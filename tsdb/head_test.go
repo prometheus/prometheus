@@ -43,7 +43,9 @@ func BenchmarkCreateSeries(b *testing.B) {
 	series := genSeries(b.N, 10, 0, 0)
 	h, _, closer := getTestHead(b, 10000, false)
 	defer closer()
-	defer h.Close()
+	defer func() {
+		testutil.Ok(b, h.Close())
+	}()
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -207,19 +209,14 @@ func TestHead_ReadWAL(t *testing.T) {
 					{Ref: 0, Intervals: []tombstones.Interval{{Mint: 99, Maxt: 101}}},
 				},
 			}
-			dir, err := ioutil.TempDir("", "test_read_wal")
-			testutil.Ok(t, err)
+
+			head, w, closer := getTestHead(t, 1000, compress)
+			defer closer()
 			defer func() {
-				testutil.Ok(t, os.RemoveAll(dir))
+				testutil.Ok(t, head.Close())
 			}()
 
-			w, err := wal.New(nil, nil, dir, compress)
-			testutil.Ok(t, err)
-			defer w.Close()
 			populateTestWAL(t, w, entries)
-
-			head, err := NewHead(nil, nil, w, 1000, w.Dir(), nil, DefaultStripeSize)
-			testutil.Ok(t, err)
 
 			testutil.Ok(t, head.Init(math.MinInt64))
 			testutil.Equals(t, uint64(101), head.lastSeriesID)
@@ -277,7 +274,9 @@ func TestHead_WALMultiRef(t *testing.T) {
 	head, err = NewHead(nil, nil, w, 1000, w.Dir(), nil, DefaultStripeSize)
 	testutil.Ok(t, err)
 	testutil.Ok(t, head.Init(0))
-	defer head.Close()
+	defer func() {
+		testutil.Ok(t, head.Close())
+	}()
 
 	q, err := NewBlockQuerier(head, 0, 300)
 	testutil.Ok(t, err)
@@ -288,7 +287,9 @@ func TestHead_WALMultiRef(t *testing.T) {
 func TestHead_Truncate(t *testing.T) {
 	h, _, closer := getTestHead(t, 1000, false)
 	defer closer()
-	defer h.Close()
+	defer func() {
+		testutil.Ok(t, h.Close())
+	}()
 
 	h.initTime(0)
 
@@ -370,6 +371,9 @@ func TestMemSeries_truncateChunks(t *testing.T) {
 	// This is usually taken from the Head, but passing manually here.
 	chunkReadWriter, err := chunks.NewChunkDiskMapper(dir, chunkenc.NewPool())
 	testutil.Ok(t, err)
+	defer func() {
+		testutil.Ok(t, chunkReadWriter.Close())
+	}()
 
 	// Initialise the global pool.
 	memChunkPool = sync.Pool{
@@ -433,7 +437,9 @@ func TestHeadDeleteSeriesWithoutSamples(t *testing.T) {
 			}
 			head, w, closer := getTestHead(t, 1000, compress)
 			defer closer()
-			defer head.Close()
+			defer func() {
+				testutil.Ok(t, head.Close())
+			}()
 
 			populateTestWAL(t, w, entries)
 
@@ -500,7 +506,6 @@ func TestHeadDeleteSimple(t *testing.T) {
 			for _, c := range cases {
 				head, w, closer := getTestHead(t, 1000, compress)
 				defer closer()
-				defer head.Close()
 
 				app := head.Appender()
 				for _, smpl := range smplsAll {
@@ -527,10 +532,8 @@ func TestHeadDeleteSimple(t *testing.T) {
 				// Compare the samples for both heads - before and after the reload.
 				reloadedW, err := wal.New(nil, nil, w.Dir(), compress) // Use a new wal to ensure deleted samples are gone even after a reload.
 				testutil.Ok(t, err)
-				defer reloadedW.Close()
 				reloadedHead, err := NewHead(nil, nil, reloadedW, 1000, reloadedW.Dir(), nil, DefaultStripeSize)
 				testutil.Ok(t, err)
-				defer reloadedHead.Close()
 				testutil.Ok(t, reloadedHead.Init(0))
 
 				// Compare the query results for both heads - before and after the reload.
@@ -550,6 +553,7 @@ func TestHeadDeleteSimple(t *testing.T) {
 					actSeriesSet, ws, err := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, lblDefault.Name, lblDefault.Value))
 					testutil.Ok(t, err)
 					testutil.Equals(t, 0, len(ws))
+					testutil.Ok(t, q.Close())
 
 					for {
 						eok, rok := expSeriesSet.Next(), actSeriesSet.Next()
@@ -579,7 +583,9 @@ func TestHeadDeleteSimple(t *testing.T) {
 func TestDeleteUntilCurMax(t *testing.T) {
 	hb, _, closer := getTestHead(t, 1000000, false)
 	defer closer()
-	defer hb.Close()
+	defer func() {
+		testutil.Ok(t, hb.Close())
+	}()
 
 	numSamples := int64(10)
 	app := hb.Appender()
@@ -627,7 +633,6 @@ func TestDeletedSamplesAndSeriesStillInWALAfterCheckpoint(t *testing.T) {
 	// Enough samples to cause a checkpoint.
 	hb, w, closer := getTestHead(t, int64(numSamples)*10, false)
 	defer closer()
-	defer hb.Close()
 
 	for i := 0; i < numSamples; i++ {
 		app := hb.Appender()
@@ -719,7 +724,9 @@ func TestDelete_e2e(t *testing.T) {
 
 	hb, _, closer := getTestHead(t, 100000, false)
 	defer closer()
-	defer hb.Close()
+	defer func() {
+		testutil.Ok(t, hb.Close())
+	}()
 
 	app := hb.Appender()
 	for _, l := range lbls {
@@ -908,6 +915,9 @@ func TestMemSeries_append(t *testing.T) {
 	// This is usually taken from the Head, but passing manually here.
 	chunkReadWriter, err := chunks.NewChunkDiskMapper(dir, chunkenc.NewPool())
 	testutil.Ok(t, err)
+	defer func() {
+		testutil.Ok(t, chunkReadWriter.Close())
+	}()
 
 	s := newMemSeries(labels.Labels{}, 1, 500)
 
@@ -955,7 +965,9 @@ func TestGCChunkAccess(t *testing.T) {
 	// Put a chunk, select it. GC it and then access it.
 	h, _, closer := getTestHead(t, 1000, false)
 	defer closer()
-	defer h.Close()
+	defer func() {
+		testutil.Ok(t, h.Close())
+	}()
 
 	h.initTime(0)
 
@@ -1007,7 +1019,9 @@ func TestGCSeriesAccess(t *testing.T) {
 	// Put a series, select it. GC it and then access it.
 	h, _, closer := getTestHead(t, 1000, false)
 	defer closer()
-	defer h.Close()
+	defer func() {
+		testutil.Ok(t, h.Close())
+	}()
 
 	h.initTime(0)
 
@@ -1060,7 +1074,9 @@ func TestGCSeriesAccess(t *testing.T) {
 func TestUncommittedSamplesNotLostOnTruncate(t *testing.T) {
 	h, _, closer := getTestHead(t, 1000, false)
 	defer closer()
-	defer h.Close()
+	defer func() {
+		testutil.Ok(t, h.Close())
+	}()
 
 	h.initTime(0)
 
@@ -1088,7 +1104,9 @@ func TestUncommittedSamplesNotLostOnTruncate(t *testing.T) {
 func TestRemoveSeriesAfterRollbackAndTruncate(t *testing.T) {
 	h, _, closer := getTestHead(t, 1000, false)
 	defer closer()
-	defer h.Close()
+	defer func() {
+		testutil.Ok(t, h.Close())
+	}()
 
 	h.initTime(0)
 
@@ -1122,6 +1140,9 @@ func TestHead_LogRollback(t *testing.T) {
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
 			h, w, closer := getTestHead(t, 1000, compress)
 			defer closer()
+			defer func() {
+				testutil.Ok(t, h.Close())
+			}()
 
 			app := h.Appender()
 			_, err := app.Add(labels.FromStrings("a", "b"), 1, 2)
@@ -1317,7 +1338,9 @@ func TestHeadReadWriterRepair(t *testing.T) {
 func TestNewWalSegmentOnTruncate(t *testing.T) {
 	h, wlog, closer := getTestHead(t, 1000, false)
 	defer closer()
-	defer h.Close()
+	defer func() {
+		testutil.Ok(t, h.Close())
+	}()
 	add := func(ts int64) {
 		app := h.Appender()
 		_, err := app.Add(labels.Labels{{Name: "a", Value: "b"}}, ts, 0)
@@ -1346,7 +1369,9 @@ func TestNewWalSegmentOnTruncate(t *testing.T) {
 func TestAddDuplicateLabelName(t *testing.T) {
 	h, _, closer := getTestHead(t, 1000, false)
 	defer closer()
-	defer h.Close()
+	defer func() {
+		testutil.Ok(t, h.Close())
+	}()
 
 	add := func(labels labels.Labels, labelName string) {
 		app := h.Appender()
@@ -1363,7 +1388,9 @@ func TestAddDuplicateLabelName(t *testing.T) {
 func TestHeadSeriesWithTimeBoundaries(t *testing.T) {
 	h, _, closer := getTestHead(t, 15, false)
 	defer closer()
-	defer h.Close()
+	defer func() {
+		testutil.Ok(t, h.Close())
+	}()
 	testutil.Ok(t, h.Init(0))
 	app := h.Appender()
 
@@ -1452,7 +1479,9 @@ func TestMemSeriesIsolation(t *testing.T) {
 	// Put a series, select it. GC it and then access it.
 	hb, _, closer := getTestHead(t, 1000, false)
 	defer closer()
-	defer hb.Close()
+	defer func() {
+		testutil.Ok(t, hb.Close())
+	}()
 
 	lastValue := func(maxAppendID uint64) int {
 		idx, err := hb.Index(hb.MinTime(), hb.MaxTime())
@@ -1555,7 +1584,9 @@ func TestIsolationRollback(t *testing.T) {
 	// Rollback after a failed append and test if the low watermark has progressed anyway.
 	hb, _, closer := getTestHead(t, 1000, false)
 	defer closer()
-	defer hb.Close()
+	defer func() {
+		testutil.Ok(t, hb.Close())
+	}()
 
 	app := hb.Appender()
 	_, err := app.Add(labels.FromStrings("foo", "bar"), 0, 0)
@@ -1581,7 +1612,9 @@ func TestIsolationRollback(t *testing.T) {
 func TestIsolationLowWatermarkMonotonous(t *testing.T) {
 	hb, _, closer := getTestHead(t, 1000, false)
 	defer closer()
-	defer hb.Close()
+	defer func() {
+		testutil.Ok(t, hb.Close())
+	}()
 
 	app1 := hb.Appender()
 	_, err := app1.Add(labels.FromStrings("foo", "bar"), 0, 0)
@@ -1613,7 +1646,9 @@ func TestIsolationLowWatermarkMonotonous(t *testing.T) {
 func TestIsolationAppendIDZeroIsNoop(t *testing.T) {
 	h, _, closer := getTestHead(t, 1000, false)
 	defer closer()
-	defer h.Close()
+	defer func() {
+		testutil.Ok(t, h.Close())
+	}()
 
 	h.initTime(0)
 
@@ -1633,7 +1668,9 @@ func TestHeadSeriesChunkRace(t *testing.T) {
 func testHeadSeriesChunkRace(t *testing.T) {
 	h, _, closer := getTestHead(t, 1000, false)
 	defer closer()
-	defer h.Close()
+	defer func() {
+		testutil.Ok(t, h.Close())
+	}()
 	testutil.Ok(t, h.Init(0))
 	app := h.Appender()
 
