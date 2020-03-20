@@ -58,6 +58,10 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
+const (
+	errorNone errorType = ""
+)
+
 // testMetaStore satisfies the scrape.MetricMetadataStore interface.
 // It is used to inject specific metadata as part of a test case.
 type testMetaStore struct {
@@ -1929,7 +1933,7 @@ func TestSampledWriteEndpoint(t *testing.T) {
 		Appendable: suite.Storage(),
 		refs:       make(map[string]uint64, 0),
 	}
-	err = api.writeTsdb(req)
+	err = api.write(req)
 	testutil.Ok(t, err)
 }
 

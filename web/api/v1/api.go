@@ -74,7 +74,6 @@ const (
 type errorType string
 
 const (
-	errorNone        errorType = ""
 	errorTimeout     errorType = "timeout"
 	errorCanceled    errorType = "canceled"
 	errorExec        errorType = "execution"
@@ -226,7 +225,7 @@ func NewAPI(
 ) *API {
 	return &API{
 		QueryEngine:           qe,
-		refs:                  make(map[string]uint64, 0),
+		refs:                  make(map[string]uint64),
 		Queryable:             q,
 		Appendable:            q,
 		targetRetriever:       tr,
