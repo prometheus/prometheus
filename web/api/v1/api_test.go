@@ -1885,6 +1885,54 @@ func TestStreamReadEndpoint(t *testing.T) {
 	}, results)
 }
 
+func TestSampledWriteEndpoint(t *testing.T) {
+
+	samples := []prompb.TimeSeries{
+		{
+			Labels: []prompb.Label{
+				{Name: "__name__", Value: "test_metric1"},
+				{Name: "b", Value: "c"},
+				{Name: "baz", Value: "qux"},
+				{Name: "d", Value: "e"},
+				{Name: "foo", Value: "bar"},
+			},
+			Samples: []prompb.Sample{{Value: 1, Timestamp: 0}},
+		},
+		{
+			Labels: []prompb.Label{
+				{Name: "__name__", Value: "test_metric1"},
+				{Name: "b", Value: "c"},
+				{Name: "baz", Value: "qux"},
+				{Name: "d", Value: "e"},
+				{Name: "foo", Value: "bar"},
+			},
+			Samples: []prompb.Sample{{Value: 2, Timestamp: 1}},
+		},
+	}
+
+	req := &prompb.WriteRequest{
+		Timeseries: samples,
+	}
+
+	suite, err := promql.NewTest(t, `
+		load 1m
+			test_metric1{foo="bar",baz="qux"} 1
+	`)
+	testutil.Ok(t, err)
+
+	defer suite.Close()
+
+	err = suite.Run()
+	testutil.Ok(t, err)
+
+	api := &API{
+		Appendable: suite.Storage(),
+		refs:       make(map[string]uint64, 0),
+	}
+	err = api.writeTsdb(req)
+	testutil.Ok(t, err)
+}
+
 type fakeDB struct {
 	err    error
 	closer func()
