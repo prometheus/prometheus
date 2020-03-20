@@ -99,8 +99,6 @@ type headMetrics struct {
 	chunksCreated            prometheus.Counter
 	chunksRemoved            prometheus.Counter
 	gcDuration               prometheus.Summary
-	minTime                  prometheus.GaugeFunc
-	maxTime                  prometheus.GaugeFunc
 	samplesAppended          prometheus.Counter
 	walTruncateDuration      prometheus.Summary
 	walCorruptionsTotal      prometheus.Counter
@@ -1999,11 +1997,11 @@ func (s *memSeries) cut(mint int64, chunkReadWriter *chunks.ChunkDiskMapper) *me
 			}
 			panic(err)
 		}
-		// TODO(codesome): set numSamples.
 		s.mmappedChunks = append(s.mmappedChunks, &mmappedChunk{
-			ref:     chunkRef,
-			minTime: s.headChunk.minTime,
-			maxTime: s.headChunk.maxTime,
+			ref:        chunkRef,
+			numSamples: uint16(s.headChunk.chunk.NumSamples()),
+			minTime:    s.headChunk.minTime,
+			maxTime:    s.headChunk.maxTime,
 		})
 	}
 	s.headChunk = &memChunk{
