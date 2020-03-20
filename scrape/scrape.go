@@ -314,7 +314,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 	for fp, oldLoop := range sp.loops {
 		var cache *scrapeCache
 		if oc := oldLoop.getCache(); reuseCache && oc != nil {
-			oldLoop.disableStalenessMarkers()
+			oldLoop.disableEndOfRunStalenessMarkers()
 			cache = oc
 		} else {
 			cache = newScrapeCache()
@@ -594,7 +594,7 @@ type loop interface {
 	run(interval, timeout time.Duration, errc chan<- error)
 	stop()
 	getCache() *scrapeCache
-	disableStalenessMarkers()
+	disableEndOfRunStalenessMarkers()
 }
 
 type cacheEntry struct {
@@ -617,11 +617,12 @@ type scrapeLoop struct {
 	sampleMutator       labelsMutator
 	reportSampleMutator labelsMutator
 
-	parentCtx                context.Context
-	ctx                      context.Context
-	cancel                   func()
-	stopped                  chan struct{}
-	disabledStalenessMarkers bool
+	parentCtx context.Context
+	ctx       context.Context
+	cancel    func()
+	stopped   chan struct{}
+
+	disabledEndOfRunStalenessMarkers bool
 }
 
 // scrapeCache tracks mappings of exposed metric strings to label sets and
@@ -999,7 +1000,7 @@ mainLoop:
 
 	close(sl.stopped)
 
-	if !sl.disabledStalenessMarkers {
+	if !sl.disabledEndOfRunStalenessMarkers {
 		sl.endOfRunStaleness(last, ticker, interval)
 	}
 }
@@ -1059,8 +1060,8 @@ func (sl *scrapeLoop) stop() {
 	<-sl.stopped
 }
 
-func (sl *scrapeLoop) disableStalenessMarkers() {
-	sl.disabledStalenessMarkers = true
+func (sl *scrapeLoop) disableEndOfRunStalenessMarkers() {
+	sl.disabledEndOfRunStalenessMarkers = true
 }
 
 func (sl *scrapeLoop) getCache() *scrapeCache {
