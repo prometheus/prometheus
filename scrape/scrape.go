@@ -1157,7 +1157,6 @@ loop:
 
 			var ref uint64
 			ref, err = app.Add(lset, t, v)
-			// call new check error function here
 			sampleAdded, err = sl.checkAddError(nil, met, tp, err, &sampleLimitErr, appErrs)
 			if err != nil {
 				if err != storage.ErrNotFound {
@@ -1176,7 +1175,7 @@ loop:
 			}
 		}
 
-		// Match the previous behaviour, increment added even if there's a sampleLimitErr.
+		// Increment added even if there's a sampleLimitErr so we correctly report the number of samples scraped.
 		if sampleAdded || sampleLimitErr != nil {
 			added++
 		}

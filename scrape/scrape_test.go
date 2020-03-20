@@ -1012,7 +1012,7 @@ func TestScrapeLoopAppend(t *testing.T) {
 }
 
 func TestScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T) {
-	// collectResultAppender's AddFast always returns ErrNotFound if we don't give it a next
+	// collectResultAppender's AddFast always returns ErrNotFound if we don't give it a next.
 	app := &collectResultAppender{}
 
 	sl := newScrapeLoop(context.Background(),
