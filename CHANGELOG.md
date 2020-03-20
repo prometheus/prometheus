@@ -1,4 +1,4 @@
-## 2.17.0-rc.3 / 2020-03-18
+## 2.17.0-rc.4 / 2020-03-20
 
 This release implements isolation in TSDB. API queries and recording rules are
 guaranteed to only see full scrapes and full recording rules. This comes with a
@@ -20,8 +20,10 @@ some increase in memory usage, CPU usage, or query latency.
 * [BUGFIX] PromQL: Do not escape HTML-like chars in query log #6834 #6795
 * [BUGFIX] React UI: Fix data table matrix values #6896
 * [BUGFIX] React UI: Fix new targets page not loading when using non-ASCII characters #6892
+* [BUGFIX] Remote write: Register WAL watcher and live reader metrics for all remotes, not just the first one #6998
 * [BUGFIX] Scrape: Prevent removal of metric names upon relabeling #6891
 * [BUGFIX] Scrape: Fix 'superfluous response.WriteHeader call' errors when scrape fails under some circonstances #6986
+* [BUGFIX] Scrape: Fix crash when reloads are separated by two scrape intervals #7011
 
 ## 2.16.0 / 2020-02-13
 
