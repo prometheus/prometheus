@@ -264,8 +264,6 @@ scrape_configs:
   #
   # Example relabel to scrape only single, desired port for the pod
   # based on pod "example.io/scrape_port = <port>" annotation.
-  # Note that __address__ is modified here, so if pod containers' ports
-  # are declared, they all will be ignored.
   #  - source_labels: [__address__, __meta_kubernetes_pod_annotation_example_io_scrape_port]
   #    action: replace
   #    regex: ([^:]+)(?::\d+)?;(\d+)
