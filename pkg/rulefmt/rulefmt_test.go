@@ -44,8 +44,12 @@ func TestParseFileFailure(t *testing.T) {
 			errMsg:   "parse error",
 		},
 		{
-			filename: "record_and_alert.bad.yaml",
-			errMsg:   "only one of 'record' and 'alert' must be set",
+			filename: "record_and_alert.both_set.bad.yaml",
+			errMsg:   "'alert' and 'record' cannot be set at the same time",
+		},
+		{
+			filename: "record_and_alert.both_unset.bad.yaml",
+			errMsg:   "one of 'record' or 'alert' must be set",
 		},
 		{
 			filename: "no_rec_alert.bad.yaml",

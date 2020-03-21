@@ -134,23 +134,17 @@ type RuleNode struct {
 func (r *RuleNode) Validate() (nodes []WrappedError) {
 	if r.Record.Value != "" && r.Alert.Value != "" {
 		nodes = append(nodes, WrappedError{
-			err:     errors.Errorf("only one of 'record' and 'alert' must be set"),
+			err:     errors.Errorf("'alert' and 'record' cannot be set at the same time"),
 			node:    &r.Record,
 			nodeAlt: &r.Alert,
 		})
 	}
 	if r.Record.Value == "" && r.Alert.Value == "" {
-		if r.Record.Value == "0" {
-			nodes = append(nodes, WrappedError{
-				err:  errors.Errorf("one of 'record' or 'alert' must be set"),
-				node: &r.Alert,
-			})
-		} else {
-			nodes = append(nodes, WrappedError{
-				err:  errors.Errorf("one of 'record' or 'alert' must be set"),
-				node: &r.Record,
-			})
-		}
+		nodes = append(nodes, WrappedError{
+			err:     errors.Errorf("one of 'record' or 'alert' must be set"),
+			node:    &r.Record,
+			nodeAlt: &r.Alert,
+		})
 	}
 
 	if r.Expr.Value == "" {
@@ -211,7 +205,7 @@ func (r *RuleNode) Validate() (nodes []WrappedError) {
 		nodes = append(nodes, WrappedError{err: err})
 	}
 
-	return
+	return nodes
 }
 
 // testTemplateParsing checks if the templates used in labels and annotations
