@@ -655,7 +655,7 @@ func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s
 	parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
 		var set storage.SeriesSet
 		var wrn storage.Warnings
-		params := &storage.SelectParams{
+		hints := &storage.SelectHints{
 			Start: timestamp.FromTime(s.Start),
 			End:   timestamp.FromTime(s.End),
 			Step:  durationToInt64Millis(s.Interval),
@@ -667,29 +667,29 @@ func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s
 		// from end also.
 		subqOffset := ng.cumulativeSubqueryOffset(path)
 		offsetMilliseconds := durationMilliseconds(subqOffset)
-		params.Start = params.Start - offsetMilliseconds
+		hints.Start = hints.Start - offsetMilliseconds
 
 		switch n := node.(type) {
 		case *parser.VectorSelector:
 			if evalRange == 0 {
-				params.Start = params.Start - durationMilliseconds(ng.lookbackDelta)
+				hints.Start = hints.Start - durationMilliseconds(ng.lookbackDelta)
 			} else {
-				params.Range = durationMilliseconds(evalRange)
+				hints.Range = durationMilliseconds(evalRange)
 				// For all matrix queries we want to ensure that we have (end-start) + range selected
 				// this way we have `range` data before the start time
-				params.Start = params.Start - durationMilliseconds(evalRange)
+				hints.Start = hints.Start - durationMilliseconds(evalRange)
 				evalRange = 0
 			}
 
-			params.Func = extractFuncFromPath(path)
-			params.By, params.Grouping = extractGroupsFromPath(path)
+			hints.Func = extractFuncFromPath(path)
+			hints.By, hints.Grouping = extractGroupsFromPath(path)
 			if n.Offset > 0 {
 				offsetMilliseconds := durationMilliseconds(n.Offset)
-				params.Start = params.Start - offsetMilliseconds
-				params.End = params.End - offsetMilliseconds
+				hints.Start = hints.Start - offsetMilliseconds
+				hints.End = hints.End - offsetMilliseconds
 			}
 
-			set, wrn, err = querier.Select(params, n.LabelMatchers...)
+			set, wrn, err = querier.Select(false, hints, n.LabelMatchers...)
 			warnings = append(warnings, wrn...)
 			if err != nil {
 				level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)

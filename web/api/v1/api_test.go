@@ -488,9 +488,9 @@ func setupRemote(s storage.Storage) *httptest.Server {
 				return
 			}
 
-			var selectParams *storage.SelectParams
+			var hints *storage.SelectHints
 			if query.Hints != nil {
-				selectParams = &storage.SelectParams{
+				hints = &storage.SelectHints{
 					Start: query.Hints.StartMs,
 					End:   query.Hints.EndMs,
 					Step:  query.Hints.StepMs,
@@ -505,7 +505,7 @@ func setupRemote(s storage.Storage) *httptest.Server {
 			}
 			defer querier.Close()
 
-			set, _, err := querier.Select(selectParams, matchers...)
+			set, _, err := querier.Select(false, hints, matchers...)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
@@ -1615,7 +1615,7 @@ func TestSampledReadEndpoint(t *testing.T) {
 	matcher2, err := labels.NewMatcher(labels.MatchEqual, "d", "e")
 	testutil.Ok(t, err)
 
-	query, err := remote.ToQuery(0, 1, []*labels.Matcher{matcher1, matcher2}, &storage.SelectParams{Step: 0, Func: "avg"})
+	query, err := remote.ToQuery(0, 1, []*labels.Matcher{matcher1, matcher2}, &storage.SelectHints{Step: 0, Func: "avg"})
 	testutil.Ok(t, err)
 
 	req := &prompb.ReadRequest{Queries: []*prompb.Query{query}}
@@ -1714,7 +1714,7 @@ func TestStreamReadEndpoint(t *testing.T) {
 	matcher3, err := labels.NewMatcher(labels.MatchEqual, "foo", "bar1")
 	testutil.Ok(t, err)
 
-	query1, err := remote.ToQuery(0, 14400001, []*labels.Matcher{matcher1, matcher2}, &storage.SelectParams{
+	query1, err := remote.ToQuery(0, 14400001, []*labels.Matcher{matcher1, matcher2}, &storage.SelectHints{
 		Step:  1,
 		Func:  "avg",
 		Start: 0,
@@ -1722,7 +1722,7 @@ func TestStreamReadEndpoint(t *testing.T) {
 	})
 	testutil.Ok(t, err)
 
-	query2, err := remote.ToQuery(0, 14400001, []*labels.Matcher{matcher1, matcher3}, &storage.SelectParams{
+	query2, err := remote.ToQuery(0, 14400001, []*labels.Matcher{matcher1, matcher3}, &storage.SelectHints{
 		Step:  1,
 		Func:  "avg",
 		Start: 0,

@@ -60,10 +60,9 @@ type Queryable interface {
 // time range.
 type Querier interface {
 	// Select returns a set of series that matches the given label matchers.
-	Select(*SelectParams, ...*labels.Matcher) (SeriesSet, Warnings, error)
-
-	// SelectSorted returns a sorted set of series that matches the given label matchers.
-	SelectSorted(*SelectParams, ...*labels.Matcher) (SeriesSet, Warnings, error)
+	// Caller can specify if it requires returned series to be sorted. Prefer not requiring sorting for better performance.
+	// It allows passing hints that can help in optimising select, but it's up to implementation how this is used if used at all.
+	Select(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) (SeriesSet, Warnings, error)
 
 	// LabelValues returns all potential values for a label name.
 	// It is not safe to use the strings beyond the lifefime of the querier.
@@ -76,8 +75,9 @@ type Querier interface {
 	Close() error
 }
 
-// SelectParams specifies parameters passed to data selections.
-type SelectParams struct {
+// SelectHints specifies hints passed for data selections.
+// This is used only as an option for implementation to use.
+type SelectHints struct {
 	Start int64 // Start time in milliseconds for this select.
 	End   int64 // End time in milliseconds for this select.
 
