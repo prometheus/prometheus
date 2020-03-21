@@ -86,9 +86,6 @@ func (i ItemType) IsSetOperator() bool {
 	return false
 }
 
-// LowestPrec is a constant for operator precedence in expressions.
-const LowestPrec = 0 // Non-operators.
-
 type ItemType int
 
 // This is a list of all keywords in PromQL.
