@@ -505,7 +505,6 @@ func TestHeadDeleteSimple(t *testing.T) {
 
 	for _, compress := range []bool{false, true} {
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
-		Outer:
 			for _, c := range cases {
 				dir, err := ioutil.TempDir("", "test_wal_reload")
 				testutil.Ok(t, err)
@@ -553,22 +552,23 @@ func TestHeadDeleteSimple(t *testing.T) {
 				testutil.Ok(t, reloadedHead.Init(0))
 
 				// Compare the query results for both heads - before and after the reload.
-				expSeriesSet := newMockSeriesSet([]storage.Series{
-					newSeries(map[string]string{lblDefault.Name: lblDefault.Value}, func() []tsdbutil.Sample {
-						ss := make([]tsdbutil.Sample, 0, len(c.smplsExp))
-						for _, s := range c.smplsExp {
-							ss = append(ss, s)
-						}
-						return ss
-					}(),
-					),
-				})
+			Outer:
 				for _, h := range []*Head{head, reloadedHead} {
 					q, err := NewBlockQuerier(h, h.MinTime(), h.MaxTime())
 					testutil.Ok(t, err)
 					actSeriesSet, ws, err := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, lblDefault.Name, lblDefault.Value))
 					testutil.Ok(t, err)
 					testutil.Equals(t, 0, len(ws))
+					expSeriesSet := newMockSeriesSet([]storage.Series{
+						newSeries(map[string]string{lblDefault.Name: lblDefault.Value}, func() []tsdbutil.Sample {
+							ss := make([]tsdbutil.Sample, 0, len(c.smplsExp))
+							for _, s := range c.smplsExp {
+								ss = append(ss, s)
+							}
+							return ss
+						}(),
+						),
+					})
 
 					for {
 						eok, rok := expSeriesSet.Next(), actSeriesSet.Next()
