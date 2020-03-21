@@ -124,7 +124,7 @@ type Manager struct {
 
 // Options are the configurable parameters of a Handler.
 type Options struct {
-	QueueCapacity  int
+	QueueCapacity  int `flagarize:"name=alertmanager.notification-queue-capacity|help=The capacity of the queue for pending Alertmanager notifications.|default=10000"`
 	ExternalLabels labels.Labels
 	RelabelConfigs []*relabel.Config
 	// Used for sending HTTP requests to the Alertmanager.

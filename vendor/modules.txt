@@ -72,6 +72,10 @@ github.com/aws/aws-sdk-go/service/sts
 github.com/aws/aws-sdk-go/service/sts/stsiface
 # github.com/beorn7/perks v1.0.1
 github.com/beorn7/perks/quantile
+# github.com/bwplotka/flagarize v0.9.0
+github.com/bwplotka/flagarize
+github.com/bwplotka/flagarize/internal/camelcase
+github.com/bwplotka/flagarize/internal/timestamp
 # github.com/cespare/xxhash v1.1.0
 github.com/cespare/xxhash
 # github.com/cespare/xxhash/v2 v2.1.1

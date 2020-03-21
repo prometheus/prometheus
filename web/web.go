@@ -29,7 +29,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"sort"
 	"strings"
@@ -39,6 +38,7 @@ import (
 	"time"
 
 	"github.com/alecthomas/units"
+	"github.com/bwplotka/flagarize"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	conntrack "github.com/mwitkow/go-conntrack"
@@ -51,12 +51,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
 	"github.com/prometheus/common/server"
-	"github.com/prometheus/prometheus/tsdb"
-	"github.com/prometheus/prometheus/tsdb/index"
-	"github.com/soheilhy/cmux"
-	"golang.org/x/net/netutil"
-	"google.golang.org/grpc"
-
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
@@ -64,10 +58,15 @@ import (
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/template"
+	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/util/httputil"
 	api_v1 "github.com/prometheus/prometheus/web/api/v1"
 	api_v2 "github.com/prometheus/prometheus/web/api/v2"
 	"github.com/prometheus/prometheus/web/ui"
+	"github.com/soheilhy/cmux"
+	"golang.org/x/net/netutil"
+	"google.golang.org/grpc"
 )
 
 // Paths that are handled by the React / Reach router that should all be served the main React app's index.html.
@@ -224,22 +223,24 @@ type Options struct {
 	Version               *PrometheusVersion
 	Flags                 map[string]string
 
-	ListenAddress              string
-	CORSOrigin                 *regexp.Regexp
-	ReadTimeout                time.Duration
-	MaxConnections             int
-	ExternalURL                *url.URL
-	RoutePrefix                string
-	UseLocalAssets             bool
-	UserAssetsPath             string
-	ConsoleTemplatesPath       string
-	ConsoleLibrariesPath       string
-	EnableLifecycle            bool
-	EnableAdminAPI             bool
-	PageTitle                  string
-	RemoteReadSampleLimit      int
-	RemoteReadConcurrencyLimit int
-	RemoteReadBytesInFrame     int
+	ListenAddress              string                   `flagarize:"name=web.listen-address|help=Address to listen on for UI, API, and telemetry.|default=0.0.0.0:9090"`
+	MaxConnections             int                      `flagarize:"name=web.max-connections|help=Maximum number of simultaneous connections.|default=512"`
+	RoutePrefix                string                   `flagarize:"name=web.route-prefix|help=Prefix for the internal routes of web endpoints. Defaults to path of --web.external-url.|placeholder=<path>"`
+	ReadTimeout                time.Duration            `flagarize:"name=web.read-timeout|help=Maximum duration before timing out read of the request, and closing idle connections.|default=5m"`
+	UserAssetsPath             string                   `flagarize:"name=web.user-assets|help=Path to static asset directory, available at /user.|placeholder=<path>"`
+	EnableLifecycle            bool                     `flagarize:"name=web.enable-lifecycle|help=Enable shutdown and reload via HTTP request."`
+	EnableAdminAPI             bool                     `flagarize:"name=web.enable-admin-api|help=Enable API endpoints for admin control actions."`
+	ConsoleTemplatesPath       string                   `flagarize:"name=web.console.templates|help=Path to the console template directory.|default=consoles"`
+	ConsoleLibrariesPath       string                   `flagarize:"name=web.console.libraries|help=Path to the console library directory.|default=console_libraries"`
+	PageTitle                  string                   `flagarize:"name=web.page-title|help=Document title of Prometheus instance.|default=Prometheus Time Series Collection and Processing Server"`
+	CORSOrigin                 flagarize.AnchoredRegexp `flagarize:"name=web.cors.origin|default=.*"`
+	CORSOriginFlagarizeHelp    string
+	RemoteReadSampleLimit      int `flagarize:"name=storage.remote.read-sample-limit|help=Maximum overall number of samples to return via the remote read interface, in a single query. 0 means no limit. This limit is ignored for streamed response types.|default=5e7"`
+	RemoteReadConcurrencyLimit int `flagarize:"name=storage.remote.read-concurrent-limit|help=Maximum number of concurrent remote read calls. 0 means no limit.|default=10"`
+	RemoteReadBytesInFrame     int `flagarize:"name=storage.remote.read-max-bytes-in-frame|help=Maximum number of bytes in a single frame for streaming remote read response types before marshalling. Note that client might have limit on frame size as well. 1MB as recommended by protobuf by default.|default=1048576"`
+
+	ExternalURL    *url.URL
+	UseLocalAssets bool
 
 	Gatherer   prometheus.Gatherer
 	Registerer prometheus.Registerer
@@ -312,7 +313,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		h.options.RemoteReadSampleLimit,
 		h.options.RemoteReadConcurrencyLimit,
 		h.options.RemoteReadBytesInFrame,
-		h.options.CORSOrigin,
+		h.options.CORSOrigin.Regexp,
 		h.runtimeInfo,
 		h.versionInfo,
 	)
@@ -564,7 +565,7 @@ func (h *Handler) Run(ctx context.Context) error {
 
 	mux.Handle(apiPath+"/", http.StripPrefix(apiPath,
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			httputil.SetCORS(w, h.options.CORSOrigin, r)
+			httputil.SetCORS(w, h.options.CORSOrigin.Regexp, r)
 			hhFunc(w, r)
 		}),
 	))
