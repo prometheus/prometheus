@@ -264,12 +264,22 @@ func Parse(content []byte) (*RuleGroups, []error) {
 	var (
 		groups RuleGroups
 		node   ruleGroups
+		errs   []error
 	)
+
 	err := yaml.Unmarshal(content, &groups)
-	_err := yaml.Unmarshal(content, &node)
-	if err != nil || _err != nil {
-		return nil, []error{err}
+	if err != nil {
+		errs = append(errs, err)
 	}
+	err = yaml.Unmarshal(content, &node)
+	if err != nil {
+		errs = append(errs, err)
+	}
+
+	if len(errs) > 0 {
+		return nil, errs
+	}
+
 	return &groups, groups.Validate(node)
 }
 
