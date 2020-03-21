@@ -128,7 +128,7 @@ func TestHeadReadWriter_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 	testutil.Ok(t, err)
 
 	idx := 0
-	err = hrw.IterateAllChunks(func(seriesRef, chunkRef uint64, mint, maxt int64) error {
+	err = hrw.IterateAllChunks(func(seriesRef, chunkRef uint64, mint, maxt int64, _ uint16) error {
 		t.Helper()
 
 		expData := expectedData[idx]
@@ -157,7 +157,7 @@ func TestHeadReadWriter_Truncate(t *testing.T) {
 	}()
 
 	testutil.Assert(t, !hrw.fileMaxtSet, "")
-	testutil.Ok(t, hrw.IterateAllChunks(func(_, _ uint64, _, _ int64) error { return nil }))
+	testutil.Ok(t, hrw.IterateAllChunks(func(_, _ uint64, _, _ int64, _ uint16) error { return nil }))
 	testutil.Assert(t, hrw.fileMaxtSet, "")
 
 	timeRange := 0
@@ -227,7 +227,7 @@ func TestHeadReadWriter_Truncate(t *testing.T) {
 	testutil.Ok(t, err)
 
 	testutil.Assert(t, !hrw.fileMaxtSet, "")
-	testutil.Ok(t, hrw.IterateAllChunks(func(_, _ uint64, _, _ int64) error { return nil }))
+	testutil.Ok(t, hrw.IterateAllChunks(func(_, _ uint64, _, _ int64, _ uint16) error { return nil }))
 	testutil.Assert(t, hrw.fileMaxtSet, "")
 
 	// Truncating files after restart.

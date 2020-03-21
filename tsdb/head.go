@@ -712,7 +712,7 @@ func (h *Head) loadSamplesFromWAL(refSeries map[uint64]*memSeries, multiRef map[
 
 func (h *Head) loadMmappedChunks(refSeries map[uint64]*memSeries, multiRef map[uint64]uint64) error {
 	unknownRefs := 0
-	if err := h.chunkReadWriter.IterateAllChunks(func(seriesRef, chunkRef uint64, mint, maxt int64) error {
+	if err := h.chunkReadWriter.IterateAllChunks(func(seriesRef, chunkRef uint64, mint, maxt int64, numSamples uint16) error {
 		ms := refSeries[seriesRef]
 		if ms == nil {
 			unknownRefs++
@@ -725,11 +725,11 @@ func (h *Head) loadMmappedChunks(refSeries map[uint64]*memSeries, multiRef map[u
 			}
 		}
 
-		// TODO(codesome): chunks should also store num samples.
 		ms.mmappedChunks = append(ms.mmappedChunks, &mmappedChunk{
-			ref:     chunkRef,
-			minTime: mint,
-			maxTime: maxt,
+			ref:        chunkRef,
+			minTime:    mint,
+			maxTime:    maxt,
+			numSamples: numSamples,
 		})
 		return nil
 	}); err != nil {

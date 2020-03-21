@@ -1477,24 +1477,19 @@ func TestHeadSeriesWithTimeBoundaries(t *testing.T) {
 
 func TestMemSeriesIsolation(t *testing.T) {
 	// Put a series, select it. GC it and then access it.
-	hb, _, closer := getTestHead(t, 1000, false)
-	defer closer()
-	defer func() {
-		testutil.Ok(t, hb.Close())
-	}()
 
-	lastValue := func(maxAppendID uint64) int {
-		idx, err := hb.Index(hb.MinTime(), hb.MaxTime())
+	lastValue := func(h *Head, maxAppendID uint64) int {
+		idx, err := h.Index(h.MinTime(), h.MaxTime())
 		testutil.Ok(t, err)
 
-		iso := hb.iso.State()
+		iso := h.iso.State()
 		iso.maxAppendID = maxAppendID
 
 		querier := &blockQuerier{
 			mint:       0,
 			maxt:       10000,
 			index:      idx,
-			chunks:     hb.chunksRange(math.MinInt64, math.MaxInt64, iso),
+			chunks:     h.chunksRange(math.MinInt64, math.MaxInt64, iso),
 			tombstones: tombstones.NewMemTombstones(),
 		}
 
@@ -1512,30 +1507,41 @@ func TestMemSeriesIsolation(t *testing.T) {
 		return -1
 	}
 
-	i := 0
-	for ; i <= 1000; i++ {
-		var app storage.Appender
-		// To initialize bounds.
-		if hb.MinTime() == math.MaxInt64 {
-			app = &initAppender{head: hb, appendID: uint64(i), cleanupAppendIDsBelow: 0}
-		} else {
-			app = hb.appender(uint64(i), 0)
-		}
+	addSamples := func(h *Head) int {
+		i := 0
+		for ; i <= 1000; i++ {
+			var app storage.Appender
+			// To initialize bounds.
+			if h.MinTime() == math.MaxInt64 {
+				app = &initAppender{head: h, appendID: uint64(i), cleanupAppendIDsBelow: 0}
+			} else {
+				app = h.appender(uint64(i), 0)
+			}
 
-		_, err := app.Add(labels.FromStrings("foo", "bar"), int64(i), float64(i))
-		testutil.Ok(t, err)
-		testutil.Ok(t, app.Commit())
+			_, err := app.Add(labels.FromStrings("foo", "bar"), int64(i), float64(i))
+			testutil.Ok(t, err)
+			testutil.Ok(t, app.Commit())
+		}
+		return i
 	}
 
+	testIsolation := func(h *Head, i int) {
+	}
+
+	// Test isolation without restart of Head.
+	hb, _, closer := getTestHead(t, 1000, false)
+	i := addSamples(hb)
+	testIsolation(hb, i)
+
 	// Test simple cases in different chunks when no appendID cleanup has been performed.
-	testutil.Equals(t, 10, lastValue(10))
-	testutil.Equals(t, 130, lastValue(130))
-	testutil.Equals(t, 160, lastValue(160))
-	testutil.Equals(t, 240, lastValue(240))
-	testutil.Equals(t, 500, lastValue(500))
-	testutil.Equals(t, 750, lastValue(750))
-	testutil.Equals(t, 995, lastValue(995))
-	testutil.Equals(t, 999, lastValue(999))
+	testutil.Equals(t, 10, lastValue(hb, 10))
+	testutil.Equals(t, 130, lastValue(hb, 130))
+	testutil.Equals(t, 160, lastValue(hb, 160))
+	testutil.Equals(t, 240, lastValue(hb, 240))
+	testutil.Equals(t, 500, lastValue(hb, 500))
+	testutil.Equals(t, 750, lastValue(hb, 750))
+	testutil.Equals(t, 995, lastValue(hb, 995))
+	testutil.Equals(t, 999, lastValue(hb, 999))
 
 	// Cleanup appendIDs below 500.
 	app := hb.appender(uint64(i), 500)
@@ -1546,13 +1552,13 @@ func TestMemSeriesIsolation(t *testing.T) {
 
 	// We should not get queries with a maxAppendID below 500 after the cleanup,
 	// but they only take the remaining appendIDs into account.
-	testutil.Equals(t, 499, lastValue(10))
-	testutil.Equals(t, 499, lastValue(130))
-	testutil.Equals(t, 499, lastValue(160))
-	testutil.Equals(t, 499, lastValue(240))
-	testutil.Equals(t, 500, lastValue(500))
-	testutil.Equals(t, 995, lastValue(995))
-	testutil.Equals(t, 999, lastValue(999))
+	testutil.Equals(t, 499, lastValue(hb, 10))
+	testutil.Equals(t, 499, lastValue(hb, 130))
+	testutil.Equals(t, 499, lastValue(hb, 160))
+	testutil.Equals(t, 499, lastValue(hb, 240))
+	testutil.Equals(t, 500, lastValue(hb, 500))
+	testutil.Equals(t, 995, lastValue(hb, 995))
+	testutil.Equals(t, 999, lastValue(hb, 999))
 
 	// Cleanup appendIDs below 1000, which means the sample buffer is
 	// the only thing with appendIDs.
@@ -1560,12 +1566,12 @@ func TestMemSeriesIsolation(t *testing.T) {
 	_, err = app.Add(labels.FromStrings("foo", "bar"), int64(i), float64(i))
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Commit())
-	testutil.Equals(t, 999, lastValue(998))
-	testutil.Equals(t, 999, lastValue(999))
-	testutil.Equals(t, 1000, lastValue(1000))
-	testutil.Equals(t, 1001, lastValue(1001))
-	testutil.Equals(t, 1002, lastValue(1002))
-	testutil.Equals(t, 1002, lastValue(1003))
+	testutil.Equals(t, 999, lastValue(hb, 998))
+	testutil.Equals(t, 999, lastValue(hb, 999))
+	testutil.Equals(t, 1000, lastValue(hb, 1000))
+	testutil.Equals(t, 1001, lastValue(hb, 1001))
+	testutil.Equals(t, 1002, lastValue(hb, 1002))
+	testutil.Equals(t, 1002, lastValue(hb, 1003))
 
 	i++
 	// Cleanup appendIDs below 1001, but with a rollback.
@@ -1573,11 +1579,59 @@ func TestMemSeriesIsolation(t *testing.T) {
 	_, err = app.Add(labels.FromStrings("foo", "bar"), int64(i), float64(i))
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Rollback())
-	testutil.Equals(t, 1000, lastValue(999))
-	testutil.Equals(t, 1000, lastValue(1000))
-	testutil.Equals(t, 1001, lastValue(1001))
-	testutil.Equals(t, 1002, lastValue(1002))
-	testutil.Equals(t, 1002, lastValue(1003))
+	testutil.Equals(t, 1000, lastValue(hb, 999))
+	testutil.Equals(t, 1000, lastValue(hb, 1000))
+	testutil.Equals(t, 1001, lastValue(hb, 1001))
+	testutil.Equals(t, 1002, lastValue(hb, 1002))
+	testutil.Equals(t, 1002, lastValue(hb, 1003))
+
+	testutil.Ok(t, hb.Close())
+	closer()
+
+	// Test isolation with restart of Head. This is to verify the num samples of chunks after m-map chunk replay.
+	hb, w, closer := getTestHead(t, 1000, false)
+	defer closer()
+	i = addSamples(hb)
+	testutil.Ok(t, hb.Close())
+
+	wlog, err := wal.NewSize(nil, nil, w.Dir(), 32768, false)
+	testutil.Ok(t, err)
+	hb, err = NewHead(nil, nil, wlog, 1000, wlog.Dir(), nil, DefaultStripeSize)
+	defer func() { testutil.Ok(t, hb.Close()) }()
+	testutil.Ok(t, err)
+	testutil.Ok(t, hb.Init(0))
+
+	// No appends after restarting. Hence all should return the last value.
+	testutil.Equals(t, 1000, lastValue(hb, 10))
+	testutil.Equals(t, 1000, lastValue(hb, 130))
+	testutil.Equals(t, 1000, lastValue(hb, 160))
+	testutil.Equals(t, 1000, lastValue(hb, 240))
+	testutil.Equals(t, 1000, lastValue(hb, 500))
+
+	// Cleanup appendIDs below 1000, which means the sample buffer is
+	// the only thing with appendIDs.
+	app = hb.appender(uint64(i), 1000)
+	_, err = app.Add(labels.FromStrings("foo", "bar"), int64(i), float64(i))
+	i++
+	testutil.Ok(t, err)
+	testutil.Ok(t, app.Commit())
+	testutil.Equals(t, 1000, lastValue(hb, 998))
+	testutil.Equals(t, 1000, lastValue(hb, 999))
+	testutil.Equals(t, 1000, lastValue(hb, 1000))
+	testutil.Equals(t, 1001, lastValue(hb, 1001))
+	testutil.Equals(t, 1001, lastValue(hb, 1002))
+	testutil.Equals(t, 1001, lastValue(hb, 1003))
+
+	// Cleanup appendIDs below 1002, but with a rollback.
+	app = hb.appender(uint64(i), 1002)
+	_, err = app.Add(labels.FromStrings("foo", "bar"), int64(i), float64(i))
+	testutil.Ok(t, err)
+	testutil.Ok(t, app.Rollback())
+	testutil.Equals(t, 1001, lastValue(hb, 999))
+	testutil.Equals(t, 1001, lastValue(hb, 1000))
+	testutil.Equals(t, 1001, lastValue(hb, 1001))
+	testutil.Equals(t, 1001, lastValue(hb, 1002))
+	testutil.Equals(t, 1001, lastValue(hb, 1003))
 }
 
 func TestIsolationRollback(t *testing.T) {
@@ -1709,7 +1763,7 @@ func getTestHead(t testing.TB, chunkRange int64, compressWAL bool) (*Head, *wal.
 	h, err := NewHead(nil, nil, wlog, chunkRange, wlog.Dir(), nil, DefaultStripeSize)
 	testutil.Ok(t, err)
 
-	testutil.Ok(t, h.chunkReadWriter.IterateAllChunks(func(_, _ uint64, _, _ int64) error { return nil }))
+	testutil.Ok(t, h.chunkReadWriter.IterateAllChunks(func(_, _ uint64, _, _ int64, _ uint16) error { return nil }))
 
 	return h, wlog, func() {
 		testutil.Ok(t, os.RemoveAll(dir))

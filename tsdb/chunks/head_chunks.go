@@ -512,7 +512,7 @@ func (cdm *ChunkDiskMapper) Chunk(ref uint64) (chunkenc.Chunk, error) {
 // and runs the provided function on each chunk. It returns on the first error encountered.
 // NOTE: This method needs to be called at least once after creating ChunkDiskMapper
 // to set the maxt of all the file.
-func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef, chunkRef uint64, mint, maxt int64) error) (err error) {
+func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef, chunkRef uint64, mint, maxt int64, numSamples uint16) error) (err error) {
 	cdm.writePathMtx.Lock()
 	defer cdm.writePathMtx.Unlock()
 
@@ -577,7 +577,10 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef, chunkRef uint64, 
 
 			idx += ChunkEncodingSize // Skip encoding.
 			dataLen, n := binary.Uvarint(mmapFile.byteSlice.Range(idx, idx+MaxChunkLengthFieldSize))
-			idx += n + int(dataLen) // Skip the data.
+			idx += n
+
+			numSamples := binary.BigEndian.Uint16(mmapFile.byteSlice.Range(idx, idx+2))
+			idx += int(dataLen) // Skip the data.
 
 			// In the beginning we only checked for the chunk meta size.
 			// Now that we have added the chunk data length, we check for sufficient bytes again.
@@ -607,7 +610,7 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef, chunkRef uint64, 
 				mmapFile.maxt = maxt
 			}
 
-			if err := f(seriesRef, chunkRef, mint, maxt); err != nil {
+			if err := f(seriesRef, chunkRef, mint, maxt, numSamples); err != nil {
 				return err
 			}
 		}
