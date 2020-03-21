@@ -181,13 +181,15 @@ type WAL struct {
 }
 
 type walMetrics struct {
-	fsyncDuration   prometheus.Summary
-	pageFlushes     prometheus.Counter
-	pageCompletions prometheus.Counter
-	truncateFail    prometheus.Counter
-	truncateTotal   prometheus.Counter
-	currentSegment  prometheus.Gauge
-	writesFailed    prometheus.Counter
+	fsyncDuration    prometheus.Summary
+	pageFlushes      prometheus.Counter
+	pageCompletions  prometheus.Counter
+	truncateFail     prometheus.Counter
+	truncateTotal    prometheus.Counter
+	currentSegment   prometheus.Gauge
+	writesFailed     prometheus.Counter
+	writesTotal      prometheus.Counter
+	writesCompressed prometheus.Counter
 }
 
 func newWALMetrics(r prometheus.Registerer) *walMetrics {
@@ -222,6 +224,14 @@ func newWALMetrics(r prometheus.Registerer) *walMetrics {
 		Name: "prometheus_tsdb_wal_writes_failed_total",
 		Help: "Total number of WAL writes that failed.",
 	})
+	m.writesTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_wal_writes_total",
+		Help: "Total number of WAL writes.",
+	})
+	m.writesCompressed = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_wal_writes_compressed_total",
+		Help: "Total number of WAL writes that compressed.",
+	})
 
 	if r != nil {
 		r.MustRegister(
@@ -232,6 +242,8 @@ func newWALMetrics(r prometheus.Registerer) *walMetrics {
 			m.truncateTotal,
 			m.currentSegment,
 			m.writesFailed,
+			m.writesTotal,
+			m.writesCompressed,
 		)
 	}
 
@@ -593,6 +605,7 @@ func (w *WAL) Log(recs ...[]byte) error {
 // - the record is bigger than the page size
 // - the current page is full.
 func (w *WAL) log(rec []byte, final bool) error {
+	defer w.metrics.writesTotal.Inc()
 	// When the last page flush failed the page will remain full.
 	// When the page is full, need to flush it before trying to add more records to it.
 	if w.page.full() {
@@ -622,6 +635,7 @@ func (w *WAL) log(rec []byte, final bool) error {
 		if len(w.snappyBuf) < len(rec) {
 			rec = w.snappyBuf
 			compressed = true
+			w.metrics.writesCompressed.Inc()
 		}
 	}
 
