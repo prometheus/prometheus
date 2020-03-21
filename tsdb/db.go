@@ -336,7 +336,10 @@ func (db *DBReadOnly) FlushWAL(dir string) error {
 	// Add +1 millisecond to block maxt because block intervals are half-open: [b.MinTime, b.MaxTime).
 	// Because of this block intervals are always +1 than the total samples it includes.
 	_, err = compactor.Write(dir, rh, mint, maxt+1, nil)
-	return errors.Wrap(err, "writing WAL")
+	var merr tsdb_errors.MultiError
+	merr.Add(errors.Wrap(err, "writing WAL"))
+	merr.Add(errors.Wrap(head.Close(), "closing Head"))
+	return merr.Err()
 }
 
 // Querier loads the wal and returns a new querier over the data partition for the given time range.

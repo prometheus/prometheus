@@ -502,7 +502,6 @@ func TestHeadDeleteSimple(t *testing.T) {
 
 	for _, compress := range []bool{false, true} {
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
-		Outer:
 			for _, c := range cases {
 				head, w, closer := getTestHead(t, 1000, compress)
 				defer closer()
@@ -537,16 +536,7 @@ func TestHeadDeleteSimple(t *testing.T) {
 				testutil.Ok(t, reloadedHead.Init(0))
 
 				// Compare the query results for both heads - before and after the reload.
-				expSeriesSet := newMockSeriesSet([]storage.Series{
-					newSeries(map[string]string{lblDefault.Name: lblDefault.Value}, func() []tsdbutil.Sample {
-						ss := make([]tsdbutil.Sample, 0, len(c.smplsExp))
-						for _, s := range c.smplsExp {
-							ss = append(ss, s)
-						}
-						return ss
-					}(),
-					),
-				})
+			Outer:
 				for _, h := range []*Head{head, reloadedHead} {
 					q, err := NewBlockQuerier(h, h.MinTime(), h.MaxTime())
 					testutil.Ok(t, err)
@@ -554,6 +544,16 @@ func TestHeadDeleteSimple(t *testing.T) {
 					testutil.Ok(t, err)
 					testutil.Equals(t, 0, len(ws))
 					testutil.Ok(t, q.Close())
+					expSeriesSet := newMockSeriesSet([]storage.Series{
+						newSeries(map[string]string{lblDefault.Name: lblDefault.Value}, func() []tsdbutil.Sample {
+							ss := make([]tsdbutil.Sample, 0, len(c.smplsExp))
+							for _, s := range c.smplsExp {
+								ss = append(ss, s)
+							}
+							return ss
+						}(),
+						),
+					})
 
 					for {
 						eok, rok := expSeriesSet.Next(), actSeriesSet.Next()
@@ -1755,7 +1755,7 @@ func testHeadSeriesChunkRace(t *testing.T) {
 }
 
 func getTestHead(t testing.TB, chunkRange int64, compressWAL bool) (*Head, *wal.WAL, func()) {
-	dir, err := ioutil.TempDir("", "test_wal_segments")
+	dir, err := ioutil.TempDir("", "test")
 	testutil.Ok(t, err)
 	wlog, err := wal.NewSize(nil, nil, dir, 32768, compressWAL)
 	testutil.Ok(t, err)
