@@ -18,9 +18,10 @@ import (
 	"testing"
 
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/discovery/targetgroup"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
 func makeNode(name, address string, labels map[string]string, annotations map[string]string) *v1.Node {
