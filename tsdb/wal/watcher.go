@@ -16,6 +16,7 @@ package wal
 import (
 	"fmt"
 	"io"
+	"io/ioutil"
 	"math"
 	"os"
 	"path"
@@ -29,7 +30,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/pkg/timestamp"
-	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/record"
 )
 
@@ -293,15 +293,15 @@ func (w *Watcher) firstAndLast() (int, int, error) {
 // Copied from tsdb/wal/wal.go so we do not have to open a WAL.
 // Plan is to move WAL watcher to TSDB and dedupe these implementations.
 func (w *Watcher) segments(dir string) ([]int, error) {
-	files, err := fileutil.ReadDir(dir)
+	files, err := ioutil.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}
 
 	var refs []int
 	var last int
-	for _, fn := range files {
-		k, err := strconv.Atoi(fn)
+	for _, f := range files {
+		k, err := strconv.Atoi(f.Name())
 		if err != nil {
 			continue
 		}

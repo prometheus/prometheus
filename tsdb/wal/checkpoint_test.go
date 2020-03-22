@@ -24,7 +24,6 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -92,9 +91,13 @@ func TestDeleteCheckpoints(t *testing.T) {
 
 	testutil.Ok(t, DeleteCheckpoints(dir, 2))
 
-	files, err := fileutil.ReadDir(dir)
+	files, err := ioutil.ReadDir(dir)
 	testutil.Ok(t, err)
-	testutil.Equals(t, []string{"checkpoint.02", "checkpoint.03"}, files)
+	fns := []string{}
+	for _, f := range files {
+		fns = append(fns, f.Name())
+	}
+	testutil.Equals(t, []string{"checkpoint.02", "checkpoint.03"}, fns)
 
 	testutil.Ok(t, os.MkdirAll(filepath.Join(dir, "checkpoint.99999999"), 0777))
 	testutil.Ok(t, os.MkdirAll(filepath.Join(dir, "checkpoint.100000000"), 0777))
@@ -102,9 +105,13 @@ func TestDeleteCheckpoints(t *testing.T) {
 
 	testutil.Ok(t, DeleteCheckpoints(dir, 100000000))
 
-	files, err = fileutil.ReadDir(dir)
+	files, err = ioutil.ReadDir(dir)
 	testutil.Ok(t, err)
-	testutil.Equals(t, []string{"checkpoint.100000000", "checkpoint.100000001"}, files)
+	fns = []string{}
+	for _, f := range files {
+		fns = append(fns, f.Name())
+	}
+	testutil.Equals(t, []string{"checkpoint.100000000", "checkpoint.100000001"}, fns)
 }
 
 func TestCheckpoint(t *testing.T) {
@@ -178,10 +185,10 @@ func TestCheckpoint(t *testing.T) {
 			testutil.Ok(t, DeleteCheckpoints(w.Dir(), 106))
 
 			// Only the new checkpoint should be left.
-			files, err := fileutil.ReadDir(dir)
+			files, err := ioutil.ReadDir(dir)
 			testutil.Ok(t, err)
 			testutil.Equals(t, 1, len(files))
-			testutil.Equals(t, "checkpoint.00000106", files[0])
+			testutil.Equals(t, "checkpoint.00000106", files[0].Name())
 
 			sr, err := NewSegmentsReader(filepath.Join(dir, "checkpoint.00000106"))
 			testutil.Ok(t, err)
