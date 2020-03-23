@@ -763,21 +763,21 @@ func listSegments(dir string) (refs []segmentRef, err error) {
 	if err != nil {
 		return nil, err
 	}
-	var last int
 	for _, fn := range files {
 		k, err := strconv.Atoi(fn)
 		if err != nil {
 			continue
 		}
-		if len(refs) > 0 && k > last+1 {
-			return nil, errors.New("segments are not sequential")
-		}
 		refs = append(refs, segmentRef{name: fn, index: k})
-		last = k
 	}
 	sort.Slice(refs, func(i, j int) bool {
 		return refs[i].index < refs[j].index
 	})
+	for i := 0; i < len(refs)-1; i++ {
+		if refs[i].index+1 != refs[i+1].index {
+			return nil, errors.New("segments are not sequential")
+		}
+	}
 	return refs, nil
 }
 
