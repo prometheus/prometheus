@@ -18,6 +18,19 @@ package storage
 
 import "github.com/prometheus/prometheus/pkg/labels"
 
+type genericQuerier interface {
+	baseQuerier
+	Select(bool, *SelectHints, ...*labels.Matcher) (genericSeriesSet, Warnings, error)
+}
+
+type genericSeriesSet interface {
+	Next() bool
+	At() Labeled
+	Err() error
+}
+
+type genericSeriesMergeFunc func(...Labeled) Labeled
+
 type genericQuerierAdapter struct {
 	baseQuerier
 
@@ -52,16 +65,10 @@ func (q *genericQuerierAdapter) Select(sortSeries bool, hints *SelectHints, matc
 }
 
 func newGenericQuerierFrom(q Querier) genericQuerier {
-	if q == nil {
-		return nil
-	}
 	return &genericQuerierAdapter{baseQuerier: q, q: q}
 }
 
 func newGenericQuerierFromChunk(cq ChunkQuerier) genericQuerier {
-	if cq == nil {
-		return nil
-	}
 	return &genericQuerierAdapter{baseQuerier: cq, cq: cq}
 }
 

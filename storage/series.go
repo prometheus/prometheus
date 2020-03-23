@@ -87,7 +87,7 @@ type chunkSetToSeriesSet struct {
 	bufIterator      chunkenc.Iterator
 }
 
-// NewSeriesSetFromChunkSeriesSet use ChunkSeriesSet to provider sample SeriesSet.
+// NewSeriesSetFromChunkSeriesSet converts ChunkSeriesSet to SeriesSet by decoding chunks one by one.
 func NewSeriesSetFromChunkSeriesSet(chk ChunkSeriesSet) SeriesSet {
 	return &chunkSetToSeriesSet{ChunkSeriesSet: chk}
 }

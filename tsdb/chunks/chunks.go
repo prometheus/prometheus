@@ -69,9 +69,6 @@ type Meta struct {
 
 // Iterator iterates over the chunk of a time series.
 type Iterator interface {
-	//// Seek advances the iterator forward to the given timestamp.
-	//// It advances to the chunk with min time at t or first chunk with min time after t.
-	//Seek(t int64) bool
 	// At returns the current meta.
 	// It depends on implementation if the chunk is populated or not.
 	At() Meta

@@ -16,7 +16,6 @@ package storage
 import (
 	"container/heap"
 	"context"
-	"math"
 	"sort"
 	"strings"
 
@@ -183,19 +182,6 @@ func (f *fanoutAppender) Rollback() (err error) {
 	}
 	return nil
 }
-
-type genericQuerier interface {
-	baseQuerier
-	Select(bool, *SelectHints, ...*labels.Matcher) (genericSeriesSet, Warnings, error)
-}
-
-type genericSeriesSet interface {
-	Next() bool
-	At() Labeled
-	Err() error
-}
-
-type genericSeriesMergeFunc func(...Labeled) Labeled
 
 type mergeGenericQuerier struct {
 	mergeFunc genericSeriesMergeFunc
@@ -633,7 +619,7 @@ func (c *chainSampleIterator) Seek(t int64) bool {
 
 func (c *chainSampleIterator) At() (t int64, v float64) {
 	if len(c.h) == 0 {
-		return math.MaxInt64, 0
+		panic("chainSampleIterator.At() called after .Next() returned false.")
 	}
 
 	return c.h[0].At()
@@ -708,7 +694,7 @@ func (h *samplesIteratorHeap) Pop() interface{} {
 // * have to be sorted by MinTime.
 // * have to be part of exactly the same timeseries.
 // * have to be populated.
-// Merge can process can result in more than once chunk.
+// Merge process can result in more than one chunk.
 type VerticalChunksMergeFunc func(chks ...chunks.Meta) chunks.Iterator
 
 type verticalChunkSeriesMerger struct {
