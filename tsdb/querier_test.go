@@ -234,7 +234,7 @@ func createIdxChkReaders(t *testing.T, tc []seriesSamples) (IndexReader, ChunkRe
 				app.Append(smpl.t, smpl.v)
 			}
 			chkReader[chunkRef] = chunk
-			chunkRef += 1
+			chunkRef++
 		}
 
 		ls := labels.FromMap(s.lset)
