@@ -1071,7 +1071,6 @@ func (sl *scrapeLoop) append(b []byte, contentType string, ts time.Time) (total,
 		defTime        = timestamp.FromTime(ts)
 		appErrs        = appendErrors{}
 		sampleLimitErr error
-		sampleAdded    bool
 	)
 
 	defer func() {
@@ -1089,7 +1088,10 @@ func (sl *scrapeLoop) append(b []byte, contentType string, ts time.Time) (total,
 
 loop:
 	for {
-		var et textparse.Entry
+		var (
+			et          textparse.Entry
+			sampleAdded bool
+		)
 		if et, err = p.Next(); err != nil {
 			if err == io.EOF {
 				err = nil
