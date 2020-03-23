@@ -730,6 +730,11 @@ func (w *WAL) Close() (err error) {
 		return errors.New("wal already closed")
 	}
 
+	if w.segment == nil {
+		w.closed = true
+		return nil
+	}
+
 	// Flush the last page and zero out all its remaining size.
 	// We must not flush an empty page as it would falsely signal
 	// the segment is done if we start writing to it again after opening.

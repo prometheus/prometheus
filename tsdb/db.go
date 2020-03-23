@@ -294,7 +294,7 @@ func OpenDBReadOnly(dir string, l log.Logger) (*DBReadOnly, error) {
 // Samples that are in existing blocks will not be written to the new block.
 // Note that if the read only database is running concurrently with a
 // writable database then writing the WAL to the database directory can race.
-func (db *DBReadOnly) FlushWAL(dir string) error {
+func (db *DBReadOnly) FlushWAL(dir string) (returnErr error) {
 	blockReaders, err := db.Blocks()
 	if err != nil {
 		return errors.Wrap(err, "read blocks")
@@ -311,6 +311,12 @@ func (db *DBReadOnly) FlushWAL(dir string) error {
 	if err != nil {
 		return err
 	}
+	defer func() {
+		var merr tsdb_errors.MultiError
+		merr.Add(returnErr)
+		merr.Add(errors.Wrap(head.Close(), "closing Head"))
+		returnErr = merr.Err()
+	}()
 	// Set the min valid time for the ingested wal samples
 	// to be no lower than the maxt of the last block.
 	if err := head.Init(maxBlockTime); err != nil {
