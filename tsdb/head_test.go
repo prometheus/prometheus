@@ -239,9 +239,9 @@ func TestHead_ReadWAL(t *testing.T) {
 				testutil.Ok(t, c.Err())
 				return x
 			}
-			testutil.Equals(t, []sample{{100, 2}, {101, 5}}, expandChunk(s10.iterator(0, nil, head.chunkReadWriter, nil)))
-			testutil.Equals(t, []sample{{101, 6}}, expandChunk(s50.iterator(0, nil, head.chunkReadWriter, nil)))
-			testutil.Equals(t, []sample{{100, 3}, {101, 7}}, expandChunk(s100.iterator(0, nil, head.chunkReadWriter, nil)))
+			testutil.Equals(t, []sample{{100, 2}, {101, 5}}, expandChunk(s10.iterator(0, nil, head.chunkDiskMapper, nil)))
+			testutil.Equals(t, []sample{{101, 6}}, expandChunk(s50.iterator(0, nil, head.chunkDiskMapper, nil)))
+			testutil.Equals(t, []sample{{100, 3}, {101, 7}}, expandChunk(s100.iterator(0, nil, head.chunkDiskMapper, nil)))
 		})
 	}
 }
@@ -369,10 +369,10 @@ func TestMemSeries_truncateChunks(t *testing.T) {
 		testutil.Ok(t, os.RemoveAll(dir))
 	}()
 	// This is usually taken from the Head, but passing manually here.
-	chunkReadWriter, err := chunks.NewChunkDiskMapper(dir, chunkenc.NewPool())
+	chunkDiskMapper, err := chunks.NewChunkDiskMapper(dir, chunkenc.NewPool())
 	testutil.Ok(t, err)
 	defer func() {
-		testutil.Ok(t, chunkReadWriter.Close())
+		testutil.Ok(t, chunkDiskMapper.Close())
 	}()
 
 	// Initialise the global pool.
@@ -385,7 +385,7 @@ func TestMemSeries_truncateChunks(t *testing.T) {
 	s := newMemSeries(labels.FromStrings("a", "b"), 1, 2000)
 
 	for i := 0; i < 4000; i += 5 {
-		ok, _ := s.append(int64(i), float64(i), 0, chunkReadWriter)
+		ok, _ := s.append(int64(i), float64(i), 0, chunkDiskMapper)
 		testutil.Assert(t, ok == true, "sample append failed")
 	}
 
@@ -393,28 +393,28 @@ func TestMemSeries_truncateChunks(t *testing.T) {
 	// that the ID of the last chunk still gives us the same chunk afterwards.
 	countBefore := len(s.mmappedChunks) + 1 // +1 for the head chunk.
 	lastID := s.chunkID(countBefore - 1)
-	lastChunk, _ := s.chunk(lastID, chunkReadWriter)
+	lastChunk, _ := s.chunk(lastID, chunkDiskMapper)
 
-	chk, _ := s.chunk(0, chunkReadWriter)
+	chk, _ := s.chunk(0, chunkDiskMapper)
 	testutil.Assert(t, chk != nil, "")
 	testutil.Assert(t, lastChunk != nil, "")
 
 	s.truncateChunksBefore(2000)
 
 	testutil.Equals(t, int64(2000), s.mmappedChunks[0].minTime)
-	chk, _ = s.chunk(0, chunkReadWriter)
+	chk, _ = s.chunk(0, chunkDiskMapper)
 	testutil.Assert(t, chk == nil, "first chunks not gone")
 	testutil.Equals(t, countBefore/2, len(s.mmappedChunks)+1) // +1 for the head chunk.
-	chk, _ = s.chunk(lastID, chunkReadWriter)
+	chk, _ = s.chunk(lastID, chunkDiskMapper)
 	testutil.Equals(t, lastChunk, chk)
 
 	// Validate that the series' sample buffer is applied correctly to the last chunk
 	// after truncation.
-	it1 := s.iterator(s.chunkID(len(s.mmappedChunks)), nil, chunkReadWriter, nil)
+	it1 := s.iterator(s.chunkID(len(s.mmappedChunks)), nil, chunkDiskMapper, nil)
 	_, ok := it1.(*memSafeIterator)
 	testutil.Assert(t, ok == true, "")
 
-	it2 := s.iterator(s.chunkID(len(s.mmappedChunks)-1), nil, chunkReadWriter, nil)
+	it2 := s.iterator(s.chunkID(len(s.mmappedChunks)-1), nil, chunkDiskMapper, nil)
 	_, ok = it2.(*memSafeIterator)
 	testutil.Assert(t, ok == false, "non-last chunk incorrectly wrapped with sample buffer")
 }
@@ -913,10 +913,10 @@ func TestMemSeries_append(t *testing.T) {
 		testutil.Ok(t, os.RemoveAll(dir))
 	}()
 	// This is usually taken from the Head, but passing manually here.
-	chunkReadWriter, err := chunks.NewChunkDiskMapper(dir, chunkenc.NewPool())
+	chunkDiskMapper, err := chunks.NewChunkDiskMapper(dir, chunkenc.NewPool())
 	testutil.Ok(t, err)
 	defer func() {
-		testutil.Ok(t, chunkReadWriter.Close())
+		testutil.Ok(t, chunkDiskMapper.Close())
 	}()
 
 	s := newMemSeries(labels.Labels{}, 1, 500)
@@ -924,19 +924,19 @@ func TestMemSeries_append(t *testing.T) {
 	// Add first two samples at the very end of a chunk range and the next two
 	// on and after it.
 	// New chunk must correctly be cut at 1000.
-	ok, chunkCreated := s.append(998, 1, 0, chunkReadWriter)
+	ok, chunkCreated := s.append(998, 1, 0, chunkDiskMapper)
 	testutil.Assert(t, ok, "append failed")
 	testutil.Assert(t, chunkCreated, "first sample created chunk")
 
-	ok, chunkCreated = s.append(999, 2, 0, chunkReadWriter)
+	ok, chunkCreated = s.append(999, 2, 0, chunkDiskMapper)
 	testutil.Assert(t, ok, "append failed")
 	testutil.Assert(t, !chunkCreated, "second sample should use same chunk")
 
-	ok, chunkCreated = s.append(1000, 3, 0, chunkReadWriter)
+	ok, chunkCreated = s.append(1000, 3, 0, chunkDiskMapper)
 	testutil.Assert(t, ok, "append failed")
 	testutil.Assert(t, chunkCreated, "expected new chunk on boundary")
 
-	ok, chunkCreated = s.append(1001, 4, 0, chunkReadWriter)
+	ok, chunkCreated = s.append(1001, 4, 0, chunkDiskMapper)
 	testutil.Assert(t, ok, "append failed")
 	testutil.Assert(t, !chunkCreated, "second sample should use same chunk")
 
@@ -947,7 +947,7 @@ func TestMemSeries_append(t *testing.T) {
 	// Fill the range [1000,2000) with many samples. Intermediate chunks should be cut
 	// at approximately 120 samples per chunk.
 	for i := 1; i < 1000; i++ {
-		ok, _ := s.append(1001+int64(i), float64(i), 0, chunkReadWriter)
+		ok, _ := s.append(1001+int64(i), float64(i), 0, chunkDiskMapper)
 		testutil.Assert(t, ok, "append failed")
 	}
 
@@ -955,7 +955,7 @@ func TestMemSeries_append(t *testing.T) {
 
 	// All chunks but the first and last should now be moderately full.
 	for i, c := range s.mmappedChunks[1:] {
-		chk, err := chunkReadWriter.Chunk(c.ref)
+		chk, err := chunkDiskMapper.Chunk(c.ref)
 		testutil.Ok(t, err)
 		testutil.Assert(t, chk.NumSamples() > 100, "unexpected small chunk %d of length %d", i, chk.NumSamples())
 	}
@@ -974,18 +974,18 @@ func TestGCChunkAccess(t *testing.T) {
 	s, _ := h.getOrCreate(1, labels.FromStrings("a", "1"))
 
 	// Appending 2 samples for the first chunk.
-	ok, chunkCreated := s.append(0, 0, 0, h.chunkReadWriter)
+	ok, chunkCreated := s.append(0, 0, 0, h.chunkDiskMapper)
 	testutil.Assert(t, ok, "series append failed")
 	testutil.Assert(t, chunkCreated, "chunks was not created")
-	ok, chunkCreated = s.append(999, 999, 0, h.chunkReadWriter)
+	ok, chunkCreated = s.append(999, 999, 0, h.chunkDiskMapper)
 	testutil.Assert(t, ok, "series append failed")
 	testutil.Assert(t, !chunkCreated, "chunks was created")
 
 	// A new chunks should be created here as it's beyond the chunk range.
-	ok, chunkCreated = s.append(1000, 1000, 0, h.chunkReadWriter)
+	ok, chunkCreated = s.append(1000, 1000, 0, h.chunkDiskMapper)
 	testutil.Assert(t, ok, "series append failed")
 	testutil.Assert(t, chunkCreated, "chunks was not created")
-	ok, chunkCreated = s.append(1999, 1999, 0, h.chunkReadWriter)
+	ok, chunkCreated = s.append(1999, 1999, 0, h.chunkDiskMapper)
 	testutil.Assert(t, ok, "series append failed")
 	testutil.Assert(t, !chunkCreated, "chunks was created")
 
@@ -1028,18 +1028,18 @@ func TestGCSeriesAccess(t *testing.T) {
 	s, _ := h.getOrCreate(1, labels.FromStrings("a", "1"))
 
 	// Appending 2 samples for the first chunk.
-	ok, chunkCreated := s.append(0, 0, 0, h.chunkReadWriter)
+	ok, chunkCreated := s.append(0, 0, 0, h.chunkDiskMapper)
 	testutil.Assert(t, ok, "series append failed")
 	testutil.Assert(t, chunkCreated, "chunks was not created")
-	ok, chunkCreated = s.append(999, 999, 0, h.chunkReadWriter)
+	ok, chunkCreated = s.append(999, 999, 0, h.chunkDiskMapper)
 	testutil.Assert(t, ok, "series append failed")
 	testutil.Assert(t, !chunkCreated, "chunks was created")
 
 	// A new chunks should be created here as it's beyond the chunk range.
-	ok, chunkCreated = s.append(1000, 1000, 0, h.chunkReadWriter)
+	ok, chunkCreated = s.append(1000, 1000, 0, h.chunkDiskMapper)
 	testutil.Assert(t, ok, "series append failed")
 	testutil.Assert(t, chunkCreated, "chunks was not created")
-	ok, chunkCreated = s.append(1999, 1999, 0, h.chunkReadWriter)
+	ok, chunkCreated = s.append(1999, 1999, 0, h.chunkDiskMapper)
 	testutil.Assert(t, ok, "series append failed")
 	testutil.Assert(t, !chunkCreated, "chunks was created")
 
@@ -1293,10 +1293,10 @@ func TestHeadReadWriterRepair(t *testing.T) {
 		testutil.Assert(t, created, "series was not created")
 
 		for i := 0; i < 7; i++ {
-			ok, chunkCreated := s.append(int64(i*int(chunkRange)), float64(i*int(chunkRange)), 0, h.chunkReadWriter)
+			ok, chunkCreated := s.append(int64(i*int(chunkRange)), float64(i*int(chunkRange)), 0, h.chunkDiskMapper)
 			testutil.Assert(t, ok, "series append failed")
 			testutil.Assert(t, chunkCreated, "chunk was not created")
-			ok, chunkCreated = s.append(int64(i*int(chunkRange))+chunkRange-1, float64(i*int(chunkRange)), 0, h.chunkReadWriter)
+			ok, chunkCreated = s.append(int64(i*int(chunkRange))+chunkRange-1, float64(i*int(chunkRange)), 0, h.chunkDiskMapper)
 			testutil.Assert(t, ok, "series append failed")
 			testutil.Assert(t, !chunkCreated, "chunk was created")
 		}
@@ -1708,7 +1708,7 @@ func TestIsolationAppendIDZeroIsNoop(t *testing.T) {
 
 	s, _ := h.getOrCreate(1, labels.FromStrings("a", "1"))
 
-	ok, _ := s.append(0, 0, 0, h.chunkReadWriter)
+	ok, _ := s.append(0, 0, 0, h.chunkDiskMapper)
 	testutil.Assert(t, ok, "Series append failed.")
 	testutil.Equals(t, 0, s.txs.txIDCount, "Series should not have an appendID after append with appendID=0.")
 }
@@ -1763,7 +1763,7 @@ func getTestHead(t testing.TB, chunkRange int64, compressWAL bool) (*Head, *wal.
 	h, err := NewHead(nil, nil, wlog, chunkRange, wlog.Dir(), nil, DefaultStripeSize)
 	testutil.Ok(t, err)
 
-	testutil.Ok(t, h.chunkReadWriter.IterateAllChunks(func(_, _ uint64, _, _ int64, _ uint16) error { return nil }))
+	testutil.Ok(t, h.chunkDiskMapper.IterateAllChunks(func(_, _ uint64, _, _ int64, _ uint16) error { return nil }))
 
 	return h, wlog, func() {
 		testutil.Ok(t, os.RemoveAll(dir))

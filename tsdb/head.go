@@ -85,8 +85,8 @@ type Head struct {
 	cardinalityCache      *index.PostingsStats // posting stats cache which will expire after 30sec
 	lastPostingsStatsCall time.Duration        // last posting stats call (PostingsCardinalityStats()) time for caching
 
-	// chunkReadWriter is used to write and ready Head chunks to/from disk.
-	chunkReadWriter *chunks.ChunkDiskMapper
+	// chunkDiskMapper is used to write and ready Head chunks to/from disk.
+	chunkDiskMapper *chunks.ChunkDiskMapper
 }
 
 type headMetrics struct {
@@ -304,7 +304,7 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, chunkRange int
 	}
 
 	var err error
-	h.chunkReadWriter, err = chunks.NewChunkDiskMapper(chunkDir(chkDirRoot), pool)
+	h.chunkDiskMapper, err = chunks.NewChunkDiskMapper(chunkDir(chkDirRoot), pool)
 	if err != nil {
 		return nil, err
 	}
@@ -333,7 +333,7 @@ func (h *Head) processWALSamples(
 				unknownRefs++
 				continue
 			}
-			if _, chunkCreated := ms.append(s.T, s.V, 0, h.chunkReadWriter); chunkCreated {
+			if _, chunkCreated := ms.append(s.T, s.V, 0, h.chunkDiskMapper); chunkCreated {
 				h.metrics.chunksCreated.Inc()
 				h.metrics.chunks.Inc()
 			}
@@ -712,7 +712,7 @@ func (h *Head) loadSamplesFromWAL(refSeries map[uint64]*memSeries, multiRef map[
 
 func (h *Head) loadMmappedChunks(refSeries map[uint64]*memSeries, multiRef map[uint64]uint64) error {
 	unknownRefs := 0
-	if err := h.chunkReadWriter.IterateAllChunks(func(seriesRef, chunkRef uint64, mint, maxt int64, numSamples uint16) error {
+	if err := h.chunkDiskMapper.IterateAllChunks(func(seriesRef, chunkRef uint64, mint, maxt int64, numSamples uint16) error {
 		ms := refSeries[seriesRef]
 		if ms == nil {
 			unknownRefs++
@@ -758,7 +758,7 @@ func (h *Head) repairMmappedChunks(err error, refSeries map[uint64]*memSeries, m
 	// Hence we need to clear the mmapped chunks from head irrespective of repair failing or passing.
 	clearMmappedChunks()
 
-	if err := h.chunkReadWriter.Repair(err); err != nil {
+	if err := h.chunkDiskMapper.Repair(err); err != nil {
 		level.Info(h.logger).Log("msg", "repair of on-disk chunk files failed, discarding chunk files completely", "err", err)
 	}
 
@@ -863,7 +863,7 @@ func (h *Head) Truncate(mint int64) (err error) {
 	h.metrics.gcDuration.Observe(time.Since(start).Seconds())
 
 	// Truncate the chunk m-mapper.
-	if err := h.chunkReadWriter.Truncate(mint); err != nil {
+	if err := h.chunkDiskMapper.Truncate(mint); err != nil {
 		return errors.Wrap(err, "truncate chunks.HeadReadWriter")
 	}
 
@@ -1248,7 +1248,7 @@ func (a *headAppender) Commit() error {
 	for i, s := range a.samples {
 		series = a.sampleSeries[i]
 		series.Lock()
-		ok, chunkCreated := series.append(s.T, s.V, a.appendID, a.head.chunkReadWriter)
+		ok, chunkCreated := series.append(s.T, s.V, a.appendID, a.head.chunkDiskMapper)
 		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
 		series.pendingCommit = false
 		series.Unlock()
@@ -1470,7 +1470,7 @@ func (h *Head) compactable() bool {
 // Close flushes the WAL and closes the head.
 func (h *Head) Close() error {
 	var merr tsdb_errors.MultiError
-	merr.Add(h.chunkReadWriter.Close())
+	merr.Add(h.chunkDiskMapper.Close())
 	if h.wal != nil {
 		merr.Add(h.wal.Close())
 	}
@@ -1515,7 +1515,7 @@ func (h *headChunkReader) Chunk(ref uint64) (chunkenc.Chunk, error) {
 	}
 
 	s.Lock()
-	c, garbageCollect := s.chunk(int(cid), h.head.chunkReadWriter)
+	c, garbageCollect := s.chunk(int(cid), h.head.chunkDiskMapper)
 	defer func() {
 		if garbageCollect {
 			c.chunk = nil
@@ -1536,7 +1536,7 @@ func (h *headChunkReader) Chunk(ref uint64) (chunkenc.Chunk, error) {
 		s:               s,
 		cid:             int(cid),
 		isoState:        h.isoState,
-		chunkReadWriter: h.head.chunkReadWriter,
+		chunkDiskMapper: h.head.chunkDiskMapper,
 	}, nil
 }
 
@@ -1545,12 +1545,12 @@ type safeChunk struct {
 	s               *memSeries
 	cid             int
 	isoState        *isolationState
-	chunkReadWriter *chunks.ChunkDiskMapper
+	chunkDiskMapper *chunks.ChunkDiskMapper
 }
 
 func (c *safeChunk) Iterator(reuseIter chunkenc.Iterator) chunkenc.Iterator {
 	c.s.Lock()
-	it := c.s.iterator(c.cid, c.isoState, c.chunkReadWriter, reuseIter)
+	it := c.s.iterator(c.cid, c.isoState, c.chunkDiskMapper, reuseIter)
 	c.s.Unlock()
 	return it
 }
@@ -1986,12 +1986,12 @@ func (s *memSeries) maxTime() int64 {
 	return c.maxTime
 }
 
-func (s *memSeries) cut(mint int64, chunkReadWriter *chunks.ChunkDiskMapper) *memChunk {
+func (s *memSeries) cut(mint int64, chunkDiskMapper *chunks.ChunkDiskMapper) *memChunk {
 	if s.headChunk != nil {
-		chunkRef, err := chunkReadWriter.WriteChunk(s.ref, s.headChunk.minTime, s.headChunk.maxTime, s.headChunk.chunk)
+		chunkRef, err := chunkDiskMapper.WriteChunk(s.ref, s.headChunk.minTime, s.headChunk.maxTime, s.headChunk.chunk)
 		if err != nil {
 			if err == chunks.ErrChunkDiskMapperClosed {
-				// The head is being closed, hence chunkReadWriter is closed.
+				// The head is being closed, hence chunkDiskMapper is closed.
 				// Return the same head chunk as there wont be more samples appended anyway.
 				return s.headChunk
 			}
@@ -2043,7 +2043,7 @@ func (s *memSeries) appendable(t int64, v float64) error {
 	return nil
 }
 
-func (s *memSeries) chunk(id int, chunkReadWriter *chunks.ChunkDiskMapper) (chunk *memChunk, garbageCollect bool) {
+func (s *memSeries) chunk(id int, chunkDiskMapper *chunks.ChunkDiskMapper) (chunk *memChunk, garbageCollect bool) {
 	ix := id - s.firstChunkID
 	if ix < 0 || ix > len(s.mmappedChunks) {
 		return nil, false
@@ -2051,7 +2051,7 @@ func (s *memSeries) chunk(id int, chunkReadWriter *chunks.ChunkDiskMapper) (chun
 	if ix == len(s.mmappedChunks) {
 		return s.headChunk, false
 	}
-	chk, err := chunkReadWriter.Chunk(s.mmappedChunks[ix].ref)
+	chk, err := chunkDiskMapper.Chunk(s.mmappedChunks[ix].ref)
 	if err != nil {
 		if err == chunks.ErrChunkDiskMapperClosed {
 			return nil, false
@@ -2096,7 +2096,7 @@ func (s *memSeries) truncateChunksBefore(mint int64) (removed int) {
 // append adds the sample (t, v) to the series. The caller also has to provide
 // the appendID for isolation. (The appendID can be zero, which results in no
 // isolation for this append.)
-func (s *memSeries) append(t int64, v float64, appendID uint64, chunkReadWriter *chunks.ChunkDiskMapper) (success, chunkCreated bool) {
+func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper *chunks.ChunkDiskMapper) (success, chunkCreated bool) {
 	// Based on Gorilla white papers this offers near-optimal compression ratio
 	// so anything bigger that this has diminishing returns and increases
 	// the time range within which we have to decompress all samples.
@@ -2109,7 +2109,7 @@ func (s *memSeries) append(t int64, v float64, appendID uint64, chunkReadWriter 
 		if len(s.mmappedChunks) > 0 && s.mmappedChunks[len(s.mmappedChunks)-1].maxTime >= t {
 			return false, chunkCreated
 		}
-		c = s.cut(t, chunkReadWriter)
+		c = s.cut(t, chunkDiskMapper)
 		chunkCreated = true
 	}
 	numSamples := c.chunk.NumSamples()
@@ -2125,7 +2125,7 @@ func (s *memSeries) append(t int64, v float64, appendID uint64, chunkReadWriter 
 		s.nextAt = computeChunkEndTime(c.minTime, c.maxTime, s.nextAt)
 	}
 	if t >= s.nextAt {
-		c = s.cut(t, chunkReadWriter)
+		c = s.cut(t, chunkDiskMapper)
 		chunkCreated = true
 	}
 	s.app.Append(t, v)
@@ -2161,8 +2161,8 @@ func computeChunkEndTime(start, cur, max int64) int64 {
 	return start + (max-start)/a
 }
 
-func (s *memSeries) iterator(id int, isoState *isolationState, chunkReadWriter *chunks.ChunkDiskMapper, it chunkenc.Iterator) chunkenc.Iterator {
-	c, garbageCollect := s.chunk(id, chunkReadWriter)
+func (s *memSeries) iterator(id int, isoState *isolationState, chunkDiskMapper *chunks.ChunkDiskMapper, it chunkenc.Iterator) chunkenc.Iterator {
+	c, garbageCollect := s.chunk(id, chunkDiskMapper)
 	defer func() {
 		if garbageCollect {
 			c.chunk = nil
