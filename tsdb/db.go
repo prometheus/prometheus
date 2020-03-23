@@ -294,7 +294,7 @@ func OpenDBReadOnly(dir string, l log.Logger) (*DBReadOnly, error) {
 // Samples that are in existing blocks will not be written to the new block.
 // Note that if the read only database is running concurrently with a
 // writable database then writing the WAL to the database directory can race.
-func (db *DBReadOnly) FlushWAL(dir string) error {
+func (db *DBReadOnly) FlushWAL(dir string) (returnErr error) {
 	blockReaders, err := db.Blocks()
 	if err != nil {
 		return errors.Wrap(err, "read blocks")
@@ -311,6 +311,12 @@ func (db *DBReadOnly) FlushWAL(dir string) error {
 	if err != nil {
 		return err
 	}
+	defer func() {
+		var merr tsdb_errors.MultiError
+		merr.Add(returnErr)
+		merr.Add(errors.Wrap(head.Close(), "closing Head"))
+		returnErr = merr.Err()
+	}()
 	// Set the min valid time for the ingested wal samples
 	// to be no lower than the maxt of the last block.
 	if err := head.Init(maxBlockTime); err != nil {
@@ -336,10 +342,7 @@ func (db *DBReadOnly) FlushWAL(dir string) error {
 	// Add +1 millisecond to block maxt because block intervals are half-open: [b.MinTime, b.MaxTime).
 	// Because of this block intervals are always +1 than the total samples it includes.
 	_, err = compactor.Write(dir, rh, mint, maxt+1, nil)
-	var merr tsdb_errors.MultiError
-	merr.Add(errors.Wrap(err, "writing WAL"))
-	merr.Add(errors.Wrap(head.Close(), "closing Head"))
-	return merr.Err()
+	return errors.Wrap(err, "writing WAL")
 }
 
 // Querier loads the wal and returns a new querier over the data partition for the given time range.

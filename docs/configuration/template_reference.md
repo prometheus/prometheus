@@ -90,7 +90,7 @@ parameterize templates, and have a few other differences.
 
 ### Alert field templates
 
-`.Value`, `.Labels`, and `ExternalLabels` contain the alert value, the alert
+`.Value`, `.Labels`, and `.ExternalLabels` contain the alert value, the alert
 labels, and the globally configured external labels, respectively. They are
 also exposed as the `$value`, `$labels`, and `$externalLabels` variables for
 convenience.
