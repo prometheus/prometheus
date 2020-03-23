@@ -25,11 +25,11 @@ type genericQuerier interface {
 
 type genericSeriesSet interface {
 	Next() bool
-	At() Labeled
+	At() SeriesLabels
 	Err() error
 }
 
-type genericSeriesMergeFunc func(...Labeled) Labeled
+type genericSeriesMergeFunc func(...SeriesLabels) SeriesLabels
 
 type genericQuerierAdapter struct {
 	baseQuerier
@@ -43,16 +43,16 @@ type genericSeriesSetAdapter struct {
 	SeriesSet
 }
 
-func (a *genericSeriesSetAdapter) At() Labeled {
-	return a.SeriesSet.At().(Labeled)
+func (a *genericSeriesSetAdapter) At() SeriesLabels {
+	return a.SeriesSet.At().(SeriesLabels)
 }
 
 type genericChunkSeriesSetAdapter struct {
 	ChunkSeriesSet
 }
 
-func (a *genericChunkSeriesSetAdapter) At() Labeled {
-	return a.ChunkSeriesSet.At().(Labeled)
+func (a *genericChunkSeriesSetAdapter) At() SeriesLabels {
+	return a.ChunkSeriesSet.At().(SeriesLabels)
 }
 
 func (q *genericQuerierAdapter) Select(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) (genericSeriesSet, Warnings, error) {
@@ -111,7 +111,7 @@ type seriesMergerAdapter struct {
 	buf []Series
 }
 
-func (a *seriesMergerAdapter) Merge(s ...Labeled) Labeled {
+func (a *seriesMergerAdapter) Merge(s ...SeriesLabels) SeriesLabels {
 	a.buf = a.buf[:0]
 	for _, ser := range s {
 		a.buf = append(a.buf, ser.(Series))
@@ -124,7 +124,7 @@ type chunkSeriesMergerAdapter struct {
 	buf []ChunkSeries
 }
 
-func (a *chunkSeriesMergerAdapter) Merge(s ...Labeled) Labeled {
+func (a *chunkSeriesMergerAdapter) Merge(s ...SeriesLabels) SeriesLabels {
 	a.buf = a.buf[:0]
 	for _, ser := range s {
 		a.buf = append(a.buf, ser.(ChunkSeries))

@@ -520,11 +520,11 @@ func (c *genericMergeSeriesSet) Next() bool {
 	return true
 }
 
-func (c *genericMergeSeriesSet) At() Labeled {
+func (c *genericMergeSeriesSet) At() SeriesLabels {
 	if len(c.currentSets) == 1 {
 		return c.currentSets[0].At()
 	}
-	series := make([]Labeled, 0, len(c.currentSets))
+	series := make([]SeriesLabels, 0, len(c.currentSets))
 	for _, seriesSet := range c.currentSets {
 		series = append(series, seriesSet.At())
 	}
