@@ -30,6 +30,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/pkg/intern"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/relabel"
 	"github.com/prometheus/prometheus/prompb"
@@ -392,7 +393,7 @@ func (t *QueueManager) Stop() {
 	// On shutdown, release the strings in the labels from the intern pool.
 	t.seriesMtx.Lock()
 	for _, labels := range t.seriesLabels {
-		releaseLabels(labels)
+		intern.ReleaseLabels(intern.Global, labels)
 	}
 	t.seriesMtx.Unlock()
 	t.metrics.unregister()
@@ -410,13 +411,13 @@ func (t *QueueManager) StoreSeries(series []record.RefSeries, index int) {
 			continue
 		}
 		t.seriesSegmentIndexes[s.Ref] = index
-		internLabels(lbls)
+		intern.InternLabels(intern.Global, lbls)
 
 		// We should not ever be replacing a series labels in the map, but just
 		// in case we do we need to ensure we do not leak the replaced interned
 		// strings.
 		if orig, ok := t.seriesLabels[s.Ref]; ok {
-			releaseLabels(orig)
+			intern.ReleaseLabels(intern.Global, orig)
 		}
 		t.seriesLabels[s.Ref] = lbls
 	}
@@ -433,7 +434,7 @@ func (t *QueueManager) SeriesReset(index int) {
 	for k, v := range t.seriesSegmentIndexes {
 		if v < index {
 			delete(t.seriesSegmentIndexes, k)
-			releaseLabels(t.seriesLabels[k])
+			intern.ReleaseLabels(intern.Global, t.seriesLabels[k])
 			delete(t.seriesLabels, k)
 			delete(t.droppedSeries, k)
 		}
@@ -452,20 +453,6 @@ func (t *QueueManager) client() WriteClient {
 	t.clientMtx.RLock()
 	defer t.clientMtx.RUnlock()
 	return t.storeClient
-}
-
-func internLabels(lbls labels.Labels) {
-	for i, l := range lbls {
-		lbls[i].Name = interner.intern(l.Name)
-		lbls[i].Value = interner.intern(l.Value)
-	}
-}
-
-func releaseLabels(ls labels.Labels) {
-	for _, l := range ls {
-		interner.release(l.Name)
-		interner.release(l.Value)
-	}
 }
 
 // processExternalLabels merges externalLabels into ls. If ls contains
