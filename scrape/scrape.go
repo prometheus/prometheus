@@ -39,6 +39,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/pkg/exemplar"
+	"github.com/prometheus/prometheus/pkg/intern"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/pool"
 	"github.com/prometheus/prometheus/pkg/relabel"
@@ -857,6 +858,7 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 		// that haven't appeared in the last scrape.
 		for s, e := range c.series {
 			if c.iter != e.lastIter {
+				intern.ReleaseLabels(intern.Global, e.lset)
 				delete(c.series, s)
 			}
 		}
@@ -1419,6 +1421,7 @@ loop:
 			}
 		}
 
+		intern.InternLabels(intern.Global, lset)
 		ref, err = app.Append(ref, lset, t, v)
 		sampleAdded, err = sl.checkAddError(ce, met, tp, err, &sampleLimitErr, &appErrs)
 		if err != nil {
@@ -1627,6 +1630,7 @@ func (sl *scrapeLoop) addReportSample(app storage.Appender, s string, t int64, v
 	switch errors.Cause(err) {
 	case nil:
 		if !ok {
+			intern.InternLabels(intern.Global, lset)
 			sl.cache.addRef(s, ref, lset, lset.Hash())
 		}
 		return nil
