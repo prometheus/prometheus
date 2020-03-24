@@ -145,7 +145,7 @@ func (s *Storage) Querier(ctx context.Context, mint, maxt int64) (storage.Querie
 		}
 		queriers = append(queriers, q)
 	}
-	return storage.NewMergeQuerier(nil, queriers), nil
+	return storage.NewMergeQuerier(nil, queriers, storage.ChainedSeriesMerge), nil
 }
 
 // Appender implements storage.Storage.

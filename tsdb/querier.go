@@ -190,7 +190,7 @@ type blockQuerier struct {
 }
 
 func (q *blockQuerier) Select(sortSeries bool, hints *storage.SelectHints, ms ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
-	var base storage.ChunkSeriesSet
+	var base storage.DeprecatedChunkSeriesSet
 	var err error
 
 	if sortSeries {
@@ -670,17 +670,17 @@ type baseChunkSeries struct {
 
 // LookupChunkSeries retrieves all series for the given matchers and returns a ChunkSeriesSet
 // over them. It drops chunks based on tombstones in the given reader.
-func LookupChunkSeries(ir IndexReader, tr tombstones.Reader, ms ...*labels.Matcher) (storage.ChunkSeriesSet, error) {
+func LookupChunkSeries(ir IndexReader, tr tombstones.Reader, ms ...*labels.Matcher) (storage.DeprecatedChunkSeriesSet, error) {
 	return lookupChunkSeries(false, ir, tr, ms...)
 }
 
 // LookupChunkSeries retrieves all series for the given matchers and returns a ChunkSeriesSet
 // over them. It drops chunks based on tombstones in the given reader. Series will be in order.
-func LookupChunkSeriesSorted(ir IndexReader, tr tombstones.Reader, ms ...*labels.Matcher) (storage.ChunkSeriesSet, error) {
+func LookupChunkSeriesSorted(ir IndexReader, tr tombstones.Reader, ms ...*labels.Matcher) (storage.DeprecatedChunkSeriesSet, error) {
 	return lookupChunkSeries(true, ir, tr, ms...)
 }
 
-func lookupChunkSeries(sorted bool, ir IndexReader, tr tombstones.Reader, ms ...*labels.Matcher) (storage.ChunkSeriesSet, error) {
+func lookupChunkSeries(sorted bool, ir IndexReader, tr tombstones.Reader, ms ...*labels.Matcher) (storage.DeprecatedChunkSeriesSet, error) {
 	if tr == nil {
 		tr = tombstones.NewMemTombstones()
 	}
@@ -754,7 +754,7 @@ func (s *baseChunkSeries) Next() bool {
 // with known chunk references. It filters out chunks that do not fit the
 // given time range.
 type populatedChunkSeries struct {
-	set        storage.ChunkSeriesSet
+	set        storage.DeprecatedChunkSeriesSet
 	chunks     ChunkReader
 	mint, maxt int64
 
@@ -822,7 +822,7 @@ func (s *populatedChunkSeries) Next() bool {
 
 // blockSeriesSet is a set of series from an inverted index query.
 type blockSeriesSet struct {
-	set storage.ChunkSeriesSet
+	set storage.DeprecatedChunkSeriesSet
 	err error
 	cur storage.Series
 

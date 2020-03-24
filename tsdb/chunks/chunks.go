@@ -67,6 +67,17 @@ type Meta struct {
 	MinTime, MaxTime int64
 }
 
+// Iterator iterates over the chunk of a time series.
+type Iterator interface {
+	// At returns the current meta.
+	// It depends on implementation if the chunk is populated or not.
+	At() Meta
+	// Next advances the iterator by one.
+	Next() bool
+	// Err returns optional error if Next is false.
+	Err() error
+}
+
 // writeHash writes the chunk encoding and raw data into the provided hash.
 func (cm *Meta) writeHash(h hash.Hash, buf []byte) error {
 	buf = append(buf[:0], byte(cm.Chunk.Encoding()))
