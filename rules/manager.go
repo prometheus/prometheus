@@ -599,7 +599,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			seriesReturned := make(map[string]labels.Labels, len(g.seriesInPreviousEval[i]))
 			defer func() {
 				if err := app.Commit(); err != nil {
-					level.Warn(g.logger).Log("msg", "rule sample appending failed", "err", err)
+					level.Warn(g.logger).Log("msg", "Rule sample appending failed", "err", err)
 					return
 				}
 				g.seriesInPreviousEval[i] = seriesReturned
@@ -637,7 +637,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 						// Do not count these in logging, as this is expected if series
 						// is exposed from a different rule.
 					default:
-						level.Warn(g.logger).Log("msg", "adding stale sample failed", "sample", metric, "err", err)
+						level.Warn(g.logger).Log("msg", "Adding stale sample failed", "sample", metric, "err", err)
 					}
 				}
 			}
@@ -660,11 +660,11 @@ func (g *Group) cleanupStaleSeries(ts time.Time) {
 			// Do not count these in logging, as this is expected if series
 			// is exposed from a different rule.
 		default:
-			level.Warn(g.logger).Log("msg", "adding stale sample for previous configuration failed", "sample", s, "err", err)
+			level.Warn(g.logger).Log("msg", "Adding stale sample for previous configuration failed", "sample", s, "err", err)
 		}
 	}
 	if err := app.Commit(); err != nil {
-		level.Warn(g.logger).Log("msg", "stale sample appending for previous configuration failed", "err", err)
+		level.Warn(g.logger).Log("msg", "Stale sample appending for previous configuration failed", "err", err)
 	} else {
 		g.staleSeries = nil
 	}

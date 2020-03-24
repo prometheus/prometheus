@@ -295,7 +295,7 @@ func main() {
 
 		if cfg.tsdb.RetentionDuration == 0 && cfg.tsdb.MaxBytes == 0 {
 			cfg.tsdb.RetentionDuration = defaultRetentionDuration
-			level.Info(logger).Log("msg", "no time or size retention was set so using the default time retention", "duration", defaultRetentionDuration)
+			level.Info(logger).Log("msg", "No time or size retention was set so using the default time retention", "duration", defaultRetentionDuration)
 		}
 
 		// Check for overflows. This limits our max retention to 100y.
@@ -305,7 +305,7 @@ func main() {
 				panic(err)
 			}
 			cfg.tsdb.RetentionDuration = y
-			level.Warn(logger).Log("msg", "time retention value is too high. Limiting to: "+y.String())
+			level.Warn(logger).Log("msg", "Time retention value is too high. Limiting to: "+y.String())
 		}
 	}
 

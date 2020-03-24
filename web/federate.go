@@ -91,7 +91,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 	for _, mset := range matcherSets {
 		s, wrns, err := q.Select(false, hints, mset...)
 		if wrns != nil {
-			level.Debug(h.logger).Log("msg", "federation select returned warnings", "warnings", wrns)
+			level.Debug(h.logger).Log("msg", "Federation select returned warnings", "warnings", wrns)
 			federationWarnings.Add(float64(len(wrns)))
 		}
 		if err != nil {

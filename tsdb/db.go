@@ -433,7 +433,7 @@ func (db *DBReadOnly) Blocks() ([]BlockReader, error) {
 	if len(corrupted) > 0 {
 		for _, b := range loadable {
 			if err := b.Close(); err != nil {
-				level.Warn(db.logger).Log("msg", "closing a block", err)
+				level.Warn(db.logger).Log("msg", "Closing a block", err)
 			}
 		}
 		return nil, errors.Errorf("unexpected corrupted block:%v", corrupted)
@@ -452,7 +452,7 @@ func (db *DBReadOnly) Blocks() ([]BlockReader, error) {
 		blockMetas = append(blockMetas, b.Meta())
 	}
 	if overlaps := OverlappingBlocks(blockMetas); len(overlaps) > 0 {
-		level.Warn(db.logger).Log("msg", "overlapping blocks found during opening", "detail", overlaps.String())
+		level.Warn(db.logger).Log("msg", "Overlapping blocks found during opening", "detail", overlaps.String())
 	}
 
 	// Close all previously open readers and add the new ones to the cache.
@@ -612,7 +612,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 
 	if initErr := db.head.Init(minValidTime); initErr != nil {
 		db.head.metrics.walCorruptionsTotal.Inc()
-		level.Warn(db.logger).Log("msg", "encountered WAL read error, attempting repair", "err", initErr)
+		level.Warn(db.logger).Log("msg", "Encountered WAL read error, attempting repair", "err", initErr)
 		if err := wlog.Repair(initErr); err != nil {
 			return nil, errors.Wrap(err, "repair corrupted WAL")
 		}
@@ -908,7 +908,7 @@ func (db *DB) reload() (err error) {
 		blockMetas = append(blockMetas, b.Meta())
 	}
 	if overlaps := OverlappingBlocks(blockMetas); len(overlaps) > 0 {
-		level.Warn(db.logger).Log("msg", "overlapping blocks found during reload", "detail", overlaps.String())
+		level.Warn(db.logger).Log("msg", "Overlapping blocks found during reload", "detail", overlaps.String())
 	}
 
 	for _, b := range oldBlocks {
@@ -1041,7 +1041,7 @@ func (db *DB) deleteBlocks(blocks map[ulid.ULID]*Block) error {
 	for ulid, block := range blocks {
 		if block != nil {
 			if err := block.Close(); err != nil {
-				level.Warn(db.logger).Log("msg", "closing block failed", "err", err)
+				level.Warn(db.logger).Log("msg", "Closing block failed", "err", err)
 			}
 		}
 		if err := os.RemoveAll(filepath.Join(db.dir, ulid.String())); err != nil {
@@ -1220,7 +1220,7 @@ func (db *DB) DisableCompactions() {
 	defer db.autoCompactMtx.Unlock()
 
 	db.autoCompact = false
-	level.Info(db.logger).Log("msg", "compactions disabled")
+	level.Info(db.logger).Log("msg", "Compactions disabled")
 }
 
 // EnableCompactions enables auto compactions.
@@ -1229,7 +1229,7 @@ func (db *DB) EnableCompactions() {
 	defer db.autoCompactMtx.Unlock()
 
 	db.autoCompact = true
-	level.Info(db.logger).Log("msg", "compactions enabled")
+	level.Info(db.logger).Log("msg", "Compactions enabled")
 }
 
 // Snapshot writes the current data to the directory. If withHead is set to true it
@@ -1249,7 +1249,7 @@ func (db *DB) Snapshot(dir string, withHead bool) error {
 	defer db.mtx.RUnlock()
 
 	for _, b := range db.blocks {
-		level.Info(db.logger).Log("msg", "snapshotting block", "block", b)
+		level.Info(db.logger).Log("msg", "Snapshotting block", "block", b)
 
 		if err := b.Snapshot(dir); err != nil {
 			return errors.Wrapf(err, "error snapshotting block: %s", b.Dir())

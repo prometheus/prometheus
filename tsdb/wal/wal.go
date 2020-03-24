@@ -123,7 +123,7 @@ func OpenWriteSegment(logger log.Logger, dir string, k int) (*Segment, error) {
 	// If it was torn mid-record, a full read (which the caller should do anyway
 	// to ensure integrity) will detect it as a corruption by the end.
 	if d := stat.Size() % pageSize; d != 0 {
-		level.Warn(logger).Log("msg", "last page of the wal is torn, filling it with zeros", "segment", segName)
+		level.Warn(logger).Log("msg", "Last page of the wal is torn, filling it with zeros", "segment", segName)
 		if _, err := f.Write(make([]byte, pageSize-d)); err != nil {
 			f.Close()
 			return nil, errors.Wrap(err, "zero-pad torn page")
@@ -351,7 +351,7 @@ func (w *WAL) Repair(origErr error) error {
 	if cerr.Segment < 0 {
 		return errors.New("corruption error does not specify position")
 	}
-	level.Warn(w.logger).Log("msg", "starting corruption repair",
+	level.Warn(w.logger).Log("msg", "Starting corruption repair",
 		"segment", cerr.Segment, "offset", cerr.Offset)
 
 	// All segments behind the corruption can no longer be used.
@@ -359,7 +359,7 @@ func (w *WAL) Repair(origErr error) error {
 	if err != nil {
 		return errors.Wrap(err, "list segments")
 	}
-	level.Warn(w.logger).Log("msg", "deleting all segments newer than corrupted segment", "segment", cerr.Segment)
+	level.Warn(w.logger).Log("msg", "Deleting all segments newer than corrupted segment", "segment", cerr.Segment)
 
 	for _, s := range segs {
 		if w.segment.i == s.index {
@@ -381,7 +381,7 @@ func (w *WAL) Repair(origErr error) error {
 	// Regardless of the corruption offset, no record reaches into the previous segment.
 	// So we can safely repair the WAL by removing the segment and re-inserting all
 	// its records up to the corruption.
-	level.Warn(w.logger).Log("msg", "rewrite corrupted segment", "segment", cerr.Segment)
+	level.Warn(w.logger).Log("msg", "Rewrite corrupted segment", "segment", cerr.Segment)
 
 	fn := SegmentName(w.dir, cerr.Segment)
 	tmpfn := fn + ".repair"

@@ -556,7 +556,7 @@ func (h *Handler) Run(ctx context.Context) error {
 	apiPath := "/api"
 	if h.options.RoutePrefix != "/" {
 		apiPath = h.options.RoutePrefix + apiPath
-		level.Info(h.logger).Log("msg", "router prefix", "prefix", h.options.RoutePrefix)
+		level.Info(h.logger).Log("msg", "Router prefix", "prefix", h.options.RoutePrefix)
 	}
 	av1 := route.New().
 		WithInstrumentation(h.metrics.instrumentHandlerWithPrefix("/api/v1")).
