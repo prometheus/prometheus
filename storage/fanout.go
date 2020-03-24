@@ -81,13 +81,16 @@ func (f *fanout) Querier(ctx context.Context, mint, maxt int64) (Querier, error)
 	for _, storage := range f.secondaries {
 		querier, err := storage.Querier(ctx, mint, maxt)
 		if err != nil {
-			NewMergeQuerier(primaryQuerier, queriers, VerticalSeriesMergeFunc(ChainedSeriesMerge)).Close()
+			for _, q := range queriers {
+				// TODO(bwplotka): Log error.
+				_ = q.Close()
+			}
 			return nil, err
 		}
 		queriers = append(queriers, querier)
 	}
 
-	return NewMergeQuerier(primaryQuerier, queriers, VerticalSeriesMergeFunc(ChainedSeriesMerge)), nil
+	return NewMergeQuerier(primaryQuerier, queriers, ChainedSeriesMerge), nil
 }
 
 func (f *fanout) Appender() Appender {
@@ -196,6 +199,7 @@ type mergeGenericQuerier struct {
 // NewMergeQuerier will return NoopQuerier if no queriers are passed to it
 // and will filter NoopQueriers from its arguments, in order to reduce overhead
 // when only one querier is passed.
+// TODO(bwplotka): Explain primary querier vs querier idea. Do we still need this?
 func NewMergeQuerier(primaryQuerier Querier, queriers []Querier, mergeFunc VerticalSeriesMergeFunc) Querier {
 	filtered := make([]genericQuerier, 0, len(queriers))
 	for _, querier := range queriers {
@@ -425,11 +429,11 @@ type genericMergeSeriesSet struct {
 	querier     *mergeGenericQuerier
 }
 
-// Merge returns merged series implementation that merges series with same labels together.
+// VerticalSeriesMergeFunc returns merged series implementation that merges series with same labels together.
 // It has to handle time-overlapped series as well.
 type VerticalSeriesMergeFunc func(...Series) Series
 
-// Merge returns merged chunk series implementation that merges series with same labels together.
+// VerticalSeriesMergeFunc returns merged chunk series implementation that merges series with same labels together.
 // It has to handle time-overlapped chunk series as well.
 type VerticalChunkSeriesMergerFunc func(...ChunkSeries) ChunkSeries
 
@@ -457,8 +461,8 @@ func NewMergeChunkSeriesSet(sets []ChunkSeriesSet, merger VerticalChunkSeriesMer
 // series returned by the chkQuerierSeries series sets when iterating.
 // Each chkQuerierSeries series set must return its series in labels order, otherwise
 // merged series set will be incorrect.
-// Querier argument is optional and can be nil. Pass it to query failed queriers.
-// Overlapped situations are merged using provided genericSeriesMerger.
+// Argument 'querier' is optional and can be nil. Pass it to query if you have failing sets.
+// Overlapped situations are merged using provided mergeFunc.
 func newGenericMergeSeriesSet(sets []genericSeriesSet, querier *mergeGenericQuerier, mergeFunc genericSeriesMergeFunc) genericSeriesSet {
 	if len(sets) == 1 {
 		return sets[0]
@@ -520,11 +524,11 @@ func (c *genericMergeSeriesSet) Next() bool {
 	return true
 }
 
-func (c *genericMergeSeriesSet) At() SeriesLabels {
+func (c *genericMergeSeriesSet) At() Labels {
 	if len(c.currentSets) == 1 {
 		return c.currentSets[0].At()
 	}
-	series := make([]SeriesLabels, 0, len(c.currentSets))
+	series := make([]Labels, 0, len(c.currentSets))
 	for _, seriesSet := range c.currentSets {
 		series = append(series, seriesSet.At())
 	}
@@ -563,8 +567,8 @@ func (h *genericSeriesSetHeap) Pop() interface{} {
 }
 
 // ChainedSeriesMerge returns single series from many same series by chaining samples together.
-// In case of the timestamp overlap, first overlapped sample is kept, rest are dropped.
-// We expect the same labels for each given series.
+// In case of the timestamp overlap, the first overlapped sample is kept and the rest samples with the same timestamps
+// are dropped. We expect the same labels for each given series.
 // TODO(bwplotka): This has the same logic as tsdb.verticalChainedSeries. Remove this in favor of ChainedSeriesMerge in next PRs.
 func ChainedSeriesMerge(s ...Series) Series {
 	if len(s) == 0 {
@@ -593,8 +597,8 @@ func (m *chainSeries) Iterator() chunkenc.Iterator {
 	return newChainSampleIterator(iterators)
 }
 
-// chainSampleIterator is responsible to iterate over samples from different iterators of same time series.
-// If the samples overlap, all but one will be dropped.
+// chainSampleIterator is responsible to iterate over samples from different iterators of the same time series.
+// If one or more samples overlap, the first one is kept and all others with the same timestamp are dropped.
 type chainSampleIterator struct {
 	iterators []chunkenc.Iterator
 	h         samplesIteratorHeap
@@ -694,7 +698,6 @@ func (h *samplesIteratorHeap) Pop() interface{} {
 // * have to be sorted by MinTime.
 // * have to be part of exactly the same timeseries.
 // * have to be populated.
-// Merge process can result in more than one chunk.
 type VerticalChunksMergeFunc func(chks ...chunks.Meta) chunks.Iterator
 
 type verticalChunkSeriesMerger struct {
@@ -704,9 +707,9 @@ type verticalChunkSeriesMerger struct {
 	series []ChunkSeries
 }
 
-// NewVerticalChunkSeriesMerger returns VerticalChunkSeriesMerger that merges the same chunk series into one chunk
-// series iterator. In case of the chunk overlap, given VerticalChunkMergeFunc will be used.
-// We expect the same labels for each given series.
+// NewVerticalChunkSeriesMerger returns VerticalChunkSeriesMerger that merges the same chunk series into one or more chunks.
+// In case of the chunk overlap, given VerticalChunkMergeFunc will be used.
+// It expects the same labels for each given series.
 func NewVerticalChunkSeriesMerger(chunkMerger VerticalChunksMergeFunc) VerticalChunkSeriesMergerFunc {
 	return func(s ...ChunkSeries) ChunkSeries {
 		if len(s) == 0 {
@@ -747,7 +750,7 @@ type chainChunkIterator struct {
 
 func (c *chainChunkIterator) At() chunks.Meta {
 	if len(c.h) == 0 {
-		return chunks.Meta{}
+		panic("chainChunkIterator.At() called after .Next() returned false.")
 	}
 
 	return c.h[0].At()
@@ -790,7 +793,7 @@ func (c *chainChunkIterator) Next() bool {
 		last = next
 	}
 	if len(overlapped) > 0 {
-		heap.Push(&c.h, c.overlappedChunksMerger(append(overlapped, c.h[0].At())...))
+		heap.Push(&c.h, c.overlappedChunksMerger(append(overlapped, c.At())...))
 		return true
 	}
 	return len(c.h) > 0

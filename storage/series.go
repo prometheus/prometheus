@@ -22,12 +22,12 @@ import (
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 )
 
-// listSeriesIterator allows to iterate over provided samples. Does not handle overlaps.
 type listSeriesIterator struct {
 	samples []tsdbutil.Sample
 	idx     int
 }
 
+// NewListSeriesIterator returns listSeriesIterator that allows to iterate over provided samples. Does not handle overlaps.
 func NewListSeriesIterator(samples []tsdbutil.Sample) chunkenc.Iterator {
 	return &listSeriesIterator{samples: samples, idx: -1}
 }
@@ -57,13 +57,13 @@ func (it *listSeriesIterator) Seek(t int64) bool {
 
 func (it *listSeriesIterator) Err() error { return nil }
 
-// listChunkSeriesIterator allows to iterate over provided chunks. Does not handle overlaps.
 type listChunkSeriesIterator struct {
 	chks []chunks.Meta
 
 	idx int
 }
 
+// NewListChunkSeriesIterator returns listChunkSeriesIterator that allows to iterate over provided chunks. Does not handle overlaps.
 func NewListChunkSeriesIterator(chks ...chunks.Meta) chunks.Iterator {
 	return &listChunkSeriesIterator{chks: chks, idx: -1}
 }
@@ -117,7 +117,7 @@ func (c *chunkSetToSeriesSet) Next() bool {
 }
 
 func (c *chunkSetToSeriesSet) At() Series {
-	// Series compose of same chunks for the same series.
+	// Series composed of same chunks for the same series.
 	return ChainedSeriesMerge(c.sameSeriesChunks...)
 }
 

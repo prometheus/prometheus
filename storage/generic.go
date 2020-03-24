@@ -11,10 +11,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package storage
-
 // This file holds boilerplate adapters for generic MergeSeriesSet and MergeQuerier functions, so we can have one optimized
 // solution that works for both ChunkSeriesSet as well as SeriesSet.
+
+package storage
 
 import "github.com/prometheus/prometheus/pkg/labels"
 
@@ -25,11 +25,27 @@ type genericQuerier interface {
 
 type genericSeriesSet interface {
 	Next() bool
-	At() SeriesLabels
+	At() Labels
 	Err() error
 }
 
-type genericSeriesMergeFunc func(...SeriesLabels) SeriesLabels
+type genericSeriesMergeFunc func(...Labels) Labels
+
+type genericSeriesSetAdapter struct {
+	SeriesSet
+}
+
+func (a *genericSeriesSetAdapter) At() Labels {
+	return a.SeriesSet.At().(Labels)
+}
+
+type genericChunkSeriesSetAdapter struct {
+	ChunkSeriesSet
+}
+
+func (a *genericChunkSeriesSetAdapter) At() Labels {
+	return a.ChunkSeriesSet.At().(Labels)
+}
 
 type genericQuerierAdapter struct {
 	baseQuerier
@@ -37,22 +53,6 @@ type genericQuerierAdapter struct {
 	// One-of. If both are set, Querier will be used.
 	q  Querier
 	cq ChunkQuerier
-}
-
-type genericSeriesSetAdapter struct {
-	SeriesSet
-}
-
-func (a *genericSeriesSetAdapter) At() SeriesLabels {
-	return a.SeriesSet.At().(SeriesLabels)
-}
-
-type genericChunkSeriesSetAdapter struct {
-	ChunkSeriesSet
-}
-
-func (a *genericChunkSeriesSetAdapter) At() SeriesLabels {
-	return a.ChunkSeriesSet.At().(SeriesLabels)
 }
 
 func (q *genericQuerierAdapter) Select(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) (genericSeriesSet, Warnings, error) {
@@ -111,7 +111,7 @@ type seriesMergerAdapter struct {
 	buf []Series
 }
 
-func (a *seriesMergerAdapter) Merge(s ...SeriesLabels) SeriesLabels {
+func (a *seriesMergerAdapter) Merge(s ...Labels) Labels {
 	a.buf = a.buf[:0]
 	for _, ser := range s {
 		a.buf = append(a.buf, ser.(Series))
@@ -124,7 +124,7 @@ type chunkSeriesMergerAdapter struct {
 	buf []ChunkSeries
 }
 
-func (a *chunkSeriesMergerAdapter) Merge(s ...SeriesLabels) SeriesLabels {
+func (a *chunkSeriesMergerAdapter) Merge(s ...Labels) Labels {
 	a.buf = a.buf[:0]
 	for _, ser := range s {
 		a.buf = append(a.buf, ser.(ChunkSeries))

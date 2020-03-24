@@ -173,7 +173,7 @@ func (s errSeriesSet) Err() error { return s.err }
 
 // Series exposes a single time series and allows iterating over samples.
 type Series interface {
-	SeriesLabels
+	Labels
 	SampleIteratable
 }
 
@@ -186,12 +186,12 @@ type ChunkSeriesSet interface {
 
 // ChunkSeries exposes a single time series and allows iterating over chunks.
 type ChunkSeries interface {
-	SeriesLabels
+	Labels
 	ChunkIteratable
 }
 
-// SeriesLabels represents the item that have labels e.g. time series.
-type SeriesLabels interface {
+// Labels represents an item that has labels e.g. time series.
+type Labels interface {
 	// Labels returns the complete set of labels. For series it means all labels identifying the series.
 	Labels() labels.Labels
 }

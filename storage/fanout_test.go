@@ -63,7 +63,7 @@ func TestMergeQuerierWithChainMerger(t *testing.T) {
 		expected SeriesSet
 	}{
 		{
-			name:          "one querier with no series",
+			name:          "1 querier with no series",
 			querierSeries: [][]Series{{}},
 			expected:      NewMockSeriesSet(),
 		},
@@ -73,7 +73,7 @@ func TestMergeQuerierWithChainMerger(t *testing.T) {
 			expected:      NewMockSeriesSet(),
 		},
 		{
-			name: "one querier, two series",
+			name: "1 querier, two series",
 			querierSeries: [][]Series{{
 				NewListSeries(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1}, sample{2, 2}, sample{3, 3}}),
 				NewListSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{0, 0}, sample{1, 1}, sample{2, 2}}),
@@ -84,7 +84,7 @@ func TestMergeQuerierWithChainMerger(t *testing.T) {
 			),
 		},
 		{
-			name: "two queriers, one different series each",
+			name: "2 queriers, 1 different series each",
 			querierSeries: [][]Series{{
 				NewListSeries(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1}, sample{2, 2}, sample{3, 3}}),
 			}, {
@@ -96,7 +96,7 @@ func TestMergeQuerierWithChainMerger(t *testing.T) {
 			),
 		},
 		{
-			name: "two queriers, two not in time order series each",
+			name: "2 time unsorted queriers, 2 series each",
 			querierSeries: [][]Series{{
 				NewListSeries(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{5, 5}, sample{6, 6}}),
 				NewListSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{0, 0}, sample{1, 1}, sample{2, 2}}),
@@ -116,7 +116,7 @@ func TestMergeQuerierWithChainMerger(t *testing.T) {
 			),
 		},
 		{
-			name: "five queriers, only two have two not in time order series each",
+			name: "5 queriers, only 2 queriers have 2 time unsorted series each",
 			querierSeries: [][]Series{{}, {}, {
 				NewListSeries(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{5, 5}, sample{6, 6}}),
 				NewListSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{0, 0}, sample{1, 1}, sample{2, 2}}),
@@ -136,7 +136,7 @@ func TestMergeQuerierWithChainMerger(t *testing.T) {
 			),
 		},
 		{
-			name: "two queriers, with two not in time order series each, with 3 noop and one nil querier together",
+			name: "2 queriers, only 2 queriers have 2 time unsorted series each, with 3 noop and one nil querier together",
 			querierSeries: [][]Series{{}, {}, {
 				NewListSeries(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{5, 5}, sample{6, 6}}),
 				NewListSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{0, 0}, sample{1, 1}, sample{2, 2}}),
@@ -157,7 +157,7 @@ func TestMergeQuerierWithChainMerger(t *testing.T) {
 			),
 		},
 		{
-			name: "two queriers, with two series, one is overlapping",
+			name: "2 queriers, with 2 series, one is overlapping",
 			querierSeries: [][]Series{{}, {}, {
 				NewListSeries(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{2, 21}, sample{3, 31}, sample{5, 5}, sample{6, 6}}),
 				NewListSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{0, 0}, sample{1, 1}, sample{2, 2}}),
@@ -177,7 +177,7 @@ func TestMergeQuerierWithChainMerger(t *testing.T) {
 			),
 		},
 		{
-			name: "two queries, one with NaN samples series",
+			name: "2 queries, one with NaN samples series",
 			querierSeries: [][]Series{{
 				NewListSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{0, math.NaN()}}),
 			}, {
