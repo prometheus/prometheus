@@ -122,7 +122,7 @@ var key = map[string]ItemType{
 	"bool":        BOOL,
 }
 
-// These are the default string representations for common Items. It does not
+// ItemTypeStr is the default string representations for common Items. It does not
 // imply that those are the only character sequences that can be lexed to such an Item.
 var ItemTypeStr = map[ItemType]string{
 	LEFT_PAREN:    "(",

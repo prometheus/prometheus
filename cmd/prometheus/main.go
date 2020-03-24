@@ -334,7 +334,7 @@ func main() {
 	level.Info(logger).Log("build_context", version.BuildContext())
 	level.Info(logger).Log("host_details", prom_runtime.Uname())
 	level.Info(logger).Log("fd_limits", prom_runtime.FdLimits())
-	level.Info(logger).Log("vm_limits", prom_runtime.VmLimits())
+	level.Info(logger).Log("vm_limits", prom_runtime.VMLimits())
 
 	var (
 		localStorage  = &readyStorage{}

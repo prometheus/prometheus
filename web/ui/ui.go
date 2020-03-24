@@ -26,7 +26,7 @@ import (
 )
 
 // Assets contains the project's assets.
-var Assets http.FileSystem = func() http.FileSystem {
+var Assets = func() http.FileSystem {
 	wd, err := os.Getwd()
 	if err != nil {
 		panic(err)

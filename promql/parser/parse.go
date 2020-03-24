@@ -94,12 +94,11 @@ type ParseErrors []ParseErr
 func (errs ParseErrors) Error() string {
 	if len(errs) != 0 {
 		return errs[0].Error()
-	} else {
-		// Should never happen
-		// Panicking while printing an error seems like a bad idea, so the
-		// situation is explained in the error message instead.
-		return "error contains no error message"
 	}
+	// Should never happen
+	// Panicking while printing an error seems like a bad idea, so the
+	// situation is explained in the error message instead.
+	return "error contains no error message"
 }
 
 // ParseExpr returns the expression parsed from the input.
@@ -295,14 +294,13 @@ func (p *parser) Lex(lval *yySymType) int {
 	if p.injecting {
 		p.injecting = false
 		return int(p.inject)
-	} else {
-		// Skip comments.
-		for {
-			p.lex.NextItem(&lval.item)
-			typ = lval.item.Typ
-			if typ != COMMENT {
-				break
-			}
+	}
+	// Skip comments.
+	for {
+		p.lex.NextItem(&lval.item)
+		typ = lval.item.Typ
+		if typ != COMMENT {
+			break
 		}
 	}
 

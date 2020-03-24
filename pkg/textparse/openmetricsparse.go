@@ -233,7 +233,7 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 	p.hasExemplarTs = false
 
 	switch t := p.nextToken(); t {
-	case tEofWord:
+	case tEOFWord:
 		if t := p.nextToken(); t != tEOF {
 			return EntryInvalid, errors.New("unexpected data after # EOF")
 		}

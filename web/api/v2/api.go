@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package api_v2
+package apiv2
 
 import (
 	"context"

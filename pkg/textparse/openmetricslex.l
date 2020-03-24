@@ -49,7 +49,7 @@ S     [ ]
 <sComment>HELP{S}                     l.state = sMeta1; return tHelp
 <sComment>TYPE{S}                     l.state = sMeta1; return tType
 <sComment>UNIT{S}                     l.state = sMeta1; return tUnit
-<sComment>"EOF"\n?                    l.state = sInit; return tEofWord
+<sComment>"EOF"\n?                    l.state = sInit; return tEOFWord
 <sMeta1>{M}({M}|{D})*                 l.state = sMeta2; return tMName
 <sMeta2>{S}{C}*\n                     l.state = sInit; return tText
 
