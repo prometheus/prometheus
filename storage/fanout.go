@@ -199,7 +199,8 @@ type mergeGenericQuerier struct {
 // NewMergeQuerier will return NoopQuerier if no queriers are passed to it
 // and will filter NoopQueriers from its arguments, in order to reduce overhead
 // when only one querier is passed.
-// TODO(bwplotka): Explain primary querier vs querier idea. Do we still need this?
+// The difference between primary and secondary is as follows: f the primaryQuerier returns an error, query fails.
+// For secondaries it just return warnings.
 func NewMergeQuerier(primaryQuerier Querier, queriers []Querier, mergeFunc VerticalSeriesMergeFunc) Querier {
 	filtered := make([]genericQuerier, 0, len(queriers))
 	for _, querier := range queriers {

@@ -36,7 +36,7 @@ type genericSeriesSetAdapter struct {
 }
 
 func (a *genericSeriesSetAdapter) At() Labels {
-	return a.SeriesSet.At().(Labels)
+	return a.SeriesSet.At()
 }
 
 type genericChunkSeriesSetAdapter struct {
@@ -44,7 +44,7 @@ type genericChunkSeriesSetAdapter struct {
 }
 
 func (a *genericChunkSeriesSetAdapter) At() Labels {
-	return a.ChunkSeriesSet.At().(Labels)
+	return a.ChunkSeriesSet.At()
 }
 
 type genericQuerierAdapter struct {

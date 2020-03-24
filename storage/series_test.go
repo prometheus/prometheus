@@ -22,8 +22,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 )
 
-var _ Series = &MockSeries{}
-
 type MockSeries struct {
 	labels           labels.Labels
 	SampleIteratorFn func() chunkenc.Iterator
@@ -40,8 +38,6 @@ func NewListSeries(lset labels.Labels, samples []tsdbutil.Sample) *MockSeries {
 
 func (s *MockSeries) Labels() labels.Labels       { return s.labels }
 func (s *MockSeries) Iterator() chunkenc.Iterator { return s.SampleIteratorFn() }
-
-var _ ChunkSeries = &MockChunkSeries{}
 
 type MockChunkSeries struct {
 	labels          labels.Labels
