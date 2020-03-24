@@ -434,7 +434,7 @@ type genericMergeSeriesSet struct {
 // It has to handle time-overlapped series as well.
 type VerticalSeriesMergeFunc func(...Series) Series
 
-// VerticalSeriesMergeFunc returns merged chunk series implementation that merges series with same labels together.
+// VerticalChunkSeriesMergerFunc returns merged chunk series implementation that merges series with same labels together.
 // It has to handle time-overlapped chunk series as well.
 type VerticalChunkSeriesMergerFunc func(...ChunkSeries) ChunkSeries
 
@@ -462,7 +462,7 @@ func NewMergeChunkSeriesSet(sets []ChunkSeriesSet, merger VerticalChunkSeriesMer
 // series returned by the chkQuerierSeries series sets when iterating.
 // Each chkQuerierSeries series set must return its series in labels order, otherwise
 // merged series set will be incorrect.
-// Argument 'querier' is optional and can be nil. Pass it to query if you have failing sets.
+// Argument 'querier' is optional and can be nil. Pass Querier if you want to retry query in case of failing series set.
 // Overlapped situations are merged using provided mergeFunc.
 func newGenericMergeSeriesSet(sets []genericSeriesSet, querier *mergeGenericQuerier, mergeFunc genericSeriesMergeFunc) genericSeriesSet {
 	if len(sets) == 1 {

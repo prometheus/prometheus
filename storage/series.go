@@ -128,8 +128,6 @@ func (c *chunkSetToSeriesSet) Err() error {
 	return c.ChunkSeriesSet.Err()
 }
 
-var _ Series = &chunkToSeries{}
-
 type chunkToSeries struct {
 	labels labels.Labels
 	chk    chunks.Meta
