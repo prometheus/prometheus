@@ -2,11 +2,11 @@ import React, { useState, FC } from 'react';
 import { RouteComponentProps } from '@reach/router';
 import { Button } from 'reactstrap';
 import CopyToClipboard from 'react-copy-to-clipboard';
-import PathPrefixProps from '../../types/PathPrefixProps';
 
 import './Config.css';
 import { withStatusIndicator } from '../../components/withStatusIndicator';
 import { useFetch } from '../../hooks/useFetch';
+import useGlobalVars from '../../hooks/useGlobalVars';
 
 type YamlConfig = { yaml?: string };
 
@@ -44,7 +44,8 @@ export const ConfigContent: FC<ConfigContentProps> = ({ error, data }) => {
   );
 };
 
-const Config: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
+const Config: FC<RouteComponentProps> = () => {
+  const { pathPrefix } = useGlobalVars();
   const { response, error } = useFetch<YamlConfig>(`${pathPrefix}/api/v1/status/config`);
   return <ConfigContent error={error} data={response.data} />;
 };

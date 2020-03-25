@@ -72,11 +72,11 @@ describe('TSDB Stats', () => {
       const mock = fetchMock.mockResponse(JSON.stringify(fakeTSDBStatusResponse));
       let page: any;
       await act(async () => {
-        page = mount(<TSDBStatus pathPrefix="/path/prefix" />);
+        page = mount(<TSDBStatus />);
       });
       page.update();
 
-      expect(mock).toHaveBeenCalledWith('/path/prefix/api/v1/status/tsdb', {
+      expect(mock).toHaveBeenCalledWith('/api/v1/status/tsdb', {
         cache: 'no-store',
         credentials: 'same-origin',
       });

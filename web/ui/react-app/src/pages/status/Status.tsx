@@ -3,7 +3,7 @@ import { RouteComponentProps } from '@reach/router';
 import { Table } from 'reactstrap';
 import { withStatusIndicator } from '../../components/withStatusIndicator';
 import { useFetch } from '../../hooks/useFetch';
-import PathPrefixProps from '../../types/PathPrefixProps';
+import useGlobalVars from '../../hooks/useGlobalVars';
 
 interface StatusPageProps {
   data: Record<string, string>;
@@ -84,7 +84,8 @@ const StatusWithStatusIndicator = withStatusIndicator(StatusContent);
 
 StatusContent.displayName = 'Status';
 
-const Status: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix = '' }) => {
+const Status: FC<RouteComponentProps> = () => {
+  const { pathPrefix } = useGlobalVars();
   const path = `${pathPrefix}/api/v1`;
 
   return (

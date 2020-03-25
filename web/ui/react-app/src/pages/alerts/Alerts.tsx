@@ -1,13 +1,14 @@
 import React, { FC } from 'react';
 import { RouteComponentProps } from '@reach/router';
-import PathPrefixProps from '../../types/PathPrefixProps';
 import { useFetch } from '../../hooks/useFetch';
 import { withStatusIndicator } from '../../components/withStatusIndicator';
 import AlertsContent, { RuleStatus, AlertsProps } from './AlertContents';
+import useGlobalVars from '../../hooks/useGlobalVars';
 
 const AlertsWithStatusIndicator = withStatusIndicator(AlertsContent);
 
-const Alerts: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix = '' }) => {
+const Alerts: FC<RouteComponentProps> = () => {
+  const { pathPrefix } = useGlobalVars();
   const { response, error, isLoading } = useFetch<AlertsProps>(`${pathPrefix}/api/v1/rules?type=alert`);
 
   const ruleStatsCount: RuleStatus<number> = {

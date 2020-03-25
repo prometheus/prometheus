@@ -8,6 +8,7 @@ import PathPrefixProps from '../../types/PathPrefixProps';
 import { generateID, decodePanelOptionsFromQueryString, encodePanelOptionsToQueryString, callAll } from '../../utils';
 import { useFetch } from '../../hooks/useFetch';
 import { useLocalStorage } from '../../hooks/useLocalStorage';
+import useGlobalVars from '../../hooks/useGlobalVars';
 
 export type PanelMeta = { key: string; options: PanelOptions; id: string };
 
@@ -107,10 +108,11 @@ export const PanelListContent: FC<PanelListProps> = ({
   );
 };
 
-const PanelList: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix = '' }) => {
+const PanelList: FC<RouteComponentProps> = () => {
   const [delta, setDelta] = useState(0);
   const [useLocalTime, setUseLocalTime] = useLocalStorage('use-local-time', false);
   const [enableQueryHistory, setEnableQueryHistory] = useLocalStorage('enable-query-history', false);
+  const { pathPrefix } = useGlobalVars();
 
   const { response: metricsRes, error: metricsErr } = useFetch<string[]>(`${pathPrefix}/api/v1/label/__name__/values`);
 
