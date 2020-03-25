@@ -754,7 +754,7 @@ type RangeHead struct {
 	mint, maxt int64
 }
 
-// NewRangeHead returns a *RangeHead.
+// NewRangeHead returns a *rangeHead.
 func NewRangeHead(head *Head, mint, maxt int64) *RangeHead {
 	return &RangeHead{
 		head: head,
@@ -763,15 +763,8 @@ func NewRangeHead(head *Head, mint, maxt int64) *RangeHead {
 	}
 }
 
-func (h *RangeHead) Index(mint, maxt int64) (IndexReader, error) {
-	// rangeHead guarantees that the series returned are within its range.
-	if mint < h.mint {
-		mint = h.mint
-	}
-	if maxt > h.maxt {
-		maxt = h.maxt
-	}
-	return h.head.indexRange(mint, maxt), nil
+func (h *RangeHead) Index() (IndexReader, error) {
+	return h.head.indexRange(h.mint, h.maxt), nil
 }
 
 func (h *RangeHead) Chunks() (ChunkReader, error) {
@@ -1196,8 +1189,8 @@ func (h *Head) Tombstones() (tombstones.Reader, error) {
 }
 
 // Index returns an IndexReader against the block.
-func (h *Head) Index(mint, maxt int64) (IndexReader, error) {
-	return h.indexRange(mint, maxt), nil
+func (h *Head) Index() (IndexReader, error) {
+	return h.indexRange(math.MinInt64, math.MaxInt64), nil
 }
 
 func (h *Head) indexRange(mint, maxt int64) *headIndexReader {
@@ -1390,37 +1383,9 @@ func (h *headIndexReader) LabelNames() ([]string, error) {
 
 // Postings returns the postings list iterator for the label pairs.
 func (h *headIndexReader) Postings(name string, values ...string) (index.Postings, error) {
-	fullRange := h.mint <= h.head.MinTime() && h.maxt >= h.head.MaxTime()
 	res := make([]index.Postings, 0, len(values))
 	for _, value := range values {
-		p := h.head.postings.Get(name, value)
-		if fullRange {
-			// The head timerange covers the full index reader timerange.
-			// All the series can the be appended without filtering.
-			res = append(res, p)
-			continue
-		}
-
-		// Filter out series not in the time range, to avoid
-		// later on building up all the chunk metadata just to
-		// discard it.
-		filtered := []uint64{}
-		for p.Next() {
-			s := h.head.series.getByID(p.At())
-			if s == nil {
-				level.Debug(h.head.logger).Log("msg", "looked up series not found")
-				continue
-			}
-			s.RLock()
-			if s.minTime() <= h.maxt && s.maxTime() >= h.mint {
-				filtered = append(filtered, p.At())
-			}
-			s.RUnlock()
-		}
-		if p.Err() != nil {
-			return nil, p.Err()
-		}
-		res = append(res, index.NewListPostings(filtered))
+		res = append(res, h.head.postings.Get(name, value))
 	}
 	return index.Merge(res...), nil
 }
