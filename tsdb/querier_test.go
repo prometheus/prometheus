@@ -1044,7 +1044,7 @@ func TestSeriesIterator(t *testing.T) {
 	})
 }
 
-// Regression for: https://github.com/prometheus/prometheus/tsdb/pull/97
+// Regression for: https://github.com/prometheus/tsdb/pull/97
 func TestChunkSeriesIterator_DoubleSeek(t *testing.T) {
 	chkMetas := []chunks.Meta{
 		tsdbutil.ChunkFromSamples([]tsdbutil.Sample{}),

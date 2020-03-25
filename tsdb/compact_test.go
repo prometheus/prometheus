@@ -652,7 +652,7 @@ func TestCompaction_populateBlock(t *testing.T) {
 			expErr:         errors.New("found chunk with minTime: 10 maxTime: 30 outside of compacted minTime: 0 maxTime: 20"),
 		},
 		{
-			// Introduced by https://github.com/prometheus/prometheus/tsdb/issues/347.
+			// Introduced by https://github.com/prometheus/tsdb/issues/347.
 			title: "Populate from single block containing extra chunk",
 			inputSeriesSamples: [][]seriesSamples{
 				{
@@ -692,7 +692,7 @@ func TestCompaction_populateBlock(t *testing.T) {
 			},
 		},
 		{
-			// Introduced by https://github.com/prometheus/prometheus/tsdb/pull/539.
+			// Introduced by https://github.com/prometheus/tsdb/pull/539.
 			title: "Populate from three blocks that the last two are overlapping.",
 			inputSeriesSamples: [][]seriesSamples{
 				{
