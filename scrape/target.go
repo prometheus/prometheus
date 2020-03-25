@@ -18,6 +18,7 @@ import (
 	"hash/fnv"
 	"net"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -222,6 +223,18 @@ func (t *Target) URL() *url.URL {
 		Path:     t.labels.Get(model.MetricsPathLabel),
 		RawQuery: params.Encode(),
 	}
+}
+
+func (t *Target) SampleLimit() int {
+	limit := t.labels.Get(model.SampleLimitLabel)
+	if limit == "" {
+		return 0
+	}
+	convertedLimit, err := strconv.Atoi(limit)
+	if err != nil {
+		return 0
+	}
+	return convertedLimit
 }
 
 // Report sets target data about the last scrape.

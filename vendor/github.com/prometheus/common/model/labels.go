@@ -45,6 +45,10 @@ const (
 	// scrape a target.
 	MetricsPathLabel = "__metrics_path__"
 
+	// SampleLimitLabel is the name of the label that holds quantity of time series
+	// that can be collected from target.
+	SampleLimitLabel = "__sample_limit__"
+
 	// ReservedLabelPrefix is a prefix which is not legal in user-supplied
 	// label names.
 	ReservedLabelPrefix = "__"

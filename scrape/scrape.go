@@ -221,6 +221,10 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 		}
 		opts.target.SetMetadataStore(cache)
 
+		limit := opts.target.SampleLimit()
+		if limit == 0 {
+			limit = opts.limit
+		}
 		return newScrapeLoop(
 			ctx,
 			opts.scraper,
@@ -230,7 +234,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 				return mutateSampleLabels(l, opts.target, opts.honorLabels, opts.mrc)
 			},
 			func(l labels.Labels) labels.Labels { return mutateReportSampleLabels(l, opts.target) },
-			func() storage.Appender { return appender(app.Appender(), opts.limit) },
+			func() storage.Appender { return appender(app.Appender(), limit) },
 			cache,
 			jitterSeed,
 			opts.honorTimestamps,
