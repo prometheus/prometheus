@@ -754,7 +754,7 @@ type RangeHead struct {
 	mint, maxt int64
 }
 
-// NewRangeHead returns a *rangeHead.
+// NewRangeHead returns a *RangeHead.
 func NewRangeHead(head *Head, mint, maxt int64) *RangeHead {
 	return &RangeHead{
 		head: head,
