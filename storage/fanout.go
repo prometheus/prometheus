@@ -16,6 +16,7 @@ package storage
 import (
 	"container/heap"
 	"context"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -290,7 +291,7 @@ func (q *mergeGenericQuerier) Select(sortSeries bool, hints *SelectHints, matche
 		if qryResult.selectError != nil {
 			q.failedQueriers[qryResult.qr] = struct{}{}
 			// If the error source isn't the primary querier, return the error as a warning and continue.
-			if qryResult.qr != q.primaryQuerier {
+			if !reflect.DeepEqual(qryResult.qr, q.primaryQuerier) {
 				warnings = append(warnings, qryResult.selectError)
 			} else {
 				priErr = qryResult.selectError
