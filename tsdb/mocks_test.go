@@ -71,8 +71,8 @@ type mockBReader struct {
 	maxt int64
 }
 
-func (r *mockBReader) Index(mint, maxt int64) (IndexReader, error) { return r.ir, nil }
-func (r *mockBReader) Chunks() (ChunkReader, error)                { return r.cr, nil }
+func (r *mockBReader) Index() (IndexReader, error)  { return r.ir, nil }
+func (r *mockBReader) Chunks() (ChunkReader, error) { return r.cr, nil }
 func (r *mockBReader) Tombstones() (tombstones.Reader, error) {
 	return tombstones.NewMemTombstones(), nil
 }
