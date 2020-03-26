@@ -17,6 +17,7 @@ import (
 	"container/heap"
 	"context"
 	"fmt"
+	"hash/maphash"
 	"math"
 	"regexp"
 	"runtime"
@@ -1656,7 +1657,6 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 			continue
 		}
 		metric := resultMetric(ls.Metric, rs.Metric, op, matching, enh)
-
 		insertedSigs, exists := matchedSigs[sig]
 		if matching.Card == parser.CardOneToOne {
 			if exists {
@@ -1712,9 +1712,11 @@ func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.V
 	// there's no need to include them in the hash key.
 	// If the lhs and rhs are the same then the xor would be 0,
 	// so add in one side to protect against that.
-	lh := lhs.Hash()
-	h := (lh ^ rhs.Hash()) + lh
-	if ret, ok := enh.resultMetric[h]; ok {
+	h := maphash.Hash{}
+	h.WriteString(lhs.String())
+	h.WriteString(rhs.String())
+	finalHash := h.Sum64()
+	if ret, ok := enh.resultMetric[finalHash]; ok {
 		return ret
 	}
 
@@ -1749,7 +1751,7 @@ func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.V
 	}
 
 	ret := lb.Labels()
-	enh.resultMetric[h] = ret
+	enh.resultMetric[finalHash] = ret
 	return ret
 }
 
