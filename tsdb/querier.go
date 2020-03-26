@@ -154,7 +154,7 @@ func (q *verticalQuerier) sel(sortSeries bool, hints *storage.SelectHints, qs []
 
 // NewBlockQuerier returns a querier against the reader.
 func NewBlockQuerier(b BlockReader, mint, maxt int64) (storage.Querier, error) {
-	indexr, err := b.Index(mint, maxt)
+	indexr, err := b.Index()
 	if err != nil {
 		return nil, errors.Wrapf(err, "open index reader")
 	}

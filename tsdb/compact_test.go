@@ -456,10 +456,10 @@ func metaRange(name string, mint, maxt int64, stats *BlockStats) dirMeta {
 
 type erringBReader struct{}
 
-func (erringBReader) Index(int64, int64) (IndexReader, error) { return nil, errors.New("index") }
-func (erringBReader) Chunks() (ChunkReader, error)            { return nil, errors.New("chunks") }
-func (erringBReader) Tombstones() (tombstones.Reader, error)  { return nil, errors.New("tombstones") }
-func (erringBReader) Meta() BlockMeta                         { return BlockMeta{} }
+func (erringBReader) Index() (IndexReader, error)            { return nil, errors.New("index") }
+func (erringBReader) Chunks() (ChunkReader, error)           { return nil, errors.New("chunks") }
+func (erringBReader) Tombstones() (tombstones.Reader, error) { return nil, errors.New("tombstones") }
+func (erringBReader) Meta() BlockMeta                        { return BlockMeta{} }
 
 type nopChunkWriter struct{}
 
