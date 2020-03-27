@@ -2137,7 +2137,7 @@ func TestPostingsForMatchers(t *testing.T) {
 		},
 	}
 
-	ir, err := h.Index(math.MinInt64, math.MaxInt64)
+	ir, err := h.Index()
 	testutil.Ok(t, err)
 
 	for _, c := range cases {
