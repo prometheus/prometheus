@@ -17,7 +17,6 @@ import (
 	"container/heap"
 	"context"
 	"fmt"
-	"hash/maphash"
 	"math"
 	"regexp"
 	"runtime"
@@ -839,9 +838,9 @@ type EvalNodeHelper struct {
 	regex *regexp.Regexp
 
 	// For binary vector matching.
-	rightSigs    map[uint64]Sample
-	matchedSigs  map[uint64]map[uint64]struct{}
-	resultMetric map[uint64]labels.Labels
+	rightSigs    map[string]Sample
+	matchedSigs  map[string]map[uint64]struct{}
+	resultMetric map[string]labels.Labels
 }
 
 // dropMetricName is a cached version of dropMetricName.
@@ -1588,7 +1587,7 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 	if matching.Card == parser.CardManyToMany {
 		panic("many-to-many only allowed for set operators")
 	}
-	sigf := enh.signatureFunc(matching.On, matching.MatchingLabels...)
+	sigf := signatureFuncString(matching.On, matching.MatchingLabels...)
 
 	// The control flow below handles one-to-one or many-to-one matching.
 	// For one-to-many, swap sidedness and account for the swap when calculating
@@ -1599,7 +1598,7 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 
 	// All samples from the rhs hashed by the matching label/values.
 	if enh.rightSigs == nil {
-		enh.rightSigs = make(map[uint64]Sample, len(enh.out))
+		enh.rightSigs = make(map[string]Sample, len(enh.out))
 	} else {
 		for k := range enh.rightSigs {
 			delete(enh.rightSigs, k)
@@ -1629,7 +1628,7 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 	// Tracks the match-signature. For one-to-one operations the value is nil. For many-to-one
 	// the value is a set of signatures to detect duplicated result elements.
 	if enh.matchedSigs == nil {
-		enh.matchedSigs = make(map[uint64]map[uint64]struct{}, len(rightSigs))
+		enh.matchedSigs = make(map[string]map[uint64]struct{}, len(rightSigs))
 	} else {
 		for k := range enh.matchedSigs {
 			delete(enh.matchedSigs, k)
@@ -1708,21 +1707,26 @@ func signatureFunc(on bool, names ...string) func(labels.Labels) uint64 {
 	}
 }
 
+func signatureFuncString(on bool, names ...string) func(labels.Labels) string {
+	sort.Strings(names)
+	if on {
+		return func(lset labels.Labels) string {
+			return lset.WithLabels(names...).String()
+		}
+	}
+	return func(lset labels.Labels) string {
+		return lset.WithoutLabels(names...).String()
+	}
+}
+
 // resultMetric returns the metric for the given sample(s) based on the Vector
 // binary operation and the matching options.
 func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.VectorMatching, enh *EvalNodeHelper) labels.Labels {
 	if enh.resultMetric == nil {
-		enh.resultMetric = make(map[uint64]labels.Labels, len(enh.out))
+		enh.resultMetric = make(map[string]labels.Labels, len(enh.out))
 	}
-	// op and matching are always the same for a given node, so
-	// there's no need to include them in the hash key.
-	// If the lhs and rhs are the same then the xor would be 0,
-	// so add in one side to protect against that.
-	h := maphash.Hash{}
-	h.WriteString(lhs.String())
-	h.WriteString(rhs.String())
-	finalHash := h.Sum64()
-	if ret, ok := enh.resultMetric[finalHash]; ok {
+
+	if ret, ok := enh.resultMetric[lhs.String()+rhs.String()]; ok {
 		return ret
 	}
 
@@ -1757,7 +1761,7 @@ func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.V
 	}
 
 	ret := lb.Labels()
-	enh.resultMetric[finalHash] = ret
+	enh.resultMetric[lhs.String()+rhs.String()] = ret
 	return ret
 }
 

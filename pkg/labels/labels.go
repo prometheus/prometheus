@@ -172,6 +172,39 @@ func (ls Labels) HashWithoutLabels(b []byte, names ...string) (uint64, []byte) {
 	return xxhash.Sum64(b), b
 }
 
+// WithLabels returns a new labels.Labels from ls that only contains labels matching names.
+func (ls Labels) WithLabels(names ...string) Labels {
+	var ret Labels
+	i, j := 0, 0
+	for i < len(ls) && j < len(names) {
+		if names[j] < ls[i].Name {
+			j++
+		} else if ls[i].Name < names[j] {
+			i++
+		} else {
+			ret = append(ret, ls[i])
+			i++
+			j++
+		}
+	}
+	return ret
+}
+
+func (ls Labels) WithoutLabels(names ...string) Labels {
+	var ret Labels
+	j := 0
+	for i := range ls {
+		for j < len(names) && names[j] < ls[i].Name {
+			j++
+		}
+		if ls[i].Name == MetricName || (j < len(names) && ls[i].Name == names[j]) {
+			continue
+		}
+		ret = append(ret, ls[i])
+	}
+	return ret
+}
+
 // Copy returns a copy of the labels.
 func (ls Labels) Copy() Labels {
 	res := make(Labels, len(ls))
