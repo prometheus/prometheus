@@ -394,7 +394,7 @@ func CheckMetrics() int {
 // QueryInstant performs an instant query against a Prometheus server.
 func QueryInstant(url, query string, p printer) int {
 	urlWithScheme, err := addScheme(url)
-	if (err != nil) {
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "error parsing url", err)
 	}
 	config := api.Config{
@@ -427,7 +427,7 @@ func QueryInstant(url, query string, p printer) int {
 // QueryRange performs a range query against a Prometheus server.
 func QueryRange(url string, headers map[string]string, query, start, end string, step time.Duration, p printer) int {
 	urlWithScheme, err := addScheme(url)
-	if (err != nil) {
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "error parsing url", err)
 	}
 	config := api.Config{
@@ -500,7 +500,7 @@ func QueryRange(url string, headers map[string]string, query, start, end string,
 // QuerySeries queries for a series against a Prometheus server.
 func QuerySeries(url *url.URL, matchers []string, start, end string, p printer) int {
 	urlWithScheme, err := addScheme(url.String())
-	if (err != nil) {
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "error parsing url", err)
 	}
 	config := api.Config{
@@ -558,7 +558,7 @@ func QuerySeries(url *url.URL, matchers []string, start, end string, p printer) 
 // QueryLabels queries for label values against a Prometheus server.
 func QueryLabels(url *url.URL, name string, p printer) int {
 	urlWithScheme, err := addScheme(url.String())
-	if (err != nil) {
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "error parsing url", err)
 	}
 	config := api.Config{
