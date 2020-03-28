@@ -191,6 +191,13 @@ func checkFileExists(fn string) error {
 	return err
 }
 
+func addScheme(urlString string) (string, error) {
+	// Add HTTP Scheme to urlString
+	urlObject, err := url.Parse(urlString)
+	urlObject.Scheme = "http"
+	return urlObject.String(), err
+}
+
 func checkConfig(filename string) ([]string, error) {
 	fmt.Println("Checking", filename)
 
@@ -386,8 +393,12 @@ func CheckMetrics() int {
 
 // QueryInstant performs an instant query against a Prometheus server.
 func QueryInstant(url, query string, p printer) int {
+	urlWithScheme, err := addScheme(url)
+	if (err != nil) {
+		fmt.Fprintln(os.Stderr, "error parsing url", err)
+	}
 	config := api.Config{
-		Address: url,
+		Address: urlWithScheme,
 	}
 
 	// Create new client.
@@ -415,8 +426,12 @@ func QueryInstant(url, query string, p printer) int {
 
 // QueryRange performs a range query against a Prometheus server.
 func QueryRange(url string, headers map[string]string, query, start, end string, step time.Duration, p printer) int {
+	urlWithScheme, err := addScheme(url)
+	if (err != nil) {
+		fmt.Fprintln(os.Stderr, "error parsing url", err)
+	}
 	config := api.Config{
-		Address: url,
+		Address: urlWithScheme,
 	}
 
 	if len(headers) > 0 {
@@ -484,8 +499,12 @@ func QueryRange(url string, headers map[string]string, query, start, end string,
 
 // QuerySeries queries for a series against a Prometheus server.
 func QuerySeries(url *url.URL, matchers []string, start, end string, p printer) int {
+	urlWithScheme, err := addScheme(url.String())
+	if (err != nil) {
+		fmt.Fprintln(os.Stderr, "error parsing url", err)
+	}
 	config := api.Config{
-		Address: url.String(),
+		Address: urlWithScheme,
 	}
 
 	// Create new client.
@@ -538,8 +557,12 @@ func QuerySeries(url *url.URL, matchers []string, start, end string, p printer) 
 
 // QueryLabels queries for label values against a Prometheus server.
 func QueryLabels(url *url.URL, name string, p printer) int {
+	urlWithScheme, err := addScheme(url.String())
+	if (err != nil) {
+		fmt.Fprintln(os.Stderr, "error parsing url", err)
+	}
 	config := api.Config{
-		Address: url.String(),
+		Address: urlWithScheme,
 	}
 
 	// Create new client.
