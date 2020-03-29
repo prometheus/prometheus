@@ -43,9 +43,6 @@ var (
 	// ErrInvalidSample is returned if an appended sample is not valid and can't
 	// be ingested.
 	ErrInvalidSample = errors.New("invalid sample")
-
-	// memChunkPool is the pool used by the chunk read/writer.
-	memChunkPool sync.Pool
 )
 
 // Head handles reads and writes of time series data within a time window.
@@ -58,12 +55,13 @@ type Head struct {
 	minValidTime     int64 // Mint allowed to be added to the head. It shouldn't be lower than the maxt of the last persisted block.
 	lastSeriesID     uint64
 
-	metrics    *headMetrics
-	wal        *wal.WAL
-	logger     log.Logger
-	appendPool sync.Pool
-	seriesPool sync.Pool
-	bytesPool  sync.Pool
+	metrics      *headMetrics
+	wal          *wal.WAL
+	logger       log.Logger
+	appendPool   sync.Pool
+	seriesPool   sync.Pool
+	bytesPool    sync.Pool
+	memChunkPool sync.Pool
 
 	// All series addressable by their ID or hash.
 	series *stripeSeries
@@ -82,8 +80,8 @@ type Head struct {
 	iso *isolation
 
 	cardinalityMutex      sync.Mutex
-	cardinalityCache      *index.PostingsStats // posting stats cache which will expire after 30sec
-	lastPostingsStatsCall time.Duration        // last posting stats call (PostingsCardinalityStats()) time for caching
+	cardinalityCache      *index.PostingsStats // Posting stats cache which will expire after 30sec.
+	lastPostingsStatsCall time.Duration        // Last posting stats call (PostingsCardinalityStats()) time for caching.
 
 	// chunkDiskMapper is used to write and ready Head chunks to/from disk.
 	chunkDiskMapper *chunks.ChunkDiskMapper
@@ -291,16 +289,16 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, chunkRange int
 		tombstones: tombstones.NewMemTombstones(),
 		iso:        newIsolation(),
 		deleted:    map[uint64]int{},
+		memChunkPool: sync.Pool{
+			New: func() interface{} {
+				return &memChunk{}
+			},
+		},
 	}
 	h.metrics = newHeadMetrics(h, r)
 
 	if pool == nil {
 		pool = chunkenc.NewPool()
-	}
-	memChunkPool = sync.Pool{
-		New: func() interface{} {
-			return &memChunk{}
-		},
 	}
 
 	var err error
@@ -1423,10 +1421,11 @@ func (h *Head) chunksRange(mint, maxt int64, is *isolationState) *headChunkReade
 		mint = hmin
 	}
 	return &headChunkReader{
-		head:     h,
-		mint:     mint,
-		maxt:     maxt,
-		isoState: is,
+		head:         h,
+		mint:         mint,
+		maxt:         maxt,
+		isoState:     is,
+		memChunkPool: &h.memChunkPool,
 	}
 }
 
@@ -1478,9 +1477,10 @@ func (h *Head) Close() error {
 }
 
 type headChunkReader struct {
-	head       *Head
-	mint, maxt int64
-	isoState   *isolationState
+	head         *Head
+	mint, maxt   int64
+	isoState     *isolationState
+	memChunkPool *sync.Pool
 }
 
 func (h *headChunkReader) Close() error {
@@ -1519,7 +1519,7 @@ func (h *headChunkReader) Chunk(ref uint64) (chunkenc.Chunk, error) {
 	defer func() {
 		if garbageCollect {
 			c.chunk = nil
-			memChunkPool.Put(c)
+			h.memChunkPool.Put(c)
 		}
 	}()
 
@@ -1722,7 +1722,7 @@ func (h *Head) getOrCreate(hash uint64, lset labels.Labels) (*memSeries, bool) {
 }
 
 func (h *Head) getOrCreateWithID(id, hash uint64, lset labels.Labels) (*memSeries, bool) {
-	s := newMemSeries(lset, id, h.chunkRange)
+	s := newMemSeries(lset, id, h.chunkRange, &h.memChunkPool)
 
 	s, created := h.series.getOrSet(hash, s)
 	if !created {
@@ -1954,16 +1954,19 @@ type memSeries struct {
 
 	app chunkenc.Appender // Current appender for the chunk.
 
+	memChunkPool *sync.Pool
+
 	txs *txRing
 }
 
-func newMemSeries(lset labels.Labels, id uint64, chunkRange int64) *memSeries {
+func newMemSeries(lset labels.Labels, id uint64, chunkRange int64, memChunkPool *sync.Pool) *memSeries {
 	s := &memSeries{
-		lset:       lset,
-		ref:        id,
-		chunkRange: chunkRange,
-		nextAt:     math.MinInt64,
-		txs:        newTxRing(4),
+		lset:         lset,
+		ref:          id,
+		chunkRange:   chunkRange,
+		nextAt:       math.MinInt64,
+		txs:          newTxRing(4),
+		memChunkPool: memChunkPool,
 	}
 	return s
 }
@@ -2058,7 +2061,7 @@ func (s *memSeries) chunk(id int, chunkDiskMapper *chunks.ChunkDiskMapper) (chun
 		}
 		panic(err)
 	}
-	mc := memChunkPool.Get().(*memChunk)
+	mc := s.memChunkPool.Get().(*memChunk)
 	mc.chunk = chk
 	mc.minTime = s.mmappedChunks[ix].minTime
 	mc.maxTime = s.mmappedChunks[ix].maxTime
@@ -2166,7 +2169,7 @@ func (s *memSeries) iterator(id int, isoState *isolationState, chunkDiskMapper *
 	defer func() {
 		if garbageCollect {
 			c.chunk = nil
-			memChunkPool.Put(c)
+			s.memChunkPool.Put(c)
 		}
 	}()
 
