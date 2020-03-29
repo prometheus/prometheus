@@ -80,7 +80,7 @@ func ruleUnitTest(filename string) []error {
 	}
 
 	// Bounds for evaluating the rules.
-	mint := time.Unix(0, 0)
+	mint := time.Unix(0, 0).UTC()
 	maxd := unitTestInp.maxEvalTime()
 	maxt := mint.Add(maxd)
 	// Rounding off to nearest Eval time (> maxt).
@@ -232,7 +232,7 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 				for _, r := range g.Rules() {
 					if r.LastError() != nil {
 						errs = append(errs, errors.Errorf("    rule: %s, time: %s, err: %v",
-							r.Name(), ts.Sub(time.Unix(0, 0)), r.LastError()))
+							r.Name(), ts.Sub(time.Unix(0, 0).UTC()), r.LastError()))
 					}
 				}
 			}

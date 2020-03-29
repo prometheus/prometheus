@@ -487,7 +487,7 @@ func (g *Group) evalTimestamp() time.Time {
 		base   = adjNow - (adjNow % int64(g.interval))
 	)
 
-	return time.Unix(0, base+offset)
+	return time.Unix(0, base+offset).UTC()
 }
 
 func nameAndLabels(rule Rule) string {
@@ -745,8 +745,8 @@ func (g *Group) RestoreForState(ts time.Time) {
 				return
 			}
 
-			downAt := time.Unix(t/1000, 0)
-			restoredActiveAt := time.Unix(int64(v), 0)
+			downAt := time.Unix(t/1000, 0).UTC()
+			restoredActiveAt := time.Unix(int64(v), 0).UTC()
 			timeSpentPending := downAt.Sub(restoredActiveAt)
 			timeRemainingPending := alertHoldDuration - timeSpentPending
 

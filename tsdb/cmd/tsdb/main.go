@@ -459,7 +459,7 @@ func printBlocks(blocks []tsdb.BlockReader, humanReadable *bool) {
 
 func getFormatedTime(timestamp int64, humanReadable *bool) string {
 	if *humanReadable {
-		return time.Unix(timestamp/1000, 0).String()
+		return time.Unix(timestamp/1000, 0).UTC().String()
 	}
 	return strconv.FormatInt(timestamp, 10)
 }

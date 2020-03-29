@@ -272,7 +272,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		reloadCh:    make(chan chan error),
 		options:     o,
 		versionInfo: o.Version,
-		birth:       time.Now(),
+		birth:       time.Now().UTC(),
 		cwd:         cwd,
 		flagsMap:    o.Flags,
 
@@ -780,7 +780,7 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 		case "prometheus_config_last_reload_successful":
 			status.ReloadConfigSuccess = toFloat64(mF) != 0
 		case "prometheus_config_last_reload_success_timestamp_seconds":
-			status.LastConfigTime = time.Unix(int64(toFloat64(mF)), 0)
+			status.LastConfigTime = time.Unix(int64(toFloat64(mF)), 0).UTC()
 		}
 	}
 	db := h.tsdb()
@@ -829,7 +829,7 @@ func (h *Handler) runtimeInfo() (api_v1.RuntimeInfo, error) {
 		case "prometheus_config_last_reload_successful":
 			status.ReloadConfigSuccess = toFloat64(mF) != 0
 		case "prometheus_config_last_reload_success_timestamp_seconds":
-			status.LastConfigTime = time.Unix(int64(toFloat64(mF)), 0)
+			status.LastConfigTime = time.Unix(int64(toFloat64(mF)), 0).UTC()
 		}
 	}
 	return status, nil
