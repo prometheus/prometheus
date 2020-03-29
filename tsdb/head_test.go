@@ -1477,19 +1477,19 @@ func TestIsolationLowWatermarkMonotonous(t *testing.T) {
 	app1 = hb.Appender()
 	_, err = app1.Add(labels.FromStrings("foo", "bar"), 1, 1)
 	testutil.Ok(t, err)
-	testutil.Equals(t, uint64(2), hb.iso.lowWatermark(), "Low watermark should be two, even if append is not commited yet.")
+	testutil.Equals(t, uint64(2), hb.iso.lowWatermark(), "Low watermark should be two, even if append is not committed yet.")
 
 	app2 := hb.Appender()
 	_, err = app2.Add(labels.FromStrings("foo", "baz"), 1, 1)
 	testutil.Ok(t, err)
 	testutil.Ok(t, app2.Commit())
-	testutil.Equals(t, uint64(2), hb.iso.lowWatermark(), "Low watermark should stay two because app1 is not commited yet.")
+	testutil.Equals(t, uint64(2), hb.iso.lowWatermark(), "Low watermark should stay two because app1 is not committed yet.")
 
 	is := hb.iso.State()
 	testutil.Equals(t, uint64(2), hb.iso.lowWatermark(), "After simulated read (iso state retrieved), low watermark should stay at 2.")
 
 	testutil.Ok(t, app1.Commit())
-	testutil.Equals(t, uint64(2), hb.iso.lowWatermark(), "Even after app1 is commited, low watermark should stay at 2 because read is still ongoing.")
+	testutil.Equals(t, uint64(2), hb.iso.lowWatermark(), "Even after app1 is committed, low watermark should stay at 2 because read is still ongoing.")
 
 	is.Close()
 	testutil.Equals(t, uint64(3), hb.iso.lowWatermark(), "After read has finished (iso state closed), low watermark should jump to three.")
