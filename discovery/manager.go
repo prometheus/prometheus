@@ -117,13 +117,13 @@ func NewManager(ctx context.Context, logger log.Logger, options ...func(*Manager
 		logger = log.NewNopLogger()
 	}
 	mgr := &Manager{
-		logger:         logger,
-		syncCh:         make(chan map[string][]*targetgroup.Group),
-		targets:        make(map[poolKey]map[string]*targetgroup.Group),
-		discoverCancel: []context.CancelFunc{},
-		ctx:            ctx,
-		updatert:       5 * time.Second,
-		triggerSend:    make(chan struct{}, 1),
+		logger:          logger,
+		syncCh:          make(chan map[string][]*targetgroup.Group),
+		targets:         make(map[poolKey]map[string]*targetgroup.Group),
+		discoverCancels: []context.CancelFunc{},
+		ctx:             ctx,
+		updatert:        5 * time.Second,
+		triggerSend:     make(chan struct{}, 1),
 	}
 	for _, option := range options {
 		option(mgr)
@@ -143,11 +143,11 @@ func Name(n string) func(*Manager) {
 // Manager maintains a set of discovery providers and sends each update to a map channel.
 // Targets are grouped by the target set name.
 type Manager struct {
-	logger         log.Logger
-	name           string
-	mtx            sync.RWMutex
-	ctx            context.Context
-	discoverCancel []context.CancelFunc
+	logger          log.Logger
+	name            string
+	mtx             sync.RWMutex
+	ctx             context.Context
+	discoverCancels []context.CancelFunc
 
 	// Some Discoverers(eg. k8s) send only the updates for a given target group
 	// so we use map[tg.Source]*targetgroup.Group to know which group to update.
@@ -193,7 +193,7 @@ func (m *Manager) ApplyConfig(cfg map[string]sd_config.ServiceDiscoveryConfig) e
 	m.cancelDiscoverers()
 	m.targets = make(map[poolKey]map[string]*targetgroup.Group)
 	m.providers = nil
-	m.discoverCancel = nil
+	m.discoverCancels = nil
 
 	failedCount := 0
 	for name, scfg := range cfg {
@@ -225,7 +225,7 @@ func (m *Manager) startProvider(ctx context.Context, p *provider) {
 	ctx, cancel := context.WithCancel(ctx)
 	updates := make(chan []*targetgroup.Group)
 
-	m.discoverCancel = append(m.discoverCancel, cancel)
+	m.discoverCancels = append(m.discoverCancels, cancel)
 
 	go p.d.Run(ctx, updates)
 	go m.updater(ctx, p, updates)
@@ -284,7 +284,7 @@ func (m *Manager) sender() {
 }
 
 func (m *Manager) cancelDiscoverers() {
-	for _, c := range m.discoverCancel {
+	for _, c := range m.discoverCancels {
 		c()
 	}
 }
