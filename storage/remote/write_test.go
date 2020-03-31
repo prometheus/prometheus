@@ -141,14 +141,14 @@ func TestRestartOnNameChange(t *testing.T) {
 		},
 	}
 	testutil.Ok(t, s.ApplyConfig(conf))
-	testutil.Equals(t, s.queues[hash].client.Name(), cfg.Name)
+	testutil.Equals(t, s.queues[hash].client().Name(), cfg.Name)
 
 	// Change the queues name, ensure the queue has been restarted.
 	conf.RemoteWriteConfigs[0].Name = "dev-2"
 	testutil.Ok(t, s.ApplyConfig(conf))
 	hash, err = toHash(cfg)
 	testutil.Ok(t, err)
-	testutil.Equals(t, s.queues[hash].client.Name(), conf.RemoteWriteConfigs[0].Name)
+	testutil.Equals(t, s.queues[hash].client().Name(), conf.RemoteWriteConfigs[0].Name)
 
 	err = s.Close()
 	testutil.Ok(t, err)
@@ -257,7 +257,7 @@ func TestWriteStorageApplyConfigsPartialUpdate(t *testing.T) {
 	c1 := &config.RemoteWriteConfig{
 		RemoteTimeout: model.Duration(20 * time.Second),
 		QueueConfig:   config.DefaultQueueConfig,
-		HTTPClientConfig: config_util.HTTPClientConfig{
+		HTTPClientConfig: common_config.HTTPClientConfig{
 			BearerToken: "foo",
 		},
 	}
@@ -282,11 +282,13 @@ func TestWriteStorageApplyConfigsPartialUpdate(t *testing.T) {
 	testutil.Equals(t, 3, len(s.queues))
 
 	hashes := make([]string, len(conf.RemoteWriteConfigs))
+	queues := make([]*QueueManager, len(conf.RemoteWriteConfigs))
 	storeHashes := func() {
 		for i := range conf.RemoteWriteConfigs {
 			hash, err := toHash(conf.RemoteWriteConfigs[i])
 			testutil.Ok(t, err)
 			hashes[i] = hash
+			queues[i] = s.queues[hash]
 		}
 	}
 
@@ -303,12 +305,14 @@ func TestWriteStorageApplyConfigsPartialUpdate(t *testing.T) {
 
 	_, hashExists := s.queues[hashes[0]]
 	testutil.Assert(t, !hashExists, "The queue for the first remote write configuration should have been restarted because the relabel configuration has changed.")
-	_, hashExists = s.queues[hashes[1]]
-	testutil.Assert(t, hashExists, "Pointer of unchanged queue should have remained the same")
+	q, hashExists := s.queues[hashes[1]]
+	testutil.Assert(t, hashExists, "Hash of unchanged queue should have remained the same")
+	testutil.Assert(t, q == queues[1], "Pointer of unchanged queue should have remained the same")
 	_, hashExists = s.queues[hashes[2]]
 	testutil.Assert(t, !hashExists, "The queue for the third remote write configuration should have been restarted because the timeout has changed.")
 
 	storeHashes()
+	secondClient := s.queues[hashes[1]].client()
 	// Update c1.
 	c1.HTTPClientConfig.BearerToken = "bar"
 	err = s.ApplyConfig(conf)
@@ -317,8 +321,9 @@ func TestWriteStorageApplyConfigsPartialUpdate(t *testing.T) {
 
 	_, hashExists = s.queues[hashes[0]]
 	testutil.Assert(t, hashExists, "Pointer of unchanged queue should have remained the same")
-	_, hashExists = s.queues[hashes[1]]
-	testutil.Assert(t, !hashExists, "The queue for the second remote write configuration should have been restarted because the HTTP configuration has changed.")
+	q, hashExists = s.queues[hashes[1]]
+	testutil.Assert(t, hashExists, "Hash of queue with secret change should have remained the same")
+	testutil.Assert(t, secondClient != q.client(), "Pointer of a client with a secret change should not be the same")
 	_, hashExists = s.queues[hashes[2]]
 	testutil.Assert(t, hashExists, "Pointer of unchanged queue should have remained the same")
 
@@ -332,7 +337,7 @@ func TestWriteStorageApplyConfigsPartialUpdate(t *testing.T) {
 	testutil.Equals(t, 2, len(s.queues))
 
 	_, hashExists = s.queues[hashes[0]]
-	testutil.Assert(t, !hashExists, "If the index changed, the queue should be stopped and recreated.")
+	testutil.Assert(t, !hashExists, "If a config is removed, the queue should be stopped and recreated.")
 	_, hashExists = s.queues[hashes[1]]
 	testutil.Assert(t, hashExists, "Pointer of unchanged queue should have remained the same")
 	_, hashExists = s.queues[hashes[2]]
