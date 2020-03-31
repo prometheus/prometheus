@@ -367,7 +367,7 @@ tags:
 [ tag_separator: <string> | default = , ]
 
 # Allow stale Consul results (see https://www.consul.io/api/features/consistency.html). Will reduce load on Consul.
-[ allow_stale: <bool> ]
+[ allow_stale: <bool> | default = true ]
 
 # The time after which the provided names are refreshed.
 # On large setup it might be a good idea to increase this value because the catalog will change all the time.
