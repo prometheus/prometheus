@@ -64,6 +64,18 @@ func TestQueryRange(t *testing.T) {
 	}
 }
 
+func TestAddScheme(t *testing.T) {
+	url := "google.com"
+	urlWithScheme, err := addScheme(url)
+	if (err != nil) {
+		t.Errorf("Error while parsing url %s into URL object: ", url)
+		t.Error(err)
+	}
+	if (urlWithScheme != "http://google.com") {
+		t.Errorf("unexpected value %s for urlWithScheme", urlWithScheme)
+	}
+}
+
 func mockServer(code int, body string) (*httptest.Server, func() *http.Request) {
 	var req *http.Request
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
