@@ -77,9 +77,13 @@ func (q *querier) Select(sortSeries bool, hints *storage.SelectHints, matchers .
 }
 
 // LabelValues implements storage.Querier and is a noop.
-func (q *querier) LabelValues(string) ([]string, storage.Warnings, error) {
+func (q *querier) LabelValues(name string) ([]string, storage.Warnings, error) {
 	// TODO implement?
-	return nil, nil, nil
+	res, err := q.client.LabelValues(q.ctx, name)
+	if err != nil {
+		return nil, nil, fmt.Errorf("remote_read: %v", err)
+	}
+	return res.Values, nil, nil
 }
 
 // LabelNames implements storage.Querier and is a noop.
