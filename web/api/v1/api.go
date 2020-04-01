@@ -469,11 +469,14 @@ func (api *API) labelValues(r *http.Request) apiFuncResult {
 	ctx := r.Context()
 	name := route.Param(ctx, "name")
 
-	vals, err, warnings, finalizer := api.getLabelValues(name, ctx)
+	vals, err, warnings, finalizer := api.getLabelValues(ctx, name)
+	if len(vals) == 0 {
+		return apiFuncResult{nil, err, warnings, finalizer}
+	}
 	return apiFuncResult{vals, err, warnings, finalizer}
 }
 
-func (api *API) getLabelValues(name string, ctx context.Context) ([]string, *apiError, storage.Warnings, func()) {
+func (api *API) getLabelValues(ctx context.Context, name string) ([]string, *apiError, storage.Warnings, func()) {
 	if !model.LabelNameRE.MatchString(name) {
 		return nil, &apiError{errorBadData, errors.Errorf("invalid label name: %q", name)}, nil, nil
 	}
@@ -1242,7 +1245,7 @@ func (api *API) remoteLabelValues(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	vals, apiErr, _, finalizer := api.getLabelValues(req.LabelName, ctx)
+	vals, apiErr, _, finalizer := api.getLabelValues(ctx, req.LabelName)
 	if apiErr != nil {
 		http.Error(w, apiErr.Error(), http.StatusInternalServerError)
 	}

@@ -200,7 +200,7 @@ func (c *Client) LabelValues(ctx context.Context, name string) (*prompb.LabelVal
 	}
 
 	compressed := snappy.Encode(nil, data)
-	httpReq, err := http.NewRequest("POST", c.url.String() + "/labelvalues", bytes.NewReader(compressed))
+	httpReq, err := http.NewRequest("POST", c.url.String()+"/labelvalues", bytes.NewReader(compressed))
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to create request")
 	}
