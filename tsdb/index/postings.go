@@ -16,6 +16,7 @@ package index
 import (
 	"container/heap"
 	"encoding/binary"
+	"fmt"
 	"runtime"
 	"sort"
 	"strings"
@@ -330,6 +331,12 @@ func (e errPostings) Next() bool       { return false }
 func (e errPostings) Seek(uint64) bool { return false }
 func (e errPostings) At() uint64       { return 0 }
 func (e errPostings) Err() error       { return e.err }
+func (e errPostings) String() string {
+	if e.err == nil {
+		return "emptyPostings"
+	}
+	return fmt.Sprintf("errPostings(%v)", e.err)
+}
 
 var emptyPostings = errPostings{}
 

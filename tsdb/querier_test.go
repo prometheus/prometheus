@@ -2425,3 +2425,84 @@ func TestPostingsForMatcher(t *testing.T) {
 		}
 	}
 }
+
+func TestPostingsForMatchersShortcuts(t *testing.T) {
+	for ix, tc := range []struct {
+		matchers []*labels.Matcher
+		expected string
+	}{
+		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", ".*")},
+			expected: "allPostings",
+		},
+		{
+			// single allPostings
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "n", ".*"), labels.MustNewMatcher(labels.MatchRegexp, "i", "^.*$")},
+			expected: "allPostings",
+		},
+		{
+			// this checks that "allPostings" were optimized away
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "n", "^.*$"), labels.MustNewMatcher(labels.MatchEqual, "i", "a")},
+			expected: "postings(i, values=[a])",
+		},
+		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotRegexp, "i", ".*")},
+			expected: "emptyPostings",
+		},
+		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotRegexp, "n", "^.*$"), labels.MustNewMatcher(labels.MatchNotRegexp, "i", ".*")},
+			expected: "emptyPostings",
+		},
+		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "n", ".*"), labels.MustNewMatcher(labels.MatchNotRegexp, "i", ".*")},
+			expected: "emptyPostings",
+		},
+		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "n", "1"), labels.MustNewMatcher(labels.MatchNotRegexp, "i", "^.*$")},
+			expected: "emptyPostings",
+		},
+	} {
+		t.Run(fmt.Sprintf("%d", ix), func(t *testing.T) {
+			p, err := PostingsForMatchers(&mockIndexReader{}, tc.matchers...)
+			testutil.Ok(t, err)
+
+			testutil.Equals(t, tc.expected, fmt.Sprintf("%v", p))
+		})
+	}
+}
+
+type mockIndexReader struct{}
+
+func (m mockIndexReader) Postings(name string, values ...string) (index.Postings, error) {
+	k, v := index.AllPostingsKey()
+	if name == k && len(values) == 1 && values[0] == v {
+		return &mockPosting{all: true}, nil
+	}
+	return &mockPosting{name: name, values: values}, nil
+}
+
+func (m mockIndexReader) Symbols() index.StringIter                             { panic("implement me") }
+func (m mockIndexReader) LabelValues(name string) ([]string, error)             { panic("implement me") }
+func (m mockIndexReader) SortedPostings(postings index.Postings) index.Postings { panic("implement me") }
+func (m mockIndexReader) LabelNames() ([]string, error)                         { panic("implement me") }
+func (m mockIndexReader) Close() error                                          { panic("implement me") }
+func (m mockIndexReader) Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) error {
+	panic("implement me")
+}
+
+type mockPosting struct {
+	all    bool
+	name   string
+	values []string
+}
+
+func (m *mockPosting) Next() bool         { return true } // used by merge postings
+func (m *mockPosting) Seek(v uint64) bool { return false }
+func (m *mockPosting) At() uint64         { return 0 }
+func (m *mockPosting) Err() error         { return nil }
+func (m *mockPosting) String() string {
+	if m.all {
+		return "allPostings"
+	}
+	return fmt.Sprintf("postings(%s, values=%v)", m.name, m.values)
+}
