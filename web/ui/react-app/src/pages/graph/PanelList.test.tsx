@@ -20,7 +20,7 @@ describe('PanelList', () => {
   });
 
   it('renders panels', () => {
-    const panelList = shallow(<PanelListContent {...({ panels: [{}] } as any)} />);
+    const panelList = shallow(<PanelListContent {...({ panels: [{ id: 'foo' }] } as any)} />);
     const panels = panelList.find(Panel);
     expect(panels.length).toBeGreaterThan(0);
   });
