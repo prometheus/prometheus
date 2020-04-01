@@ -188,7 +188,7 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 	return resp.Results[0], nil
 }
 
-// Read reads from a remote endpoint.
+// LabelValues queries label values from a remote endpoint.
 func (c *Client) LabelValues(ctx context.Context, name string) (*prompb.LabelValuesResponse, error) {
 	req := &prompb.LabelValuesRequest{
 		LabelName: name,

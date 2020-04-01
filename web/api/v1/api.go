@@ -1259,7 +1259,6 @@ func (api *API) remoteLabelValues(w http.ResponseWriter, r *http.Request) {
 
 	if err := remote.EncodeLabelValuesResponse(&resp, w); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
 	}
 	finalizer()
 }

@@ -76,9 +76,8 @@ func (q *querier) Select(sortSeries bool, hints *storage.SelectHints, matchers .
 	return FromQueryResult(sortSeries, res), nil, nil
 }
 
-// LabelValues implements storage.Querier and is a noop.
+// LabelValues implements storage.Querier queries the client with the given name.
 func (q *querier) LabelValues(name string) ([]string, storage.Warnings, error) {
-	// TODO implement?
 	res, err := q.client.LabelValues(q.ctx, name)
 	if err != nil {
 		return nil, nil, fmt.Errorf("remote_read: %v", err)
