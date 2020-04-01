@@ -46,7 +46,7 @@ func testBlocks(t *testing.T, blocks []tsdb.BlockReader, metricLabels []string, 
 	maxt, mint := int64(math.MinInt64), int64(math.MaxInt64)
 	for _, block := range blocks {
 		maxt, mint = value.MaxInt64(maxt, block.Meta().MaxTime), value.MinInt64(mint, block.Meta().MinTime)
-		indexr, err := block.Index(math.MinInt64, math.MaxInt64)
+		indexr, err := block.Index()
 		testutil.Ok(t, err)
 		symbols := indexr.Symbols()
 		for symbols.Next() {
@@ -88,9 +88,8 @@ func sortSamples(samples []tsdb.MetricSample) {
 		// If timestamps are equal, sort based on values.
 		if sx.Timestamp != sy.Timestamp {
 			return sx.Timestamp < sy.Timestamp
-		} else {
-			return sx.Value < sy.Value
 		}
+		return sx.Value < sy.Value
 	})
 }
 
@@ -100,7 +99,7 @@ func sortSamples(samples []tsdb.MetricSample) {
 // even if the other labels b/w the metrics are different.
 func readSeries(block tsdb.BlockReader, lbls labels2.Labels) ([]tsdb.MetricSample, error) {
 	series := make([]tsdb.MetricSample, 0)
-	ir, err := block.Index(math.MinInt64, math.MaxInt64)
+	ir, err := block.Index()
 	if err != nil {
 		return series, err
 	}

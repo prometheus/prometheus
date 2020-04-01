@@ -167,11 +167,11 @@ func writeSamples(
 		meta := metas[blockIndex]
 		meta.mint = value.MinInt64(meta.mint, sample.Timestamp)
 		meta.maxt = value.MaxInt64(meta.maxt, sample.Timestamp)
-		meta.count += 1
+		meta.count++
 
 		blocks[blockIndex] = append(blocks[blockIndex], &sample)
 
-		currentPassCount += 1
+		currentPassCount++
 		// Have enough samples to write to disk.
 		if currentPassCount == maxSamplesInMemory {
 			if err := flushBlocks(dir, blocks, metas, maxBlockChildren, logger); err != nil {
@@ -281,28 +281,27 @@ func sampleStreamer(buf *bytes.Buffer) func([]byte, bool) (int, []byte, error) {
 			_, ctime, cvalue := parser.Series()
 			if ctime == nil {
 				return 0, nil, NoTimestampError
-			} else {
-				// OpenMetrics parser multiples times by 1000 - undoing that.
-				ctimeCorrected := *ctime / 1000
-
-				var clabels labels.Labels
-				_ = parser.Metric(&clabels)
-
-				sample := tsdb.MetricSample{
-					Timestamp: ctimeCorrected,
-					Value:     cvalue,
-					Labels:    labels.FromMap(clabels.Map()),
-				}
-
-				buf.Reset()
-				enc := gob.NewEncoder(buf)
-				if err = enc.Encode(sample); err != nil {
-					return 0, nil, err
-				}
-
-				advance += lineLength
-				return advance, buf.Bytes(), nil
 			}
+			// OpenMetrics parser multiples times by 1000 - undoing that.
+			ctimeCorrected := *ctime / 1000
+
+			var clabels labels.Labels
+			_ = parser.Metric(&clabels)
+
+			sample := tsdb.MetricSample{
+				Timestamp: ctimeCorrected,
+				Value:     cvalue,
+				Labels:    labels.FromMap(clabels.Map()),
+			}
+
+			buf.Reset()
+			enc := gob.NewEncoder(buf)
+			if err = enc.Encode(sample); err != nil {
+				return 0, nil, err
+			}
+
+			advance += lineLength
+			return advance, buf.Bytes(), nil
 		}
 	}
 }
@@ -597,8 +596,7 @@ func sortBlocks(blocks []*newBlockMeta) {
 		bx, by := blocks[x], blocks[y]
 		if bx.mint != by.mint {
 			return bx.mint < by.mint
-		} else {
-			return bx.maxt < by.maxt
 		}
+		return bx.maxt < by.maxt
 	})
 }
