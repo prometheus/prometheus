@@ -2429,44 +2429,44 @@ func TestPostingsForMatcher(t *testing.T) {
 func TestPostingsForMatchersShortcuts(t *testing.T) {
 	for ix, tc := range []struct {
 		matchers []*labels.Matcher
-		expected string
+		expected index.Postings
 	}{
 		{
 			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", ".*")},
-			expected: "allPostings",
+			expected: &mockPosting{all: true},
 		},
 		{
 			// single allPostings
 			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "n", ".*"), labels.MustNewMatcher(labels.MatchRegexp, "i", "^.*$")},
-			expected: "allPostings",
+			expected: &mockPosting{all: true},
 		},
 		{
 			// this checks that "allPostings" were optimized away
 			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "n", "^.*$"), labels.MustNewMatcher(labels.MatchEqual, "i", "a")},
-			expected: "postings(i, values=[a])",
+			expected: &mockPosting{name: "i", values: []string{"a"}},
 		},
 		{
 			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotRegexp, "i", ".*")},
-			expected: "emptyPostings",
+			expected: index.EmptyPostings(),
 		},
 		{
 			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotRegexp, "n", "^.*$"), labels.MustNewMatcher(labels.MatchNotRegexp, "i", ".*")},
-			expected: "emptyPostings",
+			expected: index.EmptyPostings(),
 		},
 		{
 			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "n", ".*"), labels.MustNewMatcher(labels.MatchNotRegexp, "i", ".*")},
-			expected: "emptyPostings",
+			expected: index.EmptyPostings(),
 		},
 		{
 			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "n", "1"), labels.MustNewMatcher(labels.MatchNotRegexp, "i", "^.*$")},
-			expected: "emptyPostings",
+			expected: index.EmptyPostings(),
 		},
 	} {
 		t.Run(fmt.Sprintf("%d", ix), func(t *testing.T) {
 			p, err := PostingsForMatchers(&mockIndexReader{}, tc.matchers...)
 			testutil.Ok(t, err)
 
-			testutil.Equals(t, tc.expected, fmt.Sprintf("%v", p))
+			testutil.Equals(t, tc.expected, p)
 		})
 	}
 }
