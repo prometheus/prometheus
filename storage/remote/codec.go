@@ -78,36 +78,6 @@ func EncodeReadResponse(resp *prompb.ReadResponse, w http.ResponseWriter) error 
 	return err
 }
 
-func DecodeLabelValuesRequest(r *http.Request) (*prompb.LabelValuesRequest, error) {
-	compressed, err := ioutil.ReadAll(io.LimitReader(r.Body, decodeReadLimit))
-	if err != nil {
-		return nil, err
-	}
-
-	reqBuf, err := snappy.Decode(nil, compressed)
-	if err != nil {
-		return nil, err
-	}
-
-	var req prompb.LabelValuesRequest
-	if err := proto.Unmarshal(reqBuf, &req); err != nil {
-		return nil, err
-	}
-
-	return &req, nil
-}
-
-func EncodeLabelValuesResponse(resp *prompb.LabelValuesResponse, w http.ResponseWriter) error {
-	data, err := proto.Marshal(resp)
-	if err != nil {
-		return err
-	}
-
-	compressed := snappy.Encode(nil, data)
-	_, err = w.Write(compressed)
-	return err
-}
-
 // ToQuery builds a Query proto.
 func ToQuery(from, to int64, matchers []*labels.Matcher, hints *storage.SelectHints) (*prompb.Query, error) {
 	ms, err := toLabelMatchers(matchers)

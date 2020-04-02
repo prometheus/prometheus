@@ -82,7 +82,7 @@ func (q *querier) LabelValues(name string) ([]string, storage.Warnings, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("remote_read: %v", err)
 	}
-	return res.Values, nil, nil
+	return res, nil, nil
 }
 
 // LabelNames implements storage.Querier and is a noop.

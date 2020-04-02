@@ -80,11 +80,3 @@ message ChunkedReadResponse {
   // query_index represents an index of the query from ReadRequest.queries these chunks relates to.
   int64 query_index = 2;
 }
-
-message LabelValuesRequest {
-  string label_name = 1;
-}
-
-message LabelValuesResponse {
-  repeated string values = 1;
-}

@@ -292,7 +292,6 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/status/flags", wrap(api.serveFlags))
 	r.Get("/status/tsdb", wrap(api.serveTSDBStatus))
 	r.Post("/read", api.ready(http.HandlerFunc(api.remoteRead)))
-	r.Post("/read/labelvalues", api.ready(http.HandlerFunc(api.remoteLabelValues)))
 
 	r.Get("/alerts", wrap(api.alerts))
 	r.Get("/rules", wrap(api.rules))
@@ -469,20 +468,12 @@ func (api *API) labelValues(r *http.Request) apiFuncResult {
 	ctx := r.Context()
 	name := route.Param(ctx, "name")
 
-	vals, err, warnings, finalizer := api.getLabelValues(ctx, name)
-	if len(vals) == 0 {
-		return apiFuncResult{nil, err, warnings, finalizer}
-	}
-	return apiFuncResult{vals, err, warnings, finalizer}
-}
-
-func (api *API) getLabelValues(ctx context.Context, name string) ([]string, *apiError, storage.Warnings, func()) {
 	if !model.LabelNameRE.MatchString(name) {
-		return nil, &apiError{errorBadData, errors.Errorf("invalid label name: %q", name)}, nil, nil
+		return apiFuncResult{nil, &apiError{errorBadData, errors.Errorf("invalid label name: %q", name)}, nil, nil}
 	}
 	q, err := api.Queryable.Querier(ctx, math.MinInt64, math.MaxInt64)
 	if err != nil {
-		return nil, &apiError{errorExec, err}, nil, nil
+		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
 	}
 
 	closer := func() {
@@ -491,10 +482,10 @@ func (api *API) getLabelValues(ctx context.Context, name string) ([]string, *api
 
 	vals, warnings, err := q.LabelValues(name)
 	if err != nil {
-		return nil, &apiError{errorExec, err}, warnings, closer
+		return apiFuncResult{nil, &apiError{errorExec, err}, warnings, closer}
 	}
 
-	return vals, nil, warnings, closer
+	return apiFuncResult{vals, nil, warnings, closer}
 }
 
 var (
@@ -1234,33 +1225,6 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-}
-
-func (api *API) remoteLabelValues(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	req, err := remote.DecodeLabelValuesRequest(r)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	vals, apiErr, _, finalizer := api.getLabelValues(ctx, req.LabelName)
-	if apiErr != nil {
-		http.Error(w, apiErr.Error(), http.StatusInternalServerError)
-	}
-
-	w.Header().Set("Content-Type", "application/x-protobuf")
-	w.Header().Set("Content-Encoding", "snappy")
-
-	resp := prompb.LabelValuesResponse{
-		Values: vals,
-	}
-
-	if err := remote.EncodeLabelValuesResponse(&resp, w); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
-	finalizer()
 }
 
 // filterExtLabelsFromMatchers change equality matchers which match external labels

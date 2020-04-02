@@ -30,6 +30,7 @@ import (
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
+	"google.golang.org/grpc"
 
 	"github.com/prometheus/prometheus/prompb"
 )
@@ -189,58 +190,21 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 }
 
 // LabelValues queries label values from a remote endpoint.
-func (c *Client) LabelValues(ctx context.Context, name string) (*prompb.LabelValuesResponse, error) {
-	req := &prompb.LabelValuesRequest{
-		LabelName: name,
-	}
-
-	data, err := proto.Marshal(req)
+func (c *Client) LabelValues(ctx context.Context, name string) ([]string, error) {
+	conn, err := grpc.Dial(c.url.Host, grpc.WithInsecure(), grpc.WithBlock())
 	if err != nil {
-		return nil, errors.Wrapf(err, "unable to marshal read request")
+		return []string{}, err
 	}
+	defer conn.Close()
 
-	compressed := snappy.Encode(nil, data)
-	httpReq, err := http.NewRequest("POST", c.url.String()+"/labelvalues", bytes.NewReader(compressed))
-	if err != nil {
-		return nil, errors.Wrap(err, "unable to create request")
-	}
-	httpReq.Header.Add("Content-Encoding", "snappy")
-	httpReq.Header.Add("Accept-Encoding", "snappy")
-	httpReq.Header.Set("Content-Type", "application/x-protobuf")
-	httpReq.Header.Set("User-Agent", userAgent)
-	httpReq.Header.Set("X-Prometheus-Remote-Read-Version", "0.1.0")
+	client := prompb.NewRemoteClient(conn)
 
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
-	httpResp, err := c.client.Do(httpReq.WithContext(ctx))
+	res, err := client.RemoteLabelValues(ctx, &prompb.LabelValuesRequest{LabelName: name})
 	if err != nil {
-		return nil, errors.Wrap(err, "error sending request")
+		return []string{}, err
 	}
-	defer func() {
-		io.Copy(ioutil.Discard, httpResp.Body)
-		httpResp.Body.Close()
-	}()
-
-	compressed, err = ioutil.ReadAll(httpResp.Body)
-	if err != nil {
-		return nil, errors.Wrap(err, fmt.Sprintf("error reading response. HTTP status code: %s", httpResp.Status))
-	}
-
-	if httpResp.StatusCode/100 != 2 {
-		return nil, errors.Errorf("remote server %s returned HTTP status %s: %s", c.url.String(), httpResp.Status, strings.TrimSpace(string(compressed)))
-	}
-
-	uncompressed, err := snappy.Decode(nil, compressed)
-	if err != nil {
-		return nil, errors.Wrap(err, "error reading response")
-	}
-
-	resp := &prompb.LabelValuesResponse{}
-	err = proto.Unmarshal(uncompressed, resp)
-	if err != nil {
-		return nil, errors.Wrap(err, "unable to unmarshal response body")
-	}
-
-	return resp, nil
+	return res.Values, nil
 }
