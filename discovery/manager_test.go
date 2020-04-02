@@ -1192,14 +1192,11 @@ func (tp mockdiscoveryProvider) Run(ctx context.Context, upCh chan<- []*targetgr
 		if u.interval > 0 {
 			t := time.NewTicker(u.interval)
 			defer t.Stop()
-		Loop:
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-t.C:
-					break Loop
-				}
+
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
 			}
 		}
 		tgs := make([]*targetgroup.Group, len(u.targetGroups))
