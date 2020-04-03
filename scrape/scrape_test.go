@@ -611,7 +611,7 @@ func TestScrapeLoopMetadata(t *testing.T) {
 	)
 	defer cancel()
 
-	total, _, _, err := sl.append([]byte(`# TYPE test_metric counter
+	total, _, _, err := sl.append(nil, []byte(`# TYPE test_metric counter
 # HELP test_metric some help text
 # UNIT test_metric metric
 test_metric 1
@@ -660,13 +660,13 @@ func TestScrapeLoopSeriesAdded(t *testing.T) {
 	)
 	defer cancel()
 
-	total, added, seriesAdded, err := sl.append([]byte("test_metric 1\n"), "", time.Time{})
+	total, added, seriesAdded, err := sl.append(nil, []byte("test_metric 1\n"), "", time.Time{})
 	testutil.Ok(t, err)
 	testutil.Equals(t, 1, total)
 	testutil.Equals(t, 1, added)
 	testutil.Equals(t, 1, seriesAdded)
 
-	total, added, seriesAdded, err = sl.append([]byte("test_metric 1\n"), "", time.Time{})
+	total, added, seriesAdded, err = sl.append(nil, []byte("test_metric 1\n"), "", time.Time{})
 	testutil.Ok(t, err)
 	testutil.Equals(t, 1, total)
 	testutil.Equals(t, 1, added)
@@ -991,7 +991,7 @@ func TestScrapeLoopAppend(t *testing.T) {
 
 		now := time.Now()
 
-		_, _, _, err := sl.append([]byte(test.scrapeLabels), "", now)
+		_, _, _, err := sl.append(nil, []byte(test.scrapeLabels), "", now)
 		testutil.Ok(t, err)
 
 		expected := []sample{
@@ -1042,7 +1042,7 @@ func TestScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T) {
 	sl.cache.addRef(mets, fakeRef, lset, hash)
 	now := time.Now()
 
-	_, _, _, err := sl.append([]byte(metric), "", now)
+	_, _, _, err := sl.append(nil, []byte(metric), "", now)
 	testutil.Ok(t, err)
 
 	expected := []sample{
@@ -1083,7 +1083,7 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 	beforeMetricValue := beforeMetric.GetCounter().GetValue()
 
 	now := time.Now()
-	total, added, seriesAdded, err := sl.append([]byte("metric_a 1\nmetric_b 1\nmetric_c 1\n"), "", now)
+	total, added, seriesAdded, err := sl.append(nil, []byte("metric_a 1\nmetric_b 1\nmetric_c 1\n"), "", now)
 	if err != errSampleLimit {
 		t.Fatalf("Did not see expected sample limit error: %s", err)
 	}
@@ -1112,7 +1112,7 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 	testutil.Equals(t, want, resApp.result, "Appended samples not as expected")
 
 	now = time.Now()
-	total, added, seriesAdded, err = sl.append([]byte("metric_a 1\nmetric_b 1\nmetric_c{deleteme=\"yes\"} 1\nmetric_d 1\nmetric_e 1\nmetric_f 1\nmetric_g 1\nmetric_h{deleteme=\"yes\"} 1\nmetric_i{deleteme=\"yes\"} 1\n"), "", now)
+	total, added, seriesAdded, err = sl.append(nil, []byte("metric_a 1\nmetric_b 1\nmetric_c{deleteme=\"yes\"} 1\nmetric_d 1\nmetric_e 1\nmetric_f 1\nmetric_g 1\nmetric_h{deleteme=\"yes\"} 1\nmetric_i{deleteme=\"yes\"} 1\n"), "", now)
 	if err != errSampleLimit {
 		t.Fatalf("Did not see expected sample limit error: %s", err)
 	}
@@ -1143,10 +1143,10 @@ func TestScrapeLoop_ChangingMetricString(t *testing.T) {
 	)
 
 	now := time.Now()
-	_, _, _, err := sl.append([]byte(`metric_a{a="1",b="1"} 1`), "", now)
+	_, _, _, err := sl.append(nil, []byte(`metric_a{a="1",b="1"} 1`), "", now)
 	testutil.Ok(t, err)
 
-	_, _, _, err = sl.append([]byte(`metric_a{b="1",a="1"} 2`), "", now.Add(time.Minute))
+	_, _, _, err = sl.append(nil, []byte(`metric_a{b="1",a="1"} 2`), "", now.Add(time.Minute))
 	testutil.Ok(t, err)
 
 	// DeepEqual will report NaNs as being different, so replace with a different value.
@@ -1179,10 +1179,10 @@ func TestScrapeLoopAppendStaleness(t *testing.T) {
 	)
 
 	now := time.Now()
-	_, _, _, err := sl.append([]byte("metric_a 1\n"), "", now)
+	_, _, _, err := sl.append(nil, []byte("metric_a 1\n"), "", now)
 	testutil.Ok(t, err)
 
-	_, _, _, err = sl.append([]byte(""), "", now.Add(time.Second))
+	_, _, _, err = sl.append(nil, []byte(""), "", now.Add(time.Second))
 	testutil.Ok(t, err)
 
 	ingestedNaN := math.Float64bits(app.result[1].v)
@@ -1218,10 +1218,10 @@ func TestScrapeLoopAppendNoStalenessIfTimestamp(t *testing.T) {
 	)
 
 	now := time.Now()
-	_, _, _, err := sl.append([]byte("metric_a 1 1000\n"), "", now)
+	_, _, _, err := sl.append(nil, []byte("metric_a 1 1000\n"), "", now)
 	testutil.Ok(t, err)
 
-	_, _, _, err = sl.append([]byte(""), "", now.Add(time.Second))
+	_, _, _, err = sl.append(nil, []byte(""), "", now.Add(time.Second))
 	testutil.Ok(t, err)
 
 	want := []sample{
@@ -1327,7 +1327,7 @@ func TestScrapeLoopAppendGracefullyIfAmendOrOutOfOrderOrOutOfBounds(t *testing.T
 	)
 
 	now := time.Unix(1, 0)
-	total, added, seriesAdded, err := sl.append([]byte("out_of_order 1\namend 1\nnormal 1\nout_of_bounds 1\n"), "", now)
+	total, added, seriesAdded, err := sl.append(nil, []byte("out_of_order 1\namend 1\nnormal 1\nout_of_bounds 1\n"), "", now)
 	testutil.Ok(t, err)
 
 	want := []sample{
@@ -1362,7 +1362,7 @@ func TestScrapeLoopOutOfBoundsTimeError(t *testing.T) {
 	)
 
 	now := time.Now().Add(20 * time.Minute)
-	total, added, seriesAdded, err := sl.append([]byte("normal 1\n"), "", now)
+	total, added, seriesAdded, err := sl.append(nil, []byte("normal 1\n"), "", now)
 	testutil.Equals(t, 1, total)
 	testutil.Equals(t, 0, added)
 	testutil.Equals(t, 0, seriesAdded)
@@ -1547,7 +1547,7 @@ func TestScrapeLoop_RespectTimestamps(t *testing.T) {
 	)
 
 	now := time.Now()
-	_, _, _, err := sl.append([]byte(`metric_a{a="1",b="1"} 1 0`), "", now)
+	_, _, _, err := sl.append(nil, []byte(`metric_a{a="1",b="1"} 1 0`), "", now)
 	testutil.Ok(t, err)
 
 	want := []sample{
@@ -1578,7 +1578,7 @@ func TestScrapeLoop_DiscardTimestamps(t *testing.T) {
 	)
 
 	now := time.Now()
-	_, _, _, err := sl.append([]byte(`metric_a{a="1",b="1"} 1 0`), "", now)
+	_, _, _, err := sl.append(nil, []byte(`metric_a{a="1",b="1"} 1 0`), "", now)
 	testutil.Ok(t, err)
 
 	want := []sample{
@@ -1611,7 +1611,7 @@ func TestScrapeLoopDiscardDuplicateLabels(t *testing.T) {
 	defer cancel()
 
 	// We add a good and a bad metric to check that both are discarded.
-	_, _, _, err := sl.append([]byte("test_metric{le=\"500\"} 1\ntest_metric{le=\"600\",le=\"700\"} 1\n"), "", time.Time{})
+	_, _, _, err := sl.append(nil, []byte("test_metric{le=\"500\"} 1\ntest_metric{le=\"600\",le=\"700\"} 1\n"), "", time.Time{})
 	testutil.NotOk(t, err)
 
 	q, err := s.Querier(ctx, time.Time{}.UnixNano(), 0)
@@ -1621,7 +1621,7 @@ func TestScrapeLoopDiscardDuplicateLabels(t *testing.T) {
 	testutil.Equals(t, false, series.Next(), "series found in tsdb")
 
 	// We add a good metric to check that it is recorded.
-	_, _, _, err = sl.append([]byte("test_metric{le=\"500\"} 1\n"), "", time.Time{})
+	_, _, _, err = sl.append(nil, []byte("test_metric{le=\"500\"} 1\n"), "", time.Time{})
 	testutil.Ok(t, err)
 
 	q, err = s.Querier(ctx, time.Time{}.UnixNano(), 0)
@@ -1656,7 +1656,7 @@ func TestScrapeLoopDiscardUnnamedMetrics(t *testing.T) {
 	)
 	defer cancel()
 
-	_, _, _, err := sl.append([]byte("nok 1\nnok2{drop=\"drop\"} 1\n"), "", time.Time{})
+	_, _, _, err := sl.append(nil, []byte("nok 1\nnok2{drop=\"drop\"} 1\n"), "", time.Time{})
 	testutil.NotOk(t, err)
 	testutil.Equals(t, errNameLabelMandatory, err)
 
@@ -1872,7 +1872,7 @@ func TestScrapeAddFast(t *testing.T) {
 	)
 	defer cancel()
 
-	_, _, _, err := sl.append([]byte("up 1\n"), "", time.Time{})
+	_, _, _, err := sl.append(nil, []byte("up 1\n"), "", time.Time{})
 	testutil.Ok(t, err)
 
 	// Poison the cache. There is just one entry, and one series in the
@@ -1881,7 +1881,7 @@ func TestScrapeAddFast(t *testing.T) {
 		v.ref++
 	}
 
-	_, _, _, err = sl.append([]byte("up 1\n"), "", time.Time{}.Add(time.Second))
+	_, _, _, err = sl.append(nil, []byte("up 1\n"), "", time.Time{}.Add(time.Second))
 	testutil.Ok(t, err)
 }
 

@@ -967,12 +967,13 @@ mainLoop:
 
 		// A failed scrape is the same as an empty scrape,
 		// we still call sl.append to trigger stale markers.
-		total, added, seriesAdded, appErr := sl.append(b, contentType, start)
+		scrapeAppender := sl.appender()
+		total, added, seriesAdded, appErr := sl.append(scrapeAppender, b, contentType, start)
 		if appErr != nil {
 			level.Debug(sl.l).Log("msg", "append failed", "err", appErr)
 			// The append failed, probably due to a parse error or sample limit.
 			// Call sl.append again with an empty scrape to trigger stale markers.
-			if _, _, _, err := sl.append([]byte{}, "", start); err != nil {
+			if _, _, _, err := sl.append(scrapeAppender, []byte{}, "", start); err != nil {
 				level.Warn(sl.l).Log("msg", "append failed", "err", err)
 			}
 		}
@@ -983,7 +984,7 @@ mainLoop:
 			scrapeErr = appErr
 		}
 
-		if err := sl.report(start, time.Since(start), total, added, seriesAdded, scrapeErr); err != nil {
+		if err := sl.report(scrapeAppender, start, time.Since(start), total, added, seriesAdded, scrapeErr); err != nil {
 			level.Warn(sl.l).Log("msg", "appending scrape report failed", "err", err)
 		}
 		last = start
@@ -1045,7 +1046,7 @@ func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, int
 	// Call sl.append again with an empty scrape to trigger stale markers.
 	// If the target has since been recreated and scraped, the
 	// stale markers will be out of order and ignored.
-	if _, _, _, err := sl.append([]byte{}, "", staleTime); err != nil {
+	if _, _, _, err := sl.append(nil, []byte{}, "", staleTime); err != nil {
 		level.Error(sl.l).Log("msg", "stale append failed", "err", err)
 	}
 	if err := sl.reportStale(staleTime); err != nil {
@@ -1074,26 +1075,33 @@ type appendErrors struct {
 	numOutOfBounds int
 }
 
-func (sl *scrapeLoop) append(b []byte, contentType string, ts time.Time) (total, added, seriesAdded int, err error) {
+func (sl *scrapeLoop) append(scrapeAppender storage.Appender, b []byte, contentType string, ts time.Time) (total, added, seriesAdded int, err error) {
 	var (
-		app            = sl.appender()
 		p              = textparse.New(b, contentType)
 		defTime        = timestamp.FromTime(ts)
 		appErrs        = appendErrors{}
 		sampleLimitErr error
 	)
 
+	app := scrapeAppender
+	if app == nil {
+		app = sl.appender()
+	}
+
 	defer func() {
 		if err != nil {
 			app.Rollback()
 			return
 		}
-		if err = app.Commit(); err != nil {
-			return
-		}
 		// Only perform cache cleaning if the scrape was not empty.
 		// An empty scrape (usually) is used to indicate a failed scrape.
 		sl.cache.iterDone(len(b) > 0)
+		if scrapeAppender != nil {
+			return
+		}
+		if err = app.Commit(); err != nil {
+			return
+		}
 	}()
 
 loop:
@@ -1275,7 +1283,7 @@ const (
 	scrapeSeriesAddedMetricName  = "scrape_series_added" + "\xff"
 )
 
-func (sl *scrapeLoop) report(start time.Time, duration time.Duration, scraped, appended, seriesAdded int, scrapeErr error) (err error) {
+func (sl *scrapeLoop) report(app storage.Appender, start time.Time, duration time.Duration, scraped, appended, seriesAdded int, scrapeErr error) (err error) {
 	sl.scraper.Report(start, duration, scrapeErr)
 
 	ts := timestamp.FromTime(start)
@@ -1283,8 +1291,9 @@ func (sl *scrapeLoop) report(start time.Time, duration time.Duration, scraped, a
 	var health float64
 	if scrapeErr == nil {
 		health = 1
+	} else {
+		app = sl.appender()
 	}
-	app := sl.appender()
 	defer func() {
 		if err != nil {
 			app.Rollback()
