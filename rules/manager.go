@@ -65,7 +65,7 @@ type Metrics struct {
 	groupRules          *prometheus.GaugeVec
 }
 
-// NewGroupMetrics makes a new Metrics and registers them with the provided registerer,
+// NewGroupMetrics makes a new instance of Metrics and registers them with the provided registerer,
 // if not nil.
 func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 	m := &Metrics{
