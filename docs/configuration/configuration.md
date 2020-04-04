@@ -442,6 +442,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_ec2_subnet_id`: comma separated list of subnets IDs in which the instance is running, if available
 * `__meta_ec2_tag_<tagkey>`: each tag value of the instance
 * `__meta_ec2_vpc_id`: the ID of the VPC in which the instance is running, if available
+* `__meta_ec2_ipv6_address`: comma seperated list of IPv6 addresses for the all the network interfaces of the instance, if available
 
 See below for the configuration options for EC2 discovery:
 

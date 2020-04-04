@@ -40,7 +40,7 @@ const (
 	ec2Label                  = model.MetaLabelPrefix + "ec2_"
 	ec2LabelAZ                = ec2Label + "availability_zone"
 	ec2LabelArch              = ec2Label + "architecture"
-	ec2LabelIPv6              = ec2Label + "ipv6"
+	ec2LabelIPv6Address       = ec2Label + "ipv6_address"
 	ec2LabelInstanceID        = ec2Label + "instance_id"
 	ec2LabelInstanceLifecycle = ec2Label + "instance_lifecycle"
 	ec2LabelInstanceState     = ec2Label + "instance_state"
@@ -256,7 +256,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 						ec2LabelSeparator +
 							strings.Join(subnets, ec2LabelSeparator) +
 							ec2LabelSeparator)
-					labels[ec2LabelIPv6] = model.LabelValue(
+					labels[ec2LabelIPv6Address] = model.LabelValue(
 						ec2LabelSeparator +
 							strings.Join(ipv6addrs, ec2LabelSeparator) +
 							ec2LabelSeparator)
