@@ -528,10 +528,16 @@ func (api *API) series(r *http.Request) apiFuncResult {
 	}
 	defer q.Close()
 
+	hints := &storage.SelectHints{
+		Start: timestamp.FromTime(start),
+		End:   timestamp.FromTime(end),
+		Func:  "series", // There is no series function.
+	}
+
 	var sets []storage.SeriesSet
 	var warnings storage.Warnings
 	for _, mset := range matcherSets {
-		s, wrn, err := q.Select(false, nil, mset...)
+		s, wrn, err := q.Select(false, hints, mset...)
 		warnings = append(warnings, wrn...)
 		if err != nil {
 			return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}

@@ -207,6 +207,13 @@ func (q *blockQuerier) Select(sortSeries bool, hints *storage.SelectHints, ms ..
 	if hints != nil {
 		mint = hints.Start
 		maxt = hints.End
+		if hints.Func == "series" { // The series API does not need any chunks loaded.
+			return &blockSeriesSet{
+				set:  base,
+				mint: mint,
+				maxt: maxt,
+			}, nil, nil
+		}
 	}
 	return &blockSeriesSet{
 		set: &populatedChunkSeries{
