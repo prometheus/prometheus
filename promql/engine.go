@@ -651,57 +651,128 @@ func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s
 		warnings  storage.Warnings
 		err       error
 	)
-
+	SelectCalls := 0
 	parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
-		var set storage.SeriesSet
-		var wrn storage.Warnings
-		hints := &storage.SelectHints{
-			Start: timestamp.FromTime(s.Start),
-			End:   timestamp.FromTime(s.End),
-			Step:  durationToInt64Millis(s.Interval),
-		}
-
-		// We need to make sure we select the timerange selected by the subquery.
-		// TODO(gouthamve): cumulativeSubqueryOffset gives the sum of range and the offset
-		// we can optimise it by separating out the range and offsets, and subtracting the offsets
-		// from end also.
-		subqOffset := ng.cumulativeSubqueryOffset(path)
-		offsetMilliseconds := durationMilliseconds(subqOffset)
-		hints.Start = hints.Start - offsetMilliseconds
-
-		switch n := node.(type) {
+		switch node.(type) {
 		case *parser.VectorSelector:
-			if evalRange == 0 {
-				hints.Start = hints.Start - durationMilliseconds(ng.lookbackDelta)
-			} else {
-				hints.Range = durationMilliseconds(evalRange)
-				// For all matrix queries we want to ensure that we have (end-start) + range selected
-				// this way we have `range` data before the start time
-				hints.Start = hints.Start - durationMilliseconds(evalRange)
-				evalRange = 0
-			}
-
-			hints.Func = extractFuncFromPath(path)
-			hints.By, hints.Grouping = extractGroupsFromPath(path)
-			if n.Offset > 0 {
-				offsetMilliseconds := durationMilliseconds(n.Offset)
-				hints.Start = hints.Start - offsetMilliseconds
-				hints.End = hints.End - offsetMilliseconds
-			}
-
-			set, wrn, err = querier.Select(false, hints, n.LabelMatchers...)
-			warnings = append(warnings, wrn...)
-			if err != nil {
-				level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
-				return err
-			}
-			n.UnexpandedSeriesSet = set
-
-		case *parser.MatrixSelector:
-			evalRange = n.Range
+			SelectCalls++
 		}
 		return nil
 	})
+	if SelectCalls < 2 {
+		parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
+			var set storage.SeriesSet
+			var wrn storage.Warnings
+			hints := &storage.SelectHints{
+				Start: timestamp.FromTime(s.Start),
+				End:   timestamp.FromTime(s.End),
+				Step:  durationToInt64Millis(s.Interval),
+			}
+
+			// We need to make sure we select the timerange selected by the subquery.
+			// TODO(gouthamve): cumulativeSubqueryOffset gives the sum of range and the offset
+			// we can optimise it by separating out the range and offsets, and subtracting the offsets
+			// from end also.
+			subqOffset := ng.cumulativeSubqueryOffset(path)
+			offsetMilliseconds := durationMilliseconds(subqOffset)
+			hints.Start = hints.Start - offsetMilliseconds
+
+			switch n := node.(type) {
+			case *parser.VectorSelector:
+				if evalRange == 0 {
+					hints.Start = hints.Start - durationMilliseconds(ng.lookbackDelta)
+				} else {
+					hints.Range = durationMilliseconds(evalRange)
+					// For all matrix queries we want to ensure that we have (end-start) + range selected
+					// this way we have `range` data before the start time
+					hints.Start = hints.Start - durationMilliseconds(evalRange)
+					evalRange = 0
+				}
+
+				hints.Func = extractFuncFromPath(path)
+				hints.By, hints.Grouping = extractGroupsFromPath(path)
+				if n.Offset > 0 {
+					offsetMilliseconds := durationMilliseconds(n.Offset)
+					hints.Start = hints.Start - offsetMilliseconds
+					hints.End = hints.End - offsetMilliseconds
+				}
+
+				set, wrn, err = querier.Select(false, hints, n.LabelMatchers...)
+				warnings = append(warnings, wrn...)
+				if err != nil {
+					level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
+					return err
+				}
+				n.UnexpandedSeriesSet = set
+
+			case *parser.MatrixSelector:
+				evalRange = n.Range
+			}
+			return nil
+		})
+	} else {
+		type queryResult struct {
+			vs          *parser.VectorSelector
+			set         storage.SeriesSet
+			wrn         storage.Warnings
+			selectError error
+		}
+		queryResultChan := make(chan *queryResult)
+		parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
+			hints := &storage.SelectHints{
+				Start: timestamp.FromTime(s.Start),
+				End:   timestamp.FromTime(s.End),
+				Step:  durationToInt64Millis(s.Interval),
+			}
+
+			// We need to make sure we select the timerange selected by the subquery.
+			// TODO(gouthamve): cumulativeSubqueryOffset gives the sum of range and the offset
+			// we can optimise it by separating out the range and offsets, and subtracting the offsets
+			// from end also.
+			subqOffset := ng.cumulativeSubqueryOffset(path)
+			offsetMilliseconds := durationMilliseconds(subqOffset)
+			hints.Start = hints.Start - offsetMilliseconds
+
+			switch n := node.(type) {
+			case *parser.VectorSelector:
+				if evalRange == 0 {
+					hints.Start = hints.Start - durationMilliseconds(ng.lookbackDelta)
+				} else {
+					hints.Range = durationMilliseconds(evalRange)
+					// For all matrix queries we want to ensure that we have (end-start) + range selected
+					// this way we have `range` data before the start time
+					hints.Start = hints.Start - durationMilliseconds(evalRange)
+					evalRange = 0
+				}
+
+				hints.Func = extractFuncFromPath(path)
+				hints.By, hints.Grouping = extractGroupsFromPath(path)
+				if n.Offset > 0 {
+					offsetMilliseconds := durationMilliseconds(n.Offset)
+					hints.Start = hints.Start - offsetMilliseconds
+					hints.End = hints.End - offsetMilliseconds
+				}
+				go func(vs *parser.VectorSelector) {
+					set, wrn, err := querier.Select(false, hints, vs.LabelMatchers...)
+					queryResultChan <- &queryResult{vs: vs, set: set, wrn: wrn, selectError: err}
+				}(n)
+			case *parser.MatrixSelector:
+				evalRange = n.Range
+			}
+			return nil
+		})
+		for i := 0; i < SelectCalls; i++ {
+			qryResult := <-queryResultChan
+			err = qryResult.selectError
+			warnings = append(warnings, qryResult.wrn...)
+			if err != nil {
+				level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
+				continue
+			}
+			qryResult.vs.UnexpandedSeriesSet = qryResult.set
+		}
+
+	}
 	return warnings, err
 }
 
