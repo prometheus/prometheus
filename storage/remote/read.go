@@ -93,6 +93,10 @@ func (q *querier) Close() error {
 	return nil
 }
 
+func (q *querier) Remotely() bool {
+	return false
+}
+
 // ExternalLabelsHandler returns a storage.Queryable which creates a
 // externalLabelsQuerier.
 func ExternalLabelsHandler(next storage.Queryable, externalLabels labels.Labels) storage.Queryable {

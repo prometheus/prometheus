@@ -19,6 +19,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -194,6 +195,8 @@ type mergeGenericQuerier struct {
 	queriers       []genericQuerier
 	failedQueriers map[genericQuerier]struct{}
 	setQuerierMap  map[genericSeriesSet]genericQuerier
+	mtx            sync.Mutex
+	failMtx        sync.Mutex
 }
 
 // NewMergeQuerier returns a new Querier that merges results of chkQuerierSeries queriers.
@@ -215,7 +218,7 @@ func NewMergeQuerier(primaryQuerier Querier, queriers []Querier, mergeFunc Verti
 	}
 
 	if primaryQuerier == nil && len(filtered) == 1 {
-		return &querierAdapter{filtered[0]}
+		return &querierAdapter{filtered[0], true}
 	}
 
 	return &querierAdapter{&mergeGenericQuerier{
@@ -224,7 +227,8 @@ func NewMergeQuerier(primaryQuerier Querier, queriers []Querier, mergeFunc Verti
 		queriers:       filtered,
 		failedQueriers: make(map[genericQuerier]struct{}),
 		setQuerierMap:  make(map[genericSeriesSet]genericQuerier),
-	}}
+		mtx:            sync.Mutex{},
+	}, len(filtered) > 1}
 }
 
 // NewMergeChunkQuerier returns a new ChunkQuerier that merges results of chkQuerierSeries chunk queriers.
@@ -284,12 +288,16 @@ func (q *mergeGenericQuerier) Select(sortSeries bool, hints *SelectHints, matche
 	}
 	for i := 0; i < len(q.queriers); i++ {
 		qryResult := <-queryResultChan
+		q.mtx.Lock()
 		q.setQuerierMap[qryResult.set] = qryResult.qr
+		q.mtx.Unlock()
 		if qryResult.wrn != nil {
 			warnings = append(warnings, qryResult.wrn...)
 		}
 		if qryResult.selectError != nil {
+			q.failMtx.Lock()
 			q.failedQueriers[qryResult.qr] = struct{}{}
+			q.failMtx.Unlock()
 			// If the error source isn't the primary querier, return the error as a warning and continue.
 			if !reflect.DeepEqual(qryResult.qr, q.primaryQuerier) {
 				warnings = append(warnings, qryResult.selectError)

@@ -119,6 +119,10 @@ func (q *querier) Close() error {
 	return merr.Err()
 }
 
+func (q *querier) Remotely() bool {
+	return false
+}
+
 // verticalQuerier aggregates querying results from time blocks within
 // a single partition. The block time ranges can be overlapping.
 type verticalQuerier struct {
@@ -242,6 +246,10 @@ func (q *blockQuerier) Close() error {
 	merr.Add(q.tombstones.Close())
 	q.closed = true
 	return merr.Err()
+}
+
+func (q *blockQuerier) Remotely() bool {
+	return false
 }
 
 // Bitmap used by func isRegexMetaCharacter to check whether a character needs to be escaped.

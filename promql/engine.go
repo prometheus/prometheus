@@ -17,6 +17,7 @@ import (
 	"container/heap"
 	"context"
 	"fmt"
+	"github.com/prometheus/prometheus/pkg/gate"
 	"math"
 	"regexp"
 	"runtime"
@@ -232,6 +233,7 @@ type Engine struct {
 	queryLogger        QueryLogger
 	queryLoggerLock    sync.RWMutex
 	lookbackDelta      time.Duration
+	remoteReadGate     *gate.Gate
 }
 
 // NewEngine returns a new engine.
@@ -332,6 +334,7 @@ func NewEngine(opts EngineOpts) *Engine {
 		maxSamplesPerQuery: opts.MaxSamples,
 		activeQueryTracker: opts.ActiveQueryTracker,
 		lookbackDelta:      opts.LookbackDelta,
+		remoteReadGate:     gate.New(1000),
 	}
 }
 
@@ -651,15 +654,20 @@ func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s
 		warnings  storage.Warnings
 		err       error
 	)
-	SelectCalls := 0
-	parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
-		switch node.(type) {
-		case *parser.VectorSelector:
-			SelectCalls++
+	RemoteSelectCalls := 0
+	if querier.Remotely() {
+		if err := ng.remoteReadGate.Start(ctx); err != nil {
+			return nil, err
 		}
-		return nil
-	})
-	if SelectCalls < 2 {
+		parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
+			switch node.(type) {
+			case *parser.VectorSelector:
+				RemoteSelectCalls++
+			}
+			return nil
+		})
+	}
+	if RemoteSelectCalls < 2 {
 		parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
 			var set storage.SeriesSet
 			var wrn storage.Warnings
@@ -761,7 +769,7 @@ func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s
 			}
 			return nil
 		})
-		for i := 0; i < SelectCalls; i++ {
+		for i := 0; i < RemoteSelectCalls; i++ {
 			qryResult := <-queryResultChan
 			err = qryResult.selectError
 			warnings = append(warnings, qryResult.wrn...)
@@ -771,7 +779,6 @@ func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s
 			}
 			qryResult.vs.UnexpandedSeriesSet = qryResult.set
 		}
-
 	}
 	return warnings, err
 }

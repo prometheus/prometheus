@@ -61,6 +61,7 @@ type Queryable interface {
 // Querier provides querying access over time series data of a fixed time range.
 type Querier interface {
 	baseQuerier
+	RemoteQuerier
 
 	// Select returns a set of series that matches the given label matchers.
 	// Caller can specify if it requires returned series to be sorted. Prefer not requiring sorting for better performance.
