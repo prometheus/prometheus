@@ -184,3 +184,7 @@ func (errQuerier) LabelNames() ([]string, storage.Warnings, error) {
 func (errQuerier) Close() error {
 	return nil
 }
+
+func (errQuerier) Remotely() bool {
+	return false
+}
