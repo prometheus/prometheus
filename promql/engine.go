@@ -656,9 +656,6 @@ func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s
 	)
 	RemoteSelectCalls := 0
 	if querier.Remotely() {
-		if err := ng.remoteReadGate.Start(ctx); err != nil {
-			return nil, err
-		}
 		parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
 			switch node.(type) {
 			case *parser.VectorSelector:
@@ -719,6 +716,10 @@ func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s
 			return nil
 		})
 	} else {
+		if err := ng.remoteReadGate.Start(ctx); err != nil {
+			return nil, err
+		}
+		defer ng.remoteReadGate.Done()
 		type queryResult struct {
 			vs          *parser.VectorSelector
 			set         storage.SeriesSet
