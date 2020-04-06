@@ -623,7 +623,7 @@ func main() {
 			func() error {
 				select {
 				case <-dbOpen:
-					// In case a shutdown is initiated before the dbOpen is released
+				// In case a shutdown is initiated before the dbOpen is released
 				case <-cancel:
 					reloadReady.Close()
 					return nil
