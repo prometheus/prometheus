@@ -17,7 +17,6 @@ import (
 	"container/heap"
 	"context"
 	"fmt"
-	"github.com/prometheus/prometheus/pkg/gate"
 	"math"
 	"regexp"
 	"runtime"
@@ -33,7 +32,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
-
+	"github.com/prometheus/prometheus/pkg/gate"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/pkg/value"
@@ -655,15 +654,16 @@ func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s
 		err       error
 	)
 	RemoteSelectCalls := 0
-	if querier.Remotely() {
-		parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
-			switch node.(type) {
-			case *parser.VectorSelector:
+	parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
+		switch node.(type) {
+		case *parser.VectorSelector:
+			if querier.Remotely() {
 				RemoteSelectCalls++
 			}
-			return nil
-		})
-	}
+		}
+		return nil
+	})
+
 	if RemoteSelectCalls < 2 {
 		parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
 			var set storage.SeriesSet
