@@ -25,6 +25,7 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/pkg/gate"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -216,9 +217,9 @@ func NewMergeQuerier(primaryQuerier Querier, queriers []Querier, mergeFunc Verti
 	if len(filtered) == 0 {
 		return primaryQuerier
 	}
-
+	remoteReadGate := gate.New(1000)
 	if primaryQuerier == nil && len(filtered) == 1 {
-		return &querierAdapter{filtered[0]}
+		return &querierAdapter{filtered[0], true, remoteReadGate}
 	}
 
 	return &querierAdapter{&mergeGenericQuerier{
@@ -228,7 +229,7 @@ func NewMergeQuerier(primaryQuerier Querier, queriers []Querier, mergeFunc Verti
 		failedQueriers: make(map[genericQuerier]struct{}),
 		setQuerierMap:  make(map[genericSeriesSet]genericQuerier),
 		mtx:            sync.Mutex{},
-	}}
+	}, len(filtered) > 1, remoteReadGate}
 }
 
 // NewMergeChunkQuerier returns a new ChunkQuerier that merges results of chkQuerierSeries chunk queriers.

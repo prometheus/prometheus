@@ -436,11 +436,6 @@ func main() {
 				return err
 			}
 			queryEngine.SetQueryLogger(l)
-			remotely := false
-			if cfg.RemoteReadConfigs != nil && len(cfg.RemoteReadConfigs) > 0 {
-				remotely = true
-			}
-			queryEngine.SetRemotely(remotely)
 			return nil
 		},
 		// The Scrape and notifier managers need to reload before the Discovery manager as

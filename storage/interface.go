@@ -68,6 +68,11 @@ type Querier interface {
 	Select(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) (SeriesSet, Warnings, error)
 }
 
+type BatchQuerier interface {
+	Querier
+	Selects(context.Context, []*SelectParam) ([]*SelectResult)
+}
+
 // A ChunkQueryable handles queries against a storage.
 // Use it when you need to have access to samples in encoded format.
 type ChunkQueryable interface {
@@ -109,6 +114,19 @@ type SelectHints struct {
 	Grouping []string // List of label names used in aggregation.
 	By       bool     // Indicate whether it is without or by.
 	Range    int64    // Range vector selector range in milliseconds.
+}
+
+type SelectParam struct {
+	SortSeries bool
+	Hints      *SelectHints
+	Matchers   []*labels.Matcher
+}
+
+type SelectResult struct {
+	Param       *SelectParam
+	Set         SeriesSet
+	Wrn         Warnings
+	SelectError error
 }
 
 // QueryableFunc is an adapter to allow the use of ordinary functions as

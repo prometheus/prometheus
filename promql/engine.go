@@ -28,11 +28,10 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
-	opentracing "github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/pkg/gate"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/pkg/value"
@@ -232,8 +231,6 @@ type Engine struct {
 	queryLogger        QueryLogger
 	queryLoggerLock    sync.RWMutex
 	lookbackDelta      time.Duration
-	remoteReadGate     *gate.Gate
-	remotely           bool
 }
 
 // NewEngine returns a new engine.
@@ -334,12 +331,7 @@ func NewEngine(opts EngineOpts) *Engine {
 		maxSamplesPerQuery: opts.MaxSamples,
 		activeQueryTracker: opts.ActiveQueryTracker,
 		lookbackDelta:      opts.LookbackDelta,
-		remoteReadGate:     gate.New(1000),
 	}
-}
-
-func (ng *Engine) SetRemotely(remotely bool) {
-	ng.remotely = remotely
 }
 
 // SetQueryLogger sets the query logger.
@@ -654,135 +646,80 @@ func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s
 		// Whenever a MatrixSelector is evaluated, evalRange is set to the corresponding range.
 		// The evaluation of the VectorSelector inside then evaluates the given range and unsets
 		// the variable.
-		evalRange time.Duration
-		warnings  storage.Warnings
-		err       error
+		evalRange    time.Duration
+		warnings     storage.Warnings
+		err          error
+		selectParams []*storage.SelectParam
 	)
-	RemoteSelectCalls := 0
-	if ng.remotely {
-		parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
-			switch node.(type) {
-			case *parser.VectorSelector:
-				RemoteSelectCalls++
-			}
-			return nil
-		})
-	}
-	if RemoteSelectCalls < 2 {
-		parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
-			var set storage.SeriesSet
-			var wrn storage.Warnings
-			hints := &storage.SelectHints{
-				Start: timestamp.FromTime(s.Start),
-				End:   timestamp.FromTime(s.End),
-				Step:  durationToInt64Millis(s.Interval),
-			}
-
-			// We need to make sure we select the timerange selected by the subquery.
-			// TODO(gouthamve): cumulativeSubqueryOffset gives the sum of range and the offset
-			// we can optimise it by separating out the range and offsets, and subtracting the offsets
-			// from end also.
-			subqOffset := ng.cumulativeSubqueryOffset(path)
-			offsetMilliseconds := durationMilliseconds(subqOffset)
-			hints.Start = hints.Start - offsetMilliseconds
-
-			switch n := node.(type) {
-			case *parser.VectorSelector:
-				if evalRange == 0 {
-					hints.Start = hints.Start - durationMilliseconds(ng.lookbackDelta)
-				} else {
-					hints.Range = durationMilliseconds(evalRange)
-					// For all matrix queries we want to ensure that we have (end-start) + range selected
-					// this way we have `range` data before the start time
-					hints.Start = hints.Start - durationMilliseconds(evalRange)
-					evalRange = 0
-				}
-
-				hints.Func = extractFuncFromPath(path)
-				hints.By, hints.Grouping = extractGroupsFromPath(path)
-				if n.Offset > 0 {
-					offsetMilliseconds := durationMilliseconds(n.Offset)
-					hints.Start = hints.Start - offsetMilliseconds
-					hints.End = hints.End - offsetMilliseconds
-				}
-
-				set, wrn, err = querier.Select(false, hints, n.LabelMatchers...)
-				warnings = append(warnings, wrn...)
-				if err != nil {
-					level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
-					return err
-				}
-				n.UnexpandedSeriesSet = set
-
-			case *parser.MatrixSelector:
-				evalRange = n.Range
-			}
-			return nil
-		})
-	} else {
-		if err := ng.remoteReadGate.Start(ctx); err != nil {
-			return nil, err
+	selectCalls := make(map[*storage.SelectParam]*parser.VectorSelector)
+	parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
+		hints := &storage.SelectHints{
+			Start: timestamp.FromTime(s.Start),
+			End:   timestamp.FromTime(s.End),
+			Step:  durationToInt64Millis(s.Interval),
 		}
-		defer ng.remoteReadGate.Done()
-		type queryResult struct {
-			vs          *parser.VectorSelector
-			set         storage.SeriesSet
-			wrn         storage.Warnings
-			selectError error
+
+		// We need to make sure we select the timerange selected by the subquery.
+		// TODO(gouthamve): cumulativeSubqueryOffset gives the sum of range and the offset
+		// we can optimise it by separating out the range and offsets, and subtracting the offsets
+		// from end also.
+		subqOffset := ng.cumulativeSubqueryOffset(path)
+		offsetMilliseconds := durationMilliseconds(subqOffset)
+		hints.Start = hints.Start - offsetMilliseconds
+
+		switch n := node.(type) {
+		case *parser.VectorSelector:
+			if evalRange == 0 {
+				hints.Start = hints.Start - durationMilliseconds(ng.lookbackDelta)
+			} else {
+				hints.Range = durationMilliseconds(evalRange)
+				// For all matrix queries we want to ensure that we have (end-start) + range selected
+				// this way we have `range` data before the start time
+				hints.Start = hints.Start - durationMilliseconds(evalRange)
+				evalRange = 0
+			}
+
+			hints.Func = extractFuncFromPath(path)
+			hints.By, hints.Grouping = extractGroupsFromPath(path)
+			if n.Offset > 0 {
+				offsetMilliseconds := durationMilliseconds(n.Offset)
+				hints.Start = hints.Start - offsetMilliseconds
+				hints.End = hints.End - offsetMilliseconds
+			}
+
+			//set, wrn, err = querier.Select(false, hints, n.LabelMatchers...)
+			sp := &storage.SelectParam{false, hints, n.LabelMatchers}
+			selectParams = append(selectParams, sp)
+			selectCalls[sp] = n
+		case *parser.MatrixSelector:
+			evalRange = n.Range
 		}
-		queryResultChan := make(chan *queryResult)
-		parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
-			hints := &storage.SelectHints{
-				Start: timestamp.FromTime(s.Start),
-				End:   timestamp.FromTime(s.End),
-				Step:  durationToInt64Millis(s.Interval),
-			}
-
-			// We need to make sure we select the timerange selected by the subquery.
-			// TODO(gouthamve): cumulativeSubqueryOffset gives the sum of range and the offset
-			// we can optimise it by separating out the range and offsets, and subtracting the offsets
-			// from end also.
-			subqOffset := ng.cumulativeSubqueryOffset(path)
-			offsetMilliseconds := durationMilliseconds(subqOffset)
-			hints.Start = hints.Start - offsetMilliseconds
-
-			switch n := node.(type) {
-			case *parser.VectorSelector:
-				if evalRange == 0 {
-					hints.Start = hints.Start - durationMilliseconds(ng.lookbackDelta)
-				} else {
-					hints.Range = durationMilliseconds(evalRange)
-					// For all matrix queries we want to ensure that we have (end-start) + range selected
-					// this way we have `range` data before the start time
-					hints.Start = hints.Start - durationMilliseconds(evalRange)
-					evalRange = 0
-				}
-
-				hints.Func = extractFuncFromPath(path)
-				hints.By, hints.Grouping = extractGroupsFromPath(path)
-				if n.Offset > 0 {
-					offsetMilliseconds := durationMilliseconds(n.Offset)
-					hints.Start = hints.Start - offsetMilliseconds
-					hints.End = hints.End - offsetMilliseconds
-				}
-				go func(vs *parser.VectorSelector) {
-					set, wrn, err := querier.Select(false, hints, vs.LabelMatchers...)
-					queryResultChan <- &queryResult{vs: vs, set: set, wrn: wrn, selectError: err}
-				}(n)
-			case *parser.MatrixSelector:
-				evalRange = n.Range
-			}
-			return nil
-		})
-		for i := 0; i < RemoteSelectCalls; i++ {
-			qryResult := <-queryResultChan
-			err = qryResult.selectError
-			warnings = append(warnings, qryResult.wrn...)
+		return nil
+	})
+	switch q := querier.(type) {
+	case storage.BatchQuerier:
+		selectResults := q.Selects(ctx, selectParams)
+		for _, qryResult := range selectResults {
+			node := selectCalls[qryResult.Param]
+			err = qryResult.SelectError
+			warnings = append(warnings, qryResult.Wrn...)
 			if err != nil {
 				level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
 				continue
 			}
-			qryResult.vs.UnexpandedSeriesSet = qryResult.set
+			node.UnexpandedSeriesSet = qryResult.Set
+		}
+	case storage.Querier:
+		for _, sp := range selectParams {
+			node := selectCalls[sp]
+			set, wrn, selectErr := q.Select(sp.SortSeries, sp.Hints, sp.Matchers...)
+			err = selectErr
+			warnings = append(warnings, wrn...)
+			if err != nil {
+				level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
+				continue
+			}
+			node.UnexpandedSeriesSet = set
 		}
 	}
 	return warnings, err

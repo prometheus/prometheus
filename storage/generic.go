@@ -16,7 +16,11 @@
 
 package storage
 
-import "github.com/prometheus/prometheus/pkg/labels"
+import (
+	"context"
+	"github.com/prometheus/prometheus/pkg/gate"
+	"github.com/prometheus/prometheus/pkg/labels"
+)
 
 type genericQuerier interface {
 	baseQuerier
@@ -74,6 +78,8 @@ func newGenericQuerierFromChunk(cq ChunkQuerier) genericQuerier {
 
 type querierAdapter struct {
 	genericQuerier
+	remotely       bool
+	remoteReadGate *gate.Gate
 }
 
 type seriesSetAdapter struct {
@@ -87,6 +93,34 @@ func (a *seriesSetAdapter) At() Series {
 func (q *querierAdapter) Select(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) (SeriesSet, Warnings, error) {
 	s, w, err := q.genericQuerier.Select(sortSeries, hints, matchers...)
 	return &seriesSetAdapter{s}, w, err
+}
+
+func (q *querierAdapter) Selects(ctx context.Context, selectParams []*SelectParam) ([]*SelectResult) {
+	var result []*SelectResult
+	if q.remotely && len(selectParams) > 1 {
+		queryResultChan := make(chan *SelectResult)
+		for _, param := range selectParams {
+			if err := q.remoteReadGate.Start(ctx); err != nil {
+				result = append(result, &SelectResult{param, nil, nil, err})
+				continue
+			}
+			q.remoteReadGate.Done()
+			go func(sp *SelectParam) {
+				set, wrn, err := q.Select(sp.SortSeries, sp.Hints, sp.Matchers...)
+				queryResultChan <- &SelectResult{sp, set, wrn, err}
+			}(param)
+		}
+		for i := 0; i < len(selectParams); i++ {
+			qryResult := <-queryResultChan
+			result = append(result, qryResult)
+		}
+	} else {
+		for _, sp := range selectParams {
+			set, wrn, err := q.Select(sp.SortSeries, sp.Hints, sp.Matchers...)
+			result = append(result, &SelectResult{sp, set, wrn, err})
+		}
+	}
+	return result
 }
 
 type chunkQuerierAdapter struct {
