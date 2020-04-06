@@ -687,8 +687,7 @@ func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s
 				hints.End = hints.End - offsetMilliseconds
 			}
 
-			//set, wrn, err = querier.Select(false, hints, n.LabelMatchers...)
-			sp := &storage.SelectParam{false, hints, n.LabelMatchers}
+			sp := &storage.SelectParam{SortSeries: false, Hints: hints, Matchers: n.LabelMatchers}
 			selectParams = append(selectParams, sp)
 			selectCalls[sp] = n
 		case *parser.MatrixSelector:
