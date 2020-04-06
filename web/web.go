@@ -139,6 +139,7 @@ func newMetrics(r prometheus.Registerer) *metrics {
 
 	if r != nil {
 		r.MustRegister(m.requestCounter, m.requestDuration, m.responseSize)
+		registerFederationMetrics(r)
 	}
 	return m
 }
