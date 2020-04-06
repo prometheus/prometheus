@@ -601,14 +601,14 @@ func (s *Reader) Chunk(ref uint64) (chunkenc.Chunk, error) {
 }
 
 func nextSequenceFile(dir string) (string, int, error) {
-	names, err := fileutil.ReadDir(dir)
+	files, err := ioutil.ReadDir(dir)
 	if err != nil {
 		return "", 0, err
 	}
 
 	i := uint64(0)
-	for _, n := range names {
-		j, err := strconv.ParseUint(n, 10, 64)
+	for _, f := range files {
+		j, err := strconv.ParseUint(f.Name(), 10, 64)
 		if err != nil {
 			continue
 		}
