@@ -72,13 +72,8 @@ func newGenericQuerierFromChunk(cq ChunkQuerier) genericQuerier {
 	return &genericQuerierAdapter{baseQuerier: cq, cq: cq}
 }
 
-type RemoteQuerier interface {
-	Remotely() bool
-}
-
 type querierAdapter struct {
 	genericQuerier
-	remotely bool
 }
 
 type seriesSetAdapter struct {
@@ -92,10 +87,6 @@ func (a *seriesSetAdapter) At() Series {
 func (q *querierAdapter) Select(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) (SeriesSet, Warnings, error) {
 	s, w, err := q.genericQuerier.Select(sortSeries, hints, matchers...)
 	return &seriesSetAdapter{s}, w, err
-}
-
-func (q *querierAdapter) Remotely() bool {
-	return q.remotely
 }
 
 type chunkQuerierAdapter struct {

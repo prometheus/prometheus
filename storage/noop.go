@@ -40,10 +40,6 @@ func (noopQuerier) Close() error {
 	return nil
 }
 
-func (noopQuerier) Remotely() bool {
-	return false
-}
-
 type noopChunkQuerier struct{}
 
 // NoopChunkedQuerier is a ChunkQuerier that does nothing.

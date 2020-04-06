@@ -181,7 +181,6 @@ func (q *errQuerier) Select(bool, *storage.SelectHints, ...*labels.Matcher) (sto
 func (*errQuerier) LabelValues(string) ([]string, storage.Warnings, error) { return nil, nil, nil }
 func (*errQuerier) LabelNames() ([]string, storage.Warnings, error)        { return nil, nil, nil }
 func (*errQuerier) Close() error                                           { return nil }
-func (*errQuerier) Remotely() bool                                         { return false }
 
 // errSeriesSet implements storage.SeriesSet which always returns error.
 type errSeriesSet struct {
@@ -250,7 +249,6 @@ func (*hintCheckerQuerier) LabelValues(string) ([]string, storage.Warnings, erro
 }
 func (*hintCheckerQuerier) LabelNames() ([]string, storage.Warnings, error) { return nil, nil, nil }
 func (*hintCheckerQuerier) Close() error                                    { return nil }
-func (*hintCheckerQuerier) Remotely() bool                                  { return false }
 
 func TestParamsSetCorrectly(t *testing.T) {
 	opts := EngineOpts{

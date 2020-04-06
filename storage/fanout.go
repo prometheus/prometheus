@@ -218,7 +218,7 @@ func NewMergeQuerier(primaryQuerier Querier, queriers []Querier, mergeFunc Verti
 	}
 
 	if primaryQuerier == nil && len(filtered) == 1 {
-		return &querierAdapter{filtered[0], true}
+		return &querierAdapter{filtered[0]}
 	}
 
 	return &querierAdapter{&mergeGenericQuerier{
@@ -228,7 +228,7 @@ func NewMergeQuerier(primaryQuerier Querier, queriers []Querier, mergeFunc Verti
 		failedQueriers: make(map[genericQuerier]struct{}),
 		setQuerierMap:  make(map[genericSeriesSet]genericQuerier),
 		mtx:            sync.Mutex{},
-	}, len(filtered) > 1}
+	}}
 }
 
 // NewMergeChunkQuerier returns a new ChunkQuerier that merges results of chkQuerierSeries chunk queriers.

@@ -233,6 +233,7 @@ type Engine struct {
 	queryLoggerLock    sync.RWMutex
 	lookbackDelta      time.Duration
 	remoteReadGate     *gate.Gate
+	remotely           bool
 }
 
 // NewEngine returns a new engine.
@@ -335,6 +336,10 @@ func NewEngine(opts EngineOpts) *Engine {
 		lookbackDelta:      opts.LookbackDelta,
 		remoteReadGate:     gate.New(1000),
 	}
+}
+
+func (ng *Engine) SetRemotely(remotely bool) {
+	ng.remotely = remotely
 }
 
 // SetQueryLogger sets the query logger.
@@ -654,7 +659,7 @@ func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s
 		err       error
 	)
 	RemoteSelectCalls := 0
-	if querier.Remotely() {
+	if ng.remotely {
 		parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
 			switch node.(type) {
 			case *parser.VectorSelector:

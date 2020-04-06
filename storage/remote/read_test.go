@@ -246,10 +246,6 @@ func (mockQuerier) Select(bool, *storage.SelectHints, ...*labels.Matcher) (stora
 	return mockSeriesSet{}, nil, nil
 }
 
-func (mockQuerier) Remotely() bool {
-	return false
-}
-
 func TestPreferLocalStorageFilter(t *testing.T) {
 	ctx := context.Background()
 

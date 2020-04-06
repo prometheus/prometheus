@@ -387,10 +387,6 @@ func (m *mockQuerier) Select(sortSeries bool, _ *SelectHints, _ ...*labels.Match
 	return NewMockSeriesSet(cpy...), nil, nil
 }
 
-func (m *mockQuerier) Remotely() bool {
-	return false
-}
-
 type mockChunkQurier struct {
 	baseQuerier
 
