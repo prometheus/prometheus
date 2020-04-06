@@ -654,16 +654,15 @@ func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s
 		err       error
 	)
 	RemoteSelectCalls := 0
-	parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
-		switch node.(type) {
-		case *parser.VectorSelector:
-			if querier.Remotely() {
+	if querier.Remotely() {
+		parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
+			switch node.(type) {
+			case *parser.VectorSelector:
 				RemoteSelectCalls++
 			}
-		}
-		return nil
-	})
-
+			return nil
+		})
+	}
 	if RemoteSelectCalls < 2 {
 		parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
 			var set storage.SeriesSet
