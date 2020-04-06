@@ -70,7 +70,7 @@ type Querier interface {
 
 type BatchQuerier interface {
 	Querier
-	Selects(context.Context, []*SelectParam) ([]*SelectResult)
+	Selects(context.Context, []*SelectParam) []*SelectResult
 }
 
 // A ChunkQueryable handles queries against a storage.

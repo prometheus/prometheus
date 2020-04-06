@@ -35,17 +35,19 @@ import (
 type fanout struct {
 	logger log.Logger
 
-	primary     Storage
-	secondaries []Storage
+	primary        Storage
+	secondaries    []Storage
+	remoteReadGate *gate.Gate
 }
 
 // NewFanout returns a new fan-out Storage, which proxies reads and writes
 // through to multiple underlying storages.
 func NewFanout(logger log.Logger, primary Storage, secondaries ...Storage) Storage {
 	return &fanout{
-		logger:      logger,
-		primary:     primary,
-		secondaries: secondaries,
+		logger:         logger,
+		primary:        primary,
+		secondaries:    secondaries,
+		remoteReadGate: gate.New(1000),
 	}
 }
 
@@ -93,7 +95,7 @@ func (f *fanout) Querier(ctx context.Context, mint, maxt int64) (Querier, error)
 		queriers = append(queriers, querier)
 	}
 
-	return NewMergeQuerier(primaryQuerier, queriers, ChainedSeriesMerge), nil
+	return NewMergeQuerier(primaryQuerier, queriers, ChainedSeriesMerge, f.remoteReadGate), nil
 }
 
 func (f *fanout) Appender() Appender {
@@ -206,7 +208,7 @@ type mergeGenericQuerier struct {
 // when only one querier is passed.
 // The difference between primary and secondary is as follows: f the primaryQuerier returns an error, query fails.
 // For secondaries it just return warnings.
-func NewMergeQuerier(primaryQuerier Querier, queriers []Querier, mergeFunc VerticalSeriesMergeFunc) Querier {
+func NewMergeQuerier(primaryQuerier Querier, queriers []Querier, mergeFunc VerticalSeriesMergeFunc, remoteReadGate *gate.Gate) Querier {
 	filtered := make([]genericQuerier, 0, len(queriers))
 	for _, querier := range queriers {
 		if _, ok := querier.(noopQuerier); !ok && querier != nil {
@@ -217,7 +219,7 @@ func NewMergeQuerier(primaryQuerier Querier, queriers []Querier, mergeFunc Verti
 	if len(filtered) == 0 {
 		return primaryQuerier
 	}
-	remoteReadGate := gate.New(1000)
+
 	if primaryQuerier == nil && len(filtered) == 1 {
 		return &querierAdapter{filtered[0], true, remoteReadGate}
 	}

@@ -195,7 +195,7 @@ func TestMergeQuerierWithChainMerger(t *testing.T) {
 			}
 			qs = append(qs, tc.extraQueriers...)
 
-			merged, _, _ := NewMergeQuerier(qs[0], qs, ChainedSeriesMerge).Select(false, nil)
+			merged, _, _ := NewMergeQuerier(qs[0], qs, ChainedSeriesMerge, nil).Select(false, nil, nil)
 			for merged.Next() {
 				testutil.Assert(t, tc.expected.Next(), "Expected Next() to be true")
 				actualSeries := merged.At()

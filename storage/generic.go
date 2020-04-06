@@ -95,16 +95,21 @@ func (q *querierAdapter) Select(sortSeries bool, hints *SelectHints, matchers ..
 	return &seriesSetAdapter{s}, w, err
 }
 
-func (q *querierAdapter) Selects(ctx context.Context, selectParams []*SelectParam) ([]*SelectResult) {
+func (q *querierAdapter) Selects(ctx context.Context, selectParams []*SelectParam) []*SelectResult {
 	var result []*SelectResult
 	if q.remotely && len(selectParams) > 1 {
+		if q.remoteReadGate != nil {
+			if err := q.remoteReadGate.Start(ctx); err != nil {
+				for _, param := range selectParams {
+					result = append(result, &SelectResult{param, nil, nil, err})
+				}
+				return result
+			}
+			defer q.remoteReadGate.Done()
+		}
+
 		queryResultChan := make(chan *SelectResult)
 		for _, param := range selectParams {
-			if err := q.remoteReadGate.Start(ctx); err != nil {
-				result = append(result, &SelectResult{param, nil, nil, err})
-				continue
-			}
-			q.remoteReadGate.Done()
 			go func(sp *SelectParam) {
 				set, wrn, err := q.Select(sp.SortSeries, sp.Hints, sp.Matchers...)
 				queryResultChan <- &SelectResult{sp, set, wrn, err}
