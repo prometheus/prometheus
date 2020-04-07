@@ -199,8 +199,7 @@ func TestFederation(t *testing.T) {
 	}
 
 	h := &Handler{
-		storage:       suite.Storage(),
-		queryEngine:   suite.QueryEngine(),
+		localStorage:  suite.Storage(),
 		lookbackDelta: 5 * time.Minute,
 		now:           func() model.Time { return 101 * 60 * 1000 }, // 101min after epoch.
 		config: &config.Config{
