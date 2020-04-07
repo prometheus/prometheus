@@ -18,9 +18,10 @@ import (
 	"testing"
 
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"k8s.io/api/extensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
 type TLSMode int
