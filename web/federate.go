@@ -75,7 +75,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 	)
 	w.Header().Set("Content-Type", string(format))
 
-	q, err := h.storage.Querier(req.Context(), mint, maxt)
+	q, err := h.localStorage.Querier(req.Context(), mint, maxt)
 	if err != nil {
 		federationErrors.Inc()
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -209,10 +209,10 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 		// Attach global labels if they do not exist yet.
 		for _, ln := range externalLabelNames {
 			lv := externalLabels[ln]
-			if _, ok := globalUsed[string(ln)]; !ok {
+			if _, ok := globalUsed[ln]; !ok {
 				protMetric.Label = append(protMetric.Label, &dto.LabelPair{
-					Name:  proto.String(string(ln)),
-					Value: proto.String(string(lv)),
+					Name:  proto.String(ln),
+					Value: proto.String(lv),
 				})
 			}
 		}
