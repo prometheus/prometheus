@@ -285,15 +285,12 @@ func New(logger log.Logger, o *Options) *Handler {
 		lookbackDelta: o.LookbackDelta,
 		tsdb:          o.TSDB,
 		storage:       o.Storage,
+		localStorage:  o.TSDB(),
 		notifier:      o.Notifier,
 
 		now: model.Now,
 
 		ready: 0,
-	}
-
-	if h.tsdb != nil {
-		h.localStorage = h.tsdb()
 	}
 
 	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, h.scrapeManager, h.notifier,
