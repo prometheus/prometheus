@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"context"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -110,6 +111,15 @@ func (q *querier) Select(sortSeries bool, hints *storage.SelectHints, ms ...*lab
 	return NewMergedSeriesSet(ss), ws, nil
 }
 
+func (q *querier) Selects(ctx context.Context, selectParams []*storage.SelectParam) []*storage.SelectResult {
+	var result []*storage.SelectResult
+	for _, sp := range selectParams {
+		set, wrn, err := q.Select(sp.SortSeries, sp.Hints, sp.Matchers...)
+		result = append(result, &storage.SelectResult{sp, set, wrn, err})
+	}
+	return result
+}
+
 func (q *querier) Close() error {
 	var merr tsdb_errors.MultiError
 
@@ -127,6 +137,10 @@ type verticalQuerier struct {
 
 func (q *verticalQuerier) Select(sortSeries bool, hints *storage.SelectHints, ms ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
 	return q.sel(sortSeries, hints, q.blocks, ms)
+}
+
+func (q *verticalQuerier) Selects(ctx context.Context, selectParams []*storage.SelectParam) []*storage.SelectResult {
+	return nil
 }
 
 func (q *verticalQuerier) sel(sortSeries bool, hints *storage.SelectHints, qs []storage.Querier, ms []*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
@@ -219,6 +233,10 @@ func (q *blockQuerier) Select(sortSeries bool, hints *storage.SelectHints, ms ..
 		mint: mint,
 		maxt: maxt,
 	}, nil, nil
+}
+
+func (q *blockQuerier) Selects(ctx context.Context, selectParams []*storage.SelectParam) []*storage.SelectResult {
+	return nil
 }
 
 func (q *blockQuerier) LabelValues(name string) ([]string, storage.Warnings, error) {

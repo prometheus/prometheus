@@ -178,6 +178,16 @@ type errQuerier struct {
 func (q *errQuerier) Select(bool, *storage.SelectHints, ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
 	return errSeriesSet{err: q.err}, nil, q.err
 }
+
+func (q *errQuerier) Selects(ctx context.Context, selectParams []*storage.SelectParam) []*storage.SelectResult {
+	var result []*storage.SelectResult
+	for _, sp := range selectParams {
+		set, wrn, err := q.Select(sp.SortSeries, sp.Hints, sp.Matchers...)
+		result = append(result, &storage.SelectResult{sp, set, wrn, err})
+	}
+	return result
+}
+
 func (*errQuerier) LabelValues(string) ([]string, storage.Warnings, error) { return nil, nil, nil }
 func (*errQuerier) LabelNames() ([]string, storage.Warnings, error)        { return nil, nil, nil }
 func (*errQuerier) Close() error                                           { return nil }
@@ -244,6 +254,16 @@ func (q *hintCheckerQuerier) Select(_ bool, sp *storage.SelectHints, _ ...*label
 
 	return errSeriesSet{err: nil}, nil, nil
 }
+
+func (q *hintCheckerQuerier) Selects(ctx context.Context, selectParams []*storage.SelectParam) []*storage.SelectResult {
+	var result []*storage.SelectResult
+	for _, sp := range selectParams {
+		set, wrn, err := q.Select(sp.SortSeries, sp.Hints, sp.Matchers...)
+		result = append(result, &storage.SelectResult{sp, set, wrn, err})
+	}
+	return result
+}
+
 func (*hintCheckerQuerier) LabelValues(string) ([]string, storage.Warnings, error) {
 	return nil, nil, nil
 }

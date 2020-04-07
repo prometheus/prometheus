@@ -76,6 +76,15 @@ func (q *querier) Select(sortSeries bool, hints *storage.SelectHints, matchers .
 	return FromQueryResult(sortSeries, res), nil, nil
 }
 
+func (q *querier) Selects(ctx context.Context, selectParams []*storage.SelectParam) []*storage.SelectResult {
+	var result []*storage.SelectResult
+	for _, sp := range selectParams {
+		set, wrn, err := q.Select(sp.SortSeries, sp.Hints, sp.Matchers...)
+		result = append(result, &storage.SelectResult{sp, set, wrn, err})
+	}
+	return result
+}
+
 // LabelValues implements storage.Querier and is a noop.
 func (q *querier) LabelValues(string) ([]string, storage.Warnings, error) {
 	// TODO implement?

@@ -695,31 +695,16 @@ func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s
 		}
 		return nil
 	})
-	switch q := querier.(type) {
-	case storage.BatchQuerier:
-		selectResults := q.Selects(ctx, selectParams)
-		for _, qryResult := range selectResults {
-			node := selectCalls[qryResult.Param]
-			err = qryResult.SelectError
-			warnings = append(warnings, qryResult.Wrn...)
-			if err != nil {
-				level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
-				continue
-			}
-			node.UnexpandedSeriesSet = qryResult.Set
+	selectResults := querier.Selects(ctx, selectParams)
+	for _, qryResult := range selectResults {
+		node := selectCalls[qryResult.Param]
+		err = qryResult.SelectError
+		warnings = append(warnings, qryResult.Wrn...)
+		if err != nil {
+			level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
+			continue
 		}
-	case storage.Querier:
-		for _, sp := range selectParams {
-			node := selectCalls[sp]
-			set, wrn, selectErr := q.Select(sp.SortSeries, sp.Hints, sp.Matchers...)
-			err = selectErr
-			warnings = append(warnings, wrn...)
-			if err != nil {
-				level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
-				continue
-			}
-			node.UnexpandedSeriesSet = set
-		}
+		node.UnexpandedSeriesSet = qryResult.Set
 	}
 	return warnings, err
 }

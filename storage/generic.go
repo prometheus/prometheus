@@ -170,3 +170,16 @@ func (a *chunkSeriesMergerAdapter) Merge(s ...Labels) Labels {
 	}
 	return a.VerticalChunkSeriesMergerFunc(a.buf...)
 }
+
+type batchQuerier struct {
+	Querier
+}
+
+func (q *batchQuerier) Selects(ctx context.Context, selectParams []*SelectParam) []*SelectResult {
+	var result []*SelectResult
+	for _, sp := range selectParams {
+		set, wrn, err := q.Select(sp.SortSeries, sp.Hints, sp.Matchers...)
+		result = append(result, &SelectResult{sp, set, wrn, err})
+	}
+	return result
+}

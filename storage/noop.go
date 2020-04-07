@@ -14,6 +14,7 @@
 package storage
 
 import (
+	"context"
 	"github.com/prometheus/prometheus/pkg/labels"
 )
 
@@ -34,6 +35,10 @@ func (noopQuerier) LabelValues(string) ([]string, Warnings, error) {
 
 func (noopQuerier) LabelNames() ([]string, Warnings, error) {
 	return nil, nil, nil
+}
+
+func (noopQuerier) Selects(ctx context.Context, selectParams []*SelectParam) []*SelectResult {
+	return nil
 }
 
 func (noopQuerier) Close() error {
