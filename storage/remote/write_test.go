@@ -21,7 +21,6 @@ import (
 	"time"
 
 	common_config "github.com/prometheus/common/config"
-	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -30,7 +29,7 @@ import (
 
 var cfg = config.RemoteWriteConfig{
 	Name: "dev",
-	URL: &config_util.URL{
+	URL: &common_config.URL{
 		URL: &url.URL{
 			Scheme: "http",
 			Host:   "localhost",
@@ -46,7 +45,7 @@ func TestNoDuplicateWriteConfigs(t *testing.T) {
 
 	cfg1 := config.RemoteWriteConfig{
 		Name: "write-1",
-		URL: &config_util.URL{
+		URL: &common_config.URL{
 			URL: &url.URL{
 				Scheme: "http",
 				Host:   "localhost",
@@ -56,7 +55,7 @@ func TestNoDuplicateWriteConfigs(t *testing.T) {
 	}
 	cfg2 := config.RemoteWriteConfig{
 		Name: "write-2",
-		URL: &config_util.URL{
+		URL: &common_config.URL{
 			URL: &url.URL{
 				Scheme: "http",
 				Host:   "localhost",
@@ -65,7 +64,7 @@ func TestNoDuplicateWriteConfigs(t *testing.T) {
 		QueueConfig: config.DefaultQueueConfig,
 	}
 	cfg3 := config.RemoteWriteConfig{
-		URL: &config_util.URL{
+		URL: &common_config.URL{
 			URL: &url.URL{
 				Scheme: "http",
 				Host:   "localhost",
