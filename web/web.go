@@ -180,6 +180,7 @@ type Handler struct {
 	context       context.Context
 	tsdb          func() *tsdb.DB
 	storage       storage.Storage
+	localStorage  storage.Storage
 	notifier      *notifier.Manager
 
 	apiV1 *api_v1.API
@@ -289,6 +290,10 @@ func New(logger log.Logger, o *Options) *Handler {
 		now: model.Now,
 
 		ready: 0,
+	}
+
+	if h.tsdb != nil {
+		h.localStorage = h.tsdb()
 	}
 
 	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, h.scrapeManager, h.notifier,
