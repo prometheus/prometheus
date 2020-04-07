@@ -681,9 +681,11 @@ func (h *Head) Truncate(mint int64) (err error) {
 	if last < 0 {
 		return nil // no segments yet.
 	}
-	// The lower third of segments should contain mostly obsolete samples.
-	// If we have less than three segments, it's not worth checkpointing yet.
-	last = first + (last-first)/3
+	// The lower two thirds of segments should contain mostly obsolete samples.
+	// If we have less than two segments, it's not worth checkpointing yet.
+	// With the default 2h blocks, this will keeping up to around 3h worth
+	// of WAL segments.
+	last = first + (last-first)*2/3
 	if last <= first {
 		return nil
 	}
