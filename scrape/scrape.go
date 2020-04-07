@@ -973,7 +973,7 @@ mainLoop:
 			level.Debug(sl.l).Log("msg", "append failed", "err", appErr)
 			// The append failed, probably due to a parse error or sample limit.
 			// Call sl.append again with an empty scrape to trigger stale markers.
-			if _, _, _, err := sl.append(sl.appender(), []byte{}, "", start); err != nil {
+			if _, _, _, err := sl.append(scrapeAppender, []byte{}, "", start); err != nil {
 				level.Warn(sl.l).Log("msg", "append failed", "err", err)
 			}
 		}
@@ -1048,7 +1048,7 @@ func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, int
 	// Call sl.append again with an empty scrape to trigger stale markers.
 	// If the target has since been recreated and scraped, the
 	// stale markers will be out of order and ignored.
-	if _, _, _, err := sl.append(nil, []byte{}, "", staleTime); err != nil {
+	if _, _, _, err := sl.append(sl.appender(), []byte{}, "", staleTime); err != nil {
 		level.Error(sl.l).Log("msg", "stale append failed", "err", err)
 	}
 	if err := sl.reportStale(staleTime); err != nil {
