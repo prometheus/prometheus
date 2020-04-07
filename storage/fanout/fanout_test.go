@@ -173,6 +173,15 @@ func (errQuerier) Select(bool, *storage.SelectHints, ...*labels.Matcher) (storag
 	return nil, nil, errSelect
 }
 
+func (q *errQuerier) Selects(ctx context.Context, selectParams []*storage.SelectParam) []*storage.SelectResult {
+	var result []*storage.SelectResult
+	for _, sp := range selectParams {
+		set, wrn, err := q.Select(sp.SortSeries, sp.Hints, sp.Matchers...)
+		result = append(result, &storage.SelectResult{Param: sp, Set: set, Wrn: wrn, SelectError: err})
+	}
+	return result
+}
+
 func (errQuerier) LabelValues(name string) ([]string, storage.Warnings, error) {
 	return nil, nil, errors.New("label values error")
 }

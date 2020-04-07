@@ -80,7 +80,7 @@ func (q *querier) Selects(ctx context.Context, selectParams []*storage.SelectPar
 	var result []*storage.SelectResult
 	for _, sp := range selectParams {
 		set, wrn, err := q.Select(sp.SortSeries, sp.Hints, sp.Matchers...)
-		result = append(result, &storage.SelectResult{sp, set, wrn, err})
+		result = append(result, &storage.SelectResult{Param: sp, Set: set, Wrn: wrn, SelectError: err})
 	}
 	return result
 }

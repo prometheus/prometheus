@@ -183,7 +183,7 @@ func (q *errQuerier) Selects(ctx context.Context, selectParams []*storage.Select
 	var result []*storage.SelectResult
 	for _, sp := range selectParams {
 		set, wrn, err := q.Select(sp.SortSeries, sp.Hints, sp.Matchers...)
-		result = append(result, &storage.SelectResult{sp, set, wrn, err})
+		result = append(result, &storage.SelectResult{Param: sp, Set: set, Wrn: wrn, SelectError: err})
 	}
 	return result
 }
@@ -259,7 +259,7 @@ func (q *hintCheckerQuerier) Selects(ctx context.Context, selectParams []*storag
 	var result []*storage.SelectResult
 	for _, sp := range selectParams {
 		set, wrn, err := q.Select(sp.SortSeries, sp.Hints, sp.Matchers...)
-		result = append(result, &storage.SelectResult{sp, set, wrn, err})
+		result = append(result, &storage.SelectResult{Param: sp, Set: set, Wrn: wrn, SelectError: err})
 	}
 	return result
 }
