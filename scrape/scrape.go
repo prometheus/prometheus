@@ -984,7 +984,7 @@ mainLoop:
 			scrapeErr = appErr
 		}
 		if scrapeErr != nil {
-			scrapeAppender = nil
+			scrapeAppender = sl.appender()
 		}
 		if err := sl.report(scrapeAppender, start, time.Since(start), total, added, seriesAdded, scrapeErr); err != nil {
 			level.Warn(sl.l).Log("msg", "appending scrape report failed", "err", err)
@@ -1294,9 +1294,7 @@ func (sl *scrapeLoop) report(app storage.Appender, start time.Time, duration tim
 	if scrapeErr == nil {
 		health = 1
 	}
-	if app == nil {
-		app = sl.appender()
-	}
+
 	defer func() {
 		if err != nil {
 			app.Rollback()
