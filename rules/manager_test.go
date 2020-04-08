@@ -901,6 +901,8 @@ func TestNotify(t *testing.T) {
 func TestMetricsUpdate(t *testing.T) {
 	files := []string{"fixtures/rules.yaml", "fixtures/rules2.yaml"}
 	metricNames := []string{
+		"prometheus_rule_evaluations_total",
+		"prometheus_rule_evaluation_failures_total",
 		"prometheus_rule_group_interval_seconds",
 		"prometheus_rule_group_last_duration_seconds",
 		"prometheus_rule_group_last_evaluation_timestamp_seconds",
@@ -950,11 +952,11 @@ func TestMetricsUpdate(t *testing.T) {
 	}{
 		{
 			files:   files,
-			metrics: 8,
+			metrics: 12,
 		},
 		{
 			files:   files[:1],
-			metrics: 4,
+			metrics: 6,
 		},
 		{
 			files:   files[:0],
@@ -962,7 +964,7 @@ func TestMetricsUpdate(t *testing.T) {
 		},
 		{
 			files:   files[1:],
-			metrics: 4,
+			metrics: 6,
 		},
 	}
 
