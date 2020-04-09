@@ -453,3 +453,35 @@ func TestLabels_Compare(t *testing.T) {
 		testutil.Equals(t, test.expected, got, "unexpected comparison result for test case %d", i)
 	}
 }
+
+func TestLabels_Has(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected bool
+	}{
+		{
+			input:    "foo",
+			expected: false,
+		},
+		{
+			input:    "aaa",
+			expected: true,
+		},
+	}
+
+	labelsSet := Labels{
+		{
+			Name:  "aaa",
+			Value: "111",
+		},
+		{
+			Name:  "bbb",
+			Value: "222",
+		},
+	}
+
+	for i, test := range tests {
+		got := labelsSet.Has(test.input)
+		testutil.Equals(t, test.expected, got, "unexpected comparison result for test case %d", i)
+	}
+}
