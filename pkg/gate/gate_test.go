@@ -30,8 +30,8 @@ func TestLabels_IsOverload(t *testing.T) {
 	var wg sync.WaitGroup
 
 	for i := 0; i < callCount; i++ {
+		wg.Add(1)
 		go func() {
-			wg.Add(1)
 			defer wg.Done()
 			if gate.IsOverload() {
 				overloadChan <- 1
