@@ -38,7 +38,7 @@ func TestLabels_IsOverload(t *testing.T) {
 				return
 			}
 			if err := gate.Start(context.Background()); err != nil {
-
+				t.Fatal(err)
 			}
 			time.Sleep(2 * time.Second)
 			gate.Done()
