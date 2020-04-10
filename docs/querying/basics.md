@@ -4,17 +4,15 @@ nav_title: Basics
 sort_rank: 1
 ---
 
-# Querying Prometheus
+# Querying basics
 
 Prometheus provides a functional query language called PromQL (Prometheus Query
-Language) that lets the user select and aggregate time series data in real
+Language) that lets you select and aggregate time series data in real
 time. The result of an expression can either be shown as a graph, viewed as
 tabular data in Prometheus's expression browser, or consumed by external
 systems via the [HTTP API](api.md).
 
-## Examples
-
-This document is meant as a reference. For learning, it might be easier to
+> **Note:** This document is meant as a reference. For learning, it might be easier to
 start with a couple of [examples](examples.md).
 
 ## Expression language data types
@@ -27,7 +25,7 @@ evaluate to one of four types:
 * **Scalar** - a simple numeric floating point value
 * **String** - a simple string value; currently unused
 
-Depending on the use-case (e.g. when graphing vs. displaying the output of an
+Depending on the use case (e.g. when graphing vs. displaying the output of an
 expression), only some of these types are legal as the result from a
 user-specified expression. For example, an expression that returns an instant
 vector is the only type that can be directly graphed.
@@ -36,7 +34,7 @@ vector is the only type that can be directly graphed.
 
 ### String literals
 
-Strings may be specified as literals in single quotes, double quotes or
+Strings may be specified as literals in single quotes, double quotes, or
 backticks.
 
 PromQL follows the same [escaping rules as
