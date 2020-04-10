@@ -29,6 +29,7 @@ func TestLabels_IsOverload(t *testing.T) {
 	overloadChan := make(chan int, callCount-maxGoRoutine)
 	var wg sync.WaitGroup
 
+	var mainErr error = nil
 	for i := 0; i < callCount; i++ {
 		wg.Add(1)
 		go func() {
@@ -38,11 +39,14 @@ func TestLabels_IsOverload(t *testing.T) {
 				return
 			}
 			if err := gate.Start(context.Background()); err != nil {
-				t.Fatal(err)
+				mainErr = err
 			}
 			time.Sleep(2 * time.Second)
 			gate.Done()
 		}()
+	}
+	if mainErr != nil {
+		t.Fatal(mainErr)
 	}
 
 	wg.Wait()
