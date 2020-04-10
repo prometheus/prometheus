@@ -29,7 +29,7 @@ func TestLabels_IsOverload(t *testing.T) {
 	overloadChan := make(chan int, callCount-maxGoRoutine)
 	var wg sync.WaitGroup
 
-	var mainErr error = nil
+	var mainErr error
 	for i := 0; i < callCount; i++ {
 		wg.Add(1)
 		go func() {
