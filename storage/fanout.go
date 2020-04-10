@@ -47,7 +47,7 @@ func NewFanout(logger log.Logger, primary Storage, secondaries ...Storage) Stora
 		logger:         logger,
 		primary:        primary,
 		secondaries:    secondaries,
-		remoteReadGate: gate.New(1000),
+		remoteReadGate: gate.New(10),
 	}
 }
 

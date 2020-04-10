@@ -17,14 +17,16 @@ import "context"
 
 // A Gate controls the maximum number of concurrently running and waiting queries.
 type Gate struct {
-	ch chan struct{}
+	ch     chan struct{}
+	length int
 }
 
 // New returns a query gate that limits the number of queries
 // being concurrently executed.
 func New(length int) *Gate {
 	return &Gate{
-		ch: make(chan struct{}, length),
+		ch:     make(chan struct{}, length),
+		length: length,
 	}
 }
 
@@ -45,4 +47,8 @@ func (g *Gate) Done() {
 	default:
 		panic("gate.Done: more operations done than started")
 	}
+}
+
+func (g *Gate) IsOverload() bool {
+	return len(g.ch) == g.length
 }

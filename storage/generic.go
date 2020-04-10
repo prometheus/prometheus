@@ -97,16 +97,14 @@ func (q *querierAdapter) Select(sortSeries bool, hints *SelectHints, matchers ..
 
 func (q *querierAdapter) Selects(ctx context.Context, selectParams []*SelectParam) []*SelectResult {
 	var result []*SelectResult
-	if q.remotely && len(selectParams) > 1 {
-		if q.remoteReadGate != nil {
-			if err := q.remoteReadGate.Start(ctx); err != nil {
-				for _, param := range selectParams {
-					result = append(result, &SelectResult{param, nil, nil, err})
-				}
-				return result
+	if q.remotely && len(selectParams) > 1 && q.remoteReadGate != nil && !q.remoteReadGate.IsOverload() {
+		if err := q.remoteReadGate.Start(ctx); err != nil {
+			for _, param := range selectParams {
+				result = append(result, &SelectResult{param, nil, nil, err})
 			}
-			defer q.remoteReadGate.Done()
+			return result
 		}
+		defer q.remoteReadGate.Done()
 
 		queryResultChan := make(chan *SelectResult)
 		for _, param := range selectParams {
