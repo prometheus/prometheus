@@ -21,7 +21,7 @@ import (
 	"time"
 )
 
-func TestLabels_IsOverload(t *testing.T) {
+func TestIsOverload(t *testing.T) {
 
 	maxGoRoutine := 3
 	gate := New(maxGoRoutine)
