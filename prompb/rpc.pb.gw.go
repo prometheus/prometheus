@@ -116,39 +116,6 @@ func local_request_Admin_DeleteSeries_0(ctx context.Context, marshaler runtime.M
 
 }
 
-var (
-	filter_Remote_RemoteLabelValues_0 = &utilities.DoubleArray{Encoding: map[string]int{}, Base: []int(nil), Check: []int(nil)}
-)
-
-func request_Remote_RemoteLabelValues_0(ctx context.Context, marshaler runtime.Marshaler, client RemoteClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq LabelValuesRequest
-	var metadata runtime.ServerMetadata
-
-	if err := req.ParseForm(); err != nil {
-		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
-	}
-	if err := runtime.PopulateQueryParameters(&protoReq, req.Form, filter_Remote_RemoteLabelValues_0); err != nil {
-		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
-	}
-
-	msg, err := client.RemoteLabelValues(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
-	return msg, metadata, err
-
-}
-
-func local_request_Remote_RemoteLabelValues_0(ctx context.Context, marshaler runtime.Marshaler, server RemoteServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
-	var protoReq LabelValuesRequest
-	var metadata runtime.ServerMetadata
-
-	if err := runtime.PopulateQueryParameters(&protoReq, req.URL.Query(), filter_Remote_RemoteLabelValues_0); err != nil {
-		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
-	}
-
-	msg, err := server.RemoteLabelValues(ctx, &protoReq)
-	return msg, metadata, err
-
-}
-
 // RegisterAdminHandlerServer registers the http handlers for service Admin to "mux".
 // UnaryRPC     :call AdminServer directly.
 // StreamingRPC :currently unsupported pending https://github.com/grpc/grpc-go/issues/906.
@@ -211,34 +178,6 @@ func RegisterAdminHandlerServer(ctx context.Context, mux *runtime.ServeMux, serv
 		}
 
 		forward_Admin_DeleteSeries_0(ctx, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
-	})
-
-	return nil
-}
-
-// RegisterRemoteHandlerServer registers the http handlers for service Remote to "mux".
-// UnaryRPC     :call RemoteServer directly.
-// StreamingRPC :currently unsupported pending https://github.com/grpc/grpc-go/issues/906.
-func RegisterRemoteHandlerServer(ctx context.Context, mux *runtime.ServeMux, server RemoteServer) error {
-
-	mux.Handle("POST", pattern_Remote_RemoteLabelValues_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
-		ctx, cancel := context.WithCancel(req.Context())
-		defer cancel()
-		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		rctx, err := runtime.AnnotateIncomingContext(ctx, mux, req)
-		if err != nil {
-			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
-			return
-		}
-		resp, md, err := local_request_Remote_RemoteLabelValues_0(rctx, inboundMarshaler, server, req, pathParams)
-		ctx = runtime.NewServerMetadataContext(ctx, md)
-		if err != nil {
-			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
-			return
-		}
-
-		forward_Remote_RemoteLabelValues_0(ctx, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
 
 	})
 
@@ -360,73 +299,4 @@ var (
 	forward_Admin_TSDBCleanTombstones_0 = runtime.ForwardResponseMessage
 
 	forward_Admin_DeleteSeries_0 = runtime.ForwardResponseMessage
-)
-
-// RegisterRemoteHandlerFromEndpoint is same as RegisterRemoteHandler but
-// automatically dials to "endpoint" and closes the connection when "ctx" gets done.
-func RegisterRemoteHandlerFromEndpoint(ctx context.Context, mux *runtime.ServeMux, endpoint string, opts []grpc.DialOption) (err error) {
-	conn, err := grpc.Dial(endpoint, opts...)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err != nil {
-			if cerr := conn.Close(); cerr != nil {
-				grpclog.Infof("Failed to close conn to %s: %v", endpoint, cerr)
-			}
-			return
-		}
-		go func() {
-			<-ctx.Done()
-			if cerr := conn.Close(); cerr != nil {
-				grpclog.Infof("Failed to close conn to %s: %v", endpoint, cerr)
-			}
-		}()
-	}()
-
-	return RegisterRemoteHandler(ctx, mux, conn)
-}
-
-// RegisterRemoteHandler registers the http handlers for service Remote to "mux".
-// The handlers forward requests to the grpc endpoint over "conn".
-func RegisterRemoteHandler(ctx context.Context, mux *runtime.ServeMux, conn *grpc.ClientConn) error {
-	return RegisterRemoteHandlerClient(ctx, mux, NewRemoteClient(conn))
-}
-
-// RegisterRemoteHandlerClient registers the http handlers for service Remote
-// to "mux". The handlers forward requests to the grpc endpoint over the given implementation of "RemoteClient".
-// Note: the gRPC framework executes interceptors within the gRPC handler. If the passed in "RemoteClient"
-// doesn't go through the normal gRPC flow (creating a gRPC client etc.) then it will be up to the passed in
-// "RemoteClient" to call the correct interceptors.
-func RegisterRemoteHandlerClient(ctx context.Context, mux *runtime.ServeMux, client RemoteClient) error {
-
-	mux.Handle("POST", pattern_Remote_RemoteLabelValues_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
-		ctx, cancel := context.WithCancel(req.Context())
-		defer cancel()
-		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		rctx, err := runtime.AnnotateContext(ctx, mux, req)
-		if err != nil {
-			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
-			return
-		}
-		resp, md, err := request_Remote_RemoteLabelValues_0(rctx, inboundMarshaler, client, req, pathParams)
-		ctx = runtime.NewServerMetadataContext(ctx, md)
-		if err != nil {
-			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
-			return
-		}
-
-		forward_Remote_RemoteLabelValues_0(ctx, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
-
-	})
-
-	return nil
-}
-
-var (
-	pattern_Remote_RemoteLabelValues_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v2", "remote", "labelvalues"}, "", runtime.AssumeColonVerbOpt(true)))
-)
-
-var (
-	forward_Remote_RemoteLabelValues_0 = runtime.ForwardResponseMessage
 )

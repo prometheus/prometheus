@@ -17,10 +17,12 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -30,9 +32,9 @@ import (
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
-	"google.golang.org/grpc"
 
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/storage"
 )
 
 const maxErrMsgLen = 256
@@ -189,22 +191,69 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 	return resp.Results[0], nil
 }
 
-// LabelValues queries label values from a remote endpoint.
-func (c *Client) LabelValues(ctx context.Context, name string) ([]string, error) {
-	conn, err := grpc.Dial(c.url.Host, grpc.WithInsecure(), grpc.WithBlock())
-	if err != nil {
-		return []string{}, err
-	}
-	defer conn.Close()
+type labelsResponse struct {
+	Data     []string `json:"data,omitempty"`
+	Error    string   `json:"error,omitempty"`
+	Warnings []string `json:"warnings,omitempty"`
+}
 
-	client := prompb.NewRemoteClient(conn)
+// makeLabelsRequest makes the actual request for /label and /labels/{name}/values from the remote client
+func (c *Client) makeLabelsRequest(ctx context.Context, url string) ([]string, storage.Warnings, error) {
+	httpReq, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "unable to create request")
+	}
+	httpReq.Header.Set("User-Agent", userAgent)
 
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
-	res, err := client.RemoteLabelValues(ctx, &prompb.LabelValuesRequest{LabelName: name})
+	httpResp, err := c.client.Do(httpReq.WithContext(ctx))
 	if err != nil {
-		return []string{}, err
+		return nil, nil, errors.Wrap(err, "error sending request")
 	}
-	return res.Values, nil
+	defer func() {
+		io.Copy(ioutil.Discard, httpResp.Body)
+		httpResp.Body.Close()
+	}()
+
+	body, err := ioutil.ReadAll(httpResp.Body)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, fmt.Sprintf("error reading response. HTTP status code: %s", httpResp.Status))
+	}
+
+	if httpResp.StatusCode/100 != 2 {
+		return nil, nil, errors.Errorf("remote server %s returned HTTP status %s: %s", url, httpResp.Status, strings.TrimSpace(string(body)))
+	}
+
+	var resp labelsResponse
+	err = json.Unmarshal(body, &resp)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "unable to unmarshal response body")
+	}
+
+	if resp.Error != "" {
+		return nil, nil, errors.New(resp.Error)
+	}
+
+	var warnings storage.Warnings
+	for _, warning := range resp.Warnings {
+		warnings = append(warnings, errors.New(warning))
+	}
+
+	return resp.Data, warnings, nil
+}
+
+// LabelValues queries label values from a remote endpoint.
+func (c *Client) LabelValues(ctx context.Context, name string) ([]string, storage.Warnings, error) {
+	re := regexp.MustCompile(`read/?$`)
+	url := re.ReplaceAllString(c.url.String(), "label/"+name+"/values")
+	return c.makeLabelsRequest(ctx, url)
+}
+
+// LabelNames queries label names from a remote endpoint.
+func (c *Client) LabelNames(ctx context.Context) ([]string, storage.Warnings, error) {
+	re := regexp.MustCompile(`read/?$`)
+	url := re.ReplaceAllString(c.url.String(), "labels")
+	return c.makeLabelsRequest(ctx, url)
 }

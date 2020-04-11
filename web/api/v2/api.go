@@ -31,11 +31,9 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	pb "github.com/prometheus/prometheus/prompb"
-	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 )
 
@@ -43,19 +41,16 @@ import (
 type API struct {
 	enableAdmin bool
 	db          func() *tsdb.DB
-	Queryable   storage.Queryable
 }
 
 // New returns a new API object.
 func New(
 	db func() *tsdb.DB,
 	enableAdmin bool,
-	Queryable storage.Queryable,
 ) *API {
 	return &API{
 		db:          db,
 		enableAdmin: enableAdmin,
-		Queryable:   Queryable,
 	}
 }
 
@@ -66,7 +61,6 @@ func (api *API) RegisterGRPC(srv *grpc.Server) {
 	} else {
 		pb.RegisterAdminServer(srv, &AdminDisabled{})
 	}
-	pb.RegisterRemoteServer(srv, NewRemote(api.Queryable))
 }
 
 // HTTPHandler returns an HTTP handler for a REST API gateway to the given grpc address.
@@ -83,11 +77,6 @@ func (api *API) HTTPHandler(ctx context.Context, grpcAddr string) (http.Handler,
 	}
 
 	err := pb.RegisterAdminHandlerFromEndpoint(ctx, mux, grpcAddr, opts)
-	if err != nil {
-		return nil, err
-	}
-
-	err = pb.RegisterAdminHandlerFromEndpoint(ctx, mux, grpcAddr, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -231,36 +220,4 @@ func (s *Admin) DeleteSeries(_ context.Context, r *pb.SeriesDeleteRequest) (*pb.
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	return &pb.SeriesDeleteResponse{}, nil
-}
-
-// Admin provides access to information from remote reading sources
-type Remote struct {
-	Queryable storage.Queryable
-}
-
-// NewRemote returns a Remote server.
-func NewRemote(Queryable storage.Queryable) *Remote {
-	return &Remote{
-		Queryable: Queryable,
-	}
-}
-
-// RemoteLabelValues queries label values for a given label name
-func (r *Remote) RemoteLabelValues(ctx context.Context, req *pb.LabelValuesRequest) (*pb.LabelValuesResponse, error) {
-	if !model.LabelNameRE.MatchString(req.LabelName) {
-		return nil, errors.Errorf("invalid label name: %q", req.LabelName)
-	}
-	q, err := r.Queryable.Querier(ctx, math.MinInt64, math.MaxInt64)
-	if err != nil {
-		return nil, err
-	}
-
-	defer q.Close()
-
-	vals, _, err := q.LabelValues(req.LabelName)
-	if err != nil {
-		return nil, err
-	}
-
-	return &pb.LabelValuesResponse{Values: vals}, nil
 }

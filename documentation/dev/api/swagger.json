@@ -89,28 +89,6 @@
           "Admin"
         ]
       }
-    },
-    "/v2/remote/labelvalues": {
-      "post": {
-        "operationId": "RemoteLabelValues",
-        "responses": {
-          "200": {
-            "description": "A successful response.",
-            "schema": {
-              "$ref": "#/definitions/prometheusLabelValuesResponse"
-            }
-          },
-          "default": {
-            "description": "An unexpected error response",
-            "schema": {
-              "$ref": "#/definitions/runtimeError"
-            }
-          }
-        },
-        "tags": [
-          "Remote"
-        ]
-      }
     }
   },
   "definitions": {
@@ -138,17 +116,6 @@
         "NRE"
       ],
       "default": "EQ"
-    },
-    "prometheusLabelValuesResponse": {
-      "type": "object",
-      "properties": {
-        "values": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        }
-      }
     },
     "prometheusSeriesDeleteRequest": {
       "type": "object",
