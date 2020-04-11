@@ -1265,7 +1265,7 @@ func (api *API) remoteReadQuery(ctx context.Context, query *prompb.Query, extern
 	}
 	defer func() {
 		if err := querier.Close(); err != nil {
-			level.Warn(api.logger).Log("msg", "error on querier close", "err", err.Error())
+			level.Warn(api.logger).Log("msg", "Error on querier close", "err", err.Error())
 		}
 	}()
 

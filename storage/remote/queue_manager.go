@@ -318,7 +318,7 @@ outer:
 			t.droppedSamplesTotal.Inc()
 			t.samplesDropped.incr(1)
 			if _, ok := t.droppedSeries[s.Ref]; !ok {
-				level.Info(t.logger).Log("msg", "dropped sample for series that was not explicitly dropped via relabelling", "ref", s.Ref)
+				level.Info(t.logger).Log("msg", "Dropped sample for series that was not explicitly dropped via relabelling", "ref", s.Ref)
 			}
 			t.seriesMtx.Unlock()
 			continue
@@ -881,7 +881,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 			return err
 		}
 		s.qm.retriedSamplesTotal.Add(float64(len(samples)))
-		level.Debug(s.qm.logger).Log("msg", "failed to send batch, retrying", "err", err)
+		level.Debug(s.qm.logger).Log("msg", "Failed to send batch, retrying", "err", err)
 
 		time.Sleep(time.Duration(backoff))
 		backoff = backoff * 2

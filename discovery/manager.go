@@ -239,7 +239,7 @@ func (m *Manager) updater(ctx context.Context, p *provider, updates chan []*targ
 		case tgs, ok := <-updates:
 			receivedUpdates.WithLabelValues(m.name).Inc()
 			if !ok {
-				level.Debug(m.logger).Log("msg", "discoverer channel closed", "provider", p.name)
+				level.Debug(m.logger).Log("msg", "Discoverer channel closed", "provider", p.name)
 				return
 			}
 
@@ -271,7 +271,7 @@ func (m *Manager) sender() {
 				case m.syncCh <- m.allGroups():
 				default:
 					delayedUpdates.WithLabelValues(m.name).Inc()
-					level.Debug(m.logger).Log("msg", "discovery receiver's channel was full so will retry the next cycle")
+					level.Debug(m.logger).Log("msg", "Discovery receiver's channel was full so will retry the next cycle")
 					select {
 					case m.triggerSend <- struct{}{}:
 					default:

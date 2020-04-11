@@ -107,7 +107,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 	// external labels change.
 	externalLabelUnchanged := externalLabelHash == rws.externalLabelHash
 	if configHash == rws.configHash && externalLabelUnchanged {
-		level.Debug(rws.logger).Log("msg", "remote write config has not changed, no need to restart QueueManagers")
+		level.Debug(rws.logger).Log("msg", "Remote write config has not changed, no need to restart QueueManagers")
 		return nil
 	}
 

@@ -57,7 +57,7 @@ func repairBadIndexVersion(logger log.Logger, dir string) error {
 		}
 		if meta.Version == metaVersion1 {
 			level.Info(logger).Log(
-				"msg", "found healthy block",
+				"msg", "Found healthy block",
 				"mint", meta.MinTime,
 				"maxt", meta.MaxTime,
 				"ulid", meta.ULID,
@@ -65,7 +65,7 @@ func repairBadIndexVersion(logger log.Logger, dir string) error {
 			continue
 		}
 		level.Info(logger).Log(
-			"msg", "fixing broken block",
+			"msg", "Fixing broken block",
 			"mint", meta.MinTime,
 			"maxt", meta.MaxTime,
 			"ulid", meta.ULID,
