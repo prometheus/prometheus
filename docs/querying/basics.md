@@ -58,21 +58,20 @@ Scalar float values can be literally written as numbers of the form
 
     -2.43
 
-## Time series Selectors
+## Time series selectors
 
 ### Instant vector selectors
 
 Instant vector selectors allow the selection of a set of time series and a
-single sample value for each at a given timestamp (instant): in the simplest
+single sample value for each at a given timestamp (instant). In the simplest
 form, only a metric name is specified. This results in an instant vector
 containing elements for all time series that have this metric name.
 
-This example selects all time series that have the `http_requests_total` metric
-name:
+This example selects all time series that have the `http_requests_total` metric name:
 
     http_requests_total
 
-It is possible to filter these time series further by appending a comma separated list of label
+You can filter time series further by appending a comma separated list of label
 matchers in curly braces (`{}`).
 
 This example selects only those time series with the `http_requests_total`
@@ -81,8 +80,8 @@ metric name that also have the `job` label set to `prometheus` and their
 
     http_requests_total{job="prometheus",group="canary"}
 
-It is also possible to negatively match a label value, or to match label values
-against regular expressions. The following label matching operators exist:
+You can also negatively match a label value, or match label values
+against regular expressions with the following label-matching operators:
 
 * `=`: Select labels that are exactly equal to the provided string.
 * `!=`: Select labels that are not equal to the provided string.
@@ -90,7 +89,7 @@ against regular expressions. The following label matching operators exist:
 * `!~`: Select labels that do not regex-match the provided string.
 
 For example, this selects all `http_requests_total` time series for `staging`,
-`testing`, and `development` environments and HTTP methods other than `GET`.
+`testing`, and `development` environments and HTTP methods other than `GET`:
 
     http_requests_total{environment=~"staging|testing|development",method!="GET"}
 
@@ -104,19 +103,19 @@ that does not match the empty string. The following expression is illegal:
     {job=~".*"} # Bad!
 
 In contrast, these expressions are valid as they both have a selector that does not
-match empty label values.
+match empty label values:
 
     {job=~".+"}              # Good!
     {job=~".*",method="get"} # Good!
 
 Label matchers can also be applied to metric names by matching against the internal
 `__name__` label. For example, the expression `http_requests_total` is equivalent to
-`{__name__="http_requests_total"}`. Matchers other than `=` (`!=`, `=~`, `!~`) may also be used.
+`{__name__="http_requests_total"}`. Matchers other than `=` (`!=`, `=~`, `!~`) can also be used.
 The following expression selects all metrics that have a name starting with `job:`:
 
     {__name__=~"job:.*"}
 
-The metric name must not be one of the keywords `bool`, `on`, `ignoring`, `group_left` and `group_right`. The following expression is illegal:
+The metric name must not be one of the keywords `bool`, `on`, `ignoring`, `group_left`, and `group_right`. The following expression is illegal:
 
     on{} # Bad!
 
@@ -127,7 +126,7 @@ A workaround for this restriction is to use the `__name__` label:
 All regular expressions in Prometheus use [RE2
 syntax](https://github.com/google/re2/wiki/Syntax).
 
-### Range Vector Selectors
+### Range vector selectors
 
 Range vector literals work like instant vector literals, except that they
 select a range of samples back from the current instant. Syntactically, a range
@@ -145,7 +144,7 @@ following units:
 * `w` - weeks
 * `y` - years
 
-In this example, we select all the values we have recorded within the last 5
+In this example, we select all the values we have recorded within the last five
 minutes for all time series that have the metric name `http_requests_total` and
 a `job` label set to `prometheus`:
 
@@ -157,7 +156,7 @@ The `offset` modifier allows changing the time offset for individual
 instant and range vectors in a query.
 
 For example, the following expression returns the value of
-`http_requests_total` 5 minutes in the past relative to the current
+`http_requests_total` five minutes in the past relative to the current
 query evaluation time:
 
     http_requests_total offset 5m
@@ -171,7 +170,7 @@ While the following would be *incorrect*:
 
     sum(http_requests_total{method="GET"}) offset 5m // INVALID.
 
-The same works for range vectors. This returns the 5-minute rate that
+The same works for range vectors. This returns the five-minute rate that
 `http_requests_total` had a week ago:
 
     rate(http_requests_total[5m] offset 1w)
@@ -200,7 +199,9 @@ PromQL supports line comments that start with `#`. Example:
 
         # This is a comment
 
-## Gotchas
+## Troubleshooting
+
+The following are common difficulties you might encounter while querying.
 
 ### Staleness
 
@@ -220,10 +221,10 @@ If a query is evaluated at a sampling timestamp after a time series is marked
 stale, then no value is returned for that time series. If new samples are
 subsequently ingested for that time series, they will be returned as normal.
 
-If no sample is found (by default) 5 minutes before a sampling timestamp,
+If no sample is found (by default) five minutes before a sampling timestamp,
 no value is returned for that time series at this point in time. This
 effectively means that time series "disappear" from graphs at times where their
-latest collected sample is older than 5 minutes or after they are marked stale.
+latest collected sample is older than five minutes or after they are marked stale.
 
 Staleness will not be marked for time series that have timestamps included in
 their scrapes. Only the 5 minute threshold will be applied in that case.
@@ -233,8 +234,8 @@ their scrapes. Only the 5 minute threshold will be applied in that case.
 If a query needs to operate on a very large amount of data, graphing it might
 time out or overload the server or browser. Thus, when constructing queries
 over unknown data, always start building the query in the tabular view of
-Prometheus's expression browser until the result set seems reasonable
-(hundreds, not thousands, of time series at most).  Only when you have filtered
+the Prometheus expression browser until the result set seems reasonable
+(hundreds, not thousands, of time series at most). Only when you have filtered
 or aggregated your data sufficiently, switch to graph mode. If the expression
 still takes too long to graph ad-hoc, pre-record it via a [recording
 rule](../configuration/recording_rules.md#recording-rules).
