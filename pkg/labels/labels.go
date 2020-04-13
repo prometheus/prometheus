@@ -173,6 +173,7 @@ func (ls Labels) HashWithoutLabels(b []byte, names ...string) (uint64, []byte) {
 }
 
 // WithLabels returns a new labels.Labels from ls that only contains labels matching names.
+// 'names' have to be sorted in ascending order.
 func (ls Labels) WithLabels(names ...string) Labels {
 	var ret Labels
 	i, j := 0, 0
@@ -190,6 +191,8 @@ func (ls Labels) WithLabels(names ...string) Labels {
 	return ret
 }
 
+// WithLabels returns a new labels.Labels from ls that contains labels not matching names.
+// 'names' have to be sorted in ascending order.
 func (ls Labels) WithoutLabels(names ...string) Labels {
 	var ret Labels
 	j := 0

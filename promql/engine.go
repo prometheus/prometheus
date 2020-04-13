@@ -1726,7 +1726,9 @@ func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.V
 		enh.resultMetric = make(map[string]labels.Labels, len(enh.out))
 	}
 
-	if ret, ok := enh.resultMetric[lhs.String()+rhs.String()]; ok {
+	key := lhs.String() + rhs.String()
+
+	if ret, ok := enh.resultMetric[key]; ok {
 		return ret
 	}
 
@@ -1761,7 +1763,7 @@ func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.V
 	}
 
 	ret := lb.Labels()
-	enh.resultMetric[lhs.String()+rhs.String()] = ret
+	enh.resultMetric[key] = ret
 	return ret
 }
 
