@@ -825,9 +825,9 @@ type EvalNodeHelper struct {
 	// dropMetricName and label_*.
 	dmn map[uint64]labels.Labels
 	// signatureFunc.
-	sigf map[uint64]uint64
+	sigf map[string]string
 	// funcHistogramQuantile.
-	signatureToMetricWithBuckets map[uint64]*metricWithBuckets
+	signatureToMetricWithBuckets map[string]*metricWithBuckets
 	// label_replace.
 	regex *regexp.Regexp
 
@@ -852,20 +852,19 @@ func (enh *EvalNodeHelper) dropMetricName(l labels.Labels) labels.Labels {
 	return ret
 }
 
-// signatureFunc is a cached version of signatureFunc.
-func (enh *EvalNodeHelper) signatureFunc(on bool, names ...string) func(labels.Labels) uint64 {
+// signatureFunc is a cached version of signatureFuncString.
+func (enh *EvalNodeHelper) signatureFunc(on bool, names ...string) func(labels.Labels) string {
 	if enh.sigf == nil {
-		enh.sigf = make(map[uint64]uint64, len(enh.out))
+		enh.sigf = make(map[string]string, len(enh.out))
 	}
-	f := signatureFunc(on, names...)
-	return func(l labels.Labels) uint64 {
-		h := l.Hash()
-		ret, ok := enh.sigf[h]
+	f := signatureFuncString(on, names...)
+	return func(l labels.Labels) string {
+		ret, ok := enh.sigf[l.String()]
 		if ok {
 			return ret
 		}
 		ret = f(l)
-		enh.sigf[h] = ret
+		enh.sigf[l.String()] = ret
 		return ret
 	}
 }
@@ -1521,7 +1520,7 @@ func (ev *evaluator) VectorAnd(lhs, rhs Vector, matching *parser.VectorMatching,
 	sigf := enh.signatureFunc(matching.On, matching.MatchingLabels...)
 
 	// The set of signatures for the right-hand side Vector.
-	rightSigs := map[uint64]struct{}{}
+	rightSigs := map[string]struct{}{}
 	// Add all rhs samples to a map so we can easily find matches later.
 	for _, rs := range rhs {
 		rightSigs[sigf(rs.Metric)] = struct{}{}
@@ -1542,7 +1541,7 @@ func (ev *evaluator) VectorOr(lhs, rhs Vector, matching *parser.VectorMatching, 
 	}
 	sigf := enh.signatureFunc(matching.On, matching.MatchingLabels...)
 
-	leftSigs := map[uint64]struct{}{}
+	leftSigs := map[string]struct{}{}
 	// Add everything from the left-hand-side Vector.
 	for _, ls := range lhs {
 		leftSigs[sigf(ls.Metric)] = struct{}{}
@@ -1563,7 +1562,7 @@ func (ev *evaluator) VectorUnless(lhs, rhs Vector, matching *parser.VectorMatchi
 	}
 	sigf := enh.signatureFunc(matching.On, matching.MatchingLabels...)
 
-	rightSigs := map[uint64]struct{}{}
+	rightSigs := map[string]struct{}{}
 	for _, rs := range rhs {
 		rightSigs[sigf(rs.Metric)] = struct{}{}
 	}
@@ -1581,7 +1580,7 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 	if matching.Card == parser.CardManyToMany {
 		panic("many-to-many only allowed for set operators")
 	}
-	sigf := signatureFuncString(matching.On, matching.MatchingLabels...)
+	sigf := enh.signatureFunc(matching.On, matching.MatchingLabels...)
 
 	// The control flow below handles one-to-one or many-to-one matching.
 	// For one-to-many, swap sidedness and account for the swap when calculating
@@ -1683,22 +1682,6 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 		})
 	}
 	return enh.out
-}
-
-// signatureFunc returns a function that calculates the signature for a metric
-// ignoring the provided labels. If on, then the given labels are only used instead.
-func signatureFunc(on bool, names ...string) func(labels.Labels) uint64 {
-	sort.Strings(names)
-	if on {
-		return func(lset labels.Labels) uint64 {
-			h, _ := lset.HashForLabels(make([]byte, 0, 1024), names...)
-			return h
-		}
-	}
-	return func(lset labels.Labels) uint64 {
-		h, _ := lset.HashWithoutLabels(make([]byte, 0, 1024), names...)
-		return h
-	}
 }
 
 func signatureFuncString(on bool, names ...string) func(labels.Labels) string {
