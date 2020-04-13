@@ -234,8 +234,8 @@ func TestIndexRW_Postings(t *testing.T) {
 		return d.Err()
 	}))
 	testutil.Equals(t, map[string][]string{
-		"a": []string{"1"},
-		"b": []string{"1", "2", "3", "4"},
+		"a": {"1"},
+		"b": {"1", "2", "3", "4"},
 	}, labelIndices)
 
 	testutil.Ok(t, ir.Close())
