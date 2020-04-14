@@ -199,11 +199,7 @@ PromQL supports line comments that start with `#`. Example:
 
         # This is a comment
 
-## Troubleshooting
-
-The following are common difficulties you might encounter while querying.
-
-### Staleness
+## Staleness
 
 When queries are run, timestamps at which to sample data are selected
 independently of the actual present time series data. This is mainly to support
@@ -213,8 +209,8 @@ Prometheus needs to assign a value at those timestamps for each relevant time
 series. It does so by simply taking the newest sample before this timestamp.
 
 If a target scrape or rule evaluation no longer returns a sample for a time
-series that was previously present, that time series will be marked as stale.
-If a target is removed, its previously returned time series will be marked as
+series that was previously present, then that time series is marked as stale.
+If a target is removed, its previously returned time series is marked as
 stale soon afterwards.
 
 If a query is evaluated at a sampling timestamp after a time series is marked
@@ -227,9 +223,9 @@ effectively means that time series "disappear" from graphs at times where their
 latest collected sample is older than five minutes or after they are marked stale.
 
 Staleness will not be marked for time series that have timestamps included in
-their scrapes. Only the 5 minute threshold will be applied in that case.
+their scrapes. Only the five-minute threshold applies in that case.
 
-### Avoiding slow queries and overloads
+## Avoiding slow queries and overloads
 
 If a query needs to operate on a very large amount of data, graphing it might
 time out or overload the server or browser. Thus, when constructing queries
@@ -243,7 +239,7 @@ rule](../configuration/recording_rules.md#recording-rules).
 This is especially relevant for Prometheus's query language, where a bare
 metric name selector like `api_http_requests_total` could expand to thousands
 of time series with different labels. Also keep in mind that expressions which
-aggregate over many time series will generate load on the server even if the
+aggregate over many time series generate load on the server even if the
 output is only a small number of time series. This is similar to how it would
 be slow to sum all values of a column in a relational database, even if the
 output value is only a single number.
