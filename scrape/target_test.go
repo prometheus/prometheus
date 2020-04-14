@@ -257,7 +257,6 @@ func TestNewHTTPClientCert(t *testing.T) {
 	tlsConfig := newTLSConfig("server", t)
 	tlsConfig.ClientAuth = tls.RequireAndVerifyClientCert
 	tlsConfig.ClientCAs = tlsConfig.RootCAs
-	tlsConfig.BuildNameToCertificate()
 	server.TLS = tlsConfig
 	server.StartTLS()
 	defer server.Close()
@@ -354,7 +353,6 @@ func newTLSConfig(certName string, t *testing.T) *tls.Config {
 		t.Errorf("Unable to use specified server cert (%s) & key (%v): %s", certPath, keyPath, err)
 	}
 	tlsConfig.Certificates = []tls.Certificate{cert}
-	tlsConfig.BuildNameToCertificate()
 	return tlsConfig
 }
 

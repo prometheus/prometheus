@@ -460,7 +460,7 @@ func printBlocks(blocks []tsdb.BlockReader, humanReadable *bool) {
 
 func getFormatedTime(timestamp int64, humanReadable *bool) string {
 	if *humanReadable {
-		return time.Unix(timestamp/1000, 0).String()
+		return time.Unix(timestamp/1000, 0).UTC().String()
 	}
 	return strconv.FormatInt(timestamp, 10)
 }
@@ -471,7 +471,7 @@ func analyzeBlock(b tsdb.BlockReader, limit int) error {
 	// Presume 1ms resolution that Prometheus uses.
 	fmt.Printf("Duration: %s\n", (time.Duration(meta.MaxTime-meta.MinTime) * 1e6).String())
 	fmt.Printf("Series: %d\n", meta.Stats.NumSeries)
-	ir, err := b.Index(math.MinInt64, math.MaxInt64)
+	ir, err := b.Index()
 	if err != nil {
 		return err
 	}

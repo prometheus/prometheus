@@ -16,7 +16,6 @@ package tsdb
 import (
 	"fmt"
 	"io/ioutil"
-	"math"
 	"os"
 	"strconv"
 	"testing"
@@ -59,7 +58,7 @@ func BenchmarkPostingsForMatchers(b *testing.B) {
 	}
 	testutil.Ok(b, app.Commit())
 
-	ir, err := h.Index(math.MinInt64, math.MaxInt64)
+	ir, err := h.Index()
 	testutil.Ok(b, err)
 	b.Run("Head", func(b *testing.B) {
 		benchmarkPostingsForMatchers(b, ir)
@@ -77,7 +76,7 @@ func BenchmarkPostingsForMatchers(b *testing.B) {
 	defer func() {
 		testutil.Ok(b, block.Close())
 	}()
-	ir, err = block.Index(math.MinInt64, math.MaxInt64)
+	ir, err = block.Index()
 	testutil.Ok(b, err)
 	defer ir.Close()
 	b.Run("Block", func(b *testing.B) {

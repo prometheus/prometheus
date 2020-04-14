@@ -609,7 +609,7 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64, refSeries map[
 	}
 
 	if unknownRefs > 0 {
-		level.Warn(h.logger).Log("msg", "unknown series references", "count", unknownRefs)
+		level.Warn(h.logger).Log("msg", "Unknown series references", "count", unknownRefs)
 	}
 	return nil
 }
@@ -626,10 +626,10 @@ func (h *Head) Init(minValidTime int64) error {
 		return nil
 	}
 
-	level.Info(h.logger).Log("msg", "replaying WAL, this may take awhile")
-
 	refSeries := map[uint64]*memSeries{}
 	multiRef := map[uint64]uint64{}
+
+	level.Info(h.logger).Log("msg", "Replaying WAL, this may take awhile")
 
 	start := time.Now()
 	level.Info(h.logger).Log("msg", "creating series from WAL")
@@ -814,7 +814,7 @@ func (h *Head) executeOnWALSegmentReader(f func(*wal.Reader) error) error {
 		sr := wal.NewSegmentBufReader(s)
 		ferr := f(wal.NewReader(sr))
 		if err := sr.Close(); err != nil {
-			level.Warn(h.logger).Log("msg", "error while closing the wal segments reader", "err", err)
+			level.Warn(h.logger).Log("msg", "Error while closing the wal segments reader", "err", err)
 		}
 		if ferr != nil {
 			return ferr
@@ -857,7 +857,7 @@ func (h *Head) Truncate(mint int64) (err error) {
 	start := time.Now()
 
 	h.gc()
-	level.Info(h.logger).Log("msg", "head GC completed", "duration", time.Since(start))
+	level.Info(h.logger).Log("msg", "Head GC completed", "duration", time.Since(start))
 	h.metrics.gcDuration.Observe(time.Since(start).Seconds())
 
 	// Truncate the chunk m-mapper.
@@ -884,9 +884,11 @@ func (h *Head) Truncate(mint int64) (err error) {
 	if last < 0 {
 		return nil // no segments yet.
 	}
-	// The lower third of segments should contain mostly obsolete samples.
-	// If we have less than three segments, it's not worth checkpointing yet.
-	last = first + (last-first)/3
+	// The lower two thirds of segments should contain mostly obsolete samples.
+	// If we have less than two segments, it's not worth checkpointing yet.
+	// With the default 2h blocks, this will keeping up to around 3h worth
+	// of WAL segments.
+	last = first + (last-first)*2/3
 	if last <= first {
 		return nil
 	}
@@ -966,15 +968,8 @@ func NewRangeHead(head *Head, mint, maxt int64) *RangeHead {
 	}
 }
 
-func (h *RangeHead) Index(mint, maxt int64) (IndexReader, error) {
-	// rangeHead guarantees that the series returned are within its range.
-	if mint < h.mint {
-		mint = h.mint
-	}
-	if maxt > h.maxt {
-		maxt = h.maxt
-	}
-	return h.head.indexRange(mint, maxt), nil
+func (h *RangeHead) Index() (IndexReader, error) {
+	return h.head.indexRange(h.mint, h.maxt), nil
 }
 
 func (h *RangeHead) Chunks() (ChunkReader, error) {
@@ -1400,8 +1395,8 @@ func (h *Head) Tombstones() (tombstones.Reader, error) {
 }
 
 // Index returns an IndexReader against the block.
-func (h *Head) Index(mint, maxt int64) (IndexReader, error) {
-	return h.indexRange(mint, maxt), nil
+func (h *Head) Index() (IndexReader, error) {
+	return h.indexRange(math.MinInt64, math.MaxInt64), nil
 }
 
 func (h *Head) indexRange(mint, maxt int64) *headIndexReader {
@@ -1606,37 +1601,9 @@ func (h *headIndexReader) LabelNames() ([]string, error) {
 
 // Postings returns the postings list iterator for the label pairs.
 func (h *headIndexReader) Postings(name string, values ...string) (index.Postings, error) {
-	fullRange := h.mint <= h.head.MinTime() && h.maxt >= h.head.MaxTime()
 	res := make([]index.Postings, 0, len(values))
 	for _, value := range values {
-		p := h.head.postings.Get(name, value)
-		if fullRange {
-			// The head timerange covers the full index reader timerange.
-			// All the series can the be appended without filtering.
-			res = append(res, p)
-			continue
-		}
-
-		// Filter out series not in the time range, to avoid
-		// later on building up all the chunk metadata just to
-		// discard it.
-		filtered := []uint64{}
-		for p.Next() {
-			s := h.head.series.getByID(p.At())
-			if s == nil {
-				level.Debug(h.head.logger).Log("msg", "looked up series not found")
-				continue
-			}
-			s.RLock()
-			if s.minTime() <= h.maxt && s.maxTime() >= h.mint {
-				filtered = append(filtered, p.At())
-			}
-			s.RUnlock()
-		}
-		if p.Err() != nil {
-			return nil, p.Err()
-		}
-		res = append(res, index.NewListPostings(filtered))
+		res = append(res, h.head.postings.Get(name, value))
 	}
 	return index.Merge(res...), nil
 }
@@ -1648,7 +1615,7 @@ func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {
 	for p.Next() {
 		s := h.head.series.getByID(p.At())
 		if s == nil {
-			level.Debug(h.head.logger).Log("msg", "looked up series not found")
+			level.Debug(h.head.logger).Log("msg", "Looked up series not found")
 		} else {
 			series = append(series, s)
 		}

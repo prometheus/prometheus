@@ -44,6 +44,10 @@ var (
 	})
 )
 
+func registerFederationMetrics(r prometheus.Registerer) {
+	r.MustRegister(federationWarnings, federationErrors)
+}
+
 func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 	h.mtx.RLock()
 	defer h.mtx.RUnlock()
@@ -71,7 +75,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 	)
 	w.Header().Set("Content-Type", string(format))
 
-	q, err := h.storage.Querier(req.Context(), mint, maxt)
+	q, err := h.localStorage.Querier(req.Context(), mint, maxt)
 	if err != nil {
 		federationErrors.Inc()
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -87,7 +91,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 	for _, mset := range matcherSets {
 		s, wrns, err := q.Select(false, hints, mset...)
 		if wrns != nil {
-			level.Debug(h.logger).Log("msg", "federation select returned warnings", "warnings", wrns)
+			level.Debug(h.logger).Log("msg", "Federation select returned warnings", "warnings", wrns)
 			federationWarnings.Add(float64(len(wrns)))
 		}
 		if err != nil {
@@ -98,7 +102,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 		sets = append(sets, s)
 	}
 
-	set := storage.NewMergeSeriesSet(sets, nil)
+	set := storage.NewMergeSeriesSet(sets, storage.ChainedSeriesMerge)
 	it := storage.NewBuffer(int64(h.lookbackDelta / 1e6))
 	for set.Next() {
 		s := set.At()
@@ -205,10 +209,10 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 		// Attach global labels if they do not exist yet.
 		for _, ln := range externalLabelNames {
 			lv := externalLabels[ln]
-			if _, ok := globalUsed[string(ln)]; !ok {
+			if _, ok := globalUsed[ln]; !ok {
 				protMetric.Label = append(protMetric.Label, &dto.LabelPair{
-					Name:  proto.String(string(ln)),
-					Value: proto.String(string(lv)),
+					Name:  proto.String(ln),
+					Value: proto.String(lv),
 				})
 			}
 		}

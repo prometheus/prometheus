@@ -1014,6 +1014,48 @@ func TestScrapeLoopAppend(t *testing.T) {
 	}
 }
 
+func TestScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T) {
+	// collectResultAppender's AddFast always returns ErrNotFound if we don't give it a next.
+	app := &collectResultAppender{}
+
+	sl := newScrapeLoop(context.Background(),
+		nil, nil, nil,
+		nopMutator,
+		nopMutator,
+		func() storage.Appender { return app },
+		nil,
+		0,
+		true,
+	)
+
+	fakeRef := uint64(1)
+	expValue := float64(1)
+	metric := `metric{n="1"} 1`
+	p := textparse.New([]byte(metric), "")
+
+	var lset labels.Labels
+	p.Next()
+	mets := p.Metric(&lset)
+	hash := lset.Hash()
+
+	// Create a fake entry in the cache
+	sl.cache.addRef(mets, fakeRef, lset, hash)
+	now := time.Now()
+
+	_, _, _, err := sl.append([]byte(metric), "", now)
+	testutil.Ok(t, err)
+
+	expected := []sample{
+		{
+			metric: lset,
+			t:      timestamp.FromTime(now),
+			v:      expValue,
+		},
+	}
+
+	testutil.Equals(t, expected, app.result)
+}
+
 func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 	resApp := &collectResultAppender{}
 	app := &limitAppender{Appender: resApp, limit: 1}

@@ -1,4 +1,8 @@
-## 2.17.0-rc.4 / 2020-03-21
+## 2.17.1 / 2020-03-26
+
+* [BUGFIX] TSDB: Fix query performance regression that increased memory and CPU usage #7051
+
+## 2.17.0 / 2020-03-24
 
 This release implements isolation in TSDB. API queries and recording rules are
 guaranteed to only see full scrapes and full recording rules. This comes with a

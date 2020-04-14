@@ -234,7 +234,7 @@ func createIdxChkReaders(t *testing.T, tc []seriesSamples) (IndexReader, ChunkRe
 				app.Append(smpl.t, smpl.v)
 			}
 			chkReader[chunkRef] = chunk
-			chunkRef += 1
+			chunkRef++
 		}
 
 		ls := labels.FromMap(s.lset)
@@ -2142,7 +2142,7 @@ func TestPostingsForMatchers(t *testing.T) {
 		},
 	}
 
-	ir, err := h.Index(math.MinInt64, math.MaxInt64)
+	ir, err := h.Index()
 	testutil.Ok(t, err)
 
 	for _, c := range cases {

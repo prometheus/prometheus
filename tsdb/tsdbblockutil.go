@@ -23,7 +23,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 )
 
-var InvalidTimesError = fmt.Errorf("max time is lesser than min time")
+var ErrInvalidTimes = fmt.Errorf("max time is lesser than min time")
 
 type MetricSample struct {
 	TimestampMs int64
@@ -59,7 +59,7 @@ func CreateBlock(samples []*MetricSample, dir string, mint, maxt int64, logger l
 		chunkRange = DefaultBlockDuration
 	}
 	if chunkRange < 0 {
-		return "", InvalidTimesError
+		return "", ErrInvalidTimes
 	}
 	chunkDir := filepath.Join(dir, "chunks_tmp")
 	defer func() {

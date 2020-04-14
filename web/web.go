@@ -139,6 +139,7 @@ func newMetrics(r prometheus.Registerer) *metrics {
 
 	if r != nil {
 		r.MustRegister(m.requestCounter, m.requestDuration, m.responseSize)
+		registerFederationMetrics(r)
 	}
 	return m
 }
@@ -179,6 +180,7 @@ type Handler struct {
 	context       context.Context
 	tsdb          func() *tsdb.DB
 	storage       storage.Storage
+	localStorage  storage.Storage
 	notifier      *notifier.Manager
 
 	apiV1 *api_v1.API
@@ -272,7 +274,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		reloadCh:    make(chan chan error),
 		options:     o,
 		versionInfo: o.Version,
-		birth:       time.Now(),
+		birth:       time.Now().UTC(),
 		cwd:         cwd,
 		flagsMap:    o.Flags,
 
@@ -283,6 +285,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		lookbackDelta: o.LookbackDelta,
 		tsdb:          o.TSDB,
 		storage:       o.Storage,
+		localStorage:  o.TSDB(),
 		notifier:      o.Notifier,
 
 		now: model.Now,
@@ -553,7 +556,7 @@ func (h *Handler) Run(ctx context.Context) error {
 	apiPath := "/api"
 	if h.options.RoutePrefix != "/" {
 		apiPath = h.options.RoutePrefix + apiPath
-		level.Info(h.logger).Log("msg", "router prefix", "prefix", h.options.RoutePrefix)
+		level.Info(h.logger).Log("msg", "Router prefix", "prefix", h.options.RoutePrefix)
 	}
 	av1 := route.New().
 		WithInstrumentation(h.metrics.instrumentHandlerWithPrefix("/api/v1")).
@@ -780,7 +783,7 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 		case "prometheus_config_last_reload_successful":
 			status.ReloadConfigSuccess = toFloat64(mF) != 0
 		case "prometheus_config_last_reload_success_timestamp_seconds":
-			status.LastConfigTime = time.Unix(int64(toFloat64(mF)), 0)
+			status.LastConfigTime = time.Unix(int64(toFloat64(mF)), 0).UTC()
 		}
 	}
 	db := h.tsdb()
@@ -829,7 +832,7 @@ func (h *Handler) runtimeInfo() (api_v1.RuntimeInfo, error) {
 		case "prometheus_config_last_reload_successful":
 			status.ReloadConfigSuccess = toFloat64(mF) != 0
 		case "prometheus_config_last_reload_success_timestamp_seconds":
-			status.LastConfigTime = time.Unix(int64(toFloat64(mF)), 0)
+			status.LastConfigTime = time.Unix(int64(toFloat64(mF)), 0).UTC()
 		}
 	}
 	return status, nil

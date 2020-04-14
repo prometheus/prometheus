@@ -399,9 +399,8 @@ func (e Expressions) PositionRange() PositionRange {
 			Start: -1,
 			End:   -1,
 		}
-	} else {
-		return mergeRanges(e[0], e[len(e)-1])
 	}
+	return mergeRanges(e[0], e[len(e)-1])
 }
 func (e *MatrixSelector) PositionRange() PositionRange {
 	return PositionRange{

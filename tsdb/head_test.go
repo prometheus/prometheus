@@ -1384,101 +1384,12 @@ func TestAddDuplicateLabelName(t *testing.T) {
 	add(labels.Labels{{Name: "__name__", Value: "up"}, {Name: "job", Value: "prometheus"}, {Name: "le", Value: "500"}, {Name: "le", Value: "400"}, {Name: "unit", Value: "s"}}, "le")
 }
 
-func TestHeadSeriesWithTimeBoundaries(t *testing.T) {
-	h, _, closer := newTestHead(t, 15, false)
-	defer closer()
-	defer func() {
-		testutil.Ok(t, h.Close())
-	}()
-	testutil.Ok(t, h.Init(0))
-	app := h.Appender()
-
-	s1, err := app.Add(labels.FromStrings("foo1", "bar"), 2, 0)
-	testutil.Ok(t, err)
-	for ts := int64(3); ts < 13; ts++ {
-		err = app.AddFast(s1, ts, 0)
-		testutil.Ok(t, err)
-	}
-	s2, err := app.Add(labels.FromStrings("foo2", "bar"), 5, 0)
-	testutil.Ok(t, err)
-	for ts := int64(6); ts < 11; ts++ {
-		err = app.AddFast(s2, ts, 0)
-		testutil.Ok(t, err)
-	}
-	s3, err := app.Add(labels.FromStrings("foo3", "bar"), 5, 0)
-	testutil.Ok(t, err)
-	err = app.AddFast(s3, 6, 0)
-	testutil.Ok(t, err)
-	_, err = app.Add(labels.FromStrings("foo4", "bar"), 9, 0)
-	testutil.Ok(t, err)
-
-	testutil.Ok(t, app.Commit())
-
-	cases := []struct {
-		mint         int64
-		maxt         int64
-		seriesCount  int
-		samplesCount int
-	}{
-		// foo1 ..00000000000..
-		// foo2 .....000000....
-		// foo3 .....00........
-		// foo4 .........0.....
-		{mint: 0, maxt: 0, seriesCount: 0, samplesCount: 0},
-		{mint: 0, maxt: 1, seriesCount: 0, samplesCount: 0},
-		{mint: 0, maxt: 2, seriesCount: 1, samplesCount: 1},
-		{mint: 2, maxt: 2, seriesCount: 1, samplesCount: 1},
-		{mint: 0, maxt: 4, seriesCount: 1, samplesCount: 3},
-		{mint: 0, maxt: 5, seriesCount: 3, samplesCount: 6},
-		{mint: 0, maxt: 6, seriesCount: 3, samplesCount: 9},
-		{mint: 0, maxt: 7, seriesCount: 3, samplesCount: 11},
-		{mint: 0, maxt: 8, seriesCount: 3, samplesCount: 13},
-		{mint: 0, maxt: 9, seriesCount: 4, samplesCount: 16},
-		{mint: 0, maxt: 10, seriesCount: 4, samplesCount: 18},
-		{mint: 0, maxt: 11, seriesCount: 4, samplesCount: 19},
-		{mint: 0, maxt: 12, seriesCount: 4, samplesCount: 20},
-		{mint: 0, maxt: 13, seriesCount: 4, samplesCount: 20},
-		{mint: 0, maxt: 14, seriesCount: 4, samplesCount: 20},
-		{mint: 2, maxt: 14, seriesCount: 4, samplesCount: 20},
-		{mint: 3, maxt: 14, seriesCount: 4, samplesCount: 19},
-		{mint: 4, maxt: 14, seriesCount: 4, samplesCount: 18},
-		{mint: 8, maxt: 9, seriesCount: 3, samplesCount: 5},
-		{mint: 9, maxt: 9, seriesCount: 3, samplesCount: 3},
-		{mint: 6, maxt: 9, seriesCount: 4, samplesCount: 10},
-		{mint: 11, maxt: 11, seriesCount: 1, samplesCount: 1},
-		{mint: 11, maxt: 12, seriesCount: 1, samplesCount: 2},
-		{mint: 11, maxt: 14, seriesCount: 1, samplesCount: 2},
-		{mint: 12, maxt: 14, seriesCount: 1, samplesCount: 1},
-	}
-
-	for i, c := range cases {
-		matcher := labels.MustNewMatcher(labels.MatchEqual, "", "")
-		q, err := NewBlockQuerier(h, c.mint, c.maxt)
-		testutil.Ok(t, err)
-
-		seriesCount := 0
-		samplesCount := 0
-		ss, _, err := q.Select(false, nil, matcher)
-		testutil.Ok(t, err)
-		for ss.Next() {
-			i := ss.At().Iterator()
-			for i.Next() {
-				samplesCount++
-			}
-			seriesCount++
-		}
-		testutil.Ok(t, ss.Err())
-		testutil.Equals(t, c.seriesCount, seriesCount, "test series %d", i)
-		testutil.Equals(t, c.samplesCount, samplesCount, "test samples %d", i)
-		q.Close()
-	}
-}
-
 func TestMemSeriesIsolation(t *testing.T) {
 	// Put a series, select it. GC it and then access it.
 
 	lastValue := func(h *Head, maxAppendID uint64) int {
-		idx, err := h.Index(h.MinTime(), h.MaxTime())
+		idx, err := h.Index()
+
 		testutil.Ok(t, err)
 
 		iso := h.iso.State()
@@ -1678,19 +1589,19 @@ func TestIsolationLowWatermarkMonotonous(t *testing.T) {
 	app1 = hb.Appender()
 	_, err = app1.Add(labels.FromStrings("foo", "bar"), 1, 1)
 	testutil.Ok(t, err)
-	testutil.Equals(t, uint64(2), hb.iso.lowWatermark(), "Low watermark should be two, even if append is not commited yet.")
+	testutil.Equals(t, uint64(2), hb.iso.lowWatermark(), "Low watermark should be two, even if append is not committed yet.")
 
 	app2 := hb.Appender()
 	_, err = app2.Add(labels.FromStrings("foo", "baz"), 1, 1)
 	testutil.Ok(t, err)
 	testutil.Ok(t, app2.Commit())
-	testutil.Equals(t, uint64(2), hb.iso.lowWatermark(), "Low watermark should stay two because app1 is not commited yet.")
+	testutil.Equals(t, uint64(2), hb.iso.lowWatermark(), "Low watermark should stay two because app1 is not committed yet.")
 
 	is := hb.iso.State()
 	testutil.Equals(t, uint64(2), hb.iso.lowWatermark(), "After simulated read (iso state retrieved), low watermark should stay at 2.")
 
 	testutil.Ok(t, app1.Commit())
-	testutil.Equals(t, uint64(2), hb.iso.lowWatermark(), "Even after app1 is commited, low watermark should stay at 2 because read is still ongoing.")
+	testutil.Equals(t, uint64(2), hb.iso.lowWatermark(), "Even after app1 is committed, low watermark should stay at 2 because read is still ongoing.")
 
 	is.Close()
 	testutil.Equals(t, uint64(3), hb.iso.lowWatermark(), "After read has finished (iso state closed), low watermark should jump to three.")

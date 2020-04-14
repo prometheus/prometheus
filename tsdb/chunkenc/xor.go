@@ -127,6 +127,7 @@ func (c *XORChunk) iterator(it Iterator) *xorIterator {
 		// We skip that for actual samples.
 		br:       newBReader(c.b.bytes()[2:]),
 		numTotal: binary.BigEndian.Uint16(c.b.bytes()),
+		t:        math.MinInt64,
 	}
 }
 

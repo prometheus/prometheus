@@ -187,7 +187,7 @@
             },
             annotations: {
               summary: 'Prometheus fails to send samples to remote storage.',
-              description: 'Prometheus %(prometheusName)s failed to send {{ printf "%%.1f" $value }}%% of the samples to {{ if $labels.queue }}{{ $labels.queue }}{{ else }}{{ $labels.url }}{{ end }}.' % $._config,
+              description: 'Prometheus %(prometheusName)s failed to send {{ printf "%%.1f" $value }}%% of the samples to {{ $labels.remote_name}}:{{ $labels.url }}' % $._config,
             },
           },
           {
@@ -208,7 +208,7 @@
             },
             annotations: {
               summary: 'Prometheus remote write is behind.',
-              description: 'Prometheus %(prometheusName)s remote write is {{ printf "%%.1f" $value }}s behind for {{ if $labels.queue }}{{ $labels.queue }}{{ else }}{{ $labels.url }}{{ end }}.' % $._config,
+              description: 'Prometheus %(prometheusName)s remote write is {{ printf "%%.1f" $value }}s behind for {{ $labels.remote_name}}:{{ $labels.url }}.' % $._config,
             },
           },
           {
@@ -228,7 +228,7 @@
             },
             annotations: {
               summary: 'Prometheus remote write desired shards calculation wants to run more than configured max shards.',
-              description: 'Prometheus %(prometheusName)s remote write desired shards calculation wants to run {{ $value }} shards, which is more than the max of {{ printf `prometheus_remote_storage_shards_max{instance="%%s",%(prometheusSelector)s}` $labels.instance | query | first | value }}.' % $._config,
+              description: 'Prometheus %(prometheusName)s remote write desired shards calculation wants to run {{ $value }} shards for queue {{ $labels.remote_name}}:{{ $labels.url }}, which is more than the max of {{ printf `prometheus_remote_storage_shards_max{instance="%%s",%(prometheusSelector)s}` $labels.instance | query | first | value }}.' % $._config,
             },
           },
           {

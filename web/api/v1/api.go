@@ -539,7 +539,7 @@ func (api *API) series(r *http.Request) apiFuncResult {
 		sets = append(sets, s)
 	}
 
-	set := storage.NewMergeSeriesSet(sets, nil)
+	set := storage.NewMergeSeriesSet(sets, storage.ChainedSeriesMerge)
 	metrics := []labels.Labels{}
 	for set.Next() {
 		metrics = append(metrics, set.At().Labels())
@@ -1265,7 +1265,7 @@ func (api *API) remoteReadQuery(ctx context.Context, query *prompb.Query, extern
 	}
 	defer func() {
 		if err := querier.Close(); err != nil {
-			level.Warn(api.logger).Log("msg", "error on querier close", "err", err.Error())
+			level.Warn(api.logger).Log("msg", "Error on querier close", "err", err.Error())
 		}
 	}()
 
@@ -1457,7 +1457,7 @@ func parseTime(s string) (time.Time, error) {
 	if t, err := strconv.ParseFloat(s, 64); err == nil {
 		s, ns := math.Modf(t)
 		ns = math.Round(ns*1000) / 1000
-		return time.Unix(int64(s), int64(ns*float64(time.Second))), nil
+		return time.Unix(int64(s), int64(ns*float64(time.Second))).UTC(), nil
 	}
 	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
 		return t, nil
