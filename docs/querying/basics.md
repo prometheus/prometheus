@@ -7,7 +7,7 @@ sort_rank: 1
 # Querying basics
 
 Prometheus provides a functional query language called PromQL (Prometheus Query
-Language) that lets you select and aggregate time series data in real
+Language) that lets the user select and aggregate time series data in real
 time. The result of an expression can either be shown as a graph, viewed as
 tabular data in Prometheus's expression browser, or consumed by external
 systems via the [HTTP API](api.md).
@@ -222,7 +222,7 @@ no value is returned for that time series at this point in time. This
 effectively means that time series "disappear" from graphs at times where their
 latest collected sample is older than five minutes or after they are marked stale.
 
-Staleness will not be marked for time series that have timestamps included in
+Staleness is not marked for time series that have timestamps included in
 their scrapes. Only the five-minute threshold applies in that case.
 
 ## Avoiding slow queries and overloads
