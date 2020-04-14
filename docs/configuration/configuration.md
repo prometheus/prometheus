@@ -1294,6 +1294,11 @@ url: <string>
 write_relabel_configs:
   [ - <relabel_config> ... ]
 
+# Name of the remote write config, which if specified must be unique among remote write configs. 
+# The name will be used in metrics and logging in place of a generated value to help users distinguish between
+# remote write configs.
+[ name: <string> ]
+
 # Sets the `Authorization` header on every remote write request with the
 # configured username and password.
 # password and password_file are mutually exclusive.
@@ -1348,6 +1353,11 @@ with this feature.
 ```yaml
 # The URL of the endpoint to query from.
 url: <string>
+
+# Name of the remote read config, which if specified must be unique among remote read configs. 
+# The name will be used in metrics and logging in place of a generated value to help users distiguish between
+# remote read configs.
+[ name: <string> ]
 
 # An optional list of equality matchers which have to be
 # present in a selector to query the remote read endpoint.
