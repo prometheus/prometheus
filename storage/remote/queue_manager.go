@@ -845,6 +845,7 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, b
 	// should be maintained irrespective of success or failure.
 	s.qm.samplesOut.incr(int64(len(samples)))
 	s.qm.samplesOutDuration.incr(int64(time.Since(begin)))
+	atomic.StoreInt64(&s.qm.lastSendTimestamp, time.Now().Unix())
 }
 
 // sendSamples to the remote storage with backoff for recoverable errors.
@@ -873,7 +874,6 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 			s.qm.succeededSamplesTotal.Add(float64(len(samples)))
 			s.qm.bytesSent.Add(float64(len(req)))
 			s.qm.highestSentTimestampMetric.Set(float64(highest / 1000))
-			atomic.StoreInt64(&s.qm.lastSendTimestamp, time.Now().Unix())
 			return nil
 		}
 
