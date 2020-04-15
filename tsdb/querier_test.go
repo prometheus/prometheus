@@ -461,9 +461,9 @@ func TestBlockQuerierDelete(t *testing.T) {
 			},
 		},
 		tombstones: tombstones.NewTestMemTombstones([]tombstones.Intervals{
-			tombstones.Intervals{{Mint: 1, Maxt: 3}},
-			tombstones.Intervals{{Mint: 1, Maxt: 3}, {Mint: 6, Maxt: 10}},
-			tombstones.Intervals{{Mint: 6, Maxt: 10}},
+			{{Mint: 1, Maxt: 3}},
+			{{Mint: 1, Maxt: 3}, {Mint: 6, Maxt: 10}},
+			{{Mint: 6, Maxt: 10}},
 		}),
 		queries: []query{
 			{
