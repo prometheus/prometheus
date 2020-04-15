@@ -100,7 +100,8 @@ func (e *apiError) Error() string {
 	return fmt.Sprintf("%s: %s", e.typ, e.err)
 }
 
-type targetRetriever interface {
+// TargetRetriever provides the list of active/dropped targets to scrape or not.
+type TargetRetriever interface {
 	TargetsActive() map[string][]*scrape.Target
 	TargetsDropped() map[string][]*scrape.Target
 }
@@ -173,7 +174,7 @@ type API struct {
 	Queryable   storage.Queryable
 	QueryEngine *promql.Engine
 
-	targetRetriever       targetRetriever
+	targetRetriever       func(context.Context) TargetRetriever
 	alertmanagerRetriever alertmanagerRetriever
 	rulesRetriever        rulesRetriever
 	now                   func() time.Time
@@ -202,7 +203,7 @@ func init() {
 func NewAPI(
 	qe *promql.Engine,
 	q storage.Queryable,
-	tr targetRetriever,
+	tr func(context.Context) TargetRetriever,
 	ar alertmanagerRetriever,
 	configFunc func() config.Config,
 	flagsMap map[string]string,
@@ -659,7 +660,7 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 	res := &TargetDiscovery{}
 
 	if showActive {
-		targetsActive := api.targetRetriever.TargetsActive()
+		targetsActive := api.targetRetriever(r.Context()).TargetsActive()
 		activeKeys, numTargets := sortKeys(targetsActive)
 		res.ActiveTargets = make([]*Target, 0, numTargets)
 
@@ -697,7 +698,7 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 		res.ActiveTargets = []*Target{}
 	}
 	if showDropped {
-		tDropped := flatten(api.targetRetriever.TargetsDropped())
+		tDropped := flatten(api.targetRetriever(r.Context()).TargetsDropped())
 		res.DroppedTargets = make([]*DroppedTarget, 0, len(tDropped))
 		for _, t := range tDropped {
 			res.DroppedTargets = append(res.DroppedTargets, &DroppedTarget{
@@ -744,7 +745,7 @@ func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 	metric := r.FormValue("metric")
 
 	res := []metricMetadata{}
-	for _, tt := range api.targetRetriever.TargetsActive() {
+	for _, tt := range api.targetRetriever(r.Context()).TargetsActive() {
 		for _, t := range tt {
 			if limit >= 0 && len(res) >= limit {
 				break
@@ -877,7 +878,7 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 
 	metric := r.FormValue("metric")
 
-	for _, tt := range api.targetRetriever.TargetsActive() {
+	for _, tt := range api.targetRetriever(r.Context()).TargetsActive() {
 		for _, t := range tt {
 
 			if metric == "" {
