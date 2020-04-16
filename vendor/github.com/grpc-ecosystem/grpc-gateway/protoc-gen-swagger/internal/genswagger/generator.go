@@ -112,7 +112,7 @@ func extensionMarshalJSON(so interface{}, extensions []extension) ([]byte, error
 	// and thus render into what we want -- the JSON of swaggerCore with the
 	// extensions appended.
 	fields := []reflect.StructField{
-		reflect.StructField{ // embedded
+		{ // embedded
 			Name:      "Embedded",
 			Type:      reflect.TypeOf(so),
 			Anonymous: true,

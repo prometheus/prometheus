@@ -2619,7 +2619,7 @@ func TestDBQueryDoesntSeeAppendsAfterCreation(t *testing.T) {
 	testutil.Ok(t, err)
 	_, seriesSet, err = expandSeriesSet(ss)
 	testutil.Ok(t, err)
-	testutil.Equals(t, map[string][]sample{`{foo="bar"}`: []sample{}}, seriesSet)
+	testutil.Equals(t, map[string][]sample{`{foo="bar"}`: {}}, seriesSet)
 
 	querierAfterCommit, err := db.Querier(context.Background(), 0, 1000000)
 	testutil.Ok(t, err)
@@ -2630,7 +2630,7 @@ func TestDBQueryDoesntSeeAppendsAfterCreation(t *testing.T) {
 	testutil.Ok(t, err)
 	_, seriesSet, err = expandSeriesSet(ss)
 	testutil.Ok(t, err)
-	testutil.Equals(t, map[string][]sample{`{foo="bar"}`: []sample{{t: 0, v: 0}}}, seriesSet)
+	testutil.Equals(t, map[string][]sample{`{foo="bar"}`: {{t: 0, v: 0}}}, seriesSet)
 }
 
 // TestChunkWriter_ReadAfterWrite ensures that chunk segment are cut at the set segment size and
@@ -2653,7 +2653,7 @@ func TestChunkWriter_ReadAfterWrite(t *testing.T) {
 		// all chunks should fit in a single segment.
 		{
 			chks: [][]chunks.Meta{
-				[]chunks.Meta{
+				{
 					chk1,
 					chk2,
 					chk3,
@@ -2666,7 +2666,7 @@ func TestChunkWriter_ReadAfterWrite(t *testing.T) {
 		// 1:Two chunks can fit in a single segment so the last one should result in a new segment.
 		{
 			chks: [][]chunks.Meta{
-				[]chunks.Meta{
+				{
 					chk1,
 					chk2,
 					chk3,
@@ -2682,7 +2682,7 @@ func TestChunkWriter_ReadAfterWrite(t *testing.T) {
 		// the last segment should still create a new segment.
 		{
 			chks: [][]chunks.Meta{
-				[]chunks.Meta{
+				{
 					chk1,
 					chk2,
 					chk3,
@@ -2696,7 +2696,7 @@ func TestChunkWriter_ReadAfterWrite(t *testing.T) {
 		// it should still be written by ignoring the max segment size.
 		{
 			chks: [][]chunks.Meta{
-				[]chunks.Meta{
+				{
 					chk1,
 				},
 			},
@@ -2709,7 +2709,7 @@ func TestChunkWriter_ReadAfterWrite(t *testing.T) {
 		// Each segment will hold a single chunk.
 		{
 			chks: [][]chunks.Meta{
-				[]chunks.Meta{
+				{
 					chk1,
 					chk2,
 					chk3,
@@ -2722,12 +2722,12 @@ func TestChunkWriter_ReadAfterWrite(t *testing.T) {
 		// 5:Adding multiple batches of chunks.
 		{
 			chks: [][]chunks.Meta{
-				[]chunks.Meta{
+				{
 					chk1,
 					chk2,
 					chk3,
 				},
-				[]chunks.Meta{
+				{
 					chk4,
 					chk5,
 				},
@@ -2739,14 +2739,14 @@ func TestChunkWriter_ReadAfterWrite(t *testing.T) {
 		// 6:Adding multiple batches of chunks.
 		{
 			chks: [][]chunks.Meta{
-				[]chunks.Meta{
+				{
 					chk1,
 				},
-				[]chunks.Meta{
+				{
 					chk2,
 					chk3,
 				},
-				[]chunks.Meta{
+				{
 					chk4,
 				},
 			},

@@ -58,7 +58,7 @@ func (i *Iterator) Next() ([]byte, interface{}, bool) {
 	// Initialize our stack if needed
 	if i.stack == nil && i.node != nil {
 		i.stack = []edges{
-			edges{
+			{
 				edge{node: i.node},
 			},
 		}

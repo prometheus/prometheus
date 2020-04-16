@@ -25,62 +25,62 @@ import (
 )
 
 var wktSchemas = map[string]schemaCore{
-	".google.protobuf.Timestamp": schemaCore{
+	".google.protobuf.Timestamp": {
 		Type:   "string",
 		Format: "date-time",
 	},
-	".google.protobuf.Duration": schemaCore{
+	".google.protobuf.Duration": {
 		Type: "string",
 	},
-	".google.protobuf.StringValue": schemaCore{
+	".google.protobuf.StringValue": {
 		Type: "string",
 	},
-	".google.protobuf.BytesValue": schemaCore{
+	".google.protobuf.BytesValue": {
 		Type:   "string",
 		Format: "byte",
 	},
-	".google.protobuf.Int32Value": schemaCore{
+	".google.protobuf.Int32Value": {
 		Type:   "integer",
 		Format: "int32",
 	},
-	".google.protobuf.UInt32Value": schemaCore{
+	".google.protobuf.UInt32Value": {
 		Type:   "integer",
 		Format: "int64",
 	},
-	".google.protobuf.Int64Value": schemaCore{
+	".google.protobuf.Int64Value": {
 		Type:   "string",
 		Format: "int64",
 	},
-	".google.protobuf.UInt64Value": schemaCore{
+	".google.protobuf.UInt64Value": {
 		Type:   "string",
 		Format: "uint64",
 	},
-	".google.protobuf.FloatValue": schemaCore{
+	".google.protobuf.FloatValue": {
 		Type:   "number",
 		Format: "float",
 	},
-	".google.protobuf.DoubleValue": schemaCore{
+	".google.protobuf.DoubleValue": {
 		Type:   "number",
 		Format: "double",
 	},
-	".google.protobuf.BoolValue": schemaCore{
+	".google.protobuf.BoolValue": {
 		Type:   "boolean",
 		Format: "boolean",
 	},
-	".google.protobuf.Empty": schemaCore{},
-	".google.protobuf.Struct": schemaCore{
+	".google.protobuf.Empty": {},
+	".google.protobuf.Struct": {
 		Type: "object",
 	},
-	".google.protobuf.Value": schemaCore{
+	".google.protobuf.Value": {
 		Type: "object",
 	},
-	".google.protobuf.ListValue": schemaCore{
+	".google.protobuf.ListValue": {
 		Type: "array",
 		Items: (*swaggerItemsObject)(&schemaCore{
 			Type: "object",
 		}),
 	},
-	".google.protobuf.NullValue": schemaCore{
+	".google.protobuf.NullValue": {
 		Type: "string",
 	},
 }

@@ -39,7 +39,7 @@ func TestChunkedReaderCanReadFromChunkedWriter(t *testing.T) {
 		[]byte("test2"),
 		[]byte("test3"),
 		[]byte("test4"),
-		[]byte{}, // This is ignored by writer.
+		{}, // This is ignored by writer.
 		[]byte("test5-after-empty"),
 	}
 

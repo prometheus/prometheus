@@ -1624,37 +1624,37 @@ func TestScrapeLoopDiscardUnnamedMetrics(t *testing.T) {
 
 func TestReusableConfig(t *testing.T) {
 	variants := []*config.ScrapeConfig{
-		&config.ScrapeConfig{
+		{
 			JobName:       "prometheus",
 			ScrapeTimeout: model.Duration(15 * time.Second),
 		},
-		&config.ScrapeConfig{
+		{
 			JobName:       "httpd",
 			ScrapeTimeout: model.Duration(15 * time.Second),
 		},
-		&config.ScrapeConfig{
+		{
 			JobName:       "prometheus",
 			ScrapeTimeout: model.Duration(5 * time.Second),
 		},
-		&config.ScrapeConfig{
+		{
 			JobName:     "prometheus",
 			MetricsPath: "/metrics",
 		},
-		&config.ScrapeConfig{
+		{
 			JobName:     "prometheus",
 			MetricsPath: "/metrics2",
 		},
-		&config.ScrapeConfig{
+		{
 			JobName:       "prometheus",
 			ScrapeTimeout: model.Duration(5 * time.Second),
 			MetricsPath:   "/metrics2",
 		},
-		&config.ScrapeConfig{
+		{
 			JobName:        "prometheus",
 			ScrapeInterval: model.Duration(5 * time.Second),
 			MetricsPath:    "/metrics2",
 		},
-		&config.ScrapeConfig{
+		{
 			JobName:        "prometheus",
 			ScrapeInterval: model.Duration(5 * time.Second),
 			SampleLimit:    1000,
@@ -1663,18 +1663,18 @@ func TestReusableConfig(t *testing.T) {
 	}
 
 	match := [][]int{
-		[]int{0, 2},
-		[]int{4, 5},
-		[]int{4, 6},
-		[]int{4, 7},
-		[]int{5, 6},
-		[]int{5, 7},
-		[]int{6, 7},
+		{0, 2},
+		{4, 5},
+		{4, 6},
+		{4, 7},
+		{5, 6},
+		{5, 7},
+		{6, 7},
 	}
 	noMatch := [][]int{
-		[]int{1, 2},
-		[]int{0, 4},
-		[]int{3, 4},
+		{1, 2},
+		{0, 4},
+		{3, 4},
 	}
 
 	for i, m := range match {

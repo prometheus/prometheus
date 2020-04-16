@@ -247,7 +247,7 @@ type ZoneParser struct {
 
 	includeDepth uint8
 
-	includeAllowed bool
+	includeAllowed     bool
 	generateDisallowed bool
 }
 
