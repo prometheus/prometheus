@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/wal"
 )
 
 var (
@@ -46,11 +47,12 @@ var (
 
 // WriteStorage represents all the remote write storage.
 type WriteStorage struct {
-	reg    prometheus.Registerer
 	logger log.Logger
 	mtx    sync.Mutex
 
 	queueMetrics      *queueManagerMetrics
+	watcherMetrics    *wal.WatcherMetrics
+	liveReaderMetrics *wal.LiveReaderMetrics
 	configHash        string
 	externalLabelHash string
 	walDir            string
@@ -65,13 +67,14 @@ func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, walDir string
 		logger = log.NewNopLogger()
 	}
 	rws := &WriteStorage{
-		queues:        make(map[string]*QueueManager),
-		reg:           reg,
-		queueMetrics:  newQueueManagerMetrics(reg),
-		logger:        logger,
-		flushDeadline: flushDeadline,
-		samplesIn:     newEWMARate(ewmaWeight, shardUpdateDuration),
-		walDir:        walDir,
+		queues:            make(map[string]*QueueManager),
+		queueMetrics:      newQueueManagerMetrics(reg),
+		watcherMetrics:    wal.NewWatcherMetrics(reg),
+		liveReaderMetrics: wal.NewLiveReaderMetrics(reg),
+		logger:            logger,
+		flushDeadline:     flushDeadline,
+		samplesIn:         newEWMARate(ewmaWeight, shardUpdateDuration),
+		walDir:            walDir,
 	}
 	go rws.run()
 	return rws
@@ -104,7 +107,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 	// external labels change.
 	externalLabelUnchanged := externalLabelHash == rws.externalLabelHash
 	if configHash == rws.configHash && externalLabelUnchanged {
-		level.Debug(rws.logger).Log("msg", "remote write config has not changed, no need to restart QueueManagers")
+		level.Debug(rws.logger).Log("msg", "Remote write config has not changed, no need to restart QueueManagers")
 		return nil
 	}
 
@@ -152,8 +155,9 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			return err
 		}
 		newQueues[hash] = NewQueueManager(
-			rws.reg,
 			rws.queueMetrics,
+			rws.watcherMetrics,
+			rws.liveReaderMetrics,
 			rws.logger,
 			rws.walDir,
 			rws.samplesIn,

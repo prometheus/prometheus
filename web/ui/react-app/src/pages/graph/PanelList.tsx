@@ -60,7 +60,10 @@ export const PanelListContent: FC<PanelListProps> = ({
   };
 
   const addPanel = () => {
-    callAll(setPanels, updateURL)([
+    callAll(
+      setPanels,
+      updateURL
+    )([
       ...panels,
       {
         id: generateID(),
@@ -81,7 +84,10 @@ export const PanelListContent: FC<PanelListProps> = ({
             callAll(setPanels, updateURL)(panels.map(p => (id === p.id ? { ...p, options: opts } : p)))
           }
           removePanel={() =>
-            callAll(setPanels, updateURL)(
+            callAll(
+              setPanels,
+              updateURL
+            )(
               panels.reduce<PanelMeta[]>(
                 (acc, panel) => (panel.id !== id ? [...acc, { ...panel, key: `${acc.length}` }] : acc),
                 []
@@ -117,7 +123,7 @@ const PanelList: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix = '' 
       setDelta(Math.abs(browserTime - serverTime));
     }
     /**
-     * React wants to include browserTime to useEffect dependencie list which will cause a delta change on every re-render
+     * React wants to include browserTime to useEffect dependencies list which will cause a delta change on every re-render
      * Basically it's not recommended to disable this rule, but this is the only way to take control over the useEffect
      * dependencies and to not include the browserTime variable.
      **/

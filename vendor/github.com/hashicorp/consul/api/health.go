@@ -36,6 +36,8 @@ type HealthCheck struct {
 	ServiceID   string
 	ServiceName string
 	ServiceTags []string
+	Type        string
+	Namespace   string `json:",omitempty"`
 
 	Definition HealthCheckDefinition
 
@@ -49,6 +51,7 @@ type HealthCheckDefinition struct {
 	HTTP                                   string
 	Header                                 map[string][]string
 	Method                                 string
+	Body                                   string
 	TLSSkipVerify                          bool
 	TCP                                    string
 	IntervalDuration                       time.Duration `json:"-"`
@@ -94,40 +97,63 @@ func (d *HealthCheckDefinition) MarshalJSON() ([]byte, error) {
 	return json.Marshal(out)
 }
 
-func (d *HealthCheckDefinition) UnmarshalJSON(data []byte) error {
+func (t *HealthCheckDefinition) UnmarshalJSON(data []byte) (err error) {
 	type Alias HealthCheckDefinition
 	aux := &struct {
-		Interval                       string
-		Timeout                        string
-		DeregisterCriticalServiceAfter string
+		IntervalDuration                       interface{}
+		TimeoutDuration                        interface{}
+		DeregisterCriticalServiceAfterDuration interface{}
 		*Alias
 	}{
-		Alias: (*Alias)(d),
+		Alias: (*Alias)(t),
 	}
 	if err := json.Unmarshal(data, &aux); err != nil {
 		return err
 	}
 
 	// Parse the values into both the time.Duration and old ReadableDuration fields.
-	var err error
-	if aux.Interval != "" {
-		if d.IntervalDuration, err = time.ParseDuration(aux.Interval); err != nil {
-			return err
+
+	if aux.IntervalDuration == nil {
+		t.IntervalDuration = time.Duration(t.Interval)
+	} else {
+		switch v := aux.IntervalDuration.(type) {
+		case string:
+			if t.IntervalDuration, err = time.ParseDuration(v); err != nil {
+				return err
+			}
+		case float64:
+			t.IntervalDuration = time.Duration(v)
 		}
-		d.Interval = ReadableDuration(d.IntervalDuration)
+		t.Interval = ReadableDuration(t.IntervalDuration)
 	}
-	if aux.Timeout != "" {
-		if d.TimeoutDuration, err = time.ParseDuration(aux.Timeout); err != nil {
-			return err
+
+	if aux.TimeoutDuration == nil {
+		t.TimeoutDuration = time.Duration(t.Timeout)
+	} else {
+		switch v := aux.TimeoutDuration.(type) {
+		case string:
+			if t.TimeoutDuration, err = time.ParseDuration(v); err != nil {
+				return err
+			}
+		case float64:
+			t.TimeoutDuration = time.Duration(v)
 		}
-		d.Timeout = ReadableDuration(d.TimeoutDuration)
+		t.Timeout = ReadableDuration(t.TimeoutDuration)
 	}
-	if aux.DeregisterCriticalServiceAfter != "" {
-		if d.DeregisterCriticalServiceAfterDuration, err = time.ParseDuration(aux.DeregisterCriticalServiceAfter); err != nil {
-			return err
+	if aux.DeregisterCriticalServiceAfterDuration == nil {
+		t.DeregisterCriticalServiceAfterDuration = time.Duration(t.DeregisterCriticalServiceAfter)
+	} else {
+		switch v := aux.DeregisterCriticalServiceAfterDuration.(type) {
+		case string:
+			if t.DeregisterCriticalServiceAfterDuration, err = time.ParseDuration(v); err != nil {
+				return err
+			}
+		case float64:
+			t.DeregisterCriticalServiceAfterDuration = time.Duration(v)
 		}
-		d.DeregisterCriticalServiceAfter = ReadableDuration(d.DeregisterCriticalServiceAfterDuration)
+		t.DeregisterCriticalServiceAfter = ReadableDuration(t.DeregisterCriticalServiceAfterDuration)
 	}
+
 	return nil
 }
 

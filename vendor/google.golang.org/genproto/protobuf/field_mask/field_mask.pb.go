@@ -219,7 +219,7 @@ const _ = proto.ProtoPackageIsVersion3 // please upgrade the proto package
 //
 // The implementation of any API method which has a FieldMask type field in the
 // request should verify the included field paths, and return an
-// `INVALID_ARGUMENT` error if any path is duplicated or unmappable.
+// `INVALID_ARGUMENT` error if any path is unmappable.
 type FieldMask struct {
 	// The set of field mask paths.
 	Paths                []string `protobuf:"bytes,1,rep,name=paths,proto3" json:"paths,omitempty"`
@@ -264,7 +264,9 @@ func init() {
 	proto.RegisterType((*FieldMask)(nil), "google.protobuf.FieldMask")
 }
 
-func init() { proto.RegisterFile("google/protobuf/field_mask.proto", fileDescriptor_5158202634f0da48) }
+func init() {
+	proto.RegisterFile("google/protobuf/field_mask.proto", fileDescriptor_5158202634f0da48)
+}
 
 var fileDescriptor_5158202634f0da48 = []byte{
 	// 175 bytes of a gzipped FileDescriptorProto

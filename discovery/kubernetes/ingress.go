@@ -109,7 +109,7 @@ func (i *Ingress) process(ctx context.Context, ch chan<- []*targetgroup.Group) b
 		return true
 	}
 	if !exists {
-		send(ctx, i.logger, RoleIngress, ch, &targetgroup.Group{Source: ingressSourceFromNamespaceAndName(namespace, name)})
+		send(ctx, ch, &targetgroup.Group{Source: ingressSourceFromNamespaceAndName(namespace, name)})
 		return true
 	}
 	eps, err := convertToIngress(o)
@@ -117,7 +117,7 @@ func (i *Ingress) process(ctx context.Context, ch chan<- []*targetgroup.Group) b
 		level.Error(i.logger).Log("msg", "converting to Ingress object failed", "err", err)
 		return true
 	}
-	send(ctx, i.logger, RoleIngress, ch, i.buildIngress(eps))
+	send(ctx, ch, i.buildIngress(eps))
 	return true
 }
 

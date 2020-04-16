@@ -15,10 +15,10 @@ package tsdb
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"io"
 	"math"
-	"math/rand"
 	"os"
 	"path/filepath"
 	"sort"
@@ -413,8 +413,7 @@ func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) (u
 		uids = append(uids, meta.ULID.String())
 	}
 
-	entropy := rand.New(rand.NewSource(time.Now().UnixNano()))
-	uid = ulid.MustNew(ulid.Now(), entropy)
+	uid = ulid.MustNew(ulid.Now(), rand.Reader)
 
 	meta := compactBlockMetas(uid, metas...)
 	err = c.write(dest, meta, blocks...)
@@ -468,8 +467,7 @@ func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) (u
 func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, parent *BlockMeta) (ulid.ULID, error) {
 	start := time.Now()
 
-	entropy := rand.New(rand.NewSource(time.Now().UnixNano()))
-	uid := ulid.MustNew(ulid.Now(), entropy)
+	uid := ulid.MustNew(ulid.Now(), rand.Reader)
 
 	meta := &BlockMeta{
 		ULID:    uid,
@@ -650,7 +648,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 	}
 
 	var (
-		set         storage.ChunkSeriesSet
+		set         storage.DeprecatedChunkSeriesSet
 		symbols     index.StringIter
 		closers     = []io.Closer{}
 		overlapping bool
@@ -676,7 +674,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 			if i > 0 && b.Meta().MinTime < globalMaxt {
 				c.metrics.overlappingBlocks.Inc()
 				overlapping = true
-				level.Warn(c.logger).Log("msg", "found overlapping blocks during compaction", "ulid", meta.ULID)
+				level.Warn(c.logger).Log("msg", "Found overlapping blocks during compaction", "ulid", meta.ULID)
 			}
 			if b.Meta().MaxTime > globalMaxt {
 				globalMaxt = b.Meta().MaxTime
@@ -917,7 +915,7 @@ func (c *compactionSeriesSet) At() (labels.Labels, []chunks.Meta, tombstones.Int
 }
 
 type compactionMerger struct {
-	a, b storage.ChunkSeriesSet
+	a, b storage.DeprecatedChunkSeriesSet
 
 	aok, bok  bool
 	l         labels.Labels
@@ -925,7 +923,8 @@ type compactionMerger struct {
 	intervals tombstones.Intervals
 }
 
-func newCompactionMerger(a, b storage.ChunkSeriesSet) (*compactionMerger, error) {
+// TODO(bwplotka): Move to storage mergers.
+func newCompactionMerger(a, b storage.DeprecatedChunkSeriesSet) (*compactionMerger, error) {
 	c := &compactionMerger{
 		a: a,
 		b: b,

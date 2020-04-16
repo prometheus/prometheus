@@ -15,11 +15,10 @@ package procfs
 
 import (
 	"bufio"
-	"fmt"
-	"io/ioutil"
-	"os"
+	"bytes"
 	"regexp"
-	"strings"
+
+	"github.com/prometheus/procfs/internal/util"
 )
 
 // Regexp variables
@@ -46,21 +45,15 @@ type ProcFDInfo struct {
 
 // FDInfo constructor. On kernels older than 3.8, InotifyInfos will always be empty.
 func (p Proc) FDInfo(fd string) (*ProcFDInfo, error) {
-	f, err := os.Open(p.path("fdinfo", fd))
+	data, err := util.ReadFileNoStat(p.path("fdinfo", fd))
 	if err != nil {
 		return nil, err
-	}
-	defer f.Close()
-
-	fdinfo, err := ioutil.ReadAll(f)
-	if err != nil {
-		return nil, fmt.Errorf("could not read %s: %s", f.Name(), err)
 	}
 
 	var text, pos, flags, mntid string
 	var inotify []InotifyInfo
 
-	scanner := bufio.NewScanner(strings.NewReader(string(fdinfo)))
+	scanner := bufio.NewScanner(bytes.NewReader(data))
 	for scanner.Scan() {
 		text = scanner.Text()
 		if rPos.MatchString(text) {

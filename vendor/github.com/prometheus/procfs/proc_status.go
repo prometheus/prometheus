@@ -15,10 +15,10 @@ package procfs
 
 import (
 	"bytes"
-	"io/ioutil"
-	"os"
 	"strconv"
 	"strings"
+
+	"github.com/prometheus/procfs/internal/util"
 )
 
 // ProcStatus provides status information about the process,
@@ -75,13 +75,7 @@ type ProcStatus struct {
 
 // NewStatus returns the current status information of the process.
 func (p Proc) NewStatus() (ProcStatus, error) {
-	f, err := os.Open(p.path("status"))
-	if err != nil {
-		return ProcStatus{}, err
-	}
-	defer f.Close()
-
-	data, err := ioutil.ReadAll(f)
+	data, err := util.ReadFileNoStat(p.path("status"))
 	if err != nil {
 		return ProcStatus{}, err
 	}

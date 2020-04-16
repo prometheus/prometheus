@@ -2,6 +2,10 @@ run:
   modules-download-mode: vendor
   deadline: 5m
 
+linters:
+  enable:
+  - golint
+
 issues:
   exclude-rules:
   - path: _test.go

@@ -28,11 +28,16 @@ func OpenMmapFile(path string) (*MmapFile, error) {
 	return OpenMmapFileWithSize(path, 0)
 }
 
-func OpenMmapFileWithSize(path string, size int) (*MmapFile, error) {
+func OpenMmapFileWithSize(path string, size int) (mf *MmapFile, retErr error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, errors.Wrap(err, "try lock file")
 	}
+	defer func() {
+		if retErr != nil {
+			f.Close()
+		}
+	}()
 	if size <= 0 {
 		info, err := f.Stat()
 		if err != nil {

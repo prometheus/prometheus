@@ -79,7 +79,7 @@ key:
 			dec.pos += p
 			if dec.pos > start {
 				dec.key = line[start:dec.pos]
-				if multibyte && bytes.IndexRune(dec.key, utf8.RuneError) != -1 {
+				if multibyte && bytes.ContainsRune(dec.key, utf8.RuneError) {
 					dec.syntaxError(invalidKeyError)
 					return false
 				}
@@ -97,7 +97,7 @@ key:
 			dec.pos += p
 			if dec.pos > start {
 				dec.key = line[start:dec.pos]
-				if multibyte && bytes.IndexRune(dec.key, utf8.RuneError) != -1 {
+				if multibyte && bytes.ContainsRune(dec.key, utf8.RuneError) {
 					dec.syntaxError(invalidKeyError)
 					return false
 				}
@@ -110,7 +110,7 @@ key:
 	dec.pos = len(line)
 	if dec.pos > start {
 		dec.key = line[start:dec.pos]
-		if multibyte && bytes.IndexRune(dec.key, utf8.RuneError) != -1 {
+		if multibyte && bytes.ContainsRune(dec.key, utf8.RuneError) {
 			dec.syntaxError(invalidKeyError)
 			return false
 		}

@@ -20,12 +20,13 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
-	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/util/testutil"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/cache"
+
+	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 // makeDiscovery creates a kubernetes.Discovery instance for testing.
@@ -65,6 +66,21 @@ func (d k8sDiscoveryTest) Run(t *testing.T) {
 
 	// Run discoverer and start a goroutine to read results.
 	go d.discovery.Run(ctx, ch)
+
+	// Ensure that discovery has a discoverer set. This prevents a race
+	// condition where the above go routine may or may not have set a
+	// discoverer yet.
+	for {
+		dis := d.discovery.(*Discovery)
+		dis.RLock()
+		l := len(dis.discoverers)
+		dis.RUnlock()
+		if l > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
 	resChan := make(chan map[string]*targetgroup.Group)
 	go readResultWithTimeout(t, ch, d.expectedMaxItems, time.Second, resChan)
 

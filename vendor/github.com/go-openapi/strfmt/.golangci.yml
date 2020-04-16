@@ -20,6 +20,11 @@ linters:
     - lll
     - gochecknoinits
     - gochecknoglobals
+    - godox
+    - gocognit
+    - whitespace
+    - wsl
+    - funlen
 
 issues:
   exclude-rules:
@@ -27,4 +32,5 @@ issues:
       text: "should be .*ObjectID"
       linters:
         - golint
+        - stylecheck
 

@@ -34,6 +34,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
@@ -309,7 +310,7 @@ func (b *writeBenchmark) ingestScrapesShard(lbls []labels.Labels, scrapeCount in
 				s.ref = &ref
 			} else if err := app.AddFast(*s.ref, ts, float64(s.value)); err != nil {
 
-				if errors.Cause(err) != tsdb.ErrNotFound {
+				if errors.Cause(err) != storage.ErrNotFound {
 					panic(err)
 				}
 
@@ -459,7 +460,7 @@ func printBlocks(blocks []tsdb.BlockReader, humanReadable *bool) {
 
 func getFormatedTime(timestamp int64, humanReadable *bool) string {
 	if *humanReadable {
-		return time.Unix(timestamp/1000, 0).String()
+		return time.Unix(timestamp/1000, 0).UTC().String()
 	}
 	return strconv.FormatInt(timestamp, 10)
 }
@@ -616,7 +617,7 @@ func dumpSamples(db *tsdb.DBReadOnly, mint, maxt int64) (err error) {
 		err = merr.Err()
 	}()
 
-	ss, ws, err := q.Select(nil, labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
+	ss, ws, err := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
 	if err != nil {
 		return err
 	}

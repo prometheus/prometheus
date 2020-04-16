@@ -367,7 +367,7 @@ tags:
 [ tag_separator: <string> | default = , ]
 
 # Allow stale Consul results (see https://www.consul.io/api/features/consistency.html). Will reduce load on Consul.
-[ allow_stale: <bool> ]
+[ allow_stale: <bool> | default = true ]
 
 # The time after which the provided names are refreshed.
 # On large setup it might be a good idea to increase this value because the catalog will change all the time.
@@ -426,8 +426,10 @@ the public IP address with relabeling.
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
+* `__meta_ec2_architecture`: the architecture of the instance
 * `__meta_ec2_availability_zone`: the availability zone in which the instance is running
 * `__meta_ec2_instance_id`: the EC2 instance ID
+* `__meta_ec2_instance_lifecycle`: the lifecycle of the EC2 instance, set only for 'spot' or 'scheduled' instances, absent otherwise
 * `__meta_ec2_instance_state`: the state of the EC2 instance
 * `__meta_ec2_instance_type`: the type of the EC2 instance
 * `__meta_ec2_owner_id`: the ID of the AWS account that owns the EC2 instance
@@ -498,6 +500,7 @@ address defaults to the `host_ip` attribute of the hypervisor.
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
 * `__meta_openstack_hypervisor_host_ip`: the hypervisor node's IP address.
+* `__meta_openstack_hypervisor_id`: the hypervisor node's ID.
 * `__meta_openstack_hypervisor_name`: the hypervisor node's name.
 * `__meta_openstack_hypervisor_state`: the hypervisor node's state.
 * `__meta_openstack_hypervisor_status`: the hypervisor node's status.
@@ -743,6 +746,7 @@ Available meta labels:
 * `__meta_kubernetes_service_name`: The name of the service object.
 * `__meta_kubernetes_service_port_name`: Name of the service port for the target.
 * `__meta_kubernetes_service_port_protocol`: Protocol of the service port for the target.
+* `__meta_kubernetes_service_type`: The type of the service.
 
 #### `pod`
 
@@ -1290,6 +1294,11 @@ url: <string>
 write_relabel_configs:
   [ - <relabel_config> ... ]
 
+# Name of the remote write config, which if specified must be unique among remote write configs. 
+# The name will be used in metrics and logging in place of a generated value to help users distinguish between
+# remote write configs.
+[ name: <string> ]
+
 # Sets the `Authorization` header on every remote write request with the
 # configured username and password.
 # password and password_file are mutually exclusive.
@@ -1344,6 +1353,11 @@ with this feature.
 ```yaml
 # The URL of the endpoint to query from.
 url: <string>
+
+# Name of the remote read config, which if specified must be unique among remote read configs. 
+# The name will be used in metrics and logging in place of a generated value to help users distiguish between
+# remote read configs.
+[ name: <string> ]
 
 # An optional list of equality matchers which have to be
 # present in a selector to query the remote read endpoint.

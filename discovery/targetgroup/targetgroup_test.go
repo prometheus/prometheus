@@ -38,8 +38,8 @@ func TestTargetGroupStrictJsonUnmarshal(t *testing.T) {
 			json: `	{"labels": {"my":"label"},"targets": ["localhost:9090","localhost:9091"]}`,
 			expectedReply: nil,
 			expectedGroup: Group{Targets: []model.LabelSet{
-				model.LabelSet{"__address__": "localhost:9090"},
-				model.LabelSet{"__address__": "localhost:9091"}}, Labels: model.LabelSet{"my": "label"}},
+				{"__address__": "localhost:9090"},
+				{"__address__": "localhost:9091"}}, Labels: model.LabelSet{"my": "label"}},
 		},
 		{
 			json: `	{"label": {},"targets": []}`,
@@ -83,8 +83,8 @@ func TestTargetGroupYamlMarshal(t *testing.T) {
 		{
 			// targets only exposes addresses.
 			group: Group{Targets: []model.LabelSet{
-				model.LabelSet{"__address__": "localhost:9090"},
-				model.LabelSet{"__address__": "localhost:9091"}},
+				{"__address__": "localhost:9090"},
+				{"__address__": "localhost:9091"}},
 				Labels: model.LabelSet{"foo": "bar", "bar": "baz"}},
 			expectedYaml: "targets:\n- localhost:9090\n- localhost:9091\nlabels:\n  bar: baz\n  foo: bar\n",
 			expectedErr:  nil,
@@ -120,8 +120,8 @@ func TestTargetGroupYamlUnmarshal(t *testing.T) {
 			yaml:          "labels:\n  my:  label\ntargets:\n  ['localhost:9090', 'localhost:9191']",
 			expectedReply: nil,
 			expectedGroup: Group{Targets: []model.LabelSet{
-				model.LabelSet{"__address__": "localhost:9090"},
-				model.LabelSet{"__address__": "localhost:9191"}}, Labels: model.LabelSet{"my": "label"}},
+				{"__address__": "localhost:9090"},
+				{"__address__": "localhost:9191"}}, Labels: model.LabelSet{"my": "label"}},
 		},
 		{
 			// incorrect syntax.
@@ -143,8 +143,8 @@ func TestString(t *testing.T) {
 	// String() should return only the source, regardless of other attributes.
 	group1 :=
 		Group{Targets: []model.LabelSet{
-			model.LabelSet{"__address__": "localhost:9090"},
-			model.LabelSet{"__address__": "localhost:9091"}},
+			{"__address__": "localhost:9090"},
+			{"__address__": "localhost:9091"}},
 			Source: "<source>",
 			Labels: model.LabelSet{"foo": "bar", "bar": "baz"}}
 	group2 :=

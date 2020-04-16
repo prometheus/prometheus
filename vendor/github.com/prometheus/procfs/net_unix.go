@@ -207,10 +207,6 @@ func (u NetUnix) parseUsers(hexStr string) (uint64, error) {
 	return strconv.ParseUint(hexStr, 16, 32)
 }
 
-func (u NetUnix) parseProtocol(hexStr string) (uint64, error) {
-	return strconv.ParseUint(hexStr, 16, 32)
-}
-
 func (u NetUnix) parseType(hexStr string) (NetUnixType, error) {
 	typ, err := strconv.ParseUint(hexStr, 16, 16)
 	if err != nil {

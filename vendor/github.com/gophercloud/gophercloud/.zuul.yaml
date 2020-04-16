@@ -12,6 +12,7 @@
     description: |
       Run gophercloud acceptance test on master branch
     run: .zuul/playbooks/gophercloud-acceptance-test/run.yaml
+    nodeset: ubuntu-bionic
 
 - job:
     name: gophercloud-acceptance-test-ironic
@@ -19,6 +20,7 @@
     description: |
       Run gophercloud ironic acceptance test on master branch
     run: .zuul/playbooks/gophercloud-acceptance-test-ironic/run.yaml
+    nodeset: ubuntu-bionic
 
 - job:
     name: gophercloud-acceptance-test-stein
@@ -74,16 +76,6 @@
       global_env:
         OS_BRANCH: stable/newton
 
-- job:
-    name: gophercloud-acceptance-test-mitaka
-    parent: gophercloud-acceptance-test
-    description: |
-      Run gophercloud acceptance test on mitaka branch
-    vars:
-      global_env:
-        OS_BRANCH: stable/mitaka
-    nodeset: ubuntu-trusty
-
 - project:
     name: gophercloud/gophercloud
     check:
@@ -91,9 +83,6 @@
         - gophercloud-unittest
         - gophercloud-acceptance-test
         - gophercloud-acceptance-test-ironic
-    recheck-mitaka:
-      jobs:
-        - gophercloud-acceptance-test-mitaka
     recheck-newton:
       jobs:
         - gophercloud-acceptance-test-newton

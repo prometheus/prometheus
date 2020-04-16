@@ -57,13 +57,39 @@ except that the forwarded destination is not another HTTP service but rather
 a gRPC service.
 */
 func AnnotateContext(ctx context.Context, mux *ServeMux, req *http.Request) (context.Context, error) {
+	ctx, md, err := annotateContext(ctx, mux, req)
+	if err != nil {
+		return nil, err
+	}
+	if md == nil {
+		return ctx, nil
+	}
+
+	return metadata.NewOutgoingContext(ctx, md), nil
+}
+
+// AnnotateIncomingContext adds context information such as metadata from the request.
+// Attach metadata as incoming context.
+func AnnotateIncomingContext(ctx context.Context, mux *ServeMux, req *http.Request) (context.Context, error) {
+	ctx, md, err := annotateContext(ctx, mux, req)
+	if err != nil {
+		return nil, err
+	}
+	if md == nil {
+		return ctx, nil
+	}
+
+	return metadata.NewIncomingContext(ctx, md), nil
+}
+
+func annotateContext(ctx context.Context, mux *ServeMux, req *http.Request) (context.Context, metadata.MD, error) {
 	var pairs []string
 	timeout := DefaultContextTimeout
 	if tm := req.Header.Get(metadataGrpcTimeout); tm != "" {
 		var err error
 		timeout, err = timeoutDecode(tm)
 		if err != nil {
-			return nil, status.Errorf(codes.InvalidArgument, "invalid grpc-timeout: %s", tm)
+			return nil, nil, status.Errorf(codes.InvalidArgument, "invalid grpc-timeout: %s", tm)
 		}
 	}
 
@@ -80,7 +106,7 @@ func AnnotateContext(ctx context.Context, mux *ServeMux, req *http.Request) (con
 				if strings.HasSuffix(key, metadataHeaderBinarySuffix) {
 					b, err := decodeBinHeader(val)
 					if err != nil {
-						return nil, status.Errorf(codes.InvalidArgument, "invalid binary header %s: %s", key, err)
+						return nil, nil, status.Errorf(codes.InvalidArgument, "invalid binary header %s: %s", key, err)
 					}
 
 					val = string(b)
@@ -111,13 +137,13 @@ func AnnotateContext(ctx context.Context, mux *ServeMux, req *http.Request) (con
 		ctx, _ = context.WithTimeout(ctx, timeout)
 	}
 	if len(pairs) == 0 {
-		return ctx, nil
+		return ctx, nil, nil
 	}
 	md := metadata.Pairs(pairs...)
 	for _, mda := range mux.metadataAnnotators {
 		md = metadata.Join(md, mda(ctx, req))
 	}
-	return metadata.NewOutgoingContext(ctx, md), nil
+	return ctx, md, nil
 }
 
 // ServerMetadata consists of metadata sent from gRPC server.

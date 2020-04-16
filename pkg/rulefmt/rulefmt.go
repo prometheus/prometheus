@@ -24,7 +24,7 @@ import (
 	yaml "gopkg.in/yaml.v3"
 
 	"github.com/prometheus/prometheus/pkg/timestamp"
-	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/template"
 )
 
@@ -156,7 +156,7 @@ func (r *RuleNode) Validate() (nodes []WrappedError) {
 			err:  errors.Errorf("field 'expr' must be set in rule"),
 			node: &r.Expr,
 		})
-	} else if _, err := promql.ParseExpr(r.Expr.Value); err != nil {
+	} else if _, err := parser.ParseExpr(r.Expr.Value); err != nil {
 		nodes = append(nodes, WrappedError{
 			err:  errors.Wrapf(err, "could not parse expression"),
 			node: &r.Expr,
@@ -264,12 +264,22 @@ func Parse(content []byte) (*RuleGroups, []error) {
 	var (
 		groups RuleGroups
 		node   ruleGroups
+		errs   []error
 	)
+
 	err := yaml.Unmarshal(content, &groups)
-	_err := yaml.Unmarshal(content, &node)
-	if err != nil || _err != nil {
-		return nil, []error{err}
+	if err != nil {
+		errs = append(errs, err)
 	}
+	err = yaml.Unmarshal(content, &node)
+	if err != nil {
+		errs = append(errs, err)
+	}
+
+	if len(errs) > 0 {
+		return nil, errs
+	}
+
 	return &groups, groups.Validate(node)
 }
 

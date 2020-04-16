@@ -114,7 +114,7 @@ func (s *Service) process(ctx context.Context, ch chan<- []*targetgroup.Group) b
 		return true
 	}
 	if !exists {
-		send(ctx, s.logger, RoleService, ch, &targetgroup.Group{Source: serviceSourceFromNamespaceAndName(namespace, name)})
+		send(ctx, ch, &targetgroup.Group{Source: serviceSourceFromNamespaceAndName(namespace, name)})
 		return true
 	}
 	eps, err := convertToService(o)
@@ -122,7 +122,7 @@ func (s *Service) process(ctx context.Context, ch chan<- []*targetgroup.Group) b
 		level.Error(s.logger).Log("msg", "converting to Service object failed", "err", err)
 		return true
 	}
-	send(ctx, s.logger, RoleService, ch, s.buildService(eps))
+	send(ctx, ch, s.buildService(eps))
 	return true
 }
 
@@ -152,6 +152,7 @@ const (
 	servicePortProtocolLabel       = metaLabelPrefix + "service_port_protocol"
 	serviceClusterIPLabel          = metaLabelPrefix + "service_cluster_ip"
 	serviceExternalNameLabel       = metaLabelPrefix + "service_external_name"
+	serviceType                    = metaLabelPrefix + "service_type"
 )
 
 func serviceLabels(svc *apiv1.Service) model.LabelSet {
@@ -188,6 +189,7 @@ func (s *Service) buildService(svc *apiv1.Service) *targetgroup.Group {
 			model.AddressLabel:       lv(addr),
 			servicePortNameLabel:     lv(port.Name),
 			servicePortProtocolLabel: lv(string(port.Protocol)),
+			serviceType:              lv(string(svc.Spec.Type)),
 		}
 
 		if svc.Spec.Type == apiv1.ServiceTypeExternalName {

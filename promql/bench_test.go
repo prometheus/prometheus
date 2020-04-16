@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
@@ -249,7 +250,7 @@ func BenchmarkParser(b *testing.B) {
 		b.Run(c, func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
-				ParseExpr(c)
+				parser.ParseExpr(c)
 			}
 		})
 	}
@@ -258,7 +259,7 @@ func BenchmarkParser(b *testing.B) {
 		b.Run(name, func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
-				ParseExpr(c)
+				parser.ParseExpr(c)
 			}
 		})
 	}

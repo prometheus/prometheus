@@ -31,6 +31,7 @@ import (
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
 )
@@ -79,7 +80,7 @@ func ruleUnitTest(filename string) []error {
 	}
 
 	// Bounds for evaluating the rules.
-	mint := time.Unix(0, 0)
+	mint := time.Unix(0, 0).UTC()
 	maxd := unitTestInp.maxEvalTime()
 	maxt := mint.Add(maxd)
 	// Rounding off to nearest Eval time (> maxt).
@@ -231,7 +232,7 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 				for _, r := range g.Rules() {
 					if r.LastError() != nil {
 						errs = append(errs, errors.Errorf("    rule: %s, time: %s, err: %v",
-							r.Name(), ts.Sub(time.Unix(0, 0)), r.LastError()))
+							r.Name(), ts.Sub(time.Unix(0, 0).UTC()), r.LastError()))
 					}
 				}
 			}
@@ -339,7 +340,7 @@ Outer:
 
 		var expSamples []parsedSample
 		for _, s := range testCase.ExpSamples {
-			lb, err := promql.ParseMetric(s.Labels)
+			lb, err := parser.ParseMetric(s.Labels)
 			if err != nil {
 				err = errors.Wrapf(err, "labels %q", s.Labels)
 				errs = append(errs, errors.Errorf("    expr: %q, time: %s, err: %s", testCase.Expr,

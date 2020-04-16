@@ -169,7 +169,7 @@ func (e *Endpoints) process(ctx context.Context, ch chan<- []*targetgroup.Group)
 		return true
 	}
 	if !exists {
-		send(ctx, e.logger, RoleEndpoint, ch, &targetgroup.Group{Source: endpointsSourceFromNamespaceAndName(namespace, name)})
+		send(ctx, ch, &targetgroup.Group{Source: endpointsSourceFromNamespaceAndName(namespace, name)})
 		return true
 	}
 	eps, err := convertToEndpoints(o)
@@ -177,7 +177,7 @@ func (e *Endpoints) process(ctx context.Context, ch chan<- []*targetgroup.Group)
 		level.Error(e.logger).Log("msg", "converting to Endpoints object failed", "err", err)
 		return true
 	}
-	send(ctx, e.logger, RoleEndpoint, ch, e.buildEndpoints(eps))
+	send(ctx, ch, e.buildEndpoints(eps))
 	return true
 }
 

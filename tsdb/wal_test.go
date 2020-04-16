@@ -28,7 +28,6 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/wal"
@@ -303,8 +302,12 @@ func TestWALRestoreCorrupted_invalidSegment(t *testing.T) {
 	_, err = OpenSegmentWAL(dir, log.NewLogfmtLogger(os.Stderr), 0, nil)
 	testutil.Ok(t, err)
 
-	fns, err := fileutil.ReadDir(dir)
+	files, err := ioutil.ReadDir(dir)
 	testutil.Ok(t, err)
+	fns := []string{}
+	for _, f := range files {
+		fns = append(fns, f.Name())
+	}
 	testutil.Equals(t, []string{"000000"}, fns)
 }
 

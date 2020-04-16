@@ -20,7 +20,7 @@ const TargetLabels: FC<TargetLabelsProps> = ({ discoveredLabels, labels, idx, sc
   const [tooltipOpen, setTooltipOpen] = useState(false);
 
   const toggle = (): void => setTooltipOpen(!tooltipOpen);
-  const id = `series-labels-${CSS.escape(scrapePool)}-${idx}`;
+  const id = `series-labels-${scrapePool}-${idx}`;
 
   return (
     <>
@@ -33,7 +33,7 @@ const TargetLabels: FC<TargetLabelsProps> = ({ discoveredLabels, labels, idx, sc
           );
         })}
       </div>
-      <Tooltip isOpen={tooltipOpen} target={id} toggle={toggle} style={{ maxWidth: 'none', textAlign: 'left' }}>
+      <Tooltip isOpen={tooltipOpen} target={CSS.escape(id)} toggle={toggle} style={{ maxWidth: 'none', textAlign: 'left' }}>
         <b>Before relabeling:</b>
         {formatLabels(discoveredLabels).map((s: string, idx: number) => (
           <Fragment key={idx}>

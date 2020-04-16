@@ -15,6 +15,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -26,7 +27,6 @@ import (
 )
 
 func TestSelectSorted(t *testing.T) {
-
 	inputLabel := labels.FromStrings(model.MetricNameLabel, "a")
 	outputLabel := labels.FromStrings(model.MetricNameLabel, "a")
 
@@ -79,7 +79,7 @@ func TestSelectSorted(t *testing.T) {
 	matcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "a")
 	testutil.Ok(t, err)
 
-	seriesSet, _, err := querier.SelectSorted(nil, matcher)
+	seriesSet, _, err := querier.Select(true, nil, matcher)
 	testutil.Ok(t, err)
 
 	result := make(map[int64]float64)
@@ -97,5 +97,90 @@ func TestSelectSorted(t *testing.T) {
 
 	testutil.Equals(t, labelsResult, outputLabel)
 	testutil.Equals(t, inputTotalSize, len(result))
+}
 
+func TestFanoutErrors(t *testing.T) {
+	workingStorage := teststorage.New(t)
+	defer workingStorage.Close()
+
+	cases := []struct {
+		primary   storage.Storage
+		secondary storage.Storage
+		warnings  storage.Warnings
+		err       error
+	}{
+		{
+			primary:   workingStorage,
+			secondary: errStorage{},
+			warnings:  storage.Warnings{errSelect},
+			err:       nil,
+		},
+		{
+			primary:   errStorage{},
+			secondary: workingStorage,
+			warnings:  nil,
+			err:       errSelect,
+		},
+	}
+
+	for _, tc := range cases {
+		fanoutStorage := storage.NewFanout(nil, tc.primary, tc.secondary)
+
+		querier, err := fanoutStorage.Querier(context.Background(), 0, 8000)
+		testutil.Ok(t, err)
+		defer querier.Close()
+
+		matcher := labels.MustNewMatcher(labels.MatchEqual, "a", "b")
+		ss, warnings, err := querier.Select(true, nil, matcher)
+		testutil.Equals(t, tc.err, err)
+		testutil.Equals(t, tc.warnings, warnings)
+
+		// Only test series iteration if there are no errors.
+		if err != nil {
+			continue
+		}
+
+		for ss.Next() {
+			ss.At()
+		}
+		testutil.Ok(t, ss.Err())
+	}
+}
+
+var errSelect = errors.New("select error")
+
+type errStorage struct{}
+
+func (errStorage) Querier(_ context.Context, _, _ int64) (storage.Querier, error) {
+	return errQuerier{}, nil
+}
+
+func (errStorage) Appender() storage.Appender {
+	return nil
+}
+
+func (errStorage) StartTime() (int64, error) {
+	return 0, nil
+}
+
+func (errStorage) Close() error {
+	return nil
+}
+
+type errQuerier struct{}
+
+func (errQuerier) Select(bool, *storage.SelectHints, ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
+	return nil, nil, errSelect
+}
+
+func (errQuerier) LabelValues(name string) ([]string, storage.Warnings, error) {
+	return nil, nil, errors.New("label values error")
+}
+
+func (errQuerier) LabelNames() ([]string, storage.Warnings, error) {
+	return nil, nil, errors.New("label names error")
+}
+
+func (errQuerier) Close() error {
+	return nil
 }
