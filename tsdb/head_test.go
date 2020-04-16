@@ -25,6 +25,7 @@ import (
 	"strconv"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/pkg/errors"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
@@ -1513,6 +1514,35 @@ func TestHeadSeriesChunkRace(t *testing.T) {
 	for i := 0; i < 1000; i++ {
 		testHeadSeriesChunkRace(t)
 	}
+}
+
+func TestIsolationLowWatermarkConcurrency(t *testing.T) {
+	hb, err := NewHead(nil, nil, nil, 1000, DefaultStripeSize)
+	testutil.Ok(t, err)
+	defer hb.Close()
+
+	var wg sync.WaitGroup
+	doAppend := func(i int) {
+		app := hb.Appender()
+		time.Sleep(1 * time.Millisecond)
+		if i%2 == 0 {
+			testutil.Ok(t, app.Commit())
+		} else {
+			testutil.Ok(t, app.Rollback())
+		}
+		wg.Done()
+	}
+
+	runs := 5000
+
+	wg.Add(runs)
+	for i := 0; i < runs; i++ {
+		go doAppend(i)
+	}
+	wg.Wait()
+
+	testutil.Equals(t, uint64(runs), hb.iso.lastAppendID, "High watermark should be equal to runs")
+	testutil.Equals(t, uint64(runs), hb.iso.lowWatermark(), "Low watermark should be equal to runs")
 }
 
 func testHeadSeriesChunkRace(t *testing.T) {
