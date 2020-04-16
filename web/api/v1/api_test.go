@@ -163,6 +163,12 @@ func (t *testTargetRetriever) ResetMetadataStore() {
 	}
 }
 
+func (t *testTargetRetriever) toFactory() func(context.Context) TargetRetriever {
+	return func(context.Context) TargetRetriever {
+		return t
+	}
+}
+
 type testAlertmanagerRetriever struct{}
 
 func (t testAlertmanagerRetriever) Alertmanagers() []*url.URL {
@@ -311,7 +317,7 @@ func TestEndpoints(t *testing.T) {
 		api := &API{
 			Queryable:             suite.Storage(),
 			QueryEngine:           suite.QueryEngine(),
-			targetRetriever:       testTargetRetriever,
+			targetRetriever:       testTargetRetriever.toFactory(),
 			alertmanagerRetriever: testAlertmanagerRetriever{},
 			flagsMap:              sampleFlagMap,
 			now:                   func() time.Time { return now },
@@ -375,7 +381,7 @@ func TestEndpoints(t *testing.T) {
 		api := &API{
 			Queryable:             remote,
 			QueryEngine:           suite.QueryEngine(),
-			targetRetriever:       testTargetRetriever,
+			targetRetriever:       testTargetRetriever.toFactory(),
 			alertmanagerRetriever: testAlertmanagerRetriever{},
 			flagsMap:              sampleFlagMap,
 			now:                   func() time.Time { return now },
