@@ -1373,7 +1373,7 @@ func TestMemSeriesIsolation(t *testing.T) {
 		var app storage.Appender
 		// To initialize bounds.
 		if hb.MinTime() == math.MaxInt64 {
-			app = &initAppender{head: hb, appendID: uint64(i), cleanupAppendIDsBelow: 0}
+			app = &initAppender{head: hb}
 		} else {
 			app = hb.appender(uint64(i), 0)
 		}
@@ -1513,6 +1513,22 @@ func TestHeadSeriesChunkRace(t *testing.T) {
 	for i := 0; i < 1000; i++ {
 		testHeadSeriesChunkRace(t)
 	}
+}
+
+func TestIsolationWithoutAdd(t *testing.T) {
+	hb, err := NewHead(nil, nil, nil, 1000, DefaultStripeSize)
+	testutil.Ok(t, err)
+	defer hb.Close()
+
+	app := hb.Appender()
+	testutil.Ok(t, app.Commit())
+
+	app = hb.Appender()
+	_, err = app.Add(labels.FromStrings("foo", "baz"), 1, 1)
+	testutil.Ok(t, err)
+	testutil.Ok(t, app.Commit())
+
+	testutil.Equals(t, hb.iso.lastAppendID, hb.iso.lowWatermark(), "High watermark should be equal to the low watermark")
 }
 
 func testHeadSeriesChunkRace(t *testing.T) {
