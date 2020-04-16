@@ -237,8 +237,10 @@ type QueueManager struct {
 	cfg            config.QueueConfig
 	externalLabels labels.Labels
 	relabelConfigs []*relabel.Config
-	client         StorageClient
 	watcher        *wal.Watcher
+
+	clientMtx   sync.RWMutex
+	storeClient StorageClient
 
 	seriesMtx            sync.Mutex
 	seriesLabels         map[uint64]labels.Labels
@@ -283,7 +285,7 @@ func NewQueueManager(metrics *queueManagerMetrics, watcherMetrics *wal.WatcherMe
 		cfg:            cfg,
 		externalLabels: externalLabels,
 		relabelConfigs: relabelConfigs,
-		client:         client,
+		storeClient:    client,
 
 		seriesLabels:         make(map[uint64]labels.Labels),
 		seriesSegmentIndexes: make(map[uint64]int),
@@ -358,8 +360,8 @@ func (t *QueueManager) Start() {
 	// Setup the QueueManagers metrics. We do this here rather than in the
 	// constructor because of the ordering of creating Queue Managers's, stopping them,
 	// and then starting new ones in storage/remote/storage.go ApplyConfig.
-	name := t.client.Name()
-	ep := t.client.Endpoint()
+	name := t.client().Name()
+	ep := t.client().Endpoint()
 	t.highestSentTimestampMetric = &maxGauge{
 		Gauge: t.metrics.queueHighestSentTimestamp.WithLabelValues(name, ep),
 	}
@@ -413,8 +415,8 @@ func (t *QueueManager) Stop() {
 	}
 	t.seriesMtx.Unlock()
 	// Delete metrics so we don't have alerts for queues that are gone.
-	name := t.client.Name()
-	ep := t.client.Endpoint()
+	name := t.client().Name()
+	ep := t.client().Endpoint()
 	t.metrics.queueHighestSentTimestamp.DeleteLabelValues(name, ep)
 	t.metrics.queuePendingSamples.DeleteLabelValues(name, ep)
 	t.metrics.enqueueRetriesTotal.DeleteLabelValues(name, ep)
@@ -470,6 +472,20 @@ func (t *QueueManager) SeriesReset(index int) {
 			delete(t.droppedSeries, k)
 		}
 	}
+}
+
+// SetClient updates the client used by a queue. Used when only client specific
+// fields are updated to avoid restarting the queue.
+func (t *QueueManager) SetClient(c StorageClient) {
+	t.clientMtx.Lock()
+	t.storeClient = c
+	t.clientMtx.Unlock()
+}
+
+func (t *QueueManager) client() StorageClient {
+	t.clientMtx.RLock()
+	defer t.clientMtx.RUnlock()
+	return t.storeClient
 }
 
 func internLabels(lbls labels.Labels) {
@@ -866,7 +882,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 		default:
 		}
 		begin := time.Now()
-		err := s.qm.client.Store(ctx, req)
+		err := s.qm.client().Store(ctx, req)
 
 		s.qm.sentBatchDuration.Observe(time.Since(begin).Seconds())
 
