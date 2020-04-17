@@ -851,6 +851,9 @@ func (h *Head) Appender() storage.Appender {
 }
 
 func (h *Head) appender() *headAppender {
+	appendID := h.iso.newAppendID()
+	cleanupAppendIDsBelow := h.iso.lowWatermark()
+
 	return &headAppender{
 		head: h,
 		// Set the minimum valid time to whichever is greater the head min valid time or the compaction window.
@@ -860,8 +863,8 @@ func (h *Head) appender() *headAppender {
 		maxt:                  math.MinInt64,
 		samples:               h.getAppendBuffer(),
 		sampleSeries:          h.getSeriesBuffer(),
-		appendID:              h.iso.newAppendID(),
-		cleanupAppendIDsBelow: h.iso.lowWatermark(),
+		appendID:              appendID,
+		cleanupAppendIDsBelow: cleanupAppendIDsBelow,
 	}
 }
 
