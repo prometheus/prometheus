@@ -317,7 +317,7 @@ func (api *API) options(r *http.Request) apiFuncResult {
 	return apiFuncResult{nil, nil, nil, nil}
 }
 
-func (api *API) query(r *http.Request) apiFuncResult {
+func (api *API) query(r *http.Request) (result apiFuncResult) {
 	ts, err := parseTimeParam(r, "time", api.now())
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
@@ -340,6 +340,14 @@ func (api *API) query(r *http.Request) apiFuncResult {
 		err = errors.Wrapf(err, "invalid parameter 'query'")
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
+	// From now on, we must only return with a finalizer in the result (to
+	// be called by the caller) or call qry.Close ourselves (which is
+	// required in the case of a panic).
+	defer func() {
+		if result.finalizer == nil {
+			qry.Close()
+		}
+	}()
 
 	ctx = httputil.ContextFromRequest(ctx, r)
 
@@ -361,7 +369,7 @@ func (api *API) query(r *http.Request) apiFuncResult {
 	}, nil, res.Warnings, qry.Close}
 }
 
-func (api *API) queryRange(r *http.Request) apiFuncResult {
+func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 	start, err := parseTime(r.FormValue("start"))
 	if err != nil {
 		err = errors.Wrapf(err, "invalid parameter 'start'")
@@ -412,6 +420,14 @@ func (api *API) queryRange(r *http.Request) apiFuncResult {
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
+	// From now on, we must only return with a finalizer in the result (to
+	// be called by the caller) or call qry.Close ourselves (which is
+	// required in the case of a panic).
+	defer func() {
+		if result.finalizer == nil {
+			qry.Close()
+		}
+	}()
 
 	ctx = httputil.ContextFromRequest(ctx, r)
 
@@ -464,7 +480,7 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 	return apiFuncResult{names, nil, warnings, nil}
 }
 
-func (api *API) labelValues(r *http.Request) apiFuncResult {
+func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 	ctx := r.Context()
 	name := route.Param(ctx, "name")
 
@@ -475,7 +491,14 @@ func (api *API) labelValues(r *http.Request) apiFuncResult {
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
 	}
-
+	// From now on, we must only return with a finalizer in the result (to
+	// be called by the caller) or call q.Close ourselves (which is required
+	// in the case of a panic).
+	defer func() {
+		if result.finalizer == nil {
+			q.Close()
+		}
+	}()
 	closer := func() {
 		q.Close()
 	}
@@ -496,7 +519,7 @@ var (
 	maxTimeFormatted = maxTime.Format(time.RFC3339Nano)
 )
 
-func (api *API) series(r *http.Request) apiFuncResult {
+func (api *API) series(r *http.Request) (result apiFuncResult) {
 	if err := r.ParseForm(); err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrapf(err, "error parsing form values")}, nil, nil}
 	}
@@ -526,7 +549,17 @@ func (api *API) series(r *http.Request) apiFuncResult {
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
 	}
-	defer q.Close()
+	// From now on, we must only return with a finalizer in the result (to
+	// be called by the caller) or call q.Close ourselves (which is required
+	// in the case of a panic).
+	defer func() {
+		if result.finalizer == nil {
+			q.Close()
+		}
+	}()
+	closer := func() {
+		q.Close()
+	}
 
 	var sets []storage.SeriesSet
 	var warnings storage.Warnings
@@ -534,7 +567,7 @@ func (api *API) series(r *http.Request) apiFuncResult {
 		s, wrn, err := q.Select(false, nil, mset...)
 		warnings = append(warnings, wrn...)
 		if err != nil {
-			return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
+			return apiFuncResult{nil, &apiError{errorExec, err}, warnings, closer}
 		}
 		sets = append(sets, s)
 	}
@@ -545,10 +578,10 @@ func (api *API) series(r *http.Request) apiFuncResult {
 		metrics = append(metrics, set.At().Labels())
 	}
 	if set.Err() != nil {
-		return apiFuncResult{nil, &apiError{errorExec, set.Err()}, warnings, nil}
+		return apiFuncResult{nil, &apiError{errorExec, set.Err()}, warnings, closer}
 	}
 
-	return apiFuncResult{metrics, nil, warnings, nil}
+	return apiFuncResult{metrics, nil, warnings, closer}
 }
 
 func (api *API) dropSeries(r *http.Request) apiFuncResult {
