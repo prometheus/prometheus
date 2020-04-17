@@ -14,6 +14,7 @@
 package promql
 
 import (
+	"bytes"
 	"container/heap"
 	"context"
 	"fmt"
@@ -837,6 +838,8 @@ type EvalNodeHelper struct {
 	// label_replace.
 	regex *regexp.Regexp
 
+	lb *labels.Builder
+
 	// For binary vector matching.
 	rightSigs    map[string]Sample
 	matchedSigs  map[string]map[uint64]struct{}
@@ -865,12 +868,13 @@ func (enh *EvalNodeHelper) signatureFunc(on bool, names ...string) func(labels.L
 	}
 	f := signatureFuncString(on, names...)
 	return func(l labels.Labels) string {
-		ret, ok := enh.sigf[l.String()]
+		ls := l.String()
+		ret, ok := enh.sigf[ls]
 		if ok {
 			return ret
 		}
 		ret = f(l)
-		enh.sigf[l.String()] = ret
+		enh.sigf[ls] = ret
 		return ret
 	}
 }
@@ -1702,23 +1706,36 @@ func signatureFuncString(on bool, names ...string) func(labels.Labels) string {
 	}
 }
 
+var labelsPool = sync.Pool{
+	New: func() interface{} {
+		// todo: does the size here change anything?
+		return bytes.NewBuffer(make([]byte, 0, 96))
+	},
+}
+
 // resultMetric returns the metric for the given sample(s) based on the Vector
 // binary operation and the matching options.
 func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.VectorMatching, enh *EvalNodeHelper) labels.Labels {
 	if enh.resultMetric == nil {
 		enh.resultMetric = make(map[string]labels.Labels, len(enh.out))
 	}
-
-	key := lhs.String() + rhs.String()
-
-	if ret, ok := enh.resultMetric[key]; ok {
+	if enh.lb == nil {
+		enh.lb = labels.NewBuilder(lhs)
+	} else {
+		enh.lb.Reset(lhs)
+	}
+	reuseStr := labelsPool.Get().(*bytes.Buffer)
+	reuseStr.Write([]byte(lhs.String()))
+	reuseStr.Write([]byte(rhs.String()))
+	str := reuseStr.String()
+	reuseStr.Reset()
+	labelsPool.Put(reuseStr)
+	if ret, ok := enh.resultMetric[string(str)]; ok {
 		return ret
 	}
 
-	lb := labels.NewBuilder(lhs)
-
 	if shouldDropMetricName(op) {
-		lb.Del(labels.MetricName)
+		enh.lb.Del(labels.MetricName)
 	}
 
 	if matching.Card == parser.CardOneToOne {
@@ -1730,23 +1747,23 @@ func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.V
 						continue Outer
 					}
 				}
-				lb.Del(l.Name)
+				enh.lb.Del(l.Name)
 			}
 		} else {
-			lb.Del(matching.MatchingLabels...)
+			enh.lb.Del(matching.MatchingLabels...)
 		}
 	}
 	for _, ln := range matching.Include {
 		// Included labels from the `group_x` modifier are taken from the "one"-side.
 		if v := rhs.Get(ln); v != "" {
-			lb.Set(ln, v)
+			enh.lb.Set(ln, v)
 		} else {
-			lb.Del(ln)
+			enh.lb.Del(ln)
 		}
 	}
 
-	ret := lb.Labels()
-	enh.resultMetric[key] = ret
+	ret := enh.lb.Labels()
+	enh.resultMetric[string(str)] = ret
 	return ret
 }
 

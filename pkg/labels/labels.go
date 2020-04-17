@@ -17,7 +17,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"sort"
-	"strconv"
+	"sync"
 
 	"github.com/cespare/xxhash"
 )
@@ -31,6 +31,13 @@ const (
 	BucketLabel  = "le"
 	InstanceName = "instance"
 )
+
+var bufPool = sync.Pool{
+	New: func() interface{} {
+		// 96 seems to be the best for the benchmarks but that might not mean anything for real scenarios
+		return bytes.NewBuffer(make([]byte, 0, 96))
+	},
+}
 
 // Label is a key/value pair of strings.
 type Label struct {
@@ -46,7 +53,8 @@ func (ls Labels) Swap(i, j int)      { ls[i], ls[j] = ls[j], ls[i] }
 func (ls Labels) Less(i, j int) bool { return ls[i].Name < ls[j].Name }
 
 func (ls Labels) String() string {
-	var b bytes.Buffer
+	var ret string
+	b := bufPool.Get().(*bytes.Buffer)
 
 	b.WriteByte('{')
 	for i, l := range ls {
@@ -56,11 +64,16 @@ func (ls Labels) String() string {
 		}
 		b.WriteString(l.Name)
 		b.WriteByte('=')
-		b.WriteString(strconv.Quote(l.Value))
+		b.WriteByte('"')
+		b.WriteString(l.Value)
+		b.WriteByte('"')
+
 	}
 	b.WriteByte('}')
-
-	return b.String()
+	ret = b.String()
+	b.Reset()
+	bufPool.Put(b)
+	return ret
 }
 
 // MarshalJSON implements json.Marshaler.
@@ -175,7 +188,8 @@ func (ls Labels) HashWithoutLabels(b []byte, names ...string) (uint64, []byte) {
 // WithLabels returns a new labels.Labels from ls that only contains labels matching names.
 // 'names' have to be sorted in ascending order.
 func (ls Labels) WithLabels(names ...string) Labels {
-	var ret Labels
+	ret := make([]Label, 0, len(ls))
+
 	i, j := 0, 0
 	for i < len(ls) && j < len(names) {
 		if names[j] < ls[i].Name {
@@ -194,7 +208,8 @@ func (ls Labels) WithLabels(names ...string) Labels {
 // WithLabels returns a new labels.Labels from ls that contains labels not matching names.
 // 'names' have to be sorted in ascending order.
 func (ls Labels) WithoutLabels(names ...string) Labels {
-	var ret Labels
+	ret := make([]Label, 0, len(ls))
+
 	j := 0
 	for i := range ls {
 		for j < len(names) && names[j] < ls[i].Name {
