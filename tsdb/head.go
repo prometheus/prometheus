@@ -810,10 +810,7 @@ func (a *initAppender) Add(lset labels.Labels, t int64, v float64) (uint64, erro
 		return a.app.Add(lset, t, v)
 	}
 	a.head.initTime(t)
-	appendID := a.head.iso.newAppendID()
-	cleanupAppendIDsBelow := a.head.iso.lowWatermark()
-
-	a.app = a.head.appender(appendID, cleanupAppendIDsBelow)
+	a.app = a.head.appender()
 
 	return a.app.Add(lset, t, v)
 }
@@ -850,14 +847,10 @@ func (h *Head) Appender() storage.Appender {
 			head: h,
 		}
 	}
-
-	appendID := h.iso.newAppendID()
-	cleanupAppendIDsBelow := h.iso.lowWatermark()
-
-	return h.appender(appendID, cleanupAppendIDsBelow)
+	return h.appender()
 }
 
-func (h *Head) appender(appendID, cleanupAppendIDsBelow uint64) *headAppender {
+func (h *Head) appender() *headAppender {
 	return &headAppender{
 		head: h,
 		// Set the minimum valid time to whichever is greater the head min valid time or the compaction window.
@@ -867,8 +860,8 @@ func (h *Head) appender(appendID, cleanupAppendIDsBelow uint64) *headAppender {
 		maxt:                  math.MinInt64,
 		samples:               h.getAppendBuffer(),
 		sampleSeries:          h.getSeriesBuffer(),
-		appendID:              appendID,
-		cleanupAppendIDsBelow: cleanupAppendIDsBelow,
+		appendID:              h.iso.newAppendID(),
+		cleanupAppendIDsBelow: h.iso.lowWatermark(),
 	}
 }
 
