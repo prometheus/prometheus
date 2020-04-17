@@ -73,7 +73,7 @@ type Appender interface {
 }
 
 // Iterator is a simple iterator that can only get the next value.
-// Iterator iterates over the samples of a time series.
+// Iterator iterates over the samples of a time series, in timestamp-increasing order.
 type Iterator interface {
 	// Next advances the iterator by one.
 	Next() bool

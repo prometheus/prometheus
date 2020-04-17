@@ -172,21 +172,47 @@ func TestNonConfiguredService(t *testing.T) {
 
 const (
 	AgentAnswer       = `{"Config": {"Datacenter": "test-dc"}}`
-	ServiceTestAnswer = `[{
-"ID": "b78c2e48-5ef3-1814-31b8-0d880f50471e",
-"Node": "node1",
-"Address": "1.1.1.1",
-"Datacenter": "test-dc",
-"TaggedAddresses": {"lan":"192.168.10.10","wan":"10.0.10.10"},
-"NodeMeta": {"rack_name": "2304"},
-"ServiceID": "test",
-"ServiceName": "test",
-"ServiceMeta": {"version":"1.0.0","environment":"staging"},
-"ServiceTags": ["tag1"],
-"ServicePort": 3341,
-"CreateIndex": 1,
-"ModifyIndex": 1
+	ServiceTestAnswer = `
+[{
+	"Node": {
+		"ID": "b78c2e48-5ef3-1814-31b8-0d880f50471e",
+		"Node": "node1",
+		"Address": "1.1.1.1",
+		"Datacenter": "test-dc",
+		"TaggedAddresses": {
+			"lan": "192.168.10.10",
+			"wan": "10.0.10.10"
+		},
+		"Meta": {"rack_name": "2304"},
+		"CreateIndex": 1,
+		"ModifyIndex": 1
+	},
+	"Service": {
+		"ID": "test",
+		"Service": "test",
+		"Tags": ["tag1"],
+		"Address": "",
+		"Meta": {"version":"1.0.0","environment":"stagging"},
+		"Port": 3341,
+		"Weights": {
+			"Passing": 1,
+			"Warning": 1
+		},
+		"EnableTagOverride": false,
+		"ProxyDestination": "",
+		"Proxy": {},
+		"Connect": {},
+		"CreateIndex": 1,
+		"ModifyIndex": 1
+	},
+	"Checks": [{
+		"Node": "node1",
+		"CheckID": "serfHealth",
+		"Name": "Serf Health Status",
+		"Status": "passing"
+	}]
 }]`
+
 	ServicesTestAnswer = `{"test": ["tag1"], "other": ["tag2"]}`
 )
 
@@ -197,11 +223,11 @@ func newServer(t *testing.T) (*httptest.Server, *SDConfig) {
 		switch r.URL.String() {
 		case "/v1/agent/self":
 			response = AgentAnswer
-		case "/v1/catalog/service/test?node-meta=rack_name%3A2304&stale=&tag=tag1&wait=30000ms":
+		case "/v1/health/service/test?node-meta=rack_name%3A2304&stale=&tag=tag1&wait=30000ms":
 			response = ServiceTestAnswer
-		case "/v1/catalog/service/test?wait=30000ms":
+		case "/v1/health/service/test?wait=30000ms":
 			response = ServiceTestAnswer
-		case "/v1/catalog/service/other?wait=30000ms":
+		case "/v1/health/service/other?wait=30000ms":
 			response = `[]`
 		case "/v1/catalog/services?node-meta=rack_name%3A2304&stale=&wait=30000ms":
 			response = ServicesTestAnswer

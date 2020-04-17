@@ -17,15 +17,21 @@ const defaultProps = {
     resolution: 28,
     stacked: false,
   },
-  onOptionsChanged: (): void => {},
+  onOptionsChanged: (): void => {
+    // Do nothing.
+  },
   pastQueries: [],
   metricNames: [
     'prometheus_engine_queries',
     'prometheus_engine_queries_concurrent_max',
     'prometheus_engine_query_duration_seconds',
   ],
-  removePanel: (): void => {},
-  onExecuteQuery: (): void => {},
+  removePanel: (): void => {
+    // Do nothing.
+  },
+  onExecuteQuery: (): void => {
+    // Do nothing.
+  },
 };
 
 describe('Panel', () => {
@@ -51,17 +57,18 @@ describe('Panel', () => {
     };
     const panel = shallow(<Panel {...defaultProps} onOptionsChanged={onOptionsChanged} />);
     const links = panel.find(NavLink);
-    [{ panelType: 'Table', active: true }, { panelType: 'Graph', active: false }].forEach(
-      (tc: { panelType: string; active: boolean }, i: number) => {
-        const link = links.at(i);
-        const className = tc.active ? 'active' : '';
-        expect(link.prop('className')).toEqual(className);
-        link.simulate('click');
-        expect(results).toHaveLength(1);
-        expect(results[0].type).toEqual(tc.panelType.toLowerCase());
-        results.pop();
-      }
-    );
+    [
+      { panelType: 'Table', active: true },
+      { panelType: 'Graph', active: false },
+    ].forEach((tc: { panelType: string; active: boolean }, i: number) => {
+      const link = links.at(i);
+      const className = tc.active ? 'active' : '';
+      expect(link.prop('className')).toEqual(className);
+      link.simulate('click');
+      expect(results).toHaveLength(1);
+      expect(results[0].type).toEqual(tc.panelType.toLowerCase());
+      results.pop();
+    });
   });
 
   it('renders a TabPane with a TimeInput and a DataTable when in table mode', () => {
@@ -94,22 +101,23 @@ describe('Panel', () => {
   });
 
   describe('when switching between modes', () => {
-    [{ from: PanelType.Table, to: PanelType.Graph }, { from: PanelType.Graph, to: PanelType.Table }].forEach(
-      ({ from, to }: { from: PanelType; to: PanelType }) => {
-        it(`${from} -> ${to} nulls out data`, () => {
-          const props = {
-            ...defaultProps,
-            options: { ...defaultProps.options, type: from },
-          };
-          const panel = shallow(<Panel {...props} />);
-          const instance: any = panel.instance();
-          panel.setState({ data: 'somedata' });
-          expect(panel.state('data')).toEqual('somedata');
-          instance.handleChangeType(to);
-          expect(panel.state('data')).toBeNull();
-        });
-      }
-    );
+    [
+      { from: PanelType.Table, to: PanelType.Graph },
+      { from: PanelType.Graph, to: PanelType.Table },
+    ].forEach(({ from, to }: { from: PanelType; to: PanelType }) => {
+      it(`${from} -> ${to} nulls out data`, () => {
+        const props = {
+          ...defaultProps,
+          options: { ...defaultProps.options, type: from },
+        };
+        const panel = shallow(<Panel {...props} />);
+        const instance: any = panel.instance();
+        panel.setState({ data: 'somedata' });
+        expect(panel.state('data')).toEqual('somedata');
+        instance.handleChangeType(to);
+        expect(panel.state('data')).toBeNull();
+      });
+    });
   });
 
   describe('when changing query then time', () => {

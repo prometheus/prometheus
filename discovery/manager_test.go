@@ -758,20 +758,20 @@ func TestTargetSetRecreatesTargetGroupsEveryRun(t *testing.T) {
 	go discoveryManager.Run()
 
 	c := map[string]sd_config.ServiceDiscoveryConfig{
-		"prometheus": sd_config.ServiceDiscoveryConfig{
+		"prometheus": {
 			StaticConfigs: []*targetgroup.Group{
-				&targetgroup.Group{
+				{
 					Source: "0",
 					Targets: []model.LabelSet{
-						model.LabelSet{
+						{
 							model.AddressLabel: model.LabelValue("foo:9090"),
 						},
 					},
 				},
-				&targetgroup.Group{
+				{
 					Source: "1",
 					Targets: []model.LabelSet{
-						model.LabelSet{
+						{
 							model.AddressLabel: model.LabelValue("bar:9090"),
 						},
 					},
@@ -787,10 +787,10 @@ func TestTargetSetRecreatesTargetGroupsEveryRun(t *testing.T) {
 
 	c["prometheus"] = sd_config.ServiceDiscoveryConfig{
 		StaticConfigs: []*targetgroup.Group{
-			&targetgroup.Group{
+			{
 				Source: "0",
 				Targets: []model.LabelSet{
-					model.LabelSet{
+					{
 						model.AddressLabel: model.LabelValue("foo:9090"),
 					},
 				},
@@ -815,12 +815,12 @@ func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
 	go discoveryManager.Run()
 
 	c := map[string]sd_config.ServiceDiscoveryConfig{
-		"prometheus": sd_config.ServiceDiscoveryConfig{
+		"prometheus": {
 			StaticConfigs: []*targetgroup.Group{
-				&targetgroup.Group{
+				{
 					Source: "0",
 					Targets: []model.LabelSet{
-						model.LabelSet{
+						{
 							model.AddressLabel: model.LabelValue("foo:9090"),
 						},
 					},
@@ -880,9 +880,9 @@ func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
 	go discoveryManager.Run()
 
 	c := map[string]sd_config.ServiceDiscoveryConfig{
-		"prometheus": sd_config.ServiceDiscoveryConfig{
+		"prometheus": {
 			FileSDConfigs: []*file.SDConfig{
-				&file.SDConfig{
+				{
 					Files: []string{
 						tmpFile2,
 					},
@@ -890,9 +890,9 @@ func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
 				},
 			},
 		},
-		"prometheus2": sd_config.ServiceDiscoveryConfig{
+		"prometheus2": {
 			FileSDConfigs: []*file.SDConfig{
-				&file.SDConfig{
+				{
 					Files: []string{
 						tmpFile2,
 					},
@@ -958,21 +958,21 @@ func TestGaugeFailedConfigs(t *testing.T) {
 	go discoveryManager.Run()
 
 	c := map[string]sd_config.ServiceDiscoveryConfig{
-		"prometheus": sd_config.ServiceDiscoveryConfig{
+		"prometheus": {
 			ConsulSDConfigs: []*consul.SDConfig{
-				&consul.SDConfig{
+				{
 					Server: "foo:8500",
 					TLSConfig: common_config.TLSConfig{
 						CertFile: "/tmp/non_existent",
 					},
 				},
-				&consul.SDConfig{
+				{
 					Server: "bar:8500",
 					TLSConfig: common_config.TLSConfig{
 						CertFile: "/tmp/non_existent",
 					},
 				},
-				&consul.SDConfig{
+				{
 					Server: "foo2:8500",
 					TLSConfig: common_config.TLSConfig{
 						CertFile: "/tmp/non_existent",
@@ -991,10 +991,10 @@ func TestGaugeFailedConfigs(t *testing.T) {
 
 	c["prometheus"] = sd_config.ServiceDiscoveryConfig{
 		StaticConfigs: []*targetgroup.Group{
-			&targetgroup.Group{
+			{
 				Source: "0",
 				Targets: []model.LabelSet{
-					model.LabelSet{
+					{
 						model.AddressLabel: "foo:9090",
 					},
 				},

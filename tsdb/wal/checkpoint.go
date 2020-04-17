@@ -21,6 +21,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -44,46 +45,32 @@ type CheckpointStats struct {
 // LastCheckpoint returns the directory name and index of the most recent checkpoint.
 // If dir does not contain any checkpoints, ErrNotFound is returned.
 func LastCheckpoint(dir string) (string, int, error) {
-	files, err := ioutil.ReadDir(dir)
+	checkpoints, err := listCheckpoints(dir)
 	if err != nil {
 		return "", 0, err
 	}
-	// Traverse list backwards since there may be multiple checkpoints left.
-	for i := len(files) - 1; i >= 0; i-- {
-		fi := files[i]
 
-		if !strings.HasPrefix(fi.Name(), checkpointPrefix) {
-			continue
-		}
-		if !fi.IsDir() {
-			return "", 0, errors.Errorf("checkpoint %s is not a directory", fi.Name())
-		}
-		idx, err := strconv.Atoi(fi.Name()[len(checkpointPrefix):])
-		if err != nil {
-			continue
-		}
-		return filepath.Join(dir, fi.Name()), idx, nil
+	if len(checkpoints) == 0 {
+		return "", 0, record.ErrNotFound
 	}
-	return "", 0, record.ErrNotFound
+
+	checkpoint := checkpoints[len(checkpoints)-1]
+	return filepath.Join(dir, checkpoint.name), checkpoint.index, nil
 }
 
 // DeleteCheckpoints deletes all checkpoints in a directory below a given index.
 func DeleteCheckpoints(dir string, maxIndex int) error {
-	var errs tsdb_errors.MultiError
-
-	files, err := ioutil.ReadDir(dir)
+	checkpoints, err := listCheckpoints(dir)
 	if err != nil {
 		return err
 	}
-	for _, fi := range files {
-		if !strings.HasPrefix(fi.Name(), checkpointPrefix) {
-			continue
+
+	var errs tsdb_errors.MultiError
+	for _, checkpoint := range checkpoints {
+		if checkpoint.index >= maxIndex {
+			break
 		}
-		index, err := strconv.Atoi(fi.Name()[len(checkpointPrefix):])
-		if err != nil || index >= maxIndex {
-			continue
-		}
-		if err := os.RemoveAll(filepath.Join(dir, fi.Name())); err != nil {
+		if err := os.RemoveAll(filepath.Join(dir, checkpoint.name)); err != nil {
 			errs.Add(err)
 		}
 	}
@@ -130,7 +117,7 @@ func Checkpoint(w *WAL, from, to int, keep func(id uint64) bool, mint int64) (*C
 		defer sgmReader.Close()
 	}
 
-	cpdir := filepath.Join(w.Dir(), fmt.Sprintf(checkpointPrefix+"%06d", to))
+	cpdir := checkpointDir(w.Dir(), to)
 	cpdirtmp := cpdir + ".tmp"
 
 	if err := os.RemoveAll(cpdirtmp); err != nil {
@@ -263,4 +250,42 @@ func Checkpoint(w *WAL, from, to int, keep func(id uint64) bool, mint int64) (*C
 	}
 
 	return stats, nil
+}
+
+func checkpointDir(dir string, i int) string {
+	return filepath.Join(dir, fmt.Sprintf(checkpointPrefix+"%08d", i))
+}
+
+type checkpointRef struct {
+	name  string
+	index int
+}
+
+func listCheckpoints(dir string) (refs []checkpointRef, err error) {
+	files, err := ioutil.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+
+	for i := 0; i < len(files); i++ {
+		fi := files[i]
+		if !strings.HasPrefix(fi.Name(), checkpointPrefix) {
+			continue
+		}
+		if !fi.IsDir() {
+			return nil, errors.Errorf("checkpoint %s is not a directory", fi.Name())
+		}
+		idx, err := strconv.Atoi(fi.Name()[len(checkpointPrefix):])
+		if err != nil {
+			continue
+		}
+
+		refs = append(refs, checkpointRef{name: fi.Name(), index: idx})
+	}
+
+	sort.Slice(refs, func(i, j int) bool {
+		return refs[i].index < refs[j].index
+	})
+
+	return refs, nil
 }

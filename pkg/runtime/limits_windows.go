@@ -20,7 +20,7 @@ func FdLimits() string {
 	return "N/A"
 }
 
-// VmLimits not supported on Windows
-func VmLimits() string {
+// VMLimits not supported on Windows
+func VMLimits() string {
 	return "N/A"
 }

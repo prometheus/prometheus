@@ -234,7 +234,7 @@ func createIdxChkReaders(t *testing.T, tc []seriesSamples) (IndexReader, ChunkRe
 				app.Append(smpl.t, smpl.v)
 			}
 			chkReader[chunkRef] = chunk
-			chunkRef += 1
+			chunkRef++
 		}
 
 		ls := labels.FromMap(s.lset)
@@ -373,7 +373,7 @@ Outer:
 			maxt: c.maxt,
 		}
 
-		res, ws, err := querier.Select(nil, c.ms...)
+		res, ws, err := querier.Select(false, nil, c.ms...)
 		testutil.Ok(t, err)
 		testutil.Equals(t, 0, len(ws))
 
@@ -461,9 +461,9 @@ func TestBlockQuerierDelete(t *testing.T) {
 			},
 		},
 		tombstones: tombstones.NewTestMemTombstones([]tombstones.Intervals{
-			tombstones.Intervals{{Mint: 1, Maxt: 3}},
-			tombstones.Intervals{{Mint: 1, Maxt: 3}, {Mint: 6, Maxt: 10}},
-			tombstones.Intervals{{Mint: 6, Maxt: 10}},
+			{{Mint: 1, Maxt: 3}},
+			{{Mint: 1, Maxt: 3}, {Mint: 6, Maxt: 10}},
+			{{Mint: 6, Maxt: 10}},
 		}),
 		queries: []query{
 			{
@@ -536,7 +536,7 @@ Outer:
 			maxt: c.maxt,
 		}
 
-		res, ws, err := querier.Select(nil, c.ms...)
+		res, ws, err := querier.Select(false, nil, c.ms...)
 		testutil.Ok(t, err)
 		testutil.Equals(t, 0, len(ws))
 
@@ -1491,7 +1491,7 @@ func (m mockIndex) SortedPostings(p index.Postings) index.Postings {
 func (m mockIndex) Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) error {
 	s, ok := m.series[ref]
 	if !ok {
-		return ErrNotFound
+		return storage.ErrNotFound
 	}
 	*lset = append((*lset)[:0], s.l...)
 	*chks = append((*chks)[:0], s.chunks...)
@@ -1710,7 +1710,7 @@ func BenchmarkQuerySeek(b *testing.B) {
 				b.ResetTimer()
 				b.ReportAllocs()
 
-				ss, ws, err := sq.Select(nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
+				ss, ws, err := sq.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
 				for ss.Next() {
 					it := ss.At().Iterator()
 					for t := mint; t <= maxt; t++ {
@@ -1848,7 +1848,7 @@ func BenchmarkSetMatcher(b *testing.B) {
 			b.ResetTimer()
 			b.ReportAllocs()
 			for n := 0; n < b.N; n++ {
-				_, ws, err := que.Select(nil, labels.MustNewMatcher(labels.MatchRegexp, "test", c.pattern))
+				_, ws, err := que.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "test", c.pattern))
 				testutil.Ok(b, err)
 				testutil.Equals(b, 0, len(ws))
 			}
@@ -2137,7 +2137,7 @@ func TestPostingsForMatchers(t *testing.T) {
 		},
 	}
 
-	ir, err := h.Index(math.MinInt64, math.MaxInt64)
+	ir, err := h.Index()
 	testutil.Ok(t, err)
 
 	for _, c := range cases {
@@ -2297,7 +2297,7 @@ func benchQuery(b *testing.B, expExpansions int, q storage.Querier, selectors la
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		ss, ws, err := q.Select(nil, selectors...)
+		ss, ws, err := q.Select(false, nil, selectors...)
 		testutil.Ok(b, err)
 		testutil.Equals(b, 0, len(ws))
 		var actualExpansions int

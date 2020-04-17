@@ -231,7 +231,7 @@ func (t *testRunner) requireTargetGroups(expected, got []*targetgroup.Group) {
 // validTg() maps to fixtures/valid.{json,yml}.
 func validTg(file string) []*targetgroup.Group {
 	return []*targetgroup.Group{
-		&targetgroup.Group{
+		{
 			Targets: []model.LabelSet{
 				{
 					model.AddressLabel: model.LabelValue("localhost:9090"),
@@ -246,7 +246,7 @@ func validTg(file string) []*targetgroup.Group {
 			},
 			Source: fileSource(file, 0),
 		},
-		&targetgroup.Group{
+		{
 			Targets: []model.LabelSet{
 				{
 					model.AddressLabel: model.LabelValue("my.domain"),
@@ -263,7 +263,7 @@ func validTg(file string) []*targetgroup.Group {
 // valid2Tg() maps to fixtures/valid2.{json,yml}.
 func valid2Tg(file string) []*targetgroup.Group {
 	return []*targetgroup.Group{
-		&targetgroup.Group{
+		{
 			Targets: []model.LabelSet{
 				{
 					model.AddressLabel: model.LabelValue("my.domain"),
@@ -274,7 +274,7 @@ func valid2Tg(file string) []*targetgroup.Group {
 			},
 			Source: fileSource(file, 0),
 		},
-		&targetgroup.Group{
+		{
 			Targets: []model.LabelSet{
 				{
 					model.AddressLabel: model.LabelValue("localhost:9090"),
@@ -287,7 +287,7 @@ func valid2Tg(file string) []*targetgroup.Group {
 			},
 			Source: fileSource(file, 1),
 		},
-		&targetgroup.Group{
+		{
 			Targets: []model.LabelSet{
 				{
 					model.AddressLabel: model.LabelValue("example.org:443"),
@@ -431,7 +431,7 @@ func TestUpdateFileWithPartialWrites(t *testing.T) {
 	runner.appendString(sdFile, `: ["localhost:9091"]`)
 	runner.requireUpdate(ref,
 		[]*targetgroup.Group{
-			&targetgroup.Group{
+			{
 				Targets: []model.LabelSet{
 					{
 						model.AddressLabel: model.LabelValue("localhost:9091"),
@@ -442,7 +442,7 @@ func TestUpdateFileWithPartialWrites(t *testing.T) {
 				},
 				Source: fileSource(sdFile, 0),
 			},
-			&targetgroup.Group{
+			{
 				Source: fileSource(sdFile, 1),
 			},
 		},
@@ -467,10 +467,10 @@ func TestRemoveFile(t *testing.T) {
 	runner.requireUpdate(
 		ref,
 		[]*targetgroup.Group{
-			&targetgroup.Group{
+			{
 				Source: fileSource(sdFile, 0),
 			},
-			&targetgroup.Group{
+			{
 				Source: fileSource(sdFile, 1),
 			}},
 	)

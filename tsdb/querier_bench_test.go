@@ -16,13 +16,11 @@ package tsdb
 import (
 	"fmt"
 	"io/ioutil"
-	"math"
 	"os"
 	"strconv"
 	"testing"
 
 	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -55,7 +53,7 @@ func BenchmarkPostingsForMatchers(b *testing.B) {
 	}
 	testutil.Ok(b, app.Commit())
 
-	ir, err := h.Index(math.MinInt64, math.MaxInt64)
+	ir, err := h.Index()
 	testutil.Ok(b, err)
 	b.Run("Head", func(b *testing.B) {
 		benchmarkPostingsForMatchers(b, ir)
@@ -73,7 +71,7 @@ func BenchmarkPostingsForMatchers(b *testing.B) {
 	defer func() {
 		testutil.Ok(b, block.Close())
 	}()
-	ir, err = block.Index(math.MinInt64, math.MaxInt64)
+	ir, err = block.Index()
 	testutil.Ok(b, err)
 	defer ir.Close()
 	b.Run("Block", func(b *testing.B) {
@@ -147,12 +145,7 @@ func BenchmarkQuerierSelect(b *testing.B) {
 
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
-					var ss storage.SeriesSet
-					if sorted {
-						ss, _, err = q.SelectSorted(nil, matcher)
-					} else {
-						ss, _, err = q.Select(nil, matcher)
-					}
+					ss, _, err := q.Select(sorted, nil, matcher)
 					testutil.Ok(b, err)
 					for ss.Next() {
 					}

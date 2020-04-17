@@ -77,7 +77,7 @@ type IndexReader interface {
 
 	// Series populates the given labels and chunk metas for the series identified
 	// by the reference.
-	// Returns ErrNotFound if the ref does not resolve to a known series.
+	// Returns storage.ErrNotFound if the ref does not resolve to a known series.
 	Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) error
 
 	// LabelNames returns all the unique label names present in the index in sorted order.
@@ -111,9 +111,8 @@ type ChunkReader interface {
 
 // BlockReader provides reading access to a data block.
 type BlockReader interface {
-	// Index returns an IndexReader over the block's data within the specified
-	// timeframe.
-	Index(mint, maxt int64) (IndexReader, error)
+	// Index returns an IndexReader over the block's data.
+	Index() (IndexReader, error)
 
 	// Chunks returns a ChunkReader over the block's data.
 	Chunks() (ChunkReader, error)
@@ -373,7 +372,7 @@ func (pb *Block) startRead() error {
 }
 
 // Index returns a new IndexReader against the block data.
-func (pb *Block) Index(mint, maxt int64) (IndexReader, error) {
+func (pb *Block) Index() (IndexReader, error) {
 	if err := pb.startRead(); err != nil {
 		return nil, err
 	}

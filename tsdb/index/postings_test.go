@@ -852,7 +852,7 @@ func TestMemPostings_Delete(t *testing.T) {
 
 	before := p.Get(allPostingsKey.Name, allPostingsKey.Value)
 	p.Delete(map[uint64]struct{}{
-		2: struct{}{},
+		2: {},
 	})
 	after := p.Get(allPostingsKey.Name, allPostingsKey.Value)
 

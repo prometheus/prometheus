@@ -4,7 +4,7 @@ exports[`targetLabels renders discovered labels 1`] = `
 <Fragment>
   <div
     className="series-labels-container"
-    id="series-labels-cortex\\\\/node-exporter_group\\\\/0-1"
+    id="series-labels-cortex/node-exporter_group/0-1"
   >
     <Badge
       className="mr-1 instance"
@@ -47,7 +47,7 @@ exports[`targetLabels renders discovered labels 1`] = `
     }
     target="series-labels-cortex\\\\/node-exporter_group\\\\/0-1"
     toggle={[Function]}
-    trigger="click hover focus"
+    trigger="hover focus"
   >
     <b>
       Before relabeling:

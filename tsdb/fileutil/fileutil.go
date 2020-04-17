@@ -21,7 +21,6 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 )
 
@@ -89,21 +88,6 @@ func readDirs(src string) ([]string, error) {
 		return nil, err
 	}
 	return files, nil
-}
-
-// ReadDir returns the filenames in the given directory in sorted order.
-func ReadDir(dirpath string) ([]string, error) {
-	dir, err := os.Open(dirpath)
-	if err != nil {
-		return nil, err
-	}
-	defer dir.Close()
-	names, err := dir.Readdirnames(-1)
-	if err != nil {
-		return nil, err
-	}
-	sort.Strings(names)
-	return names, nil
 }
 
 // Rename safely renames a file.

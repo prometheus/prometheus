@@ -40,6 +40,10 @@ type KVPair struct {
 	// interactions with this key over the same session must specify the same
 	// session ID.
 	Session string
+
+	// Namespace is the namespace the KVPair is associated with
+	// Namespacing is a Consul Enterprise feature.
+	Namespace string `json:",omitempty"`
 }
 
 // KVPairs is a list of KVPair objects

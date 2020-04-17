@@ -237,8 +237,10 @@ type QueueManager struct {
 	cfg            config.QueueConfig
 	externalLabels labels.Labels
 	relabelConfigs []*relabel.Config
-	client         StorageClient
 	watcher        *wal.Watcher
+
+	clientMtx   sync.RWMutex
+	storeClient StorageClient
 
 	seriesMtx            sync.Mutex
 	seriesLabels         map[uint64]labels.Labels
@@ -271,7 +273,7 @@ type QueueManager struct {
 }
 
 // NewQueueManager builds a new QueueManager.
-func NewQueueManager(reg prometheus.Registerer, metrics *queueManagerMetrics, logger log.Logger, walDir string, samplesIn *ewmaRate, cfg config.QueueConfig, externalLabels labels.Labels, relabelConfigs []*relabel.Config, client StorageClient, flushDeadline time.Duration) *QueueManager {
+func NewQueueManager(metrics *queueManagerMetrics, watcherMetrics *wal.WatcherMetrics, readerMetrics *wal.LiveReaderMetrics, logger log.Logger, walDir string, samplesIn *ewmaRate, cfg config.QueueConfig, externalLabels labels.Labels, relabelConfigs []*relabel.Config, client StorageClient, flushDeadline time.Duration) *QueueManager {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -283,7 +285,7 @@ func NewQueueManager(reg prometheus.Registerer, metrics *queueManagerMetrics, lo
 		cfg:            cfg,
 		externalLabels: externalLabels,
 		relabelConfigs: relabelConfigs,
-		client:         client,
+		storeClient:    client,
 
 		seriesLabels:         make(map[uint64]labels.Labels),
 		seriesSegmentIndexes: make(map[uint64]int),
@@ -301,7 +303,7 @@ func NewQueueManager(reg prometheus.Registerer, metrics *queueManagerMetrics, lo
 		metrics: metrics,
 	}
 
-	t.watcher = wal.NewWatcher(reg, wal.NewWatcherMetrics(reg), logger, client.Name(), t, walDir)
+	t.watcher = wal.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, walDir)
 	t.shards = t.newShards()
 
 	return t
@@ -318,7 +320,7 @@ outer:
 			t.droppedSamplesTotal.Inc()
 			t.samplesDropped.incr(1)
 			if _, ok := t.droppedSeries[s.Ref]; !ok {
-				level.Info(t.logger).Log("msg", "dropped sample for series that was not explicitly dropped via relabelling", "ref", s.Ref)
+				level.Info(t.logger).Log("msg", "Dropped sample for series that was not explicitly dropped via relabelling", "ref", s.Ref)
 			}
 			t.seriesMtx.Unlock()
 			continue
@@ -358,8 +360,8 @@ func (t *QueueManager) Start() {
 	// Setup the QueueManagers metrics. We do this here rather than in the
 	// constructor because of the ordering of creating Queue Managers's, stopping them,
 	// and then starting new ones in storage/remote/storage.go ApplyConfig.
-	name := t.client.Name()
-	ep := t.client.Endpoint()
+	name := t.client().Name()
+	ep := t.client().Endpoint()
 	t.highestSentTimestampMetric = &maxGauge{
 		Gauge: t.metrics.queueHighestSentTimestamp.WithLabelValues(name, ep),
 	}
@@ -413,8 +415,8 @@ func (t *QueueManager) Stop() {
 	}
 	t.seriesMtx.Unlock()
 	// Delete metrics so we don't have alerts for queues that are gone.
-	name := t.client.Name()
-	ep := t.client.Endpoint()
+	name := t.client().Name()
+	ep := t.client().Endpoint()
 	t.metrics.queueHighestSentTimestamp.DeleteLabelValues(name, ep)
 	t.metrics.queuePendingSamples.DeleteLabelValues(name, ep)
 	t.metrics.enqueueRetriesTotal.DeleteLabelValues(name, ep)
@@ -470,6 +472,20 @@ func (t *QueueManager) SeriesReset(index int) {
 			delete(t.droppedSeries, k)
 		}
 	}
+}
+
+// SetClient updates the client used by a queue. Used when only client specific
+// fields are updated to avoid restarting the queue.
+func (t *QueueManager) SetClient(c StorageClient) {
+	t.clientMtx.Lock()
+	t.storeClient = c
+	t.clientMtx.Unlock()
+}
+
+func (t *QueueManager) client() StorageClient {
+	t.clientMtx.RLock()
+	defer t.clientMtx.RUnlock()
+	return t.storeClient
 }
 
 func internLabels(lbls labels.Labels) {
@@ -845,6 +861,7 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, b
 	// should be maintained irrespective of success or failure.
 	s.qm.samplesOut.incr(int64(len(samples)))
 	s.qm.samplesOutDuration.incr(int64(time.Since(begin)))
+	atomic.StoreInt64(&s.qm.lastSendTimestamp, time.Now().Unix())
 }
 
 // sendSamples to the remote storage with backoff for recoverable errors.
@@ -865,7 +882,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 		default:
 		}
 		begin := time.Now()
-		err := s.qm.client.Store(ctx, req)
+		err := s.qm.client().Store(ctx, req)
 
 		s.qm.sentBatchDuration.Observe(time.Since(begin).Seconds())
 
@@ -873,7 +890,6 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 			s.qm.succeededSamplesTotal.Add(float64(len(samples)))
 			s.qm.bytesSent.Add(float64(len(req)))
 			s.qm.highestSentTimestampMetric.Set(float64(highest / 1000))
-			atomic.StoreInt64(&s.qm.lastSendTimestamp, time.Now().Unix())
 			return nil
 		}
 
@@ -881,7 +897,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 			return err
 		}
 		s.qm.retriedSamplesTotal.Add(float64(len(samples)))
-		level.Debug(s.qm.logger).Log("msg", "failed to send batch, retrying", "err", err)
+		level.Debug(s.qm.logger).Log("msg", "Failed to send batch, retrying", "err", err)
 
 		time.Sleep(time.Duration(backoff))
 		backoff = backoff * 2

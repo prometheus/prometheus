@@ -23,12 +23,13 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestAlertingRuleHTMLSnippet(t *testing.T) {
-	expr, err := promql.ParseExpr(`foo{html="<b>BOLD<b>"}`)
+	expr, err := parser.ParseExpr(`foo{html="<b>BOLD<b>"}`)
 	testutil.Ok(t, err)
 	rule := NewAlertingRule("testrule", expr, 0, labels.FromStrings("html", "<b>BOLD</b>"), labels.FromStrings("html", "<b>BOLD</b>"), nil, false, nil)
 
@@ -54,7 +55,7 @@ func TestAlertingRuleLabelsUpdate(t *testing.T) {
 
 	testutil.Ok(t, suite.Run())
 
-	expr, err := promql.ParseExpr(`http_requests < 100`)
+	expr, err := parser.ParseExpr(`http_requests < 100`)
 	testutil.Ok(t, err)
 
 	rule := NewAlertingRule(
@@ -156,7 +157,7 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 
 	testutil.Ok(t, suite.Run())
 
-	expr, err := promql.ParseExpr(`http_requests < 100`)
+	expr, err := parser.ParseExpr(`http_requests < 100`)
 	testutil.Ok(t, err)
 
 	ruleWithoutExternalLabels := NewAlertingRule(
@@ -248,7 +249,7 @@ func TestAlertingRuleEmptyLabelFromTemplate(t *testing.T) {
 
 	testutil.Ok(t, suite.Run())
 
-	expr, err := promql.ParseExpr(`http_requests < 100`)
+	expr, err := parser.ParseExpr(`http_requests < 100`)
 	testutil.Ok(t, err)
 
 	rule := NewAlertingRule(
@@ -310,7 +311,7 @@ func TestAlertingRuleDuplicate(t *testing.T) {
 
 	now := time.Now()
 
-	expr, _ := promql.ParseExpr(`vector(0) or label_replace(vector(0),"test","x","","")`)
+	expr, _ := parser.ParseExpr(`vector(0) or label_replace(vector(0),"test","x","","")`)
 	rule := NewAlertingRule(
 		"foo",
 		expr,

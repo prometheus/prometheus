@@ -25,7 +25,7 @@ describe('targetLabels', () => {
   it('renders a div of series labels', () => {
     const div = targetLabels.find('div').filterWhere(elem => elem.hasClass('series-labels-container'));
     expect(div).toHaveLength(1);
-    expect(div.prop('id')).toEqual('series-labels-cortex\\/node-exporter_group\\/0-1');
+    expect(div.prop('id')).toEqual('series-labels-cortex/node-exporter_group/0-1');
   });
 
   it('wraps each label in a label badge', () => {

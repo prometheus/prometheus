@@ -203,7 +203,7 @@ func TestCorruptedChunk(t *testing.T) {
 			querier, err := NewBlockQuerier(b, 0, 1)
 			testutil.Ok(t, err)
 			defer func() { testutil.Ok(t, querier.Close()) }()
-			set, ws, err := querier.Select(nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+			set, ws, err := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 			testutil.Ok(t, err)
 			testutil.Equals(t, 0, len(ws))
 
@@ -292,14 +292,14 @@ func TestReadIndexFormatV1(t *testing.T) {
 	q, err := NewBlockQuerier(block, 0, 1000)
 	testutil.Ok(t, err)
 	testutil.Equals(t, query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")),
-		map[string][]tsdbutil.Sample{`{foo="bar"}`: []tsdbutil.Sample{sample{t: 1, v: 2}}})
+		map[string][]tsdbutil.Sample{`{foo="bar"}`: {sample{t: 1, v: 2}}})
 
 	q, err = NewBlockQuerier(block, 0, 1000)
 	testutil.Ok(t, err)
 	testutil.Equals(t, query(t, q, labels.MustNewMatcher(labels.MatchNotRegexp, "foo", "^.?$")),
 		map[string][]tsdbutil.Sample{
-			`{foo="bar"}`: []tsdbutil.Sample{sample{t: 1, v: 2}},
-			`{foo="baz"}`: []tsdbutil.Sample{sample{t: 3, v: 4}},
+			`{foo="bar"}`: {sample{t: 1, v: 2}},
+			`{foo="baz"}`: {sample{t: 3, v: 4}},
 		})
 }
 

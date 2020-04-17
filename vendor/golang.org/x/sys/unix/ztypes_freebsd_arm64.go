@@ -397,7 +397,7 @@ type Reg struct {
 }
 
 type FpReg struct {
-	Fp_q  [32]uint128
+	Fp_q  [512]uint8
 	Fp_sr uint32
 	Fp_cr uint32
 }
@@ -406,7 +406,7 @@ type PtraceIoDesc struct {
 	Op   int32
 	Offs *byte
 	Addr *byte
-	Len  uint
+	Len  uint64
 }
 
 type Kevent_t struct {
@@ -681,4 +681,14 @@ type Utsname struct {
 	Release  [256]byte
 	Version  [256]byte
 	Machine  [256]byte
+}
+
+const SizeofClockinfo = 0x14
+
+type Clockinfo struct {
+	Hz     int32
+	Tick   int32
+	Spare  int32
+	Stathz int32
+	Profhz int32
 }

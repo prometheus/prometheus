@@ -28,14 +28,14 @@ import (
 )
 
 // liveReaderMetrics holds all metrics exposed by the LiveReader.
-type liveReaderMetrics struct {
+type LiveReaderMetrics struct {
 	readerCorruptionErrors *prometheus.CounterVec
 }
 
 // NewLiveReaderMetrics instantiates, registers and returns metrics to be injected
 // at LiveReader instantiation.
-func NewLiveReaderMetrics(reg prometheus.Registerer) *liveReaderMetrics {
-	m := &liveReaderMetrics{
+func NewLiveReaderMetrics(reg prometheus.Registerer) *LiveReaderMetrics {
+	m := &LiveReaderMetrics{
 		readerCorruptionErrors: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_wal_reader_corruption_errors_total",
 			Help: "Errors encountered when reading the WAL.",
@@ -43,15 +43,14 @@ func NewLiveReaderMetrics(reg prometheus.Registerer) *liveReaderMetrics {
 	}
 
 	if reg != nil {
-		// TODO(codesome): log error.
-		_ = reg.Register(m.readerCorruptionErrors)
+		reg.MustRegister(m.readerCorruptionErrors)
 	}
 
 	return m
 }
 
 // NewLiveReader returns a new live reader.
-func NewLiveReader(logger log.Logger, metrics *liveReaderMetrics, r io.Reader) *LiveReader {
+func NewLiveReader(logger log.Logger, metrics *LiveReaderMetrics, r io.Reader) *LiveReader {
 	lr := &LiveReader{
 		logger:  logger,
 		rdr:     r,
@@ -89,7 +88,7 @@ type LiveReader struct {
 	// NB the non-ive Reader implementation allows for this.
 	permissive bool
 
-	metrics *liveReaderMetrics
+	metrics *LiveReaderMetrics
 }
 
 // Err returns any errors encountered reading the WAL.  io.EOFs are not terminal
@@ -298,7 +297,7 @@ func (r *LiveReader) readRecord() ([]byte, int, error) {
 			return nil, 0, fmt.Errorf("record would overflow current page: %d > %d", r.readIndex+recordHeaderSize+length, pageSize)
 		}
 		r.metrics.readerCorruptionErrors.WithLabelValues("record_span_page").Inc()
-		level.Warn(r.logger).Log("msg", "record spans page boundaries", "start", r.readIndex, "end", recordHeaderSize+length, "pageSize", pageSize)
+		level.Warn(r.logger).Log("msg", "Record spans page boundaries", "start", r.readIndex, "end", recordHeaderSize+length, "pageSize", pageSize)
 	}
 	if recordHeaderSize+length > pageSize {
 		return nil, 0, fmt.Errorf("record length greater than a single page: %d > %d", recordHeaderSize+length, pageSize)

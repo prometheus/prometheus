@@ -35,7 +35,9 @@ func NewExpressRoutePortsLocationsClient(subscriptionID string) ExpressRoutePort
 	return NewExpressRoutePortsLocationsClientWithBaseURI(DefaultBaseURI, subscriptionID)
 }
 
-// NewExpressRoutePortsLocationsClientWithBaseURI creates an instance of the ExpressRoutePortsLocationsClient client.
+// NewExpressRoutePortsLocationsClientWithBaseURI creates an instance of the ExpressRoutePortsLocationsClient client
+// using a custom endpoint.  Use this when interacting with an Azure cloud that uses a non-standard base URI (sovereign
+// clouds, Azure stack).
 func NewExpressRoutePortsLocationsClientWithBaseURI(baseURI string, subscriptionID string) ExpressRoutePortsLocationsClient {
 	return ExpressRoutePortsLocationsClient{NewWithBaseURI(baseURI, subscriptionID)}
 }
@@ -99,8 +101,7 @@ func (client ExpressRoutePortsLocationsClient) GetPreparer(ctx context.Context, 
 // GetSender sends the Get request. The method will close the
 // http.Response Body if it receives an error.
 func (client ExpressRoutePortsLocationsClient) GetSender(req *http.Request) (*http.Response, error) {
-	return autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // GetResponder handles the response to the Get request. The method always
@@ -117,7 +118,7 @@ func (client ExpressRoutePortsLocationsClient) GetResponder(resp *http.Response)
 }
 
 // List retrieves all ExpressRoutePort peering locations. Does not return available bandwidths for each location.
-// Available bandwidths can only be obtained when retriving a specific peering location.
+// Available bandwidths can only be obtained when retrieving a specific peering location.
 func (client ExpressRoutePortsLocationsClient) List(ctx context.Context) (result ExpressRoutePortsLocationListResultPage, err error) {
 	if tracing.IsEnabled() {
 		ctx = tracing.StartSpan(ctx, fqdn+"/ExpressRoutePortsLocationsClient.List")
@@ -173,8 +174,7 @@ func (client ExpressRoutePortsLocationsClient) ListPreparer(ctx context.Context)
 // ListSender sends the List request. The method will close the
 // http.Response Body if it receives an error.
 func (client ExpressRoutePortsLocationsClient) ListSender(req *http.Request) (*http.Response, error) {
-	return autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListResponder handles the response to the List request. The method always

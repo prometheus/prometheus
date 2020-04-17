@@ -12,10 +12,18 @@ const defaultGraphControlProps = {
   resolution: 10,
   stacked: false,
 
-  onChangeRange: (): void => {},
-  onChangeEndTime: (): void => {},
-  onChangeResolution: (): void => {},
-  onChangeStacking: (): void => {},
+  onChangeRange: (): void => {
+    // Do nothing.
+  },
+  onChangeEndTime: (): void => {
+    // Do nothing.
+  },
+  onChangeResolution: (): void => {
+    // Do nothing.
+  },
+  onChangeStacking: (): void => {
+    // Do nothing.
+  },
 };
 
 describe('GraphControls', () => {

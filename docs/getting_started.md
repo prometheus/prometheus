@@ -81,13 +81,12 @@ navigating to its metrics endpoint:
 
 Let us try looking at some data that Prometheus has collected about itself. To
 use Prometheus's built-in expression browser, navigate to
-http://localhost:9090/graph and choose the "Console" view within the "Graph"
-tab.
+http://localhost:9090/graph and choose the "Console" view within the "Graph" tab.
 
 As you can gather from [localhost:9090/metrics](http://localhost:9090/metrics),
 one metric that Prometheus exports about itself is called
 `prometheus_target_interval_length_seconds` (the actual amount of time between
-target scrapes). Go ahead and enter this into the expression console:
+target scrapes). Go ahead and enter this into the expression console and then click "Execute":
 
 ```
 prometheus_target_interval_length_seconds

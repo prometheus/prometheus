@@ -164,11 +164,11 @@ func TestConcreteSeriesClonesLabels(t *testing.T) {
 func TestFromQueryResultWithDuplicates(t *testing.T) {
 	ts1 := prompb.TimeSeries{
 		Labels: []prompb.Label{
-			prompb.Label{Name: "foo", Value: "bar"},
-			prompb.Label{Name: "foo", Value: "def"},
+			{Name: "foo", Value: "bar"},
+			{Name: "foo", Value: "def"},
 		},
 		Samples: []prompb.Sample{
-			prompb.Sample{Value: 0.0, Timestamp: 0},
+			{Value: 0.0, Timestamp: 0},
 		},
 	}
 
@@ -178,7 +178,7 @@ func TestFromQueryResultWithDuplicates(t *testing.T) {
 		},
 	}
 
-	series := FromQueryResult(&res)
+	series := FromQueryResult(false, &res)
 
 	errSeries, isErrSeriesSet := series.(errSeriesSet)
 

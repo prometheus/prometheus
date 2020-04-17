@@ -5,8 +5,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes/any"
+	"github.com/grpc-ecosystem/grpc-gateway/internal"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/grpclog"
 	"google.golang.org/grpc/status"
@@ -58,27 +57,51 @@ func HTTPStatusFromCode(code codes.Code) int {
 }
 
 var (
-	// HTTPError replies to the request with the error.
+	// HTTPError replies to the request with an error.
+	//
+	// HTTPError is called:
+	//  - From generated per-endpoint gateway handler code, when calling the backend results in an error.
+	//  - From gateway runtime code, when forwarding the response message results in an error.
+	//
+	// The default value for HTTPError calls the custom error handler configured on the ServeMux via the
+	// WithProtoErrorHandler serve option if that option was used, calling GlobalHTTPErrorHandler otherwise.
+	//
+	// To customize the error handling of a particular ServeMux instance, use the WithProtoErrorHandler
+	// serve option.
+	//
+	// To customize the error format for all ServeMux instances not using the WithProtoErrorHandler serve
+	// option, set GlobalHTTPErrorHandler to a custom function.
+	//
+	// Setting this variable directly to customize error format is deprecated.
+	HTTPError = MuxOrGlobalHTTPError
+
+	// GlobalHTTPErrorHandler is the HTTPError handler for all ServeMux instances not using the
+	// WithProtoErrorHandler serve option.
+	//
 	// You can set a custom function to this variable to customize error format.
-	HTTPError = DefaultHTTPError
-	// OtherErrorHandler handles the following error used by the gateway: StatusMethodNotAllowed StatusNotFound and StatusBadRequest
+	GlobalHTTPErrorHandler = DefaultHTTPError
+
+	// OtherErrorHandler handles gateway errors from parsing and routing client requests for all
+	// ServeMux instances not using the WithProtoErrorHandler serve option.
+	//
+	// It returns the following error codes: StatusMethodNotAllowed StatusNotFound StatusBadRequest
+	//
+	// To customize parsing and routing error handling of a particular ServeMux instance, use the
+	// WithProtoErrorHandler serve option.
+	//
+	// To customize parsing and routing error handling of all ServeMux instances not using the
+	// WithProtoErrorHandler serve option, set a custom function to this variable.
 	OtherErrorHandler = DefaultOtherErrorHandler
 )
 
-type errorBody struct {
-	Error string `protobuf:"bytes,1,name=error" json:"error"`
-	// This is to make the error more compatible with users that expect errors to be Status objects:
-	// https://github.com/grpc/grpc/blob/master/src/proto/grpc/status/status.proto
-	// It should be the exact same message as the Error field.
-	Message string     `protobuf:"bytes,1,name=message" json:"message"`
-	Code    int32      `protobuf:"varint,2,name=code" json:"code"`
-	Details []*any.Any `protobuf:"bytes,3,rep,name=details" json:"details,omitempty"`
+// MuxOrGlobalHTTPError uses the mux-configured error handler, falling back to GlobalErrorHandler.
+func MuxOrGlobalHTTPError(ctx context.Context, mux *ServeMux, marshaler Marshaler, w http.ResponseWriter, r *http.Request, err error) {
+	if mux.protoErrorHandler != nil {
+		mux.protoErrorHandler(ctx, mux, marshaler, w, r, err)
+	} else {
+		GlobalHTTPErrorHandler(ctx, mux, marshaler, w, r, err)
+	}
 }
-
-// Make this also conform to proto.Message for builtin JSONPb Marshaler
-func (e *errorBody) Reset()         { *e = errorBody{} }
-func (e *errorBody) String() string { return proto.CompactTextString(e) }
-func (*errorBody) ProtoMessage()    {}
 
 // DefaultHTTPError is the default implementation of HTTPError.
 // If "err" is an error from gRPC system, the function replies with the status code mapped by HTTPStatusFromCode.
@@ -100,13 +123,13 @@ func DefaultHTTPError(ctx context.Context, mux *ServeMux, marshaler Marshaler, w
 	// Check marshaler on run time in order to keep backwards compatability
 	// An interface param needs to be added to the ContentType() function on
 	// the Marshal interface to be able to remove this check
-	if httpBodyMarshaler, ok := marshaler.(*HTTPBodyMarshaler); ok {
+	if typeMarshaler, ok := marshaler.(contentTypeMarshaler); ok {
 		pb := s.Proto()
-		contentType = httpBodyMarshaler.ContentTypeFromMessage(pb)
+		contentType = typeMarshaler.ContentTypeFromMessage(pb)
 	}
 	w.Header().Set("Content-Type", contentType)
 
-	body := &errorBody{
+	body := &internal.Error{
 		Error:   s.Message(),
 		Message: s.Message(),
 		Code:    int32(s.Code()),

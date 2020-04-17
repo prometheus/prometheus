@@ -40,7 +40,7 @@ type TSIG struct {
 // TSIG has no official presentation format, but this will suffice.
 
 func (rr *TSIG) String() string {
-	s := "\n;; TSIG PSEUDOSECTION:\n"
+	s := "\n;; TSIG PSEUDOSECTION:\n; " // add another semi-colon to signify TSIG does not have a presentation format
 	s += rr.Hdr.String() +
 		" " + rr.Algorithm +
 		" " + tsigTimeToString(rr.TimeSigned) +

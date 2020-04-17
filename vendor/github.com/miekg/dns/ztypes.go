@@ -13,6 +13,7 @@ var TypeToRR = map[uint16]func() RR{
 	TypeAAAA:       func() RR { return new(AAAA) },
 	TypeAFSDB:      func() RR { return new(AFSDB) },
 	TypeANY:        func() RR { return new(ANY) },
+	TypeAPL:        func() RR { return new(APL) },
 	TypeAVC:        func() RR { return new(AVC) },
 	TypeCAA:        func() RR { return new(CAA) },
 	TypeCDNSKEY:    func() RR { return new(CDNSKEY) },
@@ -87,6 +88,7 @@ var TypeToString = map[uint16]string{
 	TypeAAAA:       "AAAA",
 	TypeAFSDB:      "AFSDB",
 	TypeANY:        "ANY",
+	TypeAPL:        "APL",
 	TypeATMA:       "ATMA",
 	TypeAVC:        "AVC",
 	TypeAXFR:       "AXFR",
@@ -169,6 +171,7 @@ func (rr *A) Header() *RR_Header          { return &rr.Hdr }
 func (rr *AAAA) Header() *RR_Header       { return &rr.Hdr }
 func (rr *AFSDB) Header() *RR_Header      { return &rr.Hdr }
 func (rr *ANY) Header() *RR_Header        { return &rr.Hdr }
+func (rr *APL) Header() *RR_Header        { return &rr.Hdr }
 func (rr *AVC) Header() *RR_Header        { return &rr.Hdr }
 func (rr *CAA) Header() *RR_Header        { return &rr.Hdr }
 func (rr *CDNSKEY) Header() *RR_Header    { return &rr.Hdr }
@@ -260,6 +263,13 @@ func (rr *AFSDB) len(off int, compression map[string]struct{}) int {
 }
 func (rr *ANY) len(off int, compression map[string]struct{}) int {
 	l := rr.Hdr.len(off, compression)
+	return l
+}
+func (rr *APL) len(off int, compression map[string]struct{}) int {
+	l := rr.Hdr.len(off, compression)
+	for _, x := range rr.Prefixes {
+		l += x.len()
+	}
 	return l
 }
 func (rr *AVC) len(off int, compression map[string]struct{}) int {
@@ -672,6 +682,13 @@ func (rr *AFSDB) copy() RR {
 }
 func (rr *ANY) copy() RR {
 	return &ANY{rr.Hdr}
+}
+func (rr *APL) copy() RR {
+	Prefixes := make([]APLPrefix, len(rr.Prefixes))
+	for i := range rr.Prefixes {
+		Prefixes[i] = rr.Prefixes[i].copy()
+	}
+	return &APL{rr.Hdr, Prefixes}
 }
 func (rr *AVC) copy() RR {
 	Txt := make([]string, len(rr.Txt))

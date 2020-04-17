@@ -41,7 +41,7 @@ func repairBadIndexVersion(logger log.Logger, dir string) error {
 		return errors.Wrapf(err, "block dir: %q", d)
 	}
 
-	tmpFiles := make([]string, 0, len(dir))
+	tmpFiles := make([]string, 0, len(dirs))
 	defer func() {
 		for _, tmp := range tmpFiles {
 			if err := os.RemoveAll(tmp); err != nil {
@@ -57,7 +57,7 @@ func repairBadIndexVersion(logger log.Logger, dir string) error {
 		}
 		if meta.Version == metaVersion1 {
 			level.Info(logger).Log(
-				"msg", "found healthy block",
+				"msg", "Found healthy block",
 				"mint", meta.MinTime,
 				"maxt", meta.MaxTime,
 				"ulid", meta.ULID,
@@ -65,7 +65,7 @@ func repairBadIndexVersion(logger log.Logger, dir string) error {
 			continue
 		}
 		level.Info(logger).Log(
-			"msg", "fixing broken block",
+			"msg", "Fixing broken block",
 			"mint", meta.MinTime,
 			"maxt", meta.MaxTime,
 			"ulid", meta.ULID,

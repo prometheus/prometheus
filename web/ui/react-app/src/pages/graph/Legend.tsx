@@ -23,12 +23,12 @@ export class Legend extends PureComponent<LegendProps, LegendState> {
       this.setState({ selectedIndexes: [] });
     }
   }
-  handleSeriesSelect = (index: number) => (ev: any) => {
+  handleSeriesSelect = (index: number) => (ev: React.MouseEvent<HTMLDivElement, MouseEvent>) => {
     // TODO: add proper event type
     const { selectedIndexes } = this.state;
 
     let selected = [index];
-    if (ev.ctrlKey) {
+    if (ev.ctrlKey || ev.metaKey) {
       const { chartData } = this.props;
       if (selectedIndexes.includes(index)) {
         selected = selectedIndexes.filter(idx => idx !== index);
@@ -68,7 +68,7 @@ export class Legend extends PureComponent<LegendProps, LegendState> {
         ))}
         {chartData.length > 1 && (
           <div className="pl-1 mt-1 text-muted" style={{ fontSize: 13 }}>
-            Click: select series, CTRL + click: toggle multiple series
+            Click: select series, {navigator.platform.includes('Mac') ? 'CMD' : 'CTRL'} + click: toggle multiple series
           </div>
         )}
       </div>

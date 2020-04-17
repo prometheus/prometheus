@@ -1696,3 +1696,69 @@ func (rr *TKEY) parse(c *zlexer, o string) *ParseError {
 
 	return nil
 }
+
+func (rr *APL) parse(c *zlexer, o string) *ParseError {
+	var prefixes []APLPrefix
+
+	for {
+		l, _ := c.Next()
+		if l.value == zNewline || l.value == zEOF {
+			break
+		}
+		if l.value == zBlank && prefixes != nil {
+			continue
+		}
+		if l.value != zString {
+			return &ParseError{"", "unexpected APL field", l}
+		}
+
+		// Expected format: [!]afi:address/prefix
+
+		colon := strings.IndexByte(l.token, ':')
+		if colon == -1 {
+			return &ParseError{"", "missing colon in APL field", l}
+		}
+
+		family, cidr := l.token[:colon], l.token[colon+1:]
+
+		var negation bool
+		if family != "" && family[0] == '!' {
+			negation = true
+			family = family[1:]
+		}
+
+		afi, err := strconv.ParseUint(family, 10, 16)
+		if err != nil {
+			return &ParseError{"", "failed to parse APL family: " + err.Error(), l}
+		}
+		var addrLen int
+		switch afi {
+		case 1:
+			addrLen = net.IPv4len
+		case 2:
+			addrLen = net.IPv6len
+		default:
+			return &ParseError{"", "unrecognized APL family", l}
+		}
+
+		ip, subnet, err := net.ParseCIDR(cidr)
+		if err != nil {
+			return &ParseError{"", "failed to parse APL address: " + err.Error(), l}
+		}
+		if !ip.Equal(subnet.IP) {
+			return &ParseError{"", "extra bits in APL address", l}
+		}
+
+		if len(subnet.IP) != addrLen {
+			return &ParseError{"", "address mismatch with the APL family", l}
+		}
+
+		prefixes = append(prefixes, APLPrefix{
+			Negation: negation,
+			Network:  *subnet,
+		})
+	}
+
+	rr.Prefixes = prefixes
+	return nil
+}
