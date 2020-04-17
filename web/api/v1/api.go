@@ -519,7 +519,7 @@ var (
 	maxTimeFormatted = maxTime.Format(time.RFC3339Nano)
 )
 
-func (api *API) series(r *http.Request) apiFuncResult {
+func (api *API) series(r *http.Request) (result apiFuncResult) {
 	if err := r.ParseForm(); err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrapf(err, "error parsing form values")}, nil, nil}
 	}
@@ -549,7 +549,17 @@ func (api *API) series(r *http.Request) apiFuncResult {
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
 	}
-	defer q.Close()
+	// From now on, we must only return with a finalizer in the result (to
+	// be called by the caller) or call q.Close ourselves (which is required
+	// in the case of a panic).
+	defer func() {
+		if result.finalizer == nil {
+			q.Close()
+		}
+	}()
+	closer := func() {
+		q.Close()
+	}
 
 	var sets []storage.SeriesSet
 	var warnings storage.Warnings
@@ -557,7 +567,7 @@ func (api *API) series(r *http.Request) apiFuncResult {
 		s, wrn, err := q.Select(false, nil, mset...)
 		warnings = append(warnings, wrn...)
 		if err != nil {
-			return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
+			return apiFuncResult{nil, &apiError{errorExec, err}, warnings, closer}
 		}
 		sets = append(sets, s)
 	}
@@ -568,10 +578,10 @@ func (api *API) series(r *http.Request) apiFuncResult {
 		metrics = append(metrics, set.At().Labels())
 	}
 	if set.Err() != nil {
-		return apiFuncResult{nil, &apiError{errorExec, set.Err()}, warnings, nil}
+		return apiFuncResult{nil, &apiError{errorExec, set.Err()}, warnings, closer}
 	}
 
-	return apiFuncResult{metrics, nil, warnings, nil}
+	return apiFuncResult{metrics, nil, warnings, closer}
 }
 
 func (api *API) dropSeries(r *http.Request) apiFuncResult {
