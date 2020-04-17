@@ -1375,9 +1375,9 @@ func TestMemSeriesIsolation(t *testing.T) {
 		if hb.MinTime() == math.MaxInt64 {
 			app = &initAppender{head: hb}
 		} else {
-			_app := hb.appender()
-			_app.cleanupAppendIDsBelow = 0
-			app = _app
+			a := hb.appender()
+			a.cleanupAppendIDsBelow = 0
+			app = a
 		}
 
 		_, err := app.Add(labels.FromStrings("foo", "bar"), int64(i), float64(i))
