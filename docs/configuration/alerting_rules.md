@@ -79,6 +79,10 @@ groups:
       description: "{{ $labels.instance }} has a median request latency above 1s (current value: {{ $value }}s)"
 ```
 
+Remember that [comparison operators](https://prometheus.io/docs/prometheus/latest/querying/operators/#comparison-binary-operators)
+are filters by default, so `$value` for the expression `api_http_request_latencies_second{quantile="0.5"} > 1` will be a number,
+not a boolean.
+
 ### Inspecting alerts during runtime
 
 To manually inspect which alerts are active (pending or firing), navigate to
