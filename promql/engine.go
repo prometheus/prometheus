@@ -18,7 +18,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"reflect"
 	"regexp"
 	"runtime"
 	"sort"
@@ -512,7 +511,6 @@ func durationMilliseconds(d time.Duration) int64 {
 
 // execEvalStmt evaluates the expression of an evaluation statement for the given time range.
 func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.EvalStmt) (parser.Value, storage.Warnings, error) {
-	fmt.Println("query is ", query.q)
 	prepareSpanTimer, ctxPrepare := query.stats.GetSpanTimer(ctx, stats.QueryPreparationTime, ng.metrics.queryPrepareTime)
 	mint := ng.findMinTime(s)
 	querier, err := query.queryable.Querier(ctxPrepare, timestamp.FromTime(mint), timestamp.FromTime(s.End))
@@ -602,8 +600,6 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 	}
 	evalSpanTimer.Finish()
 
-	//query.sampleStats.UpdateStats(evaluator.currentSamples)
-
 	mat, ok := val.(Matrix)
 	if !ok {
 		panic(errors.Errorf("promql.Engine.exec: invalid expression type %q", val.Type()))
@@ -684,14 +680,10 @@ func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s
 		// from end also.
 		subqOffset := ng.cumulativeSubqueryOffset(path)
 		offsetMilliseconds := durationMilliseconds(subqOffset)
-		fmt.Println("start is ", hints.Start)
-		fmt.Println("milliseconds")
-		fmt.Println(offsetMilliseconds)
 		hints.Start = hints.Start - offsetMilliseconds
 
 		switch n := node.(type) {
 		case *parser.VectorSelector:
-			fmt.Println("inside vectorSelector now thisssssssssssss")
 			if evalRange == 0 {
 				hints.Start = hints.Start - durationMilliseconds(ng.lookbackDelta)
 			} else {
@@ -711,8 +703,6 @@ func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s
 			}
 
 			set, wrn, err = querier.Select(false, hints, n.LabelMatchers...)
-			fmt.Println("series set below")
-			fmt.Println(set)
 			warnings = append(warnings, wrn...)
 			if err != nil {
 				level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
@@ -760,7 +750,6 @@ func extractGroupsFromPath(p []parser.Node) (bool, []string) {
 }
 
 func checkForSeriesSetExpansion(ctx context.Context, expr parser.Expr) {
-	fmt.Println("secondary type ", reflect.TypeOf(expr))
 	switch e := expr.(type) {
 	case *parser.MatrixSelector:
 		checkForSeriesSetExpansion(ctx, e.VectorSelector)
@@ -1050,12 +1039,10 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 		ev.error(err)
 	}
 	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
-	fmt.Println("expression is ", expr, " and its type below")
-	fmt.Println(reflect.TypeOf(expr))
+
 	switch e := expr.(type) {
 	case *parser.AggregateExpr:
 		unwrapParenExpr(&e.Param)
-		fmt.Println("aggregateExpr")
 		if s, ok := e.Param.(*parser.StringLiteral); ok {
 			return ev.rangeEval(func(v []parser.Value, enh *EvalNodeHelper) Vector {
 				return ev.aggregation(e.Op, e.Grouping, e.Without, s.Val, v[0].(Vector), enh)
@@ -1258,9 +1245,6 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 		return mat
 
 	case *parser.BinaryExpr:
-		fmt.Println("inside binaryexpr")
-		fmt.Println(e.LHS.Type())
-		fmt.Println(e.RHS.Type())
 		switch lt, rt := e.LHS.Type(), e.RHS.Type(); {
 		case lt == parser.ValueTypeScalar && rt == parser.ValueTypeScalar:
 			return ev.rangeEval(func(v []parser.Value, enh *EvalNodeHelper) Vector {
@@ -1268,7 +1252,6 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 				return append(enh.out, Sample{Point: Point{V: val}})
 			}, e.LHS, e.RHS)
 		case lt == parser.ValueTypeVector && rt == parser.ValueTypeVector:
-			fmt.Println("e.Op is ", e.Op)
 			switch e.Op {
 			case parser.LAND:
 				return ev.rangeEval(func(v []parser.Value, enh *EvalNodeHelper) Vector {
@@ -1310,7 +1293,6 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 		mat := make(Matrix, 0, len(e.Series))
 		it := storage.NewBuffer(durationMilliseconds(ev.lookbackDelta))
 		for i, s := range e.Series {
-			fmt.Println("count ", i, " series are ", s)
 			it.Reset(s.Iterator())
 			ss := Series{
 				Metric: e.Series[i].Labels(),
@@ -1318,15 +1300,12 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 			}
 
 			for ts := ev.startTimestamp; ts <= ev.endTimestamp; ts += ev.interval {
-				fmt.Println("LOOP RUNNNINIFNNIFGDFGNFFFFFFFFFFFFFFFFFFF")
 				_, v, ok := ev.vectorSelectorSingle(it, e, ts)
 				if ok {
 					if ev.currentSamples < ev.maxSamples {
-						fmt.Println("updating the samples as well")
 						ss.Points = append(ss.Points, Point{V: v, T: ts})
 						ev.currentSamples++
 						ev.updateSamples(1)
-						fmt.Println("current samples stand at => ", ev.currentSamples)
 					} else {
 						ev.error(ErrTooManySamples(env))
 					}
@@ -1420,13 +1399,11 @@ func (ev *evaluator) vectorSelector(node *parser.VectorSelector, ts int64) Vecto
 // vectorSelectorSingle evaluates a instant vector for the iterator of one time series.
 func (ev *evaluator) vectorSelectorSingle(it *storage.BufferedSeriesIterator, node *parser.VectorSelector, ts int64) (int64, float64, bool) {
 	refTime := ts - durationMilliseconds(node.Offset)
-	fmt.Println("node offset is ", node.Offset)
 	var t int64
 	var v float64
 
 	ok := it.Seek(refTime)
 	if !ok {
-		fmt.Println("NOT OK---------")
 		if it.Err() != nil {
 			ev.error(it.Err())
 		}
@@ -1434,14 +1411,10 @@ func (ev *evaluator) vectorSelectorSingle(it *storage.BufferedSeriesIterator, no
 
 	if ok {
 		t, v = it.Values()
-		fmt.Println("hey inside the values")
-		fmt.Println(t, " and hte float is ", v)
 	}
 
 	if !ok || t > refTime {
 		t, v, ok = it.PeekBack(1)
-		fmt.Println("hey2222 inside the values")
-		fmt.Println(t, " and hte float is ", v)
 		if !ok || t < refTime-durationMilliseconds(ev.lookbackDelta) {
 			return 0, 0, false
 		}
