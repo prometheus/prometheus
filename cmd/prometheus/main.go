@@ -17,6 +17,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/opentracing/opentracing-go"
+	"github.com/uber/jaeger-client-go"
+	"github.com/uber/jaeger-lib/metrics"
+
+	"io"
 	"math"
 	"net"
 	"net/http"
@@ -42,6 +47,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promlog"
 	"github.com/prometheus/common/version"
+	jaegercfg "github.com/uber/jaeger-client-go/config"
 	kingpin "gopkg.in/alecthomas/kingpin.v2"
 	"k8s.io/klog"
 
@@ -497,6 +503,13 @@ func main() {
 			close(reloadReady.C)
 		})
 	}
+
+	closer, err := initTracer(logger)
+	if err != nil {
+		level.Error(logger).Log("err", err)
+		os.Exit(1)
+	}
+	defer closer.Close()
 
 	var g run.Group
 	{
@@ -1004,4 +1017,49 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		MinBlockDuration:       int64(time.Duration(opts.MinBlockDuration) / time.Millisecond),
 		MaxBlockDuration:       int64(time.Duration(opts.MaxBlockDuration) / time.Millisecond),
 	}
+}
+
+func initTracer(logger log.Logger) (io.Closer, error) {
+	cfg := &jaegercfg.Configuration{
+		ServiceName: "prometheus",
+		Sampler: &jaegercfg.SamplerConfig{
+			Type:  jaeger.SamplerTypeConst,
+			Param: 1,
+		},
+		Reporter: &jaegercfg.ReporterConfig{
+			LogSpans: false,
+		},
+	}
+
+	cfg, err := cfg.FromEnv()
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to init tracing")
+	}
+
+	jLogger := jaegerLogger{logger: log.With(logger, "component", "tracing")}
+	jMetricsFactory := metrics.NullFactory
+
+	tracer, closer, err := cfg.NewTracer(
+		jaegercfg.Logger(jLogger),
+		jaegercfg.Metrics(jMetricsFactory),
+	)
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to init tracing")
+	}
+
+	opentracing.SetGlobalTracer(tracer)
+	return closer, nil
+}
+
+type jaegerLogger struct {
+	logger log.Logger
+}
+
+func (l jaegerLogger) Error(msg string) {
+	level.Error(l.logger).Log("msg", msg)
+}
+
+func (l jaegerLogger) Infof(msg string, args ...interface{}) {
+	keyvals := []interface{}{"msg", fmt.Sprintf(msg, args...)}
+	level.Info(l.logger).Log(keyvals...)
 }
