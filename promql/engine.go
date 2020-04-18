@@ -789,7 +789,6 @@ type evaluator struct {
 
 	maxSamples          int
 	currentSamples      int
-	totalSamples        int
 	updateSamples       func(int)
 	defaultEvalInterval int64
 	logger              log.Logger
