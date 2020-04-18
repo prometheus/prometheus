@@ -249,15 +249,15 @@ func (api *API) Register(r *route.Router) {
 		hf := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			httputil.SetCORS(w, api.CORSOrigin, r)
 			result := f(r)
+			if result.finalizer != nil {
+				defer result.finalizer()
+			}
 			if result.err != nil {
 				api.respondError(w, result.err, result.data)
 			} else if result.data != nil {
 				api.respond(w, result.data, result.warnings)
 			} else {
 				w.WriteHeader(http.StatusNoContent)
-			}
-			if result.finalizer != nil {
-				result.finalizer()
 			}
 		})
 		return api.ready(httputil.CompressionHandler{

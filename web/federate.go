@@ -44,6 +44,10 @@ var (
 	})
 )
 
+func registerFederationMetrics(r prometheus.Registerer) {
+	r.MustRegister(federationWarnings, federationErrors)
+}
+
 func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 	h.mtx.RLock()
 	defer h.mtx.RUnlock()
