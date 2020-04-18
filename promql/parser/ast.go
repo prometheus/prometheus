@@ -392,6 +392,7 @@ func (e *Call) PositionRange() PositionRange {
 func (e *EvalStmt) PositionRange() PositionRange {
 	return e.Expr.PositionRange()
 }
+
 func (e Expressions) PositionRange() PositionRange {
 	if len(e) == 0 {
 		// Position undefined.

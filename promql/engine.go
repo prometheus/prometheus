@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"reflect"
 	"regexp"
 	"runtime"
 	"sort"
@@ -449,7 +450,7 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, w storage
 				f = append(f, "error", err)
 			}
 			f = append(f, "stats", stats.NewQueryStats(q.Stats(), q.SampleStats()))
-			if origin := ctx.Value(queryOrigin); origin != nil {
+			if origin := ctx.Value(queryOrigin{}); origin != nil {
 				for k, v := range origin.(map[string]interface{}) {
 					f = append(f, k, v)
 				}
@@ -511,6 +512,7 @@ func durationMilliseconds(d time.Duration) int64 {
 
 // execEvalStmt evaluates the expression of an evaluation statement for the given time range.
 func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.EvalStmt) (parser.Value, storage.Warnings, error) {
+	fmt.Println("query is ", query.q)
 	prepareSpanTimer, ctxPrepare := query.stats.GetSpanTimer(ctx, stats.QueryPreparationTime, ng.metrics.queryPrepareTime)
 	mint := ng.findMinTime(s)
 	querier, err := query.queryable.Querier(ctxPrepare, timestamp.FromTime(mint), timestamp.FromTime(s.End))
@@ -540,14 +542,13 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 			defaultEvalInterval: GetDefaultEvaluationInterval(),
 			logger:              ng.logger,
 			lookbackDelta:       ng.lookbackDelta,
+			updateSamples:       query.sampleStats.UpdateStats(),
 		}
 
 		val, err := evaluator.Eval(s.Expr)
 		if err != nil {
 			return nil, warnings, err
 		}
-
-		query.sampleStats.ObserveSamples(evaluator.currentSamples)
 
 		evalSpanTimer.Finish()
 
@@ -592,14 +593,16 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 		defaultEvalInterval: GetDefaultEvaluationInterval(),
 		logger:              ng.logger,
 		lookbackDelta:       ng.lookbackDelta,
+		updateSamples:       query.sampleStats.UpdateStats(),
 	}
+
 	val, err := evaluator.Eval(s.Expr)
 	if err != nil {
 		return nil, warnings, err
 	}
 	evalSpanTimer.Finish()
 
-	query.sampleStats.ObserveSamples(evaluator.currentSamples)
+	//query.sampleStats.UpdateStats(evaluator.currentSamples)
 
 	mat, ok := val.(Matrix)
 	if !ok {
@@ -681,10 +684,14 @@ func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s
 		// from end also.
 		subqOffset := ng.cumulativeSubqueryOffset(path)
 		offsetMilliseconds := durationMilliseconds(subqOffset)
+		fmt.Println("start is ", hints.Start)
+		fmt.Println("milliseconds")
+		fmt.Println(offsetMilliseconds)
 		hints.Start = hints.Start - offsetMilliseconds
 
 		switch n := node.(type) {
 		case *parser.VectorSelector:
+			fmt.Println("inside vectorSelector now thisssssssssssss")
 			if evalRange == 0 {
 				hints.Start = hints.Start - durationMilliseconds(ng.lookbackDelta)
 			} else {
@@ -704,6 +711,8 @@ func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s
 			}
 
 			set, wrn, err = querier.Select(false, hints, n.LabelMatchers...)
+			fmt.Println("series set below")
+			fmt.Println(set)
 			warnings = append(warnings, wrn...)
 			if err != nil {
 				level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
@@ -751,6 +760,7 @@ func extractGroupsFromPath(p []parser.Node) (bool, []string) {
 }
 
 func checkForSeriesSetExpansion(ctx context.Context, expr parser.Expr) {
+	fmt.Println("secondary type ", reflect.TypeOf(expr))
 	switch e := expr.(type) {
 	case *parser.MatrixSelector:
 		checkForSeriesSetExpansion(ctx, e.VectorSelector)
@@ -790,6 +800,8 @@ type evaluator struct {
 
 	maxSamples          int
 	currentSamples      int
+	totalSamples        int
+	updateSamples       func(int)
 	defaultEvalInterval int64
 	logger              log.Logger
 	lookbackDelta       time.Duration
@@ -886,7 +898,7 @@ func (enh *EvalNodeHelper) signatureFunc(on bool, names ...string) func(labels.L
 
 // rangeEval evaluates the given expressions, and then for each step calls
 // the given function with the values computed for each expression at that
-// step.  The return value is the combination into time series of all the
+// step. The return value is the combination into time series of all the
 // function call results.
 func (ev *evaluator) rangeEval(f func([]parser.Value, *EvalNodeHelper) Vector, exprs ...parser.Expr) Matrix {
 	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
@@ -939,6 +951,7 @@ func (ev *evaluator) rangeEval(f func([]parser.Value, *EvalNodeHelper) Vector, e
 							// past points at the next step.
 							matrixes[i][si].Points = series.Points[1:]
 							ev.currentSamples++
+							ev.updateSamples(ev.currentSamples - tempNumSamples)
 						} else {
 							ev.error(ErrTooManySamples(env))
 						}
@@ -957,6 +970,7 @@ func (ev *evaluator) rangeEval(f func([]parser.Value, *EvalNodeHelper) Vector, e
 		enh.out = result[:0] // Reuse result vector.
 
 		ev.currentSamples += len(result)
+		ev.updateSamples(len(result))
 		// When we reset currentSamples to tempNumSamples during the next iteration of the loop it also
 		// needs to include the samples from the result here, as they're still in memory.
 		tempNumSamples += len(result)
@@ -973,6 +987,7 @@ func (ev *evaluator) rangeEval(f func([]parser.Value, *EvalNodeHelper) Vector, e
 				mat[i] = Series{Metric: s.Metric, Points: []Point{s.Point}}
 			}
 			ev.currentSamples = originalNumSamples + mat.TotalSamples()
+			ev.updateSamples(mat.TotalSamples())
 			return mat
 		}
 
@@ -1005,6 +1020,7 @@ func (ev *evaluator) rangeEval(f func([]parser.Value, *EvalNodeHelper) Vector, e
 		mat = append(mat, ss)
 	}
 	ev.currentSamples = originalNumSamples + mat.TotalSamples()
+	ev.updateSamples(mat.TotalSamples())
 	return mat
 }
 
@@ -1034,10 +1050,12 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 		ev.error(err)
 	}
 	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
-
+	fmt.Println("expression is ", expr, " and its type below")
+	fmt.Println(reflect.TypeOf(expr))
 	switch e := expr.(type) {
 	case *parser.AggregateExpr:
 		unwrapParenExpr(&e.Param)
+		fmt.Println("aggregateExpr")
 		if s, ok := e.Param.(*parser.StringLiteral); ok {
 			return ev.rangeEval(func(v []parser.Value, enh *EvalNodeHelper) Vector {
 				return ev.aggregation(e.Op, e.Grouping, e.Without, s.Val, v[0].(Vector), enh)
@@ -1166,6 +1184,7 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 				if ev.currentSamples < ev.maxSamples {
 					mat = append(mat, ss)
 					ev.currentSamples += len(ss.Points)
+					ev.updateSamples(len(ss.Points))
 				} else {
 					ev.error(ErrTooManySamples(env))
 				}
@@ -1239,6 +1258,9 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 		return mat
 
 	case *parser.BinaryExpr:
+		fmt.Println("inside binaryexpr")
+		fmt.Println(e.LHS.Type())
+		fmt.Println(e.RHS.Type())
 		switch lt, rt := e.LHS.Type(), e.RHS.Type(); {
 		case lt == parser.ValueTypeScalar && rt == parser.ValueTypeScalar:
 			return ev.rangeEval(func(v []parser.Value, enh *EvalNodeHelper) Vector {
@@ -1246,6 +1268,7 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 				return append(enh.out, Sample{Point: Point{V: val}})
 			}, e.LHS, e.RHS)
 		case lt == parser.ValueTypeVector && rt == parser.ValueTypeVector:
+			fmt.Println("e.Op is ", e.Op)
 			switch e.Op {
 			case parser.LAND:
 				return ev.rangeEval(func(v []parser.Value, enh *EvalNodeHelper) Vector {
@@ -1260,6 +1283,7 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 					return ev.VectorUnless(v[0].(Vector), v[1].(Vector), e.VectorMatching, enh)
 				}, e.LHS, e.RHS)
 			default:
+				fmt.Println("in default stage")
 				return ev.rangeEval(func(v []parser.Value, enh *EvalNodeHelper) Vector {
 					return ev.VectorBinop(e.Op, v[0].(Vector), v[1].(Vector), e.VectorMatching, e.ReturnBool, enh)
 				}, e.LHS, e.RHS)
@@ -1286,6 +1310,7 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 		mat := make(Matrix, 0, len(e.Series))
 		it := storage.NewBuffer(durationMilliseconds(ev.lookbackDelta))
 		for i, s := range e.Series {
+			fmt.Println("count ", i, " series are ", s)
 			it.Reset(s.Iterator())
 			ss := Series{
 				Metric: e.Series[i].Labels(),
@@ -1293,11 +1318,15 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 			}
 
 			for ts := ev.startTimestamp; ts <= ev.endTimestamp; ts += ev.interval {
+				fmt.Println("LOOP RUNNNINIFNNIFGDFGNFFFFFFFFFFFFFFFFFFF")
 				_, v, ok := ev.vectorSelectorSingle(it, e, ts)
 				if ok {
 					if ev.currentSamples < ev.maxSamples {
+						fmt.Println("updating the samples as well")
 						ss.Points = append(ss.Points, Point{V: v, T: ts})
 						ev.currentSamples++
+						ev.updateSamples(1)
+						fmt.Println("current samples stand at => ", ev.currentSamples)
 					} else {
 						ev.error(ErrTooManySamples(env))
 					}
@@ -1346,6 +1375,7 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 
 		res := newEv.eval(e.Expr)
 		ev.currentSamples = newEv.currentSamples
+		ev.updateSamples(newEv.currentSamples)
 		return res
 	case *parser.StringLiteral:
 		return String{V: e.Val, T: ev.startTimestamp}
@@ -1377,6 +1407,7 @@ func (ev *evaluator) vectorSelector(node *parser.VectorSelector, ts int64) Vecto
 				Point:  Point{V: v, T: t},
 			})
 			ev.currentSamples++
+			ev.updateSamples(1)
 		}
 
 		if ev.currentSamples >= ev.maxSamples {
@@ -1389,11 +1420,13 @@ func (ev *evaluator) vectorSelector(node *parser.VectorSelector, ts int64) Vecto
 // vectorSelectorSingle evaluates a instant vector for the iterator of one time series.
 func (ev *evaluator) vectorSelectorSingle(it *storage.BufferedSeriesIterator, node *parser.VectorSelector, ts int64) (int64, float64, bool) {
 	refTime := ts - durationMilliseconds(node.Offset)
+	fmt.Println("node offset is ", node.Offset)
 	var t int64
 	var v float64
 
 	ok := it.Seek(refTime)
 	if !ok {
+		fmt.Println("NOT OK---------")
 		if it.Err() != nil {
 			ev.error(it.Err())
 		}
@@ -1401,10 +1434,14 @@ func (ev *evaluator) vectorSelectorSingle(it *storage.BufferedSeriesIterator, no
 
 	if ok {
 		t, v = it.Values()
+		fmt.Println("hey inside the values")
+		fmt.Println(t, " and hte float is ", v)
 	}
 
 	if !ok || t > refTime {
 		t, v, ok = it.PeekBack(1)
+		fmt.Println("hey2222 inside the values")
+		fmt.Println(t, " and hte float is ", v)
 		if !ok || t < refTime-durationMilliseconds(ev.lookbackDelta) {
 			return 0, 0, false
 		}
@@ -1512,6 +1549,7 @@ func (ev *evaluator) matrixIterSlice(it *storage.BufferedSeriesIterator, mint, m
 			}
 			out = append(out, Point{T: t, V: v})
 			ev.currentSamples++
+			ev.updateSamples(1)
 		}
 	}
 	// The seeked sample might also be in the range.
@@ -1523,6 +1561,7 @@ func (ev *evaluator) matrixIterSlice(it *storage.BufferedSeriesIterator, mint, m
 			}
 			out = append(out, Point{T: t, V: v})
 			ev.currentSamples++
+			ev.updateSamples(1)
 		}
 	}
 	return out

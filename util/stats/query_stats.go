@@ -15,6 +15,7 @@ package stats
 
 import (
 	"context"
+	"sync"
 
 	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
@@ -165,6 +166,7 @@ type QueryTimers struct {
 }
 
 type QuerySamples struct {
+	mutex          sync.RWMutex
 	EvaluatorCount int
 	PeakSamples    int
 	TotalSamples   int
@@ -175,13 +177,19 @@ type Stats struct {
 	SampleStats QuerySamples
 }
 
-// ObserveSamples observes the samples through which the query
-// is passed and modifies the stats accordingly.
-func (qs *QuerySamples) ObserveSamples(samples int) {
-	if samples > qs.PeakSamples {
-		qs.PeakSamples = samples
+// UpdateStats updates the stats according to the samples
+// passed as params.
+func (qs *QuerySamples) UpdateStats() func(int) {
+	samples := func(samples int) {
+		qs.mutex.Lock()
+		defer qs.mutex.Unlock()
+
+		if samples > qs.PeakSamples {
+			qs.PeakSamples = samples
+		}
+		qs.TotalSamples += samples
 	}
-	qs.TotalSamples += samples
+	return samples
 }
 
 func NewQueryTimers() *QueryTimers {

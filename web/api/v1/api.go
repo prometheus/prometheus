@@ -319,6 +319,7 @@ func (api *API) options(r *http.Request) apiFuncResult {
 }
 
 func (api *API) query(r *http.Request) apiFuncResult {
+	fmt.Println("inside 1")
 	ts, err := parseTimeParam(r, "time", api.now())
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
@@ -354,7 +355,8 @@ func (api *API) query(r *http.Request) apiFuncResult {
 	if r.FormValue("stats") != "" {
 		qs = stats.NewQueryStats(qry.Stats(), qry.SampleStats())
 	}
-
+	fmt.Println("the samples are...............")
+	fmt.Println(qs)
 	return apiFuncResult{&queryData{
 		ResultType: res.Value.Type(),
 		Result:     res.Value,
@@ -363,6 +365,8 @@ func (api *API) query(r *http.Request) apiFuncResult {
 }
 
 func (api *API) queryRange(r *http.Request) apiFuncResult {
+	fmt.Println("inside 2")
+
 	start, err := parseTime(r.FormValue("start"))
 	if err != nil {
 		err = errors.Wrapf(err, "invalid parameter 'start'")

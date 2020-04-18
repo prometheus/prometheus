@@ -14,6 +14,7 @@
 package storage
 
 import (
+	"fmt"
 	"math"
 
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -83,6 +84,7 @@ func (b *BufferedSeriesIterator) Seek(t int64) bool {
 	// If the delta would cause us to seek backwards, preserve the buffer
 	// and just continue regular advancement while filling the buffer on the way.
 	if t0 > b.lastTime {
+		fmt.Print("advance lastTime")
 		b.buf.reset()
 
 		b.ok = b.it.Seek(t0)
@@ -90,9 +92,11 @@ func (b *BufferedSeriesIterator) Seek(t int64) bool {
 			return false
 		}
 		b.lastTime, _ = b.Values()
+		fmt.Println(b.lastTime)
 	}
 
 	if b.lastTime >= t {
+		fmt.Println("yes lastTime is greater")
 		return true
 	}
 	for b.Next() {
