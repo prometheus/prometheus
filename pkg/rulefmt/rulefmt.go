@@ -21,6 +21,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+	yamlv2 "gopkg.in/yaml.v2"
 	yaml "gopkg.in/yaml.v3"
 
 	"github.com/prometheus/prometheus/pkg/timestamp"
@@ -58,8 +59,48 @@ type RuleGroups struct {
 	Groups []RuleGroup `yaml:"groups"`
 }
 
+// RuleGroup is a list of sequentially evaluated recording and alerting rules.
+type RuleGroup struct {
+	Name     string         `yaml:"name"`
+	Interval model.Duration `yaml:"interval,omitempty"`
+	Rules    []RuleNode     `yaml:"rules"`
+}
+
+// RuleNode adds yaml.v3 layer to support line and column outputs for invalid rules.
+type RuleNode struct {
+	Record      yaml.Node         `yaml:"record,omitempty"`
+	Alert       yaml.Node         `yaml:"alert,omitempty"`
+	Expr        yaml.Node         `yaml:"expr"`
+	For         model.Duration    `yaml:"for,omitempty"`
+	Labels      map[string]string `yaml:"labels,omitempty"`
+	Annotations map[string]string `yaml:"annotations,omitempty"`
+}
+
+// ruleGroups type of yaml.v3 features in the groups field.
 type ruleGroups struct {
 	Groups []yaml.Node `yaml:"groups"`
+}
+
+// validateRules type for validating the groups inside the
+// rules files under strict mode, supported under yaml.v2
+type validateRules struct {
+	Groups []validateGroup `yaml:"groups"`
+}
+
+type validateGroup struct {
+	Name     string         `yaml:"name"`
+	Interval model.Duration `yaml:"interval,omitempty"`
+	Rules    []Rule         `yaml:"rules"`
+}
+
+// Rule describes an alerting or recording rule.
+type Rule struct {
+	Record      string            `yaml:"record,omitempty"`
+	Alert       string            `yaml:"alert,omitempty"`
+	Expr        string            `yaml:"expr"`
+	For         model.Duration    `yaml:"for,omitempty"`
+	Labels      map[string]string `yaml:"labels,omitempty"`
+	Annotations map[string]string `yaml:"annotations,omitempty"`
 }
 
 // Validate validates all rules in the rule groups.
@@ -74,7 +115,7 @@ func (g *RuleGroups) Validate(node ruleGroups) (errs []error) {
 		if _, ok := set[g.Name]; ok {
 			errs = append(
 				errs,
-				errors.Errorf("%d:%d: groupname: \"%s\" is repeated in the same file", node.Groups[j].Line, node.Groups[j].Column, g.Name),
+				errors.Errorf("%d:%d: Groupname: \"%s\" is repeated in the same file", node.Groups[j].Line, node.Groups[j].Column, g.Name),
 			)
 		}
 
@@ -99,33 +140,6 @@ func (g *RuleGroups) Validate(node ruleGroups) (errs []error) {
 	}
 
 	return errs
-}
-
-// RuleGroup is a list of sequentially evaluated recording and alerting rules.
-type RuleGroup struct {
-	Name     string         `yaml:"name"`
-	Interval model.Duration `yaml:"interval,omitempty"`
-	Rules    []RuleNode     `yaml:"rules"`
-}
-
-// Rule describes an alerting or recording rule.
-type Rule struct {
-	Record      string            `yaml:"record,omitempty"`
-	Alert       string            `yaml:"alert,omitempty"`
-	Expr        string            `yaml:"expr"`
-	For         model.Duration    `yaml:"for,omitempty"`
-	Labels      map[string]string `yaml:"labels,omitempty"`
-	Annotations map[string]string `yaml:"annotations,omitempty"`
-}
-
-// RuleNode adds yaml.v3 layer to support line and column outputs for invalid rules.
-type RuleNode struct {
-	Record      yaml.Node         `yaml:"record,omitempty"`
-	Alert       yaml.Node         `yaml:"alert,omitempty"`
-	Expr        yaml.Node         `yaml:"expr"`
-	For         model.Duration    `yaml:"for,omitempty"`
-	Labels      map[string]string `yaml:"labels,omitempty"`
-	Annotations map[string]string `yaml:"annotations,omitempty"`
 }
 
 // Validate the rule and return a list of encountered errors.
@@ -262,19 +276,23 @@ func testTemplateParsing(rl *RuleNode) (errs []error) {
 // Parse parses and validates a set of rules.
 func Parse(content []byte) (*RuleGroups, []error) {
 	var (
-		groups RuleGroups
-		node   ruleGroups
-		errs   []error
+		groups   RuleGroups
+		node     ruleGroups
+		validate validateRules
+		errs     []error
 	)
 
-	err := yaml.Unmarshal(content, &groups)
+	err := yamlv2.UnmarshalStrict(content, &validate)
 	if err != nil {
 		errs = append(errs, err)
 	}
-	err = yaml.Unmarshal(content, &node)
-	if err != nil {
-		errs = append(errs, err)
-	}
+
+	// Error catching is not required since the errors related to the
+	// yaml file Unmarshalling are already captured in the strict mode.
+	// Further, catching errors here will lead to duplicate
+	// errors in the output. Hence, here we aim to perform further
+	// checks on the rules files supported with the line and columns numbers.
+	_, _ = yaml.Unmarshal(content, &groups), yaml.Unmarshal(content, &node)
 
 	if len(errs) > 0 {
 		return nil, errs
