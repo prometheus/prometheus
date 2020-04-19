@@ -292,16 +292,14 @@ func TestReleaseNoninternedString(t *testing.T) {
 	testutil.Assert(t, metric == 0, "expected there to be no calls to release for strings that were not already interned: %d", int(metric))
 }
 
-func TestCalculateDesiredsShards(t *testing.T) {
+func TestShouldReshard(t *testing.T) {
 	type testcase struct {
 		startingShards        int
-		samplesIn, samplesOut int64
 		reshard               bool
+		samplesIn, samplesOut int64
 	}
 	cases := []testcase{
 		{
-			// Test that ensures that if we haven't successfully sent a
-			// sample recently the queue will not reshard.
 			startingShards: 10,
 			reshard:        false,
 			samplesIn:      1000,
@@ -329,8 +327,9 @@ func TestCalculateDesiredsShards(t *testing.T) {
 		}
 		m.Start()
 		desiredShards := m.calculateDesiredShards()
+		shouldReshard := m.shouldReshard(desiredShards)
 		m.Stop()
-		if !c.reshard {
+		if !(c.reshard == shouldReshard) {
 			testutil.Assert(t, desiredShards == m.numShards, "expected calculateDesiredShards to not want to reshard, wants to change from %d to %d shards", m.numShards, desiredShards)
 		} else {
 			testutil.Assert(t, desiredShards != m.numShards, "expected calculateDesiredShards to want to reshard, wants to change from %d to %d shards", m.numShards, desiredShards)
