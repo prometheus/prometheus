@@ -37,7 +37,7 @@ func TestParseFileFailure(t *testing.T) {
 	}{
 		{
 			filename: "duplicate_grp.bad.yaml",
-			errMsg:   "groupname: \"yolo\" is repeated in the same file",
+			errMsg:   "Groupname: \"yolo\" is repeated in the same file",
 		},
 		{
 			filename: "bad_expr.bad.yaml",
