@@ -51,6 +51,7 @@ func (err *Error) Error() string {
 	} else if err.Err.node != nil {
 		return errors.Wrapf(err.Err.err, "%d:%d: group %q, rule %d, %q", err.Err.node.Line, err.Err.node.Column, err.Group, err.Rule, err.RuleName).Error()
 	}
+
 	return errors.Wrapf(err.Err.err, "group %q, rule %d, %q", err.Group, err.Rule, err.RuleName).Error()
 }
 
