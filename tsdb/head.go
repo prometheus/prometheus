@@ -805,8 +805,6 @@ func (h *RangeHead) Meta() BlockMeta {
 type initAppender struct {
 	app  storage.Appender
 	head *Head
-
-	appendID, cleanupAppendIDsBelow uint64
 }
 
 func (a *initAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
@@ -814,7 +812,7 @@ func (a *initAppender) Add(lset labels.Labels, t int64, v float64) (uint64, erro
 		return a.app.Add(lset, t, v)
 	}
 	a.head.initTime(t)
-	a.app = a.head.appender(a.appendID, a.cleanupAppendIDsBelow)
+	a.app = a.head.appender()
 
 	return a.app.Add(lset, t, v)
 }
@@ -844,22 +842,20 @@ func (a *initAppender) Rollback() error {
 func (h *Head) Appender() storage.Appender {
 	h.metrics.activeAppenders.Inc()
 
-	appendID := h.iso.newAppendID()
-	cleanupAppendIDsBelow := h.iso.lowWatermark()
-
 	// The head cache might not have a starting point yet. The init appender
 	// picks up the first appended timestamp as the base.
 	if h.MinTime() == math.MaxInt64 {
 		return &initAppender{
-			head:                  h,
-			appendID:              appendID,
-			cleanupAppendIDsBelow: cleanupAppendIDsBelow,
+			head: h,
 		}
 	}
-	return h.appender(appendID, cleanupAppendIDsBelow)
+	return h.appender()
 }
 
-func (h *Head) appender(appendID, cleanupAppendIDsBelow uint64) *headAppender {
+func (h *Head) appender() *headAppender {
+	appendID := h.iso.newAppendID()
+	cleanupAppendIDsBelow := h.iso.lowWatermark()
+
 	return &headAppender{
 		head: h,
 		// Set the minimum valid time to whichever is greater the head min valid time or the compaction window.

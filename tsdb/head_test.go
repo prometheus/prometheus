@@ -1078,7 +1078,7 @@ func TestUncommittedSamplesNotLostOnTruncate(t *testing.T) {
 
 	h.initTime(0)
 
-	app := h.appender(0, 0)
+	app := h.appender()
 	lset := labels.FromStrings("a", "1")
 	_, err = app.Add(lset, 2100, 1)
 	testutil.Ok(t, err)
@@ -1106,7 +1106,7 @@ func TestRemoveSeriesAfterRollbackAndTruncate(t *testing.T) {
 
 	h.initTime(0)
 
-	app := h.appender(0, 0)
+	app := h.appender()
 	lset := labels.FromStrings("a", "1")
 	_, err = app.Add(lset, 2100, 1)
 	testutil.Ok(t, err)
@@ -1368,14 +1368,16 @@ func TestMemSeriesIsolation(t *testing.T) {
 		return -1
 	}
 
-	i := 0
+	i := 1
 	for ; i <= 1000; i++ {
 		var app storage.Appender
 		// To initialize bounds.
 		if hb.MinTime() == math.MaxInt64 {
-			app = &initAppender{head: hb, appendID: uint64(i), cleanupAppendIDsBelow: 0}
+			app = &initAppender{head: hb}
 		} else {
-			app = hb.appender(uint64(i), 0)
+			a := hb.appender()
+			a.cleanupAppendIDsBelow = 0
+			app = a
 		}
 
 		_, err := app.Add(labels.FromStrings("foo", "bar"), int64(i), float64(i))
@@ -1394,7 +1396,8 @@ func TestMemSeriesIsolation(t *testing.T) {
 	testutil.Equals(t, 999, lastValue(999))
 
 	// Cleanup appendIDs below 500.
-	app := hb.appender(uint64(i), 500)
+	app := hb.appender()
+	app.cleanupAppendIDsBelow = 500
 	_, err = app.Add(labels.FromStrings("foo", "bar"), int64(i), float64(i))
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Commit())
@@ -1412,7 +1415,8 @@ func TestMemSeriesIsolation(t *testing.T) {
 
 	// Cleanup appendIDs below 1000, which means the sample buffer is
 	// the only thing with appendIDs.
-	app = hb.appender(uint64(i), 1000)
+	app = hb.appender()
+	app.cleanupAppendIDsBelow = 1000
 	_, err = app.Add(labels.FromStrings("foo", "bar"), int64(i), float64(i))
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Commit())
@@ -1425,7 +1429,8 @@ func TestMemSeriesIsolation(t *testing.T) {
 
 	i++
 	// Cleanup appendIDs below 1001, but with a rollback.
-	app = hb.appender(uint64(i), 1001)
+	app = hb.appender()
+	app.cleanupAppendIDsBelow = 1001
 	_, err = app.Add(labels.FromStrings("foo", "bar"), int64(i), float64(i))
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Rollback())
@@ -1513,6 +1518,22 @@ func TestHeadSeriesChunkRace(t *testing.T) {
 	for i := 0; i < 1000; i++ {
 		testHeadSeriesChunkRace(t)
 	}
+}
+
+func TestIsolationWithoutAdd(t *testing.T) {
+	hb, err := NewHead(nil, nil, nil, 1000, DefaultStripeSize)
+	testutil.Ok(t, err)
+	defer hb.Close()
+
+	app := hb.Appender()
+	testutil.Ok(t, app.Commit())
+
+	app = hb.Appender()
+	_, err = app.Add(labels.FromStrings("foo", "baz"), 1, 1)
+	testutil.Ok(t, err)
+	testutil.Ok(t, app.Commit())
+
+	testutil.Equals(t, hb.iso.lastAppendID, hb.iso.lowWatermark(), "High watermark should be equal to the low watermark")
 }
 
 func testHeadSeriesChunkRace(t *testing.T) {
