@@ -292,26 +292,27 @@ func TestReleaseNoninternedString(t *testing.T) {
 	testutil.Assert(t, metric == 0, "expected there to be no calls to release for strings that were not already interned: %d", int(metric))
 }
 
-func TestCalculateDesiredsShards(t *testing.T) {
+func TestShouldReshard(t *testing.T) {
 	type testcase struct {
-		startingShards        int
-		samplesIn, samplesOut int64
-		reshard               bool
+		startingShards                           int
+		samplesIn, samplesOut, lastSendTimestamp int64
+		expectedToReshard                        bool
 	}
 	cases := []testcase{
 		{
-			// Test that ensures that if we haven't successfully sent a
-			// sample recently the queue will not reshard.
-			startingShards: 10,
-			reshard:        false,
-			samplesIn:      1000,
-			samplesOut:     10,
+			// Resharding shouldn't take place if the last successful send was > batch send deadline*2 seconds ago.
+			startingShards:    10,
+			samplesIn:         1000,
+			samplesOut:        10,
+			lastSendTimestamp: time.Now().Unix() - int64(3*time.Duration(config.DefaultQueueConfig.BatchSendDeadline)/time.Second),
+			expectedToReshard: false,
 		},
 		{
-			startingShards: 5,
-			reshard:        true,
-			samplesIn:      1000,
-			samplesOut:     10,
+			startingShards:    5,
+			samplesIn:         1000,
+			samplesOut:        10,
+			lastSendTimestamp: time.Now().Unix(),
+			expectedToReshard: true,
 		},
 	}
 	for _, c := range cases {
@@ -321,20 +322,16 @@ func TestCalculateDesiredsShards(t *testing.T) {
 		m.numShards = c.startingShards
 		m.samplesIn.incr(c.samplesIn)
 		m.samplesOut.incr(c.samplesOut)
-		m.lastSendTimestamp = time.Now().Unix()
+		m.lastSendTimestamp = c.lastSendTimestamp
 
-		// Resharding shouldn't take place if the last successful send was > batch send deadline*2 seconds ago.
-		if !c.reshard {
-			m.lastSendTimestamp = m.lastSendTimestamp - int64(3*time.Duration(config.DefaultQueueConfig.BatchSendDeadline)/time.Second)
-		}
 		m.Start()
+
 		desiredShards := m.calculateDesiredShards()
+		shouldReshard := m.shouldReshard(desiredShards)
+
 		m.Stop()
-		if !c.reshard {
-			testutil.Assert(t, desiredShards == m.numShards, "expected calculateDesiredShards to not want to reshard, wants to change from %d to %d shards", m.numShards, desiredShards)
-		} else {
-			testutil.Assert(t, desiredShards != m.numShards, "expected calculateDesiredShards to want to reshard, wants to change from %d to %d shards", m.numShards, desiredShards)
-		}
+
+		testutil.Equals(t, c.expectedToReshard, shouldReshard)
 	}
 }
 

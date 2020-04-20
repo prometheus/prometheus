@@ -544,7 +544,7 @@ func (t *QueueManager) updateShardsLoop() {
 		select {
 		case <-ticker.C:
 			desiredShards := t.calculateDesiredShards()
-			if desiredShards == t.numShards {
+			if !t.shouldReshard(desiredShards) {
 				continue
 			}
 			// Resharding can take some time, and we want this loop
@@ -560,6 +560,22 @@ func (t *QueueManager) updateShardsLoop() {
 			return
 		}
 	}
+}
+
+// shouldReshard returns if resharding should occur
+func (t *QueueManager) shouldReshard(desiredShards int) bool {
+	if desiredShards == t.numShards {
+		return false
+	}
+	// We shouldn't reshard if Prometheus hasn't been able to send to the
+	// remote endpoint successfully within some period of time.
+	minSendTimestamp := time.Now().Add(-2 * time.Duration(t.cfg.BatchSendDeadline)).Unix()
+	lsts := atomic.LoadInt64(&t.lastSendTimestamp)
+	if lsts < minSendTimestamp {
+		level.Warn(t.logger).Log("msg", "Skipping resharding, last successful send was beyond threshold", "lastSendTimestamp", lsts, "minSendTimestamp", minSendTimestamp)
+		return false
+	}
+	return true
 }
 
 // calculateDesiredShards returns the number of desired shards, which will be
@@ -588,15 +604,6 @@ func (t *QueueManager) calculateDesiredShards() int {
 	)
 
 	if samplesOutRate <= 0 {
-		return t.numShards
-	}
-
-	// We shouldn't reshard if Prometheus hasn't been able to send to the
-	// remote endpoint successfully within some period of time.
-	minSendTimestamp := time.Now().Add(-2 * time.Duration(t.cfg.BatchSendDeadline)).Unix()
-	lsts := atomic.LoadInt64(&t.lastSendTimestamp)
-	if lsts < minSendTimestamp {
-		level.Warn(t.logger).Log("msg", "Skipping resharding, last successful send was beyond threshold", "lastSendTimestamp", lsts, "minSendTimestamp", minSendTimestamp)
 		return t.numShards
 	}
 
