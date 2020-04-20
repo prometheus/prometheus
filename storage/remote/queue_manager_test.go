@@ -331,7 +331,7 @@ func TestShouldReshard(t *testing.T) {
 
 		m.Stop()
 
-		testutil.Assert(t, shouldReshard == c.expectedToReshard, "shouldReshard set to %t, expected %t", shouldReshard, c.expectedToReshard)
+		testutil.Equals(t, c.expectedToReshard, shouldReshard)
 	}
 }
 
