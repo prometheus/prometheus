@@ -15,6 +15,8 @@ package config
 
 import (
 	"fmt"
+	"github.com/uber/jaeger-client-go"
+	jaegercfg "github.com/uber/jaeger-client-go/config"
 	"io/ioutil"
 	"net/url"
 	"path/filepath"
@@ -126,6 +128,19 @@ var (
 	DefaultRemoteReadConfig = RemoteReadConfig{
 		RemoteTimeout: model.Duration(1 * time.Minute),
 	}
+
+	// DefaultTracingConfig is the default tracing configuration
+	DefaultTracingConfig = TracingConfig{
+		ServiceName: "prometheus",
+		Disabled:    true,
+		Sampler: &jaegercfg.SamplerConfig{
+			Type:  jaeger.SamplerTypeConst,
+			Param: 1,
+		},
+		Reporter: &jaegercfg.ReporterConfig{
+			LogSpans: false,
+		},
+	}
 )
 
 // Config is the top-level configuration for Prometheus's config files.
@@ -137,6 +152,9 @@ type Config struct {
 
 	RemoteWriteConfigs []*RemoteWriteConfig `yaml:"remote_write,omitempty"`
 	RemoteReadConfigs  []*RemoteReadConfig  `yaml:"remote_read,omitempty"`
+
+	// experimental tracing configuration section
+	Tracing *TracingConfig `yaml:"tracing,omitempty"`
 
 	// original is the input from which the config was parsed.
 	original string
@@ -695,4 +713,16 @@ func (c *RemoteReadConfig) UnmarshalYAML(unmarshal func(interface{}) error) erro
 	// We cannot make it a pointer as the parser panics for inlined pointer structs.
 	// Thus we just do its validation here.
 	return c.HTTPClientConfig.Validate()
+}
+
+type TracingConfig jaegercfg.Configuration
+
+func (c *TracingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultTracingConfig
+	type plain TracingConfig
+	if err := unmarshal((*plain)(c)); err != nil {
+		return err
+	}
+
+	return nil
 }

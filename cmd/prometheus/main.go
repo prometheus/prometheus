@@ -18,10 +18,8 @@ import (
 	"context"
 	"fmt"
 	"github.com/opentracing/opentracing-go"
-	"github.com/uber/jaeger-client-go"
 	"github.com/uber/jaeger-lib/metrics"
 
-	"io"
 	"math"
 	"net"
 	"net/http"
@@ -82,6 +80,7 @@ var (
 
 	defaultRetentionString   = "15d"
 	defaultRetentionDuration model.Duration
+	flushTraces              = func() {}
 )
 
 func init() {
@@ -479,6 +478,9 @@ func main() {
 				cfg.GlobalConfig.ExternalLabels,
 			)
 		},
+		func(cfg *config.Config) error {
+			return initTracer(cfg, logger)
+		},
 	}
 
 	prometheus.MustRegister(configSuccess)
@@ -503,13 +505,6 @@ func main() {
 			close(reloadReady.C)
 		})
 	}
-
-	closer, err := initTracer(logger)
-	if err != nil {
-		level.Error(logger).Log("err", err)
-		os.Exit(1)
-	}
-	defer closer.Close()
 
 	var g run.Group
 	{
@@ -755,6 +750,7 @@ func main() {
 			},
 		)
 	}
+	defer flushTraces()
 	if err := g.Run(); err != nil {
 		level.Error(logger).Log("err", err)
 		os.Exit(1)
@@ -1019,36 +1015,42 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 	}
 }
 
-func initTracer(logger log.Logger) (io.Closer, error) {
-	cfg := &jaegercfg.Configuration{
-		ServiceName: "prometheus",
-		Sampler: &jaegercfg.SamplerConfig{
-			Type:  jaeger.SamplerTypeConst,
-			Param: 1,
-		},
-		Reporter: &jaegercfg.ReporterConfig{
-			LogSpans: false,
-		},
-	}
-
-	cfg, err := cfg.FromEnv()
-	if err != nil {
-		return nil, errors.Wrap(err, "unable to init tracing")
+func initTracer(cfg *config.Config, logger log.Logger) error {
+	// Flush any previous traces
+	flushTraces()
+	if cfg.Tracing == nil {
+		return nil
 	}
 
 	jLogger := jaegerLogger{logger: log.With(logger, "component", "tracing")}
 	jMetricsFactory := metrics.NullFactory
 
-	tracer, closer, err := cfg.NewTracer(
+	jcfg := (*jaegercfg.Configuration)(cfg.Tracing)
+
+	// Override file local configuration with config from environment
+	jcfg, err := jcfg.FromEnv()
+	if err != nil {
+		return errors.Wrap(err, "unable to init tracing from environment variables")
+	}
+
+	tracer, closer, err := jcfg.NewTracer(
 		jaegercfg.Logger(jLogger),
 		jaegercfg.Metrics(jMetricsFactory),
 	)
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to init tracing")
+		return errors.Wrap(err, "unable to init tracing")
 	}
 
 	opentracing.SetGlobalTracer(tracer)
-	return closer, nil
+
+	flushTraces = func() {
+		if err := closer.Close(); err != nil {
+			level.Error(logger).Log("err", err, "msg", "error flushing tracing")
+		}
+		flushTraces = func() {}
+	}
+
+	return nil
 }
 
 type jaegerLogger struct {
@@ -1060,6 +1062,7 @@ func (l jaegerLogger) Error(msg string) {
 }
 
 func (l jaegerLogger) Infof(msg string, args ...interface{}) {
-	keyvals := []interface{}{"msg", fmt.Sprintf(msg, args...)}
+	m := fmt.Sprintf(msg, args...)
+	keyvals := []interface{}{"msg", m}
 	level.Info(l.logger).Log(keyvals...)
 }
