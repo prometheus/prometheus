@@ -128,9 +128,7 @@ type Query interface {
 	// Statement returns the parsed statement of the query.
 	Statement() parser.Statement
 	// Stats returns statistics about the lifetime of the query.
-	Stats() *stats.QueryTimers
-	// SampleStats returns sample statistics about the lifetime of the query.
-	SampleStats() *stats.QuerySamples
+	Stats() *stats.Statistics
 	// Cancel signals that a running query execution should be aborted.
 	Cancel()
 }
@@ -164,13 +162,11 @@ func (q *query) Statement() parser.Statement {
 }
 
 // Stats implements the Query interface.
-func (q *query) Stats() *stats.QueryTimers {
-	return q.stats
-}
-
-// SampleStats implements the Query interface.
-func (q *query) SampleStats() *stats.QuerySamples {
-	return q.sampleStats
+func (q *query) Stats() *stats.Statistics {
+	return &stats.Statistics{
+		Timers:  q.stats,
+		Samples: q.sampleStats,
+	}
 }
 
 // Cancel implements the Query interface.
@@ -448,7 +444,7 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, w storage
 			if err != nil {
 				f = append(f, "error", err)
 			}
-			f = append(f, "stats", stats.NewQueryStats(q.Stats(), q.SampleStats()))
+			f = append(f, "stats", stats.NewQueryStats(q.Stats()))
 			if origin := ctx.Value(queryOrigin{}); origin != nil {
 				for k, v := range origin.(map[string]interface{}) {
 					f = append(f, k, v)
@@ -1265,7 +1261,6 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 					return ev.VectorUnless(v[0].(Vector), v[1].(Vector), e.VectorMatching, enh)
 				}, e.LHS, e.RHS)
 			default:
-				fmt.Println("in default stage")
 				return ev.rangeEval(func(v []parser.Value, enh *EvalNodeHelper) Vector {
 					return ev.VectorBinop(e.Op, v[0].(Vector), v[1].(Vector), e.VectorMatching, e.ReturnBool, enh)
 				}, e.LHS, e.RHS)

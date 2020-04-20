@@ -352,7 +352,7 @@ func (api *API) query(r *http.Request) apiFuncResult {
 	// Optional stats field in response if parameter "stats" is not empty.
 	var qs *stats.QueryStats
 	if r.FormValue("stats") != "" {
-		qs = stats.NewQueryStats(qry.Stats(), qry.SampleStats())
+		qs = stats.NewQueryStats(qry.Stats())
 	}
 
 	return apiFuncResult{&queryData{
@@ -424,7 +424,7 @@ func (api *API) queryRange(r *http.Request) apiFuncResult {
 	// Optional stats field in response if parameter "stats" is not empty.
 	var qs *stats.QueryStats
 	if r.FormValue("stats") != "" {
-		qs = stats.NewQueryStats(qry.Stats(), qry.SampleStats())
+		qs = stats.NewQueryStats(qry.Stats())
 	}
 
 	return apiFuncResult{&queryData{

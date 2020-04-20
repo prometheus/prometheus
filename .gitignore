@@ -3,7 +3,6 @@
 /*.yaml
 /*.yml
 *.exe
-.idea
 
 /prometheus
 /promtool

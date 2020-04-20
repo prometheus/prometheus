@@ -97,10 +97,12 @@ type QueryStats struct {
 
 // NewQueryStats makes a QueryStats struct with all QueryTimings found in the
 // given TimerGroup.
-func NewQueryStats(tg *QueryTimers, sp *QuerySamples) *QueryStats {
+func NewQueryStats(s *Statistics) *QueryStats {
 	var (
 		qt      queryTimings
 		samples querySamples
+		tg      = s.Timers
+		sp      = s.Samples
 	)
 
 	for s, timer := range tg.TimerGroup.timers {
@@ -158,6 +160,11 @@ func (s *SpanTimer) Finish() {
 	for _, obs := range s.observers {
 		obs.Observe(s.timer.ElapsedTime().Seconds())
 	}
+}
+
+type Statistics struct {
+	Timers  *QueryTimers
+	Samples *QuerySamples
 }
 
 type QueryTimers struct {
