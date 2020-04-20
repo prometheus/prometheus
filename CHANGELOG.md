@@ -1,3 +1,11 @@
+## 2.17.2 / 2020-04-20
+
+* [BUGFIX] Federation: Register federation metrics #7081
+* [BUGFIX] PromQL: Fix panic in parser error handling #7132
+* [BUGFIX] Rules: Fix reloads hanging when deleting a rule group that is being evaluated #7138
+* [BUGFIX] TSDB: Fix a memory leak when prometheus starts with an empty TSDB WAL #7135
+* [BUGFIX] TSDB: Make isolation more robust to panics in web handlers #7129 #7136
+
 ## 2.17.1 / 2020-03-26
 
 * [BUGFIX] TSDB: Fix query performance regression that increased memory and CPU usage #7051
