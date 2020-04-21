@@ -506,7 +506,7 @@ func main() {
 
 	closer, err := initTracing(logger)
 	if err != nil {
-		level.Error(logger).Log("err", err)
+		level.Error(logger).Log("msg", "Unable to init tracing", "err", err)
 		os.Exit(1)
 	}
 	defer closer.Close()
@@ -1020,16 +1020,13 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 }
 
 func initTracing(logger log.Logger) (io.Closer, error) {
-	// Set tracing configuration defaults
+	// Set tracing configuration defaults.
 	cfg := &jaegercfg.Configuration{
 		ServiceName: "prometheus",
 		Disabled:    true,
 		Sampler: &jaegercfg.SamplerConfig{
 			Type:  jaeger.SamplerTypeConst,
 			Param: 1,
-		},
-		Reporter: &jaegercfg.ReporterConfig{
-			LogSpans: false,
 		},
 	}
 
