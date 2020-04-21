@@ -18,7 +18,6 @@ import (
 	"context"
 	"fmt"
 	"github.com/opentracing/opentracing-go"
-	"github.com/uber/jaeger-client-go"
 	"github.com/uber/jaeger-lib/metrics"
 
 	"io"
@@ -1024,10 +1023,6 @@ func initTracing(logger log.Logger) (io.Closer, error) {
 	cfg := &jaegercfg.Configuration{
 		ServiceName: "prometheus",
 		Disabled:    true,
-		Sampler: &jaegercfg.SamplerConfig{
-			Type:  jaeger.SamplerTypeConst,
-			Param: 1,
-		},
 	}
 
 	// Override defaults from environment variables. Available options can be seen here:
