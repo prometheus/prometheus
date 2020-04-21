@@ -504,7 +504,7 @@ func main() {
 		})
 	}
 
-	closer, err := initTracer(logger)
+	closer, err := initTracing(logger)
 	if err != nil {
 		level.Error(logger).Log("err", err)
 		os.Exit(1)
@@ -1019,9 +1019,11 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 	}
 }
 
-func initTracer(logger log.Logger) (io.Closer, error) {
+func initTracing(logger log.Logger) (io.Closer, error) {
+	// Set tracing configuration defaults
 	cfg := &jaegercfg.Configuration{
 		ServiceName: "prometheus",
+		Disabled:    true,
 		Sampler: &jaegercfg.SamplerConfig{
 			Type:  jaeger.SamplerTypeConst,
 			Param: 1,
@@ -1031,9 +1033,11 @@ func initTracer(logger log.Logger) (io.Closer, error) {
 		},
 	}
 
+	// Override defaults from environment variables. Available options can be seen here:
+	// https://github.com/jaegertracing/jaeger-client-go/blob/master/config/config_env.go
 	cfg, err := cfg.FromEnv()
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to init tracing")
+		return nil, errors.Wrap(err, "unable to get tracing config from environment")
 	}
 
 	jLogger := jaegerLogger{logger: log.With(logger, "component", "tracing")}
