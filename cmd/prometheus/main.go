@@ -17,8 +17,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/opentracing/opentracing-go"
-	"github.com/uber/jaeger-lib/metrics"
 
 	"io"
 	"math"
@@ -41,12 +39,14 @@ import (
 	"github.com/go-kit/kit/log/level"
 	conntrack "github.com/mwitkow/go-conntrack"
 	"github.com/oklog/run"
+	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promlog"
 	"github.com/prometheus/common/version"
 	jaegercfg "github.com/uber/jaeger-client-go/config"
+	"github.com/uber/jaeger-lib/metrics"
 	kingpin "gopkg.in/alecthomas/kingpin.v2"
 	"k8s.io/klog"
 
@@ -506,7 +506,7 @@ func main() {
 	closer, err := initTracing(logger)
 	if err != nil {
 		level.Error(logger).Log("msg", "Unable to init tracing", "err", err)
-		os.Exit(1)
+		os.Exit(2)
 	}
 	defer closer.Close()
 
