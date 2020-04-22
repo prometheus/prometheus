@@ -444,6 +444,7 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, w storage
 					f = append(f, k, v)
 				}
 			}
+			f = append(f, "span", opentracing.SpanFromContext(ctx))
 			if err := l.Log(f...); err != nil {
 				ng.metrics.queryLogFailures.Inc()
 				level.Error(ng.logger).Log("msg", "can't log query", "err", err)
