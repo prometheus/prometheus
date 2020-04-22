@@ -19,6 +19,39 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
+func TestLabels_String(t *testing.T) {
+	cases := []struct {
+		lables   Labels
+		expected string
+	}{
+		{
+			lables: Labels{
+				{
+					Name:  "t1",
+					Value: "t1",
+				},
+				{
+					Name:  "t2",
+					Value: "t2",
+				},
+			},
+			expected: "{t1=\"t1\", t2=\"t2\"}",
+		},
+		{
+			lables:   Labels{},
+			expected: "{}",
+		},
+		{
+			lables:   nil,
+			expected: "{}",
+		},
+	}
+	for _, c := range cases {
+		str := c.lables.String()
+		testutil.Equals(t, c.expected, str)
+	}
+}
+
 func TestLabels_MatchLabels(t *testing.T) {
 	labels := Labels{
 		{
