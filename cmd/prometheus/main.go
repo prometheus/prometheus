@@ -1025,7 +1025,7 @@ func initTracing(logger log.Logger) (io.Closer, error) {
 	}
 
 	// Available options can be seen here:
-	// https://github.com/jaegertracing/jaeger-client-go/blob/master/config/config_env.go
+	// https://github.com/jaegertracing/jaeger-client-go#environment-variables
 	cfg, err := cfg.FromEnv()
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to get tracing config from environment")
