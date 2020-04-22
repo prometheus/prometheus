@@ -17,7 +17,6 @@ package main
 import (
 	"context"
 	"fmt"
-
 	"io"
 	"math"
 	"net"
