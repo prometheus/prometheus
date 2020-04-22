@@ -44,8 +44,8 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promlog"
 	"github.com/prometheus/common/version"
-	jaegercfg "github.com/uber/jaeger-client-go/config"
-	"github.com/uber/jaeger-lib/metrics"
+	jcfg "github.com/uber/jaeger-client-go/config"
+	jprom "github.com/uber/jaeger-lib/metrics/prometheus"
 	kingpin "gopkg.in/alecthomas/kingpin.v2"
 	"k8s.io/klog"
 
@@ -1019,12 +1019,12 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 
 func initTracing(logger log.Logger) (io.Closer, error) {
 	// Set tracing configuration defaults.
-	cfg := &jaegercfg.Configuration{
+	cfg := &jcfg.Configuration{
 		ServiceName: "prometheus",
 		Disabled:    true,
 	}
 
-	// Override defaults from environment variables. Available options can be seen here:
+	// Available options can be seen here:
 	// https://github.com/jaegertracing/jaeger-client-go/blob/master/config/config_env.go
 	cfg, err := cfg.FromEnv()
 	if err != nil {
@@ -1032,11 +1032,10 @@ func initTracing(logger log.Logger) (io.Closer, error) {
 	}
 
 	jLogger := jaegerLogger{logger: log.With(logger, "component", "tracing")}
-	jMetricsFactory := metrics.NullFactory
 
 	tracer, closer, err := cfg.NewTracer(
-		jaegercfg.Logger(jLogger),
-		jaegercfg.Metrics(jMetricsFactory),
+		jcfg.Logger(jLogger),
+		jcfg.Metrics(jprom.New()),
 	)
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to init tracing")
