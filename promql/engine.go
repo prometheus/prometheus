@@ -439,12 +439,12 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, w storage
 				f = append(f, "error", err)
 			}
 			f = append(f, "stats", stats.NewQueryStats(q.Stats()))
+			f = append(f, "span", opentracing.SpanFromContext(ctx))
 			if origin := ctx.Value(queryOrigin{}); origin != nil {
 				for k, v := range origin.(map[string]interface{}) {
 					f = append(f, k, v)
 				}
 			}
-			f = append(f, "span", opentracing.SpanFromContext(ctx))
 			if err := l.Log(f...); err != nil {
 				ng.metrics.queryLogFailures.Inc()
 				level.Error(ng.logger).Log("msg", "can't log query", "err", err)
