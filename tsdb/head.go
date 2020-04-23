@@ -101,6 +101,7 @@ type headMetrics struct {
 	checkpointDeleteTotal   prometheus.Counter
 	checkpointCreationFail  prometheus.Counter
 	checkpointCreationTotal prometheus.Counter
+	symbols                 prometheus.Histogram
 }
 
 func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
@@ -179,6 +180,10 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			Name: "prometheus_tsdb_checkpoint_creations_total",
 			Help: "Total number of checkpoint creations attempted.",
 		}),
+		symbols: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Name: "prometheus_tsdb_head_symbols_total",
+			Help: "Total number of symbols in the head",
+		}),
 	}
 
 	if r != nil {
@@ -201,6 +206,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.checkpointDeleteTotal,
 			m.checkpointCreationFail,
 			m.checkpointCreationTotal,
+			m.symbols,
 			// Metrics bound to functions and not needed in tests
 			// can be created and registered on the spot.
 			prometheus.NewGaugeFunc(prometheus.GaugeOpts{
@@ -1177,6 +1183,7 @@ func (h *Head) gc() {
 
 	h.symbols = symbols
 	h.values = values
+	h.metrics.symbols.Observe(float64(len(h.symbols)))
 
 	h.symMtx.Unlock()
 }
@@ -1494,6 +1501,7 @@ func (h *Head) getOrCreateWithID(id, hash uint64, lset labels.Labels) (*memSerie
 		h.symbols[l.Name] = struct{}{}
 		h.symbols[l.Value] = struct{}{}
 	}
+	h.metrics.symbols.Observe(float64(len(h.symbols)))
 
 	return s, true
 }
