@@ -19,11 +19,6 @@ limitations under the License.
 package v1beta1
 
 import (
-	"context"
-
-	v1beta1 "k8s.io/api/authorization/v1beta1"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	scheme "k8s.io/client-go/kubernetes/scheme"
 	rest "k8s.io/client-go/rest"
 )
 
@@ -35,7 +30,6 @@ type SelfSubjectAccessReviewsGetter interface {
 
 // SelfSubjectAccessReviewInterface has methods to work with SelfSubjectAccessReview resources.
 type SelfSubjectAccessReviewInterface interface {
-	Create(ctx context.Context, selfSubjectAccessReview *v1beta1.SelfSubjectAccessReview, opts v1.CreateOptions) (*v1beta1.SelfSubjectAccessReview, error)
 	SelfSubjectAccessReviewExpansion
 }
 
@@ -49,16 +43,4 @@ func newSelfSubjectAccessReviews(c *AuthorizationV1beta1Client) *selfSubjectAcce
 	return &selfSubjectAccessReviews{
 		client: c.RESTClient(),
 	}
-}
-
-// Create takes the representation of a selfSubjectAccessReview and creates it.  Returns the server's representation of the selfSubjectAccessReview, and an error, if there is any.
-func (c *selfSubjectAccessReviews) Create(ctx context.Context, selfSubjectAccessReview *v1beta1.SelfSubjectAccessReview, opts v1.CreateOptions) (result *v1beta1.SelfSubjectAccessReview, err error) {
-	result = &v1beta1.SelfSubjectAccessReview{}
-	err = c.client.Post().
-		Resource("selfsubjectaccessreviews").
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Body(selfSubjectAccessReview).
-		Do(ctx).
-		Into(result)
-	return
 }

@@ -19,7 +19,6 @@ limitations under the License.
 package v1
 
 import (
-	"context"
 	"time"
 
 	v1 "k8s.io/api/admissionregistration/v1"
@@ -38,14 +37,14 @@ type ValidatingWebhookConfigurationsGetter interface {
 
 // ValidatingWebhookConfigurationInterface has methods to work with ValidatingWebhookConfiguration resources.
 type ValidatingWebhookConfigurationInterface interface {
-	Create(ctx context.Context, validatingWebhookConfiguration *v1.ValidatingWebhookConfiguration, opts metav1.CreateOptions) (*v1.ValidatingWebhookConfiguration, error)
-	Update(ctx context.Context, validatingWebhookConfiguration *v1.ValidatingWebhookConfiguration, opts metav1.UpdateOptions) (*v1.ValidatingWebhookConfiguration, error)
-	Delete(ctx context.Context, name string, opts metav1.DeleteOptions) error
-	DeleteCollection(ctx context.Context, opts metav1.DeleteOptions, listOpts metav1.ListOptions) error
-	Get(ctx context.Context, name string, opts metav1.GetOptions) (*v1.ValidatingWebhookConfiguration, error)
-	List(ctx context.Context, opts metav1.ListOptions) (*v1.ValidatingWebhookConfigurationList, error)
-	Watch(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error)
-	Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts metav1.PatchOptions, subresources ...string) (result *v1.ValidatingWebhookConfiguration, err error)
+	Create(*v1.ValidatingWebhookConfiguration) (*v1.ValidatingWebhookConfiguration, error)
+	Update(*v1.ValidatingWebhookConfiguration) (*v1.ValidatingWebhookConfiguration, error)
+	Delete(name string, options *metav1.DeleteOptions) error
+	DeleteCollection(options *metav1.DeleteOptions, listOptions metav1.ListOptions) error
+	Get(name string, options metav1.GetOptions) (*v1.ValidatingWebhookConfiguration, error)
+	List(opts metav1.ListOptions) (*v1.ValidatingWebhookConfigurationList, error)
+	Watch(opts metav1.ListOptions) (watch.Interface, error)
+	Patch(name string, pt types.PatchType, data []byte, subresources ...string) (result *v1.ValidatingWebhookConfiguration, err error)
 	ValidatingWebhookConfigurationExpansion
 }
 
@@ -62,19 +61,19 @@ func newValidatingWebhookConfigurations(c *AdmissionregistrationV1Client) *valid
 }
 
 // Get takes name of the validatingWebhookConfiguration, and returns the corresponding validatingWebhookConfiguration object, and an error if there is any.
-func (c *validatingWebhookConfigurations) Get(ctx context.Context, name string, options metav1.GetOptions) (result *v1.ValidatingWebhookConfiguration, err error) {
+func (c *validatingWebhookConfigurations) Get(name string, options metav1.GetOptions) (result *v1.ValidatingWebhookConfiguration, err error) {
 	result = &v1.ValidatingWebhookConfiguration{}
 	err = c.client.Get().
 		Resource("validatingwebhookconfigurations").
 		Name(name).
 		VersionedParams(&options, scheme.ParameterCodec).
-		Do(ctx).
+		Do().
 		Into(result)
 	return
 }
 
 // List takes label and field selectors, and returns the list of ValidatingWebhookConfigurations that match those selectors.
-func (c *validatingWebhookConfigurations) List(ctx context.Context, opts metav1.ListOptions) (result *v1.ValidatingWebhookConfigurationList, err error) {
+func (c *validatingWebhookConfigurations) List(opts metav1.ListOptions) (result *v1.ValidatingWebhookConfigurationList, err error) {
 	var timeout time.Duration
 	if opts.TimeoutSeconds != nil {
 		timeout = time.Duration(*opts.TimeoutSeconds) * time.Second
@@ -84,13 +83,13 @@ func (c *validatingWebhookConfigurations) List(ctx context.Context, opts metav1.
 		Resource("validatingwebhookconfigurations").
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Timeout(timeout).
-		Do(ctx).
+		Do().
 		Into(result)
 	return
 }
 
 // Watch returns a watch.Interface that watches the requested validatingWebhookConfigurations.
-func (c *validatingWebhookConfigurations) Watch(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error) {
+func (c *validatingWebhookConfigurations) Watch(opts metav1.ListOptions) (watch.Interface, error) {
 	var timeout time.Duration
 	if opts.TimeoutSeconds != nil {
 		timeout = time.Duration(*opts.TimeoutSeconds) * time.Second
@@ -100,69 +99,66 @@ func (c *validatingWebhookConfigurations) Watch(ctx context.Context, opts metav1
 		Resource("validatingwebhookconfigurations").
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Timeout(timeout).
-		Watch(ctx)
+		Watch()
 }
 
 // Create takes the representation of a validatingWebhookConfiguration and creates it.  Returns the server's representation of the validatingWebhookConfiguration, and an error, if there is any.
-func (c *validatingWebhookConfigurations) Create(ctx context.Context, validatingWebhookConfiguration *v1.ValidatingWebhookConfiguration, opts metav1.CreateOptions) (result *v1.ValidatingWebhookConfiguration, err error) {
+func (c *validatingWebhookConfigurations) Create(validatingWebhookConfiguration *v1.ValidatingWebhookConfiguration) (result *v1.ValidatingWebhookConfiguration, err error) {
 	result = &v1.ValidatingWebhookConfiguration{}
 	err = c.client.Post().
 		Resource("validatingwebhookconfigurations").
-		VersionedParams(&opts, scheme.ParameterCodec).
 		Body(validatingWebhookConfiguration).
-		Do(ctx).
+		Do().
 		Into(result)
 	return
 }
 
 // Update takes the representation of a validatingWebhookConfiguration and updates it. Returns the server's representation of the validatingWebhookConfiguration, and an error, if there is any.
-func (c *validatingWebhookConfigurations) Update(ctx context.Context, validatingWebhookConfiguration *v1.ValidatingWebhookConfiguration, opts metav1.UpdateOptions) (result *v1.ValidatingWebhookConfiguration, err error) {
+func (c *validatingWebhookConfigurations) Update(validatingWebhookConfiguration *v1.ValidatingWebhookConfiguration) (result *v1.ValidatingWebhookConfiguration, err error) {
 	result = &v1.ValidatingWebhookConfiguration{}
 	err = c.client.Put().
 		Resource("validatingwebhookconfigurations").
 		Name(validatingWebhookConfiguration.Name).
-		VersionedParams(&opts, scheme.ParameterCodec).
 		Body(validatingWebhookConfiguration).
-		Do(ctx).
+		Do().
 		Into(result)
 	return
 }
 
 // Delete takes name of the validatingWebhookConfiguration and deletes it. Returns an error if one occurs.
-func (c *validatingWebhookConfigurations) Delete(ctx context.Context, name string, opts metav1.DeleteOptions) error {
+func (c *validatingWebhookConfigurations) Delete(name string, options *metav1.DeleteOptions) error {
 	return c.client.Delete().
 		Resource("validatingwebhookconfigurations").
 		Name(name).
-		Body(&opts).
-		Do(ctx).
+		Body(options).
+		Do().
 		Error()
 }
 
 // DeleteCollection deletes a collection of objects.
-func (c *validatingWebhookConfigurations) DeleteCollection(ctx context.Context, opts metav1.DeleteOptions, listOpts metav1.ListOptions) error {
+func (c *validatingWebhookConfigurations) DeleteCollection(options *metav1.DeleteOptions, listOptions metav1.ListOptions) error {
 	var timeout time.Duration
-	if listOpts.TimeoutSeconds != nil {
-		timeout = time.Duration(*listOpts.TimeoutSeconds) * time.Second
+	if listOptions.TimeoutSeconds != nil {
+		timeout = time.Duration(*listOptions.TimeoutSeconds) * time.Second
 	}
 	return c.client.Delete().
 		Resource("validatingwebhookconfigurations").
-		VersionedParams(&listOpts, scheme.ParameterCodec).
+		VersionedParams(&listOptions, scheme.ParameterCodec).
 		Timeout(timeout).
-		Body(&opts).
-		Do(ctx).
+		Body(options).
+		Do().
 		Error()
 }
 
 // Patch applies the patch and returns the patched validatingWebhookConfiguration.
-func (c *validatingWebhookConfigurations) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts metav1.PatchOptions, subresources ...string) (result *v1.ValidatingWebhookConfiguration, err error) {
+func (c *validatingWebhookConfigurations) Patch(name string, pt types.PatchType, data []byte, subresources ...string) (result *v1.ValidatingWebhookConfiguration, err error) {
 	result = &v1.ValidatingWebhookConfiguration{}
 	err = c.client.Patch(pt).
 		Resource("validatingwebhookconfigurations").
-		Name(name).
 		SubResource(subresources...).
-		VersionedParams(&opts, scheme.ParameterCodec).
+		Name(name).
 		Body(data).
-		Do(ctx).
+		Do().
 		Into(result)
 	return
 }

@@ -26,7 +26,6 @@ import (
 
 type StorageV1Interface interface {
 	RESTClient() rest.Interface
-	CSIDriversGetter
 	CSINodesGetter
 	StorageClassesGetter
 	VolumeAttachmentsGetter
@@ -35,10 +34,6 @@ type StorageV1Interface interface {
 // StorageV1Client is used to interact with features provided by the storage.k8s.io group.
 type StorageV1Client struct {
 	restClient rest.Interface
-}
-
-func (c *StorageV1Client) CSIDrivers() CSIDriverInterface {
-	return newCSIDrivers(c)
 }
 
 func (c *StorageV1Client) CSINodes() CSINodeInterface {

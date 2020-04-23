@@ -25,7 +25,6 @@ import (
 	"time"
 
 	utilnet "k8s.io/apimachinery/pkg/util/net"
-	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 // TlsTransportCache caches TLS http.RoundTrippers different configurations. The
@@ -45,8 +44,6 @@ type tlsCacheKey struct {
 	caData             string
 	certData           string
 	keyData            string
-	certFile           string
-	keyFile            string
 	getCert            string
 	serverName         string
 	nextProtos         string
@@ -94,16 +91,6 @@ func (c *tlsTransportCache) get(config *Config) (http.RoundTripper, error) {
 			KeepAlive: 30 * time.Second,
 		}).DialContext
 	}
-
-	// If we use are reloading files, we need to handle certificate rotation properly
-	// TODO(jackkleeman): We can also add rotation here when config.HasCertCallback() is true
-	if config.TLS.ReloadTLSFiles {
-		dynamicCertDialer := certRotatingDialer(tlsConfig.GetClientCertificate, dial)
-		tlsConfig.GetClientCertificate = dynamicCertDialer.GetClientCertificate
-		dial = dynamicCertDialer.connDialer.DialContext
-		go dynamicCertDialer.Run(wait.NeverStop)
-	}
-
 	// Cache a single transport for these options
 	c.transports[key] = utilnet.SetTransportDefaults(&http.Transport{
 		Proxy:               http.ProxyFromEnvironment,
@@ -122,23 +109,15 @@ func tlsConfigKey(c *Config) (tlsCacheKey, error) {
 	if err := loadTLSFiles(c); err != nil {
 		return tlsCacheKey{}, err
 	}
-	k := tlsCacheKey{
+	return tlsCacheKey{
 		insecure:           c.TLS.Insecure,
 		caData:             string(c.TLS.CAData),
+		certData:           string(c.TLS.CertData),
+		keyData:            string(c.TLS.KeyData),
 		getCert:            fmt.Sprintf("%p", c.TLS.GetCert),
 		serverName:         c.TLS.ServerName,
 		nextProtos:         strings.Join(c.TLS.NextProtos, ","),
 		dial:               fmt.Sprintf("%p", c.Dial),
 		disableCompression: c.DisableCompression,
-	}
-
-	if c.TLS.ReloadTLSFiles {
-		k.certFile = c.TLS.CertFile
-		k.keyFile = c.TLS.KeyFile
-	} else {
-		k.certData = string(c.TLS.CertData)
-		k.keyData = string(c.TLS.KeyData)
-	}
-
-	return k, nil
+	}, nil
 }

@@ -20,7 +20,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
@@ -43,7 +42,6 @@ import (
 	"k8s.io/client-go/pkg/apis/clientauthentication/v1alpha1"
 	"k8s.io/client-go/pkg/apis/clientauthentication/v1beta1"
 	"k8s.io/client-go/tools/clientcmd/api"
-	"k8s.io/client-go/tools/metrics"
 	"k8s.io/client-go/transport"
 	"k8s.io/client-go/util/connrotation"
 	"k8s.io/klog"
@@ -262,7 +260,6 @@ func (a *Authenticator) cert() (*tls.Certificate, error) {
 func (a *Authenticator) getCreds() (*credentials, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-
 	if a.cachedCreds != nil && !a.credsExpired() {
 		return a.cachedCreds, nil
 	}
@@ -270,7 +267,6 @@ func (a *Authenticator) getCreds() (*credentials, error) {
 	if err := a.refreshCredsLocked(nil); err != nil {
 		return nil, err
 	}
-
 	return a.cachedCreds, nil
 }
 
@@ -359,17 +355,6 @@ func (a *Authenticator) refreshCredsLocked(r *clientauthentication.Response) err
 		if err != nil {
 			return fmt.Errorf("failed parsing client key/certificate: %v", err)
 		}
-
-		// Leaf is initialized to be nil:
-		//  https://golang.org/pkg/crypto/tls/#X509KeyPair
-		// Leaf certificate is the first certificate:
-		//  https://golang.org/pkg/crypto/tls/#Certificate
-		// Populating leaf is useful for quickly accessing the underlying x509
-		// certificate values.
-		cert.Leaf, err = x509.ParseCertificate(cert.Certificate[0])
-		if err != nil {
-			return fmt.Errorf("failed parsing client leaf certificate: %v", err)
-		}
 		newCreds.cert = &cert
 	}
 
@@ -377,20 +362,10 @@ func (a *Authenticator) refreshCredsLocked(r *clientauthentication.Response) err
 	a.cachedCreds = newCreds
 	// Only close all connections when TLS cert rotates. Token rotation doesn't
 	// need the extra noise.
-	if oldCreds != nil && !reflect.DeepEqual(oldCreds.cert, a.cachedCreds.cert) {
-		// Can be nil if the exec auth plugin only returned token auth.
-		if oldCreds.cert != nil && oldCreds.cert.Leaf != nil {
-			metrics.ClientCertRotationAge.Observe(time.Now().Sub(oldCreds.cert.Leaf.NotBefore))
-		}
+	if len(a.onRotateList) > 0 && oldCreds != nil && !reflect.DeepEqual(oldCreds.cert, a.cachedCreds.cert) {
 		for _, onRotate := range a.onRotateList {
 			onRotate()
 		}
 	}
-
-	expiry := time.Time{}
-	if a.cachedCreds.cert != nil && a.cachedCreds.cert.Leaf != nil {
-		expiry = a.cachedCreds.cert.Leaf.NotAfter
-	}
-	expirationMetrics.set(a, expiry)
 	return nil
 }

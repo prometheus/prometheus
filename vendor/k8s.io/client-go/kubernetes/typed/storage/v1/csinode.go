@@ -19,7 +19,6 @@ limitations under the License.
 package v1
 
 import (
-	"context"
 	"time"
 
 	v1 "k8s.io/api/storage/v1"
@@ -38,14 +37,14 @@ type CSINodesGetter interface {
 
 // CSINodeInterface has methods to work with CSINode resources.
 type CSINodeInterface interface {
-	Create(ctx context.Context, cSINode *v1.CSINode, opts metav1.CreateOptions) (*v1.CSINode, error)
-	Update(ctx context.Context, cSINode *v1.CSINode, opts metav1.UpdateOptions) (*v1.CSINode, error)
-	Delete(ctx context.Context, name string, opts metav1.DeleteOptions) error
-	DeleteCollection(ctx context.Context, opts metav1.DeleteOptions, listOpts metav1.ListOptions) error
-	Get(ctx context.Context, name string, opts metav1.GetOptions) (*v1.CSINode, error)
-	List(ctx context.Context, opts metav1.ListOptions) (*v1.CSINodeList, error)
-	Watch(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error)
-	Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts metav1.PatchOptions, subresources ...string) (result *v1.CSINode, err error)
+	Create(*v1.CSINode) (*v1.CSINode, error)
+	Update(*v1.CSINode) (*v1.CSINode, error)
+	Delete(name string, options *metav1.DeleteOptions) error
+	DeleteCollection(options *metav1.DeleteOptions, listOptions metav1.ListOptions) error
+	Get(name string, options metav1.GetOptions) (*v1.CSINode, error)
+	List(opts metav1.ListOptions) (*v1.CSINodeList, error)
+	Watch(opts metav1.ListOptions) (watch.Interface, error)
+	Patch(name string, pt types.PatchType, data []byte, subresources ...string) (result *v1.CSINode, err error)
 	CSINodeExpansion
 }
 
@@ -62,19 +61,19 @@ func newCSINodes(c *StorageV1Client) *cSINodes {
 }
 
 // Get takes name of the cSINode, and returns the corresponding cSINode object, and an error if there is any.
-func (c *cSINodes) Get(ctx context.Context, name string, options metav1.GetOptions) (result *v1.CSINode, err error) {
+func (c *cSINodes) Get(name string, options metav1.GetOptions) (result *v1.CSINode, err error) {
 	result = &v1.CSINode{}
 	err = c.client.Get().
 		Resource("csinodes").
 		Name(name).
 		VersionedParams(&options, scheme.ParameterCodec).
-		Do(ctx).
+		Do().
 		Into(result)
 	return
 }
 
 // List takes label and field selectors, and returns the list of CSINodes that match those selectors.
-func (c *cSINodes) List(ctx context.Context, opts metav1.ListOptions) (result *v1.CSINodeList, err error) {
+func (c *cSINodes) List(opts metav1.ListOptions) (result *v1.CSINodeList, err error) {
 	var timeout time.Duration
 	if opts.TimeoutSeconds != nil {
 		timeout = time.Duration(*opts.TimeoutSeconds) * time.Second
@@ -84,13 +83,13 @@ func (c *cSINodes) List(ctx context.Context, opts metav1.ListOptions) (result *v
 		Resource("csinodes").
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Timeout(timeout).
-		Do(ctx).
+		Do().
 		Into(result)
 	return
 }
 
 // Watch returns a watch.Interface that watches the requested cSINodes.
-func (c *cSINodes) Watch(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error) {
+func (c *cSINodes) Watch(opts metav1.ListOptions) (watch.Interface, error) {
 	var timeout time.Duration
 	if opts.TimeoutSeconds != nil {
 		timeout = time.Duration(*opts.TimeoutSeconds) * time.Second
@@ -100,69 +99,66 @@ func (c *cSINodes) Watch(ctx context.Context, opts metav1.ListOptions) (watch.In
 		Resource("csinodes").
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Timeout(timeout).
-		Watch(ctx)
+		Watch()
 }
 
 // Create takes the representation of a cSINode and creates it.  Returns the server's representation of the cSINode, and an error, if there is any.
-func (c *cSINodes) Create(ctx context.Context, cSINode *v1.CSINode, opts metav1.CreateOptions) (result *v1.CSINode, err error) {
+func (c *cSINodes) Create(cSINode *v1.CSINode) (result *v1.CSINode, err error) {
 	result = &v1.CSINode{}
 	err = c.client.Post().
 		Resource("csinodes").
-		VersionedParams(&opts, scheme.ParameterCodec).
 		Body(cSINode).
-		Do(ctx).
+		Do().
 		Into(result)
 	return
 }
 
 // Update takes the representation of a cSINode and updates it. Returns the server's representation of the cSINode, and an error, if there is any.
-func (c *cSINodes) Update(ctx context.Context, cSINode *v1.CSINode, opts metav1.UpdateOptions) (result *v1.CSINode, err error) {
+func (c *cSINodes) Update(cSINode *v1.CSINode) (result *v1.CSINode, err error) {
 	result = &v1.CSINode{}
 	err = c.client.Put().
 		Resource("csinodes").
 		Name(cSINode.Name).
-		VersionedParams(&opts, scheme.ParameterCodec).
 		Body(cSINode).
-		Do(ctx).
+		Do().
 		Into(result)
 	return
 }
 
 // Delete takes name of the cSINode and deletes it. Returns an error if one occurs.
-func (c *cSINodes) Delete(ctx context.Context, name string, opts metav1.DeleteOptions) error {
+func (c *cSINodes) Delete(name string, options *metav1.DeleteOptions) error {
 	return c.client.Delete().
 		Resource("csinodes").
 		Name(name).
-		Body(&opts).
-		Do(ctx).
+		Body(options).
+		Do().
 		Error()
 }
 
 // DeleteCollection deletes a collection of objects.
-func (c *cSINodes) DeleteCollection(ctx context.Context, opts metav1.DeleteOptions, listOpts metav1.ListOptions) error {
+func (c *cSINodes) DeleteCollection(options *metav1.DeleteOptions, listOptions metav1.ListOptions) error {
 	var timeout time.Duration
-	if listOpts.TimeoutSeconds != nil {
-		timeout = time.Duration(*listOpts.TimeoutSeconds) * time.Second
+	if listOptions.TimeoutSeconds != nil {
+		timeout = time.Duration(*listOptions.TimeoutSeconds) * time.Second
 	}
 	return c.client.Delete().
 		Resource("csinodes").
-		VersionedParams(&listOpts, scheme.ParameterCodec).
+		VersionedParams(&listOptions, scheme.ParameterCodec).
 		Timeout(timeout).
-		Body(&opts).
-		Do(ctx).
+		Body(options).
+		Do().
 		Error()
 }
 
 // Patch applies the patch and returns the patched cSINode.
-func (c *cSINodes) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts metav1.PatchOptions, subresources ...string) (result *v1.CSINode, err error) {
+func (c *cSINodes) Patch(name string, pt types.PatchType, data []byte, subresources ...string) (result *v1.CSINode, err error) {
 	result = &v1.CSINode{}
 	err = c.client.Patch(pt).
 		Resource("csinodes").
-		Name(name).
 		SubResource(subresources...).
-		VersionedParams(&opts, scheme.ParameterCodec).
+		Name(name).
 		Body(data).
-		Do(ctx).
+		Do().
 		Into(result)
 	return
 }

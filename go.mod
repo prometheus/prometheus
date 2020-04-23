@@ -81,7 +81,7 @@ require (
 	gopkg.in/yaml.v3 v3.0.0-20200313102051-9f266ea9e77c
 	k8s.io/api v0.18.2
 	k8s.io/apimachinery v0.18.2
-	k8s.io/client-go v0.18.2
+	k8s.io/client-go v0.17.5
 	k8s.io/klog v1.0.0
 	k8s.io/utils v0.0.0-20200414100711-2df71ebbae66 // indirect
 )

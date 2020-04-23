@@ -23,11 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
-// ThreadSafeStore is an interface that allows concurrent indexed
-// access to a storage backend.  It is like Indexer but does not
-// (necessarily) know how to extract the Store key from a given
-// object.
-//
+// ThreadSafeStore is an interface that allows concurrent access to a storage backend.
 // TL;DR caveats: you must not modify anything returned by Get or List as it will break
 // the indexing feature in addition to not being thread safe.
 //
@@ -55,7 +51,6 @@ type ThreadSafeStore interface {
 	// AddIndexers adds more indexers to this store.  If you call this after you already have data
 	// in the store, the results are undefined.
 	AddIndexers(newIndexers Indexers) error
-	// Resync is a no-op and is deprecated
 	Resync() error
 }
 
@@ -136,8 +131,8 @@ func (c *threadSafeMap) Replace(items map[string]interface{}, resourceVersion st
 	}
 }
 
-// Index returns a list of items that match the given object on the index function.
-// Index is thread-safe so long as you treat all items as immutable.
+// Index returns a list of items that match on the index function
+// Index is thread-safe so long as you treat all items as immutable
 func (c *threadSafeMap) Index(indexName string, obj interface{}) ([]interface{}, error) {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
@@ -147,37 +142,37 @@ func (c *threadSafeMap) Index(indexName string, obj interface{}) ([]interface{},
 		return nil, fmt.Errorf("Index with name %s does not exist", indexName)
 	}
 
-	indexedValues, err := indexFunc(obj)
+	indexKeys, err := indexFunc(obj)
 	if err != nil {
 		return nil, err
 	}
 	index := c.indices[indexName]
 
-	var storeKeySet sets.String
-	if len(indexedValues) == 1 {
+	var returnKeySet sets.String
+	if len(indexKeys) == 1 {
 		// In majority of cases, there is exactly one value matching.
 		// Optimize the most common path - deduping is not needed here.
-		storeKeySet = index[indexedValues[0]]
+		returnKeySet = index[indexKeys[0]]
 	} else {
 		// Need to de-dupe the return list.
 		// Since multiple keys are allowed, this can happen.
-		storeKeySet = sets.String{}
-		for _, indexedValue := range indexedValues {
-			for key := range index[indexedValue] {
-				storeKeySet.Insert(key)
+		returnKeySet = sets.String{}
+		for _, indexKey := range indexKeys {
+			for key := range index[indexKey] {
+				returnKeySet.Insert(key)
 			}
 		}
 	}
 
-	list := make([]interface{}, 0, storeKeySet.Len())
-	for storeKey := range storeKeySet {
-		list = append(list, c.items[storeKey])
+	list := make([]interface{}, 0, returnKeySet.Len())
+	for absoluteKey := range returnKeySet {
+		list = append(list, c.items[absoluteKey])
 	}
 	return list, nil
 }
 
-// ByIndex returns a list of the items whose indexed values in the given index include the given indexed value
-func (c *threadSafeMap) ByIndex(indexName, indexedValue string) ([]interface{}, error) {
+// ByIndex returns a list of items that match an exact value on the index function
+func (c *threadSafeMap) ByIndex(indexName, indexKey string) ([]interface{}, error) {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
 
@@ -188,7 +183,7 @@ func (c *threadSafeMap) ByIndex(indexName, indexedValue string) ([]interface{}, 
 
 	index := c.indices[indexName]
 
-	set := index[indexedValue]
+	set := index[indexKey]
 	list := make([]interface{}, 0, set.Len())
 	for key := range set {
 		list = append(list, c.items[key])
@@ -197,9 +192,9 @@ func (c *threadSafeMap) ByIndex(indexName, indexedValue string) ([]interface{}, 
 	return list, nil
 }
 
-// IndexKeys returns a list of the Store keys of the objects whose indexed values in the given index include the given indexed value.
+// IndexKeys returns a list of keys that match on the index function.
 // IndexKeys is thread-safe so long as you treat all items as immutable.
-func (c *threadSafeMap) IndexKeys(indexName, indexedValue string) ([]string, error) {
+func (c *threadSafeMap) IndexKeys(indexName, indexKey string) ([]string, error) {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
 
@@ -210,7 +205,7 @@ func (c *threadSafeMap) IndexKeys(indexName, indexedValue string) ([]string, err
 
 	index := c.indices[indexName]
 
-	set := index[indexedValue]
+	set := index[indexKey]
 	return set.List(), nil
 }
 

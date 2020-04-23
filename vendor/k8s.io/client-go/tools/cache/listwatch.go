@@ -24,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	restclient "k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/pager"
 )
 
 // Lister is any object that knows how to perform an initial list.
@@ -84,7 +85,7 @@ func NewFilteredListWatchFromClient(c Getter, resource string, namespace string,
 			Namespace(namespace).
 			Resource(resource).
 			VersionedParams(&options, metav1.ParameterCodec).
-			Do(context.TODO()).
+			Do().
 			Get()
 	}
 	watchFunc := func(options metav1.ListOptions) (watch.Interface, error) {
@@ -94,15 +95,16 @@ func NewFilteredListWatchFromClient(c Getter, resource string, namespace string,
 			Namespace(namespace).
 			Resource(resource).
 			VersionedParams(&options, metav1.ParameterCodec).
-			Watch(context.TODO())
+			Watch()
 	}
 	return &ListWatch{ListFunc: listFunc, WatchFunc: watchFunc}
 }
 
 // List a set of apiserver resources
 func (lw *ListWatch) List(options metav1.ListOptions) (runtime.Object, error) {
-	// ListWatch is used in Reflector, which already supports pagination.
-	// Don't paginate here to avoid duplication.
+	if !lw.DisableChunking {
+		return pager.New(pager.SimplePageFunc(lw.ListFunc)).List(context.TODO(), options)
+	}
 	return lw.ListFunc(options)
 }
 
