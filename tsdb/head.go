@@ -101,7 +101,8 @@ type headMetrics struct {
 	checkpointDeleteTotal   prometheus.Counter
 	checkpointCreationFail  prometheus.Counter
 	checkpointCreationTotal prometheus.Counter
-	symbols                 prometheus.Histogram
+	labelPairs              prometheus.Gauge
+	labelValues             prometheus.Gauge
 }
 
 func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
@@ -180,9 +181,13 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			Name: "prometheus_tsdb_checkpoint_creations_total",
 			Help: "Total number of checkpoint creations attempted.",
 		}),
-		symbols: prometheus.NewHistogram(prometheus.HistogramOpts{
-			Name: "prometheus_tsdb_head_symbols_total",
-			Help: "Total number of symbols in the head",
+		labelPairs: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "prometheus_tsdb_head_label_pairs_total",
+			Help: "Total number of label pairs in the head",
+		}),
+		labelValues: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "prometheus_tsdb_head_label_values_total",
+			Help: "Total number of label values in the head",
 		}),
 	}
 
@@ -206,7 +211,8 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.checkpointDeleteTotal,
 			m.checkpointCreationFail,
 			m.checkpointCreationTotal,
-			m.symbols,
+			m.labelPairs,
+			m.labelValues,
 			// Metrics bound to functions and not needed in tests
 			// can be created and registered on the spot.
 			prometheus.NewGaugeFunc(prometheus.GaugeOpts{
@@ -238,6 +244,19 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		)
 	}
 	return m
+}
+
+func (m *headMetrics) collectLabelMetrics(values map[string]stringset) {
+	labelPairs, labelValues := 0, 0
+	for name := range values {
+		if name == "" {
+			continue
+		}
+		labelPairs++
+		labelValues += len(values[name])
+	}
+	m.labelPairs.Set(float64(labelPairs))
+	m.labelValues.Set(float64(labelValues))
 }
 
 const cardinalityCacheExpirationTime = time.Duration(30) * time.Second
@@ -1183,8 +1202,7 @@ func (h *Head) gc() {
 
 	h.symbols = symbols
 	h.values = values
-	h.metrics.symbols.Observe(float64(len(h.symbols)))
-
+	h.metrics.collectLabelMetrics(h.values)
 	h.symMtx.Unlock()
 }
 
@@ -1501,7 +1519,7 @@ func (h *Head) getOrCreateWithID(id, hash uint64, lset labels.Labels) (*memSerie
 		h.symbols[l.Name] = struct{}{}
 		h.symbols[l.Value] = struct{}{}
 	}
-	h.metrics.symbols.Observe(float64(len(h.symbols)))
+	h.metrics.collectLabelMetrics(h.values)
 
 	return s, true
 }
