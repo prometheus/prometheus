@@ -1862,7 +1862,7 @@ func TestPostingsForMatchers(t *testing.T) {
 	defer func() {
 		testutil.Ok(t, os.RemoveAll(chunkDir))
 	}()
-	h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, DefaultStripeSize)
+	h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, DefaultStripeSize, nil)
 	testutil.Ok(t, err)
 	defer func() {
 		testutil.Ok(t, h.Close())
