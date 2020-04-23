@@ -1159,7 +1159,28 @@ func (it *deletedIterator) Seek(t int64) bool {
 	if it.it.Err() != nil {
 		return false
 	}
-	return it.it.Seek(t)
+	if ok := it.it.Seek(t); !ok {
+		return false
+	}
+
+	// Now double check if the entry falls into a deleted interval.
+	ts, _ := it.At()
+	for _, itv := range it.intervals {
+		if ts < itv.Mint {
+			return true
+		}
+
+		if ts > itv.Maxt {
+			it.intervals = it.intervals[1:]
+			continue
+		}
+
+		// We're in the middle of an interval, we can now call Next().
+		return it.Next()
+	}
+
+	// The timestamp is greater than all the deleted intervals.
+	return true
 }
 
 func (it *deletedIterator) Next() bool {
