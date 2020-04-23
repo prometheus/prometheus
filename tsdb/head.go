@@ -536,12 +536,6 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error) {
 		}
 	}
 
-	select {
-	case err := <-errCh:
-		return err
-	default:
-	}
-
 	// Signal termination to each worker and wait for it to close its output channel.
 	for i := 0; i < n; i++ {
 		close(inputs[i])
@@ -549,6 +543,12 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error) {
 		}
 	}
 	wg.Wait()
+
+	select {
+	case err := <-errCh:
+		return err
+	default:
+	}
 
 	if r.Err() != nil {
 		return errors.Wrap(r.Err(), "read records")
