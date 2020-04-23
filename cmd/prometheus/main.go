@@ -17,6 +17,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"math"
 	"net"
 	"net/http"
@@ -37,11 +38,14 @@ import (
 	"github.com/go-kit/kit/log/level"
 	conntrack "github.com/mwitkow/go-conntrack"
 	"github.com/oklog/run"
+	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promlog"
 	"github.com/prometheus/common/version"
+	jcfg "github.com/uber/jaeger-client-go/config"
+	jprom "github.com/uber/jaeger-lib/metrics/prometheus"
 	kingpin "gopkg.in/alecthomas/kingpin.v2"
 	"k8s.io/klog"
 
@@ -497,6 +501,13 @@ func main() {
 			close(reloadReady.C)
 		})
 	}
+
+	closer, err := initTracing(logger)
+	if err != nil {
+		level.Error(logger).Log("msg", "Unable to init tracing", "err", err)
+		os.Exit(2)
+	}
+	defer closer.Close()
 
 	var g run.Group
 	{
@@ -1004,4 +1015,45 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		MinBlockDuration:       int64(time.Duration(opts.MinBlockDuration) / time.Millisecond),
 		MaxBlockDuration:       int64(time.Duration(opts.MaxBlockDuration) / time.Millisecond),
 	}
+}
+
+func initTracing(logger log.Logger) (io.Closer, error) {
+	// Set tracing configuration defaults.
+	cfg := &jcfg.Configuration{
+		ServiceName: "prometheus",
+		Disabled:    true,
+	}
+
+	// Available options can be seen here:
+	// https://github.com/jaegertracing/jaeger-client-go#environment-variables
+	cfg, err := cfg.FromEnv()
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to get tracing config from environment")
+	}
+
+	jLogger := jaegerLogger{logger: log.With(logger, "component", "tracing")}
+
+	tracer, closer, err := cfg.NewTracer(
+		jcfg.Logger(jLogger),
+		jcfg.Metrics(jprom.New()),
+	)
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to init tracing")
+	}
+
+	opentracing.SetGlobalTracer(tracer)
+	return closer, nil
+}
+
+type jaegerLogger struct {
+	logger log.Logger
+}
+
+func (l jaegerLogger) Error(msg string) {
+	level.Error(l.logger).Log("msg", msg)
+}
+
+func (l jaegerLogger) Infof(msg string, args ...interface{}) {
+	keyvals := []interface{}{"msg", fmt.Sprintf(msg, args...)}
+	level.Info(l.logger).Log(keyvals...)
 }

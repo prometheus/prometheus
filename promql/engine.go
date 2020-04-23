@@ -32,6 +32,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/uber/jaeger-client-go"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
@@ -439,6 +440,11 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, w storage
 				f = append(f, "error", err)
 			}
 			f = append(f, "stats", stats.NewQueryStats(q.Stats()))
+			if span := opentracing.SpanFromContext(ctx); span != nil {
+				if spanCtx, ok := span.Context().(jaeger.SpanContext); ok {
+					f = append(f, "spanID", spanCtx.SpanID())
+				}
+			}
 			if origin := ctx.Value(queryOrigin{}); origin != nil {
 				for k, v := range origin.(map[string]interface{}) {
 					f = append(f, k, v)

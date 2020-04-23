@@ -42,6 +42,8 @@ require (
 	github.com/shurcooL/httpfs v0.0.0-20190707220628-8d4bc4ba7749
 	github.com/shurcooL/vfsgen v0.0.0-20181202132449-6a9ea43bcacd
 	github.com/soheilhy/cmux v0.1.4
+	github.com/uber/jaeger-client-go v2.22.1+incompatible
+	github.com/uber/jaeger-lib v2.2.0+incompatible
 	golang.org/x/net v0.0.0-20200301022130-244492dfa37a
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d
 	golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e
