@@ -20,59 +20,31 @@ import (
 )
 
 func makeFunc(size int) interface{} {
-	return size
+	return make([]int, 0, size)
 }
 
-func TestGet(t *testing.T) {
+func TestPool(t *testing.T) {
 	testPool := New(1, 8, 2, makeFunc)
 	cases := []struct {
-		size     int
-		expected int
+		size        int
+		expectedCap int
 	}{
 		{
-			size:     -1,
-			expected: 1,
+			size:        -1,
+			expectedCap: 1,
 		},
 		{
-			size:     3,
-			expected: 4,
+			size:        3,
+			expectedCap: 4,
 		},
 		{
-			size:     10,
-			expected: 10,
+			size:        10,
+			expectedCap: 10,
 		},
 	}
 	for _, c := range cases {
 		ret := testPool.Get(c.size)
-		testutil.Equals(t, c.expected, ret)
-	}
-}
-
-func TestPut(t *testing.T) {
-	testPool := New(1, 8, 2, makeFunc)
-	cases := []struct {
-		slice    []int
-		size     int
-		expected interface{}
-	}{
-		{
-			slice:    make([]int, 1),
-			size:     1,
-			expected: []int{},
-		},
-		{
-			slice:    make([]int, 8),
-			size:     8,
-			expected: []int{},
-		},
-		{
-			slice:    nil,
-			size:     2,
-			expected: 2,
-		},
-	}
-	for _, c := range cases {
-		testPool.Put(c.slice)
-		testutil.Equals(t, c.expected, testPool.Get(c.size))
+		testutil.Equals(t, c.expectedCap, cap(ret.([]int)))
+		testPool.Put(ret)
 	}
 }
