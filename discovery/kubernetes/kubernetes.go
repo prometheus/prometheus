@@ -317,12 +317,12 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
 					options.FieldSelector = d.selectors.endpoints.field
 					options.LabelSelector = d.selectors.endpoints.label
-					return e.List(ctx, options)
+					return e.List(options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 					options.FieldSelector = d.selectors.endpoints.field
 					options.LabelSelector = d.selectors.endpoints.label
-					return e.Watch(ctx, options)
+					return e.Watch(options)
 				},
 			}
 			s := d.client.CoreV1().Services(namespace)
@@ -330,12 +330,12 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
 					options.FieldSelector = d.selectors.service.field
 					options.LabelSelector = d.selectors.service.label
-					return s.List(ctx, options)
+					return s.List(options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 					options.FieldSelector = d.selectors.service.field
 					options.LabelSelector = d.selectors.service.label
-					return s.Watch(ctx, options)
+					return s.Watch(options)
 				},
 			}
 			p := d.client.CoreV1().Pods(namespace)
@@ -343,12 +343,12 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
 					options.FieldSelector = d.selectors.pod.field
 					options.LabelSelector = d.selectors.pod.label
-					return p.List(ctx, options)
+					return p.List(options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 					options.FieldSelector = d.selectors.pod.field
 					options.LabelSelector = d.selectors.pod.label
-					return p.Watch(ctx, options)
+					return p.Watch(options)
 				},
 			}
 			eps := NewEndpoints(
@@ -369,12 +369,12 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
 					options.FieldSelector = d.selectors.pod.field
 					options.LabelSelector = d.selectors.pod.label
-					return p.List(ctx, options)
+					return p.List(options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 					options.FieldSelector = d.selectors.pod.field
 					options.LabelSelector = d.selectors.pod.label
-					return p.Watch(ctx, options)
+					return p.Watch(options)
 				},
 			}
 			pod := NewPod(
@@ -391,12 +391,12 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
 					options.FieldSelector = d.selectors.service.field
 					options.LabelSelector = d.selectors.service.label
-					return s.List(ctx, options)
+					return s.List(options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 					options.FieldSelector = d.selectors.service.field
 					options.LabelSelector = d.selectors.service.label
-					return s.Watch(ctx, options)
+					return s.Watch(options)
 				},
 			}
 			svc := NewService(
@@ -413,12 +413,12 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
 					options.FieldSelector = d.selectors.ingress.field
 					options.LabelSelector = d.selectors.ingress.label
-					return i.List(ctx, options)
+					return i.List(options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 					options.FieldSelector = d.selectors.ingress.field
 					options.LabelSelector = d.selectors.ingress.label
-					return i.Watch(ctx, options)
+					return i.Watch(options)
 				},
 			}
 			ingress := NewIngress(
@@ -433,12 +433,12 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
 				options.FieldSelector = d.selectors.node.field
 				options.LabelSelector = d.selectors.node.label
-				return d.client.CoreV1().Nodes().List(ctx, options)
+				return d.client.CoreV1().Nodes().List(options)
 			},
 			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 				options.FieldSelector = d.selectors.node.field
 				options.LabelSelector = d.selectors.node.label
-				return d.client.CoreV1().Nodes().Watch(ctx, options)
+				return d.client.CoreV1().Nodes().Watch(options)
 			},
 		}
 		node := NewNode(

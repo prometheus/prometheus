@@ -14,7 +14,6 @@
 package kubernetes
 
 import (
-	"context"
 	"fmt"
 	"testing"
 
@@ -139,7 +138,7 @@ func TestIngressDiscoveryAdd(t *testing.T) {
 		discovery: n,
 		afterStart: func() {
 			obj := makeIngress(TLSNo)
-			c.ExtensionsV1beta1().Ingresses("default").Create(context.Background(), obj, metav1.CreateOptions{})
+			c.ExtensionsV1beta1().Ingresses("default").Create(obj)
 		},
 		expectedMaxItems: 1,
 		expectedRes:      expectedTargetGroups("default", TLSNo),
@@ -153,7 +152,7 @@ func TestIngressDiscoveryAddTLS(t *testing.T) {
 		discovery: n,
 		afterStart: func() {
 			obj := makeIngress(TLSYes)
-			c.ExtensionsV1beta1().Ingresses("default").Create(context.Background(), obj, metav1.CreateOptions{})
+			c.ExtensionsV1beta1().Ingresses("default").Create(obj)
 		},
 		expectedMaxItems: 1,
 		expectedRes:      expectedTargetGroups("default", TLSYes),
@@ -167,7 +166,7 @@ func TestIngressDiscoveryAddMixed(t *testing.T) {
 		discovery: n,
 		afterStart: func() {
 			obj := makeIngress(TLSMixed)
-			c.ExtensionsV1beta1().Ingresses("default").Create(context.Background(), obj, metav1.CreateOptions{})
+			c.ExtensionsV1beta1().Ingresses("default").Create(obj)
 		},
 		expectedMaxItems: 1,
 		expectedRes:      expectedTargetGroups("default", TLSMixed),
@@ -187,7 +186,7 @@ func TestIngressDiscoveryNamespaces(t *testing.T) {
 			for _, ns := range []string{"ns1", "ns2"} {
 				obj := makeIngress(TLSNo)
 				obj.Namespace = ns
-				c.ExtensionsV1beta1().Ingresses(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
+				c.ExtensionsV1beta1().Ingresses(obj.Namespace).Create(obj)
 			}
 		},
 		expectedMaxItems: 2,
