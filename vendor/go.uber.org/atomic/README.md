@@ -8,13 +8,25 @@ Simple wrappers for primitive types to enforce atomic access.
 $ go get -u go.uber.org/atomic@v1
 ```
 
-Note: If you are using Go modules, this package will fail to compile with the
-import path `github.com/uber-go/atomic`. To continue using that import path,
-you will have to add a `replace` directive to your `go.mod`, replacing
-`github.com/uber-go/atomic` with `go.uber.org/atomic`.
+### Legacy Import Path
+
+As of v1.5.0, the import path `go.uber.org/atomic` is the only supported way
+of using this package. If you are using Go modules, this package will fail to
+compile with the legacy import path path `github.com/uber-go/atomic`.
+
+We recommend migrating your code to the new import path but if you're unable
+to do so, or if your dependencies are still using the old import path, you
+will have to add a `replace` directive to your `go.mod` file downgrading the
+legacy import path to an older version.
+
+```
+replace github.com/uber-go/atomic => github.com/uber-go/atomic v1.4.0
+```
+
+You can do so automatically by running the following command.
 
 ```shell
-$ go mod edit -replace github.com/uber-go/atomic=go.uber.org/atomic@v1
+$ go mod edit -replace github.com/uber-go/atomic=github.com/uber-go/atomic@v1.4.0
 ```
 
 ## Usage

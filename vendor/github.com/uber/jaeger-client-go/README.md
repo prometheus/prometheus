@@ -87,7 +87,7 @@ defer closer.Close()
 This is especially useful for command-line tools that enable tracing, as well as
 for the long-running apps that support graceful shutdown. For example, if your deployment
 system sends SIGTERM instead of killing the process and you trap that signal to do a graceful
-exit, then having `defer closer.Closer()` ensures that all buffered spans are flushed.
+exit, then having `defer closer.Close()` ensures that all buffered spans are flushed.
 
 ### Metrics & Monitoring
 
@@ -279,20 +279,25 @@ However it is not the default propagation format, see [here](zipkin/README.md#Ne
 
 ## SelfRef
 
-Jaeger Tracer supports an additional [reference](https://github.com/opentracing/specification/blob/1.1/specification.md#references-between-spans)
-type call `Self`. This allows a caller to provide an already established `SpanContext`.
-This allows loading and continuing spans/traces from offline (ie log-based) storage. The `Self` reference
-bypasses trace and span id generation.
+Jaeger Tracer supports an additional [span reference][] type call `Self`, which was proposed
+to the OpenTracing Specification (https://github.com/opentracing/specification/issues/81)
+but not yet accepted. This allows the caller to provide an already created `SpanContext`
+when starting a new span. The `Self` reference bypasses trace and span id generation,
+as well as sampling decisions (i.e. the sampling bit in the `SpanContext.flags` must be
+set appropriately by the caller).
 
+The `Self` reference supports the following use cases:
+  * the ability to provide externally generated trace and span IDs
+  * appending data to the same span from different processes, such as loading and continuing spans/traces from offline (ie log-based) storage
 
-Usage requires passing in a `SpanContext` and the jaeger `Self` reference type:
+Usage requires passing in a `SpanContext` and the `jaeger.Self` reference type:
 ```
 span := tracer.StartSpan(
     "continued_span",
-    SelfRef(yourSpanContext),
+    jaeger.SelfRef(yourSpanContext),
 )
 ...
-defer span.finish()
+defer span.Finish()
 ```
 
 ## License
@@ -310,3 +315,4 @@ defer span.finish()
 [ot-url]: http://opentracing.io
 [baggage]: https://github.com/opentracing/specification/blob/master/specification.md#set-a-baggage-item
 [timeunits]: https://golang.org/pkg/time/#ParseDuration
+[span reference]: https://github.com/opentracing/specification/blob/1.1/specification.md#references-between-spans

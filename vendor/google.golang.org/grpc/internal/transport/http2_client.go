@@ -680,14 +680,21 @@ func (t *http2Client) NewStream(ctx context.Context, callHdr *CallHdr) (_ *Strea
 		}
 	}
 	if t.statsHandler != nil {
-		header, _, _ := metadata.FromOutgoingContextRaw(ctx)
+		header, ok := metadata.FromOutgoingContext(ctx)
+		if ok {
+			header.Set("user-agent", t.userAgent)
+		} else {
+			header = metadata.Pairs("user-agent", t.userAgent)
+		}
+		// Note: The header fields are compressed with hpack after this call returns.
+		// No WireLength field is set here.
 		outHeader := &stats.OutHeader{
 			Client:      true,
 			FullMethod:  callHdr.Method,
 			RemoteAddr:  t.remoteAddr,
 			LocalAddr:   t.localAddr,
 			Compression: callHdr.SendCompress,
-			Header:      header.Copy(),
+			Header:      header,
 		}
 		t.statsHandler.HandleRPC(s.ctx, outHeader)
 	}
@@ -1188,9 +1195,10 @@ func (t *http2Client) operateHeaders(frame *http2.MetaHeadersFrame) {
 		if t.statsHandler != nil {
 			if isHeader {
 				inHeader := &stats.InHeader{
-					Client:     true,
-					WireLength: int(frame.Header().Length),
-					Header:     s.header.Copy(),
+					Client:      true,
+					WireLength:  int(frame.Header().Length),
+					Header:      s.header.Copy(),
+					Compression: s.recvCompress,
 				}
 				t.statsHandler.HandleRPC(s.ctx, inHeader)
 			} else {

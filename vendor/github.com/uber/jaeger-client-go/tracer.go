@@ -41,7 +41,7 @@ type Tracer struct {
 	sampler  SamplerV2
 	reporter Reporter
 	metrics  Metrics
-	logger   log.Logger
+	logger   log.DebugLogger
 
 	timeNow      func() time.Time
 	randomNumber func() uint64
@@ -366,6 +366,7 @@ func (t *Tracer) Extract(
 
 // Close releases all resources used by the Tracer and flushes any remaining buffered spans.
 func (t *Tracer) Close() error {
+	t.logger.Debugf("closing tracer")
 	t.reporter.Close()
 	t.sampler.Close()
 	if mgr, ok := t.baggageRestrictionManager.(io.Closer); ok {

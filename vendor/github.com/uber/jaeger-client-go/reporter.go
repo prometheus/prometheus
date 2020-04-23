@@ -257,6 +257,7 @@ func (r *remoteReporter) Report(span *Span) {
 
 // Close implements Close() method of Reporter by waiting for the queue to be drained.
 func (r *remoteReporter) Close() {
+	r.logger.Debugf("closing reporter")
 	if swapped := atomic.CompareAndSwapInt64(&r.closed, 0, 1); !swapped {
 		r.logger.Error("Repeated attempt to close the reporter is ignored")
 		return
@@ -307,6 +308,7 @@ func (r *remoteReporter) processQueue() {
 					r.metrics.ReporterSuccess.Inc(int64(flushed))
 					// to reduce the number of gauge stats, we only emit queue length on flush
 					r.metrics.ReporterQueueLength.Update(atomic.LoadInt64(&r.queueLength))
+					r.logger.Debugf("flushed %d spans", flushed)
 				}
 				span.Release()
 			case reporterQueueItemClose:

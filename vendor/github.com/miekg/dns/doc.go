@@ -209,7 +209,7 @@ Basic use pattern validating and replying to a message that has TSIG set.
 				// *Msg r has an TSIG record and it was validated
 				m.SetTsig("axfr.", dns.HmacMD5, 300, time.Now().Unix())
 			} else {
-				// *Msg r has an TSIG records and it was not valided
+				// *Msg r has an TSIG records and it was not validated
 			}
 		}
 		w.WriteMsg(m)

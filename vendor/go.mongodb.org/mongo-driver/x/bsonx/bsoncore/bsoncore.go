@@ -29,11 +29,15 @@ import (
 	"bytes"
 	"fmt"
 	"math"
+	"strconv"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson/bsontype"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
+
+// EmptyDocumentLength is the length of a document that has been started/ended but has no elements.
+const EmptyDocumentLength = 5
 
 // AppendType will append t to dst and return the extended buffer.
 func AppendType(dst []byte, t bsontype.Type) []byte { return append(dst, byte(t)) }
@@ -119,7 +123,17 @@ func ReadElement(src []byte) (Element, []byte, bool) {
 	if elemLength > len(src) {
 		return nil, src, false
 	}
+	if elemLength < 0 {
+		return nil, src, false
+	}
 	return src[:elemLength], src[elemLength:], true
+}
+
+// AppendValueElement appends value to dst as an element using key as the element's key.
+func AppendValueElement(dst []byte, key string, value Value) []byte {
+	dst = AppendHeader(dst, value.Type, key)
+	dst = append(dst, value.Data...)
+	return dst
 }
 
 // ReadValue reads the next value as the provided types and returns a Value, the remaining bytes,
@@ -212,18 +226,9 @@ func AppendDocumentElement(dst []byte, key string, doc []byte) []byte {
 	return AppendDocument(AppendHeader(dst, bsontype.EmbeddedDocument, key), doc)
 }
 
-// BuildDocument will create a document with the given elements and will append it to dst.
-func BuildDocument(dst []byte, elems []byte) []byte {
-	idx, dst := ReserveLength(dst)
-	dst = append(dst, elems...)
-	dst = append(dst, 0x00)
-	dst = UpdateLength(dst, idx, int32(len(dst[idx:])))
-	return dst
-}
-
-// BuildDocumentFromElements will create a document with the given slice of elements and will append
+// BuildDocument will create a document with the given slice of elements and will append
 // it to dst and return the extended buffer.
-func BuildDocumentFromElements(dst []byte, elems ...[]byte) []byte {
+func BuildDocument(dst []byte, elems ...[]byte) []byte {
 	idx, dst := ReserveLength(dst)
 	for _, elem := range elems {
 		dst = append(dst, elem...)
@@ -232,6 +237,20 @@ func BuildDocumentFromElements(dst []byte, elems ...[]byte) []byte {
 	dst = UpdateLength(dst, idx, int32(len(dst[idx:])))
 	return dst
 }
+
+// BuildDocumentValue creates an Embedded Document value from the given elements.
+func BuildDocumentValue(elems ...[]byte) Value {
+	return Value{Type: bsontype.EmbeddedDocument, Data: BuildDocument(nil, elems...)}
+}
+
+// BuildDocumentElement will append a BSON embedded document elemnt using key and the provided
+// elements and return the extended buffer.
+func BuildDocumentElement(dst []byte, key string, elems ...[]byte) []byte {
+	return BuildDocument(AppendHeader(dst, bsontype.EmbeddedDocument, key), elems...)
+}
+
+// BuildDocumentFromElements is an alaias for the BuildDocument function.
+var BuildDocumentFromElements = BuildDocument
 
 // ReadDocument will read a document from src. If there are not enough bytes it
 // will return false.
@@ -258,6 +277,22 @@ func AppendArray(dst []byte, arr []byte) []byte { return append(dst, arr...) }
 // and return the extended buffer.
 func AppendArrayElement(dst []byte, key string, arr []byte) []byte {
 	return AppendArray(AppendHeader(dst, bsontype.Array, key), arr)
+}
+
+// BuildArray will append a BSON array to dst built from values.
+func BuildArray(dst []byte, values ...Value) []byte {
+	idx, dst := ReserveLength(dst)
+	for pos, val := range values {
+		dst = AppendValueElement(dst, strconv.Itoa(pos), val)
+	}
+	dst = append(dst, 0x00)
+	dst = UpdateLength(dst, idx, int32(len(dst[idx:])))
+	return dst
+}
+
+// BuildArrayElement will create an array element using the provided values.
+func BuildArrayElement(dst []byte, key string, values ...Value) []byte {
+	return BuildArray(AppendHeader(dst, bsontype.Array, key), values...)
 }
 
 // ReadArray will read an array from src. If there are not enough bytes it
@@ -691,13 +726,18 @@ func appendi32(dst []byte, i32 int32) []byte {
 // ReadLength reads an int32 length from src and returns the length and the remaining bytes. If
 // there aren't enough bytes to read a valid length, src is returned unomdified and the returned
 // bool will be false.
-func ReadLength(src []byte) (int32, []byte, bool) { return readi32(src) }
+func ReadLength(src []byte) (int32, []byte, bool) {
+	ln, src, ok := readi32(src)
+	if ln < 0 {
+		return ln, src, false
+	}
+	return ln, src, ok
+}
 
 func readi32(src []byte) (int32, []byte, bool) {
 	if len(src) < 4 {
 		return 0, src, false
 	}
-
 	return (int32(src[0]) | int32(src[1])<<8 | int32(src[2])<<16 | int32(src[3])<<24), src[4:], true
 }
 

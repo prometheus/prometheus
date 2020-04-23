@@ -165,11 +165,11 @@ const (
 	_RD = 1 << 8  // recursion desired
 	_RA = 1 << 7  // recursion available
 	_Z  = 1 << 6  // Z
-	_AD = 1 << 5  // authticated data
+	_AD = 1 << 5  // authenticated data
 	_CD = 1 << 4  // checking disabled
 )
 
-// Various constants used in the LOC RR, See RFC 1887.
+// Various constants used in the LOC RR. See RFC 1887.
 const (
 	LOC_EQUATOR       = 1 << 31 // RFC 1876, Section 2.
 	LOC_PRIMEMERIDIAN = 1 << 31 // RFC 1876, Section 2.
@@ -231,7 +231,7 @@ func (q *Question) String() (s string) {
 	return s
 }
 
-// ANY is a wildcard record. See RFC 1035, Section 3.2.3. ANY
+// ANY is a wild card record. See RFC 1035, Section 3.2.3. ANY
 // is named "*" there.
 type ANY struct {
 	Hdr RR_Header
@@ -759,8 +759,8 @@ type LOC struct {
 	Altitude  uint32
 }
 
-// cmToM takes a cm value expressed in RFC1876 SIZE mantissa/exponent
-// format and returns a string in m (two decimals for the cm)
+// cmToM takes a cm value expressed in RFC 1876 SIZE mantissa/exponent
+// format and returns a string in m (two decimals for the cm).
 func cmToM(m, e uint8) string {
 	if e < 2 {
 		if e == 1 {

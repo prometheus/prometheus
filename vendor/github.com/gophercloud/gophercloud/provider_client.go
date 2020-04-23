@@ -414,11 +414,12 @@ func (client *ProviderClient) doRequest(method, url string, options *RequestOpts
 		body, _ := ioutil.ReadAll(resp.Body)
 		resp.Body.Close()
 		respErr := ErrUnexpectedResponseCode{
-			URL:      url,
-			Method:   method,
-			Expected: options.OkCodes,
-			Actual:   resp.StatusCode,
-			Body:     body,
+			URL:            url,
+			Method:         method,
+			Expected:       options.OkCodes,
+			Actual:         resp.StatusCode,
+			Body:           body,
+			ResponseHeader: resp.Header,
 		}
 
 		errType := options.ErrorContext

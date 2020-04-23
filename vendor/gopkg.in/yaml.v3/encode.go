@@ -298,6 +298,21 @@ func isBase60Float(s string) (result bool) {
 // is bogus. In practice parsers do not enforce the "\.[0-9_]*" suffix.
 var base60float = regexp.MustCompile(`^[-+]?[0-9][0-9_]*(?::[0-5]?[0-9])+(?:\.[0-9_]*)?$`)
 
+// isOldBool returns whether s is bool notation as defined in YAML 1.1.
+//
+// We continue to force strings that YAML 1.1 would interpret as booleans to be
+// rendered as quotes strings so that the marshalled output valid for YAML 1.1
+// parsing.
+func isOldBool(s string) (result bool) {
+	switch s {
+	case "y", "Y", "yes", "Yes", "YES", "on", "On", "ON",
+		"n", "N", "no", "No", "NO", "off", "Off", "OFF":
+		return true
+	default:
+		return false
+	}
+}
+
 func (e *encoder) stringv(tag string, in reflect.Value) {
 	var style yaml_scalar_style_t
 	s := in.String()
@@ -319,7 +334,7 @@ func (e *encoder) stringv(tag string, in reflect.Value) {
 		// tag when encoded unquoted. If it doesn't,
 		// there's no need to quote it.
 		rtag, _ := resolve("", s)
-		canUsePlain = rtag == strTag && !isBase60Float(s)
+		canUsePlain = rtag == strTag && !(isBase60Float(s) || isOldBool(s))
 	}
 	// Note: it's possible for user code to emit invalid YAML
 	// if they explicitly specify a tag and a string containing

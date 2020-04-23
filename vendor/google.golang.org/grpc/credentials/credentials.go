@@ -100,7 +100,11 @@ type ProtocolInfo struct {
 	ProtocolVersion string
 	// SecurityProtocol is the security protocol in use.
 	SecurityProtocol string
-	// SecurityVersion is the security protocol version.
+	// SecurityVersion is the security protocol version.  It is a static version string from the
+	// credentials, not a value that reflects per-connection protocol negotiation.  To retrieve
+	// details about the credentials used for a connection, use the Peer's AuthInfo field instead.
+	//
+	// Deprecated: please use Peer.AuthInfo.
 	SecurityVersion string
 	// ServerName is the user-configured server name.
 	ServerName string

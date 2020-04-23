@@ -183,7 +183,7 @@ func (js *jsonScanner) scanString() (*jsonToken, error) {
 		case '\\':
 			c, err = js.readNextByte()
 			switch c {
-			case '"', '\\', '/', '\'':
+			case '"', '\\', '/':
 				b.WriteByte(c)
 			case 'b':
 				b.WriteByte('\b')

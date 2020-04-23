@@ -661,7 +661,6 @@ func unpackRRslice(l int, msg []byte, off int) (dst1 []RR, off1 int, err error) 
 		}
 		// If offset does not increase anymore, l is a lie
 		if off1 == off {
-			l = i
 			break
 		}
 		dst = append(dst, r)

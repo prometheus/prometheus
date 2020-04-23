@@ -135,16 +135,26 @@ func NewTLS(c *tls.Config) TransportCredentials {
 	return tc
 }
 
-// NewClientTLSFromCert constructs TLS credentials from the input certificate for client.
+// NewClientTLSFromCert constructs TLS credentials from the provided root
+// certificate authority certificate(s) to validate server connections. If
+// certificates to establish the identity of the client need to be included in
+// the credentials (eg: for mTLS), use NewTLS instead, where a complete
+// tls.Config can be specified.
 // serverNameOverride is for testing only. If set to a non empty string,
-// it will override the virtual host name of authority (e.g. :authority header field) in requests.
+// it will override the virtual host name of authority (e.g. :authority header
+// field) in requests.
 func NewClientTLSFromCert(cp *x509.CertPool, serverNameOverride string) TransportCredentials {
 	return NewTLS(&tls.Config{ServerName: serverNameOverride, RootCAs: cp})
 }
 
-// NewClientTLSFromFile constructs TLS credentials from the input certificate file for client.
+// NewClientTLSFromFile constructs TLS credentials from the provided root
+// certificate authority certificate file(s) to validate server connections. If
+// certificates to establish the identity of the client need to be included in
+// the credentials (eg: for mTLS), use NewTLS instead, where a complete
+// tls.Config can be specified.
 // serverNameOverride is for testing only. If set to a non empty string,
-// it will override the virtual host name of authority (e.g. :authority header field) in requests.
+// it will override the virtual host name of authority (e.g. :authority header
+// field) in requests.
 func NewClientTLSFromFile(certFile, serverNameOverride string) (TransportCredentials, error) {
 	b, err := ioutil.ReadFile(certFile)
 	if err != nil {

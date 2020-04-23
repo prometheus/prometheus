@@ -13,7 +13,6 @@ type PrivateRdata interface {
 	// Pack is used when packing a private RR into a buffer.
 	Pack([]byte) (int, error)
 	// Unpack is used when unpacking a private RR from a buffer.
-	// TODO(miek): diff. signature than Pack, see edns0.go for instance.
 	Unpack([]byte) (int, error)
 	// Copy copies the Rdata into the PrivateRdata argument.
 	Copy(PrivateRdata) error
