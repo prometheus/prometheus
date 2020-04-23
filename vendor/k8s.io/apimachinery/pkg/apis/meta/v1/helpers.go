@@ -252,9 +252,7 @@ func ResetObjectMetaForStatus(meta, existingMeta Object) {
 	meta.SetAnnotations(existingMeta.GetAnnotations())
 	meta.SetFinalizers(existingMeta.GetFinalizers())
 	meta.SetOwnerReferences(existingMeta.GetOwnerReferences())
-	// managedFields must be preserved since it's been modified to
-	// track changed fields in the status update.
-	//meta.SetManagedFields(existingMeta.GetManagedFields())
+	meta.SetManagedFields(existingMeta.GetManagedFields())
 }
 
 // MarshalJSON implements json.Marshaler

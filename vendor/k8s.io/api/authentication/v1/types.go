@@ -40,7 +40,7 @@ const (
 
 // +genclient
 // +genclient:nonNamespaced
-// +genclient:onlyVerbs=create
+// +genclient:noVerbs
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 // TokenReview attempts to authenticate a token to a known user.

@@ -53,6 +53,15 @@ var scheme = runtime.NewScheme()
 // ParameterCodec knows about query parameters used with the meta v1 API spec.
 var ParameterCodec = runtime.NewParameterCodec(scheme)
 
+func addEventConversionFuncs(scheme *runtime.Scheme) error {
+	return scheme.AddConversionFuncs(
+		Convert_v1_WatchEvent_To_watch_Event,
+		Convert_v1_InternalEvent_To_v1_WatchEvent,
+		Convert_watch_Event_To_v1_WatchEvent,
+		Convert_v1_WatchEvent_To_v1_InternalEvent,
+	)
+}
+
 var optionsTypes = []runtime.Object{
 	&ListOptions{},
 	&ExportOptions{},
@@ -81,8 +90,10 @@ func AddToGroupVersion(scheme *runtime.Scheme, groupVersion schema.GroupVersion)
 		&APIResourceList{},
 	)
 
+	utilruntime.Must(addEventConversionFuncs(scheme))
+
 	// register manually. This usually goes through the SchemeBuilder, which we cannot use here.
-	utilruntime.Must(RegisterConversions(scheme))
+	utilruntime.Must(AddConversionFuncs(scheme))
 	utilruntime.Must(RegisterDefaults(scheme))
 }
 
@@ -95,7 +106,9 @@ func AddMetaToScheme(scheme *runtime.Scheme) error {
 		&PartialObjectMetadataList{},
 	)
 
-	return nil
+	return scheme.AddConversionFuncs(
+		Convert_Slice_string_To_v1_IncludeObjectPolicy,
+	)
 }
 
 func init() {

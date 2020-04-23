@@ -28,14 +28,9 @@ type MessageCountMap map[string]int
 
 // Aggregate represents an object that contains multiple errors, but does not
 // necessarily have singular semantic meaning.
-// The aggregate can be used with `errors.Is()` to check for the occurrence of
-// a specific error type.
-// Errors.As() is not supported, because the caller presumably cares about a
-// specific error of potentially multiple that match the given type.
 type Aggregate interface {
 	error
 	Errors() []error
-	Is(error) bool
 }
 
 // NewAggregate converts a slice of errors into an Aggregate interface, which
@@ -76,17 +71,16 @@ func (agg aggregate) Error() string {
 	}
 	seenerrs := sets.NewString()
 	result := ""
-	agg.visit(func(err error) bool {
+	agg.visit(func(err error) {
 		msg := err.Error()
 		if seenerrs.Has(msg) {
-			return false
+			return
 		}
 		seenerrs.Insert(msg)
 		if len(seenerrs) > 1 {
 			result += ", "
 		}
 		result += msg
-		return false
 	})
 	if len(seenerrs) == 1 {
 		return result
@@ -94,33 +88,19 @@ func (agg aggregate) Error() string {
 	return "[" + result + "]"
 }
 
-func (agg aggregate) Is(target error) bool {
-	return agg.visit(func(err error) bool {
-		return errors.Is(err, target)
-	})
-}
-
-func (agg aggregate) visit(f func(err error) bool) bool {
+func (agg aggregate) visit(f func(err error)) {
 	for _, err := range agg {
 		switch err := err.(type) {
 		case aggregate:
-			if match := err.visit(f); match {
-				return match
-			}
+			err.visit(f)
 		case Aggregate:
 			for _, nestedErr := range err.Errors() {
-				if match := f(nestedErr); match {
-					return match
-				}
+				f(nestedErr)
 			}
 		default:
-			if match := f(err); match {
-				return match
-			}
+			f(err)
 		}
 	}
-
-	return false
 }
 
 // Errors is part of the Aggregate interface.

@@ -49,11 +49,6 @@ func (d Duration) MarshalJSON() ([]byte, error) {
 	return json.Marshal(d.Duration.String())
 }
 
-// ToUnstructured implements the value.UnstructuredConverter interface.
-func (d Duration) ToUnstructured() interface{} {
-	return d.Duration.String()
-}
-
 // OpenAPISchemaType is used by the kube-openapi generator when constructing
 // the OpenAPI spec of this type.
 //

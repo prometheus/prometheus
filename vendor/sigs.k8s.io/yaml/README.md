@@ -1,14 +1,12 @@
 # YAML marshaling and unmarshaling support for Go
 
-[![Build Status](https://travis-ci.org/kubernetes-sigs/yaml.svg)](https://travis-ci.org/kubernetes-sigs/yaml)
-
-kubernetes-sigs/yaml is a permanent fork of [ghodss/yaml](https://github.com/ghodss/yaml).
+[![Build Status](https://travis-ci.org/ghodss/yaml.svg)](https://travis-ci.org/ghodss/yaml)
 
 ## Introduction
 
 A wrapper around [go-yaml](https://github.com/go-yaml/yaml) designed to enable a better way of handling YAML when marshaling to and from structs.
 
-In short, this library first converts YAML to JSON using go-yaml and then uses `json.Marshal` and `json.Unmarshal` to convert to or from the struct. This means that it effectively reuses the JSON struct tags as well as the custom JSON methods `MarshalJSON` and `UnmarshalJSON` unlike go-yaml. For a detailed overview of the rationale behind this method, [see this blog post](http://web.archive.org/web/20190603050330/http://ghodss.com/2014/the-right-way-to-handle-yaml-in-golang/).
+In short, this library first converts YAML to JSON using go-yaml and then uses `json.Marshal` and `json.Unmarshal` to convert to or from the struct. This means that it effectively reuses the JSON struct tags as well as the custom JSON methods `MarshalJSON` and `UnmarshalJSON` unlike go-yaml. For a detailed overview of the rationale behind this method, [see this blog post](http://ghodss.com/2014/the-right-way-to-handle-yaml-in-golang/).
 
 ## Compatibility
 
@@ -34,13 +32,13 @@ GOOD:
 To install, run:
 
 ```
-$ go get sigs.k8s.io/yaml
+$ go get github.com/ghodss/yaml
 ```
 
 And import using:
 
 ```
-import "sigs.k8s.io/yaml"
+import "github.com/ghodss/yaml"
 ```
 
 Usage is very similar to the JSON library:
@@ -51,7 +49,7 @@ package main
 import (
 	"fmt"
 
-	"sigs.k8s.io/yaml"
+	"github.com/ghodss/yaml"
 )
 
 type Person struct {
@@ -95,7 +93,7 @@ package main
 import (
 	"fmt"
 
-	"sigs.k8s.io/yaml"
+	"github.com/ghodss/yaml"
 )
 
 func main() {
