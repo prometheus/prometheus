@@ -1,15 +1,14 @@
 ## 2.18.0-rc.0 / 2020-04-24
 
-* [CHANGED] Use .UTC timezeone everywhere we use time.Unix. #7066
-* [CHANGED] Federation: It does not use remote storages anymore as designed initially. #7077
-* [CHANGED] Rules: `rule_evaluations_total` and `rule_evaluation_failures_total` have `rule_group` label now. #7094
+* [CHANGE] Federation: It does not use remote storages anymore as designed initially. #7077
 * [FEATURE] Tracing(!): Added experimental Jaeger support #7148
-* [ENHANCEMENT] TSDB: Significantly reduce how much old WAL we keep around to 3h (previously 6h). #7098
-* [BUGFIX] Federation: Fixed not registered `prometheus_web_federation_errors_total` and `prometheus_web_federation_warnings_total` metrics. #7081
-* [BUGFIX] Discovery: Add `archiecture` meta label for EC2. #7000
+* [ENHANCEMENT] Rules: `rule_evaluations_total` and `rule_evaluation_failures_total` have `rule_group` label now. #7094
+* [ENHANCEMENT] TSDB: Significantly reduce how much old WAL we keep around. #7098
+* [BUGFIX] Discovery: Add `architecture` meta label for EC2. #7000
 * [BUGFIX] React UI: Fixed multiselect legend on OSX. #6880
 * [BUGFIX] Remote Write: Fixed blocked resharding edge case. #7122
 * [BUGFIX] Remote Write: Fixed the edge case of not updating remote write on relabel configs change. #7073
+* [BUGFIX] Use .UTC timezeone everywhere we use time.Unix. #7066
 
 ## 2.17.2 / 2020-04-20
 
