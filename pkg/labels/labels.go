@@ -17,7 +17,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"sort"
+	"strconv"
 	"sync"
+	"unsafe"
 
 	"github.com/cespare/xxhash"
 )
@@ -33,6 +35,13 @@ const (
 )
 
 var bufPool = sync.Pool{
+	New: func() interface{} {
+		// 96 seems to be the best for the benchmarks but that might not mean anything for real scenarios
+		return bytes.NewBuffer(make([]byte, 0, 96))
+	},
+}
+
+var yoloPool = sync.Pool{
 	New: func() interface{} {
 		// 96 seems to be the best for the benchmarks but that might not mean anything for real scenarios
 		return bytes.NewBuffer(make([]byte, 0, 96))
@@ -64,16 +73,61 @@ func (ls Labels) String() string {
 		}
 		b.WriteString(l.Name)
 		b.WriteByte('=')
-		b.WriteByte('"')
-		b.WriteString(l.Value)
-		b.WriteByte('"')
-
+		b.WriteString(strconv.Quote(l.Value))
 	}
 	b.WriteByte('}')
 	ret = b.String()
 	b.Reset()
 	bufPool.Put(b)
 	return ret
+}
+
+func (ls Labels) NoRenderString() string {
+	var ret string
+	b := bufPool.Get().(*bytes.Buffer)
+
+	b.WriteByte('{')
+	for i, l := range ls {
+		if i > 0 {
+			b.WriteByte(',')
+			b.WriteByte(' ')
+		}
+		b.WriteString(l.Name)
+		b.WriteByte('=')
+		b.WriteByte('"')
+		b.WriteString(l.Value)
+		b.WriteByte('"')
+	}
+	b.WriteByte('}')
+	ret = b.String()
+	b.Reset()
+	bufPool.Put(b)
+	return ret
+}
+
+func yoloString(b []byte) string {
+	return *((*string)(unsafe.Pointer(&b)))
+}
+
+func (ls Labels) YoloString() string {
+	b := yoloPool.Get().(*bytes.Buffer)
+	b.Reset()
+
+	b.WriteByte('{')
+	for i, l := range ls {
+		if i > 0 {
+			b.WriteByte(',')
+			b.WriteByte(' ')
+		}
+		b.WriteString(l.Name)
+		b.WriteByte('=')
+		b.WriteByte('"')
+		b.WriteString(l.Value)
+		b.WriteByte('"')
+	}
+	b.WriteByte('}')
+	yoloPool.Put(b)
+	return yoloString(b.Bytes())
 }
 
 // MarshalJSON implements json.Marshaler.

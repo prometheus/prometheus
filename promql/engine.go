@@ -26,6 +26,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unsafe"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -855,20 +856,23 @@ func (enh *EvalNodeHelper) dropMetricName(l labels.Labels) labels.Labels {
 	return ret
 }
 
-// signatureFunc is a cached version of signatureFuncString.
+func yoloString(b []byte) string {
+	return *((*string)(unsafe.Pointer(&b)))
+}
+
 func (enh *EvalNodeHelper) signatureFunc(on bool, names ...string) func(labels.Labels) string {
 	if enh.sigf == nil {
 		enh.sigf = make(map[string]string, len(enh.out))
 	}
 	f := signatureFuncString(on, names...)
 	return func(l labels.Labels) string {
-		ls := l.String()
+		ls := l.YoloString()
 		ret, ok := enh.sigf[ls]
 		if ok {
 			return ret
 		}
 		ret = f(l)
-		enh.sigf[ls] = ret
+		enh.sigf[l.NoRenderString()] = ret
 		return ret
 	}
 }
@@ -1692,11 +1696,11 @@ func signatureFuncString(on bool, names ...string) func(labels.Labels) string {
 	sort.Strings(names)
 	if on {
 		return func(lset labels.Labels) string {
-			return lset.WithLabels(names...).String()
+			return lset.WithLabels(names...).NoRenderString()
 		}
 	}
 	return func(lset labels.Labels) string {
-		return lset.WithoutLabels(names...).String()
+		return lset.WithoutLabels(names...).NoRenderString()
 	}
 }
 
@@ -1719,14 +1723,17 @@ func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.V
 		enh.lb.Reset(lhs)
 	}
 	reuseStr := labelsPool.Get().(*bytes.Buffer)
-	reuseStr.Write([]byte(lhs.String()))
-	reuseStr.Write([]byte(rhs.String()))
-	str := reuseStr.String()
-	reuseStr.Reset()
-	labelsPool.Put(reuseStr)
-	if ret, ok := enh.resultMetric[string(str)]; ok {
+	reuseStr.Write([]byte(lhs.YoloString()))
+	reuseStr.Write([]byte(rhs.YoloString()))
+	str := yoloString(reuseStr.Bytes())
+	defer func() {
+		reuseStr.Reset()
+		labelsPool.Put(reuseStr)
+	}()
+	if ret, ok := enh.resultMetric[str]; ok {
 		return ret
 	}
+	str = reuseStr.String()
 
 	if shouldDropMetricName(op) {
 		enh.lb.Del(labels.MetricName)
