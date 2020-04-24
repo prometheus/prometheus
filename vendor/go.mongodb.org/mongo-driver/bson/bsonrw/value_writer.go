@@ -56,6 +56,13 @@ func (bvwp *BSONValueWriterPool) Get(w io.Writer) ValueWriter {
 	return vw
 }
 
+// GetAtModeElement retrieves a ValueWriterFlusher from the pool and resets it to use w as the destination.
+func (bvwp *BSONValueWriterPool) GetAtModeElement(w io.Writer) ValueWriterFlusher {
+	vw := bvwp.Get(w).(*valueWriter)
+	vw.push(mElement)
+	return vw
+}
+
 // Put inserts a ValueWriter into the pool. If the ValueWriter is not a BSON ValueWriter, nothing
 // happens and ok will be false.
 func (bvwp *BSONValueWriterPool) Put(vw ValueWriter) (ok bool) {
@@ -512,17 +519,8 @@ func (vw *valueWriter) WriteDocumentEnd() error {
 	}
 
 	if vw.stack[vw.frame].mode == mTopLevel {
-		if vw.w != nil {
-			if sw, ok := vw.w.(*SliceWriter); ok {
-				*sw = vw.buf
-			} else {
-				_, err = vw.w.Write(vw.buf)
-				if err != nil {
-					return err
-				}
-				// reset buffer
-				vw.buf = vw.buf[:0]
-			}
+		if err = vw.Flush(); err != nil {
+			return err
 		}
 	}
 
@@ -534,6 +532,23 @@ func (vw *valueWriter) WriteDocumentEnd() error {
 		_ = vw.writeLength()
 		vw.pop()
 	}
+	return nil
+}
+
+func (vw *valueWriter) Flush() error {
+	if vw.w == nil {
+		return nil
+	}
+
+	if sw, ok := vw.w.(*SliceWriter); ok {
+		*sw = vw.buf
+		return nil
+	}
+	if _, err := vw.w.Write(vw.buf); err != nil {
+		return err
+	}
+	// reset buffer
+	vw.buf = vw.buf[:0]
 	return nil
 }
 

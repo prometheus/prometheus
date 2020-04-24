@@ -168,6 +168,7 @@ func newParser(input string) *parser {
 
 	p.injecting = false
 	p.parseErrors = nil
+	p.generatedParserResult = nil
 
 	// Clear lexer struct before reusing.
 	p.lex = Lexer{

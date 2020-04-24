@@ -87,6 +87,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/client"
 	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/internal/sdkrand"
 	"github.com/aws/aws-sdk-go/service/sts"
 )
@@ -116,6 +117,10 @@ const ProviderName = "AssumeRoleProvider"
 // AssumeRoler represents the minimal subset of the STS client API used by this provider.
 type AssumeRoler interface {
 	AssumeRole(input *sts.AssumeRoleInput) (*sts.AssumeRoleOutput, error)
+}
+
+type assumeRolerWithContext interface {
+	AssumeRoleWithContext(aws.Context, *sts.AssumeRoleInput, ...request.Option) (*sts.AssumeRoleOutput, error)
 }
 
 // DefaultDuration is the default amount of time in minutes that the credentials
@@ -265,6 +270,11 @@ func NewCredentialsWithClient(svc AssumeRoler, roleARN string, options ...func(*
 
 // Retrieve generates a new set of temporary credentials using STS.
 func (p *AssumeRoleProvider) Retrieve() (credentials.Value, error) {
+	return p.RetrieveWithContext(aws.BackgroundContext())
+}
+
+// RetrieveWithContext generates a new set of temporary credentials using STS.
+func (p *AssumeRoleProvider) RetrieveWithContext(ctx credentials.Context) (credentials.Value, error) {
 	// Apply defaults where parameters are not set.
 	if p.RoleSessionName == "" {
 		// Try to work out a role name that will hopefully end up unique.
@@ -304,7 +314,15 @@ func (p *AssumeRoleProvider) Retrieve() (credentials.Value, error) {
 		}
 	}
 
-	roleOutput, err := p.Client.AssumeRole(input)
+	var roleOutput *sts.AssumeRoleOutput
+	var err error
+
+	if c, ok := p.Client.(assumeRolerWithContext); ok {
+		roleOutput, err = c.AssumeRoleWithContext(ctx, input)
+	} else {
+		roleOutput, err = p.Client.AssumeRole(input)
+	}
+
 	if err != nil {
 		return credentials.Value{ProviderName: ProviderName}, err
 	}

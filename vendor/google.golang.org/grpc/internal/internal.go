@@ -37,11 +37,6 @@ var (
 	// KeepaliveMinPingTime is the minimum ping interval.  This must be 10s by
 	// default, but tests may wish to set it lower for convenience.
 	KeepaliveMinPingTime = 10 * time.Second
-	// StatusRawProto is exported by status/status.go. This func returns a
-	// pointer to the wrapped Status proto for a given status.Status without a
-	// call to proto.Clone(). The returned Status proto should not be mutated by
-	// the caller.
-	StatusRawProto interface{} // func (*status.Status) *spb.Status
 	// NewRequestInfoContext creates a new context based on the argument context attaching
 	// the passed in RequestInfo to the new context.
 	NewRequestInfoContext interface{} // func(context.Context, credentials.RequestInfo) context.Context

@@ -667,7 +667,14 @@ func Register{{$svc.GetName}}{{$.RegisterFuncSuffix}}Client(ctx context.Context,
 			return
 		}
 		{{if $m.GetServerStreaming}}
+		{{ if $b.ResponseBody }}
+		forward_{{$svc.GetName}}_{{$m.GetName}}_{{$b.Index}}(ctx, mux, outboundMarshaler, w, req, func() (proto.Message, error) {
+			res, err := resp.Recv()
+			return response_{{$svc.GetName}}_{{$m.GetName}}_{{$b.Index}}{res}, err
+		}, mux.GetForwardResponseOptions()...)
+		{{ else }}
 		forward_{{$svc.GetName}}_{{$m.GetName}}_{{$b.Index}}(ctx, mux, outboundMarshaler, w, req, func() (proto.Message, error) { return resp.Recv() }, mux.GetForwardResponseOptions()...)
+		{{end}}
 		{{else}}
 		{{ if $b.ResponseBody }}
 		forward_{{$svc.GetName}}_{{$m.GetName}}_{{$b.Index}}(ctx, mux, outboundMarshaler, w, req, response_{{$svc.GetName}}_{{$m.GetName}}_{{$b.Index}}{resp}, mux.GetForwardResponseOptions()...)

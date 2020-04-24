@@ -14,7 +14,6 @@ import (
 	"io"
 	"math"
 	"sync"
-	"unicode"
 
 	"go.mongodb.org/mongo-driver/bson/bsontype"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -373,7 +372,8 @@ func (vr *valueReader) ReadBinary() (b []byte, btype byte, err error) {
 		return nil, 0, err
 	}
 
-	if btype == 0x02 {
+	// Check length in case it is an old binary without a length.
+	if btype == 0x02 && length > 4 {
 		length, err = vr.readLength()
 		if err != nil {
 			return nil, 0, err
@@ -448,6 +448,9 @@ func (vr *valueReader) ReadCodeWithScope() (code string, dr DocumentReader, err 
 	strLength, err := vr.readLength()
 	if err != nil {
 		return "", nil, err
+	}
+	if strLength <= 0 {
+		return "", nil, fmt.Errorf("invalid string length: %d", strLength)
 	}
 	strBytes, err := vr.readBytes(strLength)
 	if err != nil {
@@ -817,14 +820,6 @@ func (vr *valueReader) readString() (string, error) {
 
 	start := vr.offset
 	vr.offset += int64(length)
-
-	if length == 2 {
-		asciiByte := vr.d[start]
-		if asciiByte > unicode.MaxASCII {
-			return "", fmt.Errorf("invalid ascii byte")
-		}
-	}
-
 	return string(vr.d[start : start+int64(length)-1]), nil
 }
 

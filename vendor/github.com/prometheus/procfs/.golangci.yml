@@ -1,4 +1,4 @@
+---
 linters:
   enable:
-  - staticcheck
-  - govet
+  - golint

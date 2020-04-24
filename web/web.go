@@ -293,7 +293,10 @@ func New(logger log.Logger, o *Options) *Handler {
 		ready: 0,
 	}
 
-	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, h.scrapeManager, h.notifier,
+	factoryTr := func(_ context.Context) api_v1.TargetRetriever {
+		return h.scrapeManager
+	}
+	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, factoryTr, h.notifier,
 		func() config.Config {
 			h.mtx.RLock()
 			defer h.mtx.RUnlock()

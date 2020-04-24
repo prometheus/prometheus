@@ -196,7 +196,7 @@ func (lim *Limiter) Reserve() *Reservation {
 
 // ReserveN returns a Reservation that indicates how long the caller must wait before n events happen.
 // The Limiter takes this Reservation into account when allowing future events.
-// ReserveN returns false if n exceeds the Limiter's burst size.
+// The returned Reservation’s OK() method returns false if n exceeds the Limiter's burst size.
 // Usage example:
 //   r := lim.ReserveN(time.Now(), 1)
 //   if !r.OK() {

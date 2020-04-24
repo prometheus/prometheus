@@ -21,12 +21,17 @@ type Binary struct {
 	Data    []byte
 }
 
-// Equal compaes bp to bp2 and returns true is the are equal.
+// Equal compares bp to bp2 and returns true is the are equal.
 func (bp Binary) Equal(bp2 Binary) bool {
 	if bp.Subtype != bp2.Subtype {
 		return false
 	}
 	return bytes.Equal(bp.Data, bp2.Data)
+}
+
+// IsZero returns if bp is the empty Binary
+func (bp Binary) IsZero() bool {
+	return bp.Subtype == 0 && len(bp.Data) == 0
 }
 
 // Undefined represents the BSON undefined value type.
@@ -37,10 +42,20 @@ type DateTime int64
 
 // MarshalJSON marshal to time type
 func (d DateTime) MarshalJSON() ([]byte, error) {
-	return json.Marshal(time.Unix(int64(d)/1000, int64(d)%1000*1000000))
+	return json.Marshal(d.Time())
 }
 
-// Null repreesnts the BSON null value.
+// Time returns the date as a time type.
+func (d DateTime) Time() time.Time {
+	return time.Unix(int64(d)/1000, int64(d)%1000*1000000)
+}
+
+// NewDateTimeFromTime creates a new DateTime from a Time.
+func NewDateTimeFromTime(t time.Time) DateTime {
+	return DateTime(t.UnixNano() / 1000000)
+}
+
+// Null represents the BSON null value.
 type Null struct{}
 
 // Regex represents a BSON regex value.
@@ -53,9 +68,14 @@ func (rp Regex) String() string {
 	return fmt.Sprintf(`{"pattern": "%s", "options": "%s"}`, rp.Pattern, rp.Options)
 }
 
-// Equal compaes rp to rp2 and returns true is the are equal.
+// Equal compares rp to rp2 and returns true is the are equal.
 func (rp Regex) Equal(rp2 Regex) bool {
-	return rp.Pattern == rp2.Pattern && rp.Options == rp.Options
+	return rp.Pattern == rp2.Pattern && rp.Options == rp2.Options
+}
+
+// IsZero returns if rp is the empty Regex
+func (rp Regex) IsZero() bool {
+	return rp.Pattern == "" && rp.Options == ""
 }
 
 // DBPointer represents a BSON dbpointer value.
@@ -68,9 +88,14 @@ func (d DBPointer) String() string {
 	return fmt.Sprintf(`{"db": "%s", "pointer": "%s"}`, d.DB, d.Pointer)
 }
 
-// Equal compaes d to d2 and returns true is the are equal.
+// Equal compares d to d2 and returns true is the are equal.
 func (d DBPointer) Equal(d2 DBPointer) bool {
 	return d.DB == d2.DB && bytes.Equal(d.Pointer[:], d2.Pointer[:])
+}
+
+// IsZero returns if d is the empty DBPointer
+func (d DBPointer) IsZero() bool {
+	return d.DB == "" && d.Pointer.IsZero()
 }
 
 // JavaScript represents a BSON JavaScript code value.
@@ -95,9 +120,34 @@ type Timestamp struct {
 	I uint32
 }
 
-// Equal compaes tp to tp2 and returns true is the are equal.
+// Equal compares tp to tp2 and returns true is the are equal.
 func (tp Timestamp) Equal(tp2 Timestamp) bool {
 	return tp.T == tp2.T && tp.I == tp2.I
+}
+
+// IsZero returns if tp is the zero Timestamp
+func (tp Timestamp) IsZero() bool {
+	return tp.T == 0 && tp.I == 0
+}
+
+// CompareTimestamp returns an integer comparing two Timestamps, where T is compared first, followed by I.
+// Returns 0 if tp = tp2, 1 if tp > tp2, -1 if tp < tp2.
+func CompareTimestamp(tp, tp2 Timestamp) int {
+	if tp.Equal(tp2) {
+		return 0
+	}
+
+	if tp.T > tp2.T {
+		return 1
+	}
+	if tp.T < tp2.T {
+		return -1
+	}
+	// Compare I values because T values are equal
+	if tp.I > tp2.I {
+		return 1
+	}
+	return -1
 }
 
 // MinKey represents the BSON minkey value.
@@ -106,16 +156,12 @@ type MinKey struct{}
 // MaxKey represents the BSON maxkey value.
 type MaxKey struct{}
 
-// D represents a BSON Document. This type can be used to represent BSON in a concise and readable
-// manner. It should generally be used when serializing to BSON. For deserializing, the Raw or
-// Document types should be used.
+// D is an ordered representation of a BSON document. This type should be used when the order of the elements matters,
+// such as MongoDB command documents. If the order of the elements does not matter, an M should be used instead.
 //
 // Example usage:
 //
-// 		primitive.D{{"foo", "bar"}, {"hello", "world"}, {"pi", 3.14159}}
-//
-// This type should be used in situations where order matters, such as MongoDB commands. If the
-// order is not important, a map is more comfortable and concise.
+// 		bson.D{{"foo", "bar"}, {"hello", "world"}, {"pi", 3.14159}}
 type D []E
 
 // Map creates a map from the elements of the D.
@@ -133,24 +179,18 @@ type E struct {
 	Value interface{}
 }
 
-// M is an unordered, concise representation of a BSON Document. It should generally be used to
-// serialize BSON when the order of the elements of a BSON document do not matter. If the element
-// order matters, use a D instead.
+// M is an unordered representation of a BSON document. This type should be used when the order of the elements does not
+// matter. This type is handled as a regular map[string]interface{} when encoding and decoding. Elements will be
+// serialized in an undefined, random order. If the order of the elements matters, a D should be used instead.
 //
 // Example usage:
 //
-// 		primitive.M{"foo": "bar", "hello": "world", "pi": 3.14159}
-//
-// This type is handled in the encoders as a regular map[string]interface{}. The elements will be
-// serialized in an undefined, random order, and the order will be different each time.
+// 		bson.M{"foo": "bar", "hello": "world", "pi": 3.14159}.
 type M map[string]interface{}
 
-// An A represents a BSON array. This type can be used to represent a BSON array in a concise and
-// readable manner. It should generally be used when serializing to BSON. For deserializing, the
-// RawArray or Array types should be used.
+// An A is an ordered representation of a BSON array.
 //
 // Example usage:
 //
-// 		primitive.A{"bar", "world", 3.14159, primitive.D{{"qux", 12345}}}
-//
+// 		bson.A{"bar", "world", 3.14159, bson.D{{"qux", 12345}}}
 type A []interface{}

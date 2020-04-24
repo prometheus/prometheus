@@ -7,7 +7,7 @@ import (
 	"github.com/golang/glog"
 	"github.com/golang/protobuf/proto"
 	descriptor "github.com/golang/protobuf/protoc-gen-go/descriptor"
-	"github.com/grpc-ecosystem/grpc-gateway/internal/httprule"
+	"github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway/httprule"
 	options "google.golang.org/genproto/googleapis/api/annotations"
 )
 
@@ -35,7 +35,7 @@ func (r *Registry) loadServices(file *File) error {
 				optsList = append(optsList, opts)
 			}
 			if len(optsList) == 0 {
-				glog.V(1).Infof("Found non-target method: %s.%s", svc.GetName(), md.GetName())
+				glog.Warningf("No HttpRule found for method: %s.%s", svc.GetName(), md.GetName())
 			}
 			meth, err := r.newMethod(svc, md, optsList)
 			if err != nil {

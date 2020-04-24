@@ -739,7 +739,7 @@ func TestLintUnitAbbreviations(t *testing.T) {
 %s 10
 `, n, n, n),
 			problems: []promlint.Problem{
-				promlint.Problem{
+				{
 					Metric: n,
 					Text:   "metric names should not contain abbreviated units",
 				},

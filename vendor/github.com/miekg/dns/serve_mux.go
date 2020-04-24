@@ -1,7 +1,6 @@
 package dns
 
 import (
-	"strings"
 	"sync"
 )
 
@@ -36,7 +35,7 @@ func (mux *ServeMux) match(q string, t uint16) Handler {
 		return nil
 	}
 
-	q = strings.ToLower(q)
+	q = CanonicalName(q)
 
 	var handler Handler
 	for off, end := 0, false; !end; off, end = NextLabel(q, off) {
@@ -66,7 +65,7 @@ func (mux *ServeMux) Handle(pattern string, handler Handler) {
 	if mux.z == nil {
 		mux.z = make(map[string]Handler)
 	}
-	mux.z[Fqdn(pattern)] = handler
+	mux.z[CanonicalName(pattern)] = handler
 	mux.m.Unlock()
 }
 
@@ -81,7 +80,7 @@ func (mux *ServeMux) HandleRemove(pattern string) {
 		panic("dns: invalid pattern " + pattern)
 	}
 	mux.m.Lock()
-	delete(mux.z, Fqdn(pattern))
+	delete(mux.z, CanonicalName(pattern))
 	mux.m.Unlock()
 }
 

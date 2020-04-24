@@ -237,8 +237,10 @@ type QueueManager struct {
 	cfg            config.QueueConfig
 	externalLabels labels.Labels
 	relabelConfigs []*relabel.Config
-	client         StorageClient
 	watcher        *wal.Watcher
+
+	clientMtx   sync.RWMutex
+	storeClient StorageClient
 
 	seriesMtx            sync.Mutex
 	seriesLabels         map[uint64]labels.Labels
@@ -283,7 +285,7 @@ func NewQueueManager(metrics *queueManagerMetrics, watcherMetrics *wal.WatcherMe
 		cfg:            cfg,
 		externalLabels: externalLabels,
 		relabelConfigs: relabelConfigs,
-		client:         client,
+		storeClient:    client,
 
 		seriesLabels:         make(map[uint64]labels.Labels),
 		seriesSegmentIndexes: make(map[uint64]int),
@@ -358,8 +360,8 @@ func (t *QueueManager) Start() {
 	// Setup the QueueManagers metrics. We do this here rather than in the
 	// constructor because of the ordering of creating Queue Managers's, stopping them,
 	// and then starting new ones in storage/remote/storage.go ApplyConfig.
-	name := t.client.Name()
-	ep := t.client.Endpoint()
+	name := t.client().Name()
+	ep := t.client().Endpoint()
 	t.highestSentTimestampMetric = &maxGauge{
 		Gauge: t.metrics.queueHighestSentTimestamp.WithLabelValues(name, ep),
 	}
@@ -413,8 +415,8 @@ func (t *QueueManager) Stop() {
 	}
 	t.seriesMtx.Unlock()
 	// Delete metrics so we don't have alerts for queues that are gone.
-	name := t.client.Name()
-	ep := t.client.Endpoint()
+	name := t.client().Name()
+	ep := t.client().Endpoint()
 	t.metrics.queueHighestSentTimestamp.DeleteLabelValues(name, ep)
 	t.metrics.queuePendingSamples.DeleteLabelValues(name, ep)
 	t.metrics.enqueueRetriesTotal.DeleteLabelValues(name, ep)
@@ -470,6 +472,20 @@ func (t *QueueManager) SeriesReset(index int) {
 			delete(t.droppedSeries, k)
 		}
 	}
+}
+
+// SetClient updates the client used by a queue. Used when only client specific
+// fields are updated to avoid restarting the queue.
+func (t *QueueManager) SetClient(c StorageClient) {
+	t.clientMtx.Lock()
+	t.storeClient = c
+	t.clientMtx.Unlock()
+}
+
+func (t *QueueManager) client() StorageClient {
+	t.clientMtx.RLock()
+	defer t.clientMtx.RUnlock()
+	return t.storeClient
 }
 
 func internLabels(lbls labels.Labels) {
@@ -528,7 +544,7 @@ func (t *QueueManager) updateShardsLoop() {
 		select {
 		case <-ticker.C:
 			desiredShards := t.calculateDesiredShards()
-			if desiredShards == t.numShards {
+			if !t.shouldReshard(desiredShards) {
 				continue
 			}
 			// Resharding can take some time, and we want this loop
@@ -544,6 +560,22 @@ func (t *QueueManager) updateShardsLoop() {
 			return
 		}
 	}
+}
+
+// shouldReshard returns if resharding should occur
+func (t *QueueManager) shouldReshard(desiredShards int) bool {
+	if desiredShards == t.numShards {
+		return false
+	}
+	// We shouldn't reshard if Prometheus hasn't been able to send to the
+	// remote endpoint successfully within some period of time.
+	minSendTimestamp := time.Now().Add(-2 * time.Duration(t.cfg.BatchSendDeadline)).Unix()
+	lsts := atomic.LoadInt64(&t.lastSendTimestamp)
+	if lsts < minSendTimestamp {
+		level.Warn(t.logger).Log("msg", "Skipping resharding, last successful send was beyond threshold", "lastSendTimestamp", lsts, "minSendTimestamp", minSendTimestamp)
+		return false
+	}
+	return true
 }
 
 // calculateDesiredShards returns the number of desired shards, which will be
@@ -572,15 +604,6 @@ func (t *QueueManager) calculateDesiredShards() int {
 	)
 
 	if samplesOutRate <= 0 {
-		return t.numShards
-	}
-
-	// We shouldn't reshard if Prometheus hasn't been able to send to the
-	// remote endpoint successfully within some period of time.
-	minSendTimestamp := time.Now().Add(-2 * time.Duration(t.cfg.BatchSendDeadline)).Unix()
-	lsts := atomic.LoadInt64(&t.lastSendTimestamp)
-	if lsts < minSendTimestamp {
-		level.Warn(t.logger).Log("msg", "Skipping resharding, last successful send was beyond threshold", "lastSendTimestamp", lsts, "minSendTimestamp", minSendTimestamp)
 		return t.numShards
 	}
 
@@ -845,6 +868,7 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, b
 	// should be maintained irrespective of success or failure.
 	s.qm.samplesOut.incr(int64(len(samples)))
 	s.qm.samplesOutDuration.incr(int64(time.Since(begin)))
+	atomic.StoreInt64(&s.qm.lastSendTimestamp, time.Now().Unix())
 }
 
 // sendSamples to the remote storage with backoff for recoverable errors.
@@ -865,7 +889,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 		default:
 		}
 		begin := time.Now()
-		err := s.qm.client.Store(ctx, req)
+		err := s.qm.client().Store(ctx, req)
 
 		s.qm.sentBatchDuration.Observe(time.Since(begin).Seconds())
 
@@ -873,7 +897,6 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 			s.qm.succeededSamplesTotal.Add(float64(len(samples)))
 			s.qm.bytesSent.Add(float64(len(req)))
 			s.qm.highestSentTimestampMetric.Set(float64(highest / 1000))
-			atomic.StoreInt64(&s.qm.lastSendTimestamp, time.Now().Unix())
 			return nil
 		}
 

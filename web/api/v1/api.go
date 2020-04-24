@@ -100,7 +100,8 @@ func (e *apiError) Error() string {
 	return fmt.Sprintf("%s: %s", e.typ, e.err)
 }
 
-type targetRetriever interface {
+// TargetRetriever provides the list of active/dropped targets to scrape or not.
+type TargetRetriever interface {
 	TargetsActive() map[string][]*scrape.Target
 	TargetsDropped() map[string][]*scrape.Target
 }
@@ -173,7 +174,7 @@ type API struct {
 	Queryable   storage.Queryable
 	QueryEngine *promql.Engine
 
-	targetRetriever       targetRetriever
+	targetRetriever       func(context.Context) TargetRetriever
 	alertmanagerRetriever alertmanagerRetriever
 	rulesRetriever        rulesRetriever
 	now                   func() time.Time
@@ -202,7 +203,7 @@ func init() {
 func NewAPI(
 	qe *promql.Engine,
 	q storage.Queryable,
-	tr targetRetriever,
+	tr func(context.Context) TargetRetriever,
 	ar alertmanagerRetriever,
 	configFunc func() config.Config,
 	flagsMap map[string]string,
@@ -249,15 +250,15 @@ func (api *API) Register(r *route.Router) {
 		hf := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			httputil.SetCORS(w, api.CORSOrigin, r)
 			result := f(r)
+			if result.finalizer != nil {
+				defer result.finalizer()
+			}
 			if result.err != nil {
 				api.respondError(w, result.err, result.data)
 			} else if result.data != nil {
 				api.respond(w, result.data, result.warnings)
 			} else {
 				w.WriteHeader(http.StatusNoContent)
-			}
-			if result.finalizer != nil {
-				result.finalizer()
 			}
 		})
 		return api.ready(httputil.CompressionHandler{
@@ -317,7 +318,7 @@ func (api *API) options(r *http.Request) apiFuncResult {
 	return apiFuncResult{nil, nil, nil, nil}
 }
 
-func (api *API) query(r *http.Request) apiFuncResult {
+func (api *API) query(r *http.Request) (result apiFuncResult) {
 	ts, err := parseTimeParam(r, "time", api.now())
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
@@ -340,6 +341,14 @@ func (api *API) query(r *http.Request) apiFuncResult {
 		err = errors.Wrapf(err, "invalid parameter 'query'")
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
+	// From now on, we must only return with a finalizer in the result (to
+	// be called by the caller) or call qry.Close ourselves (which is
+	// required in the case of a panic).
+	defer func() {
+		if result.finalizer == nil {
+			qry.Close()
+		}
+	}()
 
 	ctx = httputil.ContextFromRequest(ctx, r)
 
@@ -361,7 +370,7 @@ func (api *API) query(r *http.Request) apiFuncResult {
 	}, nil, res.Warnings, qry.Close}
 }
 
-func (api *API) queryRange(r *http.Request) apiFuncResult {
+func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 	start, err := parseTime(r.FormValue("start"))
 	if err != nil {
 		err = errors.Wrapf(err, "invalid parameter 'start'")
@@ -412,6 +421,14 @@ func (api *API) queryRange(r *http.Request) apiFuncResult {
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
+	// From now on, we must only return with a finalizer in the result (to
+	// be called by the caller) or call qry.Close ourselves (which is
+	// required in the case of a panic).
+	defer func() {
+		if result.finalizer == nil {
+			qry.Close()
+		}
+	}()
 
 	ctx = httputil.ContextFromRequest(ctx, r)
 
@@ -464,7 +481,7 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 	return apiFuncResult{names, nil, warnings, nil}
 }
 
-func (api *API) labelValues(r *http.Request) apiFuncResult {
+func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 	ctx := r.Context()
 	name := route.Param(ctx, "name")
 
@@ -475,7 +492,14 @@ func (api *API) labelValues(r *http.Request) apiFuncResult {
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
 	}
-
+	// From now on, we must only return with a finalizer in the result (to
+	// be called by the caller) or call q.Close ourselves (which is required
+	// in the case of a panic).
+	defer func() {
+		if result.finalizer == nil {
+			q.Close()
+		}
+	}()
 	closer := func() {
 		q.Close()
 	}
@@ -496,7 +520,7 @@ var (
 	maxTimeFormatted = maxTime.Format(time.RFC3339Nano)
 )
 
-func (api *API) series(r *http.Request) apiFuncResult {
+func (api *API) series(r *http.Request) (result apiFuncResult) {
 	if err := r.ParseForm(); err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrapf(err, "error parsing form values")}, nil, nil}
 	}
@@ -526,7 +550,17 @@ func (api *API) series(r *http.Request) apiFuncResult {
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
 	}
-	defer q.Close()
+	// From now on, we must only return with a finalizer in the result (to
+	// be called by the caller) or call q.Close ourselves (which is required
+	// in the case of a panic).
+	defer func() {
+		if result.finalizer == nil {
+			q.Close()
+		}
+	}()
+	closer := func() {
+		q.Close()
+	}
 
 	var sets []storage.SeriesSet
 	var warnings storage.Warnings
@@ -534,7 +568,7 @@ func (api *API) series(r *http.Request) apiFuncResult {
 		s, wrn, err := q.Select(false, nil, mset...)
 		warnings = append(warnings, wrn...)
 		if err != nil {
-			return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
+			return apiFuncResult{nil, &apiError{errorExec, err}, warnings, closer}
 		}
 		sets = append(sets, s)
 	}
@@ -545,10 +579,10 @@ func (api *API) series(r *http.Request) apiFuncResult {
 		metrics = append(metrics, set.At().Labels())
 	}
 	if set.Err() != nil {
-		return apiFuncResult{nil, &apiError{errorExec, set.Err()}, warnings, nil}
+		return apiFuncResult{nil, &apiError{errorExec, set.Err()}, warnings, closer}
 	}
 
-	return apiFuncResult{metrics, nil, warnings, nil}
+	return apiFuncResult{metrics, nil, warnings, closer}
 }
 
 func (api *API) dropSeries(r *http.Request) apiFuncResult {
@@ -659,7 +693,7 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 	res := &TargetDiscovery{}
 
 	if showActive {
-		targetsActive := api.targetRetriever.TargetsActive()
+		targetsActive := api.targetRetriever(r.Context()).TargetsActive()
 		activeKeys, numTargets := sortKeys(targetsActive)
 		res.ActiveTargets = make([]*Target, 0, numTargets)
 
@@ -697,7 +731,7 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 		res.ActiveTargets = []*Target{}
 	}
 	if showDropped {
-		tDropped := flatten(api.targetRetriever.TargetsDropped())
+		tDropped := flatten(api.targetRetriever(r.Context()).TargetsDropped())
 		res.DroppedTargets = make([]*DroppedTarget, 0, len(tDropped))
 		for _, t := range tDropped {
 			res.DroppedTargets = append(res.DroppedTargets, &DroppedTarget{
@@ -744,7 +778,7 @@ func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 	metric := r.FormValue("metric")
 
 	res := []metricMetadata{}
-	for _, tt := range api.targetRetriever.TargetsActive() {
+	for _, tt := range api.targetRetriever(r.Context()).TargetsActive() {
 		for _, t := range tt {
 			if limit >= 0 && len(res) >= limit {
 				break
@@ -877,7 +911,7 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 
 	metric := r.FormValue("metric")
 
-	for _, tt := range api.targetRetriever.TargetsActive() {
+	for _, tt := range api.targetRetriever(r.Context()).TargetsActive() {
 		for _, t := range tt {
 
 			if metric == "" {

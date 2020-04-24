@@ -5377,7 +5377,6 @@ func (c *EC2) CreatePlacementGroupRequest(input *CreatePlacementGroupInput) (req
 
 	output = &CreatePlacementGroupOutput{}
 	req = c.newRequest(op, input, output)
-	req.Handlers.Unmarshal.Swap(ec2query.UnmarshalHandler.Name, protocol.UnmarshalDiscardBodyHandler)
 	return
 }
 
@@ -11585,6 +11584,81 @@ func (c *EC2) DeregisterImageWithContext(ctx aws.Context, input *DeregisterImage
 	return out, req.Send()
 }
 
+const opDeregisterInstanceEventNotificationAttributes = "DeregisterInstanceEventNotificationAttributes"
+
+// DeregisterInstanceEventNotificationAttributesRequest generates a "aws/request.Request" representing the
+// client's request for the DeregisterInstanceEventNotificationAttributes operation. The "output" return
+// value will be populated with the request's response once the request completes
+// successfully.
+//
+// Use "Send" method on the returned Request to send the API call to the service.
+// the "output" return value is not valid until after Send returns without error.
+//
+// See DeregisterInstanceEventNotificationAttributes for more information on using the DeregisterInstanceEventNotificationAttributes
+// API call, and error handling.
+//
+// This method is useful when you want to inject custom logic or configuration
+// into the SDK's request lifecycle. Such as custom headers, or retry logic.
+//
+//
+//    // Example sending a request using the DeregisterInstanceEventNotificationAttributesRequest method.
+//    req, resp := client.DeregisterInstanceEventNotificationAttributesRequest(params)
+//
+//    err := req.Send()
+//    if err == nil { // resp is now filled
+//        fmt.Println(resp)
+//    }
+//
+// See also, https://docs.aws.amazon.com/goto/WebAPI/ec2-2016-11-15/DeregisterInstanceEventNotificationAttributes
+func (c *EC2) DeregisterInstanceEventNotificationAttributesRequest(input *DeregisterInstanceEventNotificationAttributesInput) (req *request.Request, output *DeregisterInstanceEventNotificationAttributesOutput) {
+	op := &request.Operation{
+		Name:       opDeregisterInstanceEventNotificationAttributes,
+		HTTPMethod: "POST",
+		HTTPPath:   "/",
+	}
+
+	if input == nil {
+		input = &DeregisterInstanceEventNotificationAttributesInput{}
+	}
+
+	output = &DeregisterInstanceEventNotificationAttributesOutput{}
+	req = c.newRequest(op, input, output)
+	return
+}
+
+// DeregisterInstanceEventNotificationAttributes API operation for Amazon Elastic Compute Cloud.
+//
+// Deregisters tag keys to prevent tags that have the specified tag keys from
+// being included in scheduled event notifications for resources in the Region.
+//
+// Returns awserr.Error for service API and SDK errors. Use runtime type assertions
+// with awserr.Error's Code and Message methods to get detailed information about
+// the error.
+//
+// See the AWS API reference guide for Amazon Elastic Compute Cloud's
+// API operation DeregisterInstanceEventNotificationAttributes for usage and error information.
+// See also, https://docs.aws.amazon.com/goto/WebAPI/ec2-2016-11-15/DeregisterInstanceEventNotificationAttributes
+func (c *EC2) DeregisterInstanceEventNotificationAttributes(input *DeregisterInstanceEventNotificationAttributesInput) (*DeregisterInstanceEventNotificationAttributesOutput, error) {
+	req, out := c.DeregisterInstanceEventNotificationAttributesRequest(input)
+	return out, req.Send()
+}
+
+// DeregisterInstanceEventNotificationAttributesWithContext is the same as DeregisterInstanceEventNotificationAttributes with the addition of
+// the ability to pass a context and additional request options.
+//
+// See DeregisterInstanceEventNotificationAttributes for details on how to use this API operation.
+//
+// The context must be non-nil and will be used for request cancellation. If
+// the context is nil a panic will occur. In the future the SDK may create
+// sub-contexts for http.Requests. See https://golang.org/pkg/context/
+// for more information on using Contexts.
+func (c *EC2) DeregisterInstanceEventNotificationAttributesWithContext(ctx aws.Context, input *DeregisterInstanceEventNotificationAttributesInput, opts ...request.Option) (*DeregisterInstanceEventNotificationAttributesOutput, error) {
+	req, out := c.DeregisterInstanceEventNotificationAttributesRequest(input)
+	req.SetContext(ctx)
+	req.ApplyOptions(opts...)
+	return out, req.Send()
+}
+
 const opDeregisterTransitGatewayMulticastGroupMembers = "DeregisterTransitGatewayMulticastGroupMembers"
 
 // DeregisterTransitGatewayMulticastGroupMembersRequest generates a "aws/request.Request" representing the
@@ -16192,6 +16266,81 @@ func (c *EC2) DescribeInstanceCreditSpecificationsPagesWithContext(ctx aws.Conte
 	}
 
 	return p.Err()
+}
+
+const opDescribeInstanceEventNotificationAttributes = "DescribeInstanceEventNotificationAttributes"
+
+// DescribeInstanceEventNotificationAttributesRequest generates a "aws/request.Request" representing the
+// client's request for the DescribeInstanceEventNotificationAttributes operation. The "output" return
+// value will be populated with the request's response once the request completes
+// successfully.
+//
+// Use "Send" method on the returned Request to send the API call to the service.
+// the "output" return value is not valid until after Send returns without error.
+//
+// See DescribeInstanceEventNotificationAttributes for more information on using the DescribeInstanceEventNotificationAttributes
+// API call, and error handling.
+//
+// This method is useful when you want to inject custom logic or configuration
+// into the SDK's request lifecycle. Such as custom headers, or retry logic.
+//
+//
+//    // Example sending a request using the DescribeInstanceEventNotificationAttributesRequest method.
+//    req, resp := client.DescribeInstanceEventNotificationAttributesRequest(params)
+//
+//    err := req.Send()
+//    if err == nil { // resp is now filled
+//        fmt.Println(resp)
+//    }
+//
+// See also, https://docs.aws.amazon.com/goto/WebAPI/ec2-2016-11-15/DescribeInstanceEventNotificationAttributes
+func (c *EC2) DescribeInstanceEventNotificationAttributesRequest(input *DescribeInstanceEventNotificationAttributesInput) (req *request.Request, output *DescribeInstanceEventNotificationAttributesOutput) {
+	op := &request.Operation{
+		Name:       opDescribeInstanceEventNotificationAttributes,
+		HTTPMethod: "POST",
+		HTTPPath:   "/",
+	}
+
+	if input == nil {
+		input = &DescribeInstanceEventNotificationAttributesInput{}
+	}
+
+	output = &DescribeInstanceEventNotificationAttributesOutput{}
+	req = c.newRequest(op, input, output)
+	return
+}
+
+// DescribeInstanceEventNotificationAttributes API operation for Amazon Elastic Compute Cloud.
+//
+// Describes the tag keys that are registered to appear in scheduled event notifications
+// for resources in the current Region.
+//
+// Returns awserr.Error for service API and SDK errors. Use runtime type assertions
+// with awserr.Error's Code and Message methods to get detailed information about
+// the error.
+//
+// See the AWS API reference guide for Amazon Elastic Compute Cloud's
+// API operation DescribeInstanceEventNotificationAttributes for usage and error information.
+// See also, https://docs.aws.amazon.com/goto/WebAPI/ec2-2016-11-15/DescribeInstanceEventNotificationAttributes
+func (c *EC2) DescribeInstanceEventNotificationAttributes(input *DescribeInstanceEventNotificationAttributesInput) (*DescribeInstanceEventNotificationAttributesOutput, error) {
+	req, out := c.DescribeInstanceEventNotificationAttributesRequest(input)
+	return out, req.Send()
+}
+
+// DescribeInstanceEventNotificationAttributesWithContext is the same as DescribeInstanceEventNotificationAttributes with the addition of
+// the ability to pass a context and additional request options.
+//
+// See DescribeInstanceEventNotificationAttributes for details on how to use this API operation.
+//
+// The context must be non-nil and will be used for request cancellation. If
+// the context is nil a panic will occur. In the future the SDK may create
+// sub-contexts for http.Requests. See https://golang.org/pkg/context/
+// for more information on using Contexts.
+func (c *EC2) DescribeInstanceEventNotificationAttributesWithContext(ctx aws.Context, input *DescribeInstanceEventNotificationAttributesInput, opts ...request.Option) (*DescribeInstanceEventNotificationAttributesOutput, error) {
+	req, out := c.DescribeInstanceEventNotificationAttributesRequest(input)
+	req.SetContext(ctx)
+	req.ApplyOptions(opts...)
+	return out, req.Send()
 }
 
 const opDescribeInstanceStatus = "DescribeInstanceStatus"
@@ -21232,8 +21381,8 @@ func (c *EC2) DescribeSpotInstanceRequestsRequest(input *DescribeSpotInstanceReq
 // You can use DescribeSpotInstanceRequests to find a running Spot Instance
 // by examining the response. If the status of the Spot Instance is fulfilled,
 // the instance ID appears in the response and contains the identifier of the
-// instance. Alternatively, you can use DescribeInstances with a filter to look
-// for instances where the instance lifecycle is spot.
+// instance. Alternatively, you can use DescribeInstances (https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeInstances)
+// with a filter to look for instances where the instance lifecycle is spot.
 //
 // We recommend that you set MaxResults to a value between 5 and 1000 to limit
 // the number of results returned. This paginates the output, which makes the
@@ -27359,6 +27508,10 @@ func (c *EC2) ExportTransitGatewayRoutesRequest(input *ExportTransitGatewayRoute
 // S3 bucket. By default, all routes are exported. Alternatively, you can filter
 // by CIDR range.
 //
+// The routes are saved to the specified bucket in a JSON file. For more information,
+// see Export Route Tables to Amazon S3 (https://docs.aws.amazon.com/vpc/latest/tgw/tgw-route-tables.html#tgw-export-route-tables)
+// in Transit Gateways.
+//
 // Returns awserr.Error for service API and SDK errors. Use runtime type assertions
 // with awserr.Error's Code and Message methods to get detailed information about
 // the error.
@@ -29390,6 +29543,83 @@ func (c *EC2) ImportVolume(input *ImportVolumeInput) (*ImportVolumeOutput, error
 // for more information on using Contexts.
 func (c *EC2) ImportVolumeWithContext(ctx aws.Context, input *ImportVolumeInput, opts ...request.Option) (*ImportVolumeOutput, error) {
 	req, out := c.ImportVolumeRequest(input)
+	req.SetContext(ctx)
+	req.ApplyOptions(opts...)
+	return out, req.Send()
+}
+
+const opModifyAvailabilityZoneGroup = "ModifyAvailabilityZoneGroup"
+
+// ModifyAvailabilityZoneGroupRequest generates a "aws/request.Request" representing the
+// client's request for the ModifyAvailabilityZoneGroup operation. The "output" return
+// value will be populated with the request's response once the request completes
+// successfully.
+//
+// Use "Send" method on the returned Request to send the API call to the service.
+// the "output" return value is not valid until after Send returns without error.
+//
+// See ModifyAvailabilityZoneGroup for more information on using the ModifyAvailabilityZoneGroup
+// API call, and error handling.
+//
+// This method is useful when you want to inject custom logic or configuration
+// into the SDK's request lifecycle. Such as custom headers, or retry logic.
+//
+//
+//    // Example sending a request using the ModifyAvailabilityZoneGroupRequest method.
+//    req, resp := client.ModifyAvailabilityZoneGroupRequest(params)
+//
+//    err := req.Send()
+//    if err == nil { // resp is now filled
+//        fmt.Println(resp)
+//    }
+//
+// See also, https://docs.aws.amazon.com/goto/WebAPI/ec2-2016-11-15/ModifyAvailabilityZoneGroup
+func (c *EC2) ModifyAvailabilityZoneGroupRequest(input *ModifyAvailabilityZoneGroupInput) (req *request.Request, output *ModifyAvailabilityZoneGroupOutput) {
+	op := &request.Operation{
+		Name:       opModifyAvailabilityZoneGroup,
+		HTTPMethod: "POST",
+		HTTPPath:   "/",
+	}
+
+	if input == nil {
+		input = &ModifyAvailabilityZoneGroupInput{}
+	}
+
+	output = &ModifyAvailabilityZoneGroupOutput{}
+	req = c.newRequest(op, input, output)
+	return
+}
+
+// ModifyAvailabilityZoneGroup API operation for Amazon Elastic Compute Cloud.
+//
+// Enables or disables an Availability Zone group for your account.
+//
+// Use describe-availability-zones (https://docs.aws.amazon.com/AWSEC2ApiDocReef/build/server-root/AWSEC2/latest/APIReference/API_DescribeAvailabilityZones.html)
+// to view the value for GroupName.
+//
+// Returns awserr.Error for service API and SDK errors. Use runtime type assertions
+// with awserr.Error's Code and Message methods to get detailed information about
+// the error.
+//
+// See the AWS API reference guide for Amazon Elastic Compute Cloud's
+// API operation ModifyAvailabilityZoneGroup for usage and error information.
+// See also, https://docs.aws.amazon.com/goto/WebAPI/ec2-2016-11-15/ModifyAvailabilityZoneGroup
+func (c *EC2) ModifyAvailabilityZoneGroup(input *ModifyAvailabilityZoneGroupInput) (*ModifyAvailabilityZoneGroupOutput, error) {
+	req, out := c.ModifyAvailabilityZoneGroupRequest(input)
+	return out, req.Send()
+}
+
+// ModifyAvailabilityZoneGroupWithContext is the same as ModifyAvailabilityZoneGroup with the addition of
+// the ability to pass a context and additional request options.
+//
+// See ModifyAvailabilityZoneGroup for details on how to use this API operation.
+//
+// The context must be non-nil and will be used for request cancellation. If
+// the context is nil a panic will occur. In the future the SDK may create
+// sub-contexts for http.Requests. See https://golang.org/pkg/context/
+// for more information on using Contexts.
+func (c *EC2) ModifyAvailabilityZoneGroupWithContext(ctx aws.Context, input *ModifyAvailabilityZoneGroupInput, opts ...request.Option) (*ModifyAvailabilityZoneGroupOutput, error) {
+	req, out := c.ModifyAvailabilityZoneGroupRequest(input)
 	req.SetContext(ctx)
 	req.ApplyOptions(opts...)
 	return out, req.Send()
@@ -33282,6 +33512,83 @@ func (c *EC2) RegisterImageWithContext(ctx aws.Context, input *RegisterImageInpu
 	return out, req.Send()
 }
 
+const opRegisterInstanceEventNotificationAttributes = "RegisterInstanceEventNotificationAttributes"
+
+// RegisterInstanceEventNotificationAttributesRequest generates a "aws/request.Request" representing the
+// client's request for the RegisterInstanceEventNotificationAttributes operation. The "output" return
+// value will be populated with the request's response once the request completes
+// successfully.
+//
+// Use "Send" method on the returned Request to send the API call to the service.
+// the "output" return value is not valid until after Send returns without error.
+//
+// See RegisterInstanceEventNotificationAttributes for more information on using the RegisterInstanceEventNotificationAttributes
+// API call, and error handling.
+//
+// This method is useful when you want to inject custom logic or configuration
+// into the SDK's request lifecycle. Such as custom headers, or retry logic.
+//
+//
+//    // Example sending a request using the RegisterInstanceEventNotificationAttributesRequest method.
+//    req, resp := client.RegisterInstanceEventNotificationAttributesRequest(params)
+//
+//    err := req.Send()
+//    if err == nil { // resp is now filled
+//        fmt.Println(resp)
+//    }
+//
+// See also, https://docs.aws.amazon.com/goto/WebAPI/ec2-2016-11-15/RegisterInstanceEventNotificationAttributes
+func (c *EC2) RegisterInstanceEventNotificationAttributesRequest(input *RegisterInstanceEventNotificationAttributesInput) (req *request.Request, output *RegisterInstanceEventNotificationAttributesOutput) {
+	op := &request.Operation{
+		Name:       opRegisterInstanceEventNotificationAttributes,
+		HTTPMethod: "POST",
+		HTTPPath:   "/",
+	}
+
+	if input == nil {
+		input = &RegisterInstanceEventNotificationAttributesInput{}
+	}
+
+	output = &RegisterInstanceEventNotificationAttributesOutput{}
+	req = c.newRequest(op, input, output)
+	return
+}
+
+// RegisterInstanceEventNotificationAttributes API operation for Amazon Elastic Compute Cloud.
+//
+// Registers a set of tag keys to include in scheduled event notifications for
+// your resources.
+//
+// To remove tags, use .
+//
+// Returns awserr.Error for service API and SDK errors. Use runtime type assertions
+// with awserr.Error's Code and Message methods to get detailed information about
+// the error.
+//
+// See the AWS API reference guide for Amazon Elastic Compute Cloud's
+// API operation RegisterInstanceEventNotificationAttributes for usage and error information.
+// See also, https://docs.aws.amazon.com/goto/WebAPI/ec2-2016-11-15/RegisterInstanceEventNotificationAttributes
+func (c *EC2) RegisterInstanceEventNotificationAttributes(input *RegisterInstanceEventNotificationAttributesInput) (*RegisterInstanceEventNotificationAttributesOutput, error) {
+	req, out := c.RegisterInstanceEventNotificationAttributesRequest(input)
+	return out, req.Send()
+}
+
+// RegisterInstanceEventNotificationAttributesWithContext is the same as RegisterInstanceEventNotificationAttributes with the addition of
+// the ability to pass a context and additional request options.
+//
+// See RegisterInstanceEventNotificationAttributes for details on how to use this API operation.
+//
+// The context must be non-nil and will be used for request cancellation. If
+// the context is nil a panic will occur. In the future the SDK may create
+// sub-contexts for http.Requests. See https://golang.org/pkg/context/
+// for more information on using Contexts.
+func (c *EC2) RegisterInstanceEventNotificationAttributesWithContext(ctx aws.Context, input *RegisterInstanceEventNotificationAttributesInput, opts ...request.Option) (*RegisterInstanceEventNotificationAttributesOutput, error) {
+	req, out := c.RegisterInstanceEventNotificationAttributesRequest(input)
+	req.SetContext(ctx)
+	req.ApplyOptions(opts...)
+	return out, req.Send()
+}
+
 const opRegisterTransitGatewayMulticastGroupMembers = "RegisterTransitGatewayMulticastGroupMembers"
 
 // RegisterTransitGatewayMulticastGroupMembersRequest generates a "aws/request.Request" representing the
@@ -34543,9 +34850,9 @@ func (c *EC2) RequestSpotFleetRequest(input *RequestSpotFleetInput) (req *reques
 // ensuring that the Spot Instances in your Spot Fleet are in different Spot
 // pools, you can improve the availability of your fleet.
 //
-// You can specify tags for the Spot Fleet and Spot Instances. You cannot tag
-// other resource types in a Spot Fleet request because only the spot-fleet-request
-// and instance resource types are supported.
+// You can specify tags for the Spot Fleet request and instances launched by
+// the fleet. You cannot tag other resource types in a Spot Fleet request because
+// only the spot-fleet-request and instance resource types are supported.
 //
 // For more information, see Spot Fleet Requests (https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/spot-fleet-requests.html)
 // in the Amazon EC2 User Guide for Linux Instances.
@@ -36336,9 +36643,10 @@ func (c *EC2) StopInstancesRequest(input *StopInstancesInput) (req *request.Requ
 // your Linux instance, Amazon EC2 charges a one-minute minimum for instance
 // usage, and thereafter charges per second for instance usage.
 //
-// You can't hibernate Spot Instances, and you can't stop or hibernate instance
-// store-backed instances. For information about using hibernation for Spot
-// Instances, see Hibernating Interrupted Spot Instances (https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/spot-interruptions.html#hibernate-spot-instances)
+// You can't stop or hibernate instance store-backed instances. You can't use
+// the Stop action to hibernate Spot Instances, but you can specify that Amazon
+// EC2 should hibernate Spot Instances when they are interrupted. For more information,
+// see Hibernating Interrupted Spot Instances (https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/spot-interruptions.html#hibernate-spot-instances)
 // in the Amazon Elastic Compute Cloud User Guide.
 //
 // When you stop or hibernate an instance, we shut it down. You can restart
@@ -37762,7 +38070,11 @@ type AllocateAddressInput struct {
 	// The location from which the IP address is advertised. Use this parameter
 	// to limit the address to this location.
 	//
-	// Use DescribeVpcs (https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeVpcs.html)
+	// A network border group is a unique set of Availability Zones or Local Zones
+	// from where AWS advertises IP addresses and limits the addresses to the group.
+	// IP addresses cannot move between network border groups.
+	//
+	// Use DescribeAvailabilityZones (https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeAvailabilityZones.html)
 	// to view the network border groups.
 	//
 	// You cannot use a network border group with EC2 Classic. If you attempt this
@@ -46065,6 +46377,9 @@ type CreateKeyPairInput struct {
 	//
 	// KeyName is a required field
 	KeyName *string `type:"string" required:"true"`
+
+	// The tags to apply to the new key pair.
+	TagSpecifications []*TagSpecification `locationName:"TagSpecification" locationNameList:"item" type:"list"`
 }
 
 // String returns the string representation
@@ -46102,6 +46417,12 @@ func (s *CreateKeyPairInput) SetKeyName(v string) *CreateKeyPairInput {
 	return s
 }
 
+// SetTagSpecifications sets the TagSpecifications field's value.
+func (s *CreateKeyPairInput) SetTagSpecifications(v []*TagSpecification) *CreateKeyPairInput {
+	s.TagSpecifications = v
+	return s
+}
+
 // Describes a key pair.
 type CreateKeyPairOutput struct {
 	_ struct{} `type:"structure"`
@@ -46117,6 +46438,9 @@ type CreateKeyPairOutput struct {
 
 	// The ID of the key pair.
 	KeyPairId *string `locationName:"keyPairId" type:"string"`
+
+	// Any tags applied to the key pair.
+	Tags []*Tag `locationName:"tagSet" locationNameList:"item" type:"list"`
 }
 
 // String returns the string representation
@@ -46150,6 +46474,12 @@ func (s *CreateKeyPairOutput) SetKeyName(v string) *CreateKeyPairOutput {
 // SetKeyPairId sets the KeyPairId field's value.
 func (s *CreateKeyPairOutput) SetKeyPairId(v string) *CreateKeyPairOutput {
 	s.KeyPairId = &v
+	return s
+}
+
+// SetTags sets the Tags field's value.
+func (s *CreateKeyPairOutput) SetTags(v []*Tag) *CreateKeyPairOutput {
+	s.Tags = v
 	return s
 }
 
@@ -46616,12 +46946,21 @@ type CreateNatGatewayInput struct {
 	// of the request. For more information, see How to Ensure Idempotency (https://docs.aws.amazon.com/AWSEC2/latest/APIReference/Run_Instance_Idempotency.html).
 	//
 	// Constraint: Maximum 64 ASCII characters.
-	ClientToken *string `type:"string"`
+	ClientToken *string `type:"string" idempotencyToken:"true"`
+
+	// Checks whether you have the required permissions for the action, without
+	// actually making the request, and provides an error response. If you have
+	// the required permissions, the error response is DryRunOperation. Otherwise,
+	// it is UnauthorizedOperation.
+	DryRun *bool `type:"boolean"`
 
 	// The subnet in which to create the NAT gateway.
 	//
 	// SubnetId is a required field
 	SubnetId *string `type:"string" required:"true"`
+
+	// The tags to assign to the NAT gateway.
+	TagSpecifications []*TagSpecification `locationName:"TagSpecification" locationNameList:"item" type:"list"`
 }
 
 // String returns the string representation
@@ -46662,9 +47001,21 @@ func (s *CreateNatGatewayInput) SetClientToken(v string) *CreateNatGatewayInput 
 	return s
 }
 
+// SetDryRun sets the DryRun field's value.
+func (s *CreateNatGatewayInput) SetDryRun(v bool) *CreateNatGatewayInput {
+	s.DryRun = &v
+	return s
+}
+
 // SetSubnetId sets the SubnetId field's value.
 func (s *CreateNatGatewayInput) SetSubnetId(v string) *CreateNatGatewayInput {
 	s.SubnetId = &v
+	return s
+}
+
+// SetTagSpecifications sets the TagSpecifications field's value.
+func (s *CreateNatGatewayInput) SetTagSpecifications(v []*TagSpecification) *CreateNatGatewayInput {
+	s.TagSpecifications = v
 	return s
 }
 
@@ -47236,6 +47587,9 @@ type CreatePlacementGroupInput struct {
 
 	// The placement strategy.
 	Strategy *string `locationName:"strategy" type:"string" enum:"PlacementStrategy"`
+
+	// The tags to apply to the new placement group.
+	TagSpecifications []*TagSpecification `locationName:"TagSpecification" locationNameList:"item" type:"list"`
 }
 
 // String returns the string representation
@@ -47272,8 +47626,17 @@ func (s *CreatePlacementGroupInput) SetStrategy(v string) *CreatePlacementGroupI
 	return s
 }
 
+// SetTagSpecifications sets the TagSpecifications field's value.
+func (s *CreatePlacementGroupInput) SetTagSpecifications(v []*TagSpecification) *CreatePlacementGroupInput {
+	s.TagSpecifications = v
+	return s
+}
+
 type CreatePlacementGroupOutput struct {
 	_ struct{} `type:"structure"`
+
+	// Describes a placement group.
+	PlacementGroup *PlacementGroup `locationName:"placementGroup" type:"structure"`
 }
 
 // String returns the string representation
@@ -47284,6 +47647,12 @@ func (s CreatePlacementGroupOutput) String() string {
 // GoString returns the string representation
 func (s CreatePlacementGroupOutput) GoString() string {
 	return s.String()
+}
+
+// SetPlacementGroup sets the PlacementGroup field's value.
+func (s *CreatePlacementGroupOutput) SetPlacementGroup(v *PlacementGroup) *CreatePlacementGroupOutput {
+	s.PlacementGroup = v
+	return s
 }
 
 // Contains the parameters for CreateReservedInstancesListing.
@@ -51565,9 +51934,10 @@ type DeleteKeyPairInput struct {
 	DryRun *bool `locationName:"dryRun" type:"boolean"`
 
 	// The name of the key pair.
-	//
-	// KeyName is a required field
-	KeyName *string `type:"string" required:"true"`
+	KeyName *string `type:"string"`
+
+	// The ID of the key pair.
+	KeyPairId *string `type:"string"`
 }
 
 // String returns the string representation
@@ -51580,19 +51950,6 @@ func (s DeleteKeyPairInput) GoString() string {
 	return s.String()
 }
 
-// Validate inspects the fields of the type to determine if they are valid.
-func (s *DeleteKeyPairInput) Validate() error {
-	invalidParams := request.ErrInvalidParams{Context: "DeleteKeyPairInput"}
-	if s.KeyName == nil {
-		invalidParams.Add(request.NewErrParamRequired("KeyName"))
-	}
-
-	if invalidParams.Len() > 0 {
-		return invalidParams
-	}
-	return nil
-}
-
 // SetDryRun sets the DryRun field's value.
 func (s *DeleteKeyPairInput) SetDryRun(v bool) *DeleteKeyPairInput {
 	s.DryRun = &v
@@ -51602,6 +51959,12 @@ func (s *DeleteKeyPairInput) SetDryRun(v bool) *DeleteKeyPairInput {
 // SetKeyName sets the KeyName field's value.
 func (s *DeleteKeyPairInput) SetKeyName(v string) *DeleteKeyPairInput {
 	s.KeyName = &v
+	return s
+}
+
+// SetKeyPairId sets the KeyPairId field's value.
+func (s *DeleteKeyPairInput) SetKeyPairId(v string) *DeleteKeyPairInput {
+	s.KeyPairId = &v
 	return s
 }
 
@@ -52062,6 +52425,12 @@ func (s *DeleteLocalGatewayRouteTableVpcAssociationOutput) SetLocalGatewayRouteT
 type DeleteNatGatewayInput struct {
 	_ struct{} `type:"structure"`
 
+	// Checks whether you have the required permissions for the action, without
+	// actually making the request, and provides an error response. If you have
+	// the required permissions, the error response is DryRunOperation. Otherwise,
+	// it is UnauthorizedOperation.
+	DryRun *bool `type:"boolean"`
+
 	// The ID of the NAT gateway.
 	//
 	// NatGatewayId is a required field
@@ -52089,6 +52458,12 @@ func (s *DeleteNatGatewayInput) Validate() error {
 		return invalidParams
 	}
 	return nil
+}
+
+// SetDryRun sets the DryRun field's value.
+func (s *DeleteNatGatewayInput) SetDryRun(v bool) *DeleteNatGatewayInput {
+	s.DryRun = &v
+	return s
 }
 
 // SetNatGatewayId sets the NatGatewayId field's value.
@@ -54570,6 +54945,101 @@ func (s DeregisterImageOutput) GoString() string {
 	return s.String()
 }
 
+type DeregisterInstanceEventNotificationAttributesInput struct {
+	_ struct{} `type:"structure"`
+
+	// Checks whether you have the required permissions for the action, without
+	// actually making the request, and provides an error response. If you have
+	// the required permissions, the error response is DryRunOperation. Otherwise,
+	// it is UnauthorizedOperation.
+	DryRun *bool `type:"boolean"`
+
+	// Information about the tag keys to deregister.
+	InstanceTagAttribute *DeregisterInstanceTagAttributeRequest `type:"structure"`
+}
+
+// String returns the string representation
+func (s DeregisterInstanceEventNotificationAttributesInput) String() string {
+	return awsutil.Prettify(s)
+}
+
+// GoString returns the string representation
+func (s DeregisterInstanceEventNotificationAttributesInput) GoString() string {
+	return s.String()
+}
+
+// SetDryRun sets the DryRun field's value.
+func (s *DeregisterInstanceEventNotificationAttributesInput) SetDryRun(v bool) *DeregisterInstanceEventNotificationAttributesInput {
+	s.DryRun = &v
+	return s
+}
+
+// SetInstanceTagAttribute sets the InstanceTagAttribute field's value.
+func (s *DeregisterInstanceEventNotificationAttributesInput) SetInstanceTagAttribute(v *DeregisterInstanceTagAttributeRequest) *DeregisterInstanceEventNotificationAttributesInput {
+	s.InstanceTagAttribute = v
+	return s
+}
+
+type DeregisterInstanceEventNotificationAttributesOutput struct {
+	_ struct{} `type:"structure"`
+
+	// The resulting set of tag keys.
+	InstanceTagAttribute *InstanceTagNotificationAttribute `locationName:"instanceTagAttribute" type:"structure"`
+}
+
+// String returns the string representation
+func (s DeregisterInstanceEventNotificationAttributesOutput) String() string {
+	return awsutil.Prettify(s)
+}
+
+// GoString returns the string representation
+func (s DeregisterInstanceEventNotificationAttributesOutput) GoString() string {
+	return s.String()
+}
+
+// SetInstanceTagAttribute sets the InstanceTagAttribute field's value.
+func (s *DeregisterInstanceEventNotificationAttributesOutput) SetInstanceTagAttribute(v *InstanceTagNotificationAttribute) *DeregisterInstanceEventNotificationAttributesOutput {
+	s.InstanceTagAttribute = v
+	return s
+}
+
+// Information about the tag keys to deregister for the current Region. You
+// can either specify individual tag keys or deregister all tag keys in the
+// current Region. You must specify either IncludeAllTagsOfInstance or InstanceTagKeys
+// in the request
+type DeregisterInstanceTagAttributeRequest struct {
+	_ struct{} `type:"structure"`
+
+	// Indicates whether to deregister all tag keys in the current Region. Specify
+	// false to deregister all tag keys.
+	IncludeAllTagsOfInstance *bool `type:"boolean"`
+
+	// Information about the tag keys to deregister.
+	InstanceTagKeys []*string `locationName:"InstanceTagKey" locationNameList:"item" type:"list"`
+}
+
+// String returns the string representation
+func (s DeregisterInstanceTagAttributeRequest) String() string {
+	return awsutil.Prettify(s)
+}
+
+// GoString returns the string representation
+func (s DeregisterInstanceTagAttributeRequest) GoString() string {
+	return s.String()
+}
+
+// SetIncludeAllTagsOfInstance sets the IncludeAllTagsOfInstance field's value.
+func (s *DeregisterInstanceTagAttributeRequest) SetIncludeAllTagsOfInstance(v bool) *DeregisterInstanceTagAttributeRequest {
+	s.IncludeAllTagsOfInstance = &v
+	return s
+}
+
+// SetInstanceTagKeys sets the InstanceTagKeys field's value.
+func (s *DeregisterInstanceTagAttributeRequest) SetInstanceTagKeys(v []*string) *DeregisterInstanceTagAttributeRequest {
+	s.InstanceTagKeys = v
+	return s
+}
+
 type DeregisterTransitGatewayMulticastGroupMembersInput struct {
 	_ struct{} `type:"structure"`
 
@@ -55259,6 +55729,57 @@ type DescribeCapacityReservationsInput struct {
 	DryRun *bool `type:"boolean"`
 
 	// One or more filters.
+	//
+	//    * instance-type - The type of instance for which the Capacity Reservation
+	//    reserves capacity.
+	//
+	//    * owner-id - The ID of the AWS account that owns the Capacity Reservation.
+	//
+	//    * availability-zone-id - The Availability Zone ID of the Capacity Reservation.
+	//
+	//    * instance-platform - The type of operating system for which the Capacity
+	//    Reservation reserves capacity.
+	//
+	//    * availability-zone - The Availability Zone ID of the Capacity Reservation.
+	//
+	//    * tenancy - Indicates the tenancy of the Capacity Reservation. A Capacity
+	//    Reservation can have one of the following tenancy settings: default -
+	//    The Capacity Reservation is created on hardware that is shared with other
+	//    AWS accounts. dedicated - The Capacity Reservation is created on single-tenant
+	//    hardware that is dedicated to a single AWS account.
+	//
+	//    * state - The current state of the Capacity Reservation. A Capacity Reservation
+	//    can be in one of the following states: active- The Capacity Reservation
+	//    is active and the capacity is available for your use. expired - The Capacity
+	//    Reservation expired automatically at the date and time specified in your
+	//    request. The reserved capacity is no longer available for your use. cancelled
+	//    - The Capacity Reservation was manually cancelled. The reserved capacity
+	//    is no longer available for your use. pending - The Capacity Reservation
+	//    request was successful but the capacity provisioning is still pending.
+	//    failed - The Capacity Reservation request has failed. A request might
+	//    fail due to invalid request parameters, capacity constraints, or instance
+	//    limit constraints. Failed requests are retained for 60 minutes.
+	//
+	//    * end-date - The date and time at which the Capacity Reservation expires.
+	//    When a Capacity Reservation expires, the reserved capacity is released
+	//    and you can no longer launch instances into it. The Capacity Reservation's
+	//    state changes to expired when it reaches its end date and time.
+	//
+	//    * end-date-type - Indicates the way in which the Capacity Reservation
+	//    ends. A Capacity Reservation can have one of the following end types:
+	//    unlimited - The Capacity Reservation remains active until you explicitly
+	//    cancel it. limited - The Capacity Reservation expires automatically at
+	//    a specified date and time.
+	//
+	//    * instance-match-criteria - Indicates the type of instance launches that
+	//    the Capacity Reservation accepts. The options include: open - The Capacity
+	//    Reservation accepts all instances that have matching attributes (instance
+	//    type, platform, and Availability Zone). Instances that have matching attributes
+	//    launch into the Capacity Reservation automatically without specifying
+	//    any additional parameters. targeted - The Capacity Reservation only accepts
+	//    instances that have matching attributes (instance type, platform, and
+	//    Availability Zone), and explicitly target the Capacity Reservation. This
+	//    ensures that only permitted instances can use the reserved capacity.
 	Filters []*Filter `locationName:"Filter" locationNameList:"Filter" type:"list"`
 
 	// The maximum number of results to return for the request in a single page.
@@ -58339,8 +58860,7 @@ type DescribeIamInstanceProfileAssociationsInput struct {
 	//
 	//    * instance-id - The ID of the instance.
 	//
-	//    * state - The state of the association (associating | associated | disassociating
-	//    | disassociated).
+	//    * state - The state of the association (associating | associated | disassociating).
 	Filters []*Filter `locationName:"Filter" locationNameList:"Filter" type:"list"`
 
 	// The maximum number of results to return in a single call. To retrieve the
@@ -59419,6 +59939,55 @@ func (s *DescribeInstanceCreditSpecificationsOutput) SetNextToken(v string) *Des
 	return s
 }
 
+type DescribeInstanceEventNotificationAttributesInput struct {
+	_ struct{} `type:"structure"`
+
+	// Checks whether you have the required permissions for the action, without
+	// actually making the request, and provides an error response. If you have
+	// the required permissions, the error response is DryRunOperation. Otherwise,
+	// it is UnauthorizedOperation.
+	DryRun *bool `type:"boolean"`
+}
+
+// String returns the string representation
+func (s DescribeInstanceEventNotificationAttributesInput) String() string {
+	return awsutil.Prettify(s)
+}
+
+// GoString returns the string representation
+func (s DescribeInstanceEventNotificationAttributesInput) GoString() string {
+	return s.String()
+}
+
+// SetDryRun sets the DryRun field's value.
+func (s *DescribeInstanceEventNotificationAttributesInput) SetDryRun(v bool) *DescribeInstanceEventNotificationAttributesInput {
+	s.DryRun = &v
+	return s
+}
+
+type DescribeInstanceEventNotificationAttributesOutput struct {
+	_ struct{} `type:"structure"`
+
+	// Information about the registered tag keys.
+	InstanceTagAttribute *InstanceTagNotificationAttribute `locationName:"instanceTagAttribute" type:"structure"`
+}
+
+// String returns the string representation
+func (s DescribeInstanceEventNotificationAttributesOutput) String() string {
+	return awsutil.Prettify(s)
+}
+
+// GoString returns the string representation
+func (s DescribeInstanceEventNotificationAttributesOutput) GoString() string {
+	return s.String()
+}
+
+// SetInstanceTagAttribute sets the InstanceTagAttribute field's value.
+func (s *DescribeInstanceEventNotificationAttributesOutput) SetInstanceTagAttribute(v *InstanceTagNotificationAttribute) *DescribeInstanceEventNotificationAttributesOutput {
+	s.InstanceTagAttribute = v
+	return s
+}
+
 type DescribeInstanceStatusInput struct {
 	_ struct{} `type:"structure"`
 
@@ -59713,10 +60282,10 @@ type DescribeInstanceTypesInput struct {
 	//    generation instance type of an instance family. (true | false)
 	//
 	//    * ebs-info.ebs-optimized-support - Indicates whether the instance type
-	//    is EBS-optimized. (true | false)
+	//    is EBS-optimized. (supported | unsupported | default)
 	//
 	//    * ebs-info.encryption-support - Indicates whether EBS encryption is supported.
-	//    (true | false)
+	//    (supported | unsupported)
 	//
 	//    * free-tier-eligible - Indicates whether the instance type is eligible
 	//    to use in the free tier. (true | false)
@@ -59922,7 +60491,8 @@ type DescribeInstancesInput struct {
 	//    * host-id - The ID of the Dedicated Host on which the instance is running,
 	//    if applicable.
 	//
-	//    * hypervisor - The hypervisor type of the instance (ovm | xen).
+	//    * hypervisor - The hypervisor type of the instance (ovm | xen). The value
+	//    xen is used for both Xen and Nitro hypervisors.
 	//
 	//    * iam-instance-profile.arn - The instance profile associated with the
 	//    instance. Specified as an ARN.
@@ -60477,9 +61047,21 @@ type DescribeKeyPairsInput struct {
 
 	// The filters.
 	//
+	//    * key-pair-id - The ID of the key pair.
+	//
 	//    * fingerprint - The fingerprint of the key pair.
 	//
 	//    * key-name - The name of the key pair.
+	//
+	//    * tag-key - The key of a tag assigned to the resource. Use this filter
+	//    to find all resources assigned a tag with a specific key, regardless of
+	//    the tag value.
+	//
+	//    * tag:<key> - The key/value combination of a tag assigned to the resource.
+	//    Use the tag key in the filter name and the tag value as the filter value.
+	//    For example, to find all resources that have a tag with the key Owner
+	//    and the value TeamA, specify tag:Owner for the filter name and TeamA for
+	//    the filter value.
 	Filters []*Filter `locationName:"Filter" locationNameList:"Filter" type:"list"`
 
 	// The key pair names.
@@ -61620,6 +62202,12 @@ func (s *DescribeMovingAddressesOutput) SetNextToken(v string) *DescribeMovingAd
 type DescribeNatGatewaysInput struct {
 	_ struct{} `type:"structure"`
 
+	// Checks whether you have the required permissions for the action, without
+	// actually making the request, and provides an error response. If you have
+	// the required permissions, the error response is DryRunOperation. Otherwise,
+	// it is UnauthorizedOperation.
+	DryRun *bool `type:"boolean"`
+
 	// One or more filters.
 	//
 	//    * nat-gateway-id - The ID of the NAT gateway.
@@ -61674,6 +62262,12 @@ func (s *DescribeNatGatewaysInput) Validate() error {
 		return invalidParams
 	}
 	return nil
+}
+
+// SetDryRun sets the DryRun field's value.
+func (s *DescribeNatGatewaysInput) SetDryRun(v bool) *DescribeNatGatewaysInput {
+	s.DryRun = &v
+	return s
 }
 
 // SetFilter sets the Filter field's value.
@@ -62359,6 +62953,16 @@ type DescribePlacementGroupsInput struct {
 	//    | deleted).
 	//
 	//    * strategy - The strategy of the placement group (cluster | spread | partition).
+	//
+	//    * tag:<key> - The key/value combination of a tag assigned to the resource.
+	//    Use the tag key in the filter name and the tag value as the filter value.
+	//    For example, to find all resources that have a tag with the key Owner
+	//    and the value TeamA, specify tag:Owner for the filter name and TeamA for
+	//    the filter value.
+	//
+	//    * tag-key - The key of a tag assigned to the resource. Use this filter
+	//    to find all resources that have a tag with a specific key, regardless
+	//    of the tag value.
 	Filters []*Filter `locationName:"Filter" locationNameList:"Filter" type:"list"`
 
 	// The IDs of the placement groups.
@@ -65454,12 +66058,12 @@ type DescribeTagsInput struct {
 	//    * resource-id - The ID of the resource.
 	//
 	//    * resource-type - The resource type (customer-gateway | dedicated-host
-	//    | dhcp-options | elastic-ip | fleet | fpga-image | image | instance |
-	//    host-reservation | internet-gateway | launch-template | natgateway | network-acl
-	//    | network-interface | placement-group | reserved-instances | route-table
-	//    | security-group | snapshot | spot-instances-request | subnet | volume
-	//    | vpc | vpc-endpoint | vpc-endpoint-service | vpc-peering-connection |
-	//    vpn-connection | vpn-gateway).
+	//    | dhcp-options | elastic-ip | fleet | fpga-image | host-reservation |
+	//    image | instance | internet-gateway | key-pair | launch-template | natgateway
+	//    | network-acl | network-interface | placement-group | reserved-instances
+	//    | route-table | security-group | snapshot | spot-instances-request | subnet
+	//    | volume | vpc | vpc-endpoint | vpc-endpoint-service | vpc-peering-connection
+	//    | vpn-connection | vpn-gateway).
 	//
 	//    * tag:<key> - The key/value combination of the tag. For example, specify
 	//    "tag:Owner" for the filter name and "TeamA" for the filter value to find
@@ -66163,7 +66767,20 @@ type DescribeTransitGatewayPeeringAttachmentsInput struct {
 	// it is UnauthorizedOperation.
 	DryRun *bool `type:"boolean"`
 
-	// One or more filters.
+	// One or more filters. The possible values are:
+	//
+	//    * transit-gateway-attachment-id - The ID of the transit gateway attachment.
+	//
+	//    * local-owner-id - The ID of your AWS account.
+	//
+	//    * remote-owner-id - The ID of the AWS account in the remote Region that
+	//    owns the transit gateway.
+	//
+	//    * state - The state of the peering attachment (available | deleted | deleting
+	//    | failed | modifying | pendingAcceptance | pending | rollingBack | rejected
+	//    | rejecting).
+	//
+	//    * transit-gateway-id - The ID of the transit gateway.
 	Filters []*Filter `locationName:"Filter" locationNameList:"Filter" type:"list"`
 
 	// The maximum number of results to return with a single call. To retrieve the
@@ -78286,6 +78903,9 @@ type ImportKeyPairInput struct {
 	//
 	// PublicKeyMaterial is a required field
 	PublicKeyMaterial []byte `locationName:"publicKeyMaterial" type:"blob" required:"true"`
+
+	// The tags to apply to the imported key pair.
+	TagSpecifications []*TagSpecification `locationName:"TagSpecification" locationNameList:"item" type:"list"`
 }
 
 // String returns the string representation
@@ -78332,6 +78952,12 @@ func (s *ImportKeyPairInput) SetPublicKeyMaterial(v []byte) *ImportKeyPairInput 
 	return s
 }
 
+// SetTagSpecifications sets the TagSpecifications field's value.
+func (s *ImportKeyPairInput) SetTagSpecifications(v []*TagSpecification) *ImportKeyPairInput {
+	s.TagSpecifications = v
+	return s
+}
+
 type ImportKeyPairOutput struct {
 	_ struct{} `type:"structure"`
 
@@ -78340,6 +78966,12 @@ type ImportKeyPairOutput struct {
 
 	// The key pair name you provided.
 	KeyName *string `locationName:"keyName" type:"string"`
+
+	// The ID of the resulting key pair.
+	KeyPairId *string `locationName:"keyPairId" type:"string"`
+
+	// The tags applied to the imported key pair.
+	Tags []*Tag `locationName:"tagSet" locationNameList:"item" type:"list"`
 }
 
 // String returns the string representation
@@ -78361,6 +78993,18 @@ func (s *ImportKeyPairOutput) SetKeyFingerprint(v string) *ImportKeyPairOutput {
 // SetKeyName sets the KeyName field's value.
 func (s *ImportKeyPairOutput) SetKeyName(v string) *ImportKeyPairOutput {
 	s.KeyName = &v
+	return s
+}
+
+// SetKeyPairId sets the KeyPairId field's value.
+func (s *ImportKeyPairOutput) SetKeyPairId(v string) *ImportKeyPairOutput {
+	s.KeyPairId = &v
+	return s
+}
+
+// SetTags sets the Tags field's value.
+func (s *ImportKeyPairOutput) SetTags(v []*Tag) *ImportKeyPairOutput {
+	s.Tags = v
 	return s
 }
 
@@ -78869,7 +79513,8 @@ type Instance struct {
 	// Indicates whether the instance is enabled for hibernation.
 	HibernationOptions *HibernationOptions `locationName:"hibernationOptions" type:"structure"`
 
-	// The hypervisor type of the instance.
+	// The hypervisor type of the instance. The value xen is used for both Xen and
+	// Nitro hypervisors.
 	Hypervisor *string `locationName:"hypervisor" type:"string" enum:"HypervisorType"`
 
 	// The IAM instance profile associated with the instance, if applicable.
@@ -80720,6 +81365,41 @@ func (s *InstanceStorageInfo) SetDisks(v []*DiskInfo) *InstanceStorageInfo {
 // SetTotalSizeInGB sets the TotalSizeInGB field's value.
 func (s *InstanceStorageInfo) SetTotalSizeInGB(v int64) *InstanceStorageInfo {
 	s.TotalSizeInGB = &v
+	return s
+}
+
+// Describes the registered tag keys for the current Region.
+type InstanceTagNotificationAttribute struct {
+	_ struct{} `type:"structure"`
+
+	// Indicates wheter all tag keys in the current Region are registered to appear
+	// in scheduled event notifications. true indicates that all tag keys in the
+	// current Region are registered.
+	IncludeAllTagsOfInstance *bool `locationName:"includeAllTagsOfInstance" type:"boolean"`
+
+	// The registered tag keys.
+	InstanceTagKeys []*string `locationName:"instanceTagKeySet" locationNameList:"item" type:"list"`
+}
+
+// String returns the string representation
+func (s InstanceTagNotificationAttribute) String() string {
+	return awsutil.Prettify(s)
+}
+
+// GoString returns the string representation
+func (s InstanceTagNotificationAttribute) GoString() string {
+	return s.String()
+}
+
+// SetIncludeAllTagsOfInstance sets the IncludeAllTagsOfInstance field's value.
+func (s *InstanceTagNotificationAttribute) SetIncludeAllTagsOfInstance(v bool) *InstanceTagNotificationAttribute {
+	s.IncludeAllTagsOfInstance = &v
+	return s
+}
+
+// SetInstanceTagKeys sets the InstanceTagKeys field's value.
+func (s *InstanceTagNotificationAttribute) SetInstanceTagKeys(v []*string) *InstanceTagNotificationAttribute {
+	s.InstanceTagKeys = v
 	return s
 }
 
@@ -84339,6 +85019,95 @@ func (s MemoryInfo) GoString() string {
 // SetSizeInMiB sets the SizeInMiB field's value.
 func (s *MemoryInfo) SetSizeInMiB(v int64) *MemoryInfo {
 	s.SizeInMiB = &v
+	return s
+}
+
+type ModifyAvailabilityZoneGroupInput struct {
+	_ struct{} `type:"structure"`
+
+	// Checks whether you have the required permissions for the action, without
+	// actually making the request, and provides an error response. If you have
+	// the required permissions, the error response is DryRunOperation. Otherwise,
+	// it is UnauthorizedOperation.
+	DryRun *bool `type:"boolean"`
+
+	// The name of the Availability Zone Group.
+	//
+	// GroupName is a required field
+	GroupName *string `type:"string" required:"true"`
+
+	// Indicates whether to enable or disable membership. The valid values are opted-in.
+	// You must contact AWS Support (https://console.aws.amazon.com/support/home#/case/create%3FissueType=customer-service%26serviceCode=general-info%26getting-started%26categoryCode=using-aws%26services)
+	// to disable an Availability Zone group.
+	//
+	// OptInStatus is a required field
+	OptInStatus *string `type:"string" required:"true" enum:"ModifyAvailabilityZoneOptInStatus"`
+}
+
+// String returns the string representation
+func (s ModifyAvailabilityZoneGroupInput) String() string {
+	return awsutil.Prettify(s)
+}
+
+// GoString returns the string representation
+func (s ModifyAvailabilityZoneGroupInput) GoString() string {
+	return s.String()
+}
+
+// Validate inspects the fields of the type to determine if they are valid.
+func (s *ModifyAvailabilityZoneGroupInput) Validate() error {
+	invalidParams := request.ErrInvalidParams{Context: "ModifyAvailabilityZoneGroupInput"}
+	if s.GroupName == nil {
+		invalidParams.Add(request.NewErrParamRequired("GroupName"))
+	}
+	if s.OptInStatus == nil {
+		invalidParams.Add(request.NewErrParamRequired("OptInStatus"))
+	}
+
+	if invalidParams.Len() > 0 {
+		return invalidParams
+	}
+	return nil
+}
+
+// SetDryRun sets the DryRun field's value.
+func (s *ModifyAvailabilityZoneGroupInput) SetDryRun(v bool) *ModifyAvailabilityZoneGroupInput {
+	s.DryRun = &v
+	return s
+}
+
+// SetGroupName sets the GroupName field's value.
+func (s *ModifyAvailabilityZoneGroupInput) SetGroupName(v string) *ModifyAvailabilityZoneGroupInput {
+	s.GroupName = &v
+	return s
+}
+
+// SetOptInStatus sets the OptInStatus field's value.
+func (s *ModifyAvailabilityZoneGroupInput) SetOptInStatus(v string) *ModifyAvailabilityZoneGroupInput {
+	s.OptInStatus = &v
+	return s
+}
+
+type ModifyAvailabilityZoneGroupOutput struct {
+	_ struct{} `type:"structure"`
+
+	// Is true if the request succeeds, and an error otherwise.
+	Return *bool `locationName:"return" type:"boolean"`
+}
+
+// String returns the string representation
+func (s ModifyAvailabilityZoneGroupOutput) String() string {
+	return awsutil.Prettify(s)
+}
+
+// GoString returns the string representation
+func (s ModifyAvailabilityZoneGroupOutput) GoString() string {
+	return s.String()
+}
+
+// SetReturn sets the Return field's value.
+func (s *ModifyAvailabilityZoneGroupOutput) SetReturn(v bool) *ModifyAvailabilityZoneGroupOutput {
+	s.Return = &v
 	return s
 }
 
@@ -90754,9 +91523,10 @@ type Placement struct {
 	_ struct{} `type:"structure"`
 
 	// The affinity setting for the instance on the Dedicated Host. This parameter
-	// is not supported for the ImportInstance command.
+	// is not supported for the ImportInstance (https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_ImportInstance.html)
+	// command.
 	//
-	// This parameter is not supported by .
+	// This parameter is not supported by CreateFleet (https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_CreateFleet).
 	Affinity *string `locationName:"affinity" type:"string"`
 
 	// The Availability Zone of the instance.
@@ -90764,41 +91534,43 @@ type Placement struct {
 	// If not specified, an Availability Zone will be automatically chosen for you
 	// based on the load balancing criteria for the Region.
 	//
-	// This parameter is not supported by .
+	// This parameter is not supported by CreateFleet (https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_CreateFleet).
 	AvailabilityZone *string `locationName:"availabilityZone" type:"string"`
 
 	// The name of the placement group the instance is in.
 	GroupName *string `locationName:"groupName" type:"string"`
 
 	// The ID of the Dedicated Host on which the instance resides. This parameter
-	// is not supported for the ImportInstance command.
+	// is not supported for the ImportInstance (https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_ImportInstance.html)
+	// command.
 	//
-	// This parameter is not supported by .
+	// This parameter is not supported by CreateFleet (https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_CreateFleet).
 	HostId *string `locationName:"hostId" type:"string"`
 
 	// The ARN of the host resource group in which to launch the instances. If you
 	// specify a host resource group ARN, omit the Tenancy parameter or set it to
 	// host.
 	//
-	// This parameter is not supported by .
+	// This parameter is not supported by CreateFleet (https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_CreateFleet).
 	HostResourceGroupArn *string `locationName:"hostResourceGroupArn" type:"string"`
 
 	// The number of the partition the instance is in. Valid only if the placement
 	// group strategy is set to partition.
 	//
-	// This parameter is not supported by .
+	// This parameter is not supported by CreateFleet (https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_CreateFleet).
 	PartitionNumber *int64 `locationName:"partitionNumber" type:"integer"`
 
 	// Reserved for future use.
 	//
-	// This parameter is not supported by .
+	// This parameter is not supported by CreateFleet (https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_CreateFleet).
 	SpreadDomain *string `locationName:"spreadDomain" type:"string"`
 
 	// The tenancy of the instance (if the instance is running in a VPC). An instance
 	// with a tenancy of dedicated runs on single-tenant hardware. The host tenancy
-	// is not supported for the ImportInstance command.
+	// is not supported for the ImportInstance (https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_ImportInstance.html)
+	// command.
 	//
-	// This parameter is not supported by .
+	// This parameter is not supported by CreateFleet (https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_CreateFleet).
 	Tenancy *string `locationName:"tenancy" type:"string" enum:"Tenancy"`
 }
 
@@ -92605,6 +93377,101 @@ func (s RegisterImageOutput) GoString() string {
 // SetImageId sets the ImageId field's value.
 func (s *RegisterImageOutput) SetImageId(v string) *RegisterImageOutput {
 	s.ImageId = &v
+	return s
+}
+
+type RegisterInstanceEventNotificationAttributesInput struct {
+	_ struct{} `type:"structure"`
+
+	// Checks whether you have the required permissions for the action, without
+	// actually making the request, and provides an error response. If you have
+	// the required permissions, the error response is DryRunOperation. Otherwise,
+	// it is UnauthorizedOperation.
+	DryRun *bool `type:"boolean"`
+
+	// Information about the tag keys to register.
+	InstanceTagAttribute *RegisterInstanceTagAttributeRequest `type:"structure"`
+}
+
+// String returns the string representation
+func (s RegisterInstanceEventNotificationAttributesInput) String() string {
+	return awsutil.Prettify(s)
+}
+
+// GoString returns the string representation
+func (s RegisterInstanceEventNotificationAttributesInput) GoString() string {
+	return s.String()
+}
+
+// SetDryRun sets the DryRun field's value.
+func (s *RegisterInstanceEventNotificationAttributesInput) SetDryRun(v bool) *RegisterInstanceEventNotificationAttributesInput {
+	s.DryRun = &v
+	return s
+}
+
+// SetInstanceTagAttribute sets the InstanceTagAttribute field's value.
+func (s *RegisterInstanceEventNotificationAttributesInput) SetInstanceTagAttribute(v *RegisterInstanceTagAttributeRequest) *RegisterInstanceEventNotificationAttributesInput {
+	s.InstanceTagAttribute = v
+	return s
+}
+
+type RegisterInstanceEventNotificationAttributesOutput struct {
+	_ struct{} `type:"structure"`
+
+	// The resulting set of tag keys.
+	InstanceTagAttribute *InstanceTagNotificationAttribute `locationName:"instanceTagAttribute" type:"structure"`
+}
+
+// String returns the string representation
+func (s RegisterInstanceEventNotificationAttributesOutput) String() string {
+	return awsutil.Prettify(s)
+}
+
+// GoString returns the string representation
+func (s RegisterInstanceEventNotificationAttributesOutput) GoString() string {
+	return s.String()
+}
+
+// SetInstanceTagAttribute sets the InstanceTagAttribute field's value.
+func (s *RegisterInstanceEventNotificationAttributesOutput) SetInstanceTagAttribute(v *InstanceTagNotificationAttribute) *RegisterInstanceEventNotificationAttributesOutput {
+	s.InstanceTagAttribute = v
+	return s
+}
+
+// Information about the tag keys to register for the current Region. You can
+// either specify individual tag keys or register all tag keys in the current
+// Region. You must specify either IncludeAllTagsOfInstance or InstanceTagKeys
+// in the request
+type RegisterInstanceTagAttributeRequest struct {
+	_ struct{} `type:"structure"`
+
+	// Indicates whether to register all tag keys in the current Region. Specify
+	// true to register all tag keys.
+	IncludeAllTagsOfInstance *bool `type:"boolean"`
+
+	// The tag keys to register.
+	InstanceTagKeys []*string `locationName:"InstanceTagKey" locationNameList:"item" type:"list"`
+}
+
+// String returns the string representation
+func (s RegisterInstanceTagAttributeRequest) String() string {
+	return awsutil.Prettify(s)
+}
+
+// GoString returns the string representation
+func (s RegisterInstanceTagAttributeRequest) GoString() string {
+	return s.String()
+}
+
+// SetIncludeAllTagsOfInstance sets the IncludeAllTagsOfInstance field's value.
+func (s *RegisterInstanceTagAttributeRequest) SetIncludeAllTagsOfInstance(v bool) *RegisterInstanceTagAttributeRequest {
+	s.IncludeAllTagsOfInstance = &v
+	return s
+}
+
+// SetInstanceTagKeys sets the InstanceTagKeys field's value.
+func (s *RegisterInstanceTagAttributeRequest) SetInstanceTagKeys(v []*string) *RegisterInstanceTagAttributeRequest {
+	s.InstanceTagKeys = v
 	return s
 }
 
@@ -97243,7 +98110,10 @@ type RunInstancesInput struct {
 	CapacityReservationSpecification *CapacityReservationSpecification `type:"structure"`
 
 	// Unique, case-sensitive identifier you provide to ensure the idempotency of
-	// the request. For more information, see Ensuring Idempotency (https://docs.aws.amazon.com/AWSEC2/latest/APIReference/Run_Instance_Idempotency.html).
+	// the request. If you do not specify a client token, a randomly generated token
+	// is used for the request to ensure idempotency.
+	//
+	// For more information, see Ensuring Idempotency (https://docs.aws.amazon.com/AWSEC2/latest/APIReference/Run_Instance_Idempotency.html).
 	//
 	// Constraints: Maximum 64 ASCII characters
 	ClientToken *string `locationName:"clientToken" type:"string"`
@@ -100883,8 +101753,8 @@ type SpotFleetRequestConfigData struct {
 	// (https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/spot-fleet-requests.html#spot-fleet-prerequisites)
 	// in the Amazon EC2 User Guide for Linux Instances. Spot Fleet can terminate
 	// Spot Instances on your behalf when you cancel its Spot Fleet request using
-	// CancelSpotFleetRequests or when the Spot Fleet request expires, if you set
-	// TerminateInstancesWithExpiration.
+	// CancelSpotFleetRequests (https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_CancelSpotFleetRequests)
+	// or when the Spot Fleet request expires, if you set TerminateInstancesWithExpiration.
 	//
 	// IamFleetRole is a required field
 	IamFleetRole *string `locationName:"iamFleetRole" type:"string" required:"true"`
@@ -100966,8 +101836,11 @@ type SpotFleetRequestConfigData struct {
 	// The key-value pair for tagging the Spot Fleet request on creation. The value
 	// for ResourceType must be spot-fleet-request, otherwise the Spot Fleet request
 	// fails. To tag instances at launch, specify the tags in the launch template
-	// (https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-launch-templates.html#create-launch-template).
-	// For information about tagging after launch, see Tagging Your Resources (https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Tags.html#tag-resources).
+	// (https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-launch-templates.html#create-launch-template)
+	// (valid only if you use LaunchTemplateConfigs) or in the SpotFleetTagSpecification
+	// (https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_SpotFleetTagSpecification.html)
+	// (valid only if you use LaunchSpecifications). For information about tagging
+	// after launch, see Tagging Your Resources (https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Tags.html#tag-resources).
 	TagSpecifications []*TagSpecification `locationName:"TagSpecification" locationNameList:"item" type:"list"`
 
 	// The number of units to request for the Spot Fleet. You can choose to set
@@ -101187,8 +102060,9 @@ func (s *SpotFleetRequestConfigData) SetValidUntil(v time.Time) *SpotFleetReques
 type SpotFleetTagSpecification struct {
 	_ struct{} `type:"structure"`
 
-	// The type of resource. Currently, the only resource types that are supported
-	// are spot-fleet-request and instance.
+	// The type of resource. Currently, the only resource type that is supported
+	// is instance. To tag the Spot Fleet request on creation, use the TagSpecifications
+	// parameter in SpotFleetRequestConfigData (https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_SpotFleetRequestConfigData.html).
 	ResourceType *string `locationName:"resourceType" type:"string" enum:"ResourceType"`
 
 	// The tags.
@@ -101509,9 +102383,9 @@ type SpotMarketOptions struct {
 	// default is the On-Demand price.
 	MaxPrice *string `type:"string"`
 
-	// The Spot Instance request type. For RunInstances, persistent Spot Instance
-	// requests are only supported when InstanceInterruptionBehavior is set to either
-	// hibernate or stop.
+	// The Spot Instance request type. For RunInstances (https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_RunInstances),
+	// persistent Spot Instance requests are only supported when InstanceInterruptionBehavior
+	// is set to either hibernate or stop.
 	SpotInstanceType *string `type:"string" enum:"SpotInstanceType"`
 
 	// The end date of the request. For a one-time request, the request remains
@@ -102795,10 +103669,10 @@ type TagSpecification struct {
 
 	// The type of resource to tag. Currently, the resource types that support tagging
 	// on creation are: capacity-reservation | client-vpn-endpoint | dedicated-host
-	// | fleet | fpga-image | instance | key-pair | launch-template | spot-fleet-request
-	// | placement-group | snapshot | traffic-mirror-filter | traffic-mirror-session
-	// | traffic-mirror-target | transit-gateway | transit-gateway-attachment |
-	// transit-gateway-route-table | vpc-endpoint (for interface VPC endpoints)|
+	// | fleet | fpga-image | instance | key-pair | launch-template | | natgateway
+	// | spot-fleet-request | placement-group | snapshot | traffic-mirror-filter
+	// | traffic-mirror-session | traffic-mirror-target | transit-gateway | transit-gateway-attachment
+	// | transit-gateway-route-table | vpc-endpoint (for interface VPC endpoints)|
 	// vpc-endpoint-service (for gateway VPC endpoints) | volume | vpc-flow-log.
 	//
 	// To tag a resource after it has been created, see CreateTags (https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_CreateTags.html).
@@ -102843,7 +103717,8 @@ func (s *TagSpecification) SetTags(v []*Tag) *TagSpecification {
 // reaches the maximum amount that you're willing to pay. When the maximum amount
 // you're willing to pay is reached, the fleet stops launching instances even
 // if it hasn’t met the target capacity. The MaxTotalPrice parameters are
-// located in and
+// located in OnDemandOptions (https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_OnDemandOptions.html)
+// and SpotOptions (https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_SpotOptions)
 type TargetCapacitySpecification struct {
 	_ struct{} `type:"structure"`
 
@@ -102909,7 +103784,8 @@ func (s *TargetCapacitySpecification) SetTotalTargetCapacity(v int64) *TargetCap
 // instances until it reaches the maximum amount that you're willing to pay.
 // When the maximum amount you're willing to pay is reached, the fleet stops
 // launching instances even if it hasn’t met the target capacity. The MaxTotalPrice
-// parameters are located in and .
+// parameters are located in OnDemandOptionsRequest (https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_OnDemandOptionsRequest)
+// and SpotOptionsRequest (https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_SpotOptionsRequest).
 type TargetCapacitySpecificationRequest struct {
 	_ struct{} `type:"structure"`
 
@@ -110557,6 +111433,14 @@ const (
 
 	// MembershipTypeIgmp is a MembershipType enum value
 	MembershipTypeIgmp = "igmp"
+)
+
+const (
+	// ModifyAvailabilityZoneOptInStatusOptedIn is a ModifyAvailabilityZoneOptInStatus enum value
+	ModifyAvailabilityZoneOptInStatusOptedIn = "opted-in"
+
+	// ModifyAvailabilityZoneOptInStatusNotOptedIn is a ModifyAvailabilityZoneOptInStatus enum value
+	ModifyAvailabilityZoneOptInStatusNotOptedIn = "not-opted-in"
 )
 
 const (

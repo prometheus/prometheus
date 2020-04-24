@@ -483,6 +483,7 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 					v1Payload, err = json.Marshal(alerts)
 					if err != nil {
 						level.Error(n.logger).Log("msg", "Encoding alerts for Alertmanager API v1 failed", "err", err)
+						ams.mtx.RUnlock()
 						return false
 					}
 				}
@@ -497,6 +498,7 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 					v2Payload, err = json.Marshal(openAPIAlerts)
 					if err != nil {
 						level.Error(n.logger).Log("msg", "Encoding alerts for Alertmanager API v2 failed", "err", err)
+						ams.mtx.RUnlock()
 						return false
 					}
 				}
@@ -509,6 +511,7 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 					"msg", fmt.Sprintf("Invalid Alertmanager API version '%v', expected one of '%v'", ams.cfg.APIVersion, config.SupportedAlertmanagerAPIVersions),
 					"err", err,
 				)
+				ams.mtx.RUnlock()
 				return false
 			}
 		}

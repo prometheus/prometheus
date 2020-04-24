@@ -1,4 +1,99 @@
-## 0.9.0 (Unreleased)
+## 0.11.0 (Unreleased)
+
+## 0.10.0 (April 12, 2020)
+
+UPGRADE NOTES
+
+* The various `IDFromName` convenience functions have been moved to https://github.com/gophercloud/utils [GH-1897](https://github.com/gophercloud/gophercloud/pull/1897)
+* `sharedfilesystems/v2/shares.GetExportLocations` was renamed to `sharedfilesystems/v2/shares.ListExportLocations` [GH-1932](https://github.com/gophercloud/gophercloud/pull/1932)
+
+IMPROVEMENTS 
+
+* Added `blockstorage/extensions/volumeactions.SetBootable` [GH-1891](https://github.com/gophercloud/gophercloud/pull/1891)
+* Added `blockstorage/extensions/backups.Export` [GH-1894](https://github.com/gophercloud/gophercloud/pull/1894)
+* Added `blockstorage/extensions/backups.Import` [GH-1894](https://github.com/gophercloud/gophercloud/pull/1894)
+* Added `placement/v1/resourceproviders.GetTraits` [GH-1899](https://github.com/gophercloud/gophercloud/pull/1899)
+* Added the ability to authenticate with Amazon EC2 Credentials [GH-1900](https://github.com/gophercloud/gophercloud/pull/1900)
+* Added ability to list Nova services by binary and host [GH-1904](https://github.com/gophercloud/gophercloud/pull/1904)
+* Added `compute/v2/extensions/services.Update` [GH-1902](https://github.com/gophercloud/gophercloud/pull/1902)
+* Added system scope to v3 authentication [GH-1908](https://github.com/gophercloud/gophercloud/pull/1908)
+* Added `identity/v3/extensions/ec2tokens.ValidateS3Token` [GH-1906](https://github.com/gophercloud/gophercloud/pull/1906)
+* Added `containerinfra/v1/clusters.Cluster.HealthStatus` [GH-1910](https://github.com/gophercloud/gophercloud/pull/1910)
+* Added `containerinfra/v1/clusters.Cluster.HealthStatusReason` [GH-1910](https://github.com/gophercloud/gophercloud/pull/1910)
+* Added `loadbalancer/v2/amphorae.Failover` [GH-1912](https://github.com/gophercloud/gophercloud/pull/1912)
+* Added `identity/v3/extensions/ec2credentials.List` [GH-1916](https://github.com/gophercloud/gophercloud/pull/1916)
+* Added `identity/v3/extensions/ec2credentials.Get` [GH-1916](https://github.com/gophercloud/gophercloud/pull/1916)
+* Added `identity/v3/extensions/ec2credentials.Create` [GH-1916](https://github.com/gophercloud/gophercloud/pull/1916)
+* Added `identity/v3/extensions/ec2credentials.Delete` [GH-1916](https://github.com/gophercloud/gophercloud/pull/1916)
+* Added `ErrUnexpectedResponseCode.ResponseHeader` [GH-1919](https://github.com/gophercloud/gophercloud/pull/1919)
+* Added support for TOTP authentication [GH-1922](https://github.com/gophercloud/gophercloud/pull/1922)
+* `sharedfilesystems/v2/shares.GetExportLocations` was renamed to `sharedfilesystems/v2/shares.ListExportLocations` [GH-1932](https://github.com/gophercloud/gophercloud/pull/1932)
+* Added `sharedfilesystems/v2/shares.GetExportLocation` [GH-1932](https://github.com/gophercloud/gophercloud/pull/1932)
+* Added `sharedfilesystems/v2/shares.Revert` [GH-1931](https://github.com/gophercloud/gophercloud/pull/1931)
+* Added `sharedfilesystems/v2/shares.ResetStatus` [GH-1931](https://github.com/gophercloud/gophercloud/pull/1931)
+* Added `sharedfilesystems/v2/shares.ForceDelete` [GH-1931](https://github.com/gophercloud/gophercloud/pull/1931)
+* Added `sharedfilesystems/v2/shares.Unmanage` [GH-1931](https://github.com/gophercloud/gophercloud/pull/1931)
+* Added `blockstorage/v3/attachments.Create` [GH-1934](https://github.com/gophercloud/gophercloud/pull/1934)
+* Added `blockstorage/v3/attachments.List` [GH-1934](https://github.com/gophercloud/gophercloud/pull/1934)
+* Added `blockstorage/v3/attachments.Get` [GH-1934](https://github.com/gophercloud/gophercloud/pull/1934)
+* Added `blockstorage/v3/attachments.Update` [GH-1934](https://github.com/gophercloud/gophercloud/pull/1934)
+* Added `blockstorage/v3/attachments.Delete` [GH-1934](https://github.com/gophercloud/gophercloud/pull/1934)
+* Added `blockstorage/v3/attachments.Complete` [GH-1934](https://github.com/gophercloud/gophercloud/pull/1934)
+
+BUG FIXES
+
+* Fixed issue with Orchestration `get_file` only being able to read JSON and YAML files [GH-1915](https://github.com/gophercloud/gophercloud/pull/1915)
+
+## 0.9.0 (March 10, 2020)
+
+UPGRADE NOTES
+
+* The way we implement new API result fields added by microversions has changed. Previously, we would declare a dedicated `ExtractFoo` function in a file called `microversions.go`. Now, we are declaring those fields inline of the original result struct as a pointer. [GH-1854](https://github.com/gophercloud/gophercloud/pull/1854)
+
+* `compute/v2/servers.CreateOpts.Networks` has changed from `[]Network` to `interface{}` in order to support creating servers that have no networks. [GH-1884](https://github.com/gophercloud/gophercloud/pull/1884)
+
+IMPROVEMENTS
+
+* Added `compute/v2/extensions/instanceactions.List` [GH-1848](https://github.com/gophercloud/gophercloud/pull/1848)
+* Added `compute/v2/extensions/instanceactions.Get` [GH-1848](https://github.com/gophercloud/gophercloud/pull/1848)
+* Added `networking/v2/ports.List.FixedIPs` [GH-1849](https://github.com/gophercloud/gophercloud/pull/1849)
+* Added `identity/v3/extensions/trusts.List` [GH-1855](https://github.com/gophercloud/gophercloud/pull/1855)
+* Added `identity/v3/extensions/trusts.Get` [GH-1855](https://github.com/gophercloud/gophercloud/pull/1855)
+* Added `identity/v3/extensions/trusts.Trust.ExpiresAt` [GH-1857](https://github.com/gophercloud/gophercloud/pull/1857)
+* Added `identity/v3/extensions/trusts.Trust.DeletedAt` [GH-1857](https://github.com/gophercloud/gophercloud/pull/1857)
+* Added `compute/v2/extensions/instanceactions.InstanceActionDetail` [GH-1851](https://github.com/gophercloud/gophercloud/pull/1851)
+* Added `compute/v2/extensions/instanceactions.Event` [GH-1851](https://github.com/gophercloud/gophercloud/pull/1851)
+* Added `compute/v2/extensions/instanceactions.ListOpts` [GH-1858](https://github.com/gophercloud/gophercloud/pull/1858)
+* Added `objectstorage/v1/containers.UpdateOpts.TempURLKey` [GH-1864](https://github.com/gophercloud/gophercloud/pull/1864)
+* Added `objectstorage/v1/containers.UpdateOpts.TempURLKey2` [GH-1864](https://github.com/gophercloud/gophercloud/pull/1864)
+* Added `placement/v1/resourceproviders.GetUsages` [GH-1862](https://github.com/gophercloud/gophercloud/pull/1862)
+* Added `placement/v1/resourceproviders.GetInventories` [GH-1862](https://github.com/gophercloud/gophercloud/pull/1862)
+* Added `imageservice/v2/images.ReplaceImageMinRam` [GH-1867](https://github.com/gophercloud/gophercloud/pull/1867)
+* Added `objectstorage/v1/containers.UpdateOpts.TempURLKey` [GH-1865](https://github.com/gophercloud/gophercloud/pull/1865)
+* Added `objectstorage/v1/containers.CreateOpts.TempURLKey2` [GH-1865](https://github.com/gophercloud/gophercloud/pull/1865)
+* Added `blockstorage/extensions/volumetransfers.List` [GH-1869](https://github.com/gophercloud/gophercloud/pull/1869)
+* Added `blockstorage/extensions/volumetransfers.Create` [GH-1869](https://github.com/gophercloud/gophercloud/pull/1869)
+* Added `blockstorage/extensions/volumetransfers.Accept` [GH-1869](https://github.com/gophercloud/gophercloud/pull/1869)
+* Added `blockstorage/extensions/volumetransfers.Get` [GH-1869](https://github.com/gophercloud/gophercloud/pull/1869)
+* Added `blockstorage/extensions/volumetransfers.Delete` [GH-1869](https://github.com/gophercloud/gophercloud/pull/1869)
+* Added `blockstorage/extensions/backups.RestoreFromBackup` [GH-1871](https://github.com/gophercloud/gophercloud/pull/1871)
+* Added `blockstorage/v3/volumes.CreateOpts.BackupID` [GH-1871](https://github.com/gophercloud/gophercloud/pull/1871)
+* Added `blockstorage/v3/volumes.Volume.BackupID` [GH-1871](https://github.com/gophercloud/gophercloud/pull/1871)
+* Added `identity/v3/projects.ListOpts.Tags` [GH-1882](https://github.com/gophercloud/gophercloud/pull/1882)
+* Added `identity/v3/projects.ListOpts.TagsAny` [GH-1882](https://github.com/gophercloud/gophercloud/pull/1882)
+* Added `identity/v3/projects.ListOpts.NotTags` [GH-1882](https://github.com/gophercloud/gophercloud/pull/1882)
+* Added `identity/v3/projects.ListOpts.NotTagsAny` [GH-1882](https://github.com/gophercloud/gophercloud/pull/1882)
+* Added `identity/v3/projects.CreateOpts.Tags` [GH-1882](https://github.com/gophercloud/gophercloud/pull/1882)
+* Added `identity/v3/projects.UpdateOpts.Tags` [GH-1882](https://github.com/gophercloud/gophercloud/pull/1882)
+* Added `identity/v3/projects.Project.Tags` [GH-1882](https://github.com/gophercloud/gophercloud/pull/1882)
+* Changed `compute/v2/servers.CreateOpts.Networks` from `[]Network` to `interface{}` to support creating servers with no networks. [GH-1884](https://github.com/gophercloud/gophercloud/pull/1884)
+
+
+BUG FIXES
+
+* Added support for `int64` headers, which were previously being silently dropped [GH-1860](https://github.com/gophercloud/gophercloud/pull/1860)
+* Allow image properties with empty values [GH-1875](https://github.com/gophercloud/gophercloud/pull/1875)
+* Fixed `compute/v2/extensions/extendedserverattributes.ServerAttributesExt.Userdata` JSON tag [GH-1881](https://github.com/gophercloud/gophercloud/pull/1881)
 
 ## 0.8.0 (February 8, 2020)
 
@@ -32,6 +127,10 @@ IMPROVEMENTS
 * Added `InsertHeaders` to `loadbalancer/v2/listeners.UpdateOpts` [GH-1835]
 * Added `NUMATopology` to `baremetalintrospection/v1/introspection.Data` [GH-1842](https://github.com/gophercloud/gophercloud/pull/1842)
 * Added `placement/v1/resourceproviders.Create` [GH-1841](https://github.com/gophercloud/gophercloud/pull/1841)
+* Added `blockstorage/extensions/volumeactions.UploadImageOpts.Visibility` [GH-1873](https://github.com/gophercloud/gophercloud/pull/1873)
+* Added `blockstorage/extensions/volumeactions.UploadImageOpts.Protected` [GH-1873](https://github.com/gophercloud/gophercloud/pull/1873)
+* Added `blockstorage/extensions/volumeactions.VolumeImage.Visibility` [GH-1873](https://github.com/gophercloud/gophercloud/pull/1873)
+* Added `blockstorage/extensions/volumeactions.VolumeImage.Protected` [GH-1873](https://github.com/gophercloud/gophercloud/pull/1873)
 
 BUG FIXES
 

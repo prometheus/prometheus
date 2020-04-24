@@ -82,12 +82,12 @@ func (ResourceDescriptor_History) EnumDescriptor() ([]byte, []int) {
 //
 // The ResourceDescriptor Yaml config will look like:
 //
-//    resources:
-//    - type: "pubsub.googleapis.com/Topic"
-//      name_descriptor:
-//        - pattern: "projects/{project}/topics/{topic}"
-//          parent_type: "cloudresourcemanager.googleapis.com/Project"
-//          parent_name_extractor: "projects/{project}"
+//     resources:
+//     - type: "pubsub.googleapis.com/Topic"
+//       name_descriptor:
+//         - pattern: "projects/{project}/topics/{topic}"
+//           parent_type: "cloudresourcemanager.googleapis.com/Project"
+//           parent_name_extractor: "projects/{project}"
 //
 // Sometimes, resources have multiple patterns, typically because they can
 // live under multiple parents.
@@ -317,11 +317,11 @@ type ResourceReference struct {
 	//
 	// Example:
 	//
-	//   message ListLogEntriesRequest {
-	//     string parent = 1 [(google.api.resource_reference) = {
-	//       child_type: "logging.googleapis.com/LogEntry"
-	//     };
-	//   }
+	//     message ListLogEntriesRequest {
+	//       string parent = 1 [(google.api.resource_reference) = {
+	//         child_type: "logging.googleapis.com/LogEntry"
+	//       };
+	//     }
 	ChildType            string   `protobuf:"bytes,2,opt,name=child_type,json=childType,proto3" json:"child_type,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`

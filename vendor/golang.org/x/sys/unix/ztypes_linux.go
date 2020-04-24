@@ -114,7 +114,8 @@ type FscryptKeySpecifier struct {
 type FscryptAddKeyArg struct {
 	Key_spec FscryptKeySpecifier
 	Raw_size uint32
-	_        [9]uint32
+	Key_id   uint32
+	_        [8]uint32
 }
 
 type FscryptRemoveKeyArg struct {
@@ -243,6 +244,23 @@ type RawSockaddrTIPC struct {
 	Addr     [12]byte
 }
 
+type RawSockaddrL2TPIP struct {
+	Family  uint16
+	Unused  uint16
+	Addr    [4]byte /* in_addr */
+	Conn_id uint32
+	_       [4]uint8
+}
+
+type RawSockaddrL2TPIP6 struct {
+	Family   uint16
+	Unused   uint16
+	Flowinfo uint32
+	Addr     [16]byte /* in6_addr */
+	Scope_id uint32
+	Conn_id  uint32
+}
+
 type _Socklen uint32
 
 type Linger struct {
@@ -353,6 +371,8 @@ const (
 	SizeofSockaddrXDP       = 0x10
 	SizeofSockaddrPPPoX     = 0x1e
 	SizeofSockaddrTIPC      = 0x10
+	SizeofSockaddrL2TPIP    = 0x10
+	SizeofSockaddrL2TPIP6   = 0x20
 	SizeofLinger            = 0x8
 	SizeofIPMreq            = 0x8
 	SizeofIPMreqn           = 0xc
@@ -460,7 +480,7 @@ const (
 	IFLA_NEW_IFINDEX        = 0x31
 	IFLA_MIN_MTU            = 0x32
 	IFLA_MAX_MTU            = 0x33
-	IFLA_MAX                = 0x35
+	IFLA_MAX                = 0x36
 	IFLA_INFO_KIND          = 0x1
 	IFLA_INFO_DATA          = 0x2
 	IFLA_INFO_XSTATS        = 0x3
@@ -2271,4 +2291,50 @@ const (
 	DEVLINK_DPIPE_HEADER_ETHERNET             = 0x0
 	DEVLINK_DPIPE_HEADER_IPV4                 = 0x1
 	DEVLINK_DPIPE_HEADER_IPV6                 = 0x2
+)
+
+type FsverityDigest struct {
+	Algorithm uint16
+	Size      uint16
+}
+
+type FsverityEnableArg struct {
+	Version        uint32
+	Hash_algorithm uint32
+	Block_size     uint32
+	Salt_size      uint32
+	Salt_ptr       uint64
+	Sig_size       uint32
+	_              uint32
+	Sig_ptr        uint64
+	_              [11]uint64
+}
+
+type Nhmsg struct {
+	Family   uint8
+	Scope    uint8
+	Protocol uint8
+	Resvd    uint8
+	Flags    uint32
+}
+
+type NexthopGrp struct {
+	Id     uint32
+	Weight uint8
+	Resvd1 uint8
+	Resvd2 uint16
+}
+
+const (
+	NHA_UNSPEC     = 0x0
+	NHA_ID         = 0x1
+	NHA_GROUP      = 0x2
+	NHA_GROUP_TYPE = 0x3
+	NHA_BLACKHOLE  = 0x4
+	NHA_OIF        = 0x5
+	NHA_GATEWAY    = 0x6
+	NHA_ENCAP_TYPE = 0x7
+	NHA_ENCAP      = 0x8
+	NHA_GROUPS     = 0x9
+	NHA_MASTER     = 0xa
 )

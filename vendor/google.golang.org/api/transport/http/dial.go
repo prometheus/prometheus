@@ -202,10 +202,19 @@ func addOCTransport(trans http.RoundTripper, settings *internal.DialSettings) ht
 // We would like to avoid introducing client-side logic that parses whether the
 // endpoint override is an mTLS url, since the url pattern may change at anytime.
 func getClientCertificateSource(settings *internal.DialSettings) (cert.Source, error) {
-	if settings.ClientCertSource != nil {
-		return settings.ClientCertSource, nil
-	}
-	return cert.DefaultSource()
+	return settings.ClientCertSource, nil
+	// TODO(andyzhao): Currently, many services including compute, storage, and bigquery
+	// do not have working mTLS endpoints, so we will disable the ADC for DCA logic
+	// until we can confirm that all services have working mTLS endpoints.
+	/*
+		if settings.HTTPClient != nil {
+			return nil, nil // HTTPClient is incompatible with ClientCertificateSource
+		} else if settings.ClientCertSource != nil {
+			return settings.ClientCertSource, nil
+		} else {
+			return cert.DefaultSoure()
+		}
+	*/
 }
 
 // getEndpoint returns the endpoint for the service, taking into account the

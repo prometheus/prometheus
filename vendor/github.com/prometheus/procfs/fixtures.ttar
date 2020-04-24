@@ -189,7 +189,7 @@ Ngid:	0
 Pid:	26231
 PPid:	1
 TracerPid:	0
-Uid:	0	0	0	0
+Uid:	1000	1000	1000	0
 Gid:	0	0	0	0
 FDSize:	128
 Groups:
@@ -289,6 +289,19 @@ Max realtime priority     0                    0
 Max realtime timeout      unlimited            unlimited            us
 Mode: 644
 # ttar - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+Path: fixtures/proc/26232/maps
+Lines: 9
+55680ae1e000-55680ae20000 r--p 00000000 fd:01 47316994                   /bin/cat
+55680ae29000-55680ae2a000 rwxs 0000a000 fd:01 47316994                   /bin/cat
+55680bed6000-55680bef7000 rw-p 00000000 00:00 0                          [heap]
+7fdf964fc000-7fdf973f2000 r--p 00000000 fd:01 17432624                   /usr/lib/locale/locale-archive
+7fdf973f2000-7fdf97417000 r--p 00000000 fd:01 60571062                   /lib/x86_64-linux-gnu/libc-2.29.so
+7ffe9215c000-7ffe9217f000 rw-p 00000000 00:00 0                          [stack]
+7ffe921da000-7ffe921dd000 r--p 00000000 00:00 0                          [vvar]
+7ffe921dd000-7ffe921de000 r-xp 00000000 00:00 0                          [vdso]
+ffffffffff600000-ffffffffff601000 --xp 00000000 00:00 0                  [vsyscall]
+Mode: 644
+# ttar - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 Path: fixtures/proc/26232/root
 SymlinkTo: /does/not/exist
 # ttar - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -315,6 +328,17 @@ Lines: 8
             (__)\       )\/\
                 ||----w |
                 ||     ||
+Mode: 644
+# ttar - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+Directory: fixtures/proc/26234
+Mode: 755
+# ttar - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+Path: fixtures/proc/26234/maps
+Lines: 4
+08048000-08089000 r-xp 00000000 03:01 104219 /bin/tcsh
+08089000-0808c000 rw-p 00041000 03:01 104219 /bin/tcsh
+0808c000-08146000 rwxp 00000000 00:00 0
+40000000-40015000 r-xp 00000000 03:01 61874 /lib/ld-2.3.2.so
 Mode: 644
 # ttar - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 Directory: fixtures/proc/584
@@ -554,7 +578,7 @@ power management:
 Mode: 444
 # ttar - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 Path: fixtures/proc/crypto
-Lines: 971
+Lines: 972
 name         : ccm(aes)
 driver       : ccm_base(ctr(aes-aesni),cbcmac(aes-aesni))
 module       : ccm
@@ -588,6 +612,7 @@ refcnt       : 1
 selftest     : passed
 internal     : no
 type         : kpp
+async        : yes
 
 name         : ecb(arc4)
 driver       : ecb(arc4)-generic
@@ -1614,6 +1639,11 @@ xpc 399724544 92823103 86219234
 debug 0
 Mode: 644
 # ttar - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+Path: fixtures/proc/loadavg
+Lines: 1
+0.02 0.04 0.05 1/497 11947
+Mode: 444
+# ttar - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 Path: fixtures/proc/mdstat
 Lines: 56
 Personalities : [linear] [multipath] [raid0] [raid1] [raid6] [raid5] [raid4] [raid10]
@@ -1821,8 +1851,35 @@ FRAG6: inuse 0 memory 0
 Mode: 444
 # ttar - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 Path: fixtures/proc/net/softnet_stat
-Lines: 1
+Lines: 2
 00015c73 00020e76 F0000769 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000
+01663fb2 00000000 000109a4 00000000 00000000 00000000 00000000 00000000 00000000
+Mode: 644
+# ttar - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+Path: fixtures/proc/net/softnet_stat.broken
+Lines: 1
+00015c73 00020e76 F0000769 00000000
+Mode: 644
+# ttar - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+Path: fixtures/proc/net/udp
+Lines: 4
+  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode
+   0: 0A000005:0016 00000000:0000 0A 00000000:00000001 00:00000000 00000000     0        0 2740 1 ffff88003d3af3c0 100 0 0 10 0
+   1: 00000000:0016 00000000:0000 0A 00000001:00000000 00:00000000 00000000     0        0 2740 1 ffff88003d3af3c0 100 0 0 10 0
+   2: 00000000:0016 00000000:0000 0A 00000001:00000001 00:00000000 00000000     0        0 2740 1 ffff88003d3af3c0 100 0 0 10 0
+Mode: 644
+# ttar - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+Path: fixtures/proc/net/udp6
+Lines: 3
+  sl  local_address                         remote_address                        st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode ref pointer drops
+ 1315: 00000000000000000000000000000000:14EB 00000000000000000000000000000000:0000 07 00000000:00000000 00:00000000 00000000   981        0 21040 2 0000000013726323 0
+ 6073: 000080FE00000000FFADE15609667CFE:C781 00000000000000000000000000000000:0000 07 00000000:00000000 00:00000000 00000000  1000        0 11337031 2 00000000b9256fdd 0
+Mode: 644
+# ttar - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+Path: fixtures/proc/net/udp_broken
+Lines: 2
+  sl  local_address rem_address   st
+   1: 00000000:0016 00000000:0000 0A
 Mode: 644
 # ttar - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 Path: fixtures/proc/net/unix
@@ -1929,6 +1986,12 @@ procs_running 2
 procs_blocked 1
 softirq 5057579 250191 1481983 1647 211099 186066 0 1783454 622196 12499 508444
 Mode: 644
+# ttar - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+Path: fixtures/proc/swaps
+Lines: 2
+Filename				Type		Size	Used	Priority
+/dev/dm-2                               partition	131068	176	-2
+Mode: 444
 # ttar - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 Directory: fixtures/proc/symlinktargets
 Mode: 755

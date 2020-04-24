@@ -292,14 +292,14 @@ func TestReadIndexFormatV1(t *testing.T) {
 	q, err := NewBlockQuerier(block, 0, 1000)
 	testutil.Ok(t, err)
 	testutil.Equals(t, query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")),
-		map[string][]tsdbutil.Sample{`{foo="bar"}`: []tsdbutil.Sample{sample{t: 1, v: 2}}})
+		map[string][]tsdbutil.Sample{`{foo="bar"}`: {sample{t: 1, v: 2}}})
 
 	q, err = NewBlockQuerier(block, 0, 1000)
 	testutil.Ok(t, err)
 	testutil.Equals(t, query(t, q, labels.MustNewMatcher(labels.MatchNotRegexp, "foo", "^.?$")),
 		map[string][]tsdbutil.Sample{
-			`{foo="bar"}`: []tsdbutil.Sample{sample{t: 1, v: 2}},
-			`{foo="baz"}`: []tsdbutil.Sample{sample{t: 3, v: 4}},
+			`{foo="bar"}`: {sample{t: 1, v: 2}},
+			`{foo="baz"}`: {sample{t: 3, v: 4}},
 		})
 }
 
