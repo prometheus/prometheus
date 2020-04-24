@@ -29,7 +29,7 @@ require (
 	github.com/golang/protobuf v1.4.0 // indirect
 	github.com/golang/snappy v0.0.1
 	github.com/google/pprof v0.0.0-20200417002340-c6e0a841f49a
-	github.com/googleapis/gnostic v0.4.1 // indirect
+	github.com/googleapis/gnostic v0.4.0 // indirect
 	github.com/gophercloud/gophercloud v0.10.0
 	github.com/grpc-ecosystem/grpc-gateway v1.14.4
 	github.com/hashicorp/consul/api v1.4.0
@@ -86,9 +86,4 @@ require (
 	k8s.io/utils v0.0.0-20200414100711-2df71ebbae66 // indirect
 )
 
-replace (
-	// TODO(bwplotka): Remove once client-go will move to renamed openapiv2 package
-	// (https://github.com/kubernetes/test-infra/issues/16116).
-	github.com/googleapis/gnostic => github.com/googleapis/gnostic v0.4.0
-	k8s.io/klog => github.com/simonpasquier/klog-gokit v0.1.0
-)
+replace k8s.io/klog => github.com/simonpasquier/klog-gokit v0.1.0
