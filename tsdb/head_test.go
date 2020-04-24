@@ -1670,7 +1670,7 @@ func newTestHead(t testing.TB, chunkRange int64, compressWAL bool) (*Head, *wal.
 	wlog, err := wal.NewSize(nil, nil, dir, 32768, compressWAL)
 	testutil.Ok(t, err)
 
-	h, err := NewHead(nil, nil, wlog, chunkRange, wlog.Dir(), nil, DefaultStripeSize)
+	h, err := NewHead(nil, nil, wlog, chunkRange, dir, nil, DefaultStripeSize)
 	testutil.Ok(t, err)
 
 	testutil.Ok(t, h.chunkDiskMapper.IterateAllChunks(func(_, _ uint64, _, _ int64, _ uint16) error { return nil }))

@@ -308,7 +308,7 @@ func (db *DBReadOnly) FlushWAL(dir string) (returnErr error) {
 	if err != nil {
 		return err
 	}
-	head, err := NewHead(nil, db.logger, w, 1, w.Dir(), nil, DefaultStripeSize)
+	head, err := NewHead(nil, db.logger, w, 1, db.dir, nil, DefaultStripeSize)
 	if err != nil {
 		return err
 	}
@@ -367,7 +367,7 @@ func (db *DBReadOnly) Querier(ctx context.Context, mint, maxt int64) (storage.Qu
 		blocks[i] = b
 	}
 
-	head, err := NewHead(nil, db.logger, nil, 1, "", nil, DefaultStripeSize)
+	head, err := NewHead(nil, db.logger, nil, 1, db.dir, nil, DefaultStripeSize)
 	if err != nil {
 		return nil, err
 	}
@@ -382,7 +382,7 @@ func (db *DBReadOnly) Querier(ctx context.Context, mint, maxt int64) (storage.Qu
 		if err != nil {
 			return nil, err
 		}
-		head, err = NewHead(nil, db.logger, w, 1, w.Dir(), nil, DefaultStripeSize)
+		head, err = NewHead(nil, db.logger, w, 1, db.dir, nil, DefaultStripeSize)
 		if err != nil {
 			return nil, err
 		}
@@ -595,7 +595,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 		}
 	}
 
-	db.head, err = NewHead(r, l, wlog, rngs[0], walDir, db.chunkPool, opts.StripeSize)
+	db.head, err = NewHead(r, l, wlog, rngs[0], dir, db.chunkPool, opts.StripeSize)
 
 	if err != nil {
 		return nil, err
@@ -617,6 +617,9 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 		level.Warn(db.logger).Log("msg", "Encountered WAL read error, attempting repair", "err", initErr)
 		if err := wlog.Repair(initErr); err != nil {
 			return nil, errors.Wrap(err, "repair corrupted WAL")
+		}
+		if err := db.head.PostWALRepairRecovery(); err != nil {
+			return nil, errors.Wrap(err, "replay after WAL repair")
 		}
 	}
 
