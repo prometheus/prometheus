@@ -1,9 +1,9 @@
 ## 2.18.0-rc.0 / 2020-04-24
 
 * [CHANGE] Federation: Only use local TSDB for federation (ignore remote read). #7077
-* [CHANGE] Rules: `rule_evaluations_total` and `rule_evaluation_failures_total` have `rule_group` label now. #7094
-* [FEATURE] Tracing(!): Added experimental Jaeger support #7148
-* [ENHANCEMENT] TSDB: Significantly reduce how much old WAL we keep around. #7098
+* [CHANGE] Rules: `rule_evaluations_total` and `rule_evaluation_failures_total` have a `rule_group` label now. #7094
+* [FEATURE] Tracing: Added experimental Jaeger support #7148
+* [ENHANCEMENT] TSDB: Significantly reduce WAL size kept around after a block cut. #7098
 * [ENHANCEMENT] Discovery: Add `architecture` meta label for EC2. #7000
 * [BUGFIX] React UI: Fixed multiselect legend on OSX. #6880
 * [BUGFIX] Remote Write: Fixed blocked resharding edge case. #7122
