@@ -3,7 +3,6 @@
 * [CHANGED] Use .UTC timezeone everywhere we use time.Unix. #7066
 * [CHANGED] Federation: It does not use remote storages anymore as designed initially. #7077
 * [CHANGED] Rules: `rule_evaluations_total` and `rule_evaluation_failures_total` have `rule_group` label now. #7094
-* [CHANGED] Moved to Go 1.14.2. #7100
 * [FEATURE] Tracing(!): Added experimental Jaeger support #7148
 * [ENHANCEMENT] TSDB: Significantly reduce how much old WAL we keep around to 3h (previously 6h). #7098
 * [BUGFIX] Federation: Fixed not registered `prometheus_web_federation_errors_total` and `prometheus_web_federation_warnings_total` metrics. #7081
