@@ -61,11 +61,9 @@ Maintaining the release branches for older minor releases happens on a best effo
 A few days before a major or minor release, consider updating the dependencies:
 
 ```
-export GO111MODULE=on
-go get -u ./...
-go mod tidy
-go mod vendor
+make update-deps
 git add go.mod go.sum vendor
+git commit -m "Update dependencies"
 ```
 
 Then create a pull request against the master branch.

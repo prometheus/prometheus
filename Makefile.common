@@ -150,6 +150,18 @@ else
 	$(GO) get $(GOOPTS) -t ./...
 endif
 
+.PHONY: update-deps
+update-deps:
+	@echo ">> updating Go dependencies"
+	@jq --version 1>/dev/null 2>&1 || { echo "Make sure that 'jq' is in your PATH"; exit 1; }
+	@for m in $$(go list -m -json all | jq -rc 'select(.Indirect != true and .Main != true) | .Path'); do \
+		go get $$m; \
+	done
+	GO111MODULE=$(GO111MODULE) $(GO) mod tidy
+ifneq (,$(wildcard vendor))
+	GO111MODULE=$(GO111MODULE) $(GO) mod vendor
+endif
+
 .PHONY: common-test-short
 common-test-short: $(GOTEST_DIR)
 	@echo ">> running short tests"
