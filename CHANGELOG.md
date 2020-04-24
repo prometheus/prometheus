@@ -1,6 +1,6 @@
 ## 2.18.0-rc.0 / 2020-04-24
 
-* [CHANGE] Federation: It does not use remote storages anymore as designed initially. #7077
+* [CHANGE] Federation: Only use local TSDB for federation (ignore remote read). #7077
 * [FEATURE] Tracing(!): Added experimental Jaeger support #7148
 * [ENHANCEMENT] Rules: `rule_evaluations_total` and `rule_evaluation_failures_total` have `rule_group` label now. #7094
 * [ENHANCEMENT] TSDB: Significantly reduce how much old WAL we keep around. #7098
