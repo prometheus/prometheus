@@ -24,6 +24,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/uber/jaeger-client-go/log"
 	"github.com/uber/jaeger-client-go/thrift-gen/sampling"
 )
 
@@ -199,6 +200,7 @@ func (s *RemotelyControlledSampler) updateSamplerViaUpdaters(strategy interface{
 			return err
 		}
 		if sampler != nil {
+			s.logger.Debugf("sampler updated: %+v", sampler)
 			s.sampler = sampler
 			return nil
 		}
@@ -290,7 +292,7 @@ func (u *AdaptiveSamplerUpdater) Update(sampler SamplerV2, strategy interface{})
 
 type httpSamplingStrategyFetcher struct {
 	serverURL string
-	logger    Logger
+	logger    log.DebugLogger
 }
 
 func (f *httpSamplingStrategyFetcher) Fetch(serviceName string) ([]byte, error) {

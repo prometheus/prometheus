@@ -47,13 +47,19 @@ func (l *stdLogger) Infof(msg string, args ...interface{}) {
 	log.Printf(msg, args...)
 }
 
+// Debugf logs a message at debug priority
+func (l *stdLogger) Debugf(msg string, args ...interface{}) {
+	log.Printf(fmt.Sprintf("DEBUG: %s", msg), args...)
+}
+
 // NullLogger is implementation of the Logger interface that is no-op
 var NullLogger = &nullLogger{}
 
 type nullLogger struct{}
 
-func (l *nullLogger) Error(msg string)                      {}
-func (l *nullLogger) Infof(msg string, args ...interface{}) {}
+func (l *nullLogger) Error(msg string)                       {}
+func (l *nullLogger) Infof(msg string, args ...interface{})  {}
+func (l *nullLogger) Debugf(msg string, args ...interface{}) {}
 
 // BytesBufferLogger implements Logger backed by a bytes.Buffer.
 type BytesBufferLogger struct {
@@ -75,6 +81,13 @@ func (l *BytesBufferLogger) Infof(msg string, args ...interface{}) {
 	l.mux.Unlock()
 }
 
+// Debugf implements Logger.
+func (l *BytesBufferLogger) Debugf(msg string, args ...interface{}) {
+	l.mux.Lock()
+	l.buf.WriteString("DEBUG: " + fmt.Sprintf(msg, args...) + "\n")
+	l.mux.Unlock()
+}
+
 // String returns string representation of the underlying buffer.
 func (l *BytesBufferLogger) String() string {
 	l.mux.Lock()
@@ -87,4 +100,39 @@ func (l *BytesBufferLogger) Flush() {
 	l.mux.Lock()
 	defer l.mux.Unlock()
 	l.buf.Reset()
+}
+
+// DebugLogger is an interface which adds a debug logging level
+type DebugLogger interface {
+	Logger
+
+	// Debugf logs a message at debug priority
+	Debugf(msg string, args ...interface{})
+}
+
+// DebugLogAdapter is a log adapter that converts a Logger into a DebugLogger
+// If the provided Logger doesn't satisfy the interface, a logger with debug
+// disabled is returned
+func DebugLogAdapter(logger Logger) DebugLogger {
+	if debugLogger, ok := logger.(DebugLogger); ok {
+		return debugLogger
+	}
+	logger.Infof("debug logging disabled")
+	return debugDisabledLogAdapter{logger: logger}
+}
+
+type debugDisabledLogAdapter struct {
+	logger Logger
+}
+
+func (d debugDisabledLogAdapter) Error(msg string) {
+	d.logger.Error(msg)
+}
+
+func (d debugDisabledLogAdapter) Infof(msg string, args ...interface{}) {
+	d.logger.Infof(msg, args...)
+}
+
+// Debugf is a nop
+func (d debugDisabledLogAdapter) Debugf(msg string, args ...interface{}) {
 }

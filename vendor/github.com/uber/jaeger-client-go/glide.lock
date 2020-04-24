@@ -93,4 +93,6 @@ imports:
   - windows
 - name: gopkg.in/yaml.v2
   version: 51d6538a90f86fe93ac480b35f37b2be17fef232
+- name: github.com/golang/mock 
+  version: 3a35fb6e3e18b9dbfee291262260dee7372d2a92
 testImports: []

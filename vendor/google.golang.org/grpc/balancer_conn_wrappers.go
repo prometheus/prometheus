@@ -24,8 +24,8 @@ import (
 
 	"google.golang.org/grpc/balancer"
 	"google.golang.org/grpc/connectivity"
-	"google.golang.org/grpc/grpclog"
 	"google.golang.org/grpc/internal/buffer"
+	"google.golang.org/grpc/internal/channelz"
 	"google.golang.org/grpc/internal/grpcsync"
 	"google.golang.org/grpc/resolver"
 )
@@ -245,7 +245,7 @@ func (acbw *acBalancerWrapper) UpdateAddresses(addrs []resolver.Address) {
 
 		ac, err := cc.newAddrConn(addrs, opts)
 		if err != nil {
-			grpclog.Warningf("acBalancerWrapper: UpdateAddresses: failed to newAddrConn: %v", err)
+			channelz.Warningf(acbw.ac.channelzID, "acBalancerWrapper: UpdateAddresses: failed to newAddrConn: %v", err)
 			return
 		}
 		acbw.ac = ac

@@ -7,6 +7,7 @@ import (
 
 	"github.com/gophercloud/gophercloud"
 	tokens2 "github.com/gophercloud/gophercloud/openstack/identity/v2/tokens"
+	"github.com/gophercloud/gophercloud/openstack/identity/v3/extensions/ec2tokens"
 	tokens3 "github.com/gophercloud/gophercloud/openstack/identity/v3/tokens"
 	"github.com/gophercloud/gophercloud/openstack/utils"
 )
@@ -224,7 +225,13 @@ func v3auth(client *gophercloud.ProviderClient, endpoint string, opts tokens3.Au
 			return err
 		}
 	} else {
-		result := tokens3.Create(v3Client, opts)
+		var result tokens3.CreateResult
+		switch opts.(type) {
+		case *ec2tokens.AuthOptions:
+			result = ec2tokens.Create(v3Client, opts)
+		default:
+			result = tokens3.Create(v3Client, opts)
+		}
 
 		err = client.SetTokenAndAuthResult(result)
 		if err != nil {
@@ -252,6 +259,10 @@ func v3auth(client *gophercloud.ProviderClient, endpoint string, opts tokens3.Au
 			o.AllowReauth = false
 			tao = &o
 		case *tokens3.AuthOptions:
+			o := *ot
+			o.AllowReauth = false
+			tao = &o
+		case *ec2tokens.AuthOptions:
 			o := *ot
 			o.AllowReauth = false
 			tao = &o

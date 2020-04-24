@@ -8,6 +8,7 @@ type Scope struct {
 	ProjectName string
 	DomainID    string
 	DomainName  string
+	System      bool
 }
 
 // AuthOptionsBuilder provides the ability for extensions to add additional
@@ -35,6 +36,9 @@ type AuthOptions struct {
 	UserID   string `json:"id,omitempty"`
 
 	Password string `json:"password,omitempty"`
+
+	// Passcode is used in TOTP authentication method
+	Passcode string `json:"passcode,omitempty"`
 
 	// At most one of DomainID and DomainName must be provided if using Username
 	// with Identity V3. Otherwise, either are optional.
@@ -67,6 +71,7 @@ func (opts *AuthOptions) ToTokenV3CreateMap(scope map[string]interface{}) (map[s
 		Username:                    opts.Username,
 		UserID:                      opts.UserID,
 		Password:                    opts.Password,
+		Passcode:                    opts.Passcode,
 		DomainID:                    opts.DomainID,
 		DomainName:                  opts.DomainName,
 		AllowReauth:                 opts.AllowReauth,
@@ -93,10 +98,15 @@ func (opts *AuthOptions) ToTokenV3ScopeMap() (map[string]interface{}, error) {
 }
 
 func (opts *AuthOptions) CanReauth() bool {
+	if opts.Passcode != "" {
+		// cannot reauth using TOTP passcode
+		return false
+	}
+
 	return opts.AllowReauth
 }
 
-func subjectTokenHeaders(c *gophercloud.ServiceClient, subjectToken string) map[string]string {
+func subjectTokenHeaders(subjectToken string) map[string]string {
 	return map[string]string{
 		"X-Subject-Token": subjectToken,
 	}
@@ -130,7 +140,7 @@ func Create(c *gophercloud.ServiceClient, opts AuthOptionsBuilder) (r CreateResu
 // Get validates and retrieves information about another token.
 func Get(c *gophercloud.ServiceClient, token string) (r GetResult) {
 	resp, err := c.Get(tokenURL(c), &r.Body, &gophercloud.RequestOpts{
-		MoreHeaders: subjectTokenHeaders(c, token),
+		MoreHeaders: subjectTokenHeaders(token),
 		OkCodes:     []int{200, 203},
 	})
 	if resp != nil {
@@ -143,7 +153,7 @@ func Get(c *gophercloud.ServiceClient, token string) (r GetResult) {
 // Validate determines if a specified token is valid or not.
 func Validate(c *gophercloud.ServiceClient, token string) (bool, error) {
 	resp, err := c.Head(tokenURL(c), &gophercloud.RequestOpts{
-		MoreHeaders: subjectTokenHeaders(c, token),
+		MoreHeaders: subjectTokenHeaders(token),
 		OkCodes:     []int{200, 204, 404},
 	})
 	if err != nil {
@@ -156,7 +166,7 @@ func Validate(c *gophercloud.ServiceClient, token string) (bool, error) {
 // Revoke immediately makes specified token invalid.
 func Revoke(c *gophercloud.ServiceClient, token string) (r RevokeResult) {
 	_, r.Err = c.Delete(tokenURL(c), &gophercloud.RequestOpts{
-		MoreHeaders: subjectTokenHeaders(c, token),
+		MoreHeaders: subjectTokenHeaders(token),
 	})
 	return
 }

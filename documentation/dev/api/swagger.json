@@ -14,7 +14,7 @@
     "/v2/admin/tsdb/clean_tombstones": {
       "post": {
         "summary": "CleanTombstones removes the deleted data from disk and cleans up the existing tombstones.",
-        "operationId": "TSDBCleanTombstones",
+        "operationId": "Admin_TSDBCleanTombstones",
         "responses": {
           "200": {
             "description": "A successful response.",
@@ -37,7 +37,7 @@
     "/v2/admin/tsdb/delete_series": {
       "post": {
         "summary": "DeleteSeries deletes data for a selection of series in a time range.",
-        "operationId": "DeleteSeries",
+        "operationId": "Admin_DeleteSeries",
         "responses": {
           "200": {
             "description": "A successful response.",
@@ -70,7 +70,7 @@
     "/v2/admin/tsdb/snapshot": {
       "post": {
         "summary": "Snapshot creates a snapshot of all current data into 'snapshots/\u003cdatetime\u003e-\u003crand\u003e' under the TSDB's data directory.",
-        "operationId": "TSDBSnapshot",
+        "operationId": "Admin_TSDBSnapshot",
         "responses": {
           "200": {
             "description": "A successful response.",

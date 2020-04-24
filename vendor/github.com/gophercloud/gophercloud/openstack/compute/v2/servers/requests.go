@@ -3,10 +3,9 @@ package servers
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 
 	"github.com/gophercloud/gophercloud"
-	"github.com/gophercloud/gophercloud/openstack/compute/v2/flavors"
-	"github.com/gophercloud/gophercloud/openstack/compute/v2/images"
 	"github.com/gophercloud/gophercloud/pagination"
 )
 
@@ -147,23 +146,13 @@ type CreateOpts struct {
 	// Name is the name to assign to the newly launched server.
 	Name string `json:"name" required:"true"`
 
-	// ImageRef [optional; required if ImageName is not provided] is the ID or
-	// full URL to the image that contains the server's OS and initial state.
+	// ImageRef is the ID or full URL to the image that contains the
+	// server's OS and initial state.
 	// Also optional if using the boot-from-volume extension.
 	ImageRef string `json:"imageRef"`
 
-	// ImageName [optional; required if ImageRef is not provided] is the name of
-	// the image that contains the server's OS and initial state.
-	// Also optional if using the boot-from-volume extension.
-	ImageName string `json:"-"`
-
-	// FlavorRef [optional; required if FlavorName is not provided] is the ID or
-	// full URL to the flavor that describes the server's specs.
+	// FlavorRef is the ID or full URL to the flavor that describes the server's specs.
 	FlavorRef string `json:"flavorRef"`
-
-	// FlavorName [optional; required if FlavorRef is not provided] is the name of
-	// the flavor that describes the server's specs.
-	FlavorName string `json:"-"`
 
 	// SecurityGroups lists the names of the security groups to which this server
 	// should belong.
@@ -179,7 +168,9 @@ type CreateOpts struct {
 	// Networks dictates how this server will be attached to available networks.
 	// By default, the server will be attached to all isolated networks for the
 	// tenant.
-	Networks []Network `json:"-"`
+	// Starting with microversion 2.37 networks can also be an "auto" or "none"
+	// string.
+	Networks interface{} `json:"-"`
 
 	// Metadata contains key-value pairs (up to 255 bytes each) to attach to the
 	// server.
@@ -220,7 +211,6 @@ type CreateOpts struct {
 // ToServerCreateMap assembles a request body based on the contents of a
 // CreateOpts.
 func (opts CreateOpts) ToServerCreateMap() (map[string]interface{}, error) {
-	sc := opts.ServiceClient
 	opts.ServiceClient = nil
 	b, err := gophercloud.BuildRequestBody(opts, "")
 	if err != nil {
@@ -245,57 +235,30 @@ func (opts CreateOpts) ToServerCreateMap() (map[string]interface{}, error) {
 		b["security_groups"] = securityGroups
 	}
 
-	if len(opts.Networks) > 0 {
-		networks := make([]map[string]interface{}, len(opts.Networks))
-		for i, net := range opts.Networks {
-			networks[i] = make(map[string]interface{})
-			if net.UUID != "" {
-				networks[i]["uuid"] = net.UUID
+	switch v := opts.Networks.(type) {
+	case []Network:
+		if len(v) > 0 {
+			networks := make([]map[string]interface{}, len(v))
+			for i, net := range v {
+				networks[i] = make(map[string]interface{})
+				if net.UUID != "" {
+					networks[i]["uuid"] = net.UUID
+				}
+				if net.Port != "" {
+					networks[i]["port"] = net.Port
+				}
+				if net.FixedIP != "" {
+					networks[i]["fixed_ip"] = net.FixedIP
+				}
 			}
-			if net.Port != "" {
-				networks[i]["port"] = net.Port
-			}
-			if net.FixedIP != "" {
-				networks[i]["fixed_ip"] = net.FixedIP
-			}
+			b["networks"] = networks
 		}
-		b["networks"] = networks
-	}
-
-	// If ImageRef isn't provided, check if ImageName was provided to ascertain
-	// the image ID.
-	if opts.ImageRef == "" {
-		if opts.ImageName != "" {
-			if sc == nil {
-				err := ErrNoClientProvidedForIDByName{}
-				err.Argument = "ServiceClient"
-				return nil, err
-			}
-			imageID, err := images.IDFromName(sc, opts.ImageName)
-			if err != nil {
-				return nil, err
-			}
-			b["imageRef"] = imageID
+	case string:
+		if v == "auto" || v == "none" {
+			b["networks"] = v
+		} else {
+			return nil, fmt.Errorf(`networks must be a slice of Network struct or a string with "auto" or "none" values, current value is %q`, v)
 		}
-	}
-
-	// If FlavorRef isn't provided, use FlavorName to ascertain the flavor ID.
-	if opts.FlavorRef == "" {
-		if opts.FlavorName == "" {
-			err := ErrNeitherFlavorIDNorFlavorNameProvided{}
-			err.Argument = "FlavorRef/FlavorName"
-			return nil, err
-		}
-		if sc == nil {
-			err := ErrNoClientProvidedForIDByName{}
-			err.Argument = "ServiceClient"
-			return nil, err
-		}
-		flavorID, err := flavors.IDFromName(sc, opts.FlavorName)
-		if err != nil {
-			return nil, err
-		}
-		b["flavorRef"] = flavorID
 	}
 
 	if opts.Min != 0 {
@@ -458,11 +421,8 @@ type RebuildOpts struct {
 	// AdminPass is the server's admin password
 	AdminPass string `json:"adminPass,omitempty"`
 
-	// ImageID is the ID of the image you want your server to be provisioned on.
-	ImageID string `json:"imageRef"`
-
-	// ImageName is readable name of an image.
-	ImageName string `json:"-"`
+	// ImageRef is the ID of the image you want your server to be provisioned on.
+	ImageRef string `json:"imageRef"`
 
 	// Name to set the server to
 	Name string `json:"name,omitempty"`
@@ -491,23 +451,6 @@ func (opts RebuildOpts) ToServerRebuildMap() (map[string]interface{}, error) {
 	b, err := gophercloud.BuildRequestBody(opts, "")
 	if err != nil {
 		return nil, err
-	}
-
-	// If ImageRef isn't provided, check if ImageName was provided to ascertain
-	// the image ID.
-	if opts.ImageID == "" {
-		if opts.ImageName != "" {
-			if opts.ServiceClient == nil {
-				err := ErrNoClientProvidedForIDByName{}
-				err.Argument = "ServiceClient"
-				return nil, err
-			}
-			imageID, err := images.IDFromName(opts.ServiceClient, opts.ImageName)
-			if err != nil {
-				return nil, err
-			}
-			b["imageRef"] = imageID
-		}
 	}
 
 	return map[string]interface{}{"rebuild": b}, nil
@@ -750,43 +693,6 @@ func CreateImage(client *gophercloud.ServiceClient, id string, opts CreateImageO
 	r.Err = err
 	r.Header = resp.Header
 	return
-}
-
-// IDFromName is a convienience function that returns a server's ID given its
-// name.
-func IDFromName(client *gophercloud.ServiceClient, name string) (string, error) {
-	count := 0
-	id := ""
-
-	listOpts := ListOpts{
-		Name: name,
-	}
-
-	allPages, err := List(client, listOpts).AllPages()
-	if err != nil {
-		return "", err
-	}
-
-	all, err := ExtractServers(allPages)
-	if err != nil {
-		return "", err
-	}
-
-	for _, f := range all {
-		if f.Name == name {
-			count++
-			id = f.ID
-		}
-	}
-
-	switch count {
-	case 0:
-		return "", gophercloud.ErrResourceNotFound{Name: name, ResourceType: "server"}
-	case 1:
-		return id, nil
-	default:
-		return "", gophercloud.ErrMultipleResourcesFound{Name: name, Count: count, ResourceType: "server"}
-	}
 }
 
 // GetPassword makes a request against the nova API to get the encrypted

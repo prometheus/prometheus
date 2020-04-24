@@ -6,3 +6,4 @@ go:
 
 script:
   - go test
+  - go test -bench . -benchmem

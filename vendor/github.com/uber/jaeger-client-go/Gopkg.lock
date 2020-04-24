@@ -46,6 +46,14 @@
   version = "v1.1.1"
 
 [[projects]]
+  digest = "1:7ae311278f7ccaa724de8f2cdec0a507ba3ee6dea8c77237e8157bcf64b0f28b"
+  name = "github.com/golang/mock"
+  packages = ["gomock"]
+  pruneopts = "UT"
+  revision = "3a35fb6e3e18b9dbfee291262260dee7372d2a92"
+  version = "v1.4.3"
+
+[[projects]]
   digest = "1:573ca21d3669500ff845bdebee890eb7fc7f0f50c59f2132f2a0c6b03d85086a"
   name = "github.com/golang/protobuf"
   packages = ["proto"]
@@ -182,7 +190,7 @@
   revision = "2cfd321de3ee5d5f8a5fda2521d1703478334d98"
 
 [[projects]]
-  digest = "1:6be13632ab4bd5842a097abb3aabac045a8601e19a10da4239e7d8bd83d4b83c"
+  digest = "1:98a70115729234dc73ee7bb83973cb39cb8fedf278d17df77264382bad0183ec"
   name = "go.uber.org/zap"
   packages = [
     ".",
@@ -191,6 +199,7 @@
     "internal/color",
     "internal/exit",
     "zapcore",
+    "zaptest/observer",
   ]
   pruneopts = "UT"
   revision = "a6015e13fab9b744d96085308ce4e8f11bad1996"
@@ -297,6 +306,7 @@
   analyzer-version = 1
   input-imports = [
     "github.com/crossdock/crossdock-go",
+    "github.com/golang/mock/gomock",
     "github.com/opentracing/opentracing-go",
     "github.com/opentracing/opentracing-go/ext",
     "github.com/opentracing/opentracing-go/harness",
@@ -312,6 +322,7 @@
     "go.uber.org/atomic",
     "go.uber.org/zap",
     "go.uber.org/zap/zapcore",
+    "go.uber.org/zap/zaptest/observer",
   ]
   solver-name = "gps-cdcl"
   solver-version = 1

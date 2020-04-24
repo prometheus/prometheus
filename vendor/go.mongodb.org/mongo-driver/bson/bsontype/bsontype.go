@@ -31,6 +31,14 @@ const (
 	Decimal128       Type = 0x13
 	MinKey           Type = 0xFF
 	MaxKey           Type = 0x7F
+
+	BinaryGeneric     byte = 0x00
+	BinaryFunction    byte = 0x01
+	BinaryBinaryOld   byte = 0x02
+	BinaryUUIDOld     byte = 0x03
+	BinaryUUID        byte = 0x04
+	BinaryMD5         byte = 0x05
+	BinaryUserDefined byte = 0x80
 )
 
 // Type represents a BSON type.
