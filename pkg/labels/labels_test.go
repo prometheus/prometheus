@@ -14,7 +14,6 @@
 package labels
 
 import (
-	"strconv"
 	"testing"
 
 	"github.com/prometheus/prometheus/util/testutil"
@@ -518,40 +517,4 @@ func TestLabels_Has(t *testing.T) {
 		got := labelsSet.Has(test.input)
 		testutil.Equals(t, test.expected, got, "unexpected comparison result for test case %d", i)
 	}
-}
-
-func BenchmarkLabelsString(b *testing.B) {
-	metrics := []Labels{}
-	metrics = append(metrics, FromStrings("__name__", "a_one"))
-	metrics = append(metrics, FromStrings("__name__", "b_one"))
-	for j := 0; j < 10; j++ {
-		metrics = append(metrics, FromStrings("__name__", "h_one", "le", strconv.Itoa(j)))
-	}
-	metrics = append(metrics, FromStrings("__name__", "h_one", "le", "+Inf"))
-
-	for i := 0; i < 10; i++ {
-		metrics = append(metrics, FromStrings("__name__", "a_ten", "l", strconv.Itoa(i)))
-		metrics = append(metrics, FromStrings("__name__", "b_ten", "l", strconv.Itoa(i)))
-		for j := 0; j < 10; j++ {
-			metrics = append(metrics, FromStrings("__name__", "h_ten", "l", strconv.Itoa(i), "le", strconv.Itoa(j)))
-		}
-		metrics = append(metrics, FromStrings("__name__", "h_ten", "l", strconv.Itoa(i), "le", "+Inf"))
-	}
-
-	for i := 0; i < 100; i++ {
-		metrics = append(metrics, FromStrings("__name__", "a_hundred", "l", strconv.Itoa(i)))
-		metrics = append(metrics, FromStrings("__name__", "b_hundred", "l", strconv.Itoa(i)))
-		for j := 0; j < 10; j++ {
-			metrics = append(metrics, FromStrings("__name__", "h_hundred", "l", strconv.Itoa(i), "le", strconv.Itoa(j)))
-		}
-		metrics = append(metrics, FromStrings("__name__", "h_hundred", "l", strconv.Itoa(i), "le", "+Inf"))
-	}
-	m := make(map[string]struct{})
-	b.Run("stringBenchmark", func(b *testing.B) {
-		b.ReportAllocs()
-		for _, ls := range metrics {
-			// fmt.Println("string: ", ls.String())
-			m[ls.String()] = struct{}{}
-		}
-	})
 }
