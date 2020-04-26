@@ -168,7 +168,7 @@ func (p *MemPostings) EnsureOrder() {
 	wg.Add(n)
 
 	for i := 0; i < n; i++ {
-		go func(i int) {
+		go func() {
 			for l := range workc {
 				sort.Slice(l, func(a, b int) bool { return l[a] < l[b] })
 			}
