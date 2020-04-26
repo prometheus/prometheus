@@ -173,7 +173,7 @@ func (p *MemPostings) EnsureOrder() {
 				sort.Slice(l, func(a, b int) bool { return l[a] < l[b] })
 			}
 			wg.Done()
-		}(i)
+		}()
 	}
 
 	for _, e := range p.m {
