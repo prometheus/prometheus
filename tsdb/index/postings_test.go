@@ -37,6 +37,7 @@ func TestMemPostings_addFor(t *testing.T) {
 func TestMemPostings_ensureOrder(t *testing.T) {
 	p := NewUnorderedMemPostings()
 	p.m["a"] = map[string][]uint64{}
+	p.m["b"] = map[string][]uint64{}
 
 	for i := 0; i < 100; i++ {
 		l := make([]uint64, 100)
@@ -46,6 +47,7 @@ func TestMemPostings_ensureOrder(t *testing.T) {
 		v := fmt.Sprintf("%d", i)
 
 		p.m["a"][v] = l
+		p.m["b"][v] = l
 	}
 
 	p.EnsureOrder()
