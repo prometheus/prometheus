@@ -607,7 +607,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	// to be no lower than the maxt of the last block.
 	blocks := db.Blocks()
 	minValidTime := int64(math.MinInt64)
-
+	var sampleFound bool
 	if _, err := os.Stat(filepath.Join(dir, "wal")); os.IsExist(err) {
 		sr, err := wal.NewSegmentsReader(filepath.Join(dir, "wal"))
 		if err != nil {
@@ -615,7 +615,6 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 		}
 		reader := wal.NewReader(sr)
 		dec := record.Decoder{}
-		var sampleFound bool
 		for reader.Next() {
 			currRecord := reader.Record()
 			if record.Samples == dec.Type(currRecord) {
@@ -628,9 +627,9 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 				break
 			}
 		}
-		if !sampleFound && len(blocks) > 0 {
-			minValidTime = blocks[len(blocks)-1].Meta().MaxTime
-		}
+	}
+	if !sampleFound && len(blocks) > 0 {
+		minValidTime = blocks[len(blocks)-1].Meta().MaxTime
 	}
 
 	if initErr := db.head.Init(minValidTime); initErr != nil {
