@@ -14,6 +14,7 @@
 package promql
 
 import (
+	"bytes"
 	"container/heap"
 	"context"
 	"fmt"
@@ -25,6 +26,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unsafe"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -831,16 +833,18 @@ type EvalNodeHelper struct {
 	// dropMetricName and label_*.
 	dmn map[uint64]labels.Labels
 	// signatureFunc.
-	sigf map[uint64]uint64
+	sigf map[string]string
 	// funcHistogramQuantile.
-	signatureToMetricWithBuckets map[uint64]*metricWithBuckets
+	signatureToMetricWithBuckets map[string]*metricWithBuckets
 	// label_replace.
 	regex *regexp.Regexp
 
+	lb *labels.Builder
+
 	// For binary vector matching.
-	rightSigs    map[uint64]Sample
-	matchedSigs  map[uint64]map[uint64]struct{}
-	resultMetric map[uint64]labels.Labels
+	rightSigs    map[string]Sample
+	matchedSigs  map[string]map[uint64]struct{}
+	resultMetric map[string]labels.Labels
 }
 
 // dropMetricName is a cached version of dropMetricName.
@@ -858,20 +862,23 @@ func (enh *EvalNodeHelper) dropMetricName(l labels.Labels) labels.Labels {
 	return ret
 }
 
-// signatureFunc is a cached version of signatureFunc.
-func (enh *EvalNodeHelper) signatureFunc(on bool, names ...string) func(labels.Labels) uint64 {
+func yoloString(b []byte) string {
+	return *((*string)(unsafe.Pointer(&b)))
+}
+
+func (enh *EvalNodeHelper) signatureFunc(on bool, names ...string) func(labels.Labels) string {
 	if enh.sigf == nil {
-		enh.sigf = make(map[uint64]uint64, len(enh.out))
+		enh.sigf = make(map[string]string, len(enh.out))
 	}
-	f := signatureFunc(on, names...)
-	return func(l labels.Labels) uint64 {
-		h := l.Hash()
-		ret, ok := enh.sigf[h]
+	f := signatureFuncString(on, names...)
+	return func(l labels.Labels) string {
+		ls := l.YoloString()
+		ret, ok := enh.sigf[ls]
 		if ok {
 			return ret
 		}
 		ret = f(l)
-		enh.sigf[h] = ret
+		enh.sigf[l.NoRenderString()] = ret
 		return ret
 	}
 }
@@ -1527,7 +1534,7 @@ func (ev *evaluator) VectorAnd(lhs, rhs Vector, matching *parser.VectorMatching,
 	sigf := enh.signatureFunc(matching.On, matching.MatchingLabels...)
 
 	// The set of signatures for the right-hand side Vector.
-	rightSigs := map[uint64]struct{}{}
+	rightSigs := map[string]struct{}{}
 	// Add all rhs samples to a map so we can easily find matches later.
 	for _, rs := range rhs {
 		rightSigs[sigf(rs.Metric)] = struct{}{}
@@ -1548,7 +1555,7 @@ func (ev *evaluator) VectorOr(lhs, rhs Vector, matching *parser.VectorMatching, 
 	}
 	sigf := enh.signatureFunc(matching.On, matching.MatchingLabels...)
 
-	leftSigs := map[uint64]struct{}{}
+	leftSigs := map[string]struct{}{}
 	// Add everything from the left-hand-side Vector.
 	for _, ls := range lhs {
 		leftSigs[sigf(ls.Metric)] = struct{}{}
@@ -1569,7 +1576,7 @@ func (ev *evaluator) VectorUnless(lhs, rhs Vector, matching *parser.VectorMatchi
 	}
 	sigf := enh.signatureFunc(matching.On, matching.MatchingLabels...)
 
-	rightSigs := map[uint64]struct{}{}
+	rightSigs := map[string]struct{}{}
 	for _, rs := range rhs {
 		rightSigs[sigf(rs.Metric)] = struct{}{}
 	}
@@ -1598,7 +1605,7 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 
 	// All samples from the rhs hashed by the matching label/values.
 	if enh.rightSigs == nil {
-		enh.rightSigs = make(map[uint64]Sample, len(enh.out))
+		enh.rightSigs = make(map[string]Sample, len(enh.out))
 	} else {
 		for k := range enh.rightSigs {
 			delete(enh.rightSigs, k)
@@ -1628,7 +1635,7 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 	// Tracks the match-signature. For one-to-one operations the value is nil. For many-to-one
 	// the value is a set of signatures to detect duplicated result elements.
 	if enh.matchedSigs == nil {
-		enh.matchedSigs = make(map[uint64]map[uint64]struct{}, len(rightSigs))
+		enh.matchedSigs = make(map[string]map[uint64]struct{}, len(rightSigs))
 	} else {
 		for k := range enh.matchedSigs {
 			delete(enh.matchedSigs, k)
@@ -1662,7 +1669,6 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 			continue
 		}
 		metric := resultMetric(ls.Metric, rs.Metric, op, matching, enh)
-
 		insertedSigs, exists := matchedSigs[sig]
 		if matching.Card == parser.CardOneToOne {
 			if exists {
@@ -1692,42 +1698,51 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 	return enh.out
 }
 
-// signatureFunc returns a function that calculates the signature for a metric
-// ignoring the provided labels. If on, then the given labels are only used instead.
-func signatureFunc(on bool, names ...string) func(labels.Labels) uint64 {
+func signatureFuncString(on bool, names ...string) func(labels.Labels) string {
 	sort.Strings(names)
 	if on {
-		return func(lset labels.Labels) uint64 {
-			h, _ := lset.HashForLabels(make([]byte, 0, 1024), names...)
-			return h
+		return func(lset labels.Labels) string {
+			return lset.WithLabels(names...).NoRenderString()
 		}
 	}
-	return func(lset labels.Labels) uint64 {
-		h, _ := lset.HashWithoutLabels(make([]byte, 0, 1024), names...)
-		return h
+	return func(lset labels.Labels) string {
+		return lset.WithoutLabels(names...).NoRenderString()
 	}
+}
+
+var labelsPool = sync.Pool{
+	New: func() interface{} {
+		// todo: does the size here change anything?
+		return bytes.NewBuffer(make([]byte, 0, 96))
+	},
 }
 
 // resultMetric returns the metric for the given sample(s) based on the Vector
 // binary operation and the matching options.
 func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.VectorMatching, enh *EvalNodeHelper) labels.Labels {
 	if enh.resultMetric == nil {
-		enh.resultMetric = make(map[uint64]labels.Labels, len(enh.out))
+		enh.resultMetric = make(map[string]labels.Labels, len(enh.out))
 	}
-	// op and matching are always the same for a given node, so
-	// there's no need to include them in the hash key.
-	// If the lhs and rhs are the same then the xor would be 0,
-	// so add in one side to protect against that.
-	lh := lhs.Hash()
-	h := (lh ^ rhs.Hash()) + lh
-	if ret, ok := enh.resultMetric[h]; ok {
+	if enh.lb == nil {
+		enh.lb = labels.NewBuilder(lhs)
+	} else {
+		enh.lb.Reset(lhs)
+	}
+	reuseStr := labelsPool.Get().(*bytes.Buffer)
+	reuseStr.Write([]byte(lhs.YoloString()))
+	reuseStr.Write([]byte(rhs.YoloString()))
+	str := yoloString(reuseStr.Bytes())
+	defer func() {
+		reuseStr.Reset()
+		labelsPool.Put(reuseStr)
+	}()
+	if ret, ok := enh.resultMetric[str]; ok {
 		return ret
 	}
-
-	lb := labels.NewBuilder(lhs)
+	str = reuseStr.String()
 
 	if shouldDropMetricName(op) {
-		lb.Del(labels.MetricName)
+		enh.lb.Del(labels.MetricName)
 	}
 
 	if matching.Card == parser.CardOneToOne {
@@ -1739,23 +1754,23 @@ func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.V
 						continue Outer
 					}
 				}
-				lb.Del(l.Name)
+				enh.lb.Del(l.Name)
 			}
 		} else {
-			lb.Del(matching.MatchingLabels...)
+			enh.lb.Del(matching.MatchingLabels...)
 		}
 	}
 	for _, ln := range matching.Include {
 		// Included labels from the `group_x` modifier are taken from the "one"-side.
 		if v := rhs.Get(ln); v != "" {
-			lb.Set(ln, v)
+			enh.lb.Set(ln, v)
 		} else {
-			lb.Del(ln)
+			enh.lb.Del(ln)
 		}
 	}
 
-	ret := lb.Labels()
-	enh.resultMetric[h] = ret
+	ret := enh.lb.Labels()
+	enh.resultMetric[string(str)] = ret
 	return ret
 }
 
