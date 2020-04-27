@@ -882,17 +882,12 @@ func TestWALSegmentSizeOptions(t *testing.T) {
 		},
 		// Wal disabled.
 		-1: func(dbDir string, segmentSize int) {
-			// Check that WAL dir is there.
+			// Check that WAL dir is not there.
 			_, err := os.Stat(filepath.Join(dbDir, "wal"))
+			testutil.NotOk(t, err)
+			// Check that there is chunks dir.
+			_, err = os.Stat(filepath.Join(dbDir, "chunks"))
 			testutil.Ok(t, err)
-			// Check that chunks dir is there inside WAL.
-			_, err = os.Stat(filepath.Join(dbDir, "wal/chunks"))
-			testutil.Ok(t, err)
-			// Check that there is only 1 item inside WAL dir, i.e. the chunks dir.
-			// Which means nothing was written to the WAL.
-			filesAndDir, err := ioutil.ReadDir(filepath.Join(dbDir, "wal"))
-			testutil.Ok(t, err)
-			testutil.Equals(t, 1, len(filesAndDir))
 		},
 	}
 	for segmentSize, testFunc := range tests {

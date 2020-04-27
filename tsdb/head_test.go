@@ -1283,7 +1283,7 @@ func TestHeadReadWriterRepair(t *testing.T) {
 		w, err := wal.New(nil, nil, walDir, false)
 		testutil.Ok(t, err)
 
-		h, err := NewHead(nil, nil, w, chunkRange, w.Dir(), nil, DefaultStripeSize)
+		h, err := NewHead(nil, nil, w, chunkRange, dir, nil, DefaultStripeSize)
 		testutil.Ok(t, err)
 		testutil.Equals(t, 0.0, prom_testutil.ToFloat64(h.metrics.mmapChunkCorruptionTotal))
 		testutil.Ok(t, h.Init(math.MinInt64))
@@ -1302,12 +1302,12 @@ func TestHeadReadWriterRepair(t *testing.T) {
 		testutil.Ok(t, h.Close())
 
 		// Verify that there are 6 segment files.
-		files, err := ioutil.ReadDir(chunkDir(w.Dir()))
+		files, err := ioutil.ReadDir(chunkDir(dir))
 		testutil.Ok(t, err)
 		testutil.Equals(t, 6, len(files))
 
 		// Corrupt the 4th file by writing a random byte to series ref.
-		f, err := os.OpenFile(filepath.Join(chunkDir(w.Dir()), files[3].Name()), os.O_WRONLY, 0666)
+		f, err := os.OpenFile(filepath.Join(chunkDir(dir), files[3].Name()), os.O_WRONLY, 0666)
 		testutil.Ok(t, err)
 		n, err := f.WriteAt([]byte{67, 88}, chunks.HeadChunkFileHeaderSize+2)
 		testutil.Ok(t, err)
@@ -1328,7 +1328,7 @@ func TestHeadReadWriterRepair(t *testing.T) {
 	// Verify that there are 3 segment files after the repair.
 	// The segments from the corrupt segment should be removed.
 	{
-		files, err := ioutil.ReadDir(chunkDir(walDir))
+		files, err := ioutil.ReadDir(chunkDir(dir))
 		testutil.Ok(t, err)
 		testutil.Equals(t, 3, len(files))
 	}
