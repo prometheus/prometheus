@@ -607,7 +607,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	// to be no lower than the maxt of the last block.
 	blocks := db.Blocks()
 	minValidTime := int64(math.MinInt64)
-	var sampleFound bool
+	var samplesFound bool
 	if _, err := os.Stat(filepath.Join(dir, "wal")); os.IsExist(err) {
 		sr, err := wal.NewSegmentsReader(filepath.Join(dir, "wal"))
 		if err != nil {
@@ -624,11 +624,12 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 					return nil, errors.Wrap(err, "samples append")
 				}
 				minValidTime = samples[0].T
+				samplesFound = true
 				break
 			}
 		}
 	}
-	if !sampleFound && len(blocks) > 0 {
+	if !samplesFound && len(blocks) > 0 {
 		minValidTime = blocks[len(blocks)-1].Meta().MaxTime
 	}
 
