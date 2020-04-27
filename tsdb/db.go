@@ -39,6 +39,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
+	"github.com/prometheus/prometheus/tsdb/record"
 	// Load the package into main to make sure minium Go version is met.
 	_ "github.com/prometheus/prometheus/tsdb/goversion"
 	"github.com/prometheus/prometheus/tsdb/wal"
@@ -606,8 +607,30 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	// to be no lower than the maxt of the last block.
 	blocks := db.Blocks()
 	minValidTime := int64(math.MinInt64)
-	if len(blocks) > 0 {
-		minValidTime = blocks[len(blocks)-1].Meta().MaxTime
+
+	if _, err := os.Stat(filepath.Join(dir, "wal")); os.IsExist(err) {
+		sr, err := wal.NewSegmentsReader(filepath.Join(dir, "wal"))
+		if err != nil {
+			panic(err)
+		}
+		reader := wal.NewReader(sr)
+		dec := record.Decoder{}
+		var sampleFound bool
+		for reader.Next() {
+			currRecord := reader.Record()
+			if record.Samples == dec.Type(currRecord) {
+				var samples []record.RefSample
+				samples, err := dec.Samples(currRecord, samples)
+				if err != nil {
+					return nil, errors.Wrap(err, "samples append")
+				}
+				minValidTime = samples[0].T
+				break
+			}
+		}
+		if !sampleFound && len(blocks) > 0 {
+			minValidTime = blocks[len(blocks)-1].Meta().MaxTime
+		}
 	}
 
 	if initErr := db.head.Init(minValidTime); initErr != nil {
