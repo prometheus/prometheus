@@ -86,9 +86,9 @@ type Head struct {
 	// chunkDiskMapper is used to write and ready Head chunks to/from disk.
 	chunkDiskMapper *chunks.ChunkDiskMapper
 
-	// Used during WAL replay if corruption was found in replaying series.
-	// If this is not nil after an `Init` call, then it means that the corruption
-	// happened when replaying the series.
+	// seriesReplayCorruption is set to true during WAL replay if there was corruption while
+	// loading the series from WAL.
+	seriesReplayCorruption bool
 	// refSeries a map of series ref to the actual series loaded during WAL replay.
 	refSeries map[uint64]*memSeries
 	// multiRef maps the duplicate series ref to the one in the memory.
@@ -108,6 +108,7 @@ type headMetrics struct {
 	chunksRemoved            prometheus.Counter
 	gcDuration               prometheus.Summary
 	samplesAppended          prometheus.Counter
+	outOfOrderSamples        prometheus.Counter
 	walTruncateDuration      prometheus.Summary
 	walCorruptionsTotal      prometheus.Counter
 	headTruncateFail         prometheus.Counter
@@ -170,6 +171,10 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		samplesAppended: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_head_samples_appended_total",
 			Help: "Total number of appended samples.",
+		}),
+		outOfOrderSamples: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_out_of_order_samples_total",
+			Help: "Total number of out of order samples tried to ingest.",
 		}),
 		headTruncateFail: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_head_truncations_failed_total",
@@ -327,7 +332,7 @@ func (h *Head) processWALSamples(
 	minValidTime int64,
 	refSeries map[uint64]*memSeries,
 	input <-chan []record.RefSample, output chan<- []record.RefSample,
-) (unknownRefs uint64) {
+) (unknownRefs, outOfOrder uint64) {
 	defer close(output)
 	mint, maxt := int64(math.MaxInt64), int64(math.MinInt64)
 
@@ -341,9 +346,13 @@ func (h *Head) processWALSamples(
 				unknownRefs++
 				continue
 			}
-			if _, chunkCreated := ms.append(s.T, s.V, 0, h.chunkDiskMapper); chunkCreated {
+			success, chunkCreated := ms.append(s.T, s.V, 0, h.chunkDiskMapper)
+			if chunkCreated {
 				h.metrics.chunksCreated.Inc()
 				h.metrics.chunks.Inc()
+			}
+			if !success {
+				outOfOrder++
 			}
 			if s.T > maxt {
 				maxt = s.T
@@ -356,7 +365,7 @@ func (h *Head) processWALSamples(
 	}
 	h.updateMinMaxTime(mint, maxt)
 
-	return unknownRefs
+	return
 }
 
 func (h *Head) updateMinMaxTime(mint, maxt int64) {
@@ -448,6 +457,7 @@ func (h *Head) loadSamples(r *wal.Reader, multiRef map[uint64]uint64, refSeries 
 	// Track number of samples that referenced a series we don't know about
 	// for error reporting.
 	var unknownRefs uint64
+	var outOfOrderSamples uint64
 
 	// Start workers that each process samples for a partition of the series ID space.
 	// They are connected through a ring of channels which ensures that all sample batches
@@ -477,8 +487,9 @@ func (h *Head) loadSamples(r *wal.Reader, multiRef map[uint64]uint64, refSeries 
 		inputs[i] = make(chan []record.RefSample, 300)
 
 		go func(input <-chan []record.RefSample, output chan<- []record.RefSample) {
-			unknown := h.processWALSamples(h.minValidTime, refSeries, input, output)
+			unknown, outOfOrder := h.processWALSamples(h.minValidTime, refSeries, input, output)
 			atomic.AddUint64(&unknownRefs, unknown)
+			atomic.AddUint64(&outOfOrderSamples, outOfOrder)
 			wg.Done()
 		}(inputs[i], outputs[i])
 	}
@@ -621,52 +632,9 @@ func (h *Head) loadSamples(r *wal.Reader, multiRef map[uint64]uint64, refSeries 
 	if unknownRefs > 0 {
 		level.Warn(h.logger).Log("msg", "Unknown series references", "count", unknownRefs)
 	}
-	return nil
-}
-
-// Init loads data from the write ahead log and prepares the head for writes.
-// It should be called before using an appender so that it
-// limits the ingested samples to the head min valid time.
-func (h *Head) Init(minValidTime int64) error {
-	h.minValidTime = minValidTime
-	defer h.postings.EnsureOrder()
-	defer h.gc() // After loading the wal remove the obsolete data from the head.
-
-	if h.wal == nil {
-		return nil
+	if outOfOrderSamples > 0 {
+		level.Warn(h.logger).Log("msg", "out of order samples", "count", outOfOrderSamples)
 	}
-
-	start := time.Now()
-	level.Info(h.logger).Log("msg", "Replaying WAL, this may take awhile")
-
-	level.Info(h.logger).Log("msg", "creating series from WAL")
-	var err error
-	h.refSeries, h.multiRef, err = h.loadSeriesFromWAL()
-	if err != nil {
-		return err
-	}
-
-	// No corruption in loading series. Hence set these to nil to mark that.
-	defer func() {
-		h.refSeries = nil
-		h.multiRef = nil
-	}()
-
-	level.Info(h.logger).Log("msg", "m-mapping the on-disk chunks")
-	if err := h.loadMmappedChunks(h.refSeries); err != nil {
-		level.Error(h.logger).Log("msg", "loading on-disk chunks failed", "err", err)
-		h.metrics.mmapChunkCorruptionTotal.Inc()
-		// Repair is best effort here. If it fails, data will be recovered from WAL.
-		// Hence we wont lose any data (given WAL is not corrupt).
-		h.repairMmappedChunks(err, h.refSeries)
-	}
-
-	level.Info(h.logger).Log("msg", "adding remaining samples")
-	if err := h.loadSamplesFromWAL(h.refSeries, h.multiRef); err != nil {
-		return err
-	}
-
-	level.Info(h.logger).Log("msg", "finished replaying WAL", "duration", time.Since(start).String())
 	return nil
 }
 
@@ -675,8 +643,7 @@ func (h *Head) Init(minValidTime int64) error {
 // and a repair was called on the WAL.
 // TODO(codesome): Add a test for this.
 func (h *Head) PostWALRepairRecovery() error {
-	// These should not be nil if the corruption happened while loading series.
-	if h.refSeries == nil || h.multiRef == nil {
+	if !h.seriesReplayCorruption {
 		return nil
 	}
 	defer func() {
@@ -701,6 +668,53 @@ func (h *Head) PostWALRepairRecovery() error {
 
 	level.Info(h.logger).Log("msg", "finished replaying m-mapped chunks and WAL samples", "duration", time.Since(start).String())
 
+	return nil
+}
+
+// Init loads data from the write ahead log and prepares the head for writes.
+// It should be called before using an appender so that it
+// limits the ingested samples to the head min valid time.
+func (h *Head) Init(minValidTime int64) error {
+	h.minValidTime = minValidTime
+	defer h.postings.EnsureOrder()
+	defer h.gc() // After loading the wal remove the obsolete data from the head.
+
+	if h.wal == nil {
+		return nil
+	}
+
+	start := time.Now()
+	level.Info(h.logger).Log("msg", "Replaying WAL, this may take awhile")
+
+	level.Info(h.logger).Log("msg", "creating series from WAL")
+	var err error
+	h.refSeries, h.multiRef, err = h.loadSeriesFromWAL()
+	if err != nil {
+		h.seriesReplayCorruption = true
+		return err
+	}
+
+	// No corruption in loading series. Hence set these to nil for Go GC to garbage collect it.
+	defer func() {
+		h.refSeries = nil
+		h.multiRef = nil
+	}()
+
+	level.Info(h.logger).Log("msg", "m-mapping the on-disk chunks")
+	if err := h.loadMmappedChunks(h.refSeries); err != nil {
+		level.Error(h.logger).Log("msg", "loading on-disk chunks failed", "err", err)
+		h.metrics.mmapChunkCorruptionTotal.Inc()
+		// Repair is best effort here. If it fails, data will be recovered from WAL.
+		// Hence we wont lose any data (given WAL is not corrupt).
+		h.repairMmappedChunks(err, h.refSeries)
+	}
+
+	level.Info(h.logger).Log("msg", "adding remaining samples")
+	if err := h.loadSamplesFromWAL(h.refSeries, h.multiRef); err != nil {
+		return err
+	}
+
+	level.Info(h.logger).Log("msg", "finished replaying WAL", "duration", time.Since(start).String())
 	return nil
 }
 
@@ -1294,6 +1308,7 @@ func (a *headAppender) Commit() error {
 
 		if !ok {
 			total--
+			a.head.metrics.outOfOrderSamples.Inc()
 		}
 		if chunkCreated {
 			a.head.metrics.chunks.Inc()
@@ -1559,6 +1574,7 @@ func (h *headChunkReader) Chunk(ref uint64) (chunkenc.Chunk, error) {
 	c, garbageCollect := s.chunk(int(cid), h.head.chunkDiskMapper)
 	defer func() {
 		if garbageCollect {
+			// Set this to nil so that Go GC can collect it after it has been used.
 			c.chunk = nil
 			h.memChunkPool.Put(c)
 		}
@@ -2002,25 +2018,9 @@ func (s *memSeries) maxTime() int64 {
 	return c.maxTime
 }
 
-func (s *memSeries) cut(mint int64, chunkDiskMapper *chunks.ChunkDiskMapper) *memChunk {
-	if s.headChunk != nil {
-		// There is already a chunk, m-map it before we replace it with a new one.
-		chunkRef, err := chunkDiskMapper.WriteChunk(s.ref, s.headChunk.minTime, s.headChunk.maxTime, s.headChunk.chunk)
-		if err != nil {
-			if err == chunks.ErrChunkDiskMapperClosed {
-				// The head is being closed, hence chunkDiskMapper is closed.
-				// Return the same head chunk as there wont be more samples appended anyway.
-				return s.headChunk
-			}
-			panic(err)
-		}
-		s.mmappedChunks = append(s.mmappedChunks, &mmappedChunk{
-			ref:        chunkRef,
-			numSamples: uint16(s.headChunk.chunk.NumSamples()),
-			minTime:    s.headChunk.minTime,
-			maxTime:    s.headChunk.maxTime,
-		})
-	}
+func (s *memSeries) cutNewHeadChunk(mint int64, chunkDiskMapper *chunks.ChunkDiskMapper) *memChunk {
+	s.mmapCurrentHeadChunk(chunkDiskMapper)
+
 	s.headChunk = &memChunk{
 		chunk:   chunkenc.NewXORChunk(),
 		minTime: mint,
@@ -2037,6 +2037,26 @@ func (s *memSeries) cut(mint int64, chunkDiskMapper *chunks.ChunkDiskMapper) *me
 	}
 	s.app = app
 	return s.headChunk
+}
+
+func (s *memSeries) mmapCurrentHeadChunk(chunkDiskMapper *chunks.ChunkDiskMapper) {
+	if s.headChunk == nil {
+		// There is no head chunk, so nothing to m-map here.
+		return
+	}
+
+	chunkRef, err := chunkDiskMapper.WriteChunk(s.ref, s.headChunk.minTime, s.headChunk.maxTime, s.headChunk.chunk)
+	if err != nil {
+		if err != chunks.ErrChunkDiskMapperClosed {
+			panic(err)
+		}
+	}
+	s.mmappedChunks = append(s.mmappedChunks, &mmappedChunk{
+		ref:        chunkRef,
+		numSamples: uint16(s.headChunk.chunk.NumSamples()),
+		minTime:    s.headChunk.minTime,
+		maxTime:    s.headChunk.maxTime,
+	})
 }
 
 // appendable checks whether the given sample is valid for appending to the series.
@@ -2060,8 +2080,8 @@ func (s *memSeries) appendable(t int64, v float64) error {
 	return nil
 }
 
-// chunk returns the chunk for the id. If garbageCollect is true, it means that the returned chunk can
-// be garbage collected after it's usage.
+// chunk returns the chunk for the id. If garbageCollect is true, it means that the returned *memChunk
+// (and not the chunkend.Chunk inside it) can be garbage collected after it's usage.
 func (s *memSeries) chunk(id int, chunkDiskMapper *chunks.ChunkDiskMapper) (chunk *memChunk, garbageCollect bool) {
 	// ix represents the index of chunk in the s.mmappedChunks slice. The chunk id's are
 	// incremented by 1 when new chunk is created, hence (id - firstChunkID) gives the slice index.
@@ -2119,6 +2139,7 @@ func (s *memSeries) truncateChunksBefore(mint int64) (removed int) {
 // append adds the sample (t, v) to the series. The caller also has to provide
 // the appendID for isolation. (The appendID can be zero, which results in no
 // isolation for this append.)
+// It is unsafe to call this concurrently with s.iterator(...) without holding the series lock.
 func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper *chunks.ChunkDiskMapper) (success, chunkCreated bool) {
 	// Based on Gorilla white papers this offers near-optimal compression ratio
 	// so anything bigger that this has diminishing returns and increases
@@ -2128,12 +2149,12 @@ func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper 
 	c := s.head()
 
 	if c == nil {
-		// Out of order sample. Don't cut a chunk with wrong timestamp.
+		// Out of order sample. Sample timestamp is already in the mmaped chunks, so ignore it.
 		if len(s.mmappedChunks) > 0 && s.mmappedChunks[len(s.mmappedChunks)-1].maxTime >= t {
-			return false, chunkCreated
+			return false, false
 		}
-		// There is no chunk in this series yet, create the first chunk.
-		c = s.cut(t, chunkDiskMapper)
+		// There is no chunk in this series yet, create the first chunk for the sample.
+		c = s.cutNewHeadChunk(t, chunkDiskMapper)
 		chunkCreated = true
 	}
 	numSamples := c.chunk.NumSamples()
@@ -2149,7 +2170,7 @@ func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper 
 		s.nextAt = computeChunkEndTime(c.minTime, c.maxTime, s.nextAt)
 	}
 	if t >= s.nextAt {
-		c = s.cut(t, chunkDiskMapper)
+		c = s.cutNewHeadChunk(t, chunkDiskMapper)
 		chunkCreated = true
 	}
 	s.app.Append(t, v)
@@ -2185,10 +2206,14 @@ func computeChunkEndTime(start, cur, max int64) int64 {
 	return start + (max-start)/a
 }
 
+// iterator returns a chunk iterator.
+// It is unsafe to call this concurrently with s.append(...) without holding the series lock.
 func (s *memSeries) iterator(id int, isoState *isolationState, chunkDiskMapper *chunks.ChunkDiskMapper, it chunkenc.Iterator) chunkenc.Iterator {
 	c, garbageCollect := s.chunk(id, chunkDiskMapper)
 	defer func() {
 		if garbageCollect {
+			// Set this to nil so that Go GC can collect it after it has been used.
+			// This should be done always at the end.
 			c.chunk = nil
 			s.memChunkPool.Put(c)
 		}
