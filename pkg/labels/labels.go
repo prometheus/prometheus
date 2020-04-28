@@ -18,7 +18,6 @@ import (
 	"encoding/json"
 	"sort"
 	"strconv"
-	"sync"
 	"unsafe"
 
 	"github.com/cespare/xxhash"
@@ -34,20 +33,6 @@ const (
 	InstanceName = "instance"
 )
 
-var bufPool = sync.Pool{
-	New: func() interface{} {
-		// 96 seems to be the best for the benchmarks but that might not mean anything for real scenarios
-		return bytes.NewBuffer(make([]byte, 0, 96))
-	},
-}
-
-var yoloPool = sync.Pool{
-	New: func() interface{} {
-		// 96 seems to be the best for the benchmarks but that might not mean anything for real scenarios
-		return bytes.NewBuffer(make([]byte, 0, 96))
-	},
-}
-
 // Label is a key/value pair of strings.
 type Label struct {
 	Name, Value string
@@ -62,8 +47,7 @@ func (ls Labels) Swap(i, j int)      { ls[i], ls[j] = ls[j], ls[i] }
 func (ls Labels) Less(i, j int) bool { return ls[i].Name < ls[j].Name }
 
 func (ls Labels) String() string {
-	var ret string
-	b := bufPool.Get().(*bytes.Buffer)
+	var b bytes.Buffer
 
 	b.WriteByte('{')
 	for i, l := range ls {
@@ -76,16 +60,14 @@ func (ls Labels) String() string {
 		b.WriteString(strconv.Quote(l.Value))
 	}
 	b.WriteByte('}')
-	ret = b.String()
-	b.Reset()
-	bufPool.Put(b)
-	return ret
+	return b.String()
 }
 
-func (ls Labels) NoRenderString() string {
-	var ret string
-	b := bufPool.Get().(*bytes.Buffer)
-
+// NoRenderString returns ls as a string.
+// It uses an byte invalid character as a separator and so
+// should not be used for printing.
+func (ls Labels) NoRenderString(b *bytes.Buffer) string {
+	b.Reset()
 	b.WriteByte('{')
 	for i, l := range ls {
 		if i > 0 {
@@ -94,25 +76,23 @@ func (ls Labels) NoRenderString() string {
 		}
 		b.WriteString(l.Name)
 		b.WriteByte('=')
-		b.WriteByte('"')
+		b.WriteByte(sep)
 		b.WriteString(l.Value)
-		b.WriteByte('"')
+		b.WriteByte(sep)
 	}
 	b.WriteByte('}')
-	ret = b.String()
-	b.Reset()
-	bufPool.Put(b)
-	return ret
+	return b.String()
 }
 
 func yoloString(b []byte) string {
 	return *((*string)(unsafe.Pointer(&b)))
 }
 
-func (ls Labels) YoloString() string {
-	b := yoloPool.Get().(*bytes.Buffer)
+// YoloString returns ls as an unsafe pointer to b's bytes casted to a string.
+// This is done to save on allocations that would happen during b.String() calls.
+// It uses an byte invalid character as a separator and so should not be used for printing.
+func (ls Labels) YoloString(b *bytes.Buffer) string {
 	b.Reset()
-
 	b.WriteByte('{')
 	for i, l := range ls {
 		if i > 0 {
@@ -121,12 +101,11 @@ func (ls Labels) YoloString() string {
 		}
 		b.WriteString(l.Name)
 		b.WriteByte('=')
-		b.WriteByte('"')
+		b.WriteByte(sep)
 		b.WriteString(l.Value)
-		b.WriteByte('"')
+		b.WriteByte(sep)
 	}
 	b.WriteByte('}')
-	yoloPool.Put(b)
 	return yoloString(b.Bytes())
 }
 
