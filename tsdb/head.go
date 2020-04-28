@@ -647,6 +647,7 @@ func (h *Head) PostWALRepairRecovery() error {
 		return nil
 	}
 	defer func() {
+		h.gc()
 		h.refSeries = nil
 		h.multiRef = nil
 	}()
@@ -677,8 +678,14 @@ func (h *Head) PostWALRepairRecovery() error {
 func (h *Head) Init(minValidTime int64) error {
 	h.minValidTime = minValidTime
 	defer h.postings.EnsureOrder()
-	defer h.gc() // After loading the wal remove the obsolete data from the head.
-
+	defer func() {
+		// After loading the wal remove the obsolete data from the head.
+		// We should not collect it if it was an error in loading series,
+		// as samples for that will be loaded later and gc will be called there again.
+		if !h.seriesReplayCorruption {
+			h.gc()
+		}
+	}()
 	if h.wal == nil {
 		return nil
 	}

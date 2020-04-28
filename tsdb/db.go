@@ -618,6 +618,8 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 		if err := wlog.Repair(initErr); err != nil {
 			return nil, errors.Wrap(err, "repair corrupted WAL")
 		}
+		// If the corruption was during replaying series, then we need to
+		// replay samples after fixing the corruption.
 		if err := db.head.PostWALRepairRecovery(); err != nil {
 			return nil, errors.Wrap(err, "replay after WAL repair")
 		}
