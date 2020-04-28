@@ -839,7 +839,8 @@ type EvalNodeHelper struct {
 	// label_replace.
 	regex *regexp.Regexp
 
-	lb *labels.Builder
+	lb     *labels.Builder
+	lblBuf bytes.Buffer
 
 	// For binary vector matching.
 	rightSigs    map[string]Sample
@@ -870,15 +871,15 @@ func (enh *EvalNodeHelper) signatureFunc(on bool, names ...string) func(labels.L
 	if enh.sigf == nil {
 		enh.sigf = make(map[string]string, len(enh.out))
 	}
-	f := signatureFuncString(on, names...)
+	f := signatureFunc(on, &enh.lblBuf, names...)
 	return func(l labels.Labels) string {
-		ls := l.YoloString()
+		ls := l.YoloString(&enh.lblBuf)
 		ret, ok := enh.sigf[ls]
 		if ok {
 			return ret
 		}
 		ret = f(l)
-		enh.sigf[l.NoRenderString()] = ret
+		enh.sigf[l.NoRenderString(&enh.lblBuf)] = ret
 		return ret
 	}
 }
@@ -1698,23 +1699,16 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 	return enh.out
 }
 
-func signatureFuncString(on bool, names ...string) func(labels.Labels) string {
+func signatureFunc(on bool, b *bytes.Buffer, names ...string) func(labels.Labels) string {
 	sort.Strings(names)
 	if on {
 		return func(lset labels.Labels) string {
-			return lset.WithLabels(names...).NoRenderString()
+			return lset.WithLabels(names...).NoRenderString(b)
 		}
 	}
 	return func(lset labels.Labels) string {
-		return lset.WithoutLabels(names...).NoRenderString()
+		return lset.WithoutLabels(names...).NoRenderString(b)
 	}
-}
-
-var labelsPool = sync.Pool{
-	New: func() interface{} {
-		// todo: does the size here change anything?
-		return bytes.NewBuffer(make([]byte, 0, 96))
-	},
 }
 
 // resultMetric returns the metric for the given sample(s) based on the Vector
@@ -1728,18 +1722,15 @@ func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.V
 	} else {
 		enh.lb.Reset(lhs)
 	}
-	reuseStr := labelsPool.Get().(*bytes.Buffer)
-	reuseStr.Write([]byte(lhs.YoloString()))
-	reuseStr.Write([]byte(rhs.YoloString()))
-	str := yoloString(reuseStr.Bytes())
-	defer func() {
-		reuseStr.Reset()
-		labelsPool.Put(reuseStr)
-	}()
+	enh.lblBuf.Reset()
+	enh.lblBuf.Write([]byte(lhs.YoloString(&enh.lblBuf)))
+	enh.lblBuf.Write([]byte(rhs.YoloString(&enh.lblBuf)))
+	str := yoloString(enh.lblBuf.Bytes())
+
 	if ret, ok := enh.resultMetric[str]; ok {
 		return ret
 	}
-	str = reuseStr.String()
+	str = enh.lblBuf.String()
 
 	if shouldDropMetricName(op) {
 		enh.lb.Del(labels.MetricName)
