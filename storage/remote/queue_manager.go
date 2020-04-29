@@ -15,6 +15,7 @@ package remote
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"strconv"
 	"sync"
@@ -873,6 +874,7 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, b
 
 // sendSamples to the remote storage with backoff for recoverable errors.
 func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.TimeSeries, buf *[]byte) error {
+	var err error
 	backoff := s.qm.cfg.MinBackoff
 	req, highest, err := buildWriteRequest(samples, *buf)
 	*buf = req
@@ -885,11 +887,11 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return fmt.Errorf("%v, with send batch error %v", ctx.Err(), err)
 		default:
 		}
 		begin := time.Now()
-		err := s.qm.client().Store(ctx, req)
+		err = s.qm.client().Store(ctx, req)
 
 		s.qm.sentBatchDuration.Observe(time.Since(begin).Seconds())
 
