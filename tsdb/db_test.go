@@ -886,7 +886,7 @@ func TestWALSegmentSizeOptions(t *testing.T) {
 			_, err := os.Stat(filepath.Join(dbDir, "wal"))
 			testutil.NotOk(t, err)
 			// Check that there is chunks dir.
-			_, err = os.Stat(filepath.Join(dbDir, "chunks"))
+			_, err = os.Stat(mmappedChunksDir(dbDir))
 			testutil.Ok(t, err)
 		},
 	}

@@ -16,6 +16,7 @@ package tsdb
 import (
 	"fmt"
 	"math"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
@@ -85,6 +86,8 @@ type Head struct {
 
 	// chunkDiskMapper is used to write and ready Head chunks to/from disk.
 	chunkDiskMapper *chunks.ChunkDiskMapper
+	// chunkDirRoot is the parent directory of the chunks directory.
+	chunkDirRoot string
 
 	// seriesReplayCorruption is set to true during WAL replay if there was corruption while
 	// loading the series from WAL.
@@ -309,6 +312,7 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, chunkRange int
 				return &memChunk{}
 			},
 		},
+		chunkDirRoot: chkDirRoot,
 	}
 	h.metrics = newHeadMetrics(h, r)
 
@@ -317,13 +321,15 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, chunkRange int
 	}
 
 	var err error
-	h.chunkDiskMapper, err = chunks.NewChunkDiskMapper(chunkDir(chkDirRoot), pool)
+	h.chunkDiskMapper, err = chunks.NewChunkDiskMapper(mmappedChunksDir(chkDirRoot), pool)
 	if err != nil {
 		return nil, err
 	}
 
 	return h, nil
 }
+
+func mmappedChunksDir(dir string) string { return filepath.Join(dir, "chunks_head") }
 
 // processWALSamples adds a partition of samples it receives to the head and passes
 // them on to other workers.
@@ -332,7 +338,7 @@ func (h *Head) processWALSamples(
 	minValidTime int64,
 	refSeries map[uint64]*memSeries,
 	input <-chan []record.RefSample, output chan<- []record.RefSample,
-) (unknownRefs, outOfOrder uint64) {
+) (unknownRefs uint64) {
 	defer close(output)
 	mint, maxt := int64(math.MaxInt64), int64(math.MinInt64)
 
@@ -346,13 +352,10 @@ func (h *Head) processWALSamples(
 				unknownRefs++
 				continue
 			}
-			success, chunkCreated := ms.append(s.T, s.V, 0, h.chunkDiskMapper)
+			_, chunkCreated := ms.append(s.T, s.V, 0, h.chunkDiskMapper)
 			if chunkCreated {
 				h.metrics.chunksCreated.Inc()
 				h.metrics.chunks.Inc()
-			}
-			if !success {
-				outOfOrder++
 			}
 			if s.T > maxt {
 				maxt = s.T
@@ -457,7 +460,6 @@ func (h *Head) loadSamples(r *wal.Reader, multiRef map[uint64]uint64, refSeries 
 	// Track number of samples that referenced a series we don't know about
 	// for error reporting.
 	var unknownRefs uint64
-	var outOfOrderSamples uint64
 
 	// Start workers that each process samples for a partition of the series ID space.
 	// They are connected through a ring of channels which ensures that all sample batches
@@ -487,9 +489,8 @@ func (h *Head) loadSamples(r *wal.Reader, multiRef map[uint64]uint64, refSeries 
 		inputs[i] = make(chan []record.RefSample, 300)
 
 		go func(input <-chan []record.RefSample, output chan<- []record.RefSample) {
-			unknown, outOfOrder := h.processWALSamples(h.minValidTime, refSeries, input, output)
+			unknown := h.processWALSamples(h.minValidTime, refSeries, input, output)
 			atomic.AddUint64(&unknownRefs, unknown)
-			atomic.AddUint64(&outOfOrderSamples, outOfOrder)
 			wg.Done()
 		}(inputs[i], outputs[i])
 	}
@@ -632,16 +633,12 @@ func (h *Head) loadSamples(r *wal.Reader, multiRef map[uint64]uint64, refSeries 
 	if unknownRefs > 0 {
 		level.Warn(h.logger).Log("msg", "Unknown series references", "count", unknownRefs)
 	}
-	if outOfOrderSamples > 0 {
-		level.Warn(h.logger).Log("msg", "out of order samples", "count", outOfOrderSamples)
-	}
 	return nil
 }
 
 // PostWALRepairRecovery is used to recover the remaining samples from WAL if the corruption
 // occured in the series loading phase. This must be called iff Head.Init encountered a WAL corruption
 // and a repair was called on the WAL.
-// TODO(codesome): Add a test for this.
 func (h *Head) PostWALRepairRecovery() error {
 	if !h.seriesReplayCorruption {
 		return nil

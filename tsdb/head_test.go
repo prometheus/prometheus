@@ -1302,12 +1302,12 @@ func TestHeadReadWriterRepair(t *testing.T) {
 		testutil.Ok(t, h.Close())
 
 		// Verify that there are 6 segment files.
-		files, err := ioutil.ReadDir(chunkDir(dir))
+		files, err := ioutil.ReadDir(mmappedChunksDir(dir))
 		testutil.Ok(t, err)
 		testutil.Equals(t, 6, len(files))
 
 		// Corrupt the 4th file by writing a random byte to series ref.
-		f, err := os.OpenFile(filepath.Join(chunkDir(dir), files[3].Name()), os.O_WRONLY, 0666)
+		f, err := os.OpenFile(filepath.Join(mmappedChunksDir(dir), files[3].Name()), os.O_WRONLY, 0666)
 		testutil.Ok(t, err)
 		n, err := f.WriteAt([]byte{67, 88}, chunks.HeadChunkFileHeaderSize+2)
 		testutil.Ok(t, err)
@@ -1328,7 +1328,7 @@ func TestHeadReadWriterRepair(t *testing.T) {
 	// Verify that there are 3 segment files after the repair.
 	// The segments from the corrupt segment should be removed.
 	{
-		files, err := ioutil.ReadDir(chunkDir(dir))
+		files, err := ioutil.ReadDir(mmappedChunksDir(dir))
 		testutil.Ok(t, err)
 		testutil.Equals(t, 3, len(files))
 	}
@@ -1369,14 +1369,10 @@ func TestPostWALRepairRecovery(t *testing.T) {
 	}
 
 	// Restart Head.
-	walDir := w.Dir()
-	chkDir := walDir[:len(walDir)-1] // The parent dir of WAL is the chunk Dir.
 	testutil.Ok(t, h.Close())
-
-	wlog, err := wal.NewSize(nil, nil, walDir, 32768, false)
+	wlog, err := wal.NewSize(nil, nil, w.Dir(), 32768, false)
 	testutil.Ok(t, err)
-
-	h, err = NewHead(nil, nil, wlog, 1000, chkDir, nil, DefaultStripeSize)
+	h, err = NewHead(nil, nil, wlog, 1000, h.chunkDirRoot, nil, DefaultStripeSize)
 	testutil.Ok(t, err)
 	defer func() {
 		testutil.Ok(t, h.Close())
