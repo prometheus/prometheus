@@ -180,7 +180,6 @@ type Handler struct {
 	context       context.Context
 	tsdb          func() *tsdb.DB
 	storage       storage.Storage
-	localStorage  storage.Storage
 	notifier      *notifier.Manager
 
 	apiV1 *api_v1.API
@@ -285,7 +284,6 @@ func New(logger log.Logger, o *Options) *Handler {
 		lookbackDelta: o.LookbackDelta,
 		tsdb:          o.TSDB,
 		storage:       o.Storage,
-		localStorage:  o.TSDB(),
 		notifier:      o.Notifier,
 
 		now: model.Now,
