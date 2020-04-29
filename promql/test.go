@@ -101,8 +101,8 @@ func (t *Test) Storage() storage.Storage {
 	return t.storage
 }
 
-// Storage returns the test's TSDB
-func (t *Test) GetDB() *tsdb.DB {
+// TSDB returns test's TSDB.
+func (t *Test) TSDB() *tsdb.DB {
 	return t.storage.DB
 }
 

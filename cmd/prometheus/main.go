@@ -387,9 +387,9 @@ func main() {
 	)
 
 	cfg.web.Context = ctxWeb
-	cfg.web.TSDB = localStorage.Get
 	cfg.web.TSDBRetentionDuration = cfg.tsdb.RetentionDuration
 	cfg.web.TSDBMaxBytes = cfg.tsdb.MaxBytes
+	cfg.web.LocalStorage = localStorage
 	cfg.web.Storage = fanoutStorage
 	cfg.web.QueryEngine = queryEngine
 	cfg.web.ScrapeManager = scrapeManager
@@ -921,14 +921,7 @@ func (s *readyStorage) Set(db *tsdb.DB, startTimeMargin int64) {
 	s.startTimeMargin = startTimeMargin
 }
 
-// Get the storage.
-func (s *readyStorage) Get() *tsdb.DB {
-	if x := s.get(); x != nil {
-		return x
-	}
-	return nil
-}
-
+// get is internal, you should use readyStorage as the front implementation layer.
 func (s *readyStorage) get() *tsdb.DB {
 	s.mtx.RLock()
 	x := s.db
@@ -983,10 +976,42 @@ func (n notReadyAppender) Rollback() error { return tsdb.ErrNotReady }
 
 // Close implements the Storage interface.
 func (s *readyStorage) Close() error {
-	if x := s.Get(); x != nil {
+	if x := s.get(); x != nil {
 		return x.Close()
 	}
 	return nil
+}
+
+// CleanTombstones implements the api_v1.TSDBAdminStats and api_v2.TSDBAdmin interfaces.
+func (s *readyStorage) CleanTombstones() error {
+	if x := s.get(); x != nil {
+		return x.CleanTombstones()
+	}
+	return tsdb.ErrNotReady
+}
+
+// Delete implements the api_v1.TSDBAdminStats and api_v2.TSDBAdmin interfaces.
+func (s *readyStorage) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
+	if x := s.get(); x != nil {
+		return x.Delete(mint, maxt, ms...)
+	}
+	return tsdb.ErrNotReady
+}
+
+// Snapshot implements the api_v1.TSDBAdminStats and api_v2.TSDBAdmin interfaces.
+func (s *readyStorage) Snapshot(dir string, withHead bool) error {
+	if x := s.get(); x != nil {
+		return x.Snapshot(dir, withHead)
+	}
+	return tsdb.ErrNotReady
+}
+
+// Stats implements the api_v1.TSDBAdminStats interface.
+func (s *readyStorage) Stats() (*tsdb.Stats, error) {
+	if x := s.get(); x != nil {
+		return x.Head().Stats(), nil
+	}
+	return nil, tsdb.ErrNotReady
 }
 
 // tsdbOptions is tsdb.Option version with defined units.
