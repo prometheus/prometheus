@@ -1898,9 +1898,9 @@ type fakeDB struct {
 func (f *fakeDB) CleanTombstones() error                               { return f.err }
 func (f *fakeDB) Delete(mint, maxt int64, ms ...*labels.Matcher) error { return f.err }
 func (f *fakeDB) Snapshot(dir string, withHead bool) error             { return f.err }
-func (f *fakeDB) Stats() (*tsdb.Stats, error) {
+func (f *fakeDB) Stats(statsByLabelName string) (*tsdb.Stats, error) {
 	h, _ := tsdb.NewHead(nil, nil, nil, 1000, tsdb.DefaultStripeSize)
-	return h.Stats(), nil
+	return h.Stats(statsByLabelName), nil
 }
 
 func TestAdminEndpoints(t *testing.T) {

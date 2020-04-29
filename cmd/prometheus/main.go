@@ -1007,9 +1007,9 @@ func (s *readyStorage) Snapshot(dir string, withHead bool) error {
 }
 
 // Stats implements the api_v1.TSDBAdminStats interface.
-func (s *readyStorage) Stats() (*tsdb.Stats, error) {
+func (s *readyStorage) Stats(statsByLabelName string) (*tsdb.Stats, error) {
 	if x := s.get(); x != nil {
-		return x.Head().Stats(), nil
+		return x.Head().Stats(statsByLabelName), nil
 	}
 	return nil, tsdb.ErrNotReady
 }

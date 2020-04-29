@@ -37,8 +37,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
-	"github.com/prometheus/prometheus/tsdb"
-
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/gate"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -51,6 +49,7 @@ import (
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/util/httputil"
 	"github.com/prometheus/prometheus/util/stats"
@@ -159,13 +158,13 @@ type apiFuncResult struct {
 
 type apiFunc func(r *http.Request) apiFuncResult
 
-// TSDBAdmin defines the tsdb interfaces used by the v1 API for admin operations as well as statistics.
+// TSDBAdminStats defines the tsdb interfaces used by the v1 API for admin operations as well as statistics.
 type TSDBAdminStats interface {
 	CleanTombstones() error
 	Delete(mint, maxt int64, ms ...*labels.Matcher) error
 	Snapshot(dir string, withHead bool) error
 
-	Stats() (*tsdb.Stats, error)
+	Stats(statsByLabelName string) (*tsdb.Stats, error)
 }
 
 // API can register a set of endpoints in a router and handle
@@ -1137,7 +1136,7 @@ func convertStats(stats []index.Stat) []stat {
 }
 
 func (api *API) serveTSDBStatus(*http.Request) apiFuncResult {
-	s, err := api.db.Stats()
+	s, err := api.db.Stats("__name__")
 	if err != nil {
 		if errors.Cause(err) == tsdb.ErrNotReady {
 			return apiFuncResult{nil, &apiError{errorUnavailable, tsdb.ErrNotReady}, nil, nil}
@@ -1146,10 +1145,10 @@ func (api *API) serveTSDBStatus(*http.Request) apiFuncResult {
 	}
 
 	return apiFuncResult{tsdbStatus{
-		SeriesCountByMetricName:     convertStats(s.NameMetricPostingStats.CardinalityMetricsStats),
-		LabelValueCountByLabelName:  convertStats(s.NameMetricPostingStats.CardinalityLabelStats),
-		MemoryInBytesByLabelName:    convertStats(s.NameMetricPostingStats.LabelValueStats),
-		SeriesCountByLabelValuePair: convertStats(s.NameMetricPostingStats.LabelValuePairsStats),
+		SeriesCountByMetricName:     convertStats(s.IndexPostingStats.CardinalityMetricsStats),
+		LabelValueCountByLabelName:  convertStats(s.IndexPostingStats.CardinalityLabelStats),
+		MemoryInBytesByLabelName:    convertStats(s.IndexPostingStats.LabelValueStats),
+		SeriesCountByLabelValuePair: convertStats(s.IndexPostingStats.LabelValuePairsStats),
 	}, nil, nil, nil}
 }
 

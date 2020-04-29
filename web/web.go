@@ -795,7 +795,7 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 	}
 
 	startTime := time.Now().UnixNano()
-	s, err := h.localStorage.Stats()
+	s, err := h.localStorage.Stats("__name__")
 	if err != nil {
 		if errors.Cause(err) == tsdb.ErrNotReady {
 			http.Error(w, tsdb.ErrNotReady.Error(), http.StatusServiceUnavailable)
@@ -805,7 +805,7 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	status.Duration = fmt.Sprintf("%.3f", float64(time.Now().UnixNano()-startTime)/float64(1e9))
-	status.Stats = s.NameMetricPostingStats
+	status.Stats = s.IndexPostingStats
 	status.NumSeries = s.NumSeries
 	status.MaxTime = s.MaxTime
 	status.MinTime = s.MinTime

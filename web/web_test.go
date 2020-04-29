@@ -94,8 +94,8 @@ type dbAdapter struct {
 	*tsdb.DB
 }
 
-func (a *dbAdapter) Stats() (*tsdb.Stats, error) {
-	return a.Head().Stats(), nil
+func (a *dbAdapter) Stats(statsByLabelName string) (*tsdb.Stats, error) {
+	return a.Head().Stats(statsByLabelName), nil
 }
 
 func TestReadyAndHealthy(t *testing.T) {

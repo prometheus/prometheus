@@ -752,19 +752,19 @@ func (h *Head) initTime(t int64) (initialized bool) {
 }
 
 type Stats struct {
-	NumSeries              uint64
-	MinTime, MaxTime       int64
-	NameMetricPostingStats *index.PostingsStats
+	NumSeries         uint64
+	MinTime, MaxTime  int64
+	IndexPostingStats *index.PostingsStats
 }
 
 // Stats returns important current HEAD statistics. Note that it is expensive to
 // calculate those.
-func (h *Head) Stats() *Stats {
+func (h *Head) Stats(statsByLabelName string) *Stats {
 	return &Stats{
-		NumSeries:              h.NumSeries(),
-		MinTime:                h.MaxTime(),
-		MaxTime:                h.MaxTime(),
-		NameMetricPostingStats: h.PostingsCardinalityStats("__name__"),
+		NumSeries:         h.NumSeries(),
+		MaxTime:           h.MaxTime(),
+		MinTime:           h.MinTime(),
+		IndexPostingStats: h.PostingsCardinalityStats(statsByLabelName),
 	}
 }
 
