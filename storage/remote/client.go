@@ -151,7 +151,12 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 	httpReq.Header.Set("User-Agent", userAgent)
 	httpReq.Header.Set("X-Prometheus-Remote-Read-Version", "0.1.0")
 
-	if span := opentracing.SpanFromContext(ctx); span != nil {
+	if parentSpan := opentracing.SpanFromContext(ctx); parentSpan != nil {
+		span := opentracing.StartSpan(
+			"Remote Read",
+			opentracing.ChildOf(parentSpan.Context()),
+		)
+		defer span.Finish()
 		ext.SpanKindRPCClient.Set(span)
 		ext.HTTPUrl.Set(span, httpReq.URL.String())
 		ext.HTTPMethod.Set(span, httpReq.Method)
