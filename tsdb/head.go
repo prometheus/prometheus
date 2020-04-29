@@ -718,7 +718,7 @@ func (h *Head) Init(minValidTime int64) error {
 		return err
 	}
 
-	level.Info(h.logger).Log("msg", "finished replaying WAL", "duration", time.Since(start).String())
+	level.Info(h.logger).Log("msg", "WAL replay completed", "duration", time.Since(start).String())
 	return nil
 }
 
@@ -797,6 +797,8 @@ func (h *Head) loadMmappedChunks(refSeries map[uint64]*memSeries) error {
 			maxTime:    maxt,
 			numSamples: numSamples,
 		})
+		h.metrics.chunks.Inc()
+		h.metrics.chunksCreated.Inc()
 		return nil
 	}); err != nil {
 		return errors.Wrap(err, "iterate on-disk chunks")
@@ -859,7 +861,6 @@ func (h *Head) executeOnCheckpointReader(f func(*wal.Reader) error) error {
 }
 
 func (h *Head) executeOnWALSegmentReader(f func(*wal.Reader) error) error {
-	start := time.Now()
 	_, startFrom, err := wal.LastCheckpoint(h.wal.Dir())
 	if err == nil {
 		// Assumes that checkpoint was already loaded.
@@ -889,9 +890,6 @@ func (h *Head) executeOnWALSegmentReader(f func(*wal.Reader) error) error {
 		}
 		level.Info(h.logger).Log("msg", "WAL segment loaded", "segment", i, "maxSegment", last)
 	}
-
-	level.Info(h.logger).Log("msg", "WAL replay completed", "duration", time.Since(start).String())
-
 	return nil
 }
 
