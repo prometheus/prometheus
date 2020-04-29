@@ -2078,10 +2078,9 @@ func TestAdminEndpoints(t *testing.T) {
 
 			endpoint := tc.endpoint(api)
 			req, err := http.NewRequest(tc.method, fmt.Sprintf("?%s", tc.values.Encode()), nil)
-			if err != nil {
-				t.Fatalf("Error when creating test request: %s", err)
-			}
-			res := endpoint(req)
+			testutil.Ok(t, err)
+
+			res := setUnavailStatusOnTSDBNotReady(endpoint(req))
 			assertAPIError(t, res.err, tc.errType)
 		})
 	}

@@ -758,7 +758,7 @@ type Stats struct {
 }
 
 // Stats returns important current HEAD statistics. Note that it is expensive to
-// calculate those.
+// calculate these.
 func (h *Head) Stats(statsByLabelName string) *Stats {
 	return &Stats{
 		NumSeries:         h.NumSeries(),

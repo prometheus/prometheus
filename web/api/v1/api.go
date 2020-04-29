@@ -246,22 +246,32 @@ func NewAPI(
 	}
 }
 
+func setUnavailStatusOnTSDBNotReady(r apiFuncResult) apiFuncResult {
+	if r.err != nil && errors.Cause(r.err.err) == tsdb.ErrNotReady {
+		r.err.typ = errorUnavailable
+	}
+	return r
+}
+
 // Register the API's endpoints in the given router.
 func (api *API) Register(r *route.Router) {
 	wrap := func(f apiFunc) http.HandlerFunc {
 		hf := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			httputil.SetCORS(w, api.CORSOrigin, r)
-			result := f(r)
+			result := setUnavailStatusOnTSDBNotReady(f(r))
 			if result.finalizer != nil {
 				defer result.finalizer()
 			}
 			if result.err != nil {
 				api.respondError(w, result.err, result.data)
-			} else if result.data != nil {
-				api.respond(w, result.data, result.warnings)
-			} else {
-				w.WriteHeader(http.StatusNoContent)
+				return
 			}
+
+			if result.data != nil {
+				api.respond(w, result.data, result.warnings)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
 		})
 		return api.ready(httputil.CompressionHandler{
 			Handler: hf,
@@ -1138,9 +1148,6 @@ func convertStats(stats []index.Stat) []stat {
 func (api *API) serveTSDBStatus(*http.Request) apiFuncResult {
 	s, err := api.db.Stats("__name__")
 	if err != nil {
-		if errors.Cause(err) == tsdb.ErrNotReady {
-			return apiFuncResult{nil, &apiError{errorUnavailable, tsdb.ErrNotReady}, nil, nil}
-		}
 		return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}
 	}
 
@@ -1347,9 +1354,6 @@ func (api *API) deleteSeries(r *http.Request) apiFuncResult {
 			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 		}
 		if err := api.db.Delete(timestamp.FromTime(start), timestamp.FromTime(end), matchers...); err != nil {
-			if errors.Cause(err) == tsdb.ErrNotReady {
-				return apiFuncResult{nil, &apiError{errorUnavailable, tsdb.ErrNotReady}, nil, nil}
-			}
 			return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}
 		}
 	}
@@ -1383,9 +1387,6 @@ func (api *API) snapshot(r *http.Request) apiFuncResult {
 		return apiFuncResult{nil, &apiError{errorInternal, errors.Wrap(err, "create snapshot directory")}, nil, nil}
 	}
 	if err := api.db.Snapshot(dir, !skipHead); err != nil {
-		if errors.Cause(err) == tsdb.ErrNotReady {
-			return apiFuncResult{nil, &apiError{errorUnavailable, tsdb.ErrNotReady}, nil, nil}
-		}
 		return apiFuncResult{nil, &apiError{errorInternal, errors.Wrap(err, "create snapshot")}, nil, nil}
 	}
 
@@ -1399,9 +1400,6 @@ func (api *API) cleanTombstones(r *http.Request) apiFuncResult {
 		return apiFuncResult{nil, &apiError{errorUnavailable, errors.New("admin APIs disabled")}, nil, nil}
 	}
 	if err := api.db.CleanTombstones(); err != nil {
-		if errors.Cause(err) == tsdb.ErrNotReady {
-			return apiFuncResult{nil, &apiError{errorUnavailable, tsdb.ErrNotReady}, nil, nil}
-		}
 		return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}
 	}
 
