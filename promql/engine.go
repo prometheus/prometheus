@@ -26,7 +26,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"unsafe"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -839,8 +838,9 @@ type EvalNodeHelper struct {
 	// label_replace.
 	regex *regexp.Regexp
 
-	lb     *labels.Builder
-	lblBuf bytes.Buffer
+	lb           *labels.Builder
+	lblBuf       []byte
+	lblResultBuf []byte
 
 	// For binary vector matching.
 	rightSigs    map[string]Sample
@@ -863,23 +863,19 @@ func (enh *EvalNodeHelper) dropMetricName(l labels.Labels) labels.Labels {
 	return ret
 }
 
-func yoloString(b []byte) string {
-	return *((*string)(unsafe.Pointer(&b)))
-}
-
 func (enh *EvalNodeHelper) signatureFunc(on bool, names ...string) func(labels.Labels) string {
 	if enh.sigf == nil {
 		enh.sigf = make(map[string]string, len(enh.out))
 	}
-	f := signatureFunc(on, &enh.lblBuf, names...)
+	f := signatureFunc(on, enh.lblBuf, names...)
 	return func(l labels.Labels) string {
-		ls := l.YoloString(&enh.lblBuf)
-		ret, ok := enh.sigf[ls]
+		enh.lblBuf = l.Bytes(enh.lblBuf)
+		ret, ok := enh.sigf[string(enh.lblBuf)]
 		if ok {
 			return ret
 		}
 		ret = f(l)
-		enh.sigf[l.NoRenderString(&enh.lblBuf)] = ret
+		enh.sigf[string(enh.lblBuf)] = ret
 		return ret
 	}
 }
@@ -1699,15 +1695,15 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 	return enh.out
 }
 
-func signatureFunc(on bool, b *bytes.Buffer, names ...string) func(labels.Labels) string {
+func signatureFunc(on bool, b []byte, names ...string) func(labels.Labels) string {
 	sort.Strings(names)
 	if on {
 		return func(lset labels.Labels) string {
-			return lset.WithLabels(names...).NoRenderString(b)
+			return string(lset.WithLabels(names...).Bytes(b))
 		}
 	}
 	return func(lset labels.Labels) string {
-		return lset.WithoutLabels(names...).NoRenderString(b)
+		return string(lset.WithoutLabels(names...).Bytes(b))
 	}
 }
 
@@ -1722,15 +1718,18 @@ func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.V
 	} else {
 		enh.lb.Reset(lhs)
 	}
-	enh.lblBuf.Reset()
-	enh.lblBuf.Write([]byte(lhs.YoloString(&enh.lblBuf)))
-	enh.lblBuf.Write([]byte(rhs.YoloString(&enh.lblBuf)))
-	str := yoloString(enh.lblBuf.Bytes())
+	// enh.lblBuf.Reset()
+	buf := bytes.NewBuffer(enh.lblResultBuf[:0])
+	enh.lblBuf = lhs.Bytes(enh.lblBuf)
+	buf.Write(enh.lblBuf)
+	enh.lblBuf = rhs.Bytes(enh.lblBuf)
+	buf.Write(enh.lblBuf)
+	enh.lblResultBuf = buf.Bytes()
 
-	if ret, ok := enh.resultMetric[str]; ok {
+	if ret, ok := enh.resultMetric[string(enh.lblResultBuf)]; ok {
 		return ret
 	}
-	str = enh.lblBuf.String()
+	str := string(enh.lblResultBuf)
 
 	if shouldDropMetricName(op) {
 		enh.lb.Del(labels.MetricName)
@@ -1761,7 +1760,7 @@ func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.V
 	}
 
 	ret := enh.lb.Labels()
-	enh.resultMetric[string(str)] = ret
+	enh.resultMetric[str] = ret
 	return ret
 }
 

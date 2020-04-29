@@ -598,7 +598,7 @@ func funcPredictLinear(vals []parser.Value, args parser.Expressions, enh *EvalNo
 func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	q := vals[0].(Vector)[0].V
 	inVec := vals[1].(Vector)
-	sigf := signatureFunc(false, &enh.lblBuf, excludedLabels...)
+	sigf := signatureFunc(false, enh.lblBuf, excludedLabels...)
 
 	if enh.signatureToMetricWithBuckets == nil {
 		enh.signatureToMetricWithBuckets = map[string]*metricWithBuckets{}
