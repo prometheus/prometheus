@@ -41,6 +41,7 @@ func TestMain(m *testing.M) {
 	os.Setenv("no_proxy", "localhost,127.0.0.1,0.0.0.0,:")
 	os.Exit(m.Run())
 }
+
 func TestGlobalURL(t *testing.T) {
 	opts := &Options{
 		ListenAddress: ":9090",
@@ -89,15 +90,21 @@ func TestGlobalURL(t *testing.T) {
 	}
 }
 
+type dbAdapter struct {
+	*tsdb.DB
+}
+
+func (a *dbAdapter) Stats(statsByLabelName string) (*tsdb.Stats, error) {
+	return a.Head().Stats(statsByLabelName), nil
+}
+
 func TestReadyAndHealthy(t *testing.T) {
 	t.Parallel()
 	dbDir, err := ioutil.TempDir("", "tsdb-ready")
-
 	testutil.Ok(t, err)
+	defer testutil.Ok(t, os.RemoveAll(dbDir))
 
-	defer os.RemoveAll(dbDir)
 	db, err := tsdb.Open(dbDir, nil, nil, nil)
-
 	testutil.Ok(t, err)
 
 	opts := &Options{
@@ -106,13 +113,14 @@ func TestReadyAndHealthy(t *testing.T) {
 		MaxConnections: 512,
 		Context:        nil,
 		Storage:        nil,
+		LocalStorage:   &dbAdapter{db},
+		TSDBDir:        dbDir,
 		QueryEngine:    nil,
 		ScrapeManager:  &scrape.Manager{},
 		RuleManager:    &rules.Manager{},
 		Notifier:       nil,
 		RoutePrefix:    "/",
 		EnableAdminAPI: true,
-		TSDB:           func() *tsdb.DB { return db },
 		ExternalURL: &url.URL{
 			Scheme: "http",
 			Host:   "localhost:9090",
@@ -135,6 +143,9 @@ func TestReadyAndHealthy(t *testing.T) {
 			panic(fmt.Sprintf("Can't start web handler:%s", err))
 		}
 	}()
+
+	// TODO(bwplotka): Those tests create tons of new connection and memory that is never cleaned.
+	// Close and exhaust all response bodies.
 
 	// Give some time for the web goroutine to run since we need the server
 	// to be up before starting tests.
@@ -282,13 +293,10 @@ func TestReadyAndHealthy(t *testing.T) {
 func TestRoutePrefix(t *testing.T) {
 	t.Parallel()
 	dbDir, err := ioutil.TempDir("", "tsdb-ready")
-
 	testutil.Ok(t, err)
-
-	defer os.RemoveAll(dbDir)
+	defer testutil.Ok(t, os.RemoveAll(dbDir))
 
 	db, err := tsdb.Open(dbDir, nil, nil, nil)
-
 	testutil.Ok(t, err)
 
 	opts := &Options{
@@ -296,6 +304,8 @@ func TestRoutePrefix(t *testing.T) {
 		ReadTimeout:    30 * time.Second,
 		MaxConnections: 512,
 		Context:        nil,
+		TSDBDir:        dbDir,
+		LocalStorage:   &dbAdapter{db},
 		Storage:        nil,
 		QueryEngine:    nil,
 		ScrapeManager:  nil,
@@ -307,7 +317,6 @@ func TestRoutePrefix(t *testing.T) {
 			Host:   "localhost.localdomain:9090",
 			Scheme: "http",
 		},
-		TSDB: func() *tsdb.DB { return db },
 	}
 
 	opts.Flags = map[string]string{}
@@ -399,7 +408,6 @@ func TestDebugHandler(t *testing.T) {
 				Host:   "localhost.localdomain:9090",
 				Scheme: "http",
 			},
-			TSDB: func() *tsdb.DB { return nil },
 		}
 		handler := New(nil, opts)
 		handler.Ready()
@@ -426,7 +434,6 @@ func TestHTTPMetrics(t *testing.T) {
 			Host:   "localhost.localdomain:9090",
 			Scheme: "http",
 		},
-		TSDB: func() *tsdb.DB { return nil },
 	})
 	getReady := func() int {
 		t.Helper()
