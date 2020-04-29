@@ -163,7 +163,12 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 
 	if parentSpan := opentracing.SpanFromContext(ctx); parentSpan != nil {
 		var ht *nethttp.Tracer
-		httpReq, ht = nethttp.TraceRequest(parentSpan.Tracer(), httpReq)
+		httpReq, ht = nethttp.TraceRequest(
+			parentSpan.Tracer(),
+			httpReq,
+			nethttp.OperationName("Remote Read"),
+			nethttp.ClientTrace(false),
+		)
 		defer ht.Finish()
 	}
 
