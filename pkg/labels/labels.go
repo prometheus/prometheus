@@ -18,7 +18,6 @@ import (
 	"encoding/json"
 	"sort"
 	"strconv"
-	"unsafe"
 
 	"github.com/cespare/xxhash"
 )
@@ -66,8 +65,8 @@ func (ls Labels) String() string {
 // NoRenderString returns ls as a string.
 // It uses an byte invalid character as a separator and so
 // should not be used for printing.
-func (ls Labels) NoRenderString(b *bytes.Buffer) string {
-	b.Reset()
+func (ls Labels) NoRenderString(buf []byte) []byte {
+  b := bytes.NewBuffer(buf[:0])
 	b.WriteByte('{')
 	for i, l := range ls {
 		if i > 0 {
@@ -81,32 +80,7 @@ func (ls Labels) NoRenderString(b *bytes.Buffer) string {
 		b.WriteByte(sep)
 	}
 	b.WriteByte('}')
-	return b.String()
-}
-
-func yoloString(b []byte) string {
-	return *((*string)(unsafe.Pointer(&b)))
-}
-
-// YoloString returns ls as an unsafe pointer to b's bytes casted to a string.
-// This is done to save on allocations that would happen during b.String() calls.
-// It uses an byte invalid character as a separator and so should not be used for printing.
-func (ls Labels) YoloString(b *bytes.Buffer) string {
-	b.Reset()
-	b.WriteByte('{')
-	for i, l := range ls {
-		if i > 0 {
-			b.WriteByte(',')
-			b.WriteByte(' ')
-		}
-		b.WriteString(l.Name)
-		b.WriteByte('=')
-		b.WriteByte(sep)
-		b.WriteString(l.Value)
-		b.WriteByte(sep)
-	}
-	b.WriteByte('}')
-	return yoloString(b.Bytes())
+	return b.Bytes()
 }
 
 // MarshalJSON implements json.Marshaler.
