@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"net/url"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -667,6 +668,15 @@ func TestLoadConfig(t *testing.T) {
 
 	expectedConf.original = c.original
 	testutil.Equals(t, expectedConf, c)
+}
+
+func TestExternalLabelValueFromEnv(t *testing.T) {
+	defer os.Unsetenv("envbar")
+	expectedValue := "envbar"
+	os.Setenv("bar", expectedValue)
+	c, err := LoadFile("testdata/external_label_value_from_env.yaml")
+	testutil.Ok(t, err)
+	testutil.Equals(t, expectedValue, c.GlobalConfig.ExternalLabels.Get("foo"))
 }
 
 func TestScrapeIntervalLarger(t *testing.T) {

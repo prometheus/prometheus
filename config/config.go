@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/url"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -315,12 +316,20 @@ func (c *GlobalConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 
-	for _, l := range gc.ExternalLabels {
+	for i, l := range gc.ExternalLabels {
 		if !model.LabelName(l.Name).IsValid() {
 			return errors.Errorf("%q is not a valid label name", l.Name)
 		}
+
 		if !model.LabelValue(l.Value).IsValid() {
 			return errors.Errorf("%q is not a valid label value", l.Value)
+		}
+		// Support environment varialbe in external_labels value
+		if v := os.ExpandEnv(l.Value); v != l.Value {
+			if !model.LabelValue(v).IsValid() {
+				return errors.Errorf("%q is not a valid label value", l.Value)
+			}
+			gc.ExternalLabels[i].Value = v
 		}
 	}
 
