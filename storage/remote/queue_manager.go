@@ -904,7 +904,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 			return err
 		}
 		s.qm.retriedSamplesTotal.Add(float64(len(samples)))
-		level.Debug(s.qm.logger).Log("msg", "Failed to send batch, retrying", "err", err)
+		level.Warn(s.qm.logger).Log("msg", "Failed to send batch, retrying", "err", err)
 
 		time.Sleep(time.Duration(backoff))
 		backoff = backoff * 2
