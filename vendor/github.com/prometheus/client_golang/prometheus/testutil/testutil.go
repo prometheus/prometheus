@@ -31,6 +31,10 @@
 // testing custom prometheus.Collector implementations and in particular whole
 // exporters, i.e. programs that retrieve telemetry data from a 3rd party source
 // and convert it into Prometheus metrics.
+//
+// In a similar pattern, CollectAndLint and GatherAndLint can be used to detect
+// metrics that have issues with their name, type, or metadata without being
+// necessarily invalid, e.g. a counter with a name missing the “_total” suffix.
 package testutil
 
 import (
@@ -136,8 +140,8 @@ func CollectAndCount(c prometheus.Collector) int {
 }
 
 // CollectAndCompare registers the provided Collector with a newly created
-// pedantic Registry. It then does the same as GatherAndCompare, gathering the
-// metrics from the pedantic Registry.
+// pedantic Registry. It then calls GatherAndCompare with that Registry and with
+// the provided metricNames.
 func CollectAndCompare(c prometheus.Collector, expected io.Reader, metricNames ...string) error {
 	reg := prometheus.NewPedanticRegistry()
 	if err := reg.Register(c); err != nil {
