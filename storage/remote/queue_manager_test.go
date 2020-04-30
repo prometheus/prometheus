@@ -22,6 +22,7 @@ import (
 	"reflect"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -31,6 +32,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 
+	"github.com/prometheus/client_golang/prometheus"
 	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
@@ -684,4 +686,20 @@ func TestCalculateDesiredShards(t *testing.T) {
 		testutil.Assert(t, m.numShards <= maxShards, "Shards are too high. desiredShards=%d, maxShards=%d, t_seconds=%d", m.numShards, maxShards, ts/time.Second)
 	}
 	testutil.Assert(t, pendingSamples == 0, "Remote write never caught up, there are still %d pending samples.", pendingSamples)
+}
+
+func TestQueueManagerMetrics(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	metrics := newQueueManagerMetrics(reg, "name", "http://localhost:1234")
+
+	// Make sure metrics pass linting.
+	problems, err := client_testutil.GatherAndLint(reg)
+	testutil.Ok(t, err)
+	testutil.Equals(t, 0, len(problems), "Metric linting problems detected: %v", problems)
+
+	// Make sure all metrics were unregistered. A failure here means you need
+	// unregister a metric in `queueManagerMetrics.unregister()`.
+	metrics.unregister()
+	err = client_testutil.GatherAndCompare(reg, strings.NewReader(""))
+	testutil.Ok(t, err)
 }
