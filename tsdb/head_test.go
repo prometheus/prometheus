@@ -1739,6 +1739,87 @@ func TestIsolationWithoutAdd(t *testing.T) {
 	testutil.Equals(t, hb.iso.lastAppendID, hb.iso.lowWatermark(), "High watermark should be equal to the low watermark")
 }
 
+func TestOutOfOrderSamplesMetric(t *testing.T) {
+	dir, err := ioutil.TempDir("", "test")
+	testutil.Ok(t, err)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
+
+	db, err := Open(dir, nil, nil, DefaultOptions())
+	testutil.Ok(t, err)
+	defer func() {
+		testutil.Ok(t, db.Close())
+	}()
+	db.DisableCompactions()
+
+	app := db.Appender()
+	for i := 1; i <= 5; i++ {
+		_, err = app.Add(labels.FromStrings("a", "b"), int64(i), 99)
+		testutil.Ok(t, err)
+	}
+	testutil.Ok(t, app.Commit())
+
+	// Test out of order metric.
+	testutil.Equals(t, 0.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples))
+	app = db.Appender()
+	_, err = app.Add(labels.FromStrings("a", "b"), 2, 99)
+	testutil.Equals(t, storage.ErrOutOfOrderSample, err)
+	testutil.Equals(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples))
+
+	_, err = app.Add(labels.FromStrings("a", "b"), 3, 99)
+	testutil.Equals(t, storage.ErrOutOfOrderSample, err)
+	testutil.Equals(t, 2.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples))
+
+	_, err = app.Add(labels.FromStrings("a", "b"), 4, 99)
+	testutil.Equals(t, storage.ErrOutOfOrderSample, err)
+	testutil.Equals(t, 3.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples))
+	testutil.Ok(t, app.Commit())
+
+	// Compact Head to test out of bound metric.
+	app = db.Appender()
+	_, err = app.Add(labels.FromStrings("a", "b"), DefaultBlockDuration*2, 99)
+	testutil.Ok(t, err)
+	testutil.Ok(t, app.Commit())
+
+	testutil.Equals(t, int64(math.MinInt64), db.head.minValidTime)
+	testutil.Ok(t, db.Compact())
+	testutil.Assert(t, db.head.minValidTime > 0, "")
+
+	app = db.Appender()
+	_, err = app.Add(labels.FromStrings("a", "b"), db.head.minValidTime-2, 99)
+	testutil.Equals(t, storage.ErrOutOfBounds, err)
+	testutil.Equals(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.outOfBoundSamples))
+
+	_, err = app.Add(labels.FromStrings("a", "b"), db.head.minValidTime-1, 99)
+	testutil.Equals(t, storage.ErrOutOfBounds, err)
+	testutil.Equals(t, 2.0, prom_testutil.ToFloat64(db.head.metrics.outOfBoundSamples))
+	testutil.Ok(t, app.Commit())
+
+	// Some more valid samples for out of order.
+	app = db.Appender()
+	for i := 1; i <= 5; i++ {
+		_, err = app.Add(labels.FromStrings("a", "b"), db.head.minValidTime+DefaultBlockDuration+int64(i), 99)
+		testutil.Ok(t, err)
+	}
+	testutil.Ok(t, app.Commit())
+
+	// Test out of order metric.
+	app = db.Appender()
+	_, err = app.Add(labels.FromStrings("a", "b"), db.head.minValidTime+DefaultBlockDuration+2, 99)
+	testutil.Equals(t, storage.ErrOutOfOrderSample, err)
+	testutil.Equals(t, 4.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples))
+
+	_, err = app.Add(labels.FromStrings("a", "b"), db.head.minValidTime+DefaultBlockDuration+3, 99)
+	testutil.Equals(t, storage.ErrOutOfOrderSample, err)
+	testutil.Equals(t, 5.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples))
+
+	_, err = app.Add(labels.FromStrings("a", "b"), db.head.minValidTime+DefaultBlockDuration+4, 99)
+	testutil.Equals(t, storage.ErrOutOfOrderSample, err)
+	testutil.Equals(t, 6.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples))
+	testutil.Ok(t, app.Commit())
+}
+
 func testHeadSeriesChunkRace(t *testing.T) {
 	h, _, closer := newTestHead(t, 1000, false)
 	defer closer()

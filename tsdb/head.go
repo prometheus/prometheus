@@ -111,6 +111,7 @@ type headMetrics struct {
 	chunksRemoved            prometheus.Counter
 	gcDuration               prometheus.Summary
 	samplesAppended          prometheus.Counter
+	outOfBoundSamples        prometheus.Counter
 	outOfOrderSamples        prometheus.Counter
 	walTruncateDuration      prometheus.Summary
 	walCorruptionsTotal      prometheus.Counter
@@ -175,6 +176,10 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			Name: "prometheus_tsdb_head_samples_appended_total",
 			Help: "Total number of appended samples.",
 		}),
+		outOfBoundSamples: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_out_of_bound_samples_total",
+			Help: "Total number of out of bound samples tried to ingest.",
+		}),
 		outOfOrderSamples: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_out_of_order_samples_total",
 			Help: "Total number of out of order samples tried to ingest.",
@@ -223,6 +228,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.walTruncateDuration,
 			m.walCorruptionsTotal,
 			m.samplesAppended,
+			m.outOfBoundSamples,
 			m.outOfOrderSamples,
 			m.headTruncateFail,
 			m.headTruncateTotal,
@@ -1200,6 +1206,7 @@ type headAppender struct {
 
 func (a *headAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
 	if t < a.minValidTime {
+		a.head.metrics.outOfBoundSamples.Inc()
 		return 0, storage.ErrOutOfBounds
 	}
 
@@ -1226,6 +1233,7 @@ func (a *headAppender) Add(lset labels.Labels, t int64, v float64) (uint64, erro
 
 func (a *headAppender) AddFast(ref uint64, t int64, v float64) error {
 	if t < a.minValidTime {
+		a.head.metrics.outOfBoundSamples.Inc()
 		return storage.ErrOutOfBounds
 	}
 
@@ -1236,6 +1244,9 @@ func (a *headAppender) AddFast(ref uint64, t int64, v float64) error {
 	s.Lock()
 	if err := s.appendable(t, v); err != nil {
 		s.Unlock()
+		if err == storage.ErrOutOfOrderSample {
+			a.head.metrics.outOfOrderSamples.Inc()
+		}
 		return err
 	}
 	s.pendingCommit = true
