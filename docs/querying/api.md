@@ -523,7 +523,7 @@ $ curl http://localhost:9090/api/v1/rules
                     {
                         "health": "ok",
                         "name": "job:http_inprogress_requests:sum",
-                        "query": "sum(http_inprogress_requests) by (job)",
+                        "query": "sum by (job) (http_inprogress_requests)",
                         "type": "recording"
                     }
                 ],

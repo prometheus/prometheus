@@ -62,7 +62,7 @@ groups:
   - name: example
     rules:
     - record: job:http_inprogress_requests:sum
-      expr: sum(http_inprogress_requests) by (job)
+      expr: sum by (job) (http_inprogress_requests)
 ```
 
 ### `<rule_group>`

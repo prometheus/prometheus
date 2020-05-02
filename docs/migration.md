@@ -88,7 +88,7 @@ An example of a recording rule and alert in the old format:
 
 ```
 job:request_duration_seconds:histogram_quantile99 =
-  histogram_quantile(0.99, sum(rate(request_duration_seconds_bucket[1m])) by (le, job))
+  histogram_quantile(0.99, sum by (le, job) (rate(request_duration_seconds_bucket[1m])))
 
 ALERT FrontendRequestLatency
   IF job:request_duration_seconds:histogram_quantile99{job="frontend"} > 0.1
@@ -105,8 +105,7 @@ groups:
 - name: example.rules
   rules:
   - record: job:request_duration_seconds:histogram_quantile99
-    expr: histogram_quantile(0.99, sum(rate(request_duration_seconds_bucket[1m]))
-      BY (le, job))
+    expr: histogram_quantile(0.99, sum by (le, job) (rate(request_duration_seconds_bucket[1m])))
   - alert: FrontendRequestLatency
     expr: job:request_duration_seconds:histogram_quantile99{job="frontend"} > 0.1
     for: 5m
