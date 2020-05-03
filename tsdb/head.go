@@ -88,16 +88,6 @@ type Head struct {
 	chunkDiskMapper *chunks.ChunkDiskMapper
 	// chunkDirRoot is the parent directory of the chunks directory.
 	chunkDirRoot string
-
-	// seriesReplayCorruption is set to true during WAL replay if there was corruption while
-	// loading the series from WAL.
-	seriesReplayCorruption bool
-	// refSeries a map of series ref to the actual series loaded during WAL replay.
-	refSeries map[uint64]*memSeries
-	// multiRef maps the duplicate series ref to the one in the memory.
-	// This can happen when there are multiple series records for the same series
-	// in the WAL. This mapping is required to map the samples with wrong ref to the actual series ref in memory.
-	multiRef map[uint64]uint64
 }
 
 type headMetrics struct {
@@ -343,10 +333,13 @@ func mmappedChunksDir(dir string) string { return filepath.Join(dir, "chunks_hea
 // Samples before the mint timestamp are discarded.
 func (h *Head) processWALSamples(
 	minValidTime int64,
-	refSeries map[uint64]*memSeries,
 	input <-chan []record.RefSample, output chan<- []record.RefSample,
 ) (unknownRefs uint64) {
 	defer close(output)
+
+	// Mitigate lock contention in getByID.
+	refSeries := map[uint64]*memSeries{}
+
 	mint, maxt := int64(math.MaxInt64), int64(math.MinInt64)
 
 	for samples := range input {
@@ -356,11 +349,14 @@ func (h *Head) processWALSamples(
 			}
 			ms := refSeries[s.Ref]
 			if ms == nil {
-				unknownRefs++
-				continue
+				ms = h.series.getByID(s.Ref)
+				if ms == nil {
+					unknownRefs++
+					continue
+				}
+				refSeries[s.Ref] = ms
 			}
-			_, chunkCreated := ms.append(s.T, s.V, 0, h.chunkDiskMapper)
-			if chunkCreated {
+			if _, chunkCreated := ms.append(s.T, s.V, 0, h.chunkDiskMapper); chunkCreated {
 				h.metrics.chunksCreated.Inc()
 				h.metrics.chunks.Inc()
 			}
@@ -375,7 +371,7 @@ func (h *Head) processWALSamples(
 	}
 	h.updateMinMaxTime(mint, maxt)
 
-	return
+	return unknownRefs
 }
 
 func (h *Head) updateMinMaxTime(mint, maxt int64) {
@@ -399,71 +395,7 @@ func (h *Head) updateMinMaxTime(mint, maxt int64) {
 	}
 }
 
-func (h *Head) loadSeries(r *wal.Reader, multiRef map[uint64]uint64, refSeries map[uint64]*memSeries) (err error) {
-	var (
-		dec        record.Decoder
-		decoded    = make(chan []record.RefSeries, 10)
-		errCh      = make(chan error, 1)
-		seriesPool = sync.Pool{
-			New: func() interface{} {
-				return []record.RefSeries{}
-			},
-		}
-	)
-	go func() {
-		defer close(decoded)
-		for r.Next() {
-			rec := r.Record()
-			switch dec.Type(rec) {
-			case record.Series:
-				series := seriesPool.Get().([]record.RefSeries)[:0]
-				series, err = dec.Series(rec, series)
-				if err != nil {
-					errCh <- &wal.CorruptionErr{
-						Err:     errors.Wrap(err, "decode series"),
-						Segment: r.Segment(),
-						Offset:  r.Offset(),
-					}
-					return
-				}
-				decoded <- series
-			default:
-				// Do nothing. Any other corruption will be captured while loading samples.
-			}
-		}
-	}()
-
-	for v := range decoded {
-		for _, s := range v {
-			series, created := h.getOrCreateWithID(s.Ref, s.Labels.Hash(), s.Labels)
-			refSeries[s.Ref] = series
-			if !created {
-				// There's already a different ref for this series.
-				refSeries[series.ref] = series
-				multiRef[s.Ref] = series.ref
-			}
-
-			if h.lastSeriesID < s.Ref {
-				h.lastSeriesID = s.Ref
-			}
-		}
-		//lint:ignore SA6002 relax staticcheck verification.
-		seriesPool.Put(v)
-	}
-
-	select {
-	case err := <-errCh:
-		return err
-	default:
-		if r.Err() != nil {
-			return errors.Wrap(r.Err(), "read records")
-		}
-	}
-
-	return nil
-}
-
-func (h *Head) loadSamples(r *wal.Reader, multiRef map[uint64]uint64, refSeries map[uint64]*memSeries) (err error) {
+func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64, mmappedChunks map[uint64][]*mmappedChunk) (err error) {
 	// Track number of samples that referenced a series we don't know about
 	// for error reporting.
 	var unknownRefs uint64
@@ -496,7 +428,7 @@ func (h *Head) loadSamples(r *wal.Reader, multiRef map[uint64]uint64, refSeries 
 		inputs[i] = make(chan []record.RefSample, 300)
 
 		go func(input <-chan []record.RefSample, output chan<- []record.RefSample) {
-			unknown := h.processWALSamples(h.minValidTime, refSeries, input, output)
+			unknown := h.processWALSamples(h.minValidTime, input, output)
 			atomic.AddUint64(&unknownRefs, unknown)
 			wg.Done()
 		}(inputs[i], outputs[i])
@@ -508,8 +440,13 @@ func (h *Head) loadSamples(r *wal.Reader, multiRef map[uint64]uint64, refSeries 
 	)
 
 	var (
-		decoded     = make(chan interface{}, 10)
-		errCh       = make(chan error, 1)
+		decoded    = make(chan interface{}, 10)
+		errCh      = make(chan error, 1)
+		seriesPool = sync.Pool{
+			New: func() interface{} {
+				return []record.RefSeries{}
+			},
+		}
 		samplesPool = sync.Pool{
 			New: func() interface{} {
 				return []record.RefSample{}
@@ -526,6 +463,18 @@ func (h *Head) loadSamples(r *wal.Reader, multiRef map[uint64]uint64, refSeries 
 		for r.Next() {
 			rec := r.Record()
 			switch dec.Type(rec) {
+			case record.Series:
+				series := seriesPool.Get().([]record.RefSeries)[:0]
+				series, err = dec.Series(rec, series)
+				if err != nil {
+					errCh <- &wal.CorruptionErr{
+						Err:     errors.Wrap(err, "decode series"),
+						Segment: r.Segment(),
+						Offset:  r.Offset(),
+					}
+					return
+				}
+				decoded <- series
 			case record.Samples:
 				samples := samplesPool.Get().([]record.RefSample)[:0]
 				samples, err = dec.Samples(rec, samples)
@@ -550,9 +499,6 @@ func (h *Head) loadSamples(r *wal.Reader, multiRef map[uint64]uint64, refSeries 
 					return
 				}
 				decoded <- tstones
-			case record.Series:
-				// This should be already loaded, ignore it.
-				continue
 			default:
 				errCh <- &wal.CorruptionErr{
 					Err:     errors.Errorf("invalid record type %v", dec.Type(rec)),
@@ -566,6 +512,25 @@ func (h *Head) loadSamples(r *wal.Reader, multiRef map[uint64]uint64, refSeries 
 
 	for d := range decoded {
 		switch v := d.(type) {
+		case []record.RefSeries:
+			for _, s := range v {
+				series, created := h.getOrCreateWithID(s.Ref, s.Labels.Hash(), s.Labels)
+
+				if created {
+					if mc, ok := mmappedChunks[series.ref]; ok {
+						series.mmappedChunks = mc
+					}
+				} else {
+					// There's already a different ref for this series.
+					multiRef[s.Ref] = series.ref
+				}
+
+				if h.lastSeriesID < s.Ref {
+					h.lastSeriesID = s.Ref
+				}
+			}
+			//lint:ignore SA6002 relax staticcheck verification.
+			seriesPool.Put(v)
 		case []record.RefSample:
 			samples := v
 			// We split up the samples into chunks of 5000 samples or less.
@@ -643,235 +608,55 @@ func (h *Head) loadSamples(r *wal.Reader, multiRef map[uint64]uint64, refSeries 
 	return nil
 }
 
-// PostWALRepairRecovery is used to recover the remaining samples from WAL if the corruption
-// occured in the series loading phase. This must be called iff Head.Init encountered a WAL corruption
-// and a repair was called on the WAL.
-func (h *Head) PostWALRepairRecovery() error {
-	if !h.seriesReplayCorruption {
-		return nil
-	}
-	defer func() {
-		h.gc()
-		h.refSeries = nil
-		h.multiRef = nil
-	}()
-
-	start := time.Now()
-	level.Info(h.logger).Log("msg", "m-mapping the on-disk chunks")
-	if err := h.loadMmappedChunks(h.refSeries); err != nil {
-		level.Error(h.logger).Log("msg", "loading on-disk chunks failed", "err", err)
-		h.metrics.mmapChunkCorruptionTotal.Inc()
-		// Repair is best effort here. If it fails, data will be recovered from WAL.
-		// Hence we wont lose any data (given WAL is not corrupt).
-		h.repairMmappedChunks(err, h.refSeries)
-	}
-
-	level.Info(h.logger).Log("msg", "adding remaining samples")
-	if err := h.loadSamplesFromWAL(h.refSeries, h.multiRef); err != nil {
-		return err
-	}
-
-	level.Info(h.logger).Log("msg", "finished replaying m-mapped chunks and WAL samples", "duration", time.Since(start).String())
-
-	return nil
-}
-
 // Init loads data from the write ahead log and prepares the head for writes.
 // It should be called before using an appender so that it
 // limits the ingested samples to the head min valid time.
 func (h *Head) Init(minValidTime int64) error {
 	h.minValidTime = minValidTime
 	defer h.postings.EnsureOrder()
-	defer func() {
-		// After loading the wal remove the obsolete data from the head.
-		// We should not collect it if it was an error in loading series,
-		// as samples for that will be loaded later and gc will be called there again.
-		if !h.seriesReplayCorruption {
-			h.gc()
-		}
-	}()
+	defer h.gc() // After loading the wal remove the obsolete data from the head.
+
 	if h.wal == nil {
 		return nil
 	}
 
-	start := time.Now()
 	level.Info(h.logger).Log("msg", "Replaying WAL, this may take awhile")
-
-	level.Info(h.logger).Log("msg", "creating series from WAL")
-	var err error
-	h.refSeries, h.multiRef, err = h.loadSeriesFromWAL()
-	if err != nil {
-		h.seriesReplayCorruption = true
-		return err
-	}
-
-	// No corruption in loading series. Hence set these to nil for Go GC to garbage collect it.
-	defer func() {
-		h.refSeries = nil
-		h.multiRef = nil
-	}()
+	start := time.Now()
 
 	level.Info(h.logger).Log("msg", "m-mapping the on-disk chunks")
-	if err := h.loadMmappedChunks(h.refSeries); err != nil {
+	mmappedChunks, err := h.loadMmappedChunks()
+	if err != nil {
 		level.Error(h.logger).Log("msg", "loading on-disk chunks failed", "err", err)
 		h.metrics.mmapChunkCorruptionTotal.Inc()
 		// Repair is best effort here. If it fails, data will be recovered from WAL.
 		// Hence we wont lose any data (given WAL is not corrupt).
-		h.repairMmappedChunks(err, h.refSeries)
+		h.repairMmappedChunks(err)
 	}
 
-	level.Info(h.logger).Log("msg", "adding remaining samples")
-	if err := h.loadSamplesFromWAL(h.refSeries, h.multiRef); err != nil {
-		return err
-	}
-
-	level.Info(h.logger).Log("msg", "WAL replay completed", "duration", time.Since(start).String())
-	return nil
-}
-
-func (h *Head) loadSeriesFromWAL() (map[uint64]*memSeries, map[uint64]uint64, error) {
-	refSeries := make(map[uint64]*memSeries)
-	multiRef := make(map[uint64]uint64)
-
-	// Backfill series from the checkpoint first if it exists.
-	if err := h.executeOnCheckpointReader(func(checkpointReader *wal.Reader) error {
-		// A corrupted checkpoint is a hard error for now and requires user
-		// intervention. There's likely little data that can be recovered anyway.
-		if err := h.loadSeries(checkpointReader, multiRef, refSeries); err != nil {
-			return errors.Wrap(err, "load series from checkpoint")
-		}
-		return nil
-	}); err != nil {
-		return refSeries, multiRef, err
-	}
-	// Backfill series from the remaining WAL.
-	if err := h.executeOnWALSegmentReader(func(segmentReader *wal.Reader) error {
-		if err := h.loadSeries(segmentReader, multiRef, refSeries); err != nil {
-			return errors.Wrap(err, "load series from WAL")
-		}
-		return nil
-	}); err != nil {
-		return refSeries, multiRef, err
-	}
-
-	return refSeries, multiRef, nil
-}
-
-func (h *Head) loadSamplesFromWAL(refSeries map[uint64]*memSeries, multiRef map[uint64]uint64) error {
 	// Backfill the checkpoint first if it exists.
-	if err := h.executeOnCheckpointReader(func(checkpointReader *wal.Reader) error {
-		// A corrupted checkpoint is a hard error for now and requires user
-		// intervention. There's likely little data that can be recovered anyway.
-		if err := h.loadSamples(checkpointReader, multiRef, refSeries); err != nil {
-			return errors.Wrap(err, "backfill checkpoint")
-		}
-		level.Info(h.logger).Log("msg", "WAL checkpoint loaded")
-		return nil
-	}); err != nil {
-		return err
-	}
-	// Backfill the remaining WAL.
-	if err := h.executeOnWALSegmentReader(func(segmentReader *wal.Reader) error {
-		if err := h.loadSamples(segmentReader, multiRef, refSeries); err != nil {
-			return errors.Wrap(err, "backfill WAL")
-		}
-		return nil
-	}); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (h *Head) loadMmappedChunks(refSeries map[uint64]*memSeries) error {
-	unknownRefs := 0
-	if err := h.chunkDiskMapper.IterateAllChunks(func(seriesRef, chunkRef uint64, mint, maxt int64, numSamples uint16) error {
-		ms := refSeries[seriesRef]
-		if ms == nil {
-			unknownRefs++
-			return nil
-		}
-
-		if len(ms.mmappedChunks) > 0 {
-			if ms.mmappedChunks[len(ms.mmappedChunks)-1].maxTime >= mint {
-				return errors.Errorf("out of sequence m-mapped chunk for series %s", ms.lset.String())
-			}
-		}
-
-		ms.mmappedChunks = append(ms.mmappedChunks, &mmappedChunk{
-			ref:        chunkRef,
-			minTime:    mint,
-			maxTime:    maxt,
-			numSamples: numSamples,
-		})
-		h.metrics.chunks.Inc()
-		h.metrics.chunksCreated.Inc()
-		return nil
-	}); err != nil {
-		return errors.Wrap(err, "iterate on-disk chunks")
-	}
-	if unknownRefs > 0 {
-		level.Warn(h.logger).Log("msg", "unknown series references during chunk replay", "count", unknownRefs)
-	}
-	return nil
-}
-
-// repairMmappedChunks attempts repair of the mmapped chunks and if it fails, it clears all the previously
-// loaded mmapped chunks.
-func (h *Head) repairMmappedChunks(err error, refSeries map[uint64]*memSeries) {
-	level.Info(h.logger).Log("msg", "repairing on-disk chunk files")
-
-	clearMmappedChunks := func() {
-		for _, stripe := range h.series.series {
-			for _, ms := range stripe {
-				ms.mmappedChunks = nil
-			}
-		}
-	}
-
-	// To reduce the complexity of the code, we read all the chunks once again after the repair.
-	// Hence we need to clear the mmapped chunks from head irrespective of repair failing or passing.
-	clearMmappedChunks()
-
-	if err := h.chunkDiskMapper.Repair(err); err != nil {
-		level.Info(h.logger).Log("msg", "repair of on-disk chunk files failed, discarding chunk files completely", "err", err)
-	}
-
-	level.Info(h.logger).Log("msg", "repair of on-disk chunk files successful")
-	level.Info(h.logger).Log("msg", "reattempting m-mapping the on-disk chunks")
-	// Repair done. Attempt loading the remaining chunks again.
-	if err := h.loadMmappedChunks(refSeries); err != nil {
-		level.Error(h.logger).Log("msg", "loading on-disk chunks failed, discarding chunk files completely", "err", err)
-		clearMmappedChunks()
-	}
-}
-
-func (h *Head) executeOnCheckpointReader(f func(*wal.Reader) error) error {
-	dir, _, err := wal.LastCheckpoint(h.wal.Dir())
-	if err == record.ErrNotFound {
-		return nil
-	} else if err != nil {
+	dir, startFrom, err := wal.LastCheckpoint(h.wal.Dir())
+	if err != nil && err != record.ErrNotFound {
 		return errors.Wrap(err, "find last checkpoint")
 	}
-
-	sr, err := wal.NewSegmentsReader(dir)
-	if err != nil {
-		return errors.Wrap(err, "open checkpoint")
-	}
-	defer func() {
-		if err := sr.Close(); err != nil {
-			level.Warn(h.logger).Log("msg", "error while closing the wal segments reader", "err", err)
-		}
-	}()
-
-	return f(wal.NewReader(sr))
-}
-
-func (h *Head) executeOnWALSegmentReader(f func(*wal.Reader) error) error {
-	_, startFrom, err := wal.LastCheckpoint(h.wal.Dir())
+	multiRef := map[uint64]uint64{}
 	if err == nil {
-		// Assumes that checkpoint was already loaded.
+		sr, err := wal.NewSegmentsReader(dir)
+		if err != nil {
+			return errors.Wrap(err, "open checkpoint")
+		}
+		defer func() {
+			if err := sr.Close(); err != nil {
+				level.Warn(h.logger).Log("msg", "Error while closing the wal segments reader", "err", err)
+			}
+		}()
+
+		// A corrupted checkpoint is a hard error for now and requires user
+		// intervention. There's likely little data that can be recovered anyway.
+		if err := h.loadWAL(wal.NewReader(sr), multiRef, mmappedChunks); err != nil {
+			return errors.Wrap(err, "backfill checkpoint")
+		}
 		startFrom++
+		level.Info(h.logger).Log("msg", "WAL checkpoint loaded")
 	}
 
 	// Find the last segment.
@@ -888,16 +673,68 @@ func (h *Head) executeOnWALSegmentReader(f func(*wal.Reader) error) error {
 		}
 
 		sr := wal.NewSegmentBufReader(s)
-		ferr := f(wal.NewReader(sr))
+		err = h.loadWAL(wal.NewReader(sr), multiRef, mmappedChunks)
 		if err := sr.Close(); err != nil {
 			level.Warn(h.logger).Log("msg", "Error while closing the wal segments reader", "err", err)
 		}
-		if ferr != nil {
-			return ferr
+		if err != nil {
+			return err
 		}
 		level.Info(h.logger).Log("msg", "WAL segment loaded", "segment", i, "maxSegment", last)
 	}
+
+	level.Info(h.logger).Log("msg", "WAL replay completed", "duration", time.Since(start).String())
+
 	return nil
+}
+
+func (h *Head) loadMmappedChunks() (map[uint64][]*mmappedChunk, error) {
+	mmappedChunks := map[uint64][]*mmappedChunk{}
+	if err := h.chunkDiskMapper.IterateAllChunks(func(seriesRef, chunkRef uint64, mint, maxt int64, numSamples uint16) error {
+		slice := mmappedChunks[seriesRef]
+		if len(slice) > 0 {
+			if slice[len(slice)-1].maxTime >= mint {
+				return errors.Errorf("out of sequence m-mapped chunk for series ref %d", seriesRef)
+			}
+		}
+
+		slice = append(slice, &mmappedChunk{
+			ref:        chunkRef,
+			minTime:    mint,
+			maxTime:    maxt,
+			numSamples: numSamples,
+		})
+		mmappedChunks[seriesRef] = slice
+
+		h.metrics.chunks.Inc()
+		h.metrics.chunksCreated.Inc()
+		return nil
+	}); err != nil {
+		return nil, errors.Wrap(err, "iterate on-disk chunks")
+	}
+	return mmappedChunks, nil
+}
+
+// repairMmappedChunks attempts repair of the mmapped chunks and if it fails, it clears all the previously
+// loaded mmapped chunks.
+func (h *Head) repairMmappedChunks(err error) map[uint64][]*mmappedChunk {
+	level.Info(h.logger).Log("msg", "repairing on-disk chunk files")
+
+	if err := h.chunkDiskMapper.Repair(err); err != nil {
+		level.Info(h.logger).Log("msg", "repair of on-disk chunk files failed, discarding chunk files completely", "err", err)
+		return map[uint64][]*mmappedChunk{}
+	}
+
+	level.Info(h.logger).Log("msg", "repair of on-disk chunk files successful")
+	level.Info(h.logger).Log("msg", "reattempting m-mapping the on-disk chunks")
+	// Repair done. Attempt loading the remaining chunks again.
+	mmappedChunks, err := h.loadMmappedChunks()
+	if err != nil {
+		level.Error(h.logger).Log("msg", "loading on-disk chunks failed, discarding chunk files completely", "err", err)
+		mmappedChunks = map[uint64][]*mmappedChunk{}
+	}
+
+	return mmappedChunks
 }
 
 // Truncate removes old data before mint from the head.
@@ -1393,7 +1230,6 @@ func (h *Head) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
 			return err
 		}
 	}
-
 	for _, s := range stones {
 		h.tombstones.AddInterval(s.Ref, s.Intervals[0])
 	}
