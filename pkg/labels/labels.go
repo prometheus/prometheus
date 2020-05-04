@@ -22,14 +22,15 @@ import (
 	"github.com/cespare/xxhash"
 )
 
-const sep = '\xff'
-
 // Well-known label names used by Prometheus components.
 const (
 	MetricName   = "__name__"
 	AlertName    = "alertname"
 	BucketLabel  = "le"
 	InstanceName = "instance"
+
+	sep      = '\xff'
+	labelSep = '\xfe'
 )
 
 // Label is a key/value pair of strings.
@@ -66,19 +67,16 @@ func (ls Labels) String() string {
 // It uses an byte invalid character as a separator and so should not be used for printing.
 func (ls Labels) Bytes(buf []byte) []byte {
 	b := bytes.NewBuffer(buf[:0])
-	b.WriteByte('{')
+	b.WriteByte(labelSep)
 	for i, l := range ls {
 		if i > 0 {
-			b.WriteByte(',')
-			b.WriteByte(' ')
+			b.WriteByte(sep)
 		}
 		b.WriteString(l.Name)
-		b.WriteByte('=')
 		b.WriteByte(sep)
 		b.WriteString(l.Value)
-		b.WriteByte(sep)
 	}
-	b.WriteByte('}')
+	b.WriteByte(labelSep)
 	return b.Bytes()
 }
 
