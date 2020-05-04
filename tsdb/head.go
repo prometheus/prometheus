@@ -517,10 +517,19 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64, mmappedChunks 
 				series, created := h.getOrCreateWithID(s.Ref, s.Labels.Hash(), s.Labels)
 
 				if created {
-					if mc, ok := mmappedChunks[series.ref]; ok {
-						series.mmappedChunks = mc
+					// If this series gets a duplicate record, we don't restore it's mmapped chunks,
+					// and instead restore everything from WAL records
+					series.mmappedChunks = mmappedChunks[series.ref]
+
+					h.metrics.chunks.Add(float64(len(series.mmappedChunks)))
+					h.metrics.chunksCreated.Add(float64(len(series.mmappedChunks)))
+
+					if len(series.mmappedChunks) > 0 {
+						h.updateMinMaxTime(series.minTime(), series.maxTime())
 					}
 				} else {
+					// TODO(codesome) discard old samples and mmapped chunks and use mmap chunks for the new series ID.
+
 					// There's already a different ref for this series.
 					multiRef[s.Ref] = series.ref
 				}
@@ -691,6 +700,10 @@ func (h *Head) Init(minValidTime int64) error {
 func (h *Head) loadMmappedChunks() (map[uint64][]*mmappedChunk, error) {
 	mmappedChunks := map[uint64][]*mmappedChunk{}
 	if err := h.chunkDiskMapper.IterateAllChunks(func(seriesRef, chunkRef uint64, mint, maxt int64, numSamples uint16) error {
+		if maxt < h.minValidTime {
+			return nil
+		}
+
 		slice := mmappedChunks[seriesRef]
 		if len(slice) > 0 {
 			if slice[len(slice)-1].maxTime >= mint {
@@ -705,9 +718,6 @@ func (h *Head) loadMmappedChunks() (map[uint64][]*mmappedChunk, error) {
 			numSamples: numSamples,
 		})
 		mmappedChunks[seriesRef] = slice
-
-		h.metrics.chunks.Inc()
-		h.metrics.chunksCreated.Inc()
 		return nil
 	}); err != nil {
 		return nil, errors.Wrap(err, "iterate on-disk chunks")
