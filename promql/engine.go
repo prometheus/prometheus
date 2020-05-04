@@ -210,6 +210,20 @@ func contextErr(err error, env string) error {
 	}
 }
 
+// Selector handles execution of the Selects against a Querier.
+type Selector interface {
+	// Select adds given select request to selector.
+	Select(selectRequest func() (storage.Warnings, error)) error
+
+	// Run processes the aggregated requests. Should only be called once.
+	Run(ctx context.Context) (storage.Warnings, error)
+}
+
+// A SelectManager produces a Selector to used per query.
+type SelectManager interface {
+	NewSelector() Selector
+}
+
 // EngineOpts contains configuration options used when creating a new Engine.
 type EngineOpts struct {
 	Logger             log.Logger
@@ -220,6 +234,9 @@ type EngineOpts struct {
 	// LookbackDelta determines the time since the last sample after which a time
 	// series is considered stale.
 	LookbackDelta time.Duration
+	SelectManager SelectManager
+	// MaxConcurrentSelect determines the maximum number of concurrent Selects per query.
+	MaxConcurrentSelect int
 }
 
 // Engine handles the lifetime of queries from beginning to end.
@@ -233,6 +250,7 @@ type Engine struct {
 	queryLogger        QueryLogger
 	queryLoggerLock    sync.RWMutex
 	lookbackDelta      time.Duration
+	selectManager      SelectManager
 }
 
 // NewEngine returns a new engine.
@@ -313,6 +331,14 @@ func NewEngine(opts EngineOpts) *Engine {
 		}
 	}
 
+	if opts.SelectManager == nil {
+		if opts.MaxConcurrentSelect > 1 {
+			opts.SelectManager = NewConcurrentSelectManager(opts.MaxConcurrentSelect)
+		} else {
+			opts.SelectManager = NewSequentialSelectManager()
+		}
+	}
+
 	if opts.Reg != nil {
 		opts.Reg.MustRegister(
 			metrics.currentQueries,
@@ -333,6 +359,7 @@ func NewEngine(opts EngineOpts) *Engine {
 		maxSamplesPerQuery: opts.MaxSamples,
 		activeQueryTracker: opts.ActiveQueryTracker,
 		lookbackDelta:      opts.LookbackDelta,
+		selectManager:      opts.SelectManager,
 	}
 }
 
@@ -654,13 +681,10 @@ func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s
 		// The evaluation of the VectorSelector inside then evaluates the given range and unsets
 		// the variable.
 		evalRange time.Duration
-		warnings  storage.Warnings
-		err       error
+		selector  = ng.selectManager.NewSelector()
 	)
 
 	parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
-		var set storage.SeriesSet
-		var wrn storage.Warnings
 		hints := &storage.SelectHints{
 			Start: timestamp.FromTime(s.Start),
 			End:   timestamp.FromTime(s.End),
@@ -695,20 +719,25 @@ func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s
 				hints.End = hints.End - offsetMilliseconds
 			}
 
-			set, wrn, err = querier.Select(false, hints, n.LabelMatchers...)
-			warnings = append(warnings, wrn...)
-			if err != nil {
-				level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
+			if err := selector.Select(func() (storage.Warnings, error) {
+				set, wrn, err := querier.Select(false, hints, n.LabelMatchers...)
+				if err != nil {
+					level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
+					return wrn, err
+				}
+				n.UnexpandedSeriesSet = set
+
+				return wrn, nil
+			}); err != nil {
+				level.Error(ng.logger).Log("msg", "error submitting series set for select", "err", err)
 				return err
 			}
-			n.UnexpandedSeriesSet = set
-
 		case *parser.MatrixSelector:
 			evalRange = n.Range
 		}
 		return nil
 	})
-	return warnings, err
+	return selector.Run(ctx)
 }
 
 // extractFuncFromPath walks up the path and searches for the first instance of

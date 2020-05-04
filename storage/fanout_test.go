@@ -342,7 +342,7 @@ func TestMergeChunkQuerierWithNoVerticalChunkSeriesMerger(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var qs []ChunkQuerier
 			for _, in := range tc.chkQuerierSeries {
-				qs = append(qs, &mockChunkQurier{toReturn: in})
+				qs = append(qs, &mockChunkQuerier{toReturn: in})
 			}
 			qs = append(qs, tc.extraQueriers...)
 
@@ -387,7 +387,7 @@ func (m *mockQuerier) Select(sortSeries bool, _ *SelectHints, _ ...*labels.Match
 	return NewMockSeriesSet(cpy...), nil, nil
 }
 
-type mockChunkQurier struct {
+type mockChunkQuerier struct {
 	baseQuerier
 
 	toReturn []ChunkSeries
@@ -401,7 +401,7 @@ func (a chunkSeriesByLabel) Less(i, j int) bool {
 	return labels.Compare(a[i].Labels(), a[j].Labels()) < 0
 }
 
-func (m *mockChunkQurier) Select(sortSeries bool, _ *SelectHints, _ ...*labels.Matcher) (ChunkSeriesSet, Warnings, error) {
+func (m *mockChunkQuerier) Select(sortSeries bool, _ *SelectHints, _ ...*labels.Matcher) (ChunkSeriesSet, Warnings, error) {
 	cpy := make([]ChunkSeries, len(m.toReturn))
 	copy(cpy, m.toReturn)
 	if sortSeries {
