@@ -1892,32 +1892,24 @@ func TestStreamReadEndpoint(t *testing.T) {
 }
 
 type fakeDB struct {
-	err    error
-	closer func()
+	err error
 }
 
 func (f *fakeDB) CleanTombstones() error                               { return f.err }
 func (f *fakeDB) Delete(mint, maxt int64, ms ...*labels.Matcher) error { return f.err }
-func (f *fakeDB) Dir() string {
-	dir, _ := ioutil.TempDir("", "fakeDB")
-	f.closer = func() {
-		os.RemoveAll(dir)
-	}
-	return dir
-}
-func (f *fakeDB) Snapshot(dir string, withHead bool) error { return f.err }
-func (f *fakeDB) Head() *tsdb.Head {
+func (f *fakeDB) Snapshot(dir string, withHead bool) error             { return f.err }
+func (f *fakeDB) Stats(statsByLabelName string) (*tsdb.Stats, error) {
 	h, _ := tsdb.NewHead(nil, nil, nil, 1000, tsdb.DefaultStripeSize)
-	return h
+	return h.Stats(statsByLabelName), nil
 }
 
 func TestAdminEndpoints(t *testing.T) {
-	tsdb, tsdbWithError := &fakeDB{}, &fakeDB{err: errors.New("some error")}
+	tsdb, tsdbWithError, tsdbNotReady := &fakeDB{}, &fakeDB{err: errors.New("some error")}, &fakeDB{err: errors.Wrap(tsdb.ErrNotReady, "wrap")}
 	snapshotAPI := func(api *API) apiFunc { return api.snapshot }
 	cleanAPI := func(api *API) apiFunc { return api.cleanTombstones }
 	deleteAPI := func(api *API) apiFunc { return api.deleteSeries }
 
-	for i, tc := range []struct {
+	for _, tc := range []struct {
 		db          *fakeDB
 		enableAdmin bool
 		endpoint    func(api *API) apiFunc
@@ -1965,7 +1957,7 @@ func TestAdminEndpoints(t *testing.T) {
 			errType: errorInternal,
 		},
 		{
-			db:          nil,
+			db:          tsdbNotReady,
 			enableAdmin: true,
 			endpoint:    snapshotAPI,
 
@@ -1994,7 +1986,7 @@ func TestAdminEndpoints(t *testing.T) {
 			errType: errorInternal,
 		},
 		{
-			db:          nil,
+			db:          tsdbNotReady,
 			enableAdmin: true,
 			endpoint:    cleanAPI,
 
@@ -2064,37 +2056,31 @@ func TestAdminEndpoints(t *testing.T) {
 			errType: errorInternal,
 		},
 		{
-			db:          nil,
+			db:          tsdbNotReady,
 			enableAdmin: true,
 			endpoint:    deleteAPI,
+			values:      map[string][]string{"match[]": {"up"}},
 
 			errType: errorUnavailable,
 		},
 	} {
 		tc := tc
-		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+		t.Run("", func(t *testing.T) {
+			dir, _ := ioutil.TempDir("", "fakeDB")
+			defer testutil.Ok(t, os.RemoveAll(dir))
+
 			api := &API{
-				db: func() TSDBAdmin {
-					if tc.db != nil {
-						return tc.db
-					}
-					return nil
-				},
+				db:          tc.db,
+				dbDir:       dir,
 				ready:       func(f http.HandlerFunc) http.HandlerFunc { return f },
 				enableAdmin: tc.enableAdmin,
 			}
-			defer func() {
-				if tc.db != nil && tc.db.closer != nil {
-					tc.db.closer()
-				}
-			}()
 
 			endpoint := tc.endpoint(api)
 			req, err := http.NewRequest(tc.method, fmt.Sprintf("?%s", tc.values.Encode()), nil)
-			if err != nil {
-				t.Fatalf("Error when creating test request: %s", err)
-			}
-			res := endpoint(req)
+			testutil.Ok(t, err)
+
+			res := setUnavailStatusOnTSDBNotReady(endpoint(req))
 			assertAPIError(t, res.err, tc.errType)
 		})
 	}
@@ -2504,14 +2490,7 @@ func TestTSDBStatus(t *testing.T) {
 	} {
 		tc := tc
 		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
-			api := &API{
-				db: func() TSDBAdmin {
-					if tc.db != nil {
-						return tc.db
-					}
-					return nil
-				},
-			}
+			api := &API{db: tc.db}
 			endpoint := tc.endpoint(api)
 			req, err := http.NewRequest(tc.method, fmt.Sprintf("?%s", tc.values.Encode()), nil)
 			if err != nil {
