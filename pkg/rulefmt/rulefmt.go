@@ -56,6 +56,7 @@ func (err *Error) Error() string {
 // RuleGroups is a set of rule groups that are typically exposed in a file.
 type RuleGroups struct {
 	Groups []RuleGroup `yaml:"groups"`
+	nodes  ruleGroups
 }
 
 type ruleGroups struct {
@@ -63,24 +64,24 @@ type ruleGroups struct {
 }
 
 // Validate validates all rules in the rule groups.
-func (g *RuleGroups) Validate(node ruleGroups) (errs []error) {
+func (g *RuleGroups) Validate() (errs []error) {
 	set := map[string]struct{}{}
 
-	for j, g := range g.Groups {
-		if g.Name == "" {
-			errs = append(errs, errors.Errorf("%d:%d: Groupname should not be empty", node.Groups[j].Line, node.Groups[j].Column))
+	for j, group := range g.Groups {
+		if group.Name == "" {
+			errs = append(errs, errors.Errorf("%d:%d: Groupname should not be empty", g.nodes.Groups[j].Line, g.nodes.Groups[j].Column))
 		}
 
-		if _, ok := set[g.Name]; ok {
+		if _, ok := set[group.Name]; ok {
 			errs = append(
 				errs,
-				errors.Errorf("%d:%d: groupname: \"%s\" is repeated in the same file", node.Groups[j].Line, node.Groups[j].Column, g.Name),
+				errors.Errorf("%d:%d: groupname: \"%s\" is repeated in the same file", g.nodes.Groups[j].Line, g.nodes.Groups[j].Column, group.Name),
 			)
 		}
 
-		set[g.Name] = struct{}{}
+		set[group.Name] = struct{}{}
 
-		for i, r := range g.Rules {
+		for i, r := range group.Rules {
 			for _, node := range r.Validate() {
 				var ruleName yaml.Node
 				if r.Alert.Value != "" {
@@ -89,7 +90,7 @@ func (g *RuleGroups) Validate(node ruleGroups) (errs []error) {
 					ruleName = r.Record
 				}
 				errs = append(errs, &Error{
-					Group:    g.Name,
+					Group:    group.Name,
 					Rule:     i,
 					RuleName: ruleName.Value,
 					Err:      node,
@@ -263,7 +264,6 @@ func testTemplateParsing(rl *RuleNode) (errs []error) {
 func Parse(content []byte) (*RuleGroups, []error) {
 	var (
 		groups RuleGroups
-		node   ruleGroups
 		errs   []error
 	)
 
@@ -271,7 +271,7 @@ func Parse(content []byte) (*RuleGroups, []error) {
 	if err != nil {
 		errs = append(errs, err)
 	}
-	err = yaml.Unmarshal(content, &node)
+	err = yaml.Unmarshal(content, &groups.nodes)
 	if err != nil {
 		errs = append(errs, err)
 	}
@@ -280,7 +280,7 @@ func Parse(content []byte) (*RuleGroups, []error) {
 		return nil, errs
 	}
 
-	return &groups, groups.Validate(node)
+	return &groups, groups.Validate()
 }
 
 // ParseFile reads and parses rules from a file.
