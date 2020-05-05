@@ -168,11 +168,11 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		}),
 		outOfBoundSamples: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_out_of_bound_samples_total",
-			Help: "Total number of out of bound samples tried to ingest.",
+			Help: "Total number of out of bound samples ingestion failed attempts.",
 		}),
 		outOfOrderSamples: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_out_of_order_samples_total",
-			Help: "Total number of out of order samples tried to ingest.",
+			Help: "Total number of out of order samples ingestion failed attempts.",
 		}),
 		headTruncateFail: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_head_truncations_failed_total",
@@ -200,7 +200,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		}),
 		mmapChunkCorruptionTotal: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_mmap_chunk_corruptions_total",
-			Help: "Total number of m-mapped chunk corruption.",
+			Help: "Total number of memory-mapped chunk corruptions.",
 		}),
 	}
 
@@ -517,8 +517,8 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64, mmappedChunks 
 				series, created := h.getOrCreateWithID(s.Ref, s.Labels.Hash(), s.Labels)
 
 				if created {
-					// If this series gets a duplicate record, we don't restore it's mmapped chunks,
-					// and instead restore everything from WAL records
+					// If this series gets a duplicate record, we don't restore its mmapped chunks,
+					// and instead restore everything from WAL records.
 					series.mmappedChunks = mmappedChunks[series.ref]
 
 					h.metrics.chunks.Add(float64(len(series.mmappedChunks)))
@@ -528,7 +528,7 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64, mmappedChunks 
 						h.updateMinMaxTime(series.minTime(), series.maxTime())
 					}
 				} else {
-					// TODO(codesome) discard old samples and mmapped chunks and use mmap chunks for the new series ID.
+					// TODO(codesome) Discard old samples and mmapped chunks and use mmap chunks for the new series ID.
 
 					// There's already a different ref for this series.
 					multiRef[s.Ref] = series.ref
@@ -629,14 +629,15 @@ func (h *Head) Init(minValidTime int64) error {
 		return nil
 	}
 
-	level.Info(h.logger).Log("msg", "Replaying WAL, this may take awhile")
+	level.Info(h.logger).Log("msg", "Replaying WAL and on-disk memory mappable chunks if any, this may take a while")
 	start := time.Now()
 
-	level.Info(h.logger).Log("msg", "m-mapping the on-disk chunks")
 	mmappedChunks, err := h.loadMmappedChunks()
 	if err != nil {
-		level.Error(h.logger).Log("msg", "loading on-disk chunks failed", "err", err)
-		h.metrics.mmapChunkCorruptionTotal.Inc()
+		level.Error(h.logger).Log("msg", "Loading on-disk chunks failed", "err", err)
+		if _, ok := errors.Cause(err).(*chunks.CorruptionErr); ok {
+			h.metrics.mmapChunkCorruptionTotal.Inc()
+		}
 		// If this fails, data will be recovered from WAL.
 		// Hence we wont lose any data (given WAL is not corrupt).
 		h.removeCorruptedMmappedChunks(err)
@@ -720,7 +721,7 @@ func (h *Head) loadMmappedChunks() (map[uint64][]*mmappedChunk, error) {
 		mmappedChunks[seriesRef] = slice
 		return nil
 	}); err != nil {
-		return nil, errors.Wrap(err, "iterate on-disk chunks")
+		return nil, errors.Wrap(err, "iterate on on-disk chunks")
 	}
 	return mmappedChunks, nil
 }
@@ -728,19 +729,17 @@ func (h *Head) loadMmappedChunks() (map[uint64][]*mmappedChunk, error) {
 // removeCorruptedMmappedChunks attempts to delete the corrupted mmapped chunks and if it fails, it clears all the previously
 // loaded mmapped chunks.
 func (h *Head) removeCorruptedMmappedChunks(err error) map[uint64][]*mmappedChunk {
-	level.Info(h.logger).Log("msg", "deleting mmapped chunk files")
+	level.Info(h.logger).Log("msg", "Deleting mmapped chunk files")
 
 	if err := h.chunkDiskMapper.DeleteCorrupted(err); err != nil {
-		level.Info(h.logger).Log("msg", "deletion of mmap chunk files failed, discarding chunk files completely", "err", err)
+		level.Info(h.logger).Log("msg", "Deletion of mmap chunk files failed, discarding chunk files completely", "err", err)
 		return map[uint64][]*mmappedChunk{}
 	}
 
-	level.Info(h.logger).Log("msg", "deletion of mmap chunk files successful")
-	level.Info(h.logger).Log("msg", "reattempting m-mapping the on-disk chunks")
-	// Deletion done. Attempt loading the remaining chunks again.
+	level.Info(h.logger).Log("msg", "Deletion of mmap chunk files successful, reattempting m-mapping the on-disk chunks")
 	mmappedChunks, err := h.loadMmappedChunks()
 	if err != nil {
-		level.Error(h.logger).Log("msg", "loading on-disk chunks failed, discarding chunk files completely", "err", err)
+		level.Error(h.logger).Log("msg", "Loading on-disk chunks failed, discarding chunk files completely", "err", err)
 		mmappedChunks = map[uint64][]*mmappedChunk{}
 	}
 
@@ -1940,7 +1939,8 @@ func (s *memSeries) appendable(t int64, v float64) error {
 	return nil
 }
 
-// chunk returns the chunk for the id. If garbageCollect is true, it means that the returned *memChunk
+// chunk returns the chunk for the chunk id from memory or by m-mapping it from the disk.
+// If garbageCollect is true, it means that the returned *memChunk
 // (and not the chunkenc.Chunk inside it) can be garbage collected after it's usage.
 func (s *memSeries) chunk(id int, chunkDiskMapper *chunks.ChunkDiskMapper) (chunk *memChunk, garbageCollect bool) {
 	// ix represents the index of chunk in the s.mmappedChunks slice. The chunk id's are
@@ -1982,6 +1982,7 @@ func (s *memSeries) truncateChunksBefore(mint int64) (removed int) {
 		s.firstChunkID += k
 		s.headChunk = nil
 		s.mmappedChunks = nil
+		return k
 	}
 	if len(s.mmappedChunks) > 0 {
 		for i, c := range s.mmappedChunks {
@@ -2000,7 +2001,7 @@ func (s *memSeries) truncateChunksBefore(mint int64) (removed int) {
 // the appendID for isolation. (The appendID can be zero, which results in no
 // isolation for this append.)
 // It is unsafe to call this concurrently with s.iterator(...) without holding the series lock.
-func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper *chunks.ChunkDiskMapper) (success, chunkCreated bool) {
+func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper *chunks.ChunkDiskMapper) (sampleInOrder, chunkCreated bool) {
 	// Based on Gorilla white papers this offers near-optimal compression ratio
 	// so anything bigger that this has diminishing returns and increases
 	// the time range within which we have to decompress all samples.
@@ -2009,8 +2010,8 @@ func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper 
 	c := s.head()
 
 	if c == nil {
-		// Out of order sample. Sample timestamp is already in the mmaped chunks, so ignore it.
 		if len(s.mmappedChunks) > 0 && s.mmappedChunks[len(s.mmappedChunks)-1].maxTime >= t {
+			// Out of order sample. Sample timestamp is already in the mmaped chunks, so ignore it.
 			return false, false
 		}
 		// There is no chunk in this series yet, create the first chunk for the sample.
@@ -2182,7 +2183,7 @@ type memChunk struct {
 	minTime, maxTime int64
 }
 
-// Returns true if the chunk overlaps [mint, maxt].
+// OverlapsClosedInterval returns true if the chunk overlaps [mint, maxt].
 func (mc *memChunk) OverlapsClosedInterval(mint, maxt int64) bool {
 	return mc.minTime <= maxt && mint <= mc.maxTime
 }

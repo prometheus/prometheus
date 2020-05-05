@@ -857,6 +857,7 @@ func TestWALSegmentSizeOptions(t *testing.T) {
 					files = append(files, f)
 				}
 			}
+			// All the full segment files (all but the last) should match the segment size option.
 			for _, f := range files[:len(files)-1] {
 				testutil.Equals(t, int64(DefaultOptions().WALSegmentSize), f.Size(), "WAL file size doesn't match WALSegmentSize option, filename: %v", f.Name())
 			}
@@ -874,6 +875,7 @@ func TestWALSegmentSizeOptions(t *testing.T) {
 				}
 			}
 			testutil.Assert(t, len(files) > 1, "current WALSegmentSize should result in more than a single WAL file.")
+			// All the full segment files (all but the last) should match the segment size option.
 			for _, f := range files[:len(files)-1] {
 				testutil.Equals(t, int64(segmentSize), f.Size(), "WAL file size doesn't match WALSegmentSize option, filename: %v", f.Name())
 			}

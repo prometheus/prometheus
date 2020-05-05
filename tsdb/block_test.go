@@ -307,13 +307,9 @@ func TestReadIndexFormatV1(t *testing.T) {
 func createBlock(tb testing.TB, dir string, series []storage.Series) string {
 	chunkDir, err := ioutil.TempDir("", "chunk_dir")
 	testutil.Ok(tb, err)
-	defer func() {
-		testutil.Ok(tb, os.RemoveAll(chunkDir))
-	}()
+	defer func() { testutil.Ok(tb, os.RemoveAll(chunkDir)) }()
 	head := createHead(tb, series, chunkDir)
-	defer func() {
-		testutil.Ok(tb, head.Close())
-	}()
+	defer func() { testutil.Ok(tb, head.Close()) }()
 	return createBlockFromHead(tb, dir, head)
 }
 
