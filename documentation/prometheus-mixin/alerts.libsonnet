@@ -259,6 +259,43 @@
               description: 'Prometheus %(prometheusName)s has missed {{ printf "%%.0f" $value }} rule group evaluations in the last 5m.' % $._config,
             },
           },
+          {
+            alert: 'PrometheusTSDBHeadSeriesCardinality',
+            expr: |||
+              rate(prometheus_tsdb_head_series_created_total[1h]) > 1
+            ||| % $._config,
+            'for': '30m',
+            labels: {
+              severity: 'critical',
+            },
+            annotations: {
+              summary: 'Prometheus scrape samples cardinality is exceeding server abilities.',
+              description: 'Prometheus %(prometheusName)s has {{ printf "%%.0f" $value }} scrape samples for {{$labels.job}} job in last 30m.' % $._config,
+            },
+          },
+          {
+            alert: 'PrometheusScrapeSamplesExplodingCardinality',
+            expr: |||
+              (
+                deriv(scrape_samples_scraped[1h]) > 3*0.1
+                and
+                deriv(scrape_samples_scraped[5m]) > 3*0.1
+              )
+              or
+              (
+                deriv(scrape_samples_scraped[6h]) > 0.1
+                and
+                deriv(scrape_samples_scraped[30m]) > 0.1
+              )
+            ||| % $._config,
+            labels: {
+              severity: 'warning',
+            },
+            annotations: {
+              summary: 'Prometheus scrape samples cardinality is exploding.',
+              description: 'Prometheus %(prometheusName)s has {{ printf "%%.0f" $value }} scrape samples for {{$labels.job}} job in last 30m.' % $._config,
+            },
+          },
         ],
       },
     ],
