@@ -84,7 +84,7 @@ type Head struct {
 	cardinalityCache      *index.PostingsStats // Posting stats cache which will expire after 30sec.
 	lastPostingsStatsCall time.Duration        // Last posting stats call (PostingsCardinalityStats()) time for caching.
 
-	// chunkDiskMapper is used to write and ready Head chunks to/from disk.
+	// chunkDiskMapper is used to write and read Head chunks to/from disk.
 	chunkDiskMapper *chunks.ChunkDiskMapper
 	// chunkDirRoot is the parent directory of the chunks directory.
 	chunkDirRoot string
@@ -1941,7 +1941,7 @@ func (s *memSeries) appendable(t int64, v float64) error {
 }
 
 // chunk returns the chunk for the id. If garbageCollect is true, it means that the returned *memChunk
-// (and not the chunkend.Chunk inside it) can be garbage collected after it's usage.
+// (and not the chunkenc.Chunk inside it) can be garbage collected after it's usage.
 func (s *memSeries) chunk(id int, chunkDiskMapper *chunks.ChunkDiskMapper) (chunk *memChunk, garbageCollect bool) {
 	// ix represents the index of chunk in the s.mmappedChunks slice. The chunk id's are
 	// incremented by 1 when new chunk is created, hence (id - firstChunkID) gives the slice index.

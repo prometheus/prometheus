@@ -247,25 +247,40 @@ func TestHead_ReadWAL(t *testing.T) {
 }
 
 func TestHead_WALMultiRef(t *testing.T) {
-	head, w, closer := newTestHead(t, 10000, false)
+	head, w, closer := newTestHead(t, 1000, false)
 	defer closer()
 
 	testutil.Ok(t, head.Init(0))
+
 	app := head.Appender()
 	ref1, err := app.Add(labels.FromStrings("foo", "bar"), 100, 1)
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Commit())
+	testutil.Equals(t, 1.0, prom_testutil.ToFloat64(head.metrics.chunksCreated))
 
-	testutil.Ok(t, head.Truncate(200))
-
+	// Add another sample outside chunk range to mmap a chunk.
 	app = head.Appender()
-	ref2, err := app.Add(labels.FromStrings("foo", "bar"), 300, 2)
+	_, err = app.Add(labels.FromStrings("foo", "bar"), 1500, 2)
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Commit())
+	testutil.Equals(t, 2.0, prom_testutil.ToFloat64(head.metrics.chunksCreated))
 
-	if ref1 == ref2 {
-		t.Fatal("Refs are the same")
-	}
+	testutil.Ok(t, head.Truncate(1600))
+
+	app = head.Appender()
+	ref2, err := app.Add(labels.FromStrings("foo", "bar"), 1700, 3)
+	testutil.Ok(t, err)
+	testutil.Ok(t, app.Commit())
+	testutil.Equals(t, 3.0, prom_testutil.ToFloat64(head.metrics.chunksCreated))
+
+	// Add another sample outside chunk range to mmap a chunk.
+	app = head.Appender()
+	_, err = app.Add(labels.FromStrings("foo", "bar"), 2000, 4)
+	testutil.Ok(t, err)
+	testutil.Ok(t, app.Commit())
+	testutil.Equals(t, 4.0, prom_testutil.ToFloat64(head.metrics.chunksCreated))
+
+	testutil.Assert(t, ref1 != ref2, "Refs are the same")
 	testutil.Ok(t, head.Close())
 
 	w, err = wal.New(nil, nil, w.Dir(), false)
@@ -278,10 +293,15 @@ func TestHead_WALMultiRef(t *testing.T) {
 		testutil.Ok(t, head.Close())
 	}()
 
-	q, err := NewBlockQuerier(head, 0, 300)
+	q, err := NewBlockQuerier(head, 0, 2100)
 	testutil.Ok(t, err)
 	series := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
-	testutil.Equals(t, map[string][]tsdbutil.Sample{`{foo="bar"}`: {sample{100, 1}, sample{300, 2}}}, series)
+	testutil.Equals(t, map[string][]tsdbutil.Sample{`{foo="bar"}`: {
+		sample{100, 1},
+		sample{1500, 2},
+		sample{1700, 3},
+		sample{2000, 4},
+	}}, series)
 }
 
 func TestHead_Truncate(t *testing.T) {
