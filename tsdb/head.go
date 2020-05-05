@@ -637,9 +637,9 @@ func (h *Head) Init(minValidTime int64) error {
 	if err != nil {
 		level.Error(h.logger).Log("msg", "loading on-disk chunks failed", "err", err)
 		h.metrics.mmapChunkCorruptionTotal.Inc()
-		// Repair is best effort here. If it fails, data will be recovered from WAL.
+		// If this fails, data will be recovered from WAL.
 		// Hence we wont lose any data (given WAL is not corrupt).
-		h.repairMmappedChunks(err)
+		h.removeCorruptedMmappedChunks(err)
 	}
 
 	// Backfill the checkpoint first if it exists.
@@ -725,19 +725,19 @@ func (h *Head) loadMmappedChunks() (map[uint64][]*mmappedChunk, error) {
 	return mmappedChunks, nil
 }
 
-// repairMmappedChunks attempts repair of the mmapped chunks and if it fails, it clears all the previously
+// removeCorruptedMmappedChunks attempts to delete the corrupted mmapped chunks and if it fails, it clears all the previously
 // loaded mmapped chunks.
-func (h *Head) repairMmappedChunks(err error) map[uint64][]*mmappedChunk {
-	level.Info(h.logger).Log("msg", "repairing on-disk chunk files")
+func (h *Head) removeCorruptedMmappedChunks(err error) map[uint64][]*mmappedChunk {
+	level.Info(h.logger).Log("msg", "deleting mmapped chunk files")
 
-	if err := h.chunkDiskMapper.Repair(err); err != nil {
-		level.Info(h.logger).Log("msg", "repair of on-disk chunk files failed, discarding chunk files completely", "err", err)
+	if err := h.chunkDiskMapper.DeleteCorrupted(err); err != nil {
+		level.Info(h.logger).Log("msg", "deletion of mmap chunk files failed, discarding chunk files completely", "err", err)
 		return map[uint64][]*mmappedChunk{}
 	}
 
-	level.Info(h.logger).Log("msg", "repair of on-disk chunk files successful")
+	level.Info(h.logger).Log("msg", "deletion of mmap chunk files successful")
 	level.Info(h.logger).Log("msg", "reattempting m-mapping the on-disk chunks")
-	// Repair done. Attempt loading the remaining chunks again.
+	// Deletion done. Attempt loading the remaining chunks again.
 	mmappedChunks, err := h.loadMmappedChunks()
 	if err != nil {
 		level.Error(h.logger).Log("msg", "loading on-disk chunks failed, discarding chunk files completely", "err", err)

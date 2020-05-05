@@ -681,9 +681,9 @@ func (cdm *ChunkDiskMapper) deleteFiles(removedFiles []int) error {
 	return nil
 }
 
-// Repair deletes all the head chunk files after the one which had the corruption
+// DeleteCorrupted deletes all the head chunk files after the one which had the corruption
 // (including the corrupt file).
-func (cdm *ChunkDiskMapper) Repair(originalErr error) error {
+func (cdm *ChunkDiskMapper) DeleteCorrupted(originalErr error) error {
 	err := errors.Cause(originalErr) // So that we can pick up errors even if wrapped.
 	cerr, ok := err.(*corruptionErr)
 	if !ok {
