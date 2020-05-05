@@ -1,4 +1,4 @@
-## 2.18.0-rc.1 / 2020-04-30
+## 2.18.0 / 2020-05-05
 
 * [CHANGE] Federation: Only use local TSDB for federation (ignore remote read). #7077
 * [CHANGE] Rules: `rule_evaluations_total` and `rule_evaluation_failures_total` have a `rule_group` label now. #7094
