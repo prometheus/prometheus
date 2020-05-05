@@ -25,6 +25,8 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	"github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go/ext"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/config"
@@ -844,36 +846,66 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 		return err
 	}
 
+	try := 0
+
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
 		}
-		begin := time.Now()
-		err := s.qm.client().Store(ctx, req)
 
-		s.qm.metrics.sentBatchDuration.Observe(time.Since(begin).Seconds())
-
+		err = s.attemptSendSamples(ctx, samples, buf, highest, try)
 		if err == nil {
-			s.qm.metrics.succeededSamplesTotal.Add(float64(len(samples)))
-			s.qm.metrics.bytesSent.Add(float64(len(req)))
-			s.qm.metrics.highestSentTimestamp.Set(float64(highest / 1000))
 			return nil
 		}
 
-		if _, ok := err.(recoverableError); !ok {
-			return err
-		}
-		s.qm.metrics.retriedSamplesTotal.Add(float64(len(samples)))
-		level.Warn(s.qm.logger).Log("msg", "Failed to send batch, retrying", "err", err)
-
+		// If we make it this far, we've encountered a recoverable error and will retry.
 		time.Sleep(time.Duration(backoff))
 		backoff = backoff * 2
 		if backoff > s.qm.cfg.MaxBackoff {
 			backoff = s.qm.cfg.MaxBackoff
 		}
+
+		try++
 	}
+}
+
+func (s *shards) attemptSendSamples(ctx context.Context, samples []prompb.TimeSeries, req *[]byte, highest int64, try int) error {
+	req_size := len(*req)
+	sample_count := len(samples)
+
+	span, ctx := opentracing.StartSpanFromContext(ctx, "Remote Send Batch")
+	defer span.Finish()
+
+	span.SetTag("samples", sample_count)
+	span.SetTag("requestSize", req_size)
+	span.SetTag("try", try)
+	span.SetTag("remote_name", s.qm.storeClient.Name())
+	span.SetTag("remote_url", s.qm.storeClient.Endpoint())
+
+	begin := time.Now()
+	err := s.qm.client().Store(ctx, *req)
+
+	s.qm.metrics.sentBatchDuration.Observe(time.Since(begin).Seconds())
+
+	if err == nil {
+		s.qm.metrics.succeededSamplesTotal.Add(float64(sample_count))
+		s.qm.metrics.bytesSent.Add(float64(req_size))
+		s.qm.metrics.highestSentTimestamp.Set(float64(highest / 1000))
+		return nil
+	}
+
+	if _, ok := err.(recoverableError); !ok {
+		span.LogKV("error", err)
+		ext.Error.Set(span, true)
+		return err
+	}
+	s.qm.metrics.retriedSamplesTotal.Add(float64(sample_count))
+	span.LogKV("error", err)
+	ext.Error.Set(span, true)
+	level.Warn(s.qm.logger).Log("msg", "Failed to send batch, retrying", "err", err)
+	return err
 }
 
 func buildWriteRequest(samples []prompb.TimeSeries, buf []byte) ([]byte, int64, error) {

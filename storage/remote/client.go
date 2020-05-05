@@ -92,11 +92,23 @@ func (c *Client) Store(ctx context.Context, req []byte) error {
 	httpReq.Header.Set("Content-Type", "application/x-protobuf")
 	httpReq.Header.Set("User-Agent", userAgent)
 	httpReq.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")
-
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
-	httpResp, err := c.client.Do(httpReq.WithContext(ctx))
+	httpReq = httpReq.WithContext(ctx)
+
+	if parentSpan := opentracing.SpanFromContext(ctx); parentSpan != nil {
+		var ht *nethttp.Tracer
+		httpReq, ht = nethttp.TraceRequest(
+			parentSpan.Tracer(),
+			httpReq,
+			nethttp.OperationName("Remote Store"),
+			nethttp.ClientTrace(false),
+		)
+		defer ht.Finish()
+	}
+
+	httpResp, err := c.client.Do(httpReq)
 	if err != nil {
 		// Errors from client.Do are from (for example) network errors, so are
 		// recoverable.
