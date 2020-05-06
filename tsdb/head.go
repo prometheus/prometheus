@@ -93,6 +93,7 @@ type headMetrics struct {
 	chunksRemoved           prometheus.Counter
 	gcDuration              prometheus.Summary
 	samplesAppended         prometheus.Counter
+	samplesDiscarded        prometheus.Counter
 	walTruncateDuration     prometheus.Summary
 	walCorruptionsTotal     prometheus.Counter
 	headTruncateFail        prometheus.Counter
@@ -155,6 +156,10 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			Name: "prometheus_tsdb_head_samples_appended_total",
 			Help: "Total number of appended samples.",
 		}),
+		samplesDiscarded: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_head_samples_discarded_total",
+			Help: "Total number of discarded samples.",
+		}),
 		headTruncateFail: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_head_truncations_failed_total",
 			Help: "Total number of head truncations that failed.",
@@ -195,6 +200,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.walTruncateDuration,
 			m.walCorruptionsTotal,
 			m.samplesAppended,
+			m.samplesDiscarded,
 			m.headTruncateFail,
 			m.headTruncateTotal,
 			m.checkpointDeleteFail,
@@ -1047,6 +1053,7 @@ func (a *headAppender) Commit() error {
 	defer a.head.iso.closeAppend(a.appendID)
 
 	total := len(a.samples)
+	discarded := 0
 	var series *memSeries
 	for i, s := range a.samples {
 		series = a.sampleSeries[i]
@@ -1058,6 +1065,7 @@ func (a *headAppender) Commit() error {
 
 		if !ok {
 			total--
+			discarded++
 		}
 		if chunkCreated {
 			a.head.metrics.chunks.Inc()
@@ -1066,6 +1074,7 @@ func (a *headAppender) Commit() error {
 	}
 
 	a.head.metrics.samplesAppended.Add(float64(total))
+	a.head.metrics.samplesDiscarded.Add(float64(discarded))
 	a.head.updateMinMaxTime(a.mint, a.maxt)
 
 	return nil
