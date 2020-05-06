@@ -166,6 +166,11 @@ func (m *metrics) instrumentHandler(handlerName string, handler http.HandlerFunc
 // PrometheusVersion contains build information about Prometheus.
 type PrometheusVersion = api_v1.PrometheusVersion
 
+type LocalStorage interface {
+	storage.Storage
+	api_v1.TSDBAdminStats
+}
+
 // Handler serves various HTTP endpoints of the Prometheus server
 type Handler struct {
 	logger log.Logger
@@ -178,9 +183,8 @@ type Handler struct {
 	queryEngine   *promql.Engine
 	lookbackDelta time.Duration
 	context       context.Context
-	tsdb          func() *tsdb.DB
 	storage       storage.Storage
-	localStorage  storage.Storage
+	localStorage  LocalStorage
 	notifier      *notifier.Manager
 
 	apiV1 *api_v1.API
@@ -214,9 +218,10 @@ func (h *Handler) ApplyConfig(conf *config.Config) error {
 // Options for the web Handler.
 type Options struct {
 	Context               context.Context
-	TSDB                  func() *tsdb.DB
 	TSDBRetentionDuration model.Duration
+	TSDBDir               string
 	TSDBMaxBytes          units.Base2Bytes
+	LocalStorage          LocalStorage
 	Storage               storage.Storage
 	QueryEngine           *promql.Engine
 	LookbackDelta         time.Duration
@@ -283,9 +288,8 @@ func New(logger log.Logger, o *Options) *Handler {
 		ruleManager:   o.RuleManager,
 		queryEngine:   o.QueryEngine,
 		lookbackDelta: o.LookbackDelta,
-		tsdb:          o.TSDB,
 		storage:       o.Storage,
-		localStorage:  o.TSDB(),
+		localStorage:  o.LocalStorage,
 		notifier:      o.Notifier,
 
 		now: model.Now,
@@ -309,9 +313,8 @@ func New(logger log.Logger, o *Options) *Handler {
 			Scheme:        o.ExternalURL.Scheme,
 		},
 		h.testReady,
-		func() api_v1.TSDBAdmin {
-			return h.options.TSDB()
-		},
+		h.options.LocalStorage,
+		h.options.TSDBDir,
 		h.options.EnableAdminAPI,
 		logger,
 		h.ruleManager,
@@ -538,7 +541,8 @@ func (h *Handler) Run(ctx context.Context) error {
 		grpcSrv = grpc.NewServer()
 	)
 	av2 := api_v2.New(
-		h.options.TSDB,
+		h.options.LocalStorage,
+		h.options.TSDBDir,
 		h.options.EnableAdminAPI,
 	)
 	av2.RegisterGRPC(grpcSrv)
@@ -789,13 +793,22 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 			status.LastConfigTime = time.Unix(int64(toFloat64(mF)), 0).UTC()
 		}
 	}
-	db := h.tsdb()
+
 	startTime := time.Now().UnixNano()
-	status.Stats = db.Head().PostingsCardinalityStats("__name__")
+	s, err := h.localStorage.Stats("__name__")
+	if err != nil {
+		if errors.Cause(err) == tsdb.ErrNotReady {
+			http.Error(w, tsdb.ErrNotReady.Error(), http.StatusServiceUnavailable)
+			return
+		}
+		http.Error(w, fmt.Sprintf("error gathering local storage statistics: %s", err), http.StatusInternalServerError)
+		return
+	}
 	status.Duration = fmt.Sprintf("%.3f", float64(time.Now().UnixNano()-startTime)/float64(1e9))
-	status.NumSeries = db.Head().NumSeries()
-	status.MaxTime = db.Head().MaxTime()
-	status.MinTime = db.Head().MaxTime()
+	status.Stats = s.IndexPostingStats
+	status.NumSeries = s.NumSeries
+	status.MaxTime = s.MaxTime
+	status.MinTime = s.MinTime
 
 	h.executeTemplate(w, "status.html", status)
 }

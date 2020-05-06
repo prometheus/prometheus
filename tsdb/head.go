@@ -873,6 +873,23 @@ func (h *Head) initTime(t int64) (initialized bool) {
 	return true
 }
 
+type Stats struct {
+	NumSeries         uint64
+	MinTime, MaxTime  int64
+	IndexPostingStats *index.PostingsStats
+}
+
+// Stats returns important current HEAD statistics. Note that it is expensive to
+// calculate these.
+func (h *Head) Stats(statsByLabelName string) *Stats {
+	return &Stats{
+		NumSeries:         h.NumSeries(),
+		MaxTime:           h.MaxTime(),
+		MinTime:           h.MinTime(),
+		IndexPostingStats: h.PostingsCardinalityStats(statsByLabelName),
+	}
+}
+
 type RangeHead struct {
 	head       *Head
 	mint, maxt int64

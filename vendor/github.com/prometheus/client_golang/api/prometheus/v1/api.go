@@ -905,14 +905,14 @@ func (h *apiClientImpl) Do(ctx context.Context, req *http.Request) (*http.Respon
 		}
 	}
 
-	if apiError(code) != (result.Status == "error") {
+	if apiError(code) && result.Status == "success" {
 		err = &Error{
 			Type: ErrBadResponse,
 			Msg:  "inconsistent body for response code",
 		}
 	}
 
-	if apiError(code) && result.Status == "error" {
+	if result.Status == "error" {
 		err = &Error{
 			Type: result.ErrorType,
 			Msg:  result.Error,

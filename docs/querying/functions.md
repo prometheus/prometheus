@@ -166,11 +166,11 @@ around the `rate()` function. Since the `le` label is required by
 `histogram_quantile()`, it has to be included in the `by` clause. The following
 expression aggregates the 90th percentile by `job`:
 
-    histogram_quantile(0.9, sum(rate(http_request_duration_seconds_bucket[10m])) by (job, le))
+    histogram_quantile(0.9, sum by (job, le) (rate(http_request_duration_seconds_bucket[10m])))
 
 To aggregate everything, specify only the `le` label:
 
-    histogram_quantile(0.9, sum(rate(http_request_duration_seconds_bucket[10m])) by (le))
+    histogram_quantile(0.9, sum by (le) (rate(http_request_duration_seconds_bucket[10m])))
 
 The `histogram_quantile()` function interpolates quantile values by
 assuming a linear distribution within a bucket. The highest bucket

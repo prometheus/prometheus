@@ -27,12 +27,12 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/opentracing/opentracing-go"
-	"github.com/opentracing/opentracing-go/ext"
 	"github.com/pkg/errors"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
 
+	"github.com/opentracing-contrib/go-stdlib/nethttp"
 	"github.com/prometheus/prometheus/prompb"
 )
 
@@ -60,6 +60,11 @@ func NewClient(remoteName string, conf *ClientConfig) (*Client, error) {
 	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage", false)
 	if err != nil {
 		return nil, err
+	}
+
+	t := httpClient.Transport
+	httpClient.Transport = &nethttp.Transport{
+		RoundTripper: t,
 	}
 
 	return &Client{
@@ -151,21 +156,23 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 	httpReq.Header.Set("User-Agent", userAgent)
 	httpReq.Header.Set("X-Prometheus-Remote-Read-Version", "0.1.0")
 
-	if span := opentracing.SpanFromContext(ctx); span != nil {
-		ext.SpanKindRPCClient.Set(span)
-		ext.HTTPUrl.Set(span, httpReq.URL.String())
-		ext.HTTPMethod.Set(span, httpReq.Method)
-		_ = span.Tracer().Inject(
-			span.Context(),
-			opentracing.HTTPHeaders,
-			opentracing.HTTPHeadersCarrier(httpReq.Header),
-		)
-	}
-
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
-	httpResp, err := c.client.Do(httpReq.WithContext(ctx))
+	httpReq = httpReq.WithContext(ctx)
+
+	if parentSpan := opentracing.SpanFromContext(ctx); parentSpan != nil {
+		var ht *nethttp.Tracer
+		httpReq, ht = nethttp.TraceRequest(
+			parentSpan.Tracer(),
+			httpReq,
+			nethttp.OperationName("Remote Read"),
+			nethttp.ClientTrace(false),
+		)
+		defer ht.Finish()
+	}
+
+	httpResp, err := c.client.Do(httpReq)
 	if err != nil {
 		return nil, errors.Wrap(err, "error sending request")
 	}

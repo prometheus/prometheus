@@ -25,10 +25,10 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
-
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -54,7 +54,7 @@ type Test struct {
 
 	cmds []testCommand
 
-	storage storage.Storage
+	storage *teststorage.TestStorage
 
 	queryEngine *Engine
 	context     context.Context
@@ -99,6 +99,11 @@ func (t *Test) Context() context.Context {
 // Storage returns the test's storage.
 func (t *Test) Storage() storage.Storage {
 	return t.storage
+}
+
+// TSDB returns test's TSDB.
+func (t *Test) TSDB() *tsdb.DB {
+	return t.storage.DB
 }
 
 func raise(line int, format string, v ...interface{}) error {
