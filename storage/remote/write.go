@@ -47,9 +47,9 @@ var (
 // WriteStorage represents all the remote write storage.
 type WriteStorage struct {
 	logger log.Logger
+	reg    prometheus.Registerer
 	mtx    sync.Mutex
 
-	queueMetrics      *queueManagerMetrics
 	watcherMetrics    *wal.WatcherMetrics
 	liveReaderMetrics *wal.LiveReaderMetrics
 	externalLabels    labels.Labels
@@ -66,10 +66,10 @@ func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, walDir string
 	}
 	rws := &WriteStorage{
 		queues:            make(map[string]*QueueManager),
-		queueMetrics:      newQueueManagerMetrics(reg),
 		watcherMetrics:    wal.NewWatcherMetrics(reg),
 		liveReaderMetrics: wal.NewLiveReaderMetrics(reg),
 		logger:            logger,
+		reg:               reg,
 		flushDeadline:     flushDeadline,
 		samplesIn:         newEWMARate(ewmaWeight, shardUpdateDuration),
 		walDir:            walDir,
@@ -136,8 +136,9 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			continue
 		}
 
+		endpoint := rwConf.URL.String()
 		newQueues[hash] = NewQueueManager(
-			rws.queueMetrics,
+			newQueueManagerMetrics(rws.reg, name, endpoint),
 			rws.watcherMetrics,
 			rws.liveReaderMetrics,
 			rws.logger,
