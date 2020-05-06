@@ -1976,6 +1976,7 @@ func (s *memSeries) chunk(id int, chunkDiskMapper *chunks.ChunkDiskMapper) (chun
 		if err == chunks.ErrChunkDiskMapperClosed {
 			return nil, false
 		}
+		// TODO(codesome): Find a better way to handle this error instead of a panic.
 		panic(err)
 	}
 	mc := s.memChunkPool.Get().(*memChunk)
