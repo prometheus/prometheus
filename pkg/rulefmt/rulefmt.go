@@ -14,16 +14,15 @@
 package rulefmt
 
 import (
+	"bytes"
 	"context"
+	"gopkg.in/yaml.v3"
 	"io/ioutil"
 	"strings"
 	"time"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
-	yamlv2 "gopkg.in/yaml.v2"
-	yaml "gopkg.in/yaml.v3"
-
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/template"
@@ -80,18 +79,6 @@ type RuleNode struct {
 // ruleGroups type of yaml.v3 features in the groups field.
 type ruleGroups struct {
 	Groups []yaml.Node `yaml:"groups"`
-}
-
-// validateRules type for validating the groups inside the
-// rules files under strict mode, supported under yaml.v2
-type validateRules struct {
-	Groups []validateGroup `yaml:"groups"`
-}
-
-type validateGroup struct {
-	Name     string         `yaml:"name"`
-	Interval model.Duration `yaml:"interval,omitempty"`
-	Rules    []Rule         `yaml:"rules"`
 }
 
 // Rule describes an alerting or recording rule.
@@ -277,23 +264,21 @@ func testTemplateParsing(rl *RuleNode) (errs []error) {
 // Parse parses and validates a set of rules.
 func Parse(content []byte) (*RuleGroups, []error) {
 	var (
-		groups   RuleGroups
-		node     ruleGroups
-		validate validateRules
-		errs     []error
+		groups RuleGroups
+		node   ruleGroups
+		errs   []error
+		err    error
 	)
 
-	err := yamlv2.UnmarshalStrict(content, &validate)
-	if err != nil {
+	decoder := yaml.NewDecoder(bytes.NewReader(content))
+	decoder.KnownFields(true)
+	if err = decoder.Decode(&groups); err != nil {
 		errs = append(errs, err)
 	}
 
-	// Error catching is not required since the errors related to the
-	// yaml file Unmarshalling are already captured in the strict mode.
-	// Further, catching errors here will lead to duplicate
-	// errors in the output. Hence, here we aim to perform further
-	// checks on the rules files supported with the line and columns numbers.
-	_, _ = yaml.Unmarshal(content, &groups), yaml.Unmarshal(content, &node)
+	if err = yaml.Unmarshal(content, &node); err != nil {
+		errs = append(errs, err)
+	}
 
 	if len(errs) > 0 {
 		return nil, errs
