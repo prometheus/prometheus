@@ -57,7 +57,7 @@ func (err *Error) Error() string {
 // RuleGroups is a set of rule groups that are typically exposed in a file.
 type RuleGroups struct {
 	Groups []RuleGroup `yaml:"groups"`
-	nodes ruleGroups
+	nodes  ruleGroups
 }
 
 // RuleGroup is a list of sequentially evaluated recording and alerting rules.
