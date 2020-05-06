@@ -466,6 +466,7 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error) {
 		}
 	}()
 
+	minSampleTime := int64(math.MaxInt64)
 	for d := range decoded {
 		switch v := d.(type) {
 		case []record.RefSeries:
@@ -506,6 +507,9 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error) {
 					if r, ok := multiRef[sam.Ref]; ok {
 						sam.Ref = r
 					}
+					if minSampleTime > sam.T {
+						minSampleTime = sam.T
+					}
 					mod := sam.Ref % uint64(n)
 					shards[mod] = append(shards[mod], sam)
 				}
@@ -534,6 +538,9 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error) {
 		default:
 			panic(fmt.Errorf("unexpected decoded type: %T", d))
 		}
+	}
+	if minSampleTime != int64(math.MaxInt64) {
+		h.minValidTime = minSampleTime
 	}
 
 	select {
