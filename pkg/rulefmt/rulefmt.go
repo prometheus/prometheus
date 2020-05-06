@@ -16,13 +16,14 @@ package rulefmt
 import (
 	"bytes"
 	"context"
-	"gopkg.in/yaml.v3"
 	"io/ioutil"
 	"strings"
 	"time"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+	"gopkg.in/yaml.v3"
+
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/template"
@@ -77,11 +78,6 @@ type RuleNode struct {
 	Annotations map[string]string `yaml:"annotations,omitempty"`
 }
 
-// ruleGroups type for yaml.v3 features in the groups field.
-type ruleGroups struct {
-	Groups []yaml.Node `yaml:"groups"`
-}
-
 // Rule describes an alerting or recording rule.
 type Rule struct {
 	Record      string            `yaml:"record,omitempty"`
@@ -92,26 +88,30 @@ type Rule struct {
 	Annotations map[string]string `yaml:"annotations,omitempty"`
 }
 
+// ruleGroups type for yaml.v3 features in the groups field.
+type ruleGroups struct {
+	Groups []yaml.Node `yaml:"groups"`
+}
+
 // Validate validates all rules in the rule groups.
 func (g *RuleGroups) Validate() (errs []error) {
-	node := g.nodes
 	set := map[string]struct{}{}
 
-	for j, g := range g.Groups {
-		if g.Name == "" {
-			errs = append(errs, errors.Errorf("%d:%d: Groupname should not be empty", node.Groups[j].Line, node.Groups[j].Column))
+	for j, grp := range g.Groups {
+		if grp.Name == "" {
+			errs = append(errs, errors.Errorf("%d:%d: Groupname should not be empty", g.nodes.Groups[j].Line, g.nodes.Groups[j].Column))
 		}
 
-		if _, ok := set[g.Name]; ok {
+		if _, ok := set[grp.Name]; ok {
 			errs = append(
 				errs,
-				errors.Errorf("%d:%d: Groupname: \"%s\" is repeated in the same file", node.Groups[j].Line, node.Groups[j].Column, g.Name),
+				errors.Errorf("%d:%d: Groupname: \"%s\" is repeated in the same file", g.nodes.Groups[j].Line, g.nodes.Groups[j].Column, grp.Name),
 			)
 		}
 
-		set[g.Name] = struct{}{}
+		set[grp.Name] = struct{}{}
 
-		for i, r := range g.Rules {
+		for i, r := range grp.Rules {
 			for _, node := range r.Validate() {
 				var ruleName yaml.Node
 				if r.Alert.Value != "" {
@@ -120,7 +120,7 @@ func (g *RuleGroups) Validate() (errs []error) {
 					ruleName = r.Record
 				}
 				errs = append(errs, &Error{
-					Group:    g.Name,
+					Group:    grp.Name,
 					Rule:     i,
 					RuleName: ruleName.Value,
 					Err:      node,
