@@ -1333,6 +1333,30 @@ func TestAddDuplicateLabelName(t *testing.T) {
 	add(labels.Labels{{Name: "__name__", Value: "up"}, {Name: "job", Value: "prometheus"}, {Name: "le", Value: "500"}, {Name: "le", Value: "400"}, {Name: "unit", Value: "s"}}, "le")
 }
 
+func TestAddOutOfOrderSampleWithinSameTransaction(t *testing.T) {
+	dir, err := ioutil.TempDir("", "test_out_of_order_sample")
+	testutil.Ok(t, err)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
+	wlog, err := wal.NewSize(nil, nil, dir, 32768, false)
+	testutil.Ok(t, err)
+
+	h, err := NewHead(nil, nil, wlog, 1000, DefaultStripeSize)
+	testutil.Ok(t, err)
+	defer h.Close()
+
+	app := h.Appender()
+	for _, ts := range []int64{1, 0, 2} {
+		_, err = app.Add(labels.Labels{{Name: "a", Value: "b"}}, ts, 0)
+		testutil.Ok(t, err)
+	}
+	testutil.Ok(t, app.Commit())
+
+	testutil.Equals(t, float64(2), prom_testutil.ToFloat64(h.metrics.samplesAppended))
+	testutil.Equals(t, float64(1), prom_testutil.ToFloat64(h.metrics.samplesDiscarded))
+}
+
 func TestMemSeriesIsolation(t *testing.T) {
 	// Put a series, select it. GC it and then access it.
 	hb, err := NewHead(nil, nil, nil, 1000, DefaultStripeSize)
