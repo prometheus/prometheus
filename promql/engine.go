@@ -1713,12 +1713,13 @@ func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.V
 	if enh.resultMetric == nil {
 		enh.resultMetric = make(map[string]labels.Labels, len(enh.out))
 	}
+
 	if enh.lb == nil {
 		enh.lb = labels.NewBuilder(lhs)
 	} else {
 		enh.lb.Reset(lhs)
 	}
-	// enh.lblBuf.Reset()
+
 	buf := bytes.NewBuffer(enh.lblResultBuf[:0])
 	enh.lblBuf = lhs.Bytes(enh.lblBuf)
 	buf.Write(enh.lblBuf)

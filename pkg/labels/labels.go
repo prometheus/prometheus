@@ -76,7 +76,6 @@ func (ls Labels) Bytes(buf []byte) []byte {
 		b.WriteByte(sep)
 		b.WriteString(l.Value)
 	}
-	b.WriteByte(labelSep)
 	return b.Bytes()
 }
 
