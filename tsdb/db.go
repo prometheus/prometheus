@@ -378,6 +378,9 @@ func (db *DBReadOnly) Querier(ctx context.Context, mint, maxt int64) (storage.Qu
 
 	// Also add the WAL if the current blocks don't cover the requests time range.
 	if maxBlockTime <= maxt {
+		if err := head.Close(); err != nil {
+			return nil, err
+		}
 		w, err := wal.Open(db.logger, filepath.Join(db.dir, "wal"))
 		if err != nil {
 			return nil, err
@@ -394,9 +397,9 @@ func (db *DBReadOnly) Querier(ctx context.Context, mint, maxt int64) (storage.Qu
 		// Set the wal to nil to disable all wal operations.
 		// This is mainly to avoid blocking when closing the head.
 		head.wal = nil
-
-		db.closers = append(db.closers, head)
 	}
+
+	db.closers = append(db.closers, head)
 
 	// TODO: Refactor so that it is possible to obtain a Querier without initializing a writable DB instance.
 	// Option 1: refactor DB to have the Querier implementation using the DBReadOnly.Querier implementation not the opposite.
