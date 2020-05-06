@@ -1898,8 +1898,18 @@ type fakeDB struct {
 func (f *fakeDB) CleanTombstones() error                               { return f.err }
 func (f *fakeDB) Delete(mint, maxt int64, ms ...*labels.Matcher) error { return f.err }
 func (f *fakeDB) Snapshot(dir string, withHead bool) error             { return f.err }
-func (f *fakeDB) Stats(statsByLabelName string) (*tsdb.Stats, error) {
-	h, _ := tsdb.NewHead(nil, nil, nil, 1000, tsdb.DefaultStripeSize)
+func (f *fakeDB) Stats(statsByLabelName string) (_ *tsdb.Stats, retErr error) {
+	dbDir, err := ioutil.TempDir("", "tsdb-api-ready")
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		err := os.RemoveAll(dbDir)
+		if retErr != nil {
+			retErr = err
+		}
+	}()
+	h, _ := tsdb.NewHead(nil, nil, nil, 1000, "", nil, tsdb.DefaultStripeSize)
 	return h.Stats(statsByLabelName), nil
 }
 

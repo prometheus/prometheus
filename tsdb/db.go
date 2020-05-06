@@ -309,7 +309,7 @@ func (db *DBReadOnly) FlushWAL(dir string) (returnErr error) {
 	if err != nil {
 		return err
 	}
-	head, err := NewHead(nil, db.logger, w, 1, DefaultStripeSize)
+	head, err := NewHead(nil, db.logger, w, 1, db.dir, nil, DefaultStripeSize)
 	if err != nil {
 		return err
 	}
@@ -368,7 +368,7 @@ func (db *DBReadOnly) Querier(ctx context.Context, mint, maxt int64) (storage.Qu
 		blocks[i] = b
 	}
 
-	head, err := NewHead(nil, db.logger, nil, 1, DefaultStripeSize)
+	head, err := NewHead(nil, db.logger, nil, 1, db.dir, nil, DefaultStripeSize)
 	if err != nil {
 		return nil, err
 	}
@@ -379,11 +379,14 @@ func (db *DBReadOnly) Querier(ctx context.Context, mint, maxt int64) (storage.Qu
 
 	// Also add the WAL if the current blocks don't cover the requests time range.
 	if maxBlockTime <= maxt {
+		if err := head.Close(); err != nil {
+			return nil, err
+		}
 		w, err := wal.Open(db.logger, filepath.Join(db.dir, "wal"))
 		if err != nil {
 			return nil, err
 		}
-		head, err = NewHead(nil, db.logger, w, 1, DefaultStripeSize)
+		head, err = NewHead(nil, db.logger, w, 1, db.dir, nil, DefaultStripeSize)
 		if err != nil {
 			return nil, err
 		}
@@ -395,9 +398,9 @@ func (db *DBReadOnly) Querier(ctx context.Context, mint, maxt int64) (storage.Qu
 		// Set the wal to nil to disable all wal operations.
 		// This is mainly to avoid blocking when closing the head.
 		head.wal = nil
-
-		db.closers = append(db.closers, head)
 	}
+
+	db.closers = append(db.closers, head)
 
 	// TODO: Refactor so that it is possible to obtain a Querier without initializing a writable DB instance.
 	// Option 1: refactor DB to have the Querier implementation using the DBReadOnly.Querier implementation not the opposite.
@@ -583,19 +586,21 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 
 	var wlog *wal.WAL
 	segmentSize := wal.DefaultSegmentSize
+	walDir := filepath.Join(dir, "wal")
 	// Wal is enabled.
 	if opts.WALSegmentSize >= 0 {
 		// Wal is set to a custom size.
 		if opts.WALSegmentSize > 0 {
 			segmentSize = opts.WALSegmentSize
 		}
-		wlog, err = wal.NewSize(l, r, filepath.Join(dir, "wal"), segmentSize, opts.WALCompression)
+		wlog, err = wal.NewSize(l, r, walDir, segmentSize, opts.WALCompression)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	db.head, err = NewHead(r, l, wlog, rngs[0], opts.StripeSize)
+	db.head, err = NewHead(r, l, wlog, rngs[0], dir, db.chunkPool, opts.StripeSize)
+
 	if err != nil {
 		return nil, err
 	}
@@ -1018,9 +1023,10 @@ func (db *DB) beyondSizeRetention(blocks []*Block) (deletable map[ulid.ULID]*Blo
 	deletable = make(map[ulid.ULID]*Block)
 
 	walSize, _ := db.Head().wal.Size()
-	// Initializing size counter with WAL size,
-	// as that is part of the retention strategy.
-	blocksSize := walSize
+	headChunksSize := db.Head().chunkDiskMapper.Size()
+	// Initializing size counter with WAL size and Head chunks
+	// written to disk, as that is part of the retention strategy.
+	blocksSize := walSize + headChunksSize
 	for i, block := range blocks {
 		blocksSize += block.Size()
 		if blocksSize > int64(db.opts.MaxBytes) {

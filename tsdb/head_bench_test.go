@@ -14,6 +14,8 @@
 package tsdb
 
 import (
+	"io/ioutil"
+	"os"
 	"strconv"
 	"sync/atomic"
 	"testing"
@@ -23,8 +25,13 @@ import (
 )
 
 func BenchmarkHeadStripeSeriesCreate(b *testing.B) {
+	chunkDir, err := ioutil.TempDir("", "chunk_dir")
+	testutil.Ok(b, err)
+	defer func() {
+		testutil.Ok(b, os.RemoveAll(chunkDir))
+	}()
 	// Put a series, select it. GC it and then access it.
-	h, err := NewHead(nil, nil, nil, 1000, DefaultStripeSize)
+	h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, DefaultStripeSize)
 	testutil.Ok(b, err)
 	defer h.Close()
 
@@ -34,8 +41,13 @@ func BenchmarkHeadStripeSeriesCreate(b *testing.B) {
 }
 
 func BenchmarkHeadStripeSeriesCreateParallel(b *testing.B) {
+	chunkDir, err := ioutil.TempDir("", "chunk_dir")
+	testutil.Ok(b, err)
+	defer func() {
+		testutil.Ok(b, os.RemoveAll(chunkDir))
+	}()
 	// Put a series, select it. GC it and then access it.
-	h, err := NewHead(nil, nil, nil, 1000, DefaultStripeSize)
+	h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, DefaultStripeSize)
 	testutil.Ok(b, err)
 	defer h.Close()
 

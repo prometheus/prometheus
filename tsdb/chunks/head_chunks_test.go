@@ -39,6 +39,7 @@ func TestHeadReadWriter_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 	type expectedDataType struct {
 		seriesRef, chunkRef uint64
 		mint, maxt          int64
+		numSamples          uint16
 		chunk               chunkenc.Chunk
 	}
 	expectedData := []expectedDataType{}
@@ -51,11 +52,12 @@ func TestHeadReadWriter_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 			seriesRef, chkRef, mint, maxt, chunk := createChunk(t, totalChunks, hrw)
 			totalChunks++
 			expectedData = append(expectedData, expectedDataType{
-				seriesRef: seriesRef,
-				mint:      mint,
-				maxt:      maxt,
-				chunkRef:  chkRef,
-				chunk:     chunk,
+				seriesRef:  seriesRef,
+				mint:       mint,
+				maxt:       maxt,
+				chunkRef:   chkRef,
+				chunk:      chunk,
+				numSamples: uint16(chunk.NumSamples()),
 			})
 
 			if hrw.curFileSequence != 1 {
@@ -128,7 +130,7 @@ func TestHeadReadWriter_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 	testutil.Ok(t, err)
 
 	idx := 0
-	err = hrw.IterateAllChunks(func(seriesRef, chunkRef uint64, mint, maxt int64) error {
+	err = hrw.IterateAllChunks(func(seriesRef, chunkRef uint64, mint, maxt int64, numSamples uint16) error {
 		t.Helper()
 
 		expData := expectedData[idx]
@@ -136,6 +138,7 @@ func TestHeadReadWriter_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 		testutil.Equals(t, expData.chunkRef, chunkRef)
 		testutil.Equals(t, expData.maxt, maxt)
 		testutil.Equals(t, expData.maxt, maxt)
+		testutil.Equals(t, expData.numSamples, numSamples)
 
 		actChunk, err := hrw.Chunk(expData.chunkRef)
 		testutil.Ok(t, err)
@@ -157,7 +160,7 @@ func TestHeadReadWriter_Truncate(t *testing.T) {
 	}()
 
 	testutil.Assert(t, !hrw.fileMaxtSet, "")
-	testutil.Ok(t, hrw.IterateAllChunks(func(_, _ uint64, _, _ int64) error { return nil }))
+	testutil.Ok(t, hrw.IterateAllChunks(func(_, _ uint64, _, _ int64, _ uint16) error { return nil }))
 	testutil.Assert(t, hrw.fileMaxtSet, "")
 
 	timeRange := 0
@@ -227,7 +230,7 @@ func TestHeadReadWriter_Truncate(t *testing.T) {
 	testutil.Ok(t, err)
 
 	testutil.Assert(t, !hrw.fileMaxtSet, "")
-	testutil.Ok(t, hrw.IterateAllChunks(func(_, _ uint64, _, _ int64) error { return nil }))
+	testutil.Ok(t, hrw.IterateAllChunks(func(_, _ uint64, _, _ int64, _ uint16) error { return nil }))
 	testutil.Assert(t, hrw.fileMaxtSet, "")
 
 	// Truncating files after restart.

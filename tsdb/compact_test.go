@@ -870,7 +870,12 @@ func BenchmarkCompactionFromHead(b *testing.B) {
 	for labelNames := 1; labelNames < totalSeries; labelNames *= 10 {
 		labelValues := totalSeries / labelNames
 		b.Run(fmt.Sprintf("labelnames=%d,labelvalues=%d", labelNames, labelValues), func(b *testing.B) {
-			h, err := NewHead(nil, nil, nil, 1000, DefaultStripeSize)
+			chunkDir, err := ioutil.TempDir("", "chunk_dir")
+			testutil.Ok(b, err)
+			defer func() {
+				testutil.Ok(b, os.RemoveAll(chunkDir))
+			}()
+			h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, DefaultStripeSize)
 			testutil.Ok(b, err)
 			for ln := 0; ln < labelNames; ln++ {
 				app := h.Appender()

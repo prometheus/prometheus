@@ -100,6 +100,7 @@ func (a *dbAdapter) Stats(statsByLabelName string) (*tsdb.Stats, error) {
 
 func TestReadyAndHealthy(t *testing.T) {
 	t.Parallel()
+
 	dbDir, err := ioutil.TempDir("", "tsdb-ready")
 	testutil.Ok(t, err)
 	defer testutil.Ok(t, os.RemoveAll(dbDir))
@@ -426,7 +427,6 @@ func TestDebugHandler(t *testing.T) {
 
 func TestHTTPMetrics(t *testing.T) {
 	t.Parallel()
-
 	handler := New(nil, &Options{
 		RoutePrefix:   "/",
 		ListenAddress: "somehost:9090",

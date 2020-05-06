@@ -849,8 +849,15 @@ func TestWALSegmentSizeOptions(t *testing.T) {
 	tests := map[int]func(dbdir string, segmentSize int){
 		// Default Wal Size.
 		0: func(dbDir string, segmentSize int) {
-			files, err := ioutil.ReadDir(filepath.Join(dbDir, "wal"))
+			filesAndDir, err := ioutil.ReadDir(filepath.Join(dbDir, "wal"))
 			testutil.Ok(t, err)
+			files := []os.FileInfo{}
+			for _, f := range filesAndDir {
+				if !f.IsDir() {
+					files = append(files, f)
+				}
+			}
+			// All the full segment files (all but the last) should match the segment size option.
 			for _, f := range files[:len(files)-1] {
 				testutil.Equals(t, int64(DefaultOptions().WALSegmentSize), f.Size(), "WAL file size doesn't match WALSegmentSize option, filename: %v", f.Name())
 			}
@@ -859,9 +866,16 @@ func TestWALSegmentSizeOptions(t *testing.T) {
 		},
 		// Custom Wal Size.
 		2 * 32 * 1024: func(dbDir string, segmentSize int) {
-			files, err := ioutil.ReadDir(filepath.Join(dbDir, "wal"))
-			testutil.Assert(t, len(files) > 1, "current WALSegmentSize should result in more than a single WAL file.")
+			filesAndDir, err := ioutil.ReadDir(filepath.Join(dbDir, "wal"))
 			testutil.Ok(t, err)
+			files := []os.FileInfo{}
+			for _, f := range filesAndDir {
+				if !f.IsDir() {
+					files = append(files, f)
+				}
+			}
+			testutil.Assert(t, len(files) > 1, "current WALSegmentSize should result in more than a single WAL file.")
+			// All the full segment files (all but the last) should match the segment size option.
 			for _, f := range files[:len(files)-1] {
 				testutil.Equals(t, int64(segmentSize), f.Size(), "WAL file size doesn't match WALSegmentSize option, filename: %v", f.Name())
 			}
@@ -870,9 +884,12 @@ func TestWALSegmentSizeOptions(t *testing.T) {
 		},
 		// Wal disabled.
 		-1: func(dbDir string, segmentSize int) {
-			if _, err := os.Stat(filepath.Join(dbDir, "wal")); !os.IsNotExist(err) {
-				t.Fatal("wal directory is present when the wal is disabled")
-			}
+			// Check that WAL dir is not there.
+			_, err := os.Stat(filepath.Join(dbDir, "wal"))
+			testutil.NotOk(t, err)
+			// Check that there is chunks dir.
+			_, err = os.Stat(mmappedChunksDir(dbDir))
+			testutil.Ok(t, err)
 		},
 	}
 	for segmentSize, testFunc := range tests {
