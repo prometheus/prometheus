@@ -76,8 +76,8 @@ type RuleNode struct {
 	Annotations map[string]string `yaml:"annotations,omitempty"`
 }
 
-// ruleGroups type of yaml.v3 features in the groups field.
-type ruleGroups struct {
+// RuleGroupsNode type for yaml.v3 features in the groups field.
+type RuleGroupsNode struct {
 	Groups []yaml.Node `yaml:"groups"`
 }
 
@@ -92,7 +92,7 @@ type Rule struct {
 }
 
 // Validate validates all rules in the rule groups.
-func (g *RuleGroups) Validate(node ruleGroups) (errs []error) {
+func (g *RuleGroups) Validate(node RuleGroupsNode) (errs []error) {
 	set := map[string]struct{}{}
 
 	for j, g := range g.Groups {
@@ -265,7 +265,7 @@ func testTemplateParsing(rl *RuleNode) (errs []error) {
 func Parse(content []byte) (*RuleGroups, []error) {
 	var (
 		groups RuleGroups
-		node   ruleGroups
+		node   RuleGroupsNode
 		errs   []error
 		err    error
 	)
