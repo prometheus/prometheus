@@ -57,6 +57,7 @@ func (err *Error) Error() string {
 // RuleGroups is a set of rule groups that are typically exposed in a file.
 type RuleGroups struct {
 	Groups []RuleGroup `yaml:"groups"`
+	nodes ruleGroups
 }
 
 // RuleGroup is a list of sequentially evaluated recording and alerting rules.
@@ -76,8 +77,8 @@ type RuleNode struct {
 	Annotations map[string]string `yaml:"annotations,omitempty"`
 }
 
-// RuleGroupsNode type for yaml.v3 features in the groups field.
-type RuleGroupsNode struct {
+// ruleGroups type for yaml.v3 features in the groups field.
+type ruleGroups struct {
 	Groups []yaml.Node `yaml:"groups"`
 }
 
@@ -92,7 +93,8 @@ type Rule struct {
 }
 
 // Validate validates all rules in the rule groups.
-func (g *RuleGroups) Validate(node RuleGroupsNode) (errs []error) {
+func (g *RuleGroups) Validate() (errs []error) {
+	node := g.nodes
 	set := map[string]struct{}{}
 
 	for j, g := range g.Groups {
@@ -265,7 +267,6 @@ func testTemplateParsing(rl *RuleNode) (errs []error) {
 func Parse(content []byte) (*RuleGroups, []error) {
 	var (
 		groups RuleGroups
-		node   RuleGroupsNode
 		errs   []error
 		err    error
 	)
@@ -276,7 +277,7 @@ func Parse(content []byte) (*RuleGroups, []error) {
 		errs = append(errs, err)
 	}
 
-	if err = yaml.Unmarshal(content, &node); err != nil {
+	if err = yaml.Unmarshal(content, &groups.nodes); err != nil {
 		errs = append(errs, err)
 	}
 
@@ -284,7 +285,7 @@ func Parse(content []byte) (*RuleGroups, []error) {
 		return nil, errs
 	}
 
-	return &groups, groups.Validate(node)
+	return &groups, groups.Validate()
 }
 
 // ParseFile reads and parses rules from a file.
