@@ -1,3 +1,7 @@
+## 2.18.1 / 2020-05-07
+
+* [BUGFIX] TSDB: Fixed snapshot API. #7217
+
 ## 2.18.0 / 2020-05-05
 
 * [CHANGE] Federation: Only use local TSDB for federation (ignore remote read). #7077
