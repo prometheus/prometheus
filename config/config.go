@@ -182,6 +182,11 @@ func resolveFilepaths(baseDir string, cfg *Config) {
 		for _, cfg := range cfg.TritonSDConfigs {
 			tlsPaths(&cfg.TLSConfig)
 		}
+		for _, filecfg := range cfg.FileSDConfigs {
+			for i, fn := range filecfg.Files {
+				filecfg.Files[i] = join(fn)
+			}
+		}
 		for _, sdkind := range cfg.SDConfigs {
 			for _, sdcfg := range sdkind {
 				if sd, ok := sdcfg.(TLSConfigSD); ok {
