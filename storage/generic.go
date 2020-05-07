@@ -27,6 +27,7 @@ type genericSeriesSet interface {
 	Next() bool
 	At() Labels
 	Err() error
+	Warnings() Warnings
 }
 
 type genericSeriesMergeFunc func(...Labels) Labels

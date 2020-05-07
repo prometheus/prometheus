@@ -154,6 +154,7 @@ type SeriesSet interface {
 	Next() bool
 	At() Series
 	Err() error
+	Warnings() Warnings
 }
 
 var emptySeriesSet = errSeriesSet{}
@@ -164,12 +165,14 @@ func EmptySeriesSet() SeriesSet {
 }
 
 type errSeriesSet struct {
+	ws  Warnings
 	err error
 }
 
-func (s errSeriesSet) Next() bool { return false }
-func (s errSeriesSet) At() Series { return nil }
-func (s errSeriesSet) Err() error { return s.err }
+func (s errSeriesSet) Next() bool         { return false }
+func (s errSeriesSet) At() Series         { return nil }
+func (s errSeriesSet) Err() error         { return s.err }
+func (s errSeriesSet) Warnings() Warnings { return s.ws }
 
 // Series exposes a single time series and allows iterating over samples.
 type Series interface {
@@ -182,6 +185,7 @@ type ChunkSeriesSet interface {
 	Next() bool
 	At() ChunkSeries
 	Err() error
+	Warnings() Warnings
 }
 
 // ChunkSeries exposes a single time series and allows iterating over chunks.

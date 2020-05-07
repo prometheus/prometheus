@@ -547,6 +547,16 @@ func (c *genericMergeSeriesSet) Err() error {
 	return nil
 }
 
+func (c *genericMergeSeriesSet) Warnings() Warnings {
+	var ws Warnings
+	for _, set := range c.sets {
+		if w := set.Warnings(); w != nil {
+			ws = append(ws, w...)
+		}
+	}
+	return ws
+}
+
 type genericSeriesSetHeap []genericSeriesSet
 
 func (h genericSeriesSetHeap) Len() int      { return len(h) }

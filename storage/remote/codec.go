@@ -365,6 +365,8 @@ func (e errSeriesSet) Err() error {
 	return e.err
 }
 
+func (e errSeriesSet) Warnings() storage.Warnings { return nil }
+
 // concreteSeriesSet implements storage.SeriesSet.
 type concreteSeriesSet struct {
 	cur    int
@@ -383,6 +385,8 @@ func (c *concreteSeriesSet) At() storage.Series {
 func (c *concreteSeriesSet) Err() error {
 	return nil
 }
+
+func (c *concreteSeriesSet) Warnings() storage.Warnings { return nil }
 
 // concreteSeries implements storage.Series.
 type concreteSeries struct {

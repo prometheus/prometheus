@@ -439,6 +439,8 @@ func (m *mockSeriesSet) At() Series { return m.series[m.idx] }
 
 func (m *mockSeriesSet) Err() error { return nil }
 
+func (m *mockSeriesSet) Warnings() Warnings { return nil }
+
 type mockChunkSeriesSet struct {
 	idx    int
 	series []ChunkSeries
@@ -459,6 +461,8 @@ func (m *mockChunkSeriesSet) Next() bool {
 func (m *mockChunkSeriesSet) At() ChunkSeries { return m.series[m.idx] }
 
 func (m *mockChunkSeriesSet) Err() error { return nil }
+
+func (m *mockChunkSeriesSet) Warnings() Warnings { return nil }
 
 func TestChainSampleIterator(t *testing.T) {
 	for _, tc := range []struct {

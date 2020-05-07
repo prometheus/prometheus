@@ -501,6 +501,8 @@ func (s *mergedSeriesSet) Err() error {
 	return s.err
 }
 
+func (s *mergedSeriesSet) Warnings() storage.Warnings { return nil }
+
 // nextAll is to call Next() for all SeriesSet.
 // Because the order of the SeriesSet slice will affect the results,
 // we need to use an buffer slice to hold the order.
@@ -621,6 +623,13 @@ func (s *mergedVerticalSeriesSet) Err() error {
 		return s.a.Err()
 	}
 	return s.b.Err()
+}
+
+func (s *mergedVerticalSeriesSet) Warnings() storage.Warnings {
+	var ws storage.Warnings
+	ws = append(ws, s.a.Warnings()...)
+	ws = append(ws, s.b.Warnings()...)
+	return ws
 }
 
 func (s *mergedVerticalSeriesSet) compare() int {
@@ -848,8 +857,9 @@ func (s *blockSeriesSet) Next() bool {
 	return false
 }
 
-func (s *blockSeriesSet) At() storage.Series { return s.cur }
-func (s *blockSeriesSet) Err() error         { return s.err }
+func (s *blockSeriesSet) At() storage.Series         { return s.cur }
+func (s *blockSeriesSet) Err() error                 { return s.err }
+func (s *blockSeriesSet) Warnings() storage.Warnings { return nil }
 
 // chunkSeries is a series that is backed by a sequence of chunks holding
 // time series data.

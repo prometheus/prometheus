@@ -184,9 +184,10 @@ type errSeriesSet struct {
 	err error
 }
 
-func (errSeriesSet) Next() bool         { return false }
-func (errSeriesSet) At() storage.Series { return nil }
-func (e errSeriesSet) Err() error       { return e.err }
+func (errSeriesSet) Next() bool                   { return false }
+func (errSeriesSet) At() storage.Series           { return nil }
+func (e errSeriesSet) Err() error                 { return e.err }
+func (e errSeriesSet) Warnings() storage.Warnings { return nil }
 
 func TestQueryError(t *testing.T) {
 	opts := EngineOpts{

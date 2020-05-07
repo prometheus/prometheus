@@ -39,12 +39,14 @@ import (
 type mockSeriesSet struct {
 	next   func() bool
 	series func() storage.Series
+	ws     func() storage.Warnings
 	err    func() error
 }
 
-func (m *mockSeriesSet) Next() bool         { return m.next() }
-func (m *mockSeriesSet) At() storage.Series { return m.series() }
-func (m *mockSeriesSet) Err() error         { return m.err() }
+func (m *mockSeriesSet) Next() bool                 { return m.next() }
+func (m *mockSeriesSet) At() storage.Series         { return m.series() }
+func (m *mockSeriesSet) Err() error                 { return m.err() }
+func (m *mockSeriesSet) Warnings() storage.Warnings { return m.ws() }
 
 func newMockSeriesSet(list []storage.Series) *mockSeriesSet {
 	i := -1
