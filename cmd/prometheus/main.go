@@ -66,6 +66,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/strutil"
 	"github.com/prometheus/prometheus/web"
+
+	_ "github.com/prometheus/prometheus/discovery/file"
 )
 
 var (

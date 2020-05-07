@@ -31,6 +31,7 @@ import (
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
 )
@@ -67,6 +68,10 @@ const (
 	// Constants for instrumentation.
 	namespace = "prometheus"
 )
+
+func init() {
+	discovery.Register("consul_sd_configs", SDConfig)
+}
 
 var (
 	rpcFailuresCount = prometheus.NewCounter(

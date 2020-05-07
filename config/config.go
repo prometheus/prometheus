@@ -176,18 +176,17 @@ func resolveFilepaths(baseDir string, cfg *Config) {
 			mcfg.AuthTokenFile = join(mcfg.AuthTokenFile)
 			clientPaths(&mcfg.HTTPClientConfig)
 		}
-		for _, consulcfg := range cfg.ConsulSDConfigs {
-			tlsPaths(&consulcfg.TLSConfig)
-		}
 		for _, cfg := range cfg.OpenstackSDConfigs {
 			tlsPaths(&cfg.TLSConfig)
 		}
 		for _, cfg := range cfg.TritonSDConfigs {
 			tlsPaths(&cfg.TLSConfig)
 		}
-		for _, filecfg := range cfg.FileSDConfigs {
-			for i, fn := range filecfg.Files {
-				filecfg.Files[i] = join(fn)
+		for _, sdkind := range cfg.SDConfigs {
+			for _, sdcfg := range sdkind {
+				if sd, ok := sdcfg.(TLSConfigSD); ok {
+					tlsPaths(sd.TLSConfig())
+				}
 			}
 		}
 	}
@@ -695,4 +694,8 @@ func (c *RemoteReadConfig) UnmarshalYAML(unmarshal func(interface{}) error) erro
 	// We cannot make it a pointer as the parser panics for inlined pointer structs.
 	// Thus we just do its validation here.
 	return c.HTTPClientConfig.Validate()
+}
+
+type TLSConfigSD interface {
+	TLSConfig() *config_util.TLSConfig
 }

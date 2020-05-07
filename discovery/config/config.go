@@ -14,10 +14,11 @@
 package config
 
 import (
+	"fmt"
+
 	"github.com/pkg/errors"
 
 	"github.com/prometheus/prometheus/discovery/azure"
-	"github.com/prometheus/prometheus/discovery/consul"
 	"github.com/prometheus/prometheus/discovery/dns"
 	"github.com/prometheus/prometheus/discovery/ec2"
 	"github.com/prometheus/prometheus/discovery/file"
@@ -38,8 +39,6 @@ type ServiceDiscoveryConfig struct {
 	DNSSDConfigs []*dns.SDConfig `yaml:"dns_sd_configs,omitempty"`
 	// List of file service discovery configurations.
 	FileSDConfigs []*file.SDConfig `yaml:"file_sd_configs,omitempty"`
-	// List of Consul service discovery configurations.
-	ConsulSDConfigs []*consul.SDConfig `yaml:"consul_sd_configs,omitempty"`
 	// List of Serverset service discovery configurations.
 	ServersetSDConfigs []*zookeeper.ServersetSDConfig `yaml:"serverset_sd_configs,omitempty"`
 	// NerveSDConfigs is a list of Nerve service discovery configurations.
@@ -58,18 +57,20 @@ type ServiceDiscoveryConfig struct {
 	AzureSDConfigs []*azure.SDConfig `yaml:"azure_sd_configs,omitempty"`
 	// List of Triton service discovery configurations.
 	TritonSDConfigs []*triton.SDConfig `yaml:"triton_sd_configs,omitempty"`
+
+	SDConfigs map[string][]interface{} `yaml:",inline"`
 }
 
 // Validate validates the ServiceDiscoveryConfig.
 func (c *ServiceDiscoveryConfig) Validate() error {
+	for n, cfg := range c.SDConfigs {
+		if cfg == nil {
+			return fmt.Errorf("empty or null section in %s", n)
+		}
+	}
 	for _, cfg := range c.AzureSDConfigs {
 		if cfg == nil {
 			return errors.New("empty or null section in azure_sd_configs")
-		}
-	}
-	for _, cfg := range c.ConsulSDConfigs {
-		if cfg == nil {
-			return errors.New("empty or null section in consul_sd_configs")
 		}
 	}
 	for _, cfg := range c.DNSSDConfigs {
@@ -80,11 +81,6 @@ func (c *ServiceDiscoveryConfig) Validate() error {
 	for _, cfg := range c.EC2SDConfigs {
 		if cfg == nil {
 			return errors.New("empty or null section in ec2_sd_configs")
-		}
-	}
-	for _, cfg := range c.FileSDConfigs {
-		if cfg == nil {
-			return errors.New("empty or null section in file_sd_configs")
 		}
 	}
 	for _, cfg := range c.GCESDConfigs {

@@ -297,22 +297,24 @@ var expectedConf = &Config{
 			Scheme:      DefaultScrapeConfig.Scheme,
 
 			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
-				ConsulSDConfigs: []*consul.SDConfig{
-					{
-						Server:          "localhost:1234",
-						Token:           "mysecret",
-						Services:        []string{"nginx", "cache", "mysql"},
-						ServiceTags:     []string{"canary", "v1"},
-						NodeMeta:        map[string]string{"rack": "123"},
-						TagSeparator:    consul.DefaultSDConfig.TagSeparator,
-						Scheme:          "https",
-						RefreshInterval: consul.DefaultSDConfig.RefreshInterval,
-						AllowStale:      true,
-						TLSConfig: config_util.TLSConfig{
-							CertFile:           filepath.FromSlash("testdata/valid_cert_file"),
-							KeyFile:            filepath.FromSlash("testdata/valid_key_file"),
-							CAFile:             filepath.FromSlash("testdata/valid_ca_file"),
-							InsecureSkipVerify: false,
+				SDConfigs: map[string][]interface{}{
+					"consul_sd_config": {
+						consul.SDConfig{
+							Server:          "localhost:1234",
+							Token:           "mysecret",
+							Services:        []string{"nginx", "cache", "mysql"},
+							ServiceTags:     []string{"canary", "v1"},
+							NodeMeta:        map[string]string{"rack": "123"},
+							TagSeparator:    consul.DefaultSDConfig.TagSeparator,
+							Scheme:          "https",
+							RefreshInterval: consul.DefaultSDConfig.RefreshInterval,
+							AllowStale:      true,
+							TLSConfig: config_util.TLSConfig{
+								CertFile:           filepath.FromSlash("testdata/valid_cert_file"),
+								KeyFile:            filepath.FromSlash("testdata/valid_key_file"),
+								CAFile:             filepath.FromSlash("testdata/valid_ca_file"),
+								InsecureSkipVerify: false,
+							},
 						},
 					},
 				},

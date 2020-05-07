@@ -28,7 +28,6 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 
 	"github.com/prometheus/prometheus/discovery/azure"
-	"github.com/prometheus/prometheus/discovery/consul"
 	"github.com/prometheus/prometheus/discovery/dns"
 	"github.com/prometheus/prometheus/discovery/ec2"
 	"github.com/prometheus/prometheus/discovery/file"
@@ -109,6 +108,26 @@ type provider struct {
 	d      Discoverer
 	subs   []string
 	config interface{}
+}
+
+type ServiceDiscovery interface {
+	Kind() string
+	NewDiscovery(interface{}, log.Logger) Discoverer
+}
+
+var (
+	discoveriesLock = sync.RWMutex{}
+	discoveries     = make(map[string]ServiceDiscovery)
+)
+
+func Register(n string, sd ServiceDiscovery) {
+	discoveriesLock.Lock()
+	defer discoveriesLock.Unlock()
+
+	if _, ok := discoveries[n]; ok {
+		panic(fmt.Errorf("double registration of discovery %s", n))
+	}
+	discoveries[n] = sd
 }
 
 // NewManager is the Discovery Manager constructor.
@@ -364,11 +383,6 @@ func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setNam
 			return file.NewDiscovery(c, log.With(m.logger, "discovery", "file")), nil
 		})
 	}
-	for _, c := range cfg.ConsulSDConfigs {
-		add(c, func() (Discoverer, error) {
-			return consul.NewDiscovery(c, log.With(m.logger, "discovery", "consul"))
-		})
-	}
 	for _, c := range cfg.MarathonSDConfigs {
 		add(c, func() (Discoverer, error) {
 			return marathon.NewDiscovery(*c, log.With(m.logger, "discovery", "marathon"))
@@ -412,6 +426,14 @@ func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setNam
 	for _, c := range cfg.TritonSDConfigs {
 		add(c, func() (Discoverer, error) {
 			return triton.New(log.With(m.logger, "discovery", "triton"), c)
+		})
+	}
+	for name, sdcfg := range cfg.SDConfigs {
+		discoveriesLock.RLock()
+		sd := discoveries[name]
+		discoveriesLock.RUnlock()
+		add(name, func() (Discoverer, error) {
+			return sd.NewDiscovery(sdcfg, log.With(m.logger, "discovery", sd.Kind())), nil
 		})
 	}
 	if len(cfg.StaticConfigs) > 0 {
