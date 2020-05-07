@@ -725,9 +725,9 @@ func yaml_emitter_emit_flow_mapping_value(emitter *yaml_emitter_t, event *yaml_e
 // Expect a block item node.
 func yaml_emitter_emit_block_sequence_item(emitter *yaml_emitter_t, event *yaml_event_t, first bool) bool {
 	if first {
-		// [Go] The original logic here would not indent the sequence when inside a mapping.
-		// In Go we always indent it, but take the sequence indicator out of the indentation.
-		indentless := emitter.best_indent == 2 && emitter.mapping_context && (emitter.column == 0 || !emitter.indention)
+		// [Go] The original logic here would not indent the sequence when
+		//      inside a mapping. In Go we always indent it.
+		indentless := false
 		original := emitter.indent
 		if !yaml_emitter_increase_indent(emitter, false, indentless) {
 			return false

@@ -108,14 +108,18 @@ func (p *parser) peek() yaml_event_type_t {
 func (p *parser) fail() {
 	var where string
 	var line int
-	if p.parser.problem_mark.line != 0 {
+	if p.parser.context_mark.line != 0 {
+		line = p.parser.context_mark.line
+		// Scanner errors don't iterate line before returning error
+		if p.parser.error == yaml_SCANNER_ERROR {
+			line++
+		}
+	} else if p.parser.problem_mark.line != 0 {
 		line = p.parser.problem_mark.line
 		// Scanner errors don't iterate line before returning error
 		if p.parser.error == yaml_SCANNER_ERROR {
 			line++
 		}
-	} else if p.parser.context_mark.line != 0 {
-		line = p.parser.context_mark.line
 	}
 	if line != 0 {
 		where = "line " + strconv.Itoa(line) + ": "
