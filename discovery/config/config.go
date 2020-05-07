@@ -83,6 +83,11 @@ func (c *ServiceDiscoveryConfig) Validate() error {
 			return errors.New("empty or null section in ec2_sd_configs")
 		}
 	}
+	for _, cfg := range c.FileSDConfigs {
+		if cfg == nil {
+			return errors.New("empty or null section in file_sd_configs")
+		}
+	}
 	for _, cfg := range c.GCESDConfigs {
 		if cfg == nil {
 			return errors.New("empty or null section in gce_sd_configs")
