@@ -754,7 +754,7 @@ func TestUpdate(t *testing.T) {
 	defer tmpFile.Close()
 
 	err = ruleManager.Update(10*time.Second, []string{tmpFile.Name()}, nil)
-	testutil.Ok(t, err)
+	testutil.NotOk(t, err)
 
 	for h, g := range ruleManager.groups {
 		ogs[h] = g
