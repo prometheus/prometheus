@@ -1,19 +1,19 @@
 on: repository_dispatch
 name: Prombench Workflow
 env:
-  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  LAST_COMMIT_SHA: ${{ github.event.client_payload.LAST_COMMIT_SHA }}
   AUTH_FILE: ${{ secrets.TEST_INFRA_GKE_AUTH }}
-  PROJECT_ID: macro-mile-203600
   CLUSTER_NAME: test-infra
-  ZONE: europe-west3-a
   DOMAIN_NAME: prombench.prometheus.io
-  TEST_INFRA_REPO: https://github.com/prometheus/test-infra.git
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   GITHUB_ORG: prometheus
   GITHUB_REPO: prometheus
+  GITHUB_STATUS_TARGET_URL: https://github.com/${{github.repository}}/actions/runs/${{github.run_id}}
+  LAST_COMMIT_SHA: ${{ github.event.client_payload.LAST_COMMIT_SHA }}
+  PROJECT_ID: macro-mile-203600
   PR_NUMBER: ${{ github.event.client_payload.PR_NUMBER }}
   RELEASE: ${{ github.event.client_payload.RELEASE }}
-  GITHUB_STATUS_TARGET_URL: https://github.com/${{github.repository}}/actions/runs/${{github.run_id}}
+  TEST_INFRA_REPO: https://github.com/prometheus/test-infra.git
+  ZONE: europe-west3-a
 jobs:
   benchmark_start:
     name: Benchmark Start
