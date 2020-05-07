@@ -256,6 +256,8 @@ func (w *Writer) write(b []byte) error {
 // MergeOverlappingChunks removes the samples whose timestamp is overlapping.
 // The last appearing sample is retained in case there is overlapping.
 // This assumes that `chks []Meta` is sorted w.r.t. MinTime.
+// If a chunk holds more than 120 samples the chunk is split to allow for statistical
+// optimal compression.
 func MergeOverlappingChunks(chks []Meta) ([]Meta, error) {
 	if len(chks) < 2 {
 		return chks, nil
@@ -281,10 +283,65 @@ func MergeOverlappingChunks(chks []Meta) ([]Meta, error) {
 		if err != nil {
 			return nil, err
 		}
-		nc.Chunk = chk
+
+		// If the result of merging two chunks results in a chunk with
+		// more than 120 samples we split the chunk up.
+		if chk.NumSamples() > 120 {
+			splitChks, err := split(chk, nc)
+			if err != nil {
+				return nil, err
+			}
+			*nc = splitChks[0]
+			newChks = append(newChks, splitChks[1:]...)
+			last += len(splitChks) - 1
+		} else {
+			nc.Chunk = chk
+		}
 	}
 
 	return newChks, nil
+}
+
+func split(chk chunkenc.Chunk, nc *Meta) ([]Meta, error) {
+	result := []Meta{}
+
+	it := chk.Iterator(nil)
+	it.Next()
+
+	done := false
+	for !done {
+		minTime := nc.MaxTime
+		maxTime := nc.MinTime
+
+		newChk := chunkenc.NewXORChunk()
+		appender, err := newChk.Appender()
+		if err != nil {
+			return nil, err
+		}
+
+		for newChk.NumSamples() < 120 {
+			d, v := it.At()
+			if d < minTime {
+				minTime = d
+			}
+			if d > maxTime {
+				maxTime = d
+			}
+
+			appender.Append(d, v)
+			if hasNext := it.Next(); !hasNext {
+				done = true
+				break
+			}
+		}
+
+		result = append(result, Meta{
+			Chunk:   newChk,
+			MinTime: minTime,
+			MaxTime: maxTime,
+		})
+	}
+	return result, nil
 }
 
 // MergeChunks vertically merges a and b, i.e., if there is any sample
