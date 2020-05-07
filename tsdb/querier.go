@@ -85,9 +85,9 @@ func (q *querier) lvals(qs []storage.Querier, n string) ([]string, storage.Warni
 	return mergeStrings(s1, s2), ws, nil
 }
 
-func (q *querier) Select(sortSeries bool, hints *storage.SelectHints, ms ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
+func (q *querier) Select(sortSeries bool, hints *storage.SelectHints, ms ...*labels.Matcher) storage.SeriesSet {
 	if len(q.blocks) == 0 {
-		return storage.EmptySeriesSet(), nil, nil
+		return storage.EmptySeriesSet()
 	}
 	if len(q.blocks) == 1 {
 		// Sorting Head series is slow, and unneeded when only the
@@ -96,18 +96,12 @@ func (q *querier) Select(sortSeries bool, hints *storage.SelectHints, ms ...*lab
 	}
 
 	ss := make([]storage.SeriesSet, len(q.blocks))
-	var ws storage.Warnings
 	for i, b := range q.blocks {
 		// We have to sort if blocks > 1 as MergedSeriesSet requires it.
-		s, w, err := b.Select(true, hints, ms...)
-		ws = append(ws, w...)
-		if err != nil {
-			return nil, ws, err
-		}
-		ss[i] = s
+		ss[i] = b.Select(true, hints, ms...)
 	}
 
-	return NewMergedSeriesSet(ss), ws, nil
+	return NewMergedSeriesSet(ss)
 }
 
 func (q *querier) Close() error {
@@ -125,31 +119,22 @@ type verticalQuerier struct {
 	querier
 }
 
-func (q *verticalQuerier) Select(sortSeries bool, hints *storage.SelectHints, ms ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
+func (q *verticalQuerier) Select(sortSeries bool, hints *storage.SelectHints, ms ...*labels.Matcher) storage.SeriesSet {
 	return q.sel(sortSeries, hints, q.blocks, ms)
 }
 
-func (q *verticalQuerier) sel(sortSeries bool, hints *storage.SelectHints, qs []storage.Querier, ms []*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
+func (q *verticalQuerier) sel(sortSeries bool, hints *storage.SelectHints, qs []storage.Querier, ms []*labels.Matcher) storage.SeriesSet {
 	if len(qs) == 0 {
-		return storage.EmptySeriesSet(), nil, nil
+		return storage.EmptySeriesSet()
 	}
 	if len(qs) == 1 {
 		return qs[0].Select(sortSeries, hints, ms...)
 	}
 	l := len(qs) / 2
 
-	var ws storage.Warnings
-	a, w, err := q.sel(sortSeries, hints, qs[:l], ms)
-	ws = append(ws, w...)
-	if err != nil {
-		return nil, ws, err
-	}
-	b, w, err := q.sel(sortSeries, hints, qs[l:], ms)
-	ws = append(ws, w...)
-	if err != nil {
-		return nil, ws, err
-	}
-	return newMergedVerticalSeriesSet(a, b), ws, nil
+	a := q.sel(sortSeries, hints, qs[:l], ms)
+	b := q.sel(sortSeries, hints, qs[l:], ms)
+	return newMergedVerticalSeriesSet(a, b)
 }
 
 // NewBlockQuerier returns a querier against the reader.
@@ -189,7 +174,7 @@ type blockQuerier struct {
 	mint, maxt int64
 }
 
-func (q *blockQuerier) Select(sortSeries bool, hints *storage.SelectHints, ms ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
+func (q *blockQuerier) Select(sortSeries bool, hints *storage.SelectHints, ms ...*labels.Matcher) storage.SeriesSet {
 	var base storage.DeprecatedChunkSeriesSet
 	var err error
 
@@ -199,7 +184,7 @@ func (q *blockQuerier) Select(sortSeries bool, hints *storage.SelectHints, ms ..
 		base, err = LookupChunkSeries(q.index, q.tombstones, ms...)
 	}
 	if err != nil {
-		return nil, nil, err
+		return storage.ErrSeriesSet(err)
 	}
 
 	mint := q.mint
@@ -218,7 +203,7 @@ func (q *blockQuerier) Select(sortSeries bool, hints *storage.SelectHints, ms ..
 
 		mint: mint,
 		maxt: maxt,
-	}, nil, nil
+	}
 }
 
 func (q *blockQuerier) LabelValues(name string) ([]string, storage.Warnings, error) {
@@ -475,6 +460,7 @@ type mergedSeriesSet struct {
 	done bool
 	err  error
 	cur  storage.Series
+	ws   storage.Warnings
 }
 
 // TODO(bwplotka): Merge this with merge SeriesSet available in storage package.
@@ -501,7 +487,9 @@ func (s *mergedSeriesSet) Err() error {
 	return s.err
 }
 
-func (s *mergedSeriesSet) Warnings() storage.Warnings { return nil }
+func (s *mergedSeriesSet) Warnings() storage.Warnings {
+	return s.ws
+}
 
 // nextAll is to call Next() for all SeriesSet.
 // Because the order of the SeriesSet slice will affect the results,
@@ -511,12 +499,15 @@ func (s *mergedSeriesSet) nextAll() {
 	for _, ss := range s.all {
 		if ss.Next() {
 			s.buf = append(s.buf, ss)
+			s.ws = append(s.ws, ss.Warnings()...)
 		} else if ss.Err() != nil {
 			s.done = true
 			s.err = ss.Err()
+			s.ws = append(s.ws, ss.Warnings()...)
 			break
 		}
 	}
+
 	s.all, s.buf = s.buf, s.all
 }
 
@@ -593,7 +584,9 @@ func (s *mergedSeriesSet) Next() bool {
 
 type mergedVerticalSeriesSet struct {
 	a, b         storage.SeriesSet
+	ws           storage.Warnings
 	cur          storage.Series
+	err          error
 	adone, bdone bool
 }
 
@@ -609,7 +602,18 @@ func newMergedVerticalSeriesSet(a, b storage.SeriesSet) *mergedVerticalSeriesSet
 	// Initialize first elements of both sets as Next() needs
 	// one element look-ahead.
 	s.adone = !s.a.Next()
+	s.ws = append(s.ws, s.a.Warnings()...)
+	if err := s.a.Err(); err != nil {
+		s.err = err
+		return s
+	}
+
 	s.bdone = !s.b.Next()
+	s.ws = append(s.ws, s.b.Warnings()...)
+	if err := s.b.Err(); err != nil {
+		s.err = err
+		return s
+	}
 
 	return s
 }

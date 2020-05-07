@@ -79,8 +79,7 @@ func TestSelectSorted(t *testing.T) {
 	matcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "a")
 	testutil.Ok(t, err)
 
-	seriesSet, _, err := querier.Select(true, nil, matcher)
-	testutil.Ok(t, err)
+	seriesSet := querier.Select(true, nil, matcher)
 
 	result := make(map[int64]float64)
 	var labelsResult labels.Labels
@@ -95,6 +94,7 @@ func TestSelectSorted(t *testing.T) {
 		}
 	}
 
+	testutil.Ok(t, seriesSet.Err())
 	testutil.Equals(t, labelsResult, outputLabel)
 	testutil.Equals(t, inputTotalSize, len(result))
 }
@@ -131,9 +131,12 @@ func TestFanoutErrors(t *testing.T) {
 		defer querier.Close()
 
 		matcher := labels.MustNewMatcher(labels.MatchEqual, "a", "b")
-		ss, warnings, err := querier.Select(true, nil, matcher)
-		testutil.Equals(t, tc.err, err)
-		testutil.Equals(t, tc.warnings, warnings)
+		ss := querier.Select(true, nil, matcher)
+		for ss.Next() {
+		}
+
+		testutil.Equals(t, tc.err, ss.Err())
+		testutil.Equals(t, tc.warnings, ss.Warnings())
 
 		// Only test series iteration if there are no errors.
 		if err != nil {
@@ -169,8 +172,8 @@ func (errStorage) Close() error {
 
 type errQuerier struct{}
 
-func (errQuerier) Select(bool, *storage.SelectHints, ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
-	return nil, nil, errSelect
+func (errQuerier) Select(bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
+	return storage.ErrSeriesSet(errSelect)
 }
 
 func (errQuerier) LabelValues(name string) ([]string, storage.Warnings, error) {

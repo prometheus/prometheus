@@ -596,13 +596,8 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 	}
 
 	var sets []storage.SeriesSet
-	var warnings storage.Warnings
 	for _, mset := range matcherSets {
-		s, wrn, err := q.Select(false, nil, mset...)
-		warnings = append(warnings, wrn...)
-		if err != nil {
-			return apiFuncResult{nil, &apiError{errorExec, err}, warnings, closer}
-		}
+		s := q.Select(false, nil, mset...)
 		sets = append(sets, s)
 	}
 
@@ -611,6 +606,8 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 	for set.Next() {
 		metrics = append(metrics, set.At().Labels())
 	}
+
+	warnings := set.Warnings()
 	if set.Err() != nil {
 		return apiFuncResult{nil, &apiError{errorExec, set.Err()}, warnings, closer}
 	}
@@ -1228,10 +1225,7 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 		for i, query := range req.Queries {
 			err := api.remoteReadQuery(ctx, query, externalLabels, func(querier storage.Querier, hints *storage.SelectHints, filteredMatchers []*labels.Matcher) error {
 				// The streaming API has to provide the series sorted.
-				set, _, err := querier.Select(true, hints, filteredMatchers...)
-				if err != nil {
-					return err
-				}
+				set := querier.Select(true, hints, filteredMatchers...)
 
 				return remote.StreamChunkedReadResponses(
 					remote.NewChunkedWriter(w, f),
@@ -1260,10 +1254,7 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 		}
 		for i, query := range req.Queries {
 			err := api.remoteReadQuery(ctx, query, externalLabels, func(querier storage.Querier, hints *storage.SelectHints, filteredMatchers []*labels.Matcher) error {
-				set, _, err := querier.Select(false, hints, filteredMatchers...)
-				if err != nil {
-					return err
-				}
+				set := querier.Select(false, hints, filteredMatchers...)
 
 				resp.Results[i], err = remote.ToQueryResult(set, api.remoteReadSampleLimit)
 				if err != nil {

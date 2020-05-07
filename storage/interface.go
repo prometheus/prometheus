@@ -65,7 +65,7 @@ type Querier interface {
 	// Select returns a set of series that matches the given label matchers.
 	// Caller can specify if it requires returned series to be sorted. Prefer not requiring sorting for better performance.
 	// It allows passing hints that can help in optimising select, but it's up to implementation how this is used if used at all.
-	Select(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) (SeriesSet, Warnings, error)
+	Select(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) SeriesSet
 }
 
 // A ChunkQueryable handles queries against a storage.
@@ -82,10 +82,11 @@ type ChunkQuerier interface {
 	// Select returns a set of series that matches the given label matchers.
 	// Caller can specify if it requires returned series to be sorted. Prefer not requiring sorting for better performance.
 	// It allows passing hints that can help in optimising select, but it's up to implementation how this is used if used at all.
-	Select(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) (ChunkSeriesSet, Warnings, error)
+	Select(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) ChunkSeriesSet
 }
 
 type baseQuerier interface {
+	// TODO(kakkoyun): Unify return values with storage.Error?
 	// LabelValues returns all potential values for a label name.
 	// It is not safe to use the strings beyond the lifefime of the querier.
 	LabelValues(name string) ([]string, Warnings, error)
@@ -173,6 +174,11 @@ func (s errSeriesSet) Next() bool         { return false }
 func (s errSeriesSet) At() Series         { return nil }
 func (s errSeriesSet) Err() error         { return s.err }
 func (s errSeriesSet) Warnings() Warnings { return s.ws }
+
+// ErrSeriesSet returns a series set that wraps an error.
+func ErrSeriesSet(err error) SeriesSet {
+	return errSeriesSet{err: err}
+}
 
 // Series exposes a single time series and allows iterating over samples.
 type Series interface {

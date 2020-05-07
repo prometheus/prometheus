@@ -375,9 +375,7 @@ Outer:
 			maxt: c.maxt,
 		}
 
-		res, ws, err := querier.Select(false, nil, c.ms...)
-		testutil.Ok(t, err)
-		testutil.Equals(t, 0, len(ws))
+		res := querier.Select(false, nil, c.ms...)
 
 		for {
 			eok, rok := c.exp.Next(), res.Next()
@@ -397,6 +395,8 @@ Outer:
 			testutil.Equals(t, errExp, errRes)
 			testutil.Equals(t, smplExp, smplRes)
 		}
+
+		testutil.Equals(t, 0, len(res.Warnings()))
 	}
 }
 
@@ -538,9 +538,7 @@ Outer:
 			maxt: c.maxt,
 		}
 
-		res, ws, err := querier.Select(false, nil, c.ms...)
-		testutil.Ok(t, err)
-		testutil.Equals(t, 0, len(ws))
+		res := querier.Select(false, nil, c.ms...)
 
 		for {
 			eok, rok := c.exp.Next(), res.Next()
@@ -560,6 +558,8 @@ Outer:
 			testutil.Equals(t, errExp, errRes)
 			testutil.Equals(t, smplExp, smplRes)
 		}
+
+		testutil.Equals(t, 0, len(res.Warnings()))
 	}
 }
 
@@ -1656,7 +1656,7 @@ func BenchmarkQuerySeek(b *testing.B) {
 				b.ResetTimer()
 				b.ReportAllocs()
 
-				ss, ws, err := sq.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
+				ss := sq.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
 				for ss.Next() {
 					it := ss.At().Iterator()
 					for t := mint; t <= maxt; t++ {
@@ -1666,7 +1666,7 @@ func BenchmarkQuerySeek(b *testing.B) {
 				}
 				testutil.Ok(b, ss.Err())
 				testutil.Ok(b, err)
-				testutil.Equals(b, 0, len(ws))
+				testutil.Equals(b, 0, len(ss.Warnings()))
 			})
 		}
 	}
@@ -1794,9 +1794,11 @@ func BenchmarkSetMatcher(b *testing.B) {
 			b.ResetTimer()
 			b.ReportAllocs()
 			for n := 0; n < b.N; n++ {
-				_, ws, err := que.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "test", c.pattern))
-				testutil.Ok(b, err)
-				testutil.Equals(b, 0, len(ws))
+				ss := que.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "test", c.pattern))
+				for ss.Next() {
+				}
+				testutil.Ok(b, ss.Err())
+				testutil.Equals(b, 0, len(ss.Warnings()))
 			}
 		})
 	}
@@ -2254,9 +2256,7 @@ func benchQuery(b *testing.B, expExpansions int, q storage.Querier, selectors la
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		ss, ws, err := q.Select(false, nil, selectors...)
-		testutil.Ok(b, err)
-		testutil.Equals(b, 0, len(ws))
+		ss := q.Select(false, nil, selectors...)
 		var actualExpansions int
 		for ss.Next() {
 			s := ss.At()
@@ -2266,6 +2266,8 @@ func benchQuery(b *testing.B, expExpansions int, q storage.Querier, selectors la
 			}
 			actualExpansions++
 		}
+		testutil.Ok(b, ss.Err())
+		testutil.Equals(b, 0, len(ss.Warnings()))
 		testutil.Equals(b, expExpansions, actualExpansions)
 		testutil.Ok(b, ss.Err())
 	}

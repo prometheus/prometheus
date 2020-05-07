@@ -172,8 +172,8 @@ type errQuerier struct {
 	err error
 }
 
-func (q *errQuerier) Select(bool, *storage.SelectHints, ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
-	return errSeriesSet{err: q.err}, nil, q.err
+func (q *errQuerier) Select(bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
+	return errSeriesSet{err: q.err}
 }
 func (*errQuerier) LabelValues(string) ([]string, storage.Warnings, error) { return nil, nil, nil }
 func (*errQuerier) LabelNames() ([]string, storage.Warnings, error)        { return nil, nil, nil }
@@ -232,7 +232,7 @@ type hintCheckerQuerier struct {
 	t *testing.T
 }
 
-func (q *hintCheckerQuerier) Select(_ bool, sp *storage.SelectHints, _ ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
+func (q *hintCheckerQuerier) Select(_ bool, sp *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
 	testutil.Equals(q.t, q.start, sp.Start)
 	testutil.Equals(q.t, q.end, sp.End)
 	testutil.Equals(q.t, q.grouping, sp.Grouping)
@@ -240,7 +240,7 @@ func (q *hintCheckerQuerier) Select(_ bool, sp *storage.SelectHints, _ ...*label
 	testutil.Equals(q.t, q.selRange, sp.Range)
 	testutil.Equals(q.t, q.function, sp.Func)
 
-	return errSeriesSet{err: nil}, nil, nil
+	return errSeriesSet{err: nil}
 }
 func (*hintCheckerQuerier) LabelValues(string) ([]string, storage.Warnings, error) {
 	return nil, nil, nil
@@ -835,7 +835,7 @@ func TestRecoverEvaluatorRuntime(t *testing.T) {
 	ev := &evaluator{logger: log.NewNopLogger()}
 
 	var err error
-	defer ev.recover(&err)
+	defer ev.recover(nil, &err) // TODO(kakkoyun): Test Warnings
 
 	// Cause a runtime panic.
 	var a []int
@@ -858,7 +858,7 @@ func TestRecoverEvaluatorError(t *testing.T) {
 			t.Fatalf("wrong error message: %q, expected %q", err, e)
 		}
 	}()
-	defer ev.recover(&err)
+	defer ev.recover(nil, &err) // TODO(kakkoyun): Test Warnings
 
 	panic(e)
 }

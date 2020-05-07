@@ -67,15 +67,12 @@ func openTestDB(t testing.TB, opts *Options, rngs []int64) (db *DB, close func()
 
 // query runs a matcher query against the querier and fully expands its data.
 func query(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) map[string][]tsdbutil.Sample {
-	ss, ws, err := q.Select(false, nil, matchers...)
+	ss := q.Select(false, nil, matchers...)
 	defer func() {
 		testutil.Ok(t, q.Close())
 	}()
-	testutil.Ok(t, err)
-	testutil.Equals(t, 0, len(ws))
 
 	result := map[string][]tsdbutil.Sample{}
-
 	for ss.Next() {
 		series := ss.At()
 
@@ -95,6 +92,7 @@ func query(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) map[str
 		result[name] = samples
 	}
 	testutil.Ok(t, ss.Err())
+	testutil.Equals(t, 0, len(ss.Warnings()))
 
 	return result
 }
@@ -315,9 +313,7 @@ Outer:
 		q, err := db.Querier(context.TODO(), 0, numSamples)
 		testutil.Ok(t, err)
 
-		res, ws, err := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
-		testutil.Ok(t, err)
-		testutil.Equals(t, 0, len(ws))
+		res := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 
 		expSamples := make([]tsdbutil.Sample, 0, len(c.remaint))
 		for _, ts := range c.remaint {
@@ -346,6 +342,7 @@ Outer:
 			testutil.Equals(t, errExp, errRes)
 			testutil.Equals(t, smplExp, smplRes)
 		}
+		testutil.Equals(t, 0, len(res.Warnings()))
 	}
 }
 
@@ -491,10 +488,7 @@ func TestDB_Snapshot(t *testing.T) {
 	defer func() { testutil.Ok(t, querier.Close()) }()
 
 	// sum values
-	seriesSet, ws, err := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
-	testutil.Ok(t, err)
-	testutil.Equals(t, 0, len(ws))
-
+	seriesSet := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 	sum := 0.0
 	for seriesSet.Next() {
 		series := seriesSet.At().Iterator()
@@ -505,6 +499,7 @@ func TestDB_Snapshot(t *testing.T) {
 		testutil.Ok(t, series.Err())
 	}
 	testutil.Ok(t, seriesSet.Err())
+	testutil.Equals(t, 0, len(seriesSet.Warnings()))
 	testutil.Equals(t, 1000.0, sum)
 }
 
@@ -546,10 +541,7 @@ func TestDB_Snapshot_ChunksOutsideOfCompactedRange(t *testing.T) {
 	defer func() { testutil.Ok(t, querier.Close()) }()
 
 	// Sum values.
-	seriesSet, ws, err := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
-	testutil.Ok(t, err)
-	testutil.Equals(t, 0, len(ws))
-
+	seriesSet := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 	sum := 0.0
 	for seriesSet.Next() {
 		series := seriesSet.At().Iterator()
@@ -560,6 +552,7 @@ func TestDB_Snapshot_ChunksOutsideOfCompactedRange(t *testing.T) {
 		testutil.Ok(t, series.Err())
 	}
 	testutil.Ok(t, seriesSet.Err())
+	testutil.Equals(t, 0, len(seriesSet.Warnings()))
 
 	// Since we snapshotted with MaxTime - 10, so expect 10 less samples.
 	testutil.Equals(t, 1000.0-10, sum)
@@ -618,9 +611,7 @@ Outer:
 		testutil.Ok(t, err)
 		defer func() { testutil.Ok(t, q.Close()) }()
 
-		res, ws, err := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
-		testutil.Ok(t, err)
-		testutil.Equals(t, 0, len(ws))
+		res := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 
 		expSamples := make([]tsdbutil.Sample, 0, len(c.remaint))
 		for _, ts := range c.remaint {
@@ -654,6 +645,7 @@ Outer:
 			testutil.Equals(t, errExp, errRes)
 			testutil.Equals(t, smplExp, smplRes)
 		}
+		testutil.Equals(t, 0, len(res.Warnings()))
 	}
 }
 
@@ -792,10 +784,7 @@ func TestDB_e2e(t *testing.T) {
 			q, err := db.Querier(context.TODO(), mint, maxt)
 			testutil.Ok(t, err)
 
-			ss, ws, err := q.Select(false, nil, qry.ms...)
-			testutil.Ok(t, err)
-			testutil.Equals(t, 0, len(ws))
-
+			ss := q.Select(false, nil, qry.ms...)
 			result := map[string][]tsdbutil.Sample{}
 
 			for ss.Next() {
@@ -810,6 +799,7 @@ func TestDB_e2e(t *testing.T) {
 			}
 
 			testutil.Ok(t, ss.Err())
+			testutil.Equals(t, 0, len(ss.Warnings()))
 			testutil.Equals(t, expected, result)
 
 			q.Close()
@@ -968,9 +958,7 @@ func TestTombstoneClean(t *testing.T) {
 		testutil.Ok(t, err)
 		defer q.Close()
 
-		res, ws, err := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
-		testutil.Ok(t, err)
-		testutil.Equals(t, 0, len(ws))
+		res := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 
 		expSamples := make([]tsdbutil.Sample, 0, len(c.remaint))
 		for _, ts := range c.remaint {
@@ -1004,6 +992,7 @@ func TestTombstoneClean(t *testing.T) {
 			testutil.Equals(t, errExp, errRes)
 			testutil.Equals(t, smplExp, smplRes)
 		}
+		testutil.Equals(t, 0, len(res.Warnings()))
 
 		for _, b := range db.Blocks() {
 			testutil.Equals(t, tombstones.NewMemTombstones(), b.tombstones)
@@ -1306,19 +1295,17 @@ func TestNotMatcherSelectsLabelsUnsetSeries(t *testing.T) {
 	defer func() { testutil.Ok(t, q.Close()) }()
 
 	for _, c := range cases {
-		ss, ws, err := q.Select(false, nil, c.selector...)
+		ss := q.Select(false, nil, c.selector...)
+		lres, _, ws, err := expandSeriesSet(ss)
 		testutil.Ok(t, err)
 		testutil.Equals(t, 0, len(ws))
-
-		lres, _, err := expandSeriesSet(ss)
-		testutil.Ok(t, err)
 		testutil.Equals(t, c.series, lres)
 	}
 }
 
 // expandSeriesSet returns the raw labels in the order they are retrieved from
 // the series set and the samples keyed by Labels().String().
-func expandSeriesSet(ss storage.SeriesSet) ([]labels.Labels, map[string][]sample, error) {
+func expandSeriesSet(ss storage.SeriesSet) ([]labels.Labels, map[string][]sample, storage.Warnings, error) {
 	resultLabels := []labels.Labels{}
 	resultSamples := map[string][]sample{}
 	for ss.Next() {
@@ -1332,7 +1319,7 @@ func expandSeriesSet(ss storage.SeriesSet) ([]labels.Labels, map[string][]sample
 		resultLabels = append(resultLabels, series.Labels())
 		resultSamples[series.Labels().String()] = samples
 	}
-	return resultLabels, resultSamples, ss.Err()
+	return resultLabels, resultSamples, ss.Warnings(), ss.Err()
 }
 
 func TestOverlappingBlocksDetectsAllOverlaps(t *testing.T) {
@@ -2503,9 +2490,7 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 	defer func() { testutil.Ok(t, querier.Close()) }()
 
 	// Sum the values.
-	seriesSet, ws, err := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, defaultLabelName, "flush"))
-	testutil.Ok(t, err)
-	testutil.Equals(t, 0, len(ws))
+	seriesSet := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, defaultLabelName, "flush"))
 
 	sum := 0.0
 	for seriesSet.Next() {
@@ -2517,6 +2502,7 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 		testutil.Ok(t, series.Err())
 	}
 	testutil.Ok(t, seriesSet.Err())
+	testutil.Equals(t, 0, len(seriesSet.Warnings()))
 	testutil.Equals(t, 1000.0, sum)
 }
 
@@ -2568,11 +2554,10 @@ func TestDBCannotSeePartialCommits(t *testing.T) {
 			testutil.Ok(t, err)
 			defer querier.Close()
 
-			ss, _, err := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+			ss := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+			_, seriesSet, _, err := expandSeriesSet(ss)
 			testutil.Ok(t, err)
 
-			_, seriesSet, err := expandSeriesSet(ss)
-			testutil.Ok(t, err)
 			values := map[float64]struct{}{}
 			for _, series := range seriesSet {
 				values[series[len(series)-1].v] = struct{}{}
@@ -2608,15 +2593,13 @@ func TestDBQueryDoesntSeeAppendsAfterCreation(t *testing.T) {
 	defer querierAfterAddButBeforeCommit.Close()
 
 	// None of the queriers should return anything after the Add but before the commit.
-	ss, _, err := querierBeforeAdd.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
-	testutil.Ok(t, err)
-	_, seriesSet, err := expandSeriesSet(ss)
+	ss := querierBeforeAdd.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+	_, seriesSet, _, err := expandSeriesSet(ss)
 	testutil.Ok(t, err)
 	testutil.Equals(t, map[string][]sample{}, seriesSet)
 
-	ss, _, err = querierAfterAddButBeforeCommit.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
-	testutil.Ok(t, err)
-	_, seriesSet, err = expandSeriesSet(ss)
+	ss = querierAfterAddButBeforeCommit.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+	_, seriesSet, _, err = expandSeriesSet(ss)
 	testutil.Ok(t, err)
 	testutil.Equals(t, map[string][]sample{}, seriesSet)
 
@@ -2625,16 +2608,14 @@ func TestDBQueryDoesntSeeAppendsAfterCreation(t *testing.T) {
 	testutil.Ok(t, err)
 
 	// Nothing returned for querier created before the Add.
-	ss, _, err = querierBeforeAdd.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
-	testutil.Ok(t, err)
-	_, seriesSet, err = expandSeriesSet(ss)
+	ss = querierBeforeAdd.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+	_, seriesSet, _, err = expandSeriesSet(ss)
 	testutil.Ok(t, err)
 	testutil.Equals(t, map[string][]sample{}, seriesSet)
 
 	// Series exists but has no samples for querier created after Add.
-	ss, _, err = querierAfterAddButBeforeCommit.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
-	testutil.Ok(t, err)
-	_, seriesSet, err = expandSeriesSet(ss)
+	ss = querierAfterAddButBeforeCommit.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+	_, seriesSet, _, err = expandSeriesSet(ss)
 	testutil.Ok(t, err)
 	testutil.Equals(t, map[string][]sample{`{foo="bar"}`: {}}, seriesSet)
 
@@ -2643,9 +2624,8 @@ func TestDBQueryDoesntSeeAppendsAfterCreation(t *testing.T) {
 	defer querierAfterCommit.Close()
 
 	// Samples are returned for querier created after Commit.
-	ss, _, err = querierAfterCommit.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
-	testutil.Ok(t, err)
-	_, seriesSet, err = expandSeriesSet(ss)
+	ss = querierAfterCommit.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+	_, seriesSet, _, err = expandSeriesSet(ss)
 	testutil.Ok(t, err)
 	testutil.Equals(t, map[string][]sample{`{foo="bar"}`: {{t: 0, v: 0}}}, seriesSet)
 }

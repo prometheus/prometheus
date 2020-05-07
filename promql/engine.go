@@ -517,12 +517,8 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 	}
 	defer querier.Close()
 
-	warnings, err := ng.populateSeries(ctxPrepare, querier, s)
+	ng.populateSeries(ctxPrepare, querier, s)
 	prepareSpanTimer.Finish()
-
-	if err != nil {
-		return nil, warnings, err
-	}
 
 	evalSpanTimer, ctxInnerEval := query.stats.GetSpanTimer(ctx, stats.InnerEvalTime, ng.metrics.queryInnerEval)
 	// Instant evaluation. This is executed as a range evaluation with one step.
@@ -539,7 +535,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 			lookbackDelta:       ng.lookbackDelta,
 		}
 
-		val, err := evaluator.Eval(s.Expr)
+		val, warnings, err := evaluator.Eval(s.Expr)
 		if err != nil {
 			return nil, warnings, err
 		}
@@ -588,7 +584,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 		logger:              ng.logger,
 		lookbackDelta:       ng.lookbackDelta,
 	}
-	val, err := evaluator.Eval(s.Expr)
+	val, warnings, err := evaluator.Eval(s.Expr)
 	if err != nil {
 		return nil, warnings, err
 	}
@@ -649,19 +645,13 @@ func (ng *Engine) findMinTime(s *parser.EvalStmt) time.Time {
 	return s.Start.Add(-maxOffset)
 }
 
-func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s *parser.EvalStmt) (storage.Warnings, error) {
-	var (
-		// Whenever a MatrixSelector is evaluated, evalRange is set to the corresponding range.
-		// The evaluation of the VectorSelector inside then evaluates the given range and unsets
-		// the variable.
-		evalRange time.Duration
-		warnings  storage.Warnings
-		err       error
-	)
+func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s *parser.EvalStmt) {
+	// Whenever a MatrixSelector is evaluated, evalRange is set to the corresponding range.
+	// The evaluation of the VectorSelector inside then evaluates the given range and unsets
+	// the variable.
+	var evalRange time.Duration
 
 	parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
-		var set storage.SeriesSet
-		var wrn storage.Warnings
 		hints := &storage.SelectHints{
 			Start: timestamp.FromTime(s.Start),
 			End:   timestamp.FromTime(s.End),
@@ -696,20 +686,12 @@ func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s
 				hints.End = hints.End - offsetMilliseconds
 			}
 
-			set, wrn, err = querier.Select(false, hints, n.LabelMatchers...)
-			warnings = append(warnings, wrn...)
-			if err != nil {
-				level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
-				return err
-			}
-			n.UnexpandedSeriesSet = set
-
+			n.UnexpandedSeriesSet = querier.Select(false, hints, n.LabelMatchers...)
 		case *parser.MatrixSelector:
 			evalRange = n.Range
 		}
 		return nil
 	})
-	return warnings, err
 }
 
 // extractFuncFromPath walks up the path and searches for the first instance of
@@ -749,9 +731,10 @@ func checkForSeriesSetExpansion(ctx context.Context, expr parser.Expr) {
 		checkForSeriesSetExpansion(ctx, e.VectorSelector)
 	case *parser.VectorSelector:
 		if e.Series == nil {
-			series, err := expandSeriesSet(ctx, e.UnexpandedSeriesSet)
+			series, warnings, err := expandSeriesSet(ctx, e.UnexpandedSeriesSet)
+			// TODO(kakkoyun): How about warnings without an error?
 			if err != nil {
-				panic(err)
+				panic(errWithWarnings{err: err, warnings: warnings})
 			} else {
 				e.Series = series
 			}
@@ -759,17 +742,27 @@ func checkForSeriesSetExpansion(ctx context.Context, expr parser.Expr) {
 	}
 }
 
-func expandSeriesSet(ctx context.Context, it storage.SeriesSet) (res []storage.Series, err error) {
+func expandSeriesSet(ctx context.Context, it storage.SeriesSet) (res []storage.Series, ws storage.Warnings, err error) {
 	for it.Next() {
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return nil, nil, ctx.Err()
 		default:
 		}
 		res = append(res, it.At())
+		ws = append(ws, it.Warnings()...)
 	}
-	return res, it.Err()
+	return res, ws, it.Err()
 }
+
+// TODO(kakkoyun): Document.
+// TODO: Helper functions?
+type errWithWarnings struct {
+	warnings storage.Warnings
+	err      error
+}
+
+func (e errWithWarnings) Error() string { return e.err.Error() }
 
 // An evaluator evaluates given expressions over given fixed timestamps. It
 // is attached to an engine through which it connects to a querier and reports
@@ -799,26 +792,31 @@ func (ev *evaluator) error(err error) {
 }
 
 // recover is the handler that turns panics into returns from the top level of evaluation.
-func (ev *evaluator) recover(errp *error) {
+func (ev *evaluator) recover(ws *storage.Warnings, errp *error) {
 	e := recover()
 	if e == nil {
 		return
 	}
-	if err, ok := e.(runtime.Error); ok {
+
+	switch err := e.(type) {
+	case runtime.Error:
 		// Print the stack trace but do not inhibit the running application.
 		buf := make([]byte, 64<<10)
 		buf = buf[:runtime.Stack(buf, false)]
 
 		level.Error(ev.logger).Log("msg", "runtime panic in parser", "err", e, "stacktrace", string(buf))
 		*errp = errors.Wrap(err, "unexpected error")
-	} else {
+	case errWithWarnings:
+		*errp = errors.Wrap(err.err, "error selecting series set")
+		*ws = append(*ws, err.warnings...)
+	default:
 		*errp = e.(error)
 	}
 }
 
-func (ev *evaluator) Eval(expr parser.Expr) (v parser.Value, err error) {
-	defer ev.recover(&err)
-	return ev.eval(expr), nil
+func (ev *evaluator) Eval(expr parser.Expr) (v parser.Value, ws storage.Warnings, err error) {
+	defer ev.recover(&ws, &err)
+	return ev.eval(expr), nil, nil
 }
 
 // EvalNodeHelper stores extra information and caches for evaluating a single node across steps.
