@@ -485,12 +485,12 @@ func (r *AlertingRule) sendAlerts(ctx context.Context, ts time.Time, resendDelay
 	r.ForEachActiveAlert(func(alert *Alert) {
 		if alert.needsSending(ts, resendDelay) {
 			alert.LastSentAt = ts
-			// Allow for a couple Eval or Alertmanager send failures
+			// Allow for two Eval or Alertmanager send failures.
 			delta := resendDelay
 			if interval > resendDelay {
 				delta = interval
 			}
-			alert.ValidUntil = ts.Add(3 * delta)
+			alert.ValidUntil = ts.Add(4 * delta)
 			anew := *alert
 			alerts = append(alerts, &anew)
 		}
