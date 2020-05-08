@@ -347,7 +347,7 @@ func checkDuplicates(groups []rulefmt.RuleGroup) []compareRuleType {
 	return duplicates
 }
 
-func ruleMetric(rule rulefmt.RuleNode) string {
+func ruleMetric(rule rulefmt.Rule) string {
 	if rule.Alert.Value != "" {
 		return rule.Alert.Value
 	}

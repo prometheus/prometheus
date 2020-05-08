@@ -26,7 +26,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
-	yaml "gopkg.in/yaml.v2"
+	yaml "gopkg.in/yaml.v3"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
@@ -799,9 +799,9 @@ func formatRules(r *rulefmt.RuleGroups) ruleGroupsTest {
 		rtmp := []rulefmt.Rule{}
 		for _, r := range g.Rules {
 			rtmp = append(rtmp, rulefmt.Rule{
-				Record:      r.Record.Value,
-				Alert:       r.Alert.Value,
-				Expr:        r.Expr.Value,
+				Record:      yaml.Node{Value: r.Record.Value},
+				Alert:       yaml.Node{Value: r.Alert.Value},
+				Expr:        yaml.Node{Value: r.Expr.Value},
 				For:         r.For,
 				Labels:      r.Labels,
 				Annotations: r.Annotations,

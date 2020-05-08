@@ -22,7 +22,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
-	"gopkg.in/yaml.v3"
+	yaml "gopkg.in/yaml.v3"
 
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -65,24 +65,14 @@ type RuleGroups struct {
 type RuleGroup struct {
 	Name     string         `yaml:"name"`
 	Interval model.Duration `yaml:"interval,omitempty"`
-	Rules    []RuleNode     `yaml:"rules"`
+	Rules    []Rule         `yaml:"rules"`
 }
 
-// RuleNode adds yaml.v3 layer to support line and column outputs for invalid rules.
-type RuleNode struct {
+// Rule for supporting line and column outputs for invalid rules.
+type Rule struct {
 	Record      yaml.Node         `yaml:"record,omitempty"`
 	Alert       yaml.Node         `yaml:"alert,omitempty"`
 	Expr        yaml.Node         `yaml:"expr"`
-	For         model.Duration    `yaml:"for,omitempty"`
-	Labels      map[string]string `yaml:"labels,omitempty"`
-	Annotations map[string]string `yaml:"annotations,omitempty"`
-}
-
-// Rule describes an alerting or recording rule.
-type Rule struct {
-	Record      string            `yaml:"record,omitempty"`
-	Alert       string            `yaml:"alert,omitempty"`
-	Expr        string            `yaml:"expr"`
 	For         model.Duration    `yaml:"for,omitempty"`
 	Labels      map[string]string `yaml:"labels,omitempty"`
 	Annotations map[string]string `yaml:"annotations,omitempty"`
@@ -133,7 +123,7 @@ func (g *RuleGroups) Validate() (errs []error) {
 }
 
 // Validate the rule and return a list of encountered errors.
-func (r *RuleNode) Validate() (nodes []WrappedError) {
+func (r *Rule) Validate() (nodes []WrappedError) {
 	if r.Record.Value != "" && r.Alert.Value != "" {
 		nodes = append(nodes, WrappedError{
 			err:     errors.Errorf("only one of 'record' and 'alert' must be set"),
@@ -218,7 +208,7 @@ func (r *RuleNode) Validate() (nodes []WrappedError) {
 
 // testTemplateParsing checks if the templates used in labels and annotations
 // of the alerting rules are parsed correctly.
-func testTemplateParsing(rl *RuleNode) (errs []error) {
+func testTemplateParsing(rl *Rule) (errs []error) {
 	if rl.Alert.Value == "" {
 		// Not an alerting rule.
 		return errs

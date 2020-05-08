@@ -23,7 +23,7 @@ import (
 
 	html_template "html/template"
 
-	yaml "gopkg.in/yaml.v2"
+	yaml "gopkg.in/yaml.v3"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -500,8 +500,8 @@ func (r *AlertingRule) sendAlerts(ctx context.Context, ts time.Time, resendDelay
 
 func (r *AlertingRule) String() string {
 	ar := rulefmt.Rule{
-		Alert:       r.name,
-		Expr:        r.vector.String(),
+		Alert:       yaml.Node{Value: r.name},
+		Expr:        yaml.Node{Value: r.vector.String()},
 		For:         model.Duration(r.holdDuration),
 		Labels:      r.labels.Map(),
 		Annotations: r.annotations.Map(),
@@ -535,8 +535,8 @@ func (r *AlertingRule) HTMLSnippet(pathPrefix string) html_template.HTML {
 	}
 
 	ar := rulefmt.Rule{
-		Alert:       fmt.Sprintf("<a href=%q>%s</a>", pathPrefix+strutil.TableLinkForExpression(alertMetric.String()), r.name),
-		Expr:        fmt.Sprintf("<a href=%q>%s</a>", pathPrefix+strutil.TableLinkForExpression(r.vector.String()), html_template.HTMLEscapeString(r.vector.String())),
+		Alert:       yaml.Node{Value: fmt.Sprintf("<a href=%q>%s</a>", pathPrefix+strutil.TableLinkForExpression(alertMetric.String()), r.name)},
+		Expr:        yaml.Node{Value: fmt.Sprintf("<a href=%q>%s</a>", pathPrefix+strutil.TableLinkForExpression(r.vector.String()), html_template.HTMLEscapeString(r.vector.String()))},
 		For:         model.Duration(r.holdDuration),
 		Labels:      labelsMap,
 		Annotations: annotationsMap,

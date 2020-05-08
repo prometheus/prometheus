@@ -21,7 +21,7 @@ import (
 	"sync"
 	"time"
 
-	yaml "gopkg.in/yaml.v2"
+	yaml "gopkg.in/yaml.v3"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
@@ -111,8 +111,8 @@ func (rule *RecordingRule) Eval(ctx context.Context, ts time.Time, query QueryFu
 
 func (rule *RecordingRule) String() string {
 	r := rulefmt.Rule{
-		Record: rule.name,
-		Expr:   rule.vector.String(),
+		Record: yaml.Node{Value: rule.name},
+		Expr:   yaml.Node{Value: rule.vector.String()},
 		Labels: rule.labels.Map(),
 	}
 
@@ -189,8 +189,8 @@ func (rule *RecordingRule) HTMLSnippet(pathPrefix string) template.HTML {
 	}
 
 	r := rulefmt.Rule{
-		Record: fmt.Sprintf(`<a href="%s">%s</a>`, pathPrefix+strutil.TableLinkForExpression(rule.name), rule.name),
-		Expr:   fmt.Sprintf(`<a href="%s">%s</a>`, pathPrefix+strutil.TableLinkForExpression(ruleExpr), template.HTMLEscapeString(ruleExpr)),
+		Record: yaml.Node{Value: fmt.Sprintf(`<a href="%s">%s</a>`, pathPrefix+strutil.TableLinkForExpression(rule.name), rule.name)},
+		Expr:   yaml.Node{Value: fmt.Sprintf(`<a href="%s">%s</a>`, pathPrefix+strutil.TableLinkForExpression(ruleExpr), template.HTMLEscapeString(ruleExpr))},
 		Labels: labels,
 	}
 
