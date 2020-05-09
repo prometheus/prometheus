@@ -628,7 +628,7 @@ discovery mechanism.
 
 ```yaml
 # Patterns for files from which target groups are extracted.
-files:
+- files:
   [ - <filename_pattern> ... ]
 
 # Refresh interval to re-read the files.
