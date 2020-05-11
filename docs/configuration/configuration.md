@@ -896,6 +896,7 @@ create a target group for every app that has at least one healthy task.
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
 * `__meta_marathon_app`: the name of the app (with slashes replaced by dashes)
+* `__meta_marathon_container_port`: the docker container port
 * `__meta_marathon_image`: the name of the Docker image used (if available)
 * `__meta_marathon_task`: the ID of the Mesos task
 * `__meta_marathon_app_label_<labelname>`: any Marathon labels attached to the app

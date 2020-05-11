@@ -44,8 +44,10 @@ const (
 
 	// appLabel is used for the name of the app in Marathon.
 	appLabel model.LabelName = metaLabelPrefix + "app"
+	// containerPortLabel is the label that is used for the docker container port .
+	containerPortLabel model.LabelName = metaLabelPrefix + "container_port"
 	// imageLabel is the label that is used for the docker image running the service.
-	imageLabel model.LabelName = metaLabelPrefix + "image"
+	imageLabel         model.LabelName = metaLabelPrefix + "image"
 	// portIndexLabel is the integer port index when multiple ports are defined;
 	// e.g. PORT1 would have a value of '1'
 	portIndexLabel model.LabelName = metaLabelPrefix + "port_index"
@@ -429,6 +431,7 @@ func targetsForApp(app *app) []model.LabelSet {
 			target := model.LabelSet{
 				model.AddressLabel: model.LabelValue(targetAddress),
 				taskLabel:          model.LabelValue(t.ID),
+				containerPortLabel: model.LabelValue(strconv.FormatUint(uint64(port), 10)),
 				portIndexLabel:     model.LabelValue(strconv.Itoa(i)),
 			}
 

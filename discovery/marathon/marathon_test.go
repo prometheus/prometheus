@@ -354,6 +354,9 @@ func TestMarathonSDSendGroupWithPortDefinitions(t *testing.T) {
 	if tgt[model.AddressLabel] != "mesos-slave1:1234" {
 		t.Fatalf("Wrong target address: %s", tgt[model.AddressLabel])
 	}
+	if tgt[model.LabelName(containerPortLabel)] != "1234" {
+		t.Fatalf("Wrong container port: %s", tgt[model.LabelName(containerPortLabel)])
+	}
 	if tgt[model.LabelName(portMappingLabelPrefix+"prometheus")] != "" {
 		t.Fatalf("Wrong first portMappings label from the first port: %s", tgt[model.AddressLabel])
 	}
@@ -425,6 +428,9 @@ func TestMarathonSDSendGroupWithPortDefinitionsRequirePorts(t *testing.T) {
 	tgt := tg.Targets[0]
 	if tgt[model.AddressLabel] != "mesos-slave1:31000" {
 		t.Fatalf("Wrong target address: %s", tgt[model.AddressLabel])
+	}
+	if tgt[model.LabelName(containerPortLabel)] != "31000" {
+		t.Fatalf("Wrong container port: %s", tgt[model.LabelName(containerPortLabel)])
 	}
 	if tgt[model.LabelName(portMappingLabelPrefix+"prometheus")] != "" {
 		t.Fatalf("Wrong first portMappings label from the first port: %s", tgt[model.AddressLabel])
