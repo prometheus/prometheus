@@ -663,8 +663,8 @@ type alertmanagerSet struct {
 	metrics *alertMetrics
 
 	mtx        sync.RWMutex
-	ams        []alertmanager
-	droppedAms []alertmanager
+	ams        []Alertmanager
+	droppedAms []Alertmanager
 	logger     log.Logger
 }
 

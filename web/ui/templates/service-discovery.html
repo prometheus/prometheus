@@ -15,7 +15,6 @@
 
 {{define "content"}}
 <div class="container-fluid">
-    <!--start scrape-->
     {{with .ScrapeConfigData}}
     <h1>Scrape Service Discovery</h1>
     <div>
@@ -80,12 +79,11 @@
     </div>
     {{- end }}
     {{- end }}
-    <!--over scrape-->
 </div>
 
+<hr/>
 
 <div class="container-fluid">
-    <!--start alertmanager-->
     {{with .AlertManagerConfigData}}
     <h1>AlertManager Service Discovery</h1>
     <div>
@@ -150,7 +148,6 @@
     </div>
     {{- end }}
     {{- end }}
-    <!--over scrape-->
 </div>
 
 {{end}}
