@@ -47,13 +47,12 @@ const (
 	// containerPortLabel is the label that is used for the docker container port .
 	containerPortLabel model.LabelName = metaLabelPrefix + "container_port"
 	// imageLabel is the label that is used for the docker image running the service.
-	imageLabel         model.LabelName = metaLabelPrefix + "image"
+	imageLabel model.LabelName = metaLabelPrefix + "image"
 	// portIndexLabel is the integer port index when multiple ports are defined;
 	// e.g. PORT1 would have a value of '1'
 	portIndexLabel model.LabelName = metaLabelPrefix + "port_index"
 	// taskLabel contains the mesos task name of the app instance.
 	taskLabel model.LabelName = metaLabelPrefix + "task"
-
 	// portMappingLabelPrefix is the prefix for the application portMappings labels.
 	portMappingLabelPrefix = metaLabelPrefix + "port_mapping_label_"
 	// portDefinitionLabelPrefix is the prefix for the application portDefinitions labels.
