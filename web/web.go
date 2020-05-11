@@ -59,6 +59,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
@@ -884,44 +885,88 @@ func (h *Handler) rules(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) serviceDiscovery(w http.ResponseWriter, r *http.Request) {
-	var index []string
-	targets := h.scrapeManager.TargetsAll()
-	for job := range targets {
-		index = append(index, job)
+	type serviceDiscoveryTarget interface {
+		Labels() labels.Labels
+		DiscoveredLabels() labels.Labels
 	}
-	sort.Strings(index)
-	scrapeConfigData := struct {
+	type configData struct {
 		Index   []string
-		Targets map[string][]*scrape.Target
+		Targets map[string][]serviceDiscoveryTarget
 		Active  []int
 		Dropped []int
 		Total   []int
-	}{
-		Index:   index,
-		Targets: make(map[string][]*scrape.Target),
-		Active:  make([]int, len(index)),
-		Dropped: make([]int, len(index)),
-		Total:   make([]int, len(index)),
 	}
-	for i, job := range scrapeConfigData.Index {
-		scrapeConfigData.Targets[job] = make([]*scrape.Target, 0, len(targets[job]))
-		scrapeConfigData.Total[i] = len(targets[job])
-		for _, target := range targets[job] {
-			// Do not display more than 100 dropped targets per job to avoid
-			// returning too much data to the clients.
-			if target.Labels().Len() == 0 {
-				scrapeConfigData.Dropped[i]++
-				if scrapeConfigData.Dropped[i] > 100 {
-					continue
-				}
-			} else {
-				scrapeConfigData.Active[i]++
-			}
-			scrapeConfigData.Targets[job] = append(scrapeConfigData.Targets[job], target)
+	scrapeData := func() configData {
+		var index []string
+		targets := h.scrapeManager.TargetsAll()
+		for job := range targets {
+			index = append(index, job)
 		}
+		sort.Strings(index)
+		scrapeConfigData := configData{
+			Index:   index,
+			Targets: make(map[string][]serviceDiscoveryTarget),
+			Active:  make([]int, len(index)),
+			Dropped: make([]int, len(index)),
+			Total:   make([]int, len(index)),
+		}
+		for i, job := range scrapeConfigData.Index {
+			scrapeConfigData.Targets[job] = make([]serviceDiscoveryTarget, 0, len(targets[job]))
+			scrapeConfigData.Total[i] = len(targets[job])
+			for _, target := range targets[job] {
+				// Do not display more than 100 dropped targets per job to avoid
+				// returning too much data to the clients.
+				if target.Labels().Len() == 0 {
+					scrapeConfigData.Dropped[i]++
+					if scrapeConfigData.Dropped[i] > 100 {
+						continue
+					}
+				} else {
+					scrapeConfigData.Active[i]++
+				}
+				scrapeConfigData.Targets[job] = append(scrapeConfigData.Targets[job], target)
+			}
+		}
+		return scrapeConfigData
 	}
-
-	h.executeTemplate(w, "service-discovery.html", scrapeConfigData)
+	alertManagerData := func() configData {
+		var index []string
+		targets := h.notifier.TargetsAll()
+		for job := range targets {
+			index = append(index, job)
+		}
+		sort.Strings(index)
+		configData := configData{
+			Index:   index,
+			Targets: make(map[string][]serviceDiscoveryTarget),
+			Active:  make([]int, len(index)),
+			Dropped: make([]int, len(index)),
+			Total:   make([]int, len(index)),
+		}
+		for i, job := range configData.Index {
+			configData.Targets[job] = make([]serviceDiscoveryTarget, 0, len(targets[job]))
+			configData.Total[i] = len(targets[job])
+			for _, target := range targets[job] {
+				// Do not display more than 100 dropped targets per job to avoid
+				// returning too much data to the clients.
+				if target.Labels().Len() == 0 {
+					configData.Dropped[i]++
+					if configData.Dropped[i] > 100 {
+						continue
+					}
+				} else {
+					configData.Active[i]++
+				}
+				configData.Targets[job] = append(configData.Targets[job], target)
+			}
+		}
+		return configData
+	}
+	serviceDiscoveryData := map[string]interface{}{
+		"ScrapeConfigData":       scrapeData(),
+		"AlertManagerConfigData": alertManagerData(),
+	}
+	h.executeTemplate(w, "service-discovery.html", serviceDiscoveryData)
 }
 
 func (h *Handler) targets(w http.ResponseWriter, r *http.Request) {

@@ -605,18 +605,53 @@ func (n *Manager) Stop() {
 // alertmanager holds Alertmanager endpoint information.
 type alertmanager interface {
 	url() *url.URL
+	Labels() labels.Labels
+	DiscoveredLabels() labels.Labels
 }
 
-type alertmanagerLabels struct{ labels.Labels }
+type Target struct {
+	discoveredLabels labels.Labels
+	labels           labels.Labels
+}
 
 const pathLabel = "__alerts_path__"
 
-func (a alertmanagerLabels) url() *url.URL {
+func (a Target) url() *url.URL {
 	return &url.URL{
-		Scheme: a.Get(model.SchemeLabel),
-		Host:   a.Get(model.AddressLabel),
-		Path:   a.Get(pathLabel),
+		Scheme: a.labels.Get(model.SchemeLabel),
+		Host:   a.labels.Get(model.AddressLabel),
+		Path:   a.labels.Get(pathLabel),
 	}
+}
+
+func (a Target) Labels() labels.Labels {
+	lset := make(labels.Labels, 0, len(a.labels))
+	for _, l := range a.labels {
+		if !strings.HasPrefix(l.Name, model.ReservedLabelPrefix) {
+			lset = append(lset, l)
+		}
+	}
+	return lset
+}
+
+func (a Target) DiscoveredLabels() labels.Labels {
+	lset := make(labels.Labels, len(a.discoveredLabels))
+	copy(lset, a.discoveredLabels)
+	return lset
+}
+
+func (n *Manager) TargetsAll() map[string][]alertmanager {
+	n.mtx.Lock()
+	defer n.mtx.Unlock()
+	targets := make(map[string][]alertmanager, len(n.alertmanagers))
+	for key, am := range n.alertmanagers {
+		if am.droppedAms == nil {
+			targets[key] = am.ams
+			continue
+		}
+		targets[key] = append(am.ams, am.droppedAms...)
+	}
+	return targets
 }
 
 // alertmanagerSet contains a set of Alertmanagers discovered via a group of service
@@ -716,7 +751,7 @@ func alertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig
 
 		lset := relabel.Process(labels.New(lbls...), cfg.RelabelConfigs...)
 		if lset == nil {
-			droppedAlertManagers = append(droppedAlertManagers, alertmanagerLabels{lbls})
+			droppedAlertManagers = append(droppedAlertManagers, Target{labels: lbls, discoveredLabels: lbls})
 			continue
 		}
 
@@ -761,7 +796,7 @@ func alertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig
 			}
 		}
 
-		res = append(res, alertmanagerLabels{lset})
+		res = append(res, Target{labels: lset, discoveredLabels: lbls})
 	}
 	return res, droppedAlertManagers, nil
 }

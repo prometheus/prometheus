@@ -428,6 +428,16 @@ func (a alertmanagerMock) url() *url.URL {
 	return u
 }
 
+func (a alertmanagerMock) Labels() labels.Labels {
+	lset := make(labels.Labels, 0, 0)
+	return lset
+}
+
+func (a alertmanagerMock) DiscoveredLabels() labels.Labels {
+	lset := make(labels.Labels, 0, 0)
+	return lset
+}
+
 func TestLabelSetNotReused(t *testing.T) {
 	tg := makeInputTargetGroup()
 	_, _, err := alertmanagerFromGroup(tg, &config.AlertmanagerConfig{})
