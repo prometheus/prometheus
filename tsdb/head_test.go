@@ -581,6 +581,8 @@ func TestHeadDeleteSimple(t *testing.T) {
 
 						if !eok {
 							testutil.Ok(t, h.Close())
+							testutil.Ok(t, actSeriesSet.Err())
+							testutil.Equals(t, 0, len(actSeriesSet.Warnings()))
 							continue Outer
 						}
 						expSeries := expSeriesSet.At()
@@ -594,8 +596,6 @@ func TestHeadDeleteSimple(t *testing.T) {
 						testutil.Equals(t, errExp, errRes)
 						testutil.Equals(t, smplExp, smplRes)
 					}
-					testutil.Ok(t, actSeriesSet.Err())
-					testutil.Equals(t, 0, len(actSeriesSet.Warnings()))
 				}
 			}
 		})

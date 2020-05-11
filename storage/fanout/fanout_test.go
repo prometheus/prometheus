@@ -132,21 +132,12 @@ func TestFanoutErrors(t *testing.T) {
 
 		matcher := labels.MustNewMatcher(labels.MatchEqual, "a", "b")
 		ss := querier.Select(true, nil, matcher)
-		for ss.Next() {
-		}
-
-		testutil.Equals(t, tc.err, ss.Err())
-		testutil.Equals(t, tc.warnings, ss.Warnings())
-
-		// Only test series iteration if there are no errors.
-		if err != nil {
-			continue
-		}
 
 		for ss.Next() {
 			ss.At()
 		}
-		testutil.Ok(t, ss.Err())
+		testutil.Equals(t, tc.err, ss.Err())
+		testutil.Equals(t, tc.warnings, ss.Warnings())
 	}
 }
 

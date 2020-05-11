@@ -86,7 +86,6 @@ type ChunkQuerier interface {
 }
 
 type baseQuerier interface {
-	// TODO(kakkoyun): Unify return values with storage.Error?
 	// LabelValues returns all potential values for a label name.
 	// It is not safe to use the strings beyond the lifefime of the querier.
 	LabelValues(name string) ([]string, Warnings, error)

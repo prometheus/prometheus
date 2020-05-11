@@ -410,8 +410,8 @@ type genericMergeSeriesSet struct {
 	currentSets []genericSeriesSet
 	querier     *mergeGenericQuerier
 
-	ws  Warnings
-	err error
+	err      error
+	warnings Warnings
 }
 
 // VerticalSeriesMergeFunc returns merged series implementation that merges series with same labels together.
@@ -453,46 +453,45 @@ func newGenericMergeSeriesSet(sets []genericSeriesSet, querier *mergeGenericQuer
 		return sets[0]
 	}
 
-	// Sets need to be pre-advanced, so we can introspect the label of the
-	// series under the cursor.
-	var (
-		h    genericSeriesSetHeap
-		ws   Warnings
-		pErr error
-	)
-	for _, set := range sets {
-		if set == nil {
-			continue
-		}
-		if set.Next() {
-			heap.Push(&h, set)
-		}
-		if w := set.Warnings(); len(w) > 0 {
-			ws = append(ws, w...)
-		}
-		if err := set.Err(); err != nil {
-			qr := querier.setQuerierMap[set]
-			querier.failedQueriers[qr] = struct{}{}
-			// If the error source isn't the primary querier, return the error as a warning and continue.
-			if !reflect.DeepEqual(qr, querier.primaryQuerier) {
-				ws = append(ws, err)
-			} else {
-				pErr = err
-				break
-			}
-		}
-	}
 	return &genericMergeSeriesSet{
 		mergeFunc: mergeFunc,
-		heap:      h,
 		sets:      sets,
 		querier:   querier,
-		ws:        ws,
-		err:       pErr,
 	}
 }
 
 func (c *genericMergeSeriesSet) Next() bool {
+	if c.heap == nil {
+		// Sets need to be pre-advanced, so we can introspect the label of the
+		// series under the cursor.
+		for _, set := range c.sets {
+			if set == nil {
+				continue
+			}
+			if set.Next() {
+				heap.Push(&c.heap, set)
+			}
+			if err := set.Err(); err != nil {
+				qr := c.querier.setQuerierMap[set]
+
+				c.querier.failedQueriers[qr] = struct{}{}
+				if reflect.DeepEqual(qr, c.querier.primaryQuerier) {
+					c.err = err
+					break
+				}
+
+				// If the error source isn't the primary querier,
+				// add the error as a warning and continue.
+				c.warnings = append(c.warnings, err)
+			}
+		}
+	}
+
+	// Do not continue if primary querier failed.
+	if c.err != nil {
+		return false
+	}
+
 	// Run in a loop because the "next" series sets may not be valid anymore.
 	// If a remote querier fails, we discard all series sets from that querier.
 	// If, for the current label set, all the next series sets come from
@@ -503,6 +502,9 @@ func (c *genericMergeSeriesSet) Next() bool {
 		for _, set := range c.currentSets {
 			if set.Next() {
 				heap.Push(&c.heap, set)
+			}
+			if err := set.Err(); err != nil && c.err == nil {
+				c.err = err
 			}
 		}
 		if len(c.heap) == 0 {
@@ -515,6 +517,7 @@ func (c *genericMergeSeriesSet) Next() bool {
 		for len(c.heap) > 0 && labels.Equal(c.currentLabels, c.heap[0].At().Labels()) {
 			set := heap.Pop(&c.heap).(genericSeriesSet)
 			if c.querier != nil && c.querier.IsFailedSet(set) {
+				// At this point, the failed set doesn't come from primary querier.
 				continue
 			}
 			c.currentSets = append(c.currentSets, set)
@@ -541,22 +544,16 @@ func (c *genericMergeSeriesSet) At() Labels {
 }
 
 func (c *genericMergeSeriesSet) Err() error {
-	for _, set := range c.sets {
-		if err := set.Err(); err != nil {
-			return err
-		}
-	}
-	return nil
+	return c.err
 }
 
 func (c *genericMergeSeriesSet) Warnings() Warnings {
-	var ws Warnings
 	for _, set := range c.sets {
-		if w := set.Warnings(); w != nil {
-			ws = append(ws, w...)
+		if ws := set.Warnings(); ws != nil {
+			c.warnings = append(c.warnings, ws...)
 		}
 	}
-	return ws
+	return c.warnings
 }
 
 type genericSeriesSetHeap []genericSeriesSet

@@ -835,7 +835,7 @@ func TestRecoverEvaluatorRuntime(t *testing.T) {
 	ev := &evaluator{logger: log.NewNopLogger()}
 
 	var err error
-	defer ev.recover(nil, &err) // TODO(kakkoyun): Test Warnings
+	defer ev.recover(nil, &err)
 
 	// Cause a runtime panic.
 	var a []int
@@ -858,7 +858,31 @@ func TestRecoverEvaluatorError(t *testing.T) {
 			t.Fatalf("wrong error message: %q, expected %q", err, e)
 		}
 	}()
-	defer ev.recover(nil, &err) // TODO(kakkoyun): Test Warnings
+	defer ev.recover(nil, &err)
+
+	panic(e)
+}
+
+func TestRecoverEvaluatorErrorWithWarnings(t *testing.T) {
+	ev := &evaluator{logger: log.NewNopLogger()}
+	var err error
+	var ws storage.Warnings
+
+	warnings := storage.Warnings{errors.New("custom warning")}
+	e := errorWithWarnings{
+		err:      errors.New("custom error"),
+		warnings: warnings,
+	}
+
+	defer func() {
+		if err.Error() != e.Error() {
+			t.Fatalf("wrong error message: %q, expected %q", err, e)
+		}
+		if len(ws) != len(warnings) && ws[0] != warnings[0] {
+			t.Fatalf("wrong warning message: %q, expected %q", ws[0], warnings[0])
+		}
+	}()
+	defer ev.recover(&ws, &err)
 
 	panic(e)
 }

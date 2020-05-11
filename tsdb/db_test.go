@@ -329,6 +329,7 @@ Outer:
 			testutil.Equals(t, eok, rok)
 
 			if !eok {
+				testutil.Equals(t, 0, len(res.Warnings()))
 				continue Outer
 			}
 			sexp := expss.At()
@@ -342,7 +343,6 @@ Outer:
 			testutil.Equals(t, errExp, errRes)
 			testutil.Equals(t, smplExp, smplRes)
 		}
-		testutil.Equals(t, 0, len(res.Warnings()))
 	}
 }
 
@@ -632,6 +632,7 @@ Outer:
 			testutil.Equals(t, eok, rok)
 
 			if !eok {
+				testutil.Equals(t, 0, len(res.Warnings()))
 				continue Outer
 			}
 			sexp := expss.At()
@@ -645,7 +646,6 @@ Outer:
 			testutil.Equals(t, errExp, errRes)
 			testutil.Equals(t, smplExp, smplRes)
 		}
-		testutil.Equals(t, 0, len(res.Warnings()))
 	}
 }
 

@@ -59,11 +59,11 @@ func newMockSeriesSet(list []storage.Series) *mockSeriesSet {
 			return list[i]
 		},
 		err: func() error { return nil },
+		ws:  func() storage.Warnings { return nil },
 	}
 }
 
 func TestMergedSeriesSet(t *testing.T) {
-
 	cases := []struct {
 		// The input sets in order (samples in series in b are strictly
 		// after those in a).
@@ -382,6 +382,7 @@ Outer:
 			testutil.Equals(t, eok, rok)
 
 			if !eok {
+				testutil.Equals(t, 0, len(res.Warnings()))
 				continue Outer
 			}
 			sexp := c.exp.At()
@@ -395,8 +396,6 @@ Outer:
 			testutil.Equals(t, errExp, errRes)
 			testutil.Equals(t, smplExp, smplRes)
 		}
-
-		testutil.Equals(t, 0, len(res.Warnings()))
 	}
 }
 
@@ -545,6 +544,7 @@ Outer:
 			testutil.Equals(t, eok, rok)
 
 			if !eok {
+				testutil.Equals(t, 0, len(res.Warnings()))
 				continue Outer
 			}
 			sexp := c.exp.At()
@@ -558,8 +558,6 @@ Outer:
 			testutil.Equals(t, errExp, errRes)
 			testutil.Equals(t, smplExp, smplRes)
 		}
-
-		testutil.Equals(t, 0, len(res.Warnings()))
 	}
 }
 
