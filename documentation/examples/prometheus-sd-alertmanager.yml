@@ -15,9 +15,7 @@ alerting:
     relabel_configs:
       - {target_label: _arms_instanceid, replacement: 392}
   - file_sd_configs:
-      # 指定服务发现的目录及配置文件
       - files: ['/ecs_arms.yaml']
-        # 每过5秒动态发现服务配置
         refresh_interval: 5s
 # A scrape configuration containing exactly one endpoint to scrape:
 # Here it's Prometheus itself.
