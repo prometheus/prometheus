@@ -154,7 +154,7 @@ func TestHandlerSendAll(t *testing.T) {
 	am2Cfg.Timeout = model.Duration(time.Second)
 
 	h.alertmanagers["1"] = &alertmanagerSet{
-		ams: []alertmanager{
+		ams: []Alertmanager{
 			alertmanagerMock{
 				urlf: func() string { return server1.URL },
 			},
@@ -164,7 +164,7 @@ func TestHandlerSendAll(t *testing.T) {
 	}
 
 	h.alertmanagers["2"] = &alertmanagerSet{
-		ams: []alertmanager{
+		ams: []Alertmanager{
 			alertmanagerMock{
 				urlf: func() string { return server2.URL },
 			},
@@ -348,7 +348,7 @@ func TestHandlerQueuing(t *testing.T) {
 	am1Cfg.Timeout = model.Duration(time.Second)
 
 	h.alertmanagers["1"] = &alertmanagerSet{
-		ams: []alertmanager{
+		ams: []Alertmanager{
 			alertmanagerMock{
 				urlf: func() string { return server.URL },
 			},
@@ -429,12 +429,12 @@ func (a alertmanagerMock) url() *url.URL {
 }
 
 func (a alertmanagerMock) Labels() labels.Labels {
-	lset := make(labels.Labels, 0, 0)
+	lset := make(labels.Labels, 0)
 	return lset
 }
 
 func (a alertmanagerMock) DiscoveredLabels() labels.Labels {
-	lset := make(labels.Labels, 0, 0)
+	lset := make(labels.Labels, 0)
 	return lset
 }
 
@@ -444,7 +444,7 @@ func TestLabelSetNotReused(t *testing.T) {
 
 	testutil.Ok(t, err)
 
-	// Target modified during alertmanager extraction
+	// Target modified during Alertmanager extraction
 	testutil.Equals(t, tg, makeInputTargetGroup())
 }
 
@@ -457,11 +457,11 @@ func TestReload(t *testing.T) {
 			in: &targetgroup.Group{
 				Targets: []model.LabelSet{
 					{
-						"__address__": "alertmanager:9093",
+						"__address__": "Alertmanager:9093",
 					},
 				},
 			},
-			out: "http://alertmanager:9093/api/v1/alerts",
+			out: "http://Alertmanager:9093/api/v1/alerts",
 		},
 	}
 
@@ -507,11 +507,11 @@ func TestDroppedAlertmanagers(t *testing.T) {
 			in: &targetgroup.Group{
 				Targets: []model.LabelSet{
 					{
-						"__address__": "alertmanager:9093",
+						"__address__": "Alertmanager:9093",
 					},
 				},
 			},
-			out: "http://alertmanager:9093/api/v1/alerts",
+			out: "http://Alertmanager:9093/api/v1/alerts",
 		},
 	}
 
@@ -524,7 +524,7 @@ alerting:
   - static_configs:
     relabel_configs:
       - source_labels: ['__address__']
-        regex: 'alertmanager:9093'
+        regex: 'Alertmanager:9093'
         action: drop
 `
 	if err := yaml.UnmarshalStrict([]byte(s), cfg); err != nil {

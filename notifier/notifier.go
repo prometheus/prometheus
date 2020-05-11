@@ -602,8 +602,8 @@ func (n *Manager) Stop() {
 	n.cancel()
 }
 
-// alertmanager holds Alertmanager endpoint information.
-type alertmanager interface {
+// Alertmanager holds Alertmanager endpoint information.
+type Alertmanager interface {
 	url() *url.URL
 	Labels() labels.Labels
 	DiscoveredLabels() labels.Labels
@@ -640,10 +640,10 @@ func (a Target) DiscoveredLabels() labels.Labels {
 	return lset
 }
 
-func (n *Manager) TargetsAll() map[string][]alertmanager {
+func (n *Manager) TargetsAll() map[string][]Alertmanager {
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
-	targets := make(map[string][]alertmanager, len(n.alertmanagers))
+	targets := make(map[string][]Alertmanager, len(n.alertmanagers))
 	for key, am := range n.alertmanagers {
 		if am.droppedAms == nil {
 			targets[key] = am.ams
@@ -685,8 +685,8 @@ func newAlertmanagerSet(cfg *config.AlertmanagerConfig, logger log.Logger, metri
 // sync extracts a deduplicated set of Alertmanager endpoints from a list
 // of target groups definitions.
 func (s *alertmanagerSet) sync(tgs []*targetgroup.Group) {
-	allAms := []alertmanager{}
-	allDroppedAms := []alertmanager{}
+	allAms := []Alertmanager{}
+	allDroppedAms := []Alertmanager{}
 
 	for _, tg := range tgs {
 		ams, droppedAms, err := alertmanagerFromGroup(tg, s.cfg)
@@ -701,8 +701,8 @@ func (s *alertmanagerSet) sync(tgs []*targetgroup.Group) {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 	// Set new Alertmanagers and deduplicate them along their unique URL.
-	s.ams = []alertmanager{}
-	s.droppedAms = []alertmanager{}
+	s.ams = []Alertmanager{}
+	s.droppedAms = []Alertmanager{}
 	s.droppedAms = append(s.droppedAms, allDroppedAms...)
 	seen := map[string]struct{}{}
 
@@ -728,9 +728,9 @@ func postPath(pre string, v config.AlertmanagerAPIVersion) string {
 
 // alertmanagerFromGroup extracts a list of alertmanagers from a target group
 // and an associated AlertmanagerConfig.
-func alertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig) ([]alertmanager, []alertmanager, error) {
-	var res []alertmanager
-	var droppedAlertManagers []alertmanager
+func alertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig) ([]Alertmanager, []Alertmanager, error) {
+	var res []Alertmanager
+	var droppedAlertManagers []Alertmanager
 
 	for _, tlset := range tg.Targets {
 		lbls := make([]labels.Label, 0, len(tlset)+2+len(tg.Labels))
