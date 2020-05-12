@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/prometheus/prometheus/notifier"
 	"io"
 	"io/ioutil"
 	"math"
@@ -189,6 +190,10 @@ func (t testAlertmanagerRetriever) DroppedAlertmanagers() []*url.URL {
 			Path:   "/api/v1/alerts",
 		},
 	}
+}
+
+func (t testAlertmanagerRetriever) TargetsAll() map[string][]notifier.Alertmanager {
+	return nil
 }
 
 type rulesRetrieverMock struct {
