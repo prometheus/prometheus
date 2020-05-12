@@ -16,6 +16,7 @@ package v1
 import (
 	"context"
 	"fmt"
+	"github.com/prometheus/prometheus/notifier"
 	"math"
 	"math/rand"
 	"net"
@@ -108,6 +109,7 @@ type TargetRetriever interface {
 type alertmanagerRetriever interface {
 	Alertmanagers() []*url.URL
 	DroppedAlertmanagers() []*url.URL
+	TargetsAll() map[string][]notifier.Alertmanager
 }
 
 type rulesRetriever interface {
@@ -296,6 +298,7 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/targets", wrap(api.targets))
 	r.Get("/targets/metadata", wrap(api.targetMetadata))
 	r.Get("/alertmanagers", wrap(api.alertmanagers))
+	r.Get("/servicediscovery", wrap(api.servicediscovery))
 
 	r.Get("/metadata", wrap(api.metricMetadata))
 
@@ -825,6 +828,71 @@ func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 	}
 
 	return apiFuncResult{res, nil, nil, nil}
+}
+
+func (api *API) servicediscovery(r *http.Request) apiFuncResult {
+	scrapeData := func() TargetDiscovery {
+		var index []string
+		targets := api.targetRetriever(r.Context()).TargetsActive()
+		for job := range targets {
+			index = append(index, job)
+		}
+		sort.Strings(index)
+		res := TargetDiscovery{}
+		res.ActiveTargets = make([]*Target, 0)
+		res.DroppedTargets = make([]*DroppedTarget, 0)
+		for _, job := range index {
+			for _, target := range targets[job] {
+				if target.Labels().Len() == 0 {
+					res.DroppedTargets = append(res.DroppedTargets, &DroppedTarget{
+						DiscoveredLabels: target.DiscoveredLabels().Map(),
+					})
+				} else {
+					res.ActiveTargets = append(res.ActiveTargets, &Target{
+						DiscoveredLabels: target.DiscoveredLabels().Map(),
+						Labels:           target.Labels().Map(),
+						ScrapePool:       job,
+					})
+				}
+			}
+		}
+		return res
+	}
+
+	alertManagerData := func() TargetDiscovery {
+		var index []string
+		targets := api.alertmanagerRetriever.TargetsAll()
+
+		for job := range targets {
+			index = append(index, job)
+		}
+		sort.Strings(index)
+		res := TargetDiscovery{}
+		res.ActiveTargets = make([]*Target, 0)
+		res.DroppedTargets = make([]*DroppedTarget, 0)
+
+		for i, job := range index {
+			for _, target := range targets[job] {
+				if target.Labels().Len() == 0 {
+					res.DroppedTargets = append(res.DroppedTargets, &DroppedTarget{
+						DiscoveredLabels: target.DiscoveredLabels().Map(),
+					})
+				} else {
+					res.ActiveTargets = append(res.ActiveTargets, &Target{
+						DiscoveredLabels: target.DiscoveredLabels().Map(),
+						Labels:           target.Labels().Map(),
+						ScrapePool:       "alertmanager" + strconv.Itoa(i),
+					})
+				}
+			}
+		}
+		return res
+	}
+	serviceDiscoveryData := map[string]TargetDiscovery{
+		"scrape":       scrapeData(),
+		"alertManager": alertManagerData(),
+	}
+	return apiFuncResult{serviceDiscoveryData, nil, nil, nil}
 }
 
 type metricMetadata struct {

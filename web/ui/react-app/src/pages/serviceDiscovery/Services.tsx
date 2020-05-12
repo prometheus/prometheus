@@ -8,6 +8,10 @@ import { Target, Labels, DroppedTarget } from '../targets/target';
 import { withStatusIndicator } from '../../components/withStatusIndicator';
 import { mapObjEntries } from '../../utils';
 
+interface ServiceDiscoveryMap {
+  scrape: ServiceMap;
+  alertManager: ServiceMap;
+}
 interface ServiceMap {
   activeTargets: Target[];
   droppedTargets: DroppedTarget[];
@@ -78,13 +82,15 @@ export const processTargets = (activeTargets: Target[], droppedTargets: DroppedT
   return labels;
 };
 
-export const ServiceDiscoveryContent: FC<ServiceMap> = ({ activeTargets, droppedTargets }) => {
-  const targets = processSummary(activeTargets, droppedTargets);
-  const labels = processTargets(activeTargets, droppedTargets);
+export const ServiceDiscoveryContent: FC<ServiceDiscoveryMap> = ({ scrape, alertManager }) => {
+  const targets = processSummary(scrape.activeTargets, scrape.droppedTargets);
+  const labels = processTargets(scrape.activeTargets, scrape.droppedTargets);
+  const alertManagerTargets = processSummary(alertManager.activeTargets, alertManager.droppedTargets);
+  const alertManagerLabels = processTargets(alertManager.activeTargets, alertManager.droppedTargets);
 
   return (
     <>
-      <h2>Service Discovery</h2>
+      <h2>Scrape Service Discovery</h2>
       <ul>
         {mapObjEntries(targets, ([k, v]) => (
           <li key={k}>
@@ -98,6 +104,22 @@ export const ServiceDiscoveryContent: FC<ServiceMap> = ({ activeTargets, dropped
       {mapObjEntries(labels, ([k, v]) => {
         return <LabelsTable value={v} name={k} key={k} />;
       })}
+      <hr />
+      <h2>AlertManager Service Discovery</h2>
+      <ul>
+        {mapObjEntries(alertManagerTargets, ([k, v]) => (
+          <li key={k}>
+            <a href={'#' + k}>
+              {k} ({v.active} / {v.total} active targets)
+            </a>
+          </li>
+        ))}
+      </ul>
+      <hr />
+      {mapObjEntries(alertManagerLabels, ([k, v]) => {
+        return <LabelsTable value={v} name={k} key={k} />;
+      })}
+      <hr />
     </>
   );
 };
@@ -106,7 +128,7 @@ ServiceDiscoveryContent.displayName = 'ServiceDiscoveryContent';
 const ServicesWithStatusIndicator = withStatusIndicator(ServiceDiscoveryContent);
 
 const ServiceDiscovery: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
-  const { response, error, isLoading } = useFetch<ServiceMap>(`${pathPrefix}/api/v1/targets`);
+  const { response, error, isLoading } = useFetch<ServiceDiscoveryMap>(`${pathPrefix}/api/v1/servicediscovery`);
   return (
     <ServicesWithStatusIndicator
       {...response.data}
