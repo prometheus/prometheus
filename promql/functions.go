@@ -598,10 +598,10 @@ func funcPredictLinear(vals []parser.Value, args parser.Expressions, enh *EvalNo
 func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	q := vals[0].(Vector)[0].V
 	inVec := vals[1].(Vector)
-	sigf := enh.signatureFunc(false, excludedLabels...)
+	sigf := signatureFunc(false, enh.lblBuf, excludedLabels...)
 
 	if enh.signatureToMetricWithBuckets == nil {
-		enh.signatureToMetricWithBuckets = map[uint64]*metricWithBuckets{}
+		enh.signatureToMetricWithBuckets = map[string]*metricWithBuckets{}
 	} else {
 		for _, v := range enh.signatureToMetricWithBuckets {
 			v.buckets = v.buckets[:0]
@@ -616,16 +616,16 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 			// TODO(beorn7): Issue a warning somehow.
 			continue
 		}
-		hash := sigf(el.Metric)
+		l := sigf(el.Metric)
 
-		mb, ok := enh.signatureToMetricWithBuckets[hash]
+		mb, ok := enh.signatureToMetricWithBuckets[l]
 		if !ok {
 			el.Metric = labels.NewBuilder(el.Metric).
 				Del(labels.BucketLabel, labels.MetricName).
 				Labels()
 
 			mb = &metricWithBuckets{el.Metric, nil}
-			enh.signatureToMetricWithBuckets[hash] = mb
+			enh.signatureToMetricWithBuckets[l] = mb
 		}
 		mb.buckets = append(mb.buckets, bucket{upperBound, el.V})
 	}

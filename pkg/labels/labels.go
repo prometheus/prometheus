@@ -22,14 +22,15 @@ import (
 	"github.com/cespare/xxhash"
 )
 
-const sep = '\xff'
-
 // Well-known label names used by Prometheus components.
 const (
 	MetricName   = "__name__"
 	AlertName    = "alertname"
 	BucketLabel  = "le"
 	InstanceName = "instance"
+
+	sep      = '\xff'
+	labelSep = '\xfe'
 )
 
 // Label is a key/value pair of strings.
@@ -59,8 +60,23 @@ func (ls Labels) String() string {
 		b.WriteString(strconv.Quote(l.Value))
 	}
 	b.WriteByte('}')
-
 	return b.String()
+}
+
+// Bytes returns ls as a byte slice.
+// It uses an byte invalid character as a separator and so should not be used for printing.
+func (ls Labels) Bytes(buf []byte) []byte {
+	b := bytes.NewBuffer(buf[:0])
+	b.WriteByte(labelSep)
+	for i, l := range ls {
+		if i > 0 {
+			b.WriteByte(sep)
+		}
+		b.WriteString(l.Name)
+		b.WriteByte(sep)
+		b.WriteString(l.Value)
+	}
+	return b.Bytes()
 }
 
 // MarshalJSON implements json.Marshaler.
@@ -170,6 +186,44 @@ func (ls Labels) HashWithoutLabels(b []byte, names ...string) (uint64, []byte) {
 		b = append(b, sep)
 	}
 	return xxhash.Sum64(b), b
+}
+
+// WithLabels returns a new labels.Labels from ls that only contains labels matching names.
+// 'names' have to be sorted in ascending order.
+func (ls Labels) WithLabels(names ...string) Labels {
+	ret := make([]Label, 0, len(ls))
+
+	i, j := 0, 0
+	for i < len(ls) && j < len(names) {
+		if names[j] < ls[i].Name {
+			j++
+		} else if ls[i].Name < names[j] {
+			i++
+		} else {
+			ret = append(ret, ls[i])
+			i++
+			j++
+		}
+	}
+	return ret
+}
+
+// WithLabels returns a new labels.Labels from ls that contains labels not matching names.
+// 'names' have to be sorted in ascending order.
+func (ls Labels) WithoutLabels(names ...string) Labels {
+	ret := make([]Label, 0, len(ls))
+
+	j := 0
+	for i := range ls {
+		for j < len(names) && names[j] < ls[i].Name {
+			j++
+		}
+		if ls[i].Name == MetricName || (j < len(names) && ls[i].Name == names[j]) {
+			continue
+		}
+		ret = append(ret, ls[i])
+	}
+	return ret
 }
 
 // Copy returns a copy of the labels.
