@@ -518,3 +518,16 @@ func TestLabels_Has(t *testing.T) {
 		testutil.Equals(t, test.expected, got, "unexpected comparison result for test case %d", i)
 	}
 }
+
+func TestLabels_Get(t *testing.T) {
+	testutil.Equals(t, "", Labels{{"aaa", "111"}, {"bbb", "222"}}.Get("foo"))
+	testutil.Equals(t, "111", Labels{{"aaa", "111"}, {"bbb", "222"}}.Get("aaa"))
+}
+
+func TestLabels_Copy(t *testing.T) {
+	testutil.Equals(t, Labels{{"aaa", "111"}, {"bbb", "222"}}, Labels{{"aaa", "111"}, {"bbb", "222"}}.Copy())
+}
+
+func TestLabels_Map(t *testing.T) {
+	testutil.Equals(t, map[string]string{"aaa": "111", "bbb": "222"}, Labels{{"aaa", "111"}, {"bbb", "222"}}.Map())
+}
