@@ -862,7 +862,6 @@ func (api *API) servicediscovery(r *http.Request) apiFuncResult {
 	alertManagerData := func() TargetDiscovery {
 		var index []string
 		targets := api.alertmanagerRetriever.TargetsAll()
-
 		for job := range targets {
 			index = append(index, job)
 		}
@@ -870,8 +869,7 @@ func (api *API) servicediscovery(r *http.Request) apiFuncResult {
 		res := TargetDiscovery{}
 		res.ActiveTargets = make([]*Target, 0)
 		res.DroppedTargets = make([]*DroppedTarget, 0)
-
-		for i, job := range index {
+		for _, job := range index {
 			for _, target := range targets[job] {
 				if target.Labels().Len() == 0 {
 					res.DroppedTargets = append(res.DroppedTargets, &DroppedTarget{
@@ -881,7 +879,7 @@ func (api *API) servicediscovery(r *http.Request) apiFuncResult {
 					res.ActiveTargets = append(res.ActiveTargets, &Target{
 						DiscoveredLabels: target.DiscoveredLabels().Map(),
 						Labels:           target.Labels().Map(),
-						ScrapePool:       "alertmanager" + strconv.Itoa(i),
+						ScrapePool:       job,
 					})
 				}
 			}
