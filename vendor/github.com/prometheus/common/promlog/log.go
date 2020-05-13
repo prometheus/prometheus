@@ -94,13 +94,15 @@ type Config struct {
 // with a timestamp. The output always goes to stderr.
 func New(config *Config) log.Logger {
 	var l log.Logger
-	if config.Format.s == "logfmt" {
-		l = log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
-	} else {
+	if config.Format != nil && config.Format.s == "json" {
 		l = log.NewJSONLogger(log.NewSyncWriter(os.Stderr))
+	} else {
+		l = log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
 	}
 
-	l = level.NewFilter(l, config.Level.o)
+	if config.Level != nil {
+		l = level.NewFilter(l, config.Level.o)
+	}
 	l = log.With(l, "ts", timestampFormat, "caller", log.DefaultCaller)
 	return l
 }

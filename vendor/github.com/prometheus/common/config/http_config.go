@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/mwitkow/go-conntrack"
+	"golang.org/x/net/http2"
 	"gopkg.in/yaml.v2"
 )
 
@@ -152,6 +153,11 @@ func NewRoundTripperFromConfig(cfg HTTPClientConfig, name string, disableKeepAli
 				conntrack.DialWithTracing(),
 				conntrack.DialWithName(name),
 			),
+		}
+		// TODO: use ForceAttemptHTTP2 when we move to Go 1.13+.
+		err := http2.ConfigureTransport(rt.(*http.Transport))
+		if err != nil {
+			return nil, err
 		}
 
 		// If a bearer token is provided, create a round tripper that will set the
