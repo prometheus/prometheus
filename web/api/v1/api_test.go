@@ -164,9 +164,7 @@ func (t *testTargetRetriever) ResetMetadataStore() {
 }
 
 func (t *testTargetRetriever) toFactory() func(context.Context) TargetRetriever {
-	return func(context.Context) TargetRetriever {
-		return t
-	}
+	return func(context.Context) TargetRetriever { return t }
 }
 
 type testAlertmanagerRetriever struct{}
@@ -192,9 +190,7 @@ func (t testAlertmanagerRetriever) DroppedAlertmanagers() []*url.URL {
 }
 
 func (t testAlertmanagerRetriever) toFactory() func(context.Context) AlertmanagerRetriever {
-	return func(context.Context) AlertmanagerRetriever {
-		return t
-	}
+	return func(context.Context) AlertmanagerRetriever { return t }
 }
 
 type rulesRetrieverMock struct {
@@ -283,9 +279,7 @@ func (m rulesRetrieverMock) RuleGroups() []*rules.Group {
 }
 
 func (m rulesRetrieverMock) toFactory() func(context.Context) RulesRetriever {
-	return func(context.Context) RulesRetriever {
-		return m
-	}
+	return func(context.Context) RulesRetriever { return m }
 }
 
 var samplePrometheusCfg = config.Config{
