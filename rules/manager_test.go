@@ -789,24 +789,34 @@ type ruleGroupsTest struct {
 type ruleGroupTest struct {
 	Name     string         `yaml:"name"`
 	Interval model.Duration `yaml:"interval,omitempty"`
-	Rules    []rulefmt.Rule `yaml:"rules"`
+	Rules    []rule `yaml:"rules"`
+}
+
+type rule struct {
+	Record      string         `yaml:"record,omitempty"`
+	Alert       string         `yaml:"alert,omitempty"`
+	Expr        string         `yaml:"expr"`
+	For         model.Duration    `yaml:"for,omitempty"`
+	Labels      map[string]string `yaml:"labels,omitempty"`
+	Annotations map[string]string `yaml:"annotations,omitempty"`
 }
 
 func formatRules(r *rulefmt.RuleGroups) ruleGroupsTest {
 	grps := r.Groups
 	tmp := []ruleGroupTest{}
 	for _, g := range grps {
-		rtmp := []rulefmt.Rule{}
+		rtmp := []rule{}
 		for _, r := range g.Rules {
-			rtmp = append(rtmp, rulefmt.Rule{
-				Record:      yaml.Node{Value: r.Record.Value},
-				Alert:       yaml.Node{Value: r.Alert.Value},
-				Expr:        yaml.Node{Value: r.Expr.Value},
+			rtmp = append(rtmp, rule{
+				Record:      r.Record.Value,
+				Alert:       r.Alert.Value,
+				Expr:        r.Expr.Value,
 				For:         r.For,
 				Labels:      r.Labels,
 				Annotations: r.Annotations,
 			})
 		}
+		
 		tmp = append(tmp, ruleGroupTest{
 			Name:     g.Name,
 			Interval: g.Interval,
@@ -819,7 +829,10 @@ func formatRules(r *rulefmt.RuleGroups) ruleGroupsTest {
 }
 
 func reloadAndValidate(rgs *rulefmt.RuleGroups, t *testing.T, tmpFile *os.File, ruleManager *Manager, expected map[string]labels.Labels, ogs map[string]*Group) {
+	// grps := formatRules(rgs)
 	bs, err := yaml.Marshal(formatRules(rgs))
+	fmt.Println("huhuhuhd")
+	fmt.Println(string(bs))
 	testutil.Ok(t, err)
 	tmpFile.Seek(0, 0)
 	_, err = tmpFile.Write(bs)

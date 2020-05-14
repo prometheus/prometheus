@@ -89,13 +89,13 @@ func (g *RuleGroups) Validate() (errs []error) {
 
 	for j, grp := range g.Groups {
 		if grp.Name == "" {
-			errs = append(errs, errors.Errorf("%d:%d: Groupname should not be empty", g.nodes.Groups[j].Line, g.nodes.Groups[j].Column))
+			errs = append(errs, errors.Errorf("%d:%d: group name should not be empty", g.nodes.Groups[j].Line, g.nodes.Groups[j].Column))
 		}
 
 		if _, ok := set[grp.Name]; ok {
 			errs = append(
 				errs,
-				errors.Errorf("%d:%d: Groupname: \"%s\" is repeated in the same file", g.nodes.Groups[j].Line, g.nodes.Groups[j].Column, grp.Name),
+				errors.Errorf("%d:%d: group name: \"%s\" is repeated in the same file", g.nodes.Groups[j].Line, g.nodes.Groups[j].Column, grp.Name),
 			)
 		}
 

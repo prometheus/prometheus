@@ -188,9 +188,13 @@ func (rule *RecordingRule) HTMLSnippet(pathPrefix string) template.HTML {
 		labels[l.Name] = template.HTMLEscapeString(l.Value)
 	}
 
-	r := rulefmt.Rule{
-		Record: yaml.Node{Value: fmt.Sprintf(`<a href="%s">%s</a>`, pathPrefix+strutil.TableLinkForExpression(rule.name), rule.name)},
-		Expr:   yaml.Node{Value: fmt.Sprintf(`<a href="%s">%s</a>`, pathPrefix+strutil.TableLinkForExpression(ruleExpr), template.HTMLEscapeString(ruleExpr))},
+	r := struct {
+		Record string `yaml:"record"`
+		Expr string `yaml:"expr"`
+		Labels map[string]string `yaml:"labels,omitempty"`
+	}{
+		Record: fmt.Sprintf(`<a href="%s">%s</a>`, pathPrefix+strutil.TableLinkForExpression(rule.name), rule.name),
+		Expr: fmt.Sprintf(`<a href="%s">%s</a>`, pathPrefix+strutil.TableLinkForExpression(ruleExpr), template.HTMLEscapeString(ruleExpr)),
 		Labels: labels,
 	}
 
