@@ -789,13 +789,13 @@ type ruleGroupsTest struct {
 type ruleGroupTest struct {
 	Name     string         `yaml:"name"`
 	Interval model.Duration `yaml:"interval,omitempty"`
-	Rules    []rule `yaml:"rules"`
+	Rules    []rule         `yaml:"rules"`
 }
 
 type rule struct {
-	Record      string         `yaml:"record,omitempty"`
-	Alert       string         `yaml:"alert,omitempty"`
-	Expr        string         `yaml:"expr"`
+	Record      string            `yaml:"record,omitempty"`
+	Alert       string            `yaml:"alert,omitempty"`
+	Expr        string            `yaml:"expr"`
 	For         model.Duration    `yaml:"for,omitempty"`
 	Labels      map[string]string `yaml:"labels,omitempty"`
 	Annotations map[string]string `yaml:"annotations,omitempty"`
@@ -816,7 +816,7 @@ func formatRules(r *rulefmt.RuleGroups) ruleGroupsTest {
 				Annotations: r.Annotations,
 			})
 		}
-		
+
 		tmp = append(tmp, ruleGroupTest{
 			Name:     g.Name,
 			Interval: g.Interval,

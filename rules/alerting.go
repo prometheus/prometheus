@@ -535,16 +535,16 @@ func (r *AlertingRule) HTMLSnippet(pathPrefix string) html_template.HTML {
 	}
 
 	ar := struct {
-		Alert string
-		Expr string
-		For model.Duration `yaml:"for,omitempty"`
-		Labels map[string]string `yaml:"labels,omitempty"`
+		Alert       string
+		Expr        string
+		For         model.Duration    `yaml:"for,omitempty"`
+		Labels      map[string]string `yaml:"labels,omitempty"`
 		Annotations map[string]string `yaml:"annotations,omitempty"`
 	}{
-		Alert: fmt.Sprintf("<a href=%q>%s</a>", pathPrefix+strutil.TableLinkForExpression(alertMetric.String()), r.name),
-		Expr: fmt.Sprintf("<a href=%q>%s</a>", pathPrefix+strutil.TableLinkForExpression(r.vector.String()), html_template.HTMLEscapeString(r.vector.String())),
-		For:  model.Duration(r.holdDuration),
-		Labels: labelsMap,
+		Alert:       fmt.Sprintf("<a href=%q>%s</a>", pathPrefix+strutil.TableLinkForExpression(alertMetric.String()), r.name),
+		Expr:        fmt.Sprintf("<a href=%q>%s</a>", pathPrefix+strutil.TableLinkForExpression(r.vector.String()), html_template.HTMLEscapeString(r.vector.String())),
+		For:         model.Duration(r.holdDuration),
+		Labels:      labelsMap,
 		Annotations: annotationsMap,
 	}
 
