@@ -61,7 +61,7 @@ Maintaining the release branches for older minor releases happens on a best effo
 A few days before a major or minor release, consider updating the dependencies:
 
 ```
-make update-deps
+make update-go-deps
 git add go.mod go.sum vendor
 git commit -m "Update dependencies"
 ```

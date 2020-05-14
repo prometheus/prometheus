@@ -150,8 +150,8 @@ else
 	$(GO) get $(GOOPTS) -t ./...
 endif
 
-.PHONY: update-deps
-update-deps:
+.PHONY: update-go-deps
+update-go-deps:
 	@echo ">> updating Go dependencies"
 	@jq --version 1>/dev/null 2>&1 || { echo "Make sure that 'jq' is in your PATH"; exit 1; }
 	@for m in $$(go list -m -json all | jq -rc 'select(.Indirect != true and .Main != true) | .Path'); do \
