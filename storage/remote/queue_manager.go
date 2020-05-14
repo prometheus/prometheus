@@ -872,14 +872,14 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 }
 
 func (s *shards) attemptSendSamples(ctx context.Context, samples []prompb.TimeSeries, req *[]byte, highest int64, try int) error {
-	req_size := len(*req)
-	sample_count := len(samples)
+	reqSize := len(*req)
+	sampleCount := len(samples)
 
 	span, ctx := opentracing.StartSpanFromContext(ctx, "Remote Send Batch")
 	defer span.Finish()
 
-	span.SetTag("samples", sample_count)
-	span.SetTag("requestSize", req_size)
+	span.SetTag("samples", sampleCount)
+	span.SetTag("requestSize", reqSize)
 	span.SetTag("try", try)
 	span.SetTag("remote_name", s.qm.storeClient.Name())
 	span.SetTag("remote_url", s.qm.storeClient.Endpoint())
@@ -890,8 +890,8 @@ func (s *shards) attemptSendSamples(ctx context.Context, samples []prompb.TimeSe
 	s.qm.metrics.sentBatchDuration.Observe(time.Since(begin).Seconds())
 
 	if err == nil {
-		s.qm.metrics.succeededSamplesTotal.Add(float64(sample_count))
-		s.qm.metrics.bytesSent.Add(float64(req_size))
+		s.qm.metrics.succeededSamplesTotal.Add(float64(sampleCount))
+		s.qm.metrics.bytesSent.Add(float64(reqSize))
 		s.qm.metrics.highestSentTimestamp.Set(float64(highest / 1000))
 		return nil
 	}
@@ -901,7 +901,7 @@ func (s *shards) attemptSendSamples(ctx context.Context, samples []prompb.TimeSe
 		ext.Error.Set(span, true)
 		return err
 	}
-	s.qm.metrics.retriedSamplesTotal.Add(float64(sample_count))
+	s.qm.metrics.retriedSamplesTotal.Add(float64(sampleCount))
 	span.LogKV("error", err)
 	ext.Error.Set(span, true)
 	level.Warn(s.qm.logger).Log("msg", "Failed to send batch, retrying", "err", err)
