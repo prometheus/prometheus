@@ -210,6 +210,10 @@ class Panel extends Component<PanelProps & PathPrefixProps, PanelState> {
   };
 
   handleChangeType = (type: PanelType) => {
+    if (this.props.options.type === type) {
+      return;
+    }
+
     this.setState({ data: null });
     this.setOptions({ type: type });
   };
