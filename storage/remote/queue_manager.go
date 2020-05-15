@@ -860,6 +860,11 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 			return nil
 		}
 
+		// If we make it this far, we've encountered an unrecoverable error and should not retry.
+		if _, ok := err.(recoverableError); !ok {
+			return err
+		}
+
 		// If we make it this far, we've encountered a recoverable error and will retry.
 		time.Sleep(time.Duration(backoff))
 		backoff = backoff * 2
@@ -896,14 +901,11 @@ func (s *shards) attemptSendSamples(ctx context.Context, samples []prompb.TimeSe
 		return nil
 	}
 
-	if _, ok := err.(recoverableError); !ok {
-		span.LogKV("error", err)
-		ext.Error.Set(span, true)
-		return err
-	}
 	s.qm.metrics.retriedSamplesTotal.Add(float64(sampleCount))
+
 	span.LogKV("error", err)
 	ext.Error.Set(span, true)
+
 	level.Warn(s.qm.logger).Log("msg", "Failed to send batch, retrying", "err", err)
 	return err
 }
