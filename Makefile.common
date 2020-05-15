@@ -153,8 +153,7 @@ endif
 .PHONY: update-go-deps
 update-go-deps:
 	@echo ">> updating Go dependencies"
-	@jq --version 1>/dev/null 2>&1 || { echo "Make sure that 'jq' is in your PATH"; exit 1; }
-	@for m in $$(go list -m -json all | jq -rc 'select(.Indirect != true and .Main != true) | .Path'); do \
+	@for m in $$(go list -mod=readonly -m -f '{{ if and (not .Indirect) (not .Main)}}{{.Path}}{{end}}' all); do \
 		go get $$m; \
 	done
 	GO111MODULE=$(GO111MODULE) $(GO) mod tidy
