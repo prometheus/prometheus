@@ -319,7 +319,12 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 		for _, lbl := range smpl.Metric {
 			l[lbl.Name] = lbl.Value
 		}
-
+		// get labels from config if the evaluation did not return any label
+		if len(l) == 0 && len(r.labels) > 1 {
+			for _, lbl := range r.labels {
+				l[lbl.Name] = lbl.Value
+			}
+		}
 		tmplData := template.AlertTemplateData(l, r.externalLabels, smpl.V)
 		// Inject some convenience variables that are easier to remember for users
 		// who are not used to Go's templating system.
