@@ -88,6 +88,13 @@ var (
 		Name:      "remote_read_queries",
 		Help:      "The current number of remote read queries being executed or waiting.",
 	})
+
+	responseCode = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: namespace,
+		Subsystem: subsystem,
+		Name:      "response_code",
+		Help:      "The api response code",
+	}, []string{"code"})
 )
 
 type apiError struct {
@@ -197,6 +204,7 @@ type API struct {
 func init() {
 	jsoniter.RegisterTypeEncoderFunc("promql.Point", marshalPointJSON, marshalPointJSONIsEmpty)
 	prometheus.MustRegister(remoteReadQueries)
+	prometheus.MustRegister(responseCode)
 }
 
 // NewAPI returns an initialized API type.
@@ -1420,10 +1428,11 @@ func (api *API) respond(w http.ResponseWriter, data interface{}, warnings storag
 	})
 	if err != nil {
 		level.Error(api.logger).Log("msg", "error marshaling json response", "err", err)
+		responseCode.WithLabelValues("500").Inc()
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-
+	responseCode.WithLabelValues("200").Inc()
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	if n, err := w.Write(b); err != nil {
@@ -1461,7 +1470,7 @@ func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data inter
 	default:
 		code = http.StatusInternalServerError
 	}
-
+	responseCode.WithLabelValues(strconv.Itoa(code)).Inc()
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	if n, err := w.Write(b); err != nil {
