@@ -473,11 +473,14 @@ func (c *genericMergeSeriesSet) Next() bool {
 			}
 			if err := set.Err(); err != nil {
 				qr := c.querier.setQuerierMap[set]
-
 				c.querier.failedQueriers[qr] = struct{}{}
-				if reflect.DeepEqual(qr, c.querier.primaryQuerier) {
-					c.err = err
-					break
+
+				// Continue advancing all the sets, even though we have an error already.
+				if c.err == nil {
+					if reflect.DeepEqual(qr, c.querier.primaryQuerier) {
+						c.err = err
+						break
+					}
 				}
 
 				// If the error source isn't the primary querier,
@@ -549,7 +552,7 @@ func (c *genericMergeSeriesSet) Err() error {
 
 func (c *genericMergeSeriesSet) Warnings() Warnings {
 	for _, set := range c.sets {
-		if ws := set.Warnings(); ws != nil {
+		if ws := set.Warnings(); len(ws) > 0 {
 			c.warnings = append(c.warnings, ws...)
 		}
 	}

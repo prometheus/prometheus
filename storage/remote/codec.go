@@ -107,7 +107,7 @@ func ToQuery(from, to int64, matchers []*labels.Matcher, hints *storage.SelectHi
 }
 
 // ToQueryResult builds a QueryResult proto.
-func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, error) {
+func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, storage.Warnings, error) {
 	numSamples := 0
 	resp := &prompb.QueryResult{}
 	for ss.Next() {
@@ -118,7 +118,7 @@ func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, 
 		for iter.Next() {
 			numSamples++
 			if sampleLimit > 0 && numSamples > sampleLimit {
-				return nil, HTTPError{
+				return nil, ss.Warnings(), HTTPError{
 					msg:    fmt.Sprintf("exceeded sample limit (%d)", sampleLimit),
 					status: http.StatusBadRequest,
 				}
@@ -130,7 +130,7 @@ func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, 
 			})
 		}
 		if err := iter.Err(); err != nil {
-			return nil, err
+			return nil, ss.Warnings(), err
 		}
 
 		resp.Timeseries = append(resp.Timeseries, &prompb.TimeSeries{
@@ -139,9 +139,9 @@ func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, 
 		})
 	}
 	if err := ss.Err(); err != nil {
-		return nil, err
+		return nil, ss.Warnings(), err
 	}
-	return resp, nil
+	return resp, ss.Warnings(), nil
 }
 
 // FromQueryResult unpacks and sorts a QueryResult proto.
@@ -195,7 +195,7 @@ func StreamChunkedReadResponses(
 	ss storage.SeriesSet,
 	sortedExternalLabels []prompb.Label,
 	maxBytesInFrame int,
-) error {
+) (storage.Warnings, error) {
 	var (
 		chks     []prompb.Chunk
 		lbls     []prompb.Label
@@ -218,7 +218,7 @@ func StreamChunkedReadResponses(
 			// TODO(bwplotka): Use ChunkIterator once available in TSDB instead of re-encoding: https://github.com/prometheus/prometheus/pull/5882
 			chks, err = encodeChunks(iter, chks, maxBytesInFrame-lblsSize)
 			if err != nil {
-				return err
+				return ss.Warnings(), err
 			}
 
 			if len(chks) == 0 {
@@ -234,25 +234,25 @@ func StreamChunkedReadResponses(
 				QueryIndex: queryIndex,
 			})
 			if err != nil {
-				return errors.Wrap(err, "marshal ChunkedReadResponse")
+				return ss.Warnings(), errors.Wrap(err, "marshal ChunkedReadResponse")
 			}
 
 			if _, err := stream.Write(b); err != nil {
-				return errors.Wrap(err, "write to stream")
+				return ss.Warnings(), errors.Wrap(err, "write to stream")
 			}
 
 			chks = chks[:0]
 		}
 
 		if err := iter.Err(); err != nil {
-			return err
+			return ss.Warnings(), err
 		}
 	}
 	if err := ss.Err(); err != nil {
-		return err
+		return ss.Warnings(), err
 	}
 
-	return nil
+	return ss.Warnings(), nil
 }
 
 // encodeChunks expects iterator to be ready to use (aka iter.Next() called before invoking).

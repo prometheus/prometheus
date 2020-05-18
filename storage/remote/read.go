@@ -134,8 +134,7 @@ type externalLabelsQuerier struct {
 // removed from the returned series sets.
 func (q externalLabelsQuerier) Select(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	m, added := q.addExternalLabels(matchers)
-	s := q.Querier.Select(sortSeries, hints, m...)
-	return newSeriesSetFilter(s, added)
+	return newSeriesSetFilter(q.Querier.Select(sortSeries, hints, m...), added)
 }
 
 // PreferLocalStorageFilter returns a QueryableFunc which creates a NoopQuerier

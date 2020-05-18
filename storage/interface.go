@@ -153,7 +153,11 @@ type Appender interface {
 type SeriesSet interface {
 	Next() bool
 	At() Series
+	// The error that iteration failed with.
+	// When an error occurs, set cannot continue to iterate.
 	Err() error
+	// A collection of warnings for the whole set.
+	// Warnings could be return even iteration does not fail with error.
 	Warnings() Warnings
 }
 
@@ -189,7 +193,11 @@ type Series interface {
 type ChunkSeriesSet interface {
 	Next() bool
 	At() ChunkSeries
+	// The error that iteration failed with.
+	// When an error occurs, set cannot continue to iterate.
 	Err() error
+	// A collection of warnings for the whole set.
+	// Warnings could be return even iteration does not fail with error.
 	Warnings() Warnings
 }
 

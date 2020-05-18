@@ -216,16 +216,12 @@ func TestSeriesSetFilter(t *testing.T) {
 		},
 	}
 
-	for i, tc := range tests {
+	for _, tc := range tests {
 		filtered := newSeriesSetFilter(FromQueryResult(true, tc.in), tc.toRemove)
-		have, err := ToQueryResult(filtered, 1e6)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		if !reflect.DeepEqual(have, tc.expected) {
-			t.Fatalf("%d. unexpected labels; want %v, got %v", i, tc.expected, have)
-		}
+		act, ws, err := ToQueryResult(filtered, 1e6)
+		testutil.Ok(t, err)
+		testutil.Equals(t, 0, len(ws))
+		testutil.Equals(t, tc.expected, act)
 	}
 }
 

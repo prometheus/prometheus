@@ -2555,8 +2555,9 @@ func TestDBCannotSeePartialCommits(t *testing.T) {
 			defer querier.Close()
 
 			ss := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
-			_, seriesSet, _, err := expandSeriesSet(ss)
+			_, seriesSet, ws, err := expandSeriesSet(ss)
 			testutil.Ok(t, err)
+			testutil.Equals(t, 0, len(ws))
 
 			values := map[float64]struct{}{}
 			for _, series := range seriesSet {
@@ -2594,13 +2595,15 @@ func TestDBQueryDoesntSeeAppendsAfterCreation(t *testing.T) {
 
 	// None of the queriers should return anything after the Add but before the commit.
 	ss := querierBeforeAdd.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
-	_, seriesSet, _, err := expandSeriesSet(ss)
+	_, seriesSet, ws, err := expandSeriesSet(ss)
 	testutil.Ok(t, err)
+	testutil.Equals(t, 0, len(ws))
 	testutil.Equals(t, map[string][]sample{}, seriesSet)
 
 	ss = querierAfterAddButBeforeCommit.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
-	_, seriesSet, _, err = expandSeriesSet(ss)
+	_, seriesSet, ws, err = expandSeriesSet(ss)
 	testutil.Ok(t, err)
+	testutil.Equals(t, 0, len(ws))
 	testutil.Equals(t, map[string][]sample{}, seriesSet)
 
 	// This commit is after the queriers are created, so should not be returned.
@@ -2609,14 +2612,16 @@ func TestDBQueryDoesntSeeAppendsAfterCreation(t *testing.T) {
 
 	// Nothing returned for querier created before the Add.
 	ss = querierBeforeAdd.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
-	_, seriesSet, _, err = expandSeriesSet(ss)
+	_, seriesSet, ws, err = expandSeriesSet(ss)
 	testutil.Ok(t, err)
+	testutil.Equals(t, 0, len(ws))
 	testutil.Equals(t, map[string][]sample{}, seriesSet)
 
 	// Series exists but has no samples for querier created after Add.
 	ss = querierAfterAddButBeforeCommit.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
-	_, seriesSet, _, err = expandSeriesSet(ss)
+	_, seriesSet, ws, err = expandSeriesSet(ss)
 	testutil.Ok(t, err)
+	testutil.Equals(t, 0, len(ws))
 	testutil.Equals(t, map[string][]sample{`{foo="bar"}`: {}}, seriesSet)
 
 	querierAfterCommit, err := db.Querier(context.Background(), 0, 1000000)
@@ -2625,8 +2630,9 @@ func TestDBQueryDoesntSeeAppendsAfterCreation(t *testing.T) {
 
 	// Samples are returned for querier created after Commit.
 	ss = querierAfterCommit.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
-	_, seriesSet, _, err = expandSeriesSet(ss)
+	_, seriesSet, ws, err = expandSeriesSet(ss)
 	testutil.Ok(t, err)
+	testutil.Equals(t, 0, len(ws))
 	testutil.Equals(t, map[string][]sample{`{foo="bar"}`: {{t: 0, v: 0}}}, seriesSet)
 }
 

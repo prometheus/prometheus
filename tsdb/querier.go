@@ -132,9 +132,10 @@ func (q *verticalQuerier) sel(sortSeries bool, hints *storage.SelectHints, qs []
 	}
 	l := len(qs) / 2
 
-	a := q.sel(sortSeries, hints, qs[:l], ms)
-	b := q.sel(sortSeries, hints, qs[l:], ms)
-	return newMergedVerticalSeriesSet(a, b)
+	return newMergedVerticalSeriesSet(
+		q.sel(sortSeries, hints, qs[:l], ms),
+		q.sel(sortSeries, hints, qs[l:], ms),
+	)
 }
 
 // NewBlockQuerier returns a querier against the reader.
@@ -460,7 +461,6 @@ type mergedSeriesSet struct {
 	done bool
 	err  error
 	cur  storage.Series
-	ws   storage.Warnings
 }
 
 // TODO(bwplotka): Merge this with merge SeriesSet available in storage package.
@@ -488,7 +488,11 @@ func (s *mergedSeriesSet) Err() error {
 }
 
 func (s *mergedSeriesSet) Warnings() storage.Warnings {
-	return s.ws
+	var ws storage.Warnings
+	for _, ss := range s.all {
+		ws = append(ws, ss.Warnings()...)
+	}
+	return ws
 }
 
 // nextAll is to call Next() for all SeriesSet.
@@ -499,15 +503,15 @@ func (s *mergedSeriesSet) nextAll() {
 	for _, ss := range s.all {
 		if ss.Next() {
 			s.buf = append(s.buf, ss)
-			s.ws = append(s.ws, ss.Warnings()...)
-		} else if ss.Err() != nil {
+			continue
+		}
+
+		if ss.Err() != nil {
 			s.done = true
 			s.err = ss.Err()
-			s.ws = append(s.ws, ss.Warnings()...)
 			break
 		}
 	}
-
 	s.all, s.buf = s.buf, s.all
 }
 
@@ -584,9 +588,7 @@ func (s *mergedSeriesSet) Next() bool {
 
 type mergedVerticalSeriesSet struct {
 	a, b         storage.SeriesSet
-	ws           storage.Warnings
 	cur          storage.Series
-	err          error
 	adone, bdone bool
 }
 
@@ -602,18 +604,7 @@ func newMergedVerticalSeriesSet(a, b storage.SeriesSet) *mergedVerticalSeriesSet
 	// Initialize first elements of both sets as Next() needs
 	// one element look-ahead.
 	s.adone = !s.a.Next()
-	s.ws = append(s.ws, s.a.Warnings()...)
-	if err := s.a.Err(); err != nil {
-		s.err = err
-		return s
-	}
-
 	s.bdone = !s.b.Next()
-	s.ws = append(s.ws, s.b.Warnings()...)
-	if err := s.b.Err(); err != nil {
-		s.err = err
-		return s
-	}
 
 	return s
 }

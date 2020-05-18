@@ -1438,8 +1438,9 @@ func TestMemSeriesIsolation(t *testing.T) {
 		defer querier.Close()
 
 		ss := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
-		_, seriesSet, _, err := expandSeriesSet(ss)
+		_, seriesSet, ws, err := expandSeriesSet(ss)
 		testutil.Ok(t, err)
+		testutil.Equals(t, 0, len(ws))
 
 		for _, series := range seriesSet {
 			return int(series[len(series)-1].v)
@@ -1793,7 +1794,6 @@ func testHeadSeriesChunkRace(t *testing.T) {
 		wg.Done()
 	}()
 	ss := q.Select(false, nil, matcher)
-	testutil.Ok(t, ss.Err())
 	for ss.Next() {
 	}
 	testutil.Ok(t, ss.Err())

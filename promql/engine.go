@@ -728,9 +728,7 @@ func extractGroupsFromPath(p []parser.Node) (bool, []string) {
 func checkAndExpandSeriesSet(ctx context.Context, expr parser.Expr) storage.Warnings {
 	switch e := expr.(type) {
 	case *parser.MatrixSelector:
-		if ws := checkAndExpandSeriesSet(ctx, e.VectorSelector); len(ws) > 0 {
-			return ws
-		}
+		return checkAndExpandSeriesSet(ctx, e.VectorSelector)
 	case *parser.VectorSelector:
 		if e.Series == nil {
 			series, ws, err := expandSeriesSet(ctx, e.UnexpandedSeriesSet)
@@ -739,9 +737,7 @@ func checkAndExpandSeriesSet(ctx context.Context, expr parser.Expr) storage.Warn
 			} else {
 				e.Series = series
 			}
-			if len(ws) > 0 {
-				return ws
-			}
+			return ws
 		}
 	}
 	return nil
@@ -755,9 +751,8 @@ func expandSeriesSet(ctx context.Context, it storage.SeriesSet) (res []storage.S
 		default:
 		}
 		res = append(res, it.At())
-		ws = append(ws, it.Warnings()...)
 	}
-	return res, ws, it.Err()
+	return res, it.Warnings(), it.Err()
 }
 
 type errorWithWarnings struct {
@@ -1239,10 +1234,8 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		return ev.eval(e.Expr)
 
 	case *parser.UnaryExpr:
-		var (
-			val, ws = ev.eval(e.Expr)
-			mat     = val.(Matrix)
-		)
+		val, ws := ev.eval(e.Expr)
+		mat := val.(Matrix)
 		if e.Op == parser.SUB {
 			for i := range mat {
 				mat[i].Metric = dropMetricName(mat[i].Metric)
