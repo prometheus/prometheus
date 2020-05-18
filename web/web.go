@@ -297,10 +297,11 @@ func New(logger log.Logger, o *Options) *Handler {
 		ready: 0,
 	}
 
-	factoryTr := func(_ context.Context) api_v1.TargetRetriever {
-		return h.scrapeManager
-	}
-	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, factoryTr, h.notifier,
+	factoryTr := func(_ context.Context) api_v1.TargetRetriever { return h.scrapeManager }
+	factoryAr := func(_ context.Context) api_v1.AlertmanagerRetriever { return h.notifier }
+	FactoryRr := func(_ context.Context) api_v1.RulesRetriever { return h.ruleManager }
+
+	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, factoryTr, factoryAr,
 		func() config.Config {
 			h.mtx.RLock()
 			defer h.mtx.RUnlock()
@@ -317,7 +318,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		h.options.TSDBDir,
 		h.options.EnableAdminAPI,
 		logger,
-		h.ruleManager,
+		FactoryRr,
 		h.options.RemoteReadSampleLimit,
 		h.options.RemoteReadConcurrencyLimit,
 		h.options.RemoteReadBytesInFrame,

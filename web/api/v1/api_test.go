@@ -164,9 +164,7 @@ func (t *testTargetRetriever) ResetMetadataStore() {
 }
 
 func (t *testTargetRetriever) toFactory() func(context.Context) TargetRetriever {
-	return func(context.Context) TargetRetriever {
-		return t
-	}
+	return func(context.Context) TargetRetriever { return t }
 }
 
 type testAlertmanagerRetriever struct{}
@@ -189,6 +187,10 @@ func (t testAlertmanagerRetriever) DroppedAlertmanagers() []*url.URL {
 			Path:   "/api/v1/alerts",
 		},
 	}
+}
+
+func (t testAlertmanagerRetriever) toFactory() func(context.Context) AlertmanagerRetriever {
+	return func(context.Context) AlertmanagerRetriever { return t }
 }
 
 type rulesRetrieverMock struct {
@@ -276,6 +278,10 @@ func (m rulesRetrieverMock) RuleGroups() []*rules.Group {
 	return []*rules.Group{group}
 }
 
+func (m rulesRetrieverMock) toFactory() func(context.Context) RulesRetriever {
+	return func(context.Context) RulesRetriever { return m }
+}
+
 var samplePrometheusCfg = config.Config{
 	GlobalConfig:       config.GlobalConfig{},
 	AlertingConfig:     config.AlertingConfig{},
@@ -318,12 +324,12 @@ func TestEndpoints(t *testing.T) {
 			Queryable:             suite.Storage(),
 			QueryEngine:           suite.QueryEngine(),
 			targetRetriever:       testTargetRetriever.toFactory(),
-			alertmanagerRetriever: testAlertmanagerRetriever{},
+			alertmanagerRetriever: testAlertmanagerRetriever{}.toFactory(),
 			flagsMap:              sampleFlagMap,
 			now:                   func() time.Time { return now },
 			config:                func() config.Config { return samplePrometheusCfg },
 			ready:                 func(f http.HandlerFunc) http.HandlerFunc { return f },
-			rulesRetriever:        algr,
+			rulesRetriever:        algr.toFactory(),
 		}
 
 		testEndpoints(t, api, testTargetRetriever, true)
@@ -382,12 +388,12 @@ func TestEndpoints(t *testing.T) {
 			Queryable:             remote,
 			QueryEngine:           suite.QueryEngine(),
 			targetRetriever:       testTargetRetriever.toFactory(),
-			alertmanagerRetriever: testAlertmanagerRetriever{},
+			alertmanagerRetriever: testAlertmanagerRetriever{}.toFactory(),
 			flagsMap:              sampleFlagMap,
 			now:                   func() time.Time { return now },
 			config:                func() config.Config { return samplePrometheusCfg },
 			ready:                 func(f http.HandlerFunc) http.HandlerFunc { return f },
-			rulesRetriever:        algr,
+			rulesRetriever:        algr.toFactory(),
 		}
 
 		testEndpoints(t, api, testTargetRetriever, false)
