@@ -829,7 +829,6 @@ func formatRules(r *rulefmt.RuleGroups) ruleGroupsTest {
 }
 
 func reloadAndValidate(rgs *rulefmt.RuleGroups, t *testing.T, tmpFile *os.File, ruleManager *Manager, expected map[string]labels.Labels, ogs map[string]*Group) {
-	// grps := formatRules(rgs)
 	bs, err := yaml.Marshal(formatRules(rgs))
 	fmt.Println("huhuhuhd")
 	fmt.Println(string(bs))
