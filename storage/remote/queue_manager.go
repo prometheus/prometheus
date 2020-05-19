@@ -676,7 +676,7 @@ func (t *QueueManager) reshardLoop() {
 func (t *QueueManager) newShards() *shards {
 	s := &shards{
 		qm:   t,
-		done: make(chan struct{}),
+		done: make(chan struct{}, 1),
 	}
 	return s
 }
@@ -722,7 +722,7 @@ func (s *shards) start(n int) {
 	hardShutdownCtx, s.hardShutdown = context.WithCancel(context.Background())
 	s.softShutdown = make(chan struct{})
 	s.running = int32(n)
-	s.done = make(chan struct{})
+	s.done = make(chan struct{}, 1)
 	for i := 0; i < n; i++ {
 		go s.runShard(hardShutdownCtx, i, newQueues[i])
 	}
