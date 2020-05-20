@@ -89,6 +89,8 @@ type Head struct {
 	chunkDiskMapper *chunks.ChunkDiskMapper
 	// chunkDirRoot is the parent directory of the chunks directory.
 	chunkDirRoot string
+
+	closed bool
 }
 
 type headMetrics struct {
@@ -921,7 +923,7 @@ func (h *RangeHead) Index() (IndexReader, error) {
 }
 
 func (h *RangeHead) Chunks() (ChunkReader, error) {
-	return h.head.chunksRange(h.mint, h.maxt, h.head.iso.State()), nil
+	return h.head.chunksRange(h.mint, h.maxt, h.head.iso.State())
 }
 
 func (h *RangeHead) Tombstones() (tombstones.Reader, error) {
@@ -1360,10 +1362,13 @@ func (h *Head) indexRange(mint, maxt int64) *headIndexReader {
 
 // Chunks returns a ChunkReader against the block.
 func (h *Head) Chunks() (ChunkReader, error) {
-	return h.chunksRange(math.MinInt64, math.MaxInt64, h.iso.State()), nil
+	return h.chunksRange(math.MinInt64, math.MaxInt64, h.iso.State())
 }
 
-func (h *Head) chunksRange(mint, maxt int64, is *isolationState) *headChunkReader {
+func (h *Head) chunksRange(mint, maxt int64, is *isolationState) (*headChunkReader, error) {
+	if h.closed {
+		return nil, errors.New("can't read from a closed head")
+	}
 	if hmin := h.MinTime(); hmin > mint {
 		mint = hmin
 	}
@@ -1373,7 +1378,7 @@ func (h *Head) chunksRange(mint, maxt int64, is *isolationState) *headChunkReade
 		maxt:         maxt,
 		isoState:     is,
 		memChunkPool: &h.memChunkPool,
-	}
+	}, nil
 }
 
 // NumSeries returns the number of active series in the head.
@@ -1420,6 +1425,7 @@ func (h *Head) Close() error {
 	if h.wal != nil {
 		merr.Add(h.wal.Close())
 	}
+	h.closed = true
 	return merr.Err()
 }
 
@@ -1472,7 +1478,7 @@ func (h *headChunkReader) Chunk(ref uint64) (chunkenc.Chunk, error) {
 	}()
 
 	// This means that the chunk has been garbage collected (or) is outside
-	// the specified range (or) Head is closing.
+	// the specified range.
 	if c == nil || !c.OverlapsClosedInterval(h.mint, h.maxt) {
 		s.Unlock()
 		return nil, storage.ErrNotFound
@@ -2012,9 +2018,6 @@ func (s *memSeries) chunk(id int, chunkDiskMapper *chunks.ChunkDiskMapper) (chun
 	}
 	chk, err := chunkDiskMapper.Chunk(s.mmappedChunks[ix].ref)
 	if err != nil {
-		if err == chunks.ErrChunkDiskMapperClosed {
-			return nil, false
-		}
 		// TODO(codesome): Find a better way to handle this error instead of a panic.
 		panic(err)
 	}

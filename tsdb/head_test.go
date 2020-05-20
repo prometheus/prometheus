@@ -1020,8 +1020,9 @@ func TestGCChunkAccess(t *testing.T) {
 	}}, lset)
 	testutil.Equals(t, 2, len(chunks))
 
-	cr := h.chunksRange(0, 1500, nil)
-	_, err := cr.Chunk(chunks[0].Ref)
+	cr, err := h.chunksRange(0, 1500, nil)
+	testutil.Ok(t, err)
+	_, err = cr.Chunk(chunks[0].Ref)
 	testutil.Ok(t, err)
 	_, err = cr.Chunk(chunks[1].Ref)
 	testutil.Ok(t, err)
@@ -1074,8 +1075,9 @@ func TestGCSeriesAccess(t *testing.T) {
 	}}, lset)
 	testutil.Equals(t, 2, len(chunks))
 
-	cr := h.chunksRange(0, 2000, nil)
-	_, err := cr.Chunk(chunks[0].Ref)
+	cr, err := h.chunksRange(0, 2000, nil)
+	testutil.Ok(t, err)
+	_, err = cr.Chunk(chunks[0].Ref)
 	testutil.Ok(t, err)
 	_, err = cr.Chunk(chunks[1].Ref)
 	testutil.Ok(t, err)
@@ -1415,11 +1417,13 @@ func TestMemSeriesIsolation(t *testing.T) {
 		iso := h.iso.State()
 		iso.maxAppendID = maxAppendID
 
+		chunks, err := h.chunksRange(math.MinInt64, math.MaxInt64, iso)
+		testutil.Ok(t, err)
 		querier := &blockQuerier{
 			mint:       0,
 			maxt:       10000,
 			index:      idx,
-			chunks:     h.chunksRange(math.MinInt64, math.MaxInt64, iso),
+			chunks:     chunks,
 			tombstones: tombstones.NewMemTombstones(),
 		}
 
