@@ -114,6 +114,10 @@ type Options struct {
 	// Unit agnostic as long as unit is consistent with MinBlockDuration and RetentionDuration.
 	// Typically it is in milliseconds.
 	MaxBlockDuration int64
+
+	// SeriesLifecycleCallback specifies a list of callbacks that will be called during a lifecycle of a series.
+	// It is always a no-op in Prometheus and mainly meant for external users who import TSDB.
+	SeriesLifecycleCallback SeriesLifecycleCallback
 }
 
 // DB handles reads and writes of time series falling into
@@ -309,7 +313,7 @@ func (db *DBReadOnly) FlushWAL(dir string) (returnErr error) {
 	if err != nil {
 		return err
 	}
-	head, err := NewHead(nil, db.logger, w, 1, db.dir, nil, DefaultStripeSize)
+	head, err := NewHead(nil, db.logger, w, 1, db.dir, nil, DefaultStripeSize, nil)
 	if err != nil {
 		return err
 	}
@@ -368,7 +372,7 @@ func (db *DBReadOnly) Querier(ctx context.Context, mint, maxt int64) (storage.Qu
 		blocks[i] = b
 	}
 
-	head, err := NewHead(nil, db.logger, nil, 1, db.dir, nil, DefaultStripeSize)
+	head, err := NewHead(nil, db.logger, nil, 1, db.dir, nil, DefaultStripeSize, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -386,7 +390,7 @@ func (db *DBReadOnly) Querier(ctx context.Context, mint, maxt int64) (storage.Qu
 		if err != nil {
 			return nil, err
 		}
-		head, err = NewHead(nil, db.logger, w, 1, db.dir, nil, DefaultStripeSize)
+		head, err = NewHead(nil, db.logger, w, 1, db.dir, nil, DefaultStripeSize, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -599,8 +603,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 		}
 	}
 
-	db.head, err = NewHead(r, l, wlog, rngs[0], dir, db.chunkPool, opts.StripeSize)
-
+	db.head, err = NewHead(r, l, wlog, rngs[0], dir, db.chunkPool, opts.StripeSize, opts.SeriesLifecycleCallback)
 	if err != nil {
 		return nil, err
 	}

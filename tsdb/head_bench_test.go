@@ -31,7 +31,7 @@ func BenchmarkHeadStripeSeriesCreate(b *testing.B) {
 		testutil.Ok(b, os.RemoveAll(chunkDir))
 	}()
 	// Put a series, select it. GC it and then access it.
-	h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, DefaultStripeSize)
+	h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, DefaultStripeSize, nil)
 	testutil.Ok(b, err)
 	defer h.Close()
 
@@ -47,7 +47,7 @@ func BenchmarkHeadStripeSeriesCreateParallel(b *testing.B) {
 		testutil.Ok(b, os.RemoveAll(chunkDir))
 	}()
 	// Put a series, select it. GC it and then access it.
-	h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, DefaultStripeSize)
+	h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, DefaultStripeSize, nil)
 	testutil.Ok(b, err)
 	defer h.Close()
 

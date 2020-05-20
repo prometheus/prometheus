@@ -875,7 +875,7 @@ func BenchmarkCompactionFromHead(b *testing.B) {
 			defer func() {
 				testutil.Ok(b, os.RemoveAll(chunkDir))
 			}()
-			h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, DefaultStripeSize)
+			h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, DefaultStripeSize, nil)
 			testutil.Ok(b, err)
 			for ln := 0; ln < labelNames; ln++ {
 				app := h.Appender()
