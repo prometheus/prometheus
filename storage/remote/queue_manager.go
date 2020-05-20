@@ -756,7 +756,6 @@ func (s *shards) stop() {
 
 	// Force an unclean shutdown.
 	s.hardShutdown()
-	<-s.done
 }
 
 // enqueue a sample.  If we are currently in the process of shutting down or resharding,
