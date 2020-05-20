@@ -1833,6 +1833,9 @@ func (s *stripeSeries) getByHash(hash uint64, lset labels.Labels) *memSeries {
 }
 
 func (s *stripeSeries) getOrSet(hash uint64, series *memSeries) (*memSeries, bool, error) {
+	// PreCreation is called here to avoid calling it inside the lock.
+	// It is not necessary to call it just before creating a series,
+	// rather it gives a 'hint' whether to create a series or not.
 	createSeriesErr := s.seriesLifecycleCallback.PreCreation(series.lset)
 
 	i := hash & uint64(s.size-1)
@@ -1848,8 +1851,11 @@ func (s *stripeSeries) getOrSet(hash uint64, series *memSeries) (*memSeries, boo
 	s.locks[i].Unlock()
 
 	if createSeriesErr != nil {
+		// The callback prevented creation of series.
 		return nil, false, createSeriesErr
 	}
+	// Setting the series in the s.hashes marks the creation of series
+	// as any further calls to this methods would return that series.
 	s.seriesLifecycleCallback.PostCreation(series.lset)
 
 	i = series.ref & uint64(s.size-1)
@@ -2312,6 +2318,8 @@ func (mc *mmappedChunk) OverlapsClosedInterval(mint, maxt int64) bool {
 // SeriesLifecycleCallback specifies a list of callbacks that will be called during a lifecycle of a series.
 // It is always a no-op in Prometheus and mainly meant for external users who import TSDB.
 // All the callbacks should be safe to be called concurrently.
+// It is upto the user to implement soft or hard consistency by making the callbacks
+// atomic or non-atomic. Atomic callbacks can cause degradation performance.
 type SeriesLifecycleCallback interface {
 	// PreCreation is called before creating a series to indicate if the series can be created.
 	// A non nil error means the series should not be created.
