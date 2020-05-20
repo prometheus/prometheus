@@ -837,28 +837,28 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, b
 
 // sendSamples to the remote storage with backoff for recoverable errors.
 func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.TimeSeries, buf *[]byte) error {
-	backoff := s.qm.cfg.MinBackoff
 	req, highest, err := buildWriteRequest(samples, *buf)
-	reqSize := len(*buf)
-	sampleCount := len(samples)
-	*buf = req
 	if err != nil {
 		// Failing to build the write request is non-recoverable, since it will
 		// only error if marshaling the proto to bytes fails.
 		return err
 	}
 
+	backoff := s.qm.cfg.MinBackoff
+	reqSize := len(*buf)
+	sampleCount := len(samples)
+	*buf = req
 	try := 0
 
-	// This anonymous function is used to allow us to defer the finishing of our per-try span
-	// without causing a memory leak, and it has the nice effect of avoiding propagating most of
-	// the parameters for sendSamplesWithBackoff/3.
+	// An anonymous function allows us to defer the completion of our per-try spans
+	// without causing a memory leak, and it has the nice effect of not propagating any
+	// parameters for sendSamplesWithBackoff/3.
 	attemptStore := func() error {
 		span, ctx := opentracing.StartSpanFromContext(ctx, "Remote Send Batch")
 		defer span.Finish()
 
 		span.SetTag("samples", sampleCount)
-		span.SetTag("requestSize", reqSize)
+		span.SetTag("request_size", reqSize)
 		span.SetTag("try", try)
 		span.SetTag("remote_name", s.qm.storeClient.Name())
 		span.SetTag("remote_url", s.qm.storeClient.Endpoint())
@@ -870,9 +870,9 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 		if err != nil {
 			span.LogKV("error", err)
 			ext.Error.Set(span, true)
-			level.Warn(s.qm.logger).Log("msg", "Failed to send batch, retrying", "err", err)
 			return err
 		}
+
 		return nil
 	}
 
@@ -888,13 +888,16 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 		if err != nil {
 			// If the error is unrecoverable, we should not retry.
 			if _, ok := err.(recoverableError); !ok {
+				level.Error(s.qm.logger).Log("msg", "Failed to send batch, unrecoverable error, will not retry", "err", err)
 				return err
 			}
 
 			// If we make it this far, we've encountered a recoverable error and will retry.
 			s.qm.metrics.retriedSamplesTotal.Add(float64(sampleCount))
+			level.Warn(s.qm.logger).Log("msg", "Failed to send batch, retrying", "err", err)
 			time.Sleep(time.Duration(backoff))
 			backoff = backoff * 2
+
 			if backoff > s.qm.cfg.MaxBackoff {
 				backoff = s.qm.cfg.MaxBackoff
 			}
