@@ -132,7 +132,6 @@ func TestFanoutErrors(t *testing.T) {
 
 		matcher := labels.MustNewMatcher(labels.MatchEqual, "a", "b")
 		ss := querier.Select(true, nil, matcher)
-
 		for ss.Next() {
 			ss.At()
 		}

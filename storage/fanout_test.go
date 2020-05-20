@@ -575,7 +575,7 @@ func makeMergeSeriesSet(numSeriesSets, numSeries, numSamples int) SeriesSet {
 	for i := 0; i < numSeriesSets; i++ {
 		seriesSets = append(seriesSets, &genericSeriesSetAdapter{makeSeriesSet(numSeries, numSamples)})
 	}
-	return &seriesSetAdapter{newGenericMergeSeriesSet(seriesSets, nil, (&seriesMergerAdapter{VerticalSeriesMergeFunc: ChainedSeriesMerge}).Merge)}
+	return &seriesSetAdapter{newGenericMergeSeriesSet(seriesSets, (&seriesMergerAdapter{VerticalSeriesMergeFunc: ChainedSeriesMerge}).Merge)}
 }
 
 func benchmarkDrain(seriesSet SeriesSet, b *testing.B) {

@@ -194,6 +194,8 @@ type mergeGenericQuerier struct {
 	queriers       []genericQuerier
 	failedQueriers map[genericQuerier]struct{}
 	setQuerierMap  map[genericSeriesSet]genericQuerier
+
+	mergeSeriesSets []*genericMergeSeriesSet
 }
 
 // NewMergeQuerier returns a new Querier that merges results of chkQuerierSeries queriers.
@@ -282,7 +284,14 @@ func (q *mergeGenericQuerier) Select(sortSeries bool, hints *SelectHints, matche
 		q.setQuerierMap[res.set] = res.qr
 		seriesSets = append(seriesSets, res.set)
 	}
-	return newGenericMergeSeriesSet(seriesSets, q, q.mergeFunc)
+
+	set := &genericMergeSeriesSet{
+		querier:   q,
+		mergeFunc: q.mergeFunc,
+		sets:      seriesSets,
+	}
+	q.mergeSeriesSets = append(q.mergeSeriesSets, set)
+	return set
 }
 
 // LabelValues returns all potential values for a label name.
@@ -309,9 +318,25 @@ func (q *mergeGenericQuerier) LabelValues(name string) ([]string, Warnings, erro
 	return mergeStringSlices(results), warnings, nil
 }
 
+func (q *mergeGenericQuerier) MarkAsFailedSet(set genericSeriesSet) {
+	q.failedQueriers[q.setQuerierMap[set]] = struct{}{}
+}
+
+func (q *mergeGenericQuerier) DoesBelongToPrimary(set genericSeriesSet) bool {
+	return reflect.DeepEqual(q.setQuerierMap[set], q.primaryQuerier)
+}
+
 func (q *mergeGenericQuerier) IsFailedSet(set genericSeriesSet) bool {
 	_, isFailedQuerier := q.failedQueriers[q.setQuerierMap[set]]
 	return isFailedQuerier
+}
+
+func (q *mergeGenericQuerier) AdvanceAllSets() {
+	for _, mset := range q.mergeSeriesSets {
+		// Sets need to be pre-advanced, so we can introspect the label of the
+		// series under the cursor.
+		mset.advance()
+	}
 }
 
 func mergeStringSlices(ss [][]string) []string {
@@ -408,8 +433,10 @@ type genericMergeSeriesSet struct {
 	sets []genericSeriesSet
 
 	currentSets []genericSeriesSet
-	querier     *mergeGenericQuerier
 
+	// 'querier' is optional and can be nil. Pass Querier if you want to retry query in case of failing series set.
+	querier  *mergeGenericQuerier
+	advanced bool
 	err      error
 	warnings Warnings
 }
@@ -429,7 +456,7 @@ func NewMergeSeriesSet(sets []SeriesSet, merger VerticalSeriesMergeFunc) SeriesS
 		genericSets = append(genericSets, &genericSeriesSetAdapter{s})
 
 	}
-	return &seriesSetAdapter{newGenericMergeSeriesSet(genericSets, nil, (&seriesMergerAdapter{VerticalSeriesMergeFunc: merger}).Merge)}
+	return &seriesSetAdapter{newGenericMergeSeriesSet(genericSets, (&seriesMergerAdapter{VerticalSeriesMergeFunc: merger}).Merge)}
 }
 
 // NewMergeChunkSeriesSet returns a new ChunkSeriesSet that merges results of chkQuerierSeries ChunkSeriesSets.
@@ -439,31 +466,33 @@ func NewMergeChunkSeriesSet(sets []ChunkSeriesSet, merger VerticalChunkSeriesMer
 		genericSets = append(genericSets, &genericChunkSeriesSetAdapter{s})
 
 	}
-	return &chunkSeriesSetAdapter{newGenericMergeSeriesSet(genericSets, nil, (&chunkSeriesMergerAdapter{VerticalChunkSeriesMergerFunc: merger}).Merge)}
+	return &chunkSeriesSetAdapter{newGenericMergeSeriesSet(genericSets, (&chunkSeriesMergerAdapter{VerticalChunkSeriesMergerFunc: merger}).Merge)}
 }
 
 // newGenericMergeSeriesSet returns a new genericSeriesSet that merges (and deduplicates)
 // series returned by the chkQuerierSeries series sets when iterating.
 // Each chkQuerierSeries series set must return its series in labels order, otherwise
 // merged series set will be incorrect.
-// Argument 'querier' is optional and can be nil. Pass Querier if you want to retry query in case of failing series set.
 // Overlapped situations are merged using provided mergeFunc.
-func newGenericMergeSeriesSet(sets []genericSeriesSet, querier *mergeGenericQuerier, mergeFunc genericSeriesMergeFunc) genericSeriesSet {
+func newGenericMergeSeriesSet(sets []genericSeriesSet, mergeFunc genericSeriesMergeFunc) genericSeriesSet {
 	if len(sets) == 1 {
 		return sets[0]
 	}
 
-	return &genericMergeSeriesSet{
+	mset := &genericMergeSeriesSet{
 		mergeFunc: mergeFunc,
 		sets:      sets,
-		querier:   querier,
 	}
+	// Sets need to be pre-advanced, so we can introspect the label of the
+	// series under the cursor.
+	mset.advance()
+	return mset
 }
 
-func (c *genericMergeSeriesSet) Next() bool {
-	if c.heap == nil {
-		// Sets need to be pre-advanced, so we can introspect the label of the
-		// series under the cursor.
+func (c *genericMergeSeriesSet) advance() {
+	if !c.advanced {
+		defer func() { c.advanced = true }()
+
 		for _, set := range c.sets {
 			if set == nil {
 				continue
@@ -471,26 +500,29 @@ func (c *genericMergeSeriesSet) Next() bool {
 			if set.Next() {
 				heap.Push(&c.heap, set)
 			}
-			if err := set.Err(); err != nil {
-				qr := c.querier.setQuerierMap[set]
-				c.querier.failedQueriers[qr] = struct{}{}
 
-				// Continue advancing all the sets, even though we have an error already.
-				if c.err == nil {
-					if reflect.DeepEqual(qr, c.querier.primaryQuerier) {
+			if err := set.Err(); err != nil {
+				if c.querier != nil { // since querier is optional.
+					c.querier.MarkAsFailedSet(set)
+					if c.querier.DoesBelongToPrimary(set) {
 						c.err = err
 						break
 					}
+					// If the error source isn't the primary querier,
+					// add the error as a warning and continue.
+					c.warnings = append(c.warnings, err)
 				}
-
-				// If the error source isn't the primary querier,
-				// add the error as a warning and continue.
-				c.warnings = append(c.warnings, err)
 			}
 		}
 	}
+}
 
-	// Do not continue if primary querier failed.
+func (c *genericMergeSeriesSet) Next() bool {
+	if c.querier != nil { // since querier is optional.
+		c.querier.AdvanceAllSets()
+	}
+
+	// Do not continue if primary querier failed after pre-advancing.
 	if c.err != nil {
 		return false
 	}
@@ -506,9 +538,6 @@ func (c *genericMergeSeriesSet) Next() bool {
 			if set.Next() {
 				heap.Push(&c.heap, set)
 			}
-			if err := set.Err(); err != nil && c.err == nil {
-				c.err = err
-			}
 		}
 		if len(c.heap) == 0 {
 			return false
@@ -520,7 +549,6 @@ func (c *genericMergeSeriesSet) Next() bool {
 		for len(c.heap) > 0 && labels.Equal(c.currentLabels, c.heap[0].At().Labels()) {
 			set := heap.Pop(&c.heap).(genericSeriesSet)
 			if c.querier != nil && c.querier.IsFailedSet(set) {
-				// At this point, the failed set doesn't come from primary querier.
 				continue
 			}
 			c.currentSets = append(c.currentSets, set)
@@ -547,7 +575,17 @@ func (c *genericMergeSeriesSet) At() Labels {
 }
 
 func (c *genericMergeSeriesSet) Err() error {
-	return c.err
+	if c.err != nil {
+		return c.err
+	}
+	// At this point, we know primary querier hasn't failed.
+	// If we have encountered any errors while iterating should come from current sets.
+	for _, set := range c.currentSets {
+		if err := set.Err(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (c *genericMergeSeriesSet) Warnings() Warnings {
