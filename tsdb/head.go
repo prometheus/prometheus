@@ -2029,6 +2029,9 @@ func (s *memSeries) chunk(id int, chunkDiskMapper *chunks.ChunkDiskMapper) (chun
 	}
 	chk, err := chunkDiskMapper.Chunk(s.mmappedChunks[ix].ref)
 	if err != nil {
+		if _, ok := err.(*chunks.CorruptionErr); ok {
+			panic(err)
+		}
 		return nil, false, err
 	}
 	mc := s.memChunkPool.Get().(*memChunk)
