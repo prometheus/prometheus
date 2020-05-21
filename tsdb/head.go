@@ -90,7 +90,8 @@ type Head struct {
 	// chunkDirRoot is the parent directory of the chunks directory.
 	chunkDirRoot string
 
-	closed bool
+	closedMtx sync.Mutex
+	closed    bool
 }
 
 type headMetrics struct {
@@ -1366,6 +1367,8 @@ func (h *Head) Chunks() (ChunkReader, error) {
 }
 
 func (h *Head) chunksRange(mint, maxt int64, is *isolationState) (*headChunkReader, error) {
+	h.closedMtx.Lock()
+	defer h.closedMtx.Unlock()
 	if h.closed {
 		return nil, errors.New("can't read from a closed head")
 	}
@@ -1420,12 +1423,14 @@ func (h *Head) compactable() bool {
 
 // Close flushes the WAL and closes the head.
 func (h *Head) Close() error {
+	h.closedMtx.Lock()
+	defer h.closedMtx.Unlock()
+	h.closed = true
 	var merr tsdb_errors.MultiError
 	merr.Add(h.chunkDiskMapper.Close())
 	if h.wal != nil {
 		merr.Add(h.wal.Close())
 	}
-	h.closed = true
 	return merr.Err()
 }
 
