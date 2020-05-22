@@ -1113,14 +1113,13 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 			stepRange = ev.interval
 		}
 		// Reuse objects across steps to save memory allocations.
-		points := getPointSlice(16)
+		points := getPointSlice(16)[:0]
 		inMatrix := make(Matrix, 1)
 		inArgs[matrixArgIndex] = inMatrix
 		enh := &EvalNodeHelper{out: make(Vector, 0, 1)}
 		// Process all the calls for one time series at a time.
 		it := storage.NewBuffer(selRange)
 		for i, s := range selVS.Series {
-			points = points[:0]
 			it.Reset(s.Iterator())
 			ss := Series{
 				// For all range vector functions, the only change to the
@@ -1130,6 +1129,7 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 				Points: getPointSlice(numSteps),
 			}
 			inMatrix[0].Metric = selVS.Series[i].Labels()
+			tmpEvalPoints := ev.currentSamples
 			for ts, step := ev.startTimestamp, -1; ts <= ev.endTimestamp; ts += ev.interval {
 				step++
 				// Set the non-matrix arguments.
@@ -1158,10 +1158,11 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 				// Only buffer stepRange milliseconds from the second step on.
 				it.ReduceDelta(stepRange)
 			}
+			points = points[:0]
+			ev.currentSamples = tmpEvalPoints + len(ss.Points)
 			if len(ss.Points) > 0 {
 				if ev.currentSamples < ev.maxSamples {
 					mat = append(mat, ss)
-					ev.currentSamples += len(ss.Points)
 				} else {
 					ev.error(ErrTooManySamples(env))
 				}
