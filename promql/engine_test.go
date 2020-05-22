@@ -608,6 +608,10 @@ func TestMaxQuerySamples(t *testing.T) {
 	test, err := NewTest(t, `
 load 10s
   metric 1 2
+  metric2{a="1"} 1 2
+  metric2{a="2"} 2 2
+  metric2{a="3"} 3 2
+  metric2{a="4"} 4 2
 `)
 	testutil.Ok(t, err)
 	defer test.Close()
@@ -665,6 +669,33 @@ load 10s
 				nil,
 			},
 			Start: time.Unix(1, 0),
+		},
+		{
+			Query:      "sort(max_over_time(metric2[20s]))",
+			MaxSamples: 8,
+			Result: Result{
+				nil,
+				Vector{
+					Sample{
+						Point:  Point{V: 1, T: 5000},
+						Metric: labels.FromStrings("a", "1"),
+					},
+					Sample{
+						Point:  Point{V: 2, T: 5000},
+						Metric: labels.FromStrings("a", "2"),
+					},
+					Sample{
+						Point:  Point{V: 3, T: 5000},
+						Metric: labels.FromStrings("a", "3"),
+					},
+					Sample{
+						Point:  Point{V: 4, T: 5000},
+						Metric: labels.FromStrings("a", "4"),
+					},
+				},
+				nil,
+			},
+			Start: time.Unix(5, 0),
 		},
 		{
 			Query:      "metric[20s]",
