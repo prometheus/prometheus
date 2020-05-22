@@ -1020,37 +1020,60 @@ Serverset data must be in the JSON format, the Thrift format is not currently su
 scrape targets from [Container Monitor](https://github.com/joyent/rfd/blob/master/rfd/0027/README.md)
 discovery endpoints.
 
-The following meta labels are available on targets during relabeling:
+One of the following `<triton_role>` types can be configured to discover targets:
+
+#### `container`
+
+The `container` role discovers one target per "virtual machine" owned by the `account`.
+These are SmartOS zones or lx/KVM/bhyve branded zones.
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
 
 * `__meta_triton_groups`: the list of groups belonging to the target joined by a comma separator
 * `__meta_triton_machine_alias`: the alias of the target container
 * `__meta_triton_machine_brand`: the brand of the target container
 * `__meta_triton_machine_id`: the UUID of the target container
-* `__meta_triton_machine_image`: the target containers image type
-* `__meta_triton_server_id`: the server UUID for the target container
+* `__meta_triton_machine_image`: the target container's image type
+* `__meta_triton_server_id`: the server UUID the target container is running on
 
+#### `cn`
+
+The `cn` role discovers one target for per compute node (also known as "server" or "global zone") making up the Triton infrastructure.
+The `account` must be a Triton operator and is currently required to own at least one `container`.
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_triton_machine_alias`: the hostname of the target (requires triton-cmon 1.7.0 or newer)
+* `__meta_triton_machine_id`: the UUID of the target
+
+See below for the configuration options for Triton discovery:
 ```yaml
 # The information to access the Triton discovery API.
 
-# The account to use for discovering new target containers.
+# The account to use for discovering new targets.
 account: <string>
 
-# The DNS suffix which should be applied to target containers.
+# The type of targets to discover, can be set to:
+# * "container" to discover virtual machines (SmartOS zones, lx/KVM/bhyve branded zones) running on Triton
+# * "cn" to discover compute nodes (servers/global zones) making up the Triton infrastructure
+[ role : <string> | default = "container" ]
+
+# The DNS suffix which should be applied to target.
 dns_suffix: <string>
 
 # The Triton discovery endpoint (e.g. 'cmon.us-east-3b.triton.zone'). This is
 # often the same value as dns_suffix.
 endpoint: <string>
 
-# A list of groups for which targets are retrieved. If omitted, all containers
-# available to the requesting account are scraped.
+# A list of groups for which targets are retrieved, only supported when `role` == `container`.
+# If omitted all containers owned by the requesting account are scraped.
 groups:
   [ - <string> ... ]
 
 # The port to use for discovery and metric scraping.
 [ port: <int> | default = 9163 ]
 
-# The interval which should be used for refreshing target containers.
+# The interval which should be used for refreshing targets.
 [ refresh_interval: <duration> | default = 60s ]
 
 # The Triton discovery API version.
