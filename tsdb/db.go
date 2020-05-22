@@ -750,7 +750,7 @@ func (db *DB) Compact() (err error) {
 		// consistently, we explicitly remove the last value
 		// from the block interval here.
 		head := NewRangeHead(db.head, mint, maxt-1)
-		if err := db.compactHead(head, mint, maxt); err != nil {
+		if err := db.compactHead(head); err != nil {
 			return err
 		}
 	}
@@ -759,17 +759,20 @@ func (db *DB) Compact() (err error) {
 }
 
 // CompactHead compacts the given the RangeHead.
-func (db *DB) CompactHead(head *RangeHead, mint, maxt int64) (err error) {
+func (db *DB) CompactHead(head *RangeHead) (err error) {
 	db.cmtx.Lock()
 	defer db.cmtx.Unlock()
 
-	return db.compactHead(head, mint, maxt)
+	return db.compactHead(head)
 }
 
 // compactHead compacts the given the RangeHead.
 // The compaction mutex should be held before calling this method.
-func (db *DB) compactHead(head *RangeHead, mint, maxt int64) (err error) {
-	uid, err := db.compactor.Write(db.dir, head, mint, maxt, nil)
+func (db *DB) compactHead(head *RangeHead) (err error) {
+	// Add +1 millisecond to block maxt because block intervals are half-open: [b.MinTime, b.MaxTime).
+	// Because of this block intervals are always +1 than the total samples it includes.
+	maxt := head.MaxTime() + 1
+	uid, err := db.compactor.Write(db.dir, head, head.MinTime(), maxt, nil)
 	if err != nil {
 		return errors.Wrap(err, "persist head block")
 	}
