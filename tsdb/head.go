@@ -89,6 +89,9 @@ type Head struct {
 	chunkDiskMapper *chunks.ChunkDiskMapper
 	// chunkDirRoot is the parent directory of the chunks directory.
 	chunkDirRoot string
+
+	closedMtx sync.Mutex
+	closed    bool
 }
 
 type headMetrics struct {
@@ -921,7 +924,7 @@ func (h *RangeHead) Index() (IndexReader, error) {
 }
 
 func (h *RangeHead) Chunks() (ChunkReader, error) {
-	return h.head.chunksRange(h.mint, h.maxt, h.head.iso.State()), nil
+	return h.head.chunksRange(h.mint, h.maxt, h.head.iso.State())
 }
 
 func (h *RangeHead) Tombstones() (tombstones.Reader, error) {
@@ -1360,10 +1363,15 @@ func (h *Head) indexRange(mint, maxt int64) *headIndexReader {
 
 // Chunks returns a ChunkReader against the block.
 func (h *Head) Chunks() (ChunkReader, error) {
-	return h.chunksRange(math.MinInt64, math.MaxInt64, h.iso.State()), nil
+	return h.chunksRange(math.MinInt64, math.MaxInt64, h.iso.State())
 }
 
-func (h *Head) chunksRange(mint, maxt int64, is *isolationState) *headChunkReader {
+func (h *Head) chunksRange(mint, maxt int64, is *isolationState) (*headChunkReader, error) {
+	h.closedMtx.Lock()
+	defer h.closedMtx.Unlock()
+	if h.closed {
+		return nil, errors.New("can't read from a closed head")
+	}
 	if hmin := h.MinTime(); hmin > mint {
 		mint = hmin
 	}
@@ -1373,7 +1381,7 @@ func (h *Head) chunksRange(mint, maxt int64, is *isolationState) *headChunkReade
 		maxt:         maxt,
 		isoState:     is,
 		memChunkPool: &h.memChunkPool,
-	}
+	}, nil
 }
 
 // NumSeries returns the number of active series in the head.
@@ -1415,6 +1423,9 @@ func (h *Head) compactable() bool {
 
 // Close flushes the WAL and closes the head.
 func (h *Head) Close() error {
+	h.closedMtx.Lock()
+	defer h.closedMtx.Unlock()
+	h.closed = true
 	var merr tsdb_errors.MultiError
 	merr.Add(h.chunkDiskMapper.Close())
 	if h.wal != nil {
@@ -1462,7 +1473,11 @@ func (h *headChunkReader) Chunk(ref uint64) (chunkenc.Chunk, error) {
 	}
 
 	s.Lock()
-	c, garbageCollect := s.chunk(int(cid), h.head.chunkDiskMapper)
+	c, garbageCollect, err := s.chunk(int(cid), h.head.chunkDiskMapper)
+	if err != nil {
+		s.Unlock()
+		return nil, err
+	}
 	defer func() {
 		if garbageCollect {
 			// Set this to nil so that Go GC can collect it after it has been used.
@@ -1471,9 +1486,8 @@ func (h *headChunkReader) Chunk(ref uint64) (chunkenc.Chunk, error) {
 		}
 	}()
 
-	// This means that the chunk has been garbage collected (or) is outside
-	// the specified range (or) Head is closing.
-	if c == nil || !c.OverlapsClosedInterval(h.mint, h.maxt) {
+	// This means that the chunk is outside the specified range.
+	if !c.OverlapsClosedInterval(h.mint, h.maxt) {
 		s.Unlock()
 		return nil, storage.ErrNotFound
 	}
@@ -1998,31 +2012,33 @@ func (s *memSeries) appendable(t int64, v float64) error {
 // chunk returns the chunk for the chunk id from memory or by m-mapping it from the disk.
 // If garbageCollect is true, it means that the returned *memChunk
 // (and not the chunkenc.Chunk inside it) can be garbage collected after it's usage.
-func (s *memSeries) chunk(id int, chunkDiskMapper *chunks.ChunkDiskMapper) (chunk *memChunk, garbageCollect bool) {
+func (s *memSeries) chunk(id int, chunkDiskMapper *chunks.ChunkDiskMapper) (chunk *memChunk, garbageCollect bool, err error) {
 	// ix represents the index of chunk in the s.mmappedChunks slice. The chunk id's are
 	// incremented by 1 when new chunk is created, hence (id - firstChunkID) gives the slice index.
 	// The max index for the s.mmappedChunks slice can be len(s.mmappedChunks)-1, hence if the ix
 	// is len(s.mmappedChunks), it represents the next chunk, which is the head chunk.
 	ix := id - s.firstChunkID
 	if ix < 0 || ix > len(s.mmappedChunks) {
-		return nil, false
+		return nil, false, storage.ErrNotFound
 	}
 	if ix == len(s.mmappedChunks) {
-		return s.headChunk, false
+		if s.headChunk == nil {
+			return nil, false, errors.New("invalid head chunk")
+		}
+		return s.headChunk, false, nil
 	}
 	chk, err := chunkDiskMapper.Chunk(s.mmappedChunks[ix].ref)
 	if err != nil {
-		if err == chunks.ErrChunkDiskMapperClosed {
-			return nil, false
+		if _, ok := err.(*chunks.CorruptionErr); ok {
+			panic(err)
 		}
-		// TODO(codesome): Find a better way to handle this error instead of a panic.
-		panic(err)
+		return nil, false, err
 	}
 	mc := s.memChunkPool.Get().(*memChunk)
 	mc.chunk = chk
 	mc.minTime = s.mmappedChunks[ix].minTime
 	mc.maxTime = s.mmappedChunks[ix].maxTime
-	return mc, true
+	return mc, true, nil
 }
 
 func (s *memSeries) chunkID(pos int) int {
@@ -2127,7 +2143,14 @@ func computeChunkEndTime(start, cur, max int64) int64 {
 // iterator returns a chunk iterator.
 // It is unsafe to call this concurrently with s.append(...) without holding the series lock.
 func (s *memSeries) iterator(id int, isoState *isolationState, chunkDiskMapper *chunks.ChunkDiskMapper, it chunkenc.Iterator) chunkenc.Iterator {
-	c, garbageCollect := s.chunk(id, chunkDiskMapper)
+	c, garbageCollect, err := s.chunk(id, chunkDiskMapper)
+	// TODO(fabxc): Work around! An error will be returns when a querier have retrieved a pointer to a
+	// series's chunk, which got then garbage collected before it got
+	// accessed.  We must ensure to not garbage collect as long as any
+	// readers still hold a reference.
+	if err != nil {
+		return chunkenc.NewNopIterator()
+	}
 	defer func() {
 		if garbageCollect {
 			// Set this to nil so that Go GC can collect it after it has been used.
@@ -2136,14 +2159,6 @@ func (s *memSeries) iterator(id int, isoState *isolationState, chunkDiskMapper *
 			s.memChunkPool.Put(c)
 		}
 	}()
-
-	// TODO(fabxc): Work around! A querier may have retrieved a pointer to a
-	// series's chunk, which got then garbage collected before it got
-	// accessed.  We must ensure to not garbage collect as long as any
-	// readers still hold a reference.
-	if c == nil {
-		return chunkenc.NewNopIterator()
-	}
 
 	ix := id - s.firstChunkID
 

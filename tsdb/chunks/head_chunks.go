@@ -432,7 +432,6 @@ func (cdm *ChunkDiskMapper) flushBuffer() error {
 }
 
 // Chunk returns a chunk from a given reference.
-// Note: The returned chunk will turn invalid after closing ChunkDiskMapper.
 func (cdm *ChunkDiskMapper) Chunk(ref uint64) (chunkenc.Chunk, error) {
 	cdm.readPathMtx.RLock()
 	// We hold this read lock for the entire duration because if the Close()
@@ -466,13 +465,25 @@ func (cdm *ChunkDiskMapper) Chunk(ref uint64) (chunkenc.Chunk, error) {
 	mmapFile, ok := cdm.mmappedChunkFiles[sgmIndex]
 	if !ok {
 		if sgmIndex > cdm.curFileSequence {
-			return nil, errors.Errorf("head chunk file index %d more than current open file", sgmIndex)
+			return nil, &CorruptionErr{
+				Dir:       cdm.dir.Name(),
+				FileIndex: -1,
+				Err:       errors.Errorf("head chunk file index %d more than current open file", sgmIndex),
+			}
 		}
-		return nil, errors.Errorf("head chunk file index %d does not exist on disk", sgmIndex)
+		return nil, &CorruptionErr{
+			Dir:       cdm.dir.Name(),
+			FileIndex: sgmIndex,
+			Err:       errors.New("head chunk file index %d does not exist on disk"),
+		}
 	}
 
 	if chkStart+MaxChunkLengthFieldSize > mmapFile.byteSlice.Len() {
-		return nil, errors.Errorf("head chunk file doesn't include enough bytes to read the chunk size data field - required:%v, available:%v, file:%d", chkStart+MaxChunkLengthFieldSize, mmapFile.byteSlice.Len(), sgmIndex)
+		return nil, &CorruptionErr{
+			Dir:       cdm.dir.Name(),
+			FileIndex: sgmIndex,
+			Err:       errors.Errorf("head chunk file doesn't include enough bytes to read the chunk size data field - required:%v, available:%v", chkStart+MaxChunkLengthFieldSize, mmapFile.byteSlice.Len()),
+		}
 	}
 
 	// Encoding.
@@ -485,27 +496,51 @@ func (cdm *ChunkDiskMapper) Chunk(ref uint64) (chunkenc.Chunk, error) {
 	c := mmapFile.byteSlice.Range(chkDataLenStart, chkDataLenStart+MaxChunkLengthFieldSize)
 	chkDataLen, n := binary.Uvarint(c)
 	if n <= 0 {
-		return nil, errors.Errorf("reading chunk length failed with %d", n)
+		return nil, &CorruptionErr{
+			Dir:       cdm.dir.Name(),
+			FileIndex: sgmIndex,
+			Err:       errors.Errorf("reading chunk length failed with %d", n),
+		}
 	}
 
 	// Verify the chunk data end.
 	chkDataEnd := chkDataLenStart + n + int(chkDataLen)
 	if chkDataEnd > mmapFile.byteSlice.Len() {
-		return nil, errors.Errorf("head chunk file doesn't include enough bytes to read the chunk - required:%v, available:%v", chkDataEnd, mmapFile.byteSlice.Len())
+		return nil, &CorruptionErr{
+			Dir:       cdm.dir.Name(),
+			FileIndex: sgmIndex,
+			Err:       errors.Errorf("head chunk file doesn't include enough bytes to read the chunk - required:%v, available:%v", chkDataEnd, mmapFile.byteSlice.Len()),
+		}
 	}
 
 	// Check the CRC.
 	sum := mmapFile.byteSlice.Range(chkDataEnd, chkDataEnd+CRCSize)
 	if _, err := chkCRC32.Write(mmapFile.byteSlice.Range(chkStart-(SeriesRefSize+2*MintMaxtSize), chkDataEnd)); err != nil {
-		return nil, err
+		return nil, &CorruptionErr{
+			Dir:       cdm.dir.Name(),
+			FileIndex: sgmIndex,
+			Err:       err,
+		}
 	}
 	if act := chkCRC32.Sum(nil); !bytes.Equal(act, sum) {
-		return nil, errors.Errorf("checksum mismatch expected:%x, actual:%x", sum, act)
+		return nil, &CorruptionErr{
+			Dir:       cdm.dir.Name(),
+			FileIndex: sgmIndex,
+			Err:       errors.Errorf("checksum mismatch expected:%x, actual:%x", sum, act),
+		}
 	}
 
 	// The chunk data itself.
 	chkData := mmapFile.byteSlice.Range(chkDataEnd-int(chkDataLen), chkDataEnd)
-	return cdm.pool.Get(chunkenc.Encoding(chkEnc), chkData)
+	chk, err := cdm.pool.Get(chunkenc.Encoding(chkEnc), chkData)
+	if err != nil {
+		return nil, &CorruptionErr{
+			Dir:       cdm.dir.Name(),
+			FileIndex: sgmIndex,
+			Err:       err,
+		}
+	}
+	return chk, nil
 }
 
 // IterateAllChunks iterates on all the chunks in its byte slices in the order of the head chunk file sequence

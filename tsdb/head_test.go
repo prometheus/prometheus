@@ -412,19 +412,22 @@ func TestMemSeries_truncateChunks(t *testing.T) {
 	// that the ID of the last chunk still gives us the same chunk afterwards.
 	countBefore := len(s.mmappedChunks) + 1 // +1 for the head chunk.
 	lastID := s.chunkID(countBefore - 1)
-	lastChunk, _ := s.chunk(lastID, chunkDiskMapper)
-
-	chk, _ := s.chunk(0, chunkDiskMapper)
-	testutil.Assert(t, chk != nil, "")
+	lastChunk, _, err := s.chunk(lastID, chunkDiskMapper)
+	testutil.Ok(t, err)
 	testutil.Assert(t, lastChunk != nil, "")
+
+	chk, _, err := s.chunk(0, chunkDiskMapper)
+	testutil.Assert(t, chk != nil, "")
+	testutil.Ok(t, err)
 
 	s.truncateChunksBefore(2000)
 
 	testutil.Equals(t, int64(2000), s.mmappedChunks[0].minTime)
-	chk, _ = s.chunk(0, chunkDiskMapper)
-	testutil.Assert(t, chk == nil, "first chunks not gone")
+	_, _, err = s.chunk(0, chunkDiskMapper)
+	testutil.Assert(t, err == storage.ErrNotFound, "first chunks not gone")
 	testutil.Equals(t, countBefore/2, len(s.mmappedChunks)+1) // +1 for the head chunk.
-	chk, _ = s.chunk(lastID, chunkDiskMapper)
+	chk, _, err = s.chunk(lastID, chunkDiskMapper)
+	testutil.Ok(t, err)
 	testutil.Equals(t, lastChunk, chk)
 
 	// Validate that the series' sample buffer is applied correctly to the last chunk
@@ -1020,8 +1023,9 @@ func TestGCChunkAccess(t *testing.T) {
 	}}, lset)
 	testutil.Equals(t, 2, len(chunks))
 
-	cr := h.chunksRange(0, 1500, nil)
-	_, err := cr.Chunk(chunks[0].Ref)
+	cr, err := h.chunksRange(0, 1500, nil)
+	testutil.Ok(t, err)
+	_, err = cr.Chunk(chunks[0].Ref)
 	testutil.Ok(t, err)
 	_, err = cr.Chunk(chunks[1].Ref)
 	testutil.Ok(t, err)
@@ -1074,8 +1078,9 @@ func TestGCSeriesAccess(t *testing.T) {
 	}}, lset)
 	testutil.Equals(t, 2, len(chunks))
 
-	cr := h.chunksRange(0, 2000, nil)
-	_, err := cr.Chunk(chunks[0].Ref)
+	cr, err := h.chunksRange(0, 2000, nil)
+	testutil.Ok(t, err)
+	_, err = cr.Chunk(chunks[0].Ref)
 	testutil.Ok(t, err)
 	_, err = cr.Chunk(chunks[1].Ref)
 	testutil.Ok(t, err)
@@ -1415,11 +1420,13 @@ func TestMemSeriesIsolation(t *testing.T) {
 		iso := h.iso.State()
 		iso.maxAppendID = maxAppendID
 
+		chunks, err := h.chunksRange(math.MinInt64, math.MaxInt64, iso)
+		testutil.Ok(t, err)
 		querier := &blockQuerier{
 			mint:       0,
 			maxt:       10000,
 			index:      idx,
-			chunks:     h.chunksRange(math.MinInt64, math.MaxInt64, iso),
+			chunks:     chunks,
 			tombstones: tombstones.NewMemTombstones(),
 		}
 
