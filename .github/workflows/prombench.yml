@@ -12,7 +12,6 @@ env:
   PROJECT_ID: macro-mile-203600
   PR_NUMBER: ${{ github.event.client_payload.PR_NUMBER }}
   RELEASE: ${{ github.event.client_payload.RELEASE }}
-  TEST_INFRA_REPO: https://github.com/prometheus/test-infra.git
   ZONE: europe-west3-a
 jobs:
   benchmark_start:
