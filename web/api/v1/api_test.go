@@ -1479,6 +1479,73 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 				endpoint: api.labelNames,
 				response: []string{"__name__", "foo"},
 			},
+			// Start and end before Label names starts.
+			{
+				endpoint: api.labelNames,
+				query: url.Values{
+					"start": []string{"-2"},
+					"end":   []string{"-1"},
+				},
+				response: []string{},
+			},
+			// Start and end within Label names.
+			{
+				endpoint: api.labelNames,
+				query: url.Values{
+					"start": []string{"1"},
+					"end":   []string{"100"},
+				},
+				response: []string{"__name__", "foo"},
+			},
+			// Start before Label names, end within Label names.
+			{
+				endpoint: api.labelNames,
+				query: url.Values{
+					"start": []string{"-1"},
+					"end":   []string{"1"},
+				},
+				response: []string{"__name__", "foo"},
+			},
+
+			// Start before Label names starts, end after Label names ends.
+			{
+				endpoint: api.labelNames,
+				query: url.Values{
+					"start": []string{"-1"},
+					"end":   []string{"100000"},
+				},
+				response: []string{"__name__", "foo"},
+			},
+			// Start with bad data for Label names, end within Label names.
+			{
+				endpoint: api.labelNames,
+				query: url.Values{
+					"start": []string{"boop"},
+					"end":   []string{"1"},
+				},
+				errType: errorBadData,
+			},
+			// Start within Label names, end after.
+			{
+				endpoint: api.labelNames,
+				query: url.Values{
+					"start": []string{"1"},
+					"end":   []string{"100000"},
+				},
+				response: []string{"__name__", "foo"},
+			},
+			// Start and end after Label names ends.
+			// fixme: currently failing, got ["__name__","foo"]
+			// question: how do we know what the min/max timestamp is of
+			// the block that contains this data?
+			{
+				endpoint: api.labelNames,
+				query: url.Values{
+					"start": []string{"1000000"},
+					"end":   []string{"1000001"},
+				},
+				response: []labels.Labels{},
+			},
 		}...)
 	}
 
