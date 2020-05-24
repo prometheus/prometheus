@@ -484,12 +484,12 @@ func returnAPIError(err error) *apiError {
 func (api *API) labelNames(r *http.Request) apiFuncResult {
 	start, err := parseTimeParam(r, "start", minTime)
 	if err != nil {
-		err = errors.Wrapf(err, "invalid parameter 'start'")
+		err = errors.Wrap(err, "invalid parameter 'start'")
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 	end, err := parseTimeParam(r, "end", maxTime)
 	if err != nil {
-		err = errors.Wrapf(err, "invalid parameter 'end'")
+		err = errors.Wrap(err, "invalid parameter 'end'")
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 
