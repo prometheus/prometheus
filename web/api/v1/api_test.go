@@ -1530,21 +1530,18 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 				endpoint: api.labelNames,
 				query: url.Values{
 					"start": []string{"1"},
-					"end":   []string{"100000"},
+					"end":   []string{"100000000"},
 				},
 				response: []string{"__name__", "foo"},
 			},
 			// Start and end after Label names ends.
-			// fixme: currently failing, got ["__name__","foo"]
-			// question: how do we know what the min/max timestamp is of
-			// the block that contains this data?
 			{
 				endpoint: api.labelNames,
 				query: url.Values{
-					"start": []string{"1000000"},
-					"end":   []string{"1000001"},
+					"start": []string{"148966367200.372"},
+					"end":   []string{"148966367200.972"},
 				},
-				response: []labels.Labels{},
+				response: []string{},
 			},
 		}...)
 	}

@@ -1555,6 +1555,11 @@ func (h *headIndexReader) LabelValues(name string) ([]string, error) {
 func (h *headIndexReader) LabelNames() ([]string, error) {
 	h.head.symMtx.RLock()
 	defer h.head.symMtx.RUnlock()
+
+	if h.maxt < h.head.MinTime() || h.mint > h.head.MaxTime() {
+		return []string{}, nil
+	}
+
 	labelNames := make([]string, 0, len(h.head.values))
 	for name := range h.head.values {
 		if name == "" {
