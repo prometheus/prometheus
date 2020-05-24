@@ -1474,6 +1474,102 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 				},
 				errType: errorBadData,
 			},
+			// Start and end within LabelValues.
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "foo",
+				},
+				query: url.Values{
+					"start": []string{"1"},
+					"end":   []string{"100"},
+				},
+				response: []string{
+					"bar",
+					"boo",
+				},
+			},
+			// Start before LabelValues, end within LabelValues.
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "foo",
+				},
+				query: url.Values{
+					"start": []string{"-1"},
+					"end":   []string{"1"},
+				},
+				response: []string{
+					"bar",
+					"boo",
+				},
+			},
+			// Start before LabelValues starts, end after LabelValues ends.
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "foo",
+				},
+				query: url.Values{
+					"start": []string{"-1"},
+					"end":   []string{"100000"},
+				},
+				response: []string{
+					"bar",
+					"boo",
+				},
+			},
+			// Start with bad data for LabelValues, end within LabelValues.
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "foo",
+				},
+				query: url.Values{
+					"start": []string{"boop"},
+					"end":   []string{"1"},
+				},
+				errType: errorBadData,
+			},
+			// Start within LabelValues, end after.
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "foo",
+				},
+				query: url.Values{
+					"start": []string{"1"},
+					"end":   []string{"100000000"},
+				},
+				response: []string{
+					"bar",
+					"boo",
+				},
+			},
+			// Start and end after LabelValues ends.
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "foo",
+				},
+				query: url.Values{
+					"start": []string{"148966367200.372"},
+					"end":   []string{"148966367200.972"},
+				},
+				response: []string{},
+			},
+			// Start and end before LabelValues starts.
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "foo",
+				},
+				query: url.Values{
+					"start": []string{"-2"},
+					"end":   []string{"-1"},
+				},
+				response: []string{},
+			},
 			// Label names.
 			{
 				endpoint: api.labelNames,
