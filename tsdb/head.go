@@ -1542,6 +1542,10 @@ func (h *headIndexReader) Symbols() index.StringIter {
 // LabelValues returns the possible label values
 func (h *headIndexReader) LabelValues(name string) ([]string, error) {
 	h.head.symMtx.RLock()
+	if h.maxt < h.head.MinTime() || h.mint > h.head.MaxTime() {
+		return []string{}, nil
+	}
+
 	sl := make([]string, 0, len(h.head.values[name]))
 	for s := range h.head.values[name] {
 		sl = append(sl, s)
