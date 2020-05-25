@@ -64,7 +64,7 @@ func (q *querier) LabelNames() ([]string, storage.Warnings, error) {
 
 func (q *querier) lvals(qs []storage.Querier, n string) ([]string, storage.Warnings, error) {
 	if len(qs) == 0 {
-		return nil, nil, nil
+		return []string{}, nil, nil
 	}
 	if len(qs) == 1 {
 		return qs[0].LabelValues(n)
@@ -75,12 +75,12 @@ func (q *querier) lvals(qs []storage.Querier, n string) ([]string, storage.Warni
 	s1, w, err := q.lvals(qs[:l], n)
 	ws = append(ws, w...)
 	if err != nil {
-		return nil, ws, err
+		return []string{}, ws, err
 	}
 	s2, ws, err := q.lvals(qs[l:], n)
 	ws = append(ws, w...)
 	if err != nil {
-		return nil, ws, err
+		return []string{}, ws, err
 	}
 	return mergeStrings(s1, s2), ws, nil
 }
