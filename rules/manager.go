@@ -724,8 +724,12 @@ func (g *Group) RestoreForState(ts time.Time) {
 
 			if err := sset.Err(); err != nil {
 				// Querier Warnings are ignored. We do not care unless we have an error.
-				level.Error(g.logger).Log("msg", "Failed to restore 'for' state",
-					labels.AlertName, alertRule.Name(), "stage", "Select", "err", err)
+				level.Error(g.logger).Log(
+					"msg", "Failed to restore 'for' state",
+					labels.AlertName, alertRule.Name(),
+					"stage", "Select",
+					"err", err,
+				)
 				return
 			}
 
