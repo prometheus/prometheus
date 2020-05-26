@@ -1140,7 +1140,7 @@ loop:
 
 		if ok {
 			err = app.AddFast(ce.ref, t, v)
-			sampleAdded, err = sl.checkAddError(ce, met, tp, err, &sampleLimitErr, appErrs)
+			sampleAdded, err = sl.checkAddError(ce, met, tp, err, &sampleLimitErr, &appErrs)
 			// In theory this should never happen.
 			if err == storage.ErrNotFound {
 				ok = false
@@ -1169,7 +1169,7 @@ loop:
 
 			var ref uint64
 			ref, err = app.Add(lset, t, v)
-			sampleAdded, err = sl.checkAddError(nil, met, tp, err, &sampleLimitErr, appErrs)
+			sampleAdded, err = sl.checkAddError(nil, met, tp, err, &sampleLimitErr, &appErrs)
 			if err != nil {
 				if err != storage.ErrNotFound {
 					level.Debug(sl.l).Log("msg", "Unexpected error", "series", string(met), "err", err)
@@ -1231,7 +1231,7 @@ func yoloString(b []byte) string {
 // Adds samples to the appender, checking the error, and then returns the # of samples added,
 // whether the caller should continue to process more samples, and any sample limit errors.
 
-func (sl *scrapeLoop) checkAddError(ce *cacheEntry, met []byte, tp *int64, err error, sampleLimitErr *error, appErrs appendErrors) (bool, error) {
+func (sl *scrapeLoop) checkAddError(ce *cacheEntry, met []byte, tp *int64, err error, sampleLimitErr *error, appErrs *appendErrors) (bool, error) {
 	switch errors.Cause(err) {
 	case nil:
 		if tp == nil && ce != nil {
