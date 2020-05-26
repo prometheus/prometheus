@@ -292,14 +292,11 @@ func (q *mergeGenericQuerier) Select(sortSeries bool, hints *SelectHints, matche
 	return set
 }
 
-// TODO(kakkoyun): Better name?
-// TODO(kakkoyun): Inline?
 func (q *mergeGenericQuerier) advanceAll() {
 	if q.advanced {
 		return
 	}
 	for _, set := range q.mergeSeriesSets {
-		// TODO(kakkoyun): Better name?
 		set.unbox()
 	}
 	q.advanced = true
