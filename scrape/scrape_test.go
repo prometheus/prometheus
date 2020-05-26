@@ -28,6 +28,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
 	dto "github.com/prometheus/client_model/go"
 	config_util "github.com/prometheus/common/config"
@@ -1919,4 +1920,11 @@ func TestReuseCacheRace(t *testing.T) {
 			SampleLimit:    i,
 		})
 	}
+}
+
+func TestCheckAddError(t *testing.T) {
+	var appErrs appendErrors
+	sl := scrapeLoop{l: log.NewNopLogger()}
+	sl.checkAddError(nil, nil, nil, storage.ErrOutOfOrderSample, nil, &appErrs)
+	testutil.Equals(t, 1, appErrs.numOutOfOrder)
 }
