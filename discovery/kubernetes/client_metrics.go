@@ -109,16 +109,25 @@ func (noopMetric) Set(float64)     {}
 type clientGoRequestMetricAdapter struct{}
 
 func (f *clientGoRequestMetricAdapter) Register(registerer prometheus.Registerer) {
-	metrics.Register(f, f)
+	metrics.Register(metrics.RegisterOpts{
+		RateLimiterLatency: &clientGoRequestLatencyMetric{},
+		RequestResult:      &clientGoRequestResultMetric{},
+	})
 	registerer.MustRegister(
 		clientGoRequestResultMetricVec,
 		clientGoRequestLatencyMetricVec,
 	)
 }
-func (clientGoRequestMetricAdapter) Increment(code string, method string, host string) {
+
+type clientGoRequestResultMetric struct{}
+
+func (clientGoRequestResultMetric) Increment(code string, method string, host string) {
 	clientGoRequestResultMetricVec.WithLabelValues(code).Inc()
 }
-func (clientGoRequestMetricAdapter) Observe(verb string, u url.URL, latency time.Duration) {
+
+type clientGoRequestLatencyMetric struct{}
+
+func (clientGoRequestLatencyMetric) Observe(verb string, u url.URL, latency time.Duration) {
 	clientGoRequestLatencyMetricVec.WithLabelValues(u.EscapedPath()).Observe(latency.Seconds())
 }
 
