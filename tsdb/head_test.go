@@ -1884,7 +1884,7 @@ func TestHeadLabelNamesValuesWithMinMaxRange(t *testing.T) {
 	// of head timestamps
 	{
 		mint := head.MaxTime() + 10
-		maxt := head.MinTime() + 10
+		maxt := head.MinTime() - 10
 		headIdxReader := head.indexRange(mint, maxt)
 		actualLabelNames, err := headIdxReader.LabelNames()
 		testutil.Ok(t, err)
