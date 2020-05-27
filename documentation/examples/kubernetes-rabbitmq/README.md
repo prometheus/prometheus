@@ -15,7 +15,7 @@ For more details on how to use Kubernetes service discovery take a look at the
 [documentation](https://prometheus.io/docs/operating/configuration/#kubernetes-sd-configurations-kubernetes_sd_config)
 and at the [available examples](./../).
 
-After you got Kubernetes service discovery up and running, add the following scrape_configs to promethues.yml.
+After you have gotten Kubernetes service discovery up and running, add the following scrape_configs to promethues.yml.
 
 ```
 scrape_configs:
