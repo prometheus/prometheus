@@ -15,12 +15,19 @@ For more details on how to use Kubernetes service discovery take a look at the
 [documentation](https://prometheus.io/docs/operating/configuration/#kubernetes-sd-configurations-kubernetes_sd_config)
 and at the [available examples](./../).
 
-After you got Kubernetes service discovery up and running you just need to advertise that RabbitMQ
-is exposing metrics. To do that you need to define a service that:
+After you have gotten Kubernetes service discovery up and running, add the following scrape_configs to promethues.yml.
 
-* Exposes the exporter port
-* Has a **prometheus.io/scrape: "true"** annotation
-* Has a **prometheus.io/port: "9090"** annotation
+```
+scrape_configs:
+- job_name: 'RabbitMQ'
+  kubernetes_sd_configs:
+  - role: pod
+  relabel_configs:
+  - source_labels:
+    - __meta_kubernetes_pod_label_app
+    regex: rabbitmq
+    action: keep
+```
 
 And you should be able to see your RabbitMQ exporter being scraped on the Prometheus status page.
 Since the IP that will be scraped will be the pod endpoint it is important that the node
