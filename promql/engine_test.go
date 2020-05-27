@@ -608,6 +608,8 @@ func TestMaxQuerySamples(t *testing.T) {
 	test, err := NewTest(t, `
 load 10s
   metric 1 2
+  bigmetric{a="1"} 1 2
+  bigmetric{a="2"} 1 2
 `)
 	testutil.Ok(t, err)
 	defer test.Close()
@@ -793,6 +795,18 @@ load 10s
 			Result: Result{
 				ErrTooManySamples(env),
 				nil,
+				nil,
+			},
+			Start:    time.Unix(0, 0),
+			End:      time.Unix(10, 0),
+			Interval: 5 * time.Second,
+		},
+		{
+			Query:      "rate(bigmetric[1s])",
+			MaxSamples: 1,
+			Result: Result{
+				nil,
+				Matrix{},
 				nil,
 			},
 			Start:    time.Unix(0, 0),

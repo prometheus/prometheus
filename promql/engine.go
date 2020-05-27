@@ -1120,6 +1120,7 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 		// Process all the calls for one time series at a time.
 		it := storage.NewBuffer(selRange)
 		for i, s := range selVS.Series {
+			ev.currentSamples -= len(points)
 			points = points[:0]
 			it.Reset(s.Iterator())
 			ss := Series{
@@ -1170,6 +1171,7 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 			}
 		}
 
+		ev.currentSamples -= len(points)
 		putPointSlice(points)
 
 		// The absent_over_time function returns 0 or 1 series. So far, the matrix
@@ -1480,11 +1482,13 @@ func (ev *evaluator) matrixIterSlice(it *storage.BufferedSeriesIterator, mint, m
 		var drop int
 		for drop = 0; out[drop].T < mint; drop++ {
 		}
+		ev.currentSamples -= drop
 		copy(out, out[drop:])
 		out = out[:len(out)-drop]
 		// Only append points with timestamps after the last timestamp we have.
 		mint = out[len(out)-1].T + 1
 	} else {
+		ev.currentSamples -= len(out)
 		out = out[:0]
 	}
 
