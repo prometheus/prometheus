@@ -56,24 +56,37 @@ func TestMergeTwoStringSlices(t *testing.T) {
 
 func TestMergeQuerierWithChainMerger(t *testing.T) {
 	for _, tc := range []struct {
-		name          string
-		querierSeries [][]Series
-		extraQueriers []Querier
+		name                 string
+		primaryQuerierSeries []Series
+		querierSeries        [][]Series
+		extraQueriers        []Querier
 
 		expected SeriesSet
 	}{
 		{
-			name:          "1 querier with no series",
+			name:                 "one primary querier with no series",
+			primaryQuerierSeries: []Series{},
+			expected:             NewMockSeriesSet(),
+		},
+		{
+			name:          "one secondary querier with no series",
 			querierSeries: [][]Series{{}},
 			expected:      NewMockSeriesSet(),
 		},
 		{
-			name:          "many queriers with no series",
+			name:          "many secondary queriers with no series",
 			querierSeries: [][]Series{{}, {}, {}, {}, {}, {}, {}},
 			expected:      NewMockSeriesSet(),
 		},
 		{
-			name: "1 querier, two series",
+			name:                 "mix of queriers with no series",
+			primaryQuerierSeries: []Series{},
+			querierSeries:        [][]Series{{}, {}, {}, {}, {}, {}, {}},
+			expected:             NewMockSeriesSet(),
+		},
+		// Test rest of cases on secondary queriers as the different between primary vs secondary is just error handling.
+		{
+			name: "one querier, two series",
 			querierSeries: [][]Series{{
 				NewListSeries(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1}, sample{2, 2}, sample{3, 3}}),
 				NewListSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{0, 0}, sample{1, 1}, sample{2, 2}}),
@@ -84,7 +97,7 @@ func TestMergeQuerierWithChainMerger(t *testing.T) {
 			),
 		},
 		{
-			name: "2 queriers, 1 different series each",
+			name: "two queriers, one different series each",
 			querierSeries: [][]Series{{
 				NewListSeries(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1}, sample{2, 2}, sample{3, 3}}),
 			}, {
@@ -96,7 +109,7 @@ func TestMergeQuerierWithChainMerger(t *testing.T) {
 			),
 		},
 		{
-			name: "2 time unsorted queriers, 2 series each",
+			name: "two time unsorted queriers, two series each",
 			querierSeries: [][]Series{{
 				NewListSeries(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{5, 5}, sample{6, 6}}),
 				NewListSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{0, 0}, sample{1, 1}, sample{2, 2}}),
@@ -116,7 +129,7 @@ func TestMergeQuerierWithChainMerger(t *testing.T) {
 			),
 		},
 		{
-			name: "5 queriers, only 2 queriers have 2 time unsorted series each",
+			name: "five queriers, only two queriers have two time unsorted series each",
 			querierSeries: [][]Series{{}, {}, {
 				NewListSeries(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{5, 5}, sample{6, 6}}),
 				NewListSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{0, 0}, sample{1, 1}, sample{2, 2}}),
@@ -136,7 +149,7 @@ func TestMergeQuerierWithChainMerger(t *testing.T) {
 			),
 		},
 		{
-			name: "2 queriers, only 2 queriers have 2 time unsorted series each, with 3 noop and one nil querier together",
+			name: "two queriers, only two queriers have two time unsorted series each, with 3 noop and one nil querier together",
 			querierSeries: [][]Series{{}, {}, {
 				NewListSeries(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{5, 5}, sample{6, 6}}),
 				NewListSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{0, 0}, sample{1, 1}, sample{2, 2}}),
@@ -157,7 +170,7 @@ func TestMergeQuerierWithChainMerger(t *testing.T) {
 			),
 		},
 		{
-			name: "2 queriers, with 2 series, one is overlapping",
+			name: "two queriers, with two series, one is overlapping",
 			querierSeries: [][]Series{{}, {}, {
 				NewListSeries(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{2, 21}, sample{3, 31}, sample{5, 5}, sample{6, 6}}),
 				NewListSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{0, 0}, sample{1, 1}, sample{2, 2}}),
@@ -177,7 +190,7 @@ func TestMergeQuerierWithChainMerger(t *testing.T) {
 			),
 		},
 		{
-			name: "2 queries, one with NaN samples series",
+			name: "two queries, one with NaN samples series",
 			querierSeries: [][]Series{{
 				NewListSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{0, math.NaN()}}),
 			}, {
@@ -189,6 +202,10 @@ func TestMergeQuerierWithChainMerger(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			var p Querier
+			if tc.primaryQuerierSeries != nil {
+				p = &mockQuerier{toReturn: tc.primaryQuerierSeries}
+			}
 			var qs []Querier
 			for _, in := range tc.querierSeries {
 				qs = append(qs, &mockQuerier{toReturn: in})
@@ -222,22 +239,35 @@ func TestMergeQuerierWithChainMerger(t *testing.T) {
 
 func TestMergeChunkQuerierWithNoVerticalChunkSeriesMerger(t *testing.T) {
 	for _, tc := range []struct {
-		name             string
-		chkQuerierSeries [][]ChunkSeries
-		extraQueriers    []ChunkQuerier
+		name                    string
+		primaryChkQuerierSeries []ChunkSeries
+		chkQuerierSeries        [][]ChunkSeries
+		extraQueriers           []ChunkQuerier
 
 		expected ChunkSeriesSet
 	}{
 		{
-			name:             "one querier with no series",
+			name:                    "one primary querier with no series",
+			primaryChkQuerierSeries: []ChunkSeries{},
+			expected:                NewMockChunkSeriesSet(),
+		},
+		{
+			name:             "one secondary querier with no series",
 			chkQuerierSeries: [][]ChunkSeries{{}},
 			expected:         NewMockChunkSeriesSet(),
 		},
 		{
-			name:             "many queriers with no series",
+			name:             "many secondary queriers with no series",
 			chkQuerierSeries: [][]ChunkSeries{{}, {}, {}, {}, {}, {}, {}},
 			expected:         NewMockChunkSeriesSet(),
 		},
+		{
+			name:                    "mix of queriers with no series",
+			primaryChkQuerierSeries: []ChunkSeries{},
+			chkQuerierSeries:        [][]ChunkSeries{{}, {}, {}, {}, {}, {}, {}},
+			expected:                NewMockChunkSeriesSet(),
+		},
+		// Test rest of cases on secondary queriers as the different between primary vs secondary is just error handling.
 		{
 			name: "one querier, two series",
 			chkQuerierSeries: [][]ChunkSeries{{
@@ -347,13 +377,19 @@ func TestMergeChunkQuerierWithNoVerticalChunkSeriesMerger(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			var p ChunkQuerier
+			if tc.primaryChkQuerierSeries != nil {
+				p = &mockChunkQurier{toReturn: tc.primaryChkQuerierSeries}
+			}
+
 			var qs []ChunkQuerier
 			for _, in := range tc.chkQuerierSeries {
 				qs = append(qs, &mockChunkQurier{toReturn: in})
 			}
 			qs = append(qs, tc.extraQueriers...)
 
-			merged := NewMergeChunkQuerier(qs[0], qs, NewVerticalChunkSeriesMerger(nil)).Select(false, nil)
+			// TODO(bwplotka): Add case of overlap to check if those are handled well.
+			merged := NewMergeChunkQuerier(p, qs, NewVerticalChunkSeriesMerger(nil)).Select(false, nil)
 			for merged.Next() {
 				testutil.Assert(t, tc.expected.Next(), "Expected Next() to be true")
 				actualSeries := merged.At()
@@ -604,6 +640,52 @@ func BenchmarkMergeSeriesSet(b *testing.B) {
 		seriesSet := makeMergeSeriesSet(bm.numSeriesSets, bm.numSeries, bm.numSamples)
 		b.Run(fmt.Sprintf("%d_%d_%d", bm.numSeriesSets, bm.numSeries, bm.numSamples), func(b *testing.B) {
 			benchmarkDrain(seriesSet, b)
+		})
+	}
+}
+
+func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
+	for _, tcase := range []struct {
+		queriers []genericQuerier
+
+		expectedSelectsSeries []labels.Labels
+		expectedLabelsNames   []string
+		expectedLabelValues   []string
+		expectedWarnings      [3]Warnings
+		expectedErrs          [3]error
+	}{
+		{
+			// TODO(bwplotka): Write mock and add test cases tomorrow.
+		},
+	} {
+		t.Run("", func(t *testing.T) {
+			q := &mergeGenericQuerier{
+				queriers: tcase.queriers,
+			}
+			t.Run("Select", func(t *testing.T) {
+				res := q.Select(false, nil)
+				var lbls []labels.Labels
+				for res.Next() {
+					lbls = append(lbls, res.At().Labels())
+				}
+				testutil.Equals(t, tcase.expectedWarnings[0], res.Warnings())
+				testutil.Equals(t, tcase.expectedErrs[0], res.Err())
+				testutil.Equals(t, tcase.expectedSelectsSeries, lbls)
+
+			})
+			t.Run("LabelNames", func(t *testing.T) {
+				res, w, err := q.LabelNames()
+				testutil.Equals(t, tcase.expectedWarnings[1], w)
+				testutil.Equals(t, tcase.expectedErrs[1], err)
+				testutil.Equals(t, tcase.expectedLabelsNames, res)
+
+			})
+			t.Run("LabelValues", func(t *testing.T) {
+				res, w, err := q.LabelValues("test")
+				testutil.Equals(t, tcase.expectedWarnings[2], w)
+				testutil.Equals(t, tcase.expectedErrs[2], err)
+				testutil.Equals(t, tcase.expectedLabelValues, res)
+			})
 		})
 	}
 }
