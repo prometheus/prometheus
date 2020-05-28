@@ -19,6 +19,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -192,8 +193,6 @@ type mergeGenericQuerier struct {
 
 	primaryQuerier genericQuerier
 	queriers       []genericQuerier
-	failedQueriers map[genericQuerier]struct{}
-	setQuerierMap  map[genericSeriesSet]genericQuerier
 
 	advanced        bool
 	mergeSeriesSets []*deferredGenericMergeSeriesSet
@@ -225,8 +224,6 @@ func NewMergeQuerier(primaryQuerier Querier, queriers []Querier, mergeFunc Verti
 		mergeFunc:      (&seriesMergerAdapter{VerticalSeriesMergeFunc: mergeFunc}).Merge,
 		primaryQuerier: newGenericQuerierFrom(primaryQuerier),
 		queriers:       filtered,
-		failedQueriers: make(map[genericQuerier]struct{}),
-		setQuerierMap:  make(map[genericSeriesSet]genericQuerier),
 	}}
 }
 
@@ -254,8 +251,6 @@ func NewMergeChunkQuerier(primaryQuerier ChunkQuerier, queriers []ChunkQuerier, 
 		mergeFunc:      (&chunkSeriesMergerAdapter{VerticalChunkSeriesMergerFunc: merger}).Merge,
 		primaryQuerier: newGenericQuerierFromChunk(primaryQuerier),
 		queriers:       filtered,
-		failedQueriers: make(map[genericQuerier]struct{}),
-		setQuerierMap:  make(map[genericSeriesSet]genericQuerier),
 	}}
 }
 
@@ -270,19 +265,29 @@ func (q *mergeGenericQuerier) Select(sortSeries bool, hints *SelectHints, matche
 		set genericSeriesSet
 	}
 	var (
+		wg           sync.WaitGroup
 		seriesSets   = make([]genericSeriesSet, 0, len(q.queriers))
 		queryResults = make(chan *queryResult)
 	)
 	for _, querier := range q.queriers {
+		wg.Add(1)
 		go func(qr genericQuerier) {
+			defer wg.Done()
+
 			// We need to sort for NewMergeSeriesSet to work.
 			set := qr.Select(true, hints, matchers...)
+			if !reflect.DeepEqual(qr, q.primaryQuerier) {
+				set = &secondaryQuerierSeriesSet{set}
+			}
 			queryResults <- &queryResult{qr: qr, set: set}
 		}(querier)
 	}
-	for i := 0; i < len(q.queriers); i++ {
-		res := <-queryResults
-		q.setQuerierMap[res.set] = res.qr
+
+	go func() {
+		defer close(queryResults)
+		wg.Wait()
+	}()
+	for res := range queryResults {
 		seriesSets = append(seriesSets, res.set)
 	}
 
@@ -292,12 +297,12 @@ func (q *mergeGenericQuerier) Select(sortSeries bool, hints *SelectHints, matche
 	return set
 }
 
-func (q *mergeGenericQuerier) advanceAll() {
+func (q *mergeGenericQuerier) prepareAll() {
 	if q.advanced {
 		return
 	}
 	for _, set := range q.mergeSeriesSets {
-		set.unbox()
+		set.prepare()
 	}
 	q.advanced = true
 }
@@ -312,14 +317,10 @@ func (q *mergeGenericQuerier) LabelValues(name string) ([]string, Warnings, erro
 			warnings = append(warnings, wrn...)
 		}
 		if err != nil {
-			q.failedQueriers[querier] = struct{}{}
-			// If the error source isn't the primary querier, return the error as a warning and continue.
-			if querier != q.primaryQuerier {
-				warnings = append(warnings, err)
-				continue
-			} else {
+			if reflect.DeepEqual(querier, q.primaryQuerier) {
 				return nil, nil, err
 			}
+			warnings = append(warnings, err)
 		}
 		results = append(results, values)
 	}
@@ -376,14 +377,10 @@ func (q *mergeGenericQuerier) LabelNames() ([]string, Warnings, error) {
 		}
 
 		if err != nil {
-			q.failedQueriers[querier] = struct{}{}
-			// If the error source isn't the primaryQuerier querier, return the error as a warning and continue.
-			if querier != q.primaryQuerier {
-				warnings = append(warnings, err)
-				continue
-			} else {
+			if reflect.DeepEqual(querier, q.primaryQuerier) {
 				return nil, nil, errors.Wrap(err, "LabelNames() from Querier")
 			}
+			warnings = append(warnings, err)
 		}
 
 		for _, name := range names {
@@ -443,7 +440,7 @@ func NewMergeChunkSeriesSet(sets []ChunkSeriesSet, merger VerticalChunkSeriesMer
 type deferredGenericMergeSeriesSet struct {
 	querier *mergeGenericQuerier
 
-	exec func() (genericSeriesSet, Warnings, error)
+	init func() genericSeriesSet
 	mSet genericSeriesSet
 
 	err      error
@@ -453,62 +450,23 @@ type deferredGenericMergeSeriesSet struct {
 func newDeferredGenericMergeSeriesSet(querier *mergeGenericQuerier, sets []genericSeriesSet, mergeFunc genericSeriesMergeFunc) *deferredGenericMergeSeriesSet {
 	return &deferredGenericMergeSeriesSet{
 		querier: querier,
-		exec: func() (genericSeriesSet, Warnings, error) {
-			if len(sets) == 1 {
-				return sets[0], nil, nil
-			}
-
-			var (
-				h              genericSeriesSetHeap
-				successfulSets []genericSeriesSet
-				ws             Warnings
-				pErr           error
-			)
-			for _, set := range sets {
-				if set == nil {
-					continue
-				}
-				// Sets need to be pre-advanced, so we can introspect the label of the
-				// series under the cursor.
-				if set.Next() {
-					heap.Push(&h, set)
-					successfulSets = append(successfulSets, set)
-				}
-
-				if err := set.Err(); err != nil {
-					// Mark querier as failed to ignore sets from the failed queriers when merging.
-					querier.failedQueriers[querier.setQuerierMap[set]] = struct{}{}
-					// Check if failed set belongs to primary querier and capture error if so.
-					if reflect.DeepEqual(querier.setQuerierMap[set], querier.primaryQuerier) {
-						pErr = err
-						break
-					}
-					// If the error source isn't the primary querier,
-					// add the error as a warning and continue.
-					ws = append(ws, err)
-				}
-			}
-
-			return &genericMergeSeriesSet{
-				mergeFunc: mergeFunc,
-				sets:      successfulSets,
-				heap:      h,
-			}, ws, pErr
+		init: func() genericSeriesSet {
+			return newGenericMergeSeriesSet(sets, mergeFunc)
 		}}
 }
 
-func (c *deferredGenericMergeSeriesSet) unbox() {
+func (c *deferredGenericMergeSeriesSet) prepare() {
 	if c.mSet != nil {
 		return
 	}
-	c.mSet, c.warnings, c.err = c.exec()
+	c.mSet = c.init()
 }
 
 func (c *deferredGenericMergeSeriesSet) Next() bool {
 	// Advance all sets that mergeGenericQuerier scheduled from Select calls.
 	// We need to advance all the sets from the Selects done against the mergeGenericQuerier to spot if any of them failed,
 	// so that we can filter out responses from remotes that fail some of their requests.
-	c.querier.advanceAll()
+	c.querier.prepareAll()
 
 	if c.err != nil {
 		return false
@@ -534,6 +492,31 @@ func (c *deferredGenericMergeSeriesSet) Err() error {
 
 func (c *deferredGenericMergeSeriesSet) Warnings() Warnings {
 	return append(c.warnings, c.mSet.Warnings()...)
+}
+
+type secondaryQuerierSeriesSet struct {
+	genericSeriesSet
+}
+
+func (c *secondaryQuerierSeriesSet) At() Labels {
+	// If a secondary (remote) querier fails, we discard all series sets from that querier.
+	if c.genericSeriesSet.Err() != nil {
+		return nil
+	}
+	return c.genericSeriesSet.At()
+}
+
+func (c *secondaryQuerierSeriesSet) Err() error {
+	// If the error source isn't the primary querier, shouldn't fail.
+	return nil
+}
+
+func (c *secondaryQuerierSeriesSet) Warnings() Warnings {
+	// If the error source isn't the primary querier, it is just a warning.
+	if err := c.genericSeriesSet.Err(); err != nil {
+		return append([]error{err}, c.genericSeriesSet.Warnings()...)
+	}
+	return c.genericSeriesSet.Warnings()
 }
 
 // genericMergeSeriesSet implements genericSeriesSet.
@@ -576,7 +559,6 @@ func newGenericMergeSeriesSet(sets []genericSeriesSet, mergeFunc genericSeriesMe
 
 func (c *genericMergeSeriesSet) Next() bool {
 	// Run in a loop because the "next" series sets may not be valid anymore.
-	// If a remote querier fails, we discard all series sets from that querier.
 	// If, for the current label set, all the next series sets come from
 	// failed remote storage sources, we want to keep trying with the next label set.
 	for {
@@ -587,6 +569,7 @@ func (c *genericMergeSeriesSet) Next() bool {
 				heap.Push(&c.heap, set)
 			}
 		}
+
 		if len(c.heap) == 0 {
 			return false
 		}
