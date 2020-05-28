@@ -888,7 +888,6 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 		if err != nil {
 			// If the error is unrecoverable, we should not retry.
 			if _, ok := err.(recoverableError); !ok {
-				level.Error(s.qm.logger).Log("msg", "Failed to send batch, unrecoverable error, will not retry", "err", err)
 				return err
 			}
 
