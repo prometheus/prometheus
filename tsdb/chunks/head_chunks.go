@@ -212,16 +212,16 @@ func (cdm *ChunkDiskMapper) openMMapFiles() (returnErr error) {
 
 	for i, b := range cdm.mmappedChunkFiles {
 		if b.byteSlice.Len() < HeadChunkFileHeaderSize {
-			return errors.Wrapf(errInvalidSize, "invalid head chunk file header in file %d", i)
+			return errors.Wrapf(errInvalidSize, "%s: invalid head chunk file header", files[i])
 		}
 		// Verify magic number.
 		if m := binary.BigEndian.Uint32(b.byteSlice.Range(0, MagicChunksSize)); m != MagicHeadChunks {
-			return errors.Errorf("invalid magic number %x", m)
+			return errors.Errorf("%s: invalid magic number %x", files[i], m)
 		}
 
 		// Verify chunk format version.
 		if v := int(b.byteSlice.Range(MagicChunksSize, MagicChunksSize+ChunksFormatVersionSize)[0]); v != chunksFormatV1 {
-			return errors.Errorf("invalid chunk format version %d", v)
+			return errors.Errorf("%s: invalid chunk format version %d", files[i], v)
 		}
 
 		cdm.size += int64(b.byteSlice.Len())

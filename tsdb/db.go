@@ -441,10 +441,14 @@ func (db *DBReadOnly) Blocks() ([]BlockReader, error) {
 	if len(corrupted) > 0 {
 		for _, b := range loadable {
 			if err := b.Close(); err != nil {
-				level.Warn(db.logger).Log("msg", "Closing a block", err)
+				level.Warn(db.logger).Log("msg", "Closing block failed", "err", err, "block", b)
 			}
 		}
-		return nil, errors.Errorf("unexpected corrupted block:%v", corrupted)
+		var merr tsdb_errors.MultiError
+		for ulid, err := range corrupted {
+			merr.Add(errors.Wrap(err, ulid.String()))
+		}
+		return nil, merr.Err()
 	}
 
 	if len(loadable) == 0 {
@@ -880,7 +884,11 @@ func (db *DB) reload() (err error) {
 				block.Close()
 			}
 		}
-		return fmt.Errorf("unexpected corrupted block:%v", corrupted)
+		var merr tsdb_errors.MultiError
+		for ulid, err := range corrupted {
+			merr.Add(errors.Wrap(err, ulid.String()))
+		}
+		return merr.Err()
 	}
 
 	// All deletable blocks should not be loaded.
@@ -1054,7 +1062,7 @@ func (db *DB) deleteBlocks(blocks map[ulid.ULID]*Block) error {
 	for ulid, block := range blocks {
 		if block != nil {
 			if err := block.Close(); err != nil {
-				level.Warn(db.logger).Log("msg", "Closing block failed", "err", err)
+				level.Warn(db.logger).Log("msg", "Closing block failed", "err", err, "block", ulid)
 			}
 		}
 		if err := os.RemoveAll(filepath.Join(db.dir, ulid.String())); err != nil {
