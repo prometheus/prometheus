@@ -188,7 +188,7 @@ func (cdm *ChunkDiskMapper) openMMapFiles() (returnErr error) {
 	for seq, fn := range files {
 		f, err := fileutil.OpenMmapFile(fn)
 		if err != nil {
-			return errors.Wrap(err, "mmap files")
+			return errors.Wrapf(err, "mmap files, file: %s", fn)
 		}
 		cdm.closers[seq] = f
 		cdm.mmappedChunkFiles[seq] = &mmappedChunkFile{byteSlice: realByteSlice(f.Bytes())}
@@ -337,7 +337,7 @@ func (cdm *ChunkDiskMapper) cut(mint int64) (returnErr error) {
 		return err
 	}
 
-	n, newFile, seq, err := cutSegmentFile(cdm.dir, MagicHeadChunks, headChunksFormatV1, int64(MaxHeadChunkFileSize))
+	n, newFile, seq, err := cutSegmentFile(cdm.dir, MagicHeadChunks, headChunksFormatV1, HeadChunkFilePreallocationSize)
 	if err != nil {
 		return err
 	}
