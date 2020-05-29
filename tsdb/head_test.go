@@ -1813,9 +1813,9 @@ func newTestHead(t testing.TB, chunkRange int64, compressWAL bool) (*Head, *wal.
 
 func TestHeadLabelNamesValuesWithMinMaxRange(t *testing.T) {
 	head, _, closer := newTestHead(t, 1000, false)
+	defer closer()
 	defer func() {
-		closer()
-		testutil.Ok(t, head.Close())
+		testutil.Ok(t, hb.Close())
 	}()
 
 	const (
