@@ -17,10 +17,15 @@
 package promql
 
 import (
+	"context"
+	"errors"
 	"io"
+	"time"
 
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/storage"
 )
 
 // PromQL parser fuzzing instrumentation for use with
@@ -100,4 +105,53 @@ func FuzzParseExpr(in []byte) int {
 	}
 
 	return fuzzMeh
+}
+
+// errQuerier is needed for the FuzzExec fuzzer
+type errQuerier struct {
+	err error
+}
+
+// Select, LabelValues, LabelNames and Close are
+// needed for the FuzzExec fuzzer
+func (q *errQuerier) Select(bool, *storage.SelectHints, ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
+	return errSeriesSet{err: q.err}, nil, q.err
+}
+func (*errQuerier) LabelValues(string) ([]string, storage.Warnings, error) { return nil, nil, nil }
+func (*errQuerier) LabelNames() ([]string, storage.Warnings, error)        { return nil, nil, nil }
+func (*errQuerier) Close() error                                           { return nil }
+
+//errSeriesSet is needed for the FuzzExec fuzzer
+type errSeriesSet struct {
+	err error
+}
+
+// Next, At, Err are needed for the FuzzExec fuzzer
+func (errSeriesSet) Next() bool         { return false }
+func (errSeriesSet) At() storage.Series { return nil }
+func (e errSeriesSet) Err() error       { return e.err }
+
+// FuzzExec implements the FuzzExec fuzzer
+func FuzzExec(in []byte) int {
+
+	opts := EngineOpts{
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    10 * time.Second,
+	}
+	engine := NewEngine(opts)
+	errStorage := ErrStorage{errors.New("storage error")}
+	queryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+		return &errQuerier{err: errStorage}, nil
+	})
+	ctx, cancelCtx := context.WithCancel(context.Background())
+	defer cancelCtx()
+	vectorQuery, err := engine.NewInstantQuery(queryable, string(in), time.Unix(1, 0))
+	if err != nil {
+		return -1
+	}
+	_ = vectorQuery.Exec(ctx)
+
+	return 1
 }
