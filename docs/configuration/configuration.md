@@ -359,9 +359,9 @@ services:
 tags:
   [ - <string> ]
 
-# Node metadata used to filter nodes for a given service.
+# Node metadata key/value pairs to filter nodes for a given service.
 [ node_meta:
-  [ <name>: <value> ... ] ]
+  [ <string>: <string> ... ] ]
 
 # The string by which Consul tags are joined into the tag label.
 [ tag_separator: <string> | default = , ]
