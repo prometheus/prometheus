@@ -238,7 +238,7 @@ func (cdm *ChunkDiskMapper) WriteChunk(seriesRef uint64, mint, maxt int64, chk c
 		return 0, ErrChunkDiskMapperClosed
 	}
 
-	if cdm.shouldCutNewFile(len(chk.Bytes()), maxt) {
+	if cdm.shouldCutNewFile(len(chk.Bytes())) {
 		if err := cdm.cut(); err != nil {
 			return 0, err
 		}
@@ -304,7 +304,7 @@ func chunkRef(seq, offset uint64) (chunkRef uint64) {
 // shouldCutNewFile decides the cutting of a new file based on time and size retention.
 // Size retention: because depending on the system architecture, there is a limit on how big of a file we can m-map.
 // Time retention: so that we can delete old chunks with some time guarantee in low load environments.
-func (cdm *ChunkDiskMapper) shouldCutNewFile(chunkSize int, maxt int64) bool {
+func (cdm *ChunkDiskMapper) shouldCutNewFile(chunkSize int) bool {
 	return cdm.curFileNumBytes == 0 || // First head chunk file.
 		cdm.curFileNumBytes+int64(chunkSize+MaxHeadChunkMetaSize) > MaxHeadChunkFileSize // Exceeds the max head chunk file size.
 }
