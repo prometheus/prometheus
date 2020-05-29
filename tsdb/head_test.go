@@ -1815,7 +1815,7 @@ func TestHeadLabelNamesValuesWithMinMaxRange(t *testing.T) {
 	head, _, closer := newTestHead(t, 1000, false)
 	defer closer()
 	defer func() {
-		testutil.Ok(t, hb.Close())
+		testutil.Ok(t, head.Close())
 	}()
 
 	const (
