@@ -29,7 +29,7 @@ func (s *secondaryQuerier) LabelValues(name string) ([]string, Warnings, error) 
 	return vals, w, nil
 }
 
-func (s *secondaryQuerier)  LabelNames() ([]string, Warnings, error) {
+func (s *secondaryQuerier) LabelNames() ([]string, Warnings, error) {
 	names, w, err := s.genericQuerier.LabelNames()
 	if err != nil {
 		return nil, append([]error{err}, w...), nil

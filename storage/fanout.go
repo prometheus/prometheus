@@ -209,7 +209,7 @@ func NewMergeQuerier(primary Querier, secondaries []Querier, mergeFn VerticalSer
 	}
 
 	return &querierAdapter{&mergeGenericQuerier{
-		mergeFn:      (&seriesMergerAdapter{VerticalSeriesMergeFunc: mergeFn}).Merge,
+		mergeFn:  (&seriesMergerAdapter{VerticalSeriesMergeFunc: mergeFn}).Merge,
 		queriers: queriers,
 	}}
 }
@@ -231,7 +231,7 @@ func NewMergeChunkQuerier(primary ChunkQuerier, secondaries []ChunkQuerier, merg
 	}
 
 	return &chunkQuerierAdapter{&mergeGenericQuerier{
-		mergeFn:      (&chunkSeriesMergerAdapter{VerticalChunkSeriesMergerFunc: mergeFn}).Merge,
+		mergeFn:  (&chunkSeriesMergerAdapter{VerticalChunkSeriesMergerFunc: mergeFn}).Merge,
 		queriers: queriers,
 	}}
 }
@@ -243,8 +243,8 @@ func (q *mergeGenericQuerier) Select(sortSeries bool, hints *SelectHints, matche
 	}
 
 	var (
-		seriesSets = make([]genericSeriesSet, 0, len(q.queriers))
-		wg         sync.WaitGroup
+		seriesSets    = make([]genericSeriesSet, 0, len(q.queriers))
+		wg            sync.WaitGroup
 		seriesSetChan = make(chan genericSeriesSet)
 	)
 
@@ -272,7 +272,7 @@ func (q *mergeGenericQuerier) Select(sortSeries bool, hints *SelectHints, matche
 // LabelValues returns all potential values for a label name.
 func (q *mergeGenericQuerier) LabelValues(name string) ([]string, Warnings, error) {
 	var (
-		results [][]string
+		results  [][]string
 		warnings Warnings
 	)
 	for _, querier := range q.queriers {
@@ -282,7 +282,7 @@ func (q *mergeGenericQuerier) LabelValues(name string) ([]string, Warnings, erro
 			warnings = append(warnings, wrn...)
 		}
 		if err != nil {
-			return nil, nil,  errors.Wrapf(err, "LabelValues() from Querier for label %s", name)
+			return nil, nil, errors.Wrapf(err, "LabelValues() from Querier for label %s", name)
 		}
 		results = append(results, values)
 	}
