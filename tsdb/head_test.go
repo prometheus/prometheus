@@ -1300,7 +1300,7 @@ func TestHeadReadWriterRepair(t *testing.T) {
 		testutil.Ok(t, os.RemoveAll(dir))
 	}()
 
-	const chunkRange = chunks.DefaultHeadChunkFileMaxTimeRange // to hold 4 chunks per segment.
+	const chunkRange = 1000
 
 	walDir := filepath.Join(dir, "wal")
 	// Fill the chunk segments and corrupt it.
@@ -1317,19 +1317,20 @@ func TestHeadReadWriterRepair(t *testing.T) {
 		testutil.Assert(t, created, "series was not created")
 
 		for i := 0; i < 7; i++ {
-			ok, chunkCreated := s.append(int64(i*int(chunkRange)), float64(i*int(chunkRange)), 0, h.chunkDiskMapper)
+			ok, chunkCreated := s.append(int64(i*chunkRange), float64(i*chunkRange), 0, h.chunkDiskMapper)
 			testutil.Assert(t, ok, "series append failed")
 			testutil.Assert(t, chunkCreated, "chunk was not created")
-			ok, chunkCreated = s.append(int64(i*int(chunkRange))+chunkRange-1, float64(i*int(chunkRange)), 0, h.chunkDiskMapper)
+			ok, chunkCreated = s.append(int64(i*chunkRange)+chunkRange-1, float64(i*chunkRange), 0, h.chunkDiskMapper)
 			testutil.Assert(t, ok, "series append failed")
 			testutil.Assert(t, !chunkCreated, "chunk was created")
+			testutil.Ok(t, h.chunkDiskMapper.CutNewFile())
 		}
 		testutil.Ok(t, h.Close())
 
-		// Verify that there are 6 segment files.
+		// Verify that there are 7 segment files.
 		files, err := ioutil.ReadDir(mmappedChunksDir(dir))
 		testutil.Ok(t, err)
-		testutil.Equals(t, 6, len(files))
+		testutil.Equals(t, 7, len(files))
 
 		// Corrupt the 4th file by writing a random byte to series ref.
 		f, err := os.OpenFile(filepath.Join(mmappedChunksDir(dir), files[3].Name()), os.O_WRONLY, 0666)
