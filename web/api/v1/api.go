@@ -516,13 +516,11 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 
 	start, err := parseTimeParam(r, "start", minTime)
 	if err != nil {
-		err = errors.Wrap(err, "invalid parameter 'start'")
-		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrap(err, "invalid parameter 'start'")}, nil, nil}
 	}
 	end, err := parseTimeParam(r, "end", maxTime)
 	if err != nil {
-		err = errors.Wrap(err, "invalid parameter 'end'")
-		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrap(err, "invalid parameter 'end'")}, nil, nil}
 	}
 
 	q, err := api.Queryable.Querier(r.Context(), timestamp.FromTime(start), timestamp.FromTime(end))
