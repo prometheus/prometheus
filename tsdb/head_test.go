@@ -1813,8 +1813,8 @@ func newTestHead(t testing.TB, chunkRange int64, compressWAL bool) (*Head, *wal.
 
 func TestHeadLabelNamesValuesWithMinMaxRange(t *testing.T) {
 	head, _, closer := newTestHead(t, 1000, false)
-	defer closer()
 	defer func() {
+		closer()
 		testutil.Ok(t, head.Close())
 	}()
 
@@ -1837,78 +1837,33 @@ func TestHeadLabelNamesValuesWithMinMaxRange(t *testing.T) {
 		_, err := app.Add(labels.Labels{{Name: name, Value: expectedLabelValues[i]}}, seriesTimestamps[i], 0)
 		testutil.Ok(t, err)
 	}
-	err := app.Commit()
-	testutil.Ok(t, err)
+	testutil.Ok(t, app.Commit())
+	testutil.Equals(t, head.MinTime(), firstSeriesTimestamp)
+	testutil.Equals(t, head.MaxTime(), lastSeriesTimestamp)
 
-	testutil.Assert(t,
-		head.MinTime() == firstSeriesTimestamp,
-		"the min timestamp of the head should be equal to the timestamp of first series added",
-	)
-	testutil.Assert(t,
-		head.MaxTime() == lastSeriesTimestamp,
-		"the max timestamp of the head should be equal to the timestamp of last series added",
-	)
+	var testCases = []struct {
+		name     string
+		mint     int64
+		maxt     int64
+		expected []string
+	}{
+		{"maxt less than head min", head.MaxTime() - 10, head.MinTime() - 10, []string{}},
+		{"mint less than head max", head.MaxTime() + 10, head.MinTime() + 10, []string{}},
+		{"mint and maxt outside head", head.MaxTime() + 10, head.MinTime() - 10, []string{}},
+		{"mint and maxt within head", head.MaxTime() - 10, head.MinTime() + 10, expectedLabelNames},
+	}
 
-	// maxt is less than head min and mint is less than head max
-	// expect no labels returned since the maxt is less than the head timestamps
-	{
-		mint := head.MaxTime() - 10
-		maxt := head.MinTime() - 10
-		headIdxReader := head.indexRange(mint, maxt)
-		actualLabelNames, err := headIdxReader.LabelNames()
-		testutil.Ok(t, err)
-		testutil.Equals(t, []string{}, actualLabelNames)
-		for i, name := range actualLabelNames {
-			actualLabelValue, err := headIdxReader.LabelValues(name)
+	for _, tt := range testCases {
+		t.Run(tt.name, func(t *testing.T) {
+			headIdxReader := head.indexRange(tt.mint, tt.maxt)
+			actualLabelNames, err := headIdxReader.LabelNames()
 			testutil.Ok(t, err)
-			testutil.Equals(t, expectedLabelValues[i], actualLabelValue)
-		}
-	}
-	// maxt is greater than head min and mint is greater than head max
-	// expect no labels returned since the mint is greater than head timestamps
-	{
-		mint := head.MaxTime() + 10
-		maxt := head.MinTime() + 10
-		headIdxReader := head.indexRange(mint, maxt)
-		actualLabelNames, err := headIdxReader.LabelNames()
-		testutil.Ok(t, err)
-		testutil.Equals(t, []string{}, actualLabelNames)
-		for i, name := range actualLabelNames {
-			actualLabelValue, err := headIdxReader.LabelValues(name)
-			testutil.Ok(t, err)
-			testutil.Equals(t, expectedLabelValues[i], actualLabelValue)
-		}
-	}
-	// maxt is less than head min and mint is greater than head max
-	// expect no labels returned since the mint and maxt are outside
-	// of head timestamps
-	{
-		mint := head.MaxTime() + 10
-		maxt := head.MinTime() - 10
-		headIdxReader := head.indexRange(mint, maxt)
-		actualLabelNames, err := headIdxReader.LabelNames()
-		testutil.Ok(t, err)
-		testutil.Equals(t, []string{}, actualLabelNames)
-		for i, name := range actualLabelNames {
-			actualLabelValue, err := headIdxReader.LabelValues(name)
-			testutil.Ok(t, err)
-			testutil.Equals(t, expectedLabelValues[i], actualLabelValue)
-		}
-	}
-	// maxt is greater than head min and mint is less than head max
-	// expect all labels returned since the mint and maxt are within
-	// the head timestamps
-	{
-		mint := head.MaxTime() - 10
-		maxt := head.MinTime() + 10
-		headIdxReader := head.indexRange(mint, maxt)
-		actualLabelNames, err := headIdxReader.LabelNames()
-		testutil.Ok(t, err)
-		testutil.Equals(t, expectedLabelNames, actualLabelNames)
-		for i, name := range actualLabelNames {
-			actualLabelValue, err := headIdxReader.LabelValues(name)
-			testutil.Ok(t, err)
-			testutil.Equals(t, []string{expectedLabelValues[i]}, actualLabelValue)
-		}
+			testutil.Equals(t, tt.expected, actualLabelNames)
+			for i, name := range actualLabelNames {
+				actualLabelValue, err := headIdxReader.LabelValues(name)
+				testutil.Ok(t, err)
+				testutil.Equals(t, []string{expectedLabelValues[i]}, actualLabelValue)
+			}
+		})
 	}
 }
