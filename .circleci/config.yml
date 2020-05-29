@@ -60,6 +60,11 @@ jobs:
     steps:
     - checkout
     - run:
+        # Temporary workaround until circleci updates go.
+        shell: bash
+        command: |
+          choco upgrade -y golang
+    - run:
         shell: bash
         command: |
           (cd web/ui && GOOS= GOARCH= go generate -mod=vendor)
