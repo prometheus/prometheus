@@ -26,7 +26,6 @@ import (
 	"strconv"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -50,12 +49,6 @@ var (
 )
 
 const (
-	// DefaultHeadChunkFileMaxTimeRange is the default head chunk file time range.
-	// Assuming a general scrape interval of 15s, a chunk with 120 samples would
-	// be cut every 30m, so anything <30m will cause lots of empty files. And keeping
-	// it exactly 30m also has a chance of having empty files as its near that border.
-	// Hence keeping it a little more than 30m, i.e. 40m.
-	DefaultHeadChunkFileMaxTimeRange = 40 * int64(time.Minute/time.Millisecond)
 	// MintMaxtSize is the size of the mint/maxt for head chunk file and chunks.
 	MintMaxtSize = 8
 	// SeriesRefSize is the size of series reference on disk.
@@ -63,7 +56,7 @@ const (
 	// HeadChunkFileHeaderSize is the total size of the header for the head chunk file.
 	HeadChunkFileHeaderSize = SegmentHeaderSize
 	// MaxHeadChunkFileSize is the max size of a head chunk file.
-	MaxHeadChunkFileSize = 512 * 1024 * 1024 // 512 MiB.
+	MaxHeadChunkFileSize = 128 * 1024 * 1024 // 128 MiB.
 	// CRCSize is the size of crc32 sum on disk.
 	CRCSize = 4
 	// MaxHeadChunkMetaSize is the max size of an mmapped chunks minus the chunks data.
@@ -90,15 +83,13 @@ type ChunkDiskMapper struct {
 
 	curFile         *os.File // File being written to.
 	curFileSequence int      // Index of current open file being appended to.
-	curFileMint     int64    // Used to check for a chunk crossing the max file time range.
 	curFileMaxt     int64    // Used for the size retention.
 	curFileNumBytes int64    // Bytes written in current open file.
-	maxFileTime     int64    // Max time range (curFileMaxt-curFileMint) for a file.
 
 	byteBuf      [MaxHeadChunkMetaSize]byte // Buffer used to write the header of the chunk.
 	chkWriter    *bufio.Writer              // Writer for the current open file.
 	crc32        hash.Hash
-	writePathMtx sync.RWMutex
+	writePathMtx sync.Mutex
 
 	/// Reader.
 	// The int key in the map is the file number on the disk.
@@ -133,14 +124,6 @@ type mmappedChunkFile struct {
 // NOTE: 'IterateAllChunks' method needs to be called at least once after creating ChunkDiskMapper
 // to set the maxt of all the file.
 func NewChunkDiskMapper(dir string, pool chunkenc.Pool) (*ChunkDiskMapper, error) {
-	return newChunkDiskMapper(dir, DefaultHeadChunkFileMaxTimeRange, pool)
-}
-
-func newChunkDiskMapper(dir string, maxFileDuration int64, pool chunkenc.Pool) (*ChunkDiskMapper, error) {
-	if maxFileDuration <= 0 {
-		maxFileDuration = DefaultHeadChunkFileMaxTimeRange
-	}
-
 	if err := os.MkdirAll(dir, 0777); err != nil {
 		return nil, err
 	}
@@ -151,7 +134,6 @@ func newChunkDiskMapper(dir string, maxFileDuration int64, pool chunkenc.Pool) (
 
 	m := &ChunkDiskMapper{
 		dir:         dirFile,
-		maxFileTime: maxFileDuration,
 		pool:        pool,
 		crc32:       newCRC32(),
 		chunkBuffer: newChunkBuffer(),
@@ -257,7 +239,7 @@ func (cdm *ChunkDiskMapper) WriteChunk(seriesRef uint64, mint, maxt int64, chk c
 	}
 
 	if cdm.shouldCutNewFile(len(chk.Bytes()), maxt) {
-		if err := cdm.cut(mint); err != nil {
+		if err := cdm.cut(); err != nil {
 			return 0, err
 		}
 	}
@@ -301,9 +283,6 @@ func (cdm *ChunkDiskMapper) WriteChunk(seriesRef uint64, mint, maxt int64, chk c
 	if maxt > cdm.curFileMaxt {
 		cdm.curFileMaxt = maxt
 	}
-	if mint < cdm.curFileMint {
-		cdm.curFileMint = mint
-	}
 
 	cdm.chunkBuffer.put(chkRef, chk)
 
@@ -327,11 +306,19 @@ func chunkRef(seq, offset uint64) (chunkRef uint64) {
 // Time retention: so that we can delete old chunks with some time guarantee in low load environments.
 func (cdm *ChunkDiskMapper) shouldCutNewFile(chunkSize int, maxt int64) bool {
 	return cdm.curFileNumBytes == 0 || // First head chunk file.
-		(maxt-cdm.curFileMint > cdm.maxFileTime && cdm.curFileNumBytes > HeadChunkFileHeaderSize) || // Time duration reached for the existing file.
 		cdm.curFileNumBytes+int64(chunkSize+MaxHeadChunkMetaSize) > MaxHeadChunkFileSize // Exceeds the max head chunk file size.
 }
 
-func (cdm *ChunkDiskMapper) cut(mint int64) (returnErr error) {
+// CutNewFile creates a new m-mapped file.
+func (cdm *ChunkDiskMapper) CutNewFile() (returnErr error) {
+	cdm.writePathMtx.Lock()
+	defer cdm.writePathMtx.Unlock()
+
+	return cdm.cut()
+}
+
+// cut creates a new m-mapped file. The write lock should be held before calling this.
+func (cdm *ChunkDiskMapper) cut() (returnErr error) {
 	// Sync current tail to disk and close.
 	if err := cdm.finalizeCurFile(); err != nil {
 		return err
@@ -367,7 +354,6 @@ func (cdm *ChunkDiskMapper) cut(mint int64) (returnErr error) {
 	}
 
 	cdm.curFileSequence = seq
-	cdm.curFileMint = mint
 	cdm.curFile = newFile
 	if cdm.chkWriter != nil {
 		cdm.chkWriter.Reset(newFile)
@@ -690,7 +676,10 @@ func (cdm *ChunkDiskMapper) Truncate(mint int64) error {
 	}
 	cdm.readPathMtx.RUnlock()
 
-	return cdm.deleteFiles(removedFiles)
+	var merr tsdb_errors.MultiError
+	merr.Add(cdm.CutNewFile())
+	merr.Add(cdm.deleteFiles(removedFiles))
+	return merr.Err()
 }
 
 func (cdm *ChunkDiskMapper) deleteFiles(removedFiles []int) error {

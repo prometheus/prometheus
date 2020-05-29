@@ -19,7 +19,6 @@ import (
 	"math/rand"
 	"os"
 	"testing"
-	"time"
 
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -48,53 +47,58 @@ func TestHeadReadWriter_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 	totalChunks := 0
 	var firstFileName string
 	for hrw.curFileSequence < 3 || hrw.chkWriter.Buffered() == 0 {
-		for i := 0; i < 100; i++ {
-			seriesRef, chkRef, mint, maxt, chunk := createChunk(t, totalChunks, hrw)
-			totalChunks++
-			expectedData = append(expectedData, expectedDataType{
-				seriesRef:  seriesRef,
-				mint:       mint,
-				maxt:       maxt,
-				chunkRef:   chkRef,
-				chunk:      chunk,
-				numSamples: uint16(chunk.NumSamples()),
-			})
+		addChunks := func(numChunks int) {
+			for i := 0; i < numChunks; i++ {
+				seriesRef, chkRef, mint, maxt, chunk := createChunk(t, totalChunks, hrw)
+				totalChunks++
+				expectedData = append(expectedData, expectedDataType{
+					seriesRef:  seriesRef,
+					mint:       mint,
+					maxt:       maxt,
+					chunkRef:   chkRef,
+					chunk:      chunk,
+					numSamples: uint16(chunk.NumSamples()),
+				})
 
-			if hrw.curFileSequence != 1 {
-				// We are checking for bytes written only for the first file.
-				continue
+				if hrw.curFileSequence != 1 {
+					// We are checking for bytes written only for the first file.
+					continue
+				}
+
+				// Calculating expected bytes written on disk for first file.
+				firstFileName = hrw.curFile.Name()
+				testutil.Equals(t, chunkRef(1, nextChunkOffset), chkRef)
+
+				bytesWritten := 0
+				chkCRC32.Reset()
+
+				binary.BigEndian.PutUint64(buf[bytesWritten:], seriesRef)
+				bytesWritten += SeriesRefSize
+				binary.BigEndian.PutUint64(buf[bytesWritten:], uint64(mint))
+				bytesWritten += MintMaxtSize
+				binary.BigEndian.PutUint64(buf[bytesWritten:], uint64(maxt))
+				bytesWritten += MintMaxtSize
+				buf[bytesWritten] = byte(chunk.Encoding())
+				bytesWritten += ChunkEncodingSize
+				n := binary.PutUvarint(buf[bytesWritten:], uint64(len(chunk.Bytes())))
+				bytesWritten += n
+
+				expectedBytes = append(expectedBytes, buf[:bytesWritten]...)
+				_, err := chkCRC32.Write(buf[:bytesWritten])
+				testutil.Ok(t, err)
+				expectedBytes = append(expectedBytes, chunk.Bytes()...)
+				_, err = chkCRC32.Write(chunk.Bytes())
+				testutil.Ok(t, err)
+
+				expectedBytes = append(expectedBytes, chkCRC32.Sum(nil)...)
+
+				// += seriesRef, mint, maxt, encoding, chunk data len, chunk data, CRC.
+				nextChunkOffset += SeriesRefSize + 2*MintMaxtSize + ChunkEncodingSize + uint64(n) + uint64(len(chunk.Bytes())) + CRCSize
 			}
-
-			// Calculating expected bytes written on disk for first file.
-			firstFileName = hrw.curFile.Name()
-			testutil.Equals(t, chunkRef(1, nextChunkOffset), chkRef)
-
-			bytesWritten := 0
-			chkCRC32.Reset()
-
-			binary.BigEndian.PutUint64(buf[bytesWritten:], seriesRef)
-			bytesWritten += SeriesRefSize
-			binary.BigEndian.PutUint64(buf[bytesWritten:], uint64(mint))
-			bytesWritten += MintMaxtSize
-			binary.BigEndian.PutUint64(buf[bytesWritten:], uint64(maxt))
-			bytesWritten += MintMaxtSize
-			buf[bytesWritten] = byte(chunk.Encoding())
-			bytesWritten += ChunkEncodingSize
-			n := binary.PutUvarint(buf[bytesWritten:], uint64(len(chunk.Bytes())))
-			bytesWritten += n
-
-			expectedBytes = append(expectedBytes, buf[:bytesWritten]...)
-			_, err := chkCRC32.Write(buf[:bytesWritten])
-			testutil.Ok(t, err)
-			expectedBytes = append(expectedBytes, chunk.Bytes()...)
-			_, err = chkCRC32.Write(chunk.Bytes())
-			testutil.Ok(t, err)
-
-			expectedBytes = append(expectedBytes, chkCRC32.Sum(nil)...)
-
-			// += seriesRef, mint, maxt, encoding, chunk data len, chunk data, CRC.
-			nextChunkOffset += SeriesRefSize + 2*MintMaxtSize + ChunkEncodingSize + uint64(n) + uint64(len(chunk.Bytes())) + CRCSize
 		}
+		addChunks(100)
+		hrw.CutNewFile()
+		addChunks(10) // For chunks in in-memory buffer.
 	}
 
 	// Checking on-disk bytes for the first file.
@@ -165,12 +169,12 @@ func TestHeadReadWriter_Truncate(t *testing.T) {
 
 	timeRange := 0
 	fileTimeStep := 100
-	totalFiles, after1stTruncation, after2ndTruncation := 7, 5, 3
+	totalFiles := 7
+	startIndexAfter1stTruncation, startIndexAfter2ndTruncation := 3, 6
+	filesDeletedAfter1stTruncation, filesDeletedAfter2ndTruncation := 2, 5
 	var timeToTruncate, timeToTruncateAfterRestart int64
 
-	cutFile := func(i int) {
-		testutil.Ok(t, hrw.cut(int64(timeRange)))
-
+	addChunk := func() int {
 		mint := timeRange + 1                // Just after the the new file cut.
 		maxt := timeRange + fileTimeStep - 1 // Just before the next file.
 
@@ -178,15 +182,21 @@ func TestHeadReadWriter_Truncate(t *testing.T) {
 		_, err := hrw.WriteChunk(1, int64(mint), int64(maxt), randomChunk(t))
 		testutil.Ok(t, err)
 
-		if i == totalFiles-after1stTruncation+1 {
-			// Truncate the segment files before the 5th segment.
+		timeRange += fileTimeStep
+
+		return mint
+	}
+
+	cutFile := func(i int) {
+		testutil.Ok(t, hrw.CutNewFile())
+
+		mint := addChunk()
+
+		if i == startIndexAfter1stTruncation {
 			timeToTruncate = int64(mint)
-		} else if i == totalFiles-after2ndTruncation+1 {
-			// Truncate the segment files before the 3rd segment after restart.
+		} else if i == startIndexAfter2ndTruncation {
 			timeToTruncateAfterRestart = int64(mint)
 		}
-
-		timeRange += fileTimeStep
 	}
 
 	// Cut segments.
@@ -195,8 +205,8 @@ func TestHeadReadWriter_Truncate(t *testing.T) {
 	}
 
 	// Verifying the the remaining files.
-	verifyRemainingFiles := func(remainingFiles int) {
-		t.Helper()
+	verifyRemainingFiles := func(remainingFiles, startIndex int) {
+		//t.Helper()
 
 		files, err := ioutil.ReadDir(hrw.dir.Name())
 		testutil.Ok(t, err)
@@ -206,7 +216,7 @@ func TestHeadReadWriter_Truncate(t *testing.T) {
 
 		for i := 1; i <= totalFiles; i++ {
 			_, ok := hrw.mmappedChunkFiles[i]
-			if i < totalFiles-remainingFiles+1 {
+			if i < startIndex {
 				testutil.Equals(t, false, ok)
 			} else {
 				testutil.Equals(t, true, ok)
@@ -215,11 +225,13 @@ func TestHeadReadWriter_Truncate(t *testing.T) {
 	}
 
 	// Verify the number of segments.
-	verifyRemainingFiles(totalFiles)
+	verifyRemainingFiles(totalFiles, 1)
 
 	// Truncating files.
 	testutil.Ok(t, hrw.Truncate(timeToTruncate))
-	verifyRemainingFiles(after1stTruncation)
+	totalFiles++ // Truncation creates a new file.
+	verifyRemainingFiles(totalFiles-filesDeletedAfter1stTruncation, startIndexAfter1stTruncation)
+	addChunk() // Add a chunk so that new file is not truncated.
 
 	dir := hrw.dir.Name()
 	testutil.Ok(t, hrw.Close())
@@ -235,14 +247,12 @@ func TestHeadReadWriter_Truncate(t *testing.T) {
 
 	// Truncating files after restart.
 	testutil.Ok(t, hrw.Truncate(timeToTruncateAfterRestart))
-	verifyRemainingFiles(after2ndTruncation)
+	totalFiles++ // Truncation creates a new file.
+	verifyRemainingFiles(totalFiles-filesDeletedAfter2ndTruncation, startIndexAfter2ndTruncation)
 
-	// Add another file to have an active file.
-	totalFiles++
-	cutFile(totalFiles)
 	// Truncating till current time should not delete the current active file.
-	testutil.Ok(t, hrw.Truncate(time.Now().UnixNano()/1e6))
-	verifyRemainingFiles(1)
+	testutil.Ok(t, hrw.Truncate(int64(timeRange+fileTimeStep)))
+	verifyRemainingFiles(2, totalFiles) // One file was the active file and one was newly created.
 }
 
 func testHeadReadWriter(t *testing.T) (hrw *ChunkDiskMapper, close func()) {
