@@ -1842,15 +1842,16 @@ func TestHeadLabelNamesValuesWithMinMaxRange(t *testing.T) {
 	testutil.Equals(t, head.MaxTime(), lastSeriesTimestamp)
 
 	var testCases = []struct {
-		name     string
-		mint     int64
-		maxt     int64
-		expected []string
+		name           string
+		mint           int64
+		maxt           int64
+		expectedNames  []string
+		expectedValues []string
 	}{
-		{"maxt less than head min", head.MaxTime() - 10, head.MinTime() - 10, []string{}},
-		{"mint less than head max", head.MaxTime() + 10, head.MinTime() + 10, []string{}},
-		{"mint and maxt outside head", head.MaxTime() + 10, head.MinTime() - 10, []string{}},
-		{"mint and maxt within head", head.MaxTime() - 10, head.MinTime() + 10, expectedLabelNames},
+		{"maxt less than head min", head.MaxTime() - 10, head.MinTime() - 10, []string{}, []string{}},
+		{"mint less than head max", head.MaxTime() + 10, head.MinTime() + 10, []string{}, []string{}},
+		{"mint and maxt outside head", head.MaxTime() + 10, head.MinTime() - 10, []string{}, []string{}},
+		{"mint and maxt within head", head.MaxTime() - 10, head.MinTime() + 10, expectedLabelNames, expectedLabelValues},
 	}
 
 	for _, tt := range testCases {
@@ -1858,11 +1859,13 @@ func TestHeadLabelNamesValuesWithMinMaxRange(t *testing.T) {
 			headIdxReader := head.indexRange(tt.mint, tt.maxt)
 			actualLabelNames, err := headIdxReader.LabelNames()
 			testutil.Ok(t, err)
-			testutil.Equals(t, tt.expected, actualLabelNames)
-			for i, name := range actualLabelNames {
-				actualLabelValue, err := headIdxReader.LabelValues(name)
-				testutil.Ok(t, err)
-				testutil.Equals(t, []string{expectedLabelValues[i]}, actualLabelValue)
+			testutil.Equals(t, tt.expectedNames, actualLabelNames)
+			if len(tt.expectedValues) > 0 {
+				for i, name := range expectedLabelNames {
+					actualLabelValue, err := headIdxReader.LabelValues(name)
+					testutil.Ok(t, err)
+					testutil.Equals(t, []string{tt.expectedValues[i]}, actualLabelValue)
+				}
 			}
 		})
 	}
