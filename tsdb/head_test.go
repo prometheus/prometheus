@@ -1811,3 +1811,63 @@ func newTestHead(t testing.TB, chunkRange int64, compressWAL bool) (*Head, *wal.
 		testutil.Ok(t, os.RemoveAll(dir))
 	}
 }
+
+func TestHeadLabelNamesValuesWithMinMaxRange(t *testing.T) {
+	head, _, closer := newTestHead(t, 1000, false)
+	defer closer()
+	defer func() {
+		testutil.Ok(t, head.Close())
+	}()
+
+	const (
+		firstSeriesTimestamp  int64 = 100
+		secondSeriesTimestamp int64 = 200
+		lastSeriesTimestamp   int64 = 300
+	)
+	var (
+		seriesTimestamps = []int64{firstSeriesTimestamp,
+			secondSeriesTimestamp,
+			lastSeriesTimestamp,
+		}
+		expectedLabelNames  = []string{"a", "b", "c"}
+		expectedLabelValues = []string{"d", "e", "f"}
+	)
+
+	app := head.Appender()
+	for i, name := range expectedLabelNames {
+		_, err := app.Add(labels.Labels{{Name: name, Value: expectedLabelValues[i]}}, seriesTimestamps[i], 0)
+		testutil.Ok(t, err)
+	}
+	testutil.Ok(t, app.Commit())
+	testutil.Equals(t, head.MinTime(), firstSeriesTimestamp)
+	testutil.Equals(t, head.MaxTime(), lastSeriesTimestamp)
+
+	var testCases = []struct {
+		name           string
+		mint           int64
+		maxt           int64
+		expectedNames  []string
+		expectedValues []string
+	}{
+		{"maxt less than head min", head.MaxTime() - 10, head.MinTime() - 10, []string{}, []string{}},
+		{"mint less than head max", head.MaxTime() + 10, head.MinTime() + 10, []string{}, []string{}},
+		{"mint and maxt outside head", head.MaxTime() + 10, head.MinTime() - 10, []string{}, []string{}},
+		{"mint and maxt within head", head.MaxTime() - 10, head.MinTime() + 10, expectedLabelNames, expectedLabelValues},
+	}
+
+	for _, tt := range testCases {
+		t.Run(tt.name, func(t *testing.T) {
+			headIdxReader := head.indexRange(tt.mint, tt.maxt)
+			actualLabelNames, err := headIdxReader.LabelNames()
+			testutil.Ok(t, err)
+			testutil.Equals(t, tt.expectedNames, actualLabelNames)
+			if len(tt.expectedValues) > 0 {
+				for i, name := range expectedLabelNames {
+					actualLabelValue, err := headIdxReader.LabelValues(name)
+					testutil.Ok(t, err)
+					testutil.Equals(t, []string{tt.expectedValues[i]}, actualLabelValue)
+				}
+			}
+		})
+	}
+}

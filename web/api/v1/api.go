@@ -482,7 +482,16 @@ func returnAPIError(err error) *apiError {
 }
 
 func (api *API) labelNames(r *http.Request) apiFuncResult {
-	q, err := api.Queryable.Querier(r.Context(), math.MinInt64, math.MaxInt64)
+	start, err := parseTimeParam(r, "start", minTime)
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrap(err, "invalid parameter 'start'")}, nil, nil}
+	}
+	end, err := parseTimeParam(r, "end", maxTime)
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrap(err, "invalid parameter 'end'")}, nil, nil}
+	}
+
+	q, err := api.Queryable.Querier(r.Context(), timestamp.FromTime(start), timestamp.FromTime(end))
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
 	}
@@ -502,7 +511,17 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 	if !model.LabelNameRE.MatchString(name) {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.Errorf("invalid label name: %q", name)}, nil, nil}
 	}
-	q, err := api.Queryable.Querier(ctx, math.MinInt64, math.MaxInt64)
+
+	start, err := parseTimeParam(r, "start", minTime)
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrap(err, "invalid parameter 'start'")}, nil, nil}
+	}
+	end, err := parseTimeParam(r, "end", maxTime)
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrap(err, "invalid parameter 'end'")}, nil, nil}
+	}
+
+	q, err := api.Queryable.Querier(r.Context(), timestamp.FromTime(start), timestamp.FromTime(end))
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
 	}

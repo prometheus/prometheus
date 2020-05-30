@@ -1474,9 +1474,214 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 				},
 				errType: errorBadData,
 			},
+			// Start and end before LabelValues starts.
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "foo",
+				},
+				query: url.Values{
+					"start": []string{"-2"},
+					"end":   []string{"-1"},
+				},
+				response: []string{},
+			},
+			// Start and end within LabelValues.
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "foo",
+				},
+				query: url.Values{
+					"start": []string{"1"},
+					"end":   []string{"100"},
+				},
+				response: []string{
+					"bar",
+					"boo",
+				},
+			},
+			// Start before LabelValues, end within LabelValues.
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "foo",
+				},
+				query: url.Values{
+					"start": []string{"-1"},
+					"end":   []string{"3"},
+				},
+				response: []string{
+					"bar",
+					"boo",
+				},
+			},
+			// Start before LabelValues starts, end after LabelValues ends.
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "foo",
+				},
+				query: url.Values{
+					"start": []string{"1969-12-31T00:00:00Z"},
+					"end":   []string{"1970-02-01T00:02:03Z"},
+				},
+				response: []string{
+					"bar",
+					"boo",
+				},
+			},
+			// Start with bad data, end within LabelValues.
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "foo",
+				},
+				query: url.Values{
+					"start": []string{"boop"},
+					"end":   []string{"1"},
+				},
+				errType: errorBadData,
+			},
+			// Start within LabelValues, end after.
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "foo",
+				},
+				query: url.Values{
+					"start": []string{"1"},
+					"end":   []string{"100000000"},
+				},
+				response: []string{
+					"bar",
+					"boo",
+				},
+			},
+			// Start and end after LabelValues ends.
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "foo",
+				},
+				query: url.Values{
+					"start": []string{"148966367200.372"},
+					"end":   []string{"148966367200.972"},
+				},
+				response: []string{},
+			},
+			// Only provide Start within LabelValues, don't provide an end time.
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "foo",
+				},
+				query: url.Values{
+					"start": []string{"2"},
+				},
+				response: []string{
+					"bar",
+					"boo",
+				},
+			},
+			// Only provide end within LabelValues, don't provide a start time.
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "foo",
+				},
+				query: url.Values{
+					"end": []string{"100"},
+				},
+				response: []string{
+					"bar",
+					"boo",
+				},
+			},
+
 			// Label names.
 			{
 				endpoint: api.labelNames,
+				response: []string{"__name__", "foo"},
+			},
+			// Start and end before Label names starts.
+			{
+				endpoint: api.labelNames,
+				query: url.Values{
+					"start": []string{"-2"},
+					"end":   []string{"-1"},
+				},
+				response: []string{},
+			},
+			// Start and end within Label names.
+			{
+				endpoint: api.labelNames,
+				query: url.Values{
+					"start": []string{"1"},
+					"end":   []string{"100"},
+				},
+				response: []string{"__name__", "foo"},
+			},
+			// Start before Label names, end within Label names.
+			{
+				endpoint: api.labelNames,
+				query: url.Values{
+					"start": []string{"-1"},
+					"end":   []string{"10"},
+				},
+				response: []string{"__name__", "foo"},
+			},
+
+			// Start before Label names starts, end after Label names ends.
+			{
+				endpoint: api.labelNames,
+				query: url.Values{
+					"start": []string{"-1"},
+					"end":   []string{"100000"},
+				},
+				response: []string{"__name__", "foo"},
+			},
+			// Start with bad data for Label names, end within Label names.
+			{
+				endpoint: api.labelNames,
+				query: url.Values{
+					"start": []string{"boop"},
+					"end":   []string{"1"},
+				},
+				errType: errorBadData,
+			},
+			// Start within Label names, end after.
+			{
+				endpoint: api.labelNames,
+				query: url.Values{
+					"start": []string{"1"},
+					"end":   []string{"1000000006"},
+				},
+				response: []string{"__name__", "foo"},
+			},
+			// Start and end after Label names ends.
+			{
+				endpoint: api.labelNames,
+				query: url.Values{
+					"start": []string{"148966367200.372"},
+					"end":   []string{"148966367200.972"},
+				},
+				response: []string{},
+			},
+			// Only provide Start within Label names, don't provide an end time.
+			{
+				endpoint: api.labelNames,
+				query: url.Values{
+					"start": []string{"4"},
+				},
+				response: []string{"__name__", "foo"},
+			},
+			// Only provide End within Label names, don't provide a start time.
+			{
+				endpoint: api.labelNames,
+				query: url.Values{
+					"end": []string{"20"},
+				},
 				response: []string{"__name__", "foo"},
 			},
 		}...)
