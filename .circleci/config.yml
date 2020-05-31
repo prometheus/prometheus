@@ -68,7 +68,7 @@ jobs:
         shell: bash
         command: |
           (cd web/ui && GOOS= GOARCH= go generate -mod=vendor)
-          go test -mod=vendor -test.v `go list ./...|grep -Exv "(github.com/prometheus/prometheus/discovery.*|github.com/prometheus/prometheus/config|github.com/prometheus/prometheus/web)"`
+          go test -mod=vendor -vet=off -test.v `go list ./...|grep -Exv "(github.com/prometheus/prometheus/discovery.*|github.com/prometheus/prometheus/config|github.com/prometheus/prometheus/web)"`
         environment:
           GOGC: "20"
           GOOPTS: "-p 2 -mod=vendor"
