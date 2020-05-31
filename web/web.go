@@ -301,6 +301,12 @@ func New(logger log.Logger, o *Options) *Handler {
 	factoryAr := func(_ context.Context) api_v1.AlertmanagerRetriever { return h.notifier }
 	FactoryRr := func(_ context.Context) api_v1.RulesRetriever { return h.ruleManager }
 
+	langServerHandler, err := api_v1.NewLangServer(o.ListenAddress, h.storage, factoryTr, logger)
+	if err != nil {
+		level.Error(h.logger).Log("err", "Unable to create langserver handler")
+		panic(err)
+	}
+
 	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, factoryTr, factoryAr,
 		func() config.Config {
 			h.mtx.RLock()
@@ -325,6 +331,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		h.options.CORSOrigin,
 		h.runtimeInfo,
 		h.versionInfo,
+		langServerHandler,
 	)
 
 	if o.RoutePrefix != "/" {

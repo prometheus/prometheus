@@ -75,6 +75,8 @@ github.com/aws/aws-sdk-go/service/sts
 github.com/aws/aws-sdk-go/service/sts/stsiface
 # github.com/beorn7/perks v1.0.1
 github.com/beorn7/perks/quantile
+# github.com/blang/semver v3.5.1+incompatible
+github.com/blang/semver
 # github.com/cespare/xxhash v1.1.0
 github.com/cespare/xxhash
 # github.com/cespare/xxhash/v2 v2.1.1
@@ -275,6 +277,8 @@ github.com/jpillora/backoff
 github.com/json-iterator/go
 # github.com/julienschmidt/httprouter v1.3.0
 github.com/julienschmidt/httprouter
+# github.com/kelseyhightower/envconfig v1.4.0
+github.com/kelseyhightower/envconfig
 # github.com/konsorten/go-windows-terminal-sequences v1.0.2
 github.com/konsorten/go-windows-terminal-sequences
 # github.com/mailru/easyjson v0.7.1
@@ -318,6 +322,18 @@ github.com/opentracing/opentracing-go/log
 github.com/pkg/errors
 # github.com/pmezard/go-difflib v1.0.0
 github.com/pmezard/go-difflib/difflib
+# github.com/prometheus-community/promql-langserver v0.5.1
+github.com/prometheus-community/promql-langserver/internal/vendored/go-tools/jsonrpc2
+github.com/prometheus-community/promql-langserver/internal/vendored/go-tools/lsp/debug/tag
+github.com/prometheus-community/promql-langserver/internal/vendored/go-tools/lsp/protocol
+github.com/prometheus-community/promql-langserver/internal/vendored/go-tools/span
+github.com/prometheus-community/promql-langserver/internal/vendored/go-tools/telemetry/event
+github.com/prometheus-community/promql-langserver/internal/vendored/go-tools/xcontext
+github.com/prometheus-community/promql-langserver/langserver
+github.com/prometheus-community/promql-langserver/langserver/cache
+github.com/prometheus-community/promql-langserver/langserver/documentation/functions_statik
+github.com/prometheus-community/promql-langserver/prometheus
+github.com/prometheus-community/promql-langserver/rest
 # github.com/prometheus/alertmanager v0.20.0
 github.com/prometheus/alertmanager/api/v2/models
 # github.com/prometheus/client_golang v1.7.1
@@ -345,6 +361,10 @@ github.com/prometheus/common/version
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs
 github.com/prometheus/procfs/internal/util
+# github.com/rakyll/statik v0.1.7
+github.com/rakyll/statik/fs
+# github.com/sahilm/fuzzy v0.1.0
+github.com/sahilm/fuzzy
 # github.com/samuel/go-zookeeper v0.0.0-20190923202752-2cc03de413da
 github.com/samuel/go-zookeeper/zk
 # github.com/shurcooL/httpfs v0.0.0-20190707220628-8d4bc4ba7749

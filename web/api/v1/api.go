@@ -195,6 +195,8 @@ type API struct {
 	CORSOrigin                *regexp.Regexp
 	buildInfo                 *PrometheusVersion
 	runtimeInfo               func() (RuntimeInfo, error)
+	webkit                    *webkit
+	langServerHandler         http.Handler
 }
 
 func init() {
@@ -223,6 +225,7 @@ func NewAPI(
 	CORSOrigin *regexp.Regexp,
 	runtimeInfo func() (RuntimeInfo, error),
 	buildInfo *PrometheusVersion,
+	langServerHandler http.Handler,
 ) *API {
 	return &API{
 		QueryEngine:           qe,
@@ -246,6 +249,8 @@ func NewAPI(
 		CORSOrigin:                CORSOrigin,
 		runtimeInfo:               runtimeInfo,
 		buildInfo:                 buildInfo,
+		webkit:                    newWebkit(q, tr),
+		langServerHandler:         langServerHandler,
 	}
 }
 
@@ -307,10 +312,11 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/status/buildinfo", wrap(api.serveBuildInfo))
 	r.Get("/status/flags", wrap(api.serveFlags))
 	r.Get("/status/tsdb", wrap(api.serveTSDBStatus))
-	r.Post("/read", api.ready(http.HandlerFunc(api.remoteRead)))
+	r.Post("/read", api.ready(api.remoteRead))
 
 	r.Get("/alerts", wrap(api.alerts))
 	r.Get("/rules", wrap(api.rules))
+	r.Get("/langserver/*subpath", api.langServerHandler.ServeHTTP)
 
 	// Admin APIs
 	r.Post("/admin/tsdb/delete_series", wrap(api.deleteSeries))
@@ -492,22 +498,15 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrap(err, "invalid parameter 'end'")}, nil, nil}
 	}
 
-	q, err := api.Queryable.Querier(r.Context(), timestamp.FromTime(start), timestamp.FromTime(end))
-	if err != nil {
-		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
-	}
-	defer q.Close()
-
-	names, warnings, err := q.LabelNames()
+	vals, warnings, err := api.webkit.labelNames(r.Context(), start, end)
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
 	}
-	return apiFuncResult{names, nil, warnings, nil}
+	return apiFuncResult{vals, nil, warnings, nil}
 }
 
 func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
-	ctx := r.Context()
-	name := route.Param(ctx, "name")
+	name := route.Param(r.Context(), "name")
 
 	if !model.LabelNameRE.MatchString(name) {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.Errorf("invalid label name: %q", name)}, nil, nil}
@@ -522,28 +521,13 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrap(err, "invalid parameter 'end'")}, nil, nil}
 	}
 
-	q, err := api.Queryable.Querier(r.Context(), timestamp.FromTime(start), timestamp.FromTime(end))
+	vals, warnings, err := api.webkit.labelValues(r.Context(), name, start, end)
+
 	if err != nil {
-		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
-	}
-	// From now on, we must only return with a finalizer in the result (to
-	// be called by the caller) or call q.Close ourselves (which is required
-	// in the case of a panic).
-	defer func() {
-		if result.finalizer == nil {
-			q.Close()
-		}
-	}()
-	closer := func() {
-		q.Close()
+		return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
 	}
 
-	vals, warnings, err := q.LabelValues(name)
-	if err != nil {
-		return apiFuncResult{nil, &apiError{errorExec, err}, warnings, closer}
-	}
-
-	return apiFuncResult{vals, nil, warnings, closer}
+	return apiFuncResult{vals, nil, warnings, nil}
 }
 
 var (
@@ -580,40 +564,11 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 		matcherSets = append(matcherSets, matchers)
 	}
 
-	q, err := api.Queryable.Querier(r.Context(), timestamp.FromTime(start), timestamp.FromTime(end))
+	vals, warnings, err := api.webkit.series(r.Context(), matcherSets, start, end)
 	if err != nil {
-		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
 	}
-	// From now on, we must only return with a finalizer in the result (to
-	// be called by the caller) or call q.Close ourselves (which is required
-	// in the case of a panic).
-	defer func() {
-		if result.finalizer == nil {
-			q.Close()
-		}
-	}()
-	closer := func() {
-		q.Close()
-	}
-
-	var sets []storage.SeriesSet
-	for _, mset := range matcherSets {
-		s := q.Select(false, nil, mset...)
-		sets = append(sets, s)
-	}
-
-	set := storage.NewMergeSeriesSet(sets, storage.ChainedSeriesMerge)
-	metrics := []labels.Labels{}
-	for set.Next() {
-		metrics = append(metrics, set.At().Labels())
-	}
-
-	warnings := set.Warnings()
-	if set.Err() != nil {
-		return apiFuncResult{nil, &apiError{errorExec, set.Err()}, warnings, closer}
-	}
-
-	return apiFuncResult{metrics, nil, warnings, closer}
+	return apiFuncResult{vals, nil, warnings, nil}
 }
 
 func (api *API) dropSeries(r *http.Request) apiFuncResult {
@@ -930,8 +885,6 @@ type metadata struct {
 }
 
 func (api *API) metricMetadata(r *http.Request) apiFuncResult {
-	metrics := map[string]map[metadata]struct{}{}
-
 	limit := -1
 	if s := r.FormValue("limit"); s != "" {
 		var err error
@@ -941,51 +894,7 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 	}
 
 	metric := r.FormValue("metric")
-
-	for _, tt := range api.targetRetriever(r.Context()).TargetsActive() {
-		for _, t := range tt {
-
-			if metric == "" {
-				for _, mm := range t.MetadataList() {
-					m := metadata{Type: mm.Type, Help: mm.Help, Unit: mm.Unit}
-					ms, ok := metrics[mm.Metric]
-
-					if !ok {
-						ms = map[metadata]struct{}{}
-						metrics[mm.Metric] = ms
-					}
-					ms[m] = struct{}{}
-				}
-				continue
-			}
-
-			if md, ok := t.Metadata(metric); ok {
-				m := metadata{Type: md.Type, Help: md.Help, Unit: md.Unit}
-				ms, ok := metrics[md.Metric]
-
-				if !ok {
-					ms = map[metadata]struct{}{}
-					metrics[md.Metric] = ms
-				}
-				ms[m] = struct{}{}
-			}
-		}
-	}
-
-	// Put the elements from the pseudo-set into a slice for marshaling.
-	res := map[string][]metadata{}
-
-	for name, set := range metrics {
-		if limit >= 0 && len(res) >= limit {
-			break
-		}
-
-		s := []metadata{}
-		for metadata := range set {
-			s = append(s, metadata)
-		}
-		res[name] = s
-	}
+	res := api.webkit.metadata(r.Context(), metric, limit)
 
 	return apiFuncResult{res, nil, nil, nil}
 }
