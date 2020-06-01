@@ -115,7 +115,7 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Subsystem:   subsystem,
 		Name:        "sent_batch_duration_seconds",
 		Help:        "Duration of sample batch send calls to the remote storage.",
-		Buckets:     prometheus.DefBuckets,
+		Buckets:     prometheus.ExponentialBuckets(.03125, 2, 15),
 		ConstLabels: constLabels,
 	})
 	m.highestSentTimestamp = &maxGauge{
