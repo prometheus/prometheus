@@ -183,13 +183,13 @@ type Stats struct {
 }
 
 // UpdateStats updates the stats according to the samples
-// passed as params.
-func (qs *QuerySamples) UpdateStats() func(int) {
-	return func(samples int) {
-		if samples > qs.PeakSamples {
-			qs.PeakSamples = samples
+// passed as params to the callback.
+func (qs *QuerySamples) UpdateStats() func(int, int) {
+	return func(peak, instantaneousSamples int) {
+		if peak > qs.PeakSamples {
+			qs.PeakSamples = peak
 		}
-		qs.TotalSamples += samples
+		qs.TotalSamples += instantaneousSamples
 	}
 }
 
