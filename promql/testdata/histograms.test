@@ -179,3 +179,11 @@ eval instant at 50m histogram_quantile(0.75, rate(mixed_bucket[5m]))
 eval instant at 50m histogram_quantile(1, rate(mixed_bucket[5m]))
 	{instance="ins1", job="job1"} 0.2
 	{instance="ins2", job="job1"} NaN
+
+load 5m
+	empty_bucket{le="0.1", job="job1", instance="ins1"}    0x10
+	empty_bucket{le="0.2", job="job1", instance="ins1"}    0x10
+	empty_bucket{le="+Inf", job="job1", instance="ins1"}   0x10
+
+eval instant at 50m histogram_quantile(0.2, rate(empty_bucket[5m]))
+	{instance="ins1", job="job1"} NaN
