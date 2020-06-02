@@ -446,7 +446,7 @@ func (db *DBReadOnly) Blocks() ([]BlockReader, error) {
 		}
 		var merr tsdb_errors.MultiError
 		for ulid, err := range corrupted {
-			merr.Add(errors.Wrap(err, ulid.String()))
+			merr.Add(errors.Wrapf(err, "corrupted block %s", ulid.String()))
 		}
 		return nil, merr.Err()
 	}
@@ -886,7 +886,7 @@ func (db *DB) reload() (err error) {
 		}
 		var merr tsdb_errors.MultiError
 		for ulid, err := range corrupted {
-			merr.Add(errors.Wrap(err, ulid.String()))
+			merr.Add(errors.Wrapf(err, "corrupted block %s", ulid.String()))
 		}
 		return merr.Err()
 	}
