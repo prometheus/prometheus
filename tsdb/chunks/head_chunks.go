@@ -205,7 +205,7 @@ func (cdm *ChunkDiskMapper) openMMapFiles() (returnErr error) {
 	lastSeq := chkFileIndices[0]
 	for _, seq := range chkFileIndices[1:] {
 		if seq != lastSeq+1 {
-			return errors.Errorf("found unsequential head chunk files %d and %d", lastSeq, seq)
+			return errors.Errorf("found unsequential head chunk files %s (index: %d) and %s (index: %d)", files[lastSeq], lastSeq, files[seq], seq)
 		}
 		lastSeq = seq
 	}
