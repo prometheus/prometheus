@@ -37,7 +37,7 @@ var remoteReadQueriesTotal = prometheus.NewCounterVec(
 		Namespace: namespace,
 		Subsystem: subsystem,
 		Name:      "remote_read_queries_total",
-		Help:      "The total number of in-flight remote read queries.",
+		Help:      "The total number of remote read queries.",
 	},
 	[]string{remoteName, endpoint},
 )
