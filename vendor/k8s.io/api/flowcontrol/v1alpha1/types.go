@@ -33,7 +33,10 @@ const (
 
 // System preset priority level names
 const (
-	PriorityLevelConfigurationNameExempt = "exempt"
+	PriorityLevelConfigurationNameExempt   = "exempt"
+	PriorityLevelConfigurationNameCatchAll = "catch-all"
+	FlowSchemaNameExempt                   = "exempt"
+	FlowSchemaNameCatchAll                 = "catch-all"
 )
 
 // Conditions
@@ -41,6 +44,11 @@ const (
 	FlowSchemaConditionDangling = "Dangling"
 
 	PriorityLevelConfigurationConditionConcurrencyShared = "ConcurrencyShared"
+)
+
+// Constants used by api validation.
+const (
+	FlowSchemaMaxMatchingPrecedence int32 = 10000
 )
 
 // +genclient
@@ -76,7 +84,7 @@ type FlowSchemaList struct {
 	metav1.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// `items` is a list of FlowSchemas.
-	// +listType=set
+	// +listType=atomic
 	Items []FlowSchema `json:"items" protobuf:"bytes,2,rep,name=items"`
 }
 
@@ -88,8 +96,8 @@ type FlowSchemaSpec struct {
 	PriorityLevelConfiguration PriorityLevelConfigurationReference `json:"priorityLevelConfiguration" protobuf:"bytes,1,opt,name=priorityLevelConfiguration"`
 	// `matchingPrecedence` is used to choose among the FlowSchemas that match a given request. The chosen
 	// FlowSchema is among those with the numerically lowest (which we take to be logically highest)
-	// MatchingPrecedence.  Each MatchingPrecedence value must be non-negative.
-	// Note that if the precedence is not specified or zero, it will be set to 1000 as default.
+	// MatchingPrecedence.  Each MatchingPrecedence value must be ranged in [1,10000].
+	// Note that if the precedence is not specified, it will be set to 1000 as default.
 	// +optional
 	MatchingPrecedence int32 `json:"matchingPrecedence" protobuf:"varint,2,opt,name=matchingPrecedence"`
 	// `distinguisherMethod` defines how to compute the flow distinguisher for requests that match this schema.
@@ -99,7 +107,7 @@ type FlowSchemaSpec struct {
 	// `rules` describes which requests will match this flow schema. This FlowSchema matches a request if and only if
 	// at least one member of rules matches the request.
 	// if it is an empty slice, there will be no requests matching the FlowSchema.
-	// +listType=set
+	// +listType=atomic
 	// +optional
 	Rules []PolicyRulesWithSubjects `json:"rules,omitempty" protobuf:"bytes,4,rep,name=rules"`
 }
@@ -144,18 +152,18 @@ type PolicyRulesWithSubjects struct {
 	// subjects is the list of normal user, serviceaccount, or group that this rule cares about.
 	// There must be at least one member in this slice.
 	// A slice that includes both the system:authenticated and system:unauthenticated user groups matches every request.
-	// +listType=set
+	// +listType=atomic
 	// Required.
 	Subjects []Subject `json:"subjects" protobuf:"bytes,1,rep,name=subjects"`
 	// `resourceRules` is a slice of ResourcePolicyRules that identify matching requests according to their verb and the
 	// target resource.
 	// At least one of `resourceRules` and `nonResourceRules` has to be non-empty.
-	// +listType=set
+	// +listType=atomic
 	// +optional
 	ResourceRules []ResourcePolicyRule `json:"resourceRules,omitempty" protobuf:"bytes,2,opt,name=resourceRules"`
 	// `nonResourceRules` is a list of NonResourcePolicyRules that identify matching requests according to their verb
 	// and the target non-resource URL.
-	// +listType=set
+	// +listType=atomic
 	// +optional
 	NonResourceRules []NonResourcePolicyRule `json:"nonResourceRules,omitempty" protobuf:"bytes,3,opt,name=nonResourceRules"`
 }
@@ -342,7 +350,7 @@ type PriorityLevelConfigurationList struct {
 	// +optional
 	metav1.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 	// `items` is a list of request-priorities.
-	// +listType=set
+	// +listType=atomic
 	Items []PriorityLevelConfiguration `json:"items" protobuf:"bytes,2,rep,name=items"`
 }
 

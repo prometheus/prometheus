@@ -27,7 +27,7 @@ import (
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	apiv1 "k8s.io/api/core/v1"
-	extensionsv1beta1 "k8s.io/api/extensions/v1beta1"
+	"k8s.io/api/networking/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -317,12 +317,12 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
 					options.FieldSelector = d.selectors.endpoints.field
 					options.LabelSelector = d.selectors.endpoints.label
-					return e.List(options)
+					return e.List(ctx, options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 					options.FieldSelector = d.selectors.endpoints.field
 					options.LabelSelector = d.selectors.endpoints.label
-					return e.Watch(options)
+					return e.Watch(ctx, options)
 				},
 			}
 			s := d.client.CoreV1().Services(namespace)
@@ -330,12 +330,12 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
 					options.FieldSelector = d.selectors.service.field
 					options.LabelSelector = d.selectors.service.label
-					return s.List(options)
+					return s.List(ctx, options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 					options.FieldSelector = d.selectors.service.field
 					options.LabelSelector = d.selectors.service.label
-					return s.Watch(options)
+					return s.Watch(ctx, options)
 				},
 			}
 			p := d.client.CoreV1().Pods(namespace)
@@ -343,12 +343,12 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
 					options.FieldSelector = d.selectors.pod.field
 					options.LabelSelector = d.selectors.pod.label
-					return p.List(options)
+					return p.List(ctx, options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 					options.FieldSelector = d.selectors.pod.field
 					options.LabelSelector = d.selectors.pod.label
-					return p.Watch(options)
+					return p.Watch(ctx, options)
 				},
 			}
 			eps := NewEndpoints(
@@ -369,12 +369,12 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
 					options.FieldSelector = d.selectors.pod.field
 					options.LabelSelector = d.selectors.pod.label
-					return p.List(options)
+					return p.List(ctx, options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 					options.FieldSelector = d.selectors.pod.field
 					options.LabelSelector = d.selectors.pod.label
-					return p.Watch(options)
+					return p.Watch(ctx, options)
 				},
 			}
 			pod := NewPod(
@@ -391,12 +391,12 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
 					options.FieldSelector = d.selectors.service.field
 					options.LabelSelector = d.selectors.service.label
-					return s.List(options)
+					return s.List(ctx, options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 					options.FieldSelector = d.selectors.service.field
 					options.LabelSelector = d.selectors.service.label
-					return s.Watch(options)
+					return s.Watch(ctx, options)
 				},
 			}
 			svc := NewService(
@@ -408,22 +408,22 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		}
 	case RoleIngress:
 		for _, namespace := range namespaces {
-			i := d.client.ExtensionsV1beta1().Ingresses(namespace)
+			i := d.client.NetworkingV1beta1().Ingresses(namespace)
 			ilw := &cache.ListWatch{
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
 					options.FieldSelector = d.selectors.ingress.field
 					options.LabelSelector = d.selectors.ingress.label
-					return i.List(options)
+					return i.List(ctx, options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 					options.FieldSelector = d.selectors.ingress.field
 					options.LabelSelector = d.selectors.ingress.label
-					return i.Watch(options)
+					return i.Watch(ctx, options)
 				},
 			}
 			ingress := NewIngress(
 				log.With(d.logger, "role", "ingress"),
-				cache.NewSharedInformer(ilw, &extensionsv1beta1.Ingress{}, resyncPeriod),
+				cache.NewSharedInformer(ilw, &v1beta1.Ingress{}, resyncPeriod),
 			)
 			d.discoverers = append(d.discoverers, ingress)
 			go ingress.informer.Run(ctx.Done())
@@ -433,12 +433,12 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
 				options.FieldSelector = d.selectors.node.field
 				options.LabelSelector = d.selectors.node.label
-				return d.client.CoreV1().Nodes().List(options)
+				return d.client.CoreV1().Nodes().List(ctx, options)
 			},
 			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 				options.FieldSelector = d.selectors.node.field
 				options.LabelSelector = d.selectors.node.label
-				return d.client.CoreV1().Nodes().Watch(options)
+				return d.client.CoreV1().Nodes().Watch(ctx, options)
 			},
 		}
 		node := NewNode(
