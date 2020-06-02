@@ -132,6 +132,9 @@ func (s *Storage) StartTime() (int64, error) {
 
 // Querier returns a storage.MergeQuerier combining the remote client queriers
 // of each configured remote read endpoint.
+// Returned querier will never return error as all queryables are assumed best effort.
+// Additionally all returned queriers ensure that its Select's SeriesSets have ready data after first `Next` invoke.
+// This is because Prometheus (fanout and secondary queries) can't handle the stream failing half way through by design.
 func (s *Storage) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 	s.mtx.Lock()
 	queryables := s.queryables
@@ -145,7 +148,6 @@ func (s *Storage) Querier(ctx context.Context, mint, maxt int64) (storage.Querie
 		}
 		queriers = append(queriers, q)
 	}
-	// All of those queriers are considered best effort, so we pass them as secondary queriers.
 	return storage.NewMergeQuerier(nil, queriers, storage.ChainedSeriesMerge), nil
 }
 

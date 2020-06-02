@@ -744,6 +744,9 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 			},
 			expectedLabels: []string{"a", "b", "c"},
 		},
+		{
+			// TODO(bwplotka): Add more cases.
+		},
 	} {
 		t.Run("", func(t *testing.T) {
 			q := &mergeGenericQuerier{

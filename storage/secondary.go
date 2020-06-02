@@ -13,25 +13,39 @@
 
 package storage
 
-import "github.com/prometheus/prometheus/pkg/labels"
+import (
+	"sync"
 
-// secondaryQuerier is a wrapper that allows a querier to be treated in best effort manner.
-// This means that a potential error on any method except Close will be passed as warning, and the result will be empty.
-// NOTE: Prometheus treats all remote storages as secondary / best effort ones.
+	"github.com/prometheus/prometheus/pkg/labels"
+	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
+)
+
+// secondaryQuerier is a wrapper that allows a querier to be treated in a best effort manner.
+// This means that an error on any method returned by Querier except Close will be returned as a warning,
+// and the result will be empty.
+//
+// Additionally, Querier ensures that if ANY SeriesSet returned by this querier's Select failed on an initial Next,
+// All other SeriesSet will be return no response as well. This ensures consistent partial response strategy, where you
+// have either full results or none from each secondary Querier.
+// NOTE: This works well only for implementations that only fail during first Next() (e.g fetch from network). If implementation fails
+// during further iterations, set will panic. If Select is invoked after first Next of any returned SeriesSet, querier will panic.
+//
+// Not go-routine safe.
+// NOTE: Prometheus treats all remote storages as secondary / best effort.
 type secondaryQuerier struct {
 	genericQuerier
+
+	once      sync.Once
+	done      bool
+	asyncSets []genericSeriesSet
 }
 
 func newSecondaryQuerierFrom(q Querier) genericQuerier {
-	return &secondaryQuerier{newGenericQuerierFrom(q)}
+	return &secondaryQuerier{genericQuerier: newGenericQuerierFrom(q)}
 }
 
 func newSecondaryQuerierFromChunk(cq ChunkQuerier) genericQuerier {
-	return &secondaryQuerier{newGenericQuerierFromChunk(cq)}
-}
-
-func (s *secondaryQuerier) Select(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) genericSeriesSet {
-	return &secondarySeriesSet{genericSeriesSet: s.genericQuerier.Select(sortSeries, hints, matchers...)}
+	return &secondaryQuerier{genericQuerier: newGenericQuerierFromChunk(cq)}
 }
 
 func (s *secondaryQuerier) LabelValues(name string) ([]string, Warnings, error) {
@@ -50,18 +64,88 @@ func (s *secondaryQuerier) LabelNames() ([]string, Warnings, error) {
 	return names, w, nil
 }
 
-type secondarySeriesSet struct {
-	genericSeriesSet
+func (s *secondaryQuerier) createFn(asyncSet genericSeriesSet) func() (genericSeriesSet, bool) {
+	s.asyncSets = append(s.asyncSets, asyncSet)
+	curr := len(s.asyncSets) - 1
+	return func() (genericSeriesSet, bool) {
+		s.once.Do(func() {
+			// At first create invocation we iterate over all sets and ensure its Next() returns some value without
+			// errors. This is to ensure we support consistent partial failures.
+			var errs tsdb_errors.MultiError
+			for i, set := range s.asyncSets {
+				if set.Next() {
+					continue
+				}
+				// Failed or exhausted set.
+				ws := set.Warnings()
+				if err := set.Err(); err != nil {
+					errs.Add(err)
+					ws = append([]error{err}, ws...)
+				}
+				s.asyncSets[i] = warningsOnlySeriesSet(ws)
+			}
+
+			if errs.Err() != nil {
+				// One failed, ensure all sets returns nothing. (All or nothing logic).
+				for i, set := range s.asyncSets {
+					s.asyncSets[i] = warningsOnlySeriesSet(set.Warnings())
+				}
+			}
+			s.done = true
+		})
+
+		_, ok := s.asyncSets[curr].(warningsOnlySeriesSet)
+		return s.asyncSets[curr], !ok
+	}
 }
 
-func (c *secondarySeriesSet) Err() error {
-	// Mask all errors, this series set is secondary.
+func (s *secondaryQuerier) Select(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) genericSeriesSet {
+	if s.done {
+		panic("secondaryQuerier: Select invoked after first Next of any returned SeriesSet was done")
+	}
+	return &lazySeriesSet{create: s.createFn(s.genericQuerier.Select(sortSeries, hints, matchers...))}
+}
+
+type lazySeriesSet struct {
+	create func() (s genericSeriesSet, ok bool)
+
+	set genericSeriesSet
+}
+
+func (c *lazySeriesSet) Next() bool {
+	if c.set != nil {
+		return c.set.Next()
+	}
+
+	var ok bool
+	c.set, ok = c.create()
+	return ok
+}
+
+func (c *lazySeriesSet) Err() error {
+	if c.set != nil {
+		return c.set.Err()
+	}
 	return nil
 }
 
-func (c *secondarySeriesSet) Warnings() Warnings {
-	if err := c.genericSeriesSet.Err(); err != nil {
-		return append([]error{err}, c.genericSeriesSet.Warnings()...)
+func (c *lazySeriesSet) At() Labels {
+	if c.set != nil {
+		return c.set.At()
 	}
-	return c.genericSeriesSet.Warnings()
+	return nil
 }
+
+func (c *lazySeriesSet) Warnings() Warnings {
+	if c.set != nil {
+		return c.set.Warnings()
+	}
+	return nil
+}
+
+type warningsOnlySeriesSet Warnings
+
+func (warningsOnlySeriesSet) Next() bool           { return false }
+func (warningsOnlySeriesSet) Err() error           { return nil }
+func (warningsOnlySeriesSet) At() Labels           { return nil }
+func (c warningsOnlySeriesSet) Warnings() Warnings { return Warnings(c) }

@@ -652,22 +652,22 @@ func (ng *Engine) populateSeries(querier storage.Querier, s *parser.EvalStmt) {
 	var evalRange time.Duration
 
 	parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
-		hints := &storage.SelectHints{
-			Start: timestamp.FromTime(s.Start),
-			End:   timestamp.FromTime(s.End),
-			Step:  durationToInt64Millis(s.Interval),
-		}
-
-		// We need to make sure we select the timerange selected by the subquery.
-		// TODO(gouthamve): cumulativeSubqueryOffset gives the sum of range and the offset
-		// we can optimise it by separating out the range and offsets, and subtracting the offsets
-		// from end also.
-		subqOffset := ng.cumulativeSubqueryOffset(path)
-		offsetMilliseconds := durationMilliseconds(subqOffset)
-		hints.Start = hints.Start - offsetMilliseconds
-
 		switch n := node.(type) {
 		case *parser.VectorSelector:
+			hints := &storage.SelectHints{
+				Start: timestamp.FromTime(s.Start),
+				End:   timestamp.FromTime(s.End),
+				Step:  durationToInt64Millis(s.Interval),
+			}
+
+			// We need to make sure we select the timerange selected by the subquery.
+			// TODO(gouthamve): cumulativeSubqueryOffset gives the sum of range and the offset
+			// we can optimise it by separating out the range and offsets, and subtracting the offsets
+			// from end also.
+			subqOffset := ng.cumulativeSubqueryOffset(path)
+			offsetMilliseconds := durationMilliseconds(subqOffset)
+			hints.Start = hints.Start - offsetMilliseconds
+
 			if evalRange == 0 {
 				hints.Start = hints.Start - durationMilliseconds(ng.lookbackDelta)
 			} else {
@@ -725,22 +725,19 @@ func extractGroupsFromPath(p []parser.Node) (bool, []string) {
 	return false, nil
 }
 
-func checkAndExpandSeriesSet(ctx context.Context, expr parser.Expr) storage.Warnings {
+func checkAndExpandSeriesSet(ctx context.Context, expr parser.Expr) (storage.Warnings, error) {
 	switch e := expr.(type) {
 	case *parser.MatrixSelector:
 		return checkAndExpandSeriesSet(ctx, e.VectorSelector)
 	case *parser.VectorSelector:
-		if e.Series == nil {
-			series, ws, err := expandSeriesSet(ctx, e.UnexpandedSeriesSet)
-			if err != nil {
-				panic(errorWithWarnings{err: err, warnings: ws})
-			} else {
-				e.Series = series
-			}
-			return ws
+		if e.Series != nil {
+			return nil, nil
 		}
+		series, ws, err := expandSeriesSet(ctx, e.UnexpandedSeriesSet)
+		e.Series = series
+		return ws, err
 	}
-	return nil
+	return nil, nil
 }
 
 func expandSeriesSet(ctx context.Context, it storage.SeriesSet) (res []storage.Series, ws storage.Warnings, err error) {
@@ -1115,7 +1112,10 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		sel := e.Args[matrixArgIndex].(*parser.MatrixSelector)
 		selVS := sel.VectorSelector.(*parser.VectorSelector)
 
-		ws := checkAndExpandSeriesSet(ev.ctx, sel)
+		ws, err := checkAndExpandSeriesSet(ev.ctx, sel)
+		if err != nil {
+			ev.error(errors.Wrap(err, "expanding series"))
+		}
 		warnings = append(warnings, ws...)
 		mat := make(Matrix, 0, len(selVS.Series)) // Output matrix.
 		offset := durationMilliseconds(selVS.Offset)
@@ -1293,7 +1293,10 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		})
 
 	case *parser.VectorSelector:
-		ws := checkAndExpandSeriesSet(ev.ctx, e)
+		ws, err := checkAndExpandSeriesSet(ev.ctx, e)
+		if err != nil {
+			ev.error(errors.Wrap(err, "expanding series"))
+		}
 		mat := make(Matrix, 0, len(e.Series))
 		it := storage.NewBuffer(durationMilliseconds(ev.lookbackDelta))
 		for i, s := range e.Series {
@@ -1320,7 +1323,6 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			} else {
 				putPointSlice(ss.Points)
 			}
-
 		}
 		return mat, ws
 
@@ -1371,10 +1373,11 @@ func durationToInt64Millis(d time.Duration) int64 {
 
 // vectorSelector evaluates a *parser.VectorSelector expression.
 func (ev *evaluator) vectorSelector(node *parser.VectorSelector, ts int64) (Vector, storage.Warnings) {
-	var (
-		ws  = checkAndExpandSeriesSet(ev.ctx, node)
-		vec = make(Vector, 0, len(node.Series))
-	)
+	ws, err := checkAndExpandSeriesSet(ev.ctx, node)
+	if err != nil {
+		ev.error(errors.Wrap(err, "expanding series"))
+	}
+	vec := make(Vector, 0, len(node.Series))
 	it := storage.NewBuffer(durationMilliseconds(ev.lookbackDelta))
 	for i, s := range node.Series {
 		it.Reset(s.Iterator())
@@ -1442,7 +1445,6 @@ func putPointSlice(p []Point) {
 // matrixSelector evaluates a *parser.MatrixSelector expression.
 func (ev *evaluator) matrixSelector(node *parser.MatrixSelector) (Matrix, storage.Warnings) {
 	var (
-		ws = checkAndExpandSeriesSet(ev.ctx, node)
 		vs = node.VectorSelector.(*parser.VectorSelector)
 
 		offset = durationMilliseconds(vs.Offset)
@@ -1453,6 +1455,10 @@ func (ev *evaluator) matrixSelector(node *parser.MatrixSelector) (Matrix, storag
 		it     = storage.NewBuffer(durationMilliseconds(node.Range))
 		series = vs.Series
 	)
+	ws, err := checkAndExpandSeriesSet(ev.ctx, node)
+	if err != nil {
+		ev.error(errors.Wrap(err, "expanding series"))
+	}
 
 	for i, s := range series {
 		if err := contextDone(ev.ctx, "expression evaluation"); err != nil {

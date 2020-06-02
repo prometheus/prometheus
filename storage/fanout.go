@@ -45,7 +45,7 @@ type fanout struct {
 // * If the any secondary querier returns an error the result is discarded, fanout returns only warnings but the Querier
 // operation will claim success.
 //
-// NOTE: In case of Prometheus, it treats all remote storages as secondary / best effort ones.
+// NOTE: In the case of Prometheus, it treats all remote storages as secondary / best effort.
 func NewFanout(logger log.Logger, primary Storage, secondaries ...Storage) Storage {
 	return &fanout{
 		logger:      logger,
@@ -439,7 +439,7 @@ func (c *genericMergeSeriesSet) Next() bool {
 	// If, for the current label set, all the next series sets come from
 	// failed remote storage sources, we want to keep trying with the next label set.
 	for {
-		// Firstly advance all the current series sets.  If any of them have run out
+		// Firstly advance all the current series sets. If any of them have run out
 		// we can drop them, otherwise they should be inserted back into the heap.
 		for _, set := range c.currentSets {
 			if set.Next() {
