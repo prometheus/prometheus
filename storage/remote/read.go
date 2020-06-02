@@ -32,14 +32,27 @@ var remoteReadQueries = prometheus.NewGaugeVec(
 	[]string{remoteName, endpoint},
 )
 
+var remoteReadQueriesTotal = prometheus.NewCounterVec(
+	prometheus.CounterOpts{
+		Namespace: namespace,
+		Subsystem: subsystem,
+		Name:      "remote_read_queries_total",
+		Help:      "The total number of in-flight remote read queries.",
+	},
+	[]string{remoteName, endpoint},
+)
+
 func init() {
 	prometheus.MustRegister(remoteReadQueries)
+	prometheus.MustRegister(remoteReadQueriesTotal)
 }
 
 // QueryableClient returns a storage.Queryable which queries the given
 // Client to select series sets.
 func QueryableClient(c *Client) storage.Queryable {
 	remoteReadQueries.WithLabelValues(c.remoteName, c.url.String())
+	remoteReadQueriesTotal.WithLabelValues(c.remoteName, c.url.String())
+
 	return storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 		return &querier{
 			ctx:    ctx,
@@ -67,6 +80,9 @@ func (q *querier) Select(sortSeries bool, hints *storage.SelectHints, matchers .
 	remoteReadGauge := remoteReadQueries.WithLabelValues(q.client.remoteName, q.client.url.String())
 	remoteReadGauge.Inc()
 	defer remoteReadGauge.Dec()
+
+	remoteReadTotalCounter := remoteReadQueriesTotal.WithLabelValues(q.client.remoteName, q.client.url.String())
+	remoteReadTotalCounter.Inc()
 
 	res, err := q.client.Read(q.ctx, query)
 	if err != nil {
