@@ -39,7 +39,7 @@ func (i *isolationState) Close() {
 }
 
 type isolationAppender struct {
-	appendId uint64
+	appendID uint64
 	prev     *isolationAppender
 	next     *isolationAppender
 }
@@ -50,7 +50,7 @@ type isolation struct {
 	appendMtx sync.RWMutex
 	// Which appends are currently in progress.
 	appendsOpen map[uint64]*isolationAppender
-	// New appenders with higher appendId are added to the end. First element keeps lastAppendId.
+	// New appenders with higher appendID are added to the end. First element keeps lastAppendId.
 	appendsOpenList *isolationAppender
 	// Pool of reusable *isolationAppender to save on allocations.
 	appendersPool sync.Pool
@@ -90,8 +90,8 @@ func (i *isolation) lowWatermark() uint64 {
 		return i.readsOpen.prev.lowWatermark
 	}
 
-	// Lowest appendId from appenders, or lastAppendId.
-	return i.appendsOpenList.next.appendId
+	// Lowest appendID from appenders, or lastAppendId.
+	return i.appendsOpenList.next.appendID
 }
 
 // State returns an object used to control isolation
@@ -100,8 +100,8 @@ func (i *isolation) State() *isolationState {
 	i.appendMtx.RLock() // Take append mutex before read mutex.
 	defer i.appendMtx.RUnlock()
 	isoState := &isolationState{
-		maxAppendID:       i.appendsOpenList.appendId,
-		lowWatermark:      i.appendsOpenList.next.appendId, // Lowest appendId from appenders, or lastAppendId.
+		maxAppendID:       i.appendsOpenList.appendID,
+		lowWatermark:      i.appendsOpenList.next.appendID, // Lowest appendID from appenders, or lastAppendId.
 		incompleteAppends: make(map[uint64]struct{}, len(i.appendsOpen)),
 		isolation:         i,
 	}
@@ -125,25 +125,25 @@ func (i *isolation) newAppendID() uint64 {
 	defer i.appendMtx.Unlock()
 
 	// Last used appendID is stored in head element.
-	i.appendsOpenList.appendId++
+	i.appendsOpenList.appendID++
 
 	app := i.appendersPool.Get().(*isolationAppender)
-	app.appendId = i.appendsOpenList.appendId
+	app.appendID = i.appendsOpenList.appendID
 	app.prev = i.appendsOpenList.prev
 	app.next = i.appendsOpenList
 
 	i.appendsOpenList.prev.next = app
 	i.appendsOpenList.prev = app
 
-	i.appendsOpen[app.appendId] = app
-	return app.appendId
+	i.appendsOpen[app.appendID] = app
+	return app.appendID
 }
 
 func (i *isolation) lastAppendID() uint64 {
 	i.appendMtx.RLock()
 	defer i.appendMtx.RUnlock()
 
-	return i.appendsOpenList.appendId
+	return i.appendsOpenList.appendID
 }
 
 func (i *isolation) closeAppend(appendID uint64) {
