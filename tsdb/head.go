@@ -255,9 +255,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 				Name: "prometheus_tsdb_isolation_high_watermark",
 				Help: "The highest TSDB append ID that has been given out.",
 			}, func() float64 {
-				h.iso.appendMtx.Lock()
-				defer h.iso.appendMtx.Unlock()
-				return float64(h.iso.lastAppendID)
+				return float64(h.iso.lastAppendID())
 			}),
 		)
 	}
