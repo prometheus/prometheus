@@ -47,16 +47,15 @@ type isolationAppender struct {
 // isolation is the global isolation state.
 type isolation struct {
 	// Mutex for accessing lastAppendID and appendsOpen.
-	appendMtx sync.Mutex
-	// Each append is given an internal id.
-	lastAppendID uint64
+	appendMtx sync.RWMutex
 	// Which appends are currently in progress.
-	appendsOpen     map[uint64]*isolationAppender
+	appendsOpen map[uint64]*isolationAppender
+	// New appenders with higher appendId are added to the end. First element keeps lastAppendId.
 	appendsOpenList *isolationAppender
 
 	// Mutex for accessing readsOpen.
 	// If taking both appendMtx and readMtx, take appendMtx first.
-	readMtx sync.Mutex
+	readMtx sync.RWMutex
 	// All current in use isolationStates. This is a doubly-linked list.
 	readsOpen *isolationState
 }
@@ -80,33 +79,31 @@ func newIsolation() *isolation {
 // lowWatermark returns the appendID below which we no longer need to track
 // which appends were from which appendID.
 func (i *isolation) lowWatermark() uint64 {
-	i.appendMtx.Lock() // Take appendMtx first.
-	defer i.appendMtx.Unlock()
-	i.readMtx.Lock()
-	defer i.readMtx.Unlock()
+	i.appendMtx.RLock() // Take appendMtx first.
+	defer i.appendMtx.RUnlock()
+	i.readMtx.RLock()
+	defer i.readMtx.RUnlock()
 	if i.readsOpen.prev != i.readsOpen {
 		return i.readsOpen.prev.lowWatermark
 	}
 
+	// Lowest appendId from appenders, or lastAppendId.
 	return i.appendsOpenList.next.appendId
 }
 
 // State returns an object used to control isolation
 // between a query and appends. Must be closed when complete.
 func (i *isolation) State() *isolationState {
-	i.appendMtx.Lock() // Take append mutex before read mutex.
-	defer i.appendMtx.Unlock()
+	i.appendMtx.RLock() // Take append mutex before read mutex.
+	defer i.appendMtx.RUnlock()
 	isoState := &isolationState{
-		maxAppendID:       i.lastAppendID,
-		lowWatermark:      i.lastAppendID,
+		maxAppendID:       i.appendsOpenList.appendId,
+		lowWatermark:      i.appendsOpenList.next.appendId, // Lowest appendId from appenders, or lastAppendId.
 		incompleteAppends: make(map[uint64]struct{}, len(i.appendsOpen)),
 		isolation:         i,
 	}
 	for k := range i.appendsOpen {
 		isoState.incompleteAppends[k] = struct{}{}
-		if k < isoState.lowWatermark {
-			isoState.lowWatermark = k
-		}
 	}
 
 	i.readMtx.Lock()
@@ -123,16 +120,27 @@ func (i *isolation) State() *isolationState {
 func (i *isolation) newAppendID() uint64 {
 	i.appendMtx.Lock()
 	defer i.appendMtx.Unlock()
-	i.lastAppendID++
+
+	// Last used appendID is stored in head element.
+	i.appendsOpenList.appendId++
 
 	app := &isolationAppender{}
+	app.appendId = i.appendsOpenList.appendId
 	app.prev = i.appendsOpenList.prev
 	app.next = i.appendsOpenList
+
 	i.appendsOpenList.prev.next = app
 	i.appendsOpenList.prev = app
 
-	i.appendsOpen[i.lastAppendID] = app
-	return i.lastAppendID
+	i.appendsOpen[app.appendId] = app
+	return app.appendId
+}
+
+func (i *isolation) lastAppendID() uint64 {
+	i.appendMtx.RLock()
+	defer i.appendMtx.RUnlock()
+
+	return i.appendsOpenList.appendId
 }
 
 func (i *isolation) closeAppend(appendID uint64) {
