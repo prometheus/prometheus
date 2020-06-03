@@ -49,3 +49,53 @@ func BenchmarkIsolation(b *testing.B) {
 		})
 	}
 }
+
+func BenchmarkIsolationWithState(b *testing.B) {
+	for _, goroutines := range []int{10, 100, 1000, 10000} {
+		b.Run(strconv.Itoa(goroutines), func(b *testing.B) {
+			iso := newIsolation()
+
+			wg := sync.WaitGroup{}
+			start := make(chan struct{})
+
+			for g := 0; g < goroutines; g++ {
+				wg.Add(1)
+
+				go func() {
+					defer wg.Done()
+					<-start
+
+					for i := 0; i < b.N; i++ {
+						appendID := iso.newAppendID()
+						_ = iso.lowWatermark()
+
+						iso.closeAppend(appendID)
+					}
+				}()
+			}
+
+			readers := goroutines / 100
+			if readers == 0 {
+				readers++
+			}
+
+			for g := 0; g < readers; g++ {
+				wg.Add(1)
+
+				go func() {
+					defer wg.Done()
+					<-start
+
+					for i := 0; i < b.N; i++ {
+						s := iso.State()
+						s.Close()
+					}
+				}()
+			}
+
+			b.ResetTimer()
+			close(start)
+			wg.Wait()
+		})
+	}
+}
