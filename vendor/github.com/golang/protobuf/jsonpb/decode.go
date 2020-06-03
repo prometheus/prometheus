@@ -24,7 +24,7 @@ import (
 
 const wrapJSONUnmarshalV2 = false
 
-// UnmarshalNext unmarshals the next object in a JSON object stream into m.
+// UnmarshalNext unmarshals the next JSON object from d into m.
 func UnmarshalNext(d *json.Decoder, m proto.Message) error {
 	return new(Unmarshaler).UnmarshalNext(d, m)
 }
@@ -68,7 +68,7 @@ func (u *Unmarshaler) Unmarshal(r io.Reader, m proto.Message) error {
 	return u.UnmarshalNext(json.NewDecoder(r), m)
 }
 
-// UnmarshalNext unmarshals the next object in a JSON object stream into m.
+// UnmarshalNext unmarshals the next JSON object from d into m.
 func (u *Unmarshaler) UnmarshalNext(d *json.Decoder, m proto.Message) error {
 	if m == nil {
 		return errors.New("invalid nil message")

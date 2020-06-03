@@ -108,7 +108,7 @@ const (
 func newFieldValidationInfo(mi *MessageInfo, si structInfo, fd pref.FieldDescriptor, ft reflect.Type) validationInfo {
 	var vi validationInfo
 	switch {
-	case fd.ContainingOneof() != nil:
+	case fd.ContainingOneof() != nil && !fd.ContainingOneof().IsSynthetic():
 		switch fd.Kind() {
 		case pref.MessageKind:
 			vi.typ = validationTypeMessage

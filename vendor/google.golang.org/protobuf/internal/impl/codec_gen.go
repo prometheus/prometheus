@@ -5078,6 +5078,46 @@ var coderStringPtr = pointerCoderFuncs{
 	merge:     mergeStringPtr,
 }
 
+// appendStringPtrValidateUTF8 wire encodes a *string pointer as a String.
+// It panics if the pointer is nil.
+func appendStringPtrValidateUTF8(b []byte, p pointer, f *coderFieldInfo, _ marshalOptions) ([]byte, error) {
+	v := **p.StringPtr()
+	b = protowire.AppendVarint(b, f.wiretag)
+	b = protowire.AppendString(b, v)
+	if !utf8.ValidString(v) {
+		return b, errInvalidUTF8{}
+	}
+	return b, nil
+}
+
+// consumeStringPtrValidateUTF8 wire decodes a *string pointer as a String.
+func consumeStringPtrValidateUTF8(b []byte, p pointer, wtyp protowire.Type, f *coderFieldInfo, _ unmarshalOptions) (out unmarshalOutput, err error) {
+	if wtyp != protowire.BytesType {
+		return out, errUnknown
+	}
+	v, n := protowire.ConsumeString(b)
+	if n < 0 {
+		return out, protowire.ParseError(n)
+	}
+	if !utf8.ValidString(v) {
+		return out, errInvalidUTF8{}
+	}
+	vp := p.StringPtr()
+	if *vp == nil {
+		*vp = new(string)
+	}
+	**vp = v
+	out.n = n
+	return out, nil
+}
+
+var coderStringPtrValidateUTF8 = pointerCoderFuncs{
+	size:      sizeStringPtr,
+	marshal:   appendStringPtrValidateUTF8,
+	unmarshal: consumeStringPtrValidateUTF8,
+	merge:     mergeStringPtr,
+}
+
 // sizeStringSlice returns the size of wire encoding a []string pointer as a repeated String.
 func sizeStringSlice(p pointer, f *coderFieldInfo, _ marshalOptions) (size int) {
 	s := *p.StringSlice()

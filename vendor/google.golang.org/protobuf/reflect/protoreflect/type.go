@@ -281,10 +281,18 @@ type FieldDescriptor interface {
 	// It is usually the camel-cased form of the field name.
 	JSONName() string
 
+	// HasPresence reports whether the field distinguishes between unpopulated
+	// and default values.
+	HasPresence() bool
+
 	// IsExtension reports whether this is an extension field. If false,
 	// then Parent and ContainingMessage refer to the same message.
 	// Otherwise, ContainingMessage and Parent likely differ.
 	IsExtension() bool
+
+	// HasOptionalKeyword reports whether the "optional" keyword was explicitly
+	// specified in the source .proto file.
+	HasOptionalKeyword() bool
 
 	// IsWeak reports whether this is a weak field, which does not impose a
 	// direct dependency on the target type.
@@ -374,6 +382,11 @@ type FieldDescriptors interface {
 // corresponds with the google.protobuf.OneofDescriptorProto message.
 type OneofDescriptor interface {
 	Descriptor
+
+	// IsSynthetic reports whether this is a synthetic oneof created to support
+	// proto3 optional semantics. If true, Fields contains exactly one field
+	// with HasOptionalKeyword specified.
+	IsSynthetic() bool
 
 	// Fields is a list of fields belonging to this oneof.
 	Fields() FieldDescriptors

@@ -114,8 +114,8 @@ type Message interface {
 	// Mutable is a mutating operation and unsafe for concurrent use.
 	Mutable(FieldDescriptor) Value
 
-	// NewField returns a new value for assignable to the field of a given descriptor.
-	// For scalars, this returns the default value.
+	// NewField returns a new value that is assignable to the field
+	// for the given descriptor. For scalars, this returns the default value.
 	// For lists, maps, and messages, this returns a new, empty, mutable value.
 	NewField(FieldDescriptor) Value
 

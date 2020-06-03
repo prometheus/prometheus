@@ -50,6 +50,7 @@ func (f FetchTokenPath) FetchToken(ctx credentials.Context) ([]byte, error) {
 // an OIDC token.
 type WebIdentityRoleProvider struct {
 	credentials.Expiry
+	PolicyArns []*sts.PolicyDescriptorType
 
 	client       stsiface.STSAPI
 	ExpiryWindow time.Duration
@@ -107,6 +108,7 @@ func (p *WebIdentityRoleProvider) RetrieveWithContext(ctx credentials.Context) (
 		sessionName = strconv.FormatInt(now().UnixNano(), 10)
 	}
 	req, resp := p.client.AssumeRoleWithWebIdentityRequest(&sts.AssumeRoleWithWebIdentityInput{
+		PolicyArns:       p.PolicyArns,
 		RoleArn:          &p.roleARN,
 		RoleSessionName:  &sessionName,
 		WebIdentityToken: aws.String(string(b)),

@@ -74,19 +74,54 @@ type MarshalOptions struct {
 
 // Marshal returns the wire-format encoding of m.
 func Marshal(m Message) ([]byte, error) {
+	// Treat nil message interface as an empty message; nothing to output.
+	if m == nil {
+		return nil, nil
+	}
+
 	out, err := MarshalOptions{}.marshal(nil, m.ProtoReflect())
+	if len(out.Buf) == 0 && err == nil {
+		out.Buf = emptyBytesForMessage(m)
+	}
 	return out.Buf, err
 }
 
 // Marshal returns the wire-format encoding of m.
 func (o MarshalOptions) Marshal(m Message) ([]byte, error) {
+	// Treat nil message interface as an empty message; nothing to output.
+	if m == nil {
+		return nil, nil
+	}
+
 	out, err := o.marshal(nil, m.ProtoReflect())
+	if len(out.Buf) == 0 && err == nil {
+		out.Buf = emptyBytesForMessage(m)
+	}
 	return out.Buf, err
+}
+
+// emptyBytesForMessage returns a nil buffer if and only if m is invalid,
+// otherwise it returns a non-nil empty buffer.
+//
+// This is to assist the edge-case where user-code does the following:
+//	m1.OptionalBytes, _ = proto.Marshal(m2)
+// where they expect the proto2 "optional_bytes" field to be populated
+// if any only if m2 is a valid message.
+func emptyBytesForMessage(m Message) []byte {
+	if m == nil || !m.ProtoReflect().IsValid() {
+		return nil
+	}
+	return emptyBuf[:]
 }
 
 // MarshalAppend appends the wire-format encoding of m to b,
 // returning the result.
 func (o MarshalOptions) MarshalAppend(b []byte, m Message) ([]byte, error) {
+	// Treat nil message interface as an empty message; nothing to append.
+	if m == nil {
+		return b, nil
+	}
+
 	out, err := o.marshal(b, m.ProtoReflect())
 	return out.Buf, err
 }
@@ -99,6 +134,9 @@ func (o MarshalOptions) MarshalState(in protoiface.MarshalInput) (protoiface.Mar
 	return o.marshal(in.Buf, in.Message)
 }
 
+// marshal is a centralized function that all marshal operations go through.
+// For profiling purposes, avoid changing the name of this function or
+// introducing other code paths for marshal that do not go through this.
 func (o MarshalOptions) marshal(b []byte, m protoreflect.Message) (out protoiface.MarshalOutput, err error) {
 	allowPartial := o.AllowPartial
 	o.AllowPartial = true
@@ -171,7 +209,7 @@ func growcap(oldcap, wantcap int) (newcap int) {
 
 func (o MarshalOptions) marshalMessageSlow(b []byte, m protoreflect.Message) ([]byte, error) {
 	if messageset.IsMessageSet(m.Descriptor()) {
-		return marshalMessageSet(b, m, o)
+		return o.marshalMessageSet(b, m)
 	}
 	// There are many choices for what order we visit fields in. The default one here
 	// is chosen for reasonable efficiency and simplicity given the protoreflect API.

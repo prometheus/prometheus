@@ -2856,13 +2856,12 @@ func yaml_parser_scan_line_comment(parser *yaml_parser_t, token_mark yaml_mark_t
 						return false
 					}
 					skip_line(parser)
-				} else {
-					if parser.mark.index >= seen {
-						if len(text) == 0 {
-							start_mark = parser.mark
-						}
-						text = append(text, parser.buffer[parser.buffer_pos])
+				} else if parser.mark.index >= seen {
+					if len(text) == 0 {
+						start_mark = parser.mark
 					}
+					text = read(parser, text)
+				} else {
 					skip(parser)
 				}
 			}

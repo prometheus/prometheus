@@ -53,11 +53,13 @@ func (mi *MessageInfo) makeCoderMethods(t reflect.Type, si structInfo) {
 
 	mi.coderFields = make(map[protowire.Number]*coderFieldInfo)
 	fields := mi.Desc.Fields()
+	preallocFields := make([]coderFieldInfo, fields.Len())
 	for i := 0; i < fields.Len(); i++ {
 		fd := fields.Get(i)
 
 		fs := si.fieldsByNumber[fd.Number()]
-		if fd.ContainingOneof() != nil {
+		isOneof := fd.ContainingOneof() != nil && !fd.ContainingOneof().IsSynthetic()
+		if isOneof {
 			fs = si.oneofsByName[fd.ContainingOneof().Name()]
 		}
 		ft := fs.Type
@@ -71,7 +73,7 @@ func (mi *MessageInfo) makeCoderMethods(t reflect.Type, si structInfo) {
 		var funcs pointerCoderFuncs
 		var childMessage *MessageInfo
 		switch {
-		case fd.ContainingOneof() != nil:
+		case isOneof:
 			fieldOffset = offsetOf(fs, mi.Exporter)
 		case fd.IsWeak():
 			fieldOffset = si.weakOffset
@@ -80,7 +82,8 @@ func (mi *MessageInfo) makeCoderMethods(t reflect.Type, si structInfo) {
 			fieldOffset = offsetOf(fs, mi.Exporter)
 			childMessage, funcs = fieldCoder(fd, ft)
 		}
-		cf := &coderFieldInfo{
+		cf := &preallocFields[i]
+		*cf = coderFieldInfo{
 			num:        fd.Number(),
 			offset:     fieldOffset,
 			wiretag:    wiretag,
@@ -89,17 +92,16 @@ func (mi *MessageInfo) makeCoderMethods(t reflect.Type, si structInfo) {
 			funcs:      funcs,
 			mi:         childMessage,
 			validation: newFieldValidationInfo(mi, si, fd, ft),
-			isPointer: (fd.Cardinality() == pref.Repeated ||
-				fd.Kind() == pref.MessageKind ||
-				fd.Kind() == pref.GroupKind ||
-				fd.Syntax() != pref.Proto3),
+			isPointer:  fd.Cardinality() == pref.Repeated || fd.HasPresence(),
 			isRequired: fd.Cardinality() == pref.Required,
 		}
 		mi.orderedCoderFields = append(mi.orderedCoderFields, cf)
 		mi.coderFields[cf.num] = cf
 	}
 	for i, oneofs := 0, mi.Desc.Oneofs(); i < oneofs.Len(); i++ {
-		mi.initOneofFieldCoders(oneofs.Get(i), si)
+		if od := oneofs.Get(i); !od.IsSynthetic() {
+			mi.initOneofFieldCoders(od, si)
+		}
 	}
 	if messageset.IsMessageSet(mi.Desc) {
 		if !mi.extensionOffset.IsValid() {
@@ -123,7 +125,7 @@ func (mi *MessageInfo) makeCoderMethods(t reflect.Type, si structInfo) {
 	}
 	mi.denseCoderFields = make([]*coderFieldInfo, maxDense+1)
 	for _, cf := range mi.orderedCoderFields {
-		if int(cf.num) > len(mi.denseCoderFields) {
+		if int(cf.num) >= len(mi.denseCoderFields) {
 			break
 		}
 		mi.denseCoderFields[cf.num] = cf

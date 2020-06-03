@@ -77,7 +77,7 @@ func (fd *File) Enums() pref.EnumDescriptors           { return &fd.L1.Enums }
 func (fd *File) Messages() pref.MessageDescriptors     { return &fd.L1.Messages }
 func (fd *File) Extensions() pref.ExtensionDescriptors { return &fd.L1.Extensions }
 func (fd *File) Services() pref.ServiceDescriptors     { return &fd.L1.Services }
-func (fd *File) SourceLocations() pref.SourceLocations { return &fd.L2.Locations }
+func (fd *File) SourceLocations() pref.SourceLocations { return &fd.lazyInit().Locations }
 func (fd *File) Format(s fmt.State, r rune)            { descfmt.FormatDesc(s, r, fd) }
 func (fd *File) ProtoType(pref.FileDescriptor)         {}
 func (fd *File) ProtoInternal(pragma.DoNotImplement)   {}
@@ -202,20 +202,21 @@ type (
 		L1 FieldL1
 	}
 	FieldL1 struct {
-		Options         func() pref.ProtoMessage
-		Number          pref.FieldNumber
-		Cardinality     pref.Cardinality // must be consistent with Message.RequiredNumbers
-		Kind            pref.Kind
-		JSONName        jsonName
-		IsWeak          bool // promoted from google.protobuf.FieldOptions
-		HasPacked       bool // promoted from google.protobuf.FieldOptions
-		IsPacked        bool // promoted from google.protobuf.FieldOptions
-		HasEnforceUTF8  bool // promoted from google.protobuf.FieldOptions
-		EnforceUTF8     bool // promoted from google.protobuf.FieldOptions
-		Default         defaultValue
-		ContainingOneof pref.OneofDescriptor // must be consistent with Message.Oneofs.Fields
-		Enum            pref.EnumDescriptor
-		Message         pref.MessageDescriptor
+		Options          func() pref.ProtoMessage
+		Number           pref.FieldNumber
+		Cardinality      pref.Cardinality // must be consistent with Message.RequiredNumbers
+		Kind             pref.Kind
+		JSONName         jsonName
+		IsProto3Optional bool // promoted from google.protobuf.FieldDescriptorProto
+		IsWeak           bool // promoted from google.protobuf.FieldOptions
+		HasPacked        bool // promoted from google.protobuf.FieldOptions
+		IsPacked         bool // promoted from google.protobuf.FieldOptions
+		HasEnforceUTF8   bool // promoted from google.protobuf.FieldOptions
+		EnforceUTF8      bool // promoted from google.protobuf.FieldOptions
+		Default          defaultValue
+		ContainingOneof  pref.OneofDescriptor // must be consistent with Message.Oneofs.Fields
+		Enum             pref.EnumDescriptor
+		Message          pref.MessageDescriptor
 	}
 
 	Oneof struct {
@@ -277,6 +278,12 @@ func (fd *Field) Cardinality() pref.Cardinality { return fd.L1.Cardinality }
 func (fd *Field) Kind() pref.Kind               { return fd.L1.Kind }
 func (fd *Field) HasJSONName() bool             { return fd.L1.JSONName.has }
 func (fd *Field) JSONName() string              { return fd.L1.JSONName.get(fd) }
+func (fd *Field) HasPresence() bool {
+	return fd.L1.Cardinality != pref.Repeated && (fd.L0.ParentFile.L1.Syntax == pref.Proto2 || fd.L1.Message != nil || fd.L1.ContainingOneof != nil)
+}
+func (fd *Field) HasOptionalKeyword() bool {
+	return (fd.L0.ParentFile.L1.Syntax == pref.Proto2 && fd.L1.Cardinality == pref.Optional && fd.L1.ContainingOneof == nil) || fd.L1.IsProto3Optional
+}
 func (fd *Field) IsPacked() bool {
 	if !fd.L1.HasPacked && fd.L0.ParentFile.L1.Syntax != pref.Proto2 && fd.L1.Cardinality == pref.Repeated {
 		switch fd.L1.Kind {
@@ -338,6 +345,9 @@ func (fd *Field) EnforceUTF8() bool {
 	return fd.L0.ParentFile.L1.Syntax == pref.Proto3
 }
 
+func (od *Oneof) IsSynthetic() bool {
+	return od.L0.ParentFile.L1.Syntax == pref.Proto3 && len(od.L1.Fields.List) == 1 && od.L1.Fields.List[0].HasOptionalKeyword()
+}
 func (od *Oneof) Options() pref.ProtoMessage {
 	if f := od.L1.Options; f != nil {
 		return f()
@@ -361,12 +371,13 @@ type (
 		Kind        pref.Kind
 	}
 	ExtensionL2 struct {
-		Options  func() pref.ProtoMessage
-		JSONName jsonName
-		IsPacked bool // promoted from google.protobuf.FieldOptions
-		Default  defaultValue
-		Enum     pref.EnumDescriptor
-		Message  pref.MessageDescriptor
+		Options          func() pref.ProtoMessage
+		JSONName         jsonName
+		IsProto3Optional bool // promoted from google.protobuf.FieldDescriptorProto
+		IsPacked         bool // promoted from google.protobuf.FieldOptions
+		Default          defaultValue
+		Enum             pref.EnumDescriptor
+		Message          pref.MessageDescriptor
 	}
 )
 
@@ -376,11 +387,15 @@ func (xd *Extension) Options() pref.ProtoMessage {
 	}
 	return descopts.Field
 }
-func (xd *Extension) Number() pref.FieldNumber                   { return xd.L1.Number }
-func (xd *Extension) Cardinality() pref.Cardinality              { return xd.L1.Cardinality }
-func (xd *Extension) Kind() pref.Kind                            { return xd.L1.Kind }
-func (xd *Extension) HasJSONName() bool                          { return xd.lazyInit().JSONName.has }
-func (xd *Extension) JSONName() string                           { return xd.lazyInit().JSONName.get(xd) }
+func (xd *Extension) Number() pref.FieldNumber      { return xd.L1.Number }
+func (xd *Extension) Cardinality() pref.Cardinality { return xd.L1.Cardinality }
+func (xd *Extension) Kind() pref.Kind               { return xd.L1.Kind }
+func (xd *Extension) HasJSONName() bool             { return xd.lazyInit().JSONName.has }
+func (xd *Extension) JSONName() string              { return xd.lazyInit().JSONName.get(xd) }
+func (xd *Extension) HasPresence() bool             { return xd.L1.Cardinality != pref.Repeated }
+func (xd *Extension) HasOptionalKeyword() bool {
+	return (xd.L0.ParentFile.L1.Syntax == pref.Proto2 && xd.L1.Cardinality == pref.Optional) || xd.lazyInit().IsProto3Optional
+}
 func (xd *Extension) IsPacked() bool                             { return xd.lazyInit().IsPacked }
 func (xd *Extension) IsExtension() bool                          { return true }
 func (xd *Extension) IsWeak() bool                               { return false }
@@ -592,7 +607,7 @@ func (dv *defaultValue) get(fd pref.FieldDescriptor) pref.Value {
 		// TODO: Avoid panic if we're running with the race detector
 		// and instead spawn a goroutine that periodically resets
 		// this value back to the original to induce a race.
-		panic("detected mutation on the default bytes")
+		panic(fmt.Sprintf("detected mutation on the default bytes for %v", fd.FullName()))
 	}
 	return dv.val
 }

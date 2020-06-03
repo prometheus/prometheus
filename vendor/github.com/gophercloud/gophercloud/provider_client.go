@@ -305,6 +305,9 @@ type RequestOpts struct {
 	// ErrorContext specifies the resource error type to return if an error is encountered.
 	// This lets resources override default error messages based on the response status code.
 	ErrorContext error
+	// KeepResponseBody specifies whether to keep the HTTP response body. Usually used, when the HTTP
+	// response body is considered for further use. Valid when JSONResponse is nil.
+	KeepResponseBody bool
 }
 
 // requestState contains temporary state for a single ProviderClient.Request() call.
@@ -346,6 +349,11 @@ func (client *ProviderClient) doRequest(method, url string, options *RequestOpts
 		contentType = &applicationJSON
 	}
 
+	// Return an error, when "KeepResponseBody" is true and "JSONResponse" is not nil
+	if options.KeepResponseBody && options.JSONResponse != nil {
+		return nil, errors.New("cannot use KeepResponseBody when JSONResponse is not nil")
+	}
+
 	if options.RawBody != nil {
 		body = options.RawBody
 	}
@@ -383,9 +391,6 @@ func (client *ProviderClient) doRequest(method, url string, options *RequestOpts
 	for k, v := range client.AuthenticatedHeaders() {
 		req.Header.Set(k, v)
 	}
-
-	// Set connection parameter to close the connection immediately when we've got the response
-	req.Close = true
 
 	prereqtok := req.Header.Get("X-Auth-Token")
 
@@ -514,7 +519,22 @@ func (client *ProviderClient) doRequest(method, url string, options *RequestOpts
 	// Parse the response body as JSON, if requested to do so.
 	if options.JSONResponse != nil {
 		defer resp.Body.Close()
+		// Don't decode JSON when there is no content
+		if resp.StatusCode == http.StatusNoContent {
+			// read till EOF, otherwise the connection will be closed and cannot be reused
+			_, err = io.Copy(ioutil.Discard, resp.Body)
+			return resp, err
+		}
 		if err := json.NewDecoder(resp.Body).Decode(options.JSONResponse); err != nil {
+			return nil, err
+		}
+	}
+
+	// Close unused body to allow the HTTP connection to be reused
+	if !options.KeepResponseBody && options.JSONResponse == nil {
+		defer resp.Body.Close()
+		// read till EOF, otherwise the connection will be closed and cannot be reused
+		if _, err := io.Copy(ioutil.Discard, resp.Body); err != nil {
 			return nil, err
 		}
 	}
@@ -523,16 +543,16 @@ func (client *ProviderClient) doRequest(method, url string, options *RequestOpts
 }
 
 func defaultOkCodes(method string) []int {
-	switch {
-	case method == "GET":
+	switch method {
+	case "GET", "HEAD":
 		return []int{200}
-	case method == "POST":
+	case "POST":
 		return []int{201, 202}
-	case method == "PUT":
+	case "PUT":
 		return []int{201, 202}
-	case method == "PATCH":
+	case "PATCH":
 		return []int{200, 202, 204}
-	case method == "DELETE":
+	case "DELETE":
 		return []int{202, 204}
 	}
 

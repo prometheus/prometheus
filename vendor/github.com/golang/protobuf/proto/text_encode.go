@@ -94,16 +94,16 @@ var (
 )
 
 // MarshalText writes the proto text format of m to w.
-func MarshalText(w io.Writer, pb Message) error { return defaultTextMarshaler.Marshal(w, pb) }
+func MarshalText(w io.Writer, m Message) error { return defaultTextMarshaler.Marshal(w, m) }
 
 // MarshalTextString returns a proto text formatted string of m.
-func MarshalTextString(pb Message) string { return defaultTextMarshaler.Text(pb) }
+func MarshalTextString(m Message) string { return defaultTextMarshaler.Text(m) }
 
 // CompactText writes the compact proto text format of m to w.
-func CompactText(w io.Writer, pb Message) error { return compactTextMarshaler.Marshal(w, pb) }
+func CompactText(w io.Writer, m Message) error { return compactTextMarshaler.Marshal(w, m) }
 
 // CompactTextString returns a compact proto text formatted string of m.
-func CompactTextString(pb Message) string { return compactTextMarshaler.Text(pb) }
+func CompactTextString(m Message) string { return compactTextMarshaler.Text(m) }
 
 var (
 	newline         = []byte("\n")

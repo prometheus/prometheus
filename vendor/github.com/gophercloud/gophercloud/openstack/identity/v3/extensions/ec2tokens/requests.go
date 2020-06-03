@@ -202,8 +202,15 @@ func EC2CredentialsBuildAuthorizationHeaderV4(opts AuthOptions, signedHeaders st
 		signature)
 }
 
-// ToTokenV3ScopeMap is a dummy method to satisfy tokens.AuthOptionsBuilder interface
+// ToTokenV3ScopeMap is a dummy method to satisfy tokens.AuthOptionsBuilder
+// interface.
 func (opts *AuthOptions) ToTokenV3ScopeMap() (map[string]interface{}, error) {
+	return nil, nil
+}
+
+// ToTokenV3HeadersMap allows AuthOptions to satisfy the AuthOptionsBuilder
+// interface in the v3 tokens package.
+func (opts *AuthOptions) ToTokenV3HeadersMap(map[string]interface{}) (map[string]string, error) {
 	return nil, nil
 }
 
@@ -295,10 +302,7 @@ func Create(c *gophercloud.ServiceClient, opts tokens.AuthOptionsBuilder) (r tok
 		MoreHeaders: map[string]string{"X-Auth-Token": ""},
 		OkCodes:     []int{200},
 	})
-	r.Err = err
-	if resp != nil {
-		r.Header = resp.Header
-	}
+	_, r.Header, r.Err = gophercloud.ParseResponse(resp, err)
 	return
 }
 
@@ -318,10 +322,7 @@ func ValidateS3Token(c *gophercloud.ServiceClient, opts tokens.AuthOptionsBuilde
 		MoreHeaders: map[string]string{"X-Auth-Token": ""},
 		OkCodes:     []int{200},
 	})
-	r.Err = err
-	if resp != nil {
-		r.Header = resp.Header
-	}
+	_, r.Header, r.Err = gophercloud.ParseResponse(resp, err)
 	return
 }
 

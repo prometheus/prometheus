@@ -68,7 +68,7 @@ func HasExtension(m Message, xt *ExtensionDesc) (has bool) {
 	return has
 }
 
-// ClearExtension removes the the exntesion field from m
+// ClearExtension removes the extension field from m
 // either as an explicitly populated field or as an unknown field.
 func ClearExtension(m Message, xt *ExtensionDesc) {
 	mr := MessageReflect(m)
@@ -108,7 +108,7 @@ func ClearAllExtensions(m Message) {
 	clearUnknown(mr, mr.Descriptor().ExtensionRanges())
 }
 
-// GetExtension retrieves a proto2 extended field from pb.
+// GetExtension retrieves a proto2 extended field from m.
 //
 // If the descriptor is type complete (i.e., ExtensionDesc.ExtensionType is non-nil),
 // then GetExtension parses the encoded field and returns a Go value of the specified type.

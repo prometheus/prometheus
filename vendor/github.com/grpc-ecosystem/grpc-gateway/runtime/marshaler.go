@@ -50,6 +50,6 @@ func (f EncoderFunc) Encode(v interface{}) error { return f(v) }
 
 // Delimited defines the streaming delimiter.
 type Delimited interface {
-	// Delimiter returns the record seperator for the stream.
+	// Delimiter returns the record separator for the stream.
 	Delimiter() []byte
 }

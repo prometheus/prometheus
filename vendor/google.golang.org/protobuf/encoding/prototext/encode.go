@@ -18,6 +18,7 @@ import (
 	"google.golang.org/protobuf/internal/flags"
 	"google.golang.org/protobuf/internal/mapsort"
 	"google.golang.org/protobuf/internal/pragma"
+	"google.golang.org/protobuf/internal/strs"
 	"google.golang.org/protobuf/proto"
 	pref "google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/reflect/protoregistry"
@@ -55,6 +56,15 @@ type MarshalOptions struct {
 	// Indent can only be composed of space or tab characters.
 	Indent string
 
+	// EmitASCII specifies whether to format strings and bytes as ASCII only
+	// as opposed to using UTF-8 encoding when possible.
+	EmitASCII bool
+
+	// allowInvalidUTF8 specifies whether to permit the encoding of strings
+	// with invalid UTF-8. This is unexported as it is intended to only
+	// be specified by the Format method.
+	allowInvalidUTF8 bool
+
 	// AllowPartial allows messages that have missing required fields to marshal
 	// without returning an error. If AllowPartial is false (the default),
 	// Marshal will return error if there are any missing required fields.
@@ -81,6 +91,7 @@ func (o MarshalOptions) Format(m proto.Message) string {
 	if m == nil || !m.ProtoReflect().IsValid() {
 		return "<nil>" // invalid syntax, but okay since this is for debugging
 	}
+	o.allowInvalidUTF8 = true
 	o.AllowPartial = true
 	o.EmitUnknown = true
 	b, _ := o.Marshal(m)
@@ -91,7 +102,13 @@ func (o MarshalOptions) Format(m proto.Message) string {
 // MarshalOptions object. Do not depend on the output being stable. It may
 // change over time across different versions of the program.
 func (o MarshalOptions) Marshal(m proto.Message) ([]byte, error) {
-	const outputASCII = false
+	return o.marshal(m)
+}
+
+// marshal is a centralized function that all marshal operations go through.
+// For profiling purposes, avoid changing the name of this function or
+// introducing other code paths for marshal that do not go through this.
+func (o MarshalOptions) marshal(m proto.Message) ([]byte, error) {
 	var delims = [2]byte{'{', '}'}
 
 	if o.Multiline && o.Indent == "" {
@@ -101,9 +118,15 @@ func (o MarshalOptions) Marshal(m proto.Message) ([]byte, error) {
 		o.Resolver = protoregistry.GlobalTypes
 	}
 
-	internalEnc, err := text.NewEncoder(o.Indent, delims, outputASCII)
+	internalEnc, err := text.NewEncoder(o.Indent, delims, o.EmitASCII)
 	if err != nil {
 		return nil, err
+	}
+
+	// Treat nil message interface as an empty message,
+	// in which case there is nothing to output.
+	if m == nil {
+		return []byte{}, nil
 	}
 
 	enc := encoder{internalEnc, o}
@@ -209,7 +232,7 @@ func (e encoder) marshalSingular(val pref.Value, fd pref.FieldDescriptor) error 
 
 	case pref.StringKind:
 		s := val.String()
-		if !utf8.ValidString(s) {
+		if !e.opts.allowInvalidUTF8 && strs.EnforceUTF8(fd) && !utf8.ValidString(s) {
 			return errors.InvalidUTF8(string(fd.FullName()))
 		}
 		e.WriteString(s)
