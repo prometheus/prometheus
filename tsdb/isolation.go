@@ -52,6 +52,8 @@ type isolation struct {
 	appendsOpen map[uint64]*isolationAppender
 	// New appenders with higher appendId are added to the end. First element keeps lastAppendId.
 	appendsOpenList *isolationAppender
+	// Pool of reusable *isolationAppender to save on allocations.
+	appendersPool sync.Pool
 
 	// Mutex for accessing readsOpen.
 	// If taking both appendMtx and readMtx, take appendMtx first.
@@ -73,6 +75,7 @@ func newIsolation() *isolation {
 		appendsOpen:     map[uint64]*isolationAppender{},
 		appendsOpenList: appender,
 		readsOpen:       isoState,
+		appendersPool:   sync.Pool{New: func() interface{} { return &isolationAppender{} }},
 	}
 }
 
@@ -124,7 +127,7 @@ func (i *isolation) newAppendID() uint64 {
 	// Last used appendID is stored in head element.
 	i.appendsOpenList.appendId++
 
-	app := &isolationAppender{}
+	app := i.appendersPool.Get().(*isolationAppender)
 	app.appendId = i.appendsOpenList.appendId
 	app.prev = i.appendsOpenList.prev
 	app.next = i.appendsOpenList
@@ -153,6 +156,10 @@ func (i *isolation) closeAppend(appendID uint64) {
 		app.next.prev = app.prev
 
 		delete(i.appendsOpen, appendID)
+
+		// Clear all fields, and return to the pool.
+		*app = isolationAppender{}
+		i.appendersPool.Put(app)
 	}
 }
 
