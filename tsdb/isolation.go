@@ -51,6 +51,8 @@ type isolation struct {
 	// Which appends are currently in progress.
 	appendsOpen map[uint64]*isolationAppender
 	// New appenders with higher appendID are added to the end. First element keeps lastAppendId.
+	// appendsOpenList.next points to the first element and appendsOpenList.prev points to the last element.
+	// If there are no appenders, both point back to appendsOpenList.
 	appendsOpenList *isolationAppender
 	// Pool of reusable *isolationAppender to save on allocations.
 	appendersPool sync.Pool
