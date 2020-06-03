@@ -38,6 +38,12 @@ func (i *isolationState) Close() {
 	i.prev.next = i.next
 }
 
+type isolationAppender struct {
+	appendId uint64
+	prev     *isolationAppender
+	next     *isolationAppender
+}
+
 // isolation is the global isolation state.
 type isolation struct {
 	// Mutex for accessing lastAppendID and appendsOpen.
@@ -45,7 +51,9 @@ type isolation struct {
 	// Each append is given an internal id.
 	lastAppendID uint64
 	// Which appends are currently in progress.
-	appendsOpen map[uint64]struct{}
+	appendsOpen     map[uint64]*isolationAppender
+	appendsOpenList *isolationAppender
+
 	// Mutex for accessing readsOpen.
 	// If taking both appendMtx and readMtx, take appendMtx first.
 	readMtx sync.Mutex
@@ -58,9 +66,14 @@ func newIsolation() *isolation {
 	isoState.next = isoState
 	isoState.prev = isoState
 
+	appender := &isolationAppender{}
+	appender.next = appender
+	appender.prev = appender
+
 	return &isolation{
-		appendsOpen: map[uint64]struct{}{},
-		readsOpen:   isoState,
+		appendsOpen:     map[uint64]*isolationAppender{},
+		appendsOpenList: appender,
+		readsOpen:       isoState,
 	}
 }
 
@@ -74,13 +87,8 @@ func (i *isolation) lowWatermark() uint64 {
 	if i.readsOpen.prev != i.readsOpen {
 		return i.readsOpen.prev.lowWatermark
 	}
-	lw := i.lastAppendID
-	for k := range i.appendsOpen {
-		if k < lw {
-			lw = k
-		}
-	}
-	return lw
+
+	return i.appendsOpenList.next.appendId
 }
 
 // State returns an object used to control isolation
@@ -116,14 +124,28 @@ func (i *isolation) newAppendID() uint64 {
 	i.appendMtx.Lock()
 	defer i.appendMtx.Unlock()
 	i.lastAppendID++
-	i.appendsOpen[i.lastAppendID] = struct{}{}
+
+	app := &isolationAppender{}
+	app.prev = i.appendsOpenList.prev
+	app.next = i.appendsOpenList
+	i.appendsOpenList.prev.next = app
+	i.appendsOpenList.prev = app
+
+	i.appendsOpen[i.lastAppendID] = app
 	return i.lastAppendID
 }
 
 func (i *isolation) closeAppend(appendID uint64) {
 	i.appendMtx.Lock()
 	defer i.appendMtx.Unlock()
-	delete(i.appendsOpen, appendID)
+
+	app := i.appendsOpen[appendID]
+	if app != nil {
+		app.prev.next = app.next
+		app.next.prev = app.prev
+
+		delete(i.appendsOpen, appendID)
+	}
 }
 
 // The transactionID ring buffer.
