@@ -1340,7 +1340,7 @@ func TestScrapeLoopAppendGracefullyIfAmendOrOutOfOrderOrOutOfBounds(t *testing.T
 	}
 	testutil.Equals(t, want, app.result, "Appended samples not as expected")
 	testutil.Equals(t, 4, total)
-	testutil.Equals(t, 1, added)
+	testutil.Equals(t, 4, added)
 	testutil.Equals(t, 1, seriesAdded)
 }
 
@@ -1365,7 +1365,7 @@ func TestScrapeLoopOutOfBoundsTimeError(t *testing.T) {
 	now := time.Now().Add(20 * time.Minute)
 	total, added, seriesAdded, err := sl.append([]byte("normal 1\n"), "", now)
 	testutil.Equals(t, 1, total)
-	testutil.Equals(t, 0, added)
+	testutil.Equals(t, 1, added)
 	testutil.Equals(t, 0, seriesAdded)
 
 	testutil.Ok(t, err)
