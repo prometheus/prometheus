@@ -47,7 +47,7 @@ var remoteReadQueriesHistogram = prometheus.NewHistogramVec(
 	prometheus.HistogramOpts{
 		Namespace: namespace,
 		Subsystem: subsystem,
-		Name:      "remote_read_request_duration_seconds",
+		Name:      "read_request_duration_seconds",
 		Help:      "Histogram of the latency for remote read requests.",
 		Buckets:   prometheus.DefBuckets,
 	},
