@@ -16,6 +16,7 @@ package remote
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -42,9 +43,19 @@ var remoteReadQueriesTotal = prometheus.NewCounterVec(
 	[]string{remoteName, endpoint},
 )
 
+var remoteReadQueriesHistogram = prometheus.NewHistogramVec(
+	prometheus.HistogramOpts{
+		Namespace: namespace,
+		Subsystem: subsystem,
+		Name:      "remote_read_request_duration_seconds",
+		Help:      "Histogram of the latency for remote read requests.",
+		Buckets:   prometheus.DefBuckets,
+	},
+	[]string{remoteName, endpoint},
+)
+
 func init() {
-	prometheus.MustRegister(remoteReadQueries)
-	prometheus.MustRegister(remoteReadQueriesTotal)
+	prometheus.MustRegister(remoteReadQueries, remoteReadQueriesTotal, remoteReadQueriesHistogram)
 }
 
 // QueryableClient returns a storage.Queryable which queries the given
@@ -52,6 +63,7 @@ func init() {
 func QueryableClient(c *Client) storage.Queryable {
 	remoteReadQueries.WithLabelValues(c.remoteName, c.url.String())
 	remoteReadQueriesTotal.WithLabelValues(c.remoteName, c.url.String())
+	remoteReadQueriesHistogram.WithLabelValues(c.remoteName, c.url.String())
 
 	return storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 		return &querier{
@@ -72,6 +84,8 @@ type querier struct {
 
 // Select implements storage.Querier and uses the given matchers to read series sets from the Client.
 func (q *querier) Select(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
+	begin := time.Now()
+
 	query, err := ToQuery(q.mint, q.maxt, matchers, hints)
 	if err != nil {
 		return nil, nil, err
@@ -83,6 +97,9 @@ func (q *querier) Select(sortSeries bool, hints *storage.SelectHints, matchers .
 
 	remoteReadTotalCounter := remoteReadQueriesTotal.WithLabelValues(q.client.remoteName, q.client.url.String())
 	remoteReadTotalCounter.Inc()
+
+	remoteReadQueriesHistogram := remoteReadQueriesHistogram.WithLabelValues(q.client.remoteName, q.client.url.String())
+	remoteReadQueriesHistogram.Observe(time.Since(begin).Seconds())
 
 	res, err := q.client.Read(q.ctx, query)
 	if err != nil {
