@@ -1928,3 +1928,32 @@ func TestCheckAddError(t *testing.T) {
 	sl.checkAddError(nil, nil, nil, storage.ErrOutOfOrderSample, nil, &appErrs)
 	testutil.Equals(t, 1, appErrs.numOutOfOrder)
 }
+
+func TestScrapeLoopPostRelabelingGauge(t *testing.T) {
+	sl := newScrapeLoop(context.Background(),
+		nil, nil, nil,
+		func(l labels.Labels) labels.Labels {
+			if l.Has("deleteme") {
+				return nil
+			}
+			return l
+		},
+		nopMutator,
+		func() storage.Appender { return &errorAppender{} },
+		nil,
+		0,
+		true,
+	)
+
+	total, added, seriesAdded, err := sl.append([]byte("out_of_order 1\namend 1\nnormal 1\nout_of_bounds 1\n"), "", time.Now())
+	testutil.Ok(t, err)
+	testutil.Equals(t, 4, total)
+	testutil.Equals(t, 4, added)
+	testutil.Equals(t, 1, seriesAdded)
+
+	total, added, seriesAdded, err = sl.append([]byte("out_of_order 1\namend 1\nnormal 1\nout_of_bounds 1\nout_of_order{deleteme=\"yes\"} 1\namend{deleteme=\"yes\"} 1\nnormal{deleteme=\"yes\"} 1\nout_of_bounds{deleteme=\"yes\"} 1"), "", time.Now())
+	testutil.Ok(t, err)
+	testutil.Equals(t, 8, total)
+	testutil.Equals(t, 4, added)
+	testutil.Equals(t, 1, seriesAdded)
+}
