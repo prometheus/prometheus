@@ -121,6 +121,7 @@ func (r descsByName) initFieldsFromDescriptorProto(fds []*descriptorpb.FieldDesc
 		if f.L0, err = r.makeBase(f, parent, fd.GetName(), i, sb); err != nil {
 			return nil, err
 		}
+		f.L1.IsProto3Optional = fd.GetProto3Optional()
 		if opts := fd.GetOptions(); opts != nil {
 			opts = proto.Clone(opts).(*descriptorpb.FieldOptions)
 			f.L1.Options = func() protoreflect.ProtoMessage { return opts }

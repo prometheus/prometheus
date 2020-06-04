@@ -154,13 +154,19 @@ func processFile(filename string, in io.Reader, out io.Writer, argType argumentT
 		// formatting has changed
 		if *list {
 			fmt.Fprintln(out, filename)
+			exitCode = 1
 		}
 		if *write {
 			if argType == fromStdin {
 				// filename is "<standard input>"
 				return errors.New("can't use -w on stdin")
 			}
-			err = ioutil.WriteFile(filename, res, 0)
+			// On Windows, we need to re-set the permissions from the file. See golang/go#38225.
+			var perms os.FileMode
+			if fi, err := os.Stat(filename); err == nil {
+				perms = fi.Mode() & os.ModePerm
+			}
+			err = ioutil.WriteFile(filename, res, perms)
 			if err != nil {
 				return err
 			}

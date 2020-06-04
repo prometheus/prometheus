@@ -12,7 +12,7 @@ import (
 )
 
 type mapConverter struct {
-	goType           reflect.Type
+	goType           reflect.Type // map[K]V
 	keyConv, valConv Converter
 }
 
@@ -43,11 +43,11 @@ func (c *mapConverter) IsValidPB(v pref.Value) bool {
 	if !ok {
 		return false
 	}
-	return mapv.v.Type() == c.goType && mapv.IsValid()
+	return mapv.v.Type() == c.goType
 }
 
 func (c *mapConverter) IsValidGo(v reflect.Value) bool {
-	return v.Type() == c.goType
+	return v.IsValid() && v.Type() == c.goType
 }
 
 func (c *mapConverter) New() pref.Value {

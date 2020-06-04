@@ -1,6 +1,11 @@
 Changes by Version
 ==================
 
+2.23.1 (2020-04-28)
+-------------------
+- Fix regression by handling nil logger correctly ([#507](https://github.com/jaegertracing/jaeger-client-go/pull/507)) -- Prithvi Raj
+
+
 2.23.0 (2020-04-22)
 -------------------
 

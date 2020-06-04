@@ -140,6 +140,9 @@ func ToFieldDescriptorProto(field protoreflect.FieldDescriptor) *descriptorpb.Fi
 	if field.HasJSONName() {
 		p.JsonName = proto.String(field.JSONName())
 	}
+	if field.Syntax() == protoreflect.Proto3 && field.HasOptionalKeyword() {
+		p.Proto3Optional = proto.Bool(true)
+	}
 	if field.HasDefault() {
 		def, err := defval.Marshal(field.Default(), field.DefaultEnumValue(), field.Kind(), defval.Descriptor)
 		if err != nil && field.DefaultEnumValue() != nil {

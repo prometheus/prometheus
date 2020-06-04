@@ -30,9 +30,9 @@ func Less(a, b protoreflect.FieldDescriptor) bool {
 			return a.Number() < b.Number()
 		}
 		return oa.Index() < ob.Index()
-	case oa != nil:
+	case oa != nil && !oa.IsSynthetic():
 		return false
-	case ob != nil:
+	case ob != nil && !ob.IsSynthetic():
 		return true
 	default:
 		return a.Number() < b.Number()

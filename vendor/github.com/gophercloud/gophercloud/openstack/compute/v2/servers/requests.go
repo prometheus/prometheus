@@ -279,28 +279,32 @@ func Create(client *gophercloud.ServiceClient, opts CreateOptsBuilder) (r Create
 		r.Err = err
 		return
 	}
-	_, r.Err = client.Post(listURL(client), reqBody, &r.Body, nil)
+	resp, err := client.Post(listURL(client), reqBody, &r.Body, nil)
+	_, r.Header, r.Err = gophercloud.ParseResponse(resp, err)
 	return
 }
 
 // Delete requests that a server previously provisioned be removed from your
 // account.
 func Delete(client *gophercloud.ServiceClient, id string) (r DeleteResult) {
-	_, r.Err = client.Delete(deleteURL(client, id), nil)
+	resp, err := client.Delete(deleteURL(client, id), nil)
+	_, r.Header, r.Err = gophercloud.ParseResponse(resp, err)
 	return
 }
 
 // ForceDelete forces the deletion of a server.
 func ForceDelete(client *gophercloud.ServiceClient, id string) (r ActionResult) {
-	_, r.Err = client.Post(actionURL(client, id), map[string]interface{}{"forceDelete": ""}, nil, nil)
+	resp, err := client.Post(actionURL(client, id), map[string]interface{}{"forceDelete": ""}, nil, nil)
+	_, r.Header, r.Err = gophercloud.ParseResponse(resp, err)
 	return
 }
 
 // Get requests details on a single server, by ID.
 func Get(client *gophercloud.ServiceClient, id string) (r GetResult) {
-	_, r.Err = client.Get(getURL(client, id), &r.Body, &gophercloud.RequestOpts{
+	resp, err := client.Get(getURL(client, id), &r.Body, &gophercloud.RequestOpts{
 		OkCodes: []int{200, 203},
 	})
+	_, r.Header, r.Err = gophercloud.ParseResponse(resp, err)
 	return
 }
 
@@ -337,9 +341,10 @@ func Update(client *gophercloud.ServiceClient, id string, opts UpdateOptsBuilder
 		r.Err = err
 		return
 	}
-	_, r.Err = client.Put(updateURL(client, id), b, &r.Body, &gophercloud.RequestOpts{
+	resp, err := client.Put(updateURL(client, id), b, &r.Body, &gophercloud.RequestOpts{
 		OkCodes: []int{200},
 	})
+	_, r.Header, r.Err = gophercloud.ParseResponse(resp, err)
 	return
 }
 
@@ -351,7 +356,8 @@ func ChangeAdminPassword(client *gophercloud.ServiceClient, id, newPassword stri
 			"adminPass": newPassword,
 		},
 	}
-	_, r.Err = client.Post(actionURL(client, id), b, nil, nil)
+	resp, err := client.Post(actionURL(client, id), b, nil, nil)
+	_, r.Header, r.Err = gophercloud.ParseResponse(resp, err)
 	return
 }
 
@@ -392,7 +398,7 @@ func (opts RebootOpts) ToServerRebootMap() (map[string]interface{}, error) {
 	HardReboot (aka PowerCycle) starts the server instance by physically cutting
 	power to the machine, or if a VM, terminating it at the hypervisor level.
 	It's done. Caput. Full stop.
-	Then, after a brief while, power is rtored or the VM instance restarted.
+	Then, after a brief while, power is restored or the VM instance restarted.
 
 	SoftReboot (aka OSReboot) simply tells the OS to restart under its own
 	procedure.
@@ -405,7 +411,8 @@ func Reboot(client *gophercloud.ServiceClient, id string, opts RebootOptsBuilder
 		r.Err = err
 		return
 	}
-	_, r.Err = client.Post(actionURL(client, id), b, nil, nil)
+	resp, err := client.Post(actionURL(client, id), b, nil, nil)
+	_, r.Header, r.Err = gophercloud.ParseResponse(resp, err)
 	return
 }
 
@@ -464,7 +471,8 @@ func Rebuild(client *gophercloud.ServiceClient, id string, opts RebuildOptsBuild
 		r.Err = err
 		return
 	}
-	_, r.Err = client.Post(actionURL(client, id), b, &r.Body, nil)
+	resp, err := client.Post(actionURL(client, id), b, &r.Body, nil)
+	_, r.Header, r.Err = gophercloud.ParseResponse(resp, err)
 	return
 }
 
@@ -502,23 +510,26 @@ func Resize(client *gophercloud.ServiceClient, id string, opts ResizeOptsBuilder
 		r.Err = err
 		return
 	}
-	_, r.Err = client.Post(actionURL(client, id), b, nil, nil)
+	resp, err := client.Post(actionURL(client, id), b, nil, nil)
+	_, r.Header, r.Err = gophercloud.ParseResponse(resp, err)
 	return
 }
 
 // ConfirmResize confirms a previous resize operation on a server.
 // See Resize() for more details.
 func ConfirmResize(client *gophercloud.ServiceClient, id string) (r ActionResult) {
-	_, r.Err = client.Post(actionURL(client, id), map[string]interface{}{"confirmResize": nil}, nil, &gophercloud.RequestOpts{
+	resp, err := client.Post(actionURL(client, id), map[string]interface{}{"confirmResize": nil}, nil, &gophercloud.RequestOpts{
 		OkCodes: []int{201, 202, 204},
 	})
+	_, r.Header, r.Err = gophercloud.ParseResponse(resp, err)
 	return
 }
 
 // RevertResize cancels a previous resize operation on a server.
 // See Resize() for more details.
 func RevertResize(client *gophercloud.ServiceClient, id string) (r ActionResult) {
-	_, r.Err = client.Post(actionURL(client, id), map[string]interface{}{"revertResize": nil}, nil, nil)
+	resp, err := client.Post(actionURL(client, id), map[string]interface{}{"revertResize": nil}, nil, nil)
+	_, r.Header, r.Err = gophercloud.ParseResponse(resp, err)
 	return
 }
 
@@ -554,15 +565,17 @@ func ResetMetadata(client *gophercloud.ServiceClient, id string, opts ResetMetad
 		r.Err = err
 		return
 	}
-	_, r.Err = client.Put(metadataURL(client, id), b, &r.Body, &gophercloud.RequestOpts{
+	resp, err := client.Put(metadataURL(client, id), b, &r.Body, &gophercloud.RequestOpts{
 		OkCodes: []int{200},
 	})
+	_, r.Header, r.Err = gophercloud.ParseResponse(resp, err)
 	return
 }
 
 // Metadata requests all the metadata for the given server ID.
 func Metadata(client *gophercloud.ServiceClient, id string) (r GetMetadataResult) {
-	_, r.Err = client.Get(metadataURL(client, id), &r.Body, nil)
+	resp, err := client.Get(metadataURL(client, id), &r.Body, nil)
+	_, r.Header, r.Err = gophercloud.ParseResponse(resp, err)
 	return
 }
 
@@ -581,9 +594,10 @@ func UpdateMetadata(client *gophercloud.ServiceClient, id string, opts UpdateMet
 		r.Err = err
 		return
 	}
-	_, r.Err = client.Post(metadataURL(client, id), b, &r.Body, &gophercloud.RequestOpts{
+	resp, err := client.Post(metadataURL(client, id), b, &r.Body, &gophercloud.RequestOpts{
 		OkCodes: []int{200},
 	})
+	_, r.Header, r.Err = gophercloud.ParseResponse(resp, err)
 	return
 }
 
@@ -621,23 +635,26 @@ func CreateMetadatum(client *gophercloud.ServiceClient, id string, opts Metadatu
 		r.Err = err
 		return
 	}
-	_, r.Err = client.Put(metadatumURL(client, id, key), b, &r.Body, &gophercloud.RequestOpts{
+	resp, err := client.Put(metadatumURL(client, id, key), b, &r.Body, &gophercloud.RequestOpts{
 		OkCodes: []int{200},
 	})
+	_, r.Header, r.Err = gophercloud.ParseResponse(resp, err)
 	return
 }
 
 // Metadatum requests the key-value pair with the given key for the given
 // server ID.
 func Metadatum(client *gophercloud.ServiceClient, id, key string) (r GetMetadatumResult) {
-	_, r.Err = client.Get(metadatumURL(client, id, key), &r.Body, nil)
+	resp, err := client.Get(metadatumURL(client, id, key), &r.Body, nil)
+	_, r.Header, r.Err = gophercloud.ParseResponse(resp, err)
 	return
 }
 
 // DeleteMetadatum will delete the key-value pair with the given key for the
 // given server ID.
 func DeleteMetadatum(client *gophercloud.ServiceClient, id, key string) (r DeleteMetadatumResult) {
-	_, r.Err = client.Delete(metadatumURL(client, id, key), nil)
+	resp, err := client.Delete(metadatumURL(client, id, key), nil)
+	_, r.Header, r.Err = gophercloud.ParseResponse(resp, err)
 	return
 }
 
@@ -690,15 +707,15 @@ func CreateImage(client *gophercloud.ServiceClient, id string, opts CreateImageO
 	resp, err := client.Post(actionURL(client, id), b, nil, &gophercloud.RequestOpts{
 		OkCodes: []int{202},
 	})
-	r.Err = err
-	r.Header = resp.Header
+	_, r.Header, r.Err = gophercloud.ParseResponse(resp, err)
 	return
 }
 
 // GetPassword makes a request against the nova API to get the encrypted
 // administrative password.
 func GetPassword(client *gophercloud.ServiceClient, serverId string) (r GetPasswordResult) {
-	_, r.Err = client.Get(passwordURL(client, serverId), &r.Body, nil)
+	resp, err := client.Get(passwordURL(client, serverId), &r.Body, nil)
+	_, r.Header, r.Err = gophercloud.ParseResponse(resp, err)
 	return
 }
 
@@ -727,8 +744,9 @@ func ShowConsoleOutput(client *gophercloud.ServiceClient, id string, opts ShowCo
 		r.Err = err
 		return
 	}
-	_, r.Err = client.Post(actionURL(client, id), b, &r.Body, &gophercloud.RequestOpts{
+	resp, err := client.Post(actionURL(client, id), b, &r.Body, &gophercloud.RequestOpts{
 		OkCodes: []int{200},
 	})
+	_, r.Header, r.Err = gophercloud.ParseResponse(resp, err)
 	return
 }

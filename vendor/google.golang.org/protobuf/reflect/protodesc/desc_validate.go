@@ -147,6 +147,17 @@ func validateMessageDeclarations(ms []filedesc.Message, mds []*descriptorpb.Desc
 			if fd.Extendee != nil {
 				return errors.New("message field %q may not have extendee: %q", f.FullName(), fd.GetExtendee())
 			}
+			if f.L1.IsProto3Optional {
+				if f.Syntax() != protoreflect.Proto3 {
+					return errors.New("message field %q under proto3 optional semantics must be specified in the proto3 syntax", f.FullName())
+				}
+				if f.Cardinality() != protoreflect.Optional {
+					return errors.New("message field %q under proto3 optional semantics must have optional cardinality", f.FullName())
+				}
+				if f.ContainingOneof() != nil && f.ContainingOneof().Fields().Len() != 1 {
+					return errors.New("message field %q under proto3 optional semantics must be within a single element oneof", f.FullName())
+				}
+			}
 			if f.IsWeak() && !flags.ProtoLegacy {
 				return errors.New("message field %q is a weak field, which is a legacy proto1 feature that is no longer supported", f.FullName())
 			}
@@ -171,6 +182,7 @@ func validateMessageDeclarations(ms []filedesc.Message, mds []*descriptorpb.Desc
 				}
 			}
 		}
+		seenSynthetic := false // synthetic oneofs for proto3 optional must come after real oneofs
 		for j := range md.GetOneofDecl() {
 			o := &m.L2.Oneofs.List[j]
 			if o.Fields().Len() == 0 {
@@ -179,6 +191,15 @@ func validateMessageDeclarations(ms []filedesc.Message, mds []*descriptorpb.Desc
 			if n := o.Fields().Len(); n-1 != (o.Fields().Get(n-1).Index() - o.Fields().Get(0).Index()) {
 				return errors.New("message oneof %q must have consecutively declared fields", o.FullName())
 			}
+
+			if o.IsSynthetic() {
+				seenSynthetic = true
+				continue
+			}
+			if !o.IsSynthetic() && seenSynthetic {
+				return errors.New("message oneof %q must be declared before synthetic oneofs", o.FullName())
+			}
+
 			for i := 0; i < o.Fields().Len(); i++ {
 				f := o.Fields().Get(i)
 				if f.Cardinality() != protoreflect.Optional {

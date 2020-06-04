@@ -5,8 +5,8 @@
 // Package descriptor provides functions for obtaining the protocol buffer
 // descriptors of generated Go types.
 //
-// Deprecated: Use the "google.golang.org/protobuf/reflect/protoreflect"
-// package instead to obtain an EnumDescriptor or MessageDescriptor in order to
+// Deprecated: See the "google.golang.org/protobuf/reflect/protoreflect" package
+// for how to obtain an EnumDescriptor or MessageDescriptor in order to
 // programatically interact with the protobuf type system.
 package descriptor
 
@@ -99,8 +99,8 @@ func deriveRawDescriptor(d protoreflect.Descriptor) ([]byte, []int) {
 	return file, idxs
 }
 
-// EnumRawDescriptor returns the GZIP'd raw file descriptor containing the
-// enum and the index path to reach the enum declaration.
+// EnumRawDescriptor returns the GZIP'd raw file descriptor representing
+// the enum and the index path to reach the enum declaration.
 // The returned slices must not be mutated.
 func EnumRawDescriptor(e proto.GeneratedEnum) ([]byte, []int) {
 	if ev, ok := e.(interface{ EnumDescriptor() ([]byte, []int) }); ok {
@@ -110,7 +110,7 @@ func EnumRawDescriptor(e proto.GeneratedEnum) ([]byte, []int) {
 	return deriveRawDescriptor(ed.Descriptor())
 }
 
-// MessageRawDescriptor returns the GZIP'd raw file descriptor containing
+// MessageRawDescriptor returns the GZIP'd raw file descriptor representing
 // the message and the index path to reach the message declaration.
 // The returned slices must not be mutated.
 func MessageRawDescriptor(m proto.GeneratedMessage) ([]byte, []int) {
@@ -148,7 +148,7 @@ func deriveFileDescriptor(rawDesc []byte) *descriptorpb.FileDescriptorProto {
 	return fd
 }
 
-// EnumDescriptorProto returns the file descriptor proto containing
+// EnumDescriptorProto returns the file descriptor proto representing
 // the enum and the enum descriptor proto for the enum itself.
 // The returned proto messages must not be mutated.
 func EnumDescriptorProto(e proto.GeneratedEnum) (*descriptorpb.FileDescriptorProto, *descriptorpb.EnumDescriptorProto) {
@@ -168,7 +168,7 @@ func EnumDescriptorProto(e proto.GeneratedEnum) (*descriptorpb.FileDescriptorPro
 	return fd, ed
 }
 
-// MessageDescriptorProto returns the file descriptor proto containing
+// MessageDescriptorProto returns the file descriptor proto representing
 // the message and the message descriptor proto for the message itself.
 // The returned proto messages must not be mutated.
 func MessageDescriptorProto(m proto.GeneratedMessage) (*descriptorpb.FileDescriptorProto, *descriptorpb.DescriptorProto) {

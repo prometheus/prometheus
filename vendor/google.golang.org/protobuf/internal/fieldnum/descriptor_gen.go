@@ -61,16 +61,17 @@ const (
 
 // Field numbers for google.protobuf.FieldDescriptorProto.
 const (
-	FieldDescriptorProto_Name         = 1  // optional string
-	FieldDescriptorProto_Number       = 3  // optional int32
-	FieldDescriptorProto_Label        = 4  // optional google.protobuf.FieldDescriptorProto.Label
-	FieldDescriptorProto_Type         = 5  // optional google.protobuf.FieldDescriptorProto.Type
-	FieldDescriptorProto_TypeName     = 6  // optional string
-	FieldDescriptorProto_Extendee     = 2  // optional string
-	FieldDescriptorProto_DefaultValue = 7  // optional string
-	FieldDescriptorProto_OneofIndex   = 9  // optional int32
-	FieldDescriptorProto_JsonName     = 10 // optional string
-	FieldDescriptorProto_Options      = 8  // optional google.protobuf.FieldOptions
+	FieldDescriptorProto_Name           = 1  // optional string
+	FieldDescriptorProto_Number         = 3  // optional int32
+	FieldDescriptorProto_Label          = 4  // optional google.protobuf.FieldDescriptorProto.Label
+	FieldDescriptorProto_Type           = 5  // optional google.protobuf.FieldDescriptorProto.Type
+	FieldDescriptorProto_TypeName       = 6  // optional string
+	FieldDescriptorProto_Extendee       = 2  // optional string
+	FieldDescriptorProto_DefaultValue   = 7  // optional string
+	FieldDescriptorProto_OneofIndex     = 9  // optional int32
+	FieldDescriptorProto_JsonName       = 10 // optional string
+	FieldDescriptorProto_Options        = 8  // optional google.protobuf.FieldOptions
+	FieldDescriptorProto_Proto3Optional = 17 // optional bool
 )
 
 // Field numbers for google.protobuf.OneofDescriptorProto.

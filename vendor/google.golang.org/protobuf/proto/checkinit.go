@@ -12,6 +12,12 @@ import (
 
 // CheckInitialized returns an error if any required fields in m are not set.
 func CheckInitialized(m Message) error {
+	// Treat a nil message interface as an "untyped" empty message,
+	// which we assume to have no required fields.
+	if m == nil {
+		return nil
+	}
+
 	return checkInitialized(m.ProtoReflect())
 }
 

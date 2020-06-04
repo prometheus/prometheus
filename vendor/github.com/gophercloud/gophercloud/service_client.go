@@ -152,3 +152,11 @@ func (client *ServiceClient) Request(method, url string, options *RequestOpts) (
 	}
 	return client.ProviderClient.Request(method, url, options)
 }
+
+// ParseResponse is a helper function to parse http.Response to constituents.
+func ParseResponse(resp *http.Response, err error) (io.ReadCloser, http.Header, error) {
+	if resp != nil {
+		return resp.Body, resp.Header, err
+	}
+	return nil, nil, err
+}

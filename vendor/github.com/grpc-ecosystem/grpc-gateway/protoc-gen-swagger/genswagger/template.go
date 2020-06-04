@@ -18,8 +18,8 @@ import (
 	"github.com/golang/protobuf/jsonpb"
 	"github.com/golang/protobuf/proto"
 	pbdescriptor "github.com/golang/protobuf/protoc-gen-go/descriptor"
-	gogen "github.com/golang/protobuf/protoc-gen-go/generator"
 	structpb "github.com/golang/protobuf/ptypes/struct"
+	"github.com/grpc-ecosystem/grpc-gateway/internal/casing"
 	"github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway/descriptor"
 	swagger_options "github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger/options"
 )
@@ -120,8 +120,18 @@ func messageToQueryParameters(message *descriptor.Message, reg *descriptor.Regis
 	return params, nil
 }
 
-// queryParams converts a field to a list of swagger query parameters recursively.
+// queryParams converts a field to a list of swagger query parameters recursively through the use of nestedQueryParams.
 func queryParams(message *descriptor.Message, field *descriptor.Field, prefix string, reg *descriptor.Registry, pathParams []descriptor.Parameter) (params []swaggerParameterObject, err error) {
+    return nestedQueryParams(message, field, prefix, reg, pathParams, map[string]bool{})
+}
+
+// nestedQueryParams converts a field to a list of swagger query parameters recursively.
+// This function is a helper function for queryParams, that keeps track of cyclical message references
+//  through the use of
+//      touched map[string]bool
+// If a cycle is discovered, an error is returned, as cyclical data structures aren't allowed
+//  in query parameters.
+func nestedQueryParams(message *descriptor.Message, field *descriptor.Field, prefix string, reg *descriptor.Registry, pathParams []descriptor.Parameter, touched map[string]bool) (params []swaggerParameterObject, err error) {
 	// make sure the parameter is not already listed as a path parameter
 	for _, pathParam := range pathParams {
 		if pathParam.Target == field {
@@ -216,6 +226,14 @@ func queryParams(message *descriptor.Message, field *descriptor.Field, prefix st
 	if err != nil {
 		return nil, fmt.Errorf("unknown message type %s", fieldType)
 	}
+        // Check for cyclical message reference:
+        isCycle := touched[*msg.Name]
+        if isCycle {
+            return nil, fmt.Errorf("Recursive types are not allowed for query parameters, cycle found on %q", fieldType)
+        }
+        // Update map with the massage name so a cycle further down the recursive path can be detected. 
+        touched[*msg.Name] = true
+
 	for _, nestedField := range msg.Fields {
 		var fieldName string
 		if reg.GetUseJSONNamesForFields() {
@@ -223,7 +241,7 @@ func queryParams(message *descriptor.Message, field *descriptor.Field, prefix st
 		} else {
 			fieldName = field.GetName()
 		}
-		p, err := queryParams(msg, nestedField, prefix+fieldName+".", reg, pathParams)
+		p, err := nestedQueryParams(msg, nestedField, prefix+fieldName+".", reg, pathParams, touched)
 		if err != nil {
 			return nil, err
 		}
@@ -1654,7 +1672,7 @@ func isProtoPathMatches(paths []int32, outerPaths []int32, typeName string, type
 // For example, if we are trying to locate comments related to a field named
 // `Address` in a message named `Person`, the path will be:
 //
-//     [4, a, 2, b]
+//	 [4, a, 2, b]
 //
 // While `a` gets determined by the order in which the messages appear in
 // the proto file, and `b` is the field index specified in the proto
@@ -1969,7 +1987,7 @@ func lowerCamelCase(fieldName string, fields []*descriptor.Field, msgs []*descri
 }
 
 func doCamelCase(input string) string {
-	parameterString := gogen.CamelCase(input)
+	parameterString := casing.Camel(input)
 	builder := &strings.Builder{}
 	builder.WriteString(strings.ToLower(string(parameterString[0])))
 	builder.WriteString(parameterString[1:])

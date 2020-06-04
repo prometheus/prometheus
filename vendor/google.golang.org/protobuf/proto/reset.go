@@ -4,7 +4,11 @@
 
 package proto
 
-import "google.golang.org/protobuf/reflect/protoreflect"
+import (
+	"fmt"
+
+	"google.golang.org/protobuf/reflect/protoreflect"
+)
 
 // Reset clears every field in the message.
 // The resulting message shares no observable memory with its previous state
@@ -19,7 +23,7 @@ func Reset(m Message) {
 
 func resetMessage(m protoreflect.Message) {
 	if !m.IsValid() {
-		panic("cannot reset invalid message")
+		panic(fmt.Sprintf("cannot reset invalid %v message", m.Descriptor().FullName()))
 	}
 
 	// Clear all known fields.

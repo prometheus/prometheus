@@ -187,6 +187,7 @@ struct ltchars {
 #include <sys/select.h>
 #include <sys/signalfd.h>
 #include <sys/socket.h>
+#include <sys/timerfd.h>
 #include <sys/uio.h>
 #include <sys/xattr.h>
 #include <linux/bpf.h>
@@ -480,7 +481,7 @@ ccflags="$@"
 		$2 ~ /^(MS|MNT|UMOUNT)_/ ||
 		$2 ~ /^NS_GET_/ ||
 		$2 ~ /^TUN(SET|GET|ATTACH|DETACH)/ ||
-		$2 ~ /^(O|F|[ES]?FD|NAME|S|PTRACE|PT)_/ ||
+		$2 ~ /^(O|F|[ES]?FD|NAME|S|PTRACE|PT|TFD)_/ ||
 		$2 ~ /^KEXEC_/ ||
 		$2 ~ /^LINUX_REBOOT_CMD_/ ||
 		$2 ~ /^LINUX_REBOOT_MAGIC[12]$/ ||

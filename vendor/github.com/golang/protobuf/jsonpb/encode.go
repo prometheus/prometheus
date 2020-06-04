@@ -35,11 +35,11 @@ type Marshaler struct {
 	// as opposed to string values.
 	EnumsAsInts bool
 
-	// EmitDefaults specifies Whether to render fields with zero values.
+	// EmitDefaults specifies whether to render fields with zero values.
 	EmitDefaults bool
 
 	// Indent controls whether the output is compact or not.
-	// If empty, the output is compact JSON. If non-empty, every JSON object
+	// If empty, the output is compact JSON. Otherwise, every JSON object
 	// entry and JSON array value will be on its own line.
 	// Each line will be preceded by repeated copies of Indent, where the
 	// number of copies is the current indentation depth.
@@ -62,7 +62,7 @@ type JSONPBMarshaler interface {
 	MarshalJSONPB(*Marshaler) ([]byte, error)
 }
 
-// Marshal marshals a protocol buffer into JSON.
+// Marshal serializes a protobuf message as JSON into w.
 func (jm *Marshaler) Marshal(w io.Writer, m proto.Message) error {
 	b, err := jm.marshal(m)
 	if len(b) > 0 {
@@ -73,7 +73,7 @@ func (jm *Marshaler) Marshal(w io.Writer, m proto.Message) error {
 	return err
 }
 
-// MarshalToString converts a protocol buffer object to JSON string.
+// MarshalToString serializes a protobuf message as JSON in string form.
 func (jm *Marshaler) MarshalToString(m proto.Message) (string, error) {
 	b, err := jm.marshal(m)
 	if err != nil {
