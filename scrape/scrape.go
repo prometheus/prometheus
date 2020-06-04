@@ -1140,7 +1140,7 @@ loop:
 
 		if ok {
 			err = app.AddFast(ce.ref, t, v)
-			sampleAdded, err = sl.checkAddError(ce, met, tp, err, &sampleLimitErr, &appErrs)
+			_, err = sl.checkAddError(ce, met, tp, err, &sampleLimitErr, &appErrs)
 			// In theory this should never happen.
 			if err == storage.ErrNotFound {
 				ok = false
@@ -1187,10 +1187,10 @@ loop:
 			}
 		}
 
-		// Increment added even if there's a sampleLimitErr so we correctly report the number of samples scraped.
-		if sampleAdded || sampleLimitErr != nil {
-			added++
-		}
+		// Increment added even if there's an error so we correctly report the
+		// number of samples remaining after relabelling.
+		added++
+
 	}
 	if sampleLimitErr != nil {
 		if err == nil {
@@ -1275,7 +1275,7 @@ const (
 	scrapeSeriesAddedMetricName  = "scrape_series_added" + "\xff"
 )
 
-func (sl *scrapeLoop) report(start time.Time, duration time.Duration, scraped, appended, seriesAdded int, scrapeErr error) (err error) {
+func (sl *scrapeLoop) report(start time.Time, duration time.Duration, scraped, added, seriesAdded int, scrapeErr error) (err error) {
 	sl.scraper.Report(start, duration, scrapeErr)
 
 	ts := timestamp.FromTime(start)
@@ -1302,7 +1302,7 @@ func (sl *scrapeLoop) report(start time.Time, duration time.Duration, scraped, a
 	if err = sl.addReportSample(app, scrapeSamplesMetricName, ts, float64(scraped)); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, samplesPostRelabelMetricName, ts, float64(appended)); err != nil {
+	if err = sl.addReportSample(app, samplesPostRelabelMetricName, ts, float64(added)); err != nil {
 		return
 	}
 	if err = sl.addReportSample(app, scrapeSeriesAddedMetricName, ts, float64(seriesAdded)); err != nil {
