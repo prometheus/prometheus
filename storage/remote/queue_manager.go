@@ -360,7 +360,6 @@ outer:
 func (t *QueueManager) Start() {
 	// Initialise some metrics.
 	t.metrics.shardCapacity.Set(float64(t.cfg.Capacity))
-	t.metrics.pendingSamples.Set(0)
 	t.metrics.maxNumShards.Set(float64(t.cfg.MaxShards))
 	t.metrics.minNumShards.Set(float64(t.cfg.MinShards))
 	t.metrics.desiredNumShards.Set(float64(t.cfg.MinShards))
@@ -675,6 +674,9 @@ func (s *shards) start(n int) {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
+	s.qm.metrics.pendingSamples.Set(0)
+	s.qm.metrics.numShards.Set(float64(n))
+
 	newQueues := make([]chan sample, n)
 	for i := 0; i < n; i++ {
 		newQueues[i] = make(chan sample, s.qm.cfg.Capacity)
@@ -690,7 +692,6 @@ func (s *shards) start(n int) {
 	for i := 0; i < n; i++ {
 		go s.runShard(hardShutdownCtx, i, newQueues[i])
 	}
-	s.qm.metrics.numShards.Set(float64(n))
 }
 
 // stop the shards; subsequent call to enqueue will return false.
@@ -740,6 +741,7 @@ func (s *shards) enqueue(ref uint64, sample sample) bool {
 	case <-s.softShutdown:
 		return false
 	case s.queues[shard] <- sample:
+		s.qm.metrics.pendingSamples.Inc()
 		return true
 	}
 }
@@ -777,6 +779,11 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan sample) {
 	for {
 		select {
 		case <-ctx.Done():
+			// In this case we drop all samples in the buffer and the queue.
+			// Remove them from pending and mark them as failed.
+			droppedSamples := float64(nPending + len(queue))
+			s.qm.metrics.pendingSamples.Sub(droppedSamples)
+			s.qm.metrics.failedSamplesTotal.Add(droppedSamples)
 			return
 
 		case sample, ok := <-queue:
@@ -797,7 +804,6 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan sample) {
 			pendingSamples[nPending].Samples[0].Timestamp = sample.t
 			pendingSamples[nPending].Samples[0].Value = sample.v
 			nPending++
-			s.qm.metrics.pendingSamples.Inc()
 
 			if nPending >= max {
 				s.sendSamples(ctx, pendingSamples, &buf)
