@@ -354,7 +354,15 @@ func funcAvgOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 		var mean, count float64
 		for _, v := range values {
 			count++
-			mean += (v.V - mean) / count
+			if math.IsInf(mean, 0) && math.IsInf(v.V, 0) && (mean > 0) == (v.V > 0) {
+				// The `mean` and `v.V` values are `Inf` of the same sign.  They
+				// can't be substracted, but the value of `mean` is correct
+				// already.  Continue the loop. `break` can not be used because
+				// if an opposite `Inf` is met later, `mean` must become `NaN`.
+				continue
+			}
+			// Divide each side of the `-` by `count` to avoid float64 overflows.
+			mean += v.V/count - mean/count
 		}
 		return mean
 	})
