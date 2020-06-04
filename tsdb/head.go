@@ -116,6 +116,7 @@ type headMetrics struct {
 	checkpointCreationFail   prometheus.Counter
 	checkpointCreationTotal  prometheus.Counter
 	mmapChunkCorruptionTotal prometheus.Counter
+	labelPairs               prometheus.Gauge
 }
 
 func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
@@ -206,6 +207,10 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			Name: "prometheus_tsdb_mmap_chunk_corruptions_total",
 			Help: "Total number of memory-mapped chunk corruptions.",
 		}),
+		labelPairs: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "prometheus_tsdb_head_label_pairs",
+			Help: "Total number of unique label pairs in the head block.",
+		}),
 	}
 
 	if r != nil {
@@ -231,6 +236,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.checkpointCreationFail,
 			m.checkpointCreationTotal,
 			m.mmapChunkCorruptionTotal,
+			m.labelPairs,
 			// Metrics bound to functions and not needed in tests
 			// can be created and registered on the spot.
 			prometheus.NewGaugeFunc(prometheus.GaugeOpts{
@@ -1317,6 +1323,7 @@ func (h *Head) gc() {
 	// Rebuild symbols and label value indices from what is left in the postings terms.
 	symbols := make(map[string]struct{}, len(h.symbols))
 	values := make(map[string]stringset, len(h.values))
+	numLabelPairs := 0
 
 	if err := h.postings.Iter(func(t labels.Label, _ index.Postings) error {
 		symbols[t.Name] = struct{}{}
@@ -1327,7 +1334,13 @@ func (h *Head) gc() {
 			ss = stringset{}
 			values[t.Name] = ss
 		}
-		ss.set(t.Value)
+
+		if _, ok := ss[t.Value]; !ok {
+			if t.Name != "" {
+				numLabelPairs++
+			}
+			ss.set(t.Value)
+		}
 		return nil
 	}); err != nil {
 		// This should never happen, as the iteration function only returns nil.
@@ -1338,8 +1351,10 @@ func (h *Head) gc() {
 
 	h.symbols = symbols
 	h.values = values
+	h.metrics.labelPairs.Set(float64(numLabelPairs))
 
 	h.symMtx.Unlock()
+
 }
 
 // Tombstones returns a new reader over the head's tombstones
@@ -1685,17 +1700,24 @@ func (h *Head) getOrCreateWithID(id, hash uint64, lset labels.Labels) (*memSerie
 	h.symMtx.Lock()
 	defer h.symMtx.Unlock()
 
+	numLabelPairs := 0
 	for _, l := range lset {
 		valset, ok := h.values[l.Name]
 		if !ok {
 			valset = stringset{}
 			h.values[l.Name] = valset
 		}
-		valset.set(l.Value)
+
+		if _, ok := valset[l.Value]; !ok {
+			numLabelPairs++
+			valset.set(l.Value)
+		}
 
 		h.symbols[l.Name] = struct{}{}
 		h.symbols[l.Value] = struct{}{}
 	}
+
+	h.metrics.labelPairs.Add(float64(numLabelPairs))
 
 	return s, true, nil
 }

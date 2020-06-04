@@ -1394,6 +1394,34 @@ func TestNewWalSegmentOnTruncate(t *testing.T) {
 	testutil.Equals(t, 2, last)
 }
 
+func TestAddNewLabel(t *testing.T) {
+	h, _, closer := newTestHead(t, 1000, false)
+	defer closer()
+	defer func() {
+		testutil.Ok(t, h.Close())
+	}()
+
+	h.Init(0)
+
+	app := h.Appender()
+	app.Add(labels.FromStrings("a", "1", "b", "2"), 1, rand.Float64())
+	app.Add(labels.FromStrings("a", "1", "c", "3"), 2, rand.Float64())
+	testutil.Ok(t, app.Commit())
+
+	testutil.Equals(t, 3, len(h.values), "There should be 3 labels.")
+	testutil.Equals(t, 1, len(h.values["a"]), "There should be only one value of label \"a\".")
+
+	app.Add(labels.FromStrings("a", "1", "d", "4"), 1001, rand.Float64())
+	app.Add(labels.FromStrings("e", "5", "f", "6"), 2000, rand.Float64())
+	testutil.Ok(t, app.Commit())
+
+	testutil.Equals(t, 6.0, prom_testutil.ToFloat64(h.metrics.labelPairs), "Expected count of label pairs is 6.")
+
+	testutil.Ok(t, h.Truncate(1000))
+	testutil.Equals(t, 4.0, prom_testutil.ToFloat64(h.metrics.labelPairs), "Expected count of label pairs is 4.")
+
+}
+
 func TestAddDuplicateLabelName(t *testing.T) {
 	h, _, closer := newTestHead(t, 1000, false)
 	defer closer()
