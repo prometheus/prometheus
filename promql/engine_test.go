@@ -19,7 +19,6 @@ import (
 	"io/ioutil"
 	"os"
 	"sort"
-	"strings"
 	"testing"
 	"time"
 
@@ -117,9 +116,7 @@ func TestQueryTimeout(t *testing.T) {
 	testutil.NotOk(t, res.Err, "expected timeout error but got none")
 
 	var e ErrQueryTimeout
-	// TODO: when circleci-windows moves to go 1.13:
-	// testutil.Assert(t, errors.As(res.Err, &e), "expected timeout error but got: %s", res.Err)
-	testutil.Assert(t, strings.HasPrefix(res.Err.Error(), e.Error()), "expected timeout error but got: %s", res.Err)
+	testutil.Assert(t, errors.As(res.Err, &e), "expected timeout error but got: %s", res.Err)
 }
 
 const errQueryCanceled = ErrQueryCanceled("test statement execution")
@@ -499,9 +496,7 @@ func TestEngineShutdown(t *testing.T) {
 	testutil.NotOk(t, res2.Err, "expected error on querying with canceled context but got none")
 
 	var e ErrQueryCanceled
-	// TODO: when circleci-windows moves to go 1.13:
-	// testutil.Assert(t, errors.As(res2.Err, &e), "expected cancellation error but got: %s", res2.Err)
-	testutil.Assert(t, strings.HasPrefix(res2.Err.Error(), e.Error()), "expected cancellation error but got: %s", res2.Err)
+	testutil.Assert(t, errors.As(res2.Err, &e), "expected cancellation error but got: %s", res2.Err)
 }
 
 func TestEngineEvalStmtTimestamps(t *testing.T) {
