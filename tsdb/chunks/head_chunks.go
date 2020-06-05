@@ -78,13 +78,16 @@ func (e *CorruptionErr) Error() string {
 // ChunkDiskMapper is for writing the Head block chunks to the disk
 // and access chunks via mmapped file.
 type ChunkDiskMapper struct {
+	// Keep all 64bit atomically accessed variables at the top of this struct.
+	// See https://golang.org/pkg/sync/atomic/#pkg-note-BUG for more info.
+	curFileNumBytes int64    // Bytes written in current open file.
+
 	/// Writer.
 	dir *os.File
 
 	curFile         *os.File // File being written to.
 	curFileSequence int      // Index of current open file being appended to.
 	curFileMaxt     int64    // Used for the size retention.
-	curFileNumBytes int64    // Bytes written in current open file.
 
 	byteBuf      [MaxHeadChunkMetaSize]byte // Buffer used to write the header of the chunk.
 	chkWriter    *bufio.Writer              // Writer for the current open file.
