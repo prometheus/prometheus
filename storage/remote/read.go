@@ -33,36 +33,25 @@ var remoteReadQueries = prometheus.NewGaugeVec(
 	[]string{remoteName, endpoint},
 )
 
-var remoteReadQueriesTotal = prometheus.NewCounterVec(
-	prometheus.CounterOpts{
-		Namespace: namespace,
-		Subsystem: subsystem,
-		Name:      "remote_read_queries_total",
-		Help:      "The total number of remote read queries.",
-	},
-	[]string{remoteName, endpoint},
-)
-
 var remoteReadQueriesHistogram = prometheus.NewHistogramVec(
 	prometheus.HistogramOpts{
 		Namespace: namespace,
 		Subsystem: subsystem,
 		Name:      "read_request_duration_seconds",
 		Help:      "Histogram of the latency for remote read requests.",
-		Buckets:   prometheus.DefBuckets,
+		Buckets:   append(prometheus.DefBuckets, 25, 60),
 	},
 	[]string{remoteName, endpoint},
 )
 
 func init() {
-	prometheus.MustRegister(remoteReadQueries, remoteReadQueriesTotal, remoteReadQueriesHistogram)
+	prometheus.MustRegister(remoteReadQueries, remoteReadQueriesHistogram)
 }
 
 // QueryableClient returns a storage.Queryable which queries the given
 // Client to select series sets.
 func QueryableClient(c *Client) storage.Queryable {
 	remoteReadQueries.WithLabelValues(c.remoteName, c.url.String())
-	remoteReadQueriesTotal.WithLabelValues(c.remoteName, c.url.String())
 	remoteReadQueriesHistogram.WithLabelValues(c.remoteName, c.url.String())
 
 	return storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
@@ -94,9 +83,6 @@ func (q *querier) Select(sortSeries bool, hints *storage.SelectHints, matchers .
 	remoteReadGauge := remoteReadQueries.WithLabelValues(q.client.remoteName, q.client.url.String())
 	remoteReadGauge.Inc()
 	defer remoteReadGauge.Dec()
-
-	remoteReadTotalCounter := remoteReadQueriesTotal.WithLabelValues(q.client.remoteName, q.client.url.String())
-	remoteReadTotalCounter.Inc()
 
 	remoteReadQueriesHistogram := remoteReadQueriesHistogram.WithLabelValues(q.client.remoteName, q.client.url.String())
 	remoteReadQueriesHistogram.Observe(time.Since(begin).Seconds())
