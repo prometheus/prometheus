@@ -531,3 +531,16 @@ func TestLabels_Copy(t *testing.T) {
 func TestLabels_Map(t *testing.T) {
 	testutil.Equals(t, map[string]string{"aaa": "111", "bbb": "222"}, Labels{{"aaa", "111"}, {"bbb", "222"}}.Map())
 }
+
+func TestLabels_WithLabels(t *testing.T) {
+	testutil.Equals(t, Labels{{"aaa", "111"}, {"bbb", "222"}}, Labels{{"aaa", "111"}, {"bbb", "222"}, {"ccc", "333"}}.WithLabels("aaa", "bbb"))
+}
+
+func TestLabels_WithoutLabels(t *testing.T) {
+	testutil.Equals(t, Labels{{"aaa", "111"}}, Labels{{"aaa", "111"}, {"bbb", "222"}, {"ccc", "333"}}.WithoutLabels("bbb", "ccc"))
+	testutil.Equals(t, Labels{{"aaa", "111"}}, Labels{{"aaa", "111"}, {"bbb", "222"}, {MetricName, "333"}}.WithoutLabels("bbb"))
+}
+
+func TestLabels_FromStrings(t *testing.T) {
+	testutil.Equals(t, Labels{{"aaa", "111"}, {"bbb", "222"}}, FromStrings("aaa", "111", "bbb", "222"))
+}
