@@ -209,14 +209,14 @@ func TestQueryError(t *testing.T) {
 
 	res := vectorQuery.Exec(ctx)
 	testutil.NotOk(t, res.Err, "expected error on failed select but got none")
-	testutil.Equals(t, errStorage, res.Err)
+	testutil.Assert(t, errors.Is(res.Err, errStorage), "expected error does not match")
 
 	matrixQuery, err := engine.NewInstantQuery(queryable, "foo[1m]", time.Unix(1, 0))
 	testutil.Ok(t, err)
 
 	res = matrixQuery.Exec(ctx)
 	testutil.NotOk(t, res.Err, "expected error on failed select but got none")
-	testutil.Equals(t, errStorage, res.Err)
+	testutil.Assert(t, errors.Is(res.Err, errStorage), "expected error does not match")
 }
 
 // hintCheckerQuerier implements storage.Querier which checks the start and end times
@@ -595,9 +595,8 @@ load 10s
 		}
 
 		testutil.Ok(t, res.Err)
-		testutil.Equals(t, c.Result, res.Value)
+		testutil.Equals(t, c.Result, res.Value, "query %q failed", c.Query)
 	}
-
 }
 
 func TestMaxQuerySamples(t *testing.T) {
@@ -827,7 +826,7 @@ load 10s
 
 		res := qry.Exec(test.Context())
 		testutil.Equals(t, c.Result.Err, res.Err)
-		testutil.Equals(t, c.Result.Value, res.Value)
+		testutil.Equals(t, c.Result.Value, res.Value, "query %q failed", c.Query)
 	}
 }
 

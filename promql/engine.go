@@ -1452,14 +1452,14 @@ func (ev *evaluator) matrixSelector(node *parser.MatrixSelector) (Matrix, storag
 		mint   = maxt - durationMilliseconds(node.Range)
 		matrix = make(Matrix, 0, len(vs.Series))
 
-		it     = storage.NewBuffer(durationMilliseconds(node.Range))
-		series = vs.Series
+		it = storage.NewBuffer(durationMilliseconds(node.Range))
 	)
 	ws, err := checkAndExpandSeriesSet(ev.ctx, node)
 	if err != nil {
-		ev.error(errors.Wrap(err, "expanding series"))
+		ev.error(errWithWarnings{errors.Wrap(err, "expanding series"), ws})
 	}
 
+	series := vs.Series
 	for i, s := range series {
 		if err := contextDone(ev.ctx, "expression evaluation"); err != nil {
 			ev.error(err)
