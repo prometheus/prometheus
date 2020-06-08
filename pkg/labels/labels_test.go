@@ -544,3 +544,71 @@ func TestLabels_WithoutLabels(t *testing.T) {
 func TestLabels_FromStrings(t *testing.T) {
 	testutil.Equals(t, Labels{{"aaa", "111"}, {"bbb", "222"}}, FromStrings("aaa", "111", "bbb", "222"))
 }
+
+func TestBulider_NewBulider(t *testing.T) {
+	testutil.Equals(
+		t,
+		&Builder{
+			base: Labels{{"aaa", "111"}},
+			del:  []string{},
+			add:  []Label{},
+		},
+		NewBuilder(Labels{{"aaa", "111"}}),
+	)
+}
+
+func TestBuilder_Del(t *testing.T) {
+	testutil.Equals(
+		t,
+		&Builder{
+			del: []string{"bbb"},
+			add: []Label{{"aaa", "111"}, {"ccc", "333"}},
+		},
+		(&Builder{
+			del: []string{},
+			add: []Label{{"aaa", "111"}, {"bbb", "222"}, {"ccc", "333"}},
+		}).Del("bbb"),
+	)
+}
+
+func TestBuilder_Set(t *testing.T) {
+	testutil.Equals(
+		t,
+		&Builder{
+			base: Labels{{"aaa", "111"}},
+			del:  []string{},
+			add:  []Label{{"bbb", "222"}},
+		},
+		(&Builder{
+			base: Labels{{"aaa", "111"}},
+			del:  []string{},
+			add:  []Label{},
+		}).Set("bbb", "222"),
+	)
+
+	testutil.Equals(
+		t,
+		&Builder{
+			base: Labels{{"aaa", "111"}},
+			del:  []string{},
+			add:  []Label{{"bbb", "333"}},
+		},
+		(&Builder{
+			base: Labels{{"aaa", "111"}},
+			del:  []string{},
+			add:  []Label{{"bbb", "222"}},
+		}).Set("bbb", "333"),
+	)
+}
+
+func TestBuilder_Labels(t *testing.T) {
+	testutil.Equals(
+		t,
+		Labels{{"aaa", "111"}, {"ccc", "333"}, {"ddd", "444"}},
+		(&Builder{
+			base: Labels{{"aaa", "111"}, {"bbb", "222"}, {"ccc", "333"}},
+			del:  []string{"bbb"},
+			add:  []Label{{"ddd", "444"}},
+		}).Labels(),
+	)
+}
