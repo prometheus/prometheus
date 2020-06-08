@@ -29,7 +29,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
-	opentracing "github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -752,12 +752,12 @@ func expandSeriesSet(ctx context.Context, it storage.SeriesSet) (res []storage.S
 	return res, it.Warnings(), it.Err()
 }
 
-type errorWithWarnings struct {
-	warnings storage.Warnings
+type errWithWarnings struct {
 	err      error
+	warnings storage.Warnings
 }
 
-func (e errorWithWarnings) Error() string { return e.err.Error() }
+func (e errWithWarnings) Error() string { return e.err.Error() }
 
 // An evaluator evaluates given expressions over given fixed timestamps. It
 // is attached to an engine through which it connects to a querier and reports
@@ -801,7 +801,7 @@ func (ev *evaluator) recover(ws *storage.Warnings, errp *error) {
 
 		level.Error(ev.logger).Log("msg", "runtime panic in parser", "err", e, "stacktrace", string(buf))
 		*errp = errors.Wrap(err, "unexpected error")
-	case errorWithWarnings:
+	case errWithWarnings:
 		*errp = err.err
 		*ws = append(*ws, err.warnings...)
 	default:
@@ -1113,10 +1113,10 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		selVS := sel.VectorSelector.(*parser.VectorSelector)
 
 		ws, err := checkAndExpandSeriesSet(ev.ctx, sel)
-		if err != nil {
-			ev.error(errors.Wrap(err, "expanding series"))
-		}
 		warnings = append(warnings, ws...)
+		if err != nil {
+			ev.error(errWithWarnings{errors.Wrap(err, "expanding series"), warnings})
+		}
 		mat := make(Matrix, 0, len(selVS.Series)) // Output matrix.
 		offset := durationMilliseconds(selVS.Offset)
 		selRange := durationMilliseconds(sel.Range)
@@ -1295,7 +1295,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 	case *parser.VectorSelector:
 		ws, err := checkAndExpandSeriesSet(ev.ctx, e)
 		if err != nil {
-			ev.error(errors.Wrap(err, "expanding series"))
+			ev.error(errWithWarnings{errors.Wrap(err, "expanding series"), ws})
 		}
 		mat := make(Matrix, 0, len(e.Series))
 		it := storage.NewBuffer(durationMilliseconds(ev.lookbackDelta))
@@ -1375,7 +1375,7 @@ func durationToInt64Millis(d time.Duration) int64 {
 func (ev *evaluator) vectorSelector(node *parser.VectorSelector, ts int64) (Vector, storage.Warnings) {
 	ws, err := checkAndExpandSeriesSet(ev.ctx, node)
 	if err != nil {
-		ev.error(errors.Wrap(err, "expanding series"))
+		ev.error(errWithWarnings{errors.Wrap(err, "expanding series"), ws})
 	}
 	vec := make(Vector, 0, len(node.Series))
 	it := storage.NewBuffer(durationMilliseconds(ev.lookbackDelta))

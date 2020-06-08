@@ -869,7 +869,7 @@ func TestRecoverEvaluatorErrorWithWarnings(t *testing.T) {
 	var ws storage.Warnings
 
 	warnings := storage.Warnings{errors.New("custom warning")}
-	e := errorWithWarnings{
+	e := errWithWarnings{
 		err:      errors.New("custom error"),
 		warnings: warnings,
 	}
