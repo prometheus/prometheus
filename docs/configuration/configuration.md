@@ -1184,7 +1184,7 @@ Metric relabeling is applied to samples as the last step before ingestion. It
 has the same configuration format and actions as target relabeling. Metric
 relabeling does not apply to automatically generated timeseries such as `up`.
 
-One use for this is to blacklist time series that are too expensive to ingest.
+One use for this is to exclude time series that are too expensive to ingest.
 
 ### `<alert_relabel_configs>`
 
