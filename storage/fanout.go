@@ -24,6 +24,7 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -266,6 +267,8 @@ func (q *mergeGenericQuerier) Select(sortSeries bool, hints *SelectHints, matche
 	for r := range seriesSetChan {
 		seriesSets = append(seriesSets, r)
 	}
+	// TODO(kakkoyun): Introduce lazyGenericMergeSeriesSet which defers .Next calls.
+	// TODO(kakkoyun): Add tests to prove the need.
 	return newGenericMergeSeriesSet(seriesSets, q.mergeFn)
 }
 

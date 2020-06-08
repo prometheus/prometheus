@@ -209,14 +209,14 @@ func TestQueryError(t *testing.T) {
 
 	res := vectorQuery.Exec(ctx)
 	testutil.NotOk(t, res.Err, "expected error on failed select but got none")
-	testutil.Assert(t, errors.Is(res.Err, errStorage), "expected error does not match")
+	testutil.Assert(t, errors.Is(res.Err, errStorage), "expected error doesn't match")
 
 	matrixQuery, err := engine.NewInstantQuery(queryable, "foo[1m]", time.Unix(1, 0))
 	testutil.Ok(t, err)
 
 	res = matrixQuery.Exec(ctx)
 	testutil.NotOk(t, res.Err, "expected error on failed select but got none")
-	testutil.Assert(t, errors.Is(res.Err, errStorage), "expected error does not match")
+	testutil.Assert(t, errors.Is(res.Err, errStorage), "expected error doesn't match")
 }
 
 // hintCheckerQuerier implements storage.Querier which checks the start and end times

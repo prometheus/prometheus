@@ -20,6 +20,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/pkg/errors"
+
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
@@ -693,6 +695,9 @@ type mockGenericSeriesSet struct {
 }
 
 func (m *mockGenericSeriesSet) Next() bool {
+	if m.err != nil {
+		return false
+	}
 	if m.curr >= len(m.resp) {
 		return false
 	}
@@ -713,7 +718,22 @@ func (l mockLabels) Labels() labels.Labels {
 	return labels.FromStrings("test", string(l))
 }
 
+func unwrapMockGenericQuerier(t *testing.T, qr genericQuerier) *mockGenericQuerier {
+	m, ok := qr.(*mockGenericQuerier)
+	if !ok {
+		s, ok := qr.(*secondaryQuerier)
+		testutil.Assert(t, ok, "expected secondaryQuerier got something else")
+		m, ok = s.genericQuerier.(*mockGenericQuerier)
+		testutil.Assert(t, ok, "expected mockGenericQuerier got something else")
+	}
+	return m
+}
+
 func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
+	var (
+		errStorage  = errors.New("storage error")
+		warnStorage = errors.New("storage warning")
+	)
 	for _, tcase := range []struct {
 		queriers []genericQuerier
 
@@ -745,7 +765,53 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 			expectedLabels: []string{"a", "b", "c"},
 		},
 		{
-			// TODO(bwplotka): Add more cases.
+			queriers:     []genericQuerier{&mockGenericQuerier{warnings: nil, err: errStorage}},
+			expectedErrs: [3]error{errStorage, errStorage, errStorage},
+		},
+		{
+			queriers: []genericQuerier{
+				&mockGenericQuerier{warnings: nil, err: errStorage},
+				&secondaryQuerier{genericQuerier: &mockGenericQuerier{resp: []string{"b"}, warnings: nil, err: nil}},
+			},
+			expectedErrs: [3]error{errStorage, errStorage, errStorage},
+		},
+		{
+			queriers: []genericQuerier{
+				&mockGenericQuerier{resp: []string{"a", "b"}, warnings: nil, err: nil},
+				&secondaryQuerier{genericQuerier: &mockGenericQuerier{resp: []string{"b", "c"}, warnings: nil, err: nil}},
+			},
+			expectedSelectsSeries: []labels.Labels{
+				labels.FromStrings("test", "a"),
+				labels.FromStrings("test", "b"),
+				labels.FromStrings("test", "c"),
+			},
+			expectedLabels: []string{"a", "b", "c"},
+		},
+		{
+			queriers: []genericQuerier{
+				&mockGenericQuerier{resp: []string{"a"}, warnings: nil, err: nil},
+				&secondaryQuerier{genericQuerier: &mockGenericQuerier{resp: []string{"b"}, warnings: nil, err: errStorage}},
+			},
+			expectedSelectsSeries: []labels.Labels{
+				labels.FromStrings("test", "a"),
+			},
+			expectedLabels:   []string{"a"},
+			expectedWarnings: [3]Warnings{[]error{errStorage}, []error{errStorage}, []error{errStorage}},
+		},
+		{
+			queriers: []genericQuerier{
+				&mockGenericQuerier{resp: []string{"a"}, warnings: []error{warnStorage}, err: nil},
+				&secondaryQuerier{genericQuerier: &mockGenericQuerier{resp: []string{"b"}, warnings: []error{warnStorage}, err: nil}},
+			},
+			expectedSelectsSeries: []labels.Labels{
+				labels.FromStrings("test", "a"),
+				labels.FromStrings("test", "b"),
+			},
+			expectedLabels: []string{"a", "b"},
+			expectedWarnings: [3]Warnings{
+				[]error{warnStorage, warnStorage},
+				[]error{warnStorage, warnStorage},
+				[]error{warnStorage, warnStorage}},
 		},
 	} {
 		t.Run("", func(t *testing.T) {
@@ -753,6 +819,7 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 				queriers: tcase.queriers,
 				mergeFn:  func(l ...Labels) Labels { return l[0] },
 			}
+
 			t.Run("Select", func(t *testing.T) {
 				res := q.Select(false, nil)
 				var lbls []labels.Labels
@@ -761,13 +828,12 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 				}
 				testutil.Equals(t, tcase.expectedWarnings[0], res.Warnings())
 				testutil.Equals(t, tcase.expectedErrs[0], res.Err())
+				testutil.Assert(t, errors.Is(res.Err(), tcase.expectedErrs[0]), "expected error doesn't match")
 				testutil.Equals(t, tcase.expectedSelectsSeries, lbls)
 
 				for _, qr := range q.queriers {
-					m, ok := qr.(*mockGenericQuerier)
-					if !ok {
-						// tbd
-					}
+					m := unwrapMockGenericQuerier(t, qr)
+
 					exp := []bool{true}
 					if len(q.queriers) == 1 {
 						exp[0] = false
@@ -779,28 +845,24 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 			t.Run("LabelNames", func(t *testing.T) {
 				res, w, err := q.LabelNames()
 				testutil.Equals(t, tcase.expectedWarnings[1], w)
-				testutil.Equals(t, tcase.expectedErrs[1], err)
+				testutil.Assert(t, errors.Is(err, tcase.expectedErrs[1]), "expected error doesn't match")
 				testutil.Equals(t, tcase.expectedLabels, res)
 
 				for _, qr := range q.queriers {
-					m, ok := qr.(*mockGenericQuerier)
-					if !ok {
-						// tbd
-					}
+					m := unwrapMockGenericQuerier(t, qr)
+
 					testutil.Equals(t, 1, m.labelNamesCalls)
 				}
 			})
 			t.Run("LabelValues", func(t *testing.T) {
 				res, w, err := q.LabelValues("test")
 				testutil.Equals(t, tcase.expectedWarnings[2], w)
-				testutil.Equals(t, tcase.expectedErrs[2], err)
+				testutil.Assert(t, errors.Is(err, tcase.expectedErrs[2]), "expected error doesn't match")
 				testutil.Equals(t, tcase.expectedLabels, res)
 
 				for _, qr := range q.queriers {
-					m, ok := qr.(*mockGenericQuerier)
-					if !ok {
-						// tbd
-					}
+					m := unwrapMockGenericQuerier(t, qr)
+
 					testutil.Equals(t, []string{"test"}, m.labelNamesRequested)
 				}
 			})
