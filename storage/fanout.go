@@ -267,9 +267,38 @@ func (q *mergeGenericQuerier) Select(sortSeries bool, hints *SelectHints, matche
 	for r := range seriesSetChan {
 		seriesSets = append(seriesSets, r)
 	}
-	// TODO(kakkoyun): Introduce lazyGenericMergeSeriesSet which defers .Next calls.
-	// TODO(kakkoyun): Add tests to prove the need.
-	return newGenericMergeSeriesSet(seriesSets, q.mergeFn)
+	return &lazySeriesSet{create: merge(seriesSets, q.mergeFn)}
+}
+
+func merge(seriesSets []genericSeriesSet, mergeFn genericSeriesMergeFunc) func() (genericSeriesSet, bool) {
+	// Returned function gets called with the first call to Next().
+	return func() (genericSeriesSet, bool) {
+		if len(seriesSets) == 1 {
+			return seriesSets[0], seriesSets[0].Next()
+		}
+
+		var h genericSeriesSetHeap
+		for _, set := range seriesSets {
+			if set == nil {
+				continue
+			}
+			if set.Next() {
+				heap.Push(&h, set)
+				continue
+			}
+			// When primary fails ignore results from secondaries.
+			// Only the primary querier returns error.
+			if err := set.Err(); err != nil {
+				return genericErrSeriesSet{err}, false
+			}
+		}
+		set := &genericMergeSeriesSet{
+			mergeFn: mergeFn,
+			sets:    seriesSets,
+			heap:    h,
+		}
+		return set, set.Next()
+	}
 }
 
 // LabelValues returns all potential values for a label name.
