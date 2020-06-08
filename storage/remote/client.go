@@ -42,7 +42,6 @@ const maxErrMsgLen = 256
 
 var userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 
-// -------------------------------------------------------------
 var remoteReadQueriesTotal = prometheus.NewCounterVec(
 	prometheus.CounterOpts{
 		Namespace: namespace,
@@ -60,10 +59,8 @@ var remoteReadQueriesRequestTotal = prometheus.NewCounterVec(
 		Name:      "read_queries_request_total",
 		Help:      "Counter of remote read queries by HTTP status code.",
 	},
-	[]string{"code"},
+	[]string{remoteName, endpoint, "code"},
 )
-
-// -------------------------------------------------------------
 
 // Client allows reading and writing from/to a remote HTTP endpoint.
 type Client struct {
@@ -80,6 +77,11 @@ type ClientConfig struct {
 	HTTPClientConfig config_util.HTTPClientConfig
 }
 
+// Initalize Counter
+func init() {
+	prometheus.MustRegister(remoteReadQueriesTotal, remoteReadQueriesRequestTotal)
+}
+
 // NewClient creates a new Client.
 func NewClient(remoteName string, conf *ClientConfig) (*Client, error) {
 	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage", false)
@@ -91,10 +93,6 @@ func NewClient(remoteName string, conf *ClientConfig) (*Client, error) {
 	httpClient.Transport = &nethttp.Transport{
 		RoundTripper: t,
 	}
-
-	// -------------------------------------------------------------
-	prometheus.MustRegister(remoteReadQueriesTotal, remoteReadQueriesRequestTotal)
-	// -------------------------------------------------------------
 
 	return &Client{
 		remoteName: remoteName,
@@ -215,12 +213,12 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 
 	httpResp, err := c.client.Do(httpReq)
 
-	// -------------------------------------------------------------
 	remoteReadTotalCounter := remoteReadQueriesTotal.WithLabelValues(c.remoteName, c.url.String())
 	remoteReadTotalCounter.Inc()
 
-	remoteReadRequestTotalCounter := remoteReadQueriesTotal.WithLabelValues(strconv.Itoa(httpResp.StatusCode))
-	// -------------------------------------------------------------
+	fmt.Println("Status Code: ", httpResp.StatusCode)
+
+	remoteReadRequestTotalCounter := remoteReadQueriesRequestTotal.WithLabelValues(c.remoteName, c.url.String(), strconv.Itoa(httpResp.StatusCode))
 
 	if err != nil {
 		return nil, errors.Wrap(err, "error sending request")
@@ -232,10 +230,15 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 
 	compressed, err = ioutil.ReadAll(httpResp.Body)
 	if err != nil {
+		remoteReadRequestTotalCounter = remoteReadQueriesRequestTotal.WithLabelValues(c.remoteName, c.url.String(), "504")
 		return nil, errors.Wrap(err, fmt.Sprintf("error reading response. HTTP status code: %s", httpResp.Status))
 	}
 
 	if httpResp.StatusCode/100 != 2 {
+		if httpResp.StatusCode == 500 {
+			remoteReadRequestTotalCounter = remoteReadQueriesRequestTotal.WithLabelValues(c.remoteName, c.url.String(), "500")
+		}
+
 		return nil, errors.Errorf("remote server %s returned HTTP status %s: %s", c.url.String(), httpResp.Status, strings.TrimSpace(string(compressed)))
 	}
 
@@ -254,9 +257,10 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 		return nil, errors.Errorf("responses: want %d, got %d", len(req.Queries), len(resp.Results))
 	}
 
-	// -------------------------------------------------------------
-	// Increment 200
-	remoteReadRequestTotalCounter.Inc()
-	// -------------------------------------------------------------
+	if httpResp.StatusCode == 200 {
+		remoteReadRequestTotalCounter = remoteReadQueriesRequestTotal.WithLabelValues(c.remoteName, c.url.String(), strconv.Itoa(httpResp.StatusCode))
+		remoteReadRequestTotalCounter.Inc()
+	}
+
 	return resp.Results[0], nil
 }
