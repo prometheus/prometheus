@@ -2005,7 +2005,22 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 
 		case parser.AVG:
 			group.groupCount++
-			group.mean += (s.V - group.mean) / float64(group.groupCount)
+			if math.IsInf(group.mean, 0) {
+				if math.IsInf(s.V, 0) && (group.mean > 0) == (s.V > 0) {
+					// The `mean` and `s.V` values are `Inf` of the same sign.  They
+					// can't be substracted, but the value of `mean` is correct
+					// already.  Continue the loop. `break` can not be used because
+					// if an opposite `Inf` is met later, `mean` must become `NaN`.
+					break
+				}
+				if !math.IsInf(s.V, 0) && !math.IsNaN(s.V) {
+					// It the mean is an `Inf`, avoid removing an `Inf` with
+					// itself.
+					break
+				}
+			}
+			// Divide each side of the `-` by `group.groupCount` to avoid float64 overflows.
+			group.mean += s.V/float64(group.groupCount) - group.mean/float64(group.groupCount)
 
 		case parser.GROUP:
 			// Do nothing. Required to avoid the panic in `default:` below.
