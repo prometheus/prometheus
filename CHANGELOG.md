@@ -1,4 +1,4 @@
-## 2.19.0-rc.0 / 2020-06-05
+## 2.19.0 / 2020-06-09
 
 * [FEATURE] TSDB: Memory-map full chunks of Head (in-memory) block from disk. This reduces memory footprint and makes restarts faster. #6679
 * [ENHANCEMENT] Discovery: Added discovery support for Triton global zones. #7250
@@ -10,6 +10,7 @@
 * [BUGFIX] React UI: Don't null out data when clicking on the current tab. #7243
 * [BUGFIX] PromQL: Correctly track number of samples for a query. #7307
 * [BUGFIX] PromQL: Return NaN when histogram buckets have 0 observations. #7318
+* [BUGFIX] TSDB: Fix incorrect query results when using Prometheus with remote reads configured #7361
 
 ## 2.18.1 / 2020-05-07
 
