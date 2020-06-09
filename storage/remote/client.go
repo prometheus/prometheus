@@ -201,7 +201,6 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 	}
 
 	httpResp, err := c.client.Do(httpReq)
-
 	if err != nil {
 		return nil, errors.Wrap(err, "error sending request")
 	}
@@ -210,19 +209,14 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 		httpResp.Body.Close()
 	}()
 
-	var remoteReadTotalCounter prometheus.Counter
+	remoteReadTotalCounter := remoteReadQueriesTotal.WithLabelValues(c.remoteName, c.url.String(), strconv.Itoa(httpResp.StatusCode))
 
 	compressed, err = ioutil.ReadAll(httpResp.Body)
 	if err != nil {
-		remoteReadTotalCounter = remoteReadQueriesTotal.WithLabelValues(c.remoteName, c.url.String(), "504")
 		return nil, errors.Wrap(err, fmt.Sprintf("error reading response. HTTP status code: %s", httpResp.Status))
 	}
 
 	if httpResp.StatusCode/100 != 2 {
-		if httpResp.StatusCode == 500 {
-			remoteReadTotalCounter = remoteReadQueriesTotal.WithLabelValues(c.remoteName, c.url.String(), "500")
-		}
-
 		return nil, errors.Errorf("remote server %s returned HTTP status %s: %s", c.url.String(), httpResp.Status, strings.TrimSpace(string(compressed)))
 	}
 
@@ -241,7 +235,6 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 		return nil, errors.Errorf("responses: want %d, got %d", len(req.Queries), len(resp.Results))
 	}
 
-	remoteReadTotalCounter = remoteReadQueriesTotal.WithLabelValues(c.remoteName, c.url.String(), strconv.Itoa(httpResp.StatusCode))
 	remoteReadTotalCounter.Inc()
 
 	return resp.Results[0], nil
