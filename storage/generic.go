@@ -108,24 +108,26 @@ func (q *chunkQuerierAdapter) Select(sortSeries bool, hints *SelectHints, matche
 
 type seriesMergerAdapter struct {
 	VerticalSeriesMergeFunc
+	buf []Series
 }
 
 func (a *seriesMergerAdapter) Merge(s ...Labels) Labels {
-	buf := make([]Series, 0, len(s))
+	a.buf = a.buf[:0]
 	for _, ser := range s {
-		buf = append(buf, ser.(Series))
+		a.buf = append(a.buf, ser.(Series))
 	}
-	return a.VerticalSeriesMergeFunc(buf...)
+	return a.VerticalSeriesMergeFunc(a.buf...)
 }
 
 type chunkSeriesMergerAdapter struct {
 	VerticalChunkSeriesMergerFunc
+	buf []ChunkSeries
 }
 
 func (a *chunkSeriesMergerAdapter) Merge(s ...Labels) Labels {
-	buf := make([]ChunkSeries, 0, len(s))
+	a.buf = a.buf[:0]
 	for _, ser := range s {
-		buf = append(buf, ser.(ChunkSeries))
+		a.buf = append(a.buf, ser.(ChunkSeries))
 	}
-	return a.VerticalChunkSeriesMergerFunc(buf...)
+	return a.VerticalChunkSeriesMergerFunc(a.buf...)
 }
