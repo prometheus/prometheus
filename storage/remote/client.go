@@ -210,6 +210,7 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 	}()
 
 	remoteReadTotalCounter := remoteReadQueriesTotal.WithLabelValues(c.remoteName, c.url.String(), strconv.Itoa(httpResp.StatusCode))
+	remoteReadTotalCounter.Inc()
 
 	compressed, err = ioutil.ReadAll(httpResp.Body)
 	if err != nil {
@@ -234,8 +235,6 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 	if len(resp.Results) != len(req.Queries) {
 		return nil, errors.Errorf("responses: want %d, got %d", len(req.Queries), len(resp.Results))
 	}
-
-	remoteReadTotalCounter.Inc()
 
 	return resp.Results[0], nil
 }
