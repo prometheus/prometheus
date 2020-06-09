@@ -126,12 +126,3 @@ func (a *chunkSeriesMergerAdapter) Merge(s ...Labels) Labels {
 	}
 	return a.VerticalChunkSeriesMergerFunc(buf...)
 }
-
-type genericErrSeriesSet struct {
-	err error
-}
-
-func (s genericErrSeriesSet) Next() bool         { return false }
-func (s genericErrSeriesSet) At() Labels         { return nil }
-func (s genericErrSeriesSet) Err() error         { return s.err }
-func (s genericErrSeriesSet) Warnings() Warnings { return nil }

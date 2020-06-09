@@ -289,7 +289,7 @@ func merge(seriesSets []genericSeriesSet, mergeFn genericSeriesMergeFunc) func()
 			// When primary fails ignore results from secondaries.
 			// Only the primary querier returns error.
 			if err := set.Err(); err != nil {
-				return genericErrSeriesSet{err}, false
+				return errorOnlySeriesSet{err}, false
 			}
 		}
 		set := &genericMergeSeriesSet{
