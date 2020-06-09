@@ -735,6 +735,7 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 		warnStorage = errors.New("storage warning")
 	)
 	for _, tcase := range []struct {
+		name     string
 		queriers []genericQuerier
 
 		expectedSelectsSeries []labels.Labels
@@ -745,6 +746,7 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 	}{
 		{},
 		{
+			name:     "one successful primary querier",
 			queriers: []genericQuerier{&mockGenericQuerier{resp: []string{"a", "b"}, warnings: nil, err: nil}},
 			expectedSelectsSeries: []labels.Labels{
 				labels.FromStrings("test", "a"),
@@ -753,6 +755,7 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 			expectedLabels: []string{"a", "b"},
 		},
 		{
+			name: "multiple successful primary queriers",
 			queriers: []genericQuerier{
 				&mockGenericQuerier{resp: []string{"a", "b"}, warnings: nil, err: nil},
 				&mockGenericQuerier{resp: []string{"b", "c"}, warnings: nil, err: nil},
@@ -765,21 +768,16 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 			expectedLabels: []string{"a", "b", "c"},
 		},
 		{
+			name:         "one failed primary querier",
 			queriers:     []genericQuerier{&mockGenericQuerier{warnings: nil, err: errStorage}},
 			expectedErrs: [3]error{errStorage, errStorage, errStorage},
 		},
 		{
-			// TODO(kakkoyun): ?
-			// queriers: []genericQuerier{
-			// 	&mockGenericQuerier{warnings: nil, err: errStorage},
-			// 	&secondaryQuerier{genericQuerier: &mockGenericQuerier{resp: []string{"b"}, warnings: nil, err: nil}},
-			// },
-			// expectedErrs: [3]error{errStorage, errStorage, errStorage},
-		},
-		{
+			name: "one successful primary querier with successful secondaries",
 			queriers: []genericQuerier{
 				&mockGenericQuerier{resp: []string{"a", "b"}, warnings: nil, err: nil},
-				&secondaryQuerier{genericQuerier: &mockGenericQuerier{resp: []string{"b", "c"}, warnings: nil, err: nil}},
+				&secondaryQuerier{genericQuerier: &mockGenericQuerier{resp: []string{"b"}, warnings: nil, err: nil}},
+				&secondaryQuerier{genericQuerier: &mockGenericQuerier{resp: []string{"c"}, warnings: nil, err: nil}},
 			},
 			expectedSelectsSeries: []labels.Labels{
 				labels.FromStrings("test", "a"),
@@ -789,17 +787,47 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 			expectedLabels: []string{"a", "b", "c"},
 		},
 		{
+			name: "one successful primary querier with empty response and successful secondaries",
+			queriers: []genericQuerier{
+				&mockGenericQuerier{resp: []string{}, warnings: nil, err: nil},
+				&secondaryQuerier{genericQuerier: &mockGenericQuerier{resp: []string{"b"}, warnings: nil, err: nil}},
+				&secondaryQuerier{genericQuerier: &mockGenericQuerier{resp: []string{"c"}, warnings: nil, err: nil}},
+			},
+			expectedSelectsSeries: []labels.Labels{
+				labels.FromStrings("test", "b"),
+				labels.FromStrings("test", "c"),
+			},
+			expectedLabels: []string{"b", "c"},
+		},
+		{
+			// TODO(kakkoyun): ?
+			name: "one failed primary querier with successful secondaries",
+			queriers: []genericQuerier{
+				&mockGenericQuerier{warnings: nil, err: errStorage},
+				&secondaryQuerier{genericQuerier: &mockGenericQuerier{resp: []string{"b"}, warnings: nil, err: nil}},
+				&secondaryQuerier{genericQuerier: &mockGenericQuerier{resp: []string{"c"}, warnings: nil, err: nil}},
+			},
+			expectedErrs: [3]error{errStorage, errStorage, errStorage},
+		},
+		{
+			name: "one successful primary querier with failed secondaries",
 			queriers: []genericQuerier{
 				&mockGenericQuerier{resp: []string{"a"}, warnings: nil, err: nil},
 				&secondaryQuerier{genericQuerier: &mockGenericQuerier{resp: []string{"b"}, warnings: nil, err: errStorage}},
+				&secondaryQuerier{genericQuerier: &mockGenericQuerier{resp: []string{"c"}, warnings: nil, err: errStorage}},
 			},
 			expectedSelectsSeries: []labels.Labels{
 				labels.FromStrings("test", "a"),
 			},
-			expectedLabels:   []string{"a"},
-			expectedWarnings: [3]Warnings{[]error{errStorage}, []error{errStorage}, []error{errStorage}},
+			expectedLabels: []string{"a"},
+			expectedWarnings: [3]Warnings{
+				[]error{errStorage, errStorage},
+				[]error{errStorage, errStorage},
+				[]error{errStorage, errStorage},
+			},
 		},
 		{
+			name: "successful queriers with warnings",
 			queriers: []genericQuerier{
 				&mockGenericQuerier{resp: []string{"a"}, warnings: []error{warnStorage}, err: nil},
 				&secondaryQuerier{genericQuerier: &mockGenericQuerier{resp: []string{"b"}, warnings: []error{warnStorage}, err: nil}},
@@ -816,7 +844,7 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 			},
 		},
 	} {
-		t.Run("", func(t *testing.T) {
+		t.Run(tcase.name, func(t *testing.T) {
 			q := &mergeGenericQuerier{
 				queriers: tcase.queriers,
 				mergeFn:  func(l ...Labels) Labels { return l[0] },
@@ -849,7 +877,9 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 				testutil.Assert(t, errors.Is(err, tcase.expectedErrs[1]), "expected error doesn't match")
 				testutil.Equals(t, tcase.expectedLabels, res)
 
-				// TODO(kakkoyun): !
+				if err != nil {
+					return
+				}
 				for _, qr := range q.queriers {
 					m := unwrapMockGenericQuerier(t, qr)
 
@@ -862,7 +892,9 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 				testutil.Assert(t, errors.Is(err, tcase.expectedErrs[2]), "expected error doesn't match")
 				testutil.Equals(t, tcase.expectedLabels, res)
 
-				// TODO(kakkoyun): !
+				if err != nil {
+					return
+				}
 				for _, qr := range q.queriers {
 					m := unwrapMockGenericQuerier(t, qr)
 
