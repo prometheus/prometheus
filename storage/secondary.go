@@ -81,7 +81,7 @@ func (s *secondaryQuerier) createFn(asyncSet genericSeriesSet) func() (genericSe
 					// Promote the warnings to the current one.
 					s.asyncSets[curr] = warningsOnlySeriesSet(ws)
 					// One of the sets failed, ensure rest of the sets returns nothing. (All or nothing logic).
-					for i, _ := range s.asyncSets {
+					for i := range s.asyncSets {
 						if curr != i {
 							s.asyncSets[i] = noopGenericSeriesSet{}
 						}

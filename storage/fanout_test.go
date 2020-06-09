@@ -215,7 +215,7 @@ func TestMergeQuerierWithChainMerger(t *testing.T) {
 			}
 			qs = append(qs, tc.extraQueriers...)
 
-			mergedQuerier := NewMergeQuerier(qs[0], qs, ChainedSeriesMerge).Select(false, nil)
+			mergedQuerier := NewMergeQuerier(p, qs, ChainedSeriesMerge).Select(false, nil)
 
 			// Get all merged series upfront to make sure there are no incorrectly retained shared
 			// buffers causing bugs.
