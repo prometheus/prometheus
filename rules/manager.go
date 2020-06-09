@@ -707,12 +707,7 @@ func (g *Group) RestoreForState(ts time.Time) {
 				matchers = append(matchers, mt)
 			}
 
-			sset, err, _ := q.Select(false, nil, matchers...)
-			if err != nil {
-				level.Error(g.logger).Log("msg", "Failed to restore 'for' state",
-					labels.AlertName, alertRule.Name(), "stage", "Select", "err", err)
-				return
-			}
+			sset := q.Select(false, nil, matchers...)
 
 			seriesFound := false
 			var s storage.Series
@@ -725,6 +720,17 @@ func (g *Group) RestoreForState(ts time.Time) {
 					seriesFound = true
 					break
 				}
+			}
+
+			if err := sset.Err(); err != nil {
+				// Querier Warnings are ignored. We do not care unless we have an error.
+				level.Error(g.logger).Log(
+					"msg", "Failed to restore 'for' state",
+					labels.AlertName, alertRule.Name(),
+					"stage", "Select",
+					"err", err,
+				)
+				return
 			}
 
 			if !seriesFound {

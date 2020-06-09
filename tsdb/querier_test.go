@@ -39,12 +39,14 @@ import (
 type mockSeriesSet struct {
 	next   func() bool
 	series func() storage.Series
+	ws     func() storage.Warnings
 	err    func() error
 }
 
-func (m *mockSeriesSet) Next() bool         { return m.next() }
-func (m *mockSeriesSet) At() storage.Series { return m.series() }
-func (m *mockSeriesSet) Err() error         { return m.err() }
+func (m *mockSeriesSet) Next() bool                 { return m.next() }
+func (m *mockSeriesSet) At() storage.Series         { return m.series() }
+func (m *mockSeriesSet) Err() error                 { return m.err() }
+func (m *mockSeriesSet) Warnings() storage.Warnings { return m.ws() }
 
 func newMockSeriesSet(list []storage.Series) *mockSeriesSet {
 	i := -1
@@ -57,11 +59,11 @@ func newMockSeriesSet(list []storage.Series) *mockSeriesSet {
 			return list[i]
 		},
 		err: func() error { return nil },
+		ws:  func() storage.Warnings { return nil },
 	}
 }
 
 func TestMergedSeriesSet(t *testing.T) {
-
 	cases := []struct {
 		// The input sets in order (samples in series in b are strictly
 		// after those in a).
@@ -373,15 +375,14 @@ Outer:
 			maxt: c.maxt,
 		}
 
-		res, ws, err := querier.Select(false, nil, c.ms...)
-		testutil.Ok(t, err)
-		testutil.Equals(t, 0, len(ws))
+		res := querier.Select(false, nil, c.ms...)
 
 		for {
 			eok, rok := c.exp.Next(), res.Next()
 			testutil.Equals(t, eok, rok)
 
 			if !eok {
+				testutil.Equals(t, 0, len(res.Warnings()))
 				continue Outer
 			}
 			sexp := c.exp.At()
@@ -536,15 +537,14 @@ Outer:
 			maxt: c.maxt,
 		}
 
-		res, ws, err := querier.Select(false, nil, c.ms...)
-		testutil.Ok(t, err)
-		testutil.Equals(t, 0, len(ws))
+		res := querier.Select(false, nil, c.ms...)
 
 		for {
 			eok, rok := c.exp.Next(), res.Next()
 			testutil.Equals(t, eok, rok)
 
 			if !eok {
+				testutil.Equals(t, 0, len(res.Warnings()))
 				continue Outer
 			}
 			sexp := c.exp.At()
@@ -1654,7 +1654,7 @@ func BenchmarkQuerySeek(b *testing.B) {
 				b.ResetTimer()
 				b.ReportAllocs()
 
-				ss, ws, err := sq.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
+				ss := sq.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
 				for ss.Next() {
 					it := ss.At().Iterator()
 					for t := mint; t <= maxt; t++ {
@@ -1664,7 +1664,7 @@ func BenchmarkQuerySeek(b *testing.B) {
 				}
 				testutil.Ok(b, ss.Err())
 				testutil.Ok(b, err)
-				testutil.Equals(b, 0, len(ws))
+				testutil.Equals(b, 0, len(ss.Warnings()))
 			})
 		}
 	}
@@ -1792,9 +1792,11 @@ func BenchmarkSetMatcher(b *testing.B) {
 			b.ResetTimer()
 			b.ReportAllocs()
 			for n := 0; n < b.N; n++ {
-				_, ws, err := que.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "test", c.pattern))
-				testutil.Ok(b, err)
-				testutil.Equals(b, 0, len(ws))
+				ss := que.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "test", c.pattern))
+				for ss.Next() {
+				}
+				testutil.Ok(b, ss.Err())
+				testutil.Equals(b, 0, len(ss.Warnings()))
 			}
 		})
 	}
@@ -2252,9 +2254,7 @@ func benchQuery(b *testing.B, expExpansions int, q storage.Querier, selectors la
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		ss, ws, err := q.Select(false, nil, selectors...)
-		testutil.Ok(b, err)
-		testutil.Equals(b, 0, len(ws))
+		ss := q.Select(false, nil, selectors...)
 		var actualExpansions int
 		for ss.Next() {
 			s := ss.At()
@@ -2264,6 +2264,8 @@ func benchQuery(b *testing.B, expExpansions int, q storage.Querier, selectors la
 			}
 			actualExpansions++
 		}
+		testutil.Ok(b, ss.Err())
+		testutil.Equals(b, 0, len(ss.Warnings()))
 		testutil.Equals(b, expExpansions, actualExpansions)
 		testutil.Ok(b, ss.Err())
 	}

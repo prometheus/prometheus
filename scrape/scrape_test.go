@@ -1617,9 +1617,9 @@ func TestScrapeLoopDiscardDuplicateLabels(t *testing.T) {
 
 	q, err := s.Querier(ctx, time.Time{}.UnixNano(), 0)
 	testutil.Ok(t, err)
-	series, _, err := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
-	testutil.Ok(t, err)
+	series := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
 	testutil.Equals(t, false, series.Next(), "series found in tsdb")
+	testutil.Ok(t, series.Err())
 
 	// We add a good metric to check that it is recorded.
 	_, _, _, err = sl.append([]byte("test_metric{le=\"500\"} 1\n"), "", time.Time{})
@@ -1627,9 +1627,9 @@ func TestScrapeLoopDiscardDuplicateLabels(t *testing.T) {
 
 	q, err = s.Querier(ctx, time.Time{}.UnixNano(), 0)
 	testutil.Ok(t, err)
-	series, _, err = q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "le", "500"))
-	testutil.Ok(t, err)
+	series = q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "le", "500"))
 	testutil.Equals(t, true, series.Next(), "series not found in tsdb")
+	testutil.Ok(t, series.Err())
 	testutil.Equals(t, false, series.Next(), "more than one series found in tsdb")
 }
 
@@ -1663,9 +1663,9 @@ func TestScrapeLoopDiscardUnnamedMetrics(t *testing.T) {
 
 	q, err := s.Querier(ctx, time.Time{}.UnixNano(), 0)
 	testutil.Ok(t, err)
-	series, _, err := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
-	testutil.Ok(t, err)
+	series := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
 	testutil.Equals(t, false, series.Next(), "series found in tsdb")
+	testutil.Ok(t, series.Err())
 }
 
 func TestReusableConfig(t *testing.T) {

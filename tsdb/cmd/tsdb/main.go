@@ -617,18 +617,7 @@ func dumpSamples(db *tsdb.DBReadOnly, mint, maxt int64) (err error) {
 		err = merr.Err()
 	}()
 
-	ss, ws, err := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
-	if err != nil {
-		return err
-	}
-
-	if len(ws) > 0 {
-		var merr tsdb_errors.MultiError
-		for _, w := range ws {
-			merr.Add(w)
-		}
-		return merr.Err()
-	}
+	ss := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
 
 	for ss.Next() {
 		series := ss.At()
@@ -641,6 +630,14 @@ func dumpSamples(db *tsdb.DBReadOnly, mint, maxt int64) (err error) {
 		if it.Err() != nil {
 			return ss.Err()
 		}
+	}
+
+	if ws := ss.Warnings(); len(ws) > 0 {
+		var merr tsdb_errors.MultiError
+		for _, w := range ws {
+			merr.Add(w)
+		}
+		return merr.Err()
 	}
 
 	if ss.Err() != nil {
