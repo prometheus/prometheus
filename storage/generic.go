@@ -126,3 +126,13 @@ func (a *chunkSeriesMergerAdapter) Merge(s ...Labels) Labels {
 	}
 	return a.VerticalChunkSeriesMergerFunc(buf...)
 }
+
+type noopGenericSeriesSet struct{}
+
+func (noopGenericSeriesSet) Next() bool { return false }
+
+func (noopGenericSeriesSet) At() Labels { return nil }
+
+func (noopGenericSeriesSet) Err() error { return nil }
+
+func (noopGenericSeriesSet) Warnings() Warnings { return nil }

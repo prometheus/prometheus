@@ -17,7 +17,6 @@ import (
 	"sync"
 
 	"github.com/prometheus/prometheus/pkg/labels"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 )
 
 // secondaryQuerier is a wrapper that allows a querier to be treated in a best effort manner.
@@ -71,31 +70,37 @@ func (s *secondaryQuerier) createFn(asyncSet genericSeriesSet) func() (genericSe
 		s.once.Do(func() {
 			// At first create invocation we iterate over all sets and ensure its Next() returns some value without
 			// errors. This is to ensure we support consistent partial failures.
-			var errs tsdb_errors.MultiError
 			for i, set := range s.asyncSets {
 				if set.Next() {
 					continue
 				}
-				// Failed or exhausted set.
 				ws := set.Warnings()
+				// Failed set.
 				if err := set.Err(); err != nil {
-					errs.Add(err)
 					ws = append([]error{err}, ws...)
+					// Promote the warnings to the current one.
+					s.asyncSets[curr] = warningsOnlySeriesSet(ws)
+					// One of the sets failed, ensure rest of the sets returns nothing. (All or nothing logic).
+					for i, _ := range s.asyncSets {
+						if curr != i {
+							s.asyncSets[i] = noopGenericSeriesSet{}
+						}
+					}
+					break
 				}
+				// Exhausted set.
 				s.asyncSets[i] = warningsOnlySeriesSet(ws)
 			}
 
-			if errs.Err() != nil {
-				// One failed, ensure all sets returns nothing. (All or nothing logic).
-				for i, set := range s.asyncSets {
-					s.asyncSets[i] = warningsOnlySeriesSet(set.Warnings())
-				}
-			}
 			s.done = true
 		})
 
-		_, ok := s.asyncSets[curr].(warningsOnlySeriesSet)
-		return s.asyncSets[curr], !ok
+		switch s.asyncSets[curr].(type) {
+		case warningsOnlySeriesSet, noopGenericSeriesSet:
+			return s.asyncSets[curr], false
+		default:
+			return s.asyncSets[curr], true
+		}
 	}
 }
 
