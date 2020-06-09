@@ -42,9 +42,9 @@ type fanout struct {
 // through to multiple underlying storages.
 //
 // The difference between primary and secondary Storage is only for read (Querier) path and it goes as follows:
-// * If the primary querier returns an error, the any of the Querier operation will fail.
-// * If the any secondary querier returns an error the result is discarded, fanout returns only warnings but the Querier
-// operation will claim success.
+// * If the primary querier returns an error, then any of the Querier operations will fail.
+// * If any secondary querier returns an error the result from that queries is discarded. The overall operation will succeed,
+// and the error from the secondary querier will be returned as a warning.
 //
 // NOTE: In the case of Prometheus, it treats all remote storages as secondary / best effort.
 func NewFanout(logger log.Logger, primary Storage, secondaries ...Storage) Storage {
