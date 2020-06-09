@@ -800,7 +800,6 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 			expectedLabels: []string{"b", "c"},
 		},
 		{
-			// TODO(kakkoyun): ?
 			name: "one failed primary querier with successful secondaries",
 			queriers: []genericQuerier{
 				&mockGenericQuerier{warnings: nil, err: errStorage},

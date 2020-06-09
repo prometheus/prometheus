@@ -267,16 +267,15 @@ func (q *mergeGenericQuerier) Select(sortSeries bool, hints *SelectHints, matche
 	for r := range seriesSetChan {
 		seriesSets = append(seriesSets, r)
 	}
-	return &lazySeriesSet{create: merge(seriesSets, q.mergeFn)}
+	return &lazySeriesSet{create: create(seriesSets, q.mergeFn)}
 }
 
-func merge(seriesSets []genericSeriesSet, mergeFn genericSeriesMergeFunc) func() (genericSeriesSet, bool) {
+func create(seriesSets []genericSeriesSet, mergeFn genericSeriesMergeFunc) func() (genericSeriesSet, bool) {
 	// Returned function gets called with the first call to Next().
 	return func() (genericSeriesSet, bool) {
 		if len(seriesSets) == 1 {
 			return seriesSets[0], seriesSets[0].Next()
 		}
-
 		var h genericSeriesSetHeap
 		for _, set := range seriesSets {
 			if set == nil {
