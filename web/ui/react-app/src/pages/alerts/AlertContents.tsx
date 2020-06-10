@@ -1,9 +1,10 @@
-import React, { FC, useState, Fragment } from 'react';
+import React, { FC, Fragment } from 'react';
 import { Badge } from 'reactstrap';
 import CollapsibleAlertPanel from './CollapsibleAlertPanel';
 import Checkbox from '../../components/Checkbox';
 import { isPresent } from '../../utils';
 import { Rule } from '../../types/types';
+import { useLocalStorage } from '../../hooks/useLocalStorage';
 
 export type RuleState = keyof RuleStatus<any>;
 
@@ -40,18 +41,22 @@ const stateColorTuples: Array<[RuleState, 'success' | 'warning' | 'danger']> = [
 ];
 
 const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
-  const [filter, setFilter] = useState<RuleStatus<boolean>>({
+  const [filter, setFilter] = useLocalStorage('alerts-status-filter', {
     firing: true,
     pending: true,
     inactive: true,
   });
-  const [showAnnotations, setShowAnnotations] = useState(false);
+  const [showAnnotations, setShowAnnotations] = useLocalStorage('alerts-annotations-status', { checked: false });
 
   const toggleFilter = (ruleState: RuleState) => () => {
     setFilter({
       ...filter,
       [ruleState]: !filter[ruleState],
     });
+  };
+
+  const toggleAnnotations = () => {
+    setShowAnnotations({ checked: !showAnnotations.checked });
   };
 
   return (
@@ -62,7 +67,7 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
             <Checkbox
               key={state}
               wrapperStyles={{ marginRight: 10 }}
-              defaultChecked
+              checked={filter[state]}
               id={`${state}-toggler`}
               onClick={toggleFilter(state)}
             >
@@ -74,8 +79,9 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
         })}
         <Checkbox
           wrapperStyles={{ marginLeft: 'auto' }}
+          checked={showAnnotations.checked}
           id="show-annotations-toggler"
-          onClick={() => setShowAnnotations(!showAnnotations)}
+          onClick={() => toggleAnnotations()}
         >
           <span style={{ fontSize: '0.9rem', lineHeight: 1.9 }}>Show annotations</span>
         </Checkbox>
@@ -90,7 +96,7 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
             {group.rules.map((rule, j) => {
               return (
                 filter[rule.state] && (
-                  <CollapsibleAlertPanel key={rule.name + j} showAnnotations={showAnnotations} rule={rule} />
+                  <CollapsibleAlertPanel key={rule.name + j} showAnnotations={showAnnotations.checked} rule={rule} />
                 )
               );
             })}
