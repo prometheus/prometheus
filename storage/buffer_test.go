@@ -161,6 +161,43 @@ func TestBufferedSeriesIteratorNoBadAt(t *testing.T) {
 	it.Next()
 }
 
+func TestBufferReduceDelta(t *testing.T) {
+	for _, tc := range []struct {
+		input    int64
+		r        *sampleRing
+		expexted bool
+	}{
+		{
+			input: 2,
+			r: &sampleRing{
+				delta: 1,
+			},
+			expexted: false,
+		},
+		{
+			input: 2,
+			r: &sampleRing{
+				delta: 4,
+				l:     0,
+			},
+			expexted: true,
+		},
+		{
+			input: 2,
+			r: &sampleRing{
+				delta: 4,
+				buf:   []sample{{1, 2}, {2, 4}, {3, 6}, {4, 8}},
+				i:     3,
+				f:     0,
+				l:     4,
+			},
+			expexted: true,
+		},
+	} {
+		testutil.Equals(t, tc.expexted, tc.r.reduceDelta(tc.input))
+	}
+}
+
 func BenchmarkBufferedSeriesIterator(b *testing.B) {
 	// Simulate a 5 minute rate.
 	it := NewBufferIterator(newFakeSeriesIterator(int64(b.N), 30), 5*60)
