@@ -141,37 +141,54 @@ type querier struct {
 // If requiredMatchers are given, select returns a NoopSeriesSet if the given matchers don't match the label set of the
 // requiredMatchers. Otherwise it'll just call remote endpoint.
 func (q *querier) Select(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	if len(q.requiredMatchers) > 0 {
-		// Copy to not modify slice configured by user.
-		requiredMatchers := append([]*labels.Matcher{}, q.requiredMatchers...)
-		for _, m := range matchers {
-			for i, r := range requiredMatchers {
-				if m.Type == labels.MatchEqual && m.Name == r.Name && m.Value == r.Value {
-					// Requirement matched.
-					requiredMatchers = append(requiredMatchers[:i], requiredMatchers[i+1:]...)
+	promise := make(chan storage.SeriesSet, 1)
+	go func() {
+		defer close(promise)
+
+		if len(q.requiredMatchers) > 0 {
+			// Copy to not modify slice configured by user.
+			requiredMatchers := append([]*labels.Matcher{}, q.requiredMatchers...)
+			for _, m := range matchers {
+				for i, r := range requiredMatchers {
+					if m.Type == labels.MatchEqual && m.Name == r.Name && m.Value == r.Value {
+						// Requirement matched.
+						requiredMatchers = append(requiredMatchers[:i], requiredMatchers[i+1:]...)
+						break
+					}
+				}
+				if len(requiredMatchers) == 0 {
 					break
 				}
 			}
-			if len(requiredMatchers) == 0 {
-				break
+			if len(requiredMatchers) > 0 {
+				promise <- storage.NoopSeriesSet()
+				return
 			}
 		}
-		if len(requiredMatchers) > 0 {
-			return storage.NoopSeriesSet()
+
+		m, added := q.addExternalLabels(matchers)
+		query, err := ToQuery(q.mint, q.maxt, m, hints)
+		if err != nil {
+			promise <- storage.ErrSeriesSet(errors.Wrap(err, "to_query"))
+			return
 		}
-	}
 
-	m, added := q.addExternalLabels(matchers)
-	query, err := ToQuery(q.mint, q.maxt, m, hints)
-	if err != nil {
-		return storage.ErrSeriesSet(errors.Wrap(err, "toQuery"))
-	}
+		res, err := q.client.Read(q.ctx, query)
+		if err != nil {
+			promise <- storage.ErrSeriesSet(errors.Wrap(err, "remote_read"))
+			return
+		}
 
-	res, err := q.client.Read(q.ctx, query)
-	if err != nil {
-		return storage.ErrSeriesSet(errors.Wrap(err, "remote_read"))
-	}
-	return newSeriesSetFilter(FromQueryResult(sortSeries, res), added)
+		promise <- newSeriesSetFilter(FromQueryResult(sortSeries, res), added)
+	}()
+
+	return &lazySeriesSet{create: func() (storage.SeriesSet, bool) {
+		set, ok := <-promise
+		if !ok {
+			return storage.ErrSeriesSet(errors.New("channel closed before a value received")), false
+		}
+		return set, set.Next()
+	}}
 }
 
 // addExternalLabels adds matchers for each external label. External labels
@@ -280,4 +297,41 @@ func (sf seriesFilter) Labels() labels.Labels {
 		}
 	}
 	return labels
+}
+
+type lazySeriesSet struct {
+	create func() (s storage.SeriesSet, ok bool)
+
+	set storage.SeriesSet
+}
+
+func (c *lazySeriesSet) Next() bool {
+	if c.set != nil {
+		return c.set.Next()
+	}
+
+	var ok bool
+	c.set, ok = c.create()
+	return ok
+}
+
+func (c *lazySeriesSet) Err() error {
+	if c.set != nil {
+		return c.set.Err()
+	}
+	return nil
+}
+
+func (c *lazySeriesSet) At() storage.Series {
+	if c.set != nil {
+		return c.set.At()
+	}
+	return nil
+}
+
+func (c *lazySeriesSet) Warnings() storage.Warnings {
+	if c.set != nil {
+		return c.set.Warnings()
+	}
+	return nil
 }
