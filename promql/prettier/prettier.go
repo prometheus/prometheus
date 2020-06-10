@@ -4,16 +4,10 @@ import (
 	"fmt"
 	"io/ioutil"
 	"reflect"
-
-	// "sort"
 	"strconv"
 	"strings"
 
-	// "time"
-
 	"github.com/pkg/errors"
-	// "github.com/prometheus/common/model"
-	// "github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/prometheus/prometheus/promql/parser"
 )
@@ -37,10 +31,10 @@ type Prettier struct {
 }
 
 type padder struct {
-	indent                                         string
-	previous, buff, intraNodeIndent                int
-	isNewLineApplied, changeNewLine, expectNextRHS bool
-	expectNextIdentifier, previousBaseIndent       string
+	indent                                   string
+	previous, buff                           int
+	isNewLineApplied, expectNextRHS          bool
+	expectNextIdentifier, previousBaseIndent string
 }
 
 // New returns a new prettier over the given slice of files.
@@ -124,17 +118,16 @@ var exmpt = []uint{
 }
 
 func (p *Prettier) prettify(items []parser.Item, index int, result string) (string, error) {
-	item := items[index]
-	var baseIndent string
-	fmt.Println(".................................................")
-	fmt.Println("item => ", item.String())
+	var (
+		baseIndent string
+		item       = items[index]
+	)
 	if item.Typ == parser.EOF {
 		return result, nil
 	}
 	if !p.exmptBaseIndent(item) {
 		baseIndent, _, _ = p.getBaseIndent(item, p.Node)
 		if baseIndent != p.pd.previousBaseIndent { // denotes change of node
-			fmt.Println("changed")
 			result += "\n"
 		}
 		result += baseIndent
@@ -164,6 +157,8 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 		result += item.Val
 	case parser.ADD:
 		result += item.Val
+	case parser.COMMENT:
+		result += p.pd.previousBaseIndent + item.Val + "\n"
 	}
 	if index+1 == len(items) {
 		return result, nil
@@ -183,7 +178,8 @@ func (p *Prettier) exmptBaseIndent(item parser.Item) bool {
 	return false
 }
 
-func (p *Prettier) getNode(headAST parser.Expr, rnge parser.PositionRange) (reflect.Type) {
+// getNode returns the node of the given position range in the AST.
+func (p *Prettier) getNode(headAST parser.Expr, rnge parser.PositionRange) reflect.Type {
 	ancestors, found := p.getNodeAncestorsStack(headAST, rnge, []reflect.Type{})
 	if !found {
 		return nil
@@ -194,14 +190,12 @@ func (p *Prettier) getNode(headAST parser.Expr, rnge parser.PositionRange) (refl
 	return ancestors[len(ancestors)-1]
 }
 
-func (p *Prettier) getParentNode(headAST parser.Expr, rnge parser.PositionRange) (reflect.Type) {
-	fmt.Println("pos range is ", rnge)
+// getParentNode returns the parent node of the given node/item position range.
+func (p *Prettier) getParentNode(headAST parser.Expr, rnge parser.PositionRange) reflect.Type {
 	ancestors, found := p.getNodeAncestorsStack(headAST, rnge, []reflect.Type{})
 	if !found {
 		return nil
 	}
-	fmt.Println("ancestors are below")
-	fmt.Println(ancestors)
 	if len(ancestors) < 2 {
 		return nil
 	}
@@ -210,8 +204,6 @@ func (p *Prettier) getParentNode(headAST parser.Expr, rnge parser.PositionRange)
 
 // getNodeAncestorsStack returns the ancestors (including the node itself) of the input node from the AST.
 func (p *Prettier) getNodeAncestorsStack(head parser.Expr, posRange parser.PositionRange, stack []reflect.Type) ([]reflect.Type, bool) {
-	// fmt.Println("head is ", head)
-	// fmt.Println("stack is ", stack)
 	switch n := head.(type) {
 	case *parser.ParenExpr:
 		if n.PosRange.Start <= posRange.Start && n.PosRange.End >= posRange.End {
@@ -222,8 +214,6 @@ func (p *Prettier) getNodeAncestorsStack(head parser.Expr, posRange parser.Posit
 		return stack, false
 	case *parser.VectorSelector:
 		if n.PosRange.Start <= posRange.Start && n.PosRange.End >= posRange.End {
-			fmt.Println("ancestor ", n.PosRange)
-
 			stack = append(stack, reflect.TypeOf(n))
 			return stack, true
 		}
@@ -249,7 +239,6 @@ func (p *Prettier) getNodeAncestorsStack(head parser.Expr, posRange parser.Posit
 func (p *Prettier) removeNodesWithoutPosRange(stack []reflect.Type, typ string) []reflect.Type {
 	for i := len(stack) - 1; i >= 0; i++ {
 		if stack[i].String() == typ {
-			fmt.Println("removing")
 			stack = stack[:len(stack)-1]
 		}
 		break
@@ -259,14 +248,14 @@ func (p *Prettier) removeNodesWithoutPosRange(stack []reflect.Type, typ string) 
 
 func (p *Prettier) getBaseIndent(item parser.Item, node parser.Expr) (string, *parser.PositionRange, reflect.Type) {
 	var (
-		indent int
-		tmp parser.Expr
+		indent        int
+		tmp           parser.Expr
 		expectNextRHS bool
-		previousNode string
-		exprType reflect.Type
+		previousNode  string
+		exprType      reflect.Type
+		posRange      *parser.PositionRange
+		head          = node
 	)
-	posRange := &parser.PositionRange{}
-	head := node
 	if head == nil {
 		return "", nil, nil
 	}
@@ -304,7 +293,6 @@ func (p *Prettier) getBaseIndent(item parser.Item, node parser.Expr) (string, *p
 			continue
 		}
 		indent--
-		fmt.Println()
 		return p.pd.pad(indent), posRange, exprType
 	}
 }
@@ -361,13 +349,6 @@ func (p *Prettier) Run() []error {
 					if err := p.parseExpr(exprStr); err != nil {
 						return []error{err}
 					}
-					// fmt.Printf("%v\n", expr)
-					// formattedExpr, err := p.Prettify(expr, reflect.TypeOf(""), 0, "")
-					// if err != nil {
-					// 	return []error{errors.Wrap(err, "prettier error")}
-					// }
-					// fmt.Println("raw\n", formattedExpr)
-					// rules.Expr.SetString(formattedExpr)
 					res := p.lexItems(exprStr)
 					p.pd.buff = 1
 					formattedExpr, err := p.prettify(res, 0, "")
