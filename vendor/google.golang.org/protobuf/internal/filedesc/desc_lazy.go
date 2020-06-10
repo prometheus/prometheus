@@ -441,6 +441,8 @@ func (fd *Field) unmarshalFull(b []byte, sb *strs.Builder, pf *File, pd pref.Des
 					panic("oneof type already set")
 				}
 				fd.L1.ContainingOneof = od
+			case fieldnum.FieldDescriptorProto_Proto3Optional:
+				fd.L1.IsProto3Optional = protowire.DecodeBool(v)
 			}
 		case protowire.BytesType:
 			v, m := protowire.ConsumeBytes(b)
@@ -537,6 +539,13 @@ func (xd *Extension) unmarshalFull(b []byte, sb *strs.Builder) {
 		num, typ, n := protowire.ConsumeTag(b)
 		b = b[n:]
 		switch typ {
+		case protowire.VarintType:
+			v, m := protowire.ConsumeVarint(b)
+			b = b[m:]
+			switch num {
+			case fieldnum.FieldDescriptorProto_Proto3Optional:
+				xd.L2.IsProto3Optional = protowire.DecodeBool(v)
+			}
 		case protowire.BytesType:
 			v, m := protowire.ConsumeBytes(b)
 			b = b[m:]

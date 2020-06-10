@@ -12,6 +12,14 @@ import (
 
 // Symbols defined in public import of google/protobuf/compiler/plugin.proto.
 
+type CodeGeneratorResponse_Feature = pluginpb.CodeGeneratorResponse_Feature
+
+const CodeGeneratorResponse_FEATURE_NONE = pluginpb.CodeGeneratorResponse_FEATURE_NONE
+const CodeGeneratorResponse_FEATURE_PROTO3_OPTIONAL = pluginpb.CodeGeneratorResponse_FEATURE_PROTO3_OPTIONAL
+
+var CodeGeneratorResponse_Feature_name = pluginpb.CodeGeneratorResponse_Feature_name
+var CodeGeneratorResponse_Feature_value = pluginpb.CodeGeneratorResponse_Feature_value
+
 type Version = pluginpb.Version
 type CodeGeneratorRequest = pluginpb.CodeGeneratorRequest
 type CodeGeneratorResponse = pluginpb.CodeGeneratorResponse

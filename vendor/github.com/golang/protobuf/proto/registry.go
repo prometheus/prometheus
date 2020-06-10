@@ -29,7 +29,7 @@ var fileCache sync.Map // map[filePath]fileDescGZIP
 // RegisterFile is called from generated code to register the compressed
 // FileDescriptorProto with the file path for a proto source file.
 //
-// Deprecated: Use protoregistry.GlobalFiles.Register instead.
+// Deprecated: Use protoregistry.GlobalFiles.RegisterFile instead.
 func RegisterFile(s filePath, d fileDescGZIP) {
 	// Decompress the descriptor.
 	zr, err := gzip.NewReader(bytes.NewReader(d))
@@ -53,7 +53,7 @@ func RegisterFile(s filePath, d fileDescGZIP) {
 // FileDescriptor returns the compressed FileDescriptorProto given the file path
 // for a proto source file. It returns nil if not found.
 //
-// Deprecated: Use protoregistry.GlobalFiles.RangeFilesByPath instead.
+// Deprecated: Use protoregistry.GlobalFiles.FindFileByPath instead.
 func FileDescriptor(s filePath) fileDescGZIP {
 	if v, ok := fileCache.Load(s); ok {
 		return v.(fileDescGZIP)
@@ -98,7 +98,7 @@ var numFilesCache sync.Map // map[protoreflect.FullName]int
 // RegisterEnum is called from the generated code to register the mapping of
 // enum value names to enum numbers for the enum identified by s.
 //
-// Deprecated: Use protoregistry.GlobalTypes.Register instead.
+// Deprecated: Use protoregistry.GlobalTypes.RegisterEnum instead.
 func RegisterEnum(s enumName, _ enumsByNumber, m enumsByName) {
 	if _, ok := enumCache.Load(s); ok {
 		panic("proto: duplicate enum registered: " + s)
@@ -181,7 +181,7 @@ var messageTypeCache sync.Map // map[messageName]reflect.Type
 // RegisterType is called from generated code to register the message Go type
 // for a message of the given name.
 //
-// Deprecated: Use protoregistry.GlobalTypes.Register instead.
+// Deprecated: Use protoregistry.GlobalTypes.RegisterMessage instead.
 func RegisterType(m Message, s messageName) {
 	mt := protoimpl.X.LegacyMessageTypeOf(m, protoreflect.FullName(s))
 	if err := protoregistry.GlobalTypes.RegisterMessage(mt); err != nil {
@@ -280,7 +280,7 @@ func MessageName(m Message) messageName {
 // RegisterExtension is called from the generated code to register
 // the extension descriptor.
 //
-// Deprecated: Use protoregistry.GlobalTypes.Register instead.
+// Deprecated: Use protoregistry.GlobalTypes.RegisterExtension instead.
 func RegisterExtension(d *ExtensionDesc) {
 	if err := protoregistry.GlobalTypes.RegisterExtension(d); err != nil {
 		panic(err)

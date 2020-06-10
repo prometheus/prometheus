@@ -155,6 +155,8 @@ func (x placeholderExtension) Cardinality() pref.Cardinality              { retu
 func (x placeholderExtension) Kind() pref.Kind                            { return 0 }
 func (x placeholderExtension) HasJSONName() bool                          { return false }
 func (x placeholderExtension) JSONName() string                           { return "" }
+func (x placeholderExtension) HasPresence() bool                          { return false }
+func (x placeholderExtension) HasOptionalKeyword() bool                   { return false }
 func (x placeholderExtension) IsExtension() bool                          { return true }
 func (x placeholderExtension) IsWeak() bool                               { return false }
 func (x placeholderExtension) IsPacked() bool                             { return false }

@@ -155,8 +155,7 @@ func BenchmarkQuerierSelect(b *testing.B) {
 
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
-					ss, _, err := q.Select(sorted, nil, matcher)
-					testutil.Ok(b, err)
+					ss := q.Select(sorted, nil, matcher)
 					for ss.Next() {
 					}
 					testutil.Ok(b, ss.Err())

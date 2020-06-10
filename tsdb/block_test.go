@@ -203,9 +203,7 @@ func TestCorruptedChunk(t *testing.T) {
 			querier, err := NewBlockQuerier(b, 0, 1)
 			testutil.Ok(t, err)
 			defer func() { testutil.Ok(t, querier.Close()) }()
-			set, ws, err := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
-			testutil.Ok(t, err)
-			testutil.Equals(t, 0, len(ws))
+			set := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 
 			// Check query err.
 			testutil.Equals(t, false, set.Next())

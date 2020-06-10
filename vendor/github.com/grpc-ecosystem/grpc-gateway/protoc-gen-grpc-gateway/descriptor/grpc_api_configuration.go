@@ -16,7 +16,7 @@ func loadGrpcAPIServiceFromYAML(yamlFileContents []byte, yamlSourceLogName strin
 		return nil, fmt.Errorf("Failed to convert gRPC API Configuration from YAML in '%v' to JSON: %v", yamlSourceLogName, err)
 	}
 
-	// As our GrpcAPIService is incomplete accept unkown fields.
+	// As our GrpcAPIService is incomplete accept unknown fields.
 	unmarshaler := jsonpb.Unmarshaler{
 		AllowUnknownFields: true,
 	}

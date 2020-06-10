@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package jsonpb provides marshaling and unmarshaling between a protocol buffer
-// message and JSON. It follows the specification at
+// Package jsonpb provides functionality to marshal and unmarshal between a
+// protocol buffer message and JSON. It follows the specification at
 // https://developers.google.com/protocol-buffers/docs/proto3#json.
 //
 // Do not rely on the default behavior of the standard encoding/json package
@@ -20,8 +20,8 @@ import (
 	"google.golang.org/protobuf/runtime/protoimpl"
 )
 
-// AnyResolver takes a type URL, present in an Any message, and resolves it into
-// an instance of the associated message.
+// AnyResolver takes a type URL, present in an Any message,
+// and resolves it into an instance of the associated message.
 type AnyResolver interface {
 	Resolve(typeURL string) (proto.Message, error)
 }

@@ -137,6 +137,8 @@ func (opts AuthOptions) ToTokenV2CreateMap() (map[string]interface{}, error) {
 	return map[string]interface{}{"auth": authMap}, nil
 }
 
+// ToTokenV3CreateMap allows AuthOptions to satisfy the AuthOptionsBuilder
+// interface in the v3 tokens package
 func (opts *AuthOptions) ToTokenV3CreateMap(scope map[string]interface{}) (map[string]interface{}, error) {
 	type domainReq struct {
 		ID   *string `json:"id,omitempty"`
@@ -401,6 +403,8 @@ func (opts *AuthOptions) ToTokenV3CreateMap(scope map[string]interface{}) (map[s
 	return b, nil
 }
 
+// ToTokenV3ScopeMap builds a scope from AuthOptions and satisfies interface in
+// the v3 tokens package.
 func (opts *AuthOptions) ToTokenV3ScopeMap() (map[string]interface{}, error) {
 	// For backwards compatibility.
 	// If AuthOptions.Scope was not set, try to determine it.
@@ -501,4 +505,10 @@ func (opts AuthOptions) CanReauth() bool {
 	}
 
 	return opts.AllowReauth
+}
+
+// ToTokenV3HeadersMap allows AuthOptions to satisfy the AuthOptionsBuilder
+// interface in the v3 tokens package.
+func (opts *AuthOptions) ToTokenV3HeadersMap(map[string]interface{}) (map[string]string, error) {
+	return nil, nil
 }

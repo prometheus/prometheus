@@ -15,7 +15,6 @@ import (
 	"google.golang.org/protobuf/internal/genname"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	pref "google.golang.org/protobuf/reflect/protoreflect"
-	piface "google.golang.org/protobuf/runtime/protoiface"
 )
 
 // MessageInfo provides protobuf related functionality for a given Go type
@@ -109,7 +108,7 @@ func (mi *MessageInfo) getPointer(m pref.Message) (p pointer, ok bool) {
 
 type (
 	SizeCache       = int32
-	WeakFields      = map[int32]piface.MessageV1
+	WeakFields      = map[int32]protoreflect.ProtoMessage
 	UnknownFields   = []byte
 	ExtensionFields = map[int32]ExtensionField
 )

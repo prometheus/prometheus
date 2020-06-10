@@ -338,6 +338,9 @@ func fieldCoder(fd pref.FieldDescriptor, ft reflect.Type) (*MessageInfo, pointer
 				return nil, coderDoublePtr
 			}
 		case pref.StringKind:
+			if ft.Kind() == reflect.String && strs.EnforceUTF8(fd) {
+				return nil, coderStringPtrValidateUTF8
+			}
 			if ft.Kind() == reflect.String {
 				return nil, coderStringPtr
 			}

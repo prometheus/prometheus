@@ -33,8 +33,8 @@ func SizeVarint(v uint64) int {
 	return protowire.SizeVarint(v)
 }
 
-// DecodeVarint parses a varint encoded integer from b, returning the
-// integer value and the length of the varint.
+// DecodeVarint parses a varint encoded integer from b,
+// returning the integer value and the length of the varint.
 // It returns (0, 0) if there is a parse error.
 func DecodeVarint(b []byte) (uint64, int) {
 	v, n := protowire.ConsumeVarint(b)
@@ -112,9 +112,9 @@ func (b *Buffer) Marshal(m Message) error {
 	return err
 }
 
-// Unmarshal parses the wire-format message in the buffer and places the decoded results in m.
-//
-// Unlike proto.Unmarshal, this does not reset the message before starting to unmarshal.
+// Unmarshal parses the wire-format message in the buffer and
+// places the decoded results in m.
+// It does not reset m before unmarshaling.
 func (b *Buffer) Unmarshal(m Message) error {
 	err := UnmarshalMerge(b.Unread(), m)
 	b.idx = len(b.buf)
@@ -260,7 +260,7 @@ func (b *Buffer) DecodeStringBytes() (string, error) {
 }
 
 // DecodeMessage consumes a length-prefixed message from the buffer.
-// It does not reset m.
+// It does not reset m before unmarshaling.
 func (b *Buffer) DecodeMessage(m Message) error {
 	v, err := b.DecodeRawBytes(false)
 	if err != nil {
@@ -272,7 +272,7 @@ func (b *Buffer) DecodeMessage(m Message) error {
 // DecodeGroup consumes a message group from the buffer.
 // It assumes that the start group marker has already been consumed and
 // consumes all bytes until (and including the end group marker).
-// It does not reset m.
+// It does not reset m before unmarshaling.
 func (b *Buffer) DecodeGroup(m Message) error {
 	v, n, err := consumeGroup(b.buf[b.idx:])
 	if err != nil {

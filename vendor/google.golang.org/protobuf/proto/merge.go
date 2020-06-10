@@ -5,6 +5,8 @@
 package proto
 
 import (
+	"fmt"
+
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/runtime/protoiface"
 )
@@ -21,8 +23,14 @@ import (
 // It is semantically equivalent to unmarshaling the encoded form of src
 // into dst with the UnmarshalOptions.Merge option specified.
 func Merge(dst, src Message) {
+	// TODO: Should nil src be treated as semantically equivalent to a
+	// untyped, read-only, empty message? What about a nil dst?
+
 	dstMsg, srcMsg := dst.ProtoReflect(), src.ProtoReflect()
 	if dstMsg.Descriptor() != srcMsg.Descriptor() {
+		if got, want := dstMsg.Descriptor().FullName(), srcMsg.Descriptor().FullName(); got != want {
+			panic(fmt.Sprintf("descriptor mismatch: %v != %v", got, want))
+		}
 		panic("descriptor mismatch")
 	}
 	mergeOptions{}.mergeMessage(dstMsg, srcMsg)
@@ -69,7 +77,7 @@ func (o mergeOptions) mergeMessage(dst, src protoreflect.Message) {
 	}
 
 	if !dst.IsValid() {
-		panic("cannot merge into invalid destination message")
+		panic(fmt.Sprintf("cannot merge into invalid %v message", dst.Descriptor().FullName()))
 	}
 
 	src.Range(func(fd protoreflect.FieldDescriptor, v protoreflect.Value) bool {

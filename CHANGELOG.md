@@ -1,3 +1,7 @@
+## 2.18.2 / 2020-06-09
+
+* [BUGFIX] TSDB: Fix incorrect query results when using Prometheus with remote reads configured #7361
+
 ## 2.18.1 / 2020-05-07
 
 * [BUGFIX] TSDB: Fixed snapshot API. #7217

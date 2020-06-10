@@ -331,7 +331,7 @@ func (mt multiTenantSPTAuthorizer) WithAuthorization() PrepareDecorator {
 			for i := range auxTokens {
 				auxTokens[i] = fmt.Sprintf("Bearer %s", auxTokens[i])
 			}
-			return Prepare(r, WithHeader(headerAuxAuthorization, strings.Join(auxTokens, "; ")))
+			return Prepare(r, WithHeader(headerAuxAuthorization, strings.Join(auxTokens, ", ")))
 		})
 	}
 }

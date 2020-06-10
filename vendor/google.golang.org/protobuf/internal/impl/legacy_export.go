@@ -7,14 +7,12 @@ package impl
 import (
 	"encoding/binary"
 	"encoding/json"
-	"fmt"
 	"hash/crc32"
 	"math"
 	"reflect"
 
 	"google.golang.org/protobuf/internal/errors"
 	pref "google.golang.org/protobuf/reflect/protoreflect"
-	"google.golang.org/protobuf/reflect/protoregistry"
 	piface "google.golang.org/protobuf/runtime/protoiface"
 )
 
@@ -91,14 +89,4 @@ func (Export) CompressGZIP(in []byte) (out []byte) {
 	}
 	out = append(out, gzipFooter[:]...)
 	return out
-}
-
-// WeakNil returns a typed nil pointer to a concrete message.
-// It panics if the message is not linked into the binary.
-func (Export) WeakNil(s pref.FullName) piface.MessageV1 {
-	mt, err := protoregistry.GlobalTypes.FindMessageByName(s)
-	if err != nil {
-		panic(fmt.Sprintf("weak message %v is not linked in", s))
-	}
-	return mt.Zero().Interface().(piface.MessageV1)
 }
