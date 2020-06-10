@@ -117,10 +117,8 @@ func TestExternalLabelsQuerierSelect(t *testing.T) {
 		},
 	}
 	want := newSeriesSetFilter(mockSeriesSet{}, q.externalLabels)
-	have, _, err := q.Select(false, nil, matchers...)
-	if err != nil {
-		t.Error(err)
-	}
+	have := q.Select(false, nil, matchers...)
+
 	if !reflect.DeepEqual(want, have) {
 		t.Errorf("expected series set %+v, got %+v", want, have)
 	}
@@ -218,16 +216,12 @@ func TestSeriesSetFilter(t *testing.T) {
 		},
 	}
 
-	for i, tc := range tests {
+	for _, tc := range tests {
 		filtered := newSeriesSetFilter(FromQueryResult(true, tc.in), tc.toRemove)
-		have, err := ToQueryResult(filtered, 1e6)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		if !reflect.DeepEqual(have, tc.expected) {
-			t.Fatalf("%d. unexpected labels; want %v, got %v", i, tc.expected, have)
-		}
+		act, ws, err := ToQueryResult(filtered, 1e6)
+		testutil.Ok(t, err)
+		testutil.Equals(t, 0, len(ws))
+		testutil.Equals(t, tc.expected, act)
 	}
 }
 
@@ -242,8 +236,8 @@ type mockSeriesSet struct {
 	storage.SeriesSet
 }
 
-func (mockQuerier) Select(bool, *storage.SelectHints, ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
-	return mockSeriesSet{}, nil, nil
+func (mockQuerier) Select(bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
+	return mockSeriesSet{}
 }
 
 func TestPreferLocalStorageFilter(t *testing.T) {
@@ -398,10 +392,8 @@ func TestRequiredLabelsQuerierSelect(t *testing.T) {
 			requiredMatchers: test.requiredMatchers,
 		}
 
-		have, _, err := q.Select(false, nil, test.matchers...)
-		if err != nil {
-			t.Error(err)
-		}
+		have := q.Select(false, nil, test.matchers...)
+
 		if want := test.seriesSet; want != have {
 			t.Errorf("%d. expected series set %+v, got %+v", i, want, have)
 		}

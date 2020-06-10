@@ -10,6 +10,9 @@
 * [BUGFIX] React UI: Don't null out data when clicking on the current tab. #7243
 * [BUGFIX] PromQL: Correctly track number of samples for a query. #7307
 * [BUGFIX] PromQL: Return NaN when histogram buckets have 0 observations. #7318
+
+## 2.18.2 / 2020-06-09
+
 * [BUGFIX] TSDB: Fix incorrect query results when using Prometheus with remote reads configured #7361
 
 ## 2.18.1 / 2020-05-07

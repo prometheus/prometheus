@@ -95,16 +95,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 
 	var sets []storage.SeriesSet
 	for _, mset := range matcherSets {
-		s, wrns, err := q.Select(false, hints, mset...)
-		if wrns != nil {
-			level.Debug(h.logger).Log("msg", "Federation select returned warnings", "warnings", wrns)
-			federationWarnings.Add(float64(len(wrns)))
-		}
-		if err != nil {
-			federationErrors.Inc()
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
+		s := q.Select(false, hints, mset...)
 		sets = append(sets, s)
 	}
 
@@ -141,6 +132,10 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 			Metric: s.Labels(),
 			Point:  promql.Point{T: t, V: v},
 		})
+	}
+	if ws := set.Warnings(); len(ws) > 0 {
+		level.Debug(h.logger).Log("msg", "Federation select returned warnings", "warnings", ws)
+		federationWarnings.Add(float64(len(ws)))
 	}
 	if set.Err() != nil {
 		federationErrors.Inc()
