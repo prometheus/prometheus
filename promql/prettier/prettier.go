@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"io/ioutil"
 	"reflect"
+
 	// "sort"
 	"strconv"
 	"strings"
+
 	// "time"
 
 	"github.com/pkg/errors"
@@ -121,13 +123,31 @@ var exmpt = []uint{
 	parser.LEFT_BRACE, parser.EQL,
 }
 
-func (p *Prettier) prettify(items []parser.Item, index int, result string) string {
+func (p *Prettier) prettify(items []parser.Item, index int, result string) (string, error) {
 	item := items[index]
+	var baseIndent string
+	fmt.Println(".................................................")
 	fmt.Println("item => ", item.String())
+	if item.Typ == parser.EOF {
+		return result, nil
+	}
 	if !p.exmptBaseIndent(item) {
-		baseIndent := p.getBaseIndent(item, p.Node)
-		if baseIndent != p.pd.previousBaseIndent { // denotes change of node
-			result += "\n"
+		parentNode := p.getParentNode(p.Node, item.PositionRange())
+		if parentNode != nil && parentNode.String() == "*parser.BinaryExpr" {
+			// if p.getNode(p.Node, item.PositionRange()).String() == "*parser.BinaryExpr" {
+				result += "\n"
+			// }
+			if item.Typ.IsOperator() {
+				baseIndent = p.pd.pad(p.pd.getIndentAmount(p.pd.previousBaseIndent) - 1)
+			} else if !item.Typ.IsParen() {
+				baseIndent = p.pd.pad(p.pd.getIndentAmount(p.pd.previousBaseIndent) + 1)
+			}
+		} else {
+			baseIndent, _, _ = p.getBaseIndent(item, p.Node)
+			if baseIndent != p.pd.previousBaseIndent { // denotes change of node
+				fmt.Println("changed")
+				result += "\n"
+			}
 		}
 		result += baseIndent
 		p.pd.previousBaseIndent = baseIndent
@@ -158,9 +178,13 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) strin
 		result += item.Val
 	}
 	if index+1 == len(items) {
-		return result
+		return result, nil
 	}
-	return p.prettify(items, index+1, result)
+	ptmp, err := p.prettify(items, index+1, result)
+	if err != nil {
+		return result, errors.Wrap(err, "prettify")
+	}
+	return ptmp, nil
 }
 
 func (p *Prettier) exmptBaseIndent(item parser.Item) bool {
@@ -171,27 +195,97 @@ func (p *Prettier) exmptBaseIndent(item parser.Item) bool {
 	return false
 }
 
-func (p *Prettier) getBaseIndent(item parser.Item, node parser.Expr) string {
+func (p *Prettier) getNode(headAST parser.Expr, rnge parser.PositionRange) (reflect.Type) {
+	ancestors, found := p.getNodeAncestorsStack(headAST, rnge, []reflect.Type{})
+	if !found {
+		return nil
+	}
+	if len(ancestors) < 1 {
+		return nil
+	}
+	return ancestors[len(ancestors)-1]
+}
+
+func (p *Prettier) getParentNode(headAST parser.Expr, rnge parser.PositionRange) (reflect.Type) {
+	fmt.Println("pos range is ", rnge)
+	ancestors, found := p.getNodeAncestorsStack(headAST, rnge, []reflect.Type{})
+	if !found {
+		return nil
+	}
+	fmt.Println("ancestors are below")
+	fmt.Println(ancestors)
+	if len(ancestors) < 2 {
+		return nil
+	}
+	return ancestors[len(ancestors)-2]
+}
+
+// getNodeAncestorsStack returns the ancestors (including the node itself) of the input node from the AST.
+func (p *Prettier) getNodeAncestorsStack(head parser.Expr, posRange parser.PositionRange, stack []reflect.Type) ([]reflect.Type, bool) {
+	// fmt.Println("head is ", head)
+	// fmt.Println("stack is ", stack)
+	switch n := head.(type) {
+	case *parser.ParenExpr:
+		if n.PosRange.Start <= posRange.Start && n.PosRange.End >= posRange.End {
+			fmt.Println("ancestor ", n.PosRange)
+			stack = append(stack, reflect.TypeOf(n))
+			return p.getNodeAncestorsStack(n.Expr, posRange, stack)
+		}
+		return stack, false
+	case *parser.VectorSelector:
+		if n.PosRange.Start <= posRange.Start && n.PosRange.End >= posRange.End {
+			fmt.Println("ancestor ", n.PosRange)
+
+			stack = append(stack, reflect.TypeOf(n))
+			return stack, true
+		}
+		// stack = p.removeNodesWithoutPosRange(stack, "*parser.BinaryExpr")
+		return stack, false
+	case *parser.BinaryExpr:
+		stack = append(stack, reflect.TypeOf(n))
+		stmp, found := p.getNodeAncestorsStack(n.LHS, posRange, stack)
+		if found {
+			return stmp, true
+		}
+		stmp, found = p.getNodeAncestorsStack(n.RHS, posRange, stack)
+		if found {
+			return stmp, true
+		}
+		// if none of the above are true, that implies, the position range is of a symbol.
+		return stack, true
+	}
+	return stack, true
+}
+
+// removeNodesWithoutPosRange removes the nodes (immediately after) that are added to the stack because they do not
+// have any way to check the position range with the given item.
+func (p *Prettier) removeNodesWithoutPosRange(stack []reflect.Type, typ string) []reflect.Type {
+	for i := len(stack) - 1; i >= 0; i++ {
+		if stack[i].String() == typ {
+			fmt.Println("removing")
+			stack = stack[:len(stack)-1]
+		}
+		break
+	}
+	return stack
+}
+
+func (p *Prettier) getBaseIndent(item parser.Item, node parser.Expr) (string, *parser.PositionRange, reflect.Type) {
 	indent := 0
 	head := node
 	var tmp parser.Expr
 	expectNextRHS := false
-	round := false
-	fmt.Println("+++++++++++++++++++++++++++")
-	fmt.Println("item => ", item.String(), " ", item.Typ.IsOperator())
+	var exprType reflect.Type
+	posRange := &parser.PositionRange{}
 	if head == nil {
-		return ""
+		return "", nil, nil
 	}
 	for {
-		if head != nil {
-			fmt.Println("head is => ", head, " ", reflect.TypeOf(head))
-			// break
-		}
-		//
+		// if head != nil {
+		// 	fmt.Println("head is => ", head, " ", reflect.TypeOf(head))
+		// }
 		indent++
-		fmt.Println(head == nil, " ", expectNextRHS, " ", !round)
 		if head != nil && p.isItemWithinNode(head, item) {
-			fmt.Println("item within node")
 			switch n := head.(type) {
 			case *parser.ParenExpr:
 				head = n.Expr
@@ -202,6 +296,12 @@ func (p *Prettier) getBaseIndent(item parser.Item, node parser.Expr) string {
 				tmp = n.RHS
 				expectNextRHS = true
 			}
+			if head != nil {
+				// fmt.Println("head is => ", head)
+				exprType = reflect.TypeOf(head)
+				tmp := head.PositionRange()
+				posRange = &tmp
+			}
 			continue
 		} else if expectNextRHS && head != nil && !item.Typ.IsOperator() {
 			expectNextRHS = false
@@ -210,15 +310,17 @@ func (p *Prettier) getBaseIndent(item parser.Item, node parser.Expr) string {
 			continue
 		}
 		indent--
-		fmt.Println("sending indent as ", indent)
-		fmt.Println("-----------------------------")
-		return p.pd.pad(indent)
+		// fmt.Println("sending indent as ", indent)
+		// fmt.Println("-----------------------------")
+		return p.pd.pad(indent), posRange, exprType
 	}
 }
 
 func (p *Prettier) isItemWithinNode(node parser.Node, item parser.Item) bool {
 	posNode := node.PositionRange()
 	itemNode := item.PositionRange()
+	fmt.Printf("posNode %v\n", posNode)
+	fmt.Printf("itemNode %v\n", itemNode)
 	if posNode.Start <= itemNode.Start && posNode.End >= itemNode.End {
 		return true
 	}
@@ -276,12 +378,11 @@ func (p *Prettier) Run() []error {
 					// fmt.Println("raw\n", formattedExpr)
 					// rules.Expr.SetString(formattedExpr)
 					res := p.lexItems(exprStr)
-					fmt.Println(res)
-					for i := 0; i < len(res); i++ {
-						fmt.Println(res[i].Typ, " ", res[i].Val)
-					}
 					p.pd.buff = 1
-					formattedExpr := p.prettify(res, 0, "")
+					formattedExpr, err := p.prettify(res, 0, "")
+					if err != nil {
+						return []error{errors.Wrap(err, "Run")}
+					}
 					fmt.Println("output is ")
 					fmt.Println(formattedExpr)
 				}
@@ -357,8 +458,19 @@ func (pd *padder) pad(iter int) string {
 	for i := 1; i <= iter; i++ {
 		pad += pd.indent
 	}
-	fmt.Println("=======", pad, "===========")
 	return pad
+}
+
+func (pd *padder) getIndentAmount(indent string) int {
+	tmp := ""
+	amount := 0
+	for {
+		if tmp == indent {
+			return amount
+		}
+		tmp += pd.indent
+		amount++
+	}
 }
 
 func (pd *padder) resume() string {

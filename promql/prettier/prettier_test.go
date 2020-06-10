@@ -399,7 +399,7 @@ var combineCases = []prettierTest{
 		expr: `(metric_name)`,
 		expected: `  (
     metric_name
-  )  `,
+  )`,
 	},
 	prettierTest{
 		expr: `((((metric_name))))`,
@@ -411,13 +411,13 @@ var combineCases = []prettierTest{
         )
       )
     )
-  )  `,
+  )`,
 	},
 	prettierTest{
 		expr: `(metric_name)`,
 		expected: `  (
     metric_name
-  )  `,
+  )`,
 	},
 	prettierTest{
 		expr: `metric_name{foo="bar", a="b", c="d",first="second"}`,
@@ -426,14 +426,26 @@ var combineCases = []prettierTest{
     a="b",
     c="d",
     first="second",
-  }  `,
+  }`,
 	},
 	prettierTest{
 		expr: `first + second`,
 		expected: `
     first
   +
-    second    `,
+    second`,
+	},
+	prettierTest{
+		expr: `first{foo="bar", hello="world"} + second{foo="bar"}`,
+    expected: `
+    first{
+      foo="bar",
+      hello="world",
+    }
+  +
+    second{
+      foo="bar",
+    }`,
 	},
 }
 
@@ -444,7 +456,8 @@ func TestCombinePrettify(t *testing.T) {
 		lexItems := p.lexItems(expr.expr)
 		p.parseExpr(expr.expr)
 		p.pd.buff = 1
-		output := p.prettify(lexItems, 0, "")
+    output, err := p.prettify(lexItems, 0, "")
+    testutil.Ok(t, err)
 		fmt.Println(output)
 		testutil.Equals(t, expr.expected, output, "formatting does not match")
 	}
