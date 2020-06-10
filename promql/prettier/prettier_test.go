@@ -447,6 +447,25 @@ var combineCases = []prettierTest{
       foo="bar",
     }`,
 	},
+	prettierTest{
+		expr: `first{foo="bar", hello="world"} + second{foo="bar"} + third{foo="bar", localhost="9090"} + forth`,
+    expected: `
+    first{
+      foo="bar",
+      hello="world",
+    }
+  +
+    second{
+      foo="bar",
+    }
+  +
+    third{
+      foo="bar",
+      localhost="9090",
+    }
+  +
+    forth`,
+	},
 }
 
 func TestCombinePrettify(t *testing.T) {

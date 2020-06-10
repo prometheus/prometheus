@@ -132,22 +132,10 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 		return result, nil
 	}
 	if !p.exmptBaseIndent(item) {
-		parentNode := p.getParentNode(p.Node, item.PositionRange())
-		if parentNode != nil && parentNode.String() == "*parser.BinaryExpr" {
-			// if p.getNode(p.Node, item.PositionRange()).String() == "*parser.BinaryExpr" {
-				result += "\n"
-			// }
-			if item.Typ.IsOperator() {
-				baseIndent = p.pd.pad(p.pd.getIndentAmount(p.pd.previousBaseIndent) - 1)
-			} else if !item.Typ.IsParen() {
-				baseIndent = p.pd.pad(p.pd.getIndentAmount(p.pd.previousBaseIndent) + 1)
-			}
-		} else {
-			baseIndent, _, _ = p.getBaseIndent(item, p.Node)
-			if baseIndent != p.pd.previousBaseIndent { // denotes change of node
-				fmt.Println("changed")
-				result += "\n"
-			}
+		baseIndent, _, _ = p.getBaseIndent(item, p.Node)
+		if baseIndent != p.pd.previousBaseIndent { // denotes change of node
+			fmt.Println("changed")
+			result += "\n"
 		}
 		result += baseIndent
 		p.pd.previousBaseIndent = baseIndent
@@ -239,7 +227,6 @@ func (p *Prettier) getNodeAncestorsStack(head parser.Expr, posRange parser.Posit
 			stack = append(stack, reflect.TypeOf(n))
 			return stack, true
 		}
-		// stack = p.removeNodesWithoutPosRange(stack, "*parser.BinaryExpr")
 		return stack, false
 	case *parser.BinaryExpr:
 		stack = append(stack, reflect.TypeOf(n))
@@ -271,33 +258,38 @@ func (p *Prettier) removeNodesWithoutPosRange(stack []reflect.Type, typ string) 
 }
 
 func (p *Prettier) getBaseIndent(item parser.Item, node parser.Expr) (string, *parser.PositionRange, reflect.Type) {
-	indent := 0
-	head := node
-	var tmp parser.Expr
-	expectNextRHS := false
-	var exprType reflect.Type
+	var (
+		indent int
+		tmp parser.Expr
+		expectNextRHS bool
+		previousNode string
+		exprType reflect.Type
+	)
 	posRange := &parser.PositionRange{}
+	head := node
 	if head == nil {
 		return "", nil, nil
 	}
 	for {
-		// if head != nil {
-		// 	fmt.Println("head is => ", head, " ", reflect.TypeOf(head))
-		// }
 		indent++
 		if head != nil && p.isItemWithinNode(head, item) {
 			switch n := head.(type) {
 			case *parser.ParenExpr:
 				head = n.Expr
+				previousNode = "*parser.ParenExpr"
 			case *parser.VectorSelector:
 				head = nil
+				previousNode = "*parser.VectorSelector"
 			case *parser.BinaryExpr:
 				head = n.LHS
 				tmp = n.RHS
 				expectNextRHS = true
+				if previousNode == "*parser.BinaryExpr" {
+					indent--
+				}
+				previousNode = "*parser.BinaryExpr"
 			}
 			if head != nil {
-				// fmt.Println("head is => ", head)
 				exprType = reflect.TypeOf(head)
 				tmp := head.PositionRange()
 				posRange = &tmp
@@ -306,12 +298,13 @@ func (p *Prettier) getBaseIndent(item parser.Item, node parser.Expr) (string, *p
 		} else if expectNextRHS && head != nil && !item.Typ.IsOperator() {
 			expectNextRHS = false
 			head = tmp
-			indent-- // decrease indent otherwise it will signify a next level node.
+			if previousNode == "*parser.BinaryExpr" {
+				indent--
+			}
 			continue
 		}
 		indent--
-		// fmt.Println("sending indent as ", indent)
-		// fmt.Println("-----------------------------")
+		fmt.Println()
 		return p.pd.pad(indent), posRange, exprType
 	}
 }
@@ -319,8 +312,6 @@ func (p *Prettier) getBaseIndent(item parser.Item, node parser.Expr) (string, *p
 func (p *Prettier) isItemWithinNode(node parser.Node, item parser.Item) bool {
 	posNode := node.PositionRange()
 	itemNode := item.PositionRange()
-	fmt.Printf("posNode %v\n", posNode)
-	fmt.Printf("itemNode %v\n", itemNode)
 	if posNode.Start <= itemNode.Start && posNode.End >= itemNode.End {
 		return true
 	}
