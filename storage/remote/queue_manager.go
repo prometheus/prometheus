@@ -666,7 +666,8 @@ type shards struct {
 
 	// Hard shutdown context is used to terminate outgoing HTTP connections
 	// after giving them a chance to terminate.
-	hardShutdown context.CancelFunc
+	hardShutdown          context.CancelFunc
+	droppedOnHardShutdown uint32
 }
 
 // start the shards; must be called before any call to enqueue.
@@ -689,6 +690,7 @@ func (s *shards) start(n int) {
 	s.softShutdown = make(chan struct{})
 	s.running = int32(n)
 	s.done = make(chan struct{})
+	atomic.StoreUint32(&s.droppedOnHardShutdown, 0)
 	for i := 0; i < n; i++ {
 		go s.runShard(hardShutdownCtx, i, newQueues[i])
 	}
@@ -716,12 +718,14 @@ func (s *shards) stop() {
 	case <-s.done:
 		return
 	case <-time.After(s.qm.flushDeadline):
-		level.Error(s.qm.logger).Log("msg", "Failed to flush all samples on shutdown")
 	}
 
 	// Force an unclean shutdown.
 	s.hardShutdown()
 	<-s.done
+	if dropped := atomic.LoadUint32(&s.droppedOnHardShutdown); dropped > 0 {
+		level.Error(s.qm.logger).Log("msg", "Failed to flush all samples on shutdown", "count", dropped)
+	}
 }
 
 // enqueue a sample.  If we are currently in the process of shutting down or resharding,
@@ -781,9 +785,10 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan sample) {
 		case <-ctx.Done():
 			// In this case we drop all samples in the buffer and the queue.
 			// Remove them from pending and mark them as failed.
-			droppedSamples := float64(nPending + len(queue))
-			s.qm.metrics.pendingSamples.Sub(droppedSamples)
-			s.qm.metrics.failedSamplesTotal.Add(droppedSamples)
+			droppedSamples := nPending + len(queue)
+			s.qm.metrics.pendingSamples.Sub(float64(droppedSamples))
+			s.qm.metrics.failedSamplesTotal.Add(float64(droppedSamples))
+			atomic.AddUint32(&s.droppedOnHardShutdown, uint32(droppedSamples))
 			return
 
 		case sample, ok := <-queue:
