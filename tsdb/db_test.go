@@ -2873,15 +2873,15 @@ func TestChunkReader_ConcurrentReads(t *testing.T) {
 	testutil.Ok(t, r.Close())
 }
 
-// TestHeadFlushIntoBlock ensures that the head flush
+// TestCompactHead ensures that the head compaction
 // creates a block that is ready for loading and
-// that flushing the storage does not cause data loss.
+// does not cause data loss.
 // This test:
 // * opens a storage;
 // * appends values;
-// * flushes the storage wal/head; and
-// * queries the storage to ensure the samples are present from the flushed block.
-func TestHeadFlushIntoBlock(t *testing.T) {
+// * compacts the head; and
+// * queries the db to ensure the samples are present from the compacted head.
+func TestCompactHead(t *testing.T) {
 	dbDir, err := ioutil.TempDir("", "testFlush")
 	testutil.Ok(t, err)
 	defer func() { testutil.Ok(t, os.RemoveAll(dbDir)) }()
@@ -2898,41 +2898,43 @@ func TestHeadFlushIntoBlock(t *testing.T) {
 	db, err := Open(dbDir, log.NewNopLogger(), prometheus.NewRegistry(), tsdbCfg)
 	testutil.Ok(t, err)
 	app := db.Appender()
-	maxt := 1000
+	maxt := 100
 	for i := 0; i < maxt; i++ {
-		_, err := app.Add(labels.FromStrings("thanos", "flush"), int64(i), 1.0)
+		_, err := app.Add(labels.FromStrings("a", "b"), int64(i), float64(i))
 		testutil.Ok(t, err)
 	}
 	testutil.Ok(t, app.Commit())
 
-	// Flush the WAL/Head.
+	// Compact the Head to create a new block.
 	testutil.Ok(t, db.CompactHead(NewRangeHead(db.Head(), 0, int64(maxt)-1)))
 	testutil.Ok(t, db.Close())
-	testutil.Ok(t, deleteNonBlocks(db.Dir()))
 
-	// Reopen the db to check the new block contains all data.
+	// Delete everything but the new block and
+	// reopen the db to query it to ensure it includes the head data.
+	testutil.Ok(t, deleteNonBlocks(db.Dir()))
 	db, err = Open(dbDir, log.NewNopLogger(), prometheus.NewRegistry(), tsdbCfg)
 	testutil.Ok(t, err)
 	testutil.Equals(t, len(db.Blocks()), 1)
+	testutil.Equals(t, db.Head().MinTime(), int64(maxt))
 	defer func() { testutil.Ok(t, db.Close()) }()
 	querier, err := db.Querier(context.Background(), 0, int64(maxt)-1)
 	testutil.Ok(t, err)
 	defer func() { testutil.Ok(t, querier.Close()) }()
 
-	// Sum the values.
-	seriesSet, _, err := querier.Select(false, nil, &labels.Matcher{Type: labels.MatchEqual, Name: "thanos", Value: "flush"})
+	seriesSet, _, err := querier.Select(false, nil, &labels.Matcher{Type: labels.MatchEqual, Name: "a", Value: "b"})
 	testutil.Ok(t, err)
-	sum := 0.0
+	i := int64(0)
 	for seriesSet.Next() {
 		series := seriesSet.At().Iterator()
 		for series.Next() {
-			_, v := series.At()
-			sum += v
+			time, val := series.At()
+			testutil.Equals(t, i, time)
+			testutil.Equals(t, float64(i), val)
+			i++
 		}
 		testutil.Ok(t, series.Err())
 	}
 	testutil.Ok(t, seriesSet.Err())
-	testutil.Equals(t, 1000.0, sum)
 }
 
 func deleteNonBlocks(dbDir string) error {
