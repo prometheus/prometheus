@@ -2898,10 +2898,13 @@ func TestCompactHead(t *testing.T) {
 	db, err := Open(dbDir, log.NewNopLogger(), prometheus.NewRegistry(), tsdbCfg)
 	testutil.Ok(t, err)
 	app := db.Appender()
+	var expSamples []sample
 	maxt := 100
 	for i := 0; i < maxt; i++ {
-		_, err := app.Add(labels.FromStrings("a", "b"), int64(i), float64(i))
+		val := rand.Float64()
+		_, err := app.Add(labels.FromStrings("a", "b"), int64(i), val)
 		testutil.Ok(t, err)
+		expSamples = append(expSamples, sample{int64(i), val})
 	}
 	testutil.Ok(t, app.Commit())
 
@@ -2914,8 +2917,8 @@ func TestCompactHead(t *testing.T) {
 	testutil.Ok(t, deleteNonBlocks(db.Dir()))
 	db, err = Open(dbDir, log.NewNopLogger(), prometheus.NewRegistry(), tsdbCfg)
 	testutil.Ok(t, err)
-	testutil.Equals(t, len(db.Blocks()), 1)
-	testutil.Equals(t, db.Head().MinTime(), int64(maxt))
+	testutil.Equals(t, 1, len(db.Blocks()))
+	testutil.Equals(t, int64(maxt), db.Head().MinTime())
 	defer func() { testutil.Ok(t, db.Close()) }()
 	querier, err := db.Querier(context.Background(), 0, int64(maxt)-1)
 	testutil.Ok(t, err)
@@ -2923,17 +2926,17 @@ func TestCompactHead(t *testing.T) {
 
 	seriesSet, _, err := querier.Select(false, nil, &labels.Matcher{Type: labels.MatchEqual, Name: "a", Value: "b"})
 	testutil.Ok(t, err)
-	i := int64(0)
+	var actSamples []sample
+
 	for seriesSet.Next() {
 		series := seriesSet.At().Iterator()
 		for series.Next() {
 			time, val := series.At()
-			testutil.Equals(t, i, time)
-			testutil.Equals(t, float64(i), val)
-			i++
+			actSamples = append(actSamples, sample{int64(time), val})
 		}
 		testutil.Ok(t, series.Err())
 	}
+	testutil.Equals(t, expSamples, actSamples)
 	testutil.Ok(t, seriesSet.Err())
 }
 
