@@ -31,10 +31,10 @@ type Prettier struct {
 }
 
 type padder struct {
-	indent                                   string
-	previous, buff                           int
-	isNewLineApplied, expectNextRHS          bool
-	expectNextIdentifier, previousBaseIndent string
+	indent                                                                                         string
+	previous, buff                                                                                 int
+	isNewLineApplied, expectNextRHS, leftParenNotIndented, disableBaseIndent, inAggregateModifiers bool
+	expectNextIdentifier, previousBaseIndent                                                       string
 }
 
 // New returns a new prettier over the given slice of files.
@@ -73,59 +73,62 @@ func newPadder() *padder {
 	}
 }
 
-func (p *Prettier) prettifyItems(items []parser.Item, index int, result string) string {
-	item := items[index]
-	value := item.Val
-	switch item.Typ {
-	case parser.LEFT_PAREN:
-		result += p.pd.apply() + value + "\n" + p.pd.inc(1).resume()
-	case parser.RIGHT_PAREN:
-		result += "\n" + p.pd.dec(1).apply() + value
-	case parser.LEFT_BRACE, parser.LEFT_BRACKET:
-		result += value + "\n" + p.pd.inc(1).resume()
-	case parser.RIGHT_BRACE, parser.RIGHT_BRACKET:
-		result += p.pd.dec(1).apply() + value
-	case parser.IDENTIFIER, parser.DURATION, parser.NUMBER:
-		result += p.pd.apply() + value
-	case parser.STRING:
-		result += value + ",\n"
-	case parser.SUM:
-		result += p.pd.apply() + value
-	case parser.COLON, parser.EQL, parser.EQL_REGEX, parser.NEQ, parser.NEQ_REGEX:
-		result += value
-	case parser.ADD, parser.SUB, parser.DIV, parser.MUL:
-		result += "\n" + p.pd.dec(1).apply() + value + "\n" + p.pd.inc(1).resume()
-	case parser.GTR, parser.BOOL:
-		if items[index+1].Typ == parser.BOOL {
-			index++
-			result += "\n" + p.pd.dec(1).apply() + value + " " + items[index].Val + "\n" + p.pd.inc(1).resume()
-		} else {
-			result += "\n" + p.pd.dec(1).apply() + value + "\n" + p.pd.inc(1).resume()
-		}
-	case parser.COMMENT:
-		result += p.pd.apply() + value + "\n"
+// func (p *Prettier) prettifyItems(items []parser.Item, index int, result string) string {
+// 	item := items[index]
+// 	value := item.Val
+// 	switch item.Typ {
+// 	case parser.LEFT_PAREN:
+// 		result += p.pd.apply() + value + "\n" + p.pd.inc(1).resume()
+// 	case parser.RIGHT_PAREN:
+// 		result += "\n" + p.pd.dec(1).apply() + value
+// 	case parser.LEFT_BRACE, parser.LEFT_BRACKET:
+// 		result += value + "\n" + p.pd.inc(1).resume()
+// 	case parser.RIGHT_BRACE, parser.RIGHT_BRACKET:
+// 		result += p.pd.dec(1).apply() + value
+// 	case parser.IDENTIFIER, parser.DURATION, parser.NUMBER:
+// 		result += p.pd.apply() + value
+// 	case parser.STRING:
+// 		result += value + ",\n"
+// 	case parser.SUM:
+// 		result += p.pd.apply() + value
+// 	case parser.COLON, parser.EQL, parser.EQL_REGEX, parser.NEQ, parser.NEQ_REGEX:
+// 		result += value
+// 	case parser.ADD, parser.SUB, parser.DIV, parser.MUL:
+// 		result += "\n" + p.pd.dec(1).apply() + value + "\n" + p.pd.inc(1).resume()
+// 	case parser.GTR, parser.BOOL:
+// 		if items[index+1].Typ == parser.BOOL {
+// 			index++
+// 			result += "\n" + p.pd.dec(1).apply() + value + " " + items[index].Val + "\n" + p.pd.inc(1).resume()
+// 		} else {
+// 			result += "\n" + p.pd.dec(1).apply() + value + "\n" + p.pd.inc(1).resume()
+// 		}
+// 	case parser.COMMENT:
+// 		result += p.pd.apply() + value + "\n"
 
-	case parser.BLANK:
-	}
-	if item.Typ == parser.EOF || len(items) == index+1 {
-		return p.removeTrailingLines(result)
-	}
-	return p.prettifyItems(items, index+1, result)
-}
+// 	case parser.BLANK:
+// 	}
+// 	if item.Typ == parser.EOF || len(items) == index+1 {
+// 		return p.removeTrailingLines(result)
+// 	}
+// 	return p.prettifyItems(items, index+1, result)
+// }
 
 func (p *Prettier) prettify(items []parser.Item, index int, result string) (string, error) {
 	var (
 		baseIndent string
 		item       = items[index]
+		// nodeType = p.getNode(p.Node, item.PositionRange())
 	)
 	if item.Typ == parser.EOF {
 		return result, nil
 	}
-	if !p.exmptBaseIndent(item) {
+	fmt.Println("item: ", item.Val)
+	if !p.exmptBaseIndent(item) && !p.pd.disableBaseIndent && !p.pd.inAggregateModifiers {
 		baseIndent = p.getBaseIndent(item, p.Node)
-		if baseIndent != p.pd.previousBaseIndent { // denotes change of node
+		if baseIndent != p.pd.previousBaseIndent && !p.pd.isNewLineApplied { // denotes change of node
 			result += "\n"
 		}
+		p.pd.isNewLineApplied = false
 		result += baseIndent
 		p.pd.previousBaseIndent = baseIndent
 	}
@@ -133,12 +136,15 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 	switch item.Typ {
 	case parser.LEFT_PAREN:
 		result += item.Val
+		if !p.pd.inAggregateModifiers {
+			p.pd.disableBaseIndent = false
+		}
 	case parser.LEFT_BRACE:
 		result += item.Val + p.pd.insertNewLine()
 		p.pd.expectNextIdentifier = "label"
 	case parser.RIGHT_BRACE:
 		if p.pd.isNewLineApplied {
-			result += p.pd.previousBaseIndent + item.Val	
+			result += p.pd.previousBaseIndent + item.Val
 		} else {
 			result += p.pd.insertNewLine() + p.pd.previousBaseIndent + item.Val
 		}
@@ -149,18 +155,31 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 			result += p.pd.apply()
 		}
 		result += item.Val
-	case parser.STRING:
+	case parser.STRING, parser.NUMBER:
 		result += item.Val
 		p.pd.isNewLineApplied = false
 	case parser.RIGHT_PAREN:
-		result += p.pd.dec(1).apply() + item.Val
+		if p.pd.leftParenNotIndented {
+			result += item.Val
+		} else {
+			result += p.pd.dec(1).apply() + item.Val
+		}
+		if p.pd.inAggregateModifiers {
+			result += " "
+		}
 		p.pd.expectNextIdentifier = ""
-	case parser.EQL, parser.EQL_REGEX, parser.NEQ, parser.NEQ_REGEX, parser.NUMBER, parser.OFFSET, parser.POW, parser.BOOL:
+		p.pd.inAggregateModifiers = false
+	case parser.EQL, parser.EQL_REGEX, parser.NEQ, parser.NEQ_REGEX, parser.OFFSET, parser.POW, parser.BOOL:
 		result += item.Val
-	case parser.SUM:
+	case parser.SUM, parser.AVG, parser.COUNT, parser.MIN, parser.MAX, parser.STDDEV, parser.STDVAR, parser.TOPK, parser.BOTTOMK, parser.COUNT_VALUES, parser.QUANTILE:
 		result += item.Val
+		p.pd.disableBaseIndent = true
 	case parser.ADD, parser.SUB, parser.MUL, parser.DIV:
 		result += item.Val
+	case parser.WITHOUT, parser.BY:
+		result += " " + item.Val + " "
+		p.pd.disableBaseIndent = true
+		p.pd.inAggregateModifiers = true
 	case parser.COMMA:
 		result += item.Val + p.pd.insertNewLine()
 	case parser.COMMENT:
@@ -182,7 +201,7 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 
 func (p *Prettier) exmptBaseIndent(item parser.Item) bool {
 	switch item.Typ {
-	case parser.EQL, parser.LEFT_BRACE, parser.RIGHT_BRACE, parser.STRING, parser.COMMA:
+	case parser.EQL, parser.LEFT_BRACE, parser.RIGHT_BRACE, parser.STRING, parser.COMMA, parser.NUMBER:
 		return true
 	}
 	return false
@@ -256,14 +275,14 @@ func (p *Prettier) removeNodesWithoutPosRange(stack []reflect.Type, typ string) 
 	return stack
 }
 
+// getBaseIndent returns the base indent for a lex item depending on the depth
+// of the node the item belongs to in the AST.
 func (p *Prettier) getBaseIndent(item parser.Item, node parser.Expr) string {
 	var (
 		indent        int
 		tmp           parser.Expr
 		expectNextRHS bool
 		previousNode  string
-		// exprType      reflect.Type
-		// posRange      *parser.PositionRange
 		head          = node
 	)
 	if head == nil {
@@ -273,6 +292,8 @@ func (p *Prettier) getBaseIndent(item parser.Item, node parser.Expr) string {
 		indent++
 		if head != nil && p.isItemWithinNode(head, item) {
 			switch n := head.(type) {
+			case *parser.AggregateExpr:
+				head = n.Expr
 			case *parser.ParenExpr:
 				head = n.Expr
 				previousNode = "*parser.ParenExpr"
@@ -288,11 +309,6 @@ func (p *Prettier) getBaseIndent(item parser.Item, node parser.Expr) string {
 				}
 				previousNode = "*parser.BinaryExpr"
 			}
-			// if head != nil {
-			// 	exprType = reflect.TypeOf(head)
-			// 	tmp := head.PositionRange()
-			// 	posRange = &tmp
-			// }
 			continue
 		} else if expectNextRHS && head != nil && !item.Typ.IsOperator() {
 			expectNextRHS = false

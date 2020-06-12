@@ -47,15 +47,13 @@ var combineCases = []prettierTest{
 	},
 	prettierTest{
 		expr: `first + second`,
-		expected: `
-    first
+		expected: `    first
   +
     second`,
 	},
 	prettierTest{
 		expr: `first{foo="bar", hello="world"} + second{foo="bar"}`,
-		expected: `
-    first{
+		expected: `    first{
       foo="bar",
       hello="world"
     }
@@ -66,8 +64,7 @@ var combineCases = []prettierTest{
 	},
 	prettierTest{
 		expr: `first{foo="bar", hello="world"} + second{foo="bar"} + third{foo="bar", localhost="9090"} + forth`,
-		expected: `
-    first{
+		expected: `    first{
       foo="bar",
       hello="world"
     }
@@ -88,7 +85,7 @@ var combineCases = []prettierTest{
       foo="bar",hello="world" # comment
       }`,
 		expected: `  first{
-    # comment
+  # comment
     foo="bar",
     hello="world"  # comment
   }`,
@@ -148,6 +145,67 @@ var combineCases = []prettierTest{
       (
         forth
       )
+  )`,
+	},
+	// Aggregate Expressions
+	prettierTest{
+		expr: `sum(metric_name)`,
+		expected: `  sum(
+    metric_name
+  )`,
+	},
+	prettierTest{
+		expr: `count(metric_name)`,
+		expected: `  count(
+    metric_name
+  )`,
+	},
+	prettierTest{
+		expr: `stddev(metric_name)`,
+		expected: `  stddev(
+    metric_name
+  )`,
+	},
+	prettierTest{
+		expr: `quantile(0.95, metric_name)`,
+		expected: `  quantile(0.95,
+    metric_name
+  )`,
+	},
+	prettierTest{
+		expr: `topk(5, metric_name)`,
+		expected: `  topk(5,
+    metric_name
+  )`,
+	},
+	prettierTest{
+		expr: `sum without(label) (metric_name)`,
+		expected: `  sum without (label) (
+    metric_name
+  )`,
+	},
+	prettierTest{
+		expr: `sum by(label) (metric_name)`,
+		expected: `  sum by (label) (
+    metric_name
+  )`,
+	},
+	prettierTest{
+		expr: `sum (metric_name) without(label)`,
+		expected: `  sum(
+    metric_name
+  )   without (label) `,
+	},
+	prettierTest{
+		expr: `sum (metric_name) by(label)`,
+		expected: `  sum(
+    metric_name
+  )   by (label) `,
+	},
+	prettierTest{
+		expr: `topk without (label) (5, metric_name)`,
+		expected: `  topk without (label) (5,
+    metric_name
   )`,
 	},
 }
