@@ -113,10 +113,6 @@ func (p *Prettier) prettifyItems(items []parser.Item, index int, result string) 
 	return p.prettifyItems(items, index+1, result)
 }
 
-var exmpt = []uint{
-	parser.LEFT_BRACE, parser.EQL,
-}
-
 func (p *Prettier) prettify(items []parser.Item, index int, result string) (string, error) {
 	var (
 		baseIndent string
@@ -126,7 +122,7 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 		return result, nil
 	}
 	if !p.exmptBaseIndent(item) {
-		baseIndent, _, _ = p.getBaseIndent(item, p.Node)
+		baseIndent = p.getBaseIndent(item, p.Node)
 		if baseIndent != p.pd.previousBaseIndent { // denotes change of node
 			result += "\n"
 		}
@@ -141,7 +137,12 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 		result += item.Val + p.pd.insertNewLine()
 		p.pd.expectNextIdentifier = "label"
 	case parser.RIGHT_BRACE:
-		result += p.pd.previousBaseIndent + item.Val
+		if p.pd.isNewLineApplied {
+			result += p.pd.previousBaseIndent + item.Val	
+		} else {
+			result += p.pd.insertNewLine() + p.pd.previousBaseIndent + item.Val
+		}
+		p.pd.isNewLineApplied = false
 		p.pd.expectNextIdentifier = ""
 	case parser.IDENTIFIER:
 		if p.pd.expectNextIdentifier == "label" {
@@ -149,16 +150,25 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 		}
 		result += item.Val
 	case parser.STRING:
-		result += item.Val + ",\n"
+		result += item.Val
+		p.pd.isNewLineApplied = false
 	case parser.RIGHT_PAREN:
 		result += p.pd.dec(1).apply() + item.Val
 		p.pd.expectNextIdentifier = ""
-	case parser.EQL:
+	case parser.EQL, parser.EQL_REGEX, parser.NEQ, parser.NEQ_REGEX, parser.NUMBER, parser.OFFSET, parser.POW, parser.BOOL:
 		result += item.Val
-	case parser.ADD:
+	case parser.SUM:
 		result += item.Val
+	case parser.ADD, parser.SUB, parser.MUL, parser.DIV:
+		result += item.Val
+	case parser.COMMA:
+		result += item.Val + p.pd.insertNewLine()
 	case parser.COMMENT:
-		result += p.pd.previousBaseIndent + item.Val + "\n"
+		if p.pd.isNewLineApplied {
+			result += p.pd.previousBaseIndent + item.Val + p.pd.insertNewLine()
+		} else {
+			result += item.Val + p.pd.insertNewLine()
+		}
 	}
 	if index+1 == len(items) {
 		return result, nil
@@ -246,18 +256,18 @@ func (p *Prettier) removeNodesWithoutPosRange(stack []reflect.Type, typ string) 
 	return stack
 }
 
-func (p *Prettier) getBaseIndent(item parser.Item, node parser.Expr) (string, *parser.PositionRange, reflect.Type) {
+func (p *Prettier) getBaseIndent(item parser.Item, node parser.Expr) string {
 	var (
 		indent        int
 		tmp           parser.Expr
 		expectNextRHS bool
 		previousNode  string
-		exprType      reflect.Type
-		posRange      *parser.PositionRange
+		// exprType      reflect.Type
+		// posRange      *parser.PositionRange
 		head          = node
 	)
 	if head == nil {
-		return "", nil, nil
+		return ""
 	}
 	for {
 		indent++
@@ -278,11 +288,11 @@ func (p *Prettier) getBaseIndent(item parser.Item, node parser.Expr) (string, *p
 				}
 				previousNode = "*parser.BinaryExpr"
 			}
-			if head != nil {
-				exprType = reflect.TypeOf(head)
-				tmp := head.PositionRange()
-				posRange = &tmp
-			}
+			// if head != nil {
+			// 	exprType = reflect.TypeOf(head)
+			// 	tmp := head.PositionRange()
+			// 	posRange = &tmp
+			// }
 			continue
 		} else if expectNextRHS && head != nil && !item.Typ.IsOperator() {
 			expectNextRHS = false
@@ -293,7 +303,7 @@ func (p *Prettier) getBaseIndent(item parser.Item, node parser.Expr) (string, *p
 			continue
 		}
 		indent--
-		return p.pd.pad(indent), posRange, exprType
+		return p.pd.pad(indent)
 	}
 }
 

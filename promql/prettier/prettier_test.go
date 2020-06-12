@@ -42,7 +42,7 @@ var combineCases = []prettierTest{
     foo="bar",
     a="b",
     c="d",
-    first="second",
+    first="second"
   }`,
 	},
 	prettierTest{
@@ -57,11 +57,11 @@ var combineCases = []prettierTest{
 		expected: `
     first{
       foo="bar",
-      hello="world",
+      hello="world"
     }
   +
     second{
-      foo="bar",
+      foo="bar"
     }`,
 	},
 	prettierTest{
@@ -69,16 +69,16 @@ var combineCases = []prettierTest{
 		expected: `
     first{
       foo="bar",
-      hello="world",
+      hello="world"
     }
   +
     second{
-      foo="bar",
+      foo="bar"
     }
   +
     third{
       foo="bar",
-      localhost="9090",
+      localhost="9090"
     }
   +
     forth`,
@@ -90,8 +90,7 @@ var combineCases = []prettierTest{
 		expected: `  first{
     # comment
     foo="bar",
-    hello="world",
-    # comment
+    hello="world"  # comment
   }`,
 	},
 	prettierTest{
@@ -99,13 +98,13 @@ var combineCases = []prettierTest{
 		expected: `  (
       first{
         foo="bar",
-        hello="world",
+        hello="world"
       }
     +
       (
         (
           second{
-            foo="bar",
+            foo="bar"
           }
         )
       )
@@ -113,7 +112,7 @@ var combineCases = []prettierTest{
       (
         third{
         foo="bar",
-        localhost="9090",
+        localhost="9090"
         }
       )
     +
@@ -125,14 +124,14 @@ var combineCases = []prettierTest{
 		expected: `  (
       first{
         foo="bar",
-        hello="world",
+        hello="world"
       }
     +
       (
         (
           second{
             foo="bar",
-            gfg="ghg",
+            gfg="ghg"
           }
         )
       )
@@ -141,7 +140,7 @@ var combineCases = []prettierTest{
         (
           third{
           foo="bar",
-          localhost="9090",
+          localhost="9090"
           }
         )
       )
