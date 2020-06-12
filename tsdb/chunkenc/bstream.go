@@ -110,7 +110,7 @@ func (b *bstream) writeBits(u uint64, nbits int) {
 }
 
 type bstreamReader struct {
-	stream []byte
+	stream       []byte
 	streamOffset int
 
 	buffer uint64
@@ -200,17 +200,17 @@ func (b *bstreamReader) loadNextBuffer() bool {
 	}
 
 	// Handle the most common case in a optimized way.
-	if b.streamOffset + 8 <= len(b.stream) {
+	if b.streamOffset+8 <= len(b.stream) {
 		// This is ugly, but significantly faster.
 		b.buffer =
 			((uint64(b.stream[b.streamOffset])) << 56) |
-			((uint64(b.stream[b.streamOffset+1])) << 48) |
-			((uint64(b.stream[b.streamOffset+2])) << 40) |
-			((uint64(b.stream[b.streamOffset+3])) << 32) |
-			((uint64(b.stream[b.streamOffset+4])) << 24) |
-			((uint64(b.stream[b.streamOffset+5])) << 16) |
-			((uint64(b.stream[b.streamOffset+6])) << 8) |
-			uint64(b.stream[b.streamOffset+7])
+				((uint64(b.stream[b.streamOffset+1])) << 48) |
+				((uint64(b.stream[b.streamOffset+2])) << 40) |
+				((uint64(b.stream[b.streamOffset+3])) << 32) |
+				((uint64(b.stream[b.streamOffset+4])) << 24) |
+				((uint64(b.stream[b.streamOffset+5])) << 16) |
+				((uint64(b.stream[b.streamOffset+6])) << 8) |
+				uint64(b.stream[b.streamOffset+7])
 
 		b.streamOffset += 8
 		b.valid = 64
