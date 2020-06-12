@@ -16,6 +16,7 @@ package remote
 import (
 	"context"
 
+	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -173,7 +174,13 @@ func (q *querier) Select(sortSeries bool, hints *storage.SelectHints, matchers .
 			return
 		}
 
-		res, err := q.client.Read(q.ctx, query)
+		// The querier has a context but it gets cancelled as soon as query evaluation is completed, by the engine.
+		// Async select can run until the first Next() call after query evaluation completed.
+		// Since Remote read client has a timeout value, this routine won't leak.
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		res, err := q.client.Read(opentracing.ContextWithSpan(ctx, opentracing.SpanFromContext(q.ctx)), query)
 		if err != nil {
 			promise <- storage.ErrSeriesSet(errors.Wrap(err, "remote_read"))
 			return
@@ -182,13 +189,13 @@ func (q *querier) Select(sortSeries bool, hints *storage.SelectHints, matchers .
 		promise <- newSeriesSetFilter(FromQueryResult(sortSeries, res), added)
 	}()
 
-	return &lazySeriesSet{create: func() (storage.SeriesSet, bool) {
+	return storage.LazySeriesSet(func() (storage.SeriesSet, bool) {
 		set, ok := <-promise
 		if !ok {
 			return storage.ErrSeriesSet(errors.New("channel closed before a value received")), false
 		}
 		return set, set.Next()
-	}}
+	})
 }
 
 // addExternalLabels adds matchers for each external label. External labels
@@ -297,41 +304,4 @@ func (sf seriesFilter) Labels() labels.Labels {
 		}
 	}
 	return labels
-}
-
-type lazySeriesSet struct {
-	create func() (s storage.SeriesSet, ok bool)
-
-	set storage.SeriesSet
-}
-
-func (c *lazySeriesSet) Next() bool {
-	if c.set != nil {
-		return c.set.Next()
-	}
-
-	var ok bool
-	c.set, ok = c.create()
-	return ok
-}
-
-func (c *lazySeriesSet) Err() error {
-	if c.set != nil {
-		return c.set.Err()
-	}
-	return nil
-}
-
-func (c *lazySeriesSet) At() storage.Series {
-	if c.set != nil {
-		return c.set.At()
-	}
-	return nil
-}
-
-func (c *lazySeriesSet) Warnings() storage.Warnings {
-	if c.set != nil {
-		return c.set.Warnings()
-	}
-	return nil
 }

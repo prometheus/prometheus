@@ -82,7 +82,7 @@ func (s *secondaryQuerier) Select(sortSeries bool, hints *SelectHints, matchers 
 				if err := set.Err(); err != nil {
 					// One of the sets failed, ensure current one returning errors as warnings, and rest of the sets return nothing.
 					// (All or nothing logic).
-					s.asyncSets[curr] = warningsOnlySeriesSet(append([]error{err}, ws...))
+					s.asyncSets[curr] = warningsOnlyGenericSeriesSet(append([]error{err}, ws...))
 					for i := range s.asyncSets {
 						if curr == i {
 							continue
@@ -92,13 +92,13 @@ func (s *secondaryQuerier) Select(sortSeries bool, hints *SelectHints, matchers 
 					break
 				}
 				// Exhausted set.
-				s.asyncSets[i] = warningsOnlySeriesSet(ws)
+				s.asyncSets[i] = warningsOnlyGenericSeriesSet(ws)
 			}
 			s.done = true
 		})
 
 		switch s.asyncSets[curr].(type) {
-		case warningsOnlySeriesSet, noopGenericSeriesSet:
+		case warningsOnlyGenericSeriesSet, noopGenericSeriesSet:
 			return s.asyncSets[curr], false
 		default:
 			return s.asyncSets[curr], true

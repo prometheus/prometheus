@@ -13,6 +13,48 @@
 
 package storage
 
+func LazySeriesSet(init func() (SeriesSet, bool)) SeriesSet {
+	return &lazySeriesSet{init: init}
+}
+
+// lazySeriesSet is a wrapped series set that is initialised on first call to Next().
+type lazySeriesSet struct {
+	init func() (s SeriesSet, ok bool)
+
+	set SeriesSet
+}
+
+func (c *lazySeriesSet) Next() bool {
+	if c.set != nil {
+		return c.set.Next()
+	}
+
+	var ok bool
+	c.set, ok = c.init()
+	return ok
+}
+
+func (c *lazySeriesSet) Err() error {
+	if c.set != nil {
+		return c.set.Err()
+	}
+	return nil
+}
+
+func (c *lazySeriesSet) At() Series {
+	if c.set != nil {
+		return c.set.At()
+	}
+	return nil
+}
+
+func (c *lazySeriesSet) Warnings() Warnings {
+	if c.set != nil {
+		return c.set.Warnings()
+	}
+	return nil
+}
+
 // lazyGenericSeriesSet is a wrapped series set that is initialised on first call to Next().
 type lazyGenericSeriesSet struct {
 	init func() (genericSeriesSet, bool)
@@ -50,18 +92,18 @@ func (c *lazyGenericSeriesSet) Warnings() Warnings {
 	return nil
 }
 
-type warningsOnlySeriesSet Warnings
+type warningsOnlyGenericSeriesSet Warnings
 
-func (warningsOnlySeriesSet) Next() bool           { return false }
-func (warningsOnlySeriesSet) Err() error           { return nil }
-func (warningsOnlySeriesSet) At() Labels           { return nil }
-func (c warningsOnlySeriesSet) Warnings() Warnings { return Warnings(c) }
+func (warningsOnlyGenericSeriesSet) Next() bool           { return false }
+func (warningsOnlyGenericSeriesSet) Err() error           { return nil }
+func (warningsOnlyGenericSeriesSet) At() Labels           { return nil }
+func (c warningsOnlyGenericSeriesSet) Warnings() Warnings { return Warnings(c) }
 
-type errorOnlySeriesSet struct {
+type errorOnlyGenericSeriesSet struct {
 	err error
 }
 
-func (errorOnlySeriesSet) Next() bool         { return false }
-func (errorOnlySeriesSet) At() Labels         { return nil }
-func (s errorOnlySeriesSet) Err() error       { return s.err }
-func (errorOnlySeriesSet) Warnings() Warnings { return nil }
+func (errorOnlyGenericSeriesSet) Next() bool         { return false }
+func (errorOnlyGenericSeriesSet) At() Labels         { return nil }
+func (s errorOnlyGenericSeriesSet) Err() error       { return s.err }
+func (errorOnlyGenericSeriesSet) Warnings() Warnings { return nil }

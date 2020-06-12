@@ -495,18 +495,15 @@ func TestSampleAndChunkQueryableClient(t *testing.T) {
 			defer require.NoError(t, q.Close())
 
 			ss := q.Select(true, nil, tc.matchers...)
-			require.NoError(t, err)
-			require.Equal(t, storage.Warnings(nil), ss.Warnings())
-
-			require.Equal(t, tc.expectedQuery, m.got)
 
 			var got []labels.Labels
 			for ss.Next() {
 				got = append(got, ss.At().Labels())
 			}
 			require.NoError(t, ss.Err())
+			require.Equal(t, tc.expectedQuery, m.got)
+			require.Equal(t, storage.Warnings(nil), ss.Warnings())
 			require.Equal(t, tc.expectedSeries, got)
-
 		})
 	}
 }

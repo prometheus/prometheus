@@ -318,7 +318,7 @@ func newGenericMergeSeriesSet(sets []genericSeriesSet, mergeFunc genericSeriesMe
 			heap.Push(&h, set)
 		}
 		if err := set.Err(); err != nil {
-			return errorOnlySeriesSet{err}
+			return errorOnlyGenericSeriesSet{err}
 		}
 	}
 	return &genericMergeSeriesSet{
