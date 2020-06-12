@@ -118,8 +118,7 @@ func (c *XORChunk) iterator(it Iterator) *xorIterator {
 	// Should iterators guarantee to act on a copy of the data so it doesn't lock append?
 	// When using striped locks to guard access to chunks, probably yes.
 	// Could only copy data if the chunk is not completed yet.
-	xorIter, ok := it.(*xorIterator)
-	if ok {
+	if xorIter, ok := it.(*xorIterator); ok {
 		xorIter.Reset(c.b.bytes())
 		return xorIter
 	}

@@ -41,9 +41,7 @@
 
 package chunkenc
 
-import (
-	"io"
-)
+import "io"
 
 // bstream is a stream of bits.
 type bstream struct {
@@ -111,10 +109,10 @@ func (b *bstream) writeBits(u uint64, nbits int) {
 
 type bstreamReader struct {
 	stream       []byte
-	streamOffset int
+	streamOffset int // The offset from which read the next byte from the stream.
 
-	buffer uint64
-	valid  uint8 // The number of bits valid to read (from left) in the current buffer.
+	buffer uint64 // The current buffer, filled from the stream, containing up to 8 bytes from which read bits.
+	valid  uint8  // The number of bits valid to read (from left) in the current buffer.
 }
 
 func newBReader(b []byte) bstreamReader {
@@ -135,6 +133,8 @@ func (b *bstreamReader) readBit() (bit, error) {
 
 // readBitFast is like readBit but can return io.EOF if the internal buffer is empty.
 // If it returns io.EOF, the caller should retry reading bits calling readBit().
+// This function must be kept small and a leaf in order to help the compiler inlining it
+// and further improve performances.
 func (b *bstreamReader) readBitFast() (bit, error) {
 	if b.valid == 0 {
 		return false, io.EOF
@@ -175,6 +175,8 @@ func (b *bstreamReader) readBits(nbits uint8) (uint64, error) {
 
 // readBitsFast is like readBits but can return io.EOF if the internal buffer is empty.
 // If it returns io.EOF, the caller should retry reading bits calling readBits().
+// This function must be kept small and a leaf in order to help the compiler inlining it
+// and further improve performances.
 func (b *bstreamReader) readBitsFast(nbits uint8) (uint64, error) {
 	if nbits > b.valid {
 		return 0, io.EOF
@@ -223,7 +225,7 @@ func (b *bstreamReader) loadNextBuffer() bool {
 	curr := uint64(0)
 
 	for out := 0; in < len(b.stream) && out < 64; out += 8 {
-		curr = curr | (uint64(b.stream[in]) << uint(64 - out - 8))
+		curr = curr | (uint64(b.stream[in]) << uint(64-out-8))
 		in++
 	}
 
