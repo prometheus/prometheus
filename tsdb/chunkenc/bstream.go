@@ -223,7 +223,7 @@ func (b *bstreamReader) loadNextBuffer() bool {
 	curr := uint64(0)
 
 	for out := 0; in < len(b.stream) && out < 64; out += 8 {
-		curr = curr | (uint64(b.stream[in]) << (64 - out - 8))
+		curr = curr | (uint64(b.stream[in]) << uint(64 - out - 8))
 		in++
 	}
 
