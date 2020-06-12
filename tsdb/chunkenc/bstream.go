@@ -114,7 +114,7 @@ type bstreamReader struct {
 	streamOffset int
 
 	buffer uint64
-	valid  uint8 // how many bits are valid in current buffer
+	valid  uint8 // The number of bits valid to read (from left) in the current buffer.
 }
 
 func newBReader(b []byte) bstreamReader {
@@ -228,8 +228,11 @@ func (b *bstreamReader) loadNextBuffer() bool {
 	}
 
 	b.buffer = curr
-	b.valid = 64 // Even if read less we have always to set it to the full buffer size because bits are written starting from the left.
 	b.streamOffset = in
+
+	// Even if read less we have always to set it to the full buffer size because bits
+	// are written starting from the left.
+	b.valid = 64
 
 	return true
 }
