@@ -123,7 +123,7 @@ func newBReader(b []byte) bstreamReader {
 
 func (b *bstreamReader) readBit() (bit, error) {
 	if b.valid == 0 {
-		if !b.loadNextBuffer() {
+		if !b.loadNextBuffer(1) {
 			return false, io.EOF
 		}
 	}
@@ -147,7 +147,7 @@ func (b *bstreamReader) readBitFast() (bit, error) {
 
 func (b *bstreamReader) readBits(nbits uint8) (uint64, error) {
 	if b.valid == 0 {
-		if !b.loadNextBuffer() {
+		if !b.loadNextBuffer(nbits) {
 			return 0, io.EOF
 		}
 	}
@@ -162,7 +162,7 @@ func (b *bstreamReader) readBits(nbits uint8) (uint64, error) {
 	v := (b.buffer & bitmask) << nbits
 	b.valid = 0
 
-	if !b.loadNextBuffer() {
+	if !b.loadNextBuffer(nbits) {
 		return 0, io.EOF
 	}
 
@@ -196,13 +196,19 @@ func (b *bstreamReader) ReadByte() (byte, error) {
 	return byte(v), nil
 }
 
-func (b *bstreamReader) loadNextBuffer() bool {
+// loadNextBuffer loads the next bytes from the stream into the internal buffer.
+// The input nbits is the minimum number of bits that must be read, but the implementation
+// can read more (if possible) to improve performances.
+func (b *bstreamReader) loadNextBuffer(nbits uint8) bool {
 	if b.streamOffset >= len(b.stream) {
 		return false
 	}
 
-	// Handle the most common case in a optimized way.
-	if b.streamOffset+8 <= len(b.stream) {
+	// Handle the case there are more then 8 bytes in the buffer (most common case)
+	// in a optimized way. It's guaranteed that this branch will never read from the
+	// very last byte of the stream (which suffers race conditions due to concurrent
+	// writes).
+	if b.streamOffset+8 < len(b.stream) {
 		// This is ugly, but significantly faster.
 		b.buffer =
 			((uint64(b.stream[b.streamOffset])) << 56) |
@@ -219,22 +225,23 @@ func (b *bstreamReader) loadNextBuffer() bool {
 		return true
 	}
 
-	// Handle the case we're loading the last buffer which is not a multiple of 8.
-	// The following code is slower but called less frequently.
-	in := b.streamOffset
-	curr := uint64(0)
-
-	for out := 0; in < len(b.stream) && out < 64; out += 8 {
-		curr = curr | (uint64(b.stream[in]) << uint(64-out-8))
-		in++
+	// We're here if the are 8 or less bytes left in the stream. Since this reader needs
+	// to handle race conditions with concurrent writes happening on the very last byte
+	// we make sure to never over more than the minimum requested bits (rounded up to
+	// the next byte). The following code is slower but called less frequently.
+	nbytes := int((nbits / 8) + 1)
+	if b.streamOffset+nbytes > len(b.stream) {
+		nbytes = len(b.stream) - b.streamOffset
 	}
 
-	b.buffer = curr
-	b.streamOffset = in
+	buffer := uint64(0)
+	for i := 0; i < nbytes; i++ {
+		buffer = buffer | (uint64(b.stream[b.streamOffset+i]) << uint(8*(nbytes-i-1)))
+	}
 
-	// Even if read less we have always to set it to the full buffer size because bits
-	// are written starting from the left.
-	b.valid = 64
+	b.buffer = buffer
+	b.streamOffset += nbytes
+	b.valid = uint8(nbytes * 8)
 
 	return true
 }
