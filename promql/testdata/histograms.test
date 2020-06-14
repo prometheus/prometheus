@@ -161,7 +161,7 @@ load 5m
     nonmonotonic_bucket{le="10"}    0+8x10
     nonmonotonic_bucket{le="100"}   0+8x10
     nonmonotonic_bucket{le="1000"}  0+9x10
-    nonmonotonic_bucket{le="+Inf"}  0+9x10
+    nonmonotonic_bucket{le="+Inf"}  0+7x10
 
 # Nonmonotonic buckets
 eval instant at 50m histogram_quantile(0.99, nonmonotonic_bucket)
