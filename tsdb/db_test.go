@@ -2910,8 +2910,7 @@ func TestCompactHead(t *testing.T) {
 	testutil.Ok(t, err)
 	defer func() { testutil.Ok(t, querier.Close()) }()
 
-	seriesSet, _, err := querier.Select(false, nil, &labels.Matcher{Type: labels.MatchEqual, Name: "a", Value: "b"})
-	testutil.Ok(t, err)
+	seriesSet := querier.Select(false, nil, &labels.Matcher{Type: labels.MatchEqual, Name: "a", Value: "b"})
 	var actSamples []sample
 
 	for seriesSet.Next() {
