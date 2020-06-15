@@ -725,7 +725,7 @@ func (a dbAppender) Commit() error {
 
 	// We could just run this check every few minutes practically. But for benchmarks
 	// and high frequency use cases this is the safer way.
-	if a.db.head.compactable() {
+	if a.db.isHeadCompactable() {
 		select {
 		case a.db.compactc <- struct{}{}:
 		default:
@@ -757,7 +757,7 @@ func (db *DB) Compact() (err error) {
 			return nil
 		default:
 		}
-		if !db.head.compactable() {
+		if !db.isHeadCompactable() {
 			break
 		}
 		mint := db.head.MinTime()
@@ -777,6 +777,21 @@ func (db *DB) Compact() (err error) {
 	}
 
 	return db.compactBlocks()
+}
+
+// isHeadCompactable returns whether the head has a compactable range.
+// The head has a compactable range when the head time range is 1.5 times the chunk range.
+// The 0.5 acts as a buffer of the appendable window.
+// This takes into account the grace period for min valid time and checks the range
+// from the maxt of the last block if any block exist.
+func (db *DB) isHeadCompactable() bool {
+	compactable := db.head.MaxTime()-db.head.MinTime() > db.head.opts.ChunkRange/2*3
+	if blocks := db.Blocks(); len(blocks) > 0 {
+		// We do this extra check with blocks to not compact because of the grace period
+		// allowed for the min valid time.
+		compactable = compactable && db.head.MaxTime()-blocks[len(blocks)-1].MaxTime() > db.head.opts.ChunkRange/2*3
+	}
+	return compactable
 }
 
 // CompactHead compacts the given the RangeHead.
