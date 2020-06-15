@@ -33,7 +33,12 @@ type MetricSample struct {
 
 // CreateHead creates a TSDB writer head to write the sample data to.
 func CreateHead(samples []*MetricSample, chunkRange int64, chunkDir string, logger log.Logger) (*Head, error) {
-	head, err := NewHead(nil, logger, nil, chunkRange, chunkDir, nil, DefaultStripeSize, nil)
+	headOpts := &HeadOptions{
+		ChunkRange:   chunkRange,
+		ChunkRootDir: chunkDir,
+		StripeSize:   DefaultStripeSize,
+	}
+	head, err := NewHead(nil, logger, nil, nil, headOpts)
 
 	if err != nil {
 		return nil, err

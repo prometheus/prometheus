@@ -313,7 +313,12 @@ func (db *DBReadOnly) FlushWAL(dir string) (returnErr error) {
 	if err != nil {
 		return err
 	}
-	head, err := NewHead(nil, db.logger, w, 1, db.dir, nil, DefaultStripeSize, nil)
+	headOpts := &HeadOptions{
+		ChunkRange:   1,
+		ChunkRootDir: db.dir,
+		StripeSize:   DefaultStripeSize,
+	}
+	head, err := NewHead(nil, db.logger, w, nil, headOpts)
 	if err != nil {
 		return err
 	}
@@ -372,7 +377,12 @@ func (db *DBReadOnly) Querier(ctx context.Context, mint, maxt int64) (storage.Qu
 		blocks[i] = b
 	}
 
-	head, err := NewHead(nil, db.logger, nil, 1, db.dir, nil, DefaultStripeSize, nil)
+	headOpts := &HeadOptions{
+		ChunkRange:   1,
+		ChunkRootDir: db.dir,
+		StripeSize:   DefaultStripeSize,
+	}
+	head, err := NewHead(nil, db.logger, nil, nil, headOpts)
 	if err != nil {
 		return nil, err
 	}
@@ -390,7 +400,7 @@ func (db *DBReadOnly) Querier(ctx context.Context, mint, maxt int64) (storage.Qu
 		if err != nil {
 			return nil, err
 		}
-		head, err = NewHead(nil, db.logger, w, 1, db.dir, nil, DefaultStripeSize, nil)
+		head, err = NewHead(nil, db.logger, w, nil, headOpts)
 		if err != nil {
 			return nil, err
 		}
@@ -603,7 +613,13 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 		}
 	}
 
-	db.head, err = NewHead(r, l, wlog, rngs[0], dir, db.chunkPool, opts.StripeSize, opts.SeriesLifecycleCallback)
+	headOpts := &HeadOptions{
+		ChunkRange:              rngs[0],
+		ChunkRootDir:            dir,
+		StripeSize:              opts.StripeSize,
+		SeriesLifecycleCallback: opts.SeriesLifecycleCallback,
+	}
+	db.head, err = NewHead(r, l, wlog, db.chunkPool, headOpts)
 	if err != nil {
 		return nil, err
 	}

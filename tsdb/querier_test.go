@@ -1864,7 +1864,12 @@ func TestPostingsForMatchers(t *testing.T) {
 	defer func() {
 		testutil.Ok(t, os.RemoveAll(chunkDir))
 	}()
-	h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, DefaultStripeSize, nil)
+	headOpts := &HeadOptions{
+		ChunkRange:   1000,
+		ChunkRootDir: chunkDir,
+		StripeSize:   DefaultStripeSize,
+	}
+	h, err := NewHead(nil, nil, nil, nil, headOpts)
 	testutil.Ok(t, err)
 	defer func() {
 		testutil.Ok(t, h.Close())

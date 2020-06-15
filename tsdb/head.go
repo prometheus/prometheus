@@ -55,6 +55,7 @@ type Head struct {
 	minTime, maxTime int64 // Current min and max of the samples included in the head.
 	minValidTime     int64 // Mint allowed to be added to the head. It shouldn't be lower than the maxt of the last persisted block.
 	lastSeriesID     uint64
+	opts             *HeadOptions
 
 	metrics      *headMetrics
 	wal          *wal.WAL
@@ -282,27 +283,39 @@ func (h *Head) PostingsCardinalityStats(statsByLabelName string) *index.Postings
 	return h.cardinalityCache
 }
 
+// HeadOptions are the options for the head block.
+type HeadOptions struct {
+	ChunkRange int64
+	// ChunkRootDir is the directory to store the m-mapped chunks.
+	ChunkRootDir string
+	// StripeSize sets the number of entries in the hash map, it must be a power of 2.
+	// A larger StripeSize will allocate more memory up-front, but will increase performance when handling a large number of series.
+	// A smaller StripeSize reduces the memory allocated, but can decrease performance with large number of series.
+	StripeSize int
+	// SeriesLifecycleCallback specifies a list of callbacks that will be called during a lifecycle of a series.
+	// It is always a no-op in Prometheus and mainly meant for external users who import TSDB.
+	SeriesLifecycleCallback SeriesLifecycleCallback
+}
+
 // NewHead opens the head block in dir.
-// stripeSize sets the number of entries in the hash map, it must be a power of 2.
-// A larger stripeSize will allocate more memory up-front, but will increase performance when handling a large number of series.
-// A smaller stripeSize reduces the memory allocated, but can decrease performance with large number of series.
-func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, chunkRange int64, chkDirRoot string, pool chunkenc.Pool, stripeSize int, seriesCallback SeriesLifecycleCallback) (*Head, error) {
+func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, pool chunkenc.Pool, opts *HeadOptions) (*Head, error) {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
-	if chunkRange < 1 {
-		return nil, errors.Errorf("invalid chunk range %d", chunkRange)
+	if opts.ChunkRange < 1 {
+		return nil, errors.Errorf("invalid chunk range %d", opts.ChunkRange)
 	}
-	if seriesCallback == nil {
-		seriesCallback = &noopSeriesLifecycleCallback{}
+
+	if opts.SeriesLifecycleCallback == nil {
+		opts.SeriesLifecycleCallback = &noopSeriesLifecycleCallback{}
 	}
 	h := &Head{
 		wal:        wal,
 		logger:     l,
-		chunkRange: chunkRange,
+		chunkRange: opts.ChunkRange,
 		minTime:    math.MaxInt64,
 		maxTime:    math.MinInt64,
-		series:     newStripeSeries(stripeSize, seriesCallback),
+		series:     newStripeSeries(opts.StripeSize, opts.SeriesLifecycleCallback),
 		values:     map[string]stringset{},
 		symbols:    map[string]struct{}{},
 		postings:   index.NewUnorderedMemPostings(),
@@ -314,8 +327,9 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, chunkRange int
 				return &memChunk{}
 			},
 		},
-		chunkDirRoot:   chkDirRoot,
-		seriesCallback: seriesCallback,
+		chunkDirRoot:   opts.ChunkRootDir,
+		seriesCallback: opts.SeriesLifecycleCallback,
+		opts:           opts,
 	}
 	h.metrics = newHeadMetrics(h, r)
 
@@ -324,7 +338,7 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, chunkRange int
 	}
 
 	var err error
-	h.chunkDiskMapper, err = chunks.NewChunkDiskMapper(mmappedChunksDir(chkDirRoot), pool)
+	h.chunkDiskMapper, err = chunks.NewChunkDiskMapper(mmappedChunksDir(opts.ChunkRootDir), pool)
 	if err != nil {
 		return nil, err
 	}

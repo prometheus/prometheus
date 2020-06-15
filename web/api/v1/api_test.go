@@ -2116,7 +2116,12 @@ func (f *fakeDB) Stats(statsByLabelName string) (_ *tsdb.Stats, retErr error) {
 			retErr = err
 		}
 	}()
-	h, _ := tsdb.NewHead(nil, nil, nil, 1000, "", nil, tsdb.DefaultStripeSize, nil)
+	headOpts := &tsdb.HeadOptions{
+		ChunkRange:   1000,
+		ChunkRootDir: dbDir,
+		StripeSize:   tsdb.DefaultStripeSize,
+	}
+	h, _ := tsdb.NewHead(nil, nil, nil, nil, headOpts)
 	return h.Stats(statsByLabelName), nil
 }
 

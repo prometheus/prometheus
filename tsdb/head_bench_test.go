@@ -30,8 +30,13 @@ func BenchmarkHeadStripeSeriesCreate(b *testing.B) {
 	defer func() {
 		testutil.Ok(b, os.RemoveAll(chunkDir))
 	}()
+	headOpts := &HeadOptions{
+		ChunkRange:   1000,
+		ChunkRootDir: chunkDir,
+		StripeSize:   DefaultStripeSize,
+	}
 	// Put a series, select it. GC it and then access it.
-	h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, DefaultStripeSize, nil)
+	h, err := NewHead(nil, nil, nil, nil, headOpts)
 	testutil.Ok(b, err)
 	defer h.Close()
 
@@ -46,8 +51,13 @@ func BenchmarkHeadStripeSeriesCreateParallel(b *testing.B) {
 	defer func() {
 		testutil.Ok(b, os.RemoveAll(chunkDir))
 	}()
+	headOpts := &HeadOptions{
+		ChunkRange:   1000,
+		ChunkRootDir: chunkDir,
+		StripeSize:   DefaultStripeSize,
+	}
 	// Put a series, select it. GC it and then access it.
-	h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, DefaultStripeSize, nil)
+	h, err := NewHead(nil, nil, nil, nil, headOpts)
 	testutil.Ok(b, err)
 	defer h.Close()
 
