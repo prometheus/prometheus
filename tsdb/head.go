@@ -648,7 +648,7 @@ Outer:
 // It should be called before using an appender so that it
 // limits the ingested samples to the head min valid time.
 func (h *Head) Init(minValidTime int64) error {
-	h.minValidTime = minValidTime
+	h.SetMinValidTime(minValidTime)
 	defer h.postings.EnsureOrder()
 	defer h.gc() // After loading the wal remove the obsolete data from the head.
 
@@ -773,6 +773,10 @@ func (h *Head) removeCorruptedMmappedChunks(err error) map[uint64][]*mmappedChun
 	return mmappedChunks
 }
 
+func (h *Head) SetMinValidTime(minValidTime int64) {
+	atomic.StoreInt64(&h.minValidTime, minValidTime)
+}
+
 // Truncate removes old data before mint from the head.
 func (h *Head) Truncate(mint int64) (err error) {
 	defer func() {
@@ -786,7 +790,7 @@ func (h *Head) Truncate(mint int64) (err error) {
 		return nil
 	}
 	atomic.StoreInt64(&h.minTime, mint)
-	atomic.StoreInt64(&h.minValidTime, mint)
+	h.SetMinValidTime(mint)
 
 	// Ensure that max time is at least as high as min time.
 	for h.MaxTime() < mint {
