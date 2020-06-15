@@ -427,6 +427,11 @@ func main() {
 		conntrack.DialWithTracing(),
 	)
 
+	if _, err := config.LoadFile(cfg.configFile); err != nil {
+		level.Info(logger).Log("msg", fmt.Sprintf("One or more errors exists in configuration file (--config.file=%s)", cfg.configFile))
+		os.Exit(2)
+	}
+
 	reloaders := []func(cfg *config.Config) error{
 		remoteStorage.ApplyConfig,
 		webHandler.ApplyConfig,
