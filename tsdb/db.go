@@ -118,6 +118,10 @@ type Options struct {
 	// SeriesLifecycleCallback specifies a list of callbacks that will be called during a lifecycle of a series.
 	// It is always a no-op in Prometheus and mainly meant for external users who import TSDB.
 	SeriesLifecycleCallback SeriesLifecycleCallback
+
+	// MinValidTimeGracePeriod is the additional grace period w.r.t the current min valid time
+	// for samples to be appended before they are considered out of bound.
+	MinValidTimeGracePeriod int64
 }
 
 // DB handles reads and writes of time series falling into
@@ -618,6 +622,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 		ChunkRootDir:            dir,
 		StripeSize:              opts.StripeSize,
 		SeriesLifecycleCallback: opts.SeriesLifecycleCallback,
+		MinValidTimeGracePeriod: opts.MinValidTimeGracePeriod,
 	}
 	db.head, err = NewHead(r, l, wlog, db.chunkPool, headOpts)
 	if err != nil {

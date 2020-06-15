@@ -286,15 +286,22 @@ func (h *Head) PostingsCardinalityStats(statsByLabelName string) *index.Postings
 // HeadOptions are the options for the head block.
 type HeadOptions struct {
 	ChunkRange int64
+
 	// ChunkRootDir is the directory to store the m-mapped chunks.
 	ChunkRootDir string
+
 	// StripeSize sets the number of entries in the hash map, it must be a power of 2.
 	// A larger StripeSize will allocate more memory up-front, but will increase performance when handling a large number of series.
 	// A smaller StripeSize reduces the memory allocated, but can decrease performance with large number of series.
 	StripeSize int
+
 	// SeriesLifecycleCallback specifies a list of callbacks that will be called during a lifecycle of a series.
 	// It is always a no-op in Prometheus and mainly meant for external users who import TSDB.
 	SeriesLifecycleCallback SeriesLifecycleCallback
+
+	// MinValidTimeGracePeriod is the additional grace period w.r.t the current min valid time
+	// for samples to be appended before they are considered out of bound.
+	MinValidTimeGracePeriod int64
 }
 
 // NewHead opens the head block in dir.
@@ -305,10 +312,13 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, pool chunkenc.
 	if opts.ChunkRange < 1 {
 		return nil, errors.Errorf("invalid chunk range %d", opts.ChunkRange)
 	}
-
 	if opts.SeriesLifecycleCallback == nil {
 		opts.SeriesLifecycleCallback = &noopSeriesLifecycleCallback{}
 	}
+	if opts.MinValidTimeGracePeriod < 0 {
+		opts.MinValidTimeGracePeriod = 0
+	}
+
 	h := &Head{
 		wal:        wal,
 		logger:     l,
@@ -470,7 +480,7 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64, mmappedChunks 
 		inputs[i] = make(chan []record.RefSample, 300)
 
 		go func(input <-chan []record.RefSample, output chan<- []record.RefSample) {
-			unknown := h.processWALSamples(h.minValidTime, input, output)
+			unknown := h.processWALSamples(h.minValidTime-h.opts.MinValidTimeGracePeriod, input, output)
 			atomic.AddUint64(&unknownRefs, unknown)
 			wg.Done()
 		}(inputs[i], outputs[i])
@@ -599,7 +609,7 @@ Outer:
 		case []tombstones.Stone:
 			for _, s := range v {
 				for _, itv := range s.Intervals {
-					if itv.Maxt < h.minValidTime {
+					if itv.Maxt < h.minValidTime-h.opts.MinValidTimeGracePeriod {
 						continue
 					}
 					if m := h.series.getByID(s.Ref); m == nil {
@@ -728,7 +738,7 @@ func (h *Head) Init(minValidTime int64) error {
 func (h *Head) loadMmappedChunks() (map[uint64][]*mmappedChunk, error) {
 	mmappedChunks := map[uint64][]*mmappedChunk{}
 	if err := h.chunkDiskMapper.IterateAllChunks(func(seriesRef, chunkRef uint64, mint, maxt int64, numSamples uint16) error {
-		if maxt < h.minValidTime {
+		if maxt < h.minValidTime-h.opts.MinValidTimeGracePeriod {
 			return nil
 		}
 
@@ -1030,7 +1040,7 @@ func (h *Head) appender() *headAppender {
 		head: h,
 		// Set the minimum valid time to whichever is greater the head min valid time or the compaction window.
 		// This ensures that no samples will be added within the compaction window to avoid races.
-		minValidTime:          max(atomic.LoadInt64(&h.minValidTime), h.MaxTime()-h.chunkRange/2),
+		minValidTime:          max(atomic.LoadInt64(&h.minValidTime), h.MaxTime()-h.chunkRange/2) - h.opts.MinValidTimeGracePeriod,
 		mint:                  math.MaxInt64,
 		maxt:                  math.MinInt64,
 		samples:               h.getAppendBuffer(),
