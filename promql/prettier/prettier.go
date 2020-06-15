@@ -169,14 +169,14 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 		}
 		p.pd.expectNextIdentifier = ""
 		p.pd.inAggregateModifiers = false
-	case parser.EQL, parser.EQL_REGEX, parser.NEQ, parser.NEQ_REGEX, parser.OFFSET, parser.POW, parser.BOOL:
+	case parser.EQL, parser.EQL_REGEX, parser.NEQ, parser.NEQ_REGEX, parser.POW:
 		result += item.Val
 	case parser.SUM, parser.AVG, parser.COUNT, parser.MIN, parser.MAX, parser.STDDEV, parser.STDVAR, parser.TOPK, parser.BOTTOMK, parser.COUNT_VALUES, parser.QUANTILE:
 		result += item.Val
 		p.pd.disableBaseIndent = true
 	case parser.ADD, parser.SUB, parser.MUL, parser.DIV:
 		result += item.Val
-	case parser.WITHOUT, parser.BY:
+	case parser.WITHOUT, parser.BY, parser.IGNORING, parser.BOOL, parser.GROUP_LEFT, parser.GROUP_RIGHT, parser.OFFSET, parser.ON:
 		result += " " + item.Val + " "
 		p.pd.disableBaseIndent = true
 		p.pd.inAggregateModifiers = true
@@ -259,6 +259,11 @@ func (p *Prettier) getNodeAncestorsStack(head parser.Expr, posRange parser.Posit
 		}
 		// if none of the above are true, that implies, the position range is of a symbol.
 		return stack, true
+	case *parser.AggregateExpr:
+		if n.PosRange.Start <= posRange.Start && n.PosRange.End >= posRange.End {
+			stack = append(stack, reflect.TypeOf(n))
+			return p.getNodeAncestorsStack(n.Expr, posRange, stack)
+		}
 	}
 	return stack, true
 }
