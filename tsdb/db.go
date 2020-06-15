@@ -761,7 +761,7 @@ func (db *DB) Compact() (err error) {
 			break
 		}
 		mint := db.head.MinTime()
-		maxt := rangeForTimestamp(mint, db.head.chunkRange)
+		maxt := rangeForTimestamp(mint, db.head.opts.ChunkRange)
 
 		// Wrap head into a range that bounds all reads to it.
 		// We remove 1 millisecond from maxt because block

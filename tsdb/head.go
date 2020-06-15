@@ -50,13 +50,12 @@ var (
 type Head struct {
 	// Keep all 64bit atomically accessed variables at the top of this struct.
 	// See https://golang.org/pkg/sync/atomic/#pkg-note-BUG for more info.
-	chunkRange       int64
 	numSeries        uint64
 	minTime, maxTime int64 // Current min and max of the samples included in the head.
 	minValidTime     int64 // Mint allowed to be added to the head. It shouldn't be lower than the maxt of the last persisted block.
 	lastSeriesID     uint64
-	opts             *HeadOptions
 
+	opts         *HeadOptions
 	metrics      *headMetrics
 	wal          *wal.WAL
 	logger       log.Logger
@@ -66,8 +65,7 @@ type Head struct {
 	memChunkPool sync.Pool
 
 	// All series addressable by their ID or hash.
-	series         *stripeSeries
-	seriesCallback SeriesLifecycleCallback
+	series *stripeSeries
 
 	symMtx  sync.RWMutex
 	symbols map[string]struct{}
@@ -322,7 +320,6 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, pool chunkenc.
 	h := &Head{
 		wal:        wal,
 		logger:     l,
-		chunkRange: opts.ChunkRange,
 		minTime:    math.MaxInt64,
 		maxTime:    math.MinInt64,
 		series:     newStripeSeries(opts.StripeSize, opts.SeriesLifecycleCallback),
@@ -337,9 +334,8 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, pool chunkenc.
 				return &memChunk{}
 			},
 		},
-		chunkDirRoot:   opts.ChunkRootDir,
-		seriesCallback: opts.SeriesLifecycleCallback,
-		opts:           opts,
+		chunkDirRoot: opts.ChunkRootDir,
+		opts:         opts,
 	}
 	h.metrics = newHeadMetrics(h, r)
 
@@ -1040,7 +1036,7 @@ func (h *Head) appender() *headAppender {
 		head: h,
 		// Set the minimum valid time to whichever is greater the head min valid time or the compaction window.
 		// This ensures that no samples will be added within the compaction window to avoid races.
-		minValidTime:          max(atomic.LoadInt64(&h.minValidTime), h.MaxTime()-h.chunkRange/2) - h.opts.MinValidTimeGracePeriod,
+		minValidTime:          max(atomic.LoadInt64(&h.minValidTime), h.MaxTime()-h.opts.ChunkRange/2) - h.opts.MinValidTimeGracePeriod,
 		mint:                  math.MaxInt64,
 		maxt:                  math.MinInt64,
 		samples:               h.getAppendBuffer(),
@@ -1444,7 +1440,7 @@ func (h *Head) MaxTime() int64 {
 // The head has a compactable range when the head time range is 1.5 times the chunk range.
 // The 0.5 acts as a buffer of the appendable window.
 func (h *Head) compactable() bool {
-	return h.MaxTime()-h.MinTime() > h.chunkRange/2*3
+	return h.MaxTime()-h.MinTime() > h.opts.ChunkRange/2*3
 }
 
 // Close flushes the WAL and closes the head.
@@ -1695,7 +1691,7 @@ func (h *Head) getOrCreate(hash uint64, lset labels.Labels) (*memSeries, bool, e
 }
 
 func (h *Head) getOrCreateWithID(id, hash uint64, lset labels.Labels) (*memSeries, bool, error) {
-	s := newMemSeries(lset, id, h.chunkRange, &h.memChunkPool)
+	s := newMemSeries(lset, id, h.opts.ChunkRange, &h.memChunkPool)
 
 	s, created, err := h.series.getOrSet(hash, s)
 	if err != nil {
