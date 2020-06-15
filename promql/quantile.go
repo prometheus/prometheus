@@ -168,7 +168,7 @@ func coalesceBuckets(buckets buckets) buckets {
 
 func ensureMonotonic(buckets buckets) {
 	max := buckets[0].count
-	for i := range buckets[1:] {
+	for i := 1; i < len(buckets); i++ {
 		switch {
 		case buckets[i].count > max:
 			max = buckets[i].count
