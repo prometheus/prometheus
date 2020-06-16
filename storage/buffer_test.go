@@ -17,7 +17,6 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -105,7 +104,7 @@ func TestBufferedSeriesIterator(t *testing.T) {
 		testutil.Equals(t, ev, v, "value mismatch")
 	}
 
-	it = NewBufferIterator(NewListSeriesIterator([]tsdbutil.Sample{
+	it = NewBufferIterator(NewListSeriesIterator(samples{
 		sample{t: 1, v: 2},
 		sample{t: 2, v: 3},
 		sample{t: 3, v: 4},
