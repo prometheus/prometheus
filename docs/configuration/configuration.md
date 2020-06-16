@@ -1047,6 +1047,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_triton_machine_id`: the UUID of the target
 
 See below for the configuration options for Triton discovery:
+
 ```yaml
 # The information to access the Triton discovery API.
 
