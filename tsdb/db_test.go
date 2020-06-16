@@ -2949,3 +2949,126 @@ func deleteNonBlocks(dbDir string) error {
 
 	return nil
 }
+
+func TestMinValidTimeGracePeriod(t *testing.T) {
+	dbDir, err := ioutil.TempDir("", "testFlush")
+	testutil.Ok(t, err)
+	defer func() { testutil.Ok(t, os.RemoveAll(dbDir)) }()
+
+	chunkRange := int64(1000)
+	gracePeriod := int64(1000)
+	tsdbCfg := &Options{
+		RetentionDuration:       int64(time.Hour * 24 * 15 / time.Millisecond),
+		MinBlockDuration:        chunkRange,
+		MaxBlockDuration:        chunkRange,
+		MinValidTimeGracePeriod: gracePeriod,
+		AllowOverlappingBlocks:  true,
+	}
+
+	db, err := Open(dbDir, log.NewNopLogger(), prometheus.NewRegistry(), tsdbCfg)
+	testutil.Ok(t, err)
+	defer func() { testutil.Ok(t, db.Close()) }()
+	db.DisableCompactions()
+
+	samplesAdded := make(map[string]map[string][]sample)
+
+	appendSample := func(name, value string, ts int64) {
+		s := sample{t: ts, v: rand.Float64()}
+		app := db.Appender()
+		_, err = app.Add(labels.FromStrings(name, value), s.t, s.v)
+		testutil.Ok(t, err)
+		testutil.Ok(t, app.Commit())
+
+		if _, ok := samplesAdded[name]; !ok {
+			samplesAdded[name] = make(map[string][]sample)
+		}
+		samplesAdded[name][value] = append(samplesAdded[name][value], s)
+	}
+
+	verifySamples := func() {
+		for name, values := range samplesAdded {
+			for value, samples := range values {
+				querier, err := db.Querier(context.Background(), math.MinInt64, math.MaxInt64)
+				testutil.Ok(t, err)
+				defer func(q storage.Querier) { testutil.Ok(t, q.Close()) }(querier)
+
+				seriesSet := querier.Select(true, nil, &labels.Matcher{Type: labels.MatchEqual, Name: name, Value: value})
+				var actSamples []sample
+				for seriesSet.Next() {
+					series := seriesSet.At().Iterator()
+					for series.Next() {
+						ts, val := series.At()
+						actSamples = append(actSamples, sample{ts, val})
+					}
+					testutil.Ok(t, series.Err())
+				}
+
+				testutil.Equals(t, samples, actSamples)
+			}
+		}
+	}
+
+	appendSample("a", "b", 1000)
+	appendSample("a", "b", 2000)
+	testutil.Ok(t, db.Compact())
+	testutil.Equals(t, 0, len(db.Blocks()))
+	verifySamples()
+
+	// Block should be created when we touch 3/2 of the chunkRange.
+	appendSample("a", "b", 3000)
+	testutil.Ok(t, db.Compact())
+	testutil.Equals(t, 1, len(db.Blocks()))
+	testutil.Equals(t, 1.0, prom_testutil.ToFloat64(db.metrics.headCompactionsTriggered))
+	testutil.Equals(t, int64(2000), db.head.MinTime())
+	testutil.Equals(t, int64(3000), db.head.MaxTime())
+	testutil.Equals(t, int64(2000), db.head.minValidTime)
+	verifySamples()
+
+	// As the maxt is 3000, the min valid time to append is
+	// 3000 - chunkRange/2, which is different from mdb.head.minValidTime.
+	// So we attempt ingesting samples before that.
+	// After this append, the head block overlaps with the persistent block.
+	ts := 3000 - chunkRange/2 - gracePeriod // 1500.
+	appendSample("c", "d", ts)
+	testutil.Equals(t, int64(1500), db.head.MinTime())
+	verifySamples()
+
+	// Sample before the grace period is rejected.
+	ts = 3000 - chunkRange/2 - gracePeriod - 1
+	app := db.Appender()
+	_, err = app.Add(labels.FromStrings("e", "f"), ts, rand.Float64())
+	testutil.Equals(t, storage.ErrOutOfBounds, err)
+	verifySamples()
+
+	// No new blocks.
+	testutil.Ok(t, db.Compact())
+	testutil.Equals(t, 1, len(db.Blocks()))
+	testutil.Equals(t, 1.0, prom_testutil.ToFloat64(db.metrics.headCompactionsTriggered))
+
+	// Testing that compaction is not solely based on head maxt-mint
+	// and considers the maxt of the persistent block.
+	ts = db.head.MinTime() + chunkRange*2 // 3500.
+	appendSample("c", "d", ts)
+	testutil.Equals(t, int64(1500), db.head.MinTime())
+	testutil.Equals(t, int64(3500), db.head.MaxTime())
+	verifySamples()
+
+	testutil.Ok(t, db.Compact())
+	testutil.Equals(t, 1, len(db.Blocks()))
+	testutil.Equals(t, 1.0, prom_testutil.ToFloat64(db.metrics.headCompactionsTriggered))
+
+	// Now add a sample based on the block maxt and expect compaction.
+	ts = db.Blocks()[0].MaxTime() + chunkRange*2 // 4000.
+	appendSample("c", "d", ts)
+	testutil.Equals(t, int64(1500), db.head.MinTime())
+	testutil.Equals(t, int64(4000), db.head.MaxTime())
+	verifySamples()
+
+	testutil.Ok(t, db.Compact())
+	testutil.Equals(t, 2.0, prom_testutil.ToFloat64(db.metrics.headCompactionsTriggered))
+	// As the new block overlaps with the old block, they get merged to form a single block.
+	testutil.Equals(t, 1, len(db.Blocks()))
+	testutil.Equals(t, int64(3000), db.head.MinTime())
+	testutil.Equals(t, int64(4000), db.head.MaxTime())
+	verifySamples()
+}

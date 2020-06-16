@@ -159,19 +159,20 @@ type DB struct {
 }
 
 type dbMetrics struct {
-	loadedBlocks         prometheus.GaugeFunc
-	symbolTableSize      prometheus.GaugeFunc
-	reloads              prometheus.Counter
-	reloadsFailed        prometheus.Counter
-	compactionsFailed    prometheus.Counter
-	compactionsTriggered prometheus.Counter
-	compactionsSkipped   prometheus.Counter
-	sizeRetentionCount   prometheus.Counter
-	timeRetentionCount   prometheus.Counter
-	startTime            prometheus.GaugeFunc
-	tombCleanTimer       prometheus.Histogram
-	blocksBytes          prometheus.Gauge
-	maxBytes             prometheus.Gauge
+	loadedBlocks             prometheus.GaugeFunc
+	symbolTableSize          prometheus.GaugeFunc
+	reloads                  prometheus.Counter
+	reloadsFailed            prometheus.Counter
+	compactionsFailed        prometheus.Counter
+	compactionsTriggered     prometheus.Counter
+	compactionsSkipped       prometheus.Counter
+	headCompactionsTriggered prometheus.Counter
+	sizeRetentionCount       prometheus.Counter
+	timeRetentionCount       prometheus.Counter
+	startTime                prometheus.GaugeFunc
+	tombCleanTimer           prometheus.Histogram
+	blocksBytes              prometheus.Gauge
+	maxBytes                 prometheus.Gauge
 }
 
 func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
@@ -222,6 +223,10 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		Name: "prometheus_tsdb_compactions_skipped_total",
 		Help: "Total number of skipped compactions due to disabled auto compaction.",
 	})
+	m.headCompactionsTriggered = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_head_compactions_triggered_total",
+		Help: "Total number of head compactions triggered.",
+	})
 	m.startTime = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "prometheus_tsdb_lowest_timestamp",
 		Help: "Lowest timestamp value stored in the database. The unit is decided by the library consumer.",
@@ -259,6 +264,7 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 			m.compactionsFailed,
 			m.compactionsTriggered,
 			m.compactionsSkipped,
+			m.headCompactionsTriggered,
 			m.sizeRetentionCount,
 			m.timeRetentionCount,
 			m.startTime,
@@ -762,6 +768,11 @@ func (db *DB) Compact() (err error) {
 		}
 		mint := db.head.MinTime()
 		maxt := rangeForTimestamp(mint, db.head.opts.ChunkRange)
+		if blocks := db.Blocks(); len(blocks) > 0 {
+			// Consider the maxt of the last block to calculate
+			// maxt of the new block in case the min valid time grace period was >0.
+			maxt = rangeForTimestamp(blocks[len(blocks)-1].MaxTime(), db.head.opts.ChunkRange)
+		}
 
 		// Wrap head into a range that bounds all reads to it.
 		// We remove 1 millisecond from maxt because block
@@ -805,6 +816,7 @@ func (db *DB) CompactHead(head *RangeHead) (err error) {
 // compactHead compacts the given the RangeHead.
 // The compaction mutex should be held before calling this method.
 func (db *DB) compactHead(head *RangeHead) (err error) {
+	db.metrics.headCompactionsTriggered.Inc()
 	// Add +1 millisecond to block maxt because block intervals are half-open: [b.MinTime, b.MaxTime).
 	// Because of this block intervals are always +1 than the total samples it includes.
 	maxt := head.MaxTime() + 1
