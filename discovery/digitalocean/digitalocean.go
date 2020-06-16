@@ -33,8 +33,8 @@ import (
 
 const (
 	doLabel            = model.MetaLabelPrefix + "do_"
-	doLabelID          = doLabel + "id"
-	doLabelName        = doLabel + "name"
+	doLabelID          = doLabel + "droplet_id"
+	doLabelName        = doLabel + "droplet_name"
 	doLabelImage       = doLabel + "image"
 	doLabelPrivateIPv4 = doLabel + "private_ipv4"
 	doLabelPublicIPv4  = doLabel + "public_ipv4"
@@ -44,26 +44,22 @@ const (
 	doLabelStatus      = doLabel + "status"
 	doLabelFeatures    = doLabel + "features"
 	doLabelTags        = doLabel + "tags"
+	separator          = ","
 )
 
 // DefaultSDConfig is the default DigitalOcean SD configuration.
 var DefaultSDConfig = SDConfig{
 	Port:            80,
-	Separator:       ",",
 	RefreshInterval: model.Duration(60 * time.Second),
 }
 
 // SDConfig is the configuration for DO based service discovery.
 type SDConfig struct {
-	AccessToken     config_util.Secret `yaml:"access_token,omitempty"`
-	AccessTokenFile string             `yaml:"access_token_file,omitempty"`
-
-	// A tag that can be used to filter the droplets.
-	Tag string `yaml:"tag,omitempty"`
+	BearerToken     config_util.Secret `yaml:"bearer_token,omitempty"`
+	BearerTokenFile string             `yaml:"bearer_token_file,omitempty"`
 
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 	Port            int            `yaml:"port"`
-	Separator       string         `yaml:"separator,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -74,11 +70,11 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
-	if c.AccessToken == "" && c.AccessTokenFile == "" {
-		return fmt.Errorf("access_token or access_token_file is required")
+	if c.BearerToken == "" && c.BearerTokenFile == "" {
+		return fmt.Errorf("bearer_token or bearer_token_file is required")
 	}
-	if c.AccessToken != "" && c.AccessTokenFile != "" {
-		return fmt.Errorf("access_token and access_token_file are mutually exclusive")
+	if c.BearerToken != "" && c.BearerTokenFile != "" {
+		return fmt.Errorf("bearer_token and bearer_token_file are mutually exclusive")
 	}
 	return nil
 }
@@ -87,18 +83,15 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 // the Discoverer interface.
 type Discovery struct {
 	*refresh.Discovery
-	client    *godo.Client
-	tag       string
-	port      int
-	separator string
+	client *godo.Client
+	tag    string
+	port   int
 }
 
 // NewDiscovery returns a new Discovery which periodically refreshes its targets.
 func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 	d := &Discovery{
-		tag:       conf.Tag,
-		port:      conf.Port,
-		separator: conf.Separator,
+		port: conf.Port,
 	}
 
 	var rt http.RoundTripper = &http.Transport{
@@ -108,11 +101,11 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 			conntrack.DialWithName("digitalocean_sd"),
 		),
 	}
-	if conf.AccessToken != "" {
-		rt = config_util.NewBearerAuthRoundTripper(conf.AccessToken, rt)
+	if conf.BearerToken != "" {
+		rt = config_util.NewBearerAuthRoundTripper(conf.BearerToken, rt)
 	}
-	if conf.AccessTokenFile != "" {
-		rt = config_util.NewBearerAuthFileRoundTripper(conf.AccessTokenFile, rt)
+	if conf.BearerTokenFile != "" {
+		rt = config_util.NewBearerAuthFileRoundTripper(conf.BearerTokenFile, rt)
 	}
 
 	var err error
@@ -170,17 +163,19 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		labels := model.LabelSet{
 			doLabelID:          model.LabelValue(fmt.Sprintf("%d", droplet.ID)),
 			doLabelName:        model.LabelValue(droplet.Name),
-			doLabelImage:       model.LabelValue(droplet.Image.Name),
+			doLabelImage:       model.LabelValue(droplet.Image.Slug),
 			doLabelPrivateIPv4: model.LabelValue(privateIPv4),
 			doLabelPublicIPv4:  model.LabelValue(publicIPv4),
 			doLabelPublicIPv6:  model.LabelValue(publicIPv6),
-			doLabelRegion:      model.LabelValue(droplet.Region.Name),
+			doLabelRegion:      model.LabelValue(droplet.Region.Slug),
 			doLabelSize:        model.LabelValue(droplet.SizeSlug),
 			doLabelStatus:      model.LabelValue(droplet.Status),
 		}
 
 		var addr string
-		if privateIPv4 != "" {
+		if publicIPv6 != "" {
+			addr = fmt.Sprintf("[%s]", publicIPv6)
+		} else if privateIPv4 != "" {
 			addr = privateIPv4
 		} else if publicIPv4 != "" {
 			addr = publicIPv4
@@ -190,17 +185,17 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		addr = fmt.Sprintf("%s:%d", addr, d.port)
 		labels[model.AddressLabel] = model.LabelValue(addr)
 
-		if droplet.Features != nil && len(droplet.Features) > 0 {
+		if len(droplet.Features) > 0 {
 			// We surround the separated list with the separator as well. This way regular expressions
 			// in relabeling rules don't have to consider features positions.
-			features := d.separator + strings.Join(droplet.Features, d.separator) + d.separator
+			features := separator + strings.Join(droplet.Features, separator) + separator
 			labels[doLabelFeatures] = model.LabelValue(features)
 		}
 
-		if droplet.Tags != nil && len(droplet.Tags) > 0 {
+		if len(droplet.Tags) > 0 {
 			// We surround the separated list with the separator as well. This way regular expressions
 			// in relabeling rules don't have to consider tag positions.
-			tags := d.separator + strings.Join(droplet.Tags, d.separator) + d.separator
+			tags := separator + strings.Join(droplet.Tags, separator) + separator
 			labels[doLabelTags] = model.LabelValue(tags)
 		}
 
@@ -214,30 +209,16 @@ func (d *Discovery) listDroplets() ([]godo.Droplet, error) {
 		droplets []godo.Droplet
 		opts     = &godo.ListOptions{Page: 1}
 	)
-	if d.tag != "" {
-		for {
-			paginatedDroplets, resp, err := d.client.Droplets.ListByTag(context.Background(), d.tag, opts)
-			if err != nil {
-				return nil, fmt.Errorf("error while listing droplets tagged %s, page %d: %w", d.tag, opts.Page, err)
-			}
-			droplets = append(droplets, paginatedDroplets...)
-			if resp.Links == nil || resp.Links.IsLastPage() {
-				break
-			}
-			opts.Page++
+	for {
+		paginatedDroplets, resp, err := d.client.Droplets.List(context.Background(), opts)
+		if err != nil {
+			return nil, fmt.Errorf("error while listing droplets page %d: %w", opts.Page, err)
 		}
-	} else {
-		for {
-			paginatedDroplets, resp, err := d.client.Droplets.List(context.Background(), opts)
-			if err != nil {
-				return nil, fmt.Errorf("error while listing droplets page %d: %w", opts.Page, err)
-			}
-			droplets = append(droplets, paginatedDroplets...)
-			if resp.Links == nil || resp.Links.IsLastPage() {
-				break
-			}
-			opts.Page++
+		droplets = append(droplets, paginatedDroplets...)
+		if resp.Links == nil || resp.Links.IsLastPage() {
+			break
 		}
+		opts.Page++
 	}
 	return droplets, nil
 }

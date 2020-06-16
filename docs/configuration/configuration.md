@@ -397,8 +397,8 @@ Droplets API.
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
-* `__meta_do_id`: the id of the droplet
-* `__meta_do_name`: the name of the droplet
+* `__meta_do_droplet_id`: the id of the droplet
+* `__meta_do_droplet_name`: the name of the droplet
 * `__meta_do_image`: the image name of the droplet
 * `__meta_do_private_ipv4`: the private IPv4 of the droplet
 * `__meta_do_public_ipv4`: the public IPv4 of the droplet
@@ -406,33 +406,22 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_do_region`: the region of the droplet
 * `__meta_do_size`: the size of the droplet
 * `__meta_do_status`: the status of the droplet
-* `__meta_do_features`: the list of features of the droplet joined by the tag separator
-* `__meta_do_tags`: the list of tags of the target joined by the tag separator
+* `__meta_do_features`: the comma-separated list of features of the droplet
+* `__meta_do_tags`: the comma-separated list of tags of the droplet
 
 ```yaml
 # The information to access the DigitalOcean API.
-[ access_token: <secret> ]
-[ access_token_file: <filename> ]
+[ bearer_token: <secret> ]
+[ bearer_token_file: <filename> ]
 
 # The port to scrape metrics from.
 [ port: <int> | default = 80 ]
-
-# The string by which DigitalOcean tags and features are joined into the meta labels.
-[ separator: <string> | default = , ]
-
-# An optional tag used to filter the droplets
-[ tag: <string> ]
 
 # The time after which the droplets are refreshed.
 # On large setup it might be a good idea to increase this value wrt DigitalOcean
 # rate limits.
 [ refresh_interval: <duration> | default = 60s ]
 ```
-
-Note that the IP address used to scrape the targets is the private IPv4 or the
-public IPv4, in that order.
-If you want to use the IPv6, you can use the [relabel](#relabel_config)
-feature to replace the special `__address__` label.
 
 ### `<dns_sd_config>`
 
