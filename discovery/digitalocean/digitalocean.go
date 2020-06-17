@@ -22,7 +22,6 @@ import (
 
 	"github.com/digitalocean/godo"
 	"github.com/go-kit/kit/log"
-	conntrack "github.com/mwitkow/go-conntrack"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
@@ -32,7 +31,7 @@ import (
 )
 
 const (
-	doLabel            = model.MetaLabelPrefix + "do_"
+	doLabel            = model.MetaLabelPrefix + "digitalocean_"
 	doLabelID          = doLabel + "droplet_id"
 	doLabelName        = doLabel + "droplet_name"
 	doLabelImage       = doLabel + "image"
@@ -55,8 +54,7 @@ var DefaultSDConfig = SDConfig{
 
 // SDConfig is the configuration for DO based service discovery.
 type SDConfig struct {
-	BearerToken     config_util.Secret `yaml:"bearer_token,omitempty"`
-	BearerTokenFile string             `yaml:"bearer_token_file,omitempty"`
+	HTTPClientConfig config_util.HTTPClientConfig `yaml:",inline"`
 
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 	Port            int            `yaml:"port"`
@@ -70,12 +68,6 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
-	if c.BearerToken == "" && c.BearerTokenFile == "" {
-		return fmt.Errorf("bearer_token or bearer_token_file is required")
-	}
-	if c.BearerToken != "" && c.BearerTokenFile != "" {
-		return fmt.Errorf("bearer_token and bearer_token_file are mutually exclusive")
-	}
 	return nil
 }
 
@@ -84,7 +76,6 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 type Discovery struct {
 	*refresh.Discovery
 	client *godo.Client
-	tag    string
 	port   int
 }
 
@@ -94,21 +85,11 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 		port: conf.Port,
 	}
 
-	var rt http.RoundTripper = &http.Transport{
-		IdleConnTimeout: 5 * time.Duration(conf.RefreshInterval),
-		DialContext: conntrack.NewDialContextFunc(
-			conntrack.DialWithTracing(),
-			conntrack.DialWithName("digitalocean_sd"),
-		),
-	}
-	if conf.BearerToken != "" {
-		rt = config_util.NewBearerAuthRoundTripper(conf.BearerToken, rt)
-	}
-	if conf.BearerTokenFile != "" {
-		rt = config_util.NewBearerAuthFileRoundTripper(conf.BearerTokenFile, rt)
+	rt, err := config_util.NewRoundTripperFromConfig(conf.HTTPClientConfig, "digitalocean_sd", false)
+	if err != nil {
+		return nil, err
 	}
 
-	var err error
 	d.client, err = godo.New(
 		&http.Client{
 			Transport: rt,
@@ -131,9 +112,6 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 
 func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	source := "DO"
-	if d.tag != "" {
-		source += "_" + d.tag
-	}
 	tg := &targetgroup.Group{
 		Source: source,
 	}

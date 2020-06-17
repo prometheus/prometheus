@@ -397,22 +397,43 @@ Droplets API.
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
-* `__meta_do_droplet_id`: the id of the droplet
-* `__meta_do_droplet_name`: the name of the droplet
-* `__meta_do_image`: the image name of the droplet
-* `__meta_do_private_ipv4`: the private IPv4 of the droplet
-* `__meta_do_public_ipv4`: the public IPv4 of the droplet
-* `__meta_do_public_ipv6`: the public IPv6 of the droplet
-* `__meta_do_region`: the region of the droplet
-* `__meta_do_size`: the size of the droplet
-* `__meta_do_status`: the status of the droplet
-* `__meta_do_features`: the comma-separated list of features of the droplet
-* `__meta_do_tags`: the comma-separated list of tags of the droplet
+* `__meta_digitalocean_droplet_id`: the id of the droplet
+* `__meta_digitalocean_droplet_name`: the name of the droplet
+* `__meta_digitalocean_image`: the image name of the droplet
+* `__meta_digitalocean_private_ipv4`: the private IPv4 of the droplet
+* `__meta_digitalocean_public_ipv4`: the public IPv4 of the droplet
+* `__meta_digitalocean_public_ipv6`: the public IPv6 of the droplet
+* `__meta_digitalocean_region`: the region of the droplet
+* `__meta_digitalocean_size`: the size of the droplet
+* `__meta_digitalocean_status`: the status of the droplet
+* `__meta_digitalocean_features`: the comma-separated list of features of the droplet
+* `__meta_digitalocean_tags`: the comma-separated list of tags of the droplet
 
 ```yaml
-# The information to access the DigitalOcean API.
+# Authentication information used to authenticate to the API server.
+# Note that `basic_auth`, `bearer_token` and `bearer_token_file` options are
+# mutually exclusive.
+# password and password_file are mutually exclusive.
+
+# Optional HTTP basic authentication information, not currently supported by DigitalOcean.
+basic_auth:
+  [ username: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
+
+# Optional bearer token authentication information.
 [ bearer_token: <secret> ]
+
+# Optional bearer token file authentication information.
 [ bearer_token_file: <filename> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
+
 
 # The port to scrape metrics from.
 [ port: <int> | default = 80 ]
