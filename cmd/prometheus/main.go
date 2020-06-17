@@ -278,6 +278,11 @@ func main() {
 		os.Exit(2)
 	}
 
+	if _, err := config.LoadFile(cfg.configFile); err != nil {
+		level.Info(logger).Log("msg", fmt.Sprintf("Error loading config (--config.file=%s)", cfg.configFile), "err", err)
+		os.Exit(2)
+	}
+
 	cfg.web.ReadTimeout = time.Duration(cfg.webTimeout)
 	// Default -web.route-prefix to path of -web.external-url.
 	if cfg.web.RoutePrefix == "" {
@@ -426,11 +431,6 @@ func main() {
 	http.DefaultTransport.(*http.Transport).DialContext = conntrack.NewDialContextFunc(
 		conntrack.DialWithTracing(),
 	)
-
-	if _, err := config.LoadFile(cfg.configFile); err != nil {
-		level.Info(logger).Log("msg", fmt.Sprintf("One or more errors exists in configuration file (--config.file=%s)", cfg.configFile))
-		os.Exit(2)
-	}
 
 	reloaders := []func(cfg *config.Config) error{
 		remoteStorage.ApplyConfig,
