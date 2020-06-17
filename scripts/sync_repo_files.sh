@@ -7,10 +7,10 @@ set -uo pipefail
 
 git_mail="prometheus-team@googlegroups.com"
 git_user="prombot"
-branch="makefile_common"
-commit_msg="makefile: update Makefile.common with newer version"
-pr_title="Synchronize Makefile.common from prometheus/prometheus"
-pr_msg="Propagating changes from master Makefile.common located in prometheus/prometheus."
+branch="repo_sync"
+commit_msg="Update common Prometheus files"
+pr_title="Synchronize common files from prometheus/prometheus"
+pr_msg="Propagating changes from prometheus/prometheus default branch."
 orgs="prometheus prometheus-community"
 
 GITHUB_TOKEN="${GITHUB_TOKEN:-}"
@@ -19,11 +19,13 @@ if [ -z "${GITHUB_TOKEN}" ]; then
   exit 1
 fi
 
+# List of files that should be synced.
+SYNC_FILES="CODE_OF_CONDUCT.md LICENSE Makefile.common"
+
 # Go to the root of the repo
 cd "$(git rev-parse --show-cdup)" || exit 1
 
-source_makefile="$(pwd)/Makefile.common"
-source_checksum="$(sha256sum Makefile.common | cut -d' ' -f1)"
+source_dir="$(pwd)"
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "${tmp_dir}"' EXIT
@@ -55,14 +57,25 @@ process_repo() {
   local org_repo="$1"
   echo -e "\e[32mAnalyzing '${org_repo}'\e[0m"
 
-  target_makefile="$(curl -s --fail "https://raw.githubusercontent.com/${org_repo}/master/Makefile.common")"
-  if [ -z "${target_makefile}" ]; then
-    echo "Makefile.common doesn't exist in ${org_repo}"
-    return
-  fi
-  target_checksum="$(echo "${target_makefile}" | sha256sum | cut -d' ' -f1)"
-  if [ "${source_checksum}" == "${target_checksum}" ]; then
-    echo "Makefile.common is already in sync."
+  local needs_update=0
+  for source_file in ${SYNC_FILES}; do
+    source_checksum="$(sha256sum "${souce_dir}/${source_file}" | cut -d' ' -f1)"
+
+    target_file="$(curl -s --fail "https://raw.githubusercontent.com/${org_repo}/master/${source_file}")"
+    if [[ -z "${target_makefile}" ]]; then
+      echo "${source_file} doesn't exist in ${org_repo}"
+      continue
+    fi
+    target_checksum="$(echo "${target_file}" | sha256sum | cut -d' ' -f1)"
+    if [ "${source_checksum}" == "${target_checksum}" ]; then
+      echo "${source_file} is already in sync."
+      continue
+    fi
+    needs_update=1
+  done
+
+  if [[ "${needs_update}" -eq 0 ]] ; then
+    echo "No files need sync."
     return
   fi
 
@@ -71,8 +84,11 @@ process_repo() {
   cd "${tmp_dir}/${org_repo}" || return 1
   git checkout -b "${branch}" || return 1
 
-  # Replace Makefile.common in target repo by one from prometheus/prometheus
-  cp -f "${source_makefile}" ./
+  # Update the files in target repo by one from prometheus/prometheus.
+  for source_file in ${SYNC_FILES}; do
+    cp -f "${source_dir}/${source_file}" "./${source_file}"
+  done
+
   if [ -n "$(git status --porcelain)" ]; then
     git config user.email "${git_mail}"
     git config user.name "${git_user}"
