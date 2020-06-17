@@ -158,7 +158,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 		if len(droplet.Features) > 0 {
 			// We surround the separated list with the separator as well. This way regular expressions
-			// in relabeling rules don't have to consider features positions.
+			// in relabeling rules don't have to consider feature positions.
 			features := separator + strings.Join(droplet.Features, separator) + separator
 			labels[doLabelFeatures] = model.LabelValue(features)
 		}

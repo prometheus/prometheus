@@ -434,13 +434,10 @@ basic_auth:
 tls_config:
   [ <tls_config> ]
 
-
 # The port to scrape metrics from.
 [ port: <int> | default = 80 ]
 
 # The time after which the droplets are refreshed.
-# On large setup it might be a good idea to increase this value wrt DigitalOcean
-# rate limits.
 [ refresh_interval: <duration> | default = 60s ]
 ```
 
