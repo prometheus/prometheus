@@ -173,7 +173,7 @@ basic_auth:
 
 # Sets the `Authorization` header on every scrape request with the bearer token
 # read from the configured file. It is mutually exclusive with `bearer_token`.
-[ bearer_token_file: /path/to/bearer/token/file ]
+[ bearer_token_file: <filename> ]
 
 # Configures the scrape request's TLS settings.
 tls_config:
@@ -873,7 +873,7 @@ namespaces:
 # if you just want to monitor small subset of pods in large cluster it's recommended to use selectors.
 # Decision, if selectors should be used or not depends on the particular situation.
 [ selectors:
-  [ - role: <role>  
+  [ - role: <role>
     [ label: <string> ]
     [ field: <string> ] ]]
 ```
@@ -942,7 +942,7 @@ basic_auth:
 # Sets the `Authorization` header on every request with the bearer token
 # read from the configured file. It is mutually exclusive with `bearer_token` and other authentication mechanisms.
 # NOTE: The current version of DC/OS marathon (v1.11.0) does not support standard Bearer token authentication. Use `auth_token_file` instead.
-[ bearer_token_file: /path/to/bearer/token/file ]
+[ bearer_token_file: <filename> ]
 
 # TLS configuration for connecting to marathon servers
 tls_config:
@@ -1048,6 +1048,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_triton_machine_id`: the UUID of the target
 
 See below for the configuration options for Triton discovery:
+
 ```yaml
 # The information to access the Triton discovery API.
 
@@ -1236,7 +1237,7 @@ basic_auth:
 
 # Sets the `Authorization` header on every request with the bearer token
 # read from the configured file. It is mutually exclusive with `bearer_token`.
-[ bearer_token_file: /path/to/bearer/token/file ]
+[ bearer_token_file: <filename> ]
 
 # Configures the scrape request's TLS settings.
 tls_config:
@@ -1337,7 +1338,7 @@ basic_auth:
 
 # Sets the `Authorization` header on every remote write request with the bearer token
 # read from the configured file. It is mutually exclusive with `bearer_token`.
-[ bearer_token_file: /path/to/bearer/token/file ]
+[ bearer_token_file: <filename> ]
 
 # Configures the remote write request's TLS settings.
 tls_config:
@@ -1409,7 +1410,7 @@ basic_auth:
 
 # Sets the `Authorization` header on every remote read request with the bearer token
 # read from the configured file. It is mutually exclusive with `bearer_token`.
-[ bearer_token_file: /path/to/bearer/token/file ]
+[ bearer_token_file: <filename> ]
 
 # Configures the remote read request's TLS settings.
 tls_config:
