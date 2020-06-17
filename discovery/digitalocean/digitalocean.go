@@ -150,17 +150,10 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 			doLabelStatus:      model.LabelValue(droplet.Status),
 		}
 
-		var addr string
-		if publicIPv6 != "" {
-			addr = fmt.Sprintf("[%s]", publicIPv6)
-		} else if privateIPv4 != "" {
-			addr = privateIPv4
-		} else if publicIPv4 != "" {
-			addr = publicIPv4
-		} else {
+		if publicIPv4 == "" {
 			return nil, fmt.Errorf("no suitable address for droplet %d: %w", droplet.ID, err)
 		}
-		addr = fmt.Sprintf("%s:%d", addr, d.port)
+		addr := fmt.Sprintf("%s:%d", publicIPv4, d.port)
 		labels[model.AddressLabel] = model.LabelValue(addr)
 
 		if len(droplet.Features) > 0 {

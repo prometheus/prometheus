@@ -65,7 +65,7 @@ func TestDigitalOceanSDRefresh(t *testing.T) {
 
 	for i, lbls := range []model.LabelSet{
 		{
-			"__address__":                      model.LabelValue("[2604:A880:0800:0010:0000:0000:02DD:4001]:80"),
+			"__address__":                      model.LabelValue("104.236.32.182:80"),
 			"__meta_digitalocean_droplet_id":   model.LabelValue("3164444"),
 			"__meta_digitalocean_droplet_name": model.LabelValue("example.com"),
 			"__meta_digitalocean_image":        model.LabelValue("ubuntu-16-04-x64"),
@@ -92,7 +92,7 @@ func TestDigitalOceanSDRefresh(t *testing.T) {
 			"__meta_digitalocean_features":     model.LabelValue(",virtio,"),
 		},
 		{
-			"__address__":                      model.LabelValue("10.135.64.211:80"),
+			"__address__":                      model.LabelValue("167.172.111.118:80"),
 			"__meta_digitalocean_droplet_id":   model.LabelValue("175072239"),
 			"__meta_digitalocean_droplet_name": model.LabelValue("prometheus-demo-old"),
 			"__meta_digitalocean_image":        model.LabelValue("ubuntu-18-04-x64"),
@@ -105,7 +105,7 @@ func TestDigitalOceanSDRefresh(t *testing.T) {
 			"__meta_digitalocean_features":     model.LabelValue(",ipv6,private_networking,"),
 		},
 		{
-			"__address__":                      model.LabelValue("[2a03:b0c0:3:f0::cf2:4]:80"),
+			"__address__":                      model.LabelValue("138.65.56.69:80"),
 			"__meta_digitalocean_droplet_id":   model.LabelValue("176011507"),
 			"__meta_digitalocean_droplet_name": model.LabelValue("prometheus-demo"),
 			"__meta_digitalocean_image":        model.LabelValue("ubuntu-18-04-x64"),
