@@ -16,7 +16,9 @@ package digitalocean
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -150,10 +152,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 			doLabelStatus:      model.LabelValue(droplet.Status),
 		}
 
-		if publicIPv4 == "" {
-			return nil, fmt.Errorf("no suitable address for droplet %d: %w", droplet.ID, err)
-		}
-		addr := fmt.Sprintf("%s:%d", publicIPv4, d.port)
+		addr := net.JoinHostPort(publicIPv4, strconv.FormatUint(uint64(d.port), 10))
 		labels[model.AddressLabel] = model.LabelValue(addr)
 
 		if len(droplet.Features) > 0 {

@@ -1,0 +1,27 @@
+# A example scrape configuration for running Prometheus with
+# DigitalOcean.
+
+scrape_configs:
+  
+  # Make Prometheus scrape itself for metrics.
+  - job_name: 'prometheus'
+    static_configs:
+    - targets: ['localhost:9090']
+
+  # Discover Node Exporter instances to scrape.
+  - job_name: 'node'
+
+    digitalocean_sd_configs:
+      - bearer_token: 8034e306bdb44ad882096043353fb303ba58aeff384b43c1a36b8926cb00bf8a
+        port: 9100
+    relabel_configs:
+      # Only scrape targets that have a tag 'monitoring'.
+      - source_labels: [__meta_digitalocean_tags]
+        regex: '.*,monitoring,.*'
+        action: keep
+
+      # Use the public IPv6 address to scrape the target.
+      - source_labels: [__address__, __meta_digitalocean_public_ipv6]
+        regex: .+:(\d+);(.+)
+        target_label: __address__
+        replacement: '[$2]:$1'

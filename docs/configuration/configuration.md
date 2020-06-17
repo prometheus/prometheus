@@ -394,6 +394,9 @@ metadata and a single tag).
 
 DigitalOcean SD configurations allow retrieving scrape targets from [DigitalOcean's](https://www.digitalocean.com/)
 Droplets API.
+This service discovery uses the public IPv4 address by default, by that can be
+changed with relabelling, as demonstrated in [the Prometheus digitalocean-sd
+configuration file](/documentation/examples/prometheus-digitalocean.yml).
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
