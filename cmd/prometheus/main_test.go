@@ -111,7 +111,7 @@ func TestFailedStartupExitCode(t *testing.T) {
 	}
 
 	fakeInputFile := "fake-input-file"
-	expectedExitStatus := 1
+	expectedExitStatus := 2
 
 	prom := exec.Command(promPath, "-test.main", "--config.file="+fakeInputFile)
 	err := prom.Run()

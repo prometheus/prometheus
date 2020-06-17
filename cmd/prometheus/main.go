@@ -279,7 +279,7 @@ func main() {
 	}
 
 	if _, err := config.LoadFile(cfg.configFile); err != nil {
-		level.Info(logger).Log("msg", fmt.Sprintf("Error loading config (--config.file=%s)", cfg.configFile), "err", err)
+		level.Error(logger).Log("msg", fmt.Sprintf("Error loading config (--config.file=%s)", cfg.configFile), "err", err)
 		os.Exit(2)
 	}
 
