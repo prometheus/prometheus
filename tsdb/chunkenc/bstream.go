@@ -41,7 +41,10 @@
 
 package chunkenc
 
-import "io"
+import (
+	"encoding/binary"
+	"io"
+)
 
 // bstream is a stream of bits.
 type bstream struct {
@@ -209,17 +212,7 @@ func (b *bstreamReader) loadNextBuffer(nbits uint8) bool {
 	// very last byte of the stream (which suffers race conditions due to concurrent
 	// writes).
 	if b.streamOffset+8 < len(b.stream) {
-		// This is ugly, but significantly faster.
-		b.buffer =
-			((uint64(b.stream[b.streamOffset])) << 56) |
-				((uint64(b.stream[b.streamOffset+1])) << 48) |
-				((uint64(b.stream[b.streamOffset+2])) << 40) |
-				((uint64(b.stream[b.streamOffset+3])) << 32) |
-				((uint64(b.stream[b.streamOffset+4])) << 24) |
-				((uint64(b.stream[b.streamOffset+5])) << 16) |
-				((uint64(b.stream[b.streamOffset+6])) << 8) |
-				uint64(b.stream[b.streamOffset+7])
-
+		b.buffer = binary.BigEndian.Uint64(b.stream[b.streamOffset:])
 		b.streamOffset += 8
 		b.valid = 64
 		return true
