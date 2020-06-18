@@ -214,7 +214,7 @@ func main() {
 		Default("false").BoolVar(&cfg.tsdb.AllowOverlappingBlocks)
 
 	a.Flag("storage.tsdb.wal-compression", "Compress the tsdb WAL.").
-		Default("false").BoolVar(&cfg.tsdb.WALCompression)
+		Default("true").BoolVar(&cfg.tsdb.WALCompression)
 
 	a.Flag("storage.remote.flush-deadline", "How long to wait flushing sample on shutdown or config reload.").
 		Default("1m").PlaceHolder("<duration>").SetValue(&cfg.RemoteFlushDeadline)
