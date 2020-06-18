@@ -13,14 +13,13 @@ scrape_configs:
 
     digitalocean_sd_configs:
       - bearer_token: "<replace with a Personal Access Token>"
-        port: 9100
     relabel_configs:
       # Only scrape targets that have a tag 'monitoring'.
       - source_labels: [__meta_digitalocean_tags]
         regex: '.*,monitoring,.*'
         action: keep
 
-      # Use the public IPv6 address to scrape the target.
+      # Use the public IPv6 address and port 9100 to scrape the target.
       - source_labels: [__meta_digitalocean_public_ipv6]
         target_label: __address__
         replacement: '[$1]:9100'
