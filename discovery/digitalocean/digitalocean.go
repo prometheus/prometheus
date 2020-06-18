@@ -54,7 +54,7 @@ var DefaultSDConfig = SDConfig{
 	RefreshInterval: model.Duration(60 * time.Second),
 }
 
-// SDConfig is the configuration for DO based service discovery.
+// SDConfig is the configuration for DigitalOcean based service discovery.
 type SDConfig struct {
 	HTTPClientConfig config_util.HTTPClientConfig `yaml:",inline"`
 
@@ -113,9 +113,8 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 }
 
 func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
-	source := "DO"
 	tg := &targetgroup.Group{
-		Source: source,
+		Source: "DigitalOcean",
 	}
 
 	droplets, err := d.listDroplets()
