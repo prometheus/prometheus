@@ -12,7 +12,7 @@ scrape_configs:
   - job_name: 'node'
 
     digitalocean_sd_configs:
-      - bearer_token: 8034e306bdb44ad882096043353fb303ba58aeff384b43c1a36b8926cb00bf8a
+      - bearer_token: "<replace with a Personal Access Token>"
         port: 9100
     relabel_configs:
       # Only scrape targets that have a tag 'monitoring'.
@@ -21,7 +21,6 @@ scrape_configs:
         action: keep
 
       # Use the public IPv6 address to scrape the target.
-      - source_labels: [__address__, __meta_digitalocean_public_ipv6]
-        regex: .+:(\d+);(.+)
+      - source_labels: [__meta_digitalocean_public_ipv6]
         target_label: __address__
-        replacement: '[$2]:$1'
+        replacement: '[$1]:9100'
