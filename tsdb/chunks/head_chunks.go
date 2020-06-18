@@ -680,8 +680,8 @@ func (cdm *ChunkDiskMapper) Truncate(mint int64) error {
 	cdm.readPathMtx.RUnlock()
 
 	var merr tsdb_errors.MultiError
+	// Cut a new file only if the current file has some chunks.
 	if cdm.curFileNumBytes > HeadChunkFileHeaderSize {
-		// Cut a new file only if the current file has some chunks.
 		merr.Add(cdm.CutNewFile())
 	}
 	merr.Add(cdm.deleteFiles(removedFiles))

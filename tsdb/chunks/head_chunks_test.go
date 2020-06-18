@@ -156,16 +156,17 @@ func TestHeadReadWriter_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 
 }
 
+// TestHeadReadWriter_Truncate tests
+// * If truncation is happening properly based on the time passed.
+// * The active file is not deleted even if the passed time makes it eligible to be deleted.
+// * Empty current file does not lead to creation of another file after truncation.
+// * Non-empty current file leads to creation of another file after truncation.
 func TestHeadReadWriter_Truncate(t *testing.T) {
 	hrw, close := testHeadReadWriter(t)
 	defer func() {
 		testutil.Ok(t, hrw.Close())
 		close()
 	}()
-
-	testutil.Assert(t, !hrw.fileMaxtSet, "")
-	testutil.Ok(t, hrw.IterateAllChunks(func(_, _ uint64, _, _ int64, _ uint16) error { return nil }))
-	testutil.Assert(t, hrw.fileMaxtSet, "")
 
 	timeRange := 0
 	fileTimeStep := 100
@@ -258,16 +259,20 @@ func TestHeadReadWriter_Truncate(t *testing.T) {
 	verifyFiles(2, totalFiles) // One file is the active file and one was newly created.
 }
 
+// TestHeadReadWriter_Truncate_NoUnsequentialFiles tests
+// that truncation leaves no unsequential files on disk, mainly under the following case
+// * There is an empty file in between the sequence while the truncation
+//   deletes files only upto a sequence before that (i.e. stops deleting
+//   after it has found a file that is not deletable).
+// This tests https://github.com/prometheus/prometheus/issues/7412 where
+// the truncation used to check all the files for deletion and end up
+// deleting empty files in between and breaking the sequence.
 func TestHeadReadWriter_Truncate_NoUnsequentialFiles(t *testing.T) {
 	hrw, close := testHeadReadWriter(t)
 	defer func() {
 		testutil.Ok(t, hrw.Close())
 		close()
 	}()
-
-	testutil.Assert(t, !hrw.fileMaxtSet, "")
-	testutil.Ok(t, hrw.IterateAllChunks(func(_, _ uint64, _, _ int64, _ uint16) error { return nil }))
-	testutil.Assert(t, hrw.fileMaxtSet, "")
 
 	timeRange := 0
 	addChunk := func() {
@@ -337,6 +342,9 @@ func testHeadReadWriter(t *testing.T) (hrw *ChunkDiskMapper, close func()) {
 	testutil.Ok(t, err)
 	hrw, err = NewChunkDiskMapper(tmpdir, chunkenc.NewPool())
 	testutil.Ok(t, err)
+	testutil.Assert(t, !hrw.fileMaxtSet, "")
+	testutil.Ok(t, hrw.IterateAllChunks(func(_, _ uint64, _, _ int64, _ uint16) error { return nil }))
+	testutil.Assert(t, hrw.fileMaxtSet, "")
 	return hrw, func() {
 		testutil.Ok(t, os.RemoveAll(tmpdir))
 	}
