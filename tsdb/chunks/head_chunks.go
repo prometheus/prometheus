@@ -670,8 +670,8 @@ func (cdm *ChunkDiskMapper) Truncate(mint int64) error {
 
 	var removedFiles []int
 	for _, seq := range chkFileIndices {
-		if seq == cdm.curFileSequence {
-			continue
+		if seq == cdm.curFileSequence || cdm.mmappedChunkFiles[seq].maxt >= mint {
+			break
 		}
 		if cdm.mmappedChunkFiles[seq].maxt < mint {
 			removedFiles = append(removedFiles, seq)
@@ -680,7 +680,10 @@ func (cdm *ChunkDiskMapper) Truncate(mint int64) error {
 	cdm.readPathMtx.RUnlock()
 
 	var merr tsdb_errors.MultiError
-	merr.Add(cdm.CutNewFile())
+	if cdm.curFileNumBytes > HeadChunkFileHeaderSize {
+		// Cut a new file only if the current file has some chunks.
+		merr.Add(cdm.CutNewFile())
+	}
 	merr.Add(cdm.deleteFiles(removedFiles))
 	return merr.Err()
 }
