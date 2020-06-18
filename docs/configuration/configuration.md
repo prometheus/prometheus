@@ -194,6 +194,10 @@ consul_sd_configs:
 digitalocean_sd_configs:
   [ - <digitalocean_sd_config> ... ]
 
+# List of Docker Swarm service discovery configurations.
+dockerswarm_sd_configs:
+  [ - <dockerswarm_sd_config> ... ]
+
 # List of DNS service discovery configurations.
 dns_sd_configs:
   [ - <dns_sd_config> ... ]
@@ -443,6 +447,110 @@ tls_config:
 # The time after which the droplets are refreshed.
 [ refresh_interval: <duration> | default = 60s ]
 ```
+
+### `<dockerswarm_sd_config>`
+
+Docker Swarm SD configurations allow retrieving scrape targets from [Docker Swarm](https://docs.docker.com/engine/swarm/)
+engine.
+
+One of the following `<swarm_kind>` can be configured to discover targets:
+
+#### `services`
+
+The `services` kind is used to discover [Swarm services](https://docs.docker.com/engine/swarm/key-concepts/#services-and-tasks).
+This is the default `<swarm_kind>`.
+
+Available meta labels:
+
+* `__meta_dockerswarm_service_id`: the id of the service
+* `__meta_dockerswarm_service_name`: the name of the service
+* `__meta_dockerswarm_service_endpoint_port_name`: the name of the endpoint port, if available
+* `__meta_dockerswarm_service_endpoint_port_publish_mode`: the publish mode of the endpoint port
+* `__meta_dockerswarm_service_label_`: each label of the service
+* `__meta_dockerswarm_service_task_container_hostname`: the container hostname of the target, if available
+* `__meta_dockerswarm_service_task_container_image`: the container image of the target
+* `__meta_dockerswarm_service_task_container_label_`: each label of the container
+* `__meta_dockerswarm_service_updating_status`: the status of the service, if available
+* `__meta_dockerswarm_service_virtual_ip_address_netmask`: the virtual ip address with netmask
+* `__meta_dockerswarm_service_virtual_ip_network_id`: the network id of the virtual ip
+
+#### `tasks`
+
+The `tasks` kind is used to discover [Swarm tasks](https://docs.docker.com/engine/swarm/key-concepts/#services-and-tasks).
+
+Available meta labels:
+
+* `__meta_dockerswarm_task_id`: the id of the task
+* `__meta_dockerswarm_task_address_netmask`: the address of the task
+* `__meta_dockerswarm_task_container_id`: the container id of the task
+* `__meta_dockerswarm_task_desired_state`: the desired state of the task
+* `__meta_dockerswarm_task_label_`: each label of the task
+* `__meta_dockerswarm_task_node_id`: the node id of the task
+* `__meta_dockerswarm_task_service_id`: the service id of the task
+* `__meta_dockerswarm_task_slot`: the slot of the task
+* `__meta_dockerswarm_task_state`: the state of the task
+
+#### `nodes`
+
+The `nodes` kind is used to discover [Swarm nodes](https://docs.docker.com/engine/swarm/key-concepts/#nodes).
+
+Available meta labels:
+
+* `__meta_dockerswarm_node_address`: the address of the node engine
+* `__meta_dockerswarm_node_availability`: the availabilty of the node
+* `__meta_dockerswarm_node_engine_version`: the version of the node engine
+* `__meta_dockerswarm_node_hostname`: the hostname of the node
+* `__meta_dockerswarm_node_id`: the ID of the node
+* `__meta_dockerswarm_node_label_`: each label of the node
+* `__meta_dockerswarm_node_manager_address`: the address of the manager component of the node
+* `__meta_dockerswarm_node_manager_leader`: the leadership status of the manager component of the node (true or false)
+* `__meta_dockerswarm_node_manager_reachability`: the reachability of the manager component of the node
+* `__meta_dockerswarm_node_platform_architecture`: the architechure of the node
+* `__meta_dockerswarm_node_platform_os`: the operating system of the node
+* `__meta_dockerswarm_node_role`: the role of the node
+* `__meta_dockerswarm_node_status`: the status of the node
+
+See below for the configuration options for Docker Swarm discovery:
+
+```yaml
+# Address of the Docker daemon. Docker Swarm supports http and https protocol.
+[ host: <string> | default = http://127.0.0.1:2375/ ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
+
+# Kind of the targets to retrieve.
+[ kind: <swarm_kind> | default = services ]
+
+# The port to scrape metrics from, when kind is nodes or tasks.
+[ port: <int> | default = 80 ]
+
+# The time after which the droplets are refreshed.
+[ refresh_interval: <duration> | default = 60s ]
+
+# Authentication information used to authenticate to the Docker daemon.
+# Note that `basic_auth`, `bearer_token` and `bearer_token_file` options are
+# mutually exclusive.
+# password and password_file are mutually exclusive.
+
+# Optional HTTP basic authentication information.
+basic_auth:
+  [ username: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
+
+# Optional bearer token authentication information.
+[ bearer_token: <secret> ]
+
+# Optional bearer token file authentication information.
+[ bearer_token_file: <filename> ]
+```
+
+Where `<swarm_kind>` must be `services`, `tasks`, or `nodes`.
 
 ### `<dns_sd_config>`
 

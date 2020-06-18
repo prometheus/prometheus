@@ -31,6 +31,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/consul"
 	"github.com/prometheus/prometheus/discovery/digitalocean"
 	"github.com/prometheus/prometheus/discovery/dns"
+	"github.com/prometheus/prometheus/discovery/dockerswarm"
 	"github.com/prometheus/prometheus/discovery/ec2"
 	"github.com/prometheus/prometheus/discovery/file"
 	"github.com/prometheus/prometheus/discovery/gce"
@@ -373,6 +374,11 @@ func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setNam
 	for _, c := range cfg.DigitalOceanSDConfigs {
 		add(c, func() (Discoverer, error) {
 			return digitalocean.NewDiscovery(c, log.With(m.logger, "discovery", "digitalocean"))
+		})
+	}
+	for _, c := range cfg.DockerSwarmSDConfigs {
+		add(c, func() (Discoverer, error) {
+			return dockerswarm.NewDiscovery(c, log.With(m.logger, "discovery", "dockerswarm"))
 		})
 	}
 	for _, c := range cfg.MarathonSDConfigs {
