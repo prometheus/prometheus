@@ -78,7 +78,7 @@ const CollapsibleAlertPanel: FC<CollapsibleAlertPanelProps> = ({ rule, showAnnot
                         </h5>
                       </td>
                       <td>{alert.activeAt}</td>
-                      <td>{alert.value}</td>
+                      <td>{Number(alert.value)}</td>
                     </tr>
                     {showAnnotations && <Annotations annotations={alert.annotations} />}
                   </Fragment>
