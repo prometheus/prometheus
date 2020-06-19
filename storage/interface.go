@@ -65,7 +65,7 @@ type Querier interface {
 	// Select returns a set of series that matches the given label matchers.
 	// Caller can specify if it requires returned series to be sorted. Prefer not requiring sorting for better performance.
 	// It allows passing hints that can help in optimising select, but it's up to implementation how this is used if used at all.
-	Select(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) (SeriesSet, Warnings, error)
+	Select(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) SeriesSet
 }
 
 // A ChunkQueryable handles queries against a storage.
@@ -82,7 +82,7 @@ type ChunkQuerier interface {
 	// Select returns a set of series that matches the given label matchers.
 	// Caller can specify if it requires returned series to be sorted. Prefer not requiring sorting for better performance.
 	// It allows passing hints that can help in optimising select, but it's up to implementation how this is used if used at all.
-	Select(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) (ChunkSeriesSet, Warnings, error)
+	Select(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) ChunkSeriesSet
 }
 
 type baseQuerier interface {
@@ -153,7 +153,12 @@ type Appender interface {
 type SeriesSet interface {
 	Next() bool
 	At() Series
+	// The error that iteration as failed with.
+	// When an error occurs, set cannot continue to iterate.
 	Err() error
+	// A collection of warnings for the whole set.
+	// Warnings could be return even iteration has not failed with error.
+	Warnings() Warnings
 }
 
 var emptySeriesSet = errSeriesSet{}
@@ -164,12 +169,19 @@ func EmptySeriesSet() SeriesSet {
 }
 
 type errSeriesSet struct {
+	ws  Warnings
 	err error
 }
 
-func (s errSeriesSet) Next() bool { return false }
-func (s errSeriesSet) At() Series { return nil }
-func (s errSeriesSet) Err() error { return s.err }
+func (s errSeriesSet) Next() bool         { return false }
+func (s errSeriesSet) At() Series         { return nil }
+func (s errSeriesSet) Err() error         { return s.err }
+func (s errSeriesSet) Warnings() Warnings { return s.ws }
+
+// ErrSeriesSet returns a series set that wraps an error.
+func ErrSeriesSet(err error) SeriesSet {
+	return errSeriesSet{err: err}
+}
 
 // Series exposes a single time series and allows iterating over samples.
 type Series interface {
@@ -181,7 +193,12 @@ type Series interface {
 type ChunkSeriesSet interface {
 	Next() bool
 	At() ChunkSeries
+	// The error that iteration has failed with.
+	// When an error occurs, set cannot continue to iterate.
 	Err() error
+	// A collection of warnings for the whole set.
+	// Warnings could be return even iteration has not failed with error.
+	Warnings() Warnings
 }
 
 // ChunkSeries exposes a single time series and allows iterating over chunks.

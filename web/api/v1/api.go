@@ -596,13 +596,8 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 	}
 
 	var sets []storage.SeriesSet
-	var warnings storage.Warnings
 	for _, mset := range matcherSets {
-		s, wrn, err := q.Select(false, nil, mset...)
-		warnings = append(warnings, wrn...)
-		if err != nil {
-			return apiFuncResult{nil, &apiError{errorExec, err}, warnings, closer}
-		}
+		s := q.Select(false, nil, mset...)
 		sets = append(sets, s)
 	}
 
@@ -611,6 +606,8 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 	for set.Next() {
 		metrics = append(metrics, set.At().Labels())
 	}
+
+	warnings := set.Warnings()
 	if set.Err() != nil {
 		return apiFuncResult{nil, &apiError{errorExec, set.Err()}, warnings, closer}
 	}
@@ -1226,12 +1223,9 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for i, query := range req.Queries {
-			err := api.remoteReadQuery(ctx, query, externalLabels, func(querier storage.Querier, hints *storage.SelectHints, filteredMatchers []*labels.Matcher) error {
+			ws, err := api.remoteReadQuery(ctx, query, externalLabels, func(querier storage.Querier, hints *storage.SelectHints, filteredMatchers []*labels.Matcher) (storage.Warnings, error) {
 				// The streaming API has to provide the series sorted.
-				set, _, err := querier.Select(true, hints, filteredMatchers...)
-				if err != nil {
-					return err
-				}
+				set := querier.Select(true, hints, filteredMatchers...)
 
 				return remote.StreamChunkedReadResponses(
 					remote.NewChunkedWriter(w, f),
@@ -1241,6 +1235,9 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 					api.remoteReadMaxBytesInFrame,
 				)
 			})
+			for _, w := range ws {
+				level.Warn(api.logger).Log("msg", "warnings on remote read query", "err", w.Error())
+			}
 			if err != nil {
 				if httpErr, ok := err.(remote.HTTPError); ok {
 					http.Error(w, httpErr.Error(), httpErr.Status())
@@ -1259,22 +1256,26 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 			Results: make([]*prompb.QueryResult, len(req.Queries)),
 		}
 		for i, query := range req.Queries {
-			err := api.remoteReadQuery(ctx, query, externalLabels, func(querier storage.Querier, hints *storage.SelectHints, filteredMatchers []*labels.Matcher) error {
-				set, _, err := querier.Select(false, hints, filteredMatchers...)
-				if err != nil {
-					return err
-				}
+			ws, err := api.remoteReadQuery(ctx, query, externalLabels, func(querier storage.Querier, hints *storage.SelectHints, filteredMatchers []*labels.Matcher) (storage.Warnings, error) {
+				set := querier.Select(false, hints, filteredMatchers...)
 
-				resp.Results[i], err = remote.ToQueryResult(set, api.remoteReadSampleLimit)
+				var (
+					ws  storage.Warnings
+					err error
+				)
+				resp.Results[i], ws, err = remote.ToQueryResult(set, api.remoteReadSampleLimit)
 				if err != nil {
-					return err
+					return ws, err
 				}
 
 				for _, ts := range resp.Results[i].Timeseries {
 					ts.Labels = remote.MergeLabels(ts.Labels, sortedExternalLabels)
 				}
-				return nil
+				return ws, nil
 			})
+			for _, w := range ws {
+				level.Warn(api.logger).Log("msg", "warnings on remote read query", "err", w.Error())
+			}
 			if err != nil {
 				if httpErr, ok := err.(remote.HTTPError); ok {
 					http.Error(w, httpErr.Error(), httpErr.Status())
@@ -1318,15 +1319,15 @@ func filterExtLabelsFromMatchers(pbMatchers []*prompb.LabelMatcher, externalLabe
 	return filteredMatchers, nil
 }
 
-func (api *API) remoteReadQuery(ctx context.Context, query *prompb.Query, externalLabels map[string]string, seriesHandleFn func(querier storage.Querier, hints *storage.SelectHints, filteredMatchers []*labels.Matcher) error) error {
+func (api *API) remoteReadQuery(ctx context.Context, query *prompb.Query, externalLabels map[string]string, seriesHandleFn func(querier storage.Querier, hints *storage.SelectHints, filteredMatchers []*labels.Matcher) (storage.Warnings, error)) (storage.Warnings, error) {
 	filteredMatchers, err := filterExtLabelsFromMatchers(query.Matchers, externalLabels)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	querier, err := api.Queryable.Querier(ctx, query.StartTimestampMs, query.EndTimestampMs)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer func() {
 		if err := querier.Close(); err != nil {

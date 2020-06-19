@@ -21,6 +21,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,6 +29,7 @@ import (
 	"github.com/golang/snappy"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
@@ -39,6 +41,16 @@ import (
 const maxErrMsgLen = 256
 
 var userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
+
+var remoteReadQueriesTotal = prometheus.NewCounterVec(
+	prometheus.CounterOpts{
+		Namespace: namespace,
+		Subsystem: subsystem,
+		Name:      "read_queries_total",
+		Help:      "The total number of remote read queries.",
+	},
+	[]string{remoteName, endpoint, "code"},
+)
 
 // Client allows reading and writing from/to a remote HTTP endpoint.
 type Client struct {
@@ -53,6 +65,10 @@ type ClientConfig struct {
 	URL              *config_util.URL
 	Timeout          model.Duration
 	HTTPClientConfig config_util.HTTPClientConfig
+}
+
+func init() {
+	prometheus.MustRegister(remoteReadQueriesTotal)
 }
 
 // NewClient creates a new Client.
@@ -192,6 +208,9 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 		io.Copy(ioutil.Discard, httpResp.Body)
 		httpResp.Body.Close()
 	}()
+
+	remoteReadTotalCounter := remoteReadQueriesTotal.WithLabelValues(c.remoteName, c.url.String(), strconv.Itoa(httpResp.StatusCode))
+	remoteReadTotalCounter.Inc()
 
 	compressed, err = ioutil.ReadAll(httpResp.Body)
 	if err != nil {

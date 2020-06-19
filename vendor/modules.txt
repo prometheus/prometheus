@@ -82,6 +82,8 @@ github.com/davecgh/go-spew/spew
 github.com/dgrijalva/jwt-go
 # github.com/dgryski/go-sip13 v0.0.0-20190329191031-25c5027a8c7b
 github.com/dgryski/go-sip13
+# github.com/digitalocean/godo v1.37.0
+github.com/digitalocean/godo
 # github.com/edsrzf/mmap-go v1.0.0
 github.com/edsrzf/mmap-go
 # github.com/evanphx/json-patch v4.2.0+incompatible
@@ -173,6 +175,8 @@ github.com/google/go-cmp/cmp/internal/diff
 github.com/google/go-cmp/cmp/internal/flags
 github.com/google/go-cmp/cmp/internal/function
 github.com/google/go-cmp/cmp/internal/value
+# github.com/google/go-querystring v1.0.0
+github.com/google/go-querystring/query
 # github.com/google/gofuzz v1.1.0
 github.com/google/gofuzz
 # github.com/google/pprof v0.0.0-20200507031123-427632fa3b1c
