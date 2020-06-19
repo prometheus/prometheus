@@ -223,20 +223,20 @@ func newServer(t *testing.T) (*httptest.Server, *SDConfig) {
 		switch r.URL.String() {
 		case "/v1/agent/self":
 			response = AgentAnswer
-		case "/v1/health/service/test?node-meta=rack_name%3A2304&stale=&tag=tag1&wait=30000ms":
+		case "/v1/health/service/test?node-meta=rack_name%3A2304&stale=&tag=tag1&wait=600000ms":
 			response = ServiceTestAnswer
-		case "/v1/health/service/test?wait=30000ms":
+		case "/v1/health/service/test?wait=600000ms":
 			response = ServiceTestAnswer
-		case "/v1/health/service/other?wait=30000ms":
+		case "/v1/health/service/other?wait=600000ms":
 			response = `[]`
-		case "/v1/catalog/services?node-meta=rack_name%3A2304&stale=&wait=30000ms":
+		case "/v1/catalog/services?node-meta=rack_name%3A2304&stale=&wait=600000ms":
 			response = ServicesTestAnswer
-		case "/v1/catalog/services?wait=30000ms":
+		case "/v1/catalog/services?wait=600000ms":
 			response = ServicesTestAnswer
-		case "/v1/catalog/services?index=1&node-meta=rack_name%3A2304&stale=&wait=30000ms":
+		case "/v1/catalog/services?index=1&node-meta=rack_name%3A2304&stale=&wait=600000ms":
 			time.Sleep(5 * time.Second)
 			response = ServicesTestAnswer
-		case "/v1/catalog/services?index=1&wait=30000ms":
+		case "/v1/catalog/services?index=1&wait=600000ms":
 			time.Sleep(5 * time.Second)
 			response = ServicesTestAnswer
 		default:
