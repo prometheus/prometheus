@@ -2,6 +2,10 @@
 
 * [ENHANCEMENT] TSDB: WAL compression is enabled by default.
 
+## 2.19.1 / 2020-06-18
+
+* [BUGFIX] TSDB: Fix m-map file truncation leading to unsequential files. #7414
+
 ## 2.19.0 / 2020-06-09
 
 * [FEATURE] TSDB: Memory-map full chunks of Head (in-memory) block from disk. This reduces memory footprint and makes restarts faster. #6679
