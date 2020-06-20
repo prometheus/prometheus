@@ -30,7 +30,7 @@ describe('AlertsContent', () => {
     });
   });
 
-  it('toggles the "annotations" checkbox from false to true when clicked and back to true when clicked again', () => {
+  it('toggles the "annotations" checkbox from false to true when clicked and back to false when clicked again', () => {
     wrapper.find('#show-annotations-toggler').invoke('onClick')();
     expect(wrapper.find('#show-annotations-toggler').prop('checked')).toBe(true);
     wrapper.find('#show-annotations-toggler').invoke('onClick')();
