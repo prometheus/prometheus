@@ -36,7 +36,7 @@ import (
 )
 
 const (
-	watchTimeout  = 30 * time.Second
+	watchTimeout  = 10 * time.Minute
 	retryInterval = 15 * time.Second
 
 	// addressLabel is the name for the label containing a target's address.
@@ -95,7 +95,7 @@ var (
 		Scheme:          "http",
 		Server:          "localhost:8500",
 		AllowStale:      true,
-		RefreshInterval: model.Duration(watchTimeout),
+		RefreshInterval: model.Duration(30 * time.Second),
 	}
 )
 
@@ -175,7 +175,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 		return nil, err
 	}
 	transport := &http.Transport{
-		IdleConnTimeout: 5 * time.Duration(conf.RefreshInterval),
+		IdleConnTimeout: 2 * time.Duration(watchTimeout),
 		TLSClientConfig: tls,
 		DialContext: conntrack.NewDialContextFunc(
 			conntrack.DialWithTracing(),
