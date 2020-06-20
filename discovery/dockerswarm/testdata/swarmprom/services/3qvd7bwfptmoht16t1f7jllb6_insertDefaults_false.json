@@ -1,0 +1,134 @@
+{
+  "ID": "3qvd7bwfptmoht16t1f7jllb6",
+  "Version": {
+    "Index": 41
+  },
+  "CreatedAt": "2020-06-19T19:14:29.269637662Z",
+  "UpdatedAt": "2020-06-19T19:14:29.288101671Z",
+  "Spec": {
+    "Name": "mon_node-exporter",
+    "Labels": {
+      "com.docker.stack.image": "stefanprodan/swarmprom-node-exporter:v0.16.0",
+      "com.docker.stack.namespace": "mon"
+    },
+    "TaskTemplate": {
+      "ContainerSpec": {
+        "Image": "stefanprodan/swarmprom-node-exporter:v0.16.0@sha256:1d2518ec0501dd848e718bf008df37852b1448c862d6f256f2d39244975758d6",
+        "Labels": {
+          "com.docker.stack.namespace": "mon"
+        },
+        "Args": [
+          "--path.sysfs=/host/sys",
+          "--path.procfs=/host/proc",
+          "--collector.textfile.directory=/etc/node-exporter/",
+          "--collector.filesystem.ignored-mount-points=^/(sys|proc|dev|host|etc)($|/)",
+          "--no-collector.ipvs"
+        ],
+        "Env": [
+          "NODE_ID={{.Node.ID}}"
+        ],
+        "Privileges": {
+          "CredentialSpec": null,
+          "SELinuxContext": null
+        },
+        "Mounts": [
+          {
+            "Type": "bind",
+            "Source": "/proc",
+            "Target": "/host/proc",
+            "ReadOnly": true
+          },
+          {
+            "Type": "bind",
+            "Source": "/sys",
+            "Target": "/host/sys",
+            "ReadOnly": true
+          },
+          {
+            "Type": "bind",
+            "Source": "/",
+            "Target": "/rootfs",
+            "ReadOnly": true
+          },
+          {
+            "Type": "bind",
+            "Source": "/etc/hostname",
+            "Target": "/etc/nodename"
+          }
+        ],
+        "Isolation": "default"
+      },
+      "Resources": {
+        "Limits": {
+          "MemoryBytes": 134217728
+        },
+        "Reservations": {
+          "MemoryBytes": 67108864
+        }
+      },
+      "Placement": {
+        "Platforms": [
+          {
+            "Architecture": "amd64",
+            "OS": "linux"
+          }
+        ]
+      },
+      "Networks": [
+        {
+          "Target": "npq2closzy836m07eaq1425k3",
+          "Aliases": [
+            "node-exporter"
+          ]
+        }
+      ],
+      "ForceUpdate": 0,
+      "Runtime": "container"
+    },
+    "Mode": {
+      "Global": {}
+    },
+    "EndpointSpec": {
+      "Mode": "vip",
+      "Ports": [
+        {
+          "Protocol": "tcp",
+          "TargetPort": 9100,
+          "PublishedPort": 9100,
+          "PublishMode": "ingress"
+        }
+      ]
+    }
+  },
+  "Endpoint": {
+    "Spec": {
+      "Mode": "vip",
+      "Ports": [
+        {
+          "Protocol": "tcp",
+          "TargetPort": 9100,
+          "PublishedPort": 9100,
+          "PublishMode": "ingress"
+        }
+      ]
+    },
+    "Ports": [
+      {
+        "Protocol": "tcp",
+        "TargetPort": 9100,
+        "PublishedPort": 9100,
+        "PublishMode": "ingress"
+      }
+    ],
+    "VirtualIPs": [
+      {
+        "NetworkID": "qvwhwd6p61k4o0ulsknqb066z",
+        "Addr": "10.0.0.7/24"
+      },
+      {
+        "NetworkID": "npq2closzy836m07eaq1425k3",
+        "Addr": "10.0.1.2/24"
+      }
+    ]
+  }
+}

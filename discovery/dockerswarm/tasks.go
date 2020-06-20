@@ -31,8 +31,6 @@ const (
 	swarmLabelTaskID           = swarmLabelTaskPrefix + "id"
 	swarmLabelTaskAddr         = swarmLabelTaskPrefix + "address_netmask"
 	swarmLabelTaskLabelPrefix  = swarmLabelTaskPrefix + "label_"
-	swarmLabelTaskServiceID    = swarmLabelTaskPrefix + "service_id"
-	swarmLabelTaskNodeID       = swarmLabelTaskPrefix + "node_id"
 	swarmLabelTaskDesiredState = swarmLabelTaskPrefix + "desired_state"
 	swarmLabelTaskStatus       = swarmLabelTaskPrefix + "state"
 	swarmLabelTaskContainerID  = swarmLabelTaskPrefix + "container_id"
@@ -44,18 +42,20 @@ func (d *Discovery) refreshTasks(ctx context.Context) ([]*targetgroup.Group, err
 		Source: "DockerSwarm",
 	}
 
-	tasks, err := d.client.TaskList(ctx, types.TaskListOptions{})
+	tasks, err := d.client.TaskList(ctx, types.TaskListOptions{Filters: makeArgs(d.filters)})
 	if err != nil {
 		return nil, fmt.Errorf("error while listing swarm services: %w", err)
 	}
+
+	networkLabels := make(map[string]model.LabelSet, 1)
+	serviceLabels := make(map[string]model.LabelSet, 1)
+	nodeLabels := make(map[string]model.LabelSet, 1)
 
 	for _, s := range tasks {
 		for _, network := range s.NetworksAttachments {
 			for _, address := range network.Addresses {
 				labels := model.LabelSet{
 					model.LabelName(swarmLabelTaskID):           model.LabelValue(s.ID),
-					model.LabelName(swarmLabelTaskServiceID):    model.LabelValue(s.ServiceID),
-					model.LabelName(swarmLabelTaskNodeID):       model.LabelValue(s.NodeID),
 					model.LabelName(swarmLabelTaskDesiredState): model.LabelValue(s.DesiredState),
 					model.LabelName(swarmLabelTaskStatus):       model.LabelValue(s.Status.State),
 					model.LabelName(swarmLabelTaskSlot):         model.LabelValue(fmt.Sprintf("%v", s.Slot)),
@@ -77,6 +77,43 @@ func (d *Discovery) refreshTasks(ctx context.Context) ([]*targetgroup.Group, err
 				}
 				addr := net.JoinHostPort(ip.String(), strconv.FormatUint(uint64(d.port), 10))
 				labels[model.AddressLabel] = model.LabelValue(addr)
+
+				if _, ok := networkLabels[network.Network.ID]; !ok {
+					lbs, err := d.getNetworkLabels(ctx, network.Network.ID)
+					if err != nil {
+						return nil, fmt.Errorf("error while inspecting network %s: %w", network.Network.ID, err)
+					}
+					networkLabels[network.Network.ID] = lbs
+				}
+
+				for k, v := range networkLabels[network.Network.ID] {
+					labels[k] = v
+				}
+
+				if _, ok := serviceLabels[s.ServiceID]; !ok {
+					lbs, err := d.getServiceLabels(ctx, s.ServiceID)
+					if err != nil {
+						return nil, fmt.Errorf("error while inspecting service %s: %w", network.Network.ID, err)
+					}
+					serviceLabels[s.ServiceID] = lbs
+				}
+
+				for k, v := range serviceLabels[s.ServiceID] {
+					labels[k] = v
+				}
+
+				if _, ok := nodeLabels[s.NodeID]; !ok {
+					lbs, err := d.getNodeLabels(ctx, s.NodeID)
+					if err != nil {
+						return nil, fmt.Errorf("error while inspecting service %s: %w", network.Network.ID, err)
+					}
+					nodeLabels[s.NodeID] = lbs
+				}
+
+				for k, v := range nodeLabels[s.NodeID] {
+					labels[k] = v
+				}
+
 				tg.Targets = append(tg.Targets, labels)
 			}
 		}

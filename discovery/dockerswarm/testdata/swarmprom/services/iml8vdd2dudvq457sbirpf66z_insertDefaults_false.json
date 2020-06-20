@@ -1,0 +1,106 @@
+{
+  "ID": "iml8vdd2dudvq457sbirpf66z",
+  "Version": {
+    "Index": 83
+  },
+  "CreatedAt": "2020-06-19T19:14:49.165966453Z",
+  "UpdatedAt": "2020-06-19T19:14:49.1722461Z",
+  "Spec": {
+    "Name": "mon_cadvisor",
+    "Labels": {
+      "com.docker.stack.image": "google/cadvisor",
+      "com.docker.stack.namespace": "mon"
+    },
+    "TaskTemplate": {
+      "ContainerSpec": {
+        "Image": "google/cadvisor:latest@sha256:815386ebbe9a3490f38785ab11bda34ec8dacf4634af77b8912832d4f85dca04",
+        "Labels": {
+          "com.docker.stack.namespace": "mon"
+        },
+        "Args": [
+          "-logtostderr",
+          "-docker_only"
+        ],
+        "Privileges": {
+          "CredentialSpec": null,
+          "SELinuxContext": null
+        },
+        "Mounts": [
+          {
+            "Type": "bind",
+            "Source": "/var/run/docker.sock",
+            "Target": "/var/run/docker.sock",
+            "ReadOnly": true
+          },
+          {
+            "Type": "bind",
+            "Source": "/",
+            "Target": "/rootfs",
+            "ReadOnly": true
+          },
+          {
+            "Type": "bind",
+            "Source": "/var/run",
+            "Target": "/var/run"
+          },
+          {
+            "Type": "bind",
+            "Source": "/sys",
+            "Target": "/sys",
+            "ReadOnly": true
+          },
+          {
+            "Type": "bind",
+            "Source": "/var/lib/docker/",
+            "Target": "/var/lib/docker",
+            "ReadOnly": true
+          }
+        ],
+        "Isolation": "default"
+      },
+      "Resources": {
+        "Limits": {
+          "MemoryBytes": 134217728
+        },
+        "Reservations": {
+          "MemoryBytes": 67108864
+        }
+      },
+      "Placement": {
+        "Platforms": [
+          {
+            "Architecture": "amd64",
+            "OS": "linux"
+          }
+        ]
+      },
+      "Networks": [
+        {
+          "Target": "npq2closzy836m07eaq1425k3",
+          "Aliases": [
+            "cadvisor"
+          ]
+        }
+      ],
+      "ForceUpdate": 0,
+      "Runtime": "container"
+    },
+    "Mode": {
+      "Global": {}
+    },
+    "EndpointSpec": {
+      "Mode": "vip"
+    }
+  },
+  "Endpoint": {
+    "Spec": {
+      "Mode": "vip"
+    },
+    "VirtualIPs": [
+      {
+        "NetworkID": "npq2closzy836m07eaq1425k3",
+        "Addr": "10.0.1.23/24"
+      }
+    ]
+  }
+}

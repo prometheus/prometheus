@@ -18,8 +18,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/prometheus/prometheus/util/strutil"
 	"github.com/prometheus/prometheus/util/testutil"
 	"gopkg.in/yaml.v2"
 )
@@ -30,6 +32,7 @@ type SDMock struct {
 	Server    *httptest.Server
 	Mux       *http.ServeMux
 	directory string
+	calls     map[string]int
 }
 
 // NewSDMock returns a new SDMock.
@@ -37,6 +40,7 @@ func NewSDMock(t *testing.T, directory string) *SDMock {
 	return &SDMock{
 		t:         t,
 		directory: directory,
+		calls:     make(map[string]int),
 	}
 }
 
@@ -65,23 +69,36 @@ func (m *SDMock) SetupHandlers() {
 		prefix += "v" + v + "/"
 	}
 
-	for _, path := range []string{"_ping", "nodes", "services", "tasks"} {
+	for _, path := range []string{"_ping", "networks/", "services/", "nodes/", "nodes", "services", "tasks"} {
 		p := path
 		handler := prefix + p
 		if p == "_ping" {
 			handler = "/" + p
 		}
 		m.Mux.HandleFunc(handler, func(w http.ResponseWriter, r *http.Request) {
+			// The discovery should only call each API endpoint once.
+			m.calls[r.RequestURI]++
+			if m.calls[r.RequestURI] != 1 {
+				w.WriteHeader(http.StatusTooManyRequests)
+				return
+			}
 			for k, v := range headers {
 				w.Header().Add(k, v)
 			}
-			if response, err := ioutil.ReadFile(filepath.Join("testdata", m.directory, p+".json")); err == nil {
+			parts := strings.Split(r.RequestURI, "/")
+			var f string
+			if strings.HasSuffix(p, "/") {
+				f = filepath.Join(p[:len(p)-1], strutil.SanitizeLabelName(parts[len(parts)-1]))
+			} else {
+				f = strutil.SanitizeLabelName(parts[len(parts)-1])
+			}
+			if response, err := ioutil.ReadFile(filepath.Join("testdata", m.directory, f+".json")); err == nil {
 				w.Header().Add("content-type", "application/json")
 				w.WriteHeader(http.StatusOK)
 				w.Write(response)
 				return
 			}
-			if response, err := ioutil.ReadFile(filepath.Join("testdata", m.directory, p)); err == nil {
+			if response, err := ioutil.ReadFile(filepath.Join("testdata", m.directory, f)); err == nil {
 				w.WriteHeader(http.StatusOK)
 				w.Write(response)
 				return

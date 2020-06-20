@@ -20,6 +20,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/client"
 	"github.com/go-kit/kit/log"
 	config_util "github.com/prometheus/common/config"
@@ -41,14 +42,20 @@ var DefaultSDConfig = SDConfig{
 	Port:            80,
 }
 
+type Filter struct {
+	Name   string   `yaml:"name"`
+	Values []string `yaml:"values"`
+}
+
 // SDConfig is the configuration for Docker Swarm based service discovery.
 type SDConfig struct {
 	HTTPClientConfig config_util.HTTPClientConfig `yaml:",inline"`
 
-	Host string `yaml:"host"`
-	url  *url.URL
-	Kind string `yaml:"kind"`
-	Port int    `yaml:"port"`
+	Host    string `yaml:"host"`
+	url     *url.URL
+	Filters []Filter `yaml:"filters"`
+	Kind    string   `yaml:"kind"`
+	Port    int      `yaml:"port"`
 
 	RefreshInterval model.Duration `yaml:"refresh_interval"`
 }
@@ -76,14 +83,16 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 // the Discoverer interface.
 type Discovery struct {
 	*refresh.Discovery
-	client *client.Client
-	port   int
+	client  *client.Client
+	port    int
+	filters []Filter `yaml:"filters"`
 }
 
 // NewDiscovery returns a new Discovery which periodically refreshes its targets.
 func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 	d := &Discovery{
-		port: conf.Port,
+		port:    conf.Port,
+		filters: conf.Filters,
 	}
 
 	rt, err := config_util.NewRoundTripperFromConfig(conf.HTTPClientConfig, "dockerswarm_sd", false)
@@ -129,4 +138,14 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 		r,
 	)
 	return d, nil
+}
+
+func makeArgs(fs []Filter) filters.Args {
+	args := filters.NewArgs()
+	for _, f := range fs {
+		for _, v := range f.Values {
+			args.Add(f.Name, v)
+		}
+	}
+	return args
 }

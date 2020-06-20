@@ -1,0 +1,115 @@
+{
+  "ID": "hv645udwaaewyw7wuc6nspm68",
+  "Version": {
+    "Index": 54
+  },
+  "CreatedAt": "2020-06-19T19:14:31.707250955Z",
+  "UpdatedAt": "2020-06-19T19:14:31.713627185Z",
+  "Spec": {
+    "Name": "mon_prometheus",
+    "Labels": {
+      "com.docker.stack.image": "stefanprodan/swarmprom-prometheus:v2.5.0",
+      "com.docker.stack.namespace": "mon"
+    },
+    "TaskTemplate": {
+      "ContainerSpec": {
+        "Image": "stefanprodan/swarmprom-prometheus:v2.5.0@sha256:f1a3781c4785637ba088dcf54889f77d9b6b69f21b2c0a167c1347473f4e2587",
+        "Labels": {
+          "com.docker.stack.namespace": "mon"
+        },
+        "Args": [
+          "--config.file=/etc/prometheus/prometheus.yml",
+          "--storage.tsdb.path=/prometheus",
+          "--storage.tsdb.retention=24h"
+        ],
+        "Privileges": {
+          "CredentialSpec": null,
+          "SELinuxContext": null
+        },
+        "Mounts": [
+          {
+            "Type": "volume",
+            "Source": "mon_prometheus",
+            "Target": "/prometheus",
+            "VolumeOptions": {
+              "Labels": {
+                "com.docker.stack.namespace": "mon"
+              }
+            }
+          }
+        ],
+        "Configs": [
+          {
+            "File": {
+              "Name": "/etc/prometheus/swarm_node.rules.yml",
+              "UID": "0",
+              "GID": "0",
+              "Mode": 292
+            },
+            "ConfigID": "zffindunvquarrlgdrklzczbz",
+            "ConfigName": "mon_node_rules"
+          },
+          {
+            "File": {
+              "Name": "/etc/prometheus/swarm_task.rules.yml",
+              "UID": "0",
+              "GID": "0",
+              "Mode": 292
+            },
+            "ConfigID": "fbhk5cmleeicn5fkzujm909k7",
+            "ConfigName": "mon_task_rules"
+          }
+        ],
+        "Isolation": "default"
+      },
+      "Resources": {
+        "Limits": {
+          "MemoryBytes": 2147483648
+        },
+        "Reservations": {
+          "MemoryBytes": 134217728
+        }
+      },
+      "Placement": {
+        "Constraints": [
+          "node.role == manager"
+        ],
+        "Platforms": [
+          {
+            "Architecture": "amd64",
+            "OS": "linux"
+          }
+        ]
+      },
+      "Networks": [
+        {
+          "Target": "npq2closzy836m07eaq1425k3",
+          "Aliases": [
+            "prometheus"
+          ]
+        }
+      ],
+      "ForceUpdate": 0,
+      "Runtime": "container"
+    },
+    "Mode": {
+      "Replicated": {
+        "Replicas": 1
+      }
+    },
+    "EndpointSpec": {
+      "Mode": "vip"
+    }
+  },
+  "Endpoint": {
+    "Spec": {
+      "Mode": "vip"
+    },
+    "VirtualIPs": [
+      {
+        "NetworkID": "npq2closzy836m07eaq1425k3",
+        "Addr": "10.0.1.13/24"
+      }
+    ]
+  }
+}

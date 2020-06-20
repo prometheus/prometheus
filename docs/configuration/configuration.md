@@ -469,10 +469,14 @@ Available meta labels:
 * `__meta_dockerswarm_service_label_`: each label of the service
 * `__meta_dockerswarm_service_task_container_hostname`: the container hostname of the target, if available
 * `__meta_dockerswarm_service_task_container_image`: the container image of the target
-* `__meta_dockerswarm_service_task_container_label_`: each label of the container
 * `__meta_dockerswarm_service_updating_status`: the status of the service, if available
 * `__meta_dockerswarm_service_virtual_ip_address_netmask`: the virtual ip address with netmask
-* `__meta_dockerswarm_service_virtual_ip_network_id`: the network id of the virtual ip
+* `__meta_dockerswarm_network_id`: the ID of the network
+* `__meta_dockerswarm_network_name`: the name of the network
+* `__meta_dockerswarm_network_ingress`: whether the network is ingress
+* `__meta_dockerswarm_network_internal`: whether the network is internal
+* `__meta_dockerswarm_network_label_`: each label of the network
+* `__meta_dockerswarm_network_scope`: the scope of the network
 
 #### `tasks`
 
@@ -485,10 +489,26 @@ Available meta labels:
 * `__meta_dockerswarm_task_container_id`: the container id of the task
 * `__meta_dockerswarm_task_desired_state`: the desired state of the task
 * `__meta_dockerswarm_task_label_`: each label of the task
-* `__meta_dockerswarm_task_node_id`: the node id of the task
-* `__meta_dockerswarm_task_service_id`: the service id of the task
 * `__meta_dockerswarm_task_slot`: the slot of the task
 * `__meta_dockerswarm_task_state`: the state of the task
+* `__meta_dockerswarm_service_id`: the id of the service
+* `__meta_dockerswarm_service_name`: the name of the service
+* `__meta_dockerswarm_service_label_`: each label of the service
+* `__meta_dockerswarm_network_id`: the ID of the network
+* `__meta_dockerswarm_network_name`: the name of the network
+* `__meta_dockerswarm_network_ingress`: whether the network is ingress
+* `__meta_dockerswarm_network_internal`: whether the network is internal
+* `__meta_dockerswarm_network_label_`: each label of the network
+* `__meta_dockerswarm_network_label`: each label of the network
+* `__meta_dockerswarm_network_scope`: the scope of the network
+* `__meta_dockerswarm_node_id`: the ID of the node
+* `__meta_dockerswarm_node_hostname`: the hostname of the node
+* `__meta_dockerswarm_node_availability`: the availability of the node
+* `__meta_dockerswarm_node_label_`: each label of the node
+* `__meta_dockerswarm_node_platform_architecture`: the architecture of the node
+* `__meta_dockerswarm_node_platform_os`: the operating system of the node
+* `__meta_dockerswarm_node_role`: the role of the node
+* `__meta_dockerswarm_node_status`: the status of the node
 
 #### `nodes`
 
@@ -497,7 +517,7 @@ The `nodes` kind is used to discover [Swarm nodes](https://docs.docker.com/engin
 Available meta labels:
 
 * `__meta_dockerswarm_node_address`: the address of the node engine
-* `__meta_dockerswarm_node_availability`: the availabilty of the node
+* `__meta_dockerswarm_node_availability`: the availability of the node
 * `__meta_dockerswarm_node_engine_version`: the version of the node engine
 * `__meta_dockerswarm_node_hostname`: the hostname of the node
 * `__meta_dockerswarm_node_id`: the ID of the node
@@ -505,7 +525,7 @@ Available meta labels:
 * `__meta_dockerswarm_node_manager_address`: the address of the manager component of the node
 * `__meta_dockerswarm_node_manager_leader`: the leadership status of the manager component of the node (true or false)
 * `__meta_dockerswarm_node_manager_reachability`: the reachability of the manager component of the node
-* `__meta_dockerswarm_node_platform_architecture`: the architechure of the node
+* `__meta_dockerswarm_node_platform_architecture`: the architecture of the node
 * `__meta_dockerswarm_node_platform_os`: the operating system of the node
 * `__meta_dockerswarm_node_role`: the role of the node
 * `__meta_dockerswarm_node_status`: the status of the node
@@ -525,6 +545,19 @@ tls_config:
 
 # Kind of the targets to retrieve.
 [ kind: <swarm_kind> | default = services ]
+
+# Optional filters to limit the discovery process to a subset of available resources. 
+
+# Note: When making decision about using filters make sure that this is the best
+# approach - it will prevent Prometheus from reusing single API calls for all
+# scrape configs. This might result in a bigger load on the Docker API, because
+# per each filters combination there will be additional API calls. On the other hand,
+# if you just want to monitor small subset of resources in large cluster it's
+# recommended to use filters.
+# Decision, if filters should be used or not depends on the particular situation.
+[ filters:
+  [ - name: <string>
+      values: <string>, [...] ]
 
 # The port to scrape metrics from, when kind is nodes or tasks.
 [ port: <int> | default = 80 ]

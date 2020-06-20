@@ -48,7 +48,7 @@ func (d *Discovery) refreshNodes(ctx context.Context) ([]*targetgroup.Group, err
 		Source: "DockerSwarm",
 	}
 
-	nodes, err := d.client.NodeList(ctx, types.NodeListOptions{})
+	nodes, err := d.client.NodeList(ctx, types.NodeListOptions{Filters: makeArgs(d.filters)})
 	if err != nil {
 		return nil, fmt.Errorf("error while listing swarm nodes: %w", err)
 	}
@@ -83,4 +83,25 @@ func (d *Discovery) refreshNodes(ctx context.Context) ([]*targetgroup.Group, err
 
 	}
 	return []*targetgroup.Group{tg}, nil
+}
+
+func (d *Discovery) getNodeLabels(ctx context.Context, nodeID string) (model.LabelSet, error) {
+	n, _, err := d.client.NodeInspectWithRaw(ctx, nodeID)
+	if err != nil {
+		return nil, err
+	}
+	labels := model.LabelSet{
+		swarmLabelNodeID:                   model.LabelValue(n.ID),
+		swarmLabelNodeRole:                 model.LabelValue(n.Spec.Role),
+		swarmLabelNodeAvailability:         model.LabelValue(n.Spec.Availability),
+		swarmLabelNodeHostname:             model.LabelValue(n.Description.Hostname),
+		swarmLabelNodePlatformArchitecture: model.LabelValue(n.Description.Platform.Architecture),
+		swarmLabelNodePlatformOS:           model.LabelValue(n.Description.Platform.OS),
+		swarmLabelNodeStatus:               model.LabelValue(n.Status.State),
+	}
+	for k, v := range n.Spec.Labels {
+		ln := strutil.SanitizeLabelName(k)
+		labels[model.LabelName(swarmLabelNodeLabelPrefix+ln)] = model.LabelValue(v)
+	}
+	return labels, nil
 }

@@ -1,0 +1,69 @@
+{
+  "ID": "9bbq7j55tzzz85k2gg52x73rg",
+  "Version": {
+    "Index": 116
+  },
+  "CreatedAt": "2020-06-19T19:15:16.676178796Z",
+  "UpdatedAt": "2020-06-19T19:15:16.690701679Z",
+  "Spec": {
+    "Name": "mon_unsee",
+    "Labels": {
+      "com.docker.stack.image": "cloudflare/unsee:v0.8.0",
+      "com.docker.stack.namespace": "mon"
+    },
+    "TaskTemplate": {
+      "ContainerSpec": {
+        "Image": "cloudflare/unsee:v0.8.0@sha256:28398f47f63feb1647887999701fa730da351fc6d3cc7228e5da44b40a663ada",
+        "Labels": {
+          "com.docker.stack.namespace": "mon"
+        },
+        "Env": [
+          "ALERTMANAGER_URIS=default:http://alertmanager:9093"
+        ],
+        "Privileges": {
+          "CredentialSpec": null,
+          "SELinuxContext": null
+        },
+        "Isolation": "default"
+      },
+      "Resources": {},
+      "Placement": {
+        "Platforms": [
+          {
+            "Architecture": "amd64",
+            "OS": "linux"
+          }
+        ]
+      },
+      "Networks": [
+        {
+          "Target": "npq2closzy836m07eaq1425k3",
+          "Aliases": [
+            "unsee"
+          ]
+        }
+      ],
+      "ForceUpdate": 0,
+      "Runtime": "container"
+    },
+    "Mode": {
+      "Replicated": {
+        "Replicas": 1
+      }
+    },
+    "EndpointSpec": {
+      "Mode": "vip"
+    }
+  },
+  "Endpoint": {
+    "Spec": {
+      "Mode": "vip"
+    },
+    "VirtualIPs": [
+      {
+        "NetworkID": "npq2closzy836m07eaq1425k3",
+        "Addr": "10.0.1.34/24"
+      }
+    ]
+  }
+}
