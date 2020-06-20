@@ -58,7 +58,7 @@ var DefaultSDConfig = SDConfig{
 type SDConfig struct {
 	HTTPClientConfig config_util.HTTPClientConfig `yaml:",inline"`
 
-	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
+	RefreshInterval model.Duration `yaml:"refresh_interval"`
 	Port            int            `yaml:"port"`
 }
 
@@ -95,7 +95,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 	d.client, err = godo.New(
 		&http.Client{
 			Transport: rt,
-			Timeout:   5 * time.Duration(conf.RefreshInterval),
+			Timeout:   time.Duration(conf.RefreshInterval),
 		},
 		godo.SetUserAgent(fmt.Sprintf("Prometheus/%s", version.Version)),
 	)
