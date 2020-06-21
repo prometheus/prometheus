@@ -210,3 +210,11 @@ export const callAll = (...fns: Array<(...args: any) => void>) => (...args: any)
   // eslint-disable-next-line prefer-spread
   fns.filter(Boolean).forEach(fn => fn.apply(null, args));
 };
+
+export const convertSCToNumber = (sc: string) => {
+  if (isNaN(Number(sc))) {
+    return sc;
+  } else {
+    return Number(sc);
+  }
+};
