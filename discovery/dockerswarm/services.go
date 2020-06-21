@@ -34,11 +34,15 @@ const (
 	swarmLabelServiceID                      = swarmLabelServicePrefix + "id"
 	swarmLabelServiceLabelPrefix             = swarmLabelServicePrefix + "label_"
 	swarmLabelServiceName                    = swarmLabelServicePrefix + "name"
+	swarmLabelServiceMode                    = swarmLabelServicePrefix + "mode"
 	swarmLabelServiceUpdatingStatus          = swarmLabelServicePrefix + "updating_status"
 	swarmLabelServiceTaskPrefix              = swarmLabelServicePrefix + "task_"
 	swarmLabelServiceTaskContainerImage      = swarmLabelServiceTaskPrefix + "container_image"
 	swarmLabelServiceTaskContainerHostname   = swarmLabelServiceTaskPrefix + "container_hostname"
 	swarmLabelServiceVirtualIPAddrNetmask    = swarmLabelServicePrefix + "virtual_ip_address_netmask"
+
+	swarmLabelValueModeGlobal     = model.LabelValue("global")
+	swarmLabelValueModeReplicated = model.LabelValue("replicated")
 )
 
 func (d *Discovery) refreshServices(ctx context.Context) ([]*targetgroup.Group, error) {
@@ -60,13 +64,25 @@ func (d *Discovery) refreshServices(ctx context.Context) ([]*targetgroup.Group, 
 			}
 			for _, p := range s.Endpoint.VirtualIPs {
 				labels := model.LabelSet{
-					swarmLabelServiceID:                      model.LabelValue(s.ID),
-					swarmLabelServiceName:                    model.LabelValue(s.Spec.Name),
 					swarmLabelServiceEndpointPortName:        model.LabelValue(e.Name),
 					swarmLabelServiceEndpointPortPublishMode: model.LabelValue(e.PublishMode),
-					swarmLabelServiceVirtualIPAddrNetmask:    model.LabelValue(p.Addr),
-					swarmLabelServiceTaskContainerImage:      model.LabelValue(s.Spec.TaskTemplate.ContainerSpec.Image),
+					swarmLabelServiceID:                      model.LabelValue(s.ID),
+					swarmLabelServiceName:                    model.LabelValue(s.Spec.Name),
 					swarmLabelServiceTaskContainerHostname:   model.LabelValue(s.Spec.TaskTemplate.ContainerSpec.Hostname),
+					swarmLabelServiceTaskContainerImage:      model.LabelValue(s.Spec.TaskTemplate.ContainerSpec.Image),
+					swarmLabelServiceVirtualIPAddrNetmask:    model.LabelValue(p.Addr),
+				}
+
+				if s.Spec.Mode.Global != nil {
+					labels[swarmLabelServiceMode] = swarmLabelValueModeGlobal
+				}
+				if s.Spec.Mode.Replicated != nil {
+					if s.Spec.Mode.Global != nil {
+						if err != nil {
+							return nil, fmt.Errorf("service %s is both global and replicated: %w", s.ID, err)
+						}
+					}
+					labels[swarmLabelServiceMode] = swarmLabelValueModeReplicated
 				}
 
 				if s.UpdateStatus != nil {
