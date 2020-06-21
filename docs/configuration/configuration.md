@@ -464,6 +464,7 @@ Available meta labels:
 
 * `__meta_dockerswarm_service_id`: the id of the service
 * `__meta_dockerswarm_service_name`: the name of the service
+* `__meta_dockerswarm_service_mode`: the mode of the service
 * `__meta_dockerswarm_service_endpoint_port_name`: the name of the endpoint port, if available
 * `__meta_dockerswarm_service_endpoint_port_publish_mode`: the publish mode of the endpoint port
 * `__meta_dockerswarm_service_label_`: each label of the service
@@ -493,6 +494,7 @@ Available meta labels:
 * `__meta_dockerswarm_task_state`: the state of the task
 * `__meta_dockerswarm_service_id`: the id of the service
 * `__meta_dockerswarm_service_name`: the name of the service
+* `__meta_dockerswarm_service_mode`: the mode of the service
 * `__meta_dockerswarm_service_label_`: each label of the service
 * `__meta_dockerswarm_network_id`: the ID of the network
 * `__meta_dockerswarm_network_name`: the name of the network
@@ -507,8 +509,7 @@ Available meta labels:
 * `__meta_dockerswarm_node_label_`: each label of the node
 * `__meta_dockerswarm_node_platform_architecture`: the architecture of the node
 * `__meta_dockerswarm_node_platform_os`: the operating system of the node
-* `__meta_dockerswarm_node_role`: the role of the node
-* `__meta_dockerswarm_node_status`: the status of the node
+* `__meta_dockerswarm_node_role`: the role of the nodemode* `__meta_dockerswarm_node_status`: the status of the node
 
 #### `nodes`
 

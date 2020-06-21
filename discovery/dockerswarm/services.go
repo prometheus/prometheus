@@ -65,6 +65,7 @@ func (d *Discovery) refreshServices(ctx context.Context) ([]*targetgroup.Group, 
 			for _, p := range s.Endpoint.VirtualIPs {
 				labels := model.LabelSet{
 					swarmLabelServiceEndpointPortName:        model.LabelValue(e.Name),
+					swarmLabelServiceMode:                    getServiceValueMode(s),
 					swarmLabelServiceEndpointPortPublishMode: model.LabelValue(e.PublishMode),
 					swarmLabelServiceID:                      model.LabelValue(s.ID),
 					swarmLabelServiceName:                    model.LabelValue(s.Spec.Name),
@@ -128,10 +129,21 @@ func (d *Discovery) getServiceLabels(ctx context.Context, serviceID string) (mod
 	labels := model.LabelSet{
 		swarmLabelServiceID:   model.LabelValue(s.ID),
 		swarmLabelServiceName: model.LabelValue(s.Spec.Name),
+		swarmLabelServiceMode: getServiceValueMode(s),
 	}
 	for k, v := range s.Spec.Labels {
 		ln := strutil.SanitizeLabelName(k)
 		labels[model.LabelName(swarmLabelServiceLabelPrefix+ln)] = model.LabelValue(v)
 	}
 	return labels, nil
+}
+
+func getServiceValueMode(s swarm.Service) model.LabelValue {
+	if s.Spec.Mode.Global != nil {
+		return swarmLabelValueModeGlobal
+	}
+	if s.Spec.Mode.Replicated != nil {
+		return swarmLabelValueModeReplicated
+	}
+	return model.LabelValue("")
 }
