@@ -59,10 +59,10 @@ process_repo() {
 
   local needs_update=0
   for source_file in ${SYNC_FILES}; do
-    source_checksum="$(sha256sum "${souce_dir}/${source_file}" | cut -d' ' -f1)"
+    source_checksum="$(sha256sum "${source_dir}/${source_file}" | cut -d' ' -f1)"
 
     target_file="$(curl -s --fail "https://raw.githubusercontent.com/${org_repo}/master/${source_file}")"
-    if [[ -z "${target_makefile}" ]]; then
+    if [[ -z "${target_file}" ]]; then
       echo "${source_file} doesn't exist in ${org_repo}"
       continue
     fi
