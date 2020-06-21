@@ -93,6 +93,7 @@ func (d *Discovery) getNodeLabels(ctx context.Context, nodeID string) (model.Lab
 	labels := model.LabelSet{
 		swarmLabelNodeID:                   model.LabelValue(n.ID),
 		swarmLabelNodeRole:                 model.LabelValue(n.Spec.Role),
+		swarmLabelNodeAddress:              model.LabelValue(n.Status.Addr),
 		swarmLabelNodeAvailability:         model.LabelValue(n.Spec.Availability),
 		swarmLabelNodeHostname:             model.LabelValue(n.Description.Hostname),
 		swarmLabelNodePlatformArchitecture: model.LabelValue(n.Description.Platform.Architecture),

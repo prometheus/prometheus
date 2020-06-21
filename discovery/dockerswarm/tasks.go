@@ -20,6 +20,7 @@ import (
 	"strconv"
 
 	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/swarm"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -29,12 +30,12 @@ import (
 const (
 	swarmLabelTaskPrefix       = swarmLabel + "task_"
 	swarmLabelTaskID           = swarmLabelTaskPrefix + "id"
-	swarmLabelTaskAddr         = swarmLabelTaskPrefix + "address_netmask"
 	swarmLabelTaskLabelPrefix  = swarmLabelTaskPrefix + "label_"
 	swarmLabelTaskDesiredState = swarmLabelTaskPrefix + "desired_state"
 	swarmLabelTaskStatus       = swarmLabelTaskPrefix + "state"
 	swarmLabelTaskContainerID  = swarmLabelTaskPrefix + "container_id"
 	swarmLabelTaskSlot         = swarmLabelTaskPrefix + "slot"
+	swarmLabelTaskPortMode     = swarmLabelTaskPrefix + "port_publish_mode"
 )
 
 func (d *Discovery) refreshTasks(ctx context.Context) ([]*targetgroup.Group, error) {
@@ -49,72 +50,113 @@ func (d *Discovery) refreshTasks(ctx context.Context) ([]*targetgroup.Group, err
 
 	networkLabels := make(map[string]model.LabelSet, 1)
 	serviceLabels := make(map[string]model.LabelSet, 1)
+	servicePorts := make(map[string][]swarm.PortConfig, 1)
 	nodeLabels := make(map[string]model.LabelSet, 1)
 
 	for _, s := range tasks {
-		for _, network := range s.NetworksAttachments {
-			for _, address := range network.Addresses {
-				labels := model.LabelSet{
-					model.LabelName(swarmLabelTaskID):           model.LabelValue(s.ID),
-					model.LabelName(swarmLabelTaskDesiredState): model.LabelValue(s.DesiredState),
-					model.LabelName(swarmLabelTaskStatus):       model.LabelValue(s.Status.State),
-					model.LabelName(swarmLabelTaskSlot):         model.LabelValue(fmt.Sprintf("%v", s.Slot)),
-				}
+		if _, ok := nodeLabels[s.NodeID]; !ok {
+			lbs, err := d.getNodeLabels(ctx, s.NodeID)
+			if err != nil {
+				return nil, fmt.Errorf("error while inspecting service %s: %w", s.NodeID, err)
+			}
+			nodeLabels[s.NodeID] = lbs
+		}
 
-				if s.Status.ContainerStatus != nil {
-					labels[model.LabelName(swarmLabelTaskContainerID)] = model.LabelValue(s.Status.ContainerStatus.ContainerID)
-				}
+		if _, ok := serviceLabels[s.ServiceID]; !ok {
+			lbs, ports, err := d.getServiceLabelsAndPorts(ctx, s.ServiceID)
+			if err != nil {
+				return nil, fmt.Errorf("error while inspecting service %s: %w", s.ServiceID, err)
+			}
+			serviceLabels[s.ServiceID] = lbs
+			servicePorts[s.ServiceID] = ports
+		}
 
-				for k, v := range s.Labels {
-					ln := strutil.SanitizeLabelName(k)
-					labels[model.LabelName(swarmLabelTaskLabelPrefix+ln)] = model.LabelValue(v)
-				}
+		commonLabels := model.LabelSet{
+			model.LabelName(swarmLabelTaskID):           model.LabelValue(s.ID),
+			model.LabelName(swarmLabelTaskDesiredState): model.LabelValue(s.DesiredState),
+			model.LabelName(swarmLabelTaskStatus):       model.LabelValue(s.Status.State),
+			model.LabelName(swarmLabelTaskSlot):         model.LabelValue(fmt.Sprintf("%v", s.Slot)),
+		}
 
-				labels[model.LabelName(swarmLabelTaskAddr)] = model.LabelValue(address)
-				ip, _, err := net.ParseCIDR(address)
-				if err != nil {
-					return nil, fmt.Errorf("error while parsing address %s: %w", address, err)
-				}
-				addr := net.JoinHostPort(ip.String(), strconv.FormatUint(uint64(d.port), 10))
-				labels[model.AddressLabel] = model.LabelValue(addr)
+		if s.Status.ContainerStatus != nil {
+			commonLabels[model.LabelName(swarmLabelTaskContainerID)] = model.LabelValue(s.Status.ContainerStatus.ContainerID)
+		}
 
-				if _, ok := networkLabels[network.Network.ID]; !ok {
-					lbs, err := d.getNetworkLabels(ctx, network.Network.ID)
-					if err != nil {
-						return nil, fmt.Errorf("error while inspecting network %s: %w", network.Network.ID, err)
+		for k, v := range s.Labels {
+			ln := strutil.SanitizeLabelName(k)
+			commonLabels[model.LabelName(swarmLabelTaskLabelPrefix+ln)] = model.LabelValue(v)
+		}
+
+		for k, v := range serviceLabels[s.ServiceID] {
+			commonLabels[k] = v
+		}
+
+		for k, v := range nodeLabels[s.NodeID] {
+			commonLabels[k] = v
+		}
+
+		for _, p := range s.Status.PortStatus.Ports {
+			if p.Protocol != swarm.PortConfigProtocolTCP {
+				continue
+			}
+
+			labels := model.LabelSet{
+				model.LabelName(swarmLabelTaskPortMode): model.LabelValue(p.PublishMode),
+			}
+
+			for k, v := range commonLabels {
+				labels[k] = v
+			}
+
+			for k, v := range serviceLabels[s.ServiceID] {
+				labels[k] = v
+			}
+
+			for k, v := range nodeLabels[s.NodeID] {
+				labels[k] = v
+			}
+
+			addr := net.JoinHostPort(string(labels[swarmLabelNodeAddress]), strconv.FormatUint(uint64(p.PublishedPort), 10))
+			labels[model.AddressLabel] = model.LabelValue(addr)
+			tg.Targets = append(tg.Targets, labels)
+			continue
+		}
+
+		for _, p := range servicePorts[s.ServiceID] {
+			if p.Protocol != swarm.PortConfigProtocolTCP {
+				continue
+			}
+			for _, network := range s.NetworksAttachments {
+				for _, address := range network.Addresses {
+					labels := model.LabelSet{
+						model.LabelName(swarmLabelTaskPortMode): model.LabelValue(p.PublishMode),
 					}
-					networkLabels[network.Network.ID] = lbs
-				}
 
-				for k, v := range networkLabels[network.Network.ID] {
-					labels[k] = v
-				}
-
-				if _, ok := serviceLabels[s.ServiceID]; !ok {
-					lbs, err := d.getServiceLabels(ctx, s.ServiceID)
-					if err != nil {
-						return nil, fmt.Errorf("error while inspecting service %s: %w", network.Network.ID, err)
+					for k, v := range commonLabels {
+						labels[k] = v
 					}
-					serviceLabels[s.ServiceID] = lbs
-				}
 
-				for k, v := range serviceLabels[s.ServiceID] {
-					labels[k] = v
-				}
-
-				if _, ok := nodeLabels[s.NodeID]; !ok {
-					lbs, err := d.getNodeLabels(ctx, s.NodeID)
-					if err != nil {
-						return nil, fmt.Errorf("error while inspecting service %s: %w", network.Network.ID, err)
+					if _, ok := networkLabels[network.Network.ID]; !ok {
+						lbs, err := d.getNetworkLabels(ctx, network.Network.ID)
+						if err != nil {
+							return nil, fmt.Errorf("error while inspecting network %s: %w", network.Network.ID, err)
+						}
+						networkLabels[network.Network.ID] = lbs
 					}
-					nodeLabels[s.NodeID] = lbs
-				}
 
-				for k, v := range nodeLabels[s.NodeID] {
-					labels[k] = v
-				}
+					for k, v := range networkLabels[network.Network.ID] {
+						labels[k] = v
+					}
 
-				tg.Targets = append(tg.Targets, labels)
+					ip, _, err := net.ParseCIDR(address)
+					if err != nil {
+						return nil, fmt.Errorf("error while parsing address %s: %w", address, err)
+					}
+					addr := net.JoinHostPort(ip.String(), strconv.FormatUint(uint64(p.PublishedPort), 10))
+					labels[model.AddressLabel] = model.LabelValue(addr)
+
+					tg.Targets = append(tg.Targets, labels)
+				}
 			}
 		}
 	}

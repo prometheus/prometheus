@@ -39,7 +39,6 @@ const (
 	swarmLabelServiceTaskPrefix              = swarmLabelServicePrefix + "task_"
 	swarmLabelServiceTaskContainerImage      = swarmLabelServiceTaskPrefix + "container_image"
 	swarmLabelServiceTaskContainerHostname   = swarmLabelServiceTaskPrefix + "container_hostname"
-	swarmLabelServiceVirtualIPAddrNetmask    = swarmLabelServicePrefix + "virtual_ip_address_netmask"
 
 	swarmLabelValueModeGlobal     = model.LabelValue("global")
 	swarmLabelValueModeReplicated = model.LabelValue("replicated")
@@ -65,25 +64,12 @@ func (d *Discovery) refreshServices(ctx context.Context) ([]*targetgroup.Group, 
 			for _, p := range s.Endpoint.VirtualIPs {
 				labels := model.LabelSet{
 					swarmLabelServiceEndpointPortName:        model.LabelValue(e.Name),
-					swarmLabelServiceMode:                    getServiceValueMode(s),
 					swarmLabelServiceEndpointPortPublishMode: model.LabelValue(e.PublishMode),
 					swarmLabelServiceID:                      model.LabelValue(s.ID),
+					swarmLabelServiceMode:                    getServiceValueMode(s),
 					swarmLabelServiceName:                    model.LabelValue(s.Spec.Name),
 					swarmLabelServiceTaskContainerHostname:   model.LabelValue(s.Spec.TaskTemplate.ContainerSpec.Hostname),
 					swarmLabelServiceTaskContainerImage:      model.LabelValue(s.Spec.TaskTemplate.ContainerSpec.Image),
-					swarmLabelServiceVirtualIPAddrNetmask:    model.LabelValue(p.Addr),
-				}
-
-				if s.Spec.Mode.Global != nil {
-					labels[swarmLabelServiceMode] = swarmLabelValueModeGlobal
-				}
-				if s.Spec.Mode.Replicated != nil {
-					if s.Spec.Mode.Global != nil {
-						if err != nil {
-							return nil, fmt.Errorf("service %s is both global and replicated: %w", s.ID, err)
-						}
-					}
-					labels[swarmLabelServiceMode] = swarmLabelValueModeReplicated
 				}
 
 				if s.UpdateStatus != nil {
@@ -121,10 +107,10 @@ func (d *Discovery) refreshServices(ctx context.Context) ([]*targetgroup.Group, 
 	return []*targetgroup.Group{tg}, nil
 }
 
-func (d *Discovery) getServiceLabels(ctx context.Context, serviceID string) (model.LabelSet, error) {
+func (d *Discovery) getServiceLabelsAndPorts(ctx context.Context, serviceID string) (model.LabelSet, []swarm.PortConfig, error) {
 	s, _, err := d.client.ServiceInspectWithRaw(ctx, serviceID, types.ServiceInspectOptions{})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	labels := model.LabelSet{
 		swarmLabelServiceID:   model.LabelValue(s.ID),
@@ -135,7 +121,8 @@ func (d *Discovery) getServiceLabels(ctx context.Context, serviceID string) (mod
 		ln := strutil.SanitizeLabelName(k)
 		labels[model.LabelName(swarmLabelServiceLabelPrefix+ln)] = model.LabelValue(v)
 	}
-	return labels, nil
+
+	return labels, s.Endpoint.Ports, nil
 }
 
 func getServiceValueMode(s swarm.Service) model.LabelValue {

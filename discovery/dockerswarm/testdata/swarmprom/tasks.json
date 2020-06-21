@@ -2274,7 +2274,16 @@
         "PID": 805,
         "ExitCode": 0
       },
-      "PortStatus": {}
+      "PortStatus": {
+        "Ports": [
+          {
+            "Protocol": "tcp",
+            "TargetPort": 82,
+            "PublishedPort": 82,
+            "PublishMode": "host"
+          }
+        ]
+      }
     },
     "DesiredState": "running",
     "NetworksAttachments": [
