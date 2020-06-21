@@ -1677,7 +1677,7 @@ func TestIsolationWithoutAdd(t *testing.T) {
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Commit())
 
-	testutil.Equals(t, hb.iso.lastAppendID, hb.iso.lowWatermark(), "High watermark should be equal to the low watermark")
+	testutil.Equals(t, hb.iso.lastAppendID(), hb.iso.lowWatermark(), "High watermark should be equal to the low watermark")
 }
 
 func TestOutOfOrderSamplesMetric(t *testing.T) {
