@@ -278,6 +278,12 @@ func main() {
 		os.Exit(2)
 	}
 
+	// Throw error for invalid config before starting other components.
+	if _, err := config.LoadFile(cfg.configFile); err != nil {
+		level.Error(logger).Log("msg", fmt.Sprintf("Error loading config (--config.file=%s)", cfg.configFile), "err", err)
+		os.Exit(2)
+	}
+
 	cfg.web.ReadTimeout = time.Duration(cfg.webTimeout)
 	// Default -web.route-prefix to path of -web.external-url.
 	if cfg.web.RoutePrefix == "" {
