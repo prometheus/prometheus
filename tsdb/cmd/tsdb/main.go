@@ -493,10 +493,10 @@ func analyzeBlock(b tsdb.BlockReader, limit int) error {
 		sort.Slice(postingInfos, func(i, j int) bool { return postingInfos[i].metric > postingInfos[j].metric })
 
 		for i, pc := range postingInfos {
-			fmt.Printf("%d %s\n", pc.metric, pc.key)
 			if i >= limit {
 				break
 			}
+			fmt.Printf("%d %s\n", pc.metric, pc.key)
 		}
 	}
 
