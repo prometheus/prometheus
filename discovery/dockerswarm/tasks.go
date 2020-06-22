@@ -48,29 +48,22 @@ func (d *Discovery) refreshTasks(ctx context.Context) ([]*targetgroup.Group, err
 		return nil, fmt.Errorf("error while listing swarm services: %w", err)
 	}
 
-	networkLabels := make(map[string]map[string]string, 1)
-	serviceLabels := make(map[string]map[string]string, 1)
-	servicePorts := make(map[string][]swarm.PortConfig, 1)
-	nodeLabels := make(map[string]map[string]string, 1)
+	serviceLabels, servicePorts, err := d.getServicesLabelsAndPorts(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("error while computing services labels and ports: %w", err)
+	}
+
+	nodeLabels, err := d.getNodesLabels(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("error while computing nodes labels and ports: %w", err)
+	}
+
+	networkLabels, err := d.getNetworksLabels(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("error while computing swarm network labels: %w", err)
+	}
 
 	for _, s := range tasks {
-		if _, ok := nodeLabels[s.NodeID]; !ok {
-			lbs, err := d.getNodeLabels(ctx, s.NodeID)
-			if err != nil {
-				return nil, fmt.Errorf("error while inspecting service %s: %w", s.NodeID, err)
-			}
-			nodeLabels[s.NodeID] = lbs
-		}
-
-		if _, ok := serviceLabels[s.ServiceID]; !ok {
-			lbs, ports, err := d.getServiceLabelsAndPorts(ctx, s.ServiceID)
-			if err != nil {
-				return nil, fmt.Errorf("error while inspecting service %s: %w", s.ServiceID, err)
-			}
-			serviceLabels[s.ServiceID] = lbs
-			servicePorts[s.ServiceID] = ports
-		}
-
 		commonLabels := map[string]string{
 			swarmLabelTaskID:           s.ID,
 			swarmLabelTaskDesiredState: string(s.DesiredState),
@@ -125,14 +118,6 @@ func (d *Discovery) refreshTasks(ctx context.Context) ([]*targetgroup.Group, err
 
 					for k, v := range commonLabels {
 						labels[model.LabelName(k)] = model.LabelValue(v)
-					}
-
-					if _, ok := networkLabels[network.Network.ID]; !ok {
-						lbs, err := d.getNetworkLabels(ctx, network.Network.ID)
-						if err != nil {
-							return nil, fmt.Errorf("error while inspecting network %s: %w", network.Network.ID, err)
-						}
-						networkLabels[network.Network.ID] = lbs
 					}
 
 					for k, v := range networkLabels[network.Network.ID] {

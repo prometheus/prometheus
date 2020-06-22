@@ -51,7 +51,10 @@ func (d *Discovery) refreshServices(ctx context.Context) ([]*targetgroup.Group, 
 		return nil, fmt.Errorf("error while listing swarm services: %w", err)
 	}
 
-	networkLabels := make(map[string]map[string]string, 1)
+	networkLabels, err := d.getNetworksLabels(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("error while computing swarm network labels: %w", err)
+	}
 
 	for _, s := range services {
 		for _, e := range s.Endpoint.Ports {
@@ -86,14 +89,6 @@ func (d *Discovery) refreshServices(ctx context.Context) ([]*targetgroup.Group, 
 				addr := net.JoinHostPort(ip.String(), strconv.FormatUint(uint64(e.PublishedPort), 10))
 				labels[model.AddressLabel] = model.LabelValue(addr)
 
-				if _, ok := networkLabels[p.NetworkID]; !ok {
-					lbs, err := d.getNetworkLabels(ctx, p.NetworkID)
-					if err != nil {
-						return nil, fmt.Errorf("error while inspecting network %s: %w", p.NetworkID, err)
-					}
-					networkLabels[p.NetworkID] = lbs
-				}
-
 				for k, v := range networkLabels[p.NetworkID] {
 					labels[model.LabelName(k)] = model.LabelValue(v)
 				}
@@ -105,24 +100,29 @@ func (d *Discovery) refreshServices(ctx context.Context) ([]*targetgroup.Group, 
 	return []*targetgroup.Group{tg}, nil
 }
 
-func (d *Discovery) getServiceLabelsAndPorts(ctx context.Context, serviceID string) (map[string]string, []swarm.PortConfig, error) {
-	s, _, err := d.client.ServiceInspectWithRaw(ctx, serviceID, types.ServiceInspectOptions{})
+func (d *Discovery) getServicesLabelsAndPorts(ctx context.Context) (map[string]map[string]string, map[string][]swarm.PortConfig, error) {
+	services, err := d.client.ServiceList(ctx, types.ServiceListOptions{})
 	if err != nil {
 		return nil, nil, err
 	}
-	labels := map[string]string{
-		swarmLabelServiceID:   s.ID,
-		swarmLabelServiceName: s.Spec.Name,
+	servicesLabels := make(map[string]map[string]string, len(services))
+	servicesPorts := make(map[string][]swarm.PortConfig, len(services))
+	for _, s := range services {
+		servicesLabels[s.ID] = map[string]string{
+			swarmLabelServiceID:   s.ID,
+			swarmLabelServiceName: s.Spec.Name,
+		}
+
+		servicesLabels[s.ID][swarmLabelServiceMode] = getServiceValueMode(s)
+
+		for k, v := range s.Spec.Labels {
+			ln := strutil.SanitizeLabelName(k)
+			servicesLabels[s.ID][swarmLabelServiceLabelPrefix+ln] = v
+		}
+		servicesPorts[s.ID] = s.Endpoint.Ports
 	}
 
-	labels[swarmLabelServiceMode] = getServiceValueMode(s)
-
-	for k, v := range s.Spec.Labels {
-		ln := strutil.SanitizeLabelName(k)
-		labels[swarmLabelServiceLabelPrefix+ln] = v
-	}
-
-	return labels, s.Endpoint.Ports, nil
+	return servicesLabels, servicesPorts, nil
 }
 
 func getServiceValueMode(s swarm.Service) string {

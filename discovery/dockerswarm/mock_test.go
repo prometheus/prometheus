@@ -14,6 +14,8 @@
 package dockerswarm
 
 import (
+	"crypto/sha1"
+	"encoding/base64"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -90,7 +92,14 @@ func (m *SDMock) SetupHandlers() {
 			if strings.HasSuffix(p, "/") {
 				f = filepath.Join(p[:len(p)-1], strutil.SanitizeLabelName(parts[len(parts)-1]))
 			} else {
-				f = strutil.SanitizeLabelName(parts[len(parts)-1])
+				query := strings.Split(parts[len(parts)-1], "?")
+				f = query[0]
+				if len(query) == 2 {
+					h := sha1.New()
+					h.Write([]byte(query[1]))
+					// Avoing long filenames for Windows.
+					f += "__" + base64.URLEncoding.EncodeToString(h.Sum(nil))[:10]
+				}
 			}
 			if response, err := ioutil.ReadFile(filepath.Join("testdata", m.directory, f+".json")); err == nil {
 				w.Header().Add("content-type", "application/json")

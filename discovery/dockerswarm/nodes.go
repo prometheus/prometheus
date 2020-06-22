@@ -85,24 +85,27 @@ func (d *Discovery) refreshNodes(ctx context.Context) ([]*targetgroup.Group, err
 	return []*targetgroup.Group{tg}, nil
 }
 
-func (d *Discovery) getNodeLabels(ctx context.Context, nodeID string) (map[string]string, error) {
-	n, _, err := d.client.NodeInspectWithRaw(ctx, nodeID)
+func (d *Discovery) getNodesLabels(ctx context.Context) (map[string]map[string]string, error) {
+	nodes, err := d.client.NodeList(ctx, types.NodeListOptions{})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error while listing swarm nodes: %w", err)
 	}
-	labels := map[string]string{
-		swarmLabelNodeID:                   n.ID,
-		swarmLabelNodeRole:                 string(n.Spec.Role),
-		swarmLabelNodeAddress:              n.Status.Addr,
-		swarmLabelNodeAvailability:         string(n.Spec.Availability),
-		swarmLabelNodeHostname:             n.Description.Hostname,
-		swarmLabelNodePlatformArchitecture: n.Description.Platform.Architecture,
-		swarmLabelNodePlatformOS:           n.Description.Platform.OS,
-		swarmLabelNodeStatus:               string(n.Status.State),
-	}
-	for k, v := range n.Spec.Labels {
-		ln := strutil.SanitizeLabelName(k)
-		labels[swarmLabelNodeLabelPrefix+ln] = v
+	labels := make(map[string]map[string]string, len(nodes))
+	for _, n := range nodes {
+		labels[n.ID] = map[string]string{
+			swarmLabelNodeID:                   n.ID,
+			swarmLabelNodeRole:                 string(n.Spec.Role),
+			swarmLabelNodeAddress:              n.Status.Addr,
+			swarmLabelNodeAvailability:         string(n.Spec.Availability),
+			swarmLabelNodeHostname:             n.Description.Hostname,
+			swarmLabelNodePlatformArchitecture: n.Description.Platform.Architecture,
+			swarmLabelNodePlatformOS:           n.Description.Platform.OS,
+			swarmLabelNodeStatus:               string(n.Status.State),
+		}
+		for k, v := range n.Spec.Labels {
+			ln := strutil.SanitizeLabelName(k)
+			labels[n.ID][swarmLabelNodeLabelPrefix+ln] = v
+		}
 	}
 	return labels, nil
 }

@@ -31,21 +31,25 @@ const (
 	swarmLabelNetworkLabelPrefix = swarmLabelNetworkPrefix + "label_"
 )
 
-func (d *Discovery) getNetworkLabels(ctx context.Context, networkID string) (map[string]string, error) {
-	network, err := d.client.NetworkInspect(ctx, networkID, types.NetworkInspectOptions{})
+func (d *Discovery) getNetworksLabels(ctx context.Context) (map[string]map[string]string, error) {
+	networks, err := d.client.NetworkList(ctx, types.NetworkListOptions{})
 	if err != nil {
 		return nil, err
 	}
-	labels := map[string]string{
-		swarmLabelNetworkID:       network.ID,
-		swarmLabelNetworkName:     network.Name,
-		swarmLabelNetworkScope:    network.Scope,
-		swarmLabelNetworkInternal: fmt.Sprintf("%t", network.Internal),
-		swarmLabelNetworkIngress:  fmt.Sprintf("%t", network.Ingress),
+	labels := make(map[string]map[string]string, len(networks))
+	for _, network := range networks {
+		labels[network.ID] = map[string]string{
+			swarmLabelNetworkID:       network.ID,
+			swarmLabelNetworkName:     network.Name,
+			swarmLabelNetworkScope:    network.Scope,
+			swarmLabelNetworkInternal: fmt.Sprintf("%t", network.Internal),
+			swarmLabelNetworkIngress:  fmt.Sprintf("%t", network.Ingress),
+		}
+		for k, v := range network.Labels {
+			ln := strutil.SanitizeLabelName(k)
+			labels[network.ID][swarmLabelNetworkLabelPrefix+ln] = v
+		}
 	}
-	for k, v := range network.Labels {
-		ln := strutil.SanitizeLabelName(k)
-		labels[swarmLabelNetworkLabelPrefix+ln] = v
-	}
+
 	return labels, nil
 }
