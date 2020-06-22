@@ -81,8 +81,6 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	default:
 		return fmt.Errorf("invalid kind %s, expected tasks, services, or nodes", c.Kind)
 	}
-	if _, ok := (map[string]struct{}{"services": {}, "nodes": {}, "tasks": {}})[c.Kind]; !ok {
-	}
 	return nil
 }
 
