@@ -2719,6 +2719,42 @@ func TestTSDBStatus(t *testing.T) {
 	}
 }
 
+func TestReturnAPIError(t *testing.T) {
+	cases := []struct {
+		err error
+		expected errorType
+	}{
+		{
+			err: promql.ErrStorage{Err: errors.New("storage error")},
+			expected: errorInternal,
+		},{
+			err: errors.Wrap(promql.ErrStorage{Err: errors.New("storage error")}, "wrapped"),
+			expected: errorInternal,
+		},{
+			err: promql.ErrQueryTimeout("timeout error"),
+			expected: errorTimeout,
+		},{
+			err: errors.Wrap(promql.ErrQueryTimeout("timeout error"), "wrapped"),
+			expected: errorTimeout,
+		},{
+			err: promql.ErrQueryCanceled("canceled error"),
+			expected: errorCanceled,
+		},{
+			err: errors.Wrap(promql.ErrQueryCanceled("canceled error"), "wrapped"),
+			expected: errorCanceled,
+		},{
+			err: errors.New("exec error"),
+			expected: errorExec,
+		},
+	}
+
+	for _, c := range cases {
+		actual := returnAPIError(c.err)
+		testutil.NotOk(t, actual)
+		testutil.Equals(t, c.expected, actual.typ)
+	}
+}
+
 // This is a global to avoid the benchmark being optimized away.
 var testResponseWriter = httptest.ResponseRecorder{}
 

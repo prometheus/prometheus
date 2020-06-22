@@ -469,13 +469,16 @@ func returnAPIError(err error) *apiError {
 		return nil
 	}
 
-	switch err.(type) {
-	case promql.ErrQueryCanceled:
-		return &apiError{errorCanceled, err}
-	case promql.ErrQueryTimeout:
-		return &apiError{errorTimeout, err}
-	case promql.ErrStorage:
-		return &apiError{errorInternal, err}
+	// The error may have been wrapped, so we should also check the parent ones.
+	for cause := err; cause != nil; cause = errors.Unwrap(cause) {
+		switch cause.(type) {
+		case promql.ErrQueryCanceled:
+			return &apiError{errorCanceled, cause}
+		case promql.ErrQueryTimeout:
+			return &apiError{errorTimeout, cause}
+		case promql.ErrStorage:
+			return &apiError{errorInternal, cause}
+		}
 	}
 
 	return &apiError{errorExec, err}
