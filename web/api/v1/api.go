@@ -469,7 +469,7 @@ func returnAPIError(err error) *apiError {
 		return nil
 	}
 
-	switch err.(type) {
+	switch errors.Cause(err).(type) {
 	case promql.ErrQueryCanceled:
 		return &apiError{errorCanceled, err}
 	case promql.ErrQueryTimeout:
