@@ -1193,7 +1193,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 				},
 			},
 			response: map[string][]metadata{
-				"go_threads": []metadata{
+				"go_threads": {
 					{textparse.MetricTypeGauge, "Number of OS threads created", ""},
 					{textparse.MetricTypeGauge, "Number of OS threads that were created.", ""},
 				},
@@ -1279,7 +1279,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 				},
 			},
 			response: map[string][]metadata{
-				"go_threads": []metadata{
+				"go_threads": {
 					{textparse.MetricTypeGauge, "Number of OS threads created", ""},
 					{textparse.MetricTypeGauge, "Number of OS threads that were created.", ""},
 				},
@@ -2721,29 +2721,29 @@ func TestTSDBStatus(t *testing.T) {
 
 func TestReturnAPIError(t *testing.T) {
 	cases := []struct {
-		err error
+		err      error
 		expected errorType
 	}{
 		{
-			err: promql.ErrStorage{Err: errors.New("storage error")},
+			err:      promql.ErrStorage{Err: errors.New("storage error")},
 			expected: errorInternal,
-		},{
-			err: errors.Wrap(promql.ErrStorage{Err: errors.New("storage error")}, "wrapped"),
+		}, {
+			err:      errors.Wrap(promql.ErrStorage{Err: errors.New("storage error")}, "wrapped"),
 			expected: errorInternal,
-		},{
-			err: promql.ErrQueryTimeout("timeout error"),
+		}, {
+			err:      promql.ErrQueryTimeout("timeout error"),
 			expected: errorTimeout,
-		},{
-			err: errors.Wrap(promql.ErrQueryTimeout("timeout error"), "wrapped"),
+		}, {
+			err:      errors.Wrap(promql.ErrQueryTimeout("timeout error"), "wrapped"),
 			expected: errorTimeout,
-		},{
-			err: promql.ErrQueryCanceled("canceled error"),
+		}, {
+			err:      promql.ErrQueryCanceled("canceled error"),
 			expected: errorCanceled,
-		},{
-			err: errors.Wrap(promql.ErrQueryCanceled("canceled error"), "wrapped"),
+		}, {
+			err:      errors.Wrap(promql.ErrQueryCanceled("canceled error"), "wrapped"),
 			expected: errorCanceled,
-		},{
-			err: errors.New("exec error"),
+		}, {
+			err:      errors.New("exec error"),
 			expected: errorExec,
 		},
 	}
