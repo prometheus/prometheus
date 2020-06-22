@@ -14,7 +14,7 @@ import {
   encodePanelOptionsToQueryString,
   parseOption,
   decodePanelOptionsFromQueryString,
-  convertSCToNumber,
+  convertScientificNotationToNumber,
 } from '.';
 import { PanelType } from '../pages/graph/Panel';
 
@@ -239,21 +239,21 @@ describe('Utils', () => {
       });
     });
 
-    describe('convertSCToNumber', () => {
+    describe('convertScientificNotationToNumber', () => {
       it('returns Inf when param is Inf', () => {
-        expect(convertSCToNumber('Inf')).toEqual('Inf');
+        expect(convertScientificNotationToNumber('Inf')).toEqual('Inf');
       });
       it('returns +Inf when param is +Inf', () => {
-        expect(convertSCToNumber('+Inf')).toEqual('+Inf');
+        expect(convertScientificNotationToNumber('+Inf')).toEqual('+Inf');
       });
       it('returns -Inf when param is -Inf', () => {
-        expect(convertSCToNumber('-Inf')).toEqual('-Inf');
+        expect(convertScientificNotationToNumber('-Inf')).toEqual('-Inf');
       });
       it('returns 17 when param is 1.7e+01', () => {
-        expect(convertSCToNumber('1.7e+01')).toEqual(17);
+        expect(convertScientificNotationToNumber('1.7e+01')).toEqual(17);
       });
       it('returns -17 when param is -1.7e+01', () => {
-        expect(convertSCToNumber('-1.7e+01')).toEqual(-17);
+        expect(convertScientificNotationToNumber('-1.7e+01')).toEqual(-17);
       });
     });
   });
