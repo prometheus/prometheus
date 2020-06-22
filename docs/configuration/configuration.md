@@ -467,7 +467,7 @@ Available meta labels:
 * `__meta_dockerswarm_service_mode`: the mode of the service
 * `__meta_dockerswarm_service_endpoint_port_name`: the name of the endpoint port, if available
 * `__meta_dockerswarm_service_endpoint_port_publish_mode`: the publish mode of the endpoint port
-* `__meta_dockerswarm_service_label_`: each label of the service
+* `__meta_dockerswarm_service_label_<labelname>`: each label of the service
 * `__meta_dockerswarm_service_task_container_hostname`: the container hostname of the target, if available
 * `__meta_dockerswarm_service_task_container_image`: the container image of the target
 * `__meta_dockerswarm_service_updating_status`: the status of the service, if available
@@ -475,7 +475,7 @@ Available meta labels:
 * `__meta_dockerswarm_network_name`: the name of the network
 * `__meta_dockerswarm_network_ingress`: whether the network is ingress
 * `__meta_dockerswarm_network_internal`: whether the network is internal
-* `__meta_dockerswarm_network_label_`: each label of the network
+* `__meta_dockerswarm_network_label_<labelname>`: each label of the network
 * `__meta_dockerswarm_network_scope`: the scope of the network
 
 #### `tasks`
@@ -487,26 +487,26 @@ Available meta labels:
 * `__meta_dockerswarm_task_id`: the id of the task
 * `__meta_dockerswarm_task_container_id`: the container id of the task
 * `__meta_dockerswarm_task_desired_state`: the desired state of the task
-* `__meta_dockerswarm_task_label_`: each label of the task
+* `__meta_dockerswarm_task_label_<labelname>`: each label of the task
 * `__meta_dockerswarm_task_slot`: the slot of the task
 * `__meta_dockerswarm_task_state`: the state of the task
 * `__meta_dockerswarm_task_port_publish_mode`: the publish node of the task port
 * `__meta_dockerswarm_service_id`: the id of the service
 * `__meta_dockerswarm_service_name`: the name of the service
 * `__meta_dockerswarm_service_mode`: the mode of the service
-* `__meta_dockerswarm_service_label_`: each label of the service
+* `__meta_dockerswarm_service_label_<labelname>`: each label of the service
 * `__meta_dockerswarm_network_id`: the ID of the network
 * `__meta_dockerswarm_network_name`: the name of the network
 * `__meta_dockerswarm_network_ingress`: whether the network is ingress
 * `__meta_dockerswarm_network_internal`: whether the network is internal
-* `__meta_dockerswarm_network_label_`: each label of the network
+* `__meta_dockerswarm_network_label_<labelname>`: each label of the network
 * `__meta_dockerswarm_network_label`: each label of the network
 * `__meta_dockerswarm_network_scope`: the scope of the network
 * `__meta_dockerswarm_node_id`: the ID of the node
 * `__meta_dockerswarm_node_hostname`: the hostname of the node
 * `__meta_dockerswarm_node_address`: the address of the node
 * `__meta_dockerswarm_node_availability`: the availability of the node
-* `__meta_dockerswarm_node_label_`: each label of the node
+* `__meta_dockerswarm_node_label_<labelname>`: each label of the node
 * `__meta_dockerswarm_node_platform_architecture`: the architecture of the node
 * `__meta_dockerswarm_node_platform_os`: the operating system of the node
 * `__meta_dockerswarm_node_role`: the role of the node
@@ -526,7 +526,7 @@ Available meta labels:
 * `__meta_dockerswarm_node_engine_version`: the version of the node engine
 * `__meta_dockerswarm_node_hostname`: the hostname of the node
 * `__meta_dockerswarm_node_id`: the ID of the node
-* `__meta_dockerswarm_node_label_`: each label of the node
+* `__meta_dockerswarm_node_label_<labelname>`: each label of the node
 * `__meta_dockerswarm_node_manager_address`: the address of the manager component of the node
 * `__meta_dockerswarm_node_manager_leader`: the leadership status of the manager component of the node (true or false)
 * `__meta_dockerswarm_node_manager_reachability`: the reachability of the manager component of the node
@@ -853,7 +853,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 
 * `__meta_gce_instance_id`: the numeric id of the instance
 * `__meta_gce_instance_name`: the name of the instance
-* `__meta_gce_label_<name>`: each GCE label of the instance
+* `__meta_gce_label_<labelname>`: each GCE label of the instance
 * `__meta_gce_machine_type`: full or partial URL of the machine type of the instance
 * `__meta_gce_metadata_<name>`: each metadata item of the instance
 * `__meta_gce_network`: the network URL of the instance
