@@ -37,8 +37,6 @@ const (
 // DefaultSDConfig is the default Docker Swarm SD configuration.
 var DefaultSDConfig = SDConfig{
 	RefreshInterval: model.Duration(60 * time.Second),
-	Host:            "http://127.0.0.1:2375/",
-	Kind:            "services",
 	Port:            80,
 }
 
@@ -68,13 +66,22 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
+	if c.Host == "" {
+		return fmt.Errorf("host missing")
+	}
 	url, err := url.Parse(c.Host)
 	if err != nil {
 		return err
 	}
 	c.url = url
+	switch c.Kind {
+	case "services", "nodes", "tasks":
+	case "":
+		return fmt.Errorf("kind missing (one of: tasks, services, nodes)")
+	default:
+		return fmt.Errorf("invalid kind %s, expected tasks, services, or nodes", c.Kind)
+	}
 	if _, ok := (map[string]struct{}{"services": {}, "nodes": {}, "tasks": {}})[c.Kind]; !ok {
-		return fmt.Errorf("invalid kind %s, expected services or nodes", c.Kind)
 	}
 	return nil
 }
@@ -100,7 +107,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 		return nil, err
 	}
 
-	// This is used in tests. In normal situation, it is set when Unmarshaling.
+	// This is used in tests. In normal situations, it is set when Unmarshaling.
 	if conf.url == nil {
 		conf.url, err = url.Parse(conf.Host)
 		if err != nil {

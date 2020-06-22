@@ -39,9 +39,6 @@ const (
 	swarmLabelServiceTaskPrefix              = swarmLabelServicePrefix + "task_"
 	swarmLabelServiceTaskContainerImage      = swarmLabelServiceTaskPrefix + "container_image"
 	swarmLabelServiceTaskContainerHostname   = swarmLabelServiceTaskPrefix + "container_hostname"
-
-	swarmLabelValueModeGlobal     = model.LabelValue("global")
-	swarmLabelValueModeReplicated = model.LabelValue("replicated")
 )
 
 func (d *Discovery) refreshServices(ctx context.Context) ([]*targetgroup.Group, error) {
@@ -54,7 +51,7 @@ func (d *Discovery) refreshServices(ctx context.Context) ([]*targetgroup.Group, 
 		return nil, fmt.Errorf("error while listing swarm services: %w", err)
 	}
 
-	networkLabels := make(map[string]model.LabelSet, 1)
+	networkLabels := make(map[string]map[string]string, 1)
 
 	for _, s := range services {
 		for _, e := range s.Endpoint.Ports {
@@ -66,11 +63,12 @@ func (d *Discovery) refreshServices(ctx context.Context) ([]*targetgroup.Group, 
 					swarmLabelServiceEndpointPortName:        model.LabelValue(e.Name),
 					swarmLabelServiceEndpointPortPublishMode: model.LabelValue(e.PublishMode),
 					swarmLabelServiceID:                      model.LabelValue(s.ID),
-					swarmLabelServiceMode:                    getServiceValueMode(s),
 					swarmLabelServiceName:                    model.LabelValue(s.Spec.Name),
 					swarmLabelServiceTaskContainerHostname:   model.LabelValue(s.Spec.TaskTemplate.ContainerSpec.Hostname),
 					swarmLabelServiceTaskContainerImage:      model.LabelValue(s.Spec.TaskTemplate.ContainerSpec.Image),
 				}
+
+				labels[swarmLabelServiceMode] = model.LabelValue(getServiceValueMode(s))
 
 				if s.UpdateStatus != nil {
 					labels[swarmLabelServiceUpdatingStatus] = model.LabelValue(s.UpdateStatus.State)
@@ -97,7 +95,7 @@ func (d *Discovery) refreshServices(ctx context.Context) ([]*targetgroup.Group, 
 				}
 
 				for k, v := range networkLabels[p.NetworkID] {
-					labels[k] = v
+					labels[model.LabelName(k)] = model.LabelValue(v)
 				}
 
 				tg.Targets = append(tg.Targets, labels)
@@ -107,30 +105,32 @@ func (d *Discovery) refreshServices(ctx context.Context) ([]*targetgroup.Group, 
 	return []*targetgroup.Group{tg}, nil
 }
 
-func (d *Discovery) getServiceLabelsAndPorts(ctx context.Context, serviceID string) (model.LabelSet, []swarm.PortConfig, error) {
+func (d *Discovery) getServiceLabelsAndPorts(ctx context.Context, serviceID string) (map[string]string, []swarm.PortConfig, error) {
 	s, _, err := d.client.ServiceInspectWithRaw(ctx, serviceID, types.ServiceInspectOptions{})
 	if err != nil {
 		return nil, nil, err
 	}
-	labels := model.LabelSet{
-		swarmLabelServiceID:   model.LabelValue(s.ID),
-		swarmLabelServiceName: model.LabelValue(s.Spec.Name),
-		swarmLabelServiceMode: getServiceValueMode(s),
+	labels := map[string]string{
+		swarmLabelServiceID:   s.ID,
+		swarmLabelServiceName: s.Spec.Name,
 	}
+
+	labels[swarmLabelServiceMode] = getServiceValueMode(s)
+
 	for k, v := range s.Spec.Labels {
 		ln := strutil.SanitizeLabelName(k)
-		labels[model.LabelName(swarmLabelServiceLabelPrefix+ln)] = model.LabelValue(v)
+		labels[swarmLabelServiceLabelPrefix+ln] = v
 	}
 
 	return labels, s.Endpoint.Ports, nil
 }
 
-func getServiceValueMode(s swarm.Service) model.LabelValue {
+func getServiceValueMode(s swarm.Service) string {
 	if s.Spec.Mode.Global != nil {
-		return swarmLabelValueModeGlobal
+		return "global"
 	}
 	if s.Spec.Mode.Replicated != nil {
-		return swarmLabelValueModeReplicated
+		return "replicated"
 	}
-	return model.LabelValue("")
+	return ""
 }

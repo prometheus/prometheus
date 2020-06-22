@@ -539,7 +539,7 @@ See below for the configuration options for Docker Swarm discovery:
 
 ```yaml
 # Address of the Docker daemon. Docker Swarm supports http and https protocol.
-[ host: <string> | default = http://127.0.0.1:2375/ ]
+host: <string>
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
@@ -549,7 +549,7 @@ tls_config:
   [ <tls_config> ]
 
 # Kind of the targets to retrieve.
-[ kind: <swarm_kind> | default = services ]
+kind: <swarm_kind>
 
 # Optional filters to limit the discovery process to a subset of available resources. 
 

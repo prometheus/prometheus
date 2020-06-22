@@ -66,7 +66,7 @@ func (d *Discovery) refreshNodes(ctx context.Context) ([]*targetgroup.Group, err
 			swarmLabelNodeAddress:              model.LabelValue(n.Status.Addr),
 		}
 		if n.ManagerStatus != nil {
-			labels[model.LabelName(swarmLabelNodeManagerLeader)] = model.LabelValue(fmt.Sprintf("%v", n.ManagerStatus.Leader))
+			labels[model.LabelName(swarmLabelNodeManagerLeader)] = model.LabelValue(fmt.Sprintf("%t", n.ManagerStatus.Leader))
 			labels[model.LabelName(swarmLabelNodeManagerReachability)] = model.LabelValue(n.ManagerStatus.Reachability)
 			labels[model.LabelName(swarmLabelNodeManagerAddr)] = model.LabelValue(n.ManagerStatus.Addr)
 		}
@@ -85,24 +85,24 @@ func (d *Discovery) refreshNodes(ctx context.Context) ([]*targetgroup.Group, err
 	return []*targetgroup.Group{tg}, nil
 }
 
-func (d *Discovery) getNodeLabels(ctx context.Context, nodeID string) (model.LabelSet, error) {
+func (d *Discovery) getNodeLabels(ctx context.Context, nodeID string) (map[string]string, error) {
 	n, _, err := d.client.NodeInspectWithRaw(ctx, nodeID)
 	if err != nil {
 		return nil, err
 	}
-	labels := model.LabelSet{
-		swarmLabelNodeID:                   model.LabelValue(n.ID),
-		swarmLabelNodeRole:                 model.LabelValue(n.Spec.Role),
-		swarmLabelNodeAddress:              model.LabelValue(n.Status.Addr),
-		swarmLabelNodeAvailability:         model.LabelValue(n.Spec.Availability),
-		swarmLabelNodeHostname:             model.LabelValue(n.Description.Hostname),
-		swarmLabelNodePlatformArchitecture: model.LabelValue(n.Description.Platform.Architecture),
-		swarmLabelNodePlatformOS:           model.LabelValue(n.Description.Platform.OS),
-		swarmLabelNodeStatus:               model.LabelValue(n.Status.State),
+	labels := map[string]string{
+		swarmLabelNodeID:                   n.ID,
+		swarmLabelNodeRole:                 string(n.Spec.Role),
+		swarmLabelNodeAddress:              n.Status.Addr,
+		swarmLabelNodeAvailability:         string(n.Spec.Availability),
+		swarmLabelNodeHostname:             n.Description.Hostname,
+		swarmLabelNodePlatformArchitecture: n.Description.Platform.Architecture,
+		swarmLabelNodePlatformOS:           n.Description.Platform.OS,
+		swarmLabelNodeStatus:               string(n.Status.State),
 	}
 	for k, v := range n.Spec.Labels {
 		ln := strutil.SanitizeLabelName(k)
-		labels[model.LabelName(swarmLabelNodeLabelPrefix+ln)] = model.LabelValue(v)
+		labels[swarmLabelNodeLabelPrefix+ln] = v
 	}
 	return labels, nil
 }

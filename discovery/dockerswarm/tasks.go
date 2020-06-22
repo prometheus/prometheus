@@ -48,10 +48,10 @@ func (d *Discovery) refreshTasks(ctx context.Context) ([]*targetgroup.Group, err
 		return nil, fmt.Errorf("error while listing swarm services: %w", err)
 	}
 
-	networkLabels := make(map[string]model.LabelSet, 1)
-	serviceLabels := make(map[string]model.LabelSet, 1)
+	networkLabels := make(map[string]map[string]string, 1)
+	serviceLabels := make(map[string]map[string]string, 1)
 	servicePorts := make(map[string][]swarm.PortConfig, 1)
-	nodeLabels := make(map[string]model.LabelSet, 1)
+	nodeLabels := make(map[string]map[string]string, 1)
 
 	for _, s := range tasks {
 		if _, ok := nodeLabels[s.NodeID]; !ok {
@@ -71,20 +71,20 @@ func (d *Discovery) refreshTasks(ctx context.Context) ([]*targetgroup.Group, err
 			servicePorts[s.ServiceID] = ports
 		}
 
-		commonLabels := model.LabelSet{
-			model.LabelName(swarmLabelTaskID):           model.LabelValue(s.ID),
-			model.LabelName(swarmLabelTaskDesiredState): model.LabelValue(s.DesiredState),
-			model.LabelName(swarmLabelTaskStatus):       model.LabelValue(s.Status.State),
-			model.LabelName(swarmLabelTaskSlot):         model.LabelValue(fmt.Sprintf("%v", s.Slot)),
+		commonLabels := map[string]string{
+			swarmLabelTaskID:           s.ID,
+			swarmLabelTaskDesiredState: string(s.DesiredState),
+			swarmLabelTaskStatus:       string(s.Status.State),
+			swarmLabelTaskSlot:         strconv.FormatInt(int64(s.Slot), 10),
 		}
 
 		if s.Status.ContainerStatus != nil {
-			commonLabels[model.LabelName(swarmLabelTaskContainerID)] = model.LabelValue(s.Status.ContainerStatus.ContainerID)
+			commonLabels[swarmLabelTaskContainerID] = s.Status.ContainerStatus.ContainerID
 		}
 
 		for k, v := range s.Labels {
 			ln := strutil.SanitizeLabelName(k)
-			commonLabels[model.LabelName(swarmLabelTaskLabelPrefix+ln)] = model.LabelValue(v)
+			commonLabels[swarmLabelTaskLabelPrefix+ln] = v
 		}
 
 		for k, v := range serviceLabels[s.ServiceID] {
@@ -105,21 +105,12 @@ func (d *Discovery) refreshTasks(ctx context.Context) ([]*targetgroup.Group, err
 			}
 
 			for k, v := range commonLabels {
-				labels[k] = v
-			}
-
-			for k, v := range serviceLabels[s.ServiceID] {
-				labels[k] = v
-			}
-
-			for k, v := range nodeLabels[s.NodeID] {
-				labels[k] = v
+				labels[model.LabelName(k)] = model.LabelValue(v)
 			}
 
 			addr := net.JoinHostPort(string(labels[swarmLabelNodeAddress]), strconv.FormatUint(uint64(p.PublishedPort), 10))
 			labels[model.AddressLabel] = model.LabelValue(addr)
 			tg.Targets = append(tg.Targets, labels)
-			continue
 		}
 
 		for _, p := range servicePorts[s.ServiceID] {
@@ -133,7 +124,7 @@ func (d *Discovery) refreshTasks(ctx context.Context) ([]*targetgroup.Group, err
 					}
 
 					for k, v := range commonLabels {
-						labels[k] = v
+						labels[model.LabelName(k)] = model.LabelValue(v)
 					}
 
 					if _, ok := networkLabels[network.Network.ID]; !ok {
@@ -145,7 +136,7 @@ func (d *Discovery) refreshTasks(ctx context.Context) ([]*targetgroup.Group, err
 					}
 
 					for k, v := range networkLabels[network.Network.ID] {
-						labels[k] = v
+						labels[model.LabelName(k)] = model.LabelValue(v)
 					}
 
 					ip, _, err := net.ParseCIDR(address)

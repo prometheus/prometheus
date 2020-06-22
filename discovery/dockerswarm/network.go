@@ -18,7 +18,6 @@ import (
 	"fmt"
 
 	"github.com/docker/docker/api/types"
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/util/strutil"
 )
 
@@ -32,21 +31,21 @@ const (
 	swarmLabelNetworkLabelPrefix = swarmLabelNetworkPrefix + "label_"
 )
 
-func (d *Discovery) getNetworkLabels(ctx context.Context, networkID string) (model.LabelSet, error) {
+func (d *Discovery) getNetworkLabels(ctx context.Context, networkID string) (map[string]string, error) {
 	network, err := d.client.NetworkInspect(ctx, networkID, types.NetworkInspectOptions{})
 	if err != nil {
 		return nil, err
 	}
-	labels := model.LabelSet{
-		swarmLabelNetworkID:       model.LabelValue(network.ID),
-		swarmLabelNetworkName:     model.LabelValue(network.Name),
-		swarmLabelNetworkScope:    model.LabelValue(network.Scope),
-		swarmLabelNetworkInternal: model.LabelValue(fmt.Sprintf("%t", network.Internal)),
-		swarmLabelNetworkIngress:  model.LabelValue(fmt.Sprintf("%t", network.Ingress)),
+	labels := map[string]string{
+		swarmLabelNetworkID:       network.ID,
+		swarmLabelNetworkName:     network.Name,
+		swarmLabelNetworkScope:    network.Scope,
+		swarmLabelNetworkInternal: fmt.Sprintf("%t", network.Internal),
+		swarmLabelNetworkIngress:  fmt.Sprintf("%t", network.Ingress),
 	}
 	for k, v := range network.Labels {
 		ln := strutil.SanitizeLabelName(k)
-		labels[model.LabelName(swarmLabelNetworkLabelPrefix+ln)] = model.LabelValue(v)
+		labels[swarmLabelNetworkLabelPrefix+ln] = v
 	}
 	return labels, nil
 }
