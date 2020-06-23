@@ -1330,10 +1330,8 @@ func (db *DB) Snapshot(dir string, withHead bool) error {
 }
 
 // Querier returns a new querier over the data partition for the given time range.
-// A goroutine must not handle more than one open Querier.
 func (db *DB) Querier(_ context.Context, mint, maxt int64) (storage.Querier, error) {
 	var blocks []BlockReader
-	var blockMetas []BlockMeta
 
 	db.mtx.RLock()
 	defer db.mtx.RUnlock()
@@ -1341,7 +1339,6 @@ func (db *DB) Querier(_ context.Context, mint, maxt int64) (storage.Querier, err
 	for _, b := range db.blocks {
 		if b.OverlapsClosedInterval(mint, maxt) {
 			blocks = append(blocks, b)
-			blockMetas = append(blockMetas, b.Meta())
 		}
 	}
 	if maxt >= db.head.MinTime() {
@@ -1361,27 +1358,51 @@ func (db *DB) Querier(_ context.Context, mint, maxt int64) (storage.Querier, err
 		}
 		// If we fail, all previously opened queriers must be closed.
 		for _, q := range blockQueriers {
-			q.Close()
+			// TODO(bwplotka): Handle error.
+			_ = q.Close()
 		}
 		return nil, errors.Wrapf(err, "open querier for block %s", b)
 	}
 
-	if len(OverlappingBlocks(blockMetas)) > 0 {
-		return &verticalQuerier{
-			querier: querier{
-				blocks: blockQueriers,
-			},
-		}, nil
-	}
-
-	return &querier{
-		blocks: blockQueriers,
-	}, nil
+	return storage.NewMergeQuerier(blockQueriers, nil, storage.ChainedSeriesMerge), nil
 }
 
-func (db *DB) ChunkQuerier(context.Context, int64, int64) (storage.ChunkQuerier, error) {
-	// TODO(bwplotka): Implement in next PR.
-	return nil, errors.New("not implemented")
+// ChunkQuerier returns a new chunk querier over the data partition for the given time range.
+func (db *DB) ChunkQuerier(_ context.Context, mint, maxt int64) (storage.ChunkQuerier, error) {
+	var blocks []BlockReader
+
+	db.mtx.RLock()
+	defer db.mtx.RUnlock()
+
+	for _, b := range db.blocks {
+		if b.OverlapsClosedInterval(mint, maxt) {
+			blocks = append(blocks, b)
+		}
+	}
+	if maxt >= db.head.MinTime() {
+		blocks = append(blocks, &RangeHead{
+			head: db.head,
+			mint: mint,
+			maxt: maxt,
+		})
+	}
+
+	blockQueriers := make([]storage.ChunkQuerier, 0, len(blocks))
+	for _, b := range blocks {
+		q, err := NewBlockChunkQuerier(b, mint, maxt)
+		if err == nil {
+			blockQueriers = append(blockQueriers, q)
+			continue
+		}
+		// If we fail, all previously opened queriers must be closed.
+		for _, q := range blockQueriers {
+			// TODO(bwplotka): Handle error.
+			_ = q.Close()
+		}
+		return nil, errors.Wrapf(err, "open querier for block %s", b)
+	}
+
+	return storage.NewMergeChunkQuerier(blockQueriers, nil, storage.NewCompactingChunkSeriesMerger(storage.ChainedSeriesMerge)), nil
 }
 
 func rangeForTimestamp(t int64, width int64) (maxt int64) {

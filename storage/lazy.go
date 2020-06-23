@@ -13,37 +13,37 @@
 
 package storage
 
-type lazySeriesSet struct {
-	create func() (s genericSeriesSet, ok bool)
+// lazyGenericSeriesSet is a wrapped series set that is initialised on first call to Next().
+type lazyGenericSeriesSet struct {
+	init func() (genericSeriesSet, bool)
 
 	set genericSeriesSet
 }
 
-func (c *lazySeriesSet) Next() bool {
+func (c *lazyGenericSeriesSet) Next() bool {
 	if c.set != nil {
 		return c.set.Next()
 	}
-
 	var ok bool
-	c.set, ok = c.create()
+	c.set, ok = c.init()
 	return ok
 }
 
-func (c *lazySeriesSet) Err() error {
+func (c *lazyGenericSeriesSet) Err() error {
 	if c.set != nil {
 		return c.set.Err()
 	}
 	return nil
 }
 
-func (c *lazySeriesSet) At() Labels {
+func (c *lazyGenericSeriesSet) At() Labels {
 	if c.set != nil {
 		return c.set.At()
 	}
 	return nil
 }
 
-func (c *lazySeriesSet) Warnings() Warnings {
+func (c *lazyGenericSeriesSet) Warnings() Warnings {
 	if c.set != nil {
 		return c.set.Warnings()
 	}

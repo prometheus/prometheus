@@ -28,35 +28,6 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
-func TestMergeStringSlices(t *testing.T) {
-	for _, tc := range []struct {
-		input    [][]string
-		expected []string
-	}{
-		{},
-		{[][]string{{"foo"}}, []string{"foo"}},
-		{[][]string{{"foo"}, {"bar"}}, []string{"bar", "foo"}},
-		{[][]string{{"foo"}, {"bar"}, {"baz"}}, []string{"bar", "baz", "foo"}},
-	} {
-		testutil.Equals(t, tc.expected, mergeStringSlices(tc.input))
-	}
-}
-
-func TestMergeTwoStringSlices(t *testing.T) {
-	for _, tc := range []struct {
-		a, b, expected []string
-	}{
-		{[]string{}, []string{}, []string{}},
-		{[]string{"foo"}, nil, []string{"foo"}},
-		{nil, []string{"bar"}, []string{"bar"}},
-		{[]string{"foo"}, []string{"bar"}, []string{"bar", "foo"}},
-		{[]string{"foo"}, []string{"bar", "baz"}, []string{"bar", "baz", "foo"}},
-		{[]string{"foo"}, []string{"foo"}, []string{"foo"}},
-	} {
-		testutil.Equals(t, tc.expected, mergeTwoStringSlices(tc.a, tc.b))
-	}
-}
-
 func TestMergeQuerierWithChainMerger(t *testing.T) {
 	for _, tc := range []struct {
 		name                 string
@@ -215,7 +186,7 @@ func TestMergeQuerierWithChainMerger(t *testing.T) {
 			}
 			qs = append(qs, tc.extraQueriers...)
 
-			mergedQuerier := NewMergeQuerier(p, qs, ChainedSeriesMerge).Select(false, nil)
+			mergedQuerier := NewMergeQuerier([]Querier{p}, qs, ChainedSeriesMerge).Select(false, nil)
 
 			// Get all merged series upfront to make sure there are no incorrectly retained shared
 			// buffers causing bugs.
@@ -391,7 +362,7 @@ func TestMergeChunkQuerierWithNoVerticalChunkSeriesMerger(t *testing.T) {
 			}
 			qs = append(qs, tc.extraQueriers...)
 
-			merged := NewMergeChunkQuerier(p, qs, NewCompactingChunkSeriesMerger(nil)).Select(false, nil)
+			merged := NewMergeChunkQuerier([]ChunkQuerier{p}, qs, NewCompactingChunkSeriesMerger(nil)).Select(false, nil)
 			for merged.Next() {
 				testutil.Assert(t, tc.expected.Next(), "Expected Next() to be true")
 				actualSeries := merged.At()

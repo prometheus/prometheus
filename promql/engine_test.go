@@ -1062,7 +1062,6 @@ func TestSubquerySelector(t *testing.T) {
 					testutil.Ok(t, err)
 
 					res := qry.Exec(test.Context())
-
 					testutil.Equals(t, c.Result.Err, res.Err)
 					mat := res.Value.(Matrix)
 					sort.Sort(mat)

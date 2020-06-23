@@ -179,7 +179,7 @@ func TestCorruptedChunk(t *testing.T) {
 				testutil.Ok(t, os.RemoveAll(tmpdir))
 			}()
 
-			series := newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{sample{1, 1}})
+			series := storage.NewListSeries(labels.FromStrings("a", "b"), []tsdbutil.Sample{sample{1, 1}})
 			blockDir := createBlock(t, tmpdir, []storage.Series{series})
 			files, err := sequenceFiles(chunkDir(blockDir))
 			testutil.Ok(t, err)
@@ -373,7 +373,7 @@ func genSeries(totalSeries, labelCount int, mint, maxt int64) []storage.Series {
 		for t := mint; t < maxt; t++ {
 			samples = append(samples, sample{t: t, v: rand.Float64()})
 		}
-		series[i] = newSeries(lbls, samples)
+		series[i] = storage.NewListSeries(labels.FromMap(lbls), samples)
 	}
 	return series
 }
@@ -393,7 +393,7 @@ func populateSeries(lbls []map[string]string, mint, maxt int64) []storage.Series
 		for t := mint; t <= maxt; t++ {
 			samples = append(samples, sample{t: t, v: rand.Float64()})
 		}
-		series = append(series, newSeries(lbl, samples))
+		series = append(series, storage.NewListSeries(labels.FromMap(lbl), samples))
 	}
 	return series
 }

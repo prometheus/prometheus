@@ -16,7 +16,9 @@
 
 package storage
 
-import "github.com/prometheus/prometheus/pkg/labels"
+import (
+	"github.com/prometheus/prometheus/pkg/labels"
+)
 
 type genericQuerier interface {
 	LabelQuerier
