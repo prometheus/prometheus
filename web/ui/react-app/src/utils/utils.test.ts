@@ -14,6 +14,7 @@ import {
   encodePanelOptionsToQueryString,
   parseOption,
   decodePanelOptionsFromQueryString,
+  parsePrometheusFloat,
 } from '.';
 import { PanelType } from '../pages/graph/Panel';
 
@@ -235,6 +236,24 @@ describe('Utils', () => {
       });
       it('returns an encoded query string otherwise', () => {
         expect(encodePanelOptionsToQueryString(panels)).toEqual(query);
+      });
+    });
+
+    describe('parsePrometheusFloat', () => {
+      it('returns Inf when param is Inf', () => {
+        expect(parsePrometheusFloat('Inf')).toEqual('Inf');
+      });
+      it('returns +Inf when param is +Inf', () => {
+        expect(parsePrometheusFloat('+Inf')).toEqual('+Inf');
+      });
+      it('returns -Inf when param is -Inf', () => {
+        expect(parsePrometheusFloat('-Inf')).toEqual('-Inf');
+      });
+      it('returns 17 when param is 1.7e+01', () => {
+        expect(parsePrometheusFloat('1.7e+01')).toEqual(17);
+      });
+      it('returns -17 when param is -1.7e+01', () => {
+        expect(parsePrometheusFloat('-1.7e+01')).toEqual(-17);
       });
     });
   });
