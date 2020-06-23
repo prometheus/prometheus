@@ -5,7 +5,7 @@ import { RuleStatus } from './AlertContents';
 import { Rule } from '../../types/types';
 import { faChevronDown, faChevronRight } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { createExpressionLink, convertScientificNotationToNumber } from '../../utils/index';
+import { createExpressionLink, parsePrometheusFloat } from '../../utils/index';
 
 interface CollapsibleAlertPanelProps {
   rule: Rule;
@@ -78,7 +78,7 @@ const CollapsibleAlertPanel: FC<CollapsibleAlertPanelProps> = ({ rule, showAnnot
                         </h5>
                       </td>
                       <td>{alert.activeAt}</td>
-                      <td>{convertScientificNotationToNumber(alert.value)}</td>
+                      <td>{parsePrometheusFloat(alert.value)}</td>
                     </tr>
                     {showAnnotations && <Annotations annotations={alert.annotations} />}
                   </Fragment>

@@ -211,10 +211,10 @@ export const callAll = (...fns: Array<(...args: any) => void>) => (...args: any)
   fns.filter(Boolean).forEach(fn => fn.apply(null, args));
 };
 
-export const convertScientificNotationToNumber = (scn: string) => {
-  if (isNaN(Number(scn))) {
-    return scn;
+export const parsePrometheusFloat = (value: string) => {
+  if (isNaN(Number(value))) {
+    return value;
   } else {
-    return Number(scn);
+    return Number(value);
   }
 };

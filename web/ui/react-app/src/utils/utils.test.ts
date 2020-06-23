@@ -14,7 +14,7 @@ import {
   encodePanelOptionsToQueryString,
   parseOption,
   decodePanelOptionsFromQueryString,
-  convertScientificNotationToNumber,
+  parsePrometheusFloat,
 } from '.';
 import { PanelType } from '../pages/graph/Panel';
 
@@ -239,21 +239,21 @@ describe('Utils', () => {
       });
     });
 
-    describe('convertScientificNotationToNumber', () => {
+    describe('parsePrometheusFloat', () => {
       it('returns Inf when param is Inf', () => {
-        expect(convertScientificNotationToNumber('Inf')).toEqual('Inf');
+        expect(parsePrometheusFloat('Inf')).toEqual('Inf');
       });
       it('returns +Inf when param is +Inf', () => {
-        expect(convertScientificNotationToNumber('+Inf')).toEqual('+Inf');
+        expect(parsePrometheusFloat('+Inf')).toEqual('+Inf');
       });
       it('returns -Inf when param is -Inf', () => {
-        expect(convertScientificNotationToNumber('-Inf')).toEqual('-Inf');
+        expect(parsePrometheusFloat('-Inf')).toEqual('-Inf');
       });
       it('returns 17 when param is 1.7e+01', () => {
-        expect(convertScientificNotationToNumber('1.7e+01')).toEqual(17);
+        expect(parsePrometheusFloat('1.7e+01')).toEqual(17);
       });
       it('returns -17 when param is -1.7e+01', () => {
-        expect(convertScientificNotationToNumber('-1.7e+01')).toEqual(-17);
+        expect(parsePrometheusFloat('-1.7e+01')).toEqual(-17);
       });
     });
   });
