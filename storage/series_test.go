@@ -27,11 +27,11 @@ type MockSeries struct {
 	SampleIteratorFn func() chunkenc.Iterator
 }
 
-func NewListSeries(lset labels.Labels, samples []tsdbutil.Sample) *MockSeries {
+func NewListSeries(lset labels.Labels, s []tsdbutil.Sample) *MockSeries {
 	return &MockSeries{
 		labels: lset,
 		SampleIteratorFn: func() chunkenc.Iterator {
-			return NewListSeriesIterator(samples)
+			return NewListSeriesIterator(samples(s))
 		},
 	}
 }

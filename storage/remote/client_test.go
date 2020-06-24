@@ -25,7 +25,6 @@ import (
 	"github.com/pkg/errors"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -71,7 +70,7 @@ func TestStoreHTTPErrorHandling(t *testing.T) {
 
 		hash, err := toHash(conf)
 		testutil.Ok(t, err)
-		c, err := NewClient(hash, conf)
+		c, err := NewWriteClient(hash, conf)
 		testutil.Ok(t, err)
 
 		err = c.Store(context.Background(), []byte{})

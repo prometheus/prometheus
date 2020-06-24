@@ -172,6 +172,7 @@ type TSDBAdminStats interface {
 // API can register a set of endpoints in a router and handle
 // them using the provided storage and query engine.
 type API struct {
+	// TODO(bwplotka): Change to SampleAndChunkQueryable in next PR.
 	Queryable   storage.Queryable
 	QueryEngine *promql.Engine
 
@@ -204,7 +205,7 @@ func init() {
 // NewAPI returns an initialized API type.
 func NewAPI(
 	qe *promql.Engine,
-	q storage.Queryable,
+	q storage.SampleAndChunkQueryable,
 	tr func(context.Context) TargetRetriever,
 	ar func(context.Context) AlertmanagerRetriever,
 	configFunc func() config.Config,
@@ -1199,8 +1200,8 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 	sortedExternalLabels := make([]prompb.Label, 0, len(externalLabels))
 	for name, value := range externalLabels {
 		sortedExternalLabels = append(sortedExternalLabels, prompb.Label{
-			Name:  string(name),
-			Value: string(value),
+			Name:  name,
+			Value: value,
 		})
 	}
 	sort.Slice(sortedExternalLabels, func(i, j int) bool {
@@ -1215,78 +1216,142 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 
 	switch responseType {
 	case prompb.ReadRequest_STREAMED_XOR_CHUNKS:
-		w.Header().Set("Content-Type", "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse")
+		api.remoteReadStreamedXORChunks(ctx, w, req, externalLabels, sortedExternalLabels)
+	default:
+		api.remoteReadSamples(ctx, w, req, externalLabels, sortedExternalLabels)
+	}
+}
 
-		f, ok := w.(http.Flusher)
-		if !ok {
-			http.Error(w, "internal http.ResponseWriter does not implement http.Flusher interface", http.StatusInternalServerError)
+func (api *API) remoteReadSamples(ctx context.Context, w http.ResponseWriter, req *prompb.ReadRequest, externalLabels map[string]string, sortedExternalLabels []prompb.Label) {
+	w.Header().Set("Content-Type", "application/x-protobuf")
+	w.Header().Set("Content-Encoding", "snappy")
+
+	// On empty or unknown types in req.AcceptedResponseTypes we default to non streamed, raw samples response.
+	resp := prompb.ReadResponse{
+		Results: make([]*prompb.QueryResult, len(req.Queries)),
+	}
+	for i, query := range req.Queries {
+		if err := func() error {
+			filteredMatchers, err := filterExtLabelsFromMatchers(query.Matchers, externalLabels)
+			if err != nil {
+				return err
+			}
+
+			querier, err := api.Queryable.Querier(ctx, query.StartTimestampMs, query.EndTimestampMs)
+			if err != nil {
+				return err
+			}
+			defer func() {
+				if err := querier.Close(); err != nil {
+					level.Warn(api.logger).Log("msg", "Error on querier close", "err", err.Error())
+				}
+			}()
+
+			var hints *storage.SelectHints
+			if query.Hints != nil {
+				hints = &storage.SelectHints{
+					Start:    query.Hints.StartMs,
+					End:      query.Hints.EndMs,
+					Step:     query.Hints.StepMs,
+					Func:     query.Hints.Func,
+					Grouping: query.Hints.Grouping,
+					Range:    query.Hints.RangeMs,
+					By:       query.Hints.By,
+				}
+			}
+
+			var ws storage.Warnings
+			resp.Results[i], ws, err = remote.ToQueryResult(querier.Select(false, hints, filteredMatchers...), api.remoteReadSampleLimit)
+			if err != nil {
+				return err
+			}
+
+			for _, w := range ws {
+				level.Warn(api.logger).Log("msg", "Warnings on remote read query", "err", w.Error())
+			}
+
+			for _, ts := range resp.Results[i].Timeseries {
+				ts.Labels = remote.MergeLabels(ts.Labels, sortedExternalLabels)
+			}
+
+			return nil
+		}(); err != nil {
+			if httpErr, ok := err.(remote.HTTPError); ok {
+				http.Error(w, httpErr.Error(), httpErr.Status())
+				return
+			}
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		for i, query := range req.Queries {
-			ws, err := api.remoteReadQuery(ctx, query, externalLabels, func(querier storage.Querier, hints *storage.SelectHints, filteredMatchers []*labels.Matcher) (storage.Warnings, error) {
+	}
+
+	if err := remote.EncodeReadResponse(&resp, w); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
+func (api *API) remoteReadStreamedXORChunks(ctx context.Context, w http.ResponseWriter, req *prompb.ReadRequest, externalLabels map[string]string, sortedExternalLabels []prompb.Label) {
+	w.Header().Set("Content-Type", "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse")
+
+	f, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "internal http.ResponseWriter does not implement http.Flusher interface", http.StatusInternalServerError)
+		return
+	}
+
+	for i, query := range req.Queries {
+		if err := func() error {
+			filteredMatchers, err := filterExtLabelsFromMatchers(query.Matchers, externalLabels)
+			if err != nil {
+				return err
+			}
+
+			// TODO(bwplotka): Use ChunkQuerier once ready in tsdb package.
+			querier, err := api.Queryable.Querier(ctx, query.StartTimestampMs, query.EndTimestampMs)
+			if err != nil {
+				return err
+			}
+			defer func() {
+				if err := querier.Close(); err != nil {
+					level.Warn(api.logger).Log("msg", "Error on chunk querier close", "warnings", err.Error())
+				}
+			}()
+
+			var hints *storage.SelectHints
+			if query.Hints != nil {
+				hints = &storage.SelectHints{
+					Start:    query.Hints.StartMs,
+					End:      query.Hints.EndMs,
+					Step:     query.Hints.StepMs,
+					Func:     query.Hints.Func,
+					Grouping: query.Hints.Grouping,
+					Range:    query.Hints.RangeMs,
+					By:       query.Hints.By,
+				}
+			}
+
+			ws, err := remote.DeprecatedStreamChunkedReadResponses(
+				remote.NewChunkedWriter(w, f),
+				int64(i),
 				// The streaming API has to provide the series sorted.
-				set := querier.Select(true, hints, filteredMatchers...)
-
-				return remote.StreamChunkedReadResponses(
-					remote.NewChunkedWriter(w, f),
-					int64(i),
-					set,
-					sortedExternalLabels,
-					api.remoteReadMaxBytesInFrame,
-				)
-			})
-			for _, w := range ws {
-				level.Warn(api.logger).Log("msg", "warnings on remote read query", "err", w.Error())
-			}
+				querier.Select(true, hints, filteredMatchers...),
+				sortedExternalLabels,
+				api.remoteReadMaxBytesInFrame,
+			)
 			if err != nil {
-				if httpErr, ok := err.(remote.HTTPError); ok {
-					http.Error(w, httpErr.Error(), httpErr.Status())
-					return
-				}
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return err
+			}
+
+			for _, w := range ws {
+				level.Warn(api.logger).Log("msg", "Warnings on chunked remote read query", "warnings", w.Error())
+			}
+			return nil
+		}(); err != nil {
+			if httpErr, ok := err.(remote.HTTPError); ok {
+				http.Error(w, httpErr.Error(), httpErr.Status())
 				return
 			}
-		}
-	default:
-		w.Header().Set("Content-Type", "application/x-protobuf")
-		w.Header().Set("Content-Encoding", "snappy")
-
-		// On empty or unknown types in req.AcceptedResponseTypes we default to non streamed, raw samples response.
-		resp := prompb.ReadResponse{
-			Results: make([]*prompb.QueryResult, len(req.Queries)),
-		}
-		for i, query := range req.Queries {
-			ws, err := api.remoteReadQuery(ctx, query, externalLabels, func(querier storage.Querier, hints *storage.SelectHints, filteredMatchers []*labels.Matcher) (storage.Warnings, error) {
-				set := querier.Select(false, hints, filteredMatchers...)
-
-				var (
-					ws  storage.Warnings
-					err error
-				)
-				resp.Results[i], ws, err = remote.ToQueryResult(set, api.remoteReadSampleLimit)
-				if err != nil {
-					return ws, err
-				}
-
-				for _, ts := range resp.Results[i].Timeseries {
-					ts.Labels = remote.MergeLabels(ts.Labels, sortedExternalLabels)
-				}
-				return ws, nil
-			})
-			for _, w := range ws {
-				level.Warn(api.logger).Log("msg", "warnings on remote read query", "err", w.Error())
-			}
-			if err != nil {
-				if httpErr, ok := err.(remote.HTTPError); ok {
-					http.Error(w, httpErr.Error(), httpErr.Status())
-					return
-				}
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-		}
-
-		if err := remote.EncodeReadResponse(&resp, w); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -1317,37 +1382,6 @@ func filterExtLabelsFromMatchers(pbMatchers []*prompb.LabelMatcher, externalLabe
 	}
 
 	return filteredMatchers, nil
-}
-
-func (api *API) remoteReadQuery(ctx context.Context, query *prompb.Query, externalLabels map[string]string, seriesHandleFn func(querier storage.Querier, hints *storage.SelectHints, filteredMatchers []*labels.Matcher) (storage.Warnings, error)) (storage.Warnings, error) {
-	filteredMatchers, err := filterExtLabelsFromMatchers(query.Matchers, externalLabels)
-	if err != nil {
-		return nil, err
-	}
-
-	querier, err := api.Queryable.Querier(ctx, query.StartTimestampMs, query.EndTimestampMs)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if err := querier.Close(); err != nil {
-			level.Warn(api.logger).Log("msg", "Error on querier close", "err", err.Error())
-		}
-	}()
-
-	var hints *storage.SelectHints
-	if query.Hints != nil {
-		hints = &storage.SelectHints{
-			Start:    query.Hints.StartMs,
-			End:      query.Hints.EndMs,
-			Step:     query.Hints.StepMs,
-			Func:     query.Hints.Func,
-			Grouping: query.Hints.Grouping,
-			Range:    query.Hints.RangeMs,
-			By:       query.Hints.By,
-		}
-	}
-	return seriesHandleFn(querier, hints, filteredMatchers)
 }
 
 func (api *API) deleteSeries(r *http.Request) apiFuncResult {

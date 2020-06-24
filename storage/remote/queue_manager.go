@@ -217,9 +217,9 @@ func (m *queueManagerMetrics) unregister() {
 	}
 }
 
-// StorageClient defines an interface for sending a batch of samples to an
+// WriteClient defines an interface for sending a batch of samples to an
 // external timeseries database.
-type StorageClient interface {
+type WriteClient interface {
 	// Store stores the given samples in the remote storage.
 	Store(context.Context, []byte) error
 	// Name uniquely identifies the remote storage.
@@ -229,7 +229,7 @@ type StorageClient interface {
 }
 
 // QueueManager manages a queue of samples to be sent to the Storage
-// indicated by the provided StorageClient. Implements writeTo interface
+// indicated by the provided WriteClient. Implements writeTo interface
 // used by WAL Watcher.
 type QueueManager struct {
 	// https://golang.org/pkg/sync/atomic/#pkg-note-BUG
@@ -243,7 +243,7 @@ type QueueManager struct {
 	watcher        *wal.Watcher
 
 	clientMtx   sync.RWMutex
-	storeClient StorageClient
+	storeClient WriteClient
 
 	seriesMtx            sync.Mutex
 	seriesLabels         map[uint64]labels.Labels
@@ -272,7 +272,7 @@ func NewQueueManager(
 	cfg config.QueueConfig,
 	externalLabels labels.Labels,
 	relabelConfigs []*relabel.Config,
-	client StorageClient,
+	client WriteClient,
 	flushDeadline time.Duration,
 ) *QueueManager {
 	if logger == nil {
@@ -440,13 +440,13 @@ func (t *QueueManager) SeriesReset(index int) {
 
 // SetClient updates the client used by a queue. Used when only client specific
 // fields are updated to avoid restarting the queue.
-func (t *QueueManager) SetClient(c StorageClient) {
+func (t *QueueManager) SetClient(c WriteClient) {
 	t.clientMtx.Lock()
 	t.storeClient = c
 	t.clientMtx.Unlock()
 }
 
-func (t *QueueManager) client() StorageClient {
+func (t *QueueManager) client() WriteClient {
 	t.clientMtx.RLock()
 	defer t.clientMtx.RUnlock()
 	return t.storeClient

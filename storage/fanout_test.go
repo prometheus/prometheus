@@ -283,7 +283,7 @@ func TestMergeChunkQuerierWithNoVerticalChunkSeriesMerger(t *testing.T) {
 			),
 		},
 		{
-			name: "two queriers, one different series each",
+			name: "two secondaries, one different series each",
 			chkQuerierSeries: [][]ChunkSeries{{
 				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1}, sample{2, 2}}, []tsdbutil.Sample{sample{3, 3}}),
 			}, {
@@ -295,7 +295,7 @@ func TestMergeChunkQuerierWithNoVerticalChunkSeriesMerger(t *testing.T) {
 			),
 		},
 		{
-			name: "two queriers, two not in time order series each",
+			name: "two secondaries, two not in time order series each",
 			chkQuerierSeries: [][]ChunkSeries{{
 				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{5, 5}}, []tsdbutil.Sample{sample{6, 6}}),
 				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{0, 0}, sample{1, 1}}, []tsdbutil.Sample{sample{2, 2}}),
@@ -319,7 +319,7 @@ func TestMergeChunkQuerierWithNoVerticalChunkSeriesMerger(t *testing.T) {
 			),
 		},
 		{
-			name: "five queriers, only two have two not in time order series each",
+			name: "five secondaries, only two have two not in time order series each",
 			chkQuerierSeries: [][]ChunkSeries{{}, {}, {
 				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{5, 5}}, []tsdbutil.Sample{sample{6, 6}}),
 				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{0, 0}, sample{1, 1}}, []tsdbutil.Sample{sample{2, 2}}),
@@ -343,7 +343,7 @@ func TestMergeChunkQuerierWithNoVerticalChunkSeriesMerger(t *testing.T) {
 			),
 		},
 		{
-			name: "two queriers, with two not in time order series each, with 3 noop queries and one nil together",
+			name: "two secondaries, with two not in time order series each, with 3 noop queries and one nil together",
 			chkQuerierSeries: [][]ChunkSeries{{
 				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{5, 5}}, []tsdbutil.Sample{sample{6, 6}}),
 				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{0, 0}, sample{1, 1}}, []tsdbutil.Sample{sample{2, 2}}),
@@ -391,8 +391,7 @@ func TestMergeChunkQuerierWithNoVerticalChunkSeriesMerger(t *testing.T) {
 			}
 			qs = append(qs, tc.extraQueriers...)
 
-			// TODO(bwplotka): Add case of overlap to check if those are handled well.
-			merged := NewMergeChunkQuerier(p, qs, NewVerticalChunkSeriesMerger(nil)).Select(false, nil)
+			merged := NewMergeChunkQuerier(p, qs, NewCompactingChunkSeriesMerger(nil)).Select(false, nil)
 			for merged.Next() {
 				testutil.Assert(t, tc.expected.Next(), "Expected Next() to be true")
 				actualSeries := merged.At()
@@ -412,7 +411,7 @@ func TestMergeChunkQuerierWithNoVerticalChunkSeriesMerger(t *testing.T) {
 }
 
 type mockQuerier struct {
-	baseQuerier
+	LabelQuerier
 
 	toReturn []Series
 }
@@ -434,7 +433,7 @@ func (m *mockQuerier) Select(sortSeries bool, _ *SelectHints, _ ...*labels.Match
 }
 
 type mockChunkQurier struct {
-	baseQuerier
+	LabelQuerier
 
 	toReturn []ChunkSeries
 }
@@ -510,22 +509,22 @@ func TestChainSampleIterator(t *testing.T) {
 	}{
 		{
 			input: []chunkenc.Iterator{
-				NewListSeriesIterator([]tsdbutil.Sample{sample{0, 0}, sample{1, 1}}),
+				NewListSeriesIterator(samples{sample{0, 0}, sample{1, 1}}),
 			},
 			expected: []tsdbutil.Sample{sample{0, 0}, sample{1, 1}},
 		},
 		{
 			input: []chunkenc.Iterator{
-				NewListSeriesIterator([]tsdbutil.Sample{sample{0, 0}, sample{1, 1}}),
-				NewListSeriesIterator([]tsdbutil.Sample{sample{2, 2}, sample{3, 3}}),
+				NewListSeriesIterator(samples{sample{0, 0}, sample{1, 1}}),
+				NewListSeriesIterator(samples{sample{2, 2}, sample{3, 3}}),
 			},
 			expected: []tsdbutil.Sample{sample{0, 0}, sample{1, 1}, sample{2, 2}, sample{3, 3}},
 		},
 		{
 			input: []chunkenc.Iterator{
-				NewListSeriesIterator([]tsdbutil.Sample{sample{0, 0}, sample{3, 3}}),
-				NewListSeriesIterator([]tsdbutil.Sample{sample{1, 1}, sample{4, 4}}),
-				NewListSeriesIterator([]tsdbutil.Sample{sample{2, 2}, sample{5, 5}}),
+				NewListSeriesIterator(samples{sample{0, 0}, sample{3, 3}}),
+				NewListSeriesIterator(samples{sample{1, 1}, sample{4, 4}}),
+				NewListSeriesIterator(samples{sample{2, 2}, sample{5, 5}}),
 			},
 			expected: []tsdbutil.Sample{
 				sample{0, 0}, sample{1, 1}, sample{2, 2}, sample{3, 3}, sample{4, 4}, sample{5, 5}},
@@ -533,12 +532,12 @@ func TestChainSampleIterator(t *testing.T) {
 		// Overlap.
 		{
 			input: []chunkenc.Iterator{
-				NewListSeriesIterator([]tsdbutil.Sample{sample{0, 0}, sample{1, 1}}),
-				NewListSeriesIterator([]tsdbutil.Sample{sample{0, 0}, sample{2, 2}}),
-				NewListSeriesIterator([]tsdbutil.Sample{sample{2, 2}, sample{3, 3}}),
-				NewListSeriesIterator([]tsdbutil.Sample{}),
-				NewListSeriesIterator([]tsdbutil.Sample{}),
-				NewListSeriesIterator([]tsdbutil.Sample{}),
+				NewListSeriesIterator(samples{sample{0, 0}, sample{1, 1}}),
+				NewListSeriesIterator(samples{sample{0, 0}, sample{2, 2}}),
+				NewListSeriesIterator(samples{sample{2, 2}, sample{3, 3}}),
+				NewListSeriesIterator(samples{}),
+				NewListSeriesIterator(samples{}),
+				NewListSeriesIterator(samples{}),
 			},
 			expected: []tsdbutil.Sample{sample{0, 0}, sample{1, 1}, sample{2, 2}, sample{3, 3}},
 		},
@@ -558,24 +557,24 @@ func TestChainSampleIteratorSeek(t *testing.T) {
 	}{
 		{
 			input: []chunkenc.Iterator{
-				NewListSeriesIterator([]tsdbutil.Sample{sample{0, 0}, sample{1, 1}, sample{2, 2}}),
+				NewListSeriesIterator(samples{sample{0, 0}, sample{1, 1}, sample{2, 2}}),
 			},
 			seek:     1,
 			expected: []tsdbutil.Sample{sample{1, 1}, sample{2, 2}},
 		},
 		{
 			input: []chunkenc.Iterator{
-				NewListSeriesIterator([]tsdbutil.Sample{sample{0, 0}, sample{1, 1}}),
-				NewListSeriesIterator([]tsdbutil.Sample{sample{2, 2}, sample{3, 3}}),
+				NewListSeriesIterator(samples{sample{0, 0}, sample{1, 1}}),
+				NewListSeriesIterator(samples{sample{2, 2}, sample{3, 3}}),
 			},
 			seek:     2,
 			expected: []tsdbutil.Sample{sample{2, 2}, sample{3, 3}},
 		},
 		{
 			input: []chunkenc.Iterator{
-				NewListSeriesIterator([]tsdbutil.Sample{sample{0, 0}, sample{3, 3}}),
-				NewListSeriesIterator([]tsdbutil.Sample{sample{1, 1}, sample{4, 4}}),
-				NewListSeriesIterator([]tsdbutil.Sample{sample{2, 2}, sample{5, 5}}),
+				NewListSeriesIterator(samples{sample{0, 0}, sample{3, 3}}),
+				NewListSeriesIterator(samples{sample{1, 1}, sample{4, 4}}),
+				NewListSeriesIterator(samples{sample{2, 2}, sample{5, 5}}),
 			},
 			seek:     2,
 			expected: []tsdbutil.Sample{sample{2, 2}, sample{3, 3}, sample{4, 4}, sample{5, 5}},
