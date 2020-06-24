@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	common_config "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
@@ -154,6 +155,48 @@ func TestRestartOnNameChange(t *testing.T) {
 	testutil.Ok(t, err)
 }
 
+func TestUpdateWithRegisterer(t *testing.T) {
+	dir, err := ioutil.TempDir("", "TestRestartWithRegisterer")
+	testutil.Ok(t, err)
+	defer os.RemoveAll(dir)
+
+	s := NewWriteStorage(nil, prometheus.NewRegistry(), dir, time.Millisecond)
+	c1 := &config.RemoteWriteConfig{
+		Name: "named",
+		URL: &common_config.URL{
+			URL: &url.URL{
+				Scheme: "http",
+				Host:   "localhost",
+			},
+		},
+		QueueConfig: config.DefaultQueueConfig,
+	}
+	c2 := &config.RemoteWriteConfig{
+		URL: &common_config.URL{
+			URL: &url.URL{
+				Scheme: "http",
+				Host:   "localhost",
+			},
+		},
+		QueueConfig: config.DefaultQueueConfig,
+	}
+	conf := &config.Config{
+		GlobalConfig:       config.DefaultGlobalConfig,
+		RemoteWriteConfigs: []*config.RemoteWriteConfig{c1, c2},
+	}
+	testutil.Ok(t, s.ApplyConfig(conf))
+
+	c1.QueueConfig.MaxShards = 10
+	c2.QueueConfig.MaxShards = 10
+	testutil.Ok(t, s.ApplyConfig(conf))
+	for _, queue := range s.queues {
+		testutil.Equals(t, 10, queue.cfg.MaxShards)
+	}
+
+	err = s.Close()
+	testutil.Ok(t, err)
+}
+
 func TestWriteStorageLifecycle(t *testing.T) {
 	dir, err := ioutil.TempDir("", "TestWriteStorageLifecycle")
 	testutil.Ok(t, err)
@@ -178,7 +221,7 @@ func TestUpdateExternalLabels(t *testing.T) {
 	testutil.Ok(t, err)
 	defer os.RemoveAll(dir)
 
-	s := NewWriteStorage(nil, nil, dir, time.Second)
+	s := NewWriteStorage(nil, prometheus.NewRegistry(), dir, time.Second)
 
 	externalLabels := labels.FromStrings("external", "true")
 	conf := &config.Config{
