@@ -208,7 +208,7 @@ func (q *blockQuerier) Select(sortSeries bool, hints *storage.SelectHints, ms ..
 }
 
 func (q *blockQuerier) LabelValues(name string) ([]string, storage.Warnings, error) {
-	res, err := q.index.LabelValues(name)
+	res, err := q.index.SortedLabelValues(name)
 	return res, nil, err
 }
 
@@ -403,6 +403,7 @@ func postingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Postings, erro
 		return index.EmptyPostings(), nil
 	}
 
+	sort.Strings(res)
 	return ix.Postings(m.Name, res...)
 }
 
@@ -420,6 +421,7 @@ func inversePostingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Posting
 		}
 	}
 
+	sort.Strings(res)
 	return ix.Postings(m.Name, res...)
 }
 
