@@ -368,21 +368,7 @@ func TestLabels_Equal(t *testing.T) {
 	}
 }
 
-func TestLabels_FromStrings(t *testing.T) {
-	labels := FromStrings("aaa", "111", "bbb", "222")
-	expected := Labels{
-		{
-			Name:  "aaa",
-			Value: "111",
-		},
-		{
-			Name:  "bbb",
-			Value: "222",
-		},
-	}
-
-	testutil.Equals(t, expected, labels, "unexpected labelset")
-
+func TestLabels_FromStringsPanic(t *testing.T) {
 	defer func() { recover() }()
 	FromStrings("aaa", "111", "bbb")
 
