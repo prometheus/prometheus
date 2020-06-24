@@ -553,3 +553,14 @@ func TestSymbols(t *testing.T) {
 	}
 	testutil.Ok(t, iter.Err())
 }
+
+func TestLabelNames(t *testing.T) {
+	got, _ := (&Reader{
+		postings: map[string][]postingOffset{
+			"aaa": {{"111", 0}, {"222", 1}},
+			"ccc": {{"111", 0}, {"222", 1}},
+			"bbb": {{"111", 0}, {"222", 1}},
+		},
+	}).LabelNames()
+	testutil.Equals(t, []string{"aaa", "bbb", "ccc"}, got)
+}
