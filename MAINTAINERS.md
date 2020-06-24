@@ -7,7 +7,7 @@
 * `documentation`
   * `prometheus-mixin`: @beorn7
 * `storage`
-  * `remote`: @csmarchbanks, @cstyan
+  * `remote`: @csmarchbanks, @cstyan, @bwplotka
 * `tsdb`: @codesome, @krasi-georgiev
 * `web`
   * `ui`: @juliusv
