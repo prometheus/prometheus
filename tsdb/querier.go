@@ -393,9 +393,14 @@ func postingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Postings, erro
 	}
 
 	var res []string
+	lastVal, isSorted := "", true
 	for _, val := range vals {
 		if m.Matches(val) {
 			res = append(res, val)
+			if isSorted && val < lastVal {
+				isSorted = false
+			}
+			lastVal = val
 		}
 	}
 
@@ -403,7 +408,9 @@ func postingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Postings, erro
 		return index.EmptyPostings(), nil
 	}
 
-	sort.Strings(res)
+	if !isSorted {
+		sort.Strings(res)
+	}
 	return ix.Postings(m.Name, res...)
 }
 
@@ -415,13 +422,20 @@ func inversePostingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Posting
 	}
 
 	var res []string
+	lastVal, isSorted := "", true
 	for _, val := range vals {
 		if !m.Matches(val) {
 			res = append(res, val)
+			if isSorted && val < lastVal {
+				isSorted = false
+			}
+			lastVal = val
 		}
 	}
 
-	sort.Strings(res)
+	if !isSorted {
+		sort.Strings(res)
+	}
 	return ix.Postings(m.Name, res...)
 }
 
