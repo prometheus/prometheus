@@ -1867,7 +1867,7 @@ func TestHeadLabelNamesValuesWithMinMaxRange(t *testing.T) {
 			testutil.Equals(t, tt.expectedNames, actualLabelNames)
 			if len(tt.expectedValues) > 0 {
 				for i, name := range expectedLabelNames {
-					actualLabelValue, err := headIdxReader.LabelValues(name)
+					actualLabelValue, err := headIdxReader.SortedLabelValues(name)
 					testutil.Ok(t, err)
 					testutil.Equals(t, []string{tt.expectedValues[i]}, actualLabelValue)
 				}

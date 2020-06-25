@@ -556,7 +556,7 @@ func analyzeBlock(b tsdb.BlockReader, limit int) error {
 
 	postingInfos = postingInfos[:0]
 	for _, n := range allLabelNames {
-		values, err := ir.LabelValues(n)
+		values, err := ir.SortedLabelValues(n)
 		if err != nil {
 			return err
 		}
@@ -572,7 +572,7 @@ func analyzeBlock(b tsdb.BlockReader, limit int) error {
 
 	postingInfos = postingInfos[:0]
 	for _, n := range allLabelNames {
-		lv, err := ir.LabelValues(n)
+		lv, err := ir.SortedLabelValues(n)
 		if err != nil {
 			return err
 		}
@@ -582,7 +582,7 @@ func analyzeBlock(b tsdb.BlockReader, limit int) error {
 	printInfo(postingInfos)
 
 	postingInfos = postingInfos[:0]
-	lv, err := ir.LabelValues("__name__")
+	lv, err := ir.SortedLabelValues("__name__")
 	if err != nil {
 		return err
 	}
