@@ -1,6 +1,7 @@
 ## master / unreleased
 
 * [ENHANCEMENT] TSDB: WAL compression is enabled by default.
+* [ENHANCEMENT] promtool: Added time range parameters for labels API in promtool. #7463
 
 ## 2.19.2 / 2020-06-26
 
