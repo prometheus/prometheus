@@ -562,10 +562,6 @@ func TestLabels_WithoutLabels(t *testing.T) {
 	testutil.Equals(t, Labels{{"aaa", "111"}}, Labels{{"aaa", "111"}, {"bbb", "222"}, {MetricName, "333"}}.WithoutLabels("bbb"))
 }
 
-func TestLabels_FromStrings(t *testing.T) {
-	testutil.Equals(t, Labels{{"aaa", "111"}, {"bbb", "222"}}, FromStrings("aaa", "111", "bbb", "222"))
-}
-
 func TestBulider_NewBulider(t *testing.T) {
 	testutil.Equals(
 		t,
