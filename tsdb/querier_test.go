@@ -1400,6 +1400,12 @@ func (m mockIndex) Close() error {
 	return nil
 }
 
+func (m mockIndex) SortedLabelValues(name string) ([]string, error) {
+	values, _ := m.LabelValues(name)
+	sort.Strings(values)
+	return values, nil
+}
+
 func (m mockIndex) LabelValues(name string) ([]string, error) {
 	values := []string{}
 	for l := range m.postings {
@@ -1407,7 +1413,6 @@ func (m mockIndex) LabelValues(name string) ([]string, error) {
 			values = append(values, l.Value)
 		}
 	}
-	sort.Strings(values)
 	return values, nil
 }
 
@@ -2277,6 +2282,11 @@ type mockMatcherIndex struct{}
 func (m mockMatcherIndex) Symbols() index.StringIter { return nil }
 
 func (m mockMatcherIndex) Close() error { return nil }
+
+// SortedLabelValues will return error if it is called.
+func (m mockMatcherIndex) SortedLabelValues(name string) ([]string, error) {
+	return []string{}, errors.New("sorted label values called")
+}
 
 // LabelValues will return error if it is called.
 func (m mockMatcherIndex) LabelValues(name string) ([]string, error) {

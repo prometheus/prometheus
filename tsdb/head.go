@@ -1537,6 +1537,16 @@ func (h *headIndexReader) Symbols() index.StringIter {
 	return index.NewStringListIter(res)
 }
 
+// SortedLabelValues returns label values present in the head for the
+// specific label name that are within the time range mint to maxt.
+func (h *headIndexReader) SortedLabelValues(name string) ([]string, error) {
+	values, err := h.LabelValues(name)
+	if err == nil {
+		sort.Strings(values)
+	}
+	return values, err
+}
+
 // LabelValues returns label values present in the head for the
 // specific label name that are within the time range mint to maxt.
 func (h *headIndexReader) LabelValues(name string) ([]string, error) {
@@ -1552,7 +1562,6 @@ func (h *headIndexReader) LabelValues(name string) ([]string, error) {
 		sl = append(sl, s)
 	}
 	h.head.symMtx.RUnlock()
-	sort.Strings(sl)
 	return sl, nil
 }
 
