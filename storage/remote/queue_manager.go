@@ -177,8 +177,12 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		ConstLabels: constLabels,
 	})
 
-	if r != nil {
-		r.MustRegister(
+	return m
+}
+
+func (m *queueManagerMetrics) register() {
+	if m.reg != nil {
+		m.reg.MustRegister(
 			m.succeededSamplesTotal,
 			m.failedSamplesTotal,
 			m.retriedSamplesTotal,
@@ -195,7 +199,6 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 			m.bytesSent,
 		)
 	}
-	return m
 }
 
 func (m *queueManagerMetrics) unregister() {
@@ -358,7 +361,8 @@ outer:
 // Start the queue manager sending samples to the remote storage.
 // Does not block.
 func (t *QueueManager) Start() {
-	// Initialise some metrics.
+	// Register and initialise some metrics.
+	t.metrics.register()
 	t.metrics.shardCapacity.Set(float64(t.cfg.Capacity))
 	t.metrics.maxNumShards.Set(float64(t.cfg.MaxShards))
 	t.metrics.minNumShards.Set(float64(t.cfg.MinShards))
