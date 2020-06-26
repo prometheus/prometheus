@@ -670,7 +670,7 @@ func (g *Group) RestoreForState(ts time.Time) {
 	// We allow restoration only if alerts were active before after certain time.
 	mint := ts.Add(-g.opts.OutageTolerance)
 	mintMS := int64(model.TimeFromUnixNano(mint.UnixNano()))
-	q, err := g.opts.TSDB.Querier(g.opts.Context, mintMS, maxtMS)
+	q, err := g.opts.Queryable.Querier(g.opts.Context, mintMS, maxtMS)
 	if err != nil {
 		level.Error(g.logger).Log("msg", "Failed to get Querier", "err", err)
 		return
@@ -846,7 +846,7 @@ type ManagerOptions struct {
 	NotifyFunc      NotifyFunc
 	Context         context.Context
 	Appendable      storage.Appendable
-	TSDB            storage.Storage
+	Queryable       storage.Queryable
 	Logger          log.Logger
 	Registerer      prometheus.Registerer
 	OutageTolerance time.Duration
