@@ -94,7 +94,7 @@ func (d *Discovery) refreshTasks(ctx context.Context) ([]*targetgroup.Group, err
 			}
 
 			labels := model.LabelSet{
-				model.LabelName(swarmLabelTaskPortMode): model.LabelValue(p.PublishMode),
+				swarmLabelTaskPortMode: model.LabelValue(p.PublishMode),
 			}
 
 			for k, v := range commonLabels {
@@ -113,7 +113,7 @@ func (d *Discovery) refreshTasks(ctx context.Context) ([]*targetgroup.Group, err
 			for _, network := range s.NetworksAttachments {
 				for _, address := range network.Addresses {
 					labels := model.LabelSet{
-						model.LabelName(swarmLabelTaskPortMode): model.LabelValue(p.PublishMode),
+						swarmLabelTaskPortMode: model.LabelValue(p.PublishMode),
 					}
 
 					for k, v := range commonLabels {
