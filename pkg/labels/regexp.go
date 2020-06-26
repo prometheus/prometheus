@@ -20,9 +20,9 @@ import (
 )
 
 type FastRegexMatcher struct {
-	re     *regexp.Regexp
-	prefix string
-	suffix string
+	re       *regexp.Regexp
+	prefix   string
+	suffix   string
 	contains string
 }
 
@@ -96,7 +96,7 @@ func optimizeConcatRegex(r *syntax.Regexp) (prefix, suffix, contains string) {
 	// If contains any literal which is not a prefix/suffix, we keep the
 	// 1st one. We do not keep the whole list of literals to simplify the
 	// fast path.
-	for i := 1; i < len(sub) - 1; i++ {
+	for i := 1; i < len(sub)-1; i++ {
 		if sub[i].Op == syntax.OpLiteral {
 			contains = string(sub[i].Rune)
 			break

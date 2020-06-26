@@ -61,9 +61,9 @@ func TestNewFastRegexMatcher(t *testing.T) {
 
 func TestOptimizeConcatRegex(t *testing.T) {
 	cases := []struct {
-		regex  string
-		prefix string
-		suffix string
+		regex    string
+		prefix   string
+		suffix   string
 		contains string
 	}{
 		{regex: "foo(hello|bar)", prefix: "foo", suffix: "", contains: ""},
