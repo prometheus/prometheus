@@ -537,7 +537,7 @@ Available meta labels:
 See below for the configuration options for Docker Swarm discovery:
 
 ```yaml
-# Address of the Docker daemon. Docker Swarm supports http and https protocol.
+# Address of the Docker daemon.
 host: <string>
 
 # Optional proxy URL.
