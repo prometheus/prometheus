@@ -43,7 +43,7 @@ func (d *Discovery) refreshTasks(ctx context.Context) ([]*targetgroup.Group, err
 		Source: "DockerSwarm",
 	}
 
-	tasks, err := d.client.TaskList(ctx, types.TaskListOptions{Filters: makeArgs(d.filters)})
+	tasks, err := d.client.TaskList(ctx, types.TaskListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("error while listing swarm services: %w", err)
 	}

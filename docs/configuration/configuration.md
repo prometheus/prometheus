@@ -453,12 +453,11 @@ tls_config:
 Docker Swarm SD configurations allow retrieving scrape targets from [Docker Swarm](https://docs.docker.com/engine/swarm/)
 engine.
 
-One of the following `<swarm_kind>` can be configured to discover targets:
+One of the following roles can be configured to discover targets:
 
 #### `services`
 
-The `services` kind is used to discover [Swarm services](https://docs.docker.com/engine/swarm/key-concepts/#services-and-tasks).
-This is the default `<swarm_kind>`.
+The `services` role is used to discover [Swarm services](https://docs.docker.com/engine/swarm/key-concepts/#services-and-tasks).
 
 Available meta labels:
 
@@ -480,7 +479,7 @@ Available meta labels:
 
 #### `tasks`
 
-The `tasks` kind is used to discover [Swarm tasks](https://docs.docker.com/engine/swarm/key-concepts/#services-and-tasks).
+The `tasks` role is used to discover [Swarm tasks](https://docs.docker.com/engine/swarm/key-concepts/#services-and-tasks).
 
 Available meta labels:
 
@@ -490,7 +489,7 @@ Available meta labels:
 * `__meta_dockerswarm_task_label_<labelname>`: each label of the task
 * `__meta_dockerswarm_task_slot`: the slot of the task
 * `__meta_dockerswarm_task_state`: the state of the task
-* `__meta_dockerswarm_task_port_publish_mode`: the publish node of the task port
+* `__meta_dockerswarm_task_port_publish_mode`: the publish mode of the task port
 * `__meta_dockerswarm_service_id`: the id of the service
 * `__meta_dockerswarm_service_name`: the name of the service
 * `__meta_dockerswarm_service_mode`: the mode of the service
@@ -517,7 +516,7 @@ are published with `mode=host`.
 
 #### `nodes`
 
-The `nodes` kind is used to discover [Swarm nodes](https://docs.docker.com/engine/swarm/key-concepts/#nodes).
+The `nodes` role is used to discover [Swarm nodes](https://docs.docker.com/engine/swarm/key-concepts/#nodes).
 
 Available meta labels:
 
@@ -548,23 +547,10 @@ host: <string>
 tls_config:
   [ <tls_config> ]
 
-# Kind of the targets to retrieve.
-kind: <swarm_kind>
+# Role of the targets to retrieve. Must be `services`, `tasks`, or `nodes`.
+role: <string>
 
-# Optional filters to limit the discovery process to a subset of available resources. 
-
-# Note: When making decision about using filters make sure that this is the best
-# approach - it will prevent Prometheus from reusing single API calls for all
-# scrape configs. This might result in a bigger load on the Docker API, because
-# per each filters combination there will be additional API calls. On the other hand,
-# if you just want to monitor small subset of resources in large cluster it's
-# recommended to use filters.
-# Decision, if filters should be used or not depends on the particular situation.
-[ filters:
-  [ - name: <string>
-      values: <string>, [...] ]
-
-# The port to scrape metrics from, when <swarm_kind> is nodes.
+# The port to scrape metrics from, when `role` is nodes.
 [ port: <int> | default = 80 ]
 
 # The time after which the droplets are refreshed.
@@ -587,8 +573,6 @@ basic_auth:
 # Optional bearer token file authentication information.
 [ bearer_token_file: <filename> ]
 ```
-
-Where `<swarm_kind>` must be `services`, `tasks`, or `nodes`.
 
 ### `<dns_sd_config>`
 

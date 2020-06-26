@@ -46,7 +46,7 @@ func (d *Discovery) refreshServices(ctx context.Context) ([]*targetgroup.Group, 
 		Source: "DockerSwarm",
 	}
 
-	services, err := d.client.ServiceList(ctx, types.ServiceListOptions{Filters: makeArgs(d.filters)})
+	services, err := d.client.ServiceList(ctx, types.ServiceListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("error while listing swarm services: %w", err)
 	}
