@@ -359,7 +359,7 @@ func TestForStateRestore(t *testing.T) {
 	opts := &ManagerOptions{
 		QueryFunc:       EngineQueryFunc(suite.QueryEngine(), suite.Storage()),
 		Appendable:      suite.Storage(),
-		TSDB:            suite.Storage(),
+		Queryable:       suite.Storage(),
 		Context:         context.Background(),
 		Logger:          log.NewNopLogger(),
 		NotifyFunc:      func(ctx context.Context, expr string, alerts ...*Alert) {},
@@ -524,7 +524,7 @@ func TestStaleness(t *testing.T) {
 	opts := &ManagerOptions{
 		QueryFunc:  EngineQueryFunc(engine, st),
 		Appendable: st,
-		TSDB:       st,
+		Queryable:  st,
 		Context:    context.Background(),
 		Logger:     log.NewNopLogger(),
 	}
@@ -711,7 +711,7 @@ func TestUpdate(t *testing.T) {
 	engine := promql.NewEngine(opts)
 	ruleManager := NewManager(&ManagerOptions{
 		Appendable: st,
-		TSDB:       st,
+		Queryable:  st,
 		QueryFunc:  EngineQueryFunc(engine, st),
 		Context:    context.Background(),
 		Logger:     log.NewNopLogger(),
@@ -847,7 +847,7 @@ func TestNotify(t *testing.T) {
 	opts := &ManagerOptions{
 		QueryFunc:   EngineQueryFunc(engine, storage),
 		Appendable:  storage,
-		TSDB:        storage,
+		Queryable:   storage,
 		Context:     context.Background(),
 		Logger:      log.NewNopLogger(),
 		NotifyFunc:  notifyFunc,
@@ -917,7 +917,7 @@ func TestMetricsUpdate(t *testing.T) {
 	engine := promql.NewEngine(opts)
 	ruleManager := NewManager(&ManagerOptions{
 		Appendable: storage,
-		TSDB:       storage,
+		Queryable:  storage,
 		QueryFunc:  EngineQueryFunc(engine, storage),
 		Context:    context.Background(),
 		Logger:     log.NewNopLogger(),
@@ -991,7 +991,7 @@ func TestGroupStalenessOnRemoval(t *testing.T) {
 	engine := promql.NewEngine(opts)
 	ruleManager := NewManager(&ManagerOptions{
 		Appendable: storage,
-		TSDB:       storage,
+		Queryable:  storage,
 		QueryFunc:  EngineQueryFunc(engine, storage),
 		Context:    context.Background(),
 		Logger:     log.NewNopLogger(),
@@ -1068,7 +1068,7 @@ func TestMetricsStalenessOnManagerShutdown(t *testing.T) {
 	engine := promql.NewEngine(opts)
 	ruleManager := NewManager(&ManagerOptions{
 		Appendable: storage,
-		TSDB:       storage,
+		Queryable:  storage,
 		QueryFunc:  EngineQueryFunc(engine, storage),
 		Context:    context.Background(),
 		Logger:     log.NewNopLogger(),
