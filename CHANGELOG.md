@@ -1,3 +1,7 @@
+## 2.19.2 / 2020-06-26
+
+* [BUGFIX] Remote Write: Fix panic when reloading config with modified queue parameters. #7452
+
 ## 2.19.1 / 2020-06-18
 
 * [BUGFIX] TSDB: Fix m-map file truncation leading to unsequential files. #7414
