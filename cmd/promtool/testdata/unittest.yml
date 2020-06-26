@@ -1,0 +1,21 @@
+rule_files:
+  - alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'up{job="prometheus", instance="localhost:9090"}'
+        values: "0+0x1440"
+    alert_rule_test:
+      - eval_time: 1d
+        alertname: InstanceDown
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              instance: localhost:9090
+              job: prometheus
+            exp_annotations:
+              summary: "Instance localhost:9090 down"
+              description: "localhost:9090 of job prometheus has been down for more than 5 minutes."

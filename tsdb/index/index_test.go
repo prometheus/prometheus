@@ -453,7 +453,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 	for k, v := range labelPairs {
 		sort.Strings(v)
 
-		res, err := ir.LabelValues(k)
+		res, err := ir.SortedLabelValues(k)
 		testutil.Ok(t, err)
 
 		testutil.Equals(t, len(v), len(res))

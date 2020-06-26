@@ -39,11 +39,11 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
+	"github.com/prometheus/prometheus/tsdb/wal"
+	"golang.org/x/sync/errgroup"
 
 	// Load the package into main to make sure minium Go version is met.
 	_ "github.com/prometheus/prometheus/tsdb/goversion"
-	"github.com/prometheus/prometheus/tsdb/wal"
-	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -420,6 +420,11 @@ func (db *DBReadOnly) Querier(ctx context.Context, mint, maxt int64) (storage.Qu
 	return dbWritable.Querier(ctx, mint, maxt)
 }
 
+func (db *DBReadOnly) ChunkQuerier(context.Context, int64, int64) (storage.ChunkQuerier, error) {
+	// TODO(bwplotka): Implement in next PR.
+	return nil, errors.New("not implemented")
+}
+
 // Blocks returns a slice of block readers for persisted blocks.
 func (db *DBReadOnly) Blocks() ([]BlockReader, error) {
 	select {
@@ -441,10 +446,14 @@ func (db *DBReadOnly) Blocks() ([]BlockReader, error) {
 	if len(corrupted) > 0 {
 		for _, b := range loadable {
 			if err := b.Close(); err != nil {
-				level.Warn(db.logger).Log("msg", "Closing a block", err)
+				level.Warn(db.logger).Log("msg", "Closing block failed", "err", err, "block", b)
 			}
 		}
-		return nil, errors.Errorf("unexpected corrupted block:%v", corrupted)
+		var merr tsdb_errors.MultiError
+		for ulid, err := range corrupted {
+			merr.Add(errors.Wrapf(err, "corrupted block %s", ulid.String()))
+		}
+		return nil, merr.Err()
 	}
 
 	if len(loadable) == 0 {
@@ -880,7 +889,11 @@ func (db *DB) reload() (err error) {
 				block.Close()
 			}
 		}
-		return fmt.Errorf("unexpected corrupted block:%v", corrupted)
+		var merr tsdb_errors.MultiError
+		for ulid, err := range corrupted {
+			merr.Add(errors.Wrapf(err, "corrupted block %s", ulid.String()))
+		}
+		return merr.Err()
 	}
 
 	// All deletable blocks should not be loaded.
@@ -1054,7 +1067,7 @@ func (db *DB) deleteBlocks(blocks map[ulid.ULID]*Block) error {
 	for ulid, block := range blocks {
 		if block != nil {
 			if err := block.Close(); err != nil {
-				level.Warn(db.logger).Log("msg", "Closing block failed", "err", err)
+				level.Warn(db.logger).Log("msg", "Closing block failed", "err", err, "block", ulid)
 			}
 		}
 		if err := os.RemoveAll(filepath.Join(db.dir, ulid.String())); err != nil {
@@ -1335,6 +1348,11 @@ func (db *DB) Querier(_ context.Context, mint, maxt int64) (storage.Querier, err
 	return &querier{
 		blocks: blockQueriers,
 	}, nil
+}
+
+func (db *DB) ChunkQuerier(context.Context, int64, int64) (storage.ChunkQuerier, error) {
+	// TODO(bwplotka): Implement in next PR.
+	return nil, errors.New("not implemented")
 }
 
 func rangeForTimestamp(t int64, width int64) (maxt int64) {

@@ -563,9 +563,7 @@ func TestStaleness(t *testing.T) {
 	matcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "a_plus_one")
 	testutil.Ok(t, err)
 
-	set, _, err := querier.Select(false, nil, matcher)
-	testutil.Ok(t, err)
-
+	set := querier.Select(false, nil, matcher)
 	samples, err := readSeriesSet(set)
 	testutil.Ok(t, err)
 
@@ -686,9 +684,7 @@ func TestDeletedRuleMarkedStale(t *testing.T) {
 	matcher, err := labels.NewMatcher(labels.MatchEqual, "l1", "v1")
 	testutil.Ok(t, err)
 
-	set, _, err := querier.Select(false, nil, matcher)
-	testutil.Ok(t, err)
-
+	set := querier.Select(false, nil, matcher)
 	samples, err := readSeriesSet(set)
 	testutil.Ok(t, err)
 
@@ -1107,9 +1103,7 @@ func countStaleNaN(t *testing.T, st storage.Storage) int {
 	matcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_2")
 	testutil.Ok(t, err)
 
-	set, _, err := querier.Select(false, nil, matcher)
-	testutil.Ok(t, err)
-
+	set := querier.Select(false, nil, matcher)
 	samples, err := readSeriesSet(set)
 	testutil.Ok(t, err)
 

@@ -14,6 +14,7 @@
 package storage
 
 import (
+	"math"
 	"sort"
 
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -23,23 +24,34 @@ import (
 )
 
 type listSeriesIterator struct {
-	samples []tsdbutil.Sample
+	samples Samples
 	idx     int
 }
 
+type samples []tsdbutil.Sample
+
+func (s samples) Get(i int) tsdbutil.Sample { return s[i] }
+func (s samples) Len() int                  { return len(s) }
+
+// Samples interface allows to work on arrays of types that are compatible with tsdbutil.Sample.
+type Samples interface {
+	Get(i int) tsdbutil.Sample
+	Len() int
+}
+
 // NewListSeriesIterator returns listSeriesIterator that allows to iterate over provided samples. Does not handle overlaps.
-func NewListSeriesIterator(samples []tsdbutil.Sample) chunkenc.Iterator {
+func NewListSeriesIterator(samples Samples) chunkenc.Iterator {
 	return &listSeriesIterator{samples: samples, idx: -1}
 }
 
 func (it *listSeriesIterator) At() (int64, float64) {
-	s := it.samples[it.idx]
+	s := it.samples.Get(it.idx)
 	return s.T(), s.V()
 }
 
 func (it *listSeriesIterator) Next() bool {
 	it.idx++
-	return it.idx < len(it.samples)
+	return it.idx < it.samples.Len()
 }
 
 func (it *listSeriesIterator) Seek(t int64) bool {
@@ -47,12 +59,12 @@ func (it *listSeriesIterator) Seek(t int64) bool {
 		it.idx = 0
 	}
 	// Do binary search between current position and end.
-	it.idx = sort.Search(len(it.samples)-it.idx, func(i int) bool {
-		s := it.samples[i+it.idx]
+	it.idx = sort.Search(it.samples.Len()-it.idx, func(i int) bool {
+		s := it.samples.Get(i + it.idx)
 		return s.T() >= t
 	})
 
-	return it.idx < len(it.samples)
+	return it.idx < it.samples.Len()
 }
 
 func (it *listSeriesIterator) Err() error { return nil }
@@ -84,7 +96,6 @@ type chunkSetToSeriesSet struct {
 
 	chkIterErr       error
 	sameSeriesChunks []Series
-	bufIterator      chunkenc.Iterator
 }
 
 // NewSeriesSetFromChunkSeriesSet converts ChunkSeriesSet to SeriesSet by decoding chunks one by one.
@@ -101,10 +112,9 @@ func (c *chunkSetToSeriesSet) Next() bool {
 	c.sameSeriesChunks = c.sameSeriesChunks[:0]
 
 	for iter.Next() {
-		c.sameSeriesChunks = append(c.sameSeriesChunks, &chunkToSeries{
+		c.sameSeriesChunks = append(c.sameSeriesChunks, &chunkToSeriesDecoder{
 			labels: c.ChunkSeriesSet.At().Labels(),
-			chk:    iter.At(),
-			buf:    c.bufIterator,
+			Meta:   iter.At(),
 		})
 	}
 
@@ -128,11 +138,82 @@ func (c *chunkSetToSeriesSet) Err() error {
 	return c.ChunkSeriesSet.Err()
 }
 
-type chunkToSeries struct {
+type chunkToSeriesDecoder struct {
+	chunks.Meta
+
 	labels labels.Labels
-	chk    chunks.Meta
-	buf    chunkenc.Iterator
 }
 
-func (s *chunkToSeries) Labels() labels.Labels       { return s.labels }
-func (s *chunkToSeries) Iterator() chunkenc.Iterator { return s.chk.Chunk.Iterator(s.buf) }
+func (s *chunkToSeriesDecoder) Labels() labels.Labels { return s.labels }
+
+// TODO(bwplotka): Can we provide any chunkenc buffer?
+func (s *chunkToSeriesDecoder) Iterator() chunkenc.Iterator { return s.Chunk.Iterator(nil) }
+
+type seriesSetToChunkSet struct {
+	SeriesSet
+}
+
+// NewSeriesSetToChunkSet converts SeriesSet to ChunkSeriesSet by encoding chunks from samples.
+func NewSeriesSetToChunkSet(chk SeriesSet) ChunkSeriesSet {
+	return &seriesSetToChunkSet{SeriesSet: chk}
+}
+
+func (c *seriesSetToChunkSet) Next() bool {
+	if c.Err() != nil || !c.SeriesSet.Next() {
+		return false
+	}
+	return true
+}
+
+func (c *seriesSetToChunkSet) At() ChunkSeries {
+	return &seriesToChunkEncoder{
+		Series: c.SeriesSet.At(),
+	}
+}
+
+func (c *seriesSetToChunkSet) Err() error {
+	return c.SeriesSet.Err()
+}
+
+type seriesToChunkEncoder struct {
+	Series
+}
+
+// TODO(bwplotka): Currently encoder will just naively build one chunk, without limit. Split it: https://github.com/prometheus/tsdb/issues/670
+func (s *seriesToChunkEncoder) Iterator() chunks.Iterator {
+	chk := chunkenc.NewXORChunk()
+	app, err := chk.Appender()
+	if err != nil {
+		return errChunksIterator{err: err}
+	}
+	mint := int64(math.MaxInt64)
+	maxt := int64(math.MinInt64)
+
+	seriesIter := s.Series.Iterator()
+	for seriesIter.Next() {
+		t, v := seriesIter.At()
+		app.Append(t, v)
+
+		maxt = t
+		if mint == math.MaxInt64 {
+			mint = t
+		}
+	}
+	if err := seriesIter.Err(); err != nil {
+		return errChunksIterator{err: err}
+	}
+
+	return NewListChunkSeriesIterator(chunks.Meta{
+		MinTime: mint,
+		MaxTime: maxt,
+		Chunk:   chk,
+	})
+}
+
+type errChunksIterator struct {
+	err error
+}
+
+func (e errChunksIterator) At() chunks.Meta { return chunks.Meta{} }
+func (e errChunksIterator) Next() bool      { return false }
+func (e errChunksIterator) Err() error      { return e.err }

@@ -173,7 +173,7 @@ basic_auth:
 
 # Sets the `Authorization` header on every scrape request with the bearer token
 # read from the configured file. It is mutually exclusive with `bearer_token`.
-[ bearer_token_file: /path/to/bearer/token/file ]
+[ bearer_token_file: <filename> ]
 
 # Configures the scrape request's TLS settings.
 tls_config:
@@ -189,6 +189,10 @@ azure_sd_configs:
 # List of Consul service discovery configurations.
 consul_sd_configs:
   [ - <consul_sd_config> ... ]
+
+# List of DigitalOcean service discovery configurations.
+digitalocean_sd_configs:
+  [ - <digitalocean_sd_config> ... ]
 
 # List of DNS service discovery configurations.
 dns_sd_configs:
@@ -386,6 +390,60 @@ users with thousands of services it can be more efficient to use the Consul API
 directly which has basic support for filtering nodes (currently by node
 metadata and a single tag).
 
+### `<digitalocean_sd_config>`
+
+DigitalOcean SD configurations allow retrieving scrape targets from [DigitalOcean's](https://www.digitalocean.com/)
+Droplets API.
+This service discovery uses the public IPv4 address by default, by that can be
+changed with relabelling, as demonstrated in [the Prometheus digitalocean-sd
+configuration file](/documentation/examples/prometheus-digitalocean.yml).
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_digitalocean_droplet_id`: the id of the droplet
+* `__meta_digitalocean_droplet_name`: the name of the droplet
+* `__meta_digitalocean_image`: the image name of the droplet
+* `__meta_digitalocean_private_ipv4`: the private IPv4 of the droplet
+* `__meta_digitalocean_public_ipv4`: the public IPv4 of the droplet
+* `__meta_digitalocean_public_ipv6`: the public IPv6 of the droplet
+* `__meta_digitalocean_region`: the region of the droplet
+* `__meta_digitalocean_size`: the size of the droplet
+* `__meta_digitalocean_status`: the status of the droplet
+* `__meta_digitalocean_features`: the comma-separated list of features of the droplet
+* `__meta_digitalocean_tags`: the comma-separated list of tags of the droplet
+
+```yaml
+# Authentication information used to authenticate to the API server.
+# Note that `basic_auth`, `bearer_token` and `bearer_token_file` options are
+# mutually exclusive.
+# password and password_file are mutually exclusive.
+
+# Optional HTTP basic authentication information, not currently supported by DigitalOcean.
+basic_auth:
+  [ username: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
+
+# Optional bearer token authentication information.
+[ bearer_token: <secret> ]
+
+# Optional bearer token file authentication information.
+[ bearer_token_file: <filename> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
+
+# The port to scrape metrics from.
+[ port: <int> | default = 80 ]
+
+# The time after which the droplets are refreshed.
+[ refresh_interval: <duration> | default = 60s ]
+```
+
 ### `<dns_sd_config>`
 
 A DNS-based service discovery configuration allows specifying a set of DNS
@@ -426,6 +484,7 @@ the public IP address with relabeling.
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
+* `__meta_ec2_ami`: the EC2 Amazon Machine Image
 * `__meta_ec2_architecture`: the architecture of the instance
 * `__meta_ec2_availability_zone`: the availability zone in which the instance is running
 * `__meta_ec2_instance_id`: the EC2 instance ID
@@ -872,7 +931,7 @@ namespaces:
 # if you just want to monitor small subset of pods in large cluster it's recommended to use selectors.
 # Decision, if selectors should be used or not depends on the particular situation.
 [ selectors:
-  [ - role: <role>  
+  [ - role: <role>
     [ label: <string> ]
     [ field: <string> ] ]]
 ```
@@ -941,7 +1000,7 @@ basic_auth:
 # Sets the `Authorization` header on every request with the bearer token
 # read from the configured file. It is mutually exclusive with `bearer_token` and other authentication mechanisms.
 # NOTE: The current version of DC/OS marathon (v1.11.0) does not support standard Bearer token authentication. Use `auth_token_file` instead.
-[ bearer_token_file: /path/to/bearer/token/file ]
+[ bearer_token_file: <filename> ]
 
 # TLS configuration for connecting to marathon servers
 tls_config:
@@ -1236,7 +1295,7 @@ basic_auth:
 
 # Sets the `Authorization` header on every request with the bearer token
 # read from the configured file. It is mutually exclusive with `bearer_token`.
-[ bearer_token_file: /path/to/bearer/token/file ]
+[ bearer_token_file: <filename> ]
 
 # Configures the scrape request's TLS settings.
 tls_config:
@@ -1337,7 +1396,7 @@ basic_auth:
 
 # Sets the `Authorization` header on every remote write request with the bearer token
 # read from the configured file. It is mutually exclusive with `bearer_token`.
-[ bearer_token_file: /path/to/bearer/token/file ]
+[ bearer_token_file: <filename> ]
 
 # Configures the remote write request's TLS settings.
 tls_config:
@@ -1409,7 +1468,7 @@ basic_auth:
 
 # Sets the `Authorization` header on every remote read request with the bearer token
 # read from the configured file. It is mutually exclusive with `bearer_token`.
-[ bearer_token_file: /path/to/bearer/token/file ]
+[ bearer_token_file: <filename> ]
 
 # Configures the remote read request's TLS settings.
 tls_config:

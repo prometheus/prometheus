@@ -9,7 +9,6 @@ jobs:
       AUTH_FILE: ${{ secrets.TEST_INFRA_GKE_AUTH }}
       BRANCH: ${{ github.event.client_payload.BRANCH }}
       BENCH_FUNC_REGEX: ${{ github.event.client_payload.BENCH_FUNC_REGEX }}
-      CLUSTER_NAME: test-infra
       GITHUB_TOKEN: ${{ secrets.PROMBOT_TOKEN }}
       GITHUB_ORG: prometheus
       GITHUB_REPO: prometheus

@@ -86,6 +86,11 @@ https://github.com/samuel/go-zookeeper
 Copyright (c) 2013, Samuel Stauffer <samuel@descolada.com>
 See https://github.com/samuel/go-zookeeper/blob/master/LICENSE for license details.
 
+Time series compression algorithm from Facebook's Gorilla paper
+https://github.com/dgryski/go-tsz
+Copyright (c) 2015,2016 Damian Gryski <damian@gryski.com>
+See https://github.com/dgryski/go-tsz/blob/master/LICENSE for license details.
+
 We also use code from a large number of npm packages. For details, see:
 - https://github.com/prometheus/prometheus/blob/master/web/ui/react-app/package.json
 - https://github.com/prometheus/prometheus/blob/master/web/ui/react-app/package-lock.json
