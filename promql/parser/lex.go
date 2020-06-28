@@ -48,21 +48,21 @@ func (i Item) String() string {
 	return fmt.Sprintf("%q", i.Val)
 }
 
-// isOperator returns true if the Item corresponds to a arithmetic or set operator.
+// IsOperator returns true if the Item corresponds to a arithmetic or set operator.
 // Returns false otherwise.
 func (i ItemType) IsOperator() bool { return i > operatorsStart && i < operatorsEnd }
 
-// isAggregator returns true if the Item belongs to the aggregator functions.
+// IsAggregator returns true if the Item belongs to the aggregator functions.
 // Returns false otherwise
 func (i ItemType) IsAggregator() bool { return i > aggregatorsStart && i < aggregatorsEnd }
 
-// isAggregator returns true if the Item is an aggregator that takes a parameter.
+// IsAggregatorWithParam returns true if the Item is an aggregator that takes a parameter.
 // Returns false otherwise
 func (i ItemType) IsAggregatorWithParam() bool {
 	return i == TOPK || i == BOTTOMK || i == COUNT_VALUES || i == QUANTILE
 }
 
-// isKeyword returns true if the Item corresponds to a keyword.
+// IsKeyword returns true if the Item corresponds to a keyword.
 // Returns false otherwise.
 func (i ItemType) IsKeyword() bool { return i > keywordsStart && i < keywordsEnd }
 
@@ -77,7 +77,7 @@ func (i ItemType) IsComparisonOperator() bool {
 	}
 }
 
-// isSetOperator returns whether the Item corresponds to a set operator.
+// IsSetOperator returns whether the Item corresponds to a set operator.
 func (i ItemType) IsSetOperator() bool {
 	switch i {
 	case LAND, LOR, LUNLESS:
