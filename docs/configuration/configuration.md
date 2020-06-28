@@ -592,10 +592,10 @@ record name that produced the discovered target.
 ```yaml
 # A list of DNS domain names to be queried.
 names:
-  [ - <domain_name> ]
+  [ - <string> ]
 
-# The type of DNS query to perform.
-[ type: <query_type> | default = 'SRV' ]
+# The type of DNS query to perform. One of SRV, A, or AAAA.
+[ type: <string> | default = 'SRV' ]
 
 # The port number used if the query type is not SRV.
 [ port: <number>]
@@ -603,9 +603,6 @@ names:
 # The time after which the provided names are refreshed.
 [ refresh_interval: <duration> | default = 30s ]
 ```
-
-Where `<domain_name>` is a valid DNS domain name.
-Where `<query_type>` is `SRV`, `A`, or `AAAA`.
 
 ### `<ec2_sd_config>`
 
@@ -1018,7 +1015,8 @@ See below for the configuration options for Kubernetes discovery:
 [ api_server: <host> ]
 
 # The Kubernetes role of entities that should be discovered.
-role: <role>
+# One of endpoints, service, pod, node, or ingress.
+role: <string>
 
 # Optional authentication information used to authenticate to the API server.
 # Note that `basic_auth`, `bearer_token` and `bearer_token_file` options are
@@ -1062,13 +1060,10 @@ namespaces:
 # if you just want to monitor small subset of pods in large cluster it's recommended to use selectors.
 # Decision, if selectors should be used or not depends on the particular situation.
 [ selectors:
-  [ - role: <role>
+  [ - role: <string>
     [ label: <string> ]
     [ field: <string> ] ]]
 ```
-
-Where `<role>` must be `endpoints`, `service`, `pod`, `node`, or
-`ingress`.
 
 See [this example Prometheus configuration file](/documentation/examples/prometheus-kubernetes.yml)
 for a detailed example of configuring Prometheus for Kubernetes.
