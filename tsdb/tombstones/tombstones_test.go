@@ -129,7 +129,6 @@ func TestAddingNewIntervals(t *testing.T) {
 			new:   Interval{35, 40},
 			exp:   Intervals{{5, 10}, {12, 20}, {25, 30}, {35, 40}},
 		},
-		// Trimming.
 		{
 			new: Interval{math.MinInt64, 2},
 			exp: Intervals{{math.MinInt64, 2}},
