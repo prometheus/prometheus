@@ -96,11 +96,6 @@ func TestAddingNewIntervals(t *testing.T) {
 		},
 		{
 			exist: Intervals{{1, 10}, {12, 20}, {25, 30}},
-			new:   Interval{21, 25},
-			exp:   Intervals{{1, 10}, {12, 30}},
-		},
-		{
-			exist: Intervals{{1, 10}, {12, 20}, {25, 30}},
 			new:   Interval{18, 23},
 			exp:   Intervals{{1, 10}, {12, 23}, {25, 30}},
 		},
