@@ -16,7 +16,6 @@ package uyuni
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
@@ -33,8 +32,6 @@ import (
 )
 
 const (
-	uyuniLabel                    = model.MetaLabelPrefix + "uyuni_"
-	uyuniLabelEntitlements        = uyuniLabel + "entitlements"
 	monitoringEntitlementLabel    = "monitoring_entitled"
 	prometheusExporterFormulaName = "prometheus-exporters"
 	uyuniXMLRPCAPIPath            = "/rpc/api"
@@ -76,7 +73,6 @@ type exporterConfig struct {
 // Discovery periodically performs Uyuni API requests. It implements the Discoverer interface.
 type Discovery struct {
 	*refresh.Discovery
-	client   *http.Client
 	interval time.Duration
 	sdConfig *SDConfig
 	logger   log.Logger
@@ -292,7 +288,10 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		fmt.Printf("\tFound 0 systems.\n")
 	}
 
-	logout(rpcClient, token)
+	err = logout(rpcClient, token)
+	if err != nil {
+		level.Warn(d.logger).Log("msg", "Failed to log out from Uyuni API", "err", err)
+	}
 	rpcClient.Close()
 	return []*targetgroup.Group{&targetgroup.Group{Targets: targets, Source: config.Host}}, nil
 }
