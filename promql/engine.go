@@ -1978,20 +1978,23 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 			if k > inputVecLen {
 				resultSize = inputVecLen
 			}
-			if op == parser.STDVAR || op == parser.STDDEV {
-				result[groupingKey].value = 0.0
-			} else if op == parser.TOPK || op == parser.QUANTILE {
+			switch op {
+			case parser.STDVAR, parser.STDDEV:
+				result[groupingKey].value = 0
+			case parser.TOPK, parser.QUANTILE:
 				result[groupingKey].heap = make(vectorByValueHeap, 0, resultSize)
 				heap.Push(&result[groupingKey].heap, &Sample{
 					Point:  Point{V: s.V},
 					Metric: s.Metric,
 				})
-			} else if op == parser.BOTTOMK {
+			case parser.BOTTOMK:
 				result[groupingKey].reverseHeap = make(vectorByReverseValueHeap, 0, resultSize)
 				heap.Push(&result[groupingKey].reverseHeap, &Sample{
 					Point:  Point{V: s.V},
 					Metric: s.Metric,
 				})
+			case parser.GROUP:
+				result[groupingKey].value = 1
 			}
 			continue
 		}
@@ -2003,6 +2006,9 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 		case parser.AVG:
 			group.groupCount++
 			group.mean += (s.V - group.mean) / float64(group.groupCount)
+
+		case parser.GROUP:
+			// Do nothing. Required to avoid the panic in `default:` below.
 
 		case parser.MAX:
 			if group.value < s.V || math.IsNaN(group.value) {
