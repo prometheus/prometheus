@@ -2008,6 +2008,7 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 			group.mean += (s.V - group.mean) / float64(group.groupCount)
 
 		case parser.GROUP:
+			// Do nothing. Required to avoid the panic in `default:` below.
 
 		case parser.MAX:
 			if group.value < s.V || math.IsNaN(group.value) {
