@@ -196,6 +196,11 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeScalar, ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
 	},
+	"random": {
+		Name:       "random",
+		ArgTypes:   []ValueType{},
+		ReturnType: ValueTypeScalar,
+	},
 	"rate": {
 		Name:       "rate",
 		ArgTypes:   []ValueType{ValueTypeMatrix},

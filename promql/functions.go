@@ -15,6 +15,7 @@ package promql
 
 import (
 	"math"
+	"math/rand"
 	"regexp"
 	"sort"
 	"strconv"
@@ -27,6 +28,10 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 )
+
+func init() {
+	rand.Seed(time.Now().UTC().UnixNano())
+}
 
 // FunctionCall is the type of a PromQL function implementation
 //
@@ -44,6 +49,13 @@ import (
 //     metrics, the timestamp are not needed.
 // Scalar results should be returned as the value of a sample in a Vector.
 type FunctionCall func(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector
+
+// === random() float64 ===
+func funcRandom(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return Vector{Sample{Point: Point{
+		V: rand.Float64(),
+	}}}
+}
 
 // === time() float64 ===
 func funcTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
@@ -905,6 +917,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"month":              funcMonth,
 	"predict_linear":     funcPredictLinear,
 	"quantile_over_time": funcQuantileOverTime,
+	"random":             funcRandom,
 	"rate":               funcRate,
 	"resets":             funcResets,
 	"round":              funcRound,

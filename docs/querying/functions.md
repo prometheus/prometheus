@@ -325,6 +325,11 @@ regression](https://en.wikipedia.org/wiki/Simple_linear_regression).
 
 `predict_linear` should only be used with gauges.
 
+## `random()`
+
+`random()` returns a pseudo-random scalar in [0.0,1.0). This
+function returns different values in consecutive identical queries.
+
 ## `rate()`
 
 `rate(v range-vector)` calculates the per-second average rate of increase of the

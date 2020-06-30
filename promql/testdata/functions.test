@@ -637,3 +637,8 @@ eval instant at 5m absent_over_time({job="ingress"}[4m])
 
 eval instant at 10m absent_over_time({job="ingress"}[4m])
 	{job="ingress"} 1
+
+# Test for random.
+
+eval instant at 10m count(count_values("rand",label_replace(vector(random()) >= 0 < 1,"r","1","","") or label_replace(vector(random()) >= 0 < 1,"r","2","","") ))
+	{} 2
