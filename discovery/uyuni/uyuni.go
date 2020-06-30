@@ -16,6 +16,7 @@ package uyuni
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/url"
 	"regexp"
 	"strings"
@@ -66,8 +67,17 @@ type networkInfo struct {
 }
 
 type exporterConfig struct {
+	Address string `xmlrpc:"address"`
 	Args    string `xmlrpc:"args"`
 	Enabled bool   `xmlrpc:"enabled"`
+}
+
+type proxiedExporterConfig struct {
+	ProxyIsEnabled   bool           `xmlrpc:"proxy_enabled"`
+	ProxyPort        float32        `xmlrpc:"proxy_port"`
+	NodeExporter     exporterConfig `xmlrpc:"node_exporter"`
+	ApacheExporter   exporterConfig `xmlrpc:"apache_exporter"`
+	PostgresExporter exporterConfig `xmlrpc:"postgres_exporter"`
 }
 
 // Discovery periodically performs Uyuni API requests. It implements the Discoverer interface.
@@ -147,29 +157,46 @@ func getNetworkInformationForSystems(rpcclient *xmlrpc.Client, token string, sys
 }
 
 // Get formula data for a given system
-func getExporterDataForSystems(rpcclient *xmlrpc.Client, token string, systemIDs []int) (map[int]map[string]exporterConfig, error) {
-	var combinedFormulaDatas []struct {
-		SystemID        int                       `xmlrpc:"system_id"`
-		ExporterConfigs map[string]exporterConfig `xmlrpc:"formula_values"`
+func getExporterDataForSystems(
+	rpcclient *xmlrpc.Client,
+	token string,
+	systemIDs []int,
+) (map[int]proxiedExporterConfig, error) {
+	var combinedFormulaData []struct {
+		SystemID        int                   `xmlrpc:"system_id"`
+		ExporterConfigs proxiedExporterConfig `xmlrpc:"formula_values"`
 	}
-	err := rpcclient.Call("formula.getCombinedFormulaDataByServerIds", []interface{}{token, prometheusExporterFormulaName, systemIDs}, &combinedFormulaDatas)
+	err := rpcclient.Call(
+		"formula.getCombinedFormulaDataByServerIds",
+		[]interface{}{token, prometheusExporterFormulaName, systemIDs},
+		&combinedFormulaData)
 	if err != nil {
 		return nil, err
 	}
-	result := make(map[int]map[string]exporterConfig)
-	for _, combinedFormulaData := range combinedFormulaDatas {
+	result := make(map[int]proxiedExporterConfig)
+	for _, combinedFormulaData := range combinedFormulaData {
 		result[combinedFormulaData.SystemID] = combinedFormulaData.ExporterConfigs
 	}
 	return result, nil
 }
 
 // Get exporter port configuration from Formula
-func extractPortFromFormulaData(args string) (string, error) {
-	tokens := monFormulaRegex.FindStringSubmatch(args)
-	if len(tokens) < 1 {
-		return "", errors.New("Unable to find port in args: " + args)
+func extractPortFromFormulaData(args string, address string) (string, error) {
+	// first try address
+	_, port, addrErr := net.SplitHostPort(address)
+	if addrErr != nil || len(port) == 0 {
+		// no valid port in address, try args
+		tokens := monFormulaRegex.FindStringSubmatch(args)
+		if len(tokens) < 1 {
+			err := "Unable to find port in args: " + args
+			if addrErr != nil {
+				err = strings.Join([]string{addrErr.Error(), err}, " ")
+			}
+			return "", errors.New(err)
+		}
+		port = tokens[1]
 	}
-	return tokens[1], nil
+	return port, nil
 }
 
 // NewDiscovery returns a new file discovery for the given paths.
@@ -188,39 +215,90 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) *Discovery {
 	return d
 }
 
-func (d *Discovery) getTargetsForSystem(systemID int, systemGroupsIDs []systemGroupID, networkInfo networkInfo, combinedFormulaData map[string]exporterConfig) []model.LabelSet {
-	labelSets := make([]model.LabelSet, 0)
-	for exporter, exporterConfig := range combinedFormulaData {
-		if exporterConfig.Enabled {
-			port, err := extractPortFromFormulaData(exporterConfig.Args)
-			if err == nil {
-				targets := model.LabelSet{}
-				addr := fmt.Sprintf("%s:%s", networkInfo.IP, port)
-				targets[model.AddressLabel] = model.LabelValue(addr)
-				targets["exporter"] = model.LabelValue(exporter)
-				targets["hostname"] = model.LabelValue(networkInfo.Hostname)
-
-				managedGroupNames := make([]string, 0, len(systemGroupsIDs))
-				for _, systemGroupInfo := range systemGroupsIDs {
-					managedGroupNames = append(managedGroupNames, systemGroupInfo.GroupName)
-				}
-
-				if len(managedGroupNames) == 0 {
-					managedGroupNames = []string{"No group"}
-				}
-
-				targets["groups"] = model.LabelValue(strings.Join(managedGroupNames, ","))
-				labelSets = append(labelSets, targets)
-
-			} else {
-				level.Error(d.logger).Log("msg", "Invalid exporter port", "clientId", systemID, "err", err)
-			}
-		}
+func initializeExporterTargets(
+	targets *[]model.LabelSet,
+	module string, config exporterConfig,
+	proxyPort string,
+	errors *[]error,
+) {
+	if !(config.Enabled) {
+		return
 	}
+	var port string
+	if len(proxyPort) == 0 {
+		exporterPort, err := extractPortFromFormulaData(config.Args, config.Address)
+		if err != nil {
+			*errors = append(*errors, err)
+			return
+		}
+		port = exporterPort
+	} else {
+		port = proxyPort
+	}
+
+	labels := model.LabelSet{}
+	labels["exporter"] = model.LabelValue(module + "_exporter")
+	// for now set only port number here
+	labels[model.AddressLabel] = model.LabelValue(port)
+	if len(proxyPort) > 0 {
+		labels[model.ParamLabelPrefix+"module"] = model.LabelValue(module)
+	}
+	*targets = append(*targets, labels)
+}
+
+func (d *Discovery) getTargetsForSystem(
+	systemID int,
+	systemGroupsIDs []systemGroupID,
+	networkInfo networkInfo,
+	combinedFormulaData proxiedExporterConfig,
+) []model.LabelSet {
+
+	var labelSets []model.LabelSet
+	var errors []error
+	var proxyPortNumber string
+	if combinedFormulaData.ProxyIsEnabled {
+		proxyPortNumber = fmt.Sprintf("%d", int(combinedFormulaData.ProxyPort))
+	}
+	initializeExporterTargets(&labelSets, "node", combinedFormulaData.NodeExporter, proxyPortNumber, &errors)
+	initializeExporterTargets(&labelSets, "apache", combinedFormulaData.ApacheExporter, proxyPortNumber, &errors)
+	initializeExporterTargets(&labelSets, "postgres", combinedFormulaData.PostgresExporter, proxyPortNumber, &errors)
+	managedGroupNames := getSystemGroupNames(systemGroupsIDs)
+	for _, labels := range labelSets {
+		// add hostname to the address label
+		addr := fmt.Sprintf("%s:%s", networkInfo.IP, labels[model.AddressLabel])
+		labels[model.AddressLabel] = model.LabelValue(addr)
+		labels["hostname"] = model.LabelValue(networkInfo.Hostname)
+		labels["groups"] = model.LabelValue(strings.Join(managedGroupNames, ","))
+		if combinedFormulaData.ProxyIsEnabled {
+			labels[model.MetricsPathLabel] = "/proxy"
+		}
+		level.Debug(d.logger).Log("msg", "Configured target", "Labels", fmt.Sprintf("%+v", labels))
+	}
+	for _, err := range errors {
+		level.Error(d.logger).Log("msg", "Invalid exporter port", "clientId", systemID, "err", err)
+	}
+
 	return labelSets
 }
 
-func (d *Discovery) getTargetsForSystems(rpcClient *xmlrpc.Client, token string, systemGroupIDsBySystemID map[int][]systemGroupID) ([]model.LabelSet, error) {
+func getSystemGroupNames(systemGroupsIDs []systemGroupID) []string {
+	managedGroupNames := make([]string, 0, len(systemGroupsIDs))
+	for _, systemGroupInfo := range systemGroupsIDs {
+		managedGroupNames = append(managedGroupNames, systemGroupInfo.GroupName)
+	}
+
+	if len(managedGroupNames) == 0 {
+		managedGroupNames = []string{"No group"}
+	}
+	return managedGroupNames
+}
+
+func (d *Discovery) getTargetsForSystems(
+	rpcClient *xmlrpc.Client,
+	token string,
+	systemGroupIDsBySystemID map[int][]systemGroupID,
+) ([]model.LabelSet, error) {
+
 	result := make([]model.LabelSet, 0)
 
 	systemIDs := make([]int, 0, len(systemGroupIDsBySystemID))
@@ -238,7 +316,11 @@ func (d *Discovery) getTargetsForSystems(rpcClient *xmlrpc.Client, token string,
 	}
 
 	for _, systemID := range systemIDs {
-		targets := d.getTargetsForSystem(systemID, systemGroupIDsBySystemID[systemID], networkInfoBySystemID[systemID], combinedFormulaDataBySystemID[systemID])
+		targets := d.getTargetsForSystem(
+			systemID,
+			systemGroupIDsBySystemID[systemID],
+			networkInfoBySystemID[systemID],
+			combinedFormulaDataBySystemID[systemID])
 		result = append(result, targets...)
 
 		// Log debug information
