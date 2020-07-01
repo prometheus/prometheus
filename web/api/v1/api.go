@@ -525,6 +525,14 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrap(err, "invalid parameter 'end'")}, nil, nil}
 	}
+	var matcherSets [][]*labels.Matcher
+	for _, s := range r.Form["match[]"] {
+		matchers, err := parser.ParseMetricSelector(s)
+		if err != nil {
+			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+		}
+		matcherSets = append(matcherSets, matchers)
+	}
 
 	q, err := api.Queryable.Querier(r.Context(), timestamp.FromTime(start), timestamp.FromTime(end))
 	if err != nil {
@@ -542,7 +550,20 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 		q.Close()
 	}
 
-	vals, warnings, err := q.LabelValues(name)
+	var vals []string
+	var warnings storage.Warnings
+	if len(r.Form["match[]"]) > 0 {
+		// get all series which match
+		var sets []storage.SeriesSet
+		for _, mset := range matcherSets {
+			s := q.Select(false, nil, mset...)
+			sets = append(sets, s)
+		}
+		vals, warnings, err = labelValuesByMatchers(sets, name)
+	} else {
+		vals, warnings, err = q.LabelValues(name)
+	}
+
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, warnings, closer}
 	}
@@ -551,6 +572,35 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 	}
 
 	return apiFuncResult{vals, nil, warnings, closer}
+}
+
+// LabelValuesByMatchers uses matchers to filter out the series
+// from which we get the label values
+func labelValuesByMatchers(sets []storage.SeriesSet, name string) ([]string, storage.Warnings, error) {
+	// get all the labels in the selected series
+	set := storage.NewMergeSeriesSet(sets, storage.ChainedSeriesMerge)
+	labelValuesMap := make(map[string]string)
+	for set.Next() {
+		series := set.At()
+		labelValue := series.Labels().Get(name)
+		// to avoid duplicates, any better way?
+		_, ok := labelValuesMap[labelValue]
+		if !ok && labelValue != ""  {
+			labelValuesMap[labelValue] = labelValue
+		}
+	}
+
+	warnings := set.Warnings()
+	if set.Err() != nil {
+		return nil, warnings, set.Err()
+	}
+	// convert map to array
+	labelValues := []string{}
+	for key := range labelValuesMap {
+		labelValues = append(labelValues, key)
+	}
+	sort.Strings(labelValues)
+	return labelValues, warnings, nil
 }
 
 var (
