@@ -35,6 +35,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/dockerswarm"
 	"github.com/prometheus/prometheus/discovery/ec2"
 	"github.com/prometheus/prometheus/discovery/file"
+	"github.com/prometheus/prometheus/discovery/hetzner"
 	"github.com/prometheus/prometheus/discovery/kubernetes"
 	"github.com/prometheus/prometheus/discovery/marathon"
 	"github.com/prometheus/prometheus/discovery/openstack"
@@ -648,6 +649,34 @@ var expectedConf = &Config{
 				}},
 			},
 		},
+		{
+			JobName:         "hetzner",
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath: DefaultScrapeConfig.MetricsPath,
+			Scheme:      DefaultScrapeConfig.Scheme,
+
+			ServiceDiscoveryConfigs: discovery.Configs{
+				&hetzner.SDConfig{
+					HTTPClientConfig: config.HTTPClientConfig{
+						BearerToken: "abcdef",
+					},
+					Port:            80,
+					RefreshInterval: model.Duration(60 * time.Second),
+					Role:            "hcloud",
+				},
+				&hetzner.SDConfig{
+					HTTPClientConfig: config.HTTPClientConfig{
+						BasicAuth: &config.BasicAuth{Username: "abcdef", Password: "abcdef"},
+					},
+					Port:            80,
+					RefreshInterval: model.Duration(60 * time.Second),
+					Role:            "robot",
+				},
+			},
+		},
 	},
 	AlertingConfig: AlertingConfig{
 		AlertmanagerConfigs: []*AlertmanagerConfig{
@@ -717,7 +746,7 @@ func TestElideSecrets(t *testing.T) {
 	yamlConfig := string(config)
 
 	matches := secretRe.FindAllStringIndex(yamlConfig, -1)
-	testutil.Assert(t, len(matches) == 8, "wrong number of secret matches found")
+	testutil.Assert(t, len(matches) == 10, "wrong number of secret matches found")
 	testutil.Assert(t, !strings.Contains(yamlConfig, "mysecret"),
 		"yaml marshal reveals authentication credentials.")
 }
@@ -962,6 +991,10 @@ var expectedErrors = []struct {
 	{
 		filename: "empty_static_config.bad.yml",
 		errMsg:   "empty or null section in static_configs",
+	},
+	{
+		filename: "hetzner_role.bad.yml",
+		errMsg:   "unknown role",
 	},
 }
 

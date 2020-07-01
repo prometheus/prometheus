@@ -279,6 +279,15 @@ scrape_configs:
       cert_file: valid_cert_file
       key_file:  valid_key_file
 
+- job_name: hetzner
+  hetzner_sd_configs:
+    - role: hcloud
+      bearer_token: abcdef
+    - role: robot
+      basic_auth:
+        username: abcdef
+        password: abcdef
+
 alerting:
   alertmanagers:
   - scheme: https
