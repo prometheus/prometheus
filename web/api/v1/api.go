@@ -570,14 +570,12 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 // LabelValuesByMatchers uses matchers to filter out matching series, then label values are extracted.
 func labelValuesByMatchers(sets []storage.SeriesSet, name string) ([]string, storage.Warnings, error) {
 	set := storage.NewMergeSeriesSet(sets, storage.ChainedSeriesMerge)
-	labelValuesMap := make(map[string]string)
+	labelValuesSet := make(map[string]struct{})
 	for set.Next() {
 		series := set.At()
 		labelValue := series.Labels().Get(name)
-		// This is to avoid duplicates.
-		_, ok := labelValuesMap[labelValue]
-		if !ok && labelValue != ""  {
-			labelValuesMap[labelValue] = labelValue
+		if labelValue != ""  {
+			labelValuesSet[labelValue] = struct{}{}
 		}
 	}
 
@@ -587,7 +585,7 @@ func labelValuesByMatchers(sets []storage.SeriesSet, name string) ([]string, sto
 	}
 	// Convert the map to an array.
 	labelValues := []string{}
-	for key := range labelValuesMap {
+	for key := range labelValuesSet {
 		labelValues = append(labelValues, key)
 	}
 	sort.Strings(labelValues)
