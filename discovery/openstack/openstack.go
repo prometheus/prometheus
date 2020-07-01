@@ -95,8 +95,9 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 
-	availability := gophercloud.Availability(c.Availability)
-	if availability != gophercloud.AvailabilityPublic && availability != gophercloud.AvailabilityInternal && availability != gophercloud.AvailabilityAdmin {
+	switch c.Availability {
+	case string(gophercloud.AvailabilityPublic), string(gophercloud.AvailabilityInternal), string(gophercloud.AvailabilityAdmin):
+	default:
 		return fmt.Errorf("unknown availability %s, must be one of %s, %s or %s", c.Availability, gophercloud.AvailabilityAdmin, gophercloud.AvailabilityInternal, gophercloud.AvailabilityPublic)
 	}
 
