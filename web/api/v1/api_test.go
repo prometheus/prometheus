@@ -1593,6 +1593,35 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 				},
 			},
 
+			//Should only return label value of matching metric name and label name
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "foo",
+				},
+				query: url.Values{
+					"match[]": []string{`test_metric2`},
+				},
+				response: []string{
+					"boo",
+				},
+			},
+
+			// Should only return label value of matching metric name and label name
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "foo",
+				},
+				query: url.Values{
+					"match[]": []string{`test_metric1`},
+				},
+				response: []string{
+					"bar",
+					"boo",
+				},
+			},
+
 			// Label names.
 			{
 				endpoint: api.labelNames,
