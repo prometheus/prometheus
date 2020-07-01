@@ -16,6 +16,7 @@ package discovery
 import (
 	"context"
 	"fmt"
+	"github.com/prometheus/prometheus/discovery/hcloud"
 	"reflect"
 	"sync"
 	"time"
@@ -424,6 +425,11 @@ func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setNam
 	for _, c := range cfg.TritonSDConfigs {
 		add(c, func() (Discoverer, error) {
 			return triton.New(log.With(m.logger, "discovery", "triton"), c)
+		})
+	}
+	for _, c := range cfg.HcloudSDConfigs {
+		add(c, func() (Discoverer, error) {
+			return hcloud.NewDiscovery(c, log.With(m.logger, "discovery", "hcloud"))
 		})
 	}
 	if len(cfg.StaticConfigs) > 0 {

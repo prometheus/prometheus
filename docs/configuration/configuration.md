@@ -215,6 +215,11 @@ file_sd_configs:
 gce_sd_configs:
   [ - <gce_sd_config> ... ]
 
+# List of Hetzner Cloud service discovery configurations.
+hcloud_sd_configs:
+  [ - <hcloud_sd_config> ... ]
+
+
 # List of Kubernetes service discovery configurations.
 kubernetes_sd_configs:
   [ - <kubernetes_sd_config> ... ]
@@ -917,6 +922,68 @@ If Prometheus is running within GCE, the service account associated with the
 instance it is running on should have at least read-only permissions to the
 compute resources. If running outside of GCE make sure to create an appropriate
 service account and place the credential file in one of the expected locations.
+
+### `<hcloud_sd_config>`
+
+Hetzner Cloud SD configurations allow retrieving scrape targets from [Hetzner Cloud](https://www.hetzner.cloud/)
+Server API.
+This service discovery uses the public IPv4 address by default, by that can be
+changed with relabelling, as demonstrated in [the Prometheus hcloud-sd
+configuration file](/documentation/examples/prometheus-hcloud.yml).
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_hcloud_id`: the id of the server
+* `__meta_hcloud_name`: the name of the server
+* `__meta_hcloud_image`: the image name or description of the server
+* `__meta_hcloud_location`: the name of the location the server is located
+* `__meta_hcloud_datacenter`: the name of the datacenter the server is located
+* `__meta_hcloud_ipv4`: the public ipv4 of the server
+* `__meta_hcloud_type`: the name of the type of the server
+* `__meta_hcloud_cpu_cores`: count of CPU cores the server has
+* `__meta_hcloud_cpu_type`: the type of the CPU (shared or dedicated)
+* `__meta_hcloud_memory_size`: amount of memory the server has (in GB)
+* `__meta_hcloud_disk_size`: size of disk the server has (in GB)
+
+Additionally if you configure the service discovery to look for a specific network
+the following meta labels are available:
+* `__meta_hcloud_network`: the name of the network the server is attached to
+* `__meta_hcloud_private_ipv4`: the private ipv4 of the server within this specific network
+
+```yaml
+# Authentication information used to authenticate to the API server.
+# Note that `basic_auth`, `bearer_token` and `bearer_token_file` options are
+# mutually exclusive.
+# password and password_file are mutually exclusive.
+
+# Optional HTTP basic authentication information, Hetzner Cloud does not support basic_auth.
+basic_auth:
+  [ username: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
+
+# Optional bearer token authentication information.
+[ bearer_token: <secret> ]
+
+# Optional bearer token file authentication information.
+[ bearer_token_file: <filename> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
+
+# The port to scrape metrics from.
+[ port: <int> | default = 80 ]
+
+# The time after which the droplets are refreshed.
+[ refresh_interval: <duration> | default = 60s ]
+
+# The name or the ID of the network the servers are attached to
+[ network: <string> | default = "" ]
+```
 
 ### `<kubernetes_sd_config>`
 

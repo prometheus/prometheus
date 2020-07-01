@@ -230,7 +230,7 @@ github.com/golang/protobuf/ptypes/wrappers
 # github.com/golang/snappy v0.0.1
 ## explicit
 github.com/golang/snappy
-# github.com/google/go-cmp v0.4.0
+# github.com/google/go-cmp v0.5.0
 github.com/google/go-cmp/cmp
 github.com/google/go-cmp/cmp/internal/diff
 github.com/google/go-cmp/cmp/internal/flags
@@ -298,6 +298,10 @@ github.com/hashicorp/golang-lru
 github.com/hashicorp/golang-lru/simplelru
 # github.com/hashicorp/serf v0.9.0
 github.com/hashicorp/serf/coordinate
+# github.com/hetznercloud/hcloud-go v1.20.0
+## explicit
+github.com/hetznercloud/hcloud-go/hcloud
+github.com/hetznercloud/hcloud-go/hcloud/schema
 # github.com/influxdata/influxdb v1.8.1
 ## explicit
 github.com/influxdata/influxdb/client/v2

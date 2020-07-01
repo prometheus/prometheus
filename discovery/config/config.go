@@ -15,6 +15,7 @@ package config
 
 import (
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/discovery/hcloud"
 
 	"github.com/prometheus/prometheus/discovery/azure"
 	"github.com/prometheus/prometheus/discovery/consul"
@@ -64,6 +65,8 @@ type ServiceDiscoveryConfig struct {
 	AzureSDConfigs []*azure.SDConfig `yaml:"azure_sd_configs,omitempty"`
 	// List of Triton service discovery configurations.
 	TritonSDConfigs []*triton.SDConfig `yaml:"triton_sd_configs,omitempty"`
+	// List of Hetzner Cloud service discovery configurations.
+	HcloudSDConfigs []*hcloud.SDConfig `yaml:"hcloud_sd_configs,omitempty"`
 }
 
 // Validate validates the ServiceDiscoveryConfig.

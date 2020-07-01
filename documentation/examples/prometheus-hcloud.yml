@@ -1,0 +1,32 @@
+# A example scrape configuration for running Prometheus with
+# Hetzner Cloud.
+
+scrape_configs:
+  
+  # Make Prometheus scrape itself for metrics.
+  - job_name: 'prometheus'
+    static_configs:
+    - targets: ['localhost:9090']
+
+  # Discover Node Exporter instances to scrape.
+  - job_name: 'node'
+
+    hcloud_sd_configs:
+      - bearer_token: "<replace with a Hetzner Cloud API Token>"
+    relabel_configs:
+      # Use the public IPv4 and port 9100 to scrape the target.
+      - source_labels: [__meta_meta_hcloud_ipv4]
+        target_label: __address__
+        replacement: '$1:9100'
+
+  # Discover Node Exporter instances to scrape using a Hetzner Cloud Network.
+  - job_name: 'node_private'
+
+    hcloud_sd_configs:
+      - bearer_token: "<replace with a Hetzner Cloud API Token>"
+        network: "my-network"
+    relabel_configs:
+      # Use the private IPv4 within the Hetzner Cloud Network and port 9100 to scrape the target.
+      - source_labels: [__meta_meta_hcloud_private_ipv4]
+        target_label: __address__
+        replacement: '$1:9100'
