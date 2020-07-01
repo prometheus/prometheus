@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	"github.com/prometheus/alertmanager/api/v2/models"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	yaml "gopkg.in/yaml.v2"
@@ -555,4 +556,8 @@ func makeInputTargetGroup() *targetgroup.Group {
 		},
 		Source: "testsource",
 	}
+}
+
+func TestLabelsToOpenAPILabelSet(t *testing.T) {
+	testutil.Equals(t, models.LabelSet{"aaa": "111", "bbb": "222"}, labelsToOpenAPILabelSet(labels.Labels{{Name: "aaa", Value: "111"}, {Name: "bbb", Value: "222"}}))
 }
