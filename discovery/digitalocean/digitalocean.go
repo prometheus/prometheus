@@ -176,7 +176,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 func (d *Discovery) listDroplets() ([]godo.Droplet, error) {
 	var (
 		droplets []godo.Droplet
-		opts     = &godo.ListOptions{Page: 1}
+		opts     = &godo.ListOptions{}
 	)
 	for {
 		paginatedDroplets, resp, err := d.client.Droplets.List(context.Background(), opts)
@@ -187,7 +187,13 @@ func (d *Discovery) listDroplets() ([]godo.Droplet, error) {
 		if resp.Links == nil || resp.Links.IsLastPage() {
 			break
 		}
-		opts.Page++
+
+		page, err := resp.Links.CurrentPage()
+		if err != nil {
+			return nil, err
+		}
+
+		opts.Page = page + 1
 	}
 	return droplets, nil
 }
