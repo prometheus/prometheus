@@ -1622,7 +1622,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 					"boo",
 				},
 			},
-			// Label values with matcher
+			// Label values with matcher.
 			{
 				endpoint: api.labelValues,
 				params: map[string]string{
@@ -1635,7 +1635,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 					"boo",
 				},
 			},
-			// Label values with matcher
+			// Label values with matcher.
 			{
 				endpoint: api.labelValues,
 				params: map[string]string{
@@ -1649,7 +1649,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 					"boo",
 				},
 			},
-			// Label values with matcher using label filter
+			// Label values with matcher using label filter.
 			{
 				endpoint: api.labelValues,
 				params: map[string]string{
@@ -1662,7 +1662,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 					"bar",
 				},
 			},
-			// Label values with matcher and time range
+			// Label values with matcher and time range.
 			{
 				endpoint: api.labelValues,
 				params: map[string]string{

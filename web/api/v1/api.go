@@ -553,7 +553,7 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 	var vals []string
 	var warnings storage.Warnings
 	if len(r.Form["match[]"]) > 0 {
-		// get all series which match
+		// Get all series which match matchers.
 		var sets []storage.SeriesSet
 		for _, mset := range matcherSets {
 			s := q.Select(false, nil, mset...)
@@ -574,16 +574,14 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 	return apiFuncResult{vals, nil, warnings, closer}
 }
 
-// LabelValuesByMatchers uses matchers to filter out the series
-// from which we get the label values
+// LabelValuesByMatchers uses matchers to filter out matching series, then label values are extracted.
 func labelValuesByMatchers(sets []storage.SeriesSet, name string) ([]string, storage.Warnings, error) {
-	// get all the labels in the selected series
 	set := storage.NewMergeSeriesSet(sets, storage.ChainedSeriesMerge)
 	labelValuesMap := make(map[string]string)
 	for set.Next() {
 		series := set.At()
 		labelValue := series.Labels().Get(name)
-		// to avoid duplicates, any better way?
+		// This is to avoid duplicates.
 		_, ok := labelValuesMap[labelValue]
 		if !ok && labelValue != ""  {
 			labelValuesMap[labelValue] = labelValue
@@ -594,7 +592,7 @@ func labelValuesByMatchers(sets []storage.SeriesSet, name string) ([]string, sto
 	if set.Err() != nil {
 		return nil, warnings, set.Err()
 	}
-	// convert map to array
+	// Convert the map to an array.
 	labelValues := []string{}
 	for key := range labelValuesMap {
 		labelValues = append(labelValues, key)
