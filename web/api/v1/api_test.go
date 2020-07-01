@@ -1622,8 +1622,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 					"boo",
 				},
 			},
-
-			//Should only return label value of matching metric name and label name
+			// Label values with matcher
 			{
 				endpoint: api.labelValues,
 				params: map[string]string{
@@ -1636,8 +1635,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 					"boo",
 				},
 			},
-
-			// Should only return label value of matching metric name and label name
+			// Label values with matcher
 			{
 				endpoint: api.labelValues,
 				params: map[string]string{
@@ -1651,7 +1649,35 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 					"boo",
 				},
 			},
-
+			// Label values with matcher using label filter
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "foo",
+				},
+				query: url.Values{
+					"match[]": []string{`test_metric1{foo="bar"}`},
+				},
+				response: []string{
+					"bar",
+				},
+			},
+			// Label values with matcher and time range
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "foo",
+				},
+				query: url.Values{
+					"match[]": []string{`test_metric1`},
+					"start": []string{"1"},
+					"end":   []string{"100000000"},
+				},
+				response: []string{
+					"bar",
+					"boo",
+				},
+			},
 			// Label names.
 			{
 				endpoint: api.labelNames,
