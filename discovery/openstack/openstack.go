@@ -53,7 +53,7 @@ type SDConfig struct {
 	ApplicationCredentialSecret config_util.Secret    `yaml:"application_credential_secret"`
 	Role                        Role                  `yaml:"role"`
 	Region                      string                `yaml:"region"`
-	RefreshInterval             model.Duration        `yaml:"refresh_interval,omitempty"`
+	RefreshInterval             model.Duration        `yaml:"refresh_interval"`
 	Port                        int                   `yaml:"port"`
 	AllTenants                  bool                  `yaml:"all_tenants,omitempty"`
 	TLSConfig                   config_util.TLSConfig `yaml:"tls_config,omitempty"`
@@ -163,14 +163,14 @@ func newRefresher(conf *SDConfig, l log.Logger) (refresher, error) {
 	}
 	client.HTTPClient = http.Client{
 		Transport: &http.Transport{
-			IdleConnTimeout: 5 * time.Duration(conf.RefreshInterval),
+			IdleConnTimeout: 2 * time.Duration(conf.RefreshInterval),
 			TLSClientConfig: tls,
 			DialContext: conntrack.NewDialContextFunc(
 				conntrack.DialWithTracing(),
 				conntrack.DialWithName("openstack_sd"),
 			),
 		},
-		Timeout: 5 * time.Duration(conf.RefreshInterval),
+		Timeout: time.Duration(conf.RefreshInterval),
 	}
 	availability := gophercloud.Availability(conf.Availability)
 	switch conf.Role {
