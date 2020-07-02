@@ -330,7 +330,7 @@ func TestEndpoints(t *testing.T) {
 			config:                func() config.Config { return samplePrometheusCfg },
 			ready:                 func(f http.HandlerFunc) http.HandlerFunc { return f },
 			rulesRetriever:        algr.toFactory(),
-			webkit:                newWebkit(suite.Storage(), testTargetRetriever.toFactory()),
+			metadataProvider:      &metadataProvider{queryable: suite.Storage(), targetRetriever: testTargetRetriever.toFactory()},
 		}
 
 		testEndpoints(t, api, testTargetRetriever, true)
@@ -393,7 +393,7 @@ func TestEndpoints(t *testing.T) {
 			config:                func() config.Config { return samplePrometheusCfg },
 			ready:                 func(f http.HandlerFunc) http.HandlerFunc { return f },
 			rulesRetriever:        algr.toFactory(),
-			webkit:                newWebkit(remote, testTargetRetriever.toFactory()),
+			metadataProvider:      &metadataProvider{queryable: remote, targetRetriever: testTargetRetriever.toFactory()},
 		}
 
 		testEndpoints(t, api, testTargetRetriever, false)
@@ -416,8 +416,8 @@ func TestLabelNames(t *testing.T) {
 	testutil.Ok(t, suite.Run())
 
 	api := &API{
-		Queryable: suite.Storage(),
-		webkit:    newWebkit(suite.Storage(), nil),
+		Queryable:        suite.Storage(),
+		metadataProvider: &metadataProvider{queryable: suite.Storage(), targetRetriever: nil},
 	}
 	request := func(m string) (*http.Request, error) {
 		if m == http.MethodPost {
@@ -2563,13 +2563,14 @@ func TestParseDuration(t *testing.T) {
 
 func TestOptionsMethod(t *testing.T) {
 	r := route.New()
-	langServerHandler, err := NewLangServer("", nil, nil, log.NewNopLogger())
+	langServerHandler, err := newLangServer(nil, nil, log.NewNopLogger())
 	if err != nil {
 		t.Fatalf("Error creating LangServer Handler: %s", err)
 	}
 	api := &API{
-		ready:             func(f http.HandlerFunc) http.HandlerFunc { return f },
-		webkit:            newWebkit(nil, nil),
+		ready: func(f http.HandlerFunc) http.HandlerFunc { return f },
+
+		metadataProvider:  &metadataProvider{queryable: nil, targetRetriever: nil},
 		langServerHandler: langServerHandler,
 	}
 	api.Register(r)
