@@ -33,14 +33,15 @@ Generic placeholders are defined as follows:
 
 * `<boolean>`: a boolean that can take the values `true` or `false`
 * `<duration>`: a duration matching the regular expression `[0-9]+(ms|[smhdwy])`
-* `<labelname>`: a string matching the regular expression `[a-zA-Z_][a-zA-Z0-9_]*`
-* `<labelvalue>`: a string of unicode characters
 * `<filename>`: a valid path in the current working directory
 * `<host>`: a valid string consisting of a hostname or IP followed by an optional port number
+* `<int>`: an integer value
+* `<labelname>`: a string matching the regular expression `[a-zA-Z_][a-zA-Z0-9_]*`
+* `<labelvalue>`: a string of unicode characters
 * `<path>`: a valid URL path
 * `<scheme>`: a string that can take the values `http` or `https`
-* `<string>`: a regular string
 * `<secret>`: a regular string that is a secret, such as a password
+* `<string>`: a regular string
 * `<tmpl_string>`: a string which is template-expanded before usage
 
 The other placeholders are specified separately.
@@ -376,7 +377,7 @@ tags:
 [ tag_separator: <string> | default = , ]
 
 # Allow stale Consul results (see https://www.consul.io/api/features/consistency.html). Will reduce load on Consul.
-[ allow_stale: <bool> | default = true ]
+[ allow_stale: <boolean> | default = true ]
 
 # The time after which the provided names are refreshed.
 # On large setup it might be a good idea to increase this value because the catalog will change all the time.
@@ -598,7 +599,7 @@ names:
 [ type: <string> | default = 'SRV' ]
 
 # The port number used if the query type is not SRV.
-[ port: <number>]
+[ port: <int>]
 
 # The time after which the provided names are refreshed.
 [ refresh_interval: <duration> | default = 30s ]
@@ -1118,7 +1119,7 @@ servers:
 # password and password_file are mutually exclusive.
 basic_auth:
   [ username: <string> ]
-  [ password: <string> ]
+  [ password: <secret> ]
   [ password_file: <string> ]
 
 # Sets the `Authorization` header on every request with
@@ -1332,7 +1333,7 @@ prefix is guaranteed to never be used by Prometheus itself.
 [ regex: <regex> | default = (.*) ]
 
 # Modulus to take of the hash of the source label values.
-[ modulus: <uint64> ]
+[ modulus: <int> ]
 
 # Replacement value against which a regex replace is performed if the
 # regular expression matches. Regex capture groups are available.
@@ -1402,7 +1403,7 @@ through the `__alerts_path__` label.
 [ timeout: <duration> | default = 10s ]
 
 # The api version of Alertmanager.
-[ api_version: <version> | default = v1 ]
+[ api_version: <string> | default = v1 ]
 
 # Prefix for the HTTP path alerts are pushed to.
 [ path_prefix: <path> | default = / ]
@@ -1415,7 +1416,7 @@ through the `__alerts_path__` label.
 # password and password_file are mutually exclusive.
 basic_auth:
   [ username: <string> ]
-  [ password: <string> ]
+  [ password: <secret> ]
   [ password_file: <string> ]
 
 # Sets the `Authorization` header on every request with
@@ -1516,7 +1517,7 @@ write_relabel_configs:
 # password and password_file are mutually exclusive.
 basic_auth:
   [ username: <string> ]
-  [ password: <string> ]
+  [ password: <secret> ]
   [ password_file: <string> ]
 
 # Sets the `Authorization` header on every remote write request with
@@ -1588,7 +1589,7 @@ required_matchers:
 # password and password_file are mutually exclusive.
 basic_auth:
   [ username: <string> ]
-  [ password: <string> ]
+  [ password: <secret> ]
   [ password_file: <string> ]
 
 # Sets the `Authorization` header on every remote read request with
