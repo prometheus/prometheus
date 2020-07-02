@@ -90,7 +90,7 @@ func (g *RuleGroups) Validate(node ruleGroups) (errs []error) {
 				}
 				errs = append(errs, &Error{
 					Group:    g.Name,
-					Rule:     i,
+					Rule:     i + 1,
 					RuleName: ruleName.Value,
 					Err:      node,
 				})
