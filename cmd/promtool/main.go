@@ -142,7 +142,7 @@ func main() {
 		os.Exit(debugAll(*debugAllServer))
 
 	case queryLabelsCmd.FullCommand():
-		os.Exit(QueryLabels(*queryLabelsServer, *queryLabelsName, p))
+		os.Exit(QueryLabels(*queryLabelsServer, *queryLabelsName, *querySeriesBegin, *querySeriesEnd, p))
 
 	case testRulesCmd.FullCommand():
 		os.Exit(RulesUnitTest(*testRulesFiles...))
@@ -495,30 +495,10 @@ func QuerySeries(url *url.URL, matchers []string, start, end string, p printer) 
 		return 1
 	}
 
-	// TODO: clean up timestamps
-	var (
-		minTime = time.Now().Add(-9999 * time.Hour)
-		maxTime = time.Now().Add(9999 * time.Hour)
-	)
-
-	var stime, etime time.Time
-
-	if start == "" {
-		stime = minTime
-	} else {
-		stime, err = parseTime(start)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "error parsing start time:", err)
-		}
-	}
-
-	if end == "" {
-		etime = maxTime
-	} else {
-		etime, err = parseTime(end)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "error parsing end time:", err)
-		}
+	stime, etime, err := computeStartEndTime(start, end)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
 	}
 
 	// Run query against client.
@@ -537,7 +517,7 @@ func QuerySeries(url *url.URL, matchers []string, start, end string, p printer) 
 }
 
 // QueryLabels queries for label values against a Prometheus server.
-func QueryLabels(url *url.URL, name string, p printer) int {
+func QueryLabels(url *url.URL, name string, start, end string, p printer) int {
 	config := api.Config{
 		Address: url.String(),
 	}
@@ -549,10 +529,16 @@ func QueryLabels(url *url.URL, name string, p printer) int {
 		return 1
 	}
 
+	stime, etime, err := computeStartEndTime(start, end)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+
 	// Run query against client.
 	api := v1.NewAPI(c)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	val, warn, err := api.LabelValues(ctx, name)
+	val, warn, err := api.LabelValues(ctx, name, stime, etime)
 	cancel()
 
 	for _, v := range warn {
@@ -577,6 +563,35 @@ func parseTime(s string) (time.Time, error) {
 		return t, nil
 	}
 	return time.Time{}, errors.Errorf("cannot parse %q to a valid timestamp", s)
+}
+
+func computeStartEndTime(start, end string) (time.Time, time.Time, error) {
+	var (
+		minTime = time.Now().Add(-9999 * time.Hour)
+		maxTime = time.Now().Add(9999 * time.Hour)
+	)
+
+	var stime, etime time.Time
+	var err error
+
+	if start == "" {
+		stime = minTime
+	} else {
+		stime, err = parseTime(start)
+		if err != nil {
+			return stime, etime, fmt.Errorf("error parsing start time: %s", err)
+		}
+	}
+
+	if end == "" {
+		etime = maxTime
+	} else {
+		etime, err = parseTime(end)
+		if err != nil {
+			return stime, etime, err
+		}
+	}
+	return stime, etime, nil
 }
 
 type endpointsGroup struct {
