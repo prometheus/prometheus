@@ -79,11 +79,30 @@ func (c *prometheusLangServerClient) AllMetricMetadata(ctx context.Context) (map
 // LabelNames returns all the unique label names present in the interval given by the attribute lookbackInterval in sorted order.
 // If a metric is provided, then it will return all unique label names linked to the metric during the same interval of time.
 func (c *prometheusLangServerClient) LabelNames(ctx context.Context, metricName string) ([]string, error) {
+	var q storage.Querier
+	var err error
+	defer func() {
+		if q != nil {
+			q.Close()
+		}
+	}()
+
 	if len(metricName) == 0 {
-		names, _, err := c.metadataProvider.labelNames(ctx, time.Now().Add(-1*c.lookbackInterval), time.Now())
-		return names, err
+		var names []string
+		q, names, _, err = c.metadataProvider.labelNames(ctx, time.Now().Add(-1*c.lookbackInterval), time.Now())
+		if err != nil {
+			return nil, err
+		}
+		// Here we have to copy the result before closing the query. Otherwise the result will disappear
+		result := make([]string, 0, len(names))
+		for _, name := range names {
+			result = append(result, name)
+		}
+		return result, nil
 	}
-	labelNames, _, err := c.metadataProvider.series(ctx,
+
+	var labelNames []labels.Labels
+	q, labelNames, _, err = c.metadataProvider.series(ctx,
 		[][]*labels.Matcher{
 			{
 				&labels.Matcher{
@@ -113,7 +132,13 @@ func (c *prometheusLangServerClient) LabelNames(ctx context.Context, metricName 
 
 // LabelValues performs a query for the values of the given label.
 func (c *prometheusLangServerClient) LabelValues(ctx context.Context, label string) ([]model.LabelValue, error) {
-	values, _, err := c.metadataProvider.labelValues(ctx, label, time.Now().Add(-1*c.lookbackInterval), time.Now())
+	q, values, _, err := c.metadataProvider.labelValues(ctx, label, time.Now().Add(-1*c.lookbackInterval), time.Now())
+	defer func() {
+		if q != nil {
+			q.Close()
+		}
+	}()
+
 	if err != nil {
 		return nil, err
 	}

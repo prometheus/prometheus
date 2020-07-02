@@ -495,7 +495,7 @@ func returnAPIError(err error) *apiError {
 	return &apiError{errorExec, err}
 }
 
-func (api *API) labelNames(r *http.Request) apiFuncResult {
+func (api *API) labelNames(r *http.Request) (result apiFuncResult) {
 	start, err := parseTimeParam(r, "start", minTime)
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrap(err, "invalid parameter 'start'")}, nil, nil}
@@ -505,11 +505,25 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrap(err, "invalid parameter 'end'")}, nil, nil}
 	}
 
-	vals, warnings, err := api.metadataProvider.labelNames(r.Context(), start, end)
-	if err != nil {
-		return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
+	q, vals, warnings, err := api.metadataProvider.labelNames(r.Context(), start, end)
+	// From now on, we must only return with a finalizer in the result (to
+	// be called by the caller) or call q.Close ourselves (which is required
+	// in the case of a panic).
+	defer func() {
+		if result.finalizer == nil && q != nil {
+			q.Close()
+		}
+	}()
+	closer := func() {
+		if q != nil {
+			q.Close()
+		}
 	}
-	return apiFuncResult{vals, nil, warnings, nil}
+
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorExec, err}, warnings, closer}
+	}
+	return apiFuncResult{vals, nil, warnings, closer}
 }
 
 func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
@@ -528,13 +542,27 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrap(err, "invalid parameter 'end'")}, nil, nil}
 	}
 
-	vals, warnings, err := api.metadataProvider.labelValues(r.Context(), name, start, end)
+	q, vals, warnings, err := api.metadataProvider.labelValues(r.Context(), name, start, end)
 
-	if err != nil {
-		return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
+	// From now on, we must only return with a finalizer in the result (to
+	// be called by the caller) or call q.Close ourselves (which is required
+	// in the case of a panic).
+	defer func() {
+		if result.finalizer == nil && q != nil {
+			q.Close()
+		}
+	}()
+	closer := func() {
+		if q != nil {
+			q.Close()
+		}
 	}
 
-	return apiFuncResult{vals, nil, warnings, nil}
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorExec, err}, warnings, closer}
+	}
+
+	return apiFuncResult{vals, nil, warnings, closer}
 }
 
 var (
@@ -571,11 +599,25 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 		matcherSets = append(matcherSets, matchers)
 	}
 
-	vals, warnings, err := api.metadataProvider.series(r.Context(), matcherSets, start, end)
-	if err != nil {
-		return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
+	q, vals, warnings, err := api.metadataProvider.series(r.Context(), matcherSets, start, end)
+	// From now on, we must only return with a finalizer in the result (to
+	// be called by the caller) or call q.Close ourselves (which is required
+	// in the case of a panic).
+	defer func() {
+		if result.finalizer == nil && q != nil {
+			q.Close()
+		}
+	}()
+	closer := func() {
+		if q != nil {
+			q.Close()
+		}
 	}
-	return apiFuncResult{vals, nil, warnings, nil}
+
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorExec, err}, warnings, closer}
+	}
+	return apiFuncResult{vals, nil, warnings, closer}
 }
 
 func (api *API) dropSeries(r *http.Request) apiFuncResult {

@@ -76,32 +76,29 @@ func (w *metadataProvider) metricMetadata(ctx context.Context, metric string, li
 	return res
 }
 
-func (w *metadataProvider) labelNames(ctx context.Context, start time.Time, end time.Time) ([]string, storage.Warnings, error) {
+func (w *metadataProvider) labelNames(ctx context.Context, start time.Time, end time.Time) (storage.Querier, []string, storage.Warnings, error) {
 	q, err := w.queryable.Querier(ctx, timestamp.FromTime(start), timestamp.FromTime(end))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	defer q.Close()
-
-	return q.LabelNames()
+	result, warning, err := q.LabelNames()
+	return q, result, warning, err
 }
 
-func (w *metadataProvider) labelValues(ctx context.Context, labelName string, start time.Time, end time.Time) ([]string, storage.Warnings, error) {
+func (w *metadataProvider) labelValues(ctx context.Context, labelName string, start time.Time, end time.Time) (storage.Querier, []string, storage.Warnings, error) {
 	q, err := w.queryable.Querier(ctx, timestamp.FromTime(start), timestamp.FromTime(end))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	defer q.Close()
-
-	return q.LabelValues(labelName)
+	result, warning, err := q.LabelValues(labelName)
+	return q, result, warning, err
 }
 
-func (w *metadataProvider) series(ctx context.Context, matcherSets [][]*labels.Matcher, start time.Time, end time.Time) ([]labels.Labels, storage.Warnings, error) {
+func (w *metadataProvider) series(ctx context.Context, matcherSets [][]*labels.Matcher, start time.Time, end time.Time) (storage.Querier, []labels.Labels, storage.Warnings, error) {
 	q, err := w.queryable.Querier(ctx, timestamp.FromTime(start), timestamp.FromTime(end))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	defer q.Close()
 
 	var sets []storage.SeriesSet
 	for _, mset := range matcherSets {
@@ -115,8 +112,8 @@ func (w *metadataProvider) series(ctx context.Context, matcherSets [][]*labels.M
 		metrics = append(metrics, set.At().Labels())
 	}
 	if set.Err() != nil {
-		return nil, set.Warnings(), set.Err()
+		return q, nil, set.Warnings(), set.Err()
 	}
 
-	return metrics, set.Warnings(), nil
+	return q, metrics, set.Warnings(), nil
 }
