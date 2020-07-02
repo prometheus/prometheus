@@ -225,8 +225,12 @@ func NewAPI(
 	CORSOrigin *regexp.Regexp,
 	runtimeInfo func() (RuntimeInfo, error),
 	buildInfo *PrometheusVersion,
-	langServerHandler http.Handler,
 ) *API {
+	langServerHandler, err := newLangServer(q, tr, logger)
+	if err != nil {
+		level.Error(logger).Log("err", "Unable to create langserver handler")
+		panic(err)
+	}
 	return &API{
 		QueryEngine:           qe,
 		Queryable:             q,
