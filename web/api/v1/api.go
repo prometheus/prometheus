@@ -901,7 +901,7 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 	}
 
 	metric := r.FormValue("metric")
-	res := api.metadataProvider.metadata(r.Context(), metric, limit)
+	res := api.metadataProvider.metricMetadata(r.Context(), metric, limit)
 
 	return apiFuncResult{res, nil, nil, nil}
 }

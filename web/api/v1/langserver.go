@@ -48,7 +48,7 @@ type prometheusLangServerClient struct {
 
 // MetricMetadata returns the first occurrence of metadata about metrics currently scraped by the metric name.
 func (c *prometheusLangServerClient) MetricMetadata(ctx context.Context, metric string) (v1.Metadata, error) {
-	metadata := c.metadataProvider.metadata(ctx, metric, 1)
+	metadata := c.metadataProvider.metricMetadata(ctx, metric, 1)
 	if len(metadata) == 0 {
 		return v1.Metadata{}, nil
 	}
@@ -61,7 +61,7 @@ func (c *prometheusLangServerClient) MetricMetadata(ctx context.Context, metric 
 
 // AllMetricMetadata returns metadata about metrics currently scraped for all existing metrics.
 func (c *prometheusLangServerClient) AllMetricMetadata(ctx context.Context) (map[string][]v1.Metadata, error) {
-	metadata := c.metadataProvider.metadata(ctx, "", -1)
+	metadata := c.metadataProvider.metricMetadata(ctx, "", -1)
 	result := make(map[string][]v1.Metadata)
 	for metric, infos := range metadata {
 		result[metric] = make([]v1.Metadata, 0, len(infos))

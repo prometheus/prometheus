@@ -28,7 +28,7 @@ type metadataProvider struct {
 	targetRetriever func(context.Context) TargetRetriever
 }
 
-func (w *metadataProvider) metadata(ctx context.Context, metric string, limit int) map[string][]metadata {
+func (w *metadataProvider) metricMetadata(ctx context.Context, metric string, limit int) map[string][]metadata {
 	metrics := map[string]map[metadata]struct{}{}
 	for _, tt := range w.targetRetriever(ctx).TargetsActive() {
 		for _, t := range tt {
