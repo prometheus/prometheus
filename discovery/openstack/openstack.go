@@ -35,7 +35,7 @@ import (
 var DefaultSDConfig = SDConfig{
 	Port:            80,
 	RefreshInterval: model.Duration(60 * time.Second),
-	Availability:    string(gophercloud.AvailabilityPublic),
+	Availability:    "public",
 }
 
 // SDConfig is the configuration for OpenStack based service discovery.
@@ -96,9 +96,9 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 
 	switch c.Availability {
-	case string(gophercloud.AvailabilityPublic), string(gophercloud.AvailabilityInternal), string(gophercloud.AvailabilityAdmin):
+	case "public", "internal", "admin":
 	default:
-		return fmt.Errorf("unknown availability %s, must be one of %s, %s or %s", c.Availability, gophercloud.AvailabilityAdmin, gophercloud.AvailabilityInternal, gophercloud.AvailabilityPublic)
+		return fmt.Errorf("unknown availability %s, must be one of admin, internal or public", c.Availability)
 	}
 
 	if c.Role == "" {
