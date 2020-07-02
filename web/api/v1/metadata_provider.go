@@ -22,24 +22,16 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
-// Webkit is used by the apiv1 and the langServer to retrieve metrics, labels ...etc.
-type webkit struct {
+// metadataProvider is used by the apiv1 and the langServer to retrieve metrics, labels ...etc.
+type metadataProvider struct {
 	queryable       storage.Queryable
 	targetRetriever func(context.Context) TargetRetriever
 }
 
-func newWebkit(queryable storage.Queryable, targetRetriever func(context.Context) TargetRetriever) *webkit {
-	return &webkit{
-		queryable:       queryable,
-		targetRetriever: targetRetriever,
-	}
-}
-
-func (w *webkit) metadata(ctx context.Context, metric string, limit int) map[string][]metadata {
+func (w *metadataProvider) metadata(ctx context.Context, metric string, limit int) map[string][]metadata {
 	metrics := map[string]map[metadata]struct{}{}
 	for _, tt := range w.targetRetriever(ctx).TargetsActive() {
 		for _, t := range tt {
-
 			if len(metric) == 0 {
 				for _, mm := range t.MetadataList() {
 					m := metadata{Type: mm.Type, Help: mm.Help, Unit: mm.Unit}
@@ -84,7 +76,7 @@ func (w *webkit) metadata(ctx context.Context, metric string, limit int) map[str
 	return res
 }
 
-func (w *webkit) labelNames(ctx context.Context, start time.Time, end time.Time) ([]string, storage.Warnings, error) {
+func (w *metadataProvider) labelNames(ctx context.Context, start time.Time, end time.Time) ([]string, storage.Warnings, error) {
 	q, err := w.queryable.Querier(ctx, timestamp.FromTime(start), timestamp.FromTime(end))
 	if err != nil {
 		return nil, nil, err
@@ -94,7 +86,7 @@ func (w *webkit) labelNames(ctx context.Context, start time.Time, end time.Time)
 	return q.LabelNames()
 }
 
-func (w *webkit) labelValues(ctx context.Context, labelName string, start time.Time, end time.Time) ([]string, storage.Warnings, error) {
+func (w *metadataProvider) labelValues(ctx context.Context, labelName string, start time.Time, end time.Time) ([]string, storage.Warnings, error) {
 	q, err := w.queryable.Querier(ctx, timestamp.FromTime(start), timestamp.FromTime(end))
 	if err != nil {
 		return nil, nil, err
@@ -104,7 +96,7 @@ func (w *webkit) labelValues(ctx context.Context, labelName string, start time.T
 	return q.LabelValues(labelName)
 }
 
-func (w *webkit) series(ctx context.Context, matcherSets [][]*labels.Matcher, start time.Time, end time.Time) ([]labels.Labels, storage.Warnings, error) {
+func (w *metadataProvider) series(ctx context.Context, matcherSets [][]*labels.Matcher, start time.Time, end time.Time) ([]labels.Labels, storage.Warnings, error) {
 	q, err := w.queryable.Querier(ctx, timestamp.FromTime(start), timestamp.FromTime(end))
 	if err != nil {
 		return nil, nil, err

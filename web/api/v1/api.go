@@ -195,7 +195,7 @@ type API struct {
 	CORSOrigin                *regexp.Regexp
 	buildInfo                 *PrometheusVersion
 	runtimeInfo               func() (RuntimeInfo, error)
-	webkit                    *webkit
+	metadataProvider          *metadataProvider
 	langServerHandler         http.Handler
 }
 
@@ -253,8 +253,11 @@ func NewAPI(
 		CORSOrigin:                CORSOrigin,
 		runtimeInfo:               runtimeInfo,
 		buildInfo:                 buildInfo,
-		webkit:                    newWebkit(q, tr),
-		langServerHandler:         langServerHandler,
+		metadataProvider: &metadataProvider{
+			queryable:       q,
+			targetRetriever: tr,
+		},
+		langServerHandler: langServerHandler,
 	}
 }
 
@@ -502,7 +505,7 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrap(err, "invalid parameter 'end'")}, nil, nil}
 	}
 
-	vals, warnings, err := api.webkit.labelNames(r.Context(), start, end)
+	vals, warnings, err := api.metadataProvider.labelNames(r.Context(), start, end)
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
 	}
@@ -525,7 +528,7 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrap(err, "invalid parameter 'end'")}, nil, nil}
 	}
 
-	vals, warnings, err := api.webkit.labelValues(r.Context(), name, start, end)
+	vals, warnings, err := api.metadataProvider.labelValues(r.Context(), name, start, end)
 
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
@@ -568,7 +571,7 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 		matcherSets = append(matcherSets, matchers)
 	}
 
-	vals, warnings, err := api.webkit.series(r.Context(), matcherSets, start, end)
+	vals, warnings, err := api.metadataProvider.series(r.Context(), matcherSets, start, end)
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
 	}
@@ -898,7 +901,7 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 	}
 
 	metric := r.FormValue("metric")
-	res := api.webkit.metadata(r.Context(), metric, limit)
+	res := api.metadataProvider.metadata(r.Context(), metric, limit)
 
 	return apiFuncResult{res, nil, nil, nil}
 }
