@@ -15,6 +15,7 @@ package openstack
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -34,6 +35,7 @@ import (
 var DefaultSDConfig = SDConfig{
 	Port:            80,
 	RefreshInterval: model.Duration(60 * time.Second),
+	Availability:    "public",
 }
 
 // SDConfig is the configuration for OpenStack based service discovery.
@@ -55,6 +57,7 @@ type SDConfig struct {
 	Port                        int                   `yaml:"port"`
 	AllTenants                  bool                  `yaml:"all_tenants,omitempty"`
 	TLSConfig                   config_util.TLSConfig `yaml:"tls_config,omitempty"`
+	Availability                string                `yaml:"availability,omitempty"`
 }
 
 // Role is the role of the target in OpenStack.
@@ -91,12 +94,20 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
+
+	switch c.Availability {
+	case "public", "internal", "admin":
+	default:
+		return fmt.Errorf("unknown availability %s, must be one of admin, internal or public", c.Availability)
+	}
+
 	if c.Role == "" {
 		return errors.New("role missing (one of: instance, hypervisor)")
 	}
 	if c.Region == "" {
 		return errors.New("openstack SD configuration requires a region")
 	}
+
 	return nil
 }
 
@@ -161,11 +172,12 @@ func newRefresher(conf *SDConfig, l log.Logger) (refresher, error) {
 		},
 		Timeout: 5 * time.Duration(conf.RefreshInterval),
 	}
+	availability := gophercloud.Availability(conf.Availability)
 	switch conf.Role {
 	case OpenStackRoleHypervisor:
-		return newHypervisorDiscovery(client, &opts, conf.Port, conf.Region, l), nil
+		return newHypervisorDiscovery(client, &opts, conf.Port, conf.Region, availability, l), nil
 	case OpenStackRoleInstance:
-		return newInstanceDiscovery(client, &opts, conf.Port, conf.Region, conf.AllTenants, l), nil
+		return newInstanceDiscovery(client, &opts, conf.Port, conf.Region, conf.AllTenants, availability, l), nil
 	}
 	return nil, errors.New("unknown OpenStack discovery role")
 }

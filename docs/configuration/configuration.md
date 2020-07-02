@@ -773,6 +773,9 @@ region: <string>
 # instead be specified in the relabeling rule.
 [ port: <int> | default = 80 ]
 
+# The availability of the endpoint to connect to. Must be one of public, admin or internal.
+[ availability: <string> | default = "public" ]
+
 # TLS configuration.
 tls_config:
   [ <tls_config> ]

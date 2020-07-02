@@ -621,6 +621,7 @@ var expectedConf = &Config{
 						Role:            "instance",
 						Region:          "RegionOne",
 						Port:            80,
+						Availability:    "public",
 						RefreshInterval: model.Duration(60 * time.Second),
 						TLSConfig: config_util.TLSConfig{
 							CAFile:   "testdata/valid_ca_file",
@@ -846,6 +847,9 @@ var expectedErrors = []struct {
 	}, {
 		filename: "openstack_role.bad.yml",
 		errMsg:   "unknown OpenStack SD role",
+	}, {
+		filename: "openstack_availability.bad.yml",
+		errMsg:   "unknown availability invalid, must be one of admin, internal or public",
 	}, {
 		filename: "url_in_targetgroup.bad.yml",
 		errMsg:   "\"http://bad\" is not a valid hostname",
