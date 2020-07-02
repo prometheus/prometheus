@@ -27,30 +27,24 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
-func NewLangServer(externalURL string, q storage.Queryable,
-	tr func(context.Context) TargetRetriever, logger log.Logger) (http.Handler, error) {
-	// create the custom prometheus client dedicated to the langserver
-	langserverClient := newPrometheusLangServerClient(externalURL, newWebkit(q, tr))
-	// TODO use the method CreateInstHandler once it is taking the interface prometheus.Registerer in parameter
-	// instead of the struct Registry
+func newLangServer(q storage.Queryable, tr func(context.Context) TargetRetriever, logger log.Logger) (http.Handler, error) {
+	// Create the custom prometheus client dedicated to the langserver.
+	langserverClient := &prometheusLangServerClient{
+		lookbackInterval: 12 * time.Hour,
+		webkit:           newWebkit(q, tr),
+	}
 	return rest.CreateHandler(context.Background(), langserverClient, logger)
 }
 
 type prometheusLangServerClient struct {
-	prometheus.Client
-	externalURL string
-	webkit      *webkit
+	prometheus.MetadataService
+	externalURL      string
+	webkit           *webkit
+	lookbackInterval time.Duration
 }
 
-func newPrometheusLangServerClient(externalURL string, webkit *webkit) prometheus.Client {
-	return &prometheusLangServerClient{
-		externalURL: externalURL,
-		webkit:      webkit,
-	}
-}
-
-// Metadata returns the first occurrence of metadata about metrics currently scraped by the metric name.
-func (c *prometheusLangServerClient) Metadata(ctx context.Context, metric string) (v1.Metadata, error) {
+// MetricMetadata returns the first occurrence of metadata about metrics currently scraped by the metric name.
+func (c *prometheusLangServerClient) MetricMetadata(ctx context.Context, metric string) (v1.Metadata, error) {
 	metadata := c.webkit.metadata(ctx, metric, 1)
 	if len(metadata) == 0 {
 		return v1.Metadata{}, nil
@@ -62,8 +56,8 @@ func (c *prometheusLangServerClient) Metadata(ctx context.Context, metric string
 	}, nil
 }
 
-// AllMetadata returns metadata about metrics currently scraped for all existing metrics.
-func (c *prometheusLangServerClient) AllMetadata(ctx context.Context) (map[string][]v1.Metadata, error) {
+// AllMetricMetadata returns metadata about metrics currently scraped for all existing metrics.
+func (c *prometheusLangServerClient) AllMetricMetadata(ctx context.Context) (map[string][]v1.Metadata, error) {
 	metadata := c.webkit.metadata(ctx, "", -1)
 	result := make(map[string][]v1.Metadata)
 	for metric, infos := range metadata {
@@ -79,11 +73,11 @@ func (c *prometheusLangServerClient) AllMetadata(ctx context.Context) (map[strin
 	return result, nil
 }
 
-// LabelNames returns all the unique label names present in the block in sorted order.
-// If a metric is provided, then it will return all unique label names linked to the metric during a predefined period of time
+// LabelNames returns all the unique label names present in the interval given by the attribute lookbackInterval in sorted order.
+// If a metric is provided, then it will return all unique label names linked to the metric during the same interval of time.
 func (c *prometheusLangServerClient) LabelNames(ctx context.Context, metricName string) ([]string, error) {
 	if len(metricName) == 0 {
-		names, _, err := c.webkit.labelNames(ctx, minTime, maxTime)
+		names, _, err := c.webkit.labelNames(ctx, time.Now().Add(-1*c.lookbackInterval), time.Now())
 		return names, err
 	}
 	labelNames, _, err := c.webkit.series(ctx,
@@ -95,26 +89,32 @@ func (c *prometheusLangServerClient) LabelNames(ctx context.Context, metricName 
 					Value: metricName,
 				},
 			},
-		}, time.Now().Add(-100*time.Hour), time.Now())
+		}, time.Now().Add(-1*c.lookbackInterval), time.Now())
 	if err != nil {
 		return nil, err
 	}
-	var result []string
+
+	// subResult is used as a set of label. Like that we are sure we don't have any duplication.
+	subResult := make(map[string]bool)
 	for _, ln := range labelNames {
-		for l := range ln {
-			result = append(result, string(l))
+		for _, l := range ln {
+			subResult[l.Name] = true
 		}
+	}
+	result := make([]string, 0, len(subResult))
+	for l := range subResult {
+		result = append(result, l)
 	}
 	return result, nil
 }
 
 // LabelValues performs a query for the values of the given label.
 func (c *prometheusLangServerClient) LabelValues(ctx context.Context, label string) ([]model.LabelValue, error) {
-	values, _, err := c.webkit.labelValues(ctx, label, minTime, maxTime)
+	values, _, err := c.webkit.labelValues(ctx, label, time.Now().Add(-1*c.lookbackInterval), time.Now())
 	if err != nil {
 		return nil, err
 	}
-	var labelValues []model.LabelValue
+	labelValues := make([]model.LabelValue, 0, len(values))
 	for _, value := range values {
 		labelValues = append(labelValues, model.LabelValue(value))
 	}
@@ -122,13 +122,18 @@ func (c *prometheusLangServerClient) LabelValues(ctx context.Context, label stri
 }
 
 // ChangeDataSource is not used in this context because we are inside prometheus.
-// So datasource/url doesn't mean anything and cannot be changed
+// So datasource/url doesn't mean anything and cannot be changed.
 func (c *prometheusLangServerClient) ChangeDataSource(_ string) error {
 	return nil
 }
 
 // GetURL is returning the url used to contact the prometheus server
-// In case the instance is used directly in Prometheus, it should be the externalURL
+// Since it is all call is internal, the URL is not needed.
 func (c *prometheusLangServerClient) GetURL() string {
-	return c.externalURL
+	return ""
+}
+
+// SetLookbackInterval is a method to use to change the interval that then will be used to retrieve data such as label and metrics from prometheus.
+func (c *prometheusLangServerClient) SetLookbackInterval(interval time.Duration) {
+	c.lookbackInterval = interval
 }

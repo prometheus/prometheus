@@ -138,7 +138,7 @@ func (s *server) nodeToDocMarkdown(ctx context.Context, location *cache.Location
 		}
 	}
 
-	promURL := s.prometheusClient.GetURL()
+	promURL := s.metadataService.GetURL()
 
 	if promURL != "" && !s.headless {
 		loc := *location
@@ -195,7 +195,7 @@ func (s *server) getMetricDocs(ctx context.Context, metric string) (string, erro
 	var ret strings.Builder
 	ret.WriteString(fmt.Sprintf("### %s\n\n", metric))
 
-	metadata, err := s.prometheusClient.Metadata(ctx, metric)
+	metadata, err := s.metadataService.MetricMetadata(ctx, metric)
 	if err != nil {
 		return "", err
 	}

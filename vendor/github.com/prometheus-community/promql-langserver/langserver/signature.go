@@ -38,8 +38,25 @@ func (s *server) SignatureHelp(ctx context.Context, params *protocol.SignatureHe
 		return nil, nil
 	}
 
+	activeParameter := 0.
+
+	for i, arg := range call.Args {
+		if arg != nil && arg.PositionRange().End < promql.Pos(location.Pos-location.Query.Pos) {
+			activeParameter = float64(i) + 1
+		}
+	}
+
+	// For the label_join function, which has a variable number of arguments,
+	// the "..." should be highlighted at some point.
+	// For reference, the signature is:
+	// label_join(v instant-vector, dst_label string, separator string, src_label_1 string, src_label_2 string, ...)
+	if call.Func.Name == "label_join" && activeParameter >= 5 {
+		activeParameter = 5
+	}
+
 	response := &protocol.SignatureHelp{
-		Signatures: []protocol.SignatureInformation{signature},
+		Signatures:      []protocol.SignatureInformation{signature},
+		ActiveParameter: activeParameter,
 	}
 
 	return response, nil

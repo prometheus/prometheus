@@ -58,7 +58,7 @@ func (s *server) Initialize(_ context.Context, _ *protocol.ParamInitialize) (*pr
 
 // Initialized receives a confirmation by the client that the connection has been initialized
 // required by the protocol.Server interface.
-func (s *server) Initialized(ctx context.Context, _ *protocol.InitializedParams) (err error) {
+func (s *server) Initialized(ctx context.Context, _ *protocol.InitializedParams) error {
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
 
@@ -66,8 +66,8 @@ func (s *server) Initialized(ctx context.Context, _ *protocol.InitializedParams)
 		return errors.New("cannot initialize server: wrong server state")
 	}
 
-	if s.config.PrometheusURL != "" {
-		if err := s.connectPrometheus(s.config.PrometheusURL); err != nil {
+	if len(s.prometheusURL) > 0 {
+		if err := s.connectPrometheus(s.prometheusURL); err != nil {
 			// nolint: errcheck
 			s.client.LogMessage(ctx, &protocol.LogMessageParams{
 				Type:    protocol.Info,
@@ -83,8 +83,7 @@ func (s *server) Initialized(ctx context.Context, _ *protocol.InitializedParams)
 	}
 
 	s.state = serverInitialized
-
-	return err
+	return nil
 }
 
 // Shutdown receives a call from the client to shutdown the connection

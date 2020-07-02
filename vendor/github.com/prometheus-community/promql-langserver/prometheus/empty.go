@@ -15,6 +15,7 @@ package prometheus
 import (
 	"context"
 	"fmt"
+	"time"
 
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
@@ -22,14 +23,14 @@ import (
 
 // emptyHTTPClient must be used when no prometheus URL has been defined.
 type emptyHTTPClient struct {
-	Client
+	MetadataService
 }
 
-func (c *emptyHTTPClient) Metadata(_ context.Context, _ string) (v1.Metadata, error) {
+func (c *emptyHTTPClient) MetricMetadata(_ context.Context, _ string) (v1.Metadata, error) {
 	return v1.Metadata{}, nil
 }
 
-func (c *emptyHTTPClient) AllMetadata(_ context.Context) (map[string][]v1.Metadata, error) {
+func (c *emptyHTTPClient) AllMetricMetadata(_ context.Context) (map[string][]v1.Metadata, error) {
 	return make(map[string][]v1.Metadata), nil
 }
 
@@ -43,6 +44,10 @@ func (c *emptyHTTPClient) LabelValues(_ context.Context, _ string) ([]model.Labe
 
 func (c *emptyHTTPClient) ChangeDataSource(_ string) error {
 	return fmt.Errorf("method not supported")
+}
+
+func (c *emptyHTTPClient) SetLookbackInterval(_ time.Duration) {
+
 }
 
 func (c *emptyHTTPClient) GetURL() string {

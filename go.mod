@@ -41,7 +41,7 @@ require (
 	github.com/opentracing/opentracing-go v1.1.0
 	github.com/pkg/errors v0.9.1
 	github.com/pmezard/go-difflib v1.0.0
-	github.com/prometheus-community/promql-langserver v0.5.1
+	github.com/prometheus-community/promql-langserver v0.5.2-0.20200701153022-c20ca988ee1f
 	github.com/prometheus/alertmanager v0.20.0
 	github.com/prometheus/client_golang v1.7.1
 	github.com/prometheus/client_model v0.2.0

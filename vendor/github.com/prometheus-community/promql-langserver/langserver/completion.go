@@ -94,7 +94,7 @@ func (s *server) Completion(ctx context.Context, params *protocol.CompletionPara
 }
 
 func (s *server) completeMetricName(ctx context.Context, completions *[]protocol.CompletionItem, location *cache.Location, metricName string) error {
-	allMetadata, err := s.prometheusClient.AllMetadata(ctx)
+	allMetadata, err := s.metadataService.AllMetricMetadata(ctx)
 	if err != nil {
 		return err
 	}
@@ -103,17 +103,14 @@ func (s *server) completeMetricName(ctx context.Context, completions *[]protocol
 		return err
 	}
 
-	names := make([]string, len(allMetadata))
-	i := 0
+	names := make([]string, 0, len(allMetadata))
 	for name := range allMetadata {
-		names[i] = name
-		i++
+		names = append(names, name)
 	}
-	matches := fuzzy.Find(metricName, names)
-	for _, match := range matches {
+	for _, match := range getMatches(metricName, names) {
 		item := protocol.CompletionItem{
 			Label:         match.Str,
-			SortText:      fmt.Sprintf("__3__%d", match.Score),
+			SortText:      fmt.Sprintf("__3__%09d", match.Score),
 			Kind:          12, //Value
 			Documentation: allMetadata[match.Str][0].Help,
 			Detail:        string(allMetadata[match.Str][0].Type),
@@ -130,20 +127,22 @@ func (s *server) completeMetricName(ctx context.Context, completions *[]protocol
 		return err
 	}
 
+	names = make([]string, 0, len(queries))
 	for _, q := range queries {
-		if rec := q.Record; rec != "" && strings.HasPrefix(rec, metricName) {
-			item := protocol.CompletionItem{
-				Label:            rec,
-				SortText:         "__2__" + rec,
-				Kind:             3, //Value
-				InsertTextFormat: 2, //Snippet
-				TextEdit: &protocol.TextEdit{
-					Range:   editRange,
-					NewText: rec,
-				},
-			}
-			*completions = append(*completions, item)
+		names = append(names, q.Record)
+	}
+	for _, match := range getMatches(metricName, names) {
+		item := protocol.CompletionItem{
+			Label:            match.Str,
+			SortText:         fmt.Sprintf("__2__%09d", match.Score),
+			Kind:             3, //Value
+			InsertTextFormat: 2, //Snippet
+			TextEdit: &protocol.TextEdit{
+				Range:   editRange,
+				NewText: match.Str,
+			},
 		}
+		*completions = append(*completions, item)
 	}
 
 	return nil
@@ -155,41 +154,45 @@ func (s *server) completeFunctionName(completions *[]protocol.CompletionItem, lo
 		return err
 	}
 
+	names := make([]string, 0, len(promql.Functions))
 	for name := range promql.Functions {
-		if strings.HasPrefix(strings.ToLower(name), metricName) {
-			item := protocol.CompletionItem{
-				Label:            name,
-				SortText:         "__1__" + name,
-				Kind:             3, //Function
-				InsertTextFormat: 2, //Snippet
-				TextEdit: &protocol.TextEdit{
-					Range:   editRange,
-					NewText: name + "($1)",
-				},
-				Command: &protocol.Command{
-					// This might create problems with non VS Code clients
-					Command: "editor.action.triggerParameterHints",
-				},
-			}
-			*completions = append(*completions, item)
+		names = append(names, name)
+	}
+	for _, match := range getMatches(metricName, names) {
+		item := protocol.CompletionItem{
+			Label:            match.Str,
+			SortText:         fmt.Sprintf("__1__%09d", match.Score),
+			Kind:             3, //Function
+			InsertTextFormat: 2, //Snippet
+			TextEdit: &protocol.TextEdit{
+				Range:   editRange,
+				NewText: match.Str + "($1)",
+			},
+			Command: &protocol.Command{
+				// This might create problems with non VS Code clients
+				Command: "editor.action.triggerParameterHints",
+			},
 		}
+		*completions = append(*completions, item)
 	}
 
-	for name, desc := range aggregators {
-		if strings.HasPrefix(strings.ToLower(name), metricName) {
-			item := protocol.CompletionItem{
-				Label:            name,
-				SortText:         "__1__" + name,
-				Kind:             3, //Function
-				InsertTextFormat: 2, //Snippet
-				Detail:           desc,
-				TextEdit: &protocol.TextEdit{
-					Range:   editRange,
-					NewText: name + "($1)",
-				},
-			}
-			*completions = append(*completions, item)
+	names = make([]string, 0, len(aggregators))
+	for name := range aggregators {
+		names = append(names, name)
+	}
+	for _, match := range getMatches(strings.ToLower(metricName), names) {
+		item := protocol.CompletionItem{
+			Label:            match.Str,
+			SortText:         fmt.Sprintf("__1__%09d", match.Score),
+			Kind:             3, //Function
+			InsertTextFormat: 2, //Snippet
+			Detail:           aggregators[match.Str],
+			TextEdit: &protocol.TextEdit{
+				Range:   editRange,
+				NewText: match.Str + "($1)",
+			},
 		}
+		*completions = append(*completions, item)
 	}
 
 	return nil
@@ -308,7 +311,7 @@ func (s *server) completeLabel(ctx context.Context, completions *[]protocol.Comp
 	if vs != nil {
 		metricName = vs.Name
 	}
-	allNames, err := s.prometheusClient.LabelNames(ctx, metricName)
+	allNames, err := s.metadataService.LabelNames(ctx, metricName)
 	if err != nil {
 		// nolint: errcheck
 		s.client.LogMessage(s.lifetime, &protocol.LogMessageParams{
@@ -318,41 +321,32 @@ func (s *server) completeLabel(ctx context.Context, completions *[]protocol.Comp
 		return err
 	}
 
-	sort.Strings(allNames)
-
 	editRange, err := getEditRange(location, "")
 	if err != nil {
 		return err
 	}
 
+	labelName := location.Node.(*promql.Item).Val
 OUTER:
-	for i, name := range allNames {
-		// Skip duplicates
-		if i > 0 && allNames[i-1] == name {
-			continue
-		}
-
-		if strings.HasPrefix(name, location.Node.(*promql.Item).Val) {
-			// Skip labels that already have matchers
-			if vs != nil {
-				for _, m := range vs.LabelMatchers {
-					if m != nil && m.Name == name {
-						continue OUTER
-					}
+	for _, match := range getMatches(labelName, allNames) {
+		// Skip labels that already have matchers
+		if vs != nil {
+			for _, m := range vs.LabelMatchers {
+				if m != nil && m.Name == match.Str {
+					continue OUTER
 				}
 			}
-
-			item := protocol.CompletionItem{
-				Label: name,
-				Kind:  12, //Value
-				TextEdit: &protocol.TextEdit{
-					Range:   editRange,
-					NewText: name,
-				},
-			}
-
-			*completions = append(*completions, item)
 		}
+
+		item := protocol.CompletionItem{
+			Label: match.Str,
+			Kind:  12, //Value
+			TextEdit: &protocol.TextEdit{
+				Range:   editRange,
+				NewText: match.Str,
+			},
+		}
+		*completions = append(*completions, item)
 	}
 
 	return nil
@@ -360,7 +354,7 @@ OUTER:
 
 // nolint: funlen
 func (s *server) completeLabelValue(ctx context.Context, completions *[]protocol.CompletionItem, location *cache.Location, labelName string) error {
-	labelValues, err := s.prometheusClient.LabelValues(ctx, labelName)
+	labelValues, err := s.metadataService.LabelValues(ctx, labelName)
 	if err != nil {
 		// nolint: errcheck
 		s.client.LogMessage(s.lifetime, &protocol.LogMessageParams{
@@ -392,40 +386,42 @@ func (s *server) completeLabelValue(ctx context.Context, completions *[]protocol
 		quote = '"'
 	}
 
-	for _, name := range labelValues {
-		if strings.HasPrefix(string(name), unquoted) {
-			var quoted string
+	names := make([]string, 0, len(labelValues))
+	for _, v := range labelValues {
+		names = append(names, string(v))
+	}
+	for _, match := range getMatches(unquoted, names) {
+		var quoted string
 
-			if quote == '`' {
-				if strings.ContainsRune(string(name), '`') {
-					quote = '"'
-				} else {
-					quoted = fmt.Sprint("`", name, "`")
-				}
+		if quote == '`' {
+			if strings.ContainsRune(match.Str, '`') {
+				quote = '"'
+			} else {
+				quoted = fmt.Sprint("`", match.Str, "`")
 			}
-
-			if quoted == "" {
-				quoted = strconv.Quote(string(name))
-			}
-
-			if quote == '\'' {
-				quoted = quoted[1 : len(quoted)-1]
-
-				quoted = strings.ReplaceAll(quoted, `\"`, `"`)
-				quoted = strings.ReplaceAll(quoted, `'`, `\'`)
-				quoted = fmt.Sprint("'", quoted, "'")
-			}
-
-			item := protocol.CompletionItem{
-				Label: quoted,
-				Kind:  12, //Value
-				TextEdit: &protocol.TextEdit{
-					Range:   editRange,
-					NewText: quoted,
-				},
-			}
-			*completions = append(*completions, item)
 		}
+
+		if quoted == "" {
+			quoted = strconv.Quote(match.Str)
+		}
+
+		if quote == '\'' {
+			quoted = quoted[1 : len(quoted)-1]
+
+			quoted = strings.ReplaceAll(quoted, `\"`, `"`)
+			quoted = strings.ReplaceAll(quoted, `'`, `\'`)
+			quoted = fmt.Sprint("'", quoted, "'")
+		}
+
+		item := protocol.CompletionItem{
+			Label: quoted,
+			Kind:  12, //Value
+			TextEdit: &protocol.TextEdit{
+				Range:   editRange,
+				NewText: quoted,
+			},
+		}
+		*completions = append(*completions, item)
 	}
 
 	return nil
@@ -451,4 +447,22 @@ func getEditRange(location *cache.Location, oldname string) (editRange protocol.
 	}
 
 	return
+}
+
+// getMatches returns fuzzy matches for a slice of string and a pattern.
+func getMatches(pattern string, names []string) fuzzy.Matches {
+	if pattern == "" {
+		var matches fuzzy.Matches
+		sort.Strings(names)
+		for i, name := range names {
+			matches = append(matches,
+				fuzzy.Match{
+					Str:   name,
+					Index: i,
+					Score: len(names) - i,
+				})
+		}
+		return matches
+	}
+	return fuzzy.Find(pattern, names)
 }

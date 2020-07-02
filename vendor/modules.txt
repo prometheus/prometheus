@@ -322,7 +322,8 @@ github.com/opentracing/opentracing-go/log
 github.com/pkg/errors
 # github.com/pmezard/go-difflib v1.0.0
 github.com/pmezard/go-difflib/difflib
-# github.com/prometheus-community/promql-langserver v0.5.1
+# github.com/prometheus-community/promql-langserver v0.5.2-0.20200701153022-c20ca988ee1f
+github.com/prometheus-community/promql-langserver/config
 github.com/prometheus-community/promql-langserver/internal/vendored/go-tools/jsonrpc2
 github.com/prometheus-community/promql-langserver/internal/vendored/go-tools/lsp/debug/tag
 github.com/prometheus-community/promql-langserver/internal/vendored/go-tools/lsp/protocol
