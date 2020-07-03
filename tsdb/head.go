@@ -1558,19 +1558,19 @@ func (h *headIndexReader) Symbols() index.StringIter {
 	return index.NewStringListIter(res)
 }
 
-// SortedLabelValues returns label values present in the head for the
+// LabelValues returns label values present in the head for the
 // specific label name that are within the time range mint to maxt.
-func (h *headIndexReader) SortedLabelValues(name string) ([]string, error) {
-	values, err := h.LabelValues(name)
+func (h *headIndexReader) LabelValues(name string) ([]string, error) {
+	values, err := h.UnsortedLabelValues(name)
 	if err == nil {
 		sort.Strings(values)
 	}
 	return values, err
 }
 
-// LabelValues returns label values present in the head for the
+// UnsortedLabelValues returns label values present in the head for the
 // specific label name that are within the time range mint to maxt.
-func (h *headIndexReader) LabelValues(name string) ([]string, error) {
+func (h *headIndexReader) UnsortedLabelValues(name string) ([]string, error) {
 	h.head.symMtx.RLock()
 
 	if h.maxt < h.head.MinTime() || h.mint > h.head.MaxTime() {

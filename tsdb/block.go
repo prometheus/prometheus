@@ -61,11 +61,11 @@ type IndexReader interface {
 	// beyond the lifetime of the index reader.
 	Symbols() index.StringIter
 
-	// SortedLabelValues returns sorted possible label values.
-	SortedLabelValues(name string) ([]string, error)
-
-	// LabelValues returns possible label values which may not be sorted.
+	// LabelValues returns sorted possible label values.
 	LabelValues(name string) ([]string, error)
+
+	// UnsortedLabelValues returns possible label values which may not be sorted.
+	UnsortedLabelValues(name string) ([]string, error)
 
 	// Postings returns the postings list iterator for the label pairs.
 	// The Postings here contain the offsets to the series inside the index.
@@ -421,13 +421,13 @@ func (r blockIndexReader) Symbols() index.StringIter {
 	return r.ir.Symbols()
 }
 
-func (r blockIndexReader) SortedLabelValues(name string) ([]string, error) {
-	st, err := r.ir.SortedLabelValues(name)
+func (r blockIndexReader) LabelValues(name string) ([]string, error) {
+	st, err := r.ir.LabelValues(name)
 	return st, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
 }
 
-func (r blockIndexReader) LabelValues(name string) ([]string, error) {
-	st, err := r.ir.LabelValues(name)
+func (r blockIndexReader) UnsortedLabelValues(name string) ([]string, error) {
+	st, err := r.ir.UnsortedLabelValues(name)
 	return st, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
 }
 

@@ -514,7 +514,7 @@ func analyzeBlock(path, blockID string, limit int) error {
 
 	postingInfos = postingInfos[:0]
 	for _, n := range allLabelNames {
-		values, err := ir.SortedLabelValues(n)
+		values, err := ir.LabelValues(n)
 		if err != nil {
 			return err
 		}
@@ -530,7 +530,7 @@ func analyzeBlock(path, blockID string, limit int) error {
 
 	postingInfos = postingInfos[:0]
 	for _, n := range allLabelNames {
-		lv, err := ir.SortedLabelValues(n)
+		lv, err := ir.LabelValues(n)
 		if err != nil {
 			return err
 		}
@@ -540,7 +540,7 @@ func analyzeBlock(path, blockID string, limit int) error {
 	printInfo(postingInfos)
 
 	postingInfos = postingInfos[:0]
-	lv, err := ir.SortedLabelValues("__name__")
+	lv, err := ir.LabelValues("__name__")
 	if err != nil {
 		return err
 	}

@@ -1418,21 +1418,21 @@ func (r *Reader) SymbolTableSize() uint64 {
 	return uint64(r.symbols.Size())
 }
 
-// SortedLabelValues returns value tuples that exist for the given label name.
+// LabelValues returns value tuples that exist for the given label name.
 // It is not safe to use the return value beyond the lifetime of the byte slice
 // passed into the Reader.
-func (r *Reader) SortedLabelValues(name string) ([]string, error) {
-	values, err := r.LabelValues(name)
+func (r *Reader) LabelValues(name string) ([]string, error) {
+	values, err := r.UnsortedLabelValues(name)
 	if err == nil && r.version == FormatV1 {
 		sort.Strings(values)
 	}
 	return values, err
 }
 
-// LabelValues returns value tuples that exist for the given label name.
+// UnsortedLabelValues returns value tuples that exist for the given label name.
 // It is not safe to use the return value beyond the lifetime of the byte slice
 // passed into the Reader.
-func (r *Reader) LabelValues(name string) ([]string, error) {
+func (r *Reader) UnsortedLabelValues(name string) ([]string, error) {
 	if r.version == FormatV1 {
 		e, ok := r.postingsV1[name]
 		if !ok {
