@@ -41,7 +41,6 @@ func newLangServer(q storage.Queryable, tr func(context.Context) TargetRetriever
 
 type prometheusLangServerClient struct {
 	prometheus.MetadataService
-	externalURL      string
 	metadataProvider *metadataProvider
 	lookbackInterval time.Duration
 }
@@ -95,9 +94,7 @@ func (c *prometheusLangServerClient) LabelNames(ctx context.Context, metricName 
 		}
 		// Here we have to copy the result before closing the query. Otherwise the result will disappear
 		result := make([]string, 0, len(names))
-		for _, name := range names {
-			result = append(result, name)
-		}
+		result = append(result, names...)
 		return result, nil
 	}
 
