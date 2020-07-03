@@ -574,9 +574,7 @@ func labelValuesByMatchers(sets []storage.SeriesSet, name string) ([]string, sto
 	for set.Next() {
 		series := set.At()
 		labelValue := series.Labels().Get(name)
-		if labelValue != ""  {
-			labelValuesSet[labelValue] = struct{}{}
-		}
+		labelValuesSet[labelValue] = struct{}{}
 	}
 
 	warnings := set.Warnings()
