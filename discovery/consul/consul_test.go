@@ -192,7 +192,7 @@ const (
 		"Service": "test",
 		"Tags": ["tag1"],
 		"Address": "",
-		"Meta": {"version":"1.0.0","environment":"stagging"},
+		"Meta": {"version":"1.0.0","environment":"staging"},
 		"Port": 3341,
 		"Weights": {
 			"Passing": 1,
