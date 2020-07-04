@@ -86,8 +86,8 @@ var (
 	)
 
 	// Initialize metric vectors.
-	servicesRPCDuraion = rpcDuration.WithLabelValues("catalog", "services")
-	serviceRPCDuraion  = rpcDuration.WithLabelValues("catalog", "service")
+	servicesRPCDuration = rpcDuration.WithLabelValues("catalog", "services")
+	serviceRPCDuration  = rpcDuration.WithLabelValues("catalog", "service")
 
 	// DefaultSDConfig is the default Consul SD configuration.
 	DefaultSDConfig = SDConfig{
@@ -357,7 +357,7 @@ func (d *Discovery) watchServices(ctx context.Context, ch chan<- []*targetgroup.
 	}
 	srvs, meta, err := catalog.Services(opts.WithContext(ctx))
 	elapsed := time.Since(t0)
-	servicesRPCDuraion.Observe(elapsed.Seconds())
+	servicesRPCDuration.Observe(elapsed.Seconds())
 
 	// Check the context before in order to exit early.
 	select {
@@ -473,7 +473,7 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Gr
 
 	serviceNodes, meta, err := health.ServiceMultipleTags(srv.name, srv.tags, false, opts.WithContext(ctx))
 	elapsed := time.Since(t0)
-	serviceRPCDuraion.Observe(elapsed.Seconds())
+	serviceRPCDuration.Observe(elapsed.Seconds())
 
 	// Check the context before in order to exit early.
 	select {
