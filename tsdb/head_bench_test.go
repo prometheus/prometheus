@@ -27,9 +27,7 @@ import (
 func BenchmarkHeadStripeSeriesCreate(b *testing.B) {
 	chunkDir, err := ioutil.TempDir("", "chunk_dir")
 	testutil.Ok(b, err)
-	defer func() {
-		testutil.Ok(b, os.RemoveAll(chunkDir))
-	}()
+	defer testutil.Ok(b, os.RemoveAll(chunkDir))
 	// Put a series, select it. GC it and then access it.
 	h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, DefaultStripeSize, nil)
 	testutil.Ok(b, err)
@@ -43,9 +41,7 @@ func BenchmarkHeadStripeSeriesCreate(b *testing.B) {
 func BenchmarkHeadStripeSeriesCreateParallel(b *testing.B) {
 	chunkDir, err := ioutil.TempDir("", "chunk_dir")
 	testutil.Ok(b, err)
-	defer func() {
-		testutil.Ok(b, os.RemoveAll(chunkDir))
-	}()
+	defer testutil.Ok(b, os.RemoveAll(chunkDir))
 	// Put a series, select it. GC it and then access it.
 	h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, DefaultStripeSize, nil)
 	testutil.Ok(b, err)

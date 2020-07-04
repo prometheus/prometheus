@@ -434,9 +434,7 @@ func TestCompactionFailWillCleanUpTempDir(t *testing.T) {
 
 	tmpdir, err := ioutil.TempDir("", "test")
 	testutil.Ok(t, err)
-	defer func() {
-		testutil.Ok(t, os.RemoveAll(tmpdir))
-	}()
+	defer testutil.Ok(t, os.RemoveAll(tmpdir))
 
 	testutil.NotOk(t, compactor.write(tmpdir, &BlockMeta{}, erringBReader{}))
 	_, err = os.Stat(filepath.Join(tmpdir, BlockMeta{}.ULID.String()) + ".tmp")
@@ -832,18 +830,14 @@ func BenchmarkCompaction(b *testing.B) {
 		b.Run(fmt.Sprintf("type=%s,blocks=%d,series=%d,samplesPerSeriesPerBlock=%d", c.compactionType, nBlocks, nSeries, c.ranges[0][1]-c.ranges[0][0]+1), func(b *testing.B) {
 			dir, err := ioutil.TempDir("", "bench_compaction")
 			testutil.Ok(b, err)
-			defer func() {
-				testutil.Ok(b, os.RemoveAll(dir))
-			}()
+			defer testutil.Ok(b, os.RemoveAll(dir))
 			blockDirs := make([]string, 0, len(c.ranges))
 			var blocks []*Block
 			for _, r := range c.ranges {
 				block, err := OpenBlock(nil, createBlock(b, dir, genSeries(nSeries, 10, r[0], r[1])), nil)
 				testutil.Ok(b, err)
 				blocks = append(blocks, block)
-				defer func() {
-					testutil.Ok(b, block.Close())
-				}()
+				defer testutil.Ok(b, block.Close())
 				blockDirs = append(blockDirs, block.Dir())
 			}
 
@@ -863,18 +857,14 @@ func BenchmarkCompaction(b *testing.B) {
 func BenchmarkCompactionFromHead(b *testing.B) {
 	dir, err := ioutil.TempDir("", "bench_compaction_from_head")
 	testutil.Ok(b, err)
-	defer func() {
-		testutil.Ok(b, os.RemoveAll(dir))
-	}()
+	defer testutil.Ok(b, os.RemoveAll(dir))
 	totalSeries := 100000
 	for labelNames := 1; labelNames < totalSeries; labelNames *= 10 {
 		labelValues := totalSeries / labelNames
 		b.Run(fmt.Sprintf("labelnames=%d,labelvalues=%d", labelNames, labelValues), func(b *testing.B) {
 			chunkDir, err := ioutil.TempDir("", "chunk_dir")
 			testutil.Ok(b, err)
-			defer func() {
-				testutil.Ok(b, os.RemoveAll(chunkDir))
-			}()
+			defer testutil.Ok(b, os.RemoveAll(chunkDir))
 			h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, DefaultStripeSize, nil)
 			testutil.Ok(b, err)
 			for ln := 0; ln < labelNames; ln++ {
@@ -956,9 +946,7 @@ func TestDisableAutoCompactions(t *testing.T) {
 func TestCancelCompactions(t *testing.T) {
 	tmpdir, err := ioutil.TempDir("", "testCancelCompaction")
 	testutil.Ok(t, err)
-	defer func() {
-		testutil.Ok(t, os.RemoveAll(tmpdir))
-	}()
+	defer testutil.Ok(t, os.RemoveAll(tmpdir))
 
 	// Create some blocks to fall within the compaction range.
 	createBlock(t, tmpdir, genSeries(1, 10000, 0, 1000))
@@ -969,9 +957,7 @@ func TestCancelCompactions(t *testing.T) {
 	tmpdirCopy := tmpdir + "Copy"
 	err = fileutil.CopyDirs(tmpdir, tmpdirCopy)
 	testutil.Ok(t, err)
-	defer func() {
-		testutil.Ok(t, os.RemoveAll(tmpdirCopy))
-	}()
+	defer testutil.Ok(t, os.RemoveAll(tmpdirCopy))
 
 	// Measure the compaction time without interrupting it.
 	var timeCompactionUninterrupted time.Duration

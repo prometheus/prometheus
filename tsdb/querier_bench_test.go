@@ -32,14 +32,10 @@ const (
 func BenchmarkPostingsForMatchers(b *testing.B) {
 	chunkDir, err := ioutil.TempDir("", "chunk_dir")
 	testutil.Ok(b, err)
-	defer func() {
-		testutil.Ok(b, os.RemoveAll(chunkDir))
-	}()
+	defer testutil.Ok(b, os.RemoveAll(chunkDir))
 	h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, DefaultStripeSize, nil)
 	testutil.Ok(b, err)
-	defer func() {
-		testutil.Ok(b, h.Close())
-	}()
+	defer testutil.Ok(b, h.Close())
 
 	app := h.Appender()
 	addSeries := func(l labels.Labels) {
@@ -66,16 +62,12 @@ func BenchmarkPostingsForMatchers(b *testing.B) {
 
 	tmpdir, err := ioutil.TempDir("", "test_benchpostingsformatchers")
 	testutil.Ok(b, err)
-	defer func() {
-		testutil.Ok(b, os.RemoveAll(tmpdir))
-	}()
+	defer testutil.Ok(b, os.RemoveAll(tmpdir))
 
 	blockdir := createBlockFromHead(b, tmpdir, h)
 	block, err := OpenBlock(nil, blockdir, nil)
 	testutil.Ok(b, err)
-	defer func() {
-		testutil.Ok(b, block.Close())
-	}()
+	defer testutil.Ok(b, block.Close())
 	ir, err = block.Index()
 	testutil.Ok(b, err)
 	defer ir.Close()
@@ -137,9 +129,7 @@ func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 func BenchmarkQuerierSelect(b *testing.B) {
 	chunkDir, err := ioutil.TempDir("", "chunk_dir")
 	testutil.Ok(b, err)
-	defer func() {
-		testutil.Ok(b, os.RemoveAll(chunkDir))
-	}()
+	defer testutil.Ok(b, os.RemoveAll(chunkDir))
 	h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, DefaultStripeSize, nil)
 	testutil.Ok(b, err)
 	defer h.Close()
@@ -178,16 +168,12 @@ func BenchmarkQuerierSelect(b *testing.B) {
 
 	tmpdir, err := ioutil.TempDir("", "test_benchquerierselect")
 	testutil.Ok(b, err)
-	defer func() {
-		testutil.Ok(b, os.RemoveAll(tmpdir))
-	}()
+	defer testutil.Ok(b, os.RemoveAll(tmpdir))
 
 	blockdir := createBlockFromHead(b, tmpdir, h)
 	block, err := OpenBlock(nil, blockdir, nil)
 	testutil.Ok(b, err)
-	defer func() {
-		testutil.Ok(b, block.Close())
-	}()
+	defer testutil.Ok(b, block.Close())
 
 	b.Run("Block", func(b *testing.B) {
 		bench(b, block, false)

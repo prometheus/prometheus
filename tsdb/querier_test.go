@@ -1534,9 +1534,7 @@ func BenchmarkQueryIterator(b *testing.B) {
 			b.Run(benchMsg, func(b *testing.B) {
 				dir, err := ioutil.TempDir("", "bench_query_iterator")
 				testutil.Ok(b, err)
-				defer func() {
-					testutil.Ok(b, os.RemoveAll(dir))
-				}()
+				defer testutil.Ok(b, os.RemoveAll(dir))
 
 				var (
 					blocks          []*Block
@@ -1608,9 +1606,7 @@ func BenchmarkQuerySeek(b *testing.B) {
 			b.Run(benchMsg, func(b *testing.B) {
 				dir, err := ioutil.TempDir("", "bench_query_iterator")
 				testutil.Ok(b, err)
-				defer func() {
-					testutil.Ok(b, os.RemoveAll(dir))
-				}()
+				defer testutil.Ok(b, os.RemoveAll(dir))
 
 				var (
 					blocks          []*Block
@@ -1756,9 +1752,7 @@ func BenchmarkSetMatcher(b *testing.B) {
 	for _, c := range cases {
 		dir, err := ioutil.TempDir("", "bench_postings_for_matchers")
 		testutil.Ok(b, err)
-		defer func() {
-			testutil.Ok(b, os.RemoveAll(dir))
-		}()
+		defer testutil.Ok(b, os.RemoveAll(dir))
 
 		var (
 			blocks          []*Block
@@ -1866,14 +1860,10 @@ func TestFindSetMatches(t *testing.T) {
 func TestPostingsForMatchers(t *testing.T) {
 	chunkDir, err := ioutil.TempDir("", "chunk_dir")
 	testutil.Ok(t, err)
-	defer func() {
-		testutil.Ok(t, os.RemoveAll(chunkDir))
-	}()
+	defer testutil.Ok(t, os.RemoveAll(chunkDir))
 	h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, DefaultStripeSize, nil)
 	testutil.Ok(t, err)
-	defer func() {
-		testutil.Ok(t, h.Close())
-	}()
+	defer testutil.Ok(t, h.Close())
 
 	app := h.Appender()
 	app.Add(labels.FromStrings("n", "1"), 0, 0)
@@ -2127,9 +2117,7 @@ func TestClose(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Opening test dir failed: %s", err)
 	}
-	defer func() {
-		testutil.Ok(t, os.RemoveAll(dir))
-	}()
+	defer testutil.Ok(t, os.RemoveAll(dir))
 
 	createBlock(t, dir, genSeries(1, 1, 0, 10))
 	createBlock(t, dir, genSeries(1, 1, 10, 20))
@@ -2138,9 +2126,7 @@ func TestClose(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Opening test storage failed: %s", err)
 	}
-	defer func() {
-		testutil.Ok(t, db.Close())
-	}()
+	defer testutil.Ok(t, db.Close())
 
 	q, err := db.Querier(context.TODO(), 0, 20)
 	testutil.Ok(t, err)
@@ -2192,9 +2178,7 @@ func BenchmarkQueries(b *testing.B) {
 			for _, nSamples := range []int64{1000, 10000, 100000} {
 				dir, err := ioutil.TempDir("", "test_persisted_query")
 				testutil.Ok(b, err)
-				defer func() {
-					testutil.Ok(b, os.RemoveAll(dir))
-				}()
+				defer testutil.Ok(b, os.RemoveAll(dir))
 
 				series := genSeries(nSeries, 5, 1, int64(nSamples))
 
@@ -2234,9 +2218,7 @@ func BenchmarkQueries(b *testing.B) {
 
 				chunkDir, err := ioutil.TempDir("", "chunk_dir")
 				testutil.Ok(b, err)
-				defer func() {
-					testutil.Ok(b, os.RemoveAll(chunkDir))
-				}()
+				defer testutil.Ok(b, os.RemoveAll(chunkDir))
 				head := createHead(b, series, chunkDir)
 				qHead, err := NewBlockQuerier(head, 1, int64(nSamples))
 				testutil.Ok(b, err)

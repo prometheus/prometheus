@@ -43,9 +43,7 @@ func BenchmarkCreateSeries(b *testing.B) {
 	series := genSeries(b.N, 10, 0, 0)
 	h, _, closer := newTestHead(b, 10000, false)
 	defer closer()
-	defer func() {
-		testutil.Ok(b, h.Close())
-	}()
+	defer testutil.Ok(b, h.Close())
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -131,9 +129,7 @@ func BenchmarkLoadWAL(b *testing.B) {
 			func(b *testing.B) {
 				dir, err := ioutil.TempDir("", "test_load_wal")
 				testutil.Ok(b, err)
-				defer func() {
-					testutil.Ok(b, os.RemoveAll(dir))
-				}()
+				defer testutil.Ok(b, os.RemoveAll(dir))
 
 				w, err := wal.New(nil, nil, dir, false)
 				testutil.Ok(b, err)
@@ -212,9 +208,7 @@ func TestHead_ReadWAL(t *testing.T) {
 
 			head, w, closer := newTestHead(t, 1000, compress)
 			defer closer()
-			defer func() {
-				testutil.Ok(t, head.Close())
-			}()
+			defer testutil.Ok(t, head.Close())
 
 			populateTestWAL(t, w, entries)
 
@@ -289,9 +283,7 @@ func TestHead_WALMultiRef(t *testing.T) {
 	head, err = NewHead(nil, nil, w, 1000, w.Dir(), nil, DefaultStripeSize, nil)
 	testutil.Ok(t, err)
 	testutil.Ok(t, head.Init(0))
-	defer func() {
-		testutil.Ok(t, head.Close())
-	}()
+	defer testutil.Ok(t, head.Close())
 
 	q, err := NewBlockQuerier(head, 0, 2100)
 	testutil.Ok(t, err)
@@ -307,9 +299,7 @@ func TestHead_WALMultiRef(t *testing.T) {
 func TestHead_Truncate(t *testing.T) {
 	h, _, closer := newTestHead(t, 1000, false)
 	defer closer()
-	defer func() {
-		testutil.Ok(t, h.Close())
-	}()
+	defer testutil.Ok(t, h.Close())
 
 	h.initTime(0)
 
@@ -385,15 +375,11 @@ func TestHead_Truncate(t *testing.T) {
 func TestMemSeries_truncateChunks(t *testing.T) {
 	dir, err := ioutil.TempDir("", "truncate_chunks")
 	testutil.Ok(t, err)
-	defer func() {
-		testutil.Ok(t, os.RemoveAll(dir))
-	}()
+	defer testutil.Ok(t, os.RemoveAll(dir))
 	// This is usually taken from the Head, but passing manually here.
 	chunkDiskMapper, err := chunks.NewChunkDiskMapper(dir, chunkenc.NewPool())
 	testutil.Ok(t, err)
-	defer func() {
-		testutil.Ok(t, chunkDiskMapper.Close())
-	}()
+	defer testutil.Ok(t, chunkDiskMapper.Close())
 
 	memChunkPool := sync.Pool{
 		New: func() interface{} {
@@ -459,9 +445,7 @@ func TestHeadDeleteSeriesWithoutSamples(t *testing.T) {
 			}
 			head, w, closer := newTestHead(t, 1000, compress)
 			defer closer()
-			defer func() {
-				testutil.Ok(t, head.Close())
-			}()
+			defer testutil.Ok(t, head.Close())
 
 			populateTestWAL(t, w, entries)
 
@@ -605,9 +589,7 @@ func TestHeadDeleteSimple(t *testing.T) {
 func TestDeleteUntilCurMax(t *testing.T) {
 	hb, _, closer := newTestHead(t, 1000000, false)
 	defer closer()
-	defer func() {
-		testutil.Ok(t, hb.Close())
-	}()
+	defer testutil.Ok(t, hb.Close())
 
 	numSamples := int64(10)
 	app := hb.Appender()
@@ -750,9 +732,7 @@ func TestDelete_e2e(t *testing.T) {
 
 	hb, _, closer := newTestHead(t, 100000, false)
 	defer closer()
-	defer func() {
-		testutil.Ok(t, hb.Close())
-	}()
+	defer testutil.Ok(t, hb.Close())
 
 	app := hb.Appender()
 	for _, l := range lbls {
@@ -935,15 +915,11 @@ func TestComputeChunkEndTime(t *testing.T) {
 func TestMemSeries_append(t *testing.T) {
 	dir, err := ioutil.TempDir("", "append")
 	testutil.Ok(t, err)
-	defer func() {
-		testutil.Ok(t, os.RemoveAll(dir))
-	}()
+	defer testutil.Ok(t, os.RemoveAll(dir))
 	// This is usually taken from the Head, but passing manually here.
 	chunkDiskMapper, err := chunks.NewChunkDiskMapper(dir, chunkenc.NewPool())
 	testutil.Ok(t, err)
-	defer func() {
-		testutil.Ok(t, chunkDiskMapper.Close())
-	}()
+	defer testutil.Ok(t, chunkDiskMapper.Close())
 
 	s := newMemSeries(labels.Labels{}, 1, 500, nil)
 
@@ -991,9 +967,7 @@ func TestGCChunkAccess(t *testing.T) {
 	// Put a chunk, select it. GC it and then access it.
 	h, _, closer := newTestHead(t, 1000, false)
 	defer closer()
-	defer func() {
-		testutil.Ok(t, h.Close())
-	}()
+	defer testutil.Ok(t, h.Close())
 
 	h.initTime(0)
 
@@ -1046,9 +1020,7 @@ func TestGCSeriesAccess(t *testing.T) {
 	// Put a series, select it. GC it and then access it.
 	h, _, closer := newTestHead(t, 1000, false)
 	defer closer()
-	defer func() {
-		testutil.Ok(t, h.Close())
-	}()
+	defer testutil.Ok(t, h.Close())
 
 	h.initTime(0)
 
@@ -1102,9 +1074,7 @@ func TestGCSeriesAccess(t *testing.T) {
 func TestUncommittedSamplesNotLostOnTruncate(t *testing.T) {
 	h, _, closer := newTestHead(t, 1000, false)
 	defer closer()
-	defer func() {
-		testutil.Ok(t, h.Close())
-	}()
+	defer testutil.Ok(t, h.Close())
 
 	h.initTime(0)
 
@@ -1133,9 +1103,7 @@ func TestUncommittedSamplesNotLostOnTruncate(t *testing.T) {
 func TestRemoveSeriesAfterRollbackAndTruncate(t *testing.T) {
 	h, _, closer := newTestHead(t, 1000, false)
 	defer closer()
-	defer func() {
-		testutil.Ok(t, h.Close())
-	}()
+	defer testutil.Ok(t, h.Close())
 
 	h.initTime(0)
 
@@ -1167,9 +1135,7 @@ func TestHead_LogRollback(t *testing.T) {
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
 			h, w, closer := newTestHead(t, 1000, compress)
 			defer closer()
-			defer func() {
-				testutil.Ok(t, h.Close())
-			}()
+			defer testutil.Ok(t, h.Close())
 
 			app := h.Appender()
 			_, err := app.Add(labels.FromStrings("a", "b"), 1, 2)
@@ -1238,9 +1204,7 @@ func TestWalRepair_DecodingError(t *testing.T) {
 			t.Run(fmt.Sprintf("%s,compress=%t", name, compress), func(t *testing.T) {
 				dir, err := ioutil.TempDir("", "wal_repair")
 				testutil.Ok(t, err)
-				defer func() {
-					testutil.Ok(t, os.RemoveAll(dir))
-				}()
+				defer testutil.Ok(t, os.RemoveAll(dir))
 
 				// Fill the wal and corrupt it.
 				{
@@ -1271,9 +1235,7 @@ func TestWalRepair_DecodingError(t *testing.T) {
 				{
 					db, err := Open(dir, nil, nil, DefaultOptions())
 					testutil.Ok(t, err)
-					defer func() {
-						testutil.Ok(t, db.Close())
-					}()
+					defer testutil.Ok(t, db.Close())
 					testutil.Equals(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.walCorruptionsTotal))
 				}
 
@@ -1299,9 +1261,7 @@ func TestWalRepair_DecodingError(t *testing.T) {
 func TestHeadReadWriterRepair(t *testing.T) {
 	dir, err := ioutil.TempDir("", "head_read_writer_repair")
 	testutil.Ok(t, err)
-	defer func() {
-		testutil.Ok(t, os.RemoveAll(dir))
-	}()
+	defer testutil.Ok(t, os.RemoveAll(dir))
 
 	const chunkRange = 1000
 
@@ -1348,9 +1308,7 @@ func TestHeadReadWriterRepair(t *testing.T) {
 	{
 		db, err := Open(dir, nil, nil, DefaultOptions())
 		testutil.Ok(t, err)
-		defer func() {
-			testutil.Ok(t, db.Close())
-		}()
+		defer testutil.Ok(t, db.Close())
 		testutil.Equals(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.mmapChunkCorruptionTotal))
 	}
 
@@ -1366,9 +1324,7 @@ func TestHeadReadWriterRepair(t *testing.T) {
 func TestNewWalSegmentOnTruncate(t *testing.T) {
 	h, wlog, closer := newTestHead(t, 1000, false)
 	defer closer()
-	defer func() {
-		testutil.Ok(t, h.Close())
-	}()
+	defer testutil.Ok(t, h.Close())
 	add := func(ts int64) {
 		app := h.Appender()
 		_, err := app.Add(labels.Labels{{Name: "a", Value: "b"}}, ts, 0)
@@ -1397,9 +1353,7 @@ func TestNewWalSegmentOnTruncate(t *testing.T) {
 func TestAddDuplicateLabelName(t *testing.T) {
 	h, _, closer := newTestHead(t, 1000, false)
 	defer closer()
-	defer func() {
-		testutil.Ok(t, h.Close())
-	}()
+	defer testutil.Ok(t, h.Close())
 
 	add := func(labels labels.Labels, labelName string) {
 		app := h.Appender()
@@ -1543,7 +1497,7 @@ func TestMemSeriesIsolation(t *testing.T) {
 	wlog, err := wal.NewSize(nil, nil, w.Dir(), 32768, false)
 	testutil.Ok(t, err)
 	hb, err = NewHead(nil, nil, wlog, 1000, wlog.Dir(), nil, DefaultStripeSize, nil)
-	defer func() { testutil.Ok(t, hb.Close()) }()
+	defer testutil.Ok(t, hb.Close())
 	testutil.Ok(t, err)
 	testutil.Ok(t, hb.Init(0))
 
@@ -1584,9 +1538,7 @@ func TestIsolationRollback(t *testing.T) {
 	// Rollback after a failed append and test if the low watermark has progressed anyway.
 	hb, _, closer := newTestHead(t, 1000, false)
 	defer closer()
-	defer func() {
-		testutil.Ok(t, hb.Close())
-	}()
+	defer testutil.Ok(t, hb.Close())
 
 	app := hb.Appender()
 	_, err := app.Add(labels.FromStrings("foo", "bar"), 0, 0)
@@ -1612,9 +1564,7 @@ func TestIsolationRollback(t *testing.T) {
 func TestIsolationLowWatermarkMonotonous(t *testing.T) {
 	hb, _, closer := newTestHead(t, 1000, false)
 	defer closer()
-	defer func() {
-		testutil.Ok(t, hb.Close())
-	}()
+	defer testutil.Ok(t, hb.Close())
 
 	app1 := hb.Appender()
 	_, err := app1.Add(labels.FromStrings("foo", "bar"), 0, 0)
@@ -1646,9 +1596,7 @@ func TestIsolationLowWatermarkMonotonous(t *testing.T) {
 func TestIsolationAppendIDZeroIsNoop(t *testing.T) {
 	h, _, closer := newTestHead(t, 1000, false)
 	defer closer()
-	defer func() {
-		testutil.Ok(t, h.Close())
-	}()
+	defer testutil.Ok(t, h.Close())
 
 	h.initTime(0)
 
@@ -1668,9 +1616,7 @@ func TestHeadSeriesChunkRace(t *testing.T) {
 func TestIsolationWithoutAdd(t *testing.T) {
 	hb, _, closer := newTestHead(t, 1000, false)
 	defer closer()
-	defer func() {
-		testutil.Ok(t, hb.Close())
-	}()
+	defer testutil.Ok(t, hb.Close())
 
 	app := hb.Appender()
 	testutil.Ok(t, app.Commit())
@@ -1686,15 +1632,11 @@ func TestIsolationWithoutAdd(t *testing.T) {
 func TestOutOfOrderSamplesMetric(t *testing.T) {
 	dir, err := ioutil.TempDir("", "test")
 	testutil.Ok(t, err)
-	defer func() {
-		testutil.Ok(t, os.RemoveAll(dir))
-	}()
+	defer testutil.Ok(t, os.RemoveAll(dir))
 
 	db, err := Open(dir, nil, nil, DefaultOptions())
 	testutil.Ok(t, err)
-	defer func() {
-		testutil.Ok(t, db.Close())
-	}()
+	defer testutil.Ok(t, db.Close())
 	db.DisableCompactions()
 
 	app := db.Appender()
@@ -1767,9 +1709,7 @@ func TestOutOfOrderSamplesMetric(t *testing.T) {
 func testHeadSeriesChunkRace(t *testing.T) {
 	h, _, closer := newTestHead(t, 1000, false)
 	defer closer()
-	defer func() {
-		testutil.Ok(t, h.Close())
-	}()
+	defer testutil.Ok(t, h.Close())
 	testutil.Ok(t, h.Init(0))
 	app := h.Appender()
 
@@ -1819,9 +1759,7 @@ func newTestHead(t testing.TB, chunkRange int64, compressWAL bool) (*Head, *wal.
 func TestHeadLabelNamesValuesWithMinMaxRange(t *testing.T) {
 	head, _, closer := newTestHead(t, 1000, false)
 	defer closer()
-	defer func() {
-		testutil.Ok(t, head.Close())
-	}()
+	defer testutil.Ok(t, head.Close())
 
 	const (
 		firstSeriesTimestamp  int64 = 100

@@ -37,9 +37,7 @@ import (
 func TestSegmentWAL_cut(t *testing.T) {
 	tmpdir, err := ioutil.TempDir("", "test_wal_cut")
 	testutil.Ok(t, err)
-	defer func() {
-		testutil.Ok(t, os.RemoveAll(tmpdir))
-	}()
+	defer testutil.Ok(t, os.RemoveAll(tmpdir))
 
 	// This calls cut() implicitly the first time without a previous tail.
 	w, err := OpenSegmentWAL(tmpdir, nil, 0, nil)
@@ -87,9 +85,7 @@ func TestSegmentWAL_Truncate(t *testing.T) {
 
 	dir, err := ioutil.TempDir("", "test_wal_log_truncate")
 	testutil.Ok(t, err)
-	defer func() {
-		testutil.Ok(t, os.RemoveAll(dir))
-	}()
+	defer testutil.Ok(t, os.RemoveAll(dir))
 
 	w, err := OpenSegmentWAL(dir, nil, 0, nil)
 	testutil.Ok(t, err)
@@ -168,9 +164,7 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 
 	dir, err := ioutil.TempDir("", "test_wal_log_restore")
 	testutil.Ok(t, err)
-	defer func() {
-		testutil.Ok(t, os.RemoveAll(dir))
-	}()
+	defer testutil.Ok(t, os.RemoveAll(dir))
 
 	var (
 		recordedSeries  [][]record.RefSeries
@@ -277,9 +271,7 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 func TestWALRestoreCorrupted_invalidSegment(t *testing.T) {
 	dir, err := ioutil.TempDir("", "test_wal_log_restore")
 	testutil.Ok(t, err)
-	defer func() {
-		testutil.Ok(t, os.RemoveAll(dir))
-	}()
+	defer testutil.Ok(t, os.RemoveAll(dir))
 
 	wal, err := OpenSegmentWAL(dir, nil, 0, nil)
 	testutil.Ok(t, err)
@@ -380,9 +372,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 			// for the purpose of this test.
 			dir, err := ioutil.TempDir("", "test_corrupted")
 			testutil.Ok(t, err)
-			defer func() {
-				testutil.Ok(t, os.RemoveAll(dir))
-			}()
+			defer testutil.Ok(t, os.RemoveAll(dir))
 
 			w, err := OpenSegmentWAL(dir, nil, 0, nil)
 			testutil.Ok(t, err)
@@ -457,9 +447,7 @@ func TestMigrateWAL_Empty(t *testing.T) {
 	// which is valid in the new format.
 	dir, err := ioutil.TempDir("", "walmigrate")
 	testutil.Ok(t, err)
-	defer func() {
-		testutil.Ok(t, os.RemoveAll(dir))
-	}()
+	defer testutil.Ok(t, os.RemoveAll(dir))
 
 	wdir := path.Join(dir, "wal")
 
@@ -474,9 +462,7 @@ func TestMigrateWAL_Empty(t *testing.T) {
 func TestMigrateWAL_Fuzz(t *testing.T) {
 	dir, err := ioutil.TempDir("", "walmigrate")
 	testutil.Ok(t, err)
-	defer func() {
-		testutil.Ok(t, os.RemoveAll(dir))
-	}()
+	defer testutil.Ok(t, os.RemoveAll(dir))
 
 	wdir := path.Join(dir, "wal")
 

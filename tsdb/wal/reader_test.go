@@ -314,9 +314,7 @@ func TestReaderFuzz(t *testing.T) {
 			t.Run(fmt.Sprintf("%s,compress=%t", name, compress), func(t *testing.T) {
 				dir, err := ioutil.TempDir("", "wal_fuzz_live")
 				testutil.Ok(t, err)
-				defer func() {
-					testutil.Ok(t, os.RemoveAll(dir))
-				}()
+				defer testutil.Ok(t, os.RemoveAll(dir))
 
 				w, err := NewSize(nil, nil, dir, 128*pageSize, compress)
 				testutil.Ok(t, err)
@@ -351,9 +349,7 @@ func TestReaderFuzz_Live(t *testing.T) {
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
 			dir, err := ioutil.TempDir("", "wal_fuzz_live")
 			testutil.Ok(t, err)
-			defer func() {
-				testutil.Ok(t, os.RemoveAll(dir))
-			}()
+			defer testutil.Ok(t, os.RemoveAll(dir))
 
 			w, err := NewSize(nil, nil, dir, 128*pageSize, compress)
 			testutil.Ok(t, err)
@@ -436,9 +432,7 @@ func TestLiveReaderCorrupt_ShortFile(t *testing.T) {
 	logger := testutil.NewLogger(t)
 	dir, err := ioutil.TempDir("", "wal_live_corrupt")
 	testutil.Ok(t, err)
-	defer func() {
-		testutil.Ok(t, os.RemoveAll(dir))
-	}()
+	defer testutil.Ok(t, os.RemoveAll(dir))
 
 	w, err := NewSize(nil, nil, dir, pageSize, false)
 	testutil.Ok(t, err)
@@ -480,9 +474,7 @@ func TestLiveReaderCorrupt_RecordTooLongAndShort(t *testing.T) {
 	logger := testutil.NewLogger(t)
 	dir, err := ioutil.TempDir("", "wal_live_corrupt")
 	testutil.Ok(t, err)
-	defer func() {
-		testutil.Ok(t, os.RemoveAll(dir))
-	}()
+	defer testutil.Ok(t, os.RemoveAll(dir))
 
 	w, err := NewSize(nil, nil, dir, pageSize*2, false)
 	testutil.Ok(t, err)

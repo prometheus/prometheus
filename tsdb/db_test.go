@@ -68,9 +68,7 @@ func openTestDB(t testing.TB, opts *Options, rngs []int64) (db *DB, close func()
 // query runs a matcher query against the querier and fully expands its data.
 func query(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) map[string][]tsdbutil.Sample {
 	ss := q.Select(false, nil, matchers...)
-	defer func() {
-		testutil.Ok(t, q.Close())
-	}()
+	defer testutil.Ok(t, q.Close())
 
 	result := map[string][]tsdbutil.Sample{}
 	for ss.Next() {
@@ -472,20 +470,18 @@ func TestDB_Snapshot(t *testing.T) {
 	snap, err := ioutil.TempDir("", "snap")
 	testutil.Ok(t, err)
 
-	defer func() {
-		testutil.Ok(t, os.RemoveAll(snap))
-	}()
+	defer testutil.Ok(t, os.RemoveAll(snap))
 	testutil.Ok(t, db.Snapshot(snap, true))
 	testutil.Ok(t, db.Close())
 
 	// reopen DB from snapshot
 	db, err = Open(snap, nil, nil, nil)
 	testutil.Ok(t, err)
-	defer func() { testutil.Ok(t, db.Close()) }()
+	defer testutil.Ok(t, db.Close())
 
 	querier, err := db.Querier(context.TODO(), mint, mint+1000)
 	testutil.Ok(t, err)
-	defer func() { testutil.Ok(t, querier.Close()) }()
+	defer testutil.Ok(t, querier.Close())
 
 	// sum values
 	seriesSet := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
@@ -525,20 +521,18 @@ func TestDB_Snapshot_ChunksOutsideOfCompactedRange(t *testing.T) {
 	// Hackingly introduce "race", by having lower max time then maxTime in last chunk.
 	db.head.maxTime = db.head.maxTime - 10
 
-	defer func() {
-		testutil.Ok(t, os.RemoveAll(snap))
-	}()
+	defer testutil.Ok(t, os.RemoveAll(snap))
 	testutil.Ok(t, db.Snapshot(snap, true))
 	testutil.Ok(t, db.Close())
 
 	// Reopen DB from snapshot.
 	db, err = Open(snap, nil, nil, nil)
 	testutil.Ok(t, err)
-	defer func() { testutil.Ok(t, db.Close()) }()
+	defer testutil.Ok(t, db.Close())
 
 	querier, err := db.Querier(context.TODO(), mint, mint+1000)
 	testutil.Ok(t, err)
-	defer func() { testutil.Ok(t, querier.Close()) }()
+	defer testutil.Ok(t, querier.Close())
 
 	// Sum values.
 	seriesSet := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
@@ -595,21 +589,19 @@ Outer:
 		snap, err := ioutil.TempDir("", "snap")
 		testutil.Ok(t, err)
 
-		defer func() {
-			testutil.Ok(t, os.RemoveAll(snap))
-		}()
+		defer testutil.Ok(t, os.RemoveAll(snap))
 		testutil.Ok(t, db.Snapshot(snap, true))
 		testutil.Ok(t, db.Close())
 
 		// reopen DB from snapshot
 		db, err = Open(snap, nil, nil, nil)
 		testutil.Ok(t, err)
-		defer func() { testutil.Ok(t, db.Close()) }()
+		defer testutil.Ok(t, db.Close())
 
 		// Compare the result.
 		q, err := db.Querier(context.TODO(), 0, numSamples)
 		testutil.Ok(t, err)
-		defer func() { testutil.Ok(t, q.Close()) }()
+		defer testutil.Ok(t, q.Close())
 
 		res := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 
@@ -824,7 +816,7 @@ func TestWALFlushedOnDBClose(t *testing.T) {
 
 	db, err = Open(dirDb, nil, nil, nil)
 	testutil.Ok(t, err)
-	defer func() { testutil.Ok(t, db.Close()) }()
+	defer testutil.Ok(t, db.Close())
 
 	q, err := db.Querier(context.TODO(), 0, 1)
 	testutil.Ok(t, err)
@@ -935,9 +927,7 @@ func TestTombstoneClean(t *testing.T) {
 		snap, err := ioutil.TempDir("", "snap")
 		testutil.Ok(t, err)
 
-		defer func() {
-			testutil.Ok(t, os.RemoveAll(snap))
-		}()
+		defer testutil.Ok(t, os.RemoveAll(snap))
 		testutil.Ok(t, db.Snapshot(snap, true))
 		testutil.Ok(t, db.Close())
 
@@ -1292,7 +1282,7 @@ func TestNotMatcherSelectsLabelsUnsetSeries(t *testing.T) {
 
 	q, err := db.Querier(context.TODO(), 0, 10)
 	testutil.Ok(t, err)
-	defer func() { testutil.Ok(t, q.Close()) }()
+	defer testutil.Ok(t, q.Close())
 
 	for _, c := range cases {
 		ss := q.Select(false, nil, c.selector...)
@@ -1515,9 +1505,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 	t.Run("clean", func(t *testing.T) {
 		dir, err := ioutil.TempDir("", "test_head_init")
 		testutil.Ok(t, err)
-		defer func() {
-			testutil.Ok(t, os.RemoveAll(dir))
-		}()
+		defer testutil.Ok(t, os.RemoveAll(dir))
 
 		db, err := Open(dir, nil, nil, nil)
 		testutil.Ok(t, err)
@@ -1538,9 +1526,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 	t.Run("wal-only", func(t *testing.T) {
 		dir, err := ioutil.TempDir("", "test_head_init")
 		testutil.Ok(t, err)
-		defer func() {
-			testutil.Ok(t, os.RemoveAll(dir))
-		}()
+		defer testutil.Ok(t, os.RemoveAll(dir))
 
 		testutil.Ok(t, os.MkdirAll(path.Join(dir, "wal"), 0777))
 		w, err := wal.New(nil, nil, path.Join(dir, "wal"), false)
@@ -1570,9 +1556,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 	t.Run("existing-block", func(t *testing.T) {
 		dir, err := ioutil.TempDir("", "test_head_init")
 		testutil.Ok(t, err)
-		defer func() {
-			testutil.Ok(t, os.RemoveAll(dir))
-		}()
+		defer testutil.Ok(t, os.RemoveAll(dir))
 
 		createBlock(t, dir, genSeries(1, 1, 1000, 2000))
 
@@ -1586,9 +1570,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 	t.Run("existing-block-and-wal", func(t *testing.T) {
 		dir, err := ioutil.TempDir("", "test_head_init")
 		testutil.Ok(t, err)
-		defer func() {
-			testutil.Ok(t, os.RemoveAll(dir))
-		}()
+		defer testutil.Ok(t, os.RemoveAll(dir))
 
 		createBlock(t, dir, genSeries(1, 1, 1000, 6000))
 
@@ -2188,9 +2170,7 @@ func TestVerticalCompaction(t *testing.T) {
 
 			tmpdir, err := ioutil.TempDir("", "data")
 			testutil.Ok(t, err)
-			defer func() {
-				testutil.Ok(t, os.RemoveAll(tmpdir))
-			}()
+			defer testutil.Ok(t, os.RemoveAll(tmpdir))
 
 			for _, series := range c.blockSeries {
 				createBlock(t, tmpdir, series)
@@ -2199,9 +2179,7 @@ func TestVerticalCompaction(t *testing.T) {
 			opts.AllowOverlappingBlocks = true
 			db, err := Open(tmpdir, nil, nil, opts)
 			testutil.Ok(t, err)
-			defer func() {
-				testutil.Ok(t, db.Close())
-			}()
+			defer testutil.Ok(t, db.Close())
 			db.DisableCompactions()
 			testutil.Assert(t, len(db.blocks) == len(c.blockSeries), "Wrong number of blocks [before compact].")
 
@@ -2254,9 +2232,7 @@ func TestBlockRanges(t *testing.T) {
 	testutil.Ok(t, err)
 
 	rangeToTriggerCompaction := db.compactor.(*LeveledCompactor).ranges[0]/2*3 + 1
-	defer func() {
-		os.RemoveAll(dir)
-	}()
+	defer testutil.Ok(t, os.RemoveAll(dir))
 	app := db.Appender()
 	lbl := labels.Labels{{Name: "a", Value: "b"}}
 	_, err = app.Add(lbl, firstBlockMaxT-1, rand.Float64())
@@ -2345,9 +2321,7 @@ func TestDBReadOnly(t *testing.T) {
 		dbDir, err = ioutil.TempDir("", "test")
 		testutil.Ok(t, err)
 
-		defer func() {
-			testutil.Ok(t, os.RemoveAll(dbDir))
-		}()
+		defer testutil.Ok(t, os.RemoveAll(dbDir))
 
 		dbBlocks := []*BlockMeta{
 			{MinTime: 10, MaxTime: 11},
@@ -2392,9 +2366,7 @@ func TestDBReadOnly(t *testing.T) {
 	{
 		dbReadOnly, err := OpenDBReadOnly(dbDir, logger)
 		testutil.Ok(t, err)
-		defer func() {
-			testutil.Ok(t, dbReadOnly.Close())
-		}()
+		defer testutil.Ok(t, dbReadOnly.Close())
 		blocks, err := dbReadOnly.Blocks()
 		testutil.Ok(t, err)
 		testutil.Equals(t, len(expBlocks), len(blocks))
@@ -2420,9 +2392,7 @@ func TestDBReadOnlyClosing(t *testing.T) {
 	dbDir, err := ioutil.TempDir("", "test")
 	testutil.Ok(t, err)
 
-	defer func() {
-		testutil.Ok(t, os.RemoveAll(dbDir))
-	}()
+	defer testutil.Ok(t, os.RemoveAll(dbDir))
 	db, err := OpenDBReadOnly(dbDir, log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr)))
 	testutil.Ok(t, err)
 	testutil.Ok(t, db.Close())
@@ -2446,9 +2416,7 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 		dbDir, err = ioutil.TempDir("", "test")
 		testutil.Ok(t, err)
 
-		defer func() {
-			testutil.Ok(t, os.RemoveAll(dbDir))
-		}()
+		defer testutil.Ok(t, os.RemoveAll(dbDir))
 
 		// Append data to the WAL.
 		db, err := Open(dbDir, logger, nil, nil)
@@ -2461,7 +2429,7 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 			testutil.Ok(t, err)
 		}
 		testutil.Ok(t, app.Commit())
-		defer func() { testutil.Ok(t, db.Close()) }()
+		defer testutil.Ok(t, db.Close())
 	}
 
 	// Flush WAL.
@@ -2471,23 +2439,21 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 	flush, err := ioutil.TempDir("", "flush")
 	testutil.Ok(t, err)
 
-	defer func() {
-		testutil.Ok(t, os.RemoveAll(flush))
-	}()
+	defer testutil.Ok(t, os.RemoveAll(flush))
 	testutil.Ok(t, db.FlushWAL(flush))
 	testutil.Ok(t, db.Close())
 
 	// Reopen the DB from the flushed WAL block.
 	db, err = OpenDBReadOnly(flush, logger)
 	testutil.Ok(t, err)
-	defer func() { testutil.Ok(t, db.Close()) }()
+	defer testutil.Ok(t, db.Close())
 	blocks, err := db.Blocks()
 	testutil.Ok(t, err)
 	testutil.Equals(t, len(blocks), 1)
 
 	querier, err := db.Querier(context.TODO(), 0, int64(maxt)-1)
 	testutil.Ok(t, err)
-	defer func() { testutil.Ok(t, querier.Close()) }()
+	defer testutil.Ok(t, querier.Close())
 
 	// Sum the values.
 	seriesSet := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, defaultLabelName, "flush"))
@@ -2764,7 +2730,7 @@ func TestChunkWriter_ReadAfterWrite(t *testing.T) {
 
 			tempDir, err := ioutil.TempDir("", "test_chunk_writer")
 			testutil.Ok(t, err)
-			defer func() { testutil.Ok(t, os.RemoveAll(tempDir)) }()
+			defer testutil.Ok(t, os.RemoveAll(tempDir))
 
 			chunkw, err := chunks.NewWriterWithSegSize(tempDir, chunks.SegmentHeaderSize+int64(test.segmentSize))
 			testutil.Ok(t, err)
@@ -2805,7 +2771,7 @@ func TestChunkWriter_ReadAfterWrite(t *testing.T) {
 			// Check the content of the chunks.
 			r, err := chunks.NewDirReader(tempDir, nil)
 			testutil.Ok(t, err)
-			defer func() { testutil.Ok(t, r.Close()) }()
+			defer testutil.Ok(t, r.Close())
 
 			for _, chks := range test.chks {
 				for _, chkExp := range chks {
@@ -2831,7 +2797,7 @@ func TestChunkReader_ConcurrentReads(t *testing.T) {
 
 	tempDir, err := ioutil.TempDir("", "test_chunk_writer")
 	testutil.Ok(t, err)
-	defer func() { testutil.Ok(t, os.RemoveAll(tempDir)) }()
+	defer testutil.Ok(t, os.RemoveAll(tempDir))
 
 	chunkw, err := chunks.NewWriter(tempDir)
 	testutil.Ok(t, err)
@@ -2870,7 +2836,7 @@ func TestChunkReader_ConcurrentReads(t *testing.T) {
 func TestCompactHead(t *testing.T) {
 	dbDir, err := ioutil.TempDir("", "testFlush")
 	testutil.Ok(t, err)
-	defer func() { testutil.Ok(t, os.RemoveAll(dbDir)) }()
+	defer testutil.Ok(t, os.RemoveAll(dbDir))
 
 	// Open a DB and append data to the WAL.
 	tsdbCfg := &Options{
@@ -2905,10 +2871,10 @@ func TestCompactHead(t *testing.T) {
 	testutil.Ok(t, err)
 	testutil.Equals(t, 1, len(db.Blocks()))
 	testutil.Equals(t, int64(maxt), db.Head().MinTime())
-	defer func() { testutil.Ok(t, db.Close()) }()
+	defer testutil.Ok(t, db.Close())
 	querier, err := db.Querier(context.Background(), 0, int64(maxt)-1)
 	testutil.Ok(t, err)
-	defer func() { testutil.Ok(t, querier.Close()) }()
+	defer testutil.Ok(t, querier.Close())
 
 	seriesSet := querier.Select(false, nil, &labels.Matcher{Type: labels.MatchEqual, Name: "a", Value: "b"})
 	var actSamples []sample

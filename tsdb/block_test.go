@@ -41,9 +41,7 @@ import (
 func TestBlockMetaMustNeverBeVersion2(t *testing.T) {
 	dir, err := ioutil.TempDir("", "metaversion")
 	testutil.Ok(t, err)
-	defer func() {
-		testutil.Ok(t, os.RemoveAll(dir))
-	}()
+	defer testutil.Ok(t, os.RemoveAll(dir))
 
 	_, err = writeMetaFile(log.NewNopLogger(), dir, &BlockMeta{})
 	testutil.Ok(t, err)
@@ -56,9 +54,7 @@ func TestBlockMetaMustNeverBeVersion2(t *testing.T) {
 func TestSetCompactionFailed(t *testing.T) {
 	tmpdir, err := ioutil.TempDir("", "test")
 	testutil.Ok(t, err)
-	defer func() {
-		testutil.Ok(t, os.RemoveAll(tmpdir))
-	}()
+	defer testutil.Ok(t, os.RemoveAll(tmpdir))
 
 	blockDir := createBlock(t, tmpdir, genSeries(1, 1, 0, 1))
 	b, err := OpenBlock(nil, blockDir, nil)
@@ -77,9 +73,7 @@ func TestSetCompactionFailed(t *testing.T) {
 func TestCreateBlock(t *testing.T) {
 	tmpdir, err := ioutil.TempDir("", "test")
 	testutil.Ok(t, err)
-	defer func() {
-		testutil.Ok(t, os.RemoveAll(tmpdir))
-	}()
+	defer testutil.Ok(t, os.RemoveAll(tmpdir))
 	b, err := OpenBlock(nil, createBlock(t, tmpdir, genSeries(1, 1, 0, 10)), nil)
 	if err == nil {
 		testutil.Ok(t, b.Close())
@@ -175,9 +169,7 @@ func TestCorruptedChunk(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			tmpdir, err := ioutil.TempDir("", "test_open_block_chunk_corrupted")
 			testutil.Ok(t, err)
-			defer func() {
-				testutil.Ok(t, os.RemoveAll(tmpdir))
-			}()
+			defer testutil.Ok(t, os.RemoveAll(tmpdir))
 
 			series := newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{sample{1, 1}})
 			blockDir := createBlock(t, tmpdir, []storage.Series{series})
@@ -198,11 +190,11 @@ func TestCorruptedChunk(t *testing.T) {
 				testutil.Equals(t, test.openErr.Error(), err.Error())
 				return
 			}
-			defer func() { testutil.Ok(t, b.Close()) }()
+			defer testutil.Ok(t, b.Close())
 
 			querier, err := NewBlockQuerier(b, 0, 1)
 			testutil.Ok(t, err)
-			defer func() { testutil.Ok(t, querier.Close()) }()
+			defer testutil.Ok(t, querier.Close())
 			set := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 
 			// Check query err.
@@ -216,9 +208,7 @@ func TestCorruptedChunk(t *testing.T) {
 func TestBlockSize(t *testing.T) {
 	tmpdir, err := ioutil.TempDir("", "test_blockSize")
 	testutil.Ok(t, err)
-	defer func() {
-		testutil.Ok(t, os.RemoveAll(tmpdir))
-	}()
+	defer testutil.Ok(t, os.RemoveAll(tmpdir))
 
 	var (
 		blockInit    *Block
@@ -231,9 +221,7 @@ func TestBlockSize(t *testing.T) {
 		blockDirInit = createBlock(t, tmpdir, genSeries(10, 1, 1, 100))
 		blockInit, err = OpenBlock(nil, blockDirInit, nil)
 		testutil.Ok(t, err)
-		defer func() {
-			testutil.Ok(t, blockInit.Close())
-		}()
+		defer testutil.Ok(t, blockInit.Close())
 		expSizeInit = blockInit.Size()
 		actSizeInit, err := fileutil.DirSize(blockInit.Dir())
 		testutil.Ok(t, err)
@@ -255,9 +243,7 @@ func TestBlockSize(t *testing.T) {
 		testutil.Ok(t, err)
 		blockAfterCompact, err := OpenBlock(nil, filepath.Join(tmpdir, blockDirAfterCompact.String()), nil)
 		testutil.Ok(t, err)
-		defer func() {
-			testutil.Ok(t, blockAfterCompact.Close())
-		}()
+		defer testutil.Ok(t, blockAfterCompact.Close())
 		expAfterCompact := blockAfterCompact.Size()
 		actAfterCompact, err := fileutil.DirSize(blockAfterCompact.Dir())
 		testutil.Ok(t, err)
@@ -305,9 +291,9 @@ func TestReadIndexFormatV1(t *testing.T) {
 func createBlock(tb testing.TB, dir string, series []storage.Series) string {
 	chunkDir, err := ioutil.TempDir("", "chunk_dir")
 	testutil.Ok(tb, err)
-	defer func() { testutil.Ok(tb, os.RemoveAll(chunkDir)) }()
+	defer testutil.Ok(tb, os.RemoveAll(chunkDir))
 	head := createHead(tb, series, chunkDir)
-	defer func() { testutil.Ok(tb, head.Close()) }()
+	defer testutil.Ok(tb, head.Close())
 	return createBlockFromHead(tb, dir, head)
 }
 

@@ -70,9 +70,7 @@ func TestRepairBadIndexVersion(t *testing.T) {
 
 	// Touch chunks dir in block.
 	testutil.Ok(t, os.MkdirAll(filepath.Join(dbDir, "chunks"), 0777))
-	defer func() {
-		testutil.Ok(t, os.RemoveAll(filepath.Join(dbDir, "chunks")))
-	}()
+	defer testutil.Ok(t, os.RemoveAll(filepath.Join(dbDir, "chunks")))
 
 	r, err := index.NewFileReader(filepath.Join(dbDir, indexFilename))
 	testutil.Ok(t, err)
@@ -91,9 +89,7 @@ func TestRepairBadIndexVersion(t *testing.T) {
 	if err = fileutil.CopyDirs(dbDir, tmpDbDir); err != nil {
 		t.Fatal(err)
 	}
-	defer func() {
-		testutil.Ok(t, os.RemoveAll(tmpDir))
-	}()
+	defer testutil.Ok(t, os.RemoveAll(tmpDir))
 	// On DB opening all blocks in the base dir should be repaired.
 	db, err := Open(tmpDir, nil, nil, nil)
 	testutil.Ok(t, err)
