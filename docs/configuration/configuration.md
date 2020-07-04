@@ -1568,7 +1568,7 @@ with this feature.
 url: <string>
 
 # Name of the remote read config, which if specified must be unique among remote read configs. 
-# The name will be used in metrics and logging in place of a generated value to help users distiguish between
+# The name will be used in metrics and logging in place of a generated value to help users distinguish between
 # remote read configs.
 [ name: <string> ]
 
