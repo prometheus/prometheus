@@ -94,7 +94,10 @@ func (c *prometheusLangServerClient) LabelNames(ctx context.Context, metricName 
 		}
 		// Here we have to copy the result before closing the query. Otherwise the result will disappear
 		result := make([]string, 0, len(names))
-		result = append(result, names...)
+		for _, name := range names {
+			newName := "" + name
+			result = append(result, newName)
+		}
 		return result, nil
 	}
 
@@ -122,7 +125,9 @@ func (c *prometheusLangServerClient) LabelNames(ctx context.Context, metricName 
 	}
 	result := make([]string, 0, len(subResult))
 	for l := range subResult {
-		result = append(result, l)
+		// Create a complete new string. It will avoid to return an empty because the query has been closed too earlier.
+		newLabelName := "" + l
+		result = append(result, newLabelName)
 	}
 	return result, nil
 }
@@ -141,7 +146,9 @@ func (c *prometheusLangServerClient) LabelValues(ctx context.Context, label stri
 	}
 	labelValues := make([]model.LabelValue, 0, len(values))
 	for _, value := range values {
-		labelValues = append(labelValues, model.LabelValue(value))
+		// Create a complete new string. It will avoid to return an empty because the query has been closed too earlier.
+		newLabelValue := model.LabelValue("" + value)
+		labelValues = append(labelValues, newLabelValue)
 	}
 	return labelValues, nil
 }
