@@ -10,7 +10,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"go/build"
 	"go/scanner"
 	"io"
 	"io/ioutil"
@@ -43,15 +42,7 @@ var (
 		TabIndent: true,
 		Comments:  true,
 		Fragment:  true,
-		// This environment, and its caches, will be reused for the whole run.
-		Env: &imports.ProcessEnv{
-			GOPATH:      build.Default.GOPATH,
-			GOROOT:      build.Default.GOROOT,
-			GOFLAGS:     os.Getenv("GOFLAGS"),
-			GO111MODULE: os.Getenv("GO111MODULE"),
-			GOPROXY:     os.Getenv("GOPROXY"),
-			GOSUMDB:     os.Getenv("GOSUMDB"),
-		},
+		Env: &imports.ProcessEnv{},
 	}
 	exitCode = 0
 )
@@ -154,7 +145,6 @@ func processFile(filename string, in io.Reader, out io.Writer, argType argumentT
 		// formatting has changed
 		if *list {
 			fmt.Fprintln(out, filename)
-			exitCode = 1
 		}
 		if *write {
 			if argType == fromStdin {
