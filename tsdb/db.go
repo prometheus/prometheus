@@ -569,13 +569,6 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 		autoCompact: true,
 		chunkPool:   chunkenc.NewPool(),
 	}
-	db.metrics = newDBMetrics(db, r)
-
-	maxBytes := opts.MaxBytes
-	if maxBytes < 0 {
-		maxBytes = 0
-	}
-	db.metrics.maxBytes.Set(float64(maxBytes))
 
 	if !opts.NoLockfile {
 		absdir, err := filepath.Abs(dir)
@@ -616,6 +609,14 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	if err != nil {
 		return nil, err
 	}
+
+	// Register metrics after assigning the head block.
+	db.metrics = newDBMetrics(db, r)
+	maxBytes := opts.MaxBytes
+	if maxBytes < 0 {
+		maxBytes = 0
+	}
+	db.metrics.maxBytes.Set(float64(maxBytes))
 
 	if err := db.reload(); err != nil {
 		return nil, err
