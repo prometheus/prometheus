@@ -1145,7 +1145,7 @@ func (m mockIndex) Close() error {
 }
 
 func (m mockIndex) LabelValues(name string) ([]string, error) {
-	values, _ := m.LabelValues(name)
+	values, _ := m.UnsortedLabelValues(name)
 	sort.Strings(values)
 	return values, nil
 }
