@@ -26,10 +26,6 @@ type OpenstackSDHypervisorTestSuite struct {
 	Mock *SDMock
 }
 
-func (s *OpenstackSDHypervisorTestSuite) TearDownSuite() {
-	s.Mock.ShutdownServer()
-}
-
 func (s *OpenstackSDHypervisorTestSuite) SetupTest(t *testing.T) {
 	s.Mock = NewSDMock(t)
 	s.Mock.Setup()
@@ -89,8 +85,6 @@ func TestOpenstackSDHypervisorRefresh(t *testing.T) {
 	} {
 		testutil.Equals(t, model.LabelValue(v), tg.Targets[1][model.LabelName(l)])
 	}
-
-	mock.TearDownSuite()
 }
 
 func TestOpenstackSDHypervisorRefreshWithDoneContext(t *testing.T) {
@@ -103,6 +97,4 @@ func TestOpenstackSDHypervisorRefreshWithDoneContext(t *testing.T) {
 	_, err := hypervisor.refresh(ctx)
 	testutil.NotOk(t, err)
 	testutil.Assert(t, strings.Contains(err.Error(), context.Canceled.Error()), "%q doesn't contain %q", err, context.Canceled)
-
-	mock.TearDownSuite()
 }
