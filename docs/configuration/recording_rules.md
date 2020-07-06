@@ -98,7 +98,7 @@ labels:
 The syntax for alerting rules is:
 
 ```
-# The name of the alert. Must be a valid metric name.
+# The name of the alert. Must be a valid label value.
 alert: <string>
 
 # The PromQL expression to evaluate. Every evaluation cycle this is
