@@ -43,7 +43,7 @@ require (
 	github.com/hashicorp/serf v0.9.0 // indirect
 	github.com/influxdata/influxdb v1.8.0
 	github.com/jpillora/backoff v1.0.0 // indirect
-	github.com/json-iterator/go v1.1.9
+	github.com/json-iterator/go v1.1.10
 	github.com/julienschmidt/httprouter v1.3.0 // indirect
 	github.com/mattn/go-colorable v0.1.6 // indirect
 	github.com/miekg/dns v1.1.29
@@ -60,7 +60,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/pmezard/go-difflib v1.0.0
 	github.com/prometheus/alertmanager v0.20.0
-	github.com/prometheus/client_golang v1.6.0
+	github.com/prometheus/client_golang v1.7.1
 	github.com/prometheus/client_model v0.2.0
 	github.com/prometheus/common v0.10.0
 	github.com/samuel/go-zookeeper v0.0.0-20190923202752-2cc03de413da
@@ -75,7 +75,7 @@ require (
 	golang.org/x/net v0.0.0-20200602114024-627f9648deb9
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d
 	golang.org/x/sync v0.0.0-20200317015054-43a5402ce75a
-	golang.org/x/sys v0.0.0-20200602225109-6fdc65e7d980
+	golang.org/x/sys v0.0.0-20200615200032-f1bc736245b1
 	golang.org/x/time v0.0.0-20200416051211-89c76fbcd5d1
 	golang.org/x/tools v0.0.0-20200603131246-cc40288be839
 	google.golang.org/api v0.26.0

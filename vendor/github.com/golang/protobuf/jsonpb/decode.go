@@ -474,7 +474,7 @@ func (u *Unmarshaler) unmarshalSingularValue(v protoreflect.Value, in []byte, fd
 		if hasPrefixAndSuffix('"', in, '"') {
 			vd := fd.Enum().Values().ByName(protoreflect.Name(trimQuote(in)))
 			if vd == nil {
-				return v, fmt.Errorf("unknown value %v for enum %s", in, fd.Enum().FullName())
+				return v, fmt.Errorf("unknown value %q for enum %s", in, fd.Enum().FullName())
 			}
 			return protoreflect.ValueOfEnum(vd.Number()), nil
 		}
