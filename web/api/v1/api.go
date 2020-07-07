@@ -34,6 +34,7 @@ import (
 	"github.com/go-kit/kit/log/level"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/pkg/errors"
+	"github.com/prometheus-community/promql-langserver/rest"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
@@ -196,7 +197,7 @@ type API struct {
 	buildInfo                 *PrometheusVersion
 	runtimeInfo               func() (RuntimeInfo, error)
 	metadataProvider          *metadataProvider
-	langServerHandler         http.Handler
+	langServerAPI             *rest.API
 }
 
 func init() {
@@ -226,7 +227,7 @@ func NewAPI(
 	runtimeInfo func() (RuntimeInfo, error),
 	buildInfo *PrometheusVersion,
 ) *API {
-	langServerHandler, err := newLangServer(q, tr, logger)
+	langServerAPI, err := newLangServerAPI(q, tr, logger)
 	if err != nil {
 		level.Error(logger).Log("err", "Unable to create langserver handler")
 		panic(err)
@@ -257,7 +258,7 @@ func NewAPI(
 			queryable:       q,
 			targetRetriever: tr,
 		},
-		langServerHandler: langServerHandler,
+		langServerAPI: langServerAPI,
 	}
 }
 
@@ -323,7 +324,6 @@ func (api *API) Register(r *route.Router) {
 
 	r.Get("/alerts", wrap(api.alerts))
 	r.Get("/rules", wrap(api.rules))
-	r.Get("/langserver/*subpath", api.langServerHandler.ServeHTTP)
 
 	// Admin APIs
 	r.Post("/admin/tsdb/delete_series", wrap(api.deleteSeries))
@@ -334,6 +334,8 @@ func (api *API) Register(r *route.Router) {
 	r.Put("/admin/tsdb/clean_tombstones", wrap(api.cleanTombstones))
 	r.Put("/admin/tsdb/snapshot", wrap(api.snapshot))
 
+	// LSP APIs
+	api.langServerAPI.Register(r, "/langserver")
 }
 
 type queryData struct {

@@ -23,17 +23,19 @@ Supported endpoints:
 	/hover
 	/signatureHelp
 
-URL Query Parameters:
+All endpoints are only available through the HTTP method POST. For each request, you have to provide the following JSON:
 
-	expr  : A PromQL expression.
-	limit : (optional, only for /diagnostics and /completion endpoints) The maximum number of diagnostic messages returned.
-	line  : (only for /signatureHelp, /hover and /completion endpoints) The line (0 based) for which the metadata is queried.
-	char  : (only for /signatureHelp, /hover and /completion endpoints) The column (0 based) for which the metadata is queried. Characters are counted as UTF16 Codepoints.
+{
+  "expr": "a PromQL expression" # Mandatory for all available endpoints
+  "limit": 45  # Optional. It will be used only for the endpoints /diagnostics and /completion. It's the maximum number of results returned.
+  "positionLine": 0 # Mandatory for the endpoints /signatureHelp, /hover and /completion. The line (0 based) for which the metadata is queried.
+  "positionChar": 2 # Mandatory for the endpoints /signatureHelp, /hover and /completion. The column (0 based) for which the metadata is queried. Characters are counted as UTF-16 code points.
+}
 
 
 Examples:
 
-  $ curl 'localhost:8080/diagnostics?expr=some_metric()&limit=100'|jq
+  $ curl -XPOST 'localhost:8080/diagnostics' -H "Content-Type: application/json" --data '{"expr": "some_metric()", "limit":100}'|jq
   [
     {
       "range": {
@@ -53,7 +55,7 @@ Examples:
   ]
 
 
-  $  curl 'localhost:8080/completion?expr=sum(go)&line=0&char=6&limit=2'|jq
+  $  curl -XPOST 'localhost:8080/completion' -H "Content-Type: application/json" --data '{"expr": "sum(go)", "limit":2, "positionLine":0, "positionChar":6}'|jq
   [
     {
       "label": "go_gc_duration_seconds",

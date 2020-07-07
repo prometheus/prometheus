@@ -217,6 +217,8 @@ github.com/google/go-querystring/query
 github.com/google/gofuzz
 # github.com/google/pprof v0.0.0-20200507031123-427632fa3b1c
 github.com/google/pprof/profile
+# github.com/google/uuid v1.1.1
+github.com/google/uuid
 # github.com/googleapis/gax-go/v2 v2.0.5
 github.com/googleapis/gax-go/v2
 # github.com/googleapis/gnostic v0.4.0
@@ -322,7 +324,7 @@ github.com/opentracing/opentracing-go/log
 github.com/pkg/errors
 # github.com/pmezard/go-difflib v1.0.0
 github.com/pmezard/go-difflib/difflib
-# github.com/prometheus-community/promql-langserver v0.5.2-0.20200701153022-c20ca988ee1f
+# github.com/prometheus-community/promql-langserver v0.5.2-0.20200707205213-a45e11c16373
 github.com/prometheus-community/promql-langserver/config
 github.com/prometheus-community/promql-langserver/internal/vendored/go-tools/jsonrpc2
 github.com/prometheus-community/promql-langserver/internal/vendored/go-tools/lsp/debug/tag

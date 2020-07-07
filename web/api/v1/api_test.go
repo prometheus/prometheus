@@ -2563,15 +2563,15 @@ func TestParseDuration(t *testing.T) {
 
 func TestOptionsMethod(t *testing.T) {
 	r := route.New()
-	langServerHandler, err := newLangServer(nil, nil, log.NewNopLogger())
+	langServerAPI, err := newLangServerAPI(nil, nil, log.NewNopLogger())
 	if err != nil {
 		t.Fatalf("Error creating LangServer Handler: %s", err)
 	}
 	api := &API{
 		ready: func(f http.HandlerFunc) http.HandlerFunc { return f },
 
-		metadataProvider:  &metadataProvider{queryable: nil, targetRetriever: nil},
-		langServerHandler: langServerHandler,
+		metadataProvider: &metadataProvider{queryable: nil, targetRetriever: nil},
+		langServerAPI:    langServerAPI,
 	}
 	api.Register(r)
 

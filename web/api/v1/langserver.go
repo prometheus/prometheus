@@ -15,7 +15,6 @@ package v1
 
 import (
 	"context"
-	"net/http"
 	"time"
 
 	"github.com/go-kit/kit/log"
@@ -27,7 +26,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
-func newLangServer(q storage.Queryable, tr func(context.Context) TargetRetriever, logger log.Logger) (http.Handler, error) {
+func newLangServerAPI(q storage.Queryable, tr func(context.Context) TargetRetriever, logger log.Logger) (*rest.API, error) {
 	// Create the custom prometheus client dedicated to the langserver.
 	langserverClient := &prometheusLangServerClient{
 		lookbackInterval: 12 * time.Hour,
@@ -36,7 +35,7 @@ func newLangServer(q storage.Queryable, tr func(context.Context) TargetRetriever
 			targetRetriever: tr,
 		},
 	}
-	return rest.CreateHandler(context.Background(), langserverClient, logger)
+	return rest.NewLangServerAPI(context.Background(), langserverClient, logger, false)
 }
 
 type prometheusLangServerClient struct {
