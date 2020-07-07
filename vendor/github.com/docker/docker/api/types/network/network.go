@@ -1,6 +1,7 @@
 package network // import "github.com/docker/docker/api/types/network"
 import (
 	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/errdefs"
 )
 
 // Address represents an IP address
@@ -12,7 +13,7 @@ type Address struct {
 // IPAM represents IP Address Management
 type IPAM struct {
 	Driver  string
-	Options map[string]string // Per network IPAM driver options
+	Options map[string]string //Per network IPAM driver options
 	Config  []IPAMConfig
 }
 
@@ -122,5 +123,5 @@ var acceptedFilters = map[string]bool{
 
 // ValidateFilters validates the list of filter args with the available filters.
 func ValidateFilters(filter filters.Args) error {
-	return filter.Validate(acceptedFilters)
+	return errdefs.InvalidParameter(filter.Validate(acceptedFilters))
 }
