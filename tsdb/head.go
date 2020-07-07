@@ -1692,8 +1692,6 @@ func (h *Head) getOrCreateWithID(id, hash uint64, lset labels.Labels) (*memSerie
 	h.metrics.seriesCreated.Inc()
 	atomic.AddUint64(&h.numSeries, 1)
 
-	h.postings.Add(id, lset)
-
 	h.symMtx.Lock()
 	defer h.symMtx.Unlock()
 
@@ -1708,6 +1706,10 @@ func (h *Head) getOrCreateWithID(id, hash uint64, lset labels.Labels) (*memSerie
 		h.symbols[l.Name] = struct{}{}
 		h.symbols[l.Value] = struct{}{}
 	}
+
+	// Postings should be set after setting the symbols (or after holding
+	// the symbol mtx) to avoid race during compaction of seeing partial symbols.
+	h.postings.Add(id, lset)
 
 	return s, true, nil
 }
