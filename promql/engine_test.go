@@ -172,8 +172,8 @@ type errQuerier struct {
 	err error
 }
 
-func (q *errQuerier) Select(bool, *storage.SelectHints, ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
-	return errSeriesSet{err: q.err}, nil, q.err
+func (q *errQuerier) Select(bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
+	return errSeriesSet{err: q.err}
 }
 func (*errQuerier) LabelValues(string) ([]string, storage.Warnings, error) { return nil, nil, nil }
 func (*errQuerier) LabelNames() ([]string, storage.Warnings, error)        { return nil, nil, nil }
@@ -184,9 +184,10 @@ type errSeriesSet struct {
 	err error
 }
 
-func (errSeriesSet) Next() bool         { return false }
-func (errSeriesSet) At() storage.Series { return nil }
-func (e errSeriesSet) Err() error       { return e.err }
+func (errSeriesSet) Next() bool                   { return false }
+func (errSeriesSet) At() storage.Series           { return nil }
+func (e errSeriesSet) Err() error                 { return e.err }
+func (e errSeriesSet) Warnings() storage.Warnings { return nil }
 
 func TestQueryError(t *testing.T) {
 	opts := EngineOpts{
@@ -208,14 +209,14 @@ func TestQueryError(t *testing.T) {
 
 	res := vectorQuery.Exec(ctx)
 	testutil.NotOk(t, res.Err, "expected error on failed select but got none")
-	testutil.Equals(t, errStorage, res.Err)
+	testutil.Assert(t, errors.Is(res.Err, errStorage), "expected error doesn't match")
 
 	matrixQuery, err := engine.NewInstantQuery(queryable, "foo[1m]", time.Unix(1, 0))
 	testutil.Ok(t, err)
 
 	res = matrixQuery.Exec(ctx)
 	testutil.NotOk(t, res.Err, "expected error on failed select but got none")
-	testutil.Equals(t, errStorage, res.Err)
+	testutil.Assert(t, errors.Is(res.Err, errStorage), "expected error doesn't match")
 }
 
 // hintCheckerQuerier implements storage.Querier which checks the start and end times
@@ -231,7 +232,7 @@ type hintCheckerQuerier struct {
 	t *testing.T
 }
 
-func (q *hintCheckerQuerier) Select(_ bool, sp *storage.SelectHints, _ ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
+func (q *hintCheckerQuerier) Select(_ bool, sp *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
 	testutil.Equals(q.t, q.start, sp.Start)
 	testutil.Equals(q.t, q.end, sp.End)
 	testutil.Equals(q.t, q.grouping, sp.Grouping)
@@ -239,7 +240,7 @@ func (q *hintCheckerQuerier) Select(_ bool, sp *storage.SelectHints, _ ...*label
 	testutil.Equals(q.t, q.selRange, sp.Range)
 	testutil.Equals(q.t, q.function, sp.Func)
 
-	return errSeriesSet{err: nil}, nil, nil
+	return errSeriesSet{err: nil}
 }
 func (*hintCheckerQuerier) LabelValues(string) ([]string, storage.Warnings, error) {
 	return nil, nil, nil
@@ -594,9 +595,8 @@ load 10s
 		}
 
 		testutil.Ok(t, res.Err)
-		testutil.Equals(t, c.Result, res.Value)
+		testutil.Equals(t, c.Result, res.Value, "query %q failed", c.Query)
 	}
-
 }
 
 func TestMaxQuerySamples(t *testing.T) {
@@ -826,7 +826,7 @@ load 10s
 
 		res := qry.Exec(test.Context())
 		testutil.Equals(t, c.Result.Err, res.Err)
-		testutil.Equals(t, c.Result.Value, res.Value)
+		testutil.Equals(t, c.Result.Value, res.Value, "query %q failed", c.Query)
 	}
 }
 
@@ -834,7 +834,7 @@ func TestRecoverEvaluatorRuntime(t *testing.T) {
 	ev := &evaluator{logger: log.NewNopLogger()}
 
 	var err error
-	defer ev.recover(&err)
+	defer ev.recover(nil, &err)
 
 	// Cause a runtime panic.
 	var a []int
@@ -857,7 +857,31 @@ func TestRecoverEvaluatorError(t *testing.T) {
 			t.Fatalf("wrong error message: %q, expected %q", err, e)
 		}
 	}()
-	defer ev.recover(&err)
+	defer ev.recover(nil, &err)
+
+	panic(e)
+}
+
+func TestRecoverEvaluatorErrorWithWarnings(t *testing.T) {
+	ev := &evaluator{logger: log.NewNopLogger()}
+	var err error
+	var ws storage.Warnings
+
+	warnings := storage.Warnings{errors.New("custom warning")}
+	e := errWithWarnings{
+		err:      errors.New("custom error"),
+		warnings: warnings,
+	}
+
+	defer func() {
+		if err.Error() != e.Error() {
+			t.Fatalf("wrong error message: %q, expected %q", err, e)
+		}
+		if len(ws) != len(warnings) && ws[0] != warnings[0] {
+			t.Fatalf("wrong warning message: %q, expected %q", ws[0], warnings[0])
+		}
+	}()
+	defer ev.recover(&ws, &err)
 
 	panic(e)
 }

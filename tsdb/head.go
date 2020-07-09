@@ -837,6 +837,9 @@ func (h *Head) Truncate(mint int64) (err error) {
 	h.metrics.checkpointCreationTotal.Inc()
 	if _, err = wal.Checkpoint(h.wal, first, last, keep, mint); err != nil {
 		h.metrics.checkpointCreationFail.Inc()
+		if _, ok := errors.Cause(err).(*wal.CorruptionErr); ok {
+			h.metrics.walCorruptionsTotal.Inc()
+		}
 		return errors.Wrap(err, "create checkpoint")
 	}
 	if err := h.wal.Truncate(last + 1); err != nil {
@@ -1537,6 +1540,16 @@ func (h *headIndexReader) Symbols() index.StringIter {
 	return index.NewStringListIter(res)
 }
 
+// SortedLabelValues returns label values present in the head for the
+// specific label name that are within the time range mint to maxt.
+func (h *headIndexReader) SortedLabelValues(name string) ([]string, error) {
+	values, err := h.LabelValues(name)
+	if err == nil {
+		sort.Strings(values)
+	}
+	return values, err
+}
+
 // LabelValues returns label values present in the head for the
 // specific label name that are within the time range mint to maxt.
 func (h *headIndexReader) LabelValues(name string) ([]string, error) {
@@ -1552,7 +1565,6 @@ func (h *headIndexReader) LabelValues(name string) ([]string, error) {
 		sl = append(sl, s)
 	}
 	h.head.symMtx.RUnlock()
-	sort.Strings(sl)
 	return sl, nil
 }
 
@@ -1680,8 +1692,6 @@ func (h *Head) getOrCreateWithID(id, hash uint64, lset labels.Labels) (*memSerie
 	h.metrics.seriesCreated.Inc()
 	atomic.AddUint64(&h.numSeries, 1)
 
-	h.postings.Add(id, lset)
-
 	h.symMtx.Lock()
 	defer h.symMtx.Unlock()
 
@@ -1696,6 +1706,10 @@ func (h *Head) getOrCreateWithID(id, hash uint64, lset labels.Labels) (*memSerie
 		h.symbols[l.Name] = struct{}{}
 		h.symbols[l.Value] = struct{}{}
 	}
+
+	// Postings should be set after setting the symbols (or after holding
+	// the symbol mtx) to avoid race during compaction of seeing partial symbols.
+	h.postings.Add(id, lset)
 
 	return s, true, nil
 }

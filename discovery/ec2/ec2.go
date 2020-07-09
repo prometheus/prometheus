@@ -38,6 +38,7 @@ import (
 
 const (
 	ec2Label                  = model.MetaLabelPrefix + "ec2_"
+	ec2LabelAMI               = ec2Label + "ami"
 	ec2LabelAZ                = ec2Label + "availability_zone"
 	ec2LabelArch              = ec2Label + "architecture"
 	ec2LabelInstanceID        = ec2Label + "instance_id"
@@ -212,6 +213,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 					labels[ec2LabelPublicDNS] = model.LabelValue(*inst.PublicDnsName)
 				}
 
+				labels[ec2LabelAMI] = model.LabelValue(*inst.ImageId)
 				labels[ec2LabelAZ] = model.LabelValue(*inst.Placement.AvailabilityZone)
 				labels[ec2LabelInstanceState] = model.LabelValue(*inst.State.Name)
 				labels[ec2LabelInstanceType] = model.LabelValue(*inst.InstanceType)

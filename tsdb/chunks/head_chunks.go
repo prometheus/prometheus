@@ -78,13 +78,16 @@ func (e *CorruptionErr) Error() string {
 // ChunkDiskMapper is for writing the Head block chunks to the disk
 // and access chunks via mmapped file.
 type ChunkDiskMapper struct {
+	// Keep all 64bit atomically accessed variables at the top of this struct.
+	// See https://golang.org/pkg/sync/atomic/#pkg-note-BUG for more info.
+	curFileNumBytes int64 // Bytes written in current open file.
+
 	/// Writer.
 	dir *os.File
 
 	curFile         *os.File // File being written to.
 	curFileSequence int      // Index of current open file being appended to.
 	curFileMaxt     int64    // Used for the size retention.
-	curFileNumBytes int64    // Bytes written in current open file.
 
 	byteBuf      [MaxHeadChunkMetaSize]byte // Buffer used to write the header of the chunk.
 	chkWriter    *bufio.Writer              // Writer for the current open file.
@@ -187,23 +190,23 @@ func (cdm *ChunkDiskMapper) openMMapFiles() (returnErr error) {
 	lastSeq := chkFileIndices[0]
 	for _, seq := range chkFileIndices[1:] {
 		if seq != lastSeq+1 {
-			return errors.Errorf("found unsequential head chunk files %d and %d", lastSeq, seq)
+			return errors.Errorf("found unsequential head chunk files %s (index: %d) and %s (index: %d)", files[lastSeq], lastSeq, files[seq], seq)
 		}
 		lastSeq = seq
 	}
 
 	for i, b := range cdm.mmappedChunkFiles {
 		if b.byteSlice.Len() < HeadChunkFileHeaderSize {
-			return errors.Wrapf(errInvalidSize, "invalid head chunk file header in file %d", i)
+			return errors.Wrapf(errInvalidSize, "%s: invalid head chunk file header", files[i])
 		}
 		// Verify magic number.
 		if m := binary.BigEndian.Uint32(b.byteSlice.Range(0, MagicChunksSize)); m != MagicHeadChunks {
-			return errors.Errorf("invalid magic number %x", m)
+			return errors.Errorf("%s: invalid magic number %x", files[i], m)
 		}
 
 		// Verify chunk format version.
 		if v := int(b.byteSlice.Range(MagicChunksSize, MagicChunksSize+ChunksFormatVersionSize)[0]); v != chunksFormatV1 {
-			return errors.Errorf("invalid chunk format version %d", v)
+			return errors.Errorf("%s: invalid chunk format version %d", files[i], v)
 		}
 
 		cdm.size += int64(b.byteSlice.Len())
@@ -667,8 +670,8 @@ func (cdm *ChunkDiskMapper) Truncate(mint int64) error {
 
 	var removedFiles []int
 	for _, seq := range chkFileIndices {
-		if seq == cdm.curFileSequence {
-			continue
+		if seq == cdm.curFileSequence || cdm.mmappedChunkFiles[seq].maxt >= mint {
+			break
 		}
 		if cdm.mmappedChunkFiles[seq].maxt < mint {
 			removedFiles = append(removedFiles, seq)
@@ -677,7 +680,10 @@ func (cdm *ChunkDiskMapper) Truncate(mint int64) error {
 	cdm.readPathMtx.RUnlock()
 
 	var merr tsdb_errors.MultiError
-	merr.Add(cdm.CutNewFile())
+	// Cut a new file only if the current file has some chunks.
+	if cdm.curFileNumBytes > HeadChunkFileHeaderSize {
+		merr.Add(cdm.CutNewFile())
+	}
 	merr.Add(cdm.deleteFiles(removedFiles))
 	return merr.Err()
 }

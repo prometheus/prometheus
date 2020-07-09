@@ -36,7 +36,7 @@ import (
 )
 
 const (
-	watchTimeout  = 30 * time.Second
+	watchTimeout  = 10 * time.Minute
 	retryInterval = 15 * time.Second
 
 	// addressLabel is the name for the label containing a target's address.
@@ -86,8 +86,8 @@ var (
 	)
 
 	// Initialize metric vectors.
-	servicesRPCDuraion = rpcDuration.WithLabelValues("catalog", "services")
-	serviceRPCDuraion  = rpcDuration.WithLabelValues("catalog", "service")
+	servicesRPCDuration = rpcDuration.WithLabelValues("catalog", "services")
+	serviceRPCDuration  = rpcDuration.WithLabelValues("catalog", "service")
 
 	// DefaultSDConfig is the default Consul SD configuration.
 	DefaultSDConfig = SDConfig{
@@ -95,7 +95,7 @@ var (
 		Scheme:          "http",
 		Server:          "localhost:8500",
 		AllowStale:      true,
-		RefreshInterval: model.Duration(watchTimeout),
+		RefreshInterval: model.Duration(30 * time.Second),
 	}
 )
 
@@ -175,7 +175,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 		return nil, err
 	}
 	transport := &http.Transport{
-		IdleConnTimeout: 5 * time.Duration(conf.RefreshInterval),
+		IdleConnTimeout: 2 * time.Duration(watchTimeout),
 		TLSClientConfig: tls,
 		DialContext: conntrack.NewDialContextFunc(
 			conntrack.DialWithTracing(),
@@ -357,7 +357,7 @@ func (d *Discovery) watchServices(ctx context.Context, ch chan<- []*targetgroup.
 	}
 	srvs, meta, err := catalog.Services(opts.WithContext(ctx))
 	elapsed := time.Since(t0)
-	servicesRPCDuraion.Observe(elapsed.Seconds())
+	servicesRPCDuration.Observe(elapsed.Seconds())
 
 	// Check the context before in order to exit early.
 	select {
@@ -473,7 +473,7 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Gr
 
 	serviceNodes, meta, err := health.ServiceMultipleTags(srv.name, srv.tags, false, opts.WithContext(ctx))
 	elapsed := time.Since(t0)
-	serviceRPCDuraion.Observe(elapsed.Seconds())
+	serviceRPCDuration.Observe(elapsed.Seconds())
 
 	// Check the context before in order to exit early.
 	select {

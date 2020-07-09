@@ -214,7 +214,7 @@ func main() {
 		Default("false").BoolVar(&cfg.tsdb.AllowOverlappingBlocks)
 
 	a.Flag("storage.tsdb.wal-compression", "Compress the tsdb WAL.").
-		Default("false").BoolVar(&cfg.tsdb.WALCompression)
+		Default("true").BoolVar(&cfg.tsdb.WALCompression)
 
 	a.Flag("storage.remote.flush-deadline", "How long to wait flushing sample on shutdown or config reload.").
 		Default("1m").PlaceHolder("<duration>").SetValue(&cfg.RemoteFlushDeadline)
@@ -275,6 +275,12 @@ func main() {
 	cfg.web.CORSOrigin, err = compileCORSRegexString(cfg.corsRegexString)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, errors.Wrapf(err, "could not compile CORS regex string %q", cfg.corsRegexString))
+		os.Exit(2)
+	}
+
+	// Throw error for invalid config before starting other components.
+	if _, err := config.LoadFile(cfg.configFile); err != nil {
+		level.Error(logger).Log("msg", fmt.Sprintf("Error loading config (--config.file=%s)", cfg.configFile), "err", err)
 		os.Exit(2)
 	}
 
@@ -373,7 +379,7 @@ func main() {
 
 		ruleManager = rules.NewManager(&rules.ManagerOptions{
 			Appendable:      fanoutStorage,
-			TSDB:            localStorage,
+			Queryable:       localStorage,
 			QueryFunc:       rules.EngineQueryFunc(queryEngine, fanoutStorage),
 			NotifyFunc:      sendAlerts(notifierManager, cfg.web.ExternalURL.String()),
 			Context:         ctxRule,
@@ -951,6 +957,14 @@ func (s *readyStorage) StartTime() (int64, error) {
 func (s *readyStorage) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 	if x := s.get(); x != nil {
 		return x.Querier(ctx, mint, maxt)
+	}
+	return nil, tsdb.ErrNotReady
+}
+
+// ChunkQuerier implements the Storage interface.
+func (s *readyStorage) ChunkQuerier(ctx context.Context, mint, maxt int64) (storage.ChunkQuerier, error) {
+	if x := s.get(); x != nil {
+		return x.ChunkQuerier(ctx, mint, maxt)
 	}
 	return nil, tsdb.ErrNotReady
 }

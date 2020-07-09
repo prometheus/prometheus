@@ -107,6 +107,7 @@ var key = map[string]ItemType{
 	"count":        COUNT,
 	"min":          MIN,
 	"max":          MAX,
+	"group":        GROUP,
 	"stddev":       STDDEV,
 	"stdvar":       STDVAR,
 	"topk":         TOPK,

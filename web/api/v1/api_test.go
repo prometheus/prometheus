@@ -360,9 +360,7 @@ func TestEndpoints(t *testing.T) {
 		testutil.Ok(t, err)
 		defer os.RemoveAll(dbDir)
 
-		remote := remote.NewStorage(promlog.New(&promlogConfig), prometheus.DefaultRegisterer, func() (int64, error) {
-			return 0, nil
-		}, dbDir, 1*time.Second)
+		remote := remote.NewStorage(promlog.New(&promlogConfig), prometheus.DefaultRegisterer, nil, dbDir, 1*time.Second)
 
 		err = remote.ApplyConfig(&config.Config{
 			RemoteReadConfigs: []*config.RemoteReadConfig{
@@ -517,12 +515,8 @@ func setupRemote(s storage.Storage) *httptest.Server {
 			}
 			defer querier.Close()
 
-			set, _, err := querier.Select(false, hints, matchers...)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			resp.Results[i], err = remote.ToQueryResult(set, 1e6)
+			set := querier.Select(false, hints, matchers...)
+			resp.Results[i], _, err = remote.ToQueryResult(set, 1e6)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
@@ -1197,7 +1191,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 				},
 			},
 			response: map[string][]metadata{
-				"go_threads": []metadata{
+				"go_threads": {
 					{textparse.MetricTypeGauge, "Number of OS threads created", ""},
 					{textparse.MetricTypeGauge, "Number of OS threads that were created.", ""},
 				},
@@ -1283,7 +1277,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 				},
 			},
 			response: map[string][]metadata{
-				"go_threads": []metadata{
+				"go_threads": {
 					{textparse.MetricTypeGauge, "Number of OS threads created", ""},
 					{textparse.MetricTypeGauge, "Number of OS threads that were created.", ""},
 				},
@@ -2720,6 +2714,42 @@ func TestTSDBStatus(t *testing.T) {
 			res := endpoint(req)
 			assertAPIError(t, res.err, tc.errType)
 		})
+	}
+}
+
+func TestReturnAPIError(t *testing.T) {
+	cases := []struct {
+		err      error
+		expected errorType
+	}{
+		{
+			err:      promql.ErrStorage{Err: errors.New("storage error")},
+			expected: errorInternal,
+		}, {
+			err:      errors.Wrap(promql.ErrStorage{Err: errors.New("storage error")}, "wrapped"),
+			expected: errorInternal,
+		}, {
+			err:      promql.ErrQueryTimeout("timeout error"),
+			expected: errorTimeout,
+		}, {
+			err:      errors.Wrap(promql.ErrQueryTimeout("timeout error"), "wrapped"),
+			expected: errorTimeout,
+		}, {
+			err:      promql.ErrQueryCanceled("canceled error"),
+			expected: errorCanceled,
+		}, {
+			err:      errors.Wrap(promql.ErrQueryCanceled("canceled error"), "wrapped"),
+			expected: errorCanceled,
+		}, {
+			err:      errors.New("exec error"),
+			expected: errorExec,
+		},
+	}
+
+	for _, c := range cases {
+		actual := returnAPIError(c.err)
+		testutil.NotOk(t, actual)
+		testutil.Equals(t, c.expected, actual.typ)
 	}
 }
 

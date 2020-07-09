@@ -189,7 +189,7 @@ for more details.
 If you're using Docker, then the following snippet would be used:
 
 ```
-docker run -u root -p 80:80 prom/prometheus:v2.0.0-rc.2  --web.listen-address :80
+docker run -p 9090:9090 prom/prometheus:latest
 ```
 
 ### Prometheus lifecycle

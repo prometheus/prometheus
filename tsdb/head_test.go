@@ -562,9 +562,7 @@ func TestHeadDeleteSimple(t *testing.T) {
 				for _, h := range []*Head{head, reloadedHead} {
 					q, err := NewBlockQuerier(h, h.MinTime(), h.MaxTime())
 					testutil.Ok(t, err)
-					actSeriesSet, ws, err := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, lblDefault.Name, lblDefault.Value))
-					testutil.Ok(t, err)
-					testutil.Equals(t, 0, len(ws))
+					actSeriesSet := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, lblDefault.Name, lblDefault.Value))
 					testutil.Ok(t, q.Close())
 					expSeriesSet := newMockSeriesSet([]storage.Series{
 						newSeries(map[string]string{lblDefault.Name: lblDefault.Value}, func() []tsdbutil.Sample {
@@ -583,6 +581,8 @@ func TestHeadDeleteSimple(t *testing.T) {
 
 						if !eok {
 							testutil.Ok(t, h.Close())
+							testutil.Ok(t, actSeriesSet.Err())
+							testutil.Equals(t, 0, len(actSeriesSet.Warnings()))
 							continue Outer
 						}
 						expSeries := expSeriesSet.At()
@@ -623,13 +623,15 @@ func TestDeleteUntilCurMax(t *testing.T) {
 	// Test the series returns no samples. The series is cleared only after compaction.
 	q, err := NewBlockQuerier(hb, 0, 100000)
 	testutil.Ok(t, err)
-	res, ws, err := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
-	testutil.Ok(t, err)
-	testutil.Equals(t, 0, len(ws))
+	res := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 	testutil.Assert(t, res.Next(), "series is not present")
 	s := res.At()
 	it := s.Iterator()
 	testutil.Assert(t, !it.Next(), "expected no samples")
+	for res.Next() {
+	}
+	testutil.Ok(t, res.Err())
+	testutil.Equals(t, 0, len(res.Warnings()))
 
 	// Add again and test for presence.
 	app = hb.Appender()
@@ -638,15 +640,17 @@ func TestDeleteUntilCurMax(t *testing.T) {
 	testutil.Ok(t, app.Commit())
 	q, err = NewBlockQuerier(hb, 0, 100000)
 	testutil.Ok(t, err)
-	res, ws, err = q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
-	testutil.Ok(t, err)
-	testutil.Equals(t, 0, len(ws))
+	res = q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 	testutil.Assert(t, res.Next(), "series don't exist")
 	exps := res.At()
 	it = exps.Iterator()
 	resSamples, err := expandSeriesIterator(it)
 	testutil.Ok(t, err)
 	testutil.Equals(t, []tsdbutil.Sample{sample{11, 1}}, resSamples)
+	for res.Next() {
+	}
+	testutil.Ok(t, res.Err())
+	testutil.Equals(t, 0, len(res.Warnings()))
 }
 
 func TestDeletedSamplesAndSeriesStillInWALAfterCheckpoint(t *testing.T) {
@@ -807,9 +811,7 @@ func TestDelete_e2e(t *testing.T) {
 			q, err := NewBlockQuerier(hb, 0, 100000)
 			testutil.Ok(t, err)
 			defer q.Close()
-			ss, ws, err := q.Select(true, nil, del.ms...)
-			testutil.Ok(t, err)
-			testutil.Equals(t, 0, len(ws))
+			ss := q.Select(true, nil, del.ms...)
 			// Build the mockSeriesSet.
 			matchedSeries := make([]storage.Series, 0, len(matched))
 			for _, m := range matched {
@@ -850,6 +852,8 @@ func TestDelete_e2e(t *testing.T) {
 				testutil.Equals(t, errExp, errRes)
 				testutil.Equals(t, smplExp, smplRes)
 			}
+			testutil.Ok(t, ss.Err())
+			testutil.Equals(t, 0, len(ss.Warnings()))
 		}
 	}
 }
@@ -1118,11 +1122,12 @@ func TestUncommittedSamplesNotLostOnTruncate(t *testing.T) {
 	testutil.Ok(t, err)
 	defer q.Close()
 
-	ss, ws, err := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "1"))
-	testutil.Ok(t, err)
-	testutil.Equals(t, 0, len(ws))
-
+	ss := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "1"))
 	testutil.Equals(t, true, ss.Next())
+	for ss.Next() {
+	}
+	testutil.Ok(t, ss.Err())
+	testutil.Equals(t, 0, len(ss.Warnings()))
 }
 
 func TestRemoveSeriesAfterRollbackAndTruncate(t *testing.T) {
@@ -1148,11 +1153,9 @@ func TestRemoveSeriesAfterRollbackAndTruncate(t *testing.T) {
 	testutil.Ok(t, err)
 	defer q.Close()
 
-	ss, ws, err := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "1"))
-	testutil.Ok(t, err)
-	testutil.Equals(t, 0, len(ws))
-
+	ss := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "1"))
 	testutil.Equals(t, false, ss.Next())
+	testutil.Equals(t, 0, len(ss.Warnings()))
 
 	// Truncate again, this time the series should be deleted
 	testutil.Ok(t, h.Truncate(2050))
@@ -1434,11 +1437,11 @@ func TestMemSeriesIsolation(t *testing.T) {
 		testutil.Ok(t, err)
 		defer querier.Close()
 
-		ss, _, err := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+		ss := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+		_, seriesSet, ws, err := expandSeriesSet(ss)
 		testutil.Ok(t, err)
+		testutil.Equals(t, 0, len(ws))
 
-		_, seriesSet, err := expandSeriesSet(ss)
-		testutil.Ok(t, err)
 		for _, series := range seriesSet {
 			return int(series[len(series)-1].v)
 		}
@@ -1790,8 +1793,9 @@ func testHeadSeriesChunkRace(t *testing.T) {
 		h.gc()
 		wg.Done()
 	}()
-	ss, _, err := q.Select(false, nil, matcher)
-	testutil.Ok(t, err)
+	ss := q.Select(false, nil, matcher)
+	for ss.Next() {
+	}
 	testutil.Ok(t, ss.Err())
 	wg.Wait()
 }
@@ -1863,11 +1867,78 @@ func TestHeadLabelNamesValuesWithMinMaxRange(t *testing.T) {
 			testutil.Equals(t, tt.expectedNames, actualLabelNames)
 			if len(tt.expectedValues) > 0 {
 				for i, name := range expectedLabelNames {
-					actualLabelValue, err := headIdxReader.LabelValues(name)
+					actualLabelValue, err := headIdxReader.SortedLabelValues(name)
 					testutil.Ok(t, err)
 					testutil.Equals(t, []string{tt.expectedValues[i]}, actualLabelValue)
 				}
 			}
+		})
+	}
+}
+
+func TestHeadCompactionRace(t *testing.T) {
+	// There are still some races to be fixed. Hence skipping this test
+	// for now to not cause flaky CI failures.
+	t.Skip()
+
+	for i := 0; i < 10; i++ {
+		t.Run(fmt.Sprintf("run %d", i), func(t *testing.T) {
+			tsdbCfg := &Options{
+				RetentionDuration: 100000000,
+				NoLockfile:        true,
+				MinBlockDuration:  1000000,
+				MaxBlockDuration:  1000000,
+			}
+
+			db, closer := openTestDB(t, tsdbCfg, []int64{1000000})
+			t.Cleanup(closer)
+			t.Cleanup(func() {
+				testutil.Ok(t, db.Close())
+			})
+
+			head := db.Head()
+
+			// Get past the init appender phase here.
+			app := head.Appender()
+			_, err := app.Add(labels.Labels{labels.Label{Name: "n", Value: "v"}}, 10, 10)
+			testutil.Ok(t, err)
+			testutil.Ok(t, app.Commit())
+
+			wait := make(chan struct{})
+			var wg sync.WaitGroup
+
+			// Prepare to execute concurrent appends.
+			wg.Add(100)
+			for i := 0; i < 100; i++ {
+				go func(idx int) {
+					defer wg.Done()
+					app := head.Appender()
+					<-wait
+
+					for j := 0; j < 100; j++ {
+						// After compaction this will return out of bound, so this is a best effort append.
+						app.Add(labels.Labels{labels.Label{
+							Name:  fmt.Sprintf("n%d", idx*100+j),
+							Value: fmt.Sprintf("v%d", idx*100+j),
+						}}, 1000, 10)
+					}
+
+					testutil.Ok(t, app.Commit())
+				}(i)
+			}
+
+			// Prepare for head compaction.
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-wait
+				testutil.Ok(t, db.CompactHead(NewRangeHead(head, 0, 10000000)))
+			}()
+
+			// Run concurrent appends and compaction.
+			close(wait)
+
+			wg.Wait()
 		})
 	}
 }

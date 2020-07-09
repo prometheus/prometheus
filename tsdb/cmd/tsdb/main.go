@@ -493,10 +493,10 @@ func analyzeBlock(b tsdb.BlockReader, limit int) error {
 		sort.Slice(postingInfos, func(i, j int) bool { return postingInfos[i].metric > postingInfos[j].metric })
 
 		for i, pc := range postingInfos {
-			fmt.Printf("%d %s\n", pc.metric, pc.key)
 			if i >= limit {
 				break
 			}
+			fmt.Printf("%d %s\n", pc.metric, pc.key)
 		}
 	}
 
@@ -556,7 +556,7 @@ func analyzeBlock(b tsdb.BlockReader, limit int) error {
 
 	postingInfos = postingInfos[:0]
 	for _, n := range allLabelNames {
-		values, err := ir.LabelValues(n)
+		values, err := ir.SortedLabelValues(n)
 		if err != nil {
 			return err
 		}
@@ -572,7 +572,7 @@ func analyzeBlock(b tsdb.BlockReader, limit int) error {
 
 	postingInfos = postingInfos[:0]
 	for _, n := range allLabelNames {
-		lv, err := ir.LabelValues(n)
+		lv, err := ir.SortedLabelValues(n)
 		if err != nil {
 			return err
 		}
@@ -582,7 +582,7 @@ func analyzeBlock(b tsdb.BlockReader, limit int) error {
 	printInfo(postingInfos)
 
 	postingInfos = postingInfos[:0]
-	lv, err := ir.LabelValues("__name__")
+	lv, err := ir.SortedLabelValues("__name__")
 	if err != nil {
 		return err
 	}
@@ -617,18 +617,7 @@ func dumpSamples(db *tsdb.DBReadOnly, mint, maxt int64) (err error) {
 		err = merr.Err()
 	}()
 
-	ss, ws, err := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
-	if err != nil {
-		return err
-	}
-
-	if len(ws) > 0 {
-		var merr tsdb_errors.MultiError
-		for _, w := range ws {
-			merr.Add(w)
-		}
-		return merr.Err()
-	}
+	ss := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
 
 	for ss.Next() {
 		series := ss.At()
@@ -641,6 +630,14 @@ func dumpSamples(db *tsdb.DBReadOnly, mint, maxt int64) (err error) {
 		if it.Err() != nil {
 			return ss.Err()
 		}
+	}
+
+	if ws := ss.Warnings(); len(ws) > 0 {
+		var merr tsdb_errors.MultiError
+		for _, w := range ws {
+			merr.Add(w)
+		}
+		return merr.Err()
 	}
 
 	if ss.Err() != nil {
