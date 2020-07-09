@@ -99,7 +99,9 @@ func TestTailSamples(t *testing.T) {
 
 			dir, err := ioutil.TempDir("", "readCheckpoint")
 			testutil.Ok(t, err)
-			defer os.RemoveAll(dir)
+			defer func() {
+				testutil.Ok(t, os.RemoveAll(dir))
+			}()
 
 			wdir := path.Join(dir, "wal")
 			err = os.Mkdir(wdir, 0777)
@@ -173,7 +175,9 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
 			dir, err := ioutil.TempDir("", "readToEnd_noCheckpoint")
 			testutil.Ok(t, err)
-			defer os.RemoveAll(dir)
+			defer func() {
+				testutil.Ok(t, os.RemoveAll(dir))
+			}()
 			wdir := path.Join(dir, "wal")
 			err = os.Mkdir(wdir, 0777)
 			testutil.Ok(t, err)
@@ -241,7 +245,9 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
 			dir, err := ioutil.TempDir("", "readToEnd_withCheckpoint")
 			testutil.Ok(t, err)
-			defer os.RemoveAll(dir)
+			defer func() {
+				testutil.Ok(t, os.RemoveAll(dir))
+			}()
 
 			wdir := path.Join(dir, "wal")
 			err = os.Mkdir(wdir, 0777)
@@ -325,7 +331,9 @@ func TestReadCheckpoint(t *testing.T) {
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
 			dir, err := ioutil.TempDir("", "readCheckpoint")
 			testutil.Ok(t, err)
-			defer os.RemoveAll(dir)
+			defer func() {
+				testutil.Ok(t, os.RemoveAll(dir))
+			}()
 
 			wdir := path.Join(dir, "wal")
 			err = os.Mkdir(wdir, 0777)
@@ -392,7 +400,9 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
 			dir, err := ioutil.TempDir("", "readCheckpoint")
 			testutil.Ok(t, err)
-			defer os.RemoveAll(dir)
+			defer func() {
+				testutil.Ok(t, os.RemoveAll(dir))
+			}()
 
 			wdir := path.Join(dir, "wal")
 			err = os.Mkdir(wdir, 0777)
@@ -472,7 +482,9 @@ func TestCheckpointSeriesReset(t *testing.T) {
 		t.Run(fmt.Sprintf("compress=%t", tc.compress), func(t *testing.T) {
 			dir, err := ioutil.TempDir("", "seriesReset")
 			testutil.Ok(t, err)
-			defer os.RemoveAll(dir)
+			defer func() {
+				testutil.Ok(t, os.RemoveAll(dir))
+			}()
 
 			wdir := path.Join(dir, "wal")
 			err = os.Mkdir(wdir, 0777)
