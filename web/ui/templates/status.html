@@ -99,14 +99,14 @@
         <tr>
            <th>Number Of Series </th>
            <th>Number of Chunks</th>
-           <th>Current Max Time</th>
            <th>Current Min Time</th>
+           <th>Current Max Time</th>
         </tr>
         <tr>
           <td scope="row">{{ .NumSeries}}</td>
           <td>{{.ChunkCount}}</td>  
-          <td>{{ .MaxTime}}</td>
-          <td>{{ .MinTime}}</td>
+          <td>{{ .MinTime | unixToTime }} ({{ .MinTime }})</td>
+          <td>{{ .MaxTime | unixToTime }} ({{ .MaxTime }})</td>
         </tr>
       </tbody>
     </table>
