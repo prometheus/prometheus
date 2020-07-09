@@ -21,6 +21,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/util/testutil"
+	"gopkg.in/yaml.v2"
 )
 
 func TestDockerSwarmSDServicesRefresh(t *testing.T) {
@@ -28,14 +29,20 @@ func TestDockerSwarmSDServicesRefresh(t *testing.T) {
 	sdmock.Setup()
 
 	e := sdmock.Endpoint()
-	cfg := DefaultSDConfig
-	cfg.Host = e[:len(e)-1]
+	url := e[:len(e)-1]
+	cfgString := fmt.Sprintf(`
+---
+role: services
+host: %s
+`, url)
+	var cfg SDConfig
+	testutil.Ok(t, yaml.Unmarshal([]byte(cfgString), &cfg))
 
 	d, err := NewDiscovery(&cfg, log.NewNopLogger())
 	testutil.Ok(t, err)
 
 	ctx := context.Background()
-	tgs, err := d.refreshServices(ctx)
+	tgs, err := d.refresh(ctx)
 	testutil.Ok(t, err)
 
 	testutil.Equals(t, 1, len(tgs))
