@@ -1,0 +1,36 @@
+# A example scrape configuration for running Prometheus with
+# Docker Swarm.
+#
+# This exemple works with Prometheus node_exporter deployed with:
+# docker service create --name node -l prometheus-job=node \
+#     --mode=global --publish published=9100,target=9100,mode=host \
+#     --mount type=bind,src=/sys,dst=/sys \
+#     --mount type=bind,src=/proc,dst=/proc \
+#     prom/node-exporter
+
+scrape_configs:
+
+  # Make Prometheus scrape itself for metrics.
+  - job_name: 'prometheus'
+    static_configs:
+    - targets: ['localhost:9090']
+
+  # Create a job for Docker Swarm containers.
+  - job_name: 'dockerswarm'
+    dockerswarm_sd_configs:
+      - host: http://127.0.0.1:2375
+        role: tasks
+    relabel_configs:
+      # Only keep containers that should be running.
+      - source_labels: [__meta_dockerswarm_task_desired_state]
+        regex: running
+        action: keep
+      # Only keep containers that have a `prometheus-job` label.
+      - source_labels: [__meta_dockerswarm_service_label_prometheus_job]
+        regex: .+
+        action: keep
+      # Use the tasks labels that are prefixed by `prometheus-`.
+      - regex: __meta_dockerswarm_service_label_prometheus_(.+)
+        action: labelmap
+        replacement: $1
+
