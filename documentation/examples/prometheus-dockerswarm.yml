@@ -1,12 +1,15 @@
 # A example scrape configuration for running Prometheus with
 # Docker Swarm.
 #
-# This exemple works with Prometheus node_exporter deployed with:
-# docker service create --name node -l prometheus-job=node \
-#     --mode=global --publish published=9100,target=9100,mode=host \
-#     --mount type=bind,src=/sys,dst=/sys \
-#     --mount type=bind,src=/proc,dst=/proc \
-#     prom/node-exporter
+# This example works with cadvisor deployed with:
+# docker service create --name cadvisor -l prometheus-job=cadvisor
+#     --mode=global --publish published=8080,target=8080,mode=host
+#     --mount type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock,ro
+#     --mount type=bind,src=/,dst=/rootfs,ro
+#     --mount type=bind,src=/var/run,dst=/var/run
+#     --mount type=bind,src=/sys,dst=/sys,ro
+#     --mount type=bind,src=/var/lib/docker,dst=/var/lib/docker,ro
+#     google/cadvisor -docker_only
 
 scrape_configs:
 
@@ -29,7 +32,7 @@ scrape_configs:
       - source_labels: [__meta_dockerswarm_service_label_prometheus_job]
         regex: .+
         action: keep
-      # Use the tasks labels that are prefixed by `prometheus-`.
+      # Use the task labels that are prefixed by `prometheus-`.
       - regex: __meta_dockerswarm_service_label_prometheus_(.+)
         action: labelmap
         replacement: $1
