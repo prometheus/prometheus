@@ -1006,7 +1006,7 @@ $ curl -X POST \
 *New in v2.1 and supports PUT from v2.9*
 
 ### Clean Tombstones
-CleanTombstones removes the deleted data from disk and cleans up the existing tombstones. This can be used after deleting series to free up space. This process involves rerwiting existing blocks that have tombstones which requires free disk space (upto double the used space if all blocks have tombstones).
+CleanTombstones removes the deleted data from disk and cleans up the existing tombstones. This can be used after deleting series to free up space. This process involves rewriting existing blocks that have tombstones (aka normal compaction). Note that like normal compaction, this requires some extra disk space (one more TSDB block maximum).
 
 If successful, a `204` is returned.
 
