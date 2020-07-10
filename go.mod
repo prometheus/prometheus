@@ -33,6 +33,7 @@ require (
 	github.com/go-openapi/validate v0.19.8 // indirect
 	github.com/gogo/protobuf v1.3.1
 	github.com/golang/snappy v0.0.1
+	github.com/google/go-cmp v0.5.0
 	github.com/google/pprof v0.0.0-20200507031123-427632fa3b1c
 	github.com/googleapis/gnostic v0.4.0 // indirect
 	github.com/gophercloud/gophercloud v0.11.0
