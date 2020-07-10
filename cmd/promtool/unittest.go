@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
+	"github.com/google/go-cmp/cmp"
 	"github.com/pkg/errors"
 	yaml "gopkg.in/yaml.v2"
 
@@ -304,15 +305,21 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 				}
 
 				if gotAlerts.Len() != expAlerts.Len() {
-					errs = append(errs, errors.Errorf("    alertname:%s, time:%s, \n        exp:%#v, \n        got:%#v",
-						testcase.Alertname, testcase.EvalTime.String(), expAlerts.String(), gotAlerts.String()))
+					diff := cmp.Diff(expAlerts, gotAlerts)
+					errs = append(errs, errors.Errorf(
+						"    alertname:%s, time:%s, \n        exp:%#v, \n        got:%#v, \n        diff (-exp, +got):\n%s",
+						testcase.Alertname, testcase.EvalTime.String(), expAlerts.String(),
+						gotAlerts.String(), diff))
 				} else {
 					sort.Sort(gotAlerts)
 					sort.Sort(expAlerts)
 
 					if !reflect.DeepEqual(expAlerts, gotAlerts) {
-						errs = append(errs, errors.Errorf("    alertname:%s, time:%s, \n        exp:%#v, \n        got:%#v",
-							testcase.Alertname, testcase.EvalTime.String(), expAlerts.String(), gotAlerts.String()))
+						diff := cmp.Diff(expAlerts, gotAlerts)
+						errs = append(errs, errors.Errorf(
+							"    alertname:%s, time:%s, \n        exp:%#v, \n        got:%#v, \n        diff (-exp, +got):\n%s",
+							testcase.Alertname, testcase.EvalTime.String(), expAlerts.String(),
+							gotAlerts.String(), diff))
 					}
 				}
 			}
@@ -362,8 +369,10 @@ Outer:
 			return labels.Compare(gotSamples[i].Labels, gotSamples[j].Labels) <= 0
 		})
 		if !reflect.DeepEqual(expSamples, gotSamples) {
-			errs = append(errs, errors.Errorf("    expr: %q, time: %s,\n        exp:%#v\n        got:%#v", testCase.Expr,
-				testCase.EvalTime.String(), parsedSamplesString(expSamples), parsedSamplesString(gotSamples)))
+			diff := cmp.Diff(expSamples, gotSamples)
+			errs = append(errs, errors.Errorf(
+				"    expr: %q, time: %s,\n        exp:%#v\n        got:%#v\n        diff (-exp, +got):\n%s\n",
+				testCase.Expr, testCase.EvalTime.String(), parsedSamplesString(expSamples), parsedSamplesString(gotSamples), diff))
 		}
 	}
 
