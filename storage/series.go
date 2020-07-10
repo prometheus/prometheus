@@ -259,11 +259,10 @@ func (e errChunksIterator) Err() error      { return e.err }
 
 // ExpandSamples iterates over all samples in the iterator, buffering all in slice.
 // Optionally it takes samples constructor, useful when you want to compare sample slices with different
-// sample implementations.
-func ExpandSamples(iter chunkenc.Iterator, newSampleFns ...func(t int64, v float64) tsdbutil.Sample) ([]tsdbutil.Sample, error) {
-	newSample := func(t int64, v float64) tsdbutil.Sample { return sample{t, v} }
-	if len(newSampleFns) > 0 {
-		newSample = newSampleFns[0]
+// sample implementations. if nil, sample type from this package will be used.
+func ExpandSamples(iter chunkenc.Iterator, newSampleFn func(t int64, v float64) tsdbutil.Sample) ([]tsdbutil.Sample, error) {
+	if newSampleFn == nil {
+		newSampleFn = func(t int64, v float64) tsdbutil.Sample { return sample{t, v} }
 	}
 
 	var result []tsdbutil.Sample
@@ -273,7 +272,7 @@ func ExpandSamples(iter chunkenc.Iterator, newSampleFns ...func(t int64, v float
 		if math.IsNaN(v) {
 			v = -42
 		}
-		result = append(result, newSample(t, v))
+		result = append(result, newSampleFn(t, v))
 	}
 	return result, iter.Err()
 }

@@ -343,6 +343,7 @@ func (q *mergeGenericQuerier) LabelValues(name string) ([]string, Warnings, erro
 	return res, ws, nil
 }
 
+// lvals performs merge sort for LabelValues from multiple queriers.
 func (q *mergeGenericQuerier) lvals(lq labelGenericQueriers, n string) ([]string, Warnings, error) {
 	if lq.Len() == 0 {
 		return nil, nil, nil
@@ -599,7 +600,7 @@ func (h *genericSeriesSetHeap) Pop() interface{} {
 // with "almost" the same data, e.g. from 2 Prometheus HA replicas. This is fine, since from the Prometheus perspective
 // this never happens.
 //
-// NOTE: Use returned merge function only when you see potentially overlapping series, as this introduces small overhead
+// NOTE: Use this merge function only when you see potentially overlapping series, as this introduces a small overhead
 // to handle overlaps between series.
 func ChainedSeriesMerge(series ...Series) Series {
 	if len(series) == 0 {
@@ -720,7 +721,7 @@ func (h *samplesIteratorHeap) Pop() interface{} {
 // Samples from overlapped chunks are merged using series vertical merge func.
 // It expects the same labels for each given series.
 //
-// NOTE: Use returned merge function only when you see potentially overlapping series, as this introduces small overhead
+// NOTE: Use the returned merge function only when you see potentially overlapping series, as this introduces small a overhead
 // to handle overlaps between series.
 func NewCompactingChunkSeriesMerger(mergeFunc VerticalSeriesMergeFunc) VerticalChunkSeriesMergeFunc {
 	return func(series ...ChunkSeries) ChunkSeries {

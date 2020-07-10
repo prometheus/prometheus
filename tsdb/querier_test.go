@@ -195,8 +195,8 @@ func testBlockQuerier(t *testing.T, c blockQuerierTestCase, data []seriesSamples
 			sres := res.At()
 			testutil.Equals(t, sexp.Labels(), sres.Labels())
 
-			smplExp, errExp := storage.ExpandSamples(sexp.Iterator())
-			smplRes, errRes := storage.ExpandSamples(sres.Iterator())
+			smplExp, errExp := storage.ExpandSamples(sexp.Iterator(), nil)
+			smplRes, errRes := storage.ExpandSamples(sres.Iterator(), nil)
 
 			testutil.Equals(t, errExp, errRes)
 			testutil.Equals(t, smplExp, smplRes)

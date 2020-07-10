@@ -601,8 +601,8 @@ func TestHeadDeleteSimple(t *testing.T) {
 
 						testutil.Equals(t, expSeries.Labels(), actSeries.Labels())
 
-						smplExp, errExp := storage.ExpandSamples(expSeries.Iterator())
-						smplRes, errRes := storage.ExpandSamples(actSeries.Iterator())
+						smplExp, errExp := storage.ExpandSamples(expSeries.Iterator(), nil)
+						smplRes, errRes := storage.ExpandSamples(actSeries.Iterator(), nil)
 
 						testutil.Equals(t, errExp, errRes)
 						testutil.Equals(t, smplExp, smplRes)
@@ -654,7 +654,7 @@ func TestDeleteUntilCurMax(t *testing.T) {
 	testutil.Assert(t, res.Next(), "series don't exist")
 	exps := res.At()
 	it = exps.Iterator()
-	resSamples, err := storage.ExpandSamples(it)
+	resSamples, err := storage.ExpandSamples(it, nil)
 	testutil.Ok(t, err)
 	testutil.Equals(t, []tsdbutil.Sample{sample{11, 1}}, resSamples)
 	for res.Next() {
@@ -852,8 +852,8 @@ func TestDelete_e2e(t *testing.T) {
 				sexp := expSs.At()
 				sres := ss.At()
 				testutil.Equals(t, sexp.Labels(), sres.Labels())
-				smplExp, errExp := storage.ExpandSamples(sexp.Iterator())
-				smplRes, errRes := storage.ExpandSamples(sres.Iterator())
+				smplExp, errExp := storage.ExpandSamples(sexp.Iterator(), nil)
+				smplRes, errRes := storage.ExpandSamples(sres.Iterator(), nil)
 				testutil.Equals(t, errExp, errRes)
 				testutil.Equals(t, smplExp, smplRes)
 			}

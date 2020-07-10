@@ -201,8 +201,8 @@ func TestMergeQuerierWithChainMerger(t *testing.T) {
 				expectedSeries := tc.expected.At()
 				testutil.Equals(t, expectedSeries.Labels(), actualSeries.Labels())
 
-				expSmpl, expErr := ExpandSamples(expectedSeries.Iterator())
-				actSmpl, actErr := ExpandSamples(actualSeries.Iterator())
+				expSmpl, expErr := ExpandSamples(expectedSeries.Iterator(), nil)
+				actSmpl, actErr := ExpandSamples(actualSeries.Iterator(), nil)
 				testutil.Equals(t, expErr, actErr)
 				testutil.Equals(t, expSmpl, actSmpl)
 			}
@@ -514,7 +514,7 @@ func TestChainSampleIterator(t *testing.T) {
 		},
 	} {
 		merged := newChainSampleIterator(tc.input)
-		actual, err := ExpandSamples(merged)
+		actual, err := ExpandSamples(merged, nil)
 		testutil.Ok(t, err)
 		testutil.Equals(t, tc.expected, actual)
 	}
@@ -557,7 +557,7 @@ func TestChainSampleIteratorSeek(t *testing.T) {
 			t, v := merged.At()
 			actual = append(actual, sample{t, v})
 		}
-		s, err := ExpandSamples(merged)
+		s, err := ExpandSamples(merged, nil)
 		testutil.Ok(t, err)
 		actual = append(actual, s...)
 		testutil.Equals(t, tc.expected, actual)
@@ -591,7 +591,7 @@ func benchmarkDrain(seriesSet SeriesSet, b *testing.B) {
 	var err error
 	for n := 0; n < b.N; n++ {
 		for seriesSet.Next() {
-			result, err = ExpandSamples(seriesSet.At().Iterator())
+			result, err = ExpandSamples(seriesSet.At().Iterator(), nil)
 			testutil.Ok(b, err)
 		}
 	}
