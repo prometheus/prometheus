@@ -749,6 +749,11 @@ func yaml_parser_fetch_next_token(parser *yaml_parser_t) (ok bool) {
 		if !ok {
 			return
 		}
+		if len(parser.tokens) > 0 && parser.tokens[len(parser.tokens)-1].typ == yaml_BLOCK_ENTRY_TOKEN {
+			// Sequence indicators alone have no line comments. It becomes
+			// a head comment for whatever follows.
+			return
+		}
 		if !yaml_parser_scan_line_comment(parser, comment_mark) {
 			ok = false
 			return

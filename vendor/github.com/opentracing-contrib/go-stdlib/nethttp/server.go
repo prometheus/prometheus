@@ -108,6 +108,12 @@ func MiddlewareFunc(tr opentracing.Tracer, h http.HandlerFunc, options ...MWOpti
 	for _, opt := range options {
 		opt(&opts)
 	}
+	// set component name, use "net/http" if caller does not specify
+	componentName := opts.componentName
+	if componentName == "" {
+		componentName = defaultComponentName
+	}
+
 	fn := func(w http.ResponseWriter, r *http.Request) {
 		if !opts.spanFilter(r) {
 			h(w, r)
@@ -117,24 +123,32 @@ func MiddlewareFunc(tr opentracing.Tracer, h http.HandlerFunc, options ...MWOpti
 		sp := tr.StartSpan(opts.opNameFunc(r), ext.RPCServerOption(ctx))
 		ext.HTTPMethod.Set(sp, r.Method)
 		ext.HTTPUrl.Set(sp, opts.urlTagFunc(r.URL))
-		opts.spanObserver(sp, r)
-
-		// set component name, use "net/http" if caller does not specify
-		componentName := opts.componentName
-		if componentName == "" {
-			componentName = defaultComponentName
-		}
 		ext.Component.Set(sp, componentName)
+		opts.spanObserver(sp, r)
 
 		sct := &statusCodeTracker{ResponseWriter: w}
 		r = r.WithContext(opentracing.ContextWithSpan(r.Context(), sp))
 
 		defer func() {
-			ext.HTTPStatusCode.Set(sp, uint16(sct.status))
-			if sct.status >= http.StatusInternalServerError || !sct.wroteheader {
+			panicErr := recover()
+			didPanic := panicErr != nil
+
+			if sct.status == 0 && !didPanic {
+				// Standard behavior of http.Server is to assume status code 200 if one was not written by a handler that returned successfully.
+				// https://github.com/golang/go/blob/fca286bed3ed0e12336532cc711875ae5b3cb02a/src/net/http/server.go#L120
+				sct.status = 200
+			}
+			if sct.status > 0 {
+				ext.HTTPStatusCode.Set(sp, uint16(sct.status))
+			}
+			if sct.status >= http.StatusInternalServerError || didPanic {
 				ext.Error.Set(sp, true)
 			}
 			sp.Finish()
+
+			if didPanic {
+				panic(panicErr)
+			}
 		}()
 
 		h(sct.wrappedResponseWriter(), r)

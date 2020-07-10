@@ -124,15 +124,38 @@ func (c *Client) Dial(address string) (conn *Conn, err error) {
 // of 512 bytes
 // To specify a local address or a timeout, the caller has to set the `Client.Dialer`
 // attribute appropriately
+
 func (c *Client) Exchange(m *Msg, address string) (r *Msg, rtt time.Duration, err error) {
+	co, err := c.Dial(address)
+
+	if err != nil {
+		return nil, 0, err
+	}
+	defer co.Close()
+	return c.ExchangeWithConn(m, co)
+}
+
+// ExchangeWithConn has the same behavior as Exchange, just with a predetermined connection
+// that will be used instead of creating a new one.
+// Usage pattern with a *dns.Client:
+//	c := new(dns.Client)
+//	// connection management logic goes here
+//
+//	conn := c.Dial(address)
+//	in, rtt, err := c.ExchangeWithConn(message, conn)
+//
+//  This allows users of the library to implement their own connection management,
+//  as opposed to Exchange, which will always use new connections and incur the added overhead
+//  that entails when using "tcp" and especially "tcp-tls" clients.
+func (c *Client) ExchangeWithConn(m *Msg, conn *Conn) (r *Msg, rtt time.Duration, err error) {
 	if !c.SingleInflight {
-		return c.exchange(m, address)
+		return c.exchange(m, conn)
 	}
 
 	q := m.Question[0]
 	key := fmt.Sprintf("%s:%d:%d", q.Name, q.Qtype, q.Qclass)
 	r, rtt, err, shared := c.group.Do(key, func() (*Msg, time.Duration, error) {
-		return c.exchange(m, address)
+		return c.exchange(m, conn)
 	})
 	if r != nil && shared {
 		r = r.Copy()
@@ -141,15 +164,7 @@ func (c *Client) Exchange(m *Msg, address string) (r *Msg, rtt time.Duration, er
 	return r, rtt, err
 }
 
-func (c *Client) exchange(m *Msg, a string) (r *Msg, rtt time.Duration, err error) {
-	var co *Conn
-
-	co, err = c.Dial(a)
-
-	if err != nil {
-		return nil, 0, err
-	}
-	defer co.Close()
+func (c *Client) exchange(m *Msg, co *Conn) (r *Msg, rtt time.Duration, err error) {
 
 	opt := m.IsEdns0()
 	// If EDNS0 is used use that for size.

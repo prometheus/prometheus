@@ -7,22 +7,22 @@ dist: trusty
 
 matrix:
   include:
-  - go: 1.13.x
+  - go: 1.14.x
     env:
     - TESTS=true
     - USE_DEP=true
     - COVERAGE=true
-  - go: 1.13.x
+  - go: 1.14.x
     env:
     - USE_DEP=true
     - CROSSDOCK=true
-  - go: 1.13.x
+  - go: 1.14.x
     env:
     - TESTS=true
     - USE_DEP=false
     - USE_GLIDE=true
   # test with previous version of Go
-  - go: 1.12.x
+  - go: 1.13.x
     env:
     - TESTS=true
     - USE_DEP=true

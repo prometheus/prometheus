@@ -71,6 +71,7 @@ type Environment struct {
 	ContainerRegistryDNSSuffix   string             `json:"containerRegistryDNSSuffix"`
 	CosmosDBDNSSuffix            string             `json:"cosmosDBDNSSuffix"`
 	TokenAudience                string             `json:"tokenAudience"`
+	APIManagementHostNameSuffix  string             `json:"apiManagementHostNameSuffix"`
 	ResourceIdentifiers          ResourceIdentifier `json:"resourceIdentifiers"`
 }
 
@@ -98,6 +99,7 @@ var (
 		ContainerRegistryDNSSuffix:   "azurecr.io",
 		CosmosDBDNSSuffix:            "documents.azure.com",
 		TokenAudience:                "https://management.azure.com/",
+		APIManagementHostNameSuffix:  "azure-api.net",
 		ResourceIdentifiers: ResourceIdentifier{
 			Graph:               "https://graph.windows.net/",
 			KeyVault:            "https://vault.azure.net",
@@ -127,10 +129,11 @@ var (
 		KeyVaultDNSSuffix:            "vault.usgovcloudapi.net",
 		ServiceBusEndpointSuffix:     "servicebus.usgovcloudapi.net",
 		ServiceManagementVMDNSSuffix: "usgovcloudapp.net",
-		ResourceManagerVMDNSSuffix:   "cloudapp.windowsazure.us",
+		ResourceManagerVMDNSSuffix:   "cloudapp.usgovcloudapi.net",
 		ContainerRegistryDNSSuffix:   "azurecr.us",
 		CosmosDBDNSSuffix:            "documents.azure.us",
 		TokenAudience:                "https://management.usgovcloudapi.net/",
+		APIManagementHostNameSuffix:  "azure-api.us",
 		ResourceIdentifiers: ResourceIdentifier{
 			Graph:               "https://graph.windows.net/",
 			KeyVault:            "https://vault.usgovcloudapi.net",
@@ -160,10 +163,11 @@ var (
 		KeyVaultDNSSuffix:            "vault.azure.cn",
 		ServiceBusEndpointSuffix:     "servicebus.chinacloudapi.cn",
 		ServiceManagementVMDNSSuffix: "chinacloudapp.cn",
-		ResourceManagerVMDNSSuffix:   "cloudapp.azure.cn",
+		ResourceManagerVMDNSSuffix:   "cloudapp.chinacloudapi.cn",
 		ContainerRegistryDNSSuffix:   "azurecr.cn",
 		CosmosDBDNSSuffix:            "documents.azure.cn",
 		TokenAudience:                "https://management.chinacloudapi.cn/",
+		APIManagementHostNameSuffix:  "azure-api.cn",
 		ResourceIdentifiers: ResourceIdentifier{
 			Graph:               "https://graph.chinacloudapi.cn/",
 			KeyVault:            "https://vault.azure.cn",
@@ -197,6 +201,7 @@ var (
 		ContainerRegistryDNSSuffix:   NotAvailable,
 		CosmosDBDNSSuffix:            "documents.microsoftazure.de",
 		TokenAudience:                "https://management.microsoftazure.de/",
+		APIManagementHostNameSuffix:  NotAvailable,
 		ResourceIdentifiers: ResourceIdentifier{
 			Graph:               "https://graph.cloudapi.de/",
 			KeyVault:            "https://vault.microsoftazure.de",

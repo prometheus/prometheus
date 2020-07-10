@@ -28,6 +28,7 @@ A not-so-up-to-date-list-that-may-be-actually-current:
 * https://github.com/coredns/coredns
 * https://cloudflare.com
 * https://github.com/abh/geodns
+* https://github.com/baidu/bfe
 * http://www.statdns.com/
 * http://www.dnsinspect.com/
 * https://github.com/chuangbo/jianbing-dictionary-dns

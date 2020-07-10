@@ -346,6 +346,12 @@ const (
 // and maps, Node is an intermediate representation that allows detailed
 // control over the content being decoded or encoded.
 //
+// It's worth noting that although Node offers access into details such as
+// line numbers, colums, and comments, the content when re-encoded will not
+// have its original textual representation preserved. An effort is made to
+// render the data plesantly, and to preserve comments near the data they
+// describe, though.
+//
 // Values that make use of the Node type interact with the yaml package in the
 // same way any other type would do, by encoding and decoding yaml data
 // directly or indirectly into them.

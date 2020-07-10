@@ -116,7 +116,6 @@ func (client VpnConnectionsClient) CreateOrUpdateSender(req *http.Request) (futu
 func (client VpnConnectionsClient) CreateOrUpdateResponder(resp *http.Response) (result VpnConnection, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -194,7 +193,6 @@ func (client VpnConnectionsClient) DeleteSender(req *http.Request) (future VpnCo
 func (client VpnConnectionsClient) DeleteResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted, http.StatusNoContent),
 		autorest.ByClosing())
 	result.Response = resp
@@ -271,7 +269,6 @@ func (client VpnConnectionsClient) GetSender(req *http.Request) (*http.Response,
 func (client VpnConnectionsClient) GetResponder(resp *http.Response) (result VpnConnection, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -348,7 +345,6 @@ func (client VpnConnectionsClient) ListByVpnGatewaySender(req *http.Request) (*h
 func (client VpnConnectionsClient) ListByVpnGatewayResponder(resp *http.Response) (result ListVpnConnectionsResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

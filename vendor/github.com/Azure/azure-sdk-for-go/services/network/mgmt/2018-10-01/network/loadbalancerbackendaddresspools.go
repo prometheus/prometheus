@@ -112,7 +112,6 @@ func (client LoadBalancerBackendAddressPoolsClient) GetSender(req *http.Request)
 func (client LoadBalancerBackendAddressPoolsClient) GetResponder(resp *http.Response) (result BackendAddressPool, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -189,7 +188,6 @@ func (client LoadBalancerBackendAddressPoolsClient) ListSender(req *http.Request
 func (client LoadBalancerBackendAddressPoolsClient) ListResponder(resp *http.Response) (result LoadBalancerBackendAddressPoolListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

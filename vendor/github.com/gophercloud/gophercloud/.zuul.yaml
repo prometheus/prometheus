@@ -36,6 +36,7 @@
     parent: gophercloud-acceptance-test
     description: |
       Run gophercloud acceptance test on rocky branch
+    nodeset: ubuntu-xenial
     vars:
       global_env:
         OS_BRANCH: stable/rocky
@@ -45,6 +46,7 @@
     parent: gophercloud-acceptance-test
     description: |
       Run gophercloud acceptance test on queens branch
+    nodeset: ubuntu-xenial
     vars:
       global_env:
         OS_BRANCH: stable/queens
@@ -54,6 +56,7 @@
     parent: gophercloud-acceptance-test
     description: |
       Run gophercloud acceptance test on pike branch
+    nodeset: ubuntu-xenial
     vars:
       global_env:
         OS_BRANCH: stable/pike
@@ -63,6 +66,7 @@
     parent: gophercloud-acceptance-test
     description: |
       Run gophercloud acceptance test on ocata branch
+    nodeset: ubuntu-xenial
     vars:
       global_env:
         OS_BRANCH: stable/ocata
@@ -72,6 +76,7 @@
     parent: gophercloud-acceptance-test
     description: |
       Run gophercloud acceptance test on newton branch
+    nodeset: ubuntu-xenial
     vars:
       global_env:
         OS_BRANCH: stable/newton

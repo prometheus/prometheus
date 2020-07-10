@@ -43,7 +43,7 @@ type Config struct {
 
 	// An optional endpoint URL (hostname only or fully qualified URI)
 	// that overrides the default generated endpoint for a client. Set this
-	// to `""` to use the default generated endpoint.
+	// to `nil` to use the default generated endpoint.
 	//
 	// Note: You must still provide a `Region` value when specifying an
 	// endpoint for a client.
@@ -238,6 +238,7 @@ type Config struct {
 
 	// EnableEndpointDiscovery will allow for endpoint discovery on operations that
 	// have the definition in its model. By default, endpoint discovery is off.
+	// To use EndpointDiscovery, Endpoint should be unset or set to an empty string.
 	//
 	// Example:
 	//    sess := session.Must(session.NewSession(&aws.Config{

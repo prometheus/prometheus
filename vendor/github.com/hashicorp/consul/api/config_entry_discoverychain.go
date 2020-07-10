@@ -31,12 +31,12 @@ type ServiceRouteMatch struct {
 }
 
 type ServiceRouteHTTPMatch struct {
-	PathExact  string `json:",omitempty"`
-	PathPrefix string `json:",omitempty"`
-	PathRegex  string `json:",omitempty"`
+	PathExact  string `json:",omitempty" alias:"path_exact"`
+	PathPrefix string `json:",omitempty" alias:"path_prefix"`
+	PathRegex  string `json:",omitempty" alias:"path_regex"`
 
 	Header     []ServiceRouteHTTPMatchHeader     `json:",omitempty"`
-	QueryParam []ServiceRouteHTTPMatchQueryParam `json:",omitempty"`
+	QueryParam []ServiceRouteHTTPMatchQueryParam `json:",omitempty" alias:"query_param"`
 	Methods    []string                          `json:",omitempty"`
 }
 
@@ -59,13 +59,13 @@ type ServiceRouteHTTPMatchQueryParam struct {
 
 type ServiceRouteDestination struct {
 	Service               string        `json:",omitempty"`
-	ServiceSubset         string        `json:",omitempty"`
+	ServiceSubset         string        `json:",omitempty" alias:"service_subset"`
 	Namespace             string        `json:",omitempty"`
-	PrefixRewrite         string        `json:",omitempty"`
-	RequestTimeout        time.Duration `json:",omitempty"`
-	NumRetries            uint32        `json:",omitempty"`
-	RetryOnConnectFailure bool          `json:",omitempty"`
-	RetryOnStatusCodes    []uint32      `json:",omitempty"`
+	PrefixRewrite         string        `json:",omitempty" alias:"prefix_rewrite"`
+	RequestTimeout        time.Duration `json:",omitempty" alias:"request_timeout"`
+	NumRetries            uint32        `json:",omitempty" alias:"num_retries"`
+	RetryOnConnectFailure bool          `json:",omitempty" alias:"retry_on_connect_failure"`
+	RetryOnStatusCodes    []uint32      `json:",omitempty" alias:"retry_on_status_codes"`
 }
 
 func (e *ServiceRouteDestination) MarshalJSON() ([]byte, error) {
@@ -123,7 +123,7 @@ func (e *ServiceSplitterConfigEntry) GetModifyIndex() uint64 { return e.ModifyIn
 type ServiceSplit struct {
 	Weight        float32
 	Service       string `json:",omitempty"`
-	ServiceSubset string `json:",omitempty"`
+	ServiceSubset string `json:",omitempty" alias:"service_subset"`
 	Namespace     string `json:",omitempty"`
 }
 
@@ -132,11 +132,11 @@ type ServiceResolverConfigEntry struct {
 	Name      string
 	Namespace string `json:",omitempty"`
 
-	DefaultSubset  string                             `json:",omitempty"`
+	DefaultSubset  string                             `json:",omitempty" alias:"default_subset"`
 	Subsets        map[string]ServiceResolverSubset   `json:",omitempty"`
 	Redirect       *ServiceResolverRedirect           `json:",omitempty"`
 	Failover       map[string]ServiceResolverFailover `json:",omitempty"`
-	ConnectTimeout time.Duration                      `json:",omitempty"`
+	ConnectTimeout time.Duration                      `json:",omitempty" alias:"connect_timeout"`
 
 	CreateIndex uint64
 	ModifyIndex uint64
@@ -185,19 +185,19 @@ func (e *ServiceResolverConfigEntry) GetModifyIndex() uint64 { return e.ModifyIn
 
 type ServiceResolverSubset struct {
 	Filter      string `json:",omitempty"`
-	OnlyPassing bool   `json:",omitempty"`
+	OnlyPassing bool   `json:",omitempty" alias:"only_passing"`
 }
 
 type ServiceResolverRedirect struct {
 	Service       string `json:",omitempty"`
-	ServiceSubset string `json:",omitempty"`
+	ServiceSubset string `json:",omitempty" alias:"service_subset"`
 	Namespace     string `json:",omitempty"`
 	Datacenter    string `json:",omitempty"`
 }
 
 type ServiceResolverFailover struct {
 	Service       string   `json:",omitempty"`
-	ServiceSubset string   `json:",omitempty"`
+	ServiceSubset string   `json:",omitempty" alias:"service_subset"`
 	Namespace     string   `json:",omitempty"`
 	Datacenters   []string `json:",omitempty"`
 }

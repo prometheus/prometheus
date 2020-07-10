@@ -18,6 +18,8 @@
  *
  */
 
+// Package syscall provides functionalities that grpc uses to get low-level
+// operating system stats/info.
 package syscall
 
 import (
