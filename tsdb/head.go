@@ -2195,11 +2195,14 @@ func (s *memSeries) iterator(id int, isoState *isolationState, chunkDiskMapper *
 				previousSamples += int(d.numSamples)
 			}
 		}
-		// mmappedChunks does not contain the last chunk. Hence check it separately.
-		if len(s.mmappedChunks) < ix {
-			previousSamples += s.headChunk.chunk.NumSamples()
-		} else {
-			totalSamples += s.headChunk.chunk.NumSamples()
+
+		if s.headChunk != nil {
+			// mmappedChunks does not contain the last chunk. Hence check it separately.
+			if len(s.mmappedChunks) < ix {
+				previousSamples += s.headChunk.chunk.NumSamples()
+			} else {
+				totalSamples += s.headChunk.chunk.NumSamples()
+			}
 		}
 
 		// Removing the extra transactionIDs that are relevant for samples that
