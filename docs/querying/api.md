@@ -1022,3 +1022,205 @@ $ curl -XPOST http://localhost:9090/api/v1/admin/tsdb/clean_tombstones
 ```
 
 *New in v2.1 and supports PUT from v2.9*
+
+## LangServer
+
+The following endpoints provides the different feature handled by LSP (Language Server Protocol) in a stateless way.
+
+### Diagnostics
+This endpoint returns the different errors contained in the PromQL expression provided in the body
+
+```
+POST /api/v1/langserver/diagnostics
+```
+
+Body format:
+
+```json
+{
+  "expr": "a PromQL expression",
+  "limit": 45 # Optional. The maximum number of results returned.
+}
+```
+
+Example:
+
+```json
+$ curl -XPOST 'localhost:9090/api/v1/langserver/diagnostics' -H "Content-Type: application/json" --data '{"expr": "some_metric()", "limit":100}'
+  [
+    {
+      "range": {
+        "start": {
+          "line": 0,
+          "character": 0
+        },
+        "end": {
+          "line": 0,
+          "character": 11
+        }
+      },
+      "severity": 1,
+      "source": "promql-lsp",
+      "message": "unknown function with name \"some_metric\""
+    }
+  ]
+```
+
+### Completion
+This endpoint returns a list of the possible value for the given word contains in the promQL expression provided
+
+```
+POST /api/v1/langserver/completion
+```
+
+Body format:
+
+```json
+{
+  "expr": "a PromQL expression",
+  "limit": 45 # Optional. The maximum number of results returned.
+  "positionLine": 0 # Mandatory. The line (0 based) for which the metadata is queried.
+  "positionChar": 2 # Mandatory. The column (0 based) for which the metadata is queried. Characters are counted as UTF-16 code points.
+}
+```
+
+Example:
+
+```json
+$ curl -XPOST 'localhost:9090/api/v1/langserver/completion' -H "Content-Type: application/json" --data '{"expr": "sum(go)", "limit":2, "positionLine":0, "positionChar":6}'
+  [
+    {
+      "label": "go_gc_duration_seconds",
+      "kind": 12,
+      "sortText": "__3__go_gc_duration_seconds",
+      "textEdit": {
+        "range": {
+          "start": {
+            "line": 0,
+            "character": 4
+          },
+          "end": {
+            "line": 0,
+            "character": 6
+          }
+        },
+        "newText": "go_gc_duration_seconds"
+      }
+    },
+    {
+      "label": "go_gc_duration_seconds_count",
+      "kind": 12,
+      "sortText": "__3__go_gc_duration_seconds_count",
+      "textEdit": {
+        "range": {
+          "start": {
+            "line": 0,
+            "character": 4
+          },
+          "end": {
+            "line": 0,
+            "character": 6
+          }
+        },
+        "newText": "go_gc_duration_seconds_count"
+      }
+    }
+  ]
+```
+
+### Hover
+This endpoint returns a documentation according to the given word contains in the promQL expression provided
+
+```
+POST /api/v1/langserver/hover
+```
+
+Body format:
+
+```json
+{
+  "expr": "a PromQL expression",
+  "positionLine": 0 # The line (0 based) for which the metadata is queried.
+  "positionChar": 2 # The column (0 based) for which the metadata is queried. Characters are counted as UTF-16 code points.
+}
+```
+
+Example:
+```json
+$ curl -XPOST 'localhost:9090/api/v1/langserver/hover' -H "Content-Type: application/json" --data '{"expr": "sum(go_info)", "positionLine":0, "positionChar":10}'
+
+{
+  "contents":{
+    "kind": "markdown",
+    "value": "### go_info\n\n__Metric Help:__ Information about the Go environment.\n\n__Metric Type:__  gauge\n\n\n\n__PromQL Type:__ instant vector\n\n"
+  },
+  "range": {
+    "start": {
+      "line": 0,
+      "character": 4
+    },
+    "end": {
+      "line": 0, 
+      "character": 11
+    }
+  }
+}
+```
+
+```json
+$ curl -XPOST 'localhost:9090/api/v1/langserver/hover' -H "Content-Type: application/json" --data '{"expr": "sum(go_info)", "positionLine":0, "positionChar":3}'
+
+{
+  "contents": {
+    "kind": "markdown",
+    "value": "## `\u003caggregation\u003e_over_time()`\n\nThe following functions allow aggregating each series of a given range vector\nover time and return an instant vector with per-series aggregation results:\n\n* `avg_over_time(range-vector)`: the average value of all points in the specified interval.\n* `min_over_time(range-vector)`: the minimum value of all points in the specified interval.\n* `max_over_time(range-vector)`: the maximum value of all points in the specified interval.\n* `sum_over_time(range-vector)`: the sum of all values in the specified interval.\n* `count_over_time(range-vector)`: the count of all values in the specified interval.\n* `quantile_over_time(scalar, range-vector)`: the ¤å-quantile (0 Ôëñ ¤å Ôëñ 1) of the values in the specified interval.\n* `stddev_over_time(range-vector)`: the population standard deviation of the values in the specified interval.\n* `stdvar_over_time(range-vector)`: the population standard variance of the values in the specified interval.\n\nNote that all values in the specified interval have the same weight in the\naggregation even if the values are not equally spaced throughout the interval.\n\n\n__PromQL Type:__ instant vector\n\n"
+  },
+  "range": {
+    "start": {
+      "line": 0,
+      "character": 0
+    },
+    "end": {
+      "line": 0,
+      "character": 26
+    }
+  }
+}
+```
+
+### Signature Help
+This endpoint returns the signature associated to the method selected in the promQL expression provided
+
+```
+POST /api/v1/langserver/signatureHelp
+```
+
+Body format:
+
+```json
+{
+  "expr": "a PromQL expression",
+  "positionLine": 0 # The line (0 based) for which the metadata is queried.
+  "positionChar": 2 # The column (0 based) for which the metadata is queried. Characters are counted as UTF-16 code points.
+}
+```
+
+Example:
+```json
+$ curl -XPOST 'localhost:9090/api/v1/langserver/signatureHelp' -H "Content-Type: application/json" --data '{"expr": "sum(go_info)", "positionLine":0, "positionChar":3}'
+
+{
+  "signatures": [
+    {
+      "label": "sum_over_time(v range-vector)",
+      "parameters": [
+        {
+          "label": "v range-vector"
+        }
+      ]
+    }
+  ],
+  "activeSignature": 0,
+  "activeParameter": 0
+}
+```
