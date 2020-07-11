@@ -46,6 +46,10 @@ var (
 	ErrInvalidSample = errors.New("invalid sample")
 )
 
+// TEST!
+var testSimulation1 sync.Mutex
+var testSimulation2 sync.Mutex
+
 // Head handles reads and writes of time series data within a time window.
 type Head struct {
 	// Keep all 64bit atomically accessed variables at the top of this struct.
@@ -1693,6 +1697,9 @@ func (h *Head) getOrCreateWithID(id, hash uint64, lset labels.Labels) (*memSerie
 	atomic.AddUint64(&h.numSeries, 1)
 
 	h.postings.Add(id, lset)
+
+	testSimulation1.Lock()
+	testSimulation1.Unlock()
 
 	h.symMtx.Lock()
 	defer h.symMtx.Unlock()

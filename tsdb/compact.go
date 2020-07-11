@@ -656,7 +656,9 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 	defer func() {
 		var merr tsdb_errors.MultiError
 		merr.Add(err)
-		merr.Add(closeAll(closers))
+		if cerr := closeAll(closers); cerr != nil {
+			merr.Add(errors.Wrap(err, "close"))
+		}
 		err = merr.Err()
 		c.metrics.populatingBlocks.Set(0)
 	}()
@@ -707,7 +709,11 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		all = indexr.SortedPostings(all)
 
 		s := newCompactionSeriesSet(indexr, chunkr, tombsr, all)
+
 		syms := indexr.Symbols()
+		// When we are here unblock append as we already got postings with extra one, and symbols
+		// with missing symbol for new posting.
+		testSimulation1.Unlock()
 
 		if i == 0 {
 			set = s
