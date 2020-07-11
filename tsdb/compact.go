@@ -656,7 +656,9 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 	defer func() {
 		var merr tsdb_errors.MultiError
 		merr.Add(err)
-		merr.Add(closeAll(closers))
+		if cerr := closeAll(closers); cerr != nil {
+			merr.Add(errors.Wrap(err, "close"))
+		}
 		err = merr.Err()
 		c.metrics.populatingBlocks.Set(0)
 	}()

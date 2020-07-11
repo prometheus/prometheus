@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"math"
@@ -24,6 +25,7 @@ import (
 	"strconv"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/pkg/errors"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
@@ -1874,4 +1876,60 @@ func TestHeadLabelNamesValuesWithMinMaxRange(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Regression test showing race between compact and append.
+func TestHeadCompactionRace(t *testing.T) {
+	db, closeFn := openTestDB(t, &Options{
+		RetentionDuration: 100000000,
+		NoLockfile:        true,
+		MinBlockDuration:  1000000,
+		MaxBlockDuration:  1000000,
+	}, []int64{1000000})
+	t.Cleanup(func() {
+		closeFn()
+		testutil.Ok(t, db.Close())
+	})
+
+	head := db.Head()
+
+	app := head.Appender()
+	_, err := app.Add(labels.Labels{labels.Label{Name: "n", Value: "v"}}, 10, 10)
+	testutil.Ok(t, err)
+	testutil.Ok(t, app.Commit())
+
+	var wg sync.WaitGroup
+
+	// Simulate racy append where posting is added but symbol not. Symbol is added only after symMtx.Lock.
+	head.testSimulation.Lock()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		app := head.Appender()
+		_, err := app.Add(labels.Labels{labels.Label{Name: "n", Value: "v2"}}, 10, 10)
+		testutil.Ok(t, err)
+		testutil.Ok(t, app.Commit())
+	}()
+
+	// Wait until posting from append will be added indicating locked append state.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	for {
+		select {
+		case <-ctx.Done():
+			t.Fatal("timeout")
+		case <-time.After(100 * time.Millisecond):
+		}
+
+		if len(head.postings.SortedKeys()) == 3 {
+			// Locked on 3rd posting (all, n=v, n=v2).
+			break
+		}
+	}
+
+	// Compaction fails reproducing https://github.com/prometheus/prometheus/issues/7373
+	testutil.Ok(t, db.CompactHead(NewRangeHead(head, 0, 10000000)))
+	head.testSimulation.Unlock()
+	wg.Wait()
 }

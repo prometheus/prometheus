@@ -68,9 +68,10 @@ type Head struct {
 	series         *stripeSeries
 	seriesCallback SeriesLifecycleCallback
 
-	symMtx  sync.RWMutex
-	symbols map[string]struct{}
-	values  map[string]stringset // Label names to possible values.
+	testSimulation sync.Mutex
+	symMtx         sync.RWMutex
+	symbols        map[string]struct{}
+	values         map[string]stringset // Label names to possible values.
 
 	deletedMtx sync.Mutex
 	deleted    map[uint64]int // Deleted series, and what WAL segment they must be kept until.
@@ -1693,6 +1694,10 @@ func (h *Head) getOrCreateWithID(id, hash uint64, lset labels.Labels) (*memSerie
 	atomic.AddUint64(&h.numSeries, 1)
 
 	h.postings.Add(id, lset)
+
+	// Trying to repro https://github.com/prometheus/prometheus/issues/7373
+	h.testSimulation.Lock()
+	h.testSimulation.Unlock()
 
 	h.symMtx.Lock()
 	defer h.symMtx.Unlock()
