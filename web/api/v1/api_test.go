@@ -298,7 +298,11 @@ var sampleFlagMap = map[string]string{
 }
 
 func TestEndpoints(t *testing.T) {
-	suite, err := promql.NewTest(t, `
+
+	now := time.Now()
+
+	t.Run("local", func(t *testing.T) {
+		suite, err := promql.NewTest(t, `
 		load 1m
 			test_metric1{foo="bar"} 0+100x100
 			test_metric1{foo="boo"} 1+0x100
@@ -309,14 +313,11 @@ func TestEndpoints(t *testing.T) {
 			test_metric4{foo="boo", dup="1"} 1+0x100
 			test_metric4{foo="boo"} 1+0x100
 	`)
-	testutil.Ok(t, err)
-	defer suite.Close()
+		testutil.Ok(t, err)
+		defer suite.Close()
 
-	testutil.Ok(t, suite.Run())
+		testutil.Ok(t, suite.Run())
 
-	now := time.Now()
-
-	t.Run("local", func(t *testing.T) {
 		var algr rulesRetrieverMock
 		algr.testing = t
 
@@ -341,12 +342,23 @@ func TestEndpoints(t *testing.T) {
 		testEndpoints(t, api, testTargetRetriever, true)
 	})
 
-	// Run all the API tests against a API that is wired to forward queries via
-	// the remote read client to a test server, which in turn sends them to the
-	// data from the test suite.
-	t.Run("remote", func(t *testing.T) {
-		server := setupRemote(suite.Storage())
-		defer server.Close()
+	testRemoteEndpoint := func(t *testing.T, server *httptest.Server, prometheusRegisterer prometheus.Registerer) {
+
+		suite, err := promql.NewTest(t, `
+		load 1m
+			test_metric1{foo="bar"} 0+100x100
+			test_metric1{foo="boo"} 1+0x100
+			test_metric2{foo="boo"} 1+0x100
+			test_metric3{foo="bar", dup="1"} 1+0x100
+			test_metric3{foo="boo", dup="1"} 1+0x100
+			test_metric4{foo="bar", dup="1"} 1+0x100
+			test_metric4{foo="boo", dup="1"} 1+0x100
+			test_metric4{foo="boo"} 1+0x100
+		`)
+		testutil.Ok(t, err)
+		defer suite.Close()
+
+		testutil.Ok(t, suite.Run())
 
 		u, err := url.Parse(server.URL)
 		testutil.Ok(t, err)
@@ -366,8 +378,9 @@ func TestEndpoints(t *testing.T) {
 		testutil.Ok(t, err)
 		defer os.RemoveAll(dbDir)
 
-		remote := remote.NewStorage(promlog.New(&promlogConfig), prometheus.DefaultRegisterer, nil, dbDir, 1*time.Second)
-
+		remote := remote.NewStorage(promlog.New(&promlogConfig), prometheusRegisterer, func() (int64, error) {
+			return 0, nil
+		}, dbDir, 1*time.Second)
 		err = remote.ApplyConfig(&config.Config{
 			RemoteReadConfigs: []*config.RemoteReadConfig{
 				{
@@ -401,8 +414,51 @@ func TestEndpoints(t *testing.T) {
 		}
 
 		testEndpoints(t, api, testTargetRetriever, false)
+	}
+
+	t.Run("remote", func(t *testing.T) {
+		suite, err := promql.NewTest(t, `
+		load 1m
+			test_metric1{foo="bar"} 0+100x100
+			test_metric1{foo="boo"} 1+0x100
+			test_metric2{foo="boo"} 1+0x100
+			test_metric3{foo="bar", dup="1"} 1+0x100
+			test_metric3{foo="boo", dup="1"} 1+0x100
+			test_metric4{foo="bar", dup="1"} 1+0x100
+			test_metric4{foo="boo", dup="1"} 1+0x100
+			test_metric4{foo="boo"} 1+0x100
+		`)
+		testutil.Ok(t, err)
+		defer suite.Close()
+
+		testutil.Ok(t, suite.Run())
+
+		server := setupRemote(suite.Storage())
+		defer server.Close()
+		testRemoteEndpoint(t, server, prometheus.DefaultRegisterer)
 	})
 
+	t.Run("remote_streaming", func(t *testing.T) {
+		suite, err := promql.NewTest(t, `
+			load 1m
+				test_metric1{foo="bar"} 0+100x100
+				test_metric1{foo="boo"} 1+0x100
+				test_metric2{foo="boo"} 1+0x100
+				test_metric3{foo="bar", dup="1"} 1+0x100
+				test_metric3{foo="boo", dup="1"} 1+0x100
+				test_metric4{foo="bar", dup="1"} 1+0x100
+				test_metric4{foo="boo", dup="1"} 1+0x100
+				test_metric4{foo="boo"} 1+0x100
+		`)
+		testutil.Ok(t, err)
+		defer suite.Close()
+
+		testutil.Ok(t, suite.Run())
+
+		server := setupRemoteStreaming(suite.Storage(), suite.QueryEngine())
+		defer server.Close()
+		testRemoteEndpoint(t, server, nil)
+	})
 }
 
 func TestLabelNames(t *testing.T) {
@@ -528,13 +584,30 @@ func setupRemote(s storage.Storage) *httptest.Server {
 				return
 			}
 		}
-
+		w.Header().Set("Content-Type", "application/x-protobuf")
+		w.Header().Set("Content-Encoding", "snappy")
 		if err := remote.EncodeReadResponse(&resp, w); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 	})
 
+	return httptest.NewServer(handler)
+}
+
+func setupRemoteStreaming(s storage.Storage, q *promql.Engine) *httptest.Server {
+	api := &API{
+		Queryable:   s,
+		QueryEngine: q,
+		config: func() config.Config {
+			return config.Config{}
+		},
+		remoteReadSampleLimit: 1e6,
+		remoteReadGate:        gate.New(1),
+		// Labelset has 57 bytes. Full chunk in test data has roughly 240 bytes. This allows us to have at max 2 chunks in this test.
+		remoteReadMaxBytesInFrame: 57 + 480,
+	}
+	handler := http.HandlerFunc(api.remoteRead)
 	return httptest.NewServer(handler)
 }
 

@@ -36,6 +36,7 @@ import (
 
 	"github.com/opentracing-contrib/go-stdlib/nethttp"
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/storage"
 )
 
 const maxErrMsgLen = 512
@@ -99,7 +100,7 @@ type ClientConfig struct {
 // ReadClient uses the SAMPLES method of remote read to read series samples from remote server.
 // TODO(bwplotka): Add streamed chunked remote read method as well (https://github.com/prometheus/prometheus/issues/5926).
 type ReadClient interface {
-	Read(ctx context.Context, query *prompb.Query) (*prompb.QueryResult, error)
+	StartRead(ctx context.Context, query *prompb.Query, sortSeries bool) (storage.SeriesSet, error)
 }
 
 // NewReadClient creates a new client for remote read.
@@ -214,7 +215,7 @@ func (c Client) Endpoint() string {
 }
 
 // Read reads from a remote endpoint.
-func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryResult, error) {
+func (c *Client) StartRead(ctx context.Context, query *prompb.Query, sortSeries bool) (storage.SeriesSet, error) {
 	c.readQueries.Inc()
 	defer c.readQueries.Dec()
 
@@ -223,6 +224,10 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 		// as the protobuf interface allows for it.
 		Queries: []*prompb.Query{
 			query,
+		},
+		AcceptedResponseTypes: []prompb.ReadRequest_ResponseType{
+			prompb.ReadRequest_STREAMED_XOR_CHUNKS,
+			prompb.ReadRequest_SAMPLES,
 		},
 	}
 	data, err := proto.Marshal(req)
@@ -262,6 +267,28 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 	if err != nil {
 		return nil, errors.Wrap(err, "error sending request")
 	}
+
+	contentType := httpResp.Header.Get("Content-Type")
+	if strings.HasPrefix(contentType, "application/x-protobuf") {
+		return c.handleSampledResponse(httpResp, start, req, sortSeries)
+	}
+
+	if httpResp.StatusCode/100 != 2 {
+		httpResp.Body.Close()
+		return nil, errors.Errorf("remote server %s returned HTTP status %s: %s", c.url.String(), httpResp.Status, strings.TrimSpace(string(compressed)))
+	}
+
+	if !strings.HasPrefix(contentType, "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse") {
+		httpResp.Body.Close()
+		return nil, errors.Errorf("not supported remote read content type: %s", contentType)
+	}
+
+	// Handling streamed response
+	stream := NewChunkedReader(httpResp.Body, DefaultChunkedReadLimit, nil)
+	return &chunkedResponseSeriesSet{stream: stream, httpResp: httpResp}, nil
+}
+
+func (c *Client) handleSampledResponse(httpResp *http.Response, start time.Time, req *prompb.ReadRequest, sortSeries bool) (storage.SeriesSet, error) {
 	defer func() {
 		io.Copy(ioutil.Discard, httpResp.Body)
 		httpResp.Body.Close()
@@ -269,15 +296,10 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 	c.readQueriesDuration.Observe(time.Since(start).Seconds())
 	c.readQueriesTotal.WithLabelValues(strconv.Itoa(httpResp.StatusCode)).Inc()
 
-	compressed, err = ioutil.ReadAll(httpResp.Body)
+	compressed, err := ioutil.ReadAll(httpResp.Body)
 	if err != nil {
 		return nil, errors.Wrap(err, fmt.Sprintf("error reading response. HTTP status code: %s", httpResp.Status))
 	}
-
-	if httpResp.StatusCode/100 != 2 {
-		return nil, errors.Errorf("remote server %s returned HTTP status %s: %s", c.url.String(), httpResp.Status, strings.TrimSpace(string(compressed)))
-	}
-
 	uncompressed, err := snappy.Decode(nil, compressed)
 	if err != nil {
 		return nil, errors.Wrap(err, "error reading response")
@@ -292,6 +314,5 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 	if len(resp.Results) != len(req.Queries) {
 		return nil, errors.Errorf("responses: want %d, got %d", len(req.Queries), len(resp.Results))
 	}
-
-	return resp.Results[0], nil
+	return FromQueryResult(sortSeries, resp.Results[0]), nil
 }

@@ -160,6 +160,125 @@ func FromQueryResult(sortSeries bool, res *prompb.QueryResult) storage.SeriesSet
 	}
 }
 
+// chunkedResponseSeriesSet implements storage.SeriesSet.
+type chunkedResponseSeriesSet struct {
+	stream        *ChunkedReader
+	currentChunks []prompb.Chunk
+	currentLabels []prompb.Label
+	httpResp      *http.Response
+	err           error
+}
+
+func (c *chunkedResponseSeriesSet) Next() bool {
+	c.currentLabels = nil
+	c.currentChunks = nil
+	res := &prompb.ChunkedReadResponse{}
+
+	if err := c.stream.NextProto(res); err != nil {
+		if err != io.EOF {
+			c.err = err
+		}
+		c.httpResp.Body.Close()
+		return false
+	}
+
+	c.currentLabels = res.ChunkedSeries[0].Labels
+	c.currentChunks = append(c.currentChunks, res.ChunkedSeries[0].Chunks...)
+	return true
+}
+
+func (c *chunkedResponseSeriesSet) At() storage.Series {
+	return &chunkSeries{
+		labels: prompb.Labels{Labels: c.currentLabels},
+		chunks: c.currentChunks,
+	}
+}
+
+func (c *chunkedResponseSeriesSet) Warnings() storage.Warnings { return nil }
+
+func (c *chunkedResponseSeriesSet) Err() error {
+	return c.err
+}
+
+// chunkSeries implements storage.Series
+type chunkSeries struct {
+	labels     prompb.Labels
+	chunks     []prompb.Chunk
+	mint, maxt int64
+}
+
+func (c *chunkSeries) Labels() labels.Labels {
+	return labelProtosToLabels(c.labels.Labels)
+}
+
+func (c *chunkSeries) Iterator() chunkenc.Iterator {
+	streamingChunkSeriesIterator := &chunkSeriesIterator{chunks: c.chunks, i: 0, mint: c.mint, maxt: c.maxt}
+	streamingChunkSeriesIterator.resetCurIterator()
+	return streamingChunkSeriesIterator
+}
+
+type chunkSeriesIterator struct {
+	// Index poiting to a specific chunk in []prompb.Chunk.
+	i int
+	// Current chunks iterator.
+	cur        chunkenc.Iterator
+	maxt, mint int64
+	chunks     []prompb.Chunk
+	err        error
+}
+
+func (it *chunkSeriesIterator) resetCurIterator() {
+	currectChunk := it.chunks[it.i]
+	it.mint = currectChunk.MinTimeMs
+	it.maxt = currectChunk.MaxTimeMs
+	chk, err := chunkenc.FromData(chunkenc.Encoding(currectChunk.Type), currectChunk.Data)
+	it.err = err
+	it.cur = chk.Iterator(nil)
+}
+
+func (it *chunkSeriesIterator) At() (int64, float64) {
+	return it.cur.At()
+}
+
+func (it *chunkSeriesIterator) Next() bool {
+	if it.cur.Next() {
+		return true
+	}
+	if it.i == len(it.chunks)-1 {
+		return false
+	}
+	it.i++
+	it.resetCurIterator()
+	return it.Next()
+}
+
+// Seek advances the iterator to the element at time t or greater.
+func (it *chunkSeriesIterator) Seek(t int64) bool {
+	if t > it.maxt {
+		return false
+	}
+	if t < it.mint {
+		t = it.mint
+	}
+	for ; it.chunks[it.i].MaxTimeMs < t; it.i++ {
+		if it.i == len(it.chunks)-1 {
+			return false
+		}
+	}
+	it.resetCurIterator()
+	for it.cur.Next() {
+		t0, _ := it.cur.At()
+		if t0 >= t {
+			return true
+		}
+	}
+	return false
+}
+
+func (it *chunkSeriesIterator) Err() error {
+	return it.err
+}
+
 // NegotiateResponseType returns first accepted response type that this server supports.
 // On the empty accepted list we assume that the SAMPLES response type was requested. This is to maintain backward compatibility.
 func NegotiateResponseType(accepted []prompb.ReadRequest_ResponseType) (prompb.ReadRequest_ResponseType, error) {

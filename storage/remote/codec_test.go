@@ -14,12 +14,17 @@
 package remote
 
 import (
+	"bytes"
 	"fmt"
+	"io/ioutil"
+	"net/http"
 	"testing"
 
+	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -228,4 +233,161 @@ func TestMergeLabels(t *testing.T) {
 	} {
 		testutil.Equals(t, tc.expected, MergeLabels(tc.primary, tc.secondary))
 	}
+}
+
+type TestSample struct {
+	t int64
+	v float64
+}
+
+func (s TestSample) T() int64 {
+	return s.t
+}
+
+func (s TestSample) V() float64 {
+	return s.v
+}
+
+func TestChunkSeriesSet(t *testing.T) {
+	b := &bytes.Buffer{}
+	f := &mockedFlusher{}
+	w := NewChunkedWriter(b, f)
+
+	chk1 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{TestSample{1, 10}, TestSample{2, 20}})
+	chk2 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{TestSample{5, 50}, TestSample{8, 55}})
+	chk3 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{TestSample{1, 100}, TestSample{2, 100}})
+	chk4 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{TestSample{12, 21}, TestSample{14, 41}, TestSample{16, 61}})
+	chk5 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{TestSample{10, 100}})
+
+	chunkedSeries1, _ :=
+		proto.Marshal(&prompb.ChunkedReadResponse{
+			ChunkedSeries: []*prompb.ChunkedSeries{
+				{
+					Labels: []prompb.Label{
+						{Name: "__name__", Value: "test_metric1"},
+						{Name: "__name__", Value: "test_metric2"},
+					},
+					Chunks: []prompb.Chunk{
+						{
+							Data:      chk1.Chunk.Bytes(),
+							MinTimeMs: chk1.MinTime,
+							MaxTimeMs: chk1.MaxTime,
+							Type:      prompb.Chunk_XOR,
+						},
+						{
+							Data:      chk2.Chunk.Bytes(),
+							MinTimeMs: chk2.MinTime,
+							MaxTimeMs: chk2.MaxTime,
+							Type:      prompb.Chunk_XOR,
+						},
+					},
+				},
+			},
+		})
+
+	chunkedSeries2, _ := proto.Marshal(&prompb.ChunkedReadResponse{
+		ChunkedSeries: []*prompb.ChunkedSeries{
+			{
+				Labels: []prompb.Label{
+					{Name: "__name__", Value: "test_metric3"},
+				},
+				Chunks: []prompb.Chunk{
+					{
+						Data:      chk3.Chunk.Bytes(),
+						MinTimeMs: chk3.MinTime,
+						MaxTimeMs: chk3.MaxTime,
+						Type:      prompb.Chunk_XOR,
+					},
+				},
+			},
+		},
+	})
+
+	chunkedSeries3, _ := proto.Marshal(&prompb.ChunkedReadResponse{
+		ChunkedSeries: []*prompb.ChunkedSeries{
+			{
+				Labels: []prompb.Label{
+					{Name: "__name__", Value: "test_metric4"},
+					{Name: "__name__", Value: "test_metric5"},
+				},
+				Chunks: []prompb.Chunk{
+					{
+						Data:      chk4.Chunk.Bytes(),
+						MinTimeMs: chk4.MinTime,
+						MaxTimeMs: chk4.MaxTime,
+						Type:      prompb.Chunk_XOR,
+					},
+					{
+						Data:      chk5.Chunk.Bytes(),
+						MinTimeMs: chk5.MinTime,
+						MaxTimeMs: chk5.MaxTime,
+						Type:      prompb.Chunk_XOR,
+					},
+				},
+			},
+		},
+	})
+
+	msgs := [][]byte{chunkedSeries1, chunkedSeries2, chunkedSeries3}
+	for _, msg := range msgs {
+		_, err := w.Write(msg)
+		testutil.Ok(t, err)
+	}
+	r := NewChunkedReader(b, 5e+7, nil)
+	mockHTTPResponse := http.Response{
+		Body: ioutil.NopCloser(bytes.NewBufferString("")),
+	}
+	ss := &chunkedResponseSeriesSet{stream: r, httpResp: &mockHTTPResponse}
+	testutil.Equals(t, true, ss.Next())
+	testutil.Equals(t, labels.Labels{labels.Label{Name: "__name__", Value: "test_metric1"}, labels.Label{Name: "__name__", Value: "test_metric2"}}, ss.At().Labels())
+	chk := ss.At().Iterator()
+	testutil.Equals(t, true, chk.Next())
+	time, value := chk.At()
+	testutil.Equals(t, int64(1), time)
+	testutil.Equals(t, 10.0, value)
+	testutil.Equals(t, true, chk.Next())
+	time, value = chk.At()
+	testutil.Equals(t, int64(2), time)
+	testutil.Equals(t, 20.0, value)
+	testutil.Equals(t, true, chk.Next())
+
+	time, value = chk.At()
+	testutil.Equals(t, int64(5), time)
+	testutil.Equals(t, 50.0, value)
+	testutil.Equals(t, true, chk.Next())
+	testutil.Equals(t, false, chk.Next())
+
+	testutil.Equals(t, true, ss.Next())
+	chk = ss.At().Iterator()
+	testutil.Equals(t, labels.Labels{labels.Label{Name: "__name__", Value: "test_metric3"}}, ss.At().Labels())
+
+	testutil.Equals(t, true, chk.Next())
+	time, value = chk.At()
+	testutil.Equals(t, int64(1), time)
+	testutil.Equals(t, 100.0, value)
+	testutil.Equals(t, true, chk.Next())
+	testutil.Equals(t, false, chk.Next())
+
+	testutil.Equals(t, true, ss.Next())
+	chk = ss.At().Iterator()
+	testutil.Equals(t, labels.Labels{labels.Label{Name: "__name__", Value: "test_metric4"}, labels.Label{Name: "__name__", Value: "test_metric5"}}, ss.At().Labels())
+
+	testutil.Equals(t, true, chk.Next())
+	testutil.Equals(t, true, chk.Seek(int64(14)))
+	time, value = chk.At()
+	testutil.Equals(t, int64(14), time)
+	testutil.Equals(t, 41.0, value)
+	testutil.Equals(t, true, chk.Seek(int64(15)))
+	time, value = chk.At()
+	testutil.Equals(t, int64(16), time)
+	testutil.Equals(t, 61.0, value)
+	testutil.Equals(t, labels.Labels{labels.Label{Name: "__name__", Value: "test_metric4"}, labels.Label{Name: "__name__", Value: "test_metric5"}}, ss.At().Labels())
+	testutil.Equals(t, true, chk.Next())
+	testutil.Equals(t, true, chk.Seek(int64(5)))
+	time, value = chk.At()
+	testutil.Equals(t, int64(10), time)
+	testutil.Equals(t, 100.0, value)
+	testutil.Equals(t, false, chk.Next())
+	testutil.Equals(t, false, ss.Next())
+	testutil.Equals(t, labels.Labels{}, ss.At().Labels())
 }
