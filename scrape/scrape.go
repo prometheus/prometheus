@@ -967,12 +967,14 @@ mainLoop:
 
 		// A failed scrape is the same as an empty scrape,
 		// we still call sl.append to trigger stale markers.
-		total, added, seriesAdded, appErr := sl.append(b, contentType, start)
+		total, added, seriesAdded, app, appErr := sl.append(b, contentType, start)
 		if appErr != nil {
+			app.Rollback()
 			level.Debug(sl.l).Log("msg", "Append failed", "err", appErr)
 			// The append failed, probably due to a parse error or sample limit.
 			// Call sl.append again with an empty scrape to trigger stale markers.
-			if _, _, _, err := sl.append([]byte{}, "", start); err != nil {
+			var err error
+			if _, _, _, app, err = sl.append([]byte{}, "", start); err != nil {
 				level.Warn(sl.l).Log("msg", "Append failed", "err", err)
 			}
 		}
@@ -983,7 +985,7 @@ mainLoop:
 			scrapeErr = appErr
 		}
 
-		if err := sl.report(start, time.Since(start), total, added, seriesAdded, scrapeErr); err != nil {
+		if err := sl.reportAndCommit(start, time.Since(start), total, added, seriesAdded, app, scrapeErr); err != nil {
 			level.Warn(sl.l).Log("msg", "Appending scrape report failed", "err", err)
 		}
 		last = start
@@ -1045,10 +1047,12 @@ func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, int
 	// Call sl.append again with an empty scrape to trigger stale markers.
 	// If the target has since been recreated and scraped, the
 	// stale markers will be out of order and ignored.
-	if _, _, _, err := sl.append([]byte{}, "", staleTime); err != nil {
+	var app storage.Appender
+	var err error
+	if _, _, _, app, err = sl.append([]byte{}, "", staleTime); err != nil {
 		level.Error(sl.l).Log("msg", "stale append failed", "err", err)
 	}
-	if err := sl.reportStale(staleTime); err != nil {
+	if err := sl.reportStaleAndCommit(app, staleTime); err != nil {
 		level.Error(sl.l).Log("msg", "stale report failed", "err", err)
 	}
 }
@@ -1074,9 +1078,9 @@ type appendErrors struct {
 	numOutOfBounds int
 }
 
-func (sl *scrapeLoop) append(b []byte, contentType string, ts time.Time) (total, added, seriesAdded int, err error) {
+func (sl *scrapeLoop) append(b []byte, contentType string, ts time.Time) (total, added, seriesAdded int, app storage.Appender, err error) {
+	app = sl.appender()
 	var (
-		app            = sl.appender()
 		p              = textparse.New(b, contentType)
 		defTime        = timestamp.FromTime(ts)
 		appErrs        = appendErrors{}
@@ -1085,10 +1089,7 @@ func (sl *scrapeLoop) append(b []byte, contentType string, ts time.Time) (total,
 
 	defer func() {
 		if err != nil {
-			app.Rollback()
-			return
-		}
-		if err = app.Commit(); err != nil {
+			// Don't clean the cache on a failed append.
 			return
 		}
 		// Only perform cache cleaning if the scrape was not empty.
@@ -1190,7 +1191,6 @@ loop:
 		// Increment added even if there's an error so we correctly report the
 		// number of samples remaining after relabeling.
 		added++
-
 	}
 	if sampleLimitErr != nil {
 		if err == nil {
@@ -1275,7 +1275,7 @@ const (
 	scrapeSeriesAddedMetricName  = "scrape_series_added" + "\xff"
 )
 
-func (sl *scrapeLoop) report(start time.Time, duration time.Duration, scraped, added, seriesAdded int, scrapeErr error) (err error) {
+func (sl *scrapeLoop) reportAndCommit(start time.Time, duration time.Duration, scraped, added, seriesAdded int, app storage.Appender, scrapeErr error) (err error) {
 	sl.scraper.Report(start, duration, scrapeErr)
 
 	ts := timestamp.FromTime(start)
@@ -1283,8 +1283,10 @@ func (sl *scrapeLoop) report(start time.Time, duration time.Duration, scraped, a
 	var health float64
 	if scrapeErr == nil {
 		health = 1
+	} else {
+		app.Rollback()
+		app = sl.appender()
 	}
-	app := sl.appender()
 	defer func() {
 		if err != nil {
 			app.Rollback()
@@ -1311,9 +1313,8 @@ func (sl *scrapeLoop) report(start time.Time, duration time.Duration, scraped, a
 	return
 }
 
-func (sl *scrapeLoop) reportStale(start time.Time) (err error) {
+func (sl *scrapeLoop) reportStaleAndCommit(app storage.Appender, start time.Time) (err error) {
 	ts := timestamp.FromTime(start)
-	app := sl.appender()
 	defer func() {
 		if err != nil {
 			app.Rollback()
