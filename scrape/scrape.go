@@ -161,7 +161,7 @@ type scrapePool struct {
 	appendable storage.Appendable
 	logger     log.Logger
 
-	mtx    sync.RWMutex
+	mtx    sync.Mutex
 	config *config.ScrapeConfig
 	client *http.Client
 	// Targets and loops must always be synchronized to have the same
@@ -1188,7 +1188,7 @@ loop:
 		}
 
 		// Increment added even if there's an error so we correctly report the
-		// number of samples remaining after relabelling.
+		// number of samples remaining after relabeling.
 		added++
 
 	}
