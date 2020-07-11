@@ -31,10 +31,11 @@ type Prettier struct {
 }
 
 type padder struct {
-	indent                                                                                         string
-	previous, buff                                                                                 int
-	isNewLineApplied, expectNextRHS, leftParenNotIndented, disableBaseIndent, inAggregateModifiers bool
-	expectNextIdentifier, previousBaseIndent                                                       string
+	indent                                                string
+	previous, buff, columnLimit                           int
+	isNewLineApplied, expectNextRHS, leftParenNotIndented bool
+	disableBaseIndent, inAggregateModifiers               bool
+	expectNextIdentifier, previousBaseIndent              string
 }
 
 // New returns a new prettier over the given slice of files.
@@ -69,69 +70,32 @@ func newPadder() *padder {
 		indent:             "  ", // 2 space
 		isNewLineApplied:   true,
 		expectNextRHS:      false,
+		columnLimit:        100,
 		previousBaseIndent: "  ", // start with initial indent as previous val to skip new line at start.
 	}
 }
 
-// func (p *Prettier) prettifyItems(items []parser.Item, index int, result string) string {
-// 	item := items[index]
-// 	value := item.Val
-// 	switch item.Typ {
-// 	case parser.LEFT_PAREN:
-// 		result += p.pd.apply() + value + "\n" + p.pd.inc(1).resume()
-// 	case parser.RIGHT_PAREN:
-// 		result += "\n" + p.pd.dec(1).apply() + value
-// 	case parser.LEFT_BRACE, parser.LEFT_BRACKET:
-// 		result += value + "\n" + p.pd.inc(1).resume()
-// 	case parser.RIGHT_BRACE, parser.RIGHT_BRACKET:
-// 		result += p.pd.dec(1).apply() + value
-// 	case parser.IDENTIFIER, parser.DURATION, parser.NUMBER:
-// 		result += p.pd.apply() + value
-// 	case parser.STRING:
-// 		result += value + ",\n"
-// 	case parser.SUM:
-// 		result += p.pd.apply() + value
-// 	case parser.COLON, parser.EQL, parser.EQL_REGEX, parser.NEQ, parser.NEQ_REGEX:
-// 		result += value
-// 	case parser.ADD, parser.SUB, parser.DIV, parser.MUL:
-// 		result += "\n" + p.pd.dec(1).apply() + value + "\n" + p.pd.inc(1).resume()
-// 	case parser.GTR, parser.BOOL:
-// 		if items[index+1].Typ == parser.BOOL {
-// 			index++
-// 			result += "\n" + p.pd.dec(1).apply() + value + " " + items[index].Val + "\n" + p.pd.inc(1).resume()
-// 		} else {
-// 			result += "\n" + p.pd.dec(1).apply() + value + "\n" + p.pd.inc(1).resume()
-// 		}
-// 	case parser.COMMENT:
-// 		result += p.pd.apply() + value + "\n"
-
-// 	case parser.BLANK:
-// 	}
-// 	if item.Typ == parser.EOF || len(items) == index+1 {
-// 		return p.removeTrailingLines(result)
-// 	}
-// 	return p.prettifyItems(items, index+1, result)
-// }
-
 func (p *Prettier) prettify(items []parser.Item, index int, result string) (string, error) {
 	var (
-		baseIndent string
-		item       = items[index]
-		// nodeType = p.getNode(p.Node, item.PositionRange())
+		//baseIndent string
+		item = items[index]
 	)
 	if item.Typ == parser.EOF {
 		return result, nil
 	}
-	fmt.Println("item: ", item.Val)
-	if !p.exmptBaseIndent(item) && !p.pd.disableBaseIndent && !p.pd.inAggregateModifiers {
-		baseIndent = p.getBaseIndent(item, p.Node)
-		if baseIndent != p.pd.previousBaseIndent && !p.pd.isNewLineApplied { // denotes change of node
-			result += "\n"
-		}
-		p.pd.isNewLineApplied = false
-		result += baseIndent
-		p.pd.previousBaseIndent = baseIndent
-	}
+	//if !p.exmptBaseIndent(item) && !p.pd.disableBaseIndent && !p.pd.inAggregateModifiers {
+	//	baseIndent = p.getBaseIndent(item, p.Node) // p.Node is the root node (TODO: renaming node to root node)
+	//	if baseIndent != p.pd.previousBaseIndent && !p.pd.isNewLineApplied { // denotes change of node
+	//		result += "\n"
+	//	}
+	//	p.pd.isNewLineApplied = false
+	//	result += baseIndent
+	//	p.pd.previousBaseIndent = baseIndent
+	//}
+
+	node := p.getNode(p.Node, item.PositionRange())
+	nodeInformation := newNodeInfo(node, 100)
+	nodeInformation.fetch()
 
 	switch item.Typ {
 	case parser.LEFT_PAREN:
@@ -207,21 +171,17 @@ func (p *Prettier) exmptBaseIndent(item parser.Item) bool {
 	return false
 }
 
-// getNode returns the node of the given position range in the AST.
-func (p *Prettier) getNode(headAST parser.Expr, rnge parser.PositionRange) reflect.Type {
-	ancestors, found := p.getNodeAncestorsStack(headAST, rnge, []reflect.Type{})
-	if !found {
-		return nil
-	}
-	if len(ancestors) < 1 {
-		return nil
-	}
-	return ancestors[len(ancestors)-1]
+// getNode returns the node corresponding to the given position range in the AST.
+func (p *Prettier) getNode(headAST parser.Expr, rnge parser.PositionRange) parser.Expr {
+	_, node, _ := p.getCurrentNodeHistory(headAST, rnge, []reflect.Type{})
+	return node
 }
 
 // getParentNode returns the parent node of the given node/item position range.
 func (p *Prettier) getParentNode(headAST parser.Expr, rnge parser.PositionRange) reflect.Type {
-	ancestors, found := p.getNodeAncestorsStack(headAST, rnge, []reflect.Type{})
+	// TODO: var found is of no use. Hence, remove it and the bool return from the getNodeAncestorsStack
+	// since found condition can be handled by ancestors alone(confirmation needed).
+	ancestors, _, found := p.getCurrentNodeHistory(headAST, rnge, []reflect.Type{})
 	if !found {
 		return nil
 	}
@@ -231,47 +191,68 @@ func (p *Prettier) getParentNode(headAST parser.Expr, rnge parser.PositionRange)
 	return ancestors[len(ancestors)-2]
 }
 
-// getNodeAncestorsStack returns the ancestors (including the node itself) of the input node from the AST.
-func (p *Prettier) getNodeAncestorsStack(head parser.Expr, posRange parser.PositionRange, stack []reflect.Type) ([]reflect.Type, bool) {
+// getCurrentNodeHistory returns the ancestors along with the node in which the item is present, using the help of AST.
+// posRange can also be called as itemPosRange since carries the position range of the lexical item.
+func (p *Prettier) getCurrentNodeHistory(head parser.Expr, posRange parser.PositionRange, stack []reflect.Type) ([]reflect.Type, parser.Expr, bool) {
 	switch n := head.(type) {
 	case *parser.ParenExpr:
-		if n.PosRange.Start <= posRange.Start && n.PosRange.End >= posRange.End {
-			fmt.Println("ancestor ", n.PosRange)
+		if n.Expr.PositionRange().Start <= posRange.Start && n.Expr.PositionRange().End >= posRange.End {
 			stack = append(stack, reflect.TypeOf(n))
-			return p.getNodeAncestorsStack(n.Expr, posRange, stack)
+			p.getCurrentNodeHistory(n.Expr, posRange, stack)
 		}
-		return stack, false
 	case *parser.VectorSelector:
-		if n.PosRange.Start <= posRange.Start && n.PosRange.End >= posRange.End {
-			stack = append(stack, reflect.TypeOf(n))
-			return stack, true
-		}
-		return stack, false
+		stack = append(stack, reflect.TypeOf(n))
 	case *parser.BinaryExpr:
 		stack = append(stack, reflect.TypeOf(n))
-		stmp, found := p.getNodeAncestorsStack(n.LHS, posRange, stack)
+		stmp, _head, found := p.getCurrentNodeHistory(n.LHS, posRange, stack)
 		if found {
-			return stmp, true
+			return stmp, _head, true
 		}
-		stmp, found = p.getNodeAncestorsStack(n.RHS, posRange, stack)
+		stmp, _head, found = p.getCurrentNodeHistory(n.RHS, posRange, stack)
 		if found {
-			return stmp, true
+			return stmp, _head, true
 		}
-		// if none of the above are true, that implies, the position range is of a symbol.
-		return stack, true
+		// if none of the above are true, that implies, the position range is of a symbol or a grouping modifier.
 	case *parser.AggregateExpr:
-		if n.PosRange.Start <= posRange.Start && n.PosRange.End >= posRange.End {
+		if n.Expr.PositionRange().Start <= posRange.Start && n.Expr.PositionRange().End >= posRange.End {
 			stack = append(stack, reflect.TypeOf(n))
-			return p.getNodeAncestorsStack(n.Expr, posRange, stack)
+			p.getCurrentNodeHistory(n.Expr, posRange, stack)
 		}
+	case *parser.Call:
+		stack = append(stack, reflect.TypeOf(n))
+		for _, exprs := range n.Args {
+			if exprs.PositionRange().Start <= posRange.Start && exprs.PositionRange().End >= posRange.End {
+				stmp, _head, found := p.getCurrentNodeHistory(exprs, posRange, stack)
+				if found {
+					return stmp, _head, true
+				}
+			}
+		}
+	case *parser.MatrixSelector:
+		stack = append(stack, reflect.TypeOf(n))
+		if n.VectorSelector.PositionRange().Start <= posRange.Start && n.VectorSelector.PositionRange().End >= posRange.End {
+			p.getCurrentNodeHistory(n.VectorSelector, posRange, stack)
+		}
+	case *parser.UnaryExpr:
+		stack = append(stack, reflect.TypeOf(n))
+		if n.Expr.PositionRange().Start <= posRange.Start && n.Expr.PositionRange().End >= posRange.End {
+			p.getCurrentNodeHistory(n.Expr, posRange, stack)
+		}
+	case *parser.SubqueryExpr:
+		stack = append(stack, reflect.TypeOf(n))
+		if n.Expr.PositionRange().Start <= posRange.Start && n.Expr.PositionRange().End >= posRange.End {
+			p.getCurrentNodeHistory(n.Expr, posRange, stack)
+		}
+	case *parser.NumberLiteral, *parser.StringLiteral:
+		stack = append(stack, reflect.TypeOf(n))
 	}
-	return stack, true
+	return stack, head, true
 }
 
 // removeNodesWithoutPosRange removes the nodes (immediately after) that are added to the stack because they do not
 // have any way to check the position range with the given item.
 func (p *Prettier) removeNodesWithoutPosRange(stack []reflect.Type, typ string) []reflect.Type {
-	for i := len(stack) - 1; i >= 0; i++ {
+	for i := len(stack) - 1; i >= 0; i-- {
 		if stack[i].String() == typ {
 			stack = stack[:len(stack)-1]
 		}
@@ -283,49 +264,55 @@ func (p *Prettier) removeNodesWithoutPosRange(stack []reflect.Type, typ string) 
 // getBaseIndent returns the base indent for a lex item depending on the depth
 // of the node the item belongs to in the AST.
 func (p *Prettier) getBaseIndent(item parser.Item, node parser.Expr) string {
-	var (
-		indent        int
-		tmp           parser.Expr
-		expectNextRHS bool
-		previousNode  string
-		head          = node
-	)
-	if head == nil {
-		return ""
-	}
-	for {
-		indent++
-		if head != nil && p.isItemWithinNode(head, item) {
-			switch n := head.(type) {
-			case *parser.AggregateExpr:
-				head = n.Expr
-			case *parser.ParenExpr:
-				head = n.Expr
-				previousNode = "*parser.ParenExpr"
-			case *parser.VectorSelector:
-				head = nil
-				previousNode = "*parser.VectorSelector"
-			case *parser.BinaryExpr:
-				head = n.LHS
-				tmp = n.RHS
-				expectNextRHS = true
-				if previousNode == "*parser.BinaryExpr" {
-					indent--
-				}
-				previousNode = "*parser.BinaryExpr"
-			}
-			continue
-		} else if expectNextRHS && head != nil && !item.Typ.IsOperator() {
-			expectNextRHS = false
-			head = tmp
-			if previousNode == "*parser.BinaryExpr" {
-				indent--
-			}
-			continue
-		}
-		indent--
-		return p.pd.pad(indent)
-	}
+	//var (
+	//	indent        int
+	//	tmp           parser.Expr
+	//	expectNextRHS bool
+	//	previousNode  string
+	//	head          = node
+	//)
+	//if head == nil {
+	//	return ""
+	//}
+	//for {
+	//	indent++
+	//	if head != nil && p.isItemWithinNode(head, item) {
+	//		switch n := head.(type) {
+	//		case *parser.AggregateExpr:
+	//			head = n.Expr
+	//		case *parser.ParenExpr:
+	//			head = n.Expr
+	//			previousNode = "*parser.ParenExpr"
+	//		case *parser.VectorSelector:
+	//			head = nil
+	//			previousNode = "*parser.VectorSelector"
+	//		case *parser.BinaryExpr:
+	//			head = n.LHS
+	//			tmp = n.RHS
+	//			expectNextRHS = true
+	//			if previousNode == "*parser.BinaryExpr" {
+	//				indent--
+	//			}
+	//			previousNode = "*parser.BinaryExpr"
+	//		}
+	//		continue
+	//	} else if expectNextRHS && head != nil && !item.Typ.IsOperator() {
+	//		expectNextRHS = false
+	//		head = tmp
+	//		if previousNode == "*parser.BinaryExpr" {
+	//			indent--
+	//		}
+	//		continue
+	//	}
+	//	indent--
+	//	return p.pd.pad(indent)
+	//}
+	//nodes, found := p.getNodeAncestorsStack(node, item.PositionRange(), []reflect.Type{})
+	//if !found || len(nodes) == 1 {
+	//	return ""
+	//}
+	//return p.pd.pad(len(nodes))
+	return ""
 }
 
 func (p *Prettier) isItemWithinNode(node parser.Node, item parser.Item) bool {
@@ -380,9 +367,15 @@ func (p *Prettier) Run() []error {
 					if err := p.parseExpr(exprStr); err != nil {
 						return []error{err}
 					}
-					res := p.lexItems(exprStr)
+					lexItemSlice := p.lexItems(exprStr)
+					fmt.Println("before sorting")
+					fmt.Println(lexItemSlice)
+					lexItemSlice = p.sortItems(lexItemSlice, false)
+					fmt.Println("after sorting")
+					fmt.Println(lexItemSlice)
+					break
 					p.pd.buff = 1
-					formattedExpr, err := p.prettify(res, 0, "")
+					formattedExpr, err := p.prettify(lexItemSlice, 0, "")
 					if err != nil {
 						return []error{errors.Wrap(err, "Run")}
 					}
@@ -394,6 +387,131 @@ func (p *Prettier) Run() []error {
 
 	}
 	return nil
+}
+
+func (p *Prettier) sortItems(items []parser.Item, isTest bool) []parser.Item {
+	var requiresRefresh bool
+	for i := 0; i < len(items); i++ {
+		item := items[i]
+		switch item.Typ {
+		case parser.SUM, parser.AVG, parser.MIN, parser.MAX, parser.COUNT, parser.COUNT_VALUES, parser.STDDEV,
+			parser.STDVAR, parser.TOPK, parser.BOTTOMK, parser.QUANTILE:
+			var (
+				formatItems       bool
+				aggregatorIndex   = i
+				keywordIndex      = -1
+				closingParenIndex = -1
+				openBracketsCount = 0
+			)
+			for index := i; index < len(items); index++ {
+				it := items[index]
+				switch it.Typ {
+				case parser.LEFT_PAREN, parser.LEFT_BRACE:
+					openBracketsCount++
+				case parser.RIGHT_PAREN, parser.RIGHT_BRACE:
+					openBracketsCount--
+				}
+				if openBracketsCount < 0 {
+					break
+				}
+				if openBracketsCount == 0 && it.Typ.IsKeyword() {
+					keywordIndex = index
+					break
+				}
+			}
+			if keywordIndex < 0 {
+				continue
+			}
+
+			if items[keywordIndex-1].Typ != parser.COMMENT && keywordIndex-1 != aggregatorIndex {
+				formatItems = true
+			} else if items[keywordIndex-1].Typ == parser.COMMENT {
+				// peek back until no comment is found
+				pos := -1
+				for j := keywordIndex; j > aggregatorIndex; j-- {
+					if items[j].Typ == parser.COMMENT {
+						continue
+					} else {
+						pos = j
+						break
+					}
+				}
+				if pos != aggregatorIndex {
+					formatItems = true
+				}
+			}
+			if formatItems {
+				requiresRefresh = true
+				// get first index of the closing paren.
+				for j := keywordIndex; j <= len(items); j++ {
+					if items[j].Typ == parser.RIGHT_PAREN {
+						closingParenIndex = j
+						break
+					}
+				}
+				if closingParenIndex == -1 {
+					panic("invalid paren index: closing paren not found")
+				}
+				// order elements. TODO: consider using slicing of lists
+				var tempItems []parser.Item
+				var finishedKeywordWriting bool
+				for itemp := 0; itemp < len(items); itemp++ {
+					if (itemp <= aggregatorIndex || itemp > closingParenIndex) && !(itemp >= keywordIndex && itemp <= closingParenIndex) {
+						tempItems = append(tempItems, items[itemp])
+					} else if !finishedKeywordWriting {
+						for j := keywordIndex; j <= closingParenIndex; j++ {
+							tempItems = append(tempItems, items[j])
+						}
+						tempItems = append(tempItems, items[itemp])
+						finishedKeywordWriting = true
+					} else if !(itemp >= keywordIndex && itemp <= closingParenIndex) {
+						tempItems = append(tempItems, items[itemp])
+					}
+				}
+				items = tempItems
+			}
+
+		case parser.STRING:
+			//	TODO: currently its assumed that these are always labels.
+			if i < 2 {
+				continue
+			}
+			labelItem := items[i-2]
+			if labelItem.Typ != parser.IDENTIFIER || labelItem.Val != "__name__" {
+				continue
+			}
+
+		}
+	}
+	if requiresRefresh || isTest {
+		return p.refreshLexItems(items)
+	}
+	return items
+}
+
+// refreshLexItems refreshes the contents of the lex slice and the properties
+// within it. This is expected to be called after sorting the lexItems in the
+// pre-format checks.
+func (p *Prettier) refreshLexItems(items []parser.Item) []parser.Item {
+	return p.lexItems(p.expressionFromItems(items))
+}
+
+// expressionFromItems returns the raw expression from slice of items.
+// This is mostly used in re-ordering activities where the position of
+// the items changes during sorting in the sortItems.
+func (p *Prettier) expressionFromItems(items []parser.Item) string {
+	expression := ""
+	for _, item := range items {
+		switch item.Typ {
+		case parser.COMMENT:
+			expression += item.Val + "\n"
+		case parser.COMMA:
+			expression += item.Val + " "
+		default:
+			expression += item.Val + " "
+		}
+	}
+	return expression
 }
 
 // lexItems converts the given expression into a slice of Items.
