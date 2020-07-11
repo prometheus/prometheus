@@ -259,6 +259,20 @@
               description: 'Prometheus %(prometheusName)s has missed {{ printf "%%.0f" $value }} rule group evaluations in the last 5m.' % $._config,
             },
           },
+          {
+            alert: 'PrometheusTargetLimitHit',
+            expr: |||
+              prometheus_target_scrape_pool_targets_added{%(prometheusSelector)s} > prometheus_target_scrape_pool_targets_added{%(prometheusSelector)s} > 0
+            ||| % $._config,
+            'for': '15m',
+            labels: {
+              severity: 'warning',
+            },
+            annotations: {
+              summary: 'Prometheus job has hit the configured target_limit.',
+              description: 'Prometheus %(prometheusName)s has {{ printf "%%.0f" $value }} targets for the job {{ $labels.scrape_job }}, which is higher than the configured target_limit.' % $._config,
+            },
+          },
         ],
       },
     ],
