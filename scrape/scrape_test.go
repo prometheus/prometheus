@@ -854,9 +854,7 @@ func TestScrapeLoopCache(t *testing.T) {
 
 	// 1 successfully scraped sample, 1 stale marker after first fail, 5 report samples for
 	// each scrape successful or not.
-	if len(appender.result) != 26 {
-		t.Fatalf("Appended samples not as expected. Wanted: %d samples Got: %d", 26, len(appender.result))
-	}
+	testutil.Equals(t, 26, len(appender.result), "Appended samples not as expected")
 }
 
 func TestScrapeLoopCacheMemoryExhaustionProtection(t *testing.T) {
@@ -1110,7 +1108,7 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 			v:      1,
 		},
 	}
-	testutil.Equals(t, want, resApp.result, "Appended samples not as expected")
+	testutil.Equals(t, want, resApp.rolledbackResult, "Appended samples not as expected")
 
 	now = time.Now()
 	total, added, seriesAdded, err = sl.append([]byte("metric_a 1\nmetric_b 1\nmetric_c{deleteme=\"yes\"} 1\nmetric_d 1\nmetric_e 1\nmetric_f 1\nmetric_g 1\nmetric_h{deleteme=\"yes\"} 1\nmetric_i{deleteme=\"yes\"} 1\n"), "", now)
@@ -1364,11 +1362,11 @@ func TestScrapeLoopOutOfBoundsTimeError(t *testing.T) {
 
 	now := time.Now().Add(20 * time.Minute)
 	total, added, seriesAdded, err := sl.append([]byte("normal 1\n"), "", now)
+	testutil.Ok(t, err)
 	testutil.Equals(t, 1, total)
 	testutil.Equals(t, 1, added)
 	testutil.Equals(t, 0, seriesAdded)
 
-	testutil.Ok(t, err)
 }
 
 func TestTargetScraperScrapeOK(t *testing.T) {
