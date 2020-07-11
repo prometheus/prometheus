@@ -46,6 +46,10 @@ var (
 	ErrInvalidSample = errors.New("invalid sample")
 )
 
+// TEST!
+var testSimulation1 sync.Mutex
+var testSimulation2 sync.Mutex
+
 // Head handles reads and writes of time series data within a time window.
 type Head struct {
 	// Keep all 64bit atomically accessed variables at the top of this struct.
@@ -1104,6 +1108,7 @@ func (a *headAppender) Add(lset labels.Labels, t int64, v float64) (uint64, erro
 	if err != nil {
 		return 0, err
 	}
+
 	if created {
 		a.series = append(a.series, record.RefSeries{
 			Ref:    s.ref,
@@ -1282,6 +1287,8 @@ func (h *Head) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
 	return nil
 }
 
+var lockThings bool
+
 // gc removes data before the minimum timestamp from the head.
 func (h *Head) gc() {
 	// Only data strictly lower than this timestamp must be deleted.
@@ -1335,6 +1342,13 @@ func (h *Head) gc() {
 	}); err != nil {
 		// This should never happen, as the iteration function only returns nil.
 		panic(err)
+	}
+
+	if lockThings {
+		// Test purposes. Simulate runtime freezing this go routine and allowing append to continue.
+		testSimulation1.Unlock()
+		testSimulation2.Lock()
+		testSimulation2.Unlock()
 	}
 
 	h.symMtx.Lock()
@@ -1692,8 +1706,6 @@ func (h *Head) getOrCreateWithID(id, hash uint64, lset labels.Labels) (*memSerie
 	h.metrics.seriesCreated.Inc()
 	atomic.AddUint64(&h.numSeries, 1)
 
-	h.postings.Add(id, lset)
-
 	h.symMtx.Lock()
 	defer h.symMtx.Unlock()
 
@@ -1707,6 +1719,13 @@ func (h *Head) getOrCreateWithID(id, hash uint64, lset labels.Labels) (*memSerie
 
 		h.symbols[l.Name] = struct{}{}
 		h.symbols[l.Value] = struct{}{}
+	}
+
+	h.postings.Add(id, lset)
+
+	if lockThings {
+		// Allow GC to continue and append wrong symbol with missing just added one! ):
+		testSimulation2.Unlock()
 	}
 
 	return s, true, nil

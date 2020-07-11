@@ -1875,3 +1875,57 @@ func TestHeadLabelNamesValuesWithMinMaxRange(t *testing.T) {
 		})
 	}
 }
+
+// Regression test showing race between compact and append.
+func TestHeadCompactionRace(t *testing.T) {
+	db, closeFn := openTestDB(t, &Options{
+		RetentionDuration: 100000000,
+		NoLockfile:        true,
+		MinBlockDuration:  1000000,
+		MaxBlockDuration:  1000000,
+	}, []int64{1000000})
+	t.Cleanup(func() {
+		closeFn()
+		testutil.Ok(t, db.Close())
+	})
+
+	head := db.Head()
+
+	app := head.Appender()
+	_, err := app.Add(labels.Labels{labels.Label{Name: "n", Value: "v"}}, 10, 10)
+	testutil.Ok(t, err)
+	testutil.Ok(t, app.Commit())
+
+	var wg sync.WaitGroup
+
+	// Simulate racy gc vs append
+	testSimulation1.Lock()
+	testSimulation2.Lock()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		testSimulation1.Lock()
+		testSimulation1.Unlock()
+		app := head.Appender()
+		_, err := app.Add(labels.Labels{labels.Label{Name: "n", Value: "v2"}}, 10, 10)
+		testutil.Ok(t, err)
+		testutil.Ok(t, app.Commit())
+	}()
+	lockThings = true
+	head.gc()
+	wg.Wait()
+
+	r, err := db.head.Index()
+	testutil.Ok(t, err)
+
+	all := r.Symbols()
+	var s []string
+	for all.Next() {
+		s = append(s, all.At())
+	}
+	testutil.Ok(t, all.Err())
+	testutil.Equals(t, []string{"", "n", "v2"}, s)
+
+}
