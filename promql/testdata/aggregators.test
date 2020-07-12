@@ -341,6 +341,14 @@ load 10s
 	data{test="-inf2",point="a"} -Inf
 	data{test="-inf2",point="b"} 0
 	data{test="-inf2",point="c"} -Inf
+	data{test="inf3",point="b"} Inf
+	data{test="inf3",point="d"} Inf
+	data{test="inf3",point="c"} Inf
+	data{test="inf3",point="d"} -Inf
+	data{test="-inf3",point="b"} -Inf
+	data{test="-inf3",point="d"} -Inf
+	data{test="-inf3",point="c"} -Inf
+	data{test="-inf3",point="c"} Inf
 	data{test="nan",point="a"} -Inf
 	data{test="nan",point="b"} 0
 	data{test="nan",point="c"} Inf
@@ -366,11 +374,17 @@ eval instant at 1m avg(data{test="inf"})
 eval instant at 1m avg(data{test="inf2"})
 	{} Inf
 
+eval instant at 1m avg(data{test="inf3"})
+	{} NaN
+
 eval instant at 1m avg(data{test="-inf"})
 	{} -Inf
 
 eval instant at 1m avg(data{test="-inf2"})
 	{} -Inf
+
+eval instant at 1m avg(data{test="-inf3"})
+	{} NaN
 
 eval instant at 1m avg(data{test="nan"})
 	{} NaN

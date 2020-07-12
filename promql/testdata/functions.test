@@ -400,8 +400,10 @@ load 10s
   metric4 1 2 3 Inf -Inf
   metric5 Inf 0 Inf
   metric5b Inf 0 Inf
+  metric5c Inf Inf Inf -Inf
   metric6 1 2 3 -Inf -Inf
   metric6b -Inf 0 -Inf
+  metric6c -Inf -Inf -Inf Inf
   metric7 1 2 -Inf -Inf Inf
   metric8 9.988465674311579e+307 9.988465674311579e+307
   metric9 -9.988465674311579e+307 -9.988465674311579e+307 -9.988465674311579e+307
@@ -443,6 +445,12 @@ eval instant at 1m avg_over_time(metric5b[1m])
 eval instant at 1m sum_over_time(metric5b[1m])/count_over_time(metric5b[1m])
   {} Inf
 
+eval instant at 1m avg_over_time(metric5c[1m])
+  {} NaN
+
+eval instant at 1m sum_over_time(metric5c[1m])/count_over_time(metric5c[1m])
+  {} NaN
+
 eval instant at 1m avg_over_time(metric6[1m])
   {} -Inf
 
@@ -452,8 +460,15 @@ eval instant at 1m sum_over_time(metric6[1m])/count_over_time(metric6[1m])
 eval instant at 1m avg_over_time(metric6b[1m])
   {} -Inf
 
-eval instant at 1m sum_over_time(metric6b[1m])/count_over_time(metric6[1m])
+eval instant at 1m sum_over_time(metric6b[1m])/count_over_time(metric6b[1m])
   {} -Inf
+
+eval instant at 1m avg_over_time(metric6c[1m])
+  {} NaN
+
+eval instant at 1m sum_over_time(metric6c[1m])/count_over_time(metric6c[1m])
+  {} NaN
+
 
 eval instant at 1m avg_over_time(metric7[1m])
   {} NaN

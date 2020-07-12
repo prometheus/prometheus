@@ -357,14 +357,18 @@ func funcAvgOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 			if math.IsInf(mean, 0) {
 				if math.IsInf(v.V, 0) && (mean > 0) == (v.V > 0) {
 					// The `mean` and `v.V` values are `Inf` of the same sign.  They
-					// can't be substracted, but the value of `mean` is correct
+					// can't be subtracted, but the value of `mean` is correct
 					// already.  Continue the loop. `break` can not be used because
 					// if an opposite `Inf` is met later, `mean` must become `NaN`.
 					continue
 				}
 				if !math.IsInf(v.V, 0) && !math.IsNaN(v.V) {
-					// It the mean is an `Inf`, avoid removing an `Inf` with
-					// itself.
+					// At this stage, the mean is an infinite. It the added
+					// value is neither an Inf or a Nan, we can keep that mean
+					// value.
+					// This is required because our calculation below removes
+					// the mean value, which would look like Inf += x - Inf and
+					// end up as a NaN.
 					continue
 				}
 			}
