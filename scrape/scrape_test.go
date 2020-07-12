@@ -1970,3 +1970,66 @@ func TestCheckAddError(t *testing.T) {
 	sl.checkAddError(nil, nil, nil, storage.ErrOutOfOrderSample, nil, &appErrs)
 	testutil.Equals(t, 1, appErrs.numOutOfOrder)
 }
+
+func TestScrapeReportIsolation(t *testing.T) {
+	s := teststorage.New(t)
+	defer s.Close()
+
+	var (
+		signal  = make(chan struct{}, 1)
+		scraper = &testScraper{}
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	sl := newScrapeLoop(ctx,
+		scraper,
+		nil, nil,
+		nopMutator,
+		nopMutator,
+		s.Appender,
+		nil,
+		0,
+		true,
+	)
+
+	numScrapes := 0
+
+	scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
+		numScrapes++
+		if numScrapes%4 == 0 {
+			return fmt.Errorf("scrape failed")
+		}
+		w.Write([]byte("metric_a 44\nmetric_b 44\nmetric_c 44\nmetric_d 44\n"))
+		return nil
+	}
+
+	go func() {
+		sl.run(10*time.Millisecond, time.Hour, nil)
+		signal <- struct{}{}
+	}()
+
+	start := time.Now()
+	for time.Since(start) < 3*time.Second {
+		q, err := s.Querier(ctx, time.Time{}.UnixNano(), time.Now().UnixNano())
+		testutil.Ok(t, err)
+		series := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".+"))
+
+		c := 0
+		for series.Next() {
+			i := series.At().Iterator()
+			for i.Next() {
+				c++
+			}
+		}
+
+		testutil.Equals(t, 0, c%9, "Appended samples not as expected: %d", c)
+		q.Close()
+	}
+	cancel()
+
+	select {
+	case <-signal:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("Scrape wasn't stopped.")
+	}
+}
