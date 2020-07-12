@@ -27,7 +27,6 @@ import (
 	sd_config "github.com/prometheus/prometheus/discovery/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 
-	"github.com/prometheus/prometheus/discovery/azure"
 	"github.com/prometheus/prometheus/discovery/consul"
 	"github.com/prometheus/prometheus/discovery/digitalocean"
 	"github.com/prometheus/prometheus/discovery/dns"
@@ -78,10 +77,36 @@ var (
 		},
 		[]string{"name"},
 	)
+
+	registerMtx sync.Mutex
+	providers   = make(map[string]func(interface{}, log.Logger) Discoverer, 0)
 )
 
 func init() {
 	prometheus.MustRegister(failedConfigs, discoveredTargets, receivedUpdates, delayedUpdates, sentUpdates)
+}
+
+// RegisterDiscoverer registers a discoverer that can be used.
+func RegisterDiscoverer(name string, d func(interface{}, log.Logger) Discoverer) error {
+	registerMtx.Lock()
+	defer registerMtx.Unlock()
+	if _, ok := providers[name]; ok {
+		return fmt.Errorf("provider %s is already registered", name)
+	}
+	providers[name] = d
+	return nil
+}
+
+// GetDiscoverer return a discoverer that was registered with
+// RegisterDiscoverer.
+func GetDiscoverer(name string) (func(interface{}, log.Logger) Discoverer, error) {
+	registerMtx.Lock()
+	defer registerMtx.Unlock()
+	d, ok := providers[name]
+	if !ok {
+		return nil, fmt.Errorf("provider %s is not registered", name)
+	}
+	return d, nil
 }
 
 // Discoverer provides information about target groups. It maintains a set
@@ -418,7 +443,11 @@ func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setNam
 	}
 	for _, c := range cfg.AzureSDConfigs {
 		add(c, func() (Discoverer, error) {
-			return azure.NewDiscovery(c, log.With(m.logger, "discovery", "azure")), nil
+			d, err := GetDiscoverer("azure")
+			if err != nil {
+				return nil, err
+			}
+			return d(c, log.With(m.logger, "discovery", "azure")), nil
 		})
 	}
 	for _, c := range cfg.TritonSDConfigs {

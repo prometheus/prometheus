@@ -16,7 +16,7 @@ package config
 import (
 	"github.com/pkg/errors"
 
-	"github.com/prometheus/prometheus/discovery/azure"
+	azure "github.com/prometheus/prometheus/discovery/azure/config"
 	"github.com/prometheus/prometheus/discovery/consul"
 	"github.com/prometheus/prometheus/discovery/digitalocean"
 	"github.com/prometheus/prometheus/discovery/dns"

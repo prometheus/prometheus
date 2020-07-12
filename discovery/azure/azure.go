@@ -30,9 +30,10 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
-	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/discovery"
+	azure_config "github.com/prometheus/prometheus/discovery/azure/config"
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
@@ -51,81 +52,27 @@ const (
 	azureLabelMachinePublicIP      = azureLabel + "machine_public_ip"
 	azureLabelMachineTag           = azureLabel + "machine_tag_"
 	azureLabelMachineScaleSet      = azureLabel + "machine_scale_set"
-
-	authMethodOAuth           = "OAuth"
-	authMethodManagedIdentity = "ManagedIdentity"
 )
 
-// DefaultSDConfig is the default Azure SD configuration.
-var DefaultSDConfig = SDConfig{
-	Port:                 80,
-	RefreshInterval:      model.Duration(5 * time.Minute),
-	Environment:          azure.PublicCloud.Name,
-	AuthenticationMethod: authMethodOAuth,
-}
-
-// SDConfig is the configuration for Azure based service discovery.
-type SDConfig struct {
-	Environment          string             `yaml:"environment,omitempty"`
-	Port                 int                `yaml:"port"`
-	SubscriptionID       string             `yaml:"subscription_id"`
-	TenantID             string             `yaml:"tenant_id,omitempty"`
-	ClientID             string             `yaml:"client_id,omitempty"`
-	ClientSecret         config_util.Secret `yaml:"client_secret,omitempty"`
-	RefreshInterval      model.Duration     `yaml:"refresh_interval,omitempty"`
-	AuthenticationMethod string             `yaml:"authentication_method,omitempty"`
-}
-
-func validateAuthParam(param, name string) error {
-	if len(param) == 0 {
-		return errors.Errorf("azure SD configuration requires a %s", name)
-	}
-	return nil
-}
-
-// UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	*c = DefaultSDConfig
-	type plain SDConfig
-	err := unmarshal((*plain)(c))
-	if err != nil {
-		return err
-	}
-
-	if err = validateAuthParam(c.SubscriptionID, "subscription_id"); err != nil {
-		return err
-	}
-
-	if c.AuthenticationMethod == authMethodOAuth {
-		if err = validateAuthParam(c.TenantID, "tenant_id"); err != nil {
-			return err
-		}
-		if err = validateAuthParam(c.ClientID, "client_id"); err != nil {
-			return err
-		}
-		if err = validateAuthParam(string(c.ClientSecret), "client_secret"); err != nil {
-			return err
-		}
-	}
-
-	if c.AuthenticationMethod != authMethodOAuth && c.AuthenticationMethod != authMethodManagedIdentity {
-		return errors.Errorf("unknown authentication_type %q. Supported types are %q or %q", c.AuthenticationMethod, authMethodOAuth, authMethodManagedIdentity)
-	}
-
-	return nil
+func init() {
+	discovery.RegisterDiscoverer("azure", NewDiscovery)
 }
 
 type Discovery struct {
 	*refresh.Discovery
 	logger log.Logger
-	cfg    *SDConfig
+	cfg    *azure_config.SDConfig
 	port   int
 }
 
 // NewDiscovery returns a new AzureDiscovery which periodically refreshes its targets.
-func NewDiscovery(cfg *SDConfig, logger log.Logger) *Discovery {
+func NewDiscovery(rawCfg interface{}, logger log.Logger) discovery.Discoverer {
+	cfg := rawCfg.(*azure_config.SDConfig)
 	if logger == nil {
 		logger = log.NewNopLogger()
+	}
+	if cfg.Environment == "" {
+		cfg.Environment = azure.PublicCloud.Name
 	}
 	d := &Discovery{
 		cfg:    cfg,
@@ -150,7 +97,7 @@ type azureClient struct {
 }
 
 // createAzureClient is a helper function for creating an Azure compute client to ARM.
-func createAzureClient(cfg SDConfig) (azureClient, error) {
+func createAzureClient(cfg azure_config.SDConfig) (azureClient, error) {
 	env, err := azure.EnvironmentFromName(cfg.Environment)
 	if err != nil {
 		return azureClient{}, err
@@ -164,7 +111,7 @@ func createAzureClient(cfg SDConfig) (azureClient, error) {
 	var spt *adal.ServicePrincipalToken
 
 	switch cfg.AuthenticationMethod {
-	case authMethodManagedIdentity:
+	case azure_config.AuthMethodManagedIdentity:
 		msiEndpoint, err := adal.GetMSIVMEndpoint()
 		if err != nil {
 			return azureClient{}, err
@@ -174,7 +121,7 @@ func createAzureClient(cfg SDConfig) (azureClient, error) {
 		if err != nil {
 			return azureClient{}, err
 		}
-	case authMethodOAuth:
+	case azure_config.AuthMethodOAuth:
 		oauthConfig, err := adal.NewOAuthConfig(activeDirectoryEndpoint, cfg.TenantID)
 		if err != nil {
 			return azureClient{}, err
