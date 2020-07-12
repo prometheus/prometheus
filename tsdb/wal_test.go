@@ -93,6 +93,7 @@ func TestSegmentWAL_Truncate(t *testing.T) {
 
 	w, err := OpenSegmentWAL(dir, nil, 0, nil)
 	testutil.Ok(t, err)
+	defer func(wal *SegmentWAL) { testutil.Ok(t, wal.Close()) }(w)
 	w.segmentSize = 10000
 
 	for i := 0; i < numMetrics; i += batch {
@@ -143,6 +144,7 @@ func TestSegmentWAL_Truncate(t *testing.T) {
 	// The same again with a new WAL.
 	w, err = OpenSegmentWAL(dir, nil, 0, nil)
 	testutil.Ok(t, err)
+	defer func(wal *SegmentWAL) { testutil.Ok(t, wal.Close()) }(w)
 
 	var readSeries []record.RefSeries
 	r := w.Reader()
@@ -283,6 +285,7 @@ func TestWALRestoreCorrupted_invalidSegment(t *testing.T) {
 
 	wal, err := OpenSegmentWAL(dir, nil, 0, nil)
 	testutil.Ok(t, err)
+	defer func(wal *SegmentWAL) { testutil.Ok(t, wal.Close()) }(wal)
 
 	_, err = wal.createSegmentFile(filepath.Join(dir, "000000"))
 	testutil.Ok(t, err)
@@ -299,8 +302,9 @@ func TestWALRestoreCorrupted_invalidSegment(t *testing.T) {
 
 	testutil.Ok(t, wal.Close())
 
-	_, err = OpenSegmentWAL(dir, log.NewLogfmtLogger(os.Stderr), 0, nil)
+	wal, err = OpenSegmentWAL(dir, log.NewLogfmtLogger(os.Stderr), 0, nil)
 	testutil.Ok(t, err)
+	defer func(wal *SegmentWAL) { testutil.Ok(t, wal.Close()) }(wal)
 
 	files, err := ioutil.ReadDir(dir)
 	testutil.Ok(t, err)
@@ -386,6 +390,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 
 			w, err := OpenSegmentWAL(dir, nil, 0, nil)
 			testutil.Ok(t, err)
+			defer func(wal *SegmentWAL) { testutil.Ok(t, wal.Close()) }(w)
 
 			testutil.Ok(t, w.LogSamples([]record.RefSample{{T: 1, V: 2}}))
 			testutil.Ok(t, w.LogSamples([]record.RefSample{{T: 2, V: 3}}))
@@ -416,6 +421,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 
 			w2, err := OpenSegmentWAL(dir, logger, 0, nil)
 			testutil.Ok(t, err)
+			defer func(wal *SegmentWAL) { testutil.Ok(t, wal.Close()) }(w2)
 
 			r := w2.Reader()
 
@@ -443,6 +449,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 			// is truncated.
 			w3, err := OpenSegmentWAL(dir, logger, 0, nil)
 			testutil.Ok(t, err)
+			defer func(wal *SegmentWAL) { testutil.Ok(t, wal.Close()) }(w3)
 
 			r = w3.Reader()
 

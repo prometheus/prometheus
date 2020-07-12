@@ -24,7 +24,12 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/prometheus/util/testutil"
+	"go.uber.org/goleak"
 )
+
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
+}
 
 func TestWriteAndReadbackTombstones(t *testing.T) {
 	tmpdir, _ := ioutil.TempDir("", "test")
