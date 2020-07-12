@@ -45,7 +45,12 @@ import (
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wal"
 	"github.com/prometheus/prometheus/util/testutil"
+	"go.uber.org/goleak"
 )
+
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
+}
 
 func openTestDB(t testing.TB, opts *Options, rngs []int64) (db *DB, close func()) {
 	tmpdir, err := ioutil.TempDir("", "test")

@@ -108,6 +108,7 @@ func TestTailSamples(t *testing.T) {
 			enc := record.Encoder{}
 			w, err := NewSize(nil, nil, wdir, 128*pageSize, compress)
 			testutil.Ok(t, err)
+			defer func() { testutil.Ok(t, w.Close()) }()
 
 			// Write to the initial segment then checkpoint.
 			for i := 0; i < seriesCount; i++ {
@@ -180,6 +181,7 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 
 			w, err := NewSize(nil, nil, wdir, 128*pageSize, compress)
 			testutil.Ok(t, err)
+			defer func() { testutil.Ok(t, w.Close()) }()
 
 			var recs [][]byte
 
@@ -250,6 +252,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 			enc := record.Encoder{}
 			w, err := NewSize(nil, nil, wdir, segmentSize, compress)
 			testutil.Ok(t, err)
+			defer func() { testutil.Ok(t, w.Close()) }()
 
 			// Write to the initial segment then checkpoint.
 			for i := 0; i < seriesCount; i++ {
@@ -336,6 +339,7 @@ func TestReadCheckpoint(t *testing.T) {
 			enc := record.Encoder{}
 			w, err := NewSize(nil, nil, wdir, 128*pageSize, compress)
 			testutil.Ok(t, err)
+			defer func() { testutil.Ok(t, w.Close()) }()
 
 			// Write to the initial segment then checkpoint.
 			for i := 0; i < seriesCount; i++ {
@@ -481,6 +485,7 @@ func TestCheckpointSeriesReset(t *testing.T) {
 			enc := record.Encoder{}
 			w, err := NewSize(nil, nil, wdir, segmentSize, tc.compress)
 			testutil.Ok(t, err)
+			defer func() { testutil.Ok(t, w.Close()) }()
 
 			// Write to the initial segment, then checkpoint later.
 			for i := 0; i < seriesCount; i++ {
