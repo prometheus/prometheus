@@ -34,11 +34,15 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/importer"
+	"github.com/prometheus/prometheus/tsdb/importer/blocks"
+	"github.com/prometheus/prometheus/tsdb/importer/csv"
+	"github.com/prometheus/prometheus/tsdb/importer/openmetrics"
 	"gopkg.in/alecthomas/kingpin.v2"
 )
 
@@ -53,34 +57,43 @@ func execute() (err error) {
 	var (
 		defaultDBPath = filepath.Join("benchout", "storage")
 
-		cli                      = kingpin.New(filepath.Base(os.Args[0]), "CLI tool for tsdb")
-		benchCmd                 = cli.Command("bench", "run benchmarks")
-		benchWriteCmd            = benchCmd.Command("write", "run a write performance benchmark")
-		benchWriteOutPath        = benchWriteCmd.Flag("out", "set the output path").Default("benchout").String()
-		benchWriteNumMetrics     = benchWriteCmd.Flag("metrics", "number of metrics to read").Default("10000").Int()
-		benchSamplesFile         = benchWriteCmd.Arg("file", "input file with samples data, default is ("+filepath.Join("..", "..", "testdata", "20kseries.json")+")").Default(filepath.Join("..", "..", "testdata", "20kseries.json")).String()
-		listCmd                  = cli.Command("ls", "list db blocks")
-		listCmdHumanReadable     = listCmd.Flag("human-readable", "print human readable values").Short('h').Bool()
-		listPath                 = listCmd.Arg("db path", "database path (default is "+defaultDBPath+")").Default(defaultDBPath).String()
-		analyzeCmd               = cli.Command("analyze", "analyze churn, label pair cardinality.")
-		analyzePath              = analyzeCmd.Arg("db path", "database path (default is "+defaultDBPath+")").Default(defaultDBPath).String()
-		analyzeBlockID           = analyzeCmd.Arg("block id", "block to analyze (default is the last block)").String()
-		analyzeLimit             = analyzeCmd.Flag("limit", "how many items to show in each list").Default("20").Int()
-		dumpCmd                  = cli.Command("dump", "dump samples from a TSDB")
-		dumpPath                 = dumpCmd.Arg("db path", "database path (default is "+defaultDBPath+")").Default(defaultDBPath).String()
-		dumpMinTime              = dumpCmd.Flag("min-time", "minimum timestamp to dump").Default(strconv.FormatInt(math.MinInt64, 10)).Int64()
-		dumpMaxTime              = dumpCmd.Flag("max-time", "maximum timestamp to dump").Default(strconv.FormatInt(math.MaxInt64, 10)).Int64()
-		importCmd                = cli.Command("import", "import samples from file containing information formatted in the Open Metrics format. Please refer to the storage docs for more details.")
-		importFilePath           = importCmd.Arg("file path", "file to import samples from (must be in Open Metrics format)").Required().String()
-		importDbPath             = importCmd.Arg("db path", "database path").Required().String()
-		importMaxSamplesInMemory = importCmd.Flag("max-samples-in-mem", "maximum number of samples to process in a cycle").Default("10000").Int()
-		importMaxBlockChildren   = importCmd.Flag("max-block-children", "maximum number of children a block can have at a given time").Default("20").Int()
+		cli = kingpin.New(filepath.Base(os.Args[0]), "CLI tool for tsdb")
+
+		benchCmd             = cli.Command("bench", "run benchmarks")
+		benchWriteCmd        = benchCmd.Command("write", "run a write performance benchmark")
+		benchWriteOutPath    = benchWriteCmd.Flag("out", "set the output path").Default("benchout").String()
+		benchWriteNumMetrics = benchWriteCmd.Flag("metrics", "number of metrics to read").Default("10000").Int()
+		benchSamplesFile     = benchWriteCmd.Arg("file", "input file with samples data, default is ("+filepath.Join("..", "..", "testdata", "20kseries.json")+")").Default(filepath.Join("..", "..", "testdata", "20kseries.json")).String()
+
+		listCmd              = cli.Command("ls", "list db blocks")
+		listCmdHumanReadable = listCmd.Flag("human-readable", "print human readable values").Short('h').Bool()
+		listPath             = listCmd.Arg("db path", "database path (default is "+defaultDBPath+")").Default(defaultDBPath).String()
+
+		analyzeCmd     = cli.Command("analyze", "analyze churn, label pair cardinality.")
+		analyzePath    = analyzeCmd.Arg("db path", "database path (default is "+defaultDBPath+")").Default(defaultDBPath).String()
+		analyzeBlockID = analyzeCmd.Arg("block id", "block to analyze (default is the last block)").String()
+		analyzeLimit   = analyzeCmd.Flag("limit", "how many items to show in each list").Default("20").Int()
+
+		dumpCmd     = cli.Command("dump", "dump samples from a TSDB")
+		dumpPath    = dumpCmd.Arg("db path", "database path (default is "+defaultDBPath+")").Default(defaultDBPath).String()
+		dumpMinTime = dumpCmd.Flag("min-time", "minimum timestamp to dump").Default(strconv.FormatInt(math.MinInt64, 10)).Int64()
+		dumpMaxTime = dumpCmd.Flag("max-time", "maximum timestamp to dump").Default(strconv.FormatInt(math.MaxInt64, 10)).Int64()
+
+		importCmd       = cli.Command("import", "[Experimental] import samples from input and produce TSDB block. Please refer to the storage docs for more details.")
+		importDbPath    = importCmd.Flag("output", "output directory for generated block").Default(".").String()
+		importFilePath  = importCmd.Flag("input-file", "disables reading from input and using file to import samples from. If empty input is required").String()
+		importBlockSize = importCmd.Flag("block-size", "The maximum block size. The actual block timestamps will be aligned with Prometheus time ranges.").Default("2h").Hidden().Duration()
+
+		omImportCmd = importCmd.Command("openmetrics", "import samples from OpenMetrics input and produce TSDB block. Please refer to the storage docs for more details.")
+
+		csvImportCmd       = importCmd.Command("csv", "import samples from CSV input and produce TSDB block. Please refer to the storage docs for more details.")
+		csvImportDelimiter = csvImportCmd.Flag("delimiter", "CSV single character for fields delimiting").Default(",").String()
 	)
 
 	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
 	var merr tsdb_errors.MultiError
 
-	switch kingpin.MustParse(cli.Parse(os.Args[1:])) {
+	switch cmd := kingpin.MustParse(cli.Parse(os.Args[1:])); cmd {
 	case benchWriteCmd.FullCommand():
 		wb := &writeBenchmark{
 			outPath:     *benchWriteOutPath,
@@ -144,14 +157,37 @@ func execute() (err error) {
 			err = merr.Err()
 		}()
 		return dumpSamples(db, *dumpMinTime, *dumpMaxTime)
-	case importCmd.FullCommand():
-		f, err := os.Open(*importFilePath)
-		if err != nil {
-			return err
+	case omImportCmd.FullCommand(), csvImportCmd.FullCommand():
+		input := os.Stdin
+		if *importFilePath != "" {
+			input, err = os.Open(*importFilePath)
+			if err != nil {
+				return err
+			}
+			defer func() {
+				merr.Add(err)
+				merr.Add(input.Close())
+				err = merr.Err()
+			}()
 		}
-		return importer.ImportFromFile(f, *importDbPath, *importMaxSamplesInMemory, *importMaxBlockChildren, logger)
+
+		var p textparse.Parser
+		if cmd == omImportCmd.FullCommand() {
+			p = openmetrics.NewParser(input)
+		} else {
+			if len(*csvImportDelimiter) != 1 {
+				return errors.Errorf("wrong format of delimiter flag, expected single character, got %q", *csvImportDelimiter)
+			}
+
+			p = csv.NewParser(input, []rune(*csvImportDelimiter)[0])
+		}
+		return importer.Import(logger, p, blocks.NewMultiWriter(logger, *importDbPath, durToMillis(*importBlockSize)))
 	}
 	return nil
+}
+
+func durToMillis(t time.Duration) int64 {
+	return int64(t.Seconds() * 1000)
 }
 
 type writeBenchmark struct {

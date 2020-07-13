@@ -289,19 +289,8 @@ func (p *PromParser) Next() (Entry, error) {
 		}
 		switch t {
 		case tType:
-			switch s := yoloString(p.text); s {
-			case "counter":
-				p.mtype = MetricTypeCounter
-			case "gauge":
-				p.mtype = MetricTypeGauge
-			case "histogram":
-				p.mtype = MetricTypeHistogram
-			case "summary":
-				p.mtype = MetricTypeSummary
-			case "untyped":
-				p.mtype = MetricTypeUnknown
-			default:
-				return EntryInvalid, errors.Errorf("invalid metric type %q", s)
+			if err := p.mtype.ParseForProm(yoloString(p.text)); err != nil {
+				return EntryInvalid, err
 			}
 		case tHelp:
 			if !utf8.Valid(p.text) {
