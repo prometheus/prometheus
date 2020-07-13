@@ -2013,7 +2013,7 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 					break
 				}
 				if !math.IsInf(s.V, 0) && !math.IsNaN(s.V) {
-					// At this stage, the mean is an infinite. It the added
+					// At this stage, the mean is an infinite. If the added
 					// value is neither an Inf or a Nan, we can keep that mean
 					// value.
 					// This is required because our calculation below removes

@@ -362,7 +362,7 @@ func funcAvgOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 					continue
 				}
 				if !math.IsInf(v.V, 0) && !math.IsNaN(v.V) {
-					// At this stage, the mean is an infinite. It the added
+					// At this stage, the mean is an infinite. If the added
 					// value is neither an Inf or a Nan, we can keep that mean
 					// value.
 					// This is required because our calculation below removes
