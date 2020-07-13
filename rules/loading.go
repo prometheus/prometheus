@@ -1,4 +1,4 @@
-// Copyright 2013 The Prometheus Authors
+// Copyright 2020 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -16,6 +16,7 @@ package rules
 import (
 	"time"
 
+	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
@@ -25,70 +26,82 @@ import (
 // Grouploader is an interface for loading and parsing rules from arbitrary sources.
 type GroupLoader interface {
 	// Load resolves a list of parsed rules from a set of identifiers.
-	Load(identifiers ...string) ([]*ParsedGroup, []error)
-}
-
-// ParsedGroup binds a set of ParsedRules with an evaluation interval.
-// 0 indicates that the global default interval should be used.
-type ParsedGroup struct {
-	File, Name string
-	Interval   time.Duration
-	Rules      []*ParsedRule
-}
-
-// ParsedRule is a rule which has undergone validation.
-type ParsedRule struct {
-	Name                string
-	Expr                parser.Expr
-	Alert               bool
-	Period              time.Duration
-	Labels, Annotations labels.Labels
+	Load(
+		opts *ManagerOptions,
+		done chan struct{},
+		defaultInterval time.Duration,
+		externalLabels labels.Labels,
+		shouldRestore bool,
+		logger log.Logger,
+		identifiers ...string,
+	) (map[string]*Group, []error)
 }
 
 // FileLoader is the default GroupLoader which reads files.
 type FileLoader struct{}
 
 // Load implements GroupLoader by reading local files
-func (l FileLoader) Load(filenames ...string) ([]*ParsedGroup, []error) {
-	var groups []*ParsedGroup
+func (FileLoader) Load(
+	opts *ManagerOptions,
+	done chan struct{},
+	defaultInterval time.Duration,
+	externalLabels labels.Labels,
+	shouldRestore bool,
+	logger log.Logger,
+	filenames ...string,
+) (map[string]*Group, []error) {
+	groups := make(map[string]*Group)
 
 	for _, fn := range filenames {
 		rgs, errs := rulefmt.ParseFile(fn)
 		if errs != nil {
 			return nil, errs
 		}
+
 		for _, rg := range rgs.Groups {
-			grp := &ParsedGroup{
-				File:     fn,
-				Name:     rg.Name,
-				Interval: time.Duration(rg.Interval),
+			itv := defaultInterval
+			if rg.Interval != 0 {
+				itv = time.Duration(rg.Interval)
 			}
+
+			rules := make([]Rule, 0, len(rg.Rules))
 			for _, r := range rg.Rules {
 				expr, err := parser.ParseExpr(r.Expr.Value)
 				if err != nil {
 					return nil, []error{errors.Wrap(err, fn)}
 				}
-				parsed := &ParsedRule{
-					Expr:   expr,
-					Period: time.Duration(r.For),
-				}
-				if len(r.Labels) > 0 {
-					parsed.Labels = labels.FromMap(r.Labels)
-				}
-				if len(r.Annotations) > 0 {
-					parsed.Annotations = labels.FromMap(r.Annotations)
-				}
 
 				if r.Alert.Value != "" {
-					parsed.Name = r.Alert.Value
-					parsed.Alert = true
-				} else {
-					parsed.Name = r.Record.Value
+					rules = append(rules, NewAlertingRule(
+						r.Alert.Value,
+						expr,
+						time.Duration(r.For),
+						labels.FromMap(r.Labels),
+						labels.FromMap(r.Annotations),
+						externalLabels,
+						shouldRestore,
+						log.With(logger, "alert", r.Alert),
+					))
+					continue
 				}
-				grp.Rules = append(grp.Rules, parsed)
+				rules = append(rules, NewRecordingRule(
+					r.Record.Value,
+					expr,
+					labels.FromMap(r.Labels),
+				))
 			}
-			groups = append(groups, grp)
+
+			groups[groupKey(fn, rg.Name)] = NewGroup(GroupOptions{
+				Name:          rg.Name,
+				File:          fn,
+				Interval:      itv,
+				Rules:         rules,
+				ShouldRestore: shouldRestore,
+				Opts:          opts,
+				done:          done,
+			})
 		}
 	}
+
 	return groups, nil
 }

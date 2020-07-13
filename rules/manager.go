@@ -976,54 +976,16 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 func (m *Manager) LoadGroups(
 	interval time.Duration, externalLabels labels.Labels, filenames ...string,
 ) (map[string]*Group, []error) {
-	groups := make(map[string]*Group)
-
 	shouldRestore := !m.restored
-
-	parsedGroups, errs := m.opts.GroupLoader.Load(filenames...)
-	if errs != nil {
-		return nil, errs
-	}
-
-	for _, rg := range parsedGroups {
-		itv := interval
-		if rg.Interval != 0 {
-			itv = rg.Interval
-		}
-		rules := make([]Rule, 0, len(rg.Rules))
-		for _, r := range rg.Rules {
-			if r.Alert {
-				rules = append(rules, NewAlertingRule(
-					r.Name,
-					r.Expr,
-					r.Period,
-					r.Labels,
-					r.Annotations,
-					externalLabels,
-					m.restored,
-					log.With(m.logger, "alert", r.Alert),
-				))
-				continue
-			}
-			rules = append(rules, NewRecordingRule(
-				r.Name,
-				r.Expr,
-				r.Labels,
-			))
-		}
-
-		groups[groupKey(rg.File, rg.Name)] = NewGroup(GroupOptions{
-			Name:          rg.Name,
-			File:          rg.File,
-			Interval:      itv,
-			Rules:         rules,
-			ShouldRestore: shouldRestore,
-			Opts:          m.opts,
-			done:          m.done,
-		})
-	}
-
-	return groups, nil
+	return m.opts.GroupLoader.Load(
+		m.opts,
+		m.done,
+		interval,
+		externalLabels,
+		shouldRestore,
+		m.logger,
+		filenames...,
+	)
 }
 
 // Group names need not be unique across filenames.
