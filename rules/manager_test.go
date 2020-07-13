@@ -56,7 +56,7 @@ func TestAlertingRule(t *testing.T) {
 
 	rule := NewAlertingRule(
 		"HTTPRequestRateLow",
-		expr,
+		expr.String(),
 		time.Minute,
 		labels.FromStrings("severity", "{{\"c\"}}ritical"),
 		nil, nil, true, nil,
@@ -197,7 +197,7 @@ func TestForStateAddSamples(t *testing.T) {
 
 	rule := NewAlertingRule(
 		"HTTPRequestRateLow",
-		expr,
+		expr.String(),
 		time.Minute,
 		labels.FromStrings("severity", "{{\"c\"}}ritical"),
 		nil, nil, true, nil,
@@ -371,7 +371,7 @@ func TestForStateRestore(t *testing.T) {
 	// Initial run before prometheus goes down.
 	rule := NewAlertingRule(
 		"HTTPRequestRateLow",
-		expr,
+		expr.String(),
 		alertForDuration,
 		labels.FromStrings("severity", "critical"),
 		nil, nil, true, nil,
@@ -437,7 +437,7 @@ func TestForStateRestore(t *testing.T) {
 	testFunc := func(tst testInput) {
 		newRule := NewAlertingRule(
 			"HTTPRequestRateLow",
-			expr,
+			expr.String(),
 			alertForDuration,
 			labels.FromStrings("severity", "critical"),
 			nil, nil, false, nil,
@@ -531,7 +531,7 @@ func TestStaleness(t *testing.T) {
 
 	expr, err := parser.ParseExpr("a + 1")
 	testutil.Ok(t, err)
-	rule := NewRecordingRule("a_plus_one", expr, labels.Labels{})
+	rule := NewRecordingRule("a_plus_one", expr.String(), labels.Labels{})
 	group := NewGroup(GroupOptions{
 		Name:          "default",
 		Interval:      time.Second,
@@ -604,13 +604,13 @@ func readSeriesSet(ss storage.SeriesSet) (map[string][]promql.Point, error) {
 func TestCopyState(t *testing.T) {
 	oldGroup := &Group{
 		rules: []Rule{
-			NewAlertingRule("alert", nil, 0, nil, nil, nil, true, nil),
-			NewRecordingRule("rule1", nil, nil),
-			NewRecordingRule("rule2", nil, nil),
-			NewRecordingRule("rule3", nil, labels.Labels{{Name: "l1", Value: "v1"}}),
-			NewRecordingRule("rule3", nil, labels.Labels{{Name: "l1", Value: "v2"}}),
-			NewRecordingRule("rule3", nil, labels.Labels{{Name: "l1", Value: "v3"}}),
-			NewAlertingRule("alert2", nil, 0, labels.Labels{{Name: "l2", Value: "v1"}}, nil, nil, true, nil),
+			NewAlertingRule("alert", "", 0, nil, nil, nil, true, nil),
+			NewRecordingRule("rule1", "", nil),
+			NewRecordingRule("rule2", "", nil),
+			NewRecordingRule("rule3", "", labels.Labels{{Name: "l1", Value: "v1"}}),
+			NewRecordingRule("rule3", "", labels.Labels{{Name: "l1", Value: "v2"}}),
+			NewRecordingRule("rule3", "", labels.Labels{{Name: "l1", Value: "v3"}}),
+			NewAlertingRule("alert2", "", 0, labels.Labels{{Name: "l2", Value: "v1"}}, nil, nil, true, nil),
 		},
 		seriesInPreviousEval: []map[string]labels.Labels{
 			{},
@@ -626,14 +626,14 @@ func TestCopyState(t *testing.T) {
 	oldGroup.rules[0].(*AlertingRule).active[42] = nil
 	newGroup := &Group{
 		rules: []Rule{
-			NewRecordingRule("rule3", nil, labels.Labels{{Name: "l1", Value: "v0"}}),
-			NewRecordingRule("rule3", nil, labels.Labels{{Name: "l1", Value: "v1"}}),
-			NewRecordingRule("rule3", nil, labels.Labels{{Name: "l1", Value: "v2"}}),
-			NewAlertingRule("alert", nil, 0, nil, nil, nil, true, nil),
-			NewRecordingRule("rule1", nil, nil),
-			NewAlertingRule("alert2", nil, 0, labels.Labels{{Name: "l2", Value: "v0"}}, nil, nil, true, nil),
-			NewAlertingRule("alert2", nil, 0, labels.Labels{{Name: "l2", Value: "v1"}}, nil, nil, true, nil),
-			NewRecordingRule("rule4", nil, nil),
+			NewRecordingRule("rule3", "", labels.Labels{{Name: "l1", Value: "v0"}}),
+			NewRecordingRule("rule3", "", labels.Labels{{Name: "l1", Value: "v1"}}),
+			NewRecordingRule("rule3", "", labels.Labels{{Name: "l1", Value: "v2"}}),
+			NewAlertingRule("alert", "", 0, nil, nil, nil, true, nil),
+			NewRecordingRule("rule1", "", nil),
+			NewAlertingRule("alert2", "", 0, labels.Labels{{Name: "l2", Value: "v0"}}, nil, nil, true, nil),
+			NewAlertingRule("alert2", "", 0, labels.Labels{{Name: "l2", Value: "v1"}}, nil, nil, true, nil),
+			NewRecordingRule("rule4", "", nil),
 		},
 		seriesInPreviousEval: make([]map[string]labels.Labels, 8),
 	}
@@ -660,7 +660,7 @@ func TestDeletedRuleMarkedStale(t *testing.T) {
 	defer st.Close()
 	oldGroup := &Group{
 		rules: []Rule{
-			NewRecordingRule("rule1", nil, labels.Labels{{Name: "l1", Value: "v1"}}),
+			NewRecordingRule("rule1", "", labels.Labels{{Name: "l1", Value: "v1"}}),
 		},
 		seriesInPreviousEval: []map[string]labels.Labels{
 			{"r1": labels.Labels{{Name: "l1", Value: "v1"}}},
@@ -856,7 +856,7 @@ func TestNotify(t *testing.T) {
 
 	expr, err := parser.ParseExpr("a > 1")
 	testutil.Ok(t, err)
-	rule := NewAlertingRule("aTooHigh", expr, 0, labels.Labels{}, labels.Labels{}, nil, true, log.NewNopLogger())
+	rule := NewAlertingRule("aTooHigh", expr.String(), 0, labels.Labels{}, labels.Labels{}, nil, true, log.NewNopLogger())
 	group := NewGroup(GroupOptions{
 		Name:          "alert",
 		Interval:      time.Second,
@@ -1128,8 +1128,8 @@ func TestGroupHasAlertingRules(t *testing.T) {
 			group: &Group{
 				name: "HasAlertingRule",
 				rules: []Rule{
-					NewAlertingRule("alert", nil, 0, nil, nil, nil, true, nil),
-					NewRecordingRule("record", nil, nil),
+					NewAlertingRule("alert", "", 0, nil, nil, nil, true, nil),
+					NewRecordingRule("record", "", nil),
 				},
 			},
 			want: true,
@@ -1145,7 +1145,7 @@ func TestGroupHasAlertingRules(t *testing.T) {
 			group: &Group{
 				name: "HasOnlyRecordingRule",
 				rules: []Rule{
-					NewRecordingRule("record", nil, nil),
+					NewRecordingRule("record", "", nil),
 				},
 			},
 			want: false,

@@ -71,7 +71,7 @@ func TestRuleEval(t *testing.T) {
 	}
 
 	for _, test := range suite {
-		rule := NewRecordingRule(test.name, test.expr, test.labels)
+		rule := NewRecordingRule(test.name, test.expr.String(), test.labels)
 		result, err := rule.Eval(ctx, now, EngineQueryFunc(engine, storage), nil)
 		testutil.Ok(t, err)
 		testutil.Equals(t, test.result, result)
@@ -81,7 +81,7 @@ func TestRuleEval(t *testing.T) {
 func TestRecordingRuleHTMLSnippet(t *testing.T) {
 	expr, err := parser.ParseExpr(`foo{html="<b>BOLD<b>"}`)
 	testutil.Ok(t, err)
-	rule := NewRecordingRule("testrule", expr, labels.FromStrings("html", "<b>BOLD</b>"))
+	rule := NewRecordingRule("testrule", expr.String(), labels.FromStrings("html", "<b>BOLD</b>"))
 
 	const want = `record: <a href="/test/prefix/graph?g0.expr=testrule&g0.tab=1">testrule</a>
 expr: <a href="/test/prefix/graph?g0.expr=foo%7Bhtml%3D%22%3Cb%3EBOLD%3Cb%3E%22%7D&g0.tab=1">foo{html=&#34;&lt;b&gt;BOLD&lt;b&gt;&#34;}</a>
@@ -112,7 +112,7 @@ func TestRuleEvalDuplicate(t *testing.T) {
 	now := time.Now()
 
 	expr, _ := parser.ParseExpr(`vector(0) or label_replace(vector(0),"test","x","","")`)
-	rule := NewRecordingRule("foo", expr, labels.FromStrings("test", "test"))
+	rule := NewRecordingRule("foo", expr.String(), labels.FromStrings("test", "test"))
 	_, err := rule.Eval(ctx, now, EngineQueryFunc(engine, storage), nil)
 	testutil.NotOk(t, err)
 	e := fmt.Errorf("vector contains metrics with the same labelset after applying rule labels")

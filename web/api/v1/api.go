@@ -1076,7 +1076,7 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 				enrichedRule = alertingRule{
 					State:          rule.State().String(),
 					Name:           rule.Name(),
-					Query:          rule.Query().String(),
+					Query:          rule.Query(),
 					Duration:       rule.HoldDuration().Seconds(),
 					Labels:         rule.Labels(),
 					Annotations:    rule.Annotations(),
@@ -1093,7 +1093,7 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 				}
 				enrichedRule = recordingRule{
 					Name:           rule.Name(),
-					Query:          rule.Query().String(),
+					Query:          rule.Query(),
 					Labels:         rule.Labels(),
 					Health:         rule.Health(),
 					LastError:      lastError,

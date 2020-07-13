@@ -209,7 +209,7 @@ func (m rulesRetrieverMock) AlertingRules() []*rules.AlertingRule {
 
 	rule1 := rules.NewAlertingRule(
 		"test_metric3",
-		expr1,
+		expr1.String(),
 		time.Second,
 		labels.Labels{},
 		labels.Labels{},
@@ -219,7 +219,7 @@ func (m rulesRetrieverMock) AlertingRules() []*rules.AlertingRule {
 	)
 	rule2 := rules.NewAlertingRule(
 		"test_metric4",
-		expr2,
+		expr2.String(),
 		time.Second,
 		labels.Labels{},
 		labels.Labels{},
@@ -264,7 +264,7 @@ func (m rulesRetrieverMock) RuleGroups() []*rules.Group {
 	if err != nil {
 		m.testing.Fatalf("unable to parse alert expression: %s", err)
 	}
-	recordingRule := rules.NewRecordingRule("recording-rule-1", recordingExpr, labels.Labels{})
+	recordingRule := rules.NewRecordingRule("recording-rule-1", recordingExpr.String(), labels.Labels{})
 	r = append(r, recordingRule)
 
 	group := rules.NewGroup(rules.GroupOptions{
