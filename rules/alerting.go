@@ -113,7 +113,7 @@ type AlertingRule struct {
 	// The name of the alert.
 	name string
 	// The vector expression from which to generate alerts.
-	vector parser.Expr
+	vector fmt.Stringer
 	// The duration for which a labelset needs to persist in the expression
 	// output vector before an alert transitions from Pending to Firing state.
 	holdDuration time.Duration
@@ -202,7 +202,7 @@ func (r *AlertingRule) Health() RuleHealth {
 }
 
 // Query returns the query expression of the alerting rule.
-func (r *AlertingRule) Query() parser.Expr {
+func (r *AlertingRule) Query() fmt.Stringer {
 	return r.vector
 }
 
