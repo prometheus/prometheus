@@ -992,6 +992,9 @@ func (sl *scrapeLoop) scrapeAndReport(interval, timeout time.Duration, last time
 	defer func() {
 		if err == nil {
 			err = app.Commit()
+			if err != nil {
+				level.Debug(sl.l).Log("msg", "Scrape commit failed", "err", err)
+			}
 		}
 		if err != nil {
 			app.Rollback()
@@ -1070,6 +1073,9 @@ func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, int
 	defer func() {
 		if err == nil {
 			err = app.Commit()
+			if err != nil {
+				level.Warn(sl.l).Log("msg", "End-of-run staleness commit failed", "err", err)
+			}
 		}
 		if err != nil {
 			app.Rollback()
