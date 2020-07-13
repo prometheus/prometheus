@@ -28,6 +28,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/prometheus/prometheus/pkg/value"
@@ -35,21 +36,20 @@ import (
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 )
 
-// Implementing the error interface to create a
-// constant, which cannot be overridden.
-// https://dave.cheney.net/2016/04/07/constant-errors
-type Error string
-
-func (e Error) Error() string {
-	return string(e)
+type Parser interface {
+	// IsParsable returns true if given parser can be used for given input.
+	// It's up to parser how much bytes it will fetch from reader to detect format.
+	IsParsable(io.Reader) error
+	// Parse parses the input.
+	Parse(io.Reader) error
 }
 
-const (
+var (
 	// This error is thrown when the current entry does not have a timestamp associated.
-	NoTimestampError = Error("expected timestamp with metric")
+	NoTimestampError = errors.New("expected timestamp with metric")
 	// This error is thrown when the sample being parsed currently has a corresponding block
 	// in the database, but has no metadata collected for it, curiously enough.
-	NoBlockMetaFoundError = Error("no metadata found for current samples' block")
+	NoBlockMetaFoundError = errors.New("no metadata found for current samples' block")
 )
 
 type blockTimestampPair struct {
@@ -74,10 +74,9 @@ const contentType = "application/openmetrics-text;"
 // TSDB DB directory, where it is treated like any other block.
 func ImportFromFile(
 	r io.Reader,
-	dbPath string,
+	outputPath string,
 	maxSamplesInMemory int,
 	maxBlockChildren int,
-	logger log.Logger,
 ) error {
 	if logger == nil {
 		logger = log.NewNopLogger()
