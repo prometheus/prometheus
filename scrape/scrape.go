@@ -951,64 +951,8 @@ mainLoop:
 	}
 }
 
-func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, interval time.Duration) {
-	// Scraping has stopped. We want to write stale markers but
-	// the target may be recreated, so we wait just over 2 scrape intervals
-	// before creating them.
-	// If the context is canceled, we presume the server is shutting down
-	// and will restart where is was. We do not attempt to write stale markers
-	// in this case.
-
-	if last.IsZero() {
-		// There never was a scrape, so there will be no stale markers.
-		return
-	}
-
-	// Wait for when the next scrape would have been, record its timestamp.
-	var staleTime time.Time
-	select {
-	case <-sl.parentCtx.Done():
-		return
-	case <-ticker.C:
-		staleTime = time.Now()
-	}
-
-	// Wait for when the next scrape would have been, if the target was recreated
-	// samples should have been ingested by now.
-	select {
-	case <-sl.parentCtx.Done():
-		return
-	case <-ticker.C:
-	}
-
-	// Wait for an extra 10% of the interval, just to be safe.
-	select {
-	case <-sl.parentCtx.Done():
-		return
-	case <-time.After(interval / 10):
-	}
-
-	// Call sl.append again with an empty scrape to trigger stale markers.
-	// If the target has since been recreated and scraped, the
-	// stale markers will be out of order and ignored.
-	var err error
-	app := sl.appender()
-	defer func() {
-		if err == nil {
-			err = app.Commit()
-		}
-		if err != nil {
-			app.Rollback()
-		}
-	}()
-	if _, _, _, err = sl.append(app, []byte{}, "", staleTime); err != nil {
-		level.Error(sl.l).Log("msg", "stale append failed", "err", err)
-	}
-	if err = sl.reportStale(app, staleTime); err != nil {
-		level.Error(sl.l).Log("msg", "stale report failed", "err", err)
-	}
-}
-
+// scrapeAndReport is responsible for running a scape, and inserting with its
+// report in the storage, with a single appender.
 func (sl *scrapeLoop) scrapeAndReport(interval, timeout time.Duration, last time.Time, errc chan<- error) time.Time {
 	var (
 		start             = time.Now()
@@ -1079,6 +1023,64 @@ func (sl *scrapeLoop) scrapeAndReport(interval, timeout time.Duration, last time
 		level.Warn(sl.l).Log("msg", "Appending scrape report failed", "err", err)
 	}
 	return start
+}
+
+func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, interval time.Duration) {
+	// Scraping has stopped. We want to write stale markers but
+	// the target may be recreated, so we wait just over 2 scrape intervals
+	// before creating them.
+	// If the context is canceled, we presume the server is shutting down
+	// and will restart where is was. We do not attempt to write stale markers
+	// in this case.
+
+	if last.IsZero() {
+		// There never was a scrape, so there will be no stale markers.
+		return
+	}
+
+	// Wait for when the next scrape would have been, record its timestamp.
+	var staleTime time.Time
+	select {
+	case <-sl.parentCtx.Done():
+		return
+	case <-ticker.C:
+		staleTime = time.Now()
+	}
+
+	// Wait for when the next scrape would have been, if the target was recreated
+	// samples should have been ingested by now.
+	select {
+	case <-sl.parentCtx.Done():
+		return
+	case <-ticker.C:
+	}
+
+	// Wait for an extra 10% of the interval, just to be safe.
+	select {
+	case <-sl.parentCtx.Done():
+		return
+	case <-time.After(interval / 10):
+	}
+
+	// Call sl.append again with an empty scrape to trigger stale markers.
+	// If the target has since been recreated and scraped, the
+	// stale markers will be out of order and ignored.
+	var err error
+	app := sl.appender()
+	defer func() {
+		if err == nil {
+			err = app.Commit()
+		}
+		if err != nil {
+			app.Rollback()
+		}
+	}()
+	if _, _, _, err = sl.append(app, []byte{}, "", staleTime); err != nil {
+		level.Error(sl.l).Log("msg", "stale append failed", "err", err)
+	}
+	if err = sl.reportStale(app, staleTime); err != nil {
+		level.Error(sl.l).Log("msg", "stale report failed", "err", err)
+	}
 }
 
 // Stop the scraping. May still write data and stale markers after it has
