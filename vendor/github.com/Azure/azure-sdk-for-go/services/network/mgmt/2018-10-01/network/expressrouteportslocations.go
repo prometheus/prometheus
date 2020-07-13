@@ -109,7 +109,6 @@ func (client ExpressRoutePortsLocationsClient) GetSender(req *http.Request) (*ht
 func (client ExpressRoutePortsLocationsClient) GetResponder(resp *http.Response) (result ExpressRoutePortsLocation, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -182,7 +181,6 @@ func (client ExpressRoutePortsLocationsClient) ListSender(req *http.Request) (*h
 func (client ExpressRoutePortsLocationsClient) ListResponder(resp *http.Response) (result ExpressRoutePortsLocationListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

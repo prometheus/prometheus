@@ -8,7 +8,7 @@ for more information.
 
 Example to List Tenants
 
-	listOpts := tenants.ListOpts{
+	listOpts := &tenants.ListOpts{
 		Limit: 2,
 	}
 

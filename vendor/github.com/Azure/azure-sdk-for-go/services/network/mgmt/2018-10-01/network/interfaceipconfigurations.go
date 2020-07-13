@@ -112,7 +112,6 @@ func (client InterfaceIPConfigurationsClient) GetSender(req *http.Request) (*htt
 func (client InterfaceIPConfigurationsClient) GetResponder(resp *http.Response) (result InterfaceIPConfiguration, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -189,7 +188,6 @@ func (client InterfaceIPConfigurationsClient) ListSender(req *http.Request) (*ht
 func (client InterfaceIPConfigurationsClient) ListResponder(resp *http.Response) (result InterfaceIPConfigurationListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

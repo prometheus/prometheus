@@ -112,7 +112,6 @@ func (client ExpressRouteLinksClient) GetSender(req *http.Request) (*http.Respon
 func (client ExpressRouteLinksClient) GetResponder(resp *http.Response) (result ExpressRouteLink, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -189,7 +188,6 @@ func (client ExpressRouteLinksClient) ListSender(req *http.Request) (*http.Respo
 func (client ExpressRouteLinksClient) ListResponder(resp *http.Response) (result ExpressRouteLinkListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

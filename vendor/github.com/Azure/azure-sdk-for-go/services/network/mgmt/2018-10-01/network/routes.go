@@ -114,7 +114,6 @@ func (client RoutesClient) CreateOrUpdateSender(req *http.Request) (future Route
 func (client RoutesClient) CreateOrUpdateResponder(resp *http.Response) (result Route, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -192,7 +191,6 @@ func (client RoutesClient) DeleteSender(req *http.Request) (future RoutesDeleteF
 func (client RoutesClient) DeleteResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted, http.StatusNoContent),
 		autorest.ByClosing())
 	result.Response = resp
@@ -269,7 +267,6 @@ func (client RoutesClient) GetSender(req *http.Request) (*http.Response, error) 
 func (client RoutesClient) GetResponder(resp *http.Response) (result Route, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -346,7 +343,6 @@ func (client RoutesClient) ListSender(req *http.Request) (*http.Response, error)
 func (client RoutesClient) ListResponder(resp *http.Response) (result RouteListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

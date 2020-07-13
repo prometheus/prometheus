@@ -25,6 +25,7 @@ import (
 	"os"
 
 	"google.golang.org/grpc/grpclog"
+	"google.golang.org/grpc/internal/grpcutil"
 )
 
 // Logger is the global binary logger. It can be used to get binary logger for
@@ -146,7 +147,7 @@ func (l *logger) setBlacklist(method string) error {
 // Each methodLogger returned by this method is a new instance. This is to
 // generate sequence id within the call.
 func (l *logger) getMethodLogger(methodName string) *MethodLogger {
-	s, m, err := parseMethodName(methodName)
+	s, m, err := grpcutil.ParseMethod(methodName)
 	if err != nil {
 		grpclog.Infof("binarylogging: failed to parse %q: %v", methodName, err)
 		return nil

@@ -7,7 +7,7 @@
 The Go implementation of [gRPC](https://grpc.io/): A high performance, open
 source, general RPC framework that puts mobile and HTTP/2 first. For more
 information see the [gRPC Quick Start:
-Go](https://grpc.io/docs/quickstart/go.html) guide.
+Go](https://grpc.io/docs/languages/go/quickstart/) guide.
 
 Installation
 ------------
@@ -29,7 +29,8 @@ If you are trying to access grpc-go from within China, please see the
 
 Prerequisites
 -------------
-gRPC-Go requires Go 1.9 or later.
+gRPC-Go officially supports the
+[three latest major releases of Go](https://golang.org/doc/devel/release.html).
 
 Documentation
 -------------

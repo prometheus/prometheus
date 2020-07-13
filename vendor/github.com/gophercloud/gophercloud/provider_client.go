@@ -94,10 +94,32 @@ type ProviderClient struct {
 // reauthlock represents a set of attributes used to help in the reauthentication process.
 type reauthlock struct {
 	sync.RWMutex
-	// This channel is non-nil during reauthentication. It can be used to ask the
-	// goroutine doing Reauthenticate() for its result. Look at the implementation
-	// of Reauthenticate() for details.
-	ongoing chan<- (chan<- error)
+	ongoing *reauthFuture
+}
+
+// reauthFuture represents future result of the reauthentication process.
+// while done channel is not closed, reauthentication is in progress.
+// when done channel is closed, err contains the result of reauthentication.
+type reauthFuture struct {
+	done chan struct{}
+	err  error
+}
+
+func newReauthFuture() *reauthFuture {
+	return &reauthFuture{
+		make(chan struct{}),
+		nil,
+	}
+}
+
+func (f *reauthFuture) Set(err error) {
+	f.err = err
+	close(f.done)
+}
+
+func (f *reauthFuture) Get() error {
+	<-f.done
+	return f.err
 }
 
 // AuthenticatedHeaders returns a map of HTTP headers that are common for all
@@ -112,9 +134,7 @@ func (client *ProviderClient) AuthenticatedHeaders() (m map[string]string) {
 		ongoing := client.reauthmut.ongoing
 		client.reauthmut.Unlock()
 		if ongoing != nil {
-			responseChannel := make(chan error)
-			ongoing <- responseChannel
-			_ = <-responseChannel
+			_ = ongoing.Get()
 		}
 	}
 	t := client.Token()
@@ -237,21 +257,19 @@ func (client *ProviderClient) Reauthenticate(previousToken string) error {
 		return client.ReauthFunc()
 	}
 
-	messages := make(chan (chan<- error))
+	future := newReauthFuture()
 
 	// Check if a Reauthenticate is in progress, or start one if not.
 	client.reauthmut.Lock()
 	ongoing := client.reauthmut.ongoing
 	if ongoing == nil {
-		client.reauthmut.ongoing = messages
+		client.reauthmut.ongoing = future
 	}
 	client.reauthmut.Unlock()
 
 	// If Reauthenticate is running elsewhere, wait for its result.
 	if ongoing != nil {
-		responseChannel := make(chan error)
-		ongoing <- responseChannel
-		return <-responseChannel
+		return ongoing.Get()
 	}
 
 	// Perform the actual reauthentication.
@@ -264,22 +282,10 @@ func (client *ProviderClient) Reauthenticate(previousToken string) error {
 
 	// Mark Reauthenticate as finished.
 	client.reauthmut.Lock()
+	client.reauthmut.ongoing.Set(err)
 	client.reauthmut.ongoing = nil
 	client.reauthmut.Unlock()
 
-	// Report result to all other interested goroutines.
-	//
-	// This happens in a separate goroutine because another goroutine might have
-	// acquired a copy of `client.reauthmut.ongoing` before we cleared it, but not
-	// have come around to sending its request. By answering in a goroutine, we
-	// can have that goroutine linger until all responseChannels have been sent.
-	// When GC has collected all sendings ends of the channel, our receiving end
-	// will be closed and the goroutine will end.
-	go func() {
-		for responseChannel := range messages {
-			responseChannel <- err
-		}
-	}()
 	return err
 }
 

@@ -87,16 +87,6 @@ type lex struct {
 	column int    // column in the file
 }
 
-// Token holds the token that are returned when a zone file is parsed.
-type Token struct {
-	// The scanned resource record when error is not nil.
-	RR
-	// When an error occurred, this has the error specifics.
-	Error *ParseError
-	// A potential comment positioned after the RR and on the same line.
-	Comment string
-}
-
 // ttlState describes the state necessary to fill in an omitted RR TTL
 type ttlState struct {
 	ttl           uint32 // ttl is the current default TTL
@@ -128,70 +118,6 @@ func ReadRR(r io.Reader, file string) (RR, error) {
 	zp.SetIncludeAllowed(true)
 	rr, _ := zp.Next()
 	return rr, zp.Err()
-}
-
-// ParseZone reads a RFC 1035 style zonefile from r. It returns
-// Tokens on the returned channel, each consisting of either a
-// parsed RR and optional comment or a nil RR and an error. The
-// channel is closed by ParseZone when the end of r is reached.
-//
-// The string file is used in error reporting and to resolve relative
-// $INCLUDE directives. The string origin is used as the initial
-// origin, as if the file would start with an $ORIGIN directive.
-//
-// The directives $INCLUDE, $ORIGIN, $TTL and $GENERATE are all
-// supported. Note that $GENERATE's range support up to a maximum of
-// of 65535 steps.
-//
-// Basic usage pattern when reading from a string (z) containing the
-// zone data:
-//
-//	for x := range dns.ParseZone(strings.NewReader(z), "", "") {
-//		if x.Error != nil {
-//                  // log.Println(x.Error)
-//              } else {
-//                  // Do something with x.RR
-//              }
-//	}
-//
-// Comments specified after an RR (and on the same line!) are
-// returned too:
-//
-//	foo. IN A 10.0.0.1 ; this is a comment
-//
-// The text "; this is comment" is returned in Token.Comment.
-// Comments inside the RR are returned concatenated along with the
-// RR. Comments on a line by themselves are discarded.
-//
-// To prevent memory leaks it is important to always fully drain the
-// returned channel. If an error occurs, it will always be the last
-// Token sent on the channel.
-//
-// Deprecated: New users should prefer the ZoneParser API.
-func ParseZone(r io.Reader, origin, file string) chan *Token {
-	t := make(chan *Token, 10000)
-	go parseZone(r, origin, file, t)
-	return t
-}
-
-func parseZone(r io.Reader, origin, file string, t chan *Token) {
-	defer close(t)
-
-	zp := NewZoneParser(r, origin, file)
-	zp.SetIncludeAllowed(true)
-
-	for rr, ok := zp.Next(); ok; rr, ok = zp.Next() {
-		t <- &Token{RR: rr, Comment: zp.Comment()}
-	}
-
-	if err := zp.Err(); err != nil {
-		pe, ok := err.(*ParseError)
-		if !ok {
-			pe = &ParseError{file: file, err: err.Error()}
-		}
-
-		t <- &Token{Error: pe}
-	}
 }
 
 // ZoneParser is a parser for an RFC 1035 style zonefile.
