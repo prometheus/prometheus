@@ -932,7 +932,7 @@ mainLoop:
 		default:
 		}
 
-		last = sl.scrape(interval, timeout, last, errc)
+		last = sl.scrapeAndReport(interval, timeout, last, errc)
 
 		select {
 		case <-sl.parentCtx.Done():
@@ -1009,7 +1009,7 @@ func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, int
 	}
 }
 
-func (sl *scrapeLoop) scrape(interval, timeout time.Duration, last time.Time, errc chan<- error) time.Time {
+func (sl *scrapeLoop) scrapeAndReport(interval, timeout time.Duration, last time.Time, errc chan<- error) time.Time {
 	var (
 		start             = time.Now()
 		scrapeCtx, cancel = context.WithTimeout(sl.ctx, timeout)
