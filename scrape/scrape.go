@@ -990,14 +990,13 @@ func (sl *scrapeLoop) scrapeAndReport(interval, timeout time.Duration, last time
 	app := sl.appender()
 	var err error
 	defer func() {
-		if err == nil {
-			err = app.Commit()
-			if err != nil {
-				level.Debug(sl.l).Log("msg", "Scrape commit failed", "err", err)
-			}
-		}
 		if err != nil {
 			app.Rollback()
+			return
+		}
+		err = app.Commit()
+		if err != nil {
+			level.Error(sl.l).Log("msg", "Scrape commit failed", "err", err)
 		}
 	}()
 	// A failed scrape is the same as an empty scrape,
@@ -1068,24 +1067,18 @@ func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, int
 	// Call sl.append again with an empty scrape to trigger stale markers.
 	// If the target has since been recreated and scraped, the
 	// stale markers will be out of order and ignored.
-	var err error
 	app := sl.appender()
 	defer func() {
-		if err == nil {
-			err = app.Commit()
-			if err != nil {
-				level.Warn(sl.l).Log("msg", "End-of-run staleness commit failed", "err", err)
-			}
-		}
+		err := app.Commit()
 		if err != nil {
-			app.Rollback()
+			level.Warn(sl.l).Log("msg", "Stale commit failed", "err", err)
 		}
 	}()
-	if _, _, _, err = sl.append(app, []byte{}, "", staleTime); err != nil {
-		level.Error(sl.l).Log("msg", "stale append failed", "err", err)
+	if _, _, _, err := sl.append(app, []byte{}, "", staleTime); err != nil {
+		level.Error(sl.l).Log("msg", "Stale append failed", "err", err)
 	}
-	if err = sl.reportStale(app, staleTime); err != nil {
-		level.Error(sl.l).Log("msg", "stale report failed", "err", err)
+	if err := sl.reportStale(app, staleTime); err != nil {
+		level.Error(sl.l).Log("msg", "Stale report failed", "err", err)
 	}
 }
 
