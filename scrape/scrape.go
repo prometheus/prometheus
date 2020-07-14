@@ -951,8 +951,8 @@ mainLoop:
 	}
 }
 
-// scrapeAndReport is responsible for running a scape, and inserting with its
-// report in the storage, with a single appender.
+// scrapeAndReport performs a scrape and then appends the result to the storage
+// together with reporting metrics, all using the same appender.
 func (sl *scrapeLoop) scrapeAndReport(interval, timeout time.Duration, last time.Time, errc chan<- error) time.Time {
 	var (
 		start             = time.Now()

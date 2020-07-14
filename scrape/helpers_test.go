@@ -89,7 +89,7 @@ func (a *collectResultAppender) Add(m labels.Labels, t int64, v float64) (uint64
 
 func (a *collectResultAppender) Commit() error {
 	a.result = append(a.result, a.pendingResult...)
-	a.pendingResult = make([]sample, 0)
+	a.pendingResult = nil
 	if a.next == nil {
 		return nil
 	}
@@ -98,7 +98,7 @@ func (a *collectResultAppender) Commit() error {
 
 func (a *collectResultAppender) Rollback() error {
 	a.rolledbackResult = a.pendingResult
-	a.pendingResult = make([]sample, 0)
+	a.pendingResult = nil
 	if a.next == nil {
 		return nil
 	}
