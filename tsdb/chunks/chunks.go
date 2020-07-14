@@ -220,19 +220,20 @@ func (w *Writer) cut() error {
 func cutSegmentFile(dirFile *os.File, magicNumber uint32, chunksFormat byte, allocSize int64) (headerSize int, newFile *os.File, seq int, err error) {
 	p, seq, err := nextSequenceFile(dirFile.Name())
 	if err != nil {
-		return 0, nil, 0, err
+		return 0, nil, 0, errors.Wrap(err, "next sequence file")
 	}
-	f, err := os.OpenFile(p, os.O_WRONLY|os.O_CREATE, 0666)
+	ptmp := p + ".tmp"
+	f, err := os.OpenFile(ptmp, os.O_WRONLY|os.O_CREATE, 0666)
 	if err != nil {
-		return 0, nil, 0, err
+		return 0, nil, 0, errors.Wrap(err, "open temp file")
 	}
 	if allocSize > 0 {
 		if err = fileutil.Preallocate(f, allocSize, true); err != nil {
-			return 0, nil, 0, err
+			return 0, nil, 0, errors.Wrap(err, "preallocate")
 		}
 	}
 	if err = dirFile.Sync(); err != nil {
-		return 0, nil, 0, err
+		return 0, nil, 0, errors.Wrap(err, "sync directory")
 	}
 
 	// Write header metadata for new file.
@@ -242,7 +243,23 @@ func cutSegmentFile(dirFile *os.File, magicNumber uint32, chunksFormat byte, all
 
 	n, err := f.Write(metab)
 	if err != nil {
-		return 0, nil, 0, err
+		return 0, nil, 0, errors.Wrap(err, "write header")
+	}
+	if err := f.Close(); err != nil {
+		return 0, nil, 0, errors.Wrap(err, "close temp file")
+	}
+
+	if err := fileutil.Rename(ptmp, p); err != nil {
+		return 0, nil, 0, errors.Wrap(err, "replace file")
+	}
+
+	f, err = os.OpenFile(p, os.O_WRONLY, 0666)
+	if err != nil {
+		return 0, nil, 0, errors.Wrap(err, "open final file")
+	}
+	// Skip the header for the further writes.
+	if _, err := f.Seek(int64(n), 0); err != nil {
+		return 0, nil, 0, errors.Wrap(err, "seek in final file")
 	}
 	return n, f, seq, nil
 }
