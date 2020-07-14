@@ -1074,7 +1074,7 @@ func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, int
 			app.Rollback()
 			return
 		}
-		err := app.Commit()
+		err = app.Commit()
 		if err != nil {
 			level.Warn(sl.l).Log("msg", "Stale commit failed", "err", err)
 		}
