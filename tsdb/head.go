@@ -1104,6 +1104,7 @@ func (a *headAppender) Add(lset labels.Labels, t int64, v float64) (uint64, erro
 	if err != nil {
 		return 0, err
 	}
+
 	if created {
 		a.series = append(a.series, record.RefSeries{
 			Ref:    s.ref,
@@ -1318,9 +1319,12 @@ func (h *Head) gc() {
 	}
 
 	// Rebuild symbols and label value indices from what is left in the postings terms.
+	// symMtx ensures that append of symbols and postings is disabled for rebuild time.
+	h.symMtx.Lock()
+	defer h.symMtx.Unlock()
+
 	symbols := make(map[string]struct{}, len(h.symbols))
 	values := make(map[string]stringset, len(h.values))
-
 	if err := h.postings.Iter(func(t labels.Label, _ index.Postings) error {
 		symbols[t.Name] = struct{}{}
 		symbols[t.Value] = struct{}{}
@@ -1336,13 +1340,8 @@ func (h *Head) gc() {
 		// This should never happen, as the iteration function only returns nil.
 		panic(err)
 	}
-
-	h.symMtx.Lock()
-
 	h.symbols = symbols
 	h.values = values
-
-	h.symMtx.Unlock()
 }
 
 // Tombstones returns a new reader over the head's tombstones
@@ -1692,8 +1691,6 @@ func (h *Head) getOrCreateWithID(id, hash uint64, lset labels.Labels) (*memSerie
 	h.metrics.seriesCreated.Inc()
 	atomic.AddUint64(&h.numSeries, 1)
 
-	h.postings.Add(id, lset)
-
 	h.symMtx.Lock()
 	defer h.symMtx.Unlock()
 
@@ -1709,6 +1706,7 @@ func (h *Head) getOrCreateWithID(id, hash uint64, lset labels.Labels) (*memSerie
 		h.symbols[l.Value] = struct{}{}
 	}
 
+	h.postings.Add(id, lset)
 	return s, true, nil
 }
 
