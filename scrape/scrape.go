@@ -1068,17 +1068,24 @@ func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, int
 	// If the target has since been recreated and scraped, the
 	// stale markers will be out of order and ignored.
 	app := sl.appender()
+	var err error
 	defer func() {
+		if err != nil {
+			app.Rollback()
+			return
+		}
 		err := app.Commit()
 		if err != nil {
 			level.Warn(sl.l).Log("msg", "Stale commit failed", "err", err)
 		}
 	}()
-	if _, _, _, err := sl.append(app, []byte{}, "", staleTime); err != nil {
-		level.Error(sl.l).Log("msg", "Stale append failed", "err", err)
+	if _, _, _, err = sl.append(app, []byte{}, "", staleTime); err != nil {
+		app.Rollback()
+		app = sl.appender()
+		level.Warn(sl.l).Log("msg", "Stale append failed", "err", err)
 	}
-	if err := sl.reportStale(app, staleTime); err != nil {
-		level.Error(sl.l).Log("msg", "Stale report failed", "err", err)
+	if err = sl.reportStale(app, staleTime); err != nil {
+		level.Warn(sl.l).Log("msg", "Stale report failed", "err", err)
 	}
 }
 
