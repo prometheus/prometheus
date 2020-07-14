@@ -1644,6 +1644,19 @@ func (s *stripeSeries) getByHash(hash uint64, lset labels.Labels) *memSeries {
 	return series
 }
 
+type sample struct {
+	t int64
+	v float64
+}
+
+func (s sample) T() int64 {
+	return s.t
+}
+
+func (s sample) V() float64 {
+	return s.v
+}
+
 func (s *stripeSeries) getOrSet(hash uint64, series *memSeries) (*memSeries, bool) {
 	i := hash & uint64(s.size-1)
 
@@ -1663,19 +1676,6 @@ func (s *stripeSeries) getOrSet(hash uint64, series *memSeries) (*memSeries, boo
 	s.locks[i].Unlock()
 
 	return series, true
-}
-
-type sample struct {
-	t int64
-	v float64
-}
-
-func (s sample) T() int64 {
-	return s.t
-}
-
-func (s sample) V() float64 {
-	return s.v
 }
 
 // memSeries is the in-memory representation of a series. None of its methods

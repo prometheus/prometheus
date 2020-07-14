@@ -259,25 +259,8 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 		}
 		switch t {
 		case tType:
-			switch s := yoloString(p.text); s {
-			case "counter":
-				p.mtype = MetricTypeCounter
-			case "gauge":
-				p.mtype = MetricTypeGauge
-			case "histogram":
-				p.mtype = MetricTypeHistogram
-			case "gaugehistogram":
-				p.mtype = MetricTypeGaugeHistogram
-			case "summary":
-				p.mtype = MetricTypeSummary
-			case "info":
-				p.mtype = MetricTypeInfo
-			case "stateset":
-				p.mtype = MetricTypeStateset
-			case "unknown":
-				p.mtype = MetricTypeUnknown
-			default:
-				return EntryInvalid, errors.Errorf("invalid metric type %q", s)
+			if err := p.mtype.ParseForOpenMetrics(yoloString(p.text)); err != nil {
+				return EntryInvalid, err
 			}
 		case tHelp:
 			if !utf8.Valid(p.text) {

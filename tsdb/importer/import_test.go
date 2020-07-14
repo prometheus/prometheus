@@ -24,18 +24,14 @@ import (
 	"strings"
 	"testing"
 
-	labels2 "github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
-const (
-	// We use a lower value for this than the default to test block compaction implicitly.
-	maxSamplesInMemory = 2000
-	maxBlockChildren   = 10
-)
+// TODO(bwplotka): Did not touch this file, has to updated. Some of this can be simplified and moved to importer/openmetrics package (:
 
 func testBlocks(t *testing.T, blocks []tsdb.BlockReader, metricLabels []string, expectedMint, expectedMaxt int64, expectedSamples []tsdb.MetricSample, expectedSymbols []string, expectedNumBlocks int) {
 	// Assert we have expected number of blocks.
@@ -55,7 +51,7 @@ func testBlocks(t *testing.T, blocks []tsdb.BlockReader, metricLabels []string, 
 				allSymbols[key] = struct{}{}
 			}
 		}
-		blockSamples, err := readSeries(block, labels2.FromStrings(metricLabels...))
+		blockSamples, err := readSeries(block, labels.FromStrings(metricLabels...))
 		testutil.Ok(t, err)
 		allSamples = append(allSamples, blockSamples...)
 		_ = indexr.Close()
@@ -97,7 +93,7 @@ func sortSamples(samples []tsdb.MetricSample) {
 // The labels do not have to be exhaustive, i.e. if we have metrics with common labels b/w them,
 // we just need to pass the common labels, and we will get all the metrics that have them,
 // even if the other labels b/w the metrics are different.
-func readSeries(block tsdb.BlockReader, lbls labels2.Labels) ([]tsdb.MetricSample, error) {
+func readSeries(block tsdb.BlockReader, lbls labels.Labels) ([]tsdb.MetricSample, error) {
 	series := make([]tsdb.MetricSample, 0)
 	ir, err := block.Index()
 	if err != nil {
@@ -115,7 +111,7 @@ func readSeries(block tsdb.BlockReader, lbls labels2.Labels) ([]tsdb.MetricSampl
 	}
 	defer chunkr.Close()
 	for _, lbl := range lbls {
-		css, err := tsdb.LookupChunkSeries(ir, tsr, labels2.MustNewMatcher(labels2.MatchEqual, lbl.Name, lbl.Value))
+		css, err := tsdb.LookupChunkSeries(ir, tsr, labels.MustNewMatcher(labels.MatchEqual, lbl.Name, lbl.Value))
 		if err != nil {
 			return series, err
 		}
@@ -149,7 +145,7 @@ func genSeries(labels []string, mint, maxt int64, step int) []tsdb.MetricSample 
 	for idx := mint; idx < maxt; idx += int64(step) {
 		// Round to 3 places.
 		val := math.Floor(rand.Float64()*1000) / 1000
-		sample := tsdb.MetricSample{Timestamp: idx, Value: val, Labels: labels2.FromStrings(labels...)}
+		sample := tsdb.MetricSample{Timestamp: idx, Value: val, Labels: labels.FromStrings(labels...)}
 		series = append(series, sample)
 	}
 	return series
@@ -157,7 +153,7 @@ func genSeries(labels []string, mint, maxt int64, step int) []tsdb.MetricSample 
 
 // labelsToStr converts the given labels to a string representation that is compliant with
 // the OpenMetrics parser.
-func labelsToStr(labels labels2.Labels) string {
+func labelsToStr(labels labels.Labels) string {
 	str := "{"
 	for idx, l := range labels {
 		str += fmt.Sprintf("%s=%s", l.Name, strconv.Quote(l.Value))
@@ -220,12 +216,12 @@ http_requests_total{code="400"} 1 1565133713990
 					{
 						Timestamp: 1565133713989,
 						Value:     1021,
-						Labels:    labels2.FromStrings("__name__", "http_requests_total", "code", "200"),
+						Labels:    labels.FromStrings("__name__", "http_requests_total", "code", "200"),
 					},
 					{
 						Timestamp: 1565133713990,
 						Value:     1,
-						Labels:    labels2.FromStrings("__name__", "http_requests_total", "code", "400"),
+						Labels:    labels.FromStrings("__name__", "http_requests_total", "code", "400"),
 					},
 				},
 			},
@@ -254,12 +250,12 @@ http_requests_total{code="400"} 2 1575133713990
 					{
 						Timestamp: 1565133713989,
 						Value:     1022,
-						Labels:    labels2.FromStrings("__name__", "http_requests_total", "code", "200"),
+						Labels:    labels.FromStrings("__name__", "http_requests_total", "code", "200"),
 					},
 					{
 						Timestamp: 1575133713990,
 						Value:     2,
-						Labels:    labels2.FromStrings("__name__", "http_requests_total", "code", "400"),
+						Labels:    labels.FromStrings("__name__", "http_requests_total", "code", "400"),
 					},
 				},
 			},
@@ -288,12 +284,12 @@ http_requests_total{code="400"} 3 1395066363000
 					{
 						Timestamp: 1395066363000,
 						Value:     1023,
-						Labels:    labels2.FromStrings("__name__", "http_requests_total", "code", "200"),
+						Labels:    labels.FromStrings("__name__", "http_requests_total", "code", "200"),
 					},
 					{
 						Timestamp: 1395066363000,
 						Value:     3,
-						Labels:    labels2.FromStrings("__name__", "http_requests_total", "code", "400"),
+						Labels:    labels.FromStrings("__name__", "http_requests_total", "code", "400"),
 					},
 				},
 			},
@@ -338,7 +334,7 @@ no_type_metric{type="bad_news_bears"} 0.0 111
 					{
 						Timestamp: 111,
 						Value:     0.0,
-						Labels:    labels2.FromStrings("__name__", "no_type_metric", "type", "bad_news_bears"),
+						Labels:    labels.FromStrings("__name__", "no_type_metric", "type", "bad_news_bears"),
 					},
 				},
 			},
@@ -380,7 +376,7 @@ bad_ts{type="bad_timestamp"} 420 1e99
 					{
 						Timestamp: 6900,
 						Value:     42,
-						Labels:    labels2.FromStrings("__name__", "no_help_no_type", "foo", "bar"),
+						Labels:    labels.FromStrings("__name__", "no_help_no_type", "foo", "bar"),
 					},
 				},
 			},
@@ -406,7 +402,7 @@ bad_ts{type="bad_timestamp"} 420 1e99
 					{
 						Timestamp: 1001,
 						Value:     42.24,
-						Labels:    labels2.FromStrings("__name__", "bare_metric"),
+						Labels:    labels.FromStrings("__name__", "bare_metric"),
 					},
 				},
 			},
@@ -430,7 +426,7 @@ no_nl{type="no newline"}
 	for _, test := range tests {
 		tmpDbDir, err := ioutil.TempDir("", "importer")
 		testutil.Ok(t, err)
-		err = ImportFromFile(strings.NewReader(test.ToParse), tmpDbDir, maxSamplesInMemory, maxBlockChildren, nil)
+		err = Import(strings.NewReader(test.ToParse), tmpDbDir, maxSamplesInMemory, maxBlockChildren, nil)
 		if test.IsOk {
 			testutil.Ok(t, err)
 			if len(test.Expected.Symbols) > 0 {
@@ -449,7 +445,7 @@ no_nl{type="no newline"}
 
 func TestImportBadFile(t *testing.T) {
 	// No file found case.
-	err := ImportFromFile((*os.File)(nil), "/buzz/baz/bar/foo", maxSamplesInMemory, maxBlockChildren, nil)
+	err := Import((*os.File)(nil), "/buzz/baz/bar/foo", maxSamplesInMemory, maxBlockChildren, nil)
 	testutil.NotOk(t, err)
 }
 
@@ -558,19 +554,19 @@ func TestImportIntoExistingDB(t *testing.T) {
 
 		tmpDbDir, err := ioutil.TempDir("", "importer")
 		testutil.Ok(t, err)
-		err = ImportFromFile(strings.NewReader(initText), tmpDbDir, maxSamplesInMemory, maxBlockChildren, nil)
+		err = Import(strings.NewReader(initText), tmpDbDir, maxSamplesInMemory, maxBlockChildren, nil)
 		testutil.Ok(t, err)
 
 		importSeries := genSeries(test.MetricLabels, test.ImportMint, test.ImportMaxt, test.GeneratorStep)
 		importText := genOpenMetricsText(test.MetricName, test.MetricType, importSeries)
 
-		err = ImportFromFile(strings.NewReader(importText), tmpDbDir, maxSamplesInMemory, maxBlockChildren, nil)
+		err = Import(strings.NewReader(importText), tmpDbDir, maxSamplesInMemory, maxBlockChildren, nil)
 		testutil.Ok(t, err)
 
 		expectedSamples := make([]tsdb.MetricSample, 0)
 		for _, exp := range [][]tsdb.MetricSample{initSeries, importSeries} {
 			for _, sample := range exp {
-				lbls := labels2.FromStrings("__name__", test.MetricName)
+				lbls := labels.FromStrings("__name__", test.MetricName)
 				s := tsdb.MetricSample{
 					Timestamp: sample.Timestamp,
 					Value:     sample.Value,
@@ -621,13 +617,13 @@ func TestMixedSeries(t *testing.T) {
 
 	tmpDbDir, err := ioutil.TempDir("", "importer")
 	testutil.Ok(t, err)
-	err = ImportFromFile(strings.NewReader(text), tmpDbDir, maxSamplesInMemory, maxBlockChildren, nil)
+	err = Import(strings.NewReader(text), tmpDbDir, maxSamplesInMemory, maxBlockChildren, nil)
 	testutil.Ok(t, err)
 
 	addMetricLabel := func(series []tsdb.MetricSample, metricName string) []tsdb.MetricSample {
 		augSamples := make([]tsdb.MetricSample, 0)
 		for _, sample := range series {
-			lbls := labels2.FromStrings("__name__", metricName)
+			lbls := labels.FromStrings("__name__", metricName)
 			s := tsdb.MetricSample{
 				Timestamp: sample.Timestamp,
 				Value:     sample.Value,
@@ -666,7 +662,7 @@ func TestInvalidSyntaxQuickAbort(t *testing.T) {
 		{
 			Timestamp: -1,
 			Value:     0,
-			Labels:    labels2.FromStrings(" INVALID", "INVALID"),
+			Labels:    labels.FromStrings(" INVALID", "INVALID"),
 		},
 	}
 	secondHalf := genSeries(lbls, 10, 200, 1)
@@ -677,7 +673,7 @@ func TestInvalidSyntaxQuickAbort(t *testing.T) {
 	testutil.Ok(t, err)
 
 	r := strings.NewReader(importText)
-	err = ImportFromFile(r, tmpDbDir, maxSamplesInMemory, maxBlockChildren, nil)
+	err = Import(r, tmpDbDir, maxSamplesInMemory, maxBlockChildren, nil)
 
 	testutil.NotOk(t, err)
 	// We should abort and return the error with the text, without reading till EOF.
@@ -727,13 +723,13 @@ func TestInvalidSyntaxQuickAbort(t *testing.T) {
 //
 // 			tmpDbDir, err := ioutil.TempDir("", "importer")
 // 			testutil.Ok(b, err)
-// 			err = ImportFromFile(strings.NewReader(initText), tmpDbDir, maxSamplesInMemory, vThresh, nil)
+// 			err = Import(strings.NewReader(initText), tmpDbDir, maxSamplesInMemory, vThresh, nil)
 // 			testutil.Ok(b, err)
 //
 // 			importSeries := genSeries(test.MetricLabels, test.ImportMint, test.ImportMaxt, test.GeneratorStep)
 // 			importText := genOpenMetricsText(test.MetricName, test.MetricType, importSeries)
 //
-// 			err = ImportFromFile(strings.NewReader(importText), tmpDbDir, maxSamplesInMemory, vThresh, nil)
+// 			err = Import(strings.NewReader(importText), tmpDbDir, maxSamplesInMemory, vThresh, nil)
 // 			testutil.Ok(b, err)
 // 		}
 // 	}
