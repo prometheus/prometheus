@@ -835,7 +835,7 @@ func (h *Head) Truncate(mint int64) (err error) {
 		return ok
 	}
 	h.metrics.checkpointCreationTotal.Inc()
-	if _, err = wal.Checkpoint(h.wal, first, last, keep, mint); err != nil {
+	if _, err = wal.Checkpoint(h.logger, h.wal, first, last, keep, mint); err != nil {
 		h.metrics.checkpointCreationFail.Inc()
 		if _, ok := errors.Cause(err).(*wal.CorruptionErr); ok {
 			h.metrics.walCorruptionsTotal.Inc()
