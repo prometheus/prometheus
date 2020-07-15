@@ -738,18 +738,20 @@ func (db *DB) Compact() (err error) {
 			db.metrics.compactionsFailed.Inc()
 		}
 	}()
-	// Check whether we have pending head blocks that are ready to be persisted.
-	// They have the highest priority.
+
 	checkpointTime := int64(math.MinInt64)
 	checkpointAttempted := false
+	headCompacted := false
 	defer func() {
-		if err != nil && !checkpointAttempted {
+		if headCompacted && !checkpointAttempted {
 			var merr tsdb_errors.MultiError
 			merr.Add(err)
 			merr.Add(errors.Wrap(db.performHeadCheckpoint(checkpointTime), "head checkpoint in Compact"))
 			err = merr.Err()
 		}
 	}()
+	// Check whether we have pending head blocks that are ready to be persisted.
+	// They have the highest priority.
 	for {
 		select {
 		case <-db.stopc:
@@ -777,11 +779,14 @@ func (db *DB) Compact() (err error) {
 		if t > checkpointTime {
 			checkpointTime = t
 		}
+		headCompacted = true
 	}
 
-	checkpointAttempted = true
-	if err := db.performHeadCheckpoint(checkpointTime); err != nil {
-		return errors.Wrap(err, "head checkpoint in Compact")
+	if headCompacted {
+		checkpointAttempted = true
+		if err := db.performHeadCheckpoint(checkpointTime); err != nil {
+			return errors.Wrap(err, "head checkpoint in Compact")
+		}
 	}
 
 	return db.compactBlocks()
