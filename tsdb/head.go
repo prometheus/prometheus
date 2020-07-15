@@ -760,7 +760,7 @@ func (h *Head) removeCorruptedMmappedChunks(err error) map[uint64][]*mmappedChun
 }
 
 // Truncate removes old data before mint from the head.
-func (h *Head) Truncate(mint int64, performCheckpoint bool) (err error) {
+func (h *Head) Truncate(mint int64) (err error) {
 	defer func() {
 		if err != nil {
 			h.metrics.headTruncateFail.Inc()
@@ -797,14 +797,10 @@ func (h *Head) Truncate(mint int64, performCheckpoint bool) (err error) {
 		return errors.Wrap(err, "truncate chunks.HeadReadWriter")
 	}
 
-	if performCheckpoint {
-		return h.performCheckpoint(mint)
-	}
-
 	return nil
 }
 
-func (h *Head) performCheckpoint(mint int64) error {
+func (h *Head) truncateWAL(mint int64) error {
 	if h.wal == nil {
 		return nil
 	}
