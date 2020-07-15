@@ -618,7 +618,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	}
 	db.metrics.maxBytes.Set(float64(maxBytes))
 
-	if err := db.reload(); err != nil {
+	if err := db.reload(true); err != nil {
 		return nil, err
 	}
 	// Set the min valid time for the ingested samples
@@ -740,6 +740,16 @@ func (db *DB) Compact() (err error) {
 	}()
 	// Check whether we have pending head blocks that are ready to be persisted.
 	// They have the highest priority.
+	checkpointTime := int64(math.MinInt64)
+	checkpointAttempted := false
+	defer func() {
+		if err != nil && !checkpointAttempted {
+			var merr tsdb_errors.MultiError
+			merr.Add(err)
+			merr.Add(errors.Wrap(db.performHeadCheckpoint(checkpointTime), "head checkpoint in Compact"))
+			err = merr.Err()
+		}
+	}()
 	for {
 		select {
 		case <-db.stopc:
@@ -760,12 +770,36 @@ func (db *DB) Compact() (err error) {
 		// consistently, we explicitly remove the last value
 		// from the block interval here.
 		head := NewRangeHead(db.head, mint, maxt-1)
-		if err := db.compactHead(head); err != nil {
+		t, err := db.compactHead(head)
+		if err != nil {
 			return err
+		}
+		if t > checkpointTime {
+			checkpointTime = t
 		}
 	}
 
+	checkpointAttempted = true
+	if err := db.performHeadCheckpoint(checkpointTime); err != nil {
+		return errors.Wrap(err, "head checkpoint in Compact")
+	}
+
 	return db.compactBlocks()
+}
+
+func (db *DB) performHeadCheckpoint(t int64) error {
+	if blocks := db.Blocks(); len(blocks) > 0 {
+		blockMaxt := blocks[len(blocks)-1].Meta().MaxTime
+		if blockMaxt > t {
+			t = blockMaxt
+		}
+	}
+
+	if t == math.MinInt64 {
+		return nil
+	}
+
+	return db.head.performCheckpoint(t)
 }
 
 // CompactHead compacts the given the RangeHead.
@@ -773,39 +807,45 @@ func (db *DB) CompactHead(head *RangeHead) (err error) {
 	db.cmtx.Lock()
 	defer db.cmtx.Unlock()
 
-	return db.compactHead(head)
+	checkpointTime, err := db.compactHead(head)
+	if err != nil {
+		return err
+	}
+	return errors.Wrap(db.performHeadCheckpoint(checkpointTime), "head checkpoint in CompactHead")
 }
 
 // compactHead compacts the given the RangeHead.
 // The compaction mutex should be held before calling this method.
-func (db *DB) compactHead(head *RangeHead) (err error) {
+func (db *DB) compactHead(head *RangeHead) (checkpointTime int64, err error) {
+	checkpointTime = math.MinInt64
 	// Add +1 millisecond to block maxt because block intervals are half-open: [b.MinTime, b.MaxTime).
 	// Because of this block intervals are always +1 than the total samples it includes.
 	maxt := head.MaxTime() + 1
 	uid, err := db.compactor.Write(db.dir, head, head.MinTime(), maxt, nil)
 	if err != nil {
-		return errors.Wrap(err, "persist head block")
+		return checkpointTime, errors.Wrap(err, "persist head block")
 	}
 
 	runtime.GC()
 
-	if err := db.reload(); err != nil {
+	if err := db.reload(false); err != nil {
 		if err := os.RemoveAll(filepath.Join(db.dir, uid.String())); err != nil {
-			return errors.Wrapf(err, "delete persisted head block after failed db reload:%s", uid)
+			return checkpointTime, errors.Wrapf(err, "delete persisted head block after failed db reload:%s", uid)
 		}
-		return errors.Wrap(err, "reload blocks")
+		return checkpointTime, errors.Wrap(err, "reload blocks")
 	}
 	if (uid == ulid.ULID{}) {
-		// Compaction resulted in an empty block.
-		// Head truncating during db.reload() depends on the persisted blocks and
 		// in this case no new block will be persisted so manually truncate the head.
-		if err = db.head.Truncate(maxt); err != nil {
-			return errors.Wrap(err, "head truncate failed (in compact)")
+		// Head truncating during db.reload() depends on the persisted blocks and
+		// Compaction resulted in an empty block.
+		if err = db.head.Truncate(maxt, false); err != nil {
+			return checkpointTime, errors.Wrap(err, "head truncate failed (in compact)")
 		}
+		checkpointTime = maxt
 	}
 	runtime.GC()
 
-	return nil
+	return checkpointTime, nil
 }
 
 // compactBlocks compacts all the eligible on-disk blocks.
@@ -833,7 +873,7 @@ func (db *DB) compactBlocks() (err error) {
 		}
 		runtime.GC()
 
-		if err := db.reload(); err != nil {
+		if err := db.reload(true); err != nil {
 			if err := os.RemoveAll(filepath.Join(db.dir, uid.String())); err != nil {
 				return errors.Wrapf(err, "delete compacted block after failed db reload:%s", uid)
 			}
@@ -858,7 +898,7 @@ func getBlock(allBlocks []*Block, id ulid.ULID) (*Block, bool) {
 
 // reload blocks and trigger head truncation if new blocks appeared.
 // Blocks that are obsolete due to replacement or retention will be deleted.
-func (db *DB) reload() (err error) {
+func (db *DB) reload(performCheckpoint bool) (err error) {
 	defer func() {
 		if err != nil {
 			db.metrics.reloadsFailed.Inc()
@@ -955,7 +995,7 @@ func (db *DB) reload() (err error) {
 
 	maxt := loadable[len(loadable)-1].Meta().MaxTime
 
-	return errors.Wrap(db.head.Truncate(maxt), "head truncate failed")
+	return errors.Wrap(db.head.Truncate(maxt, performCheckpoint), "head truncate failed")
 }
 
 func openBlocks(l log.Logger, dir string, loaded []*Block, chunkPool chunkenc.Pool) (blocks []*Block, corrupted map[ulid.ULID]error, err error) {
@@ -1416,7 +1456,7 @@ func (db *DB) CleanTombstones() (err error) {
 			newUIDs = append(newUIDs, *uid)
 		}
 	}
-	return errors.Wrap(db.reload(), "reload blocks")
+	return errors.Wrap(db.reload(false), "reload blocks")
 }
 
 func isBlockDir(fi os.FileInfo) bool {
