@@ -14,6 +14,7 @@ package wal
 
 import (
 	"fmt"
+	"github.com/go-kit/kit/log"
 	"io/ioutil"
 	"math/rand"
 	"os"
@@ -275,7 +276,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 				}
 			}
 
-			Checkpoint(w, 0, 1, func(x uint64) bool { return true }, 0)
+			Checkpoint(log.NewNopLogger(), w, 0, 1, func(x uint64) bool { return true }, 0)
 			w.Truncate(1)
 
 			// Write more records after checkpointing.
@@ -360,7 +361,7 @@ func TestReadCheckpoint(t *testing.T) {
 					testutil.Ok(t, w.Log(sample))
 				}
 			}
-			Checkpoint(w, 30, 31, func(x uint64) bool { return true }, 0)
+			Checkpoint(log.NewNopLogger(), w, 30, 31, func(x uint64) bool { return true }, 0)
 			w.Truncate(32)
 
 			// Start read after checkpoint, no more data written.
@@ -520,7 +521,7 @@ func TestCheckpointSeriesReset(t *testing.T) {
 			})
 			testutil.Equals(t, seriesCount, wt.checkNumLabels())
 
-			_, err = Checkpoint(w, 2, 4, func(x uint64) bool { return true }, 0)
+			_, err = Checkpoint(log.NewNopLogger(), w, 2, 4, func(x uint64) bool { return true }, 0)
 			testutil.Ok(t, err)
 
 			err = w.Truncate(5)
