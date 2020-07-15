@@ -952,7 +952,8 @@ mainLoop:
 }
 
 // scrapeAndReport performs a scrape and then appends the result to the storage
-// together with reporting metrics, all using the same appender.
+// together with reporting metrics, by using as few appenders as possible.
+// In the happy scenario, a single appender is used.
 func (sl *scrapeLoop) scrapeAndReport(interval, timeout time.Duration, last time.Time, errc chan<- error) time.Time {
 	var (
 		start             = time.Now()
