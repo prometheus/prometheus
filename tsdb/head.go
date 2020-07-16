@@ -638,10 +638,6 @@ func (h *Head) Init(minValidTime int64) error {
 	defer h.postings.EnsureOrder()
 	defer h.gc() // After loading the wal remove the obsolete data from the head.
 
-	if h.wal == nil {
-		return nil
-	}
-
 	level.Info(h.logger).Log("msg", "Replaying WAL and on-disk memory mappable chunks if any, this may take a while")
 	start := time.Now()
 
@@ -654,6 +650,11 @@ func (h *Head) Init(minValidTime int64) error {
 		// If this fails, data will be recovered from WAL.
 		// Hence we wont lose any data (given WAL is not corrupt).
 		h.removeCorruptedMmappedChunks(err)
+	}
+
+	if h.wal == nil {
+		level.Info(h.logger).Log("msg", "On-disk memory mappable chunks replay completed, WAL not found", "duration", time.Since(start).String())
+		return nil
 	}
 
 	// Backfill the checkpoint first if it exists.
@@ -706,7 +707,7 @@ func (h *Head) Init(minValidTime int64) error {
 		level.Info(h.logger).Log("msg", "WAL segment loaded", "segment", i, "maxSegment", last)
 	}
 
-	level.Info(h.logger).Log("msg", "WAL replay completed", "duration", time.Since(start).String())
+	level.Info(h.logger).Log("msg", "WAL and on-disk memory mappable chunks replay completed", "duration", time.Since(start).String())
 
 	return nil
 }
