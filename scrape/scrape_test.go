@@ -1971,7 +1971,7 @@ func TestCheckAddError(t *testing.T) {
 	testutil.Equals(t, 1, appErrs.numOutOfOrder)
 }
 
-func TestScrapeReportIsolation(t *testing.T) {
+func TestScrapeReportSingleAppender(t *testing.T) {
 	s := teststorage.New(t)
 	defer s.Close()
 
