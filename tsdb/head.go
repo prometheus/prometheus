@@ -44,6 +44,9 @@ var (
 	// ErrInvalidSample is returned if an appended sample is not valid and can't
 	// be ingested.
 	ErrInvalidSample = errors.New("invalid sample")
+	// ErrAppenderClosed is returned if an appender has already be successfully
+	// rolled back or commited.
+	ErrAppenderClosed = errors.New("appender closed")
 )
 
 // Head handles reads and writes of time series data within a time window.
@@ -1093,6 +1096,7 @@ type headAppender struct {
 	sampleSeries []*memSeries
 
 	appendID, cleanupAppendIDsBelow uint64
+	closed                          bool
 }
 
 func (a *headAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
@@ -1193,7 +1197,11 @@ func (a *headAppender) log() error {
 	return nil
 }
 
-func (a *headAppender) Commit() error {
+func (a *headAppender) Commit() (err error) {
+	if a.closed {
+		return ErrAppenderClosed
+	}
+	defer func() { a.closed = true }()
 	if err := a.log(); err != nil {
 		//nolint: errcheck
 		a.Rollback() // Most likely the same error will happen again.
@@ -1231,7 +1239,11 @@ func (a *headAppender) Commit() error {
 	return nil
 }
 
-func (a *headAppender) Rollback() error {
+func (a *headAppender) Rollback() (err error) {
+	if a.closed {
+		return ErrAppenderClosed
+	}
+	defer func() { a.closed = true }()
 	defer a.head.metrics.activeAppenders.Dec()
 	defer a.head.iso.closeAppend(a.appendID)
 	defer a.head.putSeriesBuffer(a.sampleSeries)
