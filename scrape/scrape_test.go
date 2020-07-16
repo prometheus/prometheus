@@ -648,15 +648,13 @@ func TestScrapeLoopSeriesAdded(t *testing.T) {
 	s := teststorage.New(t)
 	defer s.Close()
 
-	app := s.Appender()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	sl := newScrapeLoop(ctx,
 		&testScraper{},
 		nil, nil,
 		nopMutator,
 		nopMutator,
-		func() storage.Appender { return app },
+		s.Appender,
 		nil,
 		0,
 		true,
@@ -793,13 +791,11 @@ func TestScrapeLoopCache(t *testing.T) {
 	s := teststorage.New(t)
 	defer s.Close()
 
-	sapp := s.Appender()
-
-	appender := &collectResultAppender{next: sapp}
+	appender := &collectResultAppender{}
 	var (
 		signal  = make(chan struct{}, 1)
 		scraper = &testScraper{}
-		app     = func() storage.Appender { return appender }
+		app     = func() storage.Appender { appender.next = s.Appender(); return appender }
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1141,15 +1137,13 @@ func TestScrapeLoop_ChangingMetricString(t *testing.T) {
 	s := teststorage.New(t)
 	defer s.Close()
 
-	app := s.Appender()
-
-	capp := &collectResultAppender{next: app}
+	capp := &collectResultAppender{}
 
 	sl := newScrapeLoop(context.Background(),
 		nil, nil, nil,
 		nopMutator,
 		nopMutator,
-		func() storage.Appender { return capp },
+		func() storage.Appender { capp.next = s.Appender(); return capp },
 		nil,
 		0,
 		true,
@@ -1628,15 +1622,13 @@ func TestScrapeLoopDiscardDuplicateLabels(t *testing.T) {
 	s := teststorage.New(t)
 	defer s.Close()
 
-	app := s.Appender()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	sl := newScrapeLoop(ctx,
 		&testScraper{},
 		nil, nil,
 		nopMutator,
 		nopMutator,
-		func() storage.Appender { return app },
+		s.Appender,
 		nil,
 		0,
 		true,
@@ -1896,15 +1888,13 @@ func TestScrapeAddFast(t *testing.T) {
 	s := teststorage.New(t)
 	defer s.Close()
 
-	app := s.Appender()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	sl := newScrapeLoop(ctx,
 		&testScraper{},
 		nil, nil,
 		nopMutator,
 		nopMutator,
-		func() storage.Appender { return app },
+		s.Appender,
 		nil,
 		0,
 		true,
