@@ -589,8 +589,18 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			)
 
 			app := g.opts.Appendable.Appender()
+			var appErr error
 			seriesReturned := make(map[string]labels.Labels, len(g.seriesInPreviousEval[i]))
 			defer func() {
+				if appErr != nil {
+					app.Rollback()
+					app = g.opts.Appendable.Appender()
+					if err := g.addStalenessMarkers(app, ts, nil, i); err != nil {
+						// Make sure that if commit succeeds, next run won't re-create
+						// the staleness markers.
+						seriesReturned = nil
+					}
+				}
 				if err := app.Commit(); err != nil {
 					level.Warn(g.logger).Log("msg", "Rule sample appending failed", "err", err)
 					return
@@ -607,6 +617,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 						numDuplicates++
 						level.Debug(g.logger).Log("msg", "Rule evaluation result discarded", "err", err, "sample", s)
 					default:
+						appErr = err
 						level.Warn(g.logger).Log("msg", "Rule evaluation result discarded", "err", err, "sample", s)
 					}
 				} else {
@@ -620,23 +631,31 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				level.Warn(g.logger).Log("msg", "Error on ingesting results from rule evaluation with different value but same timestamp", "numDropped", numDuplicates)
 			}
 
-			for metric, lset := range g.seriesInPreviousEval[i] {
-				if _, ok := seriesReturned[metric]; !ok {
-					// Series no longer exposed, mark it stale.
-					_, err = app.Add(lset, timestamp.FromTime(ts), math.Float64frombits(value.StaleNaN))
-					switch errors.Cause(err) {
-					case nil:
-					case storage.ErrOutOfOrderSample, storage.ErrDuplicateSampleForTimestamp:
-						// Do not count these in logging, as this is expected if series
-						// is exposed from a different rule.
-					default:
-						level.Warn(g.logger).Log("msg", "Adding stale sample failed", "sample", metric, "err", err)
-					}
-				}
+			if err := g.addStalenessMarkers(app, ts, seriesReturned, i); err != nil {
+				appErr = err
 			}
 		}(i, rule)
 	}
 	g.cleanupStaleSeries(ts)
+}
+
+func (g *Group) addStalenessMarkers(app storage.Appender, ts time.Time, seriesReturned map[string]labels.Labels, ruleID int) error {
+	for metric, lset := range g.seriesInPreviousEval[ruleID] {
+		if _, ok := seriesReturned[metric]; !ok {
+			// Series no longer exposed, mark it stale.
+			_, err := app.Add(lset, timestamp.FromTime(ts), math.Float64frombits(value.StaleNaN))
+			switch errors.Cause(err) {
+			case nil:
+			case storage.ErrOutOfOrderSample, storage.ErrDuplicateSampleForTimestamp:
+				// Do not count these in logging, as this is expected if series
+				// is exposed from a different rule.
+			default:
+				level.Warn(g.logger).Log("msg", "Adding stale sample failed", "sample", metric, "err", err)
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (g *Group) cleanupStaleSeries(ts time.Time) {
