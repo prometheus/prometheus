@@ -638,11 +638,7 @@ func (h *Head) Init(minValidTime int64) error {
 	defer h.postings.EnsureOrder()
 	defer h.gc() // After loading the wal remove the obsolete data from the head.
 
-	if h.wal == nil {
-		return nil
-	}
-
-	level.Info(h.logger).Log("msg", "Replaying WAL and on-disk memory mappable chunks if any, this may take a while")
+	level.Info(h.logger).Log("msg", "Replaying on-disk memory mappable chunks if any")
 	start := time.Now()
 
 	mmappedChunks, err := h.loadMmappedChunks()
@@ -656,6 +652,15 @@ func (h *Head) Init(minValidTime int64) error {
 		h.removeCorruptedMmappedChunks(err)
 	}
 
+	level.Info(h.logger).Log("msg", "On-disk memory mappable chunks replay completed", "duration", time.Since(start).String())
+	if h.wal == nil {
+		level.Info(h.logger).Log("msg", "WAL not found")
+		return nil
+	}
+
+	level.Info(h.logger).Log("msg", "Replaying WAL, this may take a while")
+
+	checkpointReplayStart := time.Now()
 	// Backfill the checkpoint first if it exists.
 	dir, startFrom, err := wal.LastCheckpoint(h.wal.Dir())
 	if err != nil && err != record.ErrNotFound {
@@ -681,7 +686,9 @@ func (h *Head) Init(minValidTime int64) error {
 		startFrom++
 		level.Info(h.logger).Log("msg", "WAL checkpoint loaded")
 	}
+	checkpointReplayDuration := time.Since(checkpointReplayStart)
 
+	walReplayStart := time.Now()
 	// Find the last segment.
 	_, last, err := h.wal.Segments()
 	if err != nil {
@@ -706,7 +713,12 @@ func (h *Head) Init(minValidTime int64) error {
 		level.Info(h.logger).Log("msg", "WAL segment loaded", "segment", i, "maxSegment", last)
 	}
 
-	level.Info(h.logger).Log("msg", "WAL replay completed", "duration", time.Since(start).String())
+	level.Info(h.logger).Log(
+		"msg", "WAL replay completed",
+		"checkpoint_replay_duration", checkpointReplayDuration.String(),
+		"wal_replay_duration", time.Since(walReplayStart).String(),
+		"total_replay_duration", time.Since(start).String(),
+	)
 
 	return nil
 }
