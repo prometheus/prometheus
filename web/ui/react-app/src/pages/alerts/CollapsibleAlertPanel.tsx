@@ -44,25 +44,21 @@ const CollapsibleAlertPanel: FC<CollapsibleAlertPanelProps> = ({ rule, showAnnot
             {Object.entries(rule.labels).length > 0 && (
               <div>
                 <div>labels:</div>
-                {Object.entries(rule.labels).map(([key, value]) => {
-                  return (
-                    <div className="ml-4" key={key}>
-                      {key}: {value}
-                    </div>
-                  );
-                })}
+                {Object.entries(rule.labels).map(([key, value]) => (
+                  <div className="ml-4" key={key}>
+                    {key}: {value}
+                  </div>
+                ))}
               </div>
             )}
             {Object.entries(rule.annotations).length > 0 && (
               <div>
                 <div>annotations:</div>
-                {Object.entries(rule.annotations).map(([key, value]) => {
-                  return (
-                    <div className="ml-4" key={key}>
-                      {key}: {value}
-                    </div>
-                  );
-                })}
+                {Object.entries(rule.annotations).map(([key, value]) => (
+                  <div className="ml-4" key={key}>
+                    {key}: {value}
+                  </div>
+                ))}
               </div>
             )}
           </code>
