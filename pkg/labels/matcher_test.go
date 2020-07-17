@@ -117,3 +117,32 @@ func TestInverse(t *testing.T) {
 		testutil.Equals(t, test.expected.Type, result.Type)
 	}
 }
+
+func TestMatchType_String(t *testing.T) {
+	tests := []struct {
+		matchType MatchType
+		expected  string
+	}{
+		{
+			matchType: 0,
+			expected:  "=",
+		},
+		{
+			matchType: 1,
+			expected:  "!=",
+		},
+		{
+			matchType: 2,
+			expected:  "=~",
+		},
+		{
+			matchType: 3,
+			expected:  "!~",
+		},
+	}
+
+	for _, test := range tests {
+		result := test.matchType.String()
+		testutil.Equals(t, test.expected, result)
+	}
+}
