@@ -3,7 +3,7 @@ import { RouteComponentProps } from '@reach/router';
 import { APIResponse } from '../../hooks/useFetch';
 import { Alert, Table, Badge } from 'reactstrap';
 import { Link } from '@reach/router';
-import { formatRelative, createExpressionLink, humanizeDuration } from '../../utils';
+import { formatRelative, createExpressionLink, humanizeDuration, formatRange } from '../../utils';
 import { Rule } from '../../types/types';
 import { now } from 'moment';
 
@@ -87,6 +87,12 @@ export const RulesContent: FC<RouteComponentProps & RulesContentProps> = ({ resp
                         <td style={{ backgroundColor: '#F5F5F5' }} className="rule_cell">
                           <GraphExpressionLink title="alert" expr={r.name} />
                           <GraphExpressionLink title="expr" expr={r.query} />
+                          {r.duration > 0 && (
+                          <div>
+                            <strong>for:</strong> {formatRange(r.duration)}
+                          </div>
+                          )}
+                          {Object.entries(r.labels).length > 0 && (
                           <div>
                             <strong>labels:</strong>
                             {Object.entries(r.labels).map(([key, value]) => (
@@ -95,6 +101,8 @@ export const RulesContent: FC<RouteComponentProps & RulesContentProps> = ({ resp
                               </div>
                             ))}
                           </div>
+                          )}
+                          {Object.entries(r.annotations).length > 0 && (
                           <div>
                             <strong>annotations:</strong>
                             {Object.entries(r.annotations).map(([key, value]) => (
@@ -103,6 +111,7 @@ export const RulesContent: FC<RouteComponentProps & RulesContentProps> = ({ resp
                               </div>
                             ))}
                           </div>
+                          )}
                         </td>
                       ) : (
                         <td style={{ backgroundColor: '#F5F5F5' }}>
