@@ -10,6 +10,7 @@ require (
 	github.com/Azure/go-autorest/autorest/to v0.3.0 // indirect
 	github.com/Azure/go-autorest/autorest/validation v0.2.0 // indirect
 	github.com/Microsoft/go-winio v0.4.14 // indirect
+	github.com/RoaringBitmap/roaring v0.5.0
 	github.com/alecthomas/units v0.0.0-20190924025748-f65c72e2690d
 	github.com/armon/go-metrics v0.3.3 // indirect
 	github.com/aws/aws-sdk-go v1.33.5

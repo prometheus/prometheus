@@ -28,6 +28,9 @@ github.com/Microsoft/go-winio/pkg/guid
 github.com/PuerkitoBio/purell
 # github.com/PuerkitoBio/urlesc v0.0.0-20170810143723-de5bf2ad4578
 github.com/PuerkitoBio/urlesc
+# github.com/RoaringBitmap/roaring v0.5.0
+github.com/RoaringBitmap/roaring
+github.com/RoaringBitmap/roaring/roaring64
 # github.com/alecthomas/template v0.0.0-20190718012654-fb15b899a751
 github.com/alecthomas/template
 github.com/alecthomas/template/parse
@@ -128,6 +131,8 @@ github.com/evanphx/json-patch
 github.com/fatih/color
 # github.com/ghodss/yaml v1.0.0
 github.com/ghodss/yaml
+# github.com/glycerine/go-unsnap-stream v0.0.0-20181221182339-f9677308dec2
+github.com/glycerine/go-unsnap-stream
 # github.com/go-kit/kit v0.10.0
 github.com/go-kit/kit/log
 github.com/go-kit/kit/log/level
@@ -299,6 +304,8 @@ github.com/mitchellh/mapstructure
 github.com/modern-go/concurrent
 # github.com/modern-go/reflect2 v1.0.1
 github.com/modern-go/reflect2
+# github.com/mschoch/smat v0.0.0-20160514031455-90eadee771ae
+github.com/mschoch/smat
 # github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f
 github.com/mwitkow/go-conntrack
 # github.com/oklog/run v1.1.0
@@ -316,6 +323,8 @@ github.com/opentracing-contrib/go-stdlib/nethttp
 github.com/opentracing/opentracing-go
 github.com/opentracing/opentracing-go/ext
 github.com/opentracing/opentracing-go/log
+# github.com/philhofer/fwd v1.0.0
+github.com/philhofer/fwd
 # github.com/pkg/errors v0.9.1
 github.com/pkg/errors
 # github.com/pmezard/go-difflib v1.0.0
@@ -359,6 +368,8 @@ github.com/shurcooL/vfsgen
 github.com/sirupsen/logrus
 # github.com/soheilhy/cmux v0.1.4
 github.com/soheilhy/cmux
+# github.com/tinylib/msgp v1.1.0
+github.com/tinylib/msgp/msgp
 # github.com/uber/jaeger-client-go v2.24.0+incompatible
 github.com/uber/jaeger-client-go
 github.com/uber/jaeger-client-go/config
@@ -381,6 +392,8 @@ github.com/uber/jaeger-client-go/utils
 # github.com/uber/jaeger-lib v2.2.0+incompatible
 github.com/uber/jaeger-lib/metrics
 github.com/uber/jaeger-lib/metrics/prometheus
+# github.com/willf/bitset v1.1.10
+github.com/willf/bitset
 # go.mongodb.org/mongo-driver v1.3.2
 go.mongodb.org/mongo-driver/bson
 go.mongodb.org/mongo-driver/bson/bsoncodec
