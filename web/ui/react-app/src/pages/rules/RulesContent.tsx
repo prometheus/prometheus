@@ -83,42 +83,39 @@ export const RulesContent: FC<RouteComponentProps & RulesContentProps> = ({ resp
                 {g.rules.map((r, i) => {
                   return (
                     <tr key={i}>
-                      {r.alerts ? (
-                        <td style={{ backgroundColor: '#F5F5F5' }} className="rule_cell">
-                          <GraphExpressionLink title="alert" expr={r.name} />
-                          <GraphExpressionLink title="expr" expr={r.query} />
-                          {r.duration > 0 && (
-                            <div>
-                              <strong>for:</strong> {formatRange(r.duration)}
-                            </div>
-                          )}
-                          {Object.entries(r.labels).length > 0 && (
-                            <div>
-                              <strong>labels:</strong>
-                              {Object.entries(r.labels).map(([key, value]) => (
-                                <div className="ml-4" key={key}>
-                                  {key}: {value}
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                          {Object.entries(r.annotations).length > 0 && (
-                            <div>
-                              <strong>annotations:</strong>
-                              {Object.entries(r.annotations).map(([key, value]) => (
-                                <div className="ml-4" key={key}>
-                                  {key}: {value}
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </td>
-                      ) : (
-                        <td style={{ backgroundColor: '#F5F5F5' }}>
+                      <td style={{ backgroundColor: '#F5F5F5' }} className="rule_cell">
+                        {r.alerts ? (
+                          <GraphExpressionLink title="alert" expr={`ALERTS{alertname="${r.name}"}`} />
+                        ) : (
                           <GraphExpressionLink title="record" expr={r.name} />
-                          <GraphExpressionLink title="expr" expr={r.query} />
-                        </td>
-                      )}
+                        )}
+                        <GraphExpressionLink title="expr" expr={r.query} />
+                        {r.duration > 0 && (
+                          <div>
+                            <strong>for:</strong> {formatRange(r.duration)}
+                          </div>
+                        )}
+                        {Object.entries(r.labels).length > 0 && (
+                          <div>
+                            <strong>labels:</strong>
+                            {Object.entries(r.labels).map(([key, value]) => (
+                              <div className="ml-4" key={key}>
+                                {key}: {value}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {r.alerts && Object.entries(r.annotations).length > 0 && (
+                          <div>
+                            <strong>annotations:</strong>
+                            {Object.entries(r.annotations).map(([key, value]) => (
+                              <div className="ml-4" key={key}>
+                                {key}: {value}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </td>
                       <td>
                         <Badge color={getBadgeColor(r.health)}>{r.health.toUpperCase()}</Badge>
                       </td>
