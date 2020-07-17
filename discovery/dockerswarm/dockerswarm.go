@@ -108,8 +108,8 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 	}
 
 	// There are other protocols that HTTP supported by the Docker daemon, like
-	// unix, which do not require an http client. Passing an http client to the
-	// docker client makes those non-http requests fail.
+	// unix, which are not supported by the HTTP client. Passing HTTP client
+	// options to the Docker client makes those non-HTTP requests fail.
 	if conf.url.Scheme == "http" || conf.url.Scheme == "https" {
 		rt, err := config_util.NewRoundTripperFromConfig(conf.HTTPClientConfig, "dockerswarm_sd", false)
 		if err != nil {
