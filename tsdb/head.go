@@ -759,8 +759,16 @@ func (h *Head) removeCorruptedMmappedChunks(err error) map[uint64][]*mmappedChun
 	return mmappedChunks
 }
 
-// Truncate removes old data before mint from the head.
+// Truncate removes old data before mint from the head and WAL.
 func (h *Head) Truncate(mint int64) (err error) {
+	if err := h.TruncateInMemory(mint); err != nil {
+		return err
+	}
+	return h.TruncateWAL(mint)
+}
+
+// TruncateInMemory removes old data before mint from the head.
+func (h *Head) TruncateInMemory(mint int64) (err error) {
 	defer func() {
 		if err != nil {
 			h.metrics.headTruncateFail.Inc()
@@ -800,7 +808,8 @@ func (h *Head) Truncate(mint int64) (err error) {
 	return nil
 }
 
-func (h *Head) truncateWAL(mint int64) error {
+// TruncateWAL removes old data before mint from the WAL.
+func (h *Head) TruncateWAL(mint int64) error {
 	if h.wal == nil {
 		return nil
 	}

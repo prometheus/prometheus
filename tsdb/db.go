@@ -739,14 +739,13 @@ func (db *DB) Compact() (err error) {
 		}
 	}()
 
-	checkpointTime := int64(math.MinInt64)
-	checkpointAttempted := false
-	headCompacted := false
+	walTruncationTime := int64(math.MinInt64)
+	walTruncationAttempted, headCompacted := false, false
 	defer func() {
-		if headCompacted && !checkpointAttempted {
+		if headCompacted && !walTruncationAttempted {
 			var merr tsdb_errors.MultiError
 			merr.Add(err)
-			merr.Add(errors.Wrap(db.truncateWAL(checkpointTime), "head checkpoint in Compact"))
+			merr.Add(errors.Wrap(db.truncateWAL(walTruncationTime), "WAL truncation in Compact"))
 			err = merr.Err()
 		}
 	}()
@@ -776,22 +775,24 @@ func (db *DB) Compact() (err error) {
 		if err != nil {
 			return err
 		}
-		if t > checkpointTime {
-			checkpointTime = t
+		if t > walTruncationTime {
+			walTruncationTime = t
 		}
 		headCompacted = true
 	}
 
 	if headCompacted {
-		checkpointAttempted = true
-		if err := db.truncateWAL(checkpointTime); err != nil {
-			return errors.Wrap(err, "head checkpoint in Compact")
+		walTruncationAttempted = true
+		if err := db.truncateWAL(walTruncationTime); err != nil {
+			return errors.Wrap(err, "WAL truncation in Compact")
 		}
 	}
 
 	return db.compactBlocks()
 }
 
+// truncateWAL truncates WAL upto the maxt of the last block or the provided
+// time, whichever is higher.
 func (db *DB) truncateWAL(t int64) error {
 	if blocks := db.Blocks(); len(blocks) > 0 {
 		blockMaxt := blocks[len(blocks)-1].Meta().MaxTime
@@ -804,7 +805,7 @@ func (db *DB) truncateWAL(t int64) error {
 		return nil
 	}
 
-	return db.head.truncateWAL(t)
+	return db.head.TruncateWAL(t)
 }
 
 // CompactHead compacts the given the RangeHead.
@@ -812,45 +813,45 @@ func (db *DB) CompactHead(head *RangeHead) (err error) {
 	db.cmtx.Lock()
 	defer db.cmtx.Unlock()
 
-	checkpointTime, err := db.compactHead(head)
+	walTruncationTime, err := db.compactHead(head)
 	if err != nil {
 		return err
 	}
-	return errors.Wrap(db.truncateWAL(checkpointTime), "head checkpoint in CompactHead")
+	return errors.Wrap(db.truncateWAL(walTruncationTime), "WAL truncation in CompactHead")
 }
 
 // compactHead compacts the given the RangeHead.
 // The compaction mutex should be held before calling this method.
-func (db *DB) compactHead(head *RangeHead) (checkpointTime int64, err error) {
-	checkpointTime = math.MinInt64
+func (db *DB) compactHead(head *RangeHead) (walTruncationTime int64, err error) {
+	walTruncationTime = math.MinInt64
 	// Add +1 millisecond to block maxt because block intervals are half-open: [b.MinTime, b.MaxTime).
 	// Because of this block intervals are always +1 than the total samples it includes.
 	maxt := head.MaxTime() + 1
 	uid, err := db.compactor.Write(db.dir, head, head.MinTime(), maxt, nil)
 	if err != nil {
-		return checkpointTime, errors.Wrap(err, "persist head block")
+		return walTruncationTime, errors.Wrap(err, "persist head block")
 	}
 
 	runtime.GC()
 
 	if err := db.reload(); err != nil {
 		if err := os.RemoveAll(filepath.Join(db.dir, uid.String())); err != nil {
-			return checkpointTime, errors.Wrapf(err, "delete persisted head block after failed db reload:%s", uid)
+			return walTruncationTime, errors.Wrapf(err, "delete persisted head block after failed db reload:%s", uid)
 		}
-		return checkpointTime, errors.Wrap(err, "reload blocks")
+		return walTruncationTime, errors.Wrap(err, "reload blocks")
 	}
 	if (uid == ulid.ULID{}) {
 		// in this case no new block will be persisted so manually truncate the head.
 		// Head truncating during db.reload() depends on the persisted blocks and
 		// Compaction resulted in an empty block.
 		if err = db.head.Truncate(maxt); err != nil {
-			return checkpointTime, errors.Wrap(err, "head truncate failed (in compact)")
+			return walTruncationTime, errors.Wrap(err, "head truncate failed (in compact)")
 		}
-		checkpointTime = maxt
+		walTruncationTime = maxt
 	}
 	runtime.GC()
 
-	return checkpointTime, nil
+	return walTruncationTime, nil
 }
 
 // compactBlocks compacts all the eligible on-disk blocks.
@@ -1010,7 +1011,7 @@ func (db *DB) reload() (err error) {
 
 	maxt := loadable[len(loadable)-1].Meta().MaxTime
 
-	return errors.Wrap(db.head.Truncate(maxt), "head truncate failed")
+	return errors.Wrap(db.head.TruncateInMemory(maxt), "head truncate failed")
 }
 
 func openBlocks(l log.Logger, dir string, loaded []*Block, chunkPool chunkenc.Pool) (blocks []*Block, corrupted map[ulid.ULID]error, err error) {
