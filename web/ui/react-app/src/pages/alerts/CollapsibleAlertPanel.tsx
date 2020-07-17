@@ -37,25 +37,33 @@ const CollapsibleAlertPanel: FC<CollapsibleAlertPanelProps> = ({ rule, showAnnot
               expr: <Link to={createExpressionLink(rule.query)}>{rule.query}</Link>
             </div>
             {rule.duration > 0 && (
-            <div>
-              <div>for: {formatRange(rule.duration)}</div>
-            </div>
+              <div>
+                <div>for: {formatRange(rule.duration)}</div>
+              </div>
             )}
             {Object.entries(rule.labels).length > 0 && (
-            <div>
-              <div>labels:</div>
-              {Object.entries(rule.labels).map(([key, value]) => {
-                return (<div className="ml-4" key={key}>{key}: {value}</div>)
-              })}
-            </div>
+              <div>
+                <div>labels:</div>
+                {Object.entries(rule.labels).map(([key, value]) => {
+                  return (
+                    <div className="ml-4" key={key}>
+                      {key}: {value}
+                    </div>
+                  );
+                })}
+              </div>
             )}
             {Object.entries(rule.annotations).length > 0 && (
-            <div>
-              <div>annotations:</div>
-              {Object.entries(rule.annotations).map(([key, value]) => {
-                return ( <div className="ml-4" key={key}>{key}: {value}</div>)
-              })}
-            </div>
+              <div>
+                <div>annotations:</div>
+                {Object.entries(rule.annotations).map(([key, value]) => {
+                  return (
+                    <div className="ml-4" key={key}>
+                      {key}: {value}
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </code>
         </pre>
