@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -471,16 +472,51 @@ func (p *Prettier) sortItems(items []parser.Item, isTest bool) []parser.Item {
 				items = tempItems
 			}
 
-		case parser.STRING:
+		case parser.IDENTIFIER:
 			//	TODO: currently its assumed that these are always labels.
-			if i < 2 {
+			if i < 1 || item.Val != "__name__" || items[i+2].Typ != parser.STRING {
 				continue
 			}
-			labelItem := items[i-2]
-			if labelItem.Typ != parser.IDENTIFIER || labelItem.Val != "__name__" {
+			labelValItem := items[i+2]
+			if !regexp.MustCompile("^[a-z_A-Z]+$").MatchString(labelValItem.Val[1 : len(labelValItem.Val)-1]) {
 				continue
 			}
-
+			var (
+				leftBraceIndex  = -1
+				rightBraceIndex = -1
+				metricName      = labelValItem.Val[1 : len(labelValItem.Val)-1]
+				tmp             []parser.Item
+			)
+			for backScanIndex := i; backScanIndex >= 0; backScanIndex-- {
+				if items[backScanIndex].Typ == parser.LEFT_BRACE {
+					leftBraceIndex = backScanIndex
+					break
+				}
+			}
+			for forwardScanIndex := i; forwardScanIndex < len(items); forwardScanIndex++ {
+				if items[forwardScanIndex].Typ == parser.RIGHT_BRACE {
+					rightBraceIndex = forwardScanIndex
+					break
+				}
+			}
+			skipBraces := rightBraceIndex-4 == leftBraceIndex
+			identifierItem := parser.Item{Typ: parser.IDENTIFIER, Val: metricName, Pos: 0}
+			for j := 0; j < len(items); j++ {
+				if j == leftBraceIndex {
+					tmp = append(tmp, identifierItem)
+					if !skipBraces {
+						tmp = append(tmp, items[j])
+					}
+					continue
+				} else if items[i+3].Typ == parser.COMMA && j == i+3 || j >= i && j < i+3 {
+					continue
+				}
+				if skipBraces && (items[j].Typ == parser.LEFT_BRACE || items[j].Typ == parser.RIGHT_BRACE) {
+					continue
+				}
+				tmp = append(tmp, items[j])
+			}
+			items = tmp
 		}
 	}
 	if requiresRefresh || isTest {

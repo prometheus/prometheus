@@ -88,6 +88,19 @@ var sortingLexItemsCases = []prettierTest{
 		expr:     `sum(go_alloc_bytes{job="prometheus", instance="localhost:9090"} + ignoring(instance) go_goroutines{job="prometheus", instance="localhost:9090"}) by (job)`,
 		expected: `sum by (job) (go_alloc_bytes{job="prometheus", instance="localhost:9090"} + ignoring(instance) go_goroutines{job="prometheus", instance="localhost:9090"})`,
 	},
+	// __name__ cases
+	{
+		expr:     `{__name__="metric_name"}`,
+		expected: `metric_name`,
+	},
+	{
+		expr:     `{__name__="metric_name",}`,
+		expected: `metric_name`,
+	},
+	{
+		expr:     `{__name__="metric_name", foo="bar"}`,
+		expected: `metric_name{foo="bar"}`,
+	},
 }
 
 func TestLexItemSorting(t *testing.T) {
