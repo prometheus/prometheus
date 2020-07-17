@@ -100,6 +100,6 @@ func TestExprString(t *testing.T) {
 			exp = test.out
 		}
 
-		testutil.Equals(t, expr.String(), exp)
+		testutil.Equals(t, exp, expr.String())
 	}
 }
