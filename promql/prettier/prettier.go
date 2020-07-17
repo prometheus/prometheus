@@ -473,20 +473,21 @@ func (p *Prettier) sortItems(items []parser.Item, isTest bool) []parser.Item {
 			}
 
 		case parser.IDENTIFIER:
-			//	TODO: currently its assumed that these are always labels.
-			if i < 1 || item.Val != "__name__" || items[i+2].Typ != parser.STRING {
-				continue
-			}
-			labelValItem := items[i+2]
-			if !regexp.MustCompile("^[a-z_A-Z]+$").MatchString(labelValItem.Val[1 : len(labelValItem.Val)-1]) {
-				continue
-			}
 			var (
 				leftBraceIndex  = -1
 				rightBraceIndex = -1
 				metricName      = labelValItem.Val[1 : len(labelValItem.Val)-1]
+				labelValItem    = items[i+2]
 				tmp             []parser.Item
+				skipBraces      bool
 			)
+			//	TODO: currently its assumed that these are always labels.
+			if i < 1 || item.Val != "__name__" || items[i+2].Typ != parser.STRING {
+				continue
+			}
+			if !regexp.MustCompile("^[a-z_A-Z]+$").MatchString(labelValItem.Val[1 : len(labelValItem.Val)-1]) {
+				continue
+			}
 			for backScanIndex := i; backScanIndex >= 0; backScanIndex-- {
 				if items[backScanIndex].Typ == parser.LEFT_BRACE {
 					leftBraceIndex = backScanIndex
@@ -499,20 +500,27 @@ func (p *Prettier) sortItems(items []parser.Item, isTest bool) []parser.Item {
 					break
 				}
 			}
-			skipBraces := rightBraceIndex-4 == leftBraceIndex
+			// TODO: assuming comments are not present at this place.
+			if items[i+3].Typ == parser.COMMA {
+				skipBraces = rightBraceIndex-5 == leftBraceIndex
+			} else {
+				skipBraces = rightBraceIndex-4 == leftBraceIndex
+			}
 			identifierItem := parser.Item{Typ: parser.IDENTIFIER, Val: metricName, Pos: 0}
 			for j := 0; j < len(items); j++ {
-				if j == leftBraceIndex {
-					tmp = append(tmp, identifierItem)
-					if !skipBraces {
-						tmp = append(tmp, items[j])
+				if j >= leftBraceIndex && j <= rightBraceIndex {
+					if j == leftBraceIndex {
+						tmp = append(tmp, identifierItem)
+						if !skipBraces {
+							tmp = append(tmp, items[j])
+						}
+						continue
+					} else if items[i+3].Typ == parser.COMMA && j == i+3 || j >= i && j < i+3 {
+						continue
 					}
-					continue
-				} else if items[i+3].Typ == parser.COMMA && j == i+3 || j >= i && j < i+3 {
-					continue
-				}
-				if skipBraces && (items[j].Typ == parser.LEFT_BRACE || items[j].Typ == parser.RIGHT_BRACE) {
-					continue
+					if skipBraces && (items[j].Typ == parser.LEFT_BRACE || items[j].Typ == parser.RIGHT_BRACE) {
+						continue
+					}
 				}
 				tmp = append(tmp, items[j])
 			}
