@@ -107,7 +107,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 		client.WithAPIVersionNegotiation(),
 	}
 
-	// There are other protocols that HTTP supported by the Docker daemon, like
+	// There are other protocols than HTTP supported by the Docker daemon, like
 	// unix, which are not supported by the HTTP client. Passing HTTP client
 	// options to the Docker client makes those non-HTTP requests fail.
 	if conf.url.Scheme == "http" || conf.url.Scheme == "https" {
