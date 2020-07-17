@@ -88,29 +88,29 @@ export const RulesContent: FC<RouteComponentProps & RulesContentProps> = ({ resp
                           <GraphExpressionLink title="alert" expr={r.name} />
                           <GraphExpressionLink title="expr" expr={r.query} />
                           {r.duration > 0 && (
-                          <div>
-                            <strong>for:</strong> {formatRange(r.duration)}
-                          </div>
+                            <div>
+                              <strong>for:</strong> {formatRange(r.duration)}
+                            </div>
                           )}
                           {Object.entries(r.labels).length > 0 && (
-                          <div>
-                            <strong>labels:</strong>
-                            {Object.entries(r.labels).map(([key, value]) => (
-                              <div className="ml-4" key={key}>
-                                {key}: {value}
-                              </div>
-                            ))}
-                          </div>
+                            <div>
+                              <strong>labels:</strong>
+                              {Object.entries(r.labels).map(([key, value]) => (
+                                <div className="ml-4" key={key}>
+                                  {key}: {value}
+                                </div>
+                              ))}
+                            </div>
                           )}
                           {Object.entries(r.annotations).length > 0 && (
-                          <div>
-                            <strong>annotations:</strong>
-                            {Object.entries(r.annotations).map(([key, value]) => (
-                              <div className="ml-4" key={key}>
-                                {key}: {value}
-                              </div>
-                            ))}
-                          </div>
+                            <div>
+                              <strong>annotations:</strong>
+                              {Object.entries(r.annotations).map(([key, value]) => (
+                                <div className="ml-4" key={key}>
+                                  {key}: {value}
+                                </div>
+                              ))}
+                            </div>
                           )}
                         </td>
                       ) : (
