@@ -23,12 +23,12 @@ export interface RulesMap {
   groups: RuleGroup[];
 }
 
-const GraphExpressionLink: FC<{ expr: string; title: string }> = props => {
+const GraphExpressionLink: FC<{ expr: string; text: string; title: string }> = props => {
   return (
     <>
       <strong>{props.title}:</strong>
       <Link className="ml-4" to={createExpressionLink(props.expr)}>
-        {props.expr}
+        {props.text}
       </Link>
       <br />
     </>
@@ -85,11 +85,11 @@ export const RulesContent: FC<RouteComponentProps & RulesContentProps> = ({ resp
                     <tr key={i}>
                       <td style={{ backgroundColor: '#F5F5F5' }} className="rule_cell">
                         {r.alerts ? (
-                          <GraphExpressionLink title="alert" expr={`ALERTS{alertname="${r.name}"}`} />
+                          <GraphExpressionLink title="alert" text={r.name} expr={`ALERTS{alertname="${r.name}"}`} />
                         ) : (
-                          <GraphExpressionLink title="record" expr={r.name} />
+                          <GraphExpressionLink title="record" text={r.name} expr={r.name} />
                         )}
-                        <GraphExpressionLink title="expr" expr={r.query} />
+                        <GraphExpressionLink title="expr" text={r.query} expr={r.query} />
                         {r.duration > 0 && (
                           <div>
                             <strong>for:</strong> {formatRange(r.duration)}
