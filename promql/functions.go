@@ -404,8 +404,10 @@ func funcMaxOverTimeLastTimestamp(vals []parser.Value, args parser.Expressions, 
 		maxTime := values[0].T
 		for _, v := range values {
 			if v.V >= max || math.IsNaN(max) {
+				if v.T > maxTime || v.V > max {
+					maxTime = v.T
+				}
 				max = v.V
-				maxTime = v.T
 			}
 		}
 		return float64(maxTime) / 1000
@@ -432,8 +434,10 @@ func funcMinOverTimeLastTimestamp(vals []parser.Value, args parser.Expressions, 
 		minTime := values[0].T
 		for _, v := range values {
 			if v.V <= min || math.IsNaN(min) {
+				if v.T > minTime || v.V < min {
+					minTime = v.T
+				}
 				min = v.V
-				minTime = v.T
 			}
 		}
 		return float64(minTime) / 1000
