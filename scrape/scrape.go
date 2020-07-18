@@ -434,9 +434,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 		if _, ok := uniqueTargets[hash]; !ok {
 			wg.Add(1)
 			go func(l loop) {
-
 				l.stop()
-
 				wg.Done()
 			}(sp.loops[hash])
 
