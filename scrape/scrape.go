@@ -417,7 +417,7 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 func (sp *scrapePool) sync(targets []*Target) {
 	// This function expects that you have acquired the sp.mtx lock.
 	var (
-		uniqueTargets   = make(map[uint64]loop)
+		uniqueLoops     = make(map[uint64]loop)
 		interval        = time.Duration(sp.config.ScrapeInterval)
 		timeout         = time.Duration(sp.config.ScrapeTimeout)
 		limit           = int(sp.config.SampleLimit)
@@ -444,13 +444,11 @@ func (sp *scrapePool) sync(targets []*Target) {
 			sp.activeTargets[hash] = t
 			sp.loops[hash] = l
 
-			uniqueTargets[hash] = l
+			uniqueLoops[hash] = l
 		} else {
-			// TODO: add a test for this (ensure that we start the duplicated
-			// targets as well).
 			// This might be a duplicated target.
-			if _, ok := uniqueTargets[hash]; !ok {
-				uniqueTargets[hash] = nil
+			if _, ok := uniqueLoops[hash]; !ok {
+				uniqueLoops[hash] = nil
 			}
 			// Need to keep the most updated labels information
 			// for displaying it in the Service Discovery web page.
@@ -462,12 +460,10 @@ func (sp *scrapePool) sync(targets []*Target) {
 
 	// Stop and remove old targets and scraper loops.
 	for hash := range sp.activeTargets {
-		if _, ok := uniqueTargets[hash]; !ok {
+		if _, ok := uniqueLoops[hash]; !ok {
 			wg.Add(1)
 			go func(l loop) {
-
 				l.stop()
-
 				wg.Done()
 			}(sp.loops[hash])
 
@@ -476,12 +472,12 @@ func (sp *scrapePool) sync(targets []*Target) {
 		}
 	}
 
-	targetScrapePoolTargetsAdded.WithLabelValues(sp.config.JobName).Set(float64(len(uniqueTargets)))
+	targetScrapePoolTargetsAdded.WithLabelValues(sp.config.JobName).Set(float64(len(uniqueLoops)))
 	forcedErr := sp.getForcedError()
 	for _, l := range sp.loops {
 		l.setForcedError(forcedErr)
 	}
-	for _, l := range uniqueTargets {
+	for _, l := range uniqueLoops {
 		if l != nil {
 			go l.run(interval, timeout, nil)
 		}
@@ -1043,6 +1039,7 @@ func (sl *scrapeLoop) scrapeAndReport(interval, timeout time.Duration, last time
 	}()
 	if forcedErr := sl.getForcedError(); forcedErr != nil {
 		appErr = forcedErr
+		// Add stale markers
 		if _, _, _, err := sl.append(app, []byte{}, "", start); err != nil {
 			app.Rollback()
 			app = sl.appender()
@@ -1050,7 +1047,6 @@ func (sl *scrapeLoop) scrapeAndReport(interval, timeout time.Duration, last time
 		}
 		if errc != nil {
 			errc <- forcedErr
-			// Add stale markers
 		}
 	} else {
 		var contentType string
