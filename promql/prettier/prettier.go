@@ -78,23 +78,13 @@ func newPadder() *padder {
 
 func (p *Prettier) prettify(items []parser.Item, index int, result string) (string, error) {
 	var (
-		//baseIndent string
 		item = items[index]
 	)
 	if item.Typ == parser.EOF {
 		return result, nil
 	}
-	//if !p.exmptBaseIndent(item) && !p.pd.disableBaseIndent && !p.pd.inAggregateModifiers {
-	//	baseIndent = p.getBaseIndent(item, p.Node) // p.Node is the root node (TODO: renaming node to root node)
-	//	if baseIndent != p.pd.previousBaseIndent && !p.pd.isNewLineApplied { // denotes change of node
-	//		result += "\n"
-	//	}
-	//	p.pd.isNewLineApplied = false
-	//	result += baseIndent
-	//	p.pd.previousBaseIndent = baseIndent
-	//}
-
-	node := p.getNode(p.Node, item.PositionRange())
+	nodeInfo := newNodeInfo(p.Node, 100)
+	node := nodeInfo.getNode(p.Node, item.PositionRange())
 	nodeInformation := newNodeInfo(node, 100)
 	nodeInformation.fetch()
 
@@ -172,84 +162,6 @@ func (p *Prettier) exmptBaseIndent(item parser.Item) bool {
 	return false
 }
 
-// getNode returns the node corresponding to the given position range in the AST.
-func (p *Prettier) getNode(headAST parser.Expr, rnge parser.PositionRange) parser.Expr {
-	_, node, _ := p.getCurrentNodeHistory(headAST, rnge, []reflect.Type{})
-	return node
-}
-
-// getParentNode returns the parent node of the given node/item position range.
-func (p *Prettier) getParentNode(headAST parser.Expr, rnge parser.PositionRange) reflect.Type {
-	// TODO: var found is of no use. Hence, remove it and the bool return from the getNodeAncestorsStack
-	// since found condition can be handled by ancestors alone(confirmation needed).
-	ancestors, _, found := p.getCurrentNodeHistory(headAST, rnge, []reflect.Type{})
-	if !found {
-		return nil
-	}
-	if len(ancestors) < 2 {
-		return nil
-	}
-	return ancestors[len(ancestors)-2]
-}
-
-// getCurrentNodeHistory returns the ancestors along with the node in which the item is present, using the help of AST.
-// posRange can also be called as itemPosRange since carries the position range of the lexical item.
-func (p *Prettier) getCurrentNodeHistory(head parser.Expr, posRange parser.PositionRange, stack []reflect.Type) ([]reflect.Type, parser.Expr, bool) {
-	switch n := head.(type) {
-	case *parser.ParenExpr:
-		if n.Expr.PositionRange().Start <= posRange.Start && n.Expr.PositionRange().End >= posRange.End {
-			stack = append(stack, reflect.TypeOf(n))
-			p.getCurrentNodeHistory(n.Expr, posRange, stack)
-		}
-	case *parser.VectorSelector:
-		stack = append(stack, reflect.TypeOf(n))
-	case *parser.BinaryExpr:
-		stack = append(stack, reflect.TypeOf(n))
-		stmp, _head, found := p.getCurrentNodeHistory(n.LHS, posRange, stack)
-		if found {
-			return stmp, _head, true
-		}
-		stmp, _head, found = p.getCurrentNodeHistory(n.RHS, posRange, stack)
-		if found {
-			return stmp, _head, true
-		}
-		// if none of the above are true, that implies, the position range is of a symbol or a grouping modifier.
-	case *parser.AggregateExpr:
-		if n.Expr.PositionRange().Start <= posRange.Start && n.Expr.PositionRange().End >= posRange.End {
-			stack = append(stack, reflect.TypeOf(n))
-			p.getCurrentNodeHistory(n.Expr, posRange, stack)
-		}
-	case *parser.Call:
-		stack = append(stack, reflect.TypeOf(n))
-		for _, exprs := range n.Args {
-			if exprs.PositionRange().Start <= posRange.Start && exprs.PositionRange().End >= posRange.End {
-				stmp, _head, found := p.getCurrentNodeHistory(exprs, posRange, stack)
-				if found {
-					return stmp, _head, true
-				}
-			}
-		}
-	case *parser.MatrixSelector:
-		stack = append(stack, reflect.TypeOf(n))
-		if n.VectorSelector.PositionRange().Start <= posRange.Start && n.VectorSelector.PositionRange().End >= posRange.End {
-			p.getCurrentNodeHistory(n.VectorSelector, posRange, stack)
-		}
-	case *parser.UnaryExpr:
-		stack = append(stack, reflect.TypeOf(n))
-		if n.Expr.PositionRange().Start <= posRange.Start && n.Expr.PositionRange().End >= posRange.End {
-			p.getCurrentNodeHistory(n.Expr, posRange, stack)
-		}
-	case *parser.SubqueryExpr:
-		stack = append(stack, reflect.TypeOf(n))
-		if n.Expr.PositionRange().Start <= posRange.Start && n.Expr.PositionRange().End >= posRange.End {
-			p.getCurrentNodeHistory(n.Expr, posRange, stack)
-		}
-	case *parser.NumberLiteral, *parser.StringLiteral:
-		stack = append(stack, reflect.TypeOf(n))
-	}
-	return stack, head, true
-}
-
 // removeNodesWithoutPosRange removes the nodes (immediately after) that are added to the stack because they do not
 // have any way to check the position range with the given item.
 func (p *Prettier) removeNodesWithoutPosRange(stack []reflect.Type, typ string) []reflect.Type {
@@ -260,60 +172,6 @@ func (p *Prettier) removeNodesWithoutPosRange(stack []reflect.Type, typ string) 
 		break
 	}
 	return stack
-}
-
-// getBaseIndent returns the base indent for a lex item depending on the depth
-// of the node the item belongs to in the AST.
-func (p *Prettier) getBaseIndent(item parser.Item, node parser.Expr) string {
-	//var (
-	//	indent        int
-	//	tmp           parser.Expr
-	//	expectNextRHS bool
-	//	previousNode  string
-	//	head          = node
-	//)
-	//if head == nil {
-	//	return ""
-	//}
-	//for {
-	//	indent++
-	//	if head != nil && p.isItemWithinNode(head, item) {
-	//		switch n := head.(type) {
-	//		case *parser.AggregateExpr:
-	//			head = n.Expr
-	//		case *parser.ParenExpr:
-	//			head = n.Expr
-	//			previousNode = "*parser.ParenExpr"
-	//		case *parser.VectorSelector:
-	//			head = nil
-	//			previousNode = "*parser.VectorSelector"
-	//		case *parser.BinaryExpr:
-	//			head = n.LHS
-	//			tmp = n.RHS
-	//			expectNextRHS = true
-	//			if previousNode == "*parser.BinaryExpr" {
-	//				indent--
-	//			}
-	//			previousNode = "*parser.BinaryExpr"
-	//		}
-	//		continue
-	//	} else if expectNextRHS && head != nil && !item.Typ.IsOperator() {
-	//		expectNextRHS = false
-	//		head = tmp
-	//		if previousNode == "*parser.BinaryExpr" {
-	//			indent--
-	//		}
-	//		continue
-	//	}
-	//	indent--
-	//	return p.pd.pad(indent)
-	//}
-	//nodes, found := p.getNodeAncestorsStack(node, item.PositionRange(), []reflect.Type{})
-	//if !found || len(nodes) == 1 {
-	//	return ""
-	//}
-	//return p.pd.pad(len(nodes))
-	return ""
 }
 
 func (p *Prettier) isItemWithinNode(node parser.Node, item parser.Item) bool {
@@ -391,7 +249,7 @@ func (p *Prettier) Run() []error {
 }
 
 func (p *Prettier) sortItems(items []parser.Item, isTest bool) []parser.Item {
-	var requiresRefresh bool
+	var refreshItems bool
 	for i := 0; i < len(items); i++ {
 		item := items[i]
 		switch item.Typ {
@@ -442,7 +300,7 @@ func (p *Prettier) sortItems(items []parser.Item, isTest bool) []parser.Item {
 				}
 			}
 			if formatItems {
-				requiresRefresh = true
+				refreshItems = true
 				// get first index of the closing paren.
 				for j := keywordIndex; j <= len(items); j++ {
 					if items[j].Typ == parser.RIGHT_PAREN {
@@ -473,21 +331,22 @@ func (p *Prettier) sortItems(items []parser.Item, isTest bool) []parser.Item {
 			}
 
 		case parser.IDENTIFIER:
-			var (
-				leftBraceIndex  = -1
-				rightBraceIndex = -1
-				metricName      = labelValItem.Val[1 : len(labelValItem.Val)-1]
-				labelValItem    = items[i+2]
-				tmp             []parser.Item
-				skipBraces      bool
-			)
 			//	TODO: currently its assumed that these are always labels.
 			if i < 1 || item.Val != "__name__" || items[i+2].Typ != parser.STRING {
 				continue
 			}
+			var (
+				leftBraceIndex  = -1
+				rightBraceIndex = -1
+				labelValItem    = items[i+2]
+				metricName      = labelValItem.Val[1 : len(labelValItem.Val)-1]
+				tmp             []parser.Item
+				skipBraces      bool
+			)
 			if !regexp.MustCompile("^[a-z_A-Z]+$").MatchString(labelValItem.Val[1 : len(labelValItem.Val)-1]) {
 				continue
 			}
+			refreshItems = true
 			for backScanIndex := i; backScanIndex >= 0; backScanIndex-- {
 				if items[backScanIndex].Typ == parser.LEFT_BRACE {
 					leftBraceIndex = backScanIndex
@@ -527,7 +386,7 @@ func (p *Prettier) sortItems(items []parser.Item, isTest bool) []parser.Item {
 			items = tmp
 		}
 	}
-	if requiresRefresh || isTest {
+	if refreshItems || isTest {
 		return p.refreshLexItems(items)
 	}
 	return items
