@@ -25,6 +25,7 @@ import (
 	"github.com/pkg/errors"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promlog"
 	yaml "gopkg.in/yaml.v2"
 
 	sd_config "github.com/prometheus/prometheus/discovery/config"
@@ -301,6 +302,8 @@ type GlobalConfig struct {
 	EvaluationInterval model.Duration `yaml:"evaluation_interval,omitempty"`
 	// File to which PromQL queries are logged.
 	QueryLogFile string `yaml:"query_log_file,omitempty"`
+	// Prometheus Log Level. Takes precedence over CLI flags.
+	LogLevel *promlog.AllowedLevel `yaml:"log_level,omitempty"`
 	// The labels to add to any timeseries that this Prometheus instance scrapes.
 	ExternalLabels labels.Labels `yaml:"external_labels,omitempty"`
 }

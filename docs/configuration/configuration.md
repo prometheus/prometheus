@@ -71,6 +71,11 @@ global:
   # Reloading the configuration will reopen the file.
   [ query_log_file: <string> ]
 
+  # Prometheus log level. One of error, warn, info, or debug.
+  # Defaults to the value of the flag `--log.level`.
+  # Takes precedence over that flag.
+  [ log_level: <string> ]
+
 # Rule files specifies a list of globs. Rules and alerts are read from
 # all matching files.
 rule_files:

@@ -265,6 +265,18 @@ func main() {
 	}
 
 	logger := promlog.New(&cfg.promlogConfig)
+	originalLevel := cfg.promlogConfig.Level
+
+	// Throw error for invalid config before starting other components.
+	var initCfg *config.Config
+	if initCfg, err = config.LoadFile(cfg.configFile); err != nil {
+		level.Error(logger).Log("msg", fmt.Sprintf("Error loading config (--config.file=%s)", cfg.configFile), "err", err)
+		os.Exit(2)
+	}
+
+	if initCfg.GlobalConfig.LogLevel != nil {
+		logger.SetLevel(initCfg.GlobalConfig.LogLevel)
+	}
 
 	cfg.web.ExternalURL, err = computeExternalURL(cfg.prometheusURL, cfg.web.ListenAddress)
 	if err != nil {
@@ -275,12 +287,6 @@ func main() {
 	cfg.web.CORSOrigin, err = compileCORSRegexString(cfg.corsRegexString)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, errors.Wrapf(err, "could not compile CORS regex string %q", cfg.corsRegexString))
-		os.Exit(2)
-	}
-
-	// Throw error for invalid config before starting other components.
-	if _, err := config.LoadFile(cfg.configFile); err != nil {
-		level.Error(logger).Log("msg", fmt.Sprintf("Error loading config (--config.file=%s)", cfg.configFile), "err", err)
 		os.Exit(2)
 	}
 
@@ -434,6 +440,14 @@ func main() {
 	)
 
 	reloaders := []func(cfg *config.Config) error{
+		func(cfg *config.Config) error {
+			if lvl := cfg.GlobalConfig.LogLevel; lvl != nil {
+				logger.SetLevel(lvl)
+			} else {
+				logger.SetLevel(originalLevel)
+			}
+			return nil
+		},
 		remoteStorage.ApplyConfig,
 		webHandler.ApplyConfig,
 		func(cfg *config.Config) error {

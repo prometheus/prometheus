@@ -46,6 +46,25 @@ func (l *AllowedLevel) String() string {
 	return l.s
 }
 
+func (l *AllowedLevel) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	// Create a clean global config as the previous one was already populated
+	// by the default due to the YAML parser behavior for empty blocks.
+	var s string
+	type plain string
+	if err := unmarshal((*plain)(&s)); err != nil {
+		return err
+	}
+	if s == "" {
+		return nil
+	}
+	lo := &AllowedLevel{}
+	if err := lo.Set(s); err != nil {
+		return err
+	}
+	*l = *lo
+	return nil
+}
+
 // Set updates the value of the allowed level.
 func (l *AllowedLevel) Set(s string) error {
 	switch s {
@@ -92,17 +111,43 @@ type Config struct {
 
 // New returns a new leveled oklog logger. Each logged line will be annotated
 // with a timestamp. The output always goes to stderr.
-func New(config *Config) log.Logger {
+func New(config *Config) *logger {
 	var l log.Logger
 	if config.Format != nil && config.Format.s == "json" {
 		l = log.NewJSONLogger(log.NewSyncWriter(os.Stderr))
 	} else {
 		l = log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
 	}
-
-	if config.Level != nil {
-		l = level.NewFilter(l, config.Level.o)
-	}
 	l = log.With(l, "ts", timestampFormat, "caller", log.DefaultCaller)
-	return l
+
+	lo := &logger{
+		base:    l,
+		leveled: l,
+	}
+	if config.Level != nil {
+		lo.SetLevel(config.Level)
+	}
+	return lo
+}
+
+type logger struct {
+	base         log.Logger
+	leveled      log.Logger
+	currentLevel *AllowedLevel
+}
+
+// l implements logger.Log
+func (l *logger) Log(keyvals ...interface{}) error {
+	return l.leveled.Log(keyvals...)
+}
+
+// SetLevel allows changing the level
+func (l *logger) SetLevel(lvl *AllowedLevel) {
+	if lvl != nil {
+		if l.currentLevel != nil && l.currentLevel.s != lvl.s {
+			l.base.Log("msg", "Log level changed", "prev", l.currentLevel, "current", lvl)
+		}
+		l.currentLevel = lvl
+	}
+	l.leveled = level.NewFilter(l.base, lvl.o)
 }
