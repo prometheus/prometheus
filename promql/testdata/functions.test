@@ -734,3 +734,46 @@ eval instant at 5m absent_over_time({job="ingress"}[4m])
 
 eval instant at 10m absent_over_time({job="ingress"}[4m])
 	{job="ingress"} 1
+
+# Tests for min_over_time_last_timestamp
+clear
+
+load 10s
+    data{test="a"} 0 1 2 3 4 5 6 7 8 2
+    data{test="b"} 0 0 2 3 4 5 6 7 8 2
+    data{test="c"} 0 1 2 0 4 5 6 7 8 2
+    data{test="d"} 1 1 NaN 3 4 5 6 7 8 2
+    data{test="e"} 0 1 NaN 3 4 5 0 7 8 2
+    data{test="f"} 0 1 NaN 3 4 5 1 7 8 -2
+    data{test="f"} 0 1 NaN 3 4 5 1 7 8 -2
+    data{test="g"} 10 -Inf NaN 3 4 5 1 7 +Inf 12
+
+eval instant at 2m min_over_time_last_timestamp(data[5m])
+    {test="a"} 0
+    {test="b"} 10
+    {test="c"} 30
+    {test="d"} 10
+    {test="e"} 60
+    {test="f"} 90
+    {test="g"} 10
+
+# Tests for mmax_over_time_last_timestamp
+clear
+
+load 10s
+	data{test="a"} 10 1 2 3 4 5 6 7 8 2
+	data{test="b"} 10 10 2 3 4 5 6 7 8 2
+	data{test="c"} 10 1 2 10 4 5 6 7 8 2
+	data{test="d"} 11 11 NaN 3 4 5 6 7 8 2
+	data{test="e"} 10 1 NaN 3 4 5 10 7 8 2
+	data{test="f"} 10 1 NaN 3 4 5 1 7 8 12
+	data{test="g"} 10 +Inf NaN 3 4 5 1 7 -Inf 12
+
+eval instant at 2m max_over_time_last_timestamp(data[5m])
+    {test="a"} 0
+    {test="b"} 10
+    {test="c"} 30
+    {test="d"} 10
+    {test="e"} 60
+    {test="f"} 90
+    {test="g"} 10
