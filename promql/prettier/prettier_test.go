@@ -174,17 +174,17 @@ var prettierCases = []prettierTest{
 		expr:     `go_goroutines{job="prometheus",instance="localhost:9090"}`,
 		expected: `  go_goroutines{job="prometheus", instance="localhost:9090"}`,
 	},
-	//{
-	//	expr: `instance_cpu_time_ns{app="lion", proc="web", rev="34d0f99", env="prod", job="cluster-manager", host="localhostz"}`,
-	//	expected: `  instance_cpu_time_ns{
-	//  app="lion",
-	//  proc="web",
-	//  rev="34d0f99",
-	//  env="prod",
-	//  job="cluster-manager",
-	//  host="localhostz",
-	//}`,
-	//},
+	{
+		expr: `instance_cpu_time_ns{app="lion", proc="web", rev="34d0f99", env="prod", job="cluster-manager", host="localhost"}`,
+		expected: `  instance_cpu_time_ns{
+    app="lion",
+    proc="web",
+    rev="34d0f99",
+    env="prod",
+    job="cluster-manager",
+    host="localhost",
+  }`,
+	},
 	{
 		expr: `instance_cpu_time_ns{app="lion", proc="web", rev="34d0f99", env="prod", job="cluster-manager", host="localhost",}`,
 		expected: `  instance_cpu_time_ns{
