@@ -174,17 +174,17 @@ var prettierCases = []prettierTest{
 		expr:     `go_goroutines{job="prometheus",instance="localhost:9090"}`,
 		expected: `  go_goroutines{job="prometheus", instance="localhost:9090"}`,
 	},
-	{
-		expr: `instance_cpu_time_ns{app="lion", proc="web", rev="34d0f99", env="prod", job="cluster-manager", host="localhost"}`,
-		expected: `  instance_cpu_time_ns{
-    app="lion",
-    proc="web",
-    rev="34d0f99",
-    env="prod",
-    job="cluster-manager",
-    host="localhost",
-  }`,
-	},
+	//{
+	//	expr: `instance_cpu_time_ns{app="lion", proc="web", rev="34d0f99", env="prod", job="cluster-manager", host="localhostz"}`,
+	//	expected: `  instance_cpu_time_ns{
+	//  app="lion",
+	//  proc="web",
+	//  rev="34d0f99",
+	//  env="prod",
+	//  job="cluster-manager",
+	//  host="localhostz",
+	//}`,
+	//},
 	{
 		expr: `instance_cpu_time_ns{app="lion", proc="web", rev="34d0f99", env="prod", job="cluster-manager", host="localhost",}`,
 		expected: `  instance_cpu_time_ns{
@@ -196,15 +196,35 @@ var prettierCases = []prettierTest{
     host="localhost",
   }`,
 	},
+	{
+		expr:     `metric_one + metric_two`,
+		expected: `    metric_one + metric_two`,
+	},
+	{
+		expr:     `metric_one{foo="bar"} + metric_two{foo="bar"}`,
+		expected: `    metric_one{foo="bar"} + metric_two{foo="bar"}`,
+	},
+	{
+		expr: `metric_one{foo="bar"} + metric_two{foo="bar", instance="localhost:31233", job="two", first="second_", job="cluster-manager"}`,
+		expected: `    metric_one{foo="bar"}
++
+    metric_two{foo="bar", instance="localhost:31233", job="two", first="second_", job="cluster-manager"}`,
+	},
+	{
+		expr: `metric_two{foo="bar", instance="localhost:31233", job="two", first="second_", job="cluster-manager"} + metric_one{foo="bar"}`,
+		expected: `    metric_two{foo="bar", instance="localhost:31233", job="two", first="second_", job="cluster-manager"}
++
+    metric_one{foo="bar"}`,
+	},
 }
 
 func TestPrettierCases(t *testing.T) {
 	for _, expr := range prettierCases {
 		p, err := New(PrettifyExpression, expr.expr)
 		testutil.Ok(t, err)
-		lexItems := p.lexItems(expr.expr)
-		lexItems = p.sortItems(lexItems, true)
-		err = p.parseExpr(expr.expr)
+		standardizeExprStr := p.expressionFromItems(p.lexItems(expr.expr))
+		lexItems := p.sortItems(p.lexItems(expr.expr), true)
+		err = p.parseExpr(standardizeExprStr)
 		testutil.Ok(t, err)
 		output, err := p.prettify(lexItems, 0, "")
 		testutil.Ok(t, err)

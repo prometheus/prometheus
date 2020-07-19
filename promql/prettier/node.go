@@ -38,11 +38,19 @@ func (p *nodeInfo) getNode(root parser.Expr, item parser.Item) parser.Expr {
 }
 
 func (p *nodeInfo) baseIndent(item parser.Item) int {
-	if len(p.history) == 0 {
-		history, _, _ := p.nodeHistory(p.head, item.PositionRange(), []reflect.Type{})
-		p.history = history
+	history, _, _ := p.nodeHistory(p.head, item.PositionRange(), []reflect.Type{})
+	return len(history)
+}
+
+func (p *nodeInfo) contains(element string) bool {
+	switch element {
+	case "grouping-modifier":
+		switch n := p.head.(type) {
+		case *parser.BinaryExpr:
+			return n.VectorMatching.On
+		}
 	}
-	return len(p.history)
+	return false
 }
 
 // parentNode returns the parent node of the given node/item position range.
@@ -62,31 +70,42 @@ func (p *nodeInfo) parentNode(head parser.Expr, rnge parser.PositionRange) refle
 // nodeHistory returns the ancestors along with the node in which the item is present, using the help of AST.
 // posRange can also be called as itemPosRange since carries the position range of the lexical item.
 func (p *nodeInfo) nodeHistory(head parser.Expr, posRange parser.PositionRange, stack []reflect.Type) ([]reflect.Type, parser.Expr, bool) {
+	var nodeMatch bool
 	switch n := head.(type) {
 	case *parser.ParenExpr:
+		nodeMatch = true
 		if n.Expr.PositionRange().Start <= posRange.Start && n.Expr.PositionRange().End >= posRange.End {
 			stack = append(stack, reflect.TypeOf(n))
 			p.nodeHistory(n.Expr, posRange, stack)
 		}
 	case *parser.VectorSelector:
-		stack = append(stack, reflect.TypeOf(n))
+		if n.PositionRange().Start <= posRange.Start && n.PositionRange().End >= posRange.End {
+			nodeMatch = true
+			stack = append(stack, reflect.TypeOf(n))
+		}
 	case *parser.BinaryExpr:
 		stack = append(stack, reflect.TypeOf(n))
-		stmp, _head, found := p.nodeHistory(n.LHS, posRange, stack)
-		if found {
-			return stmp, _head, true
+		tempBinary := stack
+		stmpLHS, nodeLHS, foundLHS := p.nodeHistory(n.LHS, posRange, stack)
+		if foundLHS {
+			return stmpLHS, nodeLHS, foundLHS
 		}
-		stmp, _head, found = p.nodeHistory(n.RHS, posRange, stack)
-		if found {
-			return stmp, _head, true
+		stmpRHS, nodeRHS, foundRHS := p.nodeHistory(n.RHS, posRange, stack)
+		if foundRHS {
+			return stmpRHS, nodeRHS, foundRHS
 		}
-		// if none of the above are true, that implies, the position range is of a symbol or a grouping modifier.
+		// Since the item exists in both the child. This means that it is in binary expr range,
+		// but not satisfied by a single child. This is possible only for Op and grouping
+		// modifiers.
+		return tempBinary, head, true
 	case *parser.AggregateExpr:
+		nodeMatch = true
 		if n.Expr.PositionRange().Start <= posRange.Start && n.Expr.PositionRange().End >= posRange.End {
 			stack = append(stack, reflect.TypeOf(n))
 			p.nodeHistory(n.Expr, posRange, stack)
 		}
 	case *parser.Call:
+		nodeMatch = true
 		stack = append(stack, reflect.TypeOf(n))
 		for _, exprs := range n.Args {
 			if exprs.PositionRange().Start <= posRange.Start && exprs.PositionRange().End >= posRange.End {
@@ -97,22 +116,26 @@ func (p *nodeInfo) nodeHistory(head parser.Expr, posRange parser.PositionRange, 
 			}
 		}
 	case *parser.MatrixSelector:
+		nodeMatch = true
 		stack = append(stack, reflect.TypeOf(n))
 		if n.VectorSelector.PositionRange().Start <= posRange.Start && n.VectorSelector.PositionRange().End >= posRange.End {
 			p.nodeHistory(n.VectorSelector, posRange, stack)
 		}
 	case *parser.UnaryExpr:
+		nodeMatch = true
 		stack = append(stack, reflect.TypeOf(n))
 		if n.Expr.PositionRange().Start <= posRange.Start && n.Expr.PositionRange().End >= posRange.End {
 			p.nodeHistory(n.Expr, posRange, stack)
 		}
 	case *parser.SubqueryExpr:
+		nodeMatch = true
 		stack = append(stack, reflect.TypeOf(n))
 		if n.Expr.PositionRange().Start <= posRange.Start && n.Expr.PositionRange().End >= posRange.End {
 			p.nodeHistory(n.Expr, posRange, stack)
 		}
 	case *parser.NumberLiteral, *parser.StringLiteral:
+		nodeMatch = true
 		stack = append(stack, reflect.TypeOf(n))
 	}
-	return stack, head, true
+	return stack, head, nodeMatch
 }

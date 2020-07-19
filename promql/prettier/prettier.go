@@ -37,9 +37,11 @@ type padder struct {
 	// isNewLineApplied keeps the track of whether a new line was added
 	// after appending the item to the result. It should be set to default
 	// after applying baseIndent.
-	isNewLineApplied, expectNextRHS, leftParenNotIndented bool
-	disableBaseIndent, inAggregateModifiers               bool
-	expectNextIdentifier, previousBaseIndent              string
+	expectNextRHS, leftParenNotIndented      bool
+	disableBaseIndent, inAggregateModifiers  bool
+	expectNextIdentifier, previousBaseIndent string
+	containsGrouping                         bool
+	isNewLineApplied                         bool
 	//	new ones
 	insideMultilineBraces bool
 }
@@ -93,9 +95,12 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 		baseIndent int
 	)
 	currNode.fetch()
+	if item.Typ.IsOperator() && reflect.TypeOf(node).String() == "parser.BinaryExpr" {
+		p.pd.containsGrouping = currNode.contains("grouping-modifier")
+	}
 	nodeSplittable := currNode.violatesColumnLimit()
 	if p.pd.isNewLineApplied {
-		baseIndent = currNode.baseIndent(item)
+		baseIndent = nodeInfo.baseIndent(item)
 		result += p.pd.pad(baseIndent)
 		p.pd.isNewLineApplied = false
 	}
@@ -115,7 +120,7 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 	case parser.RIGHT_BRACE:
 		if p.pd.insideMultilineBraces {
 			if items[index-1].Typ != parser.COMMA {
-				// edge-case: if the labels are multi-line split, but do not have
+				// Edge-case: if the labels are multi-line split, but do not have
 				// a pre-applied comma.
 				result += "," + p.pd.newLine() + p.pd.pad(currNode.baseIndent(item))
 			}
@@ -124,9 +129,10 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 		result += item.Val
 	case parser.IDENTIFIER:
 		if p.pd.insideMultilineBraces {
-			result += p.pd.pad(1)
+			result += p.pd.pad(1) + item.Val
+		} else {
+			result += item.Val
 		}
-		result += item.Val
 	case parser.STRING, parser.NUMBER:
 		result += item.Val
 		p.pd.isNewLineApplied = false
@@ -146,7 +152,13 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 	case parser.SUM, parser.AVG, parser.COUNT, parser.MIN, parser.MAX, parser.STDDEV, parser.STDVAR, parser.TOPK, parser.BOTTOMK, parser.COUNT_VALUES, parser.QUANTILE:
 		result += item.Val
 	case parser.ADD, parser.SUB, parser.MUL, parser.DIV:
-		result += " " + item.Val + " "
+		if p.pd.containsGrouping {
+			result += p.pd.newLine() + p.pd.pad(baseIndent) + item.Val + " "
+		} else if nodeSplittable {
+			result += p.pd.newLine() + p.pd.pad(baseIndent) + item.Val + p.pd.newLine()
+		} else {
+			result += " " + item.Val + " "
+		}
 	case parser.WITHOUT, parser.BY, parser.IGNORING, parser.BOOL, parser.GROUP_LEFT, parser.GROUP_RIGHT, parser.OFFSET, parser.ON:
 		result += " " + item.Val + " "
 		p.pd.disableBaseIndent = true
@@ -244,7 +256,8 @@ func (p *Prettier) Run() []error {
 			for _, grps := range rgs.Groups {
 				for _, rules := range grps.Rules {
 					exprStr := rules.Expr.Value
-					if err := p.parseExpr(exprStr); err != nil {
+					standardizeExprStr := p.expressionFromItems(p.lexItems(exprStr))
+					if err := p.parseExpr(standardizeExprStr); err != nil {
 						return []error{err}
 					}
 					formattedExpr, err := p.prettify(
@@ -269,7 +282,6 @@ func (p *Prettier) Run() []error {
 }
 
 func (p *Prettier) sortItems(items []parser.Item, isTest bool) []parser.Item {
-	var refreshItems bool
 	for i := 0; i < len(items); i++ {
 		item := items[i]
 		switch item.Typ {
@@ -320,7 +332,6 @@ func (p *Prettier) sortItems(items []parser.Item, isTest bool) []parser.Item {
 				}
 			}
 			if formatItems {
-				refreshItems = true
 				// get first index of the closing paren.
 				for j := keywordIndex; j <= len(items); j++ {
 					if items[j].Typ == parser.RIGHT_PAREN {
@@ -366,7 +377,6 @@ func (p *Prettier) sortItems(items []parser.Item, isTest bool) []parser.Item {
 			if !regexp.MustCompile("^[a-z_A-Z]+$").MatchString(labelValItem.Val[1 : len(labelValItem.Val)-1]) {
 				continue
 			}
-			refreshItems = true
 			for backScanIndex := i; backScanIndex >= 0; backScanIndex-- {
 				if items[backScanIndex].Typ == parser.LEFT_BRACE {
 					leftBraceIndex = backScanIndex
@@ -406,10 +416,7 @@ func (p *Prettier) sortItems(items []parser.Item, isTest bool) []parser.Item {
 			items = tmp
 		}
 	}
-	if refreshItems || isTest {
-		return p.refreshLexItems(items)
-	}
-	return items
+	return p.refreshLexItems(items)
 }
 
 // refreshLexItems refreshes the contents of the lex slice and the properties
@@ -422,16 +429,17 @@ func (p *Prettier) refreshLexItems(items []parser.Item) []parser.Item {
 // expressionFromItems returns the raw expression from slice of items.
 // This is mostly used in re-ordering activities where the position of
 // the items changes during sorting in the sortItems.
+// This function also standardizes the expression without any spaces,
+// so that the length determined by .String() is done purely on the
+// character length.
 func (p *Prettier) expressionFromItems(items []parser.Item) string {
 	expression := ""
 	for _, item := range items {
 		switch item.Typ {
 		case parser.COMMENT:
 			expression += item.Val + "\n"
-		case parser.COMMA:
-			expression += item.Val + " "
 		default:
-			expression += item.Val + " "
+			expression += item.Val
 		}
 	}
 	return expression
