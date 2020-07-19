@@ -6,16 +6,17 @@ import (
 )
 
 type nodeInfo struct {
-	node parser.Expr
+	head parser.Expr
 	// node information details.
 	// information details should be used only after calling the fetch.
 	shouldSplit bool
 	columnLimit int
+	history     []reflect.Type
 }
 
-func newNodeInfo(node parser.Expr, columnLimit int) *nodeInfo {
+func newNodeInfo(head parser.Expr, columnLimit int) *nodeInfo {
 	return &nodeInfo{
-		node:        node,
+		head:        head,
 		columnLimit: columnLimit,
 	}
 }
@@ -26,20 +27,29 @@ func (p *nodeInfo) fetch() {
 }
 
 func (p *nodeInfo) violatesColumnLimit() bool {
-	return len(p.node.String()) > p.columnLimit
+	return len(p.head.String()) > p.columnLimit
 }
 
 // getNode returns the node corresponding to the given position range in the AST.
-func (p *nodeInfo) getNode(headAST parser.Expr, rnge parser.PositionRange) parser.Expr {
-	_, node, _ := p.getCurrentNodeHistory(headAST, rnge, []reflect.Type{})
+func (p *nodeInfo) getNode(root parser.Expr, item parser.Item) parser.Expr {
+	history, node, _ := p.nodeHistory(root, item.PositionRange(), []reflect.Type{})
+	p.history = history
 	return node
 }
 
-// getParentNode returns the parent node of the given node/item position range.
-func (p *nodeInfo) getParentNode(headAST parser.Expr, rnge parser.PositionRange) reflect.Type {
+func (p *nodeInfo) baseIndent(item parser.Item) int {
+	if len(p.history) == 0 {
+		history, _, _ := p.nodeHistory(p.head, item.PositionRange(), []reflect.Type{})
+		p.history = history
+	}
+	return len(p.history)
+}
+
+// parentNode returns the parent node of the given node/item position range.
+func (p *nodeInfo) parentNode(head parser.Expr, rnge parser.PositionRange) reflect.Type {
 	// TODO: var found is of no use. Hence, remove it and the bool return from the getNodeAncestorsStack
 	// since found condition can be handled by ancestors alone(confirmation needed).
-	ancestors, _, found := p.getCurrentNodeHistory(headAST, rnge, []reflect.Type{})
+	ancestors, _, found := p.nodeHistory(head, rnge, []reflect.Type{})
 	if !found {
 		return nil
 	}
@@ -49,24 +59,24 @@ func (p *nodeInfo) getParentNode(headAST parser.Expr, rnge parser.PositionRange)
 	return ancestors[len(ancestors)-2]
 }
 
-// getCurrentNodeHistory returns the ancestors along with the node in which the item is present, using the help of AST.
+// nodeHistory returns the ancestors along with the node in which the item is present, using the help of AST.
 // posRange can also be called as itemPosRange since carries the position range of the lexical item.
-func (p *nodeInfo) getCurrentNodeHistory(head parser.Expr, posRange parser.PositionRange, stack []reflect.Type) ([]reflect.Type, parser.Expr, bool) {
+func (p *nodeInfo) nodeHistory(head parser.Expr, posRange parser.PositionRange, stack []reflect.Type) ([]reflect.Type, parser.Expr, bool) {
 	switch n := head.(type) {
 	case *parser.ParenExpr:
 		if n.Expr.PositionRange().Start <= posRange.Start && n.Expr.PositionRange().End >= posRange.End {
 			stack = append(stack, reflect.TypeOf(n))
-			p.getCurrentNodeHistory(n.Expr, posRange, stack)
+			p.nodeHistory(n.Expr, posRange, stack)
 		}
 	case *parser.VectorSelector:
 		stack = append(stack, reflect.TypeOf(n))
 	case *parser.BinaryExpr:
 		stack = append(stack, reflect.TypeOf(n))
-		stmp, _head, found := p.getCurrentNodeHistory(n.LHS, posRange, stack)
+		stmp, _head, found := p.nodeHistory(n.LHS, posRange, stack)
 		if found {
 			return stmp, _head, true
 		}
-		stmp, _head, found = p.getCurrentNodeHistory(n.RHS, posRange, stack)
+		stmp, _head, found = p.nodeHistory(n.RHS, posRange, stack)
 		if found {
 			return stmp, _head, true
 		}
@@ -74,13 +84,13 @@ func (p *nodeInfo) getCurrentNodeHistory(head parser.Expr, posRange parser.Posit
 	case *parser.AggregateExpr:
 		if n.Expr.PositionRange().Start <= posRange.Start && n.Expr.PositionRange().End >= posRange.End {
 			stack = append(stack, reflect.TypeOf(n))
-			p.getCurrentNodeHistory(n.Expr, posRange, stack)
+			p.nodeHistory(n.Expr, posRange, stack)
 		}
 	case *parser.Call:
 		stack = append(stack, reflect.TypeOf(n))
 		for _, exprs := range n.Args {
 			if exprs.PositionRange().Start <= posRange.Start && exprs.PositionRange().End >= posRange.End {
-				stmp, _head, found := p.getCurrentNodeHistory(exprs, posRange, stack)
+				stmp, _head, found := p.nodeHistory(exprs, posRange, stack)
 				if found {
 					return stmp, _head, true
 				}
@@ -89,17 +99,17 @@ func (p *nodeInfo) getCurrentNodeHistory(head parser.Expr, posRange parser.Posit
 	case *parser.MatrixSelector:
 		stack = append(stack, reflect.TypeOf(n))
 		if n.VectorSelector.PositionRange().Start <= posRange.Start && n.VectorSelector.PositionRange().End >= posRange.End {
-			p.getCurrentNodeHistory(n.VectorSelector, posRange, stack)
+			p.nodeHistory(n.VectorSelector, posRange, stack)
 		}
 	case *parser.UnaryExpr:
 		stack = append(stack, reflect.TypeOf(n))
 		if n.Expr.PositionRange().Start <= posRange.Start && n.Expr.PositionRange().End >= posRange.End {
-			p.getCurrentNodeHistory(n.Expr, posRange, stack)
+			p.nodeHistory(n.Expr, posRange, stack)
 		}
 	case *parser.SubqueryExpr:
 		stack = append(stack, reflect.TypeOf(n))
 		if n.Expr.PositionRange().Start <= posRange.Start && n.Expr.PositionRange().End >= posRange.End {
-			p.getCurrentNodeHistory(n.Expr, posRange, stack)
+			p.nodeHistory(n.Expr, posRange, stack)
 		}
 	case *parser.NumberLiteral, *parser.StringLiteral:
 		stack = append(stack, reflect.TypeOf(n))

@@ -32,11 +32,16 @@ type Prettier struct {
 }
 
 type padder struct {
-	indent                                                string
-	previous, buff, columnLimit                           int
+	indent                      string
+	previous, buff, columnLimit int
+	// isNewLineApplied keeps the track of whether a new line was added
+	// after appending the item to the result. It should be set to default
+	// after applying baseIndent.
 	isNewLineApplied, expectNextRHS, leftParenNotIndented bool
 	disableBaseIndent, inAggregateModifiers               bool
 	expectNextIdentifier, previousBaseIndent              string
+	//	new ones
+	insideMultilineBraces bool
 }
 
 // New returns a new prettier over the given slice of files.
@@ -77,16 +82,23 @@ func newPadder() *padder {
 }
 
 func (p *Prettier) prettify(items []parser.Item, index int, result string) (string, error) {
-	var (
-		item = items[index]
-	)
-	if item.Typ == parser.EOF {
+	if items[index].Typ == parser.EOF {
 		return result, nil
 	}
-	nodeInfo := newNodeInfo(p.Node, 100)
-	node := nodeInfo.getNode(p.Node, item.PositionRange())
-	nodeInformation := newNodeInfo(node, 100)
-	nodeInformation.fetch()
+	var (
+		item       = items[index]
+		nodeInfo   = newNodeInfo(p.Node, 100)
+		node       = nodeInfo.getNode(p.Node, item)
+		currNode   = newNodeInfo(node, 100)
+		baseIndent int
+	)
+	currNode.fetch()
+	nodeSplittable := currNode.violatesColumnLimit()
+	if p.pd.isNewLineApplied {
+		baseIndent = currNode.baseIndent(item)
+		result += p.pd.pad(baseIndent)
+		p.pd.isNewLineApplied = false
+	}
 
 	switch item.Typ {
 	case parser.LEFT_PAREN:
@@ -95,19 +107,24 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 			p.pd.disableBaseIndent = false
 		}
 	case parser.LEFT_BRACE:
-		result += item.Val + p.pd.insertNewLine()
-		p.pd.expectNextIdentifier = "label"
-	case parser.RIGHT_BRACE:
-		if p.pd.isNewLineApplied {
-			result += p.pd.previousBaseIndent + item.Val
-		} else {
-			result += p.pd.insertNewLine() + p.pd.previousBaseIndent + item.Val
+		result += item.Val
+		if nodeSplittable {
+			result += p.pd.newLine()
+			p.pd.insideMultilineBraces = true
 		}
-		p.pd.isNewLineApplied = false
-		p.pd.expectNextIdentifier = ""
+	case parser.RIGHT_BRACE:
+		if p.pd.insideMultilineBraces {
+			if items[index-1].Typ != parser.COMMA {
+				// edge-case: if the labels are multi-line split, but do not have
+				// a pre-applied comma.
+				result += "," + p.pd.newLine() + p.pd.pad(currNode.baseIndent(item))
+			}
+			p.pd.insideMultilineBraces = false
+		}
+		result += item.Val
 	case parser.IDENTIFIER:
-		if p.pd.expectNextIdentifier == "label" {
-			result += p.pd.apply()
+		if p.pd.insideMultilineBraces {
+			result += p.pd.pad(1)
 		}
 		result += item.Val
 	case parser.STRING, parser.NUMBER:
@@ -128,20 +145,24 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 		result += item.Val
 	case parser.SUM, parser.AVG, parser.COUNT, parser.MIN, parser.MAX, parser.STDDEV, parser.STDVAR, parser.TOPK, parser.BOTTOMK, parser.COUNT_VALUES, parser.QUANTILE:
 		result += item.Val
-		p.pd.disableBaseIndent = true
 	case parser.ADD, parser.SUB, parser.MUL, parser.DIV:
-		result += item.Val
+		result += " " + item.Val + " "
 	case parser.WITHOUT, parser.BY, parser.IGNORING, parser.BOOL, parser.GROUP_LEFT, parser.GROUP_RIGHT, parser.OFFSET, parser.ON:
 		result += " " + item.Val + " "
 		p.pd.disableBaseIndent = true
 		p.pd.inAggregateModifiers = true
 	case parser.COMMA:
-		result += item.Val + p.pd.insertNewLine()
+		result += item.Val
+		if nodeSplittable {
+			result += p.pd.newLine()
+		} else {
+			result += " "
+		}
 	case parser.COMMENT:
 		if p.pd.isNewLineApplied {
-			result += p.pd.previousBaseIndent + item.Val + p.pd.insertNewLine()
+			result += p.pd.previousBaseIndent + item.Val + p.pd.newLine()
 		} else {
-			result += item.Val + p.pd.insertNewLine()
+			result += item.Val + p.pd.newLine()
 		}
 	}
 	if index+1 == len(items) {
@@ -226,15 +247,14 @@ func (p *Prettier) Run() []error {
 					if err := p.parseExpr(exprStr); err != nil {
 						return []error{err}
 					}
-					lexItemSlice := p.lexItems(exprStr)
-					fmt.Println("before sorting")
-					fmt.Println(lexItemSlice)
-					lexItemSlice = p.sortItems(lexItemSlice, false)
-					fmt.Println("after sorting")
-					fmt.Println(lexItemSlice)
-					break
-					p.pd.buff = 1
-					formattedExpr, err := p.prettify(lexItemSlice, 0, "")
+					formattedExpr, err := p.prettify(
+						p.sortItems(
+							p.lexItems(exprStr),
+							false,
+						),
+						0,
+						"",
+					)
 					if err != nil {
 						return []error{errors.Wrap(err, "Run")}
 					}
@@ -501,7 +521,7 @@ func (pd *padder) resume() string {
 	return ""
 }
 
-func (pd *padder) insertNewLine() string {
+func (pd *padder) newLine() string {
 	pd.isNewLineApplied = true
 	return "\n"
 }
