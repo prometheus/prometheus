@@ -24,6 +24,7 @@ import (
 	"github.com/go-kit/kit/log"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/version"
 
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -38,6 +39,8 @@ var DefaultSDConfig = SDConfig{
 	RefreshInterval: model.Duration(60 * time.Second),
 	Port:            80,
 }
+
+var userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 
 // SDConfig is the configuration for Docker Swarm based service discovery.
 type SDConfig struct {
@@ -114,6 +117,9 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 		}),
 		client.WithScheme(conf.url.Scheme),
 		client.WithAPIVersionNegotiation(),
+		client.WithHTTPHeaders(map[string]string{
+			"User-Agent": userAgent,
+		}),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error setting up docker swarm client: %w", err)

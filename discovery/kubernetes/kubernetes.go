@@ -15,6 +15,7 @@ package kubernetes
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"strings"
 	"sync"
@@ -36,6 +37,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 
+	"github.com/prometheus/common/version"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
@@ -47,6 +49,8 @@ const (
 	metricsNamespace = "prometheus_sd_kubernetes"
 	presentValue     = model.LabelValue("true")
 )
+
+var userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 
 var (
 	// Custom events metric
@@ -262,7 +266,7 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 		}
 	}
 
-	kcfg.UserAgent = "Prometheus/discovery"
+	kcfg.UserAgent = userAgent
 
 	c, err := kubernetes.NewForConfig(kcfg)
 	if err != nil {
