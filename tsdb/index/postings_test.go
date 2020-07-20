@@ -24,6 +24,13 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
+// eatPostings eat the postings and return nothing, useful for bench
+func eatPostings(p Postings) error {
+	for p.Next() {
+	}
+	return p.Err()
+}
+
 func TestMemPostings_addFor(t *testing.T) {
 	var want = []uint64{1, 2, 3, 4, 5, 6, 7, 8}
 	p := NewMemPostings()
@@ -254,7 +261,7 @@ func BenchmarkIntersect(t *testing.B) {
 		bench.ResetTimer()
 		bench.ReportAllocs()
 		for i := 0; i < bench.N; i++ {
-			if _, err := ExpandPostings(Intersect(i1, i2, i3, i4)); err != nil {
+			if err := eatPostings(Intersect(i1, i2, i3, i4)); err != nil {
 				bench.Fatal(err)
 			}
 		}
@@ -284,7 +291,7 @@ func BenchmarkIntersect(t *testing.B) {
 		bench.ResetTimer()
 		bench.ReportAllocs()
 		for i := 0; i < bench.N; i++ {
-			if _, err := ExpandPostings(Intersect(i1, i2, i3, i4)); err != nil {
+			if err := eatPostings(Intersect(i1, i2, i3, i4)); err != nil {
 				bench.Fatal(err)
 			}
 		}
@@ -306,7 +313,97 @@ func BenchmarkIntersect(t *testing.B) {
 		bench.ResetTimer()
 		bench.ReportAllocs()
 		for i := 0; i < bench.N; i++ {
-			if _, err := ExpandPostings(Intersect(its...)); err != nil {
+			if err := eatPostings(Intersect(its...)); err != nil {
+				bench.Fatal(err)
+			}
+		}
+	})
+}
+
+func BenchmarkRoaring(t *testing.B) {
+	t.Run("LongPostings1 roaring", func(bench *testing.B) {
+		var a, b, c, d RoaringBitmapPosting
+
+		for i := 0; i < 10000000; i += 2 {
+			a.Add(uint64(i))
+		}
+		for i := 5000000; i < 5000100; i += 4 {
+			b.Add(uint64(i))
+		}
+		for i := 5090000; i < 5090600; i += 4 {
+			b.Add(uint64(i))
+		}
+		for i := 4990000; i < 5100000; i++ {
+			c.Add(uint64(i))
+		}
+		for i := 4000000; i < 6000000; i++ {
+			d.Add(uint64(i))
+		}
+
+		bench.ResetTimer()
+		bench.ReportAllocs()
+		for i := 0; i < bench.N; i++ {
+			i1 := NewRoaringBitmapIterator(&a)
+			i2 := NewRoaringBitmapIterator(&b)
+			i3 := NewRoaringBitmapIterator(&c)
+			i4 := NewRoaringBitmapIterator(&d)
+			if err := eatPostings(Intersect(i1, i2, i3, i4)); err != nil {
+				bench.Fatal(err)
+			}
+		}
+	})
+
+	t.Run("LongPostings2 roaring", func(bench *testing.B) {
+		var a, b, c, d RoaringBitmapPosting
+
+		for i := 0; i < 12500000; i++ {
+			a.Add(uint64(i))
+		}
+		for i := 7500000; i < 12500000; i++ {
+			b.Add(uint64(i))
+		}
+		for i := 9000000; i < 20000000; i++ {
+			c.Add(uint64(i))
+		}
+		for i := 10000000; i < 12000000; i++ {
+			d.Add(uint64(i))
+		}
+
+		bench.ResetTimer()
+		bench.ReportAllocs()
+		for i := 0; i < bench.N; i++ {
+			i1 := NewRoaringBitmapIterator(&a)
+			i2 := NewRoaringBitmapIterator(&b)
+			i3 := NewRoaringBitmapIterator(&c)
+			i4 := NewRoaringBitmapIterator(&d)
+			if err := eatPostings(Intersect(i1, i2, i3, i4)); err != nil {
+				bench.Fatal(err)
+			}
+		}
+	})
+
+	// Many matchers(k >> n).
+	t.Run("ManyPostings roaring", func(bench *testing.B) {
+		var list []RoaringBitmapPosting
+		var iter []Postings
+
+		// 100000 matchers(k=100000).
+		for i := 0; i < 100000; i++ {
+			var temp RoaringBitmapPosting
+			for j := 1; j < 100; j++ {
+				temp.Add(uint64(j))
+			}
+			list = append(list, temp)
+			iter = append(iter, nil)
+		}
+
+		bench.ResetTimer()
+		bench.ReportAllocs()
+		for i := 0; i < bench.N; i++ {
+			for i := range list {
+				iter[i] = NewRoaringBitmapIterator(&list[i])
+			}
+			if err := eatPostings(Intersect(iter...)); err != nil {
 				bench.Fatal(err)
 			}
 		}
@@ -986,6 +1083,64 @@ func TestRoaringBitmap(t *testing.T) {
 				return
 			}
 			testutil.Equals(t, v, iter.At())
+		}
+	})
+}
+
+func BenchmarkRoaringMemoryUsage(b *testing.B) {
+	b.Run("list", func(t *testing.B) {
+		t.ReportAllocs()
+		for i := 0; i < t.N; i++ {
+			// in fact tsdb can not pre alloc memory
+			var a = make([]uint64, 0, 100000-0)
+			var b = make([]uint64, 0, 5000100-5000000+5090600-5090000)
+			var c = make([]uint64, 0, 5100000-4990000)
+			var d = make([]uint64, 0, 6000000-4000000)
+			for i := 0; i < 10000000; i += 2 {
+				a = append(a, uint64(i))
+			}
+			for i := 5000000; i < 5000100; i += 4 {
+				b = append(b, uint64(i))
+			}
+			for i := 5090000; i < 5090600; i += 4 {
+				b = append(b, uint64(i))
+			}
+			for i := 4990000; i < 5100000; i++ {
+				c = append(c, uint64(i))
+			}
+			for i := 4000000; i < 6000000; i++ {
+				d = append(d, uint64(i))
+			}
+
+			_ = newListPostings(a...)
+			_ = newListPostings(b...)
+			_ = newListPostings(c...)
+			_ = newListPostings(d...)
+		}
+	})
+
+	b.Run("roaring", func(t *testing.B) {
+		t.ReportAllocs()
+		for i := 0; i < t.N; i++ {
+			var a, b, c, d *RoaringBitmapPosting
+			for _, v := range []**RoaringBitmapPosting{&a, &b, &c, &d} {
+				*v = newRoaringBitmapPosting()
+			}
+			for i := 0; i < 10000000; i += 2 {
+				a.Add(uint64(i))
+			}
+			for i := 5000000; i < 5000100; i += 4 {
+				b.Add(uint64(i))
+			}
+			for i := 5090000; i < 5090600; i += 4 {
+				b.Add(uint64(i))
+			}
+			for i := 4990000; i < 5100000; i++ {
+				c.Add(uint64(i))
+			}
+			for i := 4000000; i < 6000000; i++ {
+				d.Add(uint64(i))
+			}
 		}
 	})
 }
