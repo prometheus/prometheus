@@ -77,9 +77,9 @@ func (p *nodeInfo) nodeHistory(head parser.Expr, posRange parser.PositionRange, 
 	switch n := head.(type) {
 	case *parser.ParenExpr:
 		nodeMatch = true
-		if n.Expr.PositionRange().Start <= posRange.Start && n.Expr.PositionRange().End >= posRange.End {
-			stack = append(stack, reflect.TypeOf(n))
-			p.nodeHistory(n.Expr, posRange, stack)
+		stack = append(stack, reflect.TypeOf(n))
+		if n.PositionRange().Start <= posRange.Start && n.PositionRange().End >= posRange.End {
+			return p.nodeHistory(n.Expr, posRange, stack)
 		}
 	case *parser.VectorSelector:
 		if n.PositionRange().Start <= posRange.Start && n.PositionRange().End >= posRange.End {
@@ -151,6 +151,8 @@ func reduceContinuous(history []reflect.Type, typ string) []reflect.Type {
 	var temp []reflect.Type
 	for i := 0; i < len(history)-1; i++ {
 		if history[i].String() == typ && history[i].String() != history[i+1].String() {
+			temp = append(temp, history[i])
+		} else if history[i].String() != typ {
 			temp = append(temp, history[i])
 		}
 	}

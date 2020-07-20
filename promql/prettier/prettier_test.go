@@ -258,23 +258,23 @@ var prettierCases = []prettierTest{
 	{
 		expr: `metric_one + ignoring(job) metric_two`,
 		expected: `    metric_one
-+ ignoring(job) 
++ ignoring(job)
     metric_two`,
 	},
 	{
 		expr: `metric_one + ignoring(job) metric_two - ignoring(job) metric_three`,
 		expected: `    metric_one
-+ ignoring(job) 
++ ignoring(job)
     metric_two
-- ignoring(job) 
+- ignoring(job)
     metric_three`,
 	},
 	{
 		expr: `metric_one + ignoring(job) metric_two - ignoring(job) metric_three{a_some_very_large_label="a_very_large_value", some_very_large_label="a_very_large_value"}`,
 		expected: `    metric_one
-+ ignoring(job) 
++ ignoring(job)
     metric_two
-- ignoring(job) 
+- ignoring(job)
     metric_three{
       a_some_very_large_label="a_very_large_value",
       some_very_large_label="a_very_large_value",
@@ -283,12 +283,12 @@ var prettierCases = []prettierTest{
 	{
 		expr: `metric_one - ignoring(job) metric_two{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"} + ignoring(job) metric_three`,
 		expected: `    metric_one
-- ignoring(job) 
+- ignoring(job)
     metric_two{
       _a_some_very_large_label="_a_very_large_value",
       some_very_large_label="a_very_large_value",
     }
-+ ignoring(job) 
++ ignoring(job)
     metric_three`,
 	},
 	{
@@ -296,6 +296,23 @@ var prettierCases = []prettierTest{
 		expected: `    metric_one
 <= bool
     metric_two`,
+	},
+	{
+		expr:     `(metric_name)`,
+		expected: `  (metric_name)`,
+	},
+	{
+		expr:     `((metric_name))`,
+		expected: `    ((metric_name))`,
+	},
+	{
+		expr: `(metric_two{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"})`,
+		expected: `  (
+    metric_two{
+      _a_some_very_large_label="_a_very_large_value",
+      some_very_large_label="a_very_large_value",
+    }  
+  )`,
 	},
 }
 

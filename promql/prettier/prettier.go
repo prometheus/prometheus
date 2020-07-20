@@ -108,8 +108,14 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 	switch item.Typ {
 	case parser.LEFT_PAREN:
 		result += item.Val
+		if nodeSplittable && !p.pd.containsGrouping {
+			result += p.pd.newLine()
+		}
 	case parser.RIGHT_PAREN:
-		result += item.Val + " "
+		if nodeSplittable && !p.pd.containsGrouping {
+			result += p.pd.newLine() + p.pd.pad(nodeInfo.baseIndent(item))
+		}
+		result += item.Val
 		if p.pd.containsGrouping {
 			p.pd.containsGrouping = false
 			result += p.pd.newLine()
