@@ -40,6 +40,7 @@ import (
 	kingpin "gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/importers"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
 )
 
@@ -103,6 +104,20 @@ func main() {
 		"The unit test file.",
 	).Required().ExistingFiles()
 
+	backfillCmd := app.Command("backfill", "Backfill Prometheus data.")
+	backfillRuleCmd := backfillCmd.Command("rules", "Backfill Prometheus data for new rules.")
+	backfillRuleURL := backfillRuleCmd.Flag("url", "Prometheus API url.").Required().String()
+	backfillRuleEvalInterval := backfillRuleCmd.Flag("evaluation_interval", "How frequently to evaluate rules when backfilling.").
+		Default("1m").Duration()
+	backfillRuleStart := backfillRuleCmd.Flag("start", "If a start time is provided, the new rule backfilling will begin at this time. The default evaluates from the first know data. Start time should be RFC3339 or Unix timestamp.").
+		Default("").Duration()
+	backfillRuleEnd := backfillRuleCmd.Flag("end", "If an end time is provided, the new rule backfilling will end at this time. The default will backfill to the current time. End time should be RFC3339 or Unix timestamp.").
+		Default("").Duration()
+	backfillRuleFiles := backfillRuleCmd.Arg(
+		"rule-files",
+		"The file containing the new rule that needs to be backfilled.",
+	).Required().ExistingFiles()
+
 	parsedCmd := kingpin.MustParse(app.Parse(os.Args[1:]))
 
 	var p printer
@@ -146,6 +161,9 @@ func main() {
 
 	case testRulesCmd.FullCommand():
 		os.Exit(RulesUnitTest(*testRulesFiles...))
+
+	case backfillRuleCmd.FullCommand():
+		os.Exit(BackfillRule(*backfillRuleURL, *backfillRuleStart, *backfillRuleEnd, *backfillRuleEvalInterval, *backfillRuleFiles...))
 	}
 }
 
@@ -695,4 +713,34 @@ func (j *jsonPrinter) printSeries(v []model.LabelSet) {
 func (j *jsonPrinter) printLabelValues(v model.LabelValues) {
 	//nolint:errcheck
 	json.NewEncoder(os.Stdout).Encode(v)
+}
+
+// BackfillRule backfills a rule
+func BackfillRule(url string, start, end, evalInterval time.Duration, files ...string) int {
+	ctx := context.Background()
+	cfg := importers.RuleConfig{
+		Start:        start.String(),
+		End:          end.String(),
+		EvalInterval: evalInterval,
+		URL:          url,
+	}
+	ruleImporter := importers.NewRuleImporter(cfg)
+	err := ruleImporter.Init()
+	if err != nil {
+		return 1
+	}
+
+	errs := ruleImporter.Parse(ctx, files)
+	for _, err := range errs {
+		if err != nil {
+			return 1
+		}
+	}
+
+	err = ruleImporter.ImportAll(ctx)
+	if err != nil {
+		return 1
+	}
+
+	return 0
 }
