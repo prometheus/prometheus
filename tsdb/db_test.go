@@ -159,20 +159,17 @@ func TestDataAvailableOnlyAfterCommit(t *testing.T) {
 // https://github.com/prometheus/prometheus/issues/7548
 func TestNoPanicAfterWALCorrutpion(t *testing.T) {
 	db, closeFn := openTestDB(t, &Options{WALSegmentSize: 32 * 1024}, nil)
-	defer func() {
-		closeFn()
-	}()
+	t.Cleanup(closeFn)
 
 	// Append untill we have at least one mmaped chunk.
 	var expSamples []tsdbutil.Sample
 	var maxt int64
 	{
-		app := db.Appender()
 		for {
+			app := db.Appender()
 			_, err := app.Add(labels.FromStrings("foo", "bar"), maxt, 0)
 			testutil.Ok(t, err)
-			err = app.Commit()
-			testutil.Ok(t, err)
+			testutil.Ok(t, app.Commit())
 			expSamples = append(expSamples, sample{t: maxt, v: 0})
 			files, err := ioutil.ReadDir(mmappedChunksDir(db.Dir()))
 			testutil.Ok(t, err)
