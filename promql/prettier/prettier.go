@@ -95,13 +95,12 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 		baseIndent int
 	)
 	currNode.fetch()
-	if item.Typ.IsOperator() && reflect.TypeOf(node).String() == "parser.BinaryExpr" {
-		p.pd.containsGrouping = currNode.contains("grouping-modifier")
+	if item.Typ.IsOperator() && reflect.TypeOf(node).String() == "*parser.BinaryExpr" {
+		p.pd.containsGrouping = currNode.contains("grouping-modifier") || items[index+1].Typ == parser.BOOL
 	}
 	nodeSplittable := currNode.violatesColumnLimit()
 	if p.pd.isNewLineApplied {
 		baseIndent = nodeInfo.baseIndent(item)
-		//fmt.Println(item, baseIndent)
 		result += p.pd.pad(baseIndent)
 		p.pd.isNewLineApplied = false
 	}
@@ -109,8 +108,11 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 	switch item.Typ {
 	case parser.LEFT_PAREN:
 		result += item.Val
-		if !p.pd.inAggregateModifiers {
-			p.pd.disableBaseIndent = false
+	case parser.RIGHT_PAREN:
+		result += item.Val + " "
+		if p.pd.containsGrouping {
+			p.pd.containsGrouping = false
+			result += p.pd.newLine()
 		}
 	case parser.LEFT_BRACE:
 		result += item.Val
@@ -137,22 +139,12 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 	case parser.STRING, parser.NUMBER:
 		result += item.Val
 		p.pd.isNewLineApplied = false
-	case parser.RIGHT_PAREN:
-		if p.pd.leftParenNotIndented {
-			result += item.Val
-		} else {
-			result += p.pd.dec(1).apply() + item.Val
-		}
-		if p.pd.inAggregateModifiers {
-			result += " "
-		}
-		p.pd.expectNextIdentifier = ""
-		p.pd.inAggregateModifiers = false
-	case parser.EQL, parser.EQL_REGEX, parser.NEQ, parser.NEQ_REGEX, parser.POW:
-		result += item.Val
 	case parser.SUM, parser.AVG, parser.COUNT, parser.MIN, parser.MAX, parser.STDDEV, parser.STDVAR, parser.TOPK, parser.BOTTOMK, parser.COUNT_VALUES, parser.QUANTILE:
 		result += item.Val
-	case parser.ADD, parser.SUB, parser.MUL, parser.DIV:
+	case parser.EQL, parser.EQL_REGEX, parser.NEQ, parser.NEQ_REGEX:
+		result += item.Val
+	case parser.ADD, parser.SUB, parser.DIV, parser.GTE, parser.GTR, parser.LOR, parser.LAND, parser.LSS,
+		parser.LTE, parser.LUNLESS, parser.MOD, parser.POW:
 		if p.pd.containsGrouping {
 			result += p.pd.newLine() + p.pd.pad(baseIndent) + item.Val + " "
 		} else if nodeSplittable {
@@ -161,9 +153,10 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 			result += " " + item.Val + " "
 		}
 	case parser.WITHOUT, parser.BY, parser.IGNORING, parser.BOOL, parser.GROUP_LEFT, parser.GROUP_RIGHT, parser.OFFSET, parser.ON:
-		result += " " + item.Val + " "
-		p.pd.disableBaseIndent = true
-		p.pd.inAggregateModifiers = true
+		result += item.Val
+		if item.Typ == parser.BOOL {
+			result += p.pd.newLine()
+		}
 	case parser.COMMA:
 		result += item.Val
 		if nodeSplittable {
@@ -439,6 +432,8 @@ func (p *Prettier) expressionFromItems(items []parser.Item) string {
 		switch item.Typ {
 		case parser.COMMENT:
 			expression += item.Val + "\n"
+		case parser.BOOL:
+			expression += item.Val + " "
 		default:
 			expression += item.Val
 		}

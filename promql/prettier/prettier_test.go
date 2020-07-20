@@ -201,6 +201,10 @@ var prettierCases = []prettierTest{
 		expected: `    metric_one + metric_two`,
 	},
 	{
+		expr:     `metric_one <= metric_two`,
+		expected: `    metric_one <= metric_two`,
+	},
+	{
 		expr:     `metric_one{foo="bar"} + metric_two{foo="bar"}`,
 		expected: `    metric_one{foo="bar"} + metric_two{foo="bar"}`,
 	},
@@ -250,6 +254,48 @@ var prettierCases = []prettierTest{
     }
 +
     metric_five`,
+	},
+	{
+		expr: `metric_one + ignoring(job) metric_two`,
+		expected: `    metric_one
++ ignoring(job) 
+    metric_two`,
+	},
+	{
+		expr: `metric_one + ignoring(job) metric_two - ignoring(job) metric_three`,
+		expected: `    metric_one
++ ignoring(job) 
+    metric_two
+- ignoring(job) 
+    metric_three`,
+	},
+	{
+		expr: `metric_one + ignoring(job) metric_two - ignoring(job) metric_three{a_some_very_large_label="a_very_large_value", some_very_large_label="a_very_large_value"}`,
+		expected: `    metric_one
++ ignoring(job) 
+    metric_two
+- ignoring(job) 
+    metric_three{
+      a_some_very_large_label="a_very_large_value",
+      some_very_large_label="a_very_large_value",
+    }`,
+	},
+	{
+		expr: `metric_one - ignoring(job) metric_two{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"} + ignoring(job) metric_three`,
+		expected: `    metric_one
+- ignoring(job) 
+    metric_two{
+      _a_some_very_large_label="_a_very_large_value",
+      some_very_large_label="a_very_large_value",
+    }
++ ignoring(job) 
+    metric_three`,
+	},
+	{
+		expr: `metric_one <= bool metric_two`,
+		expected: `    metric_one
+<= bool
+    metric_two`,
 	},
 }
 

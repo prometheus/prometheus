@@ -50,7 +50,7 @@ func (p *nodeInfo) contains(element string) bool {
 	case "grouping-modifier":
 		switch n := p.head.(type) {
 		case *parser.BinaryExpr:
-			return n.VectorMatching.On
+			return len(n.VectorMatching.MatchingLabels) > 0 || n.ReturnBool
 		}
 	}
 	return false
