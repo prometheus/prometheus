@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"bufio"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -161,19 +162,20 @@ func TestNoPanicAfterWALCorrutpion(t *testing.T) {
 	db, closeFn := openTestDB(t, &Options{WALSegmentSize: 32 * 1024}, nil)
 	t.Cleanup(closeFn)
 
-	// Append untill we have at least one mmaped chunk.
+	// Append until the the first mmaped head chunk.
+	// This is to ensure that all samples can be red from the mmaped chunks when the WAL is corrupted.
 	var expSamples []tsdbutil.Sample
 	var maxt int64
 	{
 		for {
 			app := db.Appender()
 			_, err := app.Add(labels.FromStrings("foo", "bar"), maxt, 0)
+			expSamples = append(expSamples, sample{t: maxt, v: 0})
 			testutil.Ok(t, err)
 			testutil.Ok(t, app.Commit())
-			expSamples = append(expSamples, sample{t: maxt, v: 0})
-			files, err := ioutil.ReadDir(mmappedChunksDir(db.Dir()))
+			mmapedChunks, err := ioutil.ReadDir(mmappedChunksDir(db.Dir()))
 			testutil.Ok(t, err)
-			if len(files) > 0 {
+			if len(mmapedChunks) > 0 {
 				break
 			}
 			maxt++
@@ -181,20 +183,24 @@ func TestNoPanicAfterWALCorrutpion(t *testing.T) {
 		testutil.Ok(t, db.Close())
 	}
 
-	// Corrupt the second wal to trigger a repair.
-	// The repair deletes all wals after the corrupted one.
+	// Corrupt the wal  after the first sample of the series so that it has at least one sample and
+	// it is not garbage collected.
+	// The repair deletes all WAL records after the corrupted record and these are read from the mmaped chunk.
 	{
 		walFiles, err := ioutil.ReadDir(path.Join(db.Dir(), "wal"))
 		testutil.Ok(t, err)
-
-		f, err := os.OpenFile(path.Join(db.Dir(), "wal", walFiles[1].Name()), os.O_APPEND|os.O_WRONLY, 0666)
+		f, err := os.OpenFile(path.Join(db.Dir(), "wal", walFiles[0].Name()), os.O_RDWR, 0666)
 		testutil.Ok(t, err)
-		_, err = f.Write([]byte{1})
+		r := wal.NewReader(bufio.NewReader(f))
+		testutil.Assert(t, r.Next(), "reading the series record")
+		testutil.Assert(t, r.Next(), "reading the first sample record")
+		// Write an invalid record header to corrupt everything after the first wal sample.
+		_, err = f.WriteAt([]byte{99}, r.Offset())
 		testutil.Ok(t, err)
 		f.Close()
 	}
 
-	// Query all data in the DB.
+	// Query the data.
 	{
 		db, err := Open(db.Dir(), nil, nil, nil)
 		testutil.Ok(t, err)
@@ -206,8 +212,8 @@ func TestNoPanicAfterWALCorrutpion(t *testing.T) {
 		querier, err := db.Querier(context.TODO(), 0, maxt)
 		testutil.Ok(t, err)
 		seriesSet := query(t, querier, labels.MustNewMatcher(labels.MatchEqual, "", ""))
-		// The last sample should be missing as it was in the deleted WAL segment.
-		testutil.Equals(t, map[string][]tsdbutil.Sample{`{foo="bar"}`: expSamples[:len(expSamples)-1]}, seriesSet)
+		// The last sample should be missing as it was after the WAL segment corruption.
+		testutil.Equals(t, map[string][]tsdbutil.Sample{`{foo="bar"}`: expSamples[0 : len(expSamples)-1]}, seriesSet)
 	}
 }
 
