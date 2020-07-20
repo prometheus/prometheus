@@ -16,12 +16,13 @@ package index
 import (
 	"container/heap"
 	"encoding/binary"
+	"github.com/prometheus/prometheus/pkg/labels"
 	"runtime"
 	"sort"
 	"strings"
 	"sync"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/RoaringBitmap/roaring/roaring64"
 )
 
 var allPostingsKey = labels.Label{}
@@ -690,6 +691,83 @@ func (it *ListPostings) Seek(x uint64) bool {
 }
 
 func (it *ListPostings) Err() error {
+	return nil
+}
+
+// RoaringBitmapPosting implements the Postings interface over a roaring bitmap.
+type RoaringBitmapPosting struct {
+	count uint64 // RoaringBitmap can not write in parallel, the counter can use simple uint64
+	m     roaring64.Bitmap
+}
+
+func newRoaringBitmapPosting(ls ...uint64) *RoaringBitmapPosting {
+	var m = roaring64.Bitmap{}
+	m.AddMany(ls)
+	return &RoaringBitmapPosting{m: m, count: uint64(len(ls))}
+}
+
+func (r *RoaringBitmapPosting) isEmpty() bool {
+	return r.Size() == 0
+}
+
+func (r *RoaringBitmapPosting) Add(l ...uint64) {
+	r.count += uint64(len(l))
+
+	// fast path for add only 1 item
+	// the Add api is 0-alloc
+	if len(l) == 1 {
+		r.m.Add(l[0])
+		return
+	}
+	r.m.AddMany(l)
+}
+
+func (r *RoaringBitmapPosting) Remove(l uint64) {
+	r.count--
+	r.m.Remove(l)
+}
+
+func (r *RoaringBitmapPosting) Size() uint64 {
+	return r.count
+}
+
+// NewRoaringBitmapIterator return a iterator can iter the posting in order.
+func NewRoaringBitmapIterator(r *RoaringBitmapPosting) Postings {
+	return &RoaringBitmapPostingListIterator{r: r.m.Iterator()}
+}
+
+type RoaringBitmapPostingListIterator struct {
+	r   roaring64.IntPeekable64
+	cur uint64
+}
+
+func (r *RoaringBitmapPostingListIterator) Next() bool {
+	if r.r.HasNext() {
+		r.cur = r.r.Next()
+		return true
+	}
+	return false
+}
+
+func (r *RoaringBitmapPostingListIterator) Seek(v uint64) bool {
+	r.r.AdvanceIfNeeded(v)
+
+	for r.cur < v {
+		if !r.r.HasNext() {
+			return false
+		}
+		r.cur = r.r.Next()
+	}
+
+	// true when 'v' is find, false when 'v' is not find.
+	return r.cur == v
+}
+
+func (r RoaringBitmapPostingListIterator) At() uint64 {
+	return r.cur
+}
+
+func (r RoaringBitmapPostingListIterator) Err() error {
 	return nil
 }
 

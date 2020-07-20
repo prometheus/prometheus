@@ -850,17 +850,18 @@ func TestMemPostings_Delete(t *testing.T) {
 	p.Add(2, labels.FromStrings("lbl1", "b"))
 	p.Add(3, labels.FromStrings("lbl2", "a"))
 
+	// Make sure postings gotten before the delete have the old data when
+	// iterated over.
 	before := p.Get(allPostingsKey.Name, allPostingsKey.Value)
+	expanded, err := ExpandPostings(before)
+	testutil.Ok(t, err)
+	testutil.Equals(t, []uint64{1, 2, 3}, expanded)
+
+	// the state of `before` is invalid after `p.Delete`
 	p.Delete(map[uint64]struct{}{
 		2: {},
 	})
 	after := p.Get(allPostingsKey.Name, allPostingsKey.Value)
-
-	// Make sure postings gotten before the delete have the old data when
-	// iterated over.
-	expanded, err := ExpandPostings(before)
-	testutil.Ok(t, err)
-	testutil.Equals(t, []uint64{1, 2, 3}, expanded)
 
 	// Make sure postings gotten after the delete have the new data when
 	// iterated over.
@@ -872,4 +873,114 @@ func TestMemPostings_Delete(t *testing.T) {
 	expanded, err = ExpandPostings(deleted)
 	testutil.Ok(t, err)
 	testutil.Assert(t, 0 == len(expanded), "expected empty postings, got %v", expanded)
+}
+
+func TestRoaringBitmap(t *testing.T) {
+	t.Run("add", func(t *testing.T) {
+		tests := [][]uint64{
+			{1, 2, 3, 4},
+			{1, 123, 345, 346},
+		}
+		for _, test := range tests {
+			var list = newRoaringBitmapPosting(test...)
+			var iter = NewRoaringBitmapIterator(list)
+			for _, want := range test {
+				if !iter.Next() {
+					t.Errorf("roaring bitmap has not enough items")
+					return
+				}
+				var got = iter.At()
+				testutil.Equals(t, got, want)
+				testutil.Ok(t, iter.Err())
+			}
+		}
+	})
+
+	t.Run("iter", func(t *testing.T) {
+		type out struct {
+			value uint64
+			find  bool
+		}
+		tests := []struct {
+			in   []uint64
+			want []out
+		}{
+			{
+				in: []uint64{1, 2, 3, 5, 10},
+				want: []out{
+					{1, true},
+					{2, true},
+					{4, false},
+					{6, false},
+					{10, true},
+				},
+			},
+		}
+		for _, test := range tests {
+			var list = newRoaringBitmapPosting(test.in...)
+			var iter = NewRoaringBitmapIterator(list)
+			for _, want := range test.want {
+				var find = iter.Seek(want.value)
+				testutil.Equals(t, find, want.find, "for value %d", want.value)
+			}
+		}
+	})
+
+	t.Run("add unordered", func(t *testing.T) {
+		tests := [][]uint64{
+			{1, 5, 7, 2, 3},
+			{1, 2345, 23948, 2, 3405},
+		}
+
+		for _, test := range tests {
+			var list = newRoaringBitmapPosting()
+			for _, v := range test {
+				list.Add(v)
+			}
+			sort.Slice(test, func(i, j int) bool { return test[i] < test[j] })
+
+			var iter = NewRoaringBitmapIterator(list)
+			for _, want := range test {
+				if !iter.Next() {
+					t.Errorf("roaring bitmap has not enough items")
+					return
+				}
+				var got = iter.At()
+				testutil.Equals(t, got, want)
+				testutil.Ok(t, iter.Err())
+			}
+		}
+	})
+
+	t.Run("iter to end", func(t *testing.T) {
+		tests := [][]uint64{
+			{1, 2, 3},
+			{123, 456, 788456, 1123123},
+		}
+		for _, test := range tests {
+			var size = 0
+			var list = newRoaringBitmapPosting(test...)
+			var iter = NewRoaringBitmapIterator(list)
+			for iter.Next() {
+				size++
+			}
+			testutil.Equals(t, size, len(test))
+		}
+	})
+
+	t.Run("remove", func(t *testing.T) {
+		var list = newRoaringBitmapPosting(1, 2, 3)
+		var want = []uint64{2, 3}
+		list.Remove(1)
+
+		testutil.Equals(t, list.isEmpty(), false)
+		var iter = NewRoaringBitmapIterator(list)
+		for _, v := range want {
+			if !iter.Next() {
+				t.Errorf("roaring bitmap has not enough items")
+				return
+			}
+			testutil.Equals(t, v, iter.At())
+		}
+	})
 }
