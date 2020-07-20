@@ -197,17 +197,14 @@ func (importer *RuleImporter) ImportRule(ctx context.Context, rule rules.Rule) e
 
 	appender := importer.headBlock.Appender()
 	// todo: do 2 hr blocks here?
-	// my plan is to x. does that make sense? if not can you clarify what you are asking here
 	for ts.Before(end) {
 		vector, err := rule.Eval(ctx, ts, importer.queryFn, url)
 		if err != nil {
 			return err
 		}
-		// create a time series from vector and append
 		appender.AddFast(0, vector[0].T, vector[0].V)
 		ts.Add(importer.config.EvalInterval)
 	}
-	// do we need to create block here?
 	return appender.Commit()
 }
 
