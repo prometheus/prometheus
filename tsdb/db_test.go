@@ -53,7 +53,7 @@ func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m)
 }
 
-func openTestDB(t testing.TB, opts *Options, rngs []int64) (db *DB, close func()) {
+func openTestDB(t testing.TB, opts *Options, rngs []int64) (db *DB) {
 	tmpdir, err := ioutil.TempDir("", "test")
 	testutil.Ok(t, err)
 
@@ -65,10 +65,11 @@ func openTestDB(t testing.TB, opts *Options, rngs []int64) (db *DB, close func()
 	}
 	testutil.Ok(t, err)
 
-	// Do not close the test database by default as it will deadlock on test failures.
-	return db, func() {
+	// Do not Close() the test database by default as it will deadlock on test failures.
+	t.Cleanup(func() {
 		testutil.Ok(t, os.RemoveAll(tmpdir))
-	}
+	})
+	return db
 }
 
 // query runs a matcher query against the querier and fully expands its data.
@@ -106,10 +107,9 @@ func query(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) map[str
 // Ensure that blocks are held in memory in their time order
 // and not in ULID order as they are read from the directory.
 func TestDB_reloadOrder(t *testing.T) {
-	db, closeFn := openTestDB(t, nil, nil)
+	db := openTestDB(t, nil, nil)
 	defer func() {
 		testutil.Ok(t, db.Close())
-		closeFn()
 	}()
 
 	metas := []BlockMeta{
@@ -133,10 +133,9 @@ func TestDB_reloadOrder(t *testing.T) {
 }
 
 func TestDataAvailableOnlyAfterCommit(t *testing.T) {
-	db, closeFn := openTestDB(t, nil, nil)
+	db := openTestDB(t, nil, nil)
 	defer func() {
 		testutil.Ok(t, db.Close())
-		closeFn()
 	}()
 
 	app := db.Appender()
@@ -164,8 +163,7 @@ func TestDataAvailableOnlyAfterCommit(t *testing.T) {
 // TestNoPanicAfterWALCorrutpion ensures that querying the db after a WAL corruption doesn't cause a panic.
 // https://github.com/prometheus/prometheus/issues/7548
 func TestNoPanicAfterWALCorrutpion(t *testing.T) {
-	db, closeFn := openTestDB(t, &Options{WALSegmentSize: 32 * 1024}, nil)
-	t.Cleanup(closeFn)
+	db := openTestDB(t, &Options{WALSegmentSize: 32 * 1024}, nil)
 
 	// Append until the the first mmaped head chunk.
 	// This is to ensure that all samples can be read from the mmaped chunks when the WAL is corrupted.
@@ -223,10 +221,9 @@ func TestNoPanicAfterWALCorrutpion(t *testing.T) {
 }
 
 func TestDataNotAvailableAfterRollback(t *testing.T) {
-	db, closeFn := openTestDB(t, nil, nil)
+	db := openTestDB(t, nil, nil)
 	defer func() {
 		testutil.Ok(t, db.Close())
-		closeFn()
 	}()
 
 	app := db.Appender()
@@ -246,10 +243,9 @@ func TestDataNotAvailableAfterRollback(t *testing.T) {
 }
 
 func TestDBAppenderAddRef(t *testing.T) {
-	db, closeFn := openTestDB(t, nil, nil)
+	db := openTestDB(t, nil, nil)
 	defer func() {
 		testutil.Ok(t, db.Close())
-		closeFn()
 	}()
 
 	app1 := db.Appender()
@@ -301,10 +297,9 @@ func TestDBAppenderAddRef(t *testing.T) {
 }
 
 func TestAppendEmptyLabelsIgnored(t *testing.T) {
-	db, closeFn := openTestDB(t, nil, nil)
+	db := openTestDB(t, nil, nil)
 	defer func() {
 		testutil.Ok(t, db.Close())
-		closeFn()
 	}()
 
 	app1 := db.Appender()
@@ -354,10 +349,9 @@ func TestDeleteSimple(t *testing.T) {
 
 Outer:
 	for _, c := range cases {
-		db, closeFn := openTestDB(t, nil, nil)
+		db := openTestDB(t, nil, nil)
 		defer func() {
 			testutil.Ok(t, db.Close())
-			closeFn()
 		}()
 
 		app := db.Appender()
@@ -414,10 +408,9 @@ Outer:
 }
 
 func TestAmendDatapointCausesError(t *testing.T) {
-	db, closeFn := openTestDB(t, nil, nil)
+	db := openTestDB(t, nil, nil)
 	defer func() {
 		testutil.Ok(t, db.Close())
-		closeFn()
 	}()
 
 	app := db.Appender()
@@ -432,10 +425,9 @@ func TestAmendDatapointCausesError(t *testing.T) {
 }
 
 func TestDuplicateNaNDatapointNoAmendError(t *testing.T) {
-	db, closeFn := openTestDB(t, nil, nil)
+	db := openTestDB(t, nil, nil)
 	defer func() {
 		testutil.Ok(t, db.Close())
-		closeFn()
 	}()
 
 	app := db.Appender()
@@ -449,10 +441,9 @@ func TestDuplicateNaNDatapointNoAmendError(t *testing.T) {
 }
 
 func TestNonDuplicateNaNDatapointsCausesAmendError(t *testing.T) {
-	db, closeFn := openTestDB(t, nil, nil)
+	db := openTestDB(t, nil, nil)
 	defer func() {
 		testutil.Ok(t, db.Close())
-		closeFn()
 	}()
 
 	app := db.Appender()
@@ -466,10 +457,9 @@ func TestNonDuplicateNaNDatapointsCausesAmendError(t *testing.T) {
 }
 
 func TestEmptyLabelsetCausesError(t *testing.T) {
-	db, closeFn := openTestDB(t, nil, nil)
+	db := openTestDB(t, nil, nil)
 	defer func() {
 		testutil.Ok(t, db.Close())
-		closeFn()
 	}()
 
 	app := db.Appender()
@@ -479,10 +469,9 @@ func TestEmptyLabelsetCausesError(t *testing.T) {
 }
 
 func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
-	db, closeFn := openTestDB(t, nil, nil)
+	db := openTestDB(t, nil, nil)
 	defer func() {
 		testutil.Ok(t, db.Close())
-		closeFn()
 	}()
 
 	// Append AmendedValue.
@@ -522,8 +511,7 @@ func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
 }
 
 func TestDB_Snapshot(t *testing.T) {
-	db, closeFn := openTestDB(t, nil, nil)
-	defer closeFn()
+	db := openTestDB(t, nil, nil)
 
 	// append data
 	app := db.Appender()
@@ -574,8 +562,7 @@ func TestDB_Snapshot(t *testing.T) {
 // that are outside the set block time range.
 // See https://github.com/prometheus/prometheus/issues/5105
 func TestDB_Snapshot_ChunksOutsideOfCompactedRange(t *testing.T) {
-	db, closeFn := openTestDB(t, nil, nil)
-	defer closeFn()
+	db := openTestDB(t, nil, nil)
 
 	app := db.Appender()
 	mint := int64(1414141414000)
@@ -628,8 +615,7 @@ func TestDB_Snapshot_ChunksOutsideOfCompactedRange(t *testing.T) {
 func TestDB_SnapshotWithDelete(t *testing.T) {
 	numSamples := int64(10)
 
-	db, closeFn := openTestDB(t, nil, nil)
-	defer closeFn()
+	db := openTestDB(t, nil, nil)
 
 	app := db.Appender()
 
@@ -771,10 +757,9 @@ func TestDB_e2e(t *testing.T) {
 		seriesMap[labels.New(l...).String()] = []tsdbutil.Sample{}
 	}
 
-	db, closeFn := openTestDB(t, nil, nil)
+	db := openTestDB(t, nil, nil)
 	defer func() {
 		testutil.Ok(t, db.Close())
-		closeFn()
 	}()
 
 	app := db.Appender()
@@ -875,8 +860,7 @@ func TestDB_e2e(t *testing.T) {
 }
 
 func TestWALFlushedOnDBClose(t *testing.T) {
-	db, closeFn := openTestDB(t, nil, nil)
-	defer closeFn()
+	db := openTestDB(t, nil, nil)
 
 	dirDb := db.Dir()
 
@@ -953,8 +937,7 @@ func TestWALSegmentSizeOptions(t *testing.T) {
 		t.Run(fmt.Sprintf("WALSegmentSize %d test", segmentSize), func(t *testing.T) {
 			opts := DefaultOptions()
 			opts.WALSegmentSize = segmentSize
-			db, closeFn := openTestDB(t, opts, nil)
-			defer closeFn()
+			db := openTestDB(t, opts, nil)
 
 			app := db.Appender()
 			for i := int64(0); i < 155; i++ {
@@ -973,8 +956,7 @@ func TestWALSegmentSizeOptions(t *testing.T) {
 func TestTombstoneClean(t *testing.T) {
 	numSamples := int64(10)
 
-	db, closeFn := openTestDB(t, nil, nil)
-	defer closeFn()
+	db := openTestDB(t, nil, nil)
 
 	app := db.Appender()
 
@@ -1071,10 +1053,9 @@ func TestTombstoneClean(t *testing.T) {
 // When TombstoneClean errors the original block that should be rebuilt doesn't get deleted so
 // if TombstoneClean leaves any blocks behind these will overlap.
 func TestTombstoneCleanFail(t *testing.T) {
-	db, closeFn := openTestDB(t, nil, nil)
+	db := openTestDB(t, nil, nil)
 	defer func() {
 		testutil.Ok(t, db.Close())
-		closeFn()
 	}()
 
 	var expectedBlockDirs []string
@@ -1151,10 +1132,9 @@ func (*mockCompactorFailing) Compact(string, []string, []*Block) (ulid.ULID, err
 }
 
 func TestTimeRetention(t *testing.T) {
-	db, closeFn := openTestDB(t, nil, []int64{1000})
+	db := openTestDB(t, nil, []int64{1000})
 	defer func() {
 		testutil.Ok(t, db.Close())
-		closeFn()
 	}()
 
 	blocks := []*BlockMeta{
@@ -1183,10 +1163,9 @@ func TestTimeRetention(t *testing.T) {
 }
 
 func TestSizeRetention(t *testing.T) {
-	db, closeFn := openTestDB(t, nil, []int64{100})
+	db := openTestDB(t, nil, []int64{100})
 	defer func() {
 		testutil.Ok(t, db.Close())
-		closeFn()
 	}()
 
 	blocks := []*BlockMeta{
@@ -1283,12 +1262,11 @@ func TestSizeRetentionMetric(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		db, closeFn := openTestDB(t, &Options{
+		db := openTestDB(t, &Options{
 			MaxBytes: c.maxBytes,
 		}, []int64{100})
 		defer func() {
 			testutil.Ok(t, db.Close())
-			closeFn()
 		}()
 
 		actMaxBytes := int64(prom_testutil.ToFloat64(db.metrics.maxBytes))
@@ -1297,10 +1275,9 @@ func TestSizeRetentionMetric(t *testing.T) {
 }
 
 func TestNotMatcherSelectsLabelsUnsetSeries(t *testing.T) {
-	db, closeFn := openTestDB(t, nil, nil)
+	db := openTestDB(t, nil, nil)
 	defer func() {
 		testutil.Ok(t, db.Close())
-		closeFn()
 	}()
 
 	labelpairs := []labels.Labels{
@@ -1483,10 +1460,9 @@ func TestOverlappingBlocksDetectsAllOverlaps(t *testing.T) {
 
 // Regression test for https://github.com/prometheus/tsdb/issues/347
 func TestChunkAtBlockBoundary(t *testing.T) {
-	db, closeFn := openTestDB(t, nil, nil)
+	db := openTestDB(t, nil, nil)
 	defer func() {
 		testutil.Ok(t, db.Close())
-		closeFn()
 	}()
 
 	app := db.Appender()
@@ -1540,10 +1516,9 @@ func TestChunkAtBlockBoundary(t *testing.T) {
 }
 
 func TestQuerierWithBoundaryChunks(t *testing.T) {
-	db, closeFn := openTestDB(t, nil, nil)
+	db := openTestDB(t, nil, nil)
 	defer func() {
 		testutil.Ok(t, db.Close())
-		closeFn()
 	}()
 
 	app := db.Appender()
@@ -1691,10 +1666,9 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 }
 
 func TestNoEmptyBlocks(t *testing.T) {
-	db, closeFn := openTestDB(t, nil, []int64{100})
+	db := openTestDB(t, nil, []int64{100})
 	defer func() {
 		testutil.Ok(t, db.Close())
-		closeFn()
 	}()
 	db.DisableCompactions()
 
@@ -1849,10 +1823,9 @@ func TestDB_LabelNames(t *testing.T) {
 		testutil.Ok(t, err)
 	}
 	for _, tst := range tests {
-		db, closeFn := openTestDB(t, nil, nil)
+		db := openTestDB(t, nil, nil)
 		defer func() {
 			testutil.Ok(t, db.Close())
-			closeFn()
 		}()
 
 		appendSamples(db, 0, 4, tst.sampleLabels1)
@@ -1896,10 +1869,9 @@ func TestDB_LabelNames(t *testing.T) {
 }
 
 func TestCorrectNumTombstones(t *testing.T) {
-	db, closeFn := openTestDB(t, nil, nil)
+	db := openTestDB(t, nil, nil)
 	defer func() {
 		testutil.Ok(t, db.Close())
-		closeFn()
 	}()
 
 	blockRange := db.compactor.(*LeveledCompactor).ranges[0]
