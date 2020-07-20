@@ -635,7 +635,7 @@ Outer:
 // limits the ingested samples to the head min valid time.
 func (h *Head) Init(minValidTime int64) error {
 	h.minValidTime = minValidTime
-	defer h.postings.EnsureOrder()
+	defer h.postings.EnsureOptimize()
 	defer h.gc() // After loading the wal remove the obsolete data from the head.
 
 	if h.wal == nil {

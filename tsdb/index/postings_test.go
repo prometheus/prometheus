@@ -25,18 +25,26 @@ import (
 )
 
 func TestMemPostings_addFor(t *testing.T) {
+	var want = []uint64{1, 2, 3, 4, 5, 6, 7, 8}
 	p := NewMemPostings()
-	p.m[allPostingsKey.Name] = map[string][]uint64{}
-	p.m[allPostingsKey.Name][allPostingsKey.Value] = []uint64{1, 2, 3, 4, 6, 7, 8}
+	p.m[allPostingsKey.Name] = map[string]*RoaringBitmapPosting{}
+	p.m[allPostingsKey.Name][allPostingsKey.Value] = newRoaringBitmapPosting(want...)
 
 	p.addFor(5, allPostingsKey)
 
-	testutil.Equals(t, []uint64{1, 2, 3, 4, 5, 6, 7, 8}, p.m[allPostingsKey.Name][allPostingsKey.Value])
+	var iter = NewRoaringBitmapIterator(p.m[allPostingsKey.Name][allPostingsKey.Value])
+	for _, i := range want {
+		if !iter.Next() {
+			t.Errorf("roaring bitmap has not enough items")
+			return
+		}
+		testutil.Equals(t, i, iter.At())
+	}
 }
 
 func TestMemPostings_ensureOrder(t *testing.T) {
 	p := NewUnorderedMemPostings()
-	p.m["a"] = map[string][]uint64{}
+	p.m["a"] = map[string]*RoaringBitmapPosting{}
 
 	for i := 0; i < 100; i++ {
 		l := make([]uint64, 100)
@@ -45,18 +53,15 @@ func TestMemPostings_ensureOrder(t *testing.T) {
 		}
 		v := fmt.Sprintf("%d", i)
 
-		p.m["a"][v] = l
+		p.m["a"][v] = newRoaringBitmapPosting(l...)
 	}
 
-	p.EnsureOrder()
+	p.EnsureOptimize()
 
 	for _, e := range p.m {
 		for _, l := range e {
-			ok := sort.SliceIsSorted(l, func(i, j int) bool {
-				return l[i] < l[j]
-			})
-			if !ok {
-				t.Fatalf("postings list %v is not sorted", l)
+			if !p.optimized {
+				t.Fatalf("postings list %v is not optimized", l)
 			}
 		}
 	}

@@ -34,19 +34,19 @@ func AllPostingsKey() (name, value string) {
 
 // MemPostings holds postings list for series ID per label pair. They may be written
 // to out of order.
-// ensureOrder() must be called once before any reads are done. This allows for quick
-// unordered batch fills on startup.
+// ensureOptimize() should be called once before any reads are done.
+// after the optimization will have less memory usage and better search performance.
 type MemPostings struct {
-	mtx     sync.RWMutex
-	m       map[string]map[string][]uint64
-	ordered bool
+	mtx       sync.RWMutex
+	m         map[string]map[string]*RoaringBitmapPosting
+	optimized bool
 }
 
 // NewMemPostings returns a memPostings that's ready for reads and writes.
 func NewMemPostings() *MemPostings {
 	return &MemPostings{
-		m:       make(map[string]map[string][]uint64, 512),
-		ordered: true,
+		m:         make(map[string]map[string]*RoaringBitmapPosting, 512),
+		optimized: true,
 	}
 }
 
@@ -54,8 +54,8 @@ func NewMemPostings() *MemPostings {
 // until ensureOrder was called once.
 func NewUnorderedMemPostings() *MemPostings {
 	return &MemPostings{
-		m:       make(map[string]map[string][]uint64, 512),
-		ordered: false,
+		m:         make(map[string]map[string]*RoaringBitmapPosting, 512),
+		optimized: false,
 	}
 }
 
@@ -113,9 +113,9 @@ func (p *MemPostings) Stats(label string) *PostingsStats {
 		size = 0
 		for name, values := range e {
 			if n == label {
-				metrics.push(Stat{Name: name, Count: uint64(len(values))})
+				metrics.push(Stat{Name: name, Count: values.Size()})
 			}
-			labelValuePairs.push(Stat{Name: n + "=" + name, Count: uint64(len(values))})
+			labelValuePairs.push(Stat{Name: n + "=" + name, Count: values.Size()})
 			size += uint64(len(name))
 		}
 		labelValueLength.push(Stat{Name: n, Count: size})
@@ -133,7 +133,7 @@ func (p *MemPostings) Stats(label string) *PostingsStats {
 
 // Get returns a postings list for the given label pair.
 func (p *MemPostings) Get(name, value string) Postings {
-	var lp []uint64
+	var lp *RoaringBitmapPosting
 	p.mtx.RLock()
 	l := p.m[name]
 	if l != nil {
@@ -144,7 +144,8 @@ func (p *MemPostings) Get(name, value string) Postings {
 	if lp == nil {
 		return EmptyPostings()
 	}
-	return newListPostings(lp...)
+
+	return NewRoaringBitmapIterator(lp)
 }
 
 // All returns a postings list over all documents ever added.
@@ -152,18 +153,17 @@ func (p *MemPostings) All() Postings {
 	return p.Get(AllPostingsKey())
 }
 
-// EnsureOrder ensures that all postings lists are sorted. After it returns all further
-// calls to add and addFor will insert new IDs in a sorted manner.
-func (p *MemPostings) EnsureOrder() {
+// EnsureOptimize ensures that the postings lists are optimized for search.
+func (p *MemPostings) EnsureOptimize() {
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
 
-	if p.ordered {
+	if p.optimized {
 		return
 	}
 
 	n := runtime.GOMAXPROCS(0)
-	workc := make(chan []uint64)
+	workc := make(chan *RoaringBitmapPosting)
 
 	var wg sync.WaitGroup
 	wg.Add(n)
@@ -171,7 +171,7 @@ func (p *MemPostings) EnsureOrder() {
 	for i := 0; i < n; i++ {
 		go func() {
 			for l := range workc {
-				sort.Slice(l, func(a, b int) bool { return l[a] < l[b] })
+				l.m.RunOptimize()
 			}
 			wg.Done()
 		}()
@@ -185,7 +185,7 @@ func (p *MemPostings) EnsureOrder() {
 	close(workc)
 	wg.Wait()
 
-	p.ordered = true
+	p.optimized = true
 }
 
 // Delete removes all ids in the given map from the postings lists.
@@ -209,34 +209,38 @@ func (p *MemPostings) Delete(deleted map[uint64]struct{}) {
 		p.mtx.RUnlock()
 
 		// For each posting we first analyse whether the postings list is affected by the deletes.
-		// If yes, we actually reallocate a new postings list.
+		// If yes, we modify the postings and re-run optimize.
+		var valuesToDelete []uint64
 		for _, l := range vals {
 			// Only lock for processing one postings list so we don't block reads for too long.
 			p.mtx.Lock()
 
-			found := false
-			for _, id := range p.m[n][l] {
-				if _, ok := deleted[id]; ok {
-					found = true
-					break
+			var list = p.m[n][l]
+			valuesToDelete = valuesToDelete[:0]
+
+			for iter := NewRoaringBitmapIterator(list); iter.Next(); {
+				var value = iter.At()
+				if _, ok := deleted[value]; ok {
+					valuesToDelete = append(valuesToDelete, value)
 				}
 			}
-			if !found {
+
+			if len(valuesToDelete) == 0 {
 				p.mtx.Unlock()
 				continue
 			}
-			repl := make([]uint64, 0, len(p.m[n][l]))
 
-			for _, id := range p.m[n][l] {
-				if _, ok := deleted[id]; !ok {
-					repl = append(repl, id)
-				}
-			}
-			if len(repl) > 0 {
-				p.m[n][l] = repl
-			} else {
+			// Check if the entire postings will be deleted.
+			// if the postings list will be delete just drop the post list
+			if int(list.Size())-len(valuesToDelete) <= 0 {
 				delete(p.m[n], l)
+			} else {
+				for _, toDelete := range valuesToDelete {
+					list.Remove(toDelete)
+				}
+				list.m.RunOptimize()
 			}
+
 			p.mtx.Unlock()
 		}
 		p.mtx.Lock()
@@ -254,7 +258,7 @@ func (p *MemPostings) Iter(f func(labels.Label, Postings) error) error {
 
 	for n, e := range p.m {
 		for v, p := range e {
-			if err := f(labels.Label{Name: n, Value: v}, newListPostings(p...)); err != nil {
+			if err := f(labels.Label{Name: n, Value: v}, NewRoaringBitmapIterator(p)); err != nil {
 				return err
 			}
 		}
@@ -277,24 +281,16 @@ func (p *MemPostings) Add(id uint64, lset labels.Labels) {
 func (p *MemPostings) addFor(id uint64, l labels.Label) {
 	nm, ok := p.m[l.Name]
 	if !ok {
-		nm = map[string][]uint64{}
+		nm = map[string]*RoaringBitmapPosting{}
 		p.m[l.Name] = nm
 	}
-	list := append(nm[l.Value], id)
-	nm[l.Value] = list
 
-	if !p.ordered {
-		return
-	}
-	// There is no guarantee that no higher ID was inserted before as they may
-	// be generated independently before adding them to postings.
-	// We repair order violations on insert. The invariant is that the first n-1
-	// items in the list are already sorted.
-	for i := len(list) - 1; i >= 1; i-- {
-		if list[i] >= list[i-1] {
-			break
-		}
-		list[i], list[i-1] = list[i-1], list[i]
+	nmm, ok := nm[l.Value]
+	if !ok {
+		nmm = newRoaringBitmapPosting(id)
+		nm[l.Value] = nmm
+	} else {
+		nmm.Add(id)
 	}
 }
 
