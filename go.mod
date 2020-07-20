@@ -73,8 +73,7 @@ require (
 	google.golang.org/api v0.29.0
 	google.golang.org/appengine v1.6.6 // indirect
 	google.golang.org/genproto v0.0.0-20200710124503-20a17af7bd0e
-	google.golang.org/grpc v1.30.0
-	google.golang.org/grpc/examples v0.0.0-20200709232328-d8193ee9cc3e // indirect
+	google.golang.org/grpc v1.29.1
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	gopkg.in/fsnotify/fsnotify.v1 v1.4.7
 	gopkg.in/yaml.v2 v2.3.0

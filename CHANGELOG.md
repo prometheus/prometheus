@@ -1,4 +1,13 @@
+## 2.20.0-rc.1 / 2020-07-20
+
+* [ENHANCEMENT] SD: Improve Docker Swarm example. #7608
+* [ENHANCEMENT] SD: Enable use of Unix socket for Docker Swarm. #7604
+* [BUGFIX] SD: Don't panic on an empty Docker Swarm config. #7615
+* [BUGFIX] TSDB: Don't panic on WAL corruptions. #7550
+
 ## 2.20.0-rc.0 / 2020-07-16
+
+This release changes WAL compression from opt-in to default. WAL compression will prevent a downgrade to v2.10 or earlier without deleting the WAL. Disable WAL compression explicitly by setting the command line flag `--no-storage.tsdb.wal-compression` if you require downgrading to v2.10 or earlier.
 
 * [CHANGE] promtool: Changed rule numbering from 0-based to 1-based when reporting rule errors. #7495
 * [CHANGE] Remote read: Added `prometheus_remote_storage_read_queries_total` counter and `prometheus_remote_storage_read_request_duration_seconds` histogram, removed `prometheus_remote_storage_remote_read_queries_total` counter.
