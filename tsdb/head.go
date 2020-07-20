@@ -2186,10 +2186,8 @@ func (s *memSeries) iterator(id int, isoState *isolationState, chunkDiskMapper *
 				previousSamples += int(d.numSamples)
 			}
 		}
-		// mmappedChunks does not contain the last chunk. Hence check it separately.
-		if len(s.mmappedChunks) < ix {
-			previousSamples += s.headChunk.chunk.NumSamples()
-		} else {
+
+		if s.headChunk != nil {
 			totalSamples += s.headChunk.chunk.NumSamples()
 		}
 
