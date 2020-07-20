@@ -155,6 +155,65 @@ func TestDataAvailableOnlyAfterCommit(t *testing.T) {
 	testutil.Equals(t, map[string][]tsdbutil.Sample{`{foo="bar"}`: {sample{t: 0, v: 0}}}, seriesSet)
 }
 
+// TestNoPanicAfterWALCorrutpion ensures that querying the db after a WAL corruption doesn't cause a panic.
+// https://github.com/prometheus/prometheus/issues/7548
+func TestNoPanicAfterWALCorrutpion(t *testing.T) {
+	db, closeFn := openTestDB(t, &Options{WALSegmentSize: 32 * 1024}, nil)
+	defer func() {
+		closeFn()
+	}()
+
+	// Append untill we have at least one mmaped chunk.
+	var expSamples []tsdbutil.Sample
+	var maxt int64
+	{
+		app := db.Appender()
+		for {
+			_, err := app.Add(labels.FromStrings("foo", "bar"), maxt, 0)
+			testutil.Ok(t, err)
+			err = app.Commit()
+			testutil.Ok(t, err)
+			expSamples = append(expSamples, sample{t: maxt, v: 0})
+			files, err := ioutil.ReadDir(mmappedChunksDir(db.Dir()))
+			testutil.Ok(t, err)
+			if len(files) > 0 {
+				break
+			}
+			maxt++
+		}
+		testutil.Ok(t, db.Close())
+	}
+
+	// Corrupt the second wal to trigger a repair.
+	// The repair deletes all wals after the corrupted one.
+	{
+		walFiles, err := ioutil.ReadDir(path.Join(db.Dir(), "wal"))
+		testutil.Ok(t, err)
+
+		f, err := os.OpenFile(path.Join(db.Dir(), "wal", walFiles[1].Name()), os.O_APPEND|os.O_WRONLY, 0666)
+		testutil.Ok(t, err)
+		_, err = f.Write([]byte{1})
+		testutil.Ok(t, err)
+		f.Close()
+	}
+
+	// Query all data in the DB.
+	{
+		db, err := Open(db.Dir(), nil, nil, nil)
+		testutil.Ok(t, err)
+		defer func() {
+			testutil.Ok(t, db.Close())
+		}()
+		testutil.Equals(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.walCorruptionsTotal), "wal corruption count mismatch")
+
+		querier, err := db.Querier(context.TODO(), 0, maxt)
+		testutil.Ok(t, err)
+		seriesSet := query(t, querier, labels.MustNewMatcher(labels.MatchEqual, "", ""))
+		// The last sample should be missing as it was in the deleted WAL segment.
+		testutil.Equals(t, map[string][]tsdbutil.Sample{`{foo="bar"}`: expSamples[:len(expSamples)-1]}, seriesSet)
+	}
+}
+
 func TestDataNotAvailableAfterRollback(t *testing.T) {
 	db, closeFn := openTestDB(t, nil, nil)
 	defer func() {
