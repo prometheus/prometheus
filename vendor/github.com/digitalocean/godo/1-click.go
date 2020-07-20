@@ -13,7 +13,7 @@ const oneClickBasePath = "v2/1-clicks"
 // See: https://developers.digitalocean.com/documentation/v2/#1-click-applications
 type OneClickService interface {
 	List(context.Context, string) ([]*OneClick, *Response, error)
-	InstallKubernetes(context.Context, *InstallKubernetesAppsRequest)(*InstallKubernetesAppsResponse, *Response, error)
+	InstallKubernetes(context.Context, *InstallKubernetesAppsRequest) (*InstallKubernetesAppsResponse, *Response, error)
 }
 
 var _ OneClickService = &OneClickServiceOp{}
@@ -42,7 +42,7 @@ type InstallKubernetesAppsRequest struct {
 
 // InstallKubernetesAppsResponse is the response of a kubernetes 1-click install request
 type InstallKubernetesAppsResponse struct {
-	Message string   `json:"message"`
+	Message string `json:"message"`
 }
 
 // List returns a list of the available 1-click applications.
@@ -64,8 +64,8 @@ func (ocs *OneClickServiceOp) List(ctx context.Context, oneClickType string) ([]
 }
 
 // InstallKubernetes installs an addon on a kubernetes cluster
-func (ocs *OneClickServiceOp) InstallKubernetes(ctx context.Context, install *InstallKubernetesAppsRequest ) (*InstallKubernetesAppsResponse, *Response, error) {
-	path := fmt.Sprintf(oneClickBasePath+"/kubernetes")
+func (ocs *OneClickServiceOp) InstallKubernetes(ctx context.Context, install *InstallKubernetesAppsRequest) (*InstallKubernetesAppsResponse, *Response, error) {
+	path := fmt.Sprintf(oneClickBasePath + "/kubernetes")
 
 	req, err := ocs.client.NewRequest(ctx, http.MethodPost, path, install)
 	if err != nil {
