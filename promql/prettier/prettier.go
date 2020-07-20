@@ -89,9 +89,9 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 	}
 	var (
 		item       = items[index]
-		nodeInfo   = newNodeInfo(p.Node, 100)
+		nodeInfo   = newNodeInfo(p.Node, 100, item)
 		node       = nodeInfo.getNode(p.Node, item)
-		currNode   = newNodeInfo(node, 100)
+		currNode   = newNodeInfo(node, 100, item)
 		baseIndent int
 	)
 	currNode.fetch()
@@ -101,6 +101,7 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 	nodeSplittable := currNode.violatesColumnLimit()
 	if p.pd.isNewLineApplied {
 		baseIndent = nodeInfo.baseIndent(item)
+		//fmt.Println(item, baseIndent)
 		result += p.pd.pad(baseIndent)
 		p.pd.isNewLineApplied = false
 	}
@@ -122,7 +123,7 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 			if items[index-1].Typ != parser.COMMA {
 				// Edge-case: if the labels are multi-line split, but do not have
 				// a pre-applied comma.
-				result += "," + p.pd.newLine() + p.pd.pad(currNode.baseIndent(item))
+				result += "," + p.pd.newLine() + p.pd.pad(nodeInfo.baseIndent(items[index]))
 			}
 			p.pd.insideMultilineBraces = false
 		}

@@ -216,6 +216,41 @@ var prettierCases = []prettierTest{
 +
     metric_one{foo="bar"}`,
 	},
+	{
+		expr: `metric_one + metric_two + metric_three{some_very_large_label="a_very_large_value", some_very_large_label="a_very_large_value"}`,
+		expected: `    metric_one + metric_two
++
+    metric_three{some_very_large_label="a_very_large_value", some_very_large_label="a_very_large_value"}`,
+	},
+	{
+		expr: `metric_one + metric_two + metric_three{a_some_very_large_label="a_very_large_value", some_very_large_label="a_very_large_value"}`,
+		expected: `    metric_one + metric_two
++
+    metric_three{
+      a_some_very_large_label="a_very_large_value",
+      some_very_large_label="a_very_large_value",
+    }`,
+	},
+	{
+		expr: `metric_one + metric_two + metric_three + metric_four{_a_some_very_large_label="a_very_large_value", some_very_large_label="a_very_large_value"}`,
+		expected: `    metric_one + metric_two + metric_three
++
+    metric_four{
+      _a_some_very_large_label="a_very_large_value",
+      some_very_large_label="a_very_large_value",
+    }`,
+	},
+	{
+		expr: `metric_one + metric_two + metric_three + metric_four{_a_some_very_large_label="a_very_large_value", some_very_large_label="a_very_large_value"} + metric_five`,
+		expected: `    metric_one + metric_two + metric_three
++
+    metric_four{
+      _a_some_very_large_label="a_very_large_value",
+      some_very_large_label="a_very_large_value",
+    }
++
+    metric_five`,
+	},
 }
 
 func TestPrettierCases(t *testing.T) {

@@ -12,12 +12,14 @@ type nodeInfo struct {
 	shouldSplit bool
 	columnLimit int
 	history     []reflect.Type
+	item        parser.Item
 }
 
-func newNodeInfo(head parser.Expr, columnLimit int) *nodeInfo {
+func newNodeInfo(head parser.Expr, columnLimit int, item parser.Item) *nodeInfo {
 	return &nodeInfo{
 		head:        head,
 		columnLimit: columnLimit,
+		item:        item,
 	}
 }
 
@@ -39,6 +41,7 @@ func (p *nodeInfo) getNode(root parser.Expr, item parser.Item) parser.Expr {
 
 func (p *nodeInfo) baseIndent(item parser.Item) int {
 	history, _, _ := p.nodeHistory(p.head, item.PositionRange(), []reflect.Type{})
+	history = reduceContinuous(history, "*parser.BinaryExpr")
 	return len(history)
 }
 
@@ -85,7 +88,6 @@ func (p *nodeInfo) nodeHistory(head parser.Expr, posRange parser.PositionRange, 
 		}
 	case *parser.BinaryExpr:
 		stack = append(stack, reflect.TypeOf(n))
-		tempBinary := stack
 		stmpLHS, nodeLHS, foundLHS := p.nodeHistory(n.LHS, posRange, stack)
 		if foundLHS {
 			return stmpLHS, nodeLHS, foundLHS
@@ -97,17 +99,20 @@ func (p *nodeInfo) nodeHistory(head parser.Expr, posRange parser.PositionRange, 
 		// Since the item exists in both the child. This means that it is in binary expr range,
 		// but not satisfied by a single child. This is possible only for Op and grouping
 		// modifiers.
-		return tempBinary, head, true
+		if n.PositionRange().Start <= posRange.Start && n.PositionRange().End >= posRange.End {
+			return stack, head, true
+		}
+		return stack, head, false
 	case *parser.AggregateExpr:
-		nodeMatch = true
 		if n.Expr.PositionRange().Start <= posRange.Start && n.Expr.PositionRange().End >= posRange.End {
+			nodeMatch = true
 			stack = append(stack, reflect.TypeOf(n))
 			p.nodeHistory(n.Expr, posRange, stack)
 		}
 	case *parser.Call:
-		nodeMatch = true
 		stack = append(stack, reflect.TypeOf(n))
 		for _, exprs := range n.Args {
+			nodeMatch = true
 			if exprs.PositionRange().Start <= posRange.Start && exprs.PositionRange().End >= posRange.End {
 				stmp, _head, found := p.nodeHistory(exprs, posRange, stack)
 				if found {
@@ -116,21 +121,21 @@ func (p *nodeInfo) nodeHistory(head parser.Expr, posRange parser.PositionRange, 
 			}
 		}
 	case *parser.MatrixSelector:
-		nodeMatch = true
 		stack = append(stack, reflect.TypeOf(n))
 		if n.VectorSelector.PositionRange().Start <= posRange.Start && n.VectorSelector.PositionRange().End >= posRange.End {
+			nodeMatch = true
 			p.nodeHistory(n.VectorSelector, posRange, stack)
 		}
 	case *parser.UnaryExpr:
-		nodeMatch = true
 		stack = append(stack, reflect.TypeOf(n))
 		if n.Expr.PositionRange().Start <= posRange.Start && n.Expr.PositionRange().End >= posRange.End {
+			nodeMatch = true
 			p.nodeHistory(n.Expr, posRange, stack)
 		}
 	case *parser.SubqueryExpr:
-		nodeMatch = true
 		stack = append(stack, reflect.TypeOf(n))
 		if n.Expr.PositionRange().Start <= posRange.Start && n.Expr.PositionRange().End >= posRange.End {
+			nodeMatch = true
 			p.nodeHistory(n.Expr, posRange, stack)
 		}
 	case *parser.NumberLiteral, *parser.StringLiteral:
@@ -138,4 +143,19 @@ func (p *nodeInfo) nodeHistory(head parser.Expr, posRange parser.PositionRange, 
 		stack = append(stack, reflect.TypeOf(n))
 	}
 	return stack, head, nodeMatch
+}
+
+// reduceContinuous reduces from end, the continuous
+// occurrence of a type to its single representation.
+func reduceContinuous(history []reflect.Type, typ string) []reflect.Type {
+	var temp []reflect.Type
+	for i := 0; i < len(history)-1; i++ {
+		if history[i].String() == typ && history[i].String() != history[i+1].String() {
+			temp = append(temp, history[i])
+		}
+	}
+	if history[len(history)-1].String() != typ {
+		temp = append(temp, history[len(history)-1])
+	}
+	return temp
 }
