@@ -3,7 +3,6 @@ package types // import "github.com/docker/docker/api/types"
 import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
-	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 // configs holds structs used for internal communication between the
@@ -16,7 +15,6 @@ type ContainerCreateConfig struct {
 	Config           *container.Config
 	HostConfig       *container.HostConfig
 	NetworkingConfig *network.NetworkingConfig
-	Platform         *specs.Platform
 	AdjustCPUShares  bool
 }
 

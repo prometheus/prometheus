@@ -1,6 +1,37 @@
-## master / unreleased
+## 2.20.0-rc.0 / 2020-07-16
 
-* [ENHANCEMENT] TSDB: WAL compression is enabled by default.
+* [CHANGE] promtool: Changed rule numbering from 0-based to 1-based when reporting rule errors. #7495
+* [CHANGE] Remote read: Added `prometheus_remote_storage_read_queries_total` counter and `prometheus_remote_storage_read_request_duration_seconds` histogram, removed `prometheus_remote_storage_remote_read_queries_total` counter.
+* [CHANGE] Remote write: Added buckets for longer durations to `prometheus_remote_storage_sent_batch_duration_seconds` histogram.
+* [CHANGE] TSDB: WAL compression is enabled by default. #7410
+* [FEATURE] PromQL: Added `group()` aggregator. #7480
+* [FEATURE] SD: Added Docker Swarm SD. #7420
+* [FEATURE] SD: Added DigitalOcean SD. #7407
+* [FEATURE] SD: Added Openstack config option to query alternative endpoints. #7494
+* [ENHANCEMENT] Configuration: Exit early on invalid config file and signal it with exit code 2. #7399
+* [ENHANCEMENT] PromQL: `without` is now a valid metric identifier. #7533
+* [ENHANCEMENT] PromQL: Optimized regex label matching for literals within the pattern or as prefix/suffix. #7453 #7503
+* [ENHANCEMENT] promtool: Added time range parameters for labels API in promtool. #7463
+* [ENHANCEMENT] Remote write: Include samples waiting in channel in pending samples metric. Log number of dropped samples on hard shutdown. #7335
+* [ENHANCEMENT] Scrape: Ingest synthetic scrape report metrics atomically with the corresponding scraped metrics. #7562
+* [ENHANCEMENT] SD: Reduce timeouts for Openstack SD. #7507
+* [ENHANCEMENT] SD: Use 10m timeout for Consul watches. #7423
+* [ENHANCEMENT] SD: Added AMI meta label for EC2 SD. #7386
+* [ENHANCEMENT] TSDB: Increment WAL corruption metric also on WAL corruption during checkpointing. #7491
+* [ENHANCEMENT] TSDB: Improved query performance for high-cardinality labels. #7448
+* [ENHANCEMENT] UI: Display dates as well as timestamps in status page. #7544
+* [ENHANCEMENT] UI: Improved scrolling when following hash-fragment links. #7456
+* [ENHANCEMENT] UI: React UI renders numbers in alerts in a more human-readable way. #7426
+* [BUGFIX] API: Fixed error status code in the query API. #7435 
+* [BUGFIX] PromQL: Fixed `avg` and `avg_over_time` for NaN, Inf, and float64 overflows. #7346
+* [BUGFIX] PromQL: Fixed off-by-one error in `histogram_quantile`. #7393
+* [BUGFIX] promtool: Support extended durations in rules unit tests. #6297
+* [BUGFIX] Scrape: Fix undercounting for `scrape_samples_post_metric_relabeling` in case of errors. #7342
+* [BUGFIX] TSDB: Avoid leaving behind empty files in `chunks_head`, causing startup failures. #7573
+* [BUGFIX] TSDB: Fixed race between compact (gc, populate) and head append causing unknown symbol error. #7560
+* [BUGFIX] TSDB: Fixed unknown symbol error during head compaction. #7526
+* [BUGFIX] TSDB: Fixed panic during TSDB metric registration. #7501
+* [BUGFIX] TSDB: Fixed `--limit` command line flag in `tsdb` tool. #7430
 
 ## 2.19.2 / 2020-06-26
 

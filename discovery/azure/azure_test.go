@@ -201,3 +201,24 @@ func TestMapFromVMScaleSetVMWithTags(t *testing.T) {
 		t.Errorf("Expected %v got %v", expectedVM, actualVM)
 	}
 }
+
+func TestNewAzureResourceFromID(t *testing.T) {
+	for _, tc := range []struct {
+		id       string
+		expected azureResource
+	}{
+		{
+			id:       "/a/b/c/group/d/e/f/name",
+			expected: azureResource{"name", "group"},
+		},
+		{
+			id:       "/a/b/c/group/d/e/f/name/g/h",
+			expected: azureResource{"name", "group"},
+		},
+	} {
+		actual, _ := newAzureResourceFromID(tc.id, nil)
+		if !reflect.DeepEqual(tc.expected, actual) {
+			t.Errorf("Expected %v got %v", tc.expected, actual)
+		}
+	}
+}

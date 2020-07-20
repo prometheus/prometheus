@@ -114,7 +114,6 @@ func (client ApplicationSecurityGroupsClient) CreateOrUpdateSender(req *http.Req
 func (client ApplicationSecurityGroupsClient) CreateOrUpdateResponder(resp *http.Response) (result ApplicationSecurityGroup, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -190,7 +189,6 @@ func (client ApplicationSecurityGroupsClient) DeleteSender(req *http.Request) (f
 func (client ApplicationSecurityGroupsClient) DeleteResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted, http.StatusNoContent),
 		autorest.ByClosing())
 	result.Response = resp
@@ -265,7 +263,6 @@ func (client ApplicationSecurityGroupsClient) GetSender(req *http.Request) (*htt
 func (client ApplicationSecurityGroupsClient) GetResponder(resp *http.Response) (result ApplicationSecurityGroup, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -340,7 +337,6 @@ func (client ApplicationSecurityGroupsClient) ListSender(req *http.Request) (*ht
 func (client ApplicationSecurityGroupsClient) ListResponder(resp *http.Response) (result ApplicationSecurityGroupListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -449,7 +445,6 @@ func (client ApplicationSecurityGroupsClient) ListAllSender(req *http.Request) (
 func (client ApplicationSecurityGroupsClient) ListAllResponder(resp *http.Response) (result ApplicationSecurityGroupListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

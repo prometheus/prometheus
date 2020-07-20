@@ -152,7 +152,6 @@ func (client InterfaceTapConfigurationsClient) CreateOrUpdateSender(req *http.Re
 func (client InterfaceTapConfigurationsClient) CreateOrUpdateResponder(resp *http.Response) (result InterfaceTapConfiguration, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -230,7 +229,6 @@ func (client InterfaceTapConfigurationsClient) DeleteSender(req *http.Request) (
 func (client InterfaceTapConfigurationsClient) DeleteResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted, http.StatusNoContent),
 		autorest.ByClosing())
 	result.Response = resp
@@ -307,7 +305,6 @@ func (client InterfaceTapConfigurationsClient) GetSender(req *http.Request) (*ht
 func (client InterfaceTapConfigurationsClient) GetResponder(resp *http.Response) (result InterfaceTapConfiguration, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -384,7 +381,6 @@ func (client InterfaceTapConfigurationsClient) ListSender(req *http.Request) (*h
 func (client InterfaceTapConfigurationsClient) ListResponder(resp *http.Response) (result InterfaceTapConfigurationListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

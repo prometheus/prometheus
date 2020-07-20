@@ -33,7 +33,7 @@ type Intention struct {
 	// SourceType is the type of the value for the source.
 	SourceType IntentionSourceType
 
-	// Action is whether this is a whitelist or blacklist intention.
+	// Action is whether this is an allowlist or denylist intention.
 	Action IntentionAction
 
 	// DefaultAddr, DefaultPort of the local listening proxy (if any) to
@@ -99,7 +99,7 @@ func (i *Intention) partString(ns, n string) string {
 const IntentionDefaultNamespace = "default"
 
 // IntentionAction is the action that the intention represents. This
-// can be "allow" or "deny" to whitelist or blacklist intentions.
+// can be "allow" or "deny" to allowlist or denylist intentions.
 type IntentionAction string
 
 const (

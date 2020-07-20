@@ -1118,3 +1118,42 @@ func countStaleNaN(t *testing.T, st storage.Storage) int {
 	}
 	return c
 }
+
+func TestGroupHasAlertingRules(t *testing.T) {
+	tests := []struct {
+		group *Group
+		want  bool
+	}{
+		{
+			group: &Group{
+				name: "HasAlertingRule",
+				rules: []Rule{
+					NewAlertingRule("alert", nil, 0, nil, nil, nil, true, nil),
+					NewRecordingRule("record", nil, nil),
+				},
+			},
+			want: true,
+		},
+		{
+			group: &Group{
+				name:  "HasNoRule",
+				rules: []Rule{},
+			},
+			want: false,
+		},
+		{
+			group: &Group{
+				name: "HasOnlyRecordingRule",
+				rules: []Rule{
+					NewRecordingRule("record", nil, nil),
+				},
+			},
+			want: false,
+		},
+	}
+
+	for i, test := range tests {
+		got := test.group.HasAlertingRules()
+		testutil.Assert(t, test.want == got, "test case %d failed, expected:%t got:%t", i, test.want, got)
+	}
+}

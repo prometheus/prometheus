@@ -1978,20 +1978,23 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 			if k > inputVecLen {
 				resultSize = inputVecLen
 			}
-			if op == parser.STDVAR || op == parser.STDDEV {
-				result[groupingKey].value = 0.0
-			} else if op == parser.TOPK || op == parser.QUANTILE {
+			switch op {
+			case parser.STDVAR, parser.STDDEV:
+				result[groupingKey].value = 0
+			case parser.TOPK, parser.QUANTILE:
 				result[groupingKey].heap = make(vectorByValueHeap, 0, resultSize)
 				heap.Push(&result[groupingKey].heap, &Sample{
 					Point:  Point{V: s.V},
 					Metric: s.Metric,
 				})
-			} else if op == parser.BOTTOMK {
+			case parser.BOTTOMK:
 				result[groupingKey].reverseHeap = make(vectorByReverseValueHeap, 0, resultSize)
 				heap.Push(&result[groupingKey].reverseHeap, &Sample{
 					Point:  Point{V: s.V},
 					Metric: s.Metric,
 				})
+			case parser.GROUP:
+				result[groupingKey].value = 1
 			}
 			continue
 		}
@@ -2002,7 +2005,28 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 
 		case parser.AVG:
 			group.groupCount++
-			group.mean += (s.V - group.mean) / float64(group.groupCount)
+			if math.IsInf(group.mean, 0) {
+				if math.IsInf(s.V, 0) && (group.mean > 0) == (s.V > 0) {
+					// The `mean` and `s.V` values are `Inf` of the same sign.  They
+					// can't be subtracted, but the value of `mean` is correct
+					// already.
+					break
+				}
+				if !math.IsInf(s.V, 0) && !math.IsNaN(s.V) {
+					// At this stage, the mean is an infinite. If the added
+					// value is neither an Inf or a Nan, we can keep that mean
+					// value.
+					// This is required because our calculation below removes
+					// the mean value, which would look like Inf += x - Inf and
+					// end up as a NaN.
+					break
+				}
+			}
+			// Divide each side of the `-` by `group.groupCount` to avoid float64 overflows.
+			group.mean += s.V/float64(group.groupCount) - group.mean/float64(group.groupCount)
+
+		case parser.GROUP:
+			// Do nothing. Required to avoid the panic in `default:` below.
 
 		case parser.MAX:
 			if group.value < s.V || math.IsNaN(group.value) {

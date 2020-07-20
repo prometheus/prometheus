@@ -96,8 +96,8 @@ type Token struct {
 	OAuthToken string `q:"oauth_token"`
 	// OAuthTokenSecret is the secret value associated with the OAuth Token.
 	OAuthTokenSecret string `q:"oauth_token_secret"`
-	// OAUthExpiresAt is the date and time when an OAuth token expires.
-	OAUthExpiresAt *time.Time `q:"-"`
+	// OAuthExpiresAt is the date and time when an OAuth token expires.
+	OAuthExpiresAt *time.Time `q:"-"`
 }
 
 // TokenResult is a struct to handle
@@ -127,7 +127,7 @@ func (r TokenResult) Extract() (*Token, error) {
 		if t, err := time.Parse(gophercloud.RFC3339Milli, v); err != nil {
 			return nil, err
 		} else {
-			token.OAUthExpiresAt = &t
+			token.OAuthExpiresAt = &t
 		}
 	}
 

@@ -118,7 +118,6 @@ func (client LogAnalyticsClient) ExportRequestRateByIntervalSender(req *http.Req
 func (client LogAnalyticsClient) ExportRequestRateByIntervalResponder(resp *http.Response) (result LogAnalyticsOperationResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -202,7 +201,6 @@ func (client LogAnalyticsClient) ExportThrottledRequestsSender(req *http.Request
 func (client LogAnalyticsClient) ExportThrottledRequestsResponder(resp *http.Response) (result LogAnalyticsOperationResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

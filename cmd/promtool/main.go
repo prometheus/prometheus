@@ -95,6 +95,8 @@ func main() {
 	queryLabelsCmd := queryCmd.Command("labels", "Run labels query.")
 	queryLabelsServer := queryLabelsCmd.Arg("server", "Prometheus server to query.").Required().URL()
 	queryLabelsName := queryLabelsCmd.Arg("name", "Label name to provide label values for.").Required().String()
+	queryLabelsBegin := queryLabelsCmd.Flag("start", "Start time (RFC3339 or Unix timestamp).").String()
+	queryLabelsEnd := queryLabelsCmd.Flag("end", "End time (RFC3339 or Unix timestamp).").String()
 
 	testCmd := app.Command("test", "Unit testing.")
 	testRulesCmd := testCmd.Command("rules", "Unit tests for rules.")
@@ -142,7 +144,7 @@ func main() {
 		os.Exit(debugAll(*debugAllServer))
 
 	case queryLabelsCmd.FullCommand():
-		os.Exit(QueryLabels(*queryLabelsServer, *queryLabelsName, p))
+		os.Exit(QueryLabels(*queryLabelsServer, *queryLabelsName, *queryLabelsBegin, *queryLabelsEnd, p))
 
 	case testRulesCmd.FullCommand():
 		os.Exit(RulesUnitTest(*testRulesFiles...))
@@ -453,11 +455,13 @@ func QueryRange(url string, headers map[string]string, query, start, end string,
 		stime, err = parseTime(start)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "error parsing start time:", err)
+			return 1
 		}
 	}
 
 	if !stime.Before(etime) {
 		fmt.Fprintln(os.Stderr, "start time is not before end time")
+		return 1
 	}
 
 	if step == 0 {
@@ -495,30 +499,10 @@ func QuerySeries(url *url.URL, matchers []string, start, end string, p printer) 
 		return 1
 	}
 
-	// TODO: clean up timestamps
-	var (
-		minTime = time.Now().Add(-9999 * time.Hour)
-		maxTime = time.Now().Add(9999 * time.Hour)
-	)
-
-	var stime, etime time.Time
-
-	if start == "" {
-		stime = minTime
-	} else {
-		stime, err = parseTime(start)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "error parsing start time:", err)
-		}
-	}
-
-	if end == "" {
-		etime = maxTime
-	} else {
-		etime, err = parseTime(end)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "error parsing end time:", err)
-		}
+	stime, etime, err := parseStartTimeAndEndTime(start, end)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
 	}
 
 	// Run query against client.
@@ -537,7 +521,7 @@ func QuerySeries(url *url.URL, matchers []string, start, end string, p printer) 
 }
 
 // QueryLabels queries for label values against a Prometheus server.
-func QueryLabels(url *url.URL, name string, p printer) int {
+func QueryLabels(url *url.URL, name string, start, end string, p printer) int {
 	config := api.Config{
 		Address: url.String(),
 	}
@@ -549,10 +533,16 @@ func QueryLabels(url *url.URL, name string, p printer) int {
 		return 1
 	}
 
+	stime, etime, err := parseStartTimeAndEndTime(start, end)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+
 	// Run query against client.
 	api := v1.NewAPI(c)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	val, warn, err := api.LabelValues(ctx, name)
+	val, warn, err := api.LabelValues(ctx, name, stime, etime)
 	cancel()
 
 	for _, v := range warn {
@@ -566,6 +556,32 @@ func QueryLabels(url *url.URL, name string, p printer) int {
 
 	p.printLabelValues(val)
 	return 0
+}
+
+func parseStartTimeAndEndTime(start, end string) (time.Time, time.Time, error) {
+	var (
+		minTime = time.Now().Add(-9999 * time.Hour)
+		maxTime = time.Now().Add(9999 * time.Hour)
+		err     error
+	)
+
+	stime := minTime
+	etime := maxTime
+
+	if start != "" {
+		stime, err = parseTime(start)
+		if err != nil {
+			return stime, etime, errors.Wrap(err, "error parsing start time")
+		}
+	}
+
+	if end != "" {
+		etime, err = parseTime(end)
+		if err != nil {
+			return stime, etime, errors.Wrap(err, "error parsing end time")
+		}
+	}
+	return stime, etime, nil
 }
 
 func parseTime(s string) (time.Time, error) {

@@ -18,6 +18,12 @@ const (
 )
 
 const (
+	serviceHealth = "service"
+	connectHealth = "connect"
+	ingressHealth = "ingress"
+)
+
+const (
 	// NodeMaint is the special key set by a node in maintenance mode.
 	NodeMaint = "_node_maintenance"
 
@@ -170,7 +176,7 @@ type HealthChecks []*HealthCheck
 func (c HealthChecks) AggregatedStatus() string {
 	var passing, warning, critical, maintenance bool
 	for _, check := range c {
-		id := string(check.CheckID)
+		id := check.CheckID
 		if id == NodeMaint || strings.HasPrefix(id, ServiceMaintPrefix) {
 			maintenance = true
 			continue
@@ -269,11 +275,11 @@ func (h *Health) Service(service, tag string, passingOnly bool, q *QueryOptions)
 	if tag != "" {
 		tags = []string{tag}
 	}
-	return h.service(service, tags, passingOnly, q, false)
+	return h.service(service, tags, passingOnly, q, serviceHealth)
 }
 
 func (h *Health) ServiceMultipleTags(service string, tags []string, passingOnly bool, q *QueryOptions) ([]*ServiceEntry, *QueryMeta, error) {
-	return h.service(service, tags, passingOnly, q, false)
+	return h.service(service, tags, passingOnly, q, serviceHealth)
 }
 
 // Connect is equivalent to Service except that it will only return services
@@ -286,18 +292,31 @@ func (h *Health) Connect(service, tag string, passingOnly bool, q *QueryOptions)
 	if tag != "" {
 		tags = []string{tag}
 	}
-	return h.service(service, tags, passingOnly, q, true)
+	return h.service(service, tags, passingOnly, q, connectHealth)
 }
 
 func (h *Health) ConnectMultipleTags(service string, tags []string, passingOnly bool, q *QueryOptions) ([]*ServiceEntry, *QueryMeta, error) {
-	return h.service(service, tags, passingOnly, q, true)
+	return h.service(service, tags, passingOnly, q, connectHealth)
 }
 
-func (h *Health) service(service string, tags []string, passingOnly bool, q *QueryOptions, connect bool) ([]*ServiceEntry, *QueryMeta, error) {
-	path := "/v1/health/service/" + service
-	if connect {
+// Ingress is equivalent to Connect except that it will only return associated
+// ingress gateways for the requested service.
+func (h *Health) Ingress(service string, passingOnly bool, q *QueryOptions) ([]*ServiceEntry, *QueryMeta, error) {
+	var tags []string
+	return h.service(service, tags, passingOnly, q, ingressHealth)
+}
+
+func (h *Health) service(service string, tags []string, passingOnly bool, q *QueryOptions, healthType string) ([]*ServiceEntry, *QueryMeta, error) {
+	var path string
+	switch healthType {
+	case connectHealth:
 		path = "/v1/health/connect/" + service
+	case ingressHealth:
+		path = "/v1/health/ingress/" + service
+	default:
+		path = "/v1/health/service/" + service
 	}
+
 	r := h.c.newRequest("GET", path)
 	r.setQueryOptions(q)
 	if len(tags) > 0 {

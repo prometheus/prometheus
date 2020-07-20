@@ -60,7 +60,9 @@ func TestSampleDelivery(t *testing.T) {
 
 	dir, err := ioutil.TempDir("", "TestSampleDeliver")
 	testutil.Ok(t, err)
-	defer os.RemoveAll(dir)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
 
 	metrics := newQueueManagerMetrics(nil, "", "")
 	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, nil, nil, c, defaultFlushDeadline)
@@ -89,7 +91,9 @@ func TestSampleDeliveryTimeout(t *testing.T) {
 
 	dir, err := ioutil.TempDir("", "TestSampleDeliveryTimeout")
 	testutil.Ok(t, err)
-	defer os.RemoveAll(dir)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
 
 	metrics := newQueueManagerMetrics(nil, "", "")
 	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, nil, nil, c, defaultFlushDeadline)
@@ -130,7 +134,9 @@ func TestSampleDeliveryOrder(t *testing.T) {
 
 	dir, err := ioutil.TempDir("", "TestSampleDeliveryOrder")
 	testutil.Ok(t, err)
-	defer os.RemoveAll(dir)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
 
 	metrics := newQueueManagerMetrics(nil, "", "")
 	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), config.DefaultQueueConfig, nil, nil, c, defaultFlushDeadline)
@@ -149,7 +155,9 @@ func TestShutdown(t *testing.T) {
 
 	dir, err := ioutil.TempDir("", "TestShutdown")
 	testutil.Ok(t, err)
-	defer os.RemoveAll(dir)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
 
 	metrics := newQueueManagerMetrics(nil, "", "")
 
@@ -188,7 +196,9 @@ func TestSeriesReset(t *testing.T) {
 
 	dir, err := ioutil.TempDir("", "TestSeriesReset")
 	testutil.Ok(t, err)
-	defer os.RemoveAll(dir)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
 
 	metrics := newQueueManagerMetrics(nil, "", "")
 	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), config.DefaultQueueConfig, nil, nil, c, deadline)
@@ -218,7 +228,9 @@ func TestReshard(t *testing.T) {
 
 	dir, err := ioutil.TempDir("", "TestReshard")
 	testutil.Ok(t, err)
-	defer os.RemoveAll(dir)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
 
 	metrics := newQueueManagerMetrics(nil, "", "")
 	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, nil, nil, c, defaultFlushDeadline)
@@ -616,7 +628,9 @@ func TestCalculateDesiredShards(t *testing.T) {
 
 	dir, err := ioutil.TempDir("", "TestCalculateDesiredShards")
 	testutil.Ok(t, err)
-	defer os.RemoveAll(dir)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
 
 	metrics := newQueueManagerMetrics(nil, "", "")
 	samplesIn := newEWMARate(ewmaWeight, shardUpdateDuration)

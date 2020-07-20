@@ -82,6 +82,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 type Discovery struct {
 	*refresh.Discovery
 	client *client.Client
+	role   string
 	port   int
 }
 
@@ -89,6 +90,7 @@ type Discovery struct {
 func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 	d := &Discovery{
 		port: conf.Port,
+		role: conf.Role,
 	}
 
 	rt, err := config_util.NewRoundTripperFromConfig(conf.HTTPClientConfig, "dockerswarm_sd", false)
@@ -117,21 +119,24 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 		return nil, fmt.Errorf("error setting up docker swarm client: %w", err)
 	}
 
-	var r func(context.Context) ([]*targetgroup.Group, error)
-	switch conf.Role {
-	case "services":
-		r = d.refreshServices
-	case "nodes":
-		r = d.refreshNodes
-	case "tasks":
-		r = d.refreshTasks
-	}
-
 	d.Discovery = refresh.NewDiscovery(
 		logger,
 		"dockerswarm",
 		time.Duration(conf.RefreshInterval),
-		r,
+		d.refresh,
 	)
 	return d, nil
+}
+
+func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
+	switch d.role {
+	case "services":
+		return d.refreshServices(ctx)
+	case "nodes":
+		return d.refreshNodes(ctx)
+	case "tasks":
+		return d.refreshTasks(ctx)
+	default:
+		panic(fmt.Errorf("unexpected role %s", d.role))
+	}
 }

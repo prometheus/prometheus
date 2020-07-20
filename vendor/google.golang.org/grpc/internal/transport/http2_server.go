@@ -909,13 +909,6 @@ func (t *http2Server) Write(s *Stream, hdr []byte, data []byte, opts *Options) e
 			return ContextErr(s.ctx.Err())
 		}
 	}
-	// Add some data to header frame so that we can equally distribute bytes across frames.
-	emptyLen := http2MaxFrameLen - len(hdr)
-	if emptyLen > len(data) {
-		emptyLen = len(data)
-	}
-	hdr = append(hdr, data[:emptyLen]...)
-	data = data[emptyLen:]
 	df := &dataFrame{
 		streamID:    s.id,
 		h:           hdr,

@@ -68,7 +68,7 @@ func (g *RuleGroups) Validate(node ruleGroups) (errs []error) {
 
 	for j, g := range g.Groups {
 		if g.Name == "" {
-			errs = append(errs, errors.Errorf("%d:%d: Groupname should not be empty", node.Groups[j].Line, node.Groups[j].Column))
+			errs = append(errs, errors.Errorf("%d:%d: Groupname must not be empty", node.Groups[j].Line, node.Groups[j].Column))
 		}
 
 		if _, ok := set[g.Name]; ok {
@@ -90,7 +90,7 @@ func (g *RuleGroups) Validate(node ruleGroups) (errs []error) {
 				}
 				errs = append(errs, &Error{
 					Group:    g.Name,
-					Rule:     i,
+					Rule:     i + 1,
 					RuleName: ruleName.Value,
 					Err:      node,
 				})

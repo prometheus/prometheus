@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -37,6 +38,7 @@ type ACLToken struct {
 	Roles             []*ACLTokenRoleLink   `json:",omitempty"`
 	ServiceIdentities []*ACLServiceIdentity `json:",omitempty"`
 	Local             bool
+	AuthMethod        string        `json:",omitempty"`
 	ExpirationTTL     time.Duration `json:",omitempty"`
 	ExpirationTime    *time.Time    `json:",omitempty"`
 	CreateTime        time.Time     `json:",omitempty"`
@@ -60,6 +62,7 @@ type ACLTokenListEntry struct {
 	Roles             []*ACLTokenRoleLink   `json:",omitempty"`
 	ServiceIdentities []*ACLServiceIdentity `json:",omitempty"`
 	Local             bool
+	AuthMethod        string     `json:",omitempty"`
 	ExpirationTime    *time.Time `json:",omitempty"`
 	CreateTime        time.Time
 	Hash              []byte
@@ -180,7 +183,13 @@ type ACLBindingRule struct {
 type ACLAuthMethod struct {
 	Name        string
 	Type        string
-	Description string
+	DisplayName string        `json:",omitempty"`
+	Description string        `json:",omitempty"`
+	MaxTokenTTL time.Duration `json:",omitempty"`
+
+	// TokenLocality defines the kind of token that this auth method produces.
+	// This can be either 'local' or 'global'. If empty 'local' is assumed.
+	TokenLocality string `json:",omitempty"`
 
 	// Configuration is arbitrary configuration for the auth method. This
 	// should only contain primitive values and containers (such as lists and
@@ -190,15 +199,69 @@ type ACLAuthMethod struct {
 	CreateIndex uint64
 	ModifyIndex uint64
 
+	// NamespaceRules apply only on auth methods defined in the default namespace.
+	// Namespacing is a Consul Enterprise feature.
+	NamespaceRules []*ACLAuthMethodNamespaceRule `json:",omitempty"`
+
 	// Namespace is the namespace the ACLAuthMethod is associated with.
 	// Namespacing is a Consul Enterprise feature.
 	Namespace string `json:",omitempty"`
 }
 
+func (m *ACLAuthMethod) MarshalJSON() ([]byte, error) {
+	type Alias ACLAuthMethod
+	exported := &struct {
+		MaxTokenTTL string `json:",omitempty"`
+		*Alias
+	}{
+		MaxTokenTTL: m.MaxTokenTTL.String(),
+		Alias:       (*Alias)(m),
+	}
+	if m.MaxTokenTTL == 0 {
+		exported.MaxTokenTTL = ""
+	}
+
+	return json.Marshal(exported)
+}
+
+func (m *ACLAuthMethod) UnmarshalJSON(data []byte) error {
+	type Alias ACLAuthMethod
+	aux := &struct {
+		MaxTokenTTL string
+		*Alias
+	}{
+		Alias: (*Alias)(m),
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	var err error
+	if aux.MaxTokenTTL != "" {
+		if m.MaxTokenTTL, err = time.ParseDuration(aux.MaxTokenTTL); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+type ACLAuthMethodNamespaceRule struct {
+	// Selector is an expression that matches against verified identity
+	// attributes returned from the auth method during login.
+	Selector string `json:",omitempty"`
+
+	// BindNamespace is the target namespace of the binding. Can be lightly
+	// templated using HIL ${foo} syntax from available field names.
+	//
+	// If empty it's created in the same namespace as the auth method.
+	BindNamespace string `json:",omitempty"`
+}
+
 type ACLAuthMethodListEntry struct {
 	Name        string
 	Type        string
-	Description string
+	DisplayName string `json:",omitempty"`
+	Description string `json:",omitempty"`
 	CreateIndex uint64
 	ModifyIndex uint64
 
@@ -246,9 +309,70 @@ func (c *KubernetesAuthMethodConfig) RenderToConfig() map[string]interface{} {
 	}
 }
 
+// OIDCAuthMethodConfig is the config for the built-in Consul auth method for
+// OIDC and JWT.
+type OIDCAuthMethodConfig struct {
+	// common for type=oidc and type=jwt
+	JWTSupportedAlgs    []string          `json:",omitempty"`
+	BoundAudiences      []string          `json:",omitempty"`
+	ClaimMappings       map[string]string `json:",omitempty"`
+	ListClaimMappings   map[string]string `json:",omitempty"`
+	OIDCDiscoveryURL    string            `json:",omitempty"`
+	OIDCDiscoveryCACert string            `json:",omitempty"`
+	// just for type=oidc
+	OIDCClientID        string   `json:",omitempty"`
+	OIDCClientSecret    string   `json:",omitempty"`
+	OIDCScopes          []string `json:",omitempty"`
+	AllowedRedirectURIs []string `json:",omitempty"`
+	VerboseOIDCLogging  bool     `json:",omitempty"`
+	// just for type=jwt
+	JWKSURL              string        `json:",omitempty"`
+	JWKSCACert           string        `json:",omitempty"`
+	JWTValidationPubKeys []string      `json:",omitempty"`
+	BoundIssuer          string        `json:",omitempty"`
+	ExpirationLeeway     time.Duration `json:",omitempty"`
+	NotBeforeLeeway      time.Duration `json:",omitempty"`
+	ClockSkewLeeway      time.Duration `json:",omitempty"`
+}
+
+// RenderToConfig converts this into a map[string]interface{} suitable for use
+// in the ACLAuthMethod.Config field.
+func (c *OIDCAuthMethodConfig) RenderToConfig() map[string]interface{} {
+	return map[string]interface{}{
+		// common for type=oidc and type=jwt
+		"JWTSupportedAlgs":    c.JWTSupportedAlgs,
+		"BoundAudiences":      c.BoundAudiences,
+		"ClaimMappings":       c.ClaimMappings,
+		"ListClaimMappings":   c.ListClaimMappings,
+		"OIDCDiscoveryURL":    c.OIDCDiscoveryURL,
+		"OIDCDiscoveryCACert": c.OIDCDiscoveryCACert,
+		// just for type=oidc
+		"OIDCClientID":        c.OIDCClientID,
+		"OIDCClientSecret":    c.OIDCClientSecret,
+		"OIDCScopes":          c.OIDCScopes,
+		"AllowedRedirectURIs": c.AllowedRedirectURIs,
+		"VerboseOIDCLogging":  c.VerboseOIDCLogging,
+		// just for type=jwt
+		"JWKSURL":              c.JWKSURL,
+		"JWKSCACert":           c.JWKSCACert,
+		"JWTValidationPubKeys": c.JWTValidationPubKeys,
+		"BoundIssuer":          c.BoundIssuer,
+		"ExpirationLeeway":     c.ExpirationLeeway,
+		"NotBeforeLeeway":      c.NotBeforeLeeway,
+		"ClockSkewLeeway":      c.ClockSkewLeeway,
+	}
+}
+
 type ACLLoginParams struct {
 	AuthMethod  string
 	BearerToken string
+	Meta        map[string]string `json:",omitempty"`
+}
+
+type ACLOIDCAuthURLParams struct {
+	AuthMethod  string
+	RedirectURI string
+	ClientNonce string
 	Meta        map[string]string `json:",omitempty"`
 }
 
@@ -657,6 +781,32 @@ func (a *ACL) PolicyRead(policyID string, q *QueryOptions) (*ACLPolicy, *QueryMe
 	qm := &QueryMeta{}
 	parseQueryMeta(resp, qm)
 	qm.RequestTime = rtt
+
+	var out ACLPolicy
+	if err := decodeBody(resp, &out); err != nil {
+		return nil, nil, err
+	}
+
+	return &out, qm, nil
+}
+
+// PolicyReadByName retrieves the policy details including the rule set with name.
+func (a *ACL) PolicyReadByName(policyName string, q *QueryOptions) (*ACLPolicy, *QueryMeta, error) {
+	r := a.c.newRequest("GET", "/v1/acl/policy/name/"+url.QueryEscape(policyName))
+	r.setQueryOptions(q)
+	found, rtt, resp, err := requireNotFoundOrOK(a.c.doRequest(r))
+	if err != nil {
+		return nil, nil, err
+	}
+	defer resp.Body.Close()
+
+	qm := &QueryMeta{}
+	parseQueryMeta(resp, qm)
+	qm.RequestTime = rtt
+
+	if !found {
+		return nil, qm, nil
+	}
 
 	var out ACLPolicy
 	if err := decodeBody(resp, &out); err != nil {
@@ -1141,4 +1291,63 @@ func (a *ACL) Logout(q *WriteOptions) (*WriteMeta, error) {
 
 	wm := &WriteMeta{RequestTime: rtt}
 	return wm, nil
+}
+
+// OIDCAuthURL requests an authorization URL to start an OIDC login flow.
+func (a *ACL) OIDCAuthURL(auth *ACLOIDCAuthURLParams, q *WriteOptions) (string, *WriteMeta, error) {
+	if auth.AuthMethod == "" {
+		return "", nil, fmt.Errorf("Must specify an auth method name")
+	}
+
+	r := a.c.newRequest("POST", "/v1/acl/oidc/auth-url")
+	r.setWriteOptions(q)
+	r.obj = auth
+
+	rtt, resp, err := requireOK(a.c.doRequest(r))
+	if err != nil {
+		return "", nil, err
+	}
+	defer resp.Body.Close()
+
+	wm := &WriteMeta{RequestTime: rtt}
+	var out aclOIDCAuthURLResponse
+	if err := decodeBody(resp, &out); err != nil {
+		return "", nil, err
+	}
+	return out.AuthURL, wm, nil
+}
+
+type aclOIDCAuthURLResponse struct {
+	AuthURL string
+}
+
+type ACLOIDCCallbackParams struct {
+	AuthMethod  string
+	State       string
+	Code        string
+	ClientNonce string
+}
+
+// OIDCCallback is the callback endpoint to complete an OIDC login.
+func (a *ACL) OIDCCallback(auth *ACLOIDCCallbackParams, q *WriteOptions) (*ACLToken, *WriteMeta, error) {
+	if auth.AuthMethod == "" {
+		return nil, nil, fmt.Errorf("Must specify an auth method name")
+	}
+
+	r := a.c.newRequest("POST", "/v1/acl/oidc/callback")
+	r.setWriteOptions(q)
+	r.obj = auth
+
+	rtt, resp, err := requireOK(a.c.doRequest(r))
+	if err != nil {
+		return nil, nil, err
+	}
+	defer resp.Body.Close()
+
+	wm := &WriteMeta{RequestTime: rtt}
+	var out ACLToken
+	if err := decodeBody(resp, &out); err != nil {
+		return nil, nil, err
+	}
+	return &out, wm, nil
 }

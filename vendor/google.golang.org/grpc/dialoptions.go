@@ -46,18 +46,18 @@ type dialOptions struct {
 	chainUnaryInts  []UnaryClientInterceptor
 	chainStreamInts []StreamClientInterceptor
 
-	cp          Compressor
-	dc          Decompressor
-	bs          internalbackoff.Strategy
-	block       bool
-	insecure    bool
-	timeout     time.Duration
-	scChan      <-chan ServiceConfig
-	authority   string
-	copts       transport.ConnectOptions
-	callOptions []CallOption
-	// This is used by v1 balancer dial option WithBalancer to support v1
-	// balancer, and also by WithBalancerName dial option.
+	cp              Compressor
+	dc              Decompressor
+	bs              internalbackoff.Strategy
+	block           bool
+	returnLastError bool
+	insecure        bool
+	timeout         time.Duration
+	scChan          <-chan ServiceConfig
+	authority       string
+	copts           transport.ConnectOptions
+	callOptions     []CallOption
+	// This is used by WithBalancerName dial option.
 	balancerBuilder             balancer.Builder
 	channelzParentID            int64
 	disableServiceConfig        bool
@@ -199,19 +199,6 @@ func WithDecompressor(dc Decompressor) DialOption {
 	})
 }
 
-// WithBalancer returns a DialOption which sets a load balancer with the v1 API.
-// Name resolver will be ignored if this DialOption is specified.
-//
-// Deprecated: use the new balancer APIs in balancer package and
-// WithBalancerName.  Will be removed in a future 1.x release.
-func WithBalancer(b Balancer) DialOption {
-	return newFuncDialOption(func(o *dialOptions) {
-		o.balancerBuilder = &balancerWrapperBuilder{
-			b: b,
-		}
-	})
-}
-
 // WithBalancerName sets the balancer that the ClientConn will be initialized
 // with. Balancer registered with balancerName will be used. This function
 // panics if no balancer was registered by balancerName.
@@ -296,6 +283,19 @@ func withBackoff(bs internalbackoff.Strategy) DialOption {
 func WithBlock() DialOption {
 	return newFuncDialOption(func(o *dialOptions) {
 		o.block = true
+	})
+}
+
+// WithReturnConnectionError returns a DialOption which makes the client connection
+// return a string containing both the last connection error that occurred and
+// the context.DeadlineExceeded error.
+// Implies WithBlock()
+//
+// This API is EXPERIMENTAL.
+func WithReturnConnectionError() DialOption {
+	return newFuncDialOption(func(o *dialOptions) {
+		o.block = true
+		o.returnLastError = true
 	})
 }
 
@@ -459,7 +459,7 @@ func WithStreamInterceptor(f StreamClientInterceptor) DialOption {
 }
 
 // WithChainStreamInterceptor returns a DialOption that specifies the chained
-// interceptor for unary RPCs. The first interceptor will be the outer most,
+// interceptor for streaming RPCs. The first interceptor will be the outer most,
 // while the last interceptor will be the inner most wrapper around the real call.
 // All interceptors added by this method will be chained, and the interceptor
 // defined by WithStreamInterceptor will always be prepended to the chain.

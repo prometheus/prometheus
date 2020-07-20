@@ -14,6 +14,7 @@ package wal
 
 import (
 	"fmt"
+	"github.com/go-kit/kit/log"
 	"io/ioutil"
 	"math/rand"
 	"os"
@@ -99,7 +100,9 @@ func TestTailSamples(t *testing.T) {
 
 			dir, err := ioutil.TempDir("", "readCheckpoint")
 			testutil.Ok(t, err)
-			defer os.RemoveAll(dir)
+			defer func() {
+				testutil.Ok(t, os.RemoveAll(dir))
+			}()
 
 			wdir := path.Join(dir, "wal")
 			err = os.Mkdir(wdir, 0777)
@@ -108,6 +111,9 @@ func TestTailSamples(t *testing.T) {
 			enc := record.Encoder{}
 			w, err := NewSize(nil, nil, wdir, 128*pageSize, compress)
 			testutil.Ok(t, err)
+			defer func() {
+				testutil.Ok(t, w.Close())
+			}()
 
 			// Write to the initial segment then checkpoint.
 			for i := 0; i < seriesCount; i++ {
@@ -173,13 +179,18 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
 			dir, err := ioutil.TempDir("", "readToEnd_noCheckpoint")
 			testutil.Ok(t, err)
-			defer os.RemoveAll(dir)
+			defer func() {
+				testutil.Ok(t, os.RemoveAll(dir))
+			}()
 			wdir := path.Join(dir, "wal")
 			err = os.Mkdir(wdir, 0777)
 			testutil.Ok(t, err)
 
 			w, err := NewSize(nil, nil, wdir, 128*pageSize, compress)
 			testutil.Ok(t, err)
+			defer func() {
+				testutil.Ok(t, w.Close())
+			}()
 
 			var recs [][]byte
 
@@ -241,7 +252,9 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
 			dir, err := ioutil.TempDir("", "readToEnd_withCheckpoint")
 			testutil.Ok(t, err)
-			defer os.RemoveAll(dir)
+			defer func() {
+				testutil.Ok(t, os.RemoveAll(dir))
+			}()
 
 			wdir := path.Join(dir, "wal")
 			err = os.Mkdir(wdir, 0777)
@@ -250,6 +263,9 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 			enc := record.Encoder{}
 			w, err := NewSize(nil, nil, wdir, segmentSize, compress)
 			testutil.Ok(t, err)
+			defer func() {
+				testutil.Ok(t, w.Close())
+			}()
 
 			// Write to the initial segment then checkpoint.
 			for i := 0; i < seriesCount; i++ {
@@ -275,7 +291,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 				}
 			}
 
-			Checkpoint(w, 0, 1, func(x uint64) bool { return true }, 0)
+			Checkpoint(log.NewNopLogger(), w, 0, 1, func(x uint64) bool { return true }, 0)
 			w.Truncate(1)
 
 			// Write more records after checkpointing.
@@ -325,7 +341,9 @@ func TestReadCheckpoint(t *testing.T) {
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
 			dir, err := ioutil.TempDir("", "readCheckpoint")
 			testutil.Ok(t, err)
-			defer os.RemoveAll(dir)
+			defer func() {
+				testutil.Ok(t, os.RemoveAll(dir))
+			}()
 
 			wdir := path.Join(dir, "wal")
 			err = os.Mkdir(wdir, 0777)
@@ -336,6 +354,9 @@ func TestReadCheckpoint(t *testing.T) {
 			enc := record.Encoder{}
 			w, err := NewSize(nil, nil, wdir, 128*pageSize, compress)
 			testutil.Ok(t, err)
+			defer func() {
+				testutil.Ok(t, w.Close())
+			}()
 
 			// Write to the initial segment then checkpoint.
 			for i := 0; i < seriesCount; i++ {
@@ -360,7 +381,7 @@ func TestReadCheckpoint(t *testing.T) {
 					testutil.Ok(t, w.Log(sample))
 				}
 			}
-			Checkpoint(w, 30, 31, func(x uint64) bool { return true }, 0)
+			Checkpoint(log.NewNopLogger(), w, 30, 31, func(x uint64) bool { return true }, 0)
 			w.Truncate(32)
 
 			// Start read after checkpoint, no more data written.
@@ -392,7 +413,9 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
 			dir, err := ioutil.TempDir("", "readCheckpoint")
 			testutil.Ok(t, err)
-			defer os.RemoveAll(dir)
+			defer func() {
+				testutil.Ok(t, os.RemoveAll(dir))
+			}()
 
 			wdir := path.Join(dir, "wal")
 			err = os.Mkdir(wdir, 0777)
@@ -472,7 +495,9 @@ func TestCheckpointSeriesReset(t *testing.T) {
 		t.Run(fmt.Sprintf("compress=%t", tc.compress), func(t *testing.T) {
 			dir, err := ioutil.TempDir("", "seriesReset")
 			testutil.Ok(t, err)
-			defer os.RemoveAll(dir)
+			defer func() {
+				testutil.Ok(t, os.RemoveAll(dir))
+			}()
 
 			wdir := path.Join(dir, "wal")
 			err = os.Mkdir(wdir, 0777)
@@ -481,6 +506,9 @@ func TestCheckpointSeriesReset(t *testing.T) {
 			enc := record.Encoder{}
 			w, err := NewSize(nil, nil, wdir, segmentSize, tc.compress)
 			testutil.Ok(t, err)
+			defer func() {
+				testutil.Ok(t, w.Close())
+			}()
 
 			// Write to the initial segment, then checkpoint later.
 			for i := 0; i < seriesCount; i++ {
@@ -520,7 +548,7 @@ func TestCheckpointSeriesReset(t *testing.T) {
 			})
 			testutil.Equals(t, seriesCount, wt.checkNumLabels())
 
-			_, err = Checkpoint(w, 2, 4, func(x uint64) bool { return true }, 0)
+			_, err = Checkpoint(log.NewNopLogger(), w, 2, 4, func(x uint64) bool { return true }, 0)
 			testutil.Ok(t, err)
 
 			err = w.Truncate(5)

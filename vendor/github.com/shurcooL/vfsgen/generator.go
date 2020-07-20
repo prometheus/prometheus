@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"errors"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -48,7 +47,6 @@ func Generate(input http.FileSystem, opt Options) error {
 	}
 
 	// Write output file (all at once).
-	fmt.Println("writing", opt.Filename)
 	err = ioutil.WriteFile(opt.Filename, buf.Bytes(), 0644)
 	return err
 }

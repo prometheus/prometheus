@@ -210,3 +210,22 @@ func TestNegotiateResponseType(t *testing.T) {
 	testutil.NotOk(t, err, "expected error due to not supported requested response types")
 	testutil.Equals(t, "server does not support any of the requested response types: [20]; supported: map[SAMPLES:{} STREAMED_XOR_CHUNKS:{}]", err.Error())
 }
+
+func TestMergeLabels(t *testing.T) {
+	for _, tc := range []struct {
+		primary, secondary, expected []prompb.Label
+	}{
+		{
+			primary:   []prompb.Label{{Name: "aaa", Value: "foo"}, {Name: "bbb", Value: "foo"}, {Name: "ddd", Value: "foo"}},
+			secondary: []prompb.Label{{Name: "bbb", Value: "bar"}, {Name: "ccc", Value: "bar"}},
+			expected:  []prompb.Label{{Name: "aaa", Value: "foo"}, {Name: "bbb", Value: "foo"}, {Name: "ccc", Value: "bar"}, {Name: "ddd", Value: "foo"}},
+		},
+		{
+			primary:   []prompb.Label{{Name: "bbb", Value: "bar"}, {Name: "ccc", Value: "bar"}},
+			secondary: []prompb.Label{{Name: "aaa", Value: "foo"}, {Name: "bbb", Value: "foo"}, {Name: "ddd", Value: "foo"}},
+			expected:  []prompb.Label{{Name: "aaa", Value: "foo"}, {Name: "bbb", Value: "bar"}, {Name: "ccc", Value: "bar"}, {Name: "ddd", Value: "foo"}},
+		},
+	} {
+		testutil.Equals(t, tc.expected, MergeLabels(tc.primary, tc.secondary))
+	}
+}

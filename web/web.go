@@ -982,6 +982,10 @@ func tmplFuncs(consolesPath string, opts *Options) template_text.FuncMap {
 		"since": func(t time.Time) time.Duration {
 			return time.Since(t) / time.Millisecond * time.Millisecond
 		},
+		"unixToTime": func(i int64) time.Time {
+			t := time.Unix(i/int64(time.Microsecond), 0).UTC()
+			return t
+		},
 		"consolesPath": func() string { return consolesPath },
 		"pathPrefix":   func() string { return opts.ExternalURL.Path },
 		"pageTitle":    func() string { return opts.PageTitle },

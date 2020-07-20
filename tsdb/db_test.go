@@ -1169,7 +1169,7 @@ func TestSizeRetention(t *testing.T) {
 	// Create a WAL checkpoint, and compare sizes.
 	first, last, err := db.Head().wal.Segments()
 	testutil.Ok(t, err)
-	_, err = wal.Checkpoint(db.Head().wal, first, last-1, func(x uint64) bool { return false }, 0)
+	_, err = wal.Checkpoint(log.NewNopLogger(), db.Head().wal, first, last-1, func(x uint64) bool { return false }, 0)
 	testutil.Ok(t, err)
 	blockSize = int64(prom_testutil.ToFloat64(db.metrics.blocksBytes)) // Use the actual internal metrics.
 	walSize, err = db.Head().wal.Size()
@@ -2508,7 +2508,9 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 
 func TestDBCannotSeePartialCommits(t *testing.T) {
 	tmpdir, _ := ioutil.TempDir("", "test")
-	defer os.RemoveAll(tmpdir)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(tmpdir))
+	}()
 
 	db, err := Open(tmpdir, nil, nil, nil)
 	testutil.Ok(t, err)
@@ -2575,7 +2577,9 @@ func TestDBCannotSeePartialCommits(t *testing.T) {
 
 func TestDBQueryDoesntSeeAppendsAfterCreation(t *testing.T) {
 	tmpdir, _ := ioutil.TempDir("", "test")
-	defer os.RemoveAll(tmpdir)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(tmpdir))
+	}()
 
 	db, err := Open(tmpdir, nil, nil, nil)
 	testutil.Ok(t, err)

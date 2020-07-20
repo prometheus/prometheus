@@ -33,14 +33,15 @@ Generic placeholders are defined as follows:
 
 * `<boolean>`: a boolean that can take the values `true` or `false`
 * `<duration>`: a duration matching the regular expression `[0-9]+(ms|[smhdwy])`
-* `<labelname>`: a string matching the regular expression `[a-zA-Z_][a-zA-Z0-9_]*`
-* `<labelvalue>`: a string of unicode characters
 * `<filename>`: a valid path in the current working directory
 * `<host>`: a valid string consisting of a hostname or IP followed by an optional port number
+* `<int>`: an integer value
+* `<labelname>`: a string matching the regular expression `[a-zA-Z_][a-zA-Z0-9_]*`
+* `<labelvalue>`: a string of unicode characters
 * `<path>`: a valid URL path
 * `<scheme>`: a string that can take the values `http` or `https`
-* `<string>`: a regular string
 * `<secret>`: a regular string that is a secret, such as a password
+* `<string>`: a regular string
 * `<tmpl_string>`: a string which is template-expanded before usage
 
 The other placeholders are specified separately.
@@ -206,10 +207,6 @@ dns_sd_configs:
 ec2_sd_configs:
   [ - <ec2_sd_config> ... ]
 
-# List of OpenStack service discovery configurations.
-openstack_sd_configs:
-  [ - <openstack_sd_config> ... ]
-
 # List of file service discovery configurations.
 file_sd_configs:
   [ - <file_sd_config> ... ]
@@ -229,6 +226,10 @@ marathon_sd_configs:
 # List of AirBnB's Nerve service discovery configurations.
 nerve_sd_configs:
   [ - <nerve_sd_config> ... ]
+
+# List of OpenStack service discovery configurations.
+openstack_sd_configs:
+  [ - <openstack_sd_config> ... ]
 
 # List of Zookeeper Serverset service discovery configurations.
 serverset_sd_configs:
@@ -376,7 +377,7 @@ tags:
 [ tag_separator: <string> | default = , ]
 
 # Allow stale Consul results (see https://www.consul.io/api/features/consistency.html). Will reduce load on Consul.
-[ allow_stale: <bool> | default = true ]
+[ allow_stale: <boolean> | default = true ]
 
 # The time after which the provided names are refreshed.
 # On large setup it might be a good idea to increase this value because the catalog will change all the time.
@@ -575,6 +576,9 @@ basic_auth:
 [ bearer_token_file: <filename> ]
 ```
 
+See [this example Prometheus configuration file](/documentation/examples/prometheus-dockerswarm.yml)
+for a detailed example of configuring Prometheus for Docker Swarm.
+
 ### `<dns_sd_config>`
 
 A DNS-based service discovery configuration allows specifying a set of DNS
@@ -598,7 +602,7 @@ names:
 [ type: <string> | default = 'SRV' ]
 
 # The port number used if the query type is not SRV.
-[ port: <number>]
+[ port: <int>]
 
 # The time after which the provided names are refreshed.
 [ refresh_interval: <duration> | default = 30s ]
@@ -772,6 +776,9 @@ region: <string>
 # The port to scrape metrics from. If using the public IP address, this must
 # instead be specified in the relabeling rule.
 [ port: <int> | default = 80 ]
+
+# The availability of the endpoint to connect to. Must be one of public, admin or internal.
+[ availability: <string> | default = "public" ]
 
 # TLS configuration.
 tls_config:
@@ -1115,7 +1122,7 @@ servers:
 # password and password_file are mutually exclusive.
 basic_auth:
   [ username: <string> ]
-  [ password: <string> ]
+  [ password: <secret> ]
   [ password_file: <string> ]
 
 # Sets the `Authorization` header on every request with
@@ -1329,7 +1336,7 @@ prefix is guaranteed to never be used by Prometheus itself.
 [ regex: <regex> | default = (.*) ]
 
 # Modulus to take of the hash of the source label values.
-[ modulus: <uint64> ]
+[ modulus: <int> ]
 
 # Replacement value against which a regex replace is performed if the
 # regular expression matches. Regex capture groups are available.
@@ -1399,7 +1406,7 @@ through the `__alerts_path__` label.
 [ timeout: <duration> | default = 10s ]
 
 # The api version of Alertmanager.
-[ api_version: <version> | default = v1 ]
+[ api_version: <string> | default = v1 ]
 
 # Prefix for the HTTP path alerts are pushed to.
 [ path_prefix: <path> | default = / ]
@@ -1412,7 +1419,7 @@ through the `__alerts_path__` label.
 # password and password_file are mutually exclusive.
 basic_auth:
   [ username: <string> ]
-  [ password: <string> ]
+  [ password: <secret> ]
   [ password_file: <string> ]
 
 # Sets the `Authorization` header on every request with
@@ -1450,6 +1457,14 @@ ec2_sd_configs:
 file_sd_configs:
   [ - <file_sd_config> ... ]
 
+# List of DigitalOcean service discovery configurations.
+digitalocean_sd_configs:
+  [ - <digitalocean_sd_config> ... ]
+
+# List of Docker Swarm service discovery configurations.
+dockerswarm_sd_configs:
+  [ - <dockerswarm_sd_config> ... ]
+
 # List of GCE service discovery configurations.
 gce_sd_configs:
   [ - <gce_sd_config> ... ]
@@ -1465,6 +1480,10 @@ marathon_sd_configs:
 # List of AirBnB's Nerve service discovery configurations.
 nerve_sd_configs:
   [ - <nerve_sd_config> ... ]
+
+# List of OpenStack service discovery configurations.
+openstack_sd_configs:
+  [ - <openstack_sd_config> ... ]
 
 # List of Zookeeper Serverset service discovery configurations.
 serverset_sd_configs:
@@ -1513,7 +1532,7 @@ write_relabel_configs:
 # password and password_file are mutually exclusive.
 basic_auth:
   [ username: <string> ]
-  [ password: <string> ]
+  [ password: <secret> ]
   [ password_file: <string> ]
 
 # Sets the `Authorization` header on every remote write request with
@@ -1564,7 +1583,7 @@ with this feature.
 url: <string>
 
 # Name of the remote read config, which if specified must be unique among remote read configs. 
-# The name will be used in metrics and logging in place of a generated value to help users distiguish between
+# The name will be used in metrics and logging in place of a generated value to help users distinguish between
 # remote read configs.
 [ name: <string> ]
 
@@ -1585,7 +1604,7 @@ required_matchers:
 # password and password_file are mutually exclusive.
 basic_auth:
   [ username: <string> ]
-  [ password: <string> ]
+  [ password: <secret> ]
   [ password_file: <string> ]
 
 # Sets the `Authorization` header on every remote read request with
