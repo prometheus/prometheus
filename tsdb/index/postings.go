@@ -308,7 +308,7 @@ type Postings interface {
 	Next() bool
 
 	// Seek advances the iterator to value v or greater and returns
-	// true if a value was found.
+	// true if postings remaining.
 	Seek(v uint64) bool
 
 	// At returns the value at the current iterator position.
