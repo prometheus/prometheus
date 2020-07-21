@@ -31,6 +31,7 @@ import (
 	sd_config "github.com/prometheus/prometheus/discovery/config"
 	"github.com/prometheus/prometheus/discovery/consul"
 	"github.com/prometheus/prometheus/discovery/dns"
+	"github.com/prometheus/prometheus/discovery/dockerswarm"
 	"github.com/prometheus/prometheus/discovery/ec2"
 	"github.com/prometheus/prometheus/discovery/file"
 	"github.com/prometheus/prometheus/discovery/kubernetes"
@@ -601,6 +602,27 @@ var expectedConf = &Config{
 							CertFile: "testdata/valid_cert_file",
 							KeyFile:  "testdata/valid_key_file",
 						},
+					},
+				},
+			},
+		},
+		{
+			JobName: "dockerswarm",
+
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath: DefaultScrapeConfig.MetricsPath,
+			Scheme:      DefaultScrapeConfig.Scheme,
+
+			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
+				DockerSwarmSDConfigs: []*dockerswarm.SDConfig{
+					{
+						Host:            "http://127.0.0.1:2375",
+						Role:            "nodes",
+						Port:            80,
+						RefreshInterval: model.Duration(60 * time.Second),
 					},
 				},
 			},
