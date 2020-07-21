@@ -41,7 +41,7 @@ const CollapsibleAlertPanel: FC<CollapsibleAlertPanelProps> = ({ rule, showAnnot
                 <div>for: {formatRange(rule.duration)}</div>
               </div>
             )}
-            {rule.labels && Object.entries(rule.labels).length > 0 && (
+            {rule.labels && Object.keys(rule.labels).length > 0 && (
               <div>
                 <div>labels:</div>
                 {Object.entries(rule.labels).map(([key, value]) => (
@@ -51,7 +51,7 @@ const CollapsibleAlertPanel: FC<CollapsibleAlertPanelProps> = ({ rule, showAnnot
                 ))}
               </div>
             )}
-            {rule.annotations && Object.entries(rule.annotations).length > 0 && (
+            {rule.annotations && Object.keys(rule.annotations).length > 0 && (
               <div>
                 <div>annotations:</div>
                 {Object.entries(rule.annotations).map(([key, value]) => (
