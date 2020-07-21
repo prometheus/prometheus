@@ -1023,7 +1023,11 @@ func TestRoaringBitmap(t *testing.T) {
 			var iter = NewRoaringBitmapIterator(list)
 			for _, want := range test.want {
 				var find = iter.Seek(want.value)
-				testutil.Equals(t, find, want.find, "for value %d", want.value)
+				if !find {
+					continue
+				}
+				var value = iter.At()
+				testutil.Equals(t, value <= want.value, want.find, "for value %d", want.value)
 			}
 		}
 	})
@@ -1083,6 +1087,21 @@ func TestRoaringBitmap(t *testing.T) {
 				return
 			}
 			testutil.Equals(t, v, iter.At())
+		}
+	})
+
+	t.Run("rand test", func(t *testing.T) {
+		var list = newRoaringBitmapPosting(1, 3, 5, 7, 9)
+		var roaringIter = NewRoaringBitmapIterator(list)
+
+		var listIter = newListPostings(1, 3, 5, 7, 9)
+		for _, iter := range []Postings{roaringIter, listIter} {
+			iter.Next() // init
+			testutil.Equals(t, uint64(1), iter.At())
+			testutil.Equals(t, true, iter.Seek(4)) // move to 5
+			testutil.Equals(t, uint64(5), iter.At())
+			testutil.Equals(t, true, iter.Next()) // move to 7
+			testutil.Equals(t, uint64(7), iter.At())
 		}
 	})
 }

@@ -746,17 +746,17 @@ func (r *RoaringBitmapPostingListIterator) Next() bool {
 }
 
 func (r *RoaringBitmapPostingListIterator) Seek(v uint64) bool {
-	r.r.AdvanceIfNeeded(v)
-
-	for r.cur < v {
-		if !r.r.HasNext() {
-			return false
-		}
-		r.cur = r.r.Next()
+	// If the current value satisfies, then return.
+	if r.cur >= v {
+		return true
 	}
 
-	// true when 'v' is find, false when 'v' is not find.
-	return r.cur == v
+	r.r.AdvanceIfNeeded(v)
+	if r.r.HasNext() {
+		r.cur = r.r.Next()
+		return true
+	}
+	return false
 }
 
 func (r RoaringBitmapPostingListIterator) At() uint64 {
