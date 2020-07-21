@@ -26,13 +26,14 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/util/strutil"
 )
 
 // A RecordingRule records its vector expression into new timeseries.
 type RecordingRule struct {
 	name   string
-	vector string
+	vector fmt.Stringer
 	labels labels.Labels
 	// Protects the below.
 	mtx sync.Mutex
@@ -47,7 +48,7 @@ type RecordingRule struct {
 }
 
 // NewRecordingRule returns a new recording rule.
-func NewRecordingRule(name string, vector string, lset labels.Labels) *RecordingRule {
+func NewRecordingRule(name string, vector parser.Expr, lset labels.Labels) *RecordingRule {
 	return &RecordingRule{
 		name:   name,
 		vector: vector,
@@ -62,7 +63,7 @@ func (rule *RecordingRule) Name() string {
 }
 
 // Query returns the rule query expression.
-func (rule *RecordingRule) Query() string {
+func (rule *RecordingRule) Query() fmt.Stringer {
 	return rule.vector
 }
 
@@ -73,7 +74,7 @@ func (rule *RecordingRule) Labels() labels.Labels {
 
 // Eval evaluates the rule and then overrides the metric names and labels accordingly.
 func (rule *RecordingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, _ *url.URL) (promql.Vector, error) {
-	vector, err := query(ctx, rule.vector, ts)
+	vector, err := query(ctx, rule.vector.String(), ts)
 	if err != nil {
 		rule.SetHealth(HealthBad)
 		rule.SetLastError(err)
@@ -111,7 +112,7 @@ func (rule *RecordingRule) Eval(ctx context.Context, ts time.Time, query QueryFu
 func (rule *RecordingRule) String() string {
 	r := rulefmt.Rule{
 		Record: rule.name,
-		Expr:   rule.vector,
+		Expr:   rule.vector.String(),
 		Labels: rule.labels.Map(),
 	}
 
@@ -181,7 +182,7 @@ func (rule *RecordingRule) GetEvaluationTimestamp() time.Time {
 
 // HTMLSnippet returns an HTML snippet representing this rule.
 func (rule *RecordingRule) HTMLSnippet(pathPrefix string) template.HTML {
-	ruleExpr := rule.vector
+	ruleExpr := rule.vector.String()
 	labels := make(map[string]string, len(rule.labels))
 	for _, l := range rule.labels {
 		labels[l.Name] = template.HTMLEscapeString(l.Value)

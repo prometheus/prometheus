@@ -34,6 +34,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/template"
 	"github.com/prometheus/prometheus/util/strutil"
 )
@@ -112,7 +113,7 @@ type AlertingRule struct {
 	// The name of the alert.
 	name string
 	// The vector expression from which to generate alerts.
-	vector string
+	vector fmt.Stringer
 	// The duration for which a labelset needs to persist in the expression
 	// output vector before an alert transitions from Pending to Firing state.
 	holdDuration time.Duration
@@ -144,7 +145,7 @@ type AlertingRule struct {
 
 // NewAlertingRule constructs a new AlertingRule.
 func NewAlertingRule(
-	name string, vec string, hold time.Duration,
+	name string, vec parser.Expr, hold time.Duration,
 	labels, annotations, externalLabels labels.Labels,
 	restored bool, logger log.Logger,
 ) *AlertingRule {
@@ -201,7 +202,7 @@ func (r *AlertingRule) Health() RuleHealth {
 }
 
 // Query returns the query expression of the alerting rule.
-func (r *AlertingRule) Query() string {
+func (r *AlertingRule) Query() fmt.Stringer {
 	return r.vector
 }
 
@@ -296,7 +297,7 @@ const resolvedRetention = 15 * time.Minute
 // Eval evaluates the rule expression and then creates pending alerts and fires
 // or removes previously pending alerts accordingly.
 func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, externalURL *url.URL) (promql.Vector, error) {
-	res, err := query(ctx, r.vector, ts)
+	res, err := query(ctx, r.vector.String(), ts)
 	if err != nil {
 		r.SetHealth(HealthBad)
 		r.SetLastError(err)
@@ -494,13 +495,13 @@ func (r *AlertingRule) sendAlerts(ctx context.Context, ts time.Time, resendDelay
 			alerts = append(alerts, &anew)
 		}
 	})
-	notifyFunc(ctx, r.vector, alerts...)
+	notifyFunc(ctx, r.vector.String(), alerts...)
 }
 
 func (r *AlertingRule) String() string {
 	ar := rulefmt.Rule{
 		Alert:       r.name,
-		Expr:        r.vector,
+		Expr:        r.vector.String(),
 		For:         model.Duration(r.holdDuration),
 		Labels:      r.labels.Map(),
 		Annotations: r.annotations.Map(),
@@ -535,7 +536,7 @@ func (r *AlertingRule) HTMLSnippet(pathPrefix string) html_template.HTML {
 
 	ar := rulefmt.Rule{
 		Alert:       fmt.Sprintf("<a href=%q>%s</a>", pathPrefix+strutil.TableLinkForExpression(alertMetric.String()), r.name),
-		Expr:        fmt.Sprintf("<a href=%q>%s</a>", pathPrefix+strutil.TableLinkForExpression(r.vector), html_template.HTMLEscapeString(r.vector)),
+		Expr:        fmt.Sprintf("<a href=%q>%s</a>", pathPrefix+strutil.TableLinkForExpression(r.vector.String()), html_template.HTMLEscapeString(r.vector.String())),
 		For:         model.Duration(r.holdDuration),
 		Labels:      labelsMap,
 		Annotations: annotationsMap,

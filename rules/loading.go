@@ -74,7 +74,7 @@ func (FileLoader) Load(
 				if r.Alert.Value != "" {
 					rules = append(rules, NewAlertingRule(
 						r.Alert.Value,
-						expr.String(),
+						expr,
 						time.Duration(r.For),
 						labels.FromMap(r.Labels),
 						labels.FromMap(r.Annotations),
@@ -86,7 +86,7 @@ func (FileLoader) Load(
 				}
 				rules = append(rules, NewRecordingRule(
 					r.Record.Value,
-					expr.String(),
+					expr,
 					labels.FromMap(r.Labels),
 				))
 			}

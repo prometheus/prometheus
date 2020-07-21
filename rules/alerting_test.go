@@ -31,7 +31,7 @@ import (
 func TestAlertingRuleHTMLSnippet(t *testing.T) {
 	expr, err := parser.ParseExpr(`foo{html="<b>BOLD<b>"}`)
 	testutil.Ok(t, err)
-	rule := NewAlertingRule("testrule", expr.String(), 0, labels.FromStrings("html", "<b>BOLD</b>"), labels.FromStrings("html", "<b>BOLD</b>"), nil, false, nil)
+	rule := NewAlertingRule("testrule", expr, 0, labels.FromStrings("html", "<b>BOLD</b>"), labels.FromStrings("html", "<b>BOLD</b>"), nil, false, nil)
 
 	const want = `alert: <a href="/test/prefix/graph?g0.expr=ALERTS%7Balertname%3D%22testrule%22%7D&g0.tab=1">testrule</a>
 expr: <a href="/test/prefix/graph?g0.expr=foo%7Bhtml%3D%22%3Cb%3EBOLD%3Cb%3E%22%7D&g0.tab=1">foo{html=&#34;&lt;b&gt;BOLD&lt;b&gt;&#34;}</a>
@@ -78,7 +78,7 @@ func TestAlertingRuleState(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		rule := NewAlertingRule(test.name, "", 0, nil, nil, nil, true, nil)
+		rule := NewAlertingRule(test.name, nil, 0, nil, nil, nil, true, nil)
 		rule.active = test.active
 		got := rule.State()
 		testutil.Assert(t, test.want == got, "test case %d unexpected AlertState, want:%d got:%d", i, test.want, got)
@@ -100,7 +100,7 @@ func TestAlertingRuleLabelsUpdate(t *testing.T) {
 
 	rule := NewAlertingRule(
 		"HTTPRequestRateLow",
-		expr.String(),
+		expr,
 		time.Minute,
 		// Basing alerting rule labels off of a value that can change is a very bad idea.
 		// If an alert is going back and forth between two label values it will never fire.
@@ -202,7 +202,7 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 
 	ruleWithoutExternalLabels := NewAlertingRule(
 		"ExternalLabelDoesNotExist",
-		expr.String(),
+		expr,
 		time.Minute,
 		labels.FromStrings("templated_label", "There are {{ len $externalLabels }} external Labels, of which foo is {{ $externalLabels.foo }}."),
 		nil,
@@ -211,7 +211,7 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 	)
 	ruleWithExternalLabels := NewAlertingRule(
 		"ExternalLabelExists",
-		expr.String(),
+		expr,
 		time.Minute,
 		labels.FromStrings("templated_label", "There are {{ len $externalLabels }} external Labels, of which foo is {{ $externalLabels.foo }}."),
 		nil,
@@ -294,7 +294,7 @@ func TestAlertingRuleEmptyLabelFromTemplate(t *testing.T) {
 
 	rule := NewAlertingRule(
 		"EmptyLabel",
-		expr.String(),
+		expr,
 		time.Minute,
 		labels.FromStrings("empty_label", ""),
 		nil,
@@ -354,7 +354,7 @@ func TestAlertingRuleDuplicate(t *testing.T) {
 	expr, _ := parser.ParseExpr(`vector(0) or label_replace(vector(0),"test","x","","")`)
 	rule := NewAlertingRule(
 		"foo",
-		expr.String(),
+		expr,
 		time.Minute,
 		labels.FromStrings("test", "test"),
 		nil,
