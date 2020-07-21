@@ -388,6 +388,25 @@ var prettierCases = []prettierTest{
     }  
   )`,
 	},
+	{
+		expr:     `1 + metric_two{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"}`,
+		expected: `    1 + metric_two{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"}`,
+	},
+	{
+		expr:     `1 + 2 + metric_two{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"}`,
+		expected: `    1 + 2 + metric_two{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"}`,
+	},
+	{
+		expr:     `1 + metric_two{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"} + 2`,
+		expected: `    1 + metric_two{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"} + 2`,
+	},
+	{
+		expr: `metric_two{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"} + 1`,
+		expected: `    metric_two{
+      _a_some_very_large_label="_a_very_large_value",
+      some_very_large_label="a_very_large_value",
+    }     + 1`,
+	},
 }
 
 func TestPrettierCases(t *testing.T) {

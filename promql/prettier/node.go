@@ -46,6 +46,13 @@ func (p *nodeInfo) contains(element string) bool {
 		case *parser.BinaryExpr:
 			return len(n.VectorMatching.MatchingLabels) > 0 || n.ReturnBool
 		}
+	case "scalars":
+		switch n := p.head.(type) {
+		case *parser.BinaryExpr:
+			if n.LHS.Type() == parser.ValueTypeScalar || n.RHS.Type() == parser.ValueTypeScalar {
+				return true
+			}
+		}
 	}
 	return false
 }

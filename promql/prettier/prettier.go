@@ -31,11 +31,16 @@ type Prettier struct {
 type padder struct {
 	indent      string
 	columnLimit int
-	// isNewLineApplied keeps the track of whether a new line was added
-	// after appending the item to the result. It should be set to default
+	// isNewLineApplied represents a new line was added previously, after
+	// appending the item to the result. It should be set to default
 	// after applying baseIndent.
-	isNewLineApplied      bool
-	containsGrouping      bool
+	isNewLineApplied bool
+	// containsGrouping represents whether a binary expression contains
+	// a grouping modifier.
+	containsGrouping bool
+	// immediateScalar represents whether the immediate child of a binary
+	// expression is a scalar.
+	immediateScalar       bool
 	insideMultilineBraces bool
 	previousBaseIndent    string
 }
@@ -284,13 +289,16 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 		currNode   = newNodeInfo(node, 100, item)
 		baseIndent int
 	)
-	if item.Typ.IsOperator() && reflect.TypeOf(node).String() == "*parser.BinaryExpr" {
-		p.pd.containsGrouping = currNode.contains("grouping-modifier")
+
+	if reflect.TypeOf(node).String() == "*parser.BinaryExpr" {
+		p.pd.immediateScalar = currNode.contains("scalars")
+		if item.Typ.IsOperator() {
+			p.pd.containsGrouping = currNode.contains("grouping-modifier")
+		}
 	}
 	nodeSplittable := currNode.violatesColumnLimit()
 	if p.pd.isNewLineApplied {
-		baseIndent = nodeInfo.baseIndent(item)
-		result += p.pd.pad(baseIndent)
+		result += p.pd.pad(nodeInfo.baseIndent(item))
 		p.pd.isNewLineApplied = false
 	}
 
@@ -343,10 +351,13 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 		parser.LSS, parser.LTE, parser.LUNLESS, parser.MOD, parser.POW:
 		if p.pd.containsGrouping {
 			result += p.pd.newLine() + p.pd.pad(baseIndent) + item.Val + " "
-		} else if nodeSplittable {
+		} else if nodeSplittable && !p.pd.immediateScalar {
 			result += p.pd.newLine() + p.pd.pad(baseIndent) + item.Val + p.pd.newLine()
 		} else {
 			result += " " + item.Val + " "
+		}
+		if p.pd.immediateScalar {
+			p.pd.immediateScalar = false
 		}
 	case parser.WITHOUT, parser.BY, parser.IGNORING, parser.BOOL, parser.GROUP_LEFT, parser.GROUP_RIGHT,
 		parser.OFFSET, parser.ON:
