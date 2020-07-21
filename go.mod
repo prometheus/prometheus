@@ -64,6 +64,7 @@ require (
 	github.com/uber/jaeger-lib v2.2.0+incompatible
 	go.mongodb.org/mongo-driver v1.3.2 // indirect
 	go.uber.org/atomic v1.6.0 // indirect
+	go.uber.org/goleak v1.0.0
 	golang.org/x/net v0.0.0-20200707034311-ab3426394381
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d
 	golang.org/x/sync v0.0.0-20200625203802-6e8e738ad208

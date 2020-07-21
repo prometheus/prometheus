@@ -14,7 +14,6 @@ package wal
 
 import (
 	"fmt"
-	"github.com/go-kit/kit/log"
 	"io/ioutil"
 	"math/rand"
 	"os"
@@ -22,6 +21,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/go-kit/kit/log"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/pkg/labels"
