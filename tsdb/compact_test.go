@@ -1174,7 +1174,7 @@ func TestBlockBaseSeriesSet(t *testing.T) {
 
 		i := 0
 		for bcs.Next() {
-			chks := bcs.currIter.chks
+			chks := bcs.currIterFn().chks
 			idx := tc.expIdxs[i]
 
 			testutil.Equals(t, tc.series[idx].lset, bcs.currLabels)
