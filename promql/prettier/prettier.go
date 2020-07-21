@@ -76,111 +76,6 @@ func newPadder() *padder {
 	}
 }
 
-func (p *Prettier) prettify(items []parser.Item, index int, result string) (string, error) {
-	if items[index].Typ == parser.EOF {
-		return result, nil
-	}
-	var (
-		item       = items[index]
-		nodeInfo   = newNodeInfo(p.Node, 100, item)
-		node       = nodeInfo.getNode(p.Node, item)
-		currNode   = newNodeInfo(node, 100, item)
-		baseIndent int
-	)
-	if item.Typ.IsOperator() && reflect.TypeOf(node).String() == "*parser.BinaryExpr" {
-		p.pd.containsGrouping = currNode.contains("grouping-modifier") || items[index+1].Typ == parser.BOOL
-	}
-	nodeSplittable := currNode.violatesColumnLimit()
-	if p.pd.isNewLineApplied {
-		baseIndent = nodeInfo.baseIndent(item)
-		result += p.pd.pad(baseIndent)
-		p.pd.isNewLineApplied = false
-	}
-
-	switch item.Typ {
-	case parser.LEFT_PAREN:
-		result += item.Val
-		if nodeSplittable && !p.pd.containsGrouping {
-			result += p.pd.newLine()
-		}
-	case parser.RIGHT_PAREN:
-		if nodeSplittable && !p.pd.containsGrouping {
-			result += p.pd.newLine() + p.pd.pad(nodeInfo.baseIndent(item))
-		}
-		result += item.Val
-		if p.pd.containsGrouping {
-			p.pd.containsGrouping = false
-			result += p.pd.newLine()
-		}
-	case parser.LEFT_BRACE:
-		result += item.Val
-		if nodeSplittable {
-			result += p.pd.newLine()
-			p.pd.insideMultilineBraces = true
-		}
-	case parser.RIGHT_BRACE:
-		if p.pd.insideMultilineBraces {
-			if items[index-1].Typ != parser.COMMA {
-				// Edge-case: if the labels are multi-line split, but do not have
-				// a pre-applied comma.
-				result += "," + p.pd.newLine() + p.pd.pad(nodeInfo.baseIndent(items[index]))
-			}
-			p.pd.insideMultilineBraces = false
-		}
-		result += item.Val
-	case parser.IDENTIFIER:
-		if p.pd.insideMultilineBraces {
-			result += p.pd.pad(1) + item.Val
-		} else {
-			result += item.Val
-		}
-	case parser.STRING, parser.NUMBER:
-		result += item.Val
-		p.pd.isNewLineApplied = false
-	case parser.SUM, parser.AVG, parser.COUNT, parser.MIN, parser.MAX, parser.STDDEV, parser.STDVAR,
-		parser.TOPK, parser.BOTTOMK, parser.COUNT_VALUES, parser.QUANTILE:
-		result += item.Val
-	case parser.EQL, parser.EQL_REGEX, parser.NEQ, parser.NEQ_REGEX:
-		result += item.Val
-	case parser.ADD, parser.SUB, parser.DIV, parser.GTE, parser.GTR, parser.LOR, parser.LAND,
-		parser.LSS, parser.LTE, parser.LUNLESS, parser.MOD, parser.POW:
-		if p.pd.containsGrouping {
-			result += p.pd.newLine() + p.pd.pad(baseIndent) + item.Val + " "
-		} else if nodeSplittable {
-			result += p.pd.newLine() + p.pd.pad(baseIndent) + item.Val + p.pd.newLine()
-		} else {
-			result += " " + item.Val + " "
-		}
-	case parser.WITHOUT, parser.BY, parser.IGNORING, parser.BOOL, parser.GROUP_LEFT, parser.GROUP_RIGHT,
-		parser.OFFSET, parser.ON:
-		result += item.Val
-		if item.Typ == parser.BOOL {
-			result += p.pd.newLine()
-		}
-	case parser.COMMA:
-		result += item.Val
-		if nodeSplittable {
-			result += p.pd.newLine()
-		} else {
-			result += " "
-		}
-	case parser.COMMENT:
-		if p.pd.isNewLineApplied {
-			result += p.pd.previousBaseIndent + item.Val + p.pd.newLine()
-		} else {
-			result += item.Val + p.pd.newLine()
-		}
-	}
-	if index+1 == len(items) {
-		return result, nil
-	}
-	ptmp, err := p.prettify(items, index+1, result)
-	if err != nil {
-		return result, errors.Wrap(err, "prettify")
-	}
-	return ptmp, nil
-}
-
 // Run executes the prettier over the rules files or expression.
 func (p *Prettier) Run() []error {
 	var (
@@ -376,6 +271,111 @@ func (p *Prettier) sortItems(items []parser.Item) []parser.Item {
 		}
 	}
 	return p.refreshLexItems(items)
+}
+
+func (p *Prettier) prettify(items []parser.Item, index int, result string) (string, error) {
+	if items[index].Typ == parser.EOF {
+		return result, nil
+	}
+	var (
+		item       = items[index]
+		nodeInfo   = newNodeInfo(p.Node, 100, item)
+		node       = nodeInfo.getNode(p.Node, item)
+		currNode   = newNodeInfo(node, 100, item)
+		baseIndent int
+	)
+	if item.Typ.IsOperator() && reflect.TypeOf(node).String() == "*parser.BinaryExpr" {
+		p.pd.containsGrouping = currNode.contains("grouping-modifier") || items[index+1].Typ == parser.BOOL
+	}
+	nodeSplittable := currNode.violatesColumnLimit()
+	if p.pd.isNewLineApplied {
+		baseIndent = nodeInfo.baseIndent(item)
+		result += p.pd.pad(baseIndent)
+		p.pd.isNewLineApplied = false
+	}
+
+	switch item.Typ {
+	case parser.LEFT_PAREN:
+		result += item.Val
+		if nodeSplittable && !p.pd.containsGrouping {
+			result += p.pd.newLine()
+		}
+	case parser.RIGHT_PAREN:
+		if nodeSplittable && !p.pd.containsGrouping {
+			result += p.pd.newLine() + p.pd.pad(nodeInfo.baseIndent(item))
+		}
+		result += item.Val
+		if p.pd.containsGrouping {
+			p.pd.containsGrouping = false
+			result += p.pd.newLine()
+		}
+	case parser.LEFT_BRACE:
+		result += item.Val
+		if nodeSplittable {
+			result += p.pd.newLine()
+			p.pd.insideMultilineBraces = true
+		}
+	case parser.RIGHT_BRACE:
+		if p.pd.insideMultilineBraces {
+			if items[index-1].Typ != parser.COMMA {
+				// Edge-case: if the labels are multi-line split, but do not have
+				// a pre-applied comma.
+				result += "," + p.pd.newLine() + p.pd.pad(nodeInfo.baseIndent(items[index]))
+			}
+			p.pd.insideMultilineBraces = false
+		}
+		result += item.Val
+	case parser.IDENTIFIER:
+		if p.pd.insideMultilineBraces {
+			result += p.pd.pad(1) + item.Val
+		} else {
+			result += item.Val
+		}
+	case parser.STRING, parser.NUMBER:
+		result += item.Val
+		p.pd.isNewLineApplied = false
+	case parser.SUM, parser.AVG, parser.COUNT, parser.MIN, parser.MAX, parser.STDDEV, parser.STDVAR,
+		parser.TOPK, parser.BOTTOMK, parser.COUNT_VALUES, parser.QUANTILE:
+		result += item.Val
+	case parser.EQL, parser.EQL_REGEX, parser.NEQ, parser.NEQ_REGEX:
+		result += item.Val
+	case parser.ADD, parser.SUB, parser.DIV, parser.GTE, parser.GTR, parser.LOR, parser.LAND,
+		parser.LSS, parser.LTE, parser.LUNLESS, parser.MOD, parser.POW:
+		if p.pd.containsGrouping {
+			result += p.pd.newLine() + p.pd.pad(baseIndent) + item.Val + " "
+		} else if nodeSplittable {
+			result += p.pd.newLine() + p.pd.pad(baseIndent) + item.Val + p.pd.newLine()
+		} else {
+			result += " " + item.Val + " "
+		}
+	case parser.WITHOUT, parser.BY, parser.IGNORING, parser.BOOL, parser.GROUP_LEFT, parser.GROUP_RIGHT,
+		parser.OFFSET, parser.ON:
+		result += item.Val
+		if item.Typ == parser.BOOL {
+			result += p.pd.newLine()
+		}
+	case parser.COMMA:
+		result += item.Val
+		if nodeSplittable {
+			result += p.pd.newLine()
+		} else {
+			result += " "
+		}
+	case parser.COMMENT:
+		if p.pd.isNewLineApplied {
+			result += p.pd.previousBaseIndent + item.Val + p.pd.newLine()
+		} else {
+			result += item.Val + p.pd.newLine()
+		}
+	}
+	if index+1 == len(items) {
+		return result, nil
+	}
+	ptmp, err := p.prettify(items, index+1, result)
+	if err != nil {
+		return result, errors.Wrap(err, "prettify")
+	}
+	return ptmp, nil
 }
 
 // refreshLexItems refreshes the contents of the lex slice and the properties
