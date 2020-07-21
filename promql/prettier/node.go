@@ -23,11 +23,6 @@ func newNodeInfo(head parser.Expr, columnLimit int, item parser.Item) *nodeInfo 
 	}
 }
 
-// fetch fetches the node information.
-func (p *nodeInfo) fetch() {
-	p.shouldSplit = p.violatesColumnLimit()
-}
-
 func (p *nodeInfo) violatesColumnLimit() bool {
 	return len(p.head.String()) > p.columnLimit
 }
@@ -58,8 +53,6 @@ func (p *nodeInfo) contains(element string) bool {
 
 // parentNode returns the parent node of the given node/item position range.
 func (p *nodeInfo) parentNode(head parser.Expr, rnge parser.PositionRange) reflect.Type {
-	// TODO: var found is of no use. Hence, remove it and the bool return from the getNodeAncestorsStack
-	// since found condition can be handled by ancestors alone(confirmation needed).
 	ancestors, _, found := p.nodeHistory(head, rnge, []reflect.Type{})
 	if !found {
 		return nil
@@ -88,13 +81,13 @@ func (p *nodeInfo) nodeHistory(head parser.Expr, posRange parser.PositionRange, 
 		}
 	case *parser.BinaryExpr:
 		stack = append(stack, reflect.TypeOf(n))
-		stmpLHS, nodeLHS, foundLHS := p.nodeHistory(n.LHS, posRange, stack)
-		if foundLHS {
-			return stmpLHS, nodeLHS, foundLHS
+		stmp, node, found := p.nodeHistory(n.LHS, posRange, stack)
+		if found {
+			return stmp, node, found
 		}
-		stmpRHS, nodeRHS, foundRHS := p.nodeHistory(n.RHS, posRange, stack)
-		if foundRHS {
-			return stmpRHS, nodeRHS, foundRHS
+		stmp, node, found = p.nodeHistory(n.RHS, posRange, stack)
+		if found {
+			return stmp, node, found
 		}
 		// Since the item exists in both the child. This means that it is in binary expr range,
 		// but not satisfied by a single child. This is possible only for Op and grouping

@@ -149,6 +149,79 @@ var sortingLexItemCases = []prettierTest{
 		expr:     `sum({instance="first", __name__="metric_first", foo="bar"} + {instance="second", __name__="metric_second", foo="bar"}) without(job, instance, foo)`,
 		expected: `sum without(job, instance, foo) (metric_first{instance="first", foo="bar"} + metric_second{instance="second", foo="bar"})`,
 	},
+	// with comments
+	{
+		expr: `sum # comment
+(go_alloc_bytes) by (job)`,
+		expected: `sum by (job) # comment
+(go_alloc_bytes)`,
+	},
+	{
+		expr: `sum # comment
+(go_alloc_bytes) by # comment
+(job)`,
+		expected: `sum by # comment
+(job) # comment
+(go_alloc_bytes)`,
+	},
+	{
+		expr: `sum (go_alloc_bytes) # comment
+by (job)`,
+		expected: `sum by (job) (go_alloc_bytes) # comment`,
+	},
+	{
+		expr: `sum ( # comment
+go_alloc_bytes # comment
+) # comment
+by (job)`,
+		expected: `sum by (job) ( # comment
+go_alloc_bytes # comment
+) # comment`,
+	},
+	{
+		expr: `sum (go_alloc_bytes) # comment
+by ( # comment
+job # comment
+) # comment`,
+		expected: `sum by ( # comment
+job # comment
+) (go_alloc_bytes) # comment
+# comment`,
+	},
+	{
+		expr: `# comment
+{__name__="metric_name"}`,
+		expected: `# comment
+metric_name`,
+	},
+	{
+		expr: `{ # comment
+__name__="metric_name"}`,
+		expected: `metric_name{ # comment
+}`,
+	},
+	{
+		expr: `{__name__ # comment
+="metric_name"}`,
+		expected: `{__name__ # comment
+="metric_name"}`,
+	},
+	{
+		expr: `{__name__= # comment
+"metric_name"}`,
+		expected: `{__name__= # comment
+"metric_name"}`,
+	},
+	{
+		expr: `{__name__="metric_name" # comment
+}`,
+		expected: `metric_name{ # comment
+}`,
+	},
+	{
+		expr:     `{__name__="metric_name"} # comment`,
+		expected: `metric_name # comment`,
+	},
 }
 
 func TestLexItemSorting(t *testing.T) {
@@ -157,7 +230,7 @@ func TestLexItemSorting(t *testing.T) {
 	for i, expr := range sortingLexItemCases {
 		expectedSlice := prettier.refreshLexItems(prettier.lexItems(expr.expected))
 		input := prettier.lexItems(expr.expr)
-		testutil.Equals(t, expectedSlice, prettier.sortItems(input, true), "%d: input %q", i, expr.expr)
+		testutil.Equals(t, expectedSlice, prettier.sortItems(input), "%d: input %q", i, expr.expr)
 	}
 }
 
@@ -321,7 +394,7 @@ func TestPrettierCases(t *testing.T) {
 		p, err := New(PrettifyExpression, expr.expr)
 		testutil.Ok(t, err)
 		standardizeExprStr := p.expressionFromItems(p.lexItems(expr.expr))
-		lexItems := p.sortItems(p.lexItems(expr.expr), true)
+		lexItems := p.sortItems(p.lexItems(expr.expr))
 		err = p.parseExpr(standardizeExprStr)
 		testutil.Ok(t, err)
 		output, err := p.prettify(lexItems, 0, "")

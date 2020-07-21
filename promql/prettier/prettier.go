@@ -2,15 +2,12 @@ package prettier
 
 import (
 	"fmt"
-	"io/ioutil"
-	"reflect"
-	"regexp"
-	"strconv"
-	"strings"
-
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/prometheus/prometheus/promql/parser"
+	"io/ioutil"
+	"reflect"
+	"regexp"
 )
 
 const (
@@ -32,18 +29,15 @@ type Prettier struct {
 }
 
 type padder struct {
-	indent                      string
-	previous, buff, columnLimit int
+	indent      string
+	columnLimit int
 	// isNewLineApplied keeps the track of whether a new line was added
 	// after appending the item to the result. It should be set to default
 	// after applying baseIndent.
-	expectNextRHS, leftParenNotIndented      bool
-	disableBaseIndent, inAggregateModifiers  bool
-	expectNextIdentifier, previousBaseIndent string
-	containsGrouping                         bool
-	isNewLineApplied                         bool
-	//	new ones
+	isNewLineApplied      bool
+	containsGrouping      bool
 	insideMultilineBraces bool
+	previousBaseIndent    string
 }
 
 // New returns a new prettier over the given slice of files.
@@ -77,7 +71,6 @@ func newPadder() *padder {
 	return &padder{
 		indent:             "  ", // 2 space
 		isNewLineApplied:   true,
-		expectNextRHS:      false,
 		columnLimit:        100,
 		previousBaseIndent: "  ", // start with initial indent as previous val to skip new line at start.
 	}
@@ -94,7 +87,6 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 		currNode   = newNodeInfo(node, 100, item)
 		baseIndent int
 	)
-	currNode.fetch()
 	if item.Typ.IsOperator() && reflect.TypeOf(node).String() == "*parser.BinaryExpr" {
 		p.pd.containsGrouping = currNode.contains("grouping-modifier") || items[index+1].Typ == parser.BOOL
 	}
@@ -145,12 +137,13 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 	case parser.STRING, parser.NUMBER:
 		result += item.Val
 		p.pd.isNewLineApplied = false
-	case parser.SUM, parser.AVG, parser.COUNT, parser.MIN, parser.MAX, parser.STDDEV, parser.STDVAR, parser.TOPK, parser.BOTTOMK, parser.COUNT_VALUES, parser.QUANTILE:
+	case parser.SUM, parser.AVG, parser.COUNT, parser.MIN, parser.MAX, parser.STDDEV, parser.STDVAR,
+		parser.TOPK, parser.BOTTOMK, parser.COUNT_VALUES, parser.QUANTILE:
 		result += item.Val
 	case parser.EQL, parser.EQL_REGEX, parser.NEQ, parser.NEQ_REGEX:
 		result += item.Val
-	case parser.ADD, parser.SUB, parser.DIV, parser.GTE, parser.GTR, parser.LOR, parser.LAND, parser.LSS,
-		parser.LTE, parser.LUNLESS, parser.MOD, parser.POW:
+	case parser.ADD, parser.SUB, parser.DIV, parser.GTE, parser.GTR, parser.LOR, parser.LAND,
+		parser.LSS, parser.LTE, parser.LUNLESS, parser.MOD, parser.POW:
 		if p.pd.containsGrouping {
 			result += p.pd.newLine() + p.pd.pad(baseIndent) + item.Val + " "
 		} else if nodeSplittable {
@@ -158,7 +151,8 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 		} else {
 			result += " " + item.Val + " "
 		}
-	case parser.WITHOUT, parser.BY, parser.IGNORING, parser.BOOL, parser.GROUP_LEFT, parser.GROUP_RIGHT, parser.OFFSET, parser.ON:
+	case parser.WITHOUT, parser.BY, parser.IGNORING, parser.BOOL, parser.GROUP_LEFT, parser.GROUP_RIGHT,
+		parser.OFFSET, parser.ON:
 		result += item.Val
 		if item.Typ == parser.BOOL {
 			result += p.pd.newLine()
@@ -185,51 +179,6 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 		return result, errors.Wrap(err, "prettify")
 	}
 	return ptmp, nil
-}
-
-func (p *Prettier) exmptBaseIndent(item parser.Item) bool {
-	switch item.Typ {
-	case parser.EQL, parser.LEFT_BRACE, parser.RIGHT_BRACE, parser.STRING, parser.COMMA, parser.NUMBER:
-		return true
-	}
-	return false
-}
-
-// removeNodesWithoutPosRange removes the nodes (immediately after) that are added to the stack because they do not
-// have any way to check the position range with the given item.
-func (p *Prettier) removeNodesWithoutPosRange(stack []reflect.Type, typ string) []reflect.Type {
-	for i := len(stack) - 1; i >= 0; i-- {
-		if stack[i].String() == typ {
-			stack = stack[:len(stack)-1]
-		}
-		break
-	}
-	return stack
-}
-
-func (p *Prettier) isItemWithinNode(node parser.Node, item parser.Item) bool {
-	posNode := node.PositionRange()
-	itemNode := item.PositionRange()
-	if posNode.Start <= itemNode.Start && posNode.End >= itemNode.End {
-		return true
-	}
-	return false
-}
-
-func (p *Prettier) removeTrailingLines(s string) string {
-	lines := strings.Split(s, "\n")
-	result := ""
-	for i := 0; i < len(lines); i++ {
-		if len(strings.TrimSpace(lines[i])) != 0 {
-			result += lines[i] + "\n"
-		}
-	}
-	return result
-}
-
-type ruleGroupFiles struct {
-	filename   string
-	ruleGroups *rulefmt.RuleGroups
 }
 
 // Run executes the prettier over the rules files or expression.
@@ -261,10 +210,7 @@ func (p *Prettier) Run() []error {
 						return []error{err}
 					}
 					formattedExpr, err := p.prettify(
-						p.sortItems(
-							p.lexItems(exprStr),
-							false,
-						),
+						p.sortItems(p.lexItems(exprStr)),
 						0,
 						"",
 					)
@@ -281,7 +227,7 @@ func (p *Prettier) Run() []error {
 	return nil
 }
 
-func (p *Prettier) sortItems(items []parser.Item, isTest bool) []parser.Item {
+func (p *Prettier) sortItems(items []parser.Item) []parser.Item {
 	for i := 0; i < len(items); i++ {
 		item := items[i]
 		switch item.Typ {
@@ -317,22 +263,27 @@ func (p *Prettier) sortItems(items []parser.Item, isTest bool) []parser.Item {
 			if items[keywordIndex-1].Typ != parser.COMMENT && keywordIndex-1 != aggregatorIndex {
 				formatItems = true
 			} else if items[keywordIndex-1].Typ == parser.COMMENT {
-				// peek back until no comment is found
-				pos := -1
-				for j := keywordIndex; j > aggregatorIndex; j-- {
+				// Peek back until no comment is found.
+				// If the item immediately before the comment is not aggregator, that means
+				// the keyword is not (immediately) after aggregator item and hence formatting
+				// is required.
+				var j int
+				for j = keywordIndex; j > aggregatorIndex; j-- {
 					if items[j].Typ == parser.COMMENT {
 						continue
-					} else {
-						pos = j
-						break
 					}
+					break
 				}
-				if pos != aggregatorIndex {
+				if j != aggregatorIndex {
 					formatItems = true
 				}
 			}
 			if formatItems {
-				// get first index of the closing paren.
+				var (
+					tempItems              []parser.Item
+					finishedKeywordWriting bool
+				)
+				// Get index of the closing paren.
 				for j := keywordIndex; j <= len(items); j++ {
 					if items[j].Typ == parser.RIGHT_PAREN {
 						closingParenIndex = j
@@ -342,16 +293,18 @@ func (p *Prettier) sortItems(items []parser.Item, isTest bool) []parser.Item {
 				if closingParenIndex == -1 {
 					panic("invalid paren index: closing paren not found")
 				}
-				// order elements. TODO: consider using slicing of lists
-				var tempItems []parser.Item
-				var finishedKeywordWriting bool
+				// Re-order lexical items. TODO: consider using slicing of lists.
 				for itemp := 0; itemp < len(items); itemp++ {
-					if (itemp <= aggregatorIndex || itemp > closingParenIndex) && !(itemp >= keywordIndex && itemp <= closingParenIndex) {
+					if itemp <= aggregatorIndex || itemp > closingParenIndex {
 						tempItems = append(tempItems, items[itemp])
 					} else if !finishedKeywordWriting {
+						// Immediately after writing the aggregator, write the keyword and
+						// the following expression till the closing paren. This is done
+						// to be in-order with the expected result.
 						for j := keywordIndex; j <= closingParenIndex; j++ {
 							tempItems = append(tempItems, items[j])
 						}
+						// itemp has not been updated yet and its holding the left paren.
 						tempItems = append(tempItems, items[itemp])
 						finishedKeywordWriting = true
 					} else if !(itemp >= keywordIndex && itemp <= closingParenIndex) {
@@ -362,49 +315,55 @@ func (p *Prettier) sortItems(items []parser.Item, isTest bool) []parser.Item {
 			}
 
 		case parser.IDENTIFIER:
-			//	TODO: currently its assumed that these are always labels.
-			if i < 1 || item.Val != "__name__" || items[i+2].Typ != parser.STRING {
+			//	TODO: currently its assumed that STRING are always label values.
+			itr := advanceComments(items, i)
+			if i < 1 || item.Val != "__name__" || items[itr+2].Typ != parser.STRING {
 				continue
 			}
 			var (
 				leftBraceIndex  = -1
 				rightBraceIndex = -1
-				labelValItem    = items[i+2]
-				metricName      = labelValItem.Val[1 : len(labelValItem.Val)-1]
+				labelValItem    = items[itr+2]
+				metricName      = labelValItem.Val[1 : len(labelValItem.Val)-1] // Trim inverted commas.
 				tmp             []parser.Item
-				skipBraces      bool
+				skipBraces      bool // For handling metric_name{} -> metric_name
 			)
-			if !regexp.MustCompile("^[a-z_A-Z]+$").MatchString(labelValItem.Val[1 : len(labelValItem.Val)-1]) {
+			// We aim to convert __name__ to an ideal metric_name if the value of that labels is atomic.
+			// Since a non-atomic metric_name will contain alphabets other than a-z and A-Z including _,
+			// anything that violates this ceases the formatting of that particular label item.
+			// If this is not done then the output from the prettier might be an un-parsable expression.
+			if !regexp.MustCompile("^[a-z_A-Z]+$").MatchString(metricName) {
 				continue
 			}
-			for backScanIndex := i; backScanIndex >= 0; backScanIndex-- {
+			for backScanIndex := itr; backScanIndex >= 0; backScanIndex-- {
 				if items[backScanIndex].Typ == parser.LEFT_BRACE {
 					leftBraceIndex = backScanIndex
 					break
 				}
 			}
-			for forwardScanIndex := i; forwardScanIndex < len(items); forwardScanIndex++ {
+			for forwardScanIndex := itr; forwardScanIndex < len(items); forwardScanIndex++ {
 				if items[forwardScanIndex].Typ == parser.RIGHT_BRACE {
 					rightBraceIndex = forwardScanIndex
 					break
 				}
 			}
 			// TODO: assuming comments are not present at this place.
-			if items[i+3].Typ == parser.COMMA {
-				skipBraces = rightBraceIndex-5 == leftBraceIndex
+			itr = advanceComments(items, itr)
+			if items[itr+3].Typ == parser.COMMA {
+				skipBraces = rightBraceIndex-5 == advanceComments(items, leftBraceIndex)
 			} else {
-				skipBraces = rightBraceIndex-4 == leftBraceIndex
+				skipBraces = rightBraceIndex-4 == advanceComments(items, leftBraceIndex)
 			}
 			identifierItem := parser.Item{Typ: parser.IDENTIFIER, Val: metricName, Pos: 0}
 			for j := 0; j < len(items); j++ {
-				if j >= leftBraceIndex && j <= rightBraceIndex {
+				if j <= rightBraceIndex && j >= leftBraceIndex {
 					if j == leftBraceIndex {
 						tmp = append(tmp, identifierItem)
 						if !skipBraces {
 							tmp = append(tmp, items[j])
 						}
 						continue
-					} else if items[i+3].Typ == parser.COMMA && j == i+3 || j >= i && j < i+3 {
+					} else if items[itr+3].Typ == parser.COMMA && j == itr+3 || j >= itr && j < itr+3 {
 						continue
 					}
 					if skipBraces && (items[j].Typ == parser.LEFT_BRACE || items[j].Typ == parser.RIGHT_BRACE) {
@@ -428,13 +387,17 @@ func (p *Prettier) refreshLexItems(items []parser.Item) []parser.Item {
 
 // expressionFromItems returns the raw expression from slice of items.
 // This is mostly used in re-ordering activities where the position of
-// the items changes during sorting in the sortItems.
+// the items change during sorting in the sortItems.
 // This function also standardizes the expression without any spaces,
 // so that the length determined by .String() is done purely on the
-// character length.
+// character length with standard indent.
 func (p *Prettier) expressionFromItems(items []parser.Item) string {
 	expression := ""
 	for _, item := range items {
+		if item.Typ.IsOperator() || item.Typ.IsAggregator() {
+			expression += " " + item.Val + " "
+			continue
+		}
 		switch item.Typ {
 		case parser.COMMENT:
 			expression += item.Val + "\n"
@@ -479,34 +442,20 @@ func (p *Prettier) parseFile(name string) (*rulefmt.RuleGroups, []error) {
 	return groups, nil
 }
 
-func parseFloat(v float64) string {
-	return strconv.FormatFloat(v, 'E', -1, 64)
-}
-
-// inc increments the padding by by adding the pad value
-// to the previous padded value.
-func (pd *padder) inc(iter int) *padder {
-	pd.buff += iter
-	return pd
-}
-
-// dec decrements the padding by by removing the pad value
-// to the previous padded value.
-func (pd *padder) dec(iter int) *padder {
-	pd.buff -= iter
-	return pd
-}
-
-// apply applies the padding.
-func (pd *padder) apply() string {
-	pad := ""
-	for i := 1; i <= pd.buff; i++ {
-		pad += pd.indent
+// advanceComments advances the index until a non-comment item is
+// encountered.
+func advanceComments(items []parser.Item, index int) int {
+	var i int
+	for i = index; i < len(items); i++ {
+		if items[i].Typ == parser.COMMENT {
+			continue
+		}
+		break
 	}
-	return pad
+	return i
 }
 
-// pad provides an instantenous padding.
+// pad provides an instantaneous padding.
 func (pd *padder) pad(iter int) string {
 	pad := ""
 	for i := 1; i <= iter; i++ {
@@ -515,27 +464,7 @@ func (pd *padder) pad(iter int) string {
 	return pad
 }
 
-func (pd *padder) getIndentAmount(indent string) int {
-	tmp := ""
-	amount := 0
-	for {
-		if tmp == indent {
-			return amount
-		}
-		tmp += pd.indent
-		amount++
-	}
-}
-
-func (pd *padder) resume() string {
-	return ""
-}
-
 func (pd *padder) newLine() string {
 	pd.isNewLineApplied = true
 	return "\n"
-}
-
-func (pd *padder) resumeLine() {
-	pd.isNewLineApplied = false
 }
