@@ -285,7 +285,7 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 		baseIndent int
 	)
 	if item.Typ.IsOperator() && reflect.TypeOf(node).String() == "*parser.BinaryExpr" {
-		p.pd.containsGrouping = currNode.contains("grouping-modifier") || items[index+1].Typ == parser.BOOL
+		p.pd.containsGrouping = currNode.contains("grouping-modifier")
 	}
 	nodeSplittable := currNode.violatesColumnLimit()
 	if p.pd.isNewLineApplied {

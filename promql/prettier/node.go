@@ -7,9 +7,7 @@ import (
 
 type nodeInfo struct {
 	head parser.Expr
-	// node information details.
-	// information details should be used only after calling the fetch.
-	shouldSplit bool
+	// Node details.
 	columnLimit int
 	history     []reflect.Type
 	item        parser.Item
@@ -40,6 +38,7 @@ func (p *nodeInfo) baseIndent(item parser.Item) int {
 	return len(history)
 }
 
+// contains verifies whether the current node contains a particular entity.
 func (p *nodeInfo) contains(element string) bool {
 	switch element {
 	case "grouping-modifier":
@@ -63,7 +62,8 @@ func (p *nodeInfo) parentNode(head parser.Expr, rnge parser.PositionRange) refle
 	return ancestors[len(ancestors)-2]
 }
 
-// nodeHistory returns the ancestors along with the node in which the item is present, using the help of AST.
+// nodeHistory returns the ancestors of the node the item position range is passed of,
+// along with the node in which the item is present. This is done with the help of AST.
 // posRange can also be called as itemPosRange since carries the position range of the lexical item.
 func (p *nodeInfo) nodeHistory(head parser.Expr, posRange parser.PositionRange, stack []reflect.Type) ([]reflect.Type, parser.Expr, bool) {
 	var nodeMatch bool

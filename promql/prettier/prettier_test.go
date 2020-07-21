@@ -200,6 +200,7 @@ __name__="metric_name"}`,
 		expected: `metric_name{ # comment
 }`,
 	},
+	// We should not format those cases that contain comments within __name__ label-value.
 	{
 		expr: `{__name__ # comment
 ="metric_name"}`,
