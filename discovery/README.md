@@ -216,4 +216,16 @@ If all the targets in a group go away, we need to send the target groups with em
 ```
 down the channel.
 
+### New Service Discovery Check List
+
+Here are some non-obvious parts of adding service discoveries that need to be verified:
+
+- Check for `nil` SDConfigs in `discovery/config/config.go`.
+- Validate that discovery configs can be DeepEqualled by adding them to
+  `config/testdata/conf.good.yml` and to the associated tests.
+- If there is a TLSConfig or HTTPClientConfig, add them to
+  `resolveFilepaths` in `config/config.go`.
+- List the service discovery in both `<scrape_config>` and
+  `<alertmanager_config>` in `docs/configuration/configuration.md`.
+
 <!-- TODO: Add best-practices -->
