@@ -95,7 +95,7 @@ export const RulesContent: FC<RouteComponentProps & RulesContentProps> = ({ resp
                             <strong>for:</strong> {formatRange(r.duration)}
                           </div>
                         )}
-                        {r.labels && Object.entries(r.labels).length > 0 && (
+                        {r.labels && Object.keys(r.labels).length > 0 && (
                           <div>
                             <strong>labels:</strong>
                             {Object.entries(r.labels).map(([key, value]) => (
@@ -105,7 +105,7 @@ export const RulesContent: FC<RouteComponentProps & RulesContentProps> = ({ resp
                             ))}
                           </div>
                         )}
-                        {r.alerts && r.annotations && Object.entries(r.annotations).length > 0 && (
+                        {r.alerts && r.annotations && Object.keys(r.annotations).length > 0 && (
                           <div>
                             <strong>annotations:</strong>
                             {Object.entries(r.annotations).map(([key, value]) => (
