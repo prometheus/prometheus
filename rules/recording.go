@@ -26,14 +26,13 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/util/strutil"
 )
 
 // A RecordingRule records its vector expression into new timeseries.
 type RecordingRule struct {
 	name   string
-	vector parser.Expr
+	vector fmt.Stringer
 	labels labels.Labels
 	// Protects the below.
 	mtx sync.Mutex
@@ -48,7 +47,7 @@ type RecordingRule struct {
 }
 
 // NewRecordingRule returns a new recording rule.
-func NewRecordingRule(name string, vector parser.Expr, lset labels.Labels) *RecordingRule {
+func NewRecordingRule(name string, vector fmt.Stringer, lset labels.Labels) *RecordingRule {
 	return &RecordingRule{
 		name:   name,
 		vector: vector,
@@ -63,7 +62,7 @@ func (rule *RecordingRule) Name() string {
 }
 
 // Query returns the rule query expression.
-func (rule *RecordingRule) Query() parser.Expr {
+func (rule *RecordingRule) Query() fmt.Stringer {
 	return rule.vector
 }
 

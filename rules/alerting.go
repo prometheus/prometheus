@@ -34,7 +34,6 @@ import (
 	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/template"
 	"github.com/prometheus/prometheus/util/strutil"
 )
@@ -113,7 +112,7 @@ type AlertingRule struct {
 	// The name of the alert.
 	name string
 	// The vector expression from which to generate alerts.
-	vector parser.Expr
+	vector fmt.Stringer
 	// The duration for which a labelset needs to persist in the expression
 	// output vector before an alert transitions from Pending to Firing state.
 	holdDuration time.Duration
@@ -145,7 +144,7 @@ type AlertingRule struct {
 
 // NewAlertingRule constructs a new AlertingRule.
 func NewAlertingRule(
-	name string, vec parser.Expr, hold time.Duration,
+	name string, vec fmt.Stringer, hold time.Duration,
 	labels, annotations, externalLabels labels.Labels,
 	restored bool, logger log.Logger,
 ) *AlertingRule {
@@ -202,7 +201,7 @@ func (r *AlertingRule) Health() RuleHealth {
 }
 
 // Query returns the query expression of the alerting rule.
-func (r *AlertingRule) Query() parser.Expr {
+func (r *AlertingRule) Query() fmt.Stringer {
 	return r.vector
 }
 
