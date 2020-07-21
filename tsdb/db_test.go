@@ -163,7 +163,7 @@ func TestNoPanicAfterWALCorrutpion(t *testing.T) {
 	t.Cleanup(closeFn)
 
 	// Append until the the first mmaped head chunk.
-	// This is to ensure that all samples can be red from the mmaped chunks when the WAL is corrupted.
+	// This is to ensure that all samples can be read from the mmaped chunks when the WAL is corrupted.
 	var expSamples []tsdbutil.Sample
 	var maxt int64
 	{
@@ -183,7 +183,7 @@ func TestNoPanicAfterWALCorrutpion(t *testing.T) {
 		testutil.Ok(t, db.Close())
 	}
 
-	// Corrupt the wal  after the first sample of the series so that it has at least one sample and
+	// Corrupt the WAL after the first sample of the series so that it has at least one sample and
 	// it is not garbage collected.
 	// The repair deletes all WAL records after the corrupted record and these are read from the mmaped chunk.
 	{
@@ -207,7 +207,7 @@ func TestNoPanicAfterWALCorrutpion(t *testing.T) {
 		defer func() {
 			testutil.Ok(t, db.Close())
 		}()
-		testutil.Equals(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.walCorruptionsTotal), "wal corruption count mismatch")
+		testutil.Equals(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.walCorruptionsTotal), "WAL corruption count mismatch")
 
 		querier, err := db.Querier(context.TODO(), 0, maxt)
 		testutil.Ok(t, err)
