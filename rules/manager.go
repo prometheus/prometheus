@@ -30,9 +30,11 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 )
 
@@ -850,7 +852,6 @@ type ManagerOptions struct {
 	OutageTolerance time.Duration
 	ForGracePeriod  time.Duration
 	ResendDelay     time.Duration
-	GroupLoader     GroupLoader
 
 	Metrics *Metrics
 }
@@ -860,10 +861,6 @@ type ManagerOptions struct {
 func NewManager(o *ManagerOptions) *Manager {
 	if o.Metrics == nil {
 		o.Metrics = NewGroupMetrics(o.Registerer)
-	}
-
-	if o.GroupLoader == nil {
-		o.GroupLoader = FileLoader{}
 	}
 
 	m := &Manager{
@@ -980,47 +977,55 @@ func (m *Manager) LoadGroups(
 
 	shouldRestore := !m.restored
 
-	parsedGroups, errs := m.opts.GroupLoader.Load(filenames...)
-	if errs != nil {
-		return nil, errs
-	}
-
-	for _, rg := range parsedGroups {
-		itv := interval
-		if rg.Interval != 0 {
-			itv = rg.Interval
+	for _, fn := range filenames {
+		rgs, errs := rulefmt.ParseFile(fn)
+		if errs != nil {
+			return nil, errs
 		}
-		rules := make([]Rule, 0, len(rg.Rules))
-		for _, r := range rg.Rules {
-			if r.Alert {
-				rules = append(rules, NewAlertingRule(
-					r.Name,
-					r.Expr,
-					r.Period,
-					r.Labels,
-					r.Annotations,
-					externalLabels,
-					m.restored,
-					log.With(m.logger, "alert", r.Alert),
-				))
-				continue
+
+		for _, rg := range rgs.Groups {
+			itv := interval
+			if rg.Interval != 0 {
+				itv = time.Duration(rg.Interval)
 			}
-			rules = append(rules, NewRecordingRule(
-				r.Name,
-				r.Expr,
-				r.Labels,
-			))
-		}
 
-		groups[groupKey(rg.File, rg.Name)] = NewGroup(GroupOptions{
-			Name:          rg.Name,
-			File:          rg.File,
-			Interval:      itv,
-			Rules:         rules,
-			ShouldRestore: shouldRestore,
-			Opts:          m.opts,
-			done:          m.done,
-		})
+			rules := make([]Rule, 0, len(rg.Rules))
+			for _, r := range rg.Rules {
+				expr, err := parser.ParseExpr(r.Expr.Value)
+				if err != nil {
+					return nil, []error{errors.Wrap(err, fn)}
+				}
+
+				if r.Alert.Value != "" {
+					rules = append(rules, NewAlertingRule(
+						r.Alert.Value,
+						expr,
+						time.Duration(r.For),
+						labels.FromMap(r.Labels),
+						labels.FromMap(r.Annotations),
+						externalLabels,
+						m.restored,
+						log.With(m.logger, "alert", r.Alert),
+					))
+					continue
+				}
+				rules = append(rules, NewRecordingRule(
+					r.Record.Value,
+					expr,
+					labels.FromMap(r.Labels),
+				))
+			}
+
+			groups[groupKey(fn, rg.Name)] = NewGroup(GroupOptions{
+				Name:          rg.Name,
+				File:          fn,
+				Interval:      itv,
+				Rules:         rules,
+				ShouldRestore: shouldRestore,
+				Opts:          m.opts,
+				done:          m.done,
+			})
+		}
 	}
 
 	return groups, nil
