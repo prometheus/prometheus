@@ -798,7 +798,7 @@ type blockBaseSeriesSet struct {
 	tombstones tombstones.Reader
 	mint, maxt int64
 
-	currIter   *populateWithDelGenericSeriesIterator
+	currIterFn func() *populateWithDelGenericSeriesIterator
 	currLabels labels.Labels
 
 	bufChks []chunks.Meta
@@ -834,6 +834,8 @@ func (b *blockBaseSeriesSet) Next() bool {
 		// * requested time ranges are closed: [req.Start, req.End].
 
 		var trimFront, trimBack bool
+
+		// Copy chunks as iteratables are reusable.
 		chks := make([]chunks.Meta, 0, len(b.bufChks))
 
 		// Prefilter chunks and pick those which are not entirely deleted or totally outside of the requested range.
@@ -869,7 +871,9 @@ func (b *blockBaseSeriesSet) Next() bool {
 			intervals = intervals.Add(tombstones.Interval{Mint: b.maxt + 1, Maxt: math.MaxInt64})
 		}
 		b.currLabels = lbls
-		b.currIter = newPopulateWithDelGenericSeriesIterator(b.chunks, chks, intervals)
+		b.currIterFn = func() *populateWithDelGenericSeriesIterator {
+			return newPopulateWithDelGenericSeriesIterator(b.chunks, chks, intervals)
+		}
 		return true
 	}
 	return false
@@ -1084,9 +1088,13 @@ func newBlockSeriesSet(i IndexReader, c ChunkReader, t tombstones.Reader, p inde
 }
 
 func (b *blockSeriesSet) At() storage.Series {
+	// At can be looped over before iterating, so save the current value locally.
+	currIterFn := b.currIterFn
 	return &storage.SeriesEntry{
-		Lset:             b.currLabels,
-		SampleIteratorFn: func() chunkenc.Iterator { return b.currIter.toSeriesIterator() },
+		Lset: b.currLabels,
+		SampleIteratorFn: func() chunkenc.Iterator {
+			return currIterFn().toSeriesIterator()
+		},
 	}
 }
 
@@ -1111,9 +1119,13 @@ func newBlockChunkSeriesSet(i IndexReader, c ChunkReader, t tombstones.Reader, p
 }
 
 func (b *blockChunkSeriesSet) At() storage.ChunkSeries {
+	// At can be looped over before iterating, so save the current value locally.
+	currIterFn := b.currIterFn
 	return &storage.ChunkSeriesEntry{
-		Lset:            b.currLabels,
-		ChunkIteratorFn: func() chunks.Iterator { return b.currIter.toChunkSeriesIterator() },
+		Lset: b.currLabels,
+		ChunkIteratorFn: func() chunks.Iterator {
+			return currIterFn().toChunkSeriesIterator()
+		},
 	}
 }
 

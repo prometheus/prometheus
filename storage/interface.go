@@ -245,11 +245,13 @@ type Labels interface {
 
 type SampleIteratable interface {
 	// Iterator returns a new iterator of the data of the series.
+	// Itaratable is reusable, meaning that multiple creations of iterator should be possible.
 	Iterator() chunkenc.Iterator
 }
 
 type ChunkIteratable interface {
 	// Iterator returns a new iterator that iterates over potentially overlapping chunks of the series, sorted by min time.
+	// Itaratable is reusable, meaning that multiple creations of iterator should be possible.
 	Iterator() chunks.Iterator
 }
 

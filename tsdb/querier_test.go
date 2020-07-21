@@ -1784,7 +1784,7 @@ func BenchmarkQueries(b *testing.B) {
 						s := series[i].(*storage.SeriesEntry)
 						allLabels := append(commonLbls, s.Labels()...)
 						newS := storage.NewListSeries(allLabels, nil)
-						newS.SampleIteratorFn = s.SampleIteratorFn
+						newS.SampleIterator = s.SampleIterator
 
 						series[i] = newS
 					}

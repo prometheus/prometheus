@@ -52,11 +52,10 @@ func NewListSeries(lset labels.Labels, s []tsdbutil.Sample) *SeriesEntry {
 // NewListChunkSeriesIterator returns chunk series entry that allows to iterate over provided samples.
 // NOTE: It uses inefficient chunks encoding implementation, not caring about chunk size.
 func NewListChunkSeriesFromSamples(lset labels.Labels, samples ...[]tsdbutil.Sample) *ChunkSeriesEntry {
-	var chks []chunks.Meta
-
 	return &ChunkSeriesEntry{
 		Lset: lset,
 		ChunkIteratorFn: func() chunks.Iterator {
+			chks := make([]chunks.Meta, 0, len(samples))
 			for _, s := range samples {
 				chks = append(chks, tsdbutil.ChunkFromSamples(s))
 			}
