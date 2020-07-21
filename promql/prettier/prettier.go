@@ -298,7 +298,9 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 	}
 	nodeSplittable := currNode.violatesColumnLimit()
 	if p.pd.isNewLineApplied {
-		result += p.pd.pad(nodeInfo.baseIndent(item))
+		if item.Typ != parser.LEFT_BRACKET && item.Typ != parser.DURATION {
+			result += p.pd.pad(nodeInfo.baseIndent(item))
+		}
 		p.pd.isNewLineApplied = false
 	}
 
@@ -341,11 +343,8 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 		}
 	case parser.STRING, parser.NUMBER:
 		result += item.Val
-		p.pd.isNewLineApplied = false
-	case parser.SUM, parser.AVG, parser.COUNT, parser.MIN, parser.MAX, parser.STDDEV, parser.STDVAR,
-		parser.TOPK, parser.BOTTOMK, parser.COUNT_VALUES, parser.QUANTILE:
-		result += item.Val
-	case parser.EQL, parser.EQL_REGEX, parser.NEQ, parser.NEQ_REGEX:
+	case parser.EQL, parser.EQL_REGEX, parser.NEQ, parser.NEQ_REGEX, parser.DURATION, parser.COLON,
+		parser.LEFT_BRACKET, parser.RIGHT_BRACKET:
 		result += item.Val
 	case parser.ADD, parser.SUB, parser.DIV, parser.GTE, parser.GTR, parser.LOR, parser.LAND,
 		parser.LSS, parser.LTE, parser.LUNLESS, parser.MOD, parser.POW:

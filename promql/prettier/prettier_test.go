@@ -380,32 +380,54 @@ var prettierCases = []prettierTest{
 		expected: `    ((metric_name))`,
 	},
 	{
-		expr: `(metric_two{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"})`,
+		expr: `(metric_one{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"})`,
 		expected: `  (
-    metric_two{
+    metric_one{
       _a_some_very_large_label="_a_very_large_value",
       some_very_large_label="a_very_large_value",
     }  
   )`,
 	},
 	{
-		expr:     `1 + metric_two{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"}`,
-		expected: `    1 + metric_two{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"}`,
+		expr:     `1 + metric_one{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"}`,
+		expected: `    1 + metric_one{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"}`,
 	},
 	{
-		expr:     `1 + 2 + metric_two{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"}`,
-		expected: `    1 + 2 + metric_two{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"}`,
+		expr:     `1 + 2 + metric_one{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"}`,
+		expected: `    1 + 2 + metric_one{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"}`,
 	},
 	{
-		expr:     `1 + metric_two{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"} + 2`,
-		expected: `    1 + metric_two{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"} + 2`,
+		expr:     `1 + metric_one{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"} + 2`,
+		expected: `    1 + metric_one{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"} + 2`,
 	},
 	{
-		expr: `metric_two{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"} + 1`,
-		expected: `    metric_two{
+		expr: `metric_one{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"} + 1`,
+		expected: `    metric_one{
       _a_some_very_large_label="_a_very_large_value",
       some_very_large_label="a_very_large_value",
     }     + 1`,
+	},
+	{
+		expr:     `metric_one[5m]`,
+		expected: `  metric_one[5m]`,
+	},
+	{
+		expr: `metric_one{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"}[5m]`,
+		expected: `  metric_one{
+    _a_some_very_large_label="_a_very_large_value",
+    some_very_large_label="a_very_large_value",
+  }[5m]`,
+	},
+	{
+		expr:     `metric_one[5m:1m]`,
+		expected: `  metric_one[5m:1m]`,
+	},
+	{
+		expr: `metric_one{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"}[5m:1m]`,
+		expected: `  metric_one{
+    _a_some_very_large_label="_a_very_large_value",
+    some_very_large_label="a_very_large_value",
+  }[5m:1m]`,
 	},
 }
 
