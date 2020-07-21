@@ -716,7 +716,7 @@ func TestUpdate(t *testing.T) {
 		Context:    context.Background(),
 		Logger:     log.NewNopLogger(),
 	})
-	ruleManager.Run()
+	ruleManager.start()
 	defer ruleManager.Stop()
 
 	err := ruleManager.Update(10*time.Second, files, nil)
@@ -906,8 +906,8 @@ func TestMetricsUpdate(t *testing.T) {
 	}
 
 	storage := teststorage.New(t)
-	registry := prometheus.NewRegistry()
 	defer storage.Close()
+	registry := prometheus.NewRegistry()
 	opts := promql.EngineOpts{
 		Logger:     nil,
 		Reg:        nil,
@@ -923,7 +923,7 @@ func TestMetricsUpdate(t *testing.T) {
 		Logger:     log.NewNopLogger(),
 		Registerer: registry,
 	})
-	ruleManager.Run()
+	ruleManager.start()
 	defer ruleManager.Stop()
 
 	countMetrics := func() int {
@@ -997,7 +997,7 @@ func TestGroupStalenessOnRemoval(t *testing.T) {
 		Logger:     log.NewNopLogger(),
 	})
 	var stopped bool
-	ruleManager.Run()
+	ruleManager.start()
 	defer func() {
 		if !stopped {
 			ruleManager.Stop()
@@ -1074,7 +1074,7 @@ func TestMetricsStalenessOnManagerShutdown(t *testing.T) {
 		Logger:     log.NewNopLogger(),
 	})
 	var stopped bool
-	ruleManager.Run()
+	ruleManager.start()
 	defer func() {
 		if !stopped {
 			ruleManager.Stop()

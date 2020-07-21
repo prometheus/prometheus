@@ -875,8 +875,13 @@ func NewManager(o *ManagerOptions) *Manager {
 	return m
 }
 
-// Run starts processing of the rule manager.
+// Run starts processing of the rule manager. It is blocking.
 func (m *Manager) Run() {
+	m.start()
+	<-m.done
+}
+
+func (m *Manager) start() {
 	close(m.block)
 }
 
