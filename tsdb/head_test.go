@@ -39,10 +39,26 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
+func newTestHead(t testing.TB, chunkRange int64, compressWAL bool) (*Head, *wal.WAL) {
+	dir, err := ioutil.TempDir("", "test")
+	testutil.Ok(t, err)
+	wlog, err := wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compressWAL)
+	testutil.Ok(t, err)
+
+	h, err := NewHead(nil, nil, wlog, chunkRange, dir, nil, DefaultStripeSize, nil)
+	testutil.Ok(t, err)
+
+	testutil.Ok(t, h.chunkDiskMapper.IterateAllChunks(func(_, _ uint64, _, _ int64, _ uint16) error { return nil }))
+
+	t.Cleanup(func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	})
+	return h, wlog
+}
+
 func BenchmarkCreateSeries(b *testing.B) {
 	series := genSeries(b.N, 10, 0, 0)
-	h, _, closer := newTestHead(b, 10000, false)
-	defer closer()
+	h, _ := newTestHead(b, 10000, false)
 	defer func() {
 		testutil.Ok(b, h.Close())
 	}()
@@ -210,8 +226,7 @@ func TestHead_ReadWAL(t *testing.T) {
 				},
 			}
 
-			head, w, closer := newTestHead(t, 1000, compress)
-			defer closer()
+			head, w := newTestHead(t, 1000, compress)
 			defer func() {
 				testutil.Ok(t, head.Close())
 			}()
@@ -247,8 +262,7 @@ func TestHead_ReadWAL(t *testing.T) {
 }
 
 func TestHead_WALMultiRef(t *testing.T) {
-	head, w, closer := newTestHead(t, 1000, false)
-	defer closer()
+	head, w := newTestHead(t, 1000, false)
 
 	testutil.Ok(t, head.Init(0))
 
@@ -305,8 +319,7 @@ func TestHead_WALMultiRef(t *testing.T) {
 }
 
 func TestHead_Truncate(t *testing.T) {
-	h, _, closer := newTestHead(t, 1000, false)
-	defer closer()
+	h, _ := newTestHead(t, 1000, false)
 	defer func() {
 		testutil.Ok(t, h.Close())
 	}()
@@ -457,8 +470,7 @@ func TestHeadDeleteSeriesWithoutSamples(t *testing.T) {
 					{Ref: 50, T: 90, V: 1},
 				},
 			}
-			head, w, closer := newTestHead(t, 1000, compress)
-			defer closer()
+			head, w := newTestHead(t, 1000, compress)
 			defer func() {
 				testutil.Ok(t, head.Close())
 			}()
@@ -525,8 +537,7 @@ func TestHeadDeleteSimple(t *testing.T) {
 	for _, compress := range []bool{false, true} {
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
 			for _, c := range cases {
-				head, w, closer := newTestHead(t, 1000, compress)
-				defer closer()
+				head, w := newTestHead(t, 1000, compress)
 
 				app := head.Appender()
 				for _, smpl := range smplsAll {
@@ -603,8 +614,7 @@ func TestHeadDeleteSimple(t *testing.T) {
 }
 
 func TestDeleteUntilCurMax(t *testing.T) {
-	hb, _, closer := newTestHead(t, 1000000, false)
-	defer closer()
+	hb, _ := newTestHead(t, 1000000, false)
 	defer func() {
 		testutil.Ok(t, hb.Close())
 	}()
@@ -657,8 +667,7 @@ func TestDeletedSamplesAndSeriesStillInWALAfterCheckpoint(t *testing.T) {
 	numSamples := 10000
 
 	// Enough samples to cause a checkpoint.
-	hb, w, closer := newTestHead(t, int64(numSamples)*10, false)
-	defer closer()
+	hb, w := newTestHead(t, int64(numSamples)*10, false)
 
 	for i := 0; i < numSamples; i++ {
 		app := hb.Appender()
@@ -748,8 +757,7 @@ func TestDelete_e2e(t *testing.T) {
 		seriesMap[labels.New(l...).String()] = []tsdbutil.Sample{}
 	}
 
-	hb, _, closer := newTestHead(t, 100000, false)
-	defer closer()
+	hb, _ := newTestHead(t, 100000, false)
 	defer func() {
 		testutil.Ok(t, hb.Close())
 	}()
@@ -989,8 +997,7 @@ func TestMemSeries_append(t *testing.T) {
 
 func TestGCChunkAccess(t *testing.T) {
 	// Put a chunk, select it. GC it and then access it.
-	h, _, closer := newTestHead(t, 1000, false)
-	defer closer()
+	h, _ := newTestHead(t, 1000, false)
 	defer func() {
 		testutil.Ok(t, h.Close())
 	}()
@@ -1044,8 +1051,7 @@ func TestGCChunkAccess(t *testing.T) {
 
 func TestGCSeriesAccess(t *testing.T) {
 	// Put a series, select it. GC it and then access it.
-	h, _, closer := newTestHead(t, 1000, false)
-	defer closer()
+	h, _ := newTestHead(t, 1000, false)
 	defer func() {
 		testutil.Ok(t, h.Close())
 	}()
@@ -1100,8 +1106,7 @@ func TestGCSeriesAccess(t *testing.T) {
 }
 
 func TestUncommittedSamplesNotLostOnTruncate(t *testing.T) {
-	h, _, closer := newTestHead(t, 1000, false)
-	defer closer()
+	h, _ := newTestHead(t, 1000, false)
 	defer func() {
 		testutil.Ok(t, h.Close())
 	}()
@@ -1131,8 +1136,7 @@ func TestUncommittedSamplesNotLostOnTruncate(t *testing.T) {
 }
 
 func TestRemoveSeriesAfterRollbackAndTruncate(t *testing.T) {
-	h, _, closer := newTestHead(t, 1000, false)
-	defer closer()
+	h, _ := newTestHead(t, 1000, false)
 	defer func() {
 		testutil.Ok(t, h.Close())
 	}()
@@ -1165,8 +1169,7 @@ func TestRemoveSeriesAfterRollbackAndTruncate(t *testing.T) {
 func TestHead_LogRollback(t *testing.T) {
 	for _, compress := range []bool{false, true} {
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
-			h, w, closer := newTestHead(t, 1000, compress)
-			defer closer()
+			h, w := newTestHead(t, 1000, compress)
 			defer func() {
 				testutil.Ok(t, h.Close())
 			}()
@@ -1364,8 +1367,7 @@ func TestHeadReadWriterRepair(t *testing.T) {
 }
 
 func TestNewWalSegmentOnTruncate(t *testing.T) {
-	h, wlog, closer := newTestHead(t, 1000, false)
-	defer closer()
+	h, wlog := newTestHead(t, 1000, false)
 	defer func() {
 		testutil.Ok(t, h.Close())
 	}()
@@ -1395,8 +1397,7 @@ func TestNewWalSegmentOnTruncate(t *testing.T) {
 }
 
 func TestAddDuplicateLabelName(t *testing.T) {
-	h, _, closer := newTestHead(t, 1000, false)
-	defer closer()
+	h, _ := newTestHead(t, 1000, false)
 	defer func() {
 		testutil.Ok(t, h.Close())
 	}()
@@ -1472,7 +1473,7 @@ func TestMemSeriesIsolation(t *testing.T) {
 	}
 
 	// Test isolation without restart of Head.
-	hb, _, closer := newTestHead(t, 1000, false)
+	hb, _ := newTestHead(t, 1000, false)
 	i := addSamples(hb)
 	testIsolation(hb, i)
 
@@ -1532,11 +1533,9 @@ func TestMemSeriesIsolation(t *testing.T) {
 	testutil.Equals(t, 1002, lastValue(hb, 1003))
 
 	testutil.Ok(t, hb.Close())
-	closer()
 
 	// Test isolation with restart of Head. This is to verify the num samples of chunks after m-map chunk replay.
-	hb, w, closer := newTestHead(t, 1000, false)
-	defer closer()
+	hb, w := newTestHead(t, 1000, false)
 	i = addSamples(hb)
 	testutil.Ok(t, hb.Close())
 
@@ -1582,8 +1581,7 @@ func TestMemSeriesIsolation(t *testing.T) {
 
 func TestIsolationRollback(t *testing.T) {
 	// Rollback after a failed append and test if the low watermark has progressed anyway.
-	hb, _, closer := newTestHead(t, 1000, false)
-	defer closer()
+	hb, _ := newTestHead(t, 1000, false)
 	defer func() {
 		testutil.Ok(t, hb.Close())
 	}()
@@ -1610,8 +1608,7 @@ func TestIsolationRollback(t *testing.T) {
 }
 
 func TestIsolationLowWatermarkMonotonous(t *testing.T) {
-	hb, _, closer := newTestHead(t, 1000, false)
-	defer closer()
+	hb, _ := newTestHead(t, 1000, false)
 	defer func() {
 		testutil.Ok(t, hb.Close())
 	}()
@@ -1644,8 +1641,7 @@ func TestIsolationLowWatermarkMonotonous(t *testing.T) {
 }
 
 func TestIsolationAppendIDZeroIsNoop(t *testing.T) {
-	h, _, closer := newTestHead(t, 1000, false)
-	defer closer()
+	h, _ := newTestHead(t, 1000, false)
 	defer func() {
 		testutil.Ok(t, h.Close())
 	}()
@@ -1666,8 +1662,7 @@ func TestHeadSeriesChunkRace(t *testing.T) {
 }
 
 func TestIsolationWithoutAdd(t *testing.T) {
-	hb, _, closer := newTestHead(t, 1000, false)
-	defer closer()
+	hb, _ := newTestHead(t, 1000, false)
 	defer func() {
 		testutil.Ok(t, hb.Close())
 	}()
@@ -1765,8 +1760,7 @@ func TestOutOfOrderSamplesMetric(t *testing.T) {
 }
 
 func testHeadSeriesChunkRace(t *testing.T) {
-	h, _, closer := newTestHead(t, 1000, false)
-	defer closer()
+	h, _ := newTestHead(t, 1000, false)
 	defer func() {
 		testutil.Ok(t, h.Close())
 	}()
@@ -1800,25 +1794,8 @@ func testHeadSeriesChunkRace(t *testing.T) {
 	wg.Wait()
 }
 
-func newTestHead(t testing.TB, chunkRange int64, compressWAL bool) (*Head, *wal.WAL, func()) {
-	dir, err := ioutil.TempDir("", "test")
-	testutil.Ok(t, err)
-	wlog, err := wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compressWAL)
-	testutil.Ok(t, err)
-
-	h, err := NewHead(nil, nil, wlog, chunkRange, dir, nil, DefaultStripeSize, nil)
-	testutil.Ok(t, err)
-
-	testutil.Ok(t, h.chunkDiskMapper.IterateAllChunks(func(_, _ uint64, _, _ int64, _ uint16) error { return nil }))
-
-	return h, wlog, func() {
-		testutil.Ok(t, os.RemoveAll(dir))
-	}
-}
-
 func TestHeadLabelNamesValuesWithMinMaxRange(t *testing.T) {
-	head, _, closer := newTestHead(t, 1000, false)
-	defer closer()
+	head, _ := newTestHead(t, 1000, false)
 	defer func() {
 		testutil.Ok(t, head.Close())
 	}()
@@ -1872,73 +1849,6 @@ func TestHeadLabelNamesValuesWithMinMaxRange(t *testing.T) {
 					testutil.Equals(t, []string{tt.expectedValues[i]}, actualLabelValue)
 				}
 			}
-		})
-	}
-}
-
-func TestHeadCompactionRace(t *testing.T) {
-	// There are still some races to be fixed. Hence skipping this test
-	// for now to not cause flaky CI failures.
-	t.Skip()
-
-	for i := 0; i < 10; i++ {
-		t.Run(fmt.Sprintf("run %d", i), func(t *testing.T) {
-			tsdbCfg := &Options{
-				RetentionDuration: 100000000,
-				NoLockfile:        true,
-				MinBlockDuration:  1000000,
-				MaxBlockDuration:  1000000,
-			}
-
-			db, closer := openTestDB(t, tsdbCfg, []int64{1000000})
-			t.Cleanup(closer)
-			t.Cleanup(func() {
-				testutil.Ok(t, db.Close())
-			})
-
-			head := db.Head()
-
-			// Get past the init appender phase here.
-			app := head.Appender()
-			_, err := app.Add(labels.Labels{labels.Label{Name: "n", Value: "v"}}, 10, 10)
-			testutil.Ok(t, err)
-			testutil.Ok(t, app.Commit())
-
-			wait := make(chan struct{})
-			var wg sync.WaitGroup
-
-			// Prepare to execute concurrent appends.
-			wg.Add(100)
-			for i := 0; i < 100; i++ {
-				go func(idx int) {
-					defer wg.Done()
-					app := head.Appender()
-					<-wait
-
-					for j := 0; j < 100; j++ {
-						// After compaction this will return out of bound, so this is a best effort append.
-						app.Add(labels.Labels{labels.Label{
-							Name:  fmt.Sprintf("n%d", idx*100+j),
-							Value: fmt.Sprintf("v%d", idx*100+j),
-						}}, 1000, 10)
-					}
-
-					testutil.Ok(t, app.Commit())
-				}(i)
-			}
-
-			// Prepare for head compaction.
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				<-wait
-				testutil.Ok(t, db.CompactHead(NewRangeHead(head, 0, 10000000)))
-			}()
-
-			// Run concurrent appends and compaction.
-			close(wait)
-
-			wg.Wait()
 		})
 	}
 }

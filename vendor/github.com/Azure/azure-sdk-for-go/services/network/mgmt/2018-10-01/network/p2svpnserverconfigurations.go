@@ -117,7 +117,6 @@ func (client P2sVpnServerConfigurationsClient) CreateOrUpdateSender(req *http.Re
 func (client P2sVpnServerConfigurationsClient) CreateOrUpdateResponder(resp *http.Response) (result P2SVpnServerConfiguration, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -195,7 +194,6 @@ func (client P2sVpnServerConfigurationsClient) DeleteSender(req *http.Request) (
 func (client P2sVpnServerConfigurationsClient) DeleteResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted, http.StatusNoContent),
 		autorest.ByClosing())
 	result.Response = resp
@@ -272,7 +270,6 @@ func (client P2sVpnServerConfigurationsClient) GetSender(req *http.Request) (*ht
 func (client P2sVpnServerConfigurationsClient) GetResponder(resp *http.Response) (result P2SVpnServerConfiguration, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -349,7 +346,6 @@ func (client P2sVpnServerConfigurationsClient) ListByVirtualWanSender(req *http.
 func (client P2sVpnServerConfigurationsClient) ListByVirtualWanResponder(resp *http.Response) (result ListP2SVpnServerConfigurationsResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

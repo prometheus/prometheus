@@ -638,11 +638,7 @@ func (h *Head) Init(minValidTime int64) error {
 	defer h.postings.EnsureOrder()
 	defer h.gc() // After loading the wal remove the obsolete data from the head.
 
-	if h.wal == nil {
-		return nil
-	}
-
-	level.Info(h.logger).Log("msg", "Replaying WAL and on-disk memory mappable chunks if any, this may take a while")
+	level.Info(h.logger).Log("msg", "Replaying on-disk memory mappable chunks if any")
 	start := time.Now()
 
 	mmappedChunks, err := h.loadMmappedChunks()
@@ -656,6 +652,15 @@ func (h *Head) Init(minValidTime int64) error {
 		h.removeCorruptedMmappedChunks(err)
 	}
 
+	level.Info(h.logger).Log("msg", "On-disk memory mappable chunks replay completed", "duration", time.Since(start).String())
+	if h.wal == nil {
+		level.Info(h.logger).Log("msg", "WAL not found")
+		return nil
+	}
+
+	level.Info(h.logger).Log("msg", "Replaying WAL, this may take a while")
+
+	checkpointReplayStart := time.Now()
 	// Backfill the checkpoint first if it exists.
 	dir, startFrom, err := wal.LastCheckpoint(h.wal.Dir())
 	if err != nil && err != record.ErrNotFound {
@@ -681,7 +686,9 @@ func (h *Head) Init(minValidTime int64) error {
 		startFrom++
 		level.Info(h.logger).Log("msg", "WAL checkpoint loaded")
 	}
+	checkpointReplayDuration := time.Since(checkpointReplayStart)
 
+	walReplayStart := time.Now()
 	// Find the last segment.
 	_, last, err := h.wal.Segments()
 	if err != nil {
@@ -706,7 +713,12 @@ func (h *Head) Init(minValidTime int64) error {
 		level.Info(h.logger).Log("msg", "WAL segment loaded", "segment", i, "maxSegment", last)
 	}
 
-	level.Info(h.logger).Log("msg", "WAL replay completed", "duration", time.Since(start).String())
+	level.Info(h.logger).Log(
+		"msg", "WAL replay completed",
+		"checkpoint_replay_duration", checkpointReplayDuration.String(),
+		"wal_replay_duration", time.Since(walReplayStart).String(),
+		"total_replay_duration", time.Since(start).String(),
+	)
 
 	return nil
 }
@@ -835,7 +847,7 @@ func (h *Head) Truncate(mint int64) (err error) {
 		return ok
 	}
 	h.metrics.checkpointCreationTotal.Inc()
-	if _, err = wal.Checkpoint(h.wal, first, last, keep, mint); err != nil {
+	if _, err = wal.Checkpoint(h.logger, h.wal, first, last, keep, mint); err != nil {
 		h.metrics.checkpointCreationFail.Inc()
 		if _, ok := errors.Cause(err).(*wal.CorruptionErr); ok {
 			h.metrics.walCorruptionsTotal.Inc()
@@ -1104,6 +1116,7 @@ func (a *headAppender) Add(lset labels.Labels, t int64, v float64) (uint64, erro
 	if err != nil {
 		return 0, err
 	}
+
 	if created {
 		a.series = append(a.series, record.RefSeries{
 			Ref:    s.ref,
@@ -1318,9 +1331,12 @@ func (h *Head) gc() {
 	}
 
 	// Rebuild symbols and label value indices from what is left in the postings terms.
+	// symMtx ensures that append of symbols and postings is disabled for rebuild time.
+	h.symMtx.Lock()
+	defer h.symMtx.Unlock()
+
 	symbols := make(map[string]struct{}, len(h.symbols))
 	values := make(map[string]stringset, len(h.values))
-
 	if err := h.postings.Iter(func(t labels.Label, _ index.Postings) error {
 		symbols[t.Name] = struct{}{}
 		symbols[t.Value] = struct{}{}
@@ -1336,13 +1352,8 @@ func (h *Head) gc() {
 		// This should never happen, as the iteration function only returns nil.
 		panic(err)
 	}
-
-	h.symMtx.Lock()
-
 	h.symbols = symbols
 	h.values = values
-
-	h.symMtx.Unlock()
 }
 
 // Tombstones returns a new reader over the head's tombstones
@@ -1707,10 +1718,7 @@ func (h *Head) getOrCreateWithID(id, hash uint64, lset labels.Labels) (*memSerie
 		h.symbols[l.Value] = struct{}{}
 	}
 
-	// Postings should be set after setting the symbols (or after holding
-	// the symbol mtx) to avoid race during compaction of seeing partial symbols.
 	h.postings.Add(id, lset)
-
 	return s, true, nil
 }
 
@@ -2070,8 +2078,9 @@ func (s *memSeries) chunkID(pos int) int {
 	return pos + s.firstChunkID
 }
 
-// truncateChunksBefore removes all chunks from the series that have not timestamp
-// at or after mint. Chunk IDs remain unchanged.
+// truncateChunksBefore removes all chunks from the series that
+// have no timestamp at or after mint.
+// Chunk IDs remain unchanged.
 func (s *memSeries) truncateChunksBefore(mint int64) (removed int) {
 	var k int
 	if s.headChunk != nil && s.headChunk.maxTime < mint {
@@ -2200,10 +2209,8 @@ func (s *memSeries) iterator(id int, isoState *isolationState, chunkDiskMapper *
 				previousSamples += int(d.numSamples)
 			}
 		}
-		// mmappedChunks does not contain the last chunk. Hence check it separately.
-		if len(s.mmappedChunks) < ix {
-			previousSamples += s.headChunk.chunk.NumSamples()
-		} else {
+
+		if s.headChunk != nil {
 			totalSamples += s.headChunk.chunk.NumSamples()
 		}
 

@@ -3,7 +3,7 @@ import { RouteComponentProps } from '@reach/router';
 import { APIResponse } from '../../hooks/useFetch';
 import { Alert, Table, Badge } from 'reactstrap';
 import { Link } from '@reach/router';
-import { formatRelative, createExpressionLink, humanizeDuration } from '../../utils';
+import { formatRelative, createExpressionLink, humanizeDuration, formatRange } from '../../utils';
 import { Rule } from '../../types/types';
 import { now } from 'moment';
 
@@ -23,12 +23,12 @@ export interface RulesMap {
   groups: RuleGroup[];
 }
 
-const GraphExpressionLink: FC<{ expr: string; title: string }> = props => {
+const GraphExpressionLink: FC<{ expr: string; text: string; title: string }> = props => {
   return (
     <>
       <strong>{props.title}:</strong>
       <Link className="ml-4" to={createExpressionLink(props.expr)}>
-        {props.expr}
+        {props.text}
       </Link>
       <br />
     </>
@@ -83,10 +83,19 @@ export const RulesContent: FC<RouteComponentProps & RulesContentProps> = ({ resp
                 {g.rules.map((r, i) => {
                   return (
                     <tr key={i}>
-                      {r.alerts ? (
-                        <td style={{ backgroundColor: '#F5F5F5' }} className="rule_cell">
-                          <GraphExpressionLink title="alert" expr={r.name} />
-                          <GraphExpressionLink title="expr" expr={r.query} />
+                      <td style={{ backgroundColor: '#F5F5F5' }} className="rule_cell">
+                        {r.alerts ? (
+                          <GraphExpressionLink title="alert" text={r.name} expr={`ALERTS{alertname="${r.name}"}`} />
+                        ) : (
+                          <GraphExpressionLink title="record" text={r.name} expr={r.name} />
+                        )}
+                        <GraphExpressionLink title="expr" text={r.query} expr={r.query} />
+                        {r.duration > 0 && (
+                          <div>
+                            <strong>for:</strong> {formatRange(r.duration)}
+                          </div>
+                        )}
+                        {r.labels && Object.keys(r.labels).length > 0 && (
                           <div>
                             <strong>labels:</strong>
                             {Object.entries(r.labels).map(([key, value]) => (
@@ -95,6 +104,8 @@ export const RulesContent: FC<RouteComponentProps & RulesContentProps> = ({ resp
                               </div>
                             ))}
                           </div>
+                        )}
+                        {r.alerts && r.annotations && Object.keys(r.annotations).length > 0 && (
                           <div>
                             <strong>annotations:</strong>
                             {Object.entries(r.annotations).map(([key, value]) => (
@@ -103,13 +114,8 @@ export const RulesContent: FC<RouteComponentProps & RulesContentProps> = ({ resp
                               </div>
                             ))}
                           </div>
-                        </td>
-                      ) : (
-                        <td style={{ backgroundColor: '#F5F5F5' }}>
-                          <GraphExpressionLink title="record" expr={r.name} />
-                          <GraphExpressionLink title="expr" expr={r.query} />
-                        </td>
-                      )}
+                        )}
+                      </td>
                       <td>
                         <Badge color={getBadgeColor(r.health)}>{r.health.toUpperCase()}</Badge>
                       </td>

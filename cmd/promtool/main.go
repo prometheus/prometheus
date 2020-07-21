@@ -483,11 +483,13 @@ func QueryRange(url string, headers map[string]string, query, start, end string,
 		stime, err = parseTime(start)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "error parsing start time:", err)
+			return 1
 		}
 	}
 
 	if !stime.Before(etime) {
 		fmt.Fprintln(os.Stderr, "start time is not before end time")
+		return 1
 	}
 
 	if step == 0 {

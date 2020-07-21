@@ -112,7 +112,6 @@ func (client LoadBalancerOutboundRulesClient) GetSender(req *http.Request) (*htt
 func (client LoadBalancerOutboundRulesClient) GetResponder(resp *http.Response) (result OutboundRule, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -189,7 +188,6 @@ func (client LoadBalancerOutboundRulesClient) ListSender(req *http.Request) (*ht
 func (client LoadBalancerOutboundRulesClient) ListResponder(resp *http.Response) (result LoadBalancerOutboundRuleListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

@@ -207,10 +207,6 @@ dns_sd_configs:
 ec2_sd_configs:
   [ - <ec2_sd_config> ... ]
 
-# List of OpenStack service discovery configurations.
-openstack_sd_configs:
-  [ - <openstack_sd_config> ... ]
-
 # List of file service discovery configurations.
 file_sd_configs:
   [ - <file_sd_config> ... ]
@@ -230,6 +226,10 @@ marathon_sd_configs:
 # List of AirBnB's Nerve service discovery configurations.
 nerve_sd_configs:
   [ - <nerve_sd_config> ... ]
+
+# List of OpenStack service discovery configurations.
+openstack_sd_configs:
+  [ - <openstack_sd_config> ... ]
 
 # List of Zookeeper Serverset service discovery configurations.
 serverset_sd_configs:
@@ -575,6 +575,9 @@ basic_auth:
 # Optional bearer token file authentication information.
 [ bearer_token_file: <filename> ]
 ```
+
+See [this example Prometheus configuration file](/documentation/examples/prometheus-dockerswarm.yml)
+for a detailed example of configuring Prometheus for Docker Swarm.
 
 ### `<dns_sd_config>`
 
@@ -1454,6 +1457,14 @@ ec2_sd_configs:
 file_sd_configs:
   [ - <file_sd_config> ... ]
 
+# List of DigitalOcean service discovery configurations.
+digitalocean_sd_configs:
+  [ - <digitalocean_sd_config> ... ]
+
+# List of Docker Swarm service discovery configurations.
+dockerswarm_sd_configs:
+  [ - <dockerswarm_sd_config> ... ]
+
 # List of GCE service discovery configurations.
 gce_sd_configs:
   [ - <gce_sd_config> ... ]
@@ -1469,6 +1480,10 @@ marathon_sd_configs:
 # List of AirBnB's Nerve service discovery configurations.
 nerve_sd_configs:
   [ - <nerve_sd_config> ... ]
+
+# List of OpenStack service discovery configurations.
+openstack_sd_configs:
+  [ - <openstack_sd_config> ... ]
 
 # List of Zookeeper Serverset service discovery configurations.
 serverset_sd_configs:

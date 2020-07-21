@@ -130,7 +130,6 @@ func (client ExpressRouteCrossConnectionPeeringsClient) CreateOrUpdateSender(req
 func (client ExpressRouteCrossConnectionPeeringsClient) CreateOrUpdateResponder(resp *http.Response) (result ExpressRouteCrossConnectionPeering, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -208,7 +207,6 @@ func (client ExpressRouteCrossConnectionPeeringsClient) DeleteSender(req *http.R
 func (client ExpressRouteCrossConnectionPeeringsClient) DeleteResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted, http.StatusNoContent),
 		autorest.ByClosing())
 	result.Response = resp
@@ -285,7 +283,6 @@ func (client ExpressRouteCrossConnectionPeeringsClient) GetSender(req *http.Requ
 func (client ExpressRouteCrossConnectionPeeringsClient) GetResponder(resp *http.Response) (result ExpressRouteCrossConnectionPeering, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -362,7 +359,6 @@ func (client ExpressRouteCrossConnectionPeeringsClient) ListSender(req *http.Req
 func (client ExpressRouteCrossConnectionPeeringsClient) ListResponder(resp *http.Response) (result ExpressRouteCrossConnectionPeeringList, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

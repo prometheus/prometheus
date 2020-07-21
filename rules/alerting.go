@@ -74,7 +74,7 @@ func (s AlertState) String() string {
 	case StateFiring:
 		return "firing"
 	}
-	panic(errors.Errorf("unknown alert state: %s", s.String()))
+	panic(errors.Errorf("unknown alert state: %d", s))
 }
 
 // Alert is the user-level representation of a single instance of an alerting rule.

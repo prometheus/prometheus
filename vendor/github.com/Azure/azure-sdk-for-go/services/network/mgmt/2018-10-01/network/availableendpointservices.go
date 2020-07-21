@@ -109,7 +109,6 @@ func (client AvailableEndpointServicesClient) ListSender(req *http.Request) (*ht
 func (client AvailableEndpointServicesClient) ListResponder(resp *http.Response) (result EndpointServicesListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

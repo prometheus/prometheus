@@ -396,9 +396,10 @@ func New(logger log.Logger, o *Options) *Handler {
 				fmt.Fprintf(w, "Error reading React index.html: %v", err)
 				return
 			}
-			prefixedIdx := bytes.ReplaceAll(idx, []byte("PATH_PREFIX_PLACEHOLDER"), []byte(o.ExternalURL.Path))
-			prefixedIdx = bytes.ReplaceAll(prefixedIdx, []byte("CONSOLES_LINK_PLACEHOLDER"), []byte(h.consolesPath()))
-			w.Write(prefixedIdx)
+			replacedIdx := bytes.ReplaceAll(idx, []byte("PATH_PREFIX_PLACEHOLDER"), []byte(o.ExternalURL.Path))
+			replacedIdx = bytes.ReplaceAll(replacedIdx, []byte("CONSOLES_LINK_PLACEHOLDER"), []byte(h.consolesPath()))
+			replacedIdx = bytes.ReplaceAll(replacedIdx, []byte("TITLE_PLACEHOLDER"), []byte(h.options.PageTitle))
+			w.Write(replacedIdx)
 			return
 		}
 
@@ -981,6 +982,10 @@ func tmplFuncs(consolesPath string, opts *Options) template_text.FuncMap {
 	return template_text.FuncMap{
 		"since": func(t time.Time) time.Duration {
 			return time.Since(t) / time.Millisecond * time.Millisecond
+		},
+		"unixToTime": func(i int64) time.Time {
+			t := time.Unix(i/int64(time.Microsecond), 0).UTC()
+			return t
 		},
 		"consolesPath": func() string { return consolesPath },
 		"pathPrefix":   func() string { return opts.ExternalURL.Path },

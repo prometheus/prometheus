@@ -1,6 +1,7 @@
 package dns
 
 import (
+	"bytes"
 	"encoding/base64"
 	"net"
 	"strconv"
@@ -10,15 +11,15 @@ import (
 // A remainder of the rdata with embedded spaces, return the parsed string (sans the spaces)
 // or an error
 func endingToString(c *zlexer, errstr string) (string, *ParseError) {
-	var s string
+	var buffer bytes.Buffer
 	l, _ := c.Next() // zString
 	for l.value != zNewline && l.value != zEOF {
 		if l.err {
-			return s, &ParseError{"", errstr, l}
+			return buffer.String(), &ParseError{"", errstr, l}
 		}
 		switch l.value {
 		case zString:
-			s += l.token
+			buffer.WriteString(l.token)
 		case zBlank: // Ok
 		default:
 			return "", &ParseError{"", errstr, l}
@@ -26,7 +27,7 @@ func endingToString(c *zlexer, errstr string) (string, *ParseError) {
 		l, _ = c.Next()
 	}
 
-	return s, nil
+	return buffer.String(), nil
 }
 
 // A remainder of the rdata with embedded spaces, split on unquoted whitespace
