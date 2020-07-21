@@ -179,6 +179,12 @@ func resolveFilepaths(baseDir string, cfg *Config) {
 		for _, consulcfg := range cfg.ConsulSDConfigs {
 			tlsPaths(&consulcfg.TLSConfig)
 		}
+		for _, digitaloceancfg := range cfg.DigitalOceanSDConfigs {
+			clientPaths(&digitaloceancfg.HTTPClientConfig)
+		}
+		for _, dockerswarmcfg := range cfg.DockerSwarmSDConfigs {
+			clientPaths(&dockerswarmcfg.HTTPClientConfig)
+		}
 		for _, cfg := range cfg.OpenstackSDConfigs {
 			tlsPaths(&cfg.TLSConfig)
 		}
