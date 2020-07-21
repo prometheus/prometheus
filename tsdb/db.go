@@ -359,9 +359,7 @@ func (db *DBReadOnly) FlushWAL(dir string) (returnErr error) {
 	return errors.Wrap(err, "writing WAL")
 }
 
-// Querier loads the wal and returns a new querier over the data partition for the given time range.
-// Current implementation doesn't support multiple Queriers.
-func (db *DBReadOnly) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+func (db *DBReadOnly) loadDataAsQueryable(maxt int64) (storage.SampleAndChunkQueryable, error) {
 	select {
 	case <-db.closed:
 		return nil, ErrClosed
@@ -413,24 +411,32 @@ func (db *DBReadOnly) Querier(ctx context.Context, mint, maxt int64) (storage.Qu
 	}
 
 	db.closers = append(db.closers, head)
-
-	// TODO: Refactor so that it is possible to obtain a Querier without initializing a writable DB instance.
-	// Option 1: refactor DB to have the Querier implementation using the DBReadOnly.Querier implementation not the opposite.
-	// Option 2: refactor Querier to use another independent func which
-	// can than be used by a read only and writable db instances without any code duplication.
-	dbWritable := &DB{
+	return &DB{
 		dir:    db.dir,
 		logger: db.logger,
 		blocks: blocks,
 		head:   head,
-	}
-
-	return dbWritable.Querier(ctx, mint, maxt)
+	}, nil
 }
 
-func (db *DBReadOnly) ChunkQuerier(context.Context, int64, int64) (storage.ChunkQuerier, error) {
-	// TODO(bwplotka): Implement in next PR.
-	return nil, errors.New("not implemented")
+// Querier loads the blocks and wal and returns a new querier over the data partition for the given time range.
+// Current implementation doesn't support multiple Queriers.
+func (db *DBReadOnly) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+	q, err := db.loadDataAsQueryable(maxt)
+	if err != nil {
+		return nil, err
+	}
+	return q.Querier(ctx, mint, maxt)
+}
+
+// ChunkQuerier loads blocks and the wal and returns a new chunk querier over the data partition for the given time range.
+// Current implementation doesn't support multiple ChunkQueriers.
+func (db *DBReadOnly) ChunkQuerier(ctx context.Context, mint, maxt int64) (storage.ChunkQuerier, error) {
+	q, err := db.loadDataAsQueryable(maxt)
+	if err != nil {
+		return nil, err
+	}
+	return q.ChunkQuerier(ctx, mint, maxt)
 }
 
 // Blocks returns a slice of block readers for persisted blocks.

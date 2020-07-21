@@ -707,7 +707,8 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 			return err
 		}
 		all = indexr.SortedPostings(all)
-		sets = append(sets, newBlockChunkSeriesSet(indexr, chunkr, tombsr, all, meta.MinTime, meta.MaxTime))
+		// Blocks meta is half open: [min, max), so subtract 1 to ensure we don't hold samples with exact meta.MaxTime timestamp.
+		sets = append(sets, newBlockChunkSeriesSet(indexr, chunkr, tombsr, all, meta.MinTime, meta.MaxTime-1))
 		syms := indexr.Symbols()
 		if i == 0 {
 			symbols = syms
@@ -1091,7 +1092,7 @@ func (b *blockSeriesSet) At() storage.Series {
 
 // blockChunkSeriesSet allows to iterate over sorted, populated series with applied tombstones.
 // Series with all deleted chunks are still present as Labelled iterator with no chunks.
-// Chunks are also trimmed to requested min and max time.
+// Chunks are also trimmed to requested [min and max] (keeping samples with min and max timestamps).
 type blockChunkSeriesSet struct {
 	blockBaseSeriesSet
 }
