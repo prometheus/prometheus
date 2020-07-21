@@ -33,7 +33,7 @@ import (
 // A RecordingRule records its vector expression into new timeseries.
 type RecordingRule struct {
 	name   string
-	vector fmt.Stringer
+	vector parser.Expr
 	labels labels.Labels
 	// Protects the below.
 	mtx sync.Mutex
@@ -63,7 +63,7 @@ func (rule *RecordingRule) Name() string {
 }
 
 // Query returns the rule query expression.
-func (rule *RecordingRule) Query() fmt.Stringer {
+func (rule *RecordingRule) Query() parser.Expr {
 	return rule.vector
 }
 
