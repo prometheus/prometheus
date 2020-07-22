@@ -15,7 +15,6 @@ package rules
 
 import (
 	"context"
-	"fmt"
 	html_template "html/template"
 	"math"
 	"net/url"
@@ -978,7 +977,7 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 // GroupLoader is responsible for loading rule groups from arbitrary sources and parsing them.
 type GroupLoader interface {
 	Load(identifier string) (*rulefmt.RuleGroups, []error)
-	Parse(query string) (fmt.Stringer, error)
+	Parse(query string) (parser.Expr, error)
 }
 
 // FileLoader is the default GroupLoader implementation. It defers to rulefmt.ParseFile
@@ -989,7 +988,7 @@ func (FileLoader) Load(identifier string) (*rulefmt.RuleGroups, []error) {
 	return rulefmt.ParseFile(identifier)
 }
 
-func (FileLoader) Parse(query string) (fmt.Stringer, error) { return parser.ParseExpr(query) }
+func (FileLoader) Parse(query string) (parser.Expr, error) { return parser.ParseExpr(query) }
 
 // LoadGroups reads groups from a list of files.
 func (m *Manager) LoadGroups(
