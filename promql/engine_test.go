@@ -1045,9 +1045,9 @@ func TestSubquerySelector(t *testing.T) {
 				},
 			},
 		},
+
 	} {
 		t.Run("", func(t *testing.T) {
-			SetDefaultEvaluationInterval(1 * time.Minute)
 			test, err := NewTest(t, tst.loadString)
 			testutil.Ok(t, err)
 			defer test.Close()
@@ -1060,8 +1060,8 @@ func TestSubquerySelector(t *testing.T) {
 					testutil.Ok(t, err)
 
 					res := qry.Exec(test.Context())
-					testutil.Equals(t, c.Result.Err, res.Err)
 
+					testutil.Equals(t, c.Result.Err, res.Err)
 					mat := res.Value.(Matrix)
 					sort.Sort(mat)
 					testutil.Equals(t, c.Result.Value, mat)

@@ -518,10 +518,11 @@ func (t *Test) clear() {
 	t.storage = teststorage.New(t)
 
 	opts := EngineOpts{
-		Logger:     nil,
-		Reg:        nil,
-		MaxSamples: 10000,
-		Timeout:    100 * time.Second,
+		Logger:                   nil,
+		Reg:                      nil,
+		MaxSamples:               10000,
+		Timeout:                  100 * time.Second,
+		NoStepSubqueryIntervalFn: func(int64) int64 { return durationMilliseconds(1 * time.Minute) },
 	}
 
 	t.queryEngine = NewEngine(opts)
