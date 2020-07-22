@@ -49,7 +49,7 @@ type Node interface {
 type Statement interface {
 	Node
 
-	// Stmt ensures that no other type accidentally implements the interface
+	// PromQLStmt ensures that no other type accidentally implements the interface
 	// nolint:unused
 	PromQLStmt()
 }
@@ -75,7 +75,7 @@ type Expr interface {
 	// Type returns the type the expression evaluates to. It does not perform
 	// in-depth checks as this is done at parsing-time.
 	Type() ValueType
-	// Expr ensures that no other types accidentally implement the interface.
+	// PromQLExpr ensures that no other types accidentally implement the interface.
 	PromQLExpr()
 }
 
