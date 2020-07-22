@@ -335,8 +335,8 @@ func main() {
 		}
 	}
 
-	noStepSuqueryInterval := &safePromQLNoStepSubqueryInterval{}
-	noStepSuqueryInterval.Set(config.DefaultGlobalConfig.EvaluationInterval)
+	noStepSubqueryInterval := &safePromQLNoStepSubqueryInterval{}
+	noStepSubqueryInterval.Set(config.DefaultGlobalConfig.EvaluationInterval)
 
 	// Above level 6, the k8s client would log bearer tokens in clear-text.
 	klog.ClampLevel(6)
@@ -375,7 +375,7 @@ func main() {
 			Timeout:                  time.Duration(cfg.queryTimeout),
 			ActiveQueryTracker:       promql.NewActiveQueryTracker(cfg.localStoragePath, cfg.queryConcurrency, log.With(logger, "component", "activeQueryTracker")),
 			LookbackDelta:            time.Duration(cfg.lookbackDelta),
-			NoStepSubqueryIntervalFn: noStepSuqueryInterval.Get,
+			NoStepSubqueryIntervalFn: noStepSubqueryInterval.Get,
 		}
 
 		queryEngine = promql.NewEngine(opts)
@@ -609,11 +609,11 @@ func main() {
 				for {
 					select {
 					case <-hup:
-						if err := reloadConfig(cfg.configFile, logger, noStepSuqueryInterval, reloaders...); err != nil {
+						if err := reloadConfig(cfg.configFile, logger, noStepSubqueryInterval, reloaders...); err != nil {
 							level.Error(logger).Log("msg", "Error reloading config", "err", err)
 						}
 					case rc := <-webHandler.Reload():
-						if err := reloadConfig(cfg.configFile, logger, noStepSuqueryInterval, reloaders...); err != nil {
+						if err := reloadConfig(cfg.configFile, logger, noStepSubqueryInterval, reloaders...); err != nil {
 							level.Error(logger).Log("msg", "Error reloading config", "err", err)
 							rc <- err
 						} else {
@@ -645,7 +645,7 @@ func main() {
 					return nil
 				}
 
-				if err := reloadConfig(cfg.configFile, logger, noStepSuqueryInterval, reloaders...); err != nil {
+				if err := reloadConfig(cfg.configFile, logger, noStepSubqueryInterval, reloaders...); err != nil {
 					return errors.Wrapf(err, "error loading config from %q", cfg.configFile)
 				}
 
