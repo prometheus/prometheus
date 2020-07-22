@@ -852,6 +852,7 @@ type ManagerOptions struct {
 	OutageTolerance time.Duration
 	ForGracePeriod  time.Duration
 	ResendDelay     time.Duration
+	GroupLoader     GroupLoader
 
 	Metrics *Metrics
 }
@@ -861,6 +862,10 @@ type ManagerOptions struct {
 func NewManager(o *ManagerOptions) *Manager {
 	if o.Metrics == nil {
 		o.Metrics = NewGroupMetrics(o.Registerer)
+	}
+
+	if o.GroupLoader == nil {
+		o.GroupLoader = FileLoader{}
 	}
 
 	m := &Manager{
@@ -974,6 +979,22 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 	return nil
 }
 
+// GroupLoader is responsible for loading rule groups from arbitrary sources and parsing them.
+type GroupLoader interface {
+	Load(identifier string) (*rulefmt.RuleGroups, []error)
+	Parse(query string) (parser.Expr, error)
+}
+
+// FileLoader is the default GroupLoader implementation. It defers to rulefmt.ParseFile
+// and parser.ParseExpr
+type FileLoader struct{}
+
+func (FileLoader) Load(identifier string) (*rulefmt.RuleGroups, []error) {
+	return rulefmt.ParseFile(identifier)
+}
+
+func (FileLoader) Parse(query string) (parser.Expr, error) { return parser.ParseExpr(query) }
+
 // LoadGroups reads groups from a list of files.
 func (m *Manager) LoadGroups(
 	interval time.Duration, externalLabels labels.Labels, filenames ...string,
@@ -983,7 +1004,7 @@ func (m *Manager) LoadGroups(
 	shouldRestore := !m.restored
 
 	for _, fn := range filenames {
-		rgs, errs := rulefmt.ParseFile(fn)
+		rgs, errs := m.opts.GroupLoader.Load(fn)
 		if errs != nil {
 			return nil, errs
 		}
@@ -996,7 +1017,7 @@ func (m *Manager) LoadGroups(
 
 			rules := make([]Rule, 0, len(rg.Rules))
 			for _, r := range rg.Rules {
-				expr, err := parser.ParseExpr(r.Expr.Value)
+				expr, err := m.opts.GroupLoader.Parse(r.Expr.Value)
 				if err != nil {
 					return nil, []error{errors.Wrap(err, fn)}
 				}
