@@ -528,7 +528,6 @@ func TestDB_Snapshot(t *testing.T) {
 		testutil.Ok(t, err)
 	}
 	testutil.Ok(t, app.Commit())
-	testutil.Ok(t, app.Rollback())
 
 	// create snapshot
 	snap, err := ioutil.TempDir("", "snap")
@@ -579,7 +578,6 @@ func TestDB_Snapshot_ChunksOutsideOfCompactedRange(t *testing.T) {
 		testutil.Ok(t, err)
 	}
 	testutil.Ok(t, app.Commit())
-	testutil.Ok(t, app.Rollback())
 
 	snap, err := ioutil.TempDir("", "snap")
 	testutil.Ok(t, err)
@@ -951,10 +949,14 @@ func TestWALSegmentSizeOptions(t *testing.T) {
 			db, closeFn := openTestDB(t, opts, nil)
 			defer closeFn()
 
-			app := db.Appender()
 			for i := int64(0); i < 155; i++ {
-				_, err := app.Add(labels.Labels{labels.Label{Name: "wal", Value: "size"}}, i, rand.Float64())
+				app := db.Appender()
+				ref, err := app.Add(labels.Labels{labels.Label{Name: "wal" + fmt.Sprintf("%d", i), Value: "size"}}, i, rand.Float64())
 				testutil.Ok(t, err)
+				for j := int64(1); j <= 78; j++ {
+					err := app.AddFast(ref, i+j, rand.Float64())
+					testutil.Ok(t, err)
+				}
 				testutil.Ok(t, app.Commit())
 			}
 
@@ -2348,6 +2350,7 @@ func TestBlockRanges(t *testing.T) {
 
 	// Test that wal records are skipped when an existing block covers the same time ranges
 	// and compaction doesn't create an overlapping block.
+	app = db.Appender()
 	db.DisableCompactions()
 	_, err = app.Add(lbl, secondBlockMaxt+1, rand.Float64())
 	testutil.Ok(t, err)

@@ -1875,3 +1875,38 @@ func TestHeadLabelNamesValuesWithMinMaxRange(t *testing.T) {
 		})
 	}
 }
+
+func TestErrReuseAppender(t *testing.T) {
+	head, _ := newTestHead(t, 1000, false)
+	defer func() {
+		testutil.Ok(t, head.Close())
+	}()
+
+	app := head.Appender()
+	_, err := app.Add(labels.Labels{{Name: "test", Value: "test"}}, 0, 0)
+	testutil.Ok(t, err)
+	testutil.Ok(t, app.Commit())
+	testutil.NotOk(t, app.Commit())
+	testutil.NotOk(t, app.Rollback())
+
+	app = head.Appender()
+	_, err = app.Add(labels.Labels{{Name: "test", Value: "test"}}, 1, 0)
+	testutil.Ok(t, err)
+	testutil.Ok(t, app.Rollback())
+	testutil.NotOk(t, app.Rollback())
+	testutil.NotOk(t, app.Commit())
+
+	app = head.Appender()
+	_, err = app.Add(labels.Labels{{Name: "test", Value: "test"}}, 2, 0)
+	testutil.Ok(t, err)
+	testutil.Ok(t, app.Commit())
+	testutil.NotOk(t, app.Rollback())
+	testutil.NotOk(t, app.Commit())
+
+	app = head.Appender()
+	_, err = app.Add(labels.Labels{{Name: "test", Value: "test"}}, 3, 0)
+	testutil.Ok(t, err)
+	testutil.Ok(t, app.Rollback())
+	testutil.NotOk(t, app.Commit())
+	testutil.NotOk(t, app.Rollback())
+}
