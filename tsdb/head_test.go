@@ -1872,7 +1872,6 @@ func TestErrReuseAppender(t *testing.T) {
 	testutil.Ok(t, app.Rollback())
 	testutil.NotOk(t, app.Rollback())
 	testutil.NotOk(t, app.Commit())
-	app = head.Appender()
 
 	app = head.Appender()
 	_, err = app.Add(labels.Labels{{Name: "test", Value: "test"}}, 2, 0)
@@ -1880,8 +1879,8 @@ func TestErrReuseAppender(t *testing.T) {
 	testutil.Ok(t, app.Commit())
 	testutil.NotOk(t, app.Rollback())
 	testutil.NotOk(t, app.Commit())
-	app = head.Appender()
 
+	app = head.Appender()
 	_, err = app.Add(labels.Labels{{Name: "test", Value: "test"}}, 3, 0)
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Rollback())
