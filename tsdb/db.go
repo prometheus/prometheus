@@ -118,6 +118,11 @@ type Options struct {
 	// SeriesLifecycleCallback specifies a list of callbacks that will be called during a lifecycle of a series.
 	// It is always a no-op in Prometheus and mainly meant for external users who import TSDB.
 	SeriesLifecycleCallback SeriesLifecycleCallback
+
+	// RetentionFilter is a function which returns the blocks which can be deleted.
+	// It is always the default time and size based retention in Prometheus and
+	// mainly meant for external users who import TSDB.
+	RetentionFilter func(blocks []*Block) map[ulid.ULID]*Block
 }
 
 // DB handles reads and writes of time series falling into
@@ -126,11 +131,12 @@ type DB struct {
 	dir   string
 	lockf fileutil.Releaser
 
-	logger    log.Logger
-	metrics   *dbMetrics
-	opts      *Options
-	chunkPool chunkenc.Pool
-	compactor Compactor
+	logger          log.Logger
+	metrics         *dbMetrics
+	opts            *Options
+	chunkPool       chunkenc.Pool
+	compactor       Compactor
+	retentionFilter func(blocks []*Block) map[ulid.ULID]*Block
 
 	// Mutex for that must be held when modifying the general block layout.
 	mtx    sync.RWMutex
@@ -560,14 +566,18 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	}
 
 	db = &DB{
-		dir:         dir,
-		logger:      l,
-		opts:        opts,
-		compactc:    make(chan struct{}, 1),
-		donec:       make(chan struct{}),
-		stopc:       make(chan struct{}),
-		autoCompact: true,
-		chunkPool:   chunkenc.NewPool(),
+		dir:             dir,
+		logger:          l,
+		opts:            opts,
+		compactc:        make(chan struct{}, 1),
+		donec:           make(chan struct{}),
+		stopc:           make(chan struct{}),
+		autoCompact:     true,
+		chunkPool:       chunkenc.NewPool(),
+		retentionFilter: opts.RetentionFilter,
+	}
+	if db.retentionFilter == nil {
+		db.retentionFilter = DefaultRetentionFilter(db)
 	}
 
 	if !opts.NoLockfile {
@@ -871,7 +881,7 @@ func (db *DB) reload() (err error) {
 		return err
 	}
 
-	deletable := db.deletableBlocks(loadable)
+	deletable := db.retentionFilter(loadable)
 
 	// Corrupted blocks that have been superseded by a loadable block can be safely ignored.
 	// This makes it resilient against the process crashing towards the end of a compaction.
@@ -986,8 +996,16 @@ func openBlocks(l log.Logger, dir string, loaded []*Block, chunkPool chunkenc.Po
 	return blocks, corrupted, nil
 }
 
+// DefaultRetentionFilter returns a filter which decides time based and size based
+// retention from the options of the db.
+func DefaultRetentionFilter(db *DB) func(blocks []*Block) map[ulid.ULID]*Block {
+	return func(blocks []*Block) map[ulid.ULID]*Block {
+		return deletableBlocks(db, blocks)
+	}
+}
+
 // deletableBlocks returns all blocks past retention policy.
-func (db *DB) deletableBlocks(blocks []*Block) map[ulid.ULID]*Block {
+func deletableBlocks(db *DB, blocks []*Block) map[ulid.ULID]*Block {
 	deletable := make(map[ulid.ULID]*Block)
 
 	// Sort the blocks by time - newest to oldest (largest to smallest timestamp).
@@ -1002,18 +1020,18 @@ func (db *DB) deletableBlocks(blocks []*Block) map[ulid.ULID]*Block {
 		}
 	}
 
-	for ulid, block := range db.beyondTimeRetention(blocks) {
+	for ulid, block := range beyondTimeRetention(db, blocks) {
 		deletable[ulid] = block
 	}
 
-	for ulid, block := range db.beyondSizeRetention(blocks) {
+	for ulid, block := range beyondSizeRetention(db, blocks) {
 		deletable[ulid] = block
 	}
 
 	return deletable
 }
 
-func (db *DB) beyondTimeRetention(blocks []*Block) (deletable map[ulid.ULID]*Block) {
+func beyondTimeRetention(db *DB, blocks []*Block) (deletable map[ulid.ULID]*Block) {
 	// Time retention is disabled or no blocks to work with.
 	if len(db.blocks) == 0 || db.opts.RetentionDuration == 0 {
 		return
@@ -1034,7 +1052,7 @@ func (db *DB) beyondTimeRetention(blocks []*Block) (deletable map[ulid.ULID]*Blo
 	return deletable
 }
 
-func (db *DB) beyondSizeRetention(blocks []*Block) (deletable map[ulid.ULID]*Block) {
+func beyondSizeRetention(db *DB, blocks []*Block) (deletable map[ulid.ULID]*Block) {
 	// Size retention is disabled or no blocks to work with.
 	if len(db.blocks) == 0 || db.opts.MaxBytes <= 0 {
 		return
