@@ -99,14 +99,14 @@ var (
 	targetScrapePoolTargetLimit = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "prometheus_target_scrape_pool_target_limit",
-			Help: "Maximum number of targets allowed for this scrape pool.",
+			Help: "Maximum number of targets allowed in this scrape pool.",
 		},
 		[]string{"scrape_job"},
 	)
 	targetScrapePoolTargetsAdded = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "prometheus_target_scrape_pool_targets_added",
-			Help: "Current number of targets actually added for this scrape pool.",
+			Name: "prometheus_target_scrape_pool_targets",
+			Help: "Current number of targets in this scrape pool.",
 		},
 		[]string{"scrape_job"},
 	)
