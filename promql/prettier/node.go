@@ -76,9 +76,9 @@ func (p *nodeInfo) nodeHistory(head parser.Expr, posRange parser.PositionRange, 
 	var nodeMatch bool
 	switch n := head.(type) {
 	case *parser.ParenExpr:
-		nodeMatch = true
-		stack = append(stack, reflect.TypeOf(n))
 		if n.PositionRange().Start <= posRange.Start && n.PositionRange().End >= posRange.End {
+			nodeMatch = true
+			stack = append(stack, reflect.TypeOf(n))
 			return p.nodeHistory(n.Expr, posRange, stack)
 		}
 	case *parser.VectorSelector:
@@ -121,8 +121,8 @@ func (p *nodeInfo) nodeHistory(head parser.Expr, posRange parser.PositionRange, 
 			}
 		}
 	case *parser.MatrixSelector:
-		stack = append(stack, reflect.TypeOf(n))
 		if n.VectorSelector.PositionRange().Start <= posRange.Start && n.VectorSelector.PositionRange().End >= posRange.End {
+			stack = append(stack, reflect.TypeOf(n))
 			nodeMatch = true
 			p.nodeHistory(n.VectorSelector, posRange, stack)
 		}
@@ -133,9 +133,9 @@ func (p *nodeInfo) nodeHistory(head parser.Expr, posRange parser.PositionRange, 
 			p.nodeHistory(n.Expr, posRange, stack)
 		}
 	case *parser.SubqueryExpr:
-		stack = append(stack, reflect.TypeOf(n))
 		if n.Expr.PositionRange().Start <= posRange.Start && n.Expr.PositionRange().End >= posRange.End {
 			nodeMatch = true
+			stack = append(stack, reflect.TypeOf(n))
 			p.nodeHistory(n.Expr, posRange, stack)
 		}
 	case *parser.NumberLiteral, *parser.StringLiteral:

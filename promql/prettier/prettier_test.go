@@ -377,7 +377,7 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr:     `((metric_name))`,
-		expected: `    ((metric_name))`,
+		expected: `  ((metric_name))`,
 	},
 	{
 		expr: `(metric_one{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"})`,
@@ -428,6 +428,61 @@ var prettierCases = []prettierTest{
     _a_some_very_large_label="_a_very_large_value",
     some_very_large_label="a_very_large_value",
   }[5m:1m]`,
+	},
+	{
+		expr: `(metric_one{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"}[5m])`,
+		expected: `  (
+    metric_one{
+      _a_some_very_large_label="_a_very_large_value",
+      some_very_large_label="a_very_large_value",
+    }[5m]
+  )`,
+	},
+	{
+		expr: `((metric_one{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"}[5m]))`,
+		expected: `  (
+    (
+      metric_one{
+        _a_some_very_large_label="_a_very_large_value",
+        some_very_large_label="a_very_large_value",
+      }[5m]
+    )  
+  )`,
+	},
+	{
+		expr: `(metric_one{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"}[5m:1m])`,
+		expected: `  (
+    metric_one{
+      _a_some_very_large_label="_a_very_large_value",
+      some_very_large_label="a_very_large_value",
+    }[5m:1m]
+  )`,
+	},
+	{
+		expr: `((metric_one{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"}[5m:1m]))`,
+		expected: `  (
+    (
+      metric_one{
+        _a_some_very_large_label="_a_very_large_value",
+        some_very_large_label="a_very_large_value",
+      }[5m:1m]
+    )  
+  )`,
+	},
+	{
+		expr: `((((metric_one{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"}[5m:1m]))))`,
+		expected: `  (
+    (
+      (
+        (
+          metric_one{
+            _a_some_very_large_label="_a_very_large_value",
+            some_very_large_label="a_very_large_value",
+          }[5m:1m]
+        )      
+      )    
+    )  
+  )`,
 	},
 }
 
