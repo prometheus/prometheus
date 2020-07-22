@@ -83,6 +83,11 @@ func (c *ServiceDiscoveryConfig) Validate() error {
 			return errors.New("empty or null section in digitalocean_sd_configs")
 		}
 	}
+	for _, cfg := range c.DockerSwarmSDConfigs {
+		if cfg == nil {
+			return errors.New("empty or null section in dockerswarm_sd_configs")
+		}
+	}
 	for _, cfg := range c.DNSSDConfigs {
 		if cfg == nil {
 			return errors.New("empty or null section in dns_sd_configs")

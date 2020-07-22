@@ -660,18 +660,14 @@ func main() {
 	}
 	{
 		// Rule manager.
-		// TODO(krasi) refactor ruleManager.Run() to be blocking to avoid using an extra blocking channel.
-		cancel := make(chan struct{})
 		g.Add(
 			func() error {
 				<-reloadReady.C
 				ruleManager.Run()
-				<-cancel
 				return nil
 			},
 			func(err error) {
 				ruleManager.Stop()
-				close(cancel)
 			},
 		)
 	}

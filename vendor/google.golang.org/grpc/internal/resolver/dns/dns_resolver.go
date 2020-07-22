@@ -32,7 +32,6 @@ import (
 	"sync"
 	"time"
 
-	grpclbstate "google.golang.org/grpc/balancer/grpclb/state"
 	"google.golang.org/grpc/grpclog"
 	"google.golang.org/grpc/internal/envconfig"
 	"google.golang.org/grpc/internal/grpcrand"
@@ -252,7 +251,7 @@ func (d *dnsResolver) lookupSRV() ([]resolver.Address, error) {
 				return nil, fmt.Errorf("dns: error parsing A record IP address %v", a)
 			}
 			addr := ip + ":" + strconv.Itoa(int(s.Port))
-			newAddrs = append(newAddrs, resolver.Address{Addr: addr, ServerName: s.Target})
+			newAddrs = append(newAddrs, resolver.Address{Addr: addr, Type: resolver.GRPCLB, ServerName: s.Target})
 		}
 	}
 	return newAddrs, nil
@@ -327,15 +326,13 @@ func (d *dnsResolver) lookup() (*resolver.State, error) {
 	if hostErr != nil && (srvErr != nil || len(srv) == 0) {
 		return nil, hostErr
 	}
-
-	state := resolver.State{Addresses: addrs}
-	if len(srv) > 0 {
-		state = grpclbstate.Set(state, &grpclbstate.State{BalancerAddresses: srv})
+	state := &resolver.State{
+		Addresses: append(addrs, srv...),
 	}
 	if !d.disableServiceConfig {
 		state.ServiceConfig = d.lookupTXT()
 	}
-	return &state, nil
+	return state, nil
 }
 
 // formatIP returns ok = false if addr is not a valid textual representation of an IP address.

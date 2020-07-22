@@ -64,6 +64,7 @@ require (
 	github.com/uber/jaeger-lib v2.2.0+incompatible
 	go.mongodb.org/mongo-driver v1.3.2 // indirect
 	go.uber.org/atomic v1.6.0 // indirect
+	go.uber.org/goleak v1.0.0
 	golang.org/x/net v0.0.0-20200707034311-ab3426394381
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d
 	golang.org/x/sync v0.0.0-20200625203802-6e8e738ad208
@@ -73,8 +74,7 @@ require (
 	google.golang.org/api v0.29.0
 	google.golang.org/appengine v1.6.6 // indirect
 	google.golang.org/genproto v0.0.0-20200710124503-20a17af7bd0e
-	google.golang.org/grpc v1.30.0
-	google.golang.org/grpc/examples v0.0.0-20200709232328-d8193ee9cc3e // indirect
+	google.golang.org/grpc v1.29.1
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	gopkg.in/fsnotify/fsnotify.v1 v1.4.7
 	gopkg.in/yaml.v2 v2.3.0

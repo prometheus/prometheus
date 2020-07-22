@@ -2078,8 +2078,9 @@ func (s *memSeries) chunkID(pos int) int {
 	return pos + s.firstChunkID
 }
 
-// truncateChunksBefore removes all chunks from the series that have not timestamp
-// at or after mint. Chunk IDs remain unchanged.
+// truncateChunksBefore removes all chunks from the series that
+// have no timestamp at or after mint.
+// Chunk IDs remain unchanged.
 func (s *memSeries) truncateChunksBefore(mint int64) (removed int) {
 	var k int
 	if s.headChunk != nil && s.headChunk.maxTime < mint {
@@ -2208,10 +2209,8 @@ func (s *memSeries) iterator(id int, isoState *isolationState, chunkDiskMapper *
 				previousSamples += int(d.numSamples)
 			}
 		}
-		// mmappedChunks does not contain the last chunk. Hence check it separately.
-		if len(s.mmappedChunks) < ix {
-			previousSamples += s.headChunk.chunk.NumSamples()
-		} else {
+
+		if s.headChunk != nil {
 			totalSamples += s.headChunk.chunk.NumSamples()
 		}
 

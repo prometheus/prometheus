@@ -396,9 +396,10 @@ func New(logger log.Logger, o *Options) *Handler {
 				fmt.Fprintf(w, "Error reading React index.html: %v", err)
 				return
 			}
-			prefixedIdx := bytes.ReplaceAll(idx, []byte("PATH_PREFIX_PLACEHOLDER"), []byte(o.ExternalURL.Path))
-			prefixedIdx = bytes.ReplaceAll(prefixedIdx, []byte("CONSOLES_LINK_PLACEHOLDER"), []byte(h.consolesPath()))
-			w.Write(prefixedIdx)
+			replacedIdx := bytes.ReplaceAll(idx, []byte("PATH_PREFIX_PLACEHOLDER"), []byte(o.ExternalURL.Path))
+			replacedIdx = bytes.ReplaceAll(replacedIdx, []byte("CONSOLES_LINK_PLACEHOLDER"), []byte(h.consolesPath()))
+			replacedIdx = bytes.ReplaceAll(replacedIdx, []byte("TITLE_PLACEHOLDER"), []byte(h.options.PageTitle))
+			w.Write(replacedIdx)
 			return
 		}
 
