@@ -1,11 +1,4 @@
-## 2.20.0-rc.1 / 2020-07-20
-
-* [ENHANCEMENT] SD: Improve Docker Swarm example. #7608
-* [ENHANCEMENT] SD: Enable use of Unix socket for Docker Swarm. #7604
-* [BUGFIX] SD: Don't panic on an empty Docker Swarm config. #7615
-* [BUGFIX] TSDB: Don't panic on WAL corruptions. #7550
-
-## 2.20.0-rc.0 / 2020-07-16
+## 2.20.0 / 2020-07-22
 
 This release changes WAL compression from opt-in to default. WAL compression will prevent a downgrade to v2.10 or earlier without deleting the WAL. Disable WAL compression explicitly by setting the command line flag `--no-storage.tsdb.wal-compression` if you require downgrading to v2.10 or earlier.
 
@@ -36,6 +29,7 @@ This release changes WAL compression from opt-in to default. WAL compression wil
 * [BUGFIX] PromQL: Fixed off-by-one error in `histogram_quantile`. #7393
 * [BUGFIX] promtool: Support extended durations in rules unit tests. #6297
 * [BUGFIX] Scrape: Fix undercounting for `scrape_samples_post_metric_relabeling` in case of errors. #7342
+* [BUGFIX] TSDB: Don't panic on WAL corruptions. #7550
 * [BUGFIX] TSDB: Avoid leaving behind empty files in `chunks_head`, causing startup failures. #7573
 * [BUGFIX] TSDB: Fixed race between compact (gc, populate) and head append causing unknown symbol error. #7560
 * [BUGFIX] TSDB: Fixed unknown symbol error during head compaction. #7526
