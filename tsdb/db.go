@@ -884,7 +884,7 @@ func (db *DB) reload() (err error) {
 	}
 
 	deletableULIDs := db.blocksToDelete(loadable)
-	deletable := make(map[ulid.ULID]*Block)
+	deletable := make(map[ulid.ULID]*Block, len(deletableULIDs))
 
 	// Corrupted blocks that have been superseded by a loadable block can be safely ignored.
 	// This makes it resilient against the process crashing towards the end of a compaction.
