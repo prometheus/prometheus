@@ -259,6 +259,15 @@ scrape_configs:
       cert_file: valid_cert_file
       key_file: valid_key_file
 
+- job_name: digitalocean-droplets
+  digitalocean_sd_configs:
+    - bearer_token: abcdef
+
+- job_name: dockerswarm
+  dockerswarm_sd_configs:
+  - host: http://127.0.0.1:2375
+    role: nodes
+
 - job_name: service-openstack
   openstack_sd_configs:
   - role: instance
