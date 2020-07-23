@@ -136,7 +136,6 @@ func createIdxChkReaders(t *testing.T, tc []seriesSamples) (IndexReader, ChunkRe
 			chkReader[chunkRef] = chunk
 			chunkRef++
 		}
-
 		ls := labels.FromMap(s.lset)
 		testutil.Ok(t, mi.AddSeries(uint64(i), ls, metas...))
 

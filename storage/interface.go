@@ -158,8 +158,7 @@ type Appender interface {
 // SeriesSet contains a set of series.
 type SeriesSet interface {
 	Next() bool
-	// At returns full series. It has to be guaranteed that next or previous
-	// iterations do not hold data for the same series.
+	// At returns full series. Returned series should be iteratable even after Next is called.
 	At() Series
 	// The error that iteration as failed with.
 	// When an error occurs, set cannot continue to iterate.
@@ -220,8 +219,7 @@ type Series interface {
 // ChunkSeriesSet contains a set of chunked series.
 type ChunkSeriesSet interface {
 	Next() bool
-	// At returns full chunk series. It has to be guaranteed that next or previous
-	// iterations do not hold data for the same series.
+	// At returns full chunk series. Returned series should be iteratable even after Next is called.
 	At() ChunkSeries
 	// The error that iteration has failed with.
 	// When an error occurs, set cannot continue to iterate.
@@ -244,14 +242,13 @@ type Labels interface {
 }
 
 type SampleIteratable interface {
-	// Iterator returns a new iterator of the data of the series.
-	// Itaratable is reusable, meaning that multiple creations of iterator should be possible.
+	// Iterator returns a new, independent iterator of the data of the series.
 	Iterator() chunkenc.Iterator
 }
 
 type ChunkIteratable interface {
-	// Iterator returns a new iterator that iterates over potentially overlapping chunks of the series, sorted by min time.
-	// Itaratable is reusable, meaning that multiple creations of iterator should be possible.
+	// Iterator returns a new, independent iterator that iterates over potentially overlapping
+	// chunks of the series, sorted by min time.
 	Iterator() chunks.Iterator
 }
 

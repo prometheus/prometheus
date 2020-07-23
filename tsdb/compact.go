@@ -744,8 +744,8 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 			return c.ctx.Err()
 		default:
 		}
-
-		chksIter := set.At().Iterator()
+		s := set.At()
+		chksIter := s.Iterator()
 		chks = chks[:0]
 		for chksIter.Next() {
 			// We are not iterating in streaming way over chunk as it's more efficient to do bulk write for index and
@@ -764,7 +764,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		if err := chunkw.WriteChunks(chks...); err != nil {
 			return errors.Wrap(err, "write chunks")
 		}
-		if err := indexw.AddSeries(ref, set.At().Labels(), chks...); err != nil {
+		if err := indexw.AddSeries(ref, s.Labels(), chks...); err != nil {
 			return errors.Wrap(err, "add series")
 		}
 

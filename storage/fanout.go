@@ -752,14 +752,13 @@ type compactChunkIterator struct {
 	iterators []chunks.Iterator
 
 	h chunkIteratorHeap
+
+	err  error
+	curr chunks.Meta
 }
 
 func (c *compactChunkIterator) At() chunks.Meta {
-	if len(c.h) == 0 {
-		panic("compactChunkIterator.At() called after .Next() returned false.")
-	}
-
-	return c.h[0].At()
+	return c.curr
 }
 
 func (c *compactChunkIterator) Next() bool {
@@ -769,52 +768,60 @@ func (c *compactChunkIterator) Next() bool {
 				heap.Push(&c.h, iter)
 			}
 		}
-		return len(c.h) > 0
 	}
-
 	if len(c.h) == 0 {
 		return false
 	}
 
+	iter := heap.Pop(&c.h).(chunks.Iterator)
+	c.curr = iter.At()
+	if iter.Next() {
+		heap.Push(&c.h, iter)
+	}
+
 	// Detect overlaps to compact.
 	// Be smart about it and deduplicate on the fly if chunks are identical.
-	last := c.At()
-	var overlapped []Series
-	for {
+	var overlapping []Series
+	prev := c.curr
+	for len(c.h) > 0 {
+		// Get the next oldest chunk by min, then max time.
+		next := c.h[0].At()
+		if next.MinTime > prev.MaxTime {
+			// No overlap with current one.
+			break
+		}
+
+		if next.MinTime == prev.MinTime &&
+			next.MaxTime == prev.MaxTime &&
+			bytes.Equal(next.Chunk.Bytes(), prev.Chunk.Bytes()) {
+			// 1:1 duplicates, skip it.
+		} else {
+			// We operate on same series, so labels does not matter here.
+			overlapping = append(overlapping, newChunkToSeriesDecoder(nil, next))
+			prev = next
+		}
+
 		iter := heap.Pop(&c.h).(chunks.Iterator)
 		if iter.Next() {
 			heap.Push(&c.h, iter)
 		}
-		if len(c.h) == 0 {
-			break
-		}
-
-		// Get the current oldest chunk by min, then max time.
-		next := c.At()
-		if next.MinTime > last.MaxTime {
-			// No overlap with last one.
-			break
-		}
-
-		if next.MinTime == last.MinTime &&
-			next.MaxTime == last.MaxTime &&
-			bytes.Equal(next.Chunk.Bytes(), last.Chunk.Bytes()) {
-			// 1:1 duplicates, skip last.
-			continue
-		}
-
-		// We operate on same series, so labels does not matter here.
-		overlapped = append(overlapped, newChunkToSeriesDecoder(nil, last))
-		last = next
+	}
+	if len(overlapping) == 0 {
+		return true
 	}
 
-	if len(overlapped) == 0 {
-		return len(c.h) > 0
+	// Add last as it's not yet included in overlap. We operate on same series, so labels does not matter here.
+	iter = (&seriesToChunkEncoder{Series: c.mergeFunc(append(overlapping, newChunkToSeriesDecoder(nil, c.curr))...)}).Iterator()
+	if !iter.Next() {
+		if c.err = iter.Err(); c.err != nil {
+			return false
+		}
+		panic("unexpected seriesToChunkEncoder lack of iterations")
 	}
-
-	// Add last, not yet included overlap. We operate on same series, so labels does not matter here.
-	var chkSeries ChunkSeries = &seriesToChunkEncoder{Series: c.mergeFunc(append(overlapped, newChunkToSeriesDecoder(nil, c.At()))...)}
-	heap.Push(&c.h, chkSeries)
+	c.curr = iter.At()
+	if iter.Next() {
+		heap.Push(&c.h, iter)
+	}
 	return true
 }
 
@@ -825,6 +832,7 @@ func (c *compactChunkIterator) Err() error {
 			errs.Add(err)
 		}
 	}
+	errs.Add(c.err)
 	return errs.Err()
 }
 
