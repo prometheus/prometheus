@@ -25,9 +25,11 @@ package testutil
 import (
 	"fmt"
 	"reflect"
+	"testing"
 
 	"github.com/davecgh/go-spew/spew"
 	"github.com/pmezard/go-difflib/difflib"
+	"go.uber.org/goleak"
 )
 
 // This package is imported by non-test code and therefore cannot import the
@@ -153,4 +155,15 @@ func formatMessage(msgAndArgs []interface{}) string {
 		return fmt.Sprintf("\n\nmsg: "+msg, msgAndArgs[1:]...)
 	}
 	return ""
+}
+
+// TolerantVerifyLeak verifies go leaks but excludes the go routines that are
+// launched as side effects of some of our dependencies.
+func TolerantVerifyLeak(m *testing.M) {
+	goleak.VerifyTestMain(m,
+		// https://github.com/census-instrumentation/opencensus-go/blob/d7677d6af5953e0506ac4c08f349c62b917a443a/stats/view/worker.go#L34
+		goleak.IgnoreTopFunction("go.opencensus.io/stats/view.(*worker).start"),
+		// https://github.com/kubernetes/klog/blob/c85d02d1c76a9ebafa81eb6d35c980734f2c4727/klog.go#L417
+		goleak.IgnoreTopFunction("k8s.io/klog/v2.(*loggingT).flushDaemon"),
+	)
 }
