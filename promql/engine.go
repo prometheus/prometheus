@@ -650,9 +650,10 @@ func (ng *Engine) populateSeries(querier storage.Querier, s *parser.EvalStmt) {
 			}
 
 			// We need to make sure we select the timerange selected by the subquery.
-			// TODO(gouthamve): cumulativeSubqueryOffset gives the sum of range and the offset
-			// we can optimise it by separating out the range and offsets, and subtracting the offsets
-			// from end also.
+			// The cumulativeSubqueryOffset function gives the sum of range and the offset.
+			// TODO(gouthamve): Consider optimising it by separating out the range and offsets, and subtracting the offsets
+			// from end also. See: https://github.com/prometheus/prometheus/issues/7629.
+			// TODO(bwplotka): Add support for better hints when subquerying. See: https://github.com/prometheus/prometheus/issues/7630.
 			subqOffset := ng.cumulativeSubqueryOffset(path)
 			offsetMilliseconds := durationMilliseconds(subqOffset)
 			hints.Start = hints.Start - offsetMilliseconds
