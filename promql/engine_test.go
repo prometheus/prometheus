@@ -824,8 +824,6 @@ func TestRecoverEvaluatorErrorWithWarnings(t *testing.T) {
 }
 
 func TestSubquerySelector(t *testing.T) {
-	SetDefaultEvaluationInterval(1 * time.Minute)
-
 	type caseType struct {
 		Query  string
 		Result Result
