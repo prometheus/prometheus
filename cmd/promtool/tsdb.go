@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -38,109 +37,11 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
-	"gopkg.in/alecthomas/kingpin.v2"
 )
 
-func main() {
-	if err := execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-}
+var merr tsdb_errors.MultiError
 
-func execute() (err error) {
-	var (
-		defaultDBPath = filepath.Join("benchout", "storage")
-
-		cli                  = kingpin.New(filepath.Base(os.Args[0]), "CLI tool for tsdb")
-		benchCmd             = cli.Command("bench", "run benchmarks")
-		benchWriteCmd        = benchCmd.Command("write", "run a write performance benchmark")
-		benchWriteOutPath    = benchWriteCmd.Flag("out", "set the output path").Default("benchout").String()
-		benchWriteNumMetrics = benchWriteCmd.Flag("metrics", "number of metrics to read").Default("10000").Int()
-		benchSamplesFile     = benchWriteCmd.Arg("file", "input file with samples data, default is ("+filepath.Join("..", "..", "testdata", "20kseries.json")+")").Default(filepath.Join("..", "..", "testdata", "20kseries.json")).String()
-		listCmd              = cli.Command("ls", "list db blocks")
-		listCmdHumanReadable = listCmd.Flag("human-readable", "print human readable values").Short('h').Bool()
-		listPath             = listCmd.Arg("db path", "database path (default is "+defaultDBPath+")").Default(defaultDBPath).String()
-		analyzeCmd           = cli.Command("analyze", "analyze churn, label pair cardinality.")
-		analyzePath          = analyzeCmd.Arg("db path", "database path (default is "+defaultDBPath+")").Default(defaultDBPath).String()
-		analyzeBlockID       = analyzeCmd.Arg("block id", "block to analyze (default is the last block)").String()
-		analyzeLimit         = analyzeCmd.Flag("limit", "how many items to show in each list").Default("20").Int()
-		dumpCmd              = cli.Command("dump", "dump samples from a TSDB")
-		dumpPath             = dumpCmd.Arg("db path", "database path (default is "+defaultDBPath+")").Default(defaultDBPath).String()
-		dumpMinTime          = dumpCmd.Flag("min-time", "minimum timestamp to dump").Default(strconv.FormatInt(math.MinInt64, 10)).Int64()
-		dumpMaxTime          = dumpCmd.Flag("max-time", "maximum timestamp to dump").Default(strconv.FormatInt(math.MaxInt64, 10)).Int64()
-	)
-
-	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
-	var merr tsdb_errors.MultiError
-
-	switch kingpin.MustParse(cli.Parse(os.Args[1:])) {
-	case benchWriteCmd.FullCommand():
-		wb := &writeBenchmark{
-			outPath:     *benchWriteOutPath,
-			numMetrics:  *benchWriteNumMetrics,
-			samplesFile: *benchSamplesFile,
-			logger:      logger,
-		}
-		return wb.run()
-	case listCmd.FullCommand():
-		db, err := tsdb.OpenDBReadOnly(*listPath, nil)
-		if err != nil {
-			return err
-		}
-		defer func() {
-			merr.Add(err)
-			merr.Add(db.Close())
-			err = merr.Err()
-		}()
-		blocks, err := db.Blocks()
-		if err != nil {
-			return err
-		}
-		printBlocks(blocks, listCmdHumanReadable)
-	case analyzeCmd.FullCommand():
-		db, err := tsdb.OpenDBReadOnly(*analyzePath, nil)
-		if err != nil {
-			return err
-		}
-		defer func() {
-			merr.Add(err)
-			merr.Add(db.Close())
-			err = merr.Err()
-		}()
-		blocks, err := db.Blocks()
-		if err != nil {
-			return err
-		}
-		var block tsdb.BlockReader
-		if *analyzeBlockID != "" {
-			for _, b := range blocks {
-				if b.Meta().ULID.String() == *analyzeBlockID {
-					block = b
-					break
-				}
-			}
-		} else if len(blocks) > 0 {
-			block = blocks[len(blocks)-1]
-		}
-		if block == nil {
-			return fmt.Errorf("block not found")
-		}
-		return analyzeBlock(block, *analyzeLimit)
-	case dumpCmd.FullCommand():
-		db, err := tsdb.OpenDBReadOnly(*dumpPath, nil)
-		if err != nil {
-			return err
-		}
-		defer func() {
-			merr.Add(err)
-			merr.Add(db.Close())
-			err = merr.Err()
-		}()
-		return dumpSamples(db, *dumpMinTime, *dumpMaxTime)
-	}
-	return nil
-}
+const timeDelta = 30000
 
 type writeBenchmark struct {
 	outPath     string
@@ -157,7 +58,13 @@ type writeBenchmark struct {
 	logger    log.Logger
 }
 
-func (b *writeBenchmark) run() error {
+func benchmarkWrite(outPath, samplesFile string, numMetrics int) error {
+	b := &writeBenchmark{
+		outPath:     outPath,
+		samplesFile: samplesFile,
+		numMetrics:  numMetrics,
+		logger:      log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr)),
+	}
 	if b.outPath == "" {
 		dir, err := ioutil.TempDir("", "tsdb_bench")
 		if err != nil {
@@ -184,24 +91,24 @@ func (b *writeBenchmark) run() error {
 	if err != nil {
 		return err
 	}
+	st.DisableCompactions()
 	b.storage = st
 
-	var labels []labels.Labels
+	var lbs []labels.Labels
 
-	_, err = measureTime("readData", func() error {
+	if _, err = measureTime("readData", func() error {
 		f, err := os.Open(b.samplesFile)
 		if err != nil {
 			return err
 		}
 		defer f.Close()
 
-		labels, err = readPrometheusLabels(f, b.numMetrics)
+		lbs, err = readPrometheusLabels(f, b.numMetrics)
 		if err != nil {
 			return err
 		}
 		return nil
-	})
-	if err != nil {
+	}); err != nil {
 		return err
 	}
 
@@ -211,7 +118,7 @@ func (b *writeBenchmark) run() error {
 		if err := b.startProfiling(); err != nil {
 			return err
 		}
-		total, err = b.ingestScrapes(labels, 3000)
+		total, err = b.ingestScrapes(lbs, 3000)
 		if err != nil {
 			return err
 		}
@@ -224,22 +131,18 @@ func (b *writeBenchmark) run() error {
 	fmt.Println(" > total samples:", total)
 	fmt.Println(" > samples/sec:", float64(total)/dur.Seconds())
 
-	_, err = measureTime("stopStorage", func() error {
+	if _, err = measureTime("stopStorage", func() error {
 		if err := b.storage.Close(); err != nil {
 			return err
 		}
-		if err := b.stopProfiling(); err != nil {
-			return err
-		}
-		return nil
-	})
-	if err != nil {
+
+		return b.stopProfiling()
+	}); err != nil {
 		return err
 	}
+
 	return nil
 }
-
-const timeDelta = 30000
 
 func (b *writeBenchmark) ingestScrapes(lbls []labels.Labels, scrapeCount int) (uint64, error) {
 	var mu sync.Mutex
@@ -399,10 +302,10 @@ func (b *writeBenchmark) stopProfiling() error {
 func measureTime(stage string, f func() error) (time.Duration, error) {
 	fmt.Printf(">> start stage=%s\n", stage)
 	start := time.Now()
-	err := f()
-	if err != nil {
+	if err := f(); err != nil {
 		return 0, err
 	}
+
 	fmt.Printf(">> completed stage=%s duration=%s\n", stage, time.Since(start))
 	return time.Since(start), nil
 }
@@ -438,7 +341,25 @@ func readPrometheusLabels(r io.Reader, n int) ([]labels.Labels, error) {
 	return mets, nil
 }
 
-func printBlocks(blocks []tsdb.BlockReader, humanReadable *bool) {
+func listBlocks(path string, humanReadable bool) error {
+	db, err := tsdb.OpenDBReadOnly(path, nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		merr.Add(err)
+		merr.Add(db.Close())
+		err = merr.Err()
+	}()
+	blocks, err := db.Blocks()
+	if err != nil {
+		return err
+	}
+	printBlocks(blocks, humanReadable)
+	return nil
+}
+
+func printBlocks(blocks []tsdb.BlockReader, humanReadable bool) {
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	defer tw.Flush()
 
@@ -458,20 +379,56 @@ func printBlocks(blocks []tsdb.BlockReader, humanReadable *bool) {
 	}
 }
 
-func getFormatedTime(timestamp int64, humanReadable *bool) string {
-	if *humanReadable {
+func getFormatedTime(timestamp int64, humanReadable bool) string {
+	if humanReadable {
 		return time.Unix(timestamp/1000, 0).UTC().String()
 	}
 	return strconv.FormatInt(timestamp, 10)
 }
 
-func analyzeBlock(b tsdb.BlockReader, limit int) error {
-	meta := b.Meta()
+func openBlock(path, blockID string) (*tsdb.DBReadOnly, tsdb.BlockReader, error) {
+	db, err := tsdb.OpenDBReadOnly(path, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	blocks, err := db.Blocks()
+	if err != nil {
+		return nil, nil, err
+	}
+	var block tsdb.BlockReader
+	if blockID != "" {
+		for _, b := range blocks {
+			if b.Meta().ULID.String() == blockID {
+				block = b
+				break
+			}
+		}
+	} else if len(blocks) > 0 {
+		block = blocks[len(blocks)-1]
+	}
+	if block == nil {
+		return nil, nil, fmt.Errorf("block %s not found", blockID)
+	}
+	return db, block, nil
+}
+
+func analyzeBlock(path, blockID string, limit int) error {
+	db, block, err := openBlock(path, blockID)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		merr.Add(err)
+		merr.Add(db.Close())
+		err = merr.Err()
+	}()
+
+	meta := block.Meta()
 	fmt.Printf("Block ID: %s\n", meta.ULID)
 	// Presume 1ms resolution that Prometheus uses.
 	fmt.Printf("Duration: %s\n", (time.Duration(meta.MaxTime-meta.MinTime) * 1e6).String())
 	fmt.Printf("Series: %d\n", meta.Stats.NumSeries)
-	ir, err := b.Index()
+	ir, err := block.Index()
 	if err != nil {
 		return err
 	}
@@ -605,27 +562,31 @@ func analyzeBlock(b tsdb.BlockReader, limit int) error {
 	return nil
 }
 
-func dumpSamples(db *tsdb.DBReadOnly, mint, maxt int64) (err error) {
-	q, err := db.Querier(context.TODO(), mint, maxt)
+func dumpSamples(path string, mint, maxt int64) (err error) {
+	db, err := tsdb.OpenDBReadOnly(path, nil)
 	if err != nil {
 		return err
 	}
 	defer func() {
-		var merr tsdb_errors.MultiError
 		merr.Add(err)
-		merr.Add(q.Close())
+		merr.Add(db.Close())
 		err = merr.Err()
 	}()
+	q, err := db.Querier(context.TODO(), mint, maxt)
+	if err != nil {
+		return err
+	}
+	defer q.Close()
 
 	ss := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
 
 	for ss.Next() {
 		series := ss.At()
-		labels := series.Labels()
+		lbs := series.Labels()
 		it := series.Iterator()
 		for it.Next() {
 			ts, val := it.At()
-			fmt.Printf("%s %g %d\n", labels, val, ts)
+			fmt.Printf("%s %g %d\n", lbs, val, ts)
 		}
 		if it.Err() != nil {
 			return ss.Err()
@@ -644,4 +605,12 @@ func dumpSamples(db *tsdb.DBReadOnly, mint, maxt int64) (err error) {
 		return ss.Err()
 	}
 	return nil
+}
+
+func checkErr(err error) int {
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return 0
 }
