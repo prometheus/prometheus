@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
-
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
@@ -1114,30 +1113,27 @@ func TestSubquerySelector(t *testing.T) {
 		},
 	}
 
-	SetDefaultEvaluationInterval(1 * time.Minute)
 	for _, tst := range tests {
-		test, err := NewTest(t, tst.loadString)
-		testutil.Ok(t, err)
-
-		defer test.Close()
-
-		err = test.Run()
-		testutil.Ok(t, err)
-
-		engine := test.QueryEngine()
-		for _, c := range tst.cases {
-			var err error
-			var qry Query
-
-			qry, err = engine.NewInstantQuery(test.Queryable(), c.Query, c.Start)
+		t.Run("", func(t *testing.T) {
+			test, err := NewTest(t, tst.loadString)
 			testutil.Ok(t, err)
+			defer test.Close()
 
-			res := qry.Exec(test.Context())
-			testutil.Equals(t, c.Result.Err, res.Err)
-			mat := res.Value.(Matrix)
-			sort.Sort(mat)
-			testutil.Equals(t, c.Result.Value, mat)
-		}
+			testutil.Ok(t, test.Run())
+			engine := test.QueryEngine()
+			for _, c := range tst.cases {
+				t.Run(c.Query, func(t *testing.T) {
+					qry, err := engine.NewInstantQuery(test.Queryable(), c.Query, c.Start)
+					testutil.Ok(t, err)
+
+					res := qry.Exec(test.Context())
+					testutil.Equals(t, c.Result.Err, res.Err, "errors do not match for query %s", c.Query)
+					mat := res.Value.(Matrix)
+					sort.Sort(mat)
+					testutil.Equals(t, c.Result.Value, mat)
+				})
+			}
+		})
 	}
 }
 
