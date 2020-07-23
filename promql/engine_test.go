@@ -1045,7 +1045,6 @@ func TestSubquerySelector(t *testing.T) {
 				},
 			},
 		},
-
 	} {
 		t.Run("", func(t *testing.T) {
 			test, err := NewTest(t, tst.loadString)
