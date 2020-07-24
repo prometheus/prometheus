@@ -234,7 +234,7 @@ func TestHead_ReadWAL(t *testing.T) {
 			populateTestWAL(t, w, entries)
 
 			testutil.Ok(t, head.Init(math.MinInt64))
-			testutil.Equals(t, uint64(101), head.lastSeriesID)
+			testutil.Equals(t, uint64(101), head.lastSeriesID.Load())
 
 			s10 := head.series.getByID(10)
 			s11 := head.series.getByID(11)
@@ -1721,16 +1721,16 @@ func TestOutOfOrderSamplesMetric(t *testing.T) {
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Commit())
 
-	testutil.Equals(t, int64(math.MinInt64), db.head.minValidTime)
+	testutil.Equals(t, int64(math.MinInt64), db.head.minValidTime.Load())
 	testutil.Ok(t, db.Compact())
-	testutil.Assert(t, db.head.minValidTime > 0, "")
+	testutil.Assert(t, db.head.minValidTime.Load() > 0, "")
 
 	app = db.Appender()
-	_, err = app.Add(labels.FromStrings("a", "b"), db.head.minValidTime-2, 99)
+	_, err = app.Add(labels.FromStrings("a", "b"), db.head.minValidTime.Load()-2, 99)
 	testutil.Equals(t, storage.ErrOutOfBounds, err)
 	testutil.Equals(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.outOfBoundSamples))
 
-	_, err = app.Add(labels.FromStrings("a", "b"), db.head.minValidTime-1, 99)
+	_, err = app.Add(labels.FromStrings("a", "b"), db.head.minValidTime.Load()-1, 99)
 	testutil.Equals(t, storage.ErrOutOfBounds, err)
 	testutil.Equals(t, 2.0, prom_testutil.ToFloat64(db.head.metrics.outOfBoundSamples))
 	testutil.Ok(t, app.Commit())
@@ -1738,22 +1738,22 @@ func TestOutOfOrderSamplesMetric(t *testing.T) {
 	// Some more valid samples for out of order.
 	app = db.Appender()
 	for i := 1; i <= 5; i++ {
-		_, err = app.Add(labels.FromStrings("a", "b"), db.head.minValidTime+DefaultBlockDuration+int64(i), 99)
+		_, err = app.Add(labels.FromStrings("a", "b"), db.head.minValidTime.Load()+DefaultBlockDuration+int64(i), 99)
 		testutil.Ok(t, err)
 	}
 	testutil.Ok(t, app.Commit())
 
 	// Test out of order metric.
 	app = db.Appender()
-	_, err = app.Add(labels.FromStrings("a", "b"), db.head.minValidTime+DefaultBlockDuration+2, 99)
+	_, err = app.Add(labels.FromStrings("a", "b"), db.head.minValidTime.Load()+DefaultBlockDuration+2, 99)
 	testutil.Equals(t, storage.ErrOutOfOrderSample, err)
 	testutil.Equals(t, 4.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples))
 
-	_, err = app.Add(labels.FromStrings("a", "b"), db.head.minValidTime+DefaultBlockDuration+3, 99)
+	_, err = app.Add(labels.FromStrings("a", "b"), db.head.minValidTime.Load()+DefaultBlockDuration+3, 99)
 	testutil.Equals(t, storage.ErrOutOfOrderSample, err)
 	testutil.Equals(t, 5.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples))
 
-	_, err = app.Add(labels.FromStrings("a", "b"), db.head.minValidTime+DefaultBlockDuration+4, 99)
+	_, err = app.Add(labels.FromStrings("a", "b"), db.head.minValidTime.Load()+DefaultBlockDuration+4, 99)
 	testutil.Equals(t, storage.ErrOutOfOrderSample, err)
 	testutil.Equals(t, 6.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples))
 	testutil.Ok(t, app.Commit())
