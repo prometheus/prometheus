@@ -122,6 +122,8 @@ github.com/docker/go-connections/tlsconfig
 github.com/docker/go-units
 # github.com/edsrzf/mmap-go v1.0.0
 github.com/edsrzf/mmap-go
+# github.com/errx/go-asap v0.0.0-20170908235707-ec3fbcbe0b33
+github.com/errx/go-asap
 # github.com/evanphx/json-patch v4.2.0+incompatible
 github.com/evanphx/json-patch
 # github.com/fatih/color v1.9.0
@@ -295,6 +297,9 @@ github.com/miekg/dns
 github.com/mitchellh/go-homedir
 # github.com/mitchellh/mapstructure v1.2.2
 github.com/mitchellh/mapstructure
+# github.com/mjibson/go-dsp v0.0.0-20180508042940-11479a337f12
+github.com/mjibson/go-dsp/dsputils
+github.com/mjibson/go-dsp/fft
 # github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd
 github.com/modern-go/concurrent
 # github.com/modern-go/reflect2 v1.0.1

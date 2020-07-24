@@ -22,6 +22,7 @@ require (
 	github.com/docker/docker v17.12.0-ce-rc1.0.20200706150819-a40b877fbb9e+incompatible
 	github.com/docker/go-connections v0.4.0 // indirect
 	github.com/edsrzf/mmap-go v1.0.0
+	github.com/errx/go-asap v0.0.0-20170908235707-ec3fbcbe0b33
 	github.com/go-kit/kit v0.10.0
 	github.com/go-logfmt/logfmt v0.5.0
 	github.com/go-openapi/strfmt v0.19.5
@@ -42,6 +43,7 @@ require (
 	github.com/mattn/go-colorable v0.1.6 // indirect
 	github.com/miekg/dns v1.1.30
 	github.com/mitchellh/mapstructure v1.2.2 // indirect
+	github.com/mjibson/go-dsp v0.0.0-20180508042940-11479a337f12 // indirect
 	github.com/morikuni/aec v1.0.0 // indirect
 	github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f
 	github.com/oklog/run v1.1.0

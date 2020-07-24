@@ -39,6 +39,11 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
 	},
+	"asap": {
+		Name:       "asap",
+		ArgTypes:   []ValueType{ValueTypeMatrix, ValueTypeScalar},
+		ReturnType: ValueTypeVector,
+	},
 	"avg_over_time": {
 		Name:       "avg_over_time",
 		ArgTypes:   []ValueType{ValueTypeMatrix},

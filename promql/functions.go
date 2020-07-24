@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/errx/go-asap"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 
@@ -488,6 +489,26 @@ func funcAbsentOverTime(vals []parser.Value, args parser.Expressions, enh *EvalN
 		})
 }
 
+// === asap(Vector parser.ValueTypeMatrix) Vector ===
+// Implements Automatic Time Series Smoothing with ASAP.
+func funcASAP(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	samples := vals[0].(Matrix)[0]
+	resolution := vals[1].(Vector)[0].V
+
+	input := []float64{}
+	for _, i := range samples.Points {
+		input = append(input, i.V)
+	}
+	smoothed := asap.Smooth(input, int(resolution))
+	if len(smoothed) == 0 {
+		return enh.out
+	}
+
+	return append(enh.out, Sample{
+		Point: Point{V: smoothed[len(smoothed)-1]},
+	})
+}
+
 func simpleFunc(vals []parser.Value, enh *EvalNodeHelper, f func(float64) float64) Vector {
 	for _, el := range vals[0].(Vector) {
 		enh.out = append(enh.out, Sample{
@@ -892,6 +913,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"abs":                funcAbs,
 	"absent":             funcAbsent,
 	"absent_over_time":   funcAbsentOverTime,
+	"asap":               funcASAP,
 	"avg_over_time":      funcAvgOverTime,
 	"ceil":               funcCeil,
 	"changes":            funcChanges,
