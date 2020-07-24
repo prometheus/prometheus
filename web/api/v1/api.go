@@ -501,6 +501,9 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
 	}
+	if names == nil {
+		names = []string{}
+	}
 	return apiFuncResult{names, nil, warnings, nil}
 }
 
@@ -540,6 +543,9 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 	vals, warnings, err := q.LabelValues(name)
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, warnings, closer}
+	}
+	if vals == nil {
+		vals = []string{}
 	}
 
 	return apiFuncResult{vals, nil, warnings, closer}
