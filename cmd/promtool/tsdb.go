@@ -372,7 +372,7 @@ func printBlocks(blocks []tsdb.BlockReader, humanReadable bool) {
 			meta.ULID,
 			getFormatedTime(meta.MinTime, humanReadable),
 			getFormatedTime(meta.MaxTime, humanReadable),
-			(meta.MaxTime-meta.MinTime)/(3600*1000),
+			time.Duration(meta.MaxTime-meta.MinTime)*time.Millisecond,
 			meta.Stats.NumSamples,
 			meta.Stats.NumChunks,
 			meta.Stats.NumSeries,
