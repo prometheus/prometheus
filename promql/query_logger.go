@@ -64,6 +64,12 @@ func logUnfinishedQueries(filename string, filesize int, logger log.Logger) {
 			level.Error(logger).Log("msg", "Failed to open query log file", "err", err)
 			return
 		}
+		defer func() {
+			err := fd.Close()
+			if err != nil {
+				level.Error(logger).Log("msg", "Failed to close query log file", "err", err)
+			}
+		}()
 
 		brokenJSON := make([]byte, filesize)
 		_, err = fd.Read(brokenJSON)
