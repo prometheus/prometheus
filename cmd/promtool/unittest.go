@@ -221,6 +221,16 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 	// Current index in alertEvalTimes what we are looking at.
 	curr := 0
 
+	for _, g := range groups {
+		for _, r := range g.Rules() {
+			if alertRule, ok := r.(*rules.AlertingRule); ok {
+				// Mark alerting rules as restored, to ensure the ALERTS timeseries is
+				// created when they run.
+				alertRule.SetRestored(true)
+			}
+		}
+	}
+
 	var errs []error
 	for ts := mint; ts.Before(maxt); ts = ts.Add(evalInterval) {
 		// Collects the alerts asked for unit testing.
