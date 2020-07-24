@@ -363,15 +363,16 @@ func printBlocks(blocks []tsdb.BlockReader, humanReadable bool) {
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	defer tw.Flush()
 
-	fmt.Fprintln(tw, "BLOCK ULID\tMIN TIME\tMAX TIME\tNUM SAMPLES\tNUM CHUNKS\tNUM SERIES")
+	fmt.Fprintln(tw, "BLOCK ULID\tMIN TIME\tMAX TIME\tDURATION\tNUM SAMPLES\tNUM CHUNKS\tNUM SERIES")
 	for _, b := range blocks {
 		meta := b.Meta()
 
 		fmt.Fprintf(tw,
-			"%v\t%v\t%v\t%v\t%v\t%v\n",
+			"%v\t%v\t%v\t%v\t%v\t%v\t%v\n",
 			meta.ULID,
 			getFormatedTime(meta.MinTime, humanReadable),
 			getFormatedTime(meta.MaxTime, humanReadable),
+			(meta.MaxTime-meta.MinTime)/(3600*1000),
 			meta.Stats.NumSamples,
 			meta.Stats.NumChunks,
 			meta.Stats.NumSeries,
