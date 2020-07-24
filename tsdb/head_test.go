@@ -654,7 +654,7 @@ func TestDeleteUntilCurMax(t *testing.T) {
 	testutil.Assert(t, res.Next(), "series don't exist")
 	exps := res.At()
 	it = exps.Iterator()
-	resSamples, err := storage.ExpandSamples(it, nil)
+	resSamples, err := storage.ExpandSamples(it, newSample)
 	testutil.Ok(t, err)
 	testutil.Equals(t, []tsdbutil.Sample{sample{11, 1}}, resSamples)
 	for res.Next() {
