@@ -139,7 +139,7 @@ to the nearest integer.
 
 ## `histogram_quantile()`
 
-`histogram_quantile(φ float, b instant-vector)` calculates the φ-quantile (0 ≤ φ
+`histogram_quantile(φ scalar, b instant-vector)` calculates the φ-quantile (0 ≤ φ
 ≤ 1) from the buckets `b` of a
 [histogram](https://prometheus.io/docs/concepts/metric_types/#histogram). (See
 [histograms and summaries](https://prometheus.io/docs/practices/histograms) for
