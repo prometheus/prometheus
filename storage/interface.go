@@ -34,7 +34,7 @@ var (
 // Appendable allows creating appenders.
 type Appendable interface {
 	// Appender returns a new appender for the storage.
-	Appender() Appender
+	Appender(ctx context.Context) Appender
 }
 
 // SampleAndChunkQueryable allows retrieving samples as well as encoded samples in form of chunks.

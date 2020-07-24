@@ -911,7 +911,8 @@ func TestDisableAutoCompactions(t *testing.T) {
 	// Trigger a compaction to check that it was skipped and
 	// no new blocks were created when compaction is disabled.
 	db.DisableCompactions()
-	app := db.Appender()
+	ctx := context.Background()
+	app := db.Appender(ctx)
 	for i := int64(0); i < 3; i++ {
 		_, err := app.Add(label, i*blockRange, 0)
 		testutil.Ok(t, err)
@@ -1027,7 +1028,8 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 			defaultLabel := labels.FromStrings("foo", "bar")
 
 			// Add some data to the head that is enough to trigger a compaction.
-			app := db.Appender()
+			ctx := context.Background()
+			app := db.Appender(ctx)
 			_, err := app.Add(defaultLabel, 1, 0)
 			testutil.Ok(t, err)
 			_, err = app.Add(defaultLabel, 2, 0)

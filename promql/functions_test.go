@@ -40,7 +40,7 @@ func TestDeriv(t *testing.T) {
 	}
 	engine := NewEngine(opts)
 
-	a := storage.Appender()
+	a := storage.Appender(context.Background())
 
 	metric := labels.FromStrings("__name__", "foo")
 	a.Add(metric, 1493712816939, 1.0)

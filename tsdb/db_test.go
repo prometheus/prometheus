@@ -138,7 +138,8 @@ func TestDataAvailableOnlyAfterCommit(t *testing.T) {
 		testutil.Ok(t, db.Close())
 	}()
 
-	app := db.Appender()
+	ctx := context.Background()
+	app := db.Appender(ctx)
 
 	_, err := app.Add(labels.FromStrings("foo", "bar"), 0, 0)
 	testutil.Ok(t, err)
@@ -169,9 +170,10 @@ func TestNoPanicAfterWALCorrutpion(t *testing.T) {
 	// This is to ensure that all samples can be read from the mmaped chunks when the WAL is corrupted.
 	var expSamples []tsdbutil.Sample
 	var maxt int64
+	ctx := context.Background()
 	{
 		for {
-			app := db.Appender()
+			app := db.Appender(ctx)
 			_, err := app.Add(labels.FromStrings("foo", "bar"), maxt, 0)
 			expSamples = append(expSamples, sample{t: maxt, v: 0})
 			testutil.Ok(t, err)
@@ -226,7 +228,7 @@ func TestDataNotAvailableAfterRollback(t *testing.T) {
 		testutil.Ok(t, db.Close())
 	}()
 
-	app := db.Appender()
+	app := db.Appender(context.Background())
 	_, err := app.Add(labels.FromStrings("foo", "bar"), 0, 0)
 	testutil.Ok(t, err)
 
@@ -248,7 +250,8 @@ func TestDBAppenderAddRef(t *testing.T) {
 		testutil.Ok(t, db.Close())
 	}()
 
-	app1 := db.Appender()
+	ctx := context.Background()
+	app1 := db.Appender(ctx)
 
 	ref1, err := app1.Add(labels.FromStrings("a", "b"), 123, 0)
 	testutil.Ok(t, err)
@@ -260,7 +263,7 @@ func TestDBAppenderAddRef(t *testing.T) {
 	err = app1.Commit()
 	testutil.Ok(t, err)
 
-	app2 := db.Appender()
+	app2 := db.Appender(ctx)
 
 	// first ref should already work in next transaction.
 	err = app2.AddFast(ref1, 125, 0)
@@ -302,7 +305,8 @@ func TestAppendEmptyLabelsIgnored(t *testing.T) {
 		testutil.Ok(t, db.Close())
 	}()
 
-	app1 := db.Appender()
+	ctx := context.Background()
+	app1 := db.Appender(ctx)
 
 	ref1, err := app1.Add(labels.FromStrings("a", "b"), 123, 0)
 	testutil.Ok(t, err)
@@ -354,7 +358,8 @@ Outer:
 			testutil.Ok(t, db.Close())
 		}()
 
-		app := db.Appender()
+		ctx := context.Background()
+		app := db.Appender(ctx)
 
 		smpls := make([]float64, numSamples)
 		for i := int64(0); i < numSamples; i++ {
@@ -413,12 +418,13 @@ func TestAmendDatapointCausesError(t *testing.T) {
 		testutil.Ok(t, db.Close())
 	}()
 
-	app := db.Appender()
+	ctx := context.Background()
+	app := db.Appender(ctx)
 	_, err := app.Add(labels.Labels{{Name: "a", Value: "b"}}, 0, 0)
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Commit())
 
-	app = db.Appender()
+	app = db.Appender(ctx)
 	_, err = app.Add(labels.Labels{{Name: "a", Value: "b"}}, 0, 1)
 	testutil.Equals(t, storage.ErrDuplicateSampleForTimestamp, err)
 	testutil.Ok(t, app.Rollback())
@@ -430,12 +436,13 @@ func TestDuplicateNaNDatapointNoAmendError(t *testing.T) {
 		testutil.Ok(t, db.Close())
 	}()
 
-	app := db.Appender()
+	ctx := context.Background()
+	app := db.Appender(ctx)
 	_, err := app.Add(labels.Labels{{Name: "a", Value: "b"}}, 0, math.NaN())
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Commit())
 
-	app = db.Appender()
+	app = db.Appender(ctx)
 	_, err = app.Add(labels.Labels{{Name: "a", Value: "b"}}, 0, math.NaN())
 	testutil.Ok(t, err)
 }
@@ -446,12 +453,13 @@ func TestNonDuplicateNaNDatapointsCausesAmendError(t *testing.T) {
 		testutil.Ok(t, db.Close())
 	}()
 
-	app := db.Appender()
+	ctx := context.Background()
+	app := db.Appender(ctx)
 	_, err := app.Add(labels.Labels{{Name: "a", Value: "b"}}, 0, math.Float64frombits(0x7ff0000000000001))
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Commit())
 
-	app = db.Appender()
+	app = db.Appender(ctx)
 	_, err = app.Add(labels.Labels{{Name: "a", Value: "b"}}, 0, math.Float64frombits(0x7ff0000000000002))
 	testutil.Equals(t, storage.ErrDuplicateSampleForTimestamp, err)
 }
@@ -462,7 +470,8 @@ func TestEmptyLabelsetCausesError(t *testing.T) {
 		testutil.Ok(t, db.Close())
 	}()
 
-	app := db.Appender()
+	ctx := context.Background()
+	app := db.Appender(ctx)
 	_, err := app.Add(labels.Labels{}, 0, 0)
 	testutil.NotOk(t, err)
 	testutil.Equals(t, "empty labelset: invalid sample", err.Error())
@@ -475,7 +484,8 @@ func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
 	}()
 
 	// Append AmendedValue.
-	app := db.Appender()
+	ctx := context.Background()
+	app := db.Appender(ctx)
 	_, err := app.Add(labels.Labels{{Name: "a", Value: "b"}}, 0, 1)
 	testutil.Ok(t, err)
 	_, err = app.Add(labels.Labels{{Name: "a", Value: "b"}}, 0, 2)
@@ -493,7 +503,7 @@ func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
 	}, ssMap)
 
 	// Append Out of Order Value.
-	app = db.Appender()
+	app = db.Appender(ctx)
 	_, err = app.Add(labels.Labels{{Name: "a", Value: "b"}}, 10, 3)
 	testutil.Ok(t, err)
 	_, err = app.Add(labels.Labels{{Name: "a", Value: "b"}}, 7, 5)
@@ -514,7 +524,8 @@ func TestDB_Snapshot(t *testing.T) {
 	db := openTestDB(t, nil, nil)
 
 	// append data
-	app := db.Appender()
+	ctx := context.Background()
+	app := db.Appender(ctx)
 	mint := int64(1414141414000)
 	for i := 0; i < 1000; i++ {
 		_, err := app.Add(labels.FromStrings("foo", "bar"), mint+int64(i), 1.0)
@@ -563,7 +574,8 @@ func TestDB_Snapshot(t *testing.T) {
 func TestDB_Snapshot_ChunksOutsideOfCompactedRange(t *testing.T) {
 	db := openTestDB(t, nil, nil)
 
-	app := db.Appender()
+	ctx := context.Background()
+	app := db.Appender(ctx)
 	mint := int64(1414141414000)
 	for i := 0; i < 1000; i++ {
 		_, err := app.Add(labels.FromStrings("foo", "bar"), mint+int64(i), 1.0)
@@ -615,7 +627,8 @@ func TestDB_SnapshotWithDelete(t *testing.T) {
 
 	db := openTestDB(t, nil, nil)
 
-	app := db.Appender()
+	ctx := context.Background()
+	app := db.Appender(ctx)
 
 	smpls := make([]float64, numSamples)
 	for i := int64(0); i < numSamples; i++ {
@@ -760,7 +773,8 @@ func TestDB_e2e(t *testing.T) {
 		testutil.Ok(t, db.Close())
 	}()
 
-	app := db.Appender()
+	ctx := context.Background()
+	app := db.Appender(ctx)
 
 	for _, l := range lbls {
 		lset := labels.New(l...)
@@ -864,7 +878,8 @@ func TestWALFlushedOnDBClose(t *testing.T) {
 
 	lbls := labels.Labels{labels.Label{Name: "labelname", Value: "labelvalue"}}
 
-	app := db.Appender()
+	ctx := context.Background()
+	app := db.Appender(ctx)
 	_, err := app.Add(lbls, 0, 1)
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Commit())
@@ -938,7 +953,7 @@ func TestWALSegmentSizeOptions(t *testing.T) {
 			db := openTestDB(t, opts, nil)
 
 			for i := int64(0); i < 155; i++ {
-				app := db.Appender()
+				app := db.Appender(context.Background())
 				ref, err := app.Add(labels.Labels{labels.Label{Name: "wal" + fmt.Sprintf("%d", i), Value: "size"}}, i, rand.Float64())
 				testutil.Ok(t, err)
 				for j := int64(1); j <= 78; j++ {
@@ -960,7 +975,8 @@ func TestTombstoneClean(t *testing.T) {
 
 	db := openTestDB(t, nil, nil)
 
-	app := db.Appender()
+	ctx := context.Background()
+	app := db.Appender(ctx)
 
 	smpls := make([]float64, numSamples)
 	for i := int64(0); i < numSamples; i++ {
@@ -1287,7 +1303,8 @@ func TestNotMatcherSelectsLabelsUnsetSeries(t *testing.T) {
 		labels.FromStrings("labelname", "labelvalue"),
 	}
 
-	app := db.Appender()
+	ctx := context.Background()
+	app := db.Appender(ctx)
 	for _, lbls := range labelpairs {
 		_, err := app.Add(lbls, 0, 1)
 		testutil.Ok(t, err)
@@ -1467,7 +1484,8 @@ func TestChunkAtBlockBoundary(t *testing.T) {
 		testutil.Ok(t, db.Close())
 	}()
 
-	app := db.Appender()
+	ctx := context.Background()
+	app := db.Appender(ctx)
 
 	blockRange := db.compactor.(*LeveledCompactor).ranges[0]
 	label := labels.FromStrings("foo", "bar")
@@ -1523,7 +1541,8 @@ func TestQuerierWithBoundaryChunks(t *testing.T) {
 		testutil.Ok(t, db.Close())
 	}()
 
-	app := db.Appender()
+	ctx := context.Background()
+	app := db.Appender(ctx)
 
 	blockRange := db.compactor.(*LeveledCompactor).ranges[0]
 	label := labels.FromStrings("foo", "bar")
@@ -1572,7 +1591,8 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 		testutil.Equals(t, int64(math.MinInt64), db.head.MaxTime())
 
 		// First added sample initializes the writable range.
-		app := db.Appender()
+		ctx := context.Background()
+		app := db.Appender(ctx)
 		_, err = app.Add(labels.FromStrings("a", "b"), 1000, 1)
 		testutil.Ok(t, err)
 
@@ -1669,6 +1689,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 
 func TestNoEmptyBlocks(t *testing.T) {
 	db := openTestDB(t, nil, []int64{100})
+	ctx := context.Background()
 	defer func() {
 		testutil.Ok(t, db.Close())
 	}()
@@ -1688,7 +1709,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 	})
 
 	t.Run("Test no blocks after deleting all samples from head.", func(t *testing.T) {
-		app := db.Appender()
+		app := db.Appender(ctx)
 		_, err := app.Add(defaultLabel, 1, 0)
 		testutil.Ok(t, err)
 		_, err = app.Add(defaultLabel, 2, 0)
@@ -1705,7 +1726,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 		testutil.Equals(t, len(db.Blocks()), len(actBlocks))
 		testutil.Equals(t, 0, len(actBlocks))
 
-		app = db.Appender()
+		app = db.Appender(ctx)
 		_, err = app.Add(defaultLabel, 1, 0)
 		testutil.Assert(t, err == storage.ErrOutOfBounds, "the head should be truncated so no samples in the past should be allowed")
 
@@ -1730,7 +1751,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 	t.Run(`When no new block is created from head, and there are some blocks on disk
 	compaction should not run into infinite loop (was seen during development).`, func(t *testing.T) {
 		oldBlocks := db.Blocks()
-		app := db.Appender()
+		app := db.Appender(ctx)
 		currentTime := db.Head().MaxTime()
 		_, err := app.Add(defaultLabel, currentTime, 0)
 		testutil.Ok(t, err)
@@ -1813,7 +1834,8 @@ func TestDB_LabelNames(t *testing.T) {
 	// Appends samples into the database.
 	appendSamples := func(db *DB, mint, maxt int64, sampleLabels [][2]string) {
 		t.Helper()
-		app := db.Appender()
+		ctx := context.Background()
+		app := db.Appender(ctx)
 		for i := mint; i <= maxt; i++ {
 			for _, tuple := range sampleLabels {
 				label := labels.FromStrings(tuple[0], tuple[1])
@@ -1880,7 +1902,8 @@ func TestCorrectNumTombstones(t *testing.T) {
 	defaultLabel := labels.FromStrings("foo", "bar")
 	defaultMatcher := labels.MustNewMatcher(labels.MatchEqual, defaultLabel[0].Name, defaultLabel[0].Value)
 
-	app := db.Appender()
+	ctx := context.Background()
+	app := db.Appender(ctx)
 	for i := int64(0); i < 3; i++ {
 		for j := int64(0); j < 15; j++ {
 			_, err := app.Add(defaultLabel, i*blockRange+j, 0)
@@ -2283,6 +2306,7 @@ func TestVerticalCompaction(t *testing.T) {
 // will not overlap with the first block created by the next compaction.
 func TestBlockRanges(t *testing.T) {
 	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
+	ctx := context.Background()
 
 	dir, err := ioutil.TempDir("", "test_storage")
 	testutil.Ok(t, err)
@@ -2298,7 +2322,7 @@ func TestBlockRanges(t *testing.T) {
 	defer func() {
 		os.RemoveAll(dir)
 	}()
-	app := db.Appender()
+	app := db.Appender(ctx)
 	lbl := labels.Labels{{Name: "a", Value: "b"}}
 	_, err = app.Add(lbl, firstBlockMaxT-1, rand.Float64())
 	if err == nil {
@@ -2327,7 +2351,7 @@ func TestBlockRanges(t *testing.T) {
 
 	// Test that wal records are skipped when an existing block covers the same time ranges
 	// and compaction doesn't create an overlapping block.
-	app = db.Appender()
+	app = db.Appender(ctx)
 	db.DisableCompactions()
 	_, err = app.Add(lbl, secondBlockMaxt+1, rand.Float64())
 	testutil.Ok(t, err)
@@ -2350,7 +2374,7 @@ func TestBlockRanges(t *testing.T) {
 	testutil.Equals(t, 3, len(db.Blocks()), "db doesn't include expected number of blocks")
 	testutil.Equals(t, db.Blocks()[2].Meta().MaxTime, thirdBlockMaxt, "unexpected maxt of the last block")
 
-	app = db.Appender()
+	app = db.Appender(ctx)
 	_, err = app.Add(lbl, thirdBlockMaxt+rangeToTriggerCompaction, rand.Float64()) // Trigger a compaction
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Commit())
@@ -2411,7 +2435,7 @@ func TestDBReadOnly(t *testing.T) {
 
 		dbSizeBeforeAppend, err := fileutil.DirSize(dbWritable.Dir())
 		testutil.Ok(t, err)
-		app := dbWritable.Appender()
+		app := dbWritable.Appender(context.Background())
 		_, err = app.Add(labels.FromStrings("foo", "bar"), dbWritable.Head().MaxTime()+1, 0)
 		testutil.Ok(t, err)
 		testutil.Ok(t, app.Commit())
@@ -2481,6 +2505,7 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 		logger = log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
 		err    error
 		maxt   int
+		ctx = context.Background()
 	)
 
 	// Bootstrap the db.
@@ -2496,7 +2521,7 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 		db, err := Open(dbDir, logger, nil, nil)
 		testutil.Ok(t, err)
 		db.DisableCompactions()
-		app := db.Appender()
+		app := db.Appender(ctx)
 		maxt = 1000
 		for i := 0; i < maxt; i++ {
 			_, err := app.Add(labels.FromStrings(defaultLabelName, "flush"), int64(i), 1.0)
@@ -2560,12 +2585,13 @@ func TestDBCannotSeePartialCommits(t *testing.T) {
 
 	stop := make(chan struct{})
 	firstInsert := make(chan struct{})
+	ctx := context.Background()
 
 	// Insert data in batches.
 	go func() {
 		iter := 0
 		for {
-			app := db.Appender()
+			app := db.Appender(ctx)
 
 			for j := 0; j < 100; j++ {
 				_, err := app.Add(labels.FromStrings("foo", "bar", "a", strconv.Itoa(j)), int64(iter), float64(iter))
@@ -2631,7 +2657,8 @@ func TestDBQueryDoesntSeeAppendsAfterCreation(t *testing.T) {
 	testutil.Ok(t, err)
 	defer querierBeforeAdd.Close()
 
-	app := db.Appender()
+	ctx := context.Background()
+	app := db.Appender(ctx)
 	_, err = app.Add(labels.FromStrings("foo", "bar"), 0, 0)
 	testutil.Ok(t, err)
 
@@ -2929,7 +2956,8 @@ func TestCompactHead(t *testing.T) {
 
 	db, err := Open(dbDir, log.NewNopLogger(), prometheus.NewRegistry(), tsdbCfg)
 	testutil.Ok(t, err)
-	app := db.Appender()
+	ctx := context.Background()
+	app := db.Appender(ctx)
 	var expSamples []sample
 	maxt := 100
 	for i := 0; i < maxt; i++ {

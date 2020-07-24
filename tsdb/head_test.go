@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"math"
@@ -1692,7 +1693,8 @@ func TestOutOfOrderSamplesMetric(t *testing.T) {
 	}()
 	db.DisableCompactions()
 
-	app := db.Appender()
+	ctx := context.Background()
+	app := db.Appender(ctx)
 	for i := 1; i <= 5; i++ {
 		_, err = app.Add(labels.FromStrings("a", "b"), int64(i), 99)
 		testutil.Ok(t, err)
@@ -1701,7 +1703,7 @@ func TestOutOfOrderSamplesMetric(t *testing.T) {
 
 	// Test out of order metric.
 	testutil.Equals(t, 0.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples))
-	app = db.Appender()
+	app = db.Appender(ctx)
 	_, err = app.Add(labels.FromStrings("a", "b"), 2, 99)
 	testutil.Equals(t, storage.ErrOutOfOrderSample, err)
 	testutil.Equals(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples))
@@ -1716,7 +1718,7 @@ func TestOutOfOrderSamplesMetric(t *testing.T) {
 	testutil.Ok(t, app.Commit())
 
 	// Compact Head to test out of bound metric.
-	app = db.Appender()
+	app = db.Appender(ctx)
 	_, err = app.Add(labels.FromStrings("a", "b"), DefaultBlockDuration*2, 99)
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Commit())
@@ -1725,7 +1727,7 @@ func TestOutOfOrderSamplesMetric(t *testing.T) {
 	testutil.Ok(t, db.Compact())
 	testutil.Assert(t, db.head.minValidTime > 0, "")
 
-	app = db.Appender()
+	app = db.Appender(ctx)
 	_, err = app.Add(labels.FromStrings("a", "b"), db.head.minValidTime-2, 99)
 	testutil.Equals(t, storage.ErrOutOfBounds, err)
 	testutil.Equals(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.outOfBoundSamples))
@@ -1736,7 +1738,7 @@ func TestOutOfOrderSamplesMetric(t *testing.T) {
 	testutil.Ok(t, app.Commit())
 
 	// Some more valid samples for out of order.
-	app = db.Appender()
+	app = db.Appender(ctx)
 	for i := 1; i <= 5; i++ {
 		_, err = app.Add(labels.FromStrings("a", "b"), db.head.minValidTime+DefaultBlockDuration+int64(i), 99)
 		testutil.Ok(t, err)
@@ -1744,7 +1746,7 @@ func TestOutOfOrderSamplesMetric(t *testing.T) {
 	testutil.Ok(t, app.Commit())
 
 	// Test out of order metric.
-	app = db.Appender()
+	app = db.Appender(ctx)
 	_, err = app.Add(labels.FromStrings("a", "b"), db.head.minValidTime+DefaultBlockDuration+2, 99)
 	testutil.Equals(t, storage.ErrOutOfOrderSample, err)
 	testutil.Equals(t, 4.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples))

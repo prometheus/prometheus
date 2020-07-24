@@ -31,10 +31,11 @@ func TestSelectSorted(t *testing.T) {
 	outputLabel := labels.FromStrings(model.MetricNameLabel, "a")
 
 	inputTotalSize := 0
+	ctx := context.Background()
 
 	priStorage := teststorage.New(t)
 	defer priStorage.Close()
-	app1 := priStorage.Appender()
+	app1 := priStorage.Appender(ctx)
 	app1.Add(inputLabel, 0, 0)
 	inputTotalSize++
 	app1.Add(inputLabel, 1000, 1)
@@ -46,7 +47,7 @@ func TestSelectSorted(t *testing.T) {
 
 	remoteStorage1 := teststorage.New(t)
 	defer remoteStorage1.Close()
-	app2 := remoteStorage1.Appender()
+	app2 := remoteStorage1.Appender(ctx)
 	app2.Add(inputLabel, 3000, 3)
 	inputTotalSize++
 	app2.Add(inputLabel, 4000, 4)
@@ -59,7 +60,7 @@ func TestSelectSorted(t *testing.T) {
 	remoteStorage2 := teststorage.New(t)
 	defer remoteStorage2.Close()
 
-	app3 := remoteStorage2.Appender()
+	app3 := remoteStorage2.Appender(ctx)
 	app3.Add(inputLabel, 6000, 6)
 	inputTotalSize++
 	app3.Add(inputLabel, 7000, 7)
@@ -100,7 +101,7 @@ func TestSelectSorted(t *testing.T) {
 	})
 	t.Run("chunk querier", func(t *testing.T) {
 		t.Skip("TODO(bwplotka: Unskip when db will implement ChunkQuerier.")
-		querier, err := fanoutStorage.ChunkQuerier(context.Background(), 0, 8000)
+		querier, err := fanoutStorage.ChunkQuerier(ctx, 0, 8000)
 		testutil.Ok(t, err)
 		defer querier.Close()
 
@@ -222,7 +223,7 @@ type errChunkQuerier struct{ errQuerier }
 func (errStorage) ChunkQuerier(_ context.Context, _, _ int64) (storage.ChunkQuerier, error) {
 	return errChunkQuerier{}, nil
 }
-func (errStorage) Appender() storage.Appender { return nil }
+func (errStorage) Appender(_ context.Context) storage.Appender { return nil }
 func (errStorage) StartTime() (int64, error)  { return 0, nil }
 func (errStorage) Close() error               { return nil }
 

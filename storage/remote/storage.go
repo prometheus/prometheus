@@ -169,7 +169,7 @@ func (s *Storage) ChunkQuerier(ctx context.Context, mint, maxt int64) (storage.C
 }
 
 // Appender implements storage.Storage.
-func (s *Storage) Appender() storage.Appender {
+func (s *Storage) Appender(_ context.Context) storage.Appender {
 	return s.rws.Appender()
 }
 
