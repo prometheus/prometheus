@@ -289,12 +289,12 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 	}, {
 		query: "count_over_time(foo[2m:1s] offset 10s)", start: 300000,
 		expected: []*storage.SelectHints{
-			{Start: 165000, End: 300000, Func: "count_over_time"},
+			{Start: 165000, End: 290000, Func: "count_over_time"},
 		},
 	}, {
 		query: "count_over_time((foo offset 10s)[2m:1s] offset 10s)", start: 300000,
 		expected: []*storage.SelectHints{
-			{Start: 155000, End: 290000, Func: "count_over_time"},
+			{Start: 155000, End: 280000, Func: "count_over_time"},
 		},
 	}, {
 
@@ -325,12 +325,12 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 	}, {
 		query: "count_over_time(foo[2m:1s] offset 10s)", start: 300000, end: 500000,
 		expected: []*storage.SelectHints{
-			{Start: 165000, End: 500000, Func: "count_over_time", Step: 1000},
+			{Start: 165000, End: 490000, Func: "count_over_time", Step: 1000},
 		},
 	}, {
 		query: "count_over_time((foo offset 10s)[2m:1s] offset 10s)", start: 300000, end: 500000,
 		expected: []*storage.SelectHints{
-			{Start: 155000, End: 490000, Func: "count_over_time", Step: 1000},
+			{Start: 155000, End: 480000, Func: "count_over_time", Step: 1000},
 		},
 	}, {
 		query: "sum by (dim1) (foo)", start: 10000,
