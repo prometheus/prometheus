@@ -224,8 +224,8 @@ func (errStorage) ChunkQuerier(_ context.Context, _, _ int64) (storage.ChunkQuer
 	return errChunkQuerier{}, nil
 }
 func (errStorage) Appender(_ context.Context) storage.Appender { return nil }
-func (errStorage) StartTime() (int64, error)  { return 0, nil }
-func (errStorage) Close() error               { return nil }
+func (errStorage) StartTime() (int64, error)                   { return 0, nil }
+func (errStorage) Close() error                                { return nil }
 
 func (errQuerier) Select(bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
 	return storage.ErrSeriesSet(errSelect)

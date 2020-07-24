@@ -2505,7 +2505,7 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 		logger = log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
 		err    error
 		maxt   int
-		ctx = context.Background()
+		ctx    = context.Background()
 	)
 
 	// Bootstrap the db.
