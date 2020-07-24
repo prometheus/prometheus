@@ -33,6 +33,7 @@ import (
 	"github.com/golang/snappy"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 )
 
@@ -723,40 +724,47 @@ func (w *WAL) fsync(f *Segment) error {
 }
 
 // Close flushes all writes and closes active segment.
-func (w *WAL) Close() (err error) {
+func (w *WAL) Close() error {
 	w.mtx.Lock()
 	defer w.mtx.Unlock()
 
 	if w.closed {
 		return errors.New("wal already closed")
 	}
-
-	if w.segment == nil {
-		w.closed = true
+	if w.stopc == nil {
+		level.Info(w.logger).Log("msg", "wal was opened in db-readonly mode")
 		return nil
-	}
-
-	// Flush the last page and zero out all its remaining size.
-	// We must not flush an empty page as it would falsely signal
-	// the segment is done if we start writing to it again after opening.
-	if w.page.alloc > 0 {
-		if err := w.flushPage(true); err != nil {
-			return err
-		}
 	}
 
 	donec := make(chan struct{})
 	w.stopc <- donec
 	<-donec
 
-	if err = w.fsync(w.segment); err != nil {
-		level.Error(w.logger).Log("msg", "sync previous segment", "err", err)
+	if w.segment == nil {
+		w.closed = true
+		return nil
+	}
+
+	var merr tsdb_errors.MultiError
+
+	// Flush the last page and zero out all its remaining size.
+	// We must not flush an empty page as it would falsely signal
+	// the segment is done if we start writing to it again after opening.
+	if w.page.alloc > 0 {
+		if err := w.flushPage(true); err != nil {
+			merr.Add(err)
+		}
+	}
+
+	if err := w.fsync(w.segment); err != nil {
+		merr.Add(err)
 	}
 	if err := w.segment.Close(); err != nil {
-		level.Error(w.logger).Log("msg", "close previous segment", "err", err)
+		merr.Add(err)
 	}
 	w.closed = true
-	return nil
+
+	return merr.Err()
 }
 
 type segmentRef struct {

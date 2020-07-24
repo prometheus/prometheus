@@ -484,3 +484,31 @@ func BenchmarkWAL_Log(b *testing.B) {
 		})
 	}
 }
+
+// TestCloseGoroutineLeak detect goroutine leak after calling WAL.Close.
+func TestCloseGoroutineLeak(t *testing.T) {
+	dir, err := ioutil.TempDir("", "wal_close_goroutine_leak")
+	testutil.Ok(t, err)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
+	w, err := NewSize(nil, nil, dir, pageSize, false)
+	testutil.Ok(t, err)
+
+	segment, err := CreateSegment(dir, 0)
+	testutil.Ok(t, err)
+	testutil.Ok(t, w.setSegment(segment))
+
+	recordSize := (pageSize / 2) - recordHeaderSize
+	buf := make([]byte, recordSize)
+	_, err = rand.Read(buf)
+	testutil.Ok(t, err)
+
+	testutil.Ok(t, w.Log(buf))
+
+	// Closing the segment before closing the WAL can cause goroutine leak.
+	// See PR description in https://github.com/prometheus/prometheus/pull/7655.
+	testutil.Ok(t, segment.Close())
+
+	testutil.NotOk(t, w.Close())
+}
