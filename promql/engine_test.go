@@ -35,7 +35,9 @@ func TestQueryConcurrency(t *testing.T) {
 
 	dir, err := ioutil.TempDir("", "test_concurrency")
 	testutil.Ok(t, err)
-	defer os.RemoveAll(dir)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
 	queryTracker := NewActiveQueryTracker(dir, maxConcurrency, nil)
 
 	opts := EngineOpts{

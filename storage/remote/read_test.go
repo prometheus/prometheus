@@ -34,7 +34,9 @@ import (
 func TestNoDuplicateReadConfigs(t *testing.T) {
 	dir, err := ioutil.TempDir("", "TestNoDuplicateReadConfigs")
 	testutil.Ok(t, err)
-	defer os.RemoveAll(dir)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
 
 	cfg1 := config.RemoteReadConfig{
 		Name: "write-1",

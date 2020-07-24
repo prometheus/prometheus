@@ -27,7 +27,9 @@ import (
 func TestStorageLifecycle(t *testing.T) {
 	dir, err := ioutil.TempDir("", "TestStorageLifecycle")
 	testutil.Ok(t, err)
-	defer os.RemoveAll(dir)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
 
 	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline)
 	conf := &config.Config{
@@ -66,7 +68,9 @@ func TestStorageLifecycle(t *testing.T) {
 func TestUpdateRemoteReadConfigs(t *testing.T) {
 	dir, err := ioutil.TempDir("", "TestUpdateRemoteReadConfigs")
 	testutil.Ok(t, err)
-	defer os.RemoveAll(dir)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
 
 	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline)
 

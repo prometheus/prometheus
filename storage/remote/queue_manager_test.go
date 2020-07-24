@@ -536,7 +536,9 @@ func BenchmarkSampleDelivery(b *testing.B) {
 
 	dir, err := ioutil.TempDir("", "BenchmarkSampleDelivery")
 	testutil.Ok(b, err)
-	defer os.RemoveAll(dir)
+	defer func() {
+		testutil.Ok(b, os.RemoveAll(dir))
+	}()
 
 	metrics := newQueueManagerMetrics(nil, "", "")
 	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, nil, nil, c, defaultFlushDeadline)

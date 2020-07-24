@@ -358,7 +358,9 @@ func TestEndpoints(t *testing.T) {
 
 		dbDir, err := ioutil.TempDir("", "tsdb-api-ready")
 		testutil.Ok(t, err)
-		defer os.RemoveAll(dbDir)
+		defer func() {
+			testutil.Ok(t, os.RemoveAll(dbDir))
+		}()
 
 		remote := remote.NewStorage(promlog.New(&promlogConfig), prometheus.DefaultRegisterer, nil, dbDir, 1*time.Second)
 
