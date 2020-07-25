@@ -59,7 +59,7 @@ Scalar float values can be written as literal integer or floating-point numbers 
 
     [-+]?(
           [0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?
-        | [-+]0[xX][0-9a-fA-F]+
+        | 0[xX][0-9a-fA-F]+
         | [nN][aA][nN]
         | [iI][nN][fF]
     )
