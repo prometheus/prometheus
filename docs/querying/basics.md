@@ -55,10 +55,23 @@ Example:
 
 ### Float literals
 
-Scalar float values can be literally written as numbers of the form
-`[-](digits)[.(digits)]`.
+Scalar float values can be written as literal integer or floating-point numbers in the format (whitespace only included for better readability):
 
+    [-+]?(
+          [0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?
+        | 0[xX][0-9a-fA-F]+
+        | [nN][aA][nN]
+        | [iI][nN][fF]
+    )
+
+Examples:
+
+    23
     -2.43
+    3.4e-9
+    0x8f
+    -Inf
+    NaN
 
 ## Time series Selectors
 
@@ -180,7 +193,7 @@ The same works for range vectors. This returns the 5-minute rate that
 
 ## Subquery
 
-Subquery allows you to run an instant query for a given range and resolution. The result of a subquery is a range vector. 
+Subquery allows you to run an instant query for a given range and resolution. The result of a subquery is a range vector.
 
 Syntax: `<instant_query> '[' <range> ':' [<resolution>] ']' [ offset <duration> ]`
 
