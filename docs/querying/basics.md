@@ -55,19 +55,23 @@ Example:
 
 ### Float literals
 
-Scalar float values can be literally written as integer or floating-point numbers, for example:
+Scalar float values can be written as literal integer or floating-point numbers in the format (whitespace only included for better readability):
+
+    [-+]?(
+          [0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?
+        | [-+]0[xX][0-9a-fA-F]+
+        | [nN][aA][nN]
+        | [iI][nN][fF]
+    )
+
+Examples:
 
     23
     -2.43
     3.4e-9
     0x8f
     -Inf
-
-Prometheus first attempts to parse scalar literals using Go's [`strconv.ParseInt()`](https://golang.org/pkg/strconv/#ParseInt)
-and falls back to [`strconv.ParseFloat()`](https://golang.org/pkg/strconv/#ParseFloat) if the former fails.
-See the documentation of those functions for a full explanation of the supported numerical formats.
-Most notably, the special floating point values `NaN`, `Inf`, and `-Inf` are parsed in a case-insensitive way
-into their respective floating-point representations.
+    NaN
 
 ## Time series Selectors
 
