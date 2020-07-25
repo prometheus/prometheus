@@ -138,5 +138,10 @@ func (c *ServiceDiscoveryConfig) Validate() error {
 			return errors.New("empty or null section in static_configs")
 		}
 	}
+	for _, cfg := range c.TritonSDConfigs {
+		if cfg == nil {
+			return errors.New("empty or null section in triton_sd_configs")
+		}
+	}
 	return nil
 }
