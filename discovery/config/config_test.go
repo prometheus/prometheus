@@ -23,7 +23,7 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-func TestForNil(t *testing.T) {
+func TestForNilSDConfig(t *testing.T) {
 	// Get all the yaml fields names of the ServiceDiscoveryConfig struct.
 	s := reflect.ValueOf(ServiceDiscoveryConfig{})
 	configType := s.Type()
