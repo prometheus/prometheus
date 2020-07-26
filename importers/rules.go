@@ -137,7 +137,7 @@ func (importer *RuleImporter) ImportAll(ctx context.Context) error {
 }
 
 func (importer *RuleImporter) queryFn(ctx context.Context, q string, t time.Time) (promql.Vector, error) {
-	// what to do with warnings?
+	// what to do with warnings? maybe just print for now?
 	val, _, err := importer.apiClient.Query(ctx, q, t)
 	if err != nil {
 		return promql.Vector{}, err
@@ -153,6 +153,7 @@ func (importer *RuleImporter) queryFn(ctx context.Context, q string, t time.Time
 			Metric: labels.Labels{},
 			Point:  promql.Point{T: int64(valScalar.Timestamp), V: float64(valScalar.Value)},
 		}}, nil
+	// case model.ValMatrix/Instant:  todo: might need to add matrix and instant? not sure if those map to scalar/vector tho
 	default:
 		return nil, errors.New("rule result is wrong type")
 	}
@@ -195,14 +196,31 @@ func (importer *RuleImporter) ImportRule(ctx context.Context, rule rules.Rule) e
 		return err
 	}
 
-	appender := importer.headBlock.Appender()
-	// todo: do 2 hr blocks here?
+	appender := importer.headBlock.Appender() // use the multi writer?
+
+	// todo: add recording rule label, etc
+	vector, err := rule.Eval(ctx, ts, importer.queryFn, url)
+	if err != nil {
+		return err
+	}
+	ref, err := appender.Add(vector[0]., vector[0].T, vector[0].V)
 	for ts.Before(end) {
 		vector, err := rule.Eval(ctx, ts, importer.queryFn, url)
 		if err != nil {
 			return err
 		}
-		appender.AddFast(0, vector[0].T, vector[0].V)
+		for x, t := range vector {
+			// do stuff, don't AddFast because you need to maintain 
+			// ref for each series bcs rule.Eval could return different labels,
+			// so that means you would need to map the ref to metric, but that is what Add does 
+			// anyways so just use that
+		}
+
+
+
+		for range vector { // todo: range over
+			appender.AddFast(ref, vector[0].T, vector[0].V)
+		}
 		ts.Add(importer.config.EvalInterval)
 	}
 	return appender.Commit()
