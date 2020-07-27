@@ -40,10 +40,12 @@ type padder struct {
 	containsGrouping bool
 	// immediateScalar represents whether the immediate child of a binary
 	// expression is a scalar.
-	immediateScalar       bool
-	multiArgumentCall     bool
-	insideMultilineBraces bool
-	previousBaseIndent    string
+	immediateScalar         bool
+	multiArgumentCall       bool
+	isAggregation           bool
+	expectAggregationLabels bool
+	insideMultilineBraces   bool
+	previousBaseIndent      string
 }
 
 // New returns a new prettier over the given slice of files.
@@ -106,7 +108,7 @@ func (p *Prettier) Run() []error {
 			for _, grps := range rgs.Groups {
 				for _, rules := range grps.Rules {
 					exprStr := rules.Expr.Value
-					standardizeExprStr := p.expressionFromItems(p.lexItems(exprStr))
+					standardizeExprStr := p.expressionFromItems(p.sortItems(p.lexItems(exprStr)))
 					if err := p.parseExpr(standardizeExprStr); err != nil {
 						return []error{err}
 					}
@@ -294,6 +296,8 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 
 	nodeSplittable := currNode.violatesColumnLimit()
 	switch node.(type) {
+	case *parser.AggregateExpr:
+		p.pd.isAggregation = true
 	case *parser.BinaryExpr:
 		p.pd.immediateScalar = currNode.is("scalars")
 		baseIndent = headInfo.baseIndent(item)
@@ -304,6 +308,7 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 		p.pd.multiArgumentCall = currNode.is("multi-argument")
 	default:
 		p.pd.multiArgumentCall = false
+		p.pd.isAggregation = false
 	}
 	if p.pd.isNewLineApplied {
 		if item.Typ != parser.LEFT_BRACKET && item.Typ != parser.DURATION {
@@ -315,17 +320,22 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 	switch item.Typ {
 	case parser.LEFT_PAREN:
 		result += item.Val
-		if (nodeSplittable && !p.pd.containsGrouping) || p.pd.multiArgumentCall {
+		fmt.Println("expectAggregationLabels", p.pd.expectAggregationLabels)
+		if ((nodeSplittable && !p.pd.containsGrouping) || p.pd.multiArgumentCall) && (!p.pd.expectAggregationLabels) {
 			result += p.pd.newLine()
 		}
 	case parser.RIGHT_PAREN:
-		if (nodeSplittable && !p.pd.containsGrouping) || p.pd.multiArgumentCall {
+		if ((nodeSplittable && !p.pd.containsGrouping) || p.pd.multiArgumentCall) && !p.pd.expectAggregationLabels {
 			result += p.pd.newLine() + p.pd.pad(headInfo.baseIndent(item))
 		}
 		result += item.Val
 		if p.pd.containsGrouping {
 			p.pd.containsGrouping = false
 			result += p.pd.newLine()
+		}
+		if p.pd.expectAggregationLabels {
+			p.pd.expectAggregationLabels = false
+			result += " "
 		}
 	case parser.LEFT_BRACE:
 		result += item.Val
@@ -351,6 +361,8 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 		}
 	case parser.STRING, parser.NUMBER:
 		result += item.Val
+	case parser.SUM:
+		result += item.Val + " "
 	case parser.EQL, parser.EQL_REGEX, parser.NEQ, parser.NEQ_REGEX, parser.DURATION, parser.COLON,
 		parser.LEFT_BRACKET, parser.RIGHT_BRACKET:
 		result += item.Val
@@ -372,6 +384,8 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 		result += item.Val
 		if item.Typ == parser.BOOL {
 			result += p.pd.newLine()
+		} else if p.pd.isAggregation {
+			p.pd.expectAggregationLabels = true
 		}
 	case parser.COMMA:
 		result += item.Val

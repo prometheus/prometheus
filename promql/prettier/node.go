@@ -84,6 +84,7 @@ func (p *nodeInfo) nodeHistory(head parser.Expr, posRange parser.PositionRange, 
 		}
 	case *parser.BinaryExpr:
 		if n.PositionRange().Start <= posRange.Start && n.PositionRange().End >= posRange.End {
+			nodeMatch = true
 			stack = append(stack, reflect.TypeOf(n))
 			stmp, node, found := p.nodeHistory(n.LHS, posRange, stack)
 			if found {
@@ -99,13 +100,21 @@ func (p *nodeInfo) nodeHistory(head parser.Expr, posRange parser.PositionRange, 
 			if n.PositionRange().Start <= posRange.Start && n.PositionRange().End >= posRange.End {
 				return stack, head, true
 			}
-			return stack, head, false
 		}
 	case *parser.AggregateExpr:
-		if n.Expr.PositionRange().Start <= posRange.Start && n.Expr.PositionRange().End >= posRange.End {
+
+		if n.PositionRange().Start <= posRange.Start && n.PositionRange().End >= posRange.End {
 			nodeMatch = true
 			stack = append(stack, reflect.TypeOf(n))
-			p.nodeHistory(n.Expr, posRange, stack)
+			stmp, _head, found := p.nodeHistory(n.Expr, posRange, stack)
+			if found {
+				return stmp, _head, true
+			}
+			if n.Param != nil {
+				if stmp, _head, found := p.nodeHistory(n.Param, posRange, stack); found {
+					return stmp, _head, true
+				}
+			}
 		}
 	case *parser.Call:
 		if n.PositionRange().Start <= posRange.Start && n.PositionRange().End >= posRange.End {
@@ -119,9 +128,7 @@ func (p *nodeInfo) nodeHistory(head parser.Expr, posRange parser.PositionRange, 
 					}
 				}
 			}
-			return stack, head, true
 		}
-		return stack, head, false
 	case *parser.MatrixSelector:
 		if n.VectorSelector.PositionRange().Start <= posRange.Start && n.VectorSelector.PositionRange().End >= posRange.End {
 			stack = append(stack, reflect.TypeOf(n))

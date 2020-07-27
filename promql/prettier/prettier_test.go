@@ -503,6 +503,13 @@ var prettierCases = []prettierTest{
   )`,
 	},
 	{
+		expr: `histogram_quantile(0.9, rate(http_request_duration_seconds_bucket[10m]))`,
+		expected: `  histogram_quantile(
+    0.9,
+    rate(http_request_duration_seconds_bucket[10m])
+  )`,
+	},
+	{
 		expr: `label_join(up{job="api-server",src1="a",src2="b",src3="c"}, "foo", ",", "src1", "src2", "src3")`,
 		expected: `  label_join(
     up{job="api-server", src1="a", src2="b", src3="c"},
@@ -587,13 +594,46 @@ var prettierCases = []prettierTest{
     )  
   )`,
 	},
+	{
+		expr:     `sum(metric_name)`,
+		expected: `  sum (metric_name)`, // TODO: add node information support for this to avoid space between sum and (.
+	},
+	{
+		expr:     `sum without(label) (metric_name)`,
+		expected: `  sum without(label) (metric_name)`,
+	},
+	{
+		expr:     `sum (metric_name) without(label)`,
+		expected: `  sum without(label) (metric_name)`,
+	},
+	{
+		expr: `sum without(label) (metric_three{a_some_very_large_label="a_very_large_value", label="a_very_large_value"})`,
+		expected: `  sum without(label) (
+    metric_three{a_some_very_large_label="a_very_large_value", label="a_very_large_value"}
+  )`,
+	},
+	{
+		expr: `sum (metric_three{a_some_very_large_label="a_very_large_value", a_some_very_large_label_2="a_very_large_value"}) without(label)`,
+		expected: `  sum without(label) (
+    metric_three{
+      a_some_very_large_label="a_very_large_value",
+      a_some_very_large_label_2="a_very_large_value",
+    }  
+  )`,
+	},
+	{
+		expr: `sum (metric_three{a_some_very_large_label="a_very_large_value", label="a_very_large_value"}) without(label)`,
+		expected: `  sum without(label) (
+    metric_three{a_some_very_large_label="a_very_large_value", label="a_very_large_value"}
+  )`,
+	},
 }
 
 func TestPrettierCases(t *testing.T) {
 	for _, expr := range prettierCases {
 		p, err := New(PrettifyExpression, expr.expr)
 		testutil.Ok(t, err)
-		standardizeExprStr := p.expressionFromItems(p.lexItems(expr.expr))
+		standardizeExprStr := p.expressionFromItems(p.sortItems(p.lexItems(expr.expr)))
 		lexItems := p.sortItems(p.lexItems(expr.expr))
 		err = p.parseExpr(standardizeExprStr)
 		testutil.Ok(t, err)
