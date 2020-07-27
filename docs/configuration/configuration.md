@@ -589,9 +589,11 @@ This service discovery method only supports basic DNS A, AAAA and SRV record
 queries, but not the advanced DNS-SD approach specified in
 [RFC6763](https://tools.ietf.org/html/rfc6763).
 
-During the [relabeling phase](#relabel_config), the meta label
-`__meta_dns_name` is available on each target and is set to the
-record name that produced the discovered target.
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_dns_name`: the record name that produced the discovered target.
+* `__meta_dns_srv_record_target`: the target field of the SRV record, if the query type is SRV
+* `__meta_dns_srv_record_port`: the port field of the SRV record, if the query type is SRV
 
 ```yaml
 # A list of DNS domain names to be queried.
