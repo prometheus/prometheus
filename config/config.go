@@ -375,7 +375,7 @@ type ScrapeConfig struct {
 	Scheme string `yaml:"scheme,omitempty"`
 	// More than this many samples post metric-relabeling will cause the scrape to fail.
 	SampleLimit uint `yaml:"sample_limit,omitempty"`
-	// More than this many targets after the relabeling phase will cause the
+	// More than this many targets after the target relabeling will cause the
 	// scrapes to fail.
 	TargetLimit uint `yaml:"target_limit,omitempty"`
 

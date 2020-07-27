@@ -256,10 +256,11 @@ metric_relabel_configs:
 # the entire scrape will be treated as failed. 0 means no limit.
 [ sample_limit: <int> | default = 0 ]
 
-# Per-scrape config limit on number of unique targets that will be accepted.
-# If more than this number of targets are present after the relabeling phase,
-# Prometheus will mark the targets as failed without scraping them.
-# 0 means no limit.
+# Per-scrape config limit on number of unique targets that will be
+# accepted. If more than this number of targets are present after the target
+# relabeling, Prometheus will mark the targets as failed without scraping them.
+# 0 means no limit. This is an experimental feature, this behaviour could
+# change in the future.
 [ target_limit: <int> | default = 0 ]
 ```
 

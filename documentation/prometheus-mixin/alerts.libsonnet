@@ -262,15 +262,15 @@
           {
             alert: 'PrometheusTargetLimitHit',
             expr: |||
-              prometheus_target_scrape_pool_targets_added{%(prometheusSelector)s} > prometheus_target_scrape_pool_targets_added{%(prometheusSelector)s} > 0
+              increase(prometheus_target_scrape_pool_exceeded_target_limit_total{%(prometheusSelector)s}[5m]) > 0
             ||| % $._config,
             'for': '15m',
             labels: {
               severity: 'warning',
             },
             annotations: {
-              summary: 'Prometheus job has hit the configured target_limit.',
-              description: 'Prometheus %(prometheusName)s has {{ printf "%%.0f" $value }} targets for the job {{ $labels.scrape_job }}, which is higher than the configured target_limit.' % $._config,
+              summary: 'Prometheus has dropped targets because some jobs have exceeded the targets limit.',
+              description: 'Prometheus %(prometheusName)s has dropped {{ printf "%%.0f" $value }} targets because the number of targets exceeded the configured target_limit.' % $._config,
             },
           },
         ],

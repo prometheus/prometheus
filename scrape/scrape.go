@@ -506,7 +506,8 @@ func (sp *scrapePool) getForcedError() error {
 		return nil
 	}
 	var err error
-	if sp.targetLimitHit = l > int(sp.config.TargetLimit); sp.targetLimitHit {
+	sp.targetLimitHit = l > int(sp.config.TargetLimit)
+	if sp.targetLimitHit {
 		targetScrapePoolExceededTargetLimit.Inc()
 		err = fmt.Errorf("target_limit exceeded (number of targets: %d, limit: %d)", l, sp.config.TargetLimit)
 	}
@@ -1046,7 +1047,7 @@ func (sl *scrapeLoop) scrapeAndReport(interval, timeout time.Duration, last time
 	}()
 	if forcedErr := sl.getForcedError(); forcedErr != nil {
 		appErr = forcedErr
-		// Add stale markers
+		// Add stale markers.
 		if _, _, _, err := sl.append(app, []byte{}, "", start); err != nil {
 			app.Rollback()
 			app = sl.appender()
