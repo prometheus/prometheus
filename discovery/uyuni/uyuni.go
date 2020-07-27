@@ -180,22 +180,27 @@ func getExporterDataForSystems(
 	return result, nil
 }
 
-// Get exporter port configuration from Formula
+// extractPortFromFormulaData gets exporter port configuration from the formula.
+// args takes precedence over address.
 func extractPortFromFormulaData(args string, address string) (string, error) {
-	// first try address
-	_, port, addrErr := net.SplitHostPort(address)
-	if addrErr != nil || len(port) == 0 {
-		// no valid port in address, try args
-		tokens := monFormulaRegex.FindStringSubmatch(args)
-		if len(tokens) < 1 {
-			err := "Unable to find port in args: " + args
+	// first try args
+	var port string
+	tokens := monFormulaRegex.FindStringSubmatch(args)
+	if len(tokens) < 1 {
+		err := "Unable to find port in args: " + args
+		// now try address
+		_, addrPort, addrErr := net.SplitHostPort(address)
+		if addrErr != nil || len(addrPort) == 0 {
 			if addrErr != nil {
 				err = strings.Join([]string{addrErr.Error(), err}, " ")
 			}
 			return "", errors.New(err)
 		}
+		port = addrPort
+	} else {
 		port = tokens[1]
 	}
+
 	return port, nil
 }
 
@@ -272,7 +277,7 @@ func (d *Discovery) getTargetsForSystem(
 		if combinedFormulaData.ProxyIsEnabled {
 			labels[model.MetricsPathLabel] = "/proxy"
 		}
-		level.Debug(d.logger).Log("msg", "Configured target", "Labels", fmt.Sprintf("%+v", labels))
+		_ = level.Debug(d.logger).Log("msg", "Configured target", "Labels", fmt.Sprintf("%+v", labels))
 	}
 	for _, err := range errors {
 		level.Error(d.logger).Log("msg", "Invalid exporter port", "clientId", systemID, "err", err)
