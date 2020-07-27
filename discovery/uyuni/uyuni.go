@@ -28,6 +28,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
@@ -45,6 +46,10 @@ var DefaultSDConfig = SDConfig{
 
 // Regular expression to extract port from formula data
 var monFormulaRegex = regexp.MustCompile(`--(?:telemetry\.address|web\.listen-address)=\":([0-9]*)\"`)
+
+func init() {
+	discovery.RegisterConfig(&SDConfig{})
+}
 
 // SDConfig is the configuration for Uyuni based service discovery.
 type SDConfig struct {
@@ -86,6 +91,14 @@ type Discovery struct {
 	interval time.Duration
 	sdConfig *SDConfig
 	logger   log.Logger
+}
+
+// Name returns the name of the Config.
+func (*SDConfig) Name() string { return "uyuni" }
+
+// NewDiscoverer returns a Discoverer for the Config.
+func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
+	return NewDiscovery(c, opts.Logger), nil
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.

@@ -7,8 +7,12 @@ import (
 	"reflect"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 )
+
+// Base64 represents value in base64 encoding
+type Base64 string
 
 type encodeFunc func(reflect.Value) ([]byte, error)
 
@@ -80,28 +84,34 @@ func encodeValue(val reflect.Value) ([]byte, error) {
 	return []byte(fmt.Sprintf("<value>%s</value>", string(b))), nil
 }
 
-func encodeStruct(val reflect.Value) ([]byte, error) {
+func encodeStruct(structVal reflect.Value) ([]byte, error) {
 	var b bytes.Buffer
 
 	b.WriteString("<struct>")
 
-	t := val.Type()
-	for i := 0; i < t.NumField(); i++ {
-		b.WriteString("<member>")
-		f := t.Field(i)
+	structType := structVal.Type()
+	for i := 0; i < structType.NumField(); i++ {
+		fieldVal := structVal.Field(i)
+		fieldType := structType.Field(i)
 
-		name := f.Tag.Get("xmlrpc")
-		if name == "" {
-			name = f.Name
+		name := fieldType.Tag.Get("xmlrpc")
+		// if the tag has the omitempty property, skip it
+		if strings.HasSuffix(name, ",omitempty") && isZero(fieldVal) {
+			continue
 		}
-		b.WriteString(fmt.Sprintf("<name>%s</name>", name))
+		name = strings.TrimSuffix(name, ",omitempty")
+		if name == "" {
+			name = fieldType.Name
+		}
 
-		p, err := encodeValue(val.FieldByName(f.Name))
+		p, err := encodeValue(fieldVal)
 		if err != nil {
 			return nil, err
 		}
-		b.Write(p)
 
+		b.WriteString("<member>")
+		b.WriteString(fmt.Sprintf("<name>%s</name>", name))
+		b.Write(p)
 		b.WriteString("</member>")
 	}
 
