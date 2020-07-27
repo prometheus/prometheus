@@ -41,6 +41,7 @@ type padder struct {
 	// immediateScalar represents whether the immediate child of a binary
 	// expression is a scalar.
 	immediateScalar       bool
+	multiArgumentCall     bool
 	insideMultilineBraces bool
 	previousBaseIndent    string
 }
@@ -283,23 +284,30 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 		return result, nil
 	}
 	var (
-		item       = items[index]
-		nodeInfo   = newNodeInfo(p.Node, 100, item)
-		node       = nodeInfo.getNode(p.Node, item)
-		currNode   = newNodeInfo(node, 100, item)
+		item = items[index]
+		// TODO: update these node naming conventions before pushing.
+		headInfo   = &nodeInfo{head: p.Node, columnLimit: 100, item: item}
+		node       = headInfo.getNode(p.Node, item)
+		currNode   = &nodeInfo{head: node, columnLimit: 100, item: item}
 		baseIndent int
 	)
 
-	if reflect.TypeOf(node).String() == "*parser.BinaryExpr" {
-		p.pd.immediateScalar = currNode.contains("scalars")
-		if item.Typ.IsOperator() {
-			p.pd.containsGrouping = currNode.contains("grouping-modifier")
-		}
-	}
 	nodeSplittable := currNode.violatesColumnLimit()
+	switch node.(type) {
+	case *parser.BinaryExpr:
+		p.pd.immediateScalar = currNode.is("scalars")
+		baseIndent = headInfo.baseIndent(item)
+		if item.Typ.IsOperator() {
+			p.pd.containsGrouping = currNode.is("grouping-modifier")
+		}
+	case *parser.Call:
+		p.pd.multiArgumentCall = currNode.is("multi-argument")
+	default:
+		p.pd.multiArgumentCall = false
+	}
 	if p.pd.isNewLineApplied {
 		if item.Typ != parser.LEFT_BRACKET && item.Typ != parser.DURATION {
-			result += p.pd.pad(nodeInfo.baseIndent(item))
+			result += p.pd.pad(headInfo.baseIndent(item))
 		}
 		p.pd.isNewLineApplied = false
 	}
@@ -307,12 +315,12 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 	switch item.Typ {
 	case parser.LEFT_PAREN:
 		result += item.Val
-		if nodeSplittable && !p.pd.containsGrouping {
+		if (nodeSplittable && !p.pd.containsGrouping) || p.pd.multiArgumentCall {
 			result += p.pd.newLine()
 		}
 	case parser.RIGHT_PAREN:
-		if nodeSplittable && !p.pd.containsGrouping {
-			result += p.pd.newLine() + p.pd.pad(nodeInfo.baseIndent(item))
+		if (nodeSplittable && !p.pd.containsGrouping) || p.pd.multiArgumentCall {
+			result += p.pd.newLine() + p.pd.pad(headInfo.baseIndent(item))
 		}
 		result += item.Val
 		if p.pd.containsGrouping {
@@ -330,7 +338,7 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 			if items[index-1].Typ != parser.COMMA {
 				// Edge-case: if the labels are multi-line split, but do not have
 				// a pre-applied comma.
-				result += "," + p.pd.newLine() + p.pd.pad(nodeInfo.baseIndent(items[index]))
+				result += "," + p.pd.newLine() + p.pd.pad(headInfo.baseIndent(items[index]))
 			}
 			p.pd.insideMultilineBraces = false
 		}
@@ -350,6 +358,7 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 		parser.LSS, parser.LTE, parser.LUNLESS, parser.MOD, parser.POW:
 		if p.pd.containsGrouping {
 			result += p.pd.newLine() + p.pd.pad(baseIndent) + item.Val + " "
+			p.pd.isNewLineApplied = false
 		} else if nodeSplittable && !p.pd.immediateScalar {
 			result += p.pd.newLine() + p.pd.pad(baseIndent) + item.Val + p.pd.newLine()
 		} else {
@@ -366,7 +375,7 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 		}
 	case parser.COMMA:
 		result += item.Val
-		if nodeSplittable {
+		if nodeSplittable || p.pd.multiArgumentCall {
 			result += p.pd.newLine()
 		} else {
 			result += " "
