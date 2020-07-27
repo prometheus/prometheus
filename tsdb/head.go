@@ -51,8 +51,6 @@ var (
 
 // Head handles reads and writes of time series data within a time window.
 type Head struct {
-	// Keep all 64bit atomically accessed variables at the top of this struct.
-	// See https://golang.org/pkg/sync/atomic/#pkg-note-BUG for more info.
 	chunkRange       atomic.Int64
 	numSeries        atomic.Uint64
 	minTime, maxTime atomic.Int64 // Current min and max of the samples included in the head.
