@@ -943,12 +943,21 @@ func (p *populateWithDelGenericSeriesIterator) next() bool {
 			p.bufIter.intervals = p.bufIter.intervals.Add(interval)
 		}
 	}
-	if len(p.bufIter.intervals) == 0 {
-		// No overlap with deletion intervals. Take chunk as it is.
+
+	// Re-encode head chunks that are still open (being appended to) or
+	// outside the compacted MaxTime range.
+	// The chunk.Bytes() method is not safe for open chunks hence the re-encoding.
+	// This happens when snapshotting the head block or just fetching chunks from TSDB.
+	//
+	// TODO think how to avoid the typecasting to verify when it is head block.
+	_, isSafeChunk := p.currChkMeta.Chunk.(*safeChunk)
+	if len(p.bufIter.intervals) == 0 && !(isSafeChunk && p.currChkMeta.MaxTime == math.MaxInt64) {
+		// If there are no overlap with deletion intervals AND it's NOT an "open" head chunk, we can take chunk as it is.
 		p.currDelIter = nil
 		return true
 	}
-	// We don't want full chunk, just part of it.
+
+	// We don't want full chunk or it's potentially still opened, take just part of it.
 	p.bufIter.it = p.currChkMeta.Chunk.Iterator(nil)
 	p.currDelIter = p.bufIter
 	return true
@@ -1028,7 +1037,7 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 		return true
 	}
 
-	// Re-encode the chunk to not have deleted values or if they are still open from case above.
+	// Re-encode the chunk if iterator is provider. This means that it has some samples to be deleted or chunk is opened.
 	newChunk := chunkenc.NewXORChunk()
 	app, err := newChunk.Appender()
 	if err != nil {
