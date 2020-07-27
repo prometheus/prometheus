@@ -28,6 +28,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-kit/kit/log"
 	"github.com/google/pprof/profile"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/api"
@@ -40,6 +41,7 @@ import (
 	"gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/importers"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
 )
 
@@ -128,6 +130,20 @@ func main() {
 	dumpMinTime := tsdbDumpCmd.Flag("min-time", "Minimum timestamp to dump.").Default(strconv.FormatInt(math.MinInt64, 10)).Int64()
 	dumpMaxTime := tsdbDumpCmd.Flag("max-time", "Maximum timestamp to dump.").Default(strconv.FormatInt(math.MaxInt64, 10)).Int64()
 
+	backfillCmd := app.Command("backfill", "Backfill Prometheus data.")
+	backfillRuleCmd := backfillCmd.Command("rules", "Backfill Prometheus data for new rules.")
+	backfillRuleURL := backfillRuleCmd.Flag("url", "Prometheus API url.").Required().String()
+	backfillRuleEvalInterval := backfillRuleCmd.Flag("evaluation_interval", "How frequently to evaluate rules when backfilling.").
+		Default("-3h").Duration()
+	backfillRuleStart := backfillRuleCmd.Flag("start", "The time to start backfilling the new rule from. It is required. Start time should be RFC3339 or Unix timestamp.").
+		Required().Duration()
+	backfillRuleEnd := backfillRuleCmd.Flag("end", "If an end time is provided, the new rule backfilling will end at this time. The default will backfill to the 3 hrs ago. End time should be RFC3339 or Unix timestamp.").
+		Default("").Duration()
+	backfillRuleFiles := backfillRuleCmd.Arg(
+		"rule-files",
+		"The file containing the new rule that needs to be backfilled.",
+	).Required().ExistingFiles()
+
 	parsedCmd := kingpin.MustParse(app.Parse(os.Args[1:]))
 
 	var p printer
@@ -183,6 +199,9 @@ func main() {
 
 	case tsdbDumpCmd.FullCommand():
 		os.Exit(checkErr(dumpSamples(*dumpPath, *dumpMinTime, *dumpMaxTime)))
+
+	case backfillRuleCmd.FullCommand():
+		os.Exit(BackfillRule(*backfillRuleURL, *backfillRuleStart, *backfillRuleEnd, *backfillRuleEvalInterval, *backfillRuleFiles...))
 	}
 }
 
@@ -746,4 +765,39 @@ func (j *jsonPrinter) printSeries(v []model.LabelSet) {
 func (j *jsonPrinter) printLabelValues(v model.LabelValues) {
 	//nolint:errcheck
 	json.NewEncoder(os.Stdout).Encode(v)
+}
+
+// BackfillRule backfills rules from the files provided
+func BackfillRule(url string, start, end, evalInterval time.Duration, files ...string) int {
+	ctx := context.Background()
+	cfg := importers.RuleConfig{
+		Start:        start.String(),
+		End:          end.String(),
+		EvalInterval: evalInterval,
+		URL:          url,
+	}
+	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
+	ruleImporter := importers.NewRuleImporter(logger, cfg)
+	err := ruleImporter.Init()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "rule importer init error", err)
+		return 1
+	}
+
+	errs := ruleImporter.Parse(ctx, files)
+	for _, err := range errs {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "rule importer parse error", err)
+			return 1
+		}
+	}
+
+	errs = ruleImporter.ImportAll(ctx)
+	for _, err := range errs {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "rule importer error", err)
+		}
+	}
+
+	return 0
 }
