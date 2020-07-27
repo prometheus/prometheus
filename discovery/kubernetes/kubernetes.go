@@ -50,9 +50,9 @@ const (
 	presentValue     = model.LabelValue("true")
 )
 
-var userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
-
 var (
+	// Http header
+	userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 	// Custom events metric
 	eventCount = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
