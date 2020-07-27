@@ -321,7 +321,7 @@ func (db *DBReadOnly) FlushWAL(dir string) (returnErr error) {
 	if err != nil {
 		return err
 	}
-	head, err := NewHead(nil, db.logger, w, 1, db.dir, nil, DefaultStripeSize, nil)
+	head, err := NewHead(nil, db.logger, w, DefaultBlockDuration, db.dir, nil, DefaultStripeSize, nil)
 	if err != nil {
 		return err
 	}
@@ -378,7 +378,7 @@ func (db *DBReadOnly) loadDataAsQueryable(maxt int64) (storage.SampleAndChunkQue
 		blocks[i] = b
 	}
 
-	head, err := NewHead(nil, db.logger, nil, 1, db.dir, nil, DefaultStripeSize, nil)
+	head, err := NewHead(nil, db.logger, nil, DefaultBlockDuration, db.dir, nil, DefaultStripeSize, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -396,7 +396,7 @@ func (db *DBReadOnly) loadDataAsQueryable(maxt int64) (storage.SampleAndChunkQue
 		if err != nil {
 			return nil, err
 		}
-		head, err = NewHead(nil, db.logger, w, 1, db.dir, nil, DefaultStripeSize, nil)
+		head, err = NewHead(nil, db.logger, w, DefaultBlockDuration, db.dir, nil, DefaultStripeSize, nil)
 		if err != nil {
 			return nil, err
 		}

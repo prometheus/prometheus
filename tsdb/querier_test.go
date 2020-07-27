@@ -24,6 +24,7 @@ import (
 	"sort"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -405,7 +406,7 @@ func TestBlockQuerier_AgainstHeadWithOpenChunks(t *testing.T) {
 		},
 	} {
 		t.Run("", func(t *testing.T) {
-			h, err := NewHead(nil, nil, nil, 1000, "", nil, DefaultStripeSize, nil)
+			h, err := NewHead(nil, nil, nil, 2*time.Hour.Milliseconds(), "", nil, DefaultStripeSize, nil)
 			testutil.Ok(t, err)
 			defer h.Close()
 
@@ -1916,7 +1917,7 @@ func BenchmarkQueries(b *testing.B) {
 				defer func() {
 					testutil.Ok(b, os.RemoveAll(chunkDir))
 				}()
-				head := createHead(b, series, chunkDir)
+				head := createHead(b, nil, series, chunkDir)
 				qHead, err := NewBlockQuerier(head, 1, nSamples)
 				testutil.Ok(b, err)
 				queryTypes["_Head"] = qHead

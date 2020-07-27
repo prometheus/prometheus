@@ -16,7 +16,6 @@ package tsdb
 import (
 	"context"
 	"encoding/binary"
-
 	"errors"
 	"hash/crc32"
 	"io/ioutil"
@@ -32,6 +31,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
+	"github.com/prometheus/prometheus/tsdb/wal"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -305,7 +305,7 @@ func createBlock(tb testing.TB, dir string, series []storage.Series) string {
 	chunkDir, err := ioutil.TempDir("", "chunk_dir")
 	testutil.Ok(tb, err)
 	defer func() { testutil.Ok(tb, os.RemoveAll(chunkDir)) }()
-	head := createHead(tb, series, chunkDir)
+	head := createHead(tb, nil, series, chunkDir)
 	defer func() { testutil.Ok(tb, head.Close()) }()
 	return createBlockFromHead(tb, dir, head)
 }
@@ -323,8 +323,8 @@ func createBlockFromHead(tb testing.TB, dir string, head *Head) string {
 	return filepath.Join(dir, ulid.String())
 }
 
-func createHead(tb testing.TB, series []storage.Series, chunkDir string) *Head {
-	head, err := NewHead(nil, nil, nil, 2*60*60*1000, chunkDir, nil, DefaultStripeSize, nil)
+func createHead(tb testing.TB, w *wal.WAL, series []storage.Series, chunkDir string) *Head {
+	head, err := NewHead(nil, nil, w, DefaultBlockDuration, chunkDir, nil, DefaultStripeSize, nil)
 	testutil.Ok(tb, err)
 
 	app := head.Appender()
@@ -344,8 +344,7 @@ func createHead(tb testing.TB, series []storage.Series, chunkDir string) *Head {
 		}
 		testutil.Ok(tb, it.Err())
 	}
-	err = app.Commit()
-	testutil.Ok(tb, err)
+	testutil.Ok(tb, app.Commit())
 	return head
 }
 

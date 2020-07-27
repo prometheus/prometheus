@@ -104,6 +104,36 @@ func query(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) map[str
 	return result
 }
 
+// queryChunks runs a matcher query against the querier and fully expands its data.
+func queryChunks(t testing.TB, q storage.ChunkQuerier, matchers ...*labels.Matcher) map[string][]chunks.Meta {
+	ss := q.Select(false, nil, matchers...)
+	defer func() {
+		testutil.Ok(t, q.Close())
+	}()
+
+	result := map[string][]chunks.Meta{}
+	for ss.Next() {
+		series := ss.At()
+
+		chks := []chunks.Meta{}
+		it := series.Iterator()
+		for it.Next() {
+			chks = append(chks, it.At())
+		}
+		testutil.Ok(t, it.Err())
+
+		if len(chks) == 0 {
+			continue
+		}
+
+		name := series.Labels().String()
+		result[name] = chks
+	}
+	testutil.Ok(t, ss.Err())
+	testutil.Equals(t, 0, len(ss.Warnings()))
+	return result
+}
+
 // Ensure that blocks are held in memory in their time order
 // and not in ULID order as they are read from the directory.
 func TestDB_reloadOrder(t *testing.T) {
@@ -2011,14 +2041,14 @@ func TestBlockRanges(t *testing.T) {
 // It also checks that the API calls return equivalent results as a normal db.Open() mode.
 func TestDBReadOnly(t *testing.T) {
 	var (
-		dbDir          string
-		logger         = log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
-		expBlocks      []*Block
-		expSeries      map[string][]tsdbutil.Sample
-		expSeriesCount int
-		expDBHash      []byte
-		matchAll       = labels.MustNewMatcher(labels.MatchEqual, "", "")
-		err            error
+		dbDir     string
+		logger    = log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
+		expBlocks []*Block
+		expSeries map[string][]tsdbutil.Sample
+		expChunks map[string][]chunks.Meta
+		expDBHash []byte
+		matchAll  = labels.MustNewMatcher(labels.MatchEqual, "", "")
+		err       error
 	)
 
 	// Bootstrap the db.
@@ -2031,15 +2061,21 @@ func TestDBReadOnly(t *testing.T) {
 		}()
 
 		dbBlocks := []*BlockMeta{
-			{MinTime: 10, MaxTime: 11},
-			{MinTime: 11, MaxTime: 12},
-			{MinTime: 12, MaxTime: 13},
+			// Create three 2-sample blocks.
+			{MinTime: 10, MaxTime: 12},
+			{MinTime: 12, MaxTime: 14},
+			{MinTime: 14, MaxTime: 16},
 		}
 
 		for _, m := range dbBlocks {
-			createBlock(t, dbDir, genSeries(1, 1, m.MinTime, m.MaxTime))
+			_ = createBlock(t, dbDir, genSeries(1, 1, m.MinTime, m.MaxTime))
 		}
-		expSeriesCount++
+
+		// Add head to test DBReadOnly WAL reading capabilities.
+		w, err := wal.New(logger, nil, filepath.Join(dbDir, "wal"), true)
+		testutil.Ok(t, err)
+		h := createHead(t, w, genSeries(1, 1, 16, 18), dbDir)
+		testutil.Ok(t, h.Close())
 	}
 
 	// Open a normal db to use for a comparison.
@@ -2054,7 +2090,6 @@ func TestDBReadOnly(t *testing.T) {
 		_, err = app.Add(labels.FromStrings("foo", "bar"), dbWritable.Head().MaxTime()+1, 0)
 		testutil.Ok(t, err)
 		testutil.Ok(t, app.Commit())
-		expSeriesCount++
 
 		expBlocks = dbWritable.Blocks()
 		expDbSize, err := fileutil.DirSize(dbWritable.Dir())
@@ -2064,35 +2099,49 @@ func TestDBReadOnly(t *testing.T) {
 		q, err := dbWritable.Querier(context.TODO(), math.MinInt64, math.MaxInt64)
 		testutil.Ok(t, err)
 		expSeries = query(t, q, matchAll)
+		cq, err := dbWritable.ChunkQuerier(context.TODO(), math.MinInt64, math.MaxInt64)
+		testutil.Ok(t, err)
+		expChunks = queryChunks(t, cq, matchAll)
 
 		testutil.Ok(t, dbWritable.Close()) // Close here to allow getting the dir hash for windows.
 		expDBHash = testutil.DirHash(t, dbWritable.Dir())
 	}
 
 	// Open a read only db and ensure that the API returns the same result as the normal DB.
-	{
-		dbReadOnly, err := OpenDBReadOnly(dbDir, logger)
-		testutil.Ok(t, err)
-		defer func() {
-			testutil.Ok(t, dbReadOnly.Close())
-		}()
+	dbReadOnly, err := OpenDBReadOnly(dbDir, logger)
+	testutil.Ok(t, err)
+	defer func() { testutil.Ok(t, dbReadOnly.Close()) }()
+
+	t.Run("blocks", func(t *testing.T) {
 		blocks, err := dbReadOnly.Blocks()
 		testutil.Ok(t, err)
 		testutil.Equals(t, len(expBlocks), len(blocks))
-
 		for i, expBlock := range expBlocks {
 			testutil.Equals(t, expBlock.Meta(), blocks[i].Meta(), "block meta mismatch")
 		}
+	})
 
+	t.Run("querier", func(t *testing.T) {
+		// Open a read only db and ensure that the API returns the same result as the normal DB.
 		q, err := dbReadOnly.Querier(context.TODO(), math.MinInt64, math.MaxInt64)
 		testutil.Ok(t, err)
 		readOnlySeries := query(t, q, matchAll)
 		readOnlyDBHash := testutil.DirHash(t, dbDir)
 
-		testutil.Equals(t, expSeriesCount, len(readOnlySeries), "total series mismatch")
+		testutil.Equals(t, len(expSeries), len(readOnlySeries), "total series mismatch")
 		testutil.Equals(t, expSeries, readOnlySeries, "series mismatch")
 		testutil.Equals(t, expDBHash, readOnlyDBHash, "after all read operations the db hash should remain the same")
-	}
+	})
+	t.Run("chunk querier", func(t *testing.T) {
+		cq, err := dbReadOnly.ChunkQuerier(context.TODO(), math.MinInt64, math.MaxInt64)
+		testutil.Ok(t, err)
+		readOnlySeries := queryChunks(t, cq, matchAll)
+		readOnlyDBHash := testutil.DirHash(t, dbDir)
+
+		testutil.Equals(t, len(expChunks), len(readOnlySeries), "total series mismatch")
+		testutil.Equals(t, expChunks, readOnlySeries, "series chunks mismatch")
+		testutil.Equals(t, expDBHash, readOnlyDBHash, "after all read operations the db hash should remain the same")
+	})
 }
 
 // TestDBReadOnlyClosing ensures that after closing the db
