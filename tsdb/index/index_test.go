@@ -91,12 +91,15 @@ func (m mockIndex) Close() error {
 	return nil
 }
 
-func (m mockIndex) LabelValues(name string) ([]string, error) {
+func (m mockIndex) LabelValues(name string, sortedValues bool) ([]string, error) {
 	values := []string{}
 	for l := range m.postings {
 		if l.Name == name {
 			values = append(values, l.Value)
 		}
+	}
+	if sortedValues {
+		sort.Strings(values)
 	}
 	return values, nil
 }
@@ -458,7 +461,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 	for k, v := range labelPairs {
 		sort.Strings(v)
 
-		res, err := ir.LabelValues(k)
+		res, err := ir.LabelValues(k, true)
 		testutil.Ok(t, err)
 
 		testutil.Equals(t, len(v), len(res))

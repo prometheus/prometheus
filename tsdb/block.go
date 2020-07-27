@@ -62,10 +62,10 @@ type IndexReader interface {
 	Symbols() index.StringIter
 
 	// LabelValues returns sorted possible label values.
-	LabelValues(name string) ([]string, error)
+	LabelValues(name string, sortedValues bool) ([]string, error)
 
 	// UnsortedLabelValues returns possible label values which may not be sorted.
-	UnsortedLabelValues(name string) ([]string, error)
+	//UnsortedLabelValues(name string) ([]string, error)
 
 	// Postings returns the postings list iterator for the label pairs.
 	// The Postings here contain the offsets to the series inside the index.
@@ -421,15 +421,15 @@ func (r blockIndexReader) Symbols() index.StringIter {
 	return r.ir.Symbols()
 }
 
-func (r blockIndexReader) LabelValues(name string) ([]string, error) {
-	st, err := r.ir.LabelValues(name)
+func (r blockIndexReader) LabelValues(name string, sortedValues bool) ([]string, error) {
+	st, err := r.ir.LabelValues(name, sortedValues)
 	return st, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
 }
 
-func (r blockIndexReader) UnsortedLabelValues(name string) ([]string, error) {
-	st, err := r.ir.UnsortedLabelValues(name)
-	return st, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
-}
+// func (r blockIndexReader) UnsortedLabelValues(name string) ([]string, error) {
+// 	st, err := r.ir.UnsortedLabelValues(name)
+// 	return st, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
+// }
 
 func (r blockIndexReader) Postings(name string, values ...string) (index.Postings, error) {
 	p, err := r.ir.Postings(name, values...)

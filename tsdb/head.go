@@ -1560,9 +1560,9 @@ func (h *headIndexReader) Symbols() index.StringIter {
 
 // LabelValues returns label values present in the head for the
 // specific label name that are within the time range mint to maxt.
-func (h *headIndexReader) LabelValues(name string) ([]string, error) {
+func (h *headIndexReader) LabelValues(name string, sortedValues bool) ([]string, error) {
 	values, err := h.UnsortedLabelValues(name)
-	if err == nil {
+	if err == nil && sortedValues {
 		sort.Strings(values)
 	}
 	return values, err

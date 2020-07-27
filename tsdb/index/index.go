@@ -1421,9 +1421,9 @@ func (r *Reader) SymbolTableSize() uint64 {
 // LabelValues returns value tuples that exist for the given label name.
 // It is not safe to use the return value beyond the lifetime of the byte slice
 // passed into the Reader.
-func (r *Reader) LabelValues(name string) ([]string, error) {
+func (r *Reader) LabelValues(name string, sortedValues bool) ([]string, error) {
 	values, err := r.UnsortedLabelValues(name)
-	if err == nil && r.version == FormatV1 {
+	if err == nil && r.version == FormatV1 && sortedValues {
 		sort.Strings(values)
 	}
 	return values, err
