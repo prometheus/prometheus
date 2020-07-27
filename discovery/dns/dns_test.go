@@ -22,12 +22,17 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/miekg/dns"
+	"go.uber.org/goleak"
 	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/testutil"
 )
+
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
+}
 
 func TestDNS(t *testing.T) {
 	testCases := []struct {
