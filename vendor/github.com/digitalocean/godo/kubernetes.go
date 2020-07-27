@@ -66,6 +66,7 @@ type KubernetesClusterCreateRequest struct {
 
 	MaintenancePolicy *KubernetesMaintenancePolicy `json:"maintenance_policy"`
 	AutoUpgrade       bool                         `json:"auto_upgrade"`
+	SurgeUpgrade      bool                         `json:"surge_upgrade"`
 }
 
 // KubernetesClusterUpdateRequest represents a request to update a Kubernetes cluster.
@@ -74,6 +75,7 @@ type KubernetesClusterUpdateRequest struct {
 	Tags              []string                     `json:"tags,omitempty"`
 	MaintenancePolicy *KubernetesMaintenancePolicy `json:"maintenance_policy,omitempty"`
 	AutoUpgrade       *bool                        `json:"auto_upgrade,omitempty"`
+	SurgeUpgrade      bool                         `json:"surge_upgrade,omitempty"`
 }
 
 // KubernetesClusterUpgradeRequest represents a request to upgrade a Kubernetes cluster.
@@ -143,6 +145,7 @@ type KubernetesCluster struct {
 
 	MaintenancePolicy *KubernetesMaintenancePolicy `json:"maintenance_policy,omitempty"`
 	AutoUpgrade       bool                         `json:"auto_upgrade,omitempty"`
+	SurgeUpgrade      bool                         `json:"surge_upgrade,omitempty"`
 
 	Status    *KubernetesClusterStatus `json:"status,omitempty"`
 	CreatedAt time.Time                `json:"created_at,omitempty"`

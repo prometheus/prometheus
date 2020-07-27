@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/opentracing/opentracing-go"
+	"github.com/uber/jaeger-client-go/utils"
 
 	"github.com/uber/jaeger-client-go"
 	"github.com/uber/jaeger-client-go/internal/baggage/remote"
@@ -123,6 +124,17 @@ type ReporterConfig struct {
 	// LocalAgentHostPort instructs reporter to send spans to jaeger-agent at this address.
 	// Can be provided by FromEnv() via the environment variable named JAEGER_AGENT_HOST / JAEGER_AGENT_PORT
 	LocalAgentHostPort string `yaml:"localAgentHostPort"`
+
+	// DisableAttemptReconnecting when true, disables udp connection helper that periodically re-resolves
+	// the agent's hostname and reconnects if there was a change. This option only
+	// applies if LocalAgentHostPort is specified.
+	// Can be provided by FromEnv() via the environment variable named JAEGER_REPORTER_ATTEMPT_RECONNECTING_DISABLED
+	DisableAttemptReconnecting bool `yaml:"disableAttemptReconnecting"`
+
+	// AttemptReconnectInterval controls how often the agent client re-resolves the provided hostname
+	// in order to detect address changes. This option only applies if DisableAttemptReconnecting is false.
+	// Can be provided by FromEnv() via the environment variable named JAEGER_REPORTER_ATTEMPT_RECONNECT_INTERVAL
+	AttemptReconnectInterval time.Duration
 
 	// CollectorEndpoint instructs reporter to send spans to jaeger-collector at this URL.
 	// Can be provided by FromEnv() via the environment variable named JAEGER_ENDPOINT
@@ -384,7 +396,7 @@ func (rc *ReporterConfig) NewReporter(
 	metrics *jaeger.Metrics,
 	logger jaeger.Logger,
 ) (jaeger.Reporter, error) {
-	sender, err := rc.newTransport()
+	sender, err := rc.newTransport(logger)
 	if err != nil {
 		return nil, err
 	}
@@ -401,7 +413,7 @@ func (rc *ReporterConfig) NewReporter(
 	return reporter, err
 }
 
-func (rc *ReporterConfig) newTransport() (jaeger.Transport, error) {
+func (rc *ReporterConfig) newTransport(logger jaeger.Logger) (jaeger.Transport, error) {
 	switch {
 	case rc.CollectorEndpoint != "":
 		httpOptions := []transport.HTTPOption{transport.HTTPBatchSize(1), transport.HTTPHeaders(rc.HTTPHeaders)}
@@ -410,6 +422,13 @@ func (rc *ReporterConfig) newTransport() (jaeger.Transport, error) {
 		}
 		return transport.NewHTTPTransport(rc.CollectorEndpoint, httpOptions...), nil
 	default:
-		return jaeger.NewUDPTransport(rc.LocalAgentHostPort, 0)
+		return jaeger.NewUDPTransportWithParams(jaeger.UDPTransportParams{
+			AgentClientUDPParams: utils.AgentClientUDPParams{
+				HostPort:                   rc.LocalAgentHostPort,
+				Logger:                     logger,
+				DisableAttemptReconnecting: rc.DisableAttemptReconnecting,
+				AttemptReconnectInterval:   rc.AttemptReconnectInterval,
+			},
+		})
 	}
 }
