@@ -84,7 +84,8 @@ type Watcher struct {
 	done chan struct{}
 
 	// For testing, stop when we hit this segment.
-	MaxSegment int
+	MaxSegment  int
+	SegmentFile string
 }
 
 func NewWatcherMetrics(reg prometheus.Registerer) *WatcherMetrics {
@@ -154,7 +155,8 @@ func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logge
 		quit: make(chan struct{}),
 		done: make(chan struct{}),
 
-		MaxSegment: -1,
+		MaxSegment:  -1,
+		SegmentFile: "/",
 	}
 }
 
@@ -257,9 +259,14 @@ func (w *Watcher) Run() error {
 		}
 
 		// For testing: stop when you hit a specific segment.
+
 		if currentSegment == w.MaxSegment {
 			return nil
 		}
+
+		//------------------------------------------------------------------
+		w.SegmentFile = SegmentName(w.walDir, currentSegment)
+		//------------------------------------------------------------------
 
 		currentSegment++
 	}
