@@ -35,7 +35,10 @@ import (
 const (
 	resolvConf = "/etc/resolv.conf"
 
-	dnsNameLabel = model.MetaLabelPrefix + "dns_name"
+	dnsNameLabel            = model.MetaLabelPrefix + "dns_name"
+	dnsSrvRecordPrefix      = model.MetaLabelPrefix + "dns_srv_record_"
+	dnsSrvRecordTargetLabel = dnsSrvRecordPrefix + "target"
+	dnsSrvRecordPortLabel   = dnsSrvRecordPrefix + "port"
 
 	// Constants for instrumentation.
 	namespace = "prometheus"
@@ -183,9 +186,13 @@ func (d *Discovery) refreshOne(ctx context.Context, name string, ch chan<- *targ
 	}
 
 	for _, record := range response.Answer {
-		var target model.LabelValue
+		var target, dnsSrvRecordTarget, dnsSrvRecordPort model.LabelValue
+
 		switch addr := record.(type) {
 		case *dns.SRV:
+			dnsSrvRecordTarget = model.LabelValue(addr.Target)
+			dnsSrvRecordPort = model.LabelValue(fmt.Sprintf("%d", addr.Port))
+
 			// Remove the final dot from rooted DNS names to make them look more usual.
 			addr.Target = strings.TrimRight(addr.Target, ".")
 
@@ -199,8 +206,10 @@ func (d *Discovery) refreshOne(ctx context.Context, name string, ch chan<- *targ
 			continue
 		}
 		tg.Targets = append(tg.Targets, model.LabelSet{
-			model.AddressLabel: target,
-			dnsNameLabel:       model.LabelValue(name),
+			model.AddressLabel:      target,
+			dnsNameLabel:            model.LabelValue(name),
+			dnsSrvRecordTargetLabel: dnsSrvRecordTarget,
+			dnsSrvRecordPortLabel:   dnsSrvRecordPort,
 		})
 	}
 
