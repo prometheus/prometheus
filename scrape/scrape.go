@@ -193,7 +193,7 @@ type scrapePool struct {
 	droppedTargets []*Target
 	loops          map[uint64]loop
 	cancel         context.CancelFunc
-	targetLimitHit bool
+	targetLimitHit bool // Internal state to speed up the target_limit checks.
 
 	// Constructor for new scrape loops. This is settable for testing convenience.
 	newLoop func(scrapeLoopOptions) loop
@@ -344,7 +344,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 		mrc             = sp.config.MetricRelabelConfigs
 	)
 
-	forcedErr := sp.getForcedError()
+	forcedErr := sp.refreshTargetLimitErr()
 	for fp, oldLoop := range sp.loops {
 		var cache *scrapeCache
 		if oc := oldLoop.getCache(); reuseCache && oc != nil {
@@ -480,7 +480,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 	}
 
 	targetScrapePoolTargetsAdded.WithLabelValues(sp.config.JobName).Set(float64(len(uniqueLoops)))
-	forcedErr := sp.getForcedError()
+	forcedErr := sp.refreshTargetLimitErr()
 	for _, l := range sp.loops {
 		l.setForcedError(forcedErr)
 	}
@@ -496,7 +496,9 @@ func (sp *scrapePool) sync(targets []*Target) {
 	wg.Wait()
 }
 
-func (sp *scrapePool) getForcedError() error {
+// refreshTargetLimitErr returns an error that can be passed to the scrape loops
+// if the number of targets exceeds the configured limit.
+func (sp *scrapePool) refreshTargetLimitErr() error {
 	// This function expects that you have acquired the sp.mtx lock.
 	if sp.config == nil || sp.config.TargetLimit == 0 && !sp.targetLimitHit {
 		return nil
