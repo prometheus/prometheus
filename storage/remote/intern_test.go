@@ -20,7 +20,6 @@ package remote
 
 import (
 	"fmt"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -33,7 +32,7 @@ func TestIntern(t *testing.T) {
 	interned, ok := interner.pool[testString]
 
 	testutil.Equals(t, true, ok)
-	testutil.Assert(t, interned.refs == 1, fmt.Sprintf("expected refs to be 1 but it was %d", interned.refs))
+	testutil.Assert(t, interned.refs.Load() == 1, fmt.Sprintf("expected refs to be 1 but it was %d", interned.refs))
 }
 
 func TestIntern_MultiRef(t *testing.T) {
@@ -43,13 +42,13 @@ func TestIntern_MultiRef(t *testing.T) {
 	interned, ok := interner.pool[testString]
 
 	testutil.Equals(t, true, ok)
-	testutil.Assert(t, interned.refs == 1, fmt.Sprintf("expected refs to be 1 but it was %d", interned.refs))
+	testutil.Assert(t, interned.refs.Load() == 1, fmt.Sprintf("expected refs to be 1 but it was %d", interned.refs))
 
 	interner.intern(testString)
 	interned, ok = interner.pool[testString]
 
 	testutil.Equals(t, true, ok)
-	testutil.Assert(t, interned.refs == 2, fmt.Sprintf("expected refs to be 2 but it was %d", interned.refs))
+	testutil.Assert(t, interned.refs.Load() == 2, fmt.Sprintf("expected refs to be 2 but it was %d", interned.refs))
 }
 
 func TestIntern_DeleteRef(t *testing.T) {
@@ -59,7 +58,7 @@ func TestIntern_DeleteRef(t *testing.T) {
 	interned, ok := interner.pool[testString]
 
 	testutil.Equals(t, true, ok)
-	testutil.Assert(t, interned.refs == 1, fmt.Sprintf("expected refs to be 1 but it was %d", interned.refs))
+	testutil.Assert(t, interned.refs.Load() == 1, fmt.Sprintf("expected refs to be 1 but it was %d", interned.refs))
 
 	interner.release(testString)
 	_, ok = interner.pool[testString]
@@ -72,7 +71,7 @@ func TestIntern_MultiRef_Concurrent(t *testing.T) {
 	interner.intern(testString)
 	interned, ok := interner.pool[testString]
 	testutil.Equals(t, true, ok)
-	testutil.Assert(t, interned.refs == 1, fmt.Sprintf("expected refs to be 1 but it was %d", interned.refs))
+	testutil.Assert(t, interned.refs.Load() == 1, fmt.Sprintf("expected refs to be 1 but it was %d", interned.refs))
 
 	go interner.release(testString)
 
@@ -84,5 +83,5 @@ func TestIntern_MultiRef_Concurrent(t *testing.T) {
 	interned, ok = interner.pool[testString]
 	interner.mtx.RUnlock()
 	testutil.Equals(t, true, ok)
-	testutil.Assert(t, atomic.LoadInt64(&interned.refs) == 1, fmt.Sprintf("expected refs to be 1 but it was %d", interned.refs))
+	testutil.Assert(t, interned.refs.Load() == 1, fmt.Sprintf("expected refs to be 1 but it was %d", interned.refs))
 }
