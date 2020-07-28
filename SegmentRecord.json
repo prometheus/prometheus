@@ -1,7 +1,7 @@
 {
 "Checkpoints": [
 {
-"Segment": "0000125",
+"Segment": "0000127",
 "Offset": "00000001",
 "Endpoint": "localhost:1234/receive"
 }
