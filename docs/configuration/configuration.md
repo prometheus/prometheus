@@ -592,8 +592,8 @@ queries, but not the advanced DNS-SD approach specified in
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
 * `__meta_dns_name`: the record name that produced the discovered target.
-* `__meta_dns_srv_record_target`: the target field of the SRV record, if the query type is SRV
-* `__meta_dns_srv_record_port`: the port field of the SRV record, if the query type is SRV
+* `__meta_dns_srv_record_target`: the target field of the SRV record
+* `__meta_dns_srv_record_port`: the port field of the SRV record
 
 ```yaml
 # A list of DNS domain names to be queried.
