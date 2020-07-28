@@ -467,6 +467,21 @@ type nopChunkWriter struct{}
 func (nopChunkWriter) WriteChunks(chunks ...chunks.Meta) error { return nil }
 func (nopChunkWriter) Close() error                            { return nil }
 
+func samplesForRange(minTime, maxTime int64, maxSamplesPerChunk int) (ret [][]sample) {
+	var curr []sample
+	for i := minTime; i <= maxTime; i++ {
+		curr = append(curr, sample{t: i})
+		if len(curr) >= maxSamplesPerChunk {
+			ret = append(ret, curr)
+			curr = []sample{}
+		}
+	}
+	if len(curr) > 0 {
+		ret = append(ret, curr)
+	}
+	return ret
+}
+
 func TestCompaction_populateBlock(t *testing.T) {
 	var populateBlocksCases = []struct {
 		title              string
@@ -484,11 +499,7 @@ func TestCompaction_populateBlock(t *testing.T) {
 		{
 			// Populate from single block without chunks. We expect these kind of series being ignored.
 			inputSeriesSamples: [][]seriesSamples{
-				{
-					{
-						lset: map[string]string{"a": "b"},
-					},
-				},
+				{{lset: map[string]string{"a": "b"}}},
 			},
 		},
 		{
@@ -834,6 +845,59 @@ func TestCompaction_populateBlock(t *testing.T) {
 				{
 					lset:   map[string]string{"a": "overlap-ending"},
 					chunks: [][]sample{{{t: 0}, {t: 10}, {t: 13}, {t: 20}}, {{t: 21}, {t: 27}, {t: 30}, {t: 35}}},
+				},
+			},
+		},
+		{
+			title: "Populate from three partially overlapping blocks with few full chunks.",
+			inputSeriesSamples: [][]seriesSamples{
+				{
+					{
+						lset:   map[string]string{"a": "1", "b": "1"},
+						chunks: samplesForRange(0, 659, 120), // 5 chunks and half.
+					},
+					{
+						lset:   map[string]string{"a": "1", "b": "2"},
+						chunks: samplesForRange(0, 659, 120),
+					},
+				},
+				{
+					{
+						lset:   map[string]string{"a": "1", "b": "2"},
+						chunks: samplesForRange(480, 1199, 120), // two chunks overlapping with previous, two non overlapping and two overlapping with next block.
+					},
+					{
+						lset:   map[string]string{"a": "1", "b": "3"},
+						chunks: samplesForRange(480, 1199, 120),
+					},
+				},
+				{
+					{
+						lset:   map[string]string{"a": "1", "b": "2"},
+						chunks: samplesForRange(960, 1499, 120), // 5 chunks and half.
+					},
+					{
+						lset:   map[string]string{"a": "1", "b": "4"},
+						chunks: samplesForRange(960, 1499, 120),
+					},
+				},
+			},
+			expSeriesSamples: []seriesSamples{
+				{
+					lset:   map[string]string{"a": "1", "b": "1"},
+					chunks: samplesForRange(0, 659, 120),
+				},
+				{
+					lset:   map[string]string{"a": "1", "b": "2"},
+					chunks: samplesForRange(0, 1499, 120),
+				},
+				{
+					lset:   map[string]string{"a": "1", "b": "3"},
+					chunks: samplesForRange(480, 1199, 120),
+				},
+				{
+					lset:   map[string]string{"a": "1", "b": "4"},
+					chunks: samplesForRange(960, 1499, 120),
 				},
 			},
 		},
