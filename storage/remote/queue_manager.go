@@ -15,6 +15,9 @@ package remote
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"io/ioutil"
 	"math"
 	"strconv"
 	"sync"
@@ -36,6 +39,20 @@ import (
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/wal"
 )
+
+// ---------------------------------------------------------------
+
+type SegmentRecord struct {
+	Segment  string
+	Offset   string
+	Endpoint string
+}
+
+type Checkpoints struct {
+	Checkpoints []SegmentRecord
+}
+
+// ---------------------------------------------------------------
 
 const (
 	// We track samples in/out and how long pushes take using an Exponentially
@@ -244,6 +261,7 @@ type QueueManager struct {
 	externalLabels labels.Labels
 	relabelConfigs []*relabel.Config
 	watcher        *wal.Watcher
+	w              wal.Watcher
 
 	clientMtx   sync.RWMutex
 	storeClient WriteClient
@@ -382,6 +400,10 @@ func (t *QueueManager) Stop() {
 	level.Info(t.logger).Log("msg", "Stopping remote storage...")
 	defer level.Info(t.logger).Log("msg", "Remote storage stopped.")
 
+	// ---------------------------------------------------------------
+	defer t.GetCheckpoint()
+	// ---------------------------------------------------------------
+
 	close(t.quit)
 	t.wg.Wait()
 	// Wait for all QueueManager routines to end before stopping shards and WAL watcher. This
@@ -398,6 +420,59 @@ func (t *QueueManager) Stop() {
 	t.seriesMtx.Unlock()
 	t.metrics.unregister()
 }
+
+// ---------------------------------------------------------------
+
+// GetCheckpoint - formats the segment data and convert it to JSON
+func (t *QueueManager) GetCheckpoint() {
+
+	// Add check that fileDir is < 7 characters
+	// Segment File Directory
+	SegmentDir := t.watcher.SegmentFile
+
+	// Segment File Name
+	SegmentName := SegmentDir[len(SegmentDir)-7:]
+
+	fmt.Println("----------------------------------------")
+	fmt.Println("Segment Directory: " + SegmentDir)
+	fmt.Println("Segment Name: " + SegmentName)
+	fmt.Println("----------------------------------------")
+
+	record := Checkpoints{
+		Checkpoints: []SegmentRecord{
+			SegmentRecord{
+				Segment:  SegmentName,
+				Offset:   "00000001",
+				Endpoint: "localhost:1234/receive",
+			},
+		},
+	}
+
+	t.RecordSegment(record)
+}
+
+// RecordSegment - writes the segment record in a JSON file
+func (t *QueueManager) RecordSegment(record Checkpoints) {
+	fmt.Println("----------------------------------------")
+	fmt.Println("Recording Segment....")
+
+	var data []byte
+	data, err := json.MarshalIndent(record, "", "")
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	fmt.Println("----------------------------------------")
+	fmt.Println(string(data))
+	fmt.Println("----------------------------------------")
+
+	err = ioutil.WriteFile("SegmentRecord.json", data, 0644)
+	if err != nil {
+		fmt.Println(err)
+	}
+}
+
+// ---------------------------------------------------------------
 
 // StoreSeries keeps track of which series we know about for lookups when sending samples to remote.
 func (t *QueueManager) StoreSeries(series []record.RefSeries, index int) {
