@@ -630,7 +630,7 @@ func (t *QueueManager) Stop() {
 	defer level.Info(t.logger).Log("msg", "Remote storage stopped.")
 
 	// ---------------------------------------------------------------
-	defer t.GetCheckpoint()
+	defer t.RecordSegment()
 	// ---------------------------------------------------------------
 
 	close(t.quit)
@@ -655,9 +655,8 @@ func (t *QueueManager) Stop() {
 
 // ---------------------------------------------------------------
 
-// GetCheckpoint - formats the segment data and convert it to JSON
-func (t *QueueManager) GetCheckpoint() {
-
+// RecordSegment - writes the segment record in a JSON file
+func (t *QueueManager) RecordSegment() {
 	// Add check that fileDir is < 7 characters
 	// Segment File Directory
 	SegmentDir := t.watcher.SegmentFile
@@ -666,9 +665,9 @@ func (t *QueueManager) GetCheckpoint() {
 	SegmentName := SegmentDir[len(SegmentDir)-7:]
 
 	fmt.Println("----------------------------------------")
+	fmt.Println("Recording Segment....")
 	fmt.Println("Segment Directory: " + SegmentDir)
 	fmt.Println("Segment Name: " + SegmentName)
-	fmt.Println("----------------------------------------")
 
 	record := Checkpoints{
 		Checkpoints: []SegmentRecord{
@@ -679,14 +678,6 @@ func (t *QueueManager) GetCheckpoint() {
 			},
 		},
 	}
-
-	t.RecordSegment(record)
-}
-
-// RecordSegment - writes the segment record in a JSON file
-func (t *QueueManager) RecordSegment(record Checkpoints) {
-	fmt.Println("----------------------------------------")
-	fmt.Println("Recording Segment....")
 
 	var data []byte
 	data, err := json.MarshalIndent(record, "", "")

@@ -265,6 +265,7 @@ func (w *Watcher) Run() error {
 		}
 
 		//------------------------------------------------------------------
+		// Only gets the most recent segment file
 		w.SegmentFile = SegmentName(w.walDir, currentSegment)
 		//------------------------------------------------------------------
 
