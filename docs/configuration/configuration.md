@@ -459,7 +459,10 @@ One of the following roles can be configured to discover targets:
 
 #### `services`
 
-The `services` role is used to discover [Swarm services](https://docs.docker.com/engine/swarm/key-concepts/#services-and-tasks).
+The `services` role discovers all [Swarm services](https://docs.docker.com/engine/swarm/key-concepts/#services-and-tasks)
+and exposes their ports as targets. For each published port of a service, a
+single target is generated. If a service has no published ports, a target per
+service is created with the `port` parameter defined in the SD configuration.
 
 Available meta labels:
 
@@ -481,7 +484,10 @@ Available meta labels:
 
 #### `tasks`
 
-The `tasks` role is used to discover [Swarm tasks](https://docs.docker.com/engine/swarm/key-concepts/#services-and-tasks).
+The `tasks` role discovers all [Swarm tasks](https://docs.docker.com/engine/swarm/key-concepts/#services-and-tasks)
+and exposes their ports as targets. For each published port of a task, a single
+target is generated. If a task has no published ports, a target per task is
+created with the `port` parameter defined in the SD configuration.
 
 Available meta labels:
 
@@ -552,7 +558,8 @@ tls_config:
 # Role of the targets to retrieve. Must be `services`, `tasks`, or `nodes`.
 role: <string>
 
-# The port to scrape metrics from, when `role` is nodes.
+# The port to scrape metrics from, when `role` is nodes, and for discovered
+# tasks and services that don't have published ports.
 [ port: <int> | default = 80 ]
 
 # The time after which the droplets are refreshed.
