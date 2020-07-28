@@ -30,7 +30,6 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -67,6 +66,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/strutil"
 	"github.com/prometheus/prometheus/web"
+
+	"go.uber.org/atomic"
 )
 
 var (
@@ -801,18 +802,18 @@ func openDBWithMetrics(dir string, logger log.Logger, reg prometheus.Registerer,
 }
 
 type safePromQLNoStepSubqueryInterval struct {
-	value int64
+	value atomic.Int64
 }
 
 func durationToInt64Millis(d time.Duration) int64 {
 	return int64(d / time.Millisecond)
 }
 func (i *safePromQLNoStepSubqueryInterval) Set(ev model.Duration) {
-	atomic.StoreInt64(&i.value, durationToInt64Millis(time.Duration(ev)))
+	i.value.Store(durationToInt64Millis(time.Duration(ev)))
 }
 
 func (i *safePromQLNoStepSubqueryInterval) Get(int64) int64 {
-	return atomic.LoadInt64(&i.value)
+	return i.value.Load()
 }
 
 func reloadConfig(filename string, logger log.Logger, noStepSuqueryInterval *safePromQLNoStepSubqueryInterval, rls ...func(*config.Config) error) (err error) {
