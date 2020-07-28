@@ -25,12 +25,12 @@ import (
 	"sort"
 	"strconv"
 	"sync"
-	"sync/atomic"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
+	"go.uber.org/atomic"
 )
 
 // Head chunk file header fields constants.
@@ -78,9 +78,7 @@ func (e *CorruptionErr) Error() string {
 // ChunkDiskMapper is for writing the Head block chunks to the disk
 // and access chunks via mmapped file.
 type ChunkDiskMapper struct {
-	// Keep all 64bit atomically accessed variables at the top of this struct.
-	// See https://golang.org/pkg/sync/atomic/#pkg-note-BUG for more info.
-	curFileNumBytes int64 // Bytes written in current open file.
+	curFileNumBytes atomic.Int64 // Bytes written in current open file.
 
 	/// Writer.
 	dir *os.File
@@ -343,7 +341,7 @@ func (cdm *ChunkDiskMapper) cut() (returnErr error) {
 	}()
 
 	cdm.size += cdm.curFileSize()
-	atomic.StoreInt64(&cdm.curFileNumBytes, int64(n))
+	cdm.curFileNumBytes.Store(int64(n))
 
 	if cdm.curFile != nil {
 		cdm.readPathMtx.Lock()
@@ -394,7 +392,7 @@ func (cdm *ChunkDiskMapper) finalizeCurFile() error {
 
 func (cdm *ChunkDiskMapper) write(b []byte) error {
 	n, err := cdm.chkWriter.Write(b)
-	atomic.AddInt64(&cdm.curFileNumBytes, int64(n))
+	cdm.curFileNumBytes.Add(int64(n))
 	return err
 }
 
@@ -736,7 +734,7 @@ func (cdm *ChunkDiskMapper) Size() int64 {
 }
 
 func (cdm *ChunkDiskMapper) curFileSize() int64 {
-	return atomic.LoadInt64(&cdm.curFileNumBytes)
+	return cdm.curFileNumBytes.Load()
 }
 
 // Close closes all the open files in ChunkDiskMapper.
