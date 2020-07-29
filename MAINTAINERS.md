@@ -8,7 +8,7 @@
   * `prometheus-mixin`: @beorn7
 * `storage`
   * `remote`: @csmarchbanks, @cstyan, @bwplotka
-* `tsdb`: @codesome, @krasi-georgiev
+* `tsdb`: @codesome, @krasi-georgiev, @bwplotka
 * `web`
   * `ui`: @juliusv
 * `Makefile` and related build configuration: @simonpasquier, @SuperQ
