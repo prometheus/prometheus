@@ -26,6 +26,7 @@ import (
 	"github.com/golang/snappy"
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
+	"go.uber.org/atomic"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/config"
@@ -34,8 +35,6 @@ import (
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/wal"
-
-	"go.uber.org/atomic"
 )
 
 const (

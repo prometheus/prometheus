@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/alertmanager/api/v2/models"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"go.uber.org/atomic"
 	yaml "gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/config"
@@ -36,8 +37,6 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/relabel"
 	"github.com/prometheus/prometheus/util/testutil"
-
-	"go.uber.org/atomic"
 )
 
 func TestPostPath(t *testing.T) {

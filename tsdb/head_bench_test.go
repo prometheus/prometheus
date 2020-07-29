@@ -19,9 +19,10 @@ import (
 	"strconv"
 	"testing"
 
+	"go.uber.org/atomic"
+
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/util/testutil"
-	"go.uber.org/atomic"
 )
 
 func BenchmarkHeadStripeSeriesCreate(b *testing.B) {

@@ -46,6 +46,7 @@ import (
 	"github.com/prometheus/common/version"
 	jcfg "github.com/uber/jaeger-client-go/config"
 	jprom "github.com/uber/jaeger-lib/metrics/prometheus"
+	"go.uber.org/atomic"
 	kingpin "gopkg.in/alecthomas/kingpin.v2"
 	"k8s.io/klog"
 
@@ -66,8 +67,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/strutil"
 	"github.com/prometheus/prometheus/web"
-
-	"go.uber.org/atomic"
 )
 
 var (

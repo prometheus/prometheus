@@ -30,6 +30,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	"go.uber.org/atomic"
 
 	"github.com/prometheus/client_golang/prometheus"
 	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
@@ -40,7 +41,6 @@ import (
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/util/testutil"
-	"go.uber.org/atomic"
 )
 
 const defaultFlushDeadline = 1 * time.Minute

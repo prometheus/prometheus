@@ -32,6 +32,8 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/go-openapi/strfmt"
 	"github.com/pkg/errors"
+	"go.uber.org/atomic"
+
 	"github.com/prometheus/alertmanager/api/v2/models"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
@@ -41,7 +43,6 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/relabel"
-	"go.uber.org/atomic"
 )
 
 const (
