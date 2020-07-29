@@ -75,7 +75,7 @@ To tune the rate of ingested samples per second, you can either reduce the numbe
 
 If your local storage becomes corrupted for whatever reason, your best bet is to shut down Prometheus and remove the entire storage directory. You can try removing individual block directories, or WAL directory, to resolve the problem, this means losing a time window of around two hours worth of data per block directory. Again, Prometheus's local storage is not meant as durable long-term storage.
 
-CAUTION: Non POSIX compliant filesystems are not supported by Prometheus's local storage, corruptions may happen, without possibility to recover. NFS is only potentially POSIX, most implementations are not. Cases of corruption are also reported with other networked filesystems. It is strongly recommended to use a local filesystem for reliability.
+CAUTION: Non-POSIX compliant filesystems are not supported by Prometheus' local storage as unrecoverable corruptions may happen. NFS is could be POSIX-compliant, but most implementations are not. Cases of corruption are also reported with other networked filesystems. It is strongly recommended to use a local filesystem for reliability.
 
 If both time and size retention policies are specified, whichever policy triggers first will be used at that instant.
 
