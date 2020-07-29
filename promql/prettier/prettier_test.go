@@ -521,6 +521,31 @@ var prettierCases = []prettierTest{
   )`,
 	},
 	{
+		expr: `label_join(label_join(label_join(up{job="api-server",src1="a",src2="b",src3="c"}, "foo", ",", "src1", "src2", "src3"), "foo", ",", "src1", "src2", "src3"), "foo", ",", "src1", "src2", "src3")`,
+		expected: `  label_join(
+    label_join(
+      label_join(
+        up{job="api-server", src1="a", src2="b", src3="c"},
+        "foo",
+        ",",
+        "src1",
+        "src2",
+        "src3"
+      ),
+      "foo",
+      ",",
+      "src1",
+      "src2",
+      "src3"
+    ),
+    "foo",
+    ",",
+    "src1",
+    "src2",
+    "src3"
+  )`,
+	},
+	{
 		expr: `a + label_join(up{job="api-server",src1="a",src2="b",src3="c"}, "foo", ",", "src1", "src2", "src3")`,
 		expected: `    a + label_join(
       up{job="api-server", src1="a", src2="b", src3="c"},
