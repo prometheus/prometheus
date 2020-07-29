@@ -5,12 +5,19 @@ import (
 	"reflect"
 )
 
+const (
+	grouping = iota
+	scalars
+	multiArguments
+)
+
 type nodeInfo struct {
 	head parser.Expr
 	// Node details.
 	columnLimit int
 	history     []reflect.Type
 	item        parser.Item
+	buf         int
 }
 
 func (p *nodeInfo) violatesColumnLimit() bool {
@@ -29,23 +36,28 @@ func (p *nodeInfo) baseIndent(item parser.Item) int {
 	//fmt.Println("item", item, history)
 	history = reduceContinuous(history, "*parser.BinaryExpr")
 	//fmt.Println("after", item, history)
-	return len(history)
+	p.buf = len(history)
+	return p.buf
+}
+
+func (p *nodeInfo) previousIndent() int {
+	return p.buf
 }
 
 // contains verifies whether the current node contains a particular entity.
-func (p *nodeInfo) is(element string) bool {
+func (p *nodeInfo) is(element uint) bool {
 	switch element {
-	case "grouping-modifier":
+	case grouping:
 		if n, ok := p.head.(*parser.BinaryExpr); ok {
 			return len(n.VectorMatching.MatchingLabels) > 0 || n.ReturnBool
 		}
-	case "scalars":
+	case scalars:
 		if n, ok := p.head.(*parser.BinaryExpr); ok {
 			if n.LHS.Type() == parser.ValueTypeScalar || n.RHS.Type() == parser.ValueTypeScalar {
 				return true
 			}
 		}
-	case "multi-argument":
+	case multiArguments:
 		if n, ok := p.head.(*parser.Call); ok {
 			return len(n.Args) > 1
 		}

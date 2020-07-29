@@ -43,9 +43,9 @@ type padder struct {
 	immediateScalar         bool
 	multiArgumentCall       bool
 	isAggregation           bool
+	isPreviousItemComment   bool
 	expectAggregationLabels bool
 	insideMultilineBraces   bool
-	previousBaseIndent      string
 }
 
 // New returns a new prettier over the given slice of files.
@@ -77,10 +77,9 @@ func New(Type uint, content interface{}) (*Prettier, error) {
 
 func newPadder() *padder {
 	return &padder{
-		indent:             "  ", // 2 space
-		isNewLineApplied:   true,
-		columnLimit:        100,
-		previousBaseIndent: "  ", // start with initial indent as previous val to skip new line at start.
+		indent:           "  ", // 2 space
+		isNewLineApplied: true,
+		columnLimit:      100,
 	}
 }
 
@@ -227,15 +226,11 @@ func (p *Prettier) sortItems(items []parser.Item) []parser.Item {
 				leftBraceIndex  = -1
 				rightBraceIndex = -1
 				labelValItem    = items[itr+2]
-				metricName      = labelValItem.Val[1 : len(labelValItem.Val)-1] // Trim inverted commas.
+				metricName      = labelValItem.Val[1 : len(labelValItem.Val)-1] // Trim inverted-commas.
 				tmp             []parser.Item
 				skipBraces      bool // For handling metric_name{} -> metric_name
 			)
-			// We aim to convert __name__ to an ideal metric_name if the value of that labels is atomic.
-			// Since a non-atomic metric_name will contain alphabets other than a-z and A-Z including _,
-			// anything that violates this ceases the formatting of that particular label item.
-			// If this is not done then the output from the prettier might be an un-parsable expression.
-			if !regexp.MustCompile("^[a-z_A-Z]+$").MatchString(metricName) {
+			if isMetricNameNotAtomic(metricName) {
 				continue
 			}
 			for backScanIndex := itr; backScanIndex >= 0; backScanIndex-- {
@@ -293,34 +288,34 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 		currNode   = &nodeInfo{head: node, columnLimit: 100, item: item}
 		baseIndent int
 	)
-
 	nodeSplittable := currNode.violatesColumnLimit()
+	if p.pd.isPreviousItemComment {
+		p.pd.isPreviousItemComment = false
+		result += p.pd.newLine()
+	}
 	switch node.(type) {
 	case *parser.AggregateExpr:
 		p.pd.isAggregation = true
 	case *parser.BinaryExpr:
-		p.pd.immediateScalar = currNode.is("scalars")
+		p.pd.immediateScalar = currNode.is(scalars)
 		baseIndent = headInfo.baseIndent(item)
 		if item.Typ.IsOperator() {
-			p.pd.containsGrouping = currNode.is("grouping-modifier")
+			p.pd.containsGrouping = currNode.is(grouping)
 		}
 	case *parser.Call:
-		p.pd.multiArgumentCall = currNode.is("multi-argument")
+		p.pd.multiArgumentCall = currNode.is(multiArguments)
 	default:
-		p.pd.multiArgumentCall = false
 		p.pd.isAggregation = false
+		p.pd.multiArgumentCall = false
 	}
 	if p.pd.isNewLineApplied {
-		if item.Typ != parser.LEFT_BRACKET && item.Typ != parser.DURATION {
-			result += p.pd.pad(headInfo.baseIndent(item))
-		}
+		result += p.pd.pad(headInfo.baseIndent(item))
 		p.pd.isNewLineApplied = false
 	}
 
 	switch item.Typ {
 	case parser.LEFT_PAREN:
 		result += item.Val
-		fmt.Println("expectAggregationLabels", p.pd.expectAggregationLabels)
 		if ((nodeSplittable && !p.pd.containsGrouping) || p.pd.multiArgumentCall) && (!p.pd.expectAggregationLabels) {
 			result += p.pd.newLine()
 		}
@@ -351,6 +346,7 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 				result += "," + p.pd.newLine() + p.pd.pad(headInfo.baseIndent(items[index]))
 			}
 			p.pd.insideMultilineBraces = false
+			p.pd.isNewLineApplied = false
 		}
 		result += item.Val
 	case parser.IDENTIFIER:
@@ -361,13 +357,17 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 		}
 	case parser.STRING, parser.NUMBER:
 		result += item.Val
-	case parser.SUM:
+	case parser.SUM, parser.BOTTOMK, parser.COUNT_VALUES, parser.COUNT, parser.GROUP, parser.MAX, parser.MIN,
+		parser.QUANTILE, parser.STDVAR, parser.STDDEV, parser.TOPK:
+		// Aggregations.
 		result += item.Val + " "
 	case parser.EQL, parser.EQL_REGEX, parser.NEQ, parser.NEQ_REGEX, parser.DURATION, parser.COLON,
 		parser.LEFT_BRACKET, parser.RIGHT_BRACKET:
+		// Comparision operators.
 		result += item.Val
 	case parser.ADD, parser.SUB, parser.DIV, parser.GTE, parser.GTR, parser.LOR, parser.LAND,
 		parser.LSS, parser.LTE, parser.LUNLESS, parser.MOD, parser.POW:
+		// Vector matching operators.
 		if p.pd.containsGrouping {
 			result += p.pd.newLine() + p.pd.pad(baseIndent) + item.Val + " "
 			p.pd.isNewLineApplied = false
@@ -381,6 +381,7 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 		}
 	case parser.WITHOUT, parser.BY, parser.IGNORING, parser.BOOL, parser.GROUP_LEFT, parser.GROUP_RIGHT,
 		parser.OFFSET, parser.ON:
+		// Keywords.
 		result += item.Val
 		if item.Typ == parser.BOOL {
 			result += p.pd.newLine()
@@ -395,11 +396,15 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 			result += " "
 		}
 	case parser.COMMENT:
-		if p.pd.isNewLineApplied {
-			result += p.pd.previousBaseIndent + item.Val + p.pd.newLine()
-		} else {
-			result += item.Val + p.pd.newLine()
+		if result[len(result)-1] != ' ' {
+			result += " "
 		}
+		if p.pd.isNewLineApplied {
+			result += p.pd.pad(currNode.previousIndent()) + item.Val
+		} else {
+			result += item.Val
+		}
+		p.pd.isPreviousItemComment = true
 	}
 	if index+1 == len(items) {
 		return result, nil
@@ -473,6 +478,19 @@ func (p *Prettier) parseFile(name string) (*rulefmt.RuleGroups, []error) {
 		return nil, errs
 	}
 	return groups, nil
+}
+
+// isMetricNameAtomic returns true if the metric name is singular in nature.
+// This is used during sorting of lex items.
+func isMetricNameNotAtomic(metricName string) bool {
+	// We aim to convert __name__ to an ideal metric_name if the value of that labels is atomic.
+	// Since a non-atomic metric_name will contain alphabets other than a-z and A-Z including _,
+	// anything that violates this ceases the formatting of that particular label item.
+	// If this is not done then the output from the prettier might be an un-parsable expression.
+	if regexp.MustCompile("^[a-z_A-Z]+$").MatchString(metricName) {
+		return false
+	}
+	return true
 }
 
 // advanceComments advances the index until a non-comment item is

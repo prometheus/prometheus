@@ -325,7 +325,7 @@ var prettierCases = []prettierTest{
     metric_four{
       _a_some_very_large_label="a_very_large_value",
       some_very_large_label="a_very_large_value",
-    }  
+    }
   +
     metric_five`,
 	},
@@ -361,7 +361,7 @@ var prettierCases = []prettierTest{
     metric_two{
       _a_some_very_large_label="_a_very_large_value",
       some_very_large_label="a_very_large_value",
-    }  
+    }
   + ignoring(job)
     metric_three`,
 	},
@@ -385,7 +385,7 @@ var prettierCases = []prettierTest{
     metric_one{
       _a_some_very_large_label="_a_very_large_value",
       some_very_large_label="a_very_large_value",
-    }  
+    }
   )`,
 	},
 	{
@@ -410,7 +410,7 @@ var prettierCases = []prettierTest{
 		expected: `    metric_one{
       _a_some_very_large_label="_a_very_large_value",
       some_very_large_label="a_very_large_value",
-    }     + 1`,
+    } + 1`,
 	},
 	{
 		expr:     `metric_one[5m]`,
@@ -618,7 +618,7 @@ var prettierCases = []prettierTest{
     metric_three{
       a_some_very_large_label="a_very_large_value",
       a_some_very_large_label_2="a_very_large_value",
-    }  
+    }
   )`,
 	},
 	{
@@ -626,6 +626,41 @@ var prettierCases = []prettierTest{
 		expected: `  sum without(label) (
     metric_three{a_some_very_large_label="a_very_large_value", label="a_very_large_value"}
   )`,
+	},
+	// Comments.
+	{
+		expr:     `metric_name # comment`,
+		expected: `  metric_name # comment`,
+	},
+	{
+		expr: `metric_name # comment 1
+          # comment 2`,
+		expected: `  metric_name # comment 1
+ # comment 2`,
+	},
+	{
+		expr: `metric_three{ # comment 1
+          a_some_very_large_label="a_very_large_value", # comment 2
+          a_some_very_large_label_2="a_very_large_value"}`,
+		expected: `  metric_three{
+  # comment 1
+    a_some_very_large_label="a_very_large_value",
+  # comment 2
+    a_some_very_large_label_2="a_very_large_value",
+  }`,
+	},
+	{
+		expr: `metric_three # comment
+          {
+          a_some_very_large_label=  # comment
+          "a_very_large_value",
+          a_some_very_large_label_2="a_very_large_value"}`,
+		expected: `  metric_three # comment
+  {
+    a_some_very_large_label= # comment
+  "a_very_large_value",
+    a_some_very_large_label_2="a_very_large_value",
+  }`,
 	},
 }
 
