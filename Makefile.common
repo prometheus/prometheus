@@ -118,7 +118,7 @@ endif
 %: common-% ;
 
 .PHONY: common-all
-common-all: precheck restricted_imports style check_license lint unused build test
+common-all: precheck style check_license lint unused build test
 
 .PHONY: common-style
 common-style:
@@ -269,11 +269,6 @@ $(PROMU):
 proto:
 	@echo ">> generating code from proto files"
 	@./scripts/genproto.sh
-
-.PHONY: common-restricted_imports
-common-restricted_imports:
-	@echo ">> verifying that we are not using restricted packages"
-	@./scripts/check_restricted_imports.sh
 
 ifdef GOLANGCI_LINT
 $(GOLANGCI_LINT):
