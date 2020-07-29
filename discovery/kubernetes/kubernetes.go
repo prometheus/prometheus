@@ -82,7 +82,7 @@ func (c *Role) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	switch *c {
-	case RoleNode, RolePod, RoleService, RoleEndpoint, RoleIngress:
+	case RoleNode, RolePod, RoleService, RoleEndpoint, RoleEndpointSlice, RoleIngress:
 		return nil
 	default:
 		return errors.Errorf("unknown Kubernetes SD role %q", *c)
