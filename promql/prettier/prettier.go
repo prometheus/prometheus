@@ -109,7 +109,7 @@ func (p *Prettier) Run() []error {
 			for _, grps := range rgs.Groups {
 				for _, rules := range grps.Rules {
 					exprStr := rules.Expr.Value
-					standardizeExprStr := p.stringifiedExpressionFromItems(p.sortItems(p.lexItems(exprStr)))
+					standardizeExprStr := p.stringifyItems(p.sortItems(p.lexItems(exprStr)))
 					if err := p.parseExpr(standardizeExprStr); err != nil {
 						return []error{err}
 					}
@@ -432,16 +432,16 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 // within it. This is expected to be called after sorting the lexItems in the
 // pre-format checks.
 func (p *Prettier) refreshLexItems(items []parser.Item) []parser.Item {
-	return p.lexItems(p.stringifiedExpressionFromItems(items))
+	return p.lexItems(p.stringifyItems(items))
 }
 
-// stringifiedExpressionFromItems returns a standardized string expression
+// stringifyItems returns a standardized string expression
 // from slice of items. This is mostly used in re-ordering activities
 // where the position of the items change during sorting in the sortItems.
 // This function also standardizes the expression without any spaces,
 // so that the length determined by .String() is done purely on the
 // character length with standard indent.
-func (p *Prettier) stringifiedExpressionFromItems(items []parser.Item) string {
+func (p *Prettier) stringifyItems(items []parser.Item) string {
 	expression := ""
 	for _, item := range items {
 		if item.Typ.IsOperator() || item.Typ.IsAggregator() {
