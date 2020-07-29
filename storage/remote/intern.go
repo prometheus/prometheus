@@ -47,9 +47,7 @@ type entry struct {
 }
 
 func newEntry(s string) *entry {
-	entry := &entry{s: s}
-	entry.refs.Store(1)
-	return entry
+	return &entry{s: s}
 }
 
 func newPool() *pool {
@@ -78,6 +76,7 @@ func (p *pool) intern(s string) string {
 	}
 
 	p.pool[s] = newEntry(s)
+	p.pool[s].refs.Store(1)
 	return s
 }
 
