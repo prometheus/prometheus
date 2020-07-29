@@ -269,7 +269,7 @@
               severity: 'warning',
             },
             annotations: {
-              summary: 'Prometheus has dropped targets because some jobs have exceeded the targets limit.',
+              summary: 'Prometheus has dropped targets because some scrape configs have exceeded the targets limit.',
               description: 'Prometheus %(prometheusName)s has dropped {{ printf "%%.0f" $value }} targets because the number of targets exceeded the configured target_limit.' % $._config,
             },
           },
