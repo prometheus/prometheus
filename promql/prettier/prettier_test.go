@@ -668,7 +668,7 @@ func TestPrettierCases(t *testing.T) {
 	for _, expr := range prettierCases {
 		p, err := New(PrettifyExpression, expr.expr)
 		testutil.Ok(t, err)
-		standardizeExprStr := p.expressionFromItems(p.sortItems(p.lexItems(expr.expr)))
+		standardizeExprStr := p.stringifiedExpressionFromItems(p.sortItems(p.lexItems(expr.expr)))
 		lexItems := p.sortItems(p.lexItems(expr.expr))
 		err = p.parseExpr(standardizeExprStr)
 		testutil.Ok(t, err)

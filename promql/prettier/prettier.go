@@ -109,7 +109,7 @@ func (p *Prettier) Run() []error {
 			for _, grps := range rgs.Groups {
 				for _, rules := range grps.Rules {
 					exprStr := rules.Expr.Value
-					standardizeExprStr := p.expressionFromItems(p.sortItems(p.lexItems(exprStr)))
+					standardizeExprStr := p.stringifiedExpressionFromItems(p.sortItems(p.lexItems(exprStr)))
 					if err := p.parseExpr(standardizeExprStr); err != nil {
 						return []error{err}
 					}
@@ -247,6 +247,10 @@ func (p *Prettier) sortItems(items []parser.Item) []parser.Item {
 					break
 				}
 			}
+			if leftBraceIndex == itemNotFound || rightBraceIndex == itemNotFound {
+				// Return an error since the expression is illegal.
+				continue
+			}
 			itr = advanceComments(items, itr)
 			if items[itr+3].Typ == parser.COMMA {
 				skipBraces = rightBraceIndex-5 == advanceComments(items, leftBraceIndex)
@@ -254,8 +258,15 @@ func (p *Prettier) sortItems(items []parser.Item) []parser.Item {
 				skipBraces = rightBraceIndex-4 == advanceComments(items, leftBraceIndex)
 			}
 			identifierItem := parser.Item{Typ: parser.IDENTIFIER, Val: metricName, Pos: 0}
+			// We scan the items slice from starting to end for rearranging the atomic IDENTIFIER item (metric_name).
+			// This is because the metric_name needs to be brought prior to the left_brace. Since we have the index
+			// of the left_brace and right_brace of that particular node, we need to change only those items that occur
+			// between the two braces (indexes). Rest items (those beyond the leftBraceIndex and rightBraceIndex range)
+			// require a simple copy.
 			for j := 0; j < len(items); j++ {
 				if j <= rightBraceIndex && j >= leftBraceIndex {
+					// Before printing the left_brace, we print the metric_name. After this, we check for metric_name{}
+					// condition. If __name__ is the only label inside the label_matchers, we skip printing '{' and '}'.
 					if j == leftBraceIndex {
 						tmp = append(tmp, identifierItem)
 						if !skipBraces {
@@ -421,16 +432,16 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 // within it. This is expected to be called after sorting the lexItems in the
 // pre-format checks.
 func (p *Prettier) refreshLexItems(items []parser.Item) []parser.Item {
-	return p.lexItems(p.expressionFromItems(items))
+	return p.lexItems(p.stringifiedExpressionFromItems(items))
 }
 
-// expressionFromItems returns the raw expression from slice of items.
-// This is mostly used in re-ordering activities where the position of
-// the items change during sorting in the sortItems.
+// stringifiedExpressionFromItems returns a standardized string expression
+// from slice of items. This is mostly used in re-ordering activities
+// where the position of the items change during sorting in the sortItems.
 // This function also standardizes the expression without any spaces,
 // so that the length determined by .String() is done purely on the
 // character length with standard indent.
-func (p *Prettier) expressionFromItems(items []parser.Item) string {
+func (p *Prettier) stringifiedExpressionFromItems(items []parser.Item) string {
 	expression := ""
 	for _, item := range items {
 		if item.Typ.IsOperator() || item.Typ.IsAggregator() {
