@@ -401,6 +401,7 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 
 			// Otherwise, when we are tailing, non-EOFs are fatal.
 			if err != io.EOF {
+				level.Error(w.logger).Log("msg", "error reading segment", "err", err, "segment num", segmentNum)
 				return err
 			}
 
@@ -421,6 +422,7 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 
 			// Otherwise, when we are tailing, non-EOFs are fatal.
 			if err != io.EOF {
+				level.Error(w.logger).Log("msg", "error reading segment", "err", err, "segment num", segmentNum)
 				return err
 			}
 		}
@@ -566,6 +568,7 @@ func (w *Watcher) readCheckpoint(checkpointDir string) error {
 
 		r := NewLiveReader(w.logger, w.readerMetrics, sr)
 		if err := w.readSegment(r, index, false); err != io.EOF && err != nil {
+			level.Error(w.logger).Log("msg", "error reading segment", "err", err, "segment num", seg)
 			return errors.Wrap(err, "readSegment")
 		}
 
