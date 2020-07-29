@@ -16,6 +16,8 @@ const (
 	PrettifyRules = iota
 	// PrettifyExpression for prettifying instantaneous expressions.
 	PrettifyExpression
+	// itemNotFound is used to initialize the index of an item.
+	itemNotFound = -1
 )
 
 // Prettier handles the prettifying and formatting operation over a
@@ -133,13 +135,13 @@ func (p *Prettier) sortItems(items []parser.Item) []parser.Item {
 	for i := 0; i < len(items); i++ {
 		item := items[i]
 		switch item.Typ {
-		case parser.SUM, parser.AVG, parser.MIN, parser.MAX, parser.COUNT, parser.COUNT_VALUES, parser.STDDEV,
-			parser.STDVAR, parser.TOPK, parser.BOTTOMK, parser.QUANTILE:
+		case parser.SUM, parser.AVG, parser.MIN, parser.MAX, parser.COUNT, parser.COUNT_VALUES,
+			parser.STDDEV, parser.STDVAR, parser.TOPK, parser.BOTTOMK, parser.QUANTILE:
 			var (
 				formatItems       bool
 				aggregatorIndex   = i
-				keywordIndex      = -1
-				closingParenIndex = -1
+				keywordIndex      = itemNotFound
+				closingParenIndex = itemNotFound
 				openBracketsCount = 0
 			)
 			for index := i; index < len(items); index++ {
@@ -158,7 +160,7 @@ func (p *Prettier) sortItems(items []parser.Item) []parser.Item {
 					break
 				}
 			}
-			if keywordIndex < 0 {
+			if keywordIndex == itemNotFound {
 				continue
 			}
 
@@ -192,7 +194,7 @@ func (p *Prettier) sortItems(items []parser.Item) []parser.Item {
 						break
 					}
 				}
-				if closingParenIndex == -1 {
+				if closingParenIndex == itemNotFound {
 					panic("invalid paren index: closing paren not found")
 				}
 				// Re-order lexical items. TODO: consider using slicing of lists.
@@ -223,8 +225,8 @@ func (p *Prettier) sortItems(items []parser.Item) []parser.Item {
 				continue
 			}
 			var (
-				leftBraceIndex  = -1
-				rightBraceIndex = -1
+				leftBraceIndex  = itemNotFound
+				rightBraceIndex = itemNotFound
 				labelValItem    = items[itr+2]
 				metricName      = labelValItem.Val[1 : len(labelValItem.Val)-1] // Trim inverted-commas.
 				tmp             []parser.Item
@@ -245,7 +247,6 @@ func (p *Prettier) sortItems(items []parser.Item) []parser.Item {
 					break
 				}
 			}
-			// TODO: assuming comments are not present at this place.
 			itr = advanceComments(items, itr)
 			if items[itr+3].Typ == parser.COMMA {
 				skipBraces = rightBraceIndex-5 == advanceComments(items, leftBraceIndex)
