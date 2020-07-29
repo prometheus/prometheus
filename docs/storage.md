@@ -73,7 +73,9 @@ needed_disk_space = retention_time_seconds * ingested_samples_per_second * bytes
 
 To tune the rate of ingested samples per second, you can either reduce the number of time series you scrape (fewer targets or fewer series per target), or you can increase the scrape interval. However, reducing the number of series is likely more effective, due to compression of samples within a series.
 
-If your local storage becomes corrupted for whatever reason, your best bet is to shut down Prometheus and remove the entire storage directory. Non POSIX compliant filesystems are not supported by Prometheus's local storage, corruptions may happen, without possibility to recover. NFS is only potentially POSIX, most implementations are not. You can try removing individual block directories to resolve the problem, this means losing a time window of around two hours worth of data per block directory. Again, Prometheus's local storage is not meant as durable long-term storage.
+If your local storage becomes corrupted for whatever reason, your best bet is to shut down Prometheus and remove the entire storage directory. You can try removing individual block directories, or WAL directory, to resolve the problem, this means losing a time window of around two hours worth of data per block directory. Again, Prometheus's local storage is not meant as durable long-term storage.
+
+CAUTION: Non POSIX compliant filesystems are not supported by Prometheus's local storage, corruptions may happen, without possibility to recover. NFS is only potentially POSIX, most implementations are not. Cases of corruption are also reported with other networked filesystems. It is strongly recommended to use a local filesystem for reliability.
 
 If both time and size retention policies are specified, whichever policy triggers first will be used at that instant.
 
