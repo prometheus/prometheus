@@ -451,7 +451,7 @@ var prettierCases = []prettierTest{
         _a_some_very_large_label="_a_very_large_value",
         some_very_large_label="a_very_large_value",
       }[5m]
-    )  
+    )
   )`,
 	},
 	{
@@ -471,7 +471,7 @@ var prettierCases = []prettierTest{
         _a_some_very_large_label="_a_very_large_value",
         some_very_large_label="a_very_large_value",
       }[5m:1m]
-    )  
+    )
   )`,
 	},
 	{
@@ -484,9 +484,9 @@ var prettierCases = []prettierTest{
             _a_some_very_large_label="_a_very_large_value",
             some_very_large_label="a_very_large_value",
           }[5m:1m]
-        )      
-      )    
-    )  
+        )
+      )
+    )
   )`,
 	},
 	{
@@ -540,7 +540,7 @@ var prettierCases = []prettierTest{
       "src1",
       "src2",
       "src3"
-    )  
+    )
   +
     label_replace(
       up{job="api-server", service="a:c"},
@@ -560,7 +560,7 @@ var prettierCases = []prettierTest{
         "src1",
         "src2",
         "src3"
-      )    
+      )
     +
       label_replace(
         up{job="api-server", service="a:c"},
@@ -568,7 +568,7 @@ var prettierCases = []prettierTest{
         "$1",
         "service",
         "(.*):.*"
-      )  
+      )
   )`,
 	},
 	{
@@ -582,7 +582,7 @@ var prettierCases = []prettierTest{
           "src1",
           "src2",
           "src3"
-        )      
+        )
       +
         label_replace(
           up{job="api-server", service="a:c"},
@@ -590,8 +590,8 @@ var prettierCases = []prettierTest{
           "$1",
           "service",
           "(.*):.*"
-        )    
-    )  
+        )
+    )
   )`,
 	},
 	{

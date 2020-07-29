@@ -16,7 +16,7 @@ type nodeInfo struct {
 	head parser.Expr
 	// Node details.
 	columnLimit int
-	history     []parser.Node
+	ancestors   []parser.Node
 	item        parser.Item
 	buf         int
 }
@@ -27,15 +27,15 @@ func (p *nodeInfo) violatesColumnLimit() bool {
 
 // getNode returns the node corresponding to the given position range in the AST.
 func (p *nodeInfo) getNode(root parser.Expr, item parser.Item) parser.Expr {
-	history, node, _ := p.nodeHistory(root, item.PositionRange(), []parser.Node{})
-	p.history = history
+	ancestors, node, _ := p.nodeHistory(root, item.PositionRange(), []parser.Node{})
+	p.ancestors = ancestors
 	return node
 }
 
 func (p *nodeInfo) baseIndent(item parser.Item) int {
-	history, _, _ := p.nodeHistory(p.head, item.PositionRange(), []parser.Node{})
-	history = reduceContinuous(history, "*parser.BinaryExpr")
-	p.buf = len(history)
+	ancestors, _, _ := p.nodeHistory(p.head, item.PositionRange(), []parser.Node{})
+	ancestors = reduceContinuous(ancestors, "*parser.BinaryExpr")
+	p.buf = len(ancestors)
 	return p.buf
 }
 

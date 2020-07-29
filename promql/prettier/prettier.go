@@ -263,7 +263,7 @@ func (p *Prettier) sortItems(items []parser.Item) []parser.Item {
 			// of the left_brace and right_brace of that particular node, we need to change only those items that occur
 			// between the two braces (indexes). Rest items (those beyond the leftBraceIndex and rightBraceIndex range)
 			// require a simple copy.
-			for j := 0; j < len(items); j++ {
+			for j := range items {
 				if j <= rightBraceIndex && j >= leftBraceIndex {
 					// Before printing the left_brace, we print the metric_name. After this, we check for metric_name{}
 					// condition. If __name__ is the only label inside the label_matchers, we skip printing '{' and '}'.
@@ -334,6 +334,7 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 	case parser.RIGHT_PAREN:
 		if ((nodeSplittable && !p.pd.containsGrouping) || p.pd.multiArgumentCall) && !p.pd.expectAggregationLabels {
 			result += p.pd.newLine() + p.pd.pad(headInfo.baseIndent(item))
+			p.pd.isNewLineApplied = false
 		}
 		result += item.Val
 		if p.pd.containsGrouping {
@@ -462,11 +463,12 @@ func (p *Prettier) stringifyItems(items []parser.Item) string {
 
 // lexItems converts the given expression into a slice of Items.
 func (p *Prettier) lexItems(expression string) (items []parser.Item) {
-	l := parser.Lex(expression)
-
-	for l.State = parser.LexStatements; l.State != nil; {
-		items = append(items, parser.Item{})
-		l.NextItem(&items[len(items)-1])
+	var (
+		l    = parser.Lex(expression)
+		item parser.Item
+	)
+	for l.NextItem(&item); item.Typ != parser.EOF; l.NextItem(&item) {
+		items = append(items, item)
 	}
 	return
 }
@@ -499,7 +501,7 @@ func isMetricNameNotAtomic(metricName string) bool {
 	// Since a non-atomic metric_name will contain alphabets other than a-z and A-Z including _,
 	// anything that violates this ceases the formatting of that particular label item.
 	// If this is not done then the output from the prettier might be an un-parsable expression.
-	if regexp.MustCompile("^[a-z_A-Z]+$").MatchString(metricName) {
+	if regexp.MustCompile("^[a-z_A-Z]+$").MatchString(metricName) && metricName != "bool" {
 		return false
 	}
 	return true
