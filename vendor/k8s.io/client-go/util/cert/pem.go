@@ -17,94 +17,18 @@ limitations under the License.
 package cert
 
 import (
-	"crypto/rsa"
+	"bytes"
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
-	"fmt"
 )
 
 const (
-	// ECPrivateKeyBlockType is a possible value for pem.Block.Type.
-	ECPrivateKeyBlockType = "EC PRIVATE KEY"
-	// RSAPrivateKeyBlockType is a possible value for pem.Block.Type.
-	RSAPrivateKeyBlockType = "RSA PRIVATE KEY"
 	// CertificateBlockType is a possible value for pem.Block.Type.
 	CertificateBlockType = "CERTIFICATE"
 	// CertificateRequestBlockType is a possible value for pem.Block.Type.
 	CertificateRequestBlockType = "CERTIFICATE REQUEST"
-	// PrivateKeyBlockType is a possible value for pem.Block.Type.
-	PrivateKeyBlockType = "PRIVATE KEY"
-	// PublicKeyBlockType is a possible value for pem.Block.Type.
-	PublicKeyBlockType = "PUBLIC KEY"
 )
-
-// EncodePublicKeyPEM returns PEM-endcode public data
-func EncodePublicKeyPEM(key *rsa.PublicKey) ([]byte, error) {
-	der, err := x509.MarshalPKIXPublicKey(key)
-	if err != nil {
-		return []byte{}, err
-	}
-	block := pem.Block{
-		Type:  PublicKeyBlockType,
-		Bytes: der,
-	}
-	return pem.EncodeToMemory(&block), nil
-}
-
-// EncodePrivateKeyPEM returns PEM-encoded private key data
-func EncodePrivateKeyPEM(key *rsa.PrivateKey) []byte {
-	block := pem.Block{
-		Type:  RSAPrivateKeyBlockType,
-		Bytes: x509.MarshalPKCS1PrivateKey(key),
-	}
-	return pem.EncodeToMemory(&block)
-}
-
-// EncodeCertPEM returns PEM-endcoded certificate data
-func EncodeCertPEM(cert *x509.Certificate) []byte {
-	block := pem.Block{
-		Type:  CertificateBlockType,
-		Bytes: cert.Raw,
-	}
-	return pem.EncodeToMemory(&block)
-}
-
-// ParsePrivateKeyPEM returns a private key parsed from a PEM block in the supplied data.
-// Recognizes PEM blocks for "EC PRIVATE KEY", "RSA PRIVATE KEY", or "PRIVATE KEY"
-func ParsePrivateKeyPEM(keyData []byte) (interface{}, error) {
-	var privateKeyPemBlock *pem.Block
-	for {
-		privateKeyPemBlock, keyData = pem.Decode(keyData)
-		if privateKeyPemBlock == nil {
-			break
-		}
-
-		switch privateKeyPemBlock.Type {
-		case ECPrivateKeyBlockType:
-			// ECDSA Private Key in ASN.1 format
-			if key, err := x509.ParseECPrivateKey(privateKeyPemBlock.Bytes); err == nil {
-				return key, nil
-			}
-		case RSAPrivateKeyBlockType:
-			// RSA Private Key in PKCS#1 format
-			if key, err := x509.ParsePKCS1PrivateKey(privateKeyPemBlock.Bytes); err == nil {
-				return key, nil
-			}
-		case PrivateKeyBlockType:
-			// RSA or ECDSA Private Key in unencrypted PKCS#8 format
-			if key, err := x509.ParsePKCS8PrivateKey(privateKeyPemBlock.Bytes); err == nil {
-				return key, nil
-			}
-		}
-
-		// tolerate non-key PEM blocks for compatibility with things like "EC PARAMETERS" blocks
-		// originally, only the first PEM block was parsed and expected to be a key block
-	}
-
-	// we read all the PEM blocks and didn't recognize one
-	return nil, fmt.Errorf("data does not contain a valid RSA or ECDSA private key")
-}
 
 // ParseCertsPEM returns the x509.Certificates contained in the given PEM-encoded byte array
 // Returns an error if a certificate could not be parsed, or if the data does not contain any certificates
@@ -132,7 +56,18 @@ func ParseCertsPEM(pemCerts []byte) ([]*x509.Certificate, error) {
 	}
 
 	if !ok {
-		return certs, errors.New("could not read any certificates")
+		return certs, errors.New("data does not contain any valid RSA or ECDSA certificates")
 	}
 	return certs, nil
+}
+
+// EncodeCertificates returns the PEM-encoded byte array that represents by the specified certs.
+func EncodeCertificates(certs ...*x509.Certificate) ([]byte, error) {
+	b := bytes.Buffer{}
+	for _, cert := range certs {
+		if err := pem.Encode(&b, &pem.Block{Type: CertificateBlockType, Bytes: cert.Raw}); err != nil {
+			return []byte{}, err
+		}
+	}
+	return b.Bytes(), nil
 }

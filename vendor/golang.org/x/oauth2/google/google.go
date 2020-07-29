@@ -2,38 +2,31 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package google provides support for making OAuth2 authorized and
-// authenticated HTTP requests to Google APIs.
-// It supports the Web server flow, client-side credentials, service accounts,
-// Google Compute Engine service accounts, and Google App Engine service
-// accounts.
-//
-// For more information, please read
-// https://developers.google.com/accounts/docs/OAuth2
-// and
-// https://developers.google.com/accounts/docs/application-default-credentials.
-package google // import "golang.org/x/oauth2/google"
+package google
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
+	"cloud.google.com/go/compute/metadata"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/jwt"
-	"google.golang.org/cloud/compute/metadata"
 )
 
 // Endpoint is Google's OAuth 2.0 endpoint.
 var Endpoint = oauth2.Endpoint{
-	AuthURL:  "https://accounts.google.com/o/oauth2/auth",
-	TokenURL: "https://accounts.google.com/o/oauth2/token",
+	AuthURL:   "https://accounts.google.com/o/oauth2/auth",
+	TokenURL:  "https://oauth2.googleapis.com/token",
+	AuthStyle: oauth2.AuthStyleInParams,
 }
 
 // JWTTokenURL is Google's OAuth 2.0 token URL to use with the JWT flow.
-const JWTTokenURL = "https://accounts.google.com/o/oauth2/token"
+const JWTTokenURL = "https://oauth2.googleapis.com/token"
 
 // ConfigFromJSON uses a Google Developers Console client_credentials.json
 // file to construct a config.
@@ -85,33 +78,90 @@ func ConfigFromJSON(jsonKey []byte, scope ...string) (*oauth2.Config, error) {
 // Create a service account on "Credentials" for your project at
 // https://console.developers.google.com to download a JSON key file.
 func JWTConfigFromJSON(jsonKey []byte, scope ...string) (*jwt.Config, error) {
-	var key struct {
-		Email      string `json:"client_email"`
-		PrivateKey string `json:"private_key"`
-	}
-	if err := json.Unmarshal(jsonKey, &key); err != nil {
+	var f credentialsFile
+	if err := json.Unmarshal(jsonKey, &f); err != nil {
 		return nil, err
 	}
-	return &jwt.Config{
-		Email:      key.Email,
-		PrivateKey: []byte(key.PrivateKey),
-		Scopes:     scope,
-		TokenURL:   JWTTokenURL,
-	}, nil
+	if f.Type != serviceAccountKey {
+		return nil, fmt.Errorf("google: read JWT from JSON credentials: 'type' field is %q (expected %q)", f.Type, serviceAccountKey)
+	}
+	scope = append([]string(nil), scope...) // copy
+	return f.jwtConfig(scope), nil
+}
+
+// JSON key file types.
+const (
+	serviceAccountKey  = "service_account"
+	userCredentialsKey = "authorized_user"
+)
+
+// credentialsFile is the unmarshalled representation of a credentials file.
+type credentialsFile struct {
+	Type string `json:"type"` // serviceAccountKey or userCredentialsKey
+
+	// Service Account fields
+	ClientEmail  string `json:"client_email"`
+	PrivateKeyID string `json:"private_key_id"`
+	PrivateKey   string `json:"private_key"`
+	TokenURL     string `json:"token_uri"`
+	ProjectID    string `json:"project_id"`
+
+	// User Credential fields
+	// (These typically come from gcloud auth.)
+	ClientSecret string `json:"client_secret"`
+	ClientID     string `json:"client_id"`
+	RefreshToken string `json:"refresh_token"`
+}
+
+func (f *credentialsFile) jwtConfig(scopes []string) *jwt.Config {
+	cfg := &jwt.Config{
+		Email:        f.ClientEmail,
+		PrivateKey:   []byte(f.PrivateKey),
+		PrivateKeyID: f.PrivateKeyID,
+		Scopes:       scopes,
+		TokenURL:     f.TokenURL,
+	}
+	if cfg.TokenURL == "" {
+		cfg.TokenURL = JWTTokenURL
+	}
+	return cfg
+}
+
+func (f *credentialsFile) tokenSource(ctx context.Context, scopes []string) (oauth2.TokenSource, error) {
+	switch f.Type {
+	case serviceAccountKey:
+		cfg := f.jwtConfig(scopes)
+		return cfg.TokenSource(ctx), nil
+	case userCredentialsKey:
+		cfg := &oauth2.Config{
+			ClientID:     f.ClientID,
+			ClientSecret: f.ClientSecret,
+			Scopes:       scopes,
+			Endpoint:     Endpoint,
+		}
+		tok := &oauth2.Token{RefreshToken: f.RefreshToken}
+		return cfg.TokenSource(ctx, tok), nil
+	case "":
+		return nil, errors.New("missing 'type' field in credentials")
+	default:
+		return nil, fmt.Errorf("unknown credential type: %q", f.Type)
+	}
 }
 
 // ComputeTokenSource returns a token source that fetches access tokens
 // from Google Compute Engine (GCE)'s metadata server. It's only valid to use
 // this token source if your program is running on a GCE instance.
 // If no account is specified, "default" is used.
+// If no scopes are specified, a set of default scopes are automatically granted.
 // Further information about retrieving access tokens from the GCE metadata
 // server can be found at https://cloud.google.com/compute/docs/authentication.
-func ComputeTokenSource(account string) oauth2.TokenSource {
-	return oauth2.ReuseTokenSource(nil, computeSource{account: account})
+func ComputeTokenSource(account string, scope ...string) oauth2.TokenSource {
+	return oauth2.ReuseTokenSource(nil, computeSource{account: account, scopes: scope})
 }
 
 type computeSource struct {
 	account string
+	scopes  []string
 }
 
 func (cs computeSource) Token() (*oauth2.Token, error) {
@@ -122,7 +172,13 @@ func (cs computeSource) Token() (*oauth2.Token, error) {
 	if acct == "" {
 		acct = "default"
 	}
-	tokenJSON, err := metadata.Get("instance/service-accounts/" + acct + "/token")
+	tokenURI := "instance/service-accounts/" + acct + "/token"
+	if len(cs.scopes) > 0 {
+		v := url.Values{}
+		v.Set("scopes", strings.Join(cs.scopes, ","))
+		tokenURI = tokenURI + "?" + v.Encode()
+	}
+	tokenJSON, err := metadata.Get(tokenURI)
 	if err != nil {
 		return nil, err
 	}
@@ -138,9 +194,16 @@ func (cs computeSource) Token() (*oauth2.Token, error) {
 	if res.ExpiresInSec == 0 || res.AccessToken == "" {
 		return nil, fmt.Errorf("oauth2/google: incomplete token received from metadata")
 	}
-	return &oauth2.Token{
+	tok := &oauth2.Token{
 		AccessToken: res.AccessToken,
 		TokenType:   res.TokenType,
 		Expiry:      time.Now().Add(time.Duration(res.ExpiresInSec) * time.Second),
-	}, nil
+	}
+	// NOTE(cbro): add hidden metadata about where the token is from.
+	// This is needed for detection by client libraries to know that credentials come from the metadata server.
+	// This may be removed in a future version of this library.
+	return tok.WithExtra(map[string]interface{}{
+		"oauth2.google.tokenSource":    "compute-metadata",
+		"oauth2.google.serviceAccount": acct,
+	}), nil
 }

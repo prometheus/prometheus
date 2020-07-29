@@ -22,8 +22,9 @@ import (
 
 // same as ECMA Number.MAX_SAFE_INTEGER and Number.MIN_SAFE_INTEGER
 const (
-	maxJSONFloat = float64(1<<53 - 1)  // 9007199254740991.0 	 	 2^53 - 1
-	minJSONFloat = -float64(1<<53 - 1) //-9007199254740991.0	-2^53 - 1
+	maxJSONFloat         = float64(1<<53 - 1)  // 9007199254740991.0 	 	 2^53 - 1
+	minJSONFloat         = -float64(1<<53 - 1) //-9007199254740991.0	-2^53 - 1
+	epsilon      float64 = 1e-9
 )
 
 // IsFloat64AJSONInteger allow for integers [-2^53, 2^53-1] inclusive
@@ -31,21 +32,40 @@ func IsFloat64AJSONInteger(f float64) bool {
 	if math.IsNaN(f) || math.IsInf(f, 0) || f < minJSONFloat || f > maxJSONFloat {
 		return false
 	}
+	fa := math.Abs(f)
+	g := float64(uint64(f))
+	ga := math.Abs(g)
 
-	return f == float64(int64(f)) || f == float64(uint64(f))
+	diff := math.Abs(f - g)
+
+	// more info: https://floating-point-gui.de/errors/comparison/#look-out-for-edge-cases
+	switch {
+	case f == g: // best case
+		return true
+	case f == float64(int64(f)) || f == float64(uint64(f)): // optimistic case
+		return true
+	case f == 0 || g == 0 || diff < math.SmallestNonzeroFloat64: // very close to 0 values
+		return diff < (epsilon * math.SmallestNonzeroFloat64)
+	}
+	// check the relative error
+	return diff/math.Min(fa+ga, math.MaxFloat64) < epsilon
 }
 
-var evaluatesAsTrue = map[string]struct{}{
-	"true":     struct{}{},
-	"1":        struct{}{},
-	"yes":      struct{}{},
-	"ok":       struct{}{},
-	"y":        struct{}{},
-	"on":       struct{}{},
-	"selected": struct{}{},
-	"checked":  struct{}{},
-	"t":        struct{}{},
-	"enabled":  struct{}{},
+var evaluatesAsTrue map[string]struct{}
+
+func init() {
+	evaluatesAsTrue = map[string]struct{}{
+		"true":     {},
+		"1":        {},
+		"yes":      {},
+		"ok":       {},
+		"y":        {},
+		"on":       {},
+		"selected": {},
+		"checked":  {},
+		"t":        {},
+		"enabled":  {},
+	}
 }
 
 // ConvertBool turn a string into a boolean
@@ -68,7 +88,7 @@ func ConvertFloat64(str string) (float64, error) {
 	return strconv.ParseFloat(str, 64)
 }
 
-// ConvertInt8 turn a string into int8 boolean
+// ConvertInt8 turn a string into an int8
 func ConvertInt8(str string) (int8, error) {
 	i, err := strconv.ParseInt(str, 10, 8)
 	if err != nil {
@@ -77,7 +97,7 @@ func ConvertInt8(str string) (int8, error) {
 	return int8(i), nil
 }
 
-// ConvertInt16 turn a string into a int16
+// ConvertInt16 turn a string into an int16
 func ConvertInt16(str string) (int16, error) {
 	i, err := strconv.ParseInt(str, 10, 16)
 	if err != nil {
@@ -86,7 +106,7 @@ func ConvertInt16(str string) (int16, error) {
 	return int16(i), nil
 }
 
-// ConvertInt32 turn a string into a int32
+// ConvertInt32 turn a string into an int32
 func ConvertInt32(str string) (int32, error) {
 	i, err := strconv.ParseInt(str, 10, 32)
 	if err != nil {
@@ -95,12 +115,12 @@ func ConvertInt32(str string) (int32, error) {
 	return int32(i), nil
 }
 
-// ConvertInt64 turn a string into a int64
+// ConvertInt64 turn a string into an int64
 func ConvertInt64(str string) (int64, error) {
 	return strconv.ParseInt(str, 10, 64)
 }
 
-// ConvertUint8 turn a string into a uint8
+// ConvertUint8 turn a string into an uint8
 func ConvertUint8(str string) (uint8, error) {
 	i, err := strconv.ParseUint(str, 10, 8)
 	if err != nil {
@@ -109,7 +129,7 @@ func ConvertUint8(str string) (uint8, error) {
 	return uint8(i), nil
 }
 
-// ConvertUint16 turn a string into a uint16
+// ConvertUint16 turn a string into an uint16
 func ConvertUint16(str string) (uint16, error) {
 	i, err := strconv.ParseUint(str, 10, 16)
 	if err != nil {
@@ -118,7 +138,7 @@ func ConvertUint16(str string) (uint16, error) {
 	return uint16(i), nil
 }
 
-// ConvertUint32 turn a string into a uint32
+// ConvertUint32 turn a string into an uint32
 func ConvertUint32(str string) (uint32, error) {
 	i, err := strconv.ParseUint(str, 10, 32)
 	if err != nil {
@@ -127,7 +147,7 @@ func ConvertUint32(str string) (uint32, error) {
 	return uint32(i), nil
 }
 
-// ConvertUint64 turn a string into a uint64
+// ConvertUint64 turn a string into an uint64
 func ConvertUint64(str string) (uint64, error) {
 	return strconv.ParseUint(str, 10, 64)
 }
@@ -159,7 +179,7 @@ func FormatInt16(value int16) string {
 
 // FormatInt32 turns an int32 into a string
 func FormatInt32(value int32) string {
-	return strconv.FormatInt(int64(value), 10)
+	return strconv.Itoa(int(value))
 }
 
 // FormatInt64 turns an int64 into a string

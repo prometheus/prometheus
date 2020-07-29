@@ -25,10 +25,23 @@ type SessionEntry struct {
 	ID          string
 	Name        string
 	Node        string
-	Checks      []string
 	LockDelay   time.Duration
 	Behavior    string
 	TTL         string
+	Namespace   string `json:",omitempty"`
+
+	// Deprecated for Consul Enterprise in v1.7.0.
+	Checks []string
+
+	// NodeChecks and ServiceChecks are new in Consul 1.7.0.
+	// When associating checks with sessions, namespaces can be specified for service checks.
+	NodeChecks    []string
+	ServiceChecks []ServiceCheck
+}
+
+type ServiceCheck struct {
+	ID        string
+	Namespace string
 }
 
 // Session can be used to query the Session endpoints
@@ -45,7 +58,7 @@ func (c *Client) Session() *Session {
 // a session with no associated health checks.
 func (s *Session) CreateNoChecks(se *SessionEntry, q *WriteOptions) (string, *WriteMeta, error) {
 	body := make(map[string]interface{})
-	body["Checks"] = []string{}
+	body["NodeChecks"] = []string{}
 	if se != nil {
 		if se.Name != "" {
 			body["Name"] = se.Name
@@ -85,6 +98,12 @@ func (s *Session) Create(se *SessionEntry, q *WriteOptions) (string, *WriteMeta,
 		}
 		if len(se.Checks) > 0 {
 			body["Checks"] = se.Checks
+		}
+		if len(se.NodeChecks) > 0 {
+			body["NodeChecks"] = se.NodeChecks
+		}
+		if len(se.ServiceChecks) > 0 {
+			body["ServiceChecks"] = se.ServiceChecks
 		}
 		if se.Behavior != "" {
 			body["Behavior"] = se.Behavior
@@ -145,7 +164,9 @@ func (s *Session) Renew(id string, q *WriteOptions) (*SessionEntry, *WriteMeta, 
 // RenewPeriodic is used to periodically invoke Session.Renew on a
 // session until a doneCh is closed. This is meant to be used in a long running
 // goroutine to ensure a session stays valid.
-func (s *Session) RenewPeriodic(initialTTL string, id string, q *WriteOptions, doneCh chan struct{}) error {
+func (s *Session) RenewPeriodic(initialTTL string, id string, q *WriteOptions, doneCh <-chan struct{}) error {
+	ctx := q.Context()
+
 	ttl, err := time.ParseDuration(initialTTL)
 	if err != nil {
 		return err
@@ -179,6 +200,11 @@ func (s *Session) RenewPeriodic(initialTTL string, id string, q *WriteOptions, d
 			// Attempt a session destroy
 			s.Destroy(id, q)
 			return nil
+
+		case <-ctx.Done():
+			// Bail immediately since attempting the destroy would
+			// use the canceled context in q, which would just bail.
+			return ctx.Err()
 		}
 	}
 }

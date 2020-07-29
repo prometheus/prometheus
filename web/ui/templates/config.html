@@ -1,8 +1,12 @@
-{{define "head"}}<!-- nix -->{{end}}
+{{define "head"}}
+    <link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/css/config.css?v={{ buildVersion }}">
+    <script src="{{ pathPrefix }}/static/js/config.js?v={{ buildVersion }}"></script>
+{{end}}
 
 {{define "content"}}
   <div class="container-fluid">
-    <h2 id="configuration">Configuration</h2>
-    <pre>{{.}}</pre>
+    <h2 id="configuration">Configuration <button type="button" class="btn btn-primary" id="copyToClipboard">Copy to clipboard</button></h2>
+
+    <pre id="config_yaml">{{.}}</pre>
   </div>
 {{end}}

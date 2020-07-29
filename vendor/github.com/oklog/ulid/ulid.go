@@ -14,9 +14,15 @@
 package ulid
 
 import (
+	"bufio"
 	"bytes"
+	"database/sql/driver"
+	"encoding/binary"
 	"errors"
 	"io"
+	"math"
+	"math/bits"
+	"math/rand"
 	"time"
 )
 
@@ -45,6 +51,10 @@ var (
 	// data size.
 	ErrDataSize = errors.New("ulid: bad data size when unmarshaling")
 
+	// ErrInvalidCharacters is returned when parsing or unmarshaling ULIDs with
+	// invalid Base32 encodings.
+	ErrInvalidCharacters = errors.New("ulid: bad data characters when unmarshaling")
+
 	// ErrBufferSize is returned when marshalling ULIDs to a buffer of insufficient
 	// size.
 	ErrBufferSize = errors.New("ulid: bad buffer size when marshaling")
@@ -52,6 +62,18 @@ var (
 	// ErrBigTime is returned when constructing an ULID with a time that is larger
 	// than MaxTime.
 	ErrBigTime = errors.New("ulid: time too big")
+
+	// ErrOverflow is returned when unmarshaling a ULID whose first character is
+	// larger than 7, thereby exceeding the valid bit depth of 128.
+	ErrOverflow = errors.New("ulid: overflow when unmarshaling")
+
+	// ErrMonotonicOverflow is returned by a Monotonic entropy source when
+	// incrementing the previous ULID's entropy bytes would result in overflow.
+	ErrMonotonicOverflow = errors.New("ulid: monotonic entropy overflow")
+
+	// ErrScanValue is returned when the value passed to scan cannot be unmarshaled
+	// into the ULID.
+	ErrScanValue = errors.New("ulid: source value must be a string or byte slice")
 )
 
 // New returns an ULID with the given Unix milliseconds timestamp and an
@@ -65,8 +87,13 @@ func New(ms uint64, entropy io.Reader) (id ULID, err error) {
 		return id, err
 	}
 
-	if entropy != nil {
-		_, err = entropy.Read(id[6:])
+	switch e := entropy.(type) {
+	case nil:
+		return id, err
+	case *monotonic:
+		err = e.MonotonicRead(ms, id[6:])
+	default:
+		_, err = io.ReadFull(e, id[6:])
 	}
 
 	return id, err
@@ -85,15 +112,110 @@ func MustNew(ms uint64, entropy io.Reader) ULID {
 // Parse parses an encoded ULID, returning an error in case of failure.
 //
 // ErrDataSize is returned if the len(ulid) is different from an encoded
-// ULID's length. Invalid encodings produce undefined ULIDs.
+// ULID's length. Invalid encodings produce undefined ULIDs. For a version that
+// returns an error instead, see ParseStrict.
 func Parse(ulid string) (id ULID, err error) {
-	return id, id.UnmarshalText([]byte(ulid))
+	return id, parse([]byte(ulid), false, &id)
+}
+
+// ParseStrict parses an encoded ULID, returning an error in case of failure.
+//
+// It is like Parse, but additionally validates that the parsed ULID consists
+// only of valid base32 characters. It is slightly slower than Parse.
+//
+// ErrDataSize is returned if the len(ulid) is different from an encoded
+// ULID's length. Invalid encodings return ErrInvalidCharacters.
+func ParseStrict(ulid string) (id ULID, err error) {
+	return id, parse([]byte(ulid), true, &id)
+}
+
+func parse(v []byte, strict bool, id *ULID) error {
+	// Check if a base32 encoded ULID is the right length.
+	if len(v) != EncodedSize {
+		return ErrDataSize
+	}
+
+	// Check if all the characters in a base32 encoded ULID are part of the
+	// expected base32 character set.
+	if strict &&
+		(dec[v[0]] == 0xFF ||
+			dec[v[1]] == 0xFF ||
+			dec[v[2]] == 0xFF ||
+			dec[v[3]] == 0xFF ||
+			dec[v[4]] == 0xFF ||
+			dec[v[5]] == 0xFF ||
+			dec[v[6]] == 0xFF ||
+			dec[v[7]] == 0xFF ||
+			dec[v[8]] == 0xFF ||
+			dec[v[9]] == 0xFF ||
+			dec[v[10]] == 0xFF ||
+			dec[v[11]] == 0xFF ||
+			dec[v[12]] == 0xFF ||
+			dec[v[13]] == 0xFF ||
+			dec[v[14]] == 0xFF ||
+			dec[v[15]] == 0xFF ||
+			dec[v[16]] == 0xFF ||
+			dec[v[17]] == 0xFF ||
+			dec[v[18]] == 0xFF ||
+			dec[v[19]] == 0xFF ||
+			dec[v[20]] == 0xFF ||
+			dec[v[21]] == 0xFF ||
+			dec[v[22]] == 0xFF ||
+			dec[v[23]] == 0xFF ||
+			dec[v[24]] == 0xFF ||
+			dec[v[25]] == 0xFF) {
+		return ErrInvalidCharacters
+	}
+
+	// Check if the first character in a base32 encoded ULID will overflow. This
+	// happens because the base32 representation encodes 130 bits, while the
+	// ULID is only 128 bits.
+	//
+	// See https://github.com/oklog/ulid/issues/9 for details.
+	if v[0] > '7' {
+		return ErrOverflow
+	}
+
+	// Use an optimized unrolled loop (from https://github.com/RobThree/NUlid)
+	// to decode a base32 ULID.
+
+	// 6 bytes timestamp (48 bits)
+	(*id)[0] = ((dec[v[0]] << 5) | dec[v[1]])
+	(*id)[1] = ((dec[v[2]] << 3) | (dec[v[3]] >> 2))
+	(*id)[2] = ((dec[v[3]] << 6) | (dec[v[4]] << 1) | (dec[v[5]] >> 4))
+	(*id)[3] = ((dec[v[5]] << 4) | (dec[v[6]] >> 1))
+	(*id)[4] = ((dec[v[6]] << 7) | (dec[v[7]] << 2) | (dec[v[8]] >> 3))
+	(*id)[5] = ((dec[v[8]] << 5) | dec[v[9]])
+
+	// 10 bytes of entropy (80 bits)
+	(*id)[6] = ((dec[v[10]] << 3) | (dec[v[11]] >> 2))
+	(*id)[7] = ((dec[v[11]] << 6) | (dec[v[12]] << 1) | (dec[v[13]] >> 4))
+	(*id)[8] = ((dec[v[13]] << 4) | (dec[v[14]] >> 1))
+	(*id)[9] = ((dec[v[14]] << 7) | (dec[v[15]] << 2) | (dec[v[16]] >> 3))
+	(*id)[10] = ((dec[v[16]] << 5) | dec[v[17]])
+	(*id)[11] = ((dec[v[18]] << 3) | dec[v[19]]>>2)
+	(*id)[12] = ((dec[v[19]] << 6) | (dec[v[20]] << 1) | (dec[v[21]] >> 4))
+	(*id)[13] = ((dec[v[21]] << 4) | (dec[v[22]] >> 1))
+	(*id)[14] = ((dec[v[22]] << 7) | (dec[v[23]] << 2) | (dec[v[24]] >> 3))
+	(*id)[15] = ((dec[v[24]] << 5) | dec[v[25]])
+
+	return nil
 }
 
 // MustParse is a convenience function equivalent to Parse that panics on failure
 // instead of returning an error.
 func MustParse(ulid string) ULID {
 	id, err := Parse(ulid)
+	if err != nil {
+		panic(err)
+	}
+	return id
+}
+
+// MustParseStrict is a convenience function equivalent to ParseStrict that
+// panics on failure instead of returning an error.
+func MustParseStrict(ulid string) ULID {
+	id, err := ParseStrict(ulid)
 	if err != nil {
 		panic(err)
 	}
@@ -232,36 +354,12 @@ const EncodedSize = 26
 // ErrDataSize is returned if the len(v) is different from an encoded
 // ULID's length. Invalid encodings produce undefined ULIDs.
 func (id *ULID) UnmarshalText(v []byte) error {
-	// Optimized unrolled loop ahead.
-	// From https://github.com/RobThree/NUlid
-	if len(v) != EncodedSize {
-		return ErrDataSize
-	}
-
-	// 6 bytes timestamp (48 bits)
-	(*id)[0] = ((dec[v[0]] << 5) | dec[v[1]])
-	(*id)[1] = ((dec[v[2]] << 3) | (dec[v[3]] >> 2))
-	(*id)[2] = ((dec[v[3]] << 6) | (dec[v[4]] << 1) | (dec[v[5]] >> 4))
-	(*id)[3] = ((dec[v[5]] << 4) | (dec[v[6]] >> 1))
-	(*id)[4] = ((dec[v[6]] << 7) | (dec[v[7]] << 2) | (dec[v[8]] >> 3))
-	(*id)[5] = ((dec[v[8]] << 5) | dec[v[9]])
-
-	// 10 bytes of entropy (80 bits)
-	(*id)[6] = ((dec[v[10]] << 3) | (dec[v[11]] >> 2))
-	(*id)[7] = ((dec[v[11]] << 6) | (dec[v[12]] << 1) | (dec[v[13]] >> 4))
-	(*id)[8] = ((dec[v[13]] << 4) | (dec[v[14]] >> 1))
-	(*id)[9] = ((dec[v[14]] << 7) | (dec[v[15]] << 2) | (dec[v[16]] >> 3))
-	(*id)[10] = ((dec[v[16]] << 5) | dec[v[17]])
-	(*id)[11] = ((dec[v[18]] << 3) | dec[v[19]]>>2)
-	(*id)[12] = ((dec[v[19]] << 6) | (dec[v[20]] << 1) | (dec[v[21]] >> 4))
-	(*id)[13] = ((dec[v[21]] << 4) | (dec[v[22]] >> 1))
-	(*id)[14] = ((dec[v[22]] << 7) | (dec[v[23]] << 2) | (dec[v[24]] >> 3))
-	(*id)[15] = ((dec[v[24]] << 5) | dec[v[25]])
-
-	return nil
+	return parse(v, false, id)
 }
 
 // Time returns the Unix time in milliseconds encoded in the ULID.
+// Use the top level Time function to convert the returned value to
+// a time.Time.
 func (id ULID) Time() uint64 {
 	return uint64(id[5]) | uint64(id[4])<<8 |
 		uint64(id[3])<<16 | uint64(id[2])<<24 |
@@ -288,6 +386,14 @@ func Now() uint64 { return Timestamp(time.Now().UTC()) }
 func Timestamp(t time.Time) uint64 {
 	return uint64(t.Unix())*1000 +
 		uint64(t.Nanosecond()/int(time.Millisecond))
+}
+
+// Time converts Unix milliseconds in the format
+// returned by the Timestamp function to a time.Time.
+func Time(ms uint64) time.Time {
+	s := int64(ms / 1e3)
+	ns := int64((ms % 1e3) * 1e6)
+	return time.Unix(s, ns)
 }
 
 // SetTime sets the time component of the ULID to the given Unix time
@@ -329,4 +435,180 @@ func (id *ULID) SetEntropy(e []byte) error {
 // The result will be 0 if id==other, -1 if id < other, and +1 if id > other.
 func (id ULID) Compare(other ULID) int {
 	return bytes.Compare(id[:], other[:])
+}
+
+// Scan implements the sql.Scanner interface. It supports scanning
+// a string or byte slice.
+func (id *ULID) Scan(src interface{}) error {
+	switch x := src.(type) {
+	case nil:
+		return nil
+	case string:
+		return id.UnmarshalText([]byte(x))
+	case []byte:
+		return id.UnmarshalBinary(x)
+	}
+
+	return ErrScanValue
+}
+
+// Value implements the sql/driver.Valuer interface. This returns the value
+// represented as a byte slice. If instead a string is desirable, a wrapper
+// type can be created that calls String().
+//
+//	// stringValuer wraps a ULID as a string-based driver.Valuer.
+// 	type stringValuer ULID
+//
+//	func (id stringValuer) Value() (driver.Value, error) {
+//		return ULID(id).String(), nil
+//	}
+//
+//	// Example usage.
+//	db.Exec("...", stringValuer(id))
+func (id ULID) Value() (driver.Value, error) {
+	return id.MarshalBinary()
+}
+
+// Monotonic returns an entropy source that is guaranteed to yield
+// strictly increasing entropy bytes for the same ULID timestamp.
+// On conflicts, the previous ULID entropy is incremented with a
+// random number between 1 and `inc` (inclusive).
+//
+// The provided entropy source must actually yield random bytes or else
+// monotonic reads are not guaranteed to terminate, since there isn't
+// enough randomness to compute an increment number.
+//
+// When `inc == 0`, it'll be set to a secure default of `math.MaxUint32`.
+// The lower the value of `inc`, the easier the next ULID within the
+// same millisecond is to guess. If your code depends on ULIDs having
+// secure entropy bytes, then don't go under this default unless you know
+// what you're doing.
+//
+// The returned io.Reader isn't safe for concurrent use.
+func Monotonic(entropy io.Reader, inc uint64) io.Reader {
+	m := monotonic{
+		Reader: bufio.NewReader(entropy),
+		inc:    inc,
+	}
+
+	if m.inc == 0 {
+		m.inc = math.MaxUint32
+	}
+
+	if rng, ok := entropy.(*rand.Rand); ok {
+		m.rng = rng
+	}
+
+	return &m
+}
+
+type monotonic struct {
+	io.Reader
+	ms      uint64
+	inc     uint64
+	entropy uint80
+	rand    [8]byte
+	rng     *rand.Rand
+}
+
+func (m *monotonic) MonotonicRead(ms uint64, entropy []byte) (err error) {
+	if !m.entropy.IsZero() && m.ms == ms {
+		err = m.increment()
+		m.entropy.AppendTo(entropy)
+	} else if _, err = io.ReadFull(m.Reader, entropy); err == nil {
+		m.ms = ms
+		m.entropy.SetBytes(entropy)
+	}
+	return err
+}
+
+// increment the previous entropy number with a random number
+// of up to m.inc (inclusive).
+func (m *monotonic) increment() error {
+	if inc, err := m.random(); err != nil {
+		return err
+	} else if m.entropy.Add(inc) {
+		return ErrMonotonicOverflow
+	}
+	return nil
+}
+
+// random returns a uniform random value in [1, m.inc), reading entropy
+// from m.Reader. When m.inc == 0 || m.inc == 1, it returns 1.
+// Adapted from: https://golang.org/pkg/crypto/rand/#Int
+func (m *monotonic) random() (inc uint64, err error) {
+	if m.inc <= 1 {
+		return 1, nil
+	}
+
+	// Fast path for using a underlying rand.Rand directly.
+	if m.rng != nil {
+		// Range: [1, m.inc)
+		return 1 + uint64(m.rng.Int63n(int64(m.inc))), nil
+	}
+
+	// bitLen is the maximum bit length needed to encode a value < m.inc.
+	bitLen := bits.Len64(m.inc)
+
+	// byteLen is the maximum byte length needed to encode a value < m.inc.
+	byteLen := uint(bitLen+7) / 8
+
+	// msbitLen is the number of bits in the most significant byte of m.inc-1.
+	msbitLen := uint(bitLen % 8)
+	if msbitLen == 0 {
+		msbitLen = 8
+	}
+
+	for inc == 0 || inc >= m.inc {
+		if _, err = io.ReadFull(m.Reader, m.rand[:byteLen]); err != nil {
+			return 0, err
+		}
+
+		// Clear bits in the first byte to increase the probability
+		// that the candidate is < m.inc.
+		m.rand[0] &= uint8(int(1<<msbitLen) - 1)
+
+		// Convert the read bytes into an uint64 with byteLen
+		// Optimized unrolled loop.
+		switch byteLen {
+		case 1:
+			inc = uint64(m.rand[0])
+		case 2:
+			inc = uint64(binary.LittleEndian.Uint16(m.rand[:2]))
+		case 3, 4:
+			inc = uint64(binary.LittleEndian.Uint32(m.rand[:4]))
+		case 5, 6, 7, 8:
+			inc = uint64(binary.LittleEndian.Uint64(m.rand[:8]))
+		}
+	}
+
+	// Range: [1, m.inc)
+	return 1 + inc, nil
+}
+
+type uint80 struct {
+	Hi uint16
+	Lo uint64
+}
+
+func (u *uint80) SetBytes(bs []byte) {
+	u.Hi = binary.BigEndian.Uint16(bs[:2])
+	u.Lo = binary.BigEndian.Uint64(bs[2:])
+}
+
+func (u *uint80) AppendTo(bs []byte) {
+	binary.BigEndian.PutUint16(bs[:2], u.Hi)
+	binary.BigEndian.PutUint64(bs[2:], u.Lo)
+}
+
+func (u *uint80) Add(n uint64) (overflow bool) {
+	lo, hi := u.Lo, u.Hi
+	if u.Lo += n; u.Lo < lo {
+		u.Hi++
+	}
+	return u.Hi < hi
+}
+
+func (u uint80) IsZero() bool {
+	return u.Hi == 0 && u.Lo == 0
 }

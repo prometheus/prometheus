@@ -5,14 +5,34 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awsutil"
+	"github.com/aws/aws-sdk-go/aws/client"
+	"github.com/aws/aws-sdk-go/aws/endpoints"
 	"github.com/aws/aws-sdk-go/aws/request"
-	"github.com/aws/aws-sdk-go/private/endpoints"
+)
+
+const (
+	// customRetryerMinRetryDelay sets min retry delay
+	customRetryerMinRetryDelay = 1 * time.Second
+
+	// customRetryerMaxRetryDelay sets max retry delay
+	customRetryerMaxRetryDelay = 8 * time.Second
 )
 
 func init() {
 	initRequest = func(r *request.Request) {
 		if r.Operation.Name == opCopySnapshot { // fill the PresignedURL parameter
 			r.Handlers.Build.PushFront(fillPresignedURL)
+		}
+
+		// only set the retryer on request if config doesn't have a retryer
+		if r.Config.Retryer == nil && (r.Operation.Name == opModifyNetworkInterfaceAttribute || r.Operation.Name == opAssignPrivateIpAddresses) {
+			r.Retryer = client.DefaultRetryer{
+				NumMaxRetries:    client.DefaultRetryerMaxNumRetries,
+				MinRetryDelay:    customRetryerMinRetryDelay,
+				MinThrottleDelay: customRetryerMinRetryDelay,
+				MaxRetryDelay:    customRetryerMaxRetryDelay,
+				MaxThrottleDelay: customRetryerMaxRetryDelay,
+			}
 		}
 	}
 }
@@ -39,12 +59,20 @@ func fillPresignedURL(r *request.Request) {
 		WithRegion(aws.StringValue(origParams.SourceRegion)))
 
 	clientInfo := r.ClientInfo
-	clientInfo.Endpoint, clientInfo.SigningRegion = endpoints.EndpointForRegion(
-		clientInfo.ServiceName,
-		aws.StringValue(cfg.Region),
-		aws.BoolValue(cfg.DisableSSL),
-		aws.BoolValue(cfg.UseDualStack),
+	resolved, err := r.Config.EndpointResolver.EndpointFor(
+		clientInfo.ServiceName, aws.StringValue(cfg.Region),
+		func(opt *endpoints.Options) {
+			opt.DisableSSL = aws.BoolValue(cfg.DisableSSL)
+			opt.UseDualStack = aws.BoolValue(cfg.UseDualStack)
+		},
 	)
+	if err != nil {
+		r.Error = err
+		return
+	}
+
+	clientInfo.Endpoint = resolved.URL
+	clientInfo.SigningRegion = resolved.SigningRegion
 
 	// Presign a CopySnapshot request with modified params
 	req := request.New(*cfg, clientInfo, r.Handlers, r.Retryer, r.Operation, newParams, r.Data)

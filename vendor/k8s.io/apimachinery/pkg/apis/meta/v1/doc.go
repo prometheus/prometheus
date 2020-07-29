@@ -14,9 +14,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// +k8s:conversion-gen=false
 // +k8s:deepcopy-gen=package
 // +k8s:openapi-gen=true
 // +k8s:defaulter-gen=TypeMeta
 
 // +groupName=meta.k8s.io
-package v1
+
+package v1 // import "k8s.io/apimachinery/pkg/apis/meta/v1"

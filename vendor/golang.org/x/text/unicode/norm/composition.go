@@ -33,17 +33,9 @@ const (
 // streamSafe implements the policy of when a CGJ should be inserted.
 type streamSafe uint8
 
-// mkStreamSafe is a shorthand for declaring a streamSafe var and calling
-// first on it.
-func mkStreamSafe(p Properties) streamSafe {
-	return streamSafe(p.nTrailingNonStarters())
-}
-
-// first inserts the first rune of a segment.
+// first inserts the first rune of a segment. It is a faster version of next if
+// it is known p represents the first rune in a segment.
 func (ss *streamSafe) first(p Properties) {
-	if *ss != 0 {
-		panic("!= 0")
-	}
 	*ss = streamSafe(p.nTrailingNonStarters())
 }
 
@@ -66,7 +58,7 @@ func (ss *streamSafe) next(p Properties) ssState {
 	// be a non-starter. Note that it always hold that if nLead > 0 then
 	// nLead == nTrail.
 	if n == 0 {
-		*ss = 0
+		*ss = streamSafe(p.nTrailingNonStarters())
 		return ssStarter
 	}
 	return ssSuccess
@@ -142,7 +134,6 @@ func (rb *reorderBuffer) setFlusher(out []byte, f func(*reorderBuffer) bool) {
 func (rb *reorderBuffer) reset() {
 	rb.nrune = 0
 	rb.nbyte = 0
-	rb.ss = 0
 }
 
 func (rb *reorderBuffer) doFlush() bool {
@@ -257,6 +248,9 @@ func (rb *reorderBuffer) insertUnsafe(src input, i int, info Properties) {
 // It flushes the buffer on each new segment start.
 func (rb *reorderBuffer) insertDecomposed(dcomp []byte) insertErr {
 	rb.tmpBytes.setBytes(dcomp)
+	// As the streamSafe accounting already handles the counting for modifiers,
+	// we don't have to call next. However, we do need to keep the accounting
+	// intact when flushing the buffer.
 	for i := 0; i < len(dcomp); {
 		info := rb.f.info(rb.tmpBytes, i)
 		if info.BoundaryBefore() && rb.nrune > 0 && !rb.doFlush() {
@@ -413,7 +407,7 @@ func decomposeHangul(buf []byte, r rune) int {
 
 // decomposeHangul algorithmically decomposes a Hangul rune into
 // its Jamo components.
-// See http://unicode.org/reports/tr15/#Hangul for details on decomposing Hangul.
+// See https://unicode.org/reports/tr15/#Hangul for details on decomposing Hangul.
 func (rb *reorderBuffer) decomposeHangul(r rune) {
 	r -= hangulBase
 	x := r % jamoTCount
@@ -426,7 +420,7 @@ func (rb *reorderBuffer) decomposeHangul(r rune) {
 }
 
 // combineHangul algorithmically combines Jamo character components into Hangul.
-// See http://unicode.org/reports/tr15/#Hangul for details on combining Hangul.
+// See https://unicode.org/reports/tr15/#Hangul for details on combining Hangul.
 func (rb *reorderBuffer) combineHangul(s, i, k int) {
 	b := rb.rune[:]
 	bn := rb.nrune
@@ -467,6 +461,10 @@ func (rb *reorderBuffer) combineHangul(s, i, k int) {
 // It should only be used to recompose a single segment, as it will not
 // handle alternations between Hangul and non-Hangul characters correctly.
 func (rb *reorderBuffer) compose() {
+	// Lazily load the map used by the combine func below, but do
+	// it outside of the loop.
+	recompMapOnce.Do(buildRecompMap)
+
 	// UAX #15, section X5 , including Corrigendum #5
 	// "In any character sequence beginning with starter S, a character C is
 	//  blocked from S if and only if there is some character B between S

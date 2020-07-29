@@ -15,38 +15,59 @@ package remote
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/hex"
+	"fmt"
 	"sync"
+	"time"
 
 	"github.com/go-kit/kit/log"
+	"gopkg.in/yaml.v2"
+
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/logging"
 	"github.com/prometheus/prometheus/storage"
 )
 
-// Callback func that return the oldest timestamp stored in a storage.
+// String constants for instrumentation.
+const (
+	namespace  = "prometheus"
+	subsystem  = "remote_storage"
+	remoteName = "remote_name"
+	endpoint   = "url"
+)
+
+// startTimeCallback is a callback func that return the oldest timestamp stored in a storage.
 type startTimeCallback func() (int64, error)
 
 // Storage represents all the remote read and write endpoints.  It implements
 // storage.Storage.
 type Storage struct {
 	logger log.Logger
-	mtx    sync.RWMutex
+	mtx    sync.Mutex
 
-	// For writes
-	queues []*QueueManager
+	rws *WriteStorage
 
-	// For reads
-	queryables             []storage.Queryable
+	// For reads.
+	queryables             []storage.SampleAndChunkQueryable
 	localStartTimeCallback startTimeCallback
 }
 
 // NewStorage returns a remote.Storage.
-func NewStorage(l log.Logger, stCallback startTimeCallback) *Storage {
+func NewStorage(l log.Logger, reg prometheus.Registerer, stCallback startTimeCallback, walDir string, flushDeadline time.Duration) *Storage {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
-	return &Storage{logger: l, localStartTimeCallback: stCallback}
+
+	s := &Storage{
+		logger:                 logging.Dedupe(l, 1*time.Minute),
+		localStartTimeCallback: stCallback,
+	}
+	s.rws = NewWriteStorage(s.logger, reg, walDir, flushDeadline)
+	return s
 }
 
 // ApplyConfig updates the state as the new config requires.
@@ -54,43 +75,34 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
-	// Update write queues
-
-	newQueues := []*QueueManager{}
-	// TODO: we should only stop & recreate queues which have changes,
-	// as this can be quite disruptive.
-	for i, rwConf := range conf.RemoteWriteConfigs {
-		c, err := NewClient(i, &ClientConfig{
-			URL:              rwConf.URL,
-			Timeout:          rwConf.RemoteTimeout,
-			HTTPClientConfig: rwConf.HTTPClientConfig,
-		})
-		if err != nil {
-			return err
-		}
-		newQueues = append(newQueues, NewQueueManager(
-			s.logger,
-			config.DefaultQueueConfig,
-			conf.GlobalConfig.ExternalLabels,
-			rwConf.WriteRelabelConfigs,
-			c,
-		))
-	}
-
-	for _, q := range s.queues {
-		q.Stop()
-	}
-
-	s.queues = newQueues
-	for _, q := range s.queues {
-		q.Start()
+	if err := s.rws.ApplyConfig(conf); err != nil {
+		return err
 	}
 
 	// Update read clients
+	readHashes := make(map[string]struct{})
+	queryables := make([]storage.SampleAndChunkQueryable, 0, len(conf.RemoteReadConfigs))
+	for _, rrConf := range conf.RemoteReadConfigs {
+		hash, err := toHash(rrConf)
+		if err != nil {
+			return err
+		}
 
-	s.queryables = make([]storage.Queryable, 0, len(conf.RemoteReadConfigs))
-	for i, rrConf := range conf.RemoteReadConfigs {
-		c, err := NewClient(i, &ClientConfig{
+		// Don't allow duplicate remote read configs.
+		if _, ok := readHashes[hash]; ok {
+			return fmt.Errorf("duplicate remote read configs are not allowed, found duplicate for URL: %s", rrConf.URL)
+		}
+		readHashes[hash] = struct{}{}
+
+		// Set the queue name to the config hash if the user has not set
+		// a name in their remote write config so we can still differentiate
+		// between queues that have the same remote write endpoint.
+		name := hash[:6]
+		if rrConf.Name != "" {
+			name = rrConf.Name
+		}
+
+		c, err := newReadClient(name, &ClientConfig{
 			URL:              rrConf.URL,
 			Timeout:          rrConf.RemoteTimeout,
 			HTTPClientConfig: rrConf.HTTPClientConfig,
@@ -99,17 +111,15 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 			return err
 		}
 
-		var q storage.Queryable
-		q = QueryableClient(c)
-		q = ExternablLabelsHandler(q, conf.GlobalConfig.ExternalLabels)
-		if len(rrConf.RequiredMatchers) > 0 {
-			q = RequiredMatchersFilter(q, labelsToEqualityMatchers(rrConf.RequiredMatchers))
-		}
-		if !rrConf.ReadRecent {
-			q = PreferLocalStorageFilter(q, s.localStartTimeCallback)
-		}
-		s.queryables = append(s.queryables, q)
+		queryables = append(queryables, NewSampleAndChunkQueryableClient(
+			c,
+			conf.GlobalConfig.ExternalLabels,
+			labelsToEqualityMatchers(rrConf.RequiredMatchers),
+			rrConf.ReadRecent,
+			s.localStartTimeCallback,
+		))
 	}
+	s.queryables = queryables
 
 	return nil
 }
@@ -121,6 +131,9 @@ func (s *Storage) StartTime() (int64, error) {
 
 // Querier returns a storage.MergeQuerier combining the remote client queriers
 // of each configured remote read endpoint.
+// Returned querier will never return error as all queryables are assumed best effort.
+// Additionally all returned queriers ensure that its Select's SeriesSets have ready data after first `Next` invoke.
+// This is because Prometheus (fanout and secondary queries) can't handle the stream failing half way through by design.
 func (s *Storage) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 	s.mtx.Lock()
 	queryables := s.queryables
@@ -134,19 +147,37 @@ func (s *Storage) Querier(ctx context.Context, mint, maxt int64) (storage.Querie
 		}
 		queriers = append(queriers, q)
 	}
-	return storage.NewMergeQuerier(queriers), nil
+	return storage.NewMergeQuerier(storage.NoopQuerier(), queriers, storage.ChainedSeriesMerge), nil
+}
+
+// ChunkQuerier returns a storage.MergeQuerier combining the remote client queriers
+// of each configured remote read endpoint.
+func (s *Storage) ChunkQuerier(ctx context.Context, mint, maxt int64) (storage.ChunkQuerier, error) {
+	s.mtx.Lock()
+	queryables := s.queryables
+	s.mtx.Unlock()
+
+	queriers := make([]storage.ChunkQuerier, 0, len(queryables))
+	for _, queryable := range queryables {
+		q, err := queryable.ChunkQuerier(ctx, mint, maxt)
+		if err != nil {
+			return nil, err
+		}
+		queriers = append(queriers, q)
+	}
+	return storage.NewMergeChunkQuerier(storage.NoopChunkedQuerier(), queriers, storage.NewCompactingChunkSeriesMerger(storage.ChainedSeriesMerge)), nil
+}
+
+// Appender implements storage.Storage.
+func (s *Storage) Appender() storage.Appender {
+	return s.rws.Appender()
 }
 
 // Close the background processing of the storage queues.
 func (s *Storage) Close() error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
-
-	for _, q := range s.queues {
-		q.Stop()
-	}
-
-	return nil
+	return s.rws.Close()
 }
 
 func labelsToEqualityMatchers(ls model.LabelSet) []*labels.Matcher {
@@ -159,4 +190,14 @@ func labelsToEqualityMatchers(ls model.LabelSet) []*labels.Matcher {
 		})
 	}
 	return ms
+}
+
+// Used for hashing configs and diff'ing hashes in ApplyConfig.
+func toHash(data interface{}) (string, error) {
+	bytes, err := yaml.Marshal(data)
+	if err != nil {
+		return "", err
+	}
+	hash := md5.Sum(bytes)
+	return hex.EncodeToString(hash[:]), nil
 }

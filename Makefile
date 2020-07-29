@@ -1,4 +1,4 @@
-# Copyright 2015 The Prometheus Authors
+# Copyright 2018 The Prometheus Authors
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -11,88 +11,81 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-GO           ?= go
-GOFMT        ?= $(GO)fmt
-FIRST_GOPATH := $(firstword $(subst :, ,$(shell $(GO) env GOPATH)))
-PROMU        := $(FIRST_GOPATH)/bin/promu
-STATICCHECK  := $(FIRST_GOPATH)/bin/staticcheck
-pkgs          = $(shell $(GO) list ./... | grep -v /vendor/)
+# Needs to be defined before including Makefile.common to auto-generate targets
+DOCKER_ARCHS ?= amd64 armv7 arm64 s390x
 
-PREFIX                  ?= $(shell pwd)
-BIN_DIR                 ?= $(shell pwd)
+REACT_APP_PATH = web/ui/react-app
+REACT_APP_SOURCE_FILES = $(wildcard $(REACT_APP_PATH)/public/* $(REACT_APP_PATH)/src/* $(REACT_APP_PATH)/tsconfig.json)
+REACT_APP_OUTPUT_DIR = web/ui/static/react
+REACT_APP_NODE_MODULES_PATH = $(REACT_APP_PATH)/node_modules
+REACT_APP_NPM_LICENSES_TARBALL = "npm_licenses.tar.bz2"
+
+PROMTOOL = ./promtool
+TSDB_BENCHMARK_NUM_METRICS ?= 1000
+TSDB_BENCHMARK_DATASET ?= ./tsdb/testdata/20kseries.json
+TSDB_BENCHMARK_OUTPUT_DIR ?= ./benchout
+
+include Makefile.common
+
 DOCKER_IMAGE_NAME       ?= prometheus
-DOCKER_IMAGE_TAG        ?= $(subst /,-,$(shell git rev-parse --abbrev-ref HEAD))
 
-ifdef DEBUG
-	bindata_flags = -debug
-endif
+$(REACT_APP_NODE_MODULES_PATH): $(REACT_APP_PATH)/package.json $(REACT_APP_PATH)/yarn.lock
+	cd $(REACT_APP_PATH) && yarn --frozen-lockfile
 
-STATICCHECK_IGNORE = \
-  github.com/prometheus/prometheus/discovery/kubernetes/kubernetes.go:SA1019 \
-  github.com/prometheus/prometheus/discovery/kubernetes/node.go:SA1019 \
-  github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_adapter/main.go:SA1019 \
-  github.com/prometheus/prometheus/pkg/textparse/lex.l.go:SA4006 \
-  github.com/prometheus/prometheus/pkg/pool/pool.go:SA6002 \
-  github.com/prometheus/prometheus/promql/engine.go:SA6002 \
-  github.com/prometheus/prometheus/web/web.go:SA1019
+$(REACT_APP_OUTPUT_DIR): $(REACT_APP_NODE_MODULES_PATH) $(REACT_APP_SOURCE_FILES)
+	@echo ">> building React app"
+	@./scripts/build_react_app.sh
 
-all: format staticcheck build test
-
-style:
-	@echo ">> checking code style"
-	@! $(GOFMT) -d $(shell find . -path ./vendor -prune -o -name '*.go' -print) | grep '^'
-
-check_license:
-	@echo ">> checking license header"
-	@./scripts/check_license.sh
-
-# TODO(fabxc): example tests temporarily removed.
-test-short:
-	@echo ">> running short tests"
-	@$(GO) test -short $(shell $(GO) list ./... | grep -v /vendor/ | grep -v examples)
-
-test:
-	@echo ">> running all tests"
-	@$(GO) test $(shell $(GO) list ./... | grep -v /vendor/ | grep -v examples)
-
-format:
-	@echo ">> formatting code"
-	@$(GO) fmt $(pkgs)
-
-vet:
-	@echo ">> vetting code"
-	@$(GO) vet $(pkgs)
-
-staticcheck: $(STATICCHECK)
-	@echo ">> running staticcheck"
-	@$(STATICCHECK) -ignore "$(STATICCHECK_IGNORE)" $(pkgs)
-
-build: promu
-	@echo ">> building binaries"
-	@$(PROMU) build --prefix $(PREFIX)
-
-tarball: promu
-	@echo ">> building release tarball"
-	@$(PROMU) tarball --prefix $(PREFIX) $(BIN_DIR)
-
-docker:
-	@echo ">> building docker image"
-	@docker build -t "$(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG)" .
-
-assets:
+.PHONY: assets
+assets: $(REACT_APP_OUTPUT_DIR)
 	@echo ">> writing assets"
-	@$(GO) get -u github.com/jteeuwen/go-bindata/...
-	@go-bindata $(bindata_flags) -pkg ui -o web/ui/bindata.go -ignore '(.*\.map|bootstrap\.js|bootstrap-theme\.css|bootstrap\.css)'  web/ui/templates/... web/ui/static/...
-	@$(GO) fmt ./web/ui
+	# Un-setting GOOS and GOARCH here because the generated Go code is always the same,
+	# but the cached object code is incompatible between architectures and OSes (which
+	# breaks cross-building for different combinations on CI in the same container).
+	cd web/ui && GO111MODULE=$(GO111MODULE) GOOS= GOARCH= $(GO) generate -x -v $(GOOPTS)
+	@$(GOFMT) -w ./web/ui
 
-promu:
-	@echo ">> fetching promu"
-	@GOOS=$(shell uname -s | tr A-Z a-z) \
-	GOARCH=$(subst x86_64,amd64,$(patsubst i%86,386,$(shell uname -m))) \
-	GO="$(GO)" \
-	$(GO) get -u github.com/prometheus/promu
+.PHONY: react-app-lint
+react-app-lint: 
+	@echo ">> running React app linting"
+	cd $(REACT_APP_PATH) && yarn lint:ci
 
-$(FIRST_GOPATH)/bin/staticcheck:
-	@GOOS= GOARCH= $(GO) get -u honnef.co/go/tools/cmd/staticcheck
+.PHONY: react-app-lint-fix
+react-app-lint-fix: 
+	@echo ">> running React app linting and fixing errors where possible"
+	cd $(REACT_APP_PATH) && yarn lint
 
-.PHONY: all style check_license format build test vet assets tarball docker promu staticcheck $(FIRST_GOPATH)/bin/staticcheck
+.PHONY: react-app-test
+react-app-test: | $(REACT_APP_NODE_MODULES_PATH) react-app-lint
+	@echo ">> running React app tests"
+	cd $(REACT_APP_PATH) && yarn test --no-watch --coverage
+
+.PHONY: test
+test: common-test react-app-test
+
+.PHONY: npm_licenses
+npm_licenses: $(REACT_APP_NODE_MODULES_PATH)
+	@echo ">> bundling npm licenses"
+	rm -f $(REACT_APP_NPM_LICENSES_TARBALL)
+	find $(REACT_APP_NODE_MODULES_PATH) -iname "license*" | tar cfj $(REACT_APP_NPM_LICENSES_TARBALL) --transform 's/^/npm_licenses\//' --files-from=-
+
+.PHONY: tarball
+tarball: npm_licenses common-tarball
+
+.PHONY: docker
+docker: npm_licenses common-docker
+
+.PHONY: build
+build: assets common-build
+
+.PHONY: bench_tsdb
+bench_tsdb: $(PROMU)
+	@echo ">> building promtool"
+	@GO111MODULE=$(GO111MODULE) $(PROMU) build --prefix $(PREFIX) promtool
+	@echo ">> running benchmark, writing result to $(TSDB_BENCHMARK_OUTPUT_DIR)"
+	@$(PROMTOOL) tsdb bench write --metrics=$(TSDB_BENCHMARK_NUM_METRICS) --out=$(TSDB_BENCHMARK_OUTPUT_DIR) $(TSDB_BENCHMARK_DATASET)
+	@$(GO) tool pprof -svg $(PROMTOOL) $(TSDB_BENCHMARK_OUTPUT_DIR)/cpu.prof > $(TSDB_BENCHMARK_OUTPUT_DIR)/cpuprof.svg
+	@$(GO) tool pprof --inuse_space -svg $(PROMTOOL) $(TSDB_BENCHMARK_OUTPUT_DIR)/mem.prof > $(TSDB_BENCHMARK_OUTPUT_DIR)/memprof.inuse.svg
+	@$(GO) tool pprof --alloc_space -svg $(PROMTOOL) $(TSDB_BENCHMARK_OUTPUT_DIR)/mem.prof > $(TSDB_BENCHMARK_OUTPUT_DIR)/memprof.alloc.svg
+	@$(GO) tool pprof -svg $(PROMTOOL) $(TSDB_BENCHMARK_OUTPUT_DIR)/block.prof > $(TSDB_BENCHMARK_OUTPUT_DIR)/blockprof.svg
+	@$(GO) tool pprof -svg $(PROMTOOL) $(TSDB_BENCHMARK_OUTPUT_DIR)/mutex.prof > $(TSDB_BENCHMARK_OUTPUT_DIR)/mutexprof.svg

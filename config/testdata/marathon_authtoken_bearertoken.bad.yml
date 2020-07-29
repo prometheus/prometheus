@@ -1,0 +1,9 @@
+scrape_configs:
+  - job_name: prometheus
+
+    marathon_sd_configs:
+    - servers:
+      - 'https://localhost:1234'
+
+      auth_token: 1234
+      bearer_token: 4567

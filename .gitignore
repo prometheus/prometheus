@@ -1,21 +1,8 @@
 *#
 .#*
-*-stamp
 /*.yaml
 /*.yml
-/*.rules
 *.exe
-
-# Editor files #
-################
-*~
-.*.swp
-.*.swo
-*.iml
-.idea
-tags
-.history
-.vscode
 
 /prometheus
 /promtool
@@ -23,12 +10,14 @@ benchmark.txt
 /data
 /cmd/prometheus/data
 /cmd/prometheus/debug
-/.build
-/.release
-/.tarballs
+/benchout
 
-!/circle.yml
 !/.travis.yml
 !/.promu.yml
+!/.golangci.yml
 /documentation/examples/remote_storage/remote_storage_adapter/remote_storage_adapter
 /documentation/examples/remote_storage/example_write_adapter/example_writer_adapter
+
+npm_licenses.tar.bz2
+/web/ui/static/react
+/web/ui/assets_vfsdata.go

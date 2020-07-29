@@ -2,13 +2,15 @@
 {{/* Load Prometheus console library JS/CSS. Should go in <head> */}}
 {{ define "prom_console_head" }}
 <link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/vendor/rickshaw/rickshaw.min.css">
-<link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/vendor/bootstrap-3.3.1/css/bootstrap.min.css">
+<link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/vendor/bootstrap-4.3.1/css/bootstrap.min.css">
 <link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/css/prom_console.css">
+<link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/vendor/bootstrap4-glyphicons/css/bootstrap-glyphicons.min.css">
 <script src="{{ pathPrefix }}/static/vendor/rickshaw/vendor/d3.v3.js"></script>
 <script src="{{ pathPrefix }}/static/vendor/rickshaw/vendor/d3.layout.min.js"></script>
 <script src="{{ pathPrefix }}/static/vendor/rickshaw/rickshaw.min.js"></script>
-<script src="{{ pathPrefix }}/static/vendor/js/jquery.min.js"></script>
-<script src="{{ pathPrefix }}/static/vendor/bootstrap-3.3.1/js/bootstrap.min.js"></script>
+<script src="{{ pathPrefix }}/static/vendor/js/jquery-3.3.1.min.js"></script>
+<script src="{{ pathPrefix }}/static/vendor/js/popper.min.js"></script>
+<script src="{{ pathPrefix }}/static/vendor/bootstrap-4.3.1/js/bootstrap.min.js"></script>
 
 <script>
 var PATH_PREFIX = "{{ pathPrefix }}";
@@ -17,13 +19,15 @@ var PATH_PREFIX = "{{ pathPrefix }}";
 {{ end }}
 
 {{/* Top of all pages. */}}
-{{ define "head" }}
-<html>
+{{ define "head" -}}
+<!doctype html>
+<html lang="en">
 <head>
 {{ template "prom_console_head" }}
 </head>
 <body>
 {{ template "navbar" . }}
+
 {{ template "menu" . }}
 {{ end }}
 
@@ -32,6 +36,7 @@ var PATH_PREFIX = "{{ pathPrefix }}";
 {{ define "humanizeNoSmallPrefix" }}{{ if and (lt . 1.0) (gt . -1.0) }}{{ printf "%.3g" . }}{{ else }}{{ humanize . }}{{ end }}{{ end }}
 {{ define "humanize1024" }}{{ humanize1024 . }}{{ end }}
 {{ define "humanizeDuration" }}{{ humanizeDuration . }}{{ end }}
+{{ define "humanizePercentage" }}{{ humanizePercentage . }}{{ end }}
 {{ define "humanizeTimestamp" }}{{ humanizeTimestamp . }}{{ end }}
 {{ define "printf.1f" }}{{ printf "%.1f" . }}{{ end }}
 {{ define "printf.3g" }}{{ printf "%.3g" . }}{{ end }}
@@ -50,7 +55,7 @@ renderTemplate is the name of the template to use to render the value.
 
 {{ define "prom_right_table_head" }}
 <div class="prom_console_rhs">
-<table class="table table-bordered table-hover table-condensed">
+<table class="table table-bordered table-hover table-sm">
 {{ end }}
 {{ define "prom_right_table_tail" }}
 </table>
@@ -76,7 +81,7 @@ renderTemplate is the name of the template to use to render the value.
 
 {{ define "prom_content_head" }}
 <div class="prom_console_content">
-  <div class="container">
+  <div class="container-fluid">
 {{ template "prom_graph_timecontrol" . }}
 {{ end }}
 {{ define "prom_content_tail" }}
@@ -87,34 +92,32 @@ renderTemplate is the name of the template to use to render the value.
 {{ define "prom_graph_timecontrol" }}
 <div class="prom_graph_timecontrol">
   <div class="prom_graph_timecontrol_inner">
-    <div class="prom_graph_timecontrol_group">
-      <button class="btn btn-default pull-left" type="button" id="prom_graph_duration_shrink" title="Shrink the time range.">
+    <div class="prom_graph_timecontrol_group ">
+      <button class="btn btn-light pull-left" type="button" id="prom_graph_duration_shrink" title="Shrink the time range.">
         <i class="glyphicon glyphicon-minus"></i>
-      </button>
-      <input class="input pull-left" size="3" title="Time range of graph" type="text" id="prom_graph_duration">
-      <button class="btn btn-default pull-left" type="button" id="prom_graph_duration_grow" title="Grow the time range.">
+      </button><!-- Comments between elements to remove spaces
+   --><input class="input pull-left align-middle" size="3" title="Time range of graph" type="text" id="prom_graph_duration"><!--
+   --><button class="btn btn-light pull-left" type="button" id="prom_graph_duration_grow" title="Grow the time range.">
         <i class="glyphicon glyphicon-plus"></i>
       </button>
     </div>
-
-    <div class="prom_graph_timecontrol_group">
-      <button class="btn btn-default pull-left" type="button" id="prom_graph_time_back" title="Rewind the end time.">
+    <div class="prom_graph_timecontrol_group ">
+      <button class="btn btn-light pull-left" type="button" id="prom_graph_time_back" title="Rewind the end time.">
         <i class="glyphicon glyphicon-backward"></i>
-      </button>
-      <input class="input pull-left" title="End time of graph" placeholder="Until" type="text" id="prom_graph_time_end" size="16" value="">
-      <button class="btn btn-default pull-left" type="button" id="prom_graph_time_forward" title="Advance the end time.">
+      </button><!--
+   --><input class="input pull-left align-middle" title="End time of graph" placeholder="Until" type="text" id="prom_graph_time_end" size="16" value=""><!--
+    --><button class="btn btn-light pull-left" type="button" id="prom_graph_time_forward" title="Advance the end time.">
         <i class="glyphicon glyphicon-forward"></i>
       </button>
     </div>
-
-    <div class="prom_graph_timecontrol_group">
+    <div class="prom_graph_timecontrol_group ">
       <div class="btn-group dropup prom_graph_timecontrol_refresh pull-left">
-        <button type="button" class="btn btn-default pull-left" id="prom_graph_refresh_button" title="Refresh.">
+        <button type="button" class="btn btn-light pull-left" id="prom_graph_refresh_button" title="Refresh.">
           <i class="glyphicon glyphicon-repeat"></i>
           <span class="icon-repeat"></span>
           (<span id="prom_graph_refresh_button_value">Off</span>)
         </button>
-        <button type="button" class="btn btn-default pull-left dropdown-toggle" data-toggle="dropdown" title="Set autorefresh." aria-expanded="false">
+        <button type="button" class="btn btn-light pull-left dropdown-toggle" data-toggle="dropdown" title="Set autorefresh."aria-haspopup="true" aria-expanded="false">
           <span class="caret"></span>&nbsp;
         </button>
         <ul class="dropdown-menu" id="prom_graph_refresh_intervals" role="menu">

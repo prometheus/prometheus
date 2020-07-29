@@ -31,7 +31,9 @@ func (l *jsonLogger) Log(keyvals ...interface{}) error {
 		}
 		merge(m, k, v)
 	}
-	return json.NewEncoder(l.Writer).Encode(m)
+	enc := json.NewEncoder(l.Writer)
+	enc.SetEscapeHTML(false)
+	return enc.Encode(m)
 }
 
 func merge(dst map[string]interface{}, k, v interface{}) {
@@ -43,9 +45,6 @@ func merge(dst map[string]interface{}, k, v interface{}) {
 		key = safeString(x)
 	default:
 		key = fmt.Sprint(x)
-	}
-	if x, ok := v.(error); ok {
-		v = safeError(x)
 	}
 
 	// We want json.Marshaler and encoding.TextMarshaller to take priority over

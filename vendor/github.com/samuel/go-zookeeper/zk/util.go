@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // AuthACL produces an ACL list containing a single ACL which uses the
@@ -51,4 +52,65 @@ func stringShuffle(s []string) {
 		j := rand.Intn(i + 1)
 		s[i], s[j] = s[j], s[i]
 	}
+}
+
+// validatePath will make sure a path is valid before sending the request
+func validatePath(path string, isSequential bool) error {
+	if path == "" {
+		return ErrInvalidPath
+	}
+
+	if path[0] != '/' {
+		return ErrInvalidPath
+	}
+
+	n := len(path)
+	if n == 1 {
+		// path is just the root
+		return nil
+	}
+
+	if !isSequential && path[n-1] == '/' {
+		return ErrInvalidPath
+	}
+
+	// Start at rune 1 since we already know that the first character is
+	// a '/'.
+	for i, w := 1, 0; i < n; i += w {
+		r, width := utf8.DecodeRuneInString(path[i:])
+		switch {
+		case r == '\u0000':
+			return ErrInvalidPath
+		case r == '/':
+			last, _ := utf8.DecodeLastRuneInString(path[:i])
+			if last == '/' {
+				return ErrInvalidPath
+			}
+		case r == '.':
+			last, lastWidth := utf8.DecodeLastRuneInString(path[:i])
+
+			// Check for double dot
+			if last == '.' {
+				last, _ = utf8.DecodeLastRuneInString(path[:i-lastWidth])
+			}
+
+			if last == '/' {
+				if i+1 == n {
+					return ErrInvalidPath
+				}
+
+				next, _ := utf8.DecodeRuneInString(path[i+w:])
+				if next == '/' {
+					return ErrInvalidPath
+				}
+			}
+		case r >= '\u0000' && r <= '\u001f',
+			r >= '\u007f' && r <= '\u009f',
+			r >= '\uf000' && r <= '\uf8ff',
+			r >= '\ufff0' && r < '\uffff':
+			return ErrInvalidPath
+		}
+		w = width
+	}
+	return nil
 }

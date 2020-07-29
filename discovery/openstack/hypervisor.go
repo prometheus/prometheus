@@ -17,20 +17,20 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"time"
 
 	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
 	"github.com/gophercloud/gophercloud"
 	"github.com/gophercloud/gophercloud/openstack"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/hypervisors"
 	"github.com/gophercloud/gophercloud/pagination"
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
 const (
+	openstackLabelHypervisorID       = openstackLabelPrefix + "hypervisor_id"
 	openstackLabelHypervisorHostIP   = openstackLabelPrefix + "hypervisor_host_ip"
 	openstackLabelHypervisorHostName = openstackLabelPrefix + "hypervisor_hostname"
 	openstackLabelHypervisorStatus   = openstackLabelPrefix + "hypervisor_status"
@@ -40,79 +40,36 @@ const (
 
 // HypervisorDiscovery discovers OpenStack hypervisors.
 type HypervisorDiscovery struct {
-	authOpts *gophercloud.AuthOptions
-	region   string
-	interval time.Duration
-	logger   log.Logger
-	port     int
+	provider     *gophercloud.ProviderClient
+	authOpts     *gophercloud.AuthOptions
+	region       string
+	logger       log.Logger
+	port         int
+	availability gophercloud.Availability
 }
 
-// NewHypervisorDiscovery returns a new hypervisor discovery.
-func NewHypervisorDiscovery(opts *gophercloud.AuthOptions,
-	interval time.Duration, port int, region string, l log.Logger) *HypervisorDiscovery {
-	return &HypervisorDiscovery{authOpts: opts,
-		region: region, interval: interval, port: port, logger: l}
+// newHypervisorDiscovery returns a new hypervisor discovery.
+func newHypervisorDiscovery(provider *gophercloud.ProviderClient, opts *gophercloud.AuthOptions,
+	port int, region string, availability gophercloud.Availability, l log.Logger) *HypervisorDiscovery {
+	return &HypervisorDiscovery{provider: provider, authOpts: opts,
+		region: region, port: port, availability: availability, logger: l}
 }
 
-// Run implements the TargetProvider interface.
-func (h *HypervisorDiscovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
-	// Get an initial set right away.
-	tg, err := h.refresh()
+func (h *HypervisorDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
+	h.provider.Context = ctx
+	err := openstack.Authenticate(h.provider, *h.authOpts)
 	if err != nil {
-		level.Error(h.logger).Log("msg", "Unable refresh target groups", "err", err.Error())
-	} else {
-		select {
-		case ch <- []*config.TargetGroup{tg}:
-		case <-ctx.Done():
-			return
-		}
+		return nil, errors.Wrap(err, "could not authenticate to OpenStack")
 	}
 
-	ticker := time.NewTicker(h.interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			tg, err := h.refresh()
-			if err != nil {
-				level.Error(h.logger).Log("msg", "Unable refresh target groups", "err", err.Error())
-				continue
-			}
-
-			select {
-			case ch <- []*config.TargetGroup{tg}:
-			case <-ctx.Done():
-				return
-			}
-		case <-ctx.Done():
-			return
-		}
-	}
-}
-
-func (h *HypervisorDiscovery) refresh() (*config.TargetGroup, error) {
-	var err error
-	t0 := time.Now()
-	defer func() {
-		refreshDuration.Observe(time.Since(t0).Seconds())
-		if err != nil {
-			refreshFailuresCount.Inc()
-		}
-	}()
-
-	provider, err := openstack.AuthenticatedClient(*h.authOpts)
-	if err != nil {
-		return nil, fmt.Errorf("could not create OpenStack session: %s", err)
-	}
-	client, err := openstack.NewComputeV2(provider, gophercloud.EndpointOpts{
-		Region: h.region,
+	client, err := openstack.NewComputeV2(h.provider, gophercloud.EndpointOpts{
+		Region: h.region, Availability: h.availability,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("could not create OpenStack compute session: %s", err)
+		return nil, errors.Wrap(err, "could not create OpenStack compute session")
 	}
 
-	tg := &config.TargetGroup{
+	tg := &targetgroup.Group{
 		Source: fmt.Sprintf("OS_" + h.region),
 	}
 	// OpenStack API reference
@@ -121,14 +78,13 @@ func (h *HypervisorDiscovery) refresh() (*config.TargetGroup, error) {
 	err = pagerHypervisors.EachPage(func(page pagination.Page) (bool, error) {
 		hypervisorList, err := hypervisors.ExtractHypervisors(page)
 		if err != nil {
-			return false, fmt.Errorf("could not extract hypervisors: %s", err)
+			return false, errors.Wrap(err, "could not extract hypervisors")
 		}
 		for _, hypervisor := range hypervisorList {
-			labels := model.LabelSet{
-				openstackLabelHypervisorHostIP: model.LabelValue(hypervisor.HostIP),
-			}
+			labels := model.LabelSet{}
 			addr := net.JoinHostPort(hypervisor.HostIP, fmt.Sprintf("%d", h.port))
 			labels[model.AddressLabel] = model.LabelValue(addr)
+			labels[openstackLabelHypervisorID] = model.LabelValue(hypervisor.ID)
 			labels[openstackLabelHypervisorHostName] = model.LabelValue(hypervisor.HypervisorHostname)
 			labels[openstackLabelHypervisorHostIP] = model.LabelValue(hypervisor.HostIP)
 			labels[openstackLabelHypervisorStatus] = model.LabelValue(hypervisor.Status)
@@ -142,5 +98,5 @@ func (h *HypervisorDiscovery) refresh() (*config.TargetGroup, error) {
 		return nil, err
 	}
 
-	return tg, nil
+	return []*targetgroup.Group{tg}, nil
 }

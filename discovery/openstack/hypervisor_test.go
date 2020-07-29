@@ -14,41 +14,29 @@
 package openstack
 
 import (
+	"context"
+	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"github.com/stretchr/testify/suite"
-
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 type OpenstackSDHypervisorTestSuite struct {
-	suite.Suite
 	Mock *SDMock
 }
 
-func (s *OpenstackSDHypervisorTestSuite) TearDownSuite() {
-	s.Mock.ShutdownServer()
-}
-
-func (s *OpenstackSDHypervisorTestSuite) SetupTest() {
-	s.Mock = NewSDMock(s.T())
+func (s *OpenstackSDHypervisorTestSuite) SetupTest(t *testing.T) {
+	s.Mock = NewSDMock(t)
 	s.Mock.Setup()
 
 	s.Mock.HandleHypervisorListSuccessfully()
-
 	s.Mock.HandleVersionsSuccessfully()
 	s.Mock.HandleAuthSuccessfully()
 }
 
-func TestOpenstackSDHypervisorSuite(t *testing.T) {
-	suite.Run(t, new(OpenstackSDHypervisorTestSuite))
-}
-
-func (s *OpenstackSDHypervisorTestSuite) openstackAuthSuccess() (Discovery, error) {
-	conf := config.OpenstackSDConfig{
+func (s *OpenstackSDHypervisorTestSuite) openstackAuthSuccess() (refresher, error) {
+	conf := SDConfig{
 		IdentityEndpoint: s.Mock.Endpoint(),
 		Password:         "test",
 		Username:         "test",
@@ -56,28 +44,57 @@ func (s *OpenstackSDHypervisorTestSuite) openstackAuthSuccess() (Discovery, erro
 		Region:           "RegionOne",
 		Role:             "hypervisor",
 	}
-	return NewDiscovery(&conf, nil)
+	return newRefresher(&conf, nil)
 }
 
-func (s *OpenstackSDHypervisorTestSuite) TestOpenstackSDHypervisorRefresh() {
-	hypervisor, _ := s.openstackAuthSuccess()
-	tg, err := hypervisor.refresh()
-	assert.Nil(s.T(), err)
-	require.NotNil(s.T(), tg)
-	require.NotNil(s.T(), tg.Targets)
-	require.Len(s.T(), tg.Targets, 2)
+func TestOpenstackSDHypervisorRefresh(t *testing.T) {
 
-	assert.Equal(s.T(), tg.Targets[0]["__address__"], model.LabelValue("172.16.70.14:0"))
-	assert.Equal(s.T(), tg.Targets[0]["__meta_openstack_hypervisor_hostname"], model.LabelValue("nc14.cloud.com"))
-	assert.Equal(s.T(), tg.Targets[0]["__meta_openstack_hypervisor_type"], model.LabelValue("QEMU"))
-	assert.Equal(s.T(), tg.Targets[0]["__meta_openstack_hypervisor_host_ip"], model.LabelValue("172.16.70.14"))
-	assert.Equal(s.T(), tg.Targets[0]["__meta_openstack_hypervisor_state"], model.LabelValue("up"))
-	assert.Equal(s.T(), tg.Targets[0]["__meta_openstack_hypervisor_status"], model.LabelValue("enabled"))
+	mock := &OpenstackSDHypervisorTestSuite{}
+	mock.SetupTest(t)
 
-	assert.Equal(s.T(), tg.Targets[1]["__address__"], model.LabelValue("172.16.70.13:0"))
-	assert.Equal(s.T(), tg.Targets[1]["__meta_openstack_hypervisor_hostname"], model.LabelValue("cc13.cloud.com"))
-	assert.Equal(s.T(), tg.Targets[1]["__meta_openstack_hypervisor_type"], model.LabelValue("QEMU"))
-	assert.Equal(s.T(), tg.Targets[1]["__meta_openstack_hypervisor_host_ip"], model.LabelValue("172.16.70.13"))
-	assert.Equal(s.T(), tg.Targets[1]["__meta_openstack_hypervisor_state"], model.LabelValue("up"))
-	assert.Equal(s.T(), tg.Targets[1]["__meta_openstack_hypervisor_status"], model.LabelValue("enabled"))
+	hypervisor, _ := mock.openstackAuthSuccess()
+	ctx := context.Background()
+	tgs, err := hypervisor.refresh(ctx)
+	testutil.Equals(t, 1, len(tgs))
+	tg := tgs[0]
+	testutil.Ok(t, err)
+	testutil.Assert(t, tg != nil, "")
+	testutil.Assert(t, tg.Targets != nil, "")
+	testutil.Equals(t, 2, len(tg.Targets))
+
+	for l, v := range map[string]string{
+		"__address__":                          "172.16.70.14:0",
+		"__meta_openstack_hypervisor_hostname": "nc14.cloud.com",
+		"__meta_openstack_hypervisor_type":     "QEMU",
+		"__meta_openstack_hypervisor_host_ip":  "172.16.70.14",
+		"__meta_openstack_hypervisor_state":    "up",
+		"__meta_openstack_hypervisor_status":   "enabled",
+		"__meta_openstack_hypervisor_id":       "1",
+	} {
+		testutil.Equals(t, model.LabelValue(v), tg.Targets[0][model.LabelName(l)])
+	}
+
+	for l, v := range map[string]string{
+		"__address__":                          "172.16.70.13:0",
+		"__meta_openstack_hypervisor_hostname": "cc13.cloud.com",
+		"__meta_openstack_hypervisor_type":     "QEMU",
+		"__meta_openstack_hypervisor_host_ip":  "172.16.70.13",
+		"__meta_openstack_hypervisor_state":    "up",
+		"__meta_openstack_hypervisor_status":   "enabled",
+		"__meta_openstack_hypervisor_id":       "721",
+	} {
+		testutil.Equals(t, model.LabelValue(v), tg.Targets[1][model.LabelName(l)])
+	}
+}
+
+func TestOpenstackSDHypervisorRefreshWithDoneContext(t *testing.T) {
+	mock := &OpenstackSDHypervisorTestSuite{}
+	mock.SetupTest(t)
+
+	hypervisor, _ := mock.openstackAuthSuccess()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := hypervisor.refresh(ctx)
+	testutil.NotOk(t, err)
+	testutil.Assert(t, strings.Contains(err.Error(), context.Canceled.Error()), "%q doesn't contain %q", err, context.Canceled)
 }

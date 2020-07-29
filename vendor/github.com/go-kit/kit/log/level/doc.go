@@ -1,10 +1,10 @@
-// Package level implements leveled logging on top of package log. To use the
-// level package, create a logger as per normal in your func main, and wrap it
-// with level.NewFilter.
+// Package level implements leveled logging on top of Go kit's log package. To
+// use the level package, create a logger as per normal in your func main, and
+// wrap it with level.NewFilter.
 //
 //    var logger log.Logger
 //    logger = log.NewLogfmtLogger(os.Stderr)
-//    logger = level.NewFilter(logger, level.AllowInfoAndAbove()) // <--
+//    logger = level.NewFilter(logger, level.AllowInfo()) // <--
 //    logger = log.With(logger, "ts", log.DefaultTimestampUTC)
 //
 // Then, at the callsites, use one of the level.Debug, Info, Warn, or Error

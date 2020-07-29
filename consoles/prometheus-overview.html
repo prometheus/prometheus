@@ -50,16 +50,17 @@
   <tr>
     <th colspan="2">HTTP Server</th>
   </tr>
-{{ range printf "http_request_duration_microseconds_count{job='prometheus',instance='%s',handler=~'^(query.*|federate|consoles)$'}" .Params.instance | query | sortByLabel "handler" }}
+{{ range printf "prometheus_http_request_duration_seconds_count{job='prometheus',instance='%s'}" .Params.instance | query | sortByLabel "handler" }}
   <tr>
     <td>{{ .Labels.handler }}</td>
-    <td>{{ template "prom_query_drilldown" (args (printf "irate(http_request_duration_microseconds_count{job='prometheus',instance='%s',handler='%s'}[5m])" .Labels.instance .Labels.handler) "/s" "humanizeNoSmallPrefix") }}</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "irate(prometheus_http_request_duration_seconds_count{job='prometheus',instance='%s',handler='%s'}[5m])" .Labels.instance .Labels.handler) "/s" "humanizeNoSmallPrefix") }}</td>
   </tr>
 {{ end }}
 
 {{ template "prom_right_table_tail" }}
 
 {{ template "prom_content_head" . }}
+ <div class="prom_content_div">
   <h1>Prometheus Overview - {{ .Params.instance }}</h1>
 
   <h3>Ingested Samples</h3>
@@ -81,7 +82,7 @@
   <script>
   new PromConsole.Graph({
     node: document.querySelector("#serverGraph"),
-    expr: "irate(http_request_duration_microseconds_count{job='prometheus',instance='{{ .Params.instance }}',handler=~'^(query.*|federate|consoles)$'}[5m])",
+    expr: "irate(prometheus_http_request_duration_seconds_count{job='prometheus',instance='{{ .Params.instance }}'}[5m])",
     name: '[[handler]]',
     yAxisFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
     yHoverFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
@@ -89,7 +90,7 @@
     yUnits: "/s",
   })
   </script>
-
+ </div>
 {{ template "prom_content_tail" . }}
 
 {{ template "tail" }}

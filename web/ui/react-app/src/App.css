@@ -1,0 +1,259 @@
+html {
+  /* https://github.com/prometheus/prometheus/issues/7434 */
+  /* Scroll to hash-fragment-links counting the fixed navbar 40px tall with 16px padding */
+  scroll-padding-top: 56px;
+}
+
+.panel {
+  margin-bottom: 20px;
+}
+
+input[type='checkbox']:checked + label {
+  color: #286090;
+}
+
+.custom-control-label {
+  cursor: pointer;
+}
+
+.togglers-wrapper .form-group {
+  margin-bottom: 0.5rem;
+}
+
+[for$='-toggler'].custom-control-label::before,
+[for$='-toggler'].custom-control-label::after {
+  top: 0.28rem;
+  left: -1.3rem;
+  width: 1.12rem;
+  height: 1.12rem;
+}
+
+.capitalize-title::first-letter {
+  text-transform: capitalize;
+}
+
+.expression-input {
+  margin-bottom: 10px;
+}
+
+.expression-input textarea {
+  /* font-family: Menlo,Monaco,Consolas,'Courier New',monospace; */
+  resize: none;
+  overflow: hidden;
+}
+
+button.execute-btn {
+  width: 84px;
+}
+
+.alert.alert-danger {
+  margin-bottom: 10px;
+}
+
+.nav-tabs .nav-link {
+  cursor: pointer;
+}
+
+.tab-content {
+  border-left: 1px solid #dee2e6;
+  border-right: 1px solid #dee2e6;
+  border-bottom: 1px solid #dee2e6;
+  padding: 10px;
+}
+
+.tab-content .alert {
+  margin-bottom: 0;
+}
+
+.data-table.table {
+  margin: 10px 0 2px 0;
+}
+
+.data-table > tbody > tr > td {
+  padding: 5px 0 5px 8px;
+  font-size: 0.8em;
+  overflow: hidden;
+}
+
+.autosuggest-dropdown {
+  position: absolute;
+  border: 1px solid #ced4da;
+  background-color: #fff;
+  color: #495057;
+  font-size: 1rem;
+  z-index: 1000;
+  left: 56px;
+  margin-top: -6px;
+}
+
+.autosuggest-dropdown-list {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.autosuggest-dropdown-list li {
+  width: 100%;
+  padding: 0.25rem 1.5rem;
+  clear: both;
+  white-space: nowrap;
+  background-color: transparent;
+  border: 0;
+  display: block;
+}
+
+.autosuggest-dropdown-list li.autosuggest-dropdown-header {
+  background-color: #bfdeff;
+  font-size: 10px;
+  line-height: 1.5;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.graph-controls,
+.table-controls {
+  margin-bottom: 10px;
+}
+
+.graph-controls input,
+.table-controls input {
+  text-align: center;
+}
+
+.graph-controls .range-input input {
+  width: 50px;
+}
+
+.time-input input {
+  border-right: none;
+}
+
+.time-input {
+  width: 270px !important;
+}
+
+.graph-controls input.resolution-input {
+  width: 90px;
+}
+
+.graph-controls > :not(:first-child) {
+  margin-left: 20px;
+}
+
+.graph-controls .clear-time-btn,
+.table-controls .clear-time-btn {
+  background: #fff;
+  border-left: none;
+  border-top: 1px solid #ced4da;
+  border-bottom: 1px solid #ced4da;
+  color: #495057;
+}
+
+.graph-legend {
+  margin: 15px 0 15px 55px;
+  font-size: 0.75em;
+  padding: 10px 5px;
+  display: inline-block;
+}
+
+.legend-item {
+  cursor: pointer;
+  display: flex;
+  padding: 0 5px;
+  border-radius: 3px;
+  line-height: 1.7;
+}
+.legend-item div {
+  flex-wrap: wrap;
+}
+
+.legend-swatch {
+  min-width: 7px;
+  height: 7px;
+  outline-offset: 1px;
+  outline: 1.5px solid #ccc;
+  margin: 6px 8px 2px 0;
+  display: inline-block;
+}
+
+.legend-item:hover {
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.legend-metric-name {
+  margin-right: 1px;
+}
+
+.legend-label-name {
+  font-weight: bold;
+}
+
+.graph {
+  margin: 0 5px 0 5px;
+}
+
+.graph-chart {
+  height: 500px;
+  width: 100%;
+  /* This is picked up by Flot's axis label font renderer,
+      which ignores "color" and uses "fill" instead. */
+  fill: #495057;
+  font-size: 0.8em;
+}
+
+.graph-chart .flot-overlay {
+  cursor: crosshair;
+}
+
+.graph-tooltip {
+  background: rgba(0, 0, 0, 0.8);
+  color: #fff;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 12px;
+  white-space: nowrap;
+  padding: 8px;
+  border-radius: 3px;
+}
+
+.graph-tooltip .labels {
+  font-size: 11px;
+  line-height: 11px;
+}
+
+.graph-tooltip .detail-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+}
+
+.add-panel-btn {
+  margin-bottom: 20px;
+}
+
+.target-head {
+  font-weight: 700;
+  font-size: large;
+}
+
+.group-info {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  padding: 10px;
+}
+
+.badges-wrapper > span {
+  margin-right: 5px;
+  max-height: 20px;
+}
+
+.rules-head {
+  font-weight: 600;
+}
+
+.rule_cell {
+  white-space: pre-wrap;
+  background-color: #f5f5f5;
+  display: block;
+  font-family: monospace;
+}

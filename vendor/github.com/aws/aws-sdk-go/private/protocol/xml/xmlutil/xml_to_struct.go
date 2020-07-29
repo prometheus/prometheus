@@ -2,6 +2,7 @@ package xmlutil
 
 import (
 	"encoding/xml"
+	"fmt"
 	"io"
 	"sort"
 )
@@ -12,6 +13,9 @@ type XMLNode struct {
 	Children map[string][]*XMLNode `json:",omitempty"`
 	Text     string                `json:",omitempty"`
 	Attr     []xml.Attr            `json:",omitempty"`
+
+	namespaces map[string]string
+	parent     *XMLNode
 }
 
 // NewXMLElement returns a pointer to a new XMLNode initialized to default values.
@@ -25,6 +29,7 @@ func NewXMLElement(name xml.Name) *XMLNode {
 
 // AddChild adds child to the XMLNode.
 func (n *XMLNode) AddChild(child *XMLNode) {
+	child.parent = n
 	if _, ok := n.Children[child.Name.Local]; !ok {
 		n.Children[child.Name.Local] = []*XMLNode{}
 	}
@@ -36,11 +41,16 @@ func XMLToStruct(d *xml.Decoder, s *xml.StartElement) (*XMLNode, error) {
 	out := &XMLNode{}
 	for {
 		tok, err := d.Token()
-		if tok == nil || err == io.EOF {
-			break
-		}
 		if err != nil {
-			return out, err
+			if err == io.EOF {
+				break
+			} else {
+				return out, err
+			}
+		}
+
+		if tok == nil {
+			break
 		}
 
 		switch typed := tok.(type) {
@@ -59,24 +69,68 @@ func XMLToStruct(d *xml.Decoder, s *xml.StartElement) (*XMLNode, error) {
 				slice = []*XMLNode{}
 			}
 			node, e := XMLToStruct(d, &el)
+			out.findNamespaces()
 			if e != nil {
 				return out, e
 			}
 			node.Name = typed.Name
+			node.findNamespaces()
+			tempOut := *out
+			// Save into a temp variable, simply because out gets squashed during
+			// loop iterations
+			node.parent = &tempOut
 			slice = append(slice, node)
 			out.Children[name] = slice
 		case xml.EndElement:
 			if s != nil && s.Name.Local == typed.Name.Local { // matching end token
 				return out, nil
 			}
+			out = &XMLNode{}
 		}
 	}
 	return out, nil
 }
 
+func (n *XMLNode) findNamespaces() {
+	ns := map[string]string{}
+	for _, a := range n.Attr {
+		if a.Name.Space == "xmlns" {
+			ns[a.Value] = a.Name.Local
+		}
+	}
+
+	n.namespaces = ns
+}
+
+func (n *XMLNode) findElem(name string) (string, bool) {
+	for node := n; node != nil; node = node.parent {
+		for _, a := range node.Attr {
+			namespace := a.Name.Space
+			if v, ok := node.namespaces[namespace]; ok {
+				namespace = v
+			}
+			if name == fmt.Sprintf("%s:%s", namespace, a.Name.Local) {
+				return a.Value, true
+			}
+		}
+	}
+	return "", false
+}
+
 // StructToXML writes an XMLNode to a xml.Encoder as tokens.
 func StructToXML(e *xml.Encoder, node *XMLNode, sorted bool) error {
-	e.EncodeToken(xml.StartElement{Name: node.Name, Attr: node.Attr})
+	// Sort Attributes
+	attrs := node.Attr
+	if sorted {
+		sortedAttrs := make([]xml.Attr, len(attrs))
+		for _, k := range node.Attr {
+			sortedAttrs = append(sortedAttrs, k)
+		}
+		sort.Sort(xmlAttrSlice(sortedAttrs))
+		attrs = sortedAttrs
+	}
+
+	e.EncodeToken(xml.StartElement{Name: node.Name, Attr: attrs})
 
 	if node.Text != "" {
 		e.EncodeToken(xml.CharData([]byte(node.Text)))

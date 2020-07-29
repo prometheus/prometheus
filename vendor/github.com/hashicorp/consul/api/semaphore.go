@@ -73,6 +73,7 @@ type SemaphoreOptions struct {
 	MonitorRetryTime  time.Duration // Optional, defaults to DefaultMonitorRetryTime
 	SemaphoreWaitTime time.Duration // Optional, defaults to DefaultSemaphoreWaitTime
 	SemaphoreTryOnce  bool          // Optional, defaults to false which means try forever
+	Namespace         string        `json:",omitempty"` // Optional, defaults to API client config, namespace of ACL token, or "default" namespace
 }
 
 // semaphoreLock is written under the DefaultSemaphoreKey and
@@ -155,34 +156,38 @@ func (s *Semaphore) Acquire(stopCh <-chan struct{}) (<-chan struct{}, error) {
 	// Check if we need to create a session first
 	s.lockSession = s.opts.Session
 	if s.lockSession == "" {
-		if sess, err := s.createSession(); err != nil {
+		sess, err := s.createSession()
+		if err != nil {
 			return nil, fmt.Errorf("failed to create session: %v", err)
-		} else {
-			s.sessionRenew = make(chan struct{})
-			s.lockSession = sess
-			session := s.c.Session()
-			go session.RenewPeriodic(s.opts.SessionTTL, sess, nil, s.sessionRenew)
-
-			// If we fail to acquire the lock, cleanup the session
-			defer func() {
-				if !s.isHeld {
-					close(s.sessionRenew)
-					s.sessionRenew = nil
-				}
-			}()
 		}
+
+		s.sessionRenew = make(chan struct{})
+		s.lockSession = sess
+		session := s.c.Session()
+		go session.RenewPeriodic(s.opts.SessionTTL, sess, nil, s.sessionRenew)
+
+		// If we fail to acquire the lock, cleanup the session
+		defer func() {
+			if !s.isHeld {
+				close(s.sessionRenew)
+				s.sessionRenew = nil
+			}
+		}()
 	}
 
 	// Create the contender entry
 	kv := s.c.KV()
-	made, _, err := kv.Acquire(s.contenderEntry(s.lockSession), nil)
+	wOpts := WriteOptions{Namespace: s.opts.Namespace}
+
+	made, _, err := kv.Acquire(s.contenderEntry(s.lockSession), &wOpts)
 	if err != nil || !made {
 		return nil, fmt.Errorf("failed to make contender entry: %v", err)
 	}
 
 	// Setup the query options
-	qOpts := &QueryOptions{
-		WaitTime: s.opts.SemaphoreWaitTime,
+	qOpts := QueryOptions{
+		WaitTime:  s.opts.SemaphoreWaitTime,
+		Namespace: s.opts.Namespace,
 	}
 
 	start := time.Now()
@@ -197,17 +202,18 @@ WAIT:
 
 	// Handle the one-shot mode.
 	if s.opts.SemaphoreTryOnce && attempts > 0 {
-		elapsed := time.Now().Sub(start)
-		if elapsed > qOpts.WaitTime {
+		elapsed := time.Since(start)
+		if elapsed > s.opts.SemaphoreWaitTime {
 			return nil, nil
 		}
 
-		qOpts.WaitTime -= elapsed
+		// Query wait time should not exceed the semaphore wait time
+		qOpts.WaitTime = s.opts.SemaphoreWaitTime - elapsed
 	}
 	attempts++
 
 	// Read the prefix
-	pairs, meta, err := kv.List(s.opts.Prefix, qOpts)
+	pairs, meta, err := kv.List(s.opts.Prefix, &qOpts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read prefix: %v", err)
 	}
@@ -245,7 +251,7 @@ WAIT:
 	}
 
 	// Attempt the acquisition
-	didSet, _, err := kv.CAS(newLock, nil)
+	didSet, _, err := kv.CAS(newLock, &wOpts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update lock: %v", err)
 	}
@@ -296,8 +302,12 @@ func (s *Semaphore) Release() error {
 	// Remove ourselves as a lock holder
 	kv := s.c.KV()
 	key := path.Join(s.opts.Prefix, DefaultSemaphoreKey)
+
+	wOpts := WriteOptions{Namespace: s.opts.Namespace}
+	qOpts := QueryOptions{Namespace: s.opts.Namespace}
+
 READ:
-	pair, _, err := kv.Get(key, nil)
+	pair, _, err := kv.Get(key, &qOpts)
 	if err != nil {
 		return err
 	}
@@ -318,7 +328,7 @@ READ:
 		}
 
 		// Swap the locks
-		didSet, _, err := kv.CAS(newLock, nil)
+		didSet, _, err := kv.CAS(newLock, &wOpts)
 		if err != nil {
 			return fmt.Errorf("failed to update lock: %v", err)
 		}
@@ -329,7 +339,7 @@ READ:
 
 	// Destroy the contender entry
 	contenderKey := path.Join(s.opts.Prefix, lockSession)
-	if _, err := kv.Delete(contenderKey, nil); err != nil {
+	if _, err := kv.Delete(contenderKey, &wOpts); err != nil {
 		return err
 	}
 	return nil
@@ -349,7 +359,9 @@ func (s *Semaphore) Destroy() error {
 
 	// List for the semaphore
 	kv := s.c.KV()
-	pairs, _, err := kv.List(s.opts.Prefix, nil)
+
+	q := QueryOptions{Namespace: s.opts.Namespace}
+	pairs, _, err := kv.List(s.opts.Prefix, &q)
 	if err != nil {
 		return fmt.Errorf("failed to read prefix: %v", err)
 	}
@@ -378,7 +390,8 @@ func (s *Semaphore) Destroy() error {
 	}
 
 	// Attempt the delete
-	didRemove, _, err := kv.DeleteCAS(lockPair, nil)
+	w := WriteOptions{Namespace: s.opts.Namespace}
+	didRemove, _, err := kv.DeleteCAS(lockPair, &w)
 	if err != nil {
 		return fmt.Errorf("failed to remove semaphore: %v", err)
 	}
@@ -396,7 +409,9 @@ func (s *Semaphore) createSession() (string, error) {
 		TTL:      s.opts.SessionTTL,
 		Behavior: SessionBehaviorDelete,
 	}
-	id, _, err := session.Create(se, nil)
+
+	w := WriteOptions{Namespace: s.opts.Namespace}
+	id, _, err := session.Create(se, &w)
 	if err != nil {
 		return "", err
 	}
@@ -481,17 +496,20 @@ func (s *Semaphore) pruneDeadHolders(lock *semaphoreLock, pairs KVPairs) {
 func (s *Semaphore) monitorLock(session string, stopCh chan struct{}) {
 	defer close(stopCh)
 	kv := s.c.KV()
-	opts := &QueryOptions{RequireConsistent: true}
+	opts := QueryOptions{
+		RequireConsistent: true,
+		Namespace:         s.opts.Namespace,
+	}
 WAIT:
 	retries := s.opts.MonitorRetries
 RETRY:
-	pairs, meta, err := kv.List(s.opts.Prefix, opts)
+	pairs, meta, err := kv.List(s.opts.Prefix, &opts)
 	if err != nil {
 		// If configured we can try to ride out a brief Consul unavailability
 		// by doing retries. Note that we have to attempt the retry in a non-
 		// blocking fashion so that we have a clean place to reset the retry
 		// counter if service is restored.
-		if retries > 0 && IsServerError(err) {
+		if retries > 0 && IsRetryableError(err) {
 			time.Sleep(s.opts.MonitorRetryTime)
 			retries--
 			opts.WaitIndex = 0

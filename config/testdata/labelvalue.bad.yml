@@ -1,0 +1,3 @@
+global:
+  external_labels:
+    name: !!binary "/w=="

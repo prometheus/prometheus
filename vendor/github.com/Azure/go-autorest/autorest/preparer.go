@@ -1,8 +1,24 @@
 package autorest
 
+// Copyright 2017 Microsoft Corporation
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -13,13 +29,36 @@ import (
 )
 
 const (
-	mimeTypeJSON     = "application/json"
-	mimeTypeFormPost = "application/x-www-form-urlencoded"
+	mimeTypeJSON        = "application/json"
+	mimeTypeOctetStream = "application/octet-stream"
+	mimeTypeFormPost    = "application/x-www-form-urlencoded"
 
-	headerAuthorization = "Authorization"
-	headerContentType   = "Content-Type"
-	headerUserAgent     = "User-Agent"
+	headerAuthorization    = "Authorization"
+	headerAuxAuthorization = "x-ms-authorization-auxiliary"
+	headerContentType      = "Content-Type"
+	headerUserAgent        = "User-Agent"
 )
+
+// used as a key type in context.WithValue()
+type ctxPrepareDecorators struct{}
+
+// WithPrepareDecorators adds the specified PrepareDecorators to the provided context.
+// If no PrepareDecorators are provided the context is unchanged.
+func WithPrepareDecorators(ctx context.Context, prepareDecorator []PrepareDecorator) context.Context {
+	if len(prepareDecorator) == 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, ctxPrepareDecorators{}, prepareDecorator)
+}
+
+// GetPrepareDecorators returns the PrepareDecorators in the provided context or the provided default PrepareDecorators.
+func GetPrepareDecorators(ctx context.Context, defaultPrepareDecorators ...PrepareDecorator) []PrepareDecorator {
+	inCtx := ctx.Value(ctxPrepareDecorators{})
+	if pd, ok := inCtx.([]PrepareDecorator); ok {
+		return pd
+	}
+	return defaultPrepareDecorators
+}
 
 // Preparer is the interface that wraps the Prepare method.
 //
@@ -98,6 +137,28 @@ func WithHeader(header string, value string) PrepareDecorator {
 	}
 }
 
+// WithHeaders returns a PrepareDecorator that sets the specified HTTP headers of the http.Request to
+// the passed value. It canonicalizes the passed headers name (via http.CanonicalHeaderKey) before
+// adding them.
+func WithHeaders(headers map[string]interface{}) PrepareDecorator {
+	h := ensureValueStrings(headers)
+	return func(p Preparer) Preparer {
+		return PreparerFunc(func(r *http.Request) (*http.Request, error) {
+			r, err := p.Prepare(r)
+			if err == nil {
+				if r.Header == nil {
+					r.Header = make(http.Header)
+				}
+
+				for name, value := range h {
+					r.Header.Set(http.CanonicalHeaderKey(name), value)
+				}
+			}
+			return r, err
+		})
+	}
+}
+
 // WithBearerAuthorization returns a PrepareDecorator that adds an HTTP Authorization header whose
 // value is "Bearer " followed by the supplied token.
 func WithBearerAuthorization(token string) PrepareDecorator {
@@ -128,6 +189,11 @@ func AsJSON() PrepareDecorator {
 	return AsContentType(mimeTypeJSON)
 }
 
+// AsOctetStream returns a PrepareDecorator that adds the "application/octet-stream" Content-Type header.
+func AsOctetStream() PrepareDecorator {
+	return AsContentType(mimeTypeOctetStream)
+}
+
 // WithMethod returns a PrepareDecorator that sets the HTTP method of the passed request. The
 // decorator does not validate that the passed method string is a known HTTP method.
 func WithMethod(method string) PrepareDecorator {
@@ -147,6 +213,9 @@ func AsGet() PrepareDecorator { return WithMethod("GET") }
 
 // AsHead returns a PrepareDecorator that sets the HTTP method to HEAD.
 func AsHead() PrepareDecorator { return WithMethod("HEAD") }
+
+// AsMerge returns a PrepareDecorator that sets the HTTP method to MERGE.
+func AsMerge() PrepareDecorator { return WithMethod("MERGE") }
 
 // AsOptions returns a PrepareDecorator that sets the HTTP method to OPTIONS.
 func AsOptions() PrepareDecorator { return WithMethod("OPTIONS") }
@@ -183,6 +252,35 @@ func WithBaseURL(baseURL string) PrepareDecorator {
 	}
 }
 
+// WithBytes returns a PrepareDecorator that takes a list of bytes
+// which passes the bytes directly to the body
+func WithBytes(input *[]byte) PrepareDecorator {
+	return func(p Preparer) Preparer {
+		return PreparerFunc(func(r *http.Request) (*http.Request, error) {
+			r, err := p.Prepare(r)
+			if err == nil {
+				if input == nil {
+					return r, fmt.Errorf("Input Bytes was nil")
+				}
+
+				r.ContentLength = int64(len(*input))
+				r.Body = ioutil.NopCloser(bytes.NewReader(*input))
+			}
+			return r, err
+		})
+	}
+}
+
+// WithCustomBaseURL returns a PrepareDecorator that replaces brace-enclosed keys within the
+// request base URL (i.e., http.Request.URL) with the corresponding values from the passed map.
+func WithCustomBaseURL(baseURL string, urlParameters map[string]interface{}) PrepareDecorator {
+	parameters := ensureValueStrings(urlParameters)
+	for key, value := range parameters {
+		baseURL = strings.Replace(baseURL, "{"+key+"}", value, -1)
+	}
+	return WithBaseURL(baseURL)
+}
+
 // WithFormData returns a PrepareDecoratore that "URL encodes" (e.g., bar=baz&foo=quux) into the
 // http.Request body.
 func WithFormData(v url.Values) PrepareDecorator {
@@ -191,6 +289,11 @@ func WithFormData(v url.Values) PrepareDecorator {
 			r, err := p.Prepare(r)
 			if err == nil {
 				s := v.Encode()
+
+				if r.Header == nil {
+					r.Header = make(http.Header)
+				}
+				r.Header.Set(http.CanonicalHeaderKey(headerContentType), mimeTypeFormPost)
 				r.ContentLength = int64(len(s))
 				r.Body = ioutil.NopCloser(strings.NewReader(s))
 			}
@@ -320,6 +423,28 @@ func WithJSON(v interface{}) PrepareDecorator {
 	}
 }
 
+// WithXML returns a PrepareDecorator that encodes the data passed as XML into the body of the
+// request and sets the Content-Length header.
+func WithXML(v interface{}) PrepareDecorator {
+	return func(p Preparer) Preparer {
+		return PreparerFunc(func(r *http.Request) (*http.Request, error) {
+			r, err := p.Prepare(r)
+			if err == nil {
+				b, err := xml.Marshal(v)
+				if err == nil {
+					// we have to tack on an XML header
+					withHeader := xml.Header + string(b)
+					bytesWithHeader := []byte(withHeader)
+
+					r.ContentLength = int64(len(bytesWithHeader))
+					r.Body = ioutil.NopCloser(bytes.NewReader(bytesWithHeader))
+				}
+			}
+			return r, err
+		})
+	}
+}
+
 // WithPath returns a PrepareDecorator that adds the supplied path to the request URL. If the path
 // is absolute (that is, it begins with a "/"), it replaces the existing path.
 func WithPath(path string) PrepareDecorator {
@@ -398,7 +523,7 @@ func parseURL(u *url.URL, path string) (*url.URL, error) {
 // WithQueryParameters returns a PrepareDecorators that encodes and applies the query parameters
 // given in the supplied map (i.e., key=value).
 func WithQueryParameters(queryParameters map[string]interface{}) PrepareDecorator {
-	parameters := ensureValueStrings(queryParameters)
+	parameters := MapToValues(queryParameters)
 	return func(p Preparer) Preparer {
 		return PreparerFunc(func(r *http.Request) (*http.Request, error) {
 			r, err := p.Prepare(r)
@@ -408,26 +533,18 @@ func WithQueryParameters(queryParameters map[string]interface{}) PrepareDecorato
 				}
 				v := r.URL.Query()
 				for key, value := range parameters {
-					v.Add(key, value)
+					for i := range value {
+						d, err := url.QueryUnescape(value[i])
+						if err != nil {
+							return r, err
+						}
+						value[i] = d
+					}
+					v[key] = value
 				}
-				r.URL.RawQuery = createQuery(v)
+				r.URL.RawQuery = v.Encode()
 			}
 			return r, err
 		})
 	}
-}
-
-// Authorizer is the interface that provides a PrepareDecorator used to supply request
-// authorization. Most often, the Authorizer decorator runs last so it has access to the full
-// state of the formed HTTP request.
-type Authorizer interface {
-	WithAuthorization() PrepareDecorator
-}
-
-// NullAuthorizer implements a default, "do nothing" Authorizer.
-type NullAuthorizer struct{}
-
-// WithAuthorization returns a PrepareDecorator that does nothing.
-func (na NullAuthorizer) WithAuthorization() PrepareDecorator {
-	return WithNothing()
 }

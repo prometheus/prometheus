@@ -56,26 +56,27 @@ To federate metrics from one server to another, configure your destination
 Prometheus server to scrape from the `/federate` endpoint of a source server,
 while also enabling the `honor_labels` scrape option (to not overwrite any
 labels exposed by the source server) and passing in the desired `match[]`
-parameters. For example, the following `scrape_config` federates any series
+parameters. For example, the following `scrape_configs` federates any series
 with the label `job="prometheus"` or a metric name starting with `job:` from
 the Prometheus servers at `source-prometheus-{1,2,3}:9090` into the scraping
 Prometheus:
 
 ```yaml
-- job_name: 'federate'
-  scrape_interval: 15s
+scrape_configs:
+  - job_name: 'federate'
+    scrape_interval: 15s
 
-  honor_labels: true
-  metrics_path: '/federate'
+    honor_labels: true
+    metrics_path: '/federate'
 
-  params:
-    'match[]':
-      - '{job="prometheus"}'
-      - '{__name__=~"job:.*"}'
+    params:
+      'match[]':
+        - '{job="prometheus"}'
+        - '{__name__=~"job:.*"}'
 
-  static_configs:
-    - targets:
-      - 'source-prometheus-1:9090'
-      - 'source-prometheus-2:9090'
-      - 'source-prometheus-3:9090'
+    static_configs:
+      - targets:
+        - 'source-prometheus-1:9090'
+        - 'source-prometheus-2:9090'
+        - 'source-prometheus-3:9090'
 ```

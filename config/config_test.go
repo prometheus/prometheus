@@ -23,17 +23,35 @@ import (
 	"testing"
 	"time"
 
+	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/util/testutil"
 	"gopkg.in/yaml.v2"
+
+	"github.com/prometheus/prometheus/discovery/azure"
+	sd_config "github.com/prometheus/prometheus/discovery/config"
+	"github.com/prometheus/prometheus/discovery/consul"
+	"github.com/prometheus/prometheus/discovery/digitalocean"
+	"github.com/prometheus/prometheus/discovery/dns"
+	"github.com/prometheus/prometheus/discovery/dockerswarm"
+	"github.com/prometheus/prometheus/discovery/ec2"
+	"github.com/prometheus/prometheus/discovery/file"
+	"github.com/prometheus/prometheus/discovery/kubernetes"
+	"github.com/prometheus/prometheus/discovery/marathon"
+	"github.com/prometheus/prometheus/discovery/openstack"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/discovery/triton"
+	"github.com/prometheus/prometheus/discovery/zookeeper"
+	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/relabel"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
-func mustParseURL(u string) *URL {
+func mustParseURL(u string) *config_util.URL {
 	parsed, err := url.Parse(u)
 	if err != nil {
 		panic(err)
 	}
-	return &URL{URL: parsed}
+	return &config_util.URL{URL: parsed}
 }
 
 var expectedConf = &Config{
@@ -41,10 +59,11 @@ var expectedConf = &Config{
 		ScrapeInterval:     model.Duration(15 * time.Second),
 		ScrapeTimeout:      DefaultGlobalConfig.ScrapeTimeout,
 		EvaluationInterval: model.Duration(30 * time.Second),
+		QueryLogFile:       "",
 
-		ExternalLabels: model.LabelSet{
-			"monitor": "codelab",
-			"foo":     "bar",
+		ExternalLabels: labels.Labels{
+			{Name: "foo", Value: "bar"},
+			{Name: "monitor", Value: "codelab"},
 		},
 	},
 
@@ -57,13 +76,14 @@ var expectedConf = &Config{
 		{
 			URL:           mustParseURL("http://remote1/push"),
 			RemoteTimeout: model.Duration(30 * time.Second),
-			WriteRelabelConfigs: []*RelabelConfig{
+			Name:          "drop_expensive",
+			WriteRelabelConfigs: []*relabel.Config{
 				{
 					SourceLabels: model.LabelNames{"__name__"},
 					Separator:    ";",
-					Regex:        MustNewRegexp("expensive.*"),
+					Regex:        relabel.MustNewRegexp("expensive.*"),
 					Replacement:  "$1",
-					Action:       RelabelDrop,
+					Action:       relabel.Drop,
 				},
 			},
 			QueueConfig: DefaultQueueConfig,
@@ -72,6 +92,13 @@ var expectedConf = &Config{
 			URL:           mustParseURL("http://remote2/push"),
 			RemoteTimeout: model.Duration(30 * time.Second),
 			QueueConfig:   DefaultQueueConfig,
+			Name:          "rw_tls",
+			HTTPClientConfig: config_util.HTTPClientConfig{
+				TLSConfig: config_util.TLSConfig{
+					CertFile: filepath.FromSlash("testdata/valid_cert_file"),
+					KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
+				},
+			},
 		},
 	},
 
@@ -80,12 +107,20 @@ var expectedConf = &Config{
 			URL:           mustParseURL("http://remote1/read"),
 			RemoteTimeout: model.Duration(1 * time.Minute),
 			ReadRecent:    true,
+			Name:          "default",
 		},
 		{
 			URL:              mustParseURL("http://remote3/read"),
 			RemoteTimeout:    model.Duration(1 * time.Minute),
 			ReadRecent:       false,
+			Name:             "read_special",
 			RequiredMatchers: model.LabelSet{"job": "special"},
+			HTTPClientConfig: config_util.HTTPClientConfig{
+				TLSConfig: config_util.TLSConfig{
+					CertFile: filepath.FromSlash("testdata/valid_cert_file"),
+					KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
+				},
+			},
 		},
 	},
 
@@ -93,19 +128,20 @@ var expectedConf = &Config{
 		{
 			JobName: "prometheus",
 
-			HonorLabels:    true,
-			ScrapeInterval: model.Duration(15 * time.Second),
-			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+			HonorLabels:     true,
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			HTTPClientConfig: HTTPClientConfig{
+			HTTPClientConfig: config_util.HTTPClientConfig{
 				BearerTokenFile: filepath.FromSlash("testdata/valid_token_file"),
 			},
 
-			ServiceDiscoveryConfig: ServiceDiscoveryConfig{
-				StaticConfigs: []*TargetGroup{
+			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
+				StaticConfigs: []*targetgroup.Group{
 					{
 						Targets: []model.LabelSet{
 							{model.AddressLabel: "localhost:9090"},
@@ -115,10 +151,11 @@ var expectedConf = &Config{
 							"my":   "label",
 							"your": "label",
 						},
+						Source: "0",
 					},
 				},
 
-				FileSDConfigs: []*FileSDConfig{
+				FileSDConfigs: []*file.SDConfig{
 					{
 						Files:           []string{"testdata/foo/*.slow.json", "testdata/foo/*.slow.yml", "testdata/single/file.yml"},
 						RefreshInterval: model.Duration(10 * time.Minute),
@@ -130,33 +167,33 @@ var expectedConf = &Config{
 				},
 			},
 
-			RelabelConfigs: []*RelabelConfig{
+			RelabelConfigs: []*relabel.Config{
 				{
 					SourceLabels: model.LabelNames{"job", "__meta_dns_name"},
 					TargetLabel:  "job",
 					Separator:    ";",
-					Regex:        MustNewRegexp("(.*)some-[regex]"),
+					Regex:        relabel.MustNewRegexp("(.*)some-[regex]"),
 					Replacement:  "foo-${1}",
-					Action:       RelabelReplace,
+					Action:       relabel.Replace,
 				}, {
 					SourceLabels: model.LabelNames{"abc"},
 					TargetLabel:  "cde",
 					Separator:    ";",
-					Regex:        DefaultRelabelConfig.Regex,
-					Replacement:  DefaultRelabelConfig.Replacement,
-					Action:       RelabelReplace,
+					Regex:        relabel.DefaultRelabelConfig.Regex,
+					Replacement:  relabel.DefaultRelabelConfig.Replacement,
+					Action:       relabel.Replace,
 				}, {
 					TargetLabel: "abc",
 					Separator:   ";",
-					Regex:       DefaultRelabelConfig.Regex,
+					Regex:       relabel.DefaultRelabelConfig.Regex,
 					Replacement: "static",
-					Action:      RelabelReplace,
+					Action:      relabel.Replace,
 				}, {
 					TargetLabel: "abc",
 					Separator:   ";",
-					Regex:       MustNewRegexp(""),
+					Regex:       relabel.MustNewRegexp(""),
 					Replacement: "static",
-					Action:      RelabelReplace,
+					Action:      relabel.Replace,
 				},
 			},
 		},
@@ -164,12 +201,13 @@ var expectedConf = &Config{
 
 			JobName: "service-x",
 
-			ScrapeInterval: model.Duration(50 * time.Second),
-			ScrapeTimeout:  model.Duration(5 * time.Second),
-			SampleLimit:    1000,
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(50 * time.Second),
+			ScrapeTimeout:   model.Duration(5 * time.Second),
+			SampleLimit:     1000,
 
-			HTTPClientConfig: HTTPClientConfig{
-				BasicAuth: &BasicAuth{
+			HTTPClientConfig: config_util.HTTPClientConfig{
+				BasicAuth: &config_util.BasicAuth{
 					Username: "admin_name",
 					Password: "multiline\nmysecret\ntest",
 				},
@@ -177,8 +215,8 @@ var expectedConf = &Config{
 			MetricsPath: "/my_path",
 			Scheme:      "https",
 
-			ServiceDiscoveryConfig: ServiceDiscoveryConfig{
-				DNSSDConfigs: []*DNSSDConfig{
+			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
+				DNSSDConfigs: []*dns.SDConfig{
 					{
 						Names: []string{
 							"first.dns.address.domain.com",
@@ -197,77 +235,82 @@ var expectedConf = &Config{
 				},
 			},
 
-			RelabelConfigs: []*RelabelConfig{
+			RelabelConfigs: []*relabel.Config{
 				{
 					SourceLabels: model.LabelNames{"job"},
-					Regex:        MustNewRegexp("(.*)some-[regex]"),
+					Regex:        relabel.MustNewRegexp("(.*)some-[regex]"),
 					Separator:    ";",
-					Replacement:  DefaultRelabelConfig.Replacement,
-					Action:       RelabelDrop,
+					Replacement:  relabel.DefaultRelabelConfig.Replacement,
+					Action:       relabel.Drop,
 				},
 				{
 					SourceLabels: model.LabelNames{"__address__"},
 					TargetLabel:  "__tmp_hash",
-					Regex:        DefaultRelabelConfig.Regex,
-					Replacement:  DefaultRelabelConfig.Replacement,
+					Regex:        relabel.DefaultRelabelConfig.Regex,
+					Replacement:  relabel.DefaultRelabelConfig.Replacement,
 					Modulus:      8,
 					Separator:    ";",
-					Action:       RelabelHashMod,
+					Action:       relabel.HashMod,
 				},
 				{
 					SourceLabels: model.LabelNames{"__tmp_hash"},
-					Regex:        MustNewRegexp("1"),
+					Regex:        relabel.MustNewRegexp("1"),
 					Separator:    ";",
-					Replacement:  DefaultRelabelConfig.Replacement,
-					Action:       RelabelKeep,
+					Replacement:  relabel.DefaultRelabelConfig.Replacement,
+					Action:       relabel.Keep,
 				},
 				{
-					Regex:       MustNewRegexp("1"),
+					Regex:       relabel.MustNewRegexp("1"),
 					Separator:   ";",
-					Replacement: DefaultRelabelConfig.Replacement,
-					Action:      RelabelLabelMap,
+					Replacement: relabel.DefaultRelabelConfig.Replacement,
+					Action:      relabel.LabelMap,
 				},
 				{
-					Regex:       MustNewRegexp("d"),
+					Regex:       relabel.MustNewRegexp("d"),
 					Separator:   ";",
-					Replacement: DefaultRelabelConfig.Replacement,
-					Action:      RelabelLabelDrop,
+					Replacement: relabel.DefaultRelabelConfig.Replacement,
+					Action:      relabel.LabelDrop,
 				},
 				{
-					Regex:       MustNewRegexp("k"),
+					Regex:       relabel.MustNewRegexp("k"),
 					Separator:   ";",
-					Replacement: DefaultRelabelConfig.Replacement,
-					Action:      RelabelLabelKeep,
+					Replacement: relabel.DefaultRelabelConfig.Replacement,
+					Action:      relabel.LabelKeep,
 				},
 			},
-			MetricRelabelConfigs: []*RelabelConfig{
+			MetricRelabelConfigs: []*relabel.Config{
 				{
 					SourceLabels: model.LabelNames{"__name__"},
-					Regex:        MustNewRegexp("expensive_metric.*"),
+					Regex:        relabel.MustNewRegexp("expensive_metric.*"),
 					Separator:    ";",
-					Replacement:  DefaultRelabelConfig.Replacement,
-					Action:       RelabelDrop,
+					Replacement:  relabel.DefaultRelabelConfig.Replacement,
+					Action:       relabel.Drop,
 				},
 			},
 		},
 		{
 			JobName: "service-y",
 
-			ScrapeInterval: model.Duration(15 * time.Second),
-			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			ServiceDiscoveryConfig: ServiceDiscoveryConfig{
-				ConsulSDConfigs: []*ConsulSDConfig{
+			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
+				ConsulSDConfigs: []*consul.SDConfig{
 					{
-						Server:       "localhost:1234",
-						Token:        "mysecret",
-						Services:     []string{"nginx", "cache", "mysql"},
-						TagSeparator: DefaultConsulSDConfig.TagSeparator,
-						Scheme:       "https",
-						TLSConfig: TLSConfig{
+						Server:          "localhost:1234",
+						Token:           "mysecret",
+						Services:        []string{"nginx", "cache", "mysql"},
+						ServiceTags:     []string{"canary", "v1"},
+						NodeMeta:        map[string]string{"rack": "123"},
+						TagSeparator:    consul.DefaultSDConfig.TagSeparator,
+						Scheme:          "https",
+						RefreshInterval: consul.DefaultSDConfig.RefreshInterval,
+						AllowStale:      true,
+						TLSConfig: config_util.TLSConfig{
 							CertFile:           filepath.FromSlash("testdata/valid_cert_file"),
 							KeyFile:            filepath.FromSlash("testdata/valid_key_file"),
 							CAFile:             filepath.FromSlash("testdata/valid_ca_file"),
@@ -277,28 +320,29 @@ var expectedConf = &Config{
 				},
 			},
 
-			RelabelConfigs: []*RelabelConfig{
+			RelabelConfigs: []*relabel.Config{
 				{
 					SourceLabels: model.LabelNames{"__meta_sd_consul_tags"},
-					Regex:        MustNewRegexp("label:([^=]+)=([^,]+)"),
+					Regex:        relabel.MustNewRegexp("label:([^=]+)=([^,]+)"),
 					Separator:    ",",
 					TargetLabel:  "${1}",
 					Replacement:  "${2}",
-					Action:       RelabelReplace,
+					Action:       relabel.Replace,
 				},
 			},
 		},
 		{
 			JobName: "service-z",
 
-			ScrapeInterval: model.Duration(15 * time.Second),
-			ScrapeTimeout:  model.Duration(10 * time.Second),
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   model.Duration(10 * time.Second),
 
 			MetricsPath: "/metrics",
 			Scheme:      "http",
 
-			HTTPClientConfig: HTTPClientConfig{
-				TLSConfig: TLSConfig{
+			HTTPClientConfig: config_util.HTTPClientConfig{
+				TLSConfig: config_util.TLSConfig{
 					CertFile: filepath.FromSlash("testdata/valid_cert_file"),
 					KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
 				},
@@ -309,22 +353,29 @@ var expectedConf = &Config{
 		{
 			JobName: "service-kubernetes",
 
-			ScrapeInterval: model.Duration(15 * time.Second),
-			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			ServiceDiscoveryConfig: ServiceDiscoveryConfig{
-				KubernetesSDConfigs: []*KubernetesSDConfig{
+			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
+				KubernetesSDConfigs: []*kubernetes.SDConfig{
 					{
 						APIServer: kubernetesSDHostURL(),
-						Role:      KubernetesRoleEndpoint,
-						BasicAuth: &BasicAuth{
-							Username: "myusername",
-							Password: "mysecret",
+						Role:      kubernetes.RoleEndpoint,
+						HTTPClientConfig: config_util.HTTPClientConfig{
+							BasicAuth: &config_util.BasicAuth{
+								Username: "myusername",
+								Password: "mysecret",
+							},
+							TLSConfig: config_util.TLSConfig{
+								CertFile: filepath.FromSlash("testdata/valid_cert_file"),
+								KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
+							},
 						},
-						NamespaceDiscovery: KubernetesNamespaceDiscovery{},
+						NamespaceDiscovery: kubernetes.NamespaceDiscovery{},
 					},
 				},
 			},
@@ -332,18 +383,25 @@ var expectedConf = &Config{
 		{
 			JobName: "service-kubernetes-namespaces",
 
-			ScrapeInterval: model.Duration(15 * time.Second),
-			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config_util.HTTPClientConfig{
+				BasicAuth: &config_util.BasicAuth{
+					Username:     "myusername",
+					PasswordFile: filepath.FromSlash("testdata/valid_password_file"),
+				},
+			},
 
-			ServiceDiscoveryConfig: ServiceDiscoveryConfig{
-				KubernetesSDConfigs: []*KubernetesSDConfig{
+			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
+				KubernetesSDConfigs: []*kubernetes.SDConfig{
 					{
 						APIServer: kubernetesSDHostURL(),
-						Role:      KubernetesRoleEndpoint,
-						NamespaceDiscovery: KubernetesNamespaceDiscovery{
+						Role:      kubernetes.RoleEndpoint,
+						NamespaceDiscovery: kubernetes.NamespaceDiscovery{
 							Names: []string{
 								"default",
 							},
@@ -355,23 +413,26 @@ var expectedConf = &Config{
 		{
 			JobName: "service-marathon",
 
-			ScrapeInterval: model.Duration(15 * time.Second),
-			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			ServiceDiscoveryConfig: ServiceDiscoveryConfig{
-				MarathonSDConfigs: []*MarathonSDConfig{
+			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
+				MarathonSDConfigs: []*marathon.SDConfig{
 					{
 						Servers: []string{
 							"https://marathon.example.com:443",
 						},
-						Timeout:         model.Duration(30 * time.Second),
 						RefreshInterval: model.Duration(30 * time.Second),
-						TLSConfig: TLSConfig{
-							CertFile: filepath.FromSlash("testdata/valid_cert_file"),
-							KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
+						AuthToken:       config_util.Secret("mysecret"),
+						HTTPClientConfig: config_util.HTTPClientConfig{
+							TLSConfig: config_util.TLSConfig{
+								CertFile: filepath.FromSlash("testdata/valid_cert_file"),
+								KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
+							},
 						},
 					},
 				},
@@ -380,14 +441,15 @@ var expectedConf = &Config{
 		{
 			JobName: "service-ec2",
 
-			ScrapeInterval: model.Duration(15 * time.Second),
-			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			ServiceDiscoveryConfig: ServiceDiscoveryConfig{
-				EC2SDConfigs: []*EC2SDConfig{
+			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
+				EC2SDConfigs: []*ec2.SDConfig{
 					{
 						Region:          "us-east-1",
 						AccessKey:       "access",
@@ -395,6 +457,16 @@ var expectedConf = &Config{
 						Profile:         "profile",
 						RefreshInterval: model.Duration(60 * time.Second),
 						Port:            80,
+						Filters: []*ec2.Filter{
+							{
+								Name:   "tag:environment",
+								Values: []string{"prod"},
+							},
+							{
+								Name:   "tag:service",
+								Values: []string{"web", "db"},
+							},
+						},
 					},
 				},
 			},
@@ -402,21 +474,24 @@ var expectedConf = &Config{
 		{
 			JobName: "service-azure",
 
-			ScrapeInterval: model.Duration(15 * time.Second),
-			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			ServiceDiscoveryConfig: ServiceDiscoveryConfig{
-				AzureSDConfigs: []*AzureSDConfig{
+			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
+				AzureSDConfigs: []*azure.SDConfig{
 					{
-						SubscriptionID:  "11AAAA11-A11A-111A-A111-1111A1111A11",
-						TenantID:        "BBBB222B-B2B2-2B22-B222-2BB2222BB2B2",
-						ClientID:        "333333CC-3C33-3333-CCC3-33C3CCCCC33C",
-						ClientSecret:    "mysecret",
-						RefreshInterval: model.Duration(5 * time.Minute),
-						Port:            9100,
+						Environment:          "AzurePublicCloud",
+						SubscriptionID:       "11AAAA11-A11A-111A-A111-1111A1111A11",
+						TenantID:             "BBBB222B-B2B2-2B22-B222-2BB2222BB2B2",
+						ClientID:             "333333CC-3C33-3333-CCC3-33C3CCCCC33C",
+						ClientSecret:         "mysecret",
+						AuthenticationMethod: "OAuth",
+						RefreshInterval:      model.Duration(5 * time.Minute),
+						Port:                 9100,
 					},
 				},
 			},
@@ -424,14 +499,15 @@ var expectedConf = &Config{
 		{
 			JobName: "service-nerve",
 
-			ScrapeInterval: model.Duration(15 * time.Second),
-			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			ServiceDiscoveryConfig: ServiceDiscoveryConfig{
-				NerveSDConfigs: []*NerveSDConfig{
+			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
+				NerveSDConfigs: []*zookeeper.NerveSDConfig{
 					{
 						Servers: []string{"localhost"},
 						Paths:   []string{"/monitoring"},
@@ -443,18 +519,41 @@ var expectedConf = &Config{
 		{
 			JobName: "0123service-xxx",
 
-			ScrapeInterval: model.Duration(15 * time.Second),
-			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			ServiceDiscoveryConfig: ServiceDiscoveryConfig{
-				StaticConfigs: []*TargetGroup{
+			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
+				StaticConfigs: []*targetgroup.Group{
 					{
 						Targets: []model.LabelSet{
 							{model.AddressLabel: "localhost:9090"},
 						},
+						Source: "0",
+					},
+				},
+			},
+		},
+		{
+			JobName: "badfederation",
+
+			HonorTimestamps: false,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath: "/federate",
+			Scheme:      DefaultScrapeConfig.Scheme,
+
+			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
+				StaticConfigs: []*targetgroup.Group{
+					{
+						Targets: []model.LabelSet{
+							{model.AddressLabel: "localhost:9090"},
+						},
+						Source: "0",
 					},
 				},
 			},
@@ -462,18 +561,20 @@ var expectedConf = &Config{
 		{
 			JobName: "測試",
 
-			ScrapeInterval: model.Duration(15 * time.Second),
-			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			ServiceDiscoveryConfig: ServiceDiscoveryConfig{
-				StaticConfigs: []*TargetGroup{
+			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
+				StaticConfigs: []*targetgroup.Group{
 					{
 						Targets: []model.LabelSet{
 							{model.AddressLabel: "localhost:9090"},
 						},
+						Source: "0",
 					},
 				},
 			},
@@ -481,23 +582,94 @@ var expectedConf = &Config{
 		{
 			JobName: "service-triton",
 
-			ScrapeInterval: model.Duration(15 * time.Second),
-			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			ServiceDiscoveryConfig: ServiceDiscoveryConfig{
-				TritonSDConfigs: []*TritonSDConfig{
+			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
+				TritonSDConfigs: []*triton.SDConfig{
 					{
-
 						Account:         "testAccount",
+						Role:            "container",
 						DNSSuffix:       "triton.example.com",
 						Endpoint:        "triton.example.com",
 						Port:            9163,
 						RefreshInterval: model.Duration(60 * time.Second),
 						Version:         1,
-						TLSConfig: TLSConfig{
+						TLSConfig: config_util.TLSConfig{
+							CertFile: "testdata/valid_cert_file",
+							KeyFile:  "testdata/valid_key_file",
+						},
+					},
+				},
+			},
+		},
+		{
+			JobName: "digitalocean-droplets",
+
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath: DefaultScrapeConfig.MetricsPath,
+			Scheme:      DefaultScrapeConfig.Scheme,
+
+			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
+				DigitalOceanSDConfigs: []*digitalocean.SDConfig{
+					{
+						HTTPClientConfig: config_util.HTTPClientConfig{
+							BearerToken: "abcdef",
+						},
+						Port:            80,
+						RefreshInterval: model.Duration(60 * time.Second),
+					},
+				},
+			},
+		},
+		{
+			JobName: "dockerswarm",
+
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath: DefaultScrapeConfig.MetricsPath,
+			Scheme:      DefaultScrapeConfig.Scheme,
+
+			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
+				DockerSwarmSDConfigs: []*dockerswarm.SDConfig{
+					{
+						Host:            "http://127.0.0.1:2375",
+						Role:            "nodes",
+						Port:            80,
+						RefreshInterval: model.Duration(60 * time.Second),
+					},
+				},
+			},
+		},
+		{
+			JobName: "service-openstack",
+
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath: DefaultScrapeConfig.MetricsPath,
+			Scheme:      DefaultScrapeConfig.Scheme,
+
+			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
+				OpenstackSDConfigs: []*openstack.SDConfig{
+					{
+						Role:            "instance",
+						Region:          "RegionOne",
+						Port:            80,
+						Availability:    "public",
+						RefreshInterval: model.Duration(60 * time.Second),
+						TLSConfig: config_util.TLSConfig{
+							CAFile:   "testdata/valid_ca_file",
 							CertFile: "testdata/valid_cert_file",
 							KeyFile:  "testdata/valid_key_file",
 						},
@@ -509,16 +681,18 @@ var expectedConf = &Config{
 	AlertingConfig: AlertingConfig{
 		AlertmanagerConfigs: []*AlertmanagerConfig{
 			{
-				Scheme:  "https",
-				Timeout: 10 * time.Second,
-				ServiceDiscoveryConfig: ServiceDiscoveryConfig{
-					StaticConfigs: []*TargetGroup{
+				Scheme:     "https",
+				Timeout:    model.Duration(10 * time.Second),
+				APIVersion: AlertmanagerAPIVersionV1,
+				ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
+					StaticConfigs: []*targetgroup.Group{
 						{
 							Targets: []model.LabelSet{
 								{model.AddressLabel: "1.2.3.4:9093"},
 								{model.AddressLabel: "1.2.3.5:9093"},
 								{model.AddressLabel: "1.2.3.6:9093"},
 							},
+							Source: "0",
 						},
 					},
 				},
@@ -541,7 +715,16 @@ func TestLoadConfig(t *testing.T) {
 	testutil.Equals(t, expectedConf, c)
 }
 
-// YAML marshalling must not reveal authentication credentials.
+func TestScrapeIntervalLarger(t *testing.T) {
+	c, err := LoadFile("testdata/scrape_interval_larger.good.yml")
+	testutil.Ok(t, err)
+	testutil.Equals(t, 1, len(c.ScrapeConfigs))
+	for _, sc := range c.ScrapeConfigs {
+		testutil.Equals(t, true, sc.ScrapeInterval >= sc.ScrapeTimeout)
+	}
+}
+
+// YAML marshaling must not reveal authentication credentials.
 func TestElideSecrets(t *testing.T) {
 	c, err := LoadFile("testdata/conf.good.yml")
 	testutil.Ok(t, err)
@@ -553,7 +736,7 @@ func TestElideSecrets(t *testing.T) {
 	yamlConfig := string(config)
 
 	matches := secretRe.FindAllStringIndex(yamlConfig, -1)
-	testutil.Assert(t, len(matches) == 6, "wrong number of secret matches found")
+	testutil.Assert(t, len(matches) == 8, "wrong number of secret matches found")
 	testutil.Assert(t, !strings.Contains(yamlConfig, "mysecret"),
 		"yaml marshal reveals authentication credentials.")
 }
@@ -565,6 +748,24 @@ func TestLoadConfigRuleFilesAbsolutePath(t *testing.T) {
 
 	ruleFilesExpectedConf.original = c.original
 	testutil.Equals(t, ruleFilesExpectedConf, c)
+}
+
+func TestKubernetesEmptyAPIServer(t *testing.T) {
+	_, err := LoadFile("testdata/kubernetes_empty_apiserver.good.yml")
+	testutil.Ok(t, err)
+}
+
+func TestKubernetesSelectors(t *testing.T) {
+	_, err := LoadFile("testdata/kubernetes_selectors_endpoints.good.yml")
+	testutil.Ok(t, err)
+	_, err = LoadFile("testdata/kubernetes_selectors_node.good.yml")
+	testutil.Ok(t, err)
+	_, err = LoadFile("testdata/kubernetes_selectors_ingress.good.yml")
+	testutil.Ok(t, err)
+	_, err = LoadFile("testdata/kubernetes_selectors_pod.good.yml")
+	testutil.Ok(t, err)
+	_, err = LoadFile("testdata/kubernetes_selectors_service.good.yml")
+	testutil.Ok(t, err)
 }
 
 var expectedErrors = []struct {
@@ -586,6 +787,9 @@ var expectedErrors = []struct {
 	}, {
 		filename: "labelname2.bad.yml",
 		errMsg:   `"not:allowed" is not a valid label name`,
+	}, {
+		filename: "labelvalue.bad.yml",
+		errMsg:   `"\xff" is not a valid label value`,
 	}, {
 		filename: "regex.bad.yml",
 		errMsg:   "error parsing regexp",
@@ -623,11 +827,14 @@ var expectedErrors = []struct {
 		filename: "labeldrop5.bad.yml",
 		errMsg:   "labeldrop action requires only 'regex', and no other fields",
 	}, {
+		filename: "labelmap.bad.yml",
+		errMsg:   "\"l-$1\" is invalid 'replacement' for labelmap action",
+	}, {
 		filename: "rules.bad.yml",
 		errMsg:   "invalid rule file path",
 	}, {
 		filename: "unknown_attr.bad.yml",
-		errMsg:   "unknown fields in scrape_config: consult_sd_configs",
+		errMsg:   "field consult_sd_configs not found in type config.plain",
 	}, {
 		filename: "bearertoken.bad.yml",
 		errMsg:   "at most one of bearer_token & bearer_token_file must be configured",
@@ -635,20 +842,59 @@ var expectedErrors = []struct {
 		filename: "bearertoken_basicauth.bad.yml",
 		errMsg:   "at most one of basic_auth, bearer_token & bearer_token_file must be configured",
 	}, {
+		filename: "kubernetes_http_config_without_api_server.bad.yml",
+		errMsg:   "to use custom HTTP client configuration please provide the 'api_server' URL explicitly",
+	}, {
 		filename: "kubernetes_bearertoken.bad.yml",
 		errMsg:   "at most one of bearer_token & bearer_token_file must be configured",
 	}, {
 		filename: "kubernetes_role.bad.yml",
 		errMsg:   "role",
 	}, {
+		filename: "kubernetes_selectors_endpoints.bad.yml",
+		errMsg:   "endpoints role supports only pod, service, endpoints selectors",
+	}, {
+		filename: "kubernetes_selectors_ingress.bad.yml",
+		errMsg:   "ingress role supports only ingress selectors",
+	}, {
+		filename: "kubernetes_selectors_node.bad.yml",
+		errMsg:   "node role supports only node selectors",
+	}, {
+		filename: "kubernetes_selectors_pod.bad.yml",
+		errMsg:   "pod role supports only pod selectors",
+	}, {
+		filename: "kubernetes_selectors_service.bad.yml",
+		errMsg:   "service role supports only service selectors",
+	}, {
 		filename: "kubernetes_namespace_discovery.bad.yml",
-		errMsg:   "unknown fields in namespaces",
+		errMsg:   "field foo not found in type kubernetes.plain",
+	}, {
+		filename: "kubernetes_selectors_duplicated_role.bad.yml",
+		errMsg:   "duplicated selector role: pod",
+	}, {
+		filename: "kubernetes_selectors_incorrect_selector.bad.yml",
+		errMsg:   "invalid selector: 'metadata.status-Running'; can't understand 'metadata.status-Running'",
 	}, {
 		filename: "kubernetes_bearertoken_basicauth.bad.yml",
 		errMsg:   "at most one of basic_auth, bearer_token & bearer_token_file must be configured",
 	}, {
 		filename: "marathon_no_servers.bad.yml",
-		errMsg:   "Marathon SD config must contain at least one Marathon server",
+		errMsg:   "marathon_sd: must contain at least one Marathon server",
+	}, {
+		filename: "marathon_authtoken_authtokenfile.bad.yml",
+		errMsg:   "marathon_sd: at most one of auth_token & auth_token_file must be configured",
+	}, {
+		filename: "marathon_authtoken_basicauth.bad.yml",
+		errMsg:   "marathon_sd: at most one of basic_auth, auth_token & auth_token_file must be configured",
+	}, {
+		filename: "marathon_authtoken_bearertoken.bad.yml",
+		errMsg:   "marathon_sd: at most one of bearer_token, bearer_token_file, auth_token & auth_token_file must be configured",
+	}, {
+		filename: "openstack_role.bad.yml",
+		errMsg:   "unknown OpenStack SD role",
+	}, {
+		filename: "openstack_availability.bad.yml",
+		errMsg:   "unknown availability invalid, must be one of admin, internal or public",
 	}, {
 		filename: "url_in_targetgroup.bad.yml",
 		errMsg:   "\"http://bad\" is not a valid hostname",
@@ -660,7 +906,7 @@ var expectedErrors = []struct {
 		errMsg:   "relabel configuration for hashmod action requires 'target_label' value",
 	}, {
 		filename: "unknown_global_attr.bad.yml",
-		errMsg:   "unknown fields in global config: nonexistent_field",
+		errMsg:   "field nonexistent_field not found in type config.plain",
 	}, {
 		filename: "remote_read_url_missing.bad.yml",
 		errMsg:   `url for remote_read is empty`,
@@ -668,27 +914,101 @@ var expectedErrors = []struct {
 		filename: "remote_write_url_missing.bad.yml",
 		errMsg:   `url for remote_write is empty`,
 	}, {
-		filename: "eureka_no_servers.bad.yml",
-		errMsg:   "Eureka SD config must contain at least one Eureka server",
+		filename: "remote_write_dup.bad.yml",
+		errMsg:   `found multiple remote write configs with job name "queue1"`,
+	}, {
+		filename: "remote_read_dup.bad.yml",
+		errMsg:   `found multiple remote read configs with job name "queue1"`,
+	},
+	{
+		filename: "ec2_filters_empty_values.bad.yml",
+		errMsg:   `EC2 SD configuration filter values cannot be empty`,
+	},
+	{
+		filename: "section_key_dup.bad.yml",
+		errMsg:   "field scrape_configs already set in type config.plain",
+	},
+	{
+		filename: "azure_client_id_missing.bad.yml",
+		errMsg:   "azure SD configuration requires a client_id",
+	},
+	{
+		filename: "azure_client_secret_missing.bad.yml",
+		errMsg:   "azure SD configuration requires a client_secret",
+	},
+	{
+		filename: "azure_subscription_id_missing.bad.yml",
+		errMsg:   "azure SD configuration requires a subscription_id",
+	},
+	{
+		filename: "azure_tenant_id_missing.bad.yml",
+		errMsg:   "azure SD configuration requires a tenant_id",
+	},
+	{
+		filename: "azure_authentication_method.bad.yml",
+		errMsg:   "unknown authentication_type \"invalid\". Supported types are \"OAuth\" or \"ManagedIdentity\"",
+	},
+	{
+		filename: "empty_scrape_config.bad.yml",
+		errMsg:   "empty or null scrape config section",
+	},
+	{
+		filename: "empty_rw_config.bad.yml",
+		errMsg:   "empty or null remote write config section",
+	},
+	{
+		filename: "empty_rr_config.bad.yml",
+		errMsg:   "empty or null remote read config section",
+	},
+	{
+		filename: "empty_target_relabel_config.bad.yml",
+		errMsg:   "empty or null target relabeling rule",
+	},
+	{
+		filename: "empty_metric_relabel_config.bad.yml",
+		errMsg:   "empty or null metric relabeling rule",
+	},
+	{
+		filename: "empty_alert_relabel_config.bad.yml",
+		errMsg:   "empty or null alert relabeling rule",
+	},
+	{
+		filename: "empty_alertmanager_relabel_config.bad.yml",
+		errMsg:   "empty or null Alertmanager target relabeling rule",
+	},
+	{
+		filename: "empty_rw_relabel_config.bad.yml",
+		errMsg:   "empty or null relabeling rule in remote write config",
+	},
+	{
+		filename: "empty_static_config.bad.yml",
+		errMsg:   "empty or null section in static_configs",
 	},
 }
 
 func TestBadConfigs(t *testing.T) {
 	for _, ee := range expectedErrors {
 		_, err := LoadFile("testdata/" + ee.filename)
-		testutil.Assert(t, err != nil,
-			"Expected error parsing %s but got none", ee.filename)
+		testutil.NotOk(t, err, "%s", ee.filename)
 		testutil.Assert(t, strings.Contains(err.Error(), ee.errMsg),
 			"Expected error for %s to contain %q but got: %s", ee.filename, ee.errMsg, err)
 	}
 }
 
-func TestBadStaticConfigs(t *testing.T) {
+func TestBadStaticConfigsJSON(t *testing.T) {
 	content, err := ioutil.ReadFile("testdata/static_config.bad.json")
 	testutil.Ok(t, err)
-	var tg TargetGroup
+	var tg targetgroup.Group
 	err = json.Unmarshal(content, &tg)
-	testutil.Assert(t, err != nil, "Expected unmarshal error but got none.")
+	testutil.NotOk(t, err)
+}
+
+func TestBadStaticConfigsYML(t *testing.T) {
+	content, err := ioutil.ReadFile("testdata/static_config.bad.yml")
+	testutil.Ok(t, err)
+	var tg targetgroup.Group
+	err = yaml.UnmarshalStrict(content, &tg)
+	testutil.NotOk(t, err)
 }
 
 func TestEmptyConfig(t *testing.T) {
@@ -706,34 +1026,7 @@ func TestEmptyGlobalBlock(t *testing.T) {
 	testutil.Equals(t, exp, *c)
 }
 
-func TestTargetLabelValidity(t *testing.T) {
-	tests := []struct {
-		str   string
-		valid bool
-	}{
-		{"-label", false},
-		{"label", true},
-		{"label${1}", true},
-		{"${1}label", true},
-		{"${1}", true},
-		{"${1}label", true},
-		{"${", false},
-		{"$", false},
-		{"${}", false},
-		{"foo${", false},
-		{"$1", true},
-		{"asd$2asd", true},
-		{"-foo${1}bar-", false},
-		{"_${1}_", true},
-		{"foo${bar}foo", true},
-	}
-	for _, test := range tests {
-		testutil.Assert(t, relabelTarget.Match([]byte(test.str)) == test.valid,
-			"Expected %q to be %v", test.str, test.valid)
-	}
-}
-
-func kubernetesSDHostURL() URL {
+func kubernetesSDHostURL() config_util.URL {
 	tURL, _ := url.Parse("https://localhost:1234")
-	return URL{URL: tURL}
+	return config_util.URL{URL: tURL}
 }

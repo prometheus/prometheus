@@ -15,18 +15,29 @@ package kubernetes
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"strconv"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/util/strutil"
-	"k8s.io/client-go/pkg/api"
-	apiv1 "k8s.io/client-go/pkg/api/v1"
+	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/util/workqueue"
+
+	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/util/strutil"
+)
+
+const (
+	NodeLegacyHostIP = "LegacyHostIP"
+)
+
+var (
+	nodeAddCount    = eventCount.WithLabelValues("node", "add")
+	nodeUpdateCount = eventCount.WithLabelValues("node", "update")
+	nodeDeleteCount = eventCount.WithLabelValues("node", "delete")
 )
 
 // Node discovers Kubernetes nodes.
@@ -34,6 +45,7 @@ type Node struct {
 	logger   log.Logger
 	informer cache.SharedInformer
 	store    cache.Store
+	queue    *workqueue.Type
 }
 
 // NewNode returns a new node discovery.
@@ -41,65 +53,81 @@ func NewNode(l log.Logger, inf cache.SharedInformer) *Node {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
-	return &Node{logger: l, informer: inf, store: inf.GetStore()}
-}
-
-// Run implements the TargetProvider interface.
-func (n *Node) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
-	// Send full initial set of pod targets.
-	var initial []*config.TargetGroup
-	for _, o := range n.store.List() {
-		tg := n.buildNode(o.(*apiv1.Node))
-		initial = append(initial, tg)
-	}
-	select {
-	case <-ctx.Done():
-		return
-	case ch <- initial:
-	}
-
-	// Send target groups for service updates.
-	send := func(tg *config.TargetGroup) {
-		select {
-		case <-ctx.Done():
-		case ch <- []*config.TargetGroup{tg}:
-		}
-	}
+	n := &Node{logger: l, informer: inf, store: inf.GetStore(), queue: workqueue.NewNamed("node")}
 	n.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
-			eventCount.WithLabelValues("node", "add").Inc()
-
-			node, err := convertToNode(o)
-			if err != nil {
-				level.Error(n.logger).Log("msg", "converting to Node object failed", "err", err)
-				return
-			}
-			send(n.buildNode(node))
+			nodeAddCount.Inc()
+			n.enqueue(o)
 		},
 		DeleteFunc: func(o interface{}) {
-			eventCount.WithLabelValues("node", "delete").Inc()
-
-			node, err := convertToNode(o)
-			if err != nil {
-				level.Error(n.logger).Log("msg", "converting to Node object failed", "err", err)
-				return
-			}
-			send(&config.TargetGroup{Source: nodeSource(node)})
+			nodeDeleteCount.Inc()
+			n.enqueue(o)
 		},
 		UpdateFunc: func(_, o interface{}) {
-			eventCount.WithLabelValues("node", "update").Inc()
-
-			node, err := convertToNode(o)
-			if err != nil {
-				level.Error(n.logger).Log("msg", "converting to Node object failed", "err", err)
-				return
-			}
-			send(n.buildNode(node))
+			nodeUpdateCount.Inc()
+			n.enqueue(o)
 		},
 	})
+	return n
+}
+
+func (n *Node) enqueue(obj interface{}) {
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
+	if err != nil {
+		return
+	}
+
+	n.queue.Add(key)
+}
+
+// Run implements the Discoverer interface.
+func (n *Node) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
+	defer n.queue.ShutDown()
+
+	if !cache.WaitForCacheSync(ctx.Done(), n.informer.HasSynced) {
+		if ctx.Err() != context.Canceled {
+			level.Error(n.logger).Log("msg", "node informer unable to sync cache")
+		}
+		return
+	}
+
+	go func() {
+		for n.process(ctx, ch) {
+		}
+	}()
 
 	// Block until the target provider is explicitly canceled.
 	<-ctx.Done()
+}
+
+func (n *Node) process(ctx context.Context, ch chan<- []*targetgroup.Group) bool {
+	keyObj, quit := n.queue.Get()
+	if quit {
+		return false
+	}
+	defer n.queue.Done(keyObj)
+	key := keyObj.(string)
+
+	_, name, err := cache.SplitMetaNamespaceKey(key)
+	if err != nil {
+		return true
+	}
+
+	o, exists, err := n.store.GetByKey(key)
+	if err != nil {
+		return true
+	}
+	if !exists {
+		send(ctx, ch, &targetgroup.Group{Source: nodeSourceFromName(name)})
+		return true
+	}
+	node, err := convertToNode(o)
+	if err != nil {
+		level.Error(n.logger).Log("msg", "converting to Node object failed", "err", err)
+		return true
+	}
+	send(ctx, ch, n.buildNode(node))
+	return true
 }
 
 func convertToNode(o interface{}) (*apiv1.Node, error) {
@@ -108,47 +136,48 @@ func convertToNode(o interface{}) (*apiv1.Node, error) {
 		return node, nil
 	}
 
-	deletedState, ok := o.(cache.DeletedFinalStateUnknown)
-	if !ok {
-		return nil, fmt.Errorf("Received unexpected object: %v", o)
-	}
-	node, ok = deletedState.Obj.(*apiv1.Node)
-	if !ok {
-		return nil, fmt.Errorf("DeletedFinalStateUnknown contained non-Node object: %v", deletedState.Obj)
-	}
-	return node, nil
+	return nil, errors.Errorf("received unexpected object: %v", o)
 }
 
 func nodeSource(n *apiv1.Node) string {
-	return "node/" + n.Name
+	return nodeSourceFromName(n.Name)
+}
+
+func nodeSourceFromName(name string) string {
+	return "node/" + name
 }
 
 const (
-	nodeNameLabel        = metaLabelPrefix + "node_name"
-	nodeLabelPrefix      = metaLabelPrefix + "node_label_"
-	nodeAnnotationPrefix = metaLabelPrefix + "node_annotation_"
-	nodeAddressPrefix    = metaLabelPrefix + "node_address_"
+	nodeNameLabel               = metaLabelPrefix + "node_name"
+	nodeLabelPrefix             = metaLabelPrefix + "node_label_"
+	nodeLabelPresentPrefix      = metaLabelPrefix + "node_labelpresent_"
+	nodeAnnotationPrefix        = metaLabelPrefix + "node_annotation_"
+	nodeAnnotationPresentPrefix = metaLabelPrefix + "node_annotationpresent_"
+	nodeAddressPrefix           = metaLabelPrefix + "node_address_"
 )
 
 func nodeLabels(n *apiv1.Node) model.LabelSet {
-	ls := make(model.LabelSet, len(n.Labels)+len(n.Annotations)+1)
+	// Each label and annotation will create two key-value pairs in the map.
+	ls := make(model.LabelSet, 2*(len(n.Labels)+len(n.Annotations))+1)
 
 	ls[nodeNameLabel] = lv(n.Name)
 
 	for k, v := range n.Labels {
-		ln := strutil.SanitizeLabelName(nodeLabelPrefix + k)
-		ls[model.LabelName(ln)] = lv(v)
+		ln := strutil.SanitizeLabelName(k)
+		ls[model.LabelName(nodeLabelPrefix+ln)] = lv(v)
+		ls[model.LabelName(nodeLabelPresentPrefix+ln)] = presentValue
 	}
 
 	for k, v := range n.Annotations {
-		ln := strutil.SanitizeLabelName(nodeAnnotationPrefix + k)
-		ls[model.LabelName(ln)] = lv(v)
+		ln := strutil.SanitizeLabelName(k)
+		ls[model.LabelName(nodeAnnotationPrefix+ln)] = lv(v)
+		ls[model.LabelName(nodeAnnotationPresentPrefix+ln)] = presentValue
 	}
 	return ls
 }
 
-func (n *Node) buildNode(node *apiv1.Node) *config.TargetGroup {
-	tg := &config.TargetGroup{
+func (n *Node) buildNode(node *apiv1.Node) *targetgroup.Group {
+	tg := &targetgroup.Group{
 		Source: nodeSource(node),
 	}
 	tg.Labels = nodeLabels(node)
@@ -176,9 +205,11 @@ func (n *Node) buildNode(node *apiv1.Node) *config.TargetGroup {
 
 // nodeAddresses returns the provided node's address, based on the priority:
 // 1. NodeInternalIP
-// 2. NodeExternalIP
-// 3. NodeLegacyHostIP
-// 3. NodeHostName
+// 2. NodeInternalDNS
+// 3. NodeExternalIP
+// 4. NodeExternalDNS
+// 5. NodeLegacyHostIP
+// 6. NodeHostName
 //
 // Derived from k8s.io/kubernetes/pkg/util/node/node.go
 func nodeAddress(node *apiv1.Node) (string, map[apiv1.NodeAddressType][]string, error) {
@@ -190,14 +221,20 @@ func nodeAddress(node *apiv1.Node) (string, map[apiv1.NodeAddressType][]string, 
 	if addresses, ok := m[apiv1.NodeInternalIP]; ok {
 		return addresses[0], m, nil
 	}
+	if addresses, ok := m[apiv1.NodeInternalDNS]; ok {
+		return addresses[0], m, nil
+	}
 	if addresses, ok := m[apiv1.NodeExternalIP]; ok {
 		return addresses[0], m, nil
 	}
-	if addresses, ok := m[apiv1.NodeAddressType(api.NodeLegacyHostIP)]; ok {
+	if addresses, ok := m[apiv1.NodeExternalDNS]; ok {
+		return addresses[0], m, nil
+	}
+	if addresses, ok := m[apiv1.NodeAddressType(NodeLegacyHostIP)]; ok {
 		return addresses[0], m, nil
 	}
 	if addresses, ok := m[apiv1.NodeHostName]; ok {
 		return addresses[0], m, nil
 	}
-	return "", m, fmt.Errorf("host address unknown")
+	return "", m, errors.New("host address unknown")
 }

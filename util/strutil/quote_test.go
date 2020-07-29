@@ -17,13 +17,11 @@ import (
 	"testing"
 )
 
-type quoteTest struct {
+var quotetests = []struct {
 	in    string
 	out   string
 	ascii string
-}
-
-var quotetests = []quoteTest{
+}{
 	{"\a\b\f\r\n\t\v", `"\a\b\f\r\n\t\v"`, `"\a\b\f\r\n\t\v"`},
 	{"\\", `"\\"`, `"\\"`},
 	{"abc\xffdef", `"abc\xffdef"`, `"abc\xffdef"`},
@@ -32,12 +30,10 @@ var quotetests = []quoteTest{
 	{"\x04", `"\x04"`, `"\x04"`},
 }
 
-type unQuoteTest struct {
+var unquotetests = []struct {
 	in  string
 	out string
-}
-
-var unquotetests = []unQuoteTest{
+}{
 	{`""`, ""},
 	{`"a"`, "a"},
 	{`"abc"`, "abc"},
@@ -56,6 +52,7 @@ var unquotetests = []unQuoteTest{
 	{`'abc'`, "abc"},
 	{`'☺'`, "☺"},
 	{`'hello world'`, "hello world"},
+	{`'\ahéllo world'`, "\ahéllo world"},
 	{`'\xFF'`, "\xFF"},
 	{`'\377'`, "\377"},
 	{`'\u1234'`, "\u1234"},
@@ -90,6 +87,7 @@ var misquoted = []string{
 	`'\9'`,
 	`'\19'`,
 	`'\129'`,
+	`'\400'`,
 	`"\x1!"`,
 	`"\U12345678"`,
 	`"\z"`,
@@ -101,6 +99,10 @@ var misquoted = []string{
 	"\"\n\"",
 	"\"\\n\n\"",
 	"'\n'",
+	"`1`9`",
+	`1231`,
+	`'\xF'`,
+	`""12345"`,
 }
 
 func TestUnquote(t *testing.T) {

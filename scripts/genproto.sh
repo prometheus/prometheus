@@ -10,26 +10,35 @@ if ! [[ "$0" =~ "scripts/genproto.sh" ]]; then
 	exit 255
 fi
 
-if ! [[ $(protoc --version) =~ "3.2.0" ]]; then
-	echo "could not find protoc 3.2.0, is it installed + in PATH?"
+if ! [[ $(protoc --version) =~ "3.12.3" ]]; then
+	echo "could not find protoc 3.12.3, is it installed + in PATH?"
 	exit 255
 fi
 
-PROM_ROOT="${GOPATH}/src/github.com/prometheus/prometheus"
+echo "installing plugins"
+GO111MODULE=on go mod download
+
+INSTALL_PKGS="golang.org/x/tools/cmd/goimports github.com/gogo/protobuf/protoc-gen-gogofast github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger"
+for pkg in ${INSTALL_PKGS}; do
+    GO111MODULE=on go install -mod=vendor "$pkg"
+done
+
+PROM_ROOT="${PWD}"
 PROM_PATH="${PROM_ROOT}/prompb"
-GOGOPROTO_ROOT="${GOPATH}/src/github.com/gogo/protobuf"
+GOGOPROTO_ROOT="$(GO111MODULE=on go list -mod=readonly -f '{{ .Dir }}' -m github.com/gogo/protobuf)"
 GOGOPROTO_PATH="${GOGOPROTO_ROOT}:${GOGOPROTO_ROOT}/protobuf"
-GRPC_GATEWAY_ROOT="${GOPATH}/src/github.com/grpc-ecosystem/grpc-gateway"
+GRPC_GATEWAY_ROOT="$(GO111MODULE=on go list -mod=readonly -f '{{ .Dir }}' -m github.com/grpc-ecosystem/grpc-gateway)"
 
 DIRS="prompb"
 
+echo "generating code"
 for dir in ${DIRS}; do
 	pushd ${dir}
 		protoc --gogofast_out=plugins=grpc:. -I=. \
             -I="${GOGOPROTO_PATH}" \
             -I="${PROM_PATH}" \
             -I="${GRPC_GATEWAY_ROOT}/third_party/googleapis" \
-            *.proto
+            ./*.proto
 
 		protoc -I. \
 			-I="${GOGOPROTO_PATH}" \
@@ -39,11 +48,13 @@ for dir in ${DIRS}; do
 			--swagger_out=logtostderr=true:../documentation/dev/api/ \
 			rpc.proto
 		mv ../documentation/dev/api/rpc.swagger.json ../documentation/dev/api/swagger.json
-		
-		sed -i.bak -E 's/import _ \"gogoproto\"//g' *.pb.go
-		sed -i.bak -E 's/import _ \"google\/protobuf\"//g' *.pb.go
-		sed -i.bak -E 's/golang\/protobuf/gogo\/protobuf/g' *.go
-		rm -f *.bak
-		goimports -w *.pb.go
+
+		sed -i.bak -E 's/import _ \"github.com\/gogo\/protobuf\/gogoproto\"//g' -- *.pb.go
+		sed -i.bak -E 's/import _ \"google\/protobuf\"//g' -- *.pb.go
+		sed -i.bak -E 's/\t_ \"google\/protobuf\"//g' -- *.pb.go
+		sed -i.bak -E 's/golang\/protobuf\/descriptor/gogo\/protobuf\/protoc-gen-gogo\/descriptor/g' -- *.go
+		sed -i.bak -E 's/golang\/protobuf/gogo\/protobuf/g' -- *.go
+		rm -f -- *.bak
+		goimports -w ./*.go
 	popd
 done

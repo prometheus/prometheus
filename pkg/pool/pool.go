@@ -13,17 +13,23 @@
 
 package pool
 
-import "sync"
+import (
+	"fmt"
+	"reflect"
+	"sync"
+)
 
-// BytesPool is a bucketed pool for variably sized byte slices.
-type BytesPool struct {
+// Pool is a bucketed pool for variably sized byte slices.
+type Pool struct {
 	buckets []sync.Pool
 	sizes   []int
+	// make is the function used to create an empty slice when none exist yet.
+	make func(int) interface{}
 }
 
-// NewBytesPool returns a new BytesPool with size buckets for minSize to maxSize
+// New returns a new Pool with size buckets for minSize to maxSize
 // increasing by the given factor.
-func NewBytesPool(minSize, maxSize int, factor float64) *BytesPool {
+func New(minSize, maxSize int, factor float64, makeFunc func(int) interface{}) *Pool {
 	if minSize < 1 {
 		panic("invalid minimum pool size")
 	}
@@ -40,36 +46,42 @@ func NewBytesPool(minSize, maxSize int, factor float64) *BytesPool {
 		sizes = append(sizes, s)
 	}
 
-	p := &BytesPool{
+	p := &Pool{
 		buckets: make([]sync.Pool, len(sizes)),
 		sizes:   sizes,
+		make:    makeFunc,
 	}
 
 	return p
 }
 
 // Get returns a new byte slices that fits the given size.
-func (p *BytesPool) Get(sz int) []byte {
+func (p *Pool) Get(sz int) interface{} {
 	for i, bktSize := range p.sizes {
 		if sz > bktSize {
 			continue
 		}
-		b, ok := p.buckets[i].Get().([]byte)
-		if !ok {
-			b = make([]byte, 0, bktSize)
+		b := p.buckets[i].Get()
+		if b == nil {
+			b = p.make(bktSize)
 		}
 		return b
 	}
-	return make([]byte, 0, sz)
+	return p.make(sz)
 }
 
-// Put returns a byte slice to the right bucket in the pool.
-func (p *BytesPool) Put(b []byte) {
-	for i, bktSize := range p.sizes {
-		if cap(b) > bktSize {
+// Put adds a slice to the right bucket in the pool.
+func (p *Pool) Put(s interface{}) {
+	slice := reflect.ValueOf(s)
+
+	if slice.Kind() != reflect.Slice {
+		panic(fmt.Sprintf("%+v is not a slice", slice))
+	}
+	for i, size := range p.sizes {
+		if slice.Cap() > size {
 			continue
 		}
-		p.buckets[i].Put(b[:0])
+		p.buckets[i].Put(slice.Slice(0, 0).Interface())
 		return
 	}
 }

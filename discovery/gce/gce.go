@@ -17,18 +17,19 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
-	"github.com/prometheus/client_golang/prometheus"
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
-	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
-	"google.golang.org/api/compute/v1"
+	compute "google.golang.org/api/compute/v1"
+	"google.golang.org/api/option"
 
-	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery/refresh"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
 )
 
@@ -40,116 +41,103 @@ const (
 	gceLabelSubnetwork     = gceLabel + "subnetwork"
 	gceLabelPublicIP       = gceLabel + "public_ip"
 	gceLabelPrivateIP      = gceLabel + "private_ip"
+	gceLabelInstanceID     = gceLabel + "instance_id"
 	gceLabelInstanceName   = gceLabel + "instance_name"
 	gceLabelInstanceStatus = gceLabel + "instance_status"
 	gceLabelTags           = gceLabel + "tags"
 	gceLabelMetadata       = gceLabel + "metadata_"
+	gceLabelLabel          = gceLabel + "label_"
+	gceLabelMachineType    = gceLabel + "machine_type"
 )
 
-var (
-	gceSDRefreshFailuresCount = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Name: "prometheus_sd_gce_refresh_failures_total",
-			Help: "The number of GCE-SD refresh failures.",
-		})
-	gceSDRefreshDuration = prometheus.NewSummary(
-		prometheus.SummaryOpts{
-			Name: "prometheus_sd_gce_refresh_duration",
-			Help: "The duration of a GCE-SD refresh in seconds.",
-		})
-)
+// DefaultSDConfig is the default GCE SD configuration.
+var DefaultSDConfig = SDConfig{
+	Port:            80,
+	TagSeparator:    ",",
+	RefreshInterval: model.Duration(60 * time.Second),
+}
 
-func init() {
-	prometheus.MustRegister(gceSDRefreshFailuresCount)
-	prometheus.MustRegister(gceSDRefreshDuration)
+// SDConfig is the configuration for GCE based service discovery.
+type SDConfig struct {
+	// Project: The Google Cloud Project ID
+	Project string `yaml:"project"`
+
+	// Zone: The zone of the scrape targets.
+	// If you need to configure multiple zones use multiple gce_sd_configs
+	Zone string `yaml:"zone"`
+
+	// Filter: Can be used optionally to filter the instance list by other criteria.
+	// Syntax of this filter string is described here in the filter query parameter section:
+	// https://cloud.google.com/compute/docs/reference/latest/instances/list
+	Filter string `yaml:"filter,omitempty"`
+
+	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
+	Port            int            `yaml:"port"`
+	TagSeparator    string         `yaml:"tag_separator,omitempty"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultSDConfig
+	type plain SDConfig
+	err := unmarshal((*plain)(c))
+	if err != nil {
+		return err
+	}
+	if c.Project == "" {
+		return errors.New("GCE SD configuration requires a project")
+	}
+	if c.Zone == "" {
+		return errors.New("GCE SD configuration requires a zone")
+	}
+	return nil
 }
 
 // Discovery periodically performs GCE-SD requests. It implements
-// the TargetProvider interface.
+// the Discoverer interface.
 type Discovery struct {
+	*refresh.Discovery
 	project      string
 	zone         string
 	filter       string
 	client       *http.Client
 	svc          *compute.Service
 	isvc         *compute.InstancesService
-	interval     time.Duration
 	port         int
 	tagSeparator string
-	logger       log.Logger
 }
 
 // NewDiscovery returns a new Discovery which periodically refreshes its targets.
-func NewDiscovery(conf *config.GCESDConfig, logger log.Logger) (*Discovery, error) {
-	if logger == nil {
-		logger = log.NewNopLogger()
-	}
-	gd := &Discovery{
+func NewDiscovery(conf SDConfig, logger log.Logger) (*Discovery, error) {
+	d := &Discovery{
 		project:      conf.Project,
 		zone:         conf.Zone,
 		filter:       conf.Filter,
-		interval:     time.Duration(conf.RefreshInterval),
 		port:         conf.Port,
 		tagSeparator: conf.TagSeparator,
-		logger:       logger,
 	}
 	var err error
-	gd.client, err = google.DefaultClient(oauth2.NoContext, compute.ComputeReadonlyScope)
+	d.client, err = google.DefaultClient(context.Background(), compute.ComputeReadonlyScope)
 	if err != nil {
-		return nil, fmt.Errorf("error setting up communication with GCE service: %s", err)
+		return nil, errors.Wrap(err, "error setting up communication with GCE service")
 	}
-	gd.svc, err = compute.New(gd.client)
+	d.svc, err = compute.NewService(context.Background(), option.WithHTTPClient(d.client))
 	if err != nil {
-		return nil, fmt.Errorf("error setting up communication with GCE service: %s", err)
+		return nil, errors.Wrap(err, "error setting up communication with GCE service")
 	}
-	gd.isvc = compute.NewInstancesService(gd.svc)
-	return gd, nil
+	d.isvc = compute.NewInstancesService(d.svc)
+
+	d.Discovery = refresh.NewDiscovery(
+		logger,
+		"gce",
+		time.Duration(conf.RefreshInterval),
+		d.refresh,
+	)
+	return d, nil
 }
 
-// Run implements the TargetProvider interface.
-func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
-	// Get an initial set right away.
-	tg, err := d.refresh()
-	if err != nil {
-		level.Error(d.logger).Log("msg", "Refresh failed", "err", err)
-	} else {
-		select {
-		case ch <- []*config.TargetGroup{tg}:
-		case <-ctx.Done():
-		}
-	}
-
-	ticker := time.NewTicker(d.interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			tg, err := d.refresh()
-			if err != nil {
-				level.Error(d.logger).Log("msg", "Refresh failed", "err", err)
-				continue
-			}
-			select {
-			case ch <- []*config.TargetGroup{tg}:
-			case <-ctx.Done():
-			}
-		case <-ctx.Done():
-			return
-		}
-	}
-}
-
-func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
-	t0 := time.Now()
-	defer func() {
-		gceSDRefreshDuration.Observe(time.Since(t0).Seconds())
-		if err != nil {
-			gceSDRefreshFailuresCount.Inc()
-		}
-	}()
-
-	tg = &config.TargetGroup{
+func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
+	tg := &targetgroup.Group{
 		Source: fmt.Sprintf("GCE_%s_%s", d.project, d.zone),
 	}
 
@@ -157,7 +145,7 @@ func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 	if len(d.filter) > 0 {
 		ilc = ilc.Filter(d.filter)
 	}
-	err = ilc.Pages(nil, func(l *compute.InstanceList) error {
+	err := ilc.Pages(ctx, func(l *compute.InstanceList) error {
 		for _, inst := range l.Items {
 			if len(inst.NetworkInterfaces) == 0 {
 				continue
@@ -165,8 +153,10 @@ func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 			labels := model.LabelSet{
 				gceLabelProject:        model.LabelValue(d.project),
 				gceLabelZone:           model.LabelValue(inst.Zone),
+				gceLabelInstanceID:     model.LabelValue(strconv.FormatUint(inst.Id, 10)),
 				gceLabelInstanceName:   model.LabelValue(inst.Name),
 				gceLabelInstanceStatus: model.LabelValue(inst.Status),
+				gceLabelMachineType:    model.LabelValue(inst.MachineType),
 			}
 			priIface := inst.NetworkInterfaces[0]
 			labels[gceLabelNetwork] = model.LabelValue(priIface.Network)
@@ -195,6 +185,12 @@ func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 				}
 			}
 
+			// GCE labels are key-value pairs that group associated resources
+			for key, value := range inst.Labels {
+				name := strutil.SanitizeLabelName(key)
+				labels[gceLabelLabel+model.LabelName(name)] = model.LabelValue(value)
+			}
+
 			if len(priIface.AccessConfigs) > 0 {
 				ac := priIface.AccessConfigs[0]
 				if ac.Type == "ONE_TO_ONE_NAT" {
@@ -206,7 +202,7 @@ func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 		return nil
 	})
 	if err != nil {
-		return tg, fmt.Errorf("error retrieving refresh targets from gce: %s", err)
+		return nil, errors.Wrap(err, "error retrieving refresh targets from gce")
 	}
-	return tg, nil
+	return []*targetgroup.Group{tg}, nil
 }

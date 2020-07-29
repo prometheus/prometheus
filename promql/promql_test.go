@@ -16,22 +16,20 @@ package promql
 import (
 	"path/filepath"
 	"testing"
+
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestEvaluations(t *testing.T) {
 	files, err := filepath.Glob("testdata/*.test")
-	if err != nil {
-		t.Fatal(err)
-	}
+	testutil.Ok(t, err)
+
 	for _, fn := range files {
 		test, err := newTestFromFile(t, fn)
-		if err != nil {
-			t.Errorf("error creating test for %s: %s", fn, err)
-		}
-		err = test.Run()
-		if err != nil {
-			t.Errorf("error running test %s: %s", fn, err)
-		}
+		testutil.Ok(t, err)
+
+		testutil.Ok(t, test.Run())
+
 		test.Close()
 	}
 }

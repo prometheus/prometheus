@@ -14,35 +14,37 @@
 package kubernetes
 
 import (
+	"context"
+	"fmt"
 	"testing"
 
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/config"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/pkg/api/v1"
-	"k8s.io/client-go/tools/cache"
+	"k8s.io/apimachinery/pkg/types"
+
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
-func podStoreKeyFunc(obj interface{}) (string, error) {
-	return obj.(*v1.Pod).ObjectMeta.Name, nil
+func makeOptionalBool(v bool) *bool {
+	return &v
 }
 
-func newFakePodInformer() *fakeInformer {
-	return newFakeInformer(podStoreKeyFunc)
-}
-
-func makeTestPodDiscovery() (*Pod, *fakeInformer) {
-	i := newFakePodInformer()
-	return NewPod(nil, i), i
-}
-
-func makeMultiPortPod() *v1.Pod {
+func makeMultiPortPods() *v1.Pod {
 	return &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        "testpod",
 			Namespace:   "default",
-			Labels:      map[string]string{"testlabel": "testvalue"},
-			Annotations: map[string]string{"testannotation": "testannotationvalue"},
+			Labels:      map[string]string{"test/label": "testvalue"},
+			Annotations: map[string]string{"test/annotation": "testannotationvalue"},
+			UID:         types.UID("abc123"),
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					Kind:       "testcontrollerkind",
+					Name:       "testcontrollername",
+					Controller: makeOptionalBool(true),
+				},
+			},
 		},
 		Spec: v1.PodSpec{
 			NodeName: "testnode",
@@ -70,6 +72,7 @@ func makeMultiPortPod() *v1.Pod {
 		Status: v1.PodStatus{
 			PodIP:  "1.2.3.4",
 			HostIP: "2.3.4.5",
+			Phase:  "Running",
 			Conditions: []v1.PodCondition{
 				{
 					Type:   v1.PodReady,
@@ -80,11 +83,12 @@ func makeMultiPortPod() *v1.Pod {
 	}
 }
 
-func makePod() *v1.Pod {
+func makePods() *v1.Pod {
 	return &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "testpod",
 			Namespace: "default",
+			UID:       types.UID("abc123"),
 		},
 		Spec: v1.PodSpec{
 			NodeName: "testnode",
@@ -104,6 +108,7 @@ func makePod() *v1.Pod {
 		Status: v1.PodStatus{
 			PodIP:  "1.2.3.4",
 			HostIP: "2.3.4.5",
+			Phase:  "Running",
 			Conditions: []v1.PodCondition{
 				{
 					Type:   v1.PodReady,
@@ -114,14 +119,89 @@ func makePod() *v1.Pod {
 	}
 }
 
-func TestPodDiscoveryInitial(t *testing.T) {
-	n, i := makeTestPodDiscovery()
-	i.GetStore().Add(makeMultiPortPod())
+func makeInitContainerPods() *v1.Pod {
+	return &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "testpod",
+			Namespace: "default",
+			UID:       types.UID("abc123"),
+		},
+		Spec: v1.PodSpec{
+			NodeName: "testnode",
+			Containers: []v1.Container{
+				{
+					Name: "testcontainer",
+					Ports: []v1.ContainerPort{
+						{
+							Name:          "testport",
+							Protocol:      v1.ProtocolTCP,
+							ContainerPort: int32(9000),
+						},
+					},
+				},
+			},
+
+			InitContainers: []v1.Container{
+				{
+					Name: "initcontainer",
+				},
+			},
+		},
+		Status: v1.PodStatus{
+			PodIP:  "1.2.3.4",
+			HostIP: "2.3.4.5",
+			Phase:  "Pending",
+			Conditions: []v1.PodCondition{
+				{
+					Type:   v1.PodReady,
+					Status: v1.ConditionFalse,
+				},
+			},
+		},
+	}
+}
+
+func expectedPodTargetGroups(ns string) map[string]*targetgroup.Group {
+	key := fmt.Sprintf("pod/%s/testpod", ns)
+	return map[string]*targetgroup.Group{
+		key: {
+			Targets: []model.LabelSet{
+				{
+					"__address__":                                   "1.2.3.4:9000",
+					"__meta_kubernetes_pod_container_name":          "testcontainer",
+					"__meta_kubernetes_pod_container_port_name":     "testport",
+					"__meta_kubernetes_pod_container_port_number":   "9000",
+					"__meta_kubernetes_pod_container_port_protocol": "TCP",
+					"__meta_kubernetes_pod_container_init":          "false",
+				},
+			},
+			Labels: model.LabelSet{
+				"__meta_kubernetes_pod_name":      "testpod",
+				"__meta_kubernetes_namespace":     lv(ns),
+				"__meta_kubernetes_pod_node_name": "testnode",
+				"__meta_kubernetes_pod_ip":        "1.2.3.4",
+				"__meta_kubernetes_pod_host_ip":   "2.3.4.5",
+				"__meta_kubernetes_pod_ready":     "true",
+				"__meta_kubernetes_pod_phase":     "Running",
+				"__meta_kubernetes_pod_uid":       "abc123",
+			},
+			Source: key,
+		},
+	}
+}
+
+func TestPodDiscoveryBeforeRun(t *testing.T) {
+	n, c := makeDiscovery(RolePod, NamespaceDiscovery{})
 
 	k8sDiscoveryTest{
 		discovery: n,
-		expectedInitial: []*config.TargetGroup{
-			{
+		beforeRun: func() {
+			obj := makeMultiPortPods()
+			c.CoreV1().Pods(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
+		},
+		expectedMaxItems: 1,
+		expectedRes: map[string]*targetgroup.Group{
+			"pod/default/testpod": {
 				Targets: []model.LabelSet{
 					{
 						"__address__":                                   "1.2.3.4:9000",
@@ -129,6 +209,7 @@ func TestPodDiscoveryInitial(t *testing.T) {
 						"__meta_kubernetes_pod_container_port_name":     "testport0",
 						"__meta_kubernetes_pod_container_port_number":   "9000",
 						"__meta_kubernetes_pod_container_port_protocol": "TCP",
+						"__meta_kubernetes_pod_container_init":          "false",
 					},
 					{
 						"__address__":                                   "1.2.3.4:9001",
@@ -136,127 +217,88 @@ func TestPodDiscoveryInitial(t *testing.T) {
 						"__meta_kubernetes_pod_container_port_name":     "testport1",
 						"__meta_kubernetes_pod_container_port_number":   "9001",
 						"__meta_kubernetes_pod_container_port_protocol": "UDP",
+						"__meta_kubernetes_pod_container_init":          "false",
 					},
 					{
 						"__address__":                          "1.2.3.4",
 						"__meta_kubernetes_pod_container_name": "testcontainer1",
+						"__meta_kubernetes_pod_container_init": "false",
 					},
 				},
 				Labels: model.LabelSet{
-					"__meta_kubernetes_pod_name":                      "testpod",
-					"__meta_kubernetes_namespace":                     "default",
-					"__meta_kubernetes_pod_label_testlabel":           "testvalue",
-					"__meta_kubernetes_pod_annotation_testannotation": "testannotationvalue",
-					"__meta_kubernetes_pod_node_name":                 "testnode",
-					"__meta_kubernetes_pod_ip":                        "1.2.3.4",
-					"__meta_kubernetes_pod_host_ip":                   "2.3.4.5",
-					"__meta_kubernetes_pod_ready":                     "true",
+					"__meta_kubernetes_pod_name":                              "testpod",
+					"__meta_kubernetes_namespace":                             "default",
+					"__meta_kubernetes_pod_label_test_label":                  "testvalue",
+					"__meta_kubernetes_pod_labelpresent_test_label":           "true",
+					"__meta_kubernetes_pod_annotation_test_annotation":        "testannotationvalue",
+					"__meta_kubernetes_pod_annotationpresent_test_annotation": "true",
+					"__meta_kubernetes_pod_node_name":                         "testnode",
+					"__meta_kubernetes_pod_ip":                                "1.2.3.4",
+					"__meta_kubernetes_pod_host_ip":                           "2.3.4.5",
+					"__meta_kubernetes_pod_ready":                             "true",
+					"__meta_kubernetes_pod_phase":                             "Running",
+					"__meta_kubernetes_pod_uid":                               "abc123",
+					"__meta_kubernetes_pod_controller_kind":                   "testcontrollerkind",
+					"__meta_kubernetes_pod_controller_name":                   "testcontrollername",
 				},
 				Source: "pod/default/testpod",
 			},
 		},
+	}.Run(t)
+}
+
+func TestPodDiscoveryInitContainer(t *testing.T) {
+	n, c := makeDiscovery(RolePod, NamespaceDiscovery{})
+
+	ns := "default"
+	key := fmt.Sprintf("pod/%s/testpod", ns)
+	expected := expectedPodTargetGroups(ns)
+	expected[key].Targets = append(expected[key].Targets, model.LabelSet{
+		"__address__":                          "1.2.3.4",
+		"__meta_kubernetes_pod_container_name": "initcontainer",
+		"__meta_kubernetes_pod_container_init": "true",
+	})
+	expected[key].Labels["__meta_kubernetes_pod_phase"] = "Pending"
+	expected[key].Labels["__meta_kubernetes_pod_ready"] = "false"
+
+	k8sDiscoveryTest{
+		discovery: n,
+		beforeRun: func() {
+			obj := makeInitContainerPods()
+			c.CoreV1().Pods(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
+		},
+		expectedMaxItems: 1,
+		expectedRes:      expected,
 	}.Run(t)
 }
 
 func TestPodDiscoveryAdd(t *testing.T) {
-	n, i := makeTestPodDiscovery()
+	n, c := makeDiscovery(RolePod, NamespaceDiscovery{})
 
 	k8sDiscoveryTest{
-		discovery:  n,
-		afterStart: func() { go func() { i.Add(makePod()) }() },
-		expectedRes: []*config.TargetGroup{
-			{
-				Targets: []model.LabelSet{
-					{
-						"__address__":                                   "1.2.3.4:9000",
-						"__meta_kubernetes_pod_container_name":          "testcontainer",
-						"__meta_kubernetes_pod_container_port_name":     "testport",
-						"__meta_kubernetes_pod_container_port_number":   "9000",
-						"__meta_kubernetes_pod_container_port_protocol": "TCP",
-					},
-				},
-				Labels: model.LabelSet{
-					"__meta_kubernetes_pod_name":      "testpod",
-					"__meta_kubernetes_namespace":     "default",
-					"__meta_kubernetes_pod_node_name": "testnode",
-					"__meta_kubernetes_pod_ip":        "1.2.3.4",
-					"__meta_kubernetes_pod_host_ip":   "2.3.4.5",
-					"__meta_kubernetes_pod_ready":     "true",
-				},
-				Source: "pod/default/testpod",
-			},
+		discovery: n,
+		afterStart: func() {
+			obj := makePods()
+			c.CoreV1().Pods(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
 		},
+		expectedMaxItems: 1,
+		expectedRes:      expectedPodTargetGroups("default"),
 	}.Run(t)
 }
 
 func TestPodDiscoveryDelete(t *testing.T) {
-	n, i := makeTestPodDiscovery()
-	i.GetStore().Add(makePod())
+	obj := makePods()
+	n, c := makeDiscovery(RolePod, NamespaceDiscovery{}, obj)
 
 	k8sDiscoveryTest{
-		discovery:  n,
-		afterStart: func() { go func() { i.Delete(makePod()) }() },
-		expectedInitial: []*config.TargetGroup{
-			{
-				Targets: []model.LabelSet{
-					{
-						"__address__":                                   "1.2.3.4:9000",
-						"__meta_kubernetes_pod_container_name":          "testcontainer",
-						"__meta_kubernetes_pod_container_port_name":     "testport",
-						"__meta_kubernetes_pod_container_port_number":   "9000",
-						"__meta_kubernetes_pod_container_port_protocol": "TCP",
-					},
-				},
-				Labels: model.LabelSet{
-					"__meta_kubernetes_pod_name":      "testpod",
-					"__meta_kubernetes_namespace":     "default",
-					"__meta_kubernetes_pod_node_name": "testnode",
-					"__meta_kubernetes_pod_ip":        "1.2.3.4",
-					"__meta_kubernetes_pod_host_ip":   "2.3.4.5",
-					"__meta_kubernetes_pod_ready":     "true",
-				},
-				Source: "pod/default/testpod",
-			},
+		discovery: n,
+		afterStart: func() {
+			obj := makePods()
+			c.CoreV1().Pods(obj.Namespace).Delete(context.Background(), obj.Name, metav1.DeleteOptions{})
 		},
-		expectedRes: []*config.TargetGroup{
-			{
-				Source: "pod/default/testpod",
-			},
-		},
-	}.Run(t)
-}
-
-func TestPodDiscoveryDeleteUnknownCacheState(t *testing.T) {
-	n, i := makeTestPodDiscovery()
-	i.GetStore().Add(makePod())
-
-	k8sDiscoveryTest{
-		discovery:  n,
-		afterStart: func() { go func() { i.Delete(cache.DeletedFinalStateUnknown{Obj: makePod()}) }() },
-		expectedInitial: []*config.TargetGroup{
-			{
-				Targets: []model.LabelSet{
-					{
-						"__address__":                                   "1.2.3.4:9000",
-						"__meta_kubernetes_pod_container_name":          "testcontainer",
-						"__meta_kubernetes_pod_container_port_name":     "testport",
-						"__meta_kubernetes_pod_container_port_number":   "9000",
-						"__meta_kubernetes_pod_container_port_protocol": "TCP",
-					},
-				},
-				Labels: model.LabelSet{
-					"__meta_kubernetes_pod_name":      "testpod",
-					"__meta_kubernetes_namespace":     "default",
-					"__meta_kubernetes_pod_node_name": "testnode",
-					"__meta_kubernetes_pod_ip":        "1.2.3.4",
-					"__meta_kubernetes_pod_host_ip":   "2.3.4.5",
-					"__meta_kubernetes_pod_ready":     "true",
-				},
-				Source: "pod/default/testpod",
-			},
-		},
-		expectedRes: []*config.TargetGroup{
-			{
+		expectedMaxItems: 2,
+		expectedRes: map[string]*targetgroup.Group{
+			"pod/default/testpod": {
 				Source: "pod/default/testpod",
 			},
 		},
@@ -264,11 +306,11 @@ func TestPodDiscoveryDeleteUnknownCacheState(t *testing.T) {
 }
 
 func TestPodDiscoveryUpdate(t *testing.T) {
-	n, i := makeTestPodDiscovery()
-	i.GetStore().Add(&v1.Pod{
+	obj := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "testpod",
 			Namespace: "default",
+			UID:       "xyz321",
 		},
 		Spec: v1.PodSpec{
 			NodeName: "testnode",
@@ -289,54 +331,61 @@ func TestPodDiscoveryUpdate(t *testing.T) {
 			PodIP:  "1.2.3.4",
 			HostIP: "2.3.4.5",
 		},
-	})
+	}
+	n, c := makeDiscovery(RolePod, NamespaceDiscovery{}, obj)
 
 	k8sDiscoveryTest{
-		discovery:  n,
-		afterStart: func() { go func() { i.Update(makePod()) }() },
-		expectedInitial: []*config.TargetGroup{
-			{
-				Targets: []model.LabelSet{
-					{
-						"__address__":                                   "1.2.3.4:9000",
-						"__meta_kubernetes_pod_container_name":          "testcontainer",
-						"__meta_kubernetes_pod_container_port_name":     "testport",
-						"__meta_kubernetes_pod_container_port_number":   "9000",
-						"__meta_kubernetes_pod_container_port_protocol": "TCP",
-					},
-				},
-				Labels: model.LabelSet{
-					"__meta_kubernetes_pod_name":      "testpod",
-					"__meta_kubernetes_namespace":     "default",
-					"__meta_kubernetes_pod_node_name": "testnode",
-					"__meta_kubernetes_pod_ip":        "1.2.3.4",
-					"__meta_kubernetes_pod_host_ip":   "2.3.4.5",
-					"__meta_kubernetes_pod_ready":     "unknown",
-				},
+		discovery: n,
+		afterStart: func() {
+			obj := makePods()
+			c.CoreV1().Pods(obj.Namespace).Update(context.Background(), obj, metav1.UpdateOptions{})
+		},
+		expectedMaxItems: 2,
+		expectedRes:      expectedPodTargetGroups("default"),
+	}.Run(t)
+}
+
+func TestPodDiscoveryUpdateEmptyPodIP(t *testing.T) {
+	n, c := makeDiscovery(RolePod, NamespaceDiscovery{})
+	initialPod := makePods()
+
+	updatedPod := makePods()
+	updatedPod.Status.PodIP = ""
+
+	k8sDiscoveryTest{
+		discovery: n,
+		beforeRun: func() {
+			c.CoreV1().Pods(initialPod.Namespace).Create(context.Background(), initialPod, metav1.CreateOptions{})
+		},
+		afterStart: func() {
+			c.CoreV1().Pods(updatedPod.Namespace).Update(context.Background(), updatedPod, metav1.UpdateOptions{})
+		},
+		expectedMaxItems: 2,
+		expectedRes: map[string]*targetgroup.Group{
+			"pod/default/testpod": {
 				Source: "pod/default/testpod",
 			},
 		},
-		expectedRes: []*config.TargetGroup{
-			{
-				Targets: []model.LabelSet{
-					{
-						"__address__":                                   "1.2.3.4:9000",
-						"__meta_kubernetes_pod_container_name":          "testcontainer",
-						"__meta_kubernetes_pod_container_port_name":     "testport",
-						"__meta_kubernetes_pod_container_port_number":   "9000",
-						"__meta_kubernetes_pod_container_port_protocol": "TCP",
-					},
-				},
-				Labels: model.LabelSet{
-					"__meta_kubernetes_pod_name":      "testpod",
-					"__meta_kubernetes_namespace":     "default",
-					"__meta_kubernetes_pod_node_name": "testnode",
-					"__meta_kubernetes_pod_ip":        "1.2.3.4",
-					"__meta_kubernetes_pod_host_ip":   "2.3.4.5",
-					"__meta_kubernetes_pod_ready":     "true",
-				},
-				Source: "pod/default/testpod",
-			},
+	}.Run(t)
+}
+
+func TestPodDiscoveryNamespaces(t *testing.T) {
+	n, c := makeDiscovery(RolePod, NamespaceDiscovery{Names: []string{"ns1", "ns2"}})
+
+	expected := expectedPodTargetGroups("ns1")
+	for k, v := range expectedPodTargetGroups("ns2") {
+		expected[k] = v
+	}
+	k8sDiscoveryTest{
+		discovery: n,
+		beforeRun: func() {
+			for _, ns := range []string{"ns1", "ns2"} {
+				pod := makePods()
+				pod.Namespace = ns
+				c.CoreV1().Pods(pod.Namespace).Create(context.Background(), pod, metav1.CreateOptions{})
+			}
 		},
+		expectedMaxItems: 2,
+		expectedRes:      expected,
 	}.Run(t)
 }

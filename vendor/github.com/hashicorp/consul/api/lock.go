@@ -79,6 +79,7 @@ type LockOptions struct {
 	MonitorRetryTime time.Duration // Optional, defaults to DefaultMonitorRetryTime
 	LockWaitTime     time.Duration // Optional, defaults to DefaultLockWaitTime
 	LockTryOnce      bool          // Optional, defaults to false which means try forever
+	Namespace        string        `json:",omitempty"` // Optional, defaults to API client config, namespace of ACL token, or "default" namespace
 }
 
 // LockKey returns a handle to a lock struct which can be used
@@ -140,31 +141,38 @@ func (l *Lock) Lock(stopCh <-chan struct{}) (<-chan struct{}, error) {
 		return nil, ErrLockHeld
 	}
 
+	wOpts := WriteOptions{
+		Namespace: l.opts.Namespace,
+	}
+
 	// Check if we need to create a session first
 	l.lockSession = l.opts.Session
 	if l.lockSession == "" {
-		if s, err := l.createSession(); err != nil {
+		s, err := l.createSession()
+		if err != nil {
 			return nil, fmt.Errorf("failed to create session: %v", err)
-		} else {
-			l.sessionRenew = make(chan struct{})
-			l.lockSession = s
-			session := l.c.Session()
-			go session.RenewPeriodic(l.opts.SessionTTL, s, nil, l.sessionRenew)
-
-			// If we fail to acquire the lock, cleanup the session
-			defer func() {
-				if !l.isHeld {
-					close(l.sessionRenew)
-					l.sessionRenew = nil
-				}
-			}()
 		}
+
+		l.sessionRenew = make(chan struct{})
+		l.lockSession = s
+
+		session := l.c.Session()
+		go session.RenewPeriodic(l.opts.SessionTTL, s, &wOpts, l.sessionRenew)
+
+		// If we fail to acquire the lock, cleanup the session
+		defer func() {
+			if !l.isHeld {
+				close(l.sessionRenew)
+				l.sessionRenew = nil
+			}
+		}()
 	}
 
 	// Setup the query options
 	kv := l.c.KV()
-	qOpts := &QueryOptions{
-		WaitTime: l.opts.LockWaitTime,
+	qOpts := QueryOptions{
+		WaitTime:  l.opts.LockWaitTime,
+		Namespace: l.opts.Namespace,
 	}
 
 	start := time.Now()
@@ -179,17 +187,18 @@ WAIT:
 
 	// Handle the one-shot mode.
 	if l.opts.LockTryOnce && attempts > 0 {
-		elapsed := time.Now().Sub(start)
-		if elapsed > qOpts.WaitTime {
+		elapsed := time.Since(start)
+		if elapsed > l.opts.LockWaitTime {
 			return nil, nil
 		}
 
-		qOpts.WaitTime -= elapsed
+		// Query wait time should not exceed the lock wait time
+		qOpts.WaitTime = l.opts.LockWaitTime - elapsed
 	}
 	attempts++
 
 	// Look for an existing lock, blocking until not taken
-	pair, meta, err := kv.Get(l.opts.Key, qOpts)
+	pair, meta, err := kv.Get(l.opts.Key, &qOpts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read lock: %v", err)
 	}
@@ -207,7 +216,8 @@ WAIT:
 
 	// Try to acquire the lock
 	pair = l.lockEntry(l.lockSession)
-	locked, _, err = kv.Acquire(pair, nil)
+
+	locked, _, err = kv.Acquire(pair, &wOpts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to acquire lock: %v", err)
 	}
@@ -216,7 +226,7 @@ WAIT:
 	if !locked {
 		// Determine why the lock failed
 		qOpts.WaitIndex = 0
-		pair, meta, err = kv.Get(l.opts.Key, qOpts)
+		pair, meta, err = kv.Get(l.opts.Key, &qOpts)
 		if pair != nil && pair.Session != "" {
 			//If the session is not null, this means that a wait can safely happen
 			//using a long poll
@@ -275,7 +285,9 @@ func (l *Lock) Unlock() error {
 
 	// Release the lock explicitly
 	kv := l.c.KV()
-	_, _, err := kv.Release(lockEnt, nil)
+	w := WriteOptions{Namespace: l.opts.Namespace}
+
+	_, _, err := kv.Release(lockEnt, &w)
 	if err != nil {
 		return fmt.Errorf("failed to release lock: %v", err)
 	}
@@ -296,7 +308,9 @@ func (l *Lock) Destroy() error {
 
 	// Look for an existing lock
 	kv := l.c.KV()
-	pair, _, err := kv.Get(l.opts.Key, nil)
+	q := QueryOptions{Namespace: l.opts.Namespace}
+
+	pair, _, err := kv.Get(l.opts.Key, &q)
 	if err != nil {
 		return fmt.Errorf("failed to read lock: %v", err)
 	}
@@ -317,7 +331,8 @@ func (l *Lock) Destroy() error {
 	}
 
 	// Attempt the delete
-	didRemove, _, err := kv.DeleteCAS(pair, nil)
+	w := WriteOptions{Namespace: l.opts.Namespace}
+	didRemove, _, err := kv.DeleteCAS(pair, &w)
 	if err != nil {
 		return fmt.Errorf("failed to remove lock: %v", err)
 	}
@@ -337,7 +352,8 @@ func (l *Lock) createSession() (string, error) {
 			TTL:  l.opts.SessionTTL,
 		}
 	}
-	id, _, err := session.Create(se, nil)
+	w := WriteOptions{Namespace: l.opts.Namespace}
+	id, _, err := session.Create(se, &w)
 	if err != nil {
 		return "", err
 	}
@@ -359,17 +375,20 @@ func (l *Lock) lockEntry(session string) *KVPair {
 func (l *Lock) monitorLock(session string, stopCh chan struct{}) {
 	defer close(stopCh)
 	kv := l.c.KV()
-	opts := &QueryOptions{RequireConsistent: true}
+	opts := QueryOptions{
+		RequireConsistent: true,
+		Namespace:         l.opts.Namespace,
+	}
 WAIT:
 	retries := l.opts.MonitorRetries
 RETRY:
-	pair, meta, err := kv.Get(l.opts.Key, opts)
+	pair, meta, err := kv.Get(l.opts.Key, &opts)
 	if err != nil {
 		// If configured we can try to ride out a brief Consul unavailability
 		// by doing retries. Note that we have to attempt the retry in a non-
 		// blocking fashion so that we have a clean place to reset the retry
 		// counter if service is restored.
-		if retries > 0 && IsServerError(err) {
+		if retries > 0 && IsRetryableError(err) {
 			time.Sleep(l.opts.MonitorRetryTime)
 			retries--
 			opts.WaitIndex = 0

@@ -1,33 +1,18 @@
 /*
  *
- * Copyright 2017, Google Inc.
- * All rights reserved.
+ * Copyright 2017 gRPC authors.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are
- * met:
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- *     * Redistributions of source code must retain the above copyright
- * notice, this list of conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above
- * copyright notice, this list of conditions and the following disclaimer
- * in the documentation and/or other materials provided with the
- * distribution.
- *     * Neither the name of Google Inc. nor the names of its
- * contributors may be used to endorse or promote products derived from
- * this software without specific prior written permission.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  *
  */
 
@@ -43,68 +28,24 @@
 package status
 
 import (
+	"context"
 	"fmt"
 
-	"github.com/golang/protobuf/proto"
 	spb "google.golang.org/genproto/googleapis/rpc/status"
+
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/internal/status"
 )
 
-// statusError is an alias of a status proto.  It implements error and Status,
-// and a nil statusError should never be returned by this package.
-type statusError spb.Status
-
-func (se *statusError) Error() string {
-	p := (*spb.Status)(se)
-	return fmt.Sprintf("rpc error: code = %s desc = %s", codes.Code(p.GetCode()), p.GetMessage())
-}
-
-func (se *statusError) status() *Status {
-	return &Status{s: (*spb.Status)(se)}
-}
-
-// Status represents an RPC status code, message, and details.  It is immutable
-// and should be created with New, Newf, or FromProto.
-type Status struct {
-	s *spb.Status
-}
-
-// Code returns the status code contained in s.
-func (s *Status) Code() codes.Code {
-	if s == nil || s.s == nil {
-		return codes.OK
-	}
-	return codes.Code(s.s.Code)
-}
-
-// Message returns the message contained in s.
-func (s *Status) Message() string {
-	if s == nil || s.s == nil {
-		return ""
-	}
-	return s.s.Message
-}
-
-// Proto returns s's status as an spb.Status proto message.
-func (s *Status) Proto() *spb.Status {
-	if s == nil {
-		return nil
-	}
-	return proto.Clone(s.s).(*spb.Status)
-}
-
-// Err returns an immutable error representing s; returns nil if s.Code() is
-// OK.
-func (s *Status) Err() error {
-	if s.Code() == codes.OK {
-		return nil
-	}
-	return (*statusError)(s.s)
-}
+// Status references google.golang.org/grpc/internal/status. It represents an
+// RPC status code, message, and details.  It is immutable and should be
+// created with New, Newf, or FromProto.
+// https://godoc.org/google.golang.org/grpc/internal/status
+type Status = status.Status
 
 // New returns a Status representing c and msg.
 func New(c codes.Code, msg string) *Status {
-	return &Status{s: &spb.Status{Code: int32(c), Message: msg}}
+	return status.New(c, msg)
 }
 
 // Newf returns New(c, fmt.Sprintf(format, a...)).
@@ -129,17 +70,58 @@ func ErrorProto(s *spb.Status) error {
 
 // FromProto returns a Status representing s.
 func FromProto(s *spb.Status) *Status {
-	return &Status{s: proto.Clone(s).(*spb.Status)}
+	return status.FromProto(s)
 }
 
 // FromError returns a Status representing err if it was produced from this
-// package, otherwise it returns nil, false.
+// package or has a method `GRPCStatus() *Status`. Otherwise, ok is false and a
+// Status is returned with codes.Unknown and the original error message.
 func FromError(err error) (s *Status, ok bool) {
 	if err == nil {
-		return &Status{s: &spb.Status{Code: int32(codes.OK)}}, true
+		return nil, true
 	}
-	if s, ok := err.(*statusError); ok {
-		return s.status(), true
+	if se, ok := err.(interface {
+		GRPCStatus() *Status
+	}); ok {
+		return se.GRPCStatus(), true
 	}
-	return nil, false
+	return New(codes.Unknown, err.Error()), false
+}
+
+// Convert is a convenience function which removes the need to handle the
+// boolean return value from FromError.
+func Convert(err error) *Status {
+	s, _ := FromError(err)
+	return s
+}
+
+// Code returns the Code of the error if it is a Status error, codes.OK if err
+// is nil, or codes.Unknown otherwise.
+func Code(err error) codes.Code {
+	// Don't use FromError to avoid allocation of OK status.
+	if err == nil {
+		return codes.OK
+	}
+	if se, ok := err.(interface {
+		GRPCStatus() *Status
+	}); ok {
+		return se.GRPCStatus().Code()
+	}
+	return codes.Unknown
+}
+
+// FromContextError converts a context error into a Status.  It returns a
+// Status with codes.OK if err is nil, or a Status with codes.Unknown if err is
+// non-nil and not a context error.
+func FromContextError(err error) *Status {
+	switch err {
+	case nil:
+		return nil
+	case context.DeadlineExceeded:
+		return New(codes.DeadlineExceeded, err.Error())
+	case context.Canceled:
+		return New(codes.Canceled, err.Error())
+	default:
+		return New(codes.Unknown, err.Error())
+	}
 }

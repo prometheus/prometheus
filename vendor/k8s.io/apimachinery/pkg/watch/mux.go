@@ -84,6 +84,13 @@ type functionFakeRuntimeObject func()
 func (obj functionFakeRuntimeObject) GetObjectKind() schema.ObjectKind {
 	return schema.EmptyObjectKind
 }
+func (obj functionFakeRuntimeObject) DeepCopyObject() runtime.Object {
+	if obj == nil {
+		return nil
+	}
+	// funcs are immutable. Hence, just return the original func.
+	return obj
+}
 
 // Execute f, blocking the incoming queue (and waiting for it to drain first).
 // The purpose of this terrible hack is so that watchers added after an event
@@ -197,11 +204,7 @@ func (m *Broadcaster) Shutdown() {
 func (m *Broadcaster) loop() {
 	// Deliberately not catching crashes here. Yes, bring down the process if there's a
 	// bug in watch.Broadcaster.
-	for {
-		event, ok := <-m.incoming
-		if !ok {
-			break
-		}
+	for event := range m.incoming {
 		if event.Type == internalRunFunctionMarker {
 			event.Object.(functionFakeRuntimeObject)()
 			continue

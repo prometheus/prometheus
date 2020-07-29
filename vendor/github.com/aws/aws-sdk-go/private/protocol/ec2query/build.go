@@ -1,7 +1,7 @@
 // Package ec2query provides serialization of AWS EC2 requests and responses.
 package ec2query
 
-//go:generate go run -tags codegen ../../../models/protocol_tests/generate.go ../../../models/protocol_tests/input/ec2.json build_test.go
+//go:generate go run -tags codegen ../../../private/model/cli/gen-protocol-tests ../../../models/protocol_tests/input/ec2.json build_test.go
 
 import (
 	"net/url"
@@ -21,10 +21,11 @@ func Build(r *request.Request) {
 		"Version": {r.ClientInfo.APIVersion},
 	}
 	if err := queryutil.Parse(body, r.Params, true); err != nil {
-		r.Error = awserr.New("SerializationError", "failed encoding EC2 Query request", err)
+		r.Error = awserr.New(request.ErrCodeSerialization,
+			"failed encoding EC2 Query request", err)
 	}
 
-	if r.ExpireTime == 0 {
+	if !r.IsPresigned() {
 		r.HTTPRequest.Method = "POST"
 		r.HTTPRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded; charset=utf-8")
 		r.SetBufferBody([]byte(body.Encode()))

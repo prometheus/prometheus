@@ -325,7 +325,7 @@ func (p *TextParser) startLabelValue() stateFn {
 	// - Other labels have to be added to currentLabels for signature calculation.
 	if p.currentMF.GetType() == dto.MetricType_SUMMARY {
 		if p.currentLabelPair.GetName() == model.QuantileLabel {
-			if p.currentQuantile, p.err = strconv.ParseFloat(p.currentLabelPair.GetValue(), 64); p.err != nil {
+			if p.currentQuantile, p.err = parseFloat(p.currentLabelPair.GetValue()); p.err != nil {
 				// Create a more helpful error message.
 				p.parseError(fmt.Sprintf("expected float as value for 'quantile' label, got %q", p.currentLabelPair.GetValue()))
 				return nil
@@ -337,7 +337,7 @@ func (p *TextParser) startLabelValue() stateFn {
 	// Similar special treatment of histograms.
 	if p.currentMF.GetType() == dto.MetricType_HISTOGRAM {
 		if p.currentLabelPair.GetName() == model.BucketLabel {
-			if p.currentBucket, p.err = strconv.ParseFloat(p.currentLabelPair.GetValue(), 64); p.err != nil {
+			if p.currentBucket, p.err = parseFloat(p.currentLabelPair.GetValue()); p.err != nil {
 				// Create a more helpful error message.
 				p.parseError(fmt.Sprintf("expected float as value for 'le' label, got %q", p.currentLabelPair.GetValue()))
 				return nil
@@ -359,7 +359,7 @@ func (p *TextParser) startLabelValue() stateFn {
 		}
 		return p.readingValue
 	default:
-		p.parseError(fmt.Sprintf("unexpected end of label value %q", p.currentLabelPair.Value))
+		p.parseError(fmt.Sprintf("unexpected end of label value %q", p.currentLabelPair.GetValue()))
 		return nil
 	}
 }
@@ -392,7 +392,7 @@ func (p *TextParser) readingValue() stateFn {
 	if p.readTokenUntilWhitespace(); p.err != nil {
 		return nil // Unexpected end of input.
 	}
-	value, err := strconv.ParseFloat(p.currentToken.String(), 64)
+	value, err := parseFloat(p.currentToken.String())
 	if err != nil {
 		// Create a more helpful error message.
 		p.parseError(fmt.Sprintf("expected float as value, got %q", p.currentToken.String()))
@@ -556,8 +556,8 @@ func (p *TextParser) readTokenUntilWhitespace() {
 // byte considered is the byte already read (now in p.currentByte).  The first
 // newline byte encountered is still copied into p.currentByte, but not into
 // p.currentToken. If recognizeEscapeSequence is true, two escape sequences are
-// recognized: '\\' tranlates into '\', and '\n' into a line-feed character. All
-// other escape sequences are invalid and cause an error.
+// recognized: '\\' translates into '\', and '\n' into a line-feed character.
+// All other escape sequences are invalid and cause an error.
 func (p *TextParser) readTokenUntilNewline(recognizeEscapeSequence bool) {
 	p.currentToken.Reset()
 	escaped := false
@@ -754,4 +754,11 @@ func histogramMetricName(name string) string {
 	default:
 		return name
 	}
+}
+
+func parseFloat(s string) (float64, error) {
+	if strings.ContainsAny(s, "pP_") {
+		return 0, fmt.Errorf("unsupported character in float")
+	}
+	return strconv.ParseFloat(s, 64)
 }

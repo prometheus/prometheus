@@ -2,10 +2,21 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package snappy implements the snappy block-based compression format.
-// It aims for very high speeds and reasonable compression.
+// Package snappy implements the Snappy compression format. It aims for very
+// high speeds and reasonable compression.
 //
-// The C++ snappy implementation is at https://github.com/google/snappy
+// There are actually two Snappy formats: block and stream. They are related,
+// but different: trying to decompress block-compressed data as a Snappy stream
+// will fail, and vice versa. The block format is the Decode and Encode
+// functions and the stream format is the Reader and Writer types.
+//
+// The block format, the more common case, is used when the complete size (the
+// number of bytes) of the original data is known upfront, at the time
+// compression starts. The stream format, also known as the framing format, is
+// for when that isn't always true.
+//
+// The canonical, C++ implementation is at https://github.com/google/snappy and
+// it only implements the block format.
 package snappy // import "github.com/golang/snappy"
 
 import (

@@ -18,25 +18,23 @@ import (
 	"math"
 	"net/url"
 	"testing"
-
-	"github.com/prometheus/common/model"
-	"github.com/stretchr/testify/require"
+	"time"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
-type testTemplatesScenario struct {
-	text       string
-	output     string
-	input      interface{}
-	shouldFail bool
-	html       bool
-}
-
 func TestTemplateExpansion(t *testing.T) {
-	scenarios := []testTemplatesScenario{
+	scenarios := []struct {
+		text        string
+		output      string
+		input       interface{}
+		queryResult promql.Vector
+		shouldFail  bool
+		html        bool
+		errorMsg    string
+	}{
 		{
 			// No template.
 			text:   "plain text",
@@ -46,6 +44,12 @@ func TestTemplateExpansion(t *testing.T) {
 			// Simple value.
 			text:   "{{ 1 }}",
 			output: "1",
+		},
+		{
+			// Non-ASCII space (not allowed in text/template, see https://github.com/golang/go/blob/master/src/text/template/parse/lex.go#L98)
+			text:       "{{ }}",
+			shouldFail: true,
+			errorMsg:   "error parsing template test: template: test:1: unexpected unrecognized character in action: U+00A0 in command",
 		},
 		{
 			// HTML escaping.
@@ -70,58 +74,103 @@ func TestTemplateExpansion(t *testing.T) {
 			output: "1 2",
 		},
 		{
-			text:   "{{ query \"1.5\" | first | value }}",
-			output: "1.5",
-		},
-		{
-			// Get value from scalar query.
-			text:   "{{ query \"scalar(count(metric))\" | first | value }}",
-			output: "2",
+			text:        "{{ query \"1.5\" | first | value }}",
+			output:      "1.5",
+			queryResult: promql.Vector{{Point: promql.Point{T: 0, V: 1.5}}},
 		},
 		{
 			// Get value from query.
-			text:   "{{ query \"metric{instance='a'}\" | first | value }}",
+			text: "{{ query \"metric{instance='a'}\" | first | value }}",
+			queryResult: promql.Vector{
+				{
+					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
+					Point:  promql.Point{T: 0, V: 11},
+				}},
 			output: "11",
 		},
 		{
 			// Get label from query.
-			text:   "{{ query \"metric{instance='a'}\" | first | label \"instance\" }}",
+			text: "{{ query \"metric{instance='a'}\" | first | label \"instance\" }}",
+
+			queryResult: promql.Vector{
+				{
+					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
+					Point:  promql.Point{T: 0, V: 11},
+				}},
+			output: "a",
+		},
+		{
+			// Get label "__value__" from query.
+			text: "{{ query \"metric{__value__='a'}\" | first | strvalue }}",
+			queryResult: promql.Vector{
+				{
+					Metric: labels.FromStrings(labels.MetricName, "metric", "__value__", "a"),
+					Point:  promql.Point{T: 0, V: 11},
+				}},
 			output: "a",
 		},
 		{
 			// Missing label is empty when using label function.
-			text:   "{{ query \"metric{instance='a'}\" | first | label \"foo\" }}",
+			text: "{{ query \"metric{instance='a'}\" | first | label \"foo\" }}",
+			queryResult: promql.Vector{
+				{
+					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
+					Point:  promql.Point{T: 0, V: 11},
+				}},
 			output: "",
 		},
 		{
 			// Missing label is empty when not using label function.
-			text:   "{{ $x := query \"metric\" | first }}{{ $x.Labels.foo }}",
+			text: "{{ $x := query \"metric\" | first }}{{ $x.Labels.foo }}",
+			queryResult: promql.Vector{
+				{
+					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
+					Point:  promql.Point{T: 0, V: 11},
+				}},
 			output: "",
 		},
 		{
-			text:   "{{ $x := query \"metric\" | first }}{{ $x.Labels.foo }}",
+			text: "{{ $x := query \"metric\" | first }}{{ $x.Labels.foo }}",
+			queryResult: promql.Vector{
+				{
+					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
+					Point:  promql.Point{T: 0, V: 11},
+				}},
 			output: "",
 			html:   true,
 		},
 		{
 			// Range over query and sort by label.
-			text:   "{{ range query \"metric\" | sortByLabel \"instance\" }}{{.Labels.instance}}:{{.Value}}: {{end}}",
+			text: "{{ range query \"metric\" | sortByLabel \"instance\" }}{{.Labels.instance}}:{{.Value}}: {{end}}",
+			queryResult: promql.Vector{
+				{
+					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "b"),
+					Point:  promql.Point{T: 0, V: 21},
+				}, {
+					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
+					Point:  promql.Point{T: 0, V: 11},
+				}},
 			output: "a:11: b:21: ",
 		},
 		{
 			// Unparsable template.
 			text:       "{{",
 			shouldFail: true,
+			errorMsg:   "error parsing template test: template: test:1: unexpected unclosed action in command",
 		},
 		{
 			// Error in function.
-			text:       "{{ query \"missing\" | first }}",
-			shouldFail: true,
+			text:        "{{ query \"missing\" | first }}",
+			queryResult: promql.Vector{},
+			shouldFail:  true,
+			errorMsg:    "error executing template test: template: test:1:21: executing \"test\" at <first>: error calling first: first() called on vector with no elements",
 		},
 		{
 			// Panic.
-			text:       "{{ (query \"missing\").banana }}",
-			shouldFail: true,
+			text:        "{{ (query \"missing\").banana }}",
+			queryResult: promql.Vector{},
+			shouldFail:  true,
+			errorMsg:    "error executing template test: template: test:1:10: executing \"test\" at <\"missing\">: can't evaluate field banana in type template.queryResult",
 		},
 		{
 			// Regex replacement.
@@ -157,6 +206,11 @@ func TestTemplateExpansion(t *testing.T) {
 			text:   "{{ range . }}{{ humanize . }}:{{ humanize1024 . }}:{{ humanizeDuration . }}:{{humanizeTimestamp .}}:{{ end }}",
 			input:  []float64{math.Inf(1), math.Inf(-1), math.NaN()},
 			output: "+Inf:+Inf:+Inf:+Inf:-Inf:-Inf:-Inf:-Inf:NaN:NaN:NaN:NaN:",
+		},
+		{
+			// HumanizePercentage - model.SampleValue input.
+			text:   "{{ -0.22222 | humanizePercentage }}:{{ 0.0 | humanizePercentage }}:{{ 0.1234567 | humanizePercentage }}:{{ 1.23456 | humanizePercentage }}",
+			output: "-22.22%:0%:12.35%:123.5%",
 		},
 		{
 			// HumanizeTimestamp - model.SampleValue input.
@@ -211,54 +265,32 @@ func TestTemplateExpansion(t *testing.T) {
 		},
 	}
 
-	time := model.Time(0)
-
-	storage := testutil.NewStorage(t)
-	defer storage.Close()
-
-	app, err := storage.Appender()
-	if err != nil {
-		t.Fatalf("get appender: %s", err)
-	}
-
-	_, err = app.Add(labels.FromStrings(labels.MetricName, "metric", "instance", "a"), 0, 11)
-	require.NoError(t, err)
-	_, err = app.Add(labels.FromStrings(labels.MetricName, "metric", "instance", "b"), 0, 21)
-	require.NoError(t, err)
-
-	if err := app.Commit(); err != nil {
-		t.Fatalf("commit samples: %s", err)
-	}
-
-	engine := promql.NewEngine(storage, nil)
-
 	extURL, err := url.Parse("http://testhost:9090/path/prefix")
 	if err != nil {
 		panic(err)
 	}
 
-	for i, s := range scenarios {
+	for _, s := range scenarios {
+		queryFunc := func(_ context.Context, _ string, _ time.Time) (promql.Vector, error) {
+			return s.queryResult, nil
+		}
 		var result string
 		var err error
-		expander := NewTemplateExpander(context.Background(), s.text, "test", s.input, time, engine, extURL)
+		expander := NewTemplateExpander(context.Background(), s.text, "test", s.input, 0, queryFunc, extURL)
 		if s.html {
 			result, err = expander.ExpandHTML(nil)
 		} else {
 			result, err = expander.Expand()
 		}
 		if s.shouldFail {
-			if err == nil {
-				t.Fatalf("%d. Error not returned from %v", i, s.text)
-			}
+			testutil.NotOk(t, err, "%v", s.text)
 			continue
 		}
-		if err != nil {
-			t.Fatalf("%d. Error returned from %v: %v", i, s.text, err)
-			continue
-		}
-		if result != s.output {
-			t.Fatalf("%d. Error in result from %v: Expected '%v' Got '%v'", i, s.text, s.output, result)
-			continue
+
+		testutil.Ok(t, err)
+
+		if err == nil {
+			testutil.Equals(t, result, s.output)
 		}
 	}
 }

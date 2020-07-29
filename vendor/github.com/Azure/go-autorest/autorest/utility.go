@@ -1,15 +1,33 @@
 package autorest
 
+// Copyright 2017 Microsoft Corporation
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+
 import (
 	"bytes"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"io"
+	"io/ioutil"
+	"net"
+	"net/http"
 	"net/url"
 	"reflect"
-	"sort"
 	"strings"
+
+	"github.com/Azure/go-autorest/autorest/adal"
 )
 
 // EncodedAs is a series of constants specifying various data encodings
@@ -123,13 +141,38 @@ func MapToValues(m map[string]interface{}) url.Values {
 	return v
 }
 
-// String method converts interface v to string. If interface is a list, it
-// joins list elements using separator.
-func String(v interface{}, sep ...string) string {
-	if len(sep) > 0 {
-		return ensureValueString(strings.Join(v.([]string), sep[0]))
+// AsStringSlice method converts interface{} to []string.
+// s must be of type slice or array or an error is returned.
+// Each element of s will be converted to its string representation.
+func AsStringSlice(s interface{}) ([]string, error) {
+	v := reflect.ValueOf(s)
+	if v.Kind() != reflect.Slice && v.Kind() != reflect.Array {
+		return nil, NewError("autorest", "AsStringSlice", "the value's type is not a slice or array.")
 	}
-	return ensureValueString(v)
+	stringSlice := make([]string, 0, v.Len())
+
+	for i := 0; i < v.Len(); i++ {
+		stringSlice = append(stringSlice, fmt.Sprintf("%v", v.Index(i)))
+	}
+	return stringSlice, nil
+}
+
+// String method converts interface v to string. If interface is a list, it
+// joins list elements using the separator. Note that only sep[0] will be used for
+// joining if any separator is specified.
+func String(v interface{}, sep ...string) string {
+	if len(sep) == 0 {
+		return ensureValueString(v)
+	}
+	stringSlice, ok := v.([]string)
+	if ok == false {
+		var err error
+		stringSlice, err = AsStringSlice(v)
+		if err != nil {
+			panic(fmt.Sprintf("autorest: Couldn't convert value to a string %s.", err))
+		}
+	}
+	return ensureValueString(strings.Join(stringSlice, sep[0]))
 }
 
 // Encode method encodes url path and query parameters.
@@ -153,26 +196,44 @@ func queryEscape(s string) string {
 	return url.QueryEscape(s)
 }
 
-// This method is same as Encode() method of "net/url" go package,
-// except it does not encode the query parameters because they
-// already come encoded. It formats values map in query format (bar=foo&a=b).
-func createQuery(v url.Values) string {
-	var buf bytes.Buffer
-	keys := make([]string, 0, len(v))
-	for k := range v {
-		keys = append(keys, k)
+// ChangeToGet turns the specified http.Request into a GET (it assumes it wasn't).
+// This is mainly useful for long-running operations that use the Azure-AsyncOperation
+// header, so we change the initial PUT into a GET to retrieve the final result.
+func ChangeToGet(req *http.Request) *http.Request {
+	req.Method = "GET"
+	req.Body = nil
+	req.ContentLength = 0
+	req.Header.Del("Content-Length")
+	return req
+}
+
+// IsTokenRefreshError returns true if the specified error implements the TokenRefreshError
+// interface.  If err is a DetailedError it will walk the chain of Original errors.
+func IsTokenRefreshError(err error) bool {
+	if _, ok := err.(adal.TokenRefreshError); ok {
+		return true
 	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		vs := v[k]
-		prefix := url.QueryEscape(k) + "="
-		for _, v := range vs {
-			if buf.Len() > 0 {
-				buf.WriteByte('&')
-			}
-			buf.WriteString(prefix)
-			buf.WriteString(v)
-		}
+	if de, ok := err.(DetailedError); ok {
+		return IsTokenRefreshError(de.Original)
 	}
-	return buf.String()
+	return false
+}
+
+// IsTemporaryNetworkError returns true if the specified error is a temporary network error or false
+// if it's not.  If the error doesn't implement the net.Error interface the return value is true.
+func IsTemporaryNetworkError(err error) bool {
+	if netErr, ok := err.(net.Error); !ok || (ok && netErr.Temporary()) {
+		return true
+	}
+	return false
+}
+
+// DrainResponseBody reads the response body then closes it.
+func DrainResponseBody(resp *http.Response) error {
+	if resp != nil && resp.Body != nil {
+		_, err := io.Copy(ioutil.Discard, resp.Body)
+		resp.Body.Close()
+		return err
+	}
+	return nil
 }

@@ -1,3 +1,14 @@
+# See the OWNERS docs at https://go.k8s.io/owners
+
+approvers:
+- thockin
+- lavalamp
+- smarterclayton
+- wojtek-t
+- deads2k
+- caesarxuchao
+- liggitt
+- ncdc
 reviewers:
 - thockin
 - lavalamp
@@ -10,11 +21,9 @@ reviewers:
 - mikedanese
 - liggitt
 - nikhiljindal
-- bprashanth
 - erictune
 - davidopp
 - pmorie
-- kargakis
 - janetkuo
 - justinsb
 - eparis
@@ -24,8 +33,6 @@ reviewers:
 - madhusudancs
 - hongchaodeng
 - krousey
-- markturansky
-- fgrzadkowski
 - xiang90
 - mml
 - ingvagabund
@@ -33,9 +40,6 @@ reviewers:
 - jessfraz
 - david-mcmahon
 - mfojtik
-- '249043822'
-- lixiaobing10051267
-- ddysher
 - mqliang
-- feihujiang
 - sdminonne
+- ncdc

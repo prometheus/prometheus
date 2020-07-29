@@ -14,6 +14,7 @@
 package notifier
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -21,15 +22,21 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"reflect"
+	"sync/atomic"
 	"testing"
 	"time"
 
-	old_ctx "golang.org/x/net/context"
-
+	"github.com/pkg/errors"
+	"github.com/prometheus/alertmanager/api/v2/models"
+	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	yaml "gopkg.in/yaml.v2"
+
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/relabel"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestPostPath(t *testing.T) {
@@ -58,14 +65,12 @@ func TestPostPath(t *testing.T) {
 		},
 	}
 	for _, c := range cases {
-		if res := postPath(c.in); res != c.out {
-			t.Errorf("Expected post path %q for %q but got %q", c.out, c.in, res)
-		}
+		testutil.Equals(t, c.out, postPath(c.in, config.AlertmanagerAPIVersionV1))
 	}
 }
 
 func TestHandlerNextBatch(t *testing.T) {
-	h := New(&Options{}, nil)
+	h := NewManager(&Options{}, nil)
 
 	for i := range make([]struct{}, 2*maxBatchSize+1) {
 		h.queue = append(h.queue, &Alert{
@@ -75,97 +80,98 @@ func TestHandlerNextBatch(t *testing.T) {
 
 	expected := append([]*Alert{}, h.queue...)
 
-	b := h.nextBatch()
-
-	if len(b) != maxBatchSize {
-		t.Fatalf("Expected first batch of length %d, but got %d", maxBatchSize, len(b))
-	}
-	if !alertsEqual(expected[0:maxBatchSize], b) {
-		t.Fatalf("First batch did not match")
-	}
-
-	b = h.nextBatch()
-
-	if len(b) != maxBatchSize {
-		t.Fatalf("Expected second batch of length %d, but got %d", maxBatchSize, len(b))
-	}
-	if !alertsEqual(expected[maxBatchSize:2*maxBatchSize], b) {
-		t.Fatalf("Second batch did not match")
-	}
-
-	b = h.nextBatch()
-
-	if len(b) != 1 {
-		t.Fatalf("Expected third batch of length %d, but got %d", 1, len(b))
-	}
-	if !alertsEqual(expected[2*maxBatchSize:], b) {
-		t.Fatalf("Third batch did not match")
-	}
-
-	if len(h.queue) != 0 {
-		t.Fatalf("Expected queue to be empty but got %d alerts", len(h.queue))
-	}
+	testutil.Ok(t, alertsEqual(expected[0:maxBatchSize], h.nextBatch()))
+	testutil.Ok(t, alertsEqual(expected[maxBatchSize:2*maxBatchSize], h.nextBatch()))
+	testutil.Ok(t, alertsEqual(expected[2*maxBatchSize:], h.nextBatch()))
+	testutil.Assert(t, len(h.queue) == 0, "Expected queue to be empty but got %d alerts", len(h.queue))
 }
 
-func alertsEqual(a, b []*Alert) bool {
+func alertsEqual(a, b []*Alert) error {
 	if len(a) != len(b) {
-		fmt.Println("len mismatch")
-		return false
+		return errors.Errorf("length mismatch: %v != %v", a, b)
 	}
 	for i, alert := range a {
 		if !labels.Equal(alert.Labels, b[i].Labels) {
-			fmt.Println("mismatch", alert.Labels, b[i].Labels)
-			return false
+			return errors.Errorf("label mismatch at index %d: %s != %s", i, alert.Labels, b[i].Labels)
 		}
 	}
-	return true
+	return nil
 }
 
 func TestHandlerSendAll(t *testing.T) {
 	var (
-		expected         []*Alert
-		status1, status2 int
+		errc             = make(chan error, 1)
+		expected         = make([]*Alert, 0, maxBatchSize)
+		status1, status2 = int32(http.StatusOK), int32(http.StatusOK)
 	)
 
-	f := func(w http.ResponseWriter, r *http.Request) {
-		defer r.Body.Close()
-
-		var alerts []*Alert
-		if err := json.NewDecoder(r.Body).Decode(&alerts); err != nil {
-			t.Fatalf("Unexpected error on input decoding: %s", err)
-		}
-
-		if !alertsEqual(alerts, expected) {
-			t.Errorf("%#v %#v", *alerts[0], *expected[0])
-			t.Fatalf("Unexpected alerts received %v exp %v", alerts, expected)
-		}
+	newHTTPServer := func(u, p string, status *int32) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var err error
+			defer func() {
+				if err == nil {
+					return
+				}
+				select {
+				case errc <- err:
+				default:
+				}
+			}()
+			user, pass, _ := r.BasicAuth()
+			if user != u || pass != p {
+				err = errors.Errorf("unexpected user/password: %s/%s != %s/%s", user, pass, u, p)
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			var alerts []*Alert
+			err = json.NewDecoder(r.Body).Decode(&alerts)
+			if err == nil {
+				err = alertsEqual(expected, alerts)
+			}
+			w.WriteHeader(int(atomic.LoadInt32(status)))
+		}))
 	}
-	server1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		f(w, r)
-		w.WriteHeader(status1)
-	}))
-	server2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		f(w, r)
-		w.WriteHeader(status2)
-	}))
-
+	server1 := newHTTPServer("prometheus", "testing_password", &status1)
+	server2 := newHTTPServer("", "", &status2)
 	defer server1.Close()
 	defer server2.Close()
 
-	h := New(&Options{}, nil)
-	h.alertmanagers = append(h.alertmanagers, &alertmanagerSet{
+	h := NewManager(&Options{}, nil)
+
+	authClient, _ := config_util.NewClientFromConfig(
+		config_util.HTTPClientConfig{
+			BasicAuth: &config_util.BasicAuth{
+				Username: "prometheus",
+				Password: "testing_password",
+			},
+		}, "auth_alertmanager", false)
+
+	h.alertmanagers = make(map[string]*alertmanagerSet)
+
+	am1Cfg := config.DefaultAlertmanagerConfig
+	am1Cfg.Timeout = model.Duration(time.Second)
+
+	am2Cfg := config.DefaultAlertmanagerConfig
+	am2Cfg.Timeout = model.Duration(time.Second)
+
+	h.alertmanagers["1"] = &alertmanagerSet{
 		ams: []alertmanager{
 			alertmanagerMock{
 				urlf: func() string { return server1.URL },
 			},
+		},
+		cfg:    &am1Cfg,
+		client: authClient,
+	}
+
+	h.alertmanagers["2"] = &alertmanagerSet{
+		ams: []alertmanager{
 			alertmanagerMock{
 				urlf: func() string { return server2.URL },
 			},
 		},
-		cfg: &config.AlertmanagerConfig{
-			Timeout: time.Second,
-		},
-	})
+		cfg: &am2Cfg,
+	}
 
 	for i := range make([]struct{}, maxBatchSize) {
 		h.queue = append(h.queue, &Alert{
@@ -176,21 +182,25 @@ func TestHandlerSendAll(t *testing.T) {
 		})
 	}
 
-	status1 = http.StatusOK
-	status2 = http.StatusOK
-	if !h.sendAll(h.queue...) {
-		t.Fatalf("all sends failed unexpectedly")
+	checkNoErr := func() {
+		t.Helper()
+		select {
+		case err := <-errc:
+			testutil.Ok(t, err)
+		default:
+		}
 	}
 
-	status1 = http.StatusNotFound
-	if !h.sendAll(h.queue...) {
-		t.Fatalf("all sends failed unexpectedly")
-	}
+	testutil.Assert(t, h.sendAll(h.queue...), "all sends failed unexpectedly")
+	checkNoErr()
 
-	status2 = http.StatusInternalServerError
-	if h.sendAll(h.queue...) {
-		t.Fatalf("all sends succeeded unexpectedly")
-	}
+	atomic.StoreInt32(&status1, int32(http.StatusNotFound))
+	testutil.Assert(t, h.sendAll(h.queue...), "all sends failed unexpectedly")
+	checkNoErr()
+
+	atomic.StoreInt32(&status2, int32(http.StatusInternalServerError))
+	testutil.Assert(t, !h.sendAll(h.queue...), "all sends succeeded unexpectedly")
+	checkNoErr()
 }
 
 func TestCustomDo(t *testing.T) {
@@ -198,42 +208,38 @@ func TestCustomDo(t *testing.T) {
 	const testBody = "testbody"
 
 	var received bool
-	h := New(&Options{
-		Do: func(ctx old_ctx.Context, client *http.Client, req *http.Request) (*http.Response, error) {
+	h := NewManager(&Options{
+		Do: func(_ context.Context, client *http.Client, req *http.Request) (*http.Response, error) {
 			received = true
 			body, err := ioutil.ReadAll(req.Body)
-			if err != nil {
-				t.Fatalf("Unable to read request body: %v", err)
-			}
-			if string(body) != testBody {
-				t.Fatalf("Unexpected body; want %v, got %v", testBody, string(body))
-			}
-			if req.URL.String() != testURL {
-				t.Fatalf("Unexpected URL; want %v, got %v", testURL, req.URL.String())
-			}
+
+			testutil.Ok(t, err)
+
+			testutil.Equals(t, testBody, string(body))
+
+			testutil.Equals(t, testURL, req.URL.String())
+
 			return &http.Response{
-				Body: ioutil.NopCloser(nil),
+				Body: ioutil.NopCloser(bytes.NewBuffer(nil)),
 			}, nil
 		},
 	}, nil)
 
 	h.sendOne(context.Background(), nil, testURL, []byte(testBody))
 
-	if !received {
-		t.Fatal("Expected to receive an alert, but didn't")
-	}
+	testutil.Assert(t, received, "Expected to receive an alert, but didn't")
 }
 
 func TestExternalLabels(t *testing.T) {
-	h := New(&Options{
+	h := NewManager(&Options{
 		QueueCapacity:  3 * maxBatchSize,
-		ExternalLabels: model.LabelSet{"a": "b"},
-		RelabelConfigs: []*config.RelabelConfig{
+		ExternalLabels: labels.Labels{{Name: "a", Value: "b"}},
+		RelabelConfigs: []*relabel.Config{
 			{
 				SourceLabels: model.LabelNames{"alertname"},
 				TargetLabel:  "a",
 				Action:       "replace",
-				Regex:        config.MustNewRegexp("externalrelabelthis"),
+				Regex:        relabel.MustNewRegexp("externalrelabelthis"),
 				Replacement:  "c",
 			},
 		},
@@ -255,25 +261,23 @@ func TestExternalLabels(t *testing.T) {
 		{Labels: labels.FromStrings("alertname", "externalrelabelthis", "a", "c")},
 	}
 
-	if !alertsEqual(expected, h.queue) {
-		t.Errorf("Expected alerts %v, got %v", expected, h.queue)
-	}
+	testutil.Ok(t, alertsEqual(expected, h.queue))
 }
 
 func TestHandlerRelabel(t *testing.T) {
-	h := New(&Options{
+	h := NewManager(&Options{
 		QueueCapacity: 3 * maxBatchSize,
-		RelabelConfigs: []*config.RelabelConfig{
+		RelabelConfigs: []*relabel.Config{
 			{
 				SourceLabels: model.LabelNames{"alertname"},
 				Action:       "drop",
-				Regex:        config.MustNewRegexp("drop"),
+				Regex:        relabel.MustNewRegexp("drop"),
 			},
 			{
 				SourceLabels: model.LabelNames{"alertname"},
 				TargetLabel:  "alertname",
 				Action:       "replace",
-				Regex:        config.MustNewRegexp("rename"),
+				Regex:        relabel.MustNewRegexp("rename"),
 				Replacement:  "renamed",
 			},
 		},
@@ -293,99 +297,123 @@ func TestHandlerRelabel(t *testing.T) {
 		{Labels: labels.FromStrings("alertname", "renamed")},
 	}
 
-	if !alertsEqual(expected, h.queue) {
-		t.Errorf("Expected alerts %v, got %v", expected, h.queue)
-	}
+	testutil.Ok(t, alertsEqual(expected, h.queue))
 }
 
-func TestHandlerQueueing(t *testing.T) {
+func TestHandlerQueuing(t *testing.T) {
 	var (
-		unblock  = make(chan struct{})
-		called   = make(chan struct{})
-		expected []*Alert
+		expectedc = make(chan []*Alert)
+		called    = make(chan struct{})
+		done      = make(chan struct{})
+		errc      = make(chan error, 1)
 	)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		called <- struct{}{}
-		<-unblock
-
-		defer r.Body.Close()
-
-		var alerts []*Alert
-		if err := json.NewDecoder(r.Body).Decode(&alerts); err != nil {
-			t.Fatalf("Unexpected error on input decoding: %s", err)
+		// Notify the test function that we have received something.
+		select {
+		case called <- struct{}{}:
+		case <-done:
+			return
 		}
 
-		if !alertsEqual(expected, alerts) {
-			t.Errorf("Expected alerts %v, got %v", expected, alerts)
+		// Wait for the test function to unblock us.
+		select {
+		case expected := <-expectedc:
+			var alerts []*Alert
+			err := json.NewDecoder(r.Body).Decode(&alerts)
+			if err == nil {
+				err = alertsEqual(expected, alerts)
+			}
+			select {
+			case errc <- err:
+			default:
+			}
+		case <-done:
 		}
 	}))
+	defer func() {
+		close(done)
+		server.Close()
+	}()
 
-	h := New(&Options{
-		QueueCapacity: 3 * maxBatchSize,
-	},
+	h := NewManager(
+		&Options{
+			QueueCapacity: 3 * maxBatchSize,
+		},
 		nil,
 	)
-	h.alertmanagers = append(h.alertmanagers, &alertmanagerSet{
+
+	h.alertmanagers = make(map[string]*alertmanagerSet)
+
+	am1Cfg := config.DefaultAlertmanagerConfig
+	am1Cfg.Timeout = model.Duration(time.Second)
+
+	h.alertmanagers["1"] = &alertmanagerSet{
 		ams: []alertmanager{
 			alertmanagerMock{
 				urlf: func() string { return server.URL },
 			},
 		},
-		cfg: &config.AlertmanagerConfig{
-			Timeout: time.Second,
-		},
-	})
+		cfg: &am1Cfg,
+	}
+	go h.Run(nil)
+	defer h.Stop()
 
 	var alerts []*Alert
-
 	for i := range make([]struct{}, 20*maxBatchSize) {
 		alerts = append(alerts, &Alert{
 			Labels: labels.FromStrings("alertname", fmt.Sprintf("%d", i)),
 		})
 	}
 
-	go h.Run()
-	defer h.Stop()
-
-	h.Send(alerts[:4*maxBatchSize]...)
-
-	// If the batch is larger than the queue size, the front should be truncated
-	// from the front. Thus, we start at i=1.
-	for i := 1; i < 4; i++ {
-		select {
-		case <-called:
-			expected = alerts[i*maxBatchSize : (i+1)*maxBatchSize]
-			unblock <- struct{}{}
-		case <-time.After(5 * time.Second):
-			t.Fatalf("Alerts were not pushed")
+	assertAlerts := func(expected []*Alert) {
+		t.Helper()
+		for {
+			select {
+			case <-called:
+				expectedc <- expected
+			case err := <-errc:
+				testutil.Ok(t, err)
+				return
+			case <-time.After(5 * time.Second):
+				t.Fatalf("Alerts were not pushed")
+			}
 		}
 	}
 
-	// Send one batch, wait for it to arrive and block so the queue fills up.
-	// Then check whether the queue is truncated in the front once its full.
+	// If the batch is larger than the queue capacity, it should be truncated
+	// from the front.
+	h.Send(alerts[:4*maxBatchSize]...)
+	for i := 1; i < 4; i++ {
+		assertAlerts(alerts[i*maxBatchSize : (i+1)*maxBatchSize])
+	}
+
+	// Send one batch, wait for it to arrive and block the server so the queue fills up.
 	h.Send(alerts[:maxBatchSize]...)
 	<-called
 
-	// Fill the 3*maxBatchSize queue.
-	h.Send(alerts[1*maxBatchSize : 2*maxBatchSize]...)
+	// Send several batches while the server is still blocked so the queue
+	// fills up to its maximum capacity (3*maxBatchSize). Then check that the
+	// queue is truncated in the front.
+	h.Send(alerts[1*maxBatchSize : 2*maxBatchSize]...) // this batch should be dropped.
 	h.Send(alerts[2*maxBatchSize : 3*maxBatchSize]...)
 	h.Send(alerts[3*maxBatchSize : 4*maxBatchSize]...)
 
 	// Send the batch that drops the first one.
 	h.Send(alerts[4*maxBatchSize : 5*maxBatchSize]...)
 
-	expected = alerts[:maxBatchSize]
-	unblock <- struct{}{}
+	// Unblock the server.
+	expectedc <- alerts[:maxBatchSize]
+	select {
+	case err := <-errc:
+		testutil.Ok(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatalf("Alerts were not pushed")
+	}
 
-	for i := 2; i < 4; i++ {
-		select {
-		case <-called:
-			expected = alerts[i*maxBatchSize : (i+1)*maxBatchSize]
-			unblock <- struct{}{}
-		case <-time.After(5 * time.Second):
-			t.Fatalf("Alerts were not pushed")
-		}
+	// Verify that we receive the last 3 batches.
+	for i := 2; i < 5; i++ {
+		assertAlerts(alerts[i*maxBatchSize : (i+1)*maxBatchSize])
 	}
 }
 
@@ -403,18 +431,120 @@ func (a alertmanagerMock) url() *url.URL {
 
 func TestLabelSetNotReused(t *testing.T) {
 	tg := makeInputTargetGroup()
-	_, err := alertmanagerFromGroup(tg, &config.AlertmanagerConfig{})
-	if err != nil {
-		t.Fatal(err)
+	_, _, err := alertmanagerFromGroup(tg, &config.AlertmanagerConfig{})
+
+	testutil.Ok(t, err)
+
+	// Target modified during alertmanager extraction
+	testutil.Equals(t, tg, makeInputTargetGroup())
+}
+
+func TestReload(t *testing.T) {
+	var tests = []struct {
+		in  *targetgroup.Group
+		out string
+	}{
+		{
+			in: &targetgroup.Group{
+				Targets: []model.LabelSet{
+					{
+						"__address__": "alertmanager:9093",
+					},
+				},
+			},
+			out: "http://alertmanager:9093/api/v1/alerts",
+		},
 	}
 
-	if !reflect.DeepEqual(tg, makeInputTargetGroup()) {
-		t.Fatal("Target modified during alertmanager extraction")
+	n := NewManager(&Options{}, nil)
+
+	cfg := &config.Config{}
+	s := `
+alerting:
+  alertmanagers:
+  - static_configs:
+`
+	if err := yaml.UnmarshalStrict([]byte(s), cfg); err != nil {
+		t.Fatalf("Unable to load YAML config: %s", err)
+	}
+	testutil.Equals(t, 1, len(cfg.AlertingConfig.AlertmanagerConfigs))
+
+	if err := n.ApplyConfig(cfg); err != nil {
+		t.Fatalf("Error Applying the config:%v", err)
+	}
+
+	tgs := make(map[string][]*targetgroup.Group)
+	for _, tt := range tests {
+		for k := range cfg.AlertingConfig.AlertmanagerConfigs.ToMap() {
+			tgs[k] = []*targetgroup.Group{
+				tt.in,
+			}
+			break
+		}
+		n.reload(tgs)
+		res := n.Alertmanagers()[0].String()
+
+		testutil.Equals(t, tt.out, res)
+	}
+
+}
+
+func TestDroppedAlertmanagers(t *testing.T) {
+	var tests = []struct {
+		in  *targetgroup.Group
+		out string
+	}{
+		{
+			in: &targetgroup.Group{
+				Targets: []model.LabelSet{
+					{
+						"__address__": "alertmanager:9093",
+					},
+				},
+			},
+			out: "http://alertmanager:9093/api/v1/alerts",
+		},
+	}
+
+	n := NewManager(&Options{}, nil)
+
+	cfg := &config.Config{}
+	s := `
+alerting:
+  alertmanagers:
+  - static_configs:
+    relabel_configs:
+      - source_labels: ['__address__']
+        regex: 'alertmanager:9093'
+        action: drop
+`
+	if err := yaml.UnmarshalStrict([]byte(s), cfg); err != nil {
+		t.Fatalf("Unable to load YAML config: %s", err)
+	}
+	testutil.Equals(t, 1, len(cfg.AlertingConfig.AlertmanagerConfigs))
+
+	if err := n.ApplyConfig(cfg); err != nil {
+		t.Fatalf("Error Applying the config:%v", err)
+	}
+
+	tgs := make(map[string][]*targetgroup.Group)
+	for _, tt := range tests {
+		for k := range cfg.AlertingConfig.AlertmanagerConfigs.ToMap() {
+			tgs[k] = []*targetgroup.Group{
+				tt.in,
+			}
+			break
+		}
+
+		n.reload(tgs)
+		res := n.DroppedAlertmanagers()[0].String()
+
+		testutil.Equals(t, res, tt.out)
 	}
 }
 
-func makeInputTargetGroup() *config.TargetGroup {
-	return &config.TargetGroup{
+func makeInputTargetGroup() *targetgroup.Group {
+	return &targetgroup.Group{
 		Targets: []model.LabelSet{
 			{
 				model.AddressLabel:            model.LabelValue("1.1.1.1:9090"),
@@ -426,4 +556,8 @@ func makeInputTargetGroup() *config.TargetGroup {
 		},
 		Source: "testsource",
 	}
+}
+
+func TestLabelsToOpenAPILabelSet(t *testing.T) {
+	testutil.Equals(t, models.LabelSet{"aaa": "111", "bbb": "222"}, labelsToOpenAPILabelSet(labels.Labels{{Name: "aaa", Value: "111"}, {Name: "bbb", Value: "222"}}))
 }

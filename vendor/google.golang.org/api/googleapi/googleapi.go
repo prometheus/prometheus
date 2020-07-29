@@ -1,4 +1,4 @@
-// Copyright 2011 Google Inc. All rights reserved.
+// Copyright 2011 Google LLC. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -16,7 +16,7 @@ import (
 	"net/url"
 	"strings"
 
-	"google.golang.org/api/googleapi/internal/uritemplates"
+	"google.golang.org/api/internal/third_party/uritemplates"
 )
 
 // ContentTyper is an interface for Readers which know (or would like
@@ -37,24 +37,28 @@ type SizeReaderAt interface {
 // ServerResponse is embedded in each Do response and
 // provides the HTTP status code and header sent by the server.
 type ServerResponse struct {
-	// HTTPStatusCode is the server's response status code.
-	// When using a resource method's Do call, this will always be in the 2xx range.
+	// HTTPStatusCode is the server's response status code. When using a
+	// resource method's Do call, this will always be in the 2xx range.
 	HTTPStatusCode int
 	// Header contains the response header fields from the server.
 	Header http.Header
 }
 
 const (
+	// Version defines the gax version being used. This is typically sent
+	// in an HTTP header to services.
 	Version = "0.5"
 
 	// UserAgent is the header string used to identify this package.
 	UserAgent = "google-api-go-client/" + Version
 
-	// The default chunk size to use for resumable uplods if not specified by the user.
-	DefaultUploadChunkSize = 8 * 1024 * 1024
+	// DefaultUploadChunkSize is the default chunk size to use for resumable
+	// uploads if not specified by the user.
+	DefaultUploadChunkSize = 16 * 1024 * 1024
 
-	// The minimum chunk size that can be used for resumable uploads.  All
-	// user-specified chunk sizes must be multiple of this value.
+	// MinUploadChunkSize is the minimum chunk size that can be used for
+	// resumable uploads.  All user-specified chunk sizes must be multiple of
+	// this value.
 	MinUploadChunkSize = 256 * 1024
 )
 
@@ -65,6 +69,8 @@ type Error struct {
 	// Message is the server response message and is only populated when
 	// explicitly referenced by the JSON server response.
 	Message string `json:"message"`
+	// Details provide more context to an error.
+	Details []interface{} `json:"details"`
 	// Body is the raw response returned by the server.
 	// It is often but not always JSON, depending on how the request fails.
 	Body string
@@ -90,6 +96,16 @@ func (e *Error) Error() string {
 	fmt.Fprintf(&buf, "googleapi: Error %d: ", e.Code)
 	if e.Message != "" {
 		fmt.Fprintf(&buf, "%s", e.Message)
+	}
+	if len(e.Details) > 0 {
+		var detailBuf bytes.Buffer
+		enc := json.NewEncoder(&detailBuf)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(e.Details); err == nil {
+			fmt.Fprint(&buf, "\nDetails:")
+			fmt.Fprintf(&buf, "\n%s", detailBuf.String())
+
+		}
 	}
 	if len(e.Errors) == 0 {
 		return strings.TrimSpace(buf.String())
@@ -149,21 +165,25 @@ func IsNotModified(err error) bool {
 // CheckMediaResponse returns an error (of type *Error) if the response
 // status code is not 2xx. Unlike CheckResponse it does not assume the
 // body is a JSON error document.
+// It is the caller's responsibility to close res.Body.
 func CheckMediaResponse(res *http.Response) error {
 	if res.StatusCode >= 200 && res.StatusCode <= 299 {
 		return nil
 	}
 	slurp, _ := ioutil.ReadAll(io.LimitReader(res.Body, 1<<20))
-	res.Body.Close()
 	return &Error{
 		Code: res.StatusCode,
 		Body: string(slurp),
 	}
 }
 
+// MarshalStyle defines whether to marshal JSON with a {"data": ...} wrapper.
 type MarshalStyle bool
 
+// WithDataWrapper marshals JSON with a {"data": ...} wrapper.
 var WithDataWrapper = MarshalStyle(true)
+
+// WithoutDataWrapper marshals JSON without a {"data": ...} wrapper.
 var WithoutDataWrapper = MarshalStyle(false)
 
 func (wrap MarshalStyle) JSONReader(v interface{}) (io.Reader, error) {
@@ -181,37 +201,12 @@ func (wrap MarshalStyle) JSONReader(v interface{}) (io.Reader, error) {
 	return buf, nil
 }
 
-// endingWithErrorReader from r until it returns an error.  If the
-// final error from r is io.EOF and e is non-nil, e is used instead.
-type endingWithErrorReader struct {
-	r io.Reader
-	e error
-}
-
-func (er endingWithErrorReader) Read(p []byte) (n int, err error) {
-	n, err = er.r.Read(p)
-	if err == io.EOF && er.e != nil {
-		err = er.e
-	}
-	return
-}
-
-// countingWriter counts the number of bytes it receives to write, but
-// discards them.
-type countingWriter struct {
-	n *int64
-}
-
-func (w countingWriter) Write(p []byte) (int, error) {
-	*w.n += int64(len(p))
-	return len(p), nil
-}
-
 // ProgressUpdater is a function that is called upon every progress update of a resumable upload.
 // This is the only part of a resumable upload (from googleapi) that is usable by the developer.
 // The remaining usable pieces of resumable uploads is exposed in each auto-generated API.
 type ProgressUpdater func(current, total int64)
 
+// MediaOption defines the interface for setting media options.
 type MediaOption interface {
 	setOptions(o *MediaOptions)
 }
@@ -268,40 +263,36 @@ func ProcessMediaOptions(opts []MediaOption) *MediaOptions {
 	return mo
 }
 
+// ResolveRelative resolves relatives such as "http://www.golang.org/" and
+// "topics/myproject/mytopic" into a single string, such as
+// "http://www.golang.org/topics/myproject/mytopic". It strips all parent
+// references (e.g. ../..) as well as anything after the host
+// (e.g. /bar/gaz gets stripped out of foo.com/bar/gaz).
+//
+// ResolveRelative panics if either basestr or relstr is not able to be parsed.
 func ResolveRelative(basestr, relstr string) string {
-	u, _ := url.Parse(basestr)
-	rel, _ := url.Parse(relstr)
+	u, err := url.Parse(basestr)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse %q", basestr))
+	}
+	afterColonPath := ""
+	if i := strings.IndexRune(relstr, ':'); i > 0 {
+		afterColonPath = relstr[i+1:]
+		relstr = relstr[:i]
+	}
+	rel, err := url.Parse(relstr)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse %q", relstr))
+	}
 	u = u.ResolveReference(rel)
 	us := u.String()
+	if afterColonPath != "" {
+		us = fmt.Sprintf("%s:%s", us, afterColonPath)
+	}
 	us = strings.Replace(us, "%7B", "{", -1)
 	us = strings.Replace(us, "%7D", "}", -1)
+	us = strings.Replace(us, "%2A", "*", -1)
 	return us
-}
-
-// has4860Fix is whether this Go environment contains the fix for
-// http://golang.org/issue/4860
-var has4860Fix bool
-
-// init initializes has4860Fix by checking the behavior of the net/http package.
-func init() {
-	r := http.Request{
-		URL: &url.URL{
-			Scheme: "http",
-			Opaque: "//opaque",
-		},
-	}
-	b := &bytes.Buffer{}
-	r.Write(b)
-	has4860Fix = bytes.HasPrefix(b.Bytes(), []byte("GET http"))
-}
-
-// SetOpaque sets u.Opaque from u.Path such that HTTP requests to it
-// don't alter any hex-escaped characters in u.Path.
-func SetOpaque(u *url.URL) {
-	u.Opaque = "//" + u.Host + u.Path
-	if !has4860Fix {
-		u.Opaque = u.Scheme + ":" + u.Opaque
-	}
 }
 
 // Expand subsitutes any {encoded} strings in the URL passed in using
@@ -309,10 +300,10 @@ func SetOpaque(u *url.URL) {
 //
 // This calls SetOpaque to avoid encoding of the parameters in the URL path.
 func Expand(u *url.URL, expansions map[string]string) {
-	expanded, err := uritemplates.Expand(u.Path, expansions)
+	escaped, unescaped, err := uritemplates.Expand(u.Path, expansions)
 	if err == nil {
-		u.Path = expanded
-		SetOpaque(u)
+		u.Path = unescaped
+		u.RawPath = escaped
 	}
 }
 
@@ -360,7 +351,7 @@ func ConvertVariant(v map[string]interface{}, dst interface{}) bool {
 }
 
 // A Field names a field to be retrieved with a partial response.
-// See https://developers.google.com/gdata/docs/2.0/basics#PartialResponse
+// https://cloud.google.com/storage/docs/json_api/v1/how-tos/performance
 //
 // Partial responses can dramatically reduce the amount of data that must be sent to your application.
 // In order to request partial responses, you can specify the full list of fields
@@ -376,9 +367,6 @@ func ConvertVariant(v map[string]interface{}, dst interface{}) bool {
 // or if you were also interested in each Item's "Updated" field, you can combine them like this:
 //
 //     svc.Events.List().Fields("nextPageToken", "items(id,updated)").Do()
-//
-// More information about field formatting can be found here:
-// https://developers.google.com/+/api/#fields-syntax
 //
 // Another way to find field names is through the Google API explorer:
 // https://developers.google.com/apis-explorer/#p/

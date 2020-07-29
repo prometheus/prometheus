@@ -19,6 +19,7 @@ package field
 import (
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
@@ -47,7 +48,7 @@ func (v *Error) ErrorBody() string {
 	var s string
 	switch v.Type {
 	case ErrorTypeRequired, ErrorTypeForbidden, ErrorTypeTooLong, ErrorTypeInternal:
-		s = fmt.Sprintf("%s", v.Type)
+		s = v.Type.String()
 	default:
 		value := v.BadValue
 		valueType := reflect.TypeOf(value)
@@ -115,6 +116,10 @@ const (
 	// This is similar to ErrorTypeInvalid, but the error will not include the
 	// too-long value.  See TooLong().
 	ErrorTypeTooLong ErrorType = "FieldValueTooLong"
+	// ErrorTypeTooMany is used to report "too many". This is used to
+	// report that a given list has too many items. This is similar to FieldValueTooLong,
+	// but the error indicates quantity instead of length.
+	ErrorTypeTooMany ErrorType = "FieldValueTooMany"
 	// ErrorTypeInternal is used to report other errors that are not related
 	// to user input.  See InternalError().
 	ErrorTypeInternal ErrorType = "InternalError"
@@ -137,6 +142,8 @@ func (t ErrorType) String() string {
 		return "Forbidden"
 	case ErrorTypeTooLong:
 		return "Too long"
+	case ErrorTypeTooMany:
+		return "Too many"
 	case ErrorTypeInternal:
 		return "Internal error"
 	default:
@@ -175,7 +182,11 @@ func Invalid(field *Path, value interface{}, detail string) *Error {
 func NotSupported(field *Path, value interface{}, validValues []string) *Error {
 	detail := ""
 	if validValues != nil && len(validValues) > 0 {
-		detail = "supported values: " + strings.Join(validValues, ", ")
+		quotedValues := make([]string, len(validValues))
+		for i, v := range validValues {
+			quotedValues[i] = strconv.Quote(v)
+		}
+		detail = "supported values: " + strings.Join(quotedValues, ", ")
 	}
 	return &Error{ErrorTypeNotSupported, field.String(), value, detail}
 }
@@ -193,7 +204,14 @@ func Forbidden(field *Path, detail string) *Error {
 // Invalid, but the returned error will not include the too-long
 // value.
 func TooLong(field *Path, value interface{}, maxLength int) *Error {
-	return &Error{ErrorTypeTooLong, field.String(), value, fmt.Sprintf("must have at most %d characters", maxLength)}
+	return &Error{ErrorTypeTooLong, field.String(), value, fmt.Sprintf("must have at most %d bytes", maxLength)}
+}
+
+// TooMany returns a *Error indicating "too many". This is used to
+// report that a given list has too many items. This is similar to TooLong,
+// but the returned error indicates quantity instead of length.
+func TooMany(field *Path, actualQuantity, maxQuantity int) *Error {
+	return &Error{ErrorTypeTooMany, field.String(), actualQuantity, fmt.Sprintf("must have at most %d items", maxQuantity)}
 }
 
 // InternalError returns a *Error indicating "internal error".  This is used

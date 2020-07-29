@@ -18,6 +18,9 @@ import (
 	"errors"
 
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/tombstones"
 )
 
 // The errors exposed.
@@ -28,39 +31,93 @@ var (
 	ErrOutOfBounds                 = errors.New("out of bounds")
 )
 
+// Appendable allows creating appenders.
+type Appendable interface {
+	// Appender returns a new appender for the storage.
+	Appender() Appender
+}
+
+// SampleAndChunkQueryable allows retrieving samples as well as encoded samples in form of chunks.
+type SampleAndChunkQueryable interface {
+	Queryable
+	ChunkQueryable
+}
+
 // Storage ingests and manages samples, along with various indexes. All methods
 // are goroutine-safe. Storage implements storage.SampleAppender.
 type Storage interface {
-	Queryable
+	SampleAndChunkQueryable
+	Appendable
 
 	// StartTime returns the oldest timestamp stored in the storage.
 	StartTime() (int64, error)
-
-	// Appender returns a new appender against the storage.
-	Appender() (Appender, error)
 
 	// Close closes the storage and all its underlying resources.
 	Close() error
 }
 
 // A Queryable handles queries against a storage.
+// Use it when you need to have access to all samples without chunk encoding abstraction e.g promQL.
 type Queryable interface {
 	// Querier returns a new Querier on the storage.
 	Querier(ctx context.Context, mint, maxt int64) (Querier, error)
 }
 
-// Querier provides reading access to time series data.
+// Querier provides querying access over time series data of a fixed time range.
 type Querier interface {
-	// Select returns a set of series that matches the given label matchers.
-	Select(...*labels.Matcher) SeriesSet
+	LabelQuerier
 
+	// Select returns a set of series that matches the given label matchers.
+	// Caller can specify if it requires returned series to be sorted. Prefer not requiring sorting for better performance.
+	// It allows passing hints that can help in optimising select, but it's up to implementation how this is used if used at all.
+	Select(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) SeriesSet
+}
+
+// A ChunkQueryable handles queries against a storage.
+// Use it when you need to have access to samples in encoded format.
+type ChunkQueryable interface {
+	// ChunkQuerier returns a new ChunkQuerier on the storage.
+	ChunkQuerier(ctx context.Context, mint, maxt int64) (ChunkQuerier, error)
+}
+
+// ChunkQuerier provides querying access over time series data of a fixed time range.
+type ChunkQuerier interface {
+	LabelQuerier
+
+	// Select returns a set of series that matches the given label matchers.
+	// Caller can specify if it requires returned series to be sorted. Prefer not requiring sorting for better performance.
+	// It allows passing hints that can help in optimising select, but it's up to implementation how this is used if used at all.
+	Select(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) ChunkSeriesSet
+}
+
+// LabelQuerier provides querying access over labels.
+type LabelQuerier interface {
 	// LabelValues returns all potential values for a label name.
-	LabelValues(name string) ([]string, error)
+	// It is not safe to use the strings beyond the lifefime of the querier.
+	LabelValues(name string) ([]string, Warnings, error)
+
+	// LabelNames returns all the unique label names present in the block in sorted order.
+	LabelNames() ([]string, Warnings, error)
 
 	// Close releases the resources of the Querier.
 	Close() error
 }
 
+// SelectHints specifies hints passed for data selections.
+// This is used only as an option for implementation to use.
+type SelectHints struct {
+	Start int64 // Start time in milliseconds for this select.
+	End   int64 // End time in milliseconds for this select.
+
+	Step int64  // Query step size in milliseconds.
+	Func string // String representation of surrounding function or aggregation.
+
+	Grouping []string // List of label names used in aggregation.
+	By       bool     // Indicate whether it is without or by.
+	Range    int64    // Range vector selector range in milliseconds.
+}
+
+// TODO(bwplotka): Move to promql/engine_test.go?
 // QueryableFunc is an adapter to allow the use of ordinary functions as
 // Queryables. It follows the idea of http.HandlerFunc.
 type QueryableFunc func(ctx context.Context, mint, maxt int64) (Querier, error)
@@ -71,14 +128,31 @@ func (f QueryableFunc) Querier(ctx context.Context, mint, maxt int64) (Querier, 
 }
 
 // Appender provides batched appends against a storage.
+// It must be completed with a call to Commit or Rollback and must not be reused afterwards.
+//
+// Operations on the Appender interface are not goroutine-safe.
 type Appender interface {
+	// Add adds a sample pair for the given series. A reference number is
+	// returned which can be used to add further samples in the same or later
+	// transactions.
+	// Returned reference numbers are ephemeral and may be rejected in calls
+	// to AddFast() at any point. Adding the sample via Add() returns a new
+	// reference number.
+	// If the reference is 0 it must not be used for caching.
 	Add(l labels.Labels, t int64, v float64) (uint64, error)
 
-	AddFast(l labels.Labels, ref uint64, t int64, v float64) error
+	// AddFast adds a sample pair for the referenced series. It is generally
+	// faster than adding a sample by providing its full label set.
+	AddFast(ref uint64, t int64, v float64) error
 
-	// Commit submits the collected samples and purges the batch.
+	// Commit submits the collected samples and purges the batch. If Commit
+	// returns a non-nil error, it also rolls back all modifications made in
+	// the appender so far, as Rollback would do. In any case, an Appender
+	// must not be used anymore after Commit has been called.
 	Commit() error
 
+	// Rollback rolls back all modifications made in the appender so far.
+	// Appender has to be discarded after rollback.
 	Rollback() error
 }
 
@@ -86,97 +160,101 @@ type Appender interface {
 type SeriesSet interface {
 	Next() bool
 	At() Series
+	// The error that iteration as failed with.
+	// When an error occurs, set cannot continue to iterate.
 	Err() error
+	// A collection of warnings for the whole set.
+	// Warnings could be return even iteration has not failed with error.
+	Warnings() Warnings
 }
 
-// Series represents a single time series.
+var emptySeriesSet = errSeriesSet{}
+
+// EmptySeriesSet returns a series set that's always empty.
+func EmptySeriesSet() SeriesSet {
+	return emptySeriesSet
+}
+
+type errSeriesSet struct {
+	err error
+}
+
+func (s errSeriesSet) Next() bool         { return false }
+func (s errSeriesSet) At() Series         { return nil }
+func (s errSeriesSet) Err() error         { return s.err }
+func (s errSeriesSet) Warnings() Warnings { return nil }
+
+// ErrSeriesSet returns a series set that wraps an error.
+func ErrSeriesSet(err error) SeriesSet {
+	return errSeriesSet{err: err}
+}
+
+var emptyChunkSeriesSet = errChunkSeriesSet{}
+
+// EmptyChunkSeriesSet returns a chunk series set that's always empty.
+func EmptyChunkSeriesSet() ChunkSeriesSet {
+	return emptyChunkSeriesSet
+}
+
+type errChunkSeriesSet struct {
+	err error
+}
+
+func (s errChunkSeriesSet) Next() bool         { return false }
+func (s errChunkSeriesSet) At() ChunkSeries    { return nil }
+func (s errChunkSeriesSet) Err() error         { return s.err }
+func (s errChunkSeriesSet) Warnings() Warnings { return nil }
+
+// ErrChunkSeriesSet returns a chunk series set that wraps an error.
+func ErrChunkSeriesSet(err error) ChunkSeriesSet {
+	return errChunkSeriesSet{err: err}
+}
+
+// Series exposes a single time series and allows iterating over samples.
 type Series interface {
-	// Labels returns the complete set of labels identifying the series.
-	Labels() labels.Labels
-
-	// Iterator returns a new iterator of the data of the series.
-	Iterator() SeriesIterator
+	Labels
+	SampleIteratable
 }
 
-// SeriesIterator iterates over the data of a time series.
-type SeriesIterator interface {
-	// Seek advances the iterator forward to the value at or after
-	// the given timestamp.
-	Seek(t int64) bool
-	// At returns the current timestamp/value pair.
-	At() (t int64, v float64)
-	// Next advances the iterator by one.
+// ChunkSeriesSet contains a set of chunked series.
+type ChunkSeriesSet interface {
 	Next() bool
-	// Err returns the current error.
+	At() ChunkSeries
+	// The error that iteration has failed with.
+	// When an error occurs, set cannot continue to iterate.
+	Err() error
+	// A collection of warnings for the whole set.
+	// Warnings could be return even iteration has not failed with error.
+	Warnings() Warnings
+}
+
+// ChunkSeries exposes a single time series and allows iterating over chunks.
+type ChunkSeries interface {
+	Labels
+	ChunkIteratable
+}
+
+// Labels represents an item that has labels e.g. time series.
+type Labels interface {
+	// Labels returns the complete set of labels. For series it means all labels identifying the series.
+	Labels() labels.Labels
+}
+
+type SampleIteratable interface {
+	// Iterator returns a new iterator of the data of the series.
+	Iterator() chunkenc.Iterator
+}
+
+type ChunkIteratable interface {
+	// ChunkIterator returns a new iterator that iterates over non-overlapping chunks of the series.
+	Iterator() chunks.Iterator
+}
+
+// TODO(bwplotka): Remove in next Pr.
+type DeprecatedChunkSeriesSet interface {
+	Next() bool
+	At() (labels.Labels, []chunks.Meta, tombstones.Intervals)
 	Err() error
 }
 
-// dedupedSeriesSet takes two series sets and returns them deduplicated.
-// The input sets must be sorted and identical if two series exist in both, i.e.
-// if their label sets are equal, the datapoints must be equal as well.
-type dedupedSeriesSet struct {
-	a, b SeriesSet
-
-	cur          Series
-	adone, bdone bool
-}
-
-// DeduplicateSeriesSet merges two SeriesSet and removes duplicates.
-// If two series exist in both sets, their datapoints must be equal.
-func DeduplicateSeriesSet(a, b SeriesSet) SeriesSet {
-	if a == nil {
-		return b
-	}
-	if b == nil {
-		return a
-	}
-
-	s := &dedupedSeriesSet{a: a, b: b}
-	s.adone = !s.a.Next()
-	s.bdone = !s.b.Next()
-
-	return s
-}
-
-func (s *dedupedSeriesSet) At() Series {
-	return s.cur
-}
-
-func (s *dedupedSeriesSet) Err() error {
-	if s.a.Err() != nil {
-		return s.a.Err()
-	}
-	return s.b.Err()
-}
-
-func (s *dedupedSeriesSet) compare() int {
-	if s.adone {
-		return 1
-	}
-	if s.bdone {
-		return -1
-	}
-	return labels.Compare(s.a.At().Labels(), s.b.At().Labels())
-}
-
-func (s *dedupedSeriesSet) Next() bool {
-	if s.adone && s.bdone || s.Err() != nil {
-		return false
-	}
-
-	d := s.compare()
-
-	// Both sets contain the current series. Chain them into a single one.
-	if d > 0 {
-		s.cur = s.b.At()
-		s.bdone = !s.b.Next()
-	} else if d < 0 {
-		s.cur = s.a.At()
-		s.adone = !s.a.Next()
-	} else {
-		s.cur = s.a.At()
-		s.adone = !s.a.Next()
-		s.bdone = !s.b.Next()
-	}
-	return true
-}
+type Warnings []error

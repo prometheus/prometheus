@@ -21,18 +21,19 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strconv"
+	"strings"
 	"testing"
-	"time"
 
-	"github.com/stretchr/testify/assert"
-
+	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/config"
+
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 var (
-	conf = config.TritonSDConfig{
+	conf = SDConfig{
 		Account:         "testAccount",
+		Role:            "container",
 		DNSSuffix:       "triton.example.com",
 		Endpoint:        "127.0.0.1",
 		Port:            443,
@@ -40,8 +41,9 @@ var (
 		RefreshInterval: 1,
 		TLSConfig:       config.TLSConfig{InsecureSkipVerify: true},
 	}
-	badconf = config.TritonSDConfig{
+	badconf = SDConfig{
 		Account:         "badTestAccount",
+		Role:            "container",
 		DNSSuffix:       "bad.triton.example.com",
 		Endpoint:        "127.0.0.1",
 		Port:            443,
@@ -54,58 +56,90 @@ var (
 			CertFile:           "shouldnotexist.cert",
 		},
 	}
+	groupsconf = SDConfig{
+		Account:         "testAccount",
+		Role:            "container",
+		DNSSuffix:       "triton.example.com",
+		Endpoint:        "127.0.0.1",
+		Groups:          []string{"foo", "bar"},
+		Port:            443,
+		Version:         1,
+		RefreshInterval: 1,
+		TLSConfig:       config.TLSConfig{InsecureSkipVerify: true},
+	}
+	cnconf = SDConfig{
+		Account:         "testAccount",
+		Role:            "cn",
+		DNSSuffix:       "triton.example.com",
+		Endpoint:        "127.0.0.1",
+		Port:            443,
+		Version:         1,
+		RefreshInterval: 1,
+		TLSConfig:       config.TLSConfig{InsecureSkipVerify: true},
+	}
 )
 
+func newTritonDiscovery(c SDConfig) (*Discovery, error) {
+	return New(nil, &c)
+}
+
 func TestTritonSDNew(t *testing.T) {
-	td, err := New(nil, &conf)
-	assert.Nil(t, err)
-	assert.NotNil(t, td)
-	assert.NotNil(t, td.client)
-	assert.NotNil(t, td.interval)
-	assert.NotNil(t, td.sdConfig)
-	assert.Equal(t, conf.Account, td.sdConfig.Account)
-	assert.Equal(t, conf.DNSSuffix, td.sdConfig.DNSSuffix)
-	assert.Equal(t, conf.Endpoint, td.sdConfig.Endpoint)
-	assert.Equal(t, conf.Port, td.sdConfig.Port)
+	td, err := newTritonDiscovery(conf)
+	testutil.Ok(t, err)
+	testutil.Assert(t, td != nil, "")
+	testutil.Assert(t, td.client != nil, "")
+	testutil.Assert(t, td.interval != 0, "")
+	testutil.Assert(t, td.sdConfig != nil, "")
+	testutil.Equals(t, conf.Account, td.sdConfig.Account)
+	testutil.Equals(t, conf.DNSSuffix, td.sdConfig.DNSSuffix)
+	testutil.Equals(t, conf.Endpoint, td.sdConfig.Endpoint)
+	testutil.Equals(t, conf.Port, td.sdConfig.Port)
 }
 
 func TestTritonSDNewBadConfig(t *testing.T) {
-	td, err := New(nil, &badconf)
-	assert.NotNil(t, err)
-	assert.Nil(t, td)
+	td, err := newTritonDiscovery(badconf)
+	testutil.NotOk(t, err)
+	testutil.Assert(t, td == nil, "")
 }
 
-func TestTritonSDRun(t *testing.T) {
-	var (
-		td, err     = New(nil, &conf)
-		ch          = make(chan []*config.TargetGroup)
-		ctx, cancel = context.WithCancel(context.Background())
-	)
+func TestTritonSDNewGroupsConfig(t *testing.T) {
+	td, err := newTritonDiscovery(groupsconf)
+	testutil.Ok(t, err)
+	testutil.Assert(t, td != nil, "")
+	testutil.Assert(t, td.client != nil, "")
+	testutil.Assert(t, td.interval != 0, "")
+	testutil.Assert(t, td.sdConfig != nil, "")
+	testutil.Equals(t, groupsconf.Account, td.sdConfig.Account)
+	testutil.Equals(t, groupsconf.DNSSuffix, td.sdConfig.DNSSuffix)
+	testutil.Equals(t, groupsconf.Endpoint, td.sdConfig.Endpoint)
+	testutil.Equals(t, groupsconf.Groups, td.sdConfig.Groups)
+	testutil.Equals(t, groupsconf.Port, td.sdConfig.Port)
+}
 
-	assert.Nil(t, err)
-	assert.NotNil(t, td)
-
-	go td.Run(ctx, ch)
-
-	select {
-	case <-time.After(60 * time.Millisecond):
-		// Expected.
-	case tgs := <-ch:
-		t.Fatalf("Unexpected target groups in triton discovery: %s", tgs)
-	}
-
-	cancel()
+func TestTritonSDNewCNConfig(t *testing.T) {
+	td, err := newTritonDiscovery(cnconf)
+	testutil.Ok(t, err)
+	testutil.Assert(t, td != nil, "")
+	testutil.Assert(t, td.client != nil, "")
+	testutil.Assert(t, td.interval != 0, "")
+	testutil.Assert(t, td.sdConfig != nil, "")
+	testutil.Equals(t, cnconf.Role, td.sdConfig.Role)
+	testutil.Equals(t, cnconf.Account, td.sdConfig.Account)
+	testutil.Equals(t, cnconf.DNSSuffix, td.sdConfig.DNSSuffix)
+	testutil.Equals(t, cnconf.Endpoint, td.sdConfig.Endpoint)
+	testutil.Equals(t, cnconf.Port, td.sdConfig.Port)
 }
 
 func TestTritonSDRefreshNoTargets(t *testing.T) {
-	tgts := testTritonSDRefresh(t, "{\"containers\":[]}")
-	assert.Nil(t, tgts)
+	tgts := testTritonSDRefresh(t, conf, "{\"containers\":[]}")
+	testutil.Assert(t, tgts == nil, "")
 }
 
 func TestTritonSDRefreshMultipleTargets(t *testing.T) {
 	var (
 		dstr = `{"containers":[
 		 	{
+                                "groups":["foo","bar","baz"],
 				"server_uuid":"44454c4c-5000-104d-8037-b7c04f5a5131",
 				"vm_alias":"server01",
 				"vm_brand":"lx",
@@ -122,56 +156,99 @@ func TestTritonSDRefreshMultipleTargets(t *testing.T) {
 		}`
 	)
 
-	tgts := testTritonSDRefresh(t, dstr)
-	assert.NotNil(t, tgts)
-	assert.Equal(t, 2, len(tgts))
+	tgts := testTritonSDRefresh(t, conf, dstr)
+	testutil.Assert(t, tgts != nil, "")
+	testutil.Equals(t, 2, len(tgts))
 }
 
 func TestTritonSDRefreshNoServer(t *testing.T) {
 	var (
-		td, err = New(nil, &conf)
+		td, _ = newTritonDiscovery(conf)
 	)
-	assert.Nil(t, err)
-	assert.NotNil(t, td)
 
-	tg, rerr := td.refresh()
-	assert.NotNil(t, rerr)
-	assert.Contains(t, rerr.Error(), "an error occurred when requesting targets from the discovery endpoint.")
-	assert.NotNil(t, tg)
-	assert.Nil(t, tg.Targets)
+	_, err := td.refresh(context.Background())
+	testutil.NotOk(t, err)
+	testutil.Equals(t, strings.Contains(err.Error(), "an error occurred when requesting targets from the discovery endpoint"), true)
 }
 
-func testTritonSDRefresh(t *testing.T, dstr string) []model.LabelSet {
+func TestTritonSDRefreshCancelled(t *testing.T) {
 	var (
-		td, err = New(nil, &conf)
-		s       = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		td, _ = newTritonDiscovery(conf)
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := td.refresh(ctx)
+	testutil.NotOk(t, err)
+	testutil.Equals(t, strings.Contains(err.Error(), context.Canceled.Error()), true)
+}
+
+func TestTritonSDRefreshCNsUUIDOnly(t *testing.T) {
+	var (
+		dstr = `{"cns":[
+		 	{
+				"server_uuid":"44454c4c-5000-104d-8037-b7c04f5a5131"
+			},
+			{
+				"server_uuid":"a5894692-bd32-4ca1-908a-e2dda3c3a5e6"
+			}]
+		}`
+	)
+
+	tgts := testTritonSDRefresh(t, cnconf, dstr)
+	testutil.Assert(t, tgts != nil, "")
+	testutil.Equals(t, 2, len(tgts))
+}
+
+func TestTritonSDRefreshCNsWithHostname(t *testing.T) {
+	var (
+		dstr = `{"cns":[
+		 	{
+				"server_uuid":"44454c4c-5000-104d-8037-b7c04f5a5131",
+				"server_hostname": "server01"
+			},
+			{
+				"server_uuid":"a5894692-bd32-4ca1-908a-e2dda3c3a5e6",
+				"server_hostname": "server02"
+			}]
+		}`
+	)
+
+	tgts := testTritonSDRefresh(t, cnconf, dstr)
+	testutil.Assert(t, tgts != nil, "")
+	testutil.Equals(t, 2, len(tgts))
+}
+
+func testTritonSDRefresh(t *testing.T, c SDConfig, dstr string) []model.LabelSet {
+	var (
+		td, _ = newTritonDiscovery(c)
+		s     = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintln(w, dstr)
 		}))
 	)
 
 	defer s.Close()
 
-	u, uperr := url.Parse(s.URL)
-	assert.Nil(t, uperr)
-	assert.NotNil(t, u)
+	u, err := url.Parse(s.URL)
+	testutil.Ok(t, err)
+	testutil.Assert(t, u != nil, "")
 
-	host, strport, sherr := net.SplitHostPort(u.Host)
-	assert.Nil(t, sherr)
-	assert.NotNil(t, host)
-	assert.NotNil(t, strport)
+	host, strport, err := net.SplitHostPort(u.Host)
+	testutil.Ok(t, err)
+	testutil.Assert(t, host != "", "")
+	testutil.Assert(t, strport != "", "")
 
-	port, atoierr := strconv.Atoi(strport)
-	assert.Nil(t, atoierr)
-	assert.NotNil(t, port)
+	port, err := strconv.Atoi(strport)
+	testutil.Ok(t, err)
+	testutil.Assert(t, port != 0, "")
 
 	td.sdConfig.Port = port
 
-	assert.Nil(t, err)
-	assert.NotNil(t, td)
-
-	tg, err := td.refresh()
-	assert.Nil(t, err)
-	assert.NotNil(t, tg)
+	tgs, err := td.refresh(context.Background())
+	testutil.Ok(t, err)
+	testutil.Equals(t, 1, len(tgs))
+	tg := tgs[0]
+	testutil.Assert(t, tg != nil, "")
 
 	return tg.Targets
 }

@@ -6,10 +6,11 @@ sort_rank: 1
 
 # Querying Prometheus
 
-Prometheus provides a functional expression language that lets the user select
-and aggregate time series data in real time. The result of an expression can
-either be shown as a graph, viewed as tabular data in Prometheus's expression
-browser, or consumed by external systems via the [HTTP API](api.md).
+Prometheus provides a functional query language called PromQL (Prometheus Query
+Language) that lets the user select and aggregate time series data in real
+time. The result of an expression can either be shown as a graph, viewed as
+tabular data in Prometheus's expression browser, or consumed by external
+systems via the [HTTP API](api.md).
 
 ## Examples
 
@@ -54,10 +55,23 @@ Example:
 
 ### Float literals
 
-Scalar float values can be literally written as numbers of the form
-`[-](digits)[.(digits)]`.
+Scalar float values can be written as literal integer or floating-point numbers in the format (whitespace only included for better readability):
 
+    [-+]?(
+          [0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?
+        | 0[xX][0-9a-fA-F]+
+        | [nN][aA][nN]
+        | [iI][nN][fF]
+    )
+
+Examples:
+
+    23
     -2.43
+    3.4e-9
+    0x8f
+    -Inf
+    NaN
 
 ## Time series Selectors
 
@@ -73,8 +87,8 @@ name:
 
     http_requests_total
 
-It is possible to filter these time series further by appending a set of labels
-to match in curly braces (`{}`).
+It is possible to filter these time series further by appending a comma separated list of label
+matchers in curly braces (`{}`).
 
 This example selects only those time series with the `http_requests_total`
 metric name that also have the `job` label set to `prometheus` and their
@@ -87,16 +101,17 @@ against regular expressions. The following label matching operators exist:
 
 * `=`: Select labels that are exactly equal to the provided string.
 * `!=`: Select labels that are not equal to the provided string.
-* `=~`: Select labels that regex-match the provided string (or substring).
-* `!~`: Select labels that do not regex-match the provided string (or substring).
+* `=~`: Select labels that regex-match the provided string.
+* `!~`: Select labels that do not regex-match the provided string.
 
 For example, this selects all `http_requests_total` time series for `staging`,
 `testing`, and `development` environments and HTTP methods other than `GET`.
 
     http_requests_total{environment=~"staging|testing|development",method!="GET"}
 
-Label matchers that match empty label values also select all time series that do
-not have the specific label set at all. Regex-matches are fully anchored.
+Label matchers that match empty label values also select all time series that
+do not have the specific label set at all. Regex-matches are fully anchored. It
+is possible to have multiple matchers for the same label name.
 
 Vector selectors must either specify a name or at least one label matcher
 that does not match the empty string. The following expression is illegal:
@@ -114,7 +129,18 @@ Label matchers can also be applied to metric names by matching against the inter
 `{__name__="http_requests_total"}`. Matchers other than `=` (`!=`, `=~`, `!~`) may also be used.
 The following expression selects all metrics that have a name starting with `job:`:
 
-    {__name__=~"^job:.*"}
+    {__name__=~"job:.*"}
+
+The metric name must not be one of the keywords `bool`, `on`, `ignoring`, `group_left` and `group_right`. The following expression is illegal:
+
+    on{} # Bad!
+
+A workaround for this restriction is to use the `__name__` label:
+
+    {__name__="on"} # Good!
+
+All regular expressions in Prometheus use [RE2
+syntax](https://github.com/google/re2/wiki/Syntax).
 
 ### Range Vector Selectors
 
@@ -160,10 +186,18 @@ While the following would be *incorrect*:
 
     sum(http_requests_total{method="GET"}) offset 5m // INVALID.
 
-The same works for range vectors. This returns the 5-minutes rate that
+The same works for range vectors. This returns the 5-minute rate that
 `http_requests_total` had a week ago:
 
     rate(http_requests_total[5m] offset 1w)
+
+## Subquery
+
+Subquery allows you to run an instant query for a given range and resolution. The result of a subquery is a range vector.
+
+Syntax: `<instant_query> '[' <range> ':' [<resolution>] ']' [ offset <duration> ]`
+
+* `<resolution>` is optional. Default is the global evaluation interval.
 
 ## Operators
 
@@ -174,6 +208,12 @@ in detail in the [expression language operators](operators.md) page.
 
 Prometheus supports several functions to operate on data. These are described
 in detail in the [expression language functions](functions.md) page.
+
+## Comments
+
+PromQL supports line comments that start with `#`. Example:
+
+        # This is a comment
 
 ## Gotchas
 

@@ -28,30 +28,15 @@ import (
 
 // Implements RESTScope interface
 type restScope struct {
-	name             RESTScopeName
-	paramName        string
-	argumentName     string
-	paramDescription string
+	name RESTScopeName
 }
 
 func (r *restScope) Name() RESTScopeName {
 	return r.name
 }
-func (r *restScope) ParamName() string {
-	return r.paramName
-}
-func (r *restScope) ArgumentName() string {
-	return r.argumentName
-}
-func (r *restScope) ParamDescription() string {
-	return r.paramDescription
-}
 
 var RESTScopeNamespace = &restScope{
-	name:             RESTScopeNameNamespace,
-	paramName:        "namespaces",
-	argumentName:     "namespace",
-	paramDescription: "object name and auth scope, such as for teams and projects",
+	name: RESTScopeNameNamespace,
 }
 
 var RESTScopeRoot = &restScope{
@@ -77,11 +62,6 @@ type DefaultRESTMapper struct {
 	kindToScope          map[schema.GroupVersionKind]RESTScope
 	singularToPlural     map[schema.GroupVersionResource]schema.GroupVersionResource
 	pluralToSingular     map[schema.GroupVersionResource]schema.GroupVersionResource
-
-	interfacesFunc VersionInterfacesFunc
-
-	// aliasToResource is used for mapping aliases to resources
-	aliasToResource map[string][]string
 }
 
 func (m *DefaultRESTMapper) String() string {
@@ -90,22 +70,17 @@ func (m *DefaultRESTMapper) String() string {
 
 var _ RESTMapper = &DefaultRESTMapper{}
 
-// VersionInterfacesFunc returns the appropriate typer, and metadata accessor for a
-// given api version, or an error if no such api version exists.
-type VersionInterfacesFunc func(version schema.GroupVersion) (*VersionInterfaces, error)
-
 // NewDefaultRESTMapper initializes a mapping between Kind and APIVersion
 // to a resource name and back based on the objects in a runtime.Scheme
 // and the Kubernetes API conventions. Takes a group name, a priority list of the versions
 // to search when an object has no default version (set empty to return an error),
 // and a function that retrieves the correct metadata for a given version.
-func NewDefaultRESTMapper(defaultGroupVersions []schema.GroupVersion, f VersionInterfacesFunc) *DefaultRESTMapper {
+func NewDefaultRESTMapper(defaultGroupVersions []schema.GroupVersion) *DefaultRESTMapper {
 	resourceToKind := make(map[schema.GroupVersionResource]schema.GroupVersionKind)
 	kindToPluralResource := make(map[schema.GroupVersionKind]schema.GroupVersionResource)
 	kindToScope := make(map[schema.GroupVersionKind]RESTScope)
 	singularToPlural := make(map[schema.GroupVersionResource]schema.GroupVersionResource)
 	pluralToSingular := make(map[schema.GroupVersionResource]schema.GroupVersionResource)
-	aliasToResource := make(map[string][]string)
 	// TODO: verify name mappings work correctly when versions differ
 
 	return &DefaultRESTMapper{
@@ -115,14 +90,15 @@ func NewDefaultRESTMapper(defaultGroupVersions []schema.GroupVersion, f VersionI
 		defaultGroupVersions: defaultGroupVersions,
 		singularToPlural:     singularToPlural,
 		pluralToSingular:     pluralToSingular,
-		aliasToResource:      aliasToResource,
-		interfacesFunc:       f,
 	}
 }
 
 func (m *DefaultRESTMapper) Add(kind schema.GroupVersionKind, scope RESTScope) {
-	plural, singular := KindToResource(kind)
+	plural, singular := UnsafeGuessKindToResource(kind)
+	m.AddSpecific(kind, plural, singular, scope)
+}
 
+func (m *DefaultRESTMapper) AddSpecific(kind schema.GroupVersionKind, plural, singular schema.GroupVersionResource, scope RESTScope) {
 	m.singularToPlural[singular] = plural
 	m.pluralToSingular[plural] = singular
 
@@ -141,10 +117,10 @@ var unpluralizedSuffixes = []string{
 	"endpoints",
 }
 
-// KindToResource converts Kind to a resource name.
+// UnsafeGuessKindToResource converts Kind to a resource name.
 // Broken. This method only "sort of" works when used outside of this package.  It assumes that Kinds and Resources match
 // and they aren't guaranteed to do so.
-func KindToResource(kind schema.GroupVersionKind) ( /*plural*/ schema.GroupVersionResource /*singular*/, schema.GroupVersionResource) {
+func UnsafeGuessKindToResource(kind schema.GroupVersionKind) ( /*plural*/ schema.GroupVersionResource /*singular*/, schema.GroupVersionResource) {
 	kindName := kind.Kind
 	if len(kindName) == 0 {
 		return schema.GroupVersionResource{}, schema.GroupVersionResource{}
@@ -474,7 +450,7 @@ func (m *DefaultRESTMapper) RESTMapping(gk schema.GroupKind, versions ...string)
 		return nil, err
 	}
 	if len(mappings) == 0 {
-		return nil, &NoKindMatchError{PartialKind: gk.WithVersion("")}
+		return nil, &NoKindMatchError{GroupKind: gk, SearchedVersions: versions}
 	}
 	// since we rely on RESTMappings method
 	// take the first match and return to the caller
@@ -512,7 +488,7 @@ func (m *DefaultRESTMapper) RESTMappings(gk schema.GroupKind, versions ...string
 	}
 
 	if len(potentialGVK) == 0 {
-		return nil, &NoKindMatchError{PartialKind: gk.WithVersion("")}
+		return nil, &NoKindMatchError{GroupKind: gk, SearchedVersions: versions}
 	}
 
 	for _, gvk := range potentialGVK {
@@ -528,18 +504,10 @@ func (m *DefaultRESTMapper) RESTMappings(gk schema.GroupKind, versions ...string
 			return nil, fmt.Errorf("the provided version %q and kind %q cannot be mapped to a supported scope", gvk.GroupVersion(), gvk.Kind)
 		}
 
-		interfaces, err := m.interfacesFunc(gvk.GroupVersion())
-		if err != nil {
-			return nil, fmt.Errorf("the provided version %q has no relevant versions: %v", gvk.GroupVersion().String(), err)
-		}
-
 		mappings = append(mappings, &RESTMapping{
-			Resource:         res.Resource,
+			Resource:         res,
 			GroupVersionKind: gvk,
 			Scope:            scope,
-
-			ObjectConvertor:  interfaces.ObjectConvertor,
-			MetadataAccessor: interfaces.MetadataAccessor,
 		})
 	}
 
@@ -547,20 +515,4 @@ func (m *DefaultRESTMapper) RESTMappings(gk schema.GroupKind, versions ...string
 		return nil, &NoResourceMatchError{PartialResource: schema.GroupVersionResource{Group: gk.Group, Resource: gk.Kind}}
 	}
 	return mappings, nil
-}
-
-// AddResourceAlias maps aliases to resources
-func (m *DefaultRESTMapper) AddResourceAlias(alias string, resources ...string) {
-	if len(resources) == 0 {
-		return
-	}
-	m.aliasToResource[alias] = resources
-}
-
-// AliasesForResource returns whether a resource has an alias or not
-func (m *DefaultRESTMapper) AliasesForResource(alias string) ([]string, bool) {
-	if res, ok := m.aliasToResource[alias]; ok {
-		return res, true
-	}
-	return nil, false
 }

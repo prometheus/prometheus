@@ -1,33 +1,18 @@
 /*
  *
- * Copyright 2017, Google Inc.
- * All rights reserved.
+ * Copyright 2017 gRPC authors.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are
- * met:
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- *     * Redistributions of source code must retain the above copyright
- * notice, this list of conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above
- * copyright notice, this list of conditions and the following disclaimer
- * in the documentation and/or other materials provided with the
- * distribution.
- *     * Neither the name of Google Inc. nor the names of its
- * contributors may be used to endorse or promote products derived from
- * this software without specific prior written permission.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  *
  */
 
@@ -35,6 +20,8 @@ package grpc
 
 import (
 	"bufio"
+	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -42,9 +29,9 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
-
-	"golang.org/x/net/context"
 )
+
+const proxyAuthHeaderKey = "Proxy-Authorization"
 
 var (
 	// errDisabled indicates that proxy is disabled for the address.
@@ -53,7 +40,7 @@ var (
 	httpProxyFromEnvironment = http.ProxyFromEnvironment
 )
 
-func mapAddress(ctx context.Context, address string) (string, error) {
+func mapAddress(ctx context.Context, address string) (*url.URL, error) {
 	req := &http.Request{
 		URL: &url.URL{
 			Scheme: "https",
@@ -62,12 +49,12 @@ func mapAddress(ctx context.Context, address string) (string, error) {
 	}
 	url, err := httpProxyFromEnvironment(req)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if url == nil {
-		return "", errDisabled
+		return nil, errDisabled
 	}
-	return url.Host, nil
+	return url, nil
 }
 
 // To read a response from a net.Conn, http.ReadResponse() takes a bufio.Reader.
@@ -84,18 +71,28 @@ func (c *bufConn) Read(b []byte) (int, error) {
 	return c.r.Read(b)
 }
 
-func doHTTPConnectHandshake(ctx context.Context, conn net.Conn, addr string) (_ net.Conn, err error) {
+func basicAuth(username, password string) string {
+	auth := username + ":" + password
+	return base64.StdEncoding.EncodeToString([]byte(auth))
+}
+
+func doHTTPConnectHandshake(ctx context.Context, conn net.Conn, backendAddr string, proxyURL *url.URL) (_ net.Conn, err error) {
 	defer func() {
 		if err != nil {
 			conn.Close()
 		}
 	}()
 
-	req := (&http.Request{
+	req := &http.Request{
 		Method: http.MethodConnect,
-		URL:    &url.URL{Host: addr},
+		URL:    &url.URL{Host: backendAddr},
 		Header: map[string][]string{"User-Agent": {grpcUA}},
-	})
+	}
+	if t := proxyURL.User; t != nil {
+		u := t.Username()
+		p, _ := t.Password()
+		req.Header.Add(proxyAuthHeaderKey, "Basic "+basicAuth(u, p))
+	}
 
 	if err := sendHTTPRequest(ctx, req, conn); err != nil {
 		return nil, fmt.Errorf("failed to write the HTTP request: %v", err)
@@ -123,23 +120,33 @@ func doHTTPConnectHandshake(ctx context.Context, conn net.Conn, addr string) (_ 
 // provided dialer, does HTTP CONNECT handshake and returns the connection.
 func newProxyDialer(dialer func(context.Context, string) (net.Conn, error)) func(context.Context, string) (net.Conn, error) {
 	return func(ctx context.Context, addr string) (conn net.Conn, err error) {
-		var skipHandshake bool
-		newAddr, err := mapAddress(ctx, addr)
+		var newAddr string
+		proxyURL, err := mapAddress(ctx, addr)
 		if err != nil {
 			if err != errDisabled {
 				return nil, err
 			}
-			skipHandshake = true
 			newAddr = addr
+		} else {
+			newAddr = proxyURL.Host
 		}
 
 		conn, err = dialer(ctx, newAddr)
 		if err != nil {
 			return
 		}
-		if !skipHandshake {
-			conn, err = doHTTPConnectHandshake(ctx, conn, addr)
+		if proxyURL != nil {
+			// proxy is disabled if proxyURL is nil.
+			conn, err = doHTTPConnectHandshake(ctx, conn, addr, proxyURL)
 		}
 		return
 	}
+}
+
+func sendHTTPRequest(ctx context.Context, req *http.Request, conn net.Conn) error {
+	req = req.WithContext(ctx)
+	if err := req.Write(conn); err != nil {
+		return fmt.Errorf("failed to write the HTTP request: %v", err)
+	}
+	return nil
 }

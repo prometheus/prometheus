@@ -1,3 +1,7 @@
+go:
+    # Whenever the Go version is updated here,
+    # .circle/config.yml should also be updated.
+    version: 1.14
 repository:
     path: github.com/prometheus/prometheus
 build:
@@ -6,13 +10,13 @@ build:
           path: ./cmd/prometheus
         - name: promtool
           path: ./cmd/promtool
-    flags: -a -tags netgo
+    flags: -mod=vendor -a -tags netgo,builtinassets
     ldflags: |
-        -X {{repoPath}}/vendor/github.com/prometheus/common/version.Version={{.Version}}
-        -X {{repoPath}}/vendor/github.com/prometheus/common/version.Revision={{.Revision}}
-        -X {{repoPath}}/vendor/github.com/prometheus/common/version.Branch={{.Branch}}
-        -X {{repoPath}}/vendor/github.com/prometheus/common/version.BuildUser={{user}}@{{host}}
-        -X {{repoPath}}/vendor/github.com/prometheus/common/version.BuildDate={{date "20060102-15:04:05"}}
+        -X github.com/prometheus/common/version.Version={{.Version}}
+        -X github.com/prometheus/common/version.Revision={{.Revision}}
+        -X github.com/prometheus/common/version.Branch={{.Branch}}
+        -X github.com/prometheus/common/version.BuildUser={{user}}@{{host}}
+        -X github.com/prometheus/common/version.BuildDate={{date "20060102-15:04:05"}}
 tarball:
     files:
         - consoles
@@ -20,6 +24,7 @@ tarball:
         - documentation/examples/prometheus.yml
         - LICENSE
         - NOTICE
+        - npm_licenses.tar.bz2
 crossbuild:
     platforms:
         - linux/amd64
@@ -38,12 +43,10 @@ crossbuild:
         - linux/arm
         - linux/arm64
         - freebsd/arm
-        # Temporarily deactivated as golang.org/x/sys does not have syscalls
-        # implemented for that os/platform combination.
-        #- openbsd/arm
-        #- linux/mips64
-        #- linux/mips64le
+        - openbsd/arm
+        - linux/mips64
+        - linux/mips64le
         - netbsd/arm
         - linux/ppc64
         - linux/ppc64le
-
+        - linux/s390x

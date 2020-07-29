@@ -8,21 +8,21 @@ import (
 	"github.com/gophercloud/gophercloud/pagination"
 )
 
-// A FloatingIP is an IP that can be associated with an instance
+// A FloatingIP is an IP that can be associated with a server.
 type FloatingIP struct {
 	// ID is a unique ID of the Floating IP
 	ID string `json:"-"`
 
-	// FixedIP is the IP of the instance related to the Floating IP
+	// FixedIP is a specific IP on the server to pair the Floating IP with.
 	FixedIP string `json:"fixed_ip,omitempty"`
 
-	// InstanceID is the ID of the instance that is using the Floating IP
+	// InstanceID is the ID of the server that is using the Floating IP.
 	InstanceID string `json:"instance_id"`
 
-	// IP is the actual Floating IP
+	// IP is the actual Floating IP.
 	IP string `json:"ip"`
 
-	// Pool is the pool of floating IPs that this floating IP belongs to
+	// Pool is the pool of Floating IPs that this Floating IP belongs to.
 	Pool string `json:"pool"`
 }
 
@@ -49,8 +49,7 @@ func (r *FloatingIP) UnmarshalJSON(b []byte) error {
 	return err
 }
 
-// FloatingIPPage stores a single, only page of FloatingIPs
-// results from a List call.
+// FloatingIPPage stores a single page of FloatingIPs from a List call.
 type FloatingIPPage struct {
 	pagination.SinglePageBase
 }
@@ -61,8 +60,7 @@ func (page FloatingIPPage) IsEmpty() (bool, error) {
 	return len(va) == 0, err
 }
 
-// ExtractFloatingIPs interprets a page of results as a slice of
-// FloatingIPs.
+// ExtractFloatingIPs interprets a page of results as a slice of FloatingIPs.
 func ExtractFloatingIPs(r pagination.Page) ([]FloatingIP, error) {
 	var s struct {
 		FloatingIPs []FloatingIP `json:"floating_ips"`
@@ -86,32 +84,32 @@ func (r FloatingIPResult) Extract() (*FloatingIP, error) {
 	return s.FloatingIP, err
 }
 
-// CreateResult is the response from a Create operation. Call its Extract method to interpret it
-// as a FloatingIP.
+// CreateResult is the response from a Create operation. Call its Extract method
+// to interpret it as a FloatingIP.
 type CreateResult struct {
 	FloatingIPResult
 }
 
-// GetResult is the response from a Get operation. Call its Extract method to interpret it
-// as a FloatingIP.
+// GetResult is the response from a Get operation. Call its Extract method to
+// interpret it as a FloatingIP.
 type GetResult struct {
 	FloatingIPResult
 }
 
-// DeleteResult is the response from a Delete operation. Call its Extract method to determine if
-// the call succeeded or failed.
+// DeleteResult is the response from a Delete operation. Call its ExtractErr
+// method to determine if the call succeeded or failed.
 type DeleteResult struct {
 	gophercloud.ErrResult
 }
 
-// AssociateResult is the response from a Delete operation. Call its Extract method to determine if
-// the call succeeded or failed.
+// AssociateResult is the response from a Delete operation. Call its ExtractErr
+// method to determine if the call succeeded or failed.
 type AssociateResult struct {
 	gophercloud.ErrResult
 }
 
-// DisassociateResult is the response from a Delete operation. Call its Extract method to determine if
-// the call succeeded or failed.
+// DisassociateResult is the response from a Delete operation. Call its
+// ExtractErr method to determine if the call succeeded or failed.
 type DisassociateResult struct {
 	gophercloud.ErrResult
 }

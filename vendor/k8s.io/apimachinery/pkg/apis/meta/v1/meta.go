@@ -17,38 +17,9 @@ limitations under the License.
 package v1
 
 import (
-	"k8s.io/apimachinery/pkg/conversion"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 )
-
-// ObjectMetaFor returns a pointer to a provided object's ObjectMeta.
-// TODO: allow runtime.Unknown to extract this object
-// TODO: Remove this function and use meta.ObjectMetaAccessor() instead.
-func ObjectMetaFor(obj runtime.Object) (*ObjectMeta, error) {
-	v, err := conversion.EnforcePtr(obj)
-	if err != nil {
-		return nil, err
-	}
-	var meta *ObjectMeta
-	err = runtime.FieldPtr(v, "ObjectMeta", &meta)
-	return meta, err
-}
-
-// ListMetaFor returns a pointer to a provided object's ListMeta,
-// or an error if the object does not have that pointer.
-// TODO: allow runtime.Unknown to extract this object
-// TODO: Remove this function and use meta.ObjectMetaAccessor() instead.
-func ListMetaFor(obj runtime.Object) (*ListMeta, error) {
-	v, err := conversion.EnforcePtr(obj)
-	if err != nil {
-		return nil, err
-	}
-	var meta *ListMeta
-	err = runtime.FieldPtr(v, "ListMeta", &meta)
-	return meta, err
-}
 
 // TODO: move this, Object, List, and Type to a different package
 type ObjectMetaAccessor interface {
@@ -70,12 +41,16 @@ type Object interface {
 	SetUID(uid types.UID)
 	GetResourceVersion() string
 	SetResourceVersion(version string)
+	GetGeneration() int64
+	SetGeneration(generation int64)
 	GetSelfLink() string
 	SetSelfLink(selfLink string)
 	GetCreationTimestamp() Time
 	SetCreationTimestamp(timestamp Time)
 	GetDeletionTimestamp() *Time
 	SetDeletionTimestamp(timestamp *Time)
+	GetDeletionGracePeriodSeconds() *int64
+	SetDeletionGracePeriodSeconds(*int64)
 	GetLabels() map[string]string
 	SetLabels(labels map[string]string)
 	GetAnnotations() map[string]string
@@ -86,22 +61,39 @@ type Object interface {
 	SetOwnerReferences([]OwnerReference)
 	GetClusterName() string
 	SetClusterName(clusterName string)
+	GetManagedFields() []ManagedFieldsEntry
+	SetManagedFields(managedFields []ManagedFieldsEntry)
 }
 
 // ListMetaAccessor retrieves the list interface from an object
 type ListMetaAccessor interface {
-	GetListMeta() List
+	GetListMeta() ListInterface
 }
 
-// List lets you work with list metadata from any of the versioned or
+// Common lets you work with core metadata from any of the versioned or
 // internal API objects. Attempting to set or retrieve a field on an object that does
 // not support that field will be a no-op and return a default value.
 // TODO: move this, and TypeMeta and ListMeta, to a different package
-type List interface {
+type Common interface {
 	GetResourceVersion() string
 	SetResourceVersion(version string)
 	GetSelfLink() string
 	SetSelfLink(selfLink string)
+}
+
+// ListInterface lets you work with list metadata from any of the versioned or
+// internal API objects. Attempting to set or retrieve a field on an object that does
+// not support that field will be a no-op and return a default value.
+// TODO: move this, and TypeMeta and ListMeta, to a different package
+type ListInterface interface {
+	GetResourceVersion() string
+	SetResourceVersion(version string)
+	GetSelfLink() string
+	SetSelfLink(selfLink string)
+	GetContinue() string
+	SetContinue(c string)
+	GetRemainingItemCount() *int64
+	SetRemainingItemCount(c *int64)
 }
 
 // Type exposes the type and APIVersion of versioned or internal API objects.
@@ -113,10 +105,16 @@ type Type interface {
 	SetKind(kind string)
 }
 
+var _ ListInterface = &ListMeta{}
+
 func (meta *ListMeta) GetResourceVersion() string        { return meta.ResourceVersion }
 func (meta *ListMeta) SetResourceVersion(version string) { meta.ResourceVersion = version }
 func (meta *ListMeta) GetSelfLink() string               { return meta.SelfLink }
 func (meta *ListMeta) SetSelfLink(selfLink string)       { meta.SelfLink = selfLink }
+func (meta *ListMeta) GetContinue() string               { return meta.Continue }
+func (meta *ListMeta) SetContinue(c string)              { meta.Continue = c }
+func (meta *ListMeta) GetRemainingItemCount() *int64     { return meta.RemainingItemCount }
+func (meta *ListMeta) SetRemainingItemCount(c *int64)    { meta.RemainingItemCount = c }
 
 func (obj *TypeMeta) GetObjectKind() schema.ObjectKind { return obj }
 
@@ -130,7 +128,7 @@ func (obj *TypeMeta) GroupVersionKind() schema.GroupVersionKind {
 	return schema.FromAPIVersionAndKind(obj.APIVersion, obj.Kind)
 }
 
-func (obj *ListMeta) GetListMeta() List { return obj }
+func (obj *ListMeta) GetListMeta() ListInterface { return obj }
 
 func (obj *ObjectMeta) GetObjectMeta() Object { return obj }
 
@@ -146,6 +144,8 @@ func (meta *ObjectMeta) GetUID() types.UID                   { return meta.UID }
 func (meta *ObjectMeta) SetUID(uid types.UID)                { meta.UID = uid }
 func (meta *ObjectMeta) GetResourceVersion() string          { return meta.ResourceVersion }
 func (meta *ObjectMeta) SetResourceVersion(version string)   { meta.ResourceVersion = version }
+func (meta *ObjectMeta) GetGeneration() int64                { return meta.Generation }
+func (meta *ObjectMeta) SetGeneration(generation int64)      { meta.Generation = generation }
 func (meta *ObjectMeta) GetSelfLink() string                 { return meta.SelfLink }
 func (meta *ObjectMeta) SetSelfLink(selfLink string)         { meta.SelfLink = selfLink }
 func (meta *ObjectMeta) GetCreationTimestamp() Time          { return meta.CreationTimestamp }
@@ -156,54 +156,23 @@ func (meta *ObjectMeta) GetDeletionTimestamp() *Time { return meta.DeletionTimes
 func (meta *ObjectMeta) SetDeletionTimestamp(deletionTimestamp *Time) {
 	meta.DeletionTimestamp = deletionTimestamp
 }
+func (meta *ObjectMeta) GetDeletionGracePeriodSeconds() *int64 { return meta.DeletionGracePeriodSeconds }
+func (meta *ObjectMeta) SetDeletionGracePeriodSeconds(deletionGracePeriodSeconds *int64) {
+	meta.DeletionGracePeriodSeconds = deletionGracePeriodSeconds
+}
 func (meta *ObjectMeta) GetLabels() map[string]string                 { return meta.Labels }
 func (meta *ObjectMeta) SetLabels(labels map[string]string)           { meta.Labels = labels }
 func (meta *ObjectMeta) GetAnnotations() map[string]string            { return meta.Annotations }
 func (meta *ObjectMeta) SetAnnotations(annotations map[string]string) { meta.Annotations = annotations }
 func (meta *ObjectMeta) GetFinalizers() []string                      { return meta.Finalizers }
 func (meta *ObjectMeta) SetFinalizers(finalizers []string)            { meta.Finalizers = finalizers }
-
-func (meta *ObjectMeta) GetOwnerReferences() []OwnerReference {
-	ret := make([]OwnerReference, len(meta.OwnerReferences))
-	for i := 0; i < len(meta.OwnerReferences); i++ {
-		ret[i].Kind = meta.OwnerReferences[i].Kind
-		ret[i].Name = meta.OwnerReferences[i].Name
-		ret[i].UID = meta.OwnerReferences[i].UID
-		ret[i].APIVersion = meta.OwnerReferences[i].APIVersion
-		if meta.OwnerReferences[i].Controller != nil {
-			value := *meta.OwnerReferences[i].Controller
-			ret[i].Controller = &value
-		}
-		if meta.OwnerReferences[i].BlockOwnerDeletion != nil {
-			value := *meta.OwnerReferences[i].BlockOwnerDeletion
-			ret[i].BlockOwnerDeletion = &value
-		}
-	}
-	return ret
-}
-
+func (meta *ObjectMeta) GetOwnerReferences() []OwnerReference         { return meta.OwnerReferences }
 func (meta *ObjectMeta) SetOwnerReferences(references []OwnerReference) {
-	newReferences := make([]OwnerReference, len(references))
-	for i := 0; i < len(references); i++ {
-		newReferences[i].Kind = references[i].Kind
-		newReferences[i].Name = references[i].Name
-		newReferences[i].UID = references[i].UID
-		newReferences[i].APIVersion = references[i].APIVersion
-		if references[i].Controller != nil {
-			value := *references[i].Controller
-			newReferences[i].Controller = &value
-		}
-		if references[i].BlockOwnerDeletion != nil {
-			value := *references[i].BlockOwnerDeletion
-			newReferences[i].BlockOwnerDeletion = &value
-		}
-	}
-	meta.OwnerReferences = newReferences
+	meta.OwnerReferences = references
 }
-
-func (meta *ObjectMeta) GetClusterName() string {
-	return meta.ClusterName
-}
-func (meta *ObjectMeta) SetClusterName(clusterName string) {
-	meta.ClusterName = clusterName
+func (meta *ObjectMeta) GetClusterName() string                 { return meta.ClusterName }
+func (meta *ObjectMeta) SetClusterName(clusterName string)      { meta.ClusterName = clusterName }
+func (meta *ObjectMeta) GetManagedFields() []ManagedFieldsEntry { return meta.ManagedFields }
+func (meta *ObjectMeta) SetManagedFields(managedFields []ManagedFieldsEntry) {
+	meta.ManagedFields = managedFields
 }

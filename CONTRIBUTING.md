@@ -11,13 +11,15 @@ Prometheus uses GitHub to manage reviews of pull requests.
 * If you plan to do something more involved, first discuss your ideas
   on our [mailing list](https://groups.google.com/forum/?fromgroups#!forum/prometheus-developers).
   This will avoid unnecessary work and surely give you and us a good deal
-  of inspiration.
+  of inspiration. Also please see our [non-goals issue](https://github.com/prometheus/docs/issues/149) on areas that the Prometheus community doesn't plan to work on.
 
 * Relevant coding style guidelines are the [Go Code Review
   Comments](https://code.google.com/p/go-wiki/wiki/CodeReviewComments)
   and the _Formatting and style_ section of Peter Bourgon's [Go: Best
   Practices for Production
-  Environments](http://peter.bourgon.org/go-in-production/#formatting-and-style).
+  Environments](https://peter.bourgon.org/go-in-production/#formatting-and-style).
+
+* Be sure to sign off on the [DCO](https://github.com/probot/dco#how-it-works)
 
 
 ## Steps to Contribute
@@ -38,7 +40,9 @@ go build ./cmd/prometheus/
 make test         # Make sure all the tests pass before you commit and push :)
 ```
 
-All our issues are regularly tagged so that you can also filter down the issues involving the components you want to work on. For our labelling policy refer [the wiki page](https://github.com/prometheus/prometheus/wiki/Label-Names-and-Descriptions).
+We use [`golangci-lint`](https://github.com/golangci/golangci-lint) for linting the code. If it reports an issue and you think that the warning needs to be disregarded or is a false-positive, you can add a special comment `//nolint:linter1[,linter2,...]` before the offending line. Use this sparingly though, fixing the code to comply with the linter's recommendation is in general the preferred course of action.
+
+All our issues are regularly tagged so that you can also filter down the issues involving the components you want to work on. For our labeling policy refer [the wiki page](https://github.com/prometheus/prometheus/wiki/Label-Names-and-Descriptions).
 
 ## Pull Request Checklist
 
@@ -49,3 +53,31 @@ All our issues are regularly tagged so that you can also filter down the issues 
 * If your patch is not getting reviewed or you need a specific person to review it, you can @-reply a reviewer asking for a review in the pull request or a comment, or you can ask for a review on IRC channel [#prometheus](https://webchat.freenode.net/?channels=#prometheus) on irc.freenode.net (for the easiest start, [join via Riot](https://riot.im/app/#/room/#prometheus:matrix.org)).
 
 * Add tests relevant to the fixed bug or new feature.
+
+## Dependency management
+
+The Prometheus project uses [Go modules](https://golang.org/cmd/go/#hdr-Modules__module_versions__and_more) to manage dependencies on external packages. This requires a working Go environment with version 1.13 or greater installed.
+
+All dependencies are vendored in the `vendor/` directory.
+
+To add or update a new dependency, use the `go get` command:
+
+```bash
+# Pick the latest tagged release.
+go get example.com/some/module/pkg
+
+# Pick a specific version.
+go get example.com/some/module/pkg@vX.Y.Z
+```
+
+Tidy up the `go.mod` and `go.sum` files and copy the new/updated dependency to the `vendor/` directory:
+
+
+```bash
+# The GO111MODULE variable can be omitted when the code isn't located in GOPATH.
+GO111MODULE=on go mod tidy
+
+GO111MODULE=on go mod vendor
+```
+
+You have to commit the changes to `go.mod`, `go.sum` and the `vendor/` directory before submitting the pull request.

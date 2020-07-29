@@ -10,7 +10,7 @@
 {{ template "prom_content_head" . }}
 <h1>Prometheus</h1>
 
-<table class="table table-condensed table-striped table-bordered" style="width: 0%">
+<table class="table table-sm table-striped table-bordered" style="width: 0%">
 <tr>
   <th>Prometheus</th>
   <th>Up</th>
@@ -27,6 +27,7 @@
 {{ else }}
 <tr><td colspan=4>No devices found.</td></tr>
 {{ end }}
+</table>
 
 {{ template "prom_content_tail" . }}
 

@@ -37,12 +37,8 @@ var (
 	big1024     = big.NewInt(1024)
 
 	// Commonly needed inf.Dec values-- treat as read only!
-	decZero      = inf.NewDec(0, 0)
-	decOne       = inf.NewDec(1, 0)
-	decMinusOne  = inf.NewDec(-1, 0)
-	decThousand  = inf.NewDec(1000, 0)
-	dec1024      = inf.NewDec(1024, 0)
-	decMinus1024 = inf.NewDec(-1024, 0)
+	decZero = inf.NewDec(0, 0)
+	decOne  = inf.NewDec(1, 0)
 
 	// Largest (in magnitude) number allowed.
 	maxAllowed = infDecAmount{inf.NewDec((1<<63)-1, 0)} // == max int64
@@ -194,9 +190,9 @@ func negativeScaleInt64(base int64, scale Scale) (result int64, exact bool) {
 	}
 	if fraction {
 		if base > 0 {
-			value += 1
+			value++
 		} else {
-			value += -1
+			value--
 		}
 	}
 	return value, !fraction
@@ -245,19 +241,6 @@ func pow10Int64(b int64) int64 {
 	default:
 		return 0
 	}
-}
-
-// powInt64 raises a to the bth power. Is not overflow aware.
-func powInt64(a, b int64) int64 {
-	p := int64(1)
-	for b > 0 {
-		if b&1 != 0 {
-			p *= a
-		}
-		b >>= 1
-		a *= a
-	}
-	return p
 }
 
 // negativeScaleInt64 returns the result of dividing base by scale * 10 and the remainder, or

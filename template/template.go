@@ -16,7 +16,6 @@ package template
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"math"
 	"net/url"
@@ -28,12 +27,29 @@ import (
 	html_template "html/template"
 	text_template "text/template"
 
-	"github.com/prometheus/common/model"
+	"github.com/pkg/errors"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/strutil"
 )
+
+var (
+	templateTextExpansionFailures = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_template_text_expansion_failures_total",
+		Help: "The total number of template text expansion failures.",
+	})
+	templateTextExpansionTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_template_text_expansions_total",
+		Help: "The total number of template text expansions.",
+	})
+)
+
+func init() {
+	prometheus.MustRegister(templateTextExpansionFailures)
+	prometheus.MustRegister(templateTextExpansionTotal)
+}
 
 // A version of vector that's easier to use from templates.
 type sample struct {
@@ -59,33 +75,13 @@ func (q queryResultByLabelSorter) Swap(i, j int) {
 	q.results[i], q.results[j] = q.results[j], q.results[i]
 }
 
-func query(ctx context.Context, q string, ts time.Time, queryEngine *promql.Engine) (queryResult, error) {
-	query, err := queryEngine.NewInstantQuery(q, ts)
+// QueryFunc executes a PromQL query at the given time.
+type QueryFunc func(context.Context, string, time.Time) (promql.Vector, error)
+
+func query(ctx context.Context, q string, ts time.Time, queryFn QueryFunc) (queryResult, error) {
+	vector, err := queryFn(ctx, q, ts)
 	if err != nil {
 		return nil, err
-	}
-	res := query.Exec(ctx)
-	if res.Err != nil {
-		return nil, res.Err
-	}
-	var vector promql.Vector
-
-	switch v := res.Value.(type) {
-	case promql.Matrix:
-		return nil, errors.New("matrix return values not supported")
-	case promql.Vector:
-		vector = v
-	case promql.Scalar:
-		vector = promql.Vector{promql.Sample{
-			Point: promql.Point(v),
-		}}
-	case promql.String:
-		vector = promql.Vector{promql.Sample{
-			Metric: labels.FromStrings("__value__", v.V),
-			Point:  promql.Point{T: v.T},
-		}}
-	default:
-		panic("template.query: unhandled result value type")
 	}
 
 	// promql.Vector is hard to work with in templates, so convert to
@@ -111,14 +107,22 @@ type Expander struct {
 }
 
 // NewTemplateExpander returns a template expander ready to use.
-func NewTemplateExpander(ctx context.Context, text string, name string, data interface{}, timestamp model.Time, queryEngine *promql.Engine, externalURL *url.URL) *Expander {
+func NewTemplateExpander(
+	ctx context.Context,
+	text string,
+	name string,
+	data interface{},
+	timestamp model.Time,
+	queryFunc QueryFunc,
+	externalURL *url.URL,
+) *Expander {
 	return &Expander{
 		text: text,
 		name: name,
 		data: data,
 		funcMap: text_template.FuncMap{
 			"query": func(q string) (queryResult, error) {
-				return query(ctx, q, timestamp.Time(), queryEngine)
+				return query(ctx, q, timestamp.Time(), queryFunc)
 			},
 			"first": func(v queryResult) (*sample, error) {
 				if len(v) > 0 {
@@ -215,7 +219,7 @@ func NewTemplateExpander(ctx context.Context, text string, name string, data int
 					seconds := int64(v) % 60
 					minutes := (int64(v) / 60) % 60
 					hours := (int64(v) / 60 / 60) % 24
-					days := (int64(v) / 60 / 60 / 24)
+					days := int64(v) / 60 / 60 / 24
 					// For days to minutes, we display seconds as an integer.
 					if days != 0 {
 						return fmt.Sprintf("%s%dd %dh %dm %ds", sign, days, hours, minutes, seconds)
@@ -226,7 +230,7 @@ func NewTemplateExpander(ctx context.Context, text string, name string, data int
 					if minutes != 0 {
 						return fmt.Sprintf("%s%dm %ds", sign, minutes, seconds)
 					}
-					// For seconds, we display 4 significant digts.
+					// For seconds, we display 4 significant digits.
 					return fmt.Sprintf("%s%.4gs", sign, v)
 				}
 				prefix := ""
@@ -238,6 +242,9 @@ func NewTemplateExpander(ctx context.Context, text string, name string, data int
 					v *= 1000
 				}
 				return fmt.Sprintf("%.4g%ss", v, prefix)
+			},
+			"humanizePercentage": func(v float64) string {
+				return fmt.Sprintf("%.4g%%", v*100)
 			},
 			"humanizeTimestamp": func(v float64) string {
 				if math.IsNaN(v) || math.IsInf(v, 0) {
@@ -253,6 +260,19 @@ func NewTemplateExpander(ctx context.Context, text string, name string, data int
 				return externalURL.String()
 			},
 		},
+	}
+}
+
+// AlertTemplateData returns the interface to be used in expanding the template.
+func AlertTemplateData(labels map[string]string, externalLabels map[string]string, value float64) interface{} {
+	return struct {
+		Labels         map[string]string
+		ExternalLabels map[string]string
+		Value          float64
+	}{
+		Labels:         labels,
+		ExternalLabels: externalLabels,
+		Value:          value,
 	}
 }
 
@@ -273,20 +293,24 @@ func (te Expander) Expand() (result string, resultErr error) {
 			var ok bool
 			resultErr, ok = r.(error)
 			if !ok {
-				resultErr = fmt.Errorf("panic expanding template %v: %v", te.name, r)
+				resultErr = errors.Errorf("panic expanding template %v: %v", te.name, r)
 			}
+		}
+		if resultErr != nil {
+			templateTextExpansionFailures.Inc()
 		}
 	}()
 
-	tmpl, err := text_template.New(te.name).Funcs(te.funcMap).Parse(te.text)
-	tmpl.Option("missingkey=zero")
+	templateTextExpansionTotal.Inc()
+
+	tmpl, err := text_template.New(te.name).Funcs(te.funcMap).Option("missingkey=zero").Parse(te.text)
 	if err != nil {
-		return "", fmt.Errorf("error parsing template %v: %v", te.name, err)
+		return "", errors.Wrapf(err, "error parsing template %v", te.name)
 	}
 	var buffer bytes.Buffer
 	err = tmpl.Execute(&buffer, te.data)
 	if err != nil {
-		return "", fmt.Errorf("error executing template %v: %v", te.name, err)
+		return "", errors.Wrapf(err, "error executing template %v", te.name)
 	}
 	return buffer.String(), nil
 }
@@ -298,7 +322,7 @@ func (te Expander) ExpandHTML(templateFiles []string) (result string, resultErr 
 			var ok bool
 			resultErr, ok = r.(error)
 			if !ok {
-				resultErr = fmt.Errorf("panic expanding template %v: %v", te.name, r)
+				resultErr = errors.Errorf("panic expanding template %s: %v", te.name, r)
 			}
 		}
 	}()
@@ -314,18 +338,27 @@ func (te Expander) ExpandHTML(templateFiles []string) (result string, resultErr 
 	})
 	tmpl, err := tmpl.Parse(te.text)
 	if err != nil {
-		return "", fmt.Errorf("error parsing template %v: %v", te.name, err)
+		return "", errors.Wrapf(err, "error parsing template %v", te.name)
 	}
 	if len(templateFiles) > 0 {
 		_, err = tmpl.ParseFiles(templateFiles...)
 		if err != nil {
-			return "", fmt.Errorf("error parsing template files for %v: %v", te.name, err)
+			return "", errors.Wrapf(err, "error parsing template files for %v", te.name)
 		}
 	}
 	var buffer bytes.Buffer
 	err = tmpl.Execute(&buffer, te.data)
 	if err != nil {
-		return "", fmt.Errorf("error executing template %v: %v", te.name, err)
+		return "", errors.Wrapf(err, "error executing template %v", te.name)
 	}
 	return buffer.String(), nil
+}
+
+// ParseTest parses the templates and returns the error if any.
+func (te Expander) ParseTest() error {
+	_, err := text_template.New(te.name).Funcs(te.funcMap).Option("missingkey=zero").Parse(te.text)
+	if err != nil {
+		return err
+	}
+	return nil
 }

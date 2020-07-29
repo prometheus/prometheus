@@ -1,49 +1,67 @@
 /*
- * Copyright 2016, Google Inc.
- * All rights reserved.
+ * Copyright 2016 gRPC authors.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are
- * met:
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- *     * Redistributions of source code must retain the above copyright
- * notice, this list of conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above
- * copyright notice, this list of conditions and the following disclaimer
- * in the documentation and/or other materials provided with the
- * distribution.
- *     * Neither the name of Google Inc. nor the names of its
- * contributors may be used to endorse or promote products derived from
- * this software without specific prior written permission.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  *
  */
 
-// Package internal contains gRPC-internal code for testing, to avoid polluting
-// the godoc of the top-level grpc package.
+// Package internal contains gRPC-internal code, to avoid polluting
+// the godoc of the top-level grpc package.  It must not import any grpc
+// symbols to avoid circular dependencies.
 package internal
 
-// TestingCloseConns closes all existing transports but keeps
-// grpcServer.lis accepting new connections.
-//
-// The provided grpcServer must be of type *grpc.Server. It is untyped
-// for circular dependency reasons.
-var TestingCloseConns func(grpcServer interface{})
+import (
+	"context"
+	"time"
 
-// TestingUseHandlerImpl enables the http.Handler-based server implementation.
-// It must be called before Serve and requires TLS credentials.
+	"google.golang.org/grpc/connectivity"
+)
+
+var (
+	// WithHealthCheckFunc is set by dialoptions.go
+	WithHealthCheckFunc interface{} // func (HealthChecker) DialOption
+	// HealthCheckFunc is used to provide client-side LB channel health checking
+	HealthCheckFunc HealthChecker
+	// BalancerUnregister is exported by package balancer to unregister a balancer.
+	BalancerUnregister func(name string)
+	// KeepaliveMinPingTime is the minimum ping interval.  This must be 10s by
+	// default, but tests may wish to set it lower for convenience.
+	KeepaliveMinPingTime = 10 * time.Second
+	// NewRequestInfoContext creates a new context based on the argument context attaching
+	// the passed in RequestInfo to the new context.
+	NewRequestInfoContext interface{} // func(context.Context, credentials.RequestInfo) context.Context
+	// ParseServiceConfigForTesting is for creating a fake
+	// ClientConn for resolver testing only
+	ParseServiceConfigForTesting interface{} // func(string) *serviceconfig.ParseResult
+)
+
+// HealthChecker defines the signature of the client-side LB channel health checking function.
 //
-// The provided grpcServer must be of type *grpc.Server. It is untyped
-// for circular dependency reasons.
-var TestingUseHandlerImpl func(grpcServer interface{})
+// The implementation is expected to create a health checking RPC stream by
+// calling newStream(), watch for the health status of serviceName, and report
+// it's health back by calling setConnectivityState().
+//
+// The health checking protocol is defined at:
+// https://github.com/grpc/grpc/blob/master/doc/health-checking.md
+type HealthChecker func(ctx context.Context, newStream func(string) (interface{}, error), setConnectivityState func(connectivity.State, error), serviceName string) error
+
+const (
+	// CredsBundleModeFallback switches GoogleDefaultCreds to fallback mode.
+	CredsBundleModeFallback = "fallback"
+	// CredsBundleModeBalancer switches GoogleDefaultCreds to grpclb balancer
+	// mode.
+	CredsBundleModeBalancer = "balancer"
+	// CredsBundleModeBackendFromBalancer switches GoogleDefaultCreds to mode
+	// that supports backend returned by grpclb balancer.
+	CredsBundleModeBackendFromBalancer = "backend-from-balancer"
+)

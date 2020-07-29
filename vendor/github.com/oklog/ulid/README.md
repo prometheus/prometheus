@@ -1,6 +1,6 @@
 # Universally Unique Lexicographically Sortable Identifier
 
-![Project status](https://img.shields.io/badge/version-0.3.0-yellow.svg)
+![Project status](https://img.shields.io/badge/version-1.3.0-yellow.svg)
 [![Build Status](https://secure.travis-ci.org/oklog/ulid.png)](http://travis-ci.org/oklog/ulid)
 [![Go Report Card](https://goreportcard.com/badge/oklog/ulid?cache=0)](https://goreportcard.com/report/oklog/ulid)
 [![Coverage Status](https://coveralls.io/repos/github/oklog/ulid/badge.svg?branch=master&cache=0)](https://coveralls.io/github/oklog/ulid?branch=master)
@@ -27,6 +27,7 @@ A ULID however:
 - Uses Crockford's base32 for better efficiency and readability (5 bits per character)
 - Case insensitive
 - No special characters (URL safe)
+- Monotonic sort order (correctly detects and handles the same millisecond)
 
 ## Install
 
@@ -42,10 +43,11 @@ This design allows for greater flexibility in choosing your trade-offs.
 Please note that `rand.Rand` from the `math` package is *not* safe for concurrent use.
 Instantiate one per long living go-routine or use a `sync.Pool` if you want to avoid the potential contention of a locked `rand.Source` as its been frequently observed in the package level functions.
 
+
 ```go
 func ExampleULID() {
 	t := time.Unix(1000000, 0)
-	entropy := rand.New(rand.NewSource(t.UnixNano()))
+	entropy := ulid.Monotonic(rand.New(rand.NewSource(t.UnixNano())), 0)
 	fmt.Println(ulid.MustNew(ulid.Timestamp(t), entropy))
 	// Output: 0000XSNJG0MQJHBF4QX1EFD6Y3
 }
@@ -66,6 +68,7 @@ Below is the current specification of ULID as implemented in this repository.
 **Entropy**
 - 80 bits
 - User defined entropy source.
+- Monotonicity within the same millisecond with [`ulid.Monotonic`](https://godoc.org/github.com/oklog/ulid#Monotonic)
 
 ### Encoding
 

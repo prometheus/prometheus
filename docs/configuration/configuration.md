@@ -24,7 +24,7 @@ This will also reload any configured rule files.
 
 To specify which configuration file to load, use the `--config.file` flag.
 
-The file is written in [YAML format](http://en.wikipedia.org/wiki/YAML),
+The file is written in [YAML format](https://en.wikipedia.org/wiki/YAML),
 defined by the scheme described below.
 Brackets indicate that a parameter is optional. For non-list parameters the
 value is set to the specified default.
@@ -33,14 +33,15 @@ Generic placeholders are defined as follows:
 
 * `<boolean>`: a boolean that can take the values `true` or `false`
 * `<duration>`: a duration matching the regular expression `[0-9]+(ms|[smhdwy])`
-* `<labelname>`: a string matching the regular expression `[a-zA-Z_][a-zA-Z0-9_]*`
-* `<labelvalue>`: a string of unicode characters
 * `<filename>`: a valid path in the current working directory
 * `<host>`: a valid string consisting of a hostname or IP followed by an optional port number
+* `<int>`: an integer value
+* `<labelname>`: a string matching the regular expression `[a-zA-Z_][a-zA-Z0-9_]*`
+* `<labelvalue>`: a string of unicode characters
 * `<path>`: a valid URL path
 * `<scheme>`: a string that can take the values `http` or `https`
-* `<string>`: a regular string
 * `<secret>`: a regular string that is a secret, such as a password
+* `<string>`: a regular string
 * `<tmpl_string>`: a string which is template-expanded before usage
 
 The other placeholders are specified separately.
@@ -66,6 +67,10 @@ global:
   external_labels:
     [ <labelname>: <labelvalue> ... ]
 
+  # File to which PromQL queries are logged.
+  # Reloading the configuration will reopen the file.
+  [ query_log_file: <string> ]
+
 # Rule files specifies a list of globs. Rules and alerts are read from
 # all matching files.
 rule_files:
@@ -82,11 +87,11 @@ alerting:
   alertmanagers:
     [ - <alertmanager_config> ... ]
 
-# Settings related to the experimental remote write feature.
+# Settings related to the remote write feature.
 remote_write:
   [ - <remote_write> ... ]
 
-# Settings related to the experimental remote read feature.
+# Settings related to the remote read feature.
 remote_read:
   [ - <remote_read> ... ]
 ```
@@ -127,13 +132,26 @@ job_name: <job_name>
 # If honor_labels is set to "false", label conflicts are resolved by renaming
 # conflicting labels in the scraped data to "exported_<original-label>" (for
 # example "exported_instance", "exported_job") and then attaching server-side
-# labels. This is useful for use cases such as federation, where all labels
-# specified in the target should be preserved.
+# labels.
+#
+# Setting honor_labels to "true" is useful for use cases such as federation and
+# scraping the Pushgateway, where all labels specified in the target should be
+# preserved.
 #
 # Note that any globally configured "external_labels" are unaffected by this
 # setting. In communication with external systems, they are always applied only
 # when a time series does not have a given label yet and are ignored otherwise.
 [ honor_labels: <boolean> | default = false ]
+
+# honor_timestamps controls whether Prometheus respects the timestamps present
+# in scraped data.
+#
+# If honor_timestamps is set to "true", the timestamps of the metrics exposed
+# by the target will be used.
+#
+# If honor_timestamps is set to "false", the timestamps of the metrics exposed
+# by the target will be ignored.
+[ honor_timestamps: <boolean> | default = true ]
 
 # Configures the protocol scheme used for requests.
 [ scheme: <scheme> | default = http ]
@@ -144,9 +162,11 @@ params:
 
 # Sets the `Authorization` header on every scrape request with the
 # configured username and password.
+# password and password_file are mutually exclusive.
 basic_auth:
   [ username: <string> ]
   [ password: <secret> ]
+  [ password_file: <string> ]
 
 # Sets the `Authorization` header on every scrape request with
 # the configured bearer token. It is mutually exclusive with `bearer_token_file`.
@@ -154,7 +174,7 @@ basic_auth:
 
 # Sets the `Authorization` header on every scrape request with the bearer token
 # read from the configured file. It is mutually exclusive with `bearer_token`.
-[ bearer_token_file: /path/to/bearer/token/file ]
+[ bearer_token_file: <filename> ]
 
 # Configures the scrape request's TLS settings.
 tls_config:
@@ -171,6 +191,14 @@ azure_sd_configs:
 consul_sd_configs:
   [ - <consul_sd_config> ... ]
 
+# List of DigitalOcean service discovery configurations.
+digitalocean_sd_configs:
+  [ - <digitalocean_sd_config> ... ]
+
+# List of Docker Swarm service discovery configurations.
+dockerswarm_sd_configs:
+  [ - <dockerswarm_sd_config> ... ]
+
 # List of DNS service discovery configurations.
 dns_sd_configs:
   [ - <dns_sd_config> ... ]
@@ -178,10 +206,6 @@ dns_sd_configs:
 # List of EC2 service discovery configurations.
 ec2_sd_configs:
   [ - <ec2_sd_config> ... ]
-
-# List of OpenStack service discovery configurations.
-openstack_sd_configs:
-  [ - <openstack_sd_config> ... ]
 
 # List of file service discovery configurations.
 file_sd_configs:
@@ -202,6 +226,10 @@ marathon_sd_configs:
 # List of AirBnB's Nerve service discovery configurations.
 nerve_sd_configs:
   [ - <nerve_sd_config> ... ]
+
+# List of OpenStack service discovery configurations.
+openstack_sd_configs:
+  [ - <openstack_sd_config> ... ]
 
 # List of Zookeeper Serverset service discovery configurations.
 serverset_sd_configs:
@@ -248,7 +276,7 @@ A `tls_config` allows configuring TLS connections.
 [ key_file: <filename> ]
 
 # ServerName extension to indicate the name of the server.
-# http://tools.ietf.org/html/rfc4366#section-3.1
+# https://tools.ietf.org/html/rfc4366#section-3.1
 [ server_name: <string> ]
 
 # Disable validation of the server certificate.
@@ -257,9 +285,6 @@ A `tls_config` allows configuring TLS connections.
 
 ### `<azure_sd_config>`
 
-CAUTION: Azure SD is in beta: breaking changes to configuration are still
-likely in future releases.
-
 Azure SD configurations allow retrieving scrape targets from Azure VMs.
 
 The following meta labels are available on targets during relabeling:
@@ -267,22 +292,33 @@ The following meta labels are available on targets during relabeling:
 * `__meta_azure_machine_id`: the machine ID
 * `__meta_azure_machine_location`: the location the machine runs in
 * `__meta_azure_machine_name`: the machine name
+* `__meta_azure_machine_os_type`: the machine operating system
 * `__meta_azure_machine_private_ip`: the machine's private IP
+* `__meta_azure_machine_public_ip`: the machine's public IP if it exists
 * `__meta_azure_machine_resource_group`: the machine's resource group
 * `__meta_azure_machine_tag_<tagname>`: each tag value of the machine
+* `__meta_azure_machine_scale_set`: the name of the scale set which the vm is part of (this value is only set if you are using a [scale set](https://docs.microsoft.com/en-us/azure/virtual-machine-scale-sets/))
+* `__meta_azure_subscription_id`: the subscription ID
+* `__meta_azure_tenant_id`: the tenant ID
 
 See below for the configuration options for Azure discovery:
 
 ```yaml
 # The information to access the Azure API.
-# The subscription ID.
+# The Azure environment.
+[ environment: <string> | default = AzurePublicCloud ]
+
+# The authentication method, either OAuth or ManagedIdentity.
+# See https://docs.microsoft.com/en-us/azure/active-directory/managed-identities-azure-resources/overview
+[ authentication_method: <string> | default = OAuth]
+# The subscription ID. Always required.
 subscription_id: <string>
-# The tenant ID.
-tenant_id: <string>
-# The client ID.
-client_id: <string>
-# The client secret.
-client_secret: <secret>
+# Optional tenant ID. Only required with authentication_method OAuth.
+[ tenant_id: <string> ]
+# Optional client ID. Only required with authentication_method OAuth.
+[ client_id: <string> ]
+# Optional client secret. Only required with authentication_method OAuth.
+[ client_secret: <secret> ]
 
 # Refresh interval to re-read the instance list.
 [ refresh_interval: <duration> | default = 300s ]
@@ -301,31 +337,55 @@ The following meta labels are available on targets during [relabeling](#relabel_
 
 * `__meta_consul_address`: the address of the target
 * `__meta_consul_dc`: the datacenter name for the target
-* `__meta_consul_metadata_<key>`: each metadata key value of the target
+* `__meta_consul_health`: the health status of the service
+* `__meta_consul_metadata_<key>`: each node metadata key value of the target
 * `__meta_consul_node`: the node name defined for the target
 * `__meta_consul_service_address`: the service address of the target
 * `__meta_consul_service_id`: the service ID of the target
+* `__meta_consul_service_metadata_<key>`: each service metadata key value of the target
 * `__meta_consul_service_port`: the service port of the target
 * `__meta_consul_service`: the name of the service the target belongs to
+* `__meta_consul_tagged_address_<key>`: each node tagged address key value of the target
 * `__meta_consul_tags`: the list of tags of the target joined by the tag separator
 
 ```yaml
 # The information to access the Consul API. It is to be defined
 # as the Consul documentation requires.
-server: <host>
+[ server: <host> | default = "localhost:8500" ]
 [ token: <secret> ]
 [ datacenter: <string> ]
-[ scheme: <string> ]
+[ scheme: <string> | default = "http" ]
 [ username: <string> ]
 [ password: <secret> ]
+
+tls_config:
+  [ <tls_config> ]
 
 # A list of services for which targets are retrieved. If omitted, all services
 # are scraped.
 services:
   [ - <string> ]
 
+# See https://www.consul.io/api/catalog.html#list-nodes-for-service to know more
+# about the possible filters that can be used.
+
+# An optional list of tags used to filter nodes for a given service. Services must contain all tags in the list.
+tags:
+  [ - <string> ]
+
+# Node metadata key/value pairs to filter nodes for a given service.
+[ node_meta:
+  [ <string>: <string> ... ] ]
+
 # The string by which Consul tags are joined into the tag label.
 [ tag_separator: <string> | default = , ]
+
+# Allow stale Consul results (see https://www.consul.io/api/features/consistency.html). Will reduce load on Consul.
+[ allow_stale: <boolean> | default = true ]
+
+# The time after which the provided names are refreshed.
+# On large setup it might be a good idea to increase this value because the catalog will change all the time.
+[ refresh_interval: <duration> | default = 30s ]
 ```
 
 Note that the IP number and port used to scrape the targets is assembled as
@@ -333,6 +393,195 @@ Note that the IP number and port used to scrape the targets is assembled as
 Consul setups, the relevant address is in `__meta_consul_service_address`.
 In those cases, you can use the [relabel](#relabel_config)
 feature to replace the special `__address__` label.
+
+The [relabeling phase](#relabel_config) is the preferred and more powerful
+way to filter services or nodes for a service based on arbitrary labels. For
+users with thousands of services it can be more efficient to use the Consul API
+directly which has basic support for filtering nodes (currently by node
+metadata and a single tag).
+
+### `<digitalocean_sd_config>`
+
+DigitalOcean SD configurations allow retrieving scrape targets from [DigitalOcean's](https://www.digitalocean.com/)
+Droplets API.
+This service discovery uses the public IPv4 address by default, by that can be
+changed with relabelling, as demonstrated in [the Prometheus digitalocean-sd
+configuration file](/documentation/examples/prometheus-digitalocean.yml).
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_digitalocean_droplet_id`: the id of the droplet
+* `__meta_digitalocean_droplet_name`: the name of the droplet
+* `__meta_digitalocean_image`: the image name of the droplet
+* `__meta_digitalocean_private_ipv4`: the private IPv4 of the droplet
+* `__meta_digitalocean_public_ipv4`: the public IPv4 of the droplet
+* `__meta_digitalocean_public_ipv6`: the public IPv6 of the droplet
+* `__meta_digitalocean_region`: the region of the droplet
+* `__meta_digitalocean_size`: the size of the droplet
+* `__meta_digitalocean_status`: the status of the droplet
+* `__meta_digitalocean_features`: the comma-separated list of features of the droplet
+* `__meta_digitalocean_tags`: the comma-separated list of tags of the droplet
+
+```yaml
+# Authentication information used to authenticate to the API server.
+# Note that `basic_auth`, `bearer_token` and `bearer_token_file` options are
+# mutually exclusive.
+# password and password_file are mutually exclusive.
+
+# Optional HTTP basic authentication information, not currently supported by DigitalOcean.
+basic_auth:
+  [ username: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
+
+# Optional bearer token authentication information.
+[ bearer_token: <secret> ]
+
+# Optional bearer token file authentication information.
+[ bearer_token_file: <filename> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
+
+# The port to scrape metrics from.
+[ port: <int> | default = 80 ]
+
+# The time after which the droplets are refreshed.
+[ refresh_interval: <duration> | default = 60s ]
+```
+
+### `<dockerswarm_sd_config>`
+
+Docker Swarm SD configurations allow retrieving scrape targets from [Docker Swarm](https://docs.docker.com/engine/swarm/)
+engine.
+
+One of the following roles can be configured to discover targets:
+
+#### `services`
+
+The `services` role is used to discover [Swarm services](https://docs.docker.com/engine/swarm/key-concepts/#services-and-tasks).
+
+Available meta labels:
+
+* `__meta_dockerswarm_service_id`: the id of the service
+* `__meta_dockerswarm_service_name`: the name of the service
+* `__meta_dockerswarm_service_mode`: the mode of the service
+* `__meta_dockerswarm_service_endpoint_port_name`: the name of the endpoint port, if available
+* `__meta_dockerswarm_service_endpoint_port_publish_mode`: the publish mode of the endpoint port
+* `__meta_dockerswarm_service_label_<labelname>`: each label of the service
+* `__meta_dockerswarm_service_task_container_hostname`: the container hostname of the target, if available
+* `__meta_dockerswarm_service_task_container_image`: the container image of the target
+* `__meta_dockerswarm_service_updating_status`: the status of the service, if available
+* `__meta_dockerswarm_network_id`: the ID of the network
+* `__meta_dockerswarm_network_name`: the name of the network
+* `__meta_dockerswarm_network_ingress`: whether the network is ingress
+* `__meta_dockerswarm_network_internal`: whether the network is internal
+* `__meta_dockerswarm_network_label_<labelname>`: each label of the network
+* `__meta_dockerswarm_network_scope`: the scope of the network
+
+#### `tasks`
+
+The `tasks` role is used to discover [Swarm tasks](https://docs.docker.com/engine/swarm/key-concepts/#services-and-tasks).
+
+Available meta labels:
+
+* `__meta_dockerswarm_task_id`: the id of the task
+* `__meta_dockerswarm_task_container_id`: the container id of the task
+* `__meta_dockerswarm_task_desired_state`: the desired state of the task
+* `__meta_dockerswarm_task_label_<labelname>`: each label of the task
+* `__meta_dockerswarm_task_slot`: the slot of the task
+* `__meta_dockerswarm_task_state`: the state of the task
+* `__meta_dockerswarm_task_port_publish_mode`: the publish mode of the task port
+* `__meta_dockerswarm_service_id`: the id of the service
+* `__meta_dockerswarm_service_name`: the name of the service
+* `__meta_dockerswarm_service_mode`: the mode of the service
+* `__meta_dockerswarm_service_label_<labelname>`: each label of the service
+* `__meta_dockerswarm_network_id`: the ID of the network
+* `__meta_dockerswarm_network_name`: the name of the network
+* `__meta_dockerswarm_network_ingress`: whether the network is ingress
+* `__meta_dockerswarm_network_internal`: whether the network is internal
+* `__meta_dockerswarm_network_label_<labelname>`: each label of the network
+* `__meta_dockerswarm_network_label`: each label of the network
+* `__meta_dockerswarm_network_scope`: the scope of the network
+* `__meta_dockerswarm_node_id`: the ID of the node
+* `__meta_dockerswarm_node_hostname`: the hostname of the node
+* `__meta_dockerswarm_node_address`: the address of the node
+* `__meta_dockerswarm_node_availability`: the availability of the node
+* `__meta_dockerswarm_node_label_<labelname>`: each label of the node
+* `__meta_dockerswarm_node_platform_architecture`: the architecture of the node
+* `__meta_dockerswarm_node_platform_os`: the operating system of the node
+* `__meta_dockerswarm_node_role`: the role of the node
+* `__meta_dockerswarm_node_status`: the status of the node
+
+The `__meta_dockerswarm_network_*` meta labels are not populated for ports which
+are published with `mode=host`.
+
+#### `nodes`
+
+The `nodes` role is used to discover [Swarm nodes](https://docs.docker.com/engine/swarm/key-concepts/#nodes).
+
+Available meta labels:
+
+* `__meta_dockerswarm_node_address`: the address of the node
+* `__meta_dockerswarm_node_availability`: the availability of the node
+* `__meta_dockerswarm_node_engine_version`: the version of the node engine
+* `__meta_dockerswarm_node_hostname`: the hostname of the node
+* `__meta_dockerswarm_node_id`: the ID of the node
+* `__meta_dockerswarm_node_label_<labelname>`: each label of the node
+* `__meta_dockerswarm_node_manager_address`: the address of the manager component of the node
+* `__meta_dockerswarm_node_manager_leader`: the leadership status of the manager component of the node (true or false)
+* `__meta_dockerswarm_node_manager_reachability`: the reachability of the manager component of the node
+* `__meta_dockerswarm_node_platform_architecture`: the architecture of the node
+* `__meta_dockerswarm_node_platform_os`: the operating system of the node
+* `__meta_dockerswarm_node_role`: the role of the node
+* `__meta_dockerswarm_node_status`: the status of the node
+
+See below for the configuration options for Docker Swarm discovery:
+
+```yaml
+# Address of the Docker daemon.
+host: <string>
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
+
+# Role of the targets to retrieve. Must be `services`, `tasks`, or `nodes`.
+role: <string>
+
+# The port to scrape metrics from, when `role` is nodes.
+[ port: <int> | default = 80 ]
+
+# The time after which the droplets are refreshed.
+[ refresh_interval: <duration> | default = 60s ]
+
+# Authentication information used to authenticate to the Docker daemon.
+# Note that `basic_auth`, `bearer_token` and `bearer_token_file` options are
+# mutually exclusive.
+# password and password_file are mutually exclusive.
+
+# Optional HTTP basic authentication information.
+basic_auth:
+  [ username: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
+
+# Optional bearer token authentication information.
+[ bearer_token: <secret> ]
+
+# Optional bearer token file authentication information.
+[ bearer_token_file: <filename> ]
+```
+
+See [this example Prometheus configuration file](/documentation/examples/prometheus-dockerswarm.yml)
+for a detailed example of configuring Prometheus for Docker Swarm.
 
 ### `<dns_sd_config>`
 
@@ -344,27 +593,26 @@ This service discovery method only supports basic DNS A, AAAA and SRV record
 queries, but not the advanced DNS-SD approach specified in
 [RFC6763](https://tools.ietf.org/html/rfc6763).
 
-During the [relabeling phase](#relabel_config), the meta label
-`__meta_dns_name` is available on each target and is set to the
-record name that produced the discovered target.
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_dns_name`: the record name that produced the discovered target.
+* `__meta_dns_srv_record_target`: the target field of the SRV record
+* `__meta_dns_srv_record_port`: the port field of the SRV record
 
 ```yaml
 # A list of DNS domain names to be queried.
 names:
-  [ - <domain_name> ]
+  [ - <string> ]
 
-# The type of DNS query to perform.
-[ type: <query_type> | default = 'SRV' ]
+# The type of DNS query to perform. One of SRV, A, or AAAA.
+[ type: <string> | default = 'SRV' ]
 
 # The port number used if the query type is not SRV.
-[ port: <number>]
+[ port: <int>]
 
 # The time after which the provided names are refreshed.
 [ refresh_interval: <duration> | default = 30s ]
 ```
-
-Where `<domain_name>` is a valid DNS domain name.
-Where `<query_type>` is `SRV`, `A`, or `AAAA`.
 
 ### `<ec2_sd_config>`
 
@@ -374,10 +622,17 @@ the public IP address with relabeling.
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
+* `__meta_ec2_ami`: the EC2 Amazon Machine Image
+* `__meta_ec2_architecture`: the architecture of the instance
 * `__meta_ec2_availability_zone`: the availability zone in which the instance is running
 * `__meta_ec2_instance_id`: the EC2 instance ID
+* `__meta_ec2_instance_lifecycle`: the lifecycle of the EC2 instance, set only for 'spot' or 'scheduled' instances, absent otherwise
 * `__meta_ec2_instance_state`: the state of the EC2 instance
 * `__meta_ec2_instance_type`: the type of the EC2 instance
+* `__meta_ec2_owner_id`: the ID of the AWS account that owns the EC2 instance
+* `__meta_ec2_platform`: the Operating System platform, set to 'windows' on Windows servers, absent otherwise
+* `__meta_ec2_primary_subnet_id`: the subnet ID of the primary network interface, if available
+* `__meta_ec2_private_dns_name`: the private DNS name of the instance, if available
 * `__meta_ec2_private_ip`: the private IP address of the instance, if present
 * `__meta_ec2_public_dns_name`: the public DNS name of the instance, if available
 * `__meta_ec2_public_ip`: the public IP address of the instance, if available
@@ -390,8 +645,11 @@ See below for the configuration options for EC2 discovery:
 ```yaml
 # The information to access the EC2 API.
 
-# The AWS Region.
-region: <string>
+# The AWS region. If blank, the region from the instance metadata is used.
+[ region: <string> ]
+
+# Custom endpoint to be used.
+[ endpoint: <string> ]
 
 # The AWS API keys. If blank, the environment variables `AWS_ACCESS_KEY_ID`
 # and `AWS_SECRET_ACCESS_KEY` are used.
@@ -409,30 +667,68 @@ region: <string>
 # The port to scrape metrics from. If using the public IP address, this must
 # instead be specified in the relabeling rule.
 [ port: <int> | default = 80 ]
+
+# Filters can be used optionally to filter the instance list by other criteria.
+# Available filter criteria can be found here:
+# https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeInstances.html
+# Filter API documentation: https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_Filter.html
+filters:
+  [ - name: <string>
+      values: <string>, [...] ]
 ```
 
-### `<openstack_sd_config>`
+The [relabeling phase](#relabel_config) is the preferred and more powerful
+way to filter targets based on arbitrary labels. For users with thousands of
+instances it can be more efficient to use the EC2 API directly which has
+support for filtering instances.
 
-CAUTION: OpenStack SD is in beta: breaking changes to configuration are still
-likely in future releases.
+### `<openstack_sd_config>`
 
 OpenStack SD configurations allow retrieving scrape targets from OpenStack Nova
 instances.
 
+One of the following `<openstack_role>` types can be configured to discover targets:
+
+#### `hypervisor`
+
+The `hypervisor` role discovers one target per Nova hypervisor node. The target
+address defaults to the `host_ip` attribute of the hypervisor.
+
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
-* `__meta_openstack_instance_id`: the OpenStack instance ID
-* `__meta_openstack_instance_name`: the OpenStack instance name
-* `__meta_openstack_instance_status`: the status of the OpenStack instance
-* `__meta_openstack_instance_flavor`: the flavor of the OpenStack instance
-* `__meta_openstack_public_ip`: the public IP of the OpenStack instance
-* `__meta_openstack_private_ip`: the private IP of the OpenStack instance
-* `__meta_openstack_tag_<tagkey>`: each tag value of the instance
+* `__meta_openstack_hypervisor_host_ip`: the hypervisor node's IP address.
+* `__meta_openstack_hypervisor_id`: the hypervisor node's ID.
+* `__meta_openstack_hypervisor_name`: the hypervisor node's name.
+* `__meta_openstack_hypervisor_state`: the hypervisor node's state.
+* `__meta_openstack_hypervisor_status`: the hypervisor node's status.
+* `__meta_openstack_hypervisor_type`: the hypervisor node's type.
+
+#### `instance`
+
+The `instance` role discovers one target per network interface of Nova
+instance. The target address defaults to the private IP address of the network
+interface.
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_openstack_address_pool`: the pool of the private IP.
+* `__meta_openstack_instance_flavor`: the flavor of the OpenStack instance.
+* `__meta_openstack_instance_id`: the OpenStack instance ID.
+* `__meta_openstack_instance_name`: the OpenStack instance name.
+* `__meta_openstack_instance_status`: the status of the OpenStack instance.
+* `__meta_openstack_private_ip`: the private IP of the OpenStack instance.
+* `__meta_openstack_project_id`: the project (tenant) owning this instance.
+* `__meta_openstack_public_ip`: the public IP of the OpenStack instance.
+* `__meta_openstack_tag_<tagkey>`: each tag value of the instance.
+* `__meta_openstack_user_id`: the user account owning the tenant.
 
 See below for the configuration options for OpenStack discovery:
 
 ```yaml
 # The information to access the OpenStack API.
+
+# The OpenStack role of entities that should be discovered.
+role: <openstack_role>
 
 # The OpenStack Region.
 region: <string>
@@ -465,12 +761,34 @@ region: <string>
 [ project_name: <string> ]
 [ project_id: <string> ]
 
+# The application_credential_id or application_credential_name fields are
+# required if using an application credential to authenticate. Some providers
+# allow you to create an application credential to authenticate rather than a
+# password.
+[ application_credential_name: <string> ]
+[ application_credential_id: <string> ]
+
+# The application_credential_secret field is required if using an application
+# credential to authenticate.
+[ application_credential_secret: <secret> ]
+
+# Whether the service discovery should list all instances for all projects.
+# It is only relevant for the 'instance' role and usually requires admin permissions.
+[ all_tenants: <boolean> | default: false ]
+
 # Refresh interval to re-read the instance list.
 [ refresh_interval: <duration> | default = 60s ]
 
 # The port to scrape metrics from. If using the public IP address, this must
 # instead be specified in the relabeling rule.
 [ port: <int> | default = 80 ]
+
+# The availability of the endpoint to connect to. Must be one of public, admin or internal.
+[ availability: <string> | default = "public" ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
 ```
 
 ### `<file_sd_config>`
@@ -505,7 +823,7 @@ Each target has a meta label `__meta_filepath` during the
 filepath from which the target was extracted.
 
 There is a list of
-[integrations](/docs/operating/configuration/#<file_sd_config>) with this
+[integrations](https://prometheus.io/docs/operating/integrations/#file-service-discovery) with this
 discovery mechanism.
 
 ```yaml
@@ -522,16 +840,16 @@ may contain a single `*` that matches any character sequence, e.g. `my/path/tg_*
 
 ### `<gce_sd_config>`
 
-CAUTION: GCE SD is in beta: breaking changes to configuration are still
-likely in future releases.
-
 [GCE](https://cloud.google.com/compute/) SD configurations allow retrieving scrape targets from GCP GCE instances.
 The private IP address is used by default, but may be changed to the public IP
 address with relabeling.
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
+* `__meta_gce_instance_id`: the numeric id of the instance
 * `__meta_gce_instance_name`: the name of the instance
+* `__meta_gce_label_<labelname>`: each GCE label of the instance
+* `__meta_gce_machine_type`: full or partial URL of the machine type of the instance
 * `__meta_gce_metadata_<name>`: each metadata item of the instance
 * `__meta_gce_network`: the network URL of the instance
 * `__meta_gce_private_ip`: the private IP address of the instance
@@ -583,11 +901,8 @@ service account and place the credential file in one of the expected locations.
 
 ### `<kubernetes_sd_config>`
 
-CAUTION: Kubernetes SD is in beta: breaking changes to configuration are still
-likely in future releases.
-
 Kubernetes SD configurations allow retrieving scrape targets from
-[Kubernetes'](http://kubernetes.io/) REST API and always staying synchronized with
+[Kubernetes'](https://kubernetes.io/) REST API and always staying synchronized with
 the cluster state.
 
 One of the following `role` types can be configured to discover targets:
@@ -604,7 +919,9 @@ Available meta labels:
 
 * `__meta_kubernetes_node_name`: The name of the node object.
 * `__meta_kubernetes_node_label_<labelname>`: Each label from the node object.
+* `__meta_kubernetes_node_labelpresent_<labelname>`: `true` for each label from the node object.
 * `__meta_kubernetes_node_annotation_<annotationname>`: Each annotation from the node object.
+* `__meta_kubernetes_node_annotationpresent_<annotationname>`: `true` for each annotation from the node object.
 * `__meta_kubernetes_node_address_<address_type>`: The first address for each node address type, if it exists.
 
 In addition, the `instance` label for the node will be set to the node name
@@ -620,12 +937,16 @@ service port.
 Available meta labels:
 
 * `__meta_kubernetes_namespace`: The namespace of the service object.
+* `__meta_kubernetes_service_annotation_<annotationname>`: Each annotation from the service object.
+* `__meta_kubernetes_service_annotationpresent_<annotationname>`: "true" for each annotation of the service object.
+* `__meta_kubernetes_service_cluster_ip`: The cluster IP address of the service. (Does not apply to services of type ExternalName)
+* `__meta_kubernetes_service_external_name`: The DNS name of the service. (Applies to services of type ExternalName)
+* `__meta_kubernetes_service_label_<labelname>`: Each label from the service object.
+* `__meta_kubernetes_service_labelpresent_<labelname>`: `true` for each label of the service object.
 * `__meta_kubernetes_service_name`: The name of the service object.
-* `__meta_kubernetes_service_label_<labelname>`: The label of the service object.
-* `__meta_kubernetes_service_annotation_<annotationname>`: The annotation of the service object.
 * `__meta_kubernetes_service_port_name`: Name of the service port for the target.
-* `__meta_kubernetes_service_port_number`: Number of the service port for the target.
 * `__meta_kubernetes_service_port_protocol`: Protocol of the service port for the target.
+* `__meta_kubernetes_service_type`: The type of the service.
 
 #### `pod`
 
@@ -638,15 +959,23 @@ Available meta labels:
 * `__meta_kubernetes_namespace`: The namespace of the pod object.
 * `__meta_kubernetes_pod_name`: The name of the pod object.
 * `__meta_kubernetes_pod_ip`: The pod IP of the pod object.
-* `__meta_kubernetes_pod_label_<labelname>`: The label of the pod object.
-* `__meta_kubernetes_pod_annotation_<annotationname>`: The annotation of the pod object.
+* `__meta_kubernetes_pod_label_<labelname>`: Each label from the pod object.
+* `__meta_kubernetes_pod_labelpresent_<labelname>`: `true`for each label from the pod object.
+* `__meta_kubernetes_pod_annotation_<annotationname>`: Each annotation from the pod object.
+* `__meta_kubernetes_pod_annotationpresent_<annotationname>`: `true` for each annotation from the pod object.
+* `__meta_kubernetes_pod_container_init`: `true` if the container is an [InitContainer](https://kubernetes.io/docs/concepts/workloads/pods/init-containers/)
 * `__meta_kubernetes_pod_container_name`: Name of the container the target address points to.
 * `__meta_kubernetes_pod_container_port_name`: Name of the container port.
 * `__meta_kubernetes_pod_container_port_number`: Number of the container port.
 * `__meta_kubernetes_pod_container_port_protocol`: Protocol of the container port.
 * `__meta_kubernetes_pod_ready`: Set to `true` or `false` for the pod's ready state.
+* `__meta_kubernetes_pod_phase`: Set to `Pending`, `Running`, `Succeeded`, `Failed` or `Unknown`
+  in the [lifecycle](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-phase).
 * `__meta_kubernetes_pod_node_name`: The name of the node the pod is scheduled onto.
 * `__meta_kubernetes_pod_host_ip`: The current host IP of the pod object.
+* `__meta_kubernetes_pod_uid`: The UID of the pod object.
+* `__meta_kubernetes_pod_controller_kind`: Object kind of the pod controller.
+* `__meta_kubernetes_pod_controller_name`: Name of the pod controller.
 
 #### `endpoints`
 
@@ -660,9 +989,13 @@ Available meta labels:
 * `__meta_kubernetes_endpoints_name`: The names of the endpoints object.
 * For all targets discovered directly from the endpoints list (those not additionally inferred
   from underlying pods), the following labels are attached:
+  * `__meta_kubernetes_endpoint_hostname`: Hostname of the endpoint.
+  * `__meta_kubernetes_endpoint_node_name`: Name of the node hosting the endpoint.
   * `__meta_kubernetes_endpoint_ready`: Set to `true` or `false` for the endpoint's ready state.
   * `__meta_kubernetes_endpoint_port_name`: Name of the endpoint port.
   * `__meta_kubernetes_endpoint_port_protocol`: Protocol of the endpoint port.
+  * `__meta_kubernetes_endpoint_address_target_kind`: Kind of the endpoint address target.
+  * `__meta_kubernetes_endpoint_address_target_name`: Name of the endpoint address target.
 * If the endpoints belong to a service, all labels of the `role: service` discovery are attached.
 * For all targets backed by a pod, all labels of the `role: pod` discovery are attached.
 
@@ -676,8 +1009,10 @@ Available meta labels:
 
 * `__meta_kubernetes_namespace`: The namespace of the ingress object.
 * `__meta_kubernetes_ingress_name`: The name of the ingress object.
-* `__meta_kubernetes_ingress_label_<labelname>`: The label of the ingress object.
-* `__meta_kubernetes_ingress_annotation_<annotationname>`: The annotation of the ingress object.
+* `__meta_kubernetes_ingress_label_<labelname>`: Each label from the ingress object.
+* `__meta_kubernetes_ingress_labelpresent_<labelname>`: `true` for each label from the ingress object.
+* `__meta_kubernetes_ingress_annotation_<annotationname>`: Each annotation from the ingress object.
+* `__meta_kubernetes_ingress_annotationpresent_<annotationname>`: `true` for each annotation from the ingress object.
 * `__meta_kubernetes_ingress_scheme`: Protocol scheme of ingress, `https` if TLS
   config is set. Defaults to `http`.
 * `__meta_kubernetes_ingress_path`: Path from ingress spec. Defaults to `/`.
@@ -693,22 +1028,28 @@ See below for the configuration options for Kubernetes discovery:
 [ api_server: <host> ]
 
 # The Kubernetes role of entities that should be discovered.
-role: <role>
+# One of endpoints, service, pod, node, or ingress.
+role: <string>
 
 # Optional authentication information used to authenticate to the API server.
 # Note that `basic_auth`, `bearer_token` and `bearer_token_file` options are
 # mutually exclusive.
+# password and password_file are mutually exclusive.
 
 # Optional HTTP basic authentication information.
 basic_auth:
   [ username: <string> ]
   [ password: <secret> ]
+  [ password_file: <string> ]
 
 # Optional bearer token authentication information.
 [ bearer_token: <secret> ]
 
 # Optional bearer token file authentication information.
 [ bearer_token_file: <filename> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
 
 # TLS configuration.
 tls_config:
@@ -718,9 +1059,24 @@ tls_config:
 namespaces:
   names:
     [ - <string> ]
-```
 
-Where `<role>` must be `endpoints`, `service`, `pod`, or `node`.
+# Optional label and field selectors to limit the discovery process to a subset of available resources. 
+# See https://kubernetes.io/docs/concepts/overview/working-with-objects/field-selectors/
+# and https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/ to learn more about the possible 
+# filters that can be used. Endpoints role supports pod, service and endpoints selectors, other roles
+# only support selectors matching the role itself (e.g. node role can only contain node selectors).
+
+# Note: When making decision about using field/label selector make sure that this 
+# is the best approach - it will prevent Prometheus from reusing single list/watch
+# for all scrape configs. This might result in a bigger load on the Kubernetes API,
+# because per each selector combination there will be additional LIST/WATCH. On the other hand,
+# if you just want to monitor small subset of pods in large cluster it's recommended to use selectors.
+# Decision, if selectors should be used or not depends on the particular situation.
+[ selectors:
+  [ - role: <string>
+    [ label: <string> ]
+    [ field: <string> ] ]]
+```
 
 See [this example Prometheus configuration file](/documentation/examples/prometheus-kubernetes.yml)
 for a detailed example of configuring Prometheus for Kubernetes.
@@ -729,9 +1085,6 @@ You may wish to check out the 3rd party [Prometheus Operator](https://github.com
 which automates the Prometheus setup on top of Kubernetes.
 
 ### `<marathon_sd_config>`
-
-CAUTION: Marathon SD is in beta: breaking changes to configuration are still
-likely in future releases.
 
 Marathon SD configurations allow retrieving scrape targets using the
 [Marathon](https://mesosphere.github.io/marathon/) REST API. Prometheus
@@ -756,22 +1109,54 @@ See below for the configuration options for Marathon discovery:
 servers:
   - <string>
 
-# Optional bearer token authentication information.
-# It is mutually exclusive with `bearer_token_file`.
-[ bearer_token: <secret> ]
-
-# Optional bearer token file authentication information.
-# It is mutually exclusive with `bearer_token`.
-[ bearer_token_file: <filename> ]
-
 # Polling interval
 [ refresh_interval: <duration> | default = 30s ]
+
+# Optional authentication information for token-based authentication
+# https://docs.mesosphere.com/1.11/security/ent/iam-api/#passing-an-authentication-token
+# It is mutually exclusive with `auth_token_file` and other authentication mechanisms.
+[ auth_token: <secret> ]
+
+# Optional authentication information for token-based authentication
+# https://docs.mesosphere.com/1.11/security/ent/iam-api/#passing-an-authentication-token
+# It is mutually exclusive with `auth_token` and other authentication mechanisms.
+[ auth_token_file: <filename> ]
+
+# Sets the `Authorization` header on every request with the
+# configured username and password.
+# This is mutually exclusive with other authentication mechanisms.
+# password and password_file are mutually exclusive.
+basic_auth:
+  [ username: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
+
+# Sets the `Authorization` header on every request with
+# the configured bearer token. It is mutually exclusive with `bearer_token_file` and other authentication mechanisms.
+# NOTE: The current version of DC/OS marathon (v1.11.0) does not support standard Bearer token authentication. Use `auth_token` instead.
+[ bearer_token: <string> ]
+
+# Sets the `Authorization` header on every request with the bearer token
+# read from the configured file. It is mutually exclusive with `bearer_token` and other authentication mechanisms.
+# NOTE: The current version of DC/OS marathon (v1.11.0) does not support standard Bearer token authentication. Use `auth_token_file` instead.
+[ bearer_token_file: <filename> ]
+
+# TLS configuration for connecting to marathon servers
+tls_config:
+  [ <tls_config> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
 ```
 
 By default every app listed in Marathon will be scraped by Prometheus. If not all
 of your services provide Prometheus metrics, you can use a Marathon label and
-Prometheus relabeling to control which instances will actually be scraped. Also
-by default all apps will show up as a single job in Prometheus (the one specified
+Prometheus relabeling to control which instances will actually be scraped.
+See [the Prometheus marathon-sd configuration file](/documentation/examples/prometheus-marathon.yml)
+for a practical example on how to set up your Marathon app and your Prometheus
+configuration.
+
+By default, all apps will show up as a single job in Prometheus (the one specified
 in the configuration file), which can also be changed using relabeling.
 
 ### `<nerve_sd_config>`
@@ -803,7 +1188,7 @@ Serverset SD configurations allow retrieving scrape targets from [Serversets]
 (https://github.com/twitter/finagle/tree/master/finagle-serversets) which are
 stored in [Zookeeper](https://zookeeper.apache.org/). Serversets are commonly
 used by [Finagle](https://twitter.github.io/finagle/) and
-[Aurora](http://aurora.apache.org/).
+[Aurora](https://aurora.apache.org/).
 
 The following meta labels are available on targets during relabeling:
 
@@ -829,37 +1214,65 @@ Serverset data must be in the JSON format, the Thrift format is not currently su
 
 ### `<triton_sd_config>`
 
-CAUTION: Triton SD is in beta: breaking changes to configuration are still
-likely in future releases.
-
 [Triton](https://github.com/joyent/triton) SD configurations allow retrieving
 scrape targets from [Container Monitor](https://github.com/joyent/rfd/blob/master/rfd/0027/README.md)
 discovery endpoints.
 
-The following meta labels are available on targets during relabeling:
+One of the following `<triton_role>` types can be configured to discover targets:
 
-* `__meta_triton_machine_id`: the UUID of the target container
+#### `container`
+
+The `container` role discovers one target per "virtual machine" owned by the `account`.
+These are SmartOS zones or lx/KVM/bhyve branded zones.
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_triton_groups`: the list of groups belonging to the target joined by a comma separator
 * `__meta_triton_machine_alias`: the alias of the target container
-* `__meta_triton_machine_image`: the target containers image type
-* `__meta_triton_machine_server_id`: the server UUID for the target container
+* `__meta_triton_machine_brand`: the brand of the target container
+* `__meta_triton_machine_id`: the UUID of the target container
+* `__meta_triton_machine_image`: the target container's image type
+* `__meta_triton_server_id`: the server UUID the target container is running on
+
+#### `cn`
+
+The `cn` role discovers one target for per compute node (also known as "server" or "global zone") making up the Triton infrastructure.
+The `account` must be a Triton operator and is currently required to own at least one `container`.
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_triton_machine_alias`: the hostname of the target (requires triton-cmon 1.7.0 or newer)
+* `__meta_triton_machine_id`: the UUID of the target
+
+See below for the configuration options for Triton discovery:
 
 ```yaml
 # The information to access the Triton discovery API.
 
-# The account to use for discovering new target containers.
+# The account to use for discovering new targets.
 account: <string>
 
-# The DNS suffix which should be applied to target containers.
+# The type of targets to discover, can be set to:
+# * "container" to discover virtual machines (SmartOS zones, lx/KVM/bhyve branded zones) running on Triton
+# * "cn" to discover compute nodes (servers/global zones) making up the Triton infrastructure
+[ role : <string> | default = "container" ]
+
+# The DNS suffix which should be applied to target.
 dns_suffix: <string>
 
 # The Triton discovery endpoint (e.g. 'cmon.us-east-3b.triton.zone'). This is
 # often the same value as dns_suffix.
 endpoint: <string>
 
+# A list of groups for which targets are retrieved, only supported when `role` == `container`.
+# If omitted all containers owned by the requesting account are scraped.
+groups:
+  [ - <string> ... ]
+
 # The port to use for discovery and metric scraping.
 [ port: <int> | default = 9163 ]
 
-# The interval which should should be used for refreshing target containers.
+# The interval which should be used for refreshing targets.
 [ refresh_interval: <duration> | default = 60s ]
 
 # The Triton discovery API version.
@@ -933,7 +1346,8 @@ Additional labels prefixed with `__meta_` may be available during the
 relabeling phase. They are set by the service discovery mechanism that provided
 the target and vary between mechanisms.
 
-Labels starting with `__` will be removed from the label set after relabeling is completed.
+Labels starting with `__` will be removed from the label set after target
+relabeling is completed.
 
 If a relabeling step needs to store a label value only temporarily (as the
 input to a subsequent relabeling step), use the `__tmp` label name prefix. This
@@ -956,7 +1370,7 @@ prefix is guaranteed to never be used by Prometheus itself.
 [ regex: <regex> | default = (.*) ]
 
 # Modulus to take of the hash of the source label values.
-[ modulus: <uint64> ]
+[ modulus: <int> ]
 
 # Replacement value against which a regex replace is performed if the
 # regular expression matches. Regex capture groups are available.
@@ -988,8 +1402,8 @@ anchored on both ends. To un-anchor the regex, use `.*<regex>.*`.
 * `labelkeep`: Match `regex` against all label names. Any label that does not match will be
   removed from the set of labels.
 
-Care must be taken with `labeldrop` and `labelkeep` to ensure that metrics are still uniquely labeled
-once the labels are removed.
+Care must be taken with `labeldrop` and `labelkeep` to ensure that metrics are
+still uniquely labeled once the labels are removed.
 
 ### `<metric_relabel_configs>`
 
@@ -997,7 +1411,7 @@ Metric relabeling is applied to samples as the last step before ingestion. It
 has the same configuration format and actions as target relabeling. Metric
 relabeling does not apply to automatically generated timeseries such as `up`.
 
-One use for this is to blacklist time series that are too expensive to ingest.
+One use for this is to exclude time series that are too expensive to ingest.
 
 ### `<alert_relabel_configs>`
 
@@ -1010,12 +1424,9 @@ external labels send identical alerts.
 
 ### `<alertmanager_config>`
 
-CAUTION: Dynamic discovery of Alertmanager instances is in alpha state. Breaking configuration
-changes may happen in future releases. Use static configuration via the `-alertmanager.url` flag
-as a stable alternative.
-
-An `alertmanager_config` section specifies Alertmanager instances the Prometheus server sends
-alerts to. It also provides parameters to configure how to communicate with these Alertmanagers.
+An `alertmanager_config` section specifies Alertmanager instances the Prometheus
+server sends alerts to. It also provides parameters to configure how to
+communicate with these Alertmanagers.
 
 Alertmanagers may be statically configured via the `static_configs` parameter or
 dynamically discovered using one of the supported service-discovery mechanisms.
@@ -1028,6 +1439,9 @@ through the `__alerts_path__` label.
 # Per-target Alertmanager timeout when pushing alerts.
 [ timeout: <duration> | default = 10s ]
 
+# The api version of Alertmanager.
+[ api_version: <string> | default = v1 ]
+
 # Prefix for the HTTP path alerts are pushed to.
 [ path_prefix: <path> | default = / ]
 
@@ -1036,9 +1450,11 @@ through the `__alerts_path__` label.
 
 # Sets the `Authorization` header on every request with the
 # configured username and password.
+# password and password_file are mutually exclusive.
 basic_auth:
   [ username: <string> ]
-  [ password: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
 
 # Sets the `Authorization` header on every request with
 # the configured bearer token. It is mutually exclusive with `bearer_token_file`.
@@ -1046,7 +1462,7 @@ basic_auth:
 
 # Sets the `Authorization` header on every request with the bearer token
 # read from the configured file. It is mutually exclusive with `bearer_token`.
-[ bearer_token_file: /path/to/bearer/token/file ]
+[ bearer_token_file: <filename> ]
 
 # Configures the scrape request's TLS settings.
 tls_config:
@@ -1075,6 +1491,14 @@ ec2_sd_configs:
 file_sd_configs:
   [ - <file_sd_config> ... ]
 
+# List of DigitalOcean service discovery configurations.
+digitalocean_sd_configs:
+  [ - <digitalocean_sd_config> ... ]
+
+# List of Docker Swarm service discovery configurations.
+dockerswarm_sd_configs:
+  [ - <dockerswarm_sd_config> ... ]
+
 # List of GCE service discovery configurations.
 gce_sd_configs:
   [ - <gce_sd_config> ... ]
@@ -1090,6 +1514,10 @@ marathon_sd_configs:
 # List of AirBnB's Nerve service discovery configurations.
 nerve_sd_configs:
   [ - <nerve_sd_config> ... ]
+
+# List of OpenStack service discovery configurations.
+openstack_sd_configs:
+  [ - <openstack_sd_config> ... ]
 
 # List of Zookeeper Serverset service discovery configurations.
 serverset_sd_configs:
@@ -1114,9 +1542,6 @@ relabel_configs:
 
 ### `<remote_write>`
 
-CAUTION: Remote write is experimental: breaking changes to configuration are
-likely in future releases.
-
 `write_relabel_configs` is relabeling applied to samples before sending them
 to the remote endpoint. Write relabeling is applied after external labels. This
 could be used to limit which samples are sent.
@@ -1135,11 +1560,18 @@ url: <string>
 write_relabel_configs:
   [ - <relabel_config> ... ]
 
+# Name of the remote write config, which if specified must be unique among remote write configs. 
+# The name will be used in metrics and logging in place of a generated value to help users distinguish between
+# remote write configs.
+[ name: <string> ]
+
 # Sets the `Authorization` header on every remote write request with the
 # configured username and password.
+# password and password_file are mutually exclusive.
 basic_auth:
   [ username: <string> ]
-  [ password: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
 
 # Sets the `Authorization` header on every remote write request with
 # the configured bearer token. It is mutually exclusive with `bearer_token_file`.
@@ -1147,7 +1579,7 @@ basic_auth:
 
 # Sets the `Authorization` header on every remote write request with the bearer token
 # read from the configured file. It is mutually exclusive with `bearer_token`.
-[ bearer_token_file: /path/to/bearer/token/file ]
+[ bearer_token_file: <filename> ]
 
 # Configures the remote write request's TLS settings.
 tls_config:
@@ -1155,6 +1587,27 @@ tls_config:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+
+# Configures the queue used to write to remote storage.
+queue_config:
+  # Number of samples to buffer per shard before we block reading of more
+  # samples from the WAL. It is recommended to have enough capacity in each
+  # shard to buffer several requests to keep throughput up while processing
+  # occasional slow remote requests.
+  [ capacity: <int> | default = 500 ]
+  # Maximum number of shards, i.e. amount of concurrency.
+  [ max_shards: <int> | default = 1000 ]
+  # Minimum number of shards, i.e. amount of concurrency.
+  [ min_shards: <int> | default = 1 ]
+  # Maximum number of samples per send.
+  [ max_samples_per_send: <int> | default = 100]
+  # Maximum time a sample will wait in buffer.
+  [ batch_send_deadline: <duration> | default = 5s ]
+  # Initial retry delay. Gets doubled for every retry.
+  [ min_backoff: <duration> | default = 30ms ]
+  # Maximum retry delay.
+  [ max_backoff: <duration> | default = 100ms ]
+
 ```
 
 There is a list of
@@ -1163,12 +1616,14 @@ with this feature.
 
 ### `<remote_read>`
 
-CAUTION: Remote read is experimental: breaking changes to configuration are
-likely in future releases.
-
 ```yaml
 # The URL of the endpoint to query from.
 url: <string>
+
+# Name of the remote read config, which if specified must be unique among remote read configs. 
+# The name will be used in metrics and logging in place of a generated value to help users distinguish between
+# remote read configs.
+[ name: <string> ]
 
 # An optional list of equality matchers which have to be
 # present in a selector to query the remote read endpoint.
@@ -1176,13 +1631,19 @@ required_matchers:
   [ <labelname>: <labelvalue> ... ]
 
 # Timeout for requests to the remote read endpoint.
-[ remote_timeout: <duration> | default = 30s ]
+[ remote_timeout: <duration> | default = 1m ]
+
+# Whether reads should be made for queries for time ranges that
+# the local storage should have complete data for.
+[ read_recent: <boolean> | default = false ]
 
 # Sets the `Authorization` header on every remote read request with the
 # configured username and password.
+# password and password_file are mutually exclusive.
 basic_auth:
   [ username: <string> ]
-  [ password: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
 
 # Sets the `Authorization` header on every remote read request with
 # the configured bearer token. It is mutually exclusive with `bearer_token_file`.
@@ -1190,7 +1651,7 @@ basic_auth:
 
 # Sets the `Authorization` header on every remote read request with the bearer token
 # read from the configured file. It is mutually exclusive with `bearer_token`.
-[ bearer_token_file: /path/to/bearer/token/file ]
+[ bearer_token_file: <filename> ]
 
 # Configures the remote read request's TLS settings.
 tls_config:

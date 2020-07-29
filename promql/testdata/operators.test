@@ -22,6 +22,29 @@ eval instant at 50m 2 - SUM(http_requests) BY (job)
 	{job="api-server"} -998
 	{job="app-server"} -2598
 
+eval instant at 50m -http_requests{job="api-server",instance="0",group="production"}
+  {job="api-server",instance="0",group="production"} -100
+
+eval instant at 50m +http_requests{job="api-server",instance="0",group="production"}
+  http_requests{job="api-server",instance="0",group="production"} 100
+
+eval instant at 50m - - - SUM(http_requests) BY (job)
+	{job="api-server"} -1000
+	{job="app-server"} -2600
+
+eval instant at 50m - - - 1
+  -1
+
+eval instant at 50m -2^---1*3
+  -1.5
+
+eval instant at 50m 2/-2^---1*3+2
+  -10 
+
+eval instant at 50m -10^3 * - SUM(http_requests) BY (job) ^ -1
+	{job="api-server"} 1
+	{job="app-server"} 0.38461538461538464
+
 eval instant at 50m 1000 / SUM(http_requests) BY (job)
 	{job="api-server"} 1
 	{job="app-server"} 0.38461538461538464
@@ -70,6 +93,9 @@ eval instant at 50m SUM(http_requests) BY (job) + SUM(http_requests) BY (job)
 	{job="api-server"} 2000
 	{job="app-server"} 5200
 
+eval instant at 50m (SUM((http_requests)) BY (job)) + SUM(http_requests) BY (job)
+	{job="api-server"} 2000
+	{job="app-server"} 5200
 
 eval instant at 50m http_requests{job="api-server", group="canary"}
 	http_requests{group="canary", instance="0", job="api-server"} 300
@@ -80,6 +106,16 @@ eval instant at 50m http_requests{job="api-server", group="canary"} + rate(http_
 	{group="canary", instance="1", job="api-server"} 440
 
 eval instant at 50m rate(http_requests[25m]) * 25 * 60
+  {group="canary", instance="0", job="api-server"} 150
+  {group="canary", instance="0", job="app-server"} 350
+  {group="canary", instance="1", job="api-server"} 200
+  {group="canary", instance="1", job="app-server"} 400
+  {group="production", instance="0", job="api-server"} 50
+  {group="production", instance="0", job="app-server"} 249.99999999999997
+  {group="production", instance="1", job="api-server"} 100
+  {group="production", instance="1", job="app-server"} 300
+
+eval instant at 50m (rate((http_requests[25m])) * 25) * 60
   {group="canary", instance="0", job="api-server"} 150
   {group="canary", instance="0", job="app-server"} 350
   {group="canary", instance="1", job="api-server"} 200
@@ -207,7 +243,7 @@ eval instant at 50m SUM(http_requests) BY (job) > 1000
 	{job="app-server"} 2600
 
 eval instant at 50m 1000 < SUM(http_requests) BY (job)
-	{job="app-server"} 1000
+	{job="app-server"} 2600
 
 eval instant at 50m SUM(http_requests) BY (job) <= 1000
 	{job="api-server"} 1000
@@ -235,6 +271,9 @@ eval instant at 50m 0 == bool 1
 
 eval instant at 50m 1 == bool 1
 	1
+
+eval instant at 50m http_requests{job="api-server", instance="0", group="production"} == bool 100
+	{job="api-server", instance="0", group="production"} 1
 
 # group_left/group_right.
 
@@ -334,6 +373,45 @@ eval instant at 5m node_cpu > on(job, instance) group_left(target) (threshold or
   node_cpu{instance="def",job="node",mode="idle"} 8
   node_cpu{instance="def",job="node",mode="user"} 2
 
+
+# Check that binops drop the metric name.
+eval instant at 5m node_cpu + 2
+  {instance="abc",job="node",mode="idle"} 5
+  {instance="abc",job="node",mode="user"} 3
+  {instance="def",job="node",mode="idle"} 10
+  {instance="def",job="node",mode="user"} 4
+
+eval instant at 5m node_cpu - 2
+  {instance="abc",job="node",mode="idle"} 1
+  {instance="abc",job="node",mode="user"} -1
+  {instance="def",job="node",mode="idle"} 6
+  {instance="def",job="node",mode="user"} 0
+
+eval instant at 5m node_cpu / 2
+  {instance="abc",job="node",mode="idle"} 1.5
+  {instance="abc",job="node",mode="user"} 0.5
+  {instance="def",job="node",mode="idle"} 4
+  {instance="def",job="node",mode="user"} 1
+
+eval instant at 5m node_cpu * 2
+  {instance="abc",job="node",mode="idle"} 6
+  {instance="abc",job="node",mode="user"} 2
+  {instance="def",job="node",mode="idle"} 16
+  {instance="def",job="node",mode="user"} 4
+
+eval instant at 5m node_cpu ^ 2
+  {instance="abc",job="node",mode="idle"} 9
+  {instance="abc",job="node",mode="user"} 1
+  {instance="def",job="node",mode="idle"} 64
+  {instance="def",job="node",mode="user"} 4
+
+eval instant at 5m node_cpu % 2
+  {instance="abc",job="node",mode="idle"} 1
+  {instance="abc",job="node",mode="user"} 1
+  {instance="def",job="node",mode="idle"} 0
+  {instance="def",job="node",mode="user"} 0
+
+
 clear
 
 load 5m
@@ -351,3 +429,12 @@ eval instant at 5m metricA + ignoring() metricB
 
 eval instant at 5m metricA + metricB
   {baz="meh"} 7
+
+clear
+
+# Test duplicate labelset in promql output.
+load 5m
+  testmetric1{src="a",dst="b"} 0
+  testmetric2{src="a",dst="b"} 1
+
+eval_fail instant at 0m -{__name__=~'testmetric1|testmetric2'}

@@ -20,6 +20,7 @@ const (
 	errorType
 	objectType
 	lazyLoggerType
+	noopType
 )
 
 // Field instances are constructed via LogBool, LogString, and so on.
@@ -121,22 +122,35 @@ func Float64(key string, val float64) Field {
 	}
 }
 
-// Error adds an error with the key "error" to a Span.LogFields() record
+// Error adds an error with the key "error.object" to a Span.LogFields() record
 func Error(err error) Field {
 	return Field{
-		key:          "error",
+		key:          "error.object",
 		fieldType:    errorType,
 		interfaceVal: err,
 	}
 }
 
 // Object adds an object-valued key:value pair to a Span.LogFields() record
+// Please pass in an immutable object, otherwise there may be concurrency issues.
+// Such as passing in the map, log.Object may result in "fatal error: concurrent map iteration and map write".
+// Because span is sent asynchronously, it is possible that this map will also be modified.
 func Object(key string, obj interface{}) Field {
 	return Field{
 		key:          key,
 		fieldType:    objectType,
 		interfaceVal: obj,
 	}
+}
+
+// Event creates a string-valued Field for span logs with key="event" and value=val.
+func Event(val string) Field {
+	return String("event", val)
+}
+
+// Message creates a string-valued Field for span logs with key="message" and value=val.
+func Message(val string) Field {
+	return String("message", val)
 }
 
 // LazyLogger allows for user-defined, late-bound logging of arbitrary data
@@ -149,6 +163,25 @@ func Lazy(ll LazyLogger) Field {
 	return Field{
 		fieldType:    lazyLoggerType,
 		interfaceVal: ll,
+	}
+}
+
+// Noop creates a no-op log field that should be ignored by the tracer.
+// It can be used to capture optional fields, for example those that should
+// only be logged in non-production environment:
+//
+//     func customerField(order *Order) log.Field {
+//          if os.Getenv("ENVIRONMENT") == "dev" {
+//              return log.String("customer", order.Customer.ID)
+//          }
+//          return log.Noop()
+//     }
+//
+//     span.LogFields(log.String("event", "purchase"), customerField(order))
+//
+func Noop() Field {
+	return Field{
+		fieldType: noopType,
 	}
 }
 
@@ -203,6 +236,8 @@ func (lf Field) Marshal(visitor Encoder) {
 		visitor.EmitObject(lf.key, lf.interfaceVal)
 	case lazyLoggerType:
 		visitor.EmitLazyLogger(lf.interfaceVal.(LazyLogger))
+	case noopType:
+		// intentionally left blank
 	}
 }
 
@@ -234,6 +269,8 @@ func (lf Field) Value() interface{} {
 		return math.Float64frombits(uint64(lf.numericVal))
 	case errorType, objectType, lazyLoggerType:
 		return lf.interfaceVal
+	case noopType:
+		return nil
 	default:
 		return nil
 	}
