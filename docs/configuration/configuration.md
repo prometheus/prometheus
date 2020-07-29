@@ -462,7 +462,7 @@ One of the following roles can be configured to discover targets:
 The `services` role discovers all [Swarm services](https://docs.docker.com/engine/swarm/key-concepts/#services-and-tasks)
 and exposes their ports as targets. For each published port of a service, a
 single target is generated. If a service has no published ports, a target per
-service is created with the `port` parameter defined in the SD configuration.
+service is created using the `port` parameter defined in the SD configuration.
 
 Available meta labels:
 
@@ -487,7 +487,7 @@ Available meta labels:
 The `tasks` role discovers all [Swarm tasks](https://docs.docker.com/engine/swarm/key-concepts/#services-and-tasks)
 and exposes their ports as targets. For each published port of a task, a single
 target is generated. If a task has no published ports, a target per task is
-created with the `port` parameter defined in the SD configuration.
+created using the `port` parameter defined in the SD configuration.
 
 Available meta labels:
 
