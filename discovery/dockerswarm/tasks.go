@@ -106,12 +106,19 @@ func (d *Discovery) refreshTasks(ctx context.Context) ([]*targetgroup.Group, err
 			tg.Targets = append(tg.Targets, labels)
 		}
 
-		for _, p := range servicePorts[s.ServiceID] {
-			if p.Protocol != swarm.PortConfigProtocolTCP {
-				continue
-			}
-			for _, network := range s.NetworksAttachments {
-				for _, address := range network.Addresses {
+		for _, network := range s.NetworksAttachments {
+			for _, address := range network.Addresses {
+				var added bool
+
+				ip, _, err := net.ParseCIDR(address)
+				if err != nil {
+					return nil, fmt.Errorf("error while parsing address %s: %w", address, err)
+				}
+
+				for _, p := range servicePorts[s.ServiceID] {
+					if p.Protocol != swarm.PortConfigProtocolTCP {
+						continue
+					}
 					labels := model.LabelSet{
 						swarmLabelTaskPortMode: model.LabelValue(p.PublishMode),
 					}
@@ -124,11 +131,24 @@ func (d *Discovery) refreshTasks(ctx context.Context) ([]*targetgroup.Group, err
 						labels[model.LabelName(k)] = model.LabelValue(v)
 					}
 
-					ip, _, err := net.ParseCIDR(address)
-					if err != nil {
-						return nil, fmt.Errorf("error while parsing address %s: %w", address, err)
-					}
 					addr := net.JoinHostPort(ip.String(), strconv.FormatUint(uint64(p.PublishedPort), 10))
+					labels[model.AddressLabel] = model.LabelValue(addr)
+
+					tg.Targets = append(tg.Targets, labels)
+					added = true
+				}
+				if !added {
+					labels := model.LabelSet{}
+
+					for k, v := range commonLabels {
+						labels[model.LabelName(k)] = model.LabelValue(v)
+					}
+
+					for k, v := range networkLabels[network.Network.ID] {
+						labels[model.LabelName(k)] = model.LabelValue(v)
+					}
+
+					addr := net.JoinHostPort(ip.String(), fmt.Sprintf("%d", d.port))
 					labels[model.AddressLabel] = model.LabelValue(addr)
 
 					tg.Targets = append(tg.Targets, labels)
