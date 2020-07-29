@@ -52,9 +52,6 @@ func (i Item) String() string {
 // Returns false otherwise.
 func (i ItemType) IsOperator() bool { return i > operatorsStart && i < operatorsEnd }
 
-// IsParen returns true if the Item corresponds to parentheses.
-func (i ItemType) IsParen() bool { return i == LEFT_PAREN || i == RIGHT_PAREN }
-
 // IsAggregator returns true if the Item belongs to the aggregator functions.
 // Returns false otherwise
 func (i ItemType) IsAggregator() bool { return i > aggregatorsStart && i < aggregatorsEnd }
@@ -220,7 +217,7 @@ type Pos int
 // Lexer holds the state of the scanner.
 type Lexer struct {
 	input       string  // The string being scanned.
-	State       stateFn // The next lexing function to enter.
+	state       stateFn // The next lexing function to enter.
 	pos         Pos     // Current position in the input.
 	start       Pos     // Start position of this Item.
 	width       Pos     // Width of last rune read from input.
@@ -306,9 +303,9 @@ func (l *Lexer) NextItem(itemp *Item) {
 	l.scannedItem = false
 	l.itemp = itemp
 
-	if l.State != nil {
+	if l.state != nil {
 		for !l.scannedItem {
-			l.State = l.State(l)
+			l.state = l.state(l)
 		}
 	} else {
 		l.emit(EOF)
@@ -321,14 +318,9 @@ func (l *Lexer) NextItem(itemp *Item) {
 func Lex(input string) *Lexer {
 	l := &Lexer{
 		input: input,
-		State: LexStatements,
+		state: lexStatements,
 	}
 	return l
-}
-
-// LexStatements exports lexStatements.
-func LexStatements(l *Lexer) stateFn {
-	return lexStatements
 }
 
 // lineComment is the character that starts a line comment.

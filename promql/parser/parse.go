@@ -173,7 +173,7 @@ func newParser(input string) *parser {
 	// Clear lexer struct before reusing.
 	p.lex = Lexer{
 		input: input,
-		State: lexStatements,
+		state: lexStatements,
 	}
 	return p
 }
