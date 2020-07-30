@@ -1114,7 +1114,7 @@ func TestUncommittedSamplesNotLostOnTruncate(t *testing.T) {
 
 	h.initTime(0)
 
-	app := h.Appender(context.Background())
+	app := h.appender()
 	lset := labels.FromStrings("a", "1")
 	_, err := app.Add(lset, 2100, 1)
 	testutil.Ok(t, err)
@@ -1144,7 +1144,7 @@ func TestRemoveSeriesAfterRollbackAndTruncate(t *testing.T) {
 
 	h.initTime(0)
 
-	app := h.Appender(context.Background())
+	app := h.appender()
 	lset := labels.FromStrings("a", "1")
 	_, err := app.Add(lset, 2100, 1)
 	testutil.Ok(t, err)
@@ -1458,7 +1458,7 @@ func TestMemSeriesIsolation(t *testing.T) {
 			if h.MinTime() == math.MaxInt64 {
 				app = &initAppender{head: h}
 			} else {
-				a := h.Appender(context.Background())
+				a := h.appender()
 				a.cleanupAppendIDsBelow = 0
 				app = a
 			}
@@ -1489,7 +1489,7 @@ func TestMemSeriesIsolation(t *testing.T) {
 	testutil.Equals(t, 999, lastValue(hb, 999))
 
 	// Cleanup appendIDs below 500.
-	app := hb.Appender(context.Background())
+	app := hb.appender()
 	app.cleanupAppendIDsBelow = 500
 	_, err := app.Add(labels.FromStrings("foo", "bar"), int64(i), float64(i))
 	testutil.Ok(t, err)
@@ -1508,7 +1508,7 @@ func TestMemSeriesIsolation(t *testing.T) {
 
 	// Cleanup appendIDs below 1000, which means the sample buffer is
 	// the only thing with appendIDs.
-	app = hb.Appender(context.Background())
+	app = hb.appender()
 	app.cleanupAppendIDsBelow = 1000
 	_, err = app.Add(labels.FromStrings("foo", "bar"), int64(i), float64(i))
 	testutil.Ok(t, err)
@@ -1522,7 +1522,7 @@ func TestMemSeriesIsolation(t *testing.T) {
 
 	i++
 	// Cleanup appendIDs below 1001, but with a rollback.
-	app = hb.Appender(context.Background())
+	app = hb.appender()
 	app.cleanupAppendIDsBelow = 1001
 	_, err = app.Add(labels.FromStrings("foo", "bar"), int64(i), float64(i))
 	testutil.Ok(t, err)
@@ -1556,7 +1556,7 @@ func TestMemSeriesIsolation(t *testing.T) {
 
 	// Cleanup appendIDs below 1000, which means the sample buffer is
 	// the only thing with appendIDs.
-	app = hb.Appender(context.Background())
+	app = hb.appender()
 	_, err = app.Add(labels.FromStrings("foo", "bar"), int64(i), float64(i))
 	i++
 	testutil.Ok(t, err)
@@ -1569,7 +1569,7 @@ func TestMemSeriesIsolation(t *testing.T) {
 	testutil.Equals(t, 1001, lastValue(hb, 1003))
 
 	// Cleanup appendIDs below 1002, but with a rollback.
-	app = hb.Appender(context.Background())
+	app = hb.appender()
 	_, err = app.Add(labels.FromStrings("foo", "bar"), int64(i), float64(i))
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Rollback())
