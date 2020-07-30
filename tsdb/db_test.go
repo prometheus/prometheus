@@ -1203,7 +1203,7 @@ func TestSizeRetention(t *testing.T) {
 	}
 
 	// Add some data to the WAL.
-	headApp := db.Head().Appender()
+	headApp := db.Head().Appender(context.Background())
 	for _, m := range headBlocks {
 		series := genSeries(100, 10, m.MinTime, m.MaxTime)
 		for _, s := range series {

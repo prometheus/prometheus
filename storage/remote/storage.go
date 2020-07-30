@@ -169,8 +169,8 @@ func (s *Storage) ChunkQuerier(ctx context.Context, mint, maxt int64) (storage.C
 }
 
 // Appender implements storage.Storage.
-func (s *Storage) Appender(_ context.Context) storage.Appender {
-	return s.rws.Appender()
+func (s *Storage) Appender(ctx context.Context) storage.Appender {
+	return s.rws.Appender(ctx)
 }
 
 // Close the background processing of the storage queues.

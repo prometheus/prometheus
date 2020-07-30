@@ -267,14 +267,14 @@ func TestHead_WALMultiRef(t *testing.T) {
 
 	testutil.Ok(t, head.Init(0))
 
-	app := head.Appender()
+	app := head.Appender(context.Background())
 	ref1, err := app.Add(labels.FromStrings("foo", "bar"), 100, 1)
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Commit())
 	testutil.Equals(t, 1.0, prom_testutil.ToFloat64(head.metrics.chunksCreated))
 
 	// Add another sample outside chunk range to mmap a chunk.
-	app = head.Appender()
+	app = head.Appender(context.Background())
 	_, err = app.Add(labels.FromStrings("foo", "bar"), 1500, 2)
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Commit())
@@ -282,14 +282,14 @@ func TestHead_WALMultiRef(t *testing.T) {
 
 	testutil.Ok(t, head.Truncate(1600))
 
-	app = head.Appender()
+	app = head.Appender(context.Background())
 	ref2, err := app.Add(labels.FromStrings("foo", "bar"), 1700, 3)
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Commit())
 	testutil.Equals(t, 3.0, prom_testutil.ToFloat64(head.metrics.chunksCreated))
 
 	// Add another sample outside chunk range to mmap a chunk.
-	app = head.Appender()
+	app = head.Appender(context.Background())
 	_, err = app.Add(labels.FromStrings("foo", "bar"), 2000, 4)
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Commit())
@@ -540,7 +540,7 @@ func TestHeadDeleteSimple(t *testing.T) {
 			for _, c := range cases {
 				head, w := newTestHead(t, 1000, compress)
 
-				app := head.Appender()
+				app := head.Appender(context.Background())
 				for _, smpl := range smplsAll {
 					_, err := app.Add(labels.Labels{lblDefault}, smpl.t, smpl.v)
 					testutil.Ok(t, err)
@@ -554,7 +554,7 @@ func TestHeadDeleteSimple(t *testing.T) {
 				}
 
 				// Add more samples.
-				app = head.Appender()
+				app = head.Appender(context.Background())
 				for _, smpl := range c.addSamples {
 					_, err := app.Add(labels.Labels{lblDefault}, smpl.t, smpl.v)
 					testutil.Ok(t, err)
@@ -621,7 +621,7 @@ func TestDeleteUntilCurMax(t *testing.T) {
 	}()
 
 	numSamples := int64(10)
-	app := hb.Appender()
+	app := hb.Appender(context.Background())
 	smpls := make([]float64, numSamples)
 	for i := int64(0); i < numSamples; i++ {
 		smpls[i] = rand.Float64()
@@ -645,7 +645,7 @@ func TestDeleteUntilCurMax(t *testing.T) {
 	testutil.Equals(t, 0, len(res.Warnings()))
 
 	// Add again and test for presence.
-	app = hb.Appender()
+	app = hb.Appender(context.Background())
 	_, err = app.Add(labels.Labels{{Name: "a", Value: "b"}}, 11, 1)
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Commit())
@@ -671,7 +671,7 @@ func TestDeletedSamplesAndSeriesStillInWALAfterCheckpoint(t *testing.T) {
 	hb, w := newTestHead(t, int64(numSamples)*10, false)
 
 	for i := 0; i < numSamples; i++ {
-		app := hb.Appender()
+		app := hb.Appender(context.Background())
 		_, err := app.Add(labels.Labels{{Name: "a", Value: "b"}}, int64(i), 0)
 		testutil.Ok(t, err)
 		testutil.Ok(t, app.Commit())
@@ -763,7 +763,7 @@ func TestDelete_e2e(t *testing.T) {
 		testutil.Ok(t, hb.Close())
 	}()
 
-	app := hb.Appender()
+	app := hb.Appender(context.Background())
 	for _, l := range lbls {
 		ls := labels.New(l...)
 		series := []tsdbutil.Sample{}
@@ -1114,7 +1114,7 @@ func TestUncommittedSamplesNotLostOnTruncate(t *testing.T) {
 
 	h.initTime(0)
 
-	app := h.appender()
+	app := h.Appender(context.Background())
 	lset := labels.FromStrings("a", "1")
 	_, err := app.Add(lset, 2100, 1)
 	testutil.Ok(t, err)
@@ -1144,7 +1144,7 @@ func TestRemoveSeriesAfterRollbackAndTruncate(t *testing.T) {
 
 	h.initTime(0)
 
-	app := h.appender()
+	app := h.Appender(context.Background())
 	lset := labels.FromStrings("a", "1")
 	_, err := app.Add(lset, 2100, 1)
 	testutil.Ok(t, err)
@@ -1175,7 +1175,7 @@ func TestHead_LogRollback(t *testing.T) {
 				testutil.Ok(t, h.Close())
 			}()
 
-			app := h.Appender()
+			app := h.Appender(context.Background())
 			_, err := app.Add(labels.FromStrings("a", "b"), 1, 2)
 			testutil.Ok(t, err)
 
@@ -1373,7 +1373,7 @@ func TestNewWalSegmentOnTruncate(t *testing.T) {
 		testutil.Ok(t, h.Close())
 	}()
 	add := func(ts int64) {
-		app := h.Appender()
+		app := h.Appender(context.Background())
 		_, err := app.Add(labels.Labels{{Name: "a", Value: "b"}}, ts, 0)
 		testutil.Ok(t, err)
 		testutil.Ok(t, app.Commit())
@@ -1404,7 +1404,7 @@ func TestAddDuplicateLabelName(t *testing.T) {
 	}()
 
 	add := func(labels labels.Labels, labelName string) {
-		app := h.Appender()
+		app := h.Appender(context.Background())
 		_, err := app.Add(labels, 0, 0)
 		testutil.NotOk(t, err)
 		testutil.Equals(t, fmt.Sprintf(`label name "%s" is not unique: invalid sample`, labelName), err.Error())
@@ -1458,7 +1458,7 @@ func TestMemSeriesIsolation(t *testing.T) {
 			if h.MinTime() == math.MaxInt64 {
 				app = &initAppender{head: h}
 			} else {
-				a := h.appender()
+				a := h.Appender(context.Background())
 				a.cleanupAppendIDsBelow = 0
 				app = a
 			}
@@ -1489,7 +1489,7 @@ func TestMemSeriesIsolation(t *testing.T) {
 	testutil.Equals(t, 999, lastValue(hb, 999))
 
 	// Cleanup appendIDs below 500.
-	app := hb.appender()
+	app := hb.Appender(context.Background())
 	app.cleanupAppendIDsBelow = 500
 	_, err := app.Add(labels.FromStrings("foo", "bar"), int64(i), float64(i))
 	testutil.Ok(t, err)
@@ -1508,7 +1508,7 @@ func TestMemSeriesIsolation(t *testing.T) {
 
 	// Cleanup appendIDs below 1000, which means the sample buffer is
 	// the only thing with appendIDs.
-	app = hb.appender()
+	app = hb.Appender(context.Background())
 	app.cleanupAppendIDsBelow = 1000
 	_, err = app.Add(labels.FromStrings("foo", "bar"), int64(i), float64(i))
 	testutil.Ok(t, err)
@@ -1522,7 +1522,7 @@ func TestMemSeriesIsolation(t *testing.T) {
 
 	i++
 	// Cleanup appendIDs below 1001, but with a rollback.
-	app = hb.appender()
+	app = hb.Appender(context.Background())
 	app.cleanupAppendIDsBelow = 1001
 	_, err = app.Add(labels.FromStrings("foo", "bar"), int64(i), float64(i))
 	testutil.Ok(t, err)
@@ -1556,7 +1556,7 @@ func TestMemSeriesIsolation(t *testing.T) {
 
 	// Cleanup appendIDs below 1000, which means the sample buffer is
 	// the only thing with appendIDs.
-	app = hb.appender()
+	app = hb.Appender(context.Background())
 	_, err = app.Add(labels.FromStrings("foo", "bar"), int64(i), float64(i))
 	i++
 	testutil.Ok(t, err)
@@ -1569,7 +1569,7 @@ func TestMemSeriesIsolation(t *testing.T) {
 	testutil.Equals(t, 1001, lastValue(hb, 1003))
 
 	// Cleanup appendIDs below 1002, but with a rollback.
-	app = hb.appender()
+	app = hb.Appender(context.Background())
 	_, err = app.Add(labels.FromStrings("foo", "bar"), int64(i), float64(i))
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Rollback())
@@ -1587,13 +1587,13 @@ func TestIsolationRollback(t *testing.T) {
 		testutil.Ok(t, hb.Close())
 	}()
 
-	app := hb.Appender()
+	app := hb.Appender(context.Background())
 	_, err := app.Add(labels.FromStrings("foo", "bar"), 0, 0)
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Commit())
 	testutil.Equals(t, uint64(1), hb.iso.lowWatermark())
 
-	app = hb.Appender()
+	app = hb.Appender(context.Background())
 	_, err = app.Add(labels.FromStrings("foo", "bar"), 1, 1)
 	testutil.Ok(t, err)
 	_, err = app.Add(labels.FromStrings("foo", "bar", "foo", "baz"), 2, 2)
@@ -1601,7 +1601,7 @@ func TestIsolationRollback(t *testing.T) {
 	testutil.Ok(t, app.Rollback())
 	testutil.Equals(t, uint64(2), hb.iso.lowWatermark())
 
-	app = hb.Appender()
+	app = hb.Appender(context.Background())
 	_, err = app.Add(labels.FromStrings("foo", "bar"), 3, 3)
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Commit())
@@ -1614,18 +1614,18 @@ func TestIsolationLowWatermarkMonotonous(t *testing.T) {
 		testutil.Ok(t, hb.Close())
 	}()
 
-	app1 := hb.Appender()
+	app1 := hb.Appender(context.Background())
 	_, err := app1.Add(labels.FromStrings("foo", "bar"), 0, 0)
 	testutil.Ok(t, err)
 	testutil.Ok(t, app1.Commit())
 	testutil.Equals(t, uint64(1), hb.iso.lowWatermark(), "Low watermark should by 1 after 1st append.")
 
-	app1 = hb.Appender()
+	app1 = hb.Appender(context.Background())
 	_, err = app1.Add(labels.FromStrings("foo", "bar"), 1, 1)
 	testutil.Ok(t, err)
 	testutil.Equals(t, uint64(2), hb.iso.lowWatermark(), "Low watermark should be two, even if append is not committed yet.")
 
-	app2 := hb.Appender()
+	app2 := hb.Appender(context.Background())
 	_, err = app2.Add(labels.FromStrings("foo", "baz"), 1, 1)
 	testutil.Ok(t, err)
 	testutil.Ok(t, app2.Commit())
@@ -1668,10 +1668,10 @@ func TestIsolationWithoutAdd(t *testing.T) {
 		testutil.Ok(t, hb.Close())
 	}()
 
-	app := hb.Appender()
+	app := hb.Appender(context.Background())
 	testutil.Ok(t, app.Commit())
 
-	app = hb.Appender()
+	app = hb.Appender(context.Background())
 	_, err := app.Add(labels.FromStrings("foo", "baz"), 1, 1)
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Commit())
@@ -1767,7 +1767,7 @@ func testHeadSeriesChunkRace(t *testing.T) {
 		testutil.Ok(t, h.Close())
 	}()
 	testutil.Ok(t, h.Init(0))
-	app := h.Appender()
+	app := h.Appender(context.Background())
 
 	s2, err := app.Add(labels.FromStrings("foo2", "bar"), 5, 0)
 	testutil.Ok(t, err)
@@ -1816,7 +1816,7 @@ func TestHeadLabelNamesValuesWithMinMaxRange(t *testing.T) {
 		expectedLabelValues = []string{"d", "e", "f"}
 	)
 
-	app := head.Appender()
+	app := head.Appender(context.Background())
 	for i, name := range expectedLabelNames {
 		_, err := app.Add(labels.Labels{{Name: name, Value: expectedLabelValues[i]}}, seriesTimestamps[i], 0)
 		testutil.Ok(t, err)
@@ -1861,28 +1861,28 @@ func TestErrReuseAppender(t *testing.T) {
 		testutil.Ok(t, head.Close())
 	}()
 
-	app := head.Appender()
+	app := head.Appender(context.Background())
 	_, err := app.Add(labels.Labels{{Name: "test", Value: "test"}}, 0, 0)
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Commit())
 	testutil.NotOk(t, app.Commit())
 	testutil.NotOk(t, app.Rollback())
 
-	app = head.Appender()
+	app = head.Appender(context.Background())
 	_, err = app.Add(labels.Labels{{Name: "test", Value: "test"}}, 1, 0)
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Rollback())
 	testutil.NotOk(t, app.Rollback())
 	testutil.NotOk(t, app.Commit())
 
-	app = head.Appender()
+	app = head.Appender(context.Background())
 	_, err = app.Add(labels.Labels{{Name: "test", Value: "test"}}, 2, 0)
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Commit())
 	testutil.NotOk(t, app.Rollback())
 	testutil.NotOk(t, app.Commit())
 
-	app = head.Appender()
+	app = head.Appender(context.Background())
 	_, err = app.Add(labels.Labels{{Name: "test", Value: "test"}}, 3, 0)
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Rollback())

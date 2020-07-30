@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"path/filepath"
@@ -1009,7 +1010,7 @@ func (a *initAppender) Rollback() error {
 }
 
 // Appender returns a new Appender on the database.
-func (h *Head) Appender() storage.Appender {
+func (h *Head) Appender(_ context.Context) storage.Appender {
 	h.metrics.activeAppenders.Inc()
 
 	// The head cache might not have a starting point yet. The init appender
