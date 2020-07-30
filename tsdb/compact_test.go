@@ -878,7 +878,7 @@ func BenchmarkCompactionFromHead(b *testing.B) {
 			h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, DefaultStripeSize, nil)
 			testutil.Ok(b, err)
 			for ln := 0; ln < labelNames; ln++ {
-				app := h.Appender()
+				app := h.Appender(context.Background())
 				for lv := 0; lv < labelValues; lv++ {
 					app.Add(labels.FromStrings(fmt.Sprintf("%d", ln), fmt.Sprintf("%d%s%d", lv, postingsBenchSuffix, ln)), 0, 0)
 				}
