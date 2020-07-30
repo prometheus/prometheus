@@ -24,13 +24,13 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/go-kit/kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	"go.uber.org/atomic"
 
 	"github.com/prometheus/client_golang/prometheus"
 	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
@@ -336,7 +336,7 @@ func TestShouldReshard(t *testing.T) {
 		m.numShards = c.startingShards
 		m.samplesIn.incr(c.samplesIn)
 		m.samplesOut.incr(c.samplesOut)
-		m.lastSendTimestamp = c.lastSendTimestamp
+		m.lastSendTimestamp.Store(c.lastSendTimestamp)
 
 		m.Start()
 
@@ -497,7 +497,7 @@ func (c *TestWriteClient) Endpoint() string {
 // point the `numCalls` property will contain a count of how many times Store()
 // was called.
 type TestBlockingWriteClient struct {
-	numCalls uint64
+	numCalls atomic.Uint64
 }
 
 func NewTestBlockedWriteClient() *TestBlockingWriteClient {
@@ -505,13 +505,13 @@ func NewTestBlockedWriteClient() *TestBlockingWriteClient {
 }
 
 func (c *TestBlockingWriteClient) Store(ctx context.Context, _ []byte) error {
-	atomic.AddUint64(&c.numCalls, 1)
+	c.numCalls.Inc()
 	<-ctx.Done()
 	return nil
 }
 
 func (c *TestBlockingWriteClient) NumCalls() uint64 {
-	return atomic.LoadUint64(&c.numCalls)
+	return c.numCalls.Load()
 }
 
 func (c *TestBlockingWriteClient) Name() string {
@@ -667,7 +667,7 @@ func TestCalculateDesiredShards(t *testing.T) {
 		highestSent := startedAt.Add(ts - time.Duration(pendingSamples/inputRate)*time.Second)
 		m.metrics.highestSentTimestamp.Set(float64(highestSent.Unix()))
 
-		atomic.StoreInt64(&m.lastSendTimestamp, time.Now().Unix())
+		m.lastSendTimestamp.Store(time.Now().Unix())
 	}
 
 	ts := time.Duration(0)
