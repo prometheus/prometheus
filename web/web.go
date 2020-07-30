@@ -50,6 +50,11 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
 	"github.com/prometheus/common/server"
+	"github.com/soheilhy/cmux"
+	"go.uber.org/atomic"
+	"golang.org/x/net/netutil"
+	"google.golang.org/grpc"
+
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
@@ -63,10 +68,6 @@ import (
 	api_v1 "github.com/prometheus/prometheus/web/api/v1"
 	api_v2 "github.com/prometheus/prometheus/web/api/v2"
 	"github.com/prometheus/prometheus/web/ui"
-	"github.com/soheilhy/cmux"
-	"go.uber.org/atomic"
-	"golang.org/x/net/netutil"
-	"google.golang.org/grpc"
 )
 
 // Paths that are handled by the React / Reach router that should all be served the main React app's index.html.
