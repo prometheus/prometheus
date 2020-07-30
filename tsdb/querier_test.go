@@ -1875,7 +1875,7 @@ func TestPostingsForMatchers(t *testing.T) {
 		testutil.Ok(t, h.Close())
 	}()
 
-	app := h.Appender()
+	app := h.Appender(context.Background())
 	app.Add(labels.FromStrings("n", "1"), 0, 0)
 	app.Add(labels.FromStrings("n", "1", "i", "a"), 0, 0)
 	app.Add(labels.FromStrings("n", "1", "i", "b"), 0, 0)
