@@ -46,6 +46,10 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
+func TestMain(m *testing.M) {
+	testutil.TolerantVerifyLeak(m)
+}
+
 func TestNewScrapePool(t *testing.T) {
 	var (
 		app   = &nopAppendable{}
@@ -1785,6 +1789,7 @@ func TestReuseScrapeCache(t *testing.T) {
 		}
 		proxyURL, _ = url.Parse("http://localhost:2128")
 	)
+	defer sp.stop()
 	sp.sync([]*Target{t1})
 
 	steps := []struct {
@@ -1937,6 +1942,7 @@ func TestReuseCacheRace(t *testing.T) {
 			},
 		}
 	)
+	defer sp.stop()
 	sp.sync([]*Target{t1})
 
 	start := time.Now()

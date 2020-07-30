@@ -18,7 +18,6 @@ import (
 	"math"
 	"strconv"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/go-kit/kit/log"
@@ -27,6 +26,7 @@ import (
 	"github.com/golang/snappy"
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
+	"go.uber.org/atomic"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/config"
@@ -235,8 +235,7 @@ type WriteClient interface {
 // indicated by the provided WriteClient. Implements writeTo interface
 // used by WAL Watcher.
 type QueueManager struct {
-	// https://golang.org/pkg/sync/atomic/#pkg-note-BUG
-	lastSendTimestamp int64
+	lastSendTimestamp atomic.Int64
 
 	logger         log.Logger
 	flushDeadline  time.Duration
@@ -537,7 +536,7 @@ func (t *QueueManager) shouldReshard(desiredShards int) bool {
 	// We shouldn't reshard if Prometheus hasn't been able to send to the
 	// remote endpoint successfully within some period of time.
 	minSendTimestamp := time.Now().Add(-2 * time.Duration(t.cfg.BatchSendDeadline)).Unix()
-	lsts := atomic.LoadInt64(&t.lastSendTimestamp)
+	lsts := t.lastSendTimestamp.Load()
 	if lsts < minSendTimestamp {
 		level.Warn(t.logger).Log("msg", "Skipping resharding, last successful send was beyond threshold", "lastSendTimestamp", lsts, "minSendTimestamp", minSendTimestamp)
 		return false
@@ -663,7 +662,7 @@ type shards struct {
 	// Emulate a wait group with a channel and an atomic int, as you
 	// cannot select on a wait group.
 	done    chan struct{}
-	running int32
+	running atomic.Int32
 
 	// Soft shutdown context will prevent new enqueues and deadlocks.
 	softShutdown chan struct{}
@@ -671,7 +670,7 @@ type shards struct {
 	// Hard shutdown context is used to terminate outgoing HTTP connections
 	// after giving them a chance to terminate.
 	hardShutdown          context.CancelFunc
-	droppedOnHardShutdown uint32
+	droppedOnHardShutdown atomic.Uint32
 }
 
 // start the shards; must be called before any call to enqueue.
@@ -692,9 +691,9 @@ func (s *shards) start(n int) {
 	var hardShutdownCtx context.Context
 	hardShutdownCtx, s.hardShutdown = context.WithCancel(context.Background())
 	s.softShutdown = make(chan struct{})
-	s.running = int32(n)
+	s.running.Store(int32(n))
 	s.done = make(chan struct{})
-	atomic.StoreUint32(&s.droppedOnHardShutdown, 0)
+	s.droppedOnHardShutdown.Store(0)
 	for i := 0; i < n; i++ {
 		go s.runShard(hardShutdownCtx, i, newQueues[i])
 	}
@@ -727,7 +726,7 @@ func (s *shards) stop() {
 	// Force an unclean shutdown.
 	s.hardShutdown()
 	<-s.done
-	if dropped := atomic.LoadUint32(&s.droppedOnHardShutdown); dropped > 0 {
+	if dropped := s.droppedOnHardShutdown.Load(); dropped > 0 {
 		level.Error(s.qm.logger).Log("msg", "Failed to flush all samples on shutdown", "count", dropped)
 	}
 }
@@ -756,7 +755,7 @@ func (s *shards) enqueue(ref uint64, sample sample) bool {
 
 func (s *shards) runShard(ctx context.Context, shardID int, queue chan sample) {
 	defer func() {
-		if atomic.AddInt32(&s.running, -1) == 0 {
+		if s.running.Dec() == 0 {
 			close(s.done)
 		}
 	}()
@@ -792,7 +791,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan sample) {
 			droppedSamples := nPending + len(queue)
 			s.qm.metrics.pendingSamples.Sub(float64(droppedSamples))
 			s.qm.metrics.failedSamplesTotal.Add(float64(droppedSamples))
-			atomic.AddUint32(&s.droppedOnHardShutdown, uint32(droppedSamples))
+			s.droppedOnHardShutdown.Add(uint32(droppedSamples))
 			return
 
 		case sample, ok := <-queue:
@@ -847,7 +846,7 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, b
 	// should be maintained irrespective of success or failure.
 	s.qm.samplesOut.incr(int64(len(samples)))
 	s.qm.samplesOutDuration.incr(int64(time.Since(begin)))
-	atomic.StoreInt64(&s.qm.lastSendTimestamp, time.Now().Unix())
+	s.qm.lastSendTimestamp.Store(time.Now().Unix())
 }
 
 // sendSamples to the remote storage with backoff for recoverable errors.
@@ -902,7 +901,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 
 		if err != nil {
 			// If the error is unrecoverable, we should not retry.
-			if _, ok := err.(recoverableError); !ok {
+			if _, ok := err.(RecoverableError); !ok {
 				return err
 			}
 

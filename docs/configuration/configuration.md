@@ -459,7 +459,10 @@ One of the following roles can be configured to discover targets:
 
 #### `services`
 
-The `services` role is used to discover [Swarm services](https://docs.docker.com/engine/swarm/key-concepts/#services-and-tasks).
+The `services` role discovers all [Swarm services](https://docs.docker.com/engine/swarm/key-concepts/#services-and-tasks)
+and exposes their ports as targets. For each published port of a service, a
+single target is generated. If a service has no published ports, a target per
+service is created using the `port` parameter defined in the SD configuration.
 
 Available meta labels:
 
@@ -481,7 +484,10 @@ Available meta labels:
 
 #### `tasks`
 
-The `tasks` role is used to discover [Swarm tasks](https://docs.docker.com/engine/swarm/key-concepts/#services-and-tasks).
+The `tasks` role discovers all [Swarm tasks](https://docs.docker.com/engine/swarm/key-concepts/#services-and-tasks)
+and exposes their ports as targets. For each published port of a task, a single
+target is generated. If a task has no published ports, a target per task is
+created using the `port` parameter defined in the SD configuration.
 
 Available meta labels:
 
@@ -552,7 +558,8 @@ tls_config:
 # Role of the targets to retrieve. Must be `services`, `tasks`, or `nodes`.
 role: <string>
 
-# The port to scrape metrics from, when `role` is nodes.
+# The port to scrape metrics from, when `role` is nodes, and for discovered
+# tasks and services that don't have published ports.
 [ port: <int> | default = 80 ]
 
 # The time after which the droplets are refreshed.
@@ -589,9 +596,11 @@ This service discovery method only supports basic DNS A, AAAA and SRV record
 queries, but not the advanced DNS-SD approach specified in
 [RFC6763](https://tools.ietf.org/html/rfc6763).
 
-During the [relabeling phase](#relabel_config), the meta label
-`__meta_dns_name` is available on each target and is set to the
-record name that produced the discovered target.
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_dns_name`: the record name that produced the discovered target.
+* `__meta_dns_srv_record_target`: the target field of the SRV record
+* `__meta_dns_srv_record_port`: the port field of the SRV record
 
 ```yaml
 # A list of DNS domain names to be queried.

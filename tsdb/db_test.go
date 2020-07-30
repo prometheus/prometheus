@@ -587,7 +587,7 @@ func TestDB_Snapshot_ChunksOutsideOfCompactedRange(t *testing.T) {
 	testutil.Ok(t, err)
 
 	// Hackingly introduce "race", by having lower max time then maxTime in last chunk.
-	db.head.maxTime = db.head.maxTime - 10
+	db.head.maxTime.Sub(10)
 
 	defer func() {
 		testutil.Ok(t, os.RemoveAll(snap))
