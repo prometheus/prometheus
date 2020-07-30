@@ -151,7 +151,7 @@ func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logge
 		done:          make(chan struct{}),
 
 		MaxSegment:  -1,
-		SegmentFile: "/",
+		SegmentFile: "",
 	}
 }
 
@@ -260,8 +260,10 @@ func (w *Watcher) Run() error {
 		}
 
 		//------------------------------------------------------------------
-		// Only gets the most recent segment file
-		w.SegmentFile = SegmentName(w.walDir, currentSegment)
+		// Only gets the most recent segment file at first run
+		// Gotta test it for whent the segment changes 
+
+		w.SegmentFile = SegmentName("", currentSegment)
 		//------------------------------------------------------------------
 
 		currentSegment++

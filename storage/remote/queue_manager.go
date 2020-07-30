@@ -49,6 +49,7 @@ type SegmentRecord struct {
 }
 
 type Checkpoints struct {
+	Recorded	time.Time
 	Checkpoints []SegmentRecord
 }
 
@@ -261,7 +262,6 @@ type QueueManager struct {
 	externalLabels labels.Labels
 	relabelConfigs []*relabel.Config
 	watcher        *wal.Watcher
-	w              wal.Watcher
 
 	clientMtx   sync.RWMutex
 	storeClient WriteClient
@@ -280,6 +280,10 @@ type QueueManager struct {
 	samplesIn, samplesDropped, samplesOut, samplesOutDuration *ewmaRate
 
 	metrics *queueManagerMetrics
+
+	// -----------------------------------------------------
+	endpoint string
+	// -----------------------------------------------------
 }
 
 // NewQueueManager builds a new QueueManager.
@@ -323,6 +327,7 @@ func NewQueueManager(
 		samplesOutDuration: newEWMARate(ewmaWeight, shardUpdateDuration),
 
 		metrics: metrics,
+		endpoint: client.Endpoint(),
 	}
 
 	t.watcher = wal.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, walDir)
@@ -424,25 +429,23 @@ func (t *QueueManager) Stop() {
 // ---------------------------------------------------------------
 
 // RecordSegment - writes the segment record in a JSON file
-func (t *QueueManager) RecordSegment() {
+func (t *QueueManager) RecordSegment(){
 	// Add check that fileDir is < 7 characters
 	// Segment File Directory
-	SegmentDir := t.watcher.SegmentFile
-
-	// Segment File Name
-	SegmentName := SegmentDir[len(SegmentDir)-7:]
+	SegmentName := t.watcher.SegmentFile
 
 	fmt.Println("----------------------------------------")
 	fmt.Println("Recording Segment....")
-	fmt.Println("Segment Directory: " + SegmentDir)
 	fmt.Println("Segment Name: " + SegmentName)
 
 	record := Checkpoints{
+		Recorded: time.Now(),
 		Checkpoints: []SegmentRecord{
 			SegmentRecord{
 				Segment:  SegmentName,
 				Offset:   "00000001",
-				Endpoint: "localhost:1234/receive",
+				// only handles one end point rn
+				Endpoint: t.endpoint,
 			},
 		},
 	}
