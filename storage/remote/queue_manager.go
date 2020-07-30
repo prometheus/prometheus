@@ -51,6 +51,7 @@ type SegmentRecord struct {
 }
 
 type Checkpoints struct {
+	Recorded    time.Time
 	Checkpoints []SegmentRecord
 }
 
@@ -385,6 +386,7 @@ type QueueManager struct {
 	metrics              *queueManagerMetrics
 	interner             *pool
 	highestRecvTimestamp *maxTimestamp
+	endpoint             string
 }
 
 // NewQueueManager builds a new QueueManager.
@@ -437,6 +439,7 @@ func NewQueueManager(
 		metrics:              metrics,
 		interner:             interner,
 		highestRecvTimestamp: highestRecvTimestamp,
+		endpoint:             client.Endpoint(),
 	}
 
 	t.watcher = wal.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, walDir, enableExemplarRemoteWrite)
@@ -659,22 +662,20 @@ func (t *QueueManager) Stop() {
 func (t *QueueManager) RecordSegment() {
 	// Add check that fileDir is < 7 characters
 	// Segment File Directory
-	SegmentDir := t.watcher.SegmentFile
-
-	// Segment File Name
-	SegmentName := SegmentDir[len(SegmentDir)-7:]
+	SegmentName := t.watcher.SegmentFile
 
 	fmt.Println("----------------------------------------")
 	fmt.Println("Recording Segment....")
-	fmt.Println("Segment Directory: " + SegmentDir)
 	fmt.Println("Segment Name: " + SegmentName)
 
 	record := Checkpoints{
+		Recorded: time.Now(),
 		Checkpoints: []SegmentRecord{
 			SegmentRecord{
-				Segment:  SegmentName,
-				Offset:   "00000001",
-				Endpoint: "localhost:1234/receive",
+				Segment: SegmentName,
+				Offset:  "00000001",
+				// only handles one end point rn
+				Endpoint: t.endpoint,
 			},
 		},
 	}

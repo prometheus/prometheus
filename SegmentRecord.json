@@ -1,9 +1,10 @@
 {
+"Recorded": "2020-07-30T05:51:14.67228696-07:00",
 "Checkpoints": [
 {
-"Segment": "0000127",
+"Segment": "00000026",
 "Offset": "00000001",
-"Endpoint": "localhost:1234/receive"
+"Endpoint": "http://localhost:1234/receive"
 }
 ]
 }
