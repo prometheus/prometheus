@@ -410,7 +410,7 @@ func TestBlockQuerier_AgainstHeadWithOpenChunks(t *testing.T) {
 			testutil.Ok(t, err)
 			defer h.Close()
 
-			app := h.Appender()
+			app := h.Appender(context.Background())
 			for _, s := range testData {
 				for _, chk := range s.chunks {
 					for _, sample := range chk {
