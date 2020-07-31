@@ -15,6 +15,7 @@ package config
 
 import (
 	"encoding/json"
+	"github.com/prometheus/prometheus/discovery/eureka"
 	"io/ioutil"
 	"net/url"
 	"path/filepath"
@@ -677,6 +678,27 @@ var expectedConf = &Config{
 				},
 			},
 		},
+		{
+			JobName: "service-eureka",
+
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath: DefaultScrapeConfig.MetricsPath,
+			Scheme:      DefaultScrapeConfig.Scheme,
+
+			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
+				EurekaSDConfigs: []*eureka.SDConfig{
+					{
+						Servers: []string{
+							"http://eureka.example.com:8761/eureka",
+						},
+						RefreshInterval: model.Duration(30 * time.Second),
+					},
+				},
+			},
+		},
 	},
 	AlertingConfig: AlertingConfig{
 		AlertmanagerConfigs: []*AlertmanagerConfig{
@@ -983,6 +1005,10 @@ var expectedErrors = []struct {
 	{
 		filename: "empty_static_config.bad.yml",
 		errMsg:   "empty or null section in static_configs",
+	},
+	{
+		filename: "eureka_no_servers.bad.yml",
+		errMsg:   "must contain at least one Eureka server",
 	},
 }
 

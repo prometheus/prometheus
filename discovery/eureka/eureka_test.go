@@ -183,7 +183,6 @@ func eurekaTestAppsWithMultipleInstance() *Applications {
 				},
 				Metadata: &MetaData{
 					Map: map[string]string{
-						"management.port":   "8090",
 						"prometheus.scrape": "true",
 						"prometheus.path":   "/actuator/prometheus",
 						"prometheus.port":   "8090",
@@ -207,7 +206,6 @@ func eurekaTestAppsWithMultipleInstance() *Applications {
 				},
 				Metadata: &MetaData{
 					Map: map[string]string{
-						"management.port":   "8090",
 						"prometheus.scrape": "true",
 						"prometheus.path":   "/actuator/prometheus",
 						"prometheus.port":   "8090",
@@ -311,7 +309,6 @@ func eurekaTestAppsWithMetadata() *Applications {
 			},
 			Metadata: &MetaData{
 				Map: map[string]string{
-					"management.port":   "8090",
 					"prometheus.scrape": "true",
 					"prometheus.path":   "/actuator/prometheus",
 					"prometheus.port":   "8090",
@@ -363,5 +360,67 @@ func TestEurekaSDAppsWithMetadata(t *testing.T) {
 
 	if tgt[model.LabelName(appInstanceMetadataPrefix+"prometheus_path")] != "/actuator/prometheus" {
 		t.Fatalf("Wrong metadata value : %s", tgt[model.LabelName(appInstanceMetadataPrefix+"prometheus_path")])
+	}
+}
+
+func eurekaTestAppsWithMetadataManagementPort() *Applications {
+	var (
+		ins = Instance{
+			HostName:   "meta-service002.test.com",
+			App:        "META-SERVICE",
+			IpAddr:     "192.133.87.237",
+			VipAddress: "meta-service",
+			Status:     "UP",
+			Port: &Port{
+				Port:    8080,
+				Enabled: true,
+			},
+			SecurePort: &Port{
+				Port:    8088,
+				Enabled: false,
+			},
+			Metadata: &MetaData{
+				Map: map[string]string{
+					"management.port": "8090",
+				},
+			},
+			InstanceID: "meta-service002.test.com:meta-service:8080",
+		}
+
+		app = Application{
+			Name:      "META-SERVICE",
+			Instances: []Instance{ins},
+		}
+	)
+	return &Applications{
+		Applications: []Application{app},
+	}
+}
+
+func TestEurekaSDAppsWithMetadataMetadataManagementPort(t *testing.T) {
+	var (
+		client = func(_ context.Context, _ []string, _ *http.Client) (*Applications, error) {
+			return eurekaTestAppsWithMetadataManagementPort(), nil
+		}
+	)
+	tgs, err := testUpdateServices(client)
+	if err != nil {
+		t.Fatalf("Got error: %s", err)
+	}
+	if len(tgs) != 1 {
+		t.Fatal("Expected 1 target group, got", len(tgs))
+	}
+
+	tg := tgs[0]
+
+	if tg.Source != "META-SERVICE" {
+		t.Fatalf("Wrong target group name: %s", tg.Source)
+	}
+	if len(tg.Targets) != 1 {
+		t.Fatalf("Wrong number of targets: %v", tg.Targets)
+	}
+	tgt := tg.Targets[0]
+	if tgt[model.AddressLabel] != "meta-service002.test.com:8090" {
+		t.Fatalf("Wrong target address: %s", tgt[model.AddressLabel])
 	}
 }

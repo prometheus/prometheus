@@ -196,7 +196,9 @@ func resolveFilepaths(baseDir string, cfg *Config) {
 				filecfg.Files[i] = join(fn)
 			}
 		}
-
+		for _, eurekacfg := range cfg.EurekaSDConfigs {
+			clientPaths(&eurekacfg.HTTPClientConfig)
+		}
 	}
 
 	for _, cfg := range cfg.ScrapeConfigs {

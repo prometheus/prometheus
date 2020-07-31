@@ -279,6 +279,11 @@ scrape_configs:
       cert_file: valid_cert_file
       key_file:  valid_key_file
 
+- job_name: service-eureka
+  eureka_sd_configs:
+    - servers:
+        - 'http://eureka.example.com:8761/eureka'
+
 alerting:
   alertmanagers:
   - scheme: https

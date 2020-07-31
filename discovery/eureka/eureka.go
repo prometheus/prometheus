@@ -205,5 +205,11 @@ func lv(s string) model.LabelValue {
 }
 
 func targetEndpoint(instance *Instance) string {
-	return net.JoinHostPort(instance.HostName, strconv.Itoa(instance.Port.Port))
+	var port string
+	if len(instance.Metadata.Map["management.port"]) > 0 {
+		port = instance.Metadata.Map["management.port"]
+	} else {
+		port = strconv.Itoa(instance.Port.Port)
+	}
+	return net.JoinHostPort(instance.HostName, port)
 }
