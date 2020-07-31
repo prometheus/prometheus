@@ -1,30 +1,25 @@
 {
-"Recorded": "2020-07-31T00:08:23.308147103-07:00",
-"Checkpoints": [
-{
-"Segment": "00000081",
-"Offset": "00000000",
-"Endpoint": "http://localhost:1234/receive"
-},
-{
-"Segment": "00000081",
-"Offset": "00000000",
-"Endpoint": "http://localhost:1235/receive"
-},
-{
-"Segment": "00000081",
-"Offset": "00000000",
-"Endpoint": "http://localhost:1236/receive"
-},
-{
-"Segment": "00000081",
-"Offset": "00000000",
-"Endpoint": "http://localhost:1237/receive"
-},
-{
-"Segment": "00000081",
-"Offset": "00000000",
-"Endpoint": "http://localhost:1238/receive"
-}
-]
+  "Recorded": "2020-07-31T14:23:07.40702096-07:00",
+  "Checkpoints": [
+    {
+      "Segment": "00000082",
+      "Endpoint": "http://localhost:1234/receive"
+    },
+    {
+      "Segment": "00000082",
+      "Endpoint": "http://localhost:1235/receive"
+    },
+    {
+      "Segment": "00000082",
+      "Endpoint": "http://localhost:1236/receive"
+    },
+    {
+      "Segment": "00000082",
+      "Endpoint": "http://localhost:1237/receive"
+    },
+    {
+      "Segment": "00000082",
+      "Endpoint": "http://localhost:1238/receive"
+    }
+  ]
 }

@@ -379,7 +379,6 @@ var Checkpoint = Checkpoints{}
 
 type SegmentRecord struct {
 	Segment  string
-	Offset   string
 	Endpoint string
 }
 
@@ -626,9 +625,6 @@ func (t *QueueManager) Start() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		// TODO:
-		// - Set communication with WAL to set the segment file
-
 		for _, record := range check.Checkpoints {
 			segmentNumber, err := strconv.Atoi(record.Segment)
 			if err != nil {
@@ -712,7 +708,6 @@ func (t *QueueManager) getSegmentRecords() SegmentRecord {
 
 	record := SegmentRecord{
 		Segment:  RecordSegment,
-		Offset:   "00000000",
 		Endpoint: RecordEndpoint,
 >>>>>>> cb5849443 (Added json error detection and handeling, added functionality to add segment records from multiple endpoints)
 	}
