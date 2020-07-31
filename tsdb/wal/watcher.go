@@ -84,7 +84,8 @@ type Watcher struct {
 	done chan struct{}
 
 	// For testing, stop when we hit this segment.
-	MaxSegment  int
+	MaxSegment int
+	// Current Segment file
 	SegmentFile string
 }
 
@@ -264,13 +265,8 @@ func (w *Watcher) Run() error {
 			return nil
 		}
 
-		//------------------------------------------------------------------
-		// Only gets the most recent segment file at first run
-		// Gotta test it for whent the segment changes 
-
+		// Sets the current Segment files name
 		w.SegmentFile = SegmentName("", currentSegment)
-		//------------------------------------------------------------------
-
 		currentSegment++
 	}
 
