@@ -28,35 +28,6 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
-func TestMergeStringSlices(t *testing.T) {
-	for _, tc := range []struct {
-		input    [][]string
-		expected []string
-	}{
-		{},
-		{[][]string{{"foo"}}, []string{"foo"}},
-		{[][]string{{"foo"}, {"bar"}}, []string{"bar", "foo"}},
-		{[][]string{{"foo"}, {"bar"}, {"baz"}}, []string{"bar", "baz", "foo"}},
-	} {
-		testutil.Equals(t, tc.expected, mergeStringSlices(tc.input))
-	}
-}
-
-func TestMergeTwoStringSlices(t *testing.T) {
-	for _, tc := range []struct {
-		a, b, expected []string
-	}{
-		{[]string{}, []string{}, []string{}},
-		{[]string{"foo"}, nil, []string{"foo"}},
-		{nil, []string{"bar"}, []string{"bar"}},
-		{[]string{"foo"}, []string{"bar"}, []string{"bar", "foo"}},
-		{[]string{"foo"}, []string{"bar", "baz"}, []string{"bar", "baz", "foo"}},
-		{[]string{"foo"}, []string{"foo"}, []string{"foo"}},
-	} {
-		testutil.Equals(t, tc.expected, mergeTwoStringSlices(tc.a, tc.b))
-	}
-}
-
 func TestMergeQuerierWithChainMerger(t *testing.T) {
 	for _, tc := range []struct {
 		name                 string
@@ -215,7 +186,7 @@ func TestMergeQuerierWithChainMerger(t *testing.T) {
 			}
 			qs = append(qs, tc.extraQueriers...)
 
-			mergedQuerier := NewMergeQuerier(p, qs, ChainedSeriesMerge).Select(false, nil)
+			mergedQuerier := NewMergeQuerier([]Querier{p}, qs, ChainedSeriesMerge).Select(false, nil)
 
 			// Get all merged series upfront to make sure there are no incorrectly retained shared
 			// buffers causing bugs.
@@ -230,8 +201,8 @@ func TestMergeQuerierWithChainMerger(t *testing.T) {
 				expectedSeries := tc.expected.At()
 				testutil.Equals(t, expectedSeries.Labels(), actualSeries.Labels())
 
-				expSmpl, expErr := ExpandSamples(expectedSeries.Iterator())
-				actSmpl, actErr := ExpandSamples(actualSeries.Iterator())
+				expSmpl, expErr := ExpandSamples(expectedSeries.Iterator(), nil)
+				actSmpl, actErr := ExpandSamples(actualSeries.Iterator(), nil)
 				testutil.Equals(t, expErr, actErr)
 				testutil.Equals(t, expSmpl, actSmpl)
 			}
@@ -391,7 +362,7 @@ func TestMergeChunkQuerierWithNoVerticalChunkSeriesMerger(t *testing.T) {
 			}
 			qs = append(qs, tc.extraQueriers...)
 
-			merged := NewMergeChunkQuerier(p, qs, NewCompactingChunkSeriesMerger(nil)).Select(false, nil)
+			merged := NewMergeChunkQuerier([]ChunkQuerier{p}, qs, NewCompactingChunkSeriesMerger(nil)).Select(false, nil)
 			for merged.Next() {
 				testutil.Assert(t, tc.expected.Next(), "Expected Next() to be true")
 				actualSeries := merged.At()
@@ -406,6 +377,103 @@ func TestMergeChunkQuerierWithNoVerticalChunkSeriesMerger(t *testing.T) {
 			}
 			testutil.Ok(t, merged.Err())
 			testutil.Assert(t, !tc.expected.Next(), "Expected Next() to be false")
+		})
+	}
+}
+
+func TestCompactingChunkSeriesMerger(t *testing.T) {
+	m := NewCompactingChunkSeriesMerger(ChainedSeriesMerge)
+
+	for _, tc := range []struct {
+		name     string
+		input    []ChunkSeries
+		expected ChunkSeries
+	}{
+		{
+			name: "single empty series",
+			input: []ChunkSeries{
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), nil),
+			},
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), nil),
+		},
+		{
+			name: "single series",
+			input: []ChunkSeries{
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1}, sample{2, 2}}, []tsdbutil.Sample{sample{3, 3}}),
+			},
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1}, sample{2, 2}}, []tsdbutil.Sample{sample{3, 3}}),
+		},
+		{
+			name: "two empty series",
+			input: []ChunkSeries{
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), nil),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), nil),
+			},
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), nil),
+		},
+		{
+			name: "two non overlapping",
+			input: []ChunkSeries{
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1}, sample{2, 2}}, []tsdbutil.Sample{sample{3, 3}, sample{5, 5}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{7, 7}, sample{9, 9}}, []tsdbutil.Sample{sample{10, 10}}),
+			},
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1}, sample{2, 2}}, []tsdbutil.Sample{sample{3, 3}, sample{5, 5}}, []tsdbutil.Sample{sample{7, 7}, sample{9, 9}}, []tsdbutil.Sample{sample{10, 10}}),
+		},
+		{
+			name: "two overlapping",
+			input: []ChunkSeries{
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1}, sample{2, 2}}, []tsdbutil.Sample{sample{3, 3}, sample{8, 8}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{7, 7}, sample{9, 9}}, []tsdbutil.Sample{sample{10, 10}}),
+			},
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1}, sample{2, 2}}, []tsdbutil.Sample{sample{3, 3}, sample{7, 7}, sample{8, 8}, sample{9, 9}}, []tsdbutil.Sample{sample{10, 10}}),
+		},
+		{
+			name: "two duplicated",
+			input: []ChunkSeries{
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1}, sample{2, 2}, sample{3, 3}, sample{5, 5}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{2, 2}, sample{3, 3}, sample{5, 5}}),
+			},
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1}, sample{2, 2}, sample{3, 3}, sample{5, 5}}),
+		},
+		{
+			name: "three overlapping",
+			input: []ChunkSeries{
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1}, sample{2, 2}, sample{3, 3}, sample{5, 5}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{2, 2}, sample{3, 3}, sample{6, 6}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{0, 0}, sample{4, 4}}),
+			},
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{0, 0}, sample{1, 1}, sample{2, 2}, sample{3, 3}, sample{4, 4}, sample{5, 5}, sample{6, 6}}),
+		},
+		{
+			name: "three in chained overlap",
+			input: []ChunkSeries{
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1}, sample{2, 2}, sample{3, 3}, sample{5, 5}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{4, 4}, sample{6, 6}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{6, 6}, sample{10, 10}}),
+			},
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1}, sample{2, 2}, sample{3, 3}, sample{4, 4}, sample{5, 5}, sample{6, 6}, sample{10, 10}}),
+		},
+		{
+			name: "three in chained overlap complex",
+			input: []ChunkSeries{
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{0, 0}, sample{5, 5}}, []tsdbutil.Sample{sample{10, 10}, sample{15, 15}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{2, 2}, sample{20, 20}}, []tsdbutil.Sample{sample{25, 25}, sample{30, 30}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{18, 18}, sample{26, 26}}, []tsdbutil.Sample{sample{31, 31}, sample{35, 35}}),
+			},
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+				[]tsdbutil.Sample{sample{0, 0}, sample{2, 2}, sample{5, 5}, sample{10, 10}, sample{15, 15}, sample{18, 18}, sample{20, 20}, sample{25, 25}, sample{26, 26}, sample{30, 30}},
+				[]tsdbutil.Sample{sample{31, 31}, sample{35, 35}},
+			),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			merged := m(tc.input...)
+			testutil.Equals(t, tc.expected.Labels(), merged.Labels())
+			actChks, actErr := ExpandChunks(merged.Iterator())
+			expChks, expErr := ExpandChunks(tc.expected.Iterator())
+
+			testutil.Equals(t, expErr, actErr)
+			testutil.Equals(t, expChks, actChks)
 		})
 	}
 }
@@ -543,7 +611,7 @@ func TestChainSampleIterator(t *testing.T) {
 		},
 	} {
 		merged := newChainSampleIterator(tc.input)
-		actual, err := ExpandSamples(merged)
+		actual, err := ExpandSamples(merged, nil)
 		testutil.Ok(t, err)
 		testutil.Equals(t, tc.expected, actual)
 	}
@@ -586,7 +654,7 @@ func TestChainSampleIteratorSeek(t *testing.T) {
 			t, v := merged.At()
 			actual = append(actual, sample{t, v})
 		}
-		s, err := ExpandSamples(merged)
+		s, err := ExpandSamples(merged, nil)
 		testutil.Ok(t, err)
 		actual = append(actual, s...)
 		testutil.Equals(t, tc.expected, actual)
@@ -620,7 +688,7 @@ func benchmarkDrain(seriesSet SeriesSet, b *testing.B) {
 	var err error
 	for n := 0; n < b.N; n++ {
 		for seriesSet.Next() {
-			result, err = ExpandSamples(seriesSet.At().Iterator())
+			result, err = ExpandSamples(seriesSet.At().Iterator(), nil)
 			testutil.Ok(b, err)
 		}
 	}
