@@ -196,6 +196,7 @@ func resolveFilepaths(baseDir string, cfg *Config) {
 				filecfg.Files[i] = join(fn)
 			}
 		}
+
 	}
 
 	for _, cfg := range cfg.ScrapeConfigs {

@@ -16,6 +16,7 @@ package discovery
 import (
 	"context"
 	"fmt"
+	"github.com/prometheus/prometheus/discovery/eureka"
 	"reflect"
 	"sync"
 	"time"
@@ -424,6 +425,11 @@ func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setNam
 	for _, c := range cfg.TritonSDConfigs {
 		add(c, func() (Discoverer, error) {
 			return triton.New(log.With(m.logger, "discovery", "triton"), c)
+		})
+	}
+	for _, c := range cfg.EurekaSDConfigs {
+		add(c, func() (Discoverer, error) {
+			return eureka.NewDiscovery(*c, log.With(m.logger, "discovery", "eureka"))
 		})
 	}
 	if len(cfg.StaticConfigs) > 0 {

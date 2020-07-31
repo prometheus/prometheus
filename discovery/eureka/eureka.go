@@ -15,165 +15,157 @@ package eureka
 
 import (
 	"context"
-	"fmt"
+	config_util "github.com/prometheus/common/config"
+	"github.com/prometheus/prometheus/discovery/refresh"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
+
 	"net"
+	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
-
-	"github.com/prometheus/client_golang/prometheus"
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/util/strutil"
-
-	"github.com/kangwoo/go-eureka-client/eureka"
 )
 
 const (
-	// metaLabelPrefix is the meta prefix used for all meta labels in this discovery.
+	presentValue = model.LabelValue("true")
+
+	// metaLabelPrefix is the meta prefix used for all meta labels.
+	// in this discovery.
 	metaLabelPrefix = model.MetaLabelPrefix + "eureka_"
 
-	// appLabel is used for the name of the app in Marathon.
-	appLabel      model.LabelName = metaLabelPrefix + "app"
-	instanceLabel model.LabelName = metaLabelPrefix + "instance"
-
-	// Constants for instrumentation.
-	namespace = "prometheus"
+	appNameLabel                     = metaLabelPrefix + "app_name"
+	appInstanceHostNameLabel         = metaLabelPrefix + "app_instance_hostname"
+	appInstanceIpAddrLabel           = metaLabelPrefix + "app_instance_ipaddr"
+	appInstanceStatusLabel           = metaLabelPrefix + "app_instance_status"
+	appInstanceIdLabel               = metaLabelPrefix + "app_instance_id"
+	appInstanceMetadataPrefix        = metaLabelPrefix + "app_instance_metadata_"
+	appInstanceMetadataPresentPrefix = metaLabelPrefix + "app_instance_metadatapresent_"
 )
 
-var (
-	refreshFailuresCount = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Namespace: namespace,
-			Name:      "sd_eureka_refresh_failures_total",
-			Help:      "The number of Eureka-SD refresh failures.",
-		})
-	refreshDuration = prometheus.NewSummary(
-		prometheus.SummaryOpts{
-			Namespace: namespace,
-			Name:      "sd_eureka_refresh_duration_seconds",
-			Help:      "The duration of a Eureka-SD refresh in seconds.",
-		})
-)
-
-func init() {
-	prometheus.MustRegister(refreshFailuresCount)
-	prometheus.MustRegister(refreshDuration)
+// DefaultSDConfig is the default Eureka SD configuration.
+var DefaultSDConfig = SDConfig{
+	RefreshInterval: model.Duration(30 * time.Second),
 }
 
-// Discovery provides service discovery based on a Marathon instance.
-type Discovery struct {
-	client          *eureka.Client
-	servers         []string
-	refreshInterval time.Duration
-	lastRefresh     map[string]*config.TargetGroup
-	metricsPath     string
-	enabledOnly     bool
-	logger          log.Logger
+// SDConfig is the configuration for applications running on Eureka.
+type SDConfig struct {
+	Servers          []string                     `yaml:"servers,omitempty"`
+	RefreshInterval  model.Duration               `yaml:"refresh_interval,omitempty"`
+	HTTPClientConfig config_util.HTTPClientConfig `yaml:",inline"`
 }
 
-// NewDiscovery returns a new Eureka Service Discovery.
-func NewDiscovery(conf *config.EurekaSDConfig, logger log.Logger) (*Discovery, error) {
-	client := eureka.NewClient(conf.Servers, logger)
-
-	return &Discovery{
-		client:          client,
-		servers:         conf.Servers,
-		refreshInterval: time.Duration(conf.RefreshInterval),
-		metricsPath:     conf.MetricsPath,
-		enabledOnly:     conf.EnabledOnly,
-		logger:          logger,
-	}, nil
-}
-
-// Run implements the TargetProvider interface.
-func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(d.refreshInterval):
-			err := d.updateServices(ctx, ch)
-			if err != nil {
-				level.Error(d.logger).Log("msg", "Error while updating services", "err", err)
-			}
-		}
-	}
-}
-
-func (d *Discovery) updateServices(ctx context.Context, ch chan<- []*config.TargetGroup) (err error) {
-	t0 := time.Now()
-	defer func() {
-		refreshDuration.Observe(time.Since(t0).Seconds())
-		if err != nil {
-			refreshFailuresCount.Inc()
-		}
-	}()
-
-	targetMap, err := d.fetchTargetGroups()
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultSDConfig
+	type plain SDConfig
+	err := unmarshal((*plain)(c))
 	if err != nil {
 		return err
 	}
+	if len(c.Servers) == 0 {
+		return errors.New("eureka_sd: must contain at least one Eureka server")
+	}
 
-	all := make([]*config.TargetGroup, 0, len(targetMap))
+	return c.HTTPClientConfig.Validate()
+}
+
+type applicationsClient func(ctx context.Context, servers []string, client *http.Client) (*Applications, error)
+
+// Discovery provides service discovery based on a Eureka instance.
+type Discovery struct {
+	*refresh.Discovery
+	client      *http.Client
+	servers     []string
+	lastRefresh map[string]*targetgroup.Group
+	appsClient  applicationsClient
+}
+
+// New creates a new Eureka discovery for the given role.
+func NewDiscovery(conf SDConfig, logger log.Logger) (*Discovery, error) {
+	rt, err := config_util.NewRoundTripperFromConfig(conf.HTTPClientConfig, "marathon_sd", false)
+	if err != nil {
+		return nil, err
+	}
+
+	d := &Discovery{
+		client:     &http.Client{Transport: rt},
+		servers:    conf.Servers,
+		appsClient: fetchApps,
+	}
+	d.Discovery = refresh.NewDiscovery(
+		logger,
+		"eureka",
+		time.Duration(conf.RefreshInterval),
+		d.refresh,
+	)
+	return d, nil
+}
+
+func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
+	targetMap, err := d.fetchTargetGroups(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	all := make([]*targetgroup.Group, 0, len(targetMap))
 	for _, tg := range targetMap {
 		all = append(all, tg)
 	}
 
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
-	case ch <- all:
+		return nil, ctx.Err()
+	default:
 	}
 
 	// Remove services which did disappear.
 	for source := range d.lastRefresh {
 		_, ok := targetMap[source]
 		if !ok {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case ch <- []*config.TargetGroup{{Source: source}}:
-				level.Debug(d.logger).Log("msg", "Removing group", "source", source)
-			}
+			all = append(all, &targetgroup.Group{Source: source})
 		}
 	}
 
 	d.lastRefresh = targetMap
-	return nil
+	return all, nil
 }
 
-func (d *Discovery) fetchTargetGroups() (map[string]*config.TargetGroup, error) {
-	apps, err := d.client.GetApplications()
+func (d *Discovery) fetchTargetGroups(ctx context.Context) (map[string]*targetgroup.Group, error) {
+	apps, err := d.appsClient(ctx, d.servers, d.client)
 	if err != nil {
 		return nil, err
 	}
 
-	groups := d.appsToTargetGroups(apps)
+	groups := appsToTargetGroups(apps)
 	return groups, nil
 }
 
-// AppsToTargetGroups takes an array of Eureka Application and converts them into target groups.
-func (d *Discovery) appsToTargetGroups(apps *eureka.Applications) map[string]*config.TargetGroup {
-	tgroups := map[string]*config.TargetGroup{}
-	for _, app := range apps.Applications {
-		group := d.createTargetGroup(&app)
+// AppsToTargetGroups takes an array of Eureka Applications and converts them into target groups.
+func appsToTargetGroups(apps *Applications) map[string]*targetgroup.Group {
+	tgroups := map[string]*targetgroup.Group{}
+	for _, a := range apps.Applications {
+		group := createTargetGroup(&a)
 		tgroups[group.Source] = group
 	}
 	return tgroups
 }
 
-func (d *Discovery) createTargetGroup(app *eureka.Application) *config.TargetGroup {
+func createTargetGroup(app *Application) *targetgroup.Group {
 	var (
-		targets = d.targetsForApp(app)
+		targets = targetsForApp(app)
 		appName = model.LabelValue(app.Name)
 	)
-	tg := &config.TargetGroup{
+	tg := &targetgroup.Group{
 		Targets: targets,
 		Labels: model.LabelSet{
-			model.JobLabel: appName,
+			// FIXME
+			//model.JobLabel: appName,
+			appNameLabel: appName,
 		},
 		Source: app.Name,
 	}
@@ -181,28 +173,37 @@ func (d *Discovery) createTargetGroup(app *eureka.Application) *config.TargetGro
 	return tg
 }
 
-func (d *Discovery) targetsForApp(app *eureka.Application) []model.LabelSet {
+func targetsForApp(app *Application) []model.LabelSet {
 	targets := make([]model.LabelSet, 0, len(app.Instances))
+
+	// Gather info about the app's 'instances'. Each instance is considered a task
 	for _, t := range app.Instances {
-		if d.enabledOnly && t.Metadata.Map["prometheusEnabled"] != "true" {
-			continue
+		targetAddress := targetEndpoint(&t)
+		target := model.LabelSet{
+			model.AddressLabel:  model.LabelValue(targetAddress),
+			model.InstanceLabel: model.LabelValue(t.InstanceID),
+
+			appInstanceHostNameLabel: lv(t.HostName),
+			appInstanceIpAddrLabel:   lv(t.IpAddr),
+			appInstanceStatusLabel:   lv(t.Status),
+			appInstanceIdLabel:       lv(t.InstanceID),
 		}
 
-		targetAddress := targetForInstance(&t)
-		target := model.LabelSet{
-			model.AddressLabel:     model.LabelValue(targetAddress),
-			model.MetricsPathLabel: model.LabelValue(d.metricsPath),
-			model.InstanceLabel:    model.LabelValue(t.InstanceId),
+		for k, v := range t.Metadata.Map {
+			ln := strutil.SanitizeLabelName(k)
+			target[model.LabelName(appInstanceMetadataPrefix+ln)] = lv(v)
+			target[model.LabelName(appInstanceMetadataPresentPrefix+ln)] = presentValue
 		}
-		for ln, lv := range t.Metadata.Map {
-			ln = strutil.SanitizeLabelName(ln)
-			target[model.LabelName(ln)] = model.LabelValue(lv)
-		}
+
 		targets = append(targets, target)
 	}
 	return targets
 }
 
-func targetForInstance(instance *eureka.InstanceInfo) string {
-	return net.JoinHostPort(instance.HostName, fmt.Sprintf("%d", instance.Port.Port))
+func lv(s string) model.LabelValue {
+	return model.LabelValue(s)
+}
+
+func targetEndpoint(instance *Instance) string {
+	return net.JoinHostPort(instance.HostName, strconv.Itoa(instance.Port.Port))
 }
