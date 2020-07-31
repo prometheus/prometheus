@@ -22,12 +22,17 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/miekg/dns"
+	"go.uber.org/goleak"
 	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/testutil"
 )
+
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
+}
 
 func TestDNS(t *testing.T) {
 	testCases := []struct {
@@ -70,7 +75,12 @@ func TestDNS(t *testing.T) {
 				{
 					Source: "web.example.com.",
 					Targets: []model.LabelSet{
-						{"__address__": "192.0.2.2:80", "__meta_dns_name": "web.example.com."},
+						{
+							"__address__":                  "192.0.2.2:80",
+							"__meta_dns_name":              "web.example.com.",
+							"__meta_dns_srv_record_target": "",
+							"__meta_dns_srv_record_port":   "",
+						},
 					},
 				},
 			},
@@ -95,7 +105,12 @@ func TestDNS(t *testing.T) {
 				{
 					Source: "web.example.com.",
 					Targets: []model.LabelSet{
-						{"__address__": "[::1]:80", "__meta_dns_name": "web.example.com."},
+						{
+							"__address__":                  "[::1]:80",
+							"__meta_dns_name":              "web.example.com.",
+							"__meta_dns_srv_record_target": "",
+							"__meta_dns_srv_record_port":   "",
+						},
 					},
 				},
 			},
@@ -120,8 +135,18 @@ func TestDNS(t *testing.T) {
 				{
 					Source: "_mysql._tcp.db.example.com.",
 					Targets: []model.LabelSet{
-						{"__address__": "db1.example.com:3306", "__meta_dns_name": "_mysql._tcp.db.example.com."},
-						{"__address__": "db2.example.com:3306", "__meta_dns_name": "_mysql._tcp.db.example.com."},
+						{
+							"__address__":                  "db1.example.com:3306",
+							"__meta_dns_name":              "_mysql._tcp.db.example.com.",
+							"__meta_dns_srv_record_target": "db1.example.com.",
+							"__meta_dns_srv_record_port":   "3306",
+						},
+						{
+							"__address__":                  "db2.example.com:3306",
+							"__meta_dns_name":              "_mysql._tcp.db.example.com.",
+							"__meta_dns_srv_record_target": "db2.example.com.",
+							"__meta_dns_srv_record_port":   "3306",
+						},
 					},
 				},
 			},
@@ -145,7 +170,12 @@ func TestDNS(t *testing.T) {
 				{
 					Source: "_mysql._tcp.db.example.com.",
 					Targets: []model.LabelSet{
-						{"__address__": "db1.example.com:3306", "__meta_dns_name": "_mysql._tcp.db.example.com."},
+						{
+							"__address__":                  "db1.example.com:3306",
+							"__meta_dns_name":              "_mysql._tcp.db.example.com.",
+							"__meta_dns_srv_record_target": "db1.example.com.",
+							"__meta_dns_srv_record_port":   "3306",
+						},
 					},
 				},
 			},

@@ -26,6 +26,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"go.uber.org/goleak"
 	yaml "gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -38,6 +39,10 @@ import (
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
+
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
+}
 
 func TestAlertingRule(t *testing.T) {
 	suite, err := promql.NewTest(t, `

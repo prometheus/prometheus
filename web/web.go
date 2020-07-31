@@ -34,7 +34,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"sync/atomic"
 	template_text "text/template"
 	"time"
 
@@ -51,9 +50,8 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
 	"github.com/prometheus/common/server"
-	"github.com/prometheus/prometheus/tsdb"
-	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/soheilhy/cmux"
+	"go.uber.org/atomic"
 	"golang.org/x/net/netutil"
 	"google.golang.org/grpc"
 
@@ -64,6 +62,8 @@ import (
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/template"
+	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/util/httputil"
 	api_v1 "github.com/prometheus/prometheus/web/api/v1"
 	api_v2 "github.com/prometheus/prometheus/web/api/v2"
@@ -202,7 +202,7 @@ type Handler struct {
 	mtx sync.RWMutex
 	now func() model.Time
 
-	ready uint32 // ready is uint32 rather than boolean to be able to use atomic functions.
+	ready atomic.Uint32 // ready is uint32 rather than boolean to be able to use atomic functions.
 }
 
 // ApplyConfig updates the config field of the Handler struct
@@ -293,9 +293,8 @@ func New(logger log.Logger, o *Options) *Handler {
 		notifier:      o.Notifier,
 
 		now: model.Now,
-
-		ready: 0,
 	}
+	h.ready.Store(0)
 
 	factoryTr := func(_ context.Context) api_v1.TargetRetriever { return h.scrapeManager }
 	factoryAr := func(_ context.Context) api_v1.AlertmanagerRetriever { return h.notifier }
@@ -484,13 +483,12 @@ func serveDebug(w http.ResponseWriter, req *http.Request) {
 
 // Ready sets Handler to be ready.
 func (h *Handler) Ready() {
-	atomic.StoreUint32(&h.ready, 1)
+	h.ready.Store(1)
 }
 
 // Verifies whether the server is ready or not.
 func (h *Handler) isReady() bool {
-	ready := atomic.LoadUint32(&h.ready)
-	return ready > 0
+	return h.ready.Load() > 0
 }
 
 // Checks if server is ready, calls f if it is, returns 503 if it is not.

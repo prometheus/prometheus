@@ -41,7 +41,7 @@ jobs:
           GOOPTS: "-p 2"
           GOMAXPROCS: "2"
     - prometheus/check_proto:
-        version: "3.11.4"
+        version: "3.12.3"
     - prometheus/store_artifact:
         file: prometheus
     - prometheus/store_artifact:

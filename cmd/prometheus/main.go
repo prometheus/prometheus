@@ -30,7 +30,6 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -47,6 +46,7 @@ import (
 	"github.com/prometheus/common/version"
 	jcfg "github.com/uber/jaeger-client-go/config"
 	jprom "github.com/uber/jaeger-lib/metrics/prometheus"
+	"go.uber.org/atomic"
 	kingpin "gopkg.in/alecthomas/kingpin.v2"
 	"k8s.io/klog"
 
@@ -696,7 +696,13 @@ func main() {
 					return errors.Wrapf(err, "opening storage failed")
 				}
 
-				level.Info(logger).Log("fs_type", prom_runtime.Statfs(cfg.localStoragePath))
+				switch fsType := prom_runtime.Statfs(cfg.localStoragePath); fsType {
+				case "NFS_SUPER_MAGIC":
+					level.Warn(logger).Log("fs_type", fsType, "msg", "This filesystem is not supported and may lead to data corruption and data loss. Please carefully read https://prometheus.io/docs/prometheus/latest/storage/ to learn more about supported filesystems.")
+				default:
+					level.Info(logger).Log("fs_type", fsType)
+				}
+
 				level.Info(logger).Log("msg", "TSDB started")
 				level.Debug(logger).Log("msg", "TSDB options",
 					"MinBlockDuration", cfg.tsdb.MinBlockDuration,
@@ -801,18 +807,18 @@ func openDBWithMetrics(dir string, logger log.Logger, reg prometheus.Registerer,
 }
 
 type safePromQLNoStepSubqueryInterval struct {
-	value int64
+	value atomic.Int64
 }
 
 func durationToInt64Millis(d time.Duration) int64 {
 	return int64(d / time.Millisecond)
 }
 func (i *safePromQLNoStepSubqueryInterval) Set(ev model.Duration) {
-	atomic.StoreInt64(&i.value, durationToInt64Millis(time.Duration(ev)))
+	i.value.Store(durationToInt64Millis(time.Duration(ev)))
 }
 
 func (i *safePromQLNoStepSubqueryInterval) Get(int64) int64 {
-	return atomic.LoadInt64(&i.value)
+	return i.value.Load()
 }
 
 func reloadConfig(filename string, logger log.Logger, noStepSuqueryInterval *safePromQLNoStepSubqueryInterval, rls ...func(*config.Config) error) (err error) {
