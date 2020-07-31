@@ -122,11 +122,11 @@ func (f *fanout) ChunkQuerier(ctx context.Context, mint, maxt int64) (ChunkQueri
 	return NewMergeChunkQuerier(primary, secondaries, NewCompactingChunkSeriesMerger(ChainedSeriesMerge)), nil
 }
 
-func (f *fanout) Appender() Appender {
-	primary := f.primary.Appender()
+func (f *fanout) Appender(ctx context.Context) Appender {
+	primary := f.primary.Appender(ctx)
 	secondaries := make([]Appender, 0, len(f.secondaries))
 	for _, storage := range f.secondaries {
-		secondaries = append(secondaries, storage.Appender())
+		secondaries = append(secondaries, storage.Appender(ctx))
 	}
 	return &fanoutAppender{
 		logger:      f.logger,

@@ -254,7 +254,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 				return mutateSampleLabels(l, opts.target, opts.honorLabels, opts.mrc)
 			},
 			func(l labels.Labels) labels.Labels { return mutateReportSampleLabels(l, opts.target) },
-			func() storage.Appender { return appender(app.Appender(), opts.limit) },
+			func(ctx context.Context) storage.Appender { return appender(app.Appender(ctx), opts.limit) },
 			cache,
 			jitterSeed,
 			opts.honorTimestamps,
@@ -681,7 +681,7 @@ type scrapeLoop struct {
 	forcedErr       error
 	forcedErrMtx    sync.Mutex
 
-	appender            func() storage.Appender
+	appender            func(ctx context.Context) storage.Appender
 	sampleMutator       labelsMutator
 	reportSampleMutator labelsMutator
 
@@ -943,7 +943,7 @@ func newScrapeLoop(ctx context.Context,
 	buffers *pool.Pool,
 	sampleMutator labelsMutator,
 	reportSampleMutator labelsMutator,
-	appender func() storage.Appender,
+	appender func(ctx context.Context) storage.Appender,
 	cache *scrapeCache,
 	jitterSeed uint64,
 	honorTimestamps bool,
@@ -1035,7 +1035,7 @@ func (sl *scrapeLoop) scrapeAndReport(interval, timeout time.Duration, last time
 	b := sl.buffers.Get(sl.lastScrapeSize).([]byte)
 	buf := bytes.NewBuffer(b)
 
-	app := sl.appender()
+	app := sl.appender(sl.ctx)
 	var total, added, seriesAdded int
 	var err, appErr, scrapeErr error
 	defer func() {
@@ -1053,7 +1053,7 @@ func (sl *scrapeLoop) scrapeAndReport(interval, timeout time.Duration, last time
 		// Add stale markers.
 		if _, _, _, err := sl.append(app, []byte{}, "", start); err != nil {
 			app.Rollback()
-			app = sl.appender()
+			app = sl.appender(sl.ctx)
 			level.Warn(sl.l).Log("msg", "Append failed", "err", err)
 		}
 		if errc != nil {
@@ -1085,13 +1085,13 @@ func (sl *scrapeLoop) scrapeAndReport(interval, timeout time.Duration, last time
 		total, added, seriesAdded, appErr = sl.append(app, b, contentType, start)
 		if appErr != nil {
 			app.Rollback()
-			app = sl.appender()
+			app = sl.appender(sl.ctx)
 			level.Debug(sl.l).Log("msg", "Append failed", "err", appErr)
 			// The append failed, probably due to a parse error or sample limit.
 			// Call sl.append again with an empty scrape to trigger stale markers.
 			if _, _, _, err := sl.append(app, []byte{}, "", start); err != nil {
 				app.Rollback()
-				app = sl.appender()
+				app = sl.appender(sl.ctx)
 				level.Warn(sl.l).Log("msg", "Append failed", "err", err)
 			}
 		}
@@ -1161,7 +1161,7 @@ func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, int
 	// Call sl.append again with an empty scrape to trigger stale markers.
 	// If the target has since been recreated and scraped, the
 	// stale markers will be out of order and ignored.
-	app := sl.appender()
+	app := sl.appender(sl.ctx)
 	var err error
 	defer func() {
 		if err != nil {
@@ -1175,7 +1175,7 @@ func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, int
 	}()
 	if _, _, _, err = sl.append(app, []byte{}, "", staleTime); err != nil {
 		app.Rollback()
-		app = sl.appender()
+		app = sl.appender(sl.ctx)
 		level.Warn(sl.l).Log("msg", "Stale append failed", "err", err)
 	}
 	if err = sl.reportStale(app, staleTime); err != nil {

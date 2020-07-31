@@ -710,8 +710,8 @@ func (db *DB) run() {
 }
 
 // Appender opens a new appender against the database.
-func (db *DB) Appender() storage.Appender {
-	return dbAppender{db: db, Appender: db.head.Appender()}
+func (db *DB) Appender(ctx context.Context) storage.Appender {
+	return dbAppender{db: db, Appender: db.head.Appender(ctx)}
 }
 
 // dbAppender wraps the DB's head appender and triggers compactions on commit

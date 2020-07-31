@@ -990,9 +990,9 @@ func (s *readyStorage) ChunkQuerier(ctx context.Context, mint, maxt int64) (stor
 }
 
 // Appender implements the Storage interface.
-func (s *readyStorage) Appender() storage.Appender {
+func (s *readyStorage) Appender(ctx context.Context) storage.Appender {
 	if x := s.get(); x != nil {
-		return x.Appender()
+		return x.Appender(ctx)
 	}
 	return notReadyAppender{}
 }

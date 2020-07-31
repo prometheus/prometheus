@@ -412,7 +412,7 @@ func TestScrapePoolAppender(t *testing.T) {
 	appl, ok := loop.(*scrapeLoop)
 	testutil.Assert(t, ok, "Expected scrapeLoop but got %T", loop)
 
-	wrapped := appl.appender()
+	wrapped := appl.appender(context.Background())
 
 	tl, ok := wrapped.(*timeLimitAppender)
 	testutil.Assert(t, ok, "Expected timeLimitAppender but got %T", wrapped)
@@ -427,7 +427,7 @@ func TestScrapePoolAppender(t *testing.T) {
 	appl, ok = loop.(*scrapeLoop)
 	testutil.Assert(t, ok, "Expected scrapeLoop but got %T", loop)
 
-	wrapped = appl.appender()
+	wrapped = appl.appender(context.Background())
 
 	sl, ok := wrapped.(*limitAppender)
 	testutil.Assert(t, ok, "Expected limitAppender but got %T", wrapped)
@@ -538,7 +538,7 @@ func TestScrapeLoopStop(t *testing.T) {
 		signal   = make(chan struct{}, 1)
 		appender = &collectResultAppender{}
 		scraper  = &testScraper{}
-		app      = func() storage.Appender { return appender }
+		app      = func(ctx context.Context) storage.Appender { return appender }
 	)
 
 	sl := newScrapeLoop(context.Background(),
@@ -603,7 +603,7 @@ func TestScrapeLoopRun(t *testing.T) {
 		errc   = make(chan error)
 
 		scraper = &testScraper{}
-		app     = func() storage.Appender { return &nopAppender{} }
+		app     = func(ctx context.Context) storage.Appender { return &nopAppender{} }
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -701,7 +701,7 @@ func TestScrapeLoopForcedErr(t *testing.T) {
 		errc   = make(chan error)
 
 		scraper = &testScraper{}
-		app     = func() storage.Appender { return &nopAppender{} }
+		app     = func(ctx context.Context) storage.Appender { return &nopAppender{} }
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -760,14 +760,14 @@ func TestScrapeLoopMetadata(t *testing.T) {
 		nil, nil,
 		nopMutator,
 		nopMutator,
-		func() storage.Appender { return nopAppender{} },
+		func(ctx context.Context) storage.Appender { return nopAppender{} },
 		cache,
 		0,
 		true,
 	)
 	defer cancel()
 
-	slApp := sl.appender()
+	slApp := sl.appender(ctx)
 	total, _, _, err := sl.append(slApp, []byte(`# TYPE test_metric counter
 # HELP test_metric some help text
 # UNIT test_metric metric
@@ -816,7 +816,7 @@ func TestScrapeLoopSeriesAdded(t *testing.T) {
 	)
 	defer cancel()
 
-	slApp := sl.appender()
+	slApp := sl.appender(ctx)
 	total, added, seriesAdded, err := sl.append(slApp, []byte("test_metric 1\n"), "", time.Time{})
 	testutil.Ok(t, err)
 	testutil.Ok(t, slApp.Commit())
@@ -824,7 +824,7 @@ func TestScrapeLoopSeriesAdded(t *testing.T) {
 	testutil.Equals(t, 1, added)
 	testutil.Equals(t, 1, seriesAdded)
 
-	slApp = sl.appender()
+	slApp = sl.appender(ctx)
 	total, added, seriesAdded, err = sl.append(slApp, []byte("test_metric 1\n"), "", time.Time{})
 	testutil.Ok(t, slApp.Commit())
 	testutil.Ok(t, err)
@@ -838,7 +838,7 @@ func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrape(t *testing.T) {
 	var (
 		signal  = make(chan struct{}, 1)
 		scraper = &testScraper{}
-		app     = func() storage.Appender { return appender }
+		app     = func(ctx context.Context) storage.Appender { return appender }
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -891,7 +891,7 @@ func TestScrapeLoopRunCreatesStaleMarkersOnParseFailure(t *testing.T) {
 	var (
 		signal     = make(chan struct{}, 1)
 		scraper    = &testScraper{}
-		app        = func() storage.Appender { return appender }
+		app        = func(ctx context.Context) storage.Appender { return appender }
 		numScrapes = 0
 	)
 
@@ -950,7 +950,7 @@ func TestScrapeLoopCache(t *testing.T) {
 	var (
 		signal  = make(chan struct{}, 1)
 		scraper = &testScraper{}
-		app     = func() storage.Appender { appender.next = s.Appender(); return appender }
+		app     = func(ctx context.Context) storage.Appender { appender.next = s.Appender(ctx); return appender }
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1018,13 +1018,13 @@ func TestScrapeLoopCacheMemoryExhaustionProtection(t *testing.T) {
 	s := teststorage.New(t)
 	defer s.Close()
 
-	sapp := s.Appender()
+	sapp := s.Appender(context.Background())
 
 	appender := &collectResultAppender{next: sapp}
 	var (
 		signal  = make(chan struct{}, 1)
 		scraper = &testScraper{}
-		app     = func() storage.Appender { return appender }
+		app     = func(ctx context.Context) storage.Appender { return appender }
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1139,7 +1139,7 @@ func TestScrapeLoopAppend(t *testing.T) {
 			func(l labels.Labels) labels.Labels {
 				return mutateReportSampleLabels(l, discoveryLabels)
 			},
-			func() storage.Appender { return app },
+			func(ctx context.Context) storage.Appender { return app },
 			nil,
 			0,
 			true,
@@ -1147,7 +1147,7 @@ func TestScrapeLoopAppend(t *testing.T) {
 
 		now := time.Now()
 
-		slApp := sl.appender()
+		slApp := sl.appender(context.Background())
 		_, _, _, err := sl.append(slApp, []byte(test.scrapeLabels), "", now)
 		testutil.Ok(t, err)
 		testutil.Ok(t, slApp.Commit())
@@ -1180,7 +1180,7 @@ func TestScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T) {
 		nil, nil, nil,
 		nopMutator,
 		nopMutator,
-		func() storage.Appender { return app },
+		func(ctx context.Context) storage.Appender { return app },
 		nil,
 		0,
 		true,
@@ -1200,7 +1200,7 @@ func TestScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T) {
 	sl.cache.addRef(mets, fakeRef, lset, hash)
 	now := time.Now()
 
-	slApp := sl.appender()
+	slApp := sl.appender(context.Background())
 	_, _, _, err := sl.append(slApp, []byte(metric), "", now)
 	testutil.Ok(t, err)
 	testutil.Ok(t, slApp.Commit())
@@ -1229,7 +1229,7 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 			return l
 		},
 		nopMutator,
-		func() storage.Appender { return app },
+		func(ctx context.Context) storage.Appender { return app },
 		nil,
 		0,
 		true,
@@ -1243,7 +1243,7 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 	beforeMetricValue := beforeMetric.GetCounter().GetValue()
 
 	now := time.Now()
-	slApp := sl.appender()
+	slApp := sl.appender(context.Background())
 	total, added, seriesAdded, err := sl.append(app, []byte("metric_a 1\nmetric_b 1\nmetric_c 1\n"), "", now)
 	if err != errSampleLimit {
 		t.Fatalf("Did not see expected sample limit error: %s", err)
@@ -1274,7 +1274,7 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 	testutil.Equals(t, want, resApp.rolledbackResult, "Appended samples not as expected")
 
 	now = time.Now()
-	slApp = sl.appender()
+	slApp = sl.appender(context.Background())
 	total, added, seriesAdded, err = sl.append(slApp, []byte("metric_a 1\nmetric_b 1\nmetric_c{deleteme=\"yes\"} 1\nmetric_d 1\nmetric_e 1\nmetric_f 1\nmetric_g 1\nmetric_h{deleteme=\"yes\"} 1\nmetric_i{deleteme=\"yes\"} 1\n"), "", now)
 	if err != errSampleLimit {
 		t.Fatalf("Did not see expected sample limit error: %s", err)
@@ -1298,19 +1298,19 @@ func TestScrapeLoop_ChangingMetricString(t *testing.T) {
 		nil, nil, nil,
 		nopMutator,
 		nopMutator,
-		func() storage.Appender { capp.next = s.Appender(); return capp },
+		func(ctx context.Context) storage.Appender { capp.next = s.Appender(ctx); return capp },
 		nil,
 		0,
 		true,
 	)
 
 	now := time.Now()
-	slApp := sl.appender()
+	slApp := sl.appender(context.Background())
 	_, _, _, err := sl.append(slApp, []byte(`metric_a{a="1",b="1"} 1`), "", now)
 	testutil.Ok(t, err)
 	testutil.Ok(t, slApp.Commit())
 
-	slApp = sl.appender()
+	slApp = sl.appender(context.Background())
 	_, _, _, err = sl.append(slApp, []byte(`metric_a{b="1",a="1"} 2`), "", now.Add(time.Minute))
 	testutil.Ok(t, err)
 	testutil.Ok(t, slApp.Commit())
@@ -1338,19 +1338,19 @@ func TestScrapeLoopAppendStaleness(t *testing.T) {
 		nil, nil, nil,
 		nopMutator,
 		nopMutator,
-		func() storage.Appender { return app },
+		func(ctx context.Context) storage.Appender { return app },
 		nil,
 		0,
 		true,
 	)
 
 	now := time.Now()
-	slApp := sl.appender()
+	slApp := sl.appender(context.Background())
 	_, _, _, err := sl.append(slApp, []byte("metric_a 1\n"), "", now)
 	testutil.Ok(t, err)
 	testutil.Ok(t, slApp.Commit())
 
-	slApp = sl.appender()
+	slApp = sl.appender(context.Background())
 	_, _, _, err = sl.append(slApp, []byte(""), "", now.Add(time.Second))
 	testutil.Ok(t, err)
 	testutil.Ok(t, slApp.Commit())
@@ -1381,19 +1381,19 @@ func TestScrapeLoopAppendNoStalenessIfTimestamp(t *testing.T) {
 		nil, nil, nil,
 		nopMutator,
 		nopMutator,
-		func() storage.Appender { return app },
+		func(ctx context.Context) storage.Appender { return app },
 		nil,
 		0,
 		true,
 	)
 
 	now := time.Now()
-	slApp := sl.appender()
+	slApp := sl.appender(context.Background())
 	_, _, _, err := sl.append(slApp, []byte("metric_a 1 1000\n"), "", now)
 	testutil.Ok(t, err)
 	testutil.Ok(t, slApp.Commit())
 
-	slApp = sl.appender()
+	slApp = sl.appender(context.Background())
 	_, _, _, err = sl.append(slApp, []byte(""), "", now.Add(time.Second))
 	testutil.Ok(t, err)
 	testutil.Ok(t, slApp.Commit())
@@ -1412,7 +1412,7 @@ func TestScrapeLoopRunReportsTargetDownOnScrapeError(t *testing.T) {
 	var (
 		scraper  = &testScraper{}
 		appender = &collectResultAppender{}
-		app      = func() storage.Appender { return appender }
+		app      = func(ctx context.Context) storage.Appender { return appender }
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1440,7 +1440,7 @@ func TestScrapeLoopRunReportsTargetDownOnInvalidUTF8(t *testing.T) {
 	var (
 		scraper  = &testScraper{}
 		appender = &collectResultAppender{}
-		app      = func() storage.Appender { return appender }
+		app      = func(ctx context.Context) storage.Appender { return appender }
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1494,14 +1494,14 @@ func TestScrapeLoopAppendGracefullyIfAmendOrOutOfOrderOrOutOfBounds(t *testing.T
 		nil, nil,
 		nopMutator,
 		nopMutator,
-		func() storage.Appender { return app },
+		func(ctx context.Context) storage.Appender { return app },
 		nil,
 		0,
 		true,
 	)
 
 	now := time.Unix(1, 0)
-	slApp := sl.appender()
+	slApp := sl.appender(context.Background())
 	total, added, seriesAdded, err := sl.append(slApp, []byte("out_of_order 1\namend 1\nnormal 1\nout_of_bounds 1\n"), "", now)
 	testutil.Ok(t, err)
 	testutil.Ok(t, slApp.Commit())
@@ -1526,7 +1526,7 @@ func TestScrapeLoopOutOfBoundsTimeError(t *testing.T) {
 		nil, nil,
 		nopMutator,
 		nopMutator,
-		func() storage.Appender {
+		func(ctx context.Context) storage.Appender {
 			return &timeLimitAppender{
 				Appender: app,
 				maxTime:  timestamp.FromTime(time.Now().Add(10 * time.Minute)),
@@ -1538,7 +1538,7 @@ func TestScrapeLoopOutOfBoundsTimeError(t *testing.T) {
 	)
 
 	now := time.Now().Add(20 * time.Minute)
-	slApp := sl.appender()
+	slApp := sl.appender(context.Background())
 	total, added, seriesAdded, err := sl.append(slApp, []byte("normal 1\n"), "", now)
 	testutil.Ok(t, err)
 	testutil.Ok(t, slApp.Commit())
@@ -1711,7 +1711,7 @@ func TestScrapeLoop_RespectTimestamps(t *testing.T) {
 	s := teststorage.New(t)
 	defer s.Close()
 
-	app := s.Appender()
+	app := s.Appender(context.Background())
 
 	capp := &collectResultAppender{next: app}
 
@@ -1719,13 +1719,13 @@ func TestScrapeLoop_RespectTimestamps(t *testing.T) {
 		nil, nil, nil,
 		nopMutator,
 		nopMutator,
-		func() storage.Appender { return capp },
+		func(ctx context.Context) storage.Appender { return capp },
 		nil, 0,
 		true,
 	)
 
 	now := time.Now()
-	slApp := sl.appender()
+	slApp := sl.appender(context.Background())
 	_, _, _, err := sl.append(slApp, []byte(`metric_a{a="1",b="1"} 1 0`), "", now)
 	testutil.Ok(t, err)
 	testutil.Ok(t, slApp.Commit())
@@ -1744,7 +1744,7 @@ func TestScrapeLoop_DiscardTimestamps(t *testing.T) {
 	s := teststorage.New(t)
 	defer s.Close()
 
-	app := s.Appender()
+	app := s.Appender(context.Background())
 
 	capp := &collectResultAppender{next: app}
 
@@ -1752,13 +1752,13 @@ func TestScrapeLoop_DiscardTimestamps(t *testing.T) {
 		nil, nil, nil,
 		nopMutator,
 		nopMutator,
-		func() storage.Appender { return capp },
+		func(ctx context.Context) storage.Appender { return capp },
 		nil, 0,
 		false,
 	)
 
 	now := time.Now()
-	slApp := sl.appender()
+	slApp := sl.appender(context.Background())
 	_, _, _, err := sl.append(slApp, []byte(`metric_a{a="1",b="1"} 1 0`), "", now)
 	testutil.Ok(t, err)
 	testutil.Ok(t, slApp.Commit())
@@ -1791,7 +1791,7 @@ func TestScrapeLoopDiscardDuplicateLabels(t *testing.T) {
 	defer cancel()
 
 	// We add a good and a bad metric to check that both are discarded.
-	slApp := sl.appender()
+	slApp := sl.appender(ctx)
 	_, _, _, err := sl.append(slApp, []byte("test_metric{le=\"500\"} 1\ntest_metric{le=\"600\",le=\"700\"} 1\n"), "", time.Time{})
 	testutil.NotOk(t, err)
 	testutil.Ok(t, slApp.Rollback())
@@ -1803,7 +1803,7 @@ func TestScrapeLoopDiscardDuplicateLabels(t *testing.T) {
 	testutil.Ok(t, series.Err())
 
 	// We add a good metric to check that it is recorded.
-	slApp = sl.appender()
+	slApp = sl.appender(ctx)
 	_, _, _, err = sl.append(slApp, []byte("test_metric{le=\"500\"} 1\n"), "", time.Time{})
 	testutil.Ok(t, err)
 	testutil.Ok(t, slApp.Commit())
@@ -1820,10 +1820,10 @@ func TestScrapeLoopDiscardUnnamedMetrics(t *testing.T) {
 	s := teststorage.New(t)
 	defer s.Close()
 
-	app := s.Appender()
+	app := s.Appender(context.Background())
 
 	ctx, cancel := context.WithCancel(context.Background())
-	sl := newScrapeLoop(ctx,
+	sl := newScrapeLoop(context.Background(),
 		&testScraper{},
 		nil, nil,
 		func(l labels.Labels) labels.Labels {
@@ -1833,14 +1833,14 @@ func TestScrapeLoopDiscardUnnamedMetrics(t *testing.T) {
 			return l
 		},
 		nopMutator,
-		func() storage.Appender { return app },
+		func(ctx context.Context) storage.Appender { return app },
 		nil,
 		0,
 		true,
 	)
 	defer cancel()
 
-	slApp := sl.appender()
+	slApp := sl.appender(context.Background())
 	_, _, _, err := sl.append(slApp, []byte("nok 1\nnok2{drop=\"drop\"} 1\n"), "", time.Time{})
 	testutil.NotOk(t, err)
 	testutil.Ok(t, slApp.Rollback())
@@ -2057,7 +2057,7 @@ func TestScrapeAddFast(t *testing.T) {
 	)
 	defer cancel()
 
-	slApp := sl.appender()
+	slApp := sl.appender(ctx)
 	_, _, _, err := sl.append(slApp, []byte("up 1\n"), "", time.Time{})
 	testutil.Ok(t, err)
 	testutil.Ok(t, slApp.Commit())
@@ -2068,7 +2068,7 @@ func TestScrapeAddFast(t *testing.T) {
 		v.ref++
 	}
 
-	slApp = sl.appender()
+	slApp = sl.appender(ctx)
 	_, _, _, err = sl.append(slApp, []byte("up 1\n"), "", time.Time{}.Add(time.Second))
 	testutil.Ok(t, err)
 	testutil.Ok(t, slApp.Commit())
