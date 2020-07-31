@@ -321,7 +321,7 @@ func (db *DBReadOnly) FlushWAL(dir string) (returnErr error) {
 	if err != nil {
 		return err
 	}
-	head, err := NewHead(nil, db.logger, w, 1, db.dir, nil, DefaultStripeSize, nil)
+	head, err := NewHead(nil, db.logger, w, DefaultBlockDuration, db.dir, nil, DefaultStripeSize, nil)
 	if err != nil {
 		return err
 	}
@@ -359,9 +359,7 @@ func (db *DBReadOnly) FlushWAL(dir string) (returnErr error) {
 	return errors.Wrap(err, "writing WAL")
 }
 
-// Querier loads the wal and returns a new querier over the data partition for the given time range.
-// Current implementation doesn't support multiple Queriers.
-func (db *DBReadOnly) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+func (db *DBReadOnly) loadDataAsQueryable(maxt int64) (storage.SampleAndChunkQueryable, error) {
 	select {
 	case <-db.closed:
 		return nil, ErrClosed
@@ -380,7 +378,7 @@ func (db *DBReadOnly) Querier(ctx context.Context, mint, maxt int64) (storage.Qu
 		blocks[i] = b
 	}
 
-	head, err := NewHead(nil, db.logger, nil, 1, db.dir, nil, DefaultStripeSize, nil)
+	head, err := NewHead(nil, db.logger, nil, DefaultBlockDuration, db.dir, nil, DefaultStripeSize, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -398,7 +396,7 @@ func (db *DBReadOnly) Querier(ctx context.Context, mint, maxt int64) (storage.Qu
 		if err != nil {
 			return nil, err
 		}
-		head, err = NewHead(nil, db.logger, w, 1, db.dir, nil, DefaultStripeSize, nil)
+		head, err = NewHead(nil, db.logger, w, DefaultBlockDuration, db.dir, nil, DefaultStripeSize, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -413,24 +411,32 @@ func (db *DBReadOnly) Querier(ctx context.Context, mint, maxt int64) (storage.Qu
 	}
 
 	db.closers = append(db.closers, head)
-
-	// TODO: Refactor so that it is possible to obtain a Querier without initializing a writable DB instance.
-	// Option 1: refactor DB to have the Querier implementation using the DBReadOnly.Querier implementation not the opposite.
-	// Option 2: refactor Querier to use another independent func which
-	// can than be used by a read only and writable db instances without any code duplication.
-	dbWritable := &DB{
+	return &DB{
 		dir:    db.dir,
 		logger: db.logger,
 		blocks: blocks,
 		head:   head,
-	}
-
-	return dbWritable.Querier(ctx, mint, maxt)
+	}, nil
 }
 
-func (db *DBReadOnly) ChunkQuerier(context.Context, int64, int64) (storage.ChunkQuerier, error) {
-	// TODO(bwplotka): Implement in next PR.
-	return nil, errors.New("not implemented")
+// Querier loads the blocks and wal and returns a new querier over the data partition for the given time range.
+// Current implementation doesn't support multiple Queriers.
+func (db *DBReadOnly) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+	q, err := db.loadDataAsQueryable(maxt)
+	if err != nil {
+		return nil, err
+	}
+	return q.Querier(ctx, mint, maxt)
+}
+
+// ChunkQuerier loads blocks and the wal and returns a new chunk querier over the data partition for the given time range.
+// Current implementation doesn't support multiple ChunkQueriers.
+func (db *DBReadOnly) ChunkQuerier(ctx context.Context, mint, maxt int64) (storage.ChunkQuerier, error) {
+	q, err := db.loadDataAsQueryable(maxt)
+	if err != nil {
+		return nil, err
+	}
+	return q.ChunkQuerier(ctx, mint, maxt)
 }
 
 // Blocks returns a slice of block readers for persisted blocks.
@@ -1330,10 +1336,8 @@ func (db *DB) Snapshot(dir string, withHead bool) error {
 }
 
 // Querier returns a new querier over the data partition for the given time range.
-// A goroutine must not handle more than one open Querier.
 func (db *DB) Querier(_ context.Context, mint, maxt int64) (storage.Querier, error) {
 	var blocks []BlockReader
-	var blockMetas []BlockMeta
 
 	db.mtx.RLock()
 	defer db.mtx.RUnlock()
@@ -1341,7 +1345,6 @@ func (db *DB) Querier(_ context.Context, mint, maxt int64) (storage.Querier, err
 	for _, b := range db.blocks {
 		if b.OverlapsClosedInterval(mint, maxt) {
 			blocks = append(blocks, b)
-			blockMetas = append(blockMetas, b.Meta())
 		}
 	}
 	if maxt >= db.head.MinTime() {
@@ -1361,27 +1364,50 @@ func (db *DB) Querier(_ context.Context, mint, maxt int64) (storage.Querier, err
 		}
 		// If we fail, all previously opened queriers must be closed.
 		for _, q := range blockQueriers {
-			q.Close()
+			// TODO(bwplotka): Handle error.
+			_ = q.Close()
+		}
+		return nil, errors.Wrapf(err, "open querier for block %s", b)
+	}
+	return storage.NewMergeQuerier(blockQueriers, nil, storage.ChainedSeriesMerge), nil
+}
+
+// ChunkQuerier returns a new chunk querier over the data partition for the given time range.
+func (db *DB) ChunkQuerier(_ context.Context, mint, maxt int64) (storage.ChunkQuerier, error) {
+	var blocks []BlockReader
+
+	db.mtx.RLock()
+	defer db.mtx.RUnlock()
+
+	for _, b := range db.blocks {
+		if b.OverlapsClosedInterval(mint, maxt) {
+			blocks = append(blocks, b)
+		}
+	}
+	if maxt >= db.head.MinTime() {
+		blocks = append(blocks, &RangeHead{
+			head: db.head,
+			mint: mint,
+			maxt: maxt,
+		})
+	}
+
+	blockQueriers := make([]storage.ChunkQuerier, 0, len(blocks))
+	for _, b := range blocks {
+		q, err := NewBlockChunkQuerier(b, mint, maxt)
+		if err == nil {
+			blockQueriers = append(blockQueriers, q)
+			continue
+		}
+		// If we fail, all previously opened queriers must be closed.
+		for _, q := range blockQueriers {
+			// TODO(bwplotka): Handle error.
+			_ = q.Close()
 		}
 		return nil, errors.Wrapf(err, "open querier for block %s", b)
 	}
 
-	if len(OverlappingBlocks(blockMetas)) > 0 {
-		return &verticalQuerier{
-			querier: querier{
-				blocks: blockQueriers,
-			},
-		}, nil
-	}
-
-	return &querier{
-		blocks: blockQueriers,
-	}, nil
-}
-
-func (db *DB) ChunkQuerier(context.Context, int64, int64) (storage.ChunkQuerier, error) {
-	// TODO(bwplotka): Implement in next PR.
-	return nil, errors.New("not implemented")
+	return storage.NewMergeChunkQuerier(blockQueriers, nil, storage.NewCompactingChunkSeriesMerger(storage.ChainedSeriesMerge)), nil
 }
 
 func rangeForTimestamp(t int64, width int64) (maxt int64) {

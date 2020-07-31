@@ -28,8 +28,10 @@ import (
 	"github.com/pkg/errors"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -466,8 +468,23 @@ type nopChunkWriter struct{}
 func (nopChunkWriter) WriteChunks(chunks ...chunks.Meta) error { return nil }
 func (nopChunkWriter) Close() error                            { return nil }
 
+func samplesForRange(minTime, maxTime int64, maxSamplesPerChunk int) (ret [][]sample) {
+	var curr []sample
+	for i := minTime; i <= maxTime; i++ {
+		curr = append(curr, sample{t: i})
+		if len(curr) >= maxSamplesPerChunk {
+			ret = append(ret, curr)
+			curr = []sample{}
+		}
+	}
+	if len(curr) > 0 {
+		ret = append(ret, curr)
+	}
+	return ret
+}
+
 func TestCompaction_populateBlock(t *testing.T) {
-	var populateBlocksCases = []struct {
+	for _, tc := range []struct {
 		title              string
 		inputSeriesSamples [][]seriesSamples
 		compactMinTime     int64
@@ -483,11 +500,7 @@ func TestCompaction_populateBlock(t *testing.T) {
 		{
 			// Populate from single block without chunks. We expect these kind of series being ignored.
 			inputSeriesSamples: [][]seriesSamples{
-				{
-					{
-						lset: map[string]string{"a": "b"},
-					},
-				},
+				{{lset: map[string]string{"a": "b"}}},
 			},
 		},
 		{
@@ -543,6 +556,46 @@ func TestCompaction_populateBlock(t *testing.T) {
 				{
 					lset:   map[string]string{"a": "c"},
 					chunks: [][]sample{{{t: 1}, {t: 9}}, {{t: 10}, {t: 19}}, {{t: 40}, {t: 45}}},
+				},
+			},
+		},
+		{
+			title: "Populate from two blocks; chunks with negative time.",
+			inputSeriesSamples: [][]seriesSamples{
+				{
+					{
+						lset:   map[string]string{"a": "b"},
+						chunks: [][]sample{{{t: 0}, {t: 10}}, {{t: 11}, {t: 20}}},
+					},
+					{
+						lset:   map[string]string{"a": "c"},
+						chunks: [][]sample{{{t: -11}, {t: -9}}, {{t: 10}, {t: 19}}},
+					},
+					{
+						// no-chunk series should be dropped.
+						lset: map[string]string{"a": "empty"},
+					},
+				},
+				{
+					{
+						lset:   map[string]string{"a": "b"},
+						chunks: [][]sample{{{t: 21}, {t: 30}}},
+					},
+					{
+						lset:   map[string]string{"a": "c"},
+						chunks: [][]sample{{{t: 40}, {t: 45}}},
+					},
+				},
+			},
+			compactMinTime: -11,
+			expSeriesSamples: []seriesSamples{
+				{
+					lset:   map[string]string{"a": "b"},
+					chunks: [][]sample{{{t: 0}, {t: 10}}, {{t: 11}, {t: 20}}, {{t: 21}, {t: 30}}},
+				},
+				{
+					lset:   map[string]string{"a": "c"},
+					chunks: [][]sample{{{t: -11}, {t: -9}}, {{t: 10}, {t: 19}}, {{t: 40}, {t: 45}}},
 				},
 			},
 		},
@@ -637,7 +690,44 @@ func TestCompaction_populateBlock(t *testing.T) {
 			},
 		},
 		{
+			title: "Populate from two blocks 1:1 duplicated chunks; with negative timestamps.",
+			inputSeriesSamples: [][]seriesSamples{
+				{
+					{
+						lset:   map[string]string{"a": "1"},
+						chunks: [][]sample{{{t: 1}, {t: 2}}, {{t: 3}, {t: 4}}},
+					},
+					{
+						lset:   map[string]string{"a": "2"},
+						chunks: [][]sample{{{t: -3}, {t: -2}}, {{t: 1}, {t: 3}, {t: 4}}, {{t: 5}, {t: 6}}},
+					},
+				},
+				{
+					{
+						lset:   map[string]string{"a": "1"},
+						chunks: [][]sample{{{t: 3}, {t: 4}}},
+					},
+					{
+						lset:   map[string]string{"a": "2"},
+						chunks: [][]sample{{{t: 1}, {t: 3}, {t: 4}}, {{t: 7}, {t: 8}}},
+					},
+				},
+			},
+			compactMinTime: -3,
+			expSeriesSamples: []seriesSamples{
+				{
+					lset:   map[string]string{"a": "1"},
+					chunks: [][]sample{{{t: 1}, {t: 2}}, {{t: 3}, {t: 4}}},
+				},
+				{
+					lset:   map[string]string{"a": "2"},
+					chunks: [][]sample{{{t: -3}, {t: -2}}, {{t: 1}, {t: 3}, {t: 4}}, {{t: 5}, {t: 6}}, {{t: 7}, {t: 8}}},
+				},
+			},
+		},
+		{
 			// This should not happened because head block is making sure the chunks are not crossing block boundaries.
+			// We used to return error, but now chunk is trimmed.
 			title: "Populate from single block containing chunk outside of compact meta time range.",
 			inputSeriesSamples: [][]seriesSamples{
 				{
@@ -649,10 +739,15 @@ func TestCompaction_populateBlock(t *testing.T) {
 			},
 			compactMinTime: 0,
 			compactMaxTime: 20,
-			expErr:         errors.New("found chunk with minTime: 10 maxTime: 30 outside of compacted minTime: 0 maxTime: 20"),
+			expSeriesSamples: []seriesSamples{
+				{
+					lset:   map[string]string{"a": "b"},
+					chunks: [][]sample{{{t: 1}, {t: 2}}, {{t: 10}}},
+				},
+			},
 		},
 		{
-			// Introduced by https://github.com/prometheus/tsdb/issues/347.
+			// Introduced by https://github.com/prometheus/tsdb/issues/347. We used to return error, but now chunk is trimmed.
 			title: "Populate from single block containing extra chunk",
 			inputSeriesSamples: [][]seriesSamples{
 				{
@@ -664,7 +759,12 @@ func TestCompaction_populateBlock(t *testing.T) {
 			},
 			compactMinTime: 0,
 			compactMaxTime: 10,
-			expErr:         errors.New("found chunk with minTime: 10 maxTime: 20 outside of compacted minTime: 0 maxTime: 10"),
+			expSeriesSamples: []seriesSamples{
+				{
+					lset:   map[string]string{"a": "issue347"},
+					chunks: [][]sample{{{t: 1}, {t: 2}}},
+				},
+			},
 		},
 		{
 			// Deduplication expected.
@@ -693,54 +793,146 @@ func TestCompaction_populateBlock(t *testing.T) {
 		},
 		{
 			// Introduced by https://github.com/prometheus/tsdb/pull/539.
-			title: "Populate from three blocks that the last two are overlapping.",
+			title: "Populate from three overlapping blocks.",
 			inputSeriesSamples: [][]seriesSamples{
 				{
 					{
-						lset:   map[string]string{"before": "fix"},
-						chunks: [][]sample{{{t: 0}, {t: 10}, {t: 11}, {t: 20}}},
-					},
-					{
-						lset:   map[string]string{"after": "fix"},
-						chunks: [][]sample{{{t: 0}, {t: 10}, {t: 11}, {t: 20}}},
-					},
-				},
-				{
-					{
-						lset:   map[string]string{"before": "fix"},
+						lset:   map[string]string{"a": "overlap-all"},
 						chunks: [][]sample{{{t: 19}, {t: 30}}},
 					},
 					{
-						lset:   map[string]string{"after": "fix"},
+						lset:   map[string]string{"a": "overlap-beginning"},
+						chunks: [][]sample{{{t: 0}, {t: 5}}},
+					},
+					{
+						lset:   map[string]string{"a": "overlap-ending"},
 						chunks: [][]sample{{{t: 21}, {t: 30}}},
 					},
 				},
 				{
 					{
-						lset:   map[string]string{"before": "fix"},
+						lset:   map[string]string{"a": "overlap-all"},
+						chunks: [][]sample{{{t: 0}, {t: 10}, {t: 11}, {t: 20}}},
+					},
+					{
+						lset:   map[string]string{"a": "overlap-beginning"},
+						chunks: [][]sample{{{t: 0}, {t: 10}, {t: 12}, {t: 20}}},
+					},
+					{
+						lset:   map[string]string{"a": "overlap-ending"},
+						chunks: [][]sample{{{t: 0}, {t: 10}, {t: 13}, {t: 20}}},
+					},
+				},
+				{
+					{
+						lset:   map[string]string{"a": "overlap-all"},
 						chunks: [][]sample{{{t: 27}, {t: 35}}},
 					},
 					{
-						lset:   map[string]string{"after": "fix"},
+						lset:   map[string]string{"a": "overlap-ending"},
 						chunks: [][]sample{{{t: 27}, {t: 35}}},
 					},
 				},
 			},
 			expSeriesSamples: []seriesSamples{
 				{
-					lset:   map[string]string{"after": "fix"},
-					chunks: [][]sample{{{t: 0}, {t: 10}, {t: 11}, {t: 20}}, {{t: 21}, {t: 27}, {t: 30}, {t: 35}}},
+					lset:   map[string]string{"a": "overlap-all"},
+					chunks: [][]sample{{{t: 0}, {t: 10}, {t: 11}, {t: 19}, {t: 20}, {t: 27}, {t: 30}, {t: 35}}},
 				},
 				{
-					lset:   map[string]string{"before": "fix"},
-					chunks: [][]sample{{{t: 0}, {t: 10}, {t: 11}, {t: 19}, {t: 20}, {t: 27}, {t: 30}, {t: 35}}},
+					lset:   map[string]string{"a": "overlap-beginning"},
+					chunks: [][]sample{{{t: 0}, {t: 5}, {t: 10}, {t: 12}, {t: 20}}},
+				},
+				{
+					lset:   map[string]string{"a": "overlap-ending"},
+					chunks: [][]sample{{{t: 0}, {t: 10}, {t: 13}, {t: 20}}, {{t: 21}, {t: 27}, {t: 30}, {t: 35}}},
 				},
 			},
 		},
-	}
-
-	for _, tc := range populateBlocksCases {
-		if ok := t.Run(tc.title, func(t *testing.T) {
+		{
+			title: "Populate from three partially overlapping blocks with few full chunks.",
+			inputSeriesSamples: [][]seriesSamples{
+				{
+					{
+						lset:   map[string]string{"a": "1", "b": "1"},
+						chunks: samplesForRange(0, 659, 120), // 5 chunks and half.
+					},
+					{
+						lset:   map[string]string{"a": "1", "b": "2"},
+						chunks: samplesForRange(0, 659, 120),
+					},
+				},
+				{
+					{
+						lset:   map[string]string{"a": "1", "b": "2"},
+						chunks: samplesForRange(480, 1199, 120), // two chunks overlapping with previous, two non overlapping and two overlapping with next block.
+					},
+					{
+						lset:   map[string]string{"a": "1", "b": "3"},
+						chunks: samplesForRange(480, 1199, 120),
+					},
+				},
+				{
+					{
+						lset:   map[string]string{"a": "1", "b": "2"},
+						chunks: samplesForRange(960, 1499, 120), // 5 chunks and half.
+					},
+					{
+						lset:   map[string]string{"a": "1", "b": "4"},
+						chunks: samplesForRange(960, 1499, 120),
+					},
+				},
+			},
+			expSeriesSamples: []seriesSamples{
+				{
+					lset:   map[string]string{"a": "1", "b": "1"},
+					chunks: samplesForRange(0, 659, 120),
+				},
+				{
+					lset:   map[string]string{"a": "1", "b": "2"},
+					chunks: samplesForRange(0, 1499, 120),
+				},
+				{
+					lset:   map[string]string{"a": "1", "b": "3"},
+					chunks: samplesForRange(480, 1199, 120),
+				},
+				{
+					lset:   map[string]string{"a": "1", "b": "4"},
+					chunks: samplesForRange(960, 1499, 120),
+				},
+			},
+		},
+		{
+			title: "Populate from three partially overlapping blocks with chunks that are expected to merge into single big chunks.",
+			inputSeriesSamples: [][]seriesSamples{
+				{
+					{
+						lset:   map[string]string{"a": "1", "b": "2"},
+						chunks: [][]sample{{{t: 0}, {t: 6902464}}, {{t: 6961968}, {t: 7080976}}},
+					},
+				},
+				{
+					{
+						lset:   map[string]string{"a": "1", "b": "2"},
+						chunks: [][]sample{{{t: 3600000}, {t: 13953696}}, {{t: 14042952}, {t: 14221464}}},
+					},
+				},
+				{
+					{
+						lset:   map[string]string{"a": "1", "b": "2"},
+						chunks: [][]sample{{{t: 10800000}, {t: 14251232}}, {{t: 14280984}, {t: 14340488}}},
+					},
+				},
+			},
+			expSeriesSamples: []seriesSamples{
+				{
+					lset:   map[string]string{"a": "1", "b": "2"},
+					chunks: [][]sample{{{t: 0}, {t: 3600000}, {t: 6902464}, {t: 6961968}, {t: 7080976}, {t: 10800000}, {t: 13953696}, {t: 14042952}, {t: 14221464}, {t: 14251232}}, {{t: 14280984}, {t: 14340488}}},
+				},
+			},
+		},
+	} {
+		t.Run(tc.title, func(t *testing.T) {
 			blocks := make([]BlockReader, 0, len(tc.inputSeriesSamples))
 			for _, b := range tc.inputSeriesSamples {
 				ir, cr, mint, maxt := createIdxChkReaders(t, b)
@@ -767,12 +959,39 @@ func TestCompaction_populateBlock(t *testing.T) {
 			}
 			testutil.Ok(t, err)
 
-			testutil.Equals(t, tc.expSeriesSamples, iw.series)
+			// Check if response is expected and chunk is valid.
+			var raw []seriesSamples
+			for _, s := range iw.seriesChunks {
+				ss := seriesSamples{lset: s.l.Map()}
+				var iter chunkenc.Iterator
+				for _, chk := range s.chunks {
+					var (
+						samples       = make([]sample, 0, chk.Chunk.NumSamples())
+						iter          = chk.Chunk.Iterator(iter)
+						firstTs int64 = math.MaxInt64
+						s       sample
+					)
+					for iter.Next() {
+						s.t, s.v = iter.At()
+						if firstTs == math.MaxInt64 {
+							firstTs = s.t
+						}
+						samples = append(samples, s)
+					}
+
+					// Check if chunk has correct min, max times.
+					testutil.Equals(t, firstTs, chk.MinTime, "chunk Meta %v does not match the first encoded sample timestamp: %v", chk, firstTs)
+					testutil.Equals(t, s.t, chk.MaxTime, "chunk Meta %v does not match the last encoded sample timestamp %v", chk, s.t)
+
+					testutil.Ok(t, iter.Err())
+					ss.chunks = append(ss.chunks, samples)
+				}
+				raw = append(raw, ss)
+			}
+			testutil.Equals(t, tc.expSeriesSamples, raw)
 
 			// Check if stats are calculated properly.
-			s := BlockStats{
-				NumSeries: uint64(len(tc.expSeriesSamples)),
-			}
+			s := BlockStats{NumSeries: uint64(len(tc.expSeriesSamples))}
 			for _, series := range tc.expSeriesSamples {
 				s.NumChunks += uint64(len(series.chunks))
 				for _, chk := range series.chunks {
@@ -780,9 +999,7 @@ func TestCompaction_populateBlock(t *testing.T) {
 				}
 			}
 			testutil.Equals(t, s, meta.Stats)
-		}); !ok {
-			return
-		}
+		})
 	}
 }
 
@@ -1090,5 +1307,100 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 			testutil.Ok(t, err)
 			testutil.Equals(t, expBlocks, len(actBlocks)-1, "block count should be the same as before the compaction") // -1 to exclude the corrupted block.
 		})
+	}
+}
+
+func TestBlockBaseSeriesSet(t *testing.T) {
+	type refdSeries struct {
+		lset   labels.Labels
+		chunks []chunks.Meta
+
+		ref uint64
+	}
+
+	cases := []struct {
+		series []refdSeries
+		// Postings should be in the sorted order of the series
+		postings []uint64
+
+		expIdxs []int
+	}{
+		{
+			series: []refdSeries{
+				{
+					lset: labels.New([]labels.Label{{Name: "a", Value: "a"}}...),
+					chunks: []chunks.Meta{
+						{Ref: 29}, {Ref: 45}, {Ref: 245}, {Ref: 123}, {Ref: 4232}, {Ref: 5344},
+						{Ref: 121},
+					},
+					ref: 12,
+				},
+				{
+					lset: labels.New([]labels.Label{{Name: "a", Value: "a"}, {Name: "b", Value: "b"}}...),
+					chunks: []chunks.Meta{
+						{Ref: 82}, {Ref: 23}, {Ref: 234}, {Ref: 65}, {Ref: 26},
+					},
+					ref: 10,
+				},
+				{
+					lset:   labels.New([]labels.Label{{Name: "b", Value: "c"}}...),
+					chunks: []chunks.Meta{{Ref: 8282}},
+					ref:    1,
+				},
+				{
+					lset: labels.New([]labels.Label{{Name: "b", Value: "b"}}...),
+					chunks: []chunks.Meta{
+						{Ref: 829}, {Ref: 239}, {Ref: 2349}, {Ref: 659}, {Ref: 269},
+					},
+					ref: 108,
+				},
+			},
+			postings: []uint64{12, 13, 10, 108}, // 13 doesn't exist and should just be skipped over.
+			expIdxs:  []int{0, 1, 3},
+		},
+		{
+			series: []refdSeries{
+				{
+					lset: labels.New([]labels.Label{{Name: "a", Value: "a"}, {Name: "b", Value: "b"}}...),
+					chunks: []chunks.Meta{
+						{Ref: 82}, {Ref: 23}, {Ref: 234}, {Ref: 65}, {Ref: 26},
+					},
+					ref: 10,
+				},
+				{
+					lset:   labels.New([]labels.Label{{Name: "b", Value: "c"}}...),
+					chunks: []chunks.Meta{{Ref: 8282}},
+					ref:    3,
+				},
+			},
+			postings: []uint64{},
+			expIdxs:  []int{},
+		},
+	}
+
+	for _, tc := range cases {
+		mi := newMockIndex()
+		for _, s := range tc.series {
+			testutil.Ok(t, mi.AddSeries(s.ref, s.lset, s.chunks...))
+		}
+
+		bcs := &blockBaseSeriesSet{
+			p:          index.NewListPostings(tc.postings),
+			index:      mi,
+			tombstones: tombstones.NewMemTombstones(),
+		}
+
+		i := 0
+		for bcs.Next() {
+			chks := bcs.currIterFn().chks
+			idx := tc.expIdxs[i]
+
+			testutil.Equals(t, tc.series[idx].lset, bcs.currLabels)
+			testutil.Equals(t, tc.series[idx].chunks, chks)
+
+			i++
+		}
+		testutil.Equals(t, len(tc.expIdxs), i)
+		testutil.Ok(t, bcs.Err())
 	}
 }

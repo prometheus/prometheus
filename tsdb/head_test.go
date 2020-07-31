@@ -565,7 +565,7 @@ func TestHeadDeleteSimple(t *testing.T) {
 					actSeriesSet := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, lblDefault.Name, lblDefault.Value))
 					testutil.Ok(t, q.Close())
 					expSeriesSet := newMockSeriesSet([]storage.Series{
-						newSeries(map[string]string{lblDefault.Name: lblDefault.Value}, func() []tsdbutil.Sample {
+						storage.NewListSeries(labels.Labels{lblDefault}, func() []tsdbutil.Sample {
 							ss := make([]tsdbutil.Sample, 0, len(c.smplsExp))
 							for _, s := range c.smplsExp {
 								ss = append(ss, s)
@@ -590,8 +590,8 @@ func TestHeadDeleteSimple(t *testing.T) {
 
 						testutil.Equals(t, expSeries.Labels(), actSeries.Labels())
 
-						smplExp, errExp := expandSeriesIterator(expSeries.Iterator())
-						smplRes, errRes := expandSeriesIterator(actSeries.Iterator())
+						smplExp, errExp := storage.ExpandSamples(expSeries.Iterator(), nil)
+						smplRes, errRes := storage.ExpandSamples(actSeries.Iterator(), nil)
 
 						testutil.Equals(t, errExp, errRes)
 						testutil.Equals(t, smplExp, smplRes)
@@ -644,7 +644,7 @@ func TestDeleteUntilCurMax(t *testing.T) {
 	testutil.Assert(t, res.Next(), "series don't exist")
 	exps := res.At()
 	it = exps.Iterator()
-	resSamples, err := expandSeriesIterator(it)
+	resSamples, err := storage.ExpandSamples(it, newSample)
 	testutil.Ok(t, err)
 	testutil.Equals(t, []tsdbutil.Sample{sample{11, 1}}, resSamples)
 	for res.Next() {
@@ -819,12 +819,9 @@ func TestDelete_e2e(t *testing.T) {
 				smpls = deletedSamples(smpls, del.drange)
 				// Only append those series for which samples exist as mockSeriesSet
 				// doesn't skip series with no samples.
-				// TODO: But sometimes SeriesSet returns an empty SeriesIterator
+				// TODO: But sometimes SeriesSet returns an empty chunkenc.Iterator
 				if len(smpls) > 0 {
-					matchedSeries = append(matchedSeries, newSeries(
-						m.Map(),
-						smpls,
-					))
+					matchedSeries = append(matchedSeries, storage.NewListSeries(m, smpls))
 				}
 			}
 			expSs := newMockSeriesSet(matchedSeries)
@@ -847,8 +844,8 @@ func TestDelete_e2e(t *testing.T) {
 				sexp := expSs.At()
 				sres := ss.At()
 				testutil.Equals(t, sexp.Labels(), sres.Labels())
-				smplExp, errExp := expandSeriesIterator(sexp.Iterator())
-				smplRes, errRes := expandSeriesIterator(sres.Iterator())
+				smplExp, errExp := storage.ExpandSamples(sexp.Iterator(), nil)
+				smplRes, errRes := storage.ExpandSamples(sres.Iterator(), nil)
 				testutil.Equals(t, errExp, errRes)
 				testutil.Equals(t, smplExp, smplRes)
 			}
@@ -1415,7 +1412,6 @@ func TestAddDuplicateLabelName(t *testing.T) {
 
 func TestMemSeriesIsolation(t *testing.T) {
 	// Put a series, select it. GC it and then access it.
-
 	lastValue := func(h *Head, maxAppendID uint64) int {
 		idx, err := h.Index()
 
@@ -1426,12 +1422,16 @@ func TestMemSeriesIsolation(t *testing.T) {
 
 		chunks, err := h.chunksRange(math.MinInt64, math.MaxInt64, iso)
 		testutil.Ok(t, err)
-		querier := &blockQuerier{
-			mint:       0,
-			maxt:       10000,
-			index:      idx,
-			chunks:     chunks,
-			tombstones: tombstones.NewMemTombstones(),
+		// Hm.. here direct block chunk querier might be required?
+		querier := blockQuerier{
+			blockBaseQuerier: &blockBaseQuerier{
+				index:      idx,
+				chunks:     chunks,
+				tombstones: tombstones.NewMemTombstones(),
+
+				mint: 0,
+				maxt: 10000,
+			},
 		}
 
 		testutil.Ok(t, err)

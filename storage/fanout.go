@@ -96,7 +96,7 @@ func (f *fanout) Querier(ctx context.Context, mint, maxt int64) (Querier, error)
 		}
 		secondaries = append(secondaries, querier)
 	}
-	return NewMergeQuerier(primary, secondaries, ChainedSeriesMerge), nil
+	return NewMergeQuerier([]Querier{primary}, secondaries, ChainedSeriesMerge), nil
 }
 
 func (f *fanout) ChunkQuerier(ctx context.Context, mint, maxt int64) (ChunkQuerier, error) {
@@ -119,7 +119,7 @@ func (f *fanout) ChunkQuerier(ctx context.Context, mint, maxt int64) (ChunkQueri
 		}
 		secondaries = append(secondaries, querier)
 	}
-	return NewMergeChunkQuerier(primary, secondaries, NewCompactingChunkSeriesMerger(ChainedSeriesMerge)), nil
+	return NewMergeChunkQuerier([]ChunkQuerier{primary}, secondaries, NewCompactingChunkSeriesMerger(ChainedSeriesMerge)), nil
 }
 
 func (f *fanout) Appender() Appender {
@@ -214,38 +214,50 @@ type mergeGenericQuerier struct {
 
 	// mergeFn is used when we see series from different queriers Selects with the same labels.
 	mergeFn genericSeriesMergeFunc
+
+	// TODO(bwplotka): Remove once remote queries are asynchronous. False by default.
+	concurrentSelect bool
 }
 
-// NewMergeQuerier returns a new Querier that merges results of given primary and slice of secondary queriers.
+// NewMergeQuerier returns a new Querier that merges results of given primary and secondary queriers.
 // See NewFanout commentary to learn more about primary vs secondary differences.
 //
-// In case of overlaps between the data given by primary + secondaries Selects, merge function will be used.
-func NewMergeQuerier(primary Querier, secondaries []Querier, mergeFn VerticalSeriesMergeFunc) Querier {
-	queriers := make([]genericQuerier, 0, len(secondaries)+1)
-	if primary != nil {
-		queriers = append(queriers, newGenericQuerierFrom(primary))
+// In case of overlaps between the data given by primaries' and secondaries' Selects, merge function will be used.
+func NewMergeQuerier(primaries []Querier, secondaries []Querier, mergeFn VerticalSeriesMergeFunc) Querier {
+	queriers := make([]genericQuerier, 0, len(primaries)+len(secondaries))
+	for _, q := range primaries {
+		if _, ok := q.(noopQuerier); !ok && q != nil {
+			queriers = append(queriers, newGenericQuerierFrom(q))
+		}
 	}
-	for _, querier := range secondaries {
-		if _, ok := querier.(noopQuerier); !ok && querier != nil {
-			queriers = append(queriers, newSecondaryQuerierFrom(querier))
+	for _, q := range secondaries {
+		if _, ok := q.(noopQuerier); !ok && q != nil {
+			queriers = append(queriers, newSecondaryQuerierFrom(q))
 		}
 	}
 
+	concurrentSelect := false
+	if len(secondaries) > 0 {
+		concurrentSelect = true
+	}
 	return &querierAdapter{&mergeGenericQuerier{
-		mergeFn:  (&seriesMergerAdapter{VerticalSeriesMergeFunc: mergeFn}).Merge,
-		queriers: queriers,
+		mergeFn:          (&seriesMergerAdapter{VerticalSeriesMergeFunc: mergeFn}).Merge,
+		queriers:         queriers,
+		concurrentSelect: concurrentSelect,
 	}}
 }
 
-// NewMergeChunkQuerier returns a new ChunkQuerier that merges results of given primary and slice of secondary chunk queriers.
+// NewMergeChunkQuerier returns a new Chunk Querier that merges results of given primary and secondary chunk queriers.
 // See NewFanout commentary to learn more about primary vs secondary differences.
 //
-// In case of overlaps between the data given by primary + secondaries Selects, merge function will be used.
+// In case of overlaps between the data given by primaries' and secondaries' Selects, merge function will be used.
 // TODO(bwplotka): Currently merge will compact overlapping chunks with bigger chunk, without limit. Split it: https://github.com/prometheus/tsdb/issues/670
-func NewMergeChunkQuerier(primary ChunkQuerier, secondaries []ChunkQuerier, mergeFn VerticalChunkSeriesMergeFunc) ChunkQuerier {
-	queriers := make([]genericQuerier, 0, len(secondaries)+1)
-	if primary != nil {
-		queriers = append(queriers, newGenericQuerierFromChunk(primary))
+func NewMergeChunkQuerier(primaries []ChunkQuerier, secondaries []ChunkQuerier, mergeFn VerticalChunkSeriesMergeFunc) ChunkQuerier {
+	queriers := make([]genericQuerier, 0, len(primaries)+len(secondaries))
+	for _, q := range primaries {
+		if _, ok := q.(noopChunkQuerier); !ok && q != nil {
+			queriers = append(queriers, newGenericQuerierFromChunk(q))
+		}
 	}
 	for _, querier := range secondaries {
 		if _, ok := querier.(noopChunkQuerier); !ok && querier != nil {
@@ -253,24 +265,42 @@ func NewMergeChunkQuerier(primary ChunkQuerier, secondaries []ChunkQuerier, merg
 		}
 	}
 
+	concurrentSelect := false
+	if len(secondaries) > 0 {
+		concurrentSelect = true
+	}
 	return &chunkQuerierAdapter{&mergeGenericQuerier{
-		mergeFn:  (&chunkSeriesMergerAdapter{VerticalChunkSeriesMergeFunc: mergeFn}).Merge,
-		queriers: queriers,
+		mergeFn:          (&chunkSeriesMergerAdapter{VerticalChunkSeriesMergeFunc: mergeFn}).Merge,
+		queriers:         queriers,
+		concurrentSelect: concurrentSelect,
 	}}
 }
 
 // Select returns a set of series that matches the given label matchers.
 func (q *mergeGenericQuerier) Select(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) genericSeriesSet {
+	if len(q.queriers) == 0 {
+		return noopGenericSeriesSet{}
+	}
 	if len(q.queriers) == 1 {
 		return q.queriers[0].Select(sortSeries, hints, matchers...)
 	}
 
+	var seriesSets = make([]genericSeriesSet, 0, len(q.queriers))
+	if !q.concurrentSelect {
+		for _, querier := range q.queriers {
+			// We need to sort for merge  to work.
+			seriesSets = append(seriesSets, querier.Select(true, hints, matchers...))
+		}
+		return &lazyGenericSeriesSet{init: func() (genericSeriesSet, bool) {
+			s := newGenericMergeSeriesSet(seriesSets, q.mergeFn)
+			return s, s.Next()
+		}}
+	}
+
 	var (
-		seriesSets    = make([]genericSeriesSet, 0, len(q.queriers))
 		wg            sync.WaitGroup
 		seriesSetChan = make(chan genericSeriesSet)
 	)
-
 	// Schedule all Selects for all queriers we know about.
 	for _, querier := range q.queriers {
 		wg.Add(1)
@@ -289,99 +319,83 @@ func (q *mergeGenericQuerier) Select(sortSeries bool, hints *SelectHints, matche
 	for r := range seriesSetChan {
 		seriesSets = append(seriesSets, r)
 	}
-	return &lazySeriesSet{create: create(seriesSets, q.mergeFn)}
+	return &lazyGenericSeriesSet{init: func() (genericSeriesSet, bool) {
+		s := newGenericMergeSeriesSet(seriesSets, q.mergeFn)
+		return s, s.Next()
+	}}
 }
 
-func create(seriesSets []genericSeriesSet, mergeFunc genericSeriesMergeFunc) func() (genericSeriesSet, bool) {
-	// Returned function gets called with the first call to Next().
-	return func() (genericSeriesSet, bool) {
-		if len(seriesSets) == 1 {
-			return seriesSets[0], seriesSets[0].Next()
-		}
-		var h genericSeriesSetHeap
-		for _, set := range seriesSets {
-			if set == nil {
-				continue
-			}
-			if set.Next() {
-				heap.Push(&h, set)
-				continue
-			}
-			// When primary fails ignore results from secondaries.
-			// Only the primary querier returns error.
-			if err := set.Err(); err != nil {
-				return errorOnlySeriesSet{err}, false
-			}
-		}
-		set := &genericMergeSeriesSet{
-			mergeFunc: mergeFunc,
-			sets:      seriesSets,
-			heap:      h,
-		}
-		return set, set.Next()
-	}
+type labelGenericQueriers []genericQuerier
+
+func (l labelGenericQueriers) Len() int               { return len(l) }
+func (l labelGenericQueriers) Get(i int) LabelQuerier { return l[i] }
+func (l labelGenericQueriers) SplitByHalf() (labelGenericQueriers, labelGenericQueriers) {
+	i := len(l) / 2
+	return l[:i], l[i:]
 }
 
 // LabelValues returns all potential values for a label name.
 func (q *mergeGenericQuerier) LabelValues(name string) ([]string, Warnings, error) {
-	var (
-		results  [][]string
-		warnings Warnings
-	)
-	for _, querier := range q.queriers {
-		values, wrn, err := querier.LabelValues(name)
-		if wrn != nil {
-			// TODO(bwplotka): We could potentially wrap warnings.
-			warnings = append(warnings, wrn...)
-		}
-		if err != nil {
-			return nil, nil, errors.Wrapf(err, "LabelValues() from Querier for label %s", name)
-		}
-		results = append(results, values)
+	res, ws, err := q.lvals(q.queriers, name)
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "LabelValues() from merge generic querier for label %s", name)
 	}
-	return mergeStringSlices(results), warnings, nil
+	return res, ws, nil
 }
 
-func mergeStringSlices(ss [][]string) []string {
-	switch len(ss) {
-	case 0:
-		return nil
-	case 1:
-		return ss[0]
-	case 2:
-		return mergeTwoStringSlices(ss[0], ss[1])
-	default:
-		halfway := len(ss) / 2
-		return mergeTwoStringSlices(
-			mergeStringSlices(ss[:halfway]),
-			mergeStringSlices(ss[halfway:]),
-		)
+// lvals performs merge sort for LabelValues from multiple queriers.
+func (q *mergeGenericQuerier) lvals(lq labelGenericQueriers, n string) ([]string, Warnings, error) {
+	if lq.Len() == 0 {
+		return nil, nil, nil
 	}
+	if lq.Len() == 1 {
+		return lq.Get(0).LabelValues(n)
+	}
+	a, b := lq.SplitByHalf()
+
+	var ws Warnings
+	s1, w, err := q.lvals(a, n)
+	ws = append(ws, w...)
+	if err != nil {
+		return nil, ws, err
+	}
+	s2, ws, err := q.lvals(b, n)
+	ws = append(ws, w...)
+	if err != nil {
+		return nil, ws, err
+	}
+	return mergeStrings(s1, s2), ws, nil
 }
 
-func mergeTwoStringSlices(a, b []string) []string {
-	i, j := 0, 0
-	result := make([]string, 0, len(a)+len(b))
-	for i < len(a) && j < len(b) {
-		switch strings.Compare(a[i], b[j]) {
-		case 0:
-			result = append(result, a[i])
-			i++
-			j++
-		case -1:
-			result = append(result, a[i])
-			i++
-		case 1:
-			result = append(result, b[j])
-			j++
+func mergeStrings(a, b []string) []string {
+	maxl := len(a)
+	if len(b) > len(a) {
+		maxl = len(b)
+	}
+	res := make([]string, 0, maxl*10/9)
+
+	for len(a) > 0 && len(b) > 0 {
+		d := strings.Compare(a[0], b[0])
+
+		if d == 0 {
+			res = append(res, a[0])
+			a, b = a[1:], b[1:]
+		} else if d < 0 {
+			res = append(res, a[0])
+			a = a[1:]
+		} else if d > 0 {
+			res = append(res, b[0])
+			b = b[1:]
 		}
 	}
-	result = append(result, a[i:]...)
-	result = append(result, b[j:]...)
-	return result
+
+	// Append all remaining elements.
+	res = append(res, a...)
+	res = append(res, b...)
+	return res
 }
 
-// LabelNames returns all the unique label names present in the block in sorted order.
+// LabelNames returns all the unique label names present in all queriers in sorted order.
 func (q *mergeGenericQuerier) LabelNames() ([]string, Warnings, error) {
 	var (
 		labelNamesMap = make(map[string]struct{})
@@ -394,7 +408,7 @@ func (q *mergeGenericQuerier) LabelNames() ([]string, Warnings, error) {
 			warnings = append(warnings, wrn...)
 		}
 		if err != nil {
-			return nil, nil, errors.Wrap(err, "LabelNames() from Querier")
+			return nil, nil, errors.Wrap(err, "LabelNames() from merge generic querier")
 		}
 		for _, name := range names {
 			labelNamesMap[name] = struct{}{}
@@ -412,7 +426,7 @@ func (q *mergeGenericQuerier) LabelNames() ([]string, Warnings, error) {
 	return labelNames, warnings, nil
 }
 
-// Close releases the resources of the Querier.
+// Close releases the resources of the generic querier.
 func (q *mergeGenericQuerier) Close() error {
 	errs := tsdb_errors.MultiError{}
 	for _, querier := range q.queriers {
@@ -482,6 +496,9 @@ func newGenericMergeSeriesSet(sets []genericSeriesSet, mergeFunc genericSeriesMe
 		}
 		if set.Next() {
 			heap.Push(&h, set)
+		}
+		if err := set.Err(); err != nil {
+			return errorOnlySeriesSet{err}
 		}
 	}
 	return &genericMergeSeriesSet{
@@ -583,33 +600,22 @@ func (h *genericSeriesSetHeap) Pop() interface{} {
 // with "almost" the same data, e.g. from 2 Prometheus HA replicas. This is fine, since from the Prometheus perspective
 // this never happens.
 //
-// NOTE: Use this only when you see potentially overlapping series, as this introduces small overhead to handle overlaps
-// between series.
-func ChainedSeriesMerge(s ...Series) Series {
-	if len(s) == 0 {
+// NOTE: Use this merge function only when you see potentially overlapping series, as this introduces a small overhead
+// to handle overlaps between series.
+func ChainedSeriesMerge(series ...Series) Series {
+	if len(series) == 0 {
 		return nil
 	}
-	return &chainSeries{
-		labels: s[0].Labels(),
-		series: s,
+	return &SeriesEntry{
+		Lset: series[0].Labels(),
+		SampleIteratorFn: func() chunkenc.Iterator {
+			iterators := make([]chunkenc.Iterator, 0, len(series))
+			for _, s := range series {
+				iterators = append(iterators, s.Iterator())
+			}
+			return newChainSampleIterator(iterators)
+		},
 	}
-}
-
-type chainSeries struct {
-	labels labels.Labels
-	series []Series
-}
-
-func (m *chainSeries) Labels() labels.Labels {
-	return m.labels
-}
-
-func (m *chainSeries) Iterator() chunkenc.Iterator {
-	iterators := make([]chunkenc.Iterator, 0, len(m.series))
-	for _, s := range m.series {
-		iterators = append(iterators, s.Iterator())
-	}
-	return newChainSampleIterator(iterators)
 }
 
 // chainSampleIterator is responsible to iterate over samples from different iterators of the same time series in timestamps
@@ -710,46 +716,31 @@ func (h *samplesIteratorHeap) Pop() interface{} {
 	return x
 }
 
-type compactChunkSeriesMerger struct {
-	mergeFunc VerticalSeriesMergeFunc
-
-	labels labels.Labels
-	series []ChunkSeries
-}
-
 // NewCompactingChunkSeriesMerger returns VerticalChunkSeriesMergeFunc that merges the same chunk series into single chunk series.
 // In case of the chunk overlaps, it compacts those into one or more time-ordered non-overlapping chunks with merged data.
 // Samples from overlapped chunks are merged using series vertical merge func.
 // It expects the same labels for each given series.
 //
-// NOTE: Use this only when you see potentially overlapping series, as this introduces small overhead to handle overlaps
-// between series.
+// NOTE: Use the returned merge function only when you see potentially overlapping series, as this introduces small a overhead
+// to handle overlaps between series.
 func NewCompactingChunkSeriesMerger(mergeFunc VerticalSeriesMergeFunc) VerticalChunkSeriesMergeFunc {
-	return func(s ...ChunkSeries) ChunkSeries {
-		if len(s) == 0 {
+	return func(series ...ChunkSeries) ChunkSeries {
+		if len(series) == 0 {
 			return nil
 		}
-		return &compactChunkSeriesMerger{
-			mergeFunc: mergeFunc,
-			labels:    s[0].Labels(),
-			series:    s,
+		return &ChunkSeriesEntry{
+			Lset: series[0].Labels(),
+			ChunkIteratorFn: func() chunks.Iterator {
+				iterators := make([]chunks.Iterator, 0, len(series))
+				for _, s := range series {
+					iterators = append(iterators, s.Iterator())
+				}
+				return &compactChunkIterator{
+					mergeFunc: mergeFunc,
+					iterators: iterators,
+				}
+			},
 		}
-	}
-}
-
-func (s *compactChunkSeriesMerger) Labels() labels.Labels {
-	return s.labels
-}
-
-func (s *compactChunkSeriesMerger) Iterator() chunks.Iterator {
-	iterators := make([]chunks.Iterator, 0, len(s.series))
-	for _, series := range s.series {
-		iterators = append(iterators, series.Iterator())
-	}
-	return &compactChunkIterator{
-		mergeFunc: s.mergeFunc,
-		labels:    s.labels,
-		iterators: iterators,
 	}
 }
 
@@ -758,19 +749,16 @@ func (s *compactChunkSeriesMerger) Iterator() chunks.Iterator {
 // TODO(bwplotka): Currently merge will compact overlapping chunks with bigger chunk, without limit. Split it: https://github.com/prometheus/tsdb/issues/670
 type compactChunkIterator struct {
 	mergeFunc VerticalSeriesMergeFunc
-
-	labels    labels.Labels
 	iterators []chunks.Iterator
 
 	h chunkIteratorHeap
+
+	err  error
+	curr chunks.Meta
 }
 
 func (c *compactChunkIterator) At() chunks.Meta {
-	if len(c.h) == 0 {
-		panic("compactChunkIterator.At() called after .Next() returned false.")
-	}
-
-	return c.h[0].At()
+	return c.curr
 }
 
 func (c *compactChunkIterator) Next() bool {
@@ -780,59 +768,65 @@ func (c *compactChunkIterator) Next() bool {
 				heap.Push(&c.h, iter)
 			}
 		}
-		return len(c.h) > 0
 	}
-
 	if len(c.h) == 0 {
 		return false
 	}
 
-	// Detect overlaps to compact.
-	// Be smart about it and deduplicate on the fly if chunks are identical.
-	last := c.At()
-	var overlapped []Series
-	for {
+	iter := heap.Pop(&c.h).(chunks.Iterator)
+	c.curr = iter.At()
+	if iter.Next() {
+		heap.Push(&c.h, iter)
+	}
+
+	var (
+		overlapping []Series
+		oMaxTime    = c.curr.MaxTime
+		prev        = c.curr
+	)
+	// Detect overlaps to compact. Be smart about it and deduplicate on the fly if chunks are identical.
+	for len(c.h) > 0 {
+		// Get the next oldest chunk by min, then max time.
+		next := c.h[0].At()
+		if next.MinTime > oMaxTime {
+			// No overlap with current one.
+			break
+		}
+
+		if next.MinTime == prev.MinTime &&
+			next.MaxTime == prev.MaxTime &&
+			bytes.Equal(next.Chunk.Bytes(), prev.Chunk.Bytes()) {
+			// 1:1 duplicates, skip it.
+		} else {
+			// We operate on same series, so labels does not matter here.
+			overlapping = append(overlapping, newChunkToSeriesDecoder(nil, next))
+			if next.MaxTime > oMaxTime {
+				oMaxTime = next.MaxTime
+			}
+			prev = next
+		}
+
 		iter := heap.Pop(&c.h).(chunks.Iterator)
 		if iter.Next() {
 			heap.Push(&c.h, iter)
 		}
-		if len(c.h) == 0 {
-			break
-		}
-
-		// Get the current oldest chunk by min, then max time.
-		next := c.At()
-		if next.MinTime > last.MaxTime {
-			// No overlap with last one.
-			break
-		}
-
-		if next.MinTime == last.MinTime &&
-			next.MaxTime == last.MaxTime &&
-			bytes.Equal(next.Chunk.Bytes(), last.Chunk.Bytes()) {
-			// 1:1 duplicates, skip last.
-			continue
-		}
-
-		overlapped = append(overlapped, &chunkToSeriesDecoder{
-			labels: c.labels,
-			Meta:   last,
-		})
-		last = next
+	}
+	if len(overlapping) == 0 {
+		return true
 	}
 
-	if len(overlapped) == 0 {
-		return len(c.h) > 0
+	// Add last as it's not yet included in overlap. We operate on same series, so labels does not matter here.
+	iter = (&seriesToChunkEncoder{Series: c.mergeFunc(append(overlapping, newChunkToSeriesDecoder(nil, c.curr))...)}).Iterator()
+	if !iter.Next() {
+		if c.err = iter.Err(); c.err != nil {
+			return false
+		}
+		panic("unexpected seriesToChunkEncoder lack of iterations")
 	}
-
-	// Add last, not yet included overlap.
-	overlapped = append(overlapped, &chunkToSeriesDecoder{
-		labels: c.labels,
-		Meta:   c.At(),
-	})
-
-	var chkSeries ChunkSeries = &seriesToChunkEncoder{Series: c.mergeFunc(overlapped...)}
-	heap.Push(&c.h, chkSeries)
+	c.curr = iter.At()
+	if iter.Next() {
+		heap.Push(&c.h, iter)
+	}
 	return true
 }
 
@@ -843,6 +837,7 @@ func (c *compactChunkIterator) Err() error {
 			errs.Add(err)
 		}
 	}
+	errs.Add(c.err)
 	return errs.Err()
 }
 

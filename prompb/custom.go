@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright 2020 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -11,26 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package promql
+package prompb
 
-import (
-	"path/filepath"
-	"testing"
-
-	"github.com/prometheus/prometheus/util/testutil"
-)
-
-func TestEvaluations(t *testing.T) {
-	files, err := filepath.Glob("testdata/*.test")
-	testutil.Ok(t, err)
-
-	for _, fn := range files {
-		t.Run(fn, func(t *testing.T) {
-			test, err := newTestFromFile(t, fn)
-			testutil.Ok(t, err)
-			testutil.Ok(t, test.Run())
-
-			test.Close()
-		})
-	}
-}
+func (m Sample) T() int64   { return m.Timestamp }
+func (m Sample) V() float64 { return m.Value }

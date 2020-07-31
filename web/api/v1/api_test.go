@@ -26,6 +26,7 @@ import (
 	"net/url"
 	"os"
 	"reflect"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -1702,38 +1703,46 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 	}
 
 	for i, test := range tests {
-		for _, method := range methods(test.endpoint) {
-			// Build a context with the correct request params.
-			ctx := context.Background()
-			for p, v := range test.params {
-				ctx = route.WithParam(ctx, p, v)
-			}
-			t.Logf("run %d\t%s\t%q", i, method, test.query.Encode())
+		t.Run(fmt.Sprintf("run %d %s %q", i, describeAPIFunc(test.endpoint), test.query.Encode()), func(t *testing.T) {
+			for _, method := range methods(test.endpoint) {
+				t.Run(method, func(t *testing.T) {
+					// Build a context with the correct request params.
+					ctx := context.Background()
+					for p, v := range test.params {
+						ctx = route.WithParam(ctx, p, v)
+					}
 
-			req, err := request(method, test.query)
-			if err != nil {
-				t.Fatal(err)
-			}
+					req, err := request(method, test.query)
+					if err != nil {
+						t.Fatal(err)
+					}
 
-			tr.ResetMetadataStore()
-			for _, tm := range test.metadata {
-				tr.SetMetadataStoreForTargets(tm.identifier, &testMetaStore{Metadata: tm.metadata})
-			}
+					tr.ResetMetadataStore()
+					for _, tm := range test.metadata {
+						tr.SetMetadataStoreForTargets(tm.identifier, &testMetaStore{Metadata: tm.metadata})
+					}
 
-			res := test.endpoint(req.WithContext(ctx))
-			assertAPIError(t, res.err, test.errType)
+					res := test.endpoint(req.WithContext(ctx))
+					assertAPIError(t, res.err, test.errType)
 
-			if test.sorter != nil {
-				test.sorter(res.data)
-			}
+					if test.sorter != nil {
+						test.sorter(res.data)
+					}
 
-			if test.responseLen != 0 {
-				assertAPIResponseLength(t, res.data, test.responseLen)
-			} else {
-				assertAPIResponse(t, res.data, test.response)
+					if test.responseLen != 0 {
+						assertAPIResponseLength(t, res.data, test.responseLen)
+					} else {
+						assertAPIResponse(t, res.data, test.response)
+					}
+				})
 			}
-		}
+		})
 	}
+}
+
+func describeAPIFunc(f apiFunc) string {
+	name := runtime.FuncForPC(reflect.ValueOf(f).Pointer()).Name()
+	return strings.Split(name[strings.LastIndex(name, ".")+1:], "-")[0]
 }
 
 func assertAPIError(t *testing.T, got *apiError, exp errorType) {
