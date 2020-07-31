@@ -28,6 +28,7 @@ import (
 	"github.com/pkg/errors"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -483,7 +484,7 @@ func samplesForRange(minTime, maxTime int64, maxSamplesPerChunk int) (ret [][]sa
 }
 
 func TestCompaction_populateBlock(t *testing.T) {
-	var populateBlocksCases = []struct {
+	for _, tc := range []struct {
 		title              string
 		inputSeriesSamples [][]seriesSamples
 		compactMinTime     int64
@@ -901,9 +902,7 @@ func TestCompaction_populateBlock(t *testing.T) {
 				},
 			},
 		},
-	}
-
-	for _, tc := range populateBlocksCases {
+	} {
 		t.Run(tc.title, func(t *testing.T) {
 			blocks := make([]BlockReader, 0, len(tc.inputSeriesSamples))
 			for _, b := range tc.inputSeriesSamples {
@@ -930,7 +929,37 @@ func TestCompaction_populateBlock(t *testing.T) {
 				return
 			}
 			testutil.Ok(t, err)
-			testutil.Equals(t, tc.expSeriesSamples, iw.series)
+
+			// Check if response is expected and chunk is valid.
+			var raw []seriesSamples
+			for _, s := range iw.seriesChunks {
+				ss := seriesSamples{lset: s.l.Map()}
+				var iter chunkenc.Iterator
+				for _, chk := range s.chunks {
+					var (
+						samples       = make([]sample, 0, chk.Chunk.NumSamples())
+						iter          = chk.Chunk.Iterator(iter)
+						firstTs int64 = math.MaxInt64
+						s       sample
+					)
+					for iter.Next() {
+						s.t, s.v = iter.At()
+						if firstTs == math.MaxInt64 {
+							firstTs = s.t
+						}
+						samples = append(samples, s)
+					}
+
+					// Check if chunk has correct min, max times.
+					testutil.Equals(t, firstTs, chk.MinTime, "chunk Meta %v does not match the first encoded sample timestamp: %v", chk, firstTs)
+					testutil.Equals(t, s.t, chk.MaxTime, "chunk Meta %v does not match the last encoded sample timestamp %v", chk, s.t)
+
+					testutil.Ok(t, iter.Err())
+					ss.chunks = append(ss.chunks, samples)
+				}
+				raw = append(raw, ss)
+			}
+			testutil.Equals(t, tc.expSeriesSamples, raw)
 
 			// Check if stats are calculated properly.
 			s := BlockStats{NumSeries: uint64(len(tc.expSeriesSamples))}
