@@ -1,8 +1,7 @@
 package prettier
 
 import (
-	"reflect"
-
+	"fmt"
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
@@ -13,28 +12,36 @@ const (
 )
 
 type nodeInfo struct {
-	head parser.Expr
+	head, currentNode parser.Expr
 	// Node details.
 	columnLimit int
 	ancestors   []parser.Node
 	item        parser.Item
 	buf         int
+	baseIndent  int
+	exprType    string
 }
 
 func (p *nodeInfo) violatesColumnLimit() bool {
-	return len(p.head.String()) > p.columnLimit
+	if p.currentNode == nil {
+		panic("current node not set")
+	}
+	return len(p.currentNode.String()) > p.columnLimit
 }
 
-// getNode returns the node corresponding to the given position range in the AST.
-func (p *nodeInfo) getNode(root parser.Expr, item parser.Item) parser.Expr {
-	ancestors, node, _ := p.nodeHistory(root, item.PositionRange(), []parser.Node{})
-	p.ancestors = ancestors
+// node returns the node corresponding to the given position range in the AST.
+func (p *nodeInfo) node() parser.Expr {
+	ancestors, node, _ := p.nodeHistory(p.head, p.item.PositionRange(), []parser.Node{})
+	p.ancestors = reduceBinary(ancestors)
+	p.baseIndent = len(p.ancestors)
+	p.currentNode = node
+	p.exprType = fmt.Sprintf("%T", node)
 	return node
 }
 
-func (p *nodeInfo) baseIndent(item parser.Item) int {
+func (p *nodeInfo) getBaseIndent(item parser.Item) int {
 	ancestors, _, _ := p.nodeHistory(p.head, item.PositionRange(), []parser.Node{})
-	ancestors = reduceContinuous(ancestors, "*parser.BinaryExpr")
+	ancestors = reduceBinary(ancestors)
 	p.buf = len(ancestors)
 	return p.buf
 }
@@ -47,17 +54,17 @@ func (p *nodeInfo) previousIndent() int {
 func (p *nodeInfo) is(element uint) bool {
 	switch element {
 	case grouping:
-		if n, ok := p.head.(*parser.BinaryExpr); ok {
+		if n, ok := p.currentNode.(*parser.BinaryExpr); ok {
 			return len(n.VectorMatching.MatchingLabels) > 0 || n.ReturnBool
 		}
 	case scalars:
-		if n, ok := p.head.(*parser.BinaryExpr); ok {
+		if n, ok := p.currentNode.(*parser.BinaryExpr); ok {
 			if n.LHS.Type() == parser.ValueTypeScalar || n.RHS.Type() == parser.ValueTypeScalar {
 				return true
 			}
 		}
 	case multiArguments:
-		if n, ok := p.head.(*parser.Call); ok {
+		if n, ok := p.currentNode.(*parser.Call); ok {
 			return len(n.Args) > 1
 		}
 	}
@@ -165,18 +172,25 @@ func (p *nodeInfo) nodeHistory(head parser.Expr, posRange parser.PositionRange, 
 	return stack, head, nodeMatch
 }
 
-// reduceContinuous reduces from end, the continuous
-// occurrence of a type to its single representation.
-func reduceContinuous(history []parser.Node, typString string) []parser.Node {
+// reduceBinary reduces from end, the continuous occurrence
+// of binary expression to its single representation.
+func reduceBinary(history []parser.Node) []parser.Node {
 	var temp []parser.Node
 	if !(len(history) > 1) {
 		return history
 	}
 	for i := 0; i < len(history)-1; i++ {
-		if !(reflect.TypeOf(history[i]).String() == reflect.TypeOf(history[i+1]).String() && reflect.TypeOf(history[i]).String() == typString) {
+		if !(isBinary(history[i]) && isBinary(history[i+1])) {
 			temp = append(temp, history[i])
 		}
 	}
 	temp = append(temp, history[len(history)-1])
 	return temp
+}
+
+func isBinary(node parser.Node) bool {
+	if _, ok := node.(*parser.BinaryExpr); ok {
+		return true
+	}
+	return false
 }

@@ -293,14 +293,12 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 		return result, nil
 	}
 	var (
-		item = items[index]
-		// TODO: update these node naming conventions before pushing.
-		headInfo   = &nodeInfo{head: p.Node, columnLimit: 100, item: item}
-		node       = headInfo.getNode(p.Node, item)
-		currNode   = &nodeInfo{head: node, columnLimit: 100, item: item}
+		item       = items[index]
+		nodeInfo   = &nodeInfo{head: p.Node, columnLimit: 100, item: item}
+		node       = nodeInfo.node()
 		baseIndent int
 	)
-	nodeSplittable := currNode.violatesColumnLimit()
+	nodeSplittable := nodeInfo.violatesColumnLimit()
 	if p.pd.isPreviousItemComment {
 		p.pd.isPreviousItemComment = false
 		result += p.pd.newLine()
@@ -309,19 +307,19 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 	case *parser.AggregateExpr:
 		p.pd.isAggregation = true
 	case *parser.BinaryExpr:
-		p.pd.immediateScalar = currNode.is(scalars)
-		baseIndent = headInfo.baseIndent(item)
+		p.pd.immediateScalar = nodeInfo.is(scalars)
+		baseIndent = nodeInfo.baseIndent
 		if item.Typ.IsOperator() {
-			p.pd.containsGrouping = currNode.is(grouping)
+			p.pd.containsGrouping = nodeInfo.is(grouping)
 		}
 	case *parser.Call:
-		p.pd.multiArgumentCall = currNode.is(multiArguments)
+		p.pd.multiArgumentCall = nodeInfo.is(multiArguments)
 	default:
 		p.pd.isAggregation = false
 		p.pd.multiArgumentCall = false
 	}
 	if p.pd.isNewLineApplied {
-		result += p.pd.pad(headInfo.baseIndent(item))
+		result += p.pd.pad(nodeInfo.baseIndent)
 		p.pd.isNewLineApplied = false
 	}
 
@@ -333,7 +331,7 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 		}
 	case parser.RIGHT_PAREN:
 		if ((nodeSplittable && !p.pd.containsGrouping) || p.pd.multiArgumentCall) && !p.pd.expectAggregationLabels {
-			result += p.pd.newLine() + p.pd.pad(headInfo.baseIndent(item))
+			result += p.pd.newLine() + p.pd.pad(nodeInfo.baseIndent)
 			p.pd.isNewLineApplied = false
 		}
 		result += item.Val
@@ -356,7 +354,7 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 			if items[index-1].Typ != parser.COMMA {
 				// Edge-case: if the labels are multi-line split, but do not have
 				// a pre-applied comma.
-				result += "," + p.pd.newLine() + p.pd.pad(headInfo.baseIndent(items[index]))
+				result += "," + p.pd.newLine() + p.pd.pad(nodeInfo.getBaseIndent(items[index]))
 			}
 			p.pd.insideMultilineBraces = false
 			p.pd.isNewLineApplied = false
@@ -413,7 +411,7 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 			result += " "
 		}
 		if p.pd.isNewLineApplied {
-			result += p.pd.pad(currNode.previousIndent()) + item.Val
+			result += p.pd.pad(nodeInfo.previousIndent()) + item.Val
 		} else {
 			result += item.Val
 		}
