@@ -38,7 +38,7 @@ scrape_configs:
       # eureka:
       #  instance:
       #    metadataMap:
-      #
+      #      "prometheus.scrape": "true"
       #
       # Example relabel to customize metric path based on application
       # "prometheus.path = <metric path>" annotation.
