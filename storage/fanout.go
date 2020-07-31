@@ -779,14 +779,16 @@ func (c *compactChunkIterator) Next() bool {
 		heap.Push(&c.h, iter)
 	}
 
-	// Detect overlaps to compact.
-	// Be smart about it and deduplicate on the fly if chunks are identical.
-	var overlapping []Series
-	prev := c.curr
+	var (
+		overlapping []Series
+		oMaxTime    = c.curr.MaxTime
+		prev        = c.curr
+	)
+	// Detect overlaps to compact. Be smart about it and deduplicate on the fly if chunks are identical.
 	for len(c.h) > 0 {
 		// Get the next oldest chunk by min, then max time.
 		next := c.h[0].At()
-		if next.MinTime > prev.MaxTime {
+		if next.MinTime > oMaxTime {
 			// No overlap with current one.
 			break
 		}
@@ -798,6 +800,9 @@ func (c *compactChunkIterator) Next() bool {
 		} else {
 			// We operate on same series, so labels does not matter here.
 			overlapping = append(overlapping, newChunkToSeriesDecoder(nil, next))
+			if next.MaxTime > oMaxTime {
+				oMaxTime = next.MaxTime
+			}
 			prev = next
 		}
 

@@ -902,6 +902,35 @@ func TestCompaction_populateBlock(t *testing.T) {
 				},
 			},
 		},
+		{
+			title: "Populate from three partially overlapping blocks with chunks that are expected to merge into single big chunks.",
+			inputSeriesSamples: [][]seriesSamples{
+				{
+					{
+						lset:   map[string]string{"a": "1", "b": "2"},
+						chunks: [][]sample{{{t: 0}, {t: 6902464}}, {{t: 6961968}, {t: 7080976}}},
+					},
+				},
+				{
+					{
+						lset:   map[string]string{"a": "1", "b": "2"},
+						chunks: [][]sample{{{t: 3600000}, {t: 13953696}}, {{t: 14042952}, {t: 14221464}}},
+					},
+				},
+				{
+					{
+						lset:   map[string]string{"a": "1", "b": "2"},
+						chunks: [][]sample{{{t: 10800000}, {t: 14251232}}, {{t: 14280984}, {t: 14340488}}},
+					},
+				},
+			},
+			expSeriesSamples: []seriesSamples{
+				{
+					lset:   map[string]string{"a": "1", "b": "2"},
+					chunks: [][]sample{{{t: 0}, {t: 3600000}, {t: 6902464}, {t: 6961968}, {t: 7080976}, {t: 10800000}, {t: 13953696}, {t: 14042952}, {t: 14221464}, {t: 14251232}}, {{t: 14280984}, {t: 14340488}}},
+				},
+			},
+		},
 	} {
 		t.Run(tc.title, func(t *testing.T) {
 			blocks := make([]BlockReader, 0, len(tc.inputSeriesSamples))
