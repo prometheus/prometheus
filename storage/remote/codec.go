@@ -180,66 +180,6 @@ func NegotiateResponseType(accepted []prompb.ReadRequest_ResponseType) (prompb.R
 	return 0, errors.Errorf("server does not support any of the requested response types: %v; supported: %v", accepted, supported)
 }
 
-// encodeChunks expects iterator to be ready to use (aka iter.Next() called before invoking).
-func encodeChunks(iter chunkenc.Iterator, chks []prompb.Chunk, frameBytesLeft int) ([]prompb.Chunk, error) {
-	const maxSamplesInChunk = 120
-
-	var (
-		chkMint int64
-		chkMaxt int64
-		chk     *chunkenc.XORChunk
-		app     chunkenc.Appender
-		err     error
-	)
-
-	for iter.Next() {
-		if chk == nil {
-			chk = chunkenc.NewXORChunk()
-			app, err = chk.Appender()
-			if err != nil {
-				return nil, err
-			}
-			chkMint, _ = iter.At()
-		}
-
-		app.Append(iter.At())
-		chkMaxt, _ = iter.At()
-
-		if chk.NumSamples() < maxSamplesInChunk {
-			continue
-		}
-
-		// Cut the chunk.
-		chks = append(chks, prompb.Chunk{
-			MinTimeMs: chkMint,
-			MaxTimeMs: chkMaxt,
-			Type:      prompb.Chunk_Encoding(chk.Encoding()),
-			Data:      chk.Bytes(),
-		})
-		chk = nil
-		frameBytesLeft -= chks[len(chks)-1].Size()
-
-		// We are fine with minor inaccuracy of max bytes per frame. The inaccuracy will be max of full chunk size.
-		if frameBytesLeft <= 0 {
-			break
-		}
-	}
-	if iter.Err() != nil {
-		return nil, errors.Wrap(iter.Err(), "iter TSDB series")
-	}
-
-	if chk != nil {
-		// Cut the chunk if exists.
-		chks = append(chks, prompb.Chunk{
-			MinTimeMs: chkMint,
-			MaxTimeMs: chkMaxt,
-			Type:      prompb.Chunk_Encoding(chk.Encoding()),
-			Data:      chk.Bytes(),
-		})
-	}
-	return chks, nil
-}
-
 // StreamChunkedReadResponses iterates over series, builds chunks and streams those to the caller.
 // It expects Series set with populated chunks.
 func StreamChunkedReadResponses(
