@@ -28,9 +28,8 @@ import (
 	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	common_config "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/config"
-	sd_config "github.com/prometheus/prometheus/discovery/config"
 	"github.com/prometheus/prometheus/discovery/consul"
+	"github.com/prometheus/prometheus/discovery/discoverer"
 	"github.com/prometheus/prometheus/discovery/file"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -760,7 +759,7 @@ func TestTargetSetRecreatesTargetGroupsEveryRun(t *testing.T) {
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
 
-	c := map[string]sd_config.ServiceDiscoveryConfig{
+	c := map[string]discoverer.ServiceDiscoveryConfig{
 		"prometheus": {
 			StaticConfigs: []*targetgroup.Group{
 				{
@@ -788,7 +787,7 @@ func TestTargetSetRecreatesTargetGroupsEveryRun(t *testing.T) {
 	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "string/0"}, "{__address__=\"foo:9090\"}", true)
 	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "string/0"}, "{__address__=\"bar:9090\"}", true)
 
-	c["prometheus"] = sd_config.ServiceDiscoveryConfig{
+	c["prometheus"] = discoverer.ServiceDiscoveryConfig{
 		StaticConfigs: []*targetgroup.Group{
 			{
 				Source: "0",
@@ -817,7 +816,7 @@ func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
 
-	c := map[string]sd_config.ServiceDiscoveryConfig{
+	c := map[string]discoverer.ServiceDiscoveryConfig{
 		"prometheus": {
 			StaticConfigs: []*targetgroup.Group{
 				{
@@ -836,7 +835,7 @@ func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
 	<-discoveryManager.SyncCh()
 	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "string/0"}, "{__address__=\"foo:9090\"}", true)
 
-	c["prometheus"] = sd_config.ServiceDiscoveryConfig{
+	c["prometheus"] = discoverer.ServiceDiscoveryConfig{
 		StaticConfigs: []*targetgroup.Group{},
 	}
 	discoveryManager.ApplyConfig(c)
@@ -882,7 +881,7 @@ func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
 
-	c := map[string]sd_config.ServiceDiscoveryConfig{
+	c := map[string]discoverer.ServiceDiscoveryConfig{
 		"prometheus": {
 			FileSDConfigs: []*file.SDConfig{
 				{
@@ -916,21 +915,19 @@ func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
 
 func TestApplyConfigDoesNotModifyStaticProviderTargets(t *testing.T) {
 	cfgText := `
-scrape_configs:
- - job_name: 'prometheus'
-   static_configs:
-   - targets: ["foo:9090"]
-   - targets: ["bar:9090"]
-   - targets: ["baz:9090"]
+static_configs:
+- targets: ["foo:9090"]
+- targets: ["bar:9090"]
+- targets: ["baz:9090"]
 `
-	originalConfig := &config.Config{}
+	originalConfig := &discoverer.ServiceDiscoveryConfig{}
 	if err := yaml.UnmarshalStrict([]byte(cfgText), originalConfig); err != nil {
-		t.Fatalf("Unable to load YAML config cfgYaml: %s", err)
+		t.Fatalf("Unable to load YAML config: %s", err)
 	}
 
-	processedConfig := &config.Config{}
+	processedConfig := &discoverer.ServiceDiscoveryConfig{}
 	if err := yaml.UnmarshalStrict([]byte(cfgText), processedConfig); err != nil {
-		t.Fatalf("Unable to load YAML config cfgYaml: %s", err)
+		t.Fatalf("Unable to load YAML config: %s", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -938,17 +935,16 @@ scrape_configs:
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
 
-	c := map[string]sd_config.ServiceDiscoveryConfig{
-		"prometheus": processedConfig.ScrapeConfigs[0].ServiceDiscoveryConfig,
+	c := map[string]discoverer.ServiceDiscoveryConfig{
+		"prometheus": *processedConfig,
 	}
 	discoveryManager.ApplyConfig(c)
 	<-discoveryManager.SyncCh()
 
-	origSdcfg := originalConfig.ScrapeConfigs[0].ServiceDiscoveryConfig
 	for _, sdcfg := range c {
-		if !reflect.DeepEqual(origSdcfg.StaticConfigs, sdcfg.StaticConfigs) {
+		if !reflect.DeepEqual(originalConfig.StaticConfigs, sdcfg.StaticConfigs) {
 			t.Fatalf("discovery manager modified static config \n  expected: %v\n  got: %v\n",
-				origSdcfg.StaticConfigs, sdcfg.StaticConfigs)
+				originalConfig.StaticConfigs, sdcfg.StaticConfigs)
 		}
 	}
 }
@@ -960,7 +956,7 @@ func TestGaugeFailedConfigs(t *testing.T) {
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
 
-	c := map[string]sd_config.ServiceDiscoveryConfig{
+	c := map[string]discoverer.ServiceDiscoveryConfig{
 		"prometheus": {
 			ConsulSDConfigs: []*consul.SDConfig{
 				{
@@ -992,7 +988,7 @@ func TestGaugeFailedConfigs(t *testing.T) {
 		t.Fatalf("Expected to have 3 failed configs, got: %v", failedCount)
 	}
 
-	c["prometheus"] = sd_config.ServiceDiscoveryConfig{
+	c["prometheus"] = discoverer.ServiceDiscoveryConfig{
 		StaticConfigs: []*targetgroup.Group{
 			{
 				Source: "0",
