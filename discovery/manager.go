@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	sd_config "github.com/prometheus/prometheus/discovery/config"
+	"github.com/prometheus/prometheus/discovery/discoverer"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 
 	"github.com/prometheus/prometheus/discovery/azure"
@@ -92,13 +93,7 @@ func init() {
 // It does guarantee that it sends the new TargetGroup whenever a change happens.
 //
 // Discoverers should initially send a full set of all discoverable TargetGroups.
-type Discoverer interface {
-	// Run hands a channel to the discovery provider (Consul, DNS etc) through which it can send
-	// updated target groups.
-	// Must returns if the context gets canceled. It should not close the update
-	// channel on returning.
-	Run(ctx context.Context, up chan<- []*targetgroup.Group)
-}
+type Discoverer = discoverer.Discoverer
 
 type poolKey struct {
 	setName  string
