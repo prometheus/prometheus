@@ -271,16 +271,22 @@ var prettierCases = []prettierTest{
   }`,
 	},
 	{
-		expr:     `metric_one + metric_two`,
-		expected: `    metric_one + metric_two`,
+		expr: `metric_one + metric_two`,
+		expected: `    metric_one
+  +
+    metric_two`,
 	},
 	{
-		expr:     `metric_one <= metric_two`,
-		expected: `    metric_one <= metric_two`,
+		expr: `metric_one <= metric_two`,
+		expected: `    metric_one
+  <=
+    metric_two`,
 	},
 	{
-		expr:     `metric_one{foo="bar"} + metric_two{foo="bar"}`,
-		expected: `    metric_one{foo="bar"} + metric_two{foo="bar"}`,
+		expr: `metric_one{foo="bar"} + metric_two{foo="bar"}`,
+		expected: `    metric_one{foo="bar"}
+  +
+    metric_two{foo="bar"}`,
 	},
 	{
 		expr: `metric_one{foo="bar"} + metric_two{foo="bar", instance="localhost:31233", job="two", first="second_", job="cluster-manager"}`,
@@ -296,13 +302,17 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `metric_one + metric_two + metric_three{some_very_large_label="a_very_large_value", some_very_large_label="a_very_large_value"}`,
-		expected: `    metric_one + metric_two
+		expected: `    metric_one
+  +
+    metric_two
   +
     metric_three{some_very_large_label="a_very_large_value", some_very_large_label="a_very_large_value"}`,
 	},
 	{
 		expr: `metric_one + metric_two + metric_three{a_some_very_large_label="a_very_large_value", some_very_large_label="a_very_large_value"}`,
-		expected: `    metric_one + metric_two
+		expected: `    metric_one
+  +
+    metric_two
   +
     metric_three{
       a_some_very_large_label="a_very_large_value",
@@ -311,7 +321,11 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `metric_one + metric_two + metric_three + metric_four{_a_some_very_large_label="a_very_large_value", some_very_large_label="a_very_large_value"}`,
-		expected: `    metric_one + metric_two + metric_three
+		expected: `    metric_one
+  +
+    metric_two
+  +
+    metric_three
   +
     metric_four{
       _a_some_very_large_label="a_very_large_value",
@@ -320,7 +334,11 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `metric_one + metric_two + metric_three + metric_four{_a_some_very_large_label="a_very_large_value", some_very_large_label="a_very_large_value"} + metric_five`,
-		expected: `    metric_one + metric_two + metric_three
+		expected: `    metric_one
+  +
+    metric_two
+  +
+    metric_three
   +
     metric_four{
       _a_some_very_large_label="a_very_large_value",
@@ -389,8 +407,11 @@ var prettierCases = []prettierTest{
   )`,
 	},
 	{
-		expr:     `1 + metric_one{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"}`,
-		expected: `    1 + metric_one{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"}`,
+		expr: `1 + metric_one{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"}`,
+		expected: `    1 + metric_one{
+      _a_some_very_large_label="_a_very_large_value",
+      some_very_large_label="a_very_large_value",
+    }`,
 	},
 	{
 		expr: `metric_one + 2 + metric_two{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"}`,
@@ -402,8 +423,11 @@ var prettierCases = []prettierTest{
     }`,
 	},
 	{
-		expr:     `1 + metric_one{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"} + 2`,
-		expected: `    1 + metric_one{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"} + 2`,
+		expr: `1 + metric_one{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"} + 2`,
+		expected: `    1 + metric_one{
+      _a_some_very_large_label="_a_very_large_value",
+      some_very_large_label="a_very_large_value",
+    } + 2`,
 	},
 	{
 		expr: `metric_one{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"} + 1`,
@@ -547,7 +571,9 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `a + label_join(up{job="api-server",src1="a",src2="b",src3="c"}, "foo", ",", "src1", "src2", "src3")`,
-		expected: `    a + label_join(
+		expected: `    a
+  +
+    label_join(
       up{job="api-server", src1="a", src2="b", src3="c"},
       "foo",
       ",",

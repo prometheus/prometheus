@@ -379,16 +379,17 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 	case parser.ADD, parser.SUB, parser.DIV, parser.GTE, parser.GTR, parser.LOR, parser.LAND,
 		parser.LSS, parser.LTE, parser.LUNLESS, parser.MOD, parser.POW:
 		// Vector matching operators.
-		if hasGrouping {
-			result += p.pd.newLine() + p.pd.pad(nodeInfo.baseIndent) + item.Val + " "
-			p.pd.isNewLineApplied = false
-		} else if nodeSplittable && !hasImmediateScalar {
-			result += p.pd.newLine() + p.pd.pad(nodeInfo.baseIndent) + item.Val + p.pd.newLine()
-		} else {
-			result += " " + item.Val + " "
-		}
 		if hasImmediateScalar {
+			result += " " + item.Val + " "
 			hasImmediateScalar = false
+		} else {
+			result += p.pd.newLine() + p.pd.pad(nodeInfo.baseIndent) + item.Val
+			if hasGrouping {
+				result += " "
+				p.pd.isNewLineApplied = false
+			} else {
+				result += p.pd.newLine()
+			}
 		}
 	case parser.WITHOUT, parser.BY, parser.IGNORING, parser.BOOL, parser.GROUP_LEFT, parser.GROUP_RIGHT,
 		parser.OFFSET, parser.ON:

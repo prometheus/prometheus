@@ -55,6 +55,9 @@ func (n *nodeInfo) is(element uint) bool {
 	switch element {
 	case grouping:
 		if n, ok := n.currentNode.(*parser.BinaryExpr); ok {
+			if n.VectorMatching == nil {
+				return n.ReturnBool
+			}
 			return len(n.VectorMatching.MatchingLabels) > 0 || n.ReturnBool
 		}
 	case scalars:
@@ -175,8 +178,10 @@ func (n *nodeInfo) nodeHistory(head parser.Expr, posRange parser.PositionRange, 
 			}
 		}
 	case *parser.NumberLiteral, *parser.StringLiteral:
-		nodeMatch = true
-		stack = append(stack, node)
+		if node.PositionRange().Start <= posRange.Start && node.PositionRange().End >= posRange.End {
+			nodeMatch = true
+			stack = append(stack, node)
+		}
 	}
 	return stack, head, nodeMatch
 }
