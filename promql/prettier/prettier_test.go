@@ -620,6 +620,17 @@ var prettierCases = []prettierTest{
   )`,
 	},
 	{
+		expr: `label_join((up), "foo", ",", "src1", "src2", "src3")`,
+		expected: `  label_join(
+    (up),
+    "foo",
+    ",",
+    "src1",
+    "src2",
+    "src3"
+  )`,
+	},
+	{
 		expr:     `sum(metric_name)`,
 		expected: `  sum (metric_name)`, // TODO: add node information support for this to avoid space between sum and (.
 	},
