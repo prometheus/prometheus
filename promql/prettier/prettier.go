@@ -35,19 +35,22 @@ type padder struct {
 	columnLimit int
 	// isNewLineApplied represents a new line was added previously, after
 	// appending the item to the result. It should be set to default
-	// after applying baseIndent.
+	// after applying baseIndent. This property is dependent across the padder states
+	// and hence needs to be carried along while formatting.
 	isNewLineApplied bool
-	// containsGrouping represents whether a binary expression contains
-	// a grouping modifier.
-	containsGrouping bool
-	// immediateScalar represents whether the immediate child of a binary
-	// expression is a scalar.
-	immediateScalar         bool
-	multiArgumentCall       bool
-	isAggregation           bool
-	isPreviousItemComment   bool
+	// isPreviousItemComment confirms whether the previous formatted item was
+	// a comment. This property is dependent on previous padder states and hence needs
+	// to be carried along while formatting.
+	isPreviousItemComment bool
+	// expectAggregationLabels expects the following item(s) to be labels of aggregation
+	// expression. Labels are used in AggregateExpr and in VectorSelector but only the ones
+	// in VectorSelector are splittable.
 	expectAggregationLabels bool
-	insideMultilineBraces   bool
+	// labelsSplittable determines whether the current formatting region lies in labels
+	// matchers in VectorSelector. Since labels in VectorSelectors are only splittable,
+	// is property is applied only after encountering a Left_Brace. This is dependent across
+	// multiple padder states and hence needs to be carried along.
+	labelsSplittable bool
 }
 
 // New returns a new prettier over the given slice of files.
@@ -293,30 +296,26 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 		return result, nil
 	}
 	var (
-		item       = items[index]
-		nodeInfo   = &nodeInfo{head: p.Node, columnLimit: 100, item: item}
-		node       = nodeInfo.node()
-		baseIndent int
+		item           = items[index]
+		nodeInfo       = &nodeInfo{head: p.Node, columnLimit: 100, item: item}
+		node           = nodeInfo.node()
+		nodeSplittable = nodeInfo.violatesColumnLimit()
+		// Binary expression use-case.
+		hasImmediateScalar bool
+		hasGrouping        bool
+		// Aggregate expression use-case.
+		hasMultiArgumentCalls bool
 	)
-	nodeSplittable := nodeInfo.violatesColumnLimit()
 	if p.pd.isPreviousItemComment {
 		p.pd.isPreviousItemComment = false
 		result += p.pd.newLine()
 	}
 	switch node.(type) {
-	case *parser.AggregateExpr:
-		p.pd.isAggregation = true
 	case *parser.BinaryExpr:
-		p.pd.immediateScalar = nodeInfo.is(scalars)
-		baseIndent = nodeInfo.baseIndent
-		if item.Typ.IsOperator() {
-			p.pd.containsGrouping = nodeInfo.is(grouping)
-		}
+		hasImmediateScalar = nodeInfo.is(scalars)
+		hasGrouping = nodeInfo.is(grouping)
 	case *parser.Call:
-		p.pd.multiArgumentCall = nodeInfo.is(multiArguments)
-	default:
-		p.pd.isAggregation = false
-		p.pd.multiArgumentCall = false
+		hasMultiArgumentCalls = nodeInfo.is(multiArguments)
 	}
 	if p.pd.isNewLineApplied {
 		result += p.pd.pad(nodeInfo.baseIndent)
@@ -326,17 +325,17 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 	switch item.Typ {
 	case parser.LEFT_PAREN:
 		result += item.Val
-		if ((nodeSplittable && !p.pd.containsGrouping) || p.pd.multiArgumentCall) && (!p.pd.expectAggregationLabels) {
+		if ((nodeSplittable && !hasGrouping) || hasMultiArgumentCalls) && (!p.pd.expectAggregationLabels) {
 			result += p.pd.newLine()
 		}
 	case parser.RIGHT_PAREN:
-		if ((nodeSplittable && !p.pd.containsGrouping) || p.pd.multiArgumentCall) && !p.pd.expectAggregationLabels {
+		if ((nodeSplittable && !hasGrouping) || hasMultiArgumentCalls) && !p.pd.expectAggregationLabels {
 			result += p.pd.newLine() + p.pd.pad(nodeInfo.baseIndent)
 			p.pd.isNewLineApplied = false
 		}
 		result += item.Val
-		if p.pd.containsGrouping {
-			p.pd.containsGrouping = false
+		if hasGrouping {
+			hasGrouping = false
 			result += p.pd.newLine()
 		}
 		if p.pd.expectAggregationLabels {
@@ -346,22 +345,23 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 	case parser.LEFT_BRACE:
 		result += item.Val
 		if nodeSplittable {
+			// This situation arises only in vector selectors that violate column limit and have labels.
 			result += p.pd.newLine()
-			p.pd.insideMultilineBraces = true
+			p.pd.labelsSplittable = true
 		}
 	case parser.RIGHT_BRACE:
-		if p.pd.insideMultilineBraces {
+		if p.pd.labelsSplittable {
 			if items[index-1].Typ != parser.COMMA {
 				// Edge-case: if the labels are multi-line split, but do not have
 				// a pre-applied comma.
 				result += "," + p.pd.newLine() + p.pd.pad(nodeInfo.getBaseIndent(items[index]))
 			}
-			p.pd.insideMultilineBraces = false
+			p.pd.labelsSplittable = false
 			p.pd.isNewLineApplied = false
 		}
 		result += item.Val
 	case parser.IDENTIFIER:
-		if p.pd.insideMultilineBraces {
+		if p.pd.labelsSplittable {
 			result += p.pd.pad(1) + item.Val
 		} else {
 			result += item.Val
@@ -374,21 +374,21 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 		result += item.Val + " "
 	case parser.EQL, parser.EQL_REGEX, parser.NEQ, parser.NEQ_REGEX, parser.DURATION, parser.COLON,
 		parser.LEFT_BRACKET, parser.RIGHT_BRACKET:
-		// Comparision operators.
+		// Comparison operators.
 		result += item.Val
 	case parser.ADD, parser.SUB, parser.DIV, parser.GTE, parser.GTR, parser.LOR, parser.LAND,
 		parser.LSS, parser.LTE, parser.LUNLESS, parser.MOD, parser.POW:
 		// Vector matching operators.
-		if p.pd.containsGrouping {
-			result += p.pd.newLine() + p.pd.pad(baseIndent) + item.Val + " "
+		if hasGrouping {
+			result += p.pd.newLine() + p.pd.pad(nodeInfo.baseIndent) + item.Val + " "
 			p.pd.isNewLineApplied = false
-		} else if nodeSplittable && !p.pd.immediateScalar {
-			result += p.pd.newLine() + p.pd.pad(baseIndent) + item.Val + p.pd.newLine()
+		} else if nodeSplittable && !hasImmediateScalar {
+			result += p.pd.newLine() + p.pd.pad(nodeInfo.baseIndent) + item.Val + p.pd.newLine()
 		} else {
 			result += " " + item.Val + " "
 		}
-		if p.pd.immediateScalar {
-			p.pd.immediateScalar = false
+		if hasImmediateScalar {
+			hasImmediateScalar = false
 		}
 	case parser.WITHOUT, parser.BY, parser.IGNORING, parser.BOOL, parser.GROUP_LEFT, parser.GROUP_RIGHT,
 		parser.OFFSET, parser.ON:
@@ -396,12 +396,12 @@ func (p *Prettier) prettify(items []parser.Item, index int, result string) (stri
 		result += item.Val
 		if item.Typ == parser.BOOL {
 			result += p.pd.newLine()
-		} else if p.pd.isAggregation {
+		} else if nodeInfo.exprType == "*parser.AggregateExpr" {
 			p.pd.expectAggregationLabels = true
 		}
 	case parser.COMMA:
 		result += item.Val
-		if nodeSplittable || p.pd.multiArgumentCall {
+		if nodeSplittable || hasMultiArgumentCalls {
 			result += p.pd.newLine()
 		} else {
 			result += " "
