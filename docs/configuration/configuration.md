@@ -32,7 +32,7 @@ value is set to the specified default.
 Generic placeholders are defined as follows:
 
 * `<boolean>`: a boolean that can take the values `true` or `false`
-* `<duration>`: a duration matching the regular expression `[0-9]+(ms|[smhdwy])`
+* `<duration>`: a duration matching the regular expression `(([0-9]+)y)?(([0-9]+)w)?(([0-9]+)d)?(([0-9]+)h)?(([0-9]+)m)?(([0-9]+)s)?(([0-9]+)ms)?`
 * `<filename>`: a valid path in the current working directory
 * `<host>`: a valid string consisting of a hostname or IP followed by an optional port number
 * `<int>`: an integer value
