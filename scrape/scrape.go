@@ -1086,7 +1086,7 @@ func (sl *scrapeLoop) scrapeAndReport(interval, timeout time.Duration, last time
 			sl.lastScrapeSize = len(b)
 		}
 	} else {
-		level.Debug(sl.l).Log("msg", "Scrape failed", "err", scrapeErr.Error())
+		level.Debug(sl.l).Log("msg", "Scrape failed", "err", scrapeErr)
 		if errc != nil {
 			errc <- scrapeErr
 		}
