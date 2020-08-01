@@ -93,7 +93,7 @@ func (n *nodeInfo) nodeHistory(head parser.Expr, posRange parser.PositionRange, 
 	var nodeMatch bool
 	switch node := head.(type) {
 	case *parser.ParenExpr:
-		if node.PositionRange().Start <= posRange.Start && node.PositionRange().End >= posRange.End {
+		if node.PositionRange().Contains(posRange) {
 			nodeMatch = true
 			stack = append(stack, node)
 			if _stack, _node, found := n.nodeHistory(node.Expr, posRange, stack); found {
@@ -102,12 +102,12 @@ func (n *nodeInfo) nodeHistory(head parser.Expr, posRange parser.PositionRange, 
 			}
 		}
 	case *parser.VectorSelector:
-		if node.PositionRange().Start <= posRange.Start && node.PositionRange().End >= posRange.End {
+		if node.PositionRange().Contains(posRange) {
 			nodeMatch = true
 			stack = append(stack, node)
 		}
 	case *parser.BinaryExpr:
-		if node.PositionRange().Start <= posRange.Start && node.PositionRange().End >= posRange.End {
+		if node.PositionRange().Contains(posRange) {
 			nodeMatch = true
 			stack = append(stack, node)
 			stmp, _node, found := n.nodeHistory(node.LHS, posRange, stack)
@@ -120,12 +120,12 @@ func (n *nodeInfo) nodeHistory(head parser.Expr, posRange parser.PositionRange, 
 			// Since the item exists in both the child. This means that it is in binary expr range,
 			// but not satisfied by a single child. This is possible only for Op and grouping
 			// modifiers.
-			if node.PositionRange().Start <= posRange.Start && node.PositionRange().End >= posRange.End {
+			if node.PositionRange().Contains(posRange) {
 				return stack, head, true
 			}
 		}
 	case *parser.AggregateExpr:
-		if node.PositionRange().Start <= posRange.Start && node.PositionRange().End >= posRange.End {
+		if node.PositionRange().Contains(posRange) {
 			nodeMatch = true
 			stack = append(stack, node)
 			stmp, _head, found := n.nodeHistory(node.Expr, posRange, stack)
@@ -139,11 +139,11 @@ func (n *nodeInfo) nodeHistory(head parser.Expr, posRange parser.PositionRange, 
 			}
 		}
 	case *parser.Call:
-		if node.PositionRange().Start <= posRange.Start && node.PositionRange().End >= posRange.End {
+		if node.PositionRange().Contains(posRange) {
 			nodeMatch = true
 			stack = append(stack, node)
 			for _, exprs := range node.Args {
-				if exprs.PositionRange().Start <= posRange.Start && exprs.PositionRange().End >= posRange.End {
+				if exprs.PositionRange().Contains(posRange) {
 					if stmp, _head, found := n.nodeHistory(exprs, posRange, stack); found {
 						return stmp, _head, true
 					}
@@ -151,7 +151,7 @@ func (n *nodeInfo) nodeHistory(head parser.Expr, posRange parser.PositionRange, 
 			}
 		}
 	case *parser.MatrixSelector:
-		if node.VectorSelector.PositionRange().Start <= posRange.Start && node.VectorSelector.PositionRange().End >= posRange.End {
+		if node.VectorSelector.PositionRange().Contains(posRange) {
 			stack = append(stack, node)
 			nodeMatch = true
 			if _stack, _node, found := n.nodeHistory(node.VectorSelector, posRange, stack); found {
@@ -161,7 +161,7 @@ func (n *nodeInfo) nodeHistory(head parser.Expr, posRange parser.PositionRange, 
 		}
 	case *parser.UnaryExpr:
 		stack = append(stack, node)
-		if node.Expr.PositionRange().Start <= posRange.Start && node.Expr.PositionRange().End >= posRange.End {
+		if node.Expr.PositionRange().Contains(posRange) {
 			nodeMatch = true
 			if _stack, _node, found := n.nodeHistory(node.Expr, posRange, stack); found {
 				stack = _stack
@@ -169,7 +169,7 @@ func (n *nodeInfo) nodeHistory(head parser.Expr, posRange parser.PositionRange, 
 			}
 		}
 	case *parser.SubqueryExpr:
-		if node.Expr.PositionRange().Start <= posRange.Start && node.Expr.PositionRange().End >= posRange.End {
+		if node.Expr.PositionRange().Contains(posRange) {
 			nodeMatch = true
 			stack = append(stack, node)
 			if _stack, _node, found := n.nodeHistory(node.Expr, posRange, stack); found {
@@ -178,7 +178,7 @@ func (n *nodeInfo) nodeHistory(head parser.Expr, posRange parser.PositionRange, 
 			}
 		}
 	case *parser.NumberLiteral, *parser.StringLiteral:
-		if node.PositionRange().Start <= posRange.Start && node.PositionRange().End >= posRange.End {
+		if node.PositionRange().Contains(posRange) {
 			nodeMatch = true
 			stack = append(stack, node)
 		}

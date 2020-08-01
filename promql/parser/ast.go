@@ -361,6 +361,10 @@ type PositionRange struct {
 	End   Pos
 }
 
+func (p PositionRange) Contains(rnge PositionRange) bool {
+	return p.Start <= rnge.Start && p.End >= rnge.End
+}
+
 // mergeRanges is a helper function to merge the PositionRanges of two Nodes.
 // Note that the arguments must be in the same order as they
 // occur in the input string.
