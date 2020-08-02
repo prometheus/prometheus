@@ -1036,7 +1036,7 @@ func (sl *scrapeLoop) scrapeAndReport(interval, timeout time.Duration, last time
 	defer sl.buffers.Put(b)
 	buf := bytes.NewBuffer(b)
 
-	var total, added, seriesAdded int
+	var total, added, seriesAdded, bytes int
 	var err, appErr, scrapeErr error
 
 	app := sl.appender(sl.ctx)
@@ -1052,7 +1052,7 @@ func (sl *scrapeLoop) scrapeAndReport(interval, timeout time.Duration, last time
 	}()
 
 	defer func() {
-		if err = sl.report(app, start, time.Since(start), total, added, seriesAdded, scrapeErr); err != nil {
+		if err = sl.report(app, start, time.Since(start), total, added, seriesAdded, bytes, scrapeErr); err != nil {
 			level.Warn(sl.l).Log("msg", "Appending scrape report failed", "err", err)
 		}
 	}()
@@ -1085,6 +1085,7 @@ func (sl *scrapeLoop) scrapeAndReport(interval, timeout time.Duration, last time
 		if len(b) > 0 {
 			sl.lastScrapeSize = len(b)
 		}
+		bytes = len(b)
 	} else {
 		level.Debug(sl.l).Log("msg", "Scrape failed", "err", scrapeErr)
 		if errc != nil {
@@ -1404,9 +1405,10 @@ const (
 	scrapeSamplesMetricName      = "scrape_samples_scraped" + "\xff"
 	samplesPostRelabelMetricName = "scrape_samples_post_metric_relabeling" + "\xff"
 	scrapeSeriesAddedMetricName  = "scrape_series_added" + "\xff"
+	scrapedBytesMetricName       = "scrape_bytes_scraped" + "\xff"
 )
 
-func (sl *scrapeLoop) report(app storage.Appender, start time.Time, duration time.Duration, scraped, added, seriesAdded int, scrapeErr error) (err error) {
+func (sl *scrapeLoop) report(app storage.Appender, start time.Time, duration time.Duration, scraped, added, seriesAdded int, bytes int, scrapeErr error) (err error) {
 	sl.scraper.Report(start, duration, scrapeErr)
 
 	ts := timestamp.FromTime(start)
@@ -1431,6 +1433,9 @@ func (sl *scrapeLoop) report(app storage.Appender, start time.Time, duration tim
 	if err = sl.addReportSample(app, scrapeSeriesAddedMetricName, ts, float64(seriesAdded)); err != nil {
 		return
 	}
+	if err = sl.addReportSample(app, scrapedBytesMetricName, ts, float64(bytes)); err != nil {
+		return
+	}
 	return
 }
 
@@ -1452,6 +1457,9 @@ func (sl *scrapeLoop) reportStale(app storage.Appender, start time.Time) (err er
 		return
 	}
 	if err = sl.addReportSample(app, scrapeSeriesAddedMetricName, ts, stale); err != nil {
+		return
+	}
+	if err = sl.addReportSample(app, scrapedBytesMetricName, ts, stale); err != nil {
 		return
 	}
 	return
