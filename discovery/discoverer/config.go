@@ -29,15 +29,12 @@ import (
 	"github.com/prometheus/prometheus/discovery/kubernetes"
 	"github.com/prometheus/prometheus/discovery/marathon"
 	"github.com/prometheus/prometheus/discovery/openstack"
-	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/discovery/triton"
 	"github.com/prometheus/prometheus/discovery/zookeeper"
 )
 
 // ServiceDiscoveryConfig configures lists of different service discovery mechanisms.
 type ServiceDiscoveryConfig struct {
-	// List of labeled target groups for this job.
-	StaticConfigs []*targetgroup.Group `yaml:"static_configs,omitempty"`
 	// List of DNS service discovery configurations.
 	DNSSDConfigs []*dns.SDConfig `yaml:"dns_sd_configs,omitempty"`
 	// List of file service discovery configurations.
@@ -164,11 +161,6 @@ func (c *ServiceDiscoveryConfig) Validate() error {
 	for _, cfg := range c.ServersetSDConfigs {
 		if cfg == nil {
 			return errors.New("empty or null section in serverset_sd_configs")
-		}
-	}
-	for _, cfg := range c.StaticConfigs {
-		if cfg == nil {
-			return errors.New("empty or null section in static_configs")
 		}
 	}
 	for _, cfg := range c.TritonSDConfigs {

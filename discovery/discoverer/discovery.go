@@ -57,3 +57,25 @@ type Config interface {
 	// with the given Options.
 	NewDiscoverer(Options) (Discoverer, error)
 }
+
+// A StaticConfig is a Config that provides a static list of targets.
+type StaticConfig []*targetgroup.Group
+
+// Name returns the name of the service discovery mechanism.
+func (StaticConfig) Name() string { return "static" }
+
+// NewDiscoverer returns a Discoverer for the Config.
+func (c StaticConfig) NewDiscoverer(Options) (Discoverer, error) {
+	return staticDiscoverer(c), nil
+}
+
+type staticDiscoverer []*targetgroup.Group
+
+func (c staticDiscoverer) Run(ctx context.Context, up chan<- []*targetgroup.Group) {
+	// TODO: existing implementation closes up chan, but documentation explicitly forbids it...?
+	defer close(up)
+	select {
+	case <-ctx.Done():
+	case up <- c:
+	}
+}

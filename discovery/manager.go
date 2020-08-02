@@ -431,11 +431,6 @@ func (m *Manager) registerProviders(cfg discoverer.ServiceDiscoveryConfig, setNa
 			})
 		})
 	}
-	if len(cfg.StaticConfigs) > 0 {
-		add(setName, func() (Discoverer, error) {
-			return &StaticProvider{TargetGroups: cfg.StaticConfigs}, nil
-		})
-	}
 	if !added {
 		// Add an empty target group to force the refresh of the corresponding
 		// scrape pool and to notify the receiver that this target set has no

@@ -33,7 +33,6 @@ import (
 	"github.com/prometheus/prometheus/discovery/file"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/testutil"
-	"gopkg.in/yaml.v2"
 )
 
 func TestMain(m *testing.M) {
@@ -724,6 +723,19 @@ func assertEqualGroups(t *testing.T, got, expected []*targetgroup.Group, msg fun
 
 }
 
+func staticConfig(addrs ...string) discoverer.StaticConfig {
+	var cfg discoverer.StaticConfig
+	for i, addr := range addrs {
+		cfg = append(cfg, &targetgroup.Group{
+			Source: fmt.Sprint(i),
+			Targets: []model.LabelSet{
+				{model.AddressLabel: model.LabelValue(addr)},
+			},
+		})
+	}
+	return cfg
+}
+
 func verifyPresence(t *testing.T, tSets map[poolKey]map[string]*targetgroup.Group, poolKey poolKey, label string, present bool) {
 	t.Helper()
 	if _, ok := tSets[poolKey]; !ok {
@@ -761,57 +773,27 @@ func TestTargetSetRecreatesTargetGroupsEveryRun(t *testing.T) {
 
 	c := map[string]discoverer.ServiceDiscoveryConfig{
 		"prometheus": {
-			StaticConfigs: []*targetgroup.Group{
-				{
-					Source: "0",
-					Targets: []model.LabelSet{
-						{
-							model.AddressLabel: model.LabelValue("foo:9090"),
-						},
-					},
-				},
-				{
-					Source: "1",
-					Targets: []model.LabelSet{
-						{
-							model.AddressLabel: model.LabelValue("bar:9090"),
-						},
-					},
-				},
+			Configs: []discoverer.Config{
+				staticConfig("foo:9090", "bar:9090"),
 			},
 		},
 	}
 	discoveryManager.ApplyConfig(c)
 
 	<-discoveryManager.SyncCh()
-	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "string/0"}, "{__address__=\"foo:9090\"}", true)
-	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "string/0"}, "{__address__=\"bar:9090\"}", true)
+	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/0"}, "{__address__=\"foo:9090\"}", true)
+	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/0"}, "{__address__=\"bar:9090\"}", true)
 
 	c["prometheus"] = discoverer.ServiceDiscoveryConfig{
-		StaticConfigs: []*targetgroup.Group{
-			{
-				Source: "0",
-				Targets: []model.LabelSet{
-					{
-						model.AddressLabel: model.LabelValue("foo:9090"),
-					},
-				},
-			},
+		Configs: []discoverer.Config{
+			staticConfig("foo:9090"),
 		},
 	}
 	discoveryManager.ApplyConfig(c)
 
 	<-discoveryManager.SyncCh()
-	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "string/0"}, "{__address__=\"foo:9090\"}", true)
-	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "string/0"}, "{__address__=\"bar:9090\"}", false)
-}
-
-type staticConfig []*targetgroup.Group
-
-func (c staticConfig) Name() string { return "static" }
-
-func (c staticConfig) NewDiscoverer(discoverer.Options) (discoverer.Discoverer, error) {
-	return &StaticProvider{TargetGroups: c}, nil
+	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/0"}, "{__address__=\"foo:9090\"}", true)
+	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/0"}, "{__address__=\"bar:9090\"}", false)
 }
 
 func TestDiscovererConfigs(t *testing.T) {
@@ -824,28 +806,8 @@ func TestDiscovererConfigs(t *testing.T) {
 	c := map[string]discoverer.ServiceDiscoveryConfig{
 		"prometheus": {
 			Configs: []discoverer.Config{
-				staticConfig([]*targetgroup.Group{
-					{
-						Source: "0",
-						Targets: []model.LabelSet{{
-							model.AddressLabel: model.LabelValue("foo:9090"),
-						}},
-					},
-					{
-						Source: "1",
-						Targets: []model.LabelSet{{
-							model.AddressLabel: model.LabelValue("bar:9090"),
-						}},
-					},
-				}),
-				staticConfig([]*targetgroup.Group{
-					{
-						Source: "0",
-						Targets: []model.LabelSet{{
-							model.AddressLabel: model.LabelValue("baz:9090"),
-						}},
-					},
-				}),
+				staticConfig("foo:9090", "bar:9090"),
+				staticConfig("baz:9090"),
 			},
 		},
 	}
@@ -869,31 +831,26 @@ func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
 
 	c := map[string]discoverer.ServiceDiscoveryConfig{
 		"prometheus": {
-			StaticConfigs: []*targetgroup.Group{
-				{
-					Source: "0",
-					Targets: []model.LabelSet{
-						{
-							model.AddressLabel: model.LabelValue("foo:9090"),
-						},
-					},
-				},
+			Configs: []discoverer.Config{
+				staticConfig("foo:9090"),
 			},
 		},
 	}
 	discoveryManager.ApplyConfig(c)
 
 	<-discoveryManager.SyncCh()
-	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "string/0"}, "{__address__=\"foo:9090\"}", true)
+	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/0"}, "{__address__=\"foo:9090\"}", true)
 
 	c["prometheus"] = discoverer.ServiceDiscoveryConfig{
-		StaticConfigs: []*targetgroup.Group{},
+		Configs: []discoverer.Config{
+			discoverer.StaticConfig{{}},
+		},
 	}
 	discoveryManager.ApplyConfig(c)
 
 	<-discoveryManager.SyncCh()
 
-	pkey := poolKey{setName: "prometheus", provider: "string/0"}
+	pkey := poolKey{setName: "prometheus", provider: "static/0"}
 	targetGroups, ok := discoveryManager.targets[pkey]
 	if !ok {
 		t.Fatalf("'%v' should be present in target groups", pkey)
@@ -965,20 +922,15 @@ func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
 }
 
 func TestApplyConfigDoesNotModifyStaticProviderTargets(t *testing.T) {
-	cfgText := `
-static_configs:
-- targets: ["foo:9090"]
-- targets: ["bar:9090"]
-- targets: ["baz:9090"]
-`
-	originalConfig := &discoverer.ServiceDiscoveryConfig{}
-	if err := yaml.UnmarshalStrict([]byte(cfgText), originalConfig); err != nil {
-		t.Fatalf("Unable to load YAML config: %s", err)
+	originalConfig := &discoverer.ServiceDiscoveryConfig{
+		Configs: []discoverer.Config{
+			staticConfig("foo:9090", "bar:9090", "baz:9090"),
+		},
 	}
-
-	processedConfig := &discoverer.ServiceDiscoveryConfig{}
-	if err := yaml.UnmarshalStrict([]byte(cfgText), processedConfig); err != nil {
-		t.Fatalf("Unable to load YAML config: %s", err)
+	processedConfig := &discoverer.ServiceDiscoveryConfig{
+		Configs: []discoverer.Config{
+			staticConfig("foo:9090", "bar:9090", "baz:9090"),
+		},
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -993,9 +945,9 @@ static_configs:
 	<-discoveryManager.SyncCh()
 
 	for _, sdcfg := range c {
-		if !reflect.DeepEqual(originalConfig.StaticConfigs, sdcfg.StaticConfigs) {
+		if !reflect.DeepEqual(originalConfig.Configs, sdcfg.Configs) {
 			t.Fatalf("discovery manager modified static config \n  expected: %v\n  got: %v\n",
-				originalConfig.StaticConfigs, sdcfg.StaticConfigs)
+				originalConfig.Configs, sdcfg.Configs)
 		}
 	}
 }
@@ -1040,15 +992,8 @@ func TestGaugeFailedConfigs(t *testing.T) {
 	}
 
 	c["prometheus"] = discoverer.ServiceDiscoveryConfig{
-		StaticConfigs: []*targetgroup.Group{
-			{
-				Source: "0",
-				Targets: []model.LabelSet{
-					{
-						model.AddressLabel: "foo:9090",
-					},
-				},
-			},
+		Configs: []discoverer.Config{
+			staticConfig("foo:9090"),
 		},
 	}
 	discoveryManager.ApplyConfig(c)
