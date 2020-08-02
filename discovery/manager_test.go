@@ -806,6 +806,57 @@ func TestTargetSetRecreatesTargetGroupsEveryRun(t *testing.T) {
 	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "string/0"}, "{__address__=\"bar:9090\"}", false)
 }
 
+type staticConfig []*targetgroup.Group
+
+func (c staticConfig) Name() string { return "static" }
+
+func (c staticConfig) NewDiscoverer(discoverer.Options) (discoverer.Discoverer, error) {
+	return &StaticProvider{TargetGroups: c}, nil
+}
+
+func TestDiscovererConfigs(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	discoveryManager := NewManager(ctx, log.NewNopLogger())
+	discoveryManager.updatert = 100 * time.Millisecond
+	go discoveryManager.Run()
+
+	c := map[string]discoverer.ServiceDiscoveryConfig{
+		"prometheus": {
+			Configs: []discoverer.Config{
+				staticConfig([]*targetgroup.Group{
+					{
+						Source: "0",
+						Targets: []model.LabelSet{{
+							model.AddressLabel: model.LabelValue("foo:9090"),
+						}},
+					},
+					{
+						Source: "1",
+						Targets: []model.LabelSet{{
+							model.AddressLabel: model.LabelValue("bar:9090"),
+						}},
+					},
+				}),
+				staticConfig([]*targetgroup.Group{
+					{
+						Source: "0",
+						Targets: []model.LabelSet{{
+							model.AddressLabel: model.LabelValue("baz:9090"),
+						}},
+					},
+				}),
+			},
+		},
+	}
+	discoveryManager.ApplyConfig(c)
+
+	<-discoveryManager.SyncCh()
+	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/0"}, "{__address__=\"foo:9090\"}", true)
+	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/0"}, "{__address__=\"bar:9090\"}", true)
+	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/1"}, "{__address__=\"baz:9090\"}", true)
+}
+
 // TestTargetSetRecreatesEmptyStaticConfigs ensures that reloading a config file after
 // removing all targets from the static_configs sends an update with empty targetGroups.
 // This is required to signal the receiver that this target set has no current targets.

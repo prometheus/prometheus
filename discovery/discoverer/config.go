@@ -66,6 +66,9 @@ type ServiceDiscoveryConfig struct {
 	AzureSDConfigs []*azure.SDConfig `yaml:"azure_sd_configs,omitempty"`
 	// List of Triton service discovery configurations.
 	TritonSDConfigs []*triton.SDConfig `yaml:"triton_sd_configs,omitempty"`
+
+	// List of additional service discovery configurations.
+	Configs []Config `yaml:"-"`
 }
 
 // SetDirectory joins any relative file paths with dir.

@@ -340,8 +340,12 @@ func (m *Manager) registerProviders(cfg discoverer.ServiceDiscoveryConfig, setNa
 			return
 		}
 
+		name := t
+		if c, ok := cfg.(discoverer.Config); ok {
+			name = c.Name()
+		}
 		provider := provider{
-			name:   fmt.Sprintf("%s/%d", t, len(m.providers)),
+			name:   fmt.Sprintf("%s/%d", name, len(m.providers)),
 			d:      d,
 			config: cfg,
 			subs:   []string{setName},
@@ -418,6 +422,13 @@ func (m *Manager) registerProviders(cfg discoverer.ServiceDiscoveryConfig, setNa
 	for _, c := range cfg.TritonSDConfigs {
 		add(c, func() (Discoverer, error) {
 			return triton.New(log.With(m.logger, "discovery", "triton"), c)
+		})
+	}
+	for _, c := range cfg.Configs {
+		add(c, func() (Discoverer, error) {
+			return c.NewDiscoverer(discoverer.Options{
+				Logger: log.With(m.logger, "discovery", c.Name()),
+			})
 		})
 	}
 	if len(cfg.StaticConfigs) > 0 {

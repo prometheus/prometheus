@@ -39,7 +39,7 @@ func TestForNilSDConfig(t *testing.T) {
 	// Unmarshall all possible yaml keys and validate errors check upon nil
 	// SD config.
 	for _, f := range fieldsSlice {
-		if f == "" {
+		if f == "" || f == "-" {
 			continue
 		}
 		t.Run(f, func(t *testing.T) {
