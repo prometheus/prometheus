@@ -203,6 +203,10 @@ func readMetaFile(dir string) (*BlockMeta, int64, error) {
 func writeMetaFile(logger log.Logger, dir string, meta *BlockMeta) (int64, error) {
 	meta.Version = metaVersion1
 
+	if logger == nil {
+		logger = log.NewNopLogger()
+	}
+
 	// Make any changes to the file appear atomic.
 	path := filepath.Join(dir, metaFilename)
 	tmp := path + ".tmp"
