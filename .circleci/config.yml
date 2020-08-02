@@ -28,7 +28,6 @@ jobs:
     - restore_cache:
         keys:
         - v1-npm-deps-{{ checksum "web/ui/react-app/yarn.lock" }}
-        - v1-npm-deps-
     - run:
         command: make
         environment:
