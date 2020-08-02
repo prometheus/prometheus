@@ -110,7 +110,18 @@ workflows:
           tags:
             only: /.*/
     - prometheus/build:
-        name: build
+        name: build-linux
+        pre-steps:
+          - run:
+                command: awk -i inplace 'go != 1 {print} go==1 && /linux/ {print} /platforms:/ {go=1}' .promu.yml
+        filters:
+          tags:
+            only: /.*/
+    - prometheus/build:
+        name: build-nonlinux
+        pre-steps:
+          - run:
+                command: awk -i inplace 'go != 1 {print} go==1 && !/linux/ {print} /platforms:/ {go=1}' .promu.yml
         filters:
           tags:
             only: /.*/
@@ -118,7 +129,8 @@ workflows:
         context: org-context
         requires:
         - test
-        - build
+        - build-linux
+        - build-nonlinux
         filters:
           branches:
             only: master
@@ -127,7 +139,8 @@ workflows:
         context: org-context
         requires:
         - test
-        - build
+        - build-linux
+        - build-nonlinux
         filters:
           tags:
             only: /^v[0-9]+(\.[0-9]+){2}(-.+|[^-.]*)$/
