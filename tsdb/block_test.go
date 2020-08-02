@@ -355,7 +355,7 @@ const (
 
 // genSeries generates series with a given number of labels and values.
 func genSeries(totalSeries, labelCount int, mint, maxt int64) []storage.Series {
-	if totalSeries == 0 || labelCount == 0 {
+	if totalSeries == 0 || labelCount == 0 || mint > maxt {
 		return nil
 	}
 
