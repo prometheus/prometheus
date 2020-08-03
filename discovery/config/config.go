@@ -66,6 +66,34 @@ type ServiceDiscoveryConfig struct {
 	TritonSDConfigs []*triton.SDConfig `yaml:"triton_sd_configs,omitempty"`
 }
 
+// SetDirectory joins any relative file paths with dir.
+func (c *ServiceDiscoveryConfig) SetDirectory(dir string) {
+	for _, c := range c.KubernetesSDConfigs {
+		c.SetDirectory(dir)
+	}
+	for _, c := range c.MarathonSDConfigs {
+		c.SetDirectory(dir)
+	}
+	for _, c := range c.ConsulSDConfigs {
+		c.SetDirectory(dir)
+	}
+	for _, c := range c.DigitalOceanSDConfigs {
+		c.SetDirectory(dir)
+	}
+	for _, c := range c.DockerSwarmSDConfigs {
+		c.SetDirectory(dir)
+	}
+	for _, c := range c.OpenstackSDConfigs {
+		c.SetDirectory(dir)
+	}
+	for _, c := range c.TritonSDConfigs {
+		c.SetDirectory(dir)
+	}
+	for _, c := range c.FileSDConfigs {
+		c.SetDirectory(dir)
+	}
+}
+
 // Validate validates the ServiceDiscoveryConfig.
 func (c *ServiceDiscoveryConfig) Validate() error {
 	for _, cfg := range c.AzureSDConfigs {

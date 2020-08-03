@@ -28,7 +28,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
-	config_util "github.com/prometheus/common/config"
+	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/discovery/refresh"
@@ -65,11 +65,17 @@ var DefaultSDConfig = SDConfig{
 
 // SDConfig is the configuration for services running on Marathon.
 type SDConfig struct {
-	Servers          []string                     `yaml:"servers,omitempty"`
-	RefreshInterval  model.Duration               `yaml:"refresh_interval,omitempty"`
-	AuthToken        config_util.Secret           `yaml:"auth_token,omitempty"`
-	AuthTokenFile    string                       `yaml:"auth_token_file,omitempty"`
-	HTTPClientConfig config_util.HTTPClientConfig `yaml:",inline"`
+	Servers          []string                `yaml:"servers,omitempty"`
+	RefreshInterval  model.Duration          `yaml:"refresh_interval,omitempty"`
+	AuthToken        config.Secret           `yaml:"auth_token,omitempty"`
+	AuthTokenFile    string                  `yaml:"auth_token_file,omitempty"`
+	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
+}
+
+// SetDirectory joins any relative file paths with dir.
+func (c *SDConfig) SetDirectory(dir string) {
+	c.HTTPClientConfig.SetDirectory(dir)
+	c.AuthTokenFile = config.JoinDir(dir, c.AuthTokenFile)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -108,7 +114,7 @@ type Discovery struct {
 
 // NewDiscovery returns a new Marathon Discovery.
 func NewDiscovery(conf SDConfig, logger log.Logger) (*Discovery, error) {
-	rt, err := config_util.NewRoundTripperFromConfig(conf.HTTPClientConfig, "marathon_sd", false, false)
+	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "marathon_sd", false, false)
 	if err != nil {
 		return nil, err
 	}
@@ -137,12 +143,12 @@ func NewDiscovery(conf SDConfig, logger log.Logger) (*Discovery, error) {
 }
 
 type authTokenRoundTripper struct {
-	authToken config_util.Secret
+	authToken config.Secret
 	rt        http.RoundTripper
 }
 
 // newAuthTokenRoundTripper adds the provided auth token to a request.
-func newAuthTokenRoundTripper(token config_util.Secret, rt http.RoundTripper) (http.RoundTripper, error) {
+func newAuthTokenRoundTripper(token config.Secret, rt http.RoundTripper) (http.RoundTripper, error) {
 	return &authTokenRoundTripper{token, rt}, nil
 }
 

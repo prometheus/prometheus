@@ -22,7 +22,7 @@ import (
 
 	"github.com/docker/docker/client"
 	"github.com/go-kit/kit/log"
-	config_util "github.com/prometheus/common/config"
+	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
 
@@ -44,13 +44,18 @@ var DefaultSDConfig = SDConfig{
 
 // SDConfig is the configuration for Docker Swarm based service discovery.
 type SDConfig struct {
-	HTTPClientConfig config_util.HTTPClientConfig `yaml:",inline"`
+	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 
 	Host string `yaml:"host"`
 	Role string `yaml:"role"`
 	Port int    `yaml:"port"`
 
 	RefreshInterval model.Duration `yaml:"refresh_interval"`
+}
+
+// SetDirectory joins any relative file paths with dir.
+func (c *SDConfig) SetDirectory(dir string) {
+	c.HTTPClientConfig.SetDirectory(dir)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -109,7 +114,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 	// unix, which are not supported by the HTTP client. Passing HTTP client
 	// options to the Docker client makes those non-HTTP requests fail.
 	if hostURL.Scheme == "http" || hostURL.Scheme == "https" {
-		rt, err := config_util.NewRoundTripperFromConfig(conf.HTTPClientConfig, "dockerswarm_sd", false, false)
+		rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "dockerswarm_sd", false, false)
 		if err != nil {
 			return nil, err
 		}

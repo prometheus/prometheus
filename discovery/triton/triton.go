@@ -27,7 +27,7 @@ import (
 	"github.com/go-kit/kit/log"
 	conntrack "github.com/mwitkow/go-conntrack"
 	"github.com/pkg/errors"
-	config_util "github.com/prometheus/common/config"
+	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/discovery/refresh"
@@ -54,15 +54,20 @@ var DefaultSDConfig = SDConfig{
 
 // SDConfig is the configuration for Triton based service discovery.
 type SDConfig struct {
-	Account         string                `yaml:"account"`
-	Role            string                `yaml:"role"`
-	DNSSuffix       string                `yaml:"dns_suffix"`
-	Endpoint        string                `yaml:"endpoint"`
-	Groups          []string              `yaml:"groups,omitempty"`
-	Port            int                   `yaml:"port"`
-	RefreshInterval model.Duration        `yaml:"refresh_interval,omitempty"`
-	TLSConfig       config_util.TLSConfig `yaml:"tls_config,omitempty"`
-	Version         int                   `yaml:"version"`
+	Account         string           `yaml:"account"`
+	Role            string           `yaml:"role"`
+	DNSSuffix       string           `yaml:"dns_suffix"`
+	Endpoint        string           `yaml:"endpoint"`
+	Groups          []string         `yaml:"groups,omitempty"`
+	Port            int              `yaml:"port"`
+	RefreshInterval model.Duration   `yaml:"refresh_interval,omitempty"`
+	TLSConfig       config.TLSConfig `yaml:"tls_config,omitempty"`
+	Version         int              `yaml:"version"`
+}
+
+// SetDirectory joins any relative file paths with dir.
+func (c *SDConfig) SetDirectory(dir string) {
+	c.TLSConfig.SetDirectory(dir)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -122,7 +127,7 @@ type Discovery struct {
 
 // New returns a new Discovery which periodically refreshes its targets.
 func New(logger log.Logger, conf *SDConfig) (*Discovery, error) {
-	tls, err := config_util.NewTLSConfig(&conf.TLSConfig)
+	tls, err := config.NewTLSConfig(&conf.TLSConfig)
 	if err != nil {
 		return nil, err
 	}
