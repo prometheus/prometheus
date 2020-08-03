@@ -24,10 +24,13 @@
 
 {{define "content"}}
     <div id="graph_container" class="container-fluid">
+      <div class="clearfix">
         <div class="query-history">
-            <i class="glyphicon glyphicon-unchecked"></i>
-            <button type="button" class="search-history" title="search previous queries">Enable query history</button>
+          <i class="glyphicon glyphicon-unchecked"></i>
+          <button type="button" class="search-history" title="search previous queries">Enable query history</button>
         </div>
+        <button type="button" class="btn btn-link btn-sm new_ui_button" onclick="window.location.pathname='{{ pathPrefix }}/new/graph'">Try experimental React UI</button>
+      </div>
     </div>
 
     <div class="container-fluid">

@@ -1,6 +1,6 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
-package(default_visibility = ["//:generators"])
+package(default_visibility = ["//visibility:public"])
 
 go_library(
     name = "go_default_library",
@@ -13,12 +13,12 @@ go_library(
     ],
     importpath = "github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway/descriptor",
     deps = [
+        "//internal/casing:go_default_library",
         "//protoc-gen-grpc-gateway/httprule:go_default_library",
         "@com_github_ghodss_yaml//:go_default_library",
         "@com_github_golang_glog//:go_default_library",
         "@com_github_golang_protobuf//jsonpb:go_default_library_gen",
         "@com_github_golang_protobuf//proto:go_default_library",
-        "@com_github_golang_protobuf//protoc-gen-go/generator:go_default_library_gen",
         "@go_googleapis//google/api:annotations_go_proto",
         "@io_bazel_rules_go//proto/wkt:compiler_plugin_go_proto",
         "@io_bazel_rules_go//proto/wkt:descriptor_go_proto",

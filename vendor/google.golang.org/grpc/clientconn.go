@@ -31,22 +31,23 @@ import (
 	"time"
 
 	"google.golang.org/grpc/balancer"
-	_ "google.golang.org/grpc/balancer/roundrobin" // To register roundrobin.
+	"google.golang.org/grpc/balancer/base"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/grpclog"
 	"google.golang.org/grpc/internal/backoff"
 	"google.golang.org/grpc/internal/channelz"
-	"google.golang.org/grpc/internal/envconfig"
 	"google.golang.org/grpc/internal/grpcsync"
+	"google.golang.org/grpc/internal/grpcutil"
 	"google.golang.org/grpc/internal/transport"
 	"google.golang.org/grpc/keepalive"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/resolver"
-	_ "google.golang.org/grpc/resolver/dns"         // To register dns resolver.
-	_ "google.golang.org/grpc/resolver/passthrough" // To register passthrough resolver.
+	"google.golang.org/grpc/serviceconfig"
 	"google.golang.org/grpc/status"
+
+	_ "google.golang.org/grpc/balancer/roundrobin"           // To register roundrobin.
+	_ "google.golang.org/grpc/internal/resolver/dns"         // To register dns resolver.
+	_ "google.golang.org/grpc/internal/resolver/passthrough" // To register passthrough resolver.
 )
 
 const (
@@ -69,11 +70,9 @@ var (
 	errConnClosing = errors.New("grpc: the connection is closing")
 	// errBalancerClosed indicates that the balancer is closed.
 	errBalancerClosed = errors.New("grpc: balancer is closed")
-	// We use an accessor so that minConnectTimeout can be
-	// atomically read and updated while testing.
-	getMinConnectTimeout = func() time.Duration {
-		return minConnectTimeout
-	}
+	// invalidDefaultServiceConfigErrPrefix is used to prefix the json parsing error for the default
+	// service config.
+	invalidDefaultServiceConfigErrPrefix = "grpc: the provided default service config is invalid"
 )
 
 // The following errors are returned from Dial and DialContext
@@ -140,10 +139,19 @@ func DialContext(ctx context.Context, target string, opts ...DialOption) (conn *
 		opt.apply(&cc.dopts)
 	}
 
+	chainUnaryClientInterceptors(cc)
+	chainStreamClientInterceptors(cc)
+
+	defer func() {
+		if err != nil {
+			cc.Close()
+		}
+	}()
+
 	if channelz.IsOn() {
 		if cc.dopts.channelzParentID != 0 {
 			cc.channelzID = channelz.RegisterChannel(&channelzChannel{cc}, cc.dopts.channelzParentID, target)
-			channelz.AddTraceEvent(cc.channelzID, &channelz.TraceEventDesc{
+			channelz.AddTraceEvent(cc.channelzID, 0, &channelz.TraceEventDesc{
 				Desc:     "Channel Created",
 				Severity: channelz.CtINFO,
 				Parent: &channelz.TraceEventDesc{
@@ -153,10 +161,7 @@ func DialContext(ctx context.Context, target string, opts ...DialOption) (conn *
 			})
 		} else {
 			cc.channelzID = channelz.RegisterChannel(&channelzChannel{cc}, 0, target)
-			channelz.AddTraceEvent(cc.channelzID, &channelz.TraceEventDesc{
-				Desc:     "Channel Created",
-				Severity: channelz.CtINFO,
-			})
+			channelz.Info(cc.channelzID, "Channel Created")
 		}
 		cc.csMgr.channelzID = cc.channelzID
 	}
@@ -179,15 +184,23 @@ func DialContext(ctx context.Context, target string, opts ...DialOption) (conn *
 		}
 	}
 
+	if cc.dopts.defaultServiceConfigRawJSON != nil {
+		scpr := parseServiceConfig(*cc.dopts.defaultServiceConfigRawJSON)
+		if scpr.Err != nil {
+			return nil, fmt.Errorf("%s: %v", invalidDefaultServiceConfigErrPrefix, scpr.Err)
+		}
+		cc.dopts.defaultServiceConfig, _ = scpr.Config.(*ServiceConfig)
+	}
 	cc.mkp = cc.dopts.copts.KeepaliveParams
 
 	if cc.dopts.copts.Dialer == nil {
-		cc.dopts.copts.Dialer = newProxyDialer(
-			func(ctx context.Context, addr string) (net.Conn, error) {
-				network, addr := parseDialTarget(addr)
-				return (&net.Dialer{}).DialContext(ctx, network, addr)
-			},
-		)
+		cc.dopts.copts.Dialer = func(ctx context.Context, addr string) (net.Conn, error) {
+			network, addr := parseDialTarget(addr)
+			return (&net.Dialer{}).DialContext(ctx, network, addr)
+		}
+		if cc.dopts.withProxy {
+			cc.dopts.copts.Dialer = newProxyDialer(cc.dopts.copts.Dialer)
+		}
 	}
 
 	if cc.dopts.copts.UserAgent != "" {
@@ -201,16 +214,11 @@ func DialContext(ctx context.Context, target string, opts ...DialOption) (conn *
 		ctx, cancel = context.WithTimeout(ctx, cc.dopts.timeout)
 		defer cancel()
 	}
-
 	defer func() {
 		select {
 		case <-ctx.Done():
 			conn, err = nil, ctx.Err()
 		default:
-		}
-
-		if err != nil {
-			cc.Close()
 		}
 	}()
 
@@ -220,36 +228,35 @@ func DialContext(ctx context.Context, target string, opts ...DialOption) (conn *
 		select {
 		case sc, ok := <-cc.dopts.scChan:
 			if ok {
-				cc.sc = sc
+				cc.sc = &sc
 				scSet = true
 			}
 		default:
 		}
 	}
 	if cc.dopts.bs == nil {
-		cc.dopts.bs = backoff.Exponential{
-			MaxDelay: DefaultBackoffConfig.MaxDelay,
+		cc.dopts.bs = backoff.DefaultExponential
+	}
+
+	// Determine the resolver to use.
+	cc.parsedTarget = grpcutil.ParseTarget(cc.target)
+	channelz.Infof(cc.channelzID, "parsed scheme: %q", cc.parsedTarget.Scheme)
+	resolverBuilder := cc.getResolver(cc.parsedTarget.Scheme)
+	if resolverBuilder == nil {
+		// If resolver builder is still nil, the parsed target's scheme is
+		// not registered. Fallback to default resolver and set Endpoint to
+		// the original target.
+		channelz.Infof(cc.channelzID, "scheme %q not registered, fallback to default scheme", cc.parsedTarget.Scheme)
+		cc.parsedTarget = resolver.Target{
+			Scheme:   resolver.GetDefaultScheme(),
+			Endpoint: target,
+		}
+		resolverBuilder = cc.getResolver(cc.parsedTarget.Scheme)
+		if resolverBuilder == nil {
+			return nil, fmt.Errorf("could not get resolver for default scheme: %q", cc.parsedTarget.Scheme)
 		}
 	}
-	if cc.dopts.resolverBuilder == nil {
-		// Only try to parse target when resolver builder is not already set.
-		cc.parsedTarget = parseTarget(cc.target)
-		grpclog.Infof("parsed scheme: %q", cc.parsedTarget.Scheme)
-		cc.dopts.resolverBuilder = resolver.Get(cc.parsedTarget.Scheme)
-		if cc.dopts.resolverBuilder == nil {
-			// If resolver builder is still nil, the parsed target's scheme is
-			// not registered. Fallback to default resolver and set Endpoint to
-			// the original target.
-			grpclog.Infof("scheme %q not registered, fallback to default scheme", cc.parsedTarget.Scheme)
-			cc.parsedTarget = resolver.Target{
-				Scheme:   resolver.GetDefaultScheme(),
-				Endpoint: target,
-			}
-			cc.dopts.resolverBuilder = resolver.Get(cc.parsedTarget.Scheme)
-		}
-	} else {
-		cc.parsedTarget = resolver.Target{Endpoint: target}
-	}
+
 	creds := cc.dopts.copts.TransportCredentials
 	if creds != nil && creds.Info().ServerName != "" {
 		cc.authority = creds.Info().ServerName
@@ -266,7 +273,7 @@ func DialContext(ctx context.Context, target string, opts ...DialOption) (conn *
 		select {
 		case sc, ok := <-cc.dopts.scChan:
 			if ok {
-				cc.sc = sc
+				cc.sc = &sc
 			}
 		case <-ctx.Done():
 			return nil, ctx.Err()
@@ -285,17 +292,18 @@ func DialContext(ctx context.Context, target string, opts ...DialOption) (conn *
 		CredsBundle:      cc.dopts.copts.CredsBundle,
 		Dialer:           cc.dopts.copts.Dialer,
 		ChannelzParentID: cc.channelzID,
+		Target:           cc.parsedTarget,
 	}
 
 	// Build the resolver.
-	rWrapper, err := newCCResolverWrapper(cc)
+	rWrapper, err := newCCResolverWrapper(cc, resolverBuilder)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build resolver: %v", err)
 	}
-
 	cc.mu.Lock()
 	cc.resolverWrapper = rWrapper
 	cc.mu.Unlock()
+
 	// A blocking dial blocks until the clientConn is ready.
 	if cc.dopts.block {
 		for {
@@ -322,6 +330,68 @@ func DialContext(ctx context.Context, target string, opts ...DialOption) (conn *
 	return cc, nil
 }
 
+// chainUnaryClientInterceptors chains all unary client interceptors into one.
+func chainUnaryClientInterceptors(cc *ClientConn) {
+	interceptors := cc.dopts.chainUnaryInts
+	// Prepend dopts.unaryInt to the chaining interceptors if it exists, since unaryInt will
+	// be executed before any other chained interceptors.
+	if cc.dopts.unaryInt != nil {
+		interceptors = append([]UnaryClientInterceptor{cc.dopts.unaryInt}, interceptors...)
+	}
+	var chainedInt UnaryClientInterceptor
+	if len(interceptors) == 0 {
+		chainedInt = nil
+	} else if len(interceptors) == 1 {
+		chainedInt = interceptors[0]
+	} else {
+		chainedInt = func(ctx context.Context, method string, req, reply interface{}, cc *ClientConn, invoker UnaryInvoker, opts ...CallOption) error {
+			return interceptors[0](ctx, method, req, reply, cc, getChainUnaryInvoker(interceptors, 0, invoker), opts...)
+		}
+	}
+	cc.dopts.unaryInt = chainedInt
+}
+
+// getChainUnaryInvoker recursively generate the chained unary invoker.
+func getChainUnaryInvoker(interceptors []UnaryClientInterceptor, curr int, finalInvoker UnaryInvoker) UnaryInvoker {
+	if curr == len(interceptors)-1 {
+		return finalInvoker
+	}
+	return func(ctx context.Context, method string, req, reply interface{}, cc *ClientConn, opts ...CallOption) error {
+		return interceptors[curr+1](ctx, method, req, reply, cc, getChainUnaryInvoker(interceptors, curr+1, finalInvoker), opts...)
+	}
+}
+
+// chainStreamClientInterceptors chains all stream client interceptors into one.
+func chainStreamClientInterceptors(cc *ClientConn) {
+	interceptors := cc.dopts.chainStreamInts
+	// Prepend dopts.streamInt to the chaining interceptors if it exists, since streamInt will
+	// be executed before any other chained interceptors.
+	if cc.dopts.streamInt != nil {
+		interceptors = append([]StreamClientInterceptor{cc.dopts.streamInt}, interceptors...)
+	}
+	var chainedInt StreamClientInterceptor
+	if len(interceptors) == 0 {
+		chainedInt = nil
+	} else if len(interceptors) == 1 {
+		chainedInt = interceptors[0]
+	} else {
+		chainedInt = func(ctx context.Context, desc *StreamDesc, cc *ClientConn, method string, streamer Streamer, opts ...CallOption) (ClientStream, error) {
+			return interceptors[0](ctx, desc, cc, method, getChainStreamer(interceptors, 0, streamer), opts...)
+		}
+	}
+	cc.dopts.streamInt = chainedInt
+}
+
+// getChainStreamer recursively generate the chained client stream constructor.
+func getChainStreamer(interceptors []StreamClientInterceptor, curr int, finalStreamer Streamer) Streamer {
+	if curr == len(interceptors)-1 {
+		return finalStreamer
+	}
+	return func(ctx context.Context, desc *StreamDesc, cc *ClientConn, method string, opts ...CallOption) (ClientStream, error) {
+		return interceptors[curr+1](ctx, desc, cc, method, getChainStreamer(interceptors, curr+1, finalStreamer), opts...)
+	}
+}
+
 // connectivityStateManager keeps the connectivity.State of ClientConn.
 // This struct will eventually be exported so the balancers can access it.
 type connectivityStateManager struct {
@@ -344,12 +414,7 @@ func (csm *connectivityStateManager) updateState(state connectivity.State) {
 		return
 	}
 	csm.state = state
-	if channelz.IsOn() {
-		channelz.AddTraceEvent(csm.channelzID, &channelz.TraceEventDesc{
-			Desc:     fmt.Sprintf("Channel Connectivity change to %v", state),
-			Severity: channelz.CtINFO,
-		})
-	}
+	channelz.Infof(csm.channelzID, "Channel Connectivity change to %v", state)
 	if csm.notifyChan != nil {
 		// There are other goroutines waiting on this channel.
 		close(csm.notifyChan)
@@ -372,7 +437,32 @@ func (csm *connectivityStateManager) getNotifyChan() <-chan struct{} {
 	return csm.notifyChan
 }
 
-// ClientConn represents a client connection to an RPC server.
+// ClientConnInterface defines the functions clients need to perform unary and
+// streaming RPCs.  It is implemented by *ClientConn, and is only intended to
+// be referenced by generated code.
+type ClientConnInterface interface {
+	// Invoke performs a unary RPC and returns after the response is received
+	// into reply.
+	Invoke(ctx context.Context, method string, args interface{}, reply interface{}, opts ...CallOption) error
+	// NewStream begins a streaming RPC.
+	NewStream(ctx context.Context, desc *StreamDesc, method string, opts ...CallOption) (ClientStream, error)
+}
+
+// Assert *ClientConn implements ClientConnInterface.
+var _ ClientConnInterface = (*ClientConn)(nil)
+
+// ClientConn represents a virtual connection to a conceptual endpoint, to
+// perform RPCs.
+//
+// A ClientConn is free to have zero or more actual connections to the endpoint
+// based on configuration, load, etc. It is also free to determine which actual
+// endpoints to use and may change it every RPC, permitting client-side load
+// balancing.
+//
+// A ClientConn encapsulates a range of functionality including name
+// resolution, TCP connection establishment (with retries and backoff) and TLS
+// handshakes. It also handles errors on established connections by
+// re-resolving the name and reconnecting.
 type ClientConn struct {
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -388,14 +478,11 @@ type ClientConn struct {
 
 	mu              sync.RWMutex
 	resolverWrapper *ccResolverWrapper
-	sc              ServiceConfig
-	scRaw           string
+	sc              *ServiceConfig
 	conns           map[*addrConn]struct{}
 	// Keepalive parameter can be updated if a GoAway is received.
 	mkp             keepalive.ClientParameters
 	curBalancerName string
-	preBalancerName string // previous balancer name.
-	curAddresses    []resolver.Address
 	balancerWrapper *ccBalancerWrapper
 	retryThrottler  atomic.Value
 
@@ -437,8 +524,7 @@ func (cc *ClientConn) scWatcher() {
 			cc.mu.Lock()
 			// TODO: load balance policy runtime change is ignored.
 			// We may revisit this decision in the future.
-			cc.sc = sc
-			cc.scRaw = ""
+			cc.sc = &sc
 			cc.mu.Unlock()
 		case <-cc.ctx.Done():
 			return
@@ -465,59 +551,104 @@ func (cc *ClientConn) waitForResolvedAddrs(ctx context.Context) error {
 	}
 }
 
-func (cc *ClientConn) handleResolvedAddrs(addrs []resolver.Address, err error) {
+var emptyServiceConfig *ServiceConfig
+
+func init() {
+	cfg := parseServiceConfig("{}")
+	if cfg.Err != nil {
+		panic(fmt.Sprintf("impossible error parsing empty service config: %v", cfg.Err))
+	}
+	emptyServiceConfig = cfg.Config.(*ServiceConfig)
+}
+
+func (cc *ClientConn) maybeApplyDefaultServiceConfig(addrs []resolver.Address) {
+	if cc.sc != nil {
+		cc.applyServiceConfigAndBalancer(cc.sc, addrs)
+		return
+	}
+	if cc.dopts.defaultServiceConfig != nil {
+		cc.applyServiceConfigAndBalancer(cc.dopts.defaultServiceConfig, addrs)
+	} else {
+		cc.applyServiceConfigAndBalancer(emptyServiceConfig, addrs)
+	}
+}
+
+func (cc *ClientConn) updateResolverState(s resolver.State, err error) error {
+	defer cc.firstResolveEvent.Fire()
 	cc.mu.Lock()
-	defer cc.mu.Unlock()
+	// Check if the ClientConn is already closed. Some fields (e.g.
+	// balancerWrapper) are set to nil when closing the ClientConn, and could
+	// cause nil pointer panic if we don't have this check.
 	if cc.conns == nil {
-		// cc was closed.
-		return
+		cc.mu.Unlock()
+		return nil
 	}
 
-	if reflect.DeepEqual(cc.curAddresses, addrs) {
-		return
-	}
+	if err != nil {
+		// May need to apply the initial service config in case the resolver
+		// doesn't support service configs, or doesn't provide a service config
+		// with the new addresses.
+		cc.maybeApplyDefaultServiceConfig(nil)
 
-	cc.curAddresses = addrs
-	cc.firstResolveEvent.Fire()
-
-	if cc.dopts.balancerBuilder == nil {
-		// Only look at balancer types and switch balancer if balancer dial
-		// option is not set.
-		var isGRPCLB bool
-		for _, a := range addrs {
-			if a.Type == resolver.GRPCLB {
-				isGRPCLB = true
-				break
-			}
+		if cc.balancerWrapper != nil {
+			cc.balancerWrapper.resolverError(err)
 		}
-		var newBalancerName string
-		if isGRPCLB {
-			newBalancerName = grpclbName
+
+		// No addresses are valid with err set; return early.
+		cc.mu.Unlock()
+		return balancer.ErrBadResolverState
+	}
+
+	var ret error
+	if cc.dopts.disableServiceConfig || s.ServiceConfig == nil {
+		cc.maybeApplyDefaultServiceConfig(s.Addresses)
+		// TODO: do we need to apply a failing LB policy if there is no
+		// default, per the error handling design?
+	} else {
+		if sc, ok := s.ServiceConfig.Config.(*ServiceConfig); s.ServiceConfig.Err == nil && ok {
+			cc.applyServiceConfigAndBalancer(sc, s.Addresses)
 		} else {
-			// Address list doesn't contain grpclb address. Try to pick a
-			// non-grpclb balancer.
-			newBalancerName = cc.curBalancerName
-			// If current balancer is grpclb, switch to the previous one.
-			if newBalancerName == grpclbName {
-				newBalancerName = cc.preBalancerName
-			}
-			// The following could be true in two cases:
-			// - the first time handling resolved addresses
-			//   (curBalancerName="")
-			// - the first time handling non-grpclb addresses
-			//   (curBalancerName="grpclb", preBalancerName="")
-			if newBalancerName == "" {
-				newBalancerName = PickFirstBalancerName
+			ret = balancer.ErrBadResolverState
+			if cc.balancerWrapper == nil {
+				var err error
+				if s.ServiceConfig.Err != nil {
+					err = status.Errorf(codes.Unavailable, "error parsing service config: %v", s.ServiceConfig.Err)
+				} else {
+					err = status.Errorf(codes.Unavailable, "illegal service config type: %T", s.ServiceConfig.Config)
+				}
+				cc.blockingpicker.updatePicker(base.NewErrPicker(err))
+				cc.csMgr.updateState(connectivity.TransientFailure)
+				cc.mu.Unlock()
+				return ret
 			}
 		}
-		cc.switchBalancer(newBalancerName)
-	} else if cc.balancerWrapper == nil {
-		// Balancer dial option was set, and this is the first time handling
-		// resolved addresses. Build a balancer with dopts.balancerBuilder.
-		cc.balancerWrapper = newCCBalancerWrapper(cc, cc.dopts.balancerBuilder, cc.balancerBuildOpts)
 	}
 
-	cc.balancerWrapper.handleResolvedAddrs(addrs, nil)
+	var balCfg serviceconfig.LoadBalancingConfig
+	if cc.dopts.balancerBuilder == nil && cc.sc != nil && cc.sc.lbConfig != nil {
+		balCfg = cc.sc.lbConfig.cfg
+	}
+
+	cbn := cc.curBalancerName
+	bw := cc.balancerWrapper
+	cc.mu.Unlock()
+	if cbn != grpclbName {
+		// Filter any grpclb addresses since we don't have the grpclb balancer.
+		for i := 0; i < len(s.Addresses); {
+			if s.Addresses[i].Type == resolver.GRPCLB {
+				copy(s.Addresses[i:], s.Addresses[i+1:])
+				s.Addresses = s.Addresses[:len(s.Addresses)-1]
+				continue
+			}
+			i++
+		}
+	}
+	uccsErr := bw.updateClientConnState(&balancer.ClientConnState{ResolverState: s, BalancerConfig: balCfg})
+	if ret == nil {
+		ret = uccsErr // prefer ErrBadResolver state since any other error is
+		// currently meaningless to the caller.
+	}
+	return ret
 }
 
 // switchBalancer starts the switching from current balancer to the balancer
@@ -529,52 +660,33 @@ func (cc *ClientConn) handleResolvedAddrs(addrs []resolver.Address, err error) {
 //
 // Caller must hold cc.mu.
 func (cc *ClientConn) switchBalancer(name string) {
-	if cc.conns == nil {
+	if strings.EqualFold(cc.curBalancerName, name) {
 		return
 	}
 
-	if strings.ToLower(cc.curBalancerName) == strings.ToLower(name) {
-		return
-	}
-
-	grpclog.Infof("ClientConn switching balancer to %q", name)
+	channelz.Infof(cc.channelzID, "ClientConn switching balancer to %q", name)
 	if cc.dopts.balancerBuilder != nil {
-		grpclog.Infoln("ignoring balancer switching: Balancer DialOption used instead")
+		channelz.Info(cc.channelzID, "ignoring balancer switching: Balancer DialOption used instead")
 		return
 	}
-	// TODO(bar switching) change this to two steps: drain and close.
-	// Keep track of sc in wrapper.
 	if cc.balancerWrapper != nil {
 		cc.balancerWrapper.close()
 	}
 
 	builder := balancer.Get(name)
-	// TODO(yuxuanli): If user send a service config that does not contain a valid balancer name, should
-	// we reuse previous one?
-	if channelz.IsOn() {
-		if builder == nil {
-			channelz.AddTraceEvent(cc.channelzID, &channelz.TraceEventDesc{
-				Desc:     fmt.Sprintf("Channel switches to new LB policy %q due to fallback from invalid balancer name", PickFirstBalancerName),
-				Severity: channelz.CtWarning,
-			})
-		} else {
-			channelz.AddTraceEvent(cc.channelzID, &channelz.TraceEventDesc{
-				Desc:     fmt.Sprintf("Channel switches to new LB policy %q", name),
-				Severity: channelz.CtINFO,
-			})
-		}
-	}
 	if builder == nil {
-		grpclog.Infof("failed to get balancer builder for: %v, using pick_first instead", name)
+		channelz.Warningf(cc.channelzID, "Channel switches to new LB policy %q due to fallback from invalid balancer name", PickFirstBalancerName)
+		channelz.Infof(cc.channelzID, "failed to get balancer builder for: %v, using pick_first instead", name)
 		builder = newPickfirstBuilder()
+	} else {
+		channelz.Infof(cc.channelzID, "Channel switches to new LB policy %q", name)
 	}
 
-	cc.preBalancerName = cc.curBalancerName
 	cc.curBalancerName = builder.Name()
 	cc.balancerWrapper = newCCBalancerWrapper(cc, builder, cc.balancerBuildOpts)
 }
 
-func (cc *ClientConn) handleSubConnStateChange(sc balancer.SubConn, s connectivity.State) {
+func (cc *ClientConn) handleSubConnStateChange(sc balancer.SubConn, s connectivity.State, err error) {
 	cc.mu.Lock()
 	if cc.conns == nil {
 		cc.mu.Unlock()
@@ -582,7 +694,7 @@ func (cc *ClientConn) handleSubConnStateChange(sc balancer.SubConn, s connectivi
 	}
 	// TODO(bar switching) send updates to all balancer wrappers when balancer
 	// gracefully switching is supported.
-	cc.balancerWrapper.handleSubConnStateChange(sc, s)
+	cc.balancerWrapper.handleSubConnStateChange(sc, s, err)
 	cc.mu.Unlock()
 }
 
@@ -591,6 +703,7 @@ func (cc *ClientConn) handleSubConnStateChange(sc balancer.SubConn, s connectivi
 // Caller needs to make sure len(addrs) > 0.
 func (cc *ClientConn) newAddrConn(addrs []resolver.Address, opts balancer.NewSubConnOptions) (*addrConn, error) {
 	ac := &addrConn{
+		state:        connectivity.Idle,
 		cc:           cc,
 		addrs:        addrs,
 		scopts:       opts,
@@ -607,7 +720,7 @@ func (cc *ClientConn) newAddrConn(addrs []resolver.Address, opts balancer.NewSub
 	}
 	if channelz.IsOn() {
 		ac.channelzID = channelz.RegisterSubChannel(ac, cc.channelzID, "")
-		channelz.AddTraceEvent(ac.channelzID, &channelz.TraceEventDesc{
+		channelz.AddTraceEvent(ac.channelzID, 0, &channelz.TraceEventDesc{
 			Desc:     "Subchannel Created",
 			Severity: channelz.CtINFO,
 			Parent: &channelz.TraceEventDesc{
@@ -677,7 +790,9 @@ func (ac *addrConn) connect() error {
 		ac.mu.Unlock()
 		return nil
 	}
-	ac.updateConnectivityState(connectivity.Connecting)
+	// Update connectivity state within the lock to prevent subsequent or
+	// concurrent calls from resetting the transport more than once.
+	ac.updateConnectivityState(connectivity.Connecting, nil)
 	ac.mu.Unlock()
 
 	// Start a goroutine connecting to the server asynchronously.
@@ -687,25 +802,35 @@ func (ac *addrConn) connect() error {
 
 // tryUpdateAddrs tries to update ac.addrs with the new addresses list.
 //
-// It checks whether current connected address of ac is in the new addrs list.
+// If ac is Connecting, it returns false. The caller should tear down the ac and
+// create a new one. Note that the backoff will be reset when this happens.
+//
+// If ac is TransientFailure, it updates ac.addrs and returns true. The updated
+// addresses will be picked up by retry in the next iteration after backoff.
+//
+// If ac is Shutdown or Idle, it updates ac.addrs and returns true.
+//
+// If ac is Ready, it checks whether current connected address of ac is in the
+// new addrs list.
 //  - If true, it updates ac.addrs and returns true. The ac will keep using
 //    the existing connection.
 //  - If false, it does nothing and returns false.
 func (ac *addrConn) tryUpdateAddrs(addrs []resolver.Address) bool {
 	ac.mu.Lock()
 	defer ac.mu.Unlock()
-	grpclog.Infof("addrConn: tryUpdateAddrs curAddr: %v, addrs: %v", ac.curAddr, addrs)
-	if ac.state == connectivity.Shutdown {
+	channelz.Infof(ac.channelzID, "addrConn: tryUpdateAddrs curAddr: %v, addrs: %v", ac.curAddr, addrs)
+	if ac.state == connectivity.Shutdown ||
+		ac.state == connectivity.TransientFailure ||
+		ac.state == connectivity.Idle {
 		ac.addrs = addrs
 		return true
 	}
 
-	// Unless we're busy reconnecting already, let's reconnect from the top of
-	// the list.
-	if ac.state != connectivity.Ready {
+	if ac.state == connectivity.Connecting {
 		return false
 	}
 
+	// ac.state is Ready, try to find the connected address.
 	var curAddrFound bool
 	for _, a := range addrs {
 		if reflect.DeepEqual(ac.curAddr, a) {
@@ -713,7 +838,7 @@ func (ac *addrConn) tryUpdateAddrs(addrs []resolver.Address) bool {
 			break
 		}
 	}
-	grpclog.Infof("addrConn: tryUpdateAddrs curAddrFound: %v", curAddrFound)
+	channelz.Infof(ac.channelzID, "addrConn: tryUpdateAddrs curAddrFound: %v", curAddrFound)
 	if curAddrFound {
 		ac.addrs = addrs
 	}
@@ -732,6 +857,9 @@ func (cc *ClientConn) GetMethodConfig(method string) MethodConfig {
 	// TODO: Avoid the locking here.
 	cc.mu.RLock()
 	defer cc.mu.RUnlock()
+	if cc.sc == nil {
+		return MethodConfig{}
+	}
 	m, ok := cc.sc.Methods[method]
 	if !ok {
 		i := strings.LastIndex(method, "/")
@@ -743,14 +871,16 @@ func (cc *ClientConn) GetMethodConfig(method string) MethodConfig {
 func (cc *ClientConn) healthCheckConfig() *healthCheckConfig {
 	cc.mu.RLock()
 	defer cc.mu.RUnlock()
+	if cc.sc == nil {
+		return nil
+	}
 	return cc.sc.healthCheckConfig
 }
 
 func (cc *ClientConn) getTransport(ctx context.Context, failfast bool, method string) (transport.ClientTransport, func(balancer.DoneInfo), error) {
-	hdr, _ := metadata.FromOutgoingContext(ctx)
-	t, done, err := cc.blockingpicker.pick(ctx, failfast, balancer.PickOptions{
+	t, done, err := cc.blockingpicker.pick(ctx, failfast, balancer.PickInfo{
+		Ctx:            ctx,
 		FullMethodName: method,
-		Header:         hdr,
 	})
 	if err != nil {
 		return nil, nil, toRPCErr(err)
@@ -758,69 +888,57 @@ func (cc *ClientConn) getTransport(ctx context.Context, failfast bool, method st
 	return t, done, nil
 }
 
-// handleServiceConfig parses the service config string in JSON format to Go native
-// struct ServiceConfig, and store both the struct and the JSON string in ClientConn.
-func (cc *ClientConn) handleServiceConfig(js string) error {
-	if cc.dopts.disableServiceConfig {
-		return nil
+func (cc *ClientConn) applyServiceConfigAndBalancer(sc *ServiceConfig, addrs []resolver.Address) {
+	if sc == nil {
+		// should never reach here.
+		return
 	}
-	if cc.scRaw == js {
-		return nil
-	}
-	if channelz.IsOn() {
-		channelz.AddTraceEvent(cc.channelzID, &channelz.TraceEventDesc{
-			// The special formatting of \"%s\" instead of %q is to provide nice printing of service config
-			// for human consumption.
-			Desc:     fmt.Sprintf("Channel has a new service config \"%s\"", js),
-			Severity: channelz.CtINFO,
-		})
-	}
-	sc, err := parseServiceConfig(js)
-	if err != nil {
-		return err
-	}
-	cc.mu.Lock()
-	// Check if the ClientConn is already closed. Some fields (e.g.
-	// balancerWrapper) are set to nil when closing the ClientConn, and could
-	// cause nil pointer panic if we don't have this check.
-	if cc.conns == nil {
-		cc.mu.Unlock()
-		return nil
-	}
-	cc.scRaw = js
 	cc.sc = sc
 
-	if sc.retryThrottling != nil {
+	if cc.sc.retryThrottling != nil {
 		newThrottler := &retryThrottler{
-			tokens: sc.retryThrottling.MaxTokens,
-			max:    sc.retryThrottling.MaxTokens,
-			thresh: sc.retryThrottling.MaxTokens / 2,
-			ratio:  sc.retryThrottling.TokenRatio,
+			tokens: cc.sc.retryThrottling.MaxTokens,
+			max:    cc.sc.retryThrottling.MaxTokens,
+			thresh: cc.sc.retryThrottling.MaxTokens / 2,
+			ratio:  cc.sc.retryThrottling.TokenRatio,
 		}
 		cc.retryThrottler.Store(newThrottler)
 	} else {
 		cc.retryThrottler.Store((*retryThrottler)(nil))
 	}
 
-	if sc.LB != nil && *sc.LB != grpclbName { // "grpclb" is not a valid balancer option in service config.
-		if cc.curBalancerName == grpclbName {
-			// If current balancer is grpclb, there's at least one grpclb
-			// balancer address in the resolved list. Don't switch the balancer,
-			// but change the previous balancer name, so if a new resolved
-			// address list doesn't contain grpclb address, balancer will be
-			// switched to *sc.LB.
-			cc.preBalancerName = *sc.LB
+	if cc.dopts.balancerBuilder == nil {
+		// Only look at balancer types and switch balancer if balancer dial
+		// option is not set.
+		var newBalancerName string
+		if cc.sc != nil && cc.sc.lbConfig != nil {
+			newBalancerName = cc.sc.lbConfig.name
 		} else {
-			cc.switchBalancer(*sc.LB)
-			cc.balancerWrapper.handleResolvedAddrs(cc.curAddresses, nil)
+			var isGRPCLB bool
+			for _, a := range addrs {
+				if a.Type == resolver.GRPCLB {
+					isGRPCLB = true
+					break
+				}
+			}
+			if isGRPCLB {
+				newBalancerName = grpclbName
+			} else if cc.sc != nil && cc.sc.LB != nil {
+				newBalancerName = *cc.sc.LB
+			} else {
+				newBalancerName = PickFirstBalancerName
+			}
 		}
+		cc.switchBalancer(newBalancerName)
+	} else if cc.balancerWrapper == nil {
+		// Balancer dial option was set, and this is the first time handling
+		// resolved addresses. Build a balancer with dopts.balancerBuilder.
+		cc.curBalancerName = cc.dopts.balancerBuilder.Name()
+		cc.balancerWrapper = newCCBalancerWrapper(cc, cc.dopts.balancerBuilder, cc.balancerBuildOpts)
 	}
-
-	cc.mu.Unlock()
-	return nil
 }
 
-func (cc *ClientConn) resolveNow(o resolver.ResolveNowOption) {
+func (cc *ClientConn) resolveNow(o resolver.ResolveNowOptions) {
 	cc.mu.RLock()
 	r := cc.resolverWrapper
 	cc.mu.RUnlock()
@@ -842,8 +960,9 @@ func (cc *ClientConn) resolveNow(o resolver.ResolveNowOption) {
 // This API is EXPERIMENTAL.
 func (cc *ClientConn) ResetConnectBackoff() {
 	cc.mu.Lock()
-	defer cc.mu.Unlock()
-	for ac := range cc.conns {
+	conns := cc.conns
+	cc.mu.Unlock()
+	for ac := range conns {
 		ac.resetConnectBackoff()
 	}
 }
@@ -890,9 +1009,9 @@ func (cc *ClientConn) Close() error {
 				Severity: channelz.CtINFO,
 			}
 		}
-		channelz.AddTraceEvent(cc.channelzID, ted)
+		channelz.AddTraceEvent(cc.channelzID, 0, ted)
 		// TraceEvent needs to be called before RemoveEntry, as TraceEvent may add trace reference to
-		// the entity beng deleted, and thus prevent it from being deleted right away.
+		// the entity being deleted, and thus prevent it from being deleted right away.
 		channelz.RemoveEntry(cc.channelzID)
 	}
 	return nil
@@ -921,8 +1040,6 @@ type addrConn struct {
 	// Use updateConnectivityState for updating addrConn's connectivity state.
 	state connectivity.State
 
-	tearDownErr error // The reason this addrConn is torn down.
-
 	backoffIdx   int // Needs to be stateful for resetConnectBackoff.
 	resetBackoff chan struct{}
 
@@ -931,20 +1048,13 @@ type addrConn struct {
 }
 
 // Note: this requires a lock on ac.mu.
-func (ac *addrConn) updateConnectivityState(s connectivity.State) {
+func (ac *addrConn) updateConnectivityState(s connectivity.State, lastErr error) {
 	if ac.state == s {
 		return
 	}
-
-	updateMsg := fmt.Sprintf("Subchannel Connectivity change to %v", s)
 	ac.state = s
-	if channelz.IsOn() {
-		channelz.AddTraceEvent(ac.channelzID, &channelz.TraceEventDesc{
-			Desc:     updateMsg,
-			Severity: channelz.CtINFO,
-		})
-	}
-	ac.cc.handleSubConnStateChange(ac.acbw, s)
+	channelz.Infof(ac.channelzID, "Subchannel Connectivity change to %v", s)
+	ac.cc.handleSubConnStateChange(ac.acbw, s, lastErr)
 }
 
 // adjustParams updates parameters used to create transports upon
@@ -963,216 +1073,194 @@ func (ac *addrConn) adjustParams(r transport.GoAwayReason) {
 
 func (ac *addrConn) resetTransport() {
 	for i := 0; ; i++ {
-		tryNextAddrFromStart := grpcsync.NewEvent()
-
-		ac.mu.Lock()
 		if i > 0 {
-			ac.cc.resolveNow(resolver.ResolveNowOption{})
-		}
-		addrs := ac.addrs
-		backoffFor := ac.dopts.bs.Backoff(ac.backoffIdx)
-
-		// This will be the duration that dial gets to finish.
-		dialDuration := getMinConnectTimeout()
-		if dialDuration < backoffFor {
-			// Give dial more time as we keep failing to connect.
-			dialDuration = backoffFor
-		}
-		connectDeadline := time.Now().Add(dialDuration)
-		ac.mu.Unlock()
-
-	addrLoop:
-		for _, addr := range addrs {
-			ac.mu.Lock()
-
-			if ac.state == connectivity.Shutdown {
-				ac.mu.Unlock()
-				return
-			}
-			ac.updateConnectivityState(connectivity.Connecting)
-			ac.transport = nil
-
-			ac.cc.mu.RLock()
-			ac.dopts.copts.KeepaliveParams = ac.cc.mkp
-			ac.cc.mu.RUnlock()
-
-			if ac.state == connectivity.Shutdown {
-				ac.mu.Unlock()
-				return
-			}
-
-			copts := ac.dopts.copts
-			if ac.scopts.CredsBundle != nil {
-				copts.CredsBundle = ac.scopts.CredsBundle
-			}
-			hctx, hcancel := context.WithCancel(ac.ctx)
-			defer hcancel()
-			ac.mu.Unlock()
-
-			if channelz.IsOn() {
-				channelz.AddTraceEvent(ac.channelzID, &channelz.TraceEventDesc{
-					Desc:     fmt.Sprintf("Subchannel picks a new address %q to connect", addr.Addr),
-					Severity: channelz.CtINFO,
-				})
-			}
-
-			reconnect := grpcsync.NewEvent()
-			prefaceReceived := make(chan struct{})
-			newTr, err := ac.createTransport(addr, copts, connectDeadline, reconnect, prefaceReceived)
-			if err == nil {
-				ac.mu.Lock()
-				ac.curAddr = addr
-				ac.transport = newTr
-				ac.mu.Unlock()
-
-				healthCheckConfig := ac.cc.healthCheckConfig()
-				// LB channel health checking is only enabled when all the four requirements below are met:
-				// 1. it is not disabled by the user with the WithDisableHealthCheck DialOption,
-				// 2. the internal.HealthCheckFunc is set by importing the grpc/healthcheck package,
-				// 3. a service config with non-empty healthCheckConfig field is provided,
-				// 4. the current load balancer allows it.
-				healthcheckManagingState := false
-				if !ac.cc.dopts.disableHealthCheck && healthCheckConfig != nil && ac.scopts.HealthCheckEnabled {
-					if ac.cc.dopts.healthCheckFunc == nil {
-						// TODO: add a link to the health check doc in the error message.
-						grpclog.Error("the client side LB channel health check function has not been set.")
-					} else {
-						// TODO(deklerk) refactor to just return transport
-						go ac.startHealthCheck(hctx, newTr, addr, healthCheckConfig.ServiceName)
-						healthcheckManagingState = true
-					}
-				}
-				if !healthcheckManagingState {
-					ac.mu.Lock()
-					ac.updateConnectivityState(connectivity.Ready)
-					ac.mu.Unlock()
-				}
-			} else {
-				hcancel()
-				if err == errConnClosing {
-					return
-				}
-
-				if tryNextAddrFromStart.HasFired() {
-					break addrLoop
-				}
-				continue
-			}
-
-			backoffFor = 0
-			ac.mu.Lock()
-			reqHandshake := ac.dopts.reqHandshake
-			ac.mu.Unlock()
-
-			<-reconnect.Done()
-			hcancel()
-
-			if reqHandshake == envconfig.RequireHandshakeHybrid {
-				// In RequireHandshakeHybrid mode, we must check to see whether
-				// server preface has arrived yet to decide whether to start
-				// reconnecting at the top of the list (server preface received)
-				// or continue with the next addr in the list as if the
-				// connection were not successful (server preface not received).
-				select {
-				case <-prefaceReceived:
-					// We received a server preface - huzzah! We consider this
-					// a success and restart from the top of the addr list.
-					ac.mu.Lock()
-					ac.backoffIdx = 0
-					ac.mu.Unlock()
-					break addrLoop
-				default:
-					// Despite having set state to READY, in hybrid mode we
-					// consider this a failure and continue connecting at the
-					// next addr in the list.
-					ac.mu.Lock()
-					if ac.state == connectivity.Shutdown {
-						ac.mu.Unlock()
-						return
-					}
-
-					ac.updateConnectivityState(connectivity.TransientFailure)
-					ac.mu.Unlock()
-
-					if tryNextAddrFromStart.HasFired() {
-						break addrLoop
-					}
-				}
-			} else {
-				// In RequireHandshakeOn mode, we would have already waited for
-				// the server preface, so we consider this a success and restart
-				// from the top of the addr list. In RequireHandshakeOff mode,
-				// we don't care to wait for the server preface before
-				// considering this a success, so we also restart from the top
-				// of the addr list.
-				ac.mu.Lock()
-				ac.backoffIdx = 0
-				ac.mu.Unlock()
-				break addrLoop
-			}
+			ac.cc.resolveNow(resolver.ResolveNowOptions{})
 		}
 
-		// After exhausting all addresses, or after need to reconnect after a
-		// READY, the addrConn enters TRANSIENT_FAILURE.
 		ac.mu.Lock()
 		if ac.state == connectivity.Shutdown {
 			ac.mu.Unlock()
 			return
 		}
-		ac.updateConnectivityState(connectivity.TransientFailure)
 
-		// Backoff.
-		b := ac.resetBackoff
-		timer := time.NewTimer(backoffFor)
-		acctx := ac.ctx
+		addrs := ac.addrs
+		backoffFor := ac.dopts.bs.Backoff(ac.backoffIdx)
+		// This will be the duration that dial gets to finish.
+		dialDuration := minConnectTimeout
+		if ac.dopts.minConnectTimeout != nil {
+			dialDuration = ac.dopts.minConnectTimeout()
+		}
+
+		if dialDuration < backoffFor {
+			// Give dial more time as we keep failing to connect.
+			dialDuration = backoffFor
+		}
+		// We can potentially spend all the time trying the first address, and
+		// if the server accepts the connection and then hangs, the following
+		// addresses will never be tried.
+		//
+		// The spec doesn't mention what should be done for multiple addresses.
+		// https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md#proposed-backoff-algorithm
+		connectDeadline := time.Now().Add(dialDuration)
+
+		ac.updateConnectivityState(connectivity.Connecting, nil)
+		ac.transport = nil
 		ac.mu.Unlock()
 
-		select {
-		case <-timer.C:
+		newTr, addr, reconnect, err := ac.tryAllAddrs(addrs, connectDeadline)
+		if err != nil {
+			// After exhausting all addresses, the addrConn enters
+			// TRANSIENT_FAILURE.
 			ac.mu.Lock()
-			ac.backoffIdx++
+			if ac.state == connectivity.Shutdown {
+				ac.mu.Unlock()
+				return
+			}
+			ac.updateConnectivityState(connectivity.TransientFailure, err)
+
+			// Backoff.
+			b := ac.resetBackoff
 			ac.mu.Unlock()
-		case <-b:
-			timer.Stop()
-		case <-acctx.Done():
-			timer.Stop()
+
+			timer := time.NewTimer(backoffFor)
+			select {
+			case <-timer.C:
+				ac.mu.Lock()
+				ac.backoffIdx++
+				ac.mu.Unlock()
+			case <-b:
+				timer.Stop()
+			case <-ac.ctx.Done():
+				timer.Stop()
+				return
+			}
+			continue
+		}
+
+		ac.mu.Lock()
+		if ac.state == connectivity.Shutdown {
+			ac.mu.Unlock()
+			newTr.Close()
 			return
 		}
+		ac.curAddr = addr
+		ac.transport = newTr
+		ac.backoffIdx = 0
+
+		hctx, hcancel := context.WithCancel(ac.ctx)
+		ac.startHealthCheck(hctx)
+		ac.mu.Unlock()
+
+		// Block until the created transport is down. And when this happens,
+		// we restart from the top of the addr list.
+		<-reconnect.Done()
+		hcancel()
+		// restart connecting - the top of the loop will set state to
+		// CONNECTING.  This is against the current connectivity semantics doc,
+		// however it allows for graceful behavior for RPCs not yet dispatched
+		// - unfortunate timing would otherwise lead to the RPC failing even
+		// though the TRANSIENT_FAILURE state (called for by the doc) would be
+		// instantaneous.
+		//
+		// Ideally we should transition to Idle here and block until there is
+		// RPC activity that leads to the balancer requesting a reconnect of
+		// the associated SubConn.
 	}
 }
 
-// createTransport creates a connection to one of the backends in addrs. It
-// sets ac.transport in the success case, or it returns an error if it was
-// unable to successfully create a transport.
-//
-// If waitForHandshake is enabled, it blocks until server preface arrives.
-func (ac *addrConn) createTransport(addr resolver.Address, copts transport.ConnectOptions, connectDeadline time.Time, reconnect *grpcsync.Event, prefaceReceived chan struct{}) (transport.ClientTransport, error) {
+// tryAllAddrs tries to creates a connection to the addresses, and stop when at the
+// first successful one. It returns the transport, the address and a Event in
+// the successful case. The Event fires when the returned transport disconnects.
+func (ac *addrConn) tryAllAddrs(addrs []resolver.Address, connectDeadline time.Time) (transport.ClientTransport, resolver.Address, *grpcsync.Event, error) {
+	var firstConnErr error
+	for _, addr := range addrs {
+		ac.mu.Lock()
+		if ac.state == connectivity.Shutdown {
+			ac.mu.Unlock()
+			return nil, resolver.Address{}, nil, errConnClosing
+		}
+
+		ac.cc.mu.RLock()
+		ac.dopts.copts.KeepaliveParams = ac.cc.mkp
+		ac.cc.mu.RUnlock()
+
+		copts := ac.dopts.copts
+		if ac.scopts.CredsBundle != nil {
+			copts.CredsBundle = ac.scopts.CredsBundle
+		}
+		ac.mu.Unlock()
+
+		channelz.Infof(ac.channelzID, "Subchannel picks a new address %q to connect", addr.Addr)
+
+		newTr, reconnect, err := ac.createTransport(addr, copts, connectDeadline)
+		if err == nil {
+			return newTr, addr, reconnect, nil
+		}
+		if firstConnErr == nil {
+			firstConnErr = err
+		}
+		ac.cc.blockingpicker.updateConnectionError(err)
+	}
+
+	// Couldn't connect to any address.
+	return nil, resolver.Address{}, nil, firstConnErr
+}
+
+// createTransport creates a connection to addr. It returns the transport and a
+// Event in the successful case. The Event fires when the returned transport
+// disconnects.
+func (ac *addrConn) createTransport(addr resolver.Address, copts transport.ConnectOptions, connectDeadline time.Time) (transport.ClientTransport, *grpcsync.Event, error) {
+	prefaceReceived := make(chan struct{})
 	onCloseCalled := make(chan struct{})
+	reconnect := grpcsync.NewEvent()
+
+	authority := ac.cc.authority
+	// addr.ServerName takes precedent over ClientConn authority, if present.
+	if addr.ServerName != "" {
+		authority = addr.ServerName
+	}
 
 	target := transport.TargetInfo{
 		Addr:      addr.Addr,
 		Metadata:  addr.Metadata,
-		Authority: ac.cc.authority,
+		Authority: authority,
 	}
 
-	prefaceTimer := time.NewTimer(time.Until(connectDeadline))
-
+	once := sync.Once{}
 	onGoAway := func(r transport.GoAwayReason) {
 		ac.mu.Lock()
 		ac.adjustParams(r)
+		once.Do(func() {
+			if ac.state == connectivity.Ready {
+				// Prevent this SubConn from being used for new RPCs by setting its
+				// state to Connecting.
+				//
+				// TODO: this should be Idle when grpc-go properly supports it.
+				ac.updateConnectivityState(connectivity.Connecting, nil)
+			}
+		})
 		ac.mu.Unlock()
 		reconnect.Fire()
 	}
 
 	onClose := func() {
+		ac.mu.Lock()
+		once.Do(func() {
+			if ac.state == connectivity.Ready {
+				// Prevent this SubConn from being used for new RPCs by setting its
+				// state to Connecting.
+				//
+				// TODO: this should be Idle when grpc-go properly supports it.
+				ac.updateConnectivityState(connectivity.Connecting, nil)
+			}
+		})
+		ac.mu.Unlock()
 		close(onCloseCalled)
-		prefaceTimer.Stop()
 		reconnect.Fire()
 	}
 
 	onPrefaceReceipt := func() {
 		close(prefaceReceived)
-		prefaceTimer.Stop()
 	}
 
 	connectCtx, cancel := context.WithDeadline(ac.ctx, connectDeadline)
@@ -1182,107 +1270,99 @@ func (ac *addrConn) createTransport(addr resolver.Address, copts transport.Conne
 	}
 
 	newTr, err := transport.NewClientTransport(connectCtx, ac.cc.ctx, target, copts, onPrefaceReceipt, onGoAway, onClose)
-
-	if err == nil {
-		if ac.dopts.reqHandshake == envconfig.RequireHandshakeOn {
-			select {
-			case <-prefaceTimer.C:
-				// We didn't get the preface in time.
-				newTr.Close()
-				err = errors.New("timed out waiting for server handshake")
-			case <-prefaceReceived:
-				// We got the preface - huzzah! things are good.
-			case <-onCloseCalled:
-				// The transport has already closed - noop.
-				return nil, errors.New("connection closed")
-			}
-		} else if ac.dopts.reqHandshake == envconfig.RequireHandshakeHybrid {
-			go func() {
-				select {
-				case <-prefaceTimer.C:
-					// We didn't get the preface in time.
-					newTr.Close()
-				case <-prefaceReceived:
-					// We got the preface just in the nick of time - huzzah!
-				case <-onCloseCalled:
-					// The transport has already closed - noop.
-				}
-			}()
-		}
-	}
-
 	if err != nil {
 		// newTr is either nil, or closed.
-		ac.cc.blockingpicker.updateConnectionError(err)
-		ac.mu.Lock()
-		if ac.state == connectivity.Shutdown {
-			// ac.tearDown(...) has been invoked.
-			ac.mu.Unlock()
-
-			return nil, errConnClosing
-		}
-		ac.mu.Unlock()
-		grpclog.Warningf("grpc: addrConn.createTransport failed to connect to %v. Err :%v. Reconnecting...", addr, err)
-		return nil, err
+		channelz.Warningf(ac.channelzID, "grpc: addrConn.createTransport failed to connect to %v. Err: %v. Reconnecting...", addr, err)
+		return nil, nil, err
 	}
 
-	// Now there is a viable transport to be use, so set ac.transport to reflect the new viable transport.
-	ac.mu.Lock()
-	if ac.state == connectivity.Shutdown {
-		ac.mu.Unlock()
+	select {
+	case <-time.After(time.Until(connectDeadline)):
+		// We didn't get the preface in time.
 		newTr.Close()
-		return nil, errConnClosing
+		channelz.Warningf(ac.channelzID, "grpc: addrConn.createTransport failed to connect to %v: didn't receive server preface in time. Reconnecting...", addr)
+		return nil, nil, errors.New("timed out waiting for server handshake")
+	case <-prefaceReceived:
+		// We got the preface - huzzah! things are good.
+	case <-onCloseCalled:
+		// The transport has already closed - noop.
+		return nil, nil, errors.New("connection closed")
+		// TODO(deklerk) this should bail on ac.ctx.Done(). Add a test and fix.
 	}
-	ac.mu.Unlock()
-
-	// Now there is a viable transport to be use, so set ac.transport to reflect the new viable transport.
-	ac.mu.Lock()
-	if ac.state == connectivity.Shutdown {
-		ac.mu.Unlock()
-		newTr.Close()
-		return nil, errConnClosing
-	}
-	ac.mu.Unlock()
-
-	return newTr, nil
+	return newTr, reconnect, nil
 }
 
-func (ac *addrConn) startHealthCheck(ctx context.Context, newTr transport.ClientTransport, addr resolver.Address, serviceName string) {
-	// Set up the health check helper functions
-	newStream := func() (interface{}, error) {
-		return ac.newClientStream(ctx, &StreamDesc{ServerStreams: true}, "/grpc.health.v1.Health/Watch", newTr)
+// startHealthCheck starts the health checking stream (RPC) to watch the health
+// stats of this connection if health checking is requested and configured.
+//
+// LB channel health checking is enabled when all requirements below are met:
+// 1. it is not disabled by the user with the WithDisableHealthCheck DialOption
+// 2. internal.HealthCheckFunc is set by importing the grpc/healthcheck package
+// 3. a service config with non-empty healthCheckConfig field is provided
+// 4. the load balancer requests it
+//
+// It sets addrConn to READY if the health checking stream is not started.
+//
+// Caller must hold ac.mu.
+func (ac *addrConn) startHealthCheck(ctx context.Context) {
+	var healthcheckManagingState bool
+	defer func() {
+		if !healthcheckManagingState {
+			ac.updateConnectivityState(connectivity.Ready, nil)
+		}
+	}()
+
+	if ac.cc.dopts.disableHealthCheck {
+		return
 	}
-	firstReady := true
-	reportHealth := func(ok bool) {
+	healthCheckConfig := ac.cc.healthCheckConfig()
+	if healthCheckConfig == nil {
+		return
+	}
+	if !ac.scopts.HealthCheckEnabled {
+		return
+	}
+	healthCheckFunc := ac.cc.dopts.healthCheckFunc
+	if healthCheckFunc == nil {
+		// The health package is not imported to set health check function.
+		//
+		// TODO: add a link to the health check doc in the error message.
+		channelz.Error(ac.channelzID, "Health check is requested but health check function is not set.")
+		return
+	}
+
+	healthcheckManagingState = true
+
+	// Set up the health check helper functions.
+	currentTr := ac.transport
+	newStream := func(method string) (interface{}, error) {
+		ac.mu.Lock()
+		if ac.transport != currentTr {
+			ac.mu.Unlock()
+			return nil, status.Error(codes.Canceled, "the provided transport is no longer valid to use")
+		}
+		ac.mu.Unlock()
+		return newNonRetryClientStream(ctx, &StreamDesc{ServerStreams: true}, method, currentTr, ac)
+	}
+	setConnectivityState := func(s connectivity.State, lastErr error) {
 		ac.mu.Lock()
 		defer ac.mu.Unlock()
-		if ac.transport != newTr {
+		if ac.transport != currentTr {
 			return
 		}
-		if ok {
-			if firstReady {
-				firstReady = false
-				ac.curAddr = addr
-			}
-			ac.updateConnectivityState(connectivity.Ready)
-		} else {
-			ac.updateConnectivityState(connectivity.TransientFailure)
-		}
+		ac.updateConnectivityState(s, lastErr)
 	}
-	err := ac.cc.dopts.healthCheckFunc(ctx, newStream, reportHealth, serviceName)
-	if err != nil {
-		if status.Code(err) == codes.Unimplemented {
-			if channelz.IsOn() {
-				channelz.AddTraceEvent(ac.channelzID, &channelz.TraceEventDesc{
-					Desc:     "Subchannel health check is unimplemented at server side, thus health check is disabled",
-					Severity: channelz.CtError,
-				})
+	// Start the health checking stream.
+	go func() {
+		err := ac.cc.dopts.healthCheckFunc(ctx, newStream, setConnectivityState, healthCheckConfig.ServiceName)
+		if err != nil {
+			if status.Code(err) == codes.Unimplemented {
+				channelz.Error(ac.channelzID, "Subchannel health check is unimplemented at server side, thus health check is disabled")
+			} else {
+				channelz.Errorf(ac.channelzID, "HealthCheckFunc exits with unexpected error %v", err)
 			}
-			grpclog.Error("Subchannel health check is unimplemented at server side, thus health check is disabled")
-		} else {
-			grpclog.Errorf("HealthCheckFunc exits with unexpected error %v", err)
 		}
-	}
+	}()
 }
 
 func (ac *addrConn) resetConnectBackoff() {
@@ -1329,10 +1409,9 @@ func (ac *addrConn) tearDown(err error) {
 	curTr := ac.transport
 	ac.transport = nil
 	// We have to set the state to Shutdown before anything else to prevent races
-	// between setting the state and logic that waits on context cancelation / etc.
-	ac.updateConnectivityState(connectivity.Shutdown)
+	// between setting the state and logic that waits on context cancellation / etc.
+	ac.updateConnectivityState(connectivity.Shutdown, nil)
 	ac.cancel()
-	ac.tearDownErr = err
 	ac.curAddr = resolver.Address{}
 	if err == errConnDrain && curTr != nil {
 		// GracefulClose(...) may be executed multiple times when
@@ -1345,7 +1424,7 @@ func (ac *addrConn) tearDown(err error) {
 		ac.mu.Lock()
 	}
 	if channelz.IsOn() {
-		channelz.AddTraceEvent(ac.channelzID, &channelz.TraceEventDesc{
+		channelz.AddTraceEvent(ac.channelzID, 0, &channelz.TraceEventDesc{
 			Desc:     "Subchannel Deleted",
 			Severity: channelz.CtINFO,
 			Parent: &channelz.TraceEventDesc{
@@ -1354,7 +1433,7 @@ func (ac *addrConn) tearDown(err error) {
 			},
 		})
 		// TraceEvent needs to be called before RemoveEntry, as TraceEvent may add trace reference to
-		// the entity beng deleted, and thus prevent it from being deleted right away.
+		// the entity being deleted, and thus prevent it from being deleted right away.
 		channelz.RemoveEntry(ac.channelzID)
 	}
 	ac.mu.Unlock()
@@ -1444,3 +1523,12 @@ func (c *channelzChannel) ChannelzMetric() *channelz.ChannelInternalMetric {
 // Deprecated: This error is never returned by grpc and should not be
 // referenced by users.
 var ErrClientConnTimeout = errors.New("grpc: timed out when dialing")
+
+func (cc *ClientConn) getResolver(scheme string) resolver.Builder {
+	for _, rb := range cc.dopts.resolvers {
+		if scheme == rb.Scheme() {
+			return rb
+		}
+	}
+	return resolver.Get(scheme)
+}

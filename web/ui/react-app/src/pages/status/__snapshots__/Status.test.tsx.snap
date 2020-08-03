@@ -1,0 +1,77 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`Status Snapshot testing should match table snapshot 1`] = `
+<Fragment>
+  <h2>
+    Foo
+  </h2>
+  <Table
+    bordered={true}
+    className="h-auto"
+    responsiveTag="div"
+    size="sm"
+    striped={true}
+    tag="table"
+  >
+    <tbody>
+      <tr
+        key="0"
+      >
+        <th
+          className="capitalize-title"
+          style={
+            Object {
+              "width": "35%",
+            }
+          }
+        >
+          0
+        </th>
+        <td
+          className="text-break"
+        >
+          <Component />
+        </td>
+      </tr>
+      <tr
+        key="1"
+      >
+        <th
+          className="capitalize-title"
+          style={
+            Object {
+              "width": "35%",
+            }
+          }
+        >
+          1
+        </th>
+        <td
+          className="text-break"
+        >
+          <Component />
+        </td>
+      </tr>
+      <tr
+        key="2"
+      >
+        <th
+          className="capitalize-title"
+          style={
+            Object {
+              "width": "35%",
+            }
+          }
+        >
+          2
+        </th>
+        <td
+          className="text-break"
+        >
+          <Component />
+        </td>
+      </tr>
+    </tbody>
+  </Table>
+</Fragment>
+`;

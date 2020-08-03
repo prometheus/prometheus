@@ -36,7 +36,8 @@ func NewVirtualMachineExtensionImagesClient(subscriptionID string) VirtualMachin
 }
 
 // NewVirtualMachineExtensionImagesClientWithBaseURI creates an instance of the VirtualMachineExtensionImagesClient
-// client.
+// client using a custom endpoint.  Use this when interacting with an Azure cloud that uses a non-standard base URI
+// (sovereign clouds, Azure stack).
 func NewVirtualMachineExtensionImagesClientWithBaseURI(baseURI string, subscriptionID string) VirtualMachineExtensionImagesClient {
 	return VirtualMachineExtensionImagesClient{NewWithBaseURI(baseURI, subscriptionID)}
 }
@@ -102,8 +103,7 @@ func (client VirtualMachineExtensionImagesClient) GetPreparer(ctx context.Contex
 // GetSender sends the Get request. The method will close the
 // http.Response Body if it receives an error.
 func (client VirtualMachineExtensionImagesClient) GetSender(req *http.Request) (*http.Response, error) {
-	return autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // GetResponder handles the response to the Get request. The method always
@@ -111,7 +111,6 @@ func (client VirtualMachineExtensionImagesClient) GetSender(req *http.Request) (
 func (client VirtualMachineExtensionImagesClient) GetResponder(resp *http.Response) (result VirtualMachineExtensionImage, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -178,8 +177,7 @@ func (client VirtualMachineExtensionImagesClient) ListTypesPreparer(ctx context.
 // ListTypesSender sends the ListTypes request. The method will close the
 // http.Response Body if it receives an error.
 func (client VirtualMachineExtensionImagesClient) ListTypesSender(req *http.Request) (*http.Response, error) {
-	return autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListTypesResponder handles the response to the ListTypes request. The method always
@@ -187,7 +185,6 @@ func (client VirtualMachineExtensionImagesClient) ListTypesSender(req *http.Requ
 func (client VirtualMachineExtensionImagesClient) ListTypesResponder(resp *http.Response) (result ListVirtualMachineExtensionImage, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result.Value),
 		autorest.ByClosing())
@@ -265,8 +262,7 @@ func (client VirtualMachineExtensionImagesClient) ListVersionsPreparer(ctx conte
 // ListVersionsSender sends the ListVersions request. The method will close the
 // http.Response Body if it receives an error.
 func (client VirtualMachineExtensionImagesClient) ListVersionsSender(req *http.Request) (*http.Response, error) {
-	return autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListVersionsResponder handles the response to the ListVersions request. The method always
@@ -274,7 +270,6 @@ func (client VirtualMachineExtensionImagesClient) ListVersionsSender(req *http.R
 func (client VirtualMachineExtensionImagesClient) ListVersionsResponder(resp *http.Response) (result ListVirtualMachineExtensionImage, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result.Value),
 		autorest.ByClosing())

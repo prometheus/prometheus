@@ -33,7 +33,7 @@ type Intention struct {
 	// SourceType is the type of the value for the source.
 	SourceType IntentionSourceType
 
-	// Action is whether this is a whitelist or blacklist intention.
+	// Action is whether this is an allowlist or denylist intention.
 	Action IntentionAction
 
 	// DefaultAddr, DefaultPort of the local listening proxy (if any) to
@@ -53,6 +53,13 @@ type Intention struct {
 	// CreatedAt and UpdatedAt keep track of when this record was created
 	// or modified.
 	CreatedAt, UpdatedAt time.Time
+
+	// Hash of the contents of the intention
+	//
+	// This is needed mainly for replication purposes. When replicating from
+	// one DC to another keeping the content Hash will allow us to detect
+	// content changes more efficiently than checking every single field
+	Hash []byte
 
 	CreateIndex uint64
 	ModifyIndex uint64
@@ -92,7 +99,7 @@ func (i *Intention) partString(ns, n string) string {
 const IntentionDefaultNamespace = "default"
 
 // IntentionAction is the action that the intention represents. This
-// can be "allow" or "deny" to whitelist or blacklist intentions.
+// can be "allow" or "deny" to allowlist or denylist intentions.
 type IntentionAction string
 
 const (

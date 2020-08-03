@@ -92,8 +92,9 @@ var (
 
 	// DefaultAlertmanagerConfig is the default alertmanager configuration.
 	DefaultAlertmanagerConfig = AlertmanagerConfig{
-		Scheme:  "http",
-		Timeout: model.Duration(10 * time.Second),
+		Scheme:     "http",
+		Timeout:    model.Duration(10 * time.Second),
+		APIVersion: AlertmanagerAPIVersionV1,
 	}
 
 	// DefaultRemoteWriteConfig is the default remote write configuration.
@@ -110,14 +111,13 @@ var (
 		MinShards:         1,
 		MaxSamplesPerSend: 100,
 
-		// Each shard will have a max of 10 samples pending in it's channel, plus the pending
-		// samples that have been enqueued. Theoretically we should only ever have about 110 samples
-		// per shard pending. At 1000 shards that's 110k.
-		Capacity:          10,
+		// Each shard will have a max of 500 samples pending in it's channel, plus the pending
+		// samples that have been enqueued. Theoretically we should only ever have about 600 samples
+		// per shard pending. At 1000 shards that's 600k.
+		Capacity:          500,
 		BatchSendDeadline: model.Duration(5 * time.Second),
 
-		// Max number of times to retry a batch on recoverable errors.
-		MaxRetries: 3,
+		// Backoff times for retrying a batch of samples on recoverable errors.
 		MinBackoff: model.Duration(30 * time.Millisecond),
 		MaxBackoff: model.Duration(100 * time.Millisecond),
 	}
@@ -178,6 +178,12 @@ func resolveFilepaths(baseDir string, cfg *Config) {
 		}
 		for _, consulcfg := range cfg.ConsulSDConfigs {
 			tlsPaths(&consulcfg.TLSConfig)
+		}
+		for _, digitaloceancfg := range cfg.DigitalOceanSDConfigs {
+			clientPaths(&digitaloceancfg.HTTPClientConfig)
+		}
+		for _, dockerswarmcfg := range cfg.DockerSwarmSDConfigs {
+			clientPaths(&dockerswarmcfg.HTTPClientConfig)
 		}
 		for _, cfg := range cfg.OpenstackSDConfigs {
 			tlsPaths(&cfg.TLSConfig)
@@ -265,15 +271,27 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		}
 		jobNames[scfg.JobName] = struct{}{}
 	}
+	rwNames := map[string]struct{}{}
 	for _, rwcfg := range c.RemoteWriteConfigs {
 		if rwcfg == nil {
 			return errors.New("empty or null remote write config section")
 		}
+		// Skip empty names, we fill their name with their config hash in remote write code.
+		if _, ok := rwNames[rwcfg.Name]; ok && rwcfg.Name != "" {
+			return errors.Errorf("found multiple remote write configs with job name %q", rwcfg.Name)
+		}
+		rwNames[rwcfg.Name] = struct{}{}
 	}
+	rrNames := map[string]struct{}{}
 	for _, rrcfg := range c.RemoteReadConfigs {
 		if rrcfg == nil {
 			return errors.New("empty or null remote read config section")
 		}
+		// Skip empty names, we fill their name with their config hash in remote read code.
+		if _, ok := rrNames[rrcfg.Name]; ok && rrcfg.Name != "" {
+			return errors.Errorf("found multiple remote read configs with job name %q", rrcfg.Name)
+		}
+		rrNames[rrcfg.Name] = struct{}{}
 	}
 	return nil
 }
@@ -287,6 +305,8 @@ type GlobalConfig struct {
 	ScrapeTimeout model.Duration `yaml:"scrape_timeout,omitempty"`
 	// How frequently to evaluate rules by default.
 	EvaluationInterval model.Duration `yaml:"evaluation_interval,omitempty"`
+	// File to which PromQL queries are logged.
+	QueryLogFile string `yaml:"query_log_file,omitempty"`
 	// The labels to add to any timeseries that this Prometheus instance scrapes.
 	ExternalLabels labels.Labels `yaml:"external_labels,omitempty"`
 }
@@ -337,7 +357,8 @@ func (c *GlobalConfig) isZero() bool {
 	return c.ExternalLabels == nil &&
 		c.ScrapeInterval == 0 &&
 		c.ScrapeTimeout == 0 &&
-		c.EvaluationInterval == 0
+		c.EvaluationInterval == 0 &&
+		c.QueryLogFile == ""
 }
 
 // ScrapeConfig configures a scraping unit for Prometheus.
@@ -358,8 +379,11 @@ type ScrapeConfig struct {
 	MetricsPath string `yaml:"metrics_path,omitempty"`
 	// The URL scheme with which to fetch metrics from targets.
 	Scheme string `yaml:"scheme,omitempty"`
-	// More than this many samples post metric-relabelling will cause the scrape to fail.
+	// More than this many samples post metric-relabeling will cause the scrape to fail.
 	SampleLimit uint `yaml:"sample_limit,omitempty"`
+	// More than this many targets after the target relabeling will cause the
+	// scrapes to fail.
+	TargetLimit uint `yaml:"target_limit,omitempty"`
 
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
@@ -432,8 +456,8 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 // AlertingConfig configures alerting and alertmanager related configs.
 type AlertingConfig struct {
-	AlertRelabelConfigs []*relabel.Config     `yaml:"alert_relabel_configs,omitempty"`
-	AlertmanagerConfigs []*AlertmanagerConfig `yaml:"alertmanagers,omitempty"`
+	AlertRelabelConfigs []*relabel.Config   `yaml:"alert_relabel_configs,omitempty"`
+	AlertmanagerConfigs AlertmanagerConfigs `yaml:"alertmanagers,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -454,6 +478,52 @@ func (c *AlertingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 	return nil
 }
 
+// AlertmanagerConfigs is a slice of *AlertmanagerConfig.
+type AlertmanagerConfigs []*AlertmanagerConfig
+
+// ToMap converts a slice of *AlertmanagerConfig to a map.
+func (a AlertmanagerConfigs) ToMap() map[string]*AlertmanagerConfig {
+	ret := make(map[string]*AlertmanagerConfig)
+	for i := range a {
+		ret[fmt.Sprintf("config-%d", i)] = a[i]
+	}
+	return ret
+}
+
+// AlertmanagerAPIVersion represents a version of the
+// github.com/prometheus/alertmanager/api, e.g. 'v1' or 'v2'.
+type AlertmanagerAPIVersion string
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (v *AlertmanagerAPIVersion) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*v = AlertmanagerAPIVersion("")
+	type plain AlertmanagerAPIVersion
+	if err := unmarshal((*plain)(v)); err != nil {
+		return err
+	}
+
+	for _, supportedVersion := range SupportedAlertmanagerAPIVersions {
+		if *v == supportedVersion {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("expected Alertmanager api version to be one of %v but got %v", SupportedAlertmanagerAPIVersions, *v)
+}
+
+const (
+	// AlertmanagerAPIVersionV1 represents
+	// github.com/prometheus/alertmanager/api/v1.
+	AlertmanagerAPIVersionV1 AlertmanagerAPIVersion = "v1"
+	// AlertmanagerAPIVersionV2 represents
+	// github.com/prometheus/alertmanager/api/v2.
+	AlertmanagerAPIVersionV2 AlertmanagerAPIVersion = "v2"
+)
+
+var SupportedAlertmanagerAPIVersions = []AlertmanagerAPIVersion{
+	AlertmanagerAPIVersionV1, AlertmanagerAPIVersionV2,
+}
+
 // AlertmanagerConfig configures how Alertmanagers can be discovered and communicated with.
 type AlertmanagerConfig struct {
 	// We cannot do proper Go type embedding below as the parser will then parse
@@ -468,6 +538,9 @@ type AlertmanagerConfig struct {
 	PathPrefix string `yaml:"path_prefix,omitempty"`
 	// The timeout used when sending alerts.
 	Timeout model.Duration `yaml:"timeout,omitempty"`
+
+	// The api version of Alertmanager.
+	APIVersion AlertmanagerAPIVersion `yaml:"api_version"`
 
 	// List of Alertmanager relabel configurations.
 	RelabelConfigs []*relabel.Config `yaml:"relabel_configs,omitempty"`
@@ -547,6 +620,7 @@ type RemoteWriteConfig struct {
 	URL                 *config_util.URL  `yaml:"url"`
 	RemoteTimeout       model.Duration    `yaml:"remote_timeout,omitempty"`
 	WriteRelabelConfigs []*relabel.Config `yaml:"write_relabel_configs,omitempty"`
+	Name                string            `yaml:"name,omitempty"`
 
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
@@ -579,7 +653,8 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 // QueueConfig is the configuration for the queue used to write to remote
 // storage.
 type QueueConfig struct {
-	// Number of samples to buffer per shard before we start dropping them.
+	// Number of samples to buffer per shard before we block. Defaults to
+	// MaxSamplesPerSend.
 	Capacity int `yaml:"capacity,omitempty"`
 
 	// Max number of shards, i.e. amount of concurrency.
@@ -594,9 +669,6 @@ type QueueConfig struct {
 	// Maximum time sample will wait in buffer.
 	BatchSendDeadline model.Duration `yaml:"batch_send_deadline,omitempty"`
 
-	// Max number of times to retry a batch on recoverable errors.
-	MaxRetries int `yaml:"max_retries,omitempty"`
-
 	// On recoverable errors, backoff exponentially.
 	MinBackoff model.Duration `yaml:"min_backoff,omitempty"`
 	MaxBackoff model.Duration `yaml:"max_backoff,omitempty"`
@@ -607,6 +679,8 @@ type RemoteReadConfig struct {
 	URL           *config_util.URL `yaml:"url"`
 	RemoteTimeout model.Duration   `yaml:"remote_timeout,omitempty"`
 	ReadRecent    bool             `yaml:"read_recent,omitempty"`
+	Name          string           `yaml:"name,omitempty"`
+
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
 	HTTPClientConfig config_util.HTTPClientConfig `yaml:",inline"`

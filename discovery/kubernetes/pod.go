@@ -32,6 +32,12 @@ import (
 	"github.com/prometheus/prometheus/util/strutil"
 )
 
+var (
+	podAddCount    = eventCount.WithLabelValues("pod", "add")
+	podUpdateCount = eventCount.WithLabelValues("pod", "update")
+	podDeleteCount = eventCount.WithLabelValues("pod", "delete")
+)
+
 // Pod discovers new pod targets.
 type Pod struct {
 	informer cache.SharedInformer
@@ -53,15 +59,15 @@ func NewPod(l log.Logger, pods cache.SharedInformer) *Pod {
 	}
 	p.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
-			eventCount.WithLabelValues("pod", "add").Inc()
+			podAddCount.Inc()
 			p.enqueue(o)
 		},
 		DeleteFunc: func(o interface{}) {
-			eventCount.WithLabelValues("pod", "delete").Inc()
+			podDeleteCount.Inc()
 			p.enqueue(o)
 		},
 		UpdateFunc: func(_, o interface{}) {
-			eventCount.WithLabelValues("pod", "update").Inc()
+			podUpdateCount.Inc()
 			p.enqueue(o)
 		},
 	})
@@ -82,7 +88,9 @@ func (p *Pod) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	defer p.queue.ShutDown()
 
 	if !cache.WaitForCacheSync(ctx.Done(), p.informer.HasSynced) {
-		level.Error(p.logger).Log("msg", "pod informer unable to sync cache")
+		if ctx.Err() != context.Canceled {
+			level.Error(p.logger).Log("msg", "pod informer unable to sync cache")
+		}
 		return
 	}
 
@@ -113,7 +121,7 @@ func (p *Pod) process(ctx context.Context, ch chan<- []*targetgroup.Group) bool 
 		return true
 	}
 	if !exists {
-		send(ctx, p.logger, RolePod, ch, &targetgroup.Group{Source: podSourceFromNamespaceAndName(namespace, name)})
+		send(ctx, ch, &targetgroup.Group{Source: podSourceFromNamespaceAndName(namespace, name)})
 		return true
 	}
 	eps, err := convertToPod(o)
@@ -121,7 +129,7 @@ func (p *Pod) process(ctx context.Context, ch chan<- []*targetgroup.Group) bool 
 		level.Error(p.logger).Log("msg", "converting to Pod object failed", "err", err)
 		return true
 	}
-	send(ctx, p.logger, RolePod, ch, p.buildPod(eps))
+	send(ctx, ch, p.buildPod(eps))
 	return true
 }
 
@@ -141,6 +149,7 @@ const (
 	podContainerPortNameLabel     = metaLabelPrefix + "pod_container_port_name"
 	podContainerPortNumberLabel   = metaLabelPrefix + "pod_container_port_number"
 	podContainerPortProtocolLabel = metaLabelPrefix + "pod_container_port_protocol"
+	podContainerIsInit            = metaLabelPrefix + "pod_container_init"
 	podReadyLabel                 = metaLabelPrefix + "pod_ready"
 	podPhaseLabel                 = metaLabelPrefix + "pod_phase"
 	podLabelPrefix                = metaLabelPrefix + "pod_label_"
@@ -213,7 +222,10 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 	tg.Labels = podLabels(pod)
 	tg.Labels[namespaceLabel] = lv(pod.Namespace)
 
-	for _, c := range pod.Spec.Containers {
+	containers := append(pod.Spec.Containers, pod.Spec.InitContainers...)
+	for i, c := range containers {
+		isInit := i >= len(pod.Spec.Containers)
+
 		// If no ports are defined for the container, create an anonymous
 		// target per container.
 		if len(c.Ports) == 0 {
@@ -222,6 +234,7 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 			tg.Targets = append(tg.Targets, model.LabelSet{
 				model.AddressLabel:    lv(pod.Status.PodIP),
 				podContainerNameLabel: lv(c.Name),
+				podContainerIsInit:    lv(strconv.FormatBool(isInit)),
 			})
 			continue
 		}
@@ -236,6 +249,7 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 				podContainerPortNumberLabel:   lv(ports),
 				podContainerPortNameLabel:     lv(port.Name),
 				podContainerPortProtocolLabel: lv(string(port.Protocol)),
+				podContainerIsInit:            lv(strconv.FormatBool(isInit)),
 			})
 		}
 	}

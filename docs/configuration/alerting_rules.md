@@ -22,7 +22,7 @@ An example rules file with an alert would be:
 groups:
 - name: example
   rules:
-  - alert: HighErrorRate
+  - alert: HighRequestLatency
     expr: job:request_latency_seconds:mean5m{job="myjob"} > 0.5
     for: 10m
     labels:
@@ -101,5 +101,5 @@ on top of the simple alert definitions. In Prometheus's ecosystem, the
 role. Thus, Prometheus may be configured to periodically send information about
 alert states to an Alertmanager instance, which then takes care of dispatching
 the right notifications.  
-Prometheus can be [configured](configuration.md) to automatically discovered available
+Prometheus can be [configured](configuration.md) to automatically discover available
 Alertmanager instances through its service discovery integrations.

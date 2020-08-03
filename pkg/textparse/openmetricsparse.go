@@ -17,18 +17,22 @@
 package textparse
 
 import (
+	"bytes"
+	"fmt"
 	"io"
 	"math"
 	"sort"
-	"strconv"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/pkg/errors"
 
+	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/value"
 )
+
+var allowedSuffixes = [][]byte{[]byte("_total"), []byte("_bucket")}
 
 type openMetricsLexer struct {
 	b     []byte
@@ -44,7 +48,10 @@ func (l *openMetricsLexer) buf() []byte {
 }
 
 func (l *openMetricsLexer) cur() byte {
-	return l.b[l.i]
+	if l.i < len(l.b) {
+		return l.b[l.i]
+	}
+	return byte(' ')
 }
 
 // next advances the openMetricsLexer to the next character.
@@ -83,9 +90,15 @@ type OpenMetricsParser struct {
 	hasTS   bool
 	start   int
 	offsets []int
+
+	eOffsets      []int
+	exemplar      []byte
+	exemplarVal   float64
+	exemplarTs    int64
+	hasExemplarTs bool
 }
 
-// New returns a new parser of the byte slice.
+// NewOpenMetricsParser returns a new parser of the byte slice.
 func NewOpenMetricsParser(b []byte) Parser {
 	return &OpenMetricsParser{l: &openMetricsLexer{b: b}}
 }
@@ -94,7 +107,8 @@ func NewOpenMetricsParser(b []byte) Parser {
 // of the current sample.
 func (p *OpenMetricsParser) Series() ([]byte, *int64, float64) {
 	if p.hasTS {
-		return p.series, &p.ts, p.val
+		ts := p.ts
+		return p.series, &ts, p.val
 	}
 	return p.series, nil, p.val
 }
@@ -168,6 +182,38 @@ func (p *OpenMetricsParser) Metric(l *labels.Labels) string {
 	return s
 }
 
+// Exemplar writes the exemplar of the current sample into the passed
+// exemplar. It returns the whether an exemplar exists.
+func (p *OpenMetricsParser) Exemplar(e *exemplar.Exemplar) bool {
+	if len(p.exemplar) == 0 {
+		return false
+	}
+
+	// Allocate the full immutable string immediately, so we just
+	// have to create references on it below.
+	s := string(p.exemplar)
+
+	e.Value = p.exemplarVal
+	if p.hasExemplarTs {
+		e.HasTs = true
+		e.Ts = p.exemplarTs
+	}
+
+	for i := 0; i < len(p.eOffsets); i += 4 {
+		a := p.eOffsets[i] - p.start
+		b := p.eOffsets[i+1] - p.start
+		c := p.eOffsets[i+2] - p.start
+		d := p.eOffsets[i+3] - p.start
+
+		e.Labels = append(e.Labels, labels.Label{Name: s[a:b], Value: s[c:d]})
+	}
+
+	// Sort the labels.
+	sort.Sort(e.Labels)
+
+	return true
+}
+
 // nextToken returns the next token from the openMetricsLexer.
 func (p *OpenMetricsParser) nextToken() token {
 	tok := p.l.Lex()
@@ -181,15 +227,19 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 
 	p.start = p.l.i
 	p.offsets = p.offsets[:0]
+	p.eOffsets = p.eOffsets[:0]
+	p.exemplar = p.exemplar[:0]
+	p.exemplarVal = 0
+	p.hasExemplarTs = false
 
 	switch t := p.nextToken(); t {
-	case tEofWord:
+	case tEOFWord:
 		if t := p.nextToken(); t != tEOF {
 			return EntryInvalid, errors.New("unexpected data after # EOF")
 		}
 		return EntryInvalid, io.EOF
 	case tEOF:
-		return EntryInvalid, parseError("unexpected end of data", t)
+		return EntryInvalid, errors.New("data does not end with # EOF")
 	case tHelp, tType, tUnit:
 		switch t := p.nextToken(); t {
 		case tMName:
@@ -256,39 +306,48 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 
 		t2 := p.nextToken()
 		if t2 == tBraceOpen {
-			if err := p.parseLVals(); err != nil {
+			offsets, err := p.parseLVals()
+			if err != nil {
 				return EntryInvalid, err
 			}
+			p.offsets = append(p.offsets, offsets...)
 			p.series = p.l.b[p.start:p.l.i]
 			t2 = p.nextToken()
 		}
-		if t2 != tValue {
-			return EntryInvalid, parseError("expected value after metric", t)
-		}
-		if p.val, err = strconv.ParseFloat(yoloString(p.l.buf()[1:]), 64); err != nil {
+		p.val, err = p.getFloatValue(t2, "metric")
+		if err != nil {
 			return EntryInvalid, err
 		}
-		// Ensure canonical NaN value.
-		if math.IsNaN(p.val) {
-			p.val = math.Float64frombits(value.NormalNaN)
-		}
+
 		p.hasTS = false
-		switch p.nextToken() {
+		switch t2 := p.nextToken(); t2 {
+		case tEOF:
+			return EntryInvalid, errors.New("data does not end with # EOF")
 		case tLinebreak:
 			break
+		case tComment:
+			if err := p.parseComment(); err != nil {
+				return EntryInvalid, err
+			}
 		case tTimestamp:
 			p.hasTS = true
 			var ts float64
 			// A float is enough to hold what we need for millisecond resolution.
-			if ts, err = strconv.ParseFloat(yoloString(p.l.buf()[1:]), 64); err != nil {
+			if ts, err = parseFloat(yoloString(p.l.buf()[1:])); err != nil {
 				return EntryInvalid, err
 			}
 			p.ts = int64(ts * 1000)
-			if t2 := p.nextToken(); t2 != tLinebreak {
-				return EntryInvalid, parseError("expected next entry after timestamp", t)
+			switch t3 := p.nextToken(); t3 {
+			case tLinebreak:
+			case tComment:
+				if err := p.parseComment(); err != nil {
+					return EntryInvalid, err
+				}
+			default:
+				return EntryInvalid, parseError("expected next entry after timestamp", t3)
 			}
 		default:
-			return EntryInvalid, parseError("expected timestamp or new record", t)
+			return EntryInvalid, parseError("expected timestamp or # symbol", t2)
 		}
 		return EntrySeries, nil
 
@@ -298,50 +357,121 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 	return EntryInvalid, err
 }
 
-func (p *OpenMetricsParser) parseLVals() error {
+func (p *OpenMetricsParser) parseComment() error {
+	// Validate the name of the metric. It must have _total or _bucket as
+	// suffix for exemplars to be supported.
+	if err := p.validateNameForExemplar(p.series[:p.offsets[0]-p.start]); err != nil {
+		return err
+	}
+
+	// Parse the labels.
+	offsets, err := p.parseLVals()
+	if err != nil {
+		return err
+	}
+	p.eOffsets = append(p.eOffsets, offsets...)
+	p.exemplar = p.l.b[p.start:p.l.i]
+
+	// Get the value.
+	p.exemplarVal, err = p.getFloatValue(p.nextToken(), "exemplar labels")
+	if err != nil {
+		return err
+	}
+
+	// Read the optional timestamp.
+	p.hasExemplarTs = false
+	switch t2 := p.nextToken(); t2 {
+	case tEOF:
+		return errors.New("data does not end with # EOF")
+	case tLinebreak:
+		break
+	case tTimestamp:
+		p.hasExemplarTs = true
+		var ts float64
+		// A float is enough to hold what we need for millisecond resolution.
+		if ts, err = parseFloat(yoloString(p.l.buf()[1:])); err != nil {
+			return err
+		}
+		p.exemplarTs = int64(ts * 1000)
+		switch t3 := p.nextToken(); t3 {
+		case tLinebreak:
+		default:
+			return parseError("expected next entry after exemplar timestamp", t3)
+		}
+	default:
+		return parseError("expected timestamp or comment", t2)
+	}
+	return nil
+}
+
+func (p *OpenMetricsParser) parseLVals() ([]int, error) {
+	var offsets []int
 	first := true
 	for {
 		t := p.nextToken()
 		switch t {
 		case tBraceClose:
-			return nil
+			return offsets, nil
 		case tComma:
 			if first {
-				return parseError("expected label name or left brace", t)
+				return nil, parseError("expected label name or left brace", t)
 			}
 			t = p.nextToken()
 			if t != tLName {
-				return parseError("expected label name", t)
+				return nil, parseError("expected label name", t)
 			}
 		case tLName:
 			if !first {
-				return parseError("expected comma", t)
+				return nil, parseError("expected comma", t)
 			}
 		default:
 			if first {
-				return parseError("expected label name or left brace", t)
+				return nil, parseError("expected label name or left brace", t)
 			}
-			return parseError("expected comma or left brace", t)
+			return nil, parseError("expected comma or left brace", t)
 
 		}
 		first = false
 		// t is now a label name.
 
-		p.offsets = append(p.offsets, p.l.start, p.l.i)
+		offsets = append(offsets, p.l.start, p.l.i)
 
 		if t := p.nextToken(); t != tEqual {
-			return parseError("expected equal", t)
+			return nil, parseError("expected equal", t)
 		}
 		if t := p.nextToken(); t != tLValue {
-			return parseError("expected label value", t)
+			return nil, parseError("expected label value", t)
 		}
 		if !utf8.Valid(p.l.buf()) {
-			return errors.New("invalid UTF-8 label value")
+			return nil, errors.New("invalid UTF-8 label value")
 		}
 
 		// The openMetricsLexer ensures the value string is quoted. Strip first
 		// and last character.
-		p.offsets = append(p.offsets, p.l.start+1, p.l.i-1)
-
+		offsets = append(offsets, p.l.start+1, p.l.i-1)
 	}
+}
+
+func (p *OpenMetricsParser) getFloatValue(t token, after string) (float64, error) {
+	if t != tValue {
+		return 0, parseError(fmt.Sprintf("expected value after %v", after), t)
+	}
+	val, err := parseFloat(yoloString(p.l.buf()[1:]))
+	if err != nil {
+		return 0, err
+	}
+	// Ensure canonical NaN value.
+	if math.IsNaN(p.exemplarVal) {
+		val = math.Float64frombits(value.NormalNaN)
+	}
+	return val, nil
+}
+
+func (p *OpenMetricsParser) validateNameForExemplar(name []byte) error {
+	for _, suffix := range allowedSuffixes {
+		if bytes.HasSuffix(name, suffix) {
+			return nil
+		}
+	}
+	return fmt.Errorf("metric name %v does not support exemplars", string(name))
 }

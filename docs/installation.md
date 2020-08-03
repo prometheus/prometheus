@@ -20,7 +20,7 @@ the respective repository.
 
 All Prometheus services are available as Docker images on
 [Quay.io](https://quay.io/repository/prometheus/prometheus) or
-[Docker Hub](https://hub.docker.com/u/prom/).
+[Docker Hub](https://hub.docker.com/r/prom/prometheus/).
 
 Running Prometheus on Docker is as simple as `docker run -p 9090:9090
 prom/prometheus`. This starts Prometheus with a sample
@@ -39,15 +39,19 @@ two examples.
 Bind-mount your `prometheus.yml` from the host by running:
 
 ```bash
-docker run -p 9090:9090 -v /tmp/prometheus.yml:/etc/prometheus/prometheus.yml \
-       prom/prometheus
+docker run \
+    -p 9090:9090 \
+    -v /tmp/prometheus.yml:/etc/prometheus/prometheus.yml \
+    prom/prometheus
 ```
 
 Or use an additional volume for the config:
 
 ```bash
-docker run -p 9090:9090 -v /prometheus-data \
-       prom/prometheus --config.file=/prometheus-data/prometheus.yml
+docker run \
+    -p 9090:9090 \
+    -v /path/to/config:/etc/prometheus \
+    prom/prometheus
 ```
 
 ### Custom image
@@ -94,4 +98,4 @@ the following third-party contributions:
 
 ### SaltStack
 
-* [bechtoldt/saltstack-prometheus-formula](https://github.com/bechtoldt/saltstack-prometheus-formula)
+* [saltstack-formulas/prometheus-formula](https://github.com/saltstack-formulas/prometheus-formula)

@@ -35,5 +35,7 @@ func (m *maxGauge) Set(value float64) {
 }
 
 func (m *maxGauge) Get() float64 {
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
 	return m.value
 }

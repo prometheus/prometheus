@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Users mailing list
+    url: https://groups.google.com/forum/#!forum/prometheus-users
+    about: Please ask and answer usage questions here.
+  - name: Prometheus community
+    url: https://prometheus.io/community/
+    about: List of communication channels for the Prometheus community.

@@ -20,7 +20,7 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
-	"k8s.io/api/extensions/v1beta1"
+	"k8s.io/api/networking/v1beta1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 
@@ -28,7 +28,13 @@ import (
 	"github.com/prometheus/prometheus/util/strutil"
 )
 
-// Ingress implements discovery of Kubernetes ingresss.
+var (
+	ingressAddCount    = eventCount.WithLabelValues("ingress", "add")
+	ingressUpdateCount = eventCount.WithLabelValues("ingress", "update")
+	ingressDeleteCount = eventCount.WithLabelValues("ingress", "delete")
+)
+
+// Ingress implements discovery of Kubernetes ingress.
 type Ingress struct {
 	logger   log.Logger
 	informer cache.SharedInformer
@@ -41,15 +47,15 @@ func NewIngress(l log.Logger, inf cache.SharedInformer) *Ingress {
 	s := &Ingress{logger: l, informer: inf, store: inf.GetStore(), queue: workqueue.NewNamed("ingress")}
 	s.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
-			eventCount.WithLabelValues("ingress", "add").Inc()
+			ingressAddCount.Inc()
 			s.enqueue(o)
 		},
 		DeleteFunc: func(o interface{}) {
-			eventCount.WithLabelValues("ingress", "delete").Inc()
+			ingressDeleteCount.Inc()
 			s.enqueue(o)
 		},
 		UpdateFunc: func(_, o interface{}) {
-			eventCount.WithLabelValues("ingress", "update").Inc()
+			ingressUpdateCount.Inc()
 			s.enqueue(o)
 		},
 	})
@@ -70,7 +76,9 @@ func (i *Ingress) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	defer i.queue.ShutDown()
 
 	if !cache.WaitForCacheSync(ctx.Done(), i.informer.HasSynced) {
-		level.Error(i.logger).Log("msg", "ingress informer unable to sync cache")
+		if ctx.Err() != context.Canceled {
+			level.Error(i.logger).Log("msg", "ingress informer unable to sync cache")
+		}
 		return
 	}
 
@@ -101,7 +109,7 @@ func (i *Ingress) process(ctx context.Context, ch chan<- []*targetgroup.Group) b
 		return true
 	}
 	if !exists {
-		send(ctx, i.logger, RoleIngress, ch, &targetgroup.Group{Source: ingressSourceFromNamespaceAndName(namespace, name)})
+		send(ctx, ch, &targetgroup.Group{Source: ingressSourceFromNamespaceAndName(namespace, name)})
 		return true
 	}
 	eps, err := convertToIngress(o)
@@ -109,7 +117,7 @@ func (i *Ingress) process(ctx context.Context, ch chan<- []*targetgroup.Group) b
 		level.Error(i.logger).Log("msg", "converting to Ingress object failed", "err", err)
 		return true
 	}
-	send(ctx, i.logger, RoleIngress, ch, i.buildIngress(eps))
+	send(ctx, ch, i.buildIngress(eps))
 	return true
 }
 
@@ -142,7 +150,8 @@ const (
 )
 
 func ingressLabels(ingress *v1beta1.Ingress) model.LabelSet {
-	ls := make(model.LabelSet, len(ingress.Labels)+len(ingress.Annotations)+2)
+	// Each label and annotation will create two key-value pairs in the map.
+	ls := make(model.LabelSet, 2*(len(ingress.Labels)+len(ingress.Annotations))+2)
 	ls[ingressNameLabel] = lv(ingress.Name)
 	ls[namespaceLabel] = lv(ingress.Namespace)
 

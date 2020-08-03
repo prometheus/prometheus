@@ -14,14 +14,16 @@
 package kubernetes
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/discovery/targetgroup"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
 func makeOptionalBool(v bool) *bool {
@@ -117,6 +119,48 @@ func makePods() *v1.Pod {
 	}
 }
 
+func makeInitContainerPods() *v1.Pod {
+	return &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "testpod",
+			Namespace: "default",
+			UID:       types.UID("abc123"),
+		},
+		Spec: v1.PodSpec{
+			NodeName: "testnode",
+			Containers: []v1.Container{
+				{
+					Name: "testcontainer",
+					Ports: []v1.ContainerPort{
+						{
+							Name:          "testport",
+							Protocol:      v1.ProtocolTCP,
+							ContainerPort: int32(9000),
+						},
+					},
+				},
+			},
+
+			InitContainers: []v1.Container{
+				{
+					Name: "initcontainer",
+				},
+			},
+		},
+		Status: v1.PodStatus{
+			PodIP:  "1.2.3.4",
+			HostIP: "2.3.4.5",
+			Phase:  "Pending",
+			Conditions: []v1.PodCondition{
+				{
+					Type:   v1.PodReady,
+					Status: v1.ConditionFalse,
+				},
+			},
+		},
+	}
+}
+
 func expectedPodTargetGroups(ns string) map[string]*targetgroup.Group {
 	key := fmt.Sprintf("pod/%s/testpod", ns)
 	return map[string]*targetgroup.Group{
@@ -128,6 +172,7 @@ func expectedPodTargetGroups(ns string) map[string]*targetgroup.Group {
 					"__meta_kubernetes_pod_container_port_name":     "testport",
 					"__meta_kubernetes_pod_container_port_number":   "9000",
 					"__meta_kubernetes_pod_container_port_protocol": "TCP",
+					"__meta_kubernetes_pod_container_init":          "false",
 				},
 			},
 			Labels: model.LabelSet{
@@ -152,7 +197,7 @@ func TestPodDiscoveryBeforeRun(t *testing.T) {
 		discovery: n,
 		beforeRun: func() {
 			obj := makeMultiPortPods()
-			c.CoreV1().Pods(obj.Namespace).Create(obj)
+			c.CoreV1().Pods(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
 		},
 		expectedMaxItems: 1,
 		expectedRes: map[string]*targetgroup.Group{
@@ -164,6 +209,7 @@ func TestPodDiscoveryBeforeRun(t *testing.T) {
 						"__meta_kubernetes_pod_container_port_name":     "testport0",
 						"__meta_kubernetes_pod_container_port_number":   "9000",
 						"__meta_kubernetes_pod_container_port_protocol": "TCP",
+						"__meta_kubernetes_pod_container_init":          "false",
 					},
 					{
 						"__address__":                                   "1.2.3.4:9001",
@@ -171,10 +217,12 @@ func TestPodDiscoveryBeforeRun(t *testing.T) {
 						"__meta_kubernetes_pod_container_port_name":     "testport1",
 						"__meta_kubernetes_pod_container_port_number":   "9001",
 						"__meta_kubernetes_pod_container_port_protocol": "UDP",
+						"__meta_kubernetes_pod_container_init":          "false",
 					},
 					{
 						"__address__":                          "1.2.3.4",
 						"__meta_kubernetes_pod_container_name": "testcontainer1",
+						"__meta_kubernetes_pod_container_init": "false",
 					},
 				},
 				Labels: model.LabelSet{
@@ -199,6 +247,31 @@ func TestPodDiscoveryBeforeRun(t *testing.T) {
 	}.Run(t)
 }
 
+func TestPodDiscoveryInitContainer(t *testing.T) {
+	n, c := makeDiscovery(RolePod, NamespaceDiscovery{})
+
+	ns := "default"
+	key := fmt.Sprintf("pod/%s/testpod", ns)
+	expected := expectedPodTargetGroups(ns)
+	expected[key].Targets = append(expected[key].Targets, model.LabelSet{
+		"__address__":                          "1.2.3.4",
+		"__meta_kubernetes_pod_container_name": "initcontainer",
+		"__meta_kubernetes_pod_container_init": "true",
+	})
+	expected[key].Labels["__meta_kubernetes_pod_phase"] = "Pending"
+	expected[key].Labels["__meta_kubernetes_pod_ready"] = "false"
+
+	k8sDiscoveryTest{
+		discovery: n,
+		beforeRun: func() {
+			obj := makeInitContainerPods()
+			c.CoreV1().Pods(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
+		},
+		expectedMaxItems: 1,
+		expectedRes:      expected,
+	}.Run(t)
+}
+
 func TestPodDiscoveryAdd(t *testing.T) {
 	n, c := makeDiscovery(RolePod, NamespaceDiscovery{})
 
@@ -206,7 +279,7 @@ func TestPodDiscoveryAdd(t *testing.T) {
 		discovery: n,
 		afterStart: func() {
 			obj := makePods()
-			c.CoreV1().Pods(obj.Namespace).Create(obj)
+			c.CoreV1().Pods(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
 		},
 		expectedMaxItems: 1,
 		expectedRes:      expectedPodTargetGroups("default"),
@@ -221,7 +294,7 @@ func TestPodDiscoveryDelete(t *testing.T) {
 		discovery: n,
 		afterStart: func() {
 			obj := makePods()
-			c.CoreV1().Pods(obj.Namespace).Delete(obj.Name, &metav1.DeleteOptions{})
+			c.CoreV1().Pods(obj.Namespace).Delete(context.Background(), obj.Name, metav1.DeleteOptions{})
 		},
 		expectedMaxItems: 2,
 		expectedRes: map[string]*targetgroup.Group{
@@ -265,7 +338,7 @@ func TestPodDiscoveryUpdate(t *testing.T) {
 		discovery: n,
 		afterStart: func() {
 			obj := makePods()
-			c.CoreV1().Pods(obj.Namespace).Update(obj)
+			c.CoreV1().Pods(obj.Namespace).Update(context.Background(), obj, metav1.UpdateOptions{})
 		},
 		expectedMaxItems: 2,
 		expectedRes:      expectedPodTargetGroups("default"),
@@ -282,10 +355,10 @@ func TestPodDiscoveryUpdateEmptyPodIP(t *testing.T) {
 	k8sDiscoveryTest{
 		discovery: n,
 		beforeRun: func() {
-			c.CoreV1().Pods(initialPod.Namespace).Create(initialPod)
+			c.CoreV1().Pods(initialPod.Namespace).Create(context.Background(), initialPod, metav1.CreateOptions{})
 		},
 		afterStart: func() {
-			c.CoreV1().Pods(updatedPod.Namespace).Update(updatedPod)
+			c.CoreV1().Pods(updatedPod.Namespace).Update(context.Background(), updatedPod, metav1.UpdateOptions{})
 		},
 		expectedMaxItems: 2,
 		expectedRes: map[string]*targetgroup.Group{
@@ -309,7 +382,7 @@ func TestPodDiscoveryNamespaces(t *testing.T) {
 			for _, ns := range []string{"ns1", "ns2"} {
 				pod := makePods()
 				pod.Namespace = ns
-				c.CoreV1().Pods(pod.Namespace).Create(pod)
+				c.CoreV1().Pods(pod.Namespace).Create(context.Background(), pod, metav1.CreateOptions{})
 			}
 		},
 		expectedMaxItems: 2,

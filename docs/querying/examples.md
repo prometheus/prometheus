@@ -59,7 +59,9 @@ Assuming that the `http_requests_total` time series all have the labels `job`
 want to sum over the rate of all instances, so we get fewer output time series,
 but still preserve the `job` dimension:
 
-    sum(rate(http_requests_total[5m])) by (job)
+    sum by (job) (
+      rate(http_requests_total[5m])
+    )
 
 If we have two different metrics with the same dimensional labels, we can apply
 binary operators to them and elements on both sides with the same label set
@@ -71,9 +73,9 @@ scheduler exposing these metrics about the instances it runs):
 
 The same expression, but summed by application, could be written like this:
 
-    sum(
+    sum by (app, proc) (
       instance_memory_limit_bytes - instance_memory_usage_bytes
-    ) by (app, proc) / 1024 / 1024
+    ) / 1024 / 1024
 
 If the same fictional cluster scheduler exposed CPU usage metrics like the
 following for every instance:
@@ -87,9 +89,9 @@ following for every instance:
 ...we could get the top 3 CPU users grouped by application (`app`) and process
 type (`proc`) like this:
 
-    topk(3, sum(rate(instance_cpu_time_ns[5m])) by (app, proc))
+    topk(3, sum by (app, proc) (rate(instance_cpu_time_ns[5m])))
 
 Assuming this metric contains one time series per running instance, you could
 count the number of running instances per application like this:
 
-    count(instance_cpu_time_ns) by (app)
+    count by (app) (instance_cpu_time_ns)

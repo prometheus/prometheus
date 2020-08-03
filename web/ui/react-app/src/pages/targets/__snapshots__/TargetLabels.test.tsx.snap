@@ -1,0 +1,81 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`targetLabels renders discovered labels 1`] = `
+<Fragment>
+  <div
+    className="series-labels-container"
+    id="series-labels-cortex/node-exporter_group/0-1"
+  >
+    <Badge
+      className="mr-1 instance"
+      color="primary"
+      key="instance"
+      pill={false}
+      tag="span"
+    >
+      instance="localhost:9100"
+    </Badge>
+    <Badge
+      className="mr-1 job"
+      color="primary"
+      key="job"
+      pill={false}
+      tag="span"
+    >
+      job="node_exporter"
+    </Badge>
+    <Badge
+      className="mr-1 foo"
+      color="primary"
+      key="foo"
+      pill={false}
+      tag="span"
+    >
+      foo="bar"
+    </Badge>
+  </div>
+  <Tooltip
+    autohide={true}
+    isOpen={false}
+    placement="top"
+    placementPrefix="bs-tooltip"
+    style={
+      Object {
+        "maxWidth": "none",
+        "textAlign": "left",
+      }
+    }
+    target="series-labels-cortex\\\\/node-exporter_group\\\\/0-1"
+    toggle={[Function]}
+    trigger="hover focus"
+  >
+    <b>
+      Before relabeling:
+    </b>
+    <br />
+    <span
+      className="discovered"
+    >
+      __address__="localhost:9100"
+    </span>
+    <br />
+    <span
+      className="discovered"
+    >
+      __metrics_path__="/metrics"
+    </span>
+    <br />
+    <span
+      className="discovered"
+    >
+      __scheme__="http"
+    </span>
+    <br />
+    <span
+      className="discovered"
+    >
+      job="node_exporter"
+    </span>
+  </Tooltip>
+</Fragment>
+`;

@@ -1,4 +1,4 @@
-// Copyright 2011 Google Inc. All rights reserved.
+// Copyright 2011 Google LLC. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -16,7 +16,7 @@ import (
 	"net/url"
 	"strings"
 
-	"google.golang.org/api/googleapi/internal/uritemplates"
+	"google.golang.org/api/internal/third_party/uritemplates"
 )
 
 // ContentTyper is an interface for Readers which know (or would like
@@ -54,7 +54,7 @@ const (
 
 	// DefaultUploadChunkSize is the default chunk size to use for resumable
 	// uploads if not specified by the user.
-	DefaultUploadChunkSize = 8 * 1024 * 1024
+	DefaultUploadChunkSize = 16 * 1024 * 1024
 
 	// MinUploadChunkSize is the minimum chunk size that can be used for
 	// resumable uploads.  All user-specified chunk sizes must be multiple of
@@ -69,6 +69,8 @@ type Error struct {
 	// Message is the server response message and is only populated when
 	// explicitly referenced by the JSON server response.
 	Message string `json:"message"`
+	// Details provide more context to an error.
+	Details []interface{} `json:"details"`
 	// Body is the raw response returned by the server.
 	// It is often but not always JSON, depending on how the request fails.
 	Body string
@@ -94,6 +96,16 @@ func (e *Error) Error() string {
 	fmt.Fprintf(&buf, "googleapi: Error %d: ", e.Code)
 	if e.Message != "" {
 		fmt.Fprintf(&buf, "%s", e.Message)
+	}
+	if len(e.Details) > 0 {
+		var detailBuf bytes.Buffer
+		enc := json.NewEncoder(&detailBuf)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(e.Details); err == nil {
+			fmt.Fprint(&buf, "\nDetails:")
+			fmt.Fprintf(&buf, "\n%s", detailBuf.String())
+
+		}
 	}
 	if len(e.Errors) == 0 {
 		return strings.TrimSpace(buf.String())
@@ -256,14 +268,22 @@ func ProcessMediaOptions(opts []MediaOption) *MediaOptions {
 // "http://www.golang.org/topics/myproject/mytopic". It strips all parent
 // references (e.g. ../..) as well as anything after the host
 // (e.g. /bar/gaz gets stripped out of foo.com/bar/gaz).
+//
+// ResolveRelative panics if either basestr or relstr is not able to be parsed.
 func ResolveRelative(basestr, relstr string) string {
-	u, _ := url.Parse(basestr)
+	u, err := url.Parse(basestr)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse %q", basestr))
+	}
 	afterColonPath := ""
 	if i := strings.IndexRune(relstr, ':'); i > 0 {
 		afterColonPath = relstr[i+1:]
 		relstr = relstr[:i]
 	}
-	rel, _ := url.Parse(relstr)
+	rel, err := url.Parse(relstr)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse %q", relstr))
+	}
 	u = u.ResolveReference(rel)
 	us := u.String()
 	if afterColonPath != "" {
@@ -331,7 +351,7 @@ func ConvertVariant(v map[string]interface{}, dst interface{}) bool {
 }
 
 // A Field names a field to be retrieved with a partial response.
-// See https://developers.google.com/gdata/docs/2.0/basics#PartialResponse
+// https://cloud.google.com/storage/docs/json_api/v1/how-tos/performance
 //
 // Partial responses can dramatically reduce the amount of data that must be sent to your application.
 // In order to request partial responses, you can specify the full list of fields
@@ -347,9 +367,6 @@ func ConvertVariant(v map[string]interface{}, dst interface{}) bool {
 // or if you were also interested in each Item's "Updated" field, you can combine them like this:
 //
 //     svc.Events.List().Fields("nextPageToken", "items(id,updated)").Do()
-//
-// More information about field formatting can be found here:
-// https://developers.google.com/+/api/#fields-syntax
 //
 // Another way to find field names is through the Google API explorer:
 // https://developers.google.com/apis-explorer/#p/

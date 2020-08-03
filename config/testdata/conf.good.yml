@@ -14,11 +14,13 @@ rule_files:
 
 remote_write:
   - url: http://remote1/push
+    name: drop_expensive
     write_relabel_configs:
     - source_labels: [__name__]
       regex:         expensive.*
       action:        drop
   - url: http://remote2/push
+    name: rw_tls
     tls_config:
       cert_file: valid_cert_file
       key_file: valid_key_file
@@ -26,8 +28,10 @@ remote_write:
 remote_read:
   - url: http://remote1/read
     read_recent: true
+    name: default
   - url: http://remote3/read
     read_recent: false
+    name: read_special
     required_matchers:
       job: special
     tls_config:
@@ -254,6 +258,15 @@ scrape_configs:
     tls_config:
       cert_file: valid_cert_file
       key_file: valid_key_file
+
+- job_name: digitalocean-droplets
+  digitalocean_sd_configs:
+    - bearer_token: abcdef
+
+- job_name: dockerswarm
+  dockerswarm_sd_configs:
+  - host: http://127.0.0.1:2375
+    role: nodes
 
 - job_name: service-openstack
   openstack_sd_configs:

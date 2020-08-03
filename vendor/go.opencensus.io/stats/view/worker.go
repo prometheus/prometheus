@@ -236,6 +236,8 @@ func (w *worker) reportView(v *viewInternal, now time.Time) {
 }
 
 func (w *worker) reportUsage(now time.Time) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	for _, v := range w.views {
 		w.reportView(v, now)
 	}

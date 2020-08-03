@@ -131,6 +131,8 @@ func (client *ServiceClient) setMicroversionHeader(opts *RequestOpts) {
 		opts.MoreHeaders["X-OpenStack-Volume-API-Version"] = client.Microversion
 	case "baremetal":
 		opts.MoreHeaders["X-OpenStack-Ironic-API-Version"] = client.Microversion
+	case "baremetal-introspection":
+		opts.MoreHeaders["X-OpenStack-Ironic-Inspector-API-Version"] = client.Microversion
 	}
 
 	if client.Type != "" {
@@ -149,4 +151,12 @@ func (client *ServiceClient) Request(method, url string, options *RequestOpts) (
 		}
 	}
 	return client.ProviderClient.Request(method, url, options)
+}
+
+// ParseResponse is a helper function to parse http.Response to constituents.
+func ParseResponse(resp *http.Response, err error) (io.ReadCloser, http.Header, error) {
+	if resp != nil {
+		return resp.Body, resp.Header, err
+	}
+	return nil, nil, err
 }

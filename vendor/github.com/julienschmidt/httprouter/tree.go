@@ -17,6 +17,8 @@ func min(a, b int) int {
 	return b
 }
 
+const maxParamCount uint8 = ^uint8(0)
+
 func countParams(path string) uint8 {
 	var n uint
 	for i := 0; i < len(path); i++ {
@@ -25,9 +27,10 @@ func countParams(path string) uint8 {
 		}
 		n++
 	}
-	if n >= 255 {
-		return 255
+	if n >= uint(maxParamCount) {
+		return maxParamCount
 	}
+
 	return uint8(n)
 }
 
@@ -45,10 +48,10 @@ type node struct {
 	wildChild bool
 	nType     nodeType
 	maxParams uint8
+	priority  uint32
 	indices   string
 	children  []*node
 	handle    Handle
-	priority  uint32
 }
 
 // increments priority of the given child and reorders if necessary
@@ -143,6 +146,8 @@ func (n *node) addRoute(path string, handle Handle) {
 
 					// Check if the wildcard matches
 					if len(path) >= len(n.path) && n.path == path[:len(n.path)] &&
+						// Adding a child to a catchAll is not possible
+						n.nType != catchAll &&
 						// Check for longer wildcard, e.g. :name and :names
 						(len(n.path) >= len(path) || path[len(n.path)] == '/') {
 						continue walk
@@ -297,6 +302,10 @@ func (n *node) insertChild(numParams uint8, path, fullPath string, handle Handle
 				wildChild: true,
 				nType:     catchAll,
 				maxParams: 1,
+			}
+			// update maxParams of the parent node
+			if n.maxParams < 1 {
+				n.maxParams = 1
 			}
 			n.children = []*node{child}
 			n.indices = string(path[i])
@@ -457,7 +466,6 @@ walk: // outer loop for walking the tree
 func (n *node) findCaseInsensitivePath(path string, fixTrailingSlash bool) (ciPath []byte, found bool) {
 	return n.findCaseInsensitivePathRec(
 		path,
-		strings.ToLower(path),
 		make([]byte, 0, len(path)+1), // preallocate enough memory for new path
 		[4]byte{},                    // empty rune buffer
 		fixTrailingSlash,
@@ -481,24 +489,24 @@ func shiftNRuneBytes(rb [4]byte, n int) [4]byte {
 }
 
 // recursive case-insensitive lookup function used by n.findCaseInsensitivePath
-func (n *node) findCaseInsensitivePathRec(path, loPath string, ciPath []byte, rb [4]byte, fixTrailingSlash bool) ([]byte, bool) {
-	loNPath := strings.ToLower(n.path)
+func (n *node) findCaseInsensitivePathRec(path string, ciPath []byte, rb [4]byte, fixTrailingSlash bool) ([]byte, bool) {
+	npLen := len(n.path)
 
 walk: // outer loop for walking the tree
-	for len(loPath) >= len(loNPath) && (len(loNPath) == 0 || loPath[1:len(loNPath)] == loNPath[1:]) {
-		// add common path to result
+	for len(path) >= npLen && (npLen == 0 || strings.EqualFold(path[1:npLen], n.path[1:])) {
+		// add common prefix to result
+
+		oldPath := path
+		path = path[npLen:]
 		ciPath = append(ciPath, n.path...)
 
-		if path = path[len(n.path):]; len(path) > 0 {
-			loOld := loPath
-			loPath = loPath[len(loNPath):]
-
+		if len(path) > 0 {
 			// If this node does not have a wildcard (param or catchAll) child,
 			// we can just look up the next child node and continue to walk down
 			// the tree
 			if !n.wildChild {
 				// skip rune bytes already processed
-				rb = shiftNRuneBytes(rb, len(loNPath))
+				rb = shiftNRuneBytes(rb, npLen)
 
 				if rb[0] != 0 {
 					// old rune not finished
@@ -506,7 +514,7 @@ walk: // outer loop for walking the tree
 						if n.indices[i] == rb[0] {
 							// continue with child node
 							n = n.children[i]
-							loNPath = strings.ToLower(n.path)
+							npLen = len(n.path)
 							continue walk
 						}
 					}
@@ -518,17 +526,19 @@ walk: // outer loop for walking the tree
 					// runes are up to 4 byte long,
 					// -4 would definitely be another rune
 					var off int
-					for max := min(len(loNPath), 3); off < max; off++ {
-						if i := len(loNPath) - off; utf8.RuneStart(loOld[i]) {
-							// read rune from cached lowercase path
-							rv, _ = utf8.DecodeRuneInString(loOld[i:])
+					for max := min(npLen, 3); off < max; off++ {
+						if i := npLen - off; utf8.RuneStart(oldPath[i]) {
+							// read rune from cached path
+							rv, _ = utf8.DecodeRuneInString(oldPath[i:])
 							break
 						}
 					}
 
 					// calculate lowercase bytes of current rune
-					utf8.EncodeRune(rb[:], rv)
-					// skipp already processed bytes
+					lo := unicode.ToLower(rv)
+					utf8.EncodeRune(rb[:], lo)
+
+					// skip already processed bytes
 					rb = shiftNRuneBytes(rb, off)
 
 					for i := 0; i < len(n.indices); i++ {
@@ -538,7 +548,7 @@ walk: // outer loop for walking the tree
 							// uppercase byte and the lowercase byte might exist
 							// as an index
 							if out, found := n.children[i].findCaseInsensitivePathRec(
-								path, loPath, ciPath, rb, fixTrailingSlash,
+								path, ciPath, rb, fixTrailingSlash,
 							); found {
 								return out, true
 							}
@@ -546,17 +556,18 @@ walk: // outer loop for walking the tree
 						}
 					}
 
-					// same for uppercase rune, if it differs
-					if up := unicode.ToUpper(rv); up != rv {
+					// if we found no match, the same for the uppercase rune,
+					// if it differs
+					if up := unicode.ToUpper(rv); up != lo {
 						utf8.EncodeRune(rb[:], up)
 						rb = shiftNRuneBytes(rb, off)
 
-						for i := 0; i < len(n.indices); i++ {
+						for i, c := 0, rb[0]; i < len(n.indices); i++ {
 							// uppercase matches
-							if n.indices[i] == rb[0] {
+							if n.indices[i] == c {
 								// continue with child node
 								n = n.children[i]
-								loNPath = strings.ToLower(n.path)
+								npLen = len(n.path)
 								continue walk
 							}
 						}
@@ -585,8 +596,7 @@ walk: // outer loop for walking the tree
 					if len(n.children) > 0 {
 						// continue with child node
 						n = n.children[0]
-						loNPath = strings.ToLower(n.path)
-						loPath = loPath[k:]
+						npLen = len(n.path)
 						path = path[k:]
 						continue
 					}
@@ -647,8 +657,8 @@ walk: // outer loop for walking the tree
 		if path == "/" {
 			return ciPath, true
 		}
-		if len(loPath)+1 == len(loNPath) && loNPath[len(loPath)] == '/' &&
-			loPath[1:] == loNPath[1:len(loPath)] && n.handle != nil {
+		if len(path)+1 == npLen && n.path[len(path)] == '/' &&
+			strings.EqualFold(path[1:], n.path[1:len(path)]) && n.handle != nil {
 			return append(ciPath, n.path...), true
 		}
 	}

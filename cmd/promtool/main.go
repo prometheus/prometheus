@@ -19,9 +19,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -30,14 +32,15 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/prometheus/client_golang/prometheus/testutil/promlint"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
-	kingpin "gopkg.in/alecthomas/kingpin.v2"
+	"gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
-	"github.com/prometheus/prometheus/util/promlint"
 )
 
 func main() {
@@ -70,6 +73,7 @@ func main() {
 	queryRangeCmd := queryCmd.Command("range", "Run range query.")
 	queryRangeServer := queryRangeCmd.Arg("server", "Prometheus server to query.").Required().String()
 	queryRangeExpr := queryRangeCmd.Arg("expr", "PromQL query expression.").Required().String()
+	queryRangeHeaders := queryRangeCmd.Flag("header", "Extra headers to send to server.").StringMap()
 	queryRangeBegin := queryRangeCmd.Flag("start", "Query range start time (RFC3339 or Unix timestamp).").String()
 	queryRangeEnd := queryRangeCmd.Flag("end", "Query range end time (RFC3339 or Unix timestamp).").String()
 	queryRangeStep := queryRangeCmd.Flag("step", "Query step size (duration).").Duration()
@@ -91,6 +95,8 @@ func main() {
 	queryLabelsCmd := queryCmd.Command("labels", "Run labels query.")
 	queryLabelsServer := queryLabelsCmd.Arg("server", "Prometheus server to query.").Required().URL()
 	queryLabelsName := queryLabelsCmd.Arg("name", "Label name to provide label values for.").Required().String()
+	queryLabelsBegin := queryLabelsCmd.Flag("start", "Start time (RFC3339 or Unix timestamp).").String()
+	queryLabelsEnd := queryLabelsCmd.Flag("end", "End time (RFC3339 or Unix timestamp).").String()
 
 	testCmd := app.Command("test", "Unit testing.")
 	testRulesCmd := testCmd.Command("rules", "Unit tests for rules.")
@@ -98,6 +104,29 @@ func main() {
 		"test-rule-file",
 		"The unit test file.",
 	).Required().ExistingFiles()
+
+	defaultDBPath := "data/"
+	tsdbCmd := app.Command("tsdb", "Run tsdb commands.")
+
+	tsdbBenchCmd := tsdbCmd.Command("bench", "Run benchmarks.")
+	tsdbBenchWriteCmd := tsdbBenchCmd.Command("write", "Run a write performance benchmark.")
+	benchWriteOutPath := tsdbBenchWriteCmd.Flag("out", "Set the output path.").Default("benchout").String()
+	benchWriteNumMetrics := tsdbBenchWriteCmd.Flag("metrics", "Number of metrics to read.").Default("10000").Int()
+	benchSamplesFile := tsdbBenchWriteCmd.Arg("file", "Input file with samples data, default is ("+filepath.Join("..", "..", "tsdb", "testdata", "20kseries.json")+").").Default(filepath.Join("..", "..", "tsdb", "testdata", "20kseries.json")).String()
+
+	tsdbAnalyzeCmd := tsdbCmd.Command("analyze", "Analyze churn, label pair cardinality.")
+	analyzePath := tsdbAnalyzeCmd.Arg("db path", "Database path (default is "+defaultDBPath+").").Default(defaultDBPath).String()
+	analyzeBlockID := tsdbAnalyzeCmd.Arg("block id", "Block to analyze (default is the last block).").String()
+	analyzeLimit := tsdbAnalyzeCmd.Flag("limit", "How many items to show in each list.").Default("20").Int()
+
+	tsdbListCmd := tsdbCmd.Command("list", "List tsdb blocks.")
+	listHumanReadable := tsdbListCmd.Flag("human-readable", "Print human readable values.").Short('r').Bool()
+	listPath := tsdbListCmd.Arg("db path", "Database path (default is "+defaultDBPath+").").Default(defaultDBPath).String()
+
+	tsdbDumpCmd := tsdbCmd.Command("dump", "Dump samples from a TSDB.")
+	dumpPath := tsdbDumpCmd.Arg("db path", "Database path (default is "+defaultDBPath+").").Default(defaultDBPath).String()
+	dumpMinTime := tsdbDumpCmd.Flag("min-time", "Minimum timestamp to dump.").Default(strconv.FormatInt(math.MinInt64, 10)).Int64()
+	dumpMaxTime := tsdbDumpCmd.Flag("max-time", "Maximum timestamp to dump.").Default(strconv.FormatInt(math.MaxInt64, 10)).Int64()
 
 	parsedCmd := kingpin.MustParse(app.Parse(os.Args[1:]))
 
@@ -123,7 +152,7 @@ func main() {
 		os.Exit(QueryInstant(*queryServer, *queryExpr, p))
 
 	case queryRangeCmd.FullCommand():
-		os.Exit(QueryRange(*queryRangeServer, *queryRangeExpr, *queryRangeBegin, *queryRangeEnd, *queryRangeStep, p))
+		os.Exit(QueryRange(*queryRangeServer, *queryRangeHeaders, *queryRangeExpr, *queryRangeBegin, *queryRangeEnd, *queryRangeStep, p))
 
 	case querySeriesCmd.FullCommand():
 		os.Exit(QuerySeries(*querySeriesServer, *querySeriesMatch, *querySeriesBegin, *querySeriesEnd, p))
@@ -138,12 +167,23 @@ func main() {
 		os.Exit(debugAll(*debugAllServer))
 
 	case queryLabelsCmd.FullCommand():
-		os.Exit(QueryLabels(*queryLabelsServer, *queryLabelsName, p))
+		os.Exit(QueryLabels(*queryLabelsServer, *queryLabelsName, *queryLabelsBegin, *queryLabelsEnd, p))
 
 	case testRulesCmd.FullCommand():
 		os.Exit(RulesUnitTest(*testRulesFiles...))
-	}
 
+	case tsdbBenchWriteCmd.FullCommand():
+		os.Exit(checkErr(benchmarkWrite(*benchWriteOutPath, *benchSamplesFile, *benchWriteNumMetrics)))
+
+	case tsdbAnalyzeCmd.FullCommand():
+		os.Exit(checkErr(analyzeBlock(*analyzePath, *analyzeBlockID, *analyzeLimit)))
+
+	case tsdbListCmd.FullCommand():
+		os.Exit(checkErr(listBlocks(*listPath, *listHumanReadable)))
+
+	case tsdbDumpCmd.FullCommand():
+		os.Exit(checkErr(dumpSamples(*dumpPath, *dumpMinTime, *dumpMaxTime)))
+	}
 }
 
 // CheckConfig validates configuration files.
@@ -161,8 +201,11 @@ func CheckConfig(files ...string) int {
 		fmt.Println()
 
 		for _, rf := range ruleFiles {
-			if n, err := checkRules(rf); err != nil {
-				fmt.Fprintln(os.Stderr, "  FAILED:", err)
+			if n, errs := checkRules(rf); len(errs) > 0 {
+				fmt.Fprintln(os.Stderr, "  FAILED:")
+				for _, err := range errs {
+					fmt.Fprintln(os.Stderr, "    ", err)
+				}
 				failed = true
 			} else {
 				fmt.Printf("  SUCCESS: %d rules found\n", n)
@@ -298,7 +341,54 @@ func checkRules(filename string) (int, []error) {
 		numRules += len(rg.Rules)
 	}
 
+	dRules := checkDuplicates(rgs.Groups)
+	if len(dRules) != 0 {
+		fmt.Printf("%d duplicate rules(s) found.\n", len(dRules))
+		for _, n := range dRules {
+			fmt.Printf("Metric: %s\nLabel(s):\n", n.metric)
+			for i, l := range n.label {
+				fmt.Printf("\t%s: %s\n", i, l)
+			}
+		}
+		fmt.Println("Might cause inconsistency while recording expressions.")
+	}
+
 	return numRules, nil
+}
+
+type compareRuleType struct {
+	metric string
+	label  map[string]string
+}
+
+func checkDuplicates(groups []rulefmt.RuleGroup) []compareRuleType {
+	var duplicates []compareRuleType
+
+	for _, group := range groups {
+		for index, rule := range group.Rules {
+			inst := compareRuleType{
+				metric: ruleMetric(rule),
+				label:  rule.Labels,
+			}
+			for i := 0; i < index; i++ {
+				t := compareRuleType{
+					metric: ruleMetric(group.Rules[i]),
+					label:  group.Rules[i].Labels,
+				}
+				if reflect.DeepEqual(t, inst) {
+					duplicates = append(duplicates, t)
+				}
+			}
+		}
+	}
+	return duplicates
+}
+
+func ruleMetric(rule rulefmt.RuleNode) string {
+	if rule.Alert.Value != "" {
+		return rule.Alert.Value
+	}
+	return rule.Record.Value
 }
 
 var checkMetricsUsage = strings.TrimSpace(`
@@ -348,7 +438,7 @@ func QueryInstant(url, query string, p printer) int {
 	api := v1.NewAPI(c)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	val, err := api.Query(ctx, query, time.Now())
+	val, _, err := api.Query(ctx, query, time.Now()) // Ignoring warnings for now.
 	cancel()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "query error:", err)
@@ -361,9 +451,18 @@ func QueryInstant(url, query string, p printer) int {
 }
 
 // QueryRange performs a range query against a Prometheus server.
-func QueryRange(url, query, start, end string, step time.Duration, p printer) int {
+func QueryRange(url string, headers map[string]string, query, start, end string, step time.Duration, p printer) int {
 	config := api.Config{
 		Address: url,
+	}
+
+	if len(headers) > 0 {
+		config.RoundTripper = promhttp.RoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			for key, value := range headers {
+				req.Header.Add(key, value)
+			}
+			return http.DefaultTransport.RoundTrip(req)
+		})
 	}
 
 	// Create new client.
@@ -391,11 +490,13 @@ func QueryRange(url, query, start, end string, step time.Duration, p printer) in
 		stime, err = parseTime(start)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "error parsing start time:", err)
+			return 1
 		}
 	}
 
 	if !stime.Before(etime) {
 		fmt.Fprintln(os.Stderr, "start time is not before end time")
+		return 1
 	}
 
 	if step == 0 {
@@ -408,7 +509,7 @@ func QueryRange(url, query, start, end string, step time.Duration, p printer) in
 	api := v1.NewAPI(c)
 	r := v1.Range{Start: stime, End: etime, Step: step}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	val, err := api.QueryRange(ctx, query, r)
+	val, _, err := api.QueryRange(ctx, query, r) // Ignoring warnings for now.
 	cancel()
 
 	if err != nil {
@@ -433,36 +534,16 @@ func QuerySeries(url *url.URL, matchers []string, start, end string, p printer) 
 		return 1
 	}
 
-	// TODO: clean up timestamps
-	var (
-		minTime = time.Now().Add(-9999 * time.Hour)
-		maxTime = time.Now().Add(9999 * time.Hour)
-	)
-
-	var stime, etime time.Time
-
-	if start == "" {
-		stime = minTime
-	} else {
-		stime, err = parseTime(start)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "error parsing start time:", err)
-		}
-	}
-
-	if end == "" {
-		etime = maxTime
-	} else {
-		etime, err = parseTime(end)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "error parsing end time:", err)
-		}
+	stime, etime, err := parseStartTimeAndEndTime(start, end)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
 	}
 
 	// Run query against client.
 	api := v1.NewAPI(c)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	val, err := api.Series(ctx, matchers, stime, etime)
+	val, _, err := api.Series(ctx, matchers, stime, etime) // Ignoring warnings for now.
 	cancel()
 
 	if err != nil {
@@ -475,7 +556,7 @@ func QuerySeries(url *url.URL, matchers []string, start, end string, p printer) 
 }
 
 // QueryLabels queries for label values against a Prometheus server.
-func QueryLabels(url *url.URL, name string, p printer) int {
+func QueryLabels(url *url.URL, name string, start, end string, p printer) int {
 	config := api.Config{
 		Address: url.String(),
 	}
@@ -487,11 +568,21 @@ func QueryLabels(url *url.URL, name string, p printer) int {
 		return 1
 	}
 
+	stime, etime, err := parseStartTimeAndEndTime(start, end)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+
 	// Run query against client.
 	api := v1.NewAPI(c)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	val, err := api.LabelValues(ctx, name)
+	val, warn, err := api.LabelValues(ctx, name, stime, etime)
 	cancel()
+
+	for _, v := range warn {
+		fmt.Fprintln(os.Stderr, "query warning:", v)
+	}
 
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "query error:", err)
@@ -502,10 +593,36 @@ func QueryLabels(url *url.URL, name string, p printer) int {
 	return 0
 }
 
+func parseStartTimeAndEndTime(start, end string) (time.Time, time.Time, error) {
+	var (
+		minTime = time.Now().Add(-9999 * time.Hour)
+		maxTime = time.Now().Add(9999 * time.Hour)
+		err     error
+	)
+
+	stime := minTime
+	etime := maxTime
+
+	if start != "" {
+		stime, err = parseTime(start)
+		if err != nil {
+			return stime, etime, errors.Wrap(err, "error parsing start time")
+		}
+	}
+
+	if end != "" {
+		etime, err = parseTime(end)
+		if err != nil {
+			return stime, etime, errors.Wrap(err, "error parsing end time")
+		}
+	}
+	return stime, etime, nil
+}
+
 func parseTime(s string) (time.Time, error) {
 	if t, err := strconv.ParseFloat(s, 64); err == nil {
 		s, ns := math.Modf(t)
-		return time.Unix(int64(s), int64(ns*float64(time.Second))), nil
+		return time.Unix(int64(s), int64(ns*float64(time.Second))).UTC(), nil
 	}
 	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
 		return t, nil

@@ -15,7 +15,6 @@ package labels
 
 import (
 	"fmt"
-	"regexp"
 )
 
 // MatchType is an enum for label matching types.
@@ -48,7 +47,7 @@ type Matcher struct {
 	Name  string
 	Value string
 
-	re *regexp.Regexp
+	re *FastRegexMatcher
 }
 
 // NewMatcher returns a matcher object.
@@ -59,13 +58,22 @@ func NewMatcher(t MatchType, n, v string) (*Matcher, error) {
 		Value: v,
 	}
 	if t == MatchRegexp || t == MatchNotRegexp {
-		re, err := regexp.Compile("^(?:" + v + ")$")
+		re, err := NewFastRegexMatcher(v)
 		if err != nil {
 			return nil, err
 		}
 		m.re = re
 	}
 	return m, nil
+}
+
+// MustNewMatcher panics on error - only for use in tests!
+func MustNewMatcher(mt MatchType, name, val string) *Matcher {
+	m, err := NewMatcher(mt, name, val)
+	if err != nil {
+		panic(err)
+	}
+	return m
 }
 
 func (m *Matcher) String() string {
@@ -85,4 +93,27 @@ func (m *Matcher) Matches(s string) bool {
 		return !m.re.MatchString(s)
 	}
 	panic("labels.Matcher.Matches: invalid match type")
+}
+
+// Inverse returns a matcher that matches the opposite.
+func (m *Matcher) Inverse() (*Matcher, error) {
+	switch m.Type {
+	case MatchEqual:
+		return NewMatcher(MatchNotEqual, m.Name, m.Value)
+	case MatchNotEqual:
+		return NewMatcher(MatchEqual, m.Name, m.Value)
+	case MatchRegexp:
+		return NewMatcher(MatchNotRegexp, m.Name, m.Value)
+	case MatchNotRegexp:
+		return NewMatcher(MatchRegexp, m.Name, m.Value)
+	}
+	panic("labels.Matcher.Matches: invalid match type")
+}
+
+// GetRegexString returns the regex string.
+func (m *Matcher) GetRegexString() string {
+	if m.re == nil {
+		return ""
+	}
+	return m.re.GetRegexString()
 }

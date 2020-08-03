@@ -93,7 +93,7 @@ Currently rules still read and write directly from/to the fanout storage, but th
 
 ### Local storage
 
-Prometheus's local on-disk time series database is a [light-weight wrapper](https://github.com/prometheus/prometheus/blob/v2.3.1/storage/tsdb/tsdb.go#L102-L106) around [`github.com/prometheus/tsdb.DB`](https://github.com/prometheus/tsdb/blob/master/db.go#L92-L117). The wrapper makes only minor interface adjustments for use of the TSDB in the context of the Prometheus server and implements the [`storage.Storage` interface](https://github.com/prometheus/prometheus/blob/v2.3.1/storage/interface.go#L31-L44). You can find more details about the TSDB's on-disk layout in the [local storage documentation](https://prometheus.io/docs/prometheus/latest/storage/).
+Prometheus's local on-disk time series database is a [light-weight wrapper](https://github.com/prometheus/prometheus/blob/v2.3.1/storage/tsdb/tsdb.go#L102-L106) around [`github.com/prometheus/prometheus/tsdb.DB`](https://github.com/prometheus/prometheus/blob/master/tsdb/db.go#L92-L117). The wrapper makes only minor interface adjustments for use of the TSDB in the context of the Prometheus server and implements the [`storage.Storage` interface](https://github.com/prometheus/prometheus/blob/v2.3.1/storage/interface.go#L31-L44). You can find more details about the TSDB's on-disk layout in the [local storage documentation](https://prometheus.io/docs/prometheus/latest/storage/).
 
 ### Remote storage
 
@@ -132,6 +132,6 @@ Internally it works like the scrape discovery manager.
 
 Prometheus serves its web UI and API on port `9090` by default. The web UI is available at `/` and serves a human-usable interface for running expression queries, inspecting active alerts, or getting other insight into the status of the Prometheus server.
 
-The web API is served under `/api/v1` and allows programmatical [querying, metadata, and server status inspection](https://prometheus.io/docs/prometheus/latest/querying/api/).
+The web API is served under `/api/v1` and allows programmatic [querying, metadata, and server status inspection](https://prometheus.io/docs/prometheus/latest/querying/api/).
 
 [Console templates](https://prometheus.io/docs/visualization/consoles/), which allow Prometheus to serve user-defined HTML templates that have access to TSDB data, are served under `/consoles` when console templates are present and configured.

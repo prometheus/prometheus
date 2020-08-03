@@ -75,12 +75,13 @@ const (
 
 // KVTxnOp defines a single operation inside a transaction.
 type KVTxnOp struct {
-	Verb    KVOp
-	Key     string
-	Value   []byte
-	Flags   uint64
-	Index   uint64
-	Session string
+	Verb      KVOp
+	Key       string
+	Value     []byte
+	Flags     uint64
+	Index     uint64
+	Session   string
+	Namespace string `json:",omitempty"`
 }
 
 // KVTxnOps defines a set of operations to be performed inside a single
@@ -91,6 +92,19 @@ type KVTxnOps []*KVTxnOp
 type KVTxnResponse struct {
 	Results []*KVPair
 	Errors  TxnErrors
+}
+
+// SessionOp constants give possible operations available in a transaction.
+type SessionOp string
+
+const (
+	SessionDelete SessionOp = "delete"
+)
+
+// SessionTxnOp defines a single operation inside a transaction.
+type SessionTxnOp struct {
+	Verb    SessionOp
+	Session Session
 }
 
 // NodeOp constants give possible operations available in a transaction.

@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/mwitkow/go-conntrack"
+	"golang.org/x/net/http2"
 	"gopkg.in/yaml.v2"
 )
 
@@ -122,8 +123,8 @@ func newClient(rt http.RoundTripper) *http.Client {
 
 // NewClientFromConfig returns a new HTTP client configured for the
 // given config.HTTPClientConfig. The name is used as go-conntrack metric label.
-func NewClientFromConfig(cfg HTTPClientConfig, name string) (*http.Client, error) {
-	rt, err := NewRoundTripperFromConfig(cfg, name)
+func NewClientFromConfig(cfg HTTPClientConfig, name string, disableKeepAlives bool) (*http.Client, error) {
+	rt, err := NewRoundTripperFromConfig(cfg, name, disableKeepAlives)
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +133,7 @@ func NewClientFromConfig(cfg HTTPClientConfig, name string) (*http.Client, error
 
 // NewRoundTripperFromConfig returns a new HTTP RoundTripper configured for the
 // given config.HTTPClientConfig. The name is used as go-conntrack metric label.
-func NewRoundTripperFromConfig(cfg HTTPClientConfig, name string) (http.RoundTripper, error) {
+func NewRoundTripperFromConfig(cfg HTTPClientConfig, name string, disableKeepAlives bool) (http.RoundTripper, error) {
 	newRT := func(tlsConfig *tls.Config) (http.RoundTripper, error) {
 		// The only timeout we care about is the configured scrape timeout.
 		// It is applied on request. So we leave out any timings here.
@@ -140,7 +141,7 @@ func NewRoundTripperFromConfig(cfg HTTPClientConfig, name string) (http.RoundTri
 			Proxy:               http.ProxyURL(cfg.ProxyURL.URL),
 			MaxIdleConns:        20000,
 			MaxIdleConnsPerHost: 1000, // see https://github.com/golang/go/issues/13801
-			DisableKeepAlives:   false,
+			DisableKeepAlives:   disableKeepAlives,
 			TLSClientConfig:     tlsConfig,
 			DisableCompression:  true,
 			// 5 minutes is typically above the maximum sane scrape interval. So we can
@@ -152,6 +153,11 @@ func NewRoundTripperFromConfig(cfg HTTPClientConfig, name string) (http.RoundTri
 				conntrack.DialWithTracing(),
 				conntrack.DialWithName(name),
 			),
+		}
+		// TODO: use ForceAttemptHTTP2 when we move to Go 1.13+.
+		err := http2.ConfigureTransport(rt.(*http.Transport))
+		if err != nil {
+			return nil, err
 		}
 
 		// If a bearer token is provided, create a round tripper that will set the

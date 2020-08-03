@@ -37,7 +37,8 @@ func NewVirtualMachineScaleSetRollingUpgradesClient(subscriptionID string) Virtu
 }
 
 // NewVirtualMachineScaleSetRollingUpgradesClientWithBaseURI creates an instance of the
-// VirtualMachineScaleSetRollingUpgradesClient client.
+// VirtualMachineScaleSetRollingUpgradesClient client using a custom endpoint.  Use this when interacting with an Azure
+// cloud that uses a non-standard base URI (sovereign clouds, Azure stack).
 func NewVirtualMachineScaleSetRollingUpgradesClientWithBaseURI(baseURI string, subscriptionID string) VirtualMachineScaleSetRollingUpgradesClient {
 	return VirtualMachineScaleSetRollingUpgradesClient{NewWithBaseURI(baseURI, subscriptionID)}
 }
@@ -97,8 +98,7 @@ func (client VirtualMachineScaleSetRollingUpgradesClient) CancelPreparer(ctx con
 // http.Response Body if it receives an error.
 func (client VirtualMachineScaleSetRollingUpgradesClient) CancelSender(req *http.Request) (future VirtualMachineScaleSetRollingUpgradesCancelFuture, err error) {
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
@@ -111,7 +111,6 @@ func (client VirtualMachineScaleSetRollingUpgradesClient) CancelSender(req *http
 func (client VirtualMachineScaleSetRollingUpgradesClient) CancelResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted),
 		autorest.ByClosing())
 	result.Response = resp
@@ -178,8 +177,7 @@ func (client VirtualMachineScaleSetRollingUpgradesClient) GetLatestPreparer(ctx 
 // GetLatestSender sends the GetLatest request. The method will close the
 // http.Response Body if it receives an error.
 func (client VirtualMachineScaleSetRollingUpgradesClient) GetLatestSender(req *http.Request) (*http.Response, error) {
-	return autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // GetLatestResponder handles the response to the GetLatest request. The method always
@@ -187,7 +185,6 @@ func (client VirtualMachineScaleSetRollingUpgradesClient) GetLatestSender(req *h
 func (client VirtualMachineScaleSetRollingUpgradesClient) GetLatestResponder(resp *http.Response) (result RollingUpgradeStatusInfo, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -252,8 +249,7 @@ func (client VirtualMachineScaleSetRollingUpgradesClient) StartExtensionUpgradeP
 // http.Response Body if it receives an error.
 func (client VirtualMachineScaleSetRollingUpgradesClient) StartExtensionUpgradeSender(req *http.Request) (future VirtualMachineScaleSetRollingUpgradesStartExtensionUpgradeFuture, err error) {
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
@@ -266,7 +262,6 @@ func (client VirtualMachineScaleSetRollingUpgradesClient) StartExtensionUpgradeS
 func (client VirtualMachineScaleSetRollingUpgradesClient) StartExtensionUpgradeResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted),
 		autorest.ByClosing())
 	result.Response = resp
@@ -329,8 +324,7 @@ func (client VirtualMachineScaleSetRollingUpgradesClient) StartOSUpgradePreparer
 // http.Response Body if it receives an error.
 func (client VirtualMachineScaleSetRollingUpgradesClient) StartOSUpgradeSender(req *http.Request) (future VirtualMachineScaleSetRollingUpgradesStartOSUpgradeFuture, err error) {
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
@@ -343,7 +337,6 @@ func (client VirtualMachineScaleSetRollingUpgradesClient) StartOSUpgradeSender(r
 func (client VirtualMachineScaleSetRollingUpgradesClient) StartOSUpgradeResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted),
 		autorest.ByClosing())
 	result.Response = resp

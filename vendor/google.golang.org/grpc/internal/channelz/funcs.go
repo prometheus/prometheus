@@ -24,12 +24,13 @@
 package channelz
 
 import (
+	"fmt"
 	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"google.golang.org/grpc/grpclog"
+	"google.golang.org/grpc/internal/grpclog"
 )
 
 const (
@@ -95,9 +96,14 @@ func (d *dbWrapper) get() *channelMap {
 
 // NewChannelzStorage initializes channelz data storage and id generator.
 //
+// This function returns a cleanup function to wait for all channelz state to be reset by the
+// grpc goroutines when those entities get closed. By using this cleanup function, we make sure tests
+// don't mess up each other, i.e. lingering goroutine from previous test doing entity removal happen
+// to remove some entity just register by the new test, since the id space is the same.
+//
 // Note: This function is exported for testing purpose only. User should not call
 // it in most cases.
-func NewChannelzStorage() {
+func NewChannelzStorage() (cleanup func() error) {
 	db.set(&channelMap{
 		topLevelChannels: make(map[int64]struct{}),
 		channels:         make(map[int64]*channel),
@@ -107,6 +113,28 @@ func NewChannelzStorage() {
 		subChannels:      make(map[int64]*subChannel),
 	})
 	idGen.reset()
+	return func() error {
+		var err error
+		cm := db.get()
+		if cm == nil {
+			return nil
+		}
+		for i := 0; i < 1000; i++ {
+			cm.mu.Lock()
+			if len(cm.topLevelChannels) == 0 && len(cm.servers) == 0 && len(cm.channels) == 0 && len(cm.subChannels) == 0 && len(cm.listenSockets) == 0 && len(cm.normalSockets) == 0 {
+				cm.mu.Unlock()
+				// all things stored in the channelz map have been cleared.
+				return nil
+			}
+			cm.mu.Unlock()
+			time.Sleep(10 * time.Millisecond)
+		}
+
+		cm.mu.Lock()
+		err = fmt.Errorf("after 10s the channelz map has not been cleaned up yet, topchannels: %d, servers: %d, channels: %d, subchannels: %d, listen sockets: %d, normal sockets: %d", len(cm.topLevelChannels), len(cm.servers), len(cm.channels), len(cm.subChannels), len(cm.listenSockets), len(cm.normalSockets))
+		cm.mu.Unlock()
+		return err
+	}
 }
 
 // GetTopChannels returns a slice of top channel's ChannelMetric, along with a
@@ -188,7 +216,7 @@ func RegisterChannel(c Channel, pid int64, ref string) int64 {
 // by pid). It returns the unique channelz tracking id assigned to this subchannel.
 func RegisterSubChannel(c Channel, pid int64, ref string) int64 {
 	if pid == 0 {
-		grpclog.Error("a SubChannel's parent id cannot be 0")
+		grpclog.ErrorDepth(0, "a SubChannel's parent id cannot be 0")
 		return 0
 	}
 	id := idGen.genID()
@@ -225,7 +253,7 @@ func RegisterServer(s Server, ref string) int64 {
 // this listen socket.
 func RegisterListenSocket(s Socket, pid int64, ref string) int64 {
 	if pid == 0 {
-		grpclog.Error("a ListenSocket's parent id cannot be 0")
+		grpclog.ErrorDepth(0, "a ListenSocket's parent id cannot be 0")
 		return 0
 	}
 	id := idGen.genID()
@@ -240,7 +268,7 @@ func RegisterListenSocket(s Socket, pid int64, ref string) int64 {
 // this normal socket.
 func RegisterNormalSocket(s Socket, pid int64, ref string) int64 {
 	if pid == 0 {
-		grpclog.Error("a NormalSocket's parent id cannot be 0")
+		grpclog.ErrorDepth(0, "a NormalSocket's parent id cannot be 0")
 		return 0
 	}
 	id := idGen.genID()
@@ -266,7 +294,19 @@ type TraceEventDesc struct {
 }
 
 // AddTraceEvent adds trace related to the entity with specified id, using the provided TraceEventDesc.
-func AddTraceEvent(id int64, desc *TraceEventDesc) {
+func AddTraceEvent(id int64, depth int, desc *TraceEventDesc) {
+	for d := desc; d != nil; d = d.Parent {
+		switch d.Severity {
+		case CtUNKNOWN:
+			grpclog.InfoDepth(depth+1, d.Desc)
+		case CtINFO:
+			grpclog.InfoDepth(depth+1, d.Desc)
+		case CtWarning:
+			grpclog.WarningDepth(depth+1, d.Desc)
+		case CtError:
+			grpclog.ErrorDepth(depth+1, d.Desc)
+		}
+	}
 	if getMaxTraceEntry() == 0 {
 		return
 	}

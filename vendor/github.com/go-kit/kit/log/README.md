@@ -103,6 +103,10 @@ logger.Log("msg", "hello")
 // ts=2016-01-01T12:34:56Z caller=main.go:15 msg=hello
 ```
 
+## Levels
+
+Log levels are supported via the [level package](https://godoc.org/github.com/go-kit/kit/log/level).
+
 ## Supported output formats
 
 - [Logfmt](https://brandur.org/logfmt) ([see also](https://blog.codeship.com/logfmt-a-log-format-thats-easy-to-read-and-write))

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build darwin dragonfly freebsd linux netbsd openbsd solaris windows
+// +build aix darwin dragonfly freebsd linux netbsd openbsd solaris windows
 
 package socket
 
@@ -12,6 +12,7 @@ import (
 )
 
 func (c *Conn) recvMsg(m *Message, flags int) error {
+	m.raceWrite()
 	var h msghdr
 	vs := make([]iovec, len(m.Buffers))
 	var sa []byte
@@ -48,6 +49,7 @@ func (c *Conn) recvMsg(m *Message, flags int) error {
 }
 
 func (c *Conn) sendMsg(m *Message, flags int) error {
+	m.raceRead()
 	var h msghdr
 	vs := make([]iovec, len(m.Buffers))
 	var sa []byte

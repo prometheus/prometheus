@@ -28,6 +28,7 @@ import (
 
 	"github.com/pkg/errors"
 
+	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/value"
 )
@@ -50,7 +51,7 @@ const (
 	tHelp
 	tType
 	tUnit
-	tEofWord
+	tEOFWord
 	tText
 	tComment
 	tBlank
@@ -81,7 +82,7 @@ func (t token) String() string {
 		return "TYPE"
 	case tUnit:
 		return "UNIT"
-	case tEofWord:
+	case tEOFWord:
 		return "EOFWORD"
 	case tText:
 		return "TEXT"
@@ -153,7 +154,7 @@ type PromParser struct {
 	offsets []int
 }
 
-// New returns a new parser of the byte slice.
+// NewPromParser returns a new parser of the byte slice.
 func NewPromParser(b []byte) Parser {
 	return &PromParser{l: &promlexer{b: append(b, '\n')}}
 }
@@ -232,6 +233,12 @@ func (p *PromParser) Metric(l *labels.Labels) string {
 	sort.Sort(*l)
 
 	return s
+}
+
+// Exemplar writes the exemplar of the current sample into the passed
+// exemplar. It returns if an exemplar exists.
+func (p *PromParser) Exemplar(e *exemplar.Exemplar) bool {
+	return false
 }
 
 // nextToken returns the next token from the promlexer. It skips over tabs
@@ -332,7 +339,7 @@ func (p *PromParser) Next() (Entry, error) {
 		if t2 != tValue {
 			return EntryInvalid, parseError("expected value after metric", t)
 		}
-		if p.val, err = strconv.ParseFloat(yoloString(p.l.buf()), 64); err != nil {
+		if p.val, err = parseFloat(yoloString(p.l.buf())); err != nil {
 			return EntryInvalid, err
 		}
 		// Ensure canonical NaN value.
@@ -408,4 +415,12 @@ var helpReplacer = strings.NewReplacer(
 
 func yoloString(b []byte) string {
 	return *((*string)(unsafe.Pointer(&b)))
+}
+
+func parseFloat(s string) (float64, error) {
+	// Keep to pre-Go 1.13 float formats.
+	if strings.ContainsAny(s, "pP_") {
+		return 0, fmt.Errorf("unsupported character in float")
+	}
+	return strconv.ParseFloat(s, 64)
 }

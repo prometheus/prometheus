@@ -1,10 +1,109 @@
-// Package mapstructure exposes functionality to convert an arbitrary
-// map[string]interface{} into a native Go structure.
+// Package mapstructure exposes functionality to convert one arbitrary
+// Go type into another, typically to convert a map[string]interface{}
+// into a native Go structure.
 //
 // The Go structure can be arbitrarily complex, containing slices,
 // other structs, etc. and the decoder will properly decode nested
 // maps and so on into the proper structures in the native Go struct.
 // See the examples to see what the decoder is capable of.
+//
+// The simplest function to start with is Decode.
+//
+// Field Tags
+//
+// When decoding to a struct, mapstructure will use the field name by
+// default to perform the mapping. For example, if a struct has a field
+// "Username" then mapstructure will look for a key in the source value
+// of "username" (case insensitive).
+//
+//     type User struct {
+//         Username string
+//     }
+//
+// You can change the behavior of mapstructure by using struct tags.
+// The default struct tag that mapstructure looks for is "mapstructure"
+// but you can customize it using DecoderConfig.
+//
+// Renaming Fields
+//
+// To rename the key that mapstructure looks for, use the "mapstructure"
+// tag and set a value directly. For example, to change the "username" example
+// above to "user":
+//
+//     type User struct {
+//         Username string `mapstructure:"user"`
+//     }
+//
+// Embedded Structs and Squashing
+//
+// Embedded structs are treated as if they're another field with that name.
+// By default, the two structs below are equivalent when decoding with
+// mapstructure:
+//
+//     type Person struct {
+//         Name string
+//     }
+//
+//     type Friend struct {
+//         Person
+//     }
+//
+//     type Friend struct {
+//         Person Person
+//     }
+//
+// This would require an input that looks like below:
+//
+//     map[string]interface{}{
+//         "person": map[string]interface{}{"name": "alice"},
+//     }
+//
+// If your "person" value is NOT nested, then you can append ",squash" to
+// your tag value and mapstructure will treat it as if the embedded struct
+// were part of the struct directly. Example:
+//
+//     type Friend struct {
+//         Person `mapstructure:",squash"`
+//     }
+//
+// Now the following input would be accepted:
+//
+//     map[string]interface{}{
+//         "name": "alice",
+//     }
+//
+// DecoderConfig has a field that changes the behavior of mapstructure
+// to always squash embedded structs.
+//
+// Remainder Values
+//
+// If there are any unmapped keys in the source value, mapstructure by
+// default will silently ignore them. You can error by setting ErrorUnused
+// in DecoderConfig. If you're using Metadata you can also maintain a slice
+// of the unused keys.
+//
+// You can also use the ",remain" suffix on your tag to collect all unused
+// values in a map. The field with this tag MUST be a map type and should
+// probably be a "map[string]interface{}" or "map[interface{}]interface{}".
+// See example below:
+//
+//     type Friend struct {
+//         Name  string
+//         Other map[string]interface{} `mapstructure:",remain"`
+//     }
+//
+// Given the input below, Other would be populated with the other
+// values that weren't used (everything but "name"):
+//
+//     map[string]interface{}{
+//         "name":    "bob",
+//         "address": "123 Maple St.",
+//     }
+//
+// Other Configuration
+//
+// mapstructure is highly configurable. See the DecoderConfig struct
+// for other features and options that are supported.
 package mapstructure
 
 import (
@@ -79,6 +178,14 @@ type DecoderConfig struct {
 	//     if the target type is an int slice.
 	//
 	WeaklyTypedInput bool
+
+	// Squash will squash embedded structs.  A squash tag may also be
+	// added to an individual struct field using a tag.  For example:
+	//
+	//  type Parent struct {
+	//      Child `mapstructure:",squash"`
+	//  }
+	Squash bool
 
 	// Metadata is the struct that will contain extra metadata about
 	// the decoding. If this is nil, then no metadata will be tracked.
@@ -438,6 +545,7 @@ func (d *Decoder) decodeInt(name string, data interface{}, val reflect.Value) er
 func (d *Decoder) decodeUint(name string, data interface{}, val reflect.Value) error {
 	dataVal := reflect.Indirect(reflect.ValueOf(data))
 	dataKind := getKind(dataVal)
+	dataType := dataVal.Type()
 
 	switch {
 	case dataKind == reflect.Int:
@@ -469,6 +577,18 @@ func (d *Decoder) decodeUint(name string, data interface{}, val reflect.Value) e
 		} else {
 			return fmt.Errorf("cannot parse '%s' as uint: %s", name, err)
 		}
+	case dataType.PkgPath() == "encoding/json" && dataType.Name() == "Number":
+		jn := data.(json.Number)
+		i, err := jn.Int64()
+		if err != nil {
+			return fmt.Errorf(
+				"error decoding json.Number into %s: %s", name, err)
+		}
+		if i < 0 && !d.config.WeaklyTypedInput {
+			return fmt.Errorf("cannot parse '%s', %d overflows uint",
+				name, i)
+		}
+		val.SetUint(uint64(i))
 	default:
 		return fmt.Errorf(
 			"'%s' expected type '%s', got unconvertible type '%s'",
@@ -689,16 +809,19 @@ func (d *Decoder) decodeMapFromStruct(name string, dataVal reflect.Value, val re
 			keyName = tagParts[0]
 		}
 
+		// If Squash is set in the config, we squash the field down.
+		squash := d.config.Squash && v.Kind() == reflect.Struct
 		// If "squash" is specified in the tag, we squash the field down.
-		squash := false
-		for _, tag := range tagParts[1:] {
-			if tag == "squash" {
-				squash = true
-				break
+		if !squash {
+			for _, tag := range tagParts[1:] {
+				if tag == "squash" {
+					squash = true
+					break
+				}
 			}
-		}
-		if squash && v.Kind() != reflect.Struct {
-			return fmt.Errorf("cannot squash non-struct type '%s'", v.Type())
+			if squash && v.Kind() != reflect.Struct {
+				return fmt.Errorf("cannot squash non-struct type '%s'", v.Type())
+			}
 		}
 
 		switch v.Kind() {
@@ -805,8 +928,8 @@ func (d *Decoder) decodeSlice(name string, data interface{}, val reflect.Value) 
 	valElemType := valType.Elem()
 	sliceType := reflect.SliceOf(valElemType)
 
-	valSlice := val
-	if valSlice.IsNil() || d.config.ZeroFields {
+	// If we have a non array/slice type then we first attempt to convert.
+	if dataValKind != reflect.Array && dataValKind != reflect.Slice {
 		if d.config.WeaklyTypedInput {
 			switch {
 			// Slice and array we use the normal logic
@@ -833,18 +956,17 @@ func (d *Decoder) decodeSlice(name string, data interface{}, val reflect.Value) 
 			}
 		}
 
-		// Check input type
-		if dataValKind != reflect.Array && dataValKind != reflect.Slice {
-			return fmt.Errorf(
-				"'%s': source data must be an array or slice, got %s", name, dataValKind)
+		return fmt.Errorf(
+			"'%s': source data must be an array or slice, got %s", name, dataValKind)
+	}
 
-		}
+	// If the input value is nil, then don't allocate since empty != nil
+	if dataVal.IsNil() {
+		return nil
+	}
 
-		// If the input value is empty, then don't allocate since non-nil != nil
-		if dataVal.Len() == 0 {
-			return nil
-		}
-
+	valSlice := val
+	if valSlice.IsNil() || d.config.ZeroFields {
 		// Make a new slice to hold our result, same size as the original data.
 		valSlice = reflect.MakeSlice(sliceType, dataVal.Len(), dataVal.Len())
 	}
@@ -1005,6 +1127,11 @@ func (d *Decoder) decodeStructFromMap(name string, dataVal, val reflect.Value) e
 		field reflect.StructField
 		val   reflect.Value
 	}
+
+	// remainField is set to a valid field set with the "remain" tag if
+	// we are keeping track of remaining values.
+	var remainField *field
+
 	fields := []field{}
 	for len(structs) > 0 {
 		structVal := structs[0]
@@ -1017,11 +1144,19 @@ func (d *Decoder) decodeStructFromMap(name string, dataVal, val reflect.Value) e
 			fieldKind := fieldType.Type.Kind()
 
 			// If "squash" is specified in the tag, we squash the field down.
-			squash := false
+			squash := d.config.Squash && fieldKind == reflect.Struct
+			remain := false
+
+			// We always parse the tags cause we're looking for other tags too
 			tagParts := strings.Split(fieldType.Tag.Get(d.config.TagName), ",")
 			for _, tag := range tagParts[1:] {
 				if tag == "squash" {
 					squash = true
+					break
+				}
+
+				if tag == "remain" {
+					remain = true
 					break
 				}
 			}
@@ -1036,8 +1171,14 @@ func (d *Decoder) decodeStructFromMap(name string, dataVal, val reflect.Value) e
 				continue
 			}
 
-			// Normal struct field, store it away
-			fields = append(fields, field{fieldType, structVal.Field(i)})
+			// Build our field
+			fieldCurrent := field{fieldType, structVal.Field(i)}
+			if remain {
+				remainField = &fieldCurrent
+			} else {
+				// Normal struct field, store it away
+				fields = append(fields, field{fieldType, structVal.Field(i)})
+			}
 		}
 	}
 
@@ -1078,9 +1219,6 @@ func (d *Decoder) decodeStructFromMap(name string, dataVal, val reflect.Value) e
 			}
 		}
 
-		// Delete the key we're using from the unused map so we stop tracking
-		delete(dataValKeysUnused, rawMapKey.Interface())
-
 		if !fieldValue.IsValid() {
 			// This should never happen
 			panic("field is not valid")
@@ -1092,6 +1230,9 @@ func (d *Decoder) decodeStructFromMap(name string, dataVal, val reflect.Value) e
 			continue
 		}
 
+		// Delete the key we're using from the unused map so we stop tracking
+		delete(dataValKeysUnused, rawMapKey.Interface())
+
 		// If the name is empty string, then we're at the root, and we
 		// don't dot-join the fields.
 		if name != "" {
@@ -1101,6 +1242,25 @@ func (d *Decoder) decodeStructFromMap(name string, dataVal, val reflect.Value) e
 		if err := d.decode(fieldName, rawMapVal.Interface(), fieldValue); err != nil {
 			errors = appendErrors(errors, err)
 		}
+	}
+
+	// If we have a "remain"-tagged field and we have unused keys then
+	// we put the unused keys directly into the remain field.
+	if remainField != nil && len(dataValKeysUnused) > 0 {
+		// Build a map of only the unused values
+		remain := map[interface{}]interface{}{}
+		for key := range dataValKeysUnused {
+			remain[key] = dataVal.MapIndex(reflect.ValueOf(key)).Interface()
+		}
+
+		// Decode it as-if we were just decoding this map onto our map.
+		if err := d.decodeMap(name, remain, remainField.val); err != nil {
+			errors = appendErrors(errors, err)
+		}
+
+		// Set the map to nil so we have none so that the next check will
+		// not error (ErrorUnused)
+		dataValKeysUnused = nil
 	}
 
 	if d.config.ErrorUnused && len(dataValKeysUnused) > 0 {

@@ -121,6 +121,8 @@ type retrieveDataResp struct {
 }
 
 func (cmd *retrieveDataReq) handleCommand(w *worker) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	vi, ok := w.views[cmd.v]
 	if !ok {
 		cmd.c <- &retrieveDataResp{
@@ -153,6 +155,8 @@ type recordReq struct {
 }
 
 func (cmd *recordReq) handleCommand(w *worker) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	for _, m := range cmd.ms {
 		if (m == stats.Measurement{}) { // not registered
 			continue

@@ -15,11 +15,12 @@ package stats
 
 import (
 	"encoding/json"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/prometheus/util/testutil"
 	"regexp"
 	"testing"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestTimerGroupNewTimer(t *testing.T) {

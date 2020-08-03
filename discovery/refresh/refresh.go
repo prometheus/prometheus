@@ -34,8 +34,9 @@ var (
 	)
 	duration = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
-			Name: "prometheus_sd_refresh_duration_seconds",
-			Help: "The duration of a refresh in seconds for the given SD mechanism.",
+			Name:       "prometheus_sd_refresh_duration_seconds",
+			Help:       "The duration of a refresh in seconds for the given SD mechanism.",
+			Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
 		},
 		[]string{"mechanism"},
 	)
@@ -74,7 +75,9 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	// Get an initial set right away.
 	tgs, err := d.refresh(ctx)
 	if err != nil {
-		level.Error(d.logger).Log("msg", "Unable to refresh target groups", "err", err.Error())
+		if ctx.Err() != context.Canceled {
+			level.Error(d.logger).Log("msg", "Unable to refresh target groups", "err", err.Error())
+		}
 	} else {
 		select {
 		case ch <- tgs:
@@ -91,7 +94,9 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		case <-ticker.C:
 			tgs, err := d.refresh(ctx)
 			if err != nil {
-				level.Error(d.logger).Log("msg", "Unable to refresh target groups", "err", err.Error())
+				if ctx.Err() != context.Canceled {
+					level.Error(d.logger).Log("msg", "Unable to refresh target groups", "err", err.Error())
+				}
 				continue
 			}
 

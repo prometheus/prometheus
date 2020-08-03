@@ -637,7 +637,7 @@ PromConsole._interpolateName = function(name, metric) {
 PromConsole._chooseNameFunction = function(data) {
   // By default, use the full metric name.
   var nameFunc = function (metric) {
-    name = metric.__name__ + "{";
+    var name = metric.__name__ + "{";
     for (var label in metric) {
       if (label.substring(0,2) == "__") {
         continue;

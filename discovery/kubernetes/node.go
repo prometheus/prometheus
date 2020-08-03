@@ -34,6 +34,12 @@ const (
 	NodeLegacyHostIP = "LegacyHostIP"
 )
 
+var (
+	nodeAddCount    = eventCount.WithLabelValues("node", "add")
+	nodeUpdateCount = eventCount.WithLabelValues("node", "update")
+	nodeDeleteCount = eventCount.WithLabelValues("node", "delete")
+)
+
 // Node discovers Kubernetes nodes.
 type Node struct {
 	logger   log.Logger
@@ -50,15 +56,15 @@ func NewNode(l log.Logger, inf cache.SharedInformer) *Node {
 	n := &Node{logger: l, informer: inf, store: inf.GetStore(), queue: workqueue.NewNamed("node")}
 	n.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
-			eventCount.WithLabelValues("node", "add").Inc()
+			nodeAddCount.Inc()
 			n.enqueue(o)
 		},
 		DeleteFunc: func(o interface{}) {
-			eventCount.WithLabelValues("node", "delete").Inc()
+			nodeDeleteCount.Inc()
 			n.enqueue(o)
 		},
 		UpdateFunc: func(_, o interface{}) {
-			eventCount.WithLabelValues("node", "update").Inc()
+			nodeUpdateCount.Inc()
 			n.enqueue(o)
 		},
 	})
@@ -79,7 +85,9 @@ func (n *Node) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	defer n.queue.ShutDown()
 
 	if !cache.WaitForCacheSync(ctx.Done(), n.informer.HasSynced) {
-		level.Error(n.logger).Log("msg", "node informer unable to sync cache")
+		if ctx.Err() != context.Canceled {
+			level.Error(n.logger).Log("msg", "node informer unable to sync cache")
+		}
 		return
 	}
 
@@ -110,7 +118,7 @@ func (n *Node) process(ctx context.Context, ch chan<- []*targetgroup.Group) bool
 		return true
 	}
 	if !exists {
-		send(ctx, n.logger, RoleNode, ch, &targetgroup.Group{Source: nodeSourceFromName(name)})
+		send(ctx, ch, &targetgroup.Group{Source: nodeSourceFromName(name)})
 		return true
 	}
 	node, err := convertToNode(o)
@@ -118,7 +126,7 @@ func (n *Node) process(ctx context.Context, ch chan<- []*targetgroup.Group) bool
 		level.Error(n.logger).Log("msg", "converting to Node object failed", "err", err)
 		return true
 	}
-	send(ctx, n.logger, RoleNode, ch, n.buildNode(node))
+	send(ctx, ch, n.buildNode(node))
 	return true
 }
 
@@ -149,7 +157,8 @@ const (
 )
 
 func nodeLabels(n *apiv1.Node) model.LabelSet {
-	ls := make(model.LabelSet, len(n.Labels)+len(n.Annotations)+1)
+	// Each label and annotation will create two key-value pairs in the map.
+	ls := make(model.LabelSet, 2*(len(n.Labels)+len(n.Annotations))+1)
 
 	ls[nodeNameLabel] = lv(n.Name)
 
@@ -196,9 +205,11 @@ func (n *Node) buildNode(node *apiv1.Node) *targetgroup.Group {
 
 // nodeAddresses returns the provided node's address, based on the priority:
 // 1. NodeInternalIP
-// 2. NodeExternalIP
-// 3. NodeLegacyHostIP
-// 3. NodeHostName
+// 2. NodeInternalDNS
+// 3. NodeExternalIP
+// 4. NodeExternalDNS
+// 5. NodeLegacyHostIP
+// 6. NodeHostName
 //
 // Derived from k8s.io/kubernetes/pkg/util/node/node.go
 func nodeAddress(node *apiv1.Node) (string, map[apiv1.NodeAddressType][]string, error) {
@@ -210,7 +221,13 @@ func nodeAddress(node *apiv1.Node) (string, map[apiv1.NodeAddressType][]string, 
 	if addresses, ok := m[apiv1.NodeInternalIP]; ok {
 		return addresses[0], m, nil
 	}
+	if addresses, ok := m[apiv1.NodeInternalDNS]; ok {
+		return addresses[0], m, nil
+	}
 	if addresses, ok := m[apiv1.NodeExternalIP]; ok {
+		return addresses[0], m, nil
+	}
+	if addresses, ok := m[apiv1.NodeExternalDNS]; ok {
 		return addresses[0], m, nil
 	}
 	if addresses, ok := m[apiv1.NodeAddressType(NodeLegacyHostIP)]; ok {

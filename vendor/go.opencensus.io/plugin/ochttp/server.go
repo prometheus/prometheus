@@ -70,6 +70,12 @@ type Handler struct {
 	// from the information found in the incoming HTTP Request. By default the
 	// name equals the URL Path.
 	FormatSpanName func(*http.Request) string
+
+	// IsHealthEndpoint holds the function to use for determining if the
+	// incoming HTTP request should be considered a health check. This is in
+	// addition to the private isHealthEndpoint func which may also indicate
+	// tracing should be skipped.
+	IsHealthEndpoint func(*http.Request) bool
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -87,7 +93,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) startTrace(w http.ResponseWriter, r *http.Request) (*http.Request, func()) {
-	if isHealthEndpoint(r.URL.Path) {
+	if h.IsHealthEndpoint != nil && h.IsHealthEndpoint(r) || isHealthEndpoint(r.URL.Path) {
 		return r, func() {}
 	}
 	var name string
@@ -124,6 +130,12 @@ func (h *Handler) startTrace(w http.ResponseWriter, r *http.Request) (*http.Requ
 		}
 	}
 	span.AddAttributes(requestAttrs(r)...)
+	if r.Body == nil {
+		// TODO: Handle cases where ContentLength is not set.
+	} else if r.ContentLength > 0 {
+		span.AddMessageReceiveEvent(0, /* TODO: messageID */
+			r.ContentLength, -1)
+	}
 	return r.WithContext(ctx), span.End
 }
 
@@ -168,8 +180,6 @@ type trackingResponseWriter struct {
 // Compile time assertion for ResponseWriter interface
 var _ http.ResponseWriter = (*trackingResponseWriter)(nil)
 
-var logTagsErrorOnce sync.Once
-
 func (t *trackingResponseWriter) end(tags *addedTags) {
 	t.endOnce.Do(func() {
 		if t.statusCode == 0 {
@@ -201,6 +211,9 @@ func (t *trackingResponseWriter) Header() http.Header {
 func (t *trackingResponseWriter) Write(data []byte) (int, error) {
 	n, err := t.writer.Write(data)
 	t.respSize += int64(n)
+	// Add message event for request bytes sent.
+	span := trace.FromContext(t.ctx)
+	span.AddMessageSendEvent(0 /* TODO: messageID */, int64(n), -1)
 	return n, err
 }
 

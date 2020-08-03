@@ -27,10 +27,6 @@ type OpenstackSDInstanceTestSuite struct {
 	Mock *SDMock
 }
 
-func (s *OpenstackSDInstanceTestSuite) TearDownSuite() {
-	s.Mock.ShutdownServer()
-}
-
 func (s *OpenstackSDInstanceTestSuite) SetupTest(t *testing.T) {
 	s.Mock = NewSDMock(t)
 	s.Mock.Setup()
@@ -128,8 +124,6 @@ func TestOpenstackSDInstanceRefresh(t *testing.T) {
 			testutil.Equals(t, lbls, tg.Targets[i])
 		})
 	}
-
-	mock.TearDownSuite()
 }
 
 func TestOpenstackSDInstanceRefreshWithDoneContext(t *testing.T) {
@@ -140,8 +134,6 @@ func TestOpenstackSDInstanceRefreshWithDoneContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	_, err := hypervisor.refresh(ctx)
-	testutil.NotOk(t, err, "")
+	testutil.NotOk(t, err)
 	testutil.Assert(t, strings.Contains(err.Error(), context.Canceled.Error()), "%q doesn't contain %q", err, context.Canceled)
-
-	mock.TearDownSuite()
 }

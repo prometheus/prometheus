@@ -25,7 +25,7 @@ var corsHeaders = map[string]string{
 	"Vary":                          "Origin",
 }
 
-// Enables cross-site script calls.
+// SetCORS enables cross-site script calls.
 func SetCORS(w http.ResponseWriter, o *regexp.Regexp, r *http.Request) {
 	origin := r.Header.Get("Origin")
 	if origin == "" {

@@ -28,6 +28,7 @@ A not-so-up-to-date-list-that-may-be-actually-current:
 * https://github.com/coredns/coredns
 * https://cloudflare.com
 * https://github.com/abh/geodns
+* https://github.com/baidu/bfe
 * http://www.statdns.com/
 * http://www.dnsinspect.com/
 * https://github.com/chuangbo/jianbing-dictionary-dns
@@ -69,6 +70,7 @@ A not-so-up-to-date-list-that-may-be-actually-current:
 * https://github.com/semihalev/sdns
 * https://render.com
 * https://github.com/peterzen/goresolver
+* https://github.com/folbricht/routedns
 
 Send pull request if you want to be listed here.
 
@@ -93,8 +95,8 @@ DNS Authors 2012-
 
 # Building
 
-Building is done with the `go` tool. If you have setup your GOPATH correctly, the following should
-work:
+This library uses Go modules and uses semantic versioning. Building is done with the `go` tool, so
+the following should work:
 
     go get github.com/miekg/dns
     go build github.com/miekg/dns
@@ -126,6 +128,7 @@ Example programs can be found in the `github.com/miekg/exdns` repository.
 * 2915 - NAPTR record
 * 2929 - DNS IANA Considerations
 * 3110 - RSASHA1 DNS keys
+* 3123 - APL record
 * 3225 - DO bit (DNSSEC OK)
 * 340{1,2,3} - NAPTR record
 * 3445 - Limiting the scope of (DNS)KEY
@@ -152,6 +155,7 @@ Example programs can be found in the `github.com/miekg/exdns` repository.
 * 6844 - CAA record
 * 6891 - EDNS0 update
 * 6895 - DNS IANA considerations
+* 6944 - DNSSEC DNSKEY Algorithm Status
 * 6975 - Algorithm Understanding in DNSSEC
 * 7043 - EUI48/EUI64 records
 * 7314 - DNS (EDNS) EXPIRE Option

@@ -26,7 +26,7 @@ func TestQueryRange(t *testing.T) {
 	defer s.Close()
 
 	p := &promqlPrinter{}
-	exitCode := QueryRange(s.URL, "up", "0", "300", 0, p)
+	exitCode := QueryRange(s.URL, map[string]string{}, "up", "0", "300", 0, p)
 	expectedPath := "/api/v1/query_range"
 	gotPath := getRequest().URL.Path
 	if gotPath != expectedPath {
@@ -38,14 +38,14 @@ func TestQueryRange(t *testing.T) {
 		t.Errorf("unexpected value %s for query", actual)
 	}
 	actual = form.Get("step")
-	if actual != "1.000" {
+	if actual != "1" {
 		t.Errorf("unexpected value %s for step", actual)
 	}
 	if exitCode > 0 {
 		t.Error()
 	}
 
-	exitCode = QueryRange(s.URL, "up", "0", "300", 10*time.Millisecond, p)
+	exitCode = QueryRange(s.URL, map[string]string{}, "up", "0", "300", 10*time.Millisecond, p)
 	gotPath = getRequest().URL.Path
 	if gotPath != expectedPath {
 		t.Errorf("unexpected URL path %s (wanted %s)", gotPath, expectedPath)
@@ -56,7 +56,7 @@ func TestQueryRange(t *testing.T) {
 		t.Errorf("unexpected value %s for query", actual)
 	}
 	actual = form.Get("step")
-	if actual != "0.010" {
+	if actual != "0.01" {
 		t.Errorf("unexpected value %s for step", actual)
 	}
 	if exitCode > 0 {

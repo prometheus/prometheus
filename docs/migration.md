@@ -1,6 +1,6 @@
 ---
 title: Migration
-sort_rank: 7
+sort_rank: 8
 ---
 
 # Prometheus 2.0 migration guide
@@ -20,7 +20,7 @@ Some notable flags which have been removed:
 
 - `-alertmanager.url` In Prometheus 2.0, the command line flags for configuring
   a static Alertmanager URL have been removed. Alertmanager must now be
-  discovered via service discovery, see [Alertmanager service discovery](#amsd).
+  discovered via service discovery, see [Alertmanager service discovery](#alertmanager-service-discovery).
 
 - `-log.format` In Prometheus 2.0 logs can only be streamed to standard error.
 
@@ -88,7 +88,7 @@ An example of a recording rule and alert in the old format:
 
 ```
 job:request_duration_seconds:histogram_quantile99 =
-  histogram_quantile(0.99, sum(rate(request_duration_seconds_bucket[1m])) by (le, job))
+  histogram_quantile(0.99, sum by (le, job) (rate(request_duration_seconds_bucket[1m])))
 
 ALERT FrontendRequestLatency
   IF job:request_duration_seconds:histogram_quantile99{job="frontend"} > 0.1
@@ -105,8 +105,7 @@ groups:
 - name: example.rules
   rules:
   - record: job:request_duration_seconds:histogram_quantile99
-    expr: histogram_quantile(0.99, sum(rate(request_duration_seconds_bucket[1m]))
-      BY (le, job))
+    expr: histogram_quantile(0.99, sum by (le, job) (rate(request_duration_seconds_bucket[1m])))
   - alert: FrontendRequestLatency
     expr: job:request_duration_seconds:histogram_quantile99{job="frontend"} > 0.1
     for: 5m
@@ -190,7 +189,7 @@ for more details.
 If you're using Docker, then the following snippet would be used:
 
 ```
-docker run -u root -p 80:80 prom/prometheus:v2.0.0-rc.2  --web.listen-address :80
+docker run -p 9090:9090 prom/prometheus:latest
 ```
 
 ### Prometheus lifecycle

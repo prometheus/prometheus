@@ -100,6 +100,16 @@ func TestTemplateExpansion(t *testing.T) {
 			output: "a",
 		},
 		{
+			// Get label "__value__" from query.
+			text: "{{ query \"metric{__value__='a'}\" | first | strvalue }}",
+			queryResult: promql.Vector{
+				{
+					Metric: labels.FromStrings(labels.MetricName, "metric", "__value__", "a"),
+					Point:  promql.Point{T: 0, V: 11},
+				}},
+			output: "a",
+		},
+		{
 			// Missing label is empty when using label function.
 			text: "{{ query \"metric{instance='a'}\" | first | label \"foo\" }}",
 			queryResult: promql.Vector{
@@ -134,11 +144,11 @@ func TestTemplateExpansion(t *testing.T) {
 			text: "{{ range query \"metric\" | sortByLabel \"instance\" }}{{.Labels.instance}}:{{.Value}}: {{end}}",
 			queryResult: promql.Vector{
 				{
-					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
-					Point:  promql.Point{T: 0, V: 11},
-				}, {
 					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "b"),
 					Point:  promql.Point{T: 0, V: 21},
+				}, {
+					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
+					Point:  promql.Point{T: 0, V: 11},
 				}},
 			output: "a:11: b:21: ",
 		},
@@ -196,6 +206,11 @@ func TestTemplateExpansion(t *testing.T) {
 			text:   "{{ range . }}{{ humanize . }}:{{ humanize1024 . }}:{{ humanizeDuration . }}:{{humanizeTimestamp .}}:{{ end }}",
 			input:  []float64{math.Inf(1), math.Inf(-1), math.NaN()},
 			output: "+Inf:+Inf:+Inf:+Inf:-Inf:-Inf:-Inf:-Inf:NaN:NaN:NaN:NaN:",
+		},
+		{
+			// HumanizePercentage - model.SampleValue input.
+			text:   "{{ -0.22222 | humanizePercentage }}:{{ 0.0 | humanizePercentage }}:{{ 0.1234567 | humanizePercentage }}:{{ 1.23456 | humanizePercentage }}",
+			output: "-22.22%:0%:12.35%:123.5%",
 		},
 		{
 			// HumanizeTimestamp - model.SampleValue input.

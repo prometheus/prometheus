@@ -24,10 +24,10 @@ import (
 	"github.com/golang/snappy"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
-
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
 // decodeReadLimit is the maximum size of a read request body in bytes.
@@ -73,28 +73,28 @@ func EncodeReadResponse(resp *prompb.ReadResponse, w http.ResponseWriter) error 
 		return err
 	}
 
-	w.Header().Set("Content-Type", "application/x-protobuf")
-	w.Header().Set("Content-Encoding", "snappy")
-
 	compressed := snappy.Encode(nil, data)
 	_, err = w.Write(compressed)
 	return err
 }
 
 // ToQuery builds a Query proto.
-func ToQuery(from, to int64, matchers []*labels.Matcher, p *storage.SelectParams) (*prompb.Query, error) {
+func ToQuery(from, to int64, matchers []*labels.Matcher, hints *storage.SelectHints) (*prompb.Query, error) {
 	ms, err := toLabelMatchers(matchers)
 	if err != nil {
 		return nil, err
 	}
 
 	var rp *prompb.ReadHints
-	if p != nil {
+	if hints != nil {
 		rp = &prompb.ReadHints{
-			StepMs:  p.Step,
-			Func:    p.Func,
-			StartMs: p.Start,
-			EndMs:   p.End,
+			StartMs:  hints.Start,
+			EndMs:    hints.End,
+			StepMs:   hints.Step,
+			Func:     hints.Func,
+			Grouping: hints.Grouping,
+			By:       hints.By,
+			RangeMs:  hints.Range,
 		}
 	}
 
@@ -106,27 +106,8 @@ func ToQuery(from, to int64, matchers []*labels.Matcher, p *storage.SelectParams
 	}, nil
 }
 
-// FromQuery unpacks a Query proto.
-func FromQuery(req *prompb.Query) (int64, int64, []*labels.Matcher, *storage.SelectParams, error) {
-	matchers, err := fromLabelMatchers(req.Matchers)
-	if err != nil {
-		return 0, 0, nil, nil, err
-	}
-	var selectParams *storage.SelectParams
-	if req.Hints != nil {
-		selectParams = &storage.SelectParams{
-			Start: req.Hints.StartMs,
-			End:   req.Hints.EndMs,
-			Step:  req.Hints.StepMs,
-			Func:  req.Hints.Func,
-		}
-	}
-
-	return req.StartTimestampMs, req.EndTimestampMs, matchers, selectParams, nil
-}
-
 // ToQueryResult builds a QueryResult proto.
-func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, error) {
+func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, storage.Warnings, error) {
 	numSamples := 0
 	resp := &prompb.QueryResult{}
 	for ss.Next() {
@@ -137,7 +118,7 @@ func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, 
 		for iter.Next() {
 			numSamples++
 			if sampleLimit > 0 && numSamples > sampleLimit {
-				return nil, HTTPError{
+				return nil, ss.Warnings(), HTTPError{
 					msg:    fmt.Sprintf("exceeded sample limit (%d)", sampleLimit),
 					status: http.StatusBadRequest,
 				}
@@ -149,38 +130,152 @@ func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, 
 			})
 		}
 		if err := iter.Err(); err != nil {
-			return nil, err
+			return nil, ss.Warnings(), err
 		}
 
 		resp.Timeseries = append(resp.Timeseries, &prompb.TimeSeries{
-			Labels:  labelsToLabelsProto(series.Labels()),
+			Labels:  labelsToLabelsProto(series.Labels(), nil),
 			Samples: samples,
 		})
 	}
-	if err := ss.Err(); err != nil {
-		return nil, err
-	}
-	return resp, nil
+	return resp, ss.Warnings(), ss.Err()
 }
 
-// FromQueryResult unpacks a QueryResult proto.
-func FromQueryResult(res *prompb.QueryResult) storage.SeriesSet {
+// FromQueryResult unpacks and sorts a QueryResult proto.
+func FromQueryResult(sortSeries bool, res *prompb.QueryResult) storage.SeriesSet {
 	series := make([]storage.Series, 0, len(res.Timeseries))
 	for _, ts := range res.Timeseries {
-		labels := labelProtosToLabels(ts.Labels)
-		if err := validateLabelsAndMetricName(labels); err != nil {
+		lbls := labelProtosToLabels(ts.Labels)
+		if err := validateLabelsAndMetricName(lbls); err != nil {
 			return errSeriesSet{err: err}
 		}
-
-		series = append(series, &concreteSeries{
-			labels:  labels,
-			samples: ts.Samples,
-		})
+		series = append(series, &concreteSeries{labels: lbls, samples: ts.Samples})
 	}
-	sort.Sort(byLabel(series))
+
+	if sortSeries {
+		sort.Sort(byLabel(series))
+	}
 	return &concreteSeriesSet{
 		series: series,
 	}
+}
+
+// NegotiateResponseType returns first accepted response type that this server supports.
+// On the empty accepted list we assume that the SAMPLES response type was requested. This is to maintain backward compatibility.
+func NegotiateResponseType(accepted []prompb.ReadRequest_ResponseType) (prompb.ReadRequest_ResponseType, error) {
+	if len(accepted) == 0 {
+		accepted = []prompb.ReadRequest_ResponseType{prompb.ReadRequest_SAMPLES}
+	}
+
+	supported := map[prompb.ReadRequest_ResponseType]struct{}{
+		prompb.ReadRequest_SAMPLES:             {},
+		prompb.ReadRequest_STREAMED_XOR_CHUNKS: {},
+	}
+
+	for _, resType := range accepted {
+		if _, ok := supported[resType]; ok {
+			return resType, nil
+		}
+	}
+	return 0, errors.Errorf("server does not support any of the requested response types: %v; supported: %v", accepted, supported)
+}
+
+// StreamChunkedReadResponses iterates over series, builds chunks and streams those to the caller.
+// It expects Series set with populated chunks.
+func StreamChunkedReadResponses(
+	stream io.Writer,
+	queryIndex int64,
+	ss storage.ChunkSeriesSet,
+	sortedExternalLabels []prompb.Label,
+	maxBytesInFrame int,
+) (storage.Warnings, error) {
+	var (
+		chks []prompb.Chunk
+		lbls []prompb.Label
+	)
+
+	for ss.Next() {
+		series := ss.At()
+		iter := series.Iterator()
+		lbls = MergeLabels(labelsToLabelsProto(series.Labels(), lbls), sortedExternalLabels)
+
+		frameBytesLeft := maxBytesInFrame
+		for _, lbl := range lbls {
+			frameBytesLeft -= lbl.Size()
+		}
+
+		isNext := iter.Next()
+
+		// Send at most one series per frame; series may be split over multiple frames according to maxBytesInFrame.
+		for isNext {
+			chk := iter.At()
+
+			if chk.Chunk == nil {
+				return ss.Warnings(), errors.Errorf("StreamChunkedReadResponses: found not populated chunk returned by SeriesSet at ref: %v", chk.Ref)
+			}
+
+			// Cut the chunk.
+			chks = append(chks, prompb.Chunk{
+				MinTimeMs: chk.MinTime,
+				MaxTimeMs: chk.MaxTime,
+				Type:      prompb.Chunk_Encoding(chk.Chunk.Encoding()),
+				Data:      chk.Chunk.Bytes(),
+			})
+			frameBytesLeft -= chks[len(chks)-1].Size()
+
+			// We are fine with minor inaccuracy of max bytes per frame. The inaccuracy will be max of full chunk size.
+			isNext = iter.Next()
+			if frameBytesLeft > 0 && isNext {
+				continue
+			}
+
+			b, err := proto.Marshal(&prompb.ChunkedReadResponse{
+				ChunkedSeries: []*prompb.ChunkedSeries{
+					{Labels: lbls, Chunks: chks},
+				},
+				QueryIndex: queryIndex,
+			})
+			if err != nil {
+				return ss.Warnings(), errors.Wrap(err, "marshal ChunkedReadResponse")
+			}
+
+			if _, err := stream.Write(b); err != nil {
+				return ss.Warnings(), errors.Wrap(err, "write to stream")
+			}
+			chks = chks[:0]
+		}
+		if err := iter.Err(); err != nil {
+			return ss.Warnings(), err
+		}
+	}
+	return ss.Warnings(), ss.Err()
+}
+
+// MergeLabels merges two sets of sorted proto labels, preferring those in
+// primary to those in secondary when there is an overlap.
+func MergeLabels(primary, secondary []prompb.Label) []prompb.Label {
+	result := make([]prompb.Label, 0, len(primary)+len(secondary))
+	i, j := 0, 0
+	for i < len(primary) && j < len(secondary) {
+		if primary[i].Name < secondary[j].Name {
+			result = append(result, primary[i])
+			i++
+		} else if primary[i].Name > secondary[j].Name {
+			result = append(result, secondary[j])
+			j++
+		} else {
+			result = append(result, primary[i])
+			i++
+			j++
+		}
+	}
+	for ; i < len(primary); i++ {
+		result = append(result, primary[i])
+	}
+	for ; j < len(secondary); j++ {
+		result = append(result, secondary[j])
+	}
+	return result
 }
 
 type byLabel []storage.Series
@@ -206,6 +301,8 @@ func (e errSeriesSet) Err() error {
 	return e.err
 }
 
+func (e errSeriesSet) Warnings() storage.Warnings { return nil }
+
 // concreteSeriesSet implements storage.SeriesSet.
 type concreteSeriesSet struct {
 	cur    int
@@ -225,6 +322,8 @@ func (c *concreteSeriesSet) Err() error {
 	return nil
 }
 
+func (c *concreteSeriesSet) Warnings() storage.Warnings { return nil }
+
 // concreteSeries implements storage.Series.
 type concreteSeries struct {
 	labels  labels.Labels
@@ -235,7 +334,7 @@ func (c *concreteSeries) Labels() labels.Labels {
 	return labels.New(c.labels...)
 }
 
-func (c *concreteSeries) Iterator() storage.SeriesIterator {
+func (c *concreteSeries) Iterator() chunkenc.Iterator {
 	return newConcreteSeriersIterator(c)
 }
 
@@ -245,7 +344,7 @@ type concreteSeriesIterator struct {
 	series *concreteSeries
 }
 
-func newConcreteSeriersIterator(series *concreteSeries) storage.SeriesIterator {
+func newConcreteSeriersIterator(series *concreteSeries) chunkenc.Iterator {
 	return &concreteSeriesIterator{
 		cur:    -1,
 		series: series,
@@ -277,9 +376,10 @@ func (c *concreteSeriesIterator) Err() error {
 	return nil
 }
 
-// validateLabelsAndMetricName validates the label names/values and metric names returned from remote read.
+// validateLabelsAndMetricName validates the label names/values and metric names returned from remote read,
+// also making sure that there are no labels with duplicate names
 func validateLabelsAndMetricName(ls labels.Labels) error {
-	for _, l := range ls {
+	for i, l := range ls {
 		if l.Name == labels.MetricName && !model.IsValidMetricName(model.LabelValue(l.Value)) {
 			return errors.Errorf("invalid metric name: %v", l.Value)
 		}
@@ -288,6 +388,9 @@ func validateLabelsAndMetricName(ls labels.Labels) error {
 		}
 		if !model.LabelValue(l.Value).IsValid() {
 			return errors.Errorf("invalid label value: %v", l.Value)
+		}
+		if i > 0 && l.Name == ls[i-1].Name {
+			return errors.Errorf("duplicate label with name: %v", l.Name)
 		}
 	}
 	return nil
@@ -318,7 +421,8 @@ func toLabelMatchers(matchers []*labels.Matcher) ([]*prompb.LabelMatcher, error)
 	return pbMatchers, nil
 }
 
-func fromLabelMatchers(matchers []*prompb.LabelMatcher) ([]*labels.Matcher, error) {
+// FromLabelMatchers parses protobuf label matchers to Prometheus label matchers.
+func FromLabelMatchers(matchers []*prompb.LabelMatcher) ([]*labels.Matcher, error) {
 	result := make([]*labels.Matcher, 0, len(matchers))
 	for _, matcher := range matchers {
 		var mtype labels.MatchType
@@ -364,12 +468,17 @@ func labelProtosToLabels(labelPairs []prompb.Label) labels.Labels {
 	return result
 }
 
-func labelsToLabelsProto(labels labels.Labels) []prompb.Label {
-	result := make([]prompb.Label, 0, len(labels))
+// labelsToLabelsProto transforms labels into prompb labels. The buffer slice
+// will be used to avoid allocations if it is big enough to store the labels.
+func labelsToLabelsProto(labels labels.Labels, buf []prompb.Label) []prompb.Label {
+	result := buf[:0]
+	if cap(buf) < len(labels) {
+		result = make([]prompb.Label, 0, len(labels))
+	}
 	for _, l := range labels {
 		result = append(result, prompb.Label{
-			Name:  interner.intern(l.Name),
-			Value: interner.intern(l.Value),
+			Name:  l.Name,
+			Value: l.Value,
 		})
 	}
 	return result

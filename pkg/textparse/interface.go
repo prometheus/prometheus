@@ -16,6 +16,7 @@ package textparse
 import (
 	"mime"
 
+	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 )
 
@@ -49,6 +50,10 @@ type Parser interface {
 	// Metric writes the labels of the current sample into the passed labels.
 	// It returns the string from which the metric was parsed.
 	Metric(l *labels.Labels) string
+
+	// Exemplar writes the exemplar of the current sample into the passed
+	// exemplar. It returns if an exemplar exists or not.
+	Exemplar(l *exemplar.Exemplar) bool
 
 	// Next advances the parser to the next sample. It returns false if no
 	// more samples were read or an error occurred.

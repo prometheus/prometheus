@@ -35,6 +35,16 @@ eval instant at 50m - - - SUM(http_requests) BY (job)
 eval instant at 50m - - - 1
   -1
 
+eval instant at 50m -2^---1*3
+  -1.5
+
+eval instant at 50m 2/-2^---1*3+2
+  -10 
+
+eval instant at 50m -10^3 * - SUM(http_requests) BY (job) ^ -1
+	{job="api-server"} 1
+	{job="app-server"} 0.38461538461538464
+
 eval instant at 50m 1000 / SUM(http_requests) BY (job)
 	{job="api-server"} 1
 	{job="app-server"} 0.38461538461538464
@@ -83,6 +93,9 @@ eval instant at 50m SUM(http_requests) BY (job) + SUM(http_requests) BY (job)
 	{job="api-server"} 2000
 	{job="app-server"} 5200
 
+eval instant at 50m (SUM((http_requests)) BY (job)) + SUM(http_requests) BY (job)
+	{job="api-server"} 2000
+	{job="app-server"} 5200
 
 eval instant at 50m http_requests{job="api-server", group="canary"}
 	http_requests{group="canary", instance="0", job="api-server"} 300
@@ -93,6 +106,16 @@ eval instant at 50m http_requests{job="api-server", group="canary"} + rate(http_
 	{group="canary", instance="1", job="api-server"} 440
 
 eval instant at 50m rate(http_requests[25m]) * 25 * 60
+  {group="canary", instance="0", job="api-server"} 150
+  {group="canary", instance="0", job="app-server"} 350
+  {group="canary", instance="1", job="api-server"} 200
+  {group="canary", instance="1", job="app-server"} 400
+  {group="production", instance="0", job="api-server"} 50
+  {group="production", instance="0", job="app-server"} 249.99999999999997
+  {group="production", instance="1", job="api-server"} 100
+  {group="production", instance="1", job="app-server"} 300
+
+eval instant at 50m (rate((http_requests[25m])) * 25) * 60
   {group="canary", instance="0", job="api-server"} 150
   {group="canary", instance="0", job="app-server"} 350
   {group="canary", instance="1", job="api-server"} 200

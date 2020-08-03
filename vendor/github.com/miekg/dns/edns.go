@@ -88,7 +88,7 @@ func (rr *OPT) len(off int, compression map[string]struct{}) int {
 	return l
 }
 
-func (rr *OPT) parse(c *zlexer, origin, file string) *ParseError {
+func (rr *OPT) parse(c *zlexer, origin string) *ParseError {
 	panic("dns: internal error: parse should never be called on OPT")
 }
 
@@ -360,7 +360,7 @@ func (e *EDNS0_COOKIE) copy() EDNS0           { return &EDNS0_COOKIE{e.Code, e.C
 // The EDNS0_UL (Update Lease) (draft RFC) option is used to tell the server to set
 // an expiration on an update RR. This is helpful for clients that cannot clean
 // up after themselves. This is a draft RFC and more information can be found at
-// http://files.dns-sd.org/draft-sekar-dns-ul.txt
+// https://tools.ietf.org/html/draft-sekar-dns-ul-02
 //
 //	o := new(dns.OPT)
 //	o.Hdr.Name = "."
@@ -370,24 +370,36 @@ func (e *EDNS0_COOKIE) copy() EDNS0           { return &EDNS0_COOKIE{e.Code, e.C
 //	e.Lease = 120 // in seconds
 //	o.Option = append(o.Option, e)
 type EDNS0_UL struct {
-	Code  uint16 // Always EDNS0UL
-	Lease uint32
+	Code     uint16 // Always EDNS0UL
+	Lease    uint32
+	KeyLease uint32
 }
 
 // Option implements the EDNS0 interface.
 func (e *EDNS0_UL) Option() uint16 { return EDNS0UL }
-func (e *EDNS0_UL) String() string { return strconv.FormatUint(uint64(e.Lease), 10) }
-func (e *EDNS0_UL) copy() EDNS0    { return &EDNS0_UL{e.Code, e.Lease} }
+func (e *EDNS0_UL) String() string { return fmt.Sprintf("%d %d", e.Lease, e.KeyLease) }
+func (e *EDNS0_UL) copy() EDNS0    { return &EDNS0_UL{e.Code, e.Lease, e.KeyLease} }
 
 // Copied: http://golang.org/src/pkg/net/dnsmsg.go
 func (e *EDNS0_UL) pack() ([]byte, error) {
-	b := make([]byte, 4)
+	var b []byte
+	if e.KeyLease == 0 {
+		b = make([]byte, 4)
+	} else {
+		b = make([]byte, 8)
+		binary.BigEndian.PutUint32(b[4:], e.KeyLease)
+	}
 	binary.BigEndian.PutUint32(b, e.Lease)
 	return b, nil
 }
 
 func (e *EDNS0_UL) unpack(b []byte) error {
-	if len(b) < 4 {
+	switch len(b) {
+	case 4:
+		e.KeyLease = 0
+	case 8:
+		e.KeyLease = binary.BigEndian.Uint32(b[4:])
+	default:
 		return ErrBuf
 	}
 	e.Lease = binary.BigEndian.Uint32(b)
@@ -531,6 +543,10 @@ func (e *EDNS0_EXPIRE) pack() ([]byte, error) {
 }
 
 func (e *EDNS0_EXPIRE) unpack(b []byte) error {
+	if len(b) == 0 {
+		// zero-length EXPIRE query, see RFC 7314 Section 2
+		return nil
+	}
 	if len(b) < 4 {
 		return ErrBuf
 	}

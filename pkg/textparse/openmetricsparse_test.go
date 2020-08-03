@@ -1,4 +1,4 @@
-// Copyright 2017 The OMetheus Authors
+// Copyright 2017 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -17,8 +17,9 @@ import (
 	"io"
 	"testing"
 
+	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/stretchr/testify/require"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestOpenMetricsParse(t *testing.T) {
@@ -38,9 +39,13 @@ some:aggregate:rate5m{a_b="c"} 1
 # TYPE go_goroutines gauge
 go_goroutines 33 123.123
 # TYPE hh histogram
-hh_bucket{le="+Inf"} 1 # {} 4
+hh_bucket{le="+Inf"} 1
 # TYPE gh gaugehistogram
-gh_bucket{le="+Inf"} 1 # {} 4
+gh_bucket{le="+Inf"} 1
+# TYPE hhh histogram
+hhh_bucket{le="+Inf"} 1 # {aa="bb"} 4
+# TYPE ggh gaugehistogram
+ggh_bucket{le="+Inf"} 1 # {cc="dd",xx="yy"} 4 123.123
 # TYPE ii info
 ii{foo="bar"} 1
 # TYPE ss stateset
@@ -49,7 +54,9 @@ ss{ss="bar"} 0
 # TYPE un unknown
 _metric_starting_with_underscore 1
 testmetric{_label_starting_with_underscore="foo"} 1
-testmetric{label="\"bar\""} 1`
+testmetric{label="\"bar\""} 1
+# TYPE foo counter
+foo_total 17.0 1520879607.789 # {xx="yy"} 5`
 
 	input += "\n# HELP metric foo\x00bar"
 	input += "\nnull_byte_metric{a=\"abc\x00\"} 1"
@@ -66,6 +73,7 @@ testmetric{label="\"bar\""} 1`
 		help    string
 		unit    string
 		comment string
+		e       *exemplar.Exemplar
 	}{
 		{
 			m:    "go_gc_duration_seconds",
@@ -135,6 +143,22 @@ testmetric{label="\"bar\""} 1`
 			v:    1,
 			lset: labels.FromStrings("__name__", "gh_bucket", "le", "+Inf"),
 		}, {
+			m:   "hhh",
+			typ: MetricTypeHistogram,
+		}, {
+			m:    `hhh_bucket{le="+Inf"}`,
+			v:    1,
+			lset: labels.FromStrings("__name__", "hhh_bucket", "le", "+Inf"),
+			e:    &exemplar.Exemplar{Labels: labels.FromStrings("aa", "bb"), Value: 4},
+		}, {
+			m:   "ggh",
+			typ: MetricTypeGaugeHistogram,
+		}, {
+			m:    `ggh_bucket{le="+Inf"}`,
+			v:    1,
+			lset: labels.FromStrings("__name__", "ggh_bucket", "le", "+Inf"),
+			e:    &exemplar.Exemplar{Labels: labels.FromStrings("cc", "dd", "xx", "yy"), Value: 4, HasTs: true, Ts: 123123},
+		}, {
 			m:   "ii",
 			typ: MetricTypeInfo,
 		}, {
@@ -168,6 +192,15 @@ testmetric{label="\"bar\""} 1`
 			v:    1,
 			lset: labels.FromStrings("__name__", "testmetric", "label", `"bar"`),
 		}, {
+			m:   "foo",
+			typ: MetricTypeCounter,
+		}, {
+			m:    "foo_total",
+			v:    17,
+			lset: labels.FromStrings("__name__", "foo_total"),
+			t:    int64p(1520879607789),
+			e:    &exemplar.Exemplar{Labels: labels.FromStrings("xx", "yy"), Value: 5},
+		}, {
 			m:    "metric",
 			help: "foo\x00bar",
 		}, {
@@ -187,42 +220,50 @@ testmetric{label="\"bar\""} 1`
 		if err == io.EOF {
 			break
 		}
-		require.NoError(t, err)
+		testutil.Ok(t, err)
 
 		switch et {
 		case EntrySeries:
 			m, ts, v := p.Series()
 
+			var e exemplar.Exemplar
 			p.Metric(&res)
+			found := p.Exemplar(&e)
 
-			require.Equal(t, exp[i].m, string(m))
-			require.Equal(t, exp[i].t, ts)
-			require.Equal(t, exp[i].v, v)
-			require.Equal(t, exp[i].lset, res)
+			testutil.Equals(t, exp[i].m, string(m))
+			testutil.Equals(t, exp[i].t, ts)
+			testutil.Equals(t, exp[i].v, v)
+			testutil.Equals(t, exp[i].lset, res)
+			if exp[i].e == nil {
+				testutil.Equals(t, false, found)
+			} else {
+				testutil.Equals(t, true, found)
+				testutil.Equals(t, *exp[i].e, e)
+			}
 			res = res[:0]
 
 		case EntryType:
 			m, typ := p.Type()
-			require.Equal(t, exp[i].m, string(m))
-			require.Equal(t, exp[i].typ, typ)
+			testutil.Equals(t, exp[i].m, string(m))
+			testutil.Equals(t, exp[i].typ, typ)
 
 		case EntryHelp:
 			m, h := p.Help()
-			require.Equal(t, exp[i].m, string(m))
-			require.Equal(t, exp[i].help, string(h))
+			testutil.Equals(t, exp[i].m, string(m))
+			testutil.Equals(t, exp[i].help, string(h))
 
 		case EntryUnit:
 			m, u := p.Unit()
-			require.Equal(t, exp[i].m, string(m))
-			require.Equal(t, exp[i].unit, string(u))
+			testutil.Equals(t, exp[i].m, string(m))
+			testutil.Equals(t, exp[i].unit, string(u))
 
 		case EntryComment:
-			require.Equal(t, exp[i].comment, string(p.Comment()))
+			testutil.Equals(t, exp[i].comment, string(p.Comment()))
 		}
 
 		i++
 	}
-	require.Equal(t, len(exp), i)
+	testutil.Equals(t, len(exp), i)
 }
 
 func TestOpenMetricsParseErrors(t *testing.T) {
@@ -230,72 +271,103 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 		input string
 		err   string
 	}{
+		// Happy cases. EOF is returned by the parser at the end of valid
+		// data.
 		{
-			input: "",
-			err:   "unexpected end of data, got \"EOF\"",
+			input: "# EOF",
+			err:   "EOF",
 		},
 		{
-			input: "a",
-			err:   "expected value after metric, got \"MNAME\"",
+			input: "# EOF\n",
+			err:   "EOF",
+		},
+		// Unhappy cases.
+		{
+			input: "",
+			err:   "data does not end with # EOF",
 		},
 		{
 			input: "\n",
 			err:   "\"INVALID\" \"\\n\" is not a valid start token",
 		},
 		{
-			input: " a 1\n",
+			input: "metric",
+			err:   "expected value after metric, got \"EOF\"",
+		},
+		{
+			input: "metric 1",
+			err:   "data does not end with # EOF",
+		},
+		{
+			input: "metric 1\n",
+			err:   "data does not end with # EOF",
+		},
+		{
+			input: "metric_total 1 # {aa=\"bb\"} 4",
+			err:   "data does not end with # EOF",
+		},
+		{
+			input: "a\n#EOF\n",
+			err:   "expected value after metric, got \"INVALID\"",
+		},
+		{
+			input: "\n\n#EOF\n",
+			err:   "\"INVALID\" \"\\n\" is not a valid start token",
+		},
+		{
+			input: " a 1\n#EOF\n",
 			err:   "\"INVALID\" \" \" is not a valid start token",
 		},
 		{
-			input: "9\n",
+			input: "9\n#EOF\n",
 			err:   "\"INVALID\" \"9\" is not a valid start token",
 		},
 		{
-			input: "# TYPE u untyped\n",
+			input: "# TYPE u untyped\n#EOF\n",
 			err:   "invalid metric type \"untyped\"",
 		},
 		{
-			input: "# TYPE c counter \n",
+			input: "# TYPE c counter \n#EOF\n",
 			err:   "invalid metric type \"counter \"",
 		},
 		{
-			input: "#  TYPE c counter\n",
+			input: "#  TYPE c counter\n#EOF\n",
 			err:   "\"INVALID\" \" \" is not a valid start token",
 		},
 		{
-			input: "# UNIT metric suffix\n",
+			input: "# UNIT metric suffix\n#EOF\n",
 			err:   "unit not a suffix of metric \"metric\"",
 		},
 		{
-			input: "# UNIT metricsuffix suffix\n",
+			input: "# UNIT metricsuffix suffix\n#EOF\n",
 			err:   "unit not a suffix of metric \"metricsuffix\"",
 		},
 		{
-			input: "# UNIT m suffix\n",
+			input: "# UNIT m suffix\n#EOF\n",
 			err:   "unit not a suffix of metric \"m\"",
 		},
 		{
-			input: "# HELP m\n",
+			input: "# HELP m\n#EOF\n",
 			err:   "expected text in HELP, got \"INVALID\"",
 		},
 		{
-			input: "a\t1\n",
-			err:   "expected value after metric, got \"MNAME\"",
+			input: "a\t1\n#EOF\n",
+			err:   "expected value after metric, got \"INVALID\"",
 		},
 		{
-			input: "a 1\t2\n",
+			input: "a 1\t2\n#EOF\n",
 			err:   "strconv.ParseFloat: parsing \"1\\t2\": invalid syntax",
 		},
 		{
-			input: "a 1 2 \n",
-			err:   "expected next entry after timestamp, got \"MNAME\"",
+			input: "a 1 2 \n#EOF\n",
+			err:   "expected next entry after timestamp, got \"INVALID\"",
 		},
 		{
-			input: "a 1 2 #\n",
-			err:   "expected next entry after timestamp, got \"MNAME\"",
+			input: "a 1 2 #\n#EOF\n",
+			err:   "expected next entry after timestamp, got \"TIMESTAMP\"",
 		},
 		{
-			input: "a 1 1z\n",
+			input: "a 1 1z\n#EOF\n",
 			err:   "strconv.ParseFloat: parsing \"1z\": invalid syntax",
 		},
 		{
@@ -323,39 +395,39 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 			err:   "invalid metric type \" counter\"",
 		},
 		{
-			input: "a 1 1 1\n",
-			err:   "expected next entry after timestamp, got \"MNAME\"",
+			input: "a 1 1 1\n# EOF\n",
+			err:   "expected next entry after timestamp, got \"TIMESTAMP\"",
 		},
 		{
-			input: "a{b='c'} 1\n",
+			input: "a{b='c'} 1\n# EOF\n",
 			err:   "expected label value, got \"INVALID\"",
 		},
 		{
-			input: "a{b=\"c\",} 1\n",
+			input: "a{b=\"c\",} 1\n# EOF\n",
 			err:   "expected label name, got \"BCLOSE\"",
 		},
 		{
-			input: "a{,b=\"c\"} 1\n",
+			input: "a{,b=\"c\"} 1\n# EOF\n",
 			err:   "expected label name or left brace, got \"COMMA\"",
 		},
 		{
-			input: "a{b=\"c\"d=\"e\"} 1\n",
+			input: "a{b=\"c\"d=\"e\"} 1\n# EOF\n",
 			err:   "expected comma, got \"LNAME\"",
 		},
 		{
-			input: "a{b=\"c\",,d=\"e\"} 1\n",
+			input: "a{b=\"c\",,d=\"e\"} 1\n# EOF\n",
 			err:   "expected label name, got \"COMMA\"",
 		},
 		{
-			input: "a{b=\n",
+			input: "a{b=\n# EOF\n",
 			err:   "expected label value, got \"INVALID\"",
 		},
 		{
-			input: "a{\xff=\"foo\"} 1\n",
+			input: "a{\xff=\"foo\"} 1\n# EOF\n",
 			err:   "expected label name or left brace, got \"INVALID\"",
 		},
 		{
-			input: "a{b=\"\xff\"} 1\n",
+			input: "a{b=\"\xff\"} 1\n# EOF\n",
 			err:   "invalid UTF-8 label value",
 		},
 		{
@@ -363,12 +435,72 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 			err:   "strconv.ParseFloat: parsing \"true\": invalid syntax",
 		},
 		{
-			input: "something_weird{problem=\"",
+			input: "something_weird{problem=\"\n# EOF\n",
 			err:   "expected label value, got \"INVALID\"",
 		},
 		{
-			input: "empty_label_name{=\"\"} 0",
+			input: "empty_label_name{=\"\"} 0\n# EOF\n",
 			err:   "expected label name or left brace, got \"EQUAL\"",
+		},
+		{
+			input: "foo 1_2\n\n# EOF\n",
+			err:   "unsupported character in float",
+		},
+		{
+			input: "foo 0x1p-3\n\n# EOF\n",
+			err:   "unsupported character in float",
+		},
+		{
+			input: "foo 0x1P-3\n\n# EOF\n",
+			err:   "unsupported character in float",
+		},
+		{
+			input: "foo 0 1_2\n\n# EOF\n",
+			err:   "unsupported character in float",
+		},
+		{
+			input: "custom_metric_total 1 # {aa=bb}\n# EOF\n",
+			err:   "expected label value, got \"INVALID\"",
+		},
+		{
+			input: "custom_metric_total 1 # {aa=\"bb\"}\n# EOF\n",
+			err:   "expected value after exemplar labels, got \"INVALID\"",
+		},
+		{
+			input: `custom_metric_total 1 # {aa="bb"}`,
+			err:   "expected value after exemplar labels, got \"EOF\"",
+		},
+		{
+			input: `custom_metric 1 # {aa="bb"}`,
+			err:   "metric name custom_metric does not support exemplars",
+		},
+		{
+			input: `custom_metric_total 1 # {aa="bb",,cc="dd"} 1`,
+			err:   "expected label name, got \"COMMA\"",
+		},
+		{
+			input: `custom_metric_total 1 # {aa="bb"} 1_2`,
+			err:   "unsupported character in float",
+		},
+		{
+			input: `custom_metric_total 1 # {aa="bb"} 0x1p-3`,
+			err:   "unsupported character in float",
+		},
+		{
+			input: `custom_metric_total 1 # {aa="bb"} true`,
+			err:   "strconv.ParseFloat: parsing \"true\": invalid syntax",
+		},
+		{
+			input: `custom_metric_total 1 # {aa="bb",cc=}`,
+			err:   "expected label value, got \"INVALID\"",
+		},
+		{
+			input: `custom_metric_total 1 # {aa=\"\xff\"} 9.0`,
+			err:   "expected label value, got \"INVALID\"",
+		},
+		{
+			input: `{b="c",} 1`,
+			err:   `"INVALID" "{" is not a valid start token`,
 		},
 	}
 
@@ -378,8 +510,7 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 		for err == nil {
 			_, err = p.Next()
 		}
-		require.NotNil(t, err)
-		require.Equal(t, c.err, err.Error(), "test %d", i)
+		testutil.Equals(t, c.err, err.Error(), "test %d: %s", i, c.input)
 	}
 }
 
@@ -418,7 +549,23 @@ func TestOMNullByteHandling(t *testing.T) {
 		},
 		{
 			input: "a\x00{b=\"ddd\"} 1",
-			err:   "expected value after metric, got \"MNAME\"",
+			err:   "expected value after metric, got \"INVALID\"",
+		},
+		{
+			input: "#",
+			err:   "\"INVALID\" \" \" is not a valid start token",
+		},
+		{
+			input: "# H",
+			err:   "\"INVALID\" \" \" is not a valid start token",
+		},
+		{
+			input: "custom_metric_total 1 # {b=\x00\"ssss\"} 1\n",
+			err:   "expected label value, got \"INVALID\"",
+		},
+		{
+			input: "custom_metric_total 1 # {b=\"\x00ss\"} 1\n",
+			err:   "expected label value, got \"INVALID\"",
 		},
 	}
 
@@ -430,11 +577,10 @@ func TestOMNullByteHandling(t *testing.T) {
 		}
 
 		if c.err == "" {
-			require.Equal(t, io.EOF, err, "test %d", i)
+			testutil.Equals(t, io.EOF, err, "test %d", i)
 			continue
 		}
 
-		require.Error(t, err)
-		require.Equal(t, c.err, err.Error(), "test %d", i)
+		testutil.Equals(t, c.err, err.Error(), "test %d", i)
 	}
 }
