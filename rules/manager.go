@@ -588,7 +588,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				numDuplicates = 0
 			)
 
-			app := g.opts.Appendable.Appender(ctx)
+			app := g.opts.Appendable.Appender(context.WithValue(ctx, "groupName", g.name))
 			seriesReturned := make(map[string]labels.Labels, len(g.seriesInPreviousEval[i]))
 			defer func() {
 				if err := app.Commit(); err != nil {
