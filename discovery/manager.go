@@ -30,7 +30,6 @@ import (
 	"github.com/prometheus/prometheus/discovery/consul"
 	"github.com/prometheus/prometheus/discovery/file"
 	"github.com/prometheus/prometheus/discovery/kubernetes"
-	"github.com/prometheus/prometheus/discovery/zookeeper"
 )
 
 var (
@@ -358,16 +357,6 @@ func (m *Manager) registerProviders(cfg discoverer.ServiceDiscoveryConfig, setNa
 	for _, c := range cfg.KubernetesSDConfigs {
 		add(c, func() (Discoverer, error) {
 			return kubernetes.New(log.With(m.logger, "discovery", "k8s"), c)
-		})
-	}
-	for _, c := range cfg.ServersetSDConfigs {
-		add(c, func() (Discoverer, error) {
-			return zookeeper.NewServersetDiscovery(c, log.With(m.logger, "discovery", "zookeeper"))
-		})
-	}
-	for _, c := range cfg.NerveSDConfigs {
-		add(c, func() (Discoverer, error) {
-			return zookeeper.NewNerveDiscovery(c, log.With(m.logger, "discovery", "nerve"))
 		})
 	}
 	for _, c := range cfg.Configs {

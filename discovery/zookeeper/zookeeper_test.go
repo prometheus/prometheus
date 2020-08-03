@@ -18,11 +18,12 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
-	"go.uber.org/goleak"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestMain(m *testing.M) {
-	goleak.VerifyTestMain(m)
+	// TODO(abursavich): CLEANUP: this will revert to standard goleak test
+	testutil.TolerantVerifyLeak(m)
 }
 
 func TestNewDiscoveryError(t *testing.T) {

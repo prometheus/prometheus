@@ -22,7 +22,6 @@ import (
 	"github.com/prometheus/prometheus/discovery/consul"
 	"github.com/prometheus/prometheus/discovery/file"
 	"github.com/prometheus/prometheus/discovery/kubernetes"
-	"github.com/prometheus/prometheus/discovery/zookeeper"
 )
 
 // ServiceDiscoveryConfig configures lists of different service discovery mechanisms.
@@ -31,10 +30,6 @@ type ServiceDiscoveryConfig struct {
 	FileSDConfigs []*file.SDConfig `yaml:"file_sd_configs,omitempty"`
 	// List of Consul service discovery configurations.
 	ConsulSDConfigs []*consul.SDConfig `yaml:"consul_sd_configs,omitempty"`
-	// List of Serverset service discovery configurations.
-	ServersetSDConfigs []*zookeeper.ServersetSDConfig `yaml:"serverset_sd_configs,omitempty"`
-	// NerveSDConfigs is a list of Nerve service discovery configurations.
-	NerveSDConfigs []*zookeeper.NerveSDConfig `yaml:"nerve_sd_configs,omitempty"`
 	// List of Kubernetes service discovery configurations.
 	KubernetesSDConfigs []*kubernetes.SDConfig `yaml:"kubernetes_sd_configs,omitempty"`
 
@@ -75,16 +70,6 @@ func (c *ServiceDiscoveryConfig) Validate() error {
 	for _, cfg := range c.KubernetesSDConfigs {
 		if cfg == nil {
 			return errors.New("empty or null section in kubernetes_sd_configs")
-		}
-	}
-	for _, cfg := range c.NerveSDConfigs {
-		if cfg == nil {
-			return errors.New("empty or null section in nerve_sd_configs")
-		}
-	}
-	for _, cfg := range c.ServersetSDConfigs {
-		if cfg == nil {
-			return errors.New("empty or null section in serverset_sd_configs")
 		}
 	}
 	return nil
