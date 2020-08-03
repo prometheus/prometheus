@@ -28,6 +28,7 @@ import (
 	compute "google.golang.org/api/compute/v1"
 	"google.golang.org/api/option"
 
+	"github.com/prometheus/prometheus/discovery/discoverer"
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
@@ -57,6 +58,10 @@ var DefaultSDConfig = SDConfig{
 	RefreshInterval: model.Duration(60 * time.Second),
 }
 
+func init() {
+	discoverer.RegisterConfig(&SDConfig{})
+}
+
 // SDConfig is the configuration for GCE based service discovery.
 type SDConfig struct {
 	// Project: The Google Cloud Project ID
@@ -74,6 +79,14 @@ type SDConfig struct {
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 	Port            int            `yaml:"port"`
 	TagSeparator    string         `yaml:"tag_separator,omitempty"`
+}
+
+// Name returns the name of the Config.
+func (*SDConfig) Name() string { return "gce" }
+
+// NewDiscoverer returns a Discoverer for the Config.
+func (c *SDConfig) NewDiscoverer(opts discoverer.Options) (discoverer.Discoverer, error) {
+	return NewDiscovery(*c, opts.Logger)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.

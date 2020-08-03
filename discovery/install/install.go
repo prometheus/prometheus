@@ -20,6 +20,7 @@ import (
 	_ "github.com/prometheus/prometheus/discovery/digitalocean" // register digitalocean
 	_ "github.com/prometheus/prometheus/discovery/dns"          // register dns
 	_ "github.com/prometheus/prometheus/discovery/dockerswarm"  // register dockerswarm
+	_ "github.com/prometheus/prometheus/discovery/gce"          // register gce
 	_ "github.com/prometheus/prometheus/discovery/marathon"     // register marathon
 	_ "github.com/prometheus/prometheus/discovery/openstack"    // register openstack
 	_ "github.com/prometheus/prometheus/discovery/triton"       // register triton
