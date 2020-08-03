@@ -518,7 +518,7 @@ func TestSymbols(t *testing.T) {
 	buf.PutBE32int(100) // Number of symbols.
 	for i := 0; i < 100; i++ {
 		// i represents index in unicode characters table.
-		buf.PutUvarintStr(string(i)) // Symbol.
+		buf.PutUvarintStr(string(rune(i))) // Symbol.
 	}
 	checksum := crc32.Checksum(buf.Get()[symbolsStart+4:], castagnoliTable)
 	buf.PutBE32(checksum) // Check sum at the end.
@@ -532,23 +532,23 @@ func TestSymbols(t *testing.T) {
 	for i := 99; i >= 0; i-- {
 		s, err := s.Lookup(uint32(i))
 		testutil.Ok(t, err)
-		testutil.Equals(t, string(i), s)
+		testutil.Equals(t, string(rune(i)), s)
 	}
 	_, err = s.Lookup(100)
 	testutil.NotOk(t, err)
 
 	for i := 99; i >= 0; i-- {
-		r, err := s.ReverseLookup(string(i))
+		r, err := s.ReverseLookup(string(rune(i)))
 		testutil.Ok(t, err)
 		testutil.Equals(t, uint32(i), r)
 	}
-	_, err = s.ReverseLookup(string(100))
+	_, err = s.ReverseLookup(string(rune(100)))
 	testutil.NotOk(t, err)
 
 	iter := s.Iter()
 	i := 0
 	for iter.Next() {
-		testutil.Equals(t, string(i), iter.At())
+		testutil.Equals(t, string(rune(i)), iter.At())
 		i++
 	}
 	testutil.Ok(t, iter.Err())
