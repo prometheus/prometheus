@@ -678,16 +678,14 @@ func TestTargetUpdatesOrder(t *testing.T) {
 			for _, up := range tc.updates {
 				go newMockDiscoveryProvider(up...).Run(ctx, provUpdates)
 				if len(up) > 0 {
-					totalUpdatesCount = totalUpdatesCount + len(up)
+					totalUpdatesCount += len(up)
 				}
 			}
 
-		Loop:
 			for x := 0; x < totalUpdatesCount; x++ {
 				select {
 				case <-ctx.Done():
-					t.Errorf("%d: no update arrived within the timeout limit", x)
-					break Loop
+					t.Fatalf("%d: no update arrived within the timeout limit", x)
 				case tgs := <-provUpdates:
 					discoveryManager.updateGroup(poolKey{setName: strconv.Itoa(i), provider: tc.title}, tgs)
 					for _, got := range discoveryManager.allGroups() {
@@ -1195,16 +1193,10 @@ func newMockDiscoveryProvider(updates ...update) mockdiscoveryProvider {
 func (tp mockdiscoveryProvider) Run(ctx context.Context, upCh chan<- []*targetgroup.Group) {
 	for _, u := range tp.updates {
 		if u.interval > 0 {
-			t := time.NewTicker(u.interval)
-			defer t.Stop()
-		Loop:
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-t.C:
-					break Loop
-				}
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(u.interval):
 			}
 		}
 		tgs := make([]*targetgroup.Group, len(u.targetGroups))
