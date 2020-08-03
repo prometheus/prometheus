@@ -20,7 +20,6 @@ import (
 
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/prometheus/discovery/consul"
-	"github.com/prometheus/prometheus/discovery/ec2"
 	"github.com/prometheus/prometheus/discovery/file"
 	"github.com/prometheus/prometheus/discovery/kubernetes"
 	"github.com/prometheus/prometheus/discovery/zookeeper"
@@ -38,8 +37,6 @@ type ServiceDiscoveryConfig struct {
 	NerveSDConfigs []*zookeeper.NerveSDConfig `yaml:"nerve_sd_configs,omitempty"`
 	// List of Kubernetes service discovery configurations.
 	KubernetesSDConfigs []*kubernetes.SDConfig `yaml:"kubernetes_sd_configs,omitempty"`
-	// List of EC2 service discovery configurations.
-	EC2SDConfigs []*ec2.SDConfig `yaml:"ec2_sd_configs,omitempty"`
 
 	// List of additional service discovery configurations.
 	Configs []Config `yaml:"-"`
@@ -68,11 +65,6 @@ func (c *ServiceDiscoveryConfig) Validate() error {
 	for _, cfg := range c.ConsulSDConfigs {
 		if cfg == nil {
 			return errors.New("empty or null section in consul_sd_configs")
-		}
-	}
-	for _, cfg := range c.EC2SDConfigs {
-		if cfg == nil {
-			return errors.New("empty or null section in ec2_sd_configs")
 		}
 	}
 	for _, cfg := range c.FileSDConfigs {

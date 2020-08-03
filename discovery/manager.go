@@ -28,7 +28,6 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 
 	"github.com/prometheus/prometheus/discovery/consul"
-	"github.com/prometheus/prometheus/discovery/ec2"
 	"github.com/prometheus/prometheus/discovery/file"
 	"github.com/prometheus/prometheus/discovery/kubernetes"
 	"github.com/prometheus/prometheus/discovery/zookeeper"
@@ -369,11 +368,6 @@ func (m *Manager) registerProviders(cfg discoverer.ServiceDiscoveryConfig, setNa
 	for _, c := range cfg.NerveSDConfigs {
 		add(c, func() (Discoverer, error) {
 			return zookeeper.NewNerveDiscovery(c, log.With(m.logger, "discovery", "nerve"))
-		})
-	}
-	for _, c := range cfg.EC2SDConfigs {
-		add(c, func() (Discoverer, error) {
-			return ec2.NewDiscovery(c, log.With(m.logger, "discovery", "ec2")), nil
 		})
 	}
 	for _, c := range cfg.Configs {

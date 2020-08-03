@@ -451,8 +451,8 @@ var expectedConf = &Config{
 			Scheme:      DefaultScrapeConfig.Scheme,
 
 			ServiceDiscoveryConfig: discoverer.ServiceDiscoveryConfig{
-				EC2SDConfigs: []*ec2.SDConfig{
-					{
+				Configs: []discoverer.Config{
+					&ec2.SDConfig{
 						Region:          "us-east-1",
 						AccessKey:       "access",
 						SecretKey:       "mysecret",
