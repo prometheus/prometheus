@@ -892,16 +892,13 @@ func (h *Head) Truncate(mint int64) (err error) {
 
 // initTime initializes a head with the first timestamp. This only needs to be called
 // for a completely fresh head with an empty WAL.
-// Returns true if the initialization took an effect.
-func (h *Head) initTime(t int64) (initialized bool) {
+func (h *Head) initTime(t int64) {
 	if !h.minTime.CAS(math.MaxInt64, t) {
-		return false
+		return
 	}
 	// Ensure that max time is initialized to at least the min time we just set.
 	// Concurrent appenders may already have set it to a higher value.
 	h.maxTime.CAS(math.MinInt64, t)
-
-	return true
 }
 
 type Stats struct {
