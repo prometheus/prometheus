@@ -811,9 +811,10 @@ It reads a set of files containing a list of zero or more
 and applied immediately. Files may be provided in YAML or JSON format. Only
 changes resulting in well-formed target groups are applied.
 
-The JSON file must contain a list of static configs, using this format:
+Files must contain a list of static configs, using these formats:
 
-```yaml
+**JSON**
+```json
 [
   {
     "targets": [ "<host>", ... ],
@@ -823,6 +824,14 @@ The JSON file must contain a list of static configs, using this format:
   },
   ...
 ]
+```
+
+**YAML**
+```yaml
+- targets:
+  [ - '<host>' ]
+  labels:
+    [ <labelname>: <labelvalue> ... ]
 ```
 
 As a fallback, the file contents are also re-read periodically at the specified
