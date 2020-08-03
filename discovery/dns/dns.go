@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/discovery/discoverer"
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
@@ -65,12 +66,26 @@ var (
 	}
 )
 
+func init() {
+	discoverer.RegisterConfig(&SDConfig{})
+	prometheus.MustRegister(dnsSDLookupFailuresCount)
+	prometheus.MustRegister(dnsSDLookupsCount)
+}
+
 // SDConfig is the configuration for DNS based service discovery.
 type SDConfig struct {
 	Names           []string       `yaml:"names"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 	Type            string         `yaml:"type"`
 	Port            int            `yaml:"port"` // Ignored for SRV records
+}
+
+// Name returns the name of the Config.
+func (*SDConfig) Name() string { return "dns" }
+
+// NewDiscoverer returns a Discoverer for the Config.
+func (c *SDConfig) NewDiscoverer(opts discoverer.Options) (discoverer.Discoverer, error) {
+	return NewDiscovery(*c, opts.Logger), nil
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -94,11 +109,6 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return errors.Errorf("invalid DNS-SD records type %s", c.Type)
 	}
 	return nil
-}
-
-func init() {
-	prometheus.MustRegister(dnsSDLookupFailuresCount)
-	prometheus.MustRegister(dnsSDLookupsCount)
 }
 
 // Discovery periodically performs DNS-SD requests. It implements

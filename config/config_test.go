@@ -218,8 +218,8 @@ var expectedConf = &Config{
 			Scheme:      "https",
 
 			ServiceDiscoveryConfig: discoverer.ServiceDiscoveryConfig{
-				DNSSDConfigs: []*dns.SDConfig{
-					{
+				Configs: []discoverer.Config{
+					&dns.SDConfig{
 						Names: []string{
 							"first.dns.address.domain.com",
 							"second.dns.address.domain.com",
@@ -227,7 +227,7 @@ var expectedConf = &Config{
 						RefreshInterval: model.Duration(15 * time.Second),
 						Type:            "SRV",
 					},
-					{
+					&dns.SDConfig{
 						Names: []string{
 							"first.dns.address.domain.com",
 						},

@@ -28,7 +28,6 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 
 	"github.com/prometheus/prometheus/discovery/consul"
-	"github.com/prometheus/prometheus/discovery/dns"
 	"github.com/prometheus/prometheus/discovery/ec2"
 	"github.com/prometheus/prometheus/discovery/file"
 	"github.com/prometheus/prometheus/discovery/gce"
@@ -348,11 +347,6 @@ func (m *Manager) registerProviders(cfg discoverer.ServiceDiscoveryConfig, setNa
 		added = true
 	}
 
-	for _, c := range cfg.DNSSDConfigs {
-		add(c, func() (Discoverer, error) {
-			return dns.NewDiscovery(*c, log.With(m.logger, "discovery", "dns")), nil
-		})
-	}
 	for _, c := range cfg.FileSDConfigs {
 		add(c, func() (Discoverer, error) {
 			return file.NewDiscovery(c, log.With(m.logger, "discovery", "file")), nil
