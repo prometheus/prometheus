@@ -22,6 +22,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/miekg/dns"
+	"go.uber.org/goleak"
 	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/common/model"
@@ -30,8 +31,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	// TODO(abursavich): CLEANUP: this will revert to standard goleak test
-	testutil.TolerantVerifyLeak(m)
+	goleak.VerifyTestMain(m)
 }
 
 func TestDNS(t *testing.T) {
