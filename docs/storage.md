@@ -63,7 +63,7 @@ Compaction will create larger blocks up to 10% of the retention time, or 31 days
 Prometheus has several flags that allow configuring the local storage. The most important ones are:
 
 * `--storage.tsdb.path`: This determines where Prometheus writes its database. Defaults to `data/`.
-* `--storage.tsdb.retention.time`: This determines when to remove old data. Defaults to `15d`. Overrides `storage.tsdb.retention` if this flag is set to anything other than default.
+* `--storage.tsdb.retention.time`: This determines when to remove old data. Defaults to `15d`. Overrides `storage.tsdb.retention` if this flag is set to anything other than the default.
 * `--storage.tsdb.retention.size`: [EXPERIMENTAL] This determines the maximum number of bytes that storage blocks can use (note that this does not include the WAL size, which can be substantial). The oldest data will be removed first. Defaults to `0` or disabled. This flag is experimental and can be changed in future releases. Units supported: B, KB, MB, GB, TB, PB, EB. Ex: "512MB"
 * `--storage.tsdb.retention`: This flag has been deprecated in favour of `storage.tsdb.retention.time`.
 * `--storage.tsdb.wal-compression`: This flag enables compression of the write-ahead log (WAL). Depending on your data, you can expect the WAL size to be halved with little extra cpu load. This flag was introduced in 2.11.0 and enabled by default in 2.20.0. Note that once enabled, downgrading Prometheus to a version below 2.11.0 will require deleting the WAL.
@@ -103,7 +103,7 @@ For details on configuring remote storage integrations in Prometheus, see the [r
 
 For details on the request and response messages, see the [remote storage protocol buffer definitions](https://github.com/prometheus/prometheus/blob/master/prompb/remote.proto).
 
-Note that on the read path, Prometheus only fetches raw series data for a set of label selectors and time ranges from the remote end. All PromQL evaluation on the raw data still happens in Prometheus itself. This means that remote read queries have some scalability limit, since all necessary data needs to be loaded into the querying Prometheus server first and then processed there. However, supporting fully distributed evaluation of PromQL was deemed infeasible for the time being.
+Note that on the read path, Prometheus only fetches raw series data for a set of label selectors and time ranges from the remote end. All PromQL evaluation on the raw data still happens in Prometheus itself. This means that remote read queries have some scalability limit, since all necessary data needs to be loaded into the querying Prometheus server first and then processed there. However, supporting a fully distributed evaluation of PromQL was deemed infeasible for the time being.
 
 ### Existing integrations
 

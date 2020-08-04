@@ -17,7 +17,7 @@ To view all available command-line flags, run `./prometheus -h`.
 Prometheus can reload its configuration at runtime. If the new configuration
 is not well-formed, the changes will not be applied.
 A configuration reload is triggered by sending a `SIGHUP` to the Prometheus process or
-sending a HTTP POST request to the `/-/reload` endpoint (when the `--web.enable-lifecycle` flag is enabled).
+sending an HTTP POST request to the `/-/reload` endpoint (when the `--web.enable-lifecycle` flag is enabled).
 This will also reload any configured rule files.
 
 ## Configuration file
@@ -251,12 +251,12 @@ relabel_configs:
 metric_relabel_configs:
   [ - <relabel_config> ... ]
 
-# Per-scrape limit on number of scraped samples that will be accepted.
+# Per-scrape limit on the number of scraped samples that will be accepted.
 # If more than this number of samples are present after metric relabeling
 # the entire scrape will be treated as failed. 0 means no limit.
 [ sample_limit: <int> | default = 0 ]
 
-# Per-scrape config limit on number of unique targets that will be
+# Per-scrape config limit on the number of unique targets that will be
 # accepted. If more than this number of targets are present after target
 # relabeling, Prometheus will mark the targets as failed without scraping them.
 # 0 means no limit. This is an experimental feature, this behaviour could
@@ -407,7 +407,7 @@ metadata and a single tag).
 
 DigitalOcean SD configurations allow retrieving scrape targets from [DigitalOcean's](https://www.digitalocean.com/)
 Droplets API.
-This service discovery uses the public IPv4 address by default, by that can be
+This service discovery uses the public IPv4 address by default, that can be
 changed with relabelling, as demonstrated in [the Prometheus digitalocean-sd
 configuration file](/documentation/examples/prometheus-digitalocean.yml).
 
@@ -526,7 +526,7 @@ Available meta labels:
 * `__meta_dockerswarm_node_role`: the role of the node
 * `__meta_dockerswarm_node_status`: the status of the node
 
-The `__meta_dockerswarm_network_*` meta labels are not populated for ports which
+The `__meta_dockerswarm_network_*` meta labels are not populated for ports that
 are published with `mode=host`.
 
 #### `nodes`
@@ -596,7 +596,7 @@ for a detailed example of configuring Prometheus for Docker Swarm.
 ### `<dns_sd_config>`
 
 A DNS-based service discovery configuration allows specifying a set of DNS
-domain names which are periodically queried to discover a list of targets. The
+domain names that are periodically queried to discover a list of targets. The
 DNS servers to be contacted are read from `/etc/resolv.conf`.
 
 This service discovery method only supports basic DNS A, AAAA and SRV record
@@ -1085,11 +1085,11 @@ namespaces:
 # filters that can be used. Endpoints role supports pod, service and endpoints selectors, other roles
 # only support selectors matching the role itself (e.g. node role can only contain node selectors).
 
-# Note: When making decision about using field/label selector make sure that this 
-# is the best approach - it will prevent Prometheus from reusing single list/watch
+# Note: When making a decision about using field/label selector make sure that this 
+# is the best approach - it will prevent Prometheus from reusing a single list/watch
 # for all scrape configs. This might result in a bigger load on the Kubernetes API,
 # because per each selector combination there will be additional LIST/WATCH. On the other hand,
-# if you just want to monitor small subset of pods in large cluster it's recommended to use selectors.
+# if you just want to monitor a small subset of pods in a large cluster it's recommended to use selectors.
 # Decision, if selectors should be used or not depends on the particular situation.
 [ selectors:
   [ - role: <string>
