@@ -52,7 +52,11 @@ const (
 const namespace = "prometheus"
 
 // Typed string for passing group information to storage.Appendable
-const RuleGroupKey = "ruleGroup"
+type RuleGroupInfo string
+
+const (
+	RuleGroupKey RuleGroupInfo = "ruleGroup"
+)
 
 // Metrics for rule evaluation.
 type Metrics struct {
