@@ -6,7 +6,7 @@ sort_rank: 8
 # Prometheus 2.0 migration guide
 
 In line with our [stability promise](https://prometheus.io/blog/2016/07/18/prometheus-1-0-released/#fine-print),
-the Prometheus 2.0 release contains a number of backwards incompatible changes.
+the Prometheus 2.0 release contains a number of backward incompatible changes.
 This document offers guidance on migrating from Prometheus 1.8 to Prometheus 2.0.
 
 ## Flags
@@ -124,7 +124,7 @@ Note that you will need to use promtool from 2.0, not 1.8.
 
 ## Storage
 
-The data format in Prometheus 2.0 has completely changed and is not backwards
+The data format in Prometheus 2.0 has completely changed and is not backward
 compatible with 1.8. To retain access to your historic monitoring data we
 recommend you run a non-scraping Prometheus instance running at least version
 1.8.1 in parallel with your Prometheus 2.0 instance, and have the new server
