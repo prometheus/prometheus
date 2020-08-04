@@ -146,72 +146,72 @@ both cases.
 
 For example if we had a discovery mechanism and it retrieves the following groups:
 
-```
+```go
 []targetgroup.Group{
-  {
-    Targets: []model.LabelSet{
-       {
-          "__instance__": "10.11.150.1:7870",
-          "hostname": "demo-target-1",
-          "test": "simple-test",
-       },
-       {
-          "__instance__": "10.11.150.4:7870",
-          "hostname": "demo-target-2",
-          "test": "simple-test",
-       },
-    },
-    Labels: map[LabelName][LabelValue] {
-      "job": "mysql",
-    },
-    "Source": "file1", 
-  },
-  {
-    Targets: []model.LabelSet{
-       {
-          "__instance__": "10.11.122.11:6001",
-          "hostname": "demo-postgres-1",
-          "test": "simple-test",
-       },
-       {
-          "__instance__": "10.11.122.15:6001",
-          "hostname": "demo-postgres-2",
-          "test": "simple-test",
-       },
-    },
-    Labels: map[LabelName][LabelValue] {
-      "job": "postgres",
-    },
-    "Source": "file2", 
-  },
+	{
+		Targets: []model.LabelSet{
+			{
+				"__instance__": "10.11.150.1:7870",
+				"hostname":     "demo-target-1",
+				"test":         "simple-test",
+			},
+			{
+				"__instance__": "10.11.150.4:7870",
+				"hostname":     "demo-target-2",
+				"test":         "simple-test",
+			},
+		},
+		Labels: model.LabelSet{
+			"job": "mysql",
+		},
+		"Source": "file1",
+	},
+	{
+		Targets: []model.LabelSet{
+			{
+				"__instance__": "10.11.122.11:6001",
+				"hostname":     "demo-postgres-1",
+				"test":         "simple-test",
+			},
+			{
+				"__instance__": "10.11.122.15:6001",
+				"hostname":     "demo-postgres-2",
+				"test":         "simple-test",
+			},
+		},
+		Labels: model.LabelSet{
+			"job": "postgres",
+		},
+		"Source": "file2",
+	},
 }
 ```
 
 Here there are two target groups one group with source `file1` and another with `file2`. The grouping is implementation specific and could even be one target per group. But, one has to make sure every target group sent by an SD instance should have a `Source` which is unique across all the target groups of that SD instance. 
 
 In this case, both the target groups are sent down the channel the first time `Run()` is called. Now, for an update, we need to send the whole _changed_ target group down the channel. i.e, if the target with `hostname: demo-postgres-2` goes away, we send:
-```
+```go
 &targetgroup.Group{
-  Targets: []model.LabelSet{
-     {
-        "__instance__": "10.11.122.11:6001",
-        "hostname": "demo-postgres-1",
-        "test": "simple-test",
-     },
-  },
-  Labels: map[LabelName][LabelValue] {
-    "job": "postgres",
-  },
-  "Source": "file2", 
+	Targets: []model.LabelSet{
+		{
+			"__instance__": "10.11.122.11:6001",
+			"hostname":     "demo-postgres-1",
+			"test":         "simple-test",
+		},
+	},
+	Labels: model.LabelSet{
+		"job": "postgres",
+	},
+	"Source": "file2",
 }
 ```
 down the channel.
 
 If all the targets in a group go away, we need to send the target groups with empty `Targets` down the channel. i.e, if all targets with `job: postgres` go away, we send:
-```
+```go
 &targetgroup.Group{
-  Targets: nil,
-  "Source": "file2", 
+	Targets:  nil,
+	"Source": "file2",
 }
 ```
 down the channel.
