@@ -118,7 +118,7 @@ endif
 %: common-% ;
 
 .PHONY: common-all
-common-all: precheck style check_license lint unused build test
+common-all: precheck style check_license restricted_imports lint unused build test
 
 .PHONY: common-style
 common-style:
@@ -183,6 +183,11 @@ common-format:
 common-vet:
 	@echo ">> vetting code"
 	GO111MODULE=$(GO111MODULE) $(GO) vet $(GOOPTS) $(pkgs)
+
+.PHONY: common-restricted_imports
+common-restricted_imports:
+	@echo ">> verifying that we are not using restricted packages"
+	faillint -paths "sync/atomic=go.uber.org/atomic" ./...
 
 .PHONY: common-lint
 common-lint: $(GOLANGCI_LINT)
