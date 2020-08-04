@@ -306,15 +306,13 @@ github.com/influxdata/influxdb/pkg/escape
 # github.com/jmespath/go-jmespath v0.3.0
 github.com/jmespath/go-jmespath
 # github.com/jpillora/backoff v1.0.0
-## explicit
 github.com/jpillora/backoff
 # github.com/json-iterator/go v1.1.10
 ## explicit
 github.com/json-iterator/go
 # github.com/julienschmidt/httprouter v1.3.0
-## explicit
 github.com/julienschmidt/httprouter
-# github.com/konsorten/go-windows-terminal-sequences v1.0.2
+# github.com/konsorten/go-windows-terminal-sequences v1.0.3
 github.com/konsorten/go-windows-terminal-sequences
 # github.com/mailru/easyjson v0.7.1
 github.com/mailru/easyjson/buffer
@@ -387,7 +385,7 @@ github.com/prometheus/client_golang/prometheus/testutil/promlint
 # github.com/prometheus/client_model v0.2.0
 ## explicit
 github.com/prometheus/client_model/go
-# github.com/prometheus/common v0.10.0
+# github.com/prometheus/common v0.11.1
 ## explicit
 github.com/prometheus/common/config
 github.com/prometheus/common/expfmt
@@ -413,7 +411,7 @@ github.com/shurcooL/httpfs/vfsutil
 # github.com/shurcooL/vfsgen v0.0.0-20200627165143-92b8a710ab6c
 ## explicit
 github.com/shurcooL/vfsgen
-# github.com/sirupsen/logrus v1.4.2
+# github.com/sirupsen/logrus v1.6.0
 github.com/sirupsen/logrus
 # github.com/soheilhy/cmux v0.1.4
 ## explicit
