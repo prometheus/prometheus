@@ -18,7 +18,7 @@ to be true.
 Prometheus's main distinguishing features as compared to other monitoring systems are:
 
 - a **multi-dimensional** data model (timeseries defined by metric name and set of key/value dimensions)
-- a **flexible query language** to leverage this dimensionality
+- PromQL, a **powerful and flexible query language** to leverage this dimensionality
 - no dependency on distributed storage; **single server nodes are autonomous**
 - timeseries collection happens via a **pull model** over HTTP
 - **pushing timeseries** is supported via an intermediary gateway
