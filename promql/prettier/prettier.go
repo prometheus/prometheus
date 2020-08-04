@@ -222,7 +222,6 @@ func (p *Prettier) sortItems(items []parser.Item) []parser.Item {
 			}
 
 		case parser.IDENTIFIER:
-			//	TODO: currently its assumed that STRING are always label values.
 			itr := advanceComments(items, i)
 			if i < 1 || item.Val != "__name__" || items[itr+2].Typ != parser.STRING {
 				continue
@@ -233,7 +232,7 @@ func (p *Prettier) sortItems(items []parser.Item) []parser.Item {
 				labelValItem    = items[itr+2]
 				metricName      = labelValItem.Val[1 : len(labelValItem.Val)-1] // Trim inverted-commas.
 				tmp             []parser.Item
-				skipBraces      bool // For handling metric_name{} -> metric_name
+				skipBraces      bool // For handling metric_name{} -> metric_name.
 			)
 			if isMetricNameNotAtomic(metricName) {
 				continue
@@ -251,7 +250,6 @@ func (p *Prettier) sortItems(items []parser.Item) []parser.Item {
 				}
 			}
 			if leftBraceIndex == itemNotFound || rightBraceIndex == itemNotFound {
-				// Return an error since the expression is illegal.
 				continue
 			}
 			itr = advanceComments(items, itr)
@@ -261,11 +259,19 @@ func (p *Prettier) sortItems(items []parser.Item) []parser.Item {
 				skipBraces = rightBraceIndex-4 == advanceComments(items, leftBraceIndex)
 			}
 			identifierItem := parser.Item{Typ: parser.IDENTIFIER, Val: metricName, Pos: 0}
-			// We scan the items slice from starting to end for rearranging the atomic IDENTIFIER item (metric_name).
-			// This is because the metric_name needs to be brought prior to the left_brace. Since we have the index
-			// of the left_brace and right_brace of that particular node, we need to change only those items that occur
-			// between the two braces (indexes). Rest items (those beyond the leftBraceIndex and rightBraceIndex range)
-			// require a simple copy.
+			// The code below re-orders the lex items in the items array and update the same. The re-ordering of
+			// lex items should be such that the key of any key-value pair if is `__name__` and its corresponding value
+			// being atomic (excluding `bool`), then the value of those key-value pair will be rearranged (written)
+			// prior to the leftBraceIndex.
+			//
+			// By now, we have the indexes of leftBrace and rightBrace. Since the leftBraceIndex and rightBraceIndex
+			// forms a range, all those items out of this range are simply copied as they do not any updates to their
+			// relative positions. However, those items within the range are added to the lex item slice after
+			// appending the identifier (i.e., atomic value of the `__name__` key) to the lex item slice.
+			//
+			// Also, we want to avoid `metric_name{}` case while re-ordering a `{__name__="metric_name"}`.
+			// Hence, when we are inside the leftBraceIndex and rightBraceIndex range, we check if the left and
+			// right braces are next to each other, then we skip appending them (braces) to the items slice.
 			for j := range items {
 				if j <= rightBraceIndex && j >= leftBraceIndex {
 					// Before printing the left_brace, we print the metric_name. After this, we check for metric_name{}
@@ -292,140 +298,133 @@ func (p *Prettier) sortItems(items []parser.Item) []parser.Item {
 }
 
 func (p *Prettier) prettify(items []parser.Item, index int, result string) (string, error) {
-	if items[index].Typ == parser.EOF {
-		return result, nil
-	}
-	var (
-		item           = items[index]
-		nodeInfo       = &nodeInfo{head: p.Node, columnLimit: 100, item: item}
-		node           = nodeInfo.node()
-		nodeSplittable = nodeInfo.violatesColumnLimit()
-		// Binary expression use-case.
-		hasImmediateScalar bool
-		hasGrouping        bool
-		// Aggregate expression use-case.
-		hasMultiArgumentCalls bool
-	)
-	if p.pd.isPreviousItemComment {
-		p.pd.isPreviousItemComment = false
-		result += p.pd.newLine()
-	}
-	switch node.(type) {
-	case *parser.BinaryExpr:
-		hasImmediateScalar = nodeInfo.is(scalars)
-		hasGrouping = nodeInfo.is(grouping)
-	case *parser.Call:
-		hasMultiArgumentCalls = nodeInfo.is(multiArguments)
-	}
-	if p.pd.isNewLineApplied {
-		result += p.pd.pad(nodeInfo.baseIndent)
-		p.pd.isNewLineApplied = false
-	}
-
-	switch item.Typ {
-	case parser.LEFT_PAREN:
-		result += item.Val
-		if ((nodeSplittable && !hasGrouping) || hasMultiArgumentCalls) && (!p.pd.expectAggregationLabels) {
+	it := itemsIterator{items, -1}
+	for it.next() {
+		var (
+			item           = it.peek()
+			nodeInfo       = &nodeInfo{head: p.Node, columnLimit: 100, item: item}
+			node           = nodeInfo.node()
+			nodeSplittable = nodeInfo.violatesColumnLimit()
+			// Binary expression use-case.
+			hasImmediateScalar bool
+			hasGrouping        bool
+			// Aggregate expression use-case.
+			hasMultiArgumentCalls bool
+		)
+		if p.pd.isPreviousItemComment {
+			p.pd.isPreviousItemComment = false
 			result += p.pd.newLine()
 		}
-	case parser.RIGHT_PAREN:
-		if ((nodeSplittable && !hasGrouping) || hasMultiArgumentCalls) && !p.pd.expectAggregationLabels {
-			result += p.pd.newLine() + p.pd.pad(nodeInfo.baseIndent)
-			p.pd.isNewLineApplied = false
-		}
-		result += item.Val
-		if hasGrouping {
-			hasGrouping = false
-			result += p.pd.newLine()
-		}
-		if p.pd.expectAggregationLabels {
-			p.pd.expectAggregationLabels = false
-			result += " "
-		}
-	case parser.LEFT_BRACE:
-		result += item.Val
-		if nodeSplittable {
-			// This situation arises only in vector selectors that violate column limit and have labels.
-			result += p.pd.newLine()
-			p.pd.labelsSplittable = true
-		}
-	case parser.RIGHT_BRACE:
-		if p.pd.labelsSplittable {
-			if items[index-1].Typ != parser.COMMA {
-				// Edge-case: if the labels are multi-line split, but do not have
-				// a pre-applied comma.
-				result += "," + p.pd.newLine() + p.pd.pad(nodeInfo.getBaseIndent(items[index]))
-			}
-			p.pd.labelsSplittable = false
-			p.pd.isNewLineApplied = false
-		}
-		result += item.Val
-	case parser.IDENTIFIER:
-		if p.pd.labelsSplittable {
-			result += p.pd.pad(1) + item.Val
-		} else {
-			result += item.Val
-		}
-	case parser.STRING, parser.NUMBER:
-		result += item.Val
-	case parser.SUM, parser.BOTTOMK, parser.COUNT_VALUES, parser.COUNT, parser.GROUP, parser.MAX, parser.MIN,
-		parser.QUANTILE, parser.STDVAR, parser.STDDEV, parser.TOPK:
-		// Aggregations.
-		result += item.Val + " "
-	case parser.EQL, parser.EQL_REGEX, parser.NEQ, parser.NEQ_REGEX, parser.DURATION, parser.COLON,
-		parser.LEFT_BRACKET, parser.RIGHT_BRACKET:
-		// Comparison operators.
-		result += item.Val
-	case parser.ADD, parser.SUB, parser.DIV, parser.GTE, parser.GTR, parser.LOR, parser.LAND,
-		parser.LSS, parser.LTE, parser.LUNLESS, parser.MOD, parser.POW:
-		// Vector matching operators.
-		if hasImmediateScalar {
-			result += " " + item.Val + " "
-			hasImmediateScalar = false
-		} else {
-			result += p.pd.newLine() + p.pd.pad(nodeInfo.baseIndent) + item.Val
-			if hasGrouping {
-				result += " "
-				p.pd.isNewLineApplied = false
-			} else {
-				result += p.pd.newLine()
-			}
-		}
-	case parser.WITHOUT, parser.BY, parser.IGNORING, parser.BOOL, parser.GROUP_LEFT, parser.GROUP_RIGHT,
-		parser.OFFSET, parser.ON:
-		// Keywords.
-		result += item.Val
-		if item.Typ == parser.BOOL {
-			result += p.pd.newLine()
-		} else if nodeInfo.exprType == "*parser.AggregateExpr" {
-			p.pd.expectAggregationLabels = true
-		}
-	case parser.COMMA:
-		result += item.Val
-		if nodeSplittable || hasMultiArgumentCalls {
-			result += p.pd.newLine()
-		} else {
-			result += " "
-		}
-	case parser.COMMENT:
-		if result[len(result)-1] != ' ' {
-			result += " "
+		switch node.(type) {
+		case *parser.BinaryExpr:
+			hasImmediateScalar = nodeInfo.is(scalars)
+			hasGrouping = nodeInfo.is(grouping)
+		case *parser.Call:
+			hasMultiArgumentCalls = nodeInfo.is(multiArguments)
 		}
 		if p.pd.isNewLineApplied {
-			result += p.pd.pad(nodeInfo.previousIndent()) + item.Val
-		} else {
-			result += item.Val
+			result += p.pd.pad(nodeInfo.baseIndent)
+			p.pd.isNewLineApplied = false
 		}
-		p.pd.isPreviousItemComment = true
+
+		switch item.Typ {
+		case parser.LEFT_PAREN:
+			result += item.Val
+			if ((nodeSplittable && !hasGrouping) || hasMultiArgumentCalls) && (!p.pd.expectAggregationLabels) {
+				result += p.pd.newLine()
+			}
+		case parser.RIGHT_PAREN:
+			if ((nodeSplittable && !hasGrouping) || hasMultiArgumentCalls) && !p.pd.expectAggregationLabels {
+				result += p.pd.newLine() + p.pd.pad(nodeInfo.baseIndent)
+				p.pd.isNewLineApplied = false
+			}
+			result += item.Val
+			if hasGrouping {
+				hasGrouping = false
+				result += p.pd.newLine()
+			}
+			if p.pd.expectAggregationLabels {
+				p.pd.expectAggregationLabels = false
+				result += " "
+			}
+		case parser.LEFT_BRACE:
+			result += item.Val
+			if nodeSplittable {
+				// This situation arises only in vector selectors that violate column limit and have labels.
+				result += p.pd.newLine()
+				p.pd.labelsSplittable = true
+			}
+		case parser.RIGHT_BRACE:
+			if p.pd.labelsSplittable {
+				if it.prev().Typ != parser.COMMA {
+					// Edge-case: if the labels are multi-line split, but do not have
+					// a pre-applied comma.
+					result += "," + p.pd.newLine() + p.pd.pad(nodeInfo.getBaseIndent(item))
+				}
+				p.pd.labelsSplittable = false
+				p.pd.isNewLineApplied = false
+			}
+			result += item.Val
+		case parser.IDENTIFIER:
+			if p.pd.labelsSplittable {
+				result += p.pd.pad(1) + item.Val
+			} else {
+				result += item.Val
+			}
+		case parser.STRING, parser.NUMBER:
+			result += item.Val
+		case parser.SUM, parser.BOTTOMK, parser.COUNT_VALUES, parser.COUNT, parser.GROUP, parser.MAX, parser.MIN,
+			parser.QUANTILE, parser.STDVAR, parser.STDDEV, parser.TOPK:
+			// Aggregations.
+			result += item.Val + " "
+		case parser.EQL, parser.EQL_REGEX, parser.NEQ, parser.NEQ_REGEX, parser.DURATION, parser.COLON,
+			parser.LEFT_BRACKET, parser.RIGHT_BRACKET:
+			// Comparison operators.
+			result += item.Val
+		case parser.ADD, parser.SUB, parser.DIV, parser.GTE, parser.GTR, parser.LOR, parser.LAND,
+			parser.LSS, parser.LTE, parser.LUNLESS, parser.MOD, parser.POW:
+			// Vector matching operators.
+			if hasImmediateScalar {
+				result += " " + item.Val + " "
+				hasImmediateScalar = false
+			} else {
+				result += p.pd.newLine() + p.pd.pad(nodeInfo.baseIndent) + item.Val
+				if hasGrouping {
+					result += " "
+					p.pd.isNewLineApplied = false
+				} else {
+					result += p.pd.newLine()
+				}
+			}
+		case parser.WITHOUT, parser.BY, parser.IGNORING, parser.BOOL, parser.GROUP_LEFT, parser.GROUP_RIGHT,
+			parser.OFFSET, parser.ON:
+			// Keywords.
+			result += item.Val
+			if item.Typ == parser.BOOL {
+				result += p.pd.newLine()
+			} else if nodeInfo.exprType == "*parser.AggregateExpr" {
+				p.pd.expectAggregationLabels = true
+			}
+		case parser.COMMA:
+			result += item.Val
+			if nodeSplittable || hasMultiArgumentCalls {
+				result += p.pd.newLine()
+			} else {
+				result += " "
+			}
+		case parser.COMMENT:
+			if result[len(result)-1] != ' ' {
+				result += " "
+			}
+			if p.pd.isNewLineApplied {
+				result += p.pd.pad(nodeInfo.previousIndent()) + item.Val
+			} else {
+				result += item.Val
+			}
+			p.pd.isPreviousItemComment = true
+		}
 	}
-	if index+1 == len(items) {
-		return result, nil
-	}
-	ptmp, err := p.prettify(items, index+1, result)
-	if err != nil {
-		return result, errors.Wrap(err, "prettify")
-	}
-	return ptmp, nil
+	return result, nil
 }
 
 // refreshLexItems refreshes the contents of the lex slice and the properties
@@ -491,6 +490,33 @@ func (p *Prettier) parseFile(name string) (*rulefmt.RuleGroups, []error) {
 		return nil, errs
 	}
 	return groups, nil
+}
+
+type itemsIterator struct {
+	itemsSlice []parser.Item
+	index      int
+}
+
+// next increments the index and returns the true if there exists an lex item after.
+func (it *itemsIterator) next() bool {
+	it.index++
+	if it.index == len(it.itemsSlice) {
+		return false
+	}
+	return true
+}
+
+// peek returns the lex item at the current index.
+func (it *itemsIterator) peek() parser.Item {
+	return it.itemsSlice[it.index]
+}
+
+// prev returns the previous lex item.
+func (it *itemsIterator) prev() parser.Item {
+	if it.index == 0 {
+		return parser.Item{}
+	}
+	return it.itemsSlice[it.index-1]
 }
 
 // isMetricNameAtomic returns true if the metric name is singular in nature.
