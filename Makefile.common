@@ -187,6 +187,7 @@ common-vet:
 .PHONY: common-restricted_imports
 common-restricted_imports:
 	@echo ">> verifying that we are not using restricted packages"
+	$(GO) get github.com/fatih/faillint
 	faillint -paths "sync/atomic=go.uber.org/atomic" ./...
 
 .PHONY: common-lint
