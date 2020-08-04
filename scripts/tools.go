@@ -22,4 +22,5 @@ import (
 	_ "github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway"
 	_ "github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger"
 	_ "golang.org/x/tools/cmd/goimports"
+	_ "github.com/fatih/faillint"
 )

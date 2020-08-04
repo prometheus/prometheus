@@ -1,5 +1,7 @@
 # cloud.google.com/go v0.56.0
 cloud.google.com/go/compute/metadata
+# dmitri.shuralyov.com/go/generated v0.0.0-20170818220700-b1254a446363
+dmitri.shuralyov.com/go/generated
 # github.com/Azure/azure-sdk-for-go v44.2.0+incompatible
 ## explicit
 github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2018-10-01/compute
@@ -146,6 +148,10 @@ github.com/edsrzf/mmap-go
 github.com/evanphx/json-patch
 # github.com/fatih/color v1.9.0
 github.com/fatih/color
+# github.com/fatih/faillint v1.5.0
+## explicit
+github.com/fatih/faillint
+github.com/fatih/faillint/faillint
 # github.com/ghodss/yaml v1.0.0
 github.com/ghodss/yaml
 # github.com/go-kit/kit v0.10.0
@@ -528,9 +534,19 @@ golang.org/x/time/rate
 # golang.org/x/tools v0.0.0-20200725200936-102e7d357031
 ## explicit
 golang.org/x/tools/cmd/goimports
+golang.org/x/tools/go/analysis
+golang.org/x/tools/go/analysis/internal/analysisflags
+golang.org/x/tools/go/analysis/internal/checker
+golang.org/x/tools/go/analysis/internal/facts
+golang.org/x/tools/go/analysis/singlechecker
+golang.org/x/tools/go/analysis/unitchecker
 golang.org/x/tools/go/ast/astutil
 golang.org/x/tools/go/gcexportdata
 golang.org/x/tools/go/internal/gcimporter
+golang.org/x/tools/go/internal/packagesdriver
+golang.org/x/tools/go/packages
+golang.org/x/tools/go/types/objectpath
+golang.org/x/tools/internal/analysisinternal
 golang.org/x/tools/internal/event
 golang.org/x/tools/internal/event/core
 golang.org/x/tools/internal/event/keys
@@ -539,6 +555,9 @@ golang.org/x/tools/internal/fastwalk
 golang.org/x/tools/internal/gocommand
 golang.org/x/tools/internal/gopathwalk
 golang.org/x/tools/internal/imports
+golang.org/x/tools/internal/packagesinternal
+golang.org/x/tools/internal/span
+golang.org/x/tools/internal/typesinternal
 # golang.org/x/xerrors v0.0.0-20191204190536-9bdfabe68543
 golang.org/x/xerrors
 golang.org/x/xerrors/internal
