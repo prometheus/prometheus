@@ -34,6 +34,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/dns"
 	"github.com/prometheus/prometheus/discovery/dockerswarm"
 	"github.com/prometheus/prometheus/discovery/ec2"
+	"github.com/prometheus/prometheus/discovery/eureka"
 	"github.com/prometheus/prometheus/discovery/file"
 	"github.com/prometheus/prometheus/discovery/hetzner"
 	"github.com/prometheus/prometheus/discovery/kubernetes"
@@ -677,6 +678,22 @@ var expectedConf = &Config{
 				},
 			},
 		},
+		{
+			JobName: "service-eureka",
+
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath: DefaultScrapeConfig.MetricsPath,
+			Scheme:      DefaultScrapeConfig.Scheme,
+
+			ServiceDiscoveryConfigs: discovery.Configs{&eureka.SDConfig{
+				Server:          "http://eureka.example.com:8761/eureka",
+				RefreshInterval: model.Duration(30 * time.Second),
+			},
+			},
+		},
 	},
 	AlertingConfig: AlertingConfig{
 		AlertmanagerConfigs: []*AlertmanagerConfig{
@@ -995,6 +1012,10 @@ var expectedErrors = []struct {
 	{
 		filename: "hetzner_role.bad.yml",
 		errMsg:   "unknown role",
+	},
+	{
+		filename: "eureka_no_server.bad.yml",
+		errMsg:   "empty or null eureka server",
 	},
 }
 

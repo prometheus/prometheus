@@ -243,6 +243,10 @@ serverset_sd_configs:
 triton_sd_configs:
   [ - <triton_sd_config> ... ]
 
+# List of Eureka service discovery configurations.
+eureka_sd_configs:
+  [ - <eureka_sd_config> ... ]
+
 # List of labeled statically configured targets for this job.
 static_configs:
   [ - <static_config> ... ]
@@ -1381,6 +1385,44 @@ tls_config:
   [ <tls_config> ]
 ```
 
+### `<eureka_sd_config>`
+
+Eureka SD configurations allow retrieving scrape targets using the
+[Eureka](https://github.com/Netflix/eureka) REST API. Prometheus
+will periodically check the REST endpoint for currently running tasks and
+create a target group for every app that has at least one healthy task.
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_eureka_app_name`: the name of the app (with slashes replaced by dashes)
+* `__meta_eureka_app_instance_hostname`: the hostname of the instance
+* `__meta_eureka_app_instance_ipaddr`: the IP address of the app instance
+* `__meta_eureka_app_instance_status`: the status of the app instance
+* `__meta_eureka_app_instance_id`: the instanceId of the app instance
+* `__meta_eureka_app_instance_metadata_<metadataname>`: app instance metadata
+
+See below for the configuration options for Eureka discovery:
+
+```yaml
+# You need to provide eureka server URL.
+server: <string>
+
+# Polling interval
+[ refresh_interval: <duration> | default = 30s ]
+```
+
+By default every app listed in Eureka will be scraped by Prometheus. If not all
+of your services provide Prometheus metrics, you can use a Eureka metadata and
+Prometheus relabeling to control which instances will actually be scraped.
+See [the Prometheus eureka-sd configuration file](/documentation/examples/prometheus-eureka.yml)
+for a practical example on how to set up your Eureka app and your Prometheus
+configuration.
+
+By default, all apps will show up as a single job in Prometheus (the one specified
+in the configuration file), which can also be changed using relabeling.
+
+```
+
 ### `<static_config>`
 
 A `static_config` allows specifying a list of targets and a common label set
@@ -1600,6 +1642,10 @@ serverset_sd_configs:
 # List of Triton service discovery configurations.
 triton_sd_configs:
   [ - <triton_sd_config> ... ]
+
+# List of Eureka service discovery configurations.
+eureka_sd_configs:
+  [ - <eureka_sd_config> ... ]
 
 # List of labeled statically configured Alertmanagers.
 static_configs:

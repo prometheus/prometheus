@@ -288,6 +288,10 @@ scrape_configs:
         username: abcdef
         password: abcdef
 
+- job_name: service-eureka
+  eureka_sd_configs:
+    - server: 'http://eureka.example.com:8761/eureka'
+
 alerting:
   alertmanagers:
   - scheme: https
