@@ -710,6 +710,9 @@ func acceptRemainingDuration(l *Lexer) bool {
 	if !l.accept("smhdwy") {
 		return false
 	}
+	// Support for ms. Bad units like hs, ys will be caught when we actually
+	// parse the duration.
+	l.accept("s")
 	// Next char can be another number then a unit.
 	for l.accept("0123456789") {
 		for l.accept("0123456789") {
@@ -719,6 +722,9 @@ func acceptRemainingDuration(l *Lexer) bool {
 		if !l.accept("smhdw") {
 			return false
 		}
+		// Support for ms. Bad units like hs, ys will be caught when we actually
+		// parse the duration.
+		l.accept("s")
 	}
 	return !isAlphaNumeric(l.next())
 }

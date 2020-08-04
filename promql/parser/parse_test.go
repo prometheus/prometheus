@@ -1377,6 +1377,19 @@ var testExpr = []struct {
 			},
 		},
 	}, {
+		input: `foo OFFSET 1m30ms`,
+		expected: &VectorSelector{
+			Name:   "foo",
+			Offset: time.Minute + 30*time.Millisecond,
+			LabelMatchers: []*labels.Matcher{
+				mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+			},
+			PosRange: PositionRange{
+				Start: 0,
+				End:   17,
+			},
+		},
+	}, {
 		input: `foo:bar{a="bc"}`,
 		expected: &VectorSelector{
 			Name:   "foo:bar",
@@ -1664,6 +1677,26 @@ var testExpr = []struct {
 		input:  `foo[5mm]`,
 		fail:   true,
 		errMsg: "bad duration syntax: \"5mm\"",
+	}, {
+		input:  `foo[5m1]`,
+		fail:   true,
+		errMsg: "bad duration syntax: \"5m1\"",
+	}, {
+		input:  `foo[5m:1m1]`,
+		fail:   true,
+		errMsg: "bad number or duration syntax: \"1m1\"",
+	}, {
+		input:  `foo[5y1hs]`,
+		fail:   true,
+		errMsg: "not a valid duration string: \"5y1hs\"",
+	}, {
+		input:  `foo[5m1h]`,
+		fail:   true,
+		errMsg: "not a valid duration string: \"5m1h\"",
+	}, {
+		input:  `foo[5m1m]`,
+		fail:   true,
+		errMsg: "not a valid duration string: \"5m1m\"",
 	}, {
 		input:  `foo[0m]`,
 		fail:   true,
@@ -2320,6 +2353,25 @@ var testExpr = []struct {
 			Range:  10 * time.Minute,
 			Step:   6 * time.Second,
 			EndPos: 22,
+		},
+	},
+	{
+		input: `foo{bar="baz"}[10m5s:1h6ms]`,
+		expected: &SubqueryExpr{
+			Expr: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					mustLabelMatcher(labels.MatchEqual, "bar", "baz"),
+					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+				},
+				PosRange: PositionRange{
+					Start: 0,
+					End:   14,
+				},
+			},
+			Range:  10*time.Minute + 5*time.Second,
+			Step:   time.Hour + 6*time.Millisecond,
+			EndPos: 27,
 		},
 	}, {
 		input: `foo[10m:]`,

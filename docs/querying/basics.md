@@ -161,17 +161,18 @@ a `job` label set to `prometheus`:
 Time durations are specified as a number, followed immediately by one of the
 following units:
 
+* `ms` - milliseconds
 * `s` - seconds
 * `m` - minutes
 * `h` - hours
-* `d` - days
-* `w` - weeks
-* `y` - years
+* `d` - days - assuming a day has always 24h
+* `w` - weeks - assuming a week has always 7d
+* `y` - years - assuming a year has always 365d
 
 Time durations can be combined, by concatenation. Units must be ordered from the
 longest to the shortest. A given unit must only appear once in a time duration.
 
-Here are some exemples of valid time durations:
+Here are some examples of valid time durations:
 
     5h
     1h30m
