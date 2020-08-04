@@ -51,6 +51,9 @@ const (
 // Constants for instrumentation.
 const namespace = "prometheus"
 
+// Typed string for passing group information to storage.Appendable
+const RuleGroupKey = "ruleGroup"
+
 // Metrics for rule evaluation.
 type Metrics struct {
 	evalDuration        prometheus.Summary
@@ -588,7 +591,8 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				numDuplicates = 0
 			)
 
-			app := g.opts.Appendable.Appender(context.WithValue(ctx, "groupName", g.name))
+			appenderCtx := context.WithValue(ctx, RuleGroupKey, g.file+"/"+g.name)
+			app := g.opts.Appendable.Appender(appenderCtx)
 			seriesReturned := make(map[string]labels.Labels, len(g.seriesInPreviousEval[i]))
 			defer func() {
 				if err := app.Commit(); err != nil {
