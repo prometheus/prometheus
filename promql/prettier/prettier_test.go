@@ -734,7 +734,7 @@ func TestPrettierCases(t *testing.T) {
 		lexItems := p.sortItems(p.lexItems(expr.expr))
 		err = p.parseExpr(standardizeExprStr)
 		testutil.Ok(t, err)
-		output, err := p.prettify(lexItems, 0, "")
+		output, err := p.prettify(lexItems)
 		testutil.Ok(t, err)
 		testutil.Equals(t, expr.expected, output, "formatting does not match")
 	}

@@ -118,8 +118,6 @@ func (p *Prettier) Run() []error {
 					}
 					formattedExpr, err := p.prettify(
 						p.sortItems(p.lexItems(exprStr)),
-						0,
-						"",
 					)
 					if err != nil {
 						return []error{errors.Wrap(err, "Run")}
@@ -297,8 +295,11 @@ func (p *Prettier) sortItems(items []parser.Item) []parser.Item {
 	return p.refreshLexItems(items)
 }
 
-func (p *Prettier) prettify(items []parser.Item, index int, result string) (string, error) {
-	it := itemsIterator{items, -1}
+func (p *Prettier) prettify(items []parser.Item) (string, error) {
+	var (
+		it     = itemsIterator{items, -1}
+		result = ""
+	)
 	for it.next() {
 		var (
 			item           = it.peek()
