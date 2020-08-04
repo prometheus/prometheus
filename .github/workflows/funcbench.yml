@@ -1,4 +1,6 @@
 on: repository_dispatch
+  repository_dispatch:
+    types: [funcbench_start]
 name: Funcbench Workflow
 jobs:
   run_funcbench:
