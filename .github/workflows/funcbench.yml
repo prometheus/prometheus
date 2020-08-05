@@ -1,4 +1,4 @@
-on: repository_dispatch
+on:
   repository_dispatch:
     types: [funcbench_start]
 name: Funcbench Workflow
