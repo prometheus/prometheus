@@ -95,7 +95,6 @@ type Discovery struct {
 	*refresh.Discovery
 	client      *http.Client
 	server      string
-	lastRefresh map[string]*targetgroup.Group
 	appsClient  applicationsClient
 }
 
@@ -131,21 +130,6 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		all = append(all, tg)
 	}
 
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	default:
-	}
-
-	// Remove services which did disappear.
-	for source := range d.lastRefresh {
-		_, ok := targetMap[source]
-		if !ok {
-			all = append(all, &targetgroup.Group{Source: source})
-		}
-	}
-
-	d.lastRefresh = targetMap
 	return all, nil
 }
 
@@ -159,7 +143,7 @@ func (d *Discovery) fetchTargetGroups(ctx context.Context) (map[string]*targetgr
 	return groups, nil
 }
 
-// AppsToTargetGroups takes an array of Eureka Applications and converts them into target groups.
+// appsToTargetGroups takes an array of Eureka Applications and converts them into target groups.
 func appsToTargetGroups(apps *Applications) map[string]*targetgroup.Group {
 	tgroups := map[string]*targetgroup.Group{}
 	for _, a := range apps.Applications {
@@ -179,7 +163,7 @@ func createTargetGroup(app *Application) *targetgroup.Group {
 		Labels: model.LabelSet{
 			appNameLabel: appName,
 		},
-		Source: app.Name,
+		Source: "eureka",
 	}
 
 	return tg

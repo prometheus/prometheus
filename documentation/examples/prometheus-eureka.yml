@@ -1,4 +1,4 @@
-# A example scrape configuration for running Prometheus on a Eureka
+# A example scrape configuration for running Prometheus with Eureka.
 
 scrape_configs:
 
