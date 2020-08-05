@@ -2,12 +2,14 @@ package prettier
 
 import (
 	"fmt"
-	"github.com/pkg/errors"
-	"github.com/prometheus/prometheus/pkg/rulefmt"
-	"github.com/prometheus/prometheus/promql/parser"
+	yaml "gopkg.in/yaml.v3"
 	"io/ioutil"
 	"reflect"
 	"regexp"
+
+	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/pkg/rulefmt"
+	"github.com/prometheus/prometheus/promql/parser"
 )
 
 const (
@@ -76,24 +78,13 @@ func New(Type uint, content interface{}) (*Prettier, error) {
 		files:      files,
 		expression: expression,
 		Type:       typ,
-		pd:         newPadder(),
+		pd:         &padder{indent: "  ", isNewLineApplied: true, columnLimit: 100},
 	}, nil
-}
-
-func newPadder() *padder {
-	return &padder{
-		indent:           "  ", // 2 space
-		isNewLineApplied: true,
-		columnLimit:      100,
-	}
 }
 
 // Run executes the prettier over the rules files or expression.
 func (p *Prettier) Run() []error {
-	var (
-		groupFiles []*rulefmt.RuleGroups
-		errs       []error
-	)
+	var errs []error
 	switch p.Type {
 	case PrettifyRules:
 		for _, f := range p.files {
@@ -102,15 +93,10 @@ func (p *Prettier) Run() []error {
 				for _, e := range err {
 					errs = append(errs, errors.Wrapf(e, "file: %s", f))
 				}
+				continue
 			}
-			groupFiles = append(groupFiles, ruleGroups)
-		}
-		if errs != nil {
-			return errs
-		}
-		for _, rgs := range groupFiles {
-			for _, grps := range rgs.Groups {
-				for _, rules := range grps.Rules {
+			for _, grps := range ruleGroups.Groups {
+				for i, rules := range grps.Rules {
 					exprStr := rules.Expr.Value
 					standardizeExprStr := p.stringifyItems(p.sortItems(p.lexItems(exprStr)))
 					if err := p.parseExpr(standardizeExprStr); err != nil {
@@ -124,10 +110,14 @@ func (p *Prettier) Run() []error {
 					}
 					fmt.Println("output is ")
 					fmt.Println(formattedExpr)
+					grps.Rules[i].Expr.SetString(formattedExpr)
 				}
 			}
+			p.updateFile(f, ruleGroups)
 		}
-
+		if len(errs) > 0 {
+			return errs
+		}
 	}
 	return nil
 }
@@ -491,6 +481,17 @@ func (p *Prettier) parseFile(name string) (*rulefmt.RuleGroups, []error) {
 		return nil, errs
 	}
 	return groups, nil
+}
+
+func (p *Prettier) updateFile(name string, ruleGroups *rulefmt.RuleGroups) {
+	data, err := yaml.Marshal(ruleGroups)
+	if err != nil {
+		panic(err)
+	}
+	if err = ioutil.WriteFile(name, data, 0666); err != nil {
+		panic(err)
+	}
+	fmt.Println("formatted content", string(data))
 }
 
 type itemsIterator struct {
