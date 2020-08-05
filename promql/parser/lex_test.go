@@ -180,6 +180,18 @@ var tests = []struct {
 			}, {
 				input:    "1y",
 				expected: []Item{{DURATION, 0, "1y"}},
+			}, {
+				input:    "1h6ms",
+				expected: []Item{{DURATION, 0, "1h6ms"}},
+			}, {
+				input:    "10m5s",
+				expected: []Item{{DURATION, 0, "10m5s"}},
+			}, {
+				input:    "10m5h",
+				expected: []Item{{DURATION, 0, "10m5h"}},
+			}, {
+				input: "1h6",
+				fail:  true,
 			},
 		},
 	},
