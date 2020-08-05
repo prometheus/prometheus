@@ -93,9 +93,9 @@ type applicationsClient func(ctx context.Context, server string, client *http.Cl
 // Discovery provides service discovery based on a Eureka instance.
 type Discovery struct {
 	*refresh.Discovery
-	client      *http.Client
-	server      string
-	appsClient  applicationsClient
+	client     *http.Client
+	server     string
+	appsClient applicationsClient
 }
 
 // New creates a new Eureka discovery for the given role.

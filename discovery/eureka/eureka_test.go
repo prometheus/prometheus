@@ -103,7 +103,7 @@ func TestEurekaSDSendGroup(t *testing.T) {
 	testutil.Equals(t, len(tgs), 1)
 
 	tg := tgs[0]
-	testutil.Equals(t, tg.Source, "META-SERVICE")
+	testutil.Equals(t, tg.Source, "eureka")
 	testutil.Equals(t, len(tg.Targets), 1)
 
 	tgt := tg.Targets[0]
@@ -210,7 +210,7 @@ func TestEurekaSDSendGroupWithMultipleInstances(t *testing.T) {
 	testutil.Equals(t, len(tgs), 1)
 
 	tg := tgs[0]
-	testutil.Equals(t, tg.Source, "META-SERVICE")
+	testutil.Equals(t, tg.Source, "eureka")
 	testutil.Equals(t, len(tg.Targets), 2)
 
 	tgt := tg.Targets[0]
@@ -244,7 +244,7 @@ func TestEurekaSDZeroApps(t *testing.T) {
 
 	tg := tgs[0]
 	testutil.Ok(t, err)
-	testutil.Equals(t, tg.Source, "META-SERVICE")
+	testutil.Equals(t, tg.Source, "eureka")
 	testutil.Equals(t, len(tg.Targets), 0)
 }
 
@@ -295,7 +295,7 @@ func TestEurekaSDAppsWithMetadata(t *testing.T) {
 	testutil.Equals(t, len(tgs), 1)
 
 	tg := tgs[0]
-	testutil.Equals(t, tg.Source, "META-SERVICE")
+	testutil.Equals(t, tg.Source, "eureka")
 	testutil.Equals(t, len(tg.Targets), 1)
 
 	tgt := tg.Targets[0]
@@ -351,7 +351,7 @@ func TestEurekaSDAppsWithMetadataMetadataManagementPort(t *testing.T) {
 	testutil.Equals(t, len(tgs), 1)
 
 	tg := tgs[0]
-	testutil.Equals(t, tg.Source, "META-SERVICE")
+	testutil.Equals(t, tg.Source, "eureka")
 	testutil.Equals(t, len(tg.Targets), 1)
 
 	tgt := tg.Targets[0]
