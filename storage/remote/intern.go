@@ -61,13 +61,6 @@ func (p *pool) intern(s string) string {
 		return ""
 	}
 
-	p.mtx.RLock()
-	interned, ok := p.pool[s]
-	p.mtx.RUnlock()
-	if ok {
-		interned.refs.Inc()
-		return interned.s
-	}
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
 	if interned, ok := p.pool[s]; ok {
