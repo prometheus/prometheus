@@ -12,7 +12,7 @@ const (
 )
 
 type nodeInfo struct {
-	head, currentNode parser.Expr
+	head, currentNode parser.Node
 	// Node details.
 	columnLimit int
 	ancestors   []parser.Node
@@ -30,8 +30,8 @@ func (n *nodeInfo) violatesColumnLimit() bool {
 }
 
 // node returns the node corresponding to the given position range in the AST.
-func (n *nodeInfo) node() parser.Expr {
-	ancestors, node, _ := n.nodeHistory(n.head, n.item.PositionRange(), []parser.Node{})
+func (n *nodeInfo) node() parser.Node {
+	ancestors, node := n.nodeHistory(n.head, n.item.PositionRange(), []parser.Node{})
 	n.ancestors = reduceNonNewLineExprs(ancestors)
 	n.baseIndent = len(n.ancestors)
 	n.currentNode = node
@@ -40,7 +40,7 @@ func (n *nodeInfo) node() parser.Expr {
 }
 
 func (n *nodeInfo) getBaseIndent(item parser.Item) int {
-	ancestors, _, _ := n.nodeHistory(n.head, item.PositionRange(), []parser.Node{})
+	ancestors, _ := n.nodeHistory(n.head, item.PositionRange(), []parser.Node{})
 	ancestors = reduceNonNewLineExprs(ancestors)
 	n.buf = len(ancestors)
 	return n.buf
@@ -76,10 +76,7 @@ func (n *nodeInfo) is(element uint) bool {
 
 // parentNode returns the parent node of the given node/item position range.
 func (n *nodeInfo) parentNode(head parser.Expr, rnge parser.PositionRange) parser.Node {
-	ancestors, _, found := n.nodeHistory(head, rnge, []parser.Node{})
-	if !found {
-		return nil
-	}
+	ancestors, _ := n.nodeHistory(head, rnge, []parser.Node{})
 	if len(ancestors) < 2 {
 		return nil
 	}
@@ -89,101 +86,16 @@ func (n *nodeInfo) parentNode(head parser.Expr, rnge parser.PositionRange) parse
 // nodeHistory returns the ancestors of the node the item position range is passed of,
 // along with the node in which the item is present. This is done with the help of AST.
 // posRange can also be called as itemPosRange since carries the position range of the lexical item.
-func (n *nodeInfo) nodeHistory(head parser.Expr, posRange parser.PositionRange, stack []parser.Node) ([]parser.Node, parser.Expr, bool) {
-	var nodeMatch bool
-	switch node := head.(type) {
-	case *parser.ParenExpr:
-		if node.PositionRange().Contains(posRange) {
-			nodeMatch = true
-			stack = append(stack, node)
-			if _stack, _node, found := n.nodeHistory(node.Expr, posRange, stack); found {
-				head = _node
-				stack = _stack
-			}
-		}
-	case *parser.VectorSelector:
-		if node.PositionRange().Contains(posRange) {
-			nodeMatch = true
-			stack = append(stack, node)
-		}
-	case *parser.BinaryExpr:
-		if node.PositionRange().Contains(posRange) {
-			nodeMatch = true
-			stack = append(stack, node)
-			stmp, _node, found := n.nodeHistory(node.LHS, posRange, stack)
-			if found {
-				return stmp, _node, found
-			}
-			if stmp, _node, found = n.nodeHistory(node.RHS, posRange, stack); found {
-				return stmp, _node, found
-			}
-			// Since the item exists in both the child. This means that it is in binary expr range,
-			// but not satisfied by a single child. This is possible only for Op and grouping
-			// modifiers.
-			if node.PositionRange().Contains(posRange) {
-				return stack, head, true
-			}
-		}
-	case *parser.AggregateExpr:
-		if node.PositionRange().Contains(posRange) {
-			nodeMatch = true
-			stack = append(stack, node)
-			stmp, _head, found := n.nodeHistory(node.Expr, posRange, stack)
-			if found {
-				return stmp, _head, true
-			}
-			if node.Param != nil {
-				if stmp, _head, found = n.nodeHistory(node.Param, posRange, stack); found {
-					return stmp, _head, true
-				}
-			}
-		}
-	case *parser.Call:
-		if node.PositionRange().Contains(posRange) {
-			nodeMatch = true
-			stack = append(stack, node)
-			for _, exprs := range node.Args {
-				if exprs.PositionRange().Contains(posRange) {
-					if stmp, _head, found := n.nodeHistory(exprs, posRange, stack); found {
-						return stmp, _head, true
-					}
-				}
-			}
-		}
-	case *parser.MatrixSelector:
-		if node.VectorSelector.PositionRange().Contains(posRange) {
-			stack = append(stack, node)
-			nodeMatch = true
-			if _stack, _node, found := n.nodeHistory(node.VectorSelector, posRange, stack); found {
-				stack = _stack
-				head = _node
-			}
-		}
-	case *parser.UnaryExpr:
-		stack = append(stack, node)
-		if node.Expr.PositionRange().Contains(posRange) {
-			nodeMatch = true
-			if _stack, _node, found := n.nodeHistory(node.Expr, posRange, stack); found {
-				stack = _stack
-				head = _node
-			}
-		}
-	case *parser.SubqueryExpr:
-		if node.Expr.PositionRange().Contains(posRange) {
-			nodeMatch = true
-			stack = append(stack, node)
-			if _stack, _node, found := n.nodeHistory(node.Expr, posRange, stack); found {
-				stack = _stack
-				head = _node
-			}
-		}
-	case *parser.NumberLiteral, *parser.StringLiteral:
-		if node.PositionRange().Contains(posRange) {
-			nodeMatch = true
-			stack = append(stack, node)
+func (n *nodeInfo) nodeHistory(head parser.Node, posRange parser.PositionRange, stack []parser.Node) ([]parser.Node, parser.Node) {
+	if head.PositionRange().Contains(posRange) {
+		stack = append(stack, head)
+	}
+	for _, child := range parser.Children(head) {
+		if child.PositionRange().Contains(posRange) {
+			return n.nodeHistory(child, posRange, stack)
 		}
 	}
-	return stack, head, nodeMatch
+	return stack, head
 }
 
 // reduceNonNewLineExprs reduces those expressions from the history that are not
