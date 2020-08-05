@@ -137,7 +137,7 @@ type query struct {
 	ng *Engine
 }
 
-type queryOrigin struct{}
+type QueryOrigin struct{}
 
 // Statement implements the Query interface.
 func (q *query) Statement() parser.Statement {
@@ -414,7 +414,7 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws storag
 					f = append(f, "spanID", spanCtx.SpanID())
 				}
 			}
-			if origin := ctx.Value(queryOrigin{}); origin != nil {
+			if origin := ctx.Value(QueryOrigin{}); origin != nil {
 				for k, v := range origin.(map[string]interface{}) {
 					f = append(f, k, v)
 				}
@@ -2116,7 +2116,7 @@ func shouldDropMetricName(op parser.ItemType) bool {
 
 // NewOriginContext returns a new context with data about the origin attached.
 func NewOriginContext(ctx context.Context, data map[string]interface{}) context.Context {
-	return context.WithValue(ctx, queryOrigin{}, data)
+	return context.WithValue(ctx, QueryOrigin{}, data)
 }
 
 func formatDate(t time.Time) string {
