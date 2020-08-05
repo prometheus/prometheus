@@ -925,7 +925,6 @@ If Prometheus is running within GCE, the service account associated with the
 instance it is running on should have at least read-only permissions to the
 compute resources. If running outside of GCE make sure to create an appropriate
 service account and place the credential file in one of the expected locations.
-create a target group for every app that has at least one healthy task.
 
 ### `<hetzner_sd_config>`
 
@@ -1192,6 +1191,7 @@ which automates the Prometheus setup on top of Kubernetes.
 Marathon SD configurations allow retrieving scrape targets using the
 [Marathon](https://mesosphere.github.io/marathon/) REST API. Prometheus
 will periodically check the REST endpoint for currently running tasks and
+create a target group for every app that has at least one healthy task.
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
