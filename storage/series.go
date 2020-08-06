@@ -49,7 +49,7 @@ func NewListSeries(lset labels.Labels, s []tsdbutil.Sample) *SeriesEntry {
 	}
 }
 
-// NewListChunkSeriesIterator returns chunk series entry that allows to iterate over provided samples.
+// NewListChunkSeriesFromSamples returns chunk series entry that allows to iterate over provided samples.
 // NOTE: It uses inefficient chunks encoding implementation, not caring about chunk size.
 func NewListChunkSeriesFromSamples(lset labels.Labels, samples ...[]tsdbutil.Sample) *ChunkSeriesEntry {
 	return &ChunkSeriesEntry{
