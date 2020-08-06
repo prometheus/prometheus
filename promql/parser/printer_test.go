@@ -89,6 +89,15 @@ func TestExprString(t *testing.T) {
 		{
 			in: `{__name__="a"}`,
 		},
+		{
+			in: `a{b!="c"}[1m]`,
+		},
+		{
+			in: `a{b=~"c"}[1m]`,
+		},
+		{
+			in: `a{b!~"c"}[1m]`,
+		},
 	}
 
 	for _, test := range inputs {
@@ -100,6 +109,6 @@ func TestExprString(t *testing.T) {
 			exp = test.out
 		}
 
-		testutil.Equals(t, expr.String(), exp)
+		testutil.Equals(t, exp, expr.String())
 	}
 }

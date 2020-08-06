@@ -187,6 +187,7 @@ vector of fewer elements with aggregated values:
 * `min` (select minimum over dimensions)
 * `max` (select maximum over dimensions)
 * `avg` (calculate the average over dimensions)
+* `group` (all values in the resulting vector are 1)
 * `stddev` (calculate population standard deviation over dimensions)
 * `stdvar` (calculate population standard variance over dimensions)
 * `count` (count number of elements in the vector)
@@ -218,12 +219,17 @@ identical between all elements of the vector.
 
 `count_values` outputs one time series per unique sample value. Each series has
 an additional label. The name of that label is given by the aggregation
-parameter, and the label value is the unique sample value.  The value of each
+parameter, and the label value is the unique sample value. The value of each
 time series is the number of times that sample value was present.
 
 `topk` and `bottomk` are different from other aggregators in that a subset of
 the input samples, including the original labels, are returned in the result
 vector. `by` and `without` are only used to bucket the input vector.
+
+`quantile` calculates the φ-quantile, the value that ranks at number φ*N among
+the N metric values of the dimensions aggregated over. φ is provided as the
+aggregation parameter. For example, `quantile(0.5, ...)` calculates the median,
+`quantile(0.95, ...)` the 95th percentile.
 
 Example:
 

@@ -109,7 +109,6 @@ func (client AvailableDelegationsClient) ListSender(req *http.Request) (*http.Re
 func (client AvailableDelegationsClient) ListResponder(resp *http.Response) (result AvailableDelegationsResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

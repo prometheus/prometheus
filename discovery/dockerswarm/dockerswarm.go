@@ -24,6 +24,7 @@ import (
 	"github.com/go-kit/kit/log"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/version"
 
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -32,6 +33,8 @@ import (
 const (
 	swarmLabel = model.MetaLabelPrefix + "dockerswarm_"
 )
+
+var userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 
 // DefaultSDConfig is the default Docker Swarm SD configuration.
 var DefaultSDConfig = SDConfig{
@@ -44,7 +47,6 @@ type SDConfig struct {
 	HTTPClientConfig config_util.HTTPClientConfig `yaml:",inline"`
 
 	Host string `yaml:"host"`
-	url  *url.URL
 	Role string `yaml:"role"`
 	Port int    `yaml:"port"`
 
@@ -62,11 +64,9 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if c.Host == "" {
 		return fmt.Errorf("host missing")
 	}
-	url, err := url.Parse(c.Host)
-	if err != nil {
+	if _, err = url.Parse(c.Host); err != nil {
 		return err
 	}
-	c.url = url
 	switch c.Role {
 	case "services", "nodes", "tasks":
 	case "":
@@ -82,56 +82,72 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 type Discovery struct {
 	*refresh.Discovery
 	client *client.Client
+	role   string
 	port   int
 }
 
 // NewDiscovery returns a new Discovery which periodically refreshes its targets.
 func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
+	var err error
+
 	d := &Discovery{
 		port: conf.Port,
+		role: conf.Role,
 	}
 
-	rt, err := config_util.NewRoundTripperFromConfig(conf.HTTPClientConfig, "dockerswarm_sd", false)
+	hostURL, err := url.Parse(conf.Host)
 	if err != nil {
 		return nil, err
 	}
 
-	// This is used in tests. In normal situations, it is set when Unmarshaling.
-	if conf.url == nil {
-		conf.url, err = url.Parse(conf.Host)
+	opts := []client.Opt{
+		client.WithHost(conf.Host),
+		client.WithAPIVersionNegotiation(),
+	}
+
+	// There are other protocols than HTTP supported by the Docker daemon, like
+	// unix, which are not supported by the HTTP client. Passing HTTP client
+	// options to the Docker client makes those non-HTTP requests fail.
+	if hostURL.Scheme == "http" || hostURL.Scheme == "https" {
+		rt, err := config_util.NewRoundTripperFromConfig(conf.HTTPClientConfig, "dockerswarm_sd", false)
 		if err != nil {
 			return nil, err
 		}
+		opts = append(opts,
+			client.WithHTTPClient(&http.Client{
+				Transport: rt,
+				Timeout:   time.Duration(conf.RefreshInterval),
+			}),
+			client.WithScheme(hostURL.Scheme),
+			client.WithHTTPHeaders(map[string]string{
+				"User-Agent": userAgent,
+			}),
+		)
 	}
 
-	d.client, err = client.NewClientWithOpts(
-		client.WithHost(conf.Host),
-		client.WithHTTPClient(&http.Client{
-			Transport: rt,
-			Timeout:   time.Duration(conf.RefreshInterval),
-		}),
-		client.WithScheme(conf.url.Scheme),
-		client.WithAPIVersionNegotiation(),
-	)
+	d.client, err = client.NewClientWithOpts(opts...)
 	if err != nil {
 		return nil, fmt.Errorf("error setting up docker swarm client: %w", err)
-	}
-
-	var r func(context.Context) ([]*targetgroup.Group, error)
-	switch conf.Role {
-	case "services":
-		r = d.refreshServices
-	case "nodes":
-		r = d.refreshNodes
-	case "tasks":
-		r = d.refreshTasks
 	}
 
 	d.Discovery = refresh.NewDiscovery(
 		logger,
 		"dockerswarm",
 		time.Duration(conf.RefreshInterval),
-		r,
+		d.refresh,
 	)
 	return d, nil
+}
+
+func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
+	switch d.role {
+	case "services":
+		return d.refreshServices(ctx)
+	case "nodes":
+		return d.refreshNodes(ctx)
+	case "tasks":
+		return d.refreshTasks(ctx)
+	default:
+		panic(fmt.Errorf("unexpected role %s", d.role))
+	}
 }

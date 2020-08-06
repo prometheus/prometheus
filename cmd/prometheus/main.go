@@ -46,6 +46,7 @@ import (
 	"github.com/prometheus/common/version"
 	jcfg "github.com/uber/jaeger-client-go/config"
 	jprom "github.com/uber/jaeger-lib/metrics/prometheus"
+	"go.uber.org/atomic"
 	kingpin "gopkg.in/alecthomas/kingpin.v2"
 	"k8s.io/klog"
 
@@ -334,7 +335,8 @@ func main() {
 		}
 	}
 
-	promql.SetDefaultEvaluationInterval(time.Duration(config.DefaultGlobalConfig.EvaluationInterval))
+	noStepSubqueryInterval := &safePromQLNoStepSubqueryInterval{}
+	noStepSubqueryInterval.Set(config.DefaultGlobalConfig.EvaluationInterval)
 
 	// Above level 6, the k8s client would log bearer tokens in clear-text.
 	klog.ClampLevel(6)
@@ -367,12 +369,13 @@ func main() {
 		scrapeManager = scrape.NewManager(log.With(logger, "component", "scrape manager"), fanoutStorage)
 
 		opts = promql.EngineOpts{
-			Logger:             log.With(logger, "component", "query engine"),
-			Reg:                prometheus.DefaultRegisterer,
-			MaxSamples:         cfg.queryMaxSamples,
-			Timeout:            time.Duration(cfg.queryTimeout),
-			ActiveQueryTracker: promql.NewActiveQueryTracker(cfg.localStoragePath, cfg.queryConcurrency, log.With(logger, "component", "activeQueryTracker")),
-			LookbackDelta:      time.Duration(cfg.lookbackDelta),
+			Logger:                   log.With(logger, "component", "query engine"),
+			Reg:                      prometheus.DefaultRegisterer,
+			MaxSamples:               cfg.queryMaxSamples,
+			Timeout:                  time.Duration(cfg.queryTimeout),
+			ActiveQueryTracker:       promql.NewActiveQueryTracker(cfg.localStoragePath, cfg.queryConcurrency, log.With(logger, "component", "activeQueryTracker")),
+			LookbackDelta:            time.Duration(cfg.lookbackDelta),
+			NoStepSubqueryIntervalFn: noStepSubqueryInterval.Get,
 		}
 
 		queryEngine = promql.NewEngine(opts)
@@ -606,11 +609,11 @@ func main() {
 				for {
 					select {
 					case <-hup:
-						if err := reloadConfig(cfg.configFile, logger, reloaders...); err != nil {
+						if err := reloadConfig(cfg.configFile, logger, noStepSubqueryInterval, reloaders...); err != nil {
 							level.Error(logger).Log("msg", "Error reloading config", "err", err)
 						}
 					case rc := <-webHandler.Reload():
-						if err := reloadConfig(cfg.configFile, logger, reloaders...); err != nil {
+						if err := reloadConfig(cfg.configFile, logger, noStepSubqueryInterval, reloaders...); err != nil {
 							level.Error(logger).Log("msg", "Error reloading config", "err", err)
 							rc <- err
 						} else {
@@ -642,7 +645,7 @@ func main() {
 					return nil
 				}
 
-				if err := reloadConfig(cfg.configFile, logger, reloaders...); err != nil {
+				if err := reloadConfig(cfg.configFile, logger, noStepSubqueryInterval, reloaders...); err != nil {
 					return errors.Wrapf(err, "error loading config from %q", cfg.configFile)
 				}
 
@@ -660,18 +663,14 @@ func main() {
 	}
 	{
 		// Rule manager.
-		// TODO(krasi) refactor ruleManager.Run() to be blocking to avoid using an extra blocking channel.
-		cancel := make(chan struct{})
 		g.Add(
 			func() error {
 				<-reloadReady.C
 				ruleManager.Run()
-				<-cancel
 				return nil
 			},
 			func(err error) {
 				ruleManager.Stop()
-				close(cancel)
 			},
 		)
 	}
@@ -697,7 +696,13 @@ func main() {
 					return errors.Wrapf(err, "opening storage failed")
 				}
 
-				level.Info(logger).Log("fs_type", prom_runtime.Statfs(cfg.localStoragePath))
+				switch fsType := prom_runtime.Statfs(cfg.localStoragePath); fsType {
+				case "NFS_SUPER_MAGIC":
+					level.Warn(logger).Log("fs_type", fsType, "msg", "This filesystem is not supported and may lead to data corruption and data loss. Please carefully read https://prometheus.io/docs/prometheus/latest/storage/ to learn more about supported filesystems.")
+				default:
+					level.Info(logger).Log("fs_type", fsType)
+				}
+
 				level.Info(logger).Log("msg", "TSDB started")
 				level.Debug(logger).Log("msg", "TSDB options",
 					"MinBlockDuration", cfg.tsdb.MinBlockDuration,
@@ -801,7 +806,22 @@ func openDBWithMetrics(dir string, logger log.Logger, reg prometheus.Registerer,
 	return db, nil
 }
 
-func reloadConfig(filename string, logger log.Logger, rls ...func(*config.Config) error) (err error) {
+type safePromQLNoStepSubqueryInterval struct {
+	value atomic.Int64
+}
+
+func durationToInt64Millis(d time.Duration) int64 {
+	return int64(d / time.Millisecond)
+}
+func (i *safePromQLNoStepSubqueryInterval) Set(ev model.Duration) {
+	i.value.Store(durationToInt64Millis(time.Duration(ev)))
+}
+
+func (i *safePromQLNoStepSubqueryInterval) Get(int64) int64 {
+	return i.value.Load()
+}
+
+func reloadConfig(filename string, logger log.Logger, noStepSuqueryInterval *safePromQLNoStepSubqueryInterval, rls ...func(*config.Config) error) (err error) {
 	level.Info(logger).Log("msg", "Loading configuration file", "filename", filename)
 
 	defer func() {
@@ -829,7 +849,7 @@ func reloadConfig(filename string, logger log.Logger, rls ...func(*config.Config
 		return errors.Errorf("one or more errors occurred while applying the new configuration (--config.file=%q)", filename)
 	}
 
-	promql.SetDefaultEvaluationInterval(time.Duration(conf.GlobalConfig.EvaluationInterval))
+	noStepSuqueryInterval.Set(conf.GlobalConfig.EvaluationInterval)
 	level.Info(logger).Log("msg", "Completed loading of configuration file", "filename", filename)
 	return nil
 }
@@ -970,9 +990,9 @@ func (s *readyStorage) ChunkQuerier(ctx context.Context, mint, maxt int64) (stor
 }
 
 // Appender implements the Storage interface.
-func (s *readyStorage) Appender() storage.Appender {
+func (s *readyStorage) Appender(ctx context.Context) storage.Appender {
 	if x := s.get(); x != nil {
-		return x.Appender()
+		return x.Appender(ctx)
 	}
 	return notReadyAppender{}
 }

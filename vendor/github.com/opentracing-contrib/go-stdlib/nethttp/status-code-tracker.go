@@ -9,21 +9,15 @@ import (
 
 type statusCodeTracker struct {
 	http.ResponseWriter
-	status      int
-	wroteheader bool
+	status int
 }
 
 func (w *statusCodeTracker) WriteHeader(status int) {
 	w.status = status
-	w.wroteheader = true
 	w.ResponseWriter.WriteHeader(status)
 }
 
 func (w *statusCodeTracker) Write(b []byte) (int, error) {
-	if !w.wroteheader {
-		w.wroteheader = true
-		w.status = 200
-	}
 	return w.ResponseWriter.Write(b)
 }
 

@@ -142,16 +142,61 @@
   version = "v0.0.5"
 
 [[projects]]
-  digest = "1:0496f0e99014b7fd0a560c539f51d0882731137b85494142f47e550e4657176a"
+  digest = "1:ac83cf90d08b63ad5f7e020ef480d319ae890c208f8524622a2f3136e2686b02"
+  name = "github.com/stretchr/objx"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "477a77ecc69700c7cdeb1fa9e129548e1c1c393c"
+  version = "v0.1.1"
+
+[[projects]]
+  digest = "1:d88ba57c4e8f5db6ce9ab6605a89f4542ee751b576884ba5271c2ba3d4b6f2d2"
   name = "github.com/stretchr/testify"
   packages = [
     "assert",
+    "mock",
     "require",
     "suite",
   ]
   pruneopts = "UT"
   revision = "221dbe5ed46703ee255b1da0dec05086f5035f62"
   version = "v1.4.0"
+
+[[projects]]
+  digest = "1:5b98956718573850caf7e0fd00b571a6657c4ef1f345ddf0c96b43ce355fe862"
+  name = "github.com/uber/jaeger-client-go"
+  packages = [
+    ".",
+    "config",
+    "crossdock/client",
+    "crossdock/common",
+    "crossdock/endtoend",
+    "crossdock/log",
+    "crossdock/server",
+    "crossdock/thrift/tracetest",
+    "internal/baggage",
+    "internal/baggage/remote",
+    "internal/reporterstats",
+    "internal/spanlog",
+    "internal/throttler",
+    "internal/throttler/remote",
+    "log",
+    "log/zap/mock_opentracing",
+    "rpcmetrics",
+    "testutils",
+    "thrift",
+    "thrift-gen/agent",
+    "thrift-gen/baggage",
+    "thrift-gen/jaeger",
+    "thrift-gen/sampling",
+    "thrift-gen/zipkincore",
+    "transport",
+    "transport/zipkin",
+    "utils",
+  ]
+  pruneopts = "UT"
+  revision = "66c008c3d6ad856cac92a0af53186efbffa8e6a5"
+  version = "v2.24.0"
 
 [[projects]]
   digest = "1:0ec60ffd594af00ba1660bc746aa0e443d27dd4003dee55f9d08a0b4ff5431a3"
@@ -314,8 +359,36 @@
     "github.com/pkg/errors",
     "github.com/prometheus/client_golang/prometheus",
     "github.com/stretchr/testify/assert",
+    "github.com/stretchr/testify/mock",
     "github.com/stretchr/testify/require",
     "github.com/stretchr/testify/suite",
+    "github.com/uber/jaeger-client-go",
+    "github.com/uber/jaeger-client-go/config",
+    "github.com/uber/jaeger-client-go/crossdock/client",
+    "github.com/uber/jaeger-client-go/crossdock/common",
+    "github.com/uber/jaeger-client-go/crossdock/endtoend",
+    "github.com/uber/jaeger-client-go/crossdock/log",
+    "github.com/uber/jaeger-client-go/crossdock/server",
+    "github.com/uber/jaeger-client-go/crossdock/thrift/tracetest",
+    "github.com/uber/jaeger-client-go/internal/baggage",
+    "github.com/uber/jaeger-client-go/internal/baggage/remote",
+    "github.com/uber/jaeger-client-go/internal/reporterstats",
+    "github.com/uber/jaeger-client-go/internal/spanlog",
+    "github.com/uber/jaeger-client-go/internal/throttler",
+    "github.com/uber/jaeger-client-go/internal/throttler/remote",
+    "github.com/uber/jaeger-client-go/log",
+    "github.com/uber/jaeger-client-go/log/zap/mock_opentracing",
+    "github.com/uber/jaeger-client-go/rpcmetrics",
+    "github.com/uber/jaeger-client-go/testutils",
+    "github.com/uber/jaeger-client-go/thrift",
+    "github.com/uber/jaeger-client-go/thrift-gen/agent",
+    "github.com/uber/jaeger-client-go/thrift-gen/baggage",
+    "github.com/uber/jaeger-client-go/thrift-gen/jaeger",
+    "github.com/uber/jaeger-client-go/thrift-gen/sampling",
+    "github.com/uber/jaeger-client-go/thrift-gen/zipkincore",
+    "github.com/uber/jaeger-client-go/transport",
+    "github.com/uber/jaeger-client-go/transport/zipkin",
+    "github.com/uber/jaeger-client-go/utils",
     "github.com/uber/jaeger-lib/metrics",
     "github.com/uber/jaeger-lib/metrics/metricstest",
     "github.com/uber/jaeger-lib/metrics/prometheus",

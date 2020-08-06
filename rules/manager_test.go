@@ -26,6 +26,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"go.uber.org/goleak"
 	yaml "gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -38,6 +39,10 @@ import (
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
+
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
+}
 
 func TestAlertingRule(t *testing.T) {
 	suite, err := promql.NewTest(t, `
@@ -541,7 +546,7 @@ func TestStaleness(t *testing.T) {
 	})
 
 	// A time series that has two samples and then goes stale.
-	app := st.Appender()
+	app := st.Appender(context.Background())
 	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 0, 1)
 	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2)
 	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 2000, math.Float64frombits(value.StaleNaN))
@@ -716,7 +721,7 @@ func TestUpdate(t *testing.T) {
 		Context:    context.Background(),
 		Logger:     log.NewNopLogger(),
 	})
-	ruleManager.Run()
+	ruleManager.start()
 	defer ruleManager.Stop()
 
 	err := ruleManager.Update(10*time.Second, files, nil)
@@ -865,7 +870,7 @@ func TestNotify(t *testing.T) {
 		Opts:          opts,
 	})
 
-	app := storage.Appender()
+	app := storage.Appender(context.Background())
 	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2)
 	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 2000, 3)
 	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 5000, 3)
@@ -906,8 +911,8 @@ func TestMetricsUpdate(t *testing.T) {
 	}
 
 	storage := teststorage.New(t)
-	registry := prometheus.NewRegistry()
 	defer storage.Close()
+	registry := prometheus.NewRegistry()
 	opts := promql.EngineOpts{
 		Logger:     nil,
 		Reg:        nil,
@@ -923,7 +928,7 @@ func TestMetricsUpdate(t *testing.T) {
 		Logger:     log.NewNopLogger(),
 		Registerer: registry,
 	})
-	ruleManager.Run()
+	ruleManager.start()
 	defer ruleManager.Stop()
 
 	countMetrics := func() int {
@@ -997,7 +1002,7 @@ func TestGroupStalenessOnRemoval(t *testing.T) {
 		Logger:     log.NewNopLogger(),
 	})
 	var stopped bool
-	ruleManager.Run()
+	ruleManager.start()
 	defer func() {
 		if !stopped {
 			ruleManager.Stop()
@@ -1074,7 +1079,7 @@ func TestMetricsStalenessOnManagerShutdown(t *testing.T) {
 		Logger:     log.NewNopLogger(),
 	})
 	var stopped bool
-	ruleManager.Run()
+	ruleManager.start()
 	defer func() {
 		if !stopped {
 			ruleManager.Stop()
@@ -1117,4 +1122,43 @@ func countStaleNaN(t *testing.T, st storage.Storage) int {
 		}
 	}
 	return c
+}
+
+func TestGroupHasAlertingRules(t *testing.T) {
+	tests := []struct {
+		group *Group
+		want  bool
+	}{
+		{
+			group: &Group{
+				name: "HasAlertingRule",
+				rules: []Rule{
+					NewAlertingRule("alert", nil, 0, nil, nil, nil, true, nil),
+					NewRecordingRule("record", nil, nil),
+				},
+			},
+			want: true,
+		},
+		{
+			group: &Group{
+				name:  "HasNoRule",
+				rules: []Rule{},
+			},
+			want: false,
+		},
+		{
+			group: &Group{
+				name: "HasOnlyRecordingRule",
+				rules: []Rule{
+					NewRecordingRule("record", nil, nil),
+				},
+			},
+			want: false,
+		},
+	}
+
+	for i, test := range tests {
+		got := test.group.HasAlertingRules()
+		testutil.Assert(t, test.want == got, "test case %d failed, expected:%t got:%t", i, test.want, got)
+	}
 }

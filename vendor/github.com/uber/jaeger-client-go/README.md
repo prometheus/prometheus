@@ -44,28 +44,34 @@ and [config/example_test.go](./config/example_test.go).
 
 ### Environment variables
 
-The tracer can be initialized with values coming from environment variables. None of the env vars are required
-and all of them can be overridden via direct setting of the property on the configuration object.
+The tracer can be initialized with values coming from environment variables, if it is
+[built from a config](https://pkg.go.dev/github.com/uber/jaeger-client-go/config?tab=doc#Configuration.NewTracer)
+that was created via [FromEnv()](https://pkg.go.dev/github.com/uber/jaeger-client-go/config?tab=doc#FromEnv).
+None of the env vars are required and all of them can be overridden via direct setting 
+of the property on the configuration object.
 
 Property| Description
 --- | ---
-JAEGER_SERVICE_NAME | The service name
-JAEGER_AGENT_HOST | The hostname for communicating with agent via UDP
-JAEGER_AGENT_PORT | The port for communicating with agent via UDP
-JAEGER_ENDPOINT | The HTTP endpoint for sending spans directly to a collector, i.e. http://jaeger-collector:14268/api/traces
-JAEGER_USER | Username to send as part of "Basic" authentication to the collector endpoint
-JAEGER_PASSWORD | Password to send as part of "Basic" authentication to the collector endpoint
-JAEGER_REPORTER_LOG_SPANS | Whether the reporter should also log the spans
-JAEGER_REPORTER_MAX_QUEUE_SIZE | The reporter's maximum queue size
-JAEGER_REPORTER_FLUSH_INTERVAL | The reporter's flush interval, with units, e.g. "500ms" or "2s" ([valid units][timeunits])
-JAEGER_SAMPLER_TYPE | The sampler type
-JAEGER_SAMPLER_PARAM | The sampler parameter (number)
-JAEGER_SAMPLER_MANAGER_HOST_PORT | The HTTP endpoint when using the remote sampler, i.e. http://jaeger-agent:5778/sampling
-JAEGER_SAMPLER_MAX_OPERATIONS | The maximum number of operations that the sampler will keep track of
-JAEGER_SAMPLER_REFRESH_INTERVAL | How often the remotely controlled sampler will poll jaeger-agent for the appropriate sampling strategy, with units, e.g. "1m" or "30s" ([valid units][timeunits])
-JAEGER_TAGS | A comma separated list of `name = value` tracer level tags, which get added to all reported spans. The value can also refer to an environment variable using the format `${envVarName:default}`, where the `:default` is optional, and identifies a value to be used if the environment variable cannot be found
-JAEGER_DISABLED | Whether the tracer is disabled or not. If true, the default `opentracing.NoopTracer` is used.
-JAEGER_RPC_METRICS | Whether to store RPC metrics
+JAEGER_SERVICE_NAME | The service name.
+JAEGER_AGENT_HOST | The hostname for communicating with agent via UDP (default `localhost`).
+JAEGER_AGENT_PORT | The port for communicating with agent via UDP (default `6831`).
+JAEGER_ENDPOINT | The HTTP endpoint for sending spans directly to a collector, i.e. http://jaeger-collector:14268/api/traces. If specified, the agent host/port are ignored.
+JAEGER_USER | Username to send as part of "Basic" authentication to the collector endpoint.
+JAEGER_PASSWORD | Password to send as part of "Basic" authentication to the collector endpoint.
+JAEGER_REPORTER_LOG_SPANS | Whether the reporter should also log the spans" `true` or `false` (default `false`).
+JAEGER_REPORTER_MAX_QUEUE_SIZE | The reporter's maximum queue size (default `100`).
+JAEGER_REPORTER_FLUSH_INTERVAL | The reporter's flush interval, with units, e.g. `500ms` or `2s` ([valid units][timeunits]; default `1s`).
+JAEGER_REPORTER_ATTEMPT_RECONNECTING_DISABLED | When true, disables udp connection helper that periodically re-resolves the agent's hostname and reconnects if there was a change (default `false`).
+JAEGER_REPORTER_ATTEMPT_RECONNECT_INTERVAL | Controls how often the agent client re-resolves the provided hostname in order to detect address changes ([valid units][timeunits]; default `30s`).
+JAEGER_SAMPLER_TYPE | The sampler type: `remote`, `const`, `probabilistic`, `ratelimiting` (default `remote`). See also https://www.jaegertracing.io/docs/latest/sampling/.
+JAEGER_SAMPLER_PARAM | The sampler parameter (number).
+JAEGER_SAMPLER_MANAGER_HOST_PORT | (deprecated) The HTTP endpoint when using the `remote` sampler.
+JAEGER_SAMPLING_ENDPOINT | The URL for the sampling configuration server when using sampler type `remote` (default `http://127.0.0.1:5778/sampling`).
+JAEGER_SAMPLER_MAX_OPERATIONS | The maximum number of operations that the sampler will keep track of (default `2000`).
+JAEGER_SAMPLER_REFRESH_INTERVAL | How often the `remote` sampler should poll the configuration server for the appropriate sampling strategy, e.g. "1m" or "30s" ([valid units][timeunits]; default `1m`).
+JAEGER_TAGS | A comma separated list of `name=value` tracer-level tags, which get added to all reported spans. The value can also refer to an environment variable using the format `${envVarName:defaultValue}`.
+JAEGER_DISABLED | Whether the tracer is disabled or not. If `true`, the `opentracing.NoopTracer` is used (default `false`).
+JAEGER_RPC_METRICS | Whether to store RPC metrics, `true` or `false` (default `false`).
 
 By default, the client sends traces via UDP to the agent at `localhost:6831`. Use `JAEGER_AGENT_HOST` and
 `JAEGER_AGENT_PORT` to send UDP traces to a different `host:port`. If `JAEGER_ENDPOINT` is set, the client sends traces

@@ -111,7 +111,6 @@ func (client InterfaceLoadBalancersClient) ListSender(req *http.Request) (*http.
 func (client InterfaceLoadBalancersClient) ListResponder(resp *http.Response) (result InterfaceLoadBalancerListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

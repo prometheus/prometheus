@@ -23,6 +23,47 @@ import (
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 )
 
+type SeriesEntry struct {
+	Lset             labels.Labels
+	SampleIteratorFn func() chunkenc.Iterator
+}
+
+func (s *SeriesEntry) Labels() labels.Labels       { return s.Lset }
+func (s *SeriesEntry) Iterator() chunkenc.Iterator { return s.SampleIteratorFn() }
+
+type ChunkSeriesEntry struct {
+	Lset            labels.Labels
+	ChunkIteratorFn func() chunks.Iterator
+}
+
+func (s *ChunkSeriesEntry) Labels() labels.Labels     { return s.Lset }
+func (s *ChunkSeriesEntry) Iterator() chunks.Iterator { return s.ChunkIteratorFn() }
+
+// NewListSeries returns series entry with iterator that allows to iterate over provided samples.
+func NewListSeries(lset labels.Labels, s []tsdbutil.Sample) *SeriesEntry {
+	return &SeriesEntry{
+		Lset: lset,
+		SampleIteratorFn: func() chunkenc.Iterator {
+			return NewListSeriesIterator(samples(s))
+		},
+	}
+}
+
+// NewListChunkSeriesIterator returns chunk series entry that allows to iterate over provided samples.
+// NOTE: It uses inefficient chunks encoding implementation, not caring about chunk size.
+func NewListChunkSeriesFromSamples(lset labels.Labels, samples ...[]tsdbutil.Sample) *ChunkSeriesEntry {
+	return &ChunkSeriesEntry{
+		Lset: lset,
+		ChunkIteratorFn: func() chunks.Iterator {
+			chks := make([]chunks.Meta, 0, len(samples))
+			for _, s := range samples {
+				chks = append(chks, tsdbutil.ChunkFromSamples(s))
+			}
+			return NewListChunkSeriesIterator(chks...)
+		},
+	}
+}
+
 type listSeriesIterator struct {
 	samples Samples
 	idx     int
@@ -39,7 +80,7 @@ type Samples interface {
 	Len() int
 }
 
-// NewListSeriesIterator returns listSeriesIterator that allows to iterate over provided samples. Does not handle overlaps.
+// NewListSeriesIterator returns listSeriesIterator that allows to iterate over provided samples.
 func NewListSeriesIterator(samples Samples) chunkenc.Iterator {
 	return &listSeriesIterator{samples: samples, idx: -1}
 }
@@ -71,11 +112,10 @@ func (it *listSeriesIterator) Err() error { return nil }
 
 type listChunkSeriesIterator struct {
 	chks []chunks.Meta
-
-	idx int
+	idx  int
 }
 
-// NewListChunkSeriesIterator returns listChunkSeriesIterator that allows to iterate over provided chunks. Does not handle overlaps.
+// NewListChunkSeriesIterator returns listChunkSeriesIterator that allows to iterate over provided chunks.
 func NewListChunkSeriesIterator(chks ...chunks.Meta) chunks.Iterator {
 	return &listChunkSeriesIterator{chks: chks, idx: -1}
 }
@@ -112,17 +152,16 @@ func (c *chunkSetToSeriesSet) Next() bool {
 	c.sameSeriesChunks = c.sameSeriesChunks[:0]
 
 	for iter.Next() {
-		c.sameSeriesChunks = append(c.sameSeriesChunks, &chunkToSeriesDecoder{
-			labels: c.ChunkSeriesSet.At().Labels(),
-			Meta:   iter.At(),
-		})
+		c.sameSeriesChunks = append(
+			c.sameSeriesChunks,
+			newChunkToSeriesDecoder(c.ChunkSeriesSet.At().Labels(), iter.At()),
+		)
 	}
 
 	if iter.Err() != nil {
 		c.chkIterErr = iter.Err()
 		return false
 	}
-
 	return true
 }
 
@@ -138,16 +177,15 @@ func (c *chunkSetToSeriesSet) Err() error {
 	return c.ChunkSeriesSet.Err()
 }
 
-type chunkToSeriesDecoder struct {
-	chunks.Meta
-
-	labels labels.Labels
+func newChunkToSeriesDecoder(labels labels.Labels, chk chunks.Meta) Series {
+	return &SeriesEntry{
+		Lset: labels,
+		SampleIteratorFn: func() chunkenc.Iterator {
+			// TODO(bwplotka): Can we provide any chunkenc buffer?
+			return chk.Chunk.Iterator(nil)
+		},
+	}
 }
-
-func (s *chunkToSeriesDecoder) Labels() labels.Labels { return s.labels }
-
-// TODO(bwplotka): Can we provide any chunkenc buffer?
-func (s *chunkToSeriesDecoder) Iterator() chunkenc.Iterator { return s.Chunk.Iterator(nil) }
 
 type seriesSetToChunkSet struct {
 	SeriesSet
@@ -217,3 +255,32 @@ type errChunksIterator struct {
 func (e errChunksIterator) At() chunks.Meta { return chunks.Meta{} }
 func (e errChunksIterator) Next() bool      { return false }
 func (e errChunksIterator) Err() error      { return e.err }
+
+// ExpandSamples iterates over all samples in the iterator, buffering all in slice.
+// Optionally it takes samples constructor, useful when you want to compare sample slices with different
+// sample implementations. if nil, sample type from this package will be used.
+func ExpandSamples(iter chunkenc.Iterator, newSampleFn func(t int64, v float64) tsdbutil.Sample) ([]tsdbutil.Sample, error) {
+	if newSampleFn == nil {
+		newSampleFn = func(t int64, v float64) tsdbutil.Sample { return sample{t, v} }
+	}
+
+	var result []tsdbutil.Sample
+	for iter.Next() {
+		t, v := iter.At()
+		// NaNs can't be compared normally, so substitute for another value.
+		if math.IsNaN(v) {
+			v = -42
+		}
+		result = append(result, newSampleFn(t, v))
+	}
+	return result, iter.Err()
+}
+
+// ExpandChunks iterates over all chunks in the iterator, buffering all in slice.
+func ExpandChunks(iter chunks.Iterator) ([]chunks.Meta, error) {
+	var result []chunks.Meta
+	for iter.Next() {
+		result = append(result, iter.At())
+	}
+	return result, iter.Err()
+}

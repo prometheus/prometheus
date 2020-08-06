@@ -113,7 +113,6 @@ func (client VirtualWansClient) CreateOrUpdateSender(req *http.Request) (future 
 func (client VirtualWansClient) CreateOrUpdateResponder(resp *http.Response) (result VirtualWAN, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -189,7 +188,6 @@ func (client VirtualWansClient) DeleteSender(req *http.Request) (future VirtualW
 func (client VirtualWansClient) DeleteResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted, http.StatusNoContent),
 		autorest.ByClosing())
 	result.Response = resp
@@ -264,7 +262,6 @@ func (client VirtualWansClient) GetSender(req *http.Request) (*http.Response, er
 func (client VirtualWansClient) GetResponder(resp *http.Response) (result VirtualWAN, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -336,7 +333,6 @@ func (client VirtualWansClient) ListSender(req *http.Request) (*http.Response, e
 func (client VirtualWansClient) ListResponder(resp *http.Response) (result ListVirtualWANsResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -448,7 +444,6 @@ func (client VirtualWansClient) ListByResourceGroupSender(req *http.Request) (*h
 func (client VirtualWansClient) ListByResourceGroupResponder(resp *http.Response) (result ListVirtualWANsResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -564,7 +559,6 @@ func (client VirtualWansClient) UpdateTagsSender(req *http.Request) (future Virt
 func (client VirtualWansClient) UpdateTagsResponder(resp *http.Response) (result VirtualWAN, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
