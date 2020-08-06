@@ -557,20 +557,20 @@ load 1s
 	testutil.Ok(t, err)
 
 	cases := []struct {
-		Query       string
-		Start       time.Time
-		End         time.Time
-		Interval    time.Duration
+		Query    string
+		Start    time.Time
+		End      time.Time
+		Interval time.Duration
 	}{
 		// Range queries.
 		{
-			Query: `sum by (status) (label_replace(rate(metric[5s]), "status", "${1}xx", "status_code", "([0-9]).."))`,
+			Query:    `sum by (status) (label_replace(rate(metric[5s]), "status", "${1}xx", "status_code", "([0-9]).."))`,
 			Start:    time.Unix(0, 0),
 			End:      time.Unix(10, 0),
 			Interval: time.Second,
 		},
 		{
-			Query: `sum(sum by(status_code) (rate(metric[5s])))`,
+			Query:    `sum(sum by(status_code) (rate(metric[5s])))`,
 			Start:    time.Unix(0, 0),
 			End:      time.Unix(10, 0),
 			Interval: time.Second,
