@@ -576,6 +576,8 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				if _, ok := err.(promql.ErrQueryCanceled); !ok {
 					level.Warn(g.logger).Log("msg", "Evaluating rule failed", "rule", rule, "err", err)
 				}
+				sp.SetTag("error", true)
+				sp.LogKV("error", err)
 				g.metrics.evalFailures.WithLabelValues(groupKey(g.File(), g.Name())).Inc()
 				return
 			}
