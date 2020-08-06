@@ -1955,7 +1955,7 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 				lb.Del(grouping...)
 				lb.Del(labels.MetricName)
 				m = lb.Labels()
-			} else {
+			} else if len(grouping) > 0 {
 				m = make(labels.Labels, 0, len(grouping))
 				for _, l := range metric {
 					for _, n := range grouping {
