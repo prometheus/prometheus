@@ -23,12 +23,13 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
+	"go.uber.org/goleak"
+
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/testutil"
-	"go.uber.org/goleak"
 )
 
 func TestMain(m *testing.M) {
@@ -538,6 +539,58 @@ load 10s
 
 		testutil.Ok(t, res.Err)
 		testutil.Equals(t, c.Result, res.Value, "query %q failed", c.Query)
+	}
+}
+
+func TestEngineStableResultValuesRounding(t *testing.T) {
+	test, err := NewTest(t, `
+load 1s
+  metric{status_code="200"} 2 3 5 7 13 17 19 31 61 89
+  metric{status_code="202"} 127 521 607 1279 2203 2281 3217 4253 4423 9689
+  metric{status_code="204"} 11213 19937 21701 23209 44497 86243 110503 132049 216091 756839
+  metric{status_code="500"} 1257787 1398269 2976221 3021377 6972593 13466917 20996011 24036583 25964951 30402457
+`)
+	testutil.Ok(t, err)
+	defer test.Close()
+
+	err = test.Run()
+	testutil.Ok(t, err)
+
+	cases := []struct {
+		Query       string
+		Start       time.Time
+		End         time.Time
+		Interval    time.Duration
+	}{
+		// Range queries.
+		{
+			Query: `sum by (status) (label_replace(rate(metric[5s]), "status", "${1}xx", "status_code", "([0-9]).."))`,
+			Start:    time.Unix(0, 0),
+			End:      time.Unix(10, 0),
+			Interval: time.Second,
+		},
+		{
+			Query: `sum(sum by(status_code) (rate(metric[5s])))`,
+			Start:    time.Unix(0, 0),
+			End:      time.Unix(10, 0),
+			Interval: time.Second,
+		},
+	}
+
+	for _, c := range cases {
+		qry, err := test.QueryEngine().NewRangeQuery(test.Queryable(), c.Query, c.Start, c.End, c.Interval)
+		testutil.Ok(t, err)
+
+		res := qry.Exec(test.Context())
+		testutil.Ok(t, res.Err)
+		expected := res.Value
+
+		// Now run the query multi times to ensure the results are stable.
+		for n := 0; n < 100; n++ {
+			res := qry.Exec(test.Context())
+			testutil.Ok(t, res.Err)
+			testutil.Equals(t, expected, res.Value)
+		}
 	}
 }
 

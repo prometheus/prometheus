@@ -655,7 +655,7 @@ func (ng *Engine) populateSeries(querier storage.Querier, s *parser.EvalStmt) {
 				hints.End = hints.End - offsetMilliseconds
 			}
 
-			n.UnexpandedSeriesSet = querier.Select(false, hints, n.LabelMatchers...)
+			n.UnexpandedSeriesSet = querier.Select(true, hints, n.LabelMatchers...)
 		case *parser.MatrixSelector:
 			evalRange = n.Range
 		}
@@ -882,7 +882,12 @@ func (ev *evaluator) rangeEval(f func([]parser.Value, *EvalNodeHelper) (Vector, 
 		}
 	}
 	enh := &EvalNodeHelper{out: make(Vector, 0, biggestLen)}
-	seriess := make(map[uint64]Series, biggestLen) // Output series by series hash.
+
+	// We should guarantee stable ordering for the output series in order to have
+	// stable query results with regards float rounding when the same exact query
+	// gets executed multiple times.
+	seriess := make([]*Series, 0, biggestLen)
+	seriessByHash := make(map[uint64]*Series, biggestLen)
 	tempNumSamples := ev.currentSamples
 	for ts := ev.startTimestamp; ts <= ev.endTimestamp; ts += ev.interval {
 		if err := contextDone(ev.ctx, "expression evaluation"); err != nil {
@@ -943,17 +948,17 @@ func (ev *evaluator) rangeEval(f func([]parser.Value, *EvalNodeHelper) (Vector, 
 		// Add samples in output vector to output series.
 		for _, sample := range result {
 			h := sample.Metric.Hash()
-			ss, ok := seriess[h]
+			ss, ok := seriessByHash[h]
 			if !ok {
-				ss = Series{
+				ss = &Series{
 					Metric: sample.Metric,
 					Points: getPointSlice(numSteps),
 				}
+				seriessByHash[h] = ss
+				seriess = append(seriess, ss)
 			}
 			sample.Point.T = ts
 			ss.Points = append(ss.Points, sample.Point)
-			seriess[h] = ss
-
 		}
 	}
 
@@ -966,7 +971,7 @@ func (ev *evaluator) rangeEval(f func([]parser.Value, *EvalNodeHelper) (Vector, 
 	// Assemble the output matrix. By the time we get here we know we don't have too many samples.
 	mat := make(Matrix, 0, len(seriess))
 	for _, ss := range seriess {
-		mat = append(mat, ss)
+		mat = append(mat, *ss)
 	}
 	ev.currentSamples = originalNumSamples + mat.TotalSamples()
 	return mat, warnings
@@ -1862,8 +1867,8 @@ type groupedAggregation struct {
 
 // aggregation evaluates an aggregation operation on a Vector.
 func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without bool, param interface{}, vec Vector, enh *EvalNodeHelper) Vector {
-
-	result := map[uint64]*groupedAggregation{}
+	resultIdx := map[uint64]*groupedAggregation{}
+	var result []*groupedAggregation
 	var k int64
 	if op == parser.TOPK || op == parser.BOTTOMK {
 		f := param.(float64)
@@ -1911,7 +1916,7 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 			groupingKey, buf = metric.HashForLabels(buf, grouping...)
 		}
 
-		group, ok := result[groupingKey]
+		group, ok := resultIdx[groupingKey]
 		// Add a new group if it doesn't exist.
 		if !ok {
 			var m labels.Labels
@@ -1933,12 +1938,15 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 				}
 				sort.Sort(m)
 			}
-			result[groupingKey] = &groupedAggregation{
+			group = &groupedAggregation{
 				labels:     m,
 				value:      s.V,
 				mean:       s.V,
 				groupCount: 1,
 			}
+			resultIdx[groupingKey] = group
+			result = append(result, group)
+
 			inputVecLen := int64(len(vec))
 			resultSize := k
 			if k > inputVecLen {
@@ -1946,21 +1954,21 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 			}
 			switch op {
 			case parser.STDVAR, parser.STDDEV:
-				result[groupingKey].value = 0
+				group.value = 0
 			case parser.TOPK, parser.QUANTILE:
-				result[groupingKey].heap = make(vectorByValueHeap, 0, resultSize)
-				heap.Push(&result[groupingKey].heap, &Sample{
+				group.heap = make(vectorByValueHeap, 0, resultSize)
+				heap.Push(&group.heap, &Sample{
 					Point:  Point{V: s.V},
 					Metric: s.Metric,
 				})
 			case parser.BOTTOMK:
-				result[groupingKey].reverseHeap = make(vectorByReverseValueHeap, 0, resultSize)
-				heap.Push(&result[groupingKey].reverseHeap, &Sample{
+				group.reverseHeap = make(vectorByReverseValueHeap, 0, resultSize)
+				heap.Push(&group.reverseHeap, &Sample{
 					Point:  Point{V: s.V},
 					Metric: s.Metric,
 				})
 			case parser.GROUP:
-				result[groupingKey].value = 1
+				group.value = 1
 			}
 			continue
 		}
