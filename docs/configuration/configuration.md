@@ -1390,7 +1390,7 @@ tls_config:
 Eureka SD configurations allow retrieving scrape targets using the
 [Eureka](https://github.com/Netflix/eureka) REST API. Prometheus
 will periodically check the REST endpoint for currently running tasks and
-create a target group for every app that has at least one healthy task.
+create a target group for every app.
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
