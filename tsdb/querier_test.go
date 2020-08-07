@@ -835,7 +835,7 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 				expandedResult, err := storage.ExpandChunks(it)
 				testutil.Ok(t, err)
 
-				// We don't care about ref IDs for comparision, only chunk's samples matters.
+				// We don't care about ref IDs for comparison, only chunk's samples matters.
 				rmChunkRefs(expandedResult)
 				rmChunkRefs(tc.expectedChks)
 				testutil.Equals(t, tc.expectedChks, expandedResult)
