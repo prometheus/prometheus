@@ -37,6 +37,9 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
+// Map of all alertnames and the intervals of the alerts
+var alertIntervalsMap = make(map[string]alertIntervals)
+
 // RulesUnitTest does unit testing of rules based on the unit testing files provided.
 // More info about the file format can be found in the docs.
 func RulesUnitTest(files ...string) int {
@@ -44,6 +47,25 @@ func RulesUnitTest(files ...string) int {
 
 	for _, f := range files {
 		if errs := ruleUnitTest(f); errs != nil {
+			var count int
+			for alertname, alertIntervals := range alertIntervalsMap {
+				var interval string
+				if alertIntervals.CurrentStartTime == alertIntervals.PreviousEndTime {
+					// If this alert fired only for 1 minute
+					interval = alertIntervals.PreviousEndTime.String()
+				} else {
+					// If this alert fired for a sequence of minutes
+					interval = alertIntervals.CurrentStartTime.String() + "-" + alertIntervals.PreviousEndTime.String()
+				}
+				alertIntervals.AllIntervals = append(alertIntervals.AllIntervals, interval)
+				var numIntervals = len(alertIntervals.AllIntervals)
+				allIntervals := strings.Join(alertIntervals.AllIntervals, ", ")
+				var alertCount = alertIntervals.AlertCount
+
+				fmt.Fprintln(os.Stderr, "Alert Name: ", alertname, "\nNumber of Alerts: ", alertCount, "\nNumber of Intervals: ", numIntervals, "\nNew Alert Intervals: ", allIntervals, "\n")
+				count = count + alertCount
+			}
+			fmt.Fprintln(os.Stderr, "Total number of alerts: ", count, "\n")
 			fmt.Fprintln(os.Stderr, "  FAILED:")
 			for _, e := range errs {
 				fmt.Fprintln(os.Stderr, e.Error())
@@ -164,6 +186,51 @@ type testGroup struct {
 	AlertRuleTests  []alertTestCase  `yaml:"alert_rule_test,omitempty"`
 	PromqlExprTests []promqlTestCase `yaml:"promql_expr_test,omitempty"`
 	ExternalLabels  labels.Labels    `yaml:"external_labels,omitempty"`
+}
+
+// This calculates the intervals
+func calculateAlertIntervals(testcase alertTestCase, evalInterval time.Duration) {
+	var alertname = testcase.Alertname
+	var currentTime = testcase.EvalTime
+
+	if alertInterval, alertPresentInMap := alertIntervalsMap[alertname]; alertPresentInMap {
+		// The alert is already being tracked in the map. We have seen this alert before so far.
+		var previousTime = alertInterval.PreviousEndTime
+		var interval = currentTime - previousTime
+		if interval != evalInterval {
+			// Either the previous interval sequence ended, or the previous alert was just for 1 minute
+			var isPreviousIntervalSequence = alertInterval.HasIntervalStarted
+			if isPreviousIntervalSequence {
+				// This means the previous interval sequence was continuing until this point.
+				// We need to end the previous interval sequence and start a new one.
+				var alertStartTime = alertInterval.CurrentStartTime
+				var intervalSequence string
+				intervalSequence = alertStartTime.String() + "-" + previousTime.String()
+				alertInterval.AllIntervals = append(alertInterval.AllIntervals, intervalSequence)
+
+				// Reset the values to current values.
+				alertInterval.CurrentStartTime = currentTime
+				alertInterval.PreviousEndTime = currentTime
+			} else {
+				// This means the previous interval was just for 1 minute, and has ended earlier.
+				alertInterval.CurrentStartTime = currentTime
+				alertInterval.PreviousEndTime = currentTime
+			}
+		} else {
+			// This means the new alert is part of the sequence.
+			alertInterval.PreviousEndTime = currentTime
+		}
+		alertInterval.AlertCount++
+		alertIntervalsMap[alertname] = alertInterval
+	} else {
+		// The alert is new and we have not seen this before yet.
+		var newAlertInterval alertIntervals
+		newAlertInterval.CurrentStartTime = currentTime
+		newAlertInterval.PreviousEndTime = currentTime
+		newAlertInterval.HasIntervalStarted = true
+		newAlertInterval.AlertCount++
+		alertIntervalsMap[alertname] = newAlertInterval
+	}
 }
 
 // test performs the unit tests.
@@ -306,6 +373,7 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 				if gotAlerts.Len() != expAlerts.Len() {
 					errs = append(errs, errors.Errorf("    alertname:%s, time:%s, \n        exp:%#v, \n        got:%#v",
 						testcase.Alertname, testcase.EvalTime.String(), expAlerts.String(), gotAlerts.String()))
+						calculateAlertIntervals(testcase, evalInterval)
 				} else {
 					sort.Sort(gotAlerts)
 					sort.Sort(expAlerts)
@@ -493,6 +561,14 @@ type alertTestCase struct {
 type alert struct {
 	ExpLabels      map[string]string `yaml:"exp_labels"`
 	ExpAnnotations map[string]string `yaml:"exp_annotations"`
+}
+
+type alertIntervals struct {
+	CurrentStartTime time.Duration
+	PreviousEndTime time.Duration
+	AllIntervals []string
+	HasIntervalStarted bool
+	AlertCount int
 }
 
 type promqlTestCase struct {
