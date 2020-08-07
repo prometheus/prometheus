@@ -62,10 +62,10 @@ func RulesUnitTest(files ...string) int {
 				allIntervals := strings.Join(alertIntervals.AllIntervals, ", ")
 				var alertCount = alertIntervals.AlertCount
 
-				fmt.Fprintln(os.Stderr, "Alert Name: ", alertname, "\nNumber of Alerts: ", alertCount, "\nNumber of Intervals: ", numIntervals, "\nNew Alert Intervals: ", allIntervals, "\n")
+				fmt.Fprintln(os.Stderr, "Alert Name: ", alertname, "\nNumber of Alerts: ", alertCount, "\nNumber of Intervals: ", numIntervals, "\nNew Alert Intervals: ", allIntervals)
 				count = count + alertCount
 			}
-			fmt.Fprintln(os.Stderr, "Total number of alerts: ", count, "\n")
+			fmt.Fprintln(os.Stderr, "Total number of alerts: ", count)
 			fmt.Fprintln(os.Stderr, "  FAILED:")
 			for _, e := range errs {
 				fmt.Fprintln(os.Stderr, e.Error())
@@ -204,8 +204,7 @@ func calculateAlertIntervals(testcase alertTestCase, evalInterval time.Duration)
 				// This means the previous interval sequence was continuing until this point.
 				// We need to end the previous interval sequence and start a new one.
 				var alertStartTime = alertInterval.CurrentStartTime
-				var intervalSequence string
-				intervalSequence = alertStartTime.String() + "-" + previousTime.String()
+				var intervalSequence = alertStartTime.String() + "-" + previousTime.String()
 				alertInterval.AllIntervals = append(alertInterval.AllIntervals, intervalSequence)
 
 				// Reset the values to current values.
