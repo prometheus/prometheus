@@ -46,7 +46,7 @@ var (
 	// be ingested.
 	ErrInvalidSample = errors.New("invalid sample")
 	// ErrAppenderClosed is returned if an appender has already be successfully
-	// rolled back or commited.
+	// rolled back or committed.
 	ErrAppenderClosed = errors.New("appender closed")
 )
 
