@@ -559,9 +559,10 @@ func TestScrapeLoopStop(t *testing.T) {
 		numScrapes++
 		if numScrapes == 2 {
 			go sl.stop()
+			<-sl.ctx.Done()
 		}
 		w.Write([]byte("metric_a 42\n"))
-		return nil
+		return ctx.Err()
 	}
 
 	go func() {
