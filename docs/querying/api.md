@@ -1023,12 +1023,22 @@ $ curl -XPOST http://localhost:9090/api/v1/admin/tsdb/clean_tombstones
 
 *New in v2.1 and supports PUT from v2.9*
 
-## LangServer
+## Language Server
 
-The following endpoints provides the different feature handled by LSP (Language Server Protocol) in a stateless way.
+This API is designed to help Web UIs provide IDE like features when writing PromQL queries, 
+without introducing the complexity of the stateful [Language Server Protocol (LSP)](https://microsoft.github.io/language-server-protocol/).
+
+Internally it uses the [PromQL Language Server](https://github.com/prometheus-community/promql-langserver).
+The returned values follow JSON schemes specified by the LSP.
+
+To deal with these types on the client side it might be helpful to use 
+the [`vscode-languageserver-types`](https://www.npmjs.com/package/vscode-languageserver-types)  NPM package which provides the respective types.
 
 ### Diagnostics
-This endpoint returns the different errors contained in the PromQL expression provided in the body
+This endpoint returns the parsing errors caused by the PromQL expression provided in the body, if any.
+
+The result is a list of  [`Diagnostic`](https://microsoft.github.io/language-server-protocol/specifications/specification-current/#diagnostic).
+An empty list means that the Query provided is valid PromQL.
 
 ```
 POST /api/v1/langserver/diagnostics
@@ -1067,7 +1077,10 @@ $ curl -XPOST 'localhost:9090/api/v1/langserver/diagnostics' -H "Content-Type: a
 ```
 
 ### Completion
-This endpoint returns a list of the possible value for the given word contains in the promQL expression provided
+This endpoint provides completions based on the provided PromQL expression and cursor position as well as the data stored in the given Prometheus instance.
+
+The result is a list of  [`CompletionItem`](https://microsoft.github.io/language-server-protocol/specifications/specification-current/#textDocument_completion)
+It is recommended to limit the number of results.
 
 ```
 POST /api/v1/langserver/completion
@@ -1129,7 +1142,10 @@ $ curl -XPOST 'localhost:9090/api/v1/langserver/completion' -H "Content-Type: ap
 ```
 
 ### Hover
-This endpoint returns a documentation according to the given word contains in the promQL expression provided
+This endpoint provides documentation based on the provided PromQL expression and cursor position as well as the data stored in the given Prometheus instance. 
+It is typically used when the mouse hovers over the query.
+
+The result is a  [`Hover`](https://microsoft.github.io/language-server-protocol/specifications/specification-current/#textDocument_hover).
 
 ```
 POST /api/v1/langserver/hover
@@ -1189,7 +1205,9 @@ $ curl -XPOST 'localhost:9090/api/v1/langserver/hover' -H "Content-Type: applica
 ```
 
 ### Signature Help
-This endpoint returns the signature associated to the method selected in the promQL expression provided
+This endpoint provides a function signature if the provided cursor position is within a PromQL function call. Otherwise a falsy value is returned.
+
+The result is a  [`SignatureHelp`](https://microsoft.github.io/language-server-protocol/specifications/specification-current/#textDocument_signatureHelp).
 
 ```
 POST /api/v1/langserver/signatureHelp
