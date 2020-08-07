@@ -16,7 +16,6 @@ package remote
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"math"
 	"os"
@@ -49,6 +48,9 @@ const (
 
 	// Allow 30% too many shards before scaling down.
 	shardToleranceFraction = 0.3
+
+	invalidSegmentNumber = -1
+	maxSegmentNumber     = 100000000
 )
 
 type queueManagerMetrics struct {
@@ -268,13 +270,20 @@ type QueueManager struct {
 	url     string
 }
 
-var Checkpoint = Checkpoints{}
+var (
+	// Checkpoint is the struture of the Segment Record
+	Checkpoint = Checkpoints{}
+	// Number of shards saved
+	savedShardsNum = 0
+)
 
+// SegmentRecord Structure holds the segment the endpoint url
 type SegmentRecord struct {
 	Segment  string
 	Endpoint string
 }
 
+// Checkpoints Structure holds the list of segment records and the time of recording
 type Checkpoints struct {
 	Recorded    time.Time
 	Checkpoints []SegmentRecord
@@ -385,6 +394,19 @@ func (t *QueueManager) Start() {
 	t.metrics.minNumShards.Set(float64(t.cfg.MinShards))
 	t.metrics.desiredNumShards.Set(float64(t.cfg.MinShards))
 
+	t.loadCheck()
+
+	t.shards.start(t.numShards)
+	t.watcher.Start()
+
+	t.wg.Add(2)
+	go t.updateShardsLoop()
+	go t.reshardLoop()
+}
+
+// loadCheck will check if the SegmentRecord.json
+// contents and segment is valid
+func (t *QueueManager) loadCheck() {
 	// Checking if the JSON file is corrupted
 	var check Checkpoints
 
@@ -395,27 +417,20 @@ func (t *QueueManager) Start() {
 	err = json.Unmarshal(byteValue, &check)
 
 	if err != nil {
-		fmt.Println(err)
+		level.Error(t.logger).Log("err", err)
 	} else {
 		for _, record := range check.Checkpoints {
 			segmentNumber, err := strconv.Atoi(record.Segment)
 			if err != nil {
-				fmt.Println(err)
+				level.Error(t.logger).Log("err", err)
 			}
 
-			if segmentNumber > -1 && segmentNumber < 100000000 {
+			if segmentNumber > invalidSegmentNumber && segmentNumber < maxSegmentNumber {
 				// Add function to connect WAL and queue_manager
 			}
 
 		}
 	}
-
-	t.shards.start(t.numShards)
-	t.watcher.Start()
-
-	t.wg.Add(2)
-	go t.updateShardsLoop()
-	go t.reshardLoop()
 }
 
 // Stop stops sending samples to the remote storage and waits for pending
@@ -456,7 +471,7 @@ func (t *QueueManager) getSegmentRecords() SegmentRecord {
 	return record
 }
 
-// Writes the segment record in a JSON file
+// RecordSegment writes the segment record in a JSON file
 func (t *QueueManager) RecordSegment() {
 	Checkpoint.Recorded = time.Now()
 	Checkpoint.Checkpoints = append(Checkpoint.Checkpoints, t.getSegmentRecords())
@@ -464,14 +479,13 @@ func (t *QueueManager) RecordSegment() {
 	// now Marshal it
 	data, err := json.MarshalIndent(Checkpoint, "", "")
 	if err != nil {
-		fmt.Println(err)
+		level.Error(t.logger).Log("err", err)
 	}
 
 	err = ioutil.WriteFile("SegmentRecord.json", data, 0644)
 	if err != nil {
-		fmt.Println(err)
+		level.Error(t.logger).Log("err", err)
 	}
-
 }
 
 // StoreSeries keeps track of which series we know about for lookups when sending samples to remote.

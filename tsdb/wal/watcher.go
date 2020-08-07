@@ -255,7 +255,6 @@ func (w *Watcher) Run() error {
 		}
 
 		// For testing: stop when you hit a specific segment.
-
 		if currentSegment == w.MaxSegment {
 			return nil
 		}
