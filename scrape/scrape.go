@@ -1022,6 +1022,8 @@ mainLoop:
 // scrapeAndReport performs a scrape and then appends the result to the storage
 // together with reporting metrics, by using as few appenders as possible.
 // In the happy scenario, a single appender is used.
+// This function uses sl.parentCtx instead of sl.ctx on purpose. A scrape should
+// only be cancelled on shutdown, not on reloads.
 func (sl *scrapeLoop) scrapeAndReport(interval, timeout time.Duration, last time.Time, errc chan<- error) time.Time {
 	start := time.Now()
 
@@ -1039,7 +1041,7 @@ func (sl *scrapeLoop) scrapeAndReport(interval, timeout time.Duration, last time
 	var total, added, seriesAdded int
 	var err, appErr, scrapeErr error
 
-	app := sl.appender(sl.ctx)
+	app := sl.appender(sl.parentCtx)
 	defer func() {
 		if err != nil {
 			app.Rollback()
@@ -1062,7 +1064,7 @@ func (sl *scrapeLoop) scrapeAndReport(interval, timeout time.Duration, last time
 		// Add stale markers.
 		if _, _, _, err := sl.append(app, []byte{}, "", start); err != nil {
 			app.Rollback()
-			app = sl.appender(sl.ctx)
+			app = sl.appender(sl.parentCtx)
 			level.Warn(sl.l).Log("msg", "Append failed", "err", err)
 		}
 		if errc != nil {
@@ -1073,7 +1075,7 @@ func (sl *scrapeLoop) scrapeAndReport(interval, timeout time.Duration, last time
 	}
 
 	var contentType string
-	scrapeCtx, cancel := context.WithTimeout(sl.ctx, timeout)
+	scrapeCtx, cancel := context.WithTimeout(sl.parentCtx, timeout)
 	contentType, scrapeErr = sl.scraper.scrape(scrapeCtx, buf)
 	cancel()
 
@@ -1097,13 +1099,13 @@ func (sl *scrapeLoop) scrapeAndReport(interval, timeout time.Duration, last time
 	total, added, seriesAdded, appErr = sl.append(app, b, contentType, start)
 	if appErr != nil {
 		app.Rollback()
-		app = sl.appender(sl.ctx)
+		app = sl.appender(sl.parentCtx)
 		level.Debug(sl.l).Log("msg", "Append failed", "err", appErr)
 		// The append failed, probably due to a parse error or sample limit.
 		// Call sl.append again with an empty scrape to trigger stale markers.
 		if _, _, _, err := sl.append(app, []byte{}, "", start); err != nil {
 			app.Rollback()
-			app = sl.appender(sl.ctx)
+			app = sl.appender(sl.parentCtx)
 			level.Warn(sl.l).Log("msg", "Append failed", "err", err)
 		}
 	}
