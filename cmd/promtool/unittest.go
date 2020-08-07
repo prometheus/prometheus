@@ -197,7 +197,7 @@ func calculateAlertIntervals(testcase alertTestCase, evalInterval time.Duration)
 		// The alert is already being tracked in the map. We have seen this alert before so far.
 		var previousTime = alertInterval.PreviousEndTime
 		var interval = currentTime - previousTime
-		if interval != evalInterval {
+		if time.Duration(interval) != evalInterval {
 			// Either the previous interval sequence ended, or the previous alert was just for 1 minute
 			var isPreviousIntervalSequence = alertInterval.HasIntervalStarted
 			if isPreviousIntervalSequence {
@@ -564,8 +564,8 @@ type alert struct {
 }
 
 type alertIntervals struct {
-	CurrentStartTime time.Duration
-	PreviousEndTime time.Duration
+	CurrentStartTime model.Duration
+	PreviousEndTime model.Duration
 	AllIntervals []string
 	HasIntervalStarted bool
 	AlertCount int
