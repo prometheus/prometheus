@@ -140,7 +140,11 @@ func (a *API) diagnostics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items := diagnostics.Diagnostics
+	items := []protocol.Diagnostic{}
+	if diagnostics != nil {
+		items = diagnostics.Diagnostics
+	}
+
 	limit := requestData.Limit
 	if limit != nil && uint64(len(items)) > *limit {
 		items = items[:*limit]
@@ -204,7 +208,10 @@ func (a *API) completion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items := completion.Items
+	items := []protocol.CompletionItem{}
+	if completion != nil {
+		items = completion.Items
+	}
 	limit := requestData.Limit
 	if limit != nil && uint64(len(items)) > *limit {
 		items = items[:*limit]

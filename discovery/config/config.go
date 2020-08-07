@@ -83,6 +83,11 @@ func (c *ServiceDiscoveryConfig) Validate() error {
 			return errors.New("empty or null section in digitalocean_sd_configs")
 		}
 	}
+	for _, cfg := range c.DockerSwarmSDConfigs {
+		if cfg == nil {
+			return errors.New("empty or null section in dockerswarm_sd_configs")
+		}
+	}
 	for _, cfg := range c.DNSSDConfigs {
 		if cfg == nil {
 			return errors.New("empty or null section in dns_sd_configs")
@@ -131,6 +136,11 @@ func (c *ServiceDiscoveryConfig) Validate() error {
 	for _, cfg := range c.StaticConfigs {
 		if cfg == nil {
 			return errors.New("empty or null section in static_configs")
+		}
+	}
+	for _, cfg := range c.TritonSDConfigs {
+		if cfg == nil {
+			return errors.New("empty or null section in triton_sd_configs")
 		}
 	}
 	return nil

@@ -140,7 +140,7 @@ func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
 	}, nil
 }
 
-type recoverableError struct {
+type RecoverableError struct {
 	error
 }
 
@@ -177,7 +177,7 @@ func (c *client) Store(ctx context.Context, req []byte) error {
 	if err != nil {
 		// Errors from client.Do are from (for example) network errors, so are
 		// recoverable.
-		return recoverableError{err}
+		return RecoverableError{err}
 	}
 	defer func() {
 		io.Copy(ioutil.Discard, httpResp.Body)
@@ -193,7 +193,7 @@ func (c *client) Store(ctx context.Context, req []byte) error {
 		err = errors.Errorf("server returned HTTP status %s: %s", httpResp.Status, line)
 	}
 	if httpResp.StatusCode/100 == 5 {
-		return recoverableError{err}
+		return RecoverableError{err}
 	}
 	return err
 }

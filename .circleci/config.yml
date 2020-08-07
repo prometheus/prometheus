@@ -27,8 +27,8 @@ jobs:
         key: v1
     - restore_cache:
         keys:
-        - v1-npm-deps-{{ checksum "web/ui/react-app/yarn.lock" }}
-        - v1-npm-deps-
+        - v3-npm-deps-{{ checksum "web/ui/react-app/yarn.lock" }}
+        - v3-npm-deps-
     - run:
         command: make
         environment:
@@ -41,7 +41,7 @@ jobs:
           GOOPTS: "-p 2"
           GOMAXPROCS: "2"
     - prometheus/check_proto:
-        version: "3.11.4"
+        version: "3.12.3"
     - prometheus/store_artifact:
         file: prometheus
     - prometheus/store_artifact:
@@ -49,9 +49,9 @@ jobs:
     - go/save-cache:
         key: v1
     - save_cache:
-        key: v1-npm-deps-{{ checksum "web/ui/react-app/yarn.lock" }}
+        key: v3-npm-deps-{{ checksum "web/ui/react-app/yarn.lock" }}
         paths:
-        - web/ui/react-app/node_modules
+        - /home/circleci/.cache/yarn
     - store_test_results:
         path: test-results
   test_windows:

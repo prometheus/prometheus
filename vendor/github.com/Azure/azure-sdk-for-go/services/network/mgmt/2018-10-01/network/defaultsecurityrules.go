@@ -112,7 +112,6 @@ func (client DefaultSecurityRulesClient) GetSender(req *http.Request) (*http.Res
 func (client DefaultSecurityRulesClient) GetResponder(resp *http.Response) (result SecurityRule, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -189,7 +188,6 @@ func (client DefaultSecurityRulesClient) ListSender(req *http.Request) (*http.Re
 func (client DefaultSecurityRulesClient) ListResponder(resp *http.Response) (result SecurityRuleListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

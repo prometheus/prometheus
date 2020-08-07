@@ -15,13 +15,24 @@ package langserver
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"time"
 
+	"github.com/pkg/errors"
 	"github.com/prometheus-community/promql-langserver/internal/vendored/go-tools/lsp/protocol"
 	"github.com/prometheus/common/model"
 )
+
+// localLSPConfiguration is the configuration that should be used by the client such as VSCode.
+// This struct shouldn't be used outside of the method DidChangeConfiguration.
+type localLSPConfiguration struct {
+	PromQL struct {
+		URL                      string `json:"url"`
+		MetadataLookbackInterval string `json:"metadataLookbackInterval"`
+	} `json:"promql"`
+}
 
 // DidChangeConfiguration is required by the protocol.Server interface.
 func (s *server) DidChangeConfiguration(ctx context.Context, params *protocol.DidChangeConfigurationParams) error {
@@ -36,27 +47,25 @@ func (s *server) DidChangeConfiguration(ctx context.Context, params *protocol.Di
 			Message: fmt.Sprintf("Received notification change: %v\n", params),
 		})
 
-	setting := params.Settings
+	config := localLSPConfiguration{}
 
-	// the struct expected is the following
-	// promql:
-	//   url: http://
-	//   interval: 3w
-	m, ok := setting.(map[string]map[string]string)
-	if !ok {
+	// Go doesn't provide an easy way to cast nested maps into structs.
+	//As a workaround, the configuration is first converted back to the JSON that was provided by the client and then marshalled back into the expected structure of the settings.
+	//If you are reading this code and are aware of a better solution to do this, feel free to submit a PR.
+	rawData, marshallError := json.Marshal(params.Settings)
+	if marshallError != nil {
 		// nolint: errcheck
 		s.client.LogMessage(ctx, &protocol.LogMessageParams{
 			Type:    protocol.Error,
-			Message: fmt.Sprint("unexpected format of the configuration"),
+			Message: fmt.Sprint("unable to serialize the configuration"),
 		})
 		return nil
 	}
-	config, ok := m["promql"]
-	if !ok {
+	if err := json.Unmarshal(rawData, &config); err != nil {
 		// nolint: errcheck
 		s.client.LogMessage(ctx, &protocol.LogMessageParams{
 			Type:    protocol.Error,
-			Message: fmt.Sprint("promQL key not found"),
+			Message: errors.Wrap(err, "unexpected configuration format").Error(),
 		})
 		return nil
 	}
@@ -79,14 +88,12 @@ func (s *server) DidChangeConfiguration(ctx context.Context, params *protocol.Di
 	return nil
 }
 
-func (s *server) setURLFromChangeConfiguration(settings map[string]string) error {
-	if promURL, ok := settings["url"]; ok {
-		if _, err := url.Parse(promURL); err != nil {
-			return err
-		}
-		if err := s.connectPrometheus(promURL); err != nil {
-			return err
-		}
+func (s *server) setURLFromChangeConfiguration(settings localLSPConfiguration) error {
+	if _, err := url.Parse(settings.PromQL.URL); err != nil {
+		return err
+	}
+	if err := s.connectPrometheus(settings.PromQL.URL); err != nil {
+		return err
 	}
 	return nil
 }
@@ -103,13 +110,11 @@ func (s *server) connectPrometheus(url string) error {
 	return nil
 }
 
-func (s *server) setMetadataLookbackInterval(settings map[string]string) error {
-	if interval, ok := settings["metadataLookbackInterval"]; ok {
-		duration, err := model.ParseDuration(interval)
-		if err != nil {
-			return err
-		}
-		s.metadataService.SetLookbackInterval(time.Duration(duration))
+func (s *server) setMetadataLookbackInterval(settings localLSPConfiguration) error {
+	duration, err := model.ParseDuration(settings.PromQL.MetadataLookbackInterval)
+	if err != nil {
+		return err
 	}
+	s.metadataService.SetLookbackInterval(time.Duration(duration))
 	return nil
 }

@@ -24,7 +24,7 @@ import (
 
 // metadataProvider is used by the apiv1 and the langServer to retrieve metrics, labels ...etc.
 type metadataProvider struct {
-	queryable       storage.Queryable
+	queryable       storage.SampleAndChunkQueryable
 	targetRetriever func(context.Context) TargetRetriever
 }
 

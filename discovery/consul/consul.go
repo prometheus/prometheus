@@ -36,7 +36,7 @@ import (
 )
 
 const (
-	watchTimeout  = 10 * time.Minute
+	watchTimeout  = 2 * time.Minute
 	retryInterval = 15 * time.Second
 
 	// addressLabel is the name for the label containing a target's address.
@@ -184,7 +184,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 	}
 	wrapper := &http.Client{
 		Transport: transport,
-		Timeout:   35 * time.Second,
+		Timeout:   time.Duration(watchTimeout) + 15*time.Second,
 	}
 
 	clientConf := &consul.Config{

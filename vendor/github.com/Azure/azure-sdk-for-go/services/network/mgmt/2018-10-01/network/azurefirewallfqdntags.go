@@ -106,7 +106,6 @@ func (client AzureFirewallFqdnTagsClient) ListAllSender(req *http.Request) (*htt
 func (client AzureFirewallFqdnTagsClient) ListAllResponder(resp *http.Response) (result AzureFirewallFqdnTagListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

@@ -113,7 +113,6 @@ func (client PublicIPPrefixesClient) CreateOrUpdateSender(req *http.Request) (fu
 func (client PublicIPPrefixesClient) CreateOrUpdateResponder(resp *http.Response) (result PublicIPPrefix, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -189,7 +188,6 @@ func (client PublicIPPrefixesClient) DeleteSender(req *http.Request) (future Pub
 func (client PublicIPPrefixesClient) DeleteResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted, http.StatusNoContent),
 		autorest.ByClosing())
 	result.Response = resp
@@ -268,7 +266,6 @@ func (client PublicIPPrefixesClient) GetSender(req *http.Request) (*http.Respons
 func (client PublicIPPrefixesClient) GetResponder(resp *http.Response) (result PublicIPPrefix, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -343,7 +340,6 @@ func (client PublicIPPrefixesClient) ListSender(req *http.Request) (*http.Respon
 func (client PublicIPPrefixesClient) ListResponder(resp *http.Response) (result PublicIPPrefixListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -452,7 +448,6 @@ func (client PublicIPPrefixesClient) ListAllSender(req *http.Request) (*http.Res
 func (client PublicIPPrefixesClient) ListAllResponder(resp *http.Response) (result PublicIPPrefixListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -568,7 +563,6 @@ func (client PublicIPPrefixesClient) UpdateTagsSender(req *http.Request) (future
 func (client PublicIPPrefixesClient) UpdateTagsResponder(resp *http.Response) (result PublicIPPrefix, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

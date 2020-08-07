@@ -22,7 +22,7 @@ import (
 
 const (
 	// JaegerClientVersion is the version of the client library reported as Span tag.
-	JaegerClientVersion = "Go-2.23.1"
+	JaegerClientVersion = "Go-2.25.0"
 
 	// JaegerClientVersionTagKey is the name of the tag used to report client version.
 	JaegerClientVersionTagKey = "jaeger.version"
@@ -102,5 +102,5 @@ const (
 
 var (
 	// DefaultSamplingServerURL is the default url to fetch sampling config from, via http
-	DefaultSamplingServerURL = fmt.Sprintf("http://localhost:%d/sampling", DefaultSamplingServerPort)
+	DefaultSamplingServerURL = fmt.Sprintf("http://127.0.0.1:%d/sampling", DefaultSamplingServerPort)
 )

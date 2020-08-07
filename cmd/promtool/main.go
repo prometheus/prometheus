@@ -37,7 +37,7 @@ import (
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
-	kingpin "gopkg.in/alecthomas/kingpin.v2"
+	"gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
@@ -105,6 +105,29 @@ func main() {
 		"The unit test file.",
 	).Required().ExistingFiles()
 
+	defaultDBPath := "data/"
+	tsdbCmd := app.Command("tsdb", "Run tsdb commands.")
+
+	tsdbBenchCmd := tsdbCmd.Command("bench", "Run benchmarks.")
+	tsdbBenchWriteCmd := tsdbBenchCmd.Command("write", "Run a write performance benchmark.")
+	benchWriteOutPath := tsdbBenchWriteCmd.Flag("out", "Set the output path.").Default("benchout").String()
+	benchWriteNumMetrics := tsdbBenchWriteCmd.Flag("metrics", "Number of metrics to read.").Default("10000").Int()
+	benchSamplesFile := tsdbBenchWriteCmd.Arg("file", "Input file with samples data, default is ("+filepath.Join("..", "..", "tsdb", "testdata", "20kseries.json")+").").Default(filepath.Join("..", "..", "tsdb", "testdata", "20kseries.json")).String()
+
+	tsdbAnalyzeCmd := tsdbCmd.Command("analyze", "Analyze churn, label pair cardinality.")
+	analyzePath := tsdbAnalyzeCmd.Arg("db path", "Database path (default is "+defaultDBPath+").").Default(defaultDBPath).String()
+	analyzeBlockID := tsdbAnalyzeCmd.Arg("block id", "Block to analyze (default is the last block).").String()
+	analyzeLimit := tsdbAnalyzeCmd.Flag("limit", "How many items to show in each list.").Default("20").Int()
+
+	tsdbListCmd := tsdbCmd.Command("list", "List tsdb blocks.")
+	listHumanReadable := tsdbListCmd.Flag("human-readable", "Print human readable values.").Short('r').Bool()
+	listPath := tsdbListCmd.Arg("db path", "Database path (default is "+defaultDBPath+").").Default(defaultDBPath).String()
+
+	tsdbDumpCmd := tsdbCmd.Command("dump", "Dump samples from a TSDB.")
+	dumpPath := tsdbDumpCmd.Arg("db path", "Database path (default is "+defaultDBPath+").").Default(defaultDBPath).String()
+	dumpMinTime := tsdbDumpCmd.Flag("min-time", "Minimum timestamp to dump.").Default(strconv.FormatInt(math.MinInt64, 10)).Int64()
+	dumpMaxTime := tsdbDumpCmd.Flag("max-time", "Maximum timestamp to dump.").Default(strconv.FormatInt(math.MaxInt64, 10)).Int64()
+
 	parsedCmd := kingpin.MustParse(app.Parse(os.Args[1:]))
 
 	var p printer
@@ -148,6 +171,18 @@ func main() {
 
 	case testRulesCmd.FullCommand():
 		os.Exit(RulesUnitTest(*testRulesFiles...))
+
+	case tsdbBenchWriteCmd.FullCommand():
+		os.Exit(checkErr(benchmarkWrite(*benchWriteOutPath, *benchSamplesFile, *benchWriteNumMetrics)))
+
+	case tsdbAnalyzeCmd.FullCommand():
+		os.Exit(checkErr(analyzeBlock(*analyzePath, *analyzeBlockID, *analyzeLimit)))
+
+	case tsdbListCmd.FullCommand():
+		os.Exit(checkErr(listBlocks(*listPath, *listHumanReadable)))
+
+	case tsdbDumpCmd.FullCommand():
+		os.Exit(checkErr(dumpSamples(*dumpPath, *dumpMinTime, *dumpMaxTime)))
 	}
 }
 
@@ -455,11 +490,13 @@ func QueryRange(url string, headers map[string]string, query, start, end string,
 		stime, err = parseTime(start)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "error parsing start time:", err)
+			return 1
 		}
 	}
 
 	if !stime.Before(etime) {
 		fmt.Fprintln(os.Stderr, "start time is not before end time")
+		return 1
 	}
 
 	if step == 0 {

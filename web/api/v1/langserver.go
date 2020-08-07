@@ -26,7 +26,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
-func newLangServerAPI(q storage.Queryable, tr func(context.Context) TargetRetriever, logger log.Logger) (*rest.API, error) {
+func newLangServerAPI(q storage.SampleAndChunkQueryable, tr func(context.Context) TargetRetriever, logger log.Logger) (*rest.API, error) {
 	// Create the custom prometheus client dedicated to the langserver.
 	langserverClient := &prometheusLangServerClient{
 		lookbackInterval: 12 * time.Hour,

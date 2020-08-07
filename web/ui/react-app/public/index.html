@@ -37,7 +37,11 @@
       work correctly both with client-side routing and a non-root public URL.
       Learn how to configure a non-root public URL by running `npm run build`.
     -->
-    <title>Prometheus Expression Browser</title>
+    <!--
+        The TITLE_PLACEHOLDER magic value is replaced during serving by Prometheus.
+        We need it dynamic because it can be overriden by the command line flag `web.page-title`.
+    -->
+    <title>TITLE_PLACEHOLDER</title>
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>

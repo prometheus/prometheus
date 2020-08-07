@@ -113,7 +113,6 @@ func (client RouteFiltersClient) CreateOrUpdateSender(req *http.Request) (future
 func (client RouteFiltersClient) CreateOrUpdateResponder(resp *http.Response) (result RouteFilter, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -189,7 +188,6 @@ func (client RouteFiltersClient) DeleteSender(req *http.Request) (future RouteFi
 func (client RouteFiltersClient) DeleteResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted, http.StatusNoContent),
 		autorest.ByClosing())
 	result.Response = resp
@@ -268,7 +266,6 @@ func (client RouteFiltersClient) GetSender(req *http.Request) (*http.Response, e
 func (client RouteFiltersClient) GetResponder(resp *http.Response) (result RouteFilter, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -340,7 +337,6 @@ func (client RouteFiltersClient) ListSender(req *http.Request) (*http.Response, 
 func (client RouteFiltersClient) ListResponder(resp *http.Response) (result RouteFilterListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -452,7 +448,6 @@ func (client RouteFiltersClient) ListByResourceGroupSender(req *http.Request) (*
 func (client RouteFiltersClient) ListByResourceGroupResponder(resp *http.Response) (result RouteFilterListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -571,7 +566,6 @@ func (client RouteFiltersClient) UpdateSender(req *http.Request) (future RouteFi
 func (client RouteFiltersClient) UpdateResponder(resp *http.Response) (result RouteFilter, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

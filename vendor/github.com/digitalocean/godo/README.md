@@ -98,9 +98,7 @@ func DropletList(ctx context.Context, client *godo.Client) ([]godo.Droplet, erro
         }
 
         // append the current page's droplets to our list
-        for _, d := range droplets {
-            list = append(list, d)
-        }
+        list = append(list, droplets...)
 
         // if we are at the last page, break out the for loop
         if resp.Links == nil || resp.Links.IsLastPage() {

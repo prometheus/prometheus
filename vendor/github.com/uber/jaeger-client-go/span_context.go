@@ -212,10 +212,14 @@ func (c SpanContext) SetFirehose() {
 }
 
 func (c SpanContext) String() string {
-	if c.traceID.High == 0 {
-		return fmt.Sprintf("%016x:%016x:%016x:%x", c.traceID.Low, uint64(c.spanID), uint64(c.parentID), c.samplingState.stateFlags.Load())
+	var flags int32
+	if c.samplingState != nil {
+		flags = c.samplingState.stateFlags.Load()
 	}
-	return fmt.Sprintf("%016x%016x:%016x:%016x:%x", c.traceID.High, c.traceID.Low, uint64(c.spanID), uint64(c.parentID), c.samplingState.stateFlags.Load())
+	if c.traceID.High == 0 {
+		return fmt.Sprintf("%016x:%016x:%016x:%x", c.traceID.Low, uint64(c.spanID), uint64(c.parentID), flags)
+	}
+	return fmt.Sprintf("%016x%016x:%016x:%016x:%x", c.traceID.High, c.traceID.Low, uint64(c.spanID), uint64(c.parentID), flags)
 }
 
 // ContextFromString reconstructs the Context encoded in a string

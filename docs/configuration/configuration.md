@@ -32,7 +32,7 @@ value is set to the specified default.
 Generic placeholders are defined as follows:
 
 * `<boolean>`: a boolean that can take the values `true` or `false`
-* `<duration>`: a duration matching the regular expression `[0-9]+(ms|[smhdwy])`
+* `<duration>`: a duration matching the regular expression `((([0-9]+)y)?(([0-9]+)w)?(([0-9]+)d)?(([0-9]+)h)?(([0-9]+)m)?(([0-9]+)s)?(([0-9]+)ms)?|0)`, e.g. `1d`, `1h30m`, `5m`, `10s`
 * `<filename>`: a valid path in the current working directory
 * `<host>`: a valid string consisting of a hostname or IP followed by an optional port number
 * `<int>`: an integer value
@@ -207,10 +207,6 @@ dns_sd_configs:
 ec2_sd_configs:
   [ - <ec2_sd_config> ... ]
 
-# List of OpenStack service discovery configurations.
-openstack_sd_configs:
-  [ - <openstack_sd_config> ... ]
-
 # List of file service discovery configurations.
 file_sd_configs:
   [ - <file_sd_config> ... ]
@@ -230,6 +226,10 @@ marathon_sd_configs:
 # List of AirBnB's Nerve service discovery configurations.
 nerve_sd_configs:
   [ - <nerve_sd_config> ... ]
+
+# List of OpenStack service discovery configurations.
+openstack_sd_configs:
+  [ - <openstack_sd_config> ... ]
 
 # List of Zookeeper Serverset service discovery configurations.
 serverset_sd_configs:
@@ -252,9 +252,16 @@ metric_relabel_configs:
   [ - <relabel_config> ... ]
 
 # Per-scrape limit on number of scraped samples that will be accepted.
-# If more than this number of samples are present after metric relabelling
+# If more than this number of samples are present after metric relabeling
 # the entire scrape will be treated as failed. 0 means no limit.
 [ sample_limit: <int> | default = 0 ]
+
+# Per-scrape config limit on number of unique targets that will be
+# accepted. If more than this number of targets are present after target
+# relabeling, Prometheus will mark the targets as failed without scraping them.
+# 0 means no limit. This is an experimental feature, this behaviour could
+# change in the future.
+[ target_limit: <int> | default = 0 ]
 ```
 
 Where `<job_name>` must be unique across all scrape configurations.
@@ -459,7 +466,10 @@ One of the following roles can be configured to discover targets:
 
 #### `services`
 
-The `services` role is used to discover [Swarm services](https://docs.docker.com/engine/swarm/key-concepts/#services-and-tasks).
+The `services` role discovers all [Swarm services](https://docs.docker.com/engine/swarm/key-concepts/#services-and-tasks)
+and exposes their ports as targets. For each published port of a service, a
+single target is generated. If a service has no published ports, a target per
+service is created using the `port` parameter defined in the SD configuration.
 
 Available meta labels:
 
@@ -481,7 +491,10 @@ Available meta labels:
 
 #### `tasks`
 
-The `tasks` role is used to discover [Swarm tasks](https://docs.docker.com/engine/swarm/key-concepts/#services-and-tasks).
+The `tasks` role discovers all [Swarm tasks](https://docs.docker.com/engine/swarm/key-concepts/#services-and-tasks)
+and exposes their ports as targets. For each published port of a task, a single
+target is generated. If a task has no published ports, a target per task is
+created using the `port` parameter defined in the SD configuration.
 
 Available meta labels:
 
@@ -552,7 +565,8 @@ tls_config:
 # Role of the targets to retrieve. Must be `services`, `tasks`, or `nodes`.
 role: <string>
 
-# The port to scrape metrics from, when `role` is nodes.
+# The port to scrape metrics from, when `role` is nodes, and for discovered
+# tasks and services that don't have published ports.
 [ port: <int> | default = 80 ]
 
 # The time after which the droplets are refreshed.
@@ -576,6 +590,9 @@ basic_auth:
 [ bearer_token_file: <filename> ]
 ```
 
+See [this example Prometheus configuration file](/documentation/examples/prometheus-dockerswarm.yml)
+for a detailed example of configuring Prometheus for Docker Swarm.
+
 ### `<dns_sd_config>`
 
 A DNS-based service discovery configuration allows specifying a set of DNS
@@ -586,9 +603,11 @@ This service discovery method only supports basic DNS A, AAAA and SRV record
 queries, but not the advanced DNS-SD approach specified in
 [RFC6763](https://tools.ietf.org/html/rfc6763).
 
-During the [relabeling phase](#relabel_config), the meta label
-`__meta_dns_name` is available on each target and is set to the
-record name that produced the discovered target.
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_dns_name`: the record name that produced the discovered target.
+* `__meta_dns_srv_record_target`: the target field of the SRV record
+* `__meta_dns_srv_record_port`: the port field of the SRV record
 
 ```yaml
 # A list of DNS domain names to be queried.
@@ -792,9 +811,10 @@ It reads a set of files containing a list of zero or more
 and applied immediately. Files may be provided in YAML or JSON format. Only
 changes resulting in well-formed target groups are applied.
 
-The JSON file must contain a list of static configs, using this format:
+Files must contain a list of static configs, using these formats:
 
-```yaml
+**JSON**
+```json
 [
   {
     "targets": [ "<host>", ... ],
@@ -804,6 +824,14 @@ The JSON file must contain a list of static configs, using this format:
   },
   ...
 ]
+```
+
+**YAML**
+```yaml
+- targets:
+  [ - '<host>' ]
+  labels:
+    [ <labelname>: <labelvalue> ... ]
 ```
 
 As a fallback, the file contents are also re-read periodically at the specified
@@ -1454,6 +1482,14 @@ ec2_sd_configs:
 file_sd_configs:
   [ - <file_sd_config> ... ]
 
+# List of DigitalOcean service discovery configurations.
+digitalocean_sd_configs:
+  [ - <digitalocean_sd_config> ... ]
+
+# List of Docker Swarm service discovery configurations.
+dockerswarm_sd_configs:
+  [ - <dockerswarm_sd_config> ... ]
+
 # List of GCE service discovery configurations.
 gce_sd_configs:
   [ - <gce_sd_config> ... ]
@@ -1469,6 +1505,10 @@ marathon_sd_configs:
 # List of AirBnB's Nerve service discovery configurations.
 nerve_sd_configs:
   [ - <nerve_sd_config> ... ]
+
+# List of OpenStack service discovery configurations.
+openstack_sd_configs:
+  [ - <openstack_sd_config> ... ]
 
 # List of Zookeeper Serverset service discovery configurations.
 serverset_sd_configs:

@@ -29,6 +29,10 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
+func TestMain(m *testing.M) {
+	testutil.TolerantVerifyLeak(m)
+}
+
 // makeDiscovery creates a kubernetes.Discovery instance for testing.
 func makeDiscovery(role Role, nsDiscovery NamespaceDiscovery, objects ...runtime.Object) (*Discovery, kubernetes.Interface) {
 	clientset := fake.NewSimpleClientset(objects...)

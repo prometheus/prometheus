@@ -104,6 +104,48 @@ func (r1 *CAA) isDuplicate(_r2 RR) bool {
 	return true
 }
 
+func (r1 *CDNSKEY) isDuplicate(_r2 RR) bool {
+	r2, ok := _r2.(*CDNSKEY)
+	if !ok {
+		return false
+	}
+	_ = r2
+	if r1.Flags != r2.Flags {
+		return false
+	}
+	if r1.Protocol != r2.Protocol {
+		return false
+	}
+	if r1.Algorithm != r2.Algorithm {
+		return false
+	}
+	if r1.PublicKey != r2.PublicKey {
+		return false
+	}
+	return true
+}
+
+func (r1 *CDS) isDuplicate(_r2 RR) bool {
+	r2, ok := _r2.(*CDS)
+	if !ok {
+		return false
+	}
+	_ = r2
+	if r1.KeyTag != r2.KeyTag {
+		return false
+	}
+	if r1.Algorithm != r2.Algorithm {
+		return false
+	}
+	if r1.DigestType != r2.DigestType {
+		return false
+	}
+	if r1.Digest != r2.Digest {
+		return false
+	}
+	return true
+}
+
 func (r1 *CERT) isDuplicate(_r2 RR) bool {
 	r2, ok := _r2.(*CERT)
 	if !ok {
@@ -166,6 +208,27 @@ func (r1 *DHCID) isDuplicate(_r2 RR) bool {
 		return false
 	}
 	_ = r2
+	if r1.Digest != r2.Digest {
+		return false
+	}
+	return true
+}
+
+func (r1 *DLV) isDuplicate(_r2 RR) bool {
+	r2, ok := _r2.(*DLV)
+	if !ok {
+		return false
+	}
+	_ = r2
+	if r1.KeyTag != r2.KeyTag {
+		return false
+	}
+	if r1.Algorithm != r2.Algorithm {
+		return false
+	}
+	if r1.DigestType != r2.DigestType {
+		return false
+	}
 	if r1.Digest != r2.Digest {
 		return false
 	}
@@ -335,6 +398,27 @@ func (r1 *HIP) isDuplicate(_r2 RR) bool {
 		if !isDuplicateName(r1.RendezvousServers[i], r2.RendezvousServers[i]) {
 			return false
 		}
+	}
+	return true
+}
+
+func (r1 *KEY) isDuplicate(_r2 RR) bool {
+	r2, ok := _r2.(*KEY)
+	if !ok {
+		return false
+	}
+	_ = r2
+	if r1.Flags != r2.Flags {
+		return false
+	}
+	if r1.Protocol != r2.Protocol {
+		return false
+	}
+	if r1.Algorithm != r2.Algorithm {
+		return false
+	}
+	if r1.PublicKey != r2.PublicKey {
+		return false
 	}
 	return true
 }
@@ -844,6 +928,42 @@ func (r1 *RT) isDuplicate(_r2 RR) bool {
 		return false
 	}
 	if !isDuplicateName(r1.Host, r2.Host) {
+		return false
+	}
+	return true
+}
+
+func (r1 *SIG) isDuplicate(_r2 RR) bool {
+	r2, ok := _r2.(*SIG)
+	if !ok {
+		return false
+	}
+	_ = r2
+	if r1.TypeCovered != r2.TypeCovered {
+		return false
+	}
+	if r1.Algorithm != r2.Algorithm {
+		return false
+	}
+	if r1.Labels != r2.Labels {
+		return false
+	}
+	if r1.OrigTtl != r2.OrigTtl {
+		return false
+	}
+	if r1.Expiration != r2.Expiration {
+		return false
+	}
+	if r1.Inception != r2.Inception {
+		return false
+	}
+	if r1.KeyTag != r2.KeyTag {
+		return false
+	}
+	if !isDuplicateName(r1.SignerName, r2.SignerName) {
+		return false
+	}
+	if r1.Signature != r2.Signature {
 		return false
 	}
 	return true
