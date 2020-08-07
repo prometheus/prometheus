@@ -373,7 +373,7 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 				if gotAlerts.Len() != expAlerts.Len() {
 					errs = append(errs, errors.Errorf("    alertname:%s, time:%s, \n        exp:%#v, \n        got:%#v",
 						testcase.Alertname, testcase.EvalTime.String(), expAlerts.String(), gotAlerts.String()))
-						calculateAlertIntervals(testcase, evalInterval)
+					calculateAlertIntervals(testcase, evalInterval)
 				} else {
 					sort.Sort(gotAlerts)
 					sort.Sort(expAlerts)
@@ -564,11 +564,11 @@ type alert struct {
 }
 
 type alertIntervals struct {
-	CurrentStartTime model.Duration
-	PreviousEndTime model.Duration
-	AllIntervals []string
+	CurrentStartTime   model.Duration
+	PreviousEndTime    model.Duration
+	AllIntervals       []string
 	HasIntervalStarted bool
-	AlertCount int
+	AlertCount         int
 }
 
 type promqlTestCase struct {
