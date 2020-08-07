@@ -14,6 +14,7 @@
 package rulefmt
 
 import (
+	"bytes"
 	"context"
 	"io/ioutil"
 	"strings"
@@ -267,7 +268,9 @@ func Parse(content []byte) (*RuleGroups, []error) {
 		errs   []error
 	)
 
-	err := yaml.Unmarshal(content, &groups)
+	dec := yaml.NewDecoder(bytes.NewReader(content))
+	dec.KnownFields(true)
+	err := dec.Decode(&groups)
 	if err != nil {
 		errs = append(errs, err)
 	}
