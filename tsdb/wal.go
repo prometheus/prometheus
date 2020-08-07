@@ -566,24 +566,22 @@ func (w *SegmentWAL) cut() error {
 		}
 		// Finish last segment asynchronously to not block the WAL moving along
 		// in the new segment.
-		go func() {
-			w.actorc <- func() error {
-				off, err := hf.Seek(0, io.SeekCurrent)
-				if err != nil {
-					return errors.Wrapf(err, "finish old segment %s", hf.Name())
-				}
-				if err := hf.Truncate(off); err != nil {
-					return errors.Wrapf(err, "finish old segment %s", hf.Name())
-				}
-				if err := hf.Sync(); err != nil {
-					return errors.Wrapf(err, "finish old segment %s", hf.Name())
-				}
-				if err := hf.Close(); err != nil {
-					return errors.Wrapf(err, "finish old segment %s", hf.Name())
-				}
-				return nil
+		w.actorc <- func() error {
+			off, err := hf.Seek(0, io.SeekCurrent)
+			if err != nil {
+				return errors.Wrapf(err, "finish old segment %s", hf.Name())
 			}
-		}()
+			if err := hf.Truncate(off); err != nil {
+				return errors.Wrapf(err, "finish old segment %s", hf.Name())
+			}
+			if err := hf.Sync(); err != nil {
+				return errors.Wrapf(err, "finish old segment %s", hf.Name())
+			}
+			if err := hf.Close(); err != nil {
+				return errors.Wrapf(err, "finish old segment %s", hf.Name())
+			}
+			return nil
+		}
 	}
 
 	p, _, err := nextSequenceFile(w.dirFile.Name())
@@ -595,11 +593,9 @@ func (w *SegmentWAL) cut() error {
 		return err
 	}
 
-	go func() {
-		w.actorc <- func() error {
-			return errors.Wrap(w.dirFile.Sync(), "sync WAL directory")
-		}
-	}()
+	w.actorc <- func() error {
+		return errors.Wrap(w.dirFile.Sync(), "sync WAL directory")
+	}
 
 	w.files = append(w.files, newSegmentFile(f))
 
@@ -675,19 +671,19 @@ func (w *SegmentWAL) run(interval time.Duration) {
 	}
 	defer close(w.donec)
 
-	for {
-		// Processing all enqueued operations has precedence over shutdown and
-		// background syncs.
-		select {
-		case f := <-w.actorc:
+	defer func() {
+		// Drain and process any remaining functions.
+		for f := range w.actorc {
 			if err := f(); err != nil {
 				level.Error(w.logger).Log("msg", "operation failed", "err", err)
 			}
-			continue
-		default:
 		}
+	}()
+
+	for {
 		select {
 		case <-w.stopc:
+			close(w.actorc)
 			return
 		case f := <-w.actorc:
 			if err := f(); err != nil {
