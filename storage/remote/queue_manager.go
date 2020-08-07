@@ -16,7 +16,6 @@ package remote
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"math"
 	"os"
@@ -51,6 +50,9 @@ const (
 
 	// Allow 30% too many shards before scaling down.
 	shardToleranceFraction = 0.3
+
+	invalidSegmentNumber = -1
+	maxSegmentNumber     = 100000000
 )
 
 type queueManagerMetrics struct {
@@ -372,16 +374,23 @@ type QueueManager struct {
 	metrics              *queueManagerMetrics
 	interner             *pool
 	highestRecvTimestamp *maxTimestamp
-	url             string
+	url                  string
 }
 
-var Checkpoint = Checkpoints{}
+var (
+	// Checkpoint is the struture of the Segment Record
+	Checkpoint = Checkpoints{}
+	// Number of shards saved
+	savedShardsNum = 0
+)
 
+// SegmentRecord Structure holds the segment the endpoint url
 type SegmentRecord struct {
 	Segment  string
 	Endpoint string
 }
 
+// Checkpoints Structure holds the list of segment records and the time of recording
 type Checkpoints struct {
 	Recorded    time.Time
 	Checkpoints []SegmentRecord
@@ -437,7 +446,7 @@ func NewQueueManager(
 		metrics:              metrics,
 		interner:             interner,
 		highestRecvTimestamp: highestRecvTimestamp,
-		url:             client.Endpoint(),
+		url:                  client.Endpoint(),
 	}
 
 	t.watcher = wal.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, walDir, enableExemplarRemoteWrite)
@@ -613,30 +622,7 @@ func (t *QueueManager) Start() {
 	t.metrics.desiredNumShards.Set(float64(t.cfg.MinShards))
 	t.metrics.maxSamplesPerSend.Set(float64(t.cfg.MaxSamplesPerSend))
 
-	// Checking if the JSON file is corrupted
-	var check Checkpoints
-
-	jsonFile, err := os.Open("SegmentRecord.json")
-	defer jsonFile.Close()
-
-	byteValue, _ := ioutil.ReadAll(jsonFile)
-	err = json.Unmarshal(byteValue, &check)
-
-	if err != nil {
-		fmt.Println(err)
-	} else {
-		for _, record := range check.Checkpoints {
-			segmentNumber, err := strconv.Atoi(record.Segment)
-			if err != nil {
-				fmt.Println(err)
-			}
-
-			if segmentNumber > -1 && segmentNumber < 100000000 {
-				// Add function to connect WAL and queue_manager
-			}
-
-		}
-	}
+	t.loadCheck()
 
 	t.shards.start(t.numShards)
 	t.watcher.Start()
@@ -647,6 +633,35 @@ func (t *QueueManager) Start() {
 	t.wg.Add(2)
 	go t.updateShardsLoop()
 	go t.reshardLoop()
+}
+
+// loadCheck will check if the SegmentRecord.json
+// contents and segment is valid
+func (t *QueueManager) loadCheck() {
+	// Checking if the JSON file is corrupted
+	var check Checkpoints
+
+	jsonFile, err := os.Open("SegmentRecord.json")
+	defer jsonFile.Close()
+
+	byteValue, _ := ioutil.ReadAll(jsonFile)
+	err = json.Unmarshal(byteValue, &check)
+
+	if err != nil {
+		level.Error(t.logger).Log("err", err)
+	} else {
+		for _, record := range check.Checkpoints {
+			segmentNumber, err := strconv.Atoi(record.Segment)
+			if err != nil {
+				level.Error(t.logger).Log("err", err)
+			}
+
+			if segmentNumber > invalidSegmentNumber && segmentNumber < maxSegmentNumber {
+				// Add function to connect WAL and queue_manager
+			}
+
+		}
+	}
 }
 
 // Stop stops sending samples to the remote storage and waits for pending
@@ -677,30 +692,6 @@ func (t *QueueManager) Stop() {
 	t.metrics.unregister()
 }
 
-<<<<<<< HEAD
-// ---------------------------------------------------------------
-
-// RecordSegment - writes the segment record in a JSON file
-func (t *QueueManager) RecordSegment() {
-	// Add check that fileDir is < 7 characters
-	// Segment File Directory
-	SegmentName := t.watcher.SegmentFile
-
-	fmt.Println("----------------------------------------")
-	fmt.Println("Recording Segment....")
-	fmt.Println("Segment Name: " + SegmentName)
-
-	record := Checkpoints{
-		Recorded: time.Now(),
-		Checkpoints: []SegmentRecord{
-			SegmentRecord{
-				Segment: SegmentName,
-				Offset:  "00000001",
-				// only handles one end point rn
-				Endpoint: t.endpoint,
-			},
-		},
-=======
 // Getting the data from a shard and structuring it as a SegmentRecord from a shard
 func (t *QueueManager) getSegmentRecords() SegmentRecord {
 	RecordSegment := t.shards.qm.watcher.SegmentFile
@@ -709,13 +700,12 @@ func (t *QueueManager) getSegmentRecords() SegmentRecord {
 	record := SegmentRecord{
 		Segment:  RecordSegment,
 		Endpoint: RecordEndpoint,
->>>>>>> cb5849443 (Added json error detection and handeling, added functionality to add segment records from multiple endpoints)
 	}
 
 	return record
 }
 
-// Writes the segment record in a JSON file
+// RecordSegment writes the segment record in a JSON file
 func (t *QueueManager) RecordSegment() {
 	Checkpoint.Recorded = time.Now()
 	Checkpoint.Checkpoints = append(Checkpoint.Checkpoints, t.getSegmentRecords())
@@ -723,14 +713,13 @@ func (t *QueueManager) RecordSegment() {
 	// now Marshal it
 	data, err := json.MarshalIndent(Checkpoint, "", "")
 	if err != nil {
-		fmt.Println(err)
+		level.Error(t.logger).Log("err", err)
 	}
 
 	err = ioutil.WriteFile("SegmentRecord.json", data, 0644)
 	if err != nil {
-		fmt.Println(err)
+		level.Error(t.logger).Log("err", err)
 	}
-
 }
 
 // StoreSeries keeps track of which series we know about for lookups when sending samples to remote.
