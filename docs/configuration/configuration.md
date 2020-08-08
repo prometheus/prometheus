@@ -1395,11 +1395,33 @@ create a target group for every app.
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
 * `__meta_eureka_app_name`: the name of the app (with slashes replaced by dashes)
+* `__meta_eureka_app_instance_id`: the ID of the app instance
 * `__meta_eureka_app_instance_hostname`: the hostname of the instance
-* `__meta_eureka_app_instance_ipaddr`: the IP address of the app instance
+* `__meta_eureka_app_instance_homepage_url`: the homepage url of the app instance
+* `__meta_eureka_app_instance_statuspage_url`: the status page url of the app instance
+* `__meta_eureka_app_instance_healthcheck_url`: the health check url of the app instance
+* `__meta_eureka_app_instance_ip_addr`: the IP address of the app instance
+* `__meta_eureka_app_instance_vip_address`: the VIP address of the app instance
+* `__meta_eureka_app_instance_secure_vip_address`: the secure VIP address of the app instance
 * `__meta_eureka_app_instance_status`: the status of the app instance
-* `__meta_eureka_app_instance_id`: the instanceId of the app instance
+* `__meta_eureka_app_instance_port`: the port of the app instance
+* `__meta_eureka_app_instance_port_enabled`: the port enabled of the app instance
+* `__meta_eureka_app_instance_secure_port`: the secure port address of the app instance
+* `__meta_eureka_app_instance_secure_port_enabled`: the secure port of the app instance
+* `__meta_eureka_app_instance_country_id`: the country ID of the app instance
 * `__meta_eureka_app_instance_metadata_<metadataname>`: app instance metadata
+* `__meta_eureka_app_instance_datacenterinfo_name`: the datacenter name of the app instance
+* `__meta_eureka_app_instance_datacenterinfo_metadata_ami_id`: the EC2 Amazon Machine Image ID
+* `__meta_eureka_app_instance_datacenterinfo_metadata_ami_launch_index`: the order in which the EC2 instance was launched
+* `__meta_eureka_app_instance_datacenterinfo_metadata_availability_zone`: the availability zone in which the EC2 instance is running
+* `__meta_eureka_app_instance_datacenterinfo_metadata_local_ipv4`: the local IP4 address of the EC2 instance
+* `__meta_eureka_app_instance_datacenterinfo_metadata_local_hostname`: the local hostname of the EC2 instance
+* `__meta_eureka_app_instance_datacenterinfo_metadata_hostname`: the hostname of the EC2 instance
+* `__meta_eureka_app_instance_datacenterinfo_metadata_instance_id`: the EC2 instance ID
+* `__meta_eureka_app_instance_datacenterinfo_metadata_instance_type`: the type of the EC2 instance
+* `__meta_eureka_app_instance_datacenterinfo_metadata_public_ipv4`: the public IP4 address of the EC2 instance
+* `__meta_eureka_app_instance_datacenterinfo_metadata_public_hostname`: the public hostname of the EC2 instance
+* `__meta_eureka_app_instance_datacenterinfo_metadata_ami_manifest_path`: the path to the AMI manifest file in Amazon S3
 
 See below for the configuration options for Eureka discovery:
 
