@@ -16,6 +16,7 @@ package rulefmt
 import (
 	"bytes"
 	"context"
+	"io"
 	"io/ioutil"
 	"strings"
 	"time"
@@ -268,10 +269,11 @@ func Parse(content []byte) (*RuleGroups, []error) {
 		errs   []error
 	)
 
-	dec := yaml.NewDecoder(bytes.NewReader(content))
-	dec.KnownFields(true)
-	err := dec.Decode(&groups)
-	if err != nil {
+	decoder := yaml.NewDecoder(bytes.NewReader(content))
+	decoder.KnownFields(true)
+	err := decoder.Decode(&groups)
+	// Ignore io.EOF which happends with empty input.
+	if err != nil && err != io.EOF {
 		errs = append(errs, err)
 	}
 	err = yaml.Unmarshal(content, &node)
