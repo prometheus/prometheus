@@ -289,28 +289,28 @@ type limitAppender struct {
 	i     int
 }
 
-func (app *limitAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
+func (app *limitAppender) Add(m storage.Metadata, t int64, v float64) (uint64, error) {
 	if !value.IsStaleNaN(v) {
 		app.i++
 		if app.i > app.limit {
 			return 0, errSampleLimit
 		}
 	}
-	ref, err := app.Appender.Add(lset, t, v)
+	ref, err := app.Appender.Add(m, t, v)
 	if err != nil {
 		return 0, err
 	}
 	return ref, nil
 }
 
-func (app *limitAppender) AddFast(ref uint64, t int64, v float64) error {
+func (app *limitAppender) AddFast(ref uint64, m storage.Metadata, t int64, v float64) error {
 	if !value.IsStaleNaN(v) {
 		app.i++
 		if app.i > app.limit {
 			return errSampleLimit
 		}
 	}
-	err := app.Appender.AddFast(ref, t, v)
+	err := app.Appender.AddFast(ref, m, t, v)
 	return err
 }
 
@@ -320,23 +320,23 @@ type timeLimitAppender struct {
 	maxTime int64
 }
 
-func (app *timeLimitAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
+func (app *timeLimitAppender) Add(m storage.Metadata, t int64, v float64) (uint64, error) {
 	if t > app.maxTime {
 		return 0, storage.ErrOutOfBounds
 	}
 
-	ref, err := app.Appender.Add(lset, t, v)
+	ref, err := app.Appender.Add(m, t, v)
 	if err != nil {
 		return 0, err
 	}
 	return ref, nil
 }
 
-func (app *timeLimitAppender) AddFast(ref uint64, t int64, v float64) error {
+func (app *timeLimitAppender) AddFast(ref uint64, m storage.Metadata, t int64, v float64) error {
 	if t > app.maxTime {
 		return storage.ErrOutOfBounds
 	}
-	err := app.Appender.AddFast(ref, t, v)
+	err := app.Appender.AddFast(ref, m, t, v)
 	return err
 }
 

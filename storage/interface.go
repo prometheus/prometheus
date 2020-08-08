@@ -18,6 +18,7 @@ import (
 	"errors"
 
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 )
@@ -140,11 +141,11 @@ type Appender interface {
 	// to AddFast() at any point. Adding the sample via Add() returns a new
 	// reference number.
 	// If the reference is 0 it must not be used for caching.
-	Add(l labels.Labels, t int64, v float64) (uint64, error)
+	Add(m Metadata, t int64, v float64) (uint64, error)
 
 	// AddFast adds a sample pair for the referenced series. It is generally
 	// faster than adding a sample by providing its full label set.
-	AddFast(ref uint64, t int64, v float64) error
+	AddFast(ref uint64, m Metadata, t int64, v float64) error
 
 	// Commit submits the collected samples and purges the batch. If Commit
 	// returns a non-nil error, it also rolls back all modifications made in
@@ -155,6 +156,14 @@ type Appender interface {
 	// Rollback rolls back all modifications made in the appender so far.
 	// Appender has to be discarded after rollback.
 	Rollback() error
+}
+
+// Metadata is metadata about a series.
+type Metadata struct {
+	Labels labels.Labels
+	Type   textparse.MetricType
+	Unit   string
+	Help   string
 }
 
 // SeriesSet contains a set of series.

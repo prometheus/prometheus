@@ -976,21 +976,21 @@ type initAppender struct {
 	head *Head
 }
 
-func (a *initAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
+func (a *initAppender) Add(m storage.Metadata, t int64, v float64) (uint64, error) {
 	if a.app != nil {
-		return a.app.Add(lset, t, v)
+		return a.app.Add(m, t, v)
 	}
 	a.head.initTime(t)
 	a.app = a.head.appender()
 
-	return a.app.Add(lset, t, v)
+	return a.app.Add(m, t, v)
 }
 
-func (a *initAppender) AddFast(ref uint64, t int64, v float64) error {
+func (a *initAppender) AddFast(ref uint64, m storage.Metadata, t int64, v float64) error {
 	if a.app == nil {
 		return storage.ErrNotFound
 	}
-	return a.app.AddFast(ref, t, v)
+	return a.app.AddFast(ref, m, t, v)
 }
 
 func (a *initAppender) Commit() error {
@@ -1091,6 +1091,7 @@ type headAppender struct {
 	mint, maxt   int64
 
 	series       []record.RefSeries
+	metadata     []record.RefMetadata
 	samples      []record.RefSample
 	sampleSeries []*memSeries
 
@@ -1098,14 +1099,14 @@ type headAppender struct {
 	closed                          bool
 }
 
-func (a *headAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
+func (a *headAppender) Add(m storage.Metadata, t int64, v float64) (uint64, error) {
 	if t < a.minValidTime {
 		a.head.metrics.outOfBoundSamples.Inc()
 		return 0, storage.ErrOutOfBounds
 	}
 
 	// Ensure no empty labels have gotten through.
-	lset = lset.WithoutEmpty()
+	lset := m.Labels.WithoutEmpty()
 
 	if len(lset) == 0 {
 		return 0, errors.Wrap(ErrInvalidSample, "empty labelset")
@@ -1125,11 +1126,17 @@ func (a *headAppender) Add(lset labels.Labels, t int64, v float64) (uint64, erro
 			Ref:    s.ref,
 			Labels: lset,
 		})
+		a.metadata = append(a.metadata, record.RefMetadata{
+			Ref:  s.ref,
+			Type: m.Type,
+			Unit: m.Unit,
+			Help: m.Help,
+		})
 	}
-	return s.ref, a.AddFast(s.ref, t, v)
+	return s.ref, a.AddFast(s.ref, m, t, v)
 }
 
-func (a *headAppender) AddFast(ref uint64, t int64, v float64) error {
+func (a *headAppender) AddFast(ref uint64, m storage.Metadata, t int64, v float64) error {
 	if t < a.minValidTime {
 		a.head.metrics.outOfBoundSamples.Inc()
 		return storage.ErrOutOfBounds
@@ -1185,6 +1192,16 @@ func (a *headAppender) log() error {
 			return errors.Wrap(err, "log series")
 		}
 	}
+
+	if len(a.metadata) > 0 {
+		rec = enc.Metadata(a.metadata, buf)
+		buf = rec[:0]
+
+		if err := a.head.wal.Log(rec); err != nil {
+			return errors.Wrap(err, "log metadata")
+		}
+	}
+
 	if len(a.samples) > 0 {
 		rec = enc.Samples(a.samples, buf)
 		buf = rec[:0]

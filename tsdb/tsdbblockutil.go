@@ -21,6 +21,8 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/textparse"
+	"github.com/prometheus/prometheus/storage"
 )
 
 var ErrInvalidTimes = fmt.Errorf("max time is lesser than min time")
@@ -29,6 +31,9 @@ type MetricSample struct {
 	TimestampMs int64
 	Value       float64
 	Labels      labels.Labels
+	Type        textparse.MetricType
+	Help        string
+	Unit        string
 }
 
 // CreateHead creates a TSDB writer head to write the sample data to.
@@ -40,7 +45,8 @@ func CreateHead(samples []*MetricSample, chunkRange int64, chunkDir string, logg
 	}
 	app := head.Appender(context.TODO())
 	for _, sample := range samples {
-		_, err = app.Add(sample.Labels, sample.TimestampMs, sample.Value)
+		metadata := storage.Metadata{Labels: sample.Labels}
+		_, err = app.Add(metadata, sample.TimestampMs, sample.Value)
 		if err != nil {
 			return nil, err
 		}

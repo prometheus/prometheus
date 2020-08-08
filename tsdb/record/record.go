@@ -20,6 +20,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 )
@@ -36,6 +37,8 @@ const (
 	Samples Type = 2
 	// Tombstones is used to match WAL records of type Tombstones.
 	Tombstones Type = 3
+	// Metadata is used to match WAL records of type Metadata.
+	Metadata Type = 4
 )
 
 var (
@@ -49,6 +52,14 @@ type RefSeries struct {
 	Labels labels.Labels
 }
 
+// RefMetadata is the series metadata.
+type RefMetadata struct {
+	Ref  uint64
+	Type textparse.MetricType
+	Unit string
+	Help string
+}
+
 // RefSample is a timestamp/value pair associated with a reference to a series.
 type RefSample struct {
 	Ref uint64
@@ -59,6 +70,7 @@ type RefSample struct {
 // Decoder decodes series, sample, and tombstone records.
 // The zero value is ready to use.
 type Decoder struct {
+	Version uint
 }
 
 // Type returns the type of the record.
@@ -168,6 +180,7 @@ func (d *Decoder) Tombstones(rec []byte, tstones []tombstones.Stone) ([]tombston
 // Encoder encodes series, sample, and tombstones records.
 // The zero value is ready to use.
 type Encoder struct {
+	Version uint
 }
 
 // Series appends the encoded series to b and returns the resulting slice.
@@ -184,6 +197,22 @@ func (e *Encoder) Series(series []RefSeries, b []byte) []byte {
 			buf.PutUvarintStr(l.Value)
 		}
 	}
+
+	return buf.Get()
+}
+
+// Metadata encodes series metadata.
+func (e *Encoder) Metadata(series []RefMetadata, b []byte) []byte {
+	buf := encoding.Encbuf{B: b}
+	buf.PutByte(byte(Metadata))
+
+	for _, s := range series {
+		buf.PutUvarint64(s.Ref)
+		buf.PutUvarintStr(string(s.Type))
+		buf.PutUvarintStr(string(s.Unit))
+		buf.PutUvarintStr(string(s.Help))
+	}
+
 	return buf.Get()
 }
 

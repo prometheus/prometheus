@@ -675,6 +675,18 @@ type cacheEntry struct {
 	lastIter uint64
 	hash     uint64
 	lset     labels.Labels
+	typ      textparse.MetricType
+	unit     string
+	help     string
+}
+
+func (ce *cacheEntry) metadata() storage.Metadata {
+	return storage.Metadata{
+		Labels: ce.lset,
+		Type:   ce.typ,
+		Unit:   ce.unit,
+		Help:   ce.help,
+	}
 }
 
 type scrapeLoop struct {
@@ -721,8 +733,8 @@ type scrapeCache struct {
 	// seriesCur and seriesPrev store the labels of series that were seen
 	// in the current and previous scrape.
 	// We hold two maps and swap them out to save allocations.
-	seriesCur  map[uint64]labels.Labels
-	seriesPrev map[uint64]labels.Labels
+	seriesCur  map[uint64]storage.Metadata
+	seriesPrev map[uint64]storage.Metadata
 
 	metaMtx  sync.Mutex
 	metadata map[string]*metaEntry
@@ -745,8 +757,8 @@ func newScrapeCache() *scrapeCache {
 	return &scrapeCache{
 		series:        map[string]*cacheEntry{},
 		droppedSeries: map[string]*uint64{},
-		seriesCur:     map[uint64]labels.Labels{},
-		seriesPrev:    map[uint64]labels.Labels{},
+		seriesCur:     map[uint64]storage.Metadata{},
+		seriesPrev:    map[uint64]storage.Metadata{},
 		metadata:      map[string]*metaEntry{},
 	}
 }
@@ -812,11 +824,27 @@ func (c *scrapeCache) get(met string) (*cacheEntry, bool) {
 	return e, true
 }
 
-func (c *scrapeCache) addRef(met string, ref uint64, lset labels.Labels, hash uint64) {
+func (c *scrapeCache) addRef(
+	met string,
+	ref uint64,
+	lset labels.Labels,
+	typ textparse.MetricType,
+	unit string,
+	help string,
+	hash uint64,
+) {
 	if ref == 0 {
 		return
 	}
-	c.series[met] = &cacheEntry{ref: ref, lastIter: c.iter, lset: lset, hash: hash}
+	c.series[met] = &cacheEntry{
+		ref:      ref,
+		lastIter: c.iter,
+		lset:     lset,
+		typ:      typ,
+		unit:     unit,
+		help:     help,
+		hash:     hash,
+	}
 }
 
 func (c *scrapeCache) addDropped(met string) {
@@ -832,18 +860,25 @@ func (c *scrapeCache) getDropped(met string) bool {
 	return ok
 }
 
-func (c *scrapeCache) trackStaleness(hash uint64, lset labels.Labels) {
-	c.seriesCur[hash] = lset
+func (c *scrapeCache) trackStaleness(hash uint64, m storage.Metadata) {
+	c.seriesCur[hash] = m
 }
 
-func (c *scrapeCache) forEachStale(f func(labels.Labels) bool) {
-	for h, lset := range c.seriesPrev {
+func (c *scrapeCache) forEachStale(f func(storage.Metadata) bool) {
+	for h, meta := range c.seriesPrev {
 		if _, ok := c.seriesCur[h]; !ok {
-			if !f(lset) {
+			if !f(meta) {
 				break
 			}
 		}
 	}
+}
+
+func (c *scrapeCache) meta(metric []byte) (*metaEntry, bool) {
+	c.metaMtx.Lock()
+	entry, ok := c.metadata[yoloString(metric)]
+	c.metaMtx.Unlock()
+	return entry, ok
 }
 
 func (c *scrapeCache) setType(metric []byte, t textparse.MetricType) {
@@ -1296,7 +1331,7 @@ loop:
 		ce, ok := sl.cache.get(yoloString(met))
 
 		if ok {
-			err = app.AddFast(ce.ref, t, v)
+			err = app.AddFast(ce.ref, ce.metadata(), t, v)
 			_, err = sl.checkAddError(ce, met, tp, err, &sampleLimitErr, &appErrs)
 			// In theory this should never happen.
 			if err == storage.ErrNotFound {
@@ -1324,8 +1359,24 @@ loop:
 				break loop
 			}
 
+			var metadata storage.Metadata
+			meta, ok := sl.cache.meta(met)
+			if ok {
+				metadata = storage.Metadata{
+					Labels: lset,
+					Type:   meta.typ,
+					Unit:   meta.unit,
+					Help:   meta.help,
+				}
+			} else {
+				metadata = storage.Metadata{
+					Labels: lset,
+					Type:   textparse.MetricTypeUnknown,
+				}
+			}
+
 			var ref uint64
-			ref, err = app.Add(lset, t, v)
+			ref, err = app.Add(metadata, t, v)
 			sampleAdded, err = sl.checkAddError(nil, met, tp, err, &sampleLimitErr, &appErrs)
 			if err != nil {
 				if err != storage.ErrNotFound {
@@ -1336,9 +1387,9 @@ loop:
 
 			if tp == nil {
 				// Bypass staleness logic if there is an explicit timestamp.
-				sl.cache.trackStaleness(hash, lset)
+				sl.cache.trackStaleness(hash, metadata)
 			}
-			sl.cache.addRef(mets, ref, lset, hash)
+			sl.cache.addRef(mets, ref, lset, metadata.Type, metadata.Unit, metadata.Help, hash)
 			if sampleAdded && sampleLimitErr == nil {
 				seriesAdded++
 			}
@@ -1366,9 +1417,9 @@ loop:
 		level.Warn(sl.l).Log("msg", "Error on ingesting samples that are too old or are too far into the future", "num_dropped", appErrs.numOutOfBounds)
 	}
 	if err == nil {
-		sl.cache.forEachStale(func(lset labels.Labels) bool {
+		sl.cache.forEachStale(func(m storage.Metadata) bool {
 			// Series no longer exposed, mark it stale.
-			_, err = app.Add(lset, defTime, math.Float64frombits(value.StaleNaN))
+			_, err = app.Add(m, defTime, math.Float64frombits(value.StaleNaN))
 			switch errors.Cause(err) {
 			case storage.ErrOutOfOrderSample, storage.ErrDuplicateSampleForTimestamp:
 				// Do not count these in logging, as this is expected if a target
@@ -1392,7 +1443,7 @@ func (sl *scrapeLoop) checkAddError(ce *cacheEntry, met []byte, tp *int64, err e
 	switch errors.Cause(err) {
 	case nil:
 		if tp == nil && ce != nil {
-			sl.cache.trackStaleness(ce.hash, ce.lset)
+			sl.cache.trackStaleness(ce.hash, ce.metadata())
 		}
 		return true, nil
 	case storage.ErrNotFound:
@@ -1426,10 +1477,15 @@ func (sl *scrapeLoop) checkAddError(ce *cacheEntry, met []byte, tp *int64, err e
 // with scraped metrics in the cache.
 const (
 	scrapeHealthMetricName       = "up" + "\xff"
+	scrapeHealthMetricType       = textparse.MetricTypeGauge
 	scrapeDurationMetricName     = "scrape_duration_seconds" + "\xff"
+	scrapeDurationMetricType     = textparse.MetricTypeGauge
 	scrapeSamplesMetricName      = "scrape_samples_scraped" + "\xff"
+	scrapeSamplesMetricType      = textparse.MetricTypeCounter
 	samplesPostRelabelMetricName = "scrape_samples_post_metric_relabeling" + "\xff"
+	samplesPostRelabelMetricType = textparse.MetricTypeCounter
 	scrapeSeriesAddedMetricName  = "scrape_series_added" + "\xff"
+	scrapeSeriesAddedMetricType  = textparse.MetricTypeCounter
 )
 
 func (sl *scrapeLoop) report(app storage.Appender, start time.Time, duration time.Duration, scraped, added, seriesAdded int, scrapeErr error) (err error) {
@@ -1442,19 +1498,19 @@ func (sl *scrapeLoop) report(app storage.Appender, start time.Time, duration tim
 		health = 1
 	}
 
-	if err = sl.addReportSample(app, scrapeHealthMetricName, ts, health); err != nil {
+	if err = sl.addReportSample(app, scrapeHealthMetricName, scrapeHealthMetricType, "", "", ts, health); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, scrapeDurationMetricName, ts, duration.Seconds()); err != nil {
+	if err = sl.addReportSample(app, scrapeDurationMetricName, scrapeDurationMetricType, "", "", ts, duration.Seconds()); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, scrapeSamplesMetricName, ts, float64(scraped)); err != nil {
+	if err = sl.addReportSample(app, scrapeSamplesMetricName, scrapeSamplesMetricType, "", "", ts, float64(scraped)); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, samplesPostRelabelMetricName, ts, float64(added)); err != nil {
+	if err = sl.addReportSample(app, samplesPostRelabelMetricName, samplesPostRelabelMetricType, "", "", ts, float64(added)); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, scrapeSeriesAddedMetricName, ts, float64(seriesAdded)); err != nil {
+	if err = sl.addReportSample(app, scrapeSeriesAddedMetricName, scrapeSeriesAddedMetricType, "", "", ts, float64(seriesAdded)); err != nil {
 		return
 	}
 	return
@@ -1465,28 +1521,36 @@ func (sl *scrapeLoop) reportStale(app storage.Appender, start time.Time) (err er
 
 	stale := math.Float64frombits(value.StaleNaN)
 
-	if err = sl.addReportSample(app, scrapeHealthMetricName, ts, stale); err != nil {
+	if err = sl.addReportSample(app, scrapeHealthMetricName, scrapeHealthMetricType, "", "", ts, stale); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, scrapeDurationMetricName, ts, stale); err != nil {
+	if err = sl.addReportSample(app, scrapeDurationMetricName, scrapeDurationMetricType, "", "", ts, stale); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, scrapeSamplesMetricName, ts, stale); err != nil {
+	if err = sl.addReportSample(app, scrapeSamplesMetricName, scrapeSamplesMetricType, "", "", ts, stale); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, samplesPostRelabelMetricName, ts, stale); err != nil {
+	if err = sl.addReportSample(app, samplesPostRelabelMetricName, samplesPostRelabelMetricType, "", "", ts, stale); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, scrapeSeriesAddedMetricName, ts, stale); err != nil {
+	if err = sl.addReportSample(app, scrapeSeriesAddedMetricName, scrapeSeriesAddedMetricType, "", "", ts, stale); err != nil {
 		return
 	}
 	return
 }
 
-func (sl *scrapeLoop) addReportSample(app storage.Appender, s string, t int64, v float64) error {
-	ce, ok := sl.cache.get(s)
+func (sl *scrapeLoop) addReportSample(
+	app storage.Appender,
+	str string,
+	typ textparse.MetricType,
+	unit string,
+	help string,
+	t int64,
+	v float64,
+) error {
+	ce, ok := sl.cache.get(str)
 	if ok {
-		err := app.AddFast(ce.ref, t, v)
+		err := app.AddFast(ce.ref, ce.metadata(), t, v)
 		switch errors.Cause(err) {
 		case nil:
 			return nil
@@ -1504,16 +1568,23 @@ func (sl *scrapeLoop) addReportSample(app storage.Appender, s string, t int64, v
 		// The constants are suffixed with the invalid \xff unicode rune to avoid collisions
 		// with scraped metrics in the cache.
 		// We have to drop it when building the actual metric.
-		labels.Label{Name: labels.MetricName, Value: s[:len(s)-1]},
+		labels.Label{Name: labels.MetricName, Value: str[:len(str)-1]},
 	}
 
 	hash := lset.Hash()
 	lset = sl.reportSampleMutator(lset)
 
-	ref, err := app.Add(lset, t, v)
+	metadata := storage.Metadata{
+		Labels: lset,
+		Type:   typ,
+		Unit:   unit,
+		Help:   help,
+	}
+
+	ref, err := app.Add(metadata, t, v)
 	switch errors.Cause(err) {
 	case nil:
-		sl.cache.addRef(s, ref, lset, hash)
+		sl.cache.addRef(str, ref, lset, typ, unit, help, hash)
 		return nil
 	case storage.ErrOutOfOrderSample, storage.ErrDuplicateSampleForTimestamp:
 		return nil
