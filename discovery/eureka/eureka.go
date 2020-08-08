@@ -37,12 +37,34 @@ const (
 	// in this discovery.
 	metaLabelPrefix = model.MetaLabelPrefix + "eureka_"
 
-	appNameLabel              = metaLabelPrefix + "app_name"
-	appInstanceHostNameLabel  = metaLabelPrefix + "app_instance_hostname"
-	appInstanceIPAddrLabel    = metaLabelPrefix + "app_instance_ipaddr"
-	appInstanceStatusLabel    = metaLabelPrefix + "app_instance_status"
-	appInstanceIDLabel        = metaLabelPrefix + "app_instance_id"
-	appInstanceMetadataPrefix = metaLabelPrefix + "app_instance_metadata_"
+	appNameLabel                                      = metaLabelPrefix + "app_name"
+	appInstanceHostNameLabel                          = metaLabelPrefix + "app_instance_hostname"
+	appInstanceHomePageURLLabel                       = metaLabelPrefix + "app_instance_homepageurl"
+	appInstanceStatusPageURLLabel                     = metaLabelPrefix + "app_instance_statuspageurl"
+	appInstanceHealthCheckURLLabel                    = metaLabelPrefix + "app_instance_healthcheckurl"
+	appInstanceIPAddrLabel                            = metaLabelPrefix + "app_instance_ipaddr"
+	appInstanceVipAddressLabel                        = metaLabelPrefix + "app_instance_vipaddress"
+	appInstanceSecureVipAddressLabel                  = metaLabelPrefix + "app_instance_securevipaddress"
+	appInstanceStatusLabel                            = metaLabelPrefix + "app_instance_status"
+	appInstancePortLabel                              = metaLabelPrefix + "app_instance_port"
+	appInstancePortEnabledLabel                       = metaLabelPrefix + "app_instance_port_enabled"
+	appInstanceSecurePortLabel                        = metaLabelPrefix + "app_instance_secureport"
+	appInstanceSecurePortEnabledLabel                 = metaLabelPrefix + "app_instance_secureport_enabled"
+	appInstanceDataCenterInfoNameLabel                = metaLabelPrefix + "app_instance_datacenterinfo_name"
+	appInstanceDataCenterInfoMetadataAmiLaunchIndex   = metaLabelPrefix + "app_instance_datacenterinfo_metadata_amilaunchindex"
+	appInstanceDataCenterInfoMetadataLocalHostname    = metaLabelPrefix + "app_instance_datacenterinfo_metadata_localhostname"
+	appInstanceDataCenterInfoMetadataAvailabilityZone = metaLabelPrefix + "app_instance_datacenterinfo_metadata_availabilityzone"
+	appInstanceDataCenterInfoMetadataInstanceID       = metaLabelPrefix + "app_instance_datacenterinfo_metadata_instanceid"
+	appInstanceDataCenterInfoMetadataPublicIpv4       = metaLabelPrefix + "app_instance_datacenterinfo_metadata_publicipv4"
+	appInstanceDataCenterInfoMetadataPublicHostname   = metaLabelPrefix + "app_instance_datacenterinfo_metadata_publichostname"
+	appInstanceDataCenterInfoMetadataAmiManifestPath  = metaLabelPrefix + "app_instance_datacenterinfo_metadata_amimanifestpath"
+	appInstanceDataCenterInfoMetadataLocalIpv4        = metaLabelPrefix + "app_instance_datacenterinfo_metadata_localipv4"
+	appInstanceDataCenterInfoMetadataHostname         = metaLabelPrefix + "app_instance_datacenterinfo_metadata_hostname"
+	appInstanceDataCenterInfoMetadataAmiID            = metaLabelPrefix + "app_instance_datacenterinfo_metadata_amiid"
+	appInstanceDataCenterInfoMetadataInstanceType     = metaLabelPrefix + "app_instance_datacenterinfo_metadata_instancetype"
+	appInstanceCountryIDLabel                         = metaLabelPrefix + "app_instance_countryId"
+	appInstanceIDLabel                                = metaLabelPrefix + "app_instance_id"
+	appInstanceMetadataPrefix                         = metaLabelPrefix + "app_instance_metadata_"
 )
 
 // DefaultSDConfig is the default Eureka SD configuration.
@@ -184,10 +206,38 @@ func targetsForApp(app *Application) []model.LabelSet {
 			model.AddressLabel:  model.LabelValue(targetAddress),
 			model.InstanceLabel: model.LabelValue(t.InstanceID),
 
-			appInstanceHostNameLabel: lv(t.HostName),
-			appInstanceIPAddrLabel:   lv(t.IPAddr),
-			appInstanceStatusLabel:   lv(t.Status),
-			appInstanceIDLabel:       lv(t.InstanceID),
+			appInstanceHostNameLabel:          lv(t.HostName),
+			appInstanceHomePageURLLabel:       lv(t.HomePageURL),
+			appInstanceStatusPageURLLabel:     lv(t.StatusPageURL),
+			appInstanceHealthCheckURLLabel:    lv(t.HealthCheckURL),
+			appInstanceIPAddrLabel:            lv(t.IPAddr),
+			appInstanceVipAddressLabel:        lv(t.VipAddress),
+			appInstanceSecureVipAddressLabel:  lv(t.SecureVipAddress),
+			appInstanceStatusLabel:            lv(t.Status),
+			appInstancePortLabel:              lv(strconv.Itoa(t.Port.Port)),
+			appInstancePortEnabledLabel:       lv(strconv.FormatBool(t.Port.Enabled)),
+			appInstanceSecurePortLabel:        lv(strconv.Itoa(t.SecurePort.Port)),
+			appInstanceSecurePortEnabledLabel: lv(strconv.FormatBool(t.SecurePort.Enabled)),
+			appInstanceCountryIDLabel:         lv(strconv.Itoa(t.CountryID)),
+			appInstanceIDLabel:                lv(t.InstanceID),
+		}
+
+		if t.DataCenterInfo != nil {
+			target[appInstanceDataCenterInfoNameLabel] = lv(t.DataCenterInfo.Name)
+
+			if t.DataCenterInfo.Metadata != nil {
+				target[appInstanceDataCenterInfoMetadataAmiLaunchIndex] = lv(t.DataCenterInfo.Metadata.AmiLaunchIndex)
+				target[appInstanceDataCenterInfoMetadataLocalHostname] = lv(t.DataCenterInfo.Metadata.LocalHostname)
+				target[appInstanceDataCenterInfoMetadataAvailabilityZone] = lv(t.DataCenterInfo.Metadata.AvailabilityZone)
+				target[appInstanceDataCenterInfoMetadataInstanceID] = lv(t.DataCenterInfo.Metadata.InstanceID)
+				target[appInstanceDataCenterInfoMetadataPublicIpv4] = lv(t.DataCenterInfo.Metadata.PublicIpv4)
+				target[appInstanceDataCenterInfoMetadataPublicHostname] = lv(t.DataCenterInfo.Metadata.PublicHostname)
+				target[appInstanceDataCenterInfoMetadataAmiManifestPath] = lv(t.DataCenterInfo.Metadata.AmiManifestPath)
+				target[appInstanceDataCenterInfoMetadataLocalIpv4] = lv(t.DataCenterInfo.Metadata.LocalIpv4)
+				target[appInstanceDataCenterInfoMetadataHostname] = lv(t.DataCenterInfo.Metadata.Hostname)
+				target[appInstanceDataCenterInfoMetadataAmiID] = lv(t.DataCenterInfo.Metadata.AmiID)
+				target[appInstanceDataCenterInfoMetadataInstanceType] = lv(t.DataCenterInfo.Metadata.InstanceType)
+			}
 		}
 
 		if t.Metadata != nil {
