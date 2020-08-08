@@ -17,6 +17,7 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -83,6 +84,10 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 	if len(c.Server) == 0 {
 		return errors.New("eureka_sd: empty or null eureka server")
+	}
+	_, err = url.Parse(c.Server)
+	if err != nil {
+		return err
 	}
 
 	return c.HTTPClientConfig.Validate()
