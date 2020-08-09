@@ -272,7 +272,7 @@ func Parse(content []byte) (*RuleGroups, []error) {
 	decoder := yaml.NewDecoder(bytes.NewReader(content))
 	decoder.KnownFields(true)
 	err := decoder.Decode(&groups)
-	// Ignore io.EOF which happends with empty input.
+	// Ignore io.EOF which happens with empty input.
 	if err != nil && err != io.EOF {
 		errs = append(errs, err)
 	}
