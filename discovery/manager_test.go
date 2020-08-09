@@ -859,11 +859,15 @@ func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
 }
 
 func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
-	tmpFile, err := ioutil.TempFile("", "sd")
+	tmpDir, err := ioutil.TempDir("", "prometheus-cfg-coalesced")
+	if err != nil {
+		t.Fatalf("error creating temporary directory: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+	tmpFile, err := ioutil.TempFile(tmpDir, "sd")
 	if err != nil {
 		t.Fatalf("error creating temporary file: %v", err)
 	}
-	defer os.Remove(tmpFile.Name())
 	if _, err := tmpFile.Write([]byte(`[{"targets": ["foo:9090"]}]`)); err != nil {
 		t.Fatalf("error writing temporary file: %v", err)
 	}
@@ -874,7 +878,6 @@ func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
 	if err = os.Link(tmpFile.Name(), tmpFile2); err != nil {
 		t.Fatalf("error linking temporary file: %v", err)
 	}
-	defer os.Remove(tmpFile2)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
