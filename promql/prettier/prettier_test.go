@@ -741,6 +741,16 @@ var prettierCases = []prettierTest{
     rate(demo_api_request_duration_seconds_count{job="demo"}[5m]) > 1`,
 	},
 	{
+		expr: `sum (container_memory_working_set_bytes{pod_name=~"^$Deployment$Statefulset$Daemonset.*$", kubernetes_io_hostname=~"^$Node$", pod_name!=""})`,
+		expected: `  sum(
+    container_memory_working_set_bytes{
+      pod_name=~"^$Deployment$Statefulset$Daemonset.*$",
+      kubernetes_io_hostname=~"^$Node$",
+      pod_name!="",
+    }
+  )`,
+	},
+	{
 		expr:     `sort_desc(sum(sum_over_time(ALERTS{alertstate="firing"}[24h])) by (alertname))`,
 		expected: `  sort_desc(sum by(alertname) (sum_over_time(ALERTS{alertstate="firing"}[24h])))`,
 	},
@@ -755,6 +765,183 @@ var prettierCases = []prettierTest{
             node_memory_Cached))
   /
     sum(node_memory_MemTotal) * 100 > 85`,
+	},
+	{
+		expr: `100 - ((node_filesystem_avail_bytes{instance=~"$node",mountpoint="$maxmount",fstype=~"ext4|xfs"} * 100) / node_filesystem_size_bytes {instance=~"$node",mountpoint="$maxmount",fstype=~"ext4|xfs"})`,
+		expected: `    100 - (
+        (node_filesystem_avail_bytes{instance=~"$node", mountpoint="$maxmount", fstype=~"ext4|xfs"} * 100)
+      /
+        node_filesystem_size_bytes{instance=~"$node", mountpoint="$maxmount", fstype=~"ext4|xfs"}
+    )`,
+	},
+	{
+		expr: `(1 - (node_memory_MemAvailable_bytes{instance=~"$node"} / (node_memory_MemTotal_bytes{instance=~"$node"})))* 100`,
+		expected: `    (
+        1 - (
+            node_memory_MemAvailable_bytes{instance=~"$node"}
+          /
+            (node_memory_MemTotal_bytes{instance=~"$node"})
+        )
+    ) * 100`,
+	},
+	{
+		expr:     `sum(time() - node_boot_time_seconds{instance=~"$node"})`,
+		expected: `  sum(time() - node_boot_time_seconds{instance=~"$node"})`,
+	},
+	{
+		expr: `irate(node_network_receive_bytes_total{instance=~'$node',device!~'tap.*|veth.*|br.*|docker.*|virbr*|lo*'}[30m])*8`,
+		expected: `    irate(
+      node_network_receive_bytes_total{instance=~'$node', device!~'tap.*|veth.*|br.*|docker.*|virbr*|lo*'}[30m]
+    ) * 8`,
+	},
+	{
+		expr: `irate(node_disk_write_time_seconds_total{instance=~"$node"}[30m]) / irate(node_disk_writes_completed_total{instance=~"$node"}[30m])`,
+		expected: `    irate(node_disk_write_time_seconds_total{instance=~"$node"}[30m])
+  /
+    irate(node_disk_writes_completed_total{instance=~"$node"}[30m])`,
+	},
+	{
+		expr: `sum (container_memory_working_set_bytes{pod_name=~"^$Deployment$Statefulset$Daemonset.*$", kubernetes_io_hostname=~"^$Node$", pod_name!=""}) / sum (kube_node_status_allocatable_memory_bytes{node=~"^$Node.*$"}) * 100`,
+		expected: `    sum(
+      container_memory_working_set_bytes{
+        pod_name=~"^$Deployment$Statefulset$Daemonset.*$",
+        kubernetes_io_hostname=~"^$Node$",
+        pod_name!="",
+      }
+    )
+  /
+    sum(kube_node_status_allocatable_memory_bytes{node=~"^$Node.*$"}) * 100`,
+	},
+	{
+		expr: `sum (rate (container_cpu_usage_seconds_total{image!="",name=~"^k8s_.*",io_kubernetes_container_name!="POD",pod_name=~"^$Deployment$Statefulset$Daemonset.*$",kubernetes_io_hostname=~"^$Node$"}[1m])) by (pod_name,kubernetes_io_hostname)`,
+		expected: `  sum by(pod_name, kubernetes_io_hostname) (
+    rate(
+      container_cpu_usage_seconds_total{
+        image!="",
+        name=~"^k8s_.*",
+        io_kubernetes_container_name!="POD",
+        pod_name=~"^$Deployment$Statefulset$Daemonset.*$",
+        kubernetes_io_hostname=~"^$Node$",
+      }[1m]
+    )
+  )`,
+	},
+	{
+		expr: `(sum(kube_deployment_status_replicas_available{deployment=~".*$Deployment$Statefulset$Daemonset"}) or vector(0)) + (sum(kube_statefulset_status_replicas{statefulset=~".*$Deployment$Statefulset$Daemonset"}) or vector(0)) + (sum(kube_daemonset_status_number_ready{daemonset=~".*$Deployment$Statefulset$Daemonset"}) or vector(0))`,
+		expected: `    (
+        sum(kube_deployment_status_replicas_available{deployment=~".*$Deployment$Statefulset$Daemonset"})
+      or
+        vector(0)
+    )
+  +
+    (
+        sum(kube_statefulset_status_replicas{statefulset=~".*$Deployment$Statefulset$Daemonset"})
+      or
+        vector(0)
+    )
+  +
+    (
+        sum(kube_daemonset_status_number_ready{daemonset=~".*$Deployment$Statefulset$Daemonset"})
+      or
+        vector(0)
+    )`,
+	},
+	{
+		expr: `label_replace((sum(node_filesystem_size_bytes{fstype=~"ext4|xfs"})by (instance)),"ip","$1","instance","(.*):.*")`,
+		expected: `  label_replace(
+    (sum by(instance) (node_filesystem_size_bytes{fstype=~"ext4|xfs"})),
+    "ip",
+    "$1",
+    "instance",
+    "(.*):.*"
+  )`,
+	},
+	{
+		expr: `label_replace((sum(rate(container_network_transmit_bytes_total{name!=""}[1m])) by (instance)),"ip","$1","instance","(.*):.*")`,
+		expected: `  label_replace(
+    (sum by(instance) (rate(container_network_transmit_bytes_total{name!=""}[1m]))),
+    "ip",
+    "$1",
+    "instance",
+    "(.*):.*"
+  )`,
+	},
+	{
+		expr: `sum(irate(django_http_requests_total_by_view_transport_method_total{namespace=~"$namespace", app=~"^$app$",view!~"prometheus-django-metrics|healthcheck"}[1m])) by(method, view)`,
+		expected: `  sum by(method, view) (
+    irate(
+      django_http_requests_total_by_view_transport_method_total{
+        namespace=~"$namespace",
+        app=~"^$app$",
+        view!~"prometheus-django-metrics|healthcheck",
+      }[1m]
+    )
+  )`,
+	},
+	{
+		expr: `histogram_quantile(0.50, sum(rate(django_http_requests_latency_seconds_by_view_method_bucket{namespace=~"$namespace", app=~"^$app$",view!~"prometheus-django-metrics|healthcheck"}[5m])) by (job, le))`,
+		expected: `  histogram_quantile(
+    0.50,
+    sum by(job, le) (
+      rate(
+        django_http_requests_latency_seconds_by_view_method_bucket{
+          namespace=~"$namespace",
+          app=~"^$app$",
+          view!~"prometheus-django-metrics|healthcheck",
+        }[5m]
+      )
+    )
+  )`,
+	},
+	{
+		expr: `time() - process_start_time_seconds{job=~"kubernetes-pods", app=~"$app", instance=~"$instance", namespace=~"$namespace"}`,
+		expected: `    time() - process_start_time_seconds{
+      job=~"kubernetes-pods",
+      app=~"$app",
+      instance=~"$instance",
+      namespace=~"$namespace",
+    }`,
+	},
+	{
+		expr: `time() - (alertmanager_build_info{instance=~"$instance"} * on (instance, cluster) group_left process_start_time_seconds{instance=~"$instance"})`,
+		expected: `    time() - (
+        alertmanager_build_info{instance=~"$instance"}
+      * on(instance, cluster)
+        group_leftprocess_start_time_seconds{instance=~"$instance"}
+    )`,
+	},
+	{
+		expr:     `sum(increase(alertmanager_notifications_failed_total{instance=~"$instance"}[5m])) by (integration)`,
+		expected: `  sum by(integration) (increase(alertmanager_notifications_failed_total{instance=~"$instance"}[5m]))`,
+	},
+	{
+		expr: `sum(histogram_quantile(0.9,rate(alertmanager_notification_latency_seconds_bucket{instance=~"$instance"}[5m]))) by (integration)`,
+		expected: `  sum by(integration) (
+    histogram_quantile(
+      0.9,
+      rate(alertmanager_notification_latency_seconds_bucket{instance=~"$instance"}[5m])
+    )
+  )`,
+	},
+	{
+		expr: `sum(rate(http_requests_received_total{instance =~ "$instances", controller =~ "$controllers", code =~ "5\\d\\d|4\\d\\d"}[3m])) by (controller)`,
+		expected: `  sum by(controller) (
+    rate(
+      http_requests_received_total{
+        instance=~"$instances",
+        controller=~"$controllers",
+        code=~"5\\d\\d|4\\d\\d",
+      }[3m]
+    )
+  )`,
+	},
+	{
+		expr: `sort_desc( sum(certmanager_certificate_expiration_timestamp_seconds{exported_namespace=~"$Namespace"} - time()) by (name,exported_namespace) )`,
+		expected: `  sort_desc(
+    sum by(name, exported_namespace) (
+        certmanager_certificate_expiration_timestamp_seconds{exported_namespace=~"$Namespace"} - time()
+    )
+  )`,
 	},
 }
 

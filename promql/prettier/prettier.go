@@ -2,7 +2,7 @@ package prettier
 
 import (
 	"fmt"
-	yaml "gopkg.in/yaml.v3"
+	"gopkg.in/yaml.v3"
 	"io/ioutil"
 	"reflect"
 	"regexp"
@@ -323,7 +323,7 @@ func (p *Prettier) prettify(items []parser.Item) (string, error) {
 		switch item.Typ {
 		case parser.LEFT_PAREN:
 			result += item.Val
-			if ((nodeSplittable && !hasGrouping) || hasMultiArgumentCalls) && (!p.pd.expectAggregationLabels) {
+			if ((nodeSplittable && !hasGrouping) || hasMultiArgumentCalls) && !p.pd.expectAggregationLabels {
 				result += p.pd.newLine()
 			}
 		case parser.RIGHT_PAREN:
@@ -403,7 +403,7 @@ func (p *Prettier) prettify(items []parser.Item) (string, error) {
 			}
 		case parser.COMMA:
 			result += item.Val
-			if (nodeSplittable || hasMultiArgumentCalls) && !hasGrouping {
+			if (nodeSplittable || hasMultiArgumentCalls) && !(hasGrouping || aggregationGrouping) {
 				result += p.pd.newLine()
 			} else {
 				result += " "
