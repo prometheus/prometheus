@@ -1556,10 +1556,10 @@ func (sl *scrapeLoop) reportStale(app storage.Appender, start time.Time) (err er
 	return
 }
 
-func (sl *scrapeLoop) addReportSample(app storage.Appender, str string, meta storage.Metadata, t int64, v float64) error {
-	ce, ok := sl.cache.get(str)
+func (sl *scrapeLoop) addReportSample(app storage.Appender, s string, m storage.Metadata, t int64, v float64) error {
+	ce, ok := sl.cache.get(s)
 	if ok {
-		err := app.AddFast(ce.ref, meta, t, v)
+		err := app.AddFast(ce.ref, m, t, v)
 		switch errors.Cause(err) {
 		case nil:
 			return nil
@@ -1577,16 +1577,16 @@ func (sl *scrapeLoop) addReportSample(app storage.Appender, str string, meta sto
 		// The constants are suffixed with the invalid \xff unicode rune to avoid collisions
 		// with scraped metrics in the cache.
 		// We have to drop it when building the actual metric.
-		labels.Label{Name: labels.MetricName, Value: str[:len(str)-1]},
+		labels.Label{Name: labels.MetricName, Value: s[:len(s)-1]},
 	}
 
 	hash := lset.Hash()
 	lset = sl.reportSampleMutator(lset)
 
-	ref, err := app.Add(lset, meta, t, v)
+	ref, err := app.Add(lset, m, t, v)
 	switch errors.Cause(err) {
 	case nil:
-		sl.cache.addRef(str, ref, lset, meta.Type, meta.Unit, meta.Help, hash)
+		sl.cache.addRef(s, ref, lset, m.Type, m.Unit, m.Help, hash)
 		return nil
 	case storage.ErrOutOfOrderSample, storage.ErrDuplicateSampleForTimestamp:
 		return nil
