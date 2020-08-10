@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/oklog/ulid"
@@ -1036,6 +1037,7 @@ func (h *Head) appender() *headAppender {
 		sampleSeries:          h.getSeriesBuffer(),
 		appendID:              appendID,
 		cleanupAppendIDsBelow: cleanupAppendIDsBelow,
+		digest:                xxhash.New(), // Consider pooling.
 	}
 }
 
@@ -1097,6 +1099,8 @@ type headAppender struct {
 
 	appendID, cleanupAppendIDsBelow uint64
 	closed                          bool
+
+	digest *xxhash.Digest
 }
 
 func (a *headAppender) Add(lset labels.Labels, m storage.Metadata, t int64, v float64) (uint64, error) {
@@ -1126,12 +1130,6 @@ func (a *headAppender) Add(lset labels.Labels, m storage.Metadata, t int64, v fl
 			Ref:    s.ref,
 			Labels: lset,
 		})
-		a.metadata = append(a.metadata, record.RefMetadata{
-			Ref:  s.ref,
-			Type: m.Type,
-			Unit: m.Unit,
-			Help: m.Help,
-		})
 	}
 	return s.ref, a.AddFast(s.ref, m, t, v)
 }
@@ -1146,6 +1144,23 @@ func (a *headAppender) AddFast(ref uint64, m storage.Metadata, t int64, v float6
 	if s == nil {
 		return errors.Wrap(storage.ErrNotFound, "unknown series")
 	}
+
+	// Without string interning / using symbol table / using more memory,
+	// determine whether the metadata has changed for this entry using
+	// a hash of the metadata.
+	a.digest.Reset()
+	if _, err := a.digest.WriteString(string(m.Type)); err != nil {
+		return err
+	}
+	if _, err := a.digest.WriteString(m.Unit); err != nil {
+		return err
+	}
+	if _, err := a.digest.WriteString(m.Help); err != nil {
+		return err
+	}
+
+	hashMetadata := a.digest.Sum64()
+
 	s.Lock()
 	if err := s.appendable(t, v); err != nil {
 		s.Unlock()
@@ -1155,6 +1170,7 @@ func (a *headAppender) AddFast(ref uint64, m storage.Metadata, t int64, v float6
 		return err
 	}
 	s.pendingCommit = true
+	pendingMetadata := hashMetadata != s.hashMetadata
 	s.Unlock()
 
 	if t < a.mint {
@@ -1164,6 +1180,15 @@ func (a *headAppender) AddFast(ref uint64, m storage.Metadata, t int64, v float6
 		a.maxt = t
 	}
 
+	if pendingMetadata {
+		// Metadata has not been recorded or has changed.
+		a.metadata = append(a.metadata, record.RefMetadata{
+			Ref:  ref,
+			Type: m.Type,
+			Unit: m.Unit,
+			Help: m.Help,
+		})
+	}
 	a.samples = append(a.samples, record.RefSample{
 		Ref: ref,
 		T:   t,
@@ -1940,6 +1965,8 @@ type memSeries struct {
 	app chunkenc.Appender // Current appender for the chunk.
 
 	memChunkPool *sync.Pool
+
+	hashMetadata uint64
 
 	txs *txRing
 }

@@ -1469,7 +1469,7 @@ var (
 	scrapeDurationMetricMeta = storage.Metadata{
 		Type: textparse.MetricTypeGauge,
 		Unit: "seconds",
-		// TODO: add help.
+		// TODO: add help based on advice.
 	}
 	scrapeSamplesMetricMeta = storage.Metadata{
 		Type: textparse.MetricTypeCounter,
