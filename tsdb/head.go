@@ -1037,7 +1037,6 @@ func (h *Head) appender() *headAppender {
 		sampleSeries:          h.getSeriesBuffer(),
 		appendID:              appendID,
 		cleanupAppendIDsBelow: cleanupAppendIDsBelow,
-		digest:                xxhash.New(), // Consider pooling.
 	}
 }
 
@@ -1100,7 +1099,7 @@ type headAppender struct {
 	appendID, cleanupAppendIDsBelow uint64
 	closed                          bool
 
-	digest *xxhash.Digest
+	digest xxhash.Digest
 }
 
 func (a *headAppender) Add(lset labels.Labels, m storage.Metadata, t int64, v float64) (uint64, error) {
