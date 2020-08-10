@@ -203,22 +203,21 @@ func (b *writeBenchmark) ingestScrapesShard(lbls []labels.Labels, scrapeCount in
 		ts += timeDelta
 
 		for _, s := range scrape {
-			meta := storage.Metadata{Labels: s.labels}
 			s.value += 1000
 
 			if s.ref == nil {
-				ref, err := app.Add(meta, ts, float64(s.value))
+				ref, err := app.Add(s.labels, storage.Metadata{}, ts, float64(s.value))
 				if err != nil {
 					panic(err)
 				}
 				s.ref = &ref
-			} else if err := app.AddFast(*s.ref, meta, ts, float64(s.value)); err != nil {
+			} else if err := app.AddFast(*s.ref, storage.Metadata{}, ts, float64(s.value)); err != nil {
 
 				if errors.Cause(err) != storage.ErrNotFound {
 					panic(err)
 				}
 
-				ref, err := app.Add(meta, ts, float64(s.value))
+				ref, err := app.Add(s.labels, storage.Metadata{}, ts, float64(s.value))
 				if err != nil {
 					panic(err)
 				}

@@ -682,10 +682,9 @@ type cacheEntry struct {
 
 func (ce *cacheEntry) metadata() storage.Metadata {
 	return storage.Metadata{
-		Labels: ce.lset,
-		Type:   ce.typ,
-		Unit:   ce.unit,
-		Help:   ce.help,
+		Type: ce.typ,
+		Unit: ce.unit,
+		Help: ce.help,
 	}
 }
 
@@ -733,11 +732,17 @@ type scrapeCache struct {
 	// seriesCur and seriesPrev store the labels of series that were seen
 	// in the current and previous scrape.
 	// We hold two maps and swap them out to save allocations.
-	seriesCur  map[uint64]storage.Metadata
-	seriesPrev map[uint64]storage.Metadata
+	seriesCur  map[uint64]seriesEntry
+	seriesPrev map[uint64]seriesEntry
 
 	metaMtx  sync.Mutex
 	metadata map[string]*metaEntry
+}
+
+// seriesEntry holds meta information about an active series.
+type seriesEntry struct {
+	labels labels.Labels
+	meta   storage.Metadata
 }
 
 // metaEntry holds meta information about a metric.
@@ -757,8 +762,8 @@ func newScrapeCache() *scrapeCache {
 	return &scrapeCache{
 		series:        map[string]*cacheEntry{},
 		droppedSeries: map[string]*uint64{},
-		seriesCur:     map[uint64]storage.Metadata{},
-		seriesPrev:    map[uint64]storage.Metadata{},
+		seriesCur:     map[uint64]seriesEntry{},
+		seriesPrev:    map[uint64]seriesEntry{},
 		metadata:      map[string]*metaEntry{},
 	}
 }
@@ -860,14 +865,14 @@ func (c *scrapeCache) getDropped(met string) bool {
 	return ok
 }
 
-func (c *scrapeCache) trackStaleness(hash uint64, m storage.Metadata) {
-	c.seriesCur[hash] = m
+func (c *scrapeCache) trackStaleness(hash uint64, s seriesEntry) {
+	c.seriesCur[hash] = s
 }
 
-func (c *scrapeCache) forEachStale(f func(storage.Metadata) bool) {
-	for h, meta := range c.seriesPrev {
+func (c *scrapeCache) forEachStale(f func(seriesEntry) bool) {
+	for h, series := range c.seriesPrev {
 		if _, ok := c.seriesCur[h]; !ok {
-			if !f(meta) {
+			if !f(series) {
 				break
 			}
 		}
@@ -1359,24 +1364,17 @@ loop:
 				break loop
 			}
 
-			var metadata storage.Metadata
-			meta, ok := sl.cache.meta(met)
-			if ok {
-				metadata = storage.Metadata{
-					Labels: lset,
-					Type:   meta.typ,
-					Unit:   meta.unit,
-					Help:   meta.help,
-				}
-			} else {
-				metadata = storage.Metadata{
-					Labels: lset,
-					Type:   textparse.MetricTypeUnknown,
+			var meta storage.Metadata
+			if m, ok := sl.cache.meta(met); ok {
+				meta = storage.Metadata{
+					Type: m.typ,
+					Unit: m.unit,
+					Help: m.help,
 				}
 			}
 
 			var ref uint64
-			ref, err = app.Add(metadata, t, v)
+			ref, err = app.Add(lset, meta, t, v)
 			sampleAdded, err = sl.checkAddError(nil, met, tp, err, &sampleLimitErr, &appErrs)
 			if err != nil {
 				if err != storage.ErrNotFound {
@@ -1387,9 +1385,12 @@ loop:
 
 			if tp == nil {
 				// Bypass staleness logic if there is an explicit timestamp.
-				sl.cache.trackStaleness(hash, metadata)
+				sl.cache.trackStaleness(hash, seriesEntry{
+					labels: lset,
+					meta:   meta,
+				})
 			}
-			sl.cache.addRef(mets, ref, lset, metadata.Type, metadata.Unit, metadata.Help, hash)
+			sl.cache.addRef(mets, ref, lset, meta.Type, meta.Unit, meta.Help, hash)
 			if sampleAdded && sampleLimitErr == nil {
 				seriesAdded++
 			}
@@ -1417,9 +1418,9 @@ loop:
 		level.Warn(sl.l).Log("msg", "Error on ingesting samples that are too old or are too far into the future", "num_dropped", appErrs.numOutOfBounds)
 	}
 	if err == nil {
-		sl.cache.forEachStale(func(m storage.Metadata) bool {
+		sl.cache.forEachStale(func(s seriesEntry) bool {
 			// Series no longer exposed, mark it stale.
-			_, err = app.Add(m, defTime, math.Float64frombits(value.StaleNaN))
+			_, err = app.Add(s.labels, s.meta, defTime, math.Float64frombits(value.StaleNaN))
 			switch errors.Cause(err) {
 			case storage.ErrOutOfOrderSample, storage.ErrDuplicateSampleForTimestamp:
 				// Do not count these in logging, as this is expected if a target
@@ -1443,7 +1444,10 @@ func (sl *scrapeLoop) checkAddError(ce *cacheEntry, met []byte, tp *int64, err e
 	switch errors.Cause(err) {
 	case nil:
 		if tp == nil && ce != nil {
-			sl.cache.trackStaleness(ce.hash, ce.metadata())
+			sl.cache.trackStaleness(ce.hash, seriesEntry{
+				labels: ce.lset,
+				meta:   ce.metadata(),
+			})
 		}
 		return true, nil
 	case storage.ErrNotFound:
@@ -1574,14 +1578,13 @@ func (sl *scrapeLoop) addReportSample(
 	hash := lset.Hash()
 	lset = sl.reportSampleMutator(lset)
 
-	metadata := storage.Metadata{
-		Labels: lset,
-		Type:   typ,
-		Unit:   unit,
-		Help:   help,
+	meta := storage.Metadata{
+		Type: typ,
+		Unit: unit,
+		Help: help,
 	}
 
-	ref, err := app.Add(metadata, t, v)
+	ref, err := app.Add(lset, meta, t, v)
 	switch errors.Cause(err) {
 	case nil:
 		sl.cache.addRef(str, ref, lset, typ, unit, help, hash)

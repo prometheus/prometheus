@@ -976,14 +976,14 @@ type initAppender struct {
 	head *Head
 }
 
-func (a *initAppender) Add(m storage.Metadata, t int64, v float64) (uint64, error) {
+func (a *initAppender) Add(l labels.Labels, m storage.Metadata, t int64, v float64) (uint64, error) {
 	if a.app != nil {
-		return a.app.Add(m, t, v)
+		return a.app.Add(l, m, t, v)
 	}
 	a.head.initTime(t)
 	a.app = a.head.appender()
 
-	return a.app.Add(m, t, v)
+	return a.app.Add(l, m, t, v)
 }
 
 func (a *initAppender) AddFast(ref uint64, m storage.Metadata, t int64, v float64) error {
@@ -1099,14 +1099,14 @@ type headAppender struct {
 	closed                          bool
 }
 
-func (a *headAppender) Add(m storage.Metadata, t int64, v float64) (uint64, error) {
+func (a *headAppender) Add(lset labels.Labels, m storage.Metadata, t int64, v float64) (uint64, error) {
 	if t < a.minValidTime {
 		a.head.metrics.outOfBoundSamples.Inc()
 		return 0, storage.ErrOutOfBounds
 	}
 
 	// Ensure no empty labels have gotten through.
-	lset := m.Labels.WithoutEmpty()
+	lset = lset.WithoutEmpty()
 
 	if len(lset) == 0 {
 		return 0, errors.Wrap(ErrInvalidSample, "empty labelset")

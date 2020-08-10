@@ -206,7 +206,7 @@ type timestampTracker struct {
 }
 
 // Add implements storage.Appender.
-func (t *timestampTracker) Add(_ storage.Metadata, ts int64, _ float64) (uint64, error) {
+func (t *timestampTracker) Add(_ labels.Labels, _ storage.Metadata, ts int64, _ float64) (uint64, error) {
 	t.samples++
 	if ts > t.highestTimestamp {
 		t.highestTimestamp = ts
@@ -216,7 +216,7 @@ func (t *timestampTracker) Add(_ storage.Metadata, ts int64, _ float64) (uint64,
 
 // AddFast implements storage.Appender.
 func (t *timestampTracker) AddFast(_ uint64, m storage.Metadata, ts int64, v float64) error {
-	_, err := t.Add(m, ts, v)
+	_, err := t.Add(nil, m, ts, v)
 	return err
 }
 

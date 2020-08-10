@@ -1038,7 +1038,7 @@ func (s *readyStorage) Appender(ctx context.Context) storage.Appender {
 
 type notReadyAppender struct{}
 
-func (n notReadyAppender) Add(m storage.Metadata, t int64, v float64) (uint64, error) {
+func (n notReadyAppender) Add(l labels.Labels, m storage.Metadata, t int64, v float64) (uint64, error) {
 	return 0, tsdb.ErrNotReady
 }
 

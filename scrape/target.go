@@ -289,14 +289,14 @@ type limitAppender struct {
 	i     int
 }
 
-func (app *limitAppender) Add(m storage.Metadata, t int64, v float64) (uint64, error) {
+func (app *limitAppender) Add(l labels.Labels, m storage.Metadata, t int64, v float64) (uint64, error) {
 	if !value.IsStaleNaN(v) {
 		app.i++
 		if app.i > app.limit {
 			return 0, errSampleLimit
 		}
 	}
-	ref, err := app.Appender.Add(m, t, v)
+	ref, err := app.Appender.Add(l, m, t, v)
 	if err != nil {
 		return 0, err
 	}
@@ -320,12 +320,12 @@ type timeLimitAppender struct {
 	maxTime int64
 }
 
-func (app *timeLimitAppender) Add(m storage.Metadata, t int64, v float64) (uint64, error) {
+func (app *timeLimitAppender) Add(l labels.Labels, m storage.Metadata, t int64, v float64) (uint64, error) {
 	if t > app.maxTime {
 		return 0, storage.ErrOutOfBounds
 	}
 
-	ref, err := app.Appender.Add(m, t, v)
+	ref, err := app.Appender.Add(l, m, t, v)
 	if err != nil {
 		return 0, err
 	}

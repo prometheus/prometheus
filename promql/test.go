@@ -305,8 +305,7 @@ func (cmd *loadCmd) append(a storage.Appender) error {
 		m := cmd.metrics[h]
 
 		for _, s := range smpls {
-			meta := storage.Metadata{Labels: m}
-			if _, err := a.Add(meta, s.T, s.V); err != nil {
+			if _, err := a.Add(m, storage.Metadata{}, s.T, s.V); err != nil {
 				return err
 			}
 		}
@@ -654,8 +653,7 @@ func (ll *LazyLoader) appendTill(ts int64) error {
 				ll.loadCmd.defs[h] = smpls[i:]
 				break
 			}
-			meta := storage.Metadata{Labels: m}
-			if _, err := app.Add(meta, s.T, s.V); err != nil {
+			if _, err := app.Add(m, storage.Metadata{}, s.T, s.V); err != nil {
 				return err
 			}
 			if i == len(smpls)-1 {

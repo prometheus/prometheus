@@ -141,7 +141,7 @@ type Appender interface {
 	// to AddFast() at any point. Adding the sample via Add() returns a new
 	// reference number.
 	// If the reference is 0 it must not be used for caching.
-	Add(m Metadata, t int64, v float64) (uint64, error)
+	Add(l labels.Labels, m Metadata, t int64, v float64) (uint64, error)
 
 	// AddFast adds a sample pair for the referenced series. It is generally
 	// faster than adding a sample by providing its full label set.
@@ -160,10 +160,9 @@ type Appender interface {
 
 // Metadata is metadata about a series.
 type Metadata struct {
-	Labels labels.Labels
-	Type   textparse.MetricType
-	Unit   string
-	Help   string
+	Type textparse.MetricType
+	Unit string
+	Help string
 }
 
 // SeriesSet contains a set of series.

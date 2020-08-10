@@ -19,6 +19,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/pkg/labels"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 )
 
@@ -144,14 +145,14 @@ type fanoutAppender struct {
 	secondaries []Appender
 }
 
-func (f *fanoutAppender) Add(m Metadata, t int64, v float64) (uint64, error) {
-	ref, err := f.primary.Add(m, t, v)
+func (f *fanoutAppender) Add(l labels.Labels, m Metadata, t int64, v float64) (uint64, error) {
+	ref, err := f.primary.Add(l, m, t, v)
 	if err != nil {
 		return ref, err
 	}
 
 	for _, appender := range f.secondaries {
-		if _, err := appender.Add(m, t, v); err != nil {
+		if _, err := appender.Add(l, m, t, v); err != nil {
 			return 0, err
 		}
 	}
