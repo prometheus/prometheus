@@ -658,7 +658,7 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr:     `sum(metric_name)`,
-		expected: `  sum (metric_name)`, // TODO: add node information support for this to avoid space between sum and (.
+		expected: `  sum(metric_name)`, // TODO: add node information support for this to avoid space between sum and (.
 	},
 	{
 		expr:     `sum without(label) (metric_name)`,
@@ -723,6 +723,38 @@ var prettierCases = []prettierTest{
   "a_very_large_value",
     a_some_very_large_label_2="a_very_large_value",
   }`,
+	},
+	// examples from real-world.
+	{
+		expr: `rate(demo_api_request_duration_seconds_count{status="500",job="demo"}[5m]) * 50 > on(job, instance, method, path) rate(demo_api_request_duration_seconds_count{status="200",job="demo"}[5m])`,
+		expected: `    rate(demo_api_request_duration_seconds_count{status="500", job="demo"}[5m]) * 50
+  > on(job, instance, method, path)
+    rate(demo_api_request_duration_seconds_count{status="200", job="demo"}[5m])`,
+	},
+	{
+		expr: `histogram_quantile(0.9, rate(demo_api_request_duration_seconds_bucket{job="demo"}[5m])) > 0.05 and rate(demo_api_request_duration_seconds_count{job="demo"}[5m]) > 1`,
+		expected: `    histogram_quantile(
+      0.9,
+      rate(demo_api_request_duration_seconds_bucket{job="demo"}[5m])
+    ) > 0.05
+  and
+    rate(demo_api_request_duration_seconds_count{job="demo"}[5m]) > 1`,
+	},
+	{
+		expr:     `sort_desc(sum(sum_over_time(ALERTS{alertstate="firing"}[24h])) by (alertname))`,
+		expected: `  sort_desc(sum by(alertname) (sum_over_time(ALERTS{alertstate="firing"}[24h])))`,
+	},
+	{
+		expr: `(sum(node_memory_MemTotal) - sum(node_memory_MemFree + node_memory_Buffers + node_memory_Cached) ) / sum(node_memory_MemTotal) * 100 > 85`,
+		expected: `    (sum(node_memory_MemTotal)
+      -
+        sum(node_memory_MemFree
+          +
+            node_memory_Buffers
+          +
+            node_memory_Cached))
+  /
+    sum(node_memory_MemTotal) * 100 > 85`,
 	},
 }
 

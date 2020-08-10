@@ -54,21 +54,24 @@ func (n *nodeInfo) previousIndent() int {
 func (n *nodeInfo) is(element uint) bool {
 	switch element {
 	case grouping:
-		if n, ok := n.currentNode.(*parser.BinaryExpr); ok {
-			if n.VectorMatching == nil {
-				return n.ReturnBool
+		switch node := n.currentNode.(type) {
+		case *parser.BinaryExpr:
+			if node.VectorMatching == nil {
+				return node.ReturnBool
 			}
-			return len(n.VectorMatching.MatchingLabels) > 0 || n.ReturnBool
+			return len(node.VectorMatching.MatchingLabels) > 0 || node.ReturnBool || node.VectorMatching.On
+		case *parser.AggregateExpr:
+			return len(node.Grouping) > 0
 		}
 	case scalars:
-		if n, ok := n.currentNode.(*parser.BinaryExpr); ok {
-			if n.LHS.Type() == parser.ValueTypeScalar || n.RHS.Type() == parser.ValueTypeScalar {
+		if node, ok := n.currentNode.(*parser.BinaryExpr); ok {
+			if node.LHS.Type() == parser.ValueTypeScalar || node.RHS.Type() == parser.ValueTypeScalar {
 				return true
 			}
 		}
 	case multiArguments:
-		if n, ok := n.currentNode.(*parser.Call); ok {
-			return len(n.Args) > 1
+		if node, ok := n.currentNode.(*parser.Call); ok {
+			return len(node.Args) > 1
 		}
 	}
 	return false

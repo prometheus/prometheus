@@ -297,8 +297,8 @@ func (p *Prettier) prettify(items []parser.Item) (string, error) {
 			node           = nodeInfo.node()
 			nodeSplittable = nodeInfo.violatesColumnLimit()
 			// Binary expression use-case.
-			hasImmediateScalar bool
-			hasGrouping        bool
+			hasImmediateScalar               bool
+			hasGrouping, aggregationGrouping bool
 			// Aggregate expression use-case.
 			hasMultiArgumentCalls bool
 		)
@@ -307,6 +307,8 @@ func (p *Prettier) prettify(items []parser.Item) (string, error) {
 			result += p.pd.newLine()
 		}
 		switch node.(type) {
+		case *parser.AggregateExpr:
+			aggregationGrouping = nodeInfo.is(grouping)
 		case *parser.BinaryExpr:
 			hasImmediateScalar = nodeInfo.is(scalars)
 			hasGrouping = nodeInfo.is(grouping)
@@ -365,14 +367,17 @@ func (p *Prettier) prettify(items []parser.Item) (string, error) {
 		case parser.STRING, parser.NUMBER:
 			result += item.Val
 		case parser.SUM, parser.BOTTOMK, parser.COUNT_VALUES, parser.COUNT, parser.GROUP, parser.MAX, parser.MIN,
-			parser.QUANTILE, parser.STDVAR, parser.STDDEV, parser.TOPK:
+			parser.QUANTILE, parser.STDVAR, parser.STDDEV, parser.TOPK, parser.AVG:
 			// Aggregations.
-			result += item.Val + " "
+			result += item.Val
+			if aggregationGrouping {
+				result += " "
+			}
 		case parser.EQL, parser.EQL_REGEX, parser.NEQ, parser.NEQ_REGEX, parser.DURATION, parser.COLON,
 			parser.LEFT_BRACKET, parser.RIGHT_BRACKET:
 			// Comparison operators.
 			result += item.Val
-		case parser.ADD, parser.SUB, parser.DIV, parser.GTE, parser.GTR, parser.LOR, parser.LAND,
+		case parser.ADD, parser.SUB, parser.MUL, parser.DIV, parser.GTE, parser.GTR, parser.LOR, parser.LAND,
 			parser.LSS, parser.LTE, parser.LUNLESS, parser.MOD, parser.POW:
 			// Vector matching operators.
 			if hasImmediateScalar {
@@ -398,7 +403,7 @@ func (p *Prettier) prettify(items []parser.Item) (string, error) {
 			}
 		case parser.COMMA:
 			result += item.Val
-			if nodeSplittable || hasMultiArgumentCalls {
+			if (nodeSplittable || hasMultiArgumentCalls) && !hasGrouping {
 				result += p.pd.newLine()
 			} else {
 				result += " "
