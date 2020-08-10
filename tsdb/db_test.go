@@ -2708,6 +2708,88 @@ func deleteNonBlocks(dbDir string) error {
 			return errors.Errorf("root folder:%v still hase non block directory:%v", dbDir, dir.Name())
 		}
 	}
-
 	return nil
+}
+
+func TestOpen_VariousBlockStates(t *testing.T) {
+	tmpDir, err := ioutil.TempDir("", "test")
+	testutil.Ok(t, err)
+	t.Cleanup(func() {
+		testutil.Ok(t, os.RemoveAll(tmpDir))
+	})
+
+	var (
+		expectedLoadedDirs  = map[string]struct{}{}
+		expectedRemovedDirs = map[string]struct{}{}
+		expectedIgnoredDirs = map[string]struct{}{}
+	)
+
+	{
+		// Ok blocks; should be loaded.
+		expectedLoadedDirs[createBlock(t, tmpDir, genSeries(10, 2, 0, 10))] = struct{}{}
+		expectedLoadedDirs[createBlock(t, tmpDir, genSeries(10, 2, 10, 20))] = struct{}{}
+	}
+	{
+		// Block to repair; should be repaired & loaded.
+		dbDir := filepath.Join("testdata", "repair_index_version", "01BZJ9WJQPWHGNC2W4J9TA62KC")
+		outDir := filepath.Join(tmpDir, "01BZJ9WJQPWHGNC2W4J9TA62KC")
+		expectedLoadedDirs[outDir] = struct{}{}
+
+		// Touch chunks dir in block.
+		testutil.Ok(t, os.MkdirAll(filepath.Join(dbDir, "chunks"), 0777))
+		defer func() {
+			testutil.Ok(t, os.RemoveAll(filepath.Join(dbDir, "chunks")))
+		}()
+		testutil.Ok(t, os.Mkdir(outDir, os.ModePerm))
+		testutil.Ok(t, fileutil.CopyDirs(dbDir, outDir))
+	}
+	{
+		// Missing meta.json; should be ignored and only logged.
+		// TODO(bwplotka): Probably add metric.
+		dir := createBlock(t, tmpDir, genSeries(10, 2, 20, 30))
+		expectedIgnoredDirs[dir] = struct{}{}
+		testutil.Ok(t, os.Remove(filepath.Join(dir, metaFilename)))
+	}
+	{
+		// Tmp blocks during creation & deletion; those should be removed on start.
+		dir := createBlock(t, tmpDir, genSeries(10, 2, 30, 40))
+		testutil.Ok(t, fileutil.Replace(dir, dir+tmpForCreationBlockDirSuffix))
+		expectedRemovedDirs[dir+tmpForCreationBlockDirSuffix] = struct{}{}
+
+		// Tmp blocks during creation & deletion; those should be removed on start.
+		dir = createBlock(t, tmpDir, genSeries(10, 2, 40, 50))
+		testutil.Ok(t, fileutil.Replace(dir, dir+tmpForDeletionBlockDirSuffix))
+		expectedRemovedDirs[dir+tmpForDeletionBlockDirSuffix] = struct{}{}
+	}
+
+	opts := DefaultOptions()
+	opts.RetentionDuration = 0
+	db, err := Open(tmpDir, log.NewLogfmtLogger(os.Stderr), nil, opts)
+	testutil.Ok(t, err)
+
+	loadedBlocks := db.Blocks()
+
+	var loaded int
+	for _, l := range loadedBlocks {
+		if _, ok := expectedLoadedDirs[filepath.Join(tmpDir, l.meta.ULID.String())]; !ok {
+			t.Fatal("unexpected block", l.meta.ULID, "was loaded")
+		}
+		loaded++
+	}
+	testutil.Equals(t, len(expectedLoadedDirs), loaded)
+	testutil.Ok(t, db.Close())
+
+	files, err := ioutil.ReadDir(tmpDir)
+	testutil.Ok(t, err)
+
+	var ignored int
+	for _, f := range files {
+		if _, ok := expectedRemovedDirs[filepath.Join(tmpDir, f.Name())]; ok {
+			t.Fatal("expected", filepath.Join(tmpDir, f.Name()), "to be removed, but still exists")
+		}
+		if _, ok := expectedIgnoredDirs[filepath.Join(tmpDir, f.Name())]; ok {
+			ignored++
+		}
+	}
+	testutil.Equals(t, len(expectedIgnoredDirs), ignored)
 }

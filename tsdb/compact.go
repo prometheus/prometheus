@@ -524,7 +524,7 @@ func (w *instrumentedChunkWriter) WriteChunks(chunks ...chunks.Meta) error {
 // It cleans up all files of the old blocks after completing successfully.
 func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockReader) (err error) {
 	dir := filepath.Join(dest, meta.ULID.String())
-	tmp := dir + ".tmp"
+	tmp := dir + tmpForCreationBlockDirSuffix
 	var closers []io.Closer
 	defer func(t time.Time) {
 		var merr tsdb_errors.MultiError
