@@ -46,6 +46,7 @@ const (
 type WriteTo interface {
 	Append([]record.RefSample) bool
 	StoreSeries([]record.RefSeries, int)
+	StoreMetadata([]record.RefMetadata, int)
 	// SeriesReset is called after reading a checkpoint to allow the deletion
 	// of all series created in a segment lower than the argument.
 	SeriesReset(int)
@@ -461,10 +462,11 @@ func (w *Watcher) garbageCollectSeries(segmentNum int) error {
 
 func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 	var (
-		dec     record.Decoder
-		series  []record.RefSeries
-		samples []record.RefSample
-		send    []record.RefSample
+		dec      record.Decoder
+		series   []record.RefSeries
+		metadata []record.RefMetadata
+		samples  []record.RefSample
+		send     []record.RefSample
 	)
 	for r.Next() && !isClosed(w.quit) {
 		rec := r.Record()
@@ -478,6 +480,14 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 				return err
 			}
 			w.writer.StoreSeries(series, segmentNum)
+
+		case record.Metadata:
+			metadata, err := dec.Metadata(rec, metadata[:0])
+			if err != nil {
+				w.recordDecodeFailsMetric.Inc()
+				return err
+			}
+			w.writer.StoreMetadata(metadata, segmentNum)
 
 		case record.Samples:
 			// If we're not tailing a segment we can ignore any samples records we see.

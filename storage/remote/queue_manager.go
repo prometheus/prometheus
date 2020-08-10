@@ -33,6 +33,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/relabel"
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/wal"
 )
@@ -249,6 +250,7 @@ type QueueManager struct {
 
 	seriesMtx            sync.Mutex
 	seriesLabels         map[uint64]labels.Labels
+	seriesMetadata       map[uint64]storage.Metadata
 	seriesSegmentIndexes map[uint64]int
 	droppedSeries        map[uint64]struct{}
 
@@ -295,6 +297,7 @@ func NewQueueManager(
 		storeClient:    client,
 
 		seriesLabels:         make(map[uint64]labels.Labels),
+		seriesMetadata:       make(map[uint64]storage.Metadata),
 		seriesSegmentIndexes: make(map[uint64]int),
 		droppedSeries:        make(map[uint64]struct{}),
 
@@ -334,6 +337,7 @@ outer:
 			t.seriesMtx.Unlock()
 			continue
 		}
+		meta, _ := t.seriesMetadata[s.Ref]
 		t.seriesMtx.Unlock()
 		// This will only loop if the queues are being resharded.
 		backoff := t.cfg.MinBackoff
@@ -346,6 +350,7 @@ outer:
 
 			if t.shards.enqueue(s.Ref, sample{
 				labels: lbls,
+				meta:   meta,
 				t:      s.T,
 				v:      s.V,
 			}) {
@@ -400,6 +405,9 @@ func (t *QueueManager) Stop() {
 	for _, labels := range t.seriesLabels {
 		t.releaseLabels(labels)
 	}
+	for _, meta := range t.seriesMetadata {
+		t.releaseMetadata(meta)
+	}
 	t.seriesMtx.Unlock()
 	t.metrics.unregister()
 }
@@ -428,6 +436,31 @@ func (t *QueueManager) StoreSeries(series []record.RefSeries, index int) {
 	}
 }
 
+// StoreMetadata keeps track of the metadata on a per series basis.
+func (t *QueueManager) StoreMetadata(metadata []record.RefMetadata, index int) {
+	t.seriesMtx.Lock()
+	defer t.seriesMtx.Unlock()
+	for _, m := range metadata {
+		meta := storage.Metadata{
+			Type: m.Type,
+			Unit: m.Unit,
+			Help: m.Help,
+		}
+
+		// Metadata can change, hence we should release the metadata
+		// if it has changed and is being replaced.
+		if orig, ok := t.seriesMetadata[m.Ref]; ok {
+			t.releaseMetadata(orig)
+		}
+
+		// Intern after potentially releasing in case some string values
+		// in the metadata were the same (do not want to release).
+		t.internMetadata(meta)
+
+		t.seriesMetadata[m.Ref] = meta
+	}
+}
+
 // SeriesReset is used when reading a checkpoint. WAL Watcher should have
 // stored series records with the checkpoints index number, so we can now
 // delete any ref ID's lower than that # from the two maps.
@@ -440,7 +473,9 @@ func (t *QueueManager) SeriesReset(index int) {
 		if v < index {
 			delete(t.seriesSegmentIndexes, k)
 			t.releaseLabels(t.seriesLabels[k])
+			t.releaseMetadata(t.seriesMetadata[k])
 			delete(t.seriesLabels, k)
+			delete(t.seriesMetadata, k)
 			delete(t.droppedSeries, k)
 		}
 	}
@@ -472,6 +507,18 @@ func (t *QueueManager) releaseLabels(ls labels.Labels) {
 		t.interner.release(l.Name)
 		t.interner.release(l.Value)
 	}
+}
+
+func (t *QueueManager) internMetadata(meta storage.Metadata) {
+	t.interner.intern(string(meta.Type))
+	t.interner.intern(meta.Unit)
+	t.interner.intern(meta.Help)
+}
+
+func (t *QueueManager) releaseMetadata(meta storage.Metadata) {
+	t.interner.release(string(meta.Type))
+	t.interner.release(meta.Unit)
+	t.interner.release(meta.Help)
 }
 
 // processExternalLabels merges externalLabels into ls. If ls contains
@@ -655,6 +702,7 @@ func (t *QueueManager) newShards() *shards {
 
 type sample struct {
 	labels labels.Labels
+	meta   storage.Metadata
 	t      int64
 	v      float64
 }
@@ -815,6 +863,9 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan sample) {
 			// retries endlessly, so once we reach max samples, if we can never send to the endpoint we'll
 			// stop reading from the queue. This makes it safe to reference pendingSamples by index.
 			pendingSamples[nPending].Labels = labelsToLabelsProto(sample.labels, pendingSamples[nPending].Labels)
+			pendingSamples[nPending].Type = string(sample.meta.Type)
+			pendingSamples[nPending].Unit = sample.meta.Unit
+			pendingSamples[nPending].Help = sample.meta.Help
 			pendingSamples[nPending].Samples[0].Timestamp = sample.t
 			pendingSamples[nPending].Samples[0].Value = sample.v
 			nPending++

@@ -118,6 +118,35 @@ func (d *Decoder) Series(rec []byte, series []RefSeries) ([]RefSeries, error) {
 	return series, nil
 }
 
+// Metadata appends metadata in rec to the given slice.
+func (d *Decoder) Metadata(rec []byte, metadata []RefMetadata) ([]RefMetadata, error) {
+	dec := encoding.Decbuf{B: rec}
+
+	if Type(dec.Byte()) != Metadata {
+		return nil, errors.New("invalid record type")
+	}
+	for len(dec.B) > 0 && dec.Err() == nil {
+		ref := dec.Uvarint64()
+		typ := dec.UvarintStr()
+		unit := dec.UvarintStr()
+		help := dec.UvarintStr()
+
+		metadata = append(metadata, RefMetadata{
+			Ref:  ref,
+			Type: textparse.MetricType(typ),
+			Unit: unit,
+			Help: help,
+		})
+	}
+	if dec.Err() != nil {
+		return nil, dec.Err()
+	}
+	if len(dec.B) > 0 {
+		return nil, errors.Errorf("unexpected %d bytes left in entry", len(dec.B))
+	}
+	return metadata, nil
+}
+
 // Samples appends samples in rec to the given slice.
 func (d *Decoder) Samples(rec []byte, samples []RefSample) ([]RefSample, error) {
 	dec := encoding.Decbuf{B: rec}
