@@ -308,12 +308,12 @@ func (p *Prettier) prettify(items []parser.Item) (string, error) {
 		}
 		switch node.(type) {
 		case *parser.AggregateExpr:
-			aggregationGrouping = nodeInfo.is(grouping)
+			aggregationGrouping = nodeInfo.has(grouping)
 		case *parser.BinaryExpr:
-			hasImmediateScalar = nodeInfo.is(scalars)
-			hasGrouping = nodeInfo.is(grouping)
+			hasImmediateScalar = nodeInfo.has(scalars)
+			hasGrouping = nodeInfo.has(grouping)
 		case *parser.Call:
-			hasMultiArgumentCalls = nodeInfo.is(multiArguments)
+			hasMultiArgumentCalls = nodeInfo.has(multiArguments)
 		}
 		if p.pd.isNewLineApplied {
 			result += p.pd.pad(nodeInfo.baseIndent)

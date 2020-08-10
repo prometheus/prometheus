@@ -50,8 +50,8 @@ func (n *nodeInfo) previousIndent() int {
 	return n.buf
 }
 
-// contains verifies whether the current node contains a particular entity.
-func (n *nodeInfo) is(element uint) bool {
+// has verifies whether the current node contains a particular entity.
+func (n *nodeInfo) has(element uint) bool {
 	switch element {
 	case grouping:
 		switch node := n.currentNode.(type) {
