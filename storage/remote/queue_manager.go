@@ -442,6 +442,7 @@ func (t *QueueManager) StoreMetadata(metadata []record.RefMetadata, index int) {
 	t.seriesMtx.Lock()
 	defer t.seriesMtx.Unlock()
 	for _, m := range metadata {
+		t.seriesSegmentIndexes[m.Ref] = index
 		meta := t.internMetadata(storage.Metadata{
 			Type: m.Type,
 			Unit: m.Unit,
