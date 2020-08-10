@@ -70,7 +70,6 @@ type RefSample struct {
 // Decoder decodes series, sample, and tombstone records.
 // The zero value is ready to use.
 type Decoder struct {
-	Version uint
 }
 
 // Type returns the type of the record.
@@ -80,7 +79,7 @@ func (d *Decoder) Type(rec []byte) Type {
 		return Unknown
 	}
 	switch t := Type(rec[0]); t {
-	case Series, Samples, Tombstones:
+	case Series, Samples, Tombstones, Metadata:
 		return t
 	}
 	return Unknown
@@ -209,7 +208,6 @@ func (d *Decoder) Tombstones(rec []byte, tstones []tombstones.Stone) ([]tombston
 // Encoder encodes series, sample, and tombstones records.
 // The zero value is ready to use.
 type Encoder struct {
-	Version uint
 }
 
 // Series appends the encoded series to b and returns the resulting slice.
