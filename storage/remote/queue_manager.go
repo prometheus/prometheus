@@ -863,7 +863,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan sample) {
 			// retries endlessly, so once we reach max samples, if we can never send to the endpoint we'll
 			// stop reading from the queue. This makes it safe to reference pendingSamples by index.
 			pendingSamples[nPending].Labels = labelsToLabelsProto(sample.labels, pendingSamples[nPending].Labels)
-			pendingSamples[nPending].Type = string(sample.meta.Type)
+			pendingSamples[nPending].Type = sample.meta.Type.ToProto()
 			pendingSamples[nPending].Unit = sample.meta.Unit
 			pendingSamples[nPending].Help = sample.meta.Help
 			pendingSamples[nPending].Samples[0].Timestamp = sample.t

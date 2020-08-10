@@ -737,11 +737,14 @@ type seriesEntry struct {
 
 // metaEntry holds meta information about a metric.
 type metaEntry struct {
-	lastIterSeen   uint64 // Last scrape iteration the entry was observed at.
-	lastIterChange uint64 // Last scrape iteration the entry was observed at.
-	typ            textparse.MetricType
-	help           string
-	unit           string
+	lastIter             uint64 // Last scrape iteration the entry was observed at.
+	lastIterObservedType uint64 // Last scrape iteration the type was observed at.
+	lastIterObservedUnit uint64 // Last scrape iteration the unit was observed at.
+	lastIterObservedHelp uint64 // Last scrape iteration the help was observed at.
+	lastIterChange       uint64 // Last scrape iteration the entry was changed at.
+	typ                  textparse.MetricType
+	help                 string
+	unit                 string
 }
 
 func (m *metaEntry) size() int {
@@ -793,7 +796,7 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 		c.metaMtx.Lock()
 		for m, e := range c.metadata {
 			// Keep metadata around for 10 scrapes after its metric disappeared.
-			if c.iter-e.lastIterSeen > 10 {
+			if c.iter-e.lastIter > 10 {
 				delete(c.metadata, m)
 			}
 		}
@@ -875,7 +878,8 @@ func (c *scrapeCache) setType(metric []byte, t textparse.MetricType) {
 		e.typ = t
 		e.lastIterChange = c.iter
 	}
-	e.lastIterSeen = c.iter
+	e.lastIter = c.iter
+	e.lastIterObservedType = c.iter
 
 	c.metaMtx.Unlock()
 }
@@ -892,7 +896,8 @@ func (c *scrapeCache) setHelp(metric, help []byte) {
 		e.help = string(help)
 		e.lastIterChange = c.iter
 	}
-	e.lastIterSeen = c.iter
+	e.lastIter = c.iter
+	e.lastIterObservedHelp = c.iter
 
 	c.metaMtx.Unlock()
 }
@@ -909,7 +914,8 @@ func (c *scrapeCache) setUnit(metric, unit []byte) {
 		e.unit = string(unit)
 		e.lastIterChange = c.iter
 	}
-	e.lastIterSeen = c.iter
+	e.lastIter = c.iter
+	e.lastIterObservedUnit = c.iter
 
 	c.metaMtx.Unlock()
 }
@@ -1334,11 +1340,19 @@ loop:
 			metaEntry, metaOk := sl.cache.metadata[yoloString(met)]
 			metaUpdated := metaOk && metaEntry.lastIterChange == currIter
 			if metaUpdated {
-				// Metadata available and metadata changed this scrape iteration.
-				meta = storage.Metadata{
-					Type: metaEntry.typ,
-					Help: metaEntry.help,
-					Unit: metaEntry.unit,
+				// Metadata available and metadata changed this scrape
+				// iteration, be sure to only set the metadata that was
+				// actually specified this iteration since the other
+				// fields are treated as zeroed since they were not specified
+				// this iteration.
+				if metaEntry.lastIterObservedType == currIter {
+					meta.Type = metaEntry.typ
+				}
+				if metaEntry.lastIterObservedUnit == currIter {
+					meta.Unit = metaEntry.unit
+				}
+				if metaEntry.lastIterObservedHelp == currIter {
+					meta.Help = metaEntry.help
 				}
 			}
 			sl.cache.metaMtx.Unlock()
@@ -1382,10 +1396,18 @@ loop:
 			sl.cache.metaMtx.Lock()
 			metaEntry, metaOk := sl.cache.metadata[yoloString(met)]
 			if metaOk {
-				meta = storage.Metadata{
-					Type: metaEntry.typ,
-					Help: metaEntry.help,
-					Unit: metaEntry.unit,
+				// Be sure to only set the metadata that was
+				// actually specified this iteration since the other
+				// fields are treated as zeroed since they were not specified
+				// this iteration.
+				if metaEntry.lastIterObservedType == currIter {
+					meta.Type = metaEntry.typ
+				}
+				if metaEntry.lastIterObservedUnit == currIter {
+					meta.Unit = metaEntry.unit
+				}
+				if metaEntry.lastIterObservedHelp == currIter {
+					meta.Help = metaEntry.help
 				}
 			}
 			sl.cache.metaMtx.Unlock()

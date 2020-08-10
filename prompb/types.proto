@@ -27,9 +27,9 @@ message Sample {
 message TimeSeries {
   repeated Label labels   = 1 [(gogoproto.nullable) = false];
   repeated Sample samples = 2 [(gogoproto.nullable) = false];
-  string type = 3;
-  string unit = 4;
-  string help = 5;
+  MetricType type         = 3;
+  string unit             = 4;
+  string help             = 5;
 }
 
 message Label {
@@ -52,6 +52,17 @@ message LabelMatcher {
   Type type    = 1;
   string name  = 2;
   string value = 3;
+}
+
+enum MetricType {
+  UNKNOWN         = 0;
+  COUNTER         = 1;
+  GAUGE           = 2;
+  HISTOGRAM       = 3;
+  GAUGE_HISTOGRAM = 4;
+  SUMMARY         = 5;
+  INFO            = 6;
+  STATESET        = 7;
 }
 
 message ReadHints {

@@ -18,6 +18,7 @@ import (
 
 	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/prompb"
 )
 
 // Parser parses samples from a byte slice of samples in the official
@@ -94,3 +95,25 @@ const (
 	MetricTypeStateset       = "stateset"
 	MetricTypeUnknown        = "unknown"
 )
+
+// ToProto returns the well known enum value or unknown otherwise.
+func (t MetricType) ToProto() prompb.MetricType {
+	switch t {
+	case MetricTypeCounter:
+		return prompb.MetricType_COUNTER
+	case MetricTypeGauge:
+		return prompb.MetricType_GAUGE
+	case MetricTypeHistogram:
+		return prompb.MetricType_HISTOGRAM
+	case MetricTypeGaugeHistogram:
+		return prompb.MetricType_GAUGE_HISTOGRAM
+	case MetricTypeSummary:
+		return prompb.MetricType_SUMMARY
+	case MetricTypeInfo:
+		return prompb.MetricType_INFO
+	case MetricTypeStateset:
+		return prompb.MetricType_STATESET
+	default:
+		return prompb.MetricType_UNKNOWN
+	}
+}
