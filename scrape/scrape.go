@@ -845,14 +845,17 @@ func (c *scrapeCache) getDropped(met string) bool {
 	return ok
 }
 
-func (c *scrapeCache) trackStaleness(hash uint64, s seriesEntry) {
-	c.seriesCur[hash] = s
+func (c *scrapeCache) trackStaleness(hash uint64, lset labels.Labels, meta storage.Metadata) {
+	c.seriesCur[hash] = seriesEntry{
+		labels: lset,
+		meta:   meta,
+	}
 }
 
-func (c *scrapeCache) forEachStale(f func(seriesEntry) bool) {
+func (c *scrapeCache) forEachStale(f func(labels.Labels, storage.Metadata) bool) {
 	for h, entry := range c.seriesPrev {
 		if _, ok := c.seriesCur[h]; !ok {
-			if !f(entry) {
+			if !f(entry.labels, entry.meta) {
 				break
 			}
 		}
@@ -1365,7 +1368,7 @@ loop:
 
 			if tp == nil {
 				// Bypass staleness logic if there is an explicit timestamp.
-				sl.cache.trackStaleness(hash, seriesEntry{labels: lset, meta: meta})
+				sl.cache.trackStaleness(hash, lset, meta)
 			}
 			sl.cache.addRef(mets, ref, lset, meta, hash)
 			if sampleAdded && sampleLimitErr == nil {
@@ -1395,9 +1398,9 @@ loop:
 		level.Warn(sl.l).Log("msg", "Error on ingesting samples that are too old or are too far into the future", "num_dropped", appErrs.numOutOfBounds)
 	}
 	if err == nil {
-		sl.cache.forEachStale(func(s seriesEntry) bool {
+		sl.cache.forEachStale(func(lset labels.Labels, meta storage.Metadata) bool {
 			// Series no longer exposed, mark it stale.
-			_, err = app.Add(s.labels, s.meta, defTime, math.Float64frombits(value.StaleNaN))
+			_, err = app.Add(lset, meta, defTime, math.Float64frombits(value.StaleNaN))
 			switch errors.Cause(err) {
 			case storage.ErrOutOfOrderSample, storage.ErrDuplicateSampleForTimestamp:
 				// Do not count these in logging, as this is expected if a target
@@ -1421,7 +1424,7 @@ func (sl *scrapeLoop) checkAddError(ce *cacheEntry, met []byte, tp *int64, err e
 	switch errors.Cause(err) {
 	case nil:
 		if tp == nil && ce != nil {
-			sl.cache.trackStaleness(ce.hash, seriesEntry{labels: ce.lset, meta: ce.meta})
+			sl.cache.trackStaleness(ce.hash, ce.lset, ce.meta)
 		}
 		return true, nil
 	case storage.ErrNotFound:
