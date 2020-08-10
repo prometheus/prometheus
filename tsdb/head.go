@@ -23,13 +23,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cespare/xxhash/v2"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -987,11 +987,11 @@ func (a *initAppender) Add(l labels.Labels, m storage.Metadata, t int64, v float
 	return a.app.Add(l, m, t, v)
 }
 
-func (a *initAppender) AddFast(ref uint64, m storage.Metadata, t int64, v float64) error {
+func (a *initAppender) AddFast(ref uint64, t int64, v float64) error {
 	if a.app == nil {
 		return storage.ErrNotFound
 	}
-	return a.app.AddFast(ref, m, t, v)
+	return a.app.AddFast(ref, t, v)
 }
 
 func (a *initAppender) Commit() error {
@@ -1098,8 +1098,6 @@ type headAppender struct {
 
 	appendID, cleanupAppendIDsBelow uint64
 	closed                          bool
-
-	digest xxhash.Digest
 }
 
 func (a *headAppender) Add(lset labels.Labels, m storage.Metadata, t int64, v float64) (uint64, error) {
@@ -1124,16 +1122,42 @@ func (a *headAppender) Add(lset labels.Labels, m storage.Metadata, t int64, v fl
 		return 0, err
 	}
 
+	meta := false
+	s.Lock()
+	if s.typ != m.Type {
+		meta = true
+		s.typ = m.Type
+	}
+	if s.unit != m.Unit {
+		meta = true
+		s.unit = m.Unit
+	}
+	if s.help != m.Help {
+		meta = true
+		s.help = m.Help
+	}
+	s.Unlock()
+
 	if created {
 		a.series = append(a.series, record.RefSeries{
 			Ref:    s.ref,
 			Labels: lset,
 		})
 	}
-	return s.ref, a.AddFast(s.ref, m, t, v)
+
+	if meta {
+		a.metadata = append(a.metadata, record.RefMetadata{
+			Ref:  s.ref,
+			Type: s.typ,
+			Unit: s.unit,
+			Help: s.help,
+		})
+	}
+
+	return s.ref, a.AddFast(s.ref, t, v)
 }
 
-func (a *headAppender) AddFast(ref uint64, m storage.Metadata, t int64, v float64) error {
+func (a *headAppender) AddFast(ref uint64, t int64, v float64) error {
 	if t < a.minValidTime {
 		a.head.metrics.outOfBoundSamples.Inc()
 		return storage.ErrOutOfBounds
@@ -1144,22 +1168,6 @@ func (a *headAppender) AddFast(ref uint64, m storage.Metadata, t int64, v float6
 		return errors.Wrap(storage.ErrNotFound, "unknown series")
 	}
 
-	// Without string interning / using symbol table / using siginficantly
-	// more memory, determine whether the metadata has changed for this entry
-	// using a hash of the metadata.
-	a.digest.Reset()
-	if _, err := a.digest.WriteString(string(m.Type)); err != nil {
-		return err
-	}
-	if _, err := a.digest.WriteString(m.Unit); err != nil {
-		return err
-	}
-	if _, err := a.digest.WriteString(m.Help); err != nil {
-		return err
-	}
-
-	hashMetadata := a.digest.Sum64()
-
 	s.Lock()
 	if err := s.appendable(t, v); err != nil {
 		s.Unlock()
@@ -1169,8 +1177,6 @@ func (a *headAppender) AddFast(ref uint64, m storage.Metadata, t int64, v float6
 		return err
 	}
 	s.pendingCommit = true
-	pendingMetadata := hashMetadata != s.hashMetadata
-	s.hashMetadata = hashMetadata
 	s.Unlock()
 
 	if t < a.mint {
@@ -1180,15 +1186,6 @@ func (a *headAppender) AddFast(ref uint64, m storage.Metadata, t int64, v float6
 		a.maxt = t
 	}
 
-	if pendingMetadata {
-		// Metadata has not been recorded or has changed.
-		a.metadata = append(a.metadata, record.RefMetadata{
-			Ref:  ref,
-			Type: m.Type,
-			Unit: m.Unit,
-			Help: m.Help,
-		})
-	}
 	a.samples = append(a.samples, record.RefSample{
 		Ref: ref,
 		T:   t,
@@ -1953,6 +1950,9 @@ type memSeries struct {
 
 	ref           uint64
 	lset          labels.Labels
+	typ           textparse.MetricType
+	unit          string
+	help          string
 	mmappedChunks []*mmappedChunk
 	headChunk     *memChunk
 	chunkRange    int64
@@ -1960,8 +1960,7 @@ type memSeries struct {
 
 	nextAt        int64 // Timestamp at which to cut the next chunk.
 	sampleBuf     [4]sample
-	pendingCommit bool   // Whether there are samples waiting to be committed to this series.
-	hashMetadata  uint64 // Last hash of the series metadata commited for series.
+	pendingCommit bool // Whether there are samples waiting to be committed to this series.
 
 	app chunkenc.Appender // Current appender for the chunk.
 

@@ -145,7 +145,7 @@ type Appender interface {
 
 	// AddFast adds a sample pair for the referenced series. It is generally
 	// faster than adding a sample by providing its full label set.
-	AddFast(ref uint64, m Metadata, t int64, v float64) error
+	AddFast(ref uint64, t int64, v float64) error
 
 	// Commit submits the collected samples and purges the batch. If Commit
 	// returns a non-nil error, it also rolls back all modifications made in

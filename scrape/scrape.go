@@ -737,10 +737,11 @@ type seriesEntry struct {
 
 // metaEntry holds meta information about a metric.
 type metaEntry struct {
-	lastIter uint64 // Last scrape iteration the entry was observed at.
-	typ      textparse.MetricType
-	help     string
-	unit     string
+	lastIterSeen   uint64 // Last scrape iteration the entry was observed at.
+	lastIterChange uint64 // Last scrape iteration the entry was observed at.
+	typ            textparse.MetricType
+	help           string
+	unit           string
 }
 
 func (m *metaEntry) size() int {
@@ -792,7 +793,7 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 		c.metaMtx.Lock()
 		for m, e := range c.metadata {
 			// Keep metadata around for 10 scrapes after its metric disappeared.
-			if c.iter-e.lastIter > 10 {
+			if c.iter-e.lastIterSeen > 10 {
 				delete(c.metadata, m)
 			}
 		}
@@ -819,7 +820,7 @@ func (c *scrapeCache) get(met string) (*cacheEntry, bool) {
 	return e, true
 }
 
-func (c *scrapeCache) addRef(met string, ref uint64, lset labels.Labels, meta storage.Metadata, hash uint64) {
+func (c *scrapeCache) addRef(met string, ref uint64, lset labels.Labels, meta *storage.Metadata, hash uint64) {
 	if ref == 0 {
 		return
 	}
@@ -827,7 +828,7 @@ func (c *scrapeCache) addRef(met string, ref uint64, lset labels.Labels, meta st
 		ref:      ref,
 		lastIter: c.iter,
 		lset:     lset,
-		meta:     meta,
+		meta:     *meta,
 		hash:     hash,
 	}
 }
@@ -845,10 +846,10 @@ func (c *scrapeCache) getDropped(met string) bool {
 	return ok
 }
 
-func (c *scrapeCache) trackStaleness(hash uint64, lset labels.Labels, meta storage.Metadata) {
+func (c *scrapeCache) trackStaleness(hash uint64, lset labels.Labels, meta *storage.Metadata) {
 	c.seriesCur[hash] = seriesEntry{
 		labels: lset,
-		meta:   meta,
+		meta:   *meta,
 	}
 }
 
@@ -862,13 +863,6 @@ func (c *scrapeCache) forEachStale(f func(labels.Labels, storage.Metadata) bool)
 	}
 }
 
-func (c *scrapeCache) meta(metric []byte) (*metaEntry, bool) {
-	c.metaMtx.Lock()
-	entry, ok := c.metadata[yoloString(metric)]
-	c.metaMtx.Unlock()
-	return entry, ok
-}
-
 func (c *scrapeCache) setType(metric []byte, t textparse.MetricType) {
 	c.metaMtx.Lock()
 
@@ -877,8 +871,11 @@ func (c *scrapeCache) setType(metric []byte, t textparse.MetricType) {
 		e = &metaEntry{typ: textparse.MetricTypeUnknown}
 		c.metadata[string(metric)] = e
 	}
-	e.typ = t
-	e.lastIter = c.iter
+	if e.typ != t {
+		e.typ = t
+		e.lastIterChange = c.iter
+	}
+	e.lastIterSeen = c.iter
 
 	c.metaMtx.Unlock()
 }
@@ -893,8 +890,9 @@ func (c *scrapeCache) setHelp(metric, help []byte) {
 	}
 	if e.help != yoloString(help) {
 		e.help = string(help)
+		e.lastIterChange = c.iter
 	}
-	e.lastIter = c.iter
+	e.lastIterSeen = c.iter
 
 	c.metaMtx.Unlock()
 }
@@ -909,8 +907,9 @@ func (c *scrapeCache) setUnit(metric, unit []byte) {
 	}
 	if e.unit != yoloString(unit) {
 		e.unit = string(unit)
+		e.lastIterChange = c.iter
 	}
-	e.lastIter = c.iter
+	e.lastIterSeen = c.iter
 
 	c.metaMtx.Unlock()
 }
@@ -1265,6 +1264,7 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 		defTime        = timestamp.FromTime(ts)
 		appErrs        = appendErrors{}
 		sampleLimitErr error
+		meta           storage.Metadata
 	)
 
 	defer func() {
@@ -1279,6 +1279,7 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 loop:
 	for {
 		var (
+			currIter    = sl.cache.iter
 			et          textparse.Entry
 			sampleAdded bool
 		)
@@ -1316,10 +1317,39 @@ loop:
 		if sl.cache.getDropped(yoloString(met)) {
 			continue
 		}
-		ce, ok := sl.cache.get(yoloString(met))
 
+		// Zero metadata out until resolved, must be done since
+		// we use a pointer later to avoid copying arg by stack for
+		// low function call overhead and thus need to declare the local var
+		// above the loop so that it does not get allocated per
+		// entry in the scrape (which could happen if we took by pointer
+		// and declared the local var inside the for loop).
+		meta = storage.Metadata{}
+
+		ce, ok := sl.cache.get(yoloString(met))
 		if ok {
-			err = app.AddFast(ce.ref, ce.meta, t, v)
+			// Avoid the overhead of returning vars by the stack and reference
+			// the metadata entry directly.
+			sl.cache.metaMtx.Lock()
+			metaEntry, metaOk := sl.cache.metadata[yoloString(met)]
+			metaUpdated := metaOk && metaEntry.lastIterChange == currIter
+			if metaUpdated {
+				// Metadata available and metadata changed this scrape iteration.
+				meta = storage.Metadata{
+					Type: metaEntry.typ,
+					Help: metaEntry.help,
+					Unit: metaEntry.unit,
+				}
+			}
+			sl.cache.metaMtx.Unlock()
+
+			if metaUpdated {
+				// Metadata has changed this iteration.
+				_, err = app.Add(ce.lset, meta, t, v)
+			} else {
+				// No metadata changed this iteration.
+				err = app.AddFast(ce.ref, t, v)
+			}
 			_, err = sl.checkAddError(ce, met, tp, err, &sampleLimitErr, &appErrs)
 			// In theory this should never happen.
 			if err == storage.ErrNotFound {
@@ -1347,14 +1377,18 @@ loop:
 				break loop
 			}
 
-			var meta storage.Metadata
-			if m, ok := sl.cache.meta(met); ok {
+			// Avoid the overhead of returning vars by the stack and reference
+			// the metadata entry directly.
+			sl.cache.metaMtx.Lock()
+			metaEntry, metaOk := sl.cache.metadata[yoloString(met)]
+			if metaOk {
 				meta = storage.Metadata{
-					Type: m.typ,
-					Unit: m.unit,
-					Help: m.help,
+					Type: metaEntry.typ,
+					Help: metaEntry.help,
+					Unit: metaEntry.unit,
 				}
 			}
+			sl.cache.metaMtx.Unlock()
 
 			var ref uint64
 			ref, err = app.Add(lset, meta, t, v)
@@ -1368,9 +1402,9 @@ loop:
 
 			if tp == nil {
 				// Bypass staleness logic if there is an explicit timestamp.
-				sl.cache.trackStaleness(hash, lset, meta)
+				sl.cache.trackStaleness(hash, lset, &meta)
 			}
-			sl.cache.addRef(mets, ref, lset, meta, hash)
+			sl.cache.addRef(mets, ref, lset, &meta, hash)
 			if sampleAdded && sampleLimitErr == nil {
 				seriesAdded++
 			}
@@ -1424,7 +1458,7 @@ func (sl *scrapeLoop) checkAddError(ce *cacheEntry, met []byte, tp *int64, err e
 	switch errors.Cause(err) {
 	case nil:
 		if tp == nil && ce != nil {
-			sl.cache.trackStaleness(ce.hash, ce.lset, ce.meta)
+			sl.cache.trackStaleness(ce.hash, ce.lset, &ce.meta)
 		}
 		return true, nil
 	case storage.ErrNotFound:
@@ -1465,25 +1499,25 @@ const (
 )
 
 var (
-	scrapeHealthMetricMeta = storage.Metadata{
+	scrapeHealthMetricMeta = &storage.Metadata{
 		Type: textparse.MetricTypeGauge,
 		// TODO: add help based on advice.
 	}
-	scrapeDurationMetricMeta = storage.Metadata{
+	scrapeDurationMetricMeta = &storage.Metadata{
 		Type: textparse.MetricTypeGauge,
 		Unit: "seconds",
 		// TODO: add help based on advice.
 	}
-	scrapeSamplesMetricMeta = storage.Metadata{
-		Type: textparse.MetricTypeCounter,
+	scrapeSamplesMetricMeta = &storage.Metadata{
+		Type: textparse.MetricTypeGauge,
 		// TODO: add help based on advice.
 	}
-	samplesPostRelabelMetricMeta = storage.Metadata{
-		Type: textparse.MetricTypeCounter,
+	samplesPostRelabelMetricMeta = &storage.Metadata{
+		Type: textparse.MetricTypeGauge,
 		// TODO: add help based on advice.
 	}
-	scrapeSeriesAddedMetricMeta = storage.Metadata{
-		Type: textparse.MetricTypeCounter,
+	scrapeSeriesAddedMetricMeta = &storage.Metadata{
+		Type: textparse.MetricTypeGauge,
 		// TODO: add help based on advice.
 	}
 )
@@ -1539,10 +1573,11 @@ func (sl *scrapeLoop) reportStale(app storage.Appender, start time.Time) (err er
 	return
 }
 
-func (sl *scrapeLoop) addReportSample(app storage.Appender, s string, m storage.Metadata, t int64, v float64) error {
+func (sl *scrapeLoop) addReportSample(app storage.Appender, s string, m *storage.Metadata, t int64, v float64) error {
 	ce, ok := sl.cache.get(s)
 	if ok {
-		err := app.AddFast(ce.ref, m, t, v)
+		// Metadata never changes for report samples, avoid checking if updated.
+		err := app.AddFast(ce.ref, t, v)
 		switch errors.Cause(err) {
 		case nil:
 			return nil
@@ -1566,7 +1601,7 @@ func (sl *scrapeLoop) addReportSample(app storage.Appender, s string, m storage.
 	hash := lset.Hash()
 	lset = sl.reportSampleMutator(lset)
 
-	ref, err := app.Add(lset, m, t, v)
+	ref, err := app.Add(lset, *m, t, v)
 	switch errors.Cause(err) {
 	case nil:
 		sl.cache.addRef(s, ref, lset, m, hash)

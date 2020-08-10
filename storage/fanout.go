@@ -159,13 +159,13 @@ func (f *fanoutAppender) Add(l labels.Labels, m Metadata, t int64, v float64) (u
 	return ref, nil
 }
 
-func (f *fanoutAppender) AddFast(ref uint64, m Metadata, t int64, v float64) error {
-	if err := f.primary.AddFast(ref, m, t, v); err != nil {
+func (f *fanoutAppender) AddFast(ref uint64, t int64, v float64) error {
+	if err := f.primary.AddFast(ref, t, v); err != nil {
 		return err
 	}
 
 	for _, appender := range f.secondaries {
-		if err := appender.AddFast(ref, m, t, v); err != nil {
+		if err := appender.AddFast(ref, t, v); err != nil {
 			return err
 		}
 	}

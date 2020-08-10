@@ -1042,7 +1042,7 @@ func (n notReadyAppender) Add(l labels.Labels, m storage.Metadata, t int64, v fl
 	return 0, tsdb.ErrNotReady
 }
 
-func (n notReadyAppender) AddFast(ref uint64, m storage.Metadata, t int64, v float64) error {
+func (n notReadyAppender) AddFast(ref uint64, t int64, v float64) error {
 	return tsdb.ErrNotReady
 }
 

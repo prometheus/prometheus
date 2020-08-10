@@ -303,14 +303,14 @@ func (app *limitAppender) Add(l labels.Labels, m storage.Metadata, t int64, v fl
 	return ref, nil
 }
 
-func (app *limitAppender) AddFast(ref uint64, m storage.Metadata, t int64, v float64) error {
+func (app *limitAppender) AddFast(ref uint64, t int64, v float64) error {
 	if !value.IsStaleNaN(v) {
 		app.i++
 		if app.i > app.limit {
 			return errSampleLimit
 		}
 	}
-	err := app.Appender.AddFast(ref, m, t, v)
+	err := app.Appender.AddFast(ref, t, v)
 	return err
 }
 
@@ -332,11 +332,11 @@ func (app *timeLimitAppender) Add(l labels.Labels, m storage.Metadata, t int64, 
 	return ref, nil
 }
 
-func (app *timeLimitAppender) AddFast(ref uint64, m storage.Metadata, t int64, v float64) error {
+func (app *timeLimitAppender) AddFast(ref uint64, t int64, v float64) error {
 	if t > app.maxTime {
 		return storage.ErrOutOfBounds
 	}
-	err := app.Appender.AddFast(ref, m, t, v)
+	err := app.Appender.AddFast(ref, t, v)
 	return err
 }
 

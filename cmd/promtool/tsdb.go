@@ -211,7 +211,7 @@ func (b *writeBenchmark) ingestScrapesShard(lbls []labels.Labels, scrapeCount in
 					panic(err)
 				}
 				s.ref = &ref
-			} else if err := app.AddFast(*s.ref, storage.Metadata{}, ts, float64(s.value)); err != nil {
+			} else if err := app.AddFast(*s.ref, ts, float64(s.value)); err != nil {
 
 				if errors.Cause(err) != storage.ErrNotFound {
 					panic(err)
