@@ -870,9 +870,9 @@ func (c *scrapeCache) trackStaleness(hash uint64, s seriesEntry) {
 }
 
 func (c *scrapeCache) forEachStale(f func(seriesEntry) bool) {
-	for h, series := range c.seriesPrev {
+	for h, entry := range c.seriesPrev {
 		if _, ok := c.seriesCur[h]; !ok {
-			if !f(series) {
+			if !f(entry) {
 				break
 			}
 		}
@@ -1385,10 +1385,7 @@ loop:
 
 			if tp == nil {
 				// Bypass staleness logic if there is an explicit timestamp.
-				sl.cache.trackStaleness(hash, seriesEntry{
-					labels: lset,
-					meta:   meta,
-				})
+				sl.cache.trackStaleness(hash, seriesEntry{labels: lset, meta: meta})
 			}
 			sl.cache.addRef(mets, ref, lset, meta.Type, meta.Unit, meta.Help, hash)
 			if sampleAdded && sampleLimitErr == nil {
@@ -1444,10 +1441,7 @@ func (sl *scrapeLoop) checkAddError(ce *cacheEntry, met []byte, tp *int64, err e
 	switch errors.Cause(err) {
 	case nil:
 		if tp == nil && ce != nil {
-			sl.cache.trackStaleness(ce.hash, seriesEntry{
-				labels: ce.lset,
-				meta:   ce.metadata(),
-			})
+			sl.cache.trackStaleness(ce.hash, seriesEntry{labels: ce.lset, meta: ce.metadata()})
 		}
 		return true, nil
 	case storage.ErrNotFound:
@@ -1481,15 +1475,34 @@ func (sl *scrapeLoop) checkAddError(ce *cacheEntry, met []byte, tp *int64, err e
 // with scraped metrics in the cache.
 const (
 	scrapeHealthMetricName       = "up" + "\xff"
-	scrapeHealthMetricType       = textparse.MetricTypeGauge
 	scrapeDurationMetricName     = "scrape_duration_seconds" + "\xff"
-	scrapeDurationMetricType     = textparse.MetricTypeGauge
 	scrapeSamplesMetricName      = "scrape_samples_scraped" + "\xff"
-	scrapeSamplesMetricType      = textparse.MetricTypeCounter
 	samplesPostRelabelMetricName = "scrape_samples_post_metric_relabeling" + "\xff"
-	samplesPostRelabelMetricType = textparse.MetricTypeCounter
 	scrapeSeriesAddedMetricName  = "scrape_series_added" + "\xff"
-	scrapeSeriesAddedMetricType  = textparse.MetricTypeCounter
+)
+
+var (
+	scrapeHealthMetricMeta = storage.Metadata{
+		Type: textparse.MetricTypeGauge,
+		// TODO: add help based on advice.
+	}
+	scrapeDurationMetricMeta = storage.Metadata{
+		Type: textparse.MetricTypeGauge,
+		Unit: "seconds",
+		// TODO: add help.
+	}
+	scrapeSamplesMetricMeta = storage.Metadata{
+		Type: textparse.MetricTypeCounter,
+		// TODO: add help based on advice.
+	}
+	samplesPostRelabelMetricMeta = storage.Metadata{
+		Type: textparse.MetricTypeCounter,
+		// TODO: add help based on advice.
+	}
+	scrapeSeriesAddedMetricMeta = storage.Metadata{
+		Type: textparse.MetricTypeCounter,
+		// TODO: add help based on advice.
+	}
 )
 
 func (sl *scrapeLoop) report(app storage.Appender, start time.Time, duration time.Duration, scraped, added, seriesAdded int, scrapeErr error) (err error) {
@@ -1502,19 +1515,19 @@ func (sl *scrapeLoop) report(app storage.Appender, start time.Time, duration tim
 		health = 1
 	}
 
-	if err = sl.addReportSample(app, scrapeHealthMetricName, scrapeHealthMetricType, "", "", ts, health); err != nil {
+	if err = sl.addReportSample(app, scrapeHealthMetricName, scrapeHealthMetricMeta, ts, health); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, scrapeDurationMetricName, scrapeDurationMetricType, "", "", ts, duration.Seconds()); err != nil {
+	if err = sl.addReportSample(app, scrapeDurationMetricName, scrapeDurationMetricMeta, ts, duration.Seconds()); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, scrapeSamplesMetricName, scrapeSamplesMetricType, "", "", ts, float64(scraped)); err != nil {
+	if err = sl.addReportSample(app, scrapeSamplesMetricName, scrapeSamplesMetricMeta, ts, float64(scraped)); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, samplesPostRelabelMetricName, samplesPostRelabelMetricType, "", "", ts, float64(added)); err != nil {
+	if err = sl.addReportSample(app, samplesPostRelabelMetricName, samplesPostRelabelMetricMeta, ts, float64(added)); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, scrapeSeriesAddedMetricName, scrapeSeriesAddedMetricType, "", "", ts, float64(seriesAdded)); err != nil {
+	if err = sl.addReportSample(app, scrapeSeriesAddedMetricName, scrapeSeriesAddedMetricMeta, ts, float64(seriesAdded)); err != nil {
 		return
 	}
 	return
@@ -1525,36 +1538,28 @@ func (sl *scrapeLoop) reportStale(app storage.Appender, start time.Time) (err er
 
 	stale := math.Float64frombits(value.StaleNaN)
 
-	if err = sl.addReportSample(app, scrapeHealthMetricName, scrapeHealthMetricType, "", "", ts, stale); err != nil {
+	if err = sl.addReportSample(app, scrapeHealthMetricName, scrapeHealthMetricMeta, ts, stale); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, scrapeDurationMetricName, scrapeDurationMetricType, "", "", ts, stale); err != nil {
+	if err = sl.addReportSample(app, scrapeDurationMetricName, scrapeDurationMetricMeta, ts, stale); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, scrapeSamplesMetricName, scrapeSamplesMetricType, "", "", ts, stale); err != nil {
+	if err = sl.addReportSample(app, scrapeSamplesMetricName, scrapeSamplesMetricMeta, ts, stale); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, samplesPostRelabelMetricName, samplesPostRelabelMetricType, "", "", ts, stale); err != nil {
+	if err = sl.addReportSample(app, samplesPostRelabelMetricName, samplesPostRelabelMetricMeta, ts, stale); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, scrapeSeriesAddedMetricName, scrapeSeriesAddedMetricType, "", "", ts, stale); err != nil {
+	if err = sl.addReportSample(app, scrapeSeriesAddedMetricName, scrapeSeriesAddedMetricMeta, ts, stale); err != nil {
 		return
 	}
 	return
 }
 
-func (sl *scrapeLoop) addReportSample(
-	app storage.Appender,
-	str string,
-	typ textparse.MetricType,
-	unit string,
-	help string,
-	t int64,
-	v float64,
-) error {
+func (sl *scrapeLoop) addReportSample(app storage.Appender, str string, meta storage.Metadata, t int64, v float64) error {
 	ce, ok := sl.cache.get(str)
 	if ok {
-		err := app.AddFast(ce.ref, ce.metadata(), t, v)
+		err := app.AddFast(ce.ref, meta, t, v)
 		switch errors.Cause(err) {
 		case nil:
 			return nil
@@ -1578,16 +1583,10 @@ func (sl *scrapeLoop) addReportSample(
 	hash := lset.Hash()
 	lset = sl.reportSampleMutator(lset)
 
-	meta := storage.Metadata{
-		Type: typ,
-		Unit: unit,
-		Help: help,
-	}
-
 	ref, err := app.Add(lset, meta, t, v)
 	switch errors.Cause(err) {
 	case nil:
-		sl.cache.addRef(str, ref, lset, typ, unit, help, hash)
+		sl.cache.addRef(str, ref, lset, meta.Type, meta.Unit, meta.Help, hash)
 		return nil
 	case storage.ErrOutOfOrderSample, storage.ErrDuplicateSampleForTimestamp:
 		return nil
