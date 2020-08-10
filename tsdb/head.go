@@ -1145,9 +1145,9 @@ func (a *headAppender) AddFast(ref uint64, m storage.Metadata, t int64, v float6
 		return errors.Wrap(storage.ErrNotFound, "unknown series")
 	}
 
-	// Without string interning / using symbol table / using more memory,
-	// determine whether the metadata has changed for this entry using
-	// a hash of the metadata.
+	// Without string interning / using symbol table / using siginficantly
+	// more memory, determine whether the metadata has changed for this entry
+	// using a hash of the metadata.
 	a.digest.Reset()
 	if _, err := a.digest.WriteString(string(m.Type)); err != nil {
 		return err
@@ -1961,13 +1961,12 @@ type memSeries struct {
 
 	nextAt        int64 // Timestamp at which to cut the next chunk.
 	sampleBuf     [4]sample
-	pendingCommit bool // Whether there are samples waiting to be committed to this series.
+	pendingCommit bool   // Whether there are samples waiting to be committed to this series.
+	hashMetadata  uint64 // Last hash of the series metadata commited for series.
 
 	app chunkenc.Appender // Current appender for the chunk.
 
 	memChunkPool *sync.Pool
-
-	hashMetadata uint64
 
 	txs *txRing
 }
