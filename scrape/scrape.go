@@ -675,17 +675,7 @@ type cacheEntry struct {
 	lastIter uint64
 	hash     uint64
 	lset     labels.Labels
-	typ      textparse.MetricType
-	unit     string
-	help     string
-}
-
-func (ce *cacheEntry) metadata() storage.Metadata {
-	return storage.Metadata{
-		Type: ce.typ,
-		Unit: ce.unit,
-		Help: ce.help,
-	}
+	meta     storage.Metadata
 }
 
 type scrapeLoop struct {
@@ -829,15 +819,7 @@ func (c *scrapeCache) get(met string) (*cacheEntry, bool) {
 	return e, true
 }
 
-func (c *scrapeCache) addRef(
-	met string,
-	ref uint64,
-	lset labels.Labels,
-	typ textparse.MetricType,
-	unit string,
-	help string,
-	hash uint64,
-) {
+func (c *scrapeCache) addRef(met string, ref uint64, lset labels.Labels, meta storage.Metadata, hash uint64) {
 	if ref == 0 {
 		return
 	}
@@ -845,9 +827,7 @@ func (c *scrapeCache) addRef(
 		ref:      ref,
 		lastIter: c.iter,
 		lset:     lset,
-		typ:      typ,
-		unit:     unit,
-		help:     help,
+		meta:     meta,
 		hash:     hash,
 	}
 }
@@ -1336,7 +1316,7 @@ loop:
 		ce, ok := sl.cache.get(yoloString(met))
 
 		if ok {
-			err = app.AddFast(ce.ref, ce.metadata(), t, v)
+			err = app.AddFast(ce.ref, ce.meta, t, v)
 			_, err = sl.checkAddError(ce, met, tp, err, &sampleLimitErr, &appErrs)
 			// In theory this should never happen.
 			if err == storage.ErrNotFound {
@@ -1387,7 +1367,7 @@ loop:
 				// Bypass staleness logic if there is an explicit timestamp.
 				sl.cache.trackStaleness(hash, seriesEntry{labels: lset, meta: meta})
 			}
-			sl.cache.addRef(mets, ref, lset, meta.Type, meta.Unit, meta.Help, hash)
+			sl.cache.addRef(mets, ref, lset, meta, hash)
 			if sampleAdded && sampleLimitErr == nil {
 				seriesAdded++
 			}
@@ -1441,7 +1421,7 @@ func (sl *scrapeLoop) checkAddError(ce *cacheEntry, met []byte, tp *int64, err e
 	switch errors.Cause(err) {
 	case nil:
 		if tp == nil && ce != nil {
-			sl.cache.trackStaleness(ce.hash, seriesEntry{labels: ce.lset, meta: ce.metadata()})
+			sl.cache.trackStaleness(ce.hash, seriesEntry{labels: ce.lset, meta: ce.meta})
 		}
 		return true, nil
 	case storage.ErrNotFound:
@@ -1586,7 +1566,7 @@ func (sl *scrapeLoop) addReportSample(app storage.Appender, s string, m storage.
 	ref, err := app.Add(lset, m, t, v)
 	switch errors.Cause(err) {
 	case nil:
-		sl.cache.addRef(s, ref, lset, m.Type, m.Unit, m.Help, hash)
+		sl.cache.addRef(s, ref, lset, m, hash)
 		return nil
 	case storage.ErrOutOfOrderSample, storage.ErrDuplicateSampleForTimestamp:
 		return nil
