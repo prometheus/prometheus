@@ -36,7 +36,7 @@ const (
 	// metaLabelPrefix is the meta prefix used for all meta labels.
 	// in this discovery.
 	metaLabelPrefix            = model.MetaLabelPrefix + "eureka_"
-	metaAppInstanceLabelPrefix = model.MetaLabelPrefix + "app_instance_"
+	metaAppInstanceLabelPrefix = metaLabelPrefix + "app_instance_"
 
 	appNameLabel                                      = metaLabelPrefix + "app_name"
 	appInstanceHostNameLabel                          = metaAppInstanceLabelPrefix + "hostname"
@@ -149,53 +149,29 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 }
 
 func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
-	targetMap, err := d.fetchTargetGroups(ctx)
+	tg, err := d.fetchTargetGroup(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	all := make([]*targetgroup.Group, 0, len(targetMap))
-	for _, tg := range targetMap {
-		all = append(all, tg)
-	}
-
-	return all, nil
+	return []*targetgroup.Group{tg}, nil
 }
 
-func (d *Discovery) fetchTargetGroups(ctx context.Context) (map[string]*targetgroup.Group, error) {
+func (d *Discovery) fetchTargetGroup(ctx context.Context) (*targetgroup.Group, error) {
 	apps, err := d.appsClient(ctx, d.server, d.client)
 	if err != nil {
 		return nil, err
 	}
 
-	groups := appsToTargetGroups(apps)
-	return groups, nil
-}
-
-// appsToTargetGroups takes an array of Eureka Applications and converts them into target groups.
-func appsToTargetGroups(apps *Applications) map[string]*targetgroup.Group {
-	tgroups := map[string]*targetgroup.Group{}
-	for _, a := range apps.Applications {
-		group := createTargetGroup(&a)
-		tgroups[group.Source] = group
-	}
-	return tgroups
-}
-
-func createTargetGroup(app *Application) *targetgroup.Group {
-	var (
-		targets = targetsForApp(app)
-		appName = model.LabelValue(app.Name)
-	)
 	tg := &targetgroup.Group{
-		Targets: targets,
-		Labels: model.LabelSet{
-			appNameLabel: appName,
-		},
 		Source: "eureka",
 	}
 
-	return tg
+	for _, app := range apps.Applications {
+		targets := targetsForApp(&app)
+		tg.Targets = append(tg.Targets, targets...)
+	}
+	return tg, nil
 }
 
 func targetsForApp(app *Application) []model.LabelSet {
@@ -208,6 +184,7 @@ func targetsForApp(app *Application) []model.LabelSet {
 			model.AddressLabel:  model.LabelValue(targetAddress),
 			model.InstanceLabel: model.LabelValue(t.InstanceID),
 
+			appNameLabel:                      lv(app.Name),
 			appInstanceHostNameLabel:          lv(t.HostName),
 			appInstanceHomePageURLLabel:       lv(t.HomePageURL),
 			appInstanceStatusPageURLLabel:     lv(t.StatusPageURL),
@@ -259,12 +236,5 @@ func lv(s string) model.LabelValue {
 }
 
 func targetEndpoint(instance *Instance) string {
-	var port string
-	if instance.Metadata != nil &&
-		len(instance.Metadata.Map["management.port"]) > 0 {
-		port = instance.Metadata.Map["management.port"]
-	} else {
-		port = strconv.Itoa(instance.Port.Port)
-	}
-	return net.JoinHostPort(instance.HostName, port)
+	return net.JoinHostPort(instance.HostName, strconv.Itoa(instance.Port.Port))
 }

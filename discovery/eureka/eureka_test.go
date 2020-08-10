@@ -59,7 +59,7 @@ func TestEurekaSDEmptyList(t *testing.T) {
 	)
 	tgs, err := testUpdateServices(client)
 	testutil.Ok(t, err)
-	testutil.Equals(t, len(tgs), 0)
+	testutil.Equals(t, len(tgs), 1)
 }
 
 func eurekaTestApps(serviceID string) *Applications {
@@ -304,56 +304,4 @@ func TestEurekaSDAppsWithMetadata(t *testing.T) {
 		model.LabelValue("true"))
 	testutil.Equals(t, tgt[model.LabelName(appInstanceMetadataPrefix+"prometheus_path")],
 		model.LabelValue("/actuator/prometheus"))
-}
-
-func eurekaTestAppsWithMetadataManagementPort() *Applications {
-	var (
-		ins = Instance{
-			HostName:   "meta-service002.test.com",
-			App:        "META-SERVICE",
-			IPAddr:     "192.133.87.237",
-			VipAddress: "meta-service",
-			Status:     "UP",
-			Port: &Port{
-				Port:    8080,
-				Enabled: true,
-			},
-			SecurePort: &Port{
-				Port:    8088,
-				Enabled: false,
-			},
-			Metadata: &MetaData{
-				Map: map[string]string{
-					"management.port": "8090",
-				},
-			},
-			InstanceID: "meta-service002.test.com:meta-service:8080",
-		}
-
-		app = Application{
-			Name:      "META-SERVICE",
-			Instances: []Instance{ins},
-		}
-	)
-	return &Applications{
-		Applications: []Application{app},
-	}
-}
-
-func TestEurekaSDAppsWithMetadataMetadataManagementPort(t *testing.T) {
-	var (
-		client = func(_ context.Context, _ string, _ *http.Client) (*Applications, error) {
-			return eurekaTestAppsWithMetadataManagementPort(), nil
-		}
-	)
-	tgs, err := testUpdateServices(client)
-	testutil.Ok(t, err)
-	testutil.Equals(t, len(tgs), 1)
-
-	tg := tgs[0]
-	testutil.Equals(t, tg.Source, "eureka")
-	testutil.Equals(t, len(tg.Targets), 1)
-
-	tgt := tg.Targets[0]
-	testutil.Equals(t, tgt[model.AddressLabel], model.LabelValue("meta-service002.test.com:8090"))
 }

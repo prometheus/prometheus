@@ -1389,12 +1389,12 @@ tls_config:
 
 Eureka SD configurations allow retrieving scrape targets using the
 [Eureka](https://github.com/Netflix/eureka) REST API. Prometheus
-will periodically check the REST endpoint for currently running tasks and
-create a target group for every app.
+will periodically check the REST endpoint and
+create a target for every app instance.
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
-* `__meta_eureka_app_name`: the name of the app (with slashes replaced by dashes)
+* `__meta_eureka_app_name`: the name of the app
 * `__meta_eureka_app_instance_id`: the ID of the app instance
 * `__meta_eureka_app_instance_hostname`: the hostname of the instance
 * `__meta_eureka_app_instance_homepage_url`: the homepage url of the app instance
@@ -1442,8 +1442,6 @@ configuration.
 
 By default, all apps will show up as a single job in Prometheus (the one specified
 in the configuration file), which can also be changed using relabeling.
-
-```
 
 ### `<static_config>`
 
