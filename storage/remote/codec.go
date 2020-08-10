@@ -25,6 +25,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -482,4 +483,25 @@ func labelsToLabelsProto(labels labels.Labels, buf []prompb.Label) []prompb.Labe
 		})
 	}
 	return result
+}
+
+func metricTypeToMetricTypeProto(t textparse.MetricType) prompb.MetricType {
+	switch t {
+	case textparse.MetricTypeCounter:
+		return prompb.MetricType_COUNTER
+	case textparse.MetricTypeGauge:
+		return prompb.MetricType_GAUGE
+	case textparse.MetricTypeHistogram:
+		return prompb.MetricType_HISTOGRAM
+	case textparse.MetricTypeGaugeHistogram:
+		return prompb.MetricType_GAUGE_HISTOGRAM
+	case textparse.MetricTypeSummary:
+		return prompb.MetricType_SUMMARY
+	case textparse.MetricTypeInfo:
+		return prompb.MetricType_INFO
+	case textparse.MetricTypeStateset:
+		return prompb.MetricType_STATESET
+	default:
+		return prompb.MetricType_UNKNOWN
+	}
 }

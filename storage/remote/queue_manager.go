@@ -32,6 +32,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/relabel"
+	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/record"
@@ -441,22 +442,17 @@ func (t *QueueManager) StoreMetadata(metadata []record.RefMetadata, index int) {
 	t.seriesMtx.Lock()
 	defer t.seriesMtx.Unlock()
 	for _, m := range metadata {
-		meta := storage.Metadata{
+		meta := t.internMetadata(storage.Metadata{
 			Type: m.Type,
 			Unit: m.Unit,
 			Help: m.Help,
-		}
+		})
 
 		// Metadata can change, hence we should release the metadata
 		// if it has changed and is being replaced.
 		if orig, ok := t.seriesMetadata[m.Ref]; ok {
 			t.releaseMetadata(orig)
 		}
-
-		// Intern after potentially releasing in case some string values
-		// in the metadata were the same (do not want to release).
-		t.internMetadata(meta)
-
 		t.seriesMetadata[m.Ref] = meta
 	}
 }
@@ -509,10 +505,11 @@ func (t *QueueManager) releaseLabels(ls labels.Labels) {
 	}
 }
 
-func (t *QueueManager) internMetadata(meta storage.Metadata) {
-	t.interner.intern(string(meta.Type))
-	t.interner.intern(meta.Unit)
-	t.interner.intern(meta.Help)
+func (t *QueueManager) internMetadata(meta storage.Metadata) storage.Metadata {
+	meta.Type = textparse.MetricType(t.interner.intern(string(meta.Type)))
+	meta.Unit = t.interner.intern(meta.Unit)
+	meta.Help = t.interner.intern(meta.Help)
+	return meta
 }
 
 func (t *QueueManager) releaseMetadata(meta storage.Metadata) {
@@ -863,7 +860,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan sample) {
 			// retries endlessly, so once we reach max samples, if we can never send to the endpoint we'll
 			// stop reading from the queue. This makes it safe to reference pendingSamples by index.
 			pendingSamples[nPending].Labels = labelsToLabelsProto(sample.labels, pendingSamples[nPending].Labels)
-			pendingSamples[nPending].Type = sample.meta.Type.ToProto()
+			pendingSamples[nPending].Type = metricTypeToMetricTypeProto(sample.meta.Type)
 			pendingSamples[nPending].Unit = sample.meta.Unit
 			pendingSamples[nPending].Help = sample.meta.Help
 			pendingSamples[nPending].Samples[0].Timestamp = sample.t
