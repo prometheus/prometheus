@@ -1171,6 +1171,7 @@ func (a *headAppender) AddFast(ref uint64, m storage.Metadata, t int64, v float6
 	}
 	s.pendingCommit = true
 	pendingMetadata := hashMetadata != s.hashMetadata
+	s.hashMetadata = hashMetadata
 	s.Unlock()
 
 	if t < a.mint {
