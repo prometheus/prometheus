@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"reflect"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/google/go-querystring/query"
@@ -18,7 +19,7 @@ import (
 )
 
 const (
-	libraryVersion = "1.38.0"
+	libraryVersion = "1.42.0"
 	defaultBaseURL = "https://api.digitalocean.com/"
 	userAgent      = "godo/" + libraryVersion
 	mediaType      = "application/json"
@@ -40,12 +41,14 @@ type Client struct {
 	UserAgent string
 
 	// Rate contains the current rate limit for the client as determined by the most recent
-	// API call.
-	Rate Rate
+	// API call. It is not thread-safe. Please consider using GetRate() instead.
+	Rate    Rate
+	ratemtx sync.Mutex
 
 	// Services used for communicating with the API
 	Account           AccountService
 	Actions           ActionsService
+	Apps              AppsService
 	Balance           BalanceService
 	BillingHistory    BillingHistoryService
 	CDNs              CDNService
@@ -186,6 +189,7 @@ func NewClient(httpClient *http.Client) *Client {
 	c := &Client{client: httpClient, BaseURL: baseURL, UserAgent: userAgent}
 	c.Account = &AccountServiceOp{client: c}
 	c.Actions = &ActionsServiceOp{client: c}
+	c.Apps = &AppsServiceOp{client: c}
 	c.Balance = &BalanceServiceOp{client: c}
 	c.BillingHistory = &BillingHistoryServiceOp{client: c}
 	c.CDNs = &CDNServiceOp{client: c}
@@ -286,6 +290,14 @@ func (c *Client) OnRequestCompleted(rc RequestCompletionCallback) {
 	c.onRequestCompleted = rc
 }
 
+// GetRate returns the current rate limit for the client as determined by the most recent
+// API call. It is thread-safe.
+func (c *Client) GetRate() Rate {
+	c.ratemtx.Lock()
+	defer c.ratemtx.Unlock()
+	return c.Rate
+}
+
 // newResponse creates a new Response for the provided http.Response
 func newResponse(r *http.Response) *Response {
 	response := Response{Response: r}
@@ -322,13 +334,26 @@ func (c *Client) Do(ctx context.Context, req *http.Request, v interface{}) (*Res
 	}
 
 	defer func() {
+		// Ensure the response body is fully read and closed
+		// before we reconnect, so that we reuse the same TCPconnection.
+		// Close the previous response's body. But read at least some of
+		// the body so if it's small the underlying TCP connection will be
+		// re-used. No need to check for errors: if it fails, the Transport
+		// won't reuse it anyway.
+		const maxBodySlurpSize = 2 << 10
+		if resp.ContentLength == -1 || resp.ContentLength <= maxBodySlurpSize {
+			io.CopyN(ioutil.Discard, resp.Body, maxBodySlurpSize)
+		}
+
 		if rerr := resp.Body.Close(); err == nil {
 			err = rerr
 		}
 	}()
 
 	response := newResponse(resp)
+	c.ratemtx.Lock()
 	c.Rate = response.Rate
+	c.ratemtx.Unlock()
 
 	err = CheckResponse(resp)
 	if err != nil {

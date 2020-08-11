@@ -179,6 +179,12 @@ func resolveFilepaths(baseDir string, cfg *Config) {
 		for _, consulcfg := range cfg.ConsulSDConfigs {
 			tlsPaths(&consulcfg.TLSConfig)
 		}
+		for _, digitaloceancfg := range cfg.DigitalOceanSDConfigs {
+			clientPaths(&digitaloceancfg.HTTPClientConfig)
+		}
+		for _, dockerswarmcfg := range cfg.DockerSwarmSDConfigs {
+			clientPaths(&dockerswarmcfg.HTTPClientConfig)
+		}
 		for _, cfg := range cfg.OpenstackSDConfigs {
 			tlsPaths(&cfg.TLSConfig)
 		}
@@ -373,8 +379,11 @@ type ScrapeConfig struct {
 	MetricsPath string `yaml:"metrics_path,omitempty"`
 	// The URL scheme with which to fetch metrics from targets.
 	Scheme string `yaml:"scheme,omitempty"`
-	// More than this many samples post metric-relabelling will cause the scrape to fail.
+	// More than this many samples post metric-relabeling will cause the scrape to fail.
 	SampleLimit uint `yaml:"sample_limit,omitempty"`
+	// More than this many targets after the target relabeling will cause the
+	// scrapes to fail.
+	TargetLimit uint `yaml:"target_limit,omitempty"`
 
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.

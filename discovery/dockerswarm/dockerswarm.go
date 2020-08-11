@@ -24,6 +24,7 @@ import (
 	"github.com/go-kit/kit/log"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/version"
 
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -32,6 +33,8 @@ import (
 const (
 	swarmLabel = model.MetaLabelPrefix + "dockerswarm_"
 )
+
+var userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 
 // DefaultSDConfig is the default Docker Swarm SD configuration.
 var DefaultSDConfig = SDConfig{
@@ -44,7 +47,6 @@ type SDConfig struct {
 	HTTPClientConfig config_util.HTTPClientConfig `yaml:",inline"`
 
 	Host string `yaml:"host"`
-	url  *url.URL
 	Role string `yaml:"role"`
 	Port int    `yaml:"port"`
 
@@ -62,11 +64,9 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if c.Host == "" {
 		return fmt.Errorf("host missing")
 	}
-	url, err := url.Parse(c.Host)
-	if err != nil {
+	if _, err = url.Parse(c.Host); err != nil {
 		return err
 	}
-	c.url = url
 	switch c.Role {
 	case "services", "nodes", "tasks":
 	case "":
@@ -89,17 +89,15 @@ type Discovery struct {
 // NewDiscovery returns a new Discovery which periodically refreshes its targets.
 func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 	var err error
+
 	d := &Discovery{
 		port: conf.Port,
 		role: conf.Role,
 	}
 
-	// This is used in tests. In normal situations, it is set when Unmarshaling.
-	if conf.url == nil {
-		conf.url, err = url.Parse(conf.Host)
-		if err != nil {
-			return nil, err
-		}
+	hostURL, err := url.Parse(conf.Host)
+	if err != nil {
+		return nil, err
 	}
 
 	opts := []client.Opt{
@@ -110,7 +108,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 	// There are other protocols than HTTP supported by the Docker daemon, like
 	// unix, which are not supported by the HTTP client. Passing HTTP client
 	// options to the Docker client makes those non-HTTP requests fail.
-	if conf.url.Scheme == "http" || conf.url.Scheme == "https" {
+	if hostURL.Scheme == "http" || hostURL.Scheme == "https" {
 		rt, err := config_util.NewRoundTripperFromConfig(conf.HTTPClientConfig, "dockerswarm_sd", false)
 		if err != nil {
 			return nil, err
@@ -120,7 +118,10 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 				Transport: rt,
 				Timeout:   time.Duration(conf.RefreshInterval),
 			}),
-			client.WithScheme(conf.url.Scheme),
+			client.WithScheme(hostURL.Scheme),
+			client.WithHTTPHeaders(map[string]string{
+				"User-Agent": userAgent,
+			}),
 		)
 	}
 

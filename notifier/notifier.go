@@ -26,19 +26,19 @@ import (
 	"path"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/go-openapi/strfmt"
 	"github.com/pkg/errors"
+	"go.uber.org/atomic"
+
+	"github.com/prometheus/alertmanager/api/v2/models"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
-
-	"github.com/prometheus/alertmanager/api/v2/models"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -466,7 +466,7 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 
 	var (
 		wg         sync.WaitGroup
-		numSuccess uint64
+		numSuccess atomic.Uint64
 	)
 	for _, ams := range amSets {
 		var (
@@ -527,7 +527,7 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 					level.Error(n.logger).Log("alertmanager", url, "count", len(alerts), "msg", "Error sending alert", "err", err)
 					n.metrics.errors.WithLabelValues(url).Inc()
 				} else {
-					atomic.AddUint64(&numSuccess, 1)
+					numSuccess.Inc()
 				}
 				n.metrics.latency.WithLabelValues(url).Observe(time.Since(begin).Seconds())
 				n.metrics.sent.WithLabelValues(url).Add(float64(len(alerts)))
@@ -541,7 +541,7 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 
 	wg.Wait()
 
-	return numSuccess > 0
+	return numSuccess.Load() > 0
 }
 
 func alertsToOpenAPIAlerts(alerts []*Alert) models.PostableAlerts {

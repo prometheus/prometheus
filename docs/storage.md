@@ -37,17 +37,20 @@ The directory structure of a Prometheus server's data directory will look someth
 │   ├── tombstones
 │   ├── index
 │   └── meta.json
+├── chunks_head
+│   └── 000001
 └── wal
-    ├── 00000002
-    └── checkpoint.000001
+    ├── 000000002
+    └── checkpoint.00000001
+        └── 00000000
 ```
 
 
-Note that a limitation of the local storage is that it is not clustered or replicated. Thus, it is not arbitrarily scalable or durable in the face of disk or node outages and should be treated as you would any other kind of single node database. Using RAID for disk availability, [snapshots](https://prometheus.io/docs/prometheus/latest/querying/api/#snapshot) for backups, capacity planning, etc, is recommended for improved durability. With proper storage durability and planning storing years of data in the local storage is possible.
+Note that a limitation of the local storage is that it is not clustered or replicated. Thus, it is not arbitrarily scalable or durable in the face of disk or node outages and should be treated as you would any other kind of single node database. Using RAID for disk availability, [snapshots](querying/api.md#snapshot) for backups, capacity planning, etc, is recommended for improved durability. With proper storage durability and planning storing years of data in the local storage is possible.
 
 Alternatively, external storage may be used via the [remote read/write APIs](https://prometheus.io/docs/operating/integrations/#remote-endpoints-and-storage). Careful evaluation is required for these systems as they vary greatly in durability, performance, and efficiency.
 
-For further details on file format, see [TSDB format](https://github.com/prometheus/prometheus/blob/master/tsdb/docs/format/README.md).
+For further details on file format, see [TSDB format](/tsdb/docs/format/README.md).
 
 ## Compaction
 
@@ -73,7 +76,9 @@ needed_disk_space = retention_time_seconds * ingested_samples_per_second * bytes
 
 To tune the rate of ingested samples per second, you can either reduce the number of time series you scrape (fewer targets or fewer series per target), or you can increase the scrape interval. However, reducing the number of series is likely more effective, due to compression of samples within a series.
 
-If your local storage becomes corrupted for whatever reason, your best bet is to shut down Prometheus and remove the entire storage directory. Non POSIX compliant filesystems are not supported by Prometheus's local storage, corruptions may happen, without possibility to recover. NFS is only potentially POSIX, most implementations are not. You can try removing individual block directories to resolve the problem, this means losing a time window of around two hours worth of data per block directory. Again, Prometheus's local storage is not meant as durable long-term storage.
+If your local storage becomes corrupted for whatever reason, your best bet is to shut down Prometheus and remove the entire storage directory. You can try removing individual block directories, or WAL directory, to resolve the problem, this means losing a time window of around two hours worth of data per block directory. Again, Prometheus's local storage is not meant as durable long-term storage.
+
+CAUTION: Non-POSIX compliant filesystems are not supported by Prometheus' local storage as unrecoverable corruptions may happen. NFS filesystems (including AWS's EFS) are not supported. NFS could be POSIX-compliant, but most implementations are not. It is strongly recommended to use a local filesystem for reliability.
 
 If both time and size retention policies are specified, whichever policy triggers first will be used at that instant.
 

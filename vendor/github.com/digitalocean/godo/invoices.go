@@ -49,6 +49,7 @@ type InvoiceItem struct {
 	StartTime        time.Time `json:"start_time"`
 	EndTime          time.Time `json:"end_time"`
 	ProjectName      string    `json:"project_name"`
+	Category         string    `json:"category"`
 }
 
 // InvoiceList contains a paginated list of all of a customer's invoices.
