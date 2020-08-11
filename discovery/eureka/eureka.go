@@ -109,11 +109,13 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if len(c.Server) == 0 {
 		return errors.New("eureka_sd: empty or null eureka server")
 	}
-	_, err = url.Parse(c.Server)
+	url, err := url.Parse(c.Server)
 	if err != nil {
 		return err
 	}
-
+	if len(url.Scheme) == 0 || len(url.Host) == 0 {
+		return errors.New("eureka_sd: invalid eureka server URL")
+	}
 	return c.HTTPClientConfig.Validate()
 }
 
@@ -149,15 +151,6 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 }
 
 func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
-	tg, err := d.fetchTargetGroup(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return []*targetgroup.Group{tg}, nil
-}
-
-func (d *Discovery) fetchTargetGroup(ctx context.Context) (*targetgroup.Group, error) {
 	apps, err := d.appsClient(ctx, d.server, d.client)
 	if err != nil {
 		return nil, err
@@ -171,7 +164,7 @@ func (d *Discovery) fetchTargetGroup(ctx context.Context) (*targetgroup.Group, e
 		targets := targetsForApp(&app)
 		tg.Targets = append(tg.Targets, targets...)
 	}
-	return tg, nil
+	return []*targetgroup.Group{tg}, nil
 }
 
 func targetsForApp(app *Application) []model.LabelSet {
@@ -236,5 +229,11 @@ func lv(s string) model.LabelValue {
 }
 
 func targetEndpoint(instance *Instance) string {
-	return net.JoinHostPort(instance.HostName, strconv.Itoa(instance.Port.Port))
+	var port string
+	if instance.SecurePort.Enabled && !instance.Port.Enabled {
+		port = strconv.Itoa(instance.SecurePort.Port)
+	} else {
+		port = strconv.Itoa(instance.Port.Port)
+	}
+	return net.JoinHostPort(instance.HostName, port)
 }

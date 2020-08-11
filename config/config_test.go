@@ -1017,6 +1017,10 @@ var expectedErrors = []struct {
 		filename: "eureka_no_server.bad.yml",
 		errMsg:   "empty or null eureka server",
 	},
+	{
+		filename: "eureka_invalid_server.bad.yml",
+		errMsg:   "invalid eureka server URL",
+	},
 }
 
 func TestBadConfigs(t *testing.T) {
