@@ -2761,6 +2761,29 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 		testutil.Ok(t, fileutil.Replace(dir, dir+tmpForDeletionBlockDirSuffix))
 		expectedRemovedDirs[dir+tmpForDeletionBlockDirSuffix] = struct{}{}
 	}
+	{
+		// One ok block; but two should be replaced.
+		dir := createBlock(t, tmpDir, genSeries(10, 2, 50, 60))
+		expectedLoadedDirs[dir] = struct{}{}
+
+		m, _, err := readMetaFile(dir)
+		testutil.Ok(t, err)
+
+		compacted := createBlock(t, tmpDir, genSeries(10, 2, 50, 55))
+		expectedRemovedDirs[compacted] = struct{}{}
+
+		m.Compaction.Parents = append(m.Compaction.Parents,
+			BlockDesc{ULID: ulid.MustParse(filepath.Base(compacted))},
+			BlockDesc{ULID: ulid.MustNew(1, nil)},
+			BlockDesc{ULID: ulid.MustNew(123, nil)},
+		)
+
+		// Regression test: Already removed parent can be still in list, which was causing Open errors.
+		m.Compaction.Parents = append(m.Compaction.Parents, BlockDesc{ULID: ulid.MustParse(filepath.Base(compacted))})
+		m.Compaction.Parents = append(m.Compaction.Parents, BlockDesc{ULID: ulid.MustParse(filepath.Base(compacted))})
+		_, err = writeMetaFile(log.NewLogfmtLogger(os.Stderr), dir, m)
+		testutil.Ok(t, err)
+	}
 
 	opts := DefaultOptions()
 	opts.RetentionDuration = 0
