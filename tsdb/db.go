@@ -49,6 +49,14 @@ import (
 const (
 	// Default duration of a block in milliseconds.
 	DefaultBlockDuration = int64(2 * time.Hour / time.Millisecond)
+
+	// Block dir suffixes to make deletion and creation operations atomic.
+	// We decided to do suffixes instead of creating meta.json as last (or delete as first) one,
+	// because in error case you still can recover meta.json from the block content within local TSDB dir.
+	// TODO(bwplotka): TSDB can end up with various .tmp files (e.g meta.json.tmp, WAL or segment tmp file. Think
+	// about removing those too on start to save space. Currently only blocks tmp dirs are removed.
+	tmpForDeletionBlockDirSuffix = ".tmp-for-deletion"
+	tmpForCreationBlockDirSuffix = ".tmp-for-creation"
 )
 
 var (
@@ -566,11 +574,15 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 
 	// Fixup bad format written by Prometheus 2.1.
 	if err := repairBadIndexVersion(l, dir); err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "repair bad index version")
 	}
 	// Migrate old WAL if one exists.
 	if err := MigrateWAL(l, filepath.Join(dir, "wal")); err != nil {
 		return nil, errors.Wrap(err, "migrate WAL")
+	}
+	// Remove garbage, tmp blocks.
+	if err := removeBestEffortTmpDirs(l, dir); err != nil {
+		return nil, errors.Wrap(err, "remove tmp dirs")
 	}
 
 	db = &DB{
@@ -658,6 +670,23 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	go db.run()
 
 	return db, nil
+}
+
+func removeBestEffortTmpDirs(l log.Logger, dir string) error {
+	files, err := ioutil.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, fi := range files {
+		if isTmpBlockDir(fi) {
+			if err := os.RemoveAll(filepath.Join(dir, fi.Name())); err != nil {
+				level.Error(l).Log("msg", "failed to delete tmp block dir", "dir", filepath.Join(dir, fi.Name()), "err", err)
+				continue
+			}
+			level.Info(l).Log("msg", "Found and deleted tmp block dir", "dir", filepath.Join(dir, fi.Name()))
+		}
+	}
+	return nil
 }
 
 // StartTime implements the Storage interface.
@@ -990,7 +1019,7 @@ func openBlocks(l log.Logger, dir string, loaded []*Block, chunkPool chunkenc.Po
 	for _, bDir := range bDirs {
 		meta, _, err := readMetaFile(bDir)
 		if err != nil {
-			level.Error(l).Log("msg", "failed to read meta.json for a block", "dir", bDir, "err", err)
+			level.Error(l).Log("msg", "failed to read meta.json for a block during reload; skipping", "dir", bDir, "err", err)
 			continue
 		}
 
@@ -1016,7 +1045,7 @@ func DefaultBlocksToDelete(db *DB) BlocksToDeleteFunc {
 	}
 }
 
-// deletableBlocks returns all blocks past retention policy.
+// deletableBlocks returns all currently loaded blocks past retention policy or already compacted into a new block.
 func deletableBlocks(db *DB, blocks []*Block) map[ulid.ULID]struct{} {
 	deletable := make(map[ulid.ULID]struct{})
 
@@ -1105,10 +1134,17 @@ func (db *DB) deleteBlocks(blocks map[ulid.ULID]*Block) error {
 				level.Warn(db.logger).Log("msg", "Closing block failed", "err", err, "block", ulid)
 			}
 		}
-		if err := os.RemoveAll(filepath.Join(db.dir, ulid.String())); err != nil {
+
+		// Replace atomically to avoid partial block when process is crashing during this moment.
+		tmpToDelete := filepath.Join(db.dir, fmt.Sprintf("%s%s", ulid, tmpForDeletionBlockDirSuffix))
+		if err := fileutil.Replace(filepath.Join(db.dir, ulid.String()), tmpToDelete); err != nil {
+			return errors.Wrapf(err, "replace of obsolete block for deletion %s", ulid)
+		}
+		if err := os.RemoveAll(tmpToDelete); err != nil {
 			return errors.Wrapf(err, "delete obsolete block %s", ulid)
 		}
 	}
+
 	return nil
 }
 
@@ -1479,6 +1515,22 @@ func isBlockDir(fi os.FileInfo) bool {
 	}
 	_, err := ulid.ParseStrict(fi.Name())
 	return err == nil
+}
+
+// isTmpBlockDir returns dir that consists of block dir ULID and tmp extension.
+func isTmpBlockDir(fi os.FileInfo) bool {
+	if !fi.IsDir() {
+		return false
+	}
+
+	fn := fi.Name()
+	ext := filepath.Ext(fn)
+	if ext == tmpForDeletionBlockDirSuffix || ext == tmpForCreationBlockDirSuffix {
+		if _, err := ulid.ParseStrict(fn[:len(fn)-len(ext)]); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 func blockDirs(dir string) ([]string, error) {
