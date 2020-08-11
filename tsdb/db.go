@@ -930,7 +930,7 @@ func (db *DB) reload() (err error) {
 		for _, b := range block.Meta().Compaction.Parents {
 			if _, ok := corrupted[b.ULID]; ok {
 				delete(corrupted, b.ULID)
-				level.Warn(db.logger).Log("msg", "Found corrupted block, but replaced by compacted one so it's safe to delete. This should not happen with atomic deletes. Please Report", "block", b.ULID)
+				level.Warn(db.logger).Log("msg", "Found corrupted block, but replaced by compacted one so it's safe to delete. This should not happen with atomic deletes.", "block", b.ULID)
 			}
 			deletable[b.ULID] = nil
 		}
