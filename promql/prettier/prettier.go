@@ -520,10 +520,7 @@ type itemsIterator struct {
 // next increments the index and returns the true if there exists an lex item after.
 func (it *itemsIterator) next() bool {
 	it.index++
-	if it.index == len(it.itemsSlice) {
-		return false
-	}
-	return true
+	return it.index != len(it.itemsSlice)
 }
 
 // peek returns the lex item at the current index.

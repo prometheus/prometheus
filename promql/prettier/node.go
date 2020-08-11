@@ -90,15 +90,6 @@ func (n *nodeInfo) has(element uint) bool {
 	return false
 }
 
-// parentNode returns the parent node of the given node/item position range.
-func (n *nodeInfo) parentNode(head parser.Expr, rnge parser.PositionRange) parser.Node {
-	ancestors, _ := n.nodeHistory(head, rnge, []parser.Node{})
-	if len(ancestors) < 2 {
-		return nil
-	}
-	return ancestors[len(ancestors)-2]
-}
-
 // nodeHistory returns the ancestors of the node the item position range is passed of,
 // along with the node in which the item is present. This is done with the help of AST.
 // posRange can also be called as itemPosRange since carries the position range of the lexical item.
