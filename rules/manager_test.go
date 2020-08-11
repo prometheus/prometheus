@@ -657,6 +657,7 @@ func TestCopyState(t *testing.T) {
 	testutil.Equals(t, want, newGroup.seriesInPreviousEval)
 	testutil.Equals(t, oldGroup.rules[0], newGroup.rules[3])
 	testutil.Equals(t, oldGroup.evaluationDuration, newGroup.evaluationDuration)
+	testutil.Equals(t, oldGroup.evaluationTimestamp, newGroup.evaluationTimestamp)
 	testutil.Equals(t, []labels.Labels{{{Name: "l1", Value: "v3"}}}, newGroup.staleSeries)
 }
 

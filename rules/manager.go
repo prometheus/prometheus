@@ -500,6 +500,7 @@ func nameAndLabels(rule Rule) string {
 // first is matched with the first, second with the second etc.
 func (g *Group) CopyState(from *Group) {
 	g.evaluationDuration = from.evaluationDuration
+	g.evaluationTimestamp = from.evaluationTimestamp
 
 	ruleMap := make(map[string][]int, len(from.rules))
 
