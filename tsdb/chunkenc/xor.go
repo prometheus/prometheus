@@ -79,12 +79,18 @@ func (c *XORChunk) NumSamples() int {
 	return int(binary.BigEndian.Uint16(c.Bytes()))
 }
 
+// Compact compacts internal buffer to minimum capacity.
 func (c *XORChunk) Compact() {
 	if l := len(c.b.stream); cap(c.b.stream) > l+chunkCompactCapacityThreshold {
-		buf := make([]byte, l)
-		copy(buf, c.b.stream)
-		c.b.stream = buf
+		c.b.stream = c.Clone().Bytes()
 	}
+}
+
+// Clone return exact, compacted copy of chunk.
+func (c *XORChunk) Clone() Chunk {
+	buf := make([]byte, len(c.b.stream))
+	copy(buf, c.b.stream)
+	return &XORChunk{b: bstream{stream: buf, count: c.b.count}}
 }
 
 // Appender implements the Chunk interface.

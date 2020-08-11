@@ -25,6 +25,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"sync"
@@ -2815,4 +2816,203 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 		}
 	}
 	testutil.Equals(t, len(expectedIgnoredDirs), ignored)
+}
+
+// Regression test for: https://github.com/prometheus/prometheus/issues/7776
+func TestDBQueriers_ChunkBytesAreCopied(t *testing.T) {
+	tmpdir, err := ioutil.TempDir("", "test")
+	testutil.Ok(t, err)
+	t.Cleanup(func() {
+		testutil.Ok(t, os.RemoveAll(tmpdir))
+	})
+
+	// Generate one series in two parts. Put first part in block, second in head.
+	createBlock(t, tmpdir, genSeries(1, 2, 0, 200))
+	s := genSeries(1, 2, 200, 400)
+
+	db, err := Open(tmpdir, log.NewLogfmtLogger(os.Stderr), nil, nil)
+	testutil.Ok(t, err)
+
+	var (
+		series      storage.Series
+		q           storage.Querier
+		chunkSeries storage.ChunkSeries
+		chks        []chunks.Meta
+		cq          storage.ChunkQuerier
+	)
+
+	t.Cleanup(func() {
+		if q != nil {
+			_ = q.Close()
+		}
+		if cq != nil {
+			_ = cq.Close()
+		}
+		testutil.Ok(t, db.reload())
+		testutil.Ok(t, db.Close())
+	})
+
+	app := db.Appender(context.Background())
+	iter := s[0].Iterator()
+	for iter.Next() {
+		ts, v := iter.At()
+		_, err := app.Add(s[0].Labels(), ts, v)
+		testutil.Ok(t, err)
+	}
+	testutil.Ok(t, iter.Err())
+	testutil.Ok(t, app.Commit())
+
+	t.Run("querier select", func(t *testing.T) {
+		q, err = db.Querier(context.TODO(), 0, 100000)
+		testutil.Ok(t, err)
+		res := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, defaultLabelName, ".*"))
+		testutil.Assert(t, res.Next(), "expected one series")
+		series = res.At()
+		testutil.Assert(t, !res.Next(), "no more series expected")
+		testutil.Ok(t, res.Err())
+		testutil.Equals(t, 0, len(res.Warnings()))
+
+		testutil.Ok(t, faultOrPanicToErr(func() {
+			smpls, err := storage.ExpandSamples(series.Iterator(), newSample)
+			testutil.Ok(t, err)
+			testutil.Equals(t, 400, len(smpls))
+		}))
+	})
+
+	t.Run("chunk querier select", func(t *testing.T) {
+		cq, err = db.ChunkQuerier(context.TODO(), 0, 100000)
+		testutil.Ok(t, err)
+		res := cq.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, defaultLabelName, ".*"))
+		testutil.Assert(t, res.Next(), "expected one series")
+		chunkSeries = res.At()
+		testutil.Assert(t, !res.Next(), "no more series expected")
+		testutil.Ok(t, res.Err())
+		testutil.Equals(t, 0, len(res.Warnings()))
+
+		testutil.Ok(t, faultOrPanicToErr(func() {
+			chks, err = storage.ExpandChunks(chunkSeries.Iterator())
+			testutil.Ok(t, err)
+			testutil.Equals(t, 4, len(chks))
+		}))
+	})
+
+	assertAcessibleResults := func() {
+		// Verify the data is accessible.
+		testutil.Equals(t, defaultLabelName, series.Labels()[0].Name)
+		testutil.Equals(t, "0", series.Labels()[0].Value)
+		testutil.Equals(t, defaultLabelName+"1", series.Labels()[1].Name)
+		testutil.Equals(t, defaultLabelValue+"1", series.Labels()[1].Value)
+
+		// Verify the chunk data is accessible.
+		testutil.Equals(t, defaultLabelName, chunkSeries.Labels()[0].Name)
+		testutil.Equals(t, "0", chunkSeries.Labels()[0].Value)
+		testutil.Equals(t, defaultLabelName+"1", chunkSeries.Labels()[1].Name)
+		testutil.Equals(t, defaultLabelValue+"1", chunkSeries.Labels()[1].Value)
+
+		// All chunks should be accessible for read.
+		for _, c := range chks {
+			testutil.Ok(t, faultOrPanicToErr(func() {
+				_ = string(c.Chunk.Bytes()) // Access bytes by converting them to different type.
+			}))
+		}
+	}
+	assertAcessibleResults()
+
+	t.Run("delete series and access results", func(t *testing.T) {
+		testutil.Ok(t, db.Delete(0, 200, labels.MustNewMatcher(labels.MatchRegexp, defaultLabelName, ".*")))
+		assertAcessibleResults()
+
+		// Iterating should still work as well.
+		testutil.Ok(t, faultOrPanicToErr(func() {
+			smpls, err := storage.ExpandSamples(series.Iterator(), newSample)
+			testutil.Ok(t, err)
+			testutil.Equals(t, 400, len(smpls))
+		}))
+		testutil.Ok(t, faultOrPanicToErr(func() {
+			chks, err := storage.ExpandChunks(chunkSeries.Iterator())
+			testutil.Ok(t, err)
+			testutil.Equals(t, 4, len(chks))
+		}))
+	})
+
+	done := make(chan struct{})
+	t.Run("delete & close block and access results", func(t *testing.T) {
+		bl := db.Blocks()
+		go func() {
+			// This should block until all queries are closed.
+			testutil.Ok(t, db.deleteBlocks(map[ulid.ULID]*Block{
+				bl[0].Meta().ULID: bl[0],
+			}))
+			close(done)
+		}()
+		assertAcessibleResults()
+		// Iterating should still work as well.
+		testutil.Ok(t, faultOrPanicToErr(func() {
+			smpls, err := storage.ExpandSamples(series.Iterator(), newSample)
+			testutil.Ok(t, err)
+			testutil.Equals(t, 400, len(smpls))
+		}))
+		testutil.Ok(t, faultOrPanicToErr(func() {
+			chks, err := storage.ExpandChunks(chunkSeries.Iterator())
+			testutil.Ok(t, err)
+			testutil.Equals(t, 4, len(chks))
+		}))
+	})
+	select {
+	case _, ok := <-done:
+		if !ok {
+			t.Fatal("expected deletion to be blocked, but it seems it completed.")
+		}
+	default:
+	}
+	testutil.Ok(t, q.Close())
+	select {
+	case _, ok := <-done:
+		if !ok {
+			t.Fatal("expected deletion to be blocked, but it seems it completed.")
+		}
+	default:
+	}
+	testutil.Ok(t, cq.Close())
+	<-done
+
+	// After queriers closed, accessing bytes should cause seg fault as intended.
+
+	// Reading certain chunks should cause SEGFAULT.
+	for _, c := range chks[:2] {
+		testutil.NotOk(t, faultOrPanicToErr(func() {
+			_ = string(c.Chunk.Bytes()) // Access bytes by converting them to different type.
+		}))
+	}
+	for _, c := range chks[2:] {
+		testutil.Ok(t, faultOrPanicToErr(func() {
+			_ = string(c.Chunk.Bytes()) // Access bytes by converting them to different type.
+		}))
+	}
+
+	// Using iterators should cause SEGFAULT.
+	testutil.NotOk(t, faultOrPanicToErr(func() {
+		smpls, err := storage.ExpandSamples(series.Iterator(), newSample)
+		testutil.Ok(t, err)
+		testutil.Equals(t, 400, len(smpls))
+	}))
+	testutil.NotOk(t, faultOrPanicToErr(func() {
+		chks, err := storage.ExpandChunks(chunkSeries.Iterator())
+		testutil.Ok(t, err)
+		testutil.Equals(t, 4, len(chks))
+	}))
+}
+
+func faultOrPanicToErr(f func()) (err error) {
+	// Set this go routine to panic on segfault to allow asserting on those.
+	debug.SetPanicOnFault(true)
+	defer func() {
+		if r := recover(); r != nil {
+			err = errors.Errorf("invoked function panicked or caused segmentation fault: %v", r)
+		}
+		debug.SetPanicOnFault(false)
+	}()
+
+	f()
+	return err
 }

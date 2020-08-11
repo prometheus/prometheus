@@ -15,6 +15,7 @@ package storage
 
 import (
 	"fmt"
+	"io"
 	"math"
 	"sort"
 	"sync"
@@ -480,6 +481,7 @@ func TestCompactingChunkSeriesMerger(t *testing.T) {
 
 type mockQuerier struct {
 	LabelQuerier
+	io.Closer
 
 	toReturn []Series
 }
@@ -502,6 +504,7 @@ func (m *mockQuerier) Select(sortSeries bool, _ *SelectHints, _ ...*labels.Match
 
 type mockChunkQurier struct {
 	LabelQuerier
+	io.Closer
 
 	toReturn []ChunkSeries
 }

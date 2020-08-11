@@ -109,6 +109,7 @@ type blockQuerier struct {
 }
 
 // NewBlockQuerier returns a querier against the block reader and requested min and max time range.
+// It is the caller responsibility to close Querier to release resources.
 func NewBlockQuerier(b BlockReader, mint, maxt int64) (storage.Querier, error) {
 	q, err := newBlockBaseQuerier(b, mint, maxt)
 	if err != nil {
@@ -141,6 +142,7 @@ type blockChunkQuerier struct {
 }
 
 // NewBlockChunkQuerier returns a chunk querier against the block reader and requested min and max time range.
+// It's caller responsibility to close ChunkQuerier to release resources.
 func NewBlockChunkQuerier(b BlockReader, mint, maxt int64) (storage.ChunkQuerier, error) {
 	q, err := newBlockBaseQuerier(b, mint, maxt)
 	if err != nil {
@@ -612,7 +614,7 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 		return true
 	}
 
-	// Re-encode the chunk if iterator is provider. This means that it has some samples to be deleted or chunk is opened.
+	// Re-encode the chunk if iterator is provided. This means that it has some samples to be deleted or chunk is opened.
 	newChunk := chunkenc.NewXORChunk()
 	app, err := newChunk.Appender()
 	if err != nil {

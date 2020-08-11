@@ -615,53 +615,102 @@ func TestHeadDeleteSimple(t *testing.T) {
 }
 
 func TestDeleteUntilCurMax(t *testing.T) {
-	hb, _ := newTestHead(t, 1000000, false)
-	defer func() {
+	hb, _ := newTestHead(t, 20, false)
+	t.Cleanup(func() {
 		testutil.Ok(t, hb.Close())
-	}()
+	})
 
-	numSamples := int64(10)
+	numSamples := int64(25)
 	app := hb.Appender(context.Background())
-	smpls := make([]float64, numSamples)
+	smpls := make([]tsdbutil.Sample, numSamples)
 	for i := int64(0); i < numSamples; i++ {
-		smpls[i] = rand.Float64()
-		_, err := app.Add(labels.Labels{{Name: "a", Value: "b"}}, i, smpls[i])
+		smpls[i] = sample{t: i, v: rand.Float64()}
+		_, err := app.Add(labels.Labels{{Name: "a", Value: "b"}}, i, smpls[i].V())
 		testutil.Ok(t, err)
 	}
 	testutil.Ok(t, app.Commit())
-	testutil.Ok(t, hb.Delete(0, 10000, labels.MustNewMatcher(labels.MatchEqual, "a", "b")))
 
-	// Test the series returns no samples. The series is cleared only after compaction.
-	q, err := NewBlockQuerier(hb, 0, 100000)
-	testutil.Ok(t, err)
-	res := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
-	testutil.Assert(t, res.Next(), "series is not present")
-	s := res.At()
-	it := s.Iterator()
-	testutil.Assert(t, !it.Next(), "expected no samples")
-	for res.Next() {
+	// Test series are returned.
+	{
+		q, err := NewBlockQuerier(hb, 0, 100000)
+		testutil.Ok(t, err)
+		res := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+		testutil.Assert(t, res.Next(), "expected one series")
+		s := res.At()
+		it := s.Iterator()
+		resSamples, err := storage.ExpandSamples(it, newSample)
+		testutil.Ok(t, err)
+		testutil.Equals(t, smpls, resSamples)
+		testutil.Assert(t, !res.Next(), "no more series expected")
+		testutil.Ok(t, res.Err())
+		testutil.Equals(t, 0, len(res.Warnings()))
 	}
-	testutil.Ok(t, res.Err())
-	testutil.Equals(t, 0, len(res.Warnings()))
 
-	// Add again and test for presence.
+	// Test series chunk iterator returns series.
+	{
+		q, err := NewBlockChunkQuerier(hb, 0, 100000)
+		testutil.Ok(t, err)
+		res := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+		testutil.Assert(t, res.Next(), "expected one series")
+		s := res.At()
+		it := s.Iterator()
+		chks, err := storage.ExpandChunks(it)
+		testutil.Ok(t, err)
+		testutil.Equals(t, 2, len(chks))
+		testutil.Assert(t, !res.Next(), "no more series expected")
+		testutil.Ok(t, res.Err())
+		testutil.Equals(t, 0, len(res.Warnings()))
+	}
+
+	testutil.Ok(t, hb.Delete(0, 10000, labels.MustNewMatcher(labels.MatchEqual, "a", "b")))
+	{
+		// Test the series returns no samples. The series is cleared only after compaction.
+		q, err := NewBlockQuerier(hb, 0, 100000)
+		testutil.Ok(t, err)
+		res := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+		testutil.Assert(t, res.Next(), "expected one series")
+		s := res.At()
+		it := s.Iterator()
+		testutil.Assert(t, !it.Next(), "expected no samples")
+		testutil.Ok(t, it.Err())
+		testutil.Assert(t, !res.Next(), "no more series expected")
+		testutil.Ok(t, res.Err())
+		testutil.Equals(t, 0, len(res.Warnings()))
+	}
+	{
+		q, err := NewBlockChunkQuerier(hb, 0, 100000)
+		testutil.Ok(t, err)
+		res := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+		testutil.Assert(t, res.Next(), "expected one series")
+		s := res.At()
+		it := s.Iterator()
+		chks, err := storage.ExpandChunks(it)
+		testutil.Ok(t, err)
+		testutil.Equals(t, 0, len(chks))
+		testutil.Assert(t, !res.Next(), "no more series expected")
+		testutil.Ok(t, res.Err())
+		testutil.Equals(t, 0, len(res.Warnings()))
+	}
+
 	app = hb.Appender(context.Background())
-	_, err = app.Add(labels.Labels{{Name: "a", Value: "b"}}, 11, 1)
+	_, err := app.Add(labels.Labels{{Name: "a", Value: "b"}}, 26, 1)
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Commit())
-	q, err = NewBlockQuerier(hb, 0, 100000)
-	testutil.Ok(t, err)
-	res = q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
-	testutil.Assert(t, res.Next(), "series don't exist")
-	exps := res.At()
-	it = exps.Iterator()
-	resSamples, err := storage.ExpandSamples(it, newSample)
-	testutil.Ok(t, err)
-	testutil.Equals(t, []tsdbutil.Sample{sample{11, 1}}, resSamples)
-	for res.Next() {
+	{
+		// Add again and test for presence.
+		q, err := NewBlockQuerier(hb, 0, 100000)
+		testutil.Ok(t, err)
+		res := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+		testutil.Assert(t, res.Next(), "expected one series")
+		s := res.At()
+		it := s.Iterator()
+		resSamples, err := storage.ExpandSamples(it, newSample)
+		testutil.Ok(t, err)
+		testutil.Equals(t, []tsdbutil.Sample{sample{26, 1}}, resSamples)
+		testutil.Assert(t, !res.Next(), "no more series expected")
+		testutil.Ok(t, res.Err())
+		testutil.Equals(t, 0, len(res.Warnings()))
 	}
-	testutil.Ok(t, res.Err())
-	testutil.Equals(t, 0, len(res.Warnings()))
 }
 
 func TestDeletedSamplesAndSeriesStillInWALAfterCheckpoint(t *testing.T) {

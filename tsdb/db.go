@@ -1310,7 +1310,6 @@ func (db *DB) Close() error {
 	var merr tsdb_errors.MultiError
 
 	merr.Add(g.Wait())
-
 	if db.lockf != nil {
 		merr.Add(db.lockf.Release())
 	}

@@ -51,6 +51,7 @@ type Chunk interface {
 	// Appender returns an appender to append samples to the chunk.
 	Appender() (Appender, error)
 
+	// Iterator returns new iterator that allows to iterate through all samples.
 	// The iterator passed as argument is for re-use.
 	// Depending on implementation, the iterator can
 	// be re-used or a new iterator can be allocated.
@@ -58,13 +59,20 @@ type Chunk interface {
 
 	// NumSamples returns the number of samples in the chunk.
 	NumSamples() int
+}
 
+// Clonable allows to clone and compact chunk.
+// Chunk can optionally implement this interface.
+type Clonable interface {
 	// Compact is called whenever a chunk is expected to be complete (no more
 	// samples appended) and the underlying implementation can eventually
 	// optimize the chunk.
 	// There's no strong guarantee that no samples will be appended once
-	// Compact() is called. Implementing this function is optional.
+	// Compact() is called.
 	Compact()
+
+	// Clone return exact, compacted copy of chunk.
+	Clone() Chunk
 }
 
 // Appender adds sample pairs to a chunk.

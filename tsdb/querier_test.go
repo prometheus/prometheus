@@ -193,8 +193,13 @@ func testBlockQuerier(t *testing.T, c blockQuerierTestCase, ir IndexReader, cr C
 			sres := res.At()
 			testutil.Equals(t, sexp.Labels(), sres.Labels())
 
-			smplExp, errExp := storage.ExpandSamples(sexp.Iterator(), nil)
+			// We should be able to expand multiple times.
+			_, _ = storage.ExpandSamples(sres.Iterator(), nil)
+			_, _ = storage.ExpandSamples(sres.Iterator(), nil)
+			_, _ = storage.ExpandSamples(sres.Iterator(), nil)
+			_, _ = storage.ExpandSamples(sres.Iterator(), nil)
 			smplRes, errRes := storage.ExpandSamples(sres.Iterator(), nil)
+			smplExp, errExp := storage.ExpandSamples(sexp.Iterator(), nil)
 
 			testutil.Equals(t, errExp, errRes)
 			testutil.Equals(t, smplExp, smplRes)
@@ -229,10 +234,15 @@ func testBlockQuerier(t *testing.T, c blockQuerierTestCase, ir IndexReader, cr C
 
 			testutil.Equals(t, sexpChks.Labels(), sres.Labels())
 
-			chksExp, errExp := storage.ExpandChunks(sexpChks.Iterator())
-			rmChunkRefs(chksExp)
+			// We should be able to expand multiple times.
+			_, _ = storage.ExpandChunks(sres.Iterator())
+			_, _ = storage.ExpandChunks(sres.Iterator())
+			_, _ = storage.ExpandChunks(sres.Iterator())
+			_, _ = storage.ExpandChunks(sres.Iterator())
 			chksRes, errRes := storage.ExpandChunks(sres.Iterator())
 			rmChunkRefs(chksRes)
+			chksExp, errExp := storage.ExpandChunks(sexpChks.Iterator())
+			rmChunkRefs(chksExp)
 			testutil.Equals(t, errExp, errRes)
 			testutil.Equals(t, chksExp, chksRes)
 		}
