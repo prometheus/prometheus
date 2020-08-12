@@ -239,8 +239,7 @@ __name__="metric_name"}`,
 }
 
 func TestLexItemSorting(t *testing.T) {
-	prettier, err := New(PrettifyExpression, "")
-	testutil.Ok(t, err)
+	prettier := New("")
 	for i, expr := range sortingLexItemCases {
 		expectedSlice := prettier.refreshLexItems(prettier.lexItems(expr.expected))
 		input := prettier.lexItems(expr.expr)
@@ -960,13 +959,7 @@ var prettierCases = []prettierTest{
 
 func TestPrettierCases(t *testing.T) {
 	for _, expr := range prettierCases {
-		p, err := New(PrettifyExpression, expr.expr)
-		testutil.Ok(t, err)
-		standardizeExprStr := p.stringifyItems(p.sortItems(p.lexItems(expr.expr)))
-		lexItems := p.sortItems(p.lexItems(expr.expr))
-		err = p.parseExpr(standardizeExprStr)
-		testutil.Ok(t, err)
-		output, err := p.prettify(lexItems)
+		output, err := New(expr.expr).Prettify()
 		testutil.Ok(t, err)
 		testutil.Equals(t, expr.expected, output, "formatting does not match")
 	}

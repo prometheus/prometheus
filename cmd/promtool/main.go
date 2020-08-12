@@ -18,6 +18,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"gopkg.in/yaml.v3"
+	"io/ioutil"
 	"math"
 	"net/http"
 	"net/url"
@@ -435,15 +437,33 @@ func CheckMetrics() int {
 
 // PrettifyRules prettifies the rule files.
 func PrettifyRules(files ...string) int {
-	pretty, err := prettier.New(prettier.PrettifyRules, files)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err.Error())
-	}
-	if errs := pretty.Run(); len(errs) != 0 {
-		for _, err := range errs {
-			fmt.Fprintln(os.Stderr, err.Error())
+	var errors []error
+	for _, filePath := range files {
+		rgs, errs := rulefmt.ParseFile(filePath)
+		if len(errs) > 0 {
+			errors = append(errors, errs...)
+			continue
 		}
-		fmt.Println("Failed formatting rule files.")
+		for i, groups := range rgs.Groups {
+			for j, rules := range groups.Rules {
+				prettifiedExpr, err := prettier.New(rules.Expr.Value).Prettify()
+				if err != nil {
+					errors = append(errors, err)
+					continue
+				}
+				rgs.Groups[i].Rules[j].Expr.SetString(prettifiedExpr)
+			}
+		}
+		data, err := yaml.Marshal(rgs)
+		if err != nil {
+			panic(err)
+		}
+		if err = ioutil.WriteFile(filePath, data, 0666); err != nil {
+			fmt.Fprintln(os.Stderr, fmt.Sprintf("failed formatted %s file:", filePath), err.Error())
+		}
+	}
+	for _, err := range errors {
+		fmt.Fprintln(os.Stderr, "errors while formatting", err.Error())
 		return 1
 	}
 	return 0

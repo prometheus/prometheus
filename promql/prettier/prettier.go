@@ -14,23 +14,13 @@
 package prettier
 
 import (
-	"fmt"
-	"gopkg.in/yaml.v3"
-	"io/ioutil"
-	"reflect"
 	"regexp"
 
 	"github.com/pkg/errors"
-	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
 const (
-	// PrettifyRules for prettifying rules files along with the
-	// expressions in them.
-	PrettifyRules = iota
-	// PrettifyExpression for prettifying instantaneous expressions.
-	PrettifyExpression
 	// itemNotFound is used to initialize the index of an item.
 	itemNotFound = -1
 )
@@ -38,9 +28,7 @@ const (
 // Prettier handles the prettifying and formatting operation over a
 // list of rules files or a single expression.
 type Prettier struct {
-	files      []string
 	expression string
-	Type       uint
 	Node       parser.Expr
 	pd         *padder
 }
@@ -69,70 +57,27 @@ type padder struct {
 }
 
 // New returns a new prettier over the given slice of files.
-func New(Type uint, content interface{}) (*Prettier, error) {
-	var (
-		ok         bool
-		files      []string
-		expression string
-		typ        uint
-	)
-	switch Type {
-	case PrettifyRules:
-		files, ok = content.([]string)
-		typ = PrettifyRules
-	case PrettifyExpression:
-		expression, ok = content.(string)
-		typ = PrettifyExpression
-	}
-	if !ok {
-		return nil, errors.Errorf("invalid type: %T", reflect.TypeOf(content))
-	}
+func New(expression string) *Prettier {
 	return &Prettier{
-		files:      files,
 		expression: expression,
-		Type:       typ,
 		pd:         &padder{indent: "  ", isNewLineApplied: true, columnLimit: 100},
-	}, nil
+	}
 }
 
-// Run executes the prettier over the rules files or expression.
-func (p *Prettier) Run() []error {
-	var errs []error
-	switch p.Type {
-	case PrettifyRules:
-		for _, f := range p.files {
-			ruleGroups, err := p.parseFile(f)
-			if err != nil {
-				for _, e := range err {
-					errs = append(errs, errors.Wrapf(e, "file: %s", f))
-				}
-				continue
-			}
-			for _, grps := range ruleGroups.Groups {
-				for i, rules := range grps.Rules {
-					exprStr := rules.Expr.Value
-					standardizeExprStr := p.stringifyItems(p.sortItems(p.lexItems(exprStr)))
-					if err := p.parseExpr(standardizeExprStr); err != nil {
-						return []error{err}
-					}
-					formattedExpr, err := p.prettify(
-						p.sortItems(p.lexItems(exprStr)),
-					)
-					if err != nil {
-						return []error{errors.Wrap(err, "Run")}
-					}
-					fmt.Println("output is ")
-					fmt.Println(formattedExpr)
-					grps.Rules[i].Expr.SetString(formattedExpr)
-				}
-			}
-			p.updateFile(f, ruleGroups)
-		}
-		if len(errs) > 0 {
-			return errs
-		}
+// Prettify prettifies the current expression in the prettier. It standardizes the input expression,
+// sorts the items slice and calls the prettify.
+func (p *Prettier) Prettify() (string, error) {
+	standardizeExprStr := p.stringifyItems(
+		p.sortItems(p.lexItems(p.expression)),
+	)
+	if err := p.parseExpr(standardizeExprStr); err != nil {
+		return p.expression, err
 	}
-	return nil
+	formattedExpr, err := p.prettify(p.lexItems(standardizeExprStr))
+	if err != nil {
+		return p.expression, errors.Wrap(err, "Prettify")
+	}
+	return formattedExpr, nil
 }
 
 func (p *Prettier) sortItems(items []parser.Item) []parser.Item {
@@ -487,29 +432,6 @@ func (p *Prettier) parseExpr(expression string) error {
 	}
 	p.Node = expr
 	return nil
-}
-
-func (p *Prettier) parseFile(name string) (*rulefmt.RuleGroups, []error) {
-	b, err := ioutil.ReadFile(name)
-	if err != nil {
-		return nil, []error{errors.Wrap(err, "unable to read file")}
-	}
-	groups, errs := rulefmt.Parse(b)
-	if errs != nil {
-		return nil, errs
-	}
-	return groups, nil
-}
-
-func (p *Prettier) updateFile(name string, ruleGroups *rulefmt.RuleGroups) {
-	data, err := yaml.Marshal(ruleGroups)
-	if err != nil {
-		panic(err)
-	}
-	if err = ioutil.WriteFile(name, data, 0666); err != nil {
-		panic(err)
-	}
-	fmt.Println("formatted content", string(data))
 }
 
 type itemsIterator struct {

@@ -22,6 +22,9 @@ const (
 	grouping = iota
 	scalars
 	multiArguments
+	binaryExpr
+	matrixExpr
+	subQueryExpr
 )
 
 type nodeInfo struct {
@@ -121,7 +124,7 @@ func reduceNonNewLineExprs(history []parser.Node) []parser.Node {
 		return history
 	}
 	for i := range history {
-		if !(isMatrixSelector(history[i]) || isSubQuery(history[i])) {
+		if !(is(history[i], matrixExpr) || is(history[i], subQueryExpr)) {
 			temp = append(temp, history[i])
 		}
 	}
@@ -136,7 +139,7 @@ func reduceBinary(history []parser.Node) []parser.Node {
 		return history
 	}
 	for i := 0; i < len(history)-1; i++ {
-		if !(isBinary(history[i]) && isBinary(history[i+1])) {
+		if !(is(history[i], binaryExpr) && is(history[i+1], binaryExpr)) {
 			temp = append(temp, history[i])
 		}
 	}
@@ -144,22 +147,23 @@ func reduceBinary(history []parser.Node) []parser.Node {
 	return temp
 }
 
-func isBinary(node parser.Node) bool {
-	if _, ok := node.(*parser.BinaryExpr); ok {
-		return true
-	}
-	return false
-}
-
-func isMatrixSelector(node parser.Node) bool {
-	if _, ok := node.(*parser.MatrixSelector); ok {
-		return true
-	}
-	return false
-}
-func isSubQuery(node parser.Node) bool {
-	if _, ok := node.(*parser.SubqueryExpr); ok {
-		return true
+func is(node parser.Node, typ uint) bool {
+	switch typ {
+	case binaryExpr:
+		if _, ok := node.(*parser.BinaryExpr); ok {
+			return true
+		}
+		return false
+	case matrixExpr:
+		if _, ok := node.(*parser.MatrixSelector); ok {
+			return true
+		}
+		return false
+	case subQueryExpr:
+		if _, ok := node.(*parser.SubqueryExpr); ok {
+			return true
+		}
+		return false
 	}
 	return false
 }
