@@ -271,3 +271,6 @@ highest to lowest.
 Operators on the same precedence level are left-associative. For example,
 `2 * 3 % 2` is equivalent to `(2 * 3) % 2`. However `^` is right associative,
 so `2 ^ 3 ^ 2` is equivalent to `2 ^ (3 ^ 2)`.
+
+Only the operators who do not alter the values (level 4, 5 and 6 in the list
+above) preserve the metric names (`__name__` label) in the resulting vector.
