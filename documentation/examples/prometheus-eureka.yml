@@ -10,10 +10,9 @@ scrape_configs:
   # Discover Eureka services to scrape.
   - job_name: 'eureka'
 
-    # Scrape Eureka itself to discover new services every minute.
+    # Scrape Eureka itself to discover new services.
     eureka_sd_configs:
       - server: http://localhost:8761/eureka
-        refresh_interval: 60s
 
     relabel_configs:
       # You can use Eureka's application instance metadata.

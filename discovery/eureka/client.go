@@ -53,13 +53,11 @@ type Instance struct {
 	Port                          *Port           `xml:"port,omitempty"`
 	SecurePort                    *Port           `xml:"securePort,omitempty"`
 	DataCenterInfo                *DataCenterInfo `xml:"dataCenterInfo"`
-	LeaseInfo                     *LeaseInfo      `xml:"leaseInfo,omitempty"`
 	Metadata                      *MetaData       `xml:"metadata,omitempty"`
 	IsCoordinatingDiscoveryServer bool            `xml:"isCoordinatingDiscoveryServer,omitempty"`
 	LastUpdatedTimestamp          int             `xml:"lastUpdatedTimestamp,omitempty"`
 	LastDirtyTimestamp            int             `xml:"lastDirtyTimestamp,omitempty"`
 	ActionType                    string          `xml:"actionType,omitempty"`
-	Overriddenstatus              string          `xml:"overriddenstatus,omitempty"`
 	CountryID                     int             `xml:"countryId,omitempty"`
 	InstanceID                    string          `xml:"instanceId,omitempty"`
 }

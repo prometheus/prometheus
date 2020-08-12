@@ -172,7 +172,7 @@ func targetsForApp(app *Application) []model.LabelSet {
 
 	// Gather info about the app's 'instances'. Each instance is considered a task
 	for _, t := range app.Instances {
-		targetAddress := targetEndpoint(&t)
+		targetAddress := net.JoinHostPort(t.HostName, strconv.Itoa(t.Port.Port))
 		target := model.LabelSet{
 			model.AddressLabel:  model.LabelValue(targetAddress),
 			model.InstanceLabel: model.LabelValue(t.InstanceID),
@@ -226,14 +226,4 @@ func targetsForApp(app *Application) []model.LabelSet {
 
 func lv(s string) model.LabelValue {
 	return model.LabelValue(s)
-}
-
-func targetEndpoint(instance *Instance) string {
-	var port string
-	if instance.SecurePort.Enabled && !instance.Port.Enabled {
-		port = strconv.Itoa(instance.SecurePort.Port)
-	} else {
-		port = strconv.Itoa(instance.Port.Port)
-	}
-	return net.JoinHostPort(instance.HostName, port)
 }

@@ -1433,9 +1433,6 @@ server: <string>
 [ refresh_interval: <duration> | default = 30s ]
 ```
 
-By default every app listed in Eureka will be scraped by Prometheus. If not all
-of your services provide Prometheus metrics, you can use a Eureka metadata and
-Prometheus relabeling to control which instances will actually be scraped.
 See [the Prometheus eureka-sd configuration file](/documentation/examples/prometheus-eureka.yml)
 for a practical example on how to set up your Eureka app and your Prometheus
 configuration.
