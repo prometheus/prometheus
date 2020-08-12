@@ -75,11 +75,13 @@ jobs:
           GOOPTS: "-p 2 -mod=vendor"
 
   test_mixins:
-    docker:
-    - image: quay.io/coreos/jsonnet-ci:release-0.37
+    executor: golang
     steps:
     - checkout
     - run: go install -mod=vendor ./cmd/promtool/.
+    - run:
+        command: go install -mod=readonly github.com/google/go-jsonnet/cmd/jsonnet github.com/google/go-jsonnet/cmd/jsonnetfmt github.com/jsonnet-bundler/jsonnet-bundler/cmd/jb
+        working_directory: ~/project/documentation/prometheus-mixin
     - run:
         command: make clean
         working_directory: ~/project/documentation/prometheus-mixin
