@@ -70,7 +70,6 @@ func main() {
 	prettifyCmd := app.Command("prettify", "Prettify PromQL expressions and YAML syntax.")
 	prettifyRuleFiles := prettifyCmd.Command("rules", "Format and prettify rule files.")
 	prettyFiles := prettifyRuleFiles.Arg("rule-files", "The rule files to prettify.").Required().ExistingFiles()
-	prettifyPromqlExpression := prettifyCmd.Command("expression", "Prettify a Promql Expression.") // TODO
 
 	queryCmd := app.Command("query", "Run query against a Prometheus server.")
 	queryCmdFmt := queryCmd.Flag("format", "Output format of the query.").Short('o').Default("promql").Enum("promql", "json")
@@ -158,9 +157,6 @@ func main() {
 
 	case prettifyRuleFiles.FullCommand():
 		os.Exit(PrettifyRules(*prettyFiles...))
-
-	case prettifyPromqlExpression.FullCommand():
-		os.Exit(0)
 
 	case queryInstantCmd.FullCommand():
 		os.Exit(QueryInstant(*queryServer, *queryExpr, p))
