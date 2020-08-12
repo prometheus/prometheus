@@ -71,6 +71,10 @@ func TestParseFileFailure(t *testing.T) {
 			filename: "bad_field.bad.yaml",
 			errMsg:   "field annotation not found",
 		},
+		{
+			filename: "invalid_label_name.bad.yaml",
+			errMsg:   "invalid label name",
+		},
 	}
 
 	for _, c := range table {
