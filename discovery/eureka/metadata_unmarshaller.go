@@ -15,7 +15,6 @@ package eureka
 
 import (
 	"encoding/xml"
-	"regexp"
 )
 
 type MetaData struct {
@@ -30,20 +29,25 @@ type Vraw struct {
 
 func (s *MetaData) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 	s.Map = make(map[string]string)
-	vraw := &Vraw{}
-	err := d.DecodeElement(vraw, &start)
-	if err != nil {
-		return err
+
+	for {
+		token, err := d.Token()
+		if err != nil {
+			return err
+		}
+
+		switch el := token.(type) {
+		case xml.StartElement:
+			item := new(string)
+			err = d.DecodeElement(item, &el)
+			if err != nil {
+				return err
+			}
+			s.Map[el.Name.Local] = *item
+		case xml.EndElement:
+			if el == start.End() {
+				return nil
+			}
+		}
 	}
-	dataInString := string(vraw.Content)
-	regex, err := regexp.Compile(`\s*<([^<>]+)>([^<>]+)</[^<>]+>\s*`)
-	if err != nil {
-		return err
-	}
-	subMatches := regex.FindAllStringSubmatch(dataInString, -1)
-	for _, subMatch := range subMatches {
-		s.Map[subMatch[1]] = subMatch[2]
-	}
-	s.Class = vraw.Class
-	return nil
 }
