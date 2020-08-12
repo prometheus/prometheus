@@ -186,7 +186,7 @@ func (r *RuleNode) Validate() (nodes []WrappedError) {
 	}
 
 	for k, v := range r.Labels {
-		if !model.LabelName(k).IsValid() {
+		if !model.LabelName(k).IsValid() || k == model.MetricNameLabel {
 			nodes = append(nodes, WrappedError{
 				err: errors.Errorf("invalid label name: %s", k),
 			})
