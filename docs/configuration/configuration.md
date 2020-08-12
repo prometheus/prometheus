@@ -1426,10 +1426,10 @@ The following meta labels are available on targets during [relabeling](#relabel_
 See below for the configuration options for Eureka discovery:
 
 ```yaml
-# You need to provide eureka server URL.
+# The URL to connect to the Eureka server.
 server: <string>
 
-# Polling interval
+# Refresh interval to re-read the app instance list.
 [ refresh_interval: <duration> | default = 30s ]
 ```
 
@@ -1437,8 +1437,6 @@ See [the Prometheus eureka-sd configuration file](/documentation/examples/promet
 for a practical example on how to set up your Eureka app and your Prometheus
 configuration.
 
-By default, all apps will show up as a single job in Prometheus (the one specified
-in the configuration file), which can also be changed using relabeling.
 
 ### `<static_config>`
 
