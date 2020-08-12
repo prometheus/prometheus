@@ -25,6 +25,12 @@ const Navigation: FC<PathPrefixProps & NavbarProps> = ({ pathPrefix, consolesLin
     <Navbar className="mb-3" dark color="dark" expand="md" fixed="top">
       <NavbarToggler onClick={toggle} />
       <Link className="pt-0 navbar-brand" to={`${pathPrefix}/new/graph`}>
+        <img
+          src={`${pathPrefix}/prometheus_logo_grey.svg`}
+          className="d-inline-block align-top"
+          alt="Prometheus logo"
+          title="Prometheus"
+        />
         Prometheus
       </Link>
       <Collapse isOpen={isOpen} navbar style={{ justifyContent: 'space-between' }}>

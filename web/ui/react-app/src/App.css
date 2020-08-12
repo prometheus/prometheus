@@ -8,6 +8,15 @@ html {
   margin-bottom: 20px;
 }
 
+.navbar-brand img {
+  padding-right: 0.6em;
+  height: 1.4em;
+}
+
+.navbar-brand {
+  margin-top: 2px;
+}
+
 input[type='checkbox']:checked + label {
   color: #286090;
 }
