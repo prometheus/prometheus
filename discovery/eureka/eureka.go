@@ -119,14 +119,11 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return c.HTTPClientConfig.Validate()
 }
 
-type applicationsClient func(ctx context.Context, server string, client *http.Client) (*Applications, error)
-
 // Discovery provides service discovery based on a Eureka instance.
 type Discovery struct {
 	*refresh.Discovery
-	client     *http.Client
-	server     string
-	appsClient applicationsClient
+	client *http.Client
+	server string
 }
 
 // New creates a new Eureka discovery for the given role.
@@ -137,9 +134,8 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 	}
 
 	d := &Discovery{
-		client:     &http.Client{Transport: rt},
-		server:     conf.Server,
-		appsClient: fetchApps,
+		client: &http.Client{Transport: rt},
+		server: conf.Server,
 	}
 	d.Discovery = refresh.NewDiscovery(
 		logger,
@@ -151,7 +147,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 }
 
 func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
-	apps, err := d.appsClient(ctx, d.server, d.client)
+	apps, err := fetchApps(ctx, d.server, d.client)
 	if err != nil {
 		return nil, err
 	}

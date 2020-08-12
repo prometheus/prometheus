@@ -15,293 +15,232 @@ package eureka
 
 import (
 	"context"
-	"errors"
+	"github.com/prometheus/prometheus/util/testutil"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/util/testutil"
 )
 
-var (
-	conf = SDConfig{Server: "http://localhost:8761"}
-)
+func testUpdateServices(respHandler http.HandlerFunc) ([]*targetgroup.Group, error) {
+	// Create a test server with mock HTTP handler.
+	ts := httptest.NewServer(respHandler)
+	defer ts.Close()
 
-func testUpdateServices(client applicationsClient) ([]*targetgroup.Group, error) {
-	md, err := NewDiscovery(&conf, nil)
+	conf := SDConfig{
+		Server: ts.URL,
+	}
+
+	md, err := NewDiscovery(conf, nil)
 	if err != nil {
 		return nil, err
 	}
-	if client != nil {
-		md.appsClient = client
-	}
+
 	return md.refresh(context.Background())
 }
 
 func TestEurekaSDHandleError(t *testing.T) {
 	var (
-		errTesting = errors.New("testing failure")
-		client     = func(_ context.Context, _ string, _ *http.Client) (*Applications, error) {
-			return nil, errTesting
+		errTesting  = errors.Errorf("non 2xx status '%d' response during eureka service discovery", http.StatusInternalServerError)
+		respHandler = func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Header().Set("Content-Type", "application/xml")
+			io.WriteString(w, ``)
 		}
 	)
-	tgs, err := testUpdateServices(client)
-	testutil.Equals(t, err, errTesting)
+	tgs, err := testUpdateServices(respHandler)
+
+	testutil.ErrorEqual(t, err, errTesting)
 	testutil.Equals(t, len(tgs), 0)
 }
 
 func TestEurekaSDEmptyList(t *testing.T) {
 	var (
-		client = func(_ context.Context, _ string, _ *http.Client) (*Applications, error) {
-			return &Applications{}, nil
+		appsXML = `<applications>
+<versions__delta>1</versions__delta>
+<apps__hashcode/>
+</applications>`
+		respHandler = func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			w.Header().Set("Content-Type", "application/xml")
+			io.WriteString(w, appsXML)
 		}
 	)
-	tgs, err := testUpdateServices(client)
+	tgs, err := testUpdateServices(respHandler)
 	testutil.Ok(t, err)
 	testutil.Equals(t, len(tgs), 1)
-}
-
-func eurekaTestApps(serviceID string) *Applications {
-	var (
-		ins = Instance{
-			HostName:   "meta-service" + serviceID + ".test.com",
-			App:        "META-SERVICE",
-			IPAddr:     "192.133.87.237",
-			VipAddress: "meta-service",
-			Status:     "UP",
-			Port: &Port{
-				Port:    8080,
-				Enabled: true,
-			},
-			SecurePort: &Port{
-				Port:    8088,
-				Enabled: false,
-			},
-			Metadata:   nil,
-			InstanceID: "meta-service" + serviceID + ".test.com:meta-service:8080",
-		}
-
-		app = Application{
-			Name:      "META-SERVICE",
-			Instances: []Instance{ins},
-		}
-	)
-	return &Applications{
-		Applications: []Application{app},
-	}
 }
 
 func TestEurekaSDSendGroup(t *testing.T) {
 	var (
-		client = func(_ context.Context, _ string, _ *http.Client) (*Applications, error) {
-			return eurekaTestApps("002"), nil
+		appsXML = `<applications>
+  <versions__delta>1</versions__delta>
+  <apps__hashcode>UP_4_</apps__hashcode>
+  <application>
+    <name>CONFIG-SERVICE</name>
+    <instance>
+      <instanceId>config-service001.test.com:config-service:8080</instanceId>
+      <hostName>config-service001.test.com</hostName>
+      <app>CONFIG-SERVICE</app>
+      <ipAddr>192.133.83.31</ipAddr>
+      <status>UP</status>
+      <overriddenstatus>UNKNOWN</overriddenstatus>
+      <port enabled="true">8080</port>
+      <securePort enabled="false">8080</securePort>
+      <countryId>1</countryId>
+      <dataCenterInfo class="com.netflix.appinfo.InstanceInfo$DefaultDataCenterInfo">
+        <name>MyOwn</name>
+      </dataCenterInfo>
+      <leaseInfo>
+        <renewalIntervalInSecs>30</renewalIntervalInSecs>
+        <durationInSecs>90</durationInSecs>
+        <registrationTimestamp>1596003469304</registrationTimestamp>
+        <lastRenewalTimestamp>1596110179310</lastRenewalTimestamp>
+        <evictionTimestamp>0</evictionTimestamp>
+        <serviceUpTimestamp>1547190033103</serviceUpTimestamp>
+      </leaseInfo>
+      <metadata>
+        <instanceId>config-service001.test.com:config-service:8080</instanceId>
+      </metadata>
+      <homePageUrl>http://config-service001.test.com:8080/</homePageUrl>
+      <statusPageUrl>http://config-service001.test.com:8080/info</statusPageUrl>
+      <healthCheckUrl>http://config-service001.test.com 8080/health</healthCheckUrl>
+      <vipAddress>config-service</vipAddress>
+      <isCoordinatingDiscoveryServer>false</isCoordinatingDiscoveryServer>
+      <lastUpdatedTimestamp>1596003469304</lastUpdatedTimestamp>
+      <lastDirtyTimestamp>1596003469304</lastDirtyTimestamp>
+      <actionType>ADDED</actionType>
+    </instance>
+    <instance>
+      <instanceId>config-service002.test.com:config-service:8080</instanceId>
+      <hostName>config-service002.test.com</hostName>
+      <app>CONFIG-SERVICE</app>
+      <ipAddr>192.133.83.31</ipAddr>
+      <status>UP</status>
+      <overriddenstatus>UNKNOWN</overriddenstatus>
+      <port enabled="true">8080</port>
+      <securePort enabled="false">8080</securePort>
+      <countryId>1</countryId>
+      <dataCenterInfo class="com.netflix.appinfo.InstanceInfo$DefaultDataCenterInfo">
+        <name>MyOwn</name>
+      </dataCenterInfo>
+      <leaseInfo>
+        <renewalIntervalInSecs>30</renewalIntervalInSecs>
+        <durationInSecs>90</durationInSecs>
+        <registrationTimestamp>1596003469304</registrationTimestamp>
+        <lastRenewalTimestamp>1596110179310</lastRenewalTimestamp>
+        <evictionTimestamp>0</evictionTimestamp>
+        <serviceUpTimestamp>1547190033103</serviceUpTimestamp>
+      </leaseInfo>
+      <metadata>
+        <instanceId>config-service002.test.com:config-service:8080</instanceId>
+      </metadata>
+      <homePageUrl>http://config-service002.test.com:8080/</homePageUrl>
+      <statusPageUrl>http://config-service002.test.com:8080/info</statusPageUrl>
+      <healthCheckUrl>http://config-service002.test.com:8080/health</healthCheckUrl>
+      <vipAddress>config-service</vipAddress>
+      <isCoordinatingDiscoveryServer>false</isCoordinatingDiscoveryServer>
+      <lastUpdatedTimestamp>1596003469304</lastUpdatedTimestamp>
+      <lastDirtyTimestamp>1596003469304</lastDirtyTimestamp>
+      <actionType>ADDED</actionType>
+    </instance>
+  </application>
+  <application>
+    <name>META-SERVICE</name>
+    <instance>
+      <instanceId>meta-service002.test.com:meta-service:8080</instanceId>
+      <hostName>meta-service002.test.com</hostName>
+      <app>META-SERVICE</app>
+      <ipAddr>192.133.87.237</ipAddr>
+      <status>UP</status>
+      <overriddenstatus>UNKNOWN</overriddenstatus>
+      <port enabled="true">8080</port>
+      <securePort enabled="false">443</securePort>
+      <countryId>1</countryId>
+      <dataCenterInfo class="com.netflix.appinfo.InstanceInfo$DefaultDataCenterInfo">
+        <name>MyOwn</name>
+      </dataCenterInfo>
+      <leaseInfo>
+        <renewalIntervalInSecs>30</renewalIntervalInSecs>
+        <durationInSecs>90</durationInSecs>
+        <registrationTimestamp>1535444352472</registrationTimestamp>
+        <lastRenewalTimestamp>1596110168846</lastRenewalTimestamp>
+        <evictionTimestamp>0</evictionTimestamp>
+        <serviceUpTimestamp>1535444352472</serviceUpTimestamp>
+      </leaseInfo>
+      <metadata>
+        <project>meta-service</project>
+        <management.port>8090</management.port>
+      </metadata>
+      <homePageUrl>http://meta-service002.test.com:8080/</homePageUrl>
+      <statusPageUrl>http://meta-service002.test.com:8080/info</statusPageUrl>
+      <healthCheckUrl>http://meta-service002.test.com:8080/health</healthCheckUrl>
+      <vipAddress>meta-service</vipAddress>
+      <secureVipAddress>meta-service</secureVipAddress>
+      <isCoordinatingDiscoveryServer>false</isCoordinatingDiscoveryServer>
+      <lastUpdatedTimestamp>1535444352472</lastUpdatedTimestamp>
+      <lastDirtyTimestamp>1535444352398</lastDirtyTimestamp>
+      <actionType>ADDED</actionType>
+    </instance>
+    <instance>
+      <instanceId>meta-service001.test.com:meta-service:8080</instanceId>
+      <hostName>meta-service001.test.com</hostName>
+      <app>META-SERVICE</app>
+      <ipAddr>192.133.87.236</ipAddr>
+      <status>UP</status>
+      <overriddenstatus>UNKNOWN</overriddenstatus>
+      <port enabled="true">8080</port>
+      <securePort enabled="false">443</securePort>
+      <countryId>1</countryId>
+      <dataCenterInfo class="com.netflix.appinfo.InstanceInfo$DefaultDataCenterInfo">
+        <name>MyOwn</name>
+      </dataCenterInfo>
+      <leaseInfo>
+        <renewalIntervalInSecs>30</renewalIntervalInSecs>
+        <durationInSecs>90</durationInSecs>
+        <registrationTimestamp>1535444352472</registrationTimestamp>
+        <lastRenewalTimestamp>1596110168846</lastRenewalTimestamp>
+        <evictionTimestamp>0</evictionTimestamp>
+        <serviceUpTimestamp>1535444352472</serviceUpTimestamp>
+      </leaseInfo>
+      <metadata>
+        <project>meta-service</project>
+        <management.port>8090</management.port>
+      </metadata>
+      <homePageUrl>http://meta-service001.test.com:8080/</homePageUrl>
+      <statusPageUrl>http://meta-service001.test.com:8080/info</statusPageUrl>
+      <healthCheckUrl>http://meta-service001.test.com:8080/health</healthCheckUrl>
+      <vipAddress>meta-service</vipAddress>
+      <secureVipAddress>meta-service</secureVipAddress>
+      <isCoordinatingDiscoveryServer>false</isCoordinatingDiscoveryServer>
+      <lastUpdatedTimestamp>1535444352472</lastUpdatedTimestamp>
+      <lastDirtyTimestamp>1535444352398</lastDirtyTimestamp>
+      <actionType>ADDED</actionType>
+    </instance>
+  </application>
+</applications>`
+		respHandler = func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			w.Header().Set("Content-Type", "application/xml")
+			io.WriteString(w, appsXML)
 		}
 	)
-	tgs, err := testUpdateServices(client)
+
+	tgs, err := testUpdateServices(respHandler)
 	testutil.Ok(t, err)
 	testutil.Equals(t, len(tgs), 1)
 
 	tg := tgs[0]
 	testutil.Equals(t, tg.Source, "eureka")
-	testutil.Equals(t, len(tg.Targets), 1)
+	testutil.Equals(t, len(tg.Targets), 4)
 
 	tgt := tg.Targets[0]
+	testutil.Equals(t, tgt[model.AddressLabel], model.LabelValue("config-service001.test.com:8080"))
+
+	tgt = tg.Targets[2]
 	testutil.Equals(t, tgt[model.AddressLabel], model.LabelValue("meta-service002.test.com:8080"))
-}
-
-func TestEurekaSDRemoveApp(t *testing.T) {
-	md, err := NewDiscovery(&conf, nil)
-	if err != nil {
-		t.Fatalf("%s", err)
-	}
-
-	md.appsClient = func(_ context.Context, _ string, _ *http.Client) (*Applications, error) {
-		return eurekaTestApps("002"), nil
-	}
-	tgs, err := md.refresh(context.Background())
-	testutil.Ok(t, err)
-	testutil.Equals(t, len(tgs), 1)
-
-	tg1 := tgs[0]
-
-	md.appsClient = func(_ context.Context, _ string, _ *http.Client) (*Applications, error) {
-		return eurekaTestApps("001"), nil
-	}
-	tgs, err = md.refresh(context.Background())
-	testutil.Ok(t, err)
-	testutil.Equals(t, len(tgs), 1)
-
-	tg2 := tgs[0]
-	testutil.Equals(t, tg2.Source, tg1.Source)
-	testutil.Equals(t, len(tg2.Targets), 1)
-
-}
-
-func eurekaTestAppsWithMultipleInstance() *Applications {
-	var (
-		instances = []Instance{
-			{
-				HostName:   "meta-service002.test.com",
-				App:        "META-SERVICE",
-				IPAddr:     "192.133.87.237",
-				VipAddress: "meta-service",
-				Status:     "UP",
-				Port: &Port{
-					Port:    8080,
-					Enabled: true,
-				},
-				SecurePort: &Port{
-					Port:    8088,
-					Enabled: false,
-				},
-				Metadata: &MetaData{
-					Map: map[string]string{
-						"prometheus.scrape": "true",
-						"prometheus.path":   "/actuator/prometheus",
-						"prometheus.port":   "8090",
-					},
-				},
-				InstanceID: "meta-service002.test.com:meta-service:8080",
-			},
-			{
-				HostName:   "meta-service001.test.com",
-				App:        "META-SERVICE",
-				IPAddr:     "192.133.87.236",
-				VipAddress: "meta-service",
-				Status:     "UP",
-				Port: &Port{
-					Port:    8080,
-					Enabled: true,
-				},
-				SecurePort: &Port{
-					Port:    8088,
-					Enabled: false,
-				},
-				Metadata: &MetaData{
-					Map: map[string]string{
-						"prometheus.scrape": "true",
-						"prometheus.path":   "/actuator/prometheus",
-						"prometheus.port":   "8090",
-					},
-				},
-				InstanceID: "meta-service001.test.com:meta-service:8080",
-			},
-		}
-
-		app = Application{
-			Name:      "META-SERVICE",
-			Instances: instances,
-		}
-	)
-	return &Applications{
-		Applications: []Application{app},
-	}
-}
-
-func TestEurekaSDSendGroupWithMultipleInstances(t *testing.T) {
-	var (
-		client = func(_ context.Context, _ string, _ *http.Client) (*Applications, error) {
-			return eurekaTestAppsWithMultipleInstance(), nil
-		}
-	)
-	tgs, err := testUpdateServices(client)
-	testutil.Ok(t, err)
-	testutil.Equals(t, len(tgs), 1)
-
-	tg := tgs[0]
-	testutil.Equals(t, tg.Source, "eureka")
-	testutil.Equals(t, len(tg.Targets), 2)
-
-	tgt := tg.Targets[0]
-	testutil.Equals(t, tgt[model.AddressLabel], model.LabelValue("meta-service002.test.com:8080"))
-
-	tgt = tg.Targets[1]
-	testutil.Equals(t, tgt[model.AddressLabel], model.LabelValue("meta-service001.test.com:8080"))
-}
-
-func eurekaTestZeroApps() *Applications {
-	var (
-		app = Application{
-			Name:      "META-SERVICE",
-			Instances: nil,
-		}
-	)
-	return &Applications{
-		Applications: []Application{app},
-	}
-}
-
-func TestEurekaSDZeroApps(t *testing.T) {
-	var (
-		client = func(_ context.Context, _ string, _ *http.Client) (*Applications, error) {
-			return eurekaTestZeroApps(), nil
-		}
-	)
-	tgs, err := testUpdateServices(client)
-	testutil.Ok(t, err)
-	testutil.Equals(t, len(tgs), 1)
-
-	tg := tgs[0]
-	testutil.Ok(t, err)
-	testutil.Equals(t, tg.Source, "eureka")
-	testutil.Equals(t, len(tg.Targets), 0)
-}
-
-func eurekaTestAppsWithMetadata() *Applications {
-	var (
-		ins = Instance{
-			HostName:   "meta-service002.test.com",
-			App:        "META-SERVICE",
-			IPAddr:     "192.133.87.237",
-			VipAddress: "meta-service",
-			Status:     "UP",
-			Port: &Port{
-				Port:    8080,
-				Enabled: true,
-			},
-			SecurePort: &Port{
-				Port:    8088,
-				Enabled: false,
-			},
-			Metadata: &MetaData{
-				Map: map[string]string{
-					"prometheus.scrape": "true",
-					"prometheus.path":   "/actuator/prometheus",
-					"prometheus.port":   "8090",
-				},
-			},
-			InstanceID: "meta-service002.test.com:meta-service:8080",
-		}
-
-		app = Application{
-			Name:      "META-SERVICE",
-			Instances: []Instance{ins},
-		}
-	)
-	return &Applications{
-		Applications: []Application{app},
-	}
-}
-
-func TestEurekaSDAppsWithMetadata(t *testing.T) {
-	var (
-		client = func(_ context.Context, _ string, _ *http.Client) (*Applications, error) {
-			return eurekaTestAppsWithMetadata(), nil
-		}
-	)
-	tgs, err := testUpdateServices(client)
-	testutil.Ok(t, err)
-	testutil.Equals(t, len(tgs), 1)
-
-	tg := tgs[0]
-	testutil.Equals(t, tg.Source, "eureka")
-	testutil.Equals(t, len(tg.Targets), 1)
-
-	tgt := tg.Targets[0]
-	testutil.Equals(t, tgt[model.AddressLabel], model.LabelValue("meta-service002.test.com:8080"))
-	testutil.Equals(t, tgt[model.LabelName(appInstanceMetadataPrefix+"prometheus_scrape")],
-		model.LabelValue("true"))
-	testutil.Equals(t, tgt[model.LabelName(appInstanceMetadataPrefix+"prometheus_path")],
-		model.LabelValue("/actuator/prometheus"))
 }
