@@ -30,6 +30,7 @@ import (
 
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 const (
@@ -368,4 +369,19 @@ func TestNewClientWithBadTLSConfig(t *testing.T) {
 	if err == nil {
 		t.Fatalf("Expected error, got nil.")
 	}
+}
+
+func TestTargetPreviousErr(t *testing.T) {
+	target := &Target{}
+	errTime := time.Now().Add(-10 * time.Second)
+	okTime := time.Now()
+	err := fmt.Errorf("foo")
+	target.Report(errTime, 5*time.Second, err)
+	target.Report(okTime, 6*time.Second, nil)
+	testutil.Equals(t, target.LastError(), nil)
+	testutil.Equals(t, target.LastScrapeDuration(), 6*time.Second)
+	testutil.Equals(t, target.LastScrape(), okTime)
+	testutil.Equals(t, target.PreviousError(), err)
+	testutil.Equals(t, target.PreviousErrScrapeDuration(), 5*time.Second)
+	testutil.Equals(t, target.PreviousErrScrape(), errTime)
 }

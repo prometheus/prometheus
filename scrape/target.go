@@ -59,6 +59,10 @@ type Target struct {
 	lastScrapeDuration time.Duration
 	health             TargetHealth
 	metadata           MetricMetadataStore
+
+	previousError             error
+	previousErrScrape         time.Time
+	previousErrScrapeDuration time.Duration
 }
 
 // NewTarget creates a reasonably configured target for querying.
@@ -238,6 +242,12 @@ func (t *Target) Report(start time.Time, dur time.Duration, err error) {
 	t.lastError = err
 	t.lastScrape = start
 	t.lastScrapeDuration = dur
+
+	if err != nil {
+		t.previousError = err
+		t.previousErrScrape = start
+		t.previousErrScrapeDuration = dur
+	}
 }
 
 // LastError returns the error encountered during the last scrape.
@@ -262,6 +272,30 @@ func (t *Target) LastScrapeDuration() time.Duration {
 	defer t.mtx.RUnlock()
 
 	return t.lastScrapeDuration
+}
+
+// PreviousError returns the error encountered during the last errorful scrape.
+func (t *Target) PreviousError() error {
+	t.mtx.RLock()
+	defer t.mtx.RUnlock()
+
+	return t.previousError
+}
+
+// PreviousErrScrape returns the time of the last errorfulscrape.
+func (t *Target) PreviousErrScrape() time.Time {
+	t.mtx.RLock()
+	defer t.mtx.RUnlock()
+
+	return t.previousErrScrape
+}
+
+// PreviousErrScrapeDuration returns how long the last scrape of the target took.
+func (t *Target) PreviousErrScrapeDuration() time.Duration {
+	t.mtx.RLock()
+	defer t.mtx.RUnlock()
+
+	return t.previousErrScrapeDuration
 }
 
 // Health returns the last known health state of the target.
