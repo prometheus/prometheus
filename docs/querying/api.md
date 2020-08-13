@@ -429,8 +429,8 @@ $ curl http://localhost:9090/api/v1/targets
         "lastScrape": "2017-01-17T15:07:44.723715405+01:00",
         "lastScrapeDuration": 0.050688943,
         "previousError": "data does not end with # EOF",
-        "previousScrape": "2017-01-17T15:02:44.723715405+01:00",
-        "previousScrapeDuration": 0.010683421,
+        "previousErrScrape": "2017-01-17T15:02:44.723715405+01:00",
+        "previousErrScrapeDuration": 0.010683421,
         "health": "up"
       }
     ],
@@ -476,8 +476,8 @@ $ curl 'http://localhost:9090/api/v1/targets?state=active'
         "lastScrape": "2017-01-17T15:07:44.723715405+01:00",
         "lastScrapeDuration": 50688943,
         "previousError": "data does not end with # EOF",
-        "previousScrape": "2017-01-17T15:02:44.723715405+01:00",
-        "previousScrapeDuration": 0.010683421,
+        "previousErrScrape": "2017-01-17T15:02:44.723715405+01:00",
+        "previousErrScrapeDuration": 0.010683421,
         "health": "up"
       }
     ],
