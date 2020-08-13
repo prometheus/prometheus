@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright 2020 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -23,6 +23,10 @@ import (
 const (
 	// itemNotFound is used to initialize the index of an item.
 	itemNotFound = -1
+	// IndentAsSpace provides an indentation of 2 spaces.
+	IndentAsSpace = iota
+	// IndentAsTab provides an indentation of a tab or 4 spaces.
+	IndentAsTab
 )
 
 // Prettier handles the prettifying and formatting operation over a
@@ -56,11 +60,18 @@ type padder struct {
 	labelsSplittable bool
 }
 
-// New returns a new prettier over the given slice of files.
-func New(expression string) *Prettier {
+// New returns a new prettier.
+func New(expression string, columnLimit int, indentType uint) *Prettier {
+	var indent string
+	switch indentType {
+	case IndentAsSpace:
+		indent = "  "
+	case IndentAsTab:
+		indent = "    "
+	}
 	return &Prettier{
 		expression: expression,
-		pd:         &padder{indent: "  ", isNewLineApplied: true, columnLimit: 100},
+		pd:         &padder{indent: indent, isNewLineApplied: true, columnLimit: columnLimit},
 	}
 }
 

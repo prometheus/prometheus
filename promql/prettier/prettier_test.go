@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright 2020 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -50,24 +50,24 @@ var sortingLexItemCases = []prettierTest{
 		expected: `sum without(job, instance, foo) (metric_first + metric_second)`,
 	},
 	{
-		expr:     `quantile(0.9, sum(go_goroutines) without(job)) by (localhost)`,
-		expected: `quantile by (localhost) (0.9, sum without(job) (go_goroutines))`,
+		expr:     `quantile(0.9, sum(go_goroutines) without(job)) by (instance)`,
+		expected: `quantile by (instance) (0.9, sum without(job) (go_goroutines))`,
 	},
 	{
-		expr:     `quantile(0.9, sum(min(go_alloc_bytes) by (job)) without(job)) by (localhost)`,
-		expected: `quantile by (localhost) (0.9, sum without(job) (min by (job) (go_alloc_bytes)))`,
+		expr:     `quantile(0.9, sum(min(go_alloc_bytes) by (job)) without(job)) by (instance)`,
+		expected: `quantile by (instance) (0.9, sum without(job) (min by (job) (go_alloc_bytes)))`,
 	},
 	{
-		expr:     `quantile(0.9, sum(min(go_alloc_bytes) by (job)) without(job)) by (localhost)`,
-		expected: `quantile by(localhost) (0.9, sum without(job) (min by(job) (go_alloc_bytes)))`,
+		expr:     `quantile(0.9, sum(min(go_alloc_bytes) by (job)) without(job)) by (instance)`,
+		expected: `quantile by(instance) (0.9, sum without(job) (min by(job) (go_alloc_bytes)))`,
 	},
 	{
-		expr:     `quantile(0.9, sum(min(go_alloc_bytes) by (job)) ignoring(job)) by (localhost)`,
-		expected: `quantile by (localhost) (0.9, sum ignoring(job) (min by (job) (go_alloc_bytes)))`,
+		expr:     `quantile(0.9, sum(min(go_alloc_bytes) by (job)) ignoring(job)) by (instance)`,
+		expected: `quantile by (instance) (0.9, sum ignoring(job) (min by (job) (go_alloc_bytes)))`,
 	},
 	{
-		expr:     `quantile(0.9, sum(min(go_alloc_bytes) by (job)) ignoring(job)) by (localhost)`,
-		expected: `quantile by (localhost) (0.9, sum ignoring(job) (min by (job) (go_alloc_bytes)))`,
+		expr:     `quantile(0.9, sum(min(go_alloc_bytes) by (job)) ignoring(job)) by (instance)`,
+		expected: `quantile by (instance) (0.9, sum ignoring(job) (min by (job) (go_alloc_bytes)))`,
 	},
 	{
 		expr:     `sum(metric_first + metric_second) without(job)`,
@@ -239,7 +239,7 @@ __name__="metric_name"}`,
 }
 
 func TestLexItemSorting(t *testing.T) {
-	prettier := New("")
+	prettier := New("", 100, IndentAsSpace)
 	for i, expr := range sortingLexItemCases {
 		expectedSlice := prettier.refreshLexItems(prettier.lexItems(expr.expected))
 		input := prettier.lexItems(expr.expr)
@@ -955,11 +955,15 @@ var prettierCases = []prettierTest{
     )
   )`,
 	},
+	{
+		expr:     `quantile(0.9, sum(min(go_alloc_bytes) by (job)) without(job)) by (instance)`,
+		expected: `  quantile by(instance) (0.9, sum without(job) (min by(job) (go_alloc_bytes)))`,
+	},
 }
 
 func TestPrettierCases(t *testing.T) {
 	for _, expr := range prettierCases {
-		output, err := New(expr.expr).Prettify()
+		output, err := New(expr.expr, 100, IndentAsSpace).Prettify()
 		testutil.Ok(t, err)
 		testutil.Equals(t, expr.expected, output, "formatting does not match")
 	}

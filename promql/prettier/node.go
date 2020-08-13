@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright 2020 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -124,7 +124,7 @@ func reduceNonNewLineExprs(history []parser.Node) []parser.Node {
 		return history
 	}
 	for i := range history {
-		if !(is(history[i], matrixExpr) || is(history[i], subQueryExpr)) {
+		if !(compareNodeType(history[i], matrixExpr) || compareNodeType(history[i], subQueryExpr)) {
 			temp = append(temp, history[i])
 		}
 	}
@@ -139,7 +139,7 @@ func reduceBinary(history []parser.Node) []parser.Node {
 		return history
 	}
 	for i := 0; i < len(history)-1; i++ {
-		if !(is(history[i], binaryExpr) && is(history[i+1], binaryExpr)) {
+		if !(compareNodeType(history[i], binaryExpr) && compareNodeType(history[i+1], binaryExpr)) {
 			temp = append(temp, history[i])
 		}
 	}
@@ -147,7 +147,7 @@ func reduceBinary(history []parser.Node) []parser.Node {
 	return temp
 }
 
-func is(node parser.Node, typ uint) bool {
+func compareNodeType(node parser.Node, typ uint) bool {
 	switch typ {
 	case binaryExpr:
 		if _, ok := node.(*parser.BinaryExpr); ok {

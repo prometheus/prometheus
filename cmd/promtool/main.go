@@ -442,7 +442,7 @@ func PrettifyRules(files ...string) int {
 		}
 		for i, groups := range rgs.Groups {
 			for j, rules := range groups.Rules {
-				prettifiedExpr, err := prettier.New(rules.Expr.Value).Prettify()
+				prettifiedExpr, err := prettier.New(rules.Expr.Value, 100, prettier.IndentAsSpace).Prettify()
 				if err != nil {
 					errors = append(errors, err)
 					continue
