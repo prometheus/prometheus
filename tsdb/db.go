@@ -576,8 +576,11 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	if err := repairBadIndexVersion(l, dir); err != nil {
 		return nil, errors.Wrap(err, "repair bad index version")
 	}
+
+	walDir := filepath.Join(dir, "wal")
+
 	// Migrate old WAL if one exists.
-	if err := MigrateWAL(l, filepath.Join(dir, "wal")); err != nil {
+	if err := MigrateWAL(l, walDir); err != nil {
 		return nil, errors.Wrap(err, "migrate WAL")
 	}
 	// Remove garbage, tmp blocks.
@@ -622,7 +625,6 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 
 	var wlog *wal.WAL
 	segmentSize := wal.DefaultSegmentSize
-	walDir := filepath.Join(dir, "wal")
 	// Wal is enabled.
 	if opts.WALSegmentSize >= 0 {
 		// Wal is set to a custom size.
