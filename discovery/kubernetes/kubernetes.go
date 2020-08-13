@@ -260,7 +260,7 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 		}
 		level.Info(l).Log("msg", "Using pod service account via in-cluster config")
 	} else {
-		rt, err := config_util.NewRoundTripperFromConfig(conf.HTTPClientConfig, "kubernetes_sd", false)
+		rt, err := config_util.NewRoundTripperFromConfig(conf.HTTPClientConfig, "kubernetes_sd", false, false)
 		if err != nil {
 			return nil, err
 		}

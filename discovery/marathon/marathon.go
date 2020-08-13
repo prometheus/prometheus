@@ -108,7 +108,7 @@ type Discovery struct {
 
 // NewDiscovery returns a new Marathon Discovery.
 func NewDiscovery(conf SDConfig, logger log.Logger) (*Discovery, error) {
-	rt, err := config_util.NewRoundTripperFromConfig(conf.HTTPClientConfig, "marathon_sd", false)
+	rt, err := config_util.NewRoundTripperFromConfig(conf.HTTPClientConfig, "marathon_sd", false, false)
 	if err != nil {
 		return nil, err
 	}

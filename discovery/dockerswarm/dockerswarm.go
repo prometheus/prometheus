@@ -109,7 +109,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 	// unix, which are not supported by the HTTP client. Passing HTTP client
 	// options to the Docker client makes those non-HTTP requests fail.
 	if hostURL.Scheme == "http" || hostURL.Scheme == "https" {
-		rt, err := config_util.NewRoundTripperFromConfig(conf.HTTPClientConfig, "dockerswarm_sd", false)
+		rt, err := config_util.NewRoundTripperFromConfig(conf.HTTPClientConfig, "dockerswarm_sd", false, false)
 		if err != nil {
 			return nil, err
 		}
