@@ -860,24 +860,17 @@ func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
 
 func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
 	tmpDir, err := ioutil.TempDir("", "prometheus-cfg-coalesced")
-	if err != nil {
-		t.Fatalf("error creating temporary directory: %v", err)
-	}
+	testutil.Ok(t, err)
 	defer os.RemoveAll(tmpDir)
 	tmpFile, err := ioutil.TempFile(tmpDir, "sd")
-	if err != nil {
-		t.Fatalf("error creating temporary file: %v", err)
-	}
-	if _, err := tmpFile.Write([]byte(`[{"targets": ["foo:9090"]}]`)); err != nil {
-		t.Fatalf("error writing temporary file: %v", err)
-	}
-	if err := tmpFile.Close(); err != nil {
-		t.Fatalf("error closing temporary file: %v", err)
-	}
+	testutil.Ok(t, err)
+	_, err = tmpFile.Write([]byte(`[{"targets": ["foo:9090"]}]`))
+	testutil.Ok(t, err)
+	err = tmpFile.Close()
+	testutil.Ok(t, err)
 	tmpFile2 := fmt.Sprintf("%s.json", tmpFile.Name())
-	if err = os.Link(tmpFile.Name(), tmpFile2); err != nil {
-		t.Fatalf("error linking temporary file: %v", err)
-	}
+	err = os.Link(tmpFile.Name(), tmpFile2)
+	testutil.Ok(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
