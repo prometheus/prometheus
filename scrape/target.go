@@ -418,7 +418,7 @@ func populateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 		if _, _, err := net.SplitHostPort(s); err == nil {
 			return false
 		}
-		// If adding a port makes it valid, the saved error
+		// If adding a port makes it valid, the previous error
 		// was not due to an invalid address and we can append a port.
 		_, _, err := net.SplitHostPort(s + ":1234")
 		return err == nil
