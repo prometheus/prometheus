@@ -28,7 +28,6 @@ import (
 	"github.com/prometheus/prometheus/discovery/gce"
 	"github.com/prometheus/prometheus/discovery/kubernetes"
 	"github.com/prometheus/prometheus/discovery/marathon"
-	"github.com/prometheus/prometheus/discovery/triton"
 	"github.com/prometheus/prometheus/discovery/zookeeper"
 )
 
@@ -56,8 +55,6 @@ type ServiceDiscoveryConfig struct {
 	GCESDConfigs []*gce.SDConfig `yaml:"gce_sd_configs,omitempty"`
 	// List of EC2 service discovery configurations.
 	EC2SDConfigs []*ec2.SDConfig `yaml:"ec2_sd_configs,omitempty"`
-	// List of Triton service discovery configurations.
-	TritonSDConfigs []*triton.SDConfig `yaml:"triton_sd_configs,omitempty"`
 
 	// List of additional service discovery configurations.
 	Configs []Config `yaml:"-"`
@@ -78,9 +75,6 @@ func (c *ServiceDiscoveryConfig) SetDirectory(dir string) {
 		c.SetDirectory(dir)
 	}
 	for _, c := range c.DockerSwarmSDConfigs {
-		c.SetDirectory(dir)
-	}
-	for _, c := range c.TritonSDConfigs {
 		c.SetDirectory(dir)
 	}
 	for _, c := range c.FileSDConfigs {
@@ -148,11 +142,6 @@ func (c *ServiceDiscoveryConfig) Validate() error {
 	for _, cfg := range c.ServersetSDConfigs {
 		if cfg == nil {
 			return errors.New("empty or null section in serverset_sd_configs")
-		}
-	}
-	for _, cfg := range c.TritonSDConfigs {
-		if cfg == nil {
-			return errors.New("empty or null section in triton_sd_configs")
 		}
 	}
 	return nil
