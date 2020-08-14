@@ -648,8 +648,8 @@ var expectedConf = &Config{
 			Scheme:      DefaultScrapeConfig.Scheme,
 
 			ServiceDiscoveryConfig: discoverer.ServiceDiscoveryConfig{
-				DockerSwarmSDConfigs: []*dockerswarm.SDConfig{
-					{
+				Configs: []discoverer.Config{
+					&dockerswarm.SDConfig{
 						Host:            "http://127.0.0.1:2375",
 						Role:            "nodes",
 						Port:            80,
