@@ -25,6 +25,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/cache"
 
+	"github.com/prometheus/prometheus/discovery/discoverer"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -47,7 +48,7 @@ func makeDiscovery(role Role, nsDiscovery NamespaceDiscovery, objects ...runtime
 
 type k8sDiscoveryTest struct {
 	// discovery is instance of discovery.Discoverer
-	discovery discoverer
+	discovery discoverer.Discoverer
 	// beforeRun runs before discoverer run
 	beforeRun func()
 	// afterStart runs after discoverer has synced

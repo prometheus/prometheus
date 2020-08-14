@@ -20,15 +20,12 @@ import (
 
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/prometheus/discovery/file"
-	"github.com/prometheus/prometheus/discovery/kubernetes"
 )
 
 // ServiceDiscoveryConfig configures lists of different service discovery mechanisms.
 type ServiceDiscoveryConfig struct {
 	// List of file service discovery configurations.
 	FileSDConfigs []*file.SDConfig `yaml:"file_sd_configs,omitempty"`
-	// List of Kubernetes service discovery configurations.
-	KubernetesSDConfigs []*kubernetes.SDConfig `yaml:"kubernetes_sd_configs,omitempty"`
 
 	// List of additional service discovery configurations.
 	Configs []Config `yaml:"-"`
@@ -36,9 +33,6 @@ type ServiceDiscoveryConfig struct {
 
 // SetDirectory joins any relative file paths with dir.
 func (c *ServiceDiscoveryConfig) SetDirectory(dir string) {
-	for _, c := range c.KubernetesSDConfigs {
-		c.SetDirectory(dir)
-	}
 	for _, c := range c.FileSDConfigs {
 		c.SetDirectory(dir)
 	}
@@ -54,11 +48,6 @@ func (c *ServiceDiscoveryConfig) Validate() error {
 	for _, cfg := range c.FileSDConfigs {
 		if cfg == nil {
 			return errors.New("empty or null section in file_sd_configs")
-		}
-	}
-	for _, cfg := range c.KubernetesSDConfigs {
-		if cfg == nil {
-			return errors.New("empty or null section in kubernetes_sd_configs")
 		}
 	}
 	return nil

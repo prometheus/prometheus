@@ -39,6 +39,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 
+	"github.com/prometheus/prometheus/discovery/discoverer"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
@@ -66,6 +67,19 @@ var (
 	// DefaultSDConfig is the default Kubernetes SD configuration
 	DefaultSDConfig = SDConfig{}
 )
+
+func init() {
+	discoverer.RegisterConfig(&SDConfig{})
+	prometheus.MustRegister(eventCount)
+	// Initialize metric vectors.
+	for _, role := range []string{"endpointslice", "endpoints", "node", "pod", "service", "ingress"} {
+		for _, evt := range []string{"add", "delete", "update"} {
+			eventCount.WithLabelValues(role, evt)
+		}
+	}
+	(&clientGoRequestMetricAdapter{}).Register(prometheus.DefaultRegisterer)
+	(&clientGoWorkqueueMetricsProvider{}).Register(prometheus.DefaultRegisterer)
+}
 
 // Role is role of the service in Kubernetes.
 type Role string
@@ -100,6 +114,14 @@ type SDConfig struct {
 	HTTPClientConfig   config.HTTPClientConfig `yaml:",inline"`
 	NamespaceDiscovery NamespaceDiscovery      `yaml:"namespaces,omitempty"`
 	Selectors          []SelectorConfig        `yaml:"selectors,omitempty"`
+}
+
+// Name returns the name of the Config.
+func (*SDConfig) Name() string { return "kubernetes" }
+
+// NewDiscoverer returns a Discoverer for the Config.
+func (c *SDConfig) NewDiscoverer(opts discoverer.Options) (discoverer.Discoverer, error) {
+	return New(opts.Logger, c)
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -202,31 +224,6 @@ func (c *NamespaceDiscovery) UnmarshalYAML(unmarshal func(interface{}) error) er
 	return unmarshal((*plain)(c))
 }
 
-func init() {
-	prometheus.MustRegister(eventCount)
-
-	// Initialize metric vectors.
-	for _, role := range []string{"endpointslice", "endpoints", "node", "pod", "service", "ingress"} {
-		for _, evt := range []string{"add", "delete", "update"} {
-			eventCount.WithLabelValues(role, evt)
-		}
-	}
-
-	var (
-		clientGoRequestMetricAdapterInstance     = clientGoRequestMetricAdapter{}
-		clientGoWorkqueueMetricsProviderInstance = clientGoWorkqueueMetricsProvider{}
-	)
-
-	clientGoRequestMetricAdapterInstance.Register(prometheus.DefaultRegisterer)
-	clientGoWorkqueueMetricsProviderInstance.Register(prometheus.DefaultRegisterer)
-
-}
-
-// This is only for internal use.
-type discoverer interface {
-	Run(ctx context.Context, up chan<- []*targetgroup.Group)
-}
-
 // Discovery implements the discoverer interface for discovering
 // targets from Kubernetes.
 type Discovery struct {
@@ -235,7 +232,7 @@ type Discovery struct {
 	role               Role
 	logger             log.Logger
 	namespaceDiscovery *NamespaceDiscovery
-	discoverers        []discoverer
+	discoverers        []discoverer.Discoverer
 	selectors          roleSelector
 }
 
@@ -286,7 +283,7 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 		logger:             l,
 		role:               conf.Role,
 		namespaceDiscovery: &conf.NamespaceDiscovery,
-		discoverers:        make([]discoverer, 0),
+		discoverers:        make([]discoverer.Discoverer, 0),
 		selectors:          mapSelector(conf.Selectors),
 	}, nil
 }
@@ -522,7 +519,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	var wg sync.WaitGroup
 	for _, dd := range d.discoverers {
 		wg.Add(1)
-		go func(d discoverer) {
+		go func(d discoverer.Discoverer) {
 			defer wg.Done()
 			d.Run(ctx, ch)
 		}(dd)
