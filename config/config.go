@@ -48,7 +48,6 @@ func Load(s string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	cfg.original = s
 	return cfg, nil
 }
 
@@ -137,9 +136,6 @@ type Config struct {
 
 	RemoteWriteConfigs []*RemoteWriteConfig `yaml:"remote_write,omitempty"`
 	RemoteReadConfigs  []*RemoteReadConfig  `yaml:"remote_read,omitempty"`
-
-	// original is the input from which the config was parsed.
-	original string
 }
 
 // resolveFilepaths joins all relative paths in a configuration

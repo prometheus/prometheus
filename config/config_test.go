@@ -699,7 +699,19 @@ var expectedConf = &Config{
 			},
 		},
 	},
-	original: "",
+}
+
+func TestYAMLRoundtrip(t *testing.T) {
+	want, err := LoadFile("testdata/roundtrip.good.yml")
+	testutil.Ok(t, err)
+
+	out, err := yaml.Marshal(want)
+
+	testutil.Ok(t, err)
+	got := &Config{}
+	testutil.Ok(t, yaml.UnmarshalStrict(out, got))
+
+	testutil.Equals(t, want, got)
 }
 
 func TestLoadConfig(t *testing.T) {
@@ -710,8 +722,6 @@ func TestLoadConfig(t *testing.T) {
 
 	c, err := LoadFile("testdata/conf.good.yml")
 	testutil.Ok(t, err)
-
-	expectedConf.original = c.original
 	testutil.Equals(t, expectedConf, c)
 }
 
@@ -745,8 +755,6 @@ func TestLoadConfigRuleFilesAbsolutePath(t *testing.T) {
 	// Parse a valid file that sets a rule files with an absolute path
 	c, err := LoadFile(ruleFilesConfigFile)
 	testutil.Ok(t, err)
-
-	ruleFilesExpectedConf.original = c.original
 	testutil.Equals(t, ruleFilesExpectedConf, c)
 }
 
@@ -1022,7 +1030,6 @@ func TestEmptyGlobalBlock(t *testing.T) {
 	c, err := Load("global:\n")
 	testutil.Ok(t, err)
 	exp := DefaultConfig
-	exp.original = "global:\n"
 	testutil.Equals(t, exp, *c)
 }
 
