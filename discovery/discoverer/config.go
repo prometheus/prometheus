@@ -27,7 +27,6 @@ import (
 	"github.com/prometheus/prometheus/discovery/file"
 	"github.com/prometheus/prometheus/discovery/gce"
 	"github.com/prometheus/prometheus/discovery/kubernetes"
-	"github.com/prometheus/prometheus/discovery/marathon"
 	"github.com/prometheus/prometheus/discovery/zookeeper"
 )
 
@@ -47,8 +46,6 @@ type ServiceDiscoveryConfig struct {
 	ServersetSDConfigs []*zookeeper.ServersetSDConfig `yaml:"serverset_sd_configs,omitempty"`
 	// NerveSDConfigs is a list of Nerve service discovery configurations.
 	NerveSDConfigs []*zookeeper.NerveSDConfig `yaml:"nerve_sd_configs,omitempty"`
-	// MarathonSDConfigs is a list of Marathon service discovery configurations.
-	MarathonSDConfigs []*marathon.SDConfig `yaml:"marathon_sd_configs,omitempty"`
 	// List of Kubernetes service discovery configurations.
 	KubernetesSDConfigs []*kubernetes.SDConfig `yaml:"kubernetes_sd_configs,omitempty"`
 	// List of GCE service discovery configurations.
@@ -63,9 +60,6 @@ type ServiceDiscoveryConfig struct {
 // SetDirectory joins any relative file paths with dir.
 func (c *ServiceDiscoveryConfig) SetDirectory(dir string) {
 	for _, c := range c.KubernetesSDConfigs {
-		c.SetDirectory(dir)
-	}
-	for _, c := range c.MarathonSDConfigs {
 		c.SetDirectory(dir)
 	}
 	for _, c := range c.ConsulSDConfigs {
@@ -127,11 +121,6 @@ func (c *ServiceDiscoveryConfig) Validate() error {
 	for _, cfg := range c.KubernetesSDConfigs {
 		if cfg == nil {
 			return errors.New("empty or null section in kubernetes_sd_configs")
-		}
-	}
-	for _, cfg := range c.MarathonSDConfigs {
-		if cfg == nil {
-			return errors.New("empty or null section in marathon_sd_configs")
 		}
 	}
 	for _, cfg := range c.NerveSDConfigs {

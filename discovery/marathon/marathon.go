@@ -31,6 +31,7 @@ import (
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/discovery/discoverer"
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
@@ -63,6 +64,10 @@ var DefaultSDConfig = SDConfig{
 	RefreshInterval: model.Duration(30 * time.Second),
 }
 
+func init() {
+	discoverer.RegisterConfig(&SDConfig{})
+}
+
 // SDConfig is the configuration for services running on Marathon.
 type SDConfig struct {
 	Servers          []string                `yaml:"servers,omitempty"`
@@ -70,6 +75,14 @@ type SDConfig struct {
 	AuthToken        config.Secret           `yaml:"auth_token,omitempty"`
 	AuthTokenFile    string                  `yaml:"auth_token_file,omitempty"`
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
+}
+
+// Name returns the name of the Config.
+func (*SDConfig) Name() string { return "marathon" }
+
+// NewDiscoverer returns a Discoverer for the Config.
+func (c *SDConfig) NewDiscoverer(opts discoverer.Options) (discoverer.Discoverer, error) {
+	return NewDiscovery(*c, opts.Logger)
 }
 
 // SetDirectory joins any relative file paths with dir.

@@ -423,8 +423,8 @@ var expectedConf = &Config{
 			Scheme:      DefaultScrapeConfig.Scheme,
 
 			ServiceDiscoveryConfig: discoverer.ServiceDiscoveryConfig{
-				MarathonSDConfigs: []*marathon.SDConfig{
-					{
+				Configs: []discoverer.Config{
+					&marathon.SDConfig{
 						Servers: []string{
 							"https://marathon.example.com:443",
 						},

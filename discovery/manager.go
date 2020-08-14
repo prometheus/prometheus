@@ -35,7 +35,6 @@ import (
 	"github.com/prometheus/prometheus/discovery/file"
 	"github.com/prometheus/prometheus/discovery/gce"
 	"github.com/prometheus/prometheus/discovery/kubernetes"
-	"github.com/prometheus/prometheus/discovery/marathon"
 	"github.com/prometheus/prometheus/discovery/zookeeper"
 )
 
@@ -374,11 +373,6 @@ func (m *Manager) registerProviders(cfg discoverer.ServiceDiscoveryConfig, setNa
 	for _, c := range cfg.DockerSwarmSDConfigs {
 		add(c, func() (Discoverer, error) {
 			return dockerswarm.NewDiscovery(c, log.With(m.logger, "discovery", "dockerswarm"))
-		})
-	}
-	for _, c := range cfg.MarathonSDConfigs {
-		add(c, func() (Discoverer, error) {
-			return marathon.NewDiscovery(*c, log.With(m.logger, "discovery", "marathon"))
 		})
 	}
 	for _, c := range cfg.KubernetesSDConfigs {
