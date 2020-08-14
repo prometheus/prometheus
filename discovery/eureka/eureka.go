@@ -38,35 +38,24 @@ const (
 	metaLabelPrefix            = model.MetaLabelPrefix + "eureka_"
 	metaAppInstanceLabelPrefix = metaLabelPrefix + "app_instance_"
 
-	appNameLabel                                      = metaLabelPrefix + "app_name"
-	appInstanceHostNameLabel                          = metaAppInstanceLabelPrefix + "hostname"
-	appInstanceHomePageURLLabel                       = metaAppInstanceLabelPrefix + "homepage_url"
-	appInstanceStatusPageURLLabel                     = metaAppInstanceLabelPrefix + "statuspage_url"
-	appInstanceHealthCheckURLLabel                    = metaAppInstanceLabelPrefix + "healthcheck_url"
-	appInstanceIPAddrLabel                            = metaAppInstanceLabelPrefix + "ip_addr"
-	appInstanceVipAddressLabel                        = metaAppInstanceLabelPrefix + "vip_address"
-	appInstanceSecureVipAddressLabel                  = metaAppInstanceLabelPrefix + "secure_vip_address"
-	appInstanceStatusLabel                            = metaAppInstanceLabelPrefix + "status"
-	appInstancePortLabel                              = metaAppInstanceLabelPrefix + "port"
-	appInstancePortEnabledLabel                       = metaAppInstanceLabelPrefix + "port_enabled"
-	appInstanceSecurePortLabel                        = metaAppInstanceLabelPrefix + "secure_port"
-	appInstanceSecurePortEnabledLabel                 = metaAppInstanceLabelPrefix + "secure_port_enabled"
-	appInstanceDataCenterInfoNameLabel                = metaAppInstanceLabelPrefix + "datacenterinfo_name"
-	appInstanceDataCenterInfoMetadataPrefix           = metaAppInstanceLabelPrefix + "datacenterinfo_metadata_"
-	appInstanceDataCenterInfoMetadataAmiLaunchIndex   = appInstanceDataCenterInfoMetadataPrefix + "ami_launch_index"
-	appInstanceDataCenterInfoMetadataLocalHostname    = appInstanceDataCenterInfoMetadataPrefix + "local_hostname"
-	appInstanceDataCenterInfoMetadataAvailabilityZone = appInstanceDataCenterInfoMetadataPrefix + "availability_zone"
-	appInstanceDataCenterInfoMetadataInstanceID       = appInstanceDataCenterInfoMetadataPrefix + "instance_id"
-	appInstanceDataCenterInfoMetadataPublicIpv4       = appInstanceDataCenterInfoMetadataPrefix + "public_ipv4"
-	appInstanceDataCenterInfoMetadataPublicHostname   = appInstanceDataCenterInfoMetadataPrefix + "public_hostname"
-	appInstanceDataCenterInfoMetadataAmiManifestPath  = appInstanceDataCenterInfoMetadataPrefix + "ami_manifest_path"
-	appInstanceDataCenterInfoMetadataLocalIpv4        = appInstanceDataCenterInfoMetadataPrefix + "local_ipv4"
-	appInstanceDataCenterInfoMetadataHostname         = appInstanceDataCenterInfoMetadataPrefix + "hostname"
-	appInstanceDataCenterInfoMetadataAmiID            = appInstanceDataCenterInfoMetadataPrefix + "ami_id"
-	appInstanceDataCenterInfoMetadataInstanceType     = appInstanceDataCenterInfoMetadataPrefix + "instance_type"
-	appInstanceCountryIDLabel                         = metaAppInstanceLabelPrefix + "country_id"
-	appInstanceIDLabel                                = metaAppInstanceLabelPrefix + "id"
-	appInstanceMetadataPrefix                         = metaAppInstanceLabelPrefix + "metadata_"
+	appNameLabel                            = metaLabelPrefix + "app_name"
+	appInstanceHostNameLabel                = metaAppInstanceLabelPrefix + "hostname"
+	appInstanceHomePageURLLabel             = metaAppInstanceLabelPrefix + "homepage_url"
+	appInstanceStatusPageURLLabel           = metaAppInstanceLabelPrefix + "statuspage_url"
+	appInstanceHealthCheckURLLabel          = metaAppInstanceLabelPrefix + "healthcheck_url"
+	appInstanceIPAddrLabel                  = metaAppInstanceLabelPrefix + "ip_addr"
+	appInstanceVipAddressLabel              = metaAppInstanceLabelPrefix + "vip_address"
+	appInstanceSecureVipAddressLabel        = metaAppInstanceLabelPrefix + "secure_vip_address"
+	appInstanceStatusLabel                  = metaAppInstanceLabelPrefix + "status"
+	appInstancePortLabel                    = metaAppInstanceLabelPrefix + "port"
+	appInstancePortEnabledLabel             = metaAppInstanceLabelPrefix + "port_enabled"
+	appInstanceSecurePortLabel              = metaAppInstanceLabelPrefix + "secure_port"
+	appInstanceSecurePortEnabledLabel       = metaAppInstanceLabelPrefix + "secure_port_enabled"
+	appInstanceDataCenterInfoNameLabel      = metaAppInstanceLabelPrefix + "datacenterinfo_name"
+	appInstanceDataCenterInfoMetadataPrefix = metaAppInstanceLabelPrefix + "datacenterinfo_metadata_"
+	appInstanceCountryIDLabel               = metaAppInstanceLabelPrefix + "country_id"
+	appInstanceIDLabel                      = metaAppInstanceLabelPrefix + "id"
+	appInstanceMetadataPrefix               = metaAppInstanceLabelPrefix + "metadata_"
 )
 
 // DefaultSDConfig is the default Eureka SD configuration.
@@ -194,17 +183,10 @@ func targetsForApp(app *Application) []model.LabelSet {
 			target[appInstanceDataCenterInfoNameLabel] = lv(t.DataCenterInfo.Name)
 
 			if t.DataCenterInfo.Metadata != nil {
-				target[appInstanceDataCenterInfoMetadataAmiLaunchIndex] = lv(t.DataCenterInfo.Metadata.AmiLaunchIndex)
-				target[appInstanceDataCenterInfoMetadataLocalHostname] = lv(t.DataCenterInfo.Metadata.LocalHostname)
-				target[appInstanceDataCenterInfoMetadataAvailabilityZone] = lv(t.DataCenterInfo.Metadata.AvailabilityZone)
-				target[appInstanceDataCenterInfoMetadataInstanceID] = lv(t.DataCenterInfo.Metadata.InstanceID)
-				target[appInstanceDataCenterInfoMetadataPublicIpv4] = lv(t.DataCenterInfo.Metadata.PublicIpv4)
-				target[appInstanceDataCenterInfoMetadataPublicHostname] = lv(t.DataCenterInfo.Metadata.PublicHostname)
-				target[appInstanceDataCenterInfoMetadataAmiManifestPath] = lv(t.DataCenterInfo.Metadata.AmiManifestPath)
-				target[appInstanceDataCenterInfoMetadataLocalIpv4] = lv(t.DataCenterInfo.Metadata.LocalIpv4)
-				target[appInstanceDataCenterInfoMetadataHostname] = lv(t.DataCenterInfo.Metadata.Hostname)
-				target[appInstanceDataCenterInfoMetadataAmiID] = lv(t.DataCenterInfo.Metadata.AmiID)
-				target[appInstanceDataCenterInfoMetadataInstanceType] = lv(t.DataCenterInfo.Metadata.InstanceType)
+				for k, v := range t.DataCenterInfo.Metadata.Map {
+					ln := strutil.SanitizeLabelName(k)
+					target[model.LabelName(appInstanceDataCenterInfoMetadataPrefix+ln)] = lv(v)
+				}
 			}
 		}
 

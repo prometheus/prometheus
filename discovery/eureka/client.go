@@ -63,33 +63,9 @@ type Instance struct {
 }
 
 type DataCenterInfo struct {
-	Name     string              `xml:"name"`
-	Class    string              `xml:"class,attr"`
-	Metadata *DataCenterMetadata `xml:"metadata,omitempty"`
-}
-
-type DataCenterMetadata struct {
-	AmiLaunchIndex   string `xml:"ami-launch-index,omitempty"`
-	LocalHostname    string `xml:"local-hostname,omitempty"`
-	AvailabilityZone string `xml:"availability-zone,omitempty"`
-	InstanceID       string `xml:"instance-id,omitempty"`
-	PublicIpv4       string `xml:"public-ipv4,omitempty"`
-	PublicHostname   string `xml:"public-hostname,omitempty"`
-	AmiManifestPath  string `xml:"ami-manifest-path,omitempty"`
-	LocalIpv4        string `xml:"local-ipv4,omitempty"`
-	Hostname         string `xml:"hostname,omitempty"`
-	AmiID            string `xml:"ami-id,omitempty"`
-	InstanceType     string `xml:"instance-type,omitempty"`
-}
-
-type LeaseInfo struct {
-	EvictionDurationInSecs uint `xml:"evictionDurationInSecs,omitempty"`
-	RenewalIntervalInSecs  int  `xml:"renewalIntervalInSecs,omitempty"`
-	DurationInSecs         int  `xml:"durationInSecs,omitempty"`
-	RegistrationTimestamp  int  `xml:"registrationTimestamp,omitempty"`
-	LastRenewalTimestamp   int  `xml:"lastRenewalTimestamp,omitempty"`
-	EvictionTimestamp      int  `xml:"evictionTimestamp,omitempty"`
-	ServiceUpTimestamp     int  `xml:"serviceUpTimestamp,omitempty"`
+	Name     string    `xml:"name"`
+	Class    string    `xml:"class,attr"`
+	Metadata *MetaData `xml:"metadata,omitempty"`
 }
 
 const appListPath string = "/apps"
