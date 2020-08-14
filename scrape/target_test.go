@@ -371,7 +371,7 @@ func TestNewClientWithBadTLSConfig(t *testing.T) {
 	}
 }
 
-func TestTargetSavedErr(t *testing.T) {
+func TestTargetMostRecentErr(t *testing.T) {
 	target := &Target{}
 	errTime := time.Now().Add(-10 * time.Second)
 	okTime := time.Now()
@@ -381,7 +381,7 @@ func TestTargetSavedErr(t *testing.T) {
 	testutil.Equals(t, target.LastError(), nil)
 	testutil.Equals(t, target.LastScrapeDuration(), 6*time.Second)
 	testutil.Equals(t, target.LastScrape(), okTime)
-	testutil.Equals(t, target.SavedError(), err)
-	testutil.Equals(t, target.SavedFailedScrapeDuration(), 5*time.Second)
-	testutil.Equals(t, target.SavedFailedScrape(), errTime)
+	testutil.Equals(t, target.MostRecentError(), err)
+	testutil.Equals(t, target.MostRecentFailedScrapeDuration(), 5*time.Second)
+	testutil.Equals(t, target.MostRecentFailedScrape(), errTime)
 }

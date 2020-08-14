@@ -636,13 +636,13 @@ type Target struct {
 	ScrapeURL  string `json:"scrapeUrl"`
 	GlobalURL  string `json:"globalUrl"`
 
-	LastError                 string              `json:"lastError"`
-	LastScrape                time.Time           `json:"lastScrape"`
-	LastScrapeDuration        float64             `json:"lastScrapeDuration"`
-	SavedError                string              `json:"savedError"`
-	SavedFailedScrape         time.Time           `json:"savedFailedScrape"`
-	SavedFailedScrapeDuration float64             `json:"savedFailedScrapeDuration"`
-	Health                    scrape.TargetHealth `json:"health"`
+	LastError                      string              `json:"lastError"`
+	LastScrape                     time.Time           `json:"lastScrape"`
+	LastScrapeDuration             float64             `json:"lastScrapeDuration"`
+	MostRecentError                string              `json:"mostRecentError"`
+	MostRecentFailedScrape         time.Time           `json:"mostRecentFailedScrape"`
+	MostRecentFailedScrapeDuration float64             `json:"mostRecentFailedScrapeDuration"`
+	Health                         scrape.TargetHealth `json:"health"`
 }
 
 // DroppedTarget has the information for one target that was dropped during relabelling.
@@ -743,10 +743,10 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 				if lastErr != nil {
 					lastErrStr = lastErr.Error()
 				}
-				savedErrStr := ""
-				savedErr := target.SavedError()
-				if savedErr != nil {
-					savedErrStr = savedErr.Error()
+				mostRecentErrStr := ""
+				mostRecentErr := target.MostRecentError()
+				if mostRecentErr != nil {
+					mostRecentErrStr = mostRecentErr.Error()
 				}
 
 				globalURL, err := getGlobalURL(target.URL(), api.globalURLOptions)
@@ -765,12 +765,12 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 						}
 						return lastErrStr
 					}(),
-					LastScrape:                target.LastScrape(),
-					LastScrapeDuration:        target.LastScrapeDuration().Seconds(),
-					SavedError:                savedErrStr,
-					SavedFailedScrape:         target.SavedFailedScrape(),
-					SavedFailedScrapeDuration: target.SavedFailedScrapeDuration().Seconds(),
-					Health:                    target.Health(),
+					LastScrape:                     target.LastScrape(),
+					LastScrapeDuration:             target.LastScrapeDuration().Seconds(),
+					MostRecentError:                mostRecentErrStr,
+					MostRecentFailedScrape:         target.MostRecentFailedScrape(),
+					MostRecentFailedScrapeDuration: target.MostRecentFailedScrapeDuration().Seconds(),
+					Health:                         target.Health(),
 				})
 			}
 		}

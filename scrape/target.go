@@ -60,9 +60,9 @@ type Target struct {
 	health             TargetHealth
 	metadata           MetricMetadataStore
 
-	savedError                error
-	savedFailedScrape         time.Time
-	savedFailedScrapeDuration time.Duration
+	mostRecentError                error
+	mostRecentFailedScrape         time.Time
+	mostRecentFailedScrapeDuration time.Duration
 }
 
 // NewTarget creates a reasonably configured target for querying.
@@ -244,9 +244,9 @@ func (t *Target) Report(start time.Time, dur time.Duration, err error) {
 	t.lastScrapeDuration = dur
 
 	if err != nil {
-		t.savedError = err
-		t.savedFailedScrape = start
-		t.savedFailedScrapeDuration = dur
+		t.mostRecentError = err
+		t.mostRecentFailedScrape = start
+		t.mostRecentFailedScrapeDuration = dur
 	}
 }
 
@@ -274,28 +274,28 @@ func (t *Target) LastScrapeDuration() time.Duration {
 	return t.lastScrapeDuration
 }
 
-// SavedError returns the error saved during the last failed scrape.
-func (t *Target) SavedError() error {
+// MostRecentError returns the error mostRecent during the last failed scrape.
+func (t *Target) MostRecentError() error {
 	t.mtx.RLock()
 	defer t.mtx.RUnlock()
 
-	return t.savedError
+	return t.mostRecentError
 }
 
-// SavedErrScrape returns the time of the last failed scrape.
-func (t *Target) SavedFailedScrape() time.Time {
+// MostRecentFailedScrape returns the time of the last failed scrape.
+func (t *Target) MostRecentFailedScrape() time.Time {
 	t.mtx.RLock()
 	defer t.mtx.RUnlock()
 
-	return t.savedFailedScrape
+	return t.mostRecentFailedScrape
 }
 
-// SavedErrScrapeDuration returns how long the last failed scrape of the target took.
-func (t *Target) SavedFailedScrapeDuration() time.Duration {
+// MostRecentFailedScrapeDuration returns how long the last failed scrape of the target took.
+func (t *Target) MostRecentFailedScrapeDuration() time.Duration {
 	t.mtx.RLock()
 	defer t.mtx.RUnlock()
 
-	return t.savedFailedScrapeDuration
+	return t.mostRecentFailedScrapeDuration
 }
 
 // Health returns the last known health state of the target.
