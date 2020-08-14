@@ -26,8 +26,6 @@ import (
 
 	"github.com/prometheus/prometheus/discovery/discoverer"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-
-	"github.com/prometheus/prometheus/discovery/file"
 )
 
 var (
@@ -342,11 +340,6 @@ func (m *Manager) registerProviders(cfg discoverer.ServiceDiscoveryConfig, setNa
 		added = true
 	}
 
-	for _, c := range cfg.FileSDConfigs {
-		add(c, func() (Discoverer, error) {
-			return file.NewDiscovery(c, log.With(m.logger, "discovery", "file")), nil
-		})
-	}
 	for _, c := range cfg.Configs {
 		add(c, func() (Discoverer, error) {
 			return c.NewDiscoverer(discoverer.Options{

@@ -891,21 +891,17 @@ func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
 
 	c := map[string]discoverer.ServiceDiscoveryConfig{
 		"prometheus": {
-			FileSDConfigs: []*file.SDConfig{
-				{
-					Files: []string{
-						tmpFile2,
-					},
+			Configs: []discoverer.Config{
+				&file.SDConfig{
+					Files:           []string{tmpFile2},
 					RefreshInterval: file.DefaultSDConfig.RefreshInterval,
 				},
 			},
 		},
 		"prometheus2": {
-			FileSDConfigs: []*file.SDConfig{
-				{
-					Files: []string{
-						tmpFile2,
-					},
+			Configs: []discoverer.Config{
+				&file.SDConfig{
+					Files:           []string{tmpFile2},
 					RefreshInterval: file.DefaultSDConfig.RefreshInterval,
 				},
 			},
@@ -914,8 +910,8 @@ func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
 	discoveryManager.ApplyConfig(c)
 
 	<-discoveryManager.SyncCh()
-	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "*file.SDConfig/0"}, "{__address__=\"foo:9090\"}", true)
-	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus2", provider: "*file.SDConfig/0"}, "{__address__=\"foo:9090\"}", true)
+	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "file/0"}, "{__address__=\"foo:9090\"}", true)
+	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus2", provider: "file/0"}, "{__address__=\"foo:9090\"}", true)
 	if len(discoveryManager.providers) != 1 {
 		t.Fatalf("Invalid number of providers: expected 1, got %d", len(discoveryManager.providers))
 	}

@@ -40,6 +40,7 @@ import (
 	"gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery/file"
 	"github.com/prometheus/prometheus/discovery/kubernetes"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
 
@@ -272,21 +273,19 @@ func checkConfig(filename string) ([]string, error) {
 				if err := checkTLSConfig(c.HTTPClientConfig.TLSConfig); err != nil {
 					return nil, err
 				}
-			}
-		}
-
-		for _, filesd := range scfg.ServiceDiscoveryConfig.FileSDConfigs {
-			for _, file := range filesd.Files {
-				files, err := filepath.Glob(file)
-				if err != nil {
-					return nil, err
+			case *file.SDConfig:
+				for _, file := range c.Files {
+					files, err := filepath.Glob(file)
+					if err != nil {
+						return nil, err
+					}
+					if len(files) != 0 {
+						// There was at least one match for the glob and we can assume checkFileExists
+						// for all matches would pass, we can continue the loop.
+						continue
+					}
+					fmt.Printf("  WARNING: file %q for file_sd in scrape job %q does not exist\n", file, scfg.JobName)
 				}
-				if len(files) != 0 {
-					// There was at least one match for the glob and we can assume checkFileExists
-					// for all matches would pass, we can continue the loop.
-					continue
-				}
-				fmt.Printf("  WARNING: file %q for file_sd in scrape job %q does not exist\n", file, scfg.JobName)
 			}
 		}
 	}

@@ -142,6 +142,14 @@ var expectedConf = &Config{
 
 			ServiceDiscoveryConfig: discoverer.ServiceDiscoveryConfig{
 				Configs: []discoverer.Config{
+					&file.SDConfig{
+						Files:           []string{"testdata/foo/*.slow.json", "testdata/foo/*.slow.yml", "testdata/single/file.yml"},
+						RefreshInterval: model.Duration(10 * time.Minute),
+					},
+					&file.SDConfig{
+						Files:           []string{"testdata/bar/*.yaml"},
+						RefreshInterval: model.Duration(5 * time.Minute),
+					},
 					discoverer.StaticConfig{
 						{
 							Targets: []model.LabelSet{
@@ -154,17 +162,6 @@ var expectedConf = &Config{
 							},
 							Source: "0",
 						},
-					},
-				},
-
-				FileSDConfigs: []*file.SDConfig{
-					{
-						Files:           []string{"testdata/foo/*.slow.json", "testdata/foo/*.slow.yml", "testdata/single/file.yml"},
-						RefreshInterval: model.Duration(10 * time.Minute),
-					},
-					{
-						Files:           []string{"testdata/bar/*.yaml"},
-						RefreshInterval: model.Duration(5 * time.Minute),
 					},
 				},
 			},
