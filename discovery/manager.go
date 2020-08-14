@@ -27,7 +27,6 @@ import (
 	"github.com/prometheus/prometheus/discovery/discoverer"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 
-	"github.com/prometheus/prometheus/discovery/azure"
 	"github.com/prometheus/prometheus/discovery/consul"
 	"github.com/prometheus/prometheus/discovery/digitalocean"
 	"github.com/prometheus/prometheus/discovery/dns"
@@ -406,11 +405,6 @@ func (m *Manager) registerProviders(cfg discoverer.ServiceDiscoveryConfig, setNa
 	for _, c := range cfg.GCESDConfigs {
 		add(c, func() (Discoverer, error) {
 			return gce.NewDiscovery(*c, log.With(m.logger, "discovery", "gce"))
-		})
-	}
-	for _, c := range cfg.AzureSDConfigs {
-		add(c, func() (Discoverer, error) {
-			return azure.NewDiscovery(c, log.With(m.logger, "discovery", "azure")), nil
 		})
 	}
 	for _, c := range cfg.TritonSDConfigs {

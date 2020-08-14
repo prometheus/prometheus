@@ -18,11 +18,12 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2018-10-01/compute"
-	"go.uber.org/goleak"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestMain(m *testing.M) {
-	goleak.VerifyTestMain(m)
+	// TODO(abursavich): CLEANUP: this will revert to standard goleak test
+	testutil.TolerantVerifyLeak(m)
 }
 
 func TestMapFromVMWithEmptyTags(t *testing.T) {

@@ -33,6 +33,7 @@ import (
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/discovery/discoverer"
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
@@ -64,6 +65,10 @@ var DefaultSDConfig = SDConfig{
 	AuthenticationMethod: authMethodOAuth,
 }
 
+func init() {
+	discoverer.RegisterConfig(&SDConfig{})
+}
+
 // SDConfig is the configuration for Azure based service discovery.
 type SDConfig struct {
 	Environment          string             `yaml:"environment,omitempty"`
@@ -74,6 +79,14 @@ type SDConfig struct {
 	ClientSecret         config_util.Secret `yaml:"client_secret,omitempty"`
 	RefreshInterval      model.Duration     `yaml:"refresh_interval,omitempty"`
 	AuthenticationMethod string             `yaml:"authentication_method,omitempty"`
+}
+
+// Name returns the name of the Config.
+func (*SDConfig) Name() string { return "azure" }
+
+// NewDiscoverer returns a Discoverer for the Config.
+func (c *SDConfig) NewDiscoverer(opts discoverer.Options) (discoverer.Discoverer, error) {
+	return NewDiscovery(c, opts.Logger), nil
 }
 
 func validateAuthParam(param, name string) error {

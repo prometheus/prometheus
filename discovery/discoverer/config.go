@@ -19,7 +19,6 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/prometheus/common/config"
-	"github.com/prometheus/prometheus/discovery/azure"
 	"github.com/prometheus/prometheus/discovery/consul"
 	"github.com/prometheus/prometheus/discovery/digitalocean"
 	"github.com/prometheus/prometheus/discovery/dns"
@@ -57,8 +56,6 @@ type ServiceDiscoveryConfig struct {
 	GCESDConfigs []*gce.SDConfig `yaml:"gce_sd_configs,omitempty"`
 	// List of EC2 service discovery configurations.
 	EC2SDConfigs []*ec2.SDConfig `yaml:"ec2_sd_configs,omitempty"`
-	// List of Azure service discovery configurations.
-	AzureSDConfigs []*azure.SDConfig `yaml:"azure_sd_configs,omitempty"`
 	// List of Triton service discovery configurations.
 	TritonSDConfigs []*triton.SDConfig `yaml:"triton_sd_configs,omitempty"`
 
@@ -98,11 +95,6 @@ func (c *ServiceDiscoveryConfig) SetDirectory(dir string) {
 
 // Validate validates the ServiceDiscoveryConfig.
 func (c *ServiceDiscoveryConfig) Validate() error {
-	for _, cfg := range c.AzureSDConfigs {
-		if cfg == nil {
-			return errors.New("empty or null section in azure_sd_configs")
-		}
-	}
 	for _, cfg := range c.ConsulSDConfigs {
 		if cfg == nil {
 			return errors.New("empty or null section in consul_sd_configs")

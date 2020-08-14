@@ -16,5 +16,6 @@
 package install
 
 import (
+	_ "github.com/prometheus/prometheus/discovery/azure"     // register azure
 	_ "github.com/prometheus/prometheus/discovery/openstack" // register openstack
 )
