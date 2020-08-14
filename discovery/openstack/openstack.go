@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/discovery/discoverer"
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
@@ -36,6 +37,10 @@ var DefaultSDConfig = SDConfig{
 	Port:            80,
 	RefreshInterval: model.Duration(60 * time.Second),
 	Availability:    "public",
+}
+
+func init() {
+	discoverer.RegisterConfig(&SDConfig{})
 }
 
 // SDConfig is the configuration for OpenStack based service discovery.
@@ -58,6 +63,14 @@ type SDConfig struct {
 	AllTenants                  bool             `yaml:"all_tenants,omitempty"`
 	TLSConfig                   config.TLSConfig `yaml:"tls_config,omitempty"`
 	Availability                string           `yaml:"availability,omitempty"`
+}
+
+// Name returns the name of the Config.
+func (*SDConfig) Name() string { return "openstack" }
+
+// NewDiscoverer returns a Discoverer for the Config.
+func (c *SDConfig) NewDiscoverer(opts discoverer.Options) (discoverer.Discoverer, error) {
+	return NewDiscovery(c, opts.Logger)
 }
 
 // SetDirectory joins any relative file paths with dir.

@@ -669,20 +669,18 @@ var expectedConf = &Config{
 			Scheme:      DefaultScrapeConfig.Scheme,
 
 			ServiceDiscoveryConfig: discoverer.ServiceDiscoveryConfig{
-				OpenstackSDConfigs: []*openstack.SDConfig{
-					{
-						Role:            "instance",
-						Region:          "RegionOne",
-						Port:            80,
-						Availability:    "public",
-						RefreshInterval: model.Duration(60 * time.Second),
-						TLSConfig: config.TLSConfig{
-							CAFile:   "testdata/valid_ca_file",
-							CertFile: "testdata/valid_cert_file",
-							KeyFile:  "testdata/valid_key_file",
-						},
+				Configs: []discoverer.Config{&openstack.SDConfig{
+					Role:            "instance",
+					Region:          "RegionOne",
+					Port:            80,
+					Availability:    "public",
+					RefreshInterval: model.Duration(60 * time.Second),
+					TLSConfig: config.TLSConfig{
+						CAFile:   "testdata/valid_ca_file",
+						CertFile: "testdata/valid_cert_file",
+						KeyFile:  "testdata/valid_key_file",
 					},
-				},
+				}},
 			},
 		},
 	},
