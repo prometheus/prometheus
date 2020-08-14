@@ -34,7 +34,7 @@ import (
 	fsnotify "gopkg.in/fsnotify/fsnotify.v1"
 	yaml "gopkg.in/yaml.v2"
 
-	"github.com/prometheus/prometheus/discovery/discoverer"
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
@@ -48,7 +48,7 @@ var (
 )
 
 func init() {
-	discoverer.RegisterConfig(&SDConfig{})
+	discovery.RegisterConfig(&SDConfig{})
 }
 
 // SDConfig is the configuration for file based discovery.
@@ -61,7 +61,7 @@ type SDConfig struct {
 func (*SDConfig) Name() string { return "file" }
 
 // NewDiscoverer returns a Discoverer for the Config.
-func (c *SDConfig) NewDiscoverer(opts discoverer.Options) (discoverer.Discoverer, error) {
+func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
 	return NewDiscovery(c, opts.Logger), nil
 }
 

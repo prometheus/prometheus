@@ -31,7 +31,7 @@ import (
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/discovery/discoverer"
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
@@ -65,7 +65,7 @@ var DefaultSDConfig = SDConfig{
 }
 
 func init() {
-	discoverer.RegisterConfig(&SDConfig{})
+	discovery.RegisterConfig(&SDConfig{})
 }
 
 // SDConfig is the configuration for services running on Marathon.
@@ -81,7 +81,7 @@ type SDConfig struct {
 func (*SDConfig) Name() string { return "marathon" }
 
 // NewDiscoverer returns a Discoverer for the Config.
-func (c *SDConfig) NewDiscoverer(opts discoverer.Options) (discoverer.Discoverer, error) {
+func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
 	return NewDiscovery(*c, opts.Logger)
 }
 

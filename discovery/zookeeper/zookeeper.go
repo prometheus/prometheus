@@ -27,7 +27,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/samuel/go-zookeeper/zk"
 
-	"github.com/prometheus/prometheus/discovery/discoverer"
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
 	"github.com/prometheus/prometheus/util/treecache"
@@ -45,8 +45,8 @@ var (
 )
 
 func init() {
-	discoverer.RegisterConfig(&ServersetSDConfig{})
-	discoverer.RegisterConfig(&NerveSDConfig{})
+	discovery.RegisterConfig(&ServersetSDConfig{})
+	discovery.RegisterConfig(&NerveSDConfig{})
 }
 
 // ServersetSDConfig is the configuration for Twitter serversets in Zookeeper based discovery.
@@ -60,7 +60,7 @@ type ServersetSDConfig struct {
 func (*ServersetSDConfig) Name() string { return "serverset" }
 
 // NewDiscoverer returns a Discoverer for the Config.
-func (c *ServersetSDConfig) NewDiscoverer(opts discoverer.Options) (discoverer.Discoverer, error) {
+func (c *ServersetSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
 	return NewServersetDiscovery(c, opts.Logger)
 }
 
@@ -97,7 +97,7 @@ type NerveSDConfig struct {
 func (*NerveSDConfig) Name() string { return "nerve" }
 
 // NewDiscoverer returns a Discoverer for the Config.
-func (c *NerveSDConfig) NewDiscoverer(opts discoverer.Options) (discoverer.Discoverer, error) {
+func (c *NerveSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
 	return NewNerveDiscovery(c, opts.Logger)
 }
 

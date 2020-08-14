@@ -27,10 +27,10 @@ import (
 	"github.com/prometheus/common/model"
 	"gopkg.in/yaml.v2"
 
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/azure"
 	"github.com/prometheus/prometheus/discovery/consul"
 	"github.com/prometheus/prometheus/discovery/digitalocean"
-	"github.com/prometheus/prometheus/discovery/discoverer"
 	"github.com/prometheus/prometheus/discovery/dns"
 	"github.com/prometheus/prometheus/discovery/dockerswarm"
 	"github.com/prometheus/prometheus/discovery/ec2"
@@ -140,7 +140,7 @@ var expectedConf = &Config{
 				BearerTokenFile: filepath.FromSlash("testdata/valid_token_file"),
 			},
 
-			ServiceDiscoveryConfigs: discoverer.Configs{
+			ServiceDiscoveryConfigs: discovery.Configs{
 				&file.SDConfig{
 					Files:           []string{"testdata/foo/*.slow.json", "testdata/foo/*.slow.yml", "testdata/single/file.yml"},
 					RefreshInterval: model.Duration(10 * time.Minute),
@@ -149,7 +149,7 @@ var expectedConf = &Config{
 					Files:           []string{"testdata/bar/*.yaml"},
 					RefreshInterval: model.Duration(5 * time.Minute),
 				},
-				discoverer.StaticConfig{
+				discovery.StaticConfig{
 					{
 						Targets: []model.LabelSet{
 							{model.AddressLabel: "localhost:9090"},
@@ -212,7 +212,7 @@ var expectedConf = &Config{
 			MetricsPath: "/my_path",
 			Scheme:      "https",
 
-			ServiceDiscoveryConfigs: discoverer.Configs{
+			ServiceDiscoveryConfigs: discovery.Configs{
 				&dns.SDConfig{
 					Names: []string{
 						"first.dns.address.domain.com",
@@ -293,7 +293,7 @@ var expectedConf = &Config{
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			ServiceDiscoveryConfigs: discoverer.Configs{
+			ServiceDiscoveryConfigs: discovery.Configs{
 				&consul.SDConfig{
 					Server:          "localhost:1234",
 					Token:           "mysecret",
@@ -353,7 +353,7 @@ var expectedConf = &Config{
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			ServiceDiscoveryConfigs: discoverer.Configs{
+			ServiceDiscoveryConfigs: discovery.Configs{
 				&kubernetes.SDConfig{
 					APIServer: kubernetesSDHostURL(),
 					Role:      kubernetes.RoleEndpoint,
@@ -387,7 +387,7 @@ var expectedConf = &Config{
 				},
 			},
 
-			ServiceDiscoveryConfigs: discoverer.Configs{
+			ServiceDiscoveryConfigs: discovery.Configs{
 				&kubernetes.SDConfig{
 					APIServer: kubernetesSDHostURL(),
 					Role:      kubernetes.RoleEndpoint,
@@ -409,7 +409,7 @@ var expectedConf = &Config{
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			ServiceDiscoveryConfigs: discoverer.Configs{
+			ServiceDiscoveryConfigs: discovery.Configs{
 				&marathon.SDConfig{
 					Servers: []string{
 						"https://marathon.example.com:443",
@@ -435,7 +435,7 @@ var expectedConf = &Config{
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			ServiceDiscoveryConfigs: discoverer.Configs{
+			ServiceDiscoveryConfigs: discovery.Configs{
 				&ec2.SDConfig{
 					Region:          "us-east-1",
 					AccessKey:       "access",
@@ -466,7 +466,7 @@ var expectedConf = &Config{
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			ServiceDiscoveryConfigs: discoverer.Configs{
+			ServiceDiscoveryConfigs: discovery.Configs{
 				&azure.SDConfig{
 					Environment:          "AzurePublicCloud",
 					SubscriptionID:       "11AAAA11-A11A-111A-A111-1111A1111A11",
@@ -489,7 +489,7 @@ var expectedConf = &Config{
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			ServiceDiscoveryConfigs: discoverer.Configs{
+			ServiceDiscoveryConfigs: discovery.Configs{
 				&zookeeper.NerveSDConfig{
 					Servers: []string{"localhost"},
 					Paths:   []string{"/monitoring"},
@@ -507,8 +507,8 @@ var expectedConf = &Config{
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			ServiceDiscoveryConfigs: discoverer.Configs{
-				discoverer.StaticConfig{
+			ServiceDiscoveryConfigs: discovery.Configs{
+				discovery.StaticConfig{
 					{
 						Targets: []model.LabelSet{
 							{model.AddressLabel: "localhost:9090"},
@@ -528,8 +528,8 @@ var expectedConf = &Config{
 			MetricsPath: "/federate",
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			ServiceDiscoveryConfigs: discoverer.Configs{
-				discoverer.StaticConfig{
+			ServiceDiscoveryConfigs: discovery.Configs{
+				discovery.StaticConfig{
 					{
 						Targets: []model.LabelSet{
 							{model.AddressLabel: "localhost:9090"},
@@ -549,8 +549,8 @@ var expectedConf = &Config{
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			ServiceDiscoveryConfigs: discoverer.Configs{
-				discoverer.StaticConfig{
+			ServiceDiscoveryConfigs: discovery.Configs{
+				discovery.StaticConfig{
 					{
 						Targets: []model.LabelSet{
 							{model.AddressLabel: "localhost:9090"},
@@ -570,7 +570,7 @@ var expectedConf = &Config{
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			ServiceDiscoveryConfigs: discoverer.Configs{
+			ServiceDiscoveryConfigs: discovery.Configs{
 				&triton.SDConfig{
 					Account:         "testAccount",
 					Role:            "container",
@@ -596,7 +596,7 @@ var expectedConf = &Config{
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			ServiceDiscoveryConfigs: discoverer.Configs{
+			ServiceDiscoveryConfigs: discovery.Configs{
 				&digitalocean.SDConfig{
 					HTTPClientConfig: config.HTTPClientConfig{
 						BearerToken: "abcdef",
@@ -616,7 +616,7 @@ var expectedConf = &Config{
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			ServiceDiscoveryConfigs: discoverer.Configs{
+			ServiceDiscoveryConfigs: discovery.Configs{
 				&dockerswarm.SDConfig{
 					Host:            "http://127.0.0.1:2375",
 					Role:            "nodes",
@@ -635,7 +635,7 @@ var expectedConf = &Config{
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			ServiceDiscoveryConfigs: discoverer.Configs{&openstack.SDConfig{
+			ServiceDiscoveryConfigs: discovery.Configs{&openstack.SDConfig{
 				Role:            "instance",
 				Region:          "RegionOne",
 				Port:            80,
@@ -655,8 +655,8 @@ var expectedConf = &Config{
 				Scheme:     "https",
 				Timeout:    model.Duration(10 * time.Second),
 				APIVersion: AlertmanagerAPIVersionV1,
-				ServiceDiscoveryConfigs: discoverer.Configs{
-					discoverer.StaticConfig{
+				ServiceDiscoveryConfigs: discovery.Configs{
+					discovery.StaticConfig{
 						{
 							Targets: []model.LabelSet{
 								{model.AddressLabel: "1.2.3.4:9093"},

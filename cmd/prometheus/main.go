@@ -53,7 +53,6 @@ import (
 	promlogflag "github.com/prometheus/common/promlog/flag"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
-	"github.com/prometheus/prometheus/discovery/discoverer"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/logging"
@@ -468,7 +467,7 @@ func main() {
 		}, {
 			name: "scrape_sd",
 			reloader: func(cfg *config.Config) error {
-				c := make(map[string]discoverer.Configs)
+				c := make(map[string]discovery.Configs)
 				for _, v := range cfg.ScrapeConfigs {
 					c[v.JobName] = v.ServiceDiscoveryConfigs
 				}
@@ -480,7 +479,7 @@ func main() {
 		}, {
 			name: "notify_sd",
 			reloader: func(cfg *config.Config) error {
-				c := make(map[string]discoverer.Configs)
+				c := make(map[string]discovery.Configs)
 				for k, v := range cfg.AlertingConfig.AlertmanagerConfigs.ToMap() {
 					c[k] = v.ServiceDiscoveryConfigs
 				}

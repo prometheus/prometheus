@@ -28,7 +28,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
 
-	"github.com/prometheus/prometheus/discovery/discoverer"
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
@@ -56,7 +56,7 @@ var DefaultSDConfig = SDConfig{
 }
 
 func init() {
-	discoverer.RegisterConfig(&SDConfig{})
+	discovery.RegisterConfig(&SDConfig{})
 }
 
 // SDConfig is the configuration for DigitalOcean based service discovery.
@@ -71,7 +71,7 @@ type SDConfig struct {
 func (*SDConfig) Name() string { return "digitalocean" }
 
 // NewDiscoverer returns a Discoverer for the Config.
-func (c *SDConfig) NewDiscoverer(opts discoverer.Options) (discoverer.Discoverer, error) {
+func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
 	return NewDiscovery(c, opts.Logger)
 }
 

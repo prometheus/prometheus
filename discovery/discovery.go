@@ -11,14 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package discoverer temporarily exists to break a dependency cycle that would
-// exist between the discovery and config packages until the dependency inversion
-// is completed. As a final step in the process, its contents will be split up and
-// returned to the discovery and config package. The config package will depend
-// on the discovery package, but not the other way around.
-package discoverer
-
-// TODO(abursavich): CLEANUP: this file's content will be moved to the discovery package
+package discovery
 
 import (
 	"context"
@@ -45,8 +38,8 @@ type Discoverer interface {
 	Run(ctx context.Context, up chan<- []*targetgroup.Group)
 }
 
-// Options provides options for a Discoverer.
-type Options struct {
+// DiscovererOptions provides options for a Discoverer.
+type DiscovererOptions struct {
 	Logger log.Logger
 }
 
@@ -56,8 +49,8 @@ type Config interface {
 	Name() string
 
 	// NewDiscoverer returns a Discoverer for the Config
-	// with the given Options.
-	NewDiscoverer(Options) (Discoverer, error)
+	// with the given DiscovererOptions.
+	NewDiscoverer(DiscovererOptions) (Discoverer, error)
 }
 
 // Configs is a slice of Config values that uses custom YAML marshaling and unmarshaling
@@ -108,7 +101,7 @@ type StaticConfig []*targetgroup.Group
 func (StaticConfig) Name() string { return "static" }
 
 // NewDiscoverer returns a Discoverer for the Config.
-func (c StaticConfig) NewDiscoverer(Options) (Discoverer, error) {
+func (c StaticConfig) NewDiscoverer(DiscovererOptions) (Discoverer, error) {
 	return staticDiscoverer(c), nil
 }
 

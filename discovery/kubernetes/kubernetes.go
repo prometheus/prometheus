@@ -39,7 +39,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 
-	"github.com/prometheus/prometheus/discovery/discoverer"
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
@@ -69,7 +69,7 @@ var (
 )
 
 func init() {
-	discoverer.RegisterConfig(&SDConfig{})
+	discovery.RegisterConfig(&SDConfig{})
 	prometheus.MustRegister(eventCount)
 	// Initialize metric vectors.
 	for _, role := range []string{"endpointslice", "endpoints", "node", "pod", "service", "ingress"} {
@@ -120,7 +120,7 @@ type SDConfig struct {
 func (*SDConfig) Name() string { return "kubernetes" }
 
 // NewDiscoverer returns a Discoverer for the Config.
-func (c *SDConfig) NewDiscoverer(opts discoverer.Options) (discoverer.Discoverer, error) {
+func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
 	return New(opts.Logger, c)
 }
 
@@ -232,7 +232,7 @@ type Discovery struct {
 	role               Role
 	logger             log.Logger
 	namespaceDiscovery *NamespaceDiscovery
-	discoverers        []discoverer.Discoverer
+	discoverers        []discovery.Discoverer
 	selectors          roleSelector
 }
 
@@ -283,7 +283,7 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 		logger:             l,
 		role:               conf.Role,
 		namespaceDiscovery: &conf.NamespaceDiscovery,
-		discoverers:        make([]discoverer.Discoverer, 0),
+		discoverers:        make([]discovery.Discoverer, 0),
 		selectors:          mapSelector(conf.Selectors),
 	}, nil
 }
@@ -519,7 +519,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	var wg sync.WaitGroup
 	for _, dd := range d.discoverers {
 		wg.Add(1)
-		go func(d discoverer.Discoverer) {
+		go func(d discovery.Discoverer) {
 			defer wg.Done()
 			d.Run(ctx, ch)
 		}(dd)

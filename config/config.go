@@ -27,7 +27,7 @@ import (
 	"github.com/prometheus/common/model"
 	yaml "gopkg.in/yaml.v2"
 
-	"github.com/prometheus/prometheus/discovery/discoverer"
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/relabel"
 )
@@ -335,7 +335,7 @@ type ScrapeConfig struct {
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
 
-	ServiceDiscoveryConfigs discoverer.Configs      `yaml:"-"`
+	ServiceDiscoveryConfigs discovery.Configs       `yaml:"-"`
 	HTTPClientConfig        config.HTTPClientConfig `yaml:",inline"`
 
 	// List of target relabel configurations.
@@ -353,7 +353,7 @@ func (c *ScrapeConfig) SetDirectory(dir string) {
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*c = DefaultScrapeConfig
-	if err := discoverer.UnmarshalYAMLWithInlineConfigs(c, unmarshal); err != nil {
+	if err := discovery.UnmarshalYAMLWithInlineConfigs(c, unmarshal); err != nil {
 		return err
 	}
 	if len(c.JobName) == 0 {
@@ -390,7 +390,7 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 // MarshalYAML implements the yaml.Marshaler interface.
 func (c *ScrapeConfig) MarshalYAML() (interface{}, error) {
-	return discoverer.MarshalYAMLWithInlineConfigs(c)
+	return discovery.MarshalYAMLWithInlineConfigs(c)
 }
 
 // AlertingConfig configures alerting and alertmanager related configs.
@@ -475,7 +475,7 @@ type AlertmanagerConfig struct {
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
 
-	ServiceDiscoveryConfigs discoverer.Configs      `yaml:"-"`
+	ServiceDiscoveryConfigs discovery.Configs       `yaml:"-"`
 	HTTPClientConfig        config.HTTPClientConfig `yaml:",inline"`
 
 	// The URL scheme to use when talking to Alertmanagers.
@@ -501,7 +501,7 @@ func (c *AlertmanagerConfig) SetDirectory(dir string) {
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*c = DefaultAlertmanagerConfig
-	if err := discoverer.UnmarshalYAMLWithInlineConfigs(c, unmarshal); err != nil {
+	if err := discovery.UnmarshalYAMLWithInlineConfigs(c, unmarshal); err != nil {
 		return err
 	}
 
@@ -530,12 +530,12 @@ func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 
 // MarshalYAML implements the yaml.Marshaler interface.
 func (c *AlertmanagerConfig) MarshalYAML() (interface{}, error) {
-	return discoverer.MarshalYAMLWithInlineConfigs(c)
+	return discovery.MarshalYAMLWithInlineConfigs(c)
 }
 
-func checkStaticTargets(configs discoverer.Configs) error {
+func checkStaticTargets(configs discovery.Configs) error {
 	for _, cfg := range configs {
-		sc, ok := cfg.(discoverer.StaticConfig)
+		sc, ok := cfg.(discovery.StaticConfig)
 		if !ok {
 			continue
 		}

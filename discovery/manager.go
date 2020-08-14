@@ -24,7 +24,6 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/prometheus/prometheus/discovery/discoverer"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
@@ -69,16 +68,6 @@ var (
 func init() {
 	prometheus.MustRegister(failedConfigs, discoveredTargets, receivedUpdates, delayedUpdates, sentUpdates)
 }
-
-// Discoverer provides information about target groups. It maintains a set
-// of sources from which TargetGroups can originate. Whenever a discovery provider
-// detects a potential change, it sends the TargetGroup through its channel.
-//
-// Discoverer does not know if an actual change happened.
-// It does guarantee that it sends the new TargetGroup whenever a change happens.
-//
-// Discoverers should initially send a full set of all discoverable TargetGroups.
-type Discoverer = discoverer.Discoverer
 
 type poolKey struct {
 	setName  string
@@ -163,7 +152,7 @@ func (m *Manager) SyncCh() <-chan map[string][]*targetgroup.Group {
 }
 
 // ApplyConfig removes all running discovery providers and starts new ones using the provided config.
-func (m *Manager) ApplyConfig(cfg map[string]discoverer.Configs) error {
+func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
@@ -304,12 +293,12 @@ func (m *Manager) allGroups() map[string][]*targetgroup.Group {
 }
 
 // registerProviders returns a number of failed SD config.
-func (m *Manager) registerProviders(cfgs discoverer.Configs, setName string) int {
+func (m *Manager) registerProviders(cfgs Configs, setName string) int {
 	var (
 		failed int
 		added  bool
 	)
-	add := func(cfg discoverer.Config) {
+	add := func(cfg Config) {
 		for _, p := range m.providers {
 			if reflect.DeepEqual(cfg, p.config) {
 				p.subs = append(p.subs, setName)
@@ -318,7 +307,7 @@ func (m *Manager) registerProviders(cfgs discoverer.Configs, setName string) int
 			}
 		}
 		typ := cfg.Name()
-		d, err := cfg.NewDiscoverer(discoverer.Options{
+		d, err := cfg.NewDiscoverer(DiscovererOptions{
 			Logger: log.With(m.logger, "discovery", typ),
 		})
 		if err != nil {
@@ -343,7 +332,7 @@ func (m *Manager) registerProviders(cfgs discoverer.Configs, setName string) int
 		// current targets.
 		// It can happen because the combined set of SD configurations is empty
 		// or because we fail to instantiate all the SD configurations.
-		add(discoverer.StaticConfig{{}})
+		add(StaticConfig{{}})
 	}
 	return failed
 }
