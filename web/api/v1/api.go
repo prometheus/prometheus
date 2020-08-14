@@ -639,9 +639,9 @@ type Target struct {
 	LastError                 string              `json:"lastError"`
 	LastScrape                time.Time           `json:"lastScrape"`
 	LastScrapeDuration        float64             `json:"lastScrapeDuration"`
-	PreviousError             string              `json:"previousError"`
-	PreviousErrScrape         time.Time           `json:"previousErrScrape"`
-	PreviousErrScrapeDuration float64             `json:"previousErrScrapeDuration"`
+	SavedError                string              `json:"savedError"`
+	SavedFailedScrape         time.Time           `json:"savedFailedScrape"`
+	SavedFailedScrapeDuration float64             `json:"savedFailedScrapeDuration"`
 	Health                    scrape.TargetHealth `json:"health"`
 }
 
@@ -743,10 +743,10 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 				if lastErr != nil {
 					lastErrStr = lastErr.Error()
 				}
-				previousErrStr := ""
-				previousErr := target.PreviousError()
-				if previousErr != nil {
-					previousErrStr = previousErr.Error()
+				savedErrStr := ""
+				savedErr := target.SavedError()
+				if savedErr != nil {
+					savedErrStr = savedErr.Error()
 				}
 
 				globalURL, err := getGlobalURL(target.URL(), api.globalURLOptions)
@@ -767,9 +767,9 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 					}(),
 					LastScrape:                target.LastScrape(),
 					LastScrapeDuration:        target.LastScrapeDuration().Seconds(),
-					PreviousError:             previousErrStr,
-					PreviousErrScrape:         target.PreviousErrScrape(),
-					PreviousErrScrapeDuration: target.PreviousErrScrapeDuration().Seconds(),
+					SavedError:                savedErrStr,
+					SavedFailedScrape:         target.SavedFailedScrape(),
+					SavedFailedScrapeDuration: target.SavedFailedScrapeDuration().Seconds(),
 					Health:                    target.Health(),
 				})
 			}

@@ -60,9 +60,9 @@ type Target struct {
 	health             TargetHealth
 	metadata           MetricMetadataStore
 
-	previousError             error
-	previousErrScrape         time.Time
-	previousErrScrapeDuration time.Duration
+	savedError          error
+	savedFailed         time.Time
+	savedFailedDuration time.Duration
 }
 
 // NewTarget creates a reasonably configured target for querying.
@@ -244,9 +244,9 @@ func (t *Target) Report(start time.Time, dur time.Duration, err error) {
 	t.lastScrapeDuration = dur
 
 	if err != nil {
-		t.previousError = err
-		t.previousErrScrape = start
-		t.previousErrScrapeDuration = dur
+		t.savedError = err
+		t.savedFailed = start
+		t.savedFailedDuration = dur
 	}
 }
 
@@ -274,28 +274,28 @@ func (t *Target) LastScrapeDuration() time.Duration {
 	return t.lastScrapeDuration
 }
 
-// PreviousError returns the error encountered during the last errorful scrape.
-func (t *Target) PreviousError() error {
+// SavedError returns the error saved during the last failed scrape.
+func (t *Target) SavedError() error {
 	t.mtx.RLock()
 	defer t.mtx.RUnlock()
 
-	return t.previousError
+	return t.savedError
 }
 
-// PreviousErrScrape returns the time of the last errorfulscrape.
-func (t *Target) PreviousErrScrape() time.Time {
+// SavedErrScrape returns the time of the last failed scrape.
+func (t *Target) SavedFailedScrape() time.Time {
 	t.mtx.RLock()
 	defer t.mtx.RUnlock()
 
-	return t.previousErrScrape
+	return t.savedFailed
 }
 
-// PreviousErrScrapeDuration returns how long the last scrape of the target took.
-func (t *Target) PreviousErrScrapeDuration() time.Duration {
+// SavedErrScrapeDuration returns how long the last failed scrape of the target took.
+func (t *Target) SavedFailedScrapeDuration() time.Duration {
 	t.mtx.RLock()
 	defer t.mtx.RUnlock()
 
-	return t.previousErrScrapeDuration
+	return t.savedFailedDuration
 }
 
 // Health returns the last known health state of the target.
@@ -418,7 +418,7 @@ func populateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 		if _, _, err := net.SplitHostPort(s); err == nil {
 			return false
 		}
-		// If adding a port makes it valid, the previous error
+		// If adding a port makes it valid, the saved error
 		// was not due to an invalid address and we can append a port.
 		_, _, err := net.SplitHostPort(s + ":1234")
 		return err == nil
