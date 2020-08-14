@@ -267,7 +267,7 @@ func checkConfig(filename string) ([]string, error) {
 			return nil, err
 		}
 
-		for _, c := range scfg.ServiceDiscoveryConfig.Configs {
+		for _, c := range scfg.ServiceDiscoveryConfigs {
 			switch c := c.(type) {
 			case *kubernetes.SDConfig:
 				if err := checkTLSConfig(c.HTTPClientConfig.TLSConfig); err != nil {

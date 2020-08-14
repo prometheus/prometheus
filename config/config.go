@@ -335,8 +335,8 @@ type ScrapeConfig struct {
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
 
-	ServiceDiscoveryConfig discoverer.ServiceDiscoveryConfig `yaml:",inline"`
-	HTTPClientConfig       config.HTTPClientConfig      `yaml:",inline"`
+	ServiceDiscoveryConfigs discoverer.Configs      `yaml:"-"`
+	HTTPClientConfig        config.HTTPClientConfig `yaml:",inline"`
 
 	// List of target relabel configurations.
 	RelabelConfigs []*relabel.Config `yaml:"relabel_configs,omitempty"`
@@ -346,7 +346,7 @@ type ScrapeConfig struct {
 
 // SetDirectory joins any relative file paths with dir.
 func (c *ScrapeConfig) SetDirectory(dir string) {
-	c.ServiceDiscoveryConfig.SetDirectory(dir)
+	c.ServiceDiscoveryConfigs.SetDirectory(dir)
 	c.HTTPClientConfig.SetDirectory(dir)
 }
 
@@ -367,16 +367,9 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 
-	// The UnmarshalYAML method of ServiceDiscoveryConfig is not being called because it's not a pointer.
-	// We cannot make it a pointer as the parser panics for inlined pointer structs.
-	// Thus we just do its validation here.
-	if err := c.ServiceDiscoveryConfig.Validate(); err != nil {
-		return err
-	}
-
 	// Check for users putting URLs in target groups.
 	if len(c.RelabelConfigs) == 0 {
-		if err := checkStaticTargets(c.ServiceDiscoveryConfig.Configs); err != nil {
+		if err := checkStaticTargets(c.ServiceDiscoveryConfigs); err != nil {
 			return err
 		}
 	}
@@ -482,8 +475,8 @@ type AlertmanagerConfig struct {
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
 
-	ServiceDiscoveryConfig discoverer.ServiceDiscoveryConfig `yaml:",inline"`
-	HTTPClientConfig       config.HTTPClientConfig      `yaml:",inline"`
+	ServiceDiscoveryConfigs discoverer.Configs      `yaml:"-"`
+	HTTPClientConfig        config.HTTPClientConfig `yaml:",inline"`
 
 	// The URL scheme to use when talking to Alertmanagers.
 	Scheme string `yaml:"scheme,omitempty"`
@@ -501,7 +494,7 @@ type AlertmanagerConfig struct {
 
 // SetDirectory joins any relative file paths with dir.
 func (c *AlertmanagerConfig) SetDirectory(dir string) {
-	c.ServiceDiscoveryConfig.SetDirectory(dir)
+	c.ServiceDiscoveryConfigs.SetDirectory(dir)
 	c.HTTPClientConfig.SetDirectory(dir)
 }
 
@@ -519,16 +512,9 @@ func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 		return err
 	}
 
-	// The UnmarshalYAML method of ServiceDiscoveryConfig is not being called because it's not a pointer.
-	// We cannot make it a pointer as the parser panics for inlined pointer structs.
-	// Thus we just do its validation here.
-	if err := c.ServiceDiscoveryConfig.Validate(); err != nil {
-		return err
-	}
-
 	// Check for users putting URLs in target groups.
 	if len(c.RelabelConfigs) == 0 {
-		if err := checkStaticTargets(c.ServiceDiscoveryConfig.Configs); err != nil {
+		if err := checkStaticTargets(c.ServiceDiscoveryConfigs); err != nil {
 			return err
 		}
 	}
@@ -547,7 +533,7 @@ func (c *AlertmanagerConfig) MarshalYAML() (interface{}, error) {
 	return discoverer.MarshalYAMLWithInlineConfigs(c)
 }
 
-func checkStaticTargets(configs []discoverer.Config) error {
+func checkStaticTargets(configs discoverer.Configs) error {
 	for _, cfg := range configs {
 		sc, ok := cfg.(discoverer.StaticConfig)
 		if !ok {

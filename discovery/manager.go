@@ -163,7 +163,7 @@ func (m *Manager) SyncCh() <-chan map[string][]*targetgroup.Group {
 }
 
 // ApplyConfig removes all running discovery providers and starts new ones using the provided config.
-func (m *Manager) ApplyConfig(cfg map[string]discoverer.ServiceDiscoveryConfig) error {
+func (m *Manager) ApplyConfig(cfg map[string]discoverer.Configs) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
@@ -304,13 +304,12 @@ func (m *Manager) allGroups() map[string][]*targetgroup.Group {
 }
 
 // registerProviders returns a number of failed SD config.
-func (m *Manager) registerProviders(cfg discoverer.ServiceDiscoveryConfig, setName string) int {
+func (m *Manager) registerProviders(cfgs discoverer.Configs, setName string) int {
 	var (
-		failedCount int
-		added       bool
+		failed int
+		added  bool
 	)
-	add := func(cfg interface{}, newDiscoverer func() (Discoverer, error)) {
-		t := reflect.TypeOf(cfg).String()
+	add := func(cfg discoverer.Config) {
 		for _, p := range m.providers {
 			if reflect.DeepEqual(cfg, p.config) {
 				p.subs = append(p.subs, setName)
@@ -318,34 +317,25 @@ func (m *Manager) registerProviders(cfg discoverer.ServiceDiscoveryConfig, setNa
 				return
 			}
 		}
-
-		d, err := newDiscoverer()
+		typ := cfg.Name()
+		d, err := cfg.NewDiscoverer(discoverer.Options{
+			Logger: log.With(m.logger, "discovery", typ),
+		})
 		if err != nil {
-			level.Error(m.logger).Log("msg", "Cannot create service discovery", "err", err, "type", t)
-			failedCount++
+			level.Error(m.logger).Log("msg", "Cannot create service discovery", "err", err, "type", typ)
+			failed++
 			return
 		}
-
-		name := t
-		if c, ok := cfg.(discoverer.Config); ok {
-			name = c.Name()
-		}
-		provider := provider{
-			name:   fmt.Sprintf("%s/%d", name, len(m.providers)),
+		m.providers = append(m.providers, &provider{
+			name:   fmt.Sprintf("%s/%d", typ, len(m.providers)),
 			d:      d,
 			config: cfg,
 			subs:   []string{setName},
-		}
-		m.providers = append(m.providers, &provider)
+		})
 		added = true
 	}
-
-	for _, c := range cfg.Configs {
-		add(c, func() (Discoverer, error) {
-			return c.NewDiscoverer(discoverer.Options{
-				Logger: log.With(m.logger, "discovery", c.Name()),
-			})
-		})
+	for _, cfg := range cfgs {
+		add(cfg)
 	}
 	if !added {
 		// Add an empty target group to force the refresh of the corresponding
@@ -353,11 +343,9 @@ func (m *Manager) registerProviders(cfg discoverer.ServiceDiscoveryConfig, setNa
 		// current targets.
 		// It can happen because the combined set of SD configurations is empty
 		// or because we fail to instantiate all the SD configurations.
-		add(setName, func() (Discoverer, error) {
-			return &StaticProvider{TargetGroups: []*targetgroup.Group{{}}}, nil
-		})
+		add(discoverer.StaticConfig{{}})
 	}
-	return failedCount
+	return failed
 }
 
 // StaticProvider holds a list of target groups that never change.

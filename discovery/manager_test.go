@@ -771,11 +771,9 @@ func TestTargetSetRecreatesTargetGroupsEveryRun(t *testing.T) {
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
 
-	c := map[string]discoverer.ServiceDiscoveryConfig{
-		"prometheus": {
-			Configs: []discoverer.Config{
-				staticConfig("foo:9090", "bar:9090"),
-			},
+	c := map[string]discoverer.Configs{
+		"prometheus": discoverer.Configs{
+			staticConfig("foo:9090", "bar:9090"),
 		},
 	}
 	discoveryManager.ApplyConfig(c)
@@ -784,10 +782,8 @@ func TestTargetSetRecreatesTargetGroupsEveryRun(t *testing.T) {
 	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/0"}, "{__address__=\"foo:9090\"}", true)
 	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/0"}, "{__address__=\"bar:9090\"}", true)
 
-	c["prometheus"] = discoverer.ServiceDiscoveryConfig{
-		Configs: []discoverer.Config{
-			staticConfig("foo:9090"),
-		},
+	c["prometheus"] = discoverer.Configs{
+		staticConfig("foo:9090"),
 	}
 	discoveryManager.ApplyConfig(c)
 
@@ -803,12 +799,10 @@ func TestDiscovererConfigs(t *testing.T) {
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
 
-	c := map[string]discoverer.ServiceDiscoveryConfig{
-		"prometheus": {
-			Configs: []discoverer.Config{
-				staticConfig("foo:9090", "bar:9090"),
-				staticConfig("baz:9090"),
-			},
+	c := map[string]discoverer.Configs{
+		"prometheus": discoverer.Configs{
+			staticConfig("foo:9090", "bar:9090"),
+			staticConfig("baz:9090"),
 		},
 	}
 	discoveryManager.ApplyConfig(c)
@@ -829,11 +823,9 @@ func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
 
-	c := map[string]discoverer.ServiceDiscoveryConfig{
-		"prometheus": {
-			Configs: []discoverer.Config{
-				staticConfig("foo:9090"),
-			},
+	c := map[string]discoverer.Configs{
+		"prometheus": discoverer.Configs{
+			staticConfig("foo:9090"),
 		},
 	}
 	discoveryManager.ApplyConfig(c)
@@ -841,10 +833,8 @@ func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
 	<-discoveryManager.SyncCh()
 	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/0"}, "{__address__=\"foo:9090\"}", true)
 
-	c["prometheus"] = discoverer.ServiceDiscoveryConfig{
-		Configs: []discoverer.Config{
-			discoverer.StaticConfig{{}},
-		},
+	c["prometheus"] = discoverer.Configs{
+		discoverer.StaticConfig{{}},
 	}
 	discoveryManager.ApplyConfig(c)
 
@@ -889,21 +879,17 @@ func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
 
-	c := map[string]discoverer.ServiceDiscoveryConfig{
+	c := map[string]discoverer.Configs{
 		"prometheus": {
-			Configs: []discoverer.Config{
-				&file.SDConfig{
-					Files:           []string{tmpFile2},
-					RefreshInterval: file.DefaultSDConfig.RefreshInterval,
-				},
+			&file.SDConfig{
+				Files:           []string{tmpFile2},
+				RefreshInterval: file.DefaultSDConfig.RefreshInterval,
 			},
 		},
 		"prometheus2": {
-			Configs: []discoverer.Config{
-				&file.SDConfig{
-					Files:           []string{tmpFile2},
-					RefreshInterval: file.DefaultSDConfig.RefreshInterval,
-				},
+			&file.SDConfig{
+				Files:           []string{tmpFile2},
+				RefreshInterval: file.DefaultSDConfig.RefreshInterval,
 			},
 		},
 	}
@@ -918,15 +904,11 @@ func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
 }
 
 func TestApplyConfigDoesNotModifyStaticProviderTargets(t *testing.T) {
-	originalConfig := &discoverer.ServiceDiscoveryConfig{
-		Configs: []discoverer.Config{
-			staticConfig("foo:9090", "bar:9090", "baz:9090"),
-		},
+	originalConfig := discoverer.Configs{
+		staticConfig("foo:9090", "bar:9090", "baz:9090"),
 	}
-	processedConfig := &discoverer.ServiceDiscoveryConfig{
-		Configs: []discoverer.Config{
-			staticConfig("foo:9090", "bar:9090", "baz:9090"),
-		},
+	processedConfig := discoverer.Configs{
+		staticConfig("foo:9090", "bar:9090", "baz:9090"),
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -934,16 +916,16 @@ func TestApplyConfigDoesNotModifyStaticProviderTargets(t *testing.T) {
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
 
-	c := map[string]discoverer.ServiceDiscoveryConfig{
-		"prometheus": *processedConfig,
+	cfgs := map[string]discoverer.Configs{
+		"prometheus": processedConfig,
 	}
-	discoveryManager.ApplyConfig(c)
+	discoveryManager.ApplyConfig(cfgs)
 	<-discoveryManager.SyncCh()
 
-	for _, sdcfg := range c {
-		if !reflect.DeepEqual(originalConfig.Configs, sdcfg.Configs) {
+	for _, cfg := range cfgs {
+		if !reflect.DeepEqual(originalConfig, cfg) {
 			t.Fatalf("discovery manager modified static config \n  expected: %v\n  got: %v\n",
-				originalConfig.Configs, sdcfg.Configs)
+				originalConfig, cfg)
 		}
 	}
 }
@@ -955,26 +937,24 @@ func TestGaugeFailedConfigs(t *testing.T) {
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
 
-	c := map[string]discoverer.ServiceDiscoveryConfig{
-		"prometheus": {
-			Configs: []discoverer.Config{
-				&consul.SDConfig{
-					Server: "foo:8500",
-					TLSConfig: common_config.TLSConfig{
-						CertFile: "/tmp/non_existent",
-					},
+	c := map[string]discoverer.Configs{
+		"prometheus": discoverer.Configs{
+			&consul.SDConfig{
+				Server: "foo:8500",
+				TLSConfig: common_config.TLSConfig{
+					CertFile: "/tmp/non_existent",
 				},
-				&consul.SDConfig{
-					Server: "bar:8500",
-					TLSConfig: common_config.TLSConfig{
-						CertFile: "/tmp/non_existent",
-					},
+			},
+			&consul.SDConfig{
+				Server: "bar:8500",
+				TLSConfig: common_config.TLSConfig{
+					CertFile: "/tmp/non_existent",
 				},
-				&consul.SDConfig{
-					Server: "foo2:8500",
-					TLSConfig: common_config.TLSConfig{
-						CertFile: "/tmp/non_existent",
-					},
+			},
+			&consul.SDConfig{
+				Server: "foo2:8500",
+				TLSConfig: common_config.TLSConfig{
+					CertFile: "/tmp/non_existent",
 				},
 			},
 		},
@@ -987,10 +967,8 @@ func TestGaugeFailedConfigs(t *testing.T) {
 		t.Fatalf("Expected to have 3 failed configs, got: %v", failedCount)
 	}
 
-	c["prometheus"] = discoverer.ServiceDiscoveryConfig{
-		Configs: []discoverer.Config{
-			staticConfig("foo:9090"),
-		},
+	c["prometheus"] = discoverer.Configs{
+		staticConfig("foo:9090"),
 	}
 	discoveryManager.ApplyConfig(c)
 	<-discoveryManager.SyncCh()

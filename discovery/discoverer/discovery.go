@@ -22,9 +22,11 @@ package discoverer
 
 import (
 	"context"
+	"reflect"
 
 	"github.com/go-kit/kit/log"
 
+	"github.com/prometheus/common/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
@@ -56,6 +58,47 @@ type Config interface {
 	// NewDiscoverer returns a Discoverer for the Config
 	// with the given Options.
 	NewDiscoverer(Options) (Discoverer, error)
+}
+
+// Configs is a slice of Config values that uses custom YAML marshaling and unmarshaling
+// to represent itself as a mapping of the Config values grouped by their types.
+type Configs []Config
+
+// SetDirectory joins any relative file paths with dir.
+func (c *Configs) SetDirectory(dir string) {
+	for _, c := range *c {
+		if v, ok := c.(config.DirectorySetter); ok {
+			v.SetDirectory(dir)
+		}
+	}
+}
+
+// UnmarshalYAML implements yaml.Unmarshaler.
+func (c *Configs) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	cfgTyp := getConfigType(configsType)
+	cfgPtr := reflect.New(cfgTyp)
+	cfgVal := cfgPtr.Elem()
+
+	if err := unmarshal(cfgPtr.Interface()); err != nil {
+		return replaceYAMLTypeError(err, cfgTyp, configsType)
+	}
+
+	var err error
+	*c, err = readConfigs(cfgVal, 0)
+	return err
+}
+
+// MarshalYAML implements yaml.Marshaler.
+func (c Configs) MarshalYAML() (interface{}, error) {
+	cfgTyp := getConfigType(configsType)
+	cfgPtr := reflect.New(cfgTyp)
+	cfgVal := cfgPtr.Elem()
+
+	if err := writeConfigs(cfgVal, c); err != nil {
+		return nil, err
+	}
+
+	return cfgPtr.Interface(), nil
 }
 
 // A StaticConfig is a Config that provides a static list of targets.
