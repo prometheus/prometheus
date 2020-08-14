@@ -16,8 +16,9 @@
 package install
 
 import (
-	_ "github.com/prometheus/prometheus/discovery/azure"     // register azure
-	_ "github.com/prometheus/prometheus/discovery/marathon"  // register marathon
-	_ "github.com/prometheus/prometheus/discovery/openstack" // register openstack
-	_ "github.com/prometheus/prometheus/discovery/triton"    // register triton
+	_ "github.com/prometheus/prometheus/discovery/azure"        // register azure
+	_ "github.com/prometheus/prometheus/discovery/digitalocean" // register digitalocean
+	_ "github.com/prometheus/prometheus/discovery/marathon"     // register marathon
+	_ "github.com/prometheus/prometheus/discovery/openstack"    // register openstack
+	_ "github.com/prometheus/prometheus/discovery/triton"       // register triton
 )

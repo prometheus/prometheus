@@ -626,8 +626,8 @@ var expectedConf = &Config{
 			Scheme:      DefaultScrapeConfig.Scheme,
 
 			ServiceDiscoveryConfig: discoverer.ServiceDiscoveryConfig{
-				DigitalOceanSDConfigs: []*digitalocean.SDConfig{
-					{
+				Configs: []discoverer.Config{
+					&digitalocean.SDConfig{
 						HTTPClientConfig: config.HTTPClientConfig{
 							BearerToken: "abcdef",
 						},
