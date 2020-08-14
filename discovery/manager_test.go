@@ -961,20 +961,20 @@ func TestGaugeFailedConfigs(t *testing.T) {
 
 	c := map[string]discoverer.ServiceDiscoveryConfig{
 		"prometheus": {
-			ConsulSDConfigs: []*consul.SDConfig{
-				{
+			Configs: []discoverer.Config{
+				&consul.SDConfig{
 					Server: "foo:8500",
 					TLSConfig: common_config.TLSConfig{
 						CertFile: "/tmp/non_existent",
 					},
 				},
-				{
+				&consul.SDConfig{
 					Server: "bar:8500",
 					TLSConfig: common_config.TLSConfig{
 						CertFile: "/tmp/non_existent",
 					},
 				},
-				{
+				&consul.SDConfig{
 					Server: "foo2:8500",
 					TLSConfig: common_config.TLSConfig{
 						CertFile: "/tmp/non_existent",

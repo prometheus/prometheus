@@ -26,11 +26,11 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/testutil"
-	"go.uber.org/goleak"
 )
 
 func TestMain(m *testing.M) {
-	goleak.VerifyTestMain(m)
+	// TODO(abursavich): CLEANUP: this will revert to standard goleak test
+	testutil.TolerantVerifyLeak(m)
 }
 
 func TestConfiguredService(t *testing.T) {

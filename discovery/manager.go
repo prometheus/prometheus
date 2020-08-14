@@ -27,7 +27,6 @@ import (
 	"github.com/prometheus/prometheus/discovery/discoverer"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 
-	"github.com/prometheus/prometheus/discovery/consul"
 	"github.com/prometheus/prometheus/discovery/file"
 	"github.com/prometheus/prometheus/discovery/kubernetes"
 )
@@ -347,11 +346,6 @@ func (m *Manager) registerProviders(cfg discoverer.ServiceDiscoveryConfig, setNa
 	for _, c := range cfg.FileSDConfigs {
 		add(c, func() (Discoverer, error) {
 			return file.NewDiscovery(c, log.With(m.logger, "discovery", "file")), nil
-		})
-	}
-	for _, c := range cfg.ConsulSDConfigs {
-		add(c, func() (Discoverer, error) {
-			return consul.NewDiscovery(c, log.With(m.logger, "discovery", "consul"))
 		})
 	}
 	for _, c := range cfg.KubernetesSDConfigs {

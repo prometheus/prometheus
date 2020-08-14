@@ -31,6 +31,7 @@ import (
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/discovery/discoverer"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
 )
@@ -99,6 +100,12 @@ var (
 	}
 )
 
+func init() {
+	discoverer.RegisterConfig(&SDConfig{})
+	prometheus.MustRegister(rpcFailuresCount)
+	prometheus.MustRegister(rpcDuration)
+}
+
 // SDConfig is the configuration for Consul service discovery.
 type SDConfig struct {
 	Server       string        `yaml:"server,omitempty"`
@@ -130,6 +137,14 @@ type SDConfig struct {
 	TLSConfig config.TLSConfig `yaml:"tls_config,omitempty"`
 }
 
+// Name returns the name of the Config.
+func (*SDConfig) Name() string { return "consul" }
+
+// NewDiscoverer returns a Discoverer for the Config.
+func (c *SDConfig) NewDiscoverer(opts discoverer.Options) (discoverer.Discoverer, error) {
+	return NewDiscovery(c, opts.Logger)
+}
+
 // SetDirectory joins any relative file paths with dir.
 func (c *SDConfig) SetDirectory(dir string) {
 	c.TLSConfig.SetDirectory(dir)
@@ -147,11 +162,6 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return errors.New("consul SD configuration requires a server address")
 	}
 	return nil
-}
-
-func init() {
-	prometheus.MustRegister(rpcFailuresCount)
-	prometheus.MustRegister(rpcDuration)
 }
 
 // Discovery retrieves target information from a Consul server

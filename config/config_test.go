@@ -301,8 +301,8 @@ var expectedConf = &Config{
 			Scheme:      DefaultScrapeConfig.Scheme,
 
 			ServiceDiscoveryConfig: discoverer.ServiceDiscoveryConfig{
-				ConsulSDConfigs: []*consul.SDConfig{
-					{
+				Configs: []discoverer.Config{
+					&consul.SDConfig{
 						Server:          "localhost:1234",
 						Token:           "mysecret",
 						Services:        []string{"nginx", "cache", "mysql"},

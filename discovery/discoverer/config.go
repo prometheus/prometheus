@@ -19,7 +19,6 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/prometheus/common/config"
-	"github.com/prometheus/prometheus/discovery/consul"
 	"github.com/prometheus/prometheus/discovery/file"
 	"github.com/prometheus/prometheus/discovery/kubernetes"
 )
@@ -28,8 +27,6 @@ import (
 type ServiceDiscoveryConfig struct {
 	// List of file service discovery configurations.
 	FileSDConfigs []*file.SDConfig `yaml:"file_sd_configs,omitempty"`
-	// List of Consul service discovery configurations.
-	ConsulSDConfigs []*consul.SDConfig `yaml:"consul_sd_configs,omitempty"`
 	// List of Kubernetes service discovery configurations.
 	KubernetesSDConfigs []*kubernetes.SDConfig `yaml:"kubernetes_sd_configs,omitempty"`
 
@@ -40,9 +37,6 @@ type ServiceDiscoveryConfig struct {
 // SetDirectory joins any relative file paths with dir.
 func (c *ServiceDiscoveryConfig) SetDirectory(dir string) {
 	for _, c := range c.KubernetesSDConfigs {
-		c.SetDirectory(dir)
-	}
-	for _, c := range c.ConsulSDConfigs {
 		c.SetDirectory(dir)
 	}
 	for _, c := range c.FileSDConfigs {
@@ -57,11 +51,6 @@ func (c *ServiceDiscoveryConfig) SetDirectory(dir string) {
 
 // Validate validates the ServiceDiscoveryConfig.
 func (c *ServiceDiscoveryConfig) Validate() error {
-	for _, cfg := range c.ConsulSDConfigs {
-		if cfg == nil {
-			return errors.New("empty or null section in consul_sd_configs")
-		}
-	}
 	for _, cfg := range c.FileSDConfigs {
 		if cfg == nil {
 			return errors.New("empty or null section in file_sd_configs")
