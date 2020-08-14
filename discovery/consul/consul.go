@@ -441,18 +441,19 @@ func (d *Discovery) watchService(ctx context.Context, ch chan<- []*targetgroup.G
 
 	go func() {
 		ticker := time.NewTicker(d.refreshInterval)
+		defer ticker.Stop()
 		var lastIndex uint64
 		health := srv.client.Health()
 		for {
 			select {
 			case <-ctx.Done():
-				ticker.Stop()
 				return
 			default:
 				srv.watch(ctx, ch, health, &lastIndex)
 				select {
 				case <-ticker.C:
 				case <-ctx.Done():
+					return
 				}
 			}
 		}
