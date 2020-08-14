@@ -112,11 +112,7 @@ charts or filled areas).
           for (m = 0; m < ps; ++m) newpoints.push(otherpoints[i + m]);
           if (withbottom) newpoints[l + 2] = otherpoints[i + accumulateOffset];
           i += ps;
-          j += otherps;
         } else if (i >= points.length) {
-          // take the remaining points from the previous series
-          for (m = 0; m < ps; ++m) newpoints.push(otherpoints[j + m]);
-          if (withbottom) newpoints[l + 2] = otherpoints[j + accumulateOffset];
           j += otherps;
         } else if (j >= otherpoints.length) {
           // take the remaining points from the current series
