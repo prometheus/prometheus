@@ -60,9 +60,9 @@ type Target struct {
 	health             TargetHealth
 	metadata           MetricMetadataStore
 
-	savedError          error
-	savedFailed         time.Time
-	savedFailedDuration time.Duration
+	savedError                error
+	savedFailedScrape         time.Time
+	savedFailedScrapeDuration time.Duration
 }
 
 // NewTarget creates a reasonably configured target for querying.
@@ -245,8 +245,8 @@ func (t *Target) Report(start time.Time, dur time.Duration, err error) {
 
 	if err != nil {
 		t.savedError = err
-		t.savedFailed = start
-		t.savedFailedDuration = dur
+		t.savedFailedScrape = start
+		t.savedFailedScrapeDuration = dur
 	}
 }
 
@@ -287,7 +287,7 @@ func (t *Target) SavedFailedScrape() time.Time {
 	t.mtx.RLock()
 	defer t.mtx.RUnlock()
 
-	return t.savedFailed
+	return t.savedFailedScrape
 }
 
 // SavedErrScrapeDuration returns how long the last failed scrape of the target took.
@@ -295,7 +295,7 @@ func (t *Target) SavedFailedScrapeDuration() time.Duration {
 	t.mtx.RLock()
 	defer t.mtx.RUnlock()
 
-	return t.savedFailedDuration
+	return t.savedFailedScrapeDuration
 }
 
 // Health returns the last known health state of the target.
