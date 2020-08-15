@@ -65,10 +65,7 @@ func (n *nodeInfo) getBaseIndent(item parser.Item) int {
 
 // isLastItem returns true if the item passed is the last item of the current node.
 func (n *nodeInfo) isLastItem(item parser.Item) bool {
-	if n.currentNode.PositionRange().End == item.PositionRange().End {
-		return true
-	}
-	return false
+	return n.currentNode.PositionRange().End == item.PositionRange().End
 }
 
 func (n *nodeInfo) previousIndent() int {
