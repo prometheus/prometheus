@@ -447,6 +447,7 @@ func PrettifyRules(files ...string) int {
 					errors = append(errors, err)
 					continue
 				}
+				fmt.Println("formatted as\n", prettifiedExpr)
 				rgs.Groups[i].Rules[j].Expr.SetString(prettifiedExpr)
 			}
 		}
@@ -456,6 +457,7 @@ func PrettifyRules(files ...string) int {
 		}
 		if err = ioutil.WriteFile(filePath, data, 0666); err != nil {
 			fmt.Fprintln(os.Stderr, fmt.Sprintf("failed formatted %s file:", filePath), err.Error())
+			return 1
 		}
 	}
 	for _, err := range errors {

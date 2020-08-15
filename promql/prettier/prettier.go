@@ -15,6 +15,7 @@ package prettier
 
 import (
 	"regexp"
+	"strings"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -45,6 +46,9 @@ type padder struct {
 	// after applying baseIndent. This property is dependent across the padder states
 	// and hence needs to be carried along while formatting.
 	isNewLineApplied bool
+	// isNewLineInserted is used to trim the spaces in cases where no lines insertion
+	// is required.
+	isNewLineInserted bool
 	// isPreviousItemComment confirms whether the previous formatted item was
 	// a comment. This property is dependent on previous padder states and hence needs
 	// to be carried along while formatting.
@@ -58,6 +62,7 @@ type padder struct {
 	// is property is applied only after encountering a Left_Brace. This is dependent across
 	// multiple padder states and hence needs to be carried along.
 	labelsSplittable bool
+	isFirstLabel     bool
 }
 
 // New returns a new prettier.
@@ -216,23 +221,22 @@ func (p *Prettier) sortItems(items []parser.Item) []parser.Item {
 				skipBraces = rightBraceIndex-4 == advanceComments(items, leftBraceIndex)
 			}
 			identifierItem := parser.Item{Typ: parser.IDENTIFIER, Val: metricName, Pos: 0}
-			// The code below re-orders the lex items in the items array and update the same. The re-ordering of
-			// lex items should be such that the key of any key-value pair if is `__name__` and its corresponding value
-			// being atomic (excluding `bool`), then the value of those key-value pair will be rearranged (written)
-			// prior to the leftBraceIndex.
+			// The code below re-orders the lex items in the items array. The re-ordering of
+			// lex items must occur only when in a key-value pair, the key is `__name__`
+			// and the corresponding value is atomic.
 			//
-			// By now, we have the indexes of leftBrace and rightBrace. Since the leftBraceIndex and rightBraceIndex
-			// forms a range, all those items out of this range are simply copied as they do not any updates to their
-			// relative positions. However, those items within the range are added to the lex item slice after
-			// appending the identifier (i.e., atomic value of the `__name__` key) to the lex item slice.
+			// The leftBraceIndex and rightBraceIndex that form a range. Since the position of items beyond
+			// this range do not change, they are simply copied. However, the items within the range require
+			// re-ordering. So, they are added to the lex item slice after appending the identifier (metric_name)
+			// to the lex item slice.
 			//
-			// Also, we want to avoid `metric_name{}` case while re-ordering a `{__name__="metric_name"}`.
-			// Hence, when we are inside the leftBraceIndex and rightBraceIndex range, we check if the left and
-			// right braces are next to each other, then we skip appending them (braces) to the items slice.
+			// Also, we need to avoid `metric_name{}` case while re-ordering a `{__name__="metric_name"}`.
+			// Hence, if the indexes of left and right braces are next to each other, we skip
+			// appending them (braces) to the items slice.
 			for j := range items {
 				if j <= rightBraceIndex && j >= leftBraceIndex {
 					// Before printing the left_brace, we print the metric_name. After this, we check for metric_name{}
-					// condition. If __name__ is the only label inside the label_matchers, we skip printing '{' and '}'.
+					// situation. If __name__ is the only label_matcher, we skip printing '{' and '}'.
 					if j == leftBraceIndex {
 						tmp = append(tmp, identifierItem)
 						if !skipBraces {
@@ -269,7 +273,7 @@ func (p *Prettier) prettify(items []parser.Item) (string, error) {
 			hasImmediateScalar               bool
 			hasGrouping, aggregationGrouping bool
 			// Aggregate expression use-case.
-			hasMultiArgumentCalls bool
+			isAggregation, hasMultiArgumentCalls bool
 		)
 		if p.pd.isPreviousItemComment {
 			p.pd.isPreviousItemComment = false
@@ -277,6 +281,7 @@ func (p *Prettier) prettify(items []parser.Item) (string, error) {
 		}
 		switch node.(type) {
 		case *parser.AggregateExpr:
+			isAggregation = true
 			aggregationGrouping = nodeInfo.has(grouping)
 		case *parser.BinaryExpr:
 			hasImmediateScalar = nodeInfo.has(scalars)
@@ -309,8 +314,12 @@ func (p *Prettier) prettify(items []parser.Item) (string, error) {
 				p.pd.expectAggregationLabels = false
 				result += " "
 			}
+			if isAggregation && nodeInfo.has(aggregateParent) && nodeInfo.isLastItem(item) {
+				result += p.pd.newLine()
+			}
 		case parser.LEFT_BRACE:
 			result += item.Val
+			p.pd.isFirstLabel = true
 			if nodeSplittable {
 				// This situation arises only in vector selectors that violate column limit and have labels.
 				result += p.pd.newLine()
@@ -321,15 +330,23 @@ func (p *Prettier) prettify(items []parser.Item) (string, error) {
 				if it.prev().Typ != parser.COMMA {
 					// Edge-case: if the labels are multi-line split, but do not have
 					// a pre-applied comma.
-					result += "," + p.pd.newLine() + p.pd.pad(nodeInfo.getBaseIndent(item))
+					result += ","
 				}
+				result += p.pd.newLine() + p.pd.pad(nodeInfo.getBaseIndent(item))
 				p.pd.labelsSplittable = false
 				p.pd.isNewLineApplied = false
 			}
+			p.pd.isFirstLabel = false
 			result += item.Val
 		case parser.IDENTIFIER:
 			if p.pd.labelsSplittable {
-				result += p.pd.pad(1) + item.Val
+				if p.pd.isFirstLabel {
+					p.pd.isFirstLabel = false
+					result += p.pd.pad(1)
+				} else {
+					result += " "
+				}
+				result += item.Val
 			} else {
 				result += item.Val
 			}
@@ -338,6 +355,11 @@ func (p *Prettier) prettify(items []parser.Item) (string, error) {
 		case parser.SUM, parser.BOTTOMK, parser.COUNT_VALUES, parser.COUNT, parser.GROUP, parser.MAX, parser.MIN,
 			parser.QUANTILE, parser.STDVAR, parser.STDDEV, parser.TOPK, parser.AVG:
 			// Aggregations.
+			if nodeInfo.has(aggregateParent) {
+				result = p.pd.removePreviousBlank(result)
+				result += p.pd.newLine() + p.pd.pad(nodeInfo.getBaseIndent(item))
+				p.pd.isNewLineApplied = false
+			}
 			result += item.Val
 			if aggregationGrouping {
 				result += " "
@@ -372,9 +394,9 @@ func (p *Prettier) prettify(items []parser.Item) (string, error) {
 			}
 		case parser.COMMA:
 			result += item.Val
-			if (nodeSplittable || hasMultiArgumentCalls) && !(hasGrouping || aggregationGrouping) {
+			if (nodeSplittable || hasMultiArgumentCalls) && !(hasGrouping || aggregationGrouping || p.pd.labelsSplittable) {
 				result += p.pd.newLine()
-			} else {
+			} else if !p.pd.labelsSplittable {
 				result += " "
 			}
 		case parser.COMMENT:
@@ -388,6 +410,9 @@ func (p *Prettier) prettify(items []parser.Item) (string, error) {
 			}
 			p.pd.isPreviousItemComment = true
 		}
+	}
+	if !p.pd.isNewLineInserted {
+		result = strings.TrimSpace(result)
 	}
 	return result, nil
 }
@@ -506,5 +531,15 @@ func (pd *padder) pad(iter int) string {
 
 func (pd *padder) newLine() string {
 	pd.isNewLineApplied = true
+	if !pd.isNewLineInserted {
+		pd.isNewLineInserted = true
+	}
 	return "\n"
+}
+
+func (pd *padder) removePreviousBlank(result string) string {
+	if result[len(result)-1] == ' ' {
+		result = result[:len(result)-1]
+	}
+	return result
 }

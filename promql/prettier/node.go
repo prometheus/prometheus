@@ -22,6 +22,7 @@ const (
 	grouping = iota
 	scalars
 	multiArguments
+	aggregateParent
 	binaryExpr
 	matrixExpr
 	subQueryExpr
@@ -62,6 +63,14 @@ func (n *nodeInfo) getBaseIndent(item parser.Item) int {
 	return n.buf
 }
 
+// isLastItem returns true if the item passed is the last item of the current node.
+func (n *nodeInfo) isLastItem(item parser.Item) bool {
+	if n.currentNode.PositionRange().End == item.PositionRange().End {
+		return true
+	}
+	return false
+}
+
 func (n *nodeInfo) previousIndent() int {
 	return n.buf
 }
@@ -88,6 +97,13 @@ func (n *nodeInfo) has(element uint) bool {
 	case multiArguments:
 		if node, ok := n.currentNode.(*parser.Call); ok {
 			return len(node.Args) > 1
+		}
+	case aggregateParent:
+		if len(n.ancestors) < 2 {
+			return false
+		}
+		if _, ok := n.ancestors[len(n.ancestors)-2].(*parser.AggregateExpr); ok {
+			return true
 		}
 	}
 	return false
@@ -124,7 +140,7 @@ func reduceNonNewLineExprs(history []parser.Node) []parser.Node {
 		return history
 	}
 	for i := range history {
-		if !(compareNodeType(history[i], matrixExpr) || compareNodeType(history[i], subQueryExpr)) {
+		if !(isNodeType(history[i], matrixExpr) || isNodeType(history[i], subQueryExpr)) {
 			temp = append(temp, history[i])
 		}
 	}
@@ -139,7 +155,7 @@ func reduceBinary(history []parser.Node) []parser.Node {
 		return history
 	}
 	for i := 0; i < len(history)-1; i++ {
-		if !(compareNodeType(history[i], binaryExpr) && compareNodeType(history[i+1], binaryExpr)) {
+		if !(isNodeType(history[i], binaryExpr) && isNodeType(history[i+1], binaryExpr)) {
 			temp = append(temp, history[i])
 		}
 	}
@@ -147,7 +163,7 @@ func reduceBinary(history []parser.Node) []parser.Node {
 	return temp
 }
 
-func compareNodeType(node parser.Node, typ uint) bool {
+func isNodeType(node parser.Node, typ uint) bool {
 	switch typ {
 	case binaryExpr:
 		if _, ok := node.(*parser.BinaryExpr); ok {
