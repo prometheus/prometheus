@@ -23,6 +23,7 @@ jobs:
 
     steps:
     - prometheus/setup_environment
+    - go get -u golang.org/x/tools/cmd/goyacc
     - go/load-cache:
         key: v1
     - restore_cache:
