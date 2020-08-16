@@ -81,8 +81,12 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	} else {
 		select {
 		case ch <- tgs:
-		case <-ctx.Done():
-			return
+		default:
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
 		}
 	}
 
@@ -102,8 +106,12 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 
 			select {
 			case ch <- tgs:
-			case <-ctx.Done():
-				return
+			default:
+				select {
+				case <-ctx.Done():
+					return
+				default:
+				}
 			}
 		case <-ctx.Done():
 			return
