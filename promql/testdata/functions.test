@@ -395,9 +395,106 @@ eval instant at 8000s holt_winters(http_requests[1m], 0.01, 0.1)
 clear
 load 10s
   metric 1 2 3 4 5
+  metric2 1 2 3 4 Inf
+  metric3 1 2 3 4 -Inf
+  metric4 1 2 3 Inf -Inf
+  metric5 Inf 0 Inf
+  metric5b Inf 0 Inf
+  metric5c Inf Inf Inf -Inf
+  metric6 1 2 3 -Inf -Inf
+  metric6b -Inf 0 -Inf
+  metric6c -Inf -Inf -Inf Inf
+  metric7 1 2 -Inf -Inf Inf
+  metric8 9.988465674311579e+307 9.988465674311579e+307
+  metric9 -9.988465674311579e+307 -9.988465674311579e+307 -9.988465674311579e+307
+  metric10 -9.988465674311579e+307 9.988465674311579e+307
 
 eval instant at 1m avg_over_time(metric[1m])
   {} 3
+
+eval instant at 1m sum_over_time(metric[1m])/count_over_time(metric[1m])
+  {} 3
+
+eval instant at 1m avg_over_time(metric2[1m])
+  {} Inf
+
+eval instant at 1m sum_over_time(metric2[1m])/count_over_time(metric2[1m])
+  {} Inf
+
+eval instant at 1m avg_over_time(metric3[1m])
+  {} -Inf
+
+eval instant at 1m sum_over_time(metric3[1m])/count_over_time(metric3[1m])
+  {} -Inf
+
+eval instant at 1m avg_over_time(metric4[1m])
+  {} NaN
+
+eval instant at 1m sum_over_time(metric4[1m])/count_over_time(metric4[1m])
+  {} NaN
+
+eval instant at 1m avg_over_time(metric5[1m])
+  {} Inf
+
+eval instant at 1m sum_over_time(metric5[1m])/count_over_time(metric5[1m])
+  {} Inf
+
+eval instant at 1m avg_over_time(metric5b[1m])
+  {} Inf
+
+eval instant at 1m sum_over_time(metric5b[1m])/count_over_time(metric5b[1m])
+  {} Inf
+
+eval instant at 1m avg_over_time(metric5c[1m])
+  {} NaN
+
+eval instant at 1m sum_over_time(metric5c[1m])/count_over_time(metric5c[1m])
+  {} NaN
+
+eval instant at 1m avg_over_time(metric6[1m])
+  {} -Inf
+
+eval instant at 1m sum_over_time(metric6[1m])/count_over_time(metric6[1m])
+  {} -Inf
+
+eval instant at 1m avg_over_time(metric6b[1m])
+  {} -Inf
+
+eval instant at 1m sum_over_time(metric6b[1m])/count_over_time(metric6b[1m])
+  {} -Inf
+
+eval instant at 1m avg_over_time(metric6c[1m])
+  {} NaN
+
+eval instant at 1m sum_over_time(metric6c[1m])/count_over_time(metric6c[1m])
+  {} NaN
+
+
+eval instant at 1m avg_over_time(metric7[1m])
+  {} NaN
+
+eval instant at 1m sum_over_time(metric7[1m])/count_over_time(metric7[1m])
+  {} NaN
+
+eval instant at 1m avg_over_time(metric8[1m])
+  {} 9.988465674311579e+307
+
+# This overflows float64.
+eval instant at 1m sum_over_time(metric8[1m])/count_over_time(metric8[1m])
+  {} Inf
+
+eval instant at 1m avg_over_time(metric9[1m])
+  {} -9.988465674311579e+307
+
+# This overflows float64.
+eval instant at 1m sum_over_time(metric9[1m])/count_over_time(metric9[1m])
+  {} -Inf
+
+eval instant at 1m avg_over_time(metric10[1m])
+  {} 0
+
+eval instant at 1m sum_over_time(metric10[1m])/count_over_time(metric10[1m])
+  {} 0
 
 # Tests for stddev_over_time and stdvar_over_time.
 clear

@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -21,48 +22,35 @@ import (
 )
 
 type mockIndexWriter struct {
-	series []seriesSamples
+	seriesChunks []series
 }
 
-func (mockIndexWriter) AddSymbol(sym string) error { return nil }
-func (m *mockIndexWriter) AddSeries(ref uint64, l labels.Labels, chunks ...chunks.Meta) error {
-	i := -1
-	for j, s := range m.series {
-		if !labels.Equal(labels.FromMap(s.lset), l) {
-			continue
+func copyChunk(c chunkenc.Chunk) (chunkenc.Chunk, error) {
+	b := c.Bytes()
+	nb := make([]byte, len(b))
+	copy(nb, b)
+	return chunkenc.FromData(c.Encoding(), nb)
+}
+
+func (mockIndexWriter) AddSymbol(string) error { return nil }
+func (m *mockIndexWriter) AddSeries(_ uint64, l labels.Labels, chks ...chunks.Meta) error {
+	// Copy chunks as their bytes are pooled.
+	chksNew := make([]chunks.Meta, len(chks))
+	for i, chk := range chks {
+		c, err := copyChunk(chk.Chunk)
+		if err != nil {
+			return errors.Wrap(err, "mockIndexWriter: copy chunk")
 		}
-		i = j
-		break
-	}
-	if i == -1 {
-		m.series = append(m.series, seriesSamples{
-			lset: l.Map(),
-		})
-		i = len(m.series) - 1
+		chksNew[i] = chunks.Meta{MaxTime: chk.MaxTime, MinTime: chk.MinTime, Chunk: c}
 	}
 
-	var iter chunkenc.Iterator
-	for _, chk := range chunks {
-		samples := make([]sample, 0, chk.Chunk.NumSamples())
-
-		iter = chk.Chunk.Iterator(iter)
-		for iter.Next() {
-			s := sample{}
-			s.t, s.v = iter.At()
-
-			samples = append(samples, s)
-		}
-		if err := iter.Err(); err != nil {
-			return err
-		}
-
-		m.series[i].chunks = append(m.series[i].chunks, samples)
-	}
+	// We don't combine multiple same series together, by design as `AddSeries` requires full series to be saved.
+	m.seriesChunks = append(m.seriesChunks, series{l: l, chunks: chksNew})
 	return nil
 }
 
-func (mockIndexWriter) WriteLabelIndex(names []string, values []string) error { return nil }
-func (mockIndexWriter) Close() error                                          { return nil }
+func (mockIndexWriter) WriteLabelIndex([]string, []string) error { return nil }
+func (mockIndexWriter) Close() error                             { return nil }
 
 type mockBReader struct {
 	ir   IndexReader

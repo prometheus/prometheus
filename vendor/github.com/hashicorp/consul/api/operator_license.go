@@ -36,6 +36,9 @@ type License struct {
 	// License Specific Flags
 	Flags map[string]interface{} `json:"flags"`
 
+	// Modules is a list of the licensed enterprise modules
+	Modules []string `json:"modules"`
+
 	// List of features enabled by the license
 	Features []string `json:"features"`
 }

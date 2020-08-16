@@ -9,6 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+
+	protoV2 "google.golang.org/protobuf/proto"
 )
 
 var (
@@ -82,11 +84,30 @@ func UnmarshalJSONEnum(m map[string]int32, data []byte, enumName string) (int32,
 	return val, nil
 }
 
-// Deprecated: Do not use.
+// Deprecated: Do not use; this type existed for intenal-use only.
 type InternalMessageInfo struct{}
 
-func (*InternalMessageInfo) DiscardUnknown(Message)                        { panic("not implemented") }
-func (*InternalMessageInfo) Marshal([]byte, Message, bool) ([]byte, error) { panic("not implemented") }
-func (*InternalMessageInfo) Merge(Message, Message)                        { panic("not implemented") }
-func (*InternalMessageInfo) Size(Message) int                              { panic("not implemented") }
-func (*InternalMessageInfo) Unmarshal(Message, []byte) error               { panic("not implemented") }
+// Deprecated: Do not use; this method existed for intenal-use only.
+func (*InternalMessageInfo) DiscardUnknown(m Message) {
+	DiscardUnknown(m)
+}
+
+// Deprecated: Do not use; this method existed for intenal-use only.
+func (*InternalMessageInfo) Marshal(b []byte, m Message, deterministic bool) ([]byte, error) {
+	return protoV2.MarshalOptions{Deterministic: deterministic}.MarshalAppend(b, MessageV2(m))
+}
+
+// Deprecated: Do not use; this method existed for intenal-use only.
+func (*InternalMessageInfo) Merge(dst, src Message) {
+	protoV2.Merge(MessageV2(dst), MessageV2(src))
+}
+
+// Deprecated: Do not use; this method existed for intenal-use only.
+func (*InternalMessageInfo) Size(m Message) int {
+	return protoV2.Size(MessageV2(m))
+}
+
+// Deprecated: Do not use; this method existed for intenal-use only.
+func (*InternalMessageInfo) Unmarshal(m Message, b []byte) error {
+	return protoV2.UnmarshalOptions{Merge: true}.Unmarshal(b, MessageV2(m))
+}

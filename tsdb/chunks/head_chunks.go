@@ -25,12 +25,12 @@ import (
 	"sort"
 	"strconv"
 	"sync"
-	"sync/atomic"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
+	"go.uber.org/atomic"
 )
 
 // Head chunk file header fields constants.
@@ -78,9 +78,7 @@ func (e *CorruptionErr) Error() string {
 // ChunkDiskMapper is for writing the Head block chunks to the disk
 // and access chunks via mmapped file.
 type ChunkDiskMapper struct {
-	// Keep all 64bit atomically accessed variables at the top of this struct.
-	// See https://golang.org/pkg/sync/atomic/#pkg-note-BUG for more info.
-	curFileNumBytes int64 // Bytes written in current open file.
+	curFileNumBytes atomic.Int64 // Bytes written in current open file.
 
 	/// Writer.
 	dir *os.File
@@ -260,7 +258,7 @@ func (cdm *ChunkDiskMapper) WriteChunk(seriesRef uint64, mint, maxt int64, chk c
 
 	// The upper 4 bytes are for the head chunk file index and
 	// the lower 4 bytes are for the head chunk file offset where to start reading this chunk.
-	chkRef = chunkRef(uint64(cdm.curFileSequence), uint64(cdm.curFileNumBytes))
+	chkRef = chunkRef(uint64(cdm.curFileSequence), uint64(cdm.curFileSize()))
 
 	binary.BigEndian.PutUint64(cdm.byteBuf[bytesWritten:], seriesRef)
 	bytesWritten += SeriesRefSize
@@ -308,8 +306,8 @@ func chunkRef(seq, offset uint64) (chunkRef uint64) {
 // Size retention: because depending on the system architecture, there is a limit on how big of a file we can m-map.
 // Time retention: so that we can delete old chunks with some time guarantee in low load environments.
 func (cdm *ChunkDiskMapper) shouldCutNewFile(chunkSize int) bool {
-	return cdm.curFileNumBytes == 0 || // First head chunk file.
-		cdm.curFileNumBytes+int64(chunkSize+MaxHeadChunkMetaSize) > MaxHeadChunkFileSize // Exceeds the max head chunk file size.
+	return cdm.curFileSize() == 0 || // First head chunk file.
+		cdm.curFileSize()+int64(chunkSize+MaxHeadChunkMetaSize) > MaxHeadChunkFileSize // Exceeds the max head chunk file size.
 }
 
 // CutNewFile creates a new m-mapped file.
@@ -342,8 +340,8 @@ func (cdm *ChunkDiskMapper) cut() (returnErr error) {
 		}
 	}()
 
-	cdm.size += cdm.curFileNumBytes
-	atomic.StoreInt64(&cdm.curFileNumBytes, int64(n))
+	cdm.size += cdm.curFileSize()
+	cdm.curFileNumBytes.Store(int64(n))
 
 	if cdm.curFile != nil {
 		cdm.readPathMtx.Lock()
@@ -394,7 +392,7 @@ func (cdm *ChunkDiskMapper) finalizeCurFile() error {
 
 func (cdm *ChunkDiskMapper) write(b []byte) error {
 	n, err := cdm.chkWriter.Write(b)
-	atomic.AddInt64(&cdm.curFileNumBytes, int64(n))
+	cdm.curFileNumBytes.Add(int64(n))
 	return err
 }
 
@@ -558,7 +556,7 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef, chunkRef uint64, 
 		mmapFile := cdm.mmappedChunkFiles[segID]
 		fileEnd := mmapFile.byteSlice.Len()
 		if segID == cdm.curFileSequence {
-			fileEnd = int(cdm.curFileNumBytes)
+			fileEnd = int(cdm.curFileSize())
 		}
 		idx := HeadChunkFileHeaderSize
 		for idx < fileEnd {
@@ -681,7 +679,7 @@ func (cdm *ChunkDiskMapper) Truncate(mint int64) error {
 
 	var merr tsdb_errors.MultiError
 	// Cut a new file only if the current file has some chunks.
-	if cdm.curFileNumBytes > HeadChunkFileHeaderSize {
+	if cdm.curFileSize() > HeadChunkFileHeaderSize {
 		merr.Add(cdm.CutNewFile())
 	}
 	merr.Add(cdm.deleteFiles(removedFiles))
@@ -732,8 +730,11 @@ func (cdm *ChunkDiskMapper) DeleteCorrupted(originalErr error) error {
 
 // Size returns the size of the chunk files.
 func (cdm *ChunkDiskMapper) Size() int64 {
-	n := atomic.LoadInt64(&cdm.curFileNumBytes)
-	return cdm.size + n
+	return cdm.size + cdm.curFileSize()
+}
+
+func (cdm *ChunkDiskMapper) curFileSize() int64 {
+	return cdm.curFileNumBytes.Load()
 }
 
 // Close closes all the open files in ChunkDiskMapper.

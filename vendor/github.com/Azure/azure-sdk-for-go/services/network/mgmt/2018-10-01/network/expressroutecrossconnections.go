@@ -114,7 +114,6 @@ func (client ExpressRouteCrossConnectionsClient) CreateOrUpdateSender(req *http.
 func (client ExpressRouteCrossConnectionsClient) CreateOrUpdateResponder(resp *http.Response) (result ExpressRouteCrossConnection, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -190,7 +189,6 @@ func (client ExpressRouteCrossConnectionsClient) GetSender(req *http.Request) (*
 func (client ExpressRouteCrossConnectionsClient) GetResponder(resp *http.Response) (result ExpressRouteCrossConnection, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -262,7 +260,6 @@ func (client ExpressRouteCrossConnectionsClient) ListSender(req *http.Request) (
 func (client ExpressRouteCrossConnectionsClient) ListResponder(resp *http.Response) (result ExpressRouteCrossConnectionListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -380,7 +377,6 @@ func (client ExpressRouteCrossConnectionsClient) ListArpTableSender(req *http.Re
 func (client ExpressRouteCrossConnectionsClient) ListArpTableResponder(resp *http.Response) (result ExpressRouteCircuitsArpTableListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -455,7 +451,6 @@ func (client ExpressRouteCrossConnectionsClient) ListByResourceGroupSender(req *
 func (client ExpressRouteCrossConnectionsClient) ListByResourceGroupResponder(resp *http.Response) (result ExpressRouteCrossConnectionListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -573,7 +568,6 @@ func (client ExpressRouteCrossConnectionsClient) ListRoutesTableSender(req *http
 func (client ExpressRouteCrossConnectionsClient) ListRoutesTableResponder(resp *http.Response) (result ExpressRouteCircuitsRoutesTableListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -654,7 +648,6 @@ func (client ExpressRouteCrossConnectionsClient) ListRoutesTableSummarySender(re
 func (client ExpressRouteCrossConnectionsClient) ListRoutesTableSummaryResponder(resp *http.Response) (result ExpressRouteCrossConnectionsRoutesTableSummaryListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -733,7 +726,6 @@ func (client ExpressRouteCrossConnectionsClient) UpdateTagsSender(req *http.Requ
 func (client ExpressRouteCrossConnectionsClient) UpdateTagsResponder(resp *http.Response) (result ExpressRouteCrossConnection, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

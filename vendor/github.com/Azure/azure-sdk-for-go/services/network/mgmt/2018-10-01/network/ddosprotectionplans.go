@@ -117,7 +117,6 @@ func (client DdosProtectionPlansClient) CreateOrUpdateSender(req *http.Request) 
 func (client DdosProtectionPlansClient) CreateOrUpdateResponder(resp *http.Response) (result DdosProtectionPlan, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -193,7 +192,6 @@ func (client DdosProtectionPlansClient) DeleteSender(req *http.Request) (future 
 func (client DdosProtectionPlansClient) DeleteResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted, http.StatusNoContent),
 		autorest.ByClosing())
 	result.Response = resp
@@ -268,7 +266,6 @@ func (client DdosProtectionPlansClient) GetSender(req *http.Request) (*http.Resp
 func (client DdosProtectionPlansClient) GetResponder(resp *http.Response) (result DdosProtectionPlan, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -340,7 +337,6 @@ func (client DdosProtectionPlansClient) ListSender(req *http.Request) (*http.Res
 func (client DdosProtectionPlansClient) ListResponder(resp *http.Response) (result DdosProtectionPlanListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -452,7 +448,6 @@ func (client DdosProtectionPlansClient) ListByResourceGroupSender(req *http.Requ
 func (client DdosProtectionPlansClient) ListByResourceGroupResponder(resp *http.Response) (result DdosProtectionPlanListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

@@ -145,7 +145,6 @@ func (client VirtualNetworkTapsClient) CreateOrUpdateSender(req *http.Request) (
 func (client VirtualNetworkTapsClient) CreateOrUpdateResponder(resp *http.Response) (result VirtualNetworkTap, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -221,7 +220,6 @@ func (client VirtualNetworkTapsClient) DeleteSender(req *http.Request) (future V
 func (client VirtualNetworkTapsClient) DeleteResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted, http.StatusNoContent),
 		autorest.ByClosing())
 	result.Response = resp
@@ -296,7 +294,6 @@ func (client VirtualNetworkTapsClient) GetSender(req *http.Request) (*http.Respo
 func (client VirtualNetworkTapsClient) GetResponder(resp *http.Response) (result VirtualNetworkTap, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -368,7 +365,6 @@ func (client VirtualNetworkTapsClient) ListAllSender(req *http.Request) (*http.R
 func (client VirtualNetworkTapsClient) ListAllResponder(resp *http.Response) (result VirtualNetworkTapListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -480,7 +476,6 @@ func (client VirtualNetworkTapsClient) ListByResourceGroupSender(req *http.Reque
 func (client VirtualNetworkTapsClient) ListByResourceGroupResponder(resp *http.Response) (result VirtualNetworkTapListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -596,7 +591,6 @@ func (client VirtualNetworkTapsClient) UpdateTagsSender(req *http.Request) (futu
 func (client VirtualNetworkTapsClient) UpdateTagsResponder(resp *http.Response) (result VirtualNetworkTap, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

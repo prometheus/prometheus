@@ -14,6 +14,7 @@
 package remote
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -170,7 +171,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 }
 
 // Appender implements storage.Storage.
-func (rws *WriteStorage) Appender() storage.Appender {
+func (rws *WriteStorage) Appender(_ context.Context) storage.Appender {
 	return &timestampTracker{
 		writeStorage: rws,
 	}

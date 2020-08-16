@@ -433,7 +433,7 @@ func (t *Test) exec(tc testCommand) error {
 		t.clear()
 
 	case *loadCmd:
-		app := t.storage.Appender()
+		app := t.storage.Appender(t.context)
 		if err := cmd.append(app); err != nil {
 			app.Rollback()
 			return err
@@ -518,10 +518,11 @@ func (t *Test) clear() {
 	t.storage = teststorage.New(t)
 
 	opts := EngineOpts{
-		Logger:     nil,
-		Reg:        nil,
-		MaxSamples: 10000,
-		Timeout:    100 * time.Second,
+		Logger:                   nil,
+		Reg:                      nil,
+		MaxSamples:               10000,
+		Timeout:                  100 * time.Second,
+		NoStepSubqueryIntervalFn: func(int64) int64 { return durationMilliseconds(1 * time.Minute) },
 	}
 
 	t.queryEngine = NewEngine(opts)
@@ -643,7 +644,7 @@ func (ll *LazyLoader) clear() {
 
 // appendTill appends the defined time series to the storage till the given timestamp (in milliseconds).
 func (ll *LazyLoader) appendTill(ts int64) error {
-	app := ll.storage.Appender()
+	app := ll.storage.Appender(ll.Context())
 	for h, smpls := range ll.loadCmd.defs {
 		m := ll.loadCmd.metrics[h]
 		for i, s := range smpls {

@@ -113,7 +113,6 @@ func (client LoadBalancerFrontendIPConfigurationsClient) GetSender(req *http.Req
 func (client LoadBalancerFrontendIPConfigurationsClient) GetResponder(resp *http.Response) (result FrontendIPConfiguration, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -190,7 +189,6 @@ func (client LoadBalancerFrontendIPConfigurationsClient) ListSender(req *http.Re
 func (client LoadBalancerFrontendIPConfigurationsClient) ListResponder(resp *http.Response) (result LoadBalancerFrontendIPConfigurationListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

@@ -22,7 +22,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -30,6 +29,7 @@ import (
 	"github.com/prometheus/alertmanager/api/v2/models"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"go.uber.org/atomic"
 	yaml "gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/config"
@@ -102,10 +102,12 @@ func TestHandlerSendAll(t *testing.T) {
 	var (
 		errc             = make(chan error, 1)
 		expected         = make([]*Alert, 0, maxBatchSize)
-		status1, status2 = int32(http.StatusOK), int32(http.StatusOK)
+		status1, status2 atomic.Int32
 	)
+	status1.Store(int32(http.StatusOK))
+	status2.Store(int32(http.StatusOK))
 
-	newHTTPServer := func(u, p string, status *int32) *httptest.Server {
+	newHTTPServer := func(u, p string, status *atomic.Int32) *httptest.Server {
 		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			var err error
 			defer func() {
@@ -128,7 +130,7 @@ func TestHandlerSendAll(t *testing.T) {
 			if err == nil {
 				err = alertsEqual(expected, alerts)
 			}
-			w.WriteHeader(int(atomic.LoadInt32(status)))
+			w.WriteHeader(int(status.Load()))
 		}))
 	}
 	server1 := newHTTPServer("prometheus", "testing_password", &status1)
@@ -194,11 +196,11 @@ func TestHandlerSendAll(t *testing.T) {
 	testutil.Assert(t, h.sendAll(h.queue...), "all sends failed unexpectedly")
 	checkNoErr()
 
-	atomic.StoreInt32(&status1, int32(http.StatusNotFound))
+	status1.Store(int32(http.StatusNotFound))
 	testutil.Assert(t, h.sendAll(h.queue...), "all sends failed unexpectedly")
 	checkNoErr()
 
-	atomic.StoreInt32(&status2, int32(http.StatusInternalServerError))
+	status2.Store(int32(http.StatusInternalServerError))
 	testutil.Assert(t, !h.sendAll(h.queue...), "all sends succeeded unexpectedly")
 	checkNoErr()
 }

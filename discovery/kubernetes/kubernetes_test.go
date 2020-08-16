@@ -29,6 +29,10 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
+func TestMain(m *testing.M) {
+	testutil.TolerantVerifyLeak(m)
+}
+
 // makeDiscovery creates a kubernetes.Discovery instance for testing.
 func makeDiscovery(role Role, nsDiscovery NamespaceDiscovery, objects ...runtime.Object) (*Discovery, kubernetes.Interface) {
 	clientset := fake.NewSimpleClientset(objects...)
@@ -158,6 +162,7 @@ type hasSynced interface {
 var _ hasSynced = &Discovery{}
 var _ hasSynced = &Node{}
 var _ hasSynced = &Endpoints{}
+var _ hasSynced = &EndpointSlice{}
 var _ hasSynced = &Ingress{}
 var _ hasSynced = &Pod{}
 var _ hasSynced = &Service{}
@@ -181,6 +186,10 @@ func (n *Node) hasSynced() bool {
 
 func (e *Endpoints) hasSynced() bool {
 	return e.endpointsInf.HasSynced() && e.serviceInf.HasSynced() && e.podInf.HasSynced()
+}
+
+func (e *EndpointSlice) hasSynced() bool {
+	return e.endpointSliceInf.HasSynced() && e.serviceInf.HasSynced() && e.podInf.HasSynced()
 }
 
 func (i *Ingress) hasSynced() bool {

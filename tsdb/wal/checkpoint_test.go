@@ -16,6 +16,7 @@ package wal
 
 import (
 	"fmt"
+	"github.com/go-kit/kit/log"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -177,7 +178,7 @@ func TestCheckpoint(t *testing.T) {
 			}
 			testutil.Ok(t, w.Close())
 
-			_, err = Checkpoint(w, 100, 106, func(x uint64) bool {
+			_, err = Checkpoint(log.NewNopLogger(), w, 100, 106, func(x uint64) bool {
 				return x%2 == 0
 			}, last/2)
 			testutil.Ok(t, err)
@@ -236,7 +237,7 @@ func TestCheckpointNoTmpFolderAfterError(t *testing.T) {
 	w.Close()
 
 	// Run the checkpoint and since the wal contains an invalid records this should return an error.
-	_, err = Checkpoint(w, 0, 1, nil, 0)
+	_, err = Checkpoint(log.NewNopLogger(), w, 0, 1, nil, 0)
 	testutil.NotOk(t, err)
 
 	// Walk the wal dir to make sure there are no tmp folder left behind after the error.

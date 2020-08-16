@@ -17,8 +17,9 @@ import (
 	"io/ioutil"
 	"os"
 	"strconv"
-	"sync/atomic"
 	"testing"
+
+	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -51,11 +52,11 @@ func BenchmarkHeadStripeSeriesCreateParallel(b *testing.B) {
 	testutil.Ok(b, err)
 	defer h.Close()
 
-	var count int64
+	var count atomic.Int64
 
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			i := atomic.AddInt64(&count, 1)
+			i := count.Inc()
 			h.getOrCreate(uint64(i), labels.FromStrings("a", strconv.Itoa(int(i))))
 		}
 	})

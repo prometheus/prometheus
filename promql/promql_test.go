@@ -25,11 +25,12 @@ func TestEvaluations(t *testing.T) {
 	testutil.Ok(t, err)
 
 	for _, fn := range files {
-		test, err := newTestFromFile(t, fn)
-		testutil.Ok(t, err)
+		t.Run(fn, func(t *testing.T) {
+			test, err := newTestFromFile(t, fn)
+			testutil.Ok(t, err)
+			testutil.Ok(t, test.Run())
 
-		testutil.Ok(t, test.Run())
-
-		test.Close()
+			test.Close()
+		})
 	}
 }

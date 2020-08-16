@@ -551,11 +551,11 @@ func NewClient(config *Config) (*Client, error) {
 	// bootstrap the config
 	defConfig := DefaultConfig()
 
-	if len(config.Address) == 0 {
+	if config.Address == "" {
 		config.Address = defConfig.Address
 	}
 
-	if len(config.Scheme) == 0 {
+	if config.Scheme == "" {
 		config.Scheme = defConfig.Scheme
 	}
 
@@ -599,7 +599,7 @@ func NewClient(config *Config) (*Client, error) {
 	if len(parts) == 2 {
 		switch parts[0] {
 		case "http":
-			config.Scheme = "http"
+			// Never revert to http if TLS was explicitly requested.
 		case "https":
 			config.Scheme = "https"
 		case "unix":

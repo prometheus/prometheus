@@ -24,7 +24,6 @@ import (
 	"sort"
 	"strconv"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/go-kit/kit/log"
@@ -56,31 +55,15 @@ const (
 	minInt64 = -9223372036854775808
 )
 
-var (
-	// DefaultEvaluationInterval is the default evaluation interval of
-	// a subquery in milliseconds.
-	DefaultEvaluationInterval int64
-)
-
-// SetDefaultEvaluationInterval sets DefaultEvaluationInterval.
-func SetDefaultEvaluationInterval(ev time.Duration) {
-	atomic.StoreInt64(&DefaultEvaluationInterval, durationToInt64Millis(ev))
-}
-
-// GetDefaultEvaluationInterval returns the DefaultEvaluationInterval as time.Duration.
-func GetDefaultEvaluationInterval() int64 {
-	return atomic.LoadInt64(&DefaultEvaluationInterval)
-}
-
 type engineMetrics struct {
 	currentQueries       prometheus.Gauge
 	maxConcurrentQueries prometheus.Gauge
 	queryLogEnabled      prometheus.Gauge
 	queryLogFailures     prometheus.Counter
-	queryQueueTime       prometheus.Summary
-	queryPrepareTime     prometheus.Summary
-	queryInnerEval       prometheus.Summary
-	queryResultSort      prometheus.Summary
+	queryQueueTime       prometheus.Observer
+	queryPrepareTime     prometheus.Observer
+	queryInnerEval       prometheus.Observer
+	queryResultSort      prometheus.Observer
 }
 
 // convertibleToInt64 returns true if v does not over-/underflow an int64.
@@ -154,7 +137,7 @@ type query struct {
 	ng *Engine
 }
 
-type queryOrigin struct{}
+type QueryOrigin struct{}
 
 // Statement implements the Query interface.
 func (q *query) Statement() parser.Statement {
@@ -221,19 +204,24 @@ type EngineOpts struct {
 	// LookbackDelta determines the time since the last sample after which a time
 	// series is considered stale.
 	LookbackDelta time.Duration
+
+	// NoStepSubqueryIntervalFn is the default evaluation interval of
+	// a subquery in milliseconds if no step in range vector was specified `[30m:<step>]`.
+	NoStepSubqueryIntervalFn func(rangeMillis int64) int64
 }
 
 // Engine handles the lifetime of queries from beginning to end.
 // It is connected to a querier.
 type Engine struct {
-	logger             log.Logger
-	metrics            *engineMetrics
-	timeout            time.Duration
-	maxSamplesPerQuery int
-	activeQueryTracker *ActiveQueryTracker
-	queryLogger        QueryLogger
-	queryLoggerLock    sync.RWMutex
-	lookbackDelta      time.Duration
+	logger                   log.Logger
+	metrics                  *engineMetrics
+	timeout                  time.Duration
+	maxSamplesPerQuery       int
+	activeQueryTracker       *ActiveQueryTracker
+	queryLogger              QueryLogger
+	queryLoggerLock          sync.RWMutex
+	lookbackDelta            time.Duration
+	noStepSubqueryIntervalFn func(rangeMillis int64) int64
 }
 
 // NewEngine returns a new engine.
@@ -241,6 +229,16 @@ func NewEngine(opts EngineOpts) *Engine {
 	if opts.Logger == nil {
 		opts.Logger = log.NewNopLogger()
 	}
+
+	queryResultSummary := prometheus.NewSummaryVec(prometheus.SummaryOpts{
+		Namespace:  namespace,
+		Subsystem:  subsystem,
+		Name:       "query_duration_seconds",
+		Help:       "Query timings",
+		Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
+	},
+		[]string{"slice"},
+	)
 
 	metrics := &engineMetrics{
 		currentQueries: prometheus.NewGauge(prometheus.GaugeOpts{
@@ -267,38 +265,10 @@ func NewEngine(opts EngineOpts) *Engine {
 			Name:      "queries_concurrent_max",
 			Help:      "The max number of concurrent queries.",
 		}),
-		queryQueueTime: prometheus.NewSummary(prometheus.SummaryOpts{
-			Namespace:   namespace,
-			Subsystem:   subsystem,
-			Name:        "query_duration_seconds",
-			Help:        "Query timings",
-			ConstLabels: prometheus.Labels{"slice": "queue_time"},
-			Objectives:  map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
-		}),
-		queryPrepareTime: prometheus.NewSummary(prometheus.SummaryOpts{
-			Namespace:   namespace,
-			Subsystem:   subsystem,
-			Name:        "query_duration_seconds",
-			Help:        "Query timings",
-			ConstLabels: prometheus.Labels{"slice": "prepare_time"},
-			Objectives:  map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
-		}),
-		queryInnerEval: prometheus.NewSummary(prometheus.SummaryOpts{
-			Namespace:   namespace,
-			Subsystem:   subsystem,
-			Name:        "query_duration_seconds",
-			Help:        "Query timings",
-			ConstLabels: prometheus.Labels{"slice": "inner_eval"},
-			Objectives:  map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
-		}),
-		queryResultSort: prometheus.NewSummary(prometheus.SummaryOpts{
-			Namespace:   namespace,
-			Subsystem:   subsystem,
-			Name:        "query_duration_seconds",
-			Help:        "Query timings",
-			ConstLabels: prometheus.Labels{"slice": "result_sort"},
-			Objectives:  map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
-		}),
+		queryQueueTime:   queryResultSummary.WithLabelValues("queue_time"),
+		queryPrepareTime: queryResultSummary.WithLabelValues("prepare_time"),
+		queryInnerEval:   queryResultSummary.WithLabelValues("inner_eval"),
+		queryResultSort:  queryResultSummary.WithLabelValues("result_sort"),
 	}
 
 	if t := opts.ActiveQueryTracker; t != nil {
@@ -320,20 +290,18 @@ func NewEngine(opts EngineOpts) *Engine {
 			metrics.maxConcurrentQueries,
 			metrics.queryLogEnabled,
 			metrics.queryLogFailures,
-			metrics.queryQueueTime,
-			metrics.queryPrepareTime,
-			metrics.queryInnerEval,
-			metrics.queryResultSort,
+			queryResultSummary,
 		)
 	}
 
 	return &Engine{
-		timeout:            opts.Timeout,
-		logger:             opts.Logger,
-		metrics:            metrics,
-		maxSamplesPerQuery: opts.MaxSamples,
-		activeQueryTracker: opts.ActiveQueryTracker,
-		lookbackDelta:      opts.LookbackDelta,
+		timeout:                  opts.Timeout,
+		logger:                   opts.Logger,
+		metrics:                  metrics,
+		maxSamplesPerQuery:       opts.MaxSamples,
+		activeQueryTracker:       opts.ActiveQueryTracker,
+		lookbackDelta:            opts.LookbackDelta,
+		noStepSubqueryIntervalFn: opts.NoStepSubqueryIntervalFn,
 	}
 }
 
@@ -446,7 +414,7 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws storag
 					f = append(f, "spanID", spanCtx.SpanID())
 				}
 			}
-			if origin := ctx.Value(queryOrigin{}); origin != nil {
+			if origin := ctx.Value(QueryOrigin{}); origin != nil {
 				for k, v := range origin.(map[string]interface{}) {
 					f = append(f, k, v)
 				}
@@ -525,14 +493,14 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 	if s.Start == s.End && s.Interval == 0 {
 		start := timeMilliseconds(s.Start)
 		evaluator := &evaluator{
-			startTimestamp:      start,
-			endTimestamp:        start,
-			interval:            1,
-			ctx:                 ctxInnerEval,
-			maxSamples:          ng.maxSamplesPerQuery,
-			defaultEvalInterval: GetDefaultEvaluationInterval(),
-			logger:              ng.logger,
-			lookbackDelta:       ng.lookbackDelta,
+			startTimestamp:           start,
+			endTimestamp:             start,
+			interval:                 1,
+			ctx:                      ctxInnerEval,
+			maxSamples:               ng.maxSamplesPerQuery,
+			logger:                   ng.logger,
+			lookbackDelta:            ng.lookbackDelta,
+			noStepSubqueryIntervalFn: ng.noStepSubqueryIntervalFn,
 		}
 
 		val, warnings, err := evaluator.Eval(s.Expr)
@@ -575,14 +543,14 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 
 	// Range evaluation.
 	evaluator := &evaluator{
-		startTimestamp:      timeMilliseconds(s.Start),
-		endTimestamp:        timeMilliseconds(s.End),
-		interval:            durationMilliseconds(s.Interval),
-		ctx:                 ctxInnerEval,
-		maxSamples:          ng.maxSamplesPerQuery,
-		defaultEvalInterval: GetDefaultEvaluationInterval(),
-		logger:              ng.logger,
-		lookbackDelta:       ng.lookbackDelta,
+		startTimestamp:           timeMilliseconds(s.Start),
+		endTimestamp:             timeMilliseconds(s.End),
+		interval:                 durationMilliseconds(s.Interval),
+		ctx:                      ctxInnerEval,
+		maxSamples:               ng.maxSamplesPerQuery,
+		logger:                   ng.logger,
+		lookbackDelta:            ng.lookbackDelta,
+		noStepSubqueryIntervalFn: ng.noStepSubqueryIntervalFn,
 	}
 	val, warnings, err := evaluator.Eval(s.Expr)
 	if err != nil {
@@ -608,35 +576,39 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 	return mat, warnings, nil
 }
 
-// cumulativeSubqueryOffset returns the sum of range and offset of all subqueries in the path.
-func (ng *Engine) cumulativeSubqueryOffset(path []parser.Node) time.Duration {
-	var subqOffset time.Duration
+// subqueryOffsetRange returns the sum of offsets and ranges of all subqueries in the path.
+func (ng *Engine) subqueryOffsetRange(path []parser.Node) (time.Duration, time.Duration) {
+	var (
+		subqOffset time.Duration
+		subqRange  time.Duration
+	)
 	for _, node := range path {
 		switch n := node.(type) {
 		case *parser.SubqueryExpr:
-			subqOffset += n.Range + n.Offset
+			subqOffset += n.Offset
+			subqRange += n.Range
 		}
 	}
-	return subqOffset
+	return subqOffset, subqRange
 }
 
 func (ng *Engine) findMinTime(s *parser.EvalStmt) time.Time {
 	var maxOffset time.Duration
 	parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
-		subqOffset := ng.cumulativeSubqueryOffset(path)
+		subqOffset, subqRange := ng.subqueryOffsetRange(path)
 		switch n := node.(type) {
 		case *parser.VectorSelector:
-			if maxOffset < ng.lookbackDelta+subqOffset {
-				maxOffset = ng.lookbackDelta + subqOffset
+			if maxOffset < ng.lookbackDelta+subqOffset+subqRange {
+				maxOffset = ng.lookbackDelta + subqOffset + subqRange
 			}
-			if n.Offset+ng.lookbackDelta+subqOffset > maxOffset {
-				maxOffset = n.Offset + ng.lookbackDelta + subqOffset
+			if n.Offset+ng.lookbackDelta+subqOffset+subqRange > maxOffset {
+				maxOffset = n.Offset + ng.lookbackDelta + subqOffset + subqRange
 			}
 		case *parser.MatrixSelector:
-			if maxOffset < n.Range+subqOffset {
-				maxOffset = n.Range + subqOffset
+			if maxOffset < n.Range+subqOffset+subqRange {
+				maxOffset = n.Range + subqOffset + subqRange
 			}
-			if m := n.VectorSelector.(*parser.VectorSelector).Offset + n.Range + subqOffset; m > maxOffset {
+			if m := n.VectorSelector.(*parser.VectorSelector).Offset + n.Range + subqOffset + subqRange; m > maxOffset {
 				maxOffset = m
 			}
 		}
@@ -657,16 +629,17 @@ func (ng *Engine) populateSeries(querier storage.Querier, s *parser.EvalStmt) {
 			hints := &storage.SelectHints{
 				Start: timestamp.FromTime(s.Start),
 				End:   timestamp.FromTime(s.End),
-				Step:  durationToInt64Millis(s.Interval),
+				Step:  durationMilliseconds(s.Interval),
 			}
 
 			// We need to make sure we select the timerange selected by the subquery.
-			// TODO(gouthamve): cumulativeSubqueryOffset gives the sum of range and the offset
-			// we can optimise it by separating out the range and offsets, and subtracting the offsets
-			// from end also.
-			subqOffset := ng.cumulativeSubqueryOffset(path)
+			// The subqueryOffsetRange function gives the sum of range and the
+			// sum of offset.
+			// TODO(bwplotka): Add support for better hints when subquerying. See: https://github.com/prometheus/prometheus/issues/7630.
+			subqOffset, subqRange := ng.subqueryOffsetRange(path)
 			offsetMilliseconds := durationMilliseconds(subqOffset)
-			hints.Start = hints.Start - offsetMilliseconds
+			hints.Start = hints.Start - offsetMilliseconds - durationMilliseconds(subqRange)
+			hints.End = hints.End - offsetMilliseconds
 
 			if evalRange == 0 {
 				hints.Start = hints.Start - durationMilliseconds(ng.lookbackDelta)
@@ -769,11 +742,11 @@ type evaluator struct {
 	endTimestamp   int64 // End time in milliseconds.
 	interval       int64 // Interval in milliseconds.
 
-	maxSamples          int
-	currentSamples      int
-	defaultEvalInterval int64
-	logger              log.Logger
-	lookbackDelta       time.Duration
+	maxSamples               int
+	currentSamples           int
+	logger                   log.Logger
+	lookbackDelta            time.Duration
+	noStepSubqueryIntervalFn func(rangeMillis int64) int64
 }
 
 // errorf causes a panic with the input formatted into an error.
@@ -1333,21 +1306,22 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		return ev.matrixSelector(e)
 
 	case *parser.SubqueryExpr:
-		offsetMillis := durationToInt64Millis(e.Offset)
-		rangeMillis := durationToInt64Millis(e.Range)
+		offsetMillis := durationMilliseconds(e.Offset)
+		rangeMillis := durationMilliseconds(e.Range)
 		newEv := &evaluator{
-			endTimestamp:        ev.endTimestamp - offsetMillis,
-			interval:            ev.defaultEvalInterval,
-			ctx:                 ev.ctx,
-			currentSamples:      ev.currentSamples,
-			maxSamples:          ev.maxSamples,
-			defaultEvalInterval: ev.defaultEvalInterval,
-			logger:              ev.logger,
-			lookbackDelta:       ev.lookbackDelta,
+			endTimestamp:             ev.endTimestamp - offsetMillis,
+			ctx:                      ev.ctx,
+			currentSamples:           ev.currentSamples,
+			maxSamples:               ev.maxSamples,
+			logger:                   ev.logger,
+			lookbackDelta:            ev.lookbackDelta,
+			noStepSubqueryIntervalFn: ev.noStepSubqueryIntervalFn,
 		}
 
 		if e.Step != 0 {
-			newEv.interval = durationToInt64Millis(e.Step)
+			newEv.interval = durationMilliseconds(e.Step)
+		} else {
+			newEv.interval = ev.noStepSubqueryIntervalFn(rangeMillis)
 		}
 
 		// Start with the first timestamp after (ev.startTimestamp - offset - range)
@@ -1365,10 +1339,6 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 	}
 
 	panic(errors.Errorf("unhandled expression of type: %T", expr))
-}
-
-func durationToInt64Millis(d time.Duration) int64 {
-	return int64(d / time.Millisecond)
 }
 
 // vectorSelector evaluates a *parser.VectorSelector expression.
@@ -2005,7 +1975,25 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 
 		case parser.AVG:
 			group.groupCount++
-			group.mean += (s.V - group.mean) / float64(group.groupCount)
+			if math.IsInf(group.mean, 0) {
+				if math.IsInf(s.V, 0) && (group.mean > 0) == (s.V > 0) {
+					// The `mean` and `s.V` values are `Inf` of the same sign.  They
+					// can't be subtracted, but the value of `mean` is correct
+					// already.
+					break
+				}
+				if !math.IsInf(s.V, 0) && !math.IsNaN(s.V) {
+					// At this stage, the mean is an infinite. If the added
+					// value is neither an Inf or a Nan, we can keep that mean
+					// value.
+					// This is required because our calculation below removes
+					// the mean value, which would look like Inf += x - Inf and
+					// end up as a NaN.
+					break
+				}
+			}
+			// Divide each side of the `-` by `group.groupCount` to avoid float64 overflows.
+			group.mean += s.V/float64(group.groupCount) - group.mean/float64(group.groupCount)
 
 		case parser.GROUP:
 			// Do nothing. Required to avoid the panic in `default:` below.
@@ -2132,7 +2120,7 @@ func shouldDropMetricName(op parser.ItemType) bool {
 
 // NewOriginContext returns a new context with data about the origin attached.
 func NewOriginContext(ctx context.Context, data map[string]interface{}) context.Context {
-	return context.WithValue(ctx, queryOrigin{}, data)
+	return context.WithValue(ctx, QueryOrigin{}, data)
 }
 
 func formatDate(t time.Time) string {

@@ -42,6 +42,11 @@ func TestNewFastRegexMatcher(t *testing.T) {
 		{regex: ".*foo", value: "\nfoo", expected: false},
 		{regex: "foo.*", value: "foo\n", expected: false},
 		{regex: "foo\n.*", value: "foo\n", expected: true},
+		{regex: ".*foo.*", value: "foo", expected: true},
+		{regex: ".*foo.*", value: "foo bar", expected: true},
+		{regex: ".*foo.*", value: "hello foo world", expected: true},
+		{regex: ".*foo.*", value: "hello foo\n world", expected: false},
+		{regex: ".*foo\n.*", value: "hello foo\n world", expected: true},
 		{regex: ".*", value: "foo", expected: true},
 		{regex: "", value: "foo", expected: false},
 		{regex: "", value: "", expected: true},
@@ -56,24 +61,30 @@ func TestNewFastRegexMatcher(t *testing.T) {
 
 func TestOptimizeConcatRegex(t *testing.T) {
 	cases := []struct {
-		regex  string
-		prefix string
-		suffix string
+		regex    string
+		prefix   string
+		suffix   string
+		contains string
 	}{
-		{regex: "foo(hello|bar)", prefix: "foo", suffix: ""},
-		{regex: "foo(hello|bar)world", prefix: "foo", suffix: "world"},
-		{regex: "foo.*", prefix: "foo", suffix: ""},
-		{regex: "foo.*hello.*bar", prefix: "foo", suffix: "bar"},
-		{regex: ".*foo", prefix: "", suffix: "foo"},
-		{regex: "^.*foo$", prefix: "", suffix: "foo"},
+		{regex: "foo(hello|bar)", prefix: "foo", suffix: "", contains: ""},
+		{regex: "foo(hello|bar)world", prefix: "foo", suffix: "world", contains: ""},
+		{regex: "foo.*", prefix: "foo", suffix: "", contains: ""},
+		{regex: "foo.*hello.*bar", prefix: "foo", suffix: "bar", contains: "hello"},
+		{regex: ".*foo", prefix: "", suffix: "foo", contains: ""},
+		{regex: "^.*foo$", prefix: "", suffix: "foo", contains: ""},
+		{regex: ".*foo.*", prefix: "", suffix: "", contains: "foo"},
+		{regex: ".*foo.*bar.*", prefix: "", suffix: "", contains: "foo"},
+		{regex: ".*(foo|bar).*", prefix: "", suffix: "", contains: ""},
+		{regex: ".*[abc].*", prefix: "", suffix: "", contains: ""},
 	}
 
 	for _, c := range cases {
 		parsed, err := syntax.Parse(c.regex, syntax.Perl)
 		testutil.Ok(t, err)
 
-		prefix, suffix := optimizeConcatRegex(parsed)
+		prefix, suffix, contains := optimizeConcatRegex(parsed)
 		testutil.Equals(t, c.prefix, prefix)
 		testutil.Equals(t, c.suffix, suffix)
+		testutil.Equals(t, c.contains, contains)
 	}
 }
