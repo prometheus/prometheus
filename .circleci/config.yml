@@ -23,13 +23,15 @@ jobs:
 
     steps:
     - prometheus/setup_environment
-    - go get -u golang.org/x/tools/cmd/goyacc
     - go/load-cache:
         key: v1
     - restore_cache:
         keys:
         - v3-npm-deps-{{ checksum "web/ui/react-app/yarn.lock" }}
         - v3-npm-deps-
+    - run:
+        name: Installing goyacc
+        command: go get -u golang.org/x/tools/cmd/goyacc
     - run:
         command: make
         environment:
