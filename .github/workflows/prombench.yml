@@ -3,7 +3,7 @@ on:
     types: [prombench_start,prombench_restart,prombench_stop]
 name: Prombench Workflow
 env:
-  AUTH_FILE: ${{ secrets.TEST_INFRA_GKE_AUTH }}
+  AUTH_FILE: ${{ secrets.TEST_INFRA_PROVIDER_AUTH }}
   CLUSTER_NAME: test-infra
   DOMAIN_NAME: prombench.prometheus.io
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -11,8 +11,9 @@ env:
   GITHUB_REPO: prometheus
   GITHUB_STATUS_TARGET_URL: https://github.com/${{github.repository}}/actions/runs/${{github.run_id}}
   LAST_COMMIT_SHA: ${{ github.event.client_payload.LAST_COMMIT_SHA }}
-  PROJECT_ID: macro-mile-203600
+  GKE_PROJECT_ID: macro-mile-203600
   PR_NUMBER: ${{ github.event.client_payload.PR_NUMBER }}
+  PROVIDER: gke
   RELEASE: ${{ github.event.client_payload.RELEASE }}
   ZONE: europe-west3-a
 jobs:
