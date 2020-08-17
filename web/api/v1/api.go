@@ -377,6 +377,11 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 		qs = stats.NewQueryStats(qry.Stats())
 	}
 
+	res, err = applyModifiers(r, res)
+	if err != nil {
+		return apiFuncResult{nil, returnAPIError(err), res.Warnings, qry.Close}
+	}
+
 	return apiFuncResult{&queryData{
 		ResultType: res.Value.Type(),
 		Result:     res.Value,
@@ -455,6 +460,11 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 	var qs *stats.QueryStats
 	if r.FormValue("stats") != "" {
 		qs = stats.NewQueryStats(qry.Stats())
+	}
+
+	res, err = applyModifiers(r, res)
+	if err != nil {
+		return apiFuncResult{nil, returnAPIError(err), res.Warnings, qry.Close}
 	}
 
 	return apiFuncResult{&queryData{
