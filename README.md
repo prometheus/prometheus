@@ -44,8 +44,6 @@ is the recommended way of installing Prometheus.
 See the [Installing](https://prometheus.io/docs/introduction/install/)
 chapter in the documentation for all the details.
 
-Debian packages [are available](https://packages.debian.org/sid/net/prometheus).
-
 ### Docker images
 
 Docker images are available on [Quay.io](https://quay.io/repository/prometheus/prometheus) or [Docker Hub](https://hub.docker.com/r/prom/prometheus/).
