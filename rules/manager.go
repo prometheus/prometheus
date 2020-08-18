@@ -970,6 +970,8 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 			g.markStale = true
 			g.stop()
 			if m := g.metrics; m != nil {
+				m.iterationsMissed.DeleteLabelValues(n)
+				m.iterationsScheduled.DeleteLabelValues(n)
 				m.evalTotal.DeleteLabelValues(n)
 				m.evalFailures.DeleteLabelValues(n)
 				m.groupInterval.DeleteLabelValues(n)
