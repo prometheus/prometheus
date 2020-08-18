@@ -17,12 +17,16 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
+	"github.com/pkg/errors"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql"
 )
 
 const (
 	limitParam = "limit"
+	sortParam  = "sort"
 )
 
 func validateModifiers(r *http.Request) error {
@@ -32,26 +36,47 @@ func validateModifiers(r *http.Request) error {
 			return fmt.Errorf("limit only takes 1 argument, got %d", l)
 		}
 	}
+	if p, ok := params[sortParam]; ok {
+		for _, s := range p {
+			// Remove heading - which means deschending order.
+			s := strings.TrimLeft(s, "-")
+			if s == "1" {
+				// Sort by value.
+				continue
+			}
+			if !model.LabelNameRE.MatchString(s) {
+				return errors.Errorf("invalid label name: %q", s)
+			}
+		}
+	}
 	return nil
 }
 
 func applyModifiers(r *http.Request, res *promql.Result) (*promql.Result, error) {
+	var err error
 	params := r.URL.Query()
 	if p, ok := params[limitParam]; ok {
-		outSize, err := strconv.ParseUint(p[0], 10, 64)
+		res, err = applyLimit(p[0], res)
 		if err != nil {
 			return nil, err
 		}
-		switch result := res.Value.(type) {
-		case promql.Matrix:
-			res.Value = result[:outSize]
-			return res, nil
-		case promql.Vector:
-			res.Value = result[:outSize]
-			return res, nil
-		default:
-			panic("unknown return type")
-		}
 	}
 	return res, nil
+}
+
+func applyLimit(l string, res *promql.Result) (*promql.Result, error) {
+	outSize, err := strconv.ParseUint(l, 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	switch result := res.Value.(type) {
+	case promql.Matrix:
+		res.Value = result[:outSize]
+		return res, nil
+	case promql.Vector:
+		res.Value = result[:outSize]
+		return res, nil
+	default:
+		panic("unknown return type")
+	}
 }
