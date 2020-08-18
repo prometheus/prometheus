@@ -35,6 +35,10 @@ func validateModifiers(r *http.Request) error {
 		if l := len(p); l != 1 {
 			return fmt.Errorf("limit only takes 1 argument, got %d", l)
 		}
+		_, err := strconv.ParseUint(p[0], 10, 64)
+		if err != nil {
+			return err
+		}
 	}
 	if p, ok := params[sortParam]; ok {
 		for _, s := range p {
@@ -67,7 +71,9 @@ func applyModifiers(r *http.Request, res *promql.Result) (*promql.Result, error)
 func applyLimit(l string, res *promql.Result) (*promql.Result, error) {
 	outSize, err := strconv.ParseUint(l, 10, 64)
 	if err != nil {
-		return nil, err
+		// This should never happen as the validate function should have been
+		// called first.
+		panic(err)
 	}
 	switch result := res.Value.(type) {
 	case promql.Matrix:
