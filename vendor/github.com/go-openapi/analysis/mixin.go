@@ -332,6 +332,9 @@ func mergeSwaggerProps(primary *spec.Swagger, m *spec.Swagger) []string {
 		if primary.Info.Contact == nil {
 			primary.Info.Contact = m.Info.Contact
 		} else if m.Info.Contact != nil {
+			var csk []string
+			primary.Info.Contact.Extensions, csk = mergeExtensions(primary.Info.Contact.Extensions, m.Info.Contact.Extensions)
+			skipped = append(skipped, csk...)
 			if primary.Info.Contact.Name == "" {
 				primary.Info.Contact.Name = m.Info.Contact.Name
 			}
@@ -346,6 +349,9 @@ func mergeSwaggerProps(primary *spec.Swagger, m *spec.Swagger) []string {
 		if primary.Info.License == nil {
 			primary.Info.License = m.Info.License
 		} else if m.Info.License != nil {
+			var lsk []string
+			primary.Info.License.Extensions, lsk = mergeExtensions(primary.Info.License.Extensions, m.Info.License.Extensions)
+			skipped = append(skipped, lsk...)
 			if primary.Info.License.Name == "" {
 				primary.Info.License.Name = m.Info.License.Name
 			}

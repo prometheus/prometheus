@@ -260,15 +260,38 @@ eval instant at 50m {job=~".+-server", job!~"api-.+"}
 eval instant at 50m absent(nonexistent)
 	{} 1
 
-
 eval instant at 50m absent(nonexistent{job="testjob", instance="testinstance", method=~".x"})
 	{instance="testinstance", job="testjob"} 1
+
+eval instant at 50m absent(nonexistent{job="testjob",job="testjob2",foo="bar"})
+	{foo="bar"} 1
+
+eval instant at 50m absent(nonexistent{job="testjob",job="testjob2",job="three",foo="bar"})
+	{foo="bar"} 1
+
+eval instant at 50m absent(nonexistent{job="testjob",job=~"testjob2",foo="bar"})
+	{foo="bar"} 1
 
 eval instant at 50m absent(http_requests)
 
 eval instant at 50m absent(sum(http_requests))
 
 eval instant at 50m absent(sum(nonexistent{job="testjob", instance="testinstance"}))
+	{} 1
+
+eval instant at 50m absent(max(nonexistant))
+	{} 1
+
+eval instant at 50m absent(nonexistant > 1)
+	{} 1
+
+eval instant at 50m absent(a + b)
+	{} 1
+
+eval instant at 50m absent(a and b)
+	{} 1
+
+eval instant at 50m absent(rate(nonexistant[5m]))
 	{} 1
 
 eval instant at 50m http_requests{group="production",job="api-server"} offset 5m

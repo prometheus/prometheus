@@ -14,13 +14,15 @@
 package kubernetes
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/discovery/targetgroup"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
 func makeMultiPortService() *v1.Service {
@@ -101,9 +103,9 @@ func TestServiceDiscoveryAdd(t *testing.T) {
 		discovery: n,
 		afterStart: func() {
 			obj := makeService()
-			c.CoreV1().Services(obj.Namespace).Create(obj)
+			c.CoreV1().Services(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
 			obj = makeExternalService()
-			c.CoreV1().Services(obj.Namespace).Create(obj)
+			c.CoreV1().Services(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
 		},
 		expectedMaxItems: 2,
 		expectedRes: map[string]*targetgroup.Group{
@@ -112,6 +114,7 @@ func TestServiceDiscoveryAdd(t *testing.T) {
 					{
 						"__meta_kubernetes_service_port_protocol": "TCP",
 						"__address__":                          "testservice.default.svc:30900",
+						"__meta_kubernetes_service_type":       "ClusterIP",
 						"__meta_kubernetes_service_cluster_ip": "10.0.0.1",
 						"__meta_kubernetes_service_port_name":  "testport",
 					},
@@ -127,6 +130,7 @@ func TestServiceDiscoveryAdd(t *testing.T) {
 					{
 						"__meta_kubernetes_service_port_protocol": "TCP",
 						"__address__":                             "testservice-external.default.svc:31900",
+						"__meta_kubernetes_service_type":          "ExternalName",
 						"__meta_kubernetes_service_port_name":     "testport",
 						"__meta_kubernetes_service_external_name": "FooExternalName",
 					},
@@ -148,7 +152,7 @@ func TestServiceDiscoveryDelete(t *testing.T) {
 		discovery: n,
 		afterStart: func() {
 			obj := makeService()
-			c.CoreV1().Services(obj.Namespace).Delete(obj.Name, &metav1.DeleteOptions{})
+			c.CoreV1().Services(obj.Namespace).Delete(context.Background(), obj.Name, metav1.DeleteOptions{})
 		},
 		expectedMaxItems: 2,
 		expectedRes: map[string]*targetgroup.Group{
@@ -166,7 +170,7 @@ func TestServiceDiscoveryUpdate(t *testing.T) {
 		discovery: n,
 		afterStart: func() {
 			obj := makeMultiPortService()
-			c.CoreV1().Services(obj.Namespace).Update(obj)
+			c.CoreV1().Services(obj.Namespace).Update(context.Background(), obj, metav1.UpdateOptions{})
 		},
 		expectedMaxItems: 2,
 		expectedRes: map[string]*targetgroup.Group{
@@ -175,12 +179,14 @@ func TestServiceDiscoveryUpdate(t *testing.T) {
 					{
 						"__meta_kubernetes_service_port_protocol": "TCP",
 						"__address__":                          "testservice.default.svc:30900",
+						"__meta_kubernetes_service_type":       "ClusterIP",
 						"__meta_kubernetes_service_cluster_ip": "10.0.0.1",
 						"__meta_kubernetes_service_port_name":  "testport0",
 					},
 					{
 						"__meta_kubernetes_service_port_protocol": "UDP",
 						"__address__":                          "testservice.default.svc:30901",
+						"__meta_kubernetes_service_type":       "ClusterIP",
 						"__meta_kubernetes_service_cluster_ip": "10.0.0.1",
 						"__meta_kubernetes_service_port_name":  "testport1",
 					},
@@ -208,7 +214,7 @@ func TestServiceDiscoveryNamespaces(t *testing.T) {
 			for _, ns := range []string{"ns1", "ns2"} {
 				obj := makeService()
 				obj.Namespace = ns
-				c.CoreV1().Services(obj.Namespace).Create(obj)
+				c.CoreV1().Services(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
 			}
 		},
 		expectedMaxItems: 2,
@@ -218,6 +224,7 @@ func TestServiceDiscoveryNamespaces(t *testing.T) {
 					{
 						"__meta_kubernetes_service_port_protocol": "TCP",
 						"__address__":                          "testservice.ns1.svc:30900",
+						"__meta_kubernetes_service_type":       "ClusterIP",
 						"__meta_kubernetes_service_cluster_ip": "10.0.0.1",
 						"__meta_kubernetes_service_port_name":  "testport",
 					},
@@ -233,6 +240,7 @@ func TestServiceDiscoveryNamespaces(t *testing.T) {
 					{
 						"__meta_kubernetes_service_port_protocol": "TCP",
 						"__address__":                          "testservice.ns2.svc:30900",
+						"__meta_kubernetes_service_type":       "ClusterIP",
 						"__meta_kubernetes_service_cluster_ip": "10.0.0.1",
 						"__meta_kubernetes_service_port_name":  "testport",
 					},

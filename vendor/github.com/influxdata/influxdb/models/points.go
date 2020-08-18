@@ -147,7 +147,7 @@ type Point interface {
 	// the result, potentially reducing string allocations.
 	AppendString(buf []byte) []byte
 
-	// FieldIterator retuns a FieldIterator that can be used to traverse the
+	// FieldIterator returns a FieldIterator that can be used to traverse the
 	// fields of a point without constructing the in-memory map.
 	FieldIterator() FieldIterator
 }
@@ -2239,7 +2239,7 @@ func DeepCopyTags(a Tags) Tags {
 // values.
 type Fields map[string]interface{}
 
-// FieldIterator retuns a FieldIterator that can be used to traverse the
+// FieldIterator returns a FieldIterator that can be used to traverse the
 // fields of a point without constructing the in-memory map.
 func (p *point) FieldIterator() FieldIterator {
 	p.Reset()
@@ -2360,7 +2360,7 @@ func (p *point) Reset() {
 }
 
 // MarshalBinary encodes all the fields to their proper type and returns the binary
-// represenation
+// representation
 // NOTE: uint64 is specifically not supported due to potential overflow when we decode
 // again later to an int64
 // NOTE2: uint is accepted, and may be 64 bits, and is for some reason accepted...

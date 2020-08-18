@@ -41,7 +41,7 @@ type reader interface {
 	Offset() int64
 }
 
-type record struct {
+type rec struct {
 	t recType
 	b []byte
 }
@@ -59,13 +59,13 @@ var readerConstructors = map[string]func(io.Reader) reader{
 
 var data = make([]byte, 100000)
 var testReaderCases = []struct {
-	t    []record
+	t    []rec
 	exp  [][]byte
 	fail bool
 }{
 	// Sequence of valid records.
 	{
-		t: []record{
+		t: []rec{
 			{recFull, data[0:200]},
 			{recFirst, data[200:300]},
 			{recLast, data[300:400]},
@@ -89,7 +89,7 @@ var testReaderCases = []struct {
 	},
 	// Exactly at the limit of one page minus the header size
 	{
-		t: []record{
+		t: []rec{
 			{recFull, data[0 : pageSize-recordHeaderSize]},
 		},
 		exp: [][]byte{
@@ -99,7 +99,7 @@ var testReaderCases = []struct {
 	// More than a full page, this exceeds our buffer and can never happen
 	// when written by the WAL.
 	{
-		t: []record{
+		t: []rec{
 			{recFull, data[0 : pageSize+1]},
 		},
 		fail: true,
@@ -108,7 +108,7 @@ var testReaderCases = []struct {
 	// NB currently the non-live reader succeeds on this. I think this is a bug.
 	// but we've seen it in production.
 	{
-		t: []record{
+		t: []rec{
 			{recFull, data[:pageSize/2]},
 			{recFull, data[:pageSize/2]},
 		},
@@ -119,22 +119,22 @@ var testReaderCases = []struct {
 	},
 	// Invalid orders of record types.
 	{
-		t:    []record{{recMiddle, data[:200]}},
+		t:    []rec{{recMiddle, data[:200]}},
 		fail: true,
 	},
 	{
-		t:    []record{{recLast, data[:200]}},
+		t:    []rec{{recLast, data[:200]}},
 		fail: true,
 	},
 	{
-		t: []record{
+		t: []rec{
 			{recFirst, data[:200]},
 			{recFull, data[200:400]},
 		},
 		fail: true,
 	},
 	{
-		t: []record{
+		t: []rec{
 			{recFirst, data[:100]},
 			{recMiddle, data[100:200]},
 			{recFull, data[200:400]},
@@ -143,7 +143,7 @@ var testReaderCases = []struct {
 	},
 	// Non-zero data after page termination.
 	{
-		t: []record{
+		t: []rec{
 			{recFull, data[:100]},
 			{recPageTerm, append(make([]byte, pageSize-recordHeaderSize-102), 1)},
 		},

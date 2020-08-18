@@ -3,6 +3,7 @@ package session
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -47,10 +48,10 @@ func resolveCredentials(cfg *aws.Config,
 }
 
 // WebIdentityEmptyRoleARNErr will occur if 'AWS_WEB_IDENTITY_TOKEN_FILE' was set but
-// 'AWS_IAM_ROLE_ARN' was not set.
+// 'AWS_ROLE_ARN' was not set.
 var WebIdentityEmptyRoleARNErr = awserr.New(stscreds.ErrCodeWebIdentity, "role ARN is not set", nil)
 
-// WebIdentityEmptyTokenFilePathErr will occur if 'AWS_IAM_ROLE_ARN' was set but
+// WebIdentityEmptyTokenFilePathErr will occur if 'AWS_ROLE_ARN' was set but
 // 'AWS_WEB_IDENTITY_TOKEN_FILE' was not set.
 var WebIdentityEmptyTokenFilePathErr = awserr.New(stscreds.ErrCodeWebIdentity, "token file path is not set", nil)
 
@@ -206,7 +207,14 @@ func credsFromAssumeRole(cfg aws.Config,
 		sharedCfg.RoleARN,
 		func(opt *stscreds.AssumeRoleProvider) {
 			opt.RoleSessionName = sharedCfg.RoleSessionName
-			opt.Duration = sessOpts.AssumeRoleDuration
+
+			if sessOpts.AssumeRoleDuration == 0 &&
+				sharedCfg.AssumeRoleDuration != nil &&
+				*sharedCfg.AssumeRoleDuration/time.Minute > 15 {
+				opt.Duration = *sharedCfg.AssumeRoleDuration
+			} else if sessOpts.AssumeRoleDuration != 0 {
+				opt.Duration = sessOpts.AssumeRoleDuration
+			}
 
 			// Assume role with external ID
 			if len(sharedCfg.ExternalID) > 0 {

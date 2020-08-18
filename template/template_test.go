@@ -100,6 +100,16 @@ func TestTemplateExpansion(t *testing.T) {
 			output: "a",
 		},
 		{
+			// Get label "__value__" from query.
+			text: "{{ query \"metric{__value__='a'}\" | first | strvalue }}",
+			queryResult: promql.Vector{
+				{
+					Metric: labels.FromStrings(labels.MetricName, "metric", "__value__", "a"),
+					Point:  promql.Point{T: 0, V: 11},
+				}},
+			output: "a",
+		},
+		{
 			// Missing label is empty when using label function.
 			text: "{{ query \"metric{instance='a'}\" | first | label \"foo\" }}",
 			queryResult: promql.Vector{
@@ -134,11 +144,11 @@ func TestTemplateExpansion(t *testing.T) {
 			text: "{{ range query \"metric\" | sortByLabel \"instance\" }}{{.Labels.instance}}:{{.Value}}: {{end}}",
 			queryResult: promql.Vector{
 				{
-					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
-					Point:  promql.Point{T: 0, V: 11},
-				}, {
 					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "b"),
 					Point:  promql.Point{T: 0, V: 21},
+				}, {
+					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
+					Point:  promql.Point{T: 0, V: 11},
 				}},
 			output: "a:11: b:21: ",
 		},

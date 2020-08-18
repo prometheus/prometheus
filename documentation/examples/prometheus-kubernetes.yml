@@ -70,6 +70,13 @@ scrape_configs:
   # <kubernetes_sd_config>.
   tls_config:
     ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    # If your node certificates are self-signed or use a different CA to the
+    # master CA, then disable certificate verification below. Note that
+    # certificate verification is an integral part of a secure infrastructure
+    # so this should only be disabled in a controlled environment. You can
+    # disable certificate verification by uncommenting the line below.
+    #
+    # insecure_skip_verify: true
   bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
 
   kubernetes_sd_configs:
@@ -78,12 +85,6 @@ scrape_configs:
   relabel_configs:
   - action: labelmap
     regex: __meta_kubernetes_node_label_(.+)
-  - target_label: __address__
-    replacement: kubernetes.default.svc:443
-  - source_labels: [__meta_kubernetes_node_name]
-    regex: (.+)
-    target_label: __metrics_path__
-    replacement: /api/v1/nodes/${1}/proxy/metrics
 
 # Scrape config for Kubelet cAdvisor.
 #
@@ -93,9 +94,9 @@ scrape_configs:
 # retrieve those metrics.
 #
 # In Kubernetes 1.7.0-1.7.2, these metrics are only exposed on the cAdvisor
-# HTTP endpoint; use "replacement: /api/v1/nodes/${1}:4194/proxy/metrics"
-# in that case (and ensure cAdvisor's HTTP server hasn't been disabled with
-# the --cadvisor-port=0 Kubelet flag).
+# HTTP endpoint; use the "/metrics" endpoint on the 4194 port of nodes. In
+# that case (and ensure cAdvisor's HTTP server hasn't been disabled with the
+# --cadvisor-port=0 Kubelet flag).
 #
 # This job is not necessary and should be removed in Kubernetes 1.6 and
 # earlier versions, or it will cause the metrics to be scraped twice.
@@ -105,6 +106,12 @@ scrape_configs:
   # `http`.
   scheme: https
 
+  # Starting Kubernetes 1.7.3 the cAdvisor metrics are under /metrics/cadvisor.
+  # Kubernetes CIS Benchmark recommends against enabling the insecure HTTP
+  # servers of Kubernetes, therefore the cAdvisor metrics on the secure handler
+  # are used.
+  metrics_path: /metrics/cadvisor
+
   # This TLS & bearer token file config is used to connect to the actual scrape
   # endpoints for cluster components. This is separate to discovery auth
   # configuration because discovery & scraping are two separate concerns in
@@ -113,6 +120,13 @@ scrape_configs:
   # <kubernetes_sd_config>.
   tls_config:
     ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    # If your node certificates are self-signed or use a different CA to the
+    # master CA, then disable certificate verification below. Note that
+    # certificate verification is an integral part of a secure infrastructure
+    # so this should only be disabled in a controlled environment. You can
+    # disable certificate verification by uncommenting the line below.
+    #
+    # insecure_skip_verify: true
   bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
 
   kubernetes_sd_configs:
@@ -121,12 +135,6 @@ scrape_configs:
   relabel_configs:
   - action: labelmap
     regex: __meta_kubernetes_node_label_(.+)
-  - target_label: __address__
-    replacement: kubernetes.default.svc:443
-  - source_labels: [__meta_kubernetes_node_name]
-    regex: (.+)
-    target_label: __metrics_path__
-    replacement: /api/v1/nodes/${1}/proxy/metrics/cadvisor
 
 # Example scrape config for service endpoints.
 #
@@ -264,8 +272,6 @@ scrape_configs:
   #
   # Example relabel to scrape only single, desired port for the pod
   # based on pod "example.io/scrape_port = <port>" annotation.
-  # Note that __address__ is modified here, so if pod containers' ports
-  # are declared, they all will be ignored.
   #  - source_labels: [__address__, __meta_kubernetes_pod_annotation_example_io_scrape_port]
   #    action: replace
   #    regex: ([^:]+)(?::\d+)?;(\d+)

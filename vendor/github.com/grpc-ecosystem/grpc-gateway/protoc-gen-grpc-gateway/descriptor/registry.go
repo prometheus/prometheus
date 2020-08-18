@@ -71,6 +71,21 @@ type Registry struct {
 	// allowColonFinalSegments determines whether colons are permitted
 	// in the final segment of a path.
 	allowColonFinalSegments bool
+
+	// useGoTemplate determines whether you want to use GO templates
+	// in your protofile comments
+	useGoTemplate bool
+
+	// enumsAsInts render enum as integer, as opposed to string
+	enumsAsInts bool
+
+	// disableDefaultErrors disables the generation of the default error types.
+	// This is useful for users who have defined custom error handling.
+	disableDefaultErrors bool
+
+	// simpleOperationIDs removes the service prefix from the generated
+	// operationIDs. This risks generating duplicate operationIDs.
+	simpleOperationIDs bool
 }
 
 type repeatedFieldSeparator struct {
@@ -260,6 +275,29 @@ func (r *Registry) AddExternalHTTPRule(qualifiedMethodName string, rule *annotat
 	r.externalHTTPRules[qualifiedMethodName] = append(r.externalHTTPRules[qualifiedMethodName], rule)
 }
 
+// UnboundExternalHTTPRules returns the list of External HTTPRules
+// which does not have a matching method in the registry
+func (r *Registry) UnboundExternalHTTPRules() []string {
+	allServiceMethods := make(map[string]struct{})
+	for _, f := range r.files {
+		for _, s := range f.GetService() {
+			svc := &Service{File: f, ServiceDescriptorProto: s}
+			for _, m := range s.GetMethod() {
+				method := &Method{Service: svc, MethodDescriptorProto: m}
+				allServiceMethods[method.FQMN()] = struct{}{}
+			}
+		}
+	}
+
+	var missingMethods []string
+	for httpRuleMethod := range r.externalHTTPRules {
+		if _, ok := allServiceMethods[httpRuleMethod]; !ok {
+			missingMethods = append(missingMethods, httpRuleMethod)
+		}
+	}
+	return missingMethods
+}
+
 // AddPkgMap adds a mapping from a .proto file to proto package name.
 func (r *Registry) AddPkgMap(file, protoPkg string) {
 	r.pkgMap[file] = protoPkg
@@ -444,6 +482,46 @@ func (r *Registry) GetUseFQNForSwaggerName() bool {
 // GetMergeFileName return the target merge swagger file name
 func (r *Registry) GetMergeFileName() string {
 	return r.mergeFileName
+}
+
+// SetUseGoTemplate sets useGoTemplate
+func (r *Registry) SetUseGoTemplate(use bool) {
+	r.useGoTemplate = use
+}
+
+// GetUseGoTemplate returns useGoTemplate
+func (r *Registry) GetUseGoTemplate() bool {
+	return r.useGoTemplate
+}
+
+// SetEnumsAsInts set enumsAsInts
+func (r *Registry) SetEnumsAsInts(enumsAsInts bool) {
+	r.enumsAsInts = enumsAsInts
+}
+
+// GetEnumsAsInts returns enumsAsInts
+func (r *Registry) GetEnumsAsInts() bool {
+	return r.enumsAsInts
+}
+
+// SetDisableDefaultErrors sets disableDefaultErrors
+func (r *Registry) SetDisableDefaultErrors(use bool) {
+	r.disableDefaultErrors = use
+}
+
+// GetDisableDefaultErrors returns disableDefaultErrors
+func (r *Registry) GetDisableDefaultErrors() bool {
+	return r.disableDefaultErrors
+}
+
+// SetSimpleOperationIDs sets simpleOperationIDs
+func (r *Registry) SetSimpleOperationIDs(use bool) {
+	r.simpleOperationIDs = use
+}
+
+// GetSimpleOperationIDs returns simpleOperationIDs
+func (r *Registry) GetSimpleOperationIDs() bool {
+	return r.simpleOperationIDs
 }
 
 // sanitizePackageName replaces unallowed character in package name

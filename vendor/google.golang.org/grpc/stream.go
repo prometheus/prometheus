@@ -31,7 +31,6 @@ import (
 	"google.golang.org/grpc/balancer"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/encoding"
-	"google.golang.org/grpc/grpclog"
 	"google.golang.org/grpc/internal/balancerload"
 	"google.golang.org/grpc/internal/binarylog"
 	"google.golang.org/grpc/internal/channelz"
@@ -327,13 +326,23 @@ func newClientStream(ctx context.Context, desc *StreamDesc, cc *ClientConn, meth
 	return cs, nil
 }
 
-func (cs *clientStream) newAttemptLocked(sh stats.Handler, trInfo *traceInfo) error {
-	cs.attempt = &csAttempt{
+// newAttemptLocked creates a new attempt with a transport.
+// If it succeeds, then it replaces clientStream's attempt with this new attempt.
+func (cs *clientStream) newAttemptLocked(sh stats.Handler, trInfo *traceInfo) (retErr error) {
+	newAttempt := &csAttempt{
 		cs:           cs,
 		dc:           cs.cc.dopts.dc,
 		statsHandler: sh,
 		trInfo:       trInfo,
 	}
+	defer func() {
+		if retErr != nil {
+			// This attempt is not set in the clientStream, so it's finish won't
+			// be called. Call it here for stats and trace in case they are not
+			// nil.
+			newAttempt.finish(retErr)
+		}
+	}()
 
 	if err := cs.ctx.Err(); err != nil {
 		return toRPCErr(err)
@@ -345,8 +354,9 @@ func (cs *clientStream) newAttemptLocked(sh stats.Handler, trInfo *traceInfo) er
 	if trInfo != nil {
 		trInfo.firstLine.SetRemoteAddr(t.RemoteAddr())
 	}
-	cs.attempt.t = t
-	cs.attempt.done = done
+	newAttempt.t = t
+	newAttempt.done = done
+	cs.attempt = newAttempt
 	return nil
 }
 
@@ -395,11 +405,18 @@ type clientStream struct {
 	serverHeaderBinlogged bool
 
 	mu                      sync.Mutex
-	firstAttempt            bool       // if true, transparent retry is valid
-	numRetries              int        // exclusive of transparent retry attempt(s)
-	numRetriesSincePushback int        // retries since pushback; to reset backoff
-	finished                bool       // TODO: replace with atomic cmpxchg or sync.Once?
-	attempt                 *csAttempt // the active client stream attempt
+	firstAttempt            bool // if true, transparent retry is valid
+	numRetries              int  // exclusive of transparent retry attempt(s)
+	numRetriesSincePushback int  // retries since pushback; to reset backoff
+	finished                bool // TODO: replace with atomic cmpxchg or sync.Once?
+	// attempt is the active client stream attempt.
+	// The only place where it is written is the newAttemptLocked method and this method never writes nil.
+	// So, attempt can be nil only inside newClientStream function when clientStream is first created.
+	// One of the first things done after clientStream's creation, is to call newAttemptLocked which either
+	// assigns a non nil value to the attempt or returns an error. If an error is returned from newAttemptLocked,
+	// then newClientStream calls finish on the clientStream and returns. So, finish method is the only
+	// place where we need to check if the attempt is nil.
+	attempt *csAttempt
 	// TODO(hedging): hedging will have multiple attempts simultaneously.
 	committed  bool                       // active attempt committed for retry?
 	buffer     []func(a *csAttempt) error // operations to replay on retry
@@ -457,8 +474,8 @@ func (cs *clientStream) shouldRetry(err error) error {
 	if cs.attempt.s != nil {
 		<-cs.attempt.s.Done()
 	}
-	if cs.firstAttempt && !cs.callInfo.failFast && (cs.attempt.s == nil || cs.attempt.s.Unprocessed()) {
-		// First attempt, wait-for-ready, stream unprocessed: transparently retry.
+	if cs.firstAttempt && (cs.attempt.s == nil || cs.attempt.s.Unprocessed()) {
+		// First attempt, stream unprocessed: transparently retry.
 		cs.firstAttempt = false
 		return nil
 	}
@@ -470,7 +487,7 @@ func (cs *clientStream) shouldRetry(err error) error {
 	pushback := 0
 	hasPushback := false
 	if cs.attempt.s != nil {
-		if to, toErr := cs.attempt.s.TrailersOnly(); toErr != nil || !to {
+		if !cs.attempt.s.TrailersOnly() {
 			return err
 		}
 
@@ -480,13 +497,13 @@ func (cs *clientStream) shouldRetry(err error) error {
 		if len(sps) == 1 {
 			var e error
 			if pushback, e = strconv.Atoi(sps[0]); e != nil || pushback < 0 {
-				grpclog.Infof("Server retry pushback specified to abort (%q).", sps[0])
+				channelz.Infof(cs.cc.channelzID, "Server retry pushback specified to abort (%q).", sps[0])
 				cs.retryThrottler.throttle() // This counts as a failure for throttling.
 				return err
 			}
 			hasPushback = true
 		} else if len(sps) > 1 {
-			grpclog.Warningf("Server retry pushback specified multiple values (%q); not retrying.", sps)
+			channelz.Warningf(cs.cc.channelzID, "Server retry pushback specified multiple values (%q); not retrying.", sps)
 			cs.retryThrottler.throttle() // This counts as a failure for throttling.
 			return err
 		}
@@ -805,11 +822,11 @@ func (cs *clientStream) finish(err error) {
 	}
 	if cs.attempt != nil {
 		cs.attempt.finish(err)
-	}
-	// after functions all rely upon having a stream.
-	if cs.attempt.s != nil {
-		for _, o := range cs.opts {
-			o.after(cs.callInfo)
+		// after functions all rely upon having a stream.
+		if cs.attempt.s != nil {
+			for _, o := range cs.opts {
+				o.after(cs.callInfo)
+			}
 		}
 	}
 	cs.cancel()

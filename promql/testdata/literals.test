@@ -46,6 +46,9 @@ eval instant at 50m 2.
 eval instant at 50m 1 / 0
 	+Inf
 
+eval instant at 50m ((1) / (0))
+	+Inf
+
 eval instant at 50m -1 / 0
 	-Inf
 

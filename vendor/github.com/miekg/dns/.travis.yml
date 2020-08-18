@@ -2,17 +2,15 @@ language: go
 sudo: false
 
 go:
-  - 1.10.x
-  - 1.11.x
-  - 1.12.x
+  - "1.12.x"
+  - "1.13.x"
   - tip
 
-before_install:
-  # don't use the miekg/dns when testing forks
-  - mkdir -p $GOPATH/src/github.com/miekg
-  - ln -s $TRAVIS_BUILD_DIR $GOPATH/src/github.com/miekg/ || true
+env:
+  - GO111MODULE=on
 
 script:
+  - go generate ./... && test `git ls-files --modified | wc -l` = 0
   - go test -race -v -bench=. -coverprofile=coverage.txt -covermode=atomic ./...
 
 after_success:

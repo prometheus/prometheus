@@ -27,23 +27,85 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 )
 
-// Appendable returns an Appender.
-type Appendable interface {
-	Appender() (storage.Appender, error)
+var targetMetadataCache = newMetadataMetricsCollector()
+
+// MetadataMetricsCollector is a Custom Collector for the metadata cache metrics.
+type MetadataMetricsCollector struct {
+	CacheEntries *prometheus.Desc
+	CacheBytes   *prometheus.Desc
+
+	scrapeManager *Manager
+}
+
+func newMetadataMetricsCollector() *MetadataMetricsCollector {
+	return &MetadataMetricsCollector{
+		CacheEntries: prometheus.NewDesc(
+			"prometheus_target_metadata_cache_entries",
+			"Total number of metric metadata entries in the cache",
+			[]string{"scrape_job"},
+			nil,
+		),
+		CacheBytes: prometheus.NewDesc(
+			"prometheus_target_metadata_cache_bytes",
+			"The number of bytes that are currently used for storing metric metadata in the cache",
+			[]string{"scrape_job"},
+			nil,
+		),
+	}
+}
+
+func (mc *MetadataMetricsCollector) registerManager(m *Manager) {
+	mc.scrapeManager = m
+}
+
+// Describe sends the metrics descriptions to the channel.
+func (mc *MetadataMetricsCollector) Describe(ch chan<- *prometheus.Desc) {
+	ch <- mc.CacheEntries
+	ch <- mc.CacheBytes
+}
+
+// Collect creates and sends the metrics for the metadata cache.
+func (mc *MetadataMetricsCollector) Collect(ch chan<- prometheus.Metric) {
+	if mc.scrapeManager == nil {
+		return
+	}
+
+	for tset, targets := range mc.scrapeManager.TargetsActive() {
+		var size, length int
+		for _, t := range targets {
+			size += t.MetadataSize()
+			length += t.MetadataLength()
+		}
+
+		ch <- prometheus.MustNewConstMetric(
+			mc.CacheEntries,
+			prometheus.GaugeValue,
+			float64(length),
+			tset,
+		)
+
+		ch <- prometheus.MustNewConstMetric(
+			mc.CacheBytes,
+			prometheus.GaugeValue,
+			float64(size),
+			tset,
+		)
+	}
 }
 
 // NewManager is the Manager constructor
-func NewManager(logger log.Logger, app Appendable) *Manager {
+func NewManager(logger log.Logger, app storage.Appendable) *Manager {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
-	return &Manager{
+	m := &Manager{
 		append:        app,
 		logger:        logger,
 		scrapeConfigs: make(map[string]*config.ScrapeConfig),
@@ -51,13 +113,16 @@ func NewManager(logger log.Logger, app Appendable) *Manager {
 		graceShut:     make(chan struct{}),
 		triggerReload: make(chan struct{}, 1),
 	}
+	targetMetadataCache.registerManager(m)
+
+	return m
 }
 
 // Manager maintains a set of scrape pools and manages start/stop cycles
 // when receiving new target groups form the discovery manager.
 type Manager struct {
 	logger    log.Logger
-	append    Appendable
+	append    storage.Appendable
 	graceShut chan struct{}
 
 	jitterSeed    uint64     // Global jitterSeed seed is used to spread scrape workload across HA setup.

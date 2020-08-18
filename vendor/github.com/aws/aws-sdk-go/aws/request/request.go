@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -37,6 +36,10 @@ const (
 	// API request that was canceled. Requests given a aws.Context may
 	// return this error when canceled.
 	CanceledErrorCode = "RequestCanceled"
+
+	// ErrCodeRequestError is an error preventing the SDK from continuing to
+	// process the request.
+	ErrCodeRequestError = "RequestError"
 )
 
 // A Request is the service request to be made.
@@ -52,6 +55,7 @@ type Request struct {
 	HTTPRequest            *http.Request
 	HTTPResponse           *http.Response
 	Body                   io.ReadSeeker
+	streamingBody          io.ReadCloser
 	BodyStart              int64 // offset from beginning of Body that the request body starts
 	Params                 interface{}
 	Error                  error
@@ -64,6 +68,15 @@ type Request struct {
 	SignedHeaderVals       http.Header
 	LastSignedAt           time.Time
 	DisableFollowRedirects bool
+
+	// Additional API error codes that should be retried. IsErrorRetryable
+	// will consider these codes in addition to its built in cases.
+	RetryErrorCodes []string
+
+	// Additional API error codes that should be retried with throttle backoff
+	// delay. IsErrorThrottle will consider these codes in addition to its
+	// built in cases.
+	ThrottleErrorCodes []string
 
 	// A value greater than 0 instructs the request to be signed as Presigned URL
 	// You should not set this field directly. Instead use Request's
@@ -91,14 +104,22 @@ type Operation struct {
 	BeforePresignFn func(r *Request) error
 }
 
-// New returns a new Request pointer for the service API
-// operation and parameters.
+// New returns a new Request pointer for the service API operation and
+// parameters.
+//
+// A Retryer should be provided to direct how the request is retried. If
+// Retryer is nil, a default no retry value will be used. You can use
+// NoOpRetryer in the Client package to disable retry behavior directly.
 //
 // Params is any value of input parameters to be the request payload.
 // Data is pointer value to an object which the request's response
 // payload will be deserialized to.
 func New(cfg aws.Config, clientInfo metadata.ClientInfo, handlers Handlers,
 	retryer Retryer, operation *Operation, params interface{}, data interface{}) *Request {
+
+	if retryer == nil {
+		retryer = noOpRetryer{}
+	}
 
 	method := operation.HTTPMethod
 	if method == "" {
@@ -113,8 +134,6 @@ func New(cfg aws.Config, clientInfo metadata.ClientInfo, handlers Handlers,
 		httpReq.URL = &url.URL{}
 		err = awserr.New("InvalidEndpointURL", "invalid endpoint uri", err)
 	}
-
-	SanitizeHostForHeader(httpReq)
 
 	r := &Request{
 		Config:     cfg,
@@ -279,6 +298,13 @@ func (r *Request) SetReaderBody(reader io.ReadSeeker) {
 	r.ResetBody()
 }
 
+// SetStreamingBody set the reader to be used for the request that will stream
+// bytes to the server. Request's Body must not be set to any reader.
+func (r *Request) SetStreamingBody(reader io.ReadCloser) {
+	r.streamingBody = reader
+	r.SetReaderBody(aws.ReadSeekCloser(reader))
+}
+
 // Presign returns the request's signed URL. Error will be returned
 // if the signing fails. The expire parameter is only used for presigned Amazon
 // S3 API requests. All other AWS services will use a fixed expiration
@@ -398,11 +424,17 @@ func (r *Request) Sign() error {
 		return r.Error
 	}
 
+	SanitizeHostForHeader(r.HTTPRequest)
+
 	r.Handlers.Sign.Run(r)
 	return r.Error
 }
 
 func (r *Request) getNextRequestBody() (body io.ReadCloser, err error) {
+	if r.streamingBody != nil {
+		return r.streamingBody, nil
+	}
+
 	if r.safeBody != nil {
 		r.safeBody.Close()
 	}
@@ -498,21 +530,17 @@ func (r *Request) Send() error {
 
 		if err := r.sendRequest(); err == nil {
 			return nil
-		} else if !shouldRetryError(r.Error) {
+		}
+		r.Handlers.Retry.Run(r)
+		r.Handlers.AfterRetry.Run(r)
+
+		if r.Error != nil || !aws.BoolValue(r.Retryable) {
+			return r.Error
+		}
+
+		if err := r.prepareRetry(); err != nil {
+			r.Error = err
 			return err
-		} else {
-			r.Handlers.Retry.Run(r)
-			r.Handlers.AfterRetry.Run(r)
-
-			if r.Error != nil || !aws.BoolValue(r.Retryable) {
-				return r.Error
-			}
-
-			if err := r.prepareRetry(); err != nil {
-				r.Error = err
-				return err
-			}
-			continue
 		}
 	}
 }
@@ -596,51 +624,6 @@ func AddToUserAgent(r *Request, s string) {
 	r.HTTPRequest.Header.Set("User-Agent", s)
 }
 
-type temporary interface {
-	Temporary() bool
-}
-
-func shouldRetryError(origErr error) bool {
-	switch err := origErr.(type) {
-	case awserr.Error:
-		if err.Code() == CanceledErrorCode {
-			return false
-		}
-		return shouldRetryError(err.OrigErr())
-	case *url.Error:
-		if strings.Contains(err.Error(), "connection refused") {
-			// Refused connections should be retried as the service may not yet
-			// be running on the port. Go TCP dial considers refused
-			// connections as not temporary.
-			return true
-		}
-		// *url.Error only implements Temporary after golang 1.6 but since
-		// url.Error only wraps the error:
-		return shouldRetryError(err.Err)
-	case temporary:
-		if netErr, ok := err.(*net.OpError); ok && netErr.Op == "dial" {
-			return true
-		}
-		// If the error is temporary, we want to allow continuation of the
-		// retry process
-		return err.Temporary() || isErrConnectionReset(origErr)
-	case nil:
-		// `awserr.Error.OrigErr()` can be nil, meaning there was an error but
-		// because we don't know the cause, it is marked as retryable. See
-		// TestRequest4xxUnretryable for an example.
-		return true
-	default:
-		switch err.Error() {
-		case "net/http: request canceled",
-			"net/http: request canceled while waiting for connection":
-			// known 1.5 error case when an http request is cancelled
-			return false
-		}
-		// here we don't know the error; so we allow a retry.
-		return true
-	}
-}
-
 // SanitizeHostForHeader removes default port from host and updates request.Host
 func SanitizeHostForHeader(r *http.Request) {
 	host := getHost(r)
@@ -654,6 +637,10 @@ func SanitizeHostForHeader(r *http.Request) {
 func getHost(r *http.Request) string {
 	if r.Host != "" {
 		return r.Host
+	}
+
+	if r.URL == nil {
+		return ""
 	}
 
 	return r.URL.Host

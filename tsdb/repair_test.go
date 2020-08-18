@@ -14,18 +14,25 @@
 package tsdb
 
 import (
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
-	"github.com/prometheus/prometheus/tsdb/labels"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestRepairBadIndexVersion(t *testing.T) {
+	tmpDir, err := ioutil.TempDir("", "test")
+	testutil.Ok(t, err)
+	t.Cleanup(func() {
+		testutil.Ok(t, os.RemoveAll(tmpDir))
+	})
+
 	// The broken index used in this test was written by the following script
 	// at a broken revision.
 	//
@@ -59,22 +66,21 @@ func TestRepairBadIndexVersion(t *testing.T) {
 	// 		panic(err)
 	// 	}
 	// }
-	dbDir := filepath.Join("testdata", "repair_index_version", "01BZJ9WJQPWHGNC2W4J9TA62KC")
-	tmpDir := filepath.Join("testdata", "repair_index_version", "copy")
-	tmpDbDir := filepath.Join(tmpDir, "3MCNSQ8S31EHGJYWK5E1GPJWJZ")
+	tmpDbDir := filepath.Join(tmpDir, "01BZJ9WJQPWHGNC2W4J9TA62KC")
+
+	// Create a copy DB to run test against.
+	testutil.Ok(t, fileutil.CopyDirs(filepath.Join("testdata", "repair_index_version", "01BZJ9WJQPWHGNC2W4J9TA62KC"), tmpDbDir))
 
 	// Check the current db.
 	// In its current state, lookups should fail with the fixed code.
-	_, _, err := readMetaFile(dbDir)
+	_, _, err = readMetaFile(tmpDbDir)
 	testutil.NotOk(t, err)
 
-	// Touch chunks dir in block.
-	testutil.Ok(t, os.MkdirAll(filepath.Join(dbDir, "chunks"), 0777))
-	defer func() {
-		testutil.Ok(t, os.RemoveAll(filepath.Join(dbDir, "chunks")))
-	}()
+	// Touch chunks dir in block to imitate them.
+	testutil.Ok(t, os.MkdirAll(filepath.Join(tmpDbDir, "chunks"), 0777))
 
-	r, err := index.NewFileReader(filepath.Join(dbDir, indexFilename))
+	// Read current index to check integrity.
+	r, err := index.NewFileReader(filepath.Join(tmpDbDir, indexFilename))
 	testutil.Ok(t, err)
 	p, err := r.Postings("b", "1")
 	testutil.Ok(t, err)
@@ -87,13 +93,6 @@ func TestRepairBadIndexVersion(t *testing.T) {
 	testutil.Ok(t, p.Err())
 	testutil.Ok(t, r.Close())
 
-	// Create a copy DB to run test against.
-	if err = fileutil.CopyDirs(dbDir, tmpDbDir); err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		testutil.Ok(t, os.RemoveAll(tmpDir))
-	}()
 	// On DB opening all blocks in the base dir should be repaired.
 	db, err := Open(tmpDir, nil, nil, nil)
 	testutil.Ok(t, err)
@@ -123,5 +122,5 @@ func TestRepairBadIndexVersion(t *testing.T) {
 
 	meta, _, err := readMetaFile(tmpDbDir)
 	testutil.Ok(t, err)
-	testutil.Assert(t, meta.Version == 1, "unexpected meta version %d", meta.Version)
+	testutil.Assert(t, meta.Version == metaVersion1, "unexpected meta version %d", meta.Version)
 }

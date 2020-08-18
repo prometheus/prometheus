@@ -215,7 +215,7 @@ func TestPopulateLabels(t *testing.T) {
 		in := c.in.Copy()
 
 		res, orig, err := populateLabels(c.in, c.cfg)
-		testutil.ErrorEqual(err, c.err)
+		testutil.ErrorEqual(t, c.err, err)
 		testutil.Equals(t, c.in, in)
 		testutil.Equals(t, c.res, res)
 		testutil.Equals(t, c.resOrig, orig)
@@ -339,6 +339,7 @@ func TestManagerTargetsUpdates(t *testing.T) {
 
 	ts := make(chan map[string][]*targetgroup.Group)
 	go m.Run(ts)
+	defer m.Stop()
 
 	tgSent := make(map[string][]*targetgroup.Group)
 	for x := 0; x < 10; x++ {

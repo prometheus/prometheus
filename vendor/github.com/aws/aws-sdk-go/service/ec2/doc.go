@@ -9,7 +9,7 @@
 //
 // To learn more, see the following resources:
 //
-//    * Amazon EC2: Amazon EC2 product page (http://aws.amazon.com/ec2), Amazon
+//    * Amazon EC2: AmazonEC2 product page (http://aws.amazon.com/ec2), Amazon
 //    EC2 documentation (http://aws.amazon.com/documentation/ec2)
 //
 //    * Amazon EBS: Amazon EBS product page (http://aws.amazon.com/ebs), Amazon

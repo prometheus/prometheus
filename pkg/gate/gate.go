@@ -20,7 +20,7 @@ type Gate struct {
 	ch chan struct{}
 }
 
-// NewGate returns a query gate that limits the number of queries
+// New returns a query gate that limits the number of queries
 // being concurrently executed.
 func New(length int) *Gate {
 	return &Gate{

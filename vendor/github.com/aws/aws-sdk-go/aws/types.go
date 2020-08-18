@@ -2,6 +2,7 @@ package aws
 
 import (
 	"io"
+	"strings"
 	"sync"
 
 	"github.com/aws/aws-sdk-go/internal/sdkio"
@@ -204,4 +205,60 @@ func (b *WriteAtBuffer) Bytes() []byte {
 	b.m.Lock()
 	defer b.m.Unlock()
 	return b.buf
+}
+
+// MultiCloser is a utility to close multiple io.Closers within a single
+// statement.
+type MultiCloser []io.Closer
+
+// Close closes all of the io.Closers making up the MultiClosers. Any
+// errors that occur while closing will be returned in the order they
+// occur.
+func (m MultiCloser) Close() error {
+	var errs errors
+	for _, c := range m {
+		err := c.Close()
+		if err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if len(errs) != 0 {
+		return errs
+	}
+
+	return nil
+}
+
+type errors []error
+
+func (es errors) Error() string {
+	var parts []string
+	for _, e := range es {
+		parts = append(parts, e.Error())
+	}
+
+	return strings.Join(parts, "\n")
+}
+
+// CopySeekableBody copies the seekable body to an io.Writer
+func CopySeekableBody(dst io.Writer, src io.ReadSeeker) (int64, error) {
+	curPos, err := src.Seek(0, sdkio.SeekCurrent)
+	if err != nil {
+		return 0, err
+	}
+
+	// copy errors may be assumed to be from the body.
+	n, err := io.Copy(dst, src)
+	if err != nil {
+		return n, err
+	}
+
+	// seek back to the first position after reading to reset
+	// the body for transmission.
+	_, err = src.Seek(curPos, sdkio.SeekStart)
+	if err != nil {
+		return n, err
+	}
+
+	return n, nil
 }

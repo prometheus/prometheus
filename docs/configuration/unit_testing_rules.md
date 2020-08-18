@@ -50,7 +50,7 @@ input_series:
 alert_rule_test:
   [ - <alert_test_case> ]
 
-# Unit tests PromQL expressions.
+# Unit tests for PromQL expressions.
 promql_expr_test:
   [ - <promql_test_case> ]
 
@@ -83,7 +83,7 @@ values: <string>
 Prometheus allows you to have same alertname for different alerting rules. Hence in this unit testing, you have to list the union of all the firing alerts for the alertname under a single `<alert_test_case>`.
 
 ``` yaml
-# It's the time elapsed from time=0s when the alerts have to be checked.
+# The time elapsed from time=0s when the alerts have to be checked.
 eval_time: <duration>
 
 # Name of the alert to be tested.
@@ -114,7 +114,7 @@ exp_annotations:
 # Expression to evaluate
 expr: <string>
 
-# It's the time elapsed from time=0s when the alerts have to be checked.
+# The time elapsed from time=0s when the expression has to be evaluated.
 eval_time: <duration>
 
 # Expected samples at the given evaluation time.
@@ -131,7 +131,7 @@ exp_samples:
 #      go_goroutines{job="prometheus", instance="localhost:9090"}
 labels: <string>
 
-# The expected value of the promql expression.
+# The expected value of the PromQL expression.
 value: <number>
 ```
 

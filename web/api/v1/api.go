@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -25,6 +26,7 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 	"unsafe"
 
@@ -35,8 +37,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
-	tsdbLabels "github.com/prometheus/prometheus/tsdb/labels"
-
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/gate"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -44,10 +44,13 @@ import (
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
+	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/util/httputil"
 	"github.com/prometheus/prometheus/util/stats"
 )
@@ -77,12 +80,15 @@ const (
 	errorNotFound    errorType = "not_found"
 )
 
-var remoteReadQueries = prometheus.NewGauge(prometheus.GaugeOpts{
-	Namespace: namespace,
-	Subsystem: subsystem,
-	Name:      "remote_read_queries",
-	Help:      "The current number of remote read queries being executed or waiting.",
-})
+var (
+	LocalhostRepresentations = []string{"127.0.0.1", "localhost"}
+	remoteReadQueries        = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: namespace,
+		Subsystem: subsystem,
+		Name:      "remote_read_queries",
+		Help:      "The current number of remote read queries being executed or waiting.",
+	})
+)
 
 type apiError struct {
 	typ errorType
@@ -93,19 +99,48 @@ func (e *apiError) Error() string {
 	return fmt.Sprintf("%s: %s", e.typ, e.err)
 }
 
-type targetRetriever interface {
+// TargetRetriever provides the list of active/dropped targets to scrape or not.
+type TargetRetriever interface {
 	TargetsActive() map[string][]*scrape.Target
 	TargetsDropped() map[string][]*scrape.Target
 }
 
-type alertmanagerRetriever interface {
+// AlertmanagerRetriever provides a list of all/dropped AlertManager URLs.
+type AlertmanagerRetriever interface {
 	Alertmanagers() []*url.URL
 	DroppedAlertmanagers() []*url.URL
 }
 
-type rulesRetriever interface {
+// RulesRetriever provides a list of active rules and alerts.
+type RulesRetriever interface {
 	RuleGroups() []*rules.Group
 	AlertingRules() []*rules.AlertingRule
+}
+
+// PrometheusVersion contains build information about Prometheus.
+type PrometheusVersion struct {
+	Version   string `json:"version"`
+	Revision  string `json:"revision"`
+	Branch    string `json:"branch"`
+	BuildUser string `json:"buildUser"`
+	BuildDate string `json:"buildDate"`
+	GoVersion string `json:"goVersion"`
+}
+
+// RuntimeInfo contains runtime information about Prometheus.
+type RuntimeInfo struct {
+	StartTime           time.Time `json:"startTime"`
+	CWD                 string    `json:"CWD"`
+	ReloadConfigSuccess bool      `json:"reloadConfigSuccess"`
+	LastConfigTime      time.Time `json:"lastConfigTime"`
+	ChunkCount          int64     `json:"chunkCount"`
+	TimeSeriesCount     int64     `json:"timeSeriesCount"`
+	CorruptionCount     int64     `json:"corruptionCount"`
+	GoroutineCount      int       `json:"goroutineCount"`
+	GOMAXPROCS          int       `json:"GOMAXPROCS"`
+	GOGC                string    `json:"GOGC"`
+	GODEBUG             string    `json:"GODEBUG"`
+	StorageRetention    string    `json:"storageRetention"`
 }
 
 type response struct {
@@ -125,35 +160,40 @@ type apiFuncResult struct {
 
 type apiFunc func(r *http.Request) apiFuncResult
 
-// TSDBAdmin defines the tsdb interfaces used by the v1 API for admin operations.
-type TSDBAdmin interface {
+// TSDBAdminStats defines the tsdb interfaces used by the v1 API for admin operations as well as statistics.
+type TSDBAdminStats interface {
 	CleanTombstones() error
-	Delete(mint, maxt int64, ms ...tsdbLabels.Matcher) error
-	Dir() string
+	Delete(mint, maxt int64, ms ...*labels.Matcher) error
 	Snapshot(dir string, withHead bool) error
+
+	Stats(statsByLabelName string) (*tsdb.Stats, error)
 }
 
 // API can register a set of endpoints in a router and handle
 // them using the provided storage and query engine.
 type API struct {
-	Queryable   storage.Queryable
+	Queryable   storage.SampleAndChunkQueryable
 	QueryEngine *promql.Engine
 
-	targetRetriever       targetRetriever
-	alertmanagerRetriever alertmanagerRetriever
-	rulesRetriever        rulesRetriever
+	targetRetriever       func(context.Context) TargetRetriever
+	alertmanagerRetriever func(context.Context) AlertmanagerRetriever
+	rulesRetriever        func(context.Context) RulesRetriever
 	now                   func() time.Time
 	config                func() config.Config
 	flagsMap              map[string]string
 	ready                 func(http.HandlerFunc) http.HandlerFunc
+	globalURLOptions      GlobalURLOptions
 
-	db                        func() TSDBAdmin
+	db                        TSDBAdminStats
+	dbDir                     string
 	enableAdmin               bool
 	logger                    log.Logger
 	remoteReadSampleLimit     int
 	remoteReadMaxBytesInFrame int
 	remoteReadGate            *gate.Gate
 	CORSOrigin                *regexp.Regexp
+	buildInfo                 *PrometheusVersion
+	runtimeInfo               func() (RuntimeInfo, error)
 }
 
 func init() {
@@ -164,20 +204,24 @@ func init() {
 // NewAPI returns an initialized API type.
 func NewAPI(
 	qe *promql.Engine,
-	q storage.Queryable,
-	tr targetRetriever,
-	ar alertmanagerRetriever,
+	q storage.SampleAndChunkQueryable,
+	tr func(context.Context) TargetRetriever,
+	ar func(context.Context) AlertmanagerRetriever,
 	configFunc func() config.Config,
 	flagsMap map[string]string,
+	globalURLOptions GlobalURLOptions,
 	readyFunc func(http.HandlerFunc) http.HandlerFunc,
-	db func() TSDBAdmin,
+	db TSDBAdminStats,
+	dbDir string,
 	enableAdmin bool,
 	logger log.Logger,
-	rr rulesRetriever,
+	rr func(context.Context) RulesRetriever,
 	remoteReadSampleLimit int,
 	remoteReadConcurrencyLimit int,
 	remoteReadMaxBytesInFrame int,
 	CORSOrigin *regexp.Regexp,
+	runtimeInfo func() (RuntimeInfo, error),
+	buildInfo *PrometheusVersion,
 ) *API {
 	return &API{
 		QueryEngine:           qe,
@@ -189,7 +233,9 @@ func NewAPI(
 		config:                    configFunc,
 		flagsMap:                  flagsMap,
 		ready:                     readyFunc,
+		globalURLOptions:          globalURLOptions,
 		db:                        db,
+		dbDir:                     dbDir,
 		enableAdmin:               enableAdmin,
 		rulesRetriever:            rr,
 		remoteReadSampleLimit:     remoteReadSampleLimit,
@@ -197,7 +243,16 @@ func NewAPI(
 		remoteReadMaxBytesInFrame: remoteReadMaxBytesInFrame,
 		logger:                    logger,
 		CORSOrigin:                CORSOrigin,
+		runtimeInfo:               runtimeInfo,
+		buildInfo:                 buildInfo,
 	}
+}
+
+func setUnavailStatusOnTSDBNotReady(r apiFuncResult) apiFuncResult {
+	if r.err != nil && errors.Cause(r.err.err) == tsdb.ErrNotReady {
+		r.err.typ = errorUnavailable
+	}
+	return r
 }
 
 // Register the API's endpoints in the given router.
@@ -205,17 +260,20 @@ func (api *API) Register(r *route.Router) {
 	wrap := func(f apiFunc) http.HandlerFunc {
 		hf := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			httputil.SetCORS(w, api.CORSOrigin, r)
-			result := f(r)
+			result := setUnavailStatusOnTSDBNotReady(f(r))
+			if result.finalizer != nil {
+				defer result.finalizer()
+			}
 			if result.err != nil {
 				api.respondError(w, result.err, result.data)
-			} else if result.data != nil {
+				return
+			}
+
+			if result.data != nil {
 				api.respond(w, result.data, result.warnings)
-			} else {
-				w.WriteHeader(http.StatusNoContent)
+				return
 			}
-			if result.finalizer != nil {
-				result.finalizer()
-			}
+			w.WriteHeader(http.StatusNoContent)
 		})
 		return api.ready(httputil.CompressionHandler{
 			Handler: hf,
@@ -241,8 +299,13 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/targets/metadata", wrap(api.targetMetadata))
 	r.Get("/alertmanagers", wrap(api.alertmanagers))
 
+	r.Get("/metadata", wrap(api.metricMetadata))
+
 	r.Get("/status/config", wrap(api.serveConfig))
+	r.Get("/status/runtimeinfo", wrap(api.serveRuntimeInfo))
+	r.Get("/status/buildinfo", wrap(api.serveBuildInfo))
 	r.Get("/status/flags", wrap(api.serveFlags))
+	r.Get("/status/tsdb", wrap(api.serveTSDBStatus))
 	r.Post("/read", api.ready(http.HandlerFunc(api.remoteRead)))
 
 	r.Get("/alerts", wrap(api.alerts))
@@ -260,8 +323,8 @@ func (api *API) Register(r *route.Router) {
 }
 
 type queryData struct {
-	ResultType promql.ValueType  `json:"resultType"`
-	Result     promql.Value      `json:"result"`
+	ResultType parser.ValueType  `json:"resultType"`
+	Result     parser.Value      `json:"result"`
 	Stats      *stats.QueryStats `json:"stats,omitempty"`
 }
 
@@ -269,19 +332,11 @@ func (api *API) options(r *http.Request) apiFuncResult {
 	return apiFuncResult{nil, nil, nil, nil}
 }
 
-func (api *API) query(r *http.Request) apiFuncResult {
-	var ts time.Time
-	if t := r.FormValue("time"); t != "" {
-		var err error
-		ts, err = parseTime(t)
-		if err != nil {
-			err = errors.Wrapf(err, "invalid parameter 'time'")
-			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
-		}
-	} else {
-		ts = api.now()
+func (api *API) query(r *http.Request) (result apiFuncResult) {
+	ts, err := parseTimeParam(r, "time", api.now())
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
-
 	ctx := r.Context()
 	if to := r.FormValue("timeout"); to != "" {
 		var cancel context.CancelFunc
@@ -300,6 +355,16 @@ func (api *API) query(r *http.Request) apiFuncResult {
 		err = errors.Wrapf(err, "invalid parameter 'query'")
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
+	// From now on, we must only return with a finalizer in the result (to
+	// be called by the caller) or call qry.Close ourselves (which is
+	// required in the case of a panic).
+	defer func() {
+		if result.finalizer == nil {
+			qry.Close()
+		}
+	}()
+
+	ctx = httputil.ContextFromRequest(ctx, r)
 
 	res := qry.Exec(ctx)
 	if res.Err != nil {
@@ -319,7 +384,7 @@ func (api *API) query(r *http.Request) apiFuncResult {
 	}, nil, res.Warnings, qry.Close}
 }
 
-func (api *API) queryRange(r *http.Request) apiFuncResult {
+func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 	start, err := parseTime(r.FormValue("start"))
 	if err != nil {
 		err = errors.Wrapf(err, "invalid parameter 'start'")
@@ -370,6 +435,16 @@ func (api *API) queryRange(r *http.Request) apiFuncResult {
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
+	// From now on, we must only return with a finalizer in the result (to
+	// be called by the caller) or call qry.Close ourselves (which is
+	// required in the case of a panic).
+	defer func() {
+		if result.finalizer == nil {
+			qry.Close()
+		}
+	}()
+
+	ctx = httputil.ContextFromRequest(ctx, r)
 
 	res := qry.Exec(ctx)
 	if res.Err != nil {
@@ -394,7 +469,7 @@ func returnAPIError(err error) *apiError {
 		return nil
 	}
 
-	switch err.(type) {
+	switch errors.Cause(err).(type) {
 	case promql.ErrQueryCanceled:
 		return &apiError{errorCanceled, err}
 	case promql.ErrQueryTimeout:
@@ -407,7 +482,16 @@ func returnAPIError(err error) *apiError {
 }
 
 func (api *API) labelNames(r *http.Request) apiFuncResult {
-	q, err := api.Queryable.Querier(r.Context(), math.MinInt64, math.MaxInt64)
+	start, err := parseTimeParam(r, "start", minTime)
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrap(err, "invalid parameter 'start'")}, nil, nil}
+	}
+	end, err := parseTimeParam(r, "end", maxTime)
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrap(err, "invalid parameter 'end'")}, nil, nil}
+	}
+
+	q, err := api.Queryable.Querier(r.Context(), timestamp.FromTime(start), timestamp.FromTime(end))
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
 	}
@@ -417,28 +501,54 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
 	}
+	if names == nil {
+		names = []string{}
+	}
 	return apiFuncResult{names, nil, warnings, nil}
 }
 
-func (api *API) labelValues(r *http.Request) apiFuncResult {
+func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 	ctx := r.Context()
 	name := route.Param(ctx, "name")
 
 	if !model.LabelNameRE.MatchString(name) {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.Errorf("invalid label name: %q", name)}, nil, nil}
 	}
-	q, err := api.Queryable.Querier(ctx, math.MinInt64, math.MaxInt64)
+
+	start, err := parseTimeParam(r, "start", minTime)
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrap(err, "invalid parameter 'start'")}, nil, nil}
+	}
+	end, err := parseTimeParam(r, "end", maxTime)
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrap(err, "invalid parameter 'end'")}, nil, nil}
+	}
+
+	q, err := api.Queryable.Querier(r.Context(), timestamp.FromTime(start), timestamp.FromTime(end))
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
 	}
-	defer q.Close()
+	// From now on, we must only return with a finalizer in the result (to
+	// be called by the caller) or call q.Close ourselves (which is required
+	// in the case of a panic).
+	defer func() {
+		if result.finalizer == nil {
+			q.Close()
+		}
+	}()
+	closer := func() {
+		q.Close()
+	}
 
 	vals, warnings, err := q.LabelValues(name)
 	if err != nil {
-		return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
+		return apiFuncResult{nil, &apiError{errorExec, err}, warnings, closer}
+	}
+	if vals == nil {
+		vals = []string{}
 	}
 
-	return apiFuncResult{vals, nil, warnings, nil}
+	return apiFuncResult{vals, nil, warnings, closer}
 }
 
 var (
@@ -449,7 +559,7 @@ var (
 	maxTimeFormatted = maxTime.Format(time.RFC3339Nano)
 )
 
-func (api *API) series(r *http.Request) apiFuncResult {
+func (api *API) series(r *http.Request) (result apiFuncResult) {
 	if err := r.ParseForm(); err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrapf(err, "error parsing form values")}, nil, nil}
 	}
@@ -457,31 +567,18 @@ func (api *API) series(r *http.Request) apiFuncResult {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.New("no match[] parameter provided")}, nil, nil}
 	}
 
-	var start time.Time
-	if t := r.FormValue("start"); t != "" {
-		var err error
-		start, err = parseTime(t)
-		if err != nil {
-			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
-		}
-	} else {
-		start = minTime
+	start, err := parseTimeParam(r, "start", minTime)
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
-
-	var end time.Time
-	if t := r.FormValue("end"); t != "" {
-		var err error
-		end, err = parseTime(t)
-		if err != nil {
-			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
-		}
-	} else {
-		end = maxTime
+	end, err := parseTimeParam(r, "end", maxTime)
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 
 	var matcherSets [][]*labels.Matcher
 	for _, s := range r.Form["match[]"] {
-		matchers, err := promql.ParseMetricSelector(s)
+		matchers, err := parser.ParseMetricSelector(s)
 		if err != nil {
 			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 		}
@@ -492,29 +589,36 @@ func (api *API) series(r *http.Request) apiFuncResult {
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
 	}
-	defer q.Close()
+	// From now on, we must only return with a finalizer in the result (to
+	// be called by the caller) or call q.Close ourselves (which is required
+	// in the case of a panic).
+	defer func() {
+		if result.finalizer == nil {
+			q.Close()
+		}
+	}()
+	closer := func() {
+		q.Close()
+	}
 
 	var sets []storage.SeriesSet
-	var warnings storage.Warnings
 	for _, mset := range matcherSets {
-		s, wrn, err := q.Select(nil, mset...) //TODO
-		warnings = append(warnings, wrn...)
-		if err != nil {
-			return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
-		}
+		s := q.Select(false, nil, mset...)
 		sets = append(sets, s)
 	}
 
-	set := storage.NewMergeSeriesSet(sets, nil)
+	set := storage.NewMergeSeriesSet(sets, storage.ChainedSeriesMerge)
 	metrics := []labels.Labels{}
 	for set.Next() {
 		metrics = append(metrics, set.At().Labels())
 	}
+
+	warnings := set.Warnings()
 	if set.Err() != nil {
-		return apiFuncResult{nil, &apiError{errorExec, set.Err()}, warnings, nil}
+		return apiFuncResult{nil, &apiError{errorExec, set.Err()}, warnings, closer}
 	}
 
-	return apiFuncResult{metrics, nil, warnings, nil}
+	return apiFuncResult{metrics, nil, warnings, closer}
 }
 
 func (api *API) dropSeries(r *http.Request) apiFuncResult {
@@ -528,11 +632,14 @@ type Target struct {
 	// Any labels that are added to this target and its metrics.
 	Labels map[string]string `json:"labels"`
 
-	ScrapeURL string `json:"scrapeUrl"`
+	ScrapePool string `json:"scrapePool"`
+	ScrapeURL  string `json:"scrapeUrl"`
+	GlobalURL  string `json:"globalUrl"`
 
-	LastError  string              `json:"lastError"`
-	LastScrape time.Time           `json:"lastScrape"`
-	Health     scrape.TargetHealth `json:"health"`
+	LastError          string              `json:"lastError"`
+	LastScrape         time.Time           `json:"lastScrape"`
+	LastScrapeDuration float64             `json:"lastScrapeDuration"`
+	Health             scrape.TargetHealth `json:"health"`
 }
 
 // DroppedTarget has the information for one target that was dropped during relabelling.
@@ -547,8 +654,56 @@ type TargetDiscovery struct {
 	DroppedTargets []*DroppedTarget `json:"droppedTargets"`
 }
 
+// GlobalURLOptions contains fields used for deriving the global URL for local targets.
+type GlobalURLOptions struct {
+	ListenAddress string
+	Host          string
+	Scheme        string
+}
+
+func getGlobalURL(u *url.URL, opts GlobalURLOptions) (*url.URL, error) {
+	host, port, err := net.SplitHostPort(u.Host)
+	if err != nil {
+		return u, err
+	}
+
+	for _, lhr := range LocalhostRepresentations {
+		if host == lhr {
+			_, ownPort, err := net.SplitHostPort(opts.ListenAddress)
+			if err != nil {
+				return u, err
+			}
+
+			if port == ownPort {
+				// Only in the case where the target is on localhost and its port is
+				// the same as the one we're listening on, we know for sure that
+				// we're monitoring our own process and that we need to change the
+				// scheme, hostname, and port to the externally reachable ones as
+				// well. We shouldn't need to touch the path at all, since if a
+				// path prefix is defined, the path under which we scrape ourselves
+				// should already contain the prefix.
+				u.Scheme = opts.Scheme
+				u.Host = opts.Host
+			} else {
+				// Otherwise, we only know that localhost is not reachable
+				// externally, so we replace only the hostname by the one in the
+				// external URL. It could be the wrong hostname for the service on
+				// this port, but it's still the best possible guess.
+				host, _, err := net.SplitHostPort(opts.Host)
+				if err != nil {
+					return u, err
+				}
+				u.Host = host + ":" + port
+			}
+			break
+		}
+	}
+
+	return u, nil
+}
+
 func (api *API) targets(r *http.Request) apiFuncResult {
-	flatten := func(targets map[string][]*scrape.Target) []*scrape.Target {
+	sortKeys := func(targets map[string][]*scrape.Target) ([]string, int) {
 		var n int
 		keys := make([]string, 0, len(targets))
 		for k := range targets {
@@ -556,6 +711,11 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 			n += len(targets[k])
 		}
 		sort.Strings(keys)
+		return keys, n
+	}
+
+	flatten := func(targets map[string][]*scrape.Target) []*scrape.Target {
+		keys, n := sortKeys(targets)
 		res := make([]*scrape.Target, 0, n)
 		for _, k := range keys {
 			res = append(res, targets[k]...)
@@ -563,31 +723,59 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 		return res
 	}
 
-	tActive := flatten(api.targetRetriever.TargetsActive())
-	tDropped := flatten(api.targetRetriever.TargetsDropped())
-	res := &TargetDiscovery{ActiveTargets: make([]*Target, 0, len(tActive)), DroppedTargets: make([]*DroppedTarget, 0, len(tDropped))}
+	state := strings.ToLower(r.URL.Query().Get("state"))
+	showActive := state == "" || state == "any" || state == "active"
+	showDropped := state == "" || state == "any" || state == "dropped"
+	res := &TargetDiscovery{}
 
-	for _, target := range tActive {
-		lastErrStr := ""
-		lastErr := target.LastError()
-		if lastErr != nil {
-			lastErrStr = lastErr.Error()
+	if showActive {
+		targetsActive := api.targetRetriever(r.Context()).TargetsActive()
+		activeKeys, numTargets := sortKeys(targetsActive)
+		res.ActiveTargets = make([]*Target, 0, numTargets)
+
+		for _, key := range activeKeys {
+			for _, target := range targetsActive[key] {
+				lastErrStr := ""
+				lastErr := target.LastError()
+				if lastErr != nil {
+					lastErrStr = lastErr.Error()
+				}
+
+				globalURL, err := getGlobalURL(target.URL(), api.globalURLOptions)
+
+				res.ActiveTargets = append(res.ActiveTargets, &Target{
+					DiscoveredLabels: target.DiscoveredLabels().Map(),
+					Labels:           target.Labels().Map(),
+					ScrapePool:       key,
+					ScrapeURL:        target.URL().String(),
+					GlobalURL:        globalURL.String(),
+					LastError: func() string {
+						if err == nil && lastErrStr == "" {
+							return ""
+						} else if err != nil {
+							return errors.Wrapf(err, lastErrStr).Error()
+						}
+						return lastErrStr
+					}(),
+					LastScrape:         target.LastScrape(),
+					LastScrapeDuration: target.LastScrapeDuration().Seconds(),
+					Health:             target.Health(),
+				})
+			}
 		}
-
-		res.ActiveTargets = append(res.ActiveTargets, &Target{
-			DiscoveredLabels: target.DiscoveredLabels().Map(),
-			Labels:           target.Labels().Map(),
-			ScrapeURL:        target.URL().String(),
-			LastError:        lastErrStr,
-			LastScrape:       target.LastScrape(),
-			Health:           target.Health(),
-		})
+	} else {
+		res.ActiveTargets = []*Target{}
 	}
-
-	for _, t := range tDropped {
-		res.DroppedTargets = append(res.DroppedTargets, &DroppedTarget{
-			DiscoveredLabels: t.DiscoveredLabels().Map(),
-		})
+	if showDropped {
+		tDropped := flatten(api.targetRetriever(r.Context()).TargetsDropped())
+		res.DroppedTargets = make([]*DroppedTarget, 0, len(tDropped))
+		for _, t := range tDropped {
+			res.DroppedTargets = append(res.DroppedTargets, &DroppedTarget{
+				DiscoveredLabels: t.DiscoveredLabels().Map(),
+			})
+		}
+	} else {
+		res.DroppedTargets = []*DroppedTarget{}
 	}
 	return apiFuncResult{res, nil, nil, nil}
 }
@@ -610,21 +798,29 @@ func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 		}
 	}
 
-	matchers, err := promql.ParseMetricSelector(r.FormValue("match_target"))
-	if err != nil {
-		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+	matchTarget := r.FormValue("match_target")
+
+	var matchers []*labels.Matcher
+
+	var err error
+
+	if matchTarget != "" {
+		matchers, err = parser.ParseMetricSelector(matchTarget)
+		if err != nil {
+			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+		}
 	}
 
 	metric := r.FormValue("metric")
 
-	var res []metricMetadata
-	for _, tt := range api.targetRetriever.TargetsActive() {
+	res := []metricMetadata{}
+	for _, tt := range api.targetRetriever(r.Context()).TargetsActive() {
 		for _, t := range tt {
 			if limit >= 0 && len(res) >= limit {
 				break
 			}
 			// Filter targets that don't satisfy the label matchers.
-			if !matchLabels(t.Labels(), matchers) {
+			if matchTarget != "" && !matchLabels(t.Labels(), matchers) {
 				continue
 			}
 			// If no metric is specified, get the full list for the target.
@@ -651,9 +847,7 @@ func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 			}
 		}
 	}
-	if len(res) == 0 {
-		return apiFuncResult{nil, &apiError{errorNotFound, errors.New("specified metadata not found")}, nil, nil}
-	}
+
 	return apiFuncResult{res, nil, nil, nil}
 }
 
@@ -677,8 +871,8 @@ type AlertmanagerTarget struct {
 }
 
 func (api *API) alertmanagers(r *http.Request) apiFuncResult {
-	urls := api.alertmanagerRetriever.Alertmanagers()
-	droppedURLS := api.alertmanagerRetriever.DroppedAlertmanagers()
+	urls := api.alertmanagerRetriever(r.Context()).Alertmanagers()
+	droppedURLS := api.alertmanagerRetriever(r.Context()).DroppedAlertmanagers()
 	ams := &AlertmanagerDiscovery{ActiveAlertmanagers: make([]*AlertmanagerTarget, len(urls)), DroppedAlertmanagers: make([]*AlertmanagerTarget, len(droppedURLS))}
 	for i, url := range urls {
 		ams.ActiveAlertmanagers[i] = &AlertmanagerTarget{URL: url.String()}
@@ -704,7 +898,7 @@ type Alert struct {
 }
 
 func (api *API) alerts(r *http.Request) apiFuncResult {
-	alertingRules := api.rulesRetriever.AlertingRules()
+	alertingRules := api.rulesRetriever(r.Context()).AlertingRules()
 	alerts := []*Alert{}
 
 	for _, alertingRule := range alertingRules {
@@ -734,6 +928,73 @@ func rulesAlertsToAPIAlerts(rulesAlerts []*rules.Alert) []*Alert {
 	return apiAlerts
 }
 
+type metadata struct {
+	Type textparse.MetricType `json:"type"`
+	Help string               `json:"help"`
+	Unit string               `json:"unit"`
+}
+
+func (api *API) metricMetadata(r *http.Request) apiFuncResult {
+	metrics := map[string]map[metadata]struct{}{}
+
+	limit := -1
+	if s := r.FormValue("limit"); s != "" {
+		var err error
+		if limit, err = strconv.Atoi(s); err != nil {
+			return apiFuncResult{nil, &apiError{errorBadData, errors.New("limit must be a number")}, nil, nil}
+		}
+	}
+
+	metric := r.FormValue("metric")
+
+	for _, tt := range api.targetRetriever(r.Context()).TargetsActive() {
+		for _, t := range tt {
+
+			if metric == "" {
+				for _, mm := range t.MetadataList() {
+					m := metadata{Type: mm.Type, Help: mm.Help, Unit: mm.Unit}
+					ms, ok := metrics[mm.Metric]
+
+					if !ok {
+						ms = map[metadata]struct{}{}
+						metrics[mm.Metric] = ms
+					}
+					ms[m] = struct{}{}
+				}
+				continue
+			}
+
+			if md, ok := t.Metadata(metric); ok {
+				m := metadata{Type: md.Type, Help: md.Help, Unit: md.Unit}
+				ms, ok := metrics[md.Metric]
+
+				if !ok {
+					ms = map[metadata]struct{}{}
+					metrics[md.Metric] = ms
+				}
+				ms[m] = struct{}{}
+			}
+		}
+	}
+
+	// Put the elements from the pseudo-set into a slice for marshaling.
+	res := map[string][]metadata{}
+
+	for name, set := range metrics {
+		if limit >= 0 && len(res) >= limit {
+			break
+		}
+
+		s := []metadata{}
+		for metadata := range set {
+			s = append(s, metadata)
+		}
+		res[name] = s
+	}
+
+	return apiFuncResult{res, nil, nil, nil}
+}
+
 // RuleDiscovery has info for all rules
 type RuleDiscovery struct {
 	RuleGroups []*RuleGroup `json:"groups"`
@@ -746,46 +1007,65 @@ type RuleGroup struct {
 	// In order to preserve rule ordering, while exposing type (alerting or recording)
 	// specific properties, both alerting and recording rules are exposed in the
 	// same array.
-	Rules    []rule  `json:"rules"`
-	Interval float64 `json:"interval"`
+	Rules          []rule    `json:"rules"`
+	Interval       float64   `json:"interval"`
+	EvaluationTime float64   `json:"evaluationTime"`
+	LastEvaluation time.Time `json:"lastEvaluation"`
 }
 
 type rule interface{}
 
 type alertingRule struct {
-	Name        string           `json:"name"`
-	Query       string           `json:"query"`
-	Duration    float64          `json:"duration"`
-	Labels      labels.Labels    `json:"labels"`
-	Annotations labels.Labels    `json:"annotations"`
-	Alerts      []*Alert         `json:"alerts"`
-	Health      rules.RuleHealth `json:"health"`
-	LastError   string           `json:"lastError,omitempty"`
+	// State can be "pending", "firing", "inactive".
+	State          string           `json:"state"`
+	Name           string           `json:"name"`
+	Query          string           `json:"query"`
+	Duration       float64          `json:"duration"`
+	Labels         labels.Labels    `json:"labels"`
+	Annotations    labels.Labels    `json:"annotations"`
+	Alerts         []*Alert         `json:"alerts"`
+	Health         rules.RuleHealth `json:"health"`
+	LastError      string           `json:"lastError,omitempty"`
+	EvaluationTime float64          `json:"evaluationTime"`
+	LastEvaluation time.Time        `json:"lastEvaluation"`
 	// Type of an alertingRule is always "alerting".
 	Type string `json:"type"`
 }
 
 type recordingRule struct {
-	Name      string           `json:"name"`
-	Query     string           `json:"query"`
-	Labels    labels.Labels    `json:"labels,omitempty"`
-	Health    rules.RuleHealth `json:"health"`
-	LastError string           `json:"lastError,omitempty"`
+	Name           string           `json:"name"`
+	Query          string           `json:"query"`
+	Labels         labels.Labels    `json:"labels,omitempty"`
+	Health         rules.RuleHealth `json:"health"`
+	LastError      string           `json:"lastError,omitempty"`
+	EvaluationTime float64          `json:"evaluationTime"`
+	LastEvaluation time.Time        `json:"lastEvaluation"`
 	// Type of a recordingRule is always "recording".
 	Type string `json:"type"`
 }
 
 func (api *API) rules(r *http.Request) apiFuncResult {
-	ruleGroups := api.rulesRetriever.RuleGroups()
+	ruleGroups := api.rulesRetriever(r.Context()).RuleGroups()
 	res := &RuleDiscovery{RuleGroups: make([]*RuleGroup, len(ruleGroups))}
+	typeParam := strings.ToLower(r.URL.Query().Get("type"))
+
+	if typeParam != "" && typeParam != "alert" && typeParam != "record" {
+		err := errors.Errorf("invalid query parameter type='%v'", typeParam)
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+	}
+
+	returnAlerts := typeParam == "" || typeParam == "alert"
+	returnRecording := typeParam == "" || typeParam == "record"
+
 	for i, grp := range ruleGroups {
 		apiRuleGroup := &RuleGroup{
-			Name:     grp.Name(),
-			File:     grp.File(),
-			Interval: grp.Interval().Seconds(),
-			Rules:    []rule{},
+			Name:           grp.Name(),
+			File:           grp.File(),
+			Interval:       grp.Interval().Seconds(),
+			Rules:          []rule{},
+			EvaluationTime: grp.GetEvaluationDuration().Seconds(),
+			LastEvaluation: grp.GetEvaluationTimestamp(),
 		}
-
 		for _, r := range grp.Rules() {
 			var enrichedRule rule
 
@@ -793,35 +1073,46 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 			if r.LastError() != nil {
 				lastError = r.LastError().Error()
 			}
-
 			switch rule := r.(type) {
 			case *rules.AlertingRule:
+				if !returnAlerts {
+					break
+				}
 				enrichedRule = alertingRule{
-					Name:        rule.Name(),
-					Query:       rule.Query().String(),
-					Duration:    rule.Duration().Seconds(),
-					Labels:      rule.Labels(),
-					Annotations: rule.Annotations(),
-					Alerts:      rulesAlertsToAPIAlerts(rule.ActiveAlerts()),
-					Health:      rule.Health(),
-					LastError:   lastError,
-					Type:        "alerting",
+					State:          rule.State().String(),
+					Name:           rule.Name(),
+					Query:          rule.Query().String(),
+					Duration:       rule.HoldDuration().Seconds(),
+					Labels:         rule.Labels(),
+					Annotations:    rule.Annotations(),
+					Alerts:         rulesAlertsToAPIAlerts(rule.ActiveAlerts()),
+					Health:         rule.Health(),
+					LastError:      lastError,
+					EvaluationTime: rule.GetEvaluationDuration().Seconds(),
+					LastEvaluation: rule.GetEvaluationTimestamp(),
+					Type:           "alerting",
 				}
 			case *rules.RecordingRule:
+				if !returnRecording {
+					break
+				}
 				enrichedRule = recordingRule{
-					Name:      rule.Name(),
-					Query:     rule.Query().String(),
-					Labels:    rule.Labels(),
-					Health:    rule.Health(),
-					LastError: lastError,
-					Type:      "recording",
+					Name:           rule.Name(),
+					Query:          rule.Query().String(),
+					Labels:         rule.Labels(),
+					Health:         rule.Health(),
+					LastError:      lastError,
+					EvaluationTime: rule.GetEvaluationDuration().Seconds(),
+					LastEvaluation: rule.GetEvaluationTimestamp(),
+					Type:           "recording",
 				}
 			default:
 				err := errors.Errorf("failed to assert type of rule '%v'", rule.Name())
 				return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}
 			}
-
-			apiRuleGroup.Rules = append(apiRuleGroup.Rules, enrichedRule)
+			if enrichedRule != nil {
+				apiRuleGroup.Rules = append(apiRuleGroup.Rules, enrichedRule)
+			}
 		}
 		res.RuleGroups[i] = apiRuleGroup
 	}
@@ -830,6 +1121,18 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 
 type prometheusConfig struct {
 	YAML string `json:"yaml"`
+}
+
+func (api *API) serveRuntimeInfo(r *http.Request) apiFuncResult {
+	status, err := api.runtimeInfo()
+	if err != nil {
+		return apiFuncResult{status, &apiError{errorInternal, err}, nil, nil}
+	}
+	return apiFuncResult{status, nil, nil, nil}
+}
+
+func (api *API) serveBuildInfo(r *http.Request) apiFuncResult {
+	return apiFuncResult{api.buildInfo, nil, nil, nil}
 }
 
 func (api *API) serveConfig(r *http.Request) apiFuncResult {
@@ -841,6 +1144,43 @@ func (api *API) serveConfig(r *http.Request) apiFuncResult {
 
 func (api *API) serveFlags(r *http.Request) apiFuncResult {
 	return apiFuncResult{api.flagsMap, nil, nil, nil}
+}
+
+// stat holds the information about individual cardinality.
+type stat struct {
+	Name  string `json:"name"`
+	Value uint64 `json:"value"`
+}
+
+// tsdbStatus has information of cardinality statistics from postings.
+type tsdbStatus struct {
+	SeriesCountByMetricName     []stat `json:"seriesCountByMetricName"`
+	LabelValueCountByLabelName  []stat `json:"labelValueCountByLabelName"`
+	MemoryInBytesByLabelName    []stat `json:"memoryInBytesByLabelName"`
+	SeriesCountByLabelValuePair []stat `json:"seriesCountByLabelValuePair"`
+}
+
+func convertStats(stats []index.Stat) []stat {
+	result := make([]stat, 0, len(stats))
+	for _, item := range stats {
+		item := stat{Name: item.Name, Value: item.Count}
+		result = append(result, item)
+	}
+	return result
+}
+
+func (api *API) serveTSDBStatus(*http.Request) apiFuncResult {
+	s, err := api.db.Stats("__name__")
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}
+	}
+
+	return apiFuncResult{tsdbStatus{
+		SeriesCountByMetricName:     convertStats(s.IndexPostingStats.CardinalityMetricsStats),
+		LabelValueCountByLabelName:  convertStats(s.IndexPostingStats.CardinalityLabelStats),
+		MemoryInBytesByLabelName:    convertStats(s.IndexPostingStats.LabelValueStats),
+		SeriesCountByLabelValuePair: convertStats(s.IndexPostingStats.LabelValuePairsStats),
+	}, nil, nil, nil}
 }
 
 func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
@@ -865,8 +1205,8 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 	sortedExternalLabels := make([]prompb.Label, 0, len(externalLabels))
 	for name, value := range externalLabels {
 		sortedExternalLabels = append(sortedExternalLabels, prompb.Label{
-			Name:  string(name),
-			Value: string(value),
+			Name:  name,
+			Value: value,
 		})
 	}
 	sort.Slice(sortedExternalLabels, func(i, j int) bool {
@@ -881,65 +1221,144 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 
 	switch responseType {
 	case prompb.ReadRequest_STREAMED_XOR_CHUNKS:
-		w.Header().Set("Content-Type", "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse")
+		api.remoteReadStreamedXORChunks(ctx, w, req, externalLabels, sortedExternalLabels)
+	default:
+		// On empty or unknown types in req.AcceptedResponseTypes we default to non streamed, raw samples response.
+		api.remoteReadSamples(ctx, w, req, externalLabels, sortedExternalLabels)
+	}
+}
 
-		f, ok := w.(http.Flusher)
-		if !ok {
-			http.Error(w, "internal http.ResponseWriter does not implement http.Flusher interface", http.StatusInternalServerError)
+func (api *API) remoteReadSamples(
+	ctx context.Context,
+	w http.ResponseWriter,
+	req *prompb.ReadRequest,
+	externalLabels map[string]string,
+	sortedExternalLabels []prompb.Label,
+) {
+	w.Header().Set("Content-Type", "application/x-protobuf")
+	w.Header().Set("Content-Encoding", "snappy")
+
+	resp := prompb.ReadResponse{
+		Results: make([]*prompb.QueryResult, len(req.Queries)),
+	}
+	for i, query := range req.Queries {
+		if err := func() error {
+			filteredMatchers, err := filterExtLabelsFromMatchers(query.Matchers, externalLabels)
+			if err != nil {
+				return err
+			}
+
+			querier, err := api.Queryable.Querier(ctx, query.StartTimestampMs, query.EndTimestampMs)
+			if err != nil {
+				return err
+			}
+			defer func() {
+				if err := querier.Close(); err != nil {
+					level.Warn(api.logger).Log("msg", "Error on querier close", "err", err.Error())
+				}
+			}()
+
+			var hints *storage.SelectHints
+			if query.Hints != nil {
+				hints = &storage.SelectHints{
+					Start:    query.Hints.StartMs,
+					End:      query.Hints.EndMs,
+					Step:     query.Hints.StepMs,
+					Func:     query.Hints.Func,
+					Grouping: query.Hints.Grouping,
+					Range:    query.Hints.RangeMs,
+					By:       query.Hints.By,
+				}
+			}
+
+			var ws storage.Warnings
+			resp.Results[i], ws, err = remote.ToQueryResult(querier.Select(false, hints, filteredMatchers...), api.remoteReadSampleLimit)
+			if err != nil {
+				return err
+			}
+			for _, w := range ws {
+				level.Warn(api.logger).Log("msg", "Warnings on remote read query", "err", w.Error())
+			}
+			for _, ts := range resp.Results[i].Timeseries {
+				ts.Labels = remote.MergeLabels(ts.Labels, sortedExternalLabels)
+			}
+			return nil
+		}(); err != nil {
+			if httpErr, ok := err.(remote.HTTPError); ok {
+				http.Error(w, httpErr.Error(), httpErr.Status())
+				return
+			}
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		for i, query := range req.Queries {
-			err := api.remoteReadQuery(ctx, query, externalLabels, func(set storage.SeriesSet) error {
+	}
 
-				return remote.StreamChunkedReadResponses(
-					remote.NewChunkedWriter(w, f),
-					int64(i),
-					set,
-					sortedExternalLabels,
-					api.remoteReadMaxBytesInFrame,
-				)
-			})
+	if err := remote.EncodeReadResponse(&resp, w); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
+func (api *API) remoteReadStreamedXORChunks(ctx context.Context, w http.ResponseWriter, req *prompb.ReadRequest, externalLabels map[string]string, sortedExternalLabels []prompb.Label) {
+	w.Header().Set("Content-Type", "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse")
+
+	f, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "internal http.ResponseWriter does not implement http.Flusher interface", http.StatusInternalServerError)
+		return
+	}
+
+	for i, query := range req.Queries {
+		if err := func() error {
+			filteredMatchers, err := filterExtLabelsFromMatchers(query.Matchers, externalLabels)
 			if err != nil {
-				if httpErr, ok := err.(remote.HTTPError); ok {
-					http.Error(w, httpErr.Error(), httpErr.Status())
-					return
+				return err
+			}
+
+			querier, err := api.Queryable.ChunkQuerier(ctx, query.StartTimestampMs, query.EndTimestampMs)
+			if err != nil {
+				return err
+			}
+			defer func() {
+				if err := querier.Close(); err != nil {
+					level.Warn(api.logger).Log("msg", "Error on chunk querier close", "err", err.Error())
 				}
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}()
+
+			var hints *storage.SelectHints
+			if query.Hints != nil {
+				hints = &storage.SelectHints{
+					Start:    query.Hints.StartMs,
+					End:      query.Hints.EndMs,
+					Step:     query.Hints.StepMs,
+					Func:     query.Hints.Func,
+					Grouping: query.Hints.Grouping,
+					Range:    query.Hints.RangeMs,
+					By:       query.Hints.By,
+				}
+			}
+
+			ws, err := remote.StreamChunkedReadResponses(
+				remote.NewChunkedWriter(w, f),
+				int64(i),
+				// The streaming API has to provide the series sorted.
+				querier.Select(true, hints, filteredMatchers...),
+				sortedExternalLabels,
+				api.remoteReadMaxBytesInFrame,
+			)
+			if err != nil {
+				return err
+			}
+
+			for _, w := range ws {
+				level.Warn(api.logger).Log("msg", "Warnings on chunked remote read query", "warnings", w.Error())
+			}
+			return nil
+		}(); err != nil {
+			if httpErr, ok := err.(remote.HTTPError); ok {
+				http.Error(w, httpErr.Error(), httpErr.Status())
 				return
 			}
-		}
-	default:
-		w.Header().Set("Content-Type", "application/x-protobuf")
-		w.Header().Set("Content-Encoding", "snappy")
-
-		// On empty or unknown types in req.AcceptedResponseTypes we default to non streamed, raw samples response.
-		resp := prompb.ReadResponse{
-			Results: make([]*prompb.QueryResult, len(req.Queries)),
-		}
-		for i, query := range req.Queries {
-			err := api.remoteReadQuery(ctx, query, externalLabels, func(set storage.SeriesSet) error {
-
-				resp.Results[i], err = remote.ToQueryResult(set, api.remoteReadSampleLimit)
-				if err != nil {
-					return err
-				}
-
-				for _, ts := range resp.Results[i].Timeseries {
-					ts.Labels = remote.MergeLabels(ts.Labels, sortedExternalLabels)
-				}
-				return nil
-			})
-			if err != nil {
-				if httpErr, ok := err.(remote.HTTPError); ok {
-					http.Error(w, httpErr.Error(), httpErr.Status())
-					return
-				}
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-		}
-
-		if err := remote.EncodeReadResponse(&resp, w); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -972,49 +1391,10 @@ func filterExtLabelsFromMatchers(pbMatchers []*prompb.LabelMatcher, externalLabe
 	return filteredMatchers, nil
 }
 
-func (api *API) remoteReadQuery(ctx context.Context, query *prompb.Query, externalLabels map[string]string, seriesHandleFn func(set storage.SeriesSet) error) error {
-	filteredMatchers, err := filterExtLabelsFromMatchers(query.Matchers, externalLabels)
-	if err != nil {
-		return err
-	}
-
-	querier, err := api.Queryable.Querier(ctx, query.StartTimestampMs, query.EndTimestampMs)
-	if err != nil {
-		return err
-	}
-
-	var selectParams *storage.SelectParams
-	if query.Hints != nil {
-		selectParams = &storage.SelectParams{
-			Start: query.Hints.StartMs,
-			End:   query.Hints.EndMs,
-			Step:  query.Hints.StepMs,
-			Func:  query.Hints.Func,
-		}
-	}
-
-	defer func() {
-		if err := querier.Close(); err != nil {
-			level.Warn(api.logger).Log("msg", "error on querier close", "err", err.Error())
-		}
-	}()
-
-	set, _, err := querier.Select(selectParams, filteredMatchers...)
-	if err != nil {
-		return err
-	}
-	return seriesHandleFn(set)
-}
-
 func (api *API) deleteSeries(r *http.Request) apiFuncResult {
 	if !api.enableAdmin {
 		return apiFuncResult{nil, &apiError{errorUnavailable, errors.New("admin APIs disabled")}, nil, nil}
 	}
-	db := api.db()
-	if db == nil {
-		return apiFuncResult{nil, &apiError{errorUnavailable, errors.New("TSDB not ready")}, nil, nil}
-	}
-
 	if err := r.ParseForm(); err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrap(err, "error parsing form values")}, nil, nil}
 	}
@@ -1022,40 +1402,21 @@ func (api *API) deleteSeries(r *http.Request) apiFuncResult {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.New("no match[] parameter provided")}, nil, nil}
 	}
 
-	var start time.Time
-	if t := r.FormValue("start"); t != "" {
-		var err error
-		start, err = parseTime(t)
-		if err != nil {
-			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
-		}
-	} else {
-		start = minTime
+	start, err := parseTimeParam(r, "start", minTime)
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
-
-	var end time.Time
-	if t := r.FormValue("end"); t != "" {
-		var err error
-		end, err = parseTime(t)
-		if err != nil {
-			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
-		}
-	} else {
-		end = maxTime
+	end, err := parseTimeParam(r, "end", maxTime)
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 
 	for _, s := range r.Form["match[]"] {
-		matchers, err := promql.ParseMetricSelector(s)
+		matchers, err := parser.ParseMetricSelector(s)
 		if err != nil {
 			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 		}
-
-		var selector tsdbLabels.Selector
-		for _, m := range matchers {
-			selector = append(selector, convertMatcher(m))
-		}
-
-		if err := db.Delete(timestamp.FromTime(start), timestamp.FromTime(end), selector...); err != nil {
+		if err := api.db.Delete(timestamp.FromTime(start), timestamp.FromTime(end), matchers...); err != nil {
 			return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}
 		}
 	}
@@ -1078,13 +1439,8 @@ func (api *API) snapshot(r *http.Request) apiFuncResult {
 		}
 	}
 
-	db := api.db()
-	if db == nil {
-		return apiFuncResult{nil, &apiError{errorUnavailable, errors.New("TSDB not ready")}, nil, nil}
-	}
-
 	var (
-		snapdir = filepath.Join(db.Dir(), "snapshots")
+		snapdir = filepath.Join(api.dbDir, "snapshots")
 		name    = fmt.Sprintf("%s-%x",
 			time.Now().UTC().Format("20060102T150405Z0700"),
 			rand.Int())
@@ -1093,7 +1449,7 @@ func (api *API) snapshot(r *http.Request) apiFuncResult {
 	if err := os.MkdirAll(dir, 0777); err != nil {
 		return apiFuncResult{nil, &apiError{errorInternal, errors.Wrap(err, "create snapshot directory")}, nil, nil}
 	}
-	if err := db.Snapshot(dir, !skipHead); err != nil {
+	if err := api.db.Snapshot(dir, !skipHead); err != nil {
 		return apiFuncResult{nil, &apiError{errorInternal, errors.Wrap(err, "create snapshot")}, nil, nil}
 	}
 
@@ -1106,41 +1462,11 @@ func (api *API) cleanTombstones(r *http.Request) apiFuncResult {
 	if !api.enableAdmin {
 		return apiFuncResult{nil, &apiError{errorUnavailable, errors.New("admin APIs disabled")}, nil, nil}
 	}
-	db := api.db()
-	if db == nil {
-		return apiFuncResult{nil, &apiError{errorUnavailable, errors.New("TSDB not ready")}, nil, nil}
-	}
-
-	if err := db.CleanTombstones(); err != nil {
+	if err := api.db.CleanTombstones(); err != nil {
 		return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}
 	}
 
 	return apiFuncResult{nil, nil, nil, nil}
-}
-
-func convertMatcher(m *labels.Matcher) tsdbLabels.Matcher {
-	switch m.Type {
-	case labels.MatchEqual:
-		return tsdbLabels.NewEqualMatcher(m.Name, m.Value)
-
-	case labels.MatchNotEqual:
-		return tsdbLabels.Not(tsdbLabels.NewEqualMatcher(m.Name, m.Value))
-
-	case labels.MatchRegexp:
-		res, err := tsdbLabels.NewRegexpMatcher(m.Name, "^(?:"+m.Value+")$")
-		if err != nil {
-			panic(err)
-		}
-		return res
-
-	case labels.MatchNotRegexp:
-		res, err := tsdbLabels.NewRegexpMatcher(m.Name, "^(?:"+m.Value+")$")
-		if err != nil {
-			panic(err)
-		}
-		return tsdbLabels.Not(res)
-	}
-	panic("storage.convertMatcher: invalid matcher type")
 }
 
 func (api *API) respond(w http.ResponseWriter, data interface{}, warnings storage.Warnings) {
@@ -1176,6 +1502,7 @@ func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data inter
 		Error:     apiErr.err.Error(),
 		Data:      data,
 	})
+
 	if err != nil {
 		level.Error(api.logger).Log("msg", "error marshaling json response", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -1205,11 +1532,23 @@ func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data inter
 	}
 }
 
+func parseTimeParam(r *http.Request, paramName string, defaultValue time.Time) (time.Time, error) {
+	val := r.FormValue(paramName)
+	if val == "" {
+		return defaultValue, nil
+	}
+	result, err := parseTime(val)
+	if err != nil {
+		return time.Time{}, errors.Wrapf(err, "Invalid time value for '%s'", paramName)
+	}
+	return result, nil
+}
+
 func parseTime(s string) (time.Time, error) {
 	if t, err := strconv.ParseFloat(s, 64); err == nil {
 		s, ns := math.Modf(t)
 		ns = math.Round(ns*1000) / 1000
-		return time.Unix(int64(s), int64(ns*float64(time.Second))), nil
+		return time.Unix(int64(s), int64(ns*float64(time.Second))).UTC(), nil
 	}
 	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
 		return t, nil
@@ -1266,10 +1605,23 @@ func marshalPointJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 	}
 	stream.WriteMore()
 	stream.WriteRaw(`"`)
-	stream.WriteFloat64(p.V)
+
+	// Taken from https://github.com/json-iterator/go/blob/master/stream_float.go#L71 as a workaround
+	// to https://github.com/json-iterator/go/issues/365 (jsoniter, to follow json standard, doesn't allow inf/nan).
+	buf := stream.Buffer()
+	abs := math.Abs(p.V)
+	fmt := byte('f')
+	// Note: Must use float32 comparisons for underlying float32 value to get precise cutoffs right.
+	if abs != 0 {
+		if abs < 1e-6 || abs >= 1e21 {
+			fmt = 'e'
+		}
+	}
+	buf = strconv.AppendFloat(buf, p.V, fmt, -1, 64)
+	stream.SetBuffer(buf)
+
 	stream.WriteRaw(`"`)
 	stream.WriteArrayEnd()
-
 }
 
 func marshalPointJSONIsEmpty(ptr unsafe.Pointer) bool {

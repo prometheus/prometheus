@@ -5,7 +5,7 @@
 //
 // http://www.apache.org/licenses/LICENSE-2.0
 //
-// Unless required by applicable law or agreed to in writing, softwar
+// Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
@@ -29,11 +30,10 @@ func BenchmarkRangeQuery(b *testing.B) {
 	storage := teststorage.New(b)
 	defer storage.Close()
 	opts := EngineOpts{
-		Logger:        nil,
-		Reg:           nil,
-		MaxConcurrent: 10,
-		MaxSamples:    50000000,
-		Timeout:       100 * time.Second,
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 50000000,
+		Timeout:    100 * time.Second,
 	}
 	engine := NewEngine(opts)
 
@@ -68,13 +68,10 @@ func BenchmarkRangeQuery(b *testing.B) {
 	numIntervals := 8640 + 10000
 
 	for s := 0; s < numIntervals; s++ {
-		a, err := storage.Appender()
-		if err != nil {
-			b.Fatal(err)
-		}
+		a := storage.Appender(context.Background())
 		ts := int64(s * 10000) // 10s interval.
 		for i, metric := range metrics {
-			err := a.AddFast(metric, refs[i], ts, float64(s))
+			err := a.AddFast(refs[i], ts, float64(s))
 			if err != nil {
 				refs[i], _ = a.Add(metric, ts, float64(s))
 			}
@@ -110,6 +107,9 @@ func BenchmarkRangeQuery(b *testing.B) {
 		},
 		{
 			expr: "rate(a_X[1d])",
+		},
+		{
+			expr: "absent_over_time(a_X[1d])",
 		},
 		// Unary operators.
 		{
@@ -216,6 +216,50 @@ func BenchmarkRangeQuery(b *testing.B) {
 					b.Fatal(res.Err)
 				}
 				qry.Close()
+			}
+		})
+	}
+}
+
+func BenchmarkParser(b *testing.B) {
+	cases := []string{
+		"a",
+		"metric",
+		"1",
+		"1 >= bool 1",
+		"1 + 2/(3*1)",
+		"foo or bar",
+		"foo and bar unless baz or qux",
+		"bar + on(foo) bla / on(baz, buz) group_right(test) blub",
+		"foo / ignoring(test,blub) group_left(blub) bar",
+		"foo - ignoring(test,blub) group_right(bar,foo) bar",
+		`foo{a="b", foo!="bar", test=~"test", bar!~"baz"}`,
+		`min_over_time(rate(foo{bar="baz"}[2s])[5m:])[4m:3s]`,
+		"sum without(and, by, avg, count, alert, annotations)(some_metric) [30m:10s]",
+	}
+	errCases := []string{
+		"(",
+		"}",
+		"1 or 1",
+		"1 or on(bar) foo",
+		"foo unless on(bar) group_left(baz) bar",
+		"test[5d] OFFSET 10s [10m:5s]",
+	}
+
+	for _, c := range cases {
+		b.Run(c, func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				parser.ParseExpr(c)
+			}
+		})
+	}
+	for _, c := range errCases {
+		name := fmt.Sprintf("%s (should fail)", c)
+		b.Run(name, func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				parser.ParseExpr(c)
 			}
 		})
 	}

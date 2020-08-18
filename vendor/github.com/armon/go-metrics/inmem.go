@@ -10,6 +10,8 @@ import (
 	"time"
 )
 
+var spaceReplacer = strings.NewReplacer(" ", "_")
+
 // InmemSink provides a MetricSink that does in-memory aggregation
 // without sending metrics over a network. It can be embedded within
 // an application to provide profiling information.
@@ -312,36 +314,21 @@ func (i *InmemSink) getInterval() *IntervalMetrics {
 // Flattens the key for formatting, removes spaces
 func (i *InmemSink) flattenKey(parts []string) string {
 	buf := &bytes.Buffer{}
-	replacer := strings.NewReplacer(" ", "_")
 
-	if len(parts) > 0 {
-		replacer.WriteString(buf, parts[0])
-	}
-	for _, part := range parts[1:] {
-		replacer.WriteString(buf, ".")
-		replacer.WriteString(buf, part)
-	}
+	joined := strings.Join(parts, ".")
+
+	spaceReplacer.WriteString(buf, joined)
 
 	return buf.String()
 }
 
 // Flattens the key for formatting along with its labels, removes spaces
 func (i *InmemSink) flattenKeyLabels(parts []string, labels []Label) (string, string) {
-	buf := &bytes.Buffer{}
-	replacer := strings.NewReplacer(" ", "_")
-
-	if len(parts) > 0 {
-		replacer.WriteString(buf, parts[0])
-	}
-	for _, part := range parts[1:] {
-		replacer.WriteString(buf, ".")
-		replacer.WriteString(buf, part)
-	}
-
-	key := buf.String()
+	key := i.flattenKey(parts)
+	buf := bytes.NewBufferString(key)
 
 	for _, label := range labels {
-		replacer.WriteString(buf, fmt.Sprintf(";%s=%s", label.Name, label.Value))
+		spaceReplacer.WriteString(buf, fmt.Sprintf(";%s=%s", label.Name, label.Value))
 	}
 
 	return buf.String(), key

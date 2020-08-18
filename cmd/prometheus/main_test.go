@@ -15,9 +15,9 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
-	"net/http"
+	"io/ioutil"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,91 +25,34 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/kit/log"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
-var promPath string
+var promPath = os.Args[0]
 var promConfig = filepath.Join("..", "..", "documentation", "examples", "prometheus.yml")
 var promData = filepath.Join(os.TempDir(), "data")
 
 func TestMain(m *testing.M) {
-	flag.Parse()
-	if testing.Short() {
-		os.Exit(m.Run())
+	for i, arg := range os.Args {
+		if arg == "-test.main" {
+			os.Args = append(os.Args[:i], os.Args[i+1:]...)
+			main()
+			return
+		}
 	}
+
 	// On linux with a global proxy the tests will fail as the go client(http,grpc) tries to connect through the proxy.
 	os.Setenv("no_proxy", "localhost,127.0.0.1,0.0.0.0,:")
 
-	var err error
-	promPath, err = os.Getwd()
-	if err != nil {
-		fmt.Printf("can't get current dir :%s \n", err)
-		os.Exit(1)
-	}
-	promPath = filepath.Join(promPath, "prometheus")
-
-	build := exec.Command("go", "build", "-o", promPath)
-	output, err := build.CombinedOutput()
-	if err != nil {
-		fmt.Printf("compilation error :%s \n", output)
-		os.Exit(1)
-	}
-
 	exitCode := m.Run()
-	os.Remove(promPath)
 	os.RemoveAll(promData)
 	os.Exit(exitCode)
-}
-
-// As soon as prometheus starts responding to http request should be able to accept Interrupt signals for a graceful shutdown.
-func TestStartupInterrupt(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping test in short mode.")
-	}
-
-	prom := exec.Command(promPath, "--config.file="+promConfig, "--storage.tsdb.path="+promData)
-	err := prom.Start()
-	if err != nil {
-		t.Errorf("execution error: %v", err)
-		return
-	}
-
-	done := make(chan error)
-	go func() {
-		done <- prom.Wait()
-	}()
-
-	var startedOk bool
-	var stoppedErr error
-
-Loop:
-	for x := 0; x < 10; x++ {
-		// error=nil means prometheus has started so can send the interrupt signal and wait for the grace shutdown.
-		if _, err := http.Get("http://localhost:9090/graph"); err == nil {
-			startedOk = true
-			prom.Process.Signal(os.Interrupt)
-			select {
-			case stoppedErr = <-done:
-				break Loop
-			case <-time.After(10 * time.Second):
-			}
-			break Loop
-		}
-		time.Sleep(500 * time.Millisecond)
-	}
-
-	if !startedOk {
-		t.Errorf("prometheus didn't start in the specified timeout")
-		return
-	}
-	if err := prom.Process.Kill(); err == nil {
-		t.Errorf("prometheus didn't shutdown gracefully after sending the Interrupt signal")
-	} else if stoppedErr != nil && stoppedErr.Error() != "signal: interrupt" { // TODO - find a better way to detect when the process didn't exit as expected!
-		t.Errorf("prometheus exited with an unexpected error:%v", stoppedErr)
-	}
 }
 
 func TestComputeExternalURL(t *testing.T) {
@@ -168,9 +111,9 @@ func TestFailedStartupExitCode(t *testing.T) {
 	}
 
 	fakeInputFile := "fake-input-file"
-	expectedExitStatus := 1
+	expectedExitStatus := 2
 
-	prom := exec.Command(promPath, "--config.file="+fakeInputFile)
+	prom := exec.Command(promPath, "-test.main", "--config.file="+fakeInputFile)
 	err := prom.Run()
 	testutil.NotOk(t, err)
 
@@ -258,8 +201,17 @@ func TestWALSegmentSizeBounds(t *testing.T) {
 	}
 
 	for size, expectedExitStatus := range map[string]int{"9MB": 1, "257MB": 1, "10": 2, "1GB": 1, "12MB": 0} {
-		prom := exec.Command(promPath, "--storage.tsdb.wal-segment-size="+size, "--config.file="+promConfig)
-		err := prom.Start()
+		prom := exec.Command(promPath, "-test.main", "--storage.tsdb.wal-segment-size="+size, "--config.file="+promConfig)
+
+		// Log stderr in case of failure.
+		stderr, err := prom.StderrPipe()
+		testutil.Ok(t, err)
+		go func() {
+			slurp, _ := ioutil.ReadAll(stderr)
+			t.Log(string(slurp))
+		}()
+
+		err = prom.Start()
 		testutil.Ok(t, err)
 
 		if expectedExitStatus == 0 {
@@ -269,7 +221,7 @@ func TestWALSegmentSizeBounds(t *testing.T) {
 			case err := <-done:
 				t.Errorf("prometheus should be still running: %v", err)
 			case <-time.After(5 * time.Second):
-				prom.Process.Signal(os.Interrupt)
+				prom.Process.Kill()
 			}
 			continue
 		}
@@ -283,4 +235,72 @@ func TestWALSegmentSizeBounds(t *testing.T) {
 			t.Errorf("unable to retrieve the exit status for prometheus: %v", err)
 		}
 	}
+}
+
+func TestTimeMetrics(t *testing.T) {
+	tmpDir, err := ioutil.TempDir("", "time_metrics_e2e")
+	testutil.Ok(t, err)
+
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(tmpDir))
+	}()
+
+	reg := prometheus.NewRegistry()
+	db, err := openDBWithMetrics(tmpDir, log.NewNopLogger(), reg, nil)
+	testutil.Ok(t, err)
+	defer func() {
+		testutil.Ok(t, db.Close())
+	}()
+
+	// Check initial values.
+	testutil.Equals(t, map[string]float64{
+		"prometheus_tsdb_lowest_timestamp_seconds": float64(math.MaxInt64) / 1000,
+		"prometheus_tsdb_head_min_time_seconds":    float64(math.MaxInt64) / 1000,
+		"prometheus_tsdb_head_max_time_seconds":    float64(math.MinInt64) / 1000,
+	}, getCurrentGaugeValuesFor(t, reg,
+		"prometheus_tsdb_lowest_timestamp_seconds",
+		"prometheus_tsdb_head_min_time_seconds",
+		"prometheus_tsdb_head_max_time_seconds",
+	))
+
+	app := db.Appender(context.Background())
+	_, err = app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 1000, 1)
+	testutil.Ok(t, err)
+	_, err = app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 2000, 1)
+	testutil.Ok(t, err)
+	_, err = app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 3000, 1)
+	testutil.Ok(t, err)
+	testutil.Ok(t, app.Commit())
+
+	testutil.Equals(t, map[string]float64{
+		"prometheus_tsdb_lowest_timestamp_seconds": 1.0,
+		"prometheus_tsdb_head_min_time_seconds":    1.0,
+		"prometheus_tsdb_head_max_time_seconds":    3.0,
+	}, getCurrentGaugeValuesFor(t, reg,
+		"prometheus_tsdb_lowest_timestamp_seconds",
+		"prometheus_tsdb_head_min_time_seconds",
+		"prometheus_tsdb_head_max_time_seconds",
+	))
+}
+
+func getCurrentGaugeValuesFor(t *testing.T, reg prometheus.Gatherer, metricNames ...string) map[string]float64 {
+	f, err := reg.Gather()
+	testutil.Ok(t, err)
+
+	res := make(map[string]float64, len(metricNames))
+	for _, g := range f {
+		for _, m := range metricNames {
+			if g.GetName() != m {
+				continue
+			}
+
+			testutil.Equals(t, 1, len(g.GetMetric()))
+			if _, ok := res[m]; ok {
+				t.Error("expected only one metric family for", m)
+				t.FailNow()
+			}
+			res[m] = *g.GetMetric()[0].GetGauge().Value
+		}
+	}
+	return res
 }

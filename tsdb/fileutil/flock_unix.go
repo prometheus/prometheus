@@ -40,7 +40,7 @@ func (l *unixLock) set(lock bool) error {
 }
 
 func newLock(fileName string) (Releaser, error) {
-	f, err := os.OpenFile(fileName, os.O_RDWR|os.O_CREATE, 0644)
+	f, err := os.OpenFile(fileName, os.O_RDWR|os.O_CREATE, 0666)
 	if err != nil {
 		return nil, err
 	}

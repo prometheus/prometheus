@@ -14,18 +14,18 @@
 package remote
 
 import (
-	"crypto/md5"
-	"encoding/json"
+	"context"
+	"fmt"
 	"sync"
 	"time"
 
 	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/wal"
 )
 
 var (
@@ -48,27 +48,32 @@ var (
 // WriteStorage represents all the remote write storage.
 type WriteStorage struct {
 	logger log.Logger
+	reg    prometheus.Registerer
 	mtx    sync.Mutex
 
-	configHash        [16]byte
-	externalLabelHash [16]byte
+	watcherMetrics    *wal.WatcherMetrics
+	liveReaderMetrics *wal.LiveReaderMetrics
+	externalLabels    labels.Labels
 	walDir            string
-	queues            []*QueueManager
-	hashes            [][16]byte
+	queues            map[string]*QueueManager
 	samplesIn         *ewmaRate
 	flushDeadline     time.Duration
 }
 
 // NewWriteStorage creates and runs a WriteStorage.
-func NewWriteStorage(logger log.Logger, walDir string, flushDeadline time.Duration) *WriteStorage {
+func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, walDir string, flushDeadline time.Duration) *WriteStorage {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 	rws := &WriteStorage{
-		logger:        logger,
-		flushDeadline: flushDeadline,
-		samplesIn:     newEWMARate(ewmaWeight, shardUpdateDuration),
-		walDir:        walDir,
+		queues:            make(map[string]*QueueManager),
+		watcherMetrics:    wal.NewWatcherMetrics(reg),
+		liveReaderMetrics: wal.NewLiveReaderMetrics(reg),
+		logger:            logger,
+		reg:               reg,
+		flushDeadline:     flushDeadline,
+		samplesIn:         newEWMARate(ewmaWeight, shardUpdateDuration),
+		walDir:            walDir,
 	}
 	go rws.run()
 	return rws
@@ -89,50 +94,32 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 	defer rws.mtx.Unlock()
 
 	// Remote write queues only need to change if the remote write config or
-	// external labels change. Hash these together and only reload if the hash
-	// changes.
-	cfgBytes, err := json.Marshal(conf.RemoteWriteConfigs)
-	if err != nil {
-		return err
-	}
-	externalLabelBytes, err := json.Marshal(conf.GlobalConfig.ExternalLabels)
-	if err != nil {
-		return err
-	}
+	// external labels change.
+	externalLabelUnchanged := labels.Equal(conf.GlobalConfig.ExternalLabels, rws.externalLabels)
+	rws.externalLabels = conf.GlobalConfig.ExternalLabels
 
-	configHash := md5.Sum(cfgBytes)
-	externalLabelHash := md5.Sum(externalLabelBytes)
-	externalLabelUnchanged := externalLabelHash == rws.externalLabelHash
-	if configHash == rws.configHash && externalLabelUnchanged {
-		level.Debug(rws.logger).Log("msg", "remote write config has not changed, no need to restart QueueManagers")
-		return nil
-	}
-
-	rws.configHash = configHash
-	rws.externalLabelHash = externalLabelHash
-
-	// Update write queues
-	newQueues := []*QueueManager{}
-	newHashes := [][16]byte{}
-	newClientIndexes := []int{}
-	for i, rwConf := range conf.RemoteWriteConfigs {
-		b, err := json.Marshal(rwConf)
+	newQueues := make(map[string]*QueueManager)
+	newHashes := []string{}
+	for _, rwConf := range conf.RemoteWriteConfigs {
+		hash, err := toHash(rwConf)
 		if err != nil {
 			return err
 		}
 
-		// Use RemoteWriteConfigs and its index to get hash. So if its index changed,
-		// the correspoinding queue should also be restarted.
-		hash := md5.Sum(b)
-		if i < len(rws.queues) && rws.hashes[i] == hash && externalLabelUnchanged {
-			// The RemoteWriteConfig and index both not changed, keep the queue.
-			newQueues = append(newQueues, rws.queues[i])
-			newHashes = append(newHashes, hash)
-			rws.queues[i] = nil
-			continue
+		// Don't allow duplicate remote write configs.
+		if _, ok := newQueues[hash]; ok {
+			return fmt.Errorf("duplicate remote write configs are not allowed, found duplicate for URL: %s", rwConf.URL)
 		}
-		// Otherwise create a new queue.
-		c, err := NewClient(i, &ClientConfig{
+
+		// Set the queue name to the config hash if the user has not set
+		// a name in their remote write config so we can still differentiate
+		// between queues that have the same remote write endpoint.
+		name := hash[:6]
+		if rwConf.Name != "" {
+			name = rwConf.Name
+		}
+
+		c, err := NewWriteClient(name, &ClientConfig{
 			URL:              rwConf.URL,
 			Timeout:          rwConf.RemoteTimeout,
 			HTTPClientConfig: rwConf.HTTPClientConfig,
@@ -140,7 +127,21 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 		if err != nil {
 			return err
 		}
-		newQueues = append(newQueues, NewQueueManager(
+
+		queue, ok := rws.queues[hash]
+		if externalLabelUnchanged && ok {
+			// Update the client in case any secret configuration has changed.
+			queue.SetClient(c)
+			newQueues[hash] = queue
+			delete(rws.queues, hash)
+			continue
+		}
+
+		endpoint := rwConf.URL.String()
+		newQueues[hash] = NewQueueManager(
+			newQueueManagerMetrics(rws.reg, name, endpoint),
+			rws.watcherMetrics,
+			rws.liveReaderMetrics,
 			rws.logger,
 			rws.walDir,
 			rws.samplesIn,
@@ -149,33 +150,31 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rwConf.WriteRelabelConfigs,
 			c,
 			rws.flushDeadline,
-		))
+		)
+		// Keep track of which queues are new so we know which to start.
 		newHashes = append(newHashes, hash)
-		newClientIndexes = append(newClientIndexes, i)
 	}
 
+	// Anything remaining in rws.queues is a queue who's config has
+	// changed or was removed from the overall remote write config.
 	for _, q := range rws.queues {
-		// A nil queue means that queue has been reused.
-		if q != nil {
-			q.Stop()
-		}
+		q.Stop()
 	}
 
-	for _, index := range newClientIndexes {
-		newQueues[index].Start()
+	for _, hash := range newHashes {
+		newQueues[hash].Start()
 	}
 
 	rws.queues = newQueues
-	rws.hashes = newHashes
 
 	return nil
 }
 
 // Appender implements storage.Storage.
-func (rws *WriteStorage) Appender() (storage.Appender, error) {
+func (rws *WriteStorage) Appender(_ context.Context) storage.Appender {
 	return &timestampTracker{
 		writeStorage: rws,
-	}, nil
+	}
 }
 
 // Close closes the WriteStorage.
@@ -195,7 +194,7 @@ type timestampTracker struct {
 }
 
 // Add implements storage.Appender.
-func (t *timestampTracker) Add(_ labels.Labels, ts int64, v float64) (uint64, error) {
+func (t *timestampTracker) Add(_ labels.Labels, ts int64, _ float64) (uint64, error) {
 	t.samples++
 	if ts > t.highestTimestamp {
 		t.highestTimestamp = ts
@@ -204,8 +203,8 @@ func (t *timestampTracker) Add(_ labels.Labels, ts int64, v float64) (uint64, er
 }
 
 // AddFast implements storage.Appender.
-func (t *timestampTracker) AddFast(l labels.Labels, _ uint64, ts int64, v float64) error {
-	_, err := t.Add(l, ts, v)
+func (t *timestampTracker) AddFast(_ uint64, ts int64, v float64) error {
+	_, err := t.Add(nil, ts, v)
 	return err
 }
 

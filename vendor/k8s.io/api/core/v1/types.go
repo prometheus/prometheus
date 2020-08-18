@@ -30,6 +30,8 @@ const (
 	NamespaceAll string = ""
 	// NamespaceNodeLease is the namespace where we place node lease objects (used for node heartbeats)
 	NamespaceNodeLease string = "kube-node-lease"
+	// TopologyKeyAny is the service topology key that matches any node
+	TopologyKeyAny string = "*"
 )
 
 // Volume represents a named volume in a pod that may be accessed by any container in the pod.
@@ -275,7 +277,7 @@ const (
 type PersistentVolume struct {
 	metav1.TypeMeta `json:",inline"`
 	// Standard object's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#metadata
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
@@ -329,7 +331,6 @@ type PersistentVolumeSpec struct {
 	MountOptions []string `json:"mountOptions,omitempty" protobuf:"bytes,7,opt,name=mountOptions"`
 	// volumeMode defines if a volume is intended to be used with a formatted filesystem
 	// or to remain in raw block state. Value of Filesystem is implied when not included in spec.
-	// This is a beta feature.
 	// +optional
 	VolumeMode *PersistentVolumeMode `json:"volumeMode,omitempty" protobuf:"bytes,8,opt,name=volumeMode,casttype=PersistentVolumeMode"`
 	// NodeAffinity defines constraints that limit what nodes this volume can be accessed from.
@@ -390,7 +391,7 @@ type PersistentVolumeStatus struct {
 type PersistentVolumeList struct {
 	metav1.TypeMeta `json:",inline"`
 	// Standard list metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
 	// +optional
 	metav1.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 	// List of persistent volumes.
@@ -405,7 +406,7 @@ type PersistentVolumeList struct {
 type PersistentVolumeClaim struct {
 	metav1.TypeMeta `json:",inline"`
 	// Standard object's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#metadata
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
@@ -427,7 +428,7 @@ type PersistentVolumeClaim struct {
 type PersistentVolumeClaimList struct {
 	metav1.TypeMeta `json:",inline"`
 	// Standard list metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
 	// +optional
 	metav1.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 	// A list of persistent volume claims.
@@ -458,14 +459,17 @@ type PersistentVolumeClaimSpec struct {
 	StorageClassName *string `json:"storageClassName,omitempty" protobuf:"bytes,5,opt,name=storageClassName"`
 	// volumeMode defines what type of volume is required by the claim.
 	// Value of Filesystem is implied when not included in claim spec.
-	// This is a beta feature.
 	// +optional
 	VolumeMode *PersistentVolumeMode `json:"volumeMode,omitempty" protobuf:"bytes,6,opt,name=volumeMode,casttype=PersistentVolumeMode"`
-	// This field requires the VolumeSnapshotDataSource alpha feature gate to be
-	// enabled and currently VolumeSnapshot is the only supported data source.
-	// If the provisioner can support VolumeSnapshot data source, it will create
-	// a new volume and data will be restored to the volume at the same time.
-	// If the provisioner does not support VolumeSnapshot data source, volume will
+	// This field can be used to specify either:
+	// * An existing VolumeSnapshot object (snapshot.storage.k8s.io/VolumeSnapshot - Beta)
+	// * An existing PVC (PersistentVolumeClaim)
+	// * An existing custom resource/object that implements data population (Alpha)
+	// In order to use VolumeSnapshot object types, the appropriate feature gate
+	// must be enabled (VolumeSnapshotDataSource or AnyVolumeDataSource)
+	// If the provisioner or an external controller can support the specified data source,
+	// it will create a new volume based on the contents of the specified data source.
+	// If the specified data source is not supported, the volume will
 	// not be created and the failure will be reported as an event.
 	// In the future, we plan to support more data source types and the behavior
 	// of the provisioner may change.
@@ -885,9 +889,10 @@ type FlockerVolumeSource struct {
 type StorageMedium string
 
 const (
-	StorageMediumDefault   StorageMedium = ""          // use whatever the default is for the node, assume anything we don't explicitly handle is this
-	StorageMediumMemory    StorageMedium = "Memory"    // use memory (e.g. tmpfs on linux)
-	StorageMediumHugePages StorageMedium = "HugePages" // use hugepages
+	StorageMediumDefault         StorageMedium = ""           // use whatever the default is for the node, assume anything we don't explicitly handle is this
+	StorageMediumMemory          StorageMedium = "Memory"     // use memory (e.g. tmpfs on linux)
+	StorageMediumHugePages       StorageMedium = "HugePages"  // use hugepages
+	StorageMediumHugePagesPrefix StorageMedium = "HugePages-" // prefix for full medium notation HugePages-<size>
 )
 
 // Protocol defines network protocols supported for things like container ports.
@@ -1784,7 +1789,6 @@ type VolumeMount struct {
 	// Behaves similarly to SubPath but environment variable references $(VAR_NAME) are expanded using the container's environment.
 	// Defaults to "" (volume's root).
 	// SubPathExpr and SubPath are mutually exclusive.
-	// This field is beta in 1.15.
 	// +optional
 	SubPathExpr string `json:"subPathExpr,omitempty" protobuf:"bytes,6,opt,name=subPathExpr"`
 }
@@ -1847,7 +1851,7 @@ type EnvVar struct {
 // EnvVarSource represents a source for the value of an EnvVar.
 type EnvVarSource struct {
 	// Selects a field of the pod: supports metadata.name, metadata.namespace, metadata.labels, metadata.annotations,
-	// spec.nodeName, spec.serviceAccountName, status.hostIP, status.podIP.
+	// spec.nodeName, spec.serviceAccountName, status.hostIP, status.podIP, status.podIPs.
 	// +optional
 	FieldRef *ObjectFieldSelector `json:"fieldRef,omitempty" protobuf:"bytes,1,opt,name=fieldRef"`
 	// Selects a resource of the container: only resources limits and requests
@@ -2025,7 +2029,7 @@ type Probe struct {
 	// +optional
 	PeriodSeconds int32 `json:"periodSeconds,omitempty" protobuf:"varint,4,opt,name=periodSeconds"`
 	// Minimum consecutive successes for the probe to be considered successful after having failed.
-	// Defaults to 1. Must be 1 for liveness. Minimum value is 1.
+	// Defaults to 1. Must be 1 for liveness and startup. Minimum value is 1.
 	// +optional
 	SuccessThreshold int32 `json:"successThreshold,omitempty" protobuf:"varint,5,opt,name=successThreshold"`
 	// Minimum consecutive failures for the probe to be considered failed after having succeeded.
@@ -2179,7 +2183,6 @@ type Container struct {
 	// +patchStrategy=merge
 	VolumeMounts []VolumeMount `json:"volumeMounts,omitempty" patchStrategy:"merge" patchMergeKey:"mountPath" protobuf:"bytes,9,rep,name=volumeMounts"`
 	// volumeDevices is the list of block devices to be used by the container.
-	// This is a beta feature.
 	// +patchMergeKey=devicePath
 	// +patchStrategy=merge
 	// +optional
@@ -2196,6 +2199,16 @@ type Container struct {
 	// More info: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle#container-probes
 	// +optional
 	ReadinessProbe *Probe `json:"readinessProbe,omitempty" protobuf:"bytes,11,opt,name=readinessProbe"`
+	// StartupProbe indicates that the Pod has successfully initialized.
+	// If specified, no other probes are executed until this completes successfully.
+	// If this probe fails, the Pod will be restarted, just as if the livenessProbe failed.
+	// This can be used to provide different probe parameters at the beginning of a Pod's lifecycle,
+	// when it might take a long time to load data or warm a cache, than during steady-state operation.
+	// This cannot be updated.
+	// This is a beta feature enabled by the StartupProbe feature flag.
+	// More info: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle#container-probes
+	// +optional
+	StartupProbe *Probe `json:"startupProbe,omitempty" protobuf:"bytes,22,opt,name=startupProbe"`
 	// Actions that the management system should take in response to container lifecycle events.
 	// Cannot be updated.
 	// +optional
@@ -2282,7 +2295,7 @@ type Lifecycle struct {
 	// +optional
 	PostStart *Handler `json:"postStart,omitempty" protobuf:"bytes,1,opt,name=postStart"`
 	// PreStop is called immediately before a container is terminated due to an
-	// API request or management event such as liveness probe failure,
+	// API request or management event such as liveness/startup probe failure,
 	// preemption, resource contention, etc. The handler is not called if the
 	// container crashes or exits. The reason for termination is passed to the
 	// handler. The Pod's termination grace period countdown begins before the
@@ -2390,6 +2403,12 @@ type ContainerStatus struct {
 	// Container's ID in the format 'docker://<container_id>'.
 	// +optional
 	ContainerID string `json:"containerID,omitempty" protobuf:"bytes,8,opt,name=containerID"`
+	// Specifies whether the container has passed its startup probe.
+	// Initialized as false, becomes true after startupProbe is considered successful.
+	// Resets to false when the container is restarted, or if kubelet loses state temporarily.
+	// Is always true when no startupProbe is defined.
+	// +optional
+	Started *bool `json:"started,omitempty" protobuf:"varint,9,opt,name=started"`
 }
 
 // PodPhase is a label for the condition of a pod at the current time.
@@ -2733,7 +2752,7 @@ type PreferredSchedulingTerm struct {
 type Taint struct {
 	// Required. The taint key to be applied to a node.
 	Key string `json:"key" protobuf:"bytes,1,opt,name=key"`
-	// Required. The taint value corresponding to the taint key.
+	// The taint value corresponding to the taint key.
 	// +optional
 	Value string `json:"value,omitempty" protobuf:"bytes,2,opt,name=value"`
 	// Required. The effect of the taint on pods
@@ -2825,7 +2844,7 @@ type PodSpec struct {
 	// init container fails, the pod is considered to have failed and is handled according
 	// to its restartPolicy. The name for an init container or normal container must be
 	// unique among all containers.
-	// Init containers may not have Lifecycle actions, Readiness probes, or Liveness probes.
+	// Init containers may not have Lifecycle actions, Readiness probes, Liveness probes, or Startup probes.
 	// The resourceRequirements of an init container are taken into account during scheduling
 	// by finding the highest request/limit for each resource type, and then using the max of
 	// of that value or the sum of the normal containers. Limits are applied to init containers
@@ -2843,12 +2862,10 @@ type PodSpec struct {
 	// +patchMergeKey=name
 	// +patchStrategy=merge
 	Containers []Container `json:"containers" patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,2,rep,name=containers"`
-	// EphemeralContainers is the list of ephemeral containers that run in this pod. Ephemeral containers
-	// are added to an existing pod as a result of a user-initiated action such as troubleshooting.
-	// This list is read-only in the pod spec. It may not be specified in a create or modified in an
-	// update of a pod or pod template.
-	// To add an ephemeral container use the pod's ephemeralcontainers subresource, which allows update
-	// using the EphemeralContainers kind.
+	// List of ephemeral containers run in this pod. Ephemeral containers may be run in an existing
+	// pod to perform user-initiated actions such as debugging. This list cannot be specified when
+	// creating a pod, and it cannot be modified by updating the pod spec. In order to add an
+	// ephemeral container to an existing pod, use the pod's ephemeralcontainers subresource.
 	// This field is alpha-level and is only honored by servers that enable the EphemeralContainers feature.
 	// +optional
 	// +patchMergeKey=name
@@ -2927,7 +2944,6 @@ type PodSpec struct {
 	// in the same pod, and the first process in each container will not be assigned PID 1.
 	// HostPID and ShareProcessNamespace cannot both be set.
 	// Optional: Default to false.
-	// This field is beta-level and may be disabled with the PodShareProcessNamespace feature.
 	// +k8s:conversion-gen=false
 	// +optional
 	ShareProcessNamespace *bool `json:"shareProcessNamespace,omitempty" protobuf:"varint,27,opt,name=shareProcessNamespace"`
@@ -3024,8 +3040,7 @@ type PodSpec struct {
 	Overhead ResourceList `json:"overhead,omitempty" protobuf:"bytes,32,opt,name=overhead"`
 	// TopologySpreadConstraints describes how a group of pods ought to spread across topology
 	// domains. Scheduler will schedule pods in a way which abides by the constraints.
-	// This field is alpha-level and is only honored by clusters that enables the EvenPodsSpread
-	// feature.
+	// This field is only honored by clusters that enable the EvenPodsSpread feature.
 	// All topologySpreadConstraints are ANDed.
 	// +optional
 	// +patchMergeKey=topologyKey
@@ -3111,6 +3126,22 @@ type HostAlias struct {
 	Hostnames []string `json:"hostnames,omitempty" protobuf:"bytes,2,rep,name=hostnames"`
 }
 
+// PodFSGroupChangePolicy holds policies that will be used for applying fsGroup to a volume
+// when volume is mounted.
+type PodFSGroupChangePolicy string
+
+const (
+	// FSGroupChangeOnRootMismatch indicates that volume's ownership and permissions will be changed
+	// only when permission and ownership of root directory does not match with expected
+	// permissions on the volume. This can help shorten the time it takes to change
+	// ownership and permissions of a volume.
+	FSGroupChangeOnRootMismatch PodFSGroupChangePolicy = "OnRootMismatch"
+	// FSGroupChangeAlways indicates that volume's ownership and permissions
+	// should always be changed whenever volume is mounted inside a Pod. This the default
+	// behavior.
+	FSGroupChangeAlways PodFSGroupChangePolicy = "Always"
+)
+
 // PodSecurityContext holds pod-level security attributes and common container settings.
 // Some fields are also present in container.securityContext.  Field values of
 // container.securityContext take precedence over field values of PodSecurityContext.
@@ -3169,6 +3200,14 @@ type PodSecurityContext struct {
 	// sysctls (by the container runtime) might fail to launch.
 	// +optional
 	Sysctls []Sysctl `json:"sysctls,omitempty" protobuf:"bytes,7,rep,name=sysctls"`
+	// fsGroupChangePolicy defines behavior of changing ownership and permission of the volume
+	// before being exposed inside Pod. This field will only apply to
+	// volume types which support fsGroup based ownership(and permissions).
+	// It will have no effect on ephemeral volume types such as: secret, configmaps
+	// and emptydir.
+	// Valid values are "OnRootMismatch" and "Always". If not specified defaults to "Always".
+	// +optional
+	FSGroupChangePolicy *PodFSGroupChangePolicy `json:"fsGroupChangePolicy,omitempty" protobuf:"bytes,9,opt,name=fsGroupChangePolicy"`
 }
 
 // PodQOSClass defines the supported qos classes of Pods.
@@ -3220,6 +3259,10 @@ type PodIP struct {
 	IP string `json:"ip,omitempty" protobuf:"bytes,1,opt,name=ip"`
 }
 
+// EphemeralContainerCommon is a copy of all fields in Container to be inlined in
+// EphemeralContainer. This separate type allows easy conversion from EphemeralContainer
+// to Container and allows separate documentation for the fields of EphemeralContainer.
+// When a new field is added to Container it must be added here as well.
 type EphemeralContainerCommon struct {
 	// Name of the ephemeral container specified as a DNS_LABEL.
 	// This name must be unique among all containers, init containers and ephemeral containers.
@@ -3280,7 +3323,6 @@ type EphemeralContainerCommon struct {
 	// +patchStrategy=merge
 	VolumeMounts []VolumeMount `json:"volumeMounts,omitempty" patchStrategy:"merge" patchMergeKey:"mountPath" protobuf:"bytes,9,rep,name=volumeMounts"`
 	// volumeDevices is the list of block devices to be used by the container.
-	// This is a beta feature.
 	// +patchMergeKey=devicePath
 	// +patchStrategy=merge
 	// +optional
@@ -3291,6 +3333,9 @@ type EphemeralContainerCommon struct {
 	// Probes are not allowed for ephemeral containers.
 	// +optional
 	ReadinessProbe *Probe `json:"readinessProbe,omitempty" protobuf:"bytes,11,opt,name=readinessProbe"`
+	// Probes are not allowed for ephemeral containers.
+	// +optional
+	StartupProbe *Probe `json:"startupProbe,omitempty" protobuf:"bytes,22,opt,name=startupProbe"`
 	// Lifecycle is not allowed for ephemeral containers.
 	// +optional
 	Lifecycle *Lifecycle `json:"lifecycle,omitempty" protobuf:"bytes,12,opt,name=lifecycle"`
@@ -3350,16 +3395,20 @@ type EphemeralContainerCommon struct {
 // these two types.
 var _ = Container(EphemeralContainerCommon{})
 
-// An EphemeralContainer is a special type of container which doesn't come with any resource
-// or scheduling guarantees but can be added to a pod that has already been created. They are
-// intended for user-initiated activities such as troubleshooting a running pod.
-// Ephemeral containers will not be restarted when they exit, and they will be killed if the
-// pod is removed or restarted. If an ephemeral container causes a pod to exceed its resource
+// An EphemeralContainer is a container that may be added temporarily to an existing pod for
+// user-initiated activities such as debugging. Ephemeral containers have no resource or
+// scheduling guarantees, and they will not be restarted when they exit or when a pod is
+// removed or restarted. If an ephemeral container causes a pod to exceed its resource
 // allocation, the pod may be evicted.
-// Ephemeral containers are added via a pod's ephemeralcontainers subresource and will appear
-// in the pod spec once added. No fields in EphemeralContainer may be changed once added.
+// Ephemeral containers may not be added by directly updating the pod spec. They must be added
+// via the pod's ephemeralcontainers subresource, and they will appear in the pod spec
+// once added.
 // This is an alpha feature enabled by the EphemeralContainers feature flag.
 type EphemeralContainer struct {
+	// Ephemeral containers have all of the fields of Container, plus additional fields
+	// specific to ephemeral containers. Fields in common with Container are in the
+	// following inlined struct so than an EphemeralContainer may easily be converted
+	// to a Container.
 	EphemeralContainerCommon `json:",inline" protobuf:"bytes,1,req"`
 
 	// If set, the name of the container from PodSpec that this ephemeral container targets.
@@ -3454,8 +3503,8 @@ type PodStatus struct {
 	// More info: https://git.k8s.io/community/contributors/design-proposals/node/resource-qos.md
 	// +optional
 	QOSClass PodQOSClass `json:"qosClass,omitempty" protobuf:"bytes,9,rep,name=qosClass"`
-	// Status for any ephemeral containers that running in this pod.
-	// This field is alpha-level and is only honored by servers that enable the EphemeralContainers feature.
+	// Status for any ephemeral containers that have run in this pod.
+	// This field is alpha-level and is only populated by servers that enable the EphemeralContainers feature.
 	// +optional
 	EphemeralContainerStatuses []ContainerStatus `json:"ephemeralContainerStatuses,omitempty" protobuf:"bytes,13,rep,name=ephemeralContainerStatuses"`
 }
@@ -3466,14 +3515,14 @@ type PodStatus struct {
 type PodStatusResult struct {
 	metav1.TypeMeta `json:",inline"`
 	// Standard object's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#metadata
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 	// Most recently observed status of the pod.
 	// This data may not be up to date.
 	// Populated by the system.
 	// Read-only.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#spec-and-status
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status
 	// +optional
 	Status PodStatus `json:"status,omitempty" protobuf:"bytes,2,opt,name=status"`
 }
@@ -3488,12 +3537,12 @@ type PodStatusResult struct {
 type Pod struct {
 	metav1.TypeMeta `json:",inline"`
 	// Standard object's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#metadata
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// Specification of the desired behavior of the pod.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#spec-and-status
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status
 	// +optional
 	Spec PodSpec `json:"spec,omitempty" protobuf:"bytes,2,opt,name=spec"`
 
@@ -3501,7 +3550,7 @@ type Pod struct {
 	// This data may not be up to date.
 	// Populated by the system.
 	// Read-only.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#spec-and-status
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status
 	// +optional
 	Status PodStatus `json:"status,omitempty" protobuf:"bytes,3,opt,name=status"`
 }
@@ -3512,24 +3561,24 @@ type Pod struct {
 type PodList struct {
 	metav1.TypeMeta `json:",inline"`
 	// Standard list metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
 	// +optional
 	metav1.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// List of pods.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md
 	Items []Pod `json:"items" protobuf:"bytes,2,rep,name=items"`
 }
 
 // PodTemplateSpec describes the data a pod should have when created from a template
 type PodTemplateSpec struct {
 	// Standard object's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#metadata
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// Specification of the desired behavior of the pod.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#spec-and-status
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status
 	// +optional
 	Spec PodSpec `json:"spec,omitempty" protobuf:"bytes,2,opt,name=spec"`
 }
@@ -3541,12 +3590,12 @@ type PodTemplateSpec struct {
 type PodTemplate struct {
 	metav1.TypeMeta `json:",inline"`
 	// Standard object's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#metadata
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// Template defines the pods that will be created from this pod template.
-	// https://git.k8s.io/community/contributors/devel/api-conventions.md#spec-and-status
+	// https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status
 	// +optional
 	Template PodTemplateSpec `json:"template,omitempty" protobuf:"bytes,2,opt,name=template"`
 }
@@ -3557,7 +3606,7 @@ type PodTemplate struct {
 type PodTemplateList struct {
 	metav1.TypeMeta `json:",inline"`
 	// Standard list metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
 	// +optional
 	metav1.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
@@ -3669,12 +3718,12 @@ type ReplicationController struct {
 
 	// If the Labels of a ReplicationController are empty, they are defaulted to
 	// be the same as the Pod(s) that the replication controller manages.
-	// Standard object's metadata. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#metadata
+	// Standard object's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// Spec defines the specification of the desired behavior of the replication controller.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#spec-and-status
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status
 	// +optional
 	Spec ReplicationControllerSpec `json:"spec,omitempty" protobuf:"bytes,2,opt,name=spec"`
 
@@ -3682,7 +3731,7 @@ type ReplicationController struct {
 	// This data may be out of date by some window of time.
 	// Populated by the system.
 	// Read-only.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#spec-and-status
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status
 	// +optional
 	Status ReplicationControllerStatus `json:"status,omitempty" protobuf:"bytes,3,opt,name=status"`
 }
@@ -3693,7 +3742,7 @@ type ReplicationController struct {
 type ReplicationControllerList struct {
 	metav1.TypeMeta `json:",inline"`
 	// Standard list metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
 	// +optional
 	metav1.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
@@ -3793,6 +3842,19 @@ type LoadBalancerIngress struct {
 	// +optional
 	Hostname string `json:"hostname,omitempty" protobuf:"bytes,2,opt,name=hostname"`
 }
+
+// IPFamily represents the IP Family (IPv4 or IPv6). This type is used
+// to express the family of an IP expressed by a type (i.e. service.Spec.IPFamily)
+type IPFamily string
+
+const (
+	// IPv4Protocol indicates that this IP is IPv4 protocol
+	IPv4Protocol IPFamily = "IPv4"
+	// IPv6Protocol indicates that this IP is IPv6 protocol
+	IPv6Protocol IPFamily = "IPv6"
+	// MaxServiceTopologyKeys is the largest number of topology keys allowed on a service
+	MaxServiceTopologyKeys = 16
+)
 
 // ServiceSpec describes the attributes that a user creates on a service.
 type ServiceSpec struct {
@@ -3906,16 +3968,43 @@ type ServiceSpec struct {
 	// of peer discovery.
 	// +optional
 	PublishNotReadyAddresses bool `json:"publishNotReadyAddresses,omitempty" protobuf:"varint,13,opt,name=publishNotReadyAddresses"`
+
 	// sessionAffinityConfig contains the configurations of session affinity.
 	// +optional
 	SessionAffinityConfig *SessionAffinityConfig `json:"sessionAffinityConfig,omitempty" protobuf:"bytes,14,opt,name=sessionAffinityConfig"`
+
+	// ipFamily specifies whether this Service has a preference for a particular IP family (e.g. IPv4 vs.
+	// IPv6).  If a specific IP family is requested, the clusterIP field will be allocated from that family, if it is
+	// available in the cluster.  If no IP family is requested, the cluster's primary IP family will be used.
+	// Other IP fields (loadBalancerIP, loadBalancerSourceRanges, externalIPs) and controllers which
+	// allocate external load-balancers should use the same IP family.  Endpoints for this Service will be of
+	// this family.  This field is immutable after creation. Assigning a ServiceIPFamily not available in the
+	// cluster (e.g. IPv6 in IPv4 only cluster) is an error condition and will fail during clusterIP assignment.
+	// +optional
+	IPFamily *IPFamily `json:"ipFamily,omitempty" protobuf:"bytes,15,opt,name=ipFamily,Configcasttype=IPFamily"`
+
+	// topologyKeys is a preference-order list of topology keys which
+	// implementations of services should use to preferentially sort endpoints
+	// when accessing this Service, it can not be used at the same time as
+	// externalTrafficPolicy=Local.
+	// Topology keys must be valid label keys and at most 16 keys may be specified.
+	// Endpoints are chosen based on the first topology key with available backends.
+	// If this field is specified and all entries have no backends that match
+	// the topology of the client, the service has no backends for that client
+	// and connections should fail.
+	// The special value "*" may be used to mean "any topology". This catch-all
+	// value, if used, only makes sense as the last value in the list.
+	// If this is not specified or empty, no topology constraints will be applied.
+	// +optional
+	TopologyKeys []string `json:"topologyKeys,omitempty" protobuf:"bytes,16,opt,name=topologyKeys"`
 }
 
 // ServicePort contains information on service's port.
 type ServicePort struct {
 	// The name of this port within the service. This must be a DNS_LABEL.
-	// All ports within a ServiceSpec must have unique names. This maps to
-	// the 'Name' field in EndpointPort objects.
+	// All ports within a ServiceSpec must have unique names. When considering
+	// the endpoints for a Service, this must match the 'name' field in the
+	// EndpointPort.
 	// Optional if only one ServicePort is defined on this service.
 	// +optional
 	Name string `json:"name,omitempty" protobuf:"bytes,1,opt,name=name"`
@@ -3924,6 +4013,16 @@ type ServicePort struct {
 	// Default is TCP.
 	// +optional
 	Protocol Protocol `json:"protocol,omitempty" protobuf:"bytes,2,opt,name=protocol,casttype=Protocol"`
+
+	// The application protocol for this port.
+	// This field follows standard Kubernetes label syntax.
+	// Un-prefixed names are reserved for IANA standard service names (as per
+	// RFC-6335 and http://www.iana.org/assignments/service-names).
+	// Non-standard protocols should use prefixed names such as
+	// mycompany.com/my-custom-protocol.
+	// Field can be enabled with ServiceAppProtocol feature gate.
+	// +optional
+	AppProtocol *string `json:"appProtocol,omitempty" protobuf:"bytes,6,opt,name=appProtocol"`
 
 	// The port that will be exposed by this service.
 	Port int32 `json:"port" protobuf:"varint,3,opt,name=port"`
@@ -3958,19 +4057,19 @@ type ServicePort struct {
 type Service struct {
 	metav1.TypeMeta `json:",inline"`
 	// Standard object's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#metadata
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// Spec defines the behavior of a service.
-	// https://git.k8s.io/community/contributors/devel/api-conventions.md#spec-and-status
+	// https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status
 	// +optional
 	Spec ServiceSpec `json:"spec,omitempty" protobuf:"bytes,2,opt,name=spec"`
 
 	// Most recently observed status of the service.
 	// Populated by the system.
 	// Read-only.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#spec-and-status
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status
 	// +optional
 	Status ServiceStatus `json:"status,omitempty" protobuf:"bytes,3,opt,name=status"`
 }
@@ -3987,7 +4086,7 @@ const (
 type ServiceList struct {
 	metav1.TypeMeta `json:",inline"`
 	// Standard list metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
 	// +optional
 	metav1.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
@@ -3996,6 +4095,7 @@ type ServiceList struct {
 }
 
 // +genclient
+// +genclient:method=CreateToken,verb=create,subresource=token,input=k8s.io/api/authentication/v1.TokenRequest,result=k8s.io/api/authentication/v1.TokenRequest
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 // ServiceAccount binds together:
@@ -4005,7 +4105,7 @@ type ServiceList struct {
 type ServiceAccount struct {
 	metav1.TypeMeta `json:",inline"`
 	// Standard object's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#metadata
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
@@ -4035,7 +4135,7 @@ type ServiceAccount struct {
 type ServiceAccountList struct {
 	metav1.TypeMeta `json:",inline"`
 	// Standard list metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
 	// +optional
 	metav1.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
@@ -4062,7 +4162,7 @@ type ServiceAccountList struct {
 type Endpoints struct {
 	metav1.TypeMeta `json:",inline"`
 	// Standard object's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#metadata
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
@@ -4124,7 +4224,8 @@ type EndpointAddress struct {
 
 // EndpointPort is a tuple that describes a single port.
 type EndpointPort struct {
-	// The name of this port (corresponds to ServicePort.Name).
+	// The name of this port.  This must match the 'name' field in the
+	// corresponding ServicePort.
 	// Must be a DNS_LABEL.
 	// Optional only if one port is defined.
 	// +optional
@@ -4138,6 +4239,16 @@ type EndpointPort struct {
 	// Default is TCP.
 	// +optional
 	Protocol Protocol `json:"protocol,omitempty" protobuf:"bytes,3,opt,name=protocol,casttype=Protocol"`
+
+	// The application protocol for this port.
+	// This field follows standard Kubernetes label syntax.
+	// Un-prefixed names are reserved for IANA standard service names (as per
+	// RFC-6335 and http://www.iana.org/assignments/service-names).
+	// Non-standard protocols should use prefixed names such as
+	// mycompany.com/my-custom-protocol.
+	// Field can be enabled with ServiceAppProtocol feature gate.
+	// +optional
+	AppProtocol *string `json:"appProtocol,omitempty" protobuf:"bytes,4,opt,name=appProtocol"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -4146,7 +4257,7 @@ type EndpointPort struct {
 type EndpointsList struct {
 	metav1.TypeMeta `json:",inline"`
 	// Standard list metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
 	// +optional
 	metav1.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
@@ -4185,7 +4296,7 @@ type NodeSpec struct {
 	// Deprecated. Not all kubelets will set this field. Remove field after 1.13.
 	// see: https://issues.k8s.io/61966
 	// +optional
-	DoNotUse_ExternalID string `json:"externalID,omitempty" protobuf:"bytes,2,opt,name=externalID"`
+	DoNotUseExternalID string `json:"externalID,omitempty" protobuf:"bytes,2,opt,name=externalID"`
 }
 
 // NodeConfigSource specifies a source of node configuration. Exactly one subfield (excluding metadata) must be non-nil.
@@ -4540,19 +4651,19 @@ type ResourceList map[ResourceName]resource.Quantity
 type Node struct {
 	metav1.TypeMeta `json:",inline"`
 	// Standard object's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#metadata
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// Spec defines the behavior of a node.
-	// https://git.k8s.io/community/contributors/devel/api-conventions.md#spec-and-status
+	// https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status
 	// +optional
 	Spec NodeSpec `json:"spec,omitempty" protobuf:"bytes,2,opt,name=spec"`
 
 	// Most recently observed status of the node.
 	// Populated by the system.
 	// Read-only.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#spec-and-status
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status
 	// +optional
 	Status NodeStatus `json:"status,omitempty" protobuf:"bytes,3,opt,name=status"`
 }
@@ -4563,7 +4674,7 @@ type Node struct {
 type NodeList struct {
 	metav1.TypeMeta `json:",inline"`
 	// Standard list metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
 	// +optional
 	metav1.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
@@ -4594,6 +4705,12 @@ type NamespaceStatus struct {
 	// More info: https://kubernetes.io/docs/tasks/administer-cluster/namespaces/
 	// +optional
 	Phase NamespacePhase `json:"phase,omitempty" protobuf:"bytes,1,opt,name=phase,casttype=NamespacePhase"`
+
+	// Represents the latest available observations of a namespace's current state.
+	// +optional
+	// +patchMergeKey=type
+	// +patchStrategy=merge
+	Conditions []NamespaceCondition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,2,rep,name=conditions"`
 }
 
 type NamespacePhase string
@@ -4606,6 +4723,42 @@ const (
 	NamespaceTerminating NamespacePhase = "Terminating"
 )
 
+const (
+	// NamespaceTerminatingCause is returned as a defaults.cause item when a change is
+	// forbidden due to the namespace being terminated.
+	NamespaceTerminatingCause metav1.CauseType = "NamespaceTerminating"
+)
+
+type NamespaceConditionType string
+
+// These are valid conditions of a namespace.
+const (
+	// NamespaceDeletionDiscoveryFailure contains information about namespace deleter errors during resource discovery.
+	NamespaceDeletionDiscoveryFailure NamespaceConditionType = "NamespaceDeletionDiscoveryFailure"
+	// NamespaceDeletionContentFailure contains information about namespace deleter errors during deletion of resources.
+	NamespaceDeletionContentFailure NamespaceConditionType = "NamespaceDeletionContentFailure"
+	// NamespaceDeletionGVParsingFailure contains information about namespace deleter errors parsing GV for legacy types.
+	NamespaceDeletionGVParsingFailure NamespaceConditionType = "NamespaceDeletionGroupVersionParsingFailure"
+	// NamespaceContentRemaining contains information about resources remaining in a namespace.
+	NamespaceContentRemaining NamespaceConditionType = "NamespaceContentRemaining"
+	// NamespaceFinalizersRemaining contains information about which finalizers are on resources remaining in a namespace.
+	NamespaceFinalizersRemaining NamespaceConditionType = "NamespaceFinalizersRemaining"
+)
+
+// NamespaceCondition contains details about state of namespace.
+type NamespaceCondition struct {
+	// Type of namespace controller condition.
+	Type NamespaceConditionType `json:"type" protobuf:"bytes,1,opt,name=type,casttype=NamespaceConditionType"`
+	// Status of the condition, one of True, False, Unknown.
+	Status ConditionStatus `json:"status" protobuf:"bytes,2,opt,name=status,casttype=ConditionStatus"`
+	// +optional
+	LastTransitionTime metav1.Time `json:"lastTransitionTime,omitempty" protobuf:"bytes,4,opt,name=lastTransitionTime"`
+	// +optional
+	Reason string `json:"reason,omitempty" protobuf:"bytes,5,opt,name=reason"`
+	// +optional
+	Message string `json:"message,omitempty" protobuf:"bytes,6,opt,name=message"`
+}
+
 // +genclient
 // +genclient:nonNamespaced
 // +genclient:skipVerbs=deleteCollection
@@ -4616,17 +4769,17 @@ const (
 type Namespace struct {
 	metav1.TypeMeta `json:",inline"`
 	// Standard object's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#metadata
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// Spec defines the behavior of the Namespace.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#spec-and-status
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status
 	// +optional
 	Spec NamespaceSpec `json:"spec,omitempty" protobuf:"bytes,2,opt,name=spec"`
 
 	// Status describes the current status of a Namespace.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#spec-and-status
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status
 	// +optional
 	Status NamespaceStatus `json:"status,omitempty" protobuf:"bytes,3,opt,name=status"`
 }
@@ -4637,7 +4790,7 @@ type Namespace struct {
 type NamespaceList struct {
 	metav1.TypeMeta `json:",inline"`
 	// Standard list metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
 	// +optional
 	metav1.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
@@ -4653,7 +4806,7 @@ type NamespaceList struct {
 type Binding struct {
 	metav1.TypeMeta `json:",inline"`
 	// Standard object's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#metadata
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
@@ -4663,13 +4816,15 @@ type Binding struct {
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
-// A list of ephemeral containers used in API operations
+// A list of ephemeral containers used with the Pod ephemeralcontainers subresource.
 type EphemeralContainers struct {
 	metav1.TypeMeta `json:",inline"`
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
-	// The new set of ephemeral containers to use for a pod.
+	// A list of ephemeral containers associated with this pod. New ephemeral containers
+	// may be appended to this list, but existing ephemeral containers may not be removed
+	// or modified.
 	// +patchMergeKey=name
 	// +patchStrategy=merge
 	EphemeralContainers []EphemeralContainer `json:"ephemeralContainers" patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,2,rep,name=ephemeralContainers"`
@@ -4683,6 +4838,7 @@ type Preconditions struct {
 	UID *types.UID `json:"uid,omitempty" protobuf:"bytes,1,opt,name=uid,casttype=k8s.io/apimachinery/pkg/types.UID"`
 }
 
+// +k8s:conversion-gen:explicit-from=net/url.Values
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 // PodLogOptions is the query options for a Pod's logs REST call.
@@ -4723,8 +4879,18 @@ type PodLogOptions struct {
 	// slightly more or slightly less than the specified limit.
 	// +optional
 	LimitBytes *int64 `json:"limitBytes,omitempty" protobuf:"varint,8,opt,name=limitBytes"`
+
+	// insecureSkipTLSVerifyBackend indicates that the apiserver should not confirm the validity of the
+	// serving certificate of the backend it is connecting to.  This will make the HTTPS connection between the apiserver
+	// and the backend insecure. This means the apiserver cannot verify the log data it is receiving came from the real
+	// kubelet.  If the kubelet is configured to verify the apiserver's TLS credentials, it does not mean the
+	// connection to the real kubelet is vulnerable to a man in the middle attack (e.g. an attacker could not intercept
+	// the actual log data coming from the real kubelet).
+	// +optional
+	InsecureSkipTLSVerifyBackend bool `json:"insecureSkipTLSVerifyBackend,omitempty" protobuf:"varint,9,opt,name=insecureSkipTLSVerifyBackend"`
 }
 
+// +k8s:conversion-gen:explicit-from=net/url.Values
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 // PodAttachOptions is the query options to a Pod's remote attach call.
@@ -4762,6 +4928,7 @@ type PodAttachOptions struct {
 	Container string `json:"container,omitempty" protobuf:"bytes,5,opt,name=container"`
 }
 
+// +k8s:conversion-gen:explicit-from=net/url.Values
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 // PodExecOptions is the query options to a Pod's remote exec call.
@@ -4800,6 +4967,7 @@ type PodExecOptions struct {
 	Command []string `json:"command" protobuf:"bytes,6,rep,name=command"`
 }
 
+// +k8s:conversion-gen:explicit-from=net/url.Values
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 // PodPortForwardOptions is the query options to a Pod's port forward call
@@ -4817,6 +4985,7 @@ type PodPortForwardOptions struct {
 	Ports []int32 `json:"ports,omitempty" protobuf:"varint,1,rep,name=ports"`
 }
 
+// +k8s:conversion-gen:explicit-from=net/url.Values
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 // PodProxyOptions is the query options to a Pod's proxy call.
@@ -4828,6 +4997,7 @@ type PodProxyOptions struct {
 	Path string `json:"path,omitempty" protobuf:"bytes,1,opt,name=path"`
 }
 
+// +k8s:conversion-gen:explicit-from=net/url.Values
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 // NodeProxyOptions is the query options to a Node's proxy call.
@@ -4839,6 +5009,7 @@ type NodeProxyOptions struct {
 	Path string `json:"path,omitempty" protobuf:"bytes,1,opt,name=path"`
 }
 
+// +k8s:conversion-gen:explicit-from=net/url.Values
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 // ServiceProxyOptions is the query options to a Service's proxy call.
@@ -4855,10 +5026,24 @@ type ServiceProxyOptions struct {
 }
 
 // ObjectReference contains enough information to let you inspect or modify the referred object.
+// ---
+// New uses of this type are discouraged because of difficulty describing its usage when embedded in APIs.
+//  1. Ignored fields.  It includes many fields which are not generally honored.  For instance, ResourceVersion and FieldPath are both very rarely valid in actual usage.
+//  2. Invalid usage help.  It is impossible to add specific help for individual usage.  In most embedded usages, there are particular
+//     restrictions like, "must refer only to types A and B" or "UID not honored" or "name must be restricted".
+//     Those cannot be well described when embedded.
+//  3. Inconsistent validation.  Because the usages are different, the validation rules are different by usage, which makes it hard for users to predict what will happen.
+//  4. The fields are both imprecise and overly precise.  Kind is not a precise mapping to a URL. This can produce ambiguity
+//     during interpretation and require a REST mapping.  In most cases, the dependency is on the group,resource tuple
+//     and the version of the actual struct is irrelevant.
+//  5. We cannot easily change it.  Because this type is embedded in many locations, updates to this type
+//     will affect numerous schemas.  Don't make new APIs embed an underspecified API type they do not control.
+// Instead of using this type, create a locally provided and used type that is well-focused on your reference.
+// For example, ServiceReferences for admission registration: https://github.com/kubernetes/api/blob/release-1.17/admissionregistration/v1/types.go#L533 .
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 type ObjectReference struct {
 	// Kind of the referent.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
 	// +optional
 	Kind string `json:"kind,omitempty" protobuf:"bytes,1,opt,name=kind"`
 	// Namespace of the referent.
@@ -4877,7 +5062,7 @@ type ObjectReference struct {
 	// +optional
 	APIVersion string `json:"apiVersion,omitempty" protobuf:"bytes,5,opt,name=apiVersion"`
 	// Specific resourceVersion to which this reference is made, if any.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#concurrency-control-and-consistency
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
 	// +optional
 	ResourceVersion string `json:"resourceVersion,omitempty" protobuf:"bytes,6,opt,name=resourceVersion"`
 
@@ -4952,7 +5137,7 @@ const (
 type Event struct {
 	metav1.TypeMeta `json:",inline"`
 	// Standard object's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#metadata
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	metav1.ObjectMeta `json:"metadata" protobuf:"bytes,1,opt,name=metadata"`
 
 	// The object that this event is about.
@@ -5040,7 +5225,7 @@ const (
 type EventList struct {
 	metav1.TypeMeta `json:",inline"`
 	// Standard list metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
 	// +optional
 	metav1.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
@@ -5068,8 +5253,7 @@ const (
 // LimitRangeItem defines a min/max usage limit for any resource that matches on kind.
 type LimitRangeItem struct {
 	// Type of resource that this limit applies to.
-	// +optional
-	Type LimitType `json:"type,omitempty" protobuf:"bytes,1,opt,name=type,casttype=LimitType"`
+	Type LimitType `json:"type" protobuf:"bytes,1,opt,name=type,casttype=LimitType"`
 	// Max usage constraints on this kind by resource name.
 	// +optional
 	Max ResourceList `json:"max,omitempty" protobuf:"bytes,2,rep,name=max,casttype=ResourceList,castkey=ResourceName"`
@@ -5100,12 +5284,12 @@ type LimitRangeSpec struct {
 type LimitRange struct {
 	metav1.TypeMeta `json:",inline"`
 	// Standard object's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#metadata
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// Spec defines the limits enforced.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#spec-and-status
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status
 	// +optional
 	Spec LimitRangeSpec `json:"spec,omitempty" protobuf:"bytes,2,opt,name=spec"`
 }
@@ -5116,7 +5300,7 @@ type LimitRange struct {
 type LimitRangeList struct {
 	metav1.TypeMeta `json:",inline"`
 	// Standard list metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
 	// +optional
 	metav1.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
@@ -5256,17 +5440,17 @@ type ResourceQuotaStatus struct {
 type ResourceQuota struct {
 	metav1.TypeMeta `json:",inline"`
 	// Standard object's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#metadata
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// Spec defines the desired quota.
-	// https://git.k8s.io/community/contributors/devel/api-conventions.md#spec-and-status
+	// https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status
 	// +optional
 	Spec ResourceQuotaSpec `json:"spec,omitempty" protobuf:"bytes,2,opt,name=spec"`
 
 	// Status defines the actual enforced quota and its current usage.
-	// https://git.k8s.io/community/contributors/devel/api-conventions.md#spec-and-status
+	// https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status
 	// +optional
 	Status ResourceQuotaStatus `json:"status,omitempty" protobuf:"bytes,3,opt,name=status"`
 }
@@ -5277,7 +5461,7 @@ type ResourceQuota struct {
 type ResourceQuotaList struct {
 	metav1.TypeMeta `json:",inline"`
 	// Standard list metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
 	// +optional
 	metav1.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
@@ -5294,9 +5478,17 @@ type ResourceQuotaList struct {
 type Secret struct {
 	metav1.TypeMeta `json:",inline"`
 	// Standard object's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#metadata
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
+
+	// Immutable, if set to true, ensures that data stored in the Secret cannot
+	// be updated (only object metadata can be modified).
+	// If not set to true, the field can be modified at any time.
+	// Defaulted to nil.
+	// This is an alpha field enabled by ImmutableEphemeralVolumes feature gate.
+	// +optional
+	Immutable *bool `json:"immutable,omitempty" protobuf:"varint,5,opt,name=immutable"`
 
 	// Data contains the secret data. Each key must consist of alphanumeric
 	// characters, '-', '_' or '.'. The serialized form of the secret data is a
@@ -5411,7 +5603,7 @@ const (
 type SecretList struct {
 	metav1.TypeMeta `json:",inline"`
 	// Standard list metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
 	// +optional
 	metav1.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
@@ -5427,9 +5619,17 @@ type SecretList struct {
 type ConfigMap struct {
 	metav1.TypeMeta `json:",inline"`
 	// Standard object's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#metadata
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
+
+	// Immutable, if set to true, ensures that data stored in the ConfigMap cannot
+	// be updated (only object metadata can be modified).
+	// If not set to true, the field can be modified at any time.
+	// Defaulted to nil.
+	// This is an alpha field enabled by ImmutableEphemeralVolumes feature gate.
+	// +optional
+	Immutable *bool `json:"immutable,omitempty" protobuf:"varint,4,opt,name=immutable"`
 
 	// Data contains the configuration data.
 	// Each key must consist of alphanumeric characters, '-', '_' or '.'.
@@ -5456,7 +5656,7 @@ type ConfigMap struct {
 type ConfigMapList struct {
 	metav1.TypeMeta `json:",inline"`
 
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#metadata
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	// +optional
 	metav1.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
@@ -5498,7 +5698,7 @@ type ComponentCondition struct {
 type ComponentStatus struct {
 	metav1.TypeMeta `json:",inline"`
 	// Standard object's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#metadata
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
@@ -5515,7 +5715,7 @@ type ComponentStatus struct {
 type ComponentStatusList struct {
 	metav1.TypeMeta `json:",inline"`
 	// Standard list metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
 	// +optional
 	metav1.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
@@ -5667,14 +5867,12 @@ type SELinuxOptions struct {
 // WindowsSecurityContextOptions contain Windows-specific options and credentials.
 type WindowsSecurityContextOptions struct {
 	// GMSACredentialSpecName is the name of the GMSA credential spec to use.
-	// This field is alpha-level and is only honored by servers that enable the WindowsGMSA feature flag.
 	// +optional
 	GMSACredentialSpecName *string `json:"gmsaCredentialSpecName,omitempty" protobuf:"bytes,1,opt,name=gmsaCredentialSpecName"`
 
 	// GMSACredentialSpec is where the GMSA admission webhook
 	// (https://github.com/kubernetes-sigs/windows-gmsa) inlines the contents of the
 	// GMSA credential spec named by the GMSACredentialSpecName field.
-	// This field is alpha-level and is only honored by servers that enable the WindowsGMSA feature flag.
 	// +optional
 	GMSACredentialSpec *string `json:"gmsaCredentialSpec,omitempty" protobuf:"bytes,2,opt,name=gmsaCredentialSpec"`
 
@@ -5682,7 +5880,6 @@ type WindowsSecurityContextOptions struct {
 	// Defaults to the user specified in image metadata if unspecified.
 	// May also be set in PodSecurityContext. If set in both SecurityContext and
 	// PodSecurityContext, the value specified in SecurityContext takes precedence.
-	// This field is alpha-level and it is only honored by servers that enable the WindowsRunAsUserName feature flag.
 	// +optional
 	RunAsUserName *string `json:"runAsUserName,omitempty" protobuf:"bytes,3,opt,name=runAsUserName"`
 }
@@ -5693,7 +5890,7 @@ type WindowsSecurityContextOptions struct {
 type RangeAllocation struct {
 	metav1.TypeMeta `json:",inline"`
 	// Standard object's metadata.
-	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#metadata
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 

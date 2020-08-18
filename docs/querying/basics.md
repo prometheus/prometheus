@@ -55,10 +55,23 @@ Example:
 
 ### Float literals
 
-Scalar float values can be literally written as numbers of the form
-`[-](digits)[.(digits)]`.
+Scalar float values can be written as literal integer or floating-point numbers in the format (whitespace only included for better readability):
 
+    [-+]?(
+          [0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?
+        | 0[xX][0-9a-fA-F]+
+        | [nN][aA][nN]
+        | [iI][nN][fF]
+    )
+
+Examples:
+
+    23
     -2.43
+    3.4e-9
+    0x8f
+    -Inf
+    NaN
 
 ## Time series Selectors
 
@@ -74,8 +87,8 @@ name:
 
     http_requests_total
 
-It is possible to filter these time series further by appending a set of labels
-to match in curly braces (`{}`).
+It is possible to filter these time series further by appending a comma separated list of label
+matchers in curly braces (`{}`).
 
 This example selects only those time series with the `http_requests_total`
 metric name that also have the `job` label set to `prometheus` and their
@@ -118,32 +131,53 @@ The following expression selects all metrics that have a name starting with `job
 
     {__name__=~"job:.*"}
 
+The metric name must not be one of the keywords `bool`, `on`, `ignoring`, `group_left` and `group_right`. The following expression is illegal:
+
+    on{} # Bad!
+
+A workaround for this restriction is to use the `__name__` label:
+
+    {__name__="on"} # Good!
+
 All regular expressions in Prometheus use [RE2
 syntax](https://github.com/google/re2/wiki/Syntax).
 
 ### Range Vector Selectors
 
 Range vector literals work like instant vector literals, except that they
-select a range of samples back from the current instant. Syntactically, a range
-duration is appended in square brackets (`[]`) at the end of a vector selector
-to specify how far back in time values should be fetched for each resulting
-range vector element.
-
-Time durations are specified as a number, followed immediately by one of the
-following units:
-
-* `s` - seconds
-* `m` - minutes
-* `h` - hours
-* `d` - days
-* `w` - weeks
-* `y` - years
+select a range of samples back from the current instant. Syntactically, a [time
+duration](#time_durations) is appended in square brackets (`[]`) at the end of a
+vector selector to specify how far back in time values should be fetched for
+each resulting range vector element.
 
 In this example, we select all the values we have recorded within the last 5
 minutes for all time series that have the metric name `http_requests_total` and
 a `job` label set to `prometheus`:
 
     http_requests_total{job="prometheus"}[5m]
+
+### Time Durations
+
+Time durations are specified as a number, followed immediately by one of the
+following units:
+
+* `ms` - milliseconds
+* `s` - seconds
+* `m` - minutes
+* `h` - hours
+* `d` - days - assuming a day has always 24h
+* `w` - weeks - assuming a week has always 7d
+* `y` - years - assuming a year has always 365d
+
+Time durations can be combined, by concatenation. Units must be ordered from the
+longest to the shortest. A given unit must only appear once in a time duration.
+
+Here are some examples of valid time durations:
+
+    5h
+    1h30m
+    5m
+    10s
 
 ### Offset modifier
 
@@ -165,14 +199,14 @@ While the following would be *incorrect*:
 
     sum(http_requests_total{method="GET"}) offset 5m // INVALID.
 
-The same works for range vectors. This returns the 5-minutes rate that
+The same works for range vectors. This returns the 5-minute rate that
 `http_requests_total` had a week ago:
 
     rate(http_requests_total[5m] offset 1w)
 
 ## Subquery
 
-Subquery allows you to run an instant query for a given range and resolution. The result of a subquery is a range vector. 
+Subquery allows you to run an instant query for a given range and resolution. The result of a subquery is a range vector.
 
 Syntax: `<instant_query> '[' <range> ':' [<resolution>] ']' [ offset <duration> ]`
 
@@ -187,6 +221,12 @@ in detail in the [expression language operators](operators.md) page.
 
 Prometheus supports several functions to operate on data. These are described
 in detail in the [expression language functions](functions.md) page.
+
+## Comments
+
+PromQL supports line comments that start with `#`. Example:
+
+        # This is a comment
 
 ## Gotchas
 

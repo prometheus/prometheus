@@ -73,7 +73,7 @@ func (dns *Msg) Truncate(size int) {
 
 	var numExtra int
 	if l < size {
-		l, numExtra = truncateLoop(dns.Extra, size, l, compression)
+		_, numExtra = truncateLoop(dns.Extra, size, l, compression)
 	}
 
 	// See the function documentation for when we set this.

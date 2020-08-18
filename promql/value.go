@@ -21,32 +21,17 @@ import (
 
 	"github.com/pkg/errors"
 
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
+
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 )
 
-// Value is a generic interface for values resulting from a query evaluation.
-type Value interface {
-	Type() ValueType
-	String() string
-}
-
-func (Matrix) Type() ValueType { return ValueTypeMatrix }
-func (Vector) Type() ValueType { return ValueTypeVector }
-func (Scalar) Type() ValueType { return ValueTypeScalar }
-func (String) Type() ValueType { return ValueTypeString }
-
-// ValueType describes a type of a value.
-type ValueType string
-
-// The valid value types.
-const (
-	ValueTypeNone   = "none"
-	ValueTypeVector = "vector"
-	ValueTypeScalar = "scalar"
-	ValueTypeMatrix = "matrix"
-	ValueTypeString = "string"
-)
+func (Matrix) Type() parser.ValueType { return parser.ValueTypeMatrix }
+func (Vector) Type() parser.ValueType { return parser.ValueTypeVector }
+func (Scalar) Type() parser.ValueType { return parser.ValueTypeScalar }
+func (String) Type() parser.ValueType { return parser.ValueTypeString }
 
 // String represents a string value.
 type String struct {
@@ -205,7 +190,7 @@ func (m Matrix) ContainsSameLabelset() bool {
 // if any occurred.
 type Result struct {
 	Err      error
-	Value    Value
+	Value    parser.Value
 	Warnings storage.Warnings
 }
 
@@ -263,7 +248,7 @@ type StorageSeries struct {
 	series Series
 }
 
-// NewStorageSeries returns a StorageSeries fromfor series.
+// NewStorageSeries returns a StorageSeries from a Series.
 func NewStorageSeries(series Series) *StorageSeries {
 	return &StorageSeries{
 		series: series,
@@ -275,7 +260,7 @@ func (ss *StorageSeries) Labels() labels.Labels {
 }
 
 // Iterator returns a new iterator of the data of the series.
-func (ss *StorageSeries) Iterator() storage.SeriesIterator {
+func (ss *StorageSeries) Iterator() chunkenc.Iterator {
 	return newStorageSeriesIterator(ss.series)
 }
 

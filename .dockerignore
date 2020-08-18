@@ -5,3 +5,5 @@ data/
 !.build/linux-amd64/
 !.build/linux-armv7/
 !.build/linux-arm64/
+!.build/linux-ppc64le/
+!.build/linux-s390x/

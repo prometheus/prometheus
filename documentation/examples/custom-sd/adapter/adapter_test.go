@@ -14,6 +14,10 @@
 package adapter
 
 import (
+	"context"
+	"github.com/prometheus/prometheus/util/testutil"
+	"io/ioutil"
+	"os"
 	"reflect"
 	"testing"
 
@@ -221,4 +225,15 @@ func TestGenerateTargetGroups(t *testing.T) {
 		}
 
 	}
+}
+
+// TestWriteOutput checks the adapter can write a file to disk.
+func TestWriteOutput(t *testing.T) {
+	ctx := context.Background()
+	tmpfile, err := ioutil.TempFile("", "sd_adapter_test")
+	testutil.Ok(t, err)
+	defer os.Remove(tmpfile.Name())
+	tmpfile.Close()
+	adapter := NewAdapter(ctx, tmpfile.Name(), "test_sd", nil, nil)
+	testutil.Ok(t, adapter.writeOutput())
 }

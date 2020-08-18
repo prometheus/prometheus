@@ -237,7 +237,7 @@ Prometheus.Graph.prototype.checkTimeDrift = function() {
         method: "GET",
         url: PATH_PREFIX + "/api/v1/query?query=time()",
         dataType: "json",
-            success: function(json, textStatus) {
+        success: function(json, textStatus) {
             if (json.status !== "success") {
                 self.showError("Error querying time.");
                 return;
@@ -271,7 +271,7 @@ Prometheus.Graph.prototype.populateInsertableMetrics = function() {
           return;
         }
 
-        pageConfig.allMetrics = json.data; // todo: do we need self.allMetrics? Or can it just live on the page
+        pageConfig.allMetrics = json.data || []; // todo: do we need self.allMetrics? Or can it just live on the page
         for (var i = 0; i < pageConfig.allMetrics.length; i++) {
           self.insertMetric[0].options.add(new Option(pageConfig.allMetrics[i], pageConfig.allMetrics[i]));
         }
@@ -514,7 +514,7 @@ Prometheus.Graph.prototype.submitQuery = function() {
         }
 
         if ("warnings" in json && json.warnings.length > 0) {
-          self.showWarning(json.warnings.join('<br>'));
+          self.showWarning(json.warnings.map(escapeHTML).join('<br>'));
         }
 
         queryHistory.handleHistory(self);
@@ -738,13 +738,9 @@ Prometheus.Graph.prototype.updateGraph = function() {
         }
       });
     });
-    if (min === max) {
-      self.rickshawGraph.max = max + 1;
-      self.rickshawGraph.min = min - 1;
-    } else {
-      self.rickshawGraph.max = max + (0.1*(Math.abs(max - min)));
-      self.rickshawGraph.min = min - (0.1*(Math.abs(max - min)));
-    }
+    var offset = 0.1 * (min === max ? max : Math.abs(max-min));
+    self.rickshawGraph.max = max + offset;
+    self.rickshawGraph.min = min - offset;
   }
 
   var xAxis = new Rickshaw.Graph.Axis.Time({ graph: self.rickshawGraph });

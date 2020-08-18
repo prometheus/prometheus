@@ -269,10 +269,25 @@ func (m *Metrics) emitRuntimeStats() {
 	m.lastNumGC = num
 }
 
-// Inserts a string value at an index into the slice
+// Creates a new slice with the provided string value as the first element
+// and the provided slice values as the remaining values.
+// Ordering of the values in the provided input slice is kept in tact in the output slice.
 func insert(i int, v string, s []string) []string {
-	s = append(s, "")
-	copy(s[i+1:], s[i:])
-	s[i] = v
-	return s
+	// Allocate new slice to avoid modifying the input slice
+	newS := make([]string, len(s)+1)
+
+	// Copy s[0, i-1] into newS
+	for j := 0; j < i; j++ {
+		newS[j] = s[j]
+	}
+
+	// Insert provided element at index i
+	newS[i] = v
+
+	// Copy s[i, len(s)-1] into newS starting at newS[i+1]
+	for j := i; j < len(s); j++ {
+		newS[j+1] = s[j]
+	}
+
+	return newS
 }

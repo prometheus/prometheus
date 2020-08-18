@@ -54,7 +54,7 @@ func (s QueryTiming) String() string {
 	}
 }
 
-// Return a string representation of a QueryTiming span operation.
+// SpanOperation returns a string representation of a QueryTiming span operation.
 func (s QueryTiming) SpanOperation() string {
 	switch s {
 	case EvalTotalTime:
