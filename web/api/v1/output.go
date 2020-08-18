@@ -21,50 +21,37 @@ import (
 	"github.com/prometheus/prometheus/promql"
 )
 
-// modifier is a function that alters the value of a query result.
-type modifier struct {
-	name  string
-	apply func([]string, *promql.Result) (*promql.Result, error)
-}
+const (
+	limitParam = "limit"
+)
 
-// modifiers is an ordered list of registered modifiers.
-var modifiers = []modifier{
-	{
-		name:  "limit",
-		apply: limitModifier,
-	},
+func validateModifiers(r *http.Request) error {
+	params := r.URL.Query()
+	if p, ok := params[limitParam]; ok {
+		if l := len(p); l != 1 {
+			return fmt.Errorf("limit only takes 1 argument, got %d", l)
+		}
+	}
+	return nil
 }
 
 func applyModifiers(r *http.Request, res *promql.Result) (*promql.Result, error) {
 	params := r.URL.Query()
-	var err error
-	for _, f := range modifiers {
-		if v, ok := params[f.name]; ok {
-			res, err = f.apply(v, res)
-			if err != nil {
-				return nil, err
-			}
+	if p, ok := params[limitParam]; ok {
+		outSize, err := strconv.ParseUint(p[0], 10, 64)
+		if err != nil {
+			return nil, err
+		}
+		switch result := res.Value.(type) {
+		case promql.Matrix:
+			res.Value = result[:outSize]
+			return res, nil
+		case promql.Vector:
+			res.Value = result[:outSize]
+			return res, nil
+		default:
+			panic("unknown return type")
 		}
 	}
 	return res, nil
-}
-
-func limitModifier(limit []string, res *promql.Result) (*promql.Result, error) {
-	if l := len(limit); l != 1 {
-		return res, fmt.Errorf("limit only takes 1 argument, got %d", l)
-	}
-	outSize, err := strconv.ParseUint(limit[0], 10, 64)
-	if err != nil {
-		return nil, err
-	}
-	switch result := res.Value.(type) {
-	case promql.Matrix:
-		res.Value = result[:outSize]
-		return res, nil
-	case promql.Vector:
-		res.Value = result[:outSize]
-		return res, nil
-	default:
-		panic("unknown return type")
-	}
 }

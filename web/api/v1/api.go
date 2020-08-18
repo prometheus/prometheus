@@ -333,6 +333,11 @@ func (api *API) options(r *http.Request) apiFuncResult {
 }
 
 func (api *API) query(r *http.Request) (result apiFuncResult) {
+	err := validateModifiers(r)
+	if err != nil {
+		return apiFuncResult{nil, returnAPIError(err), nil, nil}
+	}
+
 	ts, err := parseTimeParam(r, "time", api.now())
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
@@ -390,6 +395,11 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 }
 
 func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
+	err := validateModifiers(r)
+	if err != nil {
+		return apiFuncResult{nil, returnAPIError(err), nil, nil}
+	}
+
 	start, err := parseTime(r.FormValue("start"))
 	if err != nil {
 		err = errors.Wrapf(err, "invalid parameter 'start'")
