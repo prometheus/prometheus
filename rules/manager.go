@@ -269,6 +269,8 @@ func NewGroup(o GroupOptions) *Group {
 	}
 
 	key := groupKey(o.File, o.Name)
+	metrics.iterationsMissed.WithLabelValues(key)
+	metrics.iterationsScheduled.WithLabelValues(key)
 	metrics.evalTotal.WithLabelValues(key)
 	metrics.evalFailures.WithLabelValues(key)
 	metrics.groupLastEvalTime.WithLabelValues(key)
