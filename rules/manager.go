@@ -55,8 +55,8 @@ const namespace = "prometheus"
 type Metrics struct {
 	evalDuration        prometheus.Summary
 	iterationDuration   prometheus.Summary
-	iterationsMissed    prometheus.Counter
-	iterationsScheduled prometheus.Counter
+	iterationsMissed    *prometheus.CounterVec
+	iterationsScheduled *prometheus.CounterVec
 	evalTotal           *prometheus.CounterVec
 	evalFailures        *prometheus.CounterVec
 	groupInterval       *prometheus.GaugeVec
@@ -82,16 +82,22 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 			Help:       "The duration of rule group evaluations.",
 			Objectives: map[float64]float64{0.01: 0.001, 0.05: 0.005, 0.5: 0.05, 0.90: 0.01, 0.99: 0.001},
 		}),
-		iterationsMissed: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace: namespace,
-			Name:      "rule_group_iterations_missed_total",
-			Help:      "The total number of rule group evaluations missed due to slow rule group evaluation.",
-		}),
-		iterationsScheduled: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace: namespace,
-			Name:      "rule_group_iterations_total",
-			Help:      "The total number of scheduled rule group evaluations, whether executed or missed.",
-		}),
+		iterationsMissed: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: namespace,
+				Name:      "rule_group_iterations_missed_total",
+				Help:      "The total number of rule group evaluations missed due to slow rule group evaluation.",
+			},
+			[]string{"rule_group"},
+		),
+		iterationsScheduled: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: namespace,
+				Name:      "rule_group_iterations_total",
+				Help:      "The total number of scheduled rule group evaluations, whether executed or missed.",
+			},
+			[]string{"rule_group"},
+		),
 		evalTotal: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
 				Namespace: namespace,
@@ -263,6 +269,8 @@ func NewGroup(o GroupOptions) *Group {
 	}
 
 	key := groupKey(o.File, o.Name)
+	metrics.iterationsMissed.WithLabelValues(key)
+	metrics.iterationsScheduled.WithLabelValues(key)
 	metrics.evalTotal.WithLabelValues(key)
 	metrics.evalFailures.WithLabelValues(key)
 	metrics.groupLastEvalTime.WithLabelValues(key)
@@ -317,7 +325,7 @@ func (g *Group) run(ctx context.Context) {
 	})
 
 	iter := func() {
-		g.metrics.iterationsScheduled.Inc()
+		g.metrics.iterationsScheduled.WithLabelValues(groupKey(g.file, g.name)).Inc()
 
 		start := time.Now()
 		g.Eval(ctx, evalTimestamp)
@@ -369,8 +377,8 @@ func (g *Group) run(ctx context.Context) {
 		case <-tick.C:
 			missed := (time.Since(evalTimestamp) / g.interval) - 1
 			if missed > 0 {
-				g.metrics.iterationsMissed.Add(float64(missed))
-				g.metrics.iterationsScheduled.Add(float64(missed))
+				g.metrics.iterationsMissed.WithLabelValues(groupKey(g.file, g.name)).Add(float64(missed))
+				g.metrics.iterationsScheduled.WithLabelValues(groupKey(g.file, g.name)).Add(float64(missed))
 			}
 			evalTimestamp = evalTimestamp.Add((missed + 1) * g.interval)
 			iter()
@@ -391,8 +399,8 @@ func (g *Group) run(ctx context.Context) {
 			case <-tick.C:
 				missed := (time.Since(evalTimestamp) / g.interval) - 1
 				if missed > 0 {
-					g.metrics.iterationsMissed.Add(float64(missed))
-					g.metrics.iterationsScheduled.Add(float64(missed))
+					g.metrics.iterationsMissed.WithLabelValues(groupKey(g.file, g.name)).Add(float64(missed))
+					g.metrics.iterationsScheduled.WithLabelValues(groupKey(g.file, g.name)).Add(float64(missed))
 				}
 				evalTimestamp = evalTimestamp.Add((missed + 1) * g.interval)
 				iter()
@@ -879,7 +887,6 @@ func NewManager(o *ManagerOptions) *Manager {
 		logger: o.Logger,
 	}
 
-	o.Metrics.iterationsMissed.Inc()
 	return m
 }
 
@@ -965,6 +972,8 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 			g.markStale = true
 			g.stop()
 			if m := g.metrics; m != nil {
+				m.iterationsMissed.DeleteLabelValues(n)
+				m.iterationsScheduled.DeleteLabelValues(n)
 				m.evalTotal.DeleteLabelValues(n)
 				m.evalFailures.DeleteLabelValues(n)
 				m.groupInterval.DeleteLabelValues(n)
