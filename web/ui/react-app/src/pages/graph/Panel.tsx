@@ -35,7 +35,7 @@ interface PanelState {
 export interface PanelOptions {
   expr: string;
   type: PanelType;
-  range: number; // Range in seconds.
+  range: number; // Range in milliseconds.
   endTime: number | null; // Timestamp in milliseconds.
   resolution: number | null; // Resolution in seconds.
   stacked: boolean;
@@ -109,7 +109,7 @@ class Panel extends Component<PanelProps & PathPrefixProps, PanelState> {
 
     const endTime = this.getEndTime().valueOf() / 1000; // TODO: shouldn't valueof only work when it's a moment?
     const startTime = endTime - this.props.options.range / 1000;
-    const resolution = this.props.options.resolution || Math.max(Math.floor(this.props.options.range / 250), 1);
+    const resolution = this.props.options.resolution || Math.max(Math.floor(this.props.options.range / 250000), 1);
     const params: URLSearchParams = new URLSearchParams({
       query: expr,
     });
