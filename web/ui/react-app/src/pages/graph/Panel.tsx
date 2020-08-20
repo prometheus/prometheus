@@ -49,7 +49,7 @@ export enum PanelType {
 export const PanelDefaultOptions: PanelOptions = {
   type: PanelType.Table,
   expr: '',
-  range: 3600,
+  range: 60 * 60 * 1000,
   endTime: null,
   resolution: null,
   stacked: false,
@@ -108,7 +108,7 @@ class Panel extends Component<PanelProps & PathPrefixProps, PanelState> {
     this.setState({ loading: true });
 
     const endTime = this.getEndTime().valueOf() / 1000; // TODO: shouldn't valueof only work when it's a moment?
-    const startTime = endTime - this.props.options.range;
+    const startTime = endTime - this.props.options.range / 1000;
     const resolution = this.props.options.resolution || Math.max(Math.floor(this.props.options.range / 250), 1);
     const params: URLSearchParams = new URLSearchParams({
       query: expr,
