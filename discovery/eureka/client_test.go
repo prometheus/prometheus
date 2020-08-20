@@ -190,13 +190,15 @@ func TestFetchApps(t *testing.T) {
 
 	testutil.Equals(t, len(apps.Applications[1].Instances), 2)
 	testutil.Equals(t, apps.Applications[1].Instances[0].InstanceID, "meta-service002.test.com:meta-service:8080")
-	testutil.Equals(t, apps.Applications[1].Instances[0].Metadata.Map["project"], "meta-service")
-	testutil.Equals(t, apps.Applications[1].Instances[0].Metadata.Map["management.port"], "8090")
+	testutil.Equals(t, apps.Applications[1].Instances[0].Metadata.Items[0].XMLName.Local, "project")
+	testutil.Equals(t, apps.Applications[1].Instances[0].Metadata.Items[0].Content, "meta-service")
+	testutil.Equals(t, apps.Applications[1].Instances[0].Metadata.Items[1].XMLName.Local, "management.port")
+	testutil.Equals(t, apps.Applications[1].Instances[0].Metadata.Items[1].Content, "8090")
 	testutil.Equals(t, apps.Applications[1].Instances[1].InstanceID, "meta-service001.test.com:meta-service:8080")
 }
 
 func Test500ErrorHttpResponse(t *testing.T) {
-	// Simulate 500 error
+	// Simulate 500 error.
 	respHandler := func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Header().Set("Content-Type", "application/xml")

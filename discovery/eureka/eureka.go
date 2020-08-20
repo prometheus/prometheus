@@ -69,6 +69,7 @@ func init() {
 
 // SDConfig is the configuration for applications running on Eureka.
 type SDConfig struct {
+<<<<<<< HEAD
 	Server           string                  `yaml:"server,omitempty"`
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 	RefreshInterval  model.Duration          `yaml:"refresh_interval,omitempty"`
@@ -85,6 +86,11 @@ func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Di
 // SetDirectory joins any relative file paths with dir.
 func (c *SDConfig) SetDirectory(dir string) {
 	c.HTTPClientConfig.SetDirectory(dir)
+=======
+	Server           string                       `yaml:"server"`
+	RefreshInterval  model.Duration               `yaml:"refresh_interval"`
+	HTTPClientConfig config_util.HTTPClientConfig `yaml:",inline"`
+>>>>>>> Remove metadata_unmarshaller and remove omittempties
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -155,7 +161,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 func targetsForApp(app *Application) []model.LabelSet {
 	targets := make([]model.LabelSet, 0, len(app.Instances))
 
-	// Gather info about the app's 'instances'. Each instance is considered a task
+	// Gather info about the app's 'instances'. Each instance is considered a task.
 	for _, t := range app.Instances {
 		targetAddress := net.JoinHostPort(t.HostName, strconv.Itoa(t.Port.Port))
 		target := model.LabelSet{
@@ -183,17 +189,17 @@ func targetsForApp(app *Application) []model.LabelSet {
 			target[appInstanceDataCenterInfoNameLabel] = lv(t.DataCenterInfo.Name)
 
 			if t.DataCenterInfo.Metadata != nil {
-				for k, v := range t.DataCenterInfo.Metadata.Map {
-					ln := strutil.SanitizeLabelName(k)
-					target[model.LabelName(appInstanceDataCenterInfoMetadataPrefix+ln)] = lv(v)
+				for _, m := range t.DataCenterInfo.Metadata.Items {
+					ln := strutil.SanitizeLabelName(m.XMLName.Local)
+					target[model.LabelName(appInstanceDataCenterInfoMetadataPrefix+ln)] = lv(m.Content)
 				}
 			}
 		}
 
 		if t.Metadata != nil {
-			for k, v := range t.Metadata.Map {
-				ln := strutil.SanitizeLabelName(k)
-				target[model.LabelName(appInstanceMetadataPrefix+ln)] = lv(v)
+			for _, m := range t.Metadata.Items {
+				ln := strutil.SanitizeLabelName(m.XMLName.Local)
+				target[model.LabelName(appInstanceMetadataPrefix+ln)] = lv(m.Content)
 			}
 		}
 

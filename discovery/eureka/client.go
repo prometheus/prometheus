@@ -27,7 +27,7 @@ import (
 type Applications struct {
 	VersionsDelta int           `xml:"versions__delta"`
 	AppsHashcode  string        `xml:"apps__hashcode"`
-	Applications  []Application `xml:"application,omitempty"`
+	Applications  []Application `xml:"application"`
 }
 
 type Application struct {
@@ -42,36 +42,45 @@ type Port struct {
 
 type Instance struct {
 	HostName                      string          `xml:"hostName"`
-	HomePageURL                   string          `xml:"homePageUrl,omitempty"`
+	HomePageURL                   string          `xml:"homePageUrl"`
 	StatusPageURL                 string          `xml:"statusPageUrl"`
-	HealthCheckURL                string          `xml:"healthCheckUrl,omitempty"`
+	HealthCheckURL                string          `xml:"healthCheckUrl"`
 	App                           string          `xml:"app"`
 	IPAddr                        string          `xml:"ipAddr"`
 	VipAddress                    string          `xml:"vipAddress"`
-	SecureVipAddress              string          `xml:"secureVipAddress,omitempty"`
+	SecureVipAddress              string          `xml:"secureVipAddress"`
 	Status                        string          `xml:"status"`
-	Port                          *Port           `xml:"port,omitempty"`
-	SecurePort                    *Port           `xml:"securePort,omitempty"`
+	Port                          *Port           `xml:"port"`
+	SecurePort                    *Port           `xml:"securePort"`
 	DataCenterInfo                *DataCenterInfo `xml:"dataCenterInfo"`
-	Metadata                      *MetaData       `xml:"metadata,omitempty"`
-	IsCoordinatingDiscoveryServer bool            `xml:"isCoordinatingDiscoveryServer,omitempty"`
-	LastUpdatedTimestamp          int             `xml:"lastUpdatedTimestamp,omitempty"`
-	LastDirtyTimestamp            int             `xml:"lastDirtyTimestamp,omitempty"`
-	ActionType                    string          `xml:"actionType,omitempty"`
-	CountryID                     int             `xml:"countryId,omitempty"`
-	InstanceID                    string          `xml:"instanceId,omitempty"`
+	Metadata                      *MetaData       `xml:"metadata"`
+	IsCoordinatingDiscoveryServer bool            `xml:"isCoordinatingDiscoveryServer"`
+	LastUpdatedTimestamp          int             `xml:"lastUpdatedTimestamp"`
+	LastDirtyTimestamp            int             `xml:"lastDirtyTimestamp"`
+	ActionType                    string          `xml:"actionType"`
+	CountryID                     int             `xml:"countryId"`
+	InstanceID                    string          `xml:"instanceId"`
+}
+
+type MetaData struct {
+	Items []Tag `xml:",any"`
+}
+
+type Tag struct {
+	XMLName xml.Name
+	Content string `xml:",innerxml"`
 }
 
 type DataCenterInfo struct {
 	Name     string    `xml:"name"`
 	Class    string    `xml:"class,attr"`
-	Metadata *MetaData `xml:"metadata,omitempty"`
+	Metadata *MetaData `xml:"metadata"`
 }
 
 const appListPath string = "/apps"
 
 func fetchApps(ctx context.Context, server string, client *http.Client) (*Applications, error) {
-	url := appsURL(server)
+	url := fmt.Sprintf("%s%s", server, appListPath)
 
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -98,8 +107,4 @@ func fetchApps(ctx context.Context, server string, client *http.Client) (*Applic
 		return nil, errors.Wrapf(err, "%q", url)
 	}
 	return &apps, nil
-}
-
-func appsURL(server string) string {
-	return fmt.Sprintf("%s%s", server, appListPath)
 }
