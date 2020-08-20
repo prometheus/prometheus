@@ -72,9 +72,6 @@ func (u URL) MarshalYAML() (interface{}, error) {
 	return nil, nil
 }
 
-// RoundTripWrapper is used in HTTPClientConfig to add custom functionality to the http request path
-type RoundTripWrapper func(rt http.RoundTripper) http.RoundTripper
-
 // HTTPClientConfig configures an HTTP client.
 type HTTPClientConfig struct {
 	// The HTTP basic authentication credentials for the targets.
@@ -87,8 +84,6 @@ type HTTPClientConfig struct {
 	ProxyURL URL `yaml:"proxy_url,omitempty"`
 	// TLSConfig to use to connect to the targets.
 	TLSConfig TLSConfig `yaml:"tls_config,omitempty"`
-	// WrapBaseRoundTripper can be used to add custom functionality in the http request path
-	WrapBaseRoundTripper RoundTripWrapper `yaml:"-"`
 }
 
 // Validate validates the HTTPClientConfig to check only one of BearerToken,
@@ -163,10 +158,6 @@ func NewRoundTripperFromConfig(cfg HTTPClientConfig, name string, disableKeepAli
 		err := http2.ConfigureTransport(rt.(*http.Transport))
 		if err != nil {
 			return nil, err
-		}
-
-		if cfg.WrapBaseRoundTripper != nil {
-			rt = cfg.WrapBaseRoundTripper(rt)
 		}
 
 		// If a bearer token is provided, create a round tripper that will set the
