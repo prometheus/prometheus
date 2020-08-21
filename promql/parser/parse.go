@@ -121,7 +121,9 @@ func ParseExpr(input string) (expr Expr, err error) {
 	if len(p.parseErrors) != 0 {
 		err = p.parseErrors
 	}
-
+	fmt.Println("earlier here")
+	expr = applyLexItems(expr, input)
+	fmt.Println("now here")
 	return expr, err
 }
 
@@ -176,6 +178,35 @@ func newParser(input string) *parser {
 		state: lexStatements,
 	}
 	return p
+}
+
+func applyLexItems(expr Expr, input string) Expr {
+	fmt.Println("first part")
+	lexItems := LexItems(input)
+	fmt.Println("second part")
+	switch e := expr.(type) {
+	case *AggregateExpr:
+		e.ExprExtensions.SetItems(lexItems)
+	case *BinaryExpr:
+		e.ExprExtensions.SetItems(lexItems)
+	case *Call:
+		e.ExprExtensions.SetItems(lexItems)
+	case *SubqueryExpr:
+		e.ExprExtensions.SetItems(lexItems)
+	case *ParenExpr:
+		e.ExprExtensions.SetItems(lexItems)
+	case *UnaryExpr:
+		e.ExprExtensions.SetItems(lexItems)
+	case *MatrixSelector:
+		e.ExprExtensions.SetItems(lexItems)
+	case *NumberLiteral:
+		e.ExprExtensions.SetItems(lexItems)
+	case *StringLiteral:
+		e.ExprExtensions.SetItems(lexItems)
+	case *VectorSelector:
+		e.ExprExtensions.SetItems(lexItems)
+	}
+	return expr
 }
 
 // SequenceValue is an omittable value in a sequence of time series values.

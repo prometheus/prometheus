@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package prettier
+package parser
 
 import (
 	"testing"
@@ -239,7 +239,7 @@ __name__="metric_name"}`,
 }
 
 func TestLexItemSorting(t *testing.T) {
-	prettier := New("", 100, IndentAsSpace)
+	prettier := PromqlPrettier("", 100, IndentAsSpace)
 	for i, expr := range sortingLexItemCases {
 		expectedSlice := prettier.refreshLexItems(prettier.lexItems(expr.expected))
 		input := prettier.lexItems(expr.expr)
@@ -735,7 +735,8 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `(sum(node_memory_MemTotal) - sum(node_memory_MemFree + node_memory_Buffers + node_memory_Cached) ) / sum(node_memory_MemTotal) * 100 > 85`,
-		expected: `    (sum(node_memory_MemTotal)
+		expected: `    (
+        sum(node_memory_MemTotal)
       -
         sum(node_memory_MemFree
           +
@@ -919,7 +920,7 @@ var prettierCases = []prettierTest{
 
 func TestPrettierCases(t *testing.T) {
 	for _, expr := range prettierCases {
-		output, err := New(expr.expr, 100, IndentAsSpace).Prettify()
+		output, err := PromqlPrettier(expr.expr, 100, IndentAsSpace).Prettify()
 		testutil.Ok(t, err)
 		testutil.Equals(t, expr.expected, output, "formatting does not match")
 	}

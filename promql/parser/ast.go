@@ -82,8 +82,16 @@ type Expr interface {
 // Expressions is a list of expression nodes that implements Node.
 type Expressions []Expr
 
+type ExprExtensions struct {
+	LexItems []Item
+}
+
+func (e *ExprExtensions) GetItems() []Item         { return e.LexItems }
+func (e *ExprExtensions) SetItems(lexItems []Item) { e.LexItems = lexItems }
+
 // AggregateExpr represents an aggregation operation on a Vector.
 type AggregateExpr struct {
+	ExprExtensions
 	Op       ItemType // The used aggregation operation.
 	Expr     Expr     // The Vector expression over which is aggregated.
 	Param    Expr     // Parameter used by some aggregators.
@@ -94,6 +102,7 @@ type AggregateExpr struct {
 
 // BinaryExpr represents a binary expression between two child expressions.
 type BinaryExpr struct {
+	ExprExtensions
 	Op       ItemType // The operation of the expression.
 	LHS, RHS Expr     // The operands on the respective sides of the operator.
 
@@ -107,6 +116,7 @@ type BinaryExpr struct {
 
 // Call represents a function call.
 type Call struct {
+	ExprExtensions
 	Func *Function   // The function that was called.
 	Args Expressions // Arguments used in the call.
 
@@ -115,6 +125,7 @@ type Call struct {
 
 // MatrixSelector represents a Matrix selection.
 type MatrixSelector struct {
+	ExprExtensions
 	// It is safe to assume that this is an VectorSelector
 	// if the parser hasn't returned an error.
 	VectorSelector Expr
@@ -125,6 +136,7 @@ type MatrixSelector struct {
 
 // SubqueryExpr represents a subquery.
 type SubqueryExpr struct {
+	ExprExtensions
 	Expr   Expr
 	Range  time.Duration
 	Offset time.Duration
@@ -135,6 +147,7 @@ type SubqueryExpr struct {
 
 // NumberLiteral represents a number.
 type NumberLiteral struct {
+	ExprExtensions
 	Val float64
 
 	PosRange PositionRange
@@ -143,12 +156,14 @@ type NumberLiteral struct {
 // ParenExpr wraps an expression so it cannot be disassembled as a consequence
 // of operator precedence.
 type ParenExpr struct {
+	ExprExtensions
 	Expr     Expr
 	PosRange PositionRange
 }
 
 // StringLiteral represents a string.
 type StringLiteral struct {
+	ExprExtensions
 	Val      string
 	PosRange PositionRange
 }
@@ -156,6 +171,7 @@ type StringLiteral struct {
 // UnaryExpr represents a unary operation on another expression.
 // Currently unary operations are only supported for Scalars.
 type UnaryExpr struct {
+	ExprExtensions
 	Op   ItemType
 	Expr Expr
 
@@ -164,6 +180,7 @@ type UnaryExpr struct {
 
 // VectorSelector represents a Vector selection.
 type VectorSelector struct {
+	ExprExtensions
 	Name          string
 	Offset        time.Duration
 	LabelMatchers []*labels.Matcher
@@ -188,6 +205,7 @@ func (TestStmt) PositionRange() PositionRange {
 		End:   -1,
 	}
 }
+
 func (e *AggregateExpr) Type() ValueType  { return ValueTypeVector }
 func (e *Call) Type() ValueType           { return e.Func.ReturnType }
 func (e *MatrixSelector) Type() ValueType { return ValueTypeMatrix }
@@ -361,8 +379,8 @@ type PositionRange struct {
 	End   Pos
 }
 
-func (p PositionRange) Contains(rnge PositionRange) bool {
-	return p.Start <= rnge.Start && p.End >= rnge.End
+func (p PositionRange) Contains(r PositionRange) bool {
+	return p.Start <= r.Start && p.End >= r.End
 }
 
 // mergeRanges is a helper function to merge the PositionRanges of two Nodes.

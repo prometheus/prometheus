@@ -11,14 +11,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package prettier
+package parser
 
 import (
 	"regexp"
 	"strings"
 
 	"github.com/pkg/errors"
-	"github.com/prometheus/prometheus/promql/parser"
 )
 
 const (
@@ -33,8 +32,8 @@ const (
 // Prettier handles the prettifying and formatting operation over a
 // list of rules files or a single expression.
 type Prettier struct {
+	Node       Expr
 	expression string
-	Node       parser.Expr
 	pd         *padder
 }
 
@@ -65,8 +64,8 @@ type padder struct {
 	isFirstLabel     bool
 }
 
-// New returns a new prettier.
-func New(expression string, columnLimit int, indentType uint) *Prettier {
+// PromqlPrettier returns a new prettier.
+func PromqlPrettier(expression string, columnLimit int, indentType uint) *Prettier {
 	var indent string
 	switch indentType {
 	case IndentAsSpace:
@@ -80,10 +79,23 @@ func New(expression string, columnLimit int, indentType uint) *Prettier {
 	}
 }
 
+// PrettyPrint prints the formatted expression.
+func PrettyPrint(node Expr, lexItems []Item) (string, error) {
+	ptr := Prettier{Node: node, pd: &padder{indent: "  ", isNewLineApplied: true, columnLimit: 100}}
+	sortedLexItems := ptr.sortItems(
+		ptr.lexItems(stringifyItems(lexItems)),
+	)
+	expr, err := ptr.prettify(sortedLexItems)
+	if err != nil {
+		return expr, errors.Wrap(err, "pretty-print")
+	}
+	return expr, err
+}
+
 // Prettify prettifies the current expression in the prettier. It standardizes the input expression,
 // sorts the items slice and calls the prettify.
 func (p *Prettier) Prettify() (string, error) {
-	standardizeExprStr := p.stringifyItems(
+	standardizeExprStr := stringifyItems(
 		p.sortItems(p.lexItems(p.expression)),
 	)
 	if err := p.parseExpr(standardizeExprStr); err != nil {
@@ -96,12 +108,12 @@ func (p *Prettier) Prettify() (string, error) {
 	return formattedExpr, nil
 }
 
-func (p *Prettier) sortItems(items []parser.Item) []parser.Item {
+func (p *Prettier) sortItems(items []Item) []Item {
 	for i := 0; i < len(items); i++ {
 		item := items[i]
 		switch item.Typ {
-		case parser.SUM, parser.AVG, parser.MIN, parser.MAX, parser.COUNT, parser.COUNT_VALUES,
-			parser.STDDEV, parser.STDVAR, parser.TOPK, parser.BOTTOMK, parser.QUANTILE:
+		case SUM, AVG, MIN, MAX, COUNT, COUNT_VALUES,
+			STDDEV, STDVAR, TOPK, BOTTOMK, QUANTILE:
 			var (
 				formatItems       bool
 				aggregatorIndex   = i
@@ -112,9 +124,9 @@ func (p *Prettier) sortItems(items []parser.Item) []parser.Item {
 			for index := i; index < len(items); index++ {
 				it := items[index]
 				switch it.Typ {
-				case parser.LEFT_PAREN, parser.LEFT_BRACE:
+				case LEFT_PAREN, LEFT_BRACE:
 					openBracketsCount++
-				case parser.RIGHT_PAREN, parser.RIGHT_BRACE:
+				case RIGHT_PAREN, RIGHT_BRACE:
 					openBracketsCount--
 				}
 				if openBracketsCount < 0 {
@@ -129,16 +141,16 @@ func (p *Prettier) sortItems(items []parser.Item) []parser.Item {
 				continue
 			}
 
-			if items[keywordIndex-1].Typ != parser.COMMENT && keywordIndex-1 != aggregatorIndex {
+			if items[keywordIndex-1].Typ != COMMENT && keywordIndex-1 != aggregatorIndex {
 				formatItems = true
-			} else if items[keywordIndex-1].Typ == parser.COMMENT {
+			} else if items[keywordIndex-1].Typ == COMMENT {
 				// Peek back until no comment is found.
 				// If the item immediately before the comment is not aggregator, that means
 				// the keyword is not (immediately) after aggregator item and hence formatting
 				// is required.
 				var j int
 				for j = keywordIndex; j > aggregatorIndex; j-- {
-					if items[j].Typ == parser.COMMENT {
+					if items[j].Typ == COMMENT {
 						continue
 					}
 					break
@@ -149,12 +161,12 @@ func (p *Prettier) sortItems(items []parser.Item) []parser.Item {
 			}
 			if formatItems {
 				var (
-					tempItems              []parser.Item
+					tempItems              []Item
 					finishedKeywordWriting bool
 				)
 				// Get index of the closing paren.
 				for j := keywordIndex; j <= len(items); j++ {
-					if items[j].Typ == parser.RIGHT_PAREN {
+					if items[j].Typ == RIGHT_PAREN {
 						closingParenIndex = j
 						break
 					}
@@ -183,9 +195,9 @@ func (p *Prettier) sortItems(items []parser.Item) []parser.Item {
 				items = tempItems
 			}
 
-		case parser.IDENTIFIER:
-			itr := advanceComments(items, i)
-			if i < 1 || item.Val != "__name__" || items[itr+2].Typ != parser.STRING {
+		case IDENTIFIER:
+			itr := skipComments(items, i)
+			if i < 1 || item.Val != "__name__" || items[itr+2].Typ != STRING {
 				continue
 			}
 			var (
@@ -193,20 +205,20 @@ func (p *Prettier) sortItems(items []parser.Item) []parser.Item {
 				rightBraceIndex = itemNotFound
 				labelValItem    = items[itr+2]
 				metricName      = labelValItem.Val[1 : len(labelValItem.Val)-1] // Trim inverted-commas.
-				tmp             []parser.Item
+				tmp             []Item
 				skipBraces      bool // For handling metric_name{} -> metric_name.
 			)
 			if isMetricNameNotAtomic(metricName) {
 				continue
 			}
 			for backScanIndex := itr; backScanIndex >= 0; backScanIndex-- {
-				if items[backScanIndex].Typ == parser.LEFT_BRACE {
+				if items[backScanIndex].Typ == LEFT_BRACE {
 					leftBraceIndex = backScanIndex
 					break
 				}
 			}
 			for forwardScanIndex := itr; forwardScanIndex < len(items); forwardScanIndex++ {
-				if items[forwardScanIndex].Typ == parser.RIGHT_BRACE {
+				if items[forwardScanIndex].Typ == RIGHT_BRACE {
 					rightBraceIndex = forwardScanIndex
 					break
 				}
@@ -214,13 +226,13 @@ func (p *Prettier) sortItems(items []parser.Item) []parser.Item {
 			if leftBraceIndex == itemNotFound || rightBraceIndex == itemNotFound {
 				continue
 			}
-			itr = advanceComments(items, itr)
-			if items[itr+3].Typ == parser.COMMA {
-				skipBraces = rightBraceIndex-5 == advanceComments(items, leftBraceIndex)
+			itr = skipComments(items, itr)
+			if items[itr+3].Typ == COMMA {
+				skipBraces = rightBraceIndex-5 == skipComments(items, leftBraceIndex)
 			} else {
-				skipBraces = rightBraceIndex-4 == advanceComments(items, leftBraceIndex)
+				skipBraces = rightBraceIndex-4 == skipComments(items, leftBraceIndex)
 			}
-			identifierItem := parser.Item{Typ: parser.IDENTIFIER, Val: metricName, Pos: 0}
+			identifierItem := Item{Typ: IDENTIFIER, Val: metricName, Pos: 0}
 			// The code below re-orders the lex items in the items array. The re-ordering of
 			// lex items must occur only when in a key-value pair, the key is `__name__`
 			// and the corresponding value is atomic.
@@ -243,10 +255,10 @@ func (p *Prettier) sortItems(items []parser.Item) []parser.Item {
 							tmp = append(tmp, items[j])
 						}
 						continue
-					} else if items[itr+3].Typ == parser.COMMA && j == itr+3 || j >= itr && j < itr+3 {
+					} else if items[itr+3].Typ == COMMA && j == itr+3 || j >= itr && j < itr+3 {
 						continue
 					}
-					if skipBraces && (items[j].Typ == parser.LEFT_BRACE || items[j].Typ == parser.RIGHT_BRACE) {
+					if skipBraces && (items[j].Typ == LEFT_BRACE || items[j].Typ == RIGHT_BRACE) {
 						continue
 					}
 				}
@@ -258,7 +270,7 @@ func (p *Prettier) sortItems(items []parser.Item) []parser.Item {
 	return p.refreshLexItems(items)
 }
 
-func (p *Prettier) prettify(items []parser.Item) (string, error) {
+func (p *Prettier) prettify(items []Item) (string, error) {
 	var (
 		it     = itemsIterator{items, -1}
 		result = ""
@@ -266,7 +278,7 @@ func (p *Prettier) prettify(items []parser.Item) (string, error) {
 	for it.next() {
 		var (
 			item           = it.peek()
-			nodeInfo       = &nodeInfo{head: p.Node, columnLimit: 100, item: item}
+			nodeInfo       = &nodeInfo{head: p.Node, columnLimit: 100, item: item, items: items}
 			node           = nodeInfo.node()
 			nodeSplittable = nodeInfo.violatesColumnLimit()
 			// Binary expression use-case.
@@ -280,13 +292,13 @@ func (p *Prettier) prettify(items []parser.Item) (string, error) {
 			result += p.pd.newLine()
 		}
 		switch node.(type) {
-		case *parser.AggregateExpr:
+		case *AggregateExpr:
 			isAggregation = true
 			aggregationGrouping = nodeInfo.has(grouping)
-		case *parser.BinaryExpr:
+		case *BinaryExpr:
 			hasImmediateScalar = nodeInfo.has(scalars)
 			hasGrouping = nodeInfo.has(grouping)
-		case *parser.Call:
+		case *Call:
 			hasMultiArgumentCalls = nodeInfo.has(multiArguments)
 		}
 		if p.pd.isNewLineApplied {
@@ -295,12 +307,12 @@ func (p *Prettier) prettify(items []parser.Item) (string, error) {
 		}
 
 		switch item.Typ {
-		case parser.LEFT_PAREN:
+		case LEFT_PAREN:
 			result += item.Val
 			if ((nodeSplittable && !hasGrouping) || hasMultiArgumentCalls) && !p.pd.expectAggregationLabels {
 				result += p.pd.newLine()
 			}
-		case parser.RIGHT_PAREN:
+		case RIGHT_PAREN:
 			if ((nodeSplittable && !hasGrouping) || hasMultiArgumentCalls) && !p.pd.expectAggregationLabels {
 				result += p.pd.newLine() + p.pd.pad(nodeInfo.baseIndent)
 				p.pd.isNewLineApplied = false
@@ -317,7 +329,7 @@ func (p *Prettier) prettify(items []parser.Item) (string, error) {
 			if isAggregation && nodeInfo.has(aggregateParent) && nodeInfo.isLastItem(item) {
 				result += p.pd.newLine()
 			}
-		case parser.LEFT_BRACE:
+		case LEFT_BRACE:
 			result += item.Val
 			p.pd.isFirstLabel = true
 			if nodeSplittable {
@@ -325,9 +337,9 @@ func (p *Prettier) prettify(items []parser.Item) (string, error) {
 				result += p.pd.newLine()
 				p.pd.labelsSplittable = true
 			}
-		case parser.RIGHT_BRACE:
+		case RIGHT_BRACE:
 			if p.pd.labelsSplittable {
-				if it.prev().Typ != parser.COMMA {
+				if it.prev().Typ != COMMA {
 					// Edge-case: if the labels are multi-line split, but do not have
 					// a pre-applied comma.
 					result += ","
@@ -338,7 +350,7 @@ func (p *Prettier) prettify(items []parser.Item) (string, error) {
 			}
 			p.pd.isFirstLabel = false
 			result += item.Val
-		case parser.IDENTIFIER:
+		case IDENTIFIER:
 			if p.pd.labelsSplittable {
 				if p.pd.isFirstLabel {
 					p.pd.isFirstLabel = false
@@ -350,10 +362,10 @@ func (p *Prettier) prettify(items []parser.Item) (string, error) {
 			} else {
 				result += item.Val
 			}
-		case parser.STRING, parser.NUMBER:
+		case STRING, NUMBER:
 			result += item.Val
-		case parser.SUM, parser.BOTTOMK, parser.COUNT_VALUES, parser.COUNT, parser.GROUP, parser.MAX, parser.MIN,
-			parser.QUANTILE, parser.STDVAR, parser.STDDEV, parser.TOPK, parser.AVG:
+		case SUM, BOTTOMK, COUNT_VALUES, COUNT, GROUP, MAX, MIN,
+			QUANTILE, STDVAR, STDDEV, TOPK, AVG:
 			// Aggregations.
 			if nodeInfo.has(aggregateParent) {
 				result = p.pd.removePreviousBlank(result)
@@ -364,12 +376,12 @@ func (p *Prettier) prettify(items []parser.Item) (string, error) {
 			if aggregationGrouping {
 				result += " "
 			}
-		case parser.EQL, parser.EQL_REGEX, parser.NEQ, parser.NEQ_REGEX, parser.DURATION, parser.COLON,
-			parser.LEFT_BRACKET, parser.RIGHT_BRACKET:
+		case EQL, EQL_REGEX, NEQ, NEQ_REGEX, DURATION, COLON,
+			LEFT_BRACKET, RIGHT_BRACKET:
 			// Comparison operators.
 			result += item.Val
-		case parser.ADD, parser.SUB, parser.MUL, parser.DIV, parser.GTE, parser.GTR, parser.LOR, parser.LAND,
-			parser.LSS, parser.LTE, parser.LUNLESS, parser.MOD, parser.POW:
+		case ADD, SUB, MUL, DIV, GTE, GTR, LOR, LAND,
+			LSS, LTE, LUNLESS, MOD, POW:
 			// Vector matching operators.
 			if hasImmediateScalar {
 				result += " " + item.Val + " "
@@ -383,23 +395,23 @@ func (p *Prettier) prettify(items []parser.Item) (string, error) {
 					result += p.pd.newLine()
 				}
 			}
-		case parser.WITHOUT, parser.BY, parser.IGNORING, parser.BOOL, parser.GROUP_LEFT, parser.GROUP_RIGHT,
-			parser.OFFSET, parser.ON:
+		case WITHOUT, BY, IGNORING, BOOL, GROUP_LEFT, GROUP_RIGHT,
+			OFFSET, ON:
 			// Keywords.
 			result += item.Val
-			if item.Typ == parser.BOOL {
+			if item.Typ == BOOL {
 				result += p.pd.newLine()
 			} else if nodeInfo.exprType == "*parser.AggregateExpr" {
 				p.pd.expectAggregationLabels = true
 			}
-		case parser.COMMA:
+		case COMMA:
 			result += item.Val
 			if (nodeSplittable || hasMultiArgumentCalls) && !(hasGrouping || aggregationGrouping || p.pd.labelsSplittable) {
 				result += p.pd.newLine()
 			} else if !p.pd.labelsSplittable {
 				result += " "
 			}
-		case parser.COMMENT:
+		case COMMENT:
 			if result[len(result)-1] != ' ' {
 				result += " "
 			}
@@ -420,78 +432,29 @@ func (p *Prettier) prettify(items []parser.Item) (string, error) {
 // refreshLexItems refreshes the contents of the lex slice and the properties
 // within it. This is expected to be called after sorting the lexItems in the
 // pre-format checks.
-func (p *Prettier) refreshLexItems(items []parser.Item) []parser.Item {
-	return p.lexItems(p.stringifyItems(items))
-}
-
-// stringifyItems returns a standardized string expression
-// from slice of items. This is mostly used in re-ordering activities
-// where the position of the items change during sorting in the sortItems.
-// This function also standardizes the expression without any spaces,
-// so that the length determined by .String() is done purely on the
-// character length with standard indent.
-func (p *Prettier) stringifyItems(items []parser.Item) string {
-	expression := ""
-	for _, item := range items {
-		if item.Typ.IsOperator() || item.Typ.IsAggregator() {
-			expression += " " + item.Val + " "
-			continue
-		}
-		switch item.Typ {
-		case parser.COMMENT:
-			expression += item.Val + "\n"
-		case parser.BOOL:
-			expression += item.Val + " "
-		default:
-			expression += item.Val
-		}
-	}
-	return expression
+func (p *Prettier) refreshLexItems(items []Item) []Item {
+	return p.lexItems(stringifyItems(items))
 }
 
 // lexItems converts the given expression into a slice of Items.
-func (p *Prettier) lexItems(expression string) (items []parser.Item) {
+func (p *Prettier) lexItems(expression string) (items []Item) {
 	var (
-		l    = parser.Lex(expression)
-		item parser.Item
+		l    = Lex(expression)
+		item Item
 	)
-	for l.NextItem(&item); item.Typ != parser.EOF; l.NextItem(&item) {
+	for l.NextItem(&item); item.Typ != EOF; l.NextItem(&item) {
 		items = append(items, item)
 	}
 	return
 }
 
 func (p *Prettier) parseExpr(expression string) error {
-	expr, err := parser.ParseExpr(expression)
+	expr, err := ParseExpr(expression)
 	if err != nil {
 		return errors.Wrap(err, "parse error")
 	}
 	p.Node = expr
 	return nil
-}
-
-type itemsIterator struct {
-	itemsSlice []parser.Item
-	index      int
-}
-
-// next increments the index and returns the true if there exists an lex item after.
-func (it *itemsIterator) next() bool {
-	it.index++
-	return it.index != len(it.itemsSlice)
-}
-
-// peek returns the lex item at the current index.
-func (it *itemsIterator) peek() parser.Item {
-	return it.itemsSlice[it.index]
-}
-
-// prev returns the previous lex item.
-func (it *itemsIterator) prev() parser.Item {
-	if it.index == 0 {
-		return parser.Item{}
-	}
-	return it.itemsSlice[it.index-1]
 }
 
 // isMetricNameAtomic returns true if the metric name is singular in nature.
@@ -507,12 +470,12 @@ func isMetricNameNotAtomic(metricName string) bool {
 	return true
 }
 
-// advanceComments advances the index until a non-comment item is
+// skipComments advances the index until a non-comment item is
 // encountered.
-func advanceComments(items []parser.Item, index int) int {
+func skipComments(items []Item, index int) int {
 	var i int
 	for i = index; i < len(items); i++ {
-		if items[i].Typ == parser.COMMENT {
+		if items[i].Typ == COMMENT {
 			continue
 		}
 		break
@@ -520,9 +483,41 @@ func advanceComments(items []parser.Item, index int) int {
 	return i
 }
 
+// stringifyItems returns a standardized string expression
+// from slice of items without any trailing whitespaces.
+func stringifyItems(items []Item) string {
+	var (
+		it         = itemsIterator{items, -1}
+		item       Item
+		expression string
+	)
+	for it.next() {
+		item = it.peek()
+		if item.Typ.IsAggregator() {
+			expression += " " + item.Val + " "
+			continue
+		}
+		switch item.Typ {
+		case COMMENT:
+			expression += item.Val + "\n"
+		case BOOL, COMMA:
+			expression += item.Val + " "
+		case ADD, SUB, MUL, DIV, GTE, GTR, LOR, LAND,
+			LSS, LTE, LUNLESS, MOD, POW:
+			expression += " " + item.Val + " "
+		case SUM, BOTTOMK, COUNT_VALUES, COUNT, GROUP, MAX, MIN,
+			QUANTILE, STDVAR, STDDEV, TOPK, AVG:
+			expression += " " + item.Val + " "
+		default:
+			expression += item.Val
+		}
+	}
+	return expression
+}
+
 // pad provides an instantaneous padding.
 func (pd *padder) pad(iter int) string {
-	pad := ""
+	var pad string
 	for i := 1; i <= iter; i++ {
 		pad += pd.indent
 	}
@@ -542,4 +537,28 @@ func (pd *padder) removePreviousBlank(result string) string {
 		result = result[:len(result)-1]
 	}
 	return result
+}
+
+type itemsIterator struct {
+	itemsSlice []Item
+	index      int
+}
+
+// next increments the index and returns the true if there exists an lex item after.
+func (it *itemsIterator) next() bool {
+	it.index++
+	return it.index != len(it.itemsSlice)
+}
+
+// peek returns the lex item at the current index.
+func (it *itemsIterator) peek() Item {
+	return it.itemsSlice[it.index]
+}
+
+// prev returns the previous lex item.
+func (it *itemsIterator) prev() Item {
+	if it.index == 0 {
+		return Item{}
+	}
+	return it.itemsSlice[it.index-1]
 }

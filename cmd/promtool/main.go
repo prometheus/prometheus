@@ -39,11 +39,11 @@ import (
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
-	"github.com/prometheus/prometheus/promql/prettier"
 	"gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
+	"github.com/prometheus/prometheus/promql/parser"
 )
 
 func main() {
@@ -442,7 +442,7 @@ func PrettifyRules(files ...string) int {
 		}
 		for i, groups := range rgs.Groups {
 			for j, rules := range groups.Rules {
-				prettifiedExpr, err := prettier.New(rules.Expr.Value, 100, prettier.IndentAsSpace).Prettify()
+				prettifiedExpr, err := parser.PromqlPrettier(rules.Expr.Value, 100, parser.IndentAsSpace).Prettify()
 				if err != nil {
 					errors = append(errors, err)
 					continue

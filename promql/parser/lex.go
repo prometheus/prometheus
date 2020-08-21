@@ -323,6 +323,18 @@ func Lex(input string) *Lexer {
 	return l
 }
 
+// LexItems returns the lex items of the passed input expression string.
+func LexItems(expression string) (items []Item) {
+	var (
+		l    = Lex(expression)
+		item Item
+	)
+	for l.NextItem(&item); item.Typ != EOF; l.NextItem(&item) {
+		items = append(items, item)
+	}
+	return
+}
+
 // lineComment is the character that starts a line comment.
 const lineComment = "#"
 
