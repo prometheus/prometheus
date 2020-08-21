@@ -69,7 +69,6 @@ func init() {
 
 // SDConfig is the configuration for applications running on Eureka.
 type SDConfig struct {
-<<<<<<< HEAD
 	Server           string                  `yaml:"server,omitempty"`
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 	RefreshInterval  model.Duration          `yaml:"refresh_interval,omitempty"`
@@ -86,11 +85,6 @@ func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Di
 // SetDirectory joins any relative file paths with dir.
 func (c *SDConfig) SetDirectory(dir string) {
 	c.HTTPClientConfig.SetDirectory(dir)
-=======
-	Server           string                       `yaml:"server"`
-	RefreshInterval  model.Duration               `yaml:"refresh_interval"`
-	HTTPClientConfig config_util.HTTPClientConfig `yaml:",inline"`
->>>>>>> Remove metadata_unmarshaller and remove omittempties
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.

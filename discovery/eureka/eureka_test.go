@@ -35,7 +35,7 @@ func testUpdateServices(respHandler http.HandlerFunc) ([]*targetgroup.Group, err
 		Server: ts.URL,
 	}
 
-	md, err := NewDiscovery(conf, nil)
+	md, err := NewDiscovery(&conf, nil)
 	if err != nil {
 		return nil, err
 	}
