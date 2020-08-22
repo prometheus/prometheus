@@ -215,6 +215,10 @@ file_sd_configs:
 gce_sd_configs:
   [ - <gce_sd_config> ... ]
 
+# List of Hetzner service discovery configurations.
+hetzner_sd_configs:
+  [ - <hetzner_sd_config> ... ]
+
 # List of Kubernetes service discovery configurations.
 kubernetes_sd_configs:
   [ - <kubernetes_sd_config> ... ]
@@ -918,6 +922,81 @@ instance it is running on should have at least read-only permissions to the
 compute resources. If running outside of GCE make sure to create an appropriate
 service account and place the credential file in one of the expected locations.
 
+### `<hetzner_sd_config>`
+
+Hetzner SD configurations allow retrieving scrape targets from [Hetzner Cloud](https://www.hetzner.cloud/)
+Server API.
+This service discovery uses the public IPv4 address by default, but that can be
+changed with relabeling, as demonstrated in [the Prometheus hetzner-sd
+configuration file](/documentation/examples/prometheus-hetzner.yml).
+
+The following meta labels are available on all targets during [relabeling](#relabel_config):
+
+* `__meta_hetzner_server_id`: the id of the server
+* `__meta_hetzner_server_name`: the name of the server
+* `__meta_hetzner_server_status`: the status of the server
+* `__meta_hetzner_public_ipv4`: the public ipv4 of the server
+* `__meta_hetzner_public_ipv6_network`: the public ipv6 net (/64) of the server
+* `__meta_hetzner_datacenter`: the name of the datacenter the server is located
+
+The labels below are only available for targets with `role` set to `hcloud`:
+* `__meta_hetzner_hcloud_image_name`: the image name of the server
+* `__meta_hetzner_hcloud_image_description`: the image description of the server
+* `__meta_hetzner_hcloud_image_os_flavor`: the image os flavor of the server
+* `__meta_hetzner_hcloud_image_os_version`: the image os version of the server
+* `__meta_hetzner_hcloud_image_description`: the image name or description of the server
+* `__meta_hetzner_hcloud_datacenter_location`: the name of the location the server is located
+* `__meta_hetzner_hcloud_datacenter_location_network_zone`: the name of the network zone the server is located
+* `__meta_hetzner_hcloud_server_type`: the name of the type of the server
+* `__meta_hetzner_hcloud_cpu_cores`: the count of CPU cores the server has
+* `__meta_hetzner_hcloud_cpu_type`: the type of the CPU (shared or dedicated)
+* `__meta_hetzner_hcloud_memory_size_gb`: the amount of memory the server has (in GB)
+* `__meta_hetzner_hcloud_disk_size_gb`: the size of disk the server has (in GB)
+* `__meta_hetzner_hcloud_private_ipv4_<network name>`: the private ipv4 of the server within the network named in the metric if it is attached to a network
+* `__meta_hetzner_hcloud_label_<labelname>`: the hetzner cloud label of the server with its specific value within the cloud
+
+The labels below are only available for targets with `role` set to `robot`:
+* `__meta_hetzner_robot_product`: the name of the product of the server
+* `__meta_hetzner_robot_cancelled`: the status of the server cancellation
+
+```yaml
+# The Hetzner role of entities that should be discovered.
+# One of robot or hcloud.
+role: <string>
+
+# Authentication information used to authenticate to the API server.
+# Note that `basic_auth`, `bearer_token` and `bearer_token_file` options are
+# mutually exclusive.
+# password and password_file are mutually exclusive.
+
+# Optional HTTP basic authentication information, required when role is robot
+# Role hcloud does not support basic auth.
+basic_auth:
+  [ username: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
+
+# Optional bearer token authentication information, required when role is hcloud
+# Role robot does not support bearer token authentication.
+[ bearer_token: <secret> ]
+
+# Optional bearer token file authentication information.
+[ bearer_token_file: <filename> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
+
+# The port to scrape metrics from.
+[ port: <int> | default = 80 ]
+
+# The time after which the servers are refreshed.
+[ refresh_interval: <duration> | default = 60s ]
+```
+
 ### `<kubernetes_sd_config>`
 
 Kubernetes SD configurations allow retrieving scrape targets from
@@ -1493,6 +1572,10 @@ dockerswarm_sd_configs:
 # List of GCE service discovery configurations.
 gce_sd_configs:
   [ - <gce_sd_config> ... ]
+
+# List of Hetzner service discovery configurations.
+hetzner_sd_configs:
+  [ - <hetzner_sd_config> ... ]
 
 # List of Kubernetes service discovery configurations.
 kubernetes_sd_configs:
