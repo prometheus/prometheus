@@ -262,49 +262,49 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `instance_cpu_time_ns{app="lion", proc="web", rev="34d0f99", env="prod", job="cluster-manager", host="localhost"}`,
-		expected: `  instance_cpu_time_ns{
+		expected: `instance_cpu_time_ns{
     app="lion", proc="web", rev="34d0f99", env="prod", job="cluster-manager", host="localhost",
   }`,
 	},
 	{
 		expr: `instance_cpu_time_ns{app="lion", proc="web", rev="34d0f99", env="prod", job="cluster-manager", host="localhost",}`,
-		expected: `  instance_cpu_time_ns{
+		expected: `instance_cpu_time_ns{
     app="lion", proc="web", rev="34d0f99", env="prod", job="cluster-manager", host="localhost",
   }`,
 	},
 	{
 		expr: `metric_one + metric_two`,
-		expected: `    metric_one
+		expected: `metric_one
   +
     metric_two`,
 	},
 	{
 		expr: `metric_one <= metric_two`,
-		expected: `    metric_one
+		expected: `metric_one
   <=
     metric_two`,
 	},
 	{
 		expr: `metric_one{foo="bar"} + metric_two{foo="bar"}`,
-		expected: `    metric_one{foo="bar"}
+		expected: `metric_one{foo="bar"}
   +
     metric_two{foo="bar"}`,
 	},
 	{
 		expr: `metric_one{foo="bar"} + metric_two{foo="bar", instance="localhost:31233", job="two", first="second_", job="cluster-manager"}`,
-		expected: `    metric_one{foo="bar"}
+		expected: `metric_one{foo="bar"}
   +
     metric_two{foo="bar", instance="localhost:31233", job="two", first="second_", job="cluster-manager"}`,
 	},
 	{
 		expr: `metric_two{foo="bar", instance="localhost:31233", job="two", first="second_", job="cluster-manager"} + metric_one{foo="bar"}`,
-		expected: `    metric_two{foo="bar", instance="localhost:31233", job="two", first="second_", job="cluster-manager"}
+		expected: `metric_two{foo="bar", instance="localhost:31233", job="two", first="second_", job="cluster-manager"}
   +
     metric_one{foo="bar"}`,
 	},
 	{
 		expr: `metric_one + metric_two + metric_three{some_very_large_label="a_very_large_value", some_very_large_label="a_very_large_value"}`,
-		expected: `    metric_one
+		expected: `metric_one
   +
     metric_two
   +
@@ -312,7 +312,7 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `metric_one + metric_two + metric_three{a_some_very_large_label="a_very_large_value", some_very_large_label="a_very_large_value"}`,
-		expected: `    metric_one
+		expected: `metric_one
   +
     metric_two
   +
@@ -322,7 +322,7 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `metric_one + metric_two + metric_three + metric_four{_a_some_very_large_label="a_very_large_value", some_very_large_label="a_very_large_value"}`,
-		expected: `    metric_one
+		expected: `metric_one
   +
     metric_two
   +
@@ -334,7 +334,7 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `metric_one + metric_two + metric_three + metric_four{_a_some_very_large_label="a_very_large_value", some_very_large_label="a_very_large_value"} + metric_five`,
-		expected: `    metric_one
+		expected: `metric_one
   +
     metric_two
   +
@@ -348,13 +348,13 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `metric_one + ignoring(job) metric_two`,
-		expected: `    metric_one
+		expected: `metric_one
   + ignoring(job)
     metric_two`,
 	},
 	{
 		expr: `metric_one + ignoring(job) metric_two - ignoring(job) metric_three`,
-		expected: `    metric_one
+		expected: `metric_one
   + ignoring(job)
     metric_two
   - ignoring(job)
@@ -362,7 +362,7 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `metric_one + ignoring(job) metric_two - ignoring(job) metric_three{a_some_very_large_label="a_very_large_value", some_very_large_label="a_very_large_value"}`,
-		expected: `    metric_one
+		expected: `metric_one
   + ignoring(job)
     metric_two
   - ignoring(job)
@@ -372,7 +372,7 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `metric_one - ignoring(job) metric_two{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"} + ignoring(job) metric_three`,
-		expected: `    metric_one
+		expected: `metric_one
   - ignoring(job)
     metric_two{
       _a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value",
@@ -382,7 +382,7 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `metric_one <= bool metric_two`,
-		expected: `    metric_one
+		expected: `metric_one
   <= bool
     metric_two`,
 	},
@@ -396,7 +396,7 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `(metric_one{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"})`,
-		expected: `  (
+		expected: `(
     metric_one{
       _a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value",
     }
@@ -404,13 +404,13 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `1 + metric_one{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"}`,
-		expected: `    1 + metric_one{
+		expected: `1 + metric_one{
       _a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value",
     }`,
 	},
 	{
 		expr: `metric_one + 2 + metric_two{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"}`,
-		expected: `    metric_one + 2
+		expected: `metric_one + 2
   +
     metric_two{
       _a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value",
@@ -418,13 +418,13 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `1 + metric_one{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"} + 2`,
-		expected: `    1 + metric_one{
+		expected: `1 + metric_one{
       _a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value",
     } + 2`,
 	},
 	{
 		expr: `metric_one{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"} + 1`,
-		expected: `    metric_one{
+		expected: `metric_one{
       _a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value",
     } + 1`,
 	},
@@ -434,7 +434,7 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `metric_one{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"}[5m]`,
-		expected: `  metric_one{
+		expected: `metric_one{
     _a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value",
   }[5m]`,
 	},
@@ -444,13 +444,13 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `metric_one{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"}[5m:1m]`,
-		expected: `  metric_one{
+		expected: `metric_one{
     _a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value",
   }[5m:1m]`,
 	},
 	{
 		expr: `(metric_one{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"}[5m])`,
-		expected: `  (
+		expected: `(
     metric_one{
       _a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value",
     }[5m]
@@ -458,7 +458,7 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `((metric_one{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"}[5m]))`,
-		expected: `  (
+		expected: `(
     (
       metric_one{
         _a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value",
@@ -468,7 +468,7 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `(metric_one{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"}[5m:1m])`,
-		expected: `  (
+		expected: `(
     metric_one{
       _a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value",
     }[5m:1m]
@@ -476,7 +476,7 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `((metric_one{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"}[5m:1m]))`,
-		expected: `  (
+		expected: `(
     (
       metric_one{
         _a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value",
@@ -486,7 +486,7 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `((((metric_one{_a_some_very_large_label="_a_very_large_value", some_very_large_label="a_very_large_value"}[5m:1m]))))`,
-		expected: `  (
+		expected: `(
     (
       (
         (
@@ -504,7 +504,7 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `rate(metric_three{a_some_very_large_label="a_very_large_value", some_very_large_label="a_very_large_value"}[5m])`,
-		expected: `  rate(
+		expected: `rate(
     metric_three{
       a_some_very_large_label="a_very_large_value", some_very_large_label="a_very_large_value",
     }[5m]
@@ -512,14 +512,14 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `histogram_quantile(0.9, rate(http_request_duration_seconds_bucket[10m]))`,
-		expected: `  histogram_quantile(
+		expected: `histogram_quantile(
     0.9,
     rate(http_request_duration_seconds_bucket[10m])
   )`,
 	},
 	{
 		expr: `label_join(up{job="api-server",src1="a",src2="b",src3="c"}, "foo", ",", "src1", "src2", "src3")`,
-		expected: `  label_join(
+		expected: `label_join(
     up{job="api-server", src1="a", src2="b", src3="c"},
     "foo",
     ",",
@@ -530,7 +530,7 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `label_join(label_join(label_join(up{job="api-server",src1="a",src2="b",src3="c"}, "foo", ",", "src1", "src2", "src3"), "foo", ",", "src1", "src2", "src3"), "foo", ",", "src1", "src2", "src3")`,
-		expected: `  label_join(
+		expected: `label_join(
     label_join(
       label_join(
         up{job="api-server", src1="a", src2="b", src3="c"},
@@ -555,7 +555,7 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `a + label_join(up{job="api-server",src1="a",src2="b",src3="c"}, "foo", ",", "src1", "src2", "src3")`,
-		expected: `    a
+		expected: `a
   +
     label_join(
       up{job="api-server", src1="a", src2="b", src3="c"},
@@ -568,7 +568,7 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `label_join(up{job="api-server",src1="a",src2="b",src3="c"}, "foo", ",", "src1", "src2", "src3") + label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")`,
-		expected: `    label_join(
+		expected: `label_join(
       up{job="api-server", src1="a", src2="b", src3="c"},
       "foo",
       ",",
@@ -587,7 +587,7 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `(label_join(up{job="api-server",src1="a",src2="b",src3="c"}, "foo", ",", "src1", "src2", "src3") + label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*"))`,
-		expected: `  (
+		expected: `(
       label_join(
         up{job="api-server", src1="a", src2="b", src3="c"},
         "foo",
@@ -608,7 +608,7 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `((label_join(up{job="api-server",src1="a",src2="b",src3="c"}, "foo", ",", "src1", "src2", "src3") + label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")))`,
-		expected: `  (
+		expected: `(
     (
         label_join(
           up{job="api-server", src1="a", src2="b", src3="c"},
@@ -631,7 +631,7 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `label_join((up), "foo", ",", "src1", "src2", "src3")`,
-		expected: `  label_join(
+		expected: `label_join(
     (up),
     "foo",
     ",",
@@ -654,13 +654,13 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `sum without(label) (metric_three{a_some_very_large_label="a_very_large_value", label="a_very_large_value"})`,
-		expected: `  sum without(label) (
+		expected: `sum without(label) (
     metric_three{a_some_very_large_label="a_very_large_value", label="a_very_large_value"}
   )`,
 	},
 	{
 		expr: `sum (metric_three{a_some_very_large_label="a_very_large_value", a_some_very_large_label_2="a_very_large_value"}) without(label)`,
-		expected: `  sum without(label) (
+		expected: `sum without(label) (
     metric_three{
       a_some_very_large_label="a_very_large_value", a_some_very_large_label_2="a_very_large_value",
     }
@@ -668,7 +668,7 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `sum (metric_three{a_some_very_large_label="a_very_large_value", label="a_very_large_value"}) without(label)`,
-		expected: `  sum without(label) (
+		expected: `sum without(label) (
     metric_three{a_some_very_large_label="a_very_large_value", label="a_very_large_value"}
   )`,
 	},
@@ -680,14 +680,14 @@ var prettierCases = []prettierTest{
 	{
 		expr: `metric_name # comment 1
           # comment 2`,
-		expected: `  metric_name # comment 1
+		expected: `metric_name # comment 1
  # comment 2`,
 	},
 	{
 		expr: `metric_three{ # comment 1
           a_some_very_large_label="a_very_large_value", # comment 2
           a_some_very_large_label_2="a_very_large_value"}`,
-		expected: `  metric_three{
+		expected: `metric_three{
   # comment 1
     a_some_very_large_label="a_very_large_value", # comment 2
    a_some_very_large_label_2="a_very_large_value",
@@ -699,7 +699,7 @@ var prettierCases = []prettierTest{
           a_some_very_large_label=  # comment
           "a_very_large_value",
           a_some_very_large_label_2="a_very_large_value"}`,
-		expected: `  metric_three # comment
+		expected: `metric_three # comment
   {
     a_some_very_large_label= # comment
   "a_very_large_value", a_some_very_large_label_2="a_very_large_value",
@@ -708,13 +708,13 @@ var prettierCases = []prettierTest{
 	// examples from real-world.
 	{
 		expr: `rate(demo_api_request_duration_seconds_count{status="500",job="demo"}[5m]) * 50 > on(job, instance, method, path) rate(demo_api_request_duration_seconds_count{status="200",job="demo"}[5m])`,
-		expected: `    rate(demo_api_request_duration_seconds_count{status="500", job="demo"}[5m]) * 50
+		expected: `rate(demo_api_request_duration_seconds_count{status="500", job="demo"}[5m]) * 50
   > on(job, instance, method, path)
     rate(demo_api_request_duration_seconds_count{status="200", job="demo"}[5m])`,
 	},
 	{
 		expr: `histogram_quantile(0.9, rate(demo_api_request_duration_seconds_bucket{job="demo"}[5m])) > 0.05 and rate(demo_api_request_duration_seconds_count{job="demo"}[5m]) > 1`,
-		expected: `    histogram_quantile(
+		expected: `histogram_quantile(
       0.9,
       rate(demo_api_request_duration_seconds_bucket{job="demo"}[5m])
     ) > 0.05
@@ -723,7 +723,7 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `sum (container_memory_working_set_bytes{pod_name=~"^$Deployment$Statefulset$Daemonset.*$", kubernetes_io_hostname=~"^$Node$", pod_name!=""})`,
-		expected: `  sum(
+		expected: `sum(
     container_memory_working_set_bytes{
       pod_name=~"^$Deployment$Statefulset$Daemonset.*$", kubernetes_io_hostname=~"^$Node$", pod_name!="",
     }
@@ -735,7 +735,7 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `(sum(node_memory_MemTotal) - sum(node_memory_MemFree + node_memory_Buffers + node_memory_Cached) ) / sum(node_memory_MemTotal) * 100 > 85`,
-		expected: `    (
+		expected: `(
         sum(node_memory_MemTotal)
       -
         sum(node_memory_MemFree
@@ -748,7 +748,7 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `100 - ((node_filesystem_avail_bytes{instance=~"$node",mountpoint="$maxmount",fstype=~"ext4|xfs"} * 100) / node_filesystem_size_bytes {instance=~"$node",mountpoint="$maxmount",fstype=~"ext4|xfs"})`,
-		expected: `    100 - (
+		expected: `100 - (
         (node_filesystem_avail_bytes{instance=~"$node", mountpoint="$maxmount", fstype=~"ext4|xfs"} * 100)
       /
         node_filesystem_size_bytes{instance=~"$node", mountpoint="$maxmount", fstype=~"ext4|xfs"}
@@ -756,7 +756,7 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `(1 - (node_memory_MemAvailable_bytes{instance=~"$node"} / (node_memory_MemTotal_bytes{instance=~"$node"})))* 100`,
-		expected: `    (
+		expected: `(
         1 - (
             node_memory_MemAvailable_bytes{instance=~"$node"}
           /
@@ -770,19 +770,19 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `irate(node_network_receive_bytes_total{instance=~'$node',device!~'tap.*|veth.*|br.*|docker.*|virbr*|lo*'}[30m])*8`,
-		expected: `    irate(
+		expected: `irate(
       node_network_receive_bytes_total{instance=~'$node', device!~'tap.*|veth.*|br.*|docker.*|virbr*|lo*'}[30m]
     ) * 8`,
 	},
 	{
 		expr: `irate(node_disk_write_time_seconds_total{instance=~"$node"}[30m]) / irate(node_disk_writes_completed_total{instance=~"$node"}[30m])`,
-		expected: `    irate(node_disk_write_time_seconds_total{instance=~"$node"}[30m])
+		expected: `irate(node_disk_write_time_seconds_total{instance=~"$node"}[30m])
   /
     irate(node_disk_writes_completed_total{instance=~"$node"}[30m])`,
 	},
 	{
 		expr: `sum (container_memory_working_set_bytes{pod_name=~"^$Deployment$Statefulset$Daemonset.*$", kubernetes_io_hostname=~"^$Node$", pod_name!=""}) / sum (kube_node_status_allocatable_memory_bytes{node=~"^$Node.*$"}) * 100`,
-		expected: `    sum(
+		expected: `sum(
       container_memory_working_set_bytes{
         pod_name=~"^$Deployment$Statefulset$Daemonset.*$", kubernetes_io_hostname=~"^$Node$", pod_name!="",
       }
@@ -792,7 +792,7 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `sum (rate (container_cpu_usage_seconds_total{image!="",name=~"^k8s_.*",io_kubernetes_container_name!="POD",pod_name=~"^$Deployment$Statefulset$Daemonset.*$",kubernetes_io_hostname=~"^$Node$"}[1m])) by (pod_name,kubernetes_io_hostname)`,
-		expected: `  sum by(pod_name, kubernetes_io_hostname) (
+		expected: `sum by(pod_name, kubernetes_io_hostname) (
     rate(
       container_cpu_usage_seconds_total{
         image!="", name=~"^k8s_.*", io_kubernetes_container_name!="POD", pod_name=~"^$Deployment$Statefulset$Daemonset.*$", kubernetes_io_hostname=~"^$Node$",
@@ -802,7 +802,7 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `(sum(kube_deployment_status_replicas_available{deployment=~".*$Deployment$Statefulset$Daemonset"}) or vector(0)) + (sum(kube_statefulset_status_replicas{statefulset=~".*$Deployment$Statefulset$Daemonset"}) or vector(0)) + (sum(kube_daemonset_status_number_ready{daemonset=~".*$Deployment$Statefulset$Daemonset"}) or vector(0))`,
-		expected: `    (
+		expected: `(
         sum(kube_deployment_status_replicas_available{deployment=~".*$Deployment$Statefulset$Daemonset"})
       or
         vector(0)
@@ -822,7 +822,7 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `label_replace((sum(node_filesystem_size_bytes{fstype=~"ext4|xfs"})by (instance)),"ip","$1","instance","(.*):.*")`,
-		expected: `  label_replace(
+		expected: `label_replace(
     (sum by(instance) (node_filesystem_size_bytes{fstype=~"ext4|xfs"})),
     "ip",
     "$1",
@@ -832,7 +832,7 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `label_replace((sum(rate(container_network_transmit_bytes_total{name!=""}[1m])) by (instance)),"ip","$1","instance","(.*):.*")`,
-		expected: `  label_replace(
+		expected: `label_replace(
     (sum by(instance) (rate(container_network_transmit_bytes_total{name!=""}[1m]))),
     "ip",
     "$1",
@@ -842,7 +842,7 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `sum(irate(django_http_requests_total_by_view_transport_method_total{namespace=~"$namespace", app=~"^$app$",view!~"prometheus-django-metrics|healthcheck"}[1m])) by(method, view)`,
-		expected: `  sum by(method, view) (
+		expected: `sum by(method, view) (
     irate(
       django_http_requests_total_by_view_transport_method_total{
         namespace=~"$namespace", app=~"^$app$", view!~"prometheus-django-metrics|healthcheck",
@@ -852,7 +852,7 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `histogram_quantile(0.50, sum(rate(django_http_requests_latency_seconds_by_view_method_bucket{namespace=~"$namespace", app=~"^$app$",view!~"prometheus-django-metrics|healthcheck"}[5m])) by (job, le))`,
-		expected: `  histogram_quantile(
+		expected: `histogram_quantile(
     0.50,
     sum by(job, le) (
       rate(
@@ -865,13 +865,13 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `time() - process_start_time_seconds{job=~"kubernetes-pods", app=~"$app", instance=~"$instance", namespace=~"$namespace"}`,
-		expected: `    time() - process_start_time_seconds{
+		expected: `time() - process_start_time_seconds{
       job=~"kubernetes-pods", app=~"$app", instance=~"$instance", namespace=~"$namespace",
     }`,
 	},
 	{
 		expr: `time() - (alertmanager_build_info{instance=~"$instance"} * on (instance, cluster) group_left process_start_time_seconds{instance=~"$instance"})`,
-		expected: `    time() - (
+		expected: `time() - (
         alertmanager_build_info{instance=~"$instance"}
       * on(instance, cluster)
         group_leftprocess_start_time_seconds{instance=~"$instance"}
@@ -883,7 +883,7 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `sum(histogram_quantile(0.9,rate(alertmanager_notification_latency_seconds_bucket{instance=~"$instance"}[5m]))) by (integration)`,
-		expected: `  sum by(integration) (
+		expected: `sum by(integration) (
     histogram_quantile(
       0.9,
       rate(alertmanager_notification_latency_seconds_bucket{instance=~"$instance"}[5m])
@@ -892,7 +892,7 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `sum(rate(http_requests_received_total{instance =~ "$instances", controller =~ "$controllers", code =~ "5\\d\\d|4\\d\\d"}[3m])) by (controller)`,
-		expected: `  sum by(controller) (
+		expected: `sum by(controller) (
     rate(
       http_requests_received_total{
         instance=~"$instances", controller=~"$controllers", code=~"5\\d\\d|4\\d\\d",
@@ -902,7 +902,7 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `sort_desc( sum(certmanager_certificate_expiration_timestamp_seconds{exported_namespace=~"$Namespace"} - time()) by (name,exported_namespace) )`,
-		expected: `  sort_desc(
+		expected: `sort_desc(
     sum by(name, exported_namespace) (
         certmanager_certificate_expiration_timestamp_seconds{exported_namespace=~"$Namespace"} - time()
     )
@@ -910,7 +910,7 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `quantile(0.9, sum(min(go_alloc_bytes) by (job)) without(job)) by (instance)`,
-		expected: `  quantile by(instance) (0.9,
+		expected: `quantile by(instance) (0.9,
     sum without(job) (
       min by(job) (go_alloc_bytes)
     )

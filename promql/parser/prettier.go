@@ -45,9 +45,6 @@ type padder struct {
 	// after applying baseIndent. This property is dependent across the padder states
 	// and hence needs to be carried along while formatting.
 	isNewLineApplied bool
-	// isNewLineInserted is used to trim the spaces in cases where no lines insertion
-	// is required.
-	isNewLineInserted bool
 	// isPreviousItemComment confirms whether the previous formatted item was
 	// a comment. This property is dependent on previous padder states and hence needs
 	// to be carried along while formatting.
@@ -423,10 +420,7 @@ func (p *Prettier) prettify(items []Item) (string, error) {
 			p.pd.isPreviousItemComment = true
 		}
 	}
-	if !p.pd.isNewLineInserted {
-		result = strings.TrimSpace(result)
-	}
-	return result, nil
+	return strings.TrimSpace(result), nil
 }
 
 // refreshLexItems refreshes the contents of the lex slice and the properties
@@ -526,9 +520,6 @@ func (pd *padder) pad(iter int) string {
 
 func (pd *padder) newLine() string {
 	pd.isNewLineApplied = true
-	if !pd.isNewLineInserted {
-		pd.isNewLineInserted = true
-	}
 	return "\n"
 }
 
