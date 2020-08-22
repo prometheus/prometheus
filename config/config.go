@@ -609,12 +609,6 @@ type ClientCert struct {
 	Key  config_util.Secret `yaml:"key"`
 }
 
-// FileSDConfig is the configuration for file based discovery.
-type FileSDConfig struct {
-	Files           []string       `yaml:"files"`
-	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
-}
-
 // RemoteWriteConfig is the configuration for writing to remote storage.
 type RemoteWriteConfig struct {
 	URL                 *config_util.URL  `yaml:"url"`
