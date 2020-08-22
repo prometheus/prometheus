@@ -33,444 +33,444 @@ var testExpr = []struct {
 	errMsg   string // If not empty the parsing error has to contain this string.
 }{
 	// Scalars and scalar-to-scalar operations.
-	//{
-	//	input: "1",
-	//	expected: &NumberLiteral{
-	//		ExprExtensions: ExprExtensions{LexItems: []Item{{Typ:57359, Pos:0, Val:"1"}}},
-	//		Val:      1,
-	//		PosRange: PositionRange{Start: 0, End: 1},
-	//	},
-	//}, {
-	//	input: "+Inf",
-	//	expected: &NumberLiteral{
-	//		ExprExtensions: ExprExtensions{LexItems:[]Item{{Typ:57368, Pos:0, Val:"+"}, {Typ:57359, Pos:1, Val:"Inf"}}},
-	//		Val:      math.Inf(1),
-	//		PosRange: PositionRange{Start: 0, End: 4},
-	//	},
-	//}, {
-	//	input: "-Inf",
-	//	expected: &NumberLiteral{
-	//		ExprExtensions: ExprExtensions{LexItems:[]Item{{Typ:57384, Pos:0, Val:"-"}, {Typ:57359, Pos:1, Val:"Inf"}}},
-	//		Val:      math.Inf(-1),
-	//		PosRange: PositionRange{Start: 0, End: 4},
-	//	},
-	//}, {
-	//	input: ".5",
-	//	expected: &NumberLiteral{
-	//		ExprExtensions:ExprExtensions{LexItems:[]Item{{Typ:57359, Pos:0, Val:".5"}}},
-	//		Val:      0.5,
-	//		PosRange: PositionRange{Start: 0, End: 2},
-	//	},
-	//}, {
-	//	input: "5.",
-	//	expected: &NumberLiteral{
-	//		ExprExtensions:ExprExtensions{LexItems:[]Item{{Typ:57359, Pos:0, Val:"5."}}},
-	//		Val:      5,
-	//		PosRange: PositionRange{Start: 0, End: 2},
-	//	},
-	//}, {
-	//	input: "123.4567",
-	//	expected: &NumberLiteral{
-	//		ExprExtensions:ExprExtensions{LexItems:[]Item{{Typ:57359, Pos:0, Val:"123.4567"}}},
-	//		Val:      123.4567,
-	//		PosRange: PositionRange{Start: 0, End: 8},
-	//	},
-	//}, {
-	//	input: "5e-3",
-	//	expected: &NumberLiteral{
-	//		ExprExtensions:ExprExtensions{LexItems:[]Item{{Typ:57359, Pos:0, Val:"5e-3"}}},
-	//		Val:      0.005,
-	//		PosRange: PositionRange{Start: 0, End: 4},
-	//	},
-	//}, {
-	//	input: "5e3",
-	//	expected: &NumberLiteral{
-	//		ExprExtensions:ExprExtensions{LexItems:[]Item{{Typ:57359, Pos:0, Val:"5e3"}}},
-	//		Val:      5000,
-	//		PosRange: PositionRange{Start: 0, End: 3},
-	//	},
-	//}, {
-	//	input: "0xc",
-	//	expected: &NumberLiteral{
-	//		ExprExtensions:ExprExtensions{LexItems:[]Item{{Typ:57359, Pos:0, Val:"0xc"}}},
-	//		Val:      12,
-	//		PosRange: PositionRange{Start: 0, End: 3},
-	//	},
-	//}, {
-	//	input: "0755",
-	//	expected: &NumberLiteral{
-	//		ExprExtensions:ExprExtensions{LexItems:[]Item{{Typ:57359, Pos:0, Val:"0755"}}},
-	//		Val:      493,
-	//		PosRange: PositionRange{Start: 0, End: 4},
-	//	},
-	//}, {
-	//	input: "+5.5e-3",
-	//	expected: &NumberLiteral{
-	//		ExprExtensions:ExprExtensions{LexItems:[]Item{{Typ:57368, Pos:0, Val:"+"}, {Typ:57359, Pos:1, Val:"5.5e-3"}}},
-	//		Val:      0.0055,
-	//		PosRange: PositionRange{Start: 0, End: 7},
-	//	},
-	//}, {
-	//	input: "-0755",
-	//	expected: &NumberLiteral{
-	//		ExprExtensions:ExprExtensions{LexItems:[]Item{{Typ:57384, Pos:0, Val:"-"}, {Typ:57359, Pos:1, Val:"0755"}}},
-	//		Val:      -493,
-	//		PosRange: PositionRange{Start: 0, End: 5},
-	//	},
-	//}, {
-	//	input: "1 + 1",
-	//	expected: &BinaryExpr{
-	//		ExprExtensions:ExprExtensions{LexItems:[]Item{{Typ:57359, Pos:0, Val:"1"}, {Typ:57368, Pos:2, Val:"+"}, {Typ:57359, Pos:4, Val:"1"}}},
-	//		Op: ADD,
-	//		LHS: &NumberLiteral{
-	//			Val:      1,
-	//			PosRange: PositionRange{Start: 0, End: 1},
-	//		},
-	//		RHS: &NumberLiteral{
-	//			Val:      1,
-	//			PosRange: PositionRange{Start: 4, End: 5},
-	//		},
-	//	},
-	//}, {
-	//	input: "1 - 1",
-	//	expected: &BinaryExpr{
-	//		ExprExtensions:ExprExtensions{LexItems:[]Item{{Typ:57359, Pos:0, Val:"1"}, {Typ:57384, Pos:2, Val:"-"}, {Typ:57359, Pos:4, Val:"1"}}},
-	//		Op: SUB,
-	//		LHS: &NumberLiteral{
-	//			Val:      1,
-	//			PosRange: PositionRange{Start: 0, End: 1},
-	//		},
-	//		RHS: &NumberLiteral{
-	//			Val:      1,
-	//			PosRange: PositionRange{Start: 4, End: 5},
-	//		},
-	//	},
-	//}, {
-	//	input: "1 * 1",
-	//	expected: &BinaryExpr{
-	//		ExprExtensions:ExprExtensions{LexItems:[]Item{{Typ:57359, Pos:0, Val:"1"}, {Typ:57380, Pos:2, Val:"*"}, {Typ:57359, Pos:4, Val:"1"}}},
-	//		Op: MUL,
-	//		LHS: &NumberLiteral{
-	//			Val:      1,
-	//			PosRange: PositionRange{Start: 0, End: 1},
-	//		},
-	//		RHS: &NumberLiteral{
-	//			Val:      1,
-	//			PosRange: PositionRange{Start: 4, End: 5},
-	//		},
-	//	},
-	//}, {
-	//	input: "1 % 1",
-	//	expected: &BinaryExpr{
-	//		ExprExtensions:ExprExtensions{LexItems:[]Item{{Typ:57359, Pos:0, Val:"1"}, {Typ:57379, Pos:2, Val:"%"}, {Typ:57359, Pos:4, Val:"1"}}},
-	//		Op: MOD,
-	//		LHS: &NumberLiteral{
-	//			Val:      1,
-	//			PosRange: PositionRange{Start: 0, End: 1},
-	//		},
-	//		RHS: &NumberLiteral{
-	//			Val:      1,
-	//			PosRange: PositionRange{Start: 4, End: 5},
-	//		},
-	//	},
-	//}, {
-	//	input: "1 / 1",
-	//	expected: &BinaryExpr{
-	//		ExprExtensions:ExprExtensions{LexItems:[]Item{{Typ:57359, Pos:0, Val:"1"}, {Typ:57369, Pos:2, Val:"/"}, {Typ:57359, Pos:4, Val:"1"}}},
-	//		Op: DIV,
-	//		LHS: &NumberLiteral{
-	//			Val:      1,
-	//			PosRange: PositionRange{Start: 0, End: 1},
-	//		},
-	//		RHS: &NumberLiteral{
-	//			Val:      1,
-	//			PosRange: PositionRange{Start: 4, End: 5},
-	//		},
-	//	},
-	//}, {
-	//	input: "1 == bool 1",
-	//	expected: &BinaryExpr{
-	//		ExprExtensions:ExprExtensions{LexItems:[]Item{{Typ:57359, Pos:0, Val:"1"}, {Typ:57370, Pos:2, Val:"=="}, {Typ:57401, Pos:5, Val:"bool"}, {Typ:57359, Pos:10, Val:"1"}}},
-	//		Op: EQL,
-	//		LHS: &NumberLiteral{
-	//			Val:      1,
-	//			PosRange: PositionRange{Start: 0, End: 1},
-	//		},
-	//		RHS: &NumberLiteral{
-	//			Val:      1,
-	//			PosRange: PositionRange{Start: 10, End: 11},
-	//		},
-	//		ReturnBool: true,
-	//	},
-	//}, {
-	//	input: "1 != bool 1",
-	//	expected: &BinaryExpr{
-	//		ExprExtensions:ExprExtensions{LexItems:[]Item{{Typ:57359, Pos:0, Val:"1"}, {Typ:57381, Pos:2, Val:"!="}, {Typ:57401, Pos:5, Val:"bool"}, {Typ:57359, Pos:10, Val:"1"}}},
-	//		Op: NEQ,
-	//		LHS: &NumberLiteral{
-	//			Val:      1,
-	//			PosRange: PositionRange{Start: 0, End: 1},
-	//		},
-	//		RHS: &NumberLiteral{
-	//			Val:      1,
-	//			PosRange: PositionRange{Start: 10, End: 11},
-	//		},
-	//		ReturnBool: true,
-	//	},
-	//}, {
-	//	input: "1 > bool 1",
-	//	expected: &BinaryExpr{
-	//		ExprExtensions:ExprExtensions{LexItems:[]Item{{Typ:57359, Pos:0, Val:"1"}, {Typ:57373, Pos:2, Val:">"}, {Typ:57401, Pos:4, Val:"bool"}, {Typ:57359, Pos:9, Val:"1"}}},
-	//		Op: GTR,
-	//		LHS: &NumberLiteral{
-	//			Val:      1,
-	//			PosRange: PositionRange{Start: 0, End: 1},
-	//		},
-	//		RHS: &NumberLiteral{
-	//			Val:      1,
-	//			PosRange: PositionRange{Start: 9, End: 10},
-	//		},
-	//		ReturnBool: true,
-	//	},
-	//},
-	//{
-	//	input: "1 >= bool 1",
-	//	expected: &BinaryExpr{
-	//		ExprExtensions:ExprExtensions{LexItems:[]Item{{Typ:57359, Pos:0, Val:"1"}, {Typ:57372, Pos:2, Val:">="}, {Typ:57401, Pos:5, Val:"bool"}, {Typ:57359, Pos:10, Val:"1"}}},
-	//		Op: GTE,
-	//		LHS: &NumberLiteral{
-	//			Val:      1,
-	//			PosRange: PositionRange{Start: 0, End: 1},
-	//		},
-	//		RHS: &NumberLiteral{
-	//			Val:      1,
-	//			PosRange: PositionRange{Start: 10, End: 11},
-	//		},
-	//		ReturnBool: true,
-	//	},
-	//}, {
-	//	input: "1 < bool 1",
-	//	expected: &BinaryExpr{
-	//		ExprExtensions:ExprExtensions{LexItems:[]Item{{Typ:57359, Pos:0, Val:"1"}, {Typ:57376, Pos:2, Val:"<"}, {Typ:57401, Pos:4, Val:"bool"}, {Typ:57359, Pos:9, Val:"1"}}},
-	//		Op: LSS,
-	//		LHS: &NumberLiteral{
-	//			Val:      1,
-	//			PosRange: PositionRange{Start: 0, End: 1},
-	//		},
-	//		RHS: &NumberLiteral{
-	//			Val:      1,
-	//			PosRange: PositionRange{Start: 9, End: 10},
-	//		},
-	//		ReturnBool: true,
-	//	},
-	//}, {
-	//	input: "1 <= bool 1",
-	//	expected: &BinaryExpr{
-	//		ExprExtensions:ExprExtensions{LexItems:[]Item{{Typ:57359, Pos:0, Val:"1"}, {Typ:57377, Pos:2, Val:"<="}, {Typ:57401, Pos:5, Val:"bool"}, {Typ:57359, Pos:10, Val:"1"}}},
-	//		Op: LTE,
-	//		LHS: &NumberLiteral{
-	//			Val:      1,
-	//			PosRange: PositionRange{Start: 0, End: 1},
-	//		},
-	//		RHS: &NumberLiteral{
-	//			Val:      1,
-	//			PosRange: PositionRange{Start: 10, End: 11},
-	//		},
-	//		ReturnBool: true,
-	//	},
-	//}, {
-	//	input: "-1^2",
-	//	expected: &UnaryExpr{
-	//		ExprExtensions:ExprExtensions{LexItems:[]Item{{Typ:57384, Pos:0, Val:"-"}, {Typ:57359, Pos:1, Val:"1"}, {Typ:57383, Pos:2, Val:"^"}, {Typ:57359, Pos:3, Val:"2"}}},
-	//		Op: SUB,
-	//		Expr: &BinaryExpr{
-	//			Op: POW,
-	//			LHS: &NumberLiteral{
-	//				Val:      1,
-	//				PosRange: PositionRange{Start: 1, End: 2},
-	//			},
-	//			RHS: &NumberLiteral{
-	//				Val:      2,
-	//				PosRange: PositionRange{Start: 3, End: 4},
-	//			},
-	//		},
-	//	},
-	//}, {
-	//	input: "-1*2",
-	//	expected: &BinaryExpr{
-	//		ExprExtensions:ExprExtensions{LexItems:[]Item{{Typ:57384, Pos:0, Val:"-"}, {Typ:57359, Pos:1, Val:"1"}, {Typ:57380, Pos:2, Val:"*"}, {Typ:57359, Pos:3, Val:"2"}}},
-	//		Op: MUL,
-	//		LHS: &NumberLiteral{
-	//			Val:      -1,
-	//			PosRange: PositionRange{Start: 0, End: 2},
-	//		},
-	//		RHS: &NumberLiteral{
-	//			Val:      2,
-	//			PosRange: PositionRange{Start: 3, End: 4},
-	//		},
-	//	},
-	//}, {
-	//	input: "-1+2",
-	//	expected: &BinaryExpr{
-	//		ExprExtensions:ExprExtensions{LexItems:[]Item{{Typ:57384, Pos:0, Val:"-"}, {Typ:57359, Pos:1, Val:"1"}, {Typ:57368, Pos:2, Val:"+"}, {Typ:57359, Pos:3, Val:"2"}}},
-	//		Op: ADD,
-	//		LHS: &NumberLiteral{
-	//			Val:      -1,
-	//			PosRange: PositionRange{Start: 0, End: 2},
-	//		},
-	//		RHS: &NumberLiteral{
-	//			Val:      2,
-	//			PosRange: PositionRange{Start: 3, End: 4},
-	//		},
-	//	},
-	//}, {
-	//	input: "-1^-2",
-	//	expected: &UnaryExpr{
-	//		ExprExtensions:ExprExtensions{LexItems:[]Item{{Typ:57384, Pos:0, Val:"-"}, {Typ:57359, Pos:1, Val:"1"}, {Typ:57383, Pos:2, Val:"^"}, {Typ:57384, Pos:3, Val:"-"}, {Typ:57359, Pos:4, Val:"2"}}},
-	//		Op: SUB,
-	//		Expr: &BinaryExpr{
-	//			Op: POW,
-	//			LHS: &NumberLiteral{
-	//				Val:      1,
-	//				PosRange: PositionRange{Start: 1, End: 2},
-	//			},
-	//			RHS: &NumberLiteral{
-	//				Val:      -2,
-	//				PosRange: PositionRange{Start: 3, End: 5},
-	//			},
-	//		},
-	//	},
-	//}, {
-	//	input: "+1 + -2 * 1",
-	//	expected: &BinaryExpr{
-	//		ExprExtensions:ExprExtensions{LexItems:[]Item{{Typ:57368, Pos:0, Val:"+"}, {Typ:57359, Pos:1, Val:"1"}, {Typ:57368, Pos:3, Val:"+"}, {Typ:57384, Pos:5, Val:"-"}, {Typ:57359, Pos:6, Val:"2"}, {Typ:57380, Pos:8, Val:"*"}, {Typ:57359, Pos:10, Val:"1"}}},
-	//		Op: ADD,
-	//		LHS: &NumberLiteral{
-	//			Val:      1,
-	//			PosRange: PositionRange{Start: 0, End: 2},
-	//		},
-	//		RHS: &BinaryExpr{
-	//			Op: MUL,
-	//			LHS: &NumberLiteral{
-	//				Val:      -2,
-	//				PosRange: PositionRange{Start: 5, End: 7},
-	//			},
-	//			RHS: &NumberLiteral{
-	//				Val:      1,
-	//				PosRange: PositionRange{Start: 10, End: 11},
-	//			},
-	//		},
-	//	},
-	//}, {
-	//	input: "1 + 2/(3*1)",
-	//	expected: &BinaryExpr{
-	//		ExprExtensions:ExprExtensions{LexItems:[]Item{{Typ:57359, Pos:0, Val:"1"}, {Typ:57368, Pos:2, Val:"+"}, {Typ:57359, Pos:4, Val:"2"}, {Typ:57369, Pos:5, Val:"/"}, {Typ:57357, Pos:6, Val:"("}, {Typ:57359, Pos:7, Val:"3"}, {Typ:57380, Pos:8, Val:"*"}, {Typ:57359, Pos:9, Val:"1"}, {Typ:57362, Pos:10, Val:")"}}},
-	//		Op: ADD,
-	//		LHS: &NumberLiteral{
-	//			Val:      1,
-	//			PosRange: PositionRange{Start: 0, End: 1},
-	//		},
-	//		RHS: &BinaryExpr{
-	//			Op: DIV,
-	//			LHS: &NumberLiteral{
-	//				Val:      2,
-	//				PosRange: PositionRange{Start: 4, End: 5},
-	//			},
-	//			RHS: &ParenExpr{
-	//				Expr: &BinaryExpr{
-	//					Op: MUL,
-	//					LHS: &NumberLiteral{
-	//						Val:      3,
-	//						PosRange: PositionRange{Start: 7, End: 8},
-	//					},
-	//					RHS: &NumberLiteral{
-	//						Val:      1,
-	//						PosRange: PositionRange{Start: 9, End: 10},
-	//					},
-	//				},
-	//				PosRange: PositionRange{Start: 6, End: 11},
-	//			},
-	//		},
-	//	},
-	//}, {
-	//	input: "1 < bool 2 - 1 * 2",
-	//	expected: &BinaryExpr{
-	//		ExprExtensions:ExprExtensions{LexItems:[]Item{Item{Typ:57359, Pos:0, Val:"1"}, Item{Typ:57376, Pos:2, Val:"<"}, Item{Typ:57401, Pos:4, Val:"bool"}, Item{Typ:57359, Pos:9, Val:"2"}, Item{Typ:57384, Pos:11, Val:"-"}, Item{Typ:57359, Pos:13, Val:"1"}, Item{Typ:57380, Pos:15, Val:"*"}, Item{Typ:57359, Pos:17, Val:"2"}}},
-	//		Op:         LSS,
-	//		ReturnBool: true,
-	//		LHS: &NumberLiteral{
-	//			Val:      1,
-	//			PosRange: PositionRange{Start: 0, End: 1},
-	//		},
-	//		RHS: &BinaryExpr{
-	//			Op: SUB,
-	//			LHS: &NumberLiteral{
-	//				Val:      2,
-	//				PosRange: PositionRange{Start: 9, End: 10},
-	//			},
-	//			RHS: &BinaryExpr{
-	//				Op: MUL,
-	//				LHS: &NumberLiteral{
-	//					Val:      1,
-	//					PosRange: PositionRange{Start: 13, End: 14},
-	//				},
-	//				RHS: &NumberLiteral{
-	//					Val:      2,
-	//					PosRange: PositionRange{Start: 17, End: 18},
-	//				},
-	//			},
-	//		},
-	//	},
-	//}, {
-	//	input: "-some_metric",
-	//	expected: &UnaryExpr{
-	//		ExprExtensions:ExprExtensions{LexItems:[]Item{{Typ:57384, Pos:0, Val:"-"}, {Typ:57354, Pos:1, Val:"some_metric"}}},
-	//		Op: SUB,
-	//		Expr: &VectorSelector{
-	//			Name: "some_metric",
-	//			LabelMatchers: []*labels.Matcher{
-	//				mustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
-	//			},
-	//			PosRange: PositionRange{
-	//				Start: 1,
-	//				End:   12,
-	//			},
-	//		},
-	//	},
-	//}, {
-	//	input: "+some_metric",
-	//	expected: &UnaryExpr{
-	//		ExprExtensions:ExprExtensions{LexItems:[]Item{{Typ:57368, Pos:0, Val:"+"}, {Typ:57354, Pos:1, Val:"some_metric"}}},
-	//		Op: ADD,
-	//		Expr: &VectorSelector{
-	//			Name: "some_metric",
-	//			LabelMatchers: []*labels.Matcher{
-	//				mustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
-	//			},
-	//			PosRange: PositionRange{
-	//				Start: 1,
-	//				End:   12,
-	//			},
-	//		},
-	//	},
-	//}, {
-	//	input: " +some_metric",
-	//	expected: &UnaryExpr{
-	//		ExprExtensions:ExprExtensions{LexItems:[]Item{{Typ:57368, Pos:1, Val:"+"}, {Typ:57354, Pos:2, Val:"some_metric"}}},
-	//		Op: ADD,
-	//		Expr: &VectorSelector{
-	//			Name: "some_metric",
-	//			LabelMatchers: []*labels.Matcher{
-	//				mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
-	//			},
-	//			PosRange: PositionRange{
-	//				Start: 2,
-	//				End:   13,
-	//			},
-	//		},
-	//		StartPos: 1,
-	//	},
-	//},
+	{
+		input: "1",
+		expected: &NumberLiteral{
+			ExprExtensions: ExprExtensions{LexItems: []Item{{Typ: 57359, Pos: 0, Val: "1"}}},
+			Val:            1,
+			PosRange:       PositionRange{Start: 0, End: 1},
+		},
+	}, {
+		input: "+Inf",
+		expected: &NumberLiteral{
+			ExprExtensions: ExprExtensions{LexItems: []Item{{Typ: 57368, Pos: 0, Val: "+"}, {Typ: 57359, Pos: 1, Val: "Inf"}}},
+			Val:            math.Inf(1),
+			PosRange:       PositionRange{Start: 0, End: 4},
+		},
+	}, {
+		input: "-Inf",
+		expected: &NumberLiteral{
+			ExprExtensions: ExprExtensions{LexItems: []Item{{Typ: 57384, Pos: 0, Val: "-"}, {Typ: 57359, Pos: 1, Val: "Inf"}}},
+			Val:            math.Inf(-1),
+			PosRange:       PositionRange{Start: 0, End: 4},
+		},
+	}, {
+		input: ".5",
+		expected: &NumberLiteral{
+			ExprExtensions: ExprExtensions{LexItems: []Item{{Typ: 57359, Pos: 0, Val: ".5"}}},
+			Val:            0.5,
+			PosRange:       PositionRange{Start: 0, End: 2},
+		},
+	}, {
+		input: "5.",
+		expected: &NumberLiteral{
+			ExprExtensions: ExprExtensions{LexItems: []Item{{Typ: 57359, Pos: 0, Val: "5."}}},
+			Val:            5,
+			PosRange:       PositionRange{Start: 0, End: 2},
+		},
+	}, {
+		input: "123.4567",
+		expected: &NumberLiteral{
+			ExprExtensions: ExprExtensions{LexItems: []Item{{Typ: 57359, Pos: 0, Val: "123.4567"}}},
+			Val:            123.4567,
+			PosRange:       PositionRange{Start: 0, End: 8},
+		},
+	}, {
+		input: "5e-3",
+		expected: &NumberLiteral{
+			ExprExtensions: ExprExtensions{LexItems: []Item{{Typ: 57359, Pos: 0, Val: "5e-3"}}},
+			Val:            0.005,
+			PosRange:       PositionRange{Start: 0, End: 4},
+		},
+	}, {
+		input: "5e3",
+		expected: &NumberLiteral{
+			ExprExtensions: ExprExtensions{LexItems: []Item{{Typ: 57359, Pos: 0, Val: "5e3"}}},
+			Val:            5000,
+			PosRange:       PositionRange{Start: 0, End: 3},
+		},
+	}, {
+		input: "0xc",
+		expected: &NumberLiteral{
+			ExprExtensions: ExprExtensions{LexItems: []Item{{Typ: 57359, Pos: 0, Val: "0xc"}}},
+			Val:            12,
+			PosRange:       PositionRange{Start: 0, End: 3},
+		},
+	}, {
+		input: "0755",
+		expected: &NumberLiteral{
+			ExprExtensions: ExprExtensions{LexItems: []Item{{Typ: 57359, Pos: 0, Val: "0755"}}},
+			Val:            493,
+			PosRange:       PositionRange{Start: 0, End: 4},
+		},
+	}, {
+		input: "+5.5e-3",
+		expected: &NumberLiteral{
+			ExprExtensions: ExprExtensions{LexItems: []Item{{Typ: 57368, Pos: 0, Val: "+"}, {Typ: 57359, Pos: 1, Val: "5.5e-3"}}},
+			Val:            0.0055,
+			PosRange:       PositionRange{Start: 0, End: 7},
+		},
+	}, {
+		input: "-0755",
+		expected: &NumberLiteral{
+			ExprExtensions: ExprExtensions{LexItems: []Item{{Typ: 57384, Pos: 0, Val: "-"}, {Typ: 57359, Pos: 1, Val: "0755"}}},
+			Val:            -493,
+			PosRange:       PositionRange{Start: 0, End: 5},
+		},
+	}, {
+		input: "1 + 1",
+		expected: &BinaryExpr{
+			ExprExtensions: ExprExtensions{LexItems: []Item{{Typ: 57359, Pos: 0, Val: "1"}, {Typ: 57368, Pos: 2, Val: "+"}, {Typ: 57359, Pos: 4, Val: "1"}}},
+			Op:             ADD,
+			LHS: &NumberLiteral{
+				Val:      1,
+				PosRange: PositionRange{Start: 0, End: 1},
+			},
+			RHS: &NumberLiteral{
+				Val:      1,
+				PosRange: PositionRange{Start: 4, End: 5},
+			},
+		},
+	}, {
+		input: "1 - 1",
+		expected: &BinaryExpr{
+			ExprExtensions: ExprExtensions{LexItems: []Item{{Typ: 57359, Pos: 0, Val: "1"}, {Typ: 57384, Pos: 2, Val: "-"}, {Typ: 57359, Pos: 4, Val: "1"}}},
+			Op:             SUB,
+			LHS: &NumberLiteral{
+				Val:      1,
+				PosRange: PositionRange{Start: 0, End: 1},
+			},
+			RHS: &NumberLiteral{
+				Val:      1,
+				PosRange: PositionRange{Start: 4, End: 5},
+			},
+		},
+	}, {
+		input: "1 * 1",
+		expected: &BinaryExpr{
+			ExprExtensions: ExprExtensions{LexItems: []Item{{Typ: 57359, Pos: 0, Val: "1"}, {Typ: 57380, Pos: 2, Val: "*"}, {Typ: 57359, Pos: 4, Val: "1"}}},
+			Op:             MUL,
+			LHS: &NumberLiteral{
+				Val:      1,
+				PosRange: PositionRange{Start: 0, End: 1},
+			},
+			RHS: &NumberLiteral{
+				Val:      1,
+				PosRange: PositionRange{Start: 4, End: 5},
+			},
+		},
+	}, {
+		input: "1 % 1",
+		expected: &BinaryExpr{
+			ExprExtensions: ExprExtensions{LexItems: []Item{{Typ: 57359, Pos: 0, Val: "1"}, {Typ: 57379, Pos: 2, Val: "%"}, {Typ: 57359, Pos: 4, Val: "1"}}},
+			Op:             MOD,
+			LHS: &NumberLiteral{
+				Val:      1,
+				PosRange: PositionRange{Start: 0, End: 1},
+			},
+			RHS: &NumberLiteral{
+				Val:      1,
+				PosRange: PositionRange{Start: 4, End: 5},
+			},
+		},
+	}, {
+		input: "1 / 1",
+		expected: &BinaryExpr{
+			ExprExtensions: ExprExtensions{LexItems: []Item{{Typ: 57359, Pos: 0, Val: "1"}, {Typ: 57369, Pos: 2, Val: "/"}, {Typ: 57359, Pos: 4, Val: "1"}}},
+			Op:             DIV,
+			LHS: &NumberLiteral{
+				Val:      1,
+				PosRange: PositionRange{Start: 0, End: 1},
+			},
+			RHS: &NumberLiteral{
+				Val:      1,
+				PosRange: PositionRange{Start: 4, End: 5},
+			},
+		},
+	}, {
+		input: "1 == bool 1",
+		expected: &BinaryExpr{
+			ExprExtensions: ExprExtensions{LexItems: []Item{{Typ: 57359, Pos: 0, Val: "1"}, {Typ: 57370, Pos: 2, Val: "=="}, {Typ: 57401, Pos: 5, Val: "bool"}, {Typ: 57359, Pos: 10, Val: "1"}}},
+			Op:             EQL,
+			LHS: &NumberLiteral{
+				Val:      1,
+				PosRange: PositionRange{Start: 0, End: 1},
+			},
+			RHS: &NumberLiteral{
+				Val:      1,
+				PosRange: PositionRange{Start: 10, End: 11},
+			},
+			ReturnBool: true,
+		},
+	}, {
+		input: "1 != bool 1",
+		expected: &BinaryExpr{
+			ExprExtensions: ExprExtensions{LexItems: []Item{{Typ: 57359, Pos: 0, Val: "1"}, {Typ: 57381, Pos: 2, Val: "!="}, {Typ: 57401, Pos: 5, Val: "bool"}, {Typ: 57359, Pos: 10, Val: "1"}}},
+			Op:             NEQ,
+			LHS: &NumberLiteral{
+				Val:      1,
+				PosRange: PositionRange{Start: 0, End: 1},
+			},
+			RHS: &NumberLiteral{
+				Val:      1,
+				PosRange: PositionRange{Start: 10, End: 11},
+			},
+			ReturnBool: true,
+		},
+	}, {
+		input: "1 > bool 1",
+		expected: &BinaryExpr{
+			ExprExtensions: ExprExtensions{LexItems: []Item{{Typ: 57359, Pos: 0, Val: "1"}, {Typ: 57373, Pos: 2, Val: ">"}, {Typ: 57401, Pos: 4, Val: "bool"}, {Typ: 57359, Pos: 9, Val: "1"}}},
+			Op:             GTR,
+			LHS: &NumberLiteral{
+				Val:      1,
+				PosRange: PositionRange{Start: 0, End: 1},
+			},
+			RHS: &NumberLiteral{
+				Val:      1,
+				PosRange: PositionRange{Start: 9, End: 10},
+			},
+			ReturnBool: true,
+		},
+	},
+	{
+		input: "1 >= bool 1",
+		expected: &BinaryExpr{
+			ExprExtensions: ExprExtensions{LexItems: []Item{{Typ: 57359, Pos: 0, Val: "1"}, {Typ: 57372, Pos: 2, Val: ">="}, {Typ: 57401, Pos: 5, Val: "bool"}, {Typ: 57359, Pos: 10, Val: "1"}}},
+			Op:             GTE,
+			LHS: &NumberLiteral{
+				Val:      1,
+				PosRange: PositionRange{Start: 0, End: 1},
+			},
+			RHS: &NumberLiteral{
+				Val:      1,
+				PosRange: PositionRange{Start: 10, End: 11},
+			},
+			ReturnBool: true,
+		},
+	}, {
+		input: "1 < bool 1",
+		expected: &BinaryExpr{
+			ExprExtensions: ExprExtensions{LexItems: []Item{{Typ: 57359, Pos: 0, Val: "1"}, {Typ: 57376, Pos: 2, Val: "<"}, {Typ: 57401, Pos: 4, Val: "bool"}, {Typ: 57359, Pos: 9, Val: "1"}}},
+			Op:             LSS,
+			LHS: &NumberLiteral{
+				Val:      1,
+				PosRange: PositionRange{Start: 0, End: 1},
+			},
+			RHS: &NumberLiteral{
+				Val:      1,
+				PosRange: PositionRange{Start: 9, End: 10},
+			},
+			ReturnBool: true,
+		},
+	}, {
+		input: "1 <= bool 1",
+		expected: &BinaryExpr{
+			ExprExtensions: ExprExtensions{LexItems: []Item{{Typ: 57359, Pos: 0, Val: "1"}, {Typ: 57377, Pos: 2, Val: "<="}, {Typ: 57401, Pos: 5, Val: "bool"}, {Typ: 57359, Pos: 10, Val: "1"}}},
+			Op:             LTE,
+			LHS: &NumberLiteral{
+				Val:      1,
+				PosRange: PositionRange{Start: 0, End: 1},
+			},
+			RHS: &NumberLiteral{
+				Val:      1,
+				PosRange: PositionRange{Start: 10, End: 11},
+			},
+			ReturnBool: true,
+		},
+	}, {
+		input: "-1^2",
+		expected: &UnaryExpr{
+			ExprExtensions: ExprExtensions{LexItems: []Item{{Typ: 57384, Pos: 0, Val: "-"}, {Typ: 57359, Pos: 1, Val: "1"}, {Typ: 57383, Pos: 2, Val: "^"}, {Typ: 57359, Pos: 3, Val: "2"}}},
+			Op:             SUB,
+			Expr: &BinaryExpr{
+				Op: POW,
+				LHS: &NumberLiteral{
+					Val:      1,
+					PosRange: PositionRange{Start: 1, End: 2},
+				},
+				RHS: &NumberLiteral{
+					Val:      2,
+					PosRange: PositionRange{Start: 3, End: 4},
+				},
+			},
+		},
+	}, {
+		input: "-1*2",
+		expected: &BinaryExpr{
+			ExprExtensions: ExprExtensions{LexItems: []Item{{Typ: 57384, Pos: 0, Val: "-"}, {Typ: 57359, Pos: 1, Val: "1"}, {Typ: 57380, Pos: 2, Val: "*"}, {Typ: 57359, Pos: 3, Val: "2"}}},
+			Op:             MUL,
+			LHS: &NumberLiteral{
+				Val:      -1,
+				PosRange: PositionRange{Start: 0, End: 2},
+			},
+			RHS: &NumberLiteral{
+				Val:      2,
+				PosRange: PositionRange{Start: 3, End: 4},
+			},
+		},
+	}, {
+		input: "-1+2",
+		expected: &BinaryExpr{
+			ExprExtensions: ExprExtensions{LexItems: []Item{{Typ: 57384, Pos: 0, Val: "-"}, {Typ: 57359, Pos: 1, Val: "1"}, {Typ: 57368, Pos: 2, Val: "+"}, {Typ: 57359, Pos: 3, Val: "2"}}},
+			Op:             ADD,
+			LHS: &NumberLiteral{
+				Val:      -1,
+				PosRange: PositionRange{Start: 0, End: 2},
+			},
+			RHS: &NumberLiteral{
+				Val:      2,
+				PosRange: PositionRange{Start: 3, End: 4},
+			},
+		},
+	}, {
+		input: "-1^-2",
+		expected: &UnaryExpr{
+			ExprExtensions: ExprExtensions{LexItems: []Item{{Typ: 57384, Pos: 0, Val: "-"}, {Typ: 57359, Pos: 1, Val: "1"}, {Typ: 57383, Pos: 2, Val: "^"}, {Typ: 57384, Pos: 3, Val: "-"}, {Typ: 57359, Pos: 4, Val: "2"}}},
+			Op:             SUB,
+			Expr: &BinaryExpr{
+				Op: POW,
+				LHS: &NumberLiteral{
+					Val:      1,
+					PosRange: PositionRange{Start: 1, End: 2},
+				},
+				RHS: &NumberLiteral{
+					Val:      -2,
+					PosRange: PositionRange{Start: 3, End: 5},
+				},
+			},
+		},
+	}, {
+		input: "+1 + -2 * 1",
+		expected: &BinaryExpr{
+			ExprExtensions: ExprExtensions{LexItems: []Item{{Typ: 57368, Pos: 0, Val: "+"}, {Typ: 57359, Pos: 1, Val: "1"}, {Typ: 57368, Pos: 3, Val: "+"}, {Typ: 57384, Pos: 5, Val: "-"}, {Typ: 57359, Pos: 6, Val: "2"}, {Typ: 57380, Pos: 8, Val: "*"}, {Typ: 57359, Pos: 10, Val: "1"}}},
+			Op:             ADD,
+			LHS: &NumberLiteral{
+				Val:      1,
+				PosRange: PositionRange{Start: 0, End: 2},
+			},
+			RHS: &BinaryExpr{
+				Op: MUL,
+				LHS: &NumberLiteral{
+					Val:      -2,
+					PosRange: PositionRange{Start: 5, End: 7},
+				},
+				RHS: &NumberLiteral{
+					Val:      1,
+					PosRange: PositionRange{Start: 10, End: 11},
+				},
+			},
+		},
+	}, {
+		input: "1 + 2/(3*1)",
+		expected: &BinaryExpr{
+			ExprExtensions: ExprExtensions{LexItems: []Item{{Typ: 57359, Pos: 0, Val: "1"}, {Typ: 57368, Pos: 2, Val: "+"}, {Typ: 57359, Pos: 4, Val: "2"}, {Typ: 57369, Pos: 5, Val: "/"}, {Typ: 57357, Pos: 6, Val: "("}, {Typ: 57359, Pos: 7, Val: "3"}, {Typ: 57380, Pos: 8, Val: "*"}, {Typ: 57359, Pos: 9, Val: "1"}, {Typ: 57362, Pos: 10, Val: ")"}}},
+			Op:             ADD,
+			LHS: &NumberLiteral{
+				Val:      1,
+				PosRange: PositionRange{Start: 0, End: 1},
+			},
+			RHS: &BinaryExpr{
+				Op: DIV,
+				LHS: &NumberLiteral{
+					Val:      2,
+					PosRange: PositionRange{Start: 4, End: 5},
+				},
+				RHS: &ParenExpr{
+					Expr: &BinaryExpr{
+						Op: MUL,
+						LHS: &NumberLiteral{
+							Val:      3,
+							PosRange: PositionRange{Start: 7, End: 8},
+						},
+						RHS: &NumberLiteral{
+							Val:      1,
+							PosRange: PositionRange{Start: 9, End: 10},
+						},
+					},
+					PosRange: PositionRange{Start: 6, End: 11},
+				},
+			},
+		},
+	}, {
+		input: "1 < bool 2 - 1 * 2",
+		expected: &BinaryExpr{
+			ExprExtensions: ExprExtensions{LexItems: []Item{Item{Typ: 57359, Pos: 0, Val: "1"}, Item{Typ: 57376, Pos: 2, Val: "<"}, Item{Typ: 57401, Pos: 4, Val: "bool"}, Item{Typ: 57359, Pos: 9, Val: "2"}, Item{Typ: 57384, Pos: 11, Val: "-"}, Item{Typ: 57359, Pos: 13, Val: "1"}, Item{Typ: 57380, Pos: 15, Val: "*"}, Item{Typ: 57359, Pos: 17, Val: "2"}}},
+			Op:             LSS,
+			ReturnBool:     true,
+			LHS: &NumberLiteral{
+				Val:      1,
+				PosRange: PositionRange{Start: 0, End: 1},
+			},
+			RHS: &BinaryExpr{
+				Op: SUB,
+				LHS: &NumberLiteral{
+					Val:      2,
+					PosRange: PositionRange{Start: 9, End: 10},
+				},
+				RHS: &BinaryExpr{
+					Op: MUL,
+					LHS: &NumberLiteral{
+						Val:      1,
+						PosRange: PositionRange{Start: 13, End: 14},
+					},
+					RHS: &NumberLiteral{
+						Val:      2,
+						PosRange: PositionRange{Start: 17, End: 18},
+					},
+				},
+			},
+		},
+	}, {
+		input: "-some_metric",
+		expected: &UnaryExpr{
+			ExprExtensions: ExprExtensions{LexItems: []Item{{Typ: 57384, Pos: 0, Val: "-"}, {Typ: 57354, Pos: 1, Val: "some_metric"}}},
+			Op:             SUB,
+			Expr: &VectorSelector{
+				Name: "some_metric",
+				LabelMatchers: []*labels.Matcher{
+					mustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
+				},
+				PosRange: PositionRange{
+					Start: 1,
+					End:   12,
+				},
+			},
+		},
+	}, {
+		input: "+some_metric",
+		expected: &UnaryExpr{
+			ExprExtensions: ExprExtensions{LexItems: []Item{{Typ: 57368, Pos: 0, Val: "+"}, {Typ: 57354, Pos: 1, Val: "some_metric"}}},
+			Op:             ADD,
+			Expr: &VectorSelector{
+				Name: "some_metric",
+				LabelMatchers: []*labels.Matcher{
+					mustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
+				},
+				PosRange: PositionRange{
+					Start: 1,
+					End:   12,
+				},
+			},
+		},
+	}, {
+		input: " +some_metric",
+		expected: &UnaryExpr{
+			ExprExtensions: ExprExtensions{LexItems: []Item{{Typ: 57368, Pos: 1, Val: "+"}, {Typ: 57354, Pos: 2, Val: "some_metric"}}},
+			Op:             ADD,
+			Expr: &VectorSelector{
+				Name: "some_metric",
+				LabelMatchers: []*labels.Matcher{
+					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+				},
+				PosRange: PositionRange{
+					Start: 2,
+					End:   13,
+				},
+			},
+			StartPos: 1,
+		},
+	},
 	{
 		input:  "",
 		fail:   true,
@@ -576,10 +576,10 @@ var testExpr = []struct {
 	{
 		input: "foo * bar",
 		expected: &BinaryExpr{
-			Op: MUL,
+			ExprExtensions: ExprExtensions{LexItems: []Item{Item{Typ: 57354, Pos: 0, Val: "foo"}, Item{Typ: 57380, Pos: 4, Val: "*"}, Item{Typ: 57354, Pos: 6, Val: "bar"}}},
+			Op:             MUL,
 			LHS: &VectorSelector{
-				ExprExtensions: ExprExtensions{LexItems: []Item{Item{Typ: 57354, Pos: 0, Val: "foo"}, Item{Typ: 57380, Pos: 4, Val: "*"}, Item{Typ: 57354, Pos: 6, Val: "bar"}}},
-				Name:           "foo",
+				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
 				},
@@ -1624,10 +1624,10 @@ var testExpr = []struct {
 	{
 		input: "test[5s]",
 		expected: &MatrixSelector{
+			ExprExtensions: ExprExtensions{LexItems: []Item{Item{Typ: 57354, Pos: 0, Val: "test"}, Item{Typ: 57356, Pos: 4, Val: "["}, Item{Typ: 57351, Pos: 5, Val: "5s"}, Item{Typ: 57361, Pos: 7, Val: "]"}}},
 			VectorSelector: &VectorSelector{
-				ExprExtensions: ExprExtensions{LexItems: []Item{Item{Typ: 57354, Pos: 0, Val: "test"}, Item{Typ: 57356, Pos: 4, Val: "["}, Item{Typ: 57351, Pos: 5, Val: "5s"}, Item{Typ: 57361, Pos: 7, Val: "]"}}},
-				Name:           "test",
-				Offset:         0,
+				Name:   "test",
+				Offset: 0,
 				LabelMatchers: []*labels.Matcher{
 					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
 				},
@@ -1729,9 +1729,11 @@ var testExpr = []struct {
 			Range:  5 * 7 * 24 * time.Hour,
 			EndPos: 18,
 		},
-	}, {
+	},
+	{
 		input: `test{a="b"}[5y] OFFSET 3d`,
 		expected: &MatrixSelector{
+			ExprExtensions: ExprExtensions{LexItems: []Item{Item{Typ: 57354, Pos: 0, Val: "test"}, Item{Typ: 57355, Pos: 4, Val: "{"}, Item{Typ: 57354, Pos: 5, Val: "a"}, Item{Typ: 57370, Pos: 6, Val: "="}, Item{Typ: 57365, Pos: 7, Val: "\"b\""}, Item{Typ: 57360, Pos: 10, Val: "}"}, Item{Typ: 57356, Pos: 11, Val: "["}, Item{Typ: 57351, Pos: 12, Val: "5y"}, Item{Typ: 57361, Pos: 14, Val: "]"}, Item{Typ: 57406, Pos: 16, Val: "OFFSET"}, Item{Typ: 57351, Pos: 23, Val: "3d"}}},
 			VectorSelector: &VectorSelector{
 				Name:   "test",
 				Offset: 3 * 24 * time.Hour,
@@ -1811,7 +1813,8 @@ var testExpr = []struct {
 	{
 		input: "sum by (foo)(some_metric)",
 		expected: &AggregateExpr{
-			Op: SUM,
+			ExprExtensions: ExprExtensions{LexItems: []Item{Item{Typ: 57397, Pos: 0, Val: "sum"}, Item{Typ: 57402, Pos: 4, Val: "by"}, Item{Typ: 57357, Pos: 7, Val: "("}, Item{Typ: 57354, Pos: 8, Val: "foo"}, Item{Typ: 57362, Pos: 11, Val: ")"}, Item{Typ: 57357, Pos: 12, Val: "("}, Item{Typ: 57354, Pos: 13, Val: "some_metric"}, Item{Typ: 57362, Pos: 24, Val: ")"}}},
+			Op:             SUM,
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
@@ -1831,7 +1834,8 @@ var testExpr = []struct {
 	}, {
 		input: "avg by (foo)(some_metric)",
 		expected: &AggregateExpr{
-			Op: AVG,
+			ExprExtensions: ExprExtensions{LexItems: []Item{Item{Typ: 57387, Pos: 0, Val: "avg"}, Item{Typ: 57402, Pos: 4, Val: "by"}, Item{Typ: 57357, Pos: 7, Val: "("}, Item{Typ: 57354, Pos: 8, Val: "foo"}, Item{Typ: 57362, Pos: 11, Val: ")"}, Item{Typ: 57357, Pos: 12, Val: "("}, Item{Typ: 57354, Pos: 13, Val: "some_metric"}, Item{Typ: 57362, Pos: 24, Val: ")"}}},
+			Op:             AVG,
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
@@ -1851,7 +1855,8 @@ var testExpr = []struct {
 	}, {
 		input: "max by (foo)(some_metric)",
 		expected: &AggregateExpr{
-			Op: MAX,
+			ExprExtensions: ExprExtensions{LexItems: []Item{Item{Typ: 57392, Pos: 0, Val: "max"}, Item{Typ: 57402, Pos: 4, Val: "by"}, Item{Typ: 57357, Pos: 7, Val: "("}, Item{Typ: 57354, Pos: 8, Val: "foo"}, Item{Typ: 57362, Pos: 11, Val: ")"}, Item{Typ: 57357, Pos: 12, Val: "("}, Item{Typ: 57354, Pos: 13, Val: "some_metric"}, Item{Typ: 57362, Pos: 24, Val: ")"}}},
+			Op:             MAX,
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
@@ -1871,8 +1876,9 @@ var testExpr = []struct {
 	}, {
 		input: "sum without (foo) (some_metric)",
 		expected: &AggregateExpr{
-			Op:      SUM,
-			Without: true,
+			ExprExtensions: ExprExtensions{LexItems: []Item{Item{Typ: 57397, Pos: 0, Val: "sum"}, Item{Typ: 57408, Pos: 4, Val: "without"}, Item{Typ: 57357, Pos: 12, Val: "("}, Item{Typ: 57354, Pos: 13, Val: "foo"}, Item{Typ: 57362, Pos: 16, Val: ")"}, Item{Typ: 57357, Pos: 18, Val: "("}, Item{Typ: 57354, Pos: 19, Val: "some_metric"}, Item{Typ: 57362, Pos: 30, Val: ")"}}},
+			Op:             SUM,
+			Without:        true,
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
@@ -1892,8 +1898,9 @@ var testExpr = []struct {
 	}, {
 		input: "sum (some_metric) without (foo)",
 		expected: &AggregateExpr{
-			Op:      SUM,
-			Without: true,
+			ExprExtensions: ExprExtensions{LexItems: []Item{Item{Typ: 57397, Pos: 0, Val: "sum"}, Item{Typ: 57357, Pos: 4, Val: "("}, Item{Typ: 57354, Pos: 5, Val: "some_metric"}, Item{Typ: 57362, Pos: 16, Val: ")"}, Item{Typ: 57408, Pos: 18, Val: "without"}, Item{Typ: 57357, Pos: 26, Val: "("}, Item{Typ: 57354, Pos: 27, Val: "foo"}, Item{Typ: 57362, Pos: 30, Val: ")"}}},
+			Op:             SUM,
+			Without:        true,
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
@@ -1913,7 +1920,8 @@ var testExpr = []struct {
 	}, {
 		input: "stddev(some_metric)",
 		expected: &AggregateExpr{
-			Op: STDDEV,
+			ExprExtensions: ExprExtensions{LexItems: []Item{Item{Typ: 57395, Pos: 0, Val: "stddev"}, Item{Typ: 57357, Pos: 6, Val: "("}, Item{Typ: 57354, Pos: 7, Val: "some_metric"}, Item{Typ: 57362, Pos: 18, Val: ")"}}},
+			Op:             STDDEV,
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
@@ -1932,7 +1940,8 @@ var testExpr = []struct {
 	}, {
 		input: "stdvar by (foo)(some_metric)",
 		expected: &AggregateExpr{
-			Op: STDVAR,
+			ExprExtensions: ExprExtensions{LexItems: []Item{Item{Typ: 57396, Pos: 0, Val: "stdvar"}, Item{Typ: 57402, Pos: 7, Val: "by"}, Item{Typ: 57357, Pos: 10, Val: "("}, Item{Typ: 57354, Pos: 11, Val: "foo"}, Item{Typ: 57362, Pos: 14, Val: ")"}, Item{Typ: 57357, Pos: 15, Val: "("}, Item{Typ: 57354, Pos: 16, Val: "some_metric"}, Item{Typ: 57362, Pos: 27, Val: ")"}}},
+			Op:             STDVAR,
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
@@ -1952,7 +1961,8 @@ var testExpr = []struct {
 	}, {
 		input: "sum by ()(some_metric)",
 		expected: &AggregateExpr{
-			Op: SUM,
+			ExprExtensions: ExprExtensions{LexItems: []Item{Item{Typ: 57397, Pos: 0, Val: "sum"}, Item{Typ: 57402, Pos: 4, Val: "by"}, Item{Typ: 57357, Pos: 7, Val: "("}, Item{Typ: 57362, Pos: 8, Val: ")"}, Item{Typ: 57357, Pos: 9, Val: "("}, Item{Typ: 57354, Pos: 10, Val: "some_metric"}, Item{Typ: 57362, Pos: 21, Val: ")"}}},
+			Op:             SUM,
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
@@ -1972,7 +1982,8 @@ var testExpr = []struct {
 	}, {
 		input: "sum by (foo,bar,)(some_metric)",
 		expected: &AggregateExpr{
-			Op: SUM,
+			ExprExtensions: ExprExtensions{LexItems: []Item{Item{Typ: 57397, Pos: 0, Val: "sum"}, Item{Typ: 57402, Pos: 4, Val: "by"}, Item{Typ: 57357, Pos: 7, Val: "("}, Item{Typ: 57354, Pos: 8, Val: "foo"}, Item{Typ: 57349, Pos: 11, Val: ","}, Item{Typ: 57354, Pos: 12, Val: "bar"}, Item{Typ: 57349, Pos: 15, Val: ","}, Item{Typ: 57362, Pos: 16, Val: ")"}, Item{Typ: 57357, Pos: 17, Val: "("}, Item{Typ: 57354, Pos: 18, Val: "some_metric"}, Item{Typ: 57362, Pos: 29, Val: ")"}}},
+			Op:             SUM,
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
@@ -1992,7 +2003,8 @@ var testExpr = []struct {
 	}, {
 		input: "sum by (foo,)(some_metric)",
 		expected: &AggregateExpr{
-			Op: SUM,
+			ExprExtensions: ExprExtensions{LexItems: []Item{Item{Typ: 57397, Pos: 0, Val: "sum"}, Item{Typ: 57402, Pos: 4, Val: "by"}, Item{Typ: 57357, Pos: 7, Val: "("}, Item{Typ: 57354, Pos: 8, Val: "foo"}, Item{Typ: 57349, Pos: 11, Val: ","}, Item{Typ: 57362, Pos: 12, Val: ")"}, Item{Typ: 57357, Pos: 13, Val: "("}, Item{Typ: 57354, Pos: 14, Val: "some_metric"}, Item{Typ: 57362, Pos: 25, Val: ")"}}},
+			Op:             SUM,
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
@@ -2012,7 +2024,8 @@ var testExpr = []struct {
 	}, {
 		input: "topk(5, some_metric)",
 		expected: &AggregateExpr{
-			Op: TOPK,
+			ExprExtensions: ExprExtensions{LexItems: []Item{Item{Typ: 57398, Pos: 0, Val: "topk"}, Item{Typ: 57357, Pos: 4, Val: "("}, Item{Typ: 57359, Pos: 5, Val: "5"}, Item{Typ: 57349, Pos: 6, Val: ","}, Item{Typ: 57354, Pos: 8, Val: "some_metric"}, Item{Typ: 57362, Pos: 19, Val: ")"}}},
+			Op:             TOPK,
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
@@ -2038,7 +2051,8 @@ var testExpr = []struct {
 	}, {
 		input: `count_values("value", some_metric)`,
 		expected: &AggregateExpr{
-			Op: COUNT_VALUES,
+			ExprExtensions: ExprExtensions{LexItems: []Item{Item{Typ: 57390, Pos: 0, Val: "count_values"}, Item{Typ: 57357, Pos: 12, Val: "("}, Item{Typ: 57365, Pos: 13, Val: "\"value\""}, Item{Typ: 57349, Pos: 20, Val: ","}, Item{Typ: 57354, Pos: 22, Val: "some_metric"}, Item{Typ: 57362, Pos: 33, Val: ")"}}},
+			Op:             COUNT_VALUES,
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
@@ -2065,8 +2079,9 @@ var testExpr = []struct {
 		// Test usage of keywords as label names.
 		input: "sum without(and, by, avg, count, alert, annotations)(some_metric)",
 		expected: &AggregateExpr{
-			Op:      SUM,
-			Without: true,
+			ExprExtensions: ExprExtensions{LexItems: []Item{Item{Typ: 57397, Pos: 0, Val: "sum"}, Item{Typ: 57408, Pos: 4, Val: "without"}, Item{Typ: 57357, Pos: 11, Val: "("}, Item{Typ: 57374, Pos: 12, Val: "and"}, Item{Typ: 57349, Pos: 15, Val: ","}, Item{Typ: 57402, Pos: 17, Val: "by"}, Item{Typ: 57349, Pos: 19, Val: ","}, Item{Typ: 57387, Pos: 21, Val: "avg"}, Item{Typ: 57349, Pos: 24, Val: ","}, Item{Typ: 57389, Pos: 26, Val: "count"}, Item{Typ: 57349, Pos: 31, Val: ","}, Item{Typ: 57354, Pos: 33, Val: "alert"}, Item{Typ: 57349, Pos: 38, Val: ","}, Item{Typ: 57354, Pos: 40, Val: "annotations"}, Item{Typ: 57362, Pos: 51, Val: ")"}, Item{Typ: 57357, Pos: 52, Val: "("}, Item{Typ: 57354, Pos: 53, Val: "some_metric"}, Item{Typ: 57362, Pos: 64, Val: ")"}}},
+			Op:             SUM,
+			Without:        true,
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
@@ -2148,8 +2163,9 @@ var testExpr = []struct {
 	{
 		input: "time()",
 		expected: &Call{
-			Func: mustGetFunction("time"),
-			Args: Expressions{},
+			ExprExtensions: ExprExtensions{LexItems: []Item{Item{Typ: 57354, Pos: 0, Val: "time"}, Item{Typ: 57357, Pos: 4, Val: "("}, Item{Typ: 57362, Pos: 5, Val: ")"}}},
+			Func:           mustGetFunction("time"),
+			Args:           Expressions{},
 			PosRange: PositionRange{
 				Start: 0,
 				End:   6,
@@ -2158,7 +2174,8 @@ var testExpr = []struct {
 	}, {
 		input: `floor(some_metric{foo!="bar"})`,
 		expected: &Call{
-			Func: mustGetFunction("floor"),
+			ExprExtensions: ExprExtensions{LexItems: []Item{Item{Typ: 57354, Pos: 0, Val: "floor"}, Item{Typ: 57357, Pos: 5, Val: "("}, Item{Typ: 57354, Pos: 6, Val: "some_metric"}, Item{Typ: 57355, Pos: 17, Val: "{"}, Item{Typ: 57354, Pos: 18, Val: "foo"}, Item{Typ: 57381, Pos: 21, Val: "!="}, Item{Typ: 57365, Pos: 23, Val: "\"bar\""}, Item{Typ: 57360, Pos: 28, Val: "}"}, Item{Typ: 57362, Pos: 29, Val: ")"}}},
+			Func:           mustGetFunction("floor"),
 			Args: Expressions{
 				&VectorSelector{
 					Name: "some_metric",
@@ -2180,7 +2197,8 @@ var testExpr = []struct {
 	}, {
 		input: "rate(some_metric[5m])",
 		expected: &Call{
-			Func: mustGetFunction("rate"),
+			ExprExtensions: ExprExtensions{LexItems: []Item{Item{Typ: 57354, Pos: 0, Val: "rate"}, Item{Typ: 57357, Pos: 4, Val: "("}, Item{Typ: 57354, Pos: 5, Val: "some_metric"}, Item{Typ: 57356, Pos: 16, Val: "["}, Item{Typ: 57351, Pos: 17, Val: "5m"}, Item{Typ: 57361, Pos: 19, Val: "]"}, Item{Typ: 57362, Pos: 20, Val: ")"}}},
+			Func:           mustGetFunction("rate"),
 			Args: Expressions{
 				&MatrixSelector{
 					VectorSelector: &VectorSelector{
@@ -2205,7 +2223,8 @@ var testExpr = []struct {
 	}, {
 		input: "round(some_metric)",
 		expected: &Call{
-			Func: mustGetFunction("round"),
+			ExprExtensions: ExprExtensions{LexItems: []Item{Item{Typ: 57354, Pos: 0, Val: "round"}, Item{Typ: 57357, Pos: 5, Val: "("}, Item{Typ: 57354, Pos: 6, Val: "some_metric"}, Item{Typ: 57362, Pos: 17, Val: ")"}}},
+			Func:           mustGetFunction("round"),
 			Args: Expressions{
 				&VectorSelector{
 					Name: "some_metric",
@@ -2226,7 +2245,8 @@ var testExpr = []struct {
 	}, {
 		input: "round(some_metric, 5)",
 		expected: &Call{
-			Func: mustGetFunction("round"),
+			ExprExtensions: ExprExtensions{LexItems: []Item{Item{Typ: 57354, Pos: 0, Val: "round"}, Item{Typ: 57357, Pos: 5, Val: "("}, Item{Typ: 57354, Pos: 6, Val: "some_metric"}, Item{Typ: 57349, Pos: 17, Val: ","}, Item{Typ: 57359, Pos: 19, Val: "5"}, Item{Typ: 57362, Pos: 20, Val: ")"}}},
+			Func:           mustGetFunction("round"),
 			Args: Expressions{
 				&VectorSelector{
 					Name: "some_metric",
@@ -2312,7 +2332,8 @@ var testExpr = []struct {
 	}, {
 		input: "sum(sum)",
 		expected: &AggregateExpr{
-			Op: SUM,
+			ExprExtensions: ExprExtensions{LexItems: []Item{Item{Typ: 57397, Pos: 0, Val: "sum"}, Item{Typ: 57357, Pos: 3, Val: "("}, Item{Typ: 57397, Pos: 4, Val: "sum"}, Item{Typ: 57362, Pos: 7, Val: ")"}}},
+			Op:             SUM,
 			Expr: &VectorSelector{
 				Name: "sum",
 				LabelMatchers: []*labels.Matcher{
@@ -2331,7 +2352,8 @@ var testExpr = []struct {
 	}, {
 		input: "a + sum",
 		expected: &BinaryExpr{
-			Op: ADD,
+			ExprExtensions: ExprExtensions{LexItems: []Item{Item{Typ: 57354, Pos: 0, Val: "a"}, Item{Typ: 57368, Pos: 2, Val: "+"}, Item{Typ: 57397, Pos: 4, Val: "sum"}}},
+			Op:             ADD,
 			LHS: &VectorSelector{
 				Name: "a",
 				LabelMatchers: []*labels.Matcher{
@@ -2359,38 +2381,44 @@ var testExpr = []struct {
 	{
 		input: `"double-quoted string \" with escaped quote"`,
 		expected: &StringLiteral{
-			Val:      "double-quoted string \" with escaped quote",
-			PosRange: PositionRange{Start: 0, End: 44},
+			ExprExtensions: ExprExtensions{LexItems: []Item{Item{Typ: 57365, Pos: 0, Val: "\"double-quoted string \\\" with escaped quote\""}}},
+			Val:            "double-quoted string \" with escaped quote",
+			PosRange:       PositionRange{Start: 0, End: 44},
 		},
 	}, {
 		input: `'single-quoted string \' with escaped quote'`,
 		expected: &StringLiteral{
-			Val:      "single-quoted string ' with escaped quote",
-			PosRange: PositionRange{Start: 0, End: 44},
+			ExprExtensions: ExprExtensions{LexItems: []Item{Item{Typ: 57365, Pos: 0, Val: "'single-quoted string \\' with escaped quote'"}}},
+			Val:            "single-quoted string ' with escaped quote",
+			PosRange:       PositionRange{Start: 0, End: 44},
 		},
 	}, {
 		input: "`backtick-quoted string`",
 		expected: &StringLiteral{
-			Val:      "backtick-quoted string",
-			PosRange: PositionRange{Start: 0, End: 24},
+			ExprExtensions: ExprExtensions{LexItems: []Item{Item{Typ: 57365, Pos: 0, Val: "`backtick-quoted string`"}}},
+			Val:            "backtick-quoted string",
+			PosRange:       PositionRange{Start: 0, End: 24},
 		},
 	}, {
 		input: `"\a\b\f\n\r\t\v\\\" - \xFF\377\u1234\U00010111\U0001011111☺"`,
 		expected: &StringLiteral{
-			Val:      "\a\b\f\n\r\t\v\\\" - \xFF\377\u1234\U00010111\U0001011111☺",
-			PosRange: PositionRange{Start: 0, End: 62},
+			ExprExtensions: ExprExtensions{LexItems: []Item{Item{Typ: 57365, Pos: 0, Val: "\"\\a\\b\\f\\n\\r\\t\\v\\\\\\\" - \\xFF\\377\\u1234\\U00010111\\U0001011111☺\""}}},
+			Val:            "\a\b\f\n\r\t\v\\\" - \xFF\377\u1234\U00010111\U0001011111☺",
+			PosRange:       PositionRange{Start: 0, End: 62},
 		},
 	}, {
 		input: `'\a\b\f\n\r\t\v\\\' - \xFF\377\u1234\U00010111\U0001011111☺'`,
 		expected: &StringLiteral{
-			Val:      "\a\b\f\n\r\t\v\\' - \xFF\377\u1234\U00010111\U0001011111☺",
-			PosRange: PositionRange{Start: 0, End: 62},
+			ExprExtensions: ExprExtensions{LexItems: []Item{Item{Typ: 57365, Pos: 0, Val: "'\\a\\b\\f\\n\\r\\t\\v\\\\\\' - \\xFF\\377\\u1234\\U00010111\\U0001011111☺'"}}},
+			Val:            "\a\b\f\n\r\t\v\\' - \xFF\377\u1234\U00010111\U0001011111☺",
+			PosRange:       PositionRange{Start: 0, End: 62},
 		},
 	}, {
 		input: "`" + `\a\b\f\n\r\t\v\\\"\' - \xFF\377\u1234\U00010111\U0001011111☺` + "`",
 		expected: &StringLiteral{
-			Val:      `\a\b\f\n\r\t\v\\\"\' - \xFF\377\u1234\U00010111\U0001011111☺`,
-			PosRange: PositionRange{Start: 0, End: 64},
+			ExprExtensions: ExprExtensions{LexItems: []Item{Item{Typ: 57365, Pos: 0, Val: "`\\a\\b\\f\\n\\r\\t\\v\\\\\\\"\\' - \\xFF\\377\\u1234\\U00010111\\U0001011111☺`"}}},
+			Val:            `\a\b\f\n\r\t\v\\\"\' - \xFF\377\u1234\U00010111\U0001011111☺`,
+			PosRange:       PositionRange{Start: 0, End: 64},
 		},
 	}, {
 		input:  "`\\``",
@@ -2413,6 +2441,7 @@ var testExpr = []struct {
 	{
 		input: `foo{bar="baz"}[10m:6s]`,
 		expected: &SubqueryExpr{
+			ExprExtensions: ExprExtensions{LexItems: []Item{Item{Typ: 57354, Pos: 0, Val: "foo"}, Item{Typ: 57355, Pos: 3, Val: "{"}, Item{Typ: 57354, Pos: 4, Val: "bar"}, Item{Typ: 57370, Pos: 7, Val: "="}, Item{Typ: 57365, Pos: 8, Val: "\"baz\""}, Item{Typ: 57360, Pos: 13, Val: "}"}, Item{Typ: 57356, Pos: 14, Val: "["}, Item{Typ: 57351, Pos: 15, Val: "10m"}, Item{Typ: 57348, Pos: 18, Val: ":"}, Item{Typ: 57351, Pos: 19, Val: "6s"}, Item{Typ: 57361, Pos: 21, Val: "]"}}},
 			Expr: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
@@ -2432,6 +2461,7 @@ var testExpr = []struct {
 	{
 		input: `foo{bar="baz"}[10m5s:1h6ms]`,
 		expected: &SubqueryExpr{
+			ExprExtensions: ExprExtensions{LexItems: []Item{Item{Typ: 57354, Pos: 0, Val: "foo"}, Item{Typ: 57355, Pos: 3, Val: "{"}, Item{Typ: 57354, Pos: 4, Val: "bar"}, Item{Typ: 57370, Pos: 7, Val: "="}, Item{Typ: 57365, Pos: 8, Val: "\"baz\""}, Item{Typ: 57360, Pos: 13, Val: "}"}, Item{Typ: 57356, Pos: 14, Val: "["}, Item{Typ: 57351, Pos: 15, Val: "10m5s"}, Item{Typ: 57348, Pos: 20, Val: ":"}, Item{Typ: 57351, Pos: 21, Val: "1h6ms"}, Item{Typ: 57361, Pos: 26, Val: "]"}}},
 			Expr: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
@@ -2450,6 +2480,7 @@ var testExpr = []struct {
 	}, {
 		input: `foo[10m:]`,
 		expected: &SubqueryExpr{
+			ExprExtensions: ExprExtensions{LexItems: []Item{Item{Typ: 57354, Pos: 0, Val: "foo"}, Item{Typ: 57356, Pos: 3, Val: "["}, Item{Typ: 57351, Pos: 4, Val: "10m"}, Item{Typ: 57348, Pos: 7, Val: ":"}, Item{Typ: 57361, Pos: 8, Val: "]"}}},
 			Expr: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
@@ -2466,7 +2497,8 @@ var testExpr = []struct {
 	}, {
 		input: `min_over_time(rate(foo{bar="baz"}[2s])[5m:5s])`,
 		expected: &Call{
-			Func: mustGetFunction("min_over_time"),
+			ExprExtensions: ExprExtensions{LexItems: []Item{Item{Typ: 57354, Pos: 0, Val: "min_over_time"}, Item{Typ: 57357, Pos: 13, Val: "("}, Item{Typ: 57354, Pos: 14, Val: "rate"}, Item{Typ: 57357, Pos: 18, Val: "("}, Item{Typ: 57354, Pos: 19, Val: "foo"}, Item{Typ: 57355, Pos: 22, Val: "{"}, Item{Typ: 57354, Pos: 23, Val: "bar"}, Item{Typ: 57370, Pos: 26, Val: "="}, Item{Typ: 57365, Pos: 27, Val: "\"baz\""}, Item{Typ: 57360, Pos: 32, Val: "}"}, Item{Typ: 57356, Pos: 33, Val: "["}, Item{Typ: 57351, Pos: 34, Val: "2s"}, Item{Typ: 57361, Pos: 36, Val: "]"}, Item{Typ: 57362, Pos: 37, Val: ")"}, Item{Typ: 57356, Pos: 38, Val: "["}, Item{Typ: 57351, Pos: 39, Val: "5m"}, Item{Typ: 57348, Pos: 41, Val: ":"}, Item{Typ: 57351, Pos: 42, Val: "5s"}, Item{Typ: 57361, Pos: 44, Val: "]"}, Item{Typ: 57362, Pos: 45, Val: ")"}}},
+			Func:           mustGetFunction("min_over_time"),
 			Args: Expressions{
 				&SubqueryExpr{
 					Expr: &Call{
@@ -2507,6 +2539,7 @@ var testExpr = []struct {
 	}, {
 		input: `min_over_time(rate(foo{bar="baz"}[2s])[5m:])[4m:3s]`,
 		expected: &SubqueryExpr{
+			ExprExtensions: ExprExtensions{LexItems: []Item{Item{Typ: 57354, Pos: 0, Val: "min_over_time"}, Item{Typ: 57357, Pos: 13, Val: "("}, Item{Typ: 57354, Pos: 14, Val: "rate"}, Item{Typ: 57357, Pos: 18, Val: "("}, Item{Typ: 57354, Pos: 19, Val: "foo"}, Item{Typ: 57355, Pos: 22, Val: "{"}, Item{Typ: 57354, Pos: 23, Val: "bar"}, Item{Typ: 57370, Pos: 26, Val: "="}, Item{Typ: 57365, Pos: 27, Val: "\"baz\""}, Item{Typ: 57360, Pos: 32, Val: "}"}, Item{Typ: 57356, Pos: 33, Val: "["}, Item{Typ: 57351, Pos: 34, Val: "2s"}, Item{Typ: 57361, Pos: 36, Val: "]"}, Item{Typ: 57362, Pos: 37, Val: ")"}, Item{Typ: 57356, Pos: 38, Val: "["}, Item{Typ: 57351, Pos: 39, Val: "5m"}, Item{Typ: 57348, Pos: 41, Val: ":"}, Item{Typ: 57361, Pos: 42, Val: "]"}, Item{Typ: 57362, Pos: 43, Val: ")"}, Item{Typ: 57356, Pos: 44, Val: "["}, Item{Typ: 57351, Pos: 45, Val: "4m"}, Item{Typ: 57348, Pos: 47, Val: ":"}, Item{Typ: 57351, Pos: 48, Val: "3s"}, Item{Typ: 57361, Pos: 50, Val: "]"}}},
 			Expr: &Call{
 				Func: mustGetFunction("min_over_time"),
 				Args: Expressions{
@@ -2551,6 +2584,7 @@ var testExpr = []struct {
 	}, {
 		input: `min_over_time(rate(foo{bar="baz"}[2s])[5m:] offset 4m)[4m:3s]`,
 		expected: &SubqueryExpr{
+			ExprExtensions: ExprExtensions{LexItems: []Item{Item{Typ: 57354, Pos: 0, Val: "min_over_time"}, Item{Typ: 57357, Pos: 13, Val: "("}, Item{Typ: 57354, Pos: 14, Val: "rate"}, Item{Typ: 57357, Pos: 18, Val: "("}, Item{Typ: 57354, Pos: 19, Val: "foo"}, Item{Typ: 57355, Pos: 22, Val: "{"}, Item{Typ: 57354, Pos: 23, Val: "bar"}, Item{Typ: 57370, Pos: 26, Val: "="}, Item{Typ: 57365, Pos: 27, Val: "\"baz\""}, Item{Typ: 57360, Pos: 32, Val: "}"}, Item{Typ: 57356, Pos: 33, Val: "["}, Item{Typ: 57351, Pos: 34, Val: "2s"}, Item{Typ: 57361, Pos: 36, Val: "]"}, Item{Typ: 57362, Pos: 37, Val: ")"}, Item{Typ: 57356, Pos: 38, Val: "["}, Item{Typ: 57351, Pos: 39, Val: "5m"}, Item{Typ: 57348, Pos: 41, Val: ":"}, Item{Typ: 57361, Pos: 42, Val: "]"}, Item{Typ: 57406, Pos: 44, Val: "offset"}, Item{Typ: 57351, Pos: 51, Val: "4m"}, Item{Typ: 57362, Pos: 53, Val: ")"}, Item{Typ: 57356, Pos: 54, Val: "["}, Item{Typ: 57351, Pos: 55, Val: "4m"}, Item{Typ: 57348, Pos: 57, Val: ":"}, Item{Typ: 57351, Pos: 58, Val: "3s"}, Item{Typ: 57361, Pos: 60, Val: "]"}}},
 			Expr: &Call{
 				Func: mustGetFunction("min_over_time"),
 				Args: Expressions{
@@ -2596,6 +2630,7 @@ var testExpr = []struct {
 	}, {
 		input: "sum without(and, by, avg, count, alert, annotations)(some_metric) [30m:10s]",
 		expected: &SubqueryExpr{
+			ExprExtensions: ExprExtensions{LexItems: []Item{Item{Typ: 57397, Pos: 0, Val: "sum"}, Item{Typ: 57408, Pos: 4, Val: "without"}, Item{Typ: 57357, Pos: 11, Val: "("}, Item{Typ: 57374, Pos: 12, Val: "and"}, Item{Typ: 57349, Pos: 15, Val: ","}, Item{Typ: 57402, Pos: 17, Val: "by"}, Item{Typ: 57349, Pos: 19, Val: ","}, Item{Typ: 57387, Pos: 21, Val: "avg"}, Item{Typ: 57349, Pos: 24, Val: ","}, Item{Typ: 57389, Pos: 26, Val: "count"}, Item{Typ: 57349, Pos: 31, Val: ","}, Item{Typ: 57354, Pos: 33, Val: "alert"}, Item{Typ: 57349, Pos: 38, Val: ","}, Item{Typ: 57354, Pos: 40, Val: "annotations"}, Item{Typ: 57362, Pos: 51, Val: ")"}, Item{Typ: 57357, Pos: 52, Val: "("}, Item{Typ: 57354, Pos: 53, Val: "some_metric"}, Item{Typ: 57362, Pos: 64, Val: ")"}, Item{Typ: 57356, Pos: 66, Val: "["}, Item{Typ: 57351, Pos: 67, Val: "30m"}, Item{Typ: 57348, Pos: 70, Val: ":"}, Item{Typ: 57351, Pos: 71, Val: "10s"}, Item{Typ: 57361, Pos: 74, Val: "]"}}},
 			Expr: &AggregateExpr{
 				Op:      SUM,
 				Without: true,
@@ -2622,6 +2657,7 @@ var testExpr = []struct {
 	}, {
 		input: `some_metric OFFSET 1m [10m:5s]`,
 		expected: &SubqueryExpr{
+			ExprExtensions: ExprExtensions{LexItems: []Item{Item{Typ: 57354, Pos: 0, Val: "some_metric"}, Item{Typ: 57406, Pos: 12, Val: "OFFSET"}, Item{Typ: 57351, Pos: 19, Val: "1m"}, Item{Typ: 57356, Pos: 22, Val: "["}, Item{Typ: 57351, Pos: 23, Val: "10m"}, Item{Typ: 57348, Pos: 26, Val: ":"}, Item{Typ: 57351, Pos: 27, Val: "5s"}, Item{Typ: 57361, Pos: 29, Val: "]"}}},
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
@@ -2640,6 +2676,7 @@ var testExpr = []struct {
 	}, {
 		input: `(foo + bar{nm="val"})[5m:]`,
 		expected: &SubqueryExpr{
+			ExprExtensions: ExprExtensions{LexItems: []Item{Item{Typ: 57357, Pos: 0, Val: "("}, Item{Typ: 57354, Pos: 1, Val: "foo"}, Item{Typ: 57368, Pos: 5, Val: "+"}, Item{Typ: 57354, Pos: 7, Val: "bar"}, Item{Typ: 57355, Pos: 10, Val: "{"}, Item{Typ: 57354, Pos: 11, Val: "nm"}, Item{Typ: 57370, Pos: 13, Val: "="}, Item{Typ: 57365, Pos: 14, Val: "\"val\""}, Item{Typ: 57360, Pos: 19, Val: "}"}, Item{Typ: 57362, Pos: 20, Val: ")"}, Item{Typ: 57356, Pos: 21, Val: "["}, Item{Typ: 57351, Pos: 22, Val: "5m"}, Item{Typ: 57348, Pos: 24, Val: ":"}, Item{Typ: 57361, Pos: 25, Val: "]"}}},
 			Expr: &ParenExpr{
 				Expr: &BinaryExpr{
 					Op: ADD,
@@ -2679,6 +2716,7 @@ var testExpr = []struct {
 	}, {
 		input: `(foo + bar{nm="val"})[5m:] offset 10m`,
 		expected: &SubqueryExpr{
+			ExprExtensions: ExprExtensions{LexItems: []Item{Item{Typ: 57357, Pos: 0, Val: "("}, Item{Typ: 57354, Pos: 1, Val: "foo"}, Item{Typ: 57368, Pos: 5, Val: "+"}, Item{Typ: 57354, Pos: 7, Val: "bar"}, Item{Typ: 57355, Pos: 10, Val: "{"}, Item{Typ: 57354, Pos: 11, Val: "nm"}, Item{Typ: 57370, Pos: 13, Val: "="}, Item{Typ: 57365, Pos: 14, Val: "\"val\""}, Item{Typ: 57360, Pos: 19, Val: "}"}, Item{Typ: 57362, Pos: 20, Val: ")"}, Item{Typ: 57356, Pos: 21, Val: "["}, Item{Typ: 57351, Pos: 22, Val: "5m"}, Item{Typ: 57348, Pos: 24, Val: ":"}, Item{Typ: 57361, Pos: 25, Val: "]"}, Item{Typ: 57406, Pos: 27, Val: "offset"}, Item{Typ: 57351, Pos: 34, Val: "10m"}}},
 			Expr: &ParenExpr{
 				Expr: &BinaryExpr{
 					Op: ADD,

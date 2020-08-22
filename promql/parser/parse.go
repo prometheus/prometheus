@@ -120,10 +120,10 @@ func ParseExpr(input string) (expr Expr, err error) {
 
 	if len(p.parseErrors) != 0 {
 		err = p.parseErrors
+	} else {
+		applyLexItems(&expr, input)
 	}
-	fmt.Println("earlier here")
-	expr = applyLexItems(expr, input)
-	fmt.Println("now here")
+
 	return expr, err
 }
 
@@ -180,11 +180,9 @@ func newParser(input string) *parser {
 	return p
 }
 
-func applyLexItems(expr Expr, input string) Expr {
-	fmt.Println("first part")
+func applyLexItems(expr *Expr, input string) {
 	lexItems := LexItems(input)
-	fmt.Println("second part")
-	switch e := expr.(type) {
+	switch e := (*expr).(type) {
 	case *AggregateExpr:
 		e.ExprExtensions.SetItems(lexItems)
 	case *BinaryExpr:
@@ -206,7 +204,6 @@ func applyLexItems(expr Expr, input string) Expr {
 	case *VectorSelector:
 		e.ExprExtensions.SetItems(lexItems)
 	}
-	return expr
 }
 
 // SequenceValue is an omittable value in a sequence of time series values.
