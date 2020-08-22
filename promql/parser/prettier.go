@@ -22,11 +22,9 @@ import (
 
 const (
 	// itemNotFound is used to initialize the index of an item.
-	itemNotFound = -1
-	// IndentAsSpace provides an indentation of 2 spaces.
-	IndentAsSpace = iota
-	// IndentAsTab provides an indentation of a tab or 4 spaces.
-	IndentAsTab
+	itemNotFound  = -1
+	columnLimit   = 100
+	defaultIndent = "  "
 )
 
 // Prettier handles the prettifying and formatting operation over a
@@ -62,23 +60,16 @@ type padder struct {
 }
 
 // PromqlPrettier returns a new prettier.
-func PromqlPrettier(expression string, columnLimit int, indentType uint) *Prettier {
-	var indent string
-	switch indentType {
-	case IndentAsSpace:
-		indent = "  "
-	case IndentAsTab:
-		indent = "    "
-	}
+func PromqlPrettier(expression string) *Prettier {
 	return &Prettier{
 		expression: expression,
-		pd:         &padder{indent: indent, isNewLineApplied: true, columnLimit: columnLimit},
+		pd:         &padder{indent: defaultIndent, isNewLineApplied: true, columnLimit: columnLimit},
 	}
 }
 
 // PrettyPrint prints the formatted expression.
 func PrettyPrint(node Expr, lexItems []Item) (string, error) {
-	ptr := Prettier{Node: node, pd: &padder{indent: "  ", isNewLineApplied: true, columnLimit: 100}}
+	ptr := Prettier{Node: node, pd: &padder{indent: defaultIndent, isNewLineApplied: true, columnLimit: columnLimit}}
 	sortedLexItems := ptr.sortItems(
 		ptr.lexItems(stringifyItems(lexItems)),
 	)

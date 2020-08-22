@@ -239,7 +239,7 @@ __name__="metric_name"}`,
 }
 
 func TestLexItemSorting(t *testing.T) {
-	prettier := PromqlPrettier("", 100, IndentAsSpace)
+	prettier := PromqlPrettier("")
 	for i, expr := range sortingLexItemCases {
 		expectedSlice := prettier.refreshLexItems(prettier.lexItems(expr.expected))
 		input := prettier.lexItems(expr.expr)
@@ -920,7 +920,7 @@ var prettierCases = []prettierTest{
 
 func TestPrettierCases(t *testing.T) {
 	for _, expr := range prettierCases {
-		output, err := PromqlPrettier(expr.expr, 100, IndentAsSpace).Prettify()
+		output, err := PromqlPrettier(expr.expr).Prettify()
 		testutil.Ok(t, err)
 		testutil.Equals(t, expr.expected, output, "formatting does not match")
 	}

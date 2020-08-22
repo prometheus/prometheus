@@ -433,7 +433,10 @@ func CheckMetrics() int {
 
 // PrettifyRules prettifies the rule files.
 func PrettifyRules(files ...string) int {
-	var errors []error
+	var (
+		errors             []error
+		formattedExprCount int
+	)
 	for _, filePath := range files {
 		rgs, errs := rulefmt.ParseFile(filePath)
 		if len(errs) > 0 {
@@ -442,28 +445,33 @@ func PrettifyRules(files ...string) int {
 		}
 		for i, groups := range rgs.Groups {
 			for j, rules := range groups.Rules {
-				prettifiedExpr, err := parser.PromqlPrettier(rules.Expr.Value, 100, parser.IndentAsSpace).Prettify()
+				prettifiedExpr, err := parser.PromqlPrettier(rules.Expr.Value).Prettify()
 				if err != nil {
 					errors = append(errors, err)
 					continue
 				}
-				fmt.Println("formatted as\n", prettifiedExpr)
 				rgs.Groups[i].Rules[j].Expr.SetString(prettifiedExpr)
+				formattedExprCount++
 			}
 		}
 		data, err := yaml.Marshal(rgs)
 		if err != nil {
-			panic(err)
+			fmt.Fprintln(os.Stderr, err.Error())
+			return 1
 		}
 		if err = ioutil.WriteFile(filePath, data, 0666); err != nil {
 			fmt.Fprintln(os.Stderr, fmt.Sprintf("failed formatted %s file:", filePath), err.Error())
 			return 1
 		}
 	}
-	for _, err := range errors {
-		fmt.Fprintln(os.Stderr, "errors while formatting", err.Error())
+	if len(errors) > 0 {
+		fmt.Fprintln(os.Stderr, "incomplete formatting due to errors.")
+		for _, err := range errors {
+			fmt.Fprintln(os.Stderr, err.Error())
+		}
 		return 1
 	}
+	fmt.Printf("formatted %d expressions.\n", formattedExprCount)
 	return 0
 }
 
