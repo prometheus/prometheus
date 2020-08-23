@@ -331,6 +331,9 @@ func (client VirtualNetworkTapsClient) ListAll(ctx context.Context) (result Virt
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VirtualNetworkTapsClient", "ListAll", resp, "Failure responding to request")
 	}
+	if result.vntlr.hasNextLink() && result.vntlr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }
@@ -440,6 +443,9 @@ func (client VirtualNetworkTapsClient) ListByResourceGroup(ctx context.Context, 
 	result.vntlr, err = client.ListByResourceGroupResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VirtualNetworkTapsClient", "ListByResourceGroup", resp, "Failure responding to request")
+	}
+	if result.vntlr.hasNextLink() && result.vntlr.IsEmpty() {
+		err = result.NextWithContext(ctx)
 	}
 
 	return

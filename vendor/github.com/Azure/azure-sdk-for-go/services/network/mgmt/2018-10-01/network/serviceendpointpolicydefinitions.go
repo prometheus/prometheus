@@ -309,6 +309,9 @@ func (client ServiceEndpointPolicyDefinitionsClient) ListByResourceGroup(ctx con
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ServiceEndpointPolicyDefinitionsClient", "ListByResourceGroup", resp, "Failure responding to request")
 	}
+	if result.sepdlr.hasNextLink() && result.sepdlr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }

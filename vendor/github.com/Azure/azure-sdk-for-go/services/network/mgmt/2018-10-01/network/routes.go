@@ -307,6 +307,9 @@ func (client RoutesClient) List(ctx context.Context, resourceGroupName string, r
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.RoutesClient", "List", resp, "Failure responding to request")
 	}
+	if result.rlr.hasNextLink() && result.rlr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }
