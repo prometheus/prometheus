@@ -436,10 +436,8 @@ func QueryInstant(url, query, evalTime string, p printer) int {
 		return 1
 	}
 
-	var eTime time.Time
-	if evalTime == "" {
-		eTime = time.Now()
-	} else {
+	eTime := time.Now()
+	if evalTime != "" {
 		eTime, err = parseTime(evalTime)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "error parsing evaluation time:", err)
