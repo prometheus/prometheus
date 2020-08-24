@@ -16,7 +16,6 @@ package storage
 import (
 	"context"
 	"errors"
-	"io"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -70,7 +69,7 @@ type Querier interface {
 	LabelQuerier
 
 	// Closer releases the resources of the Querier.
-	io.Closer
+	Closer
 
 	// Select returns a set of series that matches the given label matchers.
 	// Caller can specify if it requires returned series to be sorted. Prefer not requiring sorting for better performance.
@@ -92,7 +91,7 @@ type ChunkQuerier interface {
 	LabelQuerier
 
 	// Closer releases the resources of the ChunkQuerier.
-	io.Closer
+	Closer
 
 	// Select returns a set of series that matches the given label matchers.
 	// Caller can specify if it requires returned series to be sorted. Prefer not requiring sorting for better performance.
@@ -100,6 +99,14 @@ type ChunkQuerier interface {
 	// Returned data is available and iterators are invokable only until ChunkQuerier is closed. Returned bytes are read only.
 	// It's caller responsibility to copy data to avoid segmentation faults before closing queriers.
 	Select(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) ChunkSeriesSet
+}
+
+// Closer is io.Closer.
+type Closer interface {
+	// Close releases all resources required by queriers.
+	// This might be mean that other operations like head compaction or block release are
+	// blocked until this is closed.
+	Close() error
 }
 
 // LabelQuerier provides querying access over labels.

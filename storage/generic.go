@@ -17,14 +17,12 @@
 package storage
 
 import (
-	"io"
-
 	"github.com/prometheus/prometheus/pkg/labels"
 )
 
 type genericQuerier interface {
 	LabelQuerier
-	io.Closer
+	Closer
 	Select(bool, *SelectHints, ...*labels.Matcher) genericSeriesSet
 }
 
@@ -55,7 +53,7 @@ func (a *genericChunkSeriesSetAdapter) At() Labels {
 
 type genericQuerierAdapter struct {
 	LabelQuerier
-	io.Closer
+	Closer
 
 	// One-of. If both are set, Querier will be used.
 	q  Querier

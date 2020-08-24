@@ -71,7 +71,7 @@ type Clonable interface {
 	// Compact() is called.
 	Compact()
 
-	// Clone return exact, compacted copy of chunk.
+	// Clone return exact, compacted copy of the chunk.
 	Clone() Chunk
 }
 
