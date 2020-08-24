@@ -319,6 +319,9 @@ func (client RouteFilterRulesClient) ListByRouteFilter(ctx context.Context, reso
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.RouteFilterRulesClient", "ListByRouteFilter", resp, "Failure responding to request")
 	}
+	if result.rfrlr.hasNextLink() && result.rfrlr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }

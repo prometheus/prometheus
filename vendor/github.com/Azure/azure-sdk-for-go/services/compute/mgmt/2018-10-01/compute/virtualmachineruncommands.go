@@ -162,6 +162,9 @@ func (client VirtualMachineRunCommandsClient) List(ctx context.Context, location
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachineRunCommandsClient", "List", resp, "Failure responding to request")
 	}
+	if result.rclr.hasNextLink() && result.rclr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }

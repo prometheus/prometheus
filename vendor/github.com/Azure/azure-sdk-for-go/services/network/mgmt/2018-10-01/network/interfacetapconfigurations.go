@@ -345,6 +345,9 @@ func (client InterfaceTapConfigurationsClient) List(ctx context.Context, resourc
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.InterfaceTapConfigurationsClient", "List", resp, "Failure responding to request")
 	}
+	if result.itclr.hasNextLink() && result.itclr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }

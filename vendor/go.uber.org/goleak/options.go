@@ -57,6 +57,18 @@ func IgnoreTopFunction(f string) Option {
 	})
 }
 
+// IgnoreCurrent records all current goroutines when the option is created, and ignores
+// them in any future Find/Verify calls.
+func IgnoreCurrent() Option {
+	excludeIDSet := map[int]bool{}
+	for _, s := range stack.All() {
+		excludeIDSet[s.ID()] = true
+	}
+	return addFilter(func(s stack.Stack) bool {
+		return excludeIDSet[s.ID()]
+	})
+}
+
 func maxSleep(d time.Duration) Option {
 	return optionFunc(func(opts *opts) {
 		opts.maxSleep = d
