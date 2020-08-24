@@ -31,45 +31,74 @@ func TestExprString(t *testing.T) {
 			out: `sum(task:errors:rate10s{job="s"})`,
 		},
 		{
-			in: `sum by(code) (task:errors:rate10s{job="s"})`,
+			in:  `sum by(code) (task:errors:rate10s{job="s"})`,
+			out: `sum by(code) (task:errors:rate10s{job="s"})`,
 		},
 		{
-			in: `sum without() (task:errors:rate10s{job="s"})`,
+			in:  `sum without() (task:errors:rate10s{job="s"})`,
+			out: `sum(task:errors:rate10s{job="s"})`,
 		},
 		{
-			in: `sum without(instance) (task:errors:rate10s{job="s"})`,
+			in:  `sum without(instance) (task:errors:rate10s{job="s"})`,
+			out: `sum without(instance) (task:errors:rate10s{job="s"})`,
 		},
 		{
-			in: `topk(5, task:errors:rate10s{job="s"})`,
+			in:  `topk(5, task:errors:rate10s{job="s"})`,
+			out: `topk(5, task:errors:rate10s{job="s"})`,
 		},
 		{
-			in: `count_values("value", task:errors:rate10s{job="s"})`,
+			in:  `count_values("value", task:errors:rate10s{job="s"})`,
+			out: `count_values("value", task:errors:rate10s{job="s"})`,
 		},
 		{
 			in: `a - on() c`,
+			out: `    a
+  -
+    c`,
 		},
 		{
 			in: `a - on(b) c`,
+			out: `    a
+  - on(b)
+    c`,
 		},
 		{
 			in: `a - on(b) group_left(x) c`,
+			out: `    a
+  - on(b)
+   group_left (x)
+    c`,
 		},
 		{
 			in: `a - on(b) group_left(x, y) c`,
+			out: `    a
+  - on(b)
+   group_left (x, y)
+    c`,
 		},
 		{
-			in:  `a - on(b) group_left c`,
-			out: `a - on(b) group_left() c`,
+			in: `a - on(b) group_left c`,
+			out: `    a
+  - on(b)
+   group_left c`,
 		},
 		{
 			in: `a - on(b) group_left() (c)`,
+			out: `    a
+  - on(b)
+   group_left ()
+    (c)`,
 		},
 		{
-			in: `a - ignoring(b) c`,
+			in: `    a
+  - ignoring(b)
+    c`,
 		},
 		{
-			in:  `a - ignoring() c`,
-			out: `a - c`,
+			in: `a - ignoring() c`,
+			out: `    a
+  -
+    c`,
 		},
 		{
 			in: `up > bool 0`,
@@ -84,19 +113,24 @@ func TestExprString(t *testing.T) {
 			in: `a[5m] offset 1m`,
 		},
 		{
-			in: `a[1h:5m] offset 1m`,
+			in:  `a[1h:5m] offset 1m`,
+			out: `a[1h:5m] offset 1m`,
 		},
 		{
-			in: `{__name__="a"}`,
+			in:  `{__name__="a"}`,
+			out: `a`,
 		},
 		{
-			in: `a{b!="c"}[1m]`,
+			in:  `a{b!="c"}[1m]`,
+			out: `a{b!="c"}[1m]`,
 		},
 		{
-			in: `a{b=~"c"}[1m]`,
+			in:  `a{b=~"c"}[1m]`,
+			out: `a{b=~"c"}[1m]`,
 		},
 		{
-			in: `a{b!~"c"}[1m]`,
+			in:  `a{b!~"c"}[1m]`,
+			out: `a{b!~"c"}[1m]`,
 		},
 	}
 

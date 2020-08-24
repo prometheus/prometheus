@@ -13,13 +13,12 @@
 
 package parser
 
-import "fmt"
-
 const (
 	grouping = iota
 	scalars
 	multiArguments
 	aggregateParent
+	aggregateExpr
 	binaryExpr
 	matrixExpr
 	subQueryExpr
@@ -34,7 +33,6 @@ type nodeInfo struct {
 	items       []Item
 	buf         int
 	baseIndent  int
-	exprType    string
 }
 
 func (n *nodeInfo) violatesColumnLimit() bool {
@@ -62,7 +60,6 @@ func (n *nodeInfo) node() Node {
 	n.ancestors = reduceNonNewLineExprs(ancestors)
 	n.baseIndent = len(n.ancestors)
 	n.currentNode = node
-	n.exprType = fmt.Sprintf("%T", node)
 	return node
 }
 
@@ -172,6 +169,11 @@ func reduceBinary(history []Node) []Node {
 
 func isNodeType(node Node, typ uint) bool {
 	switch typ {
+	case aggregateExpr:
+		if _, ok := node.(*AggregateExpr); ok {
+			return true
+		}
+		return false
 	case binaryExpr:
 		if _, ok := node.(*BinaryExpr); ok {
 			return true

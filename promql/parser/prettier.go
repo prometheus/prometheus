@@ -68,16 +68,13 @@ func PromqlPrettier(expression string) *Prettier {
 }
 
 // PrettyPrint prints the formatted expression.
-func PrettyPrint(node Expr, lexItems []Item) (string, error) {
-	ptr := Prettier{Node: node, pd: &padder{indent: defaultIndent, isNewLineApplied: true, columnLimit: columnLimit}}
-	sortedLexItems := ptr.sortItems(
-		ptr.lexItems(stringifyItems(lexItems)),
-	)
-	expr, err := ptr.prettify(sortedLexItems)
+func PrettyPrint(lexItems []Item) (string, error) {
+	expressionString := stringifyItems(lexItems)
+	exprFormatted, err := PromqlPrettier(expressionString).Prettify()
 	if err != nil {
-		return expr, errors.Wrap(err, "pretty-print")
+		return expressionString, errors.Wrap(err, "pretty-print")
 	}
-	return expr, err
+	return exprFormatted, err
 }
 
 // Prettify prettifies the current expression in the prettier. It standardizes the input expression,
@@ -102,6 +99,7 @@ func (p *Prettier) sortItems(items []Item) []Item {
 		switch item.Typ {
 		case SUM, AVG, MIN, MAX, COUNT, COUNT_VALUES,
 			STDDEV, STDVAR, TOPK, BOTTOMK, QUANTILE:
+			// Case: sum(metric_name) by(job) => sum by(job) (metric_name)
 			var (
 				formatItems       bool
 				aggregatorIndex   = i
@@ -183,7 +181,9 @@ func (p *Prettier) sortItems(items []Item) []Item {
 				items = tempItems
 			}
 
-		case IDENTIFIER:
+		case IDENTIFIER, METRIC_IDENTIFIER:
+			// Case-1: {__name__="metric_name"} => metric_name
+			// Case-2: {__name__="metric_name", job="prettier"} => metric_name{job="prettier"}
 			itr := skipComments(items, i)
 			if i < 1 || item.Val != "__name__" || items[itr+2].Typ != STRING {
 				continue
@@ -253,6 +253,33 @@ func (p *Prettier) sortItems(items []Item) []Item {
 				tmp = append(tmp, items[j])
 			}
 			items = tmp
+		case BY, IGNORING, ON, WITHOUT:
+			// Case: sum by() (metric_name) => sum(metric_name)
+			var (
+				leftParenIndex       = itemNotFound
+				rightParenIndex      = itemNotFound
+				groupingKeywordIndex = i
+				itr                  = skipComments(items, i)
+				tempItems            []Item
+			)
+			for index := itr; index < len(items); index++ {
+				if items[index].Typ == LEFT_PAREN {
+					leftParenIndex = index
+				}
+				if items[index].Typ == RIGHT_PAREN {
+					rightParenIndex = index
+					break
+				}
+			}
+			if leftParenIndex+1 == rightParenIndex || leftParenIndex == rightParenIndex {
+				for index := 0; index < len(items); index++ {
+					if index >= groupingKeywordIndex && index <= rightParenIndex {
+						continue
+					}
+					tempItems = append(tempItems, items[index])
+				}
+				items = tempItems
+			}
 		}
 	}
 	return p.refreshLexItems(items)
@@ -262,6 +289,10 @@ func (p *Prettier) prettify(items []Item) (string, error) {
 	var (
 		it     = itemsIterator{items, -1}
 		result = ""
+		root   struct {
+			node      Node
+			hasScalar bool
+		}
 	)
 	for it.next() {
 		var (
@@ -286,6 +317,10 @@ func (p *Prettier) prettify(items []Item) (string, error) {
 		case *BinaryExpr:
 			hasImmediateScalar = nodeInfo.has(scalars)
 			hasGrouping = nodeInfo.has(grouping)
+			if nodeInfo.baseIndent == 1 {
+				root.node = node
+				root.hasScalar = hasImmediateScalar
+			}
 		case *Call:
 			hasMultiArgumentCalls = nodeInfo.has(multiArguments)
 		}
@@ -338,7 +373,7 @@ func (p *Prettier) prettify(items []Item) (string, error) {
 			}
 			p.pd.isFirstLabel = false
 			result += item.Val
-		case IDENTIFIER:
+		case IDENTIFIER, METRIC_IDENTIFIER:
 			if p.pd.labelsSplittable {
 				if p.pd.isFirstLabel {
 					p.pd.isFirstLabel = false
@@ -383,15 +418,23 @@ func (p *Prettier) prettify(items []Item) (string, error) {
 					result += p.pd.newLine()
 				}
 			}
-		case WITHOUT, BY, IGNORING, BOOL, GROUP_LEFT, GROUP_RIGHT,
-			OFFSET, ON:
+		case WITHOUT, BY, IGNORING, ON:
 			// Keywords.
 			result += item.Val
-			if item.Typ == BOOL {
-				result += p.pd.newLine()
-			} else if nodeInfo.exprType == "*parser.AggregateExpr" {
+			if item.Typ == BOOL && hasImmediateScalar {
+				result += " "
+			} else if isNodeType(node, aggregateExpr) {
 				p.pd.expectAggregationLabels = true
 			}
+		case BOOL:
+			result += item.Val
+			if hasImmediateScalar {
+				result += " "
+			} else {
+				result += p.pd.newLine()
+			}
+		case OFFSET, GROUP_LEFT, GROUP_RIGHT:
+			result += " " + item.Val + " "
 		case COMMA:
 			result += item.Val
 			if (nodeSplittable || hasMultiArgumentCalls) && !(hasGrouping || aggregationGrouping || p.pd.labelsSplittable) {
@@ -410,6 +453,9 @@ func (p *Prettier) prettify(items []Item) (string, error) {
 			}
 			p.pd.isPreviousItemComment = true
 		}
+	}
+	if isNodeType(root.node, binaryExpr) && !root.hasScalar {
+		return result, nil
 	}
 	return strings.TrimSpace(result), nil
 }
@@ -479,22 +525,19 @@ func stringifyItems(items []Item) string {
 	for it.next() {
 		item = it.peek()
 		if item.Typ.IsAggregator() {
-			expression += " " + item.Val + " "
+			expression += item.Val
 			continue
 		}
 		switch item.Typ {
+		case EQL, EQL_REGEX, NEQ, NEQ_REGEX, COLON, LEFT_BRACE, LEFT_BRACKET, LEFT_PAREN,
+			RIGHT_BRACE, RIGHT_BRACKET, RIGHT_PAREN, STRING, NUMBER, IDENTIFIER, METRIC_IDENTIFIER:
+			expression += item.Val
+		case COMMA:
+			expression += item.Val + " "
 		case COMMENT:
 			expression += item.Val + "\n"
-		case BOOL, COMMA:
-			expression += item.Val + " "
-		case ADD, SUB, MUL, DIV, GTE, GTR, LOR, LAND,
-			LSS, LTE, LUNLESS, MOD, POW:
-			expression += " " + item.Val + " "
-		case SUM, BOTTOMK, COUNT_VALUES, COUNT, GROUP, MAX, MIN,
-			QUANTILE, STDVAR, STDDEV, TOPK, AVG:
-			expression += " " + item.Val + " "
 		default:
-			expression += item.Val
+			expression += " " + item.Val + " "
 		}
 	}
 	return expression

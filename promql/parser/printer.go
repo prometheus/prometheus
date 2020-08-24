@@ -15,13 +15,13 @@ package parser
 
 import (
 	"fmt"
-	"sort"
+	"github.com/go-kit/kit/log/level"
+	"github.com/pkg/errors"
+	"github.com/prometheus/common/promlog"
 	"strings"
-	"time"
-
-	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/pkg/labels"
 )
+
+var logger = promlog.New(&promlog.Config{})
 
 // Tree returns a string of the tree structure of the given node.
 func Tree(node Node) string {
@@ -61,115 +61,81 @@ func (es Expressions) String() (s string) {
 }
 
 func (node *AggregateExpr) String() string {
-	aggrString := node.Op.String()
-
-	if node.Without {
-		aggrString += fmt.Sprintf(" without(%s) ", strings.Join(node.Grouping, ", "))
-	} else {
-		if len(node.Grouping) > 0 {
-			aggrString += fmt.Sprintf(" by(%s) ", strings.Join(node.Grouping, ", "))
-		}
+	prettyExpr, err := PrettyPrint(node.ExprExtensions.GetItems())
+	if err != nil {
+		level.Error(logger).Log(errors.Wrap(err, "pretty-print"))
 	}
-
-	aggrString += "("
-	if node.Op.IsAggregatorWithParam() {
-		aggrString += fmt.Sprintf("%s, ", node.Param)
-	}
-	aggrString += fmt.Sprintf("%s)", node.Expr)
-
-	return aggrString
+	return prettyExpr
 }
 
 func (node *BinaryExpr) String() string {
-	returnBool := ""
-	if node.ReturnBool {
-		returnBool = " bool"
+	prettyExpr, err := PrettyPrint(node.ExprExtensions.GetItems())
+	if err != nil {
+		level.Error(logger).Log(errors.Wrap(err, "pretty-print"))
 	}
-
-	matching := ""
-	vm := node.VectorMatching
-	if vm != nil && (len(vm.MatchingLabels) > 0 || vm.On) {
-		if vm.On {
-			matching = fmt.Sprintf(" on(%s)", strings.Join(vm.MatchingLabels, ", "))
-		} else {
-			matching = fmt.Sprintf(" ignoring(%s)", strings.Join(vm.MatchingLabels, ", "))
-		}
-		if vm.Card == CardManyToOne || vm.Card == CardOneToMany {
-			matching += " group_"
-			if vm.Card == CardManyToOne {
-				matching += "left"
-			} else {
-				matching += "right"
-			}
-			matching += fmt.Sprintf("(%s)", strings.Join(vm.Include, ", "))
-		}
-	}
-	return fmt.Sprintf("%s %s%s%s %s", node.LHS, node.Op, returnBool, matching, node.RHS)
+	return prettyExpr
 }
 
 func (node *Call) String() string {
-	return fmt.Sprintf("%s(%s)", node.Func.Name, node.Args)
+	prettyExpr, err := PrettyPrint(node.ExprExtensions.GetItems())
+	if err != nil {
+		level.Error(logger).Log(errors.Wrap(err, "pretty-print"))
+	}
+	return prettyExpr
 }
 
 func (node *MatrixSelector) String() string {
-	// Copy the Vector selector before changing the offset
-	vecSelector := *node.VectorSelector.(*VectorSelector)
-	offset := ""
-	if vecSelector.Offset != time.Duration(0) {
-		offset = fmt.Sprintf(" offset %s", model.Duration(vecSelector.Offset))
+	prettyExpr, err := PrettyPrint(node.ExprExtensions.GetItems())
+	if err != nil {
+		level.Error(logger).Log(errors.Wrap(err, "pretty-print"))
 	}
-
-	// Do not print the offset twice.
-	vecSelector.Offset = 0
-
-	return fmt.Sprintf("%s[%s]%s", vecSelector.String(), model.Duration(node.Range), offset)
+	return prettyExpr
 }
 
 func (node *SubqueryExpr) String() string {
-	step := ""
-	if node.Step != 0 {
-		step = model.Duration(node.Step).String()
+	prettyExpr, err := PrettyPrint(node.ExprExtensions.GetItems())
+	if err != nil {
+		level.Error(logger).Log(errors.Wrap(err, "pretty-print"))
 	}
-	offset := ""
-	if node.Offset != time.Duration(0) {
-		offset = fmt.Sprintf(" offset %s", model.Duration(node.Offset))
-	}
-	return fmt.Sprintf("%s[%s:%s]%s", node.Expr.String(), model.Duration(node.Range), step, offset)
+	return prettyExpr
 }
 
 func (node *NumberLiteral) String() string {
-	return fmt.Sprint(node.Val)
+	prettyExpr, err := PrettyPrint(node.ExprExtensions.GetItems())
+	if err != nil {
+		level.Error(logger).Log(errors.Wrap(err, "pretty-print"))
+	}
+	return prettyExpr
 }
 
 func (node *ParenExpr) String() string {
-	return fmt.Sprintf("(%s)", node.Expr)
+	prettyExpr, err := PrettyPrint(node.ExprExtensions.GetItems())
+	if err != nil {
+		level.Error(logger).Log(errors.Wrap(err, "pretty-print"))
+	}
+	return prettyExpr
 }
 
 func (node *StringLiteral) String() string {
-	return fmt.Sprintf("%q", node.Val)
+	prettyExpr, err := PrettyPrint(node.ExprExtensions.GetItems())
+	if err != nil {
+		level.Error(logger).Log(errors.Wrap(err, "pretty-print"))
+	}
+	return prettyExpr
 }
 
 func (node *UnaryExpr) String() string {
-	return fmt.Sprintf("%s%s", node.Op, node.Expr)
+	prettyExpr, err := PrettyPrint(node.ExprExtensions.GetItems())
+	if err != nil {
+		level.Error(logger).Log(errors.Wrap(err, "pretty-print"))
+	}
+	return prettyExpr
 }
 
 func (node *VectorSelector) String() string {
-	labelStrings := make([]string, 0, len(node.LabelMatchers)-1)
-	for _, matcher := range node.LabelMatchers {
-		// Only include the __name__ label if its equality matching and matches the name.
-		if matcher.Name == labels.MetricName && matcher.Type == labels.MatchEqual && matcher.Value == node.Name {
-			continue
-		}
-		labelStrings = append(labelStrings, matcher.String())
+	prettyExpr, err := PrettyPrint(node.ExprExtensions.GetItems())
+	if err != nil {
+		level.Error(logger).Log(errors.Wrap(err, "pretty-print"))
 	}
-	offset := ""
-	if node.Offset != time.Duration(0) {
-		offset = fmt.Sprintf(" offset %s", model.Duration(node.Offset))
-	}
-
-	if len(labelStrings) == 0 {
-		return fmt.Sprintf("%s%s", node.Name, offset)
-	}
-	sort.Strings(labelStrings)
-	return fmt.Sprintf("%s{%s}%s", node.Name, strings.Join(labelStrings, ","), offset)
+	return prettyExpr
 }

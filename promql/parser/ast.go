@@ -83,11 +83,11 @@ type Expr interface {
 type Expressions []Expr
 
 type ExprExtensions struct {
-	LexItems []Item
+	lexItems []Item
 }
 
-func (e *ExprExtensions) GetItems() []Item         { return e.LexItems }
-func (e *ExprExtensions) SetItems(lexItems []Item) { e.LexItems = lexItems }
+func (e *ExprExtensions) GetItems() []Item         { return e.lexItems }
+func (e *ExprExtensions) SetItems(lexItems []Item) { e.lexItems = lexItems }
 
 // AggregateExpr represents an aggregation operation on a Vector.
 type AggregateExpr struct {
