@@ -2291,7 +2291,7 @@ func TestAdminEndpoints(t *testing.T) {
 		tc := tc
 		t.Run("", func(t *testing.T) {
 			dir, _ := ioutil.TempDir("", "fakeDB")
-			defer testutil.Ok(t, os.RemoveAll(dir))
+			defer func() { testutil.Ok(t, os.RemoveAll(dir)) }()
 
 			api := &API{
 				db:          tc.db,

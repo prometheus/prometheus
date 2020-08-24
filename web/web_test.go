@@ -104,7 +104,7 @@ func TestReadyAndHealthy(t *testing.T) {
 
 	dbDir, err := ioutil.TempDir("", "tsdb-ready")
 	testutil.Ok(t, err)
-	defer testutil.Ok(t, os.RemoveAll(dbDir))
+	defer func() { testutil.Ok(t, os.RemoveAll(dbDir)) }()
 
 	db, err := tsdb.Open(dbDir, nil, nil, nil)
 	testutil.Ok(t, err)
@@ -298,7 +298,7 @@ func TestRoutePrefix(t *testing.T) {
 	t.Parallel()
 	dbDir, err := ioutil.TempDir("", "tsdb-ready")
 	testutil.Ok(t, err)
-	defer testutil.Ok(t, os.RemoveAll(dbDir))
+	defer func() { testutil.Ok(t, os.RemoveAll(dbDir)) }()
 
 	db, err := tsdb.Open(dbDir, nil, nil, nil)
 	testutil.Ok(t, err)
