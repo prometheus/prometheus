@@ -363,13 +363,13 @@ func (d *Discovery) watchServices(ctx context.Context, ch chan<- []*targetgroup.
 	catalog := d.client.Catalog()
 	level.Debug(d.logger).Log("msg", "Watching services", "tags", strings.Join(d.watchedTags, ","))
 
-	t0 := time.Now()
 	opts := &consul.QueryOptions{
 		WaitIndex:  *lastIndex,
 		WaitTime:   watchTimeout,
 		AllowStale: d.allowStale,
 		NodeMeta:   d.watchedNodeMeta,
 	}
+	t0 := time.Now()
 	srvs, meta, err := catalog.Services(opts.WithContext(ctx))
 	elapsed := time.Since(t0)
 	servicesRPCDuration.Observe(elapsed.Seconds())
@@ -456,18 +456,19 @@ func (d *Discovery) watchService(ctx context.Context, ch chan<- []*targetgroup.G
 
 	go func() {
 		ticker := time.NewTicker(d.refreshInterval)
+		defer ticker.Stop()
 		var lastIndex uint64
 		health := srv.client.Health()
 		for {
 			select {
 			case <-ctx.Done():
-				ticker.Stop()
 				return
 			default:
 				srv.watch(ctx, ch, health, &lastIndex)
 				select {
 				case <-ticker.C:
 				case <-ctx.Done():
+					return
 				}
 			}
 		}
@@ -478,7 +479,6 @@ func (d *Discovery) watchService(ctx context.Context, ch chan<- []*targetgroup.G
 func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Group, health *consul.Health, lastIndex *uint64) {
 	level.Debug(srv.logger).Log("msg", "Watching service", "service", srv.name, "tags", strings.Join(srv.tags, ","))
 
-	t0 := time.Now()
 	opts := &consul.QueryOptions{
 		WaitIndex:  *lastIndex,
 		WaitTime:   watchTimeout,
@@ -486,6 +486,7 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Gr
 		NodeMeta:   srv.discovery.watchedNodeMeta,
 	}
 
+	t0 := time.Now()
 	serviceNodes, meta, err := health.ServiceMultipleTags(srv.name, srv.tags, false, opts.WithContext(ctx))
 	elapsed := time.Since(t0)
 	serviceRPCDuration.Observe(elapsed.Seconds())
