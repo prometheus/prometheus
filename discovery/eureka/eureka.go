@@ -157,10 +157,14 @@ func targetsForApp(app *Application) []model.LabelSet {
 
 	// Gather info about the app's 'instances'. Each instance is considered a task.
 	for _, t := range app.Instances {
-		targetAddress := net.JoinHostPort(t.HostName, strconv.Itoa(t.Port.Port))
+		var targetAddress string
+		if t.Port != nil {
+			targetAddress = net.JoinHostPort(t.HostName, strconv.Itoa(t.Port.Port))
+		}
+
 		target := model.LabelSet{
-			model.AddressLabel:  model.LabelValue(targetAddress),
-			model.InstanceLabel: model.LabelValue(t.InstanceID),
+			model.AddressLabel:  lv(targetAddress),
+			model.InstanceLabel: lv(t.InstanceID),
 
 			appNameLabel:                     lv(app.Name),
 			appInstanceHostNameLabel:         lv(t.HostName),
@@ -204,6 +208,7 @@ func targetsForApp(app *Application) []model.LabelSet {
 		}
 
 		targets = append(targets, target)
+
 	}
 	return targets
 }
