@@ -117,11 +117,9 @@ func ParseExpr(input string) (expr Expr, err error) {
 	if len(p.parseErrors) == 0 {
 		p.checkAST(expr)
 	}
-
+	setExprStr(&expr, input)
 	if len(p.parseErrors) != 0 {
 		err = p.parseErrors
-	} else {
-		applyLexItems(&expr, input)
 	}
 
 	return expr, err
@@ -180,29 +178,28 @@ func newParser(input string) *parser {
 	return p
 }
 
-func applyLexItems(expr *Expr, input string) {
-	lexItems := LexItems(input)
+func setExprStr(expr *Expr, input string) {
 	switch e := (*expr).(type) {
 	case *AggregateExpr:
-		e.ExprExtensions.SetItems(lexItems)
+		e.ExprExtensions.SetExprString(input)
 	case *BinaryExpr:
-		e.ExprExtensions.SetItems(lexItems)
+		e.ExprExtensions.SetExprString(input)
 	case *Call:
-		e.ExprExtensions.SetItems(lexItems)
+		e.ExprExtensions.SetExprString(input)
 	case *SubqueryExpr:
-		e.ExprExtensions.SetItems(lexItems)
+		e.ExprExtensions.SetExprString(input)
 	case *ParenExpr:
-		e.ExprExtensions.SetItems(lexItems)
+		e.ExprExtensions.SetExprString(input)
 	case *UnaryExpr:
-		e.ExprExtensions.SetItems(lexItems)
+		e.ExprExtensions.SetExprString(input)
 	case *MatrixSelector:
-		e.ExprExtensions.SetItems(lexItems)
+		e.ExprExtensions.SetExprString(input)
 	case *NumberLiteral:
-		e.ExprExtensions.SetItems(lexItems)
+		e.ExprExtensions.SetExprString(input)
 	case *StringLiteral:
-		e.ExprExtensions.SetItems(lexItems)
+		e.ExprExtensions.SetExprString(input)
 	case *VectorSelector:
-		e.ExprExtensions.SetItems(lexItems)
+		e.ExprExtensions.SetExprString(input)
 	}
 }
 

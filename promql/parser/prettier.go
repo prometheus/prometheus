@@ -67,16 +67,6 @@ func PromqlPrettier(expression string) *Prettier {
 	}
 }
 
-// PrettyPrint prints the formatted expression.
-func PrettyPrint(lexItems []Item) (string, error) {
-	expressionString := stringifyItems(lexItems)
-	exprFormatted, err := PromqlPrettier(expressionString).Prettify()
-	if err != nil {
-		return expressionString, errors.Wrap(err, "pretty-print")
-	}
-	return exprFormatted, err
-}
-
 // Prettify prettifies the current expression in the prettier. It standardizes the input expression,
 // sorts the items slice and calls the prettify.
 func (p *Prettier) Prettify() (string, error) {
