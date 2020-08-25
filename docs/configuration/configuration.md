@@ -924,39 +924,39 @@ service account and place the credential file in one of the expected locations.
 
 ### `<hetzner_sd_config>`
 
-Hetzner SD configurations allow retrieving scrape targets from [Hetzner Cloud](https://www.hetzner.cloud/)
-Server API.
+Hetzner SD configurations allow retrieving scrape targets from
+[Hetzner](https://www.hetzner.com/) [Cloud](https://www.hetzner.cloud/) API and
+[Robot](https://docs.hetzner.com/robot/) API.
 This service discovery uses the public IPv4 address by default, but that can be
 changed with relabeling, as demonstrated in [the Prometheus hetzner-sd
 configuration file](/documentation/examples/prometheus-hetzner.yml).
 
 The following meta labels are available on all targets during [relabeling](#relabel_config):
-
-* `__meta_hetzner_server_id`: the id of the server
+* `__meta_hetzner_server_id`: the ID of the server
 * `__meta_hetzner_server_name`: the name of the server
 * `__meta_hetzner_server_status`: the status of the server
-* `__meta_hetzner_public_ipv4`: the public ipv4 of the server
-* `__meta_hetzner_public_ipv6_network`: the public ipv6 net (/64) of the server
-* `__meta_hetzner_datacenter`: the name of the datacenter the server is located
+* `__meta_hetzner_public_ipv4`: the public ipv4 address of the server
+* `__meta_hetzner_public_ipv6_network`: the public ipv6 network (/64) of the server
+* `__meta_hetzner_datacenter`: the datacenter of the server
 
 The labels below are only available for targets with `role` set to `hcloud`:
 * `__meta_hetzner_hcloud_image_name`: the image name of the server
-* `__meta_hetzner_hcloud_image_description`: the image description of the server
-* `__meta_hetzner_hcloud_image_os_flavor`: the image os flavor of the server
-* `__meta_hetzner_hcloud_image_os_version`: the image os version of the server
-* `__meta_hetzner_hcloud_image_description`: the image name or description of the server
-* `__meta_hetzner_hcloud_datacenter_location`: the name of the location the server is located
-* `__meta_hetzner_hcloud_datacenter_location_network_zone`: the name of the network zone the server is located
-* `__meta_hetzner_hcloud_server_type`: the name of the type of the server
-* `__meta_hetzner_hcloud_cpu_cores`: the count of CPU cores the server has
+* `__meta_hetzner_hcloud_image_description`: the description of the server image
+* `__meta_hetzner_hcloud_image_os_flavor`: the OS flavor of the server image
+* `__meta_hetzner_hcloud_image_os_version`: the OS version of the server image
+* `__meta_hetzner_hcloud_image_description`: the description of the server image
+* `__meta_hetzner_hcloud_datacenter_location`: the location of the server
+* `__meta_hetzner_hcloud_datacenter_location_network_zone`: the network zone of the server
+* `__meta_hetzner_hcloud_server_type`: the type of the server
+* `__meta_hetzner_hcloud_cpu_cores`: the CPU cores count of the server
 * `__meta_hetzner_hcloud_cpu_type`: the type of the CPU (shared or dedicated)
 * `__meta_hetzner_hcloud_memory_size_gb`: the amount of memory the server has (in GB)
 * `__meta_hetzner_hcloud_disk_size_gb`: the size of disk the server has (in GB)
-* `__meta_hetzner_hcloud_private_ipv4_<network name>`: the private ipv4 of the server within the network named in the metric if it is attached to a network
-* `__meta_hetzner_hcloud_label_<labelname>`: the hetzner cloud label of the server with its specific value within the cloud
+* `__meta_hetzner_hcloud_private_ipv4_<networkname>`: the private ipv4 of the server within a given network
+* `__meta_hetzner_hcloud_label_<labelname>`: each label of the server
 
 The labels below are only available for targets with `role` set to `robot`:
-* `__meta_hetzner_robot_product`: the name of the product of the server
+* `__meta_hetzner_robot_product`: the product of the server
 * `__meta_hetzner_robot_cancelled`: the status of the server cancellation
 
 ```yaml
