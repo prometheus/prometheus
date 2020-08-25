@@ -76,7 +76,7 @@ tarball: npm_licenses common-tarball
 docker: npm_licenses common-docker
 
 .PHONY: build
-build: assets common-build
+build: assets npm_licenses common-build
 
 .PHONY: bench_tsdb
 bench_tsdb: $(PROMU)

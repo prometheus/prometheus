@@ -18,6 +18,8 @@ build:
         -X github.com/prometheus/common/version.BuildUser={{user}}@{{host}}
         -X github.com/prometheus/common/version.BuildDate={{date "20060102-15:04:05"}}
 tarball:
+    # Whenever there are new files to include in the tarball,
+    # remember to make sure the new files will be generated after `make build`
     files:
         - consoles
         - console_libraries
