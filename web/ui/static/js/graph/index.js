@@ -371,7 +371,7 @@ Prometheus.Graph.prototype.increaseRange = function() {
     if (rangeSeconds < self.parseDuration(Prometheus.Graph.stepValues[i])) {
       self.rangeInput.val(Prometheus.Graph.stepValues[i]);
       if (self.expr.val()) {
-        self.submitQuery();
+        self.submitQuery(true);
       }
       return;
     }
@@ -385,7 +385,7 @@ Prometheus.Graph.prototype.decreaseRange = function() {
     if (rangeSeconds > self.parseDuration(Prometheus.Graph.stepValues[i])) {
       self.rangeInput.val(Prometheus.Graph.stepValues[i]);
       if (self.expr.val()) {
-        self.submitQuery();
+        self.submitQuery(true);
       }
       return;
     }
@@ -417,7 +417,7 @@ Prometheus.Graph.prototype.increaseEnd = function() {
   var newDate = moment(self.getOrSetEndDate());
   newDate.add(self.parseDuration(self.rangeInput.val()) / 2, 'seconds');
   self.setEndDate(newDate);
-  self.submitQuery();
+  self.submitQuery(true);
 };
 
 Prometheus.Graph.prototype.decreaseEnd = function() {
@@ -425,7 +425,7 @@ Prometheus.Graph.prototype.decreaseEnd = function() {
   var newDate = moment(self.getOrSetEndDate());
   newDate.subtract(self.parseDuration(self.rangeInput.val()) / 2, 'seconds');
   self.setEndDate(newDate);
-  self.submitQuery();
+  self.submitQuery(true);
 };
 
 Prometheus.Graph.prototype.getMoment = function() {
@@ -464,7 +464,7 @@ Prometheus.Graph.prototype.decreaseMoment = function() {
   self.submitQuery();
 };
 
-Prometheus.Graph.prototype.submitQuery = function() {
+Prometheus.Graph.prototype.submitQuery = function(needSaveLegendStatus) {
   var self = this;
   self.clearError();
   self.clearWarning();
@@ -494,7 +494,9 @@ Prometheus.Graph.prototype.submitQuery = function() {
     params.end = endDate;
     params.step = resolution;
     url = PATH_PREFIX + "/api/v1/query_range";
-    success = function(json, textStatus) { self.handleGraphResponse(json, textStatus); };
+    success = function(json, textStatus, needSaveLegendStatus) {
+      self.handleGraphResponse(json, textStatus, needSaveLegendStatus);
+    };
   } else {
     params.time = moment;
     url = PATH_PREFIX + "/api/v1/query";
@@ -518,7 +520,7 @@ Prometheus.Graph.prototype.submitQuery = function() {
         }
 
         queryHistory.handleHistory(self);
-        success(json.data, textStatus);
+        success(json.data, textStatus, needSaveLegendStatus);
       },
       error: function(xhr, resp) {
         if (resp != "abort") {
@@ -669,10 +671,15 @@ Prometheus.Graph.prototype.transformData = function(json) {
   return data;
 };
 
-Prometheus.Graph.prototype.updateGraph = function() {
+Prometheus.Graph.prototype.updateGraph = function(needSaveLegendStatus) {
   var self = this;
   if (self.data.length === 0) { return; }
 
+  var prevActiveLegendNodes = [];
+  if (needSaveLegendStatus) {
+    // get previous active selected nodes
+    prevActiveLegendNodes = self.rickshawGraph.series.active();
+  }
   // Remove any traces of an existing graph.
   self.legend.empty();
   if (self.graphArea.children().length > 0) {
@@ -779,8 +786,31 @@ Prometheus.Graph.prototype.updateGraph = function() {
     legend: legend
   });
 
+  this.updateLegendStatus(prevActiveLegendNodes);
+
   self.handleChange();
 };
+
+Prometheus.Graph.prototype.updateLegendStatus = function(prevActiveLegendNodes) {
+  // we don't allow dis-select all nodes from graph, so ignore the empty active array
+  if (prevActiveLegendNodes.length > 0) {
+    // find inactive legend nodes by intersect the all nodes with the active nodes
+    var inactiveLegendNodes = this.rickshawGraph.series.filter(function(line) {
+      for (var activeLine of prevActiveLegendNodes) {
+        if (activeLine.name === line.name) {
+          return false;
+        }
+      }
+      return true;
+    });
+    // click the "V" action icon to disable the legend
+    inactiveLegendNodes.forEach(function(line) {
+      var unescapedName =  $('<div>').html(line.name).text();
+      var listItem = this.legend.find(`li:contains(${unescapedName})`);
+      listItem.find('a').click();
+    }.bind(this));
+  }
+}
 
 Prometheus.Graph.prototype.resizeGraph = function() {
   var self = this;
@@ -792,7 +822,7 @@ Prometheus.Graph.prototype.resizeGraph = function() {
   }
 };
 
-Prometheus.Graph.prototype.handleGraphResponse = function(json, textStatus) {
+Prometheus.Graph.prototype.handleGraphResponse = function(json, textStatus, needSaveLegendStatus) {
   var self = this;
   // Rickshaw mutates passed series data for stacked graphs, so we need to save
   // the original AJAX response in order to re-transform it into series data
@@ -804,7 +834,7 @@ Prometheus.Graph.prototype.handleGraphResponse = function(json, textStatus) {
     return;
   }
   self.graphTab.removeClass("reload");
-  self.updateGraph();
+  self.updateGraph(needSaveLegendStatus);
 };
 
 Prometheus.Graph.prototype.handleConsoleResponse = function(data, textStatus) {
