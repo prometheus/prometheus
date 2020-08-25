@@ -949,15 +949,15 @@ The labels below are only available for targets with `role` set to `hcloud`:
 * `__meta_hetzner_hcloud_datacenter_location_network_zone`: the network zone of the server
 * `__meta_hetzner_hcloud_server_type`: the type of the server
 * `__meta_hetzner_hcloud_cpu_cores`: the CPU cores count of the server
-* `__meta_hetzner_hcloud_cpu_type`: the type of the CPU (shared or dedicated)
-* `__meta_hetzner_hcloud_memory_size_gb`: the amount of memory the server has (in GB)
-* `__meta_hetzner_hcloud_disk_size_gb`: the size of disk the server has (in GB)
-* `__meta_hetzner_hcloud_private_ipv4_<networkname>`: the private ipv4 of the server within a given network
+* `__meta_hetzner_hcloud_cpu_type`: the CPU type of the server (shared or dedicated)
+* `__meta_hetzner_hcloud_memory_size_gb`: the amount of memory of the server (in GB)
+* `__meta_hetzner_hcloud_disk_size_gb`: the disk size of the server (in GB)
+* `__meta_hetzner_hcloud_private_ipv4_<networkname>`: the private ipv4 address of the server within a given network
 * `__meta_hetzner_hcloud_label_<labelname>`: each label of the server
 
 The labels below are only available for targets with `role` set to `robot`:
 * `__meta_hetzner_robot_product`: the product of the server
-* `__meta_hetzner_robot_cancelled`: the status of the server cancellation
+* `__meta_hetzner_robot_cancelled`: the server cancellation status
 
 ```yaml
 # The Hetzner role of entities that should be discovered.
