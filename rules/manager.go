@@ -237,8 +237,8 @@ type Group struct {
 	staleSeries          []labels.Labels
 	opts                 *ManagerOptions
 	mtx                  sync.Mutex
-	evaluationDuration   time.Duration
-	evaluationTimestamp  time.Time
+	evaluationTime       time.Duration
+	lastEvaluation       time.Time
 
 	shouldRestore bool
 
@@ -332,8 +332,8 @@ func (g *Group) run(ctx context.Context) {
 		timeSinceStart := time.Since(start)
 
 		g.metrics.iterationDuration.Observe(timeSinceStart.Seconds())
-		g.setEvaluationDuration(timeSinceStart)
-		g.setEvaluationTimestamp(start)
+		g.setEvaluationTime(timeSinceStart)
+		g.setLastEvaluation(start)
 	}
 
 	// The assumption here is that since the ticker was started after having
@@ -454,36 +454,36 @@ func (g *Group) HasAlertingRules() bool {
 	return false
 }
 
-// GetEvaluationDuration returns the time in seconds it took to evaluate the rule group.
-func (g *Group) GetEvaluationDuration() time.Duration {
+// GetEvaluationTime returns the time in seconds it took to evaluate the rule group.
+func (g *Group) GetEvaluationTime() time.Duration {
 	g.mtx.Lock()
 	defer g.mtx.Unlock()
-	return g.evaluationDuration
+	return g.evaluationTime
 }
 
-// setEvaluationDuration sets the time in seconds the last evaluation took.
-func (g *Group) setEvaluationDuration(dur time.Duration) {
+// setEvaluationTime sets the time in seconds the last evaluation took.
+func (g *Group) setEvaluationTime(dur time.Duration) {
 	g.metrics.groupLastDuration.WithLabelValues(groupKey(g.file, g.name)).Set(dur.Seconds())
 
 	g.mtx.Lock()
 	defer g.mtx.Unlock()
-	g.evaluationDuration = dur
+	g.evaluationTime = dur
 }
 
-// GetEvaluationTimestamp returns the time the last evaluation of the rule group took place.
-func (g *Group) GetEvaluationTimestamp() time.Time {
+// GetLastEvaluation returns the time the last evaluation of the rule group took place.
+func (g *Group) GetLastEvaluation() time.Time {
 	g.mtx.Lock()
 	defer g.mtx.Unlock()
-	return g.evaluationTimestamp
+	return g.lastEvaluation
 }
 
-// setEvaluationTimestamp updates evaluationTimestamp to the timestamp of when the rule group was last evaluated.
-func (g *Group) setEvaluationTimestamp(ts time.Time) {
+// setLastEvaluation updates lastEvaluation to the timestamp of when the rule group was last evaluated.
+func (g *Group) setLastEvaluation(ts time.Time) {
 	g.metrics.groupLastEvalTime.WithLabelValues(groupKey(g.file, g.name)).Set(float64(ts.UnixNano()) / 1e9)
 
 	g.mtx.Lock()
 	defer g.mtx.Unlock()
-	g.evaluationTimestamp = ts
+	g.lastEvaluation = ts
 }
 
 // evalTimestamp returns the immediately preceding consistently slotted evaluation time.
@@ -507,8 +507,8 @@ func nameAndLabels(rule Rule) string {
 // Rules are matched based on their name and labels. If there are duplicates, the
 // first is matched with the first, second with the second etc.
 func (g *Group) CopyState(from *Group) {
-	g.evaluationDuration = from.evaluationDuration
-	g.evaluationTimestamp = from.evaluationTimestamp
+	g.evaluationTime = from.evaluationTime
+	g.lastEvaluation = from.lastEvaluation
 
 	ruleMap := make(map[string][]int, len(from.rules))
 
