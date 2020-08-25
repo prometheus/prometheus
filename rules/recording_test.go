@@ -52,7 +52,7 @@ func TestRuleEval(t *testing.T) {
 	}{
 		{
 			name:   "nolabels",
-			expr:   &parser.NumberLiteral{Val: 1},
+			expr:   &parser.NumberLiteral{ExprExtensions: parser.ExprExtensions{ExprStr: "1"}, Val: 1},
 			labels: labels.Labels{},
 			result: promql.Vector{promql.Sample{
 				Metric: labels.FromStrings("__name__", "nolabels"),
@@ -61,7 +61,7 @@ func TestRuleEval(t *testing.T) {
 		},
 		{
 			name:   "labels",
-			expr:   &parser.NumberLiteral{Val: 1},
+			expr:   &parser.NumberLiteral{ExprExtensions: parser.ExprExtensions{ExprStr: "1"}, Val: 1},
 			labels: labels.FromStrings("foo", "bar"),
 			result: promql.Vector{promql.Sample{
 				Metric: labels.FromStrings("__name__", "labels", "foo", "bar"),

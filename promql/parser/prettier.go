@@ -390,7 +390,7 @@ func (p *Prettier) prettify(items []Item) (string, error) {
 				result += " "
 			}
 		case EQL, EQL_REGEX, NEQ, NEQ_REGEX, DURATION, COLON,
-			LEFT_BRACKET, RIGHT_BRACKET:
+			LEFT_BRACKET, RIGHT_BRACKET, ASSIGN:
 			// Comparison operators.
 			result += item.Val
 		case ADD, SUB, MUL, DIV, GTE, GTR, LOR, LAND,

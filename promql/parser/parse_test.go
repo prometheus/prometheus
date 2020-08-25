@@ -36,91 +36,91 @@ var testExpr = []struct {
 	{
 		input: "1",
 		expected: &NumberLiteral{
-			ExprExtensions: ExprExtensions{exprStr: `1`},
+			ExprExtensions: ExprExtensions{ExprStr: `1`},
 			Val:            1,
 			PosRange:       PositionRange{Start: 0, End: 1},
 		},
 	}, {
 		input: "+Inf",
 		expected: &NumberLiteral{
-			ExprExtensions: ExprExtensions{exprStr: `+Inf`},
+			ExprExtensions: ExprExtensions{ExprStr: `+Inf`},
 			Val:            math.Inf(1),
 			PosRange:       PositionRange{Start: 0, End: 4},
 		},
 	}, {
 		input: "-Inf",
 		expected: &NumberLiteral{
-			ExprExtensions: ExprExtensions{exprStr: `-Inf`},
+			ExprExtensions: ExprExtensions{ExprStr: `-Inf`},
 			Val:            math.Inf(-1),
 			PosRange:       PositionRange{Start: 0, End: 4},
 		},
 	}, {
 		input: ".5",
 		expected: &NumberLiteral{
-			ExprExtensions: ExprExtensions{exprStr: `.5`},
+			ExprExtensions: ExprExtensions{ExprStr: `.5`},
 			Val:            0.5,
 			PosRange:       PositionRange{Start: 0, End: 2},
 		},
 	}, {
 		input: "5.",
 		expected: &NumberLiteral{
-			ExprExtensions: ExprExtensions{exprStr: `5.`},
+			ExprExtensions: ExprExtensions{ExprStr: `5.`},
 			Val:            5,
 			PosRange:       PositionRange{Start: 0, End: 2},
 		},
 	}, {
 		input: "123.4567",
 		expected: &NumberLiteral{
-			ExprExtensions: ExprExtensions{exprStr: `123.4567`},
+			ExprExtensions: ExprExtensions{ExprStr: `123.4567`},
 			Val:            123.4567,
 			PosRange:       PositionRange{Start: 0, End: 8},
 		},
 	}, {
 		input: "5e-3",
 		expected: &NumberLiteral{
-			ExprExtensions: ExprExtensions{exprStr: `5e-3`},
+			ExprExtensions: ExprExtensions{ExprStr: `5e-3`},
 			Val:            0.005,
 			PosRange:       PositionRange{Start: 0, End: 4},
 		},
 	}, {
 		input: "5e3",
 		expected: &NumberLiteral{
-			ExprExtensions: ExprExtensions{exprStr: `5e3`},
+			ExprExtensions: ExprExtensions{ExprStr: `5e3`},
 			Val:            5000,
 			PosRange:       PositionRange{Start: 0, End: 3},
 		},
 	}, {
 		input: "0xc",
 		expected: &NumberLiteral{
-			ExprExtensions: ExprExtensions{exprStr: `0xc`},
+			ExprExtensions: ExprExtensions{ExprStr: `0xc`},
 			Val:            12,
 			PosRange:       PositionRange{Start: 0, End: 3},
 		},
 	}, {
 		input: "0755",
 		expected: &NumberLiteral{
-			ExprExtensions: ExprExtensions{exprStr: `0755`},
+			ExprExtensions: ExprExtensions{ExprStr: `0755`},
 			Val:            493,
 			PosRange:       PositionRange{Start: 0, End: 4},
 		},
 	}, {
 		input: "+5.5e-3",
 		expected: &NumberLiteral{
-			ExprExtensions: ExprExtensions{exprStr: `+5.5e-3`},
+			ExprExtensions: ExprExtensions{ExprStr: `+5.5e-3`},
 			Val:            0.0055,
 			PosRange:       PositionRange{Start: 0, End: 7},
 		},
 	}, {
 		input: "-0755",
 		expected: &NumberLiteral{
-			ExprExtensions: ExprExtensions{exprStr: `-0755`},
+			ExprExtensions: ExprExtensions{ExprStr: `-0755`},
 			Val:            -493,
 			PosRange:       PositionRange{Start: 0, End: 5},
 		},
 	}, {
 		input: "1 + 1",
 		expected: &BinaryExpr{
-			ExprExtensions: ExprExtensions{exprStr: `1 + 1`},
+			ExprExtensions: ExprExtensions{ExprStr: `1 + 1`},
 			Op:             ADD,
 			LHS: &NumberLiteral{
 				Val:      1,
@@ -134,7 +134,7 @@ var testExpr = []struct {
 	}, {
 		input: "1 - 1",
 		expected: &BinaryExpr{
-			ExprExtensions: ExprExtensions{exprStr: "1 - 1"},
+			ExprExtensions: ExprExtensions{ExprStr: "1 - 1"},
 			Op:             SUB,
 			LHS: &NumberLiteral{
 				Val:      1,
@@ -148,7 +148,7 @@ var testExpr = []struct {
 	}, {
 		input: "1 * 1",
 		expected: &BinaryExpr{
-			ExprExtensions: ExprExtensions{exprStr: "1 * 1"},
+			ExprExtensions: ExprExtensions{ExprStr: "1 * 1"},
 			Op:             MUL,
 			LHS: &NumberLiteral{
 				Val:      1,
@@ -162,7 +162,7 @@ var testExpr = []struct {
 	}, {
 		input: "1 % 1",
 		expected: &BinaryExpr{
-			ExprExtensions: ExprExtensions{exprStr: "1 % 1"},
+			ExprExtensions: ExprExtensions{ExprStr: "1 % 1"},
 			Op:             MOD,
 			LHS: &NumberLiteral{
 				Val:      1,
@@ -176,7 +176,7 @@ var testExpr = []struct {
 	}, {
 		input: "1 / 1",
 		expected: &BinaryExpr{
-			ExprExtensions: ExprExtensions{exprStr: "1 / 1"},
+			ExprExtensions: ExprExtensions{ExprStr: "1 / 1"},
 			Op:             DIV,
 			LHS: &NumberLiteral{
 				Val:      1,
@@ -190,7 +190,7 @@ var testExpr = []struct {
 	}, {
 		input: "1 == bool 1",
 		expected: &BinaryExpr{
-			ExprExtensions: ExprExtensions{exprStr: "1 == bool 1"},
+			ExprExtensions: ExprExtensions{ExprStr: "1 == bool 1"},
 			Op:             EQL,
 			LHS: &NumberLiteral{
 				Val:      1,
@@ -205,7 +205,7 @@ var testExpr = []struct {
 	}, {
 		input: "1 != bool 1",
 		expected: &BinaryExpr{
-			ExprExtensions: ExprExtensions{exprStr: "1 != bool 1"},
+			ExprExtensions: ExprExtensions{ExprStr: "1 != bool 1"},
 			Op:             NEQ,
 			LHS: &NumberLiteral{
 				Val:      1,
@@ -220,7 +220,7 @@ var testExpr = []struct {
 	}, {
 		input: "1 > bool 1",
 		expected: &BinaryExpr{
-			ExprExtensions: ExprExtensions{exprStr: "1 > bool 1"},
+			ExprExtensions: ExprExtensions{ExprStr: "1 > bool 1"},
 			Op:             GTR,
 			LHS: &NumberLiteral{
 				Val:      1,
@@ -236,7 +236,7 @@ var testExpr = []struct {
 	{
 		input: "1 >= bool 1",
 		expected: &BinaryExpr{
-			ExprExtensions: ExprExtensions{exprStr: "1 >= bool 1"},
+			ExprExtensions: ExprExtensions{ExprStr: "1 >= bool 1"},
 			Op:             GTE,
 			LHS: &NumberLiteral{
 				Val:      1,
@@ -251,7 +251,7 @@ var testExpr = []struct {
 	}, {
 		input: "1 < bool 1",
 		expected: &BinaryExpr{
-			ExprExtensions: ExprExtensions{exprStr: "1 < bool 1"},
+			ExprExtensions: ExprExtensions{ExprStr: "1 < bool 1"},
 			Op:             LSS,
 			LHS: &NumberLiteral{
 				Val:      1,
@@ -266,7 +266,7 @@ var testExpr = []struct {
 	}, {
 		input: "1 <= bool 1",
 		expected: &BinaryExpr{
-			ExprExtensions: ExprExtensions{exprStr: "1 <= bool 1"},
+			ExprExtensions: ExprExtensions{ExprStr: "1 <= bool 1"},
 			Op:             LTE,
 			LHS: &NumberLiteral{
 				Val:      1,
@@ -281,7 +281,7 @@ var testExpr = []struct {
 	}, {
 		input: "-1^2",
 		expected: &UnaryExpr{
-			ExprExtensions: ExprExtensions{exprStr: "-1^2"},
+			ExprExtensions: ExprExtensions{ExprStr: "-1^2"},
 			Op:             SUB,
 			Expr: &BinaryExpr{
 				Op: POW,
@@ -298,7 +298,7 @@ var testExpr = []struct {
 	}, {
 		input: "-1*2",
 		expected: &BinaryExpr{
-			ExprExtensions: ExprExtensions{exprStr: "-1*2"},
+			ExprExtensions: ExprExtensions{ExprStr: "-1*2"},
 			Op:             MUL,
 			LHS: &NumberLiteral{
 				Val:      -1,
@@ -312,7 +312,7 @@ var testExpr = []struct {
 	}, {
 		input: "-1+2",
 		expected: &BinaryExpr{
-			ExprExtensions: ExprExtensions{exprStr: "-1+2"},
+			ExprExtensions: ExprExtensions{ExprStr: "-1+2"},
 			Op:             ADD,
 			LHS: &NumberLiteral{
 				Val:      -1,
@@ -326,7 +326,7 @@ var testExpr = []struct {
 	}, {
 		input: "-1^-2",
 		expected: &UnaryExpr{
-			ExprExtensions: ExprExtensions{exprStr: "-1^-2"},
+			ExprExtensions: ExprExtensions{ExprStr: "-1^-2"},
 			Op:             SUB,
 			Expr: &BinaryExpr{
 				Op: POW,
@@ -343,7 +343,7 @@ var testExpr = []struct {
 	}, {
 		input: "+1 + -2 * 1",
 		expected: &BinaryExpr{
-			ExprExtensions: ExprExtensions{exprStr: "+1 + -2 * 1"},
+			ExprExtensions: ExprExtensions{ExprStr: "+1 + -2 * 1"},
 			Op:             ADD,
 			LHS: &NumberLiteral{
 				Val:      1,
@@ -364,7 +364,7 @@ var testExpr = []struct {
 	}, {
 		input: "1 + 2/(3*1)",
 		expected: &BinaryExpr{
-			ExprExtensions: ExprExtensions{exprStr: "1 + 2/(3*1)"},
+			ExprExtensions: ExprExtensions{ExprStr: "1 + 2/(3*1)"},
 			Op:             ADD,
 			LHS: &NumberLiteral{
 				Val:      1,
@@ -395,7 +395,7 @@ var testExpr = []struct {
 	}, {
 		input: "1 < bool 2 - 1 * 2",
 		expected: &BinaryExpr{
-			ExprExtensions: ExprExtensions{exprStr: "1 < bool 2 - 1 * 2"},
+			ExprExtensions: ExprExtensions{ExprStr: "1 < bool 2 - 1 * 2"},
 			Op:             LSS,
 			ReturnBool:     true,
 			LHS: &NumberLiteral{
@@ -424,7 +424,7 @@ var testExpr = []struct {
 	}, {
 		input: "-some_metric",
 		expected: &UnaryExpr{
-			ExprExtensions: ExprExtensions{exprStr: "-some_metric"},
+			ExprExtensions: ExprExtensions{ExprStr: "-some_metric"},
 			Op:             SUB,
 			Expr: &VectorSelector{
 				Name: "some_metric",
@@ -440,7 +440,7 @@ var testExpr = []struct {
 	}, {
 		input: "+some_metric",
 		expected: &UnaryExpr{
-			ExprExtensions: ExprExtensions{exprStr: "+some_metric"},
+			ExprExtensions: ExprExtensions{ExprStr: "+some_metric"},
 			Op:             ADD,
 			Expr: &VectorSelector{
 				Name: "some_metric",
@@ -456,7 +456,7 @@ var testExpr = []struct {
 	}, {
 		input: " +some_metric",
 		expected: &UnaryExpr{
-			ExprExtensions: ExprExtensions{exprStr: " +some_metric"},
+			ExprExtensions: ExprExtensions{ExprStr: " +some_metric"},
 			Op:             ADD,
 			Expr: &VectorSelector{
 				Name: "some_metric",
@@ -576,7 +576,7 @@ var testExpr = []struct {
 	{
 		input: "foo * bar",
 		expected: &BinaryExpr{
-			ExprExtensions: ExprExtensions{exprStr: "foo * bar"},
+			ExprExtensions: ExprExtensions{ExprStr: "foo * bar"},
 			Op:             MUL,
 			LHS: &VectorSelector{
 				Name: "foo",
@@ -603,7 +603,7 @@ var testExpr = []struct {
 	}, {
 		input: "foo * sum",
 		expected: &BinaryExpr{
-			ExprExtensions: ExprExtensions{exprStr: "foo * sum"},
+			ExprExtensions: ExprExtensions{ExprStr: "foo * sum"},
 			Op:             MUL,
 			LHS: &VectorSelector{
 				Name: "foo",
@@ -630,7 +630,7 @@ var testExpr = []struct {
 	}, {
 		input: "foo == 1",
 		expected: &BinaryExpr{
-			ExprExtensions: ExprExtensions{exprStr: "foo == 1"},
+			ExprExtensions: ExprExtensions{ExprStr: "foo == 1"},
 			Op:             EQL,
 			LHS: &VectorSelector{
 				Name: "foo",
@@ -650,7 +650,7 @@ var testExpr = []struct {
 	}, {
 		input: "foo == bool 1",
 		expected: &BinaryExpr{
-			ExprExtensions: ExprExtensions{exprStr: "foo == bool 1"},
+			ExprExtensions: ExprExtensions{ExprStr: "foo == bool 1"},
 			Op:             EQL,
 			LHS: &VectorSelector{
 				Name: "foo",
@@ -671,7 +671,7 @@ var testExpr = []struct {
 	}, {
 		input: "2.5 / bar",
 		expected: &BinaryExpr{
-			ExprExtensions: ExprExtensions{exprStr: "2.5 / bar"},
+			ExprExtensions: ExprExtensions{ExprStr: "2.5 / bar"},
 			Op:             DIV,
 			LHS: &NumberLiteral{
 				Val:      2.5,
@@ -692,7 +692,7 @@ var testExpr = []struct {
 	{
 		input: "foo and bar",
 		expected: &BinaryExpr{
-			ExprExtensions: ExprExtensions{exprStr: "foo and bar"},
+			ExprExtensions: ExprExtensions{ExprStr: "foo and bar"},
 			Op:             LAND,
 			LHS: &VectorSelector{
 				Name: "foo",
@@ -719,7 +719,7 @@ var testExpr = []struct {
 	}, {
 		input: "foo or bar",
 		expected: &BinaryExpr{
-			ExprExtensions: ExprExtensions{exprStr: "foo or bar"},
+			ExprExtensions: ExprExtensions{ExprStr: "foo or bar"},
 			Op:             LOR,
 			LHS: &VectorSelector{
 				Name: "foo",
@@ -746,7 +746,7 @@ var testExpr = []struct {
 	}, {
 		input: "foo unless bar",
 		expected: &BinaryExpr{
-			ExprExtensions: ExprExtensions{exprStr: "foo unless bar"},
+			ExprExtensions: ExprExtensions{ExprStr: "foo unless bar"},
 			Op:             LUNLESS,
 			LHS: &VectorSelector{
 				Name: "foo",
@@ -774,7 +774,7 @@ var testExpr = []struct {
 		// Test and/or precedence and reassigning of operands.
 		input: "foo + bar or bla and blub",
 		expected: &BinaryExpr{
-			ExprExtensions: ExprExtensions{exprStr: "foo + bar or bla and blub"},
+			ExprExtensions: ExprExtensions{ExprStr: "foo + bar or bla and blub"},
 			Op:             LOR,
 			LHS: &BinaryExpr{
 				Op: ADD,
@@ -830,7 +830,7 @@ var testExpr = []struct {
 		// Test and/or/unless precedence.
 		input: "foo and bar unless baz or qux",
 		expected: &BinaryExpr{
-			ExprExtensions: ExprExtensions{exprStr: "foo and bar unless baz or qux"},
+			ExprExtensions: ExprExtensions{ExprStr: "foo and bar unless baz or qux"},
 			Op:             LOR,
 			LHS: &BinaryExpr{
 				Op: LUNLESS,
@@ -886,7 +886,7 @@ var testExpr = []struct {
 		// Test precedence and reassigning of operands.
 		input: "bar + on(foo) bla / on(baz, buz) group_right(test) blub",
 		expected: &BinaryExpr{
-			ExprExtensions: ExprExtensions{exprStr: "bar + on(foo) bla / on(baz, buz) group_right(test) blub"},
+			ExprExtensions: ExprExtensions{ExprStr: "bar + on(foo) bla / on(baz, buz) group_right(test) blub"},
 			Op:             ADD,
 			LHS: &VectorSelector{
 				Name: "bar",
@@ -936,7 +936,7 @@ var testExpr = []struct {
 	}, {
 		input: "foo * on(test,blub) bar",
 		expected: &BinaryExpr{
-			ExprExtensions: ExprExtensions{exprStr: "foo * on(test,blub) bar"},
+			ExprExtensions: ExprExtensions{ExprStr: "foo * on(test,blub) bar"},
 			Op:             MUL,
 			LHS: &VectorSelector{
 				Name: "foo",
@@ -967,7 +967,7 @@ var testExpr = []struct {
 	}, {
 		input: "foo * on(test,blub) group_left bar",
 		expected: &BinaryExpr{
-			ExprExtensions: ExprExtensions{exprStr: "foo * on(test,blub) group_left bar"},
+			ExprExtensions: ExprExtensions{ExprStr: "foo * on(test,blub) group_left bar"},
 			Op:             MUL,
 			LHS: &VectorSelector{
 				Name: "foo",
@@ -998,7 +998,7 @@ var testExpr = []struct {
 	}, {
 		input: "foo and on(test,blub) bar",
 		expected: &BinaryExpr{
-			ExprExtensions: ExprExtensions{exprStr: "foo and on(test,blub) bar"},
+			ExprExtensions: ExprExtensions{ExprStr: "foo and on(test,blub) bar"},
 			Op:             LAND,
 			LHS: &VectorSelector{
 				Name: "foo",
@@ -1029,7 +1029,7 @@ var testExpr = []struct {
 	}, {
 		input: "foo and on() bar",
 		expected: &BinaryExpr{
-			ExprExtensions: ExprExtensions{exprStr: "foo and on() bar"},
+			ExprExtensions: ExprExtensions{ExprStr: "foo and on() bar"},
 			Op:             LAND,
 			LHS: &VectorSelector{
 				Name: "foo",
@@ -1060,7 +1060,7 @@ var testExpr = []struct {
 	}, {
 		input: "foo and ignoring(test,blub) bar",
 		expected: &BinaryExpr{
-			ExprExtensions: ExprExtensions{exprStr: "foo and ignoring(test,blub) bar"},
+			ExprExtensions: ExprExtensions{ExprStr: "foo and ignoring(test,blub) bar"},
 			Op:             LAND,
 			LHS: &VectorSelector{
 				Name: "foo",
@@ -1090,7 +1090,7 @@ var testExpr = []struct {
 	}, {
 		input: "foo and ignoring() bar",
 		expected: &BinaryExpr{
-			ExprExtensions: ExprExtensions{exprStr: "foo and ignoring() bar"},
+			ExprExtensions: ExprExtensions{ExprStr: "foo and ignoring() bar"},
 			Op:             LAND,
 			LHS: &VectorSelector{
 				Name: "foo",
@@ -1120,7 +1120,7 @@ var testExpr = []struct {
 	}, {
 		input: "foo unless on(bar) baz",
 		expected: &BinaryExpr{
-			ExprExtensions: ExprExtensions{exprStr: "foo unless on(bar) baz"},
+			ExprExtensions: ExprExtensions{ExprStr: "foo unless on(bar) baz"},
 			Op:             LUNLESS,
 			LHS: &VectorSelector{
 				Name: "foo",
@@ -1151,7 +1151,7 @@ var testExpr = []struct {
 	}, {
 		input: "foo / on(test,blub) group_left(bar) bar",
 		expected: &BinaryExpr{
-			ExprExtensions: ExprExtensions{exprStr: "foo / on(test,blub) group_left(bar) bar"},
+			ExprExtensions: ExprExtensions{ExprStr: "foo / on(test,blub) group_left(bar) bar"},
 			Op:             DIV,
 			LHS: &VectorSelector{
 				Name: "foo",
@@ -1183,7 +1183,7 @@ var testExpr = []struct {
 	}, {
 		input: "foo / ignoring(test,blub) group_left(blub) bar",
 		expected: &BinaryExpr{
-			ExprExtensions: ExprExtensions{exprStr: "foo / ignoring(test,blub) group_left(blub) bar"},
+			ExprExtensions: ExprExtensions{ExprStr: "foo / ignoring(test,blub) group_left(blub) bar"},
 			Op:             DIV,
 			LHS: &VectorSelector{
 				Name: "foo",
@@ -1214,7 +1214,7 @@ var testExpr = []struct {
 	}, {
 		input: "foo / ignoring(test,blub) group_left(bar) bar",
 		expected: &BinaryExpr{
-			ExprExtensions: ExprExtensions{exprStr: "foo / ignoring(test,blub) group_left(bar) bar"},
+			ExprExtensions: ExprExtensions{ExprStr: "foo / ignoring(test,blub) group_left(bar) bar"},
 			Op:             DIV,
 			LHS: &VectorSelector{
 				Name: "foo",
@@ -1245,7 +1245,7 @@ var testExpr = []struct {
 	}, {
 		input: "foo - on(test,blub) group_right(bar,foo) bar",
 		expected: &BinaryExpr{
-			ExprExtensions: ExprExtensions{exprStr: "foo - on(test,blub) group_right(bar,foo) bar"},
+			ExprExtensions: ExprExtensions{ExprStr: "foo - on(test,blub) group_right(bar,foo) bar"},
 			Op:             SUB,
 			LHS: &VectorSelector{
 				Name: "foo",
@@ -1277,7 +1277,7 @@ var testExpr = []struct {
 	}, {
 		input: "foo - ignoring(test,blub) group_right(bar,foo) bar",
 		expected: &BinaryExpr{
-			ExprExtensions: ExprExtensions{exprStr: "foo - ignoring(test,blub) group_right(bar,foo) bar"},
+			ExprExtensions: ExprExtensions{ExprStr: "foo - ignoring(test,blub) group_right(bar,foo) bar"},
 			Op:             SUB,
 			LHS: &VectorSelector{
 				Name: "foo",
@@ -1386,7 +1386,7 @@ var testExpr = []struct {
 	{
 		input: "foo",
 		expected: &VectorSelector{
-			ExprExtensions: ExprExtensions{exprStr: "foo"},
+			ExprExtensions: ExprExtensions{ExprStr: "foo"},
 			Name:           "foo",
 			Offset:         0,
 			LabelMatchers: []*labels.Matcher{
@@ -1400,7 +1400,7 @@ var testExpr = []struct {
 	}, {
 		input: "min",
 		expected: &VectorSelector{
-			ExprExtensions: ExprExtensions{exprStr: "min"},
+			ExprExtensions: ExprExtensions{ExprStr: "min"},
 			Name:           "min",
 			Offset:         0,
 			LabelMatchers: []*labels.Matcher{
@@ -1414,7 +1414,7 @@ var testExpr = []struct {
 	}, {
 		input: "foo offset 5m",
 		expected: &VectorSelector{
-			ExprExtensions: ExprExtensions{exprStr: "foo offset 5m"},
+			ExprExtensions: ExprExtensions{ExprStr: "foo offset 5m"},
 			Name:           "foo",
 			Offset:         5 * time.Minute,
 			LabelMatchers: []*labels.Matcher{
@@ -1428,7 +1428,7 @@ var testExpr = []struct {
 	}, {
 		input: `foo OFFSET 1h30m`,
 		expected: &VectorSelector{
-			ExprExtensions: ExprExtensions{exprStr: `foo OFFSET 1h30m`},
+			ExprExtensions: ExprExtensions{ExprStr: `foo OFFSET 1h30m`},
 			Name:           "foo",
 			Offset:         90 * time.Minute,
 			LabelMatchers: []*labels.Matcher{
@@ -1442,7 +1442,7 @@ var testExpr = []struct {
 	}, {
 		input: `foo OFFSET 1m30ms`,
 		expected: &VectorSelector{
-			ExprExtensions: ExprExtensions{exprStr: `foo OFFSET 1m30ms`},
+			ExprExtensions: ExprExtensions{ExprStr: `foo OFFSET 1m30ms`},
 			Name:           "foo",
 			Offset:         time.Minute + 30*time.Millisecond,
 			LabelMatchers: []*labels.Matcher{
@@ -1456,7 +1456,7 @@ var testExpr = []struct {
 	}, {
 		input: `foo:bar{a="bc"}`,
 		expected: &VectorSelector{
-			ExprExtensions: ExprExtensions{exprStr: `foo:bar{a="bc"}`},
+			ExprExtensions: ExprExtensions{ExprStr: `foo:bar{a="bc"}`},
 			Name:           "foo:bar",
 			Offset:         0,
 			LabelMatchers: []*labels.Matcher{
@@ -1471,7 +1471,7 @@ var testExpr = []struct {
 	}, {
 		input: `foo{NaN='bc'}`,
 		expected: &VectorSelector{
-			ExprExtensions: ExprExtensions{exprStr: `foo{NaN='bc'}`},
+			ExprExtensions: ExprExtensions{ExprStr: `foo{NaN='bc'}`},
 			Name:           "foo",
 			Offset:         0,
 			LabelMatchers: []*labels.Matcher{
@@ -1486,7 +1486,7 @@ var testExpr = []struct {
 	}, {
 		input: `foo{bar='}'}`,
 		expected: &VectorSelector{
-			ExprExtensions: ExprExtensions{exprStr: `foo{bar='}'}`},
+			ExprExtensions: ExprExtensions{ExprStr: `foo{bar='}'}`},
 			Name:           "foo",
 			Offset:         0,
 			LabelMatchers: []*labels.Matcher{
@@ -1501,7 +1501,7 @@ var testExpr = []struct {
 	}, {
 		input: `foo{a="b", foo!="bar", test=~"test", bar!~"baz"}`,
 		expected: &VectorSelector{
-			ExprExtensions: ExprExtensions{exprStr: `foo{a="b", foo!="bar", test=~"test", bar!~"baz"}`},
+			ExprExtensions: ExprExtensions{ExprStr: `foo{a="b", foo!="bar", test=~"test", bar!~"baz"}`},
 			Name:           "foo",
 			Offset:         0,
 			LabelMatchers: []*labels.Matcher{
@@ -1519,7 +1519,7 @@ var testExpr = []struct {
 	}, {
 		input: `foo{a="b", foo!="bar", test=~"test", bar!~"baz",}`,
 		expected: &VectorSelector{
-			ExprExtensions: ExprExtensions{exprStr: `foo{a="b", foo!="bar", test=~"test", bar!~"baz",}`},
+			ExprExtensions: ExprExtensions{ExprStr: `foo{a="b", foo!="bar", test=~"test", bar!~"baz",}`},
 			Name:           "foo",
 			Offset:         0,
 			LabelMatchers: []*labels.Matcher{
@@ -1625,7 +1625,7 @@ var testExpr = []struct {
 	{
 		input: "test[5s]",
 		expected: &MatrixSelector{
-			ExprExtensions: ExprExtensions{exprStr: "test[5s]"},
+			ExprExtensions: ExprExtensions{ExprStr: "test[5s]"},
 			VectorSelector: &VectorSelector{
 				Name:   "test",
 				Offset: 0,
@@ -1643,7 +1643,7 @@ var testExpr = []struct {
 	}, {
 		input: "test[5m]",
 		expected: &MatrixSelector{
-			ExprExtensions: ExprExtensions{exprStr: "test[5m]"},
+			ExprExtensions: ExprExtensions{ExprStr: "test[5m]"},
 			VectorSelector: &VectorSelector{
 				Name:   "test",
 				Offset: 0,
@@ -1661,7 +1661,7 @@ var testExpr = []struct {
 	}, {
 		input: `foo[5m30s]`,
 		expected: &MatrixSelector{
-			ExprExtensions: ExprExtensions{exprStr: `foo[5m30s]`},
+			ExprExtensions: ExprExtensions{ExprStr: `foo[5m30s]`},
 			VectorSelector: &VectorSelector{
 				Name:   "foo",
 				Offset: 0,
@@ -1679,7 +1679,7 @@ var testExpr = []struct {
 	}, {
 		input: "test[5h] OFFSET 5m",
 		expected: &MatrixSelector{
-			ExprExtensions: ExprExtensions{exprStr: "test[5h] OFFSET 5m"},
+			ExprExtensions: ExprExtensions{ExprStr: "test[5h] OFFSET 5m"},
 			VectorSelector: &VectorSelector{
 				Name:   "test",
 				Offset: 5 * time.Minute,
@@ -1697,7 +1697,7 @@ var testExpr = []struct {
 	}, {
 		input: "test[5d] OFFSET 10s",
 		expected: &MatrixSelector{
-			ExprExtensions: ExprExtensions{exprStr: "test[5d] OFFSET 10s"},
+			ExprExtensions: ExprExtensions{ExprStr: "test[5d] OFFSET 10s"},
 			VectorSelector: &VectorSelector{
 				Name:   "test",
 				Offset: 10 * time.Second,
@@ -1715,7 +1715,7 @@ var testExpr = []struct {
 	}, {
 		input: "test[5w] offset 2w",
 		expected: &MatrixSelector{
-			ExprExtensions: ExprExtensions{exprStr: "test[5w] offset 2w"},
+			ExprExtensions: ExprExtensions{ExprStr: "test[5w] offset 2w"},
 			VectorSelector: &VectorSelector{
 				Name:   "test",
 				Offset: 14 * 24 * time.Hour,
@@ -1734,7 +1734,7 @@ var testExpr = []struct {
 	{
 		input: `test{a="b"}[5y] OFFSET 3d`,
 		expected: &MatrixSelector{
-			ExprExtensions: ExprExtensions{exprStr: `test{a="b"}[5y] OFFSET 3d`},
+			ExprExtensions: ExprExtensions{ExprStr: `test{a="b"}[5y] OFFSET 3d`},
 			VectorSelector: &VectorSelector{
 				Name:   "test",
 				Offset: 3 * 24 * time.Hour,
@@ -1814,7 +1814,7 @@ var testExpr = []struct {
 	{
 		input: "sum by (foo)(some_metric)",
 		expected: &AggregateExpr{
-			ExprExtensions: ExprExtensions{exprStr: "sum by (foo)(some_metric)"},
+			ExprExtensions: ExprExtensions{ExprStr: "sum by (foo)(some_metric)"},
 			Op:             SUM,
 			Expr: &VectorSelector{
 				Name: "some_metric",
@@ -1835,7 +1835,7 @@ var testExpr = []struct {
 	}, {
 		input: "avg by (foo)(some_metric)",
 		expected: &AggregateExpr{
-			ExprExtensions: ExprExtensions{exprStr: "avg by (foo)(some_metric)"},
+			ExprExtensions: ExprExtensions{ExprStr: "avg by (foo)(some_metric)"},
 			Op:             AVG,
 			Expr: &VectorSelector{
 				Name: "some_metric",
@@ -1856,7 +1856,7 @@ var testExpr = []struct {
 	}, {
 		input: "max by (foo)(some_metric)",
 		expected: &AggregateExpr{
-			ExprExtensions: ExprExtensions{exprStr: "max by (foo)(some_metric)"},
+			ExprExtensions: ExprExtensions{ExprStr: "max by (foo)(some_metric)"},
 			Op:             MAX,
 			Expr: &VectorSelector{
 				Name: "some_metric",
@@ -1877,7 +1877,7 @@ var testExpr = []struct {
 	}, {
 		input: "sum without (foo) (some_metric)",
 		expected: &AggregateExpr{
-			ExprExtensions: ExprExtensions{exprStr: "sum without (foo) (some_metric)"},
+			ExprExtensions: ExprExtensions{ExprStr: "sum without (foo) (some_metric)"},
 			Op:             SUM,
 			Without:        true,
 			Expr: &VectorSelector{
@@ -1899,7 +1899,7 @@ var testExpr = []struct {
 	}, {
 		input: "sum (some_metric) without (foo)",
 		expected: &AggregateExpr{
-			ExprExtensions: ExprExtensions{exprStr: "sum (some_metric) without (foo)"},
+			ExprExtensions: ExprExtensions{ExprStr: "sum (some_metric) without (foo)"},
 			Op:             SUM,
 			Without:        true,
 			Expr: &VectorSelector{
@@ -1921,7 +1921,7 @@ var testExpr = []struct {
 	}, {
 		input: "stddev(some_metric)",
 		expected: &AggregateExpr{
-			ExprExtensions: ExprExtensions{exprStr: "stddev(some_metric)"},
+			ExprExtensions: ExprExtensions{ExprStr: "stddev(some_metric)"},
 			Op:             STDDEV,
 			Expr: &VectorSelector{
 				Name: "some_metric",
@@ -1941,7 +1941,7 @@ var testExpr = []struct {
 	}, {
 		input: "stdvar by (foo)(some_metric)",
 		expected: &AggregateExpr{
-			ExprExtensions: ExprExtensions{exprStr: "stdvar by (foo)(some_metric)"},
+			ExprExtensions: ExprExtensions{ExprStr: "stdvar by (foo)(some_metric)"},
 			Op:             STDVAR,
 			Expr: &VectorSelector{
 				Name: "some_metric",
@@ -1962,7 +1962,7 @@ var testExpr = []struct {
 	}, {
 		input: "sum by ()(some_metric)",
 		expected: &AggregateExpr{
-			ExprExtensions: ExprExtensions{exprStr: "sum by ()(some_metric)"},
+			ExprExtensions: ExprExtensions{ExprStr: "sum by ()(some_metric)"},
 			Op:             SUM,
 			Expr: &VectorSelector{
 				Name: "some_metric",
@@ -1983,7 +1983,7 @@ var testExpr = []struct {
 	}, {
 		input: "sum by (foo,bar,)(some_metric)",
 		expected: &AggregateExpr{
-			ExprExtensions: ExprExtensions{exprStr: "sum by (foo,bar,)(some_metric)"},
+			ExprExtensions: ExprExtensions{ExprStr: "sum by (foo,bar,)(some_metric)"},
 			Op:             SUM,
 			Expr: &VectorSelector{
 				Name: "some_metric",
@@ -2004,7 +2004,7 @@ var testExpr = []struct {
 	}, {
 		input: "sum by (foo,)(some_metric)",
 		expected: &AggregateExpr{
-			ExprExtensions: ExprExtensions{exprStr: "sum by (foo,)(some_metric)"},
+			ExprExtensions: ExprExtensions{ExprStr: "sum by (foo,)(some_metric)"},
 			Op:             SUM,
 			Expr: &VectorSelector{
 				Name: "some_metric",
@@ -2025,7 +2025,7 @@ var testExpr = []struct {
 	}, {
 		input: "topk(5, some_metric)",
 		expected: &AggregateExpr{
-			ExprExtensions: ExprExtensions{exprStr: "topk(5, some_metric)"},
+			ExprExtensions: ExprExtensions{ExprStr: "topk(5, some_metric)"},
 			Op:             TOPK,
 			Expr: &VectorSelector{
 				Name: "some_metric",
@@ -2052,7 +2052,7 @@ var testExpr = []struct {
 	}, {
 		input: `count_values("value", some_metric)`,
 		expected: &AggregateExpr{
-			ExprExtensions: ExprExtensions{exprStr: `count_values("value", some_metric)`},
+			ExprExtensions: ExprExtensions{ExprStr: `count_values("value", some_metric)`},
 			Op:             COUNT_VALUES,
 			Expr: &VectorSelector{
 				Name: "some_metric",
@@ -2080,7 +2080,7 @@ var testExpr = []struct {
 		// Test usage of keywords as label names.
 		input: "sum without(and, by, avg, count, alert, annotations)(some_metric)",
 		expected: &AggregateExpr{
-			ExprExtensions: ExprExtensions{exprStr: "sum without(and, by, avg, count, alert, annotations)(some_metric)"},
+			ExprExtensions: ExprExtensions{ExprStr: "sum without(and, by, avg, count, alert, annotations)(some_metric)"},
 			Op:             SUM,
 			Without:        true,
 			Expr: &VectorSelector{
@@ -2164,7 +2164,7 @@ var testExpr = []struct {
 	{
 		input: "time()",
 		expected: &Call{
-			ExprExtensions: ExprExtensions{exprStr: "time()"},
+			ExprExtensions: ExprExtensions{ExprStr: "time()"},
 			Func:           mustGetFunction("time"),
 			Args:           Expressions{},
 			PosRange: PositionRange{
@@ -2175,7 +2175,7 @@ var testExpr = []struct {
 	}, {
 		input: `floor(some_metric{foo!="bar"})`,
 		expected: &Call{
-			ExprExtensions: ExprExtensions{exprStr: `floor(some_metric{foo!="bar"})`},
+			ExprExtensions: ExprExtensions{ExprStr: `floor(some_metric{foo!="bar"})`},
 			Func:           mustGetFunction("floor"),
 			Args: Expressions{
 				&VectorSelector{
@@ -2198,7 +2198,7 @@ var testExpr = []struct {
 	}, {
 		input: "rate(some_metric[5m])",
 		expected: &Call{
-			ExprExtensions: ExprExtensions{exprStr: "rate(some_metric[5m])"},
+			ExprExtensions: ExprExtensions{ExprStr: "rate(some_metric[5m])"},
 			Func:           mustGetFunction("rate"),
 			Args: Expressions{
 				&MatrixSelector{
@@ -2224,7 +2224,7 @@ var testExpr = []struct {
 	}, {
 		input: "round(some_metric)",
 		expected: &Call{
-			ExprExtensions: ExprExtensions{exprStr: "round(some_metric)"},
+			ExprExtensions: ExprExtensions{ExprStr: "round(some_metric)"},
 			Func:           mustGetFunction("round"),
 			Args: Expressions{
 				&VectorSelector{
@@ -2246,7 +2246,7 @@ var testExpr = []struct {
 	}, {
 		input: "round(some_metric, 5)",
 		expected: &Call{
-			ExprExtensions: ExprExtensions{exprStr: "round(some_metric, 5)"},
+			ExprExtensions: ExprExtensions{ExprStr: "round(some_metric, 5)"},
 			Func:           mustGetFunction("round"),
 			Args: Expressions{
 				&VectorSelector{
@@ -2333,7 +2333,7 @@ var testExpr = []struct {
 	}, {
 		input: "sum(sum)",
 		expected: &AggregateExpr{
-			ExprExtensions: ExprExtensions{exprStr: "sum(sum)"},
+			ExprExtensions: ExprExtensions{ExprStr: "sum(sum)"},
 			Op:             SUM,
 			Expr: &VectorSelector{
 				Name: "sum",
@@ -2353,7 +2353,7 @@ var testExpr = []struct {
 	}, {
 		input: "a + sum",
 		expected: &BinaryExpr{
-			ExprExtensions: ExprExtensions{exprStr: "a + sum"},
+			ExprExtensions: ExprExtensions{ExprStr: "a + sum"},
 			Op:             ADD,
 			LHS: &VectorSelector{
 				Name: "a",
@@ -2382,42 +2382,42 @@ var testExpr = []struct {
 	{
 		input: `"double-quoted string \" with escaped quote"`,
 		expected: &StringLiteral{
-			ExprExtensions: ExprExtensions{exprStr: `"double-quoted string \" with escaped quote"`},
+			ExprExtensions: ExprExtensions{ExprStr: `"double-quoted string \" with escaped quote"`},
 			Val:            "double-quoted string \" with escaped quote",
 			PosRange:       PositionRange{Start: 0, End: 44},
 		},
 	}, {
 		input: `'single-quoted string \' with escaped quote'`,
 		expected: &StringLiteral{
-			ExprExtensions: ExprExtensions{exprStr: `'single-quoted string \' with escaped quote'`},
+			ExprExtensions: ExprExtensions{ExprStr: `'single-quoted string \' with escaped quote'`},
 			Val:            "single-quoted string ' with escaped quote",
 			PosRange:       PositionRange{Start: 0, End: 44},
 		},
 	}, {
 		input: "`backtick-quoted string`",
 		expected: &StringLiteral{
-			ExprExtensions: ExprExtensions{exprStr: "`backtick-quoted string`"},
+			ExprExtensions: ExprExtensions{ExprStr: "`backtick-quoted string`"},
 			Val:            "backtick-quoted string",
 			PosRange:       PositionRange{Start: 0, End: 24},
 		},
 	}, {
 		input: `"\a\b\f\n\r\t\v\\\" - \xFF\377\u1234\U00010111\U0001011111☺"`,
 		expected: &StringLiteral{
-			ExprExtensions: ExprExtensions{exprStr: `"\a\b\f\n\r\t\v\\\" - \xFF\377\u1234\U00010111\U0001011111☺"`},
+			ExprExtensions: ExprExtensions{ExprStr: `"\a\b\f\n\r\t\v\\\" - \xFF\377\u1234\U00010111\U0001011111☺"`},
 			Val:            "\a\b\f\n\r\t\v\\\" - \xFF\377\u1234\U00010111\U0001011111☺",
 			PosRange:       PositionRange{Start: 0, End: 62},
 		},
 	}, {
 		input: `'\a\b\f\n\r\t\v\\\' - \xFF\377\u1234\U00010111\U0001011111☺'`,
 		expected: &StringLiteral{
-			ExprExtensions: ExprExtensions{exprStr: `'\a\b\f\n\r\t\v\\\' - \xFF\377\u1234\U00010111\U0001011111☺'`},
+			ExprExtensions: ExprExtensions{ExprStr: `'\a\b\f\n\r\t\v\\\' - \xFF\377\u1234\U00010111\U0001011111☺'`},
 			Val:            "\a\b\f\n\r\t\v\\' - \xFF\377\u1234\U00010111\U0001011111☺",
 			PosRange:       PositionRange{Start: 0, End: 62},
 		},
 	}, {
 		input: "`" + `\a\b\f\n\r\t\v\\\"\' - \xFF\377\u1234\U00010111\U0001011111☺` + "`",
 		expected: &StringLiteral{
-			ExprExtensions: ExprExtensions{exprStr: "`" + `\a\b\f\n\r\t\v\\\"\' - \xFF\377\u1234\U00010111\U0001011111☺` + "`"},
+			ExprExtensions: ExprExtensions{ExprStr: "`" + `\a\b\f\n\r\t\v\\\"\' - \xFF\377\u1234\U00010111\U0001011111☺` + "`"},
 			Val:            `\a\b\f\n\r\t\v\\\"\' - \xFF\377\u1234\U00010111\U0001011111☺`,
 			PosRange:       PositionRange{Start: 0, End: 64},
 		},
@@ -2444,7 +2444,7 @@ var testExpr = []struct {
 	{
 		input: `foo{bar="baz"}[10m:6s]`,
 		expected: &SubqueryExpr{
-			ExprExtensions: ExprExtensions{exprStr: `foo{bar="baz"}[10m:6s]`},
+			ExprExtensions: ExprExtensions{ExprStr: `foo{bar="baz"}[10m:6s]`},
 			Expr: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
@@ -2464,7 +2464,7 @@ var testExpr = []struct {
 	{
 		input: `foo{bar="baz"}[10m5s:1h6ms]`,
 		expected: &SubqueryExpr{
-			ExprExtensions: ExprExtensions{exprStr: `foo{bar="baz"}[10m5s:1h6ms]`},
+			ExprExtensions: ExprExtensions{ExprStr: `foo{bar="baz"}[10m5s:1h6ms]`},
 			Expr: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
@@ -2483,7 +2483,7 @@ var testExpr = []struct {
 	}, {
 		input: `foo[10m:]`,
 		expected: &SubqueryExpr{
-			ExprExtensions: ExprExtensions{exprStr: `foo[10m:]`},
+			ExprExtensions: ExprExtensions{ExprStr: `foo[10m:]`},
 			Expr: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
@@ -2500,7 +2500,7 @@ var testExpr = []struct {
 	}, {
 		input: `min_over_time(rate(foo{bar="baz"}[2s])[5m:5s])`,
 		expected: &Call{
-			ExprExtensions: ExprExtensions{exprStr: `min_over_time(rate(foo{bar="baz"}[2s])[5m:5s])`},
+			ExprExtensions: ExprExtensions{ExprStr: `min_over_time(rate(foo{bar="baz"}[2s])[5m:5s])`},
 			Func:           mustGetFunction("min_over_time"),
 			Args: Expressions{
 				&SubqueryExpr{
@@ -2542,7 +2542,7 @@ var testExpr = []struct {
 	}, {
 		input: `min_over_time(rate(foo{bar="baz"}[2s])[5m:])[4m:3s]`,
 		expected: &SubqueryExpr{
-			ExprExtensions: ExprExtensions{exprStr: `min_over_time(rate(foo{bar="baz"}[2s])[5m:])[4m:3s]`},
+			ExprExtensions: ExprExtensions{ExprStr: `min_over_time(rate(foo{bar="baz"}[2s])[5m:])[4m:3s]`},
 			Expr: &Call{
 				Func: mustGetFunction("min_over_time"),
 				Args: Expressions{
@@ -2587,7 +2587,7 @@ var testExpr = []struct {
 	}, {
 		input: `min_over_time(rate(foo{bar="baz"}[2s])[5m:] offset 4m)[4m:3s]`,
 		expected: &SubqueryExpr{
-			ExprExtensions: ExprExtensions{exprStr: `min_over_time(rate(foo{bar="baz"}[2s])[5m:] offset 4m)[4m:3s]`},
+			ExprExtensions: ExprExtensions{ExprStr: `min_over_time(rate(foo{bar="baz"}[2s])[5m:] offset 4m)[4m:3s]`},
 			Expr: &Call{
 				Func: mustGetFunction("min_over_time"),
 				Args: Expressions{
@@ -2633,7 +2633,7 @@ var testExpr = []struct {
 	}, {
 		input: "sum without(and, by, avg, count, alert, annotations)(some_metric) [30m:10s]",
 		expected: &SubqueryExpr{
-			ExprExtensions: ExprExtensions{exprStr: `sum without(and, by, avg, count, alert, annotations)(some_metric) [30m:10s]`},
+			ExprExtensions: ExprExtensions{ExprStr: `sum without(and, by, avg, count, alert, annotations)(some_metric) [30m:10s]`},
 			Expr: &AggregateExpr{
 				Op:      SUM,
 				Without: true,
@@ -2660,7 +2660,7 @@ var testExpr = []struct {
 	}, {
 		input: `some_metric OFFSET 1m [10m:5s]`,
 		expected: &SubqueryExpr{
-			ExprExtensions: ExprExtensions{exprStr: `some_metric OFFSET 1m [10m:5s]`},
+			ExprExtensions: ExprExtensions{ExprStr: `some_metric OFFSET 1m [10m:5s]`},
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
@@ -2679,7 +2679,7 @@ var testExpr = []struct {
 	}, {
 		input: `(foo + bar{nm="val"})[5m:]`,
 		expected: &SubqueryExpr{
-			ExprExtensions: ExprExtensions{exprStr: `(foo + bar{nm="val"})[5m:]`},
+			ExprExtensions: ExprExtensions{ExprStr: `(foo + bar{nm="val"})[5m:]`},
 			Expr: &ParenExpr{
 				Expr: &BinaryExpr{
 					Op: ADD,
@@ -2719,7 +2719,7 @@ var testExpr = []struct {
 	}, {
 		input: `(foo + bar{nm="val"})[5m:] offset 10m`,
 		expected: &SubqueryExpr{
-			ExprExtensions: ExprExtensions{exprStr: `(foo + bar{nm="val"})[5m:] offset 10m`},
+			ExprExtensions: ExprExtensions{ExprStr: `(foo + bar{nm="val"})[5m:] offset 10m`},
 			Expr: &ParenExpr{
 				Expr: &BinaryExpr{
 					Op: ADD,

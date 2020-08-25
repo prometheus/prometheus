@@ -1343,7 +1343,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 							alertingRule{
 								State:       "inactive",
 								Name:        "test_metric3",
-								Query:       "absent(test_metric3) != 1",
+								Query:       "absent(test_metric3)!=1",
 								Duration:    1,
 								Labels:      labels.Labels{},
 								Annotations: labels.Labels{},
@@ -1354,7 +1354,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 							alertingRule{
 								State:       "inactive",
 								Name:        "test_metric4",
-								Query:       "up == 1",
+								Query:       "up==1",
 								Duration:    1,
 								Labels:      labels.Labels{},
 								Annotations: labels.Labels{},
@@ -1389,7 +1389,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 							alertingRule{
 								State:       "inactive",
 								Name:        "test_metric3",
-								Query:       "absent(test_metric3) != 1",
+								Query:       "absent(test_metric3)!=1",
 								Duration:    1,
 								Labels:      labels.Labels{},
 								Annotations: labels.Labels{},
@@ -1400,7 +1400,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 							alertingRule{
 								State:       "inactive",
 								Name:        "test_metric4",
-								Query:       "up == 1",
+								Query:       "up==1",
 								Duration:    1,
 								Labels:      labels.Labels{},
 								Annotations: labels.Labels{},
