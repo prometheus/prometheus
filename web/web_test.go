@@ -15,6 +15,7 @@ package web
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -23,6 +24,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -209,6 +211,7 @@ func TestReadyAndHealthy(t *testing.T) {
 	resp, err = http.Post("http://localhost:9090/api/v2/admin/tsdb/snapshot", "", strings.NewReader(""))
 	testutil.Ok(t, err)
 	testutil.Equals(t, http.StatusOK, resp.StatusCode)
+	cleanupSnapshot(t, resp)
 	cleanupTestResponse(t, resp)
 
 	resp, err = http.Post("http://localhost:9090/api/v2/admin/tsdb/delete_series", "", strings.NewReader("{}"))
@@ -308,6 +311,7 @@ func TestRoutePrefix(t *testing.T) {
 	resp, err = http.Post("http://localhost:9091"+opts.RoutePrefix+"/api/v2/admin/tsdb/snapshot", "", strings.NewReader(""))
 	testutil.Ok(t, err)
 	testutil.Equals(t, http.StatusOK, resp.StatusCode)
+	cleanupSnapshot(t, resp)
 	cleanupTestResponse(t, resp)
 
 	resp, err = http.Post("http://localhost:9091"+opts.RoutePrefix+"/api/v2/admin/tsdb/delete_series", "", strings.NewReader("{}"))
@@ -462,4 +466,16 @@ func cleanupTestResponse(t *testing.T, resp *http.Response) {
 	_, err := io.Copy(ioutil.Discard, resp.Body)
 	testutil.Ok(t, err)
 	testutil.Ok(t, resp.Body.Close())
+}
+
+func cleanupSnapshot(t *testing.T, resp *http.Response) {
+	snapshot := &struct {
+		Name string `json:name`
+	}{}
+	b, err := ioutil.ReadAll(resp.Body)
+	testutil.Ok(t, err)
+	testutil.Ok(t, json.Unmarshal(b, snapshot))
+	testutil.Assert(t, snapshot.Name != "", "snapshot directory not returned")
+	testutil.Ok(t, os.Remove(filepath.Join("snapshots", snapshot.Name)))
+	os.Remove("snapshots") // We do not check for err here to prevent existing setups to fail.
 }
