@@ -41,7 +41,7 @@ describe('targetLabels', () => {
     const tooltip = targetLabels.find(Tooltip);
     expect(tooltip).toHaveLength(1);
     expect(tooltip.prop('isOpen')).toBe(false);
-    expect(tooltip.prop('target')).toEqual('series-labels-cortex/node-exporter_group/0-1');
+    expect(tooltip.prop('target')).toEqual('series-labels-cortex\\/node-exporter_group\\/0-1');
   });
 
   it('renders discovered labels', () => {

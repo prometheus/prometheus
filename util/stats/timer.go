@@ -24,7 +24,7 @@ import (
 // was running (the time between Start() and Stop()).
 type Timer struct {
 	name     fmt.Stringer
-	created  time.Time
+	created  int
 	start    time.Time
 	duration time.Duration
 }
@@ -72,7 +72,7 @@ func (t *TimerGroup) GetTimer(name fmt.Stringer) *Timer {
 	}
 	timer := &Timer{
 		name:    name,
-		created: time.Now(),
+		created: len(t.timers),
 	}
 	t.timers[name] = timer
 	return timer
@@ -95,7 +95,7 @@ func (t Timers) Swap(i, j int) {
 }
 
 func (s byCreationTimeSorter) Less(i, j int) bool {
-	return s.Timers[i].created.Before(s.Timers[j].created)
+	return s.Timers[i].created < s.Timers[j].created
 }
 
 // Return a string representation of a TimerGroup.

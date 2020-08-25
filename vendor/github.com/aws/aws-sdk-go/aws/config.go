@@ -43,7 +43,7 @@ type Config struct {
 
 	// An optional endpoint URL (hostname only or fully qualified URI)
 	// that overrides the default generated endpoint for a client. Set this
-	// to `""` to use the default generated endpoint.
+	// to `nil` or the value to `""` to use the default generated endpoint.
 	//
 	// Note: You must still provide a `Region` value when specifying an
 	// endpoint for a client.
@@ -138,7 +138,7 @@ type Config struct {
 	// `ExpectContinueTimeout` for information on adjusting the continue wait
 	// timeout. https://golang.org/pkg/net/http/#Transport
 	//
-	// You should use this flag to disble 100-Continue if you experience issues
+	// You should use this flag to disable 100-Continue if you experience issues
 	// with proxies or third party S3 compatible services.
 	S3Disable100Continue *bool
 
@@ -165,6 +165,13 @@ type Config struct {
 	// in the ARN, when an ARN is provided as an argument to a bucket parameter.
 	S3UseARNRegion *bool
 
+	// Set this to `true` to enable the SDK to unmarshal API response header maps to
+	// normalized lower case map keys.
+	//
+	// For example S3's X-Amz-Meta prefixed header will be unmarshaled to lower case
+	// Metadata member's map keys. The value of the header in the map is unaffected.
+	LowerCaseHeaderMaps *bool
+
 	// Set this to `true` to disable the EC2Metadata client from overriding the
 	// default http.Client's Timeout. This is helpful if you do not want the
 	// EC2Metadata client to create a new http.Client. This options is only
@@ -176,7 +183,7 @@ type Config struct {
 	//
 	// Example:
 	//    sess := session.Must(session.NewSession(aws.NewConfig()
-	//       .WithEC2MetadataDiableTimeoutOverride(true)))
+	//       .WithEC2MetadataDisableTimeoutOverride(true)))
 	//
 	//    svc := s3.New(sess)
 	//
@@ -187,7 +194,7 @@ type Config struct {
 	// both IPv4 and IPv6 addressing.
 	//
 	// Setting this for a service which does not support dual stack will fail
-	// to make requets. It is not recommended to set this value on the session
+	// to make requests. It is not recommended to set this value on the session
 	// as it will apply to all service clients created with the session. Even
 	// services which don't support dual stack endpoints.
 	//
@@ -231,6 +238,7 @@ type Config struct {
 
 	// EnableEndpointDiscovery will allow for endpoint discovery on operations that
 	// have the definition in its model. By default, endpoint discovery is off.
+	// To use EndpointDiscovery, Endpoint should be unset or set to an empty string.
 	//
 	// Example:
 	//    sess := session.Must(session.NewSession(&aws.Config{

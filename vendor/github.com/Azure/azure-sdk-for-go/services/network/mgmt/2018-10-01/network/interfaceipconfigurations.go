@@ -35,7 +35,9 @@ func NewInterfaceIPConfigurationsClient(subscriptionID string) InterfaceIPConfig
 	return NewInterfaceIPConfigurationsClientWithBaseURI(DefaultBaseURI, subscriptionID)
 }
 
-// NewInterfaceIPConfigurationsClientWithBaseURI creates an instance of the InterfaceIPConfigurationsClient client.
+// NewInterfaceIPConfigurationsClientWithBaseURI creates an instance of the InterfaceIPConfigurationsClient client
+// using a custom endpoint.  Use this when interacting with an Azure cloud that uses a non-standard base URI (sovereign
+// clouds, Azure stack).
 func NewInterfaceIPConfigurationsClientWithBaseURI(baseURI string, subscriptionID string) InterfaceIPConfigurationsClient {
 	return InterfaceIPConfigurationsClient{NewWithBaseURI(baseURI, subscriptionID)}
 }
@@ -102,8 +104,7 @@ func (client InterfaceIPConfigurationsClient) GetPreparer(ctx context.Context, r
 // GetSender sends the Get request. The method will close the
 // http.Response Body if it receives an error.
 func (client InterfaceIPConfigurationsClient) GetSender(req *http.Request) (*http.Response, error) {
-	return autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // GetResponder handles the response to the Get request. The method always
@@ -111,7 +112,6 @@ func (client InterfaceIPConfigurationsClient) GetSender(req *http.Request) (*htt
 func (client InterfaceIPConfigurationsClient) GetResponder(resp *http.Response) (result InterfaceIPConfiguration, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -152,6 +152,9 @@ func (client InterfaceIPConfigurationsClient) List(ctx context.Context, resource
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.InterfaceIPConfigurationsClient", "List", resp, "Failure responding to request")
 	}
+	if result.iiclr.hasNextLink() && result.iiclr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }
@@ -180,8 +183,7 @@ func (client InterfaceIPConfigurationsClient) ListPreparer(ctx context.Context, 
 // ListSender sends the List request. The method will close the
 // http.Response Body if it receives an error.
 func (client InterfaceIPConfigurationsClient) ListSender(req *http.Request) (*http.Response, error) {
-	return autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListResponder handles the response to the List request. The method always
@@ -189,7 +191,6 @@ func (client InterfaceIPConfigurationsClient) ListSender(req *http.Request) (*ht
 func (client InterfaceIPConfigurationsClient) ListResponder(resp *http.Response) (result InterfaceIPConfigurationListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

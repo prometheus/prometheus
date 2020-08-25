@@ -20,7 +20,7 @@ func (r *Registry) loadServices(file *File) error {
 	for _, sd := range file.GetService() {
 		glog.V(2).Infof("Registering %s", sd.GetName())
 		svc := &Service{
-			File: file,
+			File:                   file,
 			ServiceDescriptorProto: sd,
 		}
 		for _, md := range sd.GetMethod() {
@@ -35,7 +35,7 @@ func (r *Registry) loadServices(file *File) error {
 				optsList = append(optsList, opts)
 			}
 			if len(optsList) == 0 {
-				glog.V(1).Infof("Found non-target method: %s.%s", svc.GetName(), md.GetName())
+				glog.Warningf("No HttpRule found for method: %s.%s", svc.GetName(), md.GetName())
 			}
 			meth, err := r.newMethod(svc, md, optsList)
 			if err != nil {

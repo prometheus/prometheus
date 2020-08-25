@@ -86,6 +86,7 @@ func newExtJSONParser(r io.Reader, canonical bool) *extJSONParser {
 func (ejp *extJSONParser) peekType() (bsontype.Type, error) {
 	var t bsontype.Type
 	var err error
+	initialState := ejp.s
 
 	ejp.advanceState()
 	switch ejp.s {
@@ -113,12 +114,15 @@ func (ejp *extJSONParser) peekType() (bsontype.Type, error) {
 		case jpsInvalidState:
 			err = ejp.err
 		case jpsSawKey:
+			if initialState == jpsStartState {
+				return bsontype.EmbeddedDocument, nil
+			}
 			t = wrapperKeyBSONType(ejp.k)
 
-			if t == bsontype.JavaScript {
+			switch t {
+			case bsontype.JavaScript:
 				// just saw $code, need to check for $scope at same level
-				_, err := ejp.readValue(bsontype.JavaScript)
-
+				_, err = ejp.readValue(bsontype.JavaScript)
 				if err != nil {
 					break
 				}
@@ -127,6 +131,7 @@ func (ejp *extJSONParser) peekType() (bsontype.Type, error) {
 				case jpsSawEndObject: // type is TypeJavaScript
 				case jpsSawComma:
 					ejp.advanceState()
+
 					if ejp.s == jpsSawKey && ejp.k == "$scope" {
 						t = bsontype.CodeWithScope
 					} else {
@@ -137,6 +142,8 @@ func (ejp *extJSONParser) peekType() (bsontype.Type, error) {
 				default:
 					err = ErrInvalidJSON
 				}
+			case bsontype.CodeWithScope:
+				err = errors.New("invalid extended JSON: code with $scope must contain $code before $scope")
 			}
 		}
 	}

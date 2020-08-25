@@ -1,5 +1,10 @@
 package api
 
+import (
+	"net"
+	"strconv"
+)
+
 type Weights struct {
 	Passing int
 	Warning int
@@ -16,6 +21,11 @@ type Node struct {
 	ModifyIndex     uint64
 }
 
+type ServiceAddress struct {
+	Address string
+	Port    int
+}
+
 type CatalogService struct {
 	ID                       string
 	Node                     string
@@ -26,22 +36,27 @@ type CatalogService struct {
 	ServiceID                string
 	ServiceName              string
 	ServiceAddress           string
+	ServiceTaggedAddresses   map[string]ServiceAddress
 	ServiceTags              []string
 	ServiceMeta              map[string]string
 	ServicePort              int
 	ServiceWeights           Weights
 	ServiceEnableTagOverride bool
-	// DEPRECATED (ProxyDestination) - remove the next comment!
-	// We forgot to ever add ServiceProxyDestination here so no need to deprecate!
-	ServiceProxy *AgentServiceConnectProxyConfig
-	CreateIndex  uint64
-	Checks       HealthChecks
-	ModifyIndex  uint64
+	ServiceProxy             *AgentServiceConnectProxyConfig
+	CreateIndex              uint64
+	Checks                   HealthChecks
+	ModifyIndex              uint64
+	Namespace                string `json:",omitempty"`
 }
 
 type CatalogNode struct {
 	Node     *Node
 	Services map[string]*AgentService
+}
+
+type CatalogNodeServiceList struct {
+	Node     *Node
+	Services []*AgentService
 }
 
 type CatalogRegistration struct {
@@ -59,10 +74,34 @@ type CatalogRegistration struct {
 
 type CatalogDeregistration struct {
 	Node       string
-	Address    string // Obsolete.
+	Address    string `json:",omitempty"` // Obsolete.
 	Datacenter string
 	ServiceID  string
 	CheckID    string
+	Namespace  string `json:",omitempty"`
+}
+
+type CompoundServiceName struct {
+	Name string
+
+	// Namespacing is a Consul Enterprise feature.
+	Namespace string `json:",omitempty"`
+}
+
+// GatewayService associates a gateway with a linked service.
+// It also contains service-specific gateway configuration like ingress listener port and protocol.
+type GatewayService struct {
+	Gateway      CompoundServiceName
+	Service      CompoundServiceName
+	GatewayKind  ServiceKind
+	Port         int      `json:",omitempty"`
+	Protocol     string   `json:",omitempty"`
+	Hosts        []string `json:",omitempty"`
+	CAFile       string   `json:",omitempty"`
+	CertFile     string   `json:",omitempty"`
+	KeyFile      string   `json:",omitempty"`
+	SNI          string   `json:",omitempty"`
+	FromWildcard bool     `json:",omitempty"`
 }
 
 // Catalog can be used to query the Catalog endpoints
@@ -241,4 +280,58 @@ func (c *Catalog) Node(node string, q *QueryOptions) (*CatalogNode, *QueryMeta, 
 		return nil, nil, err
 	}
 	return out, qm, nil
+}
+
+// NodeServiceList is used to query for service information about a single node. It differs from
+// the Node function only in its return type which will contain a list of services as opposed to
+// a map of service ids to services. This different structure allows for using the wildcard specifier
+// '*' for the Namespace in the QueryOptions.
+func (c *Catalog) NodeServiceList(node string, q *QueryOptions) (*CatalogNodeServiceList, *QueryMeta, error) {
+	r := c.c.newRequest("GET", "/v1/catalog/node-services/"+node)
+	r.setQueryOptions(q)
+	rtt, resp, err := requireOK(c.c.doRequest(r))
+	if err != nil {
+		return nil, nil, err
+	}
+	defer resp.Body.Close()
+
+	qm := &QueryMeta{}
+	parseQueryMeta(resp, qm)
+	qm.RequestTime = rtt
+
+	var out *CatalogNodeServiceList
+	if err := decodeBody(resp, &out); err != nil {
+		return nil, nil, err
+	}
+	return out, qm, nil
+}
+
+// GatewayServices is used to query the services associated with an ingress gateway or terminating gateway.
+func (c *Catalog) GatewayServices(gateway string, q *QueryOptions) ([]*GatewayService, *QueryMeta, error) {
+	r := c.c.newRequest("GET", "/v1/catalog/gateway-services/"+gateway)
+	r.setQueryOptions(q)
+	rtt, resp, err := requireOK(c.c.doRequest(r))
+	if err != nil {
+		return nil, nil, err
+	}
+	defer resp.Body.Close()
+
+	qm := &QueryMeta{}
+	parseQueryMeta(resp, qm)
+	qm.RequestTime = rtt
+
+	var out []*GatewayService
+	if err := decodeBody(resp, &out); err != nil {
+		return nil, nil, err
+	}
+	return out, qm, nil
+}
+
+func ParseServiceAddr(addrPort string) (ServiceAddress, error) {
+	port := 0
+	host, portStr, err := net.SplitHostPort(addrPort)
+	if err == nil {
+		port, err = strconv.Atoi(portStr)
+	}
+	return ServiceAddress{Address: host, Port: port}, err
 }

@@ -6,11 +6,11 @@
 
 /prometheus
 /promtool
-/tsdb/tsdb
 benchmark.txt
 /data
 /cmd/prometheus/data
 /cmd/prometheus/debug
+/benchout
 
 !/.travis.yml
 !/.promu.yml

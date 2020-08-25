@@ -187,7 +187,7 @@
             },
             annotations: {
               summary: 'Prometheus fails to send samples to remote storage.',
-              description: 'Prometheus %(prometheusName)s failed to send {{ printf "%%.1f" $value }}%% of the samples to queue {{$labels.queue}}.' % $._config,
+              description: 'Prometheus %(prometheusName)s failed to send {{ printf "%%.1f" $value }}%% of the samples to {{ $labels.remote_name}}:{{ $labels.url }}' % $._config,
             },
           },
           {
@@ -208,7 +208,7 @@
             },
             annotations: {
               summary: 'Prometheus remote write is behind.',
-              description: 'Prometheus %(prometheusName)s remote write is {{ printf "%%.1f" $value }}s behind for queue {{$labels.queue}}.' % $._config,
+              description: 'Prometheus %(prometheusName)s remote write is {{ printf "%%.1f" $value }}s behind for {{ $labels.remote_name}}:{{ $labels.url }}.' % $._config,
             },
           },
           {
@@ -228,7 +228,7 @@
             },
             annotations: {
               summary: 'Prometheus remote write desired shards calculation wants to run more than configured max shards.',
-              description: 'Prometheus %(prometheusName)s remote write desired shards calculation wants to run {{ $value }} shards, which is more than the max of {{ printf `prometheus_remote_storage_shards_max{instance="%%s",%(prometheusSelector)s}` $labels.instance | query | first | value }}.' % $._config,
+              description: 'Prometheus %(prometheusName)s remote write desired shards calculation wants to run {{ $value }} shards for queue {{ $labels.remote_name}}:{{ $labels.url }}, which is more than the max of {{ printf `prometheus_remote_storage_shards_max{instance="%%s",%(prometheusSelector)s}` $labels.instance | query | first | value }}.' % $._config,
             },
           },
           {
@@ -257,6 +257,20 @@
             annotations: {
               summary: 'Prometheus is missing rule evaluations due to slow rule group evaluation.',
               description: 'Prometheus %(prometheusName)s has missed {{ printf "%%.0f" $value }} rule group evaluations in the last 5m.' % $._config,
+            },
+          },
+          {
+            alert: 'PrometheusTargetLimitHit',
+            expr: |||
+              increase(prometheus_target_scrape_pool_exceeded_target_limit_total{%(prometheusSelector)s}[5m]) > 0
+            ||| % $._config,
+            'for': '15m',
+            labels: {
+              severity: 'warning',
+            },
+            annotations: {
+              summary: 'Prometheus has dropped targets because some scrape configs have exceeded the targets limit.',
+              description: 'Prometheus %(prometheusName)s has dropped {{ printf "%%.0f" $value }} targets because the number of targets exceeded the configured target_limit.' % $._config,
             },
           },
         ],

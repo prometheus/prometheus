@@ -16,7 +16,6 @@ package tsdb
 import (
 	"context"
 	"encoding/binary"
-
 	"errors"
 	"hash/crc32"
 	"io/ioutil"
@@ -28,9 +27,11 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
+	"github.com/prometheus/prometheus/tsdb/wal"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -87,21 +88,22 @@ func TestCreateBlock(t *testing.T) {
 }
 
 func TestCorruptedChunk(t *testing.T) {
-	for name, test := range map[string]struct {
+	for _, tc := range []struct {
+		name     string
 		corrFunc func(f *os.File) // Func that applies the corruption.
 		openErr  error
-		queryErr error
+		iterErr  error
 	}{
-		"invalid header size": {
-			func(f *os.File) {
-				err := f.Truncate(1)
-				testutil.Ok(t, err)
+		{
+			name: "invalid header size",
+			corrFunc: func(f *os.File) {
+				testutil.Ok(t, f.Truncate(1))
 			},
-			errors.New("invalid segment header in segment 0: invalid size"),
-			nil,
+			openErr: errors.New("invalid segment header in segment 0: invalid size"),
 		},
-		"invalid magic number": {
-			func(f *os.File) {
+		{
+			name: "invalid magic number",
+			corrFunc: func(f *os.File) {
 				magicChunksOffset := int64(0)
 				_, err := f.Seek(magicChunksOffset, 0)
 				testutil.Ok(t, err)
@@ -113,11 +115,11 @@ func TestCorruptedChunk(t *testing.T) {
 				testutil.Ok(t, err)
 				testutil.Equals(t, chunks.MagicChunksSize, n)
 			},
-			errors.New("invalid magic number 0"),
-			nil,
+			openErr: errors.New("invalid magic number 0"),
 		},
-		"invalid chunk format version": {
-			func(f *os.File) {
+		{
+			name: "invalid chunk format version",
+			corrFunc: func(f *os.File) {
 				chunksFormatVersionOffset := int64(4)
 				_, err := f.Seek(chunksFormatVersionOffset, 0)
 				testutil.Ok(t, err)
@@ -129,31 +131,28 @@ func TestCorruptedChunk(t *testing.T) {
 				testutil.Ok(t, err)
 				testutil.Equals(t, chunks.ChunksFormatVersionSize, n)
 			},
-			errors.New("invalid chunk format version 0"),
-			nil,
+			openErr: errors.New("invalid chunk format version 0"),
 		},
-		"chunk not enough bytes to read the chunk length": {
-			func(f *os.File) {
+		{
+			name: "chunk not enough bytes to read the chunk length",
+			corrFunc: func(f *os.File) {
 				// Truncate one byte after the segment header.
-				err := f.Truncate(chunks.SegmentHeaderSize + 1)
-				testutil.Ok(t, err)
+				testutil.Ok(t, f.Truncate(chunks.SegmentHeaderSize+1))
 			},
-			nil,
-			errors.New("segment doesn't include enough bytes to read the chunk size data field - required:13, available:9"),
+			iterErr: errors.New("cannot populate chunk 8: segment doesn't include enough bytes to read the chunk size data field - required:13, available:9"),
 		},
-		"chunk not enough bytes to read the data": {
-			func(f *os.File) {
+		{
+			name: "chunk not enough bytes to read the data",
+			corrFunc: func(f *os.File) {
 				fi, err := f.Stat()
 				testutil.Ok(t, err)
-
-				err = f.Truncate(fi.Size() - 1)
-				testutil.Ok(t, err)
+				testutil.Ok(t, f.Truncate(fi.Size()-1))
 			},
-			nil,
-			errors.New("segment doesn't include enough bytes to read the chunk - required:26, available:25"),
+			iterErr: errors.New("cannot populate chunk 8: segment doesn't include enough bytes to read the chunk - required:26, available:25"),
 		},
-		"checksum mismatch": {
-			func(f *os.File) {
+		{
+			name: "checksum mismatch",
+			corrFunc: func(f *os.File) {
 				fi, err := f.Stat()
 				testutil.Ok(t, err)
 
@@ -167,19 +166,18 @@ func TestCorruptedChunk(t *testing.T) {
 				testutil.Ok(t, err)
 				testutil.Equals(t, n, 1)
 			},
-			nil,
-			errors.New("checksum mismatch expected:cfc0526c, actual:34815eae"),
+			iterErr: errors.New("cannot populate chunk 8: checksum mismatch expected:cfc0526c, actual:34815eae"),
 		},
 	} {
-		t.Run(name, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			tmpdir, err := ioutil.TempDir("", "test_open_block_chunk_corrupted")
 			testutil.Ok(t, err)
 			defer func() {
 				testutil.Ok(t, os.RemoveAll(tmpdir))
 			}()
 
-			series := newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{sample{1, 1}})
-			blockDir := createBlock(t, tmpdir, []Series{series})
+			series := storage.NewListSeries(labels.FromStrings("a", "b"), []tsdbutil.Sample{sample{1, 1}})
+			blockDir := createBlock(t, tmpdir, []storage.Series{series})
 			files, err := sequenceFiles(chunkDir(blockDir))
 			testutil.Ok(t, err)
 			testutil.Assert(t, len(files) > 0, "No chunk created.")
@@ -188,24 +186,27 @@ func TestCorruptedChunk(t *testing.T) {
 			testutil.Ok(t, err)
 
 			// Apply corruption function.
-			test.corrFunc(f)
+			tc.corrFunc(f)
 			testutil.Ok(t, f.Close())
 
 			// Check open err.
 			b, err := OpenBlock(nil, blockDir, nil)
-			if test.openErr != nil {
-				testutil.Equals(t, test.openErr.Error(), err.Error())
+			if tc.openErr != nil {
+				testutil.Equals(t, tc.openErr.Error(), err.Error())
 				return
 			}
+			defer func() { testutil.Ok(t, b.Close()) }()
 
 			querier, err := NewBlockQuerier(b, 0, 1)
 			testutil.Ok(t, err)
-			set, err := querier.Select(labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
-			testutil.Ok(t, err)
+			defer func() { testutil.Ok(t, querier.Close()) }()
+			set := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 
-			// Check query err.
-			testutil.Equals(t, false, set.Next())
-			testutil.Equals(t, test.queryErr.Error(), set.Err().Error())
+			// Check chunk errors during iter time.
+			testutil.Assert(t, set.Next(), "")
+			it := set.At().Iterator()
+			testutil.Equals(t, false, it.Next())
+			testutil.Equals(t, tc.iterErr.Error(), it.Err().Error())
 		})
 	}
 }
@@ -264,9 +265,49 @@ func TestBlockSize(t *testing.T) {
 	}
 }
 
+func TestReadIndexFormatV1(t *testing.T) {
+	/* The block here was produced at the commit
+	    706602daed1487f7849990678b4ece4599745905 used in 2.0.0 with:
+	   db, _ := Open("v1db", nil, nil, nil)
+	   app := db.Appender()
+	   app.Add(labels.FromStrings("foo", "bar"), 1, 2)
+	   app.Add(labels.FromStrings("foo", "baz"), 3, 4)
+	   app.Add(labels.FromStrings("foo", "meh"), 1000*3600*4, 4) // Not in the block.
+	   // Make sure we've enough values for the lack of sorting of postings offsets to show up.
+	   for i := 0; i < 100; i++ {
+	     app.Add(labels.FromStrings("bar", strconv.FormatInt(int64(i), 10)), 0, 0)
+	   }
+	   app.Commit()
+	   db.compact()
+	   db.Close()
+	*/
+
+	blockDir := filepath.Join("testdata", "index_format_v1")
+	block, err := OpenBlock(nil, blockDir, nil)
+	testutil.Ok(t, err)
+
+	q, err := NewBlockQuerier(block, 0, 1000)
+	testutil.Ok(t, err)
+	testutil.Equals(t, query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")),
+		map[string][]tsdbutil.Sample{`{foo="bar"}`: {sample{t: 1, v: 2}}})
+
+	q, err = NewBlockQuerier(block, 0, 1000)
+	testutil.Ok(t, err)
+	testutil.Equals(t, query(t, q, labels.MustNewMatcher(labels.MatchNotRegexp, "foo", "^.?$")),
+		map[string][]tsdbutil.Sample{
+			`{foo="bar"}`: {sample{t: 1, v: 2}},
+			`{foo="baz"}`: {sample{t: 3, v: 4}},
+		})
+}
+
 // createBlock creates a block with given set of series and returns its dir.
-func createBlock(tb testing.TB, dir string, series []Series) string {
-	return createBlockFromHead(tb, dir, createHead(tb, series))
+func createBlock(tb testing.TB, dir string, series []storage.Series) string {
+	chunkDir, err := ioutil.TempDir("", "chunk_dir")
+	testutil.Ok(tb, err)
+	defer func() { testutil.Ok(tb, os.RemoveAll(chunkDir)) }()
+	head := createHead(tb, nil, series, chunkDir)
+	defer func() { testutil.Ok(tb, head.Close()) }()
+	return createBlockFromHead(tb, dir, head)
 }
 
 func createBlockFromHead(tb testing.TB, dir string, head *Head) string {
@@ -282,12 +323,11 @@ func createBlockFromHead(tb testing.TB, dir string, head *Head) string {
 	return filepath.Join(dir, ulid.String())
 }
 
-func createHead(tb testing.TB, series []Series) *Head {
-	head, err := NewHead(nil, nil, nil, 2*60*60*1000)
+func createHead(tb testing.TB, w *wal.WAL, series []storage.Series, chunkDir string) *Head {
+	head, err := NewHead(nil, nil, w, DefaultBlockDuration, chunkDir, nil, DefaultStripeSize, nil)
 	testutil.Ok(tb, err)
-	defer head.Close()
 
-	app := head.Appender()
+	app := head.Appender(context.Background())
 	for _, s := range series {
 		ref := uint64(0)
 		it := s.Iterator()
@@ -304,8 +344,7 @@ func createHead(tb testing.TB, series []Series) *Head {
 		}
 		testutil.Ok(tb, it.Err())
 	}
-	err = app.Commit()
-	testutil.Ok(tb, err)
+	testutil.Ok(tb, app.Commit())
 	return head
 }
 
@@ -315,12 +354,12 @@ const (
 )
 
 // genSeries generates series with a given number of labels and values.
-func genSeries(totalSeries, labelCount int, mint, maxt int64) []Series {
+func genSeries(totalSeries, labelCount int, mint, maxt int64) []storage.Series {
 	if totalSeries == 0 || labelCount == 0 {
 		return nil
 	}
 
-	series := make([]Series, totalSeries)
+	series := make([]storage.Series, totalSeries)
 
 	for i := 0; i < totalSeries; i++ {
 		lbls := make(map[string]string, labelCount)
@@ -332,18 +371,18 @@ func genSeries(totalSeries, labelCount int, mint, maxt int64) []Series {
 		for t := mint; t < maxt; t++ {
 			samples = append(samples, sample{t: t, v: rand.Float64()})
 		}
-		series[i] = newSeries(lbls, samples)
+		series[i] = storage.NewListSeries(labels.FromMap(lbls), samples)
 	}
 	return series
 }
 
 // populateSeries generates series from given labels, mint and maxt.
-func populateSeries(lbls []map[string]string, mint, maxt int64) []Series {
+func populateSeries(lbls []map[string]string, mint, maxt int64) []storage.Series {
 	if len(lbls) == 0 {
 		return nil
 	}
 
-	series := make([]Series, 0, len(lbls))
+	series := make([]storage.Series, 0, len(lbls))
 	for _, lbl := range lbls {
 		if len(lbl) == 0 {
 			continue
@@ -352,7 +391,7 @@ func populateSeries(lbls []map[string]string, mint, maxt int64) []Series {
 		for t := mint; t <= maxt; t++ {
 			samples = append(samples, sample{t: t, v: rand.Float64()})
 		}
-		series = append(series, newSeries(lbl, samples))
+		series = append(series, storage.NewListSeries(labels.FromMap(lbl), samples))
 	}
 	return series
 }

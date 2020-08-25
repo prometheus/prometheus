@@ -37,7 +37,7 @@ func (c *Cache) Purge() {
 	c.lock.Unlock()
 }
 
-// Add adds a value to the cache.  Returns true if an eviction occurred.
+// Add adds a value to the cache. Returns true if an eviction occurred.
 func (c *Cache) Add(key, value interface{}) (evicted bool) {
 	c.lock.Lock()
 	evicted = c.lru.Add(key, value)
@@ -71,8 +71,8 @@ func (c *Cache) Peek(key interface{}) (value interface{}, ok bool) {
 	return value, ok
 }
 
-// ContainsOrAdd checks if a key is in the cache  without updating the
-// recent-ness or deleting it for being stale,  and if not, adds the value.
+// ContainsOrAdd checks if a key is in the cache without updating the
+// recent-ness or deleting it for being stale, and if not, adds the value.
 // Returns whether found and whether an eviction occurred.
 func (c *Cache) ContainsOrAdd(key, value interface{}) (ok, evicted bool) {
 	c.lock.Lock()
@@ -85,18 +85,52 @@ func (c *Cache) ContainsOrAdd(key, value interface{}) (ok, evicted bool) {
 	return false, evicted
 }
 
-// Remove removes the provided key from the cache.
-func (c *Cache) Remove(key interface{}) {
+// PeekOrAdd checks if a key is in the cache without updating the
+// recent-ness or deleting it for being stale, and if not, adds the value.
+// Returns whether found and whether an eviction occurred.
+func (c *Cache) PeekOrAdd(key, value interface{}) (previous interface{}, ok, evicted bool) {
 	c.lock.Lock()
-	c.lru.Remove(key)
+	defer c.lock.Unlock()
+
+	previous, ok = c.lru.Peek(key)
+	if ok {
+		return previous, true, false
+	}
+
+	evicted = c.lru.Add(key, value)
+	return nil, false, evicted
+}
+
+// Remove removes the provided key from the cache.
+func (c *Cache) Remove(key interface{}) (present bool) {
+	c.lock.Lock()
+	present = c.lru.Remove(key)
 	c.lock.Unlock()
+	return
+}
+
+// Resize changes the cache size.
+func (c *Cache) Resize(size int) (evicted int) {
+	c.lock.Lock()
+	evicted = c.lru.Resize(size)
+	c.lock.Unlock()
+	return evicted
 }
 
 // RemoveOldest removes the oldest item from the cache.
-func (c *Cache) RemoveOldest() {
+func (c *Cache) RemoveOldest() (key interface{}, value interface{}, ok bool) {
 	c.lock.Lock()
-	c.lru.RemoveOldest()
+	key, value, ok = c.lru.RemoveOldest()
 	c.lock.Unlock()
+	return
+}
+
+// GetOldest returns the oldest entry
+func (c *Cache) GetOldest() (key interface{}, value interface{}, ok bool) {
+	c.lock.Lock()
+	key, value, ok = c.lru.GetOldest()
+	c.lock.Unlock()
+	return
 }
 
 // Keys returns a slice of the keys in the cache, from oldest to newest.

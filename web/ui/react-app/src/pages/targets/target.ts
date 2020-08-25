@@ -7,10 +7,15 @@ export interface Target {
   labels: Labels;
   scrapePool: string;
   scrapeUrl: string;
+  globalUrl: string;
   lastError: string;
   lastScrape: string;
   lastScrapeDuration: number;
   health: string;
+}
+
+export interface DroppedTarget {
+  discoveredLabels: Labels;
 }
 
 export interface ScrapePool {

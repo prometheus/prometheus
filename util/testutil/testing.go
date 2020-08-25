@@ -25,6 +25,11 @@ package testutil
 import (
 	"fmt"
 	"reflect"
+	"testing"
+
+	"github.com/davecgh/go-spew/spew"
+	"github.com/pmezard/go-difflib/difflib"
+	"go.uber.org/goleak"
 )
 
 // This package is imported by non-test code and therefore cannot import the
@@ -57,7 +62,7 @@ func NotOk(tb TB, err error, a ...interface{}) {
 	if err == nil {
 		if len(a) != 0 {
 			format := a[0].(string)
-			tb.Fatalf("\033[31m"+format+": expected error, got none\033[39m", a...)
+			tb.Fatalf("\033[31m"+format+": expected error, got none\033[39m", a[1:]...)
 		}
 		tb.Fatalf("\033[31mexpected error, got none\033[39m")
 	}
@@ -67,8 +72,78 @@ func NotOk(tb TB, err error, a ...interface{}) {
 func Equals(tb TB, exp, act interface{}, msgAndArgs ...interface{}) {
 	tb.Helper()
 	if !reflect.DeepEqual(exp, act) {
-		tb.Fatalf("\033[31m%s\n\nexp: %#v\n\ngot: %#v\033[39m\n", formatMessage(msgAndArgs), exp, act)
+		tb.Fatalf("\033[31m%s\n\nexp: %#v\n\ngot: %#v%s\033[39m\n", formatMessage(msgAndArgs), exp, act, diff(exp, act))
 	}
+}
+
+func typeAndKind(v interface{}) (reflect.Type, reflect.Kind) {
+	t := reflect.TypeOf(v)
+	k := t.Kind()
+
+	if k == reflect.Ptr {
+		t = t.Elem()
+		k = t.Kind()
+	}
+	return t, k
+}
+
+// diff returns a diff of both values as long as both are of the same type and
+// are a struct, map, slice, array or string. Otherwise it returns an empty string.
+func diff(expected interface{}, actual interface{}) string {
+	if expected == nil || actual == nil {
+		return ""
+	}
+
+	et, ek := typeAndKind(expected)
+	at, _ := typeAndKind(actual)
+	if et != at {
+		return ""
+	}
+
+	if ek != reflect.Struct && ek != reflect.Map && ek != reflect.Slice && ek != reflect.Array && ek != reflect.String {
+		return ""
+	}
+
+	var e, a string
+	c := spew.ConfigState{
+		Indent:                  " ",
+		DisablePointerAddresses: true,
+		DisableCapacities:       true,
+		SortKeys:                true,
+	}
+	if et != reflect.TypeOf("") {
+		e = c.Sdump(expected)
+		a = c.Sdump(actual)
+	} else {
+		e = reflect.ValueOf(expected).String()
+		a = reflect.ValueOf(actual).String()
+	}
+
+	diff, _ := difflib.GetUnifiedDiffString(difflib.UnifiedDiff{
+		A:        difflib.SplitLines(e),
+		B:        difflib.SplitLines(a),
+		FromFile: "Expected",
+		FromDate: "",
+		ToFile:   "Actual",
+		ToDate:   "",
+		Context:  1,
+	})
+	return "\n\nDiff:\n" + diff
+}
+
+// ErrorEqual compares Go errors for equality.
+func ErrorEqual(tb TB, left, right error, msgAndArgs ...interface{}) {
+	tb.Helper()
+	if left == right {
+		return
+	}
+
+	if left != nil && right != nil {
+		Equals(tb, left.Error(), right.Error(), msgAndArgs...)
+		return
+	}
+
+	tb.Fatalf("\033[31m%s\n\nexp: %#v\n\ngot: %#v\033[39m\n", formatMessage(msgAndArgs), left, right)
 }
 
 func formatMessage(msgAndArgs []interface{}) string {
@@ -80,4 +155,15 @@ func formatMessage(msgAndArgs []interface{}) string {
 		return fmt.Sprintf("\n\nmsg: "+msg, msgAndArgs[1:]...)
 	}
 	return ""
+}
+
+// TolerantVerifyLeak verifies go leaks but excludes the go routines that are
+// launched as side effects of some of our dependencies.
+func TolerantVerifyLeak(m *testing.M) {
+	goleak.VerifyTestMain(m,
+		// https://github.com/census-instrumentation/opencensus-go/blob/d7677d6af5953e0506ac4c08f349c62b917a443a/stats/view/worker.go#L34
+		goleak.IgnoreTopFunction("go.opencensus.io/stats/view.(*worker).start"),
+		// https://github.com/kubernetes/klog/blob/c85d02d1c76a9ebafa81eb6d35c980734f2c4727/klog.go#L417
+		goleak.IgnoreTopFunction("k8s.io/klog/v2.(*loggingT).flushDaemon"),
+	)
 }

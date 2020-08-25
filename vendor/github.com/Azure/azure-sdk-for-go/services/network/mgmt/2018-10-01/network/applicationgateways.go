@@ -36,7 +36,9 @@ func NewApplicationGatewaysClient(subscriptionID string) ApplicationGatewaysClie
 	return NewApplicationGatewaysClientWithBaseURI(DefaultBaseURI, subscriptionID)
 }
 
-// NewApplicationGatewaysClientWithBaseURI creates an instance of the ApplicationGatewaysClient client.
+// NewApplicationGatewaysClientWithBaseURI creates an instance of the ApplicationGatewaysClient client using a custom
+// endpoint.  Use this when interacting with an Azure cloud that uses a non-standard base URI (sovereign clouds, Azure
+// stack).
 func NewApplicationGatewaysClientWithBaseURI(baseURI string, subscriptionID string) ApplicationGatewaysClient {
 	return ApplicationGatewaysClient{NewWithBaseURI(baseURI, subscriptionID)}
 }
@@ -100,8 +102,7 @@ func (client ApplicationGatewaysClient) BackendHealthPreparer(ctx context.Contex
 // http.Response Body if it receives an error.
 func (client ApplicationGatewaysClient) BackendHealthSender(req *http.Request) (future ApplicationGatewaysBackendHealthFuture, err error) {
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
@@ -114,7 +115,6 @@ func (client ApplicationGatewaysClient) BackendHealthSender(req *http.Request) (
 func (client ApplicationGatewaysClient) BackendHealthResponder(resp *http.Response) (result ApplicationGatewayBackendHealth, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -147,20 +147,20 @@ func (client ApplicationGatewaysClient) CreateOrUpdate(ctx context.Context, reso
 						{Target: "parameters.ApplicationGatewayPropertiesFormat.WebApplicationFirewallConfiguration.RuleSetVersion", Name: validation.Null, Rule: true, Chain: nil},
 						{Target: "parameters.ApplicationGatewayPropertiesFormat.WebApplicationFirewallConfiguration.MaxRequestBodySize", Name: validation.Null, Rule: false,
 							Chain: []validation.Constraint{{Target: "parameters.ApplicationGatewayPropertiesFormat.WebApplicationFirewallConfiguration.MaxRequestBodySize", Name: validation.InclusiveMaximum, Rule: int64(128), Chain: nil},
-								{Target: "parameters.ApplicationGatewayPropertiesFormat.WebApplicationFirewallConfiguration.MaxRequestBodySize", Name: validation.InclusiveMinimum, Rule: 8, Chain: nil},
+								{Target: "parameters.ApplicationGatewayPropertiesFormat.WebApplicationFirewallConfiguration.MaxRequestBodySize", Name: validation.InclusiveMinimum, Rule: int64(8), Chain: nil},
 							}},
 						{Target: "parameters.ApplicationGatewayPropertiesFormat.WebApplicationFirewallConfiguration.MaxRequestBodySizeInKb", Name: validation.Null, Rule: false,
 							Chain: []validation.Constraint{{Target: "parameters.ApplicationGatewayPropertiesFormat.WebApplicationFirewallConfiguration.MaxRequestBodySizeInKb", Name: validation.InclusiveMaximum, Rule: int64(128), Chain: nil},
-								{Target: "parameters.ApplicationGatewayPropertiesFormat.WebApplicationFirewallConfiguration.MaxRequestBodySizeInKb", Name: validation.InclusiveMinimum, Rule: 8, Chain: nil},
+								{Target: "parameters.ApplicationGatewayPropertiesFormat.WebApplicationFirewallConfiguration.MaxRequestBodySizeInKb", Name: validation.InclusiveMinimum, Rule: int64(8), Chain: nil},
 							}},
 						{Target: "parameters.ApplicationGatewayPropertiesFormat.WebApplicationFirewallConfiguration.FileUploadLimitInMb", Name: validation.Null, Rule: false,
 							Chain: []validation.Constraint{{Target: "parameters.ApplicationGatewayPropertiesFormat.WebApplicationFirewallConfiguration.FileUploadLimitInMb", Name: validation.InclusiveMaximum, Rule: int64(500), Chain: nil},
-								{Target: "parameters.ApplicationGatewayPropertiesFormat.WebApplicationFirewallConfiguration.FileUploadLimitInMb", Name: validation.InclusiveMinimum, Rule: 0, Chain: nil},
+								{Target: "parameters.ApplicationGatewayPropertiesFormat.WebApplicationFirewallConfiguration.FileUploadLimitInMb", Name: validation.InclusiveMinimum, Rule: int64(0), Chain: nil},
 							}},
 					}},
 					{Target: "parameters.ApplicationGatewayPropertiesFormat.AutoscaleConfiguration", Name: validation.Null, Rule: false,
 						Chain: []validation.Constraint{{Target: "parameters.ApplicationGatewayPropertiesFormat.AutoscaleConfiguration.MinCapacity", Name: validation.Null, Rule: true,
-							Chain: []validation.Constraint{{Target: "parameters.ApplicationGatewayPropertiesFormat.AutoscaleConfiguration.MinCapacity", Name: validation.InclusiveMinimum, Rule: 2, Chain: nil}}},
+							Chain: []validation.Constraint{{Target: "parameters.ApplicationGatewayPropertiesFormat.AutoscaleConfiguration.MinCapacity", Name: validation.InclusiveMinimum, Rule: int64(2), Chain: nil}}},
 						}},
 				}}}}}); err != nil {
 		return result, validation.NewError("network.ApplicationGatewaysClient", "CreateOrUpdate", err.Error())
@@ -208,8 +208,7 @@ func (client ApplicationGatewaysClient) CreateOrUpdatePreparer(ctx context.Conte
 // http.Response Body if it receives an error.
 func (client ApplicationGatewaysClient) CreateOrUpdateSender(req *http.Request) (future ApplicationGatewaysCreateOrUpdateFuture, err error) {
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
@@ -222,7 +221,6 @@ func (client ApplicationGatewaysClient) CreateOrUpdateSender(req *http.Request) 
 func (client ApplicationGatewaysClient) CreateOrUpdateResponder(resp *http.Response) (result ApplicationGateway, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -285,8 +283,7 @@ func (client ApplicationGatewaysClient) DeletePreparer(ctx context.Context, reso
 // http.Response Body if it receives an error.
 func (client ApplicationGatewaysClient) DeleteSender(req *http.Request) (future ApplicationGatewaysDeleteFuture, err error) {
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
@@ -299,7 +296,6 @@ func (client ApplicationGatewaysClient) DeleteSender(req *http.Request) (future 
 func (client ApplicationGatewaysClient) DeleteResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted, http.StatusNoContent),
 		autorest.ByClosing())
 	result.Response = resp
@@ -366,8 +362,7 @@ func (client ApplicationGatewaysClient) GetPreparer(ctx context.Context, resourc
 // GetSender sends the Get request. The method will close the
 // http.Response Body if it receives an error.
 func (client ApplicationGatewaysClient) GetSender(req *http.Request) (*http.Response, error) {
-	return autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // GetResponder handles the response to the Get request. The method always
@@ -375,7 +370,6 @@ func (client ApplicationGatewaysClient) GetSender(req *http.Request) (*http.Resp
 func (client ApplicationGatewaysClient) GetResponder(resp *http.Response) (result ApplicationGateway, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -441,8 +435,7 @@ func (client ApplicationGatewaysClient) GetSslPredefinedPolicyPreparer(ctx conte
 // GetSslPredefinedPolicySender sends the GetSslPredefinedPolicy request. The method will close the
 // http.Response Body if it receives an error.
 func (client ApplicationGatewaysClient) GetSslPredefinedPolicySender(req *http.Request) (*http.Response, error) {
-	return autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // GetSslPredefinedPolicyResponder handles the response to the GetSslPredefinedPolicy request. The method always
@@ -450,7 +443,6 @@ func (client ApplicationGatewaysClient) GetSslPredefinedPolicySender(req *http.R
 func (client ApplicationGatewaysClient) GetSslPredefinedPolicyResponder(resp *http.Response) (result ApplicationGatewaySslPredefinedPolicy, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -490,6 +482,9 @@ func (client ApplicationGatewaysClient) List(ctx context.Context, resourceGroupN
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ApplicationGatewaysClient", "List", resp, "Failure responding to request")
 	}
+	if result.aglr.hasNextLink() && result.aglr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }
@@ -517,8 +512,7 @@ func (client ApplicationGatewaysClient) ListPreparer(ctx context.Context, resour
 // ListSender sends the List request. The method will close the
 // http.Response Body if it receives an error.
 func (client ApplicationGatewaysClient) ListSender(req *http.Request) (*http.Response, error) {
-	return autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListResponder handles the response to the List request. The method always
@@ -526,7 +520,6 @@ func (client ApplicationGatewaysClient) ListSender(req *http.Request) (*http.Res
 func (client ApplicationGatewaysClient) ListResponder(resp *http.Response) (result ApplicationGatewayListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -601,6 +594,9 @@ func (client ApplicationGatewaysClient) ListAll(ctx context.Context) (result App
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ApplicationGatewaysClient", "ListAll", resp, "Failure responding to request")
 	}
+	if result.aglr.hasNextLink() && result.aglr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }
@@ -627,8 +623,7 @@ func (client ApplicationGatewaysClient) ListAllPreparer(ctx context.Context) (*h
 // ListAllSender sends the ListAll request. The method will close the
 // http.Response Body if it receives an error.
 func (client ApplicationGatewaysClient) ListAllSender(req *http.Request) (*http.Response, error) {
-	return autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListAllResponder handles the response to the ListAll request. The method always
@@ -636,7 +631,6 @@ func (client ApplicationGatewaysClient) ListAllSender(req *http.Request) (*http.
 func (client ApplicationGatewaysClient) ListAllResponder(resp *http.Response) (result ApplicationGatewayListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -736,8 +730,7 @@ func (client ApplicationGatewaysClient) ListAvailableSslOptionsPreparer(ctx cont
 // ListAvailableSslOptionsSender sends the ListAvailableSslOptions request. The method will close the
 // http.Response Body if it receives an error.
 func (client ApplicationGatewaysClient) ListAvailableSslOptionsSender(req *http.Request) (*http.Response, error) {
-	return autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListAvailableSslOptionsResponder handles the response to the ListAvailableSslOptions request. The method always
@@ -745,7 +738,6 @@ func (client ApplicationGatewaysClient) ListAvailableSslOptionsSender(req *http.
 func (client ApplicationGatewaysClient) ListAvailableSslOptionsResponder(resp *http.Response) (result ApplicationGatewayAvailableSslOptions, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -783,6 +775,9 @@ func (client ApplicationGatewaysClient) ListAvailableSslPredefinedPolicies(ctx c
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ApplicationGatewaysClient", "ListAvailableSslPredefinedPolicies", resp, "Failure responding to request")
 	}
+	if result.agaspp.hasNextLink() && result.agaspp.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }
@@ -809,8 +804,7 @@ func (client ApplicationGatewaysClient) ListAvailableSslPredefinedPoliciesPrepar
 // ListAvailableSslPredefinedPoliciesSender sends the ListAvailableSslPredefinedPolicies request. The method will close the
 // http.Response Body if it receives an error.
 func (client ApplicationGatewaysClient) ListAvailableSslPredefinedPoliciesSender(req *http.Request) (*http.Response, error) {
-	return autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListAvailableSslPredefinedPoliciesResponder handles the response to the ListAvailableSslPredefinedPolicies request. The method always
@@ -818,7 +812,6 @@ func (client ApplicationGatewaysClient) ListAvailableSslPredefinedPoliciesSender
 func (client ApplicationGatewaysClient) ListAvailableSslPredefinedPoliciesResponder(resp *http.Response) (result ApplicationGatewayAvailableSslPredefinedPolicies, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -918,8 +911,7 @@ func (client ApplicationGatewaysClient) ListAvailableWafRuleSetsPreparer(ctx con
 // ListAvailableWafRuleSetsSender sends the ListAvailableWafRuleSets request. The method will close the
 // http.Response Body if it receives an error.
 func (client ApplicationGatewaysClient) ListAvailableWafRuleSetsSender(req *http.Request) (*http.Response, error) {
-	return autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListAvailableWafRuleSetsResponder handles the response to the ListAvailableWafRuleSets request. The method always
@@ -927,7 +919,6 @@ func (client ApplicationGatewaysClient) ListAvailableWafRuleSetsSender(req *http
 func (client ApplicationGatewaysClient) ListAvailableWafRuleSetsResponder(resp *http.Response) (result ApplicationGatewayAvailableWafRuleSetsResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -990,8 +981,7 @@ func (client ApplicationGatewaysClient) StartPreparer(ctx context.Context, resou
 // http.Response Body if it receives an error.
 func (client ApplicationGatewaysClient) StartSender(req *http.Request) (future ApplicationGatewaysStartFuture, err error) {
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
@@ -1004,7 +994,6 @@ func (client ApplicationGatewaysClient) StartSender(req *http.Request) (future A
 func (client ApplicationGatewaysClient) StartResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted),
 		autorest.ByClosing())
 	result.Response = resp
@@ -1066,8 +1055,7 @@ func (client ApplicationGatewaysClient) StopPreparer(ctx context.Context, resour
 // http.Response Body if it receives an error.
 func (client ApplicationGatewaysClient) StopSender(req *http.Request) (future ApplicationGatewaysStopFuture, err error) {
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
@@ -1080,7 +1068,6 @@ func (client ApplicationGatewaysClient) StopSender(req *http.Request) (future Ap
 func (client ApplicationGatewaysClient) StopResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted),
 		autorest.ByClosing())
 	result.Response = resp
@@ -1145,8 +1132,7 @@ func (client ApplicationGatewaysClient) UpdateTagsPreparer(ctx context.Context, 
 // http.Response Body if it receives an error.
 func (client ApplicationGatewaysClient) UpdateTagsSender(req *http.Request) (future ApplicationGatewaysUpdateTagsFuture, err error) {
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
@@ -1159,7 +1145,6 @@ func (client ApplicationGatewaysClient) UpdateTagsSender(req *http.Request) (fut
 func (client ApplicationGatewaysClient) UpdateTagsResponder(resp *http.Response) (result ApplicationGateway, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

@@ -24,20 +24,7 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 
-	sd_config "github.com/prometheus/prometheus/discovery/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-
-	"github.com/prometheus/prometheus/discovery/azure"
-	"github.com/prometheus/prometheus/discovery/consul"
-	"github.com/prometheus/prometheus/discovery/dns"
-	"github.com/prometheus/prometheus/discovery/ec2"
-	"github.com/prometheus/prometheus/discovery/file"
-	"github.com/prometheus/prometheus/discovery/gce"
-	"github.com/prometheus/prometheus/discovery/kubernetes"
-	"github.com/prometheus/prometheus/discovery/marathon"
-	"github.com/prometheus/prometheus/discovery/openstack"
-	"github.com/prometheus/prometheus/discovery/triton"
-	"github.com/prometheus/prometheus/discovery/zookeeper"
 )
 
 var (
@@ -80,22 +67,6 @@ var (
 
 func init() {
 	prometheus.MustRegister(failedConfigs, discoveredTargets, receivedUpdates, delayedUpdates, sentUpdates)
-}
-
-// Discoverer provides information about target groups. It maintains a set
-// of sources from which TargetGroups can originate. Whenever a discovery provider
-// detects a potential change, it sends the TargetGroup through its channel.
-//
-// Discoverer does not know if an actual change happened.
-// It does guarantee that it sends the new TargetGroup whenever a change happens.
-//
-// Discoverers should initially send a full set of all discoverable TargetGroups.
-type Discoverer interface {
-	// Run hands a channel to the discovery provider (Consul, DNS etc) through which it can send
-	// updated target groups.
-	// Must returns if the context gets canceled. It should not close the update
-	// channel on returning.
-	Run(ctx context.Context, up chan<- []*targetgroup.Group)
 }
 
 type poolKey struct {
@@ -181,7 +152,7 @@ func (m *Manager) SyncCh() <-chan map[string][]*targetgroup.Group {
 }
 
 // ApplyConfig removes all running discovery providers and starts new ones using the provided config.
-func (m *Manager) ApplyConfig(cfg map[string]sd_config.ServiceDiscoveryConfig) error {
+func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
@@ -239,7 +210,7 @@ func (m *Manager) updater(ctx context.Context, p *provider, updates chan []*targ
 		case tgs, ok := <-updates:
 			receivedUpdates.WithLabelValues(m.name).Inc()
 			if !ok {
-				level.Debug(m.logger).Log("msg", "discoverer channel closed", "provider", p.name)
+				level.Debug(m.logger).Log("msg", "Discoverer channel closed", "provider", p.name)
 				return
 			}
 
@@ -271,7 +242,7 @@ func (m *Manager) sender() {
 				case m.syncCh <- m.allGroups():
 				default:
 					delayedUpdates.WithLabelValues(m.name).Inc()
-					level.Debug(m.logger).Log("msg", "discovery receiver's channel was full so will retry the next cycle")
+					level.Debug(m.logger).Log("msg", "Discovery receiver's channel was full so will retry the next cycle")
 					select {
 					case m.triggerSend <- struct{}{}:
 					default:
@@ -293,19 +264,19 @@ func (m *Manager) updateGroup(poolKey poolKey, tgs []*targetgroup.Group) {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
+	if _, ok := m.targets[poolKey]; !ok {
+		m.targets[poolKey] = make(map[string]*targetgroup.Group)
+	}
 	for _, tg := range tgs {
 		if tg != nil { // Some Discoverers send nil target group so need to check for it to avoid panics.
-			if _, ok := m.targets[poolKey]; !ok {
-				m.targets[poolKey] = make(map[string]*targetgroup.Group)
-			}
 			m.targets[poolKey][tg.Source] = tg
 		}
 	}
 }
 
 func (m *Manager) allGroups() map[string][]*targetgroup.Group {
-	m.mtx.Lock()
-	defer m.mtx.Unlock()
+	m.mtx.RLock()
+	defer m.mtx.RUnlock()
 
 	tSets := map[string][]*targetgroup.Group{}
 	for pkey, tsets := range m.targets {
@@ -322,13 +293,12 @@ func (m *Manager) allGroups() map[string][]*targetgroup.Group {
 }
 
 // registerProviders returns a number of failed SD config.
-func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setName string) int {
+func (m *Manager) registerProviders(cfgs Configs, setName string) int {
 	var (
-		failedCount int
-		added       bool
+		failed int
+		added  bool
 	)
-	add := func(cfg interface{}, newDiscoverer func() (Discoverer, error)) {
-		t := reflect.TypeOf(cfg).String()
+	add := func(cfg Config) {
 		for _, p := range m.providers {
 			if reflect.DeepEqual(cfg, p.config) {
 				p.subs = append(p.subs, setName)
@@ -336,88 +306,25 @@ func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setNam
 				return
 			}
 		}
-
-		d, err := newDiscoverer()
+		typ := cfg.Name()
+		d, err := cfg.NewDiscoverer(DiscovererOptions{
+			Logger: log.With(m.logger, "discovery", typ),
+		})
 		if err != nil {
-			level.Error(m.logger).Log("msg", "Cannot create service discovery", "err", err, "type", t)
-			failedCount++
+			level.Error(m.logger).Log("msg", "Cannot create service discovery", "err", err, "type", typ)
+			failed++
 			return
 		}
-
-		provider := provider{
-			name:   fmt.Sprintf("%s/%d", t, len(m.providers)),
+		m.providers = append(m.providers, &provider{
+			name:   fmt.Sprintf("%s/%d", typ, len(m.providers)),
 			d:      d,
 			config: cfg,
 			subs:   []string{setName},
-		}
-		m.providers = append(m.providers, &provider)
+		})
 		added = true
 	}
-
-	for _, c := range cfg.DNSSDConfigs {
-		add(c, func() (Discoverer, error) {
-			return dns.NewDiscovery(*c, log.With(m.logger, "discovery", "dns")), nil
-		})
-	}
-	for _, c := range cfg.FileSDConfigs {
-		add(c, func() (Discoverer, error) {
-			return file.NewDiscovery(c, log.With(m.logger, "discovery", "file")), nil
-		})
-	}
-	for _, c := range cfg.ConsulSDConfigs {
-		add(c, func() (Discoverer, error) {
-			return consul.NewDiscovery(c, log.With(m.logger, "discovery", "consul"))
-		})
-	}
-	for _, c := range cfg.MarathonSDConfigs {
-		add(c, func() (Discoverer, error) {
-			return marathon.NewDiscovery(*c, log.With(m.logger, "discovery", "marathon"))
-		})
-	}
-	for _, c := range cfg.KubernetesSDConfigs {
-		add(c, func() (Discoverer, error) {
-			return kubernetes.New(log.With(m.logger, "discovery", "k8s"), c)
-		})
-	}
-	for _, c := range cfg.ServersetSDConfigs {
-		add(c, func() (Discoverer, error) {
-			return zookeeper.NewServersetDiscovery(c, log.With(m.logger, "discovery", "zookeeper"))
-		})
-	}
-	for _, c := range cfg.NerveSDConfigs {
-		add(c, func() (Discoverer, error) {
-			return zookeeper.NewNerveDiscovery(c, log.With(m.logger, "discovery", "nerve"))
-		})
-	}
-	for _, c := range cfg.EC2SDConfigs {
-		add(c, func() (Discoverer, error) {
-			return ec2.NewDiscovery(c, log.With(m.logger, "discovery", "ec2")), nil
-		})
-	}
-	for _, c := range cfg.OpenstackSDConfigs {
-		add(c, func() (Discoverer, error) {
-			return openstack.NewDiscovery(c, log.With(m.logger, "discovery", "openstack"))
-		})
-	}
-	for _, c := range cfg.GCESDConfigs {
-		add(c, func() (Discoverer, error) {
-			return gce.NewDiscovery(*c, log.With(m.logger, "discovery", "gce"))
-		})
-	}
-	for _, c := range cfg.AzureSDConfigs {
-		add(c, func() (Discoverer, error) {
-			return azure.NewDiscovery(c, log.With(m.logger, "discovery", "azure")), nil
-		})
-	}
-	for _, c := range cfg.TritonSDConfigs {
-		add(c, func() (Discoverer, error) {
-			return triton.New(log.With(m.logger, "discovery", "triton"), c)
-		})
-	}
-	if len(cfg.StaticConfigs) > 0 {
-		add(setName, func() (Discoverer, error) {
-			return &StaticProvider{TargetGroups: cfg.StaticConfigs}, nil
-		})
+	for _, cfg := range cfgs {
+		add(cfg)
 	}
 	if !added {
 		// Add an empty target group to force the refresh of the corresponding
@@ -425,11 +332,9 @@ func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setNam
 		// current targets.
 		// It can happen because the combined set of SD configurations is empty
 		// or because we fail to instantiate all the SD configurations.
-		add(setName, func() (Discoverer, error) {
-			return &StaticProvider{TargetGroups: []*targetgroup.Group{{}}}, nil
-		})
+		add(StaticConfig{{}})
 	}
-	return failedCount
+	return failed
 }
 
 // StaticProvider holds a list of target groups that never change.

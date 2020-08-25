@@ -21,7 +21,6 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 )
 
@@ -66,7 +65,7 @@ func copyFile(src, dest string) error {
 		return err
 	}
 
-	err = ioutil.WriteFile(dest, data, 0644)
+	err = ioutil.WriteFile(dest, data, 0666)
 	if err != nil {
 		return err
 	}
@@ -89,21 +88,6 @@ func readDirs(src string) ([]string, error) {
 		return nil, err
 	}
 	return files, nil
-}
-
-// ReadDir returns the filenames in the given directory in sorted order.
-func ReadDir(dirpath string) ([]string, error) {
-	dir, err := os.Open(dirpath)
-	if err != nil {
-		return nil, err
-	}
-	defer dir.Close()
-	names, err := dir.Readdirnames(-1)
-	if err != nil {
-		return nil, err
-	}
-	sort.Strings(names)
-	return names, nil
 }
 
 // Rename safely renames a file.
@@ -141,19 +125,5 @@ func Replace(from, to string) error {
 		}
 	}
 
-	if err := os.Rename(from, to); err != nil {
-		return err
-	}
-
-	// Directory was renamed; sync parent dir to persist rename.
-	pdir, err := OpenDir(filepath.Dir(to))
-	if err != nil {
-		return err
-	}
-
-	if err = pdir.Sync(); err != nil {
-		pdir.Close()
-		return err
-	}
-	return pdir.Close()
+	return Rename(from, to)
 }

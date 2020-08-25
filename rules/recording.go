@@ -26,13 +26,14 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/util/strutil"
 )
 
 // A RecordingRule records its vector expression into new timeseries.
 type RecordingRule struct {
 	name   string
-	vector promql.Expr
+	vector parser.Expr
 	labels labels.Labels
 	// Protects the below.
 	mtx sync.Mutex
@@ -47,7 +48,7 @@ type RecordingRule struct {
 }
 
 // NewRecordingRule returns a new recording rule.
-func NewRecordingRule(name string, vector promql.Expr, lset labels.Labels) *RecordingRule {
+func NewRecordingRule(name string, vector parser.Expr, lset labels.Labels) *RecordingRule {
 	return &RecordingRule{
 		name:   name,
 		vector: vector,
@@ -62,7 +63,7 @@ func (rule *RecordingRule) Name() string {
 }
 
 // Query returns the rule query expression.
-func (rule *RecordingRule) Query() promql.Expr {
+func (rule *RecordingRule) Query() parser.Expr {
 	return rule.vector
 }
 
@@ -93,6 +94,16 @@ func (rule *RecordingRule) Eval(ctx context.Context, ts time.Time, query QueryFu
 
 		sample.Metric = lb.Labels()
 	}
+
+	// Check that the rule does not produce identical metrics after applying
+	// labels.
+	if vector.ContainsSameLabelset() {
+		err = fmt.Errorf("vector contains metrics with the same labelset after applying rule labels")
+		rule.SetHealth(HealthBad)
+		rule.SetLastError(err)
+		return nil, err
+	}
+
 	rule.SetHealth(HealthGood)
 	rule.SetLastError(err)
 	return vector, nil

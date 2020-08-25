@@ -35,7 +35,8 @@ func NewVirtualWansClient(subscriptionID string) VirtualWansClient {
 	return NewVirtualWansClientWithBaseURI(DefaultBaseURI, subscriptionID)
 }
 
-// NewVirtualWansClientWithBaseURI creates an instance of the VirtualWansClient client.
+// NewVirtualWansClientWithBaseURI creates an instance of the VirtualWansClient client using a custom endpoint.  Use
+// this when interacting with an Azure cloud that uses a non-standard base URI (sovereign clouds, Azure stack).
 func NewVirtualWansClientWithBaseURI(baseURI string, subscriptionID string) VirtualWansClient {
 	return VirtualWansClient{NewWithBaseURI(baseURI, subscriptionID)}
 }
@@ -84,6 +85,7 @@ func (client VirtualWansClient) CreateOrUpdatePreparer(ctx context.Context, reso
 		"api-version": APIVersion,
 	}
 
+	wANParameters.Etag = nil
 	preparer := autorest.CreatePreparer(
 		autorest.AsContentType("application/json; charset=utf-8"),
 		autorest.AsPut(),
@@ -98,8 +100,7 @@ func (client VirtualWansClient) CreateOrUpdatePreparer(ctx context.Context, reso
 // http.Response Body if it receives an error.
 func (client VirtualWansClient) CreateOrUpdateSender(req *http.Request) (future VirtualWansCreateOrUpdateFuture, err error) {
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
@@ -112,7 +113,6 @@ func (client VirtualWansClient) CreateOrUpdateSender(req *http.Request) (future 
 func (client VirtualWansClient) CreateOrUpdateResponder(resp *http.Response) (result VirtualWAN, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -175,8 +175,7 @@ func (client VirtualWansClient) DeletePreparer(ctx context.Context, resourceGrou
 // http.Response Body if it receives an error.
 func (client VirtualWansClient) DeleteSender(req *http.Request) (future VirtualWansDeleteFuture, err error) {
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
@@ -189,7 +188,6 @@ func (client VirtualWansClient) DeleteSender(req *http.Request) (future VirtualW
 func (client VirtualWansClient) DeleteResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted, http.StatusNoContent),
 		autorest.ByClosing())
 	result.Response = resp
@@ -256,8 +254,7 @@ func (client VirtualWansClient) GetPreparer(ctx context.Context, resourceGroupNa
 // GetSender sends the Get request. The method will close the
 // http.Response Body if it receives an error.
 func (client VirtualWansClient) GetSender(req *http.Request) (*http.Response, error) {
-	return autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // GetResponder handles the response to the Get request. The method always
@@ -265,7 +262,6 @@ func (client VirtualWansClient) GetSender(req *http.Request) (*http.Response, er
 func (client VirtualWansClient) GetResponder(resp *http.Response) (result VirtualWAN, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -303,6 +299,9 @@ func (client VirtualWansClient) List(ctx context.Context) (result ListVirtualWAN
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VirtualWansClient", "List", resp, "Failure responding to request")
 	}
+	if result.lvwnr.hasNextLink() && result.lvwnr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }
@@ -329,8 +328,7 @@ func (client VirtualWansClient) ListPreparer(ctx context.Context) (*http.Request
 // ListSender sends the List request. The method will close the
 // http.Response Body if it receives an error.
 func (client VirtualWansClient) ListSender(req *http.Request) (*http.Response, error) {
-	return autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListResponder handles the response to the List request. The method always
@@ -338,7 +336,6 @@ func (client VirtualWansClient) ListSender(req *http.Request) (*http.Response, e
 func (client VirtualWansClient) ListResponder(resp *http.Response) (result ListVirtualWANsResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -415,6 +412,9 @@ func (client VirtualWansClient) ListByResourceGroup(ctx context.Context, resourc
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VirtualWansClient", "ListByResourceGroup", resp, "Failure responding to request")
 	}
+	if result.lvwnr.hasNextLink() && result.lvwnr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }
@@ -442,8 +442,7 @@ func (client VirtualWansClient) ListByResourceGroupPreparer(ctx context.Context,
 // ListByResourceGroupSender sends the ListByResourceGroup request. The method will close the
 // http.Response Body if it receives an error.
 func (client VirtualWansClient) ListByResourceGroupSender(req *http.Request) (*http.Response, error) {
-	return autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListByResourceGroupResponder handles the response to the ListByResourceGroup request. The method always
@@ -451,7 +450,6 @@ func (client VirtualWansClient) ListByResourceGroupSender(req *http.Request) (*h
 func (client VirtualWansClient) ListByResourceGroupResponder(resp *http.Response) (result ListVirtualWANsResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -554,8 +552,7 @@ func (client VirtualWansClient) UpdateTagsPreparer(ctx context.Context, resource
 // http.Response Body if it receives an error.
 func (client VirtualWansClient) UpdateTagsSender(req *http.Request) (future VirtualWansUpdateTagsFuture, err error) {
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
@@ -568,7 +565,6 @@ func (client VirtualWansClient) UpdateTagsSender(req *http.Request) (future Virt
 func (client VirtualWansClient) UpdateTagsResponder(resp *http.Response) (result VirtualWAN, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

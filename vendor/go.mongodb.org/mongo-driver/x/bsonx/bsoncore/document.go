@@ -115,6 +115,9 @@ var ErrOutOfBounds = errors.New("out of bounds")
 // Document is a raw bytes representation of a BSON document.
 type Document []byte
 
+// Array is a raw bytes representation of a BSON array.
+type Array = Document
+
 // NewDocumentFromReader reads a document from r. This function will only validate the length is
 // correct and that the document ends with a null byte.
 func NewDocumentFromReader(r io.Reader) (Document, error) {

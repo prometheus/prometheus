@@ -7,7 +7,7 @@
       <tbody>
         <tr>
           <th>Uptime</th>
-          <td>{{.Birth.UTC}}</td>
+          <td>{{.Birth}}</td>
         </tr>
         <tr>
           <th>Working Directory</th>
@@ -19,7 +19,7 @@
         </tr>
         <tr>
           <th>Last successful configuration reload</th>
-          <td>{{.LastConfigTime.UTC}}</td>
+          <td>{{.LastConfigTime}}</td>
         </tr>
         <tr>
           <th>WAL corruptions</th>
@@ -99,14 +99,14 @@
         <tr>
            <th>Number Of Series </th>
            <th>Number of Chunks</th>
-           <th>Current Max Time</th>
            <th>Current Min Time</th>
+           <th>Current Max Time</th>
         </tr>
         <tr>
-          <td scope="row">{{ .NumSeries}}</th>
-          <td>{{.ChunkCount}}</td>  
-          <td>{{ .MaxTime}}</td>
-          <td>{{ .MinTime}}</td>
+          <td scope="row">{{ .NumSeries}}</td>
+          <td>{{.ChunkCount}}</td>
+          <td>{{ .MinTime | unixToTime }} ({{ .MinTime }})</td>
+          <td>{{ .MaxTime | unixToTime }} ({{ .MaxTime }})</td>
         </tr>
       </tbody>
     </table>
@@ -120,8 +120,8 @@
         </tr>
         {{ range .Stats.CardinalityLabelStats }}
         <tr>
-          <td scope="row">{{.Name}}</th>
-          <td>{{.Count}}</td>  
+          <td scope="row">{{.Name}}</td>
+          <td>{{.Count}}</td>
         </tr>
         {{end}}
       </tbody>
@@ -135,8 +135,8 @@
           </tr>
           {{ range .Stats.CardinalityMetricsStats }}
           <tr>
-            <td scope="row">{{.Name}}</th>
-            <td>{{.Count}}</td>  
+            <td scope="row">{{.Name}}</td>
+            <td>{{.Count}}</td>
           </tr>
           {{end}}
         </tbody>
@@ -150,12 +150,12 @@
             </tr>
             {{ range .Stats.LabelValueStats }}
             <tr>
-              <td scope="row">{{.Name}}</th>
-              <td>{{.Count}}</td>  
+              <td scope="row">{{.Name}}</td>
+              <td>{{.Count}}</td>
             </tr>
             {{end}}
           </tbody>
-        </table>      
+        </table>
         <h3 id="headstatus">Most Common Label Pairs</h3>
         <table class="table table-sm table-bordered table-striped table-hover">
             <tbody>
@@ -165,11 +165,11 @@
               </tr>
               {{ range .Stats.LabelValuePairsStats }}
               <tr>
-                <td scope="row">{{.Name}}</th>
-                <td>{{.Count}}</td>  
+                <td scope="row">{{.Name}}</td>
+                <td>{{.Count}}</td>
               </tr>
               {{end}}
             </tbody>
-        </table>   
+        </table>
   </div>
 {{end}}

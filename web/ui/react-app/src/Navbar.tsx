@@ -12,9 +12,13 @@ import {
   DropdownMenu,
   DropdownItem,
 } from 'reactstrap';
-import PathPrefixProps from './PathPrefixProps';
+import PathPrefixProps from './types/PathPrefixProps';
 
-const Navigation: FC<PathPrefixProps> = ({ pathPrefix }) => {
+interface NavbarProps {
+  consolesLink: string | null;
+}
+
+const Navigation: FC<PathPrefixProps & NavbarProps> = ({ pathPrefix, consolesLink }) => {
   const [isOpen, setIsOpen] = useState(false);
   const toggle = () => setIsOpen(!isOpen);
   return (
@@ -25,6 +29,11 @@ const Navigation: FC<PathPrefixProps> = ({ pathPrefix }) => {
       </Link>
       <Collapse isOpen={isOpen} navbar style={{ justifyContent: 'space-between' }}>
         <Nav className="ml-0" navbar>
+          {consolesLink !== null && (
+            <NavItem>
+              <NavLink href={consolesLink}>Consoles</NavLink>
+            </NavItem>
+          )}
           <NavItem>
             <NavLink tag={Link} to={`${pathPrefix}/new/alerts`}>
               Alerts
@@ -67,7 +76,7 @@ const Navigation: FC<PathPrefixProps> = ({ pathPrefix }) => {
             <NavLink href="https://prometheus.io/docs/prometheus/latest/getting_started/">Help</NavLink>
           </NavItem>
           <NavItem>
-            <NavLink href={`${pathPrefix}/`}>Classic UI</NavLink>
+            <NavLink href={`${pathPrefix}/graph${window.location.search}`}>Classic UI</NavLink>
           </NavItem>
         </Nav>
       </Collapse>

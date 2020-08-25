@@ -26,6 +26,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/cespare/xxhash/v2"
+	//lint:ignore SA1019 Need to keep deprecated package for compatibility.
 	"github.com/golang/protobuf/proto"
 	"github.com/prometheus/common/expfmt"
 
@@ -361,7 +362,7 @@ func (r *Registry) Unregister(c Collector) bool {
 	var (
 		descChan    = make(chan *Desc, capDescChan)
 		descIDs     = map[uint64]struct{}{}
-		collectorID uint64 // Just a sum of the desc IDs.
+		collectorID uint64 // All desc IDs XOR'd together.
 	)
 	go func() {
 		c.Describe(descChan)
@@ -369,7 +370,7 @@ func (r *Registry) Unregister(c Collector) bool {
 	}()
 	for desc := range descChan {
 		if _, exists := descIDs[desc.id]; !exists {
-			collectorID += desc.id
+			collectorID ^= desc.id
 			descIDs[desc.id] = struct{}{}
 		}
 	}

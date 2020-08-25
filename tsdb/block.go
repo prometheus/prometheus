@@ -39,24 +39,15 @@ import (
 // The methods must be called in the order they are specified in.
 type IndexWriter interface {
 	// AddSymbols registers all string symbols that are encountered in series
-	// and other indices.
-	AddSymbols(sym map[string]struct{}) error
+	// and other indices. Symbols must be added in sorted order.
+	AddSymbol(sym string) error
 
 	// AddSeries populates the index writer with a series and its offsets
 	// of chunks that the index can reference.
-	// Implementations may require series to be insert in increasing order by
-	// their labels.
-	// The reference numbers are used to resolve entries in postings lists that
-	// are added later.
+	// Implementations may require series to be insert in strictly increasing order by
+	// their labels. The reference numbers are used to resolve entries in postings lists
+	// that are added later.
 	AddSeries(ref uint64, l labels.Labels, chunks ...chunks.Meta) error
-
-	// WriteLabelIndex serializes an index from label names to values.
-	// The passed in values chained tuples of strings of the length of names.
-	WriteLabelIndex(names []string, values []string) error
-
-	// WritePostings writes a postings list for a single label pair.
-	// The Postings here contain refs to the series that were added.
-	WritePostings(name, value string, it index.Postings) error
 
 	// Close writes any finalization and closes the resources associated with
 	// the underlying writer.
@@ -65,12 +56,16 @@ type IndexWriter interface {
 
 // IndexReader provides reading access of serialized index data.
 type IndexReader interface {
-	// Symbols returns a set of string symbols that may occur in series' labels
-	// and indices.
-	Symbols() (map[string]struct{}, error)
+	// Symbols return an iterator over sorted string symbols that may occur in
+	// series' labels and indices. It is not safe to use the returned strings
+	// beyond the lifetime of the index reader.
+	Symbols() index.StringIter
 
-	// LabelValues returns sorted possible label values.
-	LabelValues(names ...string) (index.StringTuples, error)
+	// SortedLabelValues returns sorted possible label values.
+	SortedLabelValues(name string) ([]string, error)
+
+	// LabelValues returns possible label values which may not be sorted.
+	LabelValues(name string) ([]string, error)
 
 	// Postings returns the postings list iterator for the label pairs.
 	// The Postings here contain the offsets to the series inside the index.
@@ -84,26 +79,14 @@ type IndexReader interface {
 
 	// Series populates the given labels and chunk metas for the series identified
 	// by the reference.
-	// Returns ErrNotFound if the ref does not resolve to a known series.
+	// Returns storage.ErrNotFound if the ref does not resolve to a known series.
 	Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) error
-
-	// LabelIndices returns a list of string tuples for which a label value index exists.
-	// NOTE: This is deprecated. Use `LabelNames()` instead.
-	LabelIndices() ([][]string, error)
 
 	// LabelNames returns all the unique label names present in the index in sorted order.
 	LabelNames() ([]string, error)
 
 	// Close releases the underlying resources of the reader.
 	Close() error
-}
-
-// StringTuples provides access to a sorted list of string tuples.
-type StringTuples interface {
-	// Total number of tuples in the list.
-	Len() int
-	// At returns the tuple at position i.
-	At(i int) ([]string, error)
 }
 
 // ChunkWriter serializes a time block of chunked series data.
@@ -141,12 +124,6 @@ type BlockReader interface {
 
 	// Meta provides meta information about the block reader.
 	Meta() BlockMeta
-}
-
-// Appendable defines an entity to which data can be appended.
-type Appendable interface {
-	// Appender returns a new Appender against an underlying store.
-	Appender() Appender
 }
 
 // BlockMeta provides meta information about a block.
@@ -440,13 +417,17 @@ type blockIndexReader struct {
 	b  *Block
 }
 
-func (r blockIndexReader) Symbols() (map[string]struct{}, error) {
-	s, err := r.ir.Symbols()
-	return s, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
+func (r blockIndexReader) Symbols() index.StringIter {
+	return r.ir.Symbols()
 }
 
-func (r blockIndexReader) LabelValues(names ...string) (index.StringTuples, error) {
-	st, err := r.ir.LabelValues(names...)
+func (r blockIndexReader) SortedLabelValues(name string) ([]string, error) {
+	st, err := r.ir.SortedLabelValues(name)
+	return st, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
+}
+
+func (r blockIndexReader) LabelValues(name string) ([]string, error) {
+	st, err := r.ir.LabelValues(name)
 	return st, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
 }
 
@@ -467,11 +448,6 @@ func (r blockIndexReader) Series(ref uint64, lset *labels.Labels, chks *[]chunks
 		return errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
 	}
 	return nil
-}
-
-func (r blockIndexReader) LabelIndices() ([][]string, error) {
-	ss, err := r.ir.LabelIndices()
-	return ss, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
 }
 
 func (r blockIndexReader) LabelNames() ([]string, error) {

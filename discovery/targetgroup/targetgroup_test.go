@@ -38,8 +38,8 @@ func TestTargetGroupStrictJsonUnmarshal(t *testing.T) {
 			json: `	{"labels": {"my":"label"},"targets": ["localhost:9090","localhost:9091"]}`,
 			expectedReply: nil,
 			expectedGroup: Group{Targets: []model.LabelSet{
-				model.LabelSet{"__address__": "localhost:9090"},
-				model.LabelSet{"__address__": "localhost:9091"}}, Labels: model.LabelSet{"my": "label"}},
+				{"__address__": "localhost:9090"},
+				{"__address__": "localhost:9091"}}, Labels: model.LabelSet{"my": "label"}},
 		},
 		{
 			json: `	{"label": {},"targets": []}`,
@@ -70,30 +70,30 @@ func TestTargetGroupYamlMarshal(t *testing.T) {
 	}
 
 	tests := []struct {
-		expectedYaml  string
-		expectetedErr error
-		group         Group
+		expectedYaml string
+		expectedErr  error
+		group        Group
 	}{
 		{
 			// labels should be omitted if empty.
-			group:         Group{},
-			expectedYaml:  "targets: []\n",
-			expectetedErr: nil,
+			group:        Group{},
+			expectedYaml: "targets: []\n",
+			expectedErr:  nil,
 		},
 		{
 			// targets only exposes addresses.
 			group: Group{Targets: []model.LabelSet{
-				model.LabelSet{"__address__": "localhost:9090"},
-				model.LabelSet{"__address__": "localhost:9091"}},
+				{"__address__": "localhost:9090"},
+				{"__address__": "localhost:9091"}},
 				Labels: model.LabelSet{"foo": "bar", "bar": "baz"}},
-			expectedYaml:  "targets:\n- localhost:9090\n- localhost:9091\nlabels:\n  bar: baz\n  foo: bar\n",
-			expectetedErr: nil,
+			expectedYaml: "targets:\n- localhost:9090\n- localhost:9091\nlabels:\n  bar: baz\n  foo: bar\n",
+			expectedErr:  nil,
 		},
 	}
 
 	for _, test := range tests {
 		actual, err := test.group.MarshalYAML()
-		testutil.Equals(t, test.expectetedErr, err)
+		testutil.Equals(t, test.expectedErr, err)
 		testutil.Equals(t, test.expectedYaml, string(marshal(actual)))
 	}
 }
@@ -120,8 +120,8 @@ func TestTargetGroupYamlUnmarshal(t *testing.T) {
 			yaml:          "labels:\n  my:  label\ntargets:\n  ['localhost:9090', 'localhost:9191']",
 			expectedReply: nil,
 			expectedGroup: Group{Targets: []model.LabelSet{
-				model.LabelSet{"__address__": "localhost:9090"},
-				model.LabelSet{"__address__": "localhost:9191"}}, Labels: model.LabelSet{"my": "label"}},
+				{"__address__": "localhost:9090"},
+				{"__address__": "localhost:9191"}}, Labels: model.LabelSet{"my": "label"}},
 		},
 		{
 			// incorrect syntax.
@@ -143,8 +143,8 @@ func TestString(t *testing.T) {
 	// String() should return only the source, regardless of other attributes.
 	group1 :=
 		Group{Targets: []model.LabelSet{
-			model.LabelSet{"__address__": "localhost:9090"},
-			model.LabelSet{"__address__": "localhost:9091"}},
+			{"__address__": "localhost:9090"},
+			{"__address__": "localhost:9091"}},
 			Source: "<source>",
 			Labels: model.LabelSet{"foo": "bar", "bar": "baz"}}
 	group2 :=

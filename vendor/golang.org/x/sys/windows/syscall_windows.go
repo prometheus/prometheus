@@ -13,6 +13,8 @@ import (
 	"time"
 	"unicode/utf16"
 	"unsafe"
+
+	"golang.org/x/sys/internal/unsafeheader"
 )
 
 type Handle uintptr
@@ -115,6 +117,32 @@ func UTF16PtrFromString(s string) (*uint16, error) {
 		return nil, err
 	}
 	return &a[0], nil
+}
+
+// UTF16PtrToString takes a pointer to a UTF-16 sequence and returns the corresponding UTF-8 encoded string.
+// If the pointer is nil, this returns the empty string. This assumes that the UTF-16 sequence is terminated
+// at a zero word; if the zero word is not present, the program may crash.
+func UTF16PtrToString(p *uint16) string {
+	if p == nil {
+		return ""
+	}
+	if *p == 0 {
+		return ""
+	}
+
+	// Find NUL terminator.
+	n := 0
+	for ptr := unsafe.Pointer(p); *(*uint16)(ptr) != 0; n++ {
+		ptr = unsafe.Pointer(uintptr(ptr) + unsafe.Sizeof(*p))
+	}
+
+	var s []uint16
+	h := (*unsafeheader.Slice)(unsafe.Pointer(&s))
+	h.Data = unsafe.Pointer(p)
+	h.Len = n
+	h.Cap = n
+
+	return string(utf16.Decode(s))
 }
 
 func Getpagesize() int { return 4096 }
@@ -280,6 +308,8 @@ func NewCallbackCDecl(fn interface{}) uintptr {
 //sys	GetProcessId(process Handle) (id uint32, err error)
 //sys	OpenThread(desiredAccess uint32, inheritHandle bool, threadId uint32) (handle Handle, err error)
 //sys	SetProcessPriorityBoost(process Handle, disable bool) (err error) = kernel32.SetProcessPriorityBoost
+//sys	GetProcessWorkingSetSizeEx(hProcess Handle, lpMinimumWorkingSetSize *uintptr, lpMaximumWorkingSetSize *uintptr, flags *uint32)
+//sys	SetProcessWorkingSetSizeEx(hProcess Handle, dwMinimumWorkingSetSize uintptr, dwMaximumWorkingSetSize uintptr, flags uint32) (err error)
 
 // Volume Management Functions
 //sys	DefineDosDevice(flags uint32, deviceName *uint16, targetPath *uint16) (err error) = DefineDosDeviceW
@@ -313,6 +343,13 @@ func NewCallbackCDecl(fn interface{}) uintptr {
 //sys	CoTaskMemFree(address unsafe.Pointer) = ole32.CoTaskMemFree
 //sys	rtlGetVersion(info *OsVersionInfoEx) (ret error) = ntdll.RtlGetVersion
 //sys	rtlGetNtVersionNumbers(majorVersion *uint32, minorVersion *uint32, buildNumber *uint32) = ntdll.RtlGetNtVersionNumbers
+//sys	getProcessPreferredUILanguages(flags uint32, numLanguages *uint32, buf *uint16, bufSize *uint32) (err error) = kernel32.GetProcessPreferredUILanguages
+//sys	getThreadPreferredUILanguages(flags uint32, numLanguages *uint32, buf *uint16, bufSize *uint32) (err error) = kernel32.GetThreadPreferredUILanguages
+//sys	getUserPreferredUILanguages(flags uint32, numLanguages *uint32, buf *uint16, bufSize *uint32) (err error) = kernel32.GetUserPreferredUILanguages
+//sys	getSystemPreferredUILanguages(flags uint32, numLanguages *uint32, buf *uint16, bufSize *uint32) (err error) = kernel32.GetSystemPreferredUILanguages
+
+// Process Status API (PSAPI)
+//sys	EnumProcesses(processIds []uint32, bytesReturned *uint32) (err error) = psapi.EnumProcesses
 
 // syscall interface implementation for other packages
 
@@ -410,7 +447,11 @@ func Open(path string, mode int, perm uint32) (fd Handle, err error) {
 	default:
 		createmode = OPEN_EXISTING
 	}
-	h, e := CreateFile(pathp, access, sharemode, sa, createmode, FILE_ATTRIBUTE_NORMAL, 0)
+	var attrs uint32 = FILE_ATTRIBUTE_NORMAL
+	if perm&S_IWRITE == 0 {
+		attrs = FILE_ATTRIBUTE_READONLY
+	}
+	h, e := CreateFile(pathp, access, sharemode, sa, createmode, attrs, 0)
 	return h, e
 }
 
@@ -690,6 +731,8 @@ const socket_error = uintptr(^uint32(0))
 //sys	WSACleanup() (err error) [failretval==socket_error] = ws2_32.WSACleanup
 //sys	WSAIoctl(s Handle, iocc uint32, inbuf *byte, cbif uint32, outbuf *byte, cbob uint32, cbbr *uint32, overlapped *Overlapped, completionRoutine uintptr) (err error) [failretval==socket_error] = ws2_32.WSAIoctl
 //sys	socket(af int32, typ int32, protocol int32) (handle Handle, err error) [failretval==InvalidHandle] = ws2_32.socket
+//sys	sendto(s Handle, buf []byte, flags int32, to unsafe.Pointer, tolen int32) (err error) [failretval==socket_error] = ws2_32.sendto
+//sys	recvfrom(s Handle, buf []byte, flags int32, from *RawSockaddrAny, fromlen *int32) (n int32, err error) [failretval==-1] = ws2_32.recvfrom
 //sys	Setsockopt(s Handle, level int32, optname int32, optval *byte, optlen int32) (err error) [failretval==socket_error] = ws2_32.setsockopt
 //sys	Getsockopt(s Handle, level int32, optname int32, optval *byte, optlen *int32) (err error) [failretval==socket_error] = ws2_32.getsockopt
 //sys	bind(s Handle, name unsafe.Pointer, namelen int32) (err error) [failretval==socket_error] = ws2_32.bind
@@ -857,7 +900,7 @@ func (rsa *RawSockaddrAny) Sockaddr() (Sockaddr, error) {
 		for n < len(pp.Path) && pp.Path[n] != 0 {
 			n++
 		}
-		bytes := (*[10000]byte)(unsafe.Pointer(&pp.Path[0]))[0:n]
+		bytes := (*[len(pp.Path)]byte)(unsafe.Pointer(&pp.Path[0]))[0:n]
 		sa.Name = string(bytes)
 		return sa, nil
 
@@ -1118,10 +1161,27 @@ func NsecToTimespec(nsec int64) (ts Timespec) {
 // TODO(brainman): fix all needed for net
 
 func Accept(fd Handle) (nfd Handle, sa Sockaddr, err error) { return 0, nil, syscall.EWINDOWS }
+
 func Recvfrom(fd Handle, p []byte, flags int) (n int, from Sockaddr, err error) {
-	return 0, nil, syscall.EWINDOWS
+	var rsa RawSockaddrAny
+	l := int32(unsafe.Sizeof(rsa))
+	n32, err := recvfrom(fd, p, int32(flags), &rsa, &l)
+	n = int(n32)
+	if err != nil {
+		return
+	}
+	from, err = rsa.Sockaddr()
+	return
 }
-func Sendto(fd Handle, p []byte, flags int, to Sockaddr) (err error)       { return syscall.EWINDOWS }
+
+func Sendto(fd Handle, p []byte, flags int, to Sockaddr) (err error) {
+	ptr, l, err := to.sockaddr()
+	if err != nil {
+		return err
+	}
+	return sendto(fd, p, int32(flags), ptr, l)
+}
+
 func SetsockoptTimeval(fd Handle, level, opt int, tv *Timeval) (err error) { return syscall.EWINDOWS }
 
 // The Linger struct is wrong but we only noticed after Go 1.
@@ -1151,7 +1211,12 @@ type IPv6Mreq struct {
 	Interface uint32
 }
 
-func GetsockoptInt(fd Handle, level, opt int) (int, error) { return -1, syscall.EWINDOWS }
+func GetsockoptInt(fd Handle, level, opt int) (int, error) {
+	v := int32(0)
+	l := int32(unsafe.Sizeof(v))
+	err := Getsockopt(fd, int32(level), int32(opt), (*byte)(unsafe.Pointer(&v)), &l)
+	return int(v), err
+}
 
 func SetsockoptLinger(fd Handle, level, opt int, l *Linger) (err error) {
 	sys := sysLinger{Onoff: uint16(l.Onoff), Linger: uint16(l.Linger)}
@@ -1348,7 +1413,7 @@ func (t Token) KnownFolderPath(folderID *KNOWNFOLDERID, flags uint32) (string, e
 		return "", err
 	}
 	defer CoTaskMemFree(unsafe.Pointer(p))
-	return UTF16ToString((*[(1 << 30) - 1]uint16)(unsafe.Pointer(p))[:]), nil
+	return UTF16PtrToString(p), nil
 }
 
 // RtlGetVersion returns the version of the underlying operating system, ignoring
@@ -1370,4 +1435,55 @@ func RtlGetNtVersionNumbers() (majorVersion, minorVersion, buildNumber uint32) {
 	rtlGetNtVersionNumbers(&majorVersion, &minorVersion, &buildNumber)
 	buildNumber &= 0xffff
 	return
+}
+
+// GetProcessPreferredUILanguages retrieves the process preferred UI languages.
+func GetProcessPreferredUILanguages(flags uint32) ([]string, error) {
+	return getUILanguages(flags, getProcessPreferredUILanguages)
+}
+
+// GetThreadPreferredUILanguages retrieves the thread preferred UI languages for the current thread.
+func GetThreadPreferredUILanguages(flags uint32) ([]string, error) {
+	return getUILanguages(flags, getThreadPreferredUILanguages)
+}
+
+// GetUserPreferredUILanguages retrieves information about the user preferred UI languages.
+func GetUserPreferredUILanguages(flags uint32) ([]string, error) {
+	return getUILanguages(flags, getUserPreferredUILanguages)
+}
+
+// GetSystemPreferredUILanguages retrieves the system preferred UI languages.
+func GetSystemPreferredUILanguages(flags uint32) ([]string, error) {
+	return getUILanguages(flags, getSystemPreferredUILanguages)
+}
+
+func getUILanguages(flags uint32, f func(flags uint32, numLanguages *uint32, buf *uint16, bufSize *uint32) error) ([]string, error) {
+	size := uint32(128)
+	for {
+		var numLanguages uint32
+		buf := make([]uint16, size)
+		err := f(flags, &numLanguages, &buf[0], &size)
+		if err == ERROR_INSUFFICIENT_BUFFER {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		buf = buf[:size]
+		if numLanguages == 0 || len(buf) == 0 { // GetProcessPreferredUILanguages may return numLanguages==0 with "\0\0"
+			return []string{}, nil
+		}
+		if buf[len(buf)-1] == 0 {
+			buf = buf[:len(buf)-1] // remove terminating null
+		}
+		languages := make([]string, 0, numLanguages)
+		from := 0
+		for i, c := range buf {
+			if c == 0 {
+				languages = append(languages, string(utf16.Decode(buf[from:i])))
+				from = i + 1
+			}
+		}
+		return languages, nil
+	}
 }

@@ -61,25 +61,139 @@ func (v Value) IsNumber() bool {
 // will panic.
 //
 // TODO(skriptble): Add support for Decimal128.
-func (v Value) AsInt32() int32 { return 0 }
+func (v Value) AsInt32() int32 {
+	if !v.IsNumber() {
+		panic(ElementTypeError{"bsoncore.Value.AsInt32", v.Type})
+	}
+	var i32 int32
+	switch v.Type {
+	case bsontype.Double:
+		f64, _, ok := ReadDouble(v.Data)
+		if !ok {
+			panic(NewInsufficientBytesError(v.Data, v.Data))
+		}
+		i32 = int32(f64)
+	case bsontype.Int32:
+		var ok bool
+		i32, _, ok = ReadInt32(v.Data)
+		if !ok {
+			panic(NewInsufficientBytesError(v.Data, v.Data))
+		}
+	case bsontype.Int64:
+		i64, _, ok := ReadInt64(v.Data)
+		if !ok {
+			panic(NewInsufficientBytesError(v.Data, v.Data))
+		}
+		i32 = int32(i64)
+	case bsontype.Decimal128:
+		panic(ElementTypeError{"bsoncore.Value.AsInt32", v.Type})
+	}
+	return i32
+}
 
 // AsInt32OK functions the same as AsInt32 but returns a boolean instead of panicking. False
 // indicates an error.
 //
 // TODO(skriptble): Add support for Decimal128.
-func (v Value) AsInt32OK() (int32, bool) { return 0, false }
+func (v Value) AsInt32OK() (int32, bool) {
+	if !v.IsNumber() {
+		return 0, false
+	}
+	var i32 int32
+	switch v.Type {
+	case bsontype.Double:
+		f64, _, ok := ReadDouble(v.Data)
+		if !ok {
+			return 0, false
+		}
+		i32 = int32(f64)
+	case bsontype.Int32:
+		var ok bool
+		i32, _, ok = ReadInt32(v.Data)
+		if !ok {
+			return 0, false
+		}
+	case bsontype.Int64:
+		i64, _, ok := ReadInt64(v.Data)
+		if !ok {
+			return 0, false
+		}
+		i32 = int32(i64)
+	case bsontype.Decimal128:
+		return 0, false
+	}
+	return i32, true
+}
 
 // AsInt64 returns a BSON number as an int64. If the BSON type is not a numeric one, this method
 // will panic.
 //
 // TODO(skriptble): Add support for Decimal128.
-func (v Value) AsInt64() int64 { return 0 }
+func (v Value) AsInt64() int64 {
+	if !v.IsNumber() {
+		panic(ElementTypeError{"bsoncore.Value.AsInt64", v.Type})
+	}
+	var i64 int64
+	switch v.Type {
+	case bsontype.Double:
+		f64, _, ok := ReadDouble(v.Data)
+		if !ok {
+			panic(NewInsufficientBytesError(v.Data, v.Data))
+		}
+		i64 = int64(f64)
+	case bsontype.Int32:
+		var ok bool
+		i32, _, ok := ReadInt32(v.Data)
+		if !ok {
+			panic(NewInsufficientBytesError(v.Data, v.Data))
+		}
+		i64 = int64(i32)
+	case bsontype.Int64:
+		var ok bool
+		i64, _, ok = ReadInt64(v.Data)
+		if !ok {
+			panic(NewInsufficientBytesError(v.Data, v.Data))
+		}
+	case bsontype.Decimal128:
+		panic(ElementTypeError{"bsoncore.Value.AsInt64", v.Type})
+	}
+	return i64
+}
 
 // AsInt64OK functions the same as AsInt64 but returns a boolean instead of panicking. False
 // indicates an error.
 //
 // TODO(skriptble): Add support for Decimal128.
-func (v Value) AsInt64OK() (int64, bool) { return 0, false }
+func (v Value) AsInt64OK() (int64, bool) {
+	if !v.IsNumber() {
+		return 0, false
+	}
+	var i64 int64
+	switch v.Type {
+	case bsontype.Double:
+		f64, _, ok := ReadDouble(v.Data)
+		if !ok {
+			return 0, false
+		}
+		i64 = int64(f64)
+	case bsontype.Int32:
+		var ok bool
+		i32, _, ok := ReadInt32(v.Data)
+		if !ok {
+			return 0, false
+		}
+		i64 = int64(i32)
+	case bsontype.Int64:
+		var ok bool
+		i64, _, ok = ReadInt64(v.Data)
+		if !ok {
+			return 0, false
+		}
+	case bsontype.Decimal128:
+		return 0, false
+	}
+	return i64, true
+}
 
 // AsFloat64 returns a BSON number as an float64. If the BSON type is not a numeric one, this method
 // will panic.

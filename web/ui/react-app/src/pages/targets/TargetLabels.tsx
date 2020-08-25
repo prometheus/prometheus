@@ -1,5 +1,6 @@
 import React, { FC, Fragment, useState } from 'react';
 import { Badge, Tooltip } from 'reactstrap';
+import 'css.escape';
 import styles from './TargetLabels.module.css';
 
 interface Labels {
@@ -32,7 +33,7 @@ const TargetLabels: FC<TargetLabelsProps> = ({ discoveredLabels, labels, idx, sc
           );
         })}
       </div>
-      <Tooltip isOpen={tooltipOpen} target={id} toggle={toggle} style={{ maxWidth: 'none', textAlign: 'left' }}>
+      <Tooltip isOpen={tooltipOpen} target={CSS.escape(id)} toggle={toggle} style={{ maxWidth: 'none', textAlign: 'left' }}>
         <b>Before relabeling:</b>
         {formatLabels(discoveredLabels).map((s: string, idx: number) => (
           <Fragment key={idx}>

@@ -35,7 +35,9 @@ func NewLoadBalancerOutboundRulesClient(subscriptionID string) LoadBalancerOutbo
 	return NewLoadBalancerOutboundRulesClientWithBaseURI(DefaultBaseURI, subscriptionID)
 }
 
-// NewLoadBalancerOutboundRulesClientWithBaseURI creates an instance of the LoadBalancerOutboundRulesClient client.
+// NewLoadBalancerOutboundRulesClientWithBaseURI creates an instance of the LoadBalancerOutboundRulesClient client
+// using a custom endpoint.  Use this when interacting with an Azure cloud that uses a non-standard base URI (sovereign
+// clouds, Azure stack).
 func NewLoadBalancerOutboundRulesClientWithBaseURI(baseURI string, subscriptionID string) LoadBalancerOutboundRulesClient {
 	return LoadBalancerOutboundRulesClient{NewWithBaseURI(baseURI, subscriptionID)}
 }
@@ -102,8 +104,7 @@ func (client LoadBalancerOutboundRulesClient) GetPreparer(ctx context.Context, r
 // GetSender sends the Get request. The method will close the
 // http.Response Body if it receives an error.
 func (client LoadBalancerOutboundRulesClient) GetSender(req *http.Request) (*http.Response, error) {
-	return autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // GetResponder handles the response to the Get request. The method always
@@ -111,7 +112,6 @@ func (client LoadBalancerOutboundRulesClient) GetSender(req *http.Request) (*htt
 func (client LoadBalancerOutboundRulesClient) GetResponder(resp *http.Response) (result OutboundRule, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -152,6 +152,9 @@ func (client LoadBalancerOutboundRulesClient) List(ctx context.Context, resource
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.LoadBalancerOutboundRulesClient", "List", resp, "Failure responding to request")
 	}
+	if result.lborlr.hasNextLink() && result.lborlr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }
@@ -180,8 +183,7 @@ func (client LoadBalancerOutboundRulesClient) ListPreparer(ctx context.Context, 
 // ListSender sends the List request. The method will close the
 // http.Response Body if it receives an error.
 func (client LoadBalancerOutboundRulesClient) ListSender(req *http.Request) (*http.Response, error) {
-	return autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListResponder handles the response to the List request. The method always
@@ -189,7 +191,6 @@ func (client LoadBalancerOutboundRulesClient) ListSender(req *http.Request) (*ht
 func (client LoadBalancerOutboundRulesClient) ListResponder(resp *http.Response) (result LoadBalancerOutboundRuleListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

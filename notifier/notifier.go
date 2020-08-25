@@ -16,7 +16,6 @@ package notifier
 import (
 	"bytes"
 	"context"
-	"crypto/md5"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -27,19 +26,19 @@ import (
 	"path"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/go-openapi/strfmt"
 	"github.com/pkg/errors"
+	"go.uber.org/atomic"
+
+	"github.com/prometheus/alertmanager/api/v2/models"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
-
-	"github.com/prometheus/alertmanager/api/v2/models"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -262,20 +261,13 @@ func (n *Manager) ApplyConfig(conf *config.Config) error {
 
 	amSets := make(map[string]*alertmanagerSet)
 
-	for _, cfg := range conf.AlertingConfig.AlertmanagerConfigs {
-		ams, err := newAlertmanagerSet(cfg, n.logger)
+	for k, cfg := range conf.AlertingConfig.AlertmanagerConfigs.ToMap() {
+		ams, err := newAlertmanagerSet(cfg, n.logger, n.metrics)
 		if err != nil {
 			return err
 		}
 
-		ams.metrics = n.metrics
-
-		// The config hash is used for the map lookup identifier.
-		b, err := json.Marshal(cfg)
-		if err != nil {
-			return err
-		}
-		amSets[fmt.Sprintf("%x", md5.Sum(b))] = ams
+		amSets[k] = ams
 	}
 
 	n.alertmanagers = amSets
@@ -474,7 +466,7 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 
 	var (
 		wg         sync.WaitGroup
-		numSuccess uint64
+		numSuccess atomic.Uint64
 	)
 	for _, ams := range amSets {
 		var (
@@ -491,6 +483,7 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 					v1Payload, err = json.Marshal(alerts)
 					if err != nil {
 						level.Error(n.logger).Log("msg", "Encoding alerts for Alertmanager API v1 failed", "err", err)
+						ams.mtx.RUnlock()
 						return false
 					}
 				}
@@ -505,6 +498,7 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 					v2Payload, err = json.Marshal(openAPIAlerts)
 					if err != nil {
 						level.Error(n.logger).Log("msg", "Encoding alerts for Alertmanager API v2 failed", "err", err)
+						ams.mtx.RUnlock()
 						return false
 					}
 				}
@@ -517,6 +511,7 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 					"msg", fmt.Sprintf("Invalid Alertmanager API version '%v', expected one of '%v'", ams.cfg.APIVersion, config.SupportedAlertmanagerAPIVersions),
 					"err", err,
 				)
+				ams.mtx.RUnlock()
 				return false
 			}
 		}
@@ -532,7 +527,7 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 					level.Error(n.logger).Log("alertmanager", url, "count", len(alerts), "msg", "Error sending alert", "err", err)
 					n.metrics.errors.WithLabelValues(url).Inc()
 				} else {
-					atomic.AddUint64(&numSuccess, 1)
+					numSuccess.Inc()
 				}
 				n.metrics.latency.WithLabelValues(url).Observe(time.Since(begin).Seconds())
 				n.metrics.sent.WithLabelValues(url).Add(float64(len(alerts)))
@@ -546,7 +541,7 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 
 	wg.Wait()
 
-	return numSuccess > 0
+	return numSuccess.Load() > 0
 }
 
 func alertsToOpenAPIAlerts(alerts []*Alert) models.PostableAlerts {
@@ -638,15 +633,16 @@ type alertmanagerSet struct {
 	logger     log.Logger
 }
 
-func newAlertmanagerSet(cfg *config.AlertmanagerConfig, logger log.Logger) (*alertmanagerSet, error) {
-	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, "alertmanager", false)
+func newAlertmanagerSet(cfg *config.AlertmanagerConfig, logger log.Logger, metrics *alertMetrics) (*alertmanagerSet, error) {
+	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, "alertmanager", false, false)
 	if err != nil {
 		return nil, err
 	}
 	s := &alertmanagerSet{
-		client: client,
-		cfg:    cfg,
-		logger: logger,
+		client:  client,
+		cfg:     cfg,
+		logger:  logger,
+		metrics: metrics,
 	}
 	return s, nil
 }

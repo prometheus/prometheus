@@ -34,6 +34,12 @@ const (
 	NodeLegacyHostIP = "LegacyHostIP"
 )
 
+var (
+	nodeAddCount    = eventCount.WithLabelValues("node", "add")
+	nodeUpdateCount = eventCount.WithLabelValues("node", "update")
+	nodeDeleteCount = eventCount.WithLabelValues("node", "delete")
+)
+
 // Node discovers Kubernetes nodes.
 type Node struct {
 	logger   log.Logger
@@ -50,15 +56,15 @@ func NewNode(l log.Logger, inf cache.SharedInformer) *Node {
 	n := &Node{logger: l, informer: inf, store: inf.GetStore(), queue: workqueue.NewNamed("node")}
 	n.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
-			eventCount.WithLabelValues("node", "add").Inc()
+			nodeAddCount.Inc()
 			n.enqueue(o)
 		},
 		DeleteFunc: func(o interface{}) {
-			eventCount.WithLabelValues("node", "delete").Inc()
+			nodeDeleteCount.Inc()
 			n.enqueue(o)
 		},
 		UpdateFunc: func(_, o interface{}) {
-			eventCount.WithLabelValues("node", "update").Inc()
+			nodeUpdateCount.Inc()
 			n.enqueue(o)
 		},
 	})
@@ -112,7 +118,7 @@ func (n *Node) process(ctx context.Context, ch chan<- []*targetgroup.Group) bool
 		return true
 	}
 	if !exists {
-		send(ctx, n.logger, RoleNode, ch, &targetgroup.Group{Source: nodeSourceFromName(name)})
+		send(ctx, ch, &targetgroup.Group{Source: nodeSourceFromName(name)})
 		return true
 	}
 	node, err := convertToNode(o)
@@ -120,7 +126,7 @@ func (n *Node) process(ctx context.Context, ch chan<- []*targetgroup.Group) bool
 		level.Error(n.logger).Log("msg", "converting to Node object failed", "err", err)
 		return true
 	}
-	send(ctx, n.logger, RoleNode, ch, n.buildNode(node))
+	send(ctx, ch, n.buildNode(node))
 	return true
 }
 

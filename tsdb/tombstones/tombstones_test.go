@@ -15,6 +15,7 @@ package tombstones
 
 import (
 	"io/ioutil"
+	"math"
 	"math/rand"
 	"os"
 	"sync"
@@ -23,9 +24,14 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/prometheus/util/testutil"
+	"go.uber.org/goleak"
 )
 
-func TestWriteAndReadbackTombStones(t *testing.T) {
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
+}
+
+func TestWriteAndReadbackTombstones(t *testing.T) {
 	tmpdir, _ := ioutil.TempDir("", "test")
 	defer func() {
 		testutil.Ok(t, os.RemoveAll(tmpdir))
@@ -80,18 +86,18 @@ func TestAddingNewIntervals(t *testing.T) {
 		},
 		{
 			exist: Intervals{{1, 10}, {12, 20}, {25, 30}},
-			new:   Interval{21, 23},
-			exp:   Intervals{{1, 10}, {12, 23}, {25, 30}},
+			new:   Interval{21, 25},
+			exp:   Intervals{{1, 10}, {12, 30}},
+		},
+		{
+			exist: Intervals{{1, 10}, {12, 20}, {25, 30}},
+			new:   Interval{22, 23},
+			exp:   Intervals{{1, 10}, {12, 20}, {22, 23}, {25, 30}},
 		},
 		{
 			exist: Intervals{{1, 2}, {3, 5}, {7, 7}},
 			new:   Interval{6, 7},
 			exp:   Intervals{{1, 2}, {3, 7}},
-		},
-		{
-			exist: Intervals{{1, 10}, {12, 20}, {25, 30}},
-			new:   Interval{21, 25},
-			exp:   Intervals{{1, 10}, {12, 30}},
 		},
 		{
 			exist: Intervals{{1, 10}, {12, 20}, {25, 30}},
@@ -118,11 +124,41 @@ func TestAddingNewIntervals(t *testing.T) {
 			new:   Interval{11, 14},
 			exp:   Intervals{{5, 20}, {25, 30}},
 		},
+		{
+			exist: Intervals{{5, 10}, {12, 20}, {25, 30}},
+			new:   Interval{1, 3},
+			exp:   Intervals{{1, 3}, {5, 10}, {12, 20}, {25, 30}},
+		},
+		{
+			exist: Intervals{{5, 10}, {12, 20}, {25, 30}},
+			new:   Interval{35, 40},
+			exp:   Intervals{{5, 10}, {12, 20}, {25, 30}, {35, 40}},
+		},
+		{
+			new: Interval{math.MinInt64, 2},
+			exp: Intervals{{math.MinInt64, 2}},
+		},
+		{
+			exist: Intervals{{math.MinInt64, 2}},
+			new:   Interval{9, math.MaxInt64},
+			exp:   Intervals{{math.MinInt64, 2}, {9, math.MaxInt64}},
+		},
+		{
+			exist: Intervals{{9, math.MaxInt64}},
+			new:   Interval{math.MinInt64, 2},
+			exp:   Intervals{{math.MinInt64, 2}, {9, math.MaxInt64}},
+		},
+		{
+			exist: Intervals{{9, math.MaxInt64}},
+			new:   Interval{math.MinInt64, 10},
+			exp:   Intervals{{math.MinInt64, math.MaxInt64}},
+		},
 	}
 
 	for _, c := range cases {
-
-		testutil.Equals(t, c.exp, c.exist.Add(c.new))
+		t.Run("", func(t *testing.T) {
+			testutil.Equals(t, c.exp, c.exist.Add(c.new))
+		})
 	}
 }
 

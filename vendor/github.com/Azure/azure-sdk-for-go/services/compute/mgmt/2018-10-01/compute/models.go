@@ -31,1149 +31,22 @@ import (
 // The package's fully qualified name.
 const fqdn = "github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2018-10-01/compute"
 
-// AccessLevel enumerates the values for access level.
-type AccessLevel string
-
-const (
-	// None ...
-	None AccessLevel = "None"
-	// Read ...
-	Read AccessLevel = "Read"
-)
-
-// PossibleAccessLevelValues returns an array of possible values for the AccessLevel const type.
-func PossibleAccessLevelValues() []AccessLevel {
-	return []AccessLevel{None, Read}
-}
-
-// AggregatedReplicationState enumerates the values for aggregated replication state.
-type AggregatedReplicationState string
-
-const (
-	// Completed ...
-	Completed AggregatedReplicationState = "Completed"
-	// Failed ...
-	Failed AggregatedReplicationState = "Failed"
-	// InProgress ...
-	InProgress AggregatedReplicationState = "InProgress"
-	// Unknown ...
-	Unknown AggregatedReplicationState = "Unknown"
-)
-
-// PossibleAggregatedReplicationStateValues returns an array of possible values for the AggregatedReplicationState const type.
-func PossibleAggregatedReplicationStateValues() []AggregatedReplicationState {
-	return []AggregatedReplicationState{Completed, Failed, InProgress, Unknown}
-}
-
-// AvailabilitySetSkuTypes enumerates the values for availability set sku types.
-type AvailabilitySetSkuTypes string
-
-const (
-	// Aligned ...
-	Aligned AvailabilitySetSkuTypes = "Aligned"
-	// Classic ...
-	Classic AvailabilitySetSkuTypes = "Classic"
-)
-
-// PossibleAvailabilitySetSkuTypesValues returns an array of possible values for the AvailabilitySetSkuTypes const type.
-func PossibleAvailabilitySetSkuTypesValues() []AvailabilitySetSkuTypes {
-	return []AvailabilitySetSkuTypes{Aligned, Classic}
-}
-
-// CachingTypes enumerates the values for caching types.
-type CachingTypes string
-
-const (
-	// CachingTypesNone ...
-	CachingTypesNone CachingTypes = "None"
-	// CachingTypesReadOnly ...
-	CachingTypesReadOnly CachingTypes = "ReadOnly"
-	// CachingTypesReadWrite ...
-	CachingTypesReadWrite CachingTypes = "ReadWrite"
-)
-
-// PossibleCachingTypesValues returns an array of possible values for the CachingTypes const type.
-func PossibleCachingTypesValues() []CachingTypes {
-	return []CachingTypes{CachingTypesNone, CachingTypesReadOnly, CachingTypesReadWrite}
-}
-
-// ComponentNames enumerates the values for component names.
-type ComponentNames string
-
-const (
-	// MicrosoftWindowsShellSetup ...
-	MicrosoftWindowsShellSetup ComponentNames = "Microsoft-Windows-Shell-Setup"
-)
-
-// PossibleComponentNamesValues returns an array of possible values for the ComponentNames const type.
-func PossibleComponentNamesValues() []ComponentNames {
-	return []ComponentNames{MicrosoftWindowsShellSetup}
-}
-
-// ContainerServiceOrchestratorTypes enumerates the values for container service orchestrator types.
-type ContainerServiceOrchestratorTypes string
-
-const (
-	// Custom ...
-	Custom ContainerServiceOrchestratorTypes = "Custom"
-	// DCOS ...
-	DCOS ContainerServiceOrchestratorTypes = "DCOS"
-	// Kubernetes ...
-	Kubernetes ContainerServiceOrchestratorTypes = "Kubernetes"
-	// Swarm ...
-	Swarm ContainerServiceOrchestratorTypes = "Swarm"
-)
-
-// PossibleContainerServiceOrchestratorTypesValues returns an array of possible values for the ContainerServiceOrchestratorTypes const type.
-func PossibleContainerServiceOrchestratorTypesValues() []ContainerServiceOrchestratorTypes {
-	return []ContainerServiceOrchestratorTypes{Custom, DCOS, Kubernetes, Swarm}
-}
-
-// ContainerServiceVMSizeTypes enumerates the values for container service vm size types.
-type ContainerServiceVMSizeTypes string
-
-const (
-	// StandardA0 ...
-	StandardA0 ContainerServiceVMSizeTypes = "Standard_A0"
-	// StandardA1 ...
-	StandardA1 ContainerServiceVMSizeTypes = "Standard_A1"
-	// StandardA10 ...
-	StandardA10 ContainerServiceVMSizeTypes = "Standard_A10"
-	// StandardA11 ...
-	StandardA11 ContainerServiceVMSizeTypes = "Standard_A11"
-	// StandardA2 ...
-	StandardA2 ContainerServiceVMSizeTypes = "Standard_A2"
-	// StandardA3 ...
-	StandardA3 ContainerServiceVMSizeTypes = "Standard_A3"
-	// StandardA4 ...
-	StandardA4 ContainerServiceVMSizeTypes = "Standard_A4"
-	// StandardA5 ...
-	StandardA5 ContainerServiceVMSizeTypes = "Standard_A5"
-	// StandardA6 ...
-	StandardA6 ContainerServiceVMSizeTypes = "Standard_A6"
-	// StandardA7 ...
-	StandardA7 ContainerServiceVMSizeTypes = "Standard_A7"
-	// StandardA8 ...
-	StandardA8 ContainerServiceVMSizeTypes = "Standard_A8"
-	// StandardA9 ...
-	StandardA9 ContainerServiceVMSizeTypes = "Standard_A9"
-	// StandardD1 ...
-	StandardD1 ContainerServiceVMSizeTypes = "Standard_D1"
-	// StandardD11 ...
-	StandardD11 ContainerServiceVMSizeTypes = "Standard_D11"
-	// StandardD11V2 ...
-	StandardD11V2 ContainerServiceVMSizeTypes = "Standard_D11_v2"
-	// StandardD12 ...
-	StandardD12 ContainerServiceVMSizeTypes = "Standard_D12"
-	// StandardD12V2 ...
-	StandardD12V2 ContainerServiceVMSizeTypes = "Standard_D12_v2"
-	// StandardD13 ...
-	StandardD13 ContainerServiceVMSizeTypes = "Standard_D13"
-	// StandardD13V2 ...
-	StandardD13V2 ContainerServiceVMSizeTypes = "Standard_D13_v2"
-	// StandardD14 ...
-	StandardD14 ContainerServiceVMSizeTypes = "Standard_D14"
-	// StandardD14V2 ...
-	StandardD14V2 ContainerServiceVMSizeTypes = "Standard_D14_v2"
-	// StandardD1V2 ...
-	StandardD1V2 ContainerServiceVMSizeTypes = "Standard_D1_v2"
-	// StandardD2 ...
-	StandardD2 ContainerServiceVMSizeTypes = "Standard_D2"
-	// StandardD2V2 ...
-	StandardD2V2 ContainerServiceVMSizeTypes = "Standard_D2_v2"
-	// StandardD3 ...
-	StandardD3 ContainerServiceVMSizeTypes = "Standard_D3"
-	// StandardD3V2 ...
-	StandardD3V2 ContainerServiceVMSizeTypes = "Standard_D3_v2"
-	// StandardD4 ...
-	StandardD4 ContainerServiceVMSizeTypes = "Standard_D4"
-	// StandardD4V2 ...
-	StandardD4V2 ContainerServiceVMSizeTypes = "Standard_D4_v2"
-	// StandardD5V2 ...
-	StandardD5V2 ContainerServiceVMSizeTypes = "Standard_D5_v2"
-	// StandardDS1 ...
-	StandardDS1 ContainerServiceVMSizeTypes = "Standard_DS1"
-	// StandardDS11 ...
-	StandardDS11 ContainerServiceVMSizeTypes = "Standard_DS11"
-	// StandardDS12 ...
-	StandardDS12 ContainerServiceVMSizeTypes = "Standard_DS12"
-	// StandardDS13 ...
-	StandardDS13 ContainerServiceVMSizeTypes = "Standard_DS13"
-	// StandardDS14 ...
-	StandardDS14 ContainerServiceVMSizeTypes = "Standard_DS14"
-	// StandardDS2 ...
-	StandardDS2 ContainerServiceVMSizeTypes = "Standard_DS2"
-	// StandardDS3 ...
-	StandardDS3 ContainerServiceVMSizeTypes = "Standard_DS3"
-	// StandardDS4 ...
-	StandardDS4 ContainerServiceVMSizeTypes = "Standard_DS4"
-	// StandardG1 ...
-	StandardG1 ContainerServiceVMSizeTypes = "Standard_G1"
-	// StandardG2 ...
-	StandardG2 ContainerServiceVMSizeTypes = "Standard_G2"
-	// StandardG3 ...
-	StandardG3 ContainerServiceVMSizeTypes = "Standard_G3"
-	// StandardG4 ...
-	StandardG4 ContainerServiceVMSizeTypes = "Standard_G4"
-	// StandardG5 ...
-	StandardG5 ContainerServiceVMSizeTypes = "Standard_G5"
-	// StandardGS1 ...
-	StandardGS1 ContainerServiceVMSizeTypes = "Standard_GS1"
-	// StandardGS2 ...
-	StandardGS2 ContainerServiceVMSizeTypes = "Standard_GS2"
-	// StandardGS3 ...
-	StandardGS3 ContainerServiceVMSizeTypes = "Standard_GS3"
-	// StandardGS4 ...
-	StandardGS4 ContainerServiceVMSizeTypes = "Standard_GS4"
-	// StandardGS5 ...
-	StandardGS5 ContainerServiceVMSizeTypes = "Standard_GS5"
-)
-
-// PossibleContainerServiceVMSizeTypesValues returns an array of possible values for the ContainerServiceVMSizeTypes const type.
-func PossibleContainerServiceVMSizeTypesValues() []ContainerServiceVMSizeTypes {
-	return []ContainerServiceVMSizeTypes{StandardA0, StandardA1, StandardA10, StandardA11, StandardA2, StandardA3, StandardA4, StandardA5, StandardA6, StandardA7, StandardA8, StandardA9, StandardD1, StandardD11, StandardD11V2, StandardD12, StandardD12V2, StandardD13, StandardD13V2, StandardD14, StandardD14V2, StandardD1V2, StandardD2, StandardD2V2, StandardD3, StandardD3V2, StandardD4, StandardD4V2, StandardD5V2, StandardDS1, StandardDS11, StandardDS12, StandardDS13, StandardDS14, StandardDS2, StandardDS3, StandardDS4, StandardG1, StandardG2, StandardG3, StandardG4, StandardG5, StandardGS1, StandardGS2, StandardGS3, StandardGS4, StandardGS5}
-}
-
-// DiffDiskOptions enumerates the values for diff disk options.
-type DiffDiskOptions string
-
-const (
-	// Local ...
-	Local DiffDiskOptions = "Local"
-)
-
-// PossibleDiffDiskOptionsValues returns an array of possible values for the DiffDiskOptions const type.
-func PossibleDiffDiskOptionsValues() []DiffDiskOptions {
-	return []DiffDiskOptions{Local}
-}
-
-// DiskCreateOption enumerates the values for disk create option.
-type DiskCreateOption string
-
-const (
-	// Attach ...
-	Attach DiskCreateOption = "Attach"
-	// Copy ...
-	Copy DiskCreateOption = "Copy"
-	// Empty ...
-	Empty DiskCreateOption = "Empty"
-	// FromImage ...
-	FromImage DiskCreateOption = "FromImage"
-	// Import ...
-	Import DiskCreateOption = "Import"
-	// Restore ...
-	Restore DiskCreateOption = "Restore"
-)
-
-// PossibleDiskCreateOptionValues returns an array of possible values for the DiskCreateOption const type.
-func PossibleDiskCreateOptionValues() []DiskCreateOption {
-	return []DiskCreateOption{Attach, Copy, Empty, FromImage, Import, Restore}
-}
-
-// DiskCreateOptionTypes enumerates the values for disk create option types.
-type DiskCreateOptionTypes string
-
-const (
-	// DiskCreateOptionTypesAttach ...
-	DiskCreateOptionTypesAttach DiskCreateOptionTypes = "Attach"
-	// DiskCreateOptionTypesEmpty ...
-	DiskCreateOptionTypesEmpty DiskCreateOptionTypes = "Empty"
-	// DiskCreateOptionTypesFromImage ...
-	DiskCreateOptionTypesFromImage DiskCreateOptionTypes = "FromImage"
-)
-
-// PossibleDiskCreateOptionTypesValues returns an array of possible values for the DiskCreateOptionTypes const type.
-func PossibleDiskCreateOptionTypesValues() []DiskCreateOptionTypes {
-	return []DiskCreateOptionTypes{DiskCreateOptionTypesAttach, DiskCreateOptionTypesEmpty, DiskCreateOptionTypesFromImage}
-}
-
-// DiskStorageAccountTypes enumerates the values for disk storage account types.
-type DiskStorageAccountTypes string
-
-const (
-	// PremiumLRS ...
-	PremiumLRS DiskStorageAccountTypes = "Premium_LRS"
-	// StandardLRS ...
-	StandardLRS DiskStorageAccountTypes = "Standard_LRS"
-	// StandardSSDLRS ...
-	StandardSSDLRS DiskStorageAccountTypes = "StandardSSD_LRS"
-	// UltraSSDLRS ...
-	UltraSSDLRS DiskStorageAccountTypes = "UltraSSD_LRS"
-)
-
-// PossibleDiskStorageAccountTypesValues returns an array of possible values for the DiskStorageAccountTypes const type.
-func PossibleDiskStorageAccountTypesValues() []DiskStorageAccountTypes {
-	return []DiskStorageAccountTypes{PremiumLRS, StandardLRS, StandardSSDLRS, UltraSSDLRS}
-}
-
-// HostCaching enumerates the values for host caching.
-type HostCaching string
-
-const (
-	// HostCachingNone ...
-	HostCachingNone HostCaching = "None"
-	// HostCachingReadOnly ...
-	HostCachingReadOnly HostCaching = "ReadOnly"
-	// HostCachingReadWrite ...
-	HostCachingReadWrite HostCaching = "ReadWrite"
-)
-
-// PossibleHostCachingValues returns an array of possible values for the HostCaching const type.
-func PossibleHostCachingValues() []HostCaching {
-	return []HostCaching{HostCachingNone, HostCachingReadOnly, HostCachingReadWrite}
-}
-
-// InstanceViewTypes enumerates the values for instance view types.
-type InstanceViewTypes string
-
-const (
-	// InstanceView ...
-	InstanceView InstanceViewTypes = "instanceView"
-)
-
-// PossibleInstanceViewTypesValues returns an array of possible values for the InstanceViewTypes const type.
-func PossibleInstanceViewTypesValues() []InstanceViewTypes {
-	return []InstanceViewTypes{InstanceView}
-}
-
-// IntervalInMins enumerates the values for interval in mins.
-type IntervalInMins string
-
-const (
-	// FiveMins ...
-	FiveMins IntervalInMins = "FiveMins"
-	// SixtyMins ...
-	SixtyMins IntervalInMins = "SixtyMins"
-	// ThirtyMins ...
-	ThirtyMins IntervalInMins = "ThirtyMins"
-	// ThreeMins ...
-	ThreeMins IntervalInMins = "ThreeMins"
-)
-
-// PossibleIntervalInMinsValues returns an array of possible values for the IntervalInMins const type.
-func PossibleIntervalInMinsValues() []IntervalInMins {
-	return []IntervalInMins{FiveMins, SixtyMins, ThirtyMins, ThreeMins}
-}
-
-// IPVersion enumerates the values for ip version.
-type IPVersion string
-
-const (
-	// IPv4 ...
-	IPv4 IPVersion = "IPv4"
-	// IPv6 ...
-	IPv6 IPVersion = "IPv6"
-)
-
-// PossibleIPVersionValues returns an array of possible values for the IPVersion const type.
-func PossibleIPVersionValues() []IPVersion {
-	return []IPVersion{IPv4, IPv6}
-}
-
-// MaintenanceOperationResultCodeTypes enumerates the values for maintenance operation result code types.
-type MaintenanceOperationResultCodeTypes string
-
-const (
-	// MaintenanceOperationResultCodeTypesMaintenanceAborted ...
-	MaintenanceOperationResultCodeTypesMaintenanceAborted MaintenanceOperationResultCodeTypes = "MaintenanceAborted"
-	// MaintenanceOperationResultCodeTypesMaintenanceCompleted ...
-	MaintenanceOperationResultCodeTypesMaintenanceCompleted MaintenanceOperationResultCodeTypes = "MaintenanceCompleted"
-	// MaintenanceOperationResultCodeTypesNone ...
-	MaintenanceOperationResultCodeTypesNone MaintenanceOperationResultCodeTypes = "None"
-	// MaintenanceOperationResultCodeTypesRetryLater ...
-	MaintenanceOperationResultCodeTypesRetryLater MaintenanceOperationResultCodeTypes = "RetryLater"
-)
-
-// PossibleMaintenanceOperationResultCodeTypesValues returns an array of possible values for the MaintenanceOperationResultCodeTypes const type.
-func PossibleMaintenanceOperationResultCodeTypesValues() []MaintenanceOperationResultCodeTypes {
-	return []MaintenanceOperationResultCodeTypes{MaintenanceOperationResultCodeTypesMaintenanceAborted, MaintenanceOperationResultCodeTypesMaintenanceCompleted, MaintenanceOperationResultCodeTypesNone, MaintenanceOperationResultCodeTypesRetryLater}
-}
-
-// OperatingSystemStateTypes enumerates the values for operating system state types.
-type OperatingSystemStateTypes string
-
-const (
-	// Generalized ...
-	Generalized OperatingSystemStateTypes = "Generalized"
-	// Specialized ...
-	Specialized OperatingSystemStateTypes = "Specialized"
-)
-
-// PossibleOperatingSystemStateTypesValues returns an array of possible values for the OperatingSystemStateTypes const type.
-func PossibleOperatingSystemStateTypesValues() []OperatingSystemStateTypes {
-	return []OperatingSystemStateTypes{Generalized, Specialized}
-}
-
-// OperatingSystemTypes enumerates the values for operating system types.
-type OperatingSystemTypes string
-
-const (
-	// Linux ...
-	Linux OperatingSystemTypes = "Linux"
-	// Windows ...
-	Windows OperatingSystemTypes = "Windows"
-)
-
-// PossibleOperatingSystemTypesValues returns an array of possible values for the OperatingSystemTypes const type.
-func PossibleOperatingSystemTypesValues() []OperatingSystemTypes {
-	return []OperatingSystemTypes{Linux, Windows}
-}
-
-// PassNames enumerates the values for pass names.
-type PassNames string
-
-const (
-	// OobeSystem ...
-	OobeSystem PassNames = "OobeSystem"
-)
-
-// PossiblePassNamesValues returns an array of possible values for the PassNames const type.
-func PossiblePassNamesValues() []PassNames {
-	return []PassNames{OobeSystem}
-}
-
-// ProtocolTypes enumerates the values for protocol types.
-type ProtocolTypes string
-
-const (
-	// HTTP ...
-	HTTP ProtocolTypes = "Http"
-	// HTTPS ...
-	HTTPS ProtocolTypes = "Https"
-)
-
-// PossibleProtocolTypesValues returns an array of possible values for the ProtocolTypes const type.
-func PossibleProtocolTypesValues() []ProtocolTypes {
-	return []ProtocolTypes{HTTP, HTTPS}
-}
-
-// ProvisioningState enumerates the values for provisioning state.
-type ProvisioningState string
-
-const (
-	// ProvisioningStateCreating ...
-	ProvisioningStateCreating ProvisioningState = "Creating"
-	// ProvisioningStateDeleting ...
-	ProvisioningStateDeleting ProvisioningState = "Deleting"
-	// ProvisioningStateFailed ...
-	ProvisioningStateFailed ProvisioningState = "Failed"
-	// ProvisioningStateMigrating ...
-	ProvisioningStateMigrating ProvisioningState = "Migrating"
-	// ProvisioningStateSucceeded ...
-	ProvisioningStateSucceeded ProvisioningState = "Succeeded"
-	// ProvisioningStateUpdating ...
-	ProvisioningStateUpdating ProvisioningState = "Updating"
-)
-
-// PossibleProvisioningStateValues returns an array of possible values for the ProvisioningState const type.
-func PossibleProvisioningStateValues() []ProvisioningState {
-	return []ProvisioningState{ProvisioningStateCreating, ProvisioningStateDeleting, ProvisioningStateFailed, ProvisioningStateMigrating, ProvisioningStateSucceeded, ProvisioningStateUpdating}
-}
-
-// ProvisioningState1 enumerates the values for provisioning state 1.
-type ProvisioningState1 string
-
-const (
-	// ProvisioningState1Creating ...
-	ProvisioningState1Creating ProvisioningState1 = "Creating"
-	// ProvisioningState1Deleting ...
-	ProvisioningState1Deleting ProvisioningState1 = "Deleting"
-	// ProvisioningState1Failed ...
-	ProvisioningState1Failed ProvisioningState1 = "Failed"
-	// ProvisioningState1Migrating ...
-	ProvisioningState1Migrating ProvisioningState1 = "Migrating"
-	// ProvisioningState1Succeeded ...
-	ProvisioningState1Succeeded ProvisioningState1 = "Succeeded"
-	// ProvisioningState1Updating ...
-	ProvisioningState1Updating ProvisioningState1 = "Updating"
-)
-
-// PossibleProvisioningState1Values returns an array of possible values for the ProvisioningState1 const type.
-func PossibleProvisioningState1Values() []ProvisioningState1 {
-	return []ProvisioningState1{ProvisioningState1Creating, ProvisioningState1Deleting, ProvisioningState1Failed, ProvisioningState1Migrating, ProvisioningState1Succeeded, ProvisioningState1Updating}
-}
-
-// ProvisioningState2 enumerates the values for provisioning state 2.
-type ProvisioningState2 string
-
-const (
-	// ProvisioningState2Creating ...
-	ProvisioningState2Creating ProvisioningState2 = "Creating"
-	// ProvisioningState2Deleting ...
-	ProvisioningState2Deleting ProvisioningState2 = "Deleting"
-	// ProvisioningState2Failed ...
-	ProvisioningState2Failed ProvisioningState2 = "Failed"
-	// ProvisioningState2Migrating ...
-	ProvisioningState2Migrating ProvisioningState2 = "Migrating"
-	// ProvisioningState2Succeeded ...
-	ProvisioningState2Succeeded ProvisioningState2 = "Succeeded"
-	// ProvisioningState2Updating ...
-	ProvisioningState2Updating ProvisioningState2 = "Updating"
-)
-
-// PossibleProvisioningState2Values returns an array of possible values for the ProvisioningState2 const type.
-func PossibleProvisioningState2Values() []ProvisioningState2 {
-	return []ProvisioningState2{ProvisioningState2Creating, ProvisioningState2Deleting, ProvisioningState2Failed, ProvisioningState2Migrating, ProvisioningState2Succeeded, ProvisioningState2Updating}
-}
-
-// ReplicationState enumerates the values for replication state.
-type ReplicationState string
-
-const (
-	// ReplicationStateCompleted ...
-	ReplicationStateCompleted ReplicationState = "Completed"
-	// ReplicationStateFailed ...
-	ReplicationStateFailed ReplicationState = "Failed"
-	// ReplicationStateReplicating ...
-	ReplicationStateReplicating ReplicationState = "Replicating"
-	// ReplicationStateUnknown ...
-	ReplicationStateUnknown ReplicationState = "Unknown"
-)
-
-// PossibleReplicationStateValues returns an array of possible values for the ReplicationState const type.
-func PossibleReplicationStateValues() []ReplicationState {
-	return []ReplicationState{ReplicationStateCompleted, ReplicationStateFailed, ReplicationStateReplicating, ReplicationStateUnknown}
-}
-
-// ReplicationStatusTypes enumerates the values for replication status types.
-type ReplicationStatusTypes string
-
-const (
-	// ReplicationStatusTypesReplicationStatus ...
-	ReplicationStatusTypesReplicationStatus ReplicationStatusTypes = "ReplicationStatus"
-)
-
-// PossibleReplicationStatusTypesValues returns an array of possible values for the ReplicationStatusTypes const type.
-func PossibleReplicationStatusTypesValues() []ReplicationStatusTypes {
-	return []ReplicationStatusTypes{ReplicationStatusTypesReplicationStatus}
-}
-
-// ResourceIdentityType enumerates the values for resource identity type.
-type ResourceIdentityType string
-
-const (
-	// ResourceIdentityTypeNone ...
-	ResourceIdentityTypeNone ResourceIdentityType = "None"
-	// ResourceIdentityTypeSystemAssigned ...
-	ResourceIdentityTypeSystemAssigned ResourceIdentityType = "SystemAssigned"
-	// ResourceIdentityTypeSystemAssignedUserAssigned ...
-	ResourceIdentityTypeSystemAssignedUserAssigned ResourceIdentityType = "SystemAssigned, UserAssigned"
-	// ResourceIdentityTypeUserAssigned ...
-	ResourceIdentityTypeUserAssigned ResourceIdentityType = "UserAssigned"
-)
-
-// PossibleResourceIdentityTypeValues returns an array of possible values for the ResourceIdentityType const type.
-func PossibleResourceIdentityTypeValues() []ResourceIdentityType {
-	return []ResourceIdentityType{ResourceIdentityTypeNone, ResourceIdentityTypeSystemAssigned, ResourceIdentityTypeSystemAssignedUserAssigned, ResourceIdentityTypeUserAssigned}
-}
-
-// ResourceSkuCapacityScaleType enumerates the values for resource sku capacity scale type.
-type ResourceSkuCapacityScaleType string
-
-const (
-	// ResourceSkuCapacityScaleTypeAutomatic ...
-	ResourceSkuCapacityScaleTypeAutomatic ResourceSkuCapacityScaleType = "Automatic"
-	// ResourceSkuCapacityScaleTypeManual ...
-	ResourceSkuCapacityScaleTypeManual ResourceSkuCapacityScaleType = "Manual"
-	// ResourceSkuCapacityScaleTypeNone ...
-	ResourceSkuCapacityScaleTypeNone ResourceSkuCapacityScaleType = "None"
-)
-
-// PossibleResourceSkuCapacityScaleTypeValues returns an array of possible values for the ResourceSkuCapacityScaleType const type.
-func PossibleResourceSkuCapacityScaleTypeValues() []ResourceSkuCapacityScaleType {
-	return []ResourceSkuCapacityScaleType{ResourceSkuCapacityScaleTypeAutomatic, ResourceSkuCapacityScaleTypeManual, ResourceSkuCapacityScaleTypeNone}
-}
-
-// ResourceSkuRestrictionsReasonCode enumerates the values for resource sku restrictions reason code.
-type ResourceSkuRestrictionsReasonCode string
-
-const (
-	// NotAvailableForSubscription ...
-	NotAvailableForSubscription ResourceSkuRestrictionsReasonCode = "NotAvailableForSubscription"
-	// QuotaID ...
-	QuotaID ResourceSkuRestrictionsReasonCode = "QuotaId"
-)
-
-// PossibleResourceSkuRestrictionsReasonCodeValues returns an array of possible values for the ResourceSkuRestrictionsReasonCode const type.
-func PossibleResourceSkuRestrictionsReasonCodeValues() []ResourceSkuRestrictionsReasonCode {
-	return []ResourceSkuRestrictionsReasonCode{NotAvailableForSubscription, QuotaID}
-}
-
-// ResourceSkuRestrictionsType enumerates the values for resource sku restrictions type.
-type ResourceSkuRestrictionsType string
-
-const (
-	// Location ...
-	Location ResourceSkuRestrictionsType = "Location"
-	// Zone ...
-	Zone ResourceSkuRestrictionsType = "Zone"
-)
-
-// PossibleResourceSkuRestrictionsTypeValues returns an array of possible values for the ResourceSkuRestrictionsType const type.
-func PossibleResourceSkuRestrictionsTypeValues() []ResourceSkuRestrictionsType {
-	return []ResourceSkuRestrictionsType{Location, Zone}
-}
-
-// RollingUpgradeActionType enumerates the values for rolling upgrade action type.
-type RollingUpgradeActionType string
-
-const (
-	// Cancel ...
-	Cancel RollingUpgradeActionType = "Cancel"
-	// Start ...
-	Start RollingUpgradeActionType = "Start"
-)
-
-// PossibleRollingUpgradeActionTypeValues returns an array of possible values for the RollingUpgradeActionType const type.
-func PossibleRollingUpgradeActionTypeValues() []RollingUpgradeActionType {
-	return []RollingUpgradeActionType{Cancel, Start}
-}
-
-// RollingUpgradeStatusCode enumerates the values for rolling upgrade status code.
-type RollingUpgradeStatusCode string
-
-const (
-	// RollingUpgradeStatusCodeCancelled ...
-	RollingUpgradeStatusCodeCancelled RollingUpgradeStatusCode = "Cancelled"
-	// RollingUpgradeStatusCodeCompleted ...
-	RollingUpgradeStatusCodeCompleted RollingUpgradeStatusCode = "Completed"
-	// RollingUpgradeStatusCodeFaulted ...
-	RollingUpgradeStatusCodeFaulted RollingUpgradeStatusCode = "Faulted"
-	// RollingUpgradeStatusCodeRollingForward ...
-	RollingUpgradeStatusCodeRollingForward RollingUpgradeStatusCode = "RollingForward"
-)
-
-// PossibleRollingUpgradeStatusCodeValues returns an array of possible values for the RollingUpgradeStatusCode const type.
-func PossibleRollingUpgradeStatusCodeValues() []RollingUpgradeStatusCode {
-	return []RollingUpgradeStatusCode{RollingUpgradeStatusCodeCancelled, RollingUpgradeStatusCodeCompleted, RollingUpgradeStatusCodeFaulted, RollingUpgradeStatusCodeRollingForward}
-}
-
-// SettingNames enumerates the values for setting names.
-type SettingNames string
-
-const (
-	// AutoLogon ...
-	AutoLogon SettingNames = "AutoLogon"
-	// FirstLogonCommands ...
-	FirstLogonCommands SettingNames = "FirstLogonCommands"
-)
-
-// PossibleSettingNamesValues returns an array of possible values for the SettingNames const type.
-func PossibleSettingNamesValues() []SettingNames {
-	return []SettingNames{AutoLogon, FirstLogonCommands}
-}
-
-// SnapshotStorageAccountTypes enumerates the values for snapshot storage account types.
-type SnapshotStorageAccountTypes string
-
-const (
-	// SnapshotStorageAccountTypesPremiumLRS ...
-	SnapshotStorageAccountTypesPremiumLRS SnapshotStorageAccountTypes = "Premium_LRS"
-	// SnapshotStorageAccountTypesStandardLRS ...
-	SnapshotStorageAccountTypesStandardLRS SnapshotStorageAccountTypes = "Standard_LRS"
-	// SnapshotStorageAccountTypesStandardZRS ...
-	SnapshotStorageAccountTypesStandardZRS SnapshotStorageAccountTypes = "Standard_ZRS"
-)
-
-// PossibleSnapshotStorageAccountTypesValues returns an array of possible values for the SnapshotStorageAccountTypes const type.
-func PossibleSnapshotStorageAccountTypesValues() []SnapshotStorageAccountTypes {
-	return []SnapshotStorageAccountTypes{SnapshotStorageAccountTypesPremiumLRS, SnapshotStorageAccountTypesStandardLRS, SnapshotStorageAccountTypesStandardZRS}
-}
-
-// StatusLevelTypes enumerates the values for status level types.
-type StatusLevelTypes string
-
-const (
-	// Error ...
-	Error StatusLevelTypes = "Error"
-	// Info ...
-	Info StatusLevelTypes = "Info"
-	// Warning ...
-	Warning StatusLevelTypes = "Warning"
-)
-
-// PossibleStatusLevelTypesValues returns an array of possible values for the StatusLevelTypes const type.
-func PossibleStatusLevelTypesValues() []StatusLevelTypes {
-	return []StatusLevelTypes{Error, Info, Warning}
-}
-
-// StorageAccountTypes enumerates the values for storage account types.
-type StorageAccountTypes string
-
-const (
-	// StorageAccountTypesPremiumLRS ...
-	StorageAccountTypesPremiumLRS StorageAccountTypes = "Premium_LRS"
-	// StorageAccountTypesStandardLRS ...
-	StorageAccountTypesStandardLRS StorageAccountTypes = "Standard_LRS"
-	// StorageAccountTypesStandardSSDLRS ...
-	StorageAccountTypesStandardSSDLRS StorageAccountTypes = "StandardSSD_LRS"
-	// StorageAccountTypesUltraSSDLRS ...
-	StorageAccountTypesUltraSSDLRS StorageAccountTypes = "UltraSSD_LRS"
-)
-
-// PossibleStorageAccountTypesValues returns an array of possible values for the StorageAccountTypes const type.
-func PossibleStorageAccountTypesValues() []StorageAccountTypes {
-	return []StorageAccountTypes{StorageAccountTypesPremiumLRS, StorageAccountTypesStandardLRS, StorageAccountTypesStandardSSDLRS, StorageAccountTypesUltraSSDLRS}
-}
-
-// UpgradeMode enumerates the values for upgrade mode.
-type UpgradeMode string
-
-const (
-	// Automatic ...
-	Automatic UpgradeMode = "Automatic"
-	// Manual ...
-	Manual UpgradeMode = "Manual"
-	// Rolling ...
-	Rolling UpgradeMode = "Rolling"
-)
-
-// PossibleUpgradeModeValues returns an array of possible values for the UpgradeMode const type.
-func PossibleUpgradeModeValues() []UpgradeMode {
-	return []UpgradeMode{Automatic, Manual, Rolling}
-}
-
-// UpgradeOperationInvoker enumerates the values for upgrade operation invoker.
-type UpgradeOperationInvoker string
-
-const (
-	// UpgradeOperationInvokerPlatform ...
-	UpgradeOperationInvokerPlatform UpgradeOperationInvoker = "Platform"
-	// UpgradeOperationInvokerUnknown ...
-	UpgradeOperationInvokerUnknown UpgradeOperationInvoker = "Unknown"
-	// UpgradeOperationInvokerUser ...
-	UpgradeOperationInvokerUser UpgradeOperationInvoker = "User"
-)
-
-// PossibleUpgradeOperationInvokerValues returns an array of possible values for the UpgradeOperationInvoker const type.
-func PossibleUpgradeOperationInvokerValues() []UpgradeOperationInvoker {
-	return []UpgradeOperationInvoker{UpgradeOperationInvokerPlatform, UpgradeOperationInvokerUnknown, UpgradeOperationInvokerUser}
-}
-
-// UpgradeState enumerates the values for upgrade state.
-type UpgradeState string
-
-const (
-	// UpgradeStateCancelled ...
-	UpgradeStateCancelled UpgradeState = "Cancelled"
-	// UpgradeStateCompleted ...
-	UpgradeStateCompleted UpgradeState = "Completed"
-	// UpgradeStateFaulted ...
-	UpgradeStateFaulted UpgradeState = "Faulted"
-	// UpgradeStateRollingForward ...
-	UpgradeStateRollingForward UpgradeState = "RollingForward"
-)
-
-// PossibleUpgradeStateValues returns an array of possible values for the UpgradeState const type.
-func PossibleUpgradeStateValues() []UpgradeState {
-	return []UpgradeState{UpgradeStateCancelled, UpgradeStateCompleted, UpgradeStateFaulted, UpgradeStateRollingForward}
-}
-
-// VirtualMachineEvictionPolicyTypes enumerates the values for virtual machine eviction policy types.
-type VirtualMachineEvictionPolicyTypes string
-
-const (
-	// Deallocate ...
-	Deallocate VirtualMachineEvictionPolicyTypes = "Deallocate"
-	// Delete ...
-	Delete VirtualMachineEvictionPolicyTypes = "Delete"
-)
-
-// PossibleVirtualMachineEvictionPolicyTypesValues returns an array of possible values for the VirtualMachineEvictionPolicyTypes const type.
-func PossibleVirtualMachineEvictionPolicyTypesValues() []VirtualMachineEvictionPolicyTypes {
-	return []VirtualMachineEvictionPolicyTypes{Deallocate, Delete}
-}
-
-// VirtualMachinePriorityTypes enumerates the values for virtual machine priority types.
-type VirtualMachinePriorityTypes string
-
-const (
-	// Low ...
-	Low VirtualMachinePriorityTypes = "Low"
-	// Regular ...
-	Regular VirtualMachinePriorityTypes = "Regular"
-)
-
-// PossibleVirtualMachinePriorityTypesValues returns an array of possible values for the VirtualMachinePriorityTypes const type.
-func PossibleVirtualMachinePriorityTypesValues() []VirtualMachinePriorityTypes {
-	return []VirtualMachinePriorityTypes{Low, Regular}
-}
-
-// VirtualMachineScaleSetSkuScaleType enumerates the values for virtual machine scale set sku scale type.
-type VirtualMachineScaleSetSkuScaleType string
-
-const (
-	// VirtualMachineScaleSetSkuScaleTypeAutomatic ...
-	VirtualMachineScaleSetSkuScaleTypeAutomatic VirtualMachineScaleSetSkuScaleType = "Automatic"
-	// VirtualMachineScaleSetSkuScaleTypeNone ...
-	VirtualMachineScaleSetSkuScaleTypeNone VirtualMachineScaleSetSkuScaleType = "None"
-)
-
-// PossibleVirtualMachineScaleSetSkuScaleTypeValues returns an array of possible values for the VirtualMachineScaleSetSkuScaleType const type.
-func PossibleVirtualMachineScaleSetSkuScaleTypeValues() []VirtualMachineScaleSetSkuScaleType {
-	return []VirtualMachineScaleSetSkuScaleType{VirtualMachineScaleSetSkuScaleTypeAutomatic, VirtualMachineScaleSetSkuScaleTypeNone}
-}
-
-// VirtualMachineSizeTypes enumerates the values for virtual machine size types.
-type VirtualMachineSizeTypes string
-
-const (
-	// VirtualMachineSizeTypesBasicA0 ...
-	VirtualMachineSizeTypesBasicA0 VirtualMachineSizeTypes = "Basic_A0"
-	// VirtualMachineSizeTypesBasicA1 ...
-	VirtualMachineSizeTypesBasicA1 VirtualMachineSizeTypes = "Basic_A1"
-	// VirtualMachineSizeTypesBasicA2 ...
-	VirtualMachineSizeTypesBasicA2 VirtualMachineSizeTypes = "Basic_A2"
-	// VirtualMachineSizeTypesBasicA3 ...
-	VirtualMachineSizeTypesBasicA3 VirtualMachineSizeTypes = "Basic_A3"
-	// VirtualMachineSizeTypesBasicA4 ...
-	VirtualMachineSizeTypesBasicA4 VirtualMachineSizeTypes = "Basic_A4"
-	// VirtualMachineSizeTypesStandardA0 ...
-	VirtualMachineSizeTypesStandardA0 VirtualMachineSizeTypes = "Standard_A0"
-	// VirtualMachineSizeTypesStandardA1 ...
-	VirtualMachineSizeTypesStandardA1 VirtualMachineSizeTypes = "Standard_A1"
-	// VirtualMachineSizeTypesStandardA10 ...
-	VirtualMachineSizeTypesStandardA10 VirtualMachineSizeTypes = "Standard_A10"
-	// VirtualMachineSizeTypesStandardA11 ...
-	VirtualMachineSizeTypesStandardA11 VirtualMachineSizeTypes = "Standard_A11"
-	// VirtualMachineSizeTypesStandardA1V2 ...
-	VirtualMachineSizeTypesStandardA1V2 VirtualMachineSizeTypes = "Standard_A1_v2"
-	// VirtualMachineSizeTypesStandardA2 ...
-	VirtualMachineSizeTypesStandardA2 VirtualMachineSizeTypes = "Standard_A2"
-	// VirtualMachineSizeTypesStandardA2mV2 ...
-	VirtualMachineSizeTypesStandardA2mV2 VirtualMachineSizeTypes = "Standard_A2m_v2"
-	// VirtualMachineSizeTypesStandardA2V2 ...
-	VirtualMachineSizeTypesStandardA2V2 VirtualMachineSizeTypes = "Standard_A2_v2"
-	// VirtualMachineSizeTypesStandardA3 ...
-	VirtualMachineSizeTypesStandardA3 VirtualMachineSizeTypes = "Standard_A3"
-	// VirtualMachineSizeTypesStandardA4 ...
-	VirtualMachineSizeTypesStandardA4 VirtualMachineSizeTypes = "Standard_A4"
-	// VirtualMachineSizeTypesStandardA4mV2 ...
-	VirtualMachineSizeTypesStandardA4mV2 VirtualMachineSizeTypes = "Standard_A4m_v2"
-	// VirtualMachineSizeTypesStandardA4V2 ...
-	VirtualMachineSizeTypesStandardA4V2 VirtualMachineSizeTypes = "Standard_A4_v2"
-	// VirtualMachineSizeTypesStandardA5 ...
-	VirtualMachineSizeTypesStandardA5 VirtualMachineSizeTypes = "Standard_A5"
-	// VirtualMachineSizeTypesStandardA6 ...
-	VirtualMachineSizeTypesStandardA6 VirtualMachineSizeTypes = "Standard_A6"
-	// VirtualMachineSizeTypesStandardA7 ...
-	VirtualMachineSizeTypesStandardA7 VirtualMachineSizeTypes = "Standard_A7"
-	// VirtualMachineSizeTypesStandardA8 ...
-	VirtualMachineSizeTypesStandardA8 VirtualMachineSizeTypes = "Standard_A8"
-	// VirtualMachineSizeTypesStandardA8mV2 ...
-	VirtualMachineSizeTypesStandardA8mV2 VirtualMachineSizeTypes = "Standard_A8m_v2"
-	// VirtualMachineSizeTypesStandardA8V2 ...
-	VirtualMachineSizeTypesStandardA8V2 VirtualMachineSizeTypes = "Standard_A8_v2"
-	// VirtualMachineSizeTypesStandardA9 ...
-	VirtualMachineSizeTypesStandardA9 VirtualMachineSizeTypes = "Standard_A9"
-	// VirtualMachineSizeTypesStandardB1ms ...
-	VirtualMachineSizeTypesStandardB1ms VirtualMachineSizeTypes = "Standard_B1ms"
-	// VirtualMachineSizeTypesStandardB1s ...
-	VirtualMachineSizeTypesStandardB1s VirtualMachineSizeTypes = "Standard_B1s"
-	// VirtualMachineSizeTypesStandardB2ms ...
-	VirtualMachineSizeTypesStandardB2ms VirtualMachineSizeTypes = "Standard_B2ms"
-	// VirtualMachineSizeTypesStandardB2s ...
-	VirtualMachineSizeTypesStandardB2s VirtualMachineSizeTypes = "Standard_B2s"
-	// VirtualMachineSizeTypesStandardB4ms ...
-	VirtualMachineSizeTypesStandardB4ms VirtualMachineSizeTypes = "Standard_B4ms"
-	// VirtualMachineSizeTypesStandardB8ms ...
-	VirtualMachineSizeTypesStandardB8ms VirtualMachineSizeTypes = "Standard_B8ms"
-	// VirtualMachineSizeTypesStandardD1 ...
-	VirtualMachineSizeTypesStandardD1 VirtualMachineSizeTypes = "Standard_D1"
-	// VirtualMachineSizeTypesStandardD11 ...
-	VirtualMachineSizeTypesStandardD11 VirtualMachineSizeTypes = "Standard_D11"
-	// VirtualMachineSizeTypesStandardD11V2 ...
-	VirtualMachineSizeTypesStandardD11V2 VirtualMachineSizeTypes = "Standard_D11_v2"
-	// VirtualMachineSizeTypesStandardD12 ...
-	VirtualMachineSizeTypesStandardD12 VirtualMachineSizeTypes = "Standard_D12"
-	// VirtualMachineSizeTypesStandardD12V2 ...
-	VirtualMachineSizeTypesStandardD12V2 VirtualMachineSizeTypes = "Standard_D12_v2"
-	// VirtualMachineSizeTypesStandardD13 ...
-	VirtualMachineSizeTypesStandardD13 VirtualMachineSizeTypes = "Standard_D13"
-	// VirtualMachineSizeTypesStandardD13V2 ...
-	VirtualMachineSizeTypesStandardD13V2 VirtualMachineSizeTypes = "Standard_D13_v2"
-	// VirtualMachineSizeTypesStandardD14 ...
-	VirtualMachineSizeTypesStandardD14 VirtualMachineSizeTypes = "Standard_D14"
-	// VirtualMachineSizeTypesStandardD14V2 ...
-	VirtualMachineSizeTypesStandardD14V2 VirtualMachineSizeTypes = "Standard_D14_v2"
-	// VirtualMachineSizeTypesStandardD15V2 ...
-	VirtualMachineSizeTypesStandardD15V2 VirtualMachineSizeTypes = "Standard_D15_v2"
-	// VirtualMachineSizeTypesStandardD16sV3 ...
-	VirtualMachineSizeTypesStandardD16sV3 VirtualMachineSizeTypes = "Standard_D16s_v3"
-	// VirtualMachineSizeTypesStandardD16V3 ...
-	VirtualMachineSizeTypesStandardD16V3 VirtualMachineSizeTypes = "Standard_D16_v3"
-	// VirtualMachineSizeTypesStandardD1V2 ...
-	VirtualMachineSizeTypesStandardD1V2 VirtualMachineSizeTypes = "Standard_D1_v2"
-	// VirtualMachineSizeTypesStandardD2 ...
-	VirtualMachineSizeTypesStandardD2 VirtualMachineSizeTypes = "Standard_D2"
-	// VirtualMachineSizeTypesStandardD2sV3 ...
-	VirtualMachineSizeTypesStandardD2sV3 VirtualMachineSizeTypes = "Standard_D2s_v3"
-	// VirtualMachineSizeTypesStandardD2V2 ...
-	VirtualMachineSizeTypesStandardD2V2 VirtualMachineSizeTypes = "Standard_D2_v2"
-	// VirtualMachineSizeTypesStandardD2V3 ...
-	VirtualMachineSizeTypesStandardD2V3 VirtualMachineSizeTypes = "Standard_D2_v3"
-	// VirtualMachineSizeTypesStandardD3 ...
-	VirtualMachineSizeTypesStandardD3 VirtualMachineSizeTypes = "Standard_D3"
-	// VirtualMachineSizeTypesStandardD32sV3 ...
-	VirtualMachineSizeTypesStandardD32sV3 VirtualMachineSizeTypes = "Standard_D32s_v3"
-	// VirtualMachineSizeTypesStandardD32V3 ...
-	VirtualMachineSizeTypesStandardD32V3 VirtualMachineSizeTypes = "Standard_D32_v3"
-	// VirtualMachineSizeTypesStandardD3V2 ...
-	VirtualMachineSizeTypesStandardD3V2 VirtualMachineSizeTypes = "Standard_D3_v2"
-	// VirtualMachineSizeTypesStandardD4 ...
-	VirtualMachineSizeTypesStandardD4 VirtualMachineSizeTypes = "Standard_D4"
-	// VirtualMachineSizeTypesStandardD4sV3 ...
-	VirtualMachineSizeTypesStandardD4sV3 VirtualMachineSizeTypes = "Standard_D4s_v3"
-	// VirtualMachineSizeTypesStandardD4V2 ...
-	VirtualMachineSizeTypesStandardD4V2 VirtualMachineSizeTypes = "Standard_D4_v2"
-	// VirtualMachineSizeTypesStandardD4V3 ...
-	VirtualMachineSizeTypesStandardD4V3 VirtualMachineSizeTypes = "Standard_D4_v3"
-	// VirtualMachineSizeTypesStandardD5V2 ...
-	VirtualMachineSizeTypesStandardD5V2 VirtualMachineSizeTypes = "Standard_D5_v2"
-	// VirtualMachineSizeTypesStandardD64sV3 ...
-	VirtualMachineSizeTypesStandardD64sV3 VirtualMachineSizeTypes = "Standard_D64s_v3"
-	// VirtualMachineSizeTypesStandardD64V3 ...
-	VirtualMachineSizeTypesStandardD64V3 VirtualMachineSizeTypes = "Standard_D64_v3"
-	// VirtualMachineSizeTypesStandardD8sV3 ...
-	VirtualMachineSizeTypesStandardD8sV3 VirtualMachineSizeTypes = "Standard_D8s_v3"
-	// VirtualMachineSizeTypesStandardD8V3 ...
-	VirtualMachineSizeTypesStandardD8V3 VirtualMachineSizeTypes = "Standard_D8_v3"
-	// VirtualMachineSizeTypesStandardDS1 ...
-	VirtualMachineSizeTypesStandardDS1 VirtualMachineSizeTypes = "Standard_DS1"
-	// VirtualMachineSizeTypesStandardDS11 ...
-	VirtualMachineSizeTypesStandardDS11 VirtualMachineSizeTypes = "Standard_DS11"
-	// VirtualMachineSizeTypesStandardDS11V2 ...
-	VirtualMachineSizeTypesStandardDS11V2 VirtualMachineSizeTypes = "Standard_DS11_v2"
-	// VirtualMachineSizeTypesStandardDS12 ...
-	VirtualMachineSizeTypesStandardDS12 VirtualMachineSizeTypes = "Standard_DS12"
-	// VirtualMachineSizeTypesStandardDS12V2 ...
-	VirtualMachineSizeTypesStandardDS12V2 VirtualMachineSizeTypes = "Standard_DS12_v2"
-	// VirtualMachineSizeTypesStandardDS13 ...
-	VirtualMachineSizeTypesStandardDS13 VirtualMachineSizeTypes = "Standard_DS13"
-	// VirtualMachineSizeTypesStandardDS132V2 ...
-	VirtualMachineSizeTypesStandardDS132V2 VirtualMachineSizeTypes = "Standard_DS13-2_v2"
-	// VirtualMachineSizeTypesStandardDS134V2 ...
-	VirtualMachineSizeTypesStandardDS134V2 VirtualMachineSizeTypes = "Standard_DS13-4_v2"
-	// VirtualMachineSizeTypesStandardDS13V2 ...
-	VirtualMachineSizeTypesStandardDS13V2 VirtualMachineSizeTypes = "Standard_DS13_v2"
-	// VirtualMachineSizeTypesStandardDS14 ...
-	VirtualMachineSizeTypesStandardDS14 VirtualMachineSizeTypes = "Standard_DS14"
-	// VirtualMachineSizeTypesStandardDS144V2 ...
-	VirtualMachineSizeTypesStandardDS144V2 VirtualMachineSizeTypes = "Standard_DS14-4_v2"
-	// VirtualMachineSizeTypesStandardDS148V2 ...
-	VirtualMachineSizeTypesStandardDS148V2 VirtualMachineSizeTypes = "Standard_DS14-8_v2"
-	// VirtualMachineSizeTypesStandardDS14V2 ...
-	VirtualMachineSizeTypesStandardDS14V2 VirtualMachineSizeTypes = "Standard_DS14_v2"
-	// VirtualMachineSizeTypesStandardDS15V2 ...
-	VirtualMachineSizeTypesStandardDS15V2 VirtualMachineSizeTypes = "Standard_DS15_v2"
-	// VirtualMachineSizeTypesStandardDS1V2 ...
-	VirtualMachineSizeTypesStandardDS1V2 VirtualMachineSizeTypes = "Standard_DS1_v2"
-	// VirtualMachineSizeTypesStandardDS2 ...
-	VirtualMachineSizeTypesStandardDS2 VirtualMachineSizeTypes = "Standard_DS2"
-	// VirtualMachineSizeTypesStandardDS2V2 ...
-	VirtualMachineSizeTypesStandardDS2V2 VirtualMachineSizeTypes = "Standard_DS2_v2"
-	// VirtualMachineSizeTypesStandardDS3 ...
-	VirtualMachineSizeTypesStandardDS3 VirtualMachineSizeTypes = "Standard_DS3"
-	// VirtualMachineSizeTypesStandardDS3V2 ...
-	VirtualMachineSizeTypesStandardDS3V2 VirtualMachineSizeTypes = "Standard_DS3_v2"
-	// VirtualMachineSizeTypesStandardDS4 ...
-	VirtualMachineSizeTypesStandardDS4 VirtualMachineSizeTypes = "Standard_DS4"
-	// VirtualMachineSizeTypesStandardDS4V2 ...
-	VirtualMachineSizeTypesStandardDS4V2 VirtualMachineSizeTypes = "Standard_DS4_v2"
-	// VirtualMachineSizeTypesStandardDS5V2 ...
-	VirtualMachineSizeTypesStandardDS5V2 VirtualMachineSizeTypes = "Standard_DS5_v2"
-	// VirtualMachineSizeTypesStandardE16sV3 ...
-	VirtualMachineSizeTypesStandardE16sV3 VirtualMachineSizeTypes = "Standard_E16s_v3"
-	// VirtualMachineSizeTypesStandardE16V3 ...
-	VirtualMachineSizeTypesStandardE16V3 VirtualMachineSizeTypes = "Standard_E16_v3"
-	// VirtualMachineSizeTypesStandardE2sV3 ...
-	VirtualMachineSizeTypesStandardE2sV3 VirtualMachineSizeTypes = "Standard_E2s_v3"
-	// VirtualMachineSizeTypesStandardE2V3 ...
-	VirtualMachineSizeTypesStandardE2V3 VirtualMachineSizeTypes = "Standard_E2_v3"
-	// VirtualMachineSizeTypesStandardE3216V3 ...
-	VirtualMachineSizeTypesStandardE3216V3 VirtualMachineSizeTypes = "Standard_E32-16_v3"
-	// VirtualMachineSizeTypesStandardE328sV3 ...
-	VirtualMachineSizeTypesStandardE328sV3 VirtualMachineSizeTypes = "Standard_E32-8s_v3"
-	// VirtualMachineSizeTypesStandardE32sV3 ...
-	VirtualMachineSizeTypesStandardE32sV3 VirtualMachineSizeTypes = "Standard_E32s_v3"
-	// VirtualMachineSizeTypesStandardE32V3 ...
-	VirtualMachineSizeTypesStandardE32V3 VirtualMachineSizeTypes = "Standard_E32_v3"
-	// VirtualMachineSizeTypesStandardE4sV3 ...
-	VirtualMachineSizeTypesStandardE4sV3 VirtualMachineSizeTypes = "Standard_E4s_v3"
-	// VirtualMachineSizeTypesStandardE4V3 ...
-	VirtualMachineSizeTypesStandardE4V3 VirtualMachineSizeTypes = "Standard_E4_v3"
-	// VirtualMachineSizeTypesStandardE6416sV3 ...
-	VirtualMachineSizeTypesStandardE6416sV3 VirtualMachineSizeTypes = "Standard_E64-16s_v3"
-	// VirtualMachineSizeTypesStandardE6432sV3 ...
-	VirtualMachineSizeTypesStandardE6432sV3 VirtualMachineSizeTypes = "Standard_E64-32s_v3"
-	// VirtualMachineSizeTypesStandardE64sV3 ...
-	VirtualMachineSizeTypesStandardE64sV3 VirtualMachineSizeTypes = "Standard_E64s_v3"
-	// VirtualMachineSizeTypesStandardE64V3 ...
-	VirtualMachineSizeTypesStandardE64V3 VirtualMachineSizeTypes = "Standard_E64_v3"
-	// VirtualMachineSizeTypesStandardE8sV3 ...
-	VirtualMachineSizeTypesStandardE8sV3 VirtualMachineSizeTypes = "Standard_E8s_v3"
-	// VirtualMachineSizeTypesStandardE8V3 ...
-	VirtualMachineSizeTypesStandardE8V3 VirtualMachineSizeTypes = "Standard_E8_v3"
-	// VirtualMachineSizeTypesStandardF1 ...
-	VirtualMachineSizeTypesStandardF1 VirtualMachineSizeTypes = "Standard_F1"
-	// VirtualMachineSizeTypesStandardF16 ...
-	VirtualMachineSizeTypesStandardF16 VirtualMachineSizeTypes = "Standard_F16"
-	// VirtualMachineSizeTypesStandardF16s ...
-	VirtualMachineSizeTypesStandardF16s VirtualMachineSizeTypes = "Standard_F16s"
-	// VirtualMachineSizeTypesStandardF16sV2 ...
-	VirtualMachineSizeTypesStandardF16sV2 VirtualMachineSizeTypes = "Standard_F16s_v2"
-	// VirtualMachineSizeTypesStandardF1s ...
-	VirtualMachineSizeTypesStandardF1s VirtualMachineSizeTypes = "Standard_F1s"
-	// VirtualMachineSizeTypesStandardF2 ...
-	VirtualMachineSizeTypesStandardF2 VirtualMachineSizeTypes = "Standard_F2"
-	// VirtualMachineSizeTypesStandardF2s ...
-	VirtualMachineSizeTypesStandardF2s VirtualMachineSizeTypes = "Standard_F2s"
-	// VirtualMachineSizeTypesStandardF2sV2 ...
-	VirtualMachineSizeTypesStandardF2sV2 VirtualMachineSizeTypes = "Standard_F2s_v2"
-	// VirtualMachineSizeTypesStandardF32sV2 ...
-	VirtualMachineSizeTypesStandardF32sV2 VirtualMachineSizeTypes = "Standard_F32s_v2"
-	// VirtualMachineSizeTypesStandardF4 ...
-	VirtualMachineSizeTypesStandardF4 VirtualMachineSizeTypes = "Standard_F4"
-	// VirtualMachineSizeTypesStandardF4s ...
-	VirtualMachineSizeTypesStandardF4s VirtualMachineSizeTypes = "Standard_F4s"
-	// VirtualMachineSizeTypesStandardF4sV2 ...
-	VirtualMachineSizeTypesStandardF4sV2 VirtualMachineSizeTypes = "Standard_F4s_v2"
-	// VirtualMachineSizeTypesStandardF64sV2 ...
-	VirtualMachineSizeTypesStandardF64sV2 VirtualMachineSizeTypes = "Standard_F64s_v2"
-	// VirtualMachineSizeTypesStandardF72sV2 ...
-	VirtualMachineSizeTypesStandardF72sV2 VirtualMachineSizeTypes = "Standard_F72s_v2"
-	// VirtualMachineSizeTypesStandardF8 ...
-	VirtualMachineSizeTypesStandardF8 VirtualMachineSizeTypes = "Standard_F8"
-	// VirtualMachineSizeTypesStandardF8s ...
-	VirtualMachineSizeTypesStandardF8s VirtualMachineSizeTypes = "Standard_F8s"
-	// VirtualMachineSizeTypesStandardF8sV2 ...
-	VirtualMachineSizeTypesStandardF8sV2 VirtualMachineSizeTypes = "Standard_F8s_v2"
-	// VirtualMachineSizeTypesStandardG1 ...
-	VirtualMachineSizeTypesStandardG1 VirtualMachineSizeTypes = "Standard_G1"
-	// VirtualMachineSizeTypesStandardG2 ...
-	VirtualMachineSizeTypesStandardG2 VirtualMachineSizeTypes = "Standard_G2"
-	// VirtualMachineSizeTypesStandardG3 ...
-	VirtualMachineSizeTypesStandardG3 VirtualMachineSizeTypes = "Standard_G3"
-	// VirtualMachineSizeTypesStandardG4 ...
-	VirtualMachineSizeTypesStandardG4 VirtualMachineSizeTypes = "Standard_G4"
-	// VirtualMachineSizeTypesStandardG5 ...
-	VirtualMachineSizeTypesStandardG5 VirtualMachineSizeTypes = "Standard_G5"
-	// VirtualMachineSizeTypesStandardGS1 ...
-	VirtualMachineSizeTypesStandardGS1 VirtualMachineSizeTypes = "Standard_GS1"
-	// VirtualMachineSizeTypesStandardGS2 ...
-	VirtualMachineSizeTypesStandardGS2 VirtualMachineSizeTypes = "Standard_GS2"
-	// VirtualMachineSizeTypesStandardGS3 ...
-	VirtualMachineSizeTypesStandardGS3 VirtualMachineSizeTypes = "Standard_GS3"
-	// VirtualMachineSizeTypesStandardGS4 ...
-	VirtualMachineSizeTypesStandardGS4 VirtualMachineSizeTypes = "Standard_GS4"
-	// VirtualMachineSizeTypesStandardGS44 ...
-	VirtualMachineSizeTypesStandardGS44 VirtualMachineSizeTypes = "Standard_GS4-4"
-	// VirtualMachineSizeTypesStandardGS48 ...
-	VirtualMachineSizeTypesStandardGS48 VirtualMachineSizeTypes = "Standard_GS4-8"
-	// VirtualMachineSizeTypesStandardGS5 ...
-	VirtualMachineSizeTypesStandardGS5 VirtualMachineSizeTypes = "Standard_GS5"
-	// VirtualMachineSizeTypesStandardGS516 ...
-	VirtualMachineSizeTypesStandardGS516 VirtualMachineSizeTypes = "Standard_GS5-16"
-	// VirtualMachineSizeTypesStandardGS58 ...
-	VirtualMachineSizeTypesStandardGS58 VirtualMachineSizeTypes = "Standard_GS5-8"
-	// VirtualMachineSizeTypesStandardH16 ...
-	VirtualMachineSizeTypesStandardH16 VirtualMachineSizeTypes = "Standard_H16"
-	// VirtualMachineSizeTypesStandardH16m ...
-	VirtualMachineSizeTypesStandardH16m VirtualMachineSizeTypes = "Standard_H16m"
-	// VirtualMachineSizeTypesStandardH16mr ...
-	VirtualMachineSizeTypesStandardH16mr VirtualMachineSizeTypes = "Standard_H16mr"
-	// VirtualMachineSizeTypesStandardH16r ...
-	VirtualMachineSizeTypesStandardH16r VirtualMachineSizeTypes = "Standard_H16r"
-	// VirtualMachineSizeTypesStandardH8 ...
-	VirtualMachineSizeTypesStandardH8 VirtualMachineSizeTypes = "Standard_H8"
-	// VirtualMachineSizeTypesStandardH8m ...
-	VirtualMachineSizeTypesStandardH8m VirtualMachineSizeTypes = "Standard_H8m"
-	// VirtualMachineSizeTypesStandardL16s ...
-	VirtualMachineSizeTypesStandardL16s VirtualMachineSizeTypes = "Standard_L16s"
-	// VirtualMachineSizeTypesStandardL32s ...
-	VirtualMachineSizeTypesStandardL32s VirtualMachineSizeTypes = "Standard_L32s"
-	// VirtualMachineSizeTypesStandardL4s ...
-	VirtualMachineSizeTypesStandardL4s VirtualMachineSizeTypes = "Standard_L4s"
-	// VirtualMachineSizeTypesStandardL8s ...
-	VirtualMachineSizeTypesStandardL8s VirtualMachineSizeTypes = "Standard_L8s"
-	// VirtualMachineSizeTypesStandardM12832ms ...
-	VirtualMachineSizeTypesStandardM12832ms VirtualMachineSizeTypes = "Standard_M128-32ms"
-	// VirtualMachineSizeTypesStandardM12864ms ...
-	VirtualMachineSizeTypesStandardM12864ms VirtualMachineSizeTypes = "Standard_M128-64ms"
-	// VirtualMachineSizeTypesStandardM128ms ...
-	VirtualMachineSizeTypesStandardM128ms VirtualMachineSizeTypes = "Standard_M128ms"
-	// VirtualMachineSizeTypesStandardM128s ...
-	VirtualMachineSizeTypesStandardM128s VirtualMachineSizeTypes = "Standard_M128s"
-	// VirtualMachineSizeTypesStandardM6416ms ...
-	VirtualMachineSizeTypesStandardM6416ms VirtualMachineSizeTypes = "Standard_M64-16ms"
-	// VirtualMachineSizeTypesStandardM6432ms ...
-	VirtualMachineSizeTypesStandardM6432ms VirtualMachineSizeTypes = "Standard_M64-32ms"
-	// VirtualMachineSizeTypesStandardM64ms ...
-	VirtualMachineSizeTypesStandardM64ms VirtualMachineSizeTypes = "Standard_M64ms"
-	// VirtualMachineSizeTypesStandardM64s ...
-	VirtualMachineSizeTypesStandardM64s VirtualMachineSizeTypes = "Standard_M64s"
-	// VirtualMachineSizeTypesStandardNC12 ...
-	VirtualMachineSizeTypesStandardNC12 VirtualMachineSizeTypes = "Standard_NC12"
-	// VirtualMachineSizeTypesStandardNC12sV2 ...
-	VirtualMachineSizeTypesStandardNC12sV2 VirtualMachineSizeTypes = "Standard_NC12s_v2"
-	// VirtualMachineSizeTypesStandardNC12sV3 ...
-	VirtualMachineSizeTypesStandardNC12sV3 VirtualMachineSizeTypes = "Standard_NC12s_v3"
-	// VirtualMachineSizeTypesStandardNC24 ...
-	VirtualMachineSizeTypesStandardNC24 VirtualMachineSizeTypes = "Standard_NC24"
-	// VirtualMachineSizeTypesStandardNC24r ...
-	VirtualMachineSizeTypesStandardNC24r VirtualMachineSizeTypes = "Standard_NC24r"
-	// VirtualMachineSizeTypesStandardNC24rsV2 ...
-	VirtualMachineSizeTypesStandardNC24rsV2 VirtualMachineSizeTypes = "Standard_NC24rs_v2"
-	// VirtualMachineSizeTypesStandardNC24rsV3 ...
-	VirtualMachineSizeTypesStandardNC24rsV3 VirtualMachineSizeTypes = "Standard_NC24rs_v3"
-	// VirtualMachineSizeTypesStandardNC24sV2 ...
-	VirtualMachineSizeTypesStandardNC24sV2 VirtualMachineSizeTypes = "Standard_NC24s_v2"
-	// VirtualMachineSizeTypesStandardNC24sV3 ...
-	VirtualMachineSizeTypesStandardNC24sV3 VirtualMachineSizeTypes = "Standard_NC24s_v3"
-	// VirtualMachineSizeTypesStandardNC6 ...
-	VirtualMachineSizeTypesStandardNC6 VirtualMachineSizeTypes = "Standard_NC6"
-	// VirtualMachineSizeTypesStandardNC6sV2 ...
-	VirtualMachineSizeTypesStandardNC6sV2 VirtualMachineSizeTypes = "Standard_NC6s_v2"
-	// VirtualMachineSizeTypesStandardNC6sV3 ...
-	VirtualMachineSizeTypesStandardNC6sV3 VirtualMachineSizeTypes = "Standard_NC6s_v3"
-	// VirtualMachineSizeTypesStandardND12s ...
-	VirtualMachineSizeTypesStandardND12s VirtualMachineSizeTypes = "Standard_ND12s"
-	// VirtualMachineSizeTypesStandardND24rs ...
-	VirtualMachineSizeTypesStandardND24rs VirtualMachineSizeTypes = "Standard_ND24rs"
-	// VirtualMachineSizeTypesStandardND24s ...
-	VirtualMachineSizeTypesStandardND24s VirtualMachineSizeTypes = "Standard_ND24s"
-	// VirtualMachineSizeTypesStandardND6s ...
-	VirtualMachineSizeTypesStandardND6s VirtualMachineSizeTypes = "Standard_ND6s"
-	// VirtualMachineSizeTypesStandardNV12 ...
-	VirtualMachineSizeTypesStandardNV12 VirtualMachineSizeTypes = "Standard_NV12"
-	// VirtualMachineSizeTypesStandardNV24 ...
-	VirtualMachineSizeTypesStandardNV24 VirtualMachineSizeTypes = "Standard_NV24"
-	// VirtualMachineSizeTypesStandardNV6 ...
-	VirtualMachineSizeTypesStandardNV6 VirtualMachineSizeTypes = "Standard_NV6"
-)
-
-// PossibleVirtualMachineSizeTypesValues returns an array of possible values for the VirtualMachineSizeTypes const type.
-func PossibleVirtualMachineSizeTypesValues() []VirtualMachineSizeTypes {
-	return []VirtualMachineSizeTypes{VirtualMachineSizeTypesBasicA0, VirtualMachineSizeTypesBasicA1, VirtualMachineSizeTypesBasicA2, VirtualMachineSizeTypesBasicA3, VirtualMachineSizeTypesBasicA4, VirtualMachineSizeTypesStandardA0, VirtualMachineSizeTypesStandardA1, VirtualMachineSizeTypesStandardA10, VirtualMachineSizeTypesStandardA11, VirtualMachineSizeTypesStandardA1V2, VirtualMachineSizeTypesStandardA2, VirtualMachineSizeTypesStandardA2mV2, VirtualMachineSizeTypesStandardA2V2, VirtualMachineSizeTypesStandardA3, VirtualMachineSizeTypesStandardA4, VirtualMachineSizeTypesStandardA4mV2, VirtualMachineSizeTypesStandardA4V2, VirtualMachineSizeTypesStandardA5, VirtualMachineSizeTypesStandardA6, VirtualMachineSizeTypesStandardA7, VirtualMachineSizeTypesStandardA8, VirtualMachineSizeTypesStandardA8mV2, VirtualMachineSizeTypesStandardA8V2, VirtualMachineSizeTypesStandardA9, VirtualMachineSizeTypesStandardB1ms, VirtualMachineSizeTypesStandardB1s, VirtualMachineSizeTypesStandardB2ms, VirtualMachineSizeTypesStandardB2s, VirtualMachineSizeTypesStandardB4ms, VirtualMachineSizeTypesStandardB8ms, VirtualMachineSizeTypesStandardD1, VirtualMachineSizeTypesStandardD11, VirtualMachineSizeTypesStandardD11V2, VirtualMachineSizeTypesStandardD12, VirtualMachineSizeTypesStandardD12V2, VirtualMachineSizeTypesStandardD13, VirtualMachineSizeTypesStandardD13V2, VirtualMachineSizeTypesStandardD14, VirtualMachineSizeTypesStandardD14V2, VirtualMachineSizeTypesStandardD15V2, VirtualMachineSizeTypesStandardD16sV3, VirtualMachineSizeTypesStandardD16V3, VirtualMachineSizeTypesStandardD1V2, VirtualMachineSizeTypesStandardD2, VirtualMachineSizeTypesStandardD2sV3, VirtualMachineSizeTypesStandardD2V2, VirtualMachineSizeTypesStandardD2V3, VirtualMachineSizeTypesStandardD3, VirtualMachineSizeTypesStandardD32sV3, VirtualMachineSizeTypesStandardD32V3, VirtualMachineSizeTypesStandardD3V2, VirtualMachineSizeTypesStandardD4, VirtualMachineSizeTypesStandardD4sV3, VirtualMachineSizeTypesStandardD4V2, VirtualMachineSizeTypesStandardD4V3, VirtualMachineSizeTypesStandardD5V2, VirtualMachineSizeTypesStandardD64sV3, VirtualMachineSizeTypesStandardD64V3, VirtualMachineSizeTypesStandardD8sV3, VirtualMachineSizeTypesStandardD8V3, VirtualMachineSizeTypesStandardDS1, VirtualMachineSizeTypesStandardDS11, VirtualMachineSizeTypesStandardDS11V2, VirtualMachineSizeTypesStandardDS12, VirtualMachineSizeTypesStandardDS12V2, VirtualMachineSizeTypesStandardDS13, VirtualMachineSizeTypesStandardDS132V2, VirtualMachineSizeTypesStandardDS134V2, VirtualMachineSizeTypesStandardDS13V2, VirtualMachineSizeTypesStandardDS14, VirtualMachineSizeTypesStandardDS144V2, VirtualMachineSizeTypesStandardDS148V2, VirtualMachineSizeTypesStandardDS14V2, VirtualMachineSizeTypesStandardDS15V2, VirtualMachineSizeTypesStandardDS1V2, VirtualMachineSizeTypesStandardDS2, VirtualMachineSizeTypesStandardDS2V2, VirtualMachineSizeTypesStandardDS3, VirtualMachineSizeTypesStandardDS3V2, VirtualMachineSizeTypesStandardDS4, VirtualMachineSizeTypesStandardDS4V2, VirtualMachineSizeTypesStandardDS5V2, VirtualMachineSizeTypesStandardE16sV3, VirtualMachineSizeTypesStandardE16V3, VirtualMachineSizeTypesStandardE2sV3, VirtualMachineSizeTypesStandardE2V3, VirtualMachineSizeTypesStandardE3216V3, VirtualMachineSizeTypesStandardE328sV3, VirtualMachineSizeTypesStandardE32sV3, VirtualMachineSizeTypesStandardE32V3, VirtualMachineSizeTypesStandardE4sV3, VirtualMachineSizeTypesStandardE4V3, VirtualMachineSizeTypesStandardE6416sV3, VirtualMachineSizeTypesStandardE6432sV3, VirtualMachineSizeTypesStandardE64sV3, VirtualMachineSizeTypesStandardE64V3, VirtualMachineSizeTypesStandardE8sV3, VirtualMachineSizeTypesStandardE8V3, VirtualMachineSizeTypesStandardF1, VirtualMachineSizeTypesStandardF16, VirtualMachineSizeTypesStandardF16s, VirtualMachineSizeTypesStandardF16sV2, VirtualMachineSizeTypesStandardF1s, VirtualMachineSizeTypesStandardF2, VirtualMachineSizeTypesStandardF2s, VirtualMachineSizeTypesStandardF2sV2, VirtualMachineSizeTypesStandardF32sV2, VirtualMachineSizeTypesStandardF4, VirtualMachineSizeTypesStandardF4s, VirtualMachineSizeTypesStandardF4sV2, VirtualMachineSizeTypesStandardF64sV2, VirtualMachineSizeTypesStandardF72sV2, VirtualMachineSizeTypesStandardF8, VirtualMachineSizeTypesStandardF8s, VirtualMachineSizeTypesStandardF8sV2, VirtualMachineSizeTypesStandardG1, VirtualMachineSizeTypesStandardG2, VirtualMachineSizeTypesStandardG3, VirtualMachineSizeTypesStandardG4, VirtualMachineSizeTypesStandardG5, VirtualMachineSizeTypesStandardGS1, VirtualMachineSizeTypesStandardGS2, VirtualMachineSizeTypesStandardGS3, VirtualMachineSizeTypesStandardGS4, VirtualMachineSizeTypesStandardGS44, VirtualMachineSizeTypesStandardGS48, VirtualMachineSizeTypesStandardGS5, VirtualMachineSizeTypesStandardGS516, VirtualMachineSizeTypesStandardGS58, VirtualMachineSizeTypesStandardH16, VirtualMachineSizeTypesStandardH16m, VirtualMachineSizeTypesStandardH16mr, VirtualMachineSizeTypesStandardH16r, VirtualMachineSizeTypesStandardH8, VirtualMachineSizeTypesStandardH8m, VirtualMachineSizeTypesStandardL16s, VirtualMachineSizeTypesStandardL32s, VirtualMachineSizeTypesStandardL4s, VirtualMachineSizeTypesStandardL8s, VirtualMachineSizeTypesStandardM12832ms, VirtualMachineSizeTypesStandardM12864ms, VirtualMachineSizeTypesStandardM128ms, VirtualMachineSizeTypesStandardM128s, VirtualMachineSizeTypesStandardM6416ms, VirtualMachineSizeTypesStandardM6432ms, VirtualMachineSizeTypesStandardM64ms, VirtualMachineSizeTypesStandardM64s, VirtualMachineSizeTypesStandardNC12, VirtualMachineSizeTypesStandardNC12sV2, VirtualMachineSizeTypesStandardNC12sV3, VirtualMachineSizeTypesStandardNC24, VirtualMachineSizeTypesStandardNC24r, VirtualMachineSizeTypesStandardNC24rsV2, VirtualMachineSizeTypesStandardNC24rsV3, VirtualMachineSizeTypesStandardNC24sV2, VirtualMachineSizeTypesStandardNC24sV3, VirtualMachineSizeTypesStandardNC6, VirtualMachineSizeTypesStandardNC6sV2, VirtualMachineSizeTypesStandardNC6sV3, VirtualMachineSizeTypesStandardND12s, VirtualMachineSizeTypesStandardND24rs, VirtualMachineSizeTypesStandardND24s, VirtualMachineSizeTypesStandardND6s, VirtualMachineSizeTypesStandardNV12, VirtualMachineSizeTypesStandardNV24, VirtualMachineSizeTypesStandardNV6}
-}
-
 // AccessURI a disk access SAS uri.
 type AccessURI struct {
 	autorest.Response `json:"-"`
-	// AccessSAS - A SAS uri for accessing a disk.
+	// AccessSAS - READ-ONLY; A SAS uri for accessing a disk.
 	AccessSAS *string `json:"accessSAS,omitempty"`
 }
 
-// AdditionalCapabilities enables or disables a capability on the virtual machine or virtual machine scale
-// set.
+// AdditionalCapabilities enables or disables a capability on the virtual machine or virtual machine scale set.
 type AdditionalCapabilities struct {
 	// UltraSSDEnabled - The flag that enables or disables a capability to have one or more managed data disks with UltraSSD_LRS storage account type on the VM or VMSS. Managed disks with storage account type UltraSSD_LRS can be added to a virtual machine or virtual machine scale set only if this property is enabled.
 	UltraSSDEnabled *bool `json:"ultraSSDEnabled,omitempty"`
 }
 
 // AdditionalUnattendContent specifies additional XML formatted information that can be included in the
-// Unattend.xml file, which is used by Windows Setup. Contents are defined by setting name, component name,
-// and the pass in which the content is applied.
+// Unattend.xml file, which is used by Windows Setup. Contents are defined by setting name, component name, and
+// the pass in which the content is applied.
 type AdditionalUnattendContent struct {
 	// PassName - The pass name. Currently, the only allowable value is OobeSystem. Possible values include: 'OobeSystem'
 	PassName PassNames `json:"passName,omitempty"`
@@ -1187,7 +60,7 @@ type AdditionalUnattendContent struct {
 
 // APIEntityReference the API entity reference.
 type APIEntityReference struct {
-	// ID - The ARM resource id in the form of /subscriptions/{SubcriptionId}/resourceGroups/{ResourceGroupName}/...
+	// ID - The ARM resource id in the form of /subscriptions/{SubscriptionId}/resourceGroups/{ResourceGroupName}/...
 	ID *string `json:"id,omitempty"`
 }
 
@@ -1217,7 +90,7 @@ type APIErrorBase struct {
 
 // AutomaticOSUpgradePolicy the configuration parameters used for performing automatic OS upgrade.
 type AutomaticOSUpgradePolicy struct {
-	// EnableAutomaticOSUpgrade - Whether OS upgrades should automatically be applied to scale set instances in a rolling fashion when a newer version of the image becomes available. Default value is false.
+	// EnableAutomaticOSUpgrade - Indicates whether OS upgrades should automatically be applied to scale set instances in a rolling fashion when a newer version of the OS image becomes available. Default value is false. If this is set to true for Windows based scale sets, recommendation is to set [enableAutomaticUpdates](https://docs.microsoft.com/dotnet/api/microsoft.azure.management.compute.models.windowsconfiguration.enableautomaticupdates?view=azure-dotnet) to false.
 	EnableAutomaticOSUpgrade *bool `json:"enableAutomaticOSUpgrade,omitempty"`
 	// DisableAutomaticRollback - Whether OS image rollback feature should be disabled. Default value is false.
 	DisableAutomaticRollback *bool `json:"disableAutomaticRollback,omitempty"`
@@ -1229,26 +102,33 @@ type AutomaticOSUpgradeProperties struct {
 	AutomaticOSUpgradeSupported *bool `json:"automaticOSUpgradeSupported,omitempty"`
 }
 
-// AvailabilitySet specifies information about the availability set that the virtual machine should be
-// assigned to. Virtual machines specified in the same availability set are allocated to different nodes to
-// maximize availability. For more information about availability sets, see [Manage the availability of
-// virtual
+// AutomaticRepairsPolicy specifies the configuration parameters for automatic repairs on the virtual machine
+// scale set.
+type AutomaticRepairsPolicy struct {
+	// Enabled - Specifies whether automatic repairs should be enabled on the virtual machine scale set. The default value is false.
+	Enabled *bool `json:"enabled,omitempty"`
+	// GracePeriod - The amount of time for which automatic repairs are suspended due to a state change on VM. The grace time starts after the state change has completed. This helps avoid premature or accidental repairs. The time duration should be specified in ISO 8601 format. The minimum allowed grace period is 30 minutes (PT30M), which is also the default value. The maximum allowed grace period is 90 minutes (PT90M).
+	GracePeriod *string `json:"gracePeriod,omitempty"`
+}
+
+// AvailabilitySet specifies information about the availability set that the virtual machine should be assigned
+// to. Virtual machines specified in the same availability set are allocated to different nodes to maximize
+// availability. For more information about availability sets, see [Manage the availability of virtual
 // machines](https://docs.microsoft.com/azure/virtual-machines/virtual-machines-windows-manage-availability?toc=%2fazure%2fvirtual-machines%2fwindows%2ftoc.json).
-// <br><br> For more information on Azure planned maintainance, see [Planned maintenance for virtual
-// machines in
+// <br><br> For more information on Azure planned maintenance, see [Planned maintenance for virtual machines in
 // Azure](https://docs.microsoft.com/azure/virtual-machines/virtual-machines-windows-planned-maintenance?toc=%2fazure%2fvirtual-machines%2fwindows%2ftoc.json)
-// <br><br> Currently, a VM can only be added to availability set at creation time. An existing VM cannot
-// be added to an availability set.
+// <br><br> Currently, a VM can only be added to availability set at creation time. An existing VM cannot be
+// added to an availability set.
 type AvailabilitySet struct {
 	autorest.Response          `json:"-"`
 	*AvailabilitySetProperties `json:"properties,omitempty"`
 	// Sku - Sku of the availability set, only name is required to be set. See AvailabilitySetSkuTypes for possible set of values. Use 'Aligned' for virtual machines with managed disks and 'Classic' for virtual machines with unmanaged disks. Default value is 'Classic'.
 	Sku *Sku `json:"sku,omitempty"`
-	// ID - Resource Id
+	// ID - READ-ONLY; Resource Id
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name
+	// Name - READ-ONLY; Resource name
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type
+	// Type - READ-ONLY; Resource type
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location
 	Location *string `json:"location,omitempty"`
@@ -1264,15 +144,6 @@ func (as AvailabilitySet) MarshalJSON() ([]byte, error) {
 	}
 	if as.Sku != nil {
 		objectMap["sku"] = as.Sku
-	}
-	if as.ID != nil {
-		objectMap["id"] = as.ID
-	}
-	if as.Name != nil {
-		objectMap["name"] = as.Name
-	}
-	if as.Type != nil {
-		objectMap["type"] = as.Type
 	}
 	if as.Location != nil {
 		objectMap["location"] = as.Location
@@ -1438,10 +309,15 @@ func (aslr AvailabilitySetListResult) IsEmpty() bool {
 	return aslr.Value == nil || len(*aslr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (aslr AvailabilitySetListResult) hasNextLink() bool {
+	return aslr.NextLink != nil && len(*aslr.NextLink) != 0
+}
+
 // availabilitySetListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (aslr AvailabilitySetListResult) availabilitySetListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if aslr.NextLink == nil || len(to.String(aslr.NextLink)) < 1 {
+	if !aslr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -1469,11 +345,16 @@ func (page *AvailabilitySetListResultPage) NextWithContext(ctx context.Context) 
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.aslr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.aslr)
+		if err != nil {
+			return err
+		}
+		page.aslr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.aslr = next
 	return nil
 }
 
@@ -1515,12 +396,32 @@ type AvailabilitySetProperties struct {
 	PlatformFaultDomainCount *int32 `json:"platformFaultDomainCount,omitempty"`
 	// VirtualMachines - A list of references to all virtual machines in the availability set.
 	VirtualMachines *[]SubResource `json:"virtualMachines,omitempty"`
-	// Statuses - The resource status information.
+	// ProximityPlacementGroup - Specifies information about the proximity placement group that the availability set should be assigned to. <br><br>Minimum api-version: 2018-04-01.
+	ProximityPlacementGroup *SubResource `json:"proximityPlacementGroup,omitempty"`
+	// Statuses - READ-ONLY; The resource status information.
 	Statuses *[]InstanceViewStatus `json:"statuses,omitempty"`
 }
 
-// AvailabilitySetUpdate specifies information about the availability set that the virtual machine should
-// be assigned to. Only tags may be updated.
+// MarshalJSON is the custom marshaler for AvailabilitySetProperties.
+func (asp AvailabilitySetProperties) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if asp.PlatformUpdateDomainCount != nil {
+		objectMap["platformUpdateDomainCount"] = asp.PlatformUpdateDomainCount
+	}
+	if asp.PlatformFaultDomainCount != nil {
+		objectMap["platformFaultDomainCount"] = asp.PlatformFaultDomainCount
+	}
+	if asp.VirtualMachines != nil {
+		objectMap["virtualMachines"] = asp.VirtualMachines
+	}
+	if asp.ProximityPlacementGroup != nil {
+		objectMap["proximityPlacementGroup"] = asp.ProximityPlacementGroup
+	}
+	return json.Marshal(objectMap)
+}
+
+// AvailabilitySetUpdate specifies information about the availability set that the virtual machine should be
+// assigned to. Only tags may be updated.
 type AvailabilitySetUpdate struct {
 	*AvailabilitySetProperties `json:"properties,omitempty"`
 	// Sku - Sku of the availability set
@@ -1598,11 +499,11 @@ type BootDiagnostics struct {
 
 // BootDiagnosticsInstanceView the instance view of a virtual machine boot diagnostics.
 type BootDiagnosticsInstanceView struct {
-	// ConsoleScreenshotBlobURI - The console screenshot blob URI.
+	// ConsoleScreenshotBlobURI - READ-ONLY; The console screenshot blob URI.
 	ConsoleScreenshotBlobURI *string `json:"consoleScreenshotBlobUri,omitempty"`
-	// SerialConsoleLogBlobURI - The Linux serial console log blob Uri.
+	// SerialConsoleLogBlobURI - READ-ONLY; The Linux serial console log blob Uri.
 	SerialConsoleLogBlobURI *string `json:"serialConsoleLogBlobUri,omitempty"`
-	// Status - The boot diagnostics status information for the VM. <br><br> NOTE: It will be set only if there are errors encountered in enabling boot diagnostics.
+	// Status - READ-ONLY; The boot diagnostics status information for the VM. <br><br> NOTE: It will be set only if there are errors encountered in enabling boot diagnostics.
 	Status *InstanceViewStatus `json:"status,omitempty"`
 }
 
@@ -1615,11 +516,11 @@ type CloudError struct {
 type ContainerService struct {
 	autorest.Response           `json:"-"`
 	*ContainerServiceProperties `json:"properties,omitempty"`
-	// ID - Resource Id
+	// ID - READ-ONLY; Resource Id
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name
+	// Name - READ-ONLY; Resource name
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type
+	// Type - READ-ONLY; Resource type
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location
 	Location *string `json:"location,omitempty"`
@@ -1632,15 +533,6 @@ func (cs ContainerService) MarshalJSON() ([]byte, error) {
 	objectMap := make(map[string]interface{})
 	if cs.ContainerServiceProperties != nil {
 		objectMap["properties"] = cs.ContainerServiceProperties
-	}
-	if cs.ID != nil {
-		objectMap["id"] = cs.ID
-	}
-	if cs.Name != nil {
-		objectMap["name"] = cs.Name
-	}
-	if cs.Type != nil {
-		objectMap["type"] = cs.Type
 	}
 	if cs.Location != nil {
 		objectMap["location"] = cs.Location
@@ -1730,8 +622,26 @@ type ContainerServiceAgentPoolProfile struct {
 	VMSize ContainerServiceVMSizeTypes `json:"vmSize,omitempty"`
 	// DNSPrefix - DNS prefix to be used to create the FQDN for the agent pool.
 	DNSPrefix *string `json:"dnsPrefix,omitempty"`
-	// Fqdn - FDQN for the agent pool.
+	// Fqdn - READ-ONLY; FQDN for the agent pool.
 	Fqdn *string `json:"fqdn,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for ContainerServiceAgentPoolProfile.
+func (csapp ContainerServiceAgentPoolProfile) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if csapp.Name != nil {
+		objectMap["name"] = csapp.Name
+	}
+	if csapp.Count != nil {
+		objectMap["count"] = csapp.Count
+	}
+	if csapp.VMSize != "" {
+		objectMap["vmSize"] = csapp.VMSize
+	}
+	if csapp.DNSPrefix != nil {
+		objectMap["dnsPrefix"] = csapp.DNSPrefix
+	}
+	return json.Marshal(objectMap)
 }
 
 // ContainerServiceCustomProfile properties to configure a custom container service cluster.
@@ -1831,10 +741,15 @@ func (cslr ContainerServiceListResult) IsEmpty() bool {
 	return cslr.Value == nil || len(*cslr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (cslr ContainerServiceListResult) hasNextLink() bool {
+	return cslr.NextLink != nil && len(*cslr.NextLink) != 0
+}
+
 // containerServiceListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (cslr ContainerServiceListResult) containerServiceListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if cslr.NextLink == nil || len(to.String(cslr.NextLink)) < 1 {
+	if !cslr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -1862,11 +777,16 @@ func (page *ContainerServiceListResultPage) NextWithContext(ctx context.Context)
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.cslr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.cslr)
+		if err != nil {
+			return err
+		}
+		page.cslr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.cslr = next
 	return nil
 }
 
@@ -1906,8 +826,20 @@ type ContainerServiceMasterProfile struct {
 	Count *int32 `json:"count,omitempty"`
 	// DNSPrefix - DNS prefix to be used to create the FQDN for master.
 	DNSPrefix *string `json:"dnsPrefix,omitempty"`
-	// Fqdn - FDQN for the master.
+	// Fqdn - READ-ONLY; FQDN for the master.
 	Fqdn *string `json:"fqdn,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for ContainerServiceMasterProfile.
+func (csmp ContainerServiceMasterProfile) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if csmp.Count != nil {
+		objectMap["count"] = csmp.Count
+	}
+	if csmp.DNSPrefix != nil {
+		objectMap["dnsPrefix"] = csmp.DNSPrefix
+	}
+	return json.Marshal(objectMap)
 }
 
 // ContainerServiceOrchestratorProfile profile for the container service orchestrator.
@@ -1918,7 +850,7 @@ type ContainerServiceOrchestratorProfile struct {
 
 // ContainerServiceProperties properties of the container service.
 type ContainerServiceProperties struct {
-	// ProvisioningState - the current deployment or provisioning state, which only appears in the response.
+	// ProvisioningState - READ-ONLY; the current deployment or provisioning state, which only appears in the response.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
 	// OrchestratorProfile - Properties of the orchestrator.
 	OrchestratorProfile *ContainerServiceOrchestratorProfile `json:"orchestratorProfile,omitempty"`
@@ -1938,6 +870,36 @@ type ContainerServiceProperties struct {
 	DiagnosticsProfile *ContainerServiceDiagnosticsProfile `json:"diagnosticsProfile,omitempty"`
 }
 
+// MarshalJSON is the custom marshaler for ContainerServiceProperties.
+func (csp ContainerServiceProperties) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if csp.OrchestratorProfile != nil {
+		objectMap["orchestratorProfile"] = csp.OrchestratorProfile
+	}
+	if csp.CustomProfile != nil {
+		objectMap["customProfile"] = csp.CustomProfile
+	}
+	if csp.ServicePrincipalProfile != nil {
+		objectMap["servicePrincipalProfile"] = csp.ServicePrincipalProfile
+	}
+	if csp.MasterProfile != nil {
+		objectMap["masterProfile"] = csp.MasterProfile
+	}
+	if csp.AgentPoolProfiles != nil {
+		objectMap["agentPoolProfiles"] = csp.AgentPoolProfiles
+	}
+	if csp.WindowsProfile != nil {
+		objectMap["windowsProfile"] = csp.WindowsProfile
+	}
+	if csp.LinuxProfile != nil {
+		objectMap["linuxProfile"] = csp.LinuxProfile
+	}
+	if csp.DiagnosticsProfile != nil {
+		objectMap["diagnosticsProfile"] = csp.DiagnosticsProfile
+	}
+	return json.Marshal(objectMap)
+}
+
 // ContainerServicesCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of a
 // long-running operation.
 type ContainerServicesCreateOrUpdateFuture struct {
@@ -1948,7 +910,7 @@ type ContainerServicesCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ContainerServicesCreateOrUpdateFuture) Result(client ContainerServicesClient) (cs ContainerService, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.ContainerServicesCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -1977,7 +939,7 @@ type ContainerServicesDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ContainerServicesDeleteFuture) Result(client ContainerServicesClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.ContainerServicesDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -1990,8 +952,8 @@ func (future *ContainerServicesDeleteFuture) Result(client ContainerServicesClie
 	return
 }
 
-// ContainerServiceServicePrincipalProfile information about a service principal identity for the cluster
-// to use for manipulating Azure APIs.
+// ContainerServiceServicePrincipalProfile information about a service principal identity for the cluster to
+// use for manipulating Azure APIs.
 type ContainerServiceServicePrincipalProfile struct {
 	// ClientID - The ID for the service principal.
 	ClientID *string `json:"clientId,omitempty"`
@@ -2015,8 +977,17 @@ type ContainerServiceSSHPublicKey struct {
 type ContainerServiceVMDiagnostics struct {
 	// Enabled - Whether the VM diagnostic agent is provisioned on the VM.
 	Enabled *bool `json:"enabled,omitempty"`
-	// StorageURI - The URI of the storage account where diagnostics are stored.
+	// StorageURI - READ-ONLY; The URI of the storage account where diagnostics are stored.
 	StorageURI *string `json:"storageUri,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for ContainerServiceVMDiagnostics.
+func (csvd ContainerServiceVMDiagnostics) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if csvd.Enabled != nil {
+		objectMap["enabled"] = csvd.Enabled
+	}
+	return json.Marshal(objectMap)
 }
 
 // ContainerServiceWindowsProfile profile for Windows VMs in the container service cluster.
@@ -2065,22 +1036,20 @@ type DataDisk struct {
 
 // DataDiskImage contains the data disk images information.
 type DataDiskImage struct {
-	// Lun - Specifies the logical unit number of the data disk. This value is used to identify data disks within the VM and therefore must be unique for each data disk attached to a VM.
+	// Lun - READ-ONLY; Specifies the logical unit number of the data disk. This value is used to identify data disks within the VM and therefore must be unique for each data disk attached to a VM.
 	Lun *int32 `json:"lun,omitempty"`
 }
 
-// DiagnosticsProfile specifies the boot diagnostic settings state. <br><br>Minimum api-version:
-// 2015-06-15.
+// DiagnosticsProfile specifies the boot diagnostic settings state. <br><br>Minimum api-version: 2015-06-15.
 type DiagnosticsProfile struct {
 	// BootDiagnostics - Boot Diagnostics is a debugging feature which allows you to view Console Output and Screenshot to diagnose VM status. <br><br> You can easily view the output of your console log. <br><br> Azure also enables you to see a screenshot of the VM from the hypervisor.
 	BootDiagnostics *BootDiagnostics `json:"bootDiagnostics,omitempty"`
 }
 
-// DiffDiskSettings describes the parameters of differencing disk settings that can be be specified for
-// operating system disk. <br><br> NOTE: The differencing disk settings can only be specified for managed
-// disk.
+// DiffDiskSettings describes the parameters of ephemeral disk settings that can be specified for operating
+// system disk. <br><br> NOTE: The ephemeral disk settings can only be specified for managed disk.
 type DiffDiskSettings struct {
-	// Option - Specifies the differencing disk settings for operating system disk. Possible values include: 'Local'
+	// Option - Specifies the ephemeral disk settings for operating system disk. Possible values include: 'Local'
 	Option DiffDiskOptions `json:"option,omitempty"`
 }
 
@@ -2093,17 +1062,17 @@ type Disallowed struct {
 // Disk disk resource.
 type Disk struct {
 	autorest.Response `json:"-"`
-	// ManagedBy - A relative URI containing the ID of the VM that has the disk attached.
+	// ManagedBy - READ-ONLY; A relative URI containing the ID of the VM that has the disk attached.
 	ManagedBy *string  `json:"managedBy,omitempty"`
 	Sku       *DiskSku `json:"sku,omitempty"`
 	// Zones - The Logical zone list for Disk.
 	Zones           *[]string `json:"zones,omitempty"`
 	*DiskProperties `json:"properties,omitempty"`
-	// ID - Resource Id
+	// ID - READ-ONLY; Resource Id
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name
+	// Name - READ-ONLY; Resource name
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type
+	// Type - READ-ONLY; Resource type
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location
 	Location *string `json:"location,omitempty"`
@@ -2114,9 +1083,6 @@ type Disk struct {
 // MarshalJSON is the custom marshaler for Disk.
 func (d Disk) MarshalJSON() ([]byte, error) {
 	objectMap := make(map[string]interface{})
-	if d.ManagedBy != nil {
-		objectMap["managedBy"] = d.ManagedBy
-	}
 	if d.Sku != nil {
 		objectMap["sku"] = d.Sku
 	}
@@ -2125,15 +1091,6 @@ func (d Disk) MarshalJSON() ([]byte, error) {
 	}
 	if d.DiskProperties != nil {
 		objectMap["properties"] = d.DiskProperties
-	}
-	if d.ID != nil {
-		objectMap["id"] = d.ID
-	}
-	if d.Name != nil {
-		objectMap["name"] = d.Name
-	}
-	if d.Type != nil {
-		objectMap["type"] = d.Type
 	}
 	if d.Location != nil {
 		objectMap["location"] = d.Location
@@ -2337,10 +1294,15 @@ func (dl DiskList) IsEmpty() bool {
 	return dl.Value == nil || len(*dl.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (dl DiskList) hasNextLink() bool {
+	return dl.NextLink != nil && len(*dl.NextLink) != 0
+}
+
 // diskListPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (dl DiskList) diskListPreparer(ctx context.Context) (*http.Request, error) {
-	if dl.NextLink == nil || len(to.String(dl.NextLink)) < 1 {
+	if !dl.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -2368,11 +1330,16 @@ func (page *DiskListPage) NextWithContext(ctx context.Context) (err error) {
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.dl)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.dl)
+		if err != nil {
+			return err
+		}
+		page.dl = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.dl = next
 	return nil
 }
 
@@ -2408,7 +1375,7 @@ func NewDiskListPage(getNextPage func(context.Context, DiskList) (DiskList, erro
 
 // DiskProperties disk resource properties.
 type DiskProperties struct {
-	// TimeCreated - The time when the disk was created.
+	// TimeCreated - READ-ONLY; The time when the disk was created.
 	TimeCreated *date.Time `json:"timeCreated,omitempty"`
 	// OsType - The Operating System type. Possible values include: 'Windows', 'Linux'
 	OsType OperatingSystemTypes `json:"osType,omitempty"`
@@ -2418,12 +1385,36 @@ type DiskProperties struct {
 	DiskSizeGB *int32 `json:"diskSizeGB,omitempty"`
 	// EncryptionSettings - Encryption settings for disk or snapshot
 	EncryptionSettings *EncryptionSettings `json:"encryptionSettings,omitempty"`
-	// ProvisioningState - The disk provisioning state.
+	// ProvisioningState - READ-ONLY; The disk provisioning state.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
-	// DiskIOPSReadWrite - The number of IOPS allowed for this disk; only settable for UltraSSD disks. One operation can transfer between 4k and 256k bytes.
+	// DiskIOPSReadWrite - The number of IOPS allowed for this disk; only settable for UltraSSD disks. One operation can transfer between 4k and 256k bytes. For a description of the range of values you can set, see [Ultra SSD Managed Disk Offerings](https://docs.microsoft.com/azure/virtual-machines/windows/disks-ultra-ssd#ultra-ssd-managed-disk-offerings).
 	DiskIOPSReadWrite *int64 `json:"diskIOPSReadWrite,omitempty"`
-	// DiskMBpsReadWrite - The bandwidth allowed for this disk; only settable for UltraSSD disks. MBps means millions of bytes per second - MB here uses the ISO notation, of powers of 10.
+	// DiskMBpsReadWrite - The bandwidth allowed for this disk; only settable for UltraSSD disks. MBps means millions of bytes per second - MB here uses the ISO notation, of powers of 10. For a description of the range of values you can set, see [Ultra SSD Managed Disk Offerings](https://docs.microsoft.com/azure/virtual-machines/windows/disks-ultra-ssd#ultra-ssd-managed-disk-offerings).
 	DiskMBpsReadWrite *int32 `json:"diskMBpsReadWrite,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for DiskProperties.
+func (dp DiskProperties) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if dp.OsType != "" {
+		objectMap["osType"] = dp.OsType
+	}
+	if dp.CreationData != nil {
+		objectMap["creationData"] = dp.CreationData
+	}
+	if dp.DiskSizeGB != nil {
+		objectMap["diskSizeGB"] = dp.DiskSizeGB
+	}
+	if dp.EncryptionSettings != nil {
+		objectMap["encryptionSettings"] = dp.EncryptionSettings
+	}
+	if dp.DiskIOPSReadWrite != nil {
+		objectMap["diskIOPSReadWrite"] = dp.DiskIOPSReadWrite
+	}
+	if dp.DiskMBpsReadWrite != nil {
+		objectMap["diskMBpsReadWrite"] = dp.DiskMBpsReadWrite
+	}
+	return json.Marshal(objectMap)
 }
 
 // DisksCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of a long-running
@@ -2436,7 +1427,7 @@ type DisksCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *DisksCreateOrUpdateFuture) Result(client DisksClient) (d Disk, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.DisksCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -2464,7 +1455,7 @@ type DisksDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *DisksDeleteFuture) Result(client DisksClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.DisksDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -2477,8 +1468,7 @@ func (future *DisksDeleteFuture) Result(client DisksClient) (ar autorest.Respons
 	return
 }
 
-// DisksGrantAccessFuture an abstraction for monitoring and retrieving the results of a long-running
-// operation.
+// DisksGrantAccessFuture an abstraction for monitoring and retrieving the results of a long-running operation.
 type DisksGrantAccessFuture struct {
 	azure.Future
 }
@@ -2487,7 +1477,7 @@ type DisksGrantAccessFuture struct {
 // If the operation has not completed it will return an error.
 func (future *DisksGrantAccessFuture) Result(client DisksClient) (au AccessURI, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.DisksGrantAccessFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -2510,8 +1500,17 @@ func (future *DisksGrantAccessFuture) Result(client DisksClient) (au AccessURI, 
 type DiskSku struct {
 	// Name - The sku name. Possible values include: 'StandardLRS', 'PremiumLRS', 'StandardSSDLRS', 'UltraSSDLRS'
 	Name DiskStorageAccountTypes `json:"name,omitempty"`
-	// Tier - The sku tier.
+	// Tier - READ-ONLY; The sku tier.
 	Tier *string `json:"tier,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for DiskSku.
+func (ds DiskSku) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if ds.Name != "" {
+		objectMap["name"] = ds.Name
+	}
+	return json.Marshal(objectMap)
 }
 
 // DisksRevokeAccessFuture an abstraction for monitoring and retrieving the results of a long-running
@@ -2524,7 +1523,7 @@ type DisksRevokeAccessFuture struct {
 // If the operation has not completed it will return an error.
 func (future *DisksRevokeAccessFuture) Result(client DisksClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.DisksRevokeAccessFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -2546,7 +1545,7 @@ type DisksUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *DisksUpdateFuture) Result(client DisksClient) (d Disk, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.DisksUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -2664,7 +1663,7 @@ type GalleriesCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *GalleriesCreateOrUpdateFuture) Result(client GalleriesClient) (g Gallery, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.GalleriesCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -2683,8 +1682,7 @@ func (future *GalleriesCreateOrUpdateFuture) Result(client GalleriesClient) (g G
 	return
 }
 
-// GalleriesDeleteFuture an abstraction for monitoring and retrieving the results of a long-running
-// operation.
+// GalleriesDeleteFuture an abstraction for monitoring and retrieving the results of a long-running operation.
 type GalleriesDeleteFuture struct {
 	azure.Future
 }
@@ -2693,7 +1691,7 @@ type GalleriesDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *GalleriesDeleteFuture) Result(client GalleriesClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.GalleriesDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -2710,11 +1708,11 @@ func (future *GalleriesDeleteFuture) Result(client GalleriesClient) (ar autorest
 type Gallery struct {
 	autorest.Response  `json:"-"`
 	*GalleryProperties `json:"properties,omitempty"`
-	// ID - Resource Id
+	// ID - READ-ONLY; Resource Id
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name
+	// Name - READ-ONLY; Resource name
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type
+	// Type - READ-ONLY; Resource type
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location
 	Location *string `json:"location,omitempty"`
@@ -2727,15 +1725,6 @@ func (g Gallery) MarshalJSON() ([]byte, error) {
 	objectMap := make(map[string]interface{})
 	if g.GalleryProperties != nil {
 		objectMap["properties"] = g.GalleryProperties
-	}
-	if g.ID != nil {
-		objectMap["id"] = g.ID
-	}
-	if g.Name != nil {
-		objectMap["name"] = g.Name
-	}
-	if g.Type != nil {
-		objectMap["type"] = g.Type
 	}
 	if g.Location != nil {
 		objectMap["location"] = g.Location
@@ -2817,7 +1806,7 @@ func (g *Gallery) UnmarshalJSON(body []byte) error {
 
 // GalleryArtifactPublishingProfileBase describes the basic gallery artifact publishing profile.
 type GalleryArtifactPublishingProfileBase struct {
-	// TargetRegions - The target regions where the Image Version is going to be replicated to. This property is updateable.
+	// TargetRegions - The target regions where the Image Version is going to be replicated to. This property is updatable.
 	TargetRegions *[]TargetRegion        `json:"targetRegions,omitempty"`
 	Source        *GalleryArtifactSource `json:"source,omitempty"`
 }
@@ -2829,25 +1818,25 @@ type GalleryArtifactSource struct {
 
 // GalleryDataDiskImage this is the data disk image.
 type GalleryDataDiskImage struct {
-	// Lun - This property specifies the logical unit number of the data disk. This value is used to identify data disks within the Virtual Machine and therefore must be unique for each data disk attached to the Virtual Machine.
+	// Lun - READ-ONLY; This property specifies the logical unit number of the data disk. This value is used to identify data disks within the Virtual Machine and therefore must be unique for each data disk attached to the Virtual Machine.
 	Lun *int32 `json:"lun,omitempty"`
-	// SizeInGB - This property indicates the size of the VHD to be created.
+	// SizeInGB - READ-ONLY; This property indicates the size of the VHD to be created.
 	SizeInGB *int32 `json:"sizeInGB,omitempty"`
-	// HostCaching - The host caching of the disk. Valid values are 'None', 'ReadOnly', and 'ReadWrite'. Possible values include: 'HostCachingNone', 'HostCachingReadOnly', 'HostCachingReadWrite'
+	// HostCaching - READ-ONLY; The host caching of the disk. Valid values are 'None', 'ReadOnly', and 'ReadWrite'. Possible values include: 'HostCachingNone', 'HostCachingReadOnly', 'HostCachingReadWrite'
 	HostCaching HostCaching `json:"hostCaching,omitempty"`
 }
 
 // GalleryDiskImage this is the disk image base class.
 type GalleryDiskImage struct {
-	// SizeInGB - This property indicates the size of the VHD to be created.
+	// SizeInGB - READ-ONLY; This property indicates the size of the VHD to be created.
 	SizeInGB *int32 `json:"sizeInGB,omitempty"`
-	// HostCaching - The host caching of the disk. Valid values are 'None', 'ReadOnly', and 'ReadWrite'. Possible values include: 'HostCachingNone', 'HostCachingReadOnly', 'HostCachingReadWrite'
+	// HostCaching - READ-ONLY; The host caching of the disk. Valid values are 'None', 'ReadOnly', and 'ReadWrite'. Possible values include: 'HostCachingNone', 'HostCachingReadOnly', 'HostCachingReadWrite'
 	HostCaching HostCaching `json:"hostCaching,omitempty"`
 }
 
 // GalleryIdentifier describes the gallery unique name.
 type GalleryIdentifier struct {
-	// UniqueName - The unique name of the Shared Image Gallery. This name is generated automatically by Azure.
+	// UniqueName - READ-ONLY; The unique name of the Shared Image Gallery. This name is generated automatically by Azure.
 	UniqueName *string `json:"uniqueName,omitempty"`
 }
 
@@ -2855,11 +1844,11 @@ type GalleryIdentifier struct {
 type GalleryImage struct {
 	autorest.Response       `json:"-"`
 	*GalleryImageProperties `json:"properties,omitempty"`
-	// ID - Resource Id
+	// ID - READ-ONLY; Resource Id
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name
+	// Name - READ-ONLY; Resource name
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type
+	// Type - READ-ONLY; Resource type
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location
 	Location *string `json:"location,omitempty"`
@@ -2872,15 +1861,6 @@ func (gi GalleryImage) MarshalJSON() ([]byte, error) {
 	objectMap := make(map[string]interface{})
 	if gi.GalleryImageProperties != nil {
 		objectMap["properties"] = gi.GalleryImageProperties
-	}
-	if gi.ID != nil {
-		objectMap["id"] = gi.ID
-	}
-	if gi.Name != nil {
-		objectMap["name"] = gi.Name
-	}
-	if gi.Type != nil {
-		objectMap["type"] = gi.Type
 	}
 	if gi.Location != nil {
 		objectMap["location"] = gi.Location
@@ -3047,10 +2027,15 @@ func (gil GalleryImageList) IsEmpty() bool {
 	return gil.Value == nil || len(*gil.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (gil GalleryImageList) hasNextLink() bool {
+	return gil.NextLink != nil && len(*gil.NextLink) != 0
+}
+
 // galleryImageListPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (gil GalleryImageList) galleryImageListPreparer(ctx context.Context) (*http.Request, error) {
-	if gil.NextLink == nil || len(to.String(gil.NextLink)) < 1 {
+	if !gil.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -3078,11 +2063,16 @@ func (page *GalleryImageListPage) NextWithContext(ctx context.Context) (err erro
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.gil)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.gil)
+		if err != nil {
+			return err
+		}
+		page.gil = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.gil = next
 	return nil
 }
 
@@ -3118,7 +2108,7 @@ func NewGalleryImageListPage(getNextPage func(context.Context, GalleryImageList)
 
 // GalleryImageProperties describes the properties of a gallery Image Definition.
 type GalleryImageProperties struct {
-	// Description - The description of this gallery Image Definition resource. This property is updateable.
+	// Description - The description of this gallery Image Definition resource. This property is updatable.
 	Description *string `json:"description,omitempty"`
 	// Eula - The Eula agreement for the gallery Image Definition.
 	Eula *string `json:"eula,omitempty"`
@@ -3130,18 +2120,57 @@ type GalleryImageProperties struct {
 	OsType OperatingSystemTypes `json:"osType,omitempty"`
 	// OsState - The allowed values for OS State are 'Generalized'. Possible values include: 'Generalized', 'Specialized'
 	OsState OperatingSystemStateTypes `json:"osState,omitempty"`
-	// EndOfLifeDate - The end of life date of the gallery Image Definition. This property can be used for decommissioning purposes. This property is updateable.
+	// EndOfLifeDate - The end of life date of the gallery Image Definition. This property can be used for decommissioning purposes. This property is updatable.
 	EndOfLifeDate *date.Time                       `json:"endOfLifeDate,omitempty"`
 	Identifier    *GalleryImageIdentifier          `json:"identifier,omitempty"`
 	Recommended   *RecommendedMachineConfiguration `json:"recommended,omitempty"`
 	Disallowed    *Disallowed                      `json:"disallowed,omitempty"`
 	PurchasePlan  *ImagePurchasePlan               `json:"purchasePlan,omitempty"`
-	// ProvisioningState - The provisioning state, which only appears in the response. Possible values include: 'ProvisioningState1Creating', 'ProvisioningState1Updating', 'ProvisioningState1Failed', 'ProvisioningState1Succeeded', 'ProvisioningState1Deleting', 'ProvisioningState1Migrating'
+	// ProvisioningState - READ-ONLY; The provisioning state, which only appears in the response. Possible values include: 'ProvisioningState1Creating', 'ProvisioningState1Updating', 'ProvisioningState1Failed', 'ProvisioningState1Succeeded', 'ProvisioningState1Deleting', 'ProvisioningState1Migrating'
 	ProvisioningState ProvisioningState1 `json:"provisioningState,omitempty"`
 }
 
-// GalleryImagesCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of a
-// long-running operation.
+// MarshalJSON is the custom marshaler for GalleryImageProperties.
+func (gip GalleryImageProperties) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if gip.Description != nil {
+		objectMap["description"] = gip.Description
+	}
+	if gip.Eula != nil {
+		objectMap["eula"] = gip.Eula
+	}
+	if gip.PrivacyStatementURI != nil {
+		objectMap["privacyStatementUri"] = gip.PrivacyStatementURI
+	}
+	if gip.ReleaseNoteURI != nil {
+		objectMap["releaseNoteUri"] = gip.ReleaseNoteURI
+	}
+	if gip.OsType != "" {
+		objectMap["osType"] = gip.OsType
+	}
+	if gip.OsState != "" {
+		objectMap["osState"] = gip.OsState
+	}
+	if gip.EndOfLifeDate != nil {
+		objectMap["endOfLifeDate"] = gip.EndOfLifeDate
+	}
+	if gip.Identifier != nil {
+		objectMap["identifier"] = gip.Identifier
+	}
+	if gip.Recommended != nil {
+		objectMap["recommended"] = gip.Recommended
+	}
+	if gip.Disallowed != nil {
+		objectMap["disallowed"] = gip.Disallowed
+	}
+	if gip.PurchasePlan != nil {
+		objectMap["purchasePlan"] = gip.PurchasePlan
+	}
+	return json.Marshal(objectMap)
+}
+
+// GalleryImagesCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of a long-running
+// operation.
 type GalleryImagesCreateOrUpdateFuture struct {
 	azure.Future
 }
@@ -3150,7 +2179,7 @@ type GalleryImagesCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *GalleryImagesCreateOrUpdateFuture) Result(client GalleryImagesClient) (gi GalleryImage, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.GalleryImagesCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -3179,7 +2208,7 @@ type GalleryImagesDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *GalleryImagesDeleteFuture) Result(client GalleryImagesClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.GalleryImagesDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -3192,16 +2221,15 @@ func (future *GalleryImagesDeleteFuture) Result(client GalleryImagesClient) (ar 
 	return
 }
 
-// GalleryImageVersion specifies information about the gallery Image Version that you want to create or
-// update.
+// GalleryImageVersion specifies information about the gallery Image Version that you want to create or update.
 type GalleryImageVersion struct {
 	autorest.Response              `json:"-"`
 	*GalleryImageVersionProperties `json:"properties,omitempty"`
-	// ID - Resource Id
+	// ID - READ-ONLY; Resource Id
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name
+	// Name - READ-ONLY; Resource name
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type
+	// Type - READ-ONLY; Resource type
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location
 	Location *string `json:"location,omitempty"`
@@ -3214,15 +2242,6 @@ func (giv GalleryImageVersion) MarshalJSON() ([]byte, error) {
 	objectMap := make(map[string]interface{})
 	if giv.GalleryImageVersionProperties != nil {
 		objectMap["properties"] = giv.GalleryImageVersionProperties
-	}
-	if giv.ID != nil {
-		objectMap["id"] = giv.ID
-	}
-	if giv.Name != nil {
-		objectMap["name"] = giv.Name
-	}
-	if giv.Type != nil {
-		objectMap["type"] = giv.Type
 	}
 	if giv.Location != nil {
 		objectMap["location"] = giv.Location
@@ -3379,10 +2398,15 @@ func (givl GalleryImageVersionList) IsEmpty() bool {
 	return givl.Value == nil || len(*givl.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (givl GalleryImageVersionList) hasNextLink() bool {
+	return givl.NextLink != nil && len(*givl.NextLink) != 0
+}
+
 // galleryImageVersionListPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (givl GalleryImageVersionList) galleryImageVersionListPreparer(ctx context.Context) (*http.Request, error) {
-	if givl.NextLink == nil || len(to.String(givl.NextLink)) < 1 {
+	if !givl.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -3410,11 +2434,16 @@ func (page *GalleryImageVersionListPage) NextWithContext(ctx context.Context) (e
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.givl)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.givl)
+		if err != nil {
+			return err
+		}
+		page.givl = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.givl = next
 	return nil
 }
 
@@ -3451,25 +2480,57 @@ func NewGalleryImageVersionListPage(getNextPage func(context.Context, GalleryIma
 // GalleryImageVersionProperties describes the properties of a gallery Image Version.
 type GalleryImageVersionProperties struct {
 	PublishingProfile *GalleryImageVersionPublishingProfile `json:"publishingProfile,omitempty"`
-	// ProvisioningState - The provisioning state, which only appears in the response. Possible values include: 'ProvisioningState2Creating', 'ProvisioningState2Updating', 'ProvisioningState2Failed', 'ProvisioningState2Succeeded', 'ProvisioningState2Deleting', 'ProvisioningState2Migrating'
-	ProvisioningState ProvisioningState2                 `json:"provisioningState,omitempty"`
-	StorageProfile    *GalleryImageVersionStorageProfile `json:"storageProfile,omitempty"`
-	ReplicationStatus *ReplicationStatus                 `json:"replicationStatus,omitempty"`
+	// ProvisioningState - READ-ONLY; The provisioning state, which only appears in the response. Possible values include: 'ProvisioningState2Creating', 'ProvisioningState2Updating', 'ProvisioningState2Failed', 'ProvisioningState2Succeeded', 'ProvisioningState2Deleting', 'ProvisioningState2Migrating'
+	ProvisioningState ProvisioningState2 `json:"provisioningState,omitempty"`
+	// StorageProfile - READ-ONLY
+	StorageProfile *GalleryImageVersionStorageProfile `json:"storageProfile,omitempty"`
+	// ReplicationStatus - READ-ONLY
+	ReplicationStatus *ReplicationStatus `json:"replicationStatus,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for GalleryImageVersionProperties.
+func (givp GalleryImageVersionProperties) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if givp.PublishingProfile != nil {
+		objectMap["publishingProfile"] = givp.PublishingProfile
+	}
+	return json.Marshal(objectMap)
 }
 
 // GalleryImageVersionPublishingProfile the publishing profile of a gallery Image Version.
 type GalleryImageVersionPublishingProfile struct {
-	// ReplicaCount - The number of replicas of the Image Version to be created per region. This property would take effect for a region when regionalReplicaCount is not specified. This property is updateable.
+	// ReplicaCount - The number of replicas of the Image Version to be created per region. This property would take effect for a region when regionalReplicaCount is not specified. This property is updatable.
 	ReplicaCount *int32 `json:"replicaCount,omitempty"`
 	// ExcludeFromLatest - If set to true, Virtual Machines deployed from the latest version of the Image Definition won't use this Image Version.
 	ExcludeFromLatest *bool `json:"excludeFromLatest,omitempty"`
-	// PublishedDate - The timestamp for when the gallery Image Version is published.
+	// PublishedDate - READ-ONLY; The timestamp for when the gallery Image Version is published.
 	PublishedDate *date.Time `json:"publishedDate,omitempty"`
-	// EndOfLifeDate - The end of life date of the gallery Image Version. This property can be used for decommissioning purposes. This property is updateable.
+	// EndOfLifeDate - The end of life date of the gallery Image Version. This property can be used for decommissioning purposes. This property is updatable.
 	EndOfLifeDate *date.Time `json:"endOfLifeDate,omitempty"`
-	// TargetRegions - The target regions where the Image Version is going to be replicated to. This property is updateable.
+	// TargetRegions - The target regions where the Image Version is going to be replicated to. This property is updatable.
 	TargetRegions *[]TargetRegion        `json:"targetRegions,omitempty"`
 	Source        *GalleryArtifactSource `json:"source,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for GalleryImageVersionPublishingProfile.
+func (givpp GalleryImageVersionPublishingProfile) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if givpp.ReplicaCount != nil {
+		objectMap["replicaCount"] = givpp.ReplicaCount
+	}
+	if givpp.ExcludeFromLatest != nil {
+		objectMap["excludeFromLatest"] = givpp.ExcludeFromLatest
+	}
+	if givpp.EndOfLifeDate != nil {
+		objectMap["endOfLifeDate"] = givpp.EndOfLifeDate
+	}
+	if givpp.TargetRegions != nil {
+		objectMap["targetRegions"] = givpp.TargetRegions
+	}
+	if givpp.Source != nil {
+		objectMap["source"] = givpp.Source
+	}
+	return json.Marshal(objectMap)
 }
 
 // GalleryImageVersionsCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of a
@@ -3482,7 +2543,7 @@ type GalleryImageVersionsCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *GalleryImageVersionsCreateOrUpdateFuture) Result(client GalleryImageVersionsClient) (giv GalleryImageVersion, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.GalleryImageVersionsCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -3501,8 +2562,8 @@ func (future *GalleryImageVersionsCreateOrUpdateFuture) Result(client GalleryIma
 	return
 }
 
-// GalleryImageVersionsDeleteFuture an abstraction for monitoring and retrieving the results of a
-// long-running operation.
+// GalleryImageVersionsDeleteFuture an abstraction for monitoring and retrieving the results of a long-running
+// operation.
 type GalleryImageVersionsDeleteFuture struct {
 	azure.Future
 }
@@ -3511,7 +2572,7 @@ type GalleryImageVersionsDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *GalleryImageVersionsDeleteFuture) Result(client GalleryImageVersionsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.GalleryImageVersionsDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -3526,8 +2587,9 @@ func (future *GalleryImageVersionsDeleteFuture) Result(client GalleryImageVersio
 
 // GalleryImageVersionStorageProfile this is the storage profile of a gallery Image Version.
 type GalleryImageVersionStorageProfile struct {
+	// OsDiskImage - READ-ONLY
 	OsDiskImage *GalleryOSDiskImage `json:"osDiskImage,omitempty"`
-	// DataDiskImages - A list of data disk images.
+	// DataDiskImages - READ-ONLY; A list of data disk images.
 	DataDiskImages *[]GalleryDataDiskImage `json:"dataDiskImages,omitempty"`
 }
 
@@ -3608,10 +2670,15 @@ func (gl GalleryList) IsEmpty() bool {
 	return gl.Value == nil || len(*gl.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (gl GalleryList) hasNextLink() bool {
+	return gl.NextLink != nil && len(*gl.NextLink) != 0
+}
+
 // galleryListPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (gl GalleryList) galleryListPreparer(ctx context.Context) (*http.Request, error) {
-	if gl.NextLink == nil || len(to.String(gl.NextLink)) < 1 {
+	if !gl.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -3639,11 +2706,16 @@ func (page *GalleryListPage) NextWithContext(ctx context.Context) (err error) {
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.gl)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.gl)
+		if err != nil {
+			return err
+		}
+		page.gl = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.gl = next
 	return nil
 }
 
@@ -3679,19 +2751,31 @@ func NewGalleryListPage(getNextPage func(context.Context, GalleryList) (GalleryL
 
 // GalleryOSDiskImage this is the OS disk image.
 type GalleryOSDiskImage struct {
-	// SizeInGB - This property indicates the size of the VHD to be created.
+	// SizeInGB - READ-ONLY; This property indicates the size of the VHD to be created.
 	SizeInGB *int32 `json:"sizeInGB,omitempty"`
-	// HostCaching - The host caching of the disk. Valid values are 'None', 'ReadOnly', and 'ReadWrite'. Possible values include: 'HostCachingNone', 'HostCachingReadOnly', 'HostCachingReadWrite'
+	// HostCaching - READ-ONLY; The host caching of the disk. Valid values are 'None', 'ReadOnly', and 'ReadWrite'. Possible values include: 'HostCachingNone', 'HostCachingReadOnly', 'HostCachingReadWrite'
 	HostCaching HostCaching `json:"hostCaching,omitempty"`
 }
 
 // GalleryProperties describes the properties of a Shared Image Gallery.
 type GalleryProperties struct {
-	// Description - The description of this Shared Image Gallery resource. This property is updateable.
+	// Description - The description of this Shared Image Gallery resource. This property is updatable.
 	Description *string            `json:"description,omitempty"`
 	Identifier  *GalleryIdentifier `json:"identifier,omitempty"`
-	// ProvisioningState - The provisioning state, which only appears in the response. Possible values include: 'ProvisioningStateCreating', 'ProvisioningStateUpdating', 'ProvisioningStateFailed', 'ProvisioningStateSucceeded', 'ProvisioningStateDeleting', 'ProvisioningStateMigrating'
+	// ProvisioningState - READ-ONLY; The provisioning state, which only appears in the response. Possible values include: 'ProvisioningStateCreating', 'ProvisioningStateUpdating', 'ProvisioningStateFailed', 'ProvisioningStateSucceeded', 'ProvisioningStateDeleting', 'ProvisioningStateMigrating'
 	ProvisioningState ProvisioningState `json:"provisioningState,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for GalleryProperties.
+func (gp GalleryProperties) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if gp.Description != nil {
+		objectMap["description"] = gp.Description
+	}
+	if gp.Identifier != nil {
+		objectMap["identifier"] = gp.Identifier
+	}
+	return json.Marshal(objectMap)
 }
 
 // GrantAccessData data used for requesting a SAS.
@@ -3708,17 +2792,16 @@ type HardwareProfile struct {
 	VMSize VirtualMachineSizeTypes `json:"vmSize,omitempty"`
 }
 
-// Image the source user image virtual hard disk. The virtual hard disk will be copied before being
-// attached to the virtual machine. If SourceImage is provided, the destination virtual hard drive must not
-// exist.
+// Image the source user image virtual hard disk. The virtual hard disk will be copied before being attached to
+// the virtual machine. If SourceImage is provided, the destination virtual hard drive must not exist.
 type Image struct {
 	autorest.Response `json:"-"`
 	*ImageProperties  `json:"properties,omitempty"`
-	// ID - Resource Id
+	// ID - READ-ONLY; Resource Id
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name
+	// Name - READ-ONLY; Resource name
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type
+	// Type - READ-ONLY; Resource type
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location
 	Location *string `json:"location,omitempty"`
@@ -3731,15 +2814,6 @@ func (i Image) MarshalJSON() ([]byte, error) {
 	objectMap := make(map[string]interface{})
 	if i.ImageProperties != nil {
 		objectMap["properties"] = i.ImageProperties
-	}
-	if i.ID != nil {
-		objectMap["id"] = i.ID
-	}
-	if i.Name != nil {
-		objectMap["name"] = i.Name
-	}
-	if i.Type != nil {
-		objectMap["type"] = i.Type
 	}
 	if i.Location != nil {
 		objectMap["location"] = i.Location
@@ -3922,10 +2996,15 @@ func (ilr ImageListResult) IsEmpty() bool {
 	return ilr.Value == nil || len(*ilr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (ilr ImageListResult) hasNextLink() bool {
+	return ilr.NextLink != nil && len(*ilr.NextLink) != 0
+}
+
 // imageListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (ilr ImageListResult) imageListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if ilr.NextLink == nil || len(to.String(ilr.NextLink)) < 1 {
+	if !ilr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -3953,11 +3032,16 @@ func (page *ImageListResultPage) NextWithContext(ctx context.Context) (err error
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.ilr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.ilr)
+		if err != nil {
+			return err
+		}
+		page.ilr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.ilr = next
 	return nil
 }
 
@@ -4017,12 +3101,23 @@ type ImageProperties struct {
 	SourceVirtualMachine *SubResource `json:"sourceVirtualMachine,omitempty"`
 	// StorageProfile - Specifies the storage settings for the virtual machine disks.
 	StorageProfile *ImageStorageProfile `json:"storageProfile,omitempty"`
-	// ProvisioningState - The provisioning state.
+	// ProvisioningState - READ-ONLY; The provisioning state.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
 }
 
-// ImagePurchasePlan describes the gallery Image Definition purchase plan. This is used by marketplace
-// images.
+// MarshalJSON is the custom marshaler for ImageProperties.
+func (IP ImageProperties) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if IP.SourceVirtualMachine != nil {
+		objectMap["sourceVirtualMachine"] = IP.SourceVirtualMachine
+	}
+	if IP.StorageProfile != nil {
+		objectMap["storageProfile"] = IP.StorageProfile
+	}
+	return json.Marshal(objectMap)
+}
+
+// ImagePurchasePlan describes the gallery Image Definition purchase plan. This is used by marketplace images.
 type ImagePurchasePlan struct {
 	// Name - The plan ID.
 	Name *string `json:"name,omitempty"`
@@ -4034,8 +3129,8 @@ type ImagePurchasePlan struct {
 
 // ImageReference specifies information about the image to use. You can specify information about platform
 // images, marketplace images, or virtual machine images. This element is required when you want to use a
-// platform image, marketplace image, or virtual machine image, but is not used in other creation
-// operations.
+// platform image, marketplace image, or virtual machine image, but is not used in other creation operations.
+// NOTE: Image reference publisher and offer can only be set when you create the scale set.
 type ImageReference struct {
 	// Publisher - The image publisher.
 	Publisher *string `json:"publisher,omitempty"`
@@ -4059,7 +3154,7 @@ type ImagesCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ImagesCreateOrUpdateFuture) Result(client ImagesClient) (i Image, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.ImagesCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -4087,7 +3182,7 @@ type ImagesDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ImagesDeleteFuture) Result(client ImagesClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.ImagesDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -4119,7 +3214,7 @@ type ImagesUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ImagesUpdateFuture) Result(client ImagesClient) (i Image, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.ImagesUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -4212,8 +3307,8 @@ type InstanceViewStatus struct {
 	Time *date.Time `json:"time,omitempty"`
 }
 
-// KeyVaultAndKeyReference key Vault Key Url and vault id of KeK, KeK is optional and when provided is used
-// to unwrap the encryptionKey
+// KeyVaultAndKeyReference key Vault Key Url and vault id of KeK, KeK is optional and when provided is used to
+// unwrap the encryptionKey
 type KeyVaultAndKeyReference struct {
 	// SourceVault - Resource id of the KeyVault containing the key or secret
 	SourceVault *SourceVault `json:"sourceVault,omitempty"`
@@ -4245,8 +3340,8 @@ type KeyVaultSecretReference struct {
 	SourceVault *SubResource `json:"sourceVault,omitempty"`
 }
 
-// LinuxConfiguration specifies the Linux operating system settings on the virtual machine. <br><br>For a
-// list of supported Linux distributions, see [Linux on Azure-Endorsed
+// LinuxConfiguration specifies the Linux operating system settings on the virtual machine. <br><br>For a list
+// of supported Linux distributions, see [Linux on Azure-Endorsed
 // Distributions](https://docs.microsoft.com/azure/virtual-machines/virtual-machines-linux-endorsed-distros?toc=%2fazure%2fvirtual-machines%2flinux%2ftoc.json)
 // <br><br> For running non-endorsed distributions, see [Information for Non-Endorsed
 // Distributions](https://docs.microsoft.com/azure/virtual-machines/virtual-machines-linux-create-upload-generic?toc=%2fazure%2fvirtual-machines%2flinux%2ftoc.json).
@@ -4336,10 +3431,15 @@ func (lur ListUsagesResult) IsEmpty() bool {
 	return lur.Value == nil || len(*lur.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (lur ListUsagesResult) hasNextLink() bool {
+	return lur.NextLink != nil && len(*lur.NextLink) != 0
+}
+
 // listUsagesResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (lur ListUsagesResult) listUsagesResultPreparer(ctx context.Context) (*http.Request, error) {
-	if lur.NextLink == nil || len(to.String(lur.NextLink)) < 1 {
+	if !lur.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -4367,11 +3467,16 @@ func (page *ListUsagesResultPage) NextWithContext(ctx context.Context) (err erro
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.lur)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.lur)
+		if err != nil {
+			return err
+		}
+		page.lur = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.lur = next
 	return nil
 }
 
@@ -4417,8 +3522,8 @@ type ListVirtualMachineImageResource struct {
 	Value             *[]VirtualMachineImageResource `json:"value,omitempty"`
 }
 
-// LogAnalyticsExportRequestRateByIntervalFuture an abstraction for monitoring and retrieving the results
-// of a long-running operation.
+// LogAnalyticsExportRequestRateByIntervalFuture an abstraction for monitoring and retrieving the results of a
+// long-running operation.
 type LogAnalyticsExportRequestRateByIntervalFuture struct {
 	azure.Future
 }
@@ -4427,7 +3532,7 @@ type LogAnalyticsExportRequestRateByIntervalFuture struct {
 // If the operation has not completed it will return an error.
 func (future *LogAnalyticsExportRequestRateByIntervalFuture) Result(client LogAnalyticsClient) (laor LogAnalyticsOperationResult, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.LogAnalyticsExportRequestRateByIntervalFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -4456,7 +3561,7 @@ type LogAnalyticsExportThrottledRequestsFuture struct {
 // If the operation has not completed it will return an error.
 func (future *LogAnalyticsExportThrottledRequestsFuture) Result(client LogAnalyticsClient) (laor LogAnalyticsOperationResult, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.LogAnalyticsExportThrottledRequestsFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -4485,7 +3590,7 @@ type LogAnalyticsInputBase struct {
 	ToTime *date.Time `json:"toTime,omitempty"`
 	// GroupByThrottlePolicy - Group query result by Throttle Policy applied.
 	GroupByThrottlePolicy *bool `json:"groupByThrottlePolicy,omitempty"`
-	// GroupByOperationName - Group query result by  by Operation Name.
+	// GroupByOperationName - Group query result by Operation Name.
 	GroupByOperationName *bool `json:"groupByOperationName,omitempty"`
 	// GroupByResourceName - Group query result by Resource Name.
 	GroupByResourceName *bool `json:"groupByResourceName,omitempty"`
@@ -4494,13 +3599,13 @@ type LogAnalyticsInputBase struct {
 // LogAnalyticsOperationResult logAnalytics operation status response
 type LogAnalyticsOperationResult struct {
 	autorest.Response `json:"-"`
-	// Properties - LogAnalyticsOutput
+	// Properties - READ-ONLY; LogAnalyticsOutput
 	Properties *LogAnalyticsOutput `json:"properties,omitempty"`
 }
 
 // LogAnalyticsOutput logAnalytics output properties
 type LogAnalyticsOutput struct {
-	// Output - Output file Uri path to blob container.
+	// Output - READ-ONLY; Output file Uri path to blob container.
 	Output *string `json:"output,omitempty"`
 }
 
@@ -4603,15 +3708,15 @@ type NetworkProfile struct {
 // OperationListResult the List Compute Operation operation response.
 type OperationListResult struct {
 	autorest.Response `json:"-"`
-	// Value - The list of compute operations
+	// Value - READ-ONLY; The list of compute operations
 	Value *[]OperationValue `json:"value,omitempty"`
 }
 
 // OperationValue describes the properties of a Compute Operation value.
 type OperationValue struct {
-	// Origin - The origin of the compute operation.
+	// Origin - READ-ONLY; The origin of the compute operation.
 	Origin *string `json:"origin,omitempty"`
-	// Name - The name of the compute operation.
+	// Name - READ-ONLY; The name of the compute operation.
 	Name                   *string `json:"name,omitempty"`
 	*OperationValueDisplay `json:"display,omitempty"`
 }
@@ -4619,12 +3724,6 @@ type OperationValue struct {
 // MarshalJSON is the custom marshaler for OperationValue.
 func (ov OperationValue) MarshalJSON() ([]byte, error) {
 	objectMap := make(map[string]interface{})
-	if ov.Origin != nil {
-		objectMap["origin"] = ov.Origin
-	}
-	if ov.Name != nil {
-		objectMap["name"] = ov.Name
-	}
 	if ov.OperationValueDisplay != nil {
 		objectMap["display"] = ov.OperationValueDisplay
 	}
@@ -4675,18 +3774,18 @@ func (ov *OperationValue) UnmarshalJSON(body []byte) error {
 
 // OperationValueDisplay describes the properties of a Compute Operation Value Display.
 type OperationValueDisplay struct {
-	// Operation - The display name of the compute operation.
+	// Operation - READ-ONLY; The display name of the compute operation.
 	Operation *string `json:"operation,omitempty"`
-	// Resource - The display name of the resource the operation applies to.
+	// Resource - READ-ONLY; The display name of the resource the operation applies to.
 	Resource *string `json:"resource,omitempty"`
-	// Description - The description of the operation.
+	// Description - READ-ONLY; The description of the operation.
 	Description *string `json:"description,omitempty"`
-	// Provider - The resource provider for the operation.
+	// Provider - READ-ONLY; The resource provider for the operation.
 	Provider *string `json:"provider,omitempty"`
 }
 
-// OSDisk specifies information about the operating system disk used by the virtual machine. <br><br> For
-// more information about disks, see [About disks and VHDs for Azure virtual
+// OSDisk specifies information about the operating system disk used by the virtual machine. <br><br> For more
+// information about disks, see [About disks and VHDs for Azure virtual
 // machines](https://docs.microsoft.com/azure/virtual-machines/virtual-machines-windows-about-disks-vhds?toc=%2fazure%2fvirtual-machines%2fwindows%2ftoc.json).
 type OSDisk struct {
 	// OsType - This property allows you to specify the type of the OS that is included in the disk if creating a VM from user-image or a specialized VHD. <br><br> Possible values are: <br><br> **Windows** <br><br> **Linux**. Possible values include: 'Windows', 'Linux'
@@ -4703,7 +3802,7 @@ type OSDisk struct {
 	Caching CachingTypes `json:"caching,omitempty"`
 	// WriteAcceleratorEnabled - Specifies whether writeAccelerator should be enabled or disabled on the disk.
 	WriteAcceleratorEnabled *bool `json:"writeAcceleratorEnabled,omitempty"`
-	// DiffDiskSettings - Specifies the differencing Disk Settings for the operating system disk used by the virtual machine.
+	// DiffDiskSettings - Specifies the ephemeral Disk Settings for the operating system disk used by the virtual machine.
 	DiffDiskSettings *DiffDiskSettings `json:"diffDiskSettings,omitempty"`
 	// CreateOption - Specifies how the virtual machine should be created.<br><br> Possible values are:<br><br> **Attach** \u2013 This value is used when you are using a specialized disk to create the virtual machine.<br><br> **FromImage** \u2013 This value is used when you are using an image to create the virtual machine. If you are using a platform image, you also use the imageReference element described above. If you are using a marketplace image, you  also use the plan element previously described. Possible values include: 'DiskCreateOptionTypesFromImage', 'DiskCreateOptionTypesEmpty', 'DiskCreateOptionTypesAttach'
 	CreateOption DiskCreateOptionTypes `json:"createOption,omitempty"`
@@ -4721,7 +3820,7 @@ type OSDiskImage struct {
 
 // OSProfile specifies the operating system settings for the virtual machine.
 type OSProfile struct {
-	// ComputerName - Specifies the host OS name of the virtual machine. <br><br> **Max-length (Windows):** 15 characters <br><br> **Max-length (Linux):** 64 characters. <br><br> For naming conventions and restrictions see [Azure infrastructure services implementation guidelines](https://docs.microsoft.com/azure/virtual-machines/virtual-machines-linux-infrastructure-subscription-accounts-guidelines?toc=%2fazure%2fvirtual-machines%2flinux%2ftoc.json#1-naming-conventions).
+	// ComputerName - Specifies the host OS name of the virtual machine. <br><br> This name cannot be updated after the VM is created. <br><br> **Max-length (Windows):** 15 characters <br><br> **Max-length (Linux):** 64 characters. <br><br> For naming conventions and restrictions see [Azure infrastructure services implementation guidelines](https://docs.microsoft.com/azure/virtual-machines/virtual-machines-linux-infrastructure-subscription-accounts-guidelines?toc=%2fazure%2fvirtual-machines%2flinux%2ftoc.json#1-naming-conventions).
 	ComputerName *string `json:"computerName,omitempty"`
 	// AdminUsername - Specifies the name of the administrator account. <br><br> **Windows-only restriction:** Cannot end in "." <br><br> **Disallowed values:** "administrator", "admin", "user", "user1", "test", "user2", "test1", "user3", "admin1", "1", "123", "a", "actuser", "adm", "admin2", "aspnet", "backup", "console", "david", "guest", "john", "owner", "root", "server", "sql", "support", "support_388945a0", "sys", "test2", "test3", "user4", "user5". <br><br> **Minimum-length (Linux):** 1  character <br><br> **Max-length (Linux):** 64 characters <br><br> **Max-length (Windows):** 20 characters  <br><br><li> For root access to the Linux VM, see [Using root privileges on Linux virtual machines in Azure](https://docs.microsoft.com/azure/virtual-machines/virtual-machines-linux-use-root-privileges?toc=%2fazure%2fvirtual-machines%2flinux%2ftoc.json)<br><li> For a list of built-in system users on Linux that should not be used in this field, see [Selecting User Names for Linux on Azure](https://docs.microsoft.com/azure/virtual-machines/virtual-machines-linux-usernames?toc=%2fazure%2fvirtual-machines%2flinux%2ftoc.json)
 	AdminUsername *string `json:"adminUsername,omitempty"`
@@ -4739,11 +3838,11 @@ type OSProfile struct {
 	AllowExtensionOperations *bool `json:"allowExtensionOperations,omitempty"`
 }
 
-// Plan specifies information about the marketplace image used to create the virtual machine. This element
-// is only used for marketplace images. Before you can use a marketplace image from an API, you must enable
-// the image for programmatic use.  In the Azure portal, find the marketplace image that you want to use
-// and then click **Want to deploy programmatically, Get Started ->**. Enter any required information and
-// then click **Save**.
+// Plan specifies information about the marketplace image used to create the virtual machine. This element is
+// only used for marketplace images. Before you can use a marketplace image from an API, you must enable the
+// image for programmatic use.  In the Azure portal, find the marketplace image that you want to use and then
+// click **Want to deploy programmatically, Get Started ->**. Enter any required information and then click
+// **Save**.
 type Plan struct {
 	// Name - The plan ID.
 	Name *string `json:"name,omitempty"`
@@ -4753,6 +3852,300 @@ type Plan struct {
 	Product *string `json:"product,omitempty"`
 	// PromotionCode - The promotion code.
 	PromotionCode *string `json:"promotionCode,omitempty"`
+}
+
+// ProximityPlacementGroup specifies information about the proximity placement group.
+type ProximityPlacementGroup struct {
+	autorest.Response `json:"-"`
+	// ProximityPlacementGroupProperties - Describes the properties of a Proximity Placement Group.
+	*ProximityPlacementGroupProperties `json:"properties,omitempty"`
+	// ID - READ-ONLY; Resource Id
+	ID *string `json:"id,omitempty"`
+	// Name - READ-ONLY; Resource name
+	Name *string `json:"name,omitempty"`
+	// Type - READ-ONLY; Resource type
+	Type *string `json:"type,omitempty"`
+	// Location - Resource location
+	Location *string `json:"location,omitempty"`
+	// Tags - Resource tags
+	Tags map[string]*string `json:"tags"`
+}
+
+// MarshalJSON is the custom marshaler for ProximityPlacementGroup.
+func (ppg ProximityPlacementGroup) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if ppg.ProximityPlacementGroupProperties != nil {
+		objectMap["properties"] = ppg.ProximityPlacementGroupProperties
+	}
+	if ppg.Location != nil {
+		objectMap["location"] = ppg.Location
+	}
+	if ppg.Tags != nil {
+		objectMap["tags"] = ppg.Tags
+	}
+	return json.Marshal(objectMap)
+}
+
+// UnmarshalJSON is the custom unmarshaler for ProximityPlacementGroup struct.
+func (ppg *ProximityPlacementGroup) UnmarshalJSON(body []byte) error {
+	var m map[string]*json.RawMessage
+	err := json.Unmarshal(body, &m)
+	if err != nil {
+		return err
+	}
+	for k, v := range m {
+		switch k {
+		case "properties":
+			if v != nil {
+				var proximityPlacementGroupProperties ProximityPlacementGroupProperties
+				err = json.Unmarshal(*v, &proximityPlacementGroupProperties)
+				if err != nil {
+					return err
+				}
+				ppg.ProximityPlacementGroupProperties = &proximityPlacementGroupProperties
+			}
+		case "id":
+			if v != nil {
+				var ID string
+				err = json.Unmarshal(*v, &ID)
+				if err != nil {
+					return err
+				}
+				ppg.ID = &ID
+			}
+		case "name":
+			if v != nil {
+				var name string
+				err = json.Unmarshal(*v, &name)
+				if err != nil {
+					return err
+				}
+				ppg.Name = &name
+			}
+		case "type":
+			if v != nil {
+				var typeVar string
+				err = json.Unmarshal(*v, &typeVar)
+				if err != nil {
+					return err
+				}
+				ppg.Type = &typeVar
+			}
+		case "location":
+			if v != nil {
+				var location string
+				err = json.Unmarshal(*v, &location)
+				if err != nil {
+					return err
+				}
+				ppg.Location = &location
+			}
+		case "tags":
+			if v != nil {
+				var tags map[string]*string
+				err = json.Unmarshal(*v, &tags)
+				if err != nil {
+					return err
+				}
+				ppg.Tags = tags
+			}
+		}
+	}
+
+	return nil
+}
+
+// ProximityPlacementGroupListResult the List Proximity Placement Group operation response.
+type ProximityPlacementGroupListResult struct {
+	autorest.Response `json:"-"`
+	// Value - The list of proximity placement groups
+	Value *[]ProximityPlacementGroup `json:"value,omitempty"`
+	// NextLink - The URI to fetch the next page of proximity placement groups.
+	NextLink *string `json:"nextLink,omitempty"`
+}
+
+// ProximityPlacementGroupListResultIterator provides access to a complete listing of ProximityPlacementGroup
+// values.
+type ProximityPlacementGroupListResultIterator struct {
+	i    int
+	page ProximityPlacementGroupListResultPage
+}
+
+// NextWithContext advances to the next value.  If there was an error making
+// the request the iterator does not advance and the error is returned.
+func (iter *ProximityPlacementGroupListResultIterator) NextWithContext(ctx context.Context) (err error) {
+	if tracing.IsEnabled() {
+		ctx = tracing.StartSpan(ctx, fqdn+"/ProximityPlacementGroupListResultIterator.NextWithContext")
+		defer func() {
+			sc := -1
+			if iter.Response().Response.Response != nil {
+				sc = iter.Response().Response.Response.StatusCode
+			}
+			tracing.EndSpan(ctx, sc, err)
+		}()
+	}
+	iter.i++
+	if iter.i < len(iter.page.Values()) {
+		return nil
+	}
+	err = iter.page.NextWithContext(ctx)
+	if err != nil {
+		iter.i--
+		return err
+	}
+	iter.i = 0
+	return nil
+}
+
+// Next advances to the next value.  If there was an error making
+// the request the iterator does not advance and the error is returned.
+// Deprecated: Use NextWithContext() instead.
+func (iter *ProximityPlacementGroupListResultIterator) Next() error {
+	return iter.NextWithContext(context.Background())
+}
+
+// NotDone returns true if the enumeration should be started or is not yet complete.
+func (iter ProximityPlacementGroupListResultIterator) NotDone() bool {
+	return iter.page.NotDone() && iter.i < len(iter.page.Values())
+}
+
+// Response returns the raw server response from the last page request.
+func (iter ProximityPlacementGroupListResultIterator) Response() ProximityPlacementGroupListResult {
+	return iter.page.Response()
+}
+
+// Value returns the current value or a zero-initialized value if the
+// iterator has advanced beyond the end of the collection.
+func (iter ProximityPlacementGroupListResultIterator) Value() ProximityPlacementGroup {
+	if !iter.page.NotDone() {
+		return ProximityPlacementGroup{}
+	}
+	return iter.page.Values()[iter.i]
+}
+
+// Creates a new instance of the ProximityPlacementGroupListResultIterator type.
+func NewProximityPlacementGroupListResultIterator(page ProximityPlacementGroupListResultPage) ProximityPlacementGroupListResultIterator {
+	return ProximityPlacementGroupListResultIterator{page: page}
+}
+
+// IsEmpty returns true if the ListResult contains no values.
+func (ppglr ProximityPlacementGroupListResult) IsEmpty() bool {
+	return ppglr.Value == nil || len(*ppglr.Value) == 0
+}
+
+// hasNextLink returns true if the NextLink is not empty.
+func (ppglr ProximityPlacementGroupListResult) hasNextLink() bool {
+	return ppglr.NextLink != nil && len(*ppglr.NextLink) != 0
+}
+
+// proximityPlacementGroupListResultPreparer prepares a request to retrieve the next set of results.
+// It returns nil if no more results exist.
+func (ppglr ProximityPlacementGroupListResult) proximityPlacementGroupListResultPreparer(ctx context.Context) (*http.Request, error) {
+	if !ppglr.hasNextLink() {
+		return nil, nil
+	}
+	return autorest.Prepare((&http.Request{}).WithContext(ctx),
+		autorest.AsJSON(),
+		autorest.AsGet(),
+		autorest.WithBaseURL(to.String(ppglr.NextLink)))
+}
+
+// ProximityPlacementGroupListResultPage contains a page of ProximityPlacementGroup values.
+type ProximityPlacementGroupListResultPage struct {
+	fn    func(context.Context, ProximityPlacementGroupListResult) (ProximityPlacementGroupListResult, error)
+	ppglr ProximityPlacementGroupListResult
+}
+
+// NextWithContext advances to the next page of values.  If there was an error making
+// the request the page does not advance and the error is returned.
+func (page *ProximityPlacementGroupListResultPage) NextWithContext(ctx context.Context) (err error) {
+	if tracing.IsEnabled() {
+		ctx = tracing.StartSpan(ctx, fqdn+"/ProximityPlacementGroupListResultPage.NextWithContext")
+		defer func() {
+			sc := -1
+			if page.Response().Response.Response != nil {
+				sc = page.Response().Response.Response.StatusCode
+			}
+			tracing.EndSpan(ctx, sc, err)
+		}()
+	}
+	for {
+		next, err := page.fn(ctx, page.ppglr)
+		if err != nil {
+			return err
+		}
+		page.ppglr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
+	}
+	return nil
+}
+
+// Next advances to the next page of values.  If there was an error making
+// the request the page does not advance and the error is returned.
+// Deprecated: Use NextWithContext() instead.
+func (page *ProximityPlacementGroupListResultPage) Next() error {
+	return page.NextWithContext(context.Background())
+}
+
+// NotDone returns true if the page enumeration should be started or is not yet complete.
+func (page ProximityPlacementGroupListResultPage) NotDone() bool {
+	return !page.ppglr.IsEmpty()
+}
+
+// Response returns the raw server response from the last page request.
+func (page ProximityPlacementGroupListResultPage) Response() ProximityPlacementGroupListResult {
+	return page.ppglr
+}
+
+// Values returns the slice of values for the current page or nil if there are no values.
+func (page ProximityPlacementGroupListResultPage) Values() []ProximityPlacementGroup {
+	if page.ppglr.IsEmpty() {
+		return nil
+	}
+	return *page.ppglr.Value
+}
+
+// Creates a new instance of the ProximityPlacementGroupListResultPage type.
+func NewProximityPlacementGroupListResultPage(getNextPage func(context.Context, ProximityPlacementGroupListResult) (ProximityPlacementGroupListResult, error)) ProximityPlacementGroupListResultPage {
+	return ProximityPlacementGroupListResultPage{fn: getNextPage}
+}
+
+// ProximityPlacementGroupProperties describes the properties of a Proximity Placement Group.
+type ProximityPlacementGroupProperties struct {
+	// ProximityPlacementGroupType - Specifies the type of the proximity placement group. <br><br> Possible values are: <br><br> **Standard** : Co-locate resources within an Azure region or Availability Zone. <br><br> **Ultra** : For future use. Possible values include: 'Standard', 'Ultra'
+	ProximityPlacementGroupType ProximityPlacementGroupType `json:"proximityPlacementGroupType,omitempty"`
+	// VirtualMachines - READ-ONLY; A list of references to all virtual machines in the proximity placement group.
+	VirtualMachines *[]SubResource `json:"virtualMachines,omitempty"`
+	// VirtualMachineScaleSets - READ-ONLY; A list of references to all virtual machine scale sets in the proximity placement group.
+	VirtualMachineScaleSets *[]SubResource `json:"virtualMachineScaleSets,omitempty"`
+	// AvailabilitySets - READ-ONLY; A list of references to all availability sets in the proximity placement group.
+	AvailabilitySets *[]SubResource `json:"availabilitySets,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for ProximityPlacementGroupProperties.
+func (ppgp ProximityPlacementGroupProperties) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if ppgp.ProximityPlacementGroupType != "" {
+		objectMap["proximityPlacementGroupType"] = ppgp.ProximityPlacementGroupType
+	}
+	return json.Marshal(objectMap)
+}
+
+// ProximityPlacementGroupUpdate specifies information about the proximity placement group.
+type ProximityPlacementGroupUpdate struct {
+	// Tags - Resource tags
+	Tags map[string]*string `json:"tags"`
+}
+
+// MarshalJSON is the custom marshaler for ProximityPlacementGroupUpdate.
+func (ppgu ProximityPlacementGroupUpdate) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if ppgu.Tags != nil {
+		objectMap["tags"] = ppgu.Tags
+	}
+	return json.Marshal(objectMap)
 }
 
 // PurchasePlan used for establishing the purchase context of any 3rd Party artifact through MarketPlace.
@@ -4765,8 +4158,8 @@ type PurchasePlan struct {
 	Product *string `json:"product,omitempty"`
 }
 
-// RecommendedMachineConfiguration the properties describe the recommended machine configuration for this
-// Image Definition. These properties are updateable.
+// RecommendedMachineConfiguration the properties describe the recommended machine configuration for this Image
+// Definition. These properties are updatable.
 type RecommendedMachineConfiguration struct {
 	VCPUs  *ResourceRange `json:"vCPUs,omitempty"`
 	Memory *ResourceRange `json:"memory,omitempty"`
@@ -4775,29 +4168,29 @@ type RecommendedMachineConfiguration struct {
 // RecoveryWalkResponse response after calling a manual recovery walk
 type RecoveryWalkResponse struct {
 	autorest.Response `json:"-"`
-	// WalkPerformed - Whether the recovery walk was performed
+	// WalkPerformed - READ-ONLY; Whether the recovery walk was performed
 	WalkPerformed *bool `json:"walkPerformed,omitempty"`
-	// NextPlatformUpdateDomain - The next update domain that needs to be walked. Null means walk spanning all update domains has been completed
+	// NextPlatformUpdateDomain - READ-ONLY; The next update domain that needs to be walked. Null means walk spanning all update domains has been completed
 	NextPlatformUpdateDomain *int32 `json:"nextPlatformUpdateDomain,omitempty"`
 }
 
 // RegionalReplicationStatus this is the regional replication status.
 type RegionalReplicationStatus struct {
-	// Region - The region to which the gallery Image Version is being replicated to.
+	// Region - READ-ONLY; The region to which the gallery Image Version is being replicated to.
 	Region *string `json:"region,omitempty"`
-	// State - This is the regional replication state. Possible values include: 'ReplicationStateUnknown', 'ReplicationStateReplicating', 'ReplicationStateCompleted', 'ReplicationStateFailed'
+	// State - READ-ONLY; This is the regional replication state. Possible values include: 'ReplicationStateUnknown', 'ReplicationStateReplicating', 'ReplicationStateCompleted', 'ReplicationStateFailed'
 	State ReplicationState `json:"state,omitempty"`
-	// Details - The details of the replication status.
+	// Details - READ-ONLY; The details of the replication status.
 	Details *string `json:"details,omitempty"`
-	// Progress - It indicates progress of the replication job.
+	// Progress - READ-ONLY; It indicates progress of the replication job.
 	Progress *int32 `json:"progress,omitempty"`
 }
 
 // ReplicationStatus this is the replication status of the gallery Image Version.
 type ReplicationStatus struct {
-	// AggregatedState - This is the aggregated replication status based on all the regional replication status flags. Possible values include: 'Unknown', 'InProgress', 'Completed', 'Failed'
+	// AggregatedState - READ-ONLY; This is the aggregated replication status based on all the regional replication status flags. Possible values include: 'Unknown', 'InProgress', 'Completed', 'Failed'
 	AggregatedState AggregatedReplicationState `json:"aggregatedState,omitempty"`
-	// Summary - This is a summary of replication status for each region.
+	// Summary - READ-ONLY; This is a summary of replication status for each region.
 	Summary *[]RegionalReplicationStatus `json:"summary,omitempty"`
 }
 
@@ -4813,7 +4206,7 @@ type RequestRateByIntervalInput struct {
 	ToTime *date.Time `json:"toTime,omitempty"`
 	// GroupByThrottlePolicy - Group query result by Throttle Policy applied.
 	GroupByThrottlePolicy *bool `json:"groupByThrottlePolicy,omitempty"`
-	// GroupByOperationName - Group query result by  by Operation Name.
+	// GroupByOperationName - Group query result by Operation Name.
 	GroupByOperationName *bool `json:"groupByOperationName,omitempty"`
 	// GroupByResourceName - Group query result by Resource Name.
 	GroupByResourceName *bool `json:"groupByResourceName,omitempty"`
@@ -4821,11 +4214,11 @@ type RequestRateByIntervalInput struct {
 
 // Resource the Resource model definition.
 type Resource struct {
-	// ID - Resource Id
+	// ID - READ-ONLY; Resource Id
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name
+	// Name - READ-ONLY; Resource name
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type
+	// Type - READ-ONLY; Resource type
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location
 	Location *string `json:"location,omitempty"`
@@ -4836,15 +4229,6 @@ type Resource struct {
 // MarshalJSON is the custom marshaler for Resource.
 func (r Resource) MarshalJSON() ([]byte, error) {
 	objectMap := make(map[string]interface{})
-	if r.ID != nil {
-		objectMap["id"] = r.ID
-	}
-	if r.Name != nil {
-		objectMap["name"] = r.Name
-	}
-	if r.Type != nil {
-		objectMap["type"] = r.Type
-	}
 	if r.Location != nil {
 		objectMap["location"] = r.Location
 	}
@@ -4864,98 +4248,98 @@ type ResourceRange struct {
 
 // ResourceSku describes an available Compute SKU.
 type ResourceSku struct {
-	// ResourceType - The type of resource the SKU applies to.
+	// ResourceType - READ-ONLY; The type of resource the SKU applies to.
 	ResourceType *string `json:"resourceType,omitempty"`
-	// Name - The name of SKU.
+	// Name - READ-ONLY; The name of SKU.
 	Name *string `json:"name,omitempty"`
-	// Tier - Specifies the tier of virtual machines in a scale set.<br /><br /> Possible Values:<br /><br /> **Standard**<br /><br /> **Basic**
+	// Tier - READ-ONLY; Specifies the tier of virtual machines in a scale set.<br /><br /> Possible Values:<br /><br /> **Standard**<br /><br /> **Basic**
 	Tier *string `json:"tier,omitempty"`
-	// Size - The Size of the SKU.
+	// Size - READ-ONLY; The Size of the SKU.
 	Size *string `json:"size,omitempty"`
-	// Family - The Family of this particular SKU.
+	// Family - READ-ONLY; The Family of this particular SKU.
 	Family *string `json:"family,omitempty"`
-	// Kind - The Kind of resources that are supported in this SKU.
+	// Kind - READ-ONLY; The Kind of resources that are supported in this SKU.
 	Kind *string `json:"kind,omitempty"`
-	// Capacity - Specifies the number of virtual machines in the scale set.
+	// Capacity - READ-ONLY; Specifies the number of virtual machines in the scale set.
 	Capacity *ResourceSkuCapacity `json:"capacity,omitempty"`
-	// Locations - The set of locations that the SKU is available.
+	// Locations - READ-ONLY; The set of locations that the SKU is available.
 	Locations *[]string `json:"locations,omitempty"`
-	// LocationInfo - A list of locations and availability zones in those locations where the SKU is available.
+	// LocationInfo - READ-ONLY; A list of locations and availability zones in those locations where the SKU is available.
 	LocationInfo *[]ResourceSkuLocationInfo `json:"locationInfo,omitempty"`
-	// APIVersions - The api versions that support this SKU.
+	// APIVersions - READ-ONLY; The api versions that support this SKU.
 	APIVersions *[]string `json:"apiVersions,omitempty"`
-	// Costs - Metadata for retrieving price info.
+	// Costs - READ-ONLY; Metadata for retrieving price info.
 	Costs *[]ResourceSkuCosts `json:"costs,omitempty"`
-	// Capabilities - A name value pair to describe the capability.
+	// Capabilities - READ-ONLY; A name value pair to describe the capability.
 	Capabilities *[]ResourceSkuCapabilities `json:"capabilities,omitempty"`
-	// Restrictions - The restrictions because of which SKU cannot be used. This is empty if there are no restrictions.
+	// Restrictions - READ-ONLY; The restrictions because of which SKU cannot be used. This is empty if there are no restrictions.
 	Restrictions *[]ResourceSkuRestrictions `json:"restrictions,omitempty"`
 }
 
-// ResourceSkuCapabilities describes The SKU capabilites object.
+// ResourceSkuCapabilities describes The SKU capabilities object.
 type ResourceSkuCapabilities struct {
-	// Name - An invariant to describe the feature.
+	// Name - READ-ONLY; An invariant to describe the feature.
 	Name *string `json:"name,omitempty"`
-	// Value - An invariant if the feature is measured by quantity.
+	// Value - READ-ONLY; An invariant if the feature is measured by quantity.
 	Value *string `json:"value,omitempty"`
 }
 
 // ResourceSkuCapacity describes scaling information of a SKU.
 type ResourceSkuCapacity struct {
-	// Minimum - The minimum capacity.
+	// Minimum - READ-ONLY; The minimum capacity.
 	Minimum *int64 `json:"minimum,omitempty"`
-	// Maximum - The maximum capacity that can be set.
+	// Maximum - READ-ONLY; The maximum capacity that can be set.
 	Maximum *int64 `json:"maximum,omitempty"`
-	// Default - The default capacity.
+	// Default - READ-ONLY; The default capacity.
 	Default *int64 `json:"default,omitempty"`
-	// ScaleType - The scale type applicable to the sku. Possible values include: 'ResourceSkuCapacityScaleTypeAutomatic', 'ResourceSkuCapacityScaleTypeManual', 'ResourceSkuCapacityScaleTypeNone'
+	// ScaleType - READ-ONLY; The scale type applicable to the sku. Possible values include: 'ResourceSkuCapacityScaleTypeAutomatic', 'ResourceSkuCapacityScaleTypeManual', 'ResourceSkuCapacityScaleTypeNone'
 	ScaleType ResourceSkuCapacityScaleType `json:"scaleType,omitempty"`
 }
 
 // ResourceSkuCosts describes metadata for retrieving price info.
 type ResourceSkuCosts struct {
-	// MeterID - Used for querying price from commerce.
+	// MeterID - READ-ONLY; Used for querying price from commerce.
 	MeterID *string `json:"meterID,omitempty"`
-	// Quantity - The multiplier is needed to extend the base metered cost.
+	// Quantity - READ-ONLY; The multiplier is needed to extend the base metered cost.
 	Quantity *int64 `json:"quantity,omitempty"`
-	// ExtendedUnit - An invariant to show the extended unit.
+	// ExtendedUnit - READ-ONLY; An invariant to show the extended unit.
 	ExtendedUnit *string `json:"extendedUnit,omitempty"`
 }
 
 // ResourceSkuLocationInfo ...
 type ResourceSkuLocationInfo struct {
-	// Location - Location of the SKU
+	// Location - READ-ONLY; Location of the SKU
 	Location *string `json:"location,omitempty"`
-	// Zones - List of availability zones where the SKU is supported.
+	// Zones - READ-ONLY; List of availability zones where the SKU is supported.
 	Zones *[]string `json:"zones,omitempty"`
 }
 
 // ResourceSkuRestrictionInfo ...
 type ResourceSkuRestrictionInfo struct {
-	// Locations - Locations where the SKU is restricted
+	// Locations - READ-ONLY; Locations where the SKU is restricted
 	Locations *[]string `json:"locations,omitempty"`
-	// Zones - List of availability zones where the SKU is restricted.
+	// Zones - READ-ONLY; List of availability zones where the SKU is restricted.
 	Zones *[]string `json:"zones,omitempty"`
 }
 
 // ResourceSkuRestrictions describes scaling information of a SKU.
 type ResourceSkuRestrictions struct {
-	// Type - The type of restrictions. Possible values include: 'Location', 'Zone'
+	// Type - READ-ONLY; The type of restrictions. Possible values include: 'Location', 'Zone'
 	Type ResourceSkuRestrictionsType `json:"type,omitempty"`
-	// Values - The value of restrictions. If the restriction type is set to location. This would be different locations where the SKU is restricted.
+	// Values - READ-ONLY; The value of restrictions. If the restriction type is set to location. This would be different locations where the SKU is restricted.
 	Values *[]string `json:"values,omitempty"`
-	// RestrictionInfo - The information about the restriction where the SKU cannot be used.
+	// RestrictionInfo - READ-ONLY; The information about the restriction where the SKU cannot be used.
 	RestrictionInfo *ResourceSkuRestrictionInfo `json:"restrictionInfo,omitempty"`
-	// ReasonCode - The reason for restriction. Possible values include: 'QuotaID', 'NotAvailableForSubscription'
+	// ReasonCode - READ-ONLY; The reason for restriction. Possible values include: 'QuotaID', 'NotAvailableForSubscription'
 	ReasonCode ResourceSkuRestrictionsReasonCode `json:"reasonCode,omitempty"`
 }
 
-// ResourceSkusResult the Compute List Skus operation response.
+// ResourceSkusResult the List Resource Skus operation response.
 type ResourceSkusResult struct {
 	autorest.Response `json:"-"`
 	// Value - The list of skus available for the subscription.
 	Value *[]ResourceSku `json:"value,omitempty"`
-	// NextLink - The uri to fetch the next page of Compute Skus. Call ListNext() with this to fetch the next page of VMSS Skus.
+	// NextLink - The URI to fetch the next page of Resource Skus. Call ListNext() with this URI to fetch the next page of Resource Skus
 	NextLink *string `json:"nextLink,omitempty"`
 }
 
@@ -5027,10 +4411,15 @@ func (rsr ResourceSkusResult) IsEmpty() bool {
 	return rsr.Value == nil || len(*rsr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (rsr ResourceSkusResult) hasNextLink() bool {
+	return rsr.NextLink != nil && len(*rsr.NextLink) != 0
+}
+
 // resourceSkusResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (rsr ResourceSkusResult) resourceSkusResultPreparer(ctx context.Context) (*http.Request, error) {
-	if rsr.NextLink == nil || len(to.String(rsr.NextLink)) < 1 {
+	if !rsr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -5058,11 +4447,16 @@ func (page *ResourceSkusResultPage) NextWithContext(ctx context.Context) (err er
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.rsr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.rsr)
+		if err != nil {
+			return err
+		}
+		page.rsr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.rsr = next
 	return nil
 }
 
@@ -5098,11 +4492,11 @@ func NewResourceSkusResultPage(getNextPage func(context.Context, ResourceSkusRes
 
 // RollbackStatusInfo information about rollback on failed VM instances after a OS Upgrade operation.
 type RollbackStatusInfo struct {
-	// SuccessfullyRolledbackInstanceCount - The number of instances which have been successfully rolled back.
+	// SuccessfullyRolledbackInstanceCount - READ-ONLY; The number of instances which have been successfully rolled back.
 	SuccessfullyRolledbackInstanceCount *int32 `json:"successfullyRolledbackInstanceCount,omitempty"`
-	// FailedRolledbackInstanceCount - The number of instances which failed to rollback.
+	// FailedRolledbackInstanceCount - READ-ONLY; The number of instances which failed to rollback.
 	FailedRolledbackInstanceCount *int32 `json:"failedRolledbackInstanceCount,omitempty"`
-	// RollbackError - Error details if OS rollback failed.
+	// RollbackError - READ-ONLY; Error details if OS rollback failed.
 	RollbackError *APIError `json:"rollbackError,omitempty"`
 }
 
@@ -5118,28 +4512,27 @@ type RollingUpgradePolicy struct {
 	PauseTimeBetweenBatches *string `json:"pauseTimeBetweenBatches,omitempty"`
 }
 
-// RollingUpgradeProgressInfo information about the number of virtual machine instances in each upgrade
-// state.
+// RollingUpgradeProgressInfo information about the number of virtual machine instances in each upgrade state.
 type RollingUpgradeProgressInfo struct {
-	// SuccessfulInstanceCount - The number of instances that have been successfully upgraded.
+	// SuccessfulInstanceCount - READ-ONLY; The number of instances that have been successfully upgraded.
 	SuccessfulInstanceCount *int32 `json:"successfulInstanceCount,omitempty"`
-	// FailedInstanceCount - The number of instances that have failed to be upgraded successfully.
+	// FailedInstanceCount - READ-ONLY; The number of instances that have failed to be upgraded successfully.
 	FailedInstanceCount *int32 `json:"failedInstanceCount,omitempty"`
-	// InProgressInstanceCount - The number of instances that are currently being upgraded.
+	// InProgressInstanceCount - READ-ONLY; The number of instances that are currently being upgraded.
 	InProgressInstanceCount *int32 `json:"inProgressInstanceCount,omitempty"`
-	// PendingInstanceCount - The number of instances that have not yet begun to be upgraded.
+	// PendingInstanceCount - READ-ONLY; The number of instances that have not yet begun to be upgraded.
 	PendingInstanceCount *int32 `json:"pendingInstanceCount,omitempty"`
 }
 
 // RollingUpgradeRunningStatus information about the current running state of the overall upgrade.
 type RollingUpgradeRunningStatus struct {
-	// Code - Code indicating the current status of the upgrade. Possible values include: 'RollingUpgradeStatusCodeRollingForward', 'RollingUpgradeStatusCodeCancelled', 'RollingUpgradeStatusCodeCompleted', 'RollingUpgradeStatusCodeFaulted'
+	// Code - READ-ONLY; Code indicating the current status of the upgrade. Possible values include: 'RollingUpgradeStatusCodeRollingForward', 'RollingUpgradeStatusCodeCancelled', 'RollingUpgradeStatusCodeCompleted', 'RollingUpgradeStatusCodeFaulted'
 	Code RollingUpgradeStatusCode `json:"code,omitempty"`
-	// StartTime - Start time of the upgrade.
+	// StartTime - READ-ONLY; Start time of the upgrade.
 	StartTime *date.Time `json:"startTime,omitempty"`
-	// LastAction - The last action performed on the rolling upgrade. Possible values include: 'Start', 'Cancel'
+	// LastAction - READ-ONLY; The last action performed on the rolling upgrade. Possible values include: 'Start', 'Cancel'
 	LastAction RollingUpgradeActionType `json:"lastAction,omitempty"`
-	// LastActionTime - Last action time of the upgrade.
+	// LastActionTime - READ-ONLY; Last action time of the upgrade.
 	LastActionTime *date.Time `json:"lastActionTime,omitempty"`
 }
 
@@ -5147,11 +4540,11 @@ type RollingUpgradeRunningStatus struct {
 type RollingUpgradeStatusInfo struct {
 	autorest.Response                   `json:"-"`
 	*RollingUpgradeStatusInfoProperties `json:"properties,omitempty"`
-	// ID - Resource Id
+	// ID - READ-ONLY; Resource Id
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name
+	// Name - READ-ONLY; Resource name
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type
+	// Type - READ-ONLY; Resource type
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location
 	Location *string `json:"location,omitempty"`
@@ -5164,15 +4557,6 @@ func (rusi RollingUpgradeStatusInfo) MarshalJSON() ([]byte, error) {
 	objectMap := make(map[string]interface{})
 	if rusi.RollingUpgradeStatusInfoProperties != nil {
 		objectMap["properties"] = rusi.RollingUpgradeStatusInfoProperties
-	}
-	if rusi.ID != nil {
-		objectMap["id"] = rusi.ID
-	}
-	if rusi.Name != nil {
-		objectMap["name"] = rusi.Name
-	}
-	if rusi.Type != nil {
-		objectMap["type"] = rusi.Type
 	}
 	if rusi.Location != nil {
 		objectMap["location"] = rusi.Location
@@ -5254,13 +4638,13 @@ func (rusi *RollingUpgradeStatusInfo) UnmarshalJSON(body []byte) error {
 
 // RollingUpgradeStatusInfoProperties the status of the latest virtual machine scale set rolling upgrade.
 type RollingUpgradeStatusInfoProperties struct {
-	// Policy - The rolling upgrade policies applied for this upgrade.
+	// Policy - READ-ONLY; The rolling upgrade policies applied for this upgrade.
 	Policy *RollingUpgradePolicy `json:"policy,omitempty"`
-	// RunningStatus - Information about the current running state of the overall upgrade.
+	// RunningStatus - READ-ONLY; Information about the current running state of the overall upgrade.
 	RunningStatus *RollingUpgradeRunningStatus `json:"runningStatus,omitempty"`
-	// Progress - Information about the number of virtual machine instances in each upgrade state.
+	// Progress - READ-ONLY; Information about the number of virtual machine instances in each upgrade state.
 	Progress *RollingUpgradeProgressInfo `json:"progress,omitempty"`
-	// Error - Error details for this upgrade, if there are any.
+	// Error - READ-ONLY; Error details for this upgrade, if there are any.
 	Error *APIError `json:"error,omitempty"`
 }
 
@@ -5392,10 +4776,15 @@ func (rclr RunCommandListResult) IsEmpty() bool {
 	return rclr.Value == nil || len(*rclr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (rclr RunCommandListResult) hasNextLink() bool {
+	return rclr.NextLink != nil && len(*rclr.NextLink) != 0
+}
+
 // runCommandListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (rclr RunCommandListResult) runCommandListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if rclr.NextLink == nil || len(to.String(rclr.NextLink)) < 1 {
+	if !rclr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -5423,11 +4812,16 @@ func (page *RunCommandListResultPage) NextWithContext(ctx context.Context) (err 
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.rclr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.rclr)
+		if err != nil {
+			return err
+		}
+		page.rclr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.rclr = next
 	return nil
 }
 
@@ -5480,7 +4874,8 @@ type RunCommandResult struct {
 	Value *[]InstanceViewStatus `json:"value,omitempty"`
 }
 
-// Sku describes a virtual machine scale set sku.
+// Sku describes a virtual machine scale set sku. NOTE: If the new VM SKU is not supported on the hardware the
+// scale set is currently on, you need to deallocate the VMs in the scale set before you modify the SKU name.
 type Sku struct {
 	// Name - The sku name.
 	Name *string `json:"name,omitempty"`
@@ -5493,15 +4888,15 @@ type Sku struct {
 // Snapshot snapshot resource.
 type Snapshot struct {
 	autorest.Response `json:"-"`
-	// ManagedBy - Unused. Always Null.
+	// ManagedBy - READ-ONLY; Unused. Always Null.
 	ManagedBy           *string      `json:"managedBy,omitempty"`
 	Sku                 *SnapshotSku `json:"sku,omitempty"`
 	*SnapshotProperties `json:"properties,omitempty"`
-	// ID - Resource Id
+	// ID - READ-ONLY; Resource Id
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name
+	// Name - READ-ONLY; Resource name
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type
+	// Type - READ-ONLY; Resource type
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location
 	Location *string `json:"location,omitempty"`
@@ -5512,23 +4907,11 @@ type Snapshot struct {
 // MarshalJSON is the custom marshaler for Snapshot.
 func (s Snapshot) MarshalJSON() ([]byte, error) {
 	objectMap := make(map[string]interface{})
-	if s.ManagedBy != nil {
-		objectMap["managedBy"] = s.ManagedBy
-	}
 	if s.Sku != nil {
 		objectMap["sku"] = s.Sku
 	}
 	if s.SnapshotProperties != nil {
 		objectMap["properties"] = s.SnapshotProperties
-	}
-	if s.ID != nil {
-		objectMap["id"] = s.ID
-	}
-	if s.Name != nil {
-		objectMap["name"] = s.Name
-	}
-	if s.Type != nil {
-		objectMap["type"] = s.Type
 	}
 	if s.Location != nil {
 		objectMap["location"] = s.Location
@@ -5703,10 +5086,15 @@ func (sl SnapshotList) IsEmpty() bool {
 	return sl.Value == nil || len(*sl.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (sl SnapshotList) hasNextLink() bool {
+	return sl.NextLink != nil && len(*sl.NextLink) != 0
+}
+
 // snapshotListPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (sl SnapshotList) snapshotListPreparer(ctx context.Context) (*http.Request, error) {
-	if sl.NextLink == nil || len(to.String(sl.NextLink)) < 1 {
+	if !sl.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -5734,11 +5122,16 @@ func (page *SnapshotListPage) NextWithContext(ctx context.Context) (err error) {
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.sl)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.sl)
+		if err != nil {
+			return err
+		}
+		page.sl = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.sl = next
 	return nil
 }
 
@@ -5774,7 +5167,7 @@ func NewSnapshotListPage(getNextPage func(context.Context, SnapshotList) (Snapsh
 
 // SnapshotProperties snapshot resource properties.
 type SnapshotProperties struct {
-	// TimeCreated - The time when the disk was created.
+	// TimeCreated - READ-ONLY; The time when the disk was created.
 	TimeCreated *date.Time `json:"timeCreated,omitempty"`
 	// OsType - The Operating System type. Possible values include: 'Windows', 'Linux'
 	OsType OperatingSystemTypes `json:"osType,omitempty"`
@@ -5784,8 +5177,26 @@ type SnapshotProperties struct {
 	DiskSizeGB *int32 `json:"diskSizeGB,omitempty"`
 	// EncryptionSettings - Encryption settings for disk or snapshot
 	EncryptionSettings *EncryptionSettings `json:"encryptionSettings,omitempty"`
-	// ProvisioningState - The disk provisioning state.
+	// ProvisioningState - READ-ONLY; The disk provisioning state.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for SnapshotProperties.
+func (sp SnapshotProperties) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if sp.OsType != "" {
+		objectMap["osType"] = sp.OsType
+	}
+	if sp.CreationData != nil {
+		objectMap["creationData"] = sp.CreationData
+	}
+	if sp.DiskSizeGB != nil {
+		objectMap["diskSizeGB"] = sp.DiskSizeGB
+	}
+	if sp.EncryptionSettings != nil {
+		objectMap["encryptionSettings"] = sp.EncryptionSettings
+	}
+	return json.Marshal(objectMap)
 }
 
 // SnapshotsCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of a long-running
@@ -5798,7 +5209,7 @@ type SnapshotsCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *SnapshotsCreateOrUpdateFuture) Result(client SnapshotsClient) (s Snapshot, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.SnapshotsCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -5817,8 +5228,7 @@ func (future *SnapshotsCreateOrUpdateFuture) Result(client SnapshotsClient) (s S
 	return
 }
 
-// SnapshotsDeleteFuture an abstraction for monitoring and retrieving the results of a long-running
-// operation.
+// SnapshotsDeleteFuture an abstraction for monitoring and retrieving the results of a long-running operation.
 type SnapshotsDeleteFuture struct {
 	azure.Future
 }
@@ -5827,7 +5237,7 @@ type SnapshotsDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *SnapshotsDeleteFuture) Result(client SnapshotsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.SnapshotsDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -5850,7 +5260,7 @@ type SnapshotsGrantAccessFuture struct {
 // If the operation has not completed it will return an error.
 func (future *SnapshotsGrantAccessFuture) Result(client SnapshotsClient) (au AccessURI, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.SnapshotsGrantAccessFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -5873,8 +5283,17 @@ func (future *SnapshotsGrantAccessFuture) Result(client SnapshotsClient) (au Acc
 type SnapshotSku struct {
 	// Name - The sku name. Possible values include: 'SnapshotStorageAccountTypesStandardLRS', 'SnapshotStorageAccountTypesPremiumLRS', 'SnapshotStorageAccountTypesStandardZRS'
 	Name SnapshotStorageAccountTypes `json:"name,omitempty"`
-	// Tier - The sku tier.
+	// Tier - READ-ONLY; The sku tier.
 	Tier *string `json:"tier,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for SnapshotSku.
+func (ss SnapshotSku) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if ss.Name != "" {
+		objectMap["name"] = ss.Name
+	}
+	return json.Marshal(objectMap)
 }
 
 // SnapshotsRevokeAccessFuture an abstraction for monitoring and retrieving the results of a long-running
@@ -5887,7 +5306,7 @@ type SnapshotsRevokeAccessFuture struct {
 // If the operation has not completed it will return an error.
 func (future *SnapshotsRevokeAccessFuture) Result(client SnapshotsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.SnapshotsRevokeAccessFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -5900,8 +5319,7 @@ func (future *SnapshotsRevokeAccessFuture) Result(client SnapshotsClient) (ar au
 	return
 }
 
-// SnapshotsUpdateFuture an abstraction for monitoring and retrieving the results of a long-running
-// operation.
+// SnapshotsUpdateFuture an abstraction for monitoring and retrieving the results of a long-running operation.
 type SnapshotsUpdateFuture struct {
 	azure.Future
 }
@@ -5910,7 +5328,7 @@ type SnapshotsUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *SnapshotsUpdateFuture) Result(client SnapshotsClient) (s Snapshot, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.SnapshotsUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -6004,7 +5422,7 @@ type SnapshotUpdateProperties struct {
 	EncryptionSettings *EncryptionSettings `json:"encryptionSettings,omitempty"`
 }
 
-// SourceVault the vault id is an Azure Resource Manager Resoure id in the form
+// SourceVault the vault id is an Azure Resource Manager Resource id in the form
 // /subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.KeyVault/vaults/{vaultName}
 type SourceVault struct {
 	// ID - Resource Id
@@ -6017,8 +5435,8 @@ type SSHConfiguration struct {
 	PublicKeys *[]SSHPublicKey `json:"publicKeys,omitempty"`
 }
 
-// SSHPublicKey contains information about SSH certificate public key and the path on the Linux VM where
-// the public key is placed.
+// SSHPublicKey contains information about SSH certificate public key and the path on the Linux VM where the
+// public key is placed.
 type SSHPublicKey struct {
 	// Path - Specifies the full path on the created VM where ssh public key is stored. If the file already exists, the specified key is appended to the file. Example: /home/user/.ssh/authorized_keys
 	Path *string `json:"path,omitempty"`
@@ -6044,7 +5462,7 @@ type SubResource struct {
 
 // SubResourceReadOnly ...
 type SubResourceReadOnly struct {
-	// ID - Resource Id
+	// ID - READ-ONLY; Resource Id
 	ID *string `json:"id,omitempty"`
 }
 
@@ -6052,7 +5470,7 @@ type SubResourceReadOnly struct {
 type TargetRegion struct {
 	// Name - The name of the region.
 	Name *string `json:"name,omitempty"`
-	// RegionalReplicaCount - The number of replicas of the Image Version to be created per region. This property is updateable.
+	// RegionalReplicaCount - The number of replicas of the Image Version to be created per region. This property is updatable.
 	RegionalReplicaCount *int32 `json:"regionalReplicaCount,omitempty"`
 }
 
@@ -6066,7 +5484,7 @@ type ThrottledRequestsInput struct {
 	ToTime *date.Time `json:"toTime,omitempty"`
 	// GroupByThrottlePolicy - Group query result by Throttle Policy applied.
 	GroupByThrottlePolicy *bool `json:"groupByThrottlePolicy,omitempty"`
-	// GroupByOperationName - Group query result by  by Operation Name.
+	// GroupByOperationName - Group query result by Operation Name.
 	GroupByOperationName *bool `json:"groupByOperationName,omitempty"`
 	// GroupByResourceName - Group query result by Resource Name.
 	GroupByResourceName *bool `json:"groupByResourceName,omitempty"`
@@ -6089,38 +5507,37 @@ func (ur UpdateResource) MarshalJSON() ([]byte, error) {
 
 // UpgradeOperationHistoricalStatusInfo virtual Machine Scale Set OS Upgrade History operation response.
 type UpgradeOperationHistoricalStatusInfo struct {
-	// Properties - Information about the properties of the upgrade operation.
+	// Properties - READ-ONLY; Information about the properties of the upgrade operation.
 	Properties *UpgradeOperationHistoricalStatusInfoProperties `json:"properties,omitempty"`
-	// Type - Resource type
+	// Type - READ-ONLY; Resource type
 	Type *string `json:"type,omitempty"`
-	// Location - Resource location
+	// Location - READ-ONLY; Resource location
 	Location *string `json:"location,omitempty"`
 }
 
-// UpgradeOperationHistoricalStatusInfoProperties describes each OS upgrade on the Virtual Machine Scale
-// Set.
+// UpgradeOperationHistoricalStatusInfoProperties describes each OS upgrade on the Virtual Machine Scale Set.
 type UpgradeOperationHistoricalStatusInfoProperties struct {
-	// RunningStatus - Information about the overall status of the upgrade operation.
+	// RunningStatus - READ-ONLY; Information about the overall status of the upgrade operation.
 	RunningStatus *UpgradeOperationHistoryStatus `json:"runningStatus,omitempty"`
-	// Progress - Counts of the VM's in each state.
+	// Progress - READ-ONLY; Counts of the VMs in each state.
 	Progress *RollingUpgradeProgressInfo `json:"progress,omitempty"`
-	// Error - Error Details for this upgrade if there are any.
+	// Error - READ-ONLY; Error Details for this upgrade if there are any.
 	Error *APIError `json:"error,omitempty"`
-	// StartedBy - Invoker of the Upgrade Operation. Possible values include: 'UpgradeOperationInvokerUnknown', 'UpgradeOperationInvokerUser', 'UpgradeOperationInvokerPlatform'
+	// StartedBy - READ-ONLY; Invoker of the Upgrade Operation. Possible values include: 'UpgradeOperationInvokerUnknown', 'UpgradeOperationInvokerUser', 'UpgradeOperationInvokerPlatform'
 	StartedBy UpgradeOperationInvoker `json:"startedBy,omitempty"`
-	// TargetImageReference - Image Reference details
+	// TargetImageReference - READ-ONLY; Image Reference details
 	TargetImageReference *ImageReference `json:"targetImageReference,omitempty"`
-	// RollbackInfo - Information about OS rollback if performed
+	// RollbackInfo - READ-ONLY; Information about OS rollback if performed
 	RollbackInfo *RollbackStatusInfo `json:"rollbackInfo,omitempty"`
 }
 
 // UpgradeOperationHistoryStatus information about the current running state of the overall upgrade.
 type UpgradeOperationHistoryStatus struct {
-	// Code - Code indicating the current status of the upgrade. Possible values include: 'UpgradeStateRollingForward', 'UpgradeStateCancelled', 'UpgradeStateCompleted', 'UpgradeStateFaulted'
+	// Code - READ-ONLY; Code indicating the current status of the upgrade. Possible values include: 'UpgradeStateRollingForward', 'UpgradeStateCancelled', 'UpgradeStateCompleted', 'UpgradeStateFaulted'
 	Code UpgradeState `json:"code,omitempty"`
-	// StartTime - Start time of the upgrade.
+	// StartTime - READ-ONLY; Start time of the upgrade.
 	StartTime *date.Time `json:"startTime,omitempty"`
-	// EndTime - End time of the upgrade.
+	// EndTime - READ-ONLY; End time of the upgrade.
 	EndTime *date.Time `json:"endTime,omitempty"`
 }
 
@@ -6154,12 +5571,12 @@ type UsageName struct {
 	LocalizedValue *string `json:"localizedValue,omitempty"`
 }
 
-// VaultCertificate describes a single certificate reference in a Key Vault, and where the certificate
-// should reside on the VM.
+// VaultCertificate describes a single certificate reference in a Key Vault, and where the certificate should
+// reside on the VM.
 type VaultCertificate struct {
 	// CertificateURL - This is the URL of a certificate that has been uploaded to Key Vault as a secret. For adding a secret to the Key Vault, see [Add a key or secret to the key vault](https://docs.microsoft.com/azure/key-vault/key-vault-get-started/#add). In this case, your certificate needs to be It is the Base64 encoding of the following JSON Object which is encoded in UTF-8: <br><br> {<br>  "data":"<Base64-encoded-certificate>",<br>  "dataType":"pfx",<br>  "password":"<pfx-file-password>"<br>}
 	CertificateURL *string `json:"certificateUrl,omitempty"`
-	// CertificateStore - For Windows VMs, specifies the certificate store on the Virtual Machine to which the certificate should be added. The specified certificate store is implicitly in the LocalMachine account. <br><br>For Linux VMs, the certificate file is placed under the /var/lib/waagent directory, with the file name <UppercaseThumbprint>.crt for the X509 certificate file and <UppercaseThumbpring>.prv for private key. Both of these files are .pem formatted.
+	// CertificateStore - For Windows VMs, specifies the certificate store on the Virtual Machine to which the certificate should be added. The specified certificate store is implicitly in the LocalMachine account. <br><br>For Linux VMs, the certificate file is placed under the /var/lib/waagent directory, with the file name &lt;UppercaseThumbprint&gt;.crt for the X509 certificate file and &lt;UppercaseThumbprint&gt;.prv for private key. Both of these files are .pem formatted.
 	CertificateStore *string `json:"certificateStore,omitempty"`
 }
 
@@ -6183,17 +5600,17 @@ type VirtualMachine struct {
 	// Plan - Specifies information about the marketplace image used to create the virtual machine. This element is only used for marketplace images. Before you can use a marketplace image from an API, you must enable the image for programmatic use.  In the Azure portal, find the marketplace image that you want to use and then click **Want to deploy programmatically, Get Started ->**. Enter any required information and then click **Save**.
 	Plan                      *Plan `json:"plan,omitempty"`
 	*VirtualMachineProperties `json:"properties,omitempty"`
-	// Resources - The virtual machine child extension resources.
+	// Resources - READ-ONLY; The virtual machine child extension resources.
 	Resources *[]VirtualMachineExtension `json:"resources,omitempty"`
 	// Identity - The identity of the virtual machine, if configured.
 	Identity *VirtualMachineIdentity `json:"identity,omitempty"`
 	// Zones - The virtual machine zones.
 	Zones *[]string `json:"zones,omitempty"`
-	// ID - Resource Id
+	// ID - READ-ONLY; Resource Id
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name
+	// Name - READ-ONLY; Resource name
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type
+	// Type - READ-ONLY; Resource type
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location
 	Location *string `json:"location,omitempty"`
@@ -6210,23 +5627,11 @@ func (VM VirtualMachine) MarshalJSON() ([]byte, error) {
 	if VM.VirtualMachineProperties != nil {
 		objectMap["properties"] = VM.VirtualMachineProperties
 	}
-	if VM.Resources != nil {
-		objectMap["resources"] = VM.Resources
-	}
 	if VM.Identity != nil {
 		objectMap["identity"] = VM.Identity
 	}
 	if VM.Zones != nil {
 		objectMap["zones"] = VM.Zones
-	}
-	if VM.ID != nil {
-		objectMap["id"] = VM.ID
-	}
-	if VM.Name != nil {
-		objectMap["name"] = VM.Name
-	}
-	if VM.Type != nil {
-		objectMap["type"] = VM.Type
 	}
 	if VM.Location != nil {
 		objectMap["location"] = VM.Location
@@ -6365,27 +5770,36 @@ type VirtualMachineCaptureParameters struct {
 // VirtualMachineCaptureResult output of virtual machine capture operation.
 type VirtualMachineCaptureResult struct {
 	autorest.Response `json:"-"`
-	// Schema - the schema of the captured virtual machine
+	// Schema - READ-ONLY; the schema of the captured virtual machine
 	Schema *string `json:"$schema,omitempty"`
-	// ContentVersion - the version of the content
+	// ContentVersion - READ-ONLY; the version of the content
 	ContentVersion *string `json:"contentVersion,omitempty"`
-	// Parameters - parameters of the captured virtual machine
+	// Parameters - READ-ONLY; parameters of the captured virtual machine
 	Parameters interface{} `json:"parameters,omitempty"`
-	// Resources - a list of resource items of the captured virtual machine
+	// Resources - READ-ONLY; a list of resource items of the captured virtual machine
 	Resources *[]interface{} `json:"resources,omitempty"`
 	// ID - Resource Id
 	ID *string `json:"id,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for VirtualMachineCaptureResult.
+func (vmcr VirtualMachineCaptureResult) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if vmcr.ID != nil {
+		objectMap["id"] = vmcr.ID
+	}
+	return json.Marshal(objectMap)
 }
 
 // VirtualMachineExtension describes a Virtual Machine Extension.
 type VirtualMachineExtension struct {
 	autorest.Response                  `json:"-"`
 	*VirtualMachineExtensionProperties `json:"properties,omitempty"`
-	// ID - Resource Id
+	// ID - READ-ONLY; Resource Id
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name
+	// Name - READ-ONLY; Resource name
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type
+	// Type - READ-ONLY; Resource type
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location
 	Location *string `json:"location,omitempty"`
@@ -6398,15 +5812,6 @@ func (vme VirtualMachineExtension) MarshalJSON() ([]byte, error) {
 	objectMap := make(map[string]interface{})
 	if vme.VirtualMachineExtensionProperties != nil {
 		objectMap["properties"] = vme.VirtualMachineExtensionProperties
-	}
-	if vme.ID != nil {
-		objectMap["id"] = vme.ID
-	}
-	if vme.Name != nil {
-		objectMap["name"] = vme.Name
-	}
-	if vme.Type != nil {
-		objectMap["type"] = vme.Type
 	}
 	if vme.Location != nil {
 		objectMap["location"] = vme.Location
@@ -6500,11 +5905,11 @@ type VirtualMachineExtensionHandlerInstanceView struct {
 type VirtualMachineExtensionImage struct {
 	autorest.Response                       `json:"-"`
 	*VirtualMachineExtensionImageProperties `json:"properties,omitempty"`
-	// ID - Resource Id
+	// ID - READ-ONLY; Resource Id
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name
+	// Name - READ-ONLY; Resource name
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type
+	// Type - READ-ONLY; Resource type
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location
 	Location *string `json:"location,omitempty"`
@@ -6517,15 +5922,6 @@ func (vmei VirtualMachineExtensionImage) MarshalJSON() ([]byte, error) {
 	objectMap := make(map[string]interface{})
 	if vmei.VirtualMachineExtensionImageProperties != nil {
 		objectMap["properties"] = vmei.VirtualMachineExtensionImageProperties
-	}
-	if vmei.ID != nil {
-		objectMap["id"] = vmei.ID
-	}
-	if vmei.Name != nil {
-		objectMap["name"] = vmei.Name
-	}
-	if vmei.Type != nil {
-		objectMap["type"] = vmei.Type
 	}
 	if vmei.Location != nil {
 		objectMap["location"] = vmei.Location
@@ -6649,14 +6045,44 @@ type VirtualMachineExtensionProperties struct {
 	Settings interface{} `json:"settings,omitempty"`
 	// ProtectedSettings - The extension can contain either protectedSettings or protectedSettingsFromKeyVault or no protected settings at all.
 	ProtectedSettings interface{} `json:"protectedSettings,omitempty"`
-	// ProvisioningState - The provisioning state, which only appears in the response.
+	// ProvisioningState - READ-ONLY; The provisioning state, which only appears in the response.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
 	// InstanceView - The virtual machine extension instance view.
 	InstanceView *VirtualMachineExtensionInstanceView `json:"instanceView,omitempty"`
 }
 
-// VirtualMachineExtensionsCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of
-// a long-running operation.
+// MarshalJSON is the custom marshaler for VirtualMachineExtensionProperties.
+func (vmep VirtualMachineExtensionProperties) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if vmep.ForceUpdateTag != nil {
+		objectMap["forceUpdateTag"] = vmep.ForceUpdateTag
+	}
+	if vmep.Publisher != nil {
+		objectMap["publisher"] = vmep.Publisher
+	}
+	if vmep.Type != nil {
+		objectMap["type"] = vmep.Type
+	}
+	if vmep.TypeHandlerVersion != nil {
+		objectMap["typeHandlerVersion"] = vmep.TypeHandlerVersion
+	}
+	if vmep.AutoUpgradeMinorVersion != nil {
+		objectMap["autoUpgradeMinorVersion"] = vmep.AutoUpgradeMinorVersion
+	}
+	if vmep.Settings != nil {
+		objectMap["settings"] = vmep.Settings
+	}
+	if vmep.ProtectedSettings != nil {
+		objectMap["protectedSettings"] = vmep.ProtectedSettings
+	}
+	if vmep.InstanceView != nil {
+		objectMap["instanceView"] = vmep.InstanceView
+	}
+	return json.Marshal(objectMap)
+}
+
+// VirtualMachineExtensionsCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of a
+// long-running operation.
 type VirtualMachineExtensionsCreateOrUpdateFuture struct {
 	azure.Future
 }
@@ -6665,7 +6091,7 @@ type VirtualMachineExtensionsCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualMachineExtensionsCreateOrUpdateFuture) Result(client VirtualMachineExtensionsClient) (vme VirtualMachineExtension, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachineExtensionsCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -6694,7 +6120,7 @@ type VirtualMachineExtensionsDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualMachineExtensionsDeleteFuture) Result(client VirtualMachineExtensionsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachineExtensionsDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -6724,7 +6150,7 @@ type VirtualMachineExtensionsUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualMachineExtensionsUpdateFuture) Result(client VirtualMachineExtensionsClient) (vme VirtualMachineExtension, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachineExtensionsUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -6815,15 +6241,15 @@ type VirtualMachineExtensionUpdateProperties struct {
 
 // VirtualMachineHealthStatus the health status of the VM.
 type VirtualMachineHealthStatus struct {
-	// Status - The health status information for the VM.
+	// Status - READ-ONLY; The health status information for the VM.
 	Status *InstanceViewStatus `json:"status,omitempty"`
 }
 
 // VirtualMachineIdentity identity for the virtual machine.
 type VirtualMachineIdentity struct {
-	// PrincipalID - The principal id of virtual machine identity. This property will only be provided for a system assigned identity.
+	// PrincipalID - READ-ONLY; The principal id of virtual machine identity. This property will only be provided for a system assigned identity.
 	PrincipalID *string `json:"principalId,omitempty"`
-	// TenantID - The tenant id associated with the virtual machine. This property will only be provided for a system assigned identity.
+	// TenantID - READ-ONLY; The tenant id associated with the virtual machine. This property will only be provided for a system assigned identity.
 	TenantID *string `json:"tenantId,omitempty"`
 	// Type - The type of identity used for the virtual machine. The type 'SystemAssigned, UserAssigned' includes both an implicitly created identity and a set of user assigned identities. The type 'None' will remove any identities from the virtual machine. Possible values include: 'ResourceIdentityTypeSystemAssigned', 'ResourceIdentityTypeUserAssigned', 'ResourceIdentityTypeSystemAssignedUserAssigned', 'ResourceIdentityTypeNone'
 	Type ResourceIdentityType `json:"type,omitempty"`
@@ -6834,12 +6260,6 @@ type VirtualMachineIdentity struct {
 // MarshalJSON is the custom marshaler for VirtualMachineIdentity.
 func (vmi VirtualMachineIdentity) MarshalJSON() ([]byte, error) {
 	objectMap := make(map[string]interface{})
-	if vmi.PrincipalID != nil {
-		objectMap["principalId"] = vmi.PrincipalID
-	}
-	if vmi.TenantID != nil {
-		objectMap["tenantId"] = vmi.TenantID
-	}
 	if vmi.Type != "" {
 		objectMap["type"] = vmi.Type
 	}
@@ -6851,9 +6271,9 @@ func (vmi VirtualMachineIdentity) MarshalJSON() ([]byte, error) {
 
 // VirtualMachineIdentityUserAssignedIdentitiesValue ...
 type VirtualMachineIdentityUserAssignedIdentitiesValue struct {
-	// PrincipalID - The principal id of user assigned identity.
+	// PrincipalID - READ-ONLY; The principal id of user assigned identity.
 	PrincipalID *string `json:"principalId,omitempty"`
-	// ClientID - The client id of user assigned identity.
+	// ClientID - READ-ONLY; The client id of user assigned identity.
 	ClientID *string `json:"clientId,omitempty"`
 }
 
@@ -7096,10 +6516,15 @@ func (vmlr VirtualMachineListResult) IsEmpty() bool {
 	return vmlr.Value == nil || len(*vmlr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (vmlr VirtualMachineListResult) hasNextLink() bool {
+	return vmlr.NextLink != nil && len(*vmlr.NextLink) != 0
+}
+
 // virtualMachineListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (vmlr VirtualMachineListResult) virtualMachineListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if vmlr.NextLink == nil || len(to.String(vmlr.NextLink)) < 1 {
+	if !vmlr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -7127,11 +6552,16 @@ func (page *VirtualMachineListResultPage) NextWithContext(ctx context.Context) (
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.vmlr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.vmlr)
+		if err != nil {
+			return err
+		}
+		page.vmlr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.vmlr = next
 	return nil
 }
 
@@ -7179,22 +6609,57 @@ type VirtualMachineProperties struct {
 	NetworkProfile *NetworkProfile `json:"networkProfile,omitempty"`
 	// DiagnosticsProfile - Specifies the boot diagnostic settings state. <br><br>Minimum api-version: 2015-06-15.
 	DiagnosticsProfile *DiagnosticsProfile `json:"diagnosticsProfile,omitempty"`
-	// AvailabilitySet - Specifies information about the availability set that the virtual machine should be assigned to. Virtual machines specified in the same availability set are allocated to different nodes to maximize availability. For more information about availability sets, see [Manage the availability of virtual machines](https://docs.microsoft.com/azure/virtual-machines/virtual-machines-windows-manage-availability?toc=%2fazure%2fvirtual-machines%2fwindows%2ftoc.json). <br><br> For more information on Azure planned maintainance, see [Planned maintenance for virtual machines in Azure](https://docs.microsoft.com/azure/virtual-machines/virtual-machines-windows-planned-maintenance?toc=%2fazure%2fvirtual-machines%2fwindows%2ftoc.json) <br><br> Currently, a VM can only be added to availability set at creation time. An existing VM cannot be added to an availability set.
+	// AvailabilitySet - Specifies information about the availability set that the virtual machine should be assigned to. Virtual machines specified in the same availability set are allocated to different nodes to maximize availability. For more information about availability sets, see [Manage the availability of virtual machines](https://docs.microsoft.com/azure/virtual-machines/virtual-machines-windows-manage-availability?toc=%2fazure%2fvirtual-machines%2fwindows%2ftoc.json). <br><br> For more information on Azure planned maintenance, see [Planned maintenance for virtual machines in Azure](https://docs.microsoft.com/azure/virtual-machines/virtual-machines-windows-planned-maintenance?toc=%2fazure%2fvirtual-machines%2fwindows%2ftoc.json) <br><br> Currently, a VM can only be added to availability set at creation time. An existing VM cannot be added to an availability set.
 	AvailabilitySet *SubResource `json:"availabilitySet,omitempty"`
-	// ProvisioningState - The provisioning state, which only appears in the response.
+	// ProximityPlacementGroup - Specifies information about the proximity placement group that the virtual machine should be assigned to. <br><br>Minimum api-version: 2018-04-01.
+	ProximityPlacementGroup *SubResource `json:"proximityPlacementGroup,omitempty"`
+	// ProvisioningState - READ-ONLY; The provisioning state, which only appears in the response.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
-	// InstanceView - The virtual machine instance view.
+	// InstanceView - READ-ONLY; The virtual machine instance view.
 	InstanceView *VirtualMachineInstanceView `json:"instanceView,omitempty"`
 	// LicenseType - Specifies that the image or disk that is being used was licensed on-premises. This element is only used for images that contain the Windows Server operating system. <br><br> Possible values are: <br><br> Windows_Client <br><br> Windows_Server <br><br> If this element is included in a request for an update, the value must match the initial value. This value cannot be updated. <br><br> For more information, see [Azure Hybrid Use Benefit for Windows Server](https://docs.microsoft.com/azure/virtual-machines/virtual-machines-windows-hybrid-use-benefit-licensing?toc=%2fazure%2fvirtual-machines%2fwindows%2ftoc.json) <br><br> Minimum api-version: 2015-06-15
 	LicenseType *string `json:"licenseType,omitempty"`
-	// VMID - Specifies the VM unique ID which is a 128-bits identifier that is encoded and stored in all Azure IaaS VMs SMBIOS and can be read using platform BIOS commands.
+	// VMID - READ-ONLY; Specifies the VM unique ID which is a 128-bits identifier that is encoded and stored in all Azure IaaS VMs SMBIOS and can be read using platform BIOS commands.
 	VMID *string `json:"vmId,omitempty"`
 }
 
-// VirtualMachineReimageParameters paramaters for Reimaging Virtual Machine. Default value for OSDisk :
-// true.
+// MarshalJSON is the custom marshaler for VirtualMachineProperties.
+func (vmp VirtualMachineProperties) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if vmp.HardwareProfile != nil {
+		objectMap["hardwareProfile"] = vmp.HardwareProfile
+	}
+	if vmp.StorageProfile != nil {
+		objectMap["storageProfile"] = vmp.StorageProfile
+	}
+	if vmp.AdditionalCapabilities != nil {
+		objectMap["additionalCapabilities"] = vmp.AdditionalCapabilities
+	}
+	if vmp.OsProfile != nil {
+		objectMap["osProfile"] = vmp.OsProfile
+	}
+	if vmp.NetworkProfile != nil {
+		objectMap["networkProfile"] = vmp.NetworkProfile
+	}
+	if vmp.DiagnosticsProfile != nil {
+		objectMap["diagnosticsProfile"] = vmp.DiagnosticsProfile
+	}
+	if vmp.AvailabilitySet != nil {
+		objectMap["availabilitySet"] = vmp.AvailabilitySet
+	}
+	if vmp.ProximityPlacementGroup != nil {
+		objectMap["proximityPlacementGroup"] = vmp.ProximityPlacementGroup
+	}
+	if vmp.LicenseType != nil {
+		objectMap["licenseType"] = vmp.LicenseType
+	}
+	return json.Marshal(objectMap)
+}
+
+// VirtualMachineReimageParameters parameters for Reimaging Virtual Machine. NOTE: Virtual Machine OS disk will
+// always be reimaged
 type VirtualMachineReimageParameters struct {
-	// TempDisk - Specified whether to reimage temp disk. Default value: false.
+	// TempDisk - Specifies whether to reimage temp disk. Default value: false. Note: This temp disk reimage parameter is only supported for VM/VMSS with Ephemeral OS disk.
 	TempDisk *bool `json:"tempDisk,omitempty"`
 }
 
@@ -7208,13 +6673,13 @@ type VirtualMachineScaleSet struct {
 	*VirtualMachineScaleSetProperties `json:"properties,omitempty"`
 	// Identity - The identity of the virtual machine scale set, if configured.
 	Identity *VirtualMachineScaleSetIdentity `json:"identity,omitempty"`
-	// Zones - The virtual machine scale set zones.
+	// Zones - The virtual machine scale set zones. NOTE: Availability zones can only be set when you create the scale set.
 	Zones *[]string `json:"zones,omitempty"`
-	// ID - Resource Id
+	// ID - READ-ONLY; Resource Id
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name
+	// Name - READ-ONLY; Resource name
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type
+	// Type - READ-ONLY; Resource type
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location
 	Location *string `json:"location,omitempty"`
@@ -7239,15 +6704,6 @@ func (vmss VirtualMachineScaleSet) MarshalJSON() ([]byte, error) {
 	}
 	if vmss.Zones != nil {
 		objectMap["zones"] = vmss.Zones
-	}
-	if vmss.ID != nil {
-		objectMap["id"] = vmss.ID
-	}
-	if vmss.Name != nil {
-		objectMap["name"] = vmss.Name
-	}
-	if vmss.Type != nil {
-		objectMap["type"] = vmss.Type
 	}
 	if vmss.Location != nil {
 		objectMap["location"] = vmss.Location
@@ -7387,7 +6843,7 @@ type VirtualMachineScaleSetExtension struct {
 	// Name - The name of the extension.
 	Name                                       *string `json:"name,omitempty"`
 	*VirtualMachineScaleSetExtensionProperties `json:"properties,omitempty"`
-	// ID - Resource Id
+	// ID - READ-ONLY; Resource Id
 	ID *string `json:"id,omitempty"`
 }
 
@@ -7399,9 +6855,6 @@ func (vmsse VirtualMachineScaleSetExtension) MarshalJSON() ([]byte, error) {
 	}
 	if vmsse.VirtualMachineScaleSetExtensionProperties != nil {
 		objectMap["properties"] = vmsse.VirtualMachineScaleSetExtensionProperties
-	}
-	if vmsse.ID != nil {
-		objectMap["id"] = vmsse.ID
 	}
 	return json.Marshal(objectMap)
 }
@@ -7526,10 +6979,15 @@ func (vmsselr VirtualMachineScaleSetExtensionListResult) IsEmpty() bool {
 	return vmsselr.Value == nil || len(*vmsselr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (vmsselr VirtualMachineScaleSetExtensionListResult) hasNextLink() bool {
+	return vmsselr.NextLink != nil && len(*vmsselr.NextLink) != 0
+}
+
 // virtualMachineScaleSetExtensionListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (vmsselr VirtualMachineScaleSetExtensionListResult) virtualMachineScaleSetExtensionListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if vmsselr.NextLink == nil || len(to.String(vmsselr.NextLink)) < 1 {
+	if !vmsselr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -7557,11 +7015,16 @@ func (page *VirtualMachineScaleSetExtensionListResultPage) NextWithContext(ctx c
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.vmsselr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.vmsselr)
+		if err != nil {
+			return err
+		}
+		page.vmsselr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.vmsselr = next
 	return nil
 }
 
@@ -7601,8 +7064,7 @@ type VirtualMachineScaleSetExtensionProfile struct {
 	Extensions *[]VirtualMachineScaleSetExtension `json:"extensions,omitempty"`
 }
 
-// VirtualMachineScaleSetExtensionProperties describes the properties of a Virtual Machine Scale Set
-// Extension.
+// VirtualMachineScaleSetExtensionProperties describes the properties of a Virtual Machine Scale Set Extension.
 type VirtualMachineScaleSetExtensionProperties struct {
 	// ForceUpdateTag - If a value is provided and is different from the previous value, the extension handler will be forced to update even if the extension configuration has not changed.
 	ForceUpdateTag *string `json:"forceUpdateTag,omitempty"`
@@ -7618,8 +7080,40 @@ type VirtualMachineScaleSetExtensionProperties struct {
 	Settings interface{} `json:"settings,omitempty"`
 	// ProtectedSettings - The extension can contain either protectedSettings or protectedSettingsFromKeyVault or no protected settings at all.
 	ProtectedSettings interface{} `json:"protectedSettings,omitempty"`
-	// ProvisioningState - The provisioning state, which only appears in the response.
+	// ProvisioningState - READ-ONLY; The provisioning state, which only appears in the response.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
+	// ProvisionAfterExtensions - Collection of extension names after which this extension needs to be provisioned.
+	ProvisionAfterExtensions *[]string `json:"provisionAfterExtensions,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for VirtualMachineScaleSetExtensionProperties.
+func (vmssep VirtualMachineScaleSetExtensionProperties) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if vmssep.ForceUpdateTag != nil {
+		objectMap["forceUpdateTag"] = vmssep.ForceUpdateTag
+	}
+	if vmssep.Publisher != nil {
+		objectMap["publisher"] = vmssep.Publisher
+	}
+	if vmssep.Type != nil {
+		objectMap["type"] = vmssep.Type
+	}
+	if vmssep.TypeHandlerVersion != nil {
+		objectMap["typeHandlerVersion"] = vmssep.TypeHandlerVersion
+	}
+	if vmssep.AutoUpgradeMinorVersion != nil {
+		objectMap["autoUpgradeMinorVersion"] = vmssep.AutoUpgradeMinorVersion
+	}
+	if vmssep.Settings != nil {
+		objectMap["settings"] = vmssep.Settings
+	}
+	if vmssep.ProtectedSettings != nil {
+		objectMap["protectedSettings"] = vmssep.ProtectedSettings
+	}
+	if vmssep.ProvisionAfterExtensions != nil {
+		objectMap["provisionAfterExtensions"] = vmssep.ProvisionAfterExtensions
+	}
+	return json.Marshal(objectMap)
 }
 
 // VirtualMachineScaleSetExtensionsCreateOrUpdateFuture an abstraction for monitoring and retrieving the
@@ -7632,7 +7126,7 @@ type VirtualMachineScaleSetExtensionsCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualMachineScaleSetExtensionsCreateOrUpdateFuture) Result(client VirtualMachineScaleSetExtensionsClient) (vmsse VirtualMachineScaleSetExtension, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachineScaleSetExtensionsCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -7651,8 +7145,8 @@ func (future *VirtualMachineScaleSetExtensionsCreateOrUpdateFuture) Result(clien
 	return
 }
 
-// VirtualMachineScaleSetExtensionsDeleteFuture an abstraction for monitoring and retrieving the results of
-// a long-running operation.
+// VirtualMachineScaleSetExtensionsDeleteFuture an abstraction for monitoring and retrieving the results of a
+// long-running operation.
 type VirtualMachineScaleSetExtensionsDeleteFuture struct {
 	azure.Future
 }
@@ -7661,7 +7155,7 @@ type VirtualMachineScaleSetExtensionsDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualMachineScaleSetExtensionsDeleteFuture) Result(client VirtualMachineScaleSetExtensionsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachineScaleSetExtensionsDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -7676,9 +7170,9 @@ func (future *VirtualMachineScaleSetExtensionsDeleteFuture) Result(client Virtua
 
 // VirtualMachineScaleSetIdentity identity for the virtual machine scale set.
 type VirtualMachineScaleSetIdentity struct {
-	// PrincipalID - The principal id of virtual machine scale set identity. This property will only be provided for a system assigned identity.
+	// PrincipalID - READ-ONLY; The principal id of virtual machine scale set identity. This property will only be provided for a system assigned identity.
 	PrincipalID *string `json:"principalId,omitempty"`
-	// TenantID - The tenant id associated with the virtual machine scale set. This property will only be provided for a system assigned identity.
+	// TenantID - READ-ONLY; The tenant id associated with the virtual machine scale set. This property will only be provided for a system assigned identity.
 	TenantID *string `json:"tenantId,omitempty"`
 	// Type - The type of identity used for the virtual machine scale set. The type 'SystemAssigned, UserAssigned' includes both an implicitly created identity and a set of user assigned identities. The type 'None' will remove any identities from the virtual machine scale set. Possible values include: 'ResourceIdentityTypeSystemAssigned', 'ResourceIdentityTypeUserAssigned', 'ResourceIdentityTypeSystemAssignedUserAssigned', 'ResourceIdentityTypeNone'
 	Type ResourceIdentityType `json:"type,omitempty"`
@@ -7689,12 +7183,6 @@ type VirtualMachineScaleSetIdentity struct {
 // MarshalJSON is the custom marshaler for VirtualMachineScaleSetIdentity.
 func (vmssi VirtualMachineScaleSetIdentity) MarshalJSON() ([]byte, error) {
 	objectMap := make(map[string]interface{})
-	if vmssi.PrincipalID != nil {
-		objectMap["principalId"] = vmssi.PrincipalID
-	}
-	if vmssi.TenantID != nil {
-		objectMap["tenantId"] = vmssi.TenantID
-	}
 	if vmssi.Type != "" {
 		objectMap["type"] = vmssi.Type
 	}
@@ -7706,27 +7194,36 @@ func (vmssi VirtualMachineScaleSetIdentity) MarshalJSON() ([]byte, error) {
 
 // VirtualMachineScaleSetIdentityUserAssignedIdentitiesValue ...
 type VirtualMachineScaleSetIdentityUserAssignedIdentitiesValue struct {
-	// PrincipalID - The principal id of user assigned identity.
+	// PrincipalID - READ-ONLY; The principal id of user assigned identity.
 	PrincipalID *string `json:"principalId,omitempty"`
-	// ClientID - The client id of user assigned identity.
+	// ClientID - READ-ONLY; The client id of user assigned identity.
 	ClientID *string `json:"clientId,omitempty"`
 }
 
 // VirtualMachineScaleSetInstanceView the instance view of a virtual machine scale set.
 type VirtualMachineScaleSetInstanceView struct {
 	autorest.Response `json:"-"`
-	// VirtualMachine - The instance view status summary for the virtual machine scale set.
+	// VirtualMachine - READ-ONLY; The instance view status summary for the virtual machine scale set.
 	VirtualMachine *VirtualMachineScaleSetInstanceViewStatusesSummary `json:"virtualMachine,omitempty"`
-	// Extensions - The extensions information.
+	// Extensions - READ-ONLY; The extensions information.
 	Extensions *[]VirtualMachineScaleSetVMExtensionsSummary `json:"extensions,omitempty"`
 	// Statuses - The resource status information.
 	Statuses *[]InstanceViewStatus `json:"statuses,omitempty"`
 }
 
-// VirtualMachineScaleSetInstanceViewStatusesSummary instance view statuses summary for virtual machines of
-// a virtual machine scale set.
+// MarshalJSON is the custom marshaler for VirtualMachineScaleSetInstanceView.
+func (vmssiv VirtualMachineScaleSetInstanceView) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if vmssiv.Statuses != nil {
+		objectMap["statuses"] = vmssiv.Statuses
+	}
+	return json.Marshal(objectMap)
+}
+
+// VirtualMachineScaleSetInstanceViewStatusesSummary instance view statuses summary for virtual machines of a
+// virtual machine scale set.
 type VirtualMachineScaleSetInstanceViewStatusesSummary struct {
-	// StatusesSummary - The extensions information.
+	// StatusesSummary - READ-ONLY; The extensions information.
 	StatusesSummary *[]VirtualMachineStatusCodeCount `json:"statusesSummary,omitempty"`
 }
 
@@ -7797,8 +7294,8 @@ func (vmssic *VirtualMachineScaleSetIPConfiguration) UnmarshalJSON(body []byte) 
 	return nil
 }
 
-// VirtualMachineScaleSetIPConfigurationProperties describes a virtual machine scale set network profile's
-// IP configuration properties.
+// VirtualMachineScaleSetIPConfigurationProperties describes a virtual machine scale set network profile's IP
+// configuration properties.
 type VirtualMachineScaleSetIPConfigurationProperties struct {
 	// Subnet - Specifies the identifier of the subnet.
 	Subnet *APIEntityReference `json:"subnet,omitempty"`
@@ -7826,8 +7323,8 @@ type VirtualMachineScaleSetIPTag struct {
 	Tag *string `json:"tag,omitempty"`
 }
 
-// VirtualMachineScaleSetListOSUpgradeHistory list of Virtual Machine Scale Set OS Upgrade History
-// operation response.
+// VirtualMachineScaleSetListOSUpgradeHistory list of Virtual Machine Scale Set OS Upgrade History operation
+// response.
 type VirtualMachineScaleSetListOSUpgradeHistory struct {
 	autorest.Response `json:"-"`
 	// Value - The list of OS upgrades performed on the virtual machine scale set.
@@ -7905,10 +7402,15 @@ func (vmsslouh VirtualMachineScaleSetListOSUpgradeHistory) IsEmpty() bool {
 	return vmsslouh.Value == nil || len(*vmsslouh.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (vmsslouh VirtualMachineScaleSetListOSUpgradeHistory) hasNextLink() bool {
+	return vmsslouh.NextLink != nil && len(*vmsslouh.NextLink) != 0
+}
+
 // virtualMachineScaleSetListOSUpgradeHistoryPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (vmsslouh VirtualMachineScaleSetListOSUpgradeHistory) virtualMachineScaleSetListOSUpgradeHistoryPreparer(ctx context.Context) (*http.Request, error) {
-	if vmsslouh.NextLink == nil || len(to.String(vmsslouh.NextLink)) < 1 {
+	if !vmsslouh.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -7937,11 +7439,16 @@ func (page *VirtualMachineScaleSetListOSUpgradeHistoryPage) NextWithContext(ctx 
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.vmsslouh)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.vmsslouh)
+		if err != nil {
+			return err
+		}
+		page.vmsslouh = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.vmsslouh = next
 	return nil
 }
 
@@ -8053,10 +7560,15 @@ func (vmsslr VirtualMachineScaleSetListResult) IsEmpty() bool {
 	return vmsslr.Value == nil || len(*vmsslr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (vmsslr VirtualMachineScaleSetListResult) hasNextLink() bool {
+	return vmsslr.NextLink != nil && len(*vmsslr.NextLink) != 0
+}
+
 // virtualMachineScaleSetListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (vmsslr VirtualMachineScaleSetListResult) virtualMachineScaleSetListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if vmsslr.NextLink == nil || len(to.String(vmsslr.NextLink)) < 1 {
+	if !vmsslr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -8084,11 +7596,16 @@ func (page *VirtualMachineScaleSetListResultPage) NextWithContext(ctx context.Co
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.vmsslr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.vmsslr)
+		if err != nil {
+			return err
+		}
+		page.vmsslr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.vmsslr = next
 	return nil
 }
 
@@ -8200,10 +7717,15 @@ func (vmsslsr VirtualMachineScaleSetListSkusResult) IsEmpty() bool {
 	return vmsslsr.Value == nil || len(*vmsslsr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (vmsslsr VirtualMachineScaleSetListSkusResult) hasNextLink() bool {
+	return vmsslsr.NextLink != nil && len(*vmsslsr.NextLink) != 0
+}
+
 // virtualMachineScaleSetListSkusResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (vmsslsr VirtualMachineScaleSetListSkusResult) virtualMachineScaleSetListSkusResultPreparer(ctx context.Context) (*http.Request, error) {
-	if vmsslsr.NextLink == nil || len(to.String(vmsslsr.NextLink)) < 1 {
+	if !vmsslsr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -8231,11 +7753,16 @@ func (page *VirtualMachineScaleSetListSkusResultPage) NextWithContext(ctx contex
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.vmsslsr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.vmsslsr)
+		if err != nil {
+			return err
+		}
+		page.vmsslsr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.vmsslsr = next
 	return nil
 }
 
@@ -8347,10 +7874,15 @@ func (vmsslwlr VirtualMachineScaleSetListWithLinkResult) IsEmpty() bool {
 	return vmsslwlr.Value == nil || len(*vmsslwlr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (vmsslwlr VirtualMachineScaleSetListWithLinkResult) hasNextLink() bool {
+	return vmsslwlr.NextLink != nil && len(*vmsslwlr.NextLink) != 0
+}
+
 // virtualMachineScaleSetListWithLinkResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (vmsslwlr VirtualMachineScaleSetListWithLinkResult) virtualMachineScaleSetListWithLinkResultPreparer(ctx context.Context) (*http.Request, error) {
-	if vmsslwlr.NextLink == nil || len(to.String(vmsslwlr.NextLink)) < 1 {
+	if !vmsslwlr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -8378,11 +7910,16 @@ func (page *VirtualMachineScaleSetListWithLinkResultPage) NextWithContext(ctx co
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.vmsslwlr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.vmsslwlr)
+		if err != nil {
+			return err
+		}
+		page.vmsslwlr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.vmsslwlr = next
 	return nil
 }
 
@@ -8422,8 +7959,8 @@ type VirtualMachineScaleSetManagedDiskParameters struct {
 	StorageAccountType StorageAccountTypes `json:"storageAccountType,omitempty"`
 }
 
-// VirtualMachineScaleSetNetworkConfiguration describes a virtual machine scale set network profile's
-// network configurations.
+// VirtualMachineScaleSetNetworkConfiguration describes a virtual machine scale set network profile's network
+// configurations.
 type VirtualMachineScaleSetNetworkConfiguration struct {
 	// Name - The network configuration name.
 	Name                                                  *string `json:"name,omitempty"`
@@ -8496,8 +8033,8 @@ type VirtualMachineScaleSetNetworkConfigurationDNSSettings struct {
 	DNSServers *[]string `json:"dnsServers,omitempty"`
 }
 
-// VirtualMachineScaleSetNetworkConfigurationProperties describes a virtual machine scale set network
-// profile's IP configuration.
+// VirtualMachineScaleSetNetworkConfigurationProperties describes a virtual machine scale set network profile's
+// IP configuration.
 type VirtualMachineScaleSetNetworkConfigurationProperties struct {
 	// Primary - Specifies the primary network interface in case the virtual machine has more than 1 network interface.
 	Primary *bool `json:"primary,omitempty"`
@@ -8531,7 +8068,7 @@ type VirtualMachineScaleSetOSDisk struct {
 	WriteAcceleratorEnabled *bool `json:"writeAcceleratorEnabled,omitempty"`
 	// CreateOption - Specifies how the virtual machines in the scale set should be created.<br><br> The only allowed value is: **FromImage** \u2013 This value is used when you are using an image to create the virtual machine. If you are using a platform image, you also use the imageReference element described above. If you are using a marketplace image, you  also use the plan element previously described. Possible values include: 'DiskCreateOptionTypesFromImage', 'DiskCreateOptionTypesEmpty', 'DiskCreateOptionTypesAttach'
 	CreateOption DiskCreateOptionTypes `json:"createOption,omitempty"`
-	// DiffDiskSettings - Specifies the differencing Disk Settings for the operating system disk used by the virtual machine scale set.
+	// DiffDiskSettings - Specifies the ephemeral disk Settings for the operating system disk used by the virtual machine scale set.
 	DiffDiskSettings *DiffDiskSettings `json:"diffDiskSettings,omitempty"`
 	// DiskSizeGB - Specifies the size of the operating system disk in gigabytes. This element can be used to overwrite the size of the disk in a virtual machine image. <br><br> This value cannot be larger than 1023 GB
 	DiskSizeGB *int32 `json:"diskSizeGB,omitempty"`
@@ -8567,24 +8104,63 @@ type VirtualMachineScaleSetOSProfile struct {
 type VirtualMachineScaleSetProperties struct {
 	// UpgradePolicy - The upgrade policy.
 	UpgradePolicy *UpgradePolicy `json:"upgradePolicy,omitempty"`
+	// AutomaticRepairsPolicy - Policy for automatic repairs.
+	AutomaticRepairsPolicy *AutomaticRepairsPolicy `json:"automaticRepairsPolicy,omitempty"`
 	// VirtualMachineProfile - The virtual machine profile.
 	VirtualMachineProfile *VirtualMachineScaleSetVMProfile `json:"virtualMachineProfile,omitempty"`
-	// ProvisioningState - The provisioning state, which only appears in the response.
+	// ProvisioningState - READ-ONLY; The provisioning state, which only appears in the response.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
 	// Overprovision - Specifies whether the Virtual Machine Scale Set should be overprovisioned.
 	Overprovision *bool `json:"overprovision,omitempty"`
-	// UniqueID - Specifies the ID which uniquely identifies a Virtual Machine Scale Set.
+	// DoNotRunExtensionsOnOverprovisionedVMs - When Overprovision is enabled, extensions are launched only on the requested number of VMs which are finally kept. This property will hence ensure that the extensions do not run on the extra overprovisioned VMs.
+	DoNotRunExtensionsOnOverprovisionedVMs *bool `json:"doNotRunExtensionsOnOverprovisionedVMs,omitempty"`
+	// UniqueID - READ-ONLY; Specifies the ID which uniquely identifies a Virtual Machine Scale Set.
 	UniqueID *string `json:"uniqueId,omitempty"`
 	// SinglePlacementGroup - When true this limits the scale set to a single placement group, of max size 100 virtual machines.
 	SinglePlacementGroup *bool `json:"singlePlacementGroup,omitempty"`
-	// ZoneBalance - Whether to force stictly even Virtual Machine distribution cross x-zones in case there is zone outage.
+	// ZoneBalance - Whether to force strictly even Virtual Machine distribution cross x-zones in case there is zone outage.
 	ZoneBalance *bool `json:"zoneBalance,omitempty"`
 	// PlatformFaultDomainCount - Fault Domain count for each placement group.
 	PlatformFaultDomainCount *int32 `json:"platformFaultDomainCount,omitempty"`
+	// ProximityPlacementGroup - Specifies information about the proximity placement group that the virtual machine scale set should be assigned to. <br><br>Minimum api-version: 2018-04-01.
+	ProximityPlacementGroup *SubResource `json:"proximityPlacementGroup,omitempty"`
 }
 
-// VirtualMachineScaleSetPublicIPAddressConfiguration describes a virtual machines scale set IP
-// Configuration's PublicIPAddress configuration
+// MarshalJSON is the custom marshaler for VirtualMachineScaleSetProperties.
+func (vmssp VirtualMachineScaleSetProperties) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if vmssp.UpgradePolicy != nil {
+		objectMap["upgradePolicy"] = vmssp.UpgradePolicy
+	}
+	if vmssp.AutomaticRepairsPolicy != nil {
+		objectMap["automaticRepairsPolicy"] = vmssp.AutomaticRepairsPolicy
+	}
+	if vmssp.VirtualMachineProfile != nil {
+		objectMap["virtualMachineProfile"] = vmssp.VirtualMachineProfile
+	}
+	if vmssp.Overprovision != nil {
+		objectMap["overprovision"] = vmssp.Overprovision
+	}
+	if vmssp.DoNotRunExtensionsOnOverprovisionedVMs != nil {
+		objectMap["doNotRunExtensionsOnOverprovisionedVMs"] = vmssp.DoNotRunExtensionsOnOverprovisionedVMs
+	}
+	if vmssp.SinglePlacementGroup != nil {
+		objectMap["singlePlacementGroup"] = vmssp.SinglePlacementGroup
+	}
+	if vmssp.ZoneBalance != nil {
+		objectMap["zoneBalance"] = vmssp.ZoneBalance
+	}
+	if vmssp.PlatformFaultDomainCount != nil {
+		objectMap["platformFaultDomainCount"] = vmssp.PlatformFaultDomainCount
+	}
+	if vmssp.ProximityPlacementGroup != nil {
+		objectMap["proximityPlacementGroup"] = vmssp.ProximityPlacementGroup
+	}
+	return json.Marshal(objectMap)
+}
+
+// VirtualMachineScaleSetPublicIPAddressConfiguration describes a virtual machines scale set IP Configuration's
+// PublicIPAddress configuration
 type VirtualMachineScaleSetPublicIPAddressConfiguration struct {
 	// Name - The publicIP address configuration name.
 	Name                                                          *string `json:"name,omitempty"`
@@ -8660,12 +8236,12 @@ type VirtualMachineScaleSetPublicIPAddressConfigurationProperties struct {
 type VirtualMachineScaleSetReimageParameters struct {
 	// InstanceIds - The virtual machine scale set instance ids. Omitting the virtual machine scale set instance ids will result in the operation being performed on all virtual machines in the virtual machine scale set.
 	InstanceIds *[]string `json:"instanceIds,omitempty"`
-	// TempDisk - Specified whether to reimage temp disk. Default value: false.
+	// TempDisk - Specifies whether to reimage temp disk. Default value: false. Note: This temp disk reimage parameter is only supported for VM/VMSS with Ephemeral OS disk.
 	TempDisk *bool `json:"tempDisk,omitempty"`
 }
 
-// VirtualMachineScaleSetRollingUpgradesCancelFuture an abstraction for monitoring and retrieving the
-// results of a long-running operation.
+// VirtualMachineScaleSetRollingUpgradesCancelFuture an abstraction for monitoring and retrieving the results
+// of a long-running operation.
 type VirtualMachineScaleSetRollingUpgradesCancelFuture struct {
 	azure.Future
 }
@@ -8674,7 +8250,7 @@ type VirtualMachineScaleSetRollingUpgradesCancelFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualMachineScaleSetRollingUpgradesCancelFuture) Result(client VirtualMachineScaleSetRollingUpgradesClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachineScaleSetRollingUpgradesCancelFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -8697,7 +8273,7 @@ type VirtualMachineScaleSetRollingUpgradesStartExtensionUpgradeFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualMachineScaleSetRollingUpgradesStartExtensionUpgradeFuture) Result(client VirtualMachineScaleSetRollingUpgradesClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachineScaleSetRollingUpgradesStartExtensionUpgradeFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -8710,8 +8286,8 @@ func (future *VirtualMachineScaleSetRollingUpgradesStartExtensionUpgradeFuture) 
 	return
 }
 
-// VirtualMachineScaleSetRollingUpgradesStartOSUpgradeFuture an abstraction for monitoring and retrieving
-// the results of a long-running operation.
+// VirtualMachineScaleSetRollingUpgradesStartOSUpgradeFuture an abstraction for monitoring and retrieving the
+// results of a long-running operation.
 type VirtualMachineScaleSetRollingUpgradesStartOSUpgradeFuture struct {
 	azure.Future
 }
@@ -8720,7 +8296,7 @@ type VirtualMachineScaleSetRollingUpgradesStartOSUpgradeFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualMachineScaleSetRollingUpgradesStartOSUpgradeFuture) Result(client VirtualMachineScaleSetRollingUpgradesClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachineScaleSetRollingUpgradesStartOSUpgradeFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -8733,8 +8309,8 @@ func (future *VirtualMachineScaleSetRollingUpgradesStartOSUpgradeFuture) Result(
 	return
 }
 
-// VirtualMachineScaleSetsCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of
-// a long-running operation.
+// VirtualMachineScaleSetsCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of a
+// long-running operation.
 type VirtualMachineScaleSetsCreateOrUpdateFuture struct {
 	azure.Future
 }
@@ -8743,7 +8319,7 @@ type VirtualMachineScaleSetsCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualMachineScaleSetsCreateOrUpdateFuture) Result(client VirtualMachineScaleSetsClient) (vmss VirtualMachineScaleSet, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachineScaleSetsCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -8772,7 +8348,7 @@ type VirtualMachineScaleSetsDeallocateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualMachineScaleSetsDeallocateFuture) Result(client VirtualMachineScaleSetsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachineScaleSetsDeallocateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -8795,7 +8371,7 @@ type VirtualMachineScaleSetsDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualMachineScaleSetsDeleteFuture) Result(client VirtualMachineScaleSetsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachineScaleSetsDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -8808,8 +8384,8 @@ func (future *VirtualMachineScaleSetsDeleteFuture) Result(client VirtualMachineS
 	return
 }
 
-// VirtualMachineScaleSetsDeleteInstancesFuture an abstraction for monitoring and retrieving the results of
-// a long-running operation.
+// VirtualMachineScaleSetsDeleteInstancesFuture an abstraction for monitoring and retrieving the results of a
+// long-running operation.
 type VirtualMachineScaleSetsDeleteInstancesFuture struct {
 	azure.Future
 }
@@ -8818,7 +8394,7 @@ type VirtualMachineScaleSetsDeleteInstancesFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualMachineScaleSetsDeleteInstancesFuture) Result(client VirtualMachineScaleSetsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachineScaleSetsDeleteInstancesFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -8833,28 +8409,28 @@ func (future *VirtualMachineScaleSetsDeleteInstancesFuture) Result(client Virtua
 
 // VirtualMachineScaleSetSku describes an available virtual machine scale set sku.
 type VirtualMachineScaleSetSku struct {
-	// ResourceType - The type of resource the sku applies to.
+	// ResourceType - READ-ONLY; The type of resource the sku applies to.
 	ResourceType *string `json:"resourceType,omitempty"`
-	// Sku - The Sku.
+	// Sku - READ-ONLY; The Sku.
 	Sku *Sku `json:"sku,omitempty"`
-	// Capacity - Specifies the number of virtual machines in the scale set.
+	// Capacity - READ-ONLY; Specifies the number of virtual machines in the scale set.
 	Capacity *VirtualMachineScaleSetSkuCapacity `json:"capacity,omitempty"`
 }
 
 // VirtualMachineScaleSetSkuCapacity describes scaling information of a sku.
 type VirtualMachineScaleSetSkuCapacity struct {
-	// Minimum - The minimum capacity.
+	// Minimum - READ-ONLY; The minimum capacity.
 	Minimum *int64 `json:"minimum,omitempty"`
-	// Maximum - The maximum capacity that can be set.
+	// Maximum - READ-ONLY; The maximum capacity that can be set.
 	Maximum *int64 `json:"maximum,omitempty"`
-	// DefaultCapacity - The default capacity.
+	// DefaultCapacity - READ-ONLY; The default capacity.
 	DefaultCapacity *int64 `json:"defaultCapacity,omitempty"`
-	// ScaleType - The scale type applicable to the sku. Possible values include: 'VirtualMachineScaleSetSkuScaleTypeAutomatic', 'VirtualMachineScaleSetSkuScaleTypeNone'
+	// ScaleType - READ-ONLY; The scale type applicable to the sku. Possible values include: 'VirtualMachineScaleSetSkuScaleTypeAutomatic', 'VirtualMachineScaleSetSkuScaleTypeNone'
 	ScaleType VirtualMachineScaleSetSkuScaleType `json:"scaleType,omitempty"`
 }
 
-// VirtualMachineScaleSetsPerformMaintenanceFuture an abstraction for monitoring and retrieving the results
-// of a long-running operation.
+// VirtualMachineScaleSetsPerformMaintenanceFuture an abstraction for monitoring and retrieving the results of
+// a long-running operation.
 type VirtualMachineScaleSetsPerformMaintenanceFuture struct {
 	azure.Future
 }
@@ -8863,7 +8439,7 @@ type VirtualMachineScaleSetsPerformMaintenanceFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualMachineScaleSetsPerformMaintenanceFuture) Result(client VirtualMachineScaleSetsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachineScaleSetsPerformMaintenanceFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -8886,7 +8462,7 @@ type VirtualMachineScaleSetsPowerOffFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualMachineScaleSetsPowerOffFuture) Result(client VirtualMachineScaleSetsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachineScaleSetsPowerOffFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -8909,7 +8485,7 @@ type VirtualMachineScaleSetsRedeployFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualMachineScaleSetsRedeployFuture) Result(client VirtualMachineScaleSetsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachineScaleSetsRedeployFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -8932,7 +8508,7 @@ type VirtualMachineScaleSetsReimageAllFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualMachineScaleSetsReimageAllFuture) Result(client VirtualMachineScaleSetsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachineScaleSetsReimageAllFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -8955,7 +8531,7 @@ type VirtualMachineScaleSetsReimageFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualMachineScaleSetsReimageFuture) Result(client VirtualMachineScaleSetsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachineScaleSetsReimageFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -8978,7 +8554,7 @@ type VirtualMachineScaleSetsRestartFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualMachineScaleSetsRestartFuture) Result(client VirtualMachineScaleSetsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachineScaleSetsRestartFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -9001,7 +8577,7 @@ type VirtualMachineScaleSetsStartFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualMachineScaleSetsStartFuture) Result(client VirtualMachineScaleSetsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachineScaleSetsStartFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -9034,7 +8610,7 @@ type VirtualMachineScaleSetsUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualMachineScaleSetsUpdateFuture) Result(client VirtualMachineScaleSetsClient) (vmss VirtualMachineScaleSet, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachineScaleSetsUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -9053,8 +8629,8 @@ func (future *VirtualMachineScaleSetsUpdateFuture) Result(client VirtualMachineS
 	return
 }
 
-// VirtualMachineScaleSetsUpdateInstancesFuture an abstraction for monitoring and retrieving the results of
-// a long-running operation.
+// VirtualMachineScaleSetsUpdateInstancesFuture an abstraction for monitoring and retrieving the results of a
+// long-running operation.
 type VirtualMachineScaleSetsUpdateInstancesFuture struct {
 	azure.Future
 }
@@ -9063,7 +8639,7 @@ type VirtualMachineScaleSetsUpdateInstancesFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualMachineScaleSetsUpdateInstancesFuture) Result(client VirtualMachineScaleSetsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachineScaleSetsUpdateInstancesFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -9238,7 +8814,8 @@ func (vmssuic *VirtualMachineScaleSetUpdateIPConfiguration) UnmarshalJSON(body [
 }
 
 // VirtualMachineScaleSetUpdateIPConfigurationProperties describes a virtual machine scale set network
-// profile's IP configuration properties.
+// profile's IP configuration properties. NOTE: The subnet of a scale set may be modified as long as the
+// original subnet and the new subnet are in the same virtual network.
 type VirtualMachineScaleSetUpdateIPConfigurationProperties struct {
 	// Subnet - The subnet.
 	Subnet *APIEntityReference `json:"subnet,omitempty"`
@@ -9325,9 +8902,8 @@ func (vmssunc *VirtualMachineScaleSetUpdateNetworkConfiguration) UnmarshalJSON(b
 	return nil
 }
 
-// VirtualMachineScaleSetUpdateNetworkConfigurationProperties describes a virtual machine scale set
-// updatable network profile's IP configuration.Use this object for updating network profile's IP
-// Configuration.
+// VirtualMachineScaleSetUpdateNetworkConfigurationProperties describes a virtual machine scale set updatable
+// network profile's IP configuration.Use this object for updating network profile's IP Configuration.
 type VirtualMachineScaleSetUpdateNetworkConfigurationProperties struct {
 	// Primary - Whether this is a primary NIC on a virtual machine.
 	Primary *bool `json:"primary,omitempty"`
@@ -9349,8 +8925,8 @@ type VirtualMachineScaleSetUpdateNetworkProfile struct {
 	NetworkInterfaceConfigurations *[]VirtualMachineScaleSetUpdateNetworkConfiguration `json:"networkInterfaceConfigurations,omitempty"`
 }
 
-// VirtualMachineScaleSetUpdateOSDisk describes virtual machine scale set operating system disk Update
-// Object. This should be used for Updating VMSS OS Disk.
+// VirtualMachineScaleSetUpdateOSDisk describes virtual machine scale set operating system disk Update Object.
+// This should be used for Updating VMSS OS Disk.
 type VirtualMachineScaleSetUpdateOSDisk struct {
 	// Caching - The caching type. Possible values include: 'CachingTypesNone', 'CachingTypesReadOnly', 'CachingTypesReadWrite'
 	Caching CachingTypes `json:"caching,omitempty"`
@@ -9382,12 +8958,18 @@ type VirtualMachineScaleSetUpdateOSProfile struct {
 type VirtualMachineScaleSetUpdateProperties struct {
 	// UpgradePolicy - The upgrade policy.
 	UpgradePolicy *UpgradePolicy `json:"upgradePolicy,omitempty"`
+	// AutomaticRepairsPolicy - Policy for automatic repairs.
+	AutomaticRepairsPolicy *AutomaticRepairsPolicy `json:"automaticRepairsPolicy,omitempty"`
 	// VirtualMachineProfile - The virtual machine profile.
 	VirtualMachineProfile *VirtualMachineScaleSetUpdateVMProfile `json:"virtualMachineProfile,omitempty"`
 	// Overprovision - Specifies whether the Virtual Machine Scale Set should be overprovisioned.
 	Overprovision *bool `json:"overprovision,omitempty"`
-	// SinglePlacementGroup - When true this limits the scale set to a single placement group, of max size 100 virtual machines.
+	// DoNotRunExtensionsOnOverprovisionedVMs - When Overprovision is enabled, extensions are launched only on the requested number of VMs which are finally kept. This property will hence ensure that the extensions do not run on the extra overprovisioned VMs.
+	DoNotRunExtensionsOnOverprovisionedVMs *bool `json:"doNotRunExtensionsOnOverprovisionedVMs,omitempty"`
+	// SinglePlacementGroup - When true this limits the scale set to a single placement group, of max size 100 virtual machines. NOTE: If singlePlacementGroup is true, it may be modified to false. However, if singlePlacementGroup is false, it may not be modified to true.
 	SinglePlacementGroup *bool `json:"singlePlacementGroup,omitempty"`
+	// ProximityPlacementGroup - Specifies information about the proximity placement group that the virtual machine scale set should be assigned to. <br><br>Minimum api-version: 2018-04-01.
+	ProximityPlacementGroup *SubResource `json:"proximityPlacementGroup,omitempty"`
 }
 
 // VirtualMachineScaleSetUpdatePublicIPAddressConfiguration describes a virtual machines scale set IP
@@ -9443,8 +9025,8 @@ func (vmssupiac *VirtualMachineScaleSetUpdatePublicIPAddressConfiguration) Unmar
 	return nil
 }
 
-// VirtualMachineScaleSetUpdatePublicIPAddressConfigurationProperties describes a virtual machines scale
-// set IP Configuration's PublicIPAddress configuration
+// VirtualMachineScaleSetUpdatePublicIPAddressConfigurationProperties describes a virtual machines scale set IP
+// Configuration's PublicIPAddress configuration
 type VirtualMachineScaleSetUpdatePublicIPAddressConfigurationProperties struct {
 	// IdleTimeoutInMinutes - The idle timeout of the public IP address.
 	IdleTimeoutInMinutes *int32 `json:"idleTimeoutInMinutes,omitempty"`
@@ -9481,22 +9063,22 @@ type VirtualMachineScaleSetUpdateVMProfile struct {
 // VirtualMachineScaleSetVM describes a virtual machine scale set virtual machine.
 type VirtualMachineScaleSetVM struct {
 	autorest.Response `json:"-"`
-	// InstanceID - The virtual machine instance ID.
+	// InstanceID - READ-ONLY; The virtual machine instance ID.
 	InstanceID *string `json:"instanceId,omitempty"`
-	// Sku - The virtual machine SKU.
+	// Sku - READ-ONLY; The virtual machine SKU.
 	Sku                                 *Sku `json:"sku,omitempty"`
 	*VirtualMachineScaleSetVMProperties `json:"properties,omitempty"`
 	// Plan - Specifies information about the marketplace image used to create the virtual machine. This element is only used for marketplace images. Before you can use a marketplace image from an API, you must enable the image for programmatic use.  In the Azure portal, find the marketplace image that you want to use and then click **Want to deploy programmatically, Get Started ->**. Enter any required information and then click **Save**.
 	Plan *Plan `json:"plan,omitempty"`
-	// Resources - The virtual machine child extension resources.
+	// Resources - READ-ONLY; The virtual machine child extension resources.
 	Resources *[]VirtualMachineExtension `json:"resources,omitempty"`
-	// Zones - The virtual machine zones.
+	// Zones - READ-ONLY; The virtual machine zones.
 	Zones *[]string `json:"zones,omitempty"`
-	// ID - Resource Id
+	// ID - READ-ONLY; Resource Id
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name
+	// Name - READ-ONLY; Resource name
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type
+	// Type - READ-ONLY; Resource type
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location
 	Location *string `json:"location,omitempty"`
@@ -9507,32 +9089,11 @@ type VirtualMachineScaleSetVM struct {
 // MarshalJSON is the custom marshaler for VirtualMachineScaleSetVM.
 func (vmssv VirtualMachineScaleSetVM) MarshalJSON() ([]byte, error) {
 	objectMap := make(map[string]interface{})
-	if vmssv.InstanceID != nil {
-		objectMap["instanceId"] = vmssv.InstanceID
-	}
-	if vmssv.Sku != nil {
-		objectMap["sku"] = vmssv.Sku
-	}
 	if vmssv.VirtualMachineScaleSetVMProperties != nil {
 		objectMap["properties"] = vmssv.VirtualMachineScaleSetVMProperties
 	}
 	if vmssv.Plan != nil {
 		objectMap["plan"] = vmssv.Plan
-	}
-	if vmssv.Resources != nil {
-		objectMap["resources"] = vmssv.Resources
-	}
-	if vmssv.Zones != nil {
-		objectMap["zones"] = vmssv.Zones
-	}
-	if vmssv.ID != nil {
-		objectMap["id"] = vmssv.ID
-	}
-	if vmssv.Name != nil {
-		objectMap["name"] = vmssv.Name
-	}
-	if vmssv.Type != nil {
-		objectMap["type"] = vmssv.Type
 	}
 	if vmssv.Location != nil {
 		objectMap["location"] = vmssv.Location
@@ -9657,17 +9218,16 @@ func (vmssv *VirtualMachineScaleSetVM) UnmarshalJSON(body []byte) error {
 	return nil
 }
 
-// VirtualMachineScaleSetVMExtensionsSummary extensions summary for virtual machines of a virtual machine
-// scale set.
+// VirtualMachineScaleSetVMExtensionsSummary extensions summary for virtual machines of a virtual machine scale
+// set.
 type VirtualMachineScaleSetVMExtensionsSummary struct {
-	// Name - The extension name.
+	// Name - READ-ONLY; The extension name.
 	Name *string `json:"name,omitempty"`
-	// StatusesSummary - The extensions information.
+	// StatusesSummary - READ-ONLY; The extensions information.
 	StatusesSummary *[]VirtualMachineStatusCodeCount `json:"statusesSummary,omitempty"`
 }
 
-// VirtualMachineScaleSetVMInstanceIDs specifies a list of virtual machine instance IDs from the VM scale
-// set.
+// VirtualMachineScaleSetVMInstanceIDs specifies a list of virtual machine instance IDs from the VM scale set.
 type VirtualMachineScaleSetVMInstanceIDs struct {
 	// InstanceIds - The virtual machine scale set instance ids. Omitting the virtual machine scale set instance ids will result in the operation being performed on all virtual machines in the virtual machine scale set.
 	InstanceIds *[]string `json:"instanceIds,omitempty"`
@@ -9697,7 +9257,7 @@ type VirtualMachineScaleSetVMInstanceView struct {
 	Disks *[]DiskInstanceView `json:"disks,omitempty"`
 	// Extensions - The extensions information.
 	Extensions *[]VirtualMachineExtensionInstanceView `json:"extensions,omitempty"`
-	// VMHealth - The health status for the VM.
+	// VMHealth - READ-ONLY; The health status for the VM.
 	VMHealth *VirtualMachineHealthStatus `json:"vmHealth,omitempty"`
 	// BootDiagnostics - Boot Diagnostics is a debugging feature which allows you to view Console Output and Screenshot to diagnose VM status. <br><br> You can easily view the output of your console log. <br><br> Azure also enables you to see a screenshot of the VM from the hypervisor.
 	BootDiagnostics *BootDiagnosticsInstanceView `json:"bootDiagnostics,omitempty"`
@@ -9705,6 +9265,42 @@ type VirtualMachineScaleSetVMInstanceView struct {
 	Statuses *[]InstanceViewStatus `json:"statuses,omitempty"`
 	// PlacementGroupID - The placement group in which the VM is running. If the VM is deallocated it will not have a placementGroupId.
 	PlacementGroupID *string `json:"placementGroupId,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for VirtualMachineScaleSetVMInstanceView.
+func (vmssviv VirtualMachineScaleSetVMInstanceView) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if vmssviv.PlatformUpdateDomain != nil {
+		objectMap["platformUpdateDomain"] = vmssviv.PlatformUpdateDomain
+	}
+	if vmssviv.PlatformFaultDomain != nil {
+		objectMap["platformFaultDomain"] = vmssviv.PlatformFaultDomain
+	}
+	if vmssviv.RdpThumbPrint != nil {
+		objectMap["rdpThumbPrint"] = vmssviv.RdpThumbPrint
+	}
+	if vmssviv.VMAgent != nil {
+		objectMap["vmAgent"] = vmssviv.VMAgent
+	}
+	if vmssviv.MaintenanceRedeployStatus != nil {
+		objectMap["maintenanceRedeployStatus"] = vmssviv.MaintenanceRedeployStatus
+	}
+	if vmssviv.Disks != nil {
+		objectMap["disks"] = vmssviv.Disks
+	}
+	if vmssviv.Extensions != nil {
+		objectMap["extensions"] = vmssviv.Extensions
+	}
+	if vmssviv.BootDiagnostics != nil {
+		objectMap["bootDiagnostics"] = vmssviv.BootDiagnostics
+	}
+	if vmssviv.Statuses != nil {
+		objectMap["statuses"] = vmssviv.Statuses
+	}
+	if vmssviv.PlacementGroupID != nil {
+		objectMap["placementGroupId"] = vmssviv.PlacementGroupID
+	}
+	return json.Marshal(objectMap)
 }
 
 // VirtualMachineScaleSetVMListResult the List Virtual Machine Scale Set VMs operation response.
@@ -9716,8 +9312,8 @@ type VirtualMachineScaleSetVMListResult struct {
 	NextLink *string `json:"nextLink,omitempty"`
 }
 
-// VirtualMachineScaleSetVMListResultIterator provides access to a complete listing of
-// VirtualMachineScaleSetVM values.
+// VirtualMachineScaleSetVMListResultIterator provides access to a complete listing of VirtualMachineScaleSetVM
+// values.
 type VirtualMachineScaleSetVMListResultIterator struct {
 	i    int
 	page VirtualMachineScaleSetVMListResultPage
@@ -9785,10 +9381,15 @@ func (vmssvlr VirtualMachineScaleSetVMListResult) IsEmpty() bool {
 	return vmssvlr.Value == nil || len(*vmssvlr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (vmssvlr VirtualMachineScaleSetVMListResult) hasNextLink() bool {
+	return vmssvlr.NextLink != nil && len(*vmssvlr.NextLink) != 0
+}
+
 // virtualMachineScaleSetVMListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (vmssvlr VirtualMachineScaleSetVMListResult) virtualMachineScaleSetVMListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if vmssvlr.NextLink == nil || len(to.String(vmssvlr.NextLink)) < 1 {
+	if !vmssvlr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -9816,11 +9417,16 @@ func (page *VirtualMachineScaleSetVMListResultPage) NextWithContext(ctx context.
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.vmssvlr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.vmssvlr)
+		if err != nil {
+			return err
+		}
+		page.vmssvlr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.vmssvlr = next
 	return nil
 }
 
@@ -9876,14 +9482,13 @@ type VirtualMachineScaleSetVMProfile struct {
 	EvictionPolicy VirtualMachineEvictionPolicyTypes `json:"evictionPolicy,omitempty"`
 }
 
-// VirtualMachineScaleSetVMProperties describes the properties of a virtual machine scale set virtual
-// machine.
+// VirtualMachineScaleSetVMProperties describes the properties of a virtual machine scale set virtual machine.
 type VirtualMachineScaleSetVMProperties struct {
-	// LatestModelApplied - Specifies whether the latest model has been applied to the virtual machine.
+	// LatestModelApplied - READ-ONLY; Specifies whether the latest model has been applied to the virtual machine.
 	LatestModelApplied *bool `json:"latestModelApplied,omitempty"`
-	// VMID - Azure VM unique ID.
+	// VMID - READ-ONLY; Azure VM unique ID.
 	VMID *string `json:"vmId,omitempty"`
-	// InstanceView - The virtual machine instance view.
+	// InstanceView - READ-ONLY; The virtual machine instance view.
 	InstanceView *VirtualMachineScaleSetVMInstanceView `json:"instanceView,omitempty"`
 	// HardwareProfile - Specifies the hardware settings for the virtual machine.
 	HardwareProfile *HardwareProfile `json:"hardwareProfile,omitempty"`
@@ -9897,17 +9502,47 @@ type VirtualMachineScaleSetVMProperties struct {
 	NetworkProfile *NetworkProfile `json:"networkProfile,omitempty"`
 	// DiagnosticsProfile - Specifies the boot diagnostic settings state. <br><br>Minimum api-version: 2015-06-15.
 	DiagnosticsProfile *DiagnosticsProfile `json:"diagnosticsProfile,omitempty"`
-	// AvailabilitySet - Specifies information about the availability set that the virtual machine should be assigned to. Virtual machines specified in the same availability set are allocated to different nodes to maximize availability. For more information about availability sets, see [Manage the availability of virtual machines](https://docs.microsoft.com/azure/virtual-machines/virtual-machines-windows-manage-availability?toc=%2fazure%2fvirtual-machines%2fwindows%2ftoc.json). <br><br> For more information on Azure planned maintainance, see [Planned maintenance for virtual machines in Azure](https://docs.microsoft.com/azure/virtual-machines/virtual-machines-windows-planned-maintenance?toc=%2fazure%2fvirtual-machines%2fwindows%2ftoc.json) <br><br> Currently, a VM can only be added to availability set at creation time. An existing VM cannot be added to an availability set.
+	// AvailabilitySet - Specifies information about the availability set that the virtual machine should be assigned to. Virtual machines specified in the same availability set are allocated to different nodes to maximize availability. For more information about availability sets, see [Manage the availability of virtual machines](https://docs.microsoft.com/azure/virtual-machines/virtual-machines-windows-manage-availability?toc=%2fazure%2fvirtual-machines%2fwindows%2ftoc.json). <br><br> For more information on Azure planned maintenance, see [Planned maintenance for virtual machines in Azure](https://docs.microsoft.com/azure/virtual-machines/virtual-machines-windows-planned-maintenance?toc=%2fazure%2fvirtual-machines%2fwindows%2ftoc.json) <br><br> Currently, a VM can only be added to availability set at creation time. An existing VM cannot be added to an availability set.
 	AvailabilitySet *SubResource `json:"availabilitySet,omitempty"`
-	// ProvisioningState - The provisioning state, which only appears in the response.
+	// ProvisioningState - READ-ONLY; The provisioning state, which only appears in the response.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
 	// LicenseType - Specifies that the image or disk that is being used was licensed on-premises. This element is only used for images that contain the Windows Server operating system. <br><br> Possible values are: <br><br> Windows_Client <br><br> Windows_Server <br><br> If this element is included in a request for an update, the value must match the initial value. This value cannot be updated. <br><br> For more information, see [Azure Hybrid Use Benefit for Windows Server](https://docs.microsoft.com/azure/virtual-machines/virtual-machines-windows-hybrid-use-benefit-licensing?toc=%2fazure%2fvirtual-machines%2fwindows%2ftoc.json) <br><br> Minimum api-version: 2015-06-15
 	LicenseType *string `json:"licenseType,omitempty"`
 }
 
+// MarshalJSON is the custom marshaler for VirtualMachineScaleSetVMProperties.
+func (vmssvp VirtualMachineScaleSetVMProperties) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if vmssvp.HardwareProfile != nil {
+		objectMap["hardwareProfile"] = vmssvp.HardwareProfile
+	}
+	if vmssvp.StorageProfile != nil {
+		objectMap["storageProfile"] = vmssvp.StorageProfile
+	}
+	if vmssvp.AdditionalCapabilities != nil {
+		objectMap["additionalCapabilities"] = vmssvp.AdditionalCapabilities
+	}
+	if vmssvp.OsProfile != nil {
+		objectMap["osProfile"] = vmssvp.OsProfile
+	}
+	if vmssvp.NetworkProfile != nil {
+		objectMap["networkProfile"] = vmssvp.NetworkProfile
+	}
+	if vmssvp.DiagnosticsProfile != nil {
+		objectMap["diagnosticsProfile"] = vmssvp.DiagnosticsProfile
+	}
+	if vmssvp.AvailabilitySet != nil {
+		objectMap["availabilitySet"] = vmssvp.AvailabilitySet
+	}
+	if vmssvp.LicenseType != nil {
+		objectMap["licenseType"] = vmssvp.LicenseType
+	}
+	return json.Marshal(objectMap)
+}
+
 // VirtualMachineScaleSetVMReimageParameters describes a Virtual Machine Scale Set VM Reimage Parameters.
 type VirtualMachineScaleSetVMReimageParameters struct {
-	// TempDisk - Specified whether to reimage temp disk. Default value: false.
+	// TempDisk - Specifies whether to reimage temp disk. Default value: false. Note: This temp disk reimage parameter is only supported for VM/VMSS with Ephemeral OS disk.
 	TempDisk *bool `json:"tempDisk,omitempty"`
 }
 
@@ -9921,7 +9556,7 @@ type VirtualMachineScaleSetVMsDeallocateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualMachineScaleSetVMsDeallocateFuture) Result(client VirtualMachineScaleSetVMsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachineScaleSetVMsDeallocateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -9944,7 +9579,7 @@ type VirtualMachineScaleSetVMsDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualMachineScaleSetVMsDeleteFuture) Result(client VirtualMachineScaleSetVMsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachineScaleSetVMsDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -9957,8 +9592,8 @@ func (future *VirtualMachineScaleSetVMsDeleteFuture) Result(client VirtualMachin
 	return
 }
 
-// VirtualMachineScaleSetVMsPerformMaintenanceFuture an abstraction for monitoring and retrieving the
-// results of a long-running operation.
+// VirtualMachineScaleSetVMsPerformMaintenanceFuture an abstraction for monitoring and retrieving the results
+// of a long-running operation.
 type VirtualMachineScaleSetVMsPerformMaintenanceFuture struct {
 	azure.Future
 }
@@ -9967,7 +9602,7 @@ type VirtualMachineScaleSetVMsPerformMaintenanceFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualMachineScaleSetVMsPerformMaintenanceFuture) Result(client VirtualMachineScaleSetVMsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachineScaleSetVMsPerformMaintenanceFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -9990,7 +9625,7 @@ type VirtualMachineScaleSetVMsPowerOffFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualMachineScaleSetVMsPowerOffFuture) Result(client VirtualMachineScaleSetVMsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachineScaleSetVMsPowerOffFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -10013,7 +9648,7 @@ type VirtualMachineScaleSetVMsRedeployFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualMachineScaleSetVMsRedeployFuture) Result(client VirtualMachineScaleSetVMsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachineScaleSetVMsRedeployFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -10036,7 +9671,7 @@ type VirtualMachineScaleSetVMsReimageAllFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualMachineScaleSetVMsReimageAllFuture) Result(client VirtualMachineScaleSetVMsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachineScaleSetVMsReimageAllFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -10059,7 +9694,7 @@ type VirtualMachineScaleSetVMsReimageFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualMachineScaleSetVMsReimageFuture) Result(client VirtualMachineScaleSetVMsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachineScaleSetVMsReimageFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -10082,7 +9717,7 @@ type VirtualMachineScaleSetVMsRestartFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualMachineScaleSetVMsRestartFuture) Result(client VirtualMachineScaleSetVMsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachineScaleSetVMsRestartFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -10105,7 +9740,7 @@ type VirtualMachineScaleSetVMsRunCommandFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualMachineScaleSetVMsRunCommandFuture) Result(client VirtualMachineScaleSetVMsClient) (rcr RunCommandResult, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachineScaleSetVMsRunCommandFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -10134,7 +9769,7 @@ type VirtualMachineScaleSetVMsStartFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualMachineScaleSetVMsStartFuture) Result(client VirtualMachineScaleSetVMsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachineScaleSetVMsStartFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -10157,7 +9792,7 @@ type VirtualMachineScaleSetVMsUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualMachineScaleSetVMsUpdateFuture) Result(client VirtualMachineScaleSetVMsClient) (vmssv VirtualMachineScaleSetVM, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachineScaleSetVMsUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -10186,7 +9821,7 @@ type VirtualMachinesCaptureFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualMachinesCaptureFuture) Result(client VirtualMachinesClient) (vmcr VirtualMachineCaptureResult, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachinesCaptureFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -10215,7 +9850,7 @@ type VirtualMachinesConvertToManagedDisksFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualMachinesConvertToManagedDisksFuture) Result(client VirtualMachinesClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachinesConvertToManagedDisksFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -10238,7 +9873,7 @@ type VirtualMachinesCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualMachinesCreateOrUpdateFuture) Result(client VirtualMachinesClient) (VM VirtualMachine, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachinesCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -10257,8 +9892,8 @@ func (future *VirtualMachinesCreateOrUpdateFuture) Result(client VirtualMachines
 	return
 }
 
-// VirtualMachinesDeallocateFuture an abstraction for monitoring and retrieving the results of a
-// long-running operation.
+// VirtualMachinesDeallocateFuture an abstraction for monitoring and retrieving the results of a long-running
+// operation.
 type VirtualMachinesDeallocateFuture struct {
 	azure.Future
 }
@@ -10267,7 +9902,7 @@ type VirtualMachinesDeallocateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualMachinesDeallocateFuture) Result(client VirtualMachinesClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachinesDeallocateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -10290,7 +9925,7 @@ type VirtualMachinesDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualMachinesDeleteFuture) Result(client VirtualMachinesClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachinesDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -10336,7 +9971,7 @@ type VirtualMachinesPerformMaintenanceFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualMachinesPerformMaintenanceFuture) Result(client VirtualMachinesClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachinesPerformMaintenanceFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -10359,7 +9994,7 @@ type VirtualMachinesPowerOffFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualMachinesPowerOffFuture) Result(client VirtualMachinesClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachinesPowerOffFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -10382,7 +10017,7 @@ type VirtualMachinesRedeployFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualMachinesRedeployFuture) Result(client VirtualMachinesClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachinesRedeployFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -10405,7 +10040,7 @@ type VirtualMachinesReimageFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualMachinesReimageFuture) Result(client VirtualMachinesClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachinesReimageFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -10428,7 +10063,7 @@ type VirtualMachinesRestartFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualMachinesRestartFuture) Result(client VirtualMachinesClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachinesRestartFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -10441,8 +10076,8 @@ func (future *VirtualMachinesRestartFuture) Result(client VirtualMachinesClient)
 	return
 }
 
-// VirtualMachinesRunCommandFuture an abstraction for monitoring and retrieving the results of a
-// long-running operation.
+// VirtualMachinesRunCommandFuture an abstraction for monitoring and retrieving the results of a long-running
+// operation.
 type VirtualMachinesRunCommandFuture struct {
 	azure.Future
 }
@@ -10451,7 +10086,7 @@ type VirtualMachinesRunCommandFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualMachinesRunCommandFuture) Result(client VirtualMachinesClient) (rcr RunCommandResult, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachinesRunCommandFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -10480,7 +10115,7 @@ type VirtualMachinesStartFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualMachinesStartFuture) Result(client VirtualMachinesClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachinesStartFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -10496,9 +10131,9 @@ func (future *VirtualMachinesStartFuture) Result(client VirtualMachinesClient) (
 // VirtualMachineStatusCodeCount the status code and count of the virtual machine scale set instance view
 // status summary.
 type VirtualMachineStatusCodeCount struct {
-	// Code - The instance view status code.
+	// Code - READ-ONLY; The instance view status code.
 	Code *string `json:"code,omitempty"`
-	// Count - The number of instances having a particular status code.
+	// Count - READ-ONLY; The number of instances having a particular status code.
 	Count *int32 `json:"count,omitempty"`
 }
 
@@ -10512,7 +10147,7 @@ type VirtualMachinesUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualMachinesUpdateFuture) Result(client VirtualMachinesClient) (VM VirtualMachine, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachinesUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -10629,7 +10264,7 @@ func (vmu *VirtualMachineUpdate) UnmarshalJSON(body []byte) error {
 type WindowsConfiguration struct {
 	// ProvisionVMAgent - Indicates whether virtual machine agent should be provisioned on the virtual machine. <br><br> When this property is not specified in the request body, default behavior is to set it to true.  This will ensure that VM Agent is installed on the VM so that extensions can be added to the VM later.
 	ProvisionVMAgent *bool `json:"provisionVMAgent,omitempty"`
-	// EnableAutomaticUpdates - Indicates whether virtual machine is enabled for automatic updates.
+	// EnableAutomaticUpdates - Indicates whether virtual machine is enabled for automatic Windows updates. Default value is true. <br><br> For virtual machine scale sets, this property can be updated and updates will take effect on OS reprovisioning.
 	EnableAutomaticUpdates *bool `json:"enableAutomaticUpdates,omitempty"`
 	// TimeZone - Specifies the time zone of the virtual machine. e.g. "Pacific Standard Time"
 	TimeZone *string `json:"timeZone,omitempty"`

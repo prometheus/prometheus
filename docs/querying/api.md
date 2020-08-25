@@ -57,8 +57,8 @@ Names of query parameters that may be repeated end with `[]`.
 selectors](basics.md#time-series-selectors) like `http_requests_total` or
 `http_requests_total{method=~"(GET|POST)"}` and need to be URL-encoded.
 
-`<duration>` placeholders refer to Prometheus duration strings of the form
-`[0-9]+[smhdwy]`. For example, `5m` refers to a duration of 5 minutes.
+`<duration>` placeholders refer to [Prometheus duration strings](basics.md#time_durations).
+For example, `5m` refers to a duration of 5 minutes.
 
 `<bool>` placeholders refer to boolean values (strings `true` and `false`).
 
@@ -236,7 +236,7 @@ The following example returns all series that match either of the selectors
 `up` or `process_start_time_seconds{job="prometheus"}`:
 
 ```json
-$ curl -g 'http://localhost:9090/api/v1/series?' --data-urlencode='match[]=up' --data-urlencode='match[]=process_start_time_seconds{job="prometheus"}'
+$ curl -g 'http://localhost:9090/api/v1/series?' --data-urlencode 'match[]=up' --data-urlencode 'match[]=process_start_time_seconds{job="prometheus"}'
 {
    "status" : "success",
    "data" : [
@@ -267,6 +267,12 @@ The following endpoint returns a list of label names:
 GET /api/v1/labels
 POST /api/v1/labels
 ```
+
+URL query parameters:
+
+- `start=<rfc3339 | unix_timestamp>`: Start timestamp. Optional.
+- `end=<rfc3339 | unix_timestamp>`: End timestamp. Optional.
+
 
 The `data` section of the JSON response is a list of string label names.
 
@@ -309,6 +315,12 @@ The following endpoint returns a list of label values for a provided label name:
 ```
 GET /api/v1/label/<label_name>/values
 ```
+
+URL query parameters:
+
+- `start=<rfc3339 | unix_timestamp>`: Start timestamp. Optional.
+- `end=<rfc3339 | unix_timestamp>`: End timestamp. Optional.
+
 
 The `data` section of the JSON response is a list of string label values.
 
@@ -523,7 +535,7 @@ $ curl http://localhost:9090/api/v1/rules
                     {
                         "health": "ok",
                         "name": "job:http_inprogress_requests:sum",
-                        "query": "sum(http_inprogress_requests) by (job)",
+                        "query": "sum by (job) (http_inprogress_requests)",
                         "type": "recording"
                     }
                 ],
@@ -871,6 +883,8 @@ $ curl http://localhost:9090/api/v1/status/buildinfo
 
 **NOTE**: The exact returned build properties may change without notice between Prometheus versions.
 
+*New in v2.14*
+
 ### TSDB Stats
 
 The following endpoint returns various cardinality statistics about the Prometheus TSDB:
@@ -932,7 +946,7 @@ $ curl http://localhost:9090/api/v1/status/tsdb
 }
 ```
 
-*New in v2.14*
+*New in v2.15*
 
 ## TSDB Admin APIs
 These are APIs that expose database functionalities for the advanced user. These APIs are not enabled unless the `--web.enable-admin-api` is set.
@@ -966,7 +980,7 @@ The snapshot now exists at `<data-dir>/snapshots/20171210T211224Z-2be650b6d019eb
 *New in v2.1 and supports PUT from v2.9*
 
 ### Delete Series
-DeleteSeries deletes data for a selection of series in a time range. The actual data still exists on disk and is cleaned up in future compactions or can be explicitly cleaned up by hitting the Clean Tombstones endpoint.
+DeleteSeries deletes data for a selection of series in a time range. The actual data still exists on disk and is cleaned up in future compactions or can be explicitly cleaned up by hitting the [Clean Tombstones](#clean-tombstones) endpoint.
 
 If successful, a `204` is returned.
 

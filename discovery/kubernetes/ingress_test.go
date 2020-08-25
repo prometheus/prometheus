@@ -14,13 +14,15 @@
 package kubernetes
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"k8s.io/api/extensions/v1beta1"
+	"k8s.io/api/networking/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
 type TLSMode int
@@ -137,7 +139,7 @@ func TestIngressDiscoveryAdd(t *testing.T) {
 		discovery: n,
 		afterStart: func() {
 			obj := makeIngress(TLSNo)
-			c.ExtensionsV1beta1().Ingresses("default").Create(obj)
+			c.NetworkingV1beta1().Ingresses("default").Create(context.Background(), obj, metav1.CreateOptions{})
 		},
 		expectedMaxItems: 1,
 		expectedRes:      expectedTargetGroups("default", TLSNo),
@@ -151,7 +153,7 @@ func TestIngressDiscoveryAddTLS(t *testing.T) {
 		discovery: n,
 		afterStart: func() {
 			obj := makeIngress(TLSYes)
-			c.ExtensionsV1beta1().Ingresses("default").Create(obj)
+			c.NetworkingV1beta1().Ingresses("default").Create(context.Background(), obj, metav1.CreateOptions{})
 		},
 		expectedMaxItems: 1,
 		expectedRes:      expectedTargetGroups("default", TLSYes),
@@ -165,7 +167,7 @@ func TestIngressDiscoveryAddMixed(t *testing.T) {
 		discovery: n,
 		afterStart: func() {
 			obj := makeIngress(TLSMixed)
-			c.ExtensionsV1beta1().Ingresses("default").Create(obj)
+			c.NetworkingV1beta1().Ingresses("default").Create(context.Background(), obj, metav1.CreateOptions{})
 		},
 		expectedMaxItems: 1,
 		expectedRes:      expectedTargetGroups("default", TLSMixed),
@@ -185,7 +187,7 @@ func TestIngressDiscoveryNamespaces(t *testing.T) {
 			for _, ns := range []string{"ns1", "ns2"} {
 				obj := makeIngress(TLSNo)
 				obj.Namespace = ns
-				c.ExtensionsV1beta1().Ingresses(obj.Namespace).Create(obj)
+				c.NetworkingV1beta1().Ingresses(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
 			}
 		},
 		expectedMaxItems: 2,

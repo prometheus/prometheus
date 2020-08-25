@@ -296,7 +296,7 @@ func TooFewItems(name, in string, min int64) *Validation {
 	}
 }
 
-// ExceedsMaximumInt error for when maxinum validation fails
+// ExceedsMaximumInt error for when maximum validation fails
 func ExceedsMaximumInt(name, in string, max int64, exclusive bool) *Validation {
 	var message string
 	if in == "" {
@@ -321,7 +321,7 @@ func ExceedsMaximumInt(name, in string, max int64, exclusive bool) *Validation {
 	}
 }
 
-// ExceedsMaximumUint error for when maxinum validation fails
+// ExceedsMaximumUint error for when maximum validation fails
 func ExceedsMaximumUint(name, in string, max uint64, exclusive bool) *Validation {
 	var message string
 	if in == "" {
@@ -346,7 +346,7 @@ func ExceedsMaximumUint(name, in string, max uint64, exclusive bool) *Validation
 	}
 }
 
-// ExceedsMaximum error for when maxinum validation fails
+// ExceedsMaximum error for when maximum validation fails
 func ExceedsMaximum(name, in string, max float64, exclusive bool) *Validation {
 	var message string
 	if in == "" {
@@ -371,7 +371,7 @@ func ExceedsMaximum(name, in string, max float64, exclusive bool) *Validation {
 	}
 }
 
-// ExceedsMinimumInt error for when maxinum validation fails
+// ExceedsMinimumInt error for when minimum validation fails
 func ExceedsMinimumInt(name, in string, min int64, exclusive bool) *Validation {
 	var message string
 	if in == "" {
@@ -396,7 +396,7 @@ func ExceedsMinimumInt(name, in string, min int64, exclusive bool) *Validation {
 	}
 }
 
-// ExceedsMinimumUint error for when maxinum validation fails
+// ExceedsMinimumUint error for when minimum validation fails
 func ExceedsMinimumUint(name, in string, min uint64, exclusive bool) *Validation {
 	var message string
 	if in == "" {
@@ -421,7 +421,7 @@ func ExceedsMinimumUint(name, in string, min uint64, exclusive bool) *Validation
 	}
 }
 
-// ExceedsMinimum error for when maxinum validation fails
+// ExceedsMinimum error for when minimum validation fails
 func ExceedsMinimum(name, in string, min float64, exclusive bool) *Validation {
 	var message string
 	if in == "" {

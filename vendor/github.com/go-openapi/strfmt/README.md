@@ -43,6 +43,19 @@ It also provides convenient extensions to go-openapi users.
 > It does not provide validation for numerical values with swagger format extension for JSON types "number" or
 > "integer" (e.g. float, double, int32...).
 
+## Type conversion
+
+All types defined here are stringers and may be converted to strings with `.String()`.
+Note that most types defined by this package may be converted directly to string like `string(Email{})`.
+
+`Date` and `DateTime` may be converted directly to `time.Time` like `time.Time(Time{})`.
+Similarly, you can convert `Duration` to `time.Duration` as in `time.Duration(Duration{})`
+
+## Using pointers
+
+The `conv` subpackage provides helpers to convert the types to and from pointers, just like `go-openapi/swag` does
+with primitive types.
+
 ## Format types
 Types defined in strfmt expose marshaling and validation capabilities.
 

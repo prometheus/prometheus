@@ -36,7 +36,9 @@ func NewVirtualNetworkTapsClient(subscriptionID string) VirtualNetworkTapsClient
 	return NewVirtualNetworkTapsClientWithBaseURI(DefaultBaseURI, subscriptionID)
 }
 
-// NewVirtualNetworkTapsClientWithBaseURI creates an instance of the VirtualNetworkTapsClient client.
+// NewVirtualNetworkTapsClientWithBaseURI creates an instance of the VirtualNetworkTapsClient client using a custom
+// endpoint.  Use this when interacting with an Azure cloud that uses a non-standard base URI (sovereign clouds, Azure
+// stack).
 func NewVirtualNetworkTapsClientWithBaseURI(baseURI string, subscriptionID string) VirtualNetworkTapsClient {
 	return VirtualNetworkTapsClient{NewWithBaseURI(baseURI, subscriptionID)}
 }
@@ -130,8 +132,7 @@ func (client VirtualNetworkTapsClient) CreateOrUpdatePreparer(ctx context.Contex
 // http.Response Body if it receives an error.
 func (client VirtualNetworkTapsClient) CreateOrUpdateSender(req *http.Request) (future VirtualNetworkTapsCreateOrUpdateFuture, err error) {
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
@@ -144,7 +145,6 @@ func (client VirtualNetworkTapsClient) CreateOrUpdateSender(req *http.Request) (
 func (client VirtualNetworkTapsClient) CreateOrUpdateResponder(resp *http.Response) (result VirtualNetworkTap, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -207,8 +207,7 @@ func (client VirtualNetworkTapsClient) DeletePreparer(ctx context.Context, resou
 // http.Response Body if it receives an error.
 func (client VirtualNetworkTapsClient) DeleteSender(req *http.Request) (future VirtualNetworkTapsDeleteFuture, err error) {
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
@@ -221,7 +220,6 @@ func (client VirtualNetworkTapsClient) DeleteSender(req *http.Request) (future V
 func (client VirtualNetworkTapsClient) DeleteResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted, http.StatusNoContent),
 		autorest.ByClosing())
 	result.Response = resp
@@ -288,8 +286,7 @@ func (client VirtualNetworkTapsClient) GetPreparer(ctx context.Context, resource
 // GetSender sends the Get request. The method will close the
 // http.Response Body if it receives an error.
 func (client VirtualNetworkTapsClient) GetSender(req *http.Request) (*http.Response, error) {
-	return autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // GetResponder handles the response to the Get request. The method always
@@ -297,7 +294,6 @@ func (client VirtualNetworkTapsClient) GetSender(req *http.Request) (*http.Respo
 func (client VirtualNetworkTapsClient) GetResponder(resp *http.Response) (result VirtualNetworkTap, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -335,6 +331,9 @@ func (client VirtualNetworkTapsClient) ListAll(ctx context.Context) (result Virt
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VirtualNetworkTapsClient", "ListAll", resp, "Failure responding to request")
 	}
+	if result.vntlr.hasNextLink() && result.vntlr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }
@@ -361,8 +360,7 @@ func (client VirtualNetworkTapsClient) ListAllPreparer(ctx context.Context) (*ht
 // ListAllSender sends the ListAll request. The method will close the
 // http.Response Body if it receives an error.
 func (client VirtualNetworkTapsClient) ListAllSender(req *http.Request) (*http.Response, error) {
-	return autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListAllResponder handles the response to the ListAll request. The method always
@@ -370,7 +368,6 @@ func (client VirtualNetworkTapsClient) ListAllSender(req *http.Request) (*http.R
 func (client VirtualNetworkTapsClient) ListAllResponder(resp *http.Response) (result VirtualNetworkTapListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -447,6 +444,9 @@ func (client VirtualNetworkTapsClient) ListByResourceGroup(ctx context.Context, 
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VirtualNetworkTapsClient", "ListByResourceGroup", resp, "Failure responding to request")
 	}
+	if result.vntlr.hasNextLink() && result.vntlr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }
@@ -474,8 +474,7 @@ func (client VirtualNetworkTapsClient) ListByResourceGroupPreparer(ctx context.C
 // ListByResourceGroupSender sends the ListByResourceGroup request. The method will close the
 // http.Response Body if it receives an error.
 func (client VirtualNetworkTapsClient) ListByResourceGroupSender(req *http.Request) (*http.Response, error) {
-	return autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListByResourceGroupResponder handles the response to the ListByResourceGroup request. The method always
@@ -483,7 +482,6 @@ func (client VirtualNetworkTapsClient) ListByResourceGroupSender(req *http.Reque
 func (client VirtualNetworkTapsClient) ListByResourceGroupResponder(resp *http.Response) (result VirtualNetworkTapListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -586,8 +584,7 @@ func (client VirtualNetworkTapsClient) UpdateTagsPreparer(ctx context.Context, r
 // http.Response Body if it receives an error.
 func (client VirtualNetworkTapsClient) UpdateTagsSender(req *http.Request) (future VirtualNetworkTapsUpdateTagsFuture, err error) {
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
@@ -600,7 +597,6 @@ func (client VirtualNetworkTapsClient) UpdateTagsSender(req *http.Request) (futu
 func (client VirtualNetworkTapsClient) UpdateTagsResponder(resp *http.Response) (result VirtualNetworkTap, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

@@ -2,15 +2,16 @@
 version: 2.1
 
 orbs:
-  prometheus: prometheus/prometheus@0.3.0
+  prometheus: prometheus/prometheus@0.4.0
   go: circleci/go@0.2.0
+  win: circleci/windows@2.3.0
 
 executors:
   # Whenever the Go version is updated here, .promu.yml
   # should also be updated.
   golang:
     docker:
-    - image: circleci/golang:1.13-node
+    - image: circleci/golang:1.15-node
 
   fuzzit:
     docker:
@@ -26,8 +27,8 @@ jobs:
         key: v1
     - restore_cache:
         keys:
-        - v1-npm-deps-{{ checksum "web/ui/react-app/yarn.lock" }}
-        - v1-npm-deps-
+        - v3-npm-deps-{{ checksum "web/ui/react-app/yarn.lock" }}
+        - v3-npm-deps-
     - run:
         command: make
         environment:
@@ -38,7 +39,9 @@ jobs:
           # don't limit this to the number of allocated cores, the job is
           # likely to get OOMed and killed.
           GOOPTS: "-p 2"
-    - prometheus/check_proto
+          GOMAXPROCS: "2"
+    - prometheus/check_proto:
+        version: "3.12.3"
     - prometheus/store_artifact:
         file: prometheus
     - prometheus/store_artifact:
@@ -46,9 +49,29 @@ jobs:
     - go/save-cache:
         key: v1
     - save_cache:
-        key: v1-npm-deps-{{ checksum "web/ui/react-app/yarn.lock" }}
+        key: v3-npm-deps-{{ checksum "web/ui/react-app/yarn.lock" }}
         paths:
-        - web/ui/react-app/node_modules
+        - /home/circleci/.cache/yarn
+    - store_test_results:
+        path: test-results
+  test_windows:
+    executor: win/default
+    working_directory: /go/src/github.com/prometheus/prometheus
+    steps:
+    - checkout
+    - run:
+        # Temporary workaround until circleci updates go.
+        shell: bash
+        command: |
+          choco upgrade -y golang
+    - run:
+        shell: bash
+        command: |
+          (cd web/ui && GOOS= GOARCH= go generate -mod=vendor)
+          go test -mod=vendor -vet=off -test.v `go list ./...|grep -Exv "(github.com/prometheus/prometheus/discovery.*|github.com/prometheus/prometheus/config|github.com/prometheus/prometheus/web)"`
+        environment:
+          GOGC: "20"
+          GOOPTS: "-p 2 -mod=vendor"
   fuzzit_regression:
     executor: fuzzit
     working_directory: /go/src/github.com/prometheus/prometheus
@@ -64,17 +87,21 @@ jobs:
       - setup_remote_docker
       - run: ./fuzzit.sh fuzzing
 
-  makefile_sync:
+  repo_sync:
     executor: golang
     steps:
     - checkout
-    - run: ./scripts/sync_makefiles.sh
+    - run: ./scripts/sync_repo_files.sh
 
 workflows:
   version: 2
   prometheus:
     jobs:
     - test:
+        filters:
+          tags:
+            only: /.*/
+    - test_windows:
         filters:
           tags:
             only: /.*/
@@ -116,7 +143,7 @@ workflows:
               only:
                 - master
     jobs:
-    - makefile_sync:
+    - repo_sync:
         context: org-context
     - fuzzit_fuzzing:
         context: org-context

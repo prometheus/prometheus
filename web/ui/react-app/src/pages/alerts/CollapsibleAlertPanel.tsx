@@ -1,9 +1,11 @@
 import React, { FC, useState, Fragment } from 'react';
 import { Link } from '@reach/router';
 import { Alert, Collapse, Table, Badge } from 'reactstrap';
-import { Rule, RuleStatus } from './AlertContents';
+import { RuleStatus } from './AlertContents';
+import { Rule } from '../../types/types';
 import { faChevronDown, faChevronRight } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { createExpressionLink, parsePrometheusFloat, formatDuration } from '../../utils/index';
 
 interface CollapsibleAlertPanelProps {
   rule: Rule;
@@ -14,10 +16,6 @@ const alertColors: RuleStatus<string> = {
   firing: 'danger',
   pending: 'warning',
   inactive: 'success',
-};
-
-const createExpressionLink = (expr: string) => {
-  return `../graph?g0.expr=${encodeURIComponent(expr)}&g0.tab=1&g0.stacked=0&g0.range_input=1h`;
 };
 
 const CollapsibleAlertPanel: FC<CollapsibleAlertPanelProps> = ({ rule, showAnnotations }) => {
@@ -38,14 +36,31 @@ const CollapsibleAlertPanel: FC<CollapsibleAlertPanelProps> = ({ rule, showAnnot
             <div>
               expr: <Link to={createExpressionLink(rule.query)}>{rule.query}</Link>
             </div>
-            <div>
-              <div>labels:</div>
-              <div className="ml-5">severity: {rule.labels.severity}</div>
-            </div>
-            <div>
-              <div>annotations:</div>
-              <div className="ml-5">summary: {rule.annotations.summary}</div>
-            </div>
+            {rule.duration > 0 && (
+              <div>
+                <div>for: {formatDuration(rule.duration * 1000)}</div>
+              </div>
+            )}
+            {rule.labels && Object.keys(rule.labels).length > 0 && (
+              <div>
+                <div>labels:</div>
+                {Object.entries(rule.labels).map(([key, value]) => (
+                  <div className="ml-4" key={key}>
+                    {key}: {value}
+                  </div>
+                ))}
+              </div>
+            )}
+            {rule.annotations && Object.keys(rule.annotations).length > 0 && (
+              <div>
+                <div>annotations:</div>
+                {Object.entries(rule.annotations).map(([key, value]) => (
+                  <div className="ml-4" key={key}>
+                    {key}: {value}
+                  </div>
+                ))}
+              </div>
+            )}
           </code>
         </pre>
         {rule.alerts.length > 0 && (
@@ -80,7 +95,7 @@ const CollapsibleAlertPanel: FC<CollapsibleAlertPanelProps> = ({ rule, showAnnot
                         </h5>
                       </td>
                       <td>{alert.activeAt}</td>
-                      <td>{alert.value}</td>
+                      <td>{parsePrometheusFloat(alert.value)}</td>
                     </tr>
                     {showAnnotations && <Annotations annotations={alert.annotations} />}
                   </Fragment>

@@ -8,6 +8,7 @@ package bsoncodec
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
 	"sync"
 
@@ -115,15 +116,79 @@ func buildDefaultRegistry() *Registry {
 
 // RegisterCodec will register the provided ValueCodec for the provided type.
 func (rb *RegistryBuilder) RegisterCodec(t reflect.Type, codec ValueCodec) *RegistryBuilder {
-	rb.RegisterEncoder(t, codec)
-	rb.RegisterDecoder(t, codec)
+	rb.RegisterTypeEncoder(t, codec)
+	rb.RegisterTypeDecoder(t, codec)
 	return rb
 }
 
-// RegisterEncoder will register the provided ValueEncoder to the provided type.
+// RegisterTypeEncoder will register the provided ValueEncoder for the provided type.
 //
-// The type registered will be used directly, so an encoder can be registered for a type and a
-// different encoder can be registered for a pointer to that type.
+// The type will be used directly, so an encoder can be registered for a type and a different encoder can be registered
+// for a pointer to that type.
+//
+// If the given type is an interface, the encoder will be called when marshalling a type that is that interface. It
+// will not be called when marshalling a non-interface type that implements the interface.
+func (rb *RegistryBuilder) RegisterTypeEncoder(t reflect.Type, enc ValueEncoder) *RegistryBuilder {
+	rb.typeEncoders[t] = enc
+	return rb
+}
+
+// RegisterHookEncoder will register an encoder for the provided interface type t. This encoder will be called when
+// marshalling a type if the type implements t or a pointer to the type implements t. If the provided type is not
+// an interface (i.e. t.Kind() != reflect.Interface), this method will panic.
+func (rb *RegistryBuilder) RegisterHookEncoder(t reflect.Type, enc ValueEncoder) *RegistryBuilder {
+	if t.Kind() != reflect.Interface {
+		panicStr := fmt.Sprintf("RegisterHookEncoder expects a type with kind reflect.Interface, "+
+			"got type %s with kind %s", t, t.Kind())
+		panic(panicStr)
+	}
+
+	for idx, encoder := range rb.interfaceEncoders {
+		if encoder.i == t {
+			rb.interfaceEncoders[idx].ve = enc
+			return rb
+		}
+	}
+
+	rb.interfaceEncoders = append(rb.interfaceEncoders, interfaceValueEncoder{i: t, ve: enc})
+	return rb
+}
+
+// RegisterTypeDecoder will register the provided ValueDecoder for the provided type.
+//
+// The type will be used directly, so a decoder can be registered for a type and a different decoder can be registered
+// for a pointer to that type.
+//
+// If the given type is an interface, the decoder will be called when unmarshalling into a type that is that interface.
+// It will not be called when unmarshalling into a non-interface type that implements the interface.
+func (rb *RegistryBuilder) RegisterTypeDecoder(t reflect.Type, dec ValueDecoder) *RegistryBuilder {
+	rb.typeDecoders[t] = dec
+	return rb
+}
+
+// RegisterHookDecoder will register an decoder for the provided interface type t. This decoder will be called when
+// unmarshalling into a type if the type implements t or a pointer to the type implements t. If the provided type is not
+// an interface (i.e. t.Kind() != reflect.Interface), this method will panic.
+func (rb *RegistryBuilder) RegisterHookDecoder(t reflect.Type, dec ValueDecoder) *RegistryBuilder {
+	if t.Kind() != reflect.Interface {
+		panicStr := fmt.Sprintf("RegisterHookDecoder expects a type with kind reflect.Interface, "+
+			"got type %s with kind %s", t, t.Kind())
+		panic(panicStr)
+	}
+
+	for idx, decoder := range rb.interfaceDecoders {
+		if decoder.i == t {
+			rb.interfaceDecoders[idx].vd = dec
+			return rb
+		}
+	}
+
+	rb.interfaceDecoders = append(rb.interfaceDecoders, interfaceValueDecoder{i: t, vd: dec})
+	return rb
+}
+
+// RegisterEncoder has been deprecated and will be removed in a future major version release. Use RegisterTypeEncoder
+// or RegisterHookEncoder instead.
 func (rb *RegistryBuilder) RegisterEncoder(t reflect.Type, enc ValueEncoder) *RegistryBuilder {
 	if t == tEmpty {
 		rb.typeEncoders[t] = enc
@@ -145,10 +210,8 @@ func (rb *RegistryBuilder) RegisterEncoder(t reflect.Type, enc ValueEncoder) *Re
 	return rb
 }
 
-// RegisterDecoder will register the provided ValueDecoder to the provided type.
-//
-// The type registered will be used directly, so a decoder can be registered for a type and a
-// different decoder can be registered for a pointer to that type.
+// RegisterDecoder has been deprecated and will be removed in a future major version release. Use RegisterTypeDecoder
+// or RegisterHookDecoder instead.
 func (rb *RegistryBuilder) RegisterDecoder(t reflect.Type, dec ValueDecoder) *RegistryBuilder {
 	if t == nil {
 		rb.typeDecoders[nil] = dec
@@ -192,11 +255,10 @@ func (rb *RegistryBuilder) RegisterDefaultDecoder(kind reflect.Kind, dec ValueDe
 // mapping is decoding situations where an empty interface is used and a default type needs to be
 // created and decoded into.
 //
-// NOTE: It is unlikely that registering a type for BSON Embedded Document is actually desired. By
-// registering a type map entry for BSON Embedded Document the type registered will be used in any
-// case where a BSON Embedded Document will be decoded into an empty interface. For example, if you
-// register primitive.M, the EmptyInterface decoder will always use primitive.M, even if an ancestor
-// was a primitive.D.
+// By default, BSON documents will decode into interface{} values as bson.D. To change the default type for BSON
+// documents, a type map entry for bsontype.EmbeddedDocument should be registered. For example, to force BSON documents
+// to decode to bson.Raw, use the following code:
+//	rb.RegisterTypeMapEntry(bsontype.EmbeddedDocument, reflect.TypeOf(bson.Raw{}))
 func (rb *RegistryBuilder) RegisterTypeMapEntry(bt bsontype.Type, rt reflect.Type) *RegistryBuilder {
 	rb.typeMap[bt] = rt
 	return rb
@@ -240,11 +302,17 @@ func (rb *RegistryBuilder) Build() *Registry {
 	return registry
 }
 
-// LookupEncoder will inspect the registry for an encoder that satisfies the
-// type provided. An encoder registered for a specific type will take
-// precedence over an encoder registered for an interface the type satisfies,
-// which takes precedence over an encoder for the reflect.Kind of the value. If
-// no encoder can be found, an error is returned.
+// LookupEncoder inspects the registry for an encoder for the given type. The lookup precendence works as follows:
+//
+// 1. An encoder registered for the exact type. If the given type represents an interface, an encoder registered using
+// RegisterTypeEncoder for the interface will be selected.
+//
+// 2. An encoder registered using RegisterHookEncoder for an interface implemented by the type or by a pointer to the
+// type.
+//
+// 3. An encoder registered for the reflect.Kind of the value.
+//
+// If no encoder is found, an error of type ErrNoEncoder is returned.
 func (r *Registry) LookupEncoder(t reflect.Type) (ValueEncoder, error) {
 	encodererr := ErrNoEncoder{Type: t}
 	r.mu.RLock()
@@ -296,20 +364,24 @@ func (r *Registry) lookupInterfaceEncoder(t reflect.Type) (ValueEncoder, bool) {
 		return nil, false
 	}
 	for _, ienc := range r.interfaceEncoders {
-		if !t.Implements(ienc.i) {
-			continue
+		if t.Implements(ienc.i) || reflect.PtrTo(t).Implements(ienc.i) {
+			return ienc.ve, true
 		}
-
-		return ienc.ve, true
 	}
 	return nil, false
 }
 
-// LookupDecoder will inspect the registry for a decoder that satisfies the
-// type provided. A decoder registered for a specific type will take
-// precedence over a decoder registered for an interface the type satisfies,
-// which takes precedence over a decoder for the reflect.Kind of the value. If
-// no decoder can be found, an error is returned.
+// LookupDecoder inspects the registry for an decoder for the given type. The lookup precendence works as follows:
+//
+// 1. A decoder registered for the exact type. If the given type represents an interface, a decoder registered using
+// RegisterTypeDecoder for the interface will be selected.
+//
+// 2. A decoder registered using RegisterHookDecoder for an interface implemented by the type or by a pointer to the
+// type.
+//
+// 3. A decoder registered for the reflect.Kind of the value.
+//
+// If no decoder is found, an error of type ErrNoDecoder is returned.
 func (r *Registry) LookupDecoder(t reflect.Type) (ValueDecoder, error) {
 	if t == nil {
 		return nil, ErrNilType

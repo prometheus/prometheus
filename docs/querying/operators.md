@@ -31,7 +31,7 @@ scalar that is the result of the operator applied to both scalar operands.
 **Between an instant vector and a scalar**, the operator is applied to the
 value of every data sample in the vector. E.g. if a time series instant vector
 is multiplied by 2, the result is another vector in which every sample value of
-the original vector is multiplied by 2.
+the original vector is multiplied by 2. The metric name is dropped.
 
 **Between two instant vectors**, a binary arithmetic operator is applied to
 each entry in the left-hand side vector and its [matching element](#vector-matching)
@@ -64,7 +64,8 @@ operators result in another scalar that is either `0` (`false`) or `1`
 value of every data sample in the vector, and vector elements between which the
 comparison result is `false` get dropped from the result vector. If the `bool`
 modifier is provided, vector elements that would be dropped instead have the value
-`0` and vector elements that would be kept have the value `1`.
+`0` and vector elements that would be kept have the value `1`. The metric name
+is dropped if the `bool` modifier is provided.
 
 **Between two instant vectors**, these operators behave as a filter by default,
 applied to matching entries. Vector elements for which the expression is not
@@ -74,6 +75,7 @@ with the grouping labels becoming the output label set.
 If the `bool` modifier is provided, vector elements that would have been
 dropped instead have the value `0` and vector elements that would be kept have
 the value `1`, with the grouping labels again becoming the output label set.
+The metric name is dropped if the `bool` modifier is provided.
 
 ### Logical/set binary operators
 
@@ -187,6 +189,7 @@ vector of fewer elements with aggregated values:
 * `min` (select minimum over dimensions)
 * `max` (select maximum over dimensions)
 * `avg` (calculate the average over dimensions)
+* `group` (all values in the resulting vector are 1)
 * `stddev` (calculate population standard deviation over dimensions)
 * `stdvar` (calculate population standard variance over dimensions)
 * `count` (count number of elements in the vector)
@@ -205,20 +208,30 @@ or
 
     <aggr-op>([parameter,] <vector expression>) [without|by (<label list>)]
 
-`parameter` is only required for `count_values`, `quantile`, `topk` and
-`bottomk`. `without` removes the listed labels from the result vector, while
+`label list` is a list of unquoted labels that may include a trailing comma, i.e.
+both `(label1, label2)` and `(label1, label2,)` are valid syntax.
+
+`without` removes the listed labels from the result vector, while
 all other labels are preserved the output. `by` does the opposite and drops
 labels that are not listed in the `by` clause, even if their label values are
 identical between all elements of the vector.
 
+`parameter` is only required for `count_values`, `quantile`, `topk` and
+`bottomk`.
+
 `count_values` outputs one time series per unique sample value. Each series has
 an additional label. The name of that label is given by the aggregation
-parameter, and the label value is the unique sample value.  The value of each
+parameter, and the label value is the unique sample value. The value of each
 time series is the number of times that sample value was present.
 
 `topk` and `bottomk` are different from other aggregators in that a subset of
 the input samples, including the original labels, are returned in the result
 vector. `by` and `without` are only used to bucket the input vector.
+
+`quantile` calculates the φ-quantile, the value that ranks at number φ*N among
+the N metric values of the dimensions aggregated over. φ is provided as the
+aggregation parameter. For example, `quantile(0.5, ...)` calculates the median,
+`quantile(0.95, ...)` the 95th percentile.
 
 Example:
 

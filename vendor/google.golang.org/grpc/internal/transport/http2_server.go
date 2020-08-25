@@ -35,11 +35,9 @@ import (
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/hpack"
 
-	spb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/grpclog"
-	"google.golang.org/grpc/internal"
 	"google.golang.org/grpc/internal/channelz"
 	"google.golang.org/grpc/internal/grpcrand"
 	"google.golang.org/grpc/keepalive"
@@ -57,16 +55,17 @@ var (
 	// ErrHeaderListSizeLimitViolation indicates that the header list size is larger
 	// than the limit set by peer.
 	ErrHeaderListSizeLimitViolation = errors.New("transport: trying to send header list size larger than the limit set by peer")
-	// statusRawProto is a function to get to the raw status proto wrapped in a
-	// status.Status without a proto.Clone().
-	statusRawProto = internal.StatusRawProto.(func(*status.Status) *spb.Status)
 )
+
+// serverConnectionCounter counts the number of connections a server has seen
+// (equal to the number of http2Servers created). Must be accessed atomically.
+var serverConnectionCounter uint64
 
 // http2Server implements the ServerTransport interface with HTTP2.
 type http2Server struct {
+	lastRead    int64 // Keep this field 64-bit aligned. Accessed atomically.
 	ctx         context.Context
-	ctxDone     <-chan struct{} // Cache the context.Done() chan
-	cancel      context.CancelFunc
+	done        chan struct{}
 	conn        net.Conn
 	loopy       *loopyWriter
 	readerDone  chan struct{} // sync point to enable testing.
@@ -84,12 +83,8 @@ type http2Server struct {
 	controlBuf *controlBuffer
 	fc         *trInFlow
 	stats      stats.Handler
-	// Flag to keep track of reading activity on transport.
-	// 1 is true and 0 is false.
-	activity uint32 // Accessed atomically.
 	// Keepalive and max-age parameters for the server.
 	kp keepalive.ServerParameters
-
 	// Keepalive enforcement policy.
 	kep keepalive.EnforcementPolicy
 	// The time instance last ping was received.
@@ -125,6 +120,8 @@ type http2Server struct {
 	channelzID int64 // channelz unique identification number
 	czData     *channelzData
 	bufferPool *bufferPool
+
+	connectionID uint64
 }
 
 // newHTTP2Server constructs a ServerTransport based on HTTP2. ConnectionError is
@@ -138,7 +135,10 @@ func newHTTP2Server(conn net.Conn, config *ServerConfig) (_ ServerTransport, err
 	}
 	framer := newFramer(conn, writeBufSize, readBufSize, maxHeaderListSize)
 	// Send initial settings as connection preface to client.
-	var isettings []http2.Setting
+	isettings := []http2.Setting{{
+		ID:  http2.SettingMaxFrameSize,
+		Val: http2MaxFrameLen,
+	}}
 	// TODO(zhaoq): Have a better way to signal "no limit" because 0 is
 	// permitted in the HTTP2 spec.
 	maxStreams := config.MaxStreams
@@ -172,6 +172,12 @@ func newHTTP2Server(conn net.Conn, config *ServerConfig) (_ ServerTransport, err
 			Val: *config.MaxHeaderListSize,
 		})
 	}
+	if config.HeaderTableSize != nil {
+		isettings = append(isettings, http2.Setting{
+			ID:  http2.SettingHeaderTableSize,
+			Val: *config.HeaderTableSize,
+		})
+	}
 	if err := framer.fr.WriteSettings(isettings...); err != nil {
 		return nil, connectionErrorf(false, err, "transport: %v", err)
 	}
@@ -203,11 +209,10 @@ func newHTTP2Server(conn net.Conn, config *ServerConfig) (_ ServerTransport, err
 	if kep.MinTime == 0 {
 		kep.MinTime = defaultKeepalivePolicyMinTime
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
 	t := &http2Server{
-		ctx:               ctx,
-		cancel:            cancel,
-		ctxDone:           ctx.Done(),
+		ctx:               context.Background(),
+		done:              done,
 		conn:              conn,
 		remoteAddr:        conn.RemoteAddr(),
 		localAddr:         conn.LocalAddr(),
@@ -228,7 +233,7 @@ func newHTTP2Server(conn net.Conn, config *ServerConfig) (_ ServerTransport, err
 		czData:            new(channelzData),
 		bufferPool:        newBufferPool(),
 	}
-	t.controlBuf = newControlBuffer(t.ctxDone)
+	t.controlBuf = newControlBuffer(t.done)
 	if dynamicWindow {
 		t.bdpEst = &bdpEstimator{
 			bdp:               initialWindowSize,
@@ -246,6 +251,9 @@ func newHTTP2Server(conn net.Conn, config *ServerConfig) (_ ServerTransport, err
 	if channelz.IsOn() {
 		t.channelzID = channelz.RegisterNormalSocket(t, config.ChannelzParentID, fmt.Sprintf("%s -> %s", t.remoteAddr, t.localAddr))
 	}
+
+	t.connectionID = atomic.AddUint64(&serverConnectionCounter, 1)
+
 	t.framer.writer.Flush()
 
 	defer func() {
@@ -270,7 +278,7 @@ func newHTTP2Server(conn net.Conn, config *ServerConfig) (_ ServerTransport, err
 	if err != nil {
 		return nil, connectionErrorf(false, err, "transport: http2Server.HandleStreams failed to read initial settings frame: %v", err)
 	}
-	atomic.StoreUint32(&t.activity, 1)
+	atomic.StoreInt64(&t.lastRead, time.Now().UnixNano())
 	sf, ok := frame.(*http2.SettingsFrame)
 	if !ok {
 		return nil, connectionErrorf(false, nil, "transport: http2Server.HandleStreams saw invalid preface type %T from client", frame)
@@ -359,12 +367,14 @@ func (t *http2Server) operateHeaders(frame *http2.MetaHeadersFrame, handle func(
 				rstCode:  http2.ErrCodeRefusedStream,
 				onWrite:  func() {},
 			})
+			s.cancel()
 			return false
 		}
 	}
 	t.mu.Lock()
 	if t.state != reachable {
 		t.mu.Unlock()
+		s.cancel()
 		return false
 	}
 	if uint32(len(t.activeStreams)) >= t.maxStreams {
@@ -375,12 +385,14 @@ func (t *http2Server) operateHeaders(frame *http2.MetaHeadersFrame, handle func(
 			rstCode:  http2.ErrCodeRefusedStream,
 			onWrite:  func() {},
 		})
+		s.cancel()
 		return false
 	}
 	if streamID%2 != 1 || streamID <= t.maxStreamID {
 		t.mu.Unlock()
 		// illegal gRPC stream id.
 		errorf("transport: http2Server.HandleStreams received an illegal stream id: %v", streamID)
+		s.cancel()
 		return true
 	}
 	t.maxStreamID = streamID
@@ -405,6 +417,7 @@ func (t *http2Server) operateHeaders(frame *http2.MetaHeadersFrame, handle func(
 			LocalAddr:   t.localAddr,
 			Compression: s.recvCompress,
 			WireLength:  int(frame.Header().Length),
+			Header:      metadata.MD(state.data.mdata).Copy(),
 		}
 		t.stats.HandleRPC(s.ctx, inHeader)
 	}
@@ -436,8 +449,9 @@ func (t *http2Server) operateHeaders(frame *http2.MetaHeadersFrame, handle func(
 func (t *http2Server) HandleStreams(handle func(*Stream), traceCtx func(context.Context, string) context.Context) {
 	defer close(t.readerDone)
 	for {
+		t.controlBuf.throttle()
 		frame, err := t.framer.fr.ReadFrame()
-		atomic.StoreUint32(&t.activity, 1)
+		atomic.StoreInt64(&t.lastRead, time.Now().UnixNano())
 		if err != nil {
 			if se, ok := err.(http2.StreamError); ok {
 				warningf("transport: http2Server.HandleStreams encountered http2.StreamError: %v", se)
@@ -745,7 +759,7 @@ func (t *http2Server) checkForHeaderListSize(it interface{}) bool {
 	return true
 }
 
-// WriteHeader sends the header metedata md back to the client.
+// WriteHeader sends the header metadata md back to the client.
 func (t *http2Server) WriteHeader(s *Stream, md metadata.MD) error {
 	if s.updateHeaderSent() || s.getState() == streamDone {
 		return ErrIllegalHeaderWrite
@@ -766,6 +780,10 @@ func (t *http2Server) WriteHeader(s *Stream, md metadata.MD) error {
 	return nil
 }
 
+func (t *http2Server) setResetPingStrikes() {
+	atomic.StoreUint32(&t.resetPingStrikes, 1)
+}
+
 func (t *http2Server) writeHeaderLocked(s *Stream) error {
 	// TODO(mmukhi): Benchmark if the performance gets better if count the metadata and other header fields
 	// first and create a slice of that exact size.
@@ -780,9 +798,7 @@ func (t *http2Server) writeHeaderLocked(s *Stream) error {
 		streamID:  s.id,
 		hf:        headerFields,
 		endStream: false,
-		onWrite: func() {
-			atomic.StoreUint32(&t.resetPingStrikes, 1)
-		},
+		onWrite:   t.setResetPingStrikes,
 	})
 	if !success {
 		if err != nil {
@@ -792,9 +808,12 @@ func (t *http2Server) writeHeaderLocked(s *Stream) error {
 		return ErrHeaderListSizeLimitViolation
 	}
 	if t.stats != nil {
-		// Note: WireLength is not set in outHeader.
-		// TODO(mmukhi): Revisit this later, if needed.
-		outHeader := &stats.OutHeader{}
+		// Note: Headers are compressed with hpack after this call returns.
+		// No WireLength field is set here.
+		outHeader := &stats.OutHeader{
+			Header:      s.header.Copy(),
+			Compression: s.sendCompress,
+		}
 		t.stats.HandleRPC(s.Context(), outHeader)
 	}
 	return nil
@@ -826,7 +845,7 @@ func (t *http2Server) WriteStatus(s *Stream, st *status.Status) error {
 	headerFields = append(headerFields, hpack.HeaderField{Name: "grpc-status", Value: strconv.Itoa(int(st.Code()))})
 	headerFields = append(headerFields, hpack.HeaderField{Name: "grpc-message", Value: encodeGrpcMessage(st.Message())})
 
-	if p := statusRawProto(st); p != nil && len(p.Details) > 0 {
+	if p := st.Proto(); p != nil && len(p.Details) > 0 {
 		stBytes, err := proto.Marshal(p)
 		if err != nil {
 			// TODO: return error instead, when callers are able to handle it.
@@ -842,9 +861,7 @@ func (t *http2Server) WriteStatus(s *Stream, st *status.Status) error {
 		streamID:  s.id,
 		hf:        headerFields,
 		endStream: true,
-		onWrite: func() {
-			atomic.StoreUint32(&t.resetPingStrikes, 1)
-		},
+		onWrite:   t.setResetPingStrikes,
 	}
 	s.hdrMu.Unlock()
 	success, err := t.controlBuf.execute(t.checkForHeaderListSize, trailingHeader)
@@ -859,7 +876,11 @@ func (t *http2Server) WriteStatus(s *Stream, st *status.Status) error {
 	rst := s.getState() == streamActive
 	t.finishStream(s, rst, http2.ErrCodeNo, trailingHeader, true)
 	if t.stats != nil {
-		t.stats.HandleRPC(s.Context(), &stats.OutTrailer{})
+		// Note: The trailer fields are compressed with hpack after this call returns.
+		// No WireLength field is set here.
+		t.stats.HandleRPC(s.Context(), &stats.OutTrailer{
+			Trailer: s.trailer.Copy(),
+		})
 	}
 	return nil
 }
@@ -881,7 +902,7 @@ func (t *http2Server) Write(s *Stream, hdr []byte, data []byte, opts *Options) e
 			// TODO(mmukhi, dfawley): Should the server write also return io.EOF?
 			s.cancel()
 			select {
-			case <-t.ctx.Done():
+			case <-t.done:
 				return ErrConnClosing
 			default:
 			}
@@ -896,16 +917,14 @@ func (t *http2Server) Write(s *Stream, hdr []byte, data []byte, opts *Options) e
 	hdr = append(hdr, data[:emptyLen]...)
 	data = data[emptyLen:]
 	df := &dataFrame{
-		streamID: s.id,
-		h:        hdr,
-		d:        data,
-		onEachWrite: func() {
-			atomic.StoreUint32(&t.resetPingStrikes, 1)
-		},
+		streamID:    s.id,
+		h:           hdr,
+		d:           data,
+		onEachWrite: t.setResetPingStrikes,
 	}
 	if err := s.wq.get(int32(len(hdr) + len(data))); err != nil {
 		select {
-		case <-t.ctx.Done():
+		case <-t.done:
 			return ErrConnClosing
 		default:
 		}
@@ -922,32 +941,35 @@ func (t *http2Server) Write(s *Stream, hdr []byte, data []byte, opts *Options) e
 // after an additional duration of keepalive.Timeout.
 func (t *http2Server) keepalive() {
 	p := &ping{}
-	var pingSent bool
-	maxIdle := time.NewTimer(t.kp.MaxConnectionIdle)
-	maxAge := time.NewTimer(t.kp.MaxConnectionAge)
-	keepalive := time.NewTimer(t.kp.Time)
-	// NOTE: All exit paths of this function should reset their
-	// respective timers. A failure to do so will cause the
-	// following clean-up to deadlock and eventually leak.
+	// True iff a ping has been sent, and no data has been received since then.
+	outstandingPing := false
+	// Amount of time remaining before which we should receive an ACK for the
+	// last sent ping.
+	kpTimeoutLeft := time.Duration(0)
+	// Records the last value of t.lastRead before we go block on the timer.
+	// This is required to check for read activity since then.
+	prevNano := time.Now().UnixNano()
+	// Initialize the different timers to their default values.
+	idleTimer := time.NewTimer(t.kp.MaxConnectionIdle)
+	ageTimer := time.NewTimer(t.kp.MaxConnectionAge)
+	kpTimer := time.NewTimer(t.kp.Time)
 	defer func() {
-		if !maxIdle.Stop() {
-			<-maxIdle.C
-		}
-		if !maxAge.Stop() {
-			<-maxAge.C
-		}
-		if !keepalive.Stop() {
-			<-keepalive.C
-		}
+		// We need to drain the underlying channel in these timers after a call
+		// to Stop(), only if we are interested in resetting them. Clearly we
+		// are not interested in resetting them here.
+		idleTimer.Stop()
+		ageTimer.Stop()
+		kpTimer.Stop()
 	}()
+
 	for {
 		select {
-		case <-maxIdle.C:
+		case <-idleTimer.C:
 			t.mu.Lock()
 			idle := t.idle
 			if idle.IsZero() { // The connection is non-idle.
 				t.mu.Unlock()
-				maxIdle.Reset(t.kp.MaxConnectionIdle)
+				idleTimer.Reset(t.kp.MaxConnectionIdle)
 				continue
 			}
 			val := t.kp.MaxConnectionIdle - time.Since(idle)
@@ -956,42 +978,52 @@ func (t *http2Server) keepalive() {
 				// The connection has been idle for a duration of keepalive.MaxConnectionIdle or more.
 				// Gracefully close the connection.
 				t.drain(http2.ErrCodeNo, []byte{})
-				// Resetting the timer so that the clean-up doesn't deadlock.
-				maxIdle.Reset(infinity)
 				return
 			}
-			maxIdle.Reset(val)
-		case <-maxAge.C:
+			idleTimer.Reset(val)
+		case <-ageTimer.C:
 			t.drain(http2.ErrCodeNo, []byte{})
-			maxAge.Reset(t.kp.MaxConnectionAgeGrace)
+			ageTimer.Reset(t.kp.MaxConnectionAgeGrace)
 			select {
-			case <-maxAge.C:
+			case <-ageTimer.C:
 				// Close the connection after grace period.
+				infof("transport: closing server transport due to maximum connection age.")
 				t.Close()
-				// Resetting the timer so that the clean-up doesn't deadlock.
-				maxAge.Reset(infinity)
-			case <-t.ctx.Done():
+			case <-t.done:
 			}
 			return
-		case <-keepalive.C:
-			if atomic.CompareAndSwapUint32(&t.activity, 1, 0) {
-				pingSent = false
-				keepalive.Reset(t.kp.Time)
+		case <-kpTimer.C:
+			lastRead := atomic.LoadInt64(&t.lastRead)
+			if lastRead > prevNano {
+				// There has been read activity since the last time we were
+				// here. Setup the timer to fire at kp.Time seconds from
+				// lastRead time and continue.
+				outstandingPing = false
+				kpTimer.Reset(time.Duration(lastRead) + t.kp.Time - time.Duration(time.Now().UnixNano()))
+				prevNano = lastRead
 				continue
 			}
-			if pingSent {
+			if outstandingPing && kpTimeoutLeft <= 0 {
+				infof("transport: closing server transport due to idleness.")
 				t.Close()
-				// Resetting the timer so that the clean-up doesn't deadlock.
-				keepalive.Reset(infinity)
 				return
 			}
-			pingSent = true
-			if channelz.IsOn() {
-				atomic.AddInt64(&t.czData.kpCount, 1)
+			if !outstandingPing {
+				if channelz.IsOn() {
+					atomic.AddInt64(&t.czData.kpCount, 1)
+				}
+				t.controlBuf.put(p)
+				kpTimeoutLeft = t.kp.Timeout
+				outstandingPing = true
 			}
-			t.controlBuf.put(p)
-			keepalive.Reset(t.kp.Timeout)
-		case <-t.ctx.Done():
+			// The amount of time to sleep here is the minimum of kp.Time and
+			// timeoutLeft. This will ensure that we wait only for kp.Time
+			// before sending out the next ping (for cases where the ping is
+			// acked).
+			sleepDuration := minTime(t.kp.Time, kpTimeoutLeft)
+			kpTimeoutLeft -= sleepDuration
+			kpTimer.Reset(sleepDuration)
+		case <-t.done:
 			return
 		}
 	}
@@ -1011,7 +1043,7 @@ func (t *http2Server) Close() error {
 	t.activeStreams = nil
 	t.mu.Unlock()
 	t.controlBuf.finish()
-	t.cancel()
+	close(t.done)
 	err := t.conn.Close()
 	if channelz.IsOn() {
 		channelz.RemoveEntry(t.channelzID)
@@ -1151,7 +1183,7 @@ func (t *http2Server) outgoingGoAwayHandler(g *goAway) (bool, error) {
 		select {
 		case <-t.drainChan:
 		case <-timer.C:
-		case <-t.ctx.Done():
+		case <-t.done:
 			return
 		}
 		t.controlBuf.put(&goAway{code: g.code, debugData: g.debugData})
@@ -1201,7 +1233,7 @@ func (t *http2Server) getOutFlowWindow() int64 {
 	select {
 	case sz := <-resp:
 		return int64(sz)
-	case <-t.ctxDone:
+	case <-t.done:
 		return -1
 	case <-timer.C:
 		return -2

@@ -3,7 +3,6 @@
  * as graphs.
  *
  */
-
 PromConsole = {};
 
 PromConsole.NumberFormatter = {};
@@ -474,7 +473,7 @@ PromConsole.Graph.prototype._render = function(data) {
 			var newSeries = [];
 			var pos = 0;
 			var start = self.params.endTime - self.params.duration;
-      var step = self.params.duration / this.graphTd.offsetWidth;
+      var step = Math.floor(self.params.duration / this.graphTd.offsetWidth * 1000) / 1000;
 			for (var t = start; t <= self.params.endTime; t += step) {
 				// Allow for floating point inaccuracy.
 				if (series[seriesLen].data.length > pos && series[seriesLen].data[pos].x < t + step / 100) {
@@ -562,7 +561,7 @@ PromConsole.Graph.prototype.buildQueryUrl = function(expr) {
   var p = this.params;
   return PATH_PREFIX + "/api/v1/query_range?query=" +
     encodeURIComponent(expr) +
-    "&step=" + p.duration / this.graphTd.offsetWidth +
+    "&step=" + Math.floor(p.duration / this.graphTd.offsetWidth * 1000) / 1000 +
     "&start=" + (p.endTime - p.duration) + "&end=" + p.endTime;
 };
 

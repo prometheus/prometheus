@@ -10,7 +10,7 @@ go_library(
     deps = [
         "//codegenerator:go_default_library",
         "//protoc-gen-grpc-gateway/descriptor:go_default_library",
-        "//protoc-gen-grpc-gateway/gengateway:go_default_library",
+        "//protoc-gen-grpc-gateway/internal/gengateway:go_default_library",
         "@com_github_golang_glog//:go_default_library",
         "@com_github_golang_protobuf//proto:go_default_library",
         "@io_bazel_rules_go//proto/wkt:compiler_plugin_go_proto",

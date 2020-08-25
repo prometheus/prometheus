@@ -35,7 +35,8 @@ func NewImagesClient(subscriptionID string) ImagesClient {
 	return NewImagesClientWithBaseURI(DefaultBaseURI, subscriptionID)
 }
 
-// NewImagesClientWithBaseURI creates an instance of the ImagesClient client.
+// NewImagesClientWithBaseURI creates an instance of the ImagesClient client using a custom endpoint.  Use this when
+// interacting with an Azure cloud that uses a non-standard base URI (sovereign clouds, Azure stack).
 func NewImagesClientWithBaseURI(baseURI string, subscriptionID string) ImagesClient {
 	return ImagesClient{NewWithBaseURI(baseURI, subscriptionID)}
 }
@@ -98,8 +99,7 @@ func (client ImagesClient) CreateOrUpdatePreparer(ctx context.Context, resourceG
 // http.Response Body if it receives an error.
 func (client ImagesClient) CreateOrUpdateSender(req *http.Request) (future ImagesCreateOrUpdateFuture, err error) {
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
@@ -112,7 +112,6 @@ func (client ImagesClient) CreateOrUpdateSender(req *http.Request) (future Image
 func (client ImagesClient) CreateOrUpdateResponder(resp *http.Response) (result Image, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -175,8 +174,7 @@ func (client ImagesClient) DeletePreparer(ctx context.Context, resourceGroupName
 // http.Response Body if it receives an error.
 func (client ImagesClient) DeleteSender(req *http.Request) (future ImagesDeleteFuture, err error) {
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
@@ -189,7 +187,6 @@ func (client ImagesClient) DeleteSender(req *http.Request) (future ImagesDeleteF
 func (client ImagesClient) DeleteResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted, http.StatusNoContent),
 		autorest.ByClosing())
 	result.Response = resp
@@ -260,8 +257,7 @@ func (client ImagesClient) GetPreparer(ctx context.Context, resourceGroupName st
 // GetSender sends the Get request. The method will close the
 // http.Response Body if it receives an error.
 func (client ImagesClient) GetSender(req *http.Request) (*http.Response, error) {
-	return autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // GetResponder handles the response to the Get request. The method always
@@ -269,7 +265,6 @@ func (client ImagesClient) GetSender(req *http.Request) (*http.Response, error) 
 func (client ImagesClient) GetResponder(resp *http.Response) (result Image, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -308,6 +303,9 @@ func (client ImagesClient) List(ctx context.Context) (result ImageListResultPage
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.ImagesClient", "List", resp, "Failure responding to request")
 	}
+	if result.ilr.hasNextLink() && result.ilr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }
@@ -334,8 +332,7 @@ func (client ImagesClient) ListPreparer(ctx context.Context) (*http.Request, err
 // ListSender sends the List request. The method will close the
 // http.Response Body if it receives an error.
 func (client ImagesClient) ListSender(req *http.Request) (*http.Response, error) {
-	return autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListResponder handles the response to the List request. The method always
@@ -343,7 +340,6 @@ func (client ImagesClient) ListSender(req *http.Request) (*http.Response, error)
 func (client ImagesClient) ListResponder(resp *http.Response) (result ImageListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -420,6 +416,9 @@ func (client ImagesClient) ListByResourceGroup(ctx context.Context, resourceGrou
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.ImagesClient", "ListByResourceGroup", resp, "Failure responding to request")
 	}
+	if result.ilr.hasNextLink() && result.ilr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }
@@ -447,8 +446,7 @@ func (client ImagesClient) ListByResourceGroupPreparer(ctx context.Context, reso
 // ListByResourceGroupSender sends the ListByResourceGroup request. The method will close the
 // http.Response Body if it receives an error.
 func (client ImagesClient) ListByResourceGroupSender(req *http.Request) (*http.Response, error) {
-	return autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListByResourceGroupResponder handles the response to the ListByResourceGroup request. The method always
@@ -456,7 +454,6 @@ func (client ImagesClient) ListByResourceGroupSender(req *http.Request) (*http.R
 func (client ImagesClient) ListByResourceGroupResponder(resp *http.Response) (result ImageListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -559,8 +556,7 @@ func (client ImagesClient) UpdatePreparer(ctx context.Context, resourceGroupName
 // http.Response Body if it receives an error.
 func (client ImagesClient) UpdateSender(req *http.Request) (future ImagesUpdateFuture, err error) {
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
@@ -573,7 +569,6 @@ func (client ImagesClient) UpdateSender(req *http.Request) (future ImagesUpdateF
 func (client ImagesClient) UpdateResponder(resp *http.Response) (result Image, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

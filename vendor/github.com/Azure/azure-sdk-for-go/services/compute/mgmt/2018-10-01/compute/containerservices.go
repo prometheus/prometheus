@@ -36,7 +36,9 @@ func NewContainerServicesClient(subscriptionID string) ContainerServicesClient {
 	return NewContainerServicesClientWithBaseURI(DefaultBaseURI, subscriptionID)
 }
 
-// NewContainerServicesClientWithBaseURI creates an instance of the ContainerServicesClient client.
+// NewContainerServicesClientWithBaseURI creates an instance of the ContainerServicesClient client using a custom
+// endpoint.  Use this when interacting with an Azure cloud that uses a non-standard base URI (sovereign clouds, Azure
+// stack).
 func NewContainerServicesClientWithBaseURI(baseURI string, subscriptionID string) ContainerServicesClient {
 	return ContainerServicesClient{NewWithBaseURI(baseURI, subscriptionID)}
 }
@@ -131,8 +133,7 @@ func (client ContainerServicesClient) CreateOrUpdatePreparer(ctx context.Context
 // http.Response Body if it receives an error.
 func (client ContainerServicesClient) CreateOrUpdateSender(req *http.Request) (future ContainerServicesCreateOrUpdateFuture, err error) {
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
@@ -145,7 +146,6 @@ func (client ContainerServicesClient) CreateOrUpdateSender(req *http.Request) (f
 func (client ContainerServicesClient) CreateOrUpdateResponder(resp *http.Response) (result ContainerService, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated, http.StatusAccepted),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -211,8 +211,7 @@ func (client ContainerServicesClient) DeletePreparer(ctx context.Context, resour
 // http.Response Body if it receives an error.
 func (client ContainerServicesClient) DeleteSender(req *http.Request) (future ContainerServicesDeleteFuture, err error) {
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
@@ -225,7 +224,6 @@ func (client ContainerServicesClient) DeleteSender(req *http.Request) (future Co
 func (client ContainerServicesClient) DeleteResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted, http.StatusNoContent),
 		autorest.ByClosing())
 	result.Response = resp
@@ -294,8 +292,7 @@ func (client ContainerServicesClient) GetPreparer(ctx context.Context, resourceG
 // GetSender sends the Get request. The method will close the
 // http.Response Body if it receives an error.
 func (client ContainerServicesClient) GetSender(req *http.Request) (*http.Response, error) {
-	return autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // GetResponder handles the response to the Get request. The method always
@@ -303,7 +300,6 @@ func (client ContainerServicesClient) GetSender(req *http.Request) (*http.Respon
 func (client ContainerServicesClient) GetResponder(resp *http.Response) (result ContainerService, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -342,6 +338,9 @@ func (client ContainerServicesClient) List(ctx context.Context) (result Containe
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.ContainerServicesClient", "List", resp, "Failure responding to request")
 	}
+	if result.cslr.hasNextLink() && result.cslr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }
@@ -368,8 +367,7 @@ func (client ContainerServicesClient) ListPreparer(ctx context.Context) (*http.R
 // ListSender sends the List request. The method will close the
 // http.Response Body if it receives an error.
 func (client ContainerServicesClient) ListSender(req *http.Request) (*http.Response, error) {
-	return autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListResponder handles the response to the List request. The method always
@@ -377,7 +375,6 @@ func (client ContainerServicesClient) ListSender(req *http.Request) (*http.Respo
 func (client ContainerServicesClient) ListResponder(resp *http.Response) (result ContainerServiceListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -456,6 +453,9 @@ func (client ContainerServicesClient) ListByResourceGroup(ctx context.Context, r
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.ContainerServicesClient", "ListByResourceGroup", resp, "Failure responding to request")
 	}
+	if result.cslr.hasNextLink() && result.cslr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }
@@ -483,8 +483,7 @@ func (client ContainerServicesClient) ListByResourceGroupPreparer(ctx context.Co
 // ListByResourceGroupSender sends the ListByResourceGroup request. The method will close the
 // http.Response Body if it receives an error.
 func (client ContainerServicesClient) ListByResourceGroupSender(req *http.Request) (*http.Response, error) {
-	return autorest.SendWithSender(client, req,
-		azure.DoRetryWithRegistration(client.Client))
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListByResourceGroupResponder handles the response to the ListByResourceGroup request. The method always
@@ -492,7 +491,6 @@ func (client ContainerServicesClient) ListByResourceGroupSender(req *http.Reques
 func (client ContainerServicesClient) ListByResourceGroupResponder(resp *http.Response) (result ContainerServiceListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

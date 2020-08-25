@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package api_v2
+package apiv2
 
 import (
 	"context"
@@ -26,7 +26,6 @@ import (
 
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/pkg/errors"
-
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -40,16 +39,19 @@ import (
 // API encapsulates all API services.
 type API struct {
 	enableAdmin bool
-	db          func() *tsdb.DB
+	db          TSDBAdmin
+	dbDir       string
 }
 
 // New returns a new API object.
 func New(
-	db func() *tsdb.DB,
+	db TSDBAdmin,
+	dbDir string,
 	enableAdmin bool,
 ) *API {
 	return &API{
 		db:          db,
+		dbDir:       dbDir,
 		enableAdmin: enableAdmin,
 	}
 }
@@ -57,7 +59,7 @@ func New(
 // RegisterGRPC registers all API services with the given server.
 func (api *API) RegisterGRPC(srv *grpc.Server) {
 	if api.enableAdmin {
-		pb.RegisterAdminServer(srv, NewAdmin(api.db))
+		pb.RegisterAdminServer(srv, NewAdmin(api.db, api.dbDir))
 	} else {
 		pb.RegisterAdminServer(srv, &AdminDisabled{})
 	}
@@ -104,8 +106,8 @@ func extractTimeRange(min, max *time.Time) (mint, maxt time.Time, err error) {
 }
 
 var (
-	minTime = time.Unix(math.MinInt64/1000+62135596801, 0)
-	maxTime = time.Unix(math.MaxInt64/1000-62135596801, 999999999)
+	minTime = time.Unix(math.MinInt64/1000+62135596801, 0).UTC()
+	maxTime = time.Unix(math.MaxInt64/1000-62135596801, 999999999).UTC()
 )
 
 var (
@@ -133,13 +135,21 @@ func (s *AdminDisabled) DeleteSeries(_ context.Context, r *pb.SeriesDeleteReques
 	return nil, errAdminDisabled
 }
 
+// TSDBAdmin defines the tsdb interfaces used by the v1 API for admin operations as well as statistics.
+type TSDBAdmin interface {
+	CleanTombstones() error
+	Delete(mint, maxt int64, ms ...*labels.Matcher) error
+	Snapshot(dir string, withHead bool) error
+}
+
 // Admin provides an administration interface to Prometheus.
 type Admin struct {
-	db func() *tsdb.DB
+	db    TSDBAdmin
+	dbDir string
 }
 
 // NewAdmin returns a Admin server.
-func NewAdmin(db func() *tsdb.DB) *Admin {
+func NewAdmin(db TSDBAdmin, dbDir string) *Admin {
 	return &Admin{
 		db: db,
 	}
@@ -147,12 +157,8 @@ func NewAdmin(db func() *tsdb.DB) *Admin {
 
 // TSDBSnapshot implements pb.AdminServer.
 func (s *Admin) TSDBSnapshot(_ context.Context, req *pb.TSDBSnapshotRequest) (*pb.TSDBSnapshotResponse, error) {
-	db := s.db()
-	if db == nil {
-		return nil, errTSDBNotReady
-	}
 	var (
-		snapdir = filepath.Join(db.Dir(), "snapshots")
+		snapdir = filepath.Join(s.dbDir, "snapshots")
 		name    = fmt.Sprintf("%s-%x",
 			time.Now().UTC().Format("20060102T150405Z0700"),
 			rand.Int())
@@ -161,7 +167,11 @@ func (s *Admin) TSDBSnapshot(_ context.Context, req *pb.TSDBSnapshotRequest) (*p
 	if err := os.MkdirAll(dir, 0777); err != nil {
 		return nil, status.Errorf(codes.Internal, "created snapshot directory: %s", err)
 	}
-	if err := db.Snapshot(dir, !req.SkipHead); err != nil {
+	if err := s.db.Snapshot(dir, !req.SkipHead); err != nil {
+		if errors.Cause(err) == tsdb.ErrNotReady {
+			return nil, errTSDBNotReady
+		}
+
 		return nil, status.Errorf(codes.Internal, "create snapshot: %s", err)
 	}
 	return &pb.TSDBSnapshotResponse{Name: name}, nil
@@ -169,12 +179,10 @@ func (s *Admin) TSDBSnapshot(_ context.Context, req *pb.TSDBSnapshotRequest) (*p
 
 // TSDBCleanTombstones implements pb.AdminServer.
 func (s *Admin) TSDBCleanTombstones(_ context.Context, _ *pb.TSDBCleanTombstonesRequest) (*pb.TSDBCleanTombstonesResponse, error) {
-	db := s.db()
-	if db == nil {
-		return nil, errTSDBNotReady
-	}
-
-	if err := db.CleanTombstones(); err != nil {
+	if err := s.db.CleanTombstones(); err != nil {
+		if errors.Cause(err) == tsdb.ErrNotReady {
+			return nil, errTSDBNotReady
+		}
 		return nil, status.Errorf(codes.Internal, "clean tombstones: %s", err)
 	}
 
@@ -212,11 +220,10 @@ func (s *Admin) DeleteSeries(_ context.Context, r *pb.SeriesDeleteRequest) (*pb.
 
 		matchers = append(matchers, lm)
 	}
-	db := s.db()
-	if db == nil {
-		return nil, errTSDBNotReady
-	}
-	if err := db.Delete(timestamp.FromTime(mint), timestamp.FromTime(maxt), matchers...); err != nil {
+	if err := s.db.Delete(timestamp.FromTime(mint), timestamp.FromTime(maxt), matchers...); err != nil {
+		if errors.Cause(err) == tsdb.ErrNotReady {
+			return nil, errTSDBNotReady
+		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	return &pb.SeriesDeleteResponse{}, nil

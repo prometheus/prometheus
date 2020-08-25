@@ -75,9 +75,9 @@ func TestRecord_EncodeDecode(t *testing.T) {
 	}, decTstones)
 }
 
-// TestRecord_Corruputed ensures that corrupted records return the correct error.
+// TestRecord_Corrupted ensures that corrupted records return the correct error.
 // Bugfix check for pull/521 and pull/523.
-func TestRecord_Corruputed(t *testing.T) {
+func TestRecord_Corrupted(t *testing.T) {
 	var enc Encoder
 	var dec Decoder
 
@@ -116,4 +116,27 @@ func TestRecord_Corruputed(t *testing.T) {
 		_, err := dec.Tombstones(corrupted, nil)
 		testutil.Equals(t, err, encoding.ErrInvalidSize)
 	})
+}
+
+func TestRecord_Type(t *testing.T) {
+	var enc Encoder
+	var dec Decoder
+
+	series := []RefSeries{{Ref: 100, Labels: labels.FromStrings("abc", "123")}}
+	recordType := dec.Type(enc.Series(series, nil))
+	testutil.Equals(t, Series, recordType)
+
+	samples := []RefSample{{Ref: 123, T: 12345, V: 1.2345}}
+	recordType = dec.Type(enc.Samples(samples, nil))
+	testutil.Equals(t, Samples, recordType)
+
+	tstones := []tombstones.Stone{{Ref: 1, Intervals: tombstones.Intervals{{Mint: 1, Maxt: 2}}}}
+	recordType = dec.Type(enc.Tombstones(tstones, nil))
+	testutil.Equals(t, Tombstones, recordType)
+
+	recordType = dec.Type(nil)
+	testutil.Equals(t, Invalid, recordType)
+
+	recordType = dec.Type([]byte{0})
+	testutil.Equals(t, Invalid, recordType)
 }

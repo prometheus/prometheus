@@ -170,7 +170,7 @@ func (p *MemPostings) EnsureOrder() {
 	for i := 0; i < n; i++ {
 		go func() {
 			for l := range workc {
-				sort.Slice(l, func(i, j int) bool { return l[i] < l[j] })
+				sort.Slice(l, func(a, b int) bool { return l[a] < l[b] })
 			}
 			wg.Done()
 		}()
@@ -453,10 +453,10 @@ func (h *postingsHeap) Pop() interface{} {
 }
 
 type mergedPostings struct {
-	h          postingsHeap
-	initilized bool
-	cur        uint64
-	err        error
+	h           postingsHeap
+	initialized bool
+	cur         uint64
+	err         error
 }
 
 func newMergedPostings(p []Postings) (m *mergedPostings, nonEmpty bool) {
@@ -485,10 +485,10 @@ func (it *mergedPostings) Next() bool {
 	}
 
 	// The user must issue an initial Next.
-	if !it.initilized {
+	if !it.initialized {
 		heap.Init(&it.h)
 		it.cur = it.h[0].At()
-		it.initilized = true
+		it.initialized = true
 		return true
 	}
 
@@ -519,7 +519,7 @@ func (it *mergedPostings) Seek(id uint64) bool {
 	if it.h.Len() == 0 || it.err != nil {
 		return false
 	}
-	if !it.initilized {
+	if !it.initialized {
 		if !it.Next() {
 			return false
 		}

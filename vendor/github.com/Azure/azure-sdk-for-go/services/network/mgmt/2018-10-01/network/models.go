@@ -31,1714 +31,8 @@ import (
 // The package's fully qualified name.
 const fqdn = "github.com/Azure/azure-sdk-for-go/services/network/mgmt/2018-10-01/network"
 
-// Access enumerates the values for access.
-type Access string
-
-const (
-	// Allow ...
-	Allow Access = "Allow"
-	// Deny ...
-	Deny Access = "Deny"
-)
-
-// PossibleAccessValues returns an array of possible values for the Access const type.
-func PossibleAccessValues() []Access {
-	return []Access{Allow, Deny}
-}
-
-// ApplicationGatewayBackendHealthServerHealth enumerates the values for application gateway backend health
-// server health.
-type ApplicationGatewayBackendHealthServerHealth string
-
-const (
-	// Down ...
-	Down ApplicationGatewayBackendHealthServerHealth = "Down"
-	// Draining ...
-	Draining ApplicationGatewayBackendHealthServerHealth = "Draining"
-	// Partial ...
-	Partial ApplicationGatewayBackendHealthServerHealth = "Partial"
-	// Unknown ...
-	Unknown ApplicationGatewayBackendHealthServerHealth = "Unknown"
-	// Up ...
-	Up ApplicationGatewayBackendHealthServerHealth = "Up"
-)
-
-// PossibleApplicationGatewayBackendHealthServerHealthValues returns an array of possible values for the ApplicationGatewayBackendHealthServerHealth const type.
-func PossibleApplicationGatewayBackendHealthServerHealthValues() []ApplicationGatewayBackendHealthServerHealth {
-	return []ApplicationGatewayBackendHealthServerHealth{Down, Draining, Partial, Unknown, Up}
-}
-
-// ApplicationGatewayCookieBasedAffinity enumerates the values for application gateway cookie based affinity.
-type ApplicationGatewayCookieBasedAffinity string
-
-const (
-	// Disabled ...
-	Disabled ApplicationGatewayCookieBasedAffinity = "Disabled"
-	// Enabled ...
-	Enabled ApplicationGatewayCookieBasedAffinity = "Enabled"
-)
-
-// PossibleApplicationGatewayCookieBasedAffinityValues returns an array of possible values for the ApplicationGatewayCookieBasedAffinity const type.
-func PossibleApplicationGatewayCookieBasedAffinityValues() []ApplicationGatewayCookieBasedAffinity {
-	return []ApplicationGatewayCookieBasedAffinity{Disabled, Enabled}
-}
-
-// ApplicationGatewayCustomErrorStatusCode enumerates the values for application gateway custom error status
-// code.
-type ApplicationGatewayCustomErrorStatusCode string
-
-const (
-	// HTTPStatus403 ...
-	HTTPStatus403 ApplicationGatewayCustomErrorStatusCode = "HttpStatus403"
-	// HTTPStatus502 ...
-	HTTPStatus502 ApplicationGatewayCustomErrorStatusCode = "HttpStatus502"
-)
-
-// PossibleApplicationGatewayCustomErrorStatusCodeValues returns an array of possible values for the ApplicationGatewayCustomErrorStatusCode const type.
-func PossibleApplicationGatewayCustomErrorStatusCodeValues() []ApplicationGatewayCustomErrorStatusCode {
-	return []ApplicationGatewayCustomErrorStatusCode{HTTPStatus403, HTTPStatus502}
-}
-
-// ApplicationGatewayFirewallMode enumerates the values for application gateway firewall mode.
-type ApplicationGatewayFirewallMode string
-
-const (
-	// Detection ...
-	Detection ApplicationGatewayFirewallMode = "Detection"
-	// Prevention ...
-	Prevention ApplicationGatewayFirewallMode = "Prevention"
-)
-
-// PossibleApplicationGatewayFirewallModeValues returns an array of possible values for the ApplicationGatewayFirewallMode const type.
-func PossibleApplicationGatewayFirewallModeValues() []ApplicationGatewayFirewallMode {
-	return []ApplicationGatewayFirewallMode{Detection, Prevention}
-}
-
-// ApplicationGatewayOperationalState enumerates the values for application gateway operational state.
-type ApplicationGatewayOperationalState string
-
-const (
-	// Running ...
-	Running ApplicationGatewayOperationalState = "Running"
-	// Starting ...
-	Starting ApplicationGatewayOperationalState = "Starting"
-	// Stopped ...
-	Stopped ApplicationGatewayOperationalState = "Stopped"
-	// Stopping ...
-	Stopping ApplicationGatewayOperationalState = "Stopping"
-)
-
-// PossibleApplicationGatewayOperationalStateValues returns an array of possible values for the ApplicationGatewayOperationalState const type.
-func PossibleApplicationGatewayOperationalStateValues() []ApplicationGatewayOperationalState {
-	return []ApplicationGatewayOperationalState{Running, Starting, Stopped, Stopping}
-}
-
-// ApplicationGatewayProtocol enumerates the values for application gateway protocol.
-type ApplicationGatewayProtocol string
-
-const (
-	// HTTP ...
-	HTTP ApplicationGatewayProtocol = "Http"
-	// HTTPS ...
-	HTTPS ApplicationGatewayProtocol = "Https"
-)
-
-// PossibleApplicationGatewayProtocolValues returns an array of possible values for the ApplicationGatewayProtocol const type.
-func PossibleApplicationGatewayProtocolValues() []ApplicationGatewayProtocol {
-	return []ApplicationGatewayProtocol{HTTP, HTTPS}
-}
-
-// ApplicationGatewayRedirectType enumerates the values for application gateway redirect type.
-type ApplicationGatewayRedirectType string
-
-const (
-	// Found ...
-	Found ApplicationGatewayRedirectType = "Found"
-	// Permanent ...
-	Permanent ApplicationGatewayRedirectType = "Permanent"
-	// SeeOther ...
-	SeeOther ApplicationGatewayRedirectType = "SeeOther"
-	// Temporary ...
-	Temporary ApplicationGatewayRedirectType = "Temporary"
-)
-
-// PossibleApplicationGatewayRedirectTypeValues returns an array of possible values for the ApplicationGatewayRedirectType const type.
-func PossibleApplicationGatewayRedirectTypeValues() []ApplicationGatewayRedirectType {
-	return []ApplicationGatewayRedirectType{Found, Permanent, SeeOther, Temporary}
-}
-
-// ApplicationGatewayRequestRoutingRuleType enumerates the values for application gateway request routing rule
-// type.
-type ApplicationGatewayRequestRoutingRuleType string
-
-const (
-	// Basic ...
-	Basic ApplicationGatewayRequestRoutingRuleType = "Basic"
-	// PathBasedRouting ...
-	PathBasedRouting ApplicationGatewayRequestRoutingRuleType = "PathBasedRouting"
-)
-
-// PossibleApplicationGatewayRequestRoutingRuleTypeValues returns an array of possible values for the ApplicationGatewayRequestRoutingRuleType const type.
-func PossibleApplicationGatewayRequestRoutingRuleTypeValues() []ApplicationGatewayRequestRoutingRuleType {
-	return []ApplicationGatewayRequestRoutingRuleType{Basic, PathBasedRouting}
-}
-
-// ApplicationGatewaySkuName enumerates the values for application gateway sku name.
-type ApplicationGatewaySkuName string
-
-const (
-	// StandardLarge ...
-	StandardLarge ApplicationGatewaySkuName = "Standard_Large"
-	// StandardMedium ...
-	StandardMedium ApplicationGatewaySkuName = "Standard_Medium"
-	// StandardSmall ...
-	StandardSmall ApplicationGatewaySkuName = "Standard_Small"
-	// StandardV2 ...
-	StandardV2 ApplicationGatewaySkuName = "Standard_v2"
-	// WAFLarge ...
-	WAFLarge ApplicationGatewaySkuName = "WAF_Large"
-	// WAFMedium ...
-	WAFMedium ApplicationGatewaySkuName = "WAF_Medium"
-	// WAFV2 ...
-	WAFV2 ApplicationGatewaySkuName = "WAF_v2"
-)
-
-// PossibleApplicationGatewaySkuNameValues returns an array of possible values for the ApplicationGatewaySkuName const type.
-func PossibleApplicationGatewaySkuNameValues() []ApplicationGatewaySkuName {
-	return []ApplicationGatewaySkuName{StandardLarge, StandardMedium, StandardSmall, StandardV2, WAFLarge, WAFMedium, WAFV2}
-}
-
-// ApplicationGatewaySslCipherSuite enumerates the values for application gateway ssl cipher suite.
-type ApplicationGatewaySslCipherSuite string
-
-const (
-	// TLSDHEDSSWITHAES128CBCSHA ...
-	TLSDHEDSSWITHAES128CBCSHA ApplicationGatewaySslCipherSuite = "TLS_DHE_DSS_WITH_AES_128_CBC_SHA"
-	// TLSDHEDSSWITHAES128CBCSHA256 ...
-	TLSDHEDSSWITHAES128CBCSHA256 ApplicationGatewaySslCipherSuite = "TLS_DHE_DSS_WITH_AES_128_CBC_SHA256"
-	// TLSDHEDSSWITHAES256CBCSHA ...
-	TLSDHEDSSWITHAES256CBCSHA ApplicationGatewaySslCipherSuite = "TLS_DHE_DSS_WITH_AES_256_CBC_SHA"
-	// TLSDHEDSSWITHAES256CBCSHA256 ...
-	TLSDHEDSSWITHAES256CBCSHA256 ApplicationGatewaySslCipherSuite = "TLS_DHE_DSS_WITH_AES_256_CBC_SHA256"
-	// TLSDHERSAWITHAES128CBCSHA ...
-	TLSDHERSAWITHAES128CBCSHA ApplicationGatewaySslCipherSuite = "TLS_DHE_RSA_WITH_AES_128_CBC_SHA"
-	// TLSDHERSAWITHAES128GCMSHA256 ...
-	TLSDHERSAWITHAES128GCMSHA256 ApplicationGatewaySslCipherSuite = "TLS_DHE_RSA_WITH_AES_128_GCM_SHA256"
-	// TLSDHERSAWITHAES256CBCSHA ...
-	TLSDHERSAWITHAES256CBCSHA ApplicationGatewaySslCipherSuite = "TLS_DHE_RSA_WITH_AES_256_CBC_SHA"
-	// TLSDHERSAWITHAES256GCMSHA384 ...
-	TLSDHERSAWITHAES256GCMSHA384 ApplicationGatewaySslCipherSuite = "TLS_DHE_RSA_WITH_AES_256_GCM_SHA384"
-	// TLSECDHEECDSAWITHAES128CBCSHA ...
-	TLSECDHEECDSAWITHAES128CBCSHA ApplicationGatewaySslCipherSuite = "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA"
-	// TLSECDHEECDSAWITHAES128CBCSHA256 ...
-	TLSECDHEECDSAWITHAES128CBCSHA256 ApplicationGatewaySslCipherSuite = "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256"
-	// TLSECDHEECDSAWITHAES128GCMSHA256 ...
-	TLSECDHEECDSAWITHAES128GCMSHA256 ApplicationGatewaySslCipherSuite = "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"
-	// TLSECDHEECDSAWITHAES256CBCSHA ...
-	TLSECDHEECDSAWITHAES256CBCSHA ApplicationGatewaySslCipherSuite = "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA"
-	// TLSECDHEECDSAWITHAES256CBCSHA384 ...
-	TLSECDHEECDSAWITHAES256CBCSHA384 ApplicationGatewaySslCipherSuite = "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384"
-	// TLSECDHEECDSAWITHAES256GCMSHA384 ...
-	TLSECDHEECDSAWITHAES256GCMSHA384 ApplicationGatewaySslCipherSuite = "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"
-	// TLSECDHERSAWITHAES128CBCSHA ...
-	TLSECDHERSAWITHAES128CBCSHA ApplicationGatewaySslCipherSuite = "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA"
-	// TLSECDHERSAWITHAES128CBCSHA256 ...
-	TLSECDHERSAWITHAES128CBCSHA256 ApplicationGatewaySslCipherSuite = "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256"
-	// TLSECDHERSAWITHAES256CBCSHA ...
-	TLSECDHERSAWITHAES256CBCSHA ApplicationGatewaySslCipherSuite = "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA"
-	// TLSECDHERSAWITHAES256CBCSHA384 ...
-	TLSECDHERSAWITHAES256CBCSHA384 ApplicationGatewaySslCipherSuite = "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384"
-	// TLSRSAWITH3DESEDECBCSHA ...
-	TLSRSAWITH3DESEDECBCSHA ApplicationGatewaySslCipherSuite = "TLS_RSA_WITH_3DES_EDE_CBC_SHA"
-	// TLSRSAWITHAES128CBCSHA ...
-	TLSRSAWITHAES128CBCSHA ApplicationGatewaySslCipherSuite = "TLS_RSA_WITH_AES_128_CBC_SHA"
-	// TLSRSAWITHAES128CBCSHA256 ...
-	TLSRSAWITHAES128CBCSHA256 ApplicationGatewaySslCipherSuite = "TLS_RSA_WITH_AES_128_CBC_SHA256"
-	// TLSRSAWITHAES128GCMSHA256 ...
-	TLSRSAWITHAES128GCMSHA256 ApplicationGatewaySslCipherSuite = "TLS_RSA_WITH_AES_128_GCM_SHA256"
-	// TLSRSAWITHAES256CBCSHA ...
-	TLSRSAWITHAES256CBCSHA ApplicationGatewaySslCipherSuite = "TLS_RSA_WITH_AES_256_CBC_SHA"
-	// TLSRSAWITHAES256CBCSHA256 ...
-	TLSRSAWITHAES256CBCSHA256 ApplicationGatewaySslCipherSuite = "TLS_RSA_WITH_AES_256_CBC_SHA256"
-	// TLSRSAWITHAES256GCMSHA384 ...
-	TLSRSAWITHAES256GCMSHA384 ApplicationGatewaySslCipherSuite = "TLS_RSA_WITH_AES_256_GCM_SHA384"
-)
-
-// PossibleApplicationGatewaySslCipherSuiteValues returns an array of possible values for the ApplicationGatewaySslCipherSuite const type.
-func PossibleApplicationGatewaySslCipherSuiteValues() []ApplicationGatewaySslCipherSuite {
-	return []ApplicationGatewaySslCipherSuite{TLSDHEDSSWITHAES128CBCSHA, TLSDHEDSSWITHAES128CBCSHA256, TLSDHEDSSWITHAES256CBCSHA, TLSDHEDSSWITHAES256CBCSHA256, TLSDHERSAWITHAES128CBCSHA, TLSDHERSAWITHAES128GCMSHA256, TLSDHERSAWITHAES256CBCSHA, TLSDHERSAWITHAES256GCMSHA384, TLSECDHEECDSAWITHAES128CBCSHA, TLSECDHEECDSAWITHAES128CBCSHA256, TLSECDHEECDSAWITHAES128GCMSHA256, TLSECDHEECDSAWITHAES256CBCSHA, TLSECDHEECDSAWITHAES256CBCSHA384, TLSECDHEECDSAWITHAES256GCMSHA384, TLSECDHERSAWITHAES128CBCSHA, TLSECDHERSAWITHAES128CBCSHA256, TLSECDHERSAWITHAES256CBCSHA, TLSECDHERSAWITHAES256CBCSHA384, TLSRSAWITH3DESEDECBCSHA, TLSRSAWITHAES128CBCSHA, TLSRSAWITHAES128CBCSHA256, TLSRSAWITHAES128GCMSHA256, TLSRSAWITHAES256CBCSHA, TLSRSAWITHAES256CBCSHA256, TLSRSAWITHAES256GCMSHA384}
-}
-
-// ApplicationGatewaySslPolicyName enumerates the values for application gateway ssl policy name.
-type ApplicationGatewaySslPolicyName string
-
-const (
-	// AppGwSslPolicy20150501 ...
-	AppGwSslPolicy20150501 ApplicationGatewaySslPolicyName = "AppGwSslPolicy20150501"
-	// AppGwSslPolicy20170401 ...
-	AppGwSslPolicy20170401 ApplicationGatewaySslPolicyName = "AppGwSslPolicy20170401"
-	// AppGwSslPolicy20170401S ...
-	AppGwSslPolicy20170401S ApplicationGatewaySslPolicyName = "AppGwSslPolicy20170401S"
-)
-
-// PossibleApplicationGatewaySslPolicyNameValues returns an array of possible values for the ApplicationGatewaySslPolicyName const type.
-func PossibleApplicationGatewaySslPolicyNameValues() []ApplicationGatewaySslPolicyName {
-	return []ApplicationGatewaySslPolicyName{AppGwSslPolicy20150501, AppGwSslPolicy20170401, AppGwSslPolicy20170401S}
-}
-
-// ApplicationGatewaySslPolicyType enumerates the values for application gateway ssl policy type.
-type ApplicationGatewaySslPolicyType string
-
-const (
-	// Custom ...
-	Custom ApplicationGatewaySslPolicyType = "Custom"
-	// Predefined ...
-	Predefined ApplicationGatewaySslPolicyType = "Predefined"
-)
-
-// PossibleApplicationGatewaySslPolicyTypeValues returns an array of possible values for the ApplicationGatewaySslPolicyType const type.
-func PossibleApplicationGatewaySslPolicyTypeValues() []ApplicationGatewaySslPolicyType {
-	return []ApplicationGatewaySslPolicyType{Custom, Predefined}
-}
-
-// ApplicationGatewaySslProtocol enumerates the values for application gateway ssl protocol.
-type ApplicationGatewaySslProtocol string
-
-const (
-	// TLSv10 ...
-	TLSv10 ApplicationGatewaySslProtocol = "TLSv1_0"
-	// TLSv11 ...
-	TLSv11 ApplicationGatewaySslProtocol = "TLSv1_1"
-	// TLSv12 ...
-	TLSv12 ApplicationGatewaySslProtocol = "TLSv1_2"
-)
-
-// PossibleApplicationGatewaySslProtocolValues returns an array of possible values for the ApplicationGatewaySslProtocol const type.
-func PossibleApplicationGatewaySslProtocolValues() []ApplicationGatewaySslProtocol {
-	return []ApplicationGatewaySslProtocol{TLSv10, TLSv11, TLSv12}
-}
-
-// ApplicationGatewayTier enumerates the values for application gateway tier.
-type ApplicationGatewayTier string
-
-const (
-	// ApplicationGatewayTierStandard ...
-	ApplicationGatewayTierStandard ApplicationGatewayTier = "Standard"
-	// ApplicationGatewayTierStandardV2 ...
-	ApplicationGatewayTierStandardV2 ApplicationGatewayTier = "Standard_v2"
-	// ApplicationGatewayTierWAF ...
-	ApplicationGatewayTierWAF ApplicationGatewayTier = "WAF"
-	// ApplicationGatewayTierWAFV2 ...
-	ApplicationGatewayTierWAFV2 ApplicationGatewayTier = "WAF_v2"
-)
-
-// PossibleApplicationGatewayTierValues returns an array of possible values for the ApplicationGatewayTier const type.
-func PossibleApplicationGatewayTierValues() []ApplicationGatewayTier {
-	return []ApplicationGatewayTier{ApplicationGatewayTierStandard, ApplicationGatewayTierStandardV2, ApplicationGatewayTierWAF, ApplicationGatewayTierWAFV2}
-}
-
-// AssociationType enumerates the values for association type.
-type AssociationType string
-
-const (
-	// Associated ...
-	Associated AssociationType = "Associated"
-	// Contains ...
-	Contains AssociationType = "Contains"
-)
-
-// PossibleAssociationTypeValues returns an array of possible values for the AssociationType const type.
-func PossibleAssociationTypeValues() []AssociationType {
-	return []AssociationType{Associated, Contains}
-}
-
-// AuthenticationMethod enumerates the values for authentication method.
-type AuthenticationMethod string
-
-const (
-	// EAPMSCHAPv2 ...
-	EAPMSCHAPv2 AuthenticationMethod = "EAPMSCHAPv2"
-	// EAPTLS ...
-	EAPTLS AuthenticationMethod = "EAPTLS"
-)
-
-// PossibleAuthenticationMethodValues returns an array of possible values for the AuthenticationMethod const type.
-func PossibleAuthenticationMethodValues() []AuthenticationMethod {
-	return []AuthenticationMethod{EAPMSCHAPv2, EAPTLS}
-}
-
-// AuthorizationUseStatus enumerates the values for authorization use status.
-type AuthorizationUseStatus string
-
-const (
-	// Available ...
-	Available AuthorizationUseStatus = "Available"
-	// InUse ...
-	InUse AuthorizationUseStatus = "InUse"
-)
-
-// PossibleAuthorizationUseStatusValues returns an array of possible values for the AuthorizationUseStatus const type.
-func PossibleAuthorizationUseStatusValues() []AuthorizationUseStatus {
-	return []AuthorizationUseStatus{Available, InUse}
-}
-
-// AzureFirewallApplicationRuleProtocolType enumerates the values for azure firewall application rule protocol
-// type.
-type AzureFirewallApplicationRuleProtocolType string
-
-const (
-	// AzureFirewallApplicationRuleProtocolTypeHTTP ...
-	AzureFirewallApplicationRuleProtocolTypeHTTP AzureFirewallApplicationRuleProtocolType = "Http"
-	// AzureFirewallApplicationRuleProtocolTypeHTTPS ...
-	AzureFirewallApplicationRuleProtocolTypeHTTPS AzureFirewallApplicationRuleProtocolType = "Https"
-)
-
-// PossibleAzureFirewallApplicationRuleProtocolTypeValues returns an array of possible values for the AzureFirewallApplicationRuleProtocolType const type.
-func PossibleAzureFirewallApplicationRuleProtocolTypeValues() []AzureFirewallApplicationRuleProtocolType {
-	return []AzureFirewallApplicationRuleProtocolType{AzureFirewallApplicationRuleProtocolTypeHTTP, AzureFirewallApplicationRuleProtocolTypeHTTPS}
-}
-
-// AzureFirewallNatRCActionType enumerates the values for azure firewall nat rc action type.
-type AzureFirewallNatRCActionType string
-
-const (
-	// Dnat ...
-	Dnat AzureFirewallNatRCActionType = "Dnat"
-	// Snat ...
-	Snat AzureFirewallNatRCActionType = "Snat"
-)
-
-// PossibleAzureFirewallNatRCActionTypeValues returns an array of possible values for the AzureFirewallNatRCActionType const type.
-func PossibleAzureFirewallNatRCActionTypeValues() []AzureFirewallNatRCActionType {
-	return []AzureFirewallNatRCActionType{Dnat, Snat}
-}
-
-// AzureFirewallNetworkRuleProtocol enumerates the values for azure firewall network rule protocol.
-type AzureFirewallNetworkRuleProtocol string
-
-const (
-	// Any ...
-	Any AzureFirewallNetworkRuleProtocol = "Any"
-	// ICMP ...
-	ICMP AzureFirewallNetworkRuleProtocol = "ICMP"
-	// TCP ...
-	TCP AzureFirewallNetworkRuleProtocol = "TCP"
-	// UDP ...
-	UDP AzureFirewallNetworkRuleProtocol = "UDP"
-)
-
-// PossibleAzureFirewallNetworkRuleProtocolValues returns an array of possible values for the AzureFirewallNetworkRuleProtocol const type.
-func PossibleAzureFirewallNetworkRuleProtocolValues() []AzureFirewallNetworkRuleProtocol {
-	return []AzureFirewallNetworkRuleProtocol{Any, ICMP, TCP, UDP}
-}
-
-// AzureFirewallRCActionType enumerates the values for azure firewall rc action type.
-type AzureFirewallRCActionType string
-
-const (
-	// AzureFirewallRCActionTypeAllow ...
-	AzureFirewallRCActionTypeAllow AzureFirewallRCActionType = "Allow"
-	// AzureFirewallRCActionTypeDeny ...
-	AzureFirewallRCActionTypeDeny AzureFirewallRCActionType = "Deny"
-)
-
-// PossibleAzureFirewallRCActionTypeValues returns an array of possible values for the AzureFirewallRCActionType const type.
-func PossibleAzureFirewallRCActionTypeValues() []AzureFirewallRCActionType {
-	return []AzureFirewallRCActionType{AzureFirewallRCActionTypeAllow, AzureFirewallRCActionTypeDeny}
-}
-
-// BgpPeerState enumerates the values for bgp peer state.
-type BgpPeerState string
-
-const (
-	// BgpPeerStateConnected ...
-	BgpPeerStateConnected BgpPeerState = "Connected"
-	// BgpPeerStateConnecting ...
-	BgpPeerStateConnecting BgpPeerState = "Connecting"
-	// BgpPeerStateIdle ...
-	BgpPeerStateIdle BgpPeerState = "Idle"
-	// BgpPeerStateStopped ...
-	BgpPeerStateStopped BgpPeerState = "Stopped"
-	// BgpPeerStateUnknown ...
-	BgpPeerStateUnknown BgpPeerState = "Unknown"
-)
-
-// PossibleBgpPeerStateValues returns an array of possible values for the BgpPeerState const type.
-func PossibleBgpPeerStateValues() []BgpPeerState {
-	return []BgpPeerState{BgpPeerStateConnected, BgpPeerStateConnecting, BgpPeerStateIdle, BgpPeerStateStopped, BgpPeerStateUnknown}
-}
-
-// CircuitConnectionStatus enumerates the values for circuit connection status.
-type CircuitConnectionStatus string
-
-const (
-	// Connected ...
-	Connected CircuitConnectionStatus = "Connected"
-	// Connecting ...
-	Connecting CircuitConnectionStatus = "Connecting"
-	// Disconnected ...
-	Disconnected CircuitConnectionStatus = "Disconnected"
-)
-
-// PossibleCircuitConnectionStatusValues returns an array of possible values for the CircuitConnectionStatus const type.
-func PossibleCircuitConnectionStatusValues() []CircuitConnectionStatus {
-	return []CircuitConnectionStatus{Connected, Connecting, Disconnected}
-}
-
-// ConnectionMonitorSourceStatus enumerates the values for connection monitor source status.
-type ConnectionMonitorSourceStatus string
-
-const (
-	// Active ...
-	Active ConnectionMonitorSourceStatus = "Active"
-	// Inactive ...
-	Inactive ConnectionMonitorSourceStatus = "Inactive"
-	// Uknown ...
-	Uknown ConnectionMonitorSourceStatus = "Uknown"
-)
-
-// PossibleConnectionMonitorSourceStatusValues returns an array of possible values for the ConnectionMonitorSourceStatus const type.
-func PossibleConnectionMonitorSourceStatusValues() []ConnectionMonitorSourceStatus {
-	return []ConnectionMonitorSourceStatus{Active, Inactive, Uknown}
-}
-
-// ConnectionState enumerates the values for connection state.
-type ConnectionState string
-
-const (
-	// ConnectionStateReachable ...
-	ConnectionStateReachable ConnectionState = "Reachable"
-	// ConnectionStateUnknown ...
-	ConnectionStateUnknown ConnectionState = "Unknown"
-	// ConnectionStateUnreachable ...
-	ConnectionStateUnreachable ConnectionState = "Unreachable"
-)
-
-// PossibleConnectionStateValues returns an array of possible values for the ConnectionState const type.
-func PossibleConnectionStateValues() []ConnectionState {
-	return []ConnectionState{ConnectionStateReachable, ConnectionStateUnknown, ConnectionStateUnreachable}
-}
-
-// ConnectionStatus enumerates the values for connection status.
-type ConnectionStatus string
-
-const (
-	// ConnectionStatusConnected ...
-	ConnectionStatusConnected ConnectionStatus = "Connected"
-	// ConnectionStatusDegraded ...
-	ConnectionStatusDegraded ConnectionStatus = "Degraded"
-	// ConnectionStatusDisconnected ...
-	ConnectionStatusDisconnected ConnectionStatus = "Disconnected"
-	// ConnectionStatusUnknown ...
-	ConnectionStatusUnknown ConnectionStatus = "Unknown"
-)
-
-// PossibleConnectionStatusValues returns an array of possible values for the ConnectionStatus const type.
-func PossibleConnectionStatusValues() []ConnectionStatus {
-	return []ConnectionStatus{ConnectionStatusConnected, ConnectionStatusDegraded, ConnectionStatusDisconnected, ConnectionStatusUnknown}
-}
-
-// DhGroup enumerates the values for dh group.
-type DhGroup string
-
-const (
-	// DHGroup1 ...
-	DHGroup1 DhGroup = "DHGroup1"
-	// DHGroup14 ...
-	DHGroup14 DhGroup = "DHGroup14"
-	// DHGroup2 ...
-	DHGroup2 DhGroup = "DHGroup2"
-	// DHGroup2048 ...
-	DHGroup2048 DhGroup = "DHGroup2048"
-	// DHGroup24 ...
-	DHGroup24 DhGroup = "DHGroup24"
-	// ECP256 ...
-	ECP256 DhGroup = "ECP256"
-	// ECP384 ...
-	ECP384 DhGroup = "ECP384"
-	// None ...
-	None DhGroup = "None"
-)
-
-// PossibleDhGroupValues returns an array of possible values for the DhGroup const type.
-func PossibleDhGroupValues() []DhGroup {
-	return []DhGroup{DHGroup1, DHGroup14, DHGroup2, DHGroup2048, DHGroup24, ECP256, ECP384, None}
-}
-
-// Direction enumerates the values for direction.
-type Direction string
-
-const (
-	// Inbound ...
-	Inbound Direction = "Inbound"
-	// Outbound ...
-	Outbound Direction = "Outbound"
-)
-
-// PossibleDirectionValues returns an array of possible values for the Direction const type.
-func PossibleDirectionValues() []Direction {
-	return []Direction{Inbound, Outbound}
-}
-
-// EffectiveRouteSource enumerates the values for effective route source.
-type EffectiveRouteSource string
-
-const (
-	// EffectiveRouteSourceDefault ...
-	EffectiveRouteSourceDefault EffectiveRouteSource = "Default"
-	// EffectiveRouteSourceUnknown ...
-	EffectiveRouteSourceUnknown EffectiveRouteSource = "Unknown"
-	// EffectiveRouteSourceUser ...
-	EffectiveRouteSourceUser EffectiveRouteSource = "User"
-	// EffectiveRouteSourceVirtualNetworkGateway ...
-	EffectiveRouteSourceVirtualNetworkGateway EffectiveRouteSource = "VirtualNetworkGateway"
-)
-
-// PossibleEffectiveRouteSourceValues returns an array of possible values for the EffectiveRouteSource const type.
-func PossibleEffectiveRouteSourceValues() []EffectiveRouteSource {
-	return []EffectiveRouteSource{EffectiveRouteSourceDefault, EffectiveRouteSourceUnknown, EffectiveRouteSourceUser, EffectiveRouteSourceVirtualNetworkGateway}
-}
-
-// EffectiveRouteState enumerates the values for effective route state.
-type EffectiveRouteState string
-
-const (
-	// EffectiveRouteStateActive ...
-	EffectiveRouteStateActive EffectiveRouteState = "Active"
-	// EffectiveRouteStateInvalid ...
-	EffectiveRouteStateInvalid EffectiveRouteState = "Invalid"
-)
-
-// PossibleEffectiveRouteStateValues returns an array of possible values for the EffectiveRouteState const type.
-func PossibleEffectiveRouteStateValues() []EffectiveRouteState {
-	return []EffectiveRouteState{EffectiveRouteStateActive, EffectiveRouteStateInvalid}
-}
-
-// EffectiveSecurityRuleProtocol enumerates the values for effective security rule protocol.
-type EffectiveSecurityRuleProtocol string
-
-const (
-	// EffectiveSecurityRuleProtocolAll ...
-	EffectiveSecurityRuleProtocolAll EffectiveSecurityRuleProtocol = "All"
-	// EffectiveSecurityRuleProtocolTCP ...
-	EffectiveSecurityRuleProtocolTCP EffectiveSecurityRuleProtocol = "Tcp"
-	// EffectiveSecurityRuleProtocolUDP ...
-	EffectiveSecurityRuleProtocolUDP EffectiveSecurityRuleProtocol = "Udp"
-)
-
-// PossibleEffectiveSecurityRuleProtocolValues returns an array of possible values for the EffectiveSecurityRuleProtocol const type.
-func PossibleEffectiveSecurityRuleProtocolValues() []EffectiveSecurityRuleProtocol {
-	return []EffectiveSecurityRuleProtocol{EffectiveSecurityRuleProtocolAll, EffectiveSecurityRuleProtocolTCP, EffectiveSecurityRuleProtocolUDP}
-}
-
-// EvaluationState enumerates the values for evaluation state.
-type EvaluationState string
-
-const (
-	// Completed ...
-	Completed EvaluationState = "Completed"
-	// InProgress ...
-	InProgress EvaluationState = "InProgress"
-	// NotStarted ...
-	NotStarted EvaluationState = "NotStarted"
-)
-
-// PossibleEvaluationStateValues returns an array of possible values for the EvaluationState const type.
-func PossibleEvaluationStateValues() []EvaluationState {
-	return []EvaluationState{Completed, InProgress, NotStarted}
-}
-
-// ExpressRouteCircuitPeeringAdvertisedPublicPrefixState enumerates the values for express route circuit
-// peering advertised public prefix state.
-type ExpressRouteCircuitPeeringAdvertisedPublicPrefixState string
-
-const (
-	// Configured ...
-	Configured ExpressRouteCircuitPeeringAdvertisedPublicPrefixState = "Configured"
-	// Configuring ...
-	Configuring ExpressRouteCircuitPeeringAdvertisedPublicPrefixState = "Configuring"
-	// NotConfigured ...
-	NotConfigured ExpressRouteCircuitPeeringAdvertisedPublicPrefixState = "NotConfigured"
-	// ValidationNeeded ...
-	ValidationNeeded ExpressRouteCircuitPeeringAdvertisedPublicPrefixState = "ValidationNeeded"
-)
-
-// PossibleExpressRouteCircuitPeeringAdvertisedPublicPrefixStateValues returns an array of possible values for the ExpressRouteCircuitPeeringAdvertisedPublicPrefixState const type.
-func PossibleExpressRouteCircuitPeeringAdvertisedPublicPrefixStateValues() []ExpressRouteCircuitPeeringAdvertisedPublicPrefixState {
-	return []ExpressRouteCircuitPeeringAdvertisedPublicPrefixState{Configured, Configuring, NotConfigured, ValidationNeeded}
-}
-
-// ExpressRouteCircuitPeeringState enumerates the values for express route circuit peering state.
-type ExpressRouteCircuitPeeringState string
-
-const (
-	// ExpressRouteCircuitPeeringStateDisabled ...
-	ExpressRouteCircuitPeeringStateDisabled ExpressRouteCircuitPeeringState = "Disabled"
-	// ExpressRouteCircuitPeeringStateEnabled ...
-	ExpressRouteCircuitPeeringStateEnabled ExpressRouteCircuitPeeringState = "Enabled"
-)
-
-// PossibleExpressRouteCircuitPeeringStateValues returns an array of possible values for the ExpressRouteCircuitPeeringState const type.
-func PossibleExpressRouteCircuitPeeringStateValues() []ExpressRouteCircuitPeeringState {
-	return []ExpressRouteCircuitPeeringState{ExpressRouteCircuitPeeringStateDisabled, ExpressRouteCircuitPeeringStateEnabled}
-}
-
-// ExpressRouteCircuitSkuFamily enumerates the values for express route circuit sku family.
-type ExpressRouteCircuitSkuFamily string
-
-const (
-	// MeteredData ...
-	MeteredData ExpressRouteCircuitSkuFamily = "MeteredData"
-	// UnlimitedData ...
-	UnlimitedData ExpressRouteCircuitSkuFamily = "UnlimitedData"
-)
-
-// PossibleExpressRouteCircuitSkuFamilyValues returns an array of possible values for the ExpressRouteCircuitSkuFamily const type.
-func PossibleExpressRouteCircuitSkuFamilyValues() []ExpressRouteCircuitSkuFamily {
-	return []ExpressRouteCircuitSkuFamily{MeteredData, UnlimitedData}
-}
-
-// ExpressRouteCircuitSkuTier enumerates the values for express route circuit sku tier.
-type ExpressRouteCircuitSkuTier string
-
-const (
-	// ExpressRouteCircuitSkuTierBasic ...
-	ExpressRouteCircuitSkuTierBasic ExpressRouteCircuitSkuTier = "Basic"
-	// ExpressRouteCircuitSkuTierPremium ...
-	ExpressRouteCircuitSkuTierPremium ExpressRouteCircuitSkuTier = "Premium"
-	// ExpressRouteCircuitSkuTierStandard ...
-	ExpressRouteCircuitSkuTierStandard ExpressRouteCircuitSkuTier = "Standard"
-)
-
-// PossibleExpressRouteCircuitSkuTierValues returns an array of possible values for the ExpressRouteCircuitSkuTier const type.
-func PossibleExpressRouteCircuitSkuTierValues() []ExpressRouteCircuitSkuTier {
-	return []ExpressRouteCircuitSkuTier{ExpressRouteCircuitSkuTierBasic, ExpressRouteCircuitSkuTierPremium, ExpressRouteCircuitSkuTierStandard}
-}
-
-// ExpressRouteLinkAdminState enumerates the values for express route link admin state.
-type ExpressRouteLinkAdminState string
-
-const (
-	// ExpressRouteLinkAdminStateDisabled ...
-	ExpressRouteLinkAdminStateDisabled ExpressRouteLinkAdminState = "Disabled"
-	// ExpressRouteLinkAdminStateEnabled ...
-	ExpressRouteLinkAdminStateEnabled ExpressRouteLinkAdminState = "Enabled"
-)
-
-// PossibleExpressRouteLinkAdminStateValues returns an array of possible values for the ExpressRouteLinkAdminState const type.
-func PossibleExpressRouteLinkAdminStateValues() []ExpressRouteLinkAdminState {
-	return []ExpressRouteLinkAdminState{ExpressRouteLinkAdminStateDisabled, ExpressRouteLinkAdminStateEnabled}
-}
-
-// ExpressRouteLinkConnectorType enumerates the values for express route link connector type.
-type ExpressRouteLinkConnectorType string
-
-const (
-	// LC ...
-	LC ExpressRouteLinkConnectorType = "LC"
-	// SC ...
-	SC ExpressRouteLinkConnectorType = "SC"
-)
-
-// PossibleExpressRouteLinkConnectorTypeValues returns an array of possible values for the ExpressRouteLinkConnectorType const type.
-func PossibleExpressRouteLinkConnectorTypeValues() []ExpressRouteLinkConnectorType {
-	return []ExpressRouteLinkConnectorType{LC, SC}
-}
-
-// ExpressRoutePeeringState enumerates the values for express route peering state.
-type ExpressRoutePeeringState string
-
-const (
-	// ExpressRoutePeeringStateDisabled ...
-	ExpressRoutePeeringStateDisabled ExpressRoutePeeringState = "Disabled"
-	// ExpressRoutePeeringStateEnabled ...
-	ExpressRoutePeeringStateEnabled ExpressRoutePeeringState = "Enabled"
-)
-
-// PossibleExpressRoutePeeringStateValues returns an array of possible values for the ExpressRoutePeeringState const type.
-func PossibleExpressRoutePeeringStateValues() []ExpressRoutePeeringState {
-	return []ExpressRoutePeeringState{ExpressRoutePeeringStateDisabled, ExpressRoutePeeringStateEnabled}
-}
-
-// ExpressRoutePeeringType enumerates the values for express route peering type.
-type ExpressRoutePeeringType string
-
-const (
-	// AzurePrivatePeering ...
-	AzurePrivatePeering ExpressRoutePeeringType = "AzurePrivatePeering"
-	// AzurePublicPeering ...
-	AzurePublicPeering ExpressRoutePeeringType = "AzurePublicPeering"
-	// MicrosoftPeering ...
-	MicrosoftPeering ExpressRoutePeeringType = "MicrosoftPeering"
-)
-
-// PossibleExpressRoutePeeringTypeValues returns an array of possible values for the ExpressRoutePeeringType const type.
-func PossibleExpressRoutePeeringTypeValues() []ExpressRoutePeeringType {
-	return []ExpressRoutePeeringType{AzurePrivatePeering, AzurePublicPeering, MicrosoftPeering}
-}
-
-// ExpressRoutePortsEncapsulation enumerates the values for express route ports encapsulation.
-type ExpressRoutePortsEncapsulation string
-
-const (
-	// Dot1Q ...
-	Dot1Q ExpressRoutePortsEncapsulation = "Dot1Q"
-	// QinQ ...
-	QinQ ExpressRoutePortsEncapsulation = "QinQ"
-)
-
-// PossibleExpressRoutePortsEncapsulationValues returns an array of possible values for the ExpressRoutePortsEncapsulation const type.
-func PossibleExpressRoutePortsEncapsulationValues() []ExpressRoutePortsEncapsulation {
-	return []ExpressRoutePortsEncapsulation{Dot1Q, QinQ}
-}
-
-// FlowLogFormatType enumerates the values for flow log format type.
-type FlowLogFormatType string
-
-const (
-	// JSON ...
-	JSON FlowLogFormatType = "JSON"
-)
-
-// PossibleFlowLogFormatTypeValues returns an array of possible values for the FlowLogFormatType const type.
-func PossibleFlowLogFormatTypeValues() []FlowLogFormatType {
-	return []FlowLogFormatType{JSON}
-}
-
-// HTTPMethod enumerates the values for http method.
-type HTTPMethod string
-
-const (
-	// Get ...
-	Get HTTPMethod = "Get"
-)
-
-// PossibleHTTPMethodValues returns an array of possible values for the HTTPMethod const type.
-func PossibleHTTPMethodValues() []HTTPMethod {
-	return []HTTPMethod{Get}
-}
-
-// HubVirtualNetworkConnectionStatus enumerates the values for hub virtual network connection status.
-type HubVirtualNetworkConnectionStatus string
-
-const (
-	// HubVirtualNetworkConnectionStatusConnected ...
-	HubVirtualNetworkConnectionStatusConnected HubVirtualNetworkConnectionStatus = "Connected"
-	// HubVirtualNetworkConnectionStatusConnecting ...
-	HubVirtualNetworkConnectionStatusConnecting HubVirtualNetworkConnectionStatus = "Connecting"
-	// HubVirtualNetworkConnectionStatusNotConnected ...
-	HubVirtualNetworkConnectionStatusNotConnected HubVirtualNetworkConnectionStatus = "NotConnected"
-	// HubVirtualNetworkConnectionStatusUnknown ...
-	HubVirtualNetworkConnectionStatusUnknown HubVirtualNetworkConnectionStatus = "Unknown"
-)
-
-// PossibleHubVirtualNetworkConnectionStatusValues returns an array of possible values for the HubVirtualNetworkConnectionStatus const type.
-func PossibleHubVirtualNetworkConnectionStatusValues() []HubVirtualNetworkConnectionStatus {
-	return []HubVirtualNetworkConnectionStatus{HubVirtualNetworkConnectionStatusConnected, HubVirtualNetworkConnectionStatusConnecting, HubVirtualNetworkConnectionStatusNotConnected, HubVirtualNetworkConnectionStatusUnknown}
-}
-
-// IkeEncryption enumerates the values for ike encryption.
-type IkeEncryption string
-
-const (
-	// AES128 ...
-	AES128 IkeEncryption = "AES128"
-	// AES192 ...
-	AES192 IkeEncryption = "AES192"
-	// AES256 ...
-	AES256 IkeEncryption = "AES256"
-	// DES ...
-	DES IkeEncryption = "DES"
-	// DES3 ...
-	DES3 IkeEncryption = "DES3"
-	// GCMAES128 ...
-	GCMAES128 IkeEncryption = "GCMAES128"
-	// GCMAES256 ...
-	GCMAES256 IkeEncryption = "GCMAES256"
-)
-
-// PossibleIkeEncryptionValues returns an array of possible values for the IkeEncryption const type.
-func PossibleIkeEncryptionValues() []IkeEncryption {
-	return []IkeEncryption{AES128, AES192, AES256, DES, DES3, GCMAES128, GCMAES256}
-}
-
-// IkeIntegrity enumerates the values for ike integrity.
-type IkeIntegrity string
-
-const (
-	// IkeIntegrityGCMAES128 ...
-	IkeIntegrityGCMAES128 IkeIntegrity = "GCMAES128"
-	// IkeIntegrityGCMAES256 ...
-	IkeIntegrityGCMAES256 IkeIntegrity = "GCMAES256"
-	// IkeIntegrityMD5 ...
-	IkeIntegrityMD5 IkeIntegrity = "MD5"
-	// IkeIntegritySHA1 ...
-	IkeIntegritySHA1 IkeIntegrity = "SHA1"
-	// IkeIntegritySHA256 ...
-	IkeIntegritySHA256 IkeIntegrity = "SHA256"
-	// IkeIntegritySHA384 ...
-	IkeIntegritySHA384 IkeIntegrity = "SHA384"
-)
-
-// PossibleIkeIntegrityValues returns an array of possible values for the IkeIntegrity const type.
-func PossibleIkeIntegrityValues() []IkeIntegrity {
-	return []IkeIntegrity{IkeIntegrityGCMAES128, IkeIntegrityGCMAES256, IkeIntegrityMD5, IkeIntegritySHA1, IkeIntegritySHA256, IkeIntegritySHA384}
-}
-
-// IPAllocationMethod enumerates the values for ip allocation method.
-type IPAllocationMethod string
-
-const (
-	// Dynamic ...
-	Dynamic IPAllocationMethod = "Dynamic"
-	// Static ...
-	Static IPAllocationMethod = "Static"
-)
-
-// PossibleIPAllocationMethodValues returns an array of possible values for the IPAllocationMethod const type.
-func PossibleIPAllocationMethodValues() []IPAllocationMethod {
-	return []IPAllocationMethod{Dynamic, Static}
-}
-
-// IPFlowProtocol enumerates the values for ip flow protocol.
-type IPFlowProtocol string
-
-const (
-	// IPFlowProtocolTCP ...
-	IPFlowProtocolTCP IPFlowProtocol = "TCP"
-	// IPFlowProtocolUDP ...
-	IPFlowProtocolUDP IPFlowProtocol = "UDP"
-)
-
-// PossibleIPFlowProtocolValues returns an array of possible values for the IPFlowProtocol const type.
-func PossibleIPFlowProtocolValues() []IPFlowProtocol {
-	return []IPFlowProtocol{IPFlowProtocolTCP, IPFlowProtocolUDP}
-}
-
-// IpsecEncryption enumerates the values for ipsec encryption.
-type IpsecEncryption string
-
-const (
-	// IpsecEncryptionAES128 ...
-	IpsecEncryptionAES128 IpsecEncryption = "AES128"
-	// IpsecEncryptionAES192 ...
-	IpsecEncryptionAES192 IpsecEncryption = "AES192"
-	// IpsecEncryptionAES256 ...
-	IpsecEncryptionAES256 IpsecEncryption = "AES256"
-	// IpsecEncryptionDES ...
-	IpsecEncryptionDES IpsecEncryption = "DES"
-	// IpsecEncryptionDES3 ...
-	IpsecEncryptionDES3 IpsecEncryption = "DES3"
-	// IpsecEncryptionGCMAES128 ...
-	IpsecEncryptionGCMAES128 IpsecEncryption = "GCMAES128"
-	// IpsecEncryptionGCMAES192 ...
-	IpsecEncryptionGCMAES192 IpsecEncryption = "GCMAES192"
-	// IpsecEncryptionGCMAES256 ...
-	IpsecEncryptionGCMAES256 IpsecEncryption = "GCMAES256"
-	// IpsecEncryptionNone ...
-	IpsecEncryptionNone IpsecEncryption = "None"
-)
-
-// PossibleIpsecEncryptionValues returns an array of possible values for the IpsecEncryption const type.
-func PossibleIpsecEncryptionValues() []IpsecEncryption {
-	return []IpsecEncryption{IpsecEncryptionAES128, IpsecEncryptionAES192, IpsecEncryptionAES256, IpsecEncryptionDES, IpsecEncryptionDES3, IpsecEncryptionGCMAES128, IpsecEncryptionGCMAES192, IpsecEncryptionGCMAES256, IpsecEncryptionNone}
-}
-
-// IpsecIntegrity enumerates the values for ipsec integrity.
-type IpsecIntegrity string
-
-const (
-	// IpsecIntegrityGCMAES128 ...
-	IpsecIntegrityGCMAES128 IpsecIntegrity = "GCMAES128"
-	// IpsecIntegrityGCMAES192 ...
-	IpsecIntegrityGCMAES192 IpsecIntegrity = "GCMAES192"
-	// IpsecIntegrityGCMAES256 ...
-	IpsecIntegrityGCMAES256 IpsecIntegrity = "GCMAES256"
-	// IpsecIntegrityMD5 ...
-	IpsecIntegrityMD5 IpsecIntegrity = "MD5"
-	// IpsecIntegritySHA1 ...
-	IpsecIntegritySHA1 IpsecIntegrity = "SHA1"
-	// IpsecIntegritySHA256 ...
-	IpsecIntegritySHA256 IpsecIntegrity = "SHA256"
-)
-
-// PossibleIpsecIntegrityValues returns an array of possible values for the IpsecIntegrity const type.
-func PossibleIpsecIntegrityValues() []IpsecIntegrity {
-	return []IpsecIntegrity{IpsecIntegrityGCMAES128, IpsecIntegrityGCMAES192, IpsecIntegrityGCMAES256, IpsecIntegrityMD5, IpsecIntegritySHA1, IpsecIntegritySHA256}
-}
-
-// IPVersion enumerates the values for ip version.
-type IPVersion string
-
-const (
-	// IPv4 ...
-	IPv4 IPVersion = "IPv4"
-	// IPv6 ...
-	IPv6 IPVersion = "IPv6"
-)
-
-// PossibleIPVersionValues returns an array of possible values for the IPVersion const type.
-func PossibleIPVersionValues() []IPVersion {
-	return []IPVersion{IPv4, IPv6}
-}
-
-// IssueType enumerates the values for issue type.
-type IssueType string
-
-const (
-	// IssueTypeAgentStopped ...
-	IssueTypeAgentStopped IssueType = "AgentStopped"
-	// IssueTypeDNSResolution ...
-	IssueTypeDNSResolution IssueType = "DnsResolution"
-	// IssueTypeGuestFirewall ...
-	IssueTypeGuestFirewall IssueType = "GuestFirewall"
-	// IssueTypeNetworkSecurityRule ...
-	IssueTypeNetworkSecurityRule IssueType = "NetworkSecurityRule"
-	// IssueTypePlatform ...
-	IssueTypePlatform IssueType = "Platform"
-	// IssueTypePortThrottled ...
-	IssueTypePortThrottled IssueType = "PortThrottled"
-	// IssueTypeSocketBind ...
-	IssueTypeSocketBind IssueType = "SocketBind"
-	// IssueTypeUnknown ...
-	IssueTypeUnknown IssueType = "Unknown"
-	// IssueTypeUserDefinedRoute ...
-	IssueTypeUserDefinedRoute IssueType = "UserDefinedRoute"
-)
-
-// PossibleIssueTypeValues returns an array of possible values for the IssueType const type.
-func PossibleIssueTypeValues() []IssueType {
-	return []IssueType{IssueTypeAgentStopped, IssueTypeDNSResolution, IssueTypeGuestFirewall, IssueTypeNetworkSecurityRule, IssueTypePlatform, IssueTypePortThrottled, IssueTypeSocketBind, IssueTypeUnknown, IssueTypeUserDefinedRoute}
-}
-
-// LoadBalancerSkuName enumerates the values for load balancer sku name.
-type LoadBalancerSkuName string
-
-const (
-	// LoadBalancerSkuNameBasic ...
-	LoadBalancerSkuNameBasic LoadBalancerSkuName = "Basic"
-	// LoadBalancerSkuNameStandard ...
-	LoadBalancerSkuNameStandard LoadBalancerSkuName = "Standard"
-)
-
-// PossibleLoadBalancerSkuNameValues returns an array of possible values for the LoadBalancerSkuName const type.
-func PossibleLoadBalancerSkuNameValues() []LoadBalancerSkuName {
-	return []LoadBalancerSkuName{LoadBalancerSkuNameBasic, LoadBalancerSkuNameStandard}
-}
-
-// LoadDistribution enumerates the values for load distribution.
-type LoadDistribution string
-
-const (
-	// Default ...
-	Default LoadDistribution = "Default"
-	// SourceIP ...
-	SourceIP LoadDistribution = "SourceIP"
-	// SourceIPProtocol ...
-	SourceIPProtocol LoadDistribution = "SourceIPProtocol"
-)
-
-// PossibleLoadDistributionValues returns an array of possible values for the LoadDistribution const type.
-func PossibleLoadDistributionValues() []LoadDistribution {
-	return []LoadDistribution{Default, SourceIP, SourceIPProtocol}
-}
-
-// NextHopType enumerates the values for next hop type.
-type NextHopType string
-
-const (
-	// NextHopTypeHyperNetGateway ...
-	NextHopTypeHyperNetGateway NextHopType = "HyperNetGateway"
-	// NextHopTypeInternet ...
-	NextHopTypeInternet NextHopType = "Internet"
-	// NextHopTypeNone ...
-	NextHopTypeNone NextHopType = "None"
-	// NextHopTypeVirtualAppliance ...
-	NextHopTypeVirtualAppliance NextHopType = "VirtualAppliance"
-	// NextHopTypeVirtualNetworkGateway ...
-	NextHopTypeVirtualNetworkGateway NextHopType = "VirtualNetworkGateway"
-	// NextHopTypeVnetLocal ...
-	NextHopTypeVnetLocal NextHopType = "VnetLocal"
-)
-
-// PossibleNextHopTypeValues returns an array of possible values for the NextHopType const type.
-func PossibleNextHopTypeValues() []NextHopType {
-	return []NextHopType{NextHopTypeHyperNetGateway, NextHopTypeInternet, NextHopTypeNone, NextHopTypeVirtualAppliance, NextHopTypeVirtualNetworkGateway, NextHopTypeVnetLocal}
-}
-
-// OfficeTrafficCategory enumerates the values for office traffic category.
-type OfficeTrafficCategory string
-
-const (
-	// OfficeTrafficCategoryAll ...
-	OfficeTrafficCategoryAll OfficeTrafficCategory = "All"
-	// OfficeTrafficCategoryNone ...
-	OfficeTrafficCategoryNone OfficeTrafficCategory = "None"
-	// OfficeTrafficCategoryOptimize ...
-	OfficeTrafficCategoryOptimize OfficeTrafficCategory = "Optimize"
-	// OfficeTrafficCategoryOptimizeAndAllow ...
-	OfficeTrafficCategoryOptimizeAndAllow OfficeTrafficCategory = "OptimizeAndAllow"
-)
-
-// PossibleOfficeTrafficCategoryValues returns an array of possible values for the OfficeTrafficCategory const type.
-func PossibleOfficeTrafficCategoryValues() []OfficeTrafficCategory {
-	return []OfficeTrafficCategory{OfficeTrafficCategoryAll, OfficeTrafficCategoryNone, OfficeTrafficCategoryOptimize, OfficeTrafficCategoryOptimizeAndAllow}
-}
-
-// OperationStatus enumerates the values for operation status.
-type OperationStatus string
-
-const (
-	// OperationStatusFailed ...
-	OperationStatusFailed OperationStatus = "Failed"
-	// OperationStatusInProgress ...
-	OperationStatusInProgress OperationStatus = "InProgress"
-	// OperationStatusSucceeded ...
-	OperationStatusSucceeded OperationStatus = "Succeeded"
-)
-
-// PossibleOperationStatusValues returns an array of possible values for the OperationStatus const type.
-func PossibleOperationStatusValues() []OperationStatus {
-	return []OperationStatus{OperationStatusFailed, OperationStatusInProgress, OperationStatusSucceeded}
-}
-
-// Origin enumerates the values for origin.
-type Origin string
-
-const (
-	// OriginInbound ...
-	OriginInbound Origin = "Inbound"
-	// OriginLocal ...
-	OriginLocal Origin = "Local"
-	// OriginOutbound ...
-	OriginOutbound Origin = "Outbound"
-)
-
-// PossibleOriginValues returns an array of possible values for the Origin const type.
-func PossibleOriginValues() []Origin {
-	return []Origin{OriginInbound, OriginLocal, OriginOutbound}
-}
-
-// PcError enumerates the values for pc error.
-type PcError string
-
-const (
-	// AgentStopped ...
-	AgentStopped PcError = "AgentStopped"
-	// CaptureFailed ...
-	CaptureFailed PcError = "CaptureFailed"
-	// InternalError ...
-	InternalError PcError = "InternalError"
-	// LocalFileFailed ...
-	LocalFileFailed PcError = "LocalFileFailed"
-	// StorageFailed ...
-	StorageFailed PcError = "StorageFailed"
-)
-
-// PossiblePcErrorValues returns an array of possible values for the PcError const type.
-func PossiblePcErrorValues() []PcError {
-	return []PcError{AgentStopped, CaptureFailed, InternalError, LocalFileFailed, StorageFailed}
-}
-
-// PcProtocol enumerates the values for pc protocol.
-type PcProtocol string
-
-const (
-	// PcProtocolAny ...
-	PcProtocolAny PcProtocol = "Any"
-	// PcProtocolTCP ...
-	PcProtocolTCP PcProtocol = "TCP"
-	// PcProtocolUDP ...
-	PcProtocolUDP PcProtocol = "UDP"
-)
-
-// PossiblePcProtocolValues returns an array of possible values for the PcProtocol const type.
-func PossiblePcProtocolValues() []PcProtocol {
-	return []PcProtocol{PcProtocolAny, PcProtocolTCP, PcProtocolUDP}
-}
-
-// PcStatus enumerates the values for pc status.
-type PcStatus string
-
-const (
-	// PcStatusError ...
-	PcStatusError PcStatus = "Error"
-	// PcStatusNotStarted ...
-	PcStatusNotStarted PcStatus = "NotStarted"
-	// PcStatusRunning ...
-	PcStatusRunning PcStatus = "Running"
-	// PcStatusStopped ...
-	PcStatusStopped PcStatus = "Stopped"
-	// PcStatusUnknown ...
-	PcStatusUnknown PcStatus = "Unknown"
-)
-
-// PossiblePcStatusValues returns an array of possible values for the PcStatus const type.
-func PossiblePcStatusValues() []PcStatus {
-	return []PcStatus{PcStatusError, PcStatusNotStarted, PcStatusRunning, PcStatusStopped, PcStatusUnknown}
-}
-
-// PfsGroup enumerates the values for pfs group.
-type PfsGroup string
-
-const (
-	// PfsGroupECP256 ...
-	PfsGroupECP256 PfsGroup = "ECP256"
-	// PfsGroupECP384 ...
-	PfsGroupECP384 PfsGroup = "ECP384"
-	// PfsGroupNone ...
-	PfsGroupNone PfsGroup = "None"
-	// PfsGroupPFS1 ...
-	PfsGroupPFS1 PfsGroup = "PFS1"
-	// PfsGroupPFS14 ...
-	PfsGroupPFS14 PfsGroup = "PFS14"
-	// PfsGroupPFS2 ...
-	PfsGroupPFS2 PfsGroup = "PFS2"
-	// PfsGroupPFS2048 ...
-	PfsGroupPFS2048 PfsGroup = "PFS2048"
-	// PfsGroupPFS24 ...
-	PfsGroupPFS24 PfsGroup = "PFS24"
-	// PfsGroupPFSMM ...
-	PfsGroupPFSMM PfsGroup = "PFSMM"
-)
-
-// PossiblePfsGroupValues returns an array of possible values for the PfsGroup const type.
-func PossiblePfsGroupValues() []PfsGroup {
-	return []PfsGroup{PfsGroupECP256, PfsGroupECP384, PfsGroupNone, PfsGroupPFS1, PfsGroupPFS14, PfsGroupPFS2, PfsGroupPFS2048, PfsGroupPFS24, PfsGroupPFSMM}
-}
-
-// ProbeProtocol enumerates the values for probe protocol.
-type ProbeProtocol string
-
-const (
-	// ProbeProtocolHTTP ...
-	ProbeProtocolHTTP ProbeProtocol = "Http"
-	// ProbeProtocolHTTPS ...
-	ProbeProtocolHTTPS ProbeProtocol = "Https"
-	// ProbeProtocolTCP ...
-	ProbeProtocolTCP ProbeProtocol = "Tcp"
-)
-
-// PossibleProbeProtocolValues returns an array of possible values for the ProbeProtocol const type.
-func PossibleProbeProtocolValues() []ProbeProtocol {
-	return []ProbeProtocol{ProbeProtocolHTTP, ProbeProtocolHTTPS, ProbeProtocolTCP}
-}
-
-// ProcessorArchitecture enumerates the values for processor architecture.
-type ProcessorArchitecture string
-
-const (
-	// Amd64 ...
-	Amd64 ProcessorArchitecture = "Amd64"
-	// X86 ...
-	X86 ProcessorArchitecture = "X86"
-)
-
-// PossibleProcessorArchitectureValues returns an array of possible values for the ProcessorArchitecture const type.
-func PossibleProcessorArchitectureValues() []ProcessorArchitecture {
-	return []ProcessorArchitecture{Amd64, X86}
-}
-
-// Protocol enumerates the values for protocol.
-type Protocol string
-
-const (
-	// ProtocolHTTP ...
-	ProtocolHTTP Protocol = "Http"
-	// ProtocolHTTPS ...
-	ProtocolHTTPS Protocol = "Https"
-	// ProtocolIcmp ...
-	ProtocolIcmp Protocol = "Icmp"
-	// ProtocolTCP ...
-	ProtocolTCP Protocol = "Tcp"
-)
-
-// PossibleProtocolValues returns an array of possible values for the Protocol const type.
-func PossibleProtocolValues() []Protocol {
-	return []Protocol{ProtocolHTTP, ProtocolHTTPS, ProtocolIcmp, ProtocolTCP}
-}
-
-// Protocol1 enumerates the values for protocol 1.
-type Protocol1 string
-
-const (
-	// Protocol1All ...
-	Protocol1All Protocol1 = "All"
-	// Protocol1TCP ...
-	Protocol1TCP Protocol1 = "Tcp"
-	// Protocol1UDP ...
-	Protocol1UDP Protocol1 = "Udp"
-)
-
-// PossibleProtocol1Values returns an array of possible values for the Protocol1 const type.
-func PossibleProtocol1Values() []Protocol1 {
-	return []Protocol1{Protocol1All, Protocol1TCP, Protocol1UDP}
-}
-
-// ProvisioningState enumerates the values for provisioning state.
-type ProvisioningState string
-
-const (
-	// Deleting ...
-	Deleting ProvisioningState = "Deleting"
-	// Failed ...
-	Failed ProvisioningState = "Failed"
-	// Succeeded ...
-	Succeeded ProvisioningState = "Succeeded"
-	// Updating ...
-	Updating ProvisioningState = "Updating"
-)
-
-// PossibleProvisioningStateValues returns an array of possible values for the ProvisioningState const type.
-func PossibleProvisioningStateValues() []ProvisioningState {
-	return []ProvisioningState{Deleting, Failed, Succeeded, Updating}
-}
-
-// PublicIPAddressSkuName enumerates the values for public ip address sku name.
-type PublicIPAddressSkuName string
-
-const (
-	// PublicIPAddressSkuNameBasic ...
-	PublicIPAddressSkuNameBasic PublicIPAddressSkuName = "Basic"
-	// PublicIPAddressSkuNameStandard ...
-	PublicIPAddressSkuNameStandard PublicIPAddressSkuName = "Standard"
-)
-
-// PossiblePublicIPAddressSkuNameValues returns an array of possible values for the PublicIPAddressSkuName const type.
-func PossiblePublicIPAddressSkuNameValues() []PublicIPAddressSkuName {
-	return []PublicIPAddressSkuName{PublicIPAddressSkuNameBasic, PublicIPAddressSkuNameStandard}
-}
-
-// PublicIPPrefixSkuName enumerates the values for public ip prefix sku name.
-type PublicIPPrefixSkuName string
-
-const (
-	// Standard ...
-	Standard PublicIPPrefixSkuName = "Standard"
-)
-
-// PossiblePublicIPPrefixSkuNameValues returns an array of possible values for the PublicIPPrefixSkuName const type.
-func PossiblePublicIPPrefixSkuNameValues() []PublicIPPrefixSkuName {
-	return []PublicIPPrefixSkuName{Standard}
-}
-
-// ResourceIdentityType enumerates the values for resource identity type.
-type ResourceIdentityType string
-
-const (
-	// ResourceIdentityTypeNone ...
-	ResourceIdentityTypeNone ResourceIdentityType = "None"
-	// ResourceIdentityTypeSystemAssigned ...
-	ResourceIdentityTypeSystemAssigned ResourceIdentityType = "SystemAssigned"
-	// ResourceIdentityTypeSystemAssignedUserAssigned ...
-	ResourceIdentityTypeSystemAssignedUserAssigned ResourceIdentityType = "SystemAssigned, UserAssigned"
-	// ResourceIdentityTypeUserAssigned ...
-	ResourceIdentityTypeUserAssigned ResourceIdentityType = "UserAssigned"
-)
-
-// PossibleResourceIdentityTypeValues returns an array of possible values for the ResourceIdentityType const type.
-func PossibleResourceIdentityTypeValues() []ResourceIdentityType {
-	return []ResourceIdentityType{ResourceIdentityTypeNone, ResourceIdentityTypeSystemAssigned, ResourceIdentityTypeSystemAssignedUserAssigned, ResourceIdentityTypeUserAssigned}
-}
-
-// RouteNextHopType enumerates the values for route next hop type.
-type RouteNextHopType string
-
-const (
-	// RouteNextHopTypeInternet ...
-	RouteNextHopTypeInternet RouteNextHopType = "Internet"
-	// RouteNextHopTypeNone ...
-	RouteNextHopTypeNone RouteNextHopType = "None"
-	// RouteNextHopTypeVirtualAppliance ...
-	RouteNextHopTypeVirtualAppliance RouteNextHopType = "VirtualAppliance"
-	// RouteNextHopTypeVirtualNetworkGateway ...
-	RouteNextHopTypeVirtualNetworkGateway RouteNextHopType = "VirtualNetworkGateway"
-	// RouteNextHopTypeVnetLocal ...
-	RouteNextHopTypeVnetLocal RouteNextHopType = "VnetLocal"
-)
-
-// PossibleRouteNextHopTypeValues returns an array of possible values for the RouteNextHopType const type.
-func PossibleRouteNextHopTypeValues() []RouteNextHopType {
-	return []RouteNextHopType{RouteNextHopTypeInternet, RouteNextHopTypeNone, RouteNextHopTypeVirtualAppliance, RouteNextHopTypeVirtualNetworkGateway, RouteNextHopTypeVnetLocal}
-}
-
-// SecurityRuleAccess enumerates the values for security rule access.
-type SecurityRuleAccess string
-
-const (
-	// SecurityRuleAccessAllow ...
-	SecurityRuleAccessAllow SecurityRuleAccess = "Allow"
-	// SecurityRuleAccessDeny ...
-	SecurityRuleAccessDeny SecurityRuleAccess = "Deny"
-)
-
-// PossibleSecurityRuleAccessValues returns an array of possible values for the SecurityRuleAccess const type.
-func PossibleSecurityRuleAccessValues() []SecurityRuleAccess {
-	return []SecurityRuleAccess{SecurityRuleAccessAllow, SecurityRuleAccessDeny}
-}
-
-// SecurityRuleDirection enumerates the values for security rule direction.
-type SecurityRuleDirection string
-
-const (
-	// SecurityRuleDirectionInbound ...
-	SecurityRuleDirectionInbound SecurityRuleDirection = "Inbound"
-	// SecurityRuleDirectionOutbound ...
-	SecurityRuleDirectionOutbound SecurityRuleDirection = "Outbound"
-)
-
-// PossibleSecurityRuleDirectionValues returns an array of possible values for the SecurityRuleDirection const type.
-func PossibleSecurityRuleDirectionValues() []SecurityRuleDirection {
-	return []SecurityRuleDirection{SecurityRuleDirectionInbound, SecurityRuleDirectionOutbound}
-}
-
-// SecurityRuleProtocol enumerates the values for security rule protocol.
-type SecurityRuleProtocol string
-
-const (
-	// SecurityRuleProtocolAsterisk ...
-	SecurityRuleProtocolAsterisk SecurityRuleProtocol = "*"
-	// SecurityRuleProtocolTCP ...
-	SecurityRuleProtocolTCP SecurityRuleProtocol = "Tcp"
-	// SecurityRuleProtocolUDP ...
-	SecurityRuleProtocolUDP SecurityRuleProtocol = "Udp"
-)
-
-// PossibleSecurityRuleProtocolValues returns an array of possible values for the SecurityRuleProtocol const type.
-func PossibleSecurityRuleProtocolValues() []SecurityRuleProtocol {
-	return []SecurityRuleProtocol{SecurityRuleProtocolAsterisk, SecurityRuleProtocolTCP, SecurityRuleProtocolUDP}
-}
-
-// ServiceProviderProvisioningState enumerates the values for service provider provisioning state.
-type ServiceProviderProvisioningState string
-
-const (
-	// Deprovisioning ...
-	Deprovisioning ServiceProviderProvisioningState = "Deprovisioning"
-	// NotProvisioned ...
-	NotProvisioned ServiceProviderProvisioningState = "NotProvisioned"
-	// Provisioned ...
-	Provisioned ServiceProviderProvisioningState = "Provisioned"
-	// Provisioning ...
-	Provisioning ServiceProviderProvisioningState = "Provisioning"
-)
-
-// PossibleServiceProviderProvisioningStateValues returns an array of possible values for the ServiceProviderProvisioningState const type.
-func PossibleServiceProviderProvisioningStateValues() []ServiceProviderProvisioningState {
-	return []ServiceProviderProvisioningState{Deprovisioning, NotProvisioned, Provisioned, Provisioning}
-}
-
-// Severity enumerates the values for severity.
-type Severity string
-
-const (
-	// SeverityError ...
-	SeverityError Severity = "Error"
-	// SeverityWarning ...
-	SeverityWarning Severity = "Warning"
-)
-
-// PossibleSeverityValues returns an array of possible values for the Severity const type.
-func PossibleSeverityValues() []Severity {
-	return []Severity{SeverityError, SeverityWarning}
-}
-
-// TransportProtocol enumerates the values for transport protocol.
-type TransportProtocol string
-
-const (
-	// TransportProtocolAll ...
-	TransportProtocolAll TransportProtocol = "All"
-	// TransportProtocolTCP ...
-	TransportProtocolTCP TransportProtocol = "Tcp"
-	// TransportProtocolUDP ...
-	TransportProtocolUDP TransportProtocol = "Udp"
-)
-
-// PossibleTransportProtocolValues returns an array of possible values for the TransportProtocol const type.
-func PossibleTransportProtocolValues() []TransportProtocol {
-	return []TransportProtocol{TransportProtocolAll, TransportProtocolTCP, TransportProtocolUDP}
-}
-
-// TunnelConnectionStatus enumerates the values for tunnel connection status.
-type TunnelConnectionStatus string
-
-const (
-	// TunnelConnectionStatusConnected ...
-	TunnelConnectionStatusConnected TunnelConnectionStatus = "Connected"
-	// TunnelConnectionStatusConnecting ...
-	TunnelConnectionStatusConnecting TunnelConnectionStatus = "Connecting"
-	// TunnelConnectionStatusNotConnected ...
-	TunnelConnectionStatusNotConnected TunnelConnectionStatus = "NotConnected"
-	// TunnelConnectionStatusUnknown ...
-	TunnelConnectionStatusUnknown TunnelConnectionStatus = "Unknown"
-)
-
-// PossibleTunnelConnectionStatusValues returns an array of possible values for the TunnelConnectionStatus const type.
-func PossibleTunnelConnectionStatusValues() []TunnelConnectionStatus {
-	return []TunnelConnectionStatus{TunnelConnectionStatusConnected, TunnelConnectionStatusConnecting, TunnelConnectionStatusNotConnected, TunnelConnectionStatusUnknown}
-}
-
-// VerbosityLevel enumerates the values for verbosity level.
-type VerbosityLevel string
-
-const (
-	// Full ...
-	Full VerbosityLevel = "Full"
-	// Minimum ...
-	Minimum VerbosityLevel = "Minimum"
-	// Normal ...
-	Normal VerbosityLevel = "Normal"
-)
-
-// PossibleVerbosityLevelValues returns an array of possible values for the VerbosityLevel const type.
-func PossibleVerbosityLevelValues() []VerbosityLevel {
-	return []VerbosityLevel{Full, Minimum, Normal}
-}
-
-// VirtualNetworkGatewayConnectionProtocol enumerates the values for virtual network gateway connection
-// protocol.
-type VirtualNetworkGatewayConnectionProtocol string
-
-const (
-	// IKEv1 ...
-	IKEv1 VirtualNetworkGatewayConnectionProtocol = "IKEv1"
-	// IKEv2 ...
-	IKEv2 VirtualNetworkGatewayConnectionProtocol = "IKEv2"
-)
-
-// PossibleVirtualNetworkGatewayConnectionProtocolValues returns an array of possible values for the VirtualNetworkGatewayConnectionProtocol const type.
-func PossibleVirtualNetworkGatewayConnectionProtocolValues() []VirtualNetworkGatewayConnectionProtocol {
-	return []VirtualNetworkGatewayConnectionProtocol{IKEv1, IKEv2}
-}
-
-// VirtualNetworkGatewayConnectionStatus enumerates the values for virtual network gateway connection status.
-type VirtualNetworkGatewayConnectionStatus string
-
-const (
-	// VirtualNetworkGatewayConnectionStatusConnected ...
-	VirtualNetworkGatewayConnectionStatusConnected VirtualNetworkGatewayConnectionStatus = "Connected"
-	// VirtualNetworkGatewayConnectionStatusConnecting ...
-	VirtualNetworkGatewayConnectionStatusConnecting VirtualNetworkGatewayConnectionStatus = "Connecting"
-	// VirtualNetworkGatewayConnectionStatusNotConnected ...
-	VirtualNetworkGatewayConnectionStatusNotConnected VirtualNetworkGatewayConnectionStatus = "NotConnected"
-	// VirtualNetworkGatewayConnectionStatusUnknown ...
-	VirtualNetworkGatewayConnectionStatusUnknown VirtualNetworkGatewayConnectionStatus = "Unknown"
-)
-
-// PossibleVirtualNetworkGatewayConnectionStatusValues returns an array of possible values for the VirtualNetworkGatewayConnectionStatus const type.
-func PossibleVirtualNetworkGatewayConnectionStatusValues() []VirtualNetworkGatewayConnectionStatus {
-	return []VirtualNetworkGatewayConnectionStatus{VirtualNetworkGatewayConnectionStatusConnected, VirtualNetworkGatewayConnectionStatusConnecting, VirtualNetworkGatewayConnectionStatusNotConnected, VirtualNetworkGatewayConnectionStatusUnknown}
-}
-
-// VirtualNetworkGatewayConnectionType enumerates the values for virtual network gateway connection type.
-type VirtualNetworkGatewayConnectionType string
-
-const (
-	// ExpressRoute ...
-	ExpressRoute VirtualNetworkGatewayConnectionType = "ExpressRoute"
-	// IPsec ...
-	IPsec VirtualNetworkGatewayConnectionType = "IPsec"
-	// Vnet2Vnet ...
-	Vnet2Vnet VirtualNetworkGatewayConnectionType = "Vnet2Vnet"
-	// VPNClient ...
-	VPNClient VirtualNetworkGatewayConnectionType = "VPNClient"
-)
-
-// PossibleVirtualNetworkGatewayConnectionTypeValues returns an array of possible values for the VirtualNetworkGatewayConnectionType const type.
-func PossibleVirtualNetworkGatewayConnectionTypeValues() []VirtualNetworkGatewayConnectionType {
-	return []VirtualNetworkGatewayConnectionType{ExpressRoute, IPsec, Vnet2Vnet, VPNClient}
-}
-
-// VirtualNetworkGatewaySkuName enumerates the values for virtual network gateway sku name.
-type VirtualNetworkGatewaySkuName string
-
-const (
-	// VirtualNetworkGatewaySkuNameBasic ...
-	VirtualNetworkGatewaySkuNameBasic VirtualNetworkGatewaySkuName = "Basic"
-	// VirtualNetworkGatewaySkuNameErGw1AZ ...
-	VirtualNetworkGatewaySkuNameErGw1AZ VirtualNetworkGatewaySkuName = "ErGw1AZ"
-	// VirtualNetworkGatewaySkuNameErGw2AZ ...
-	VirtualNetworkGatewaySkuNameErGw2AZ VirtualNetworkGatewaySkuName = "ErGw2AZ"
-	// VirtualNetworkGatewaySkuNameErGw3AZ ...
-	VirtualNetworkGatewaySkuNameErGw3AZ VirtualNetworkGatewaySkuName = "ErGw3AZ"
-	// VirtualNetworkGatewaySkuNameHighPerformance ...
-	VirtualNetworkGatewaySkuNameHighPerformance VirtualNetworkGatewaySkuName = "HighPerformance"
-	// VirtualNetworkGatewaySkuNameStandard ...
-	VirtualNetworkGatewaySkuNameStandard VirtualNetworkGatewaySkuName = "Standard"
-	// VirtualNetworkGatewaySkuNameUltraPerformance ...
-	VirtualNetworkGatewaySkuNameUltraPerformance VirtualNetworkGatewaySkuName = "UltraPerformance"
-	// VirtualNetworkGatewaySkuNameVpnGw1 ...
-	VirtualNetworkGatewaySkuNameVpnGw1 VirtualNetworkGatewaySkuName = "VpnGw1"
-	// VirtualNetworkGatewaySkuNameVpnGw1AZ ...
-	VirtualNetworkGatewaySkuNameVpnGw1AZ VirtualNetworkGatewaySkuName = "VpnGw1AZ"
-	// VirtualNetworkGatewaySkuNameVpnGw2 ...
-	VirtualNetworkGatewaySkuNameVpnGw2 VirtualNetworkGatewaySkuName = "VpnGw2"
-	// VirtualNetworkGatewaySkuNameVpnGw2AZ ...
-	VirtualNetworkGatewaySkuNameVpnGw2AZ VirtualNetworkGatewaySkuName = "VpnGw2AZ"
-	// VirtualNetworkGatewaySkuNameVpnGw3 ...
-	VirtualNetworkGatewaySkuNameVpnGw3 VirtualNetworkGatewaySkuName = "VpnGw3"
-	// VirtualNetworkGatewaySkuNameVpnGw3AZ ...
-	VirtualNetworkGatewaySkuNameVpnGw3AZ VirtualNetworkGatewaySkuName = "VpnGw3AZ"
-)
-
-// PossibleVirtualNetworkGatewaySkuNameValues returns an array of possible values for the VirtualNetworkGatewaySkuName const type.
-func PossibleVirtualNetworkGatewaySkuNameValues() []VirtualNetworkGatewaySkuName {
-	return []VirtualNetworkGatewaySkuName{VirtualNetworkGatewaySkuNameBasic, VirtualNetworkGatewaySkuNameErGw1AZ, VirtualNetworkGatewaySkuNameErGw2AZ, VirtualNetworkGatewaySkuNameErGw3AZ, VirtualNetworkGatewaySkuNameHighPerformance, VirtualNetworkGatewaySkuNameStandard, VirtualNetworkGatewaySkuNameUltraPerformance, VirtualNetworkGatewaySkuNameVpnGw1, VirtualNetworkGatewaySkuNameVpnGw1AZ, VirtualNetworkGatewaySkuNameVpnGw2, VirtualNetworkGatewaySkuNameVpnGw2AZ, VirtualNetworkGatewaySkuNameVpnGw3, VirtualNetworkGatewaySkuNameVpnGw3AZ}
-}
-
-// VirtualNetworkGatewaySkuTier enumerates the values for virtual network gateway sku tier.
-type VirtualNetworkGatewaySkuTier string
-
-const (
-	// VirtualNetworkGatewaySkuTierBasic ...
-	VirtualNetworkGatewaySkuTierBasic VirtualNetworkGatewaySkuTier = "Basic"
-	// VirtualNetworkGatewaySkuTierErGw1AZ ...
-	VirtualNetworkGatewaySkuTierErGw1AZ VirtualNetworkGatewaySkuTier = "ErGw1AZ"
-	// VirtualNetworkGatewaySkuTierErGw2AZ ...
-	VirtualNetworkGatewaySkuTierErGw2AZ VirtualNetworkGatewaySkuTier = "ErGw2AZ"
-	// VirtualNetworkGatewaySkuTierErGw3AZ ...
-	VirtualNetworkGatewaySkuTierErGw3AZ VirtualNetworkGatewaySkuTier = "ErGw3AZ"
-	// VirtualNetworkGatewaySkuTierHighPerformance ...
-	VirtualNetworkGatewaySkuTierHighPerformance VirtualNetworkGatewaySkuTier = "HighPerformance"
-	// VirtualNetworkGatewaySkuTierStandard ...
-	VirtualNetworkGatewaySkuTierStandard VirtualNetworkGatewaySkuTier = "Standard"
-	// VirtualNetworkGatewaySkuTierUltraPerformance ...
-	VirtualNetworkGatewaySkuTierUltraPerformance VirtualNetworkGatewaySkuTier = "UltraPerformance"
-	// VirtualNetworkGatewaySkuTierVpnGw1 ...
-	VirtualNetworkGatewaySkuTierVpnGw1 VirtualNetworkGatewaySkuTier = "VpnGw1"
-	// VirtualNetworkGatewaySkuTierVpnGw1AZ ...
-	VirtualNetworkGatewaySkuTierVpnGw1AZ VirtualNetworkGatewaySkuTier = "VpnGw1AZ"
-	// VirtualNetworkGatewaySkuTierVpnGw2 ...
-	VirtualNetworkGatewaySkuTierVpnGw2 VirtualNetworkGatewaySkuTier = "VpnGw2"
-	// VirtualNetworkGatewaySkuTierVpnGw2AZ ...
-	VirtualNetworkGatewaySkuTierVpnGw2AZ VirtualNetworkGatewaySkuTier = "VpnGw2AZ"
-	// VirtualNetworkGatewaySkuTierVpnGw3 ...
-	VirtualNetworkGatewaySkuTierVpnGw3 VirtualNetworkGatewaySkuTier = "VpnGw3"
-	// VirtualNetworkGatewaySkuTierVpnGw3AZ ...
-	VirtualNetworkGatewaySkuTierVpnGw3AZ VirtualNetworkGatewaySkuTier = "VpnGw3AZ"
-)
-
-// PossibleVirtualNetworkGatewaySkuTierValues returns an array of possible values for the VirtualNetworkGatewaySkuTier const type.
-func PossibleVirtualNetworkGatewaySkuTierValues() []VirtualNetworkGatewaySkuTier {
-	return []VirtualNetworkGatewaySkuTier{VirtualNetworkGatewaySkuTierBasic, VirtualNetworkGatewaySkuTierErGw1AZ, VirtualNetworkGatewaySkuTierErGw2AZ, VirtualNetworkGatewaySkuTierErGw3AZ, VirtualNetworkGatewaySkuTierHighPerformance, VirtualNetworkGatewaySkuTierStandard, VirtualNetworkGatewaySkuTierUltraPerformance, VirtualNetworkGatewaySkuTierVpnGw1, VirtualNetworkGatewaySkuTierVpnGw1AZ, VirtualNetworkGatewaySkuTierVpnGw2, VirtualNetworkGatewaySkuTierVpnGw2AZ, VirtualNetworkGatewaySkuTierVpnGw3, VirtualNetworkGatewaySkuTierVpnGw3AZ}
-}
-
-// VirtualNetworkGatewayType enumerates the values for virtual network gateway type.
-type VirtualNetworkGatewayType string
-
-const (
-	// VirtualNetworkGatewayTypeExpressRoute ...
-	VirtualNetworkGatewayTypeExpressRoute VirtualNetworkGatewayType = "ExpressRoute"
-	// VirtualNetworkGatewayTypeVpn ...
-	VirtualNetworkGatewayTypeVpn VirtualNetworkGatewayType = "Vpn"
-)
-
-// PossibleVirtualNetworkGatewayTypeValues returns an array of possible values for the VirtualNetworkGatewayType const type.
-func PossibleVirtualNetworkGatewayTypeValues() []VirtualNetworkGatewayType {
-	return []VirtualNetworkGatewayType{VirtualNetworkGatewayTypeExpressRoute, VirtualNetworkGatewayTypeVpn}
-}
-
-// VirtualNetworkPeeringState enumerates the values for virtual network peering state.
-type VirtualNetworkPeeringState string
-
-const (
-	// VirtualNetworkPeeringStateConnected ...
-	VirtualNetworkPeeringStateConnected VirtualNetworkPeeringState = "Connected"
-	// VirtualNetworkPeeringStateDisconnected ...
-	VirtualNetworkPeeringStateDisconnected VirtualNetworkPeeringState = "Disconnected"
-	// VirtualNetworkPeeringStateInitiated ...
-	VirtualNetworkPeeringStateInitiated VirtualNetworkPeeringState = "Initiated"
-)
-
-// PossibleVirtualNetworkPeeringStateValues returns an array of possible values for the VirtualNetworkPeeringState const type.
-func PossibleVirtualNetworkPeeringStateValues() []VirtualNetworkPeeringState {
-	return []VirtualNetworkPeeringState{VirtualNetworkPeeringStateConnected, VirtualNetworkPeeringStateDisconnected, VirtualNetworkPeeringStateInitiated}
-}
-
-// VirtualWanSecurityProviderType enumerates the values for virtual wan security provider type.
-type VirtualWanSecurityProviderType string
-
-const (
-	// External ...
-	External VirtualWanSecurityProviderType = "External"
-	// Native ...
-	Native VirtualWanSecurityProviderType = "Native"
-)
-
-// PossibleVirtualWanSecurityProviderTypeValues returns an array of possible values for the VirtualWanSecurityProviderType const type.
-func PossibleVirtualWanSecurityProviderTypeValues() []VirtualWanSecurityProviderType {
-	return []VirtualWanSecurityProviderType{External, Native}
-}
-
-// VpnClientProtocol enumerates the values for vpn client protocol.
-type VpnClientProtocol string
-
-const (
-	// IkeV2 ...
-	IkeV2 VpnClientProtocol = "IkeV2"
-	// OpenVPN ...
-	OpenVPN VpnClientProtocol = "OpenVPN"
-	// SSTP ...
-	SSTP VpnClientProtocol = "SSTP"
-)
-
-// PossibleVpnClientProtocolValues returns an array of possible values for the VpnClientProtocol const type.
-func PossibleVpnClientProtocolValues() []VpnClientProtocol {
-	return []VpnClientProtocol{IkeV2, OpenVPN, SSTP}
-}
-
-// VpnConnectionStatus enumerates the values for vpn connection status.
-type VpnConnectionStatus string
-
-const (
-	// VpnConnectionStatusConnected ...
-	VpnConnectionStatusConnected VpnConnectionStatus = "Connected"
-	// VpnConnectionStatusConnecting ...
-	VpnConnectionStatusConnecting VpnConnectionStatus = "Connecting"
-	// VpnConnectionStatusNotConnected ...
-	VpnConnectionStatusNotConnected VpnConnectionStatus = "NotConnected"
-	// VpnConnectionStatusUnknown ...
-	VpnConnectionStatusUnknown VpnConnectionStatus = "Unknown"
-)
-
-// PossibleVpnConnectionStatusValues returns an array of possible values for the VpnConnectionStatus const type.
-func PossibleVpnConnectionStatusValues() []VpnConnectionStatus {
-	return []VpnConnectionStatus{VpnConnectionStatusConnected, VpnConnectionStatusConnecting, VpnConnectionStatusNotConnected, VpnConnectionStatusUnknown}
-}
-
-// VpnGatewayTunnelingProtocol enumerates the values for vpn gateway tunneling protocol.
-type VpnGatewayTunnelingProtocol string
-
-const (
-	// VpnGatewayTunnelingProtocolIkeV2 ...
-	VpnGatewayTunnelingProtocolIkeV2 VpnGatewayTunnelingProtocol = "IkeV2"
-	// VpnGatewayTunnelingProtocolOpenVPN ...
-	VpnGatewayTunnelingProtocolOpenVPN VpnGatewayTunnelingProtocol = "OpenVPN"
-)
-
-// PossibleVpnGatewayTunnelingProtocolValues returns an array of possible values for the VpnGatewayTunnelingProtocol const type.
-func PossibleVpnGatewayTunnelingProtocolValues() []VpnGatewayTunnelingProtocol {
-	return []VpnGatewayTunnelingProtocol{VpnGatewayTunnelingProtocolIkeV2, VpnGatewayTunnelingProtocolOpenVPN}
-}
-
-// VpnType enumerates the values for vpn type.
-type VpnType string
-
-const (
-	// PolicyBased ...
-	PolicyBased VpnType = "PolicyBased"
-	// RouteBased ...
-	RouteBased VpnType = "RouteBased"
-)
-
-// PossibleVpnTypeValues returns an array of possible values for the VpnType const type.
-func PossibleVpnTypeValues() []VpnType {
-	return []VpnType{PolicyBased, RouteBased}
-}
-
-// AddressSpace addressSpace contains an array of IP address ranges that can be used by subnets of the
-// virtual network.
+// AddressSpace addressSpace contains an array of IP address ranges that can be used by subnets of the virtual
+// network.
 type AddressSpace struct {
 	// AddressPrefixes - A list of address blocks reserved for this virtual network in CIDR notation.
 	AddressPrefixes *[]string `json:"addressPrefixes,omitempty"`
@@ -1756,9 +50,9 @@ type ApplicationGateway struct {
 	Identity *ManagedServiceIdentity `json:"identity,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name.
+	// Name - READ-ONLY; Resource name.
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type.
+	// Type - READ-ONLY; Resource type.
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location.
 	Location *string `json:"location,omitempty"`
@@ -1783,12 +77,6 @@ func (ag ApplicationGateway) MarshalJSON() ([]byte, error) {
 	}
 	if ag.ID != nil {
 		objectMap["id"] = ag.ID
-	}
-	if ag.Name != nil {
-		objectMap["name"] = ag.Name
-	}
-	if ag.Type != nil {
-		objectMap["type"] = ag.Type
 	}
 	if ag.Location != nil {
 		objectMap["location"] = ag.Location
@@ -2004,16 +292,15 @@ type ApplicationGatewayAutoscaleConfiguration struct {
 	MinCapacity *int32 `json:"minCapacity,omitempty"`
 }
 
-// ApplicationGatewayAvailableSslOptions response for ApplicationGatewayAvailableSslOptions API service
-// call.
+// ApplicationGatewayAvailableSslOptions response for ApplicationGatewayAvailableSslOptions API service call.
 type ApplicationGatewayAvailableSslOptions struct {
 	autorest.Response                                      `json:"-"`
 	*ApplicationGatewayAvailableSslOptionsPropertiesFormat `json:"properties,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name.
+	// Name - READ-ONLY; Resource name.
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type.
+	// Type - READ-ONLY; Resource type.
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location.
 	Location *string `json:"location,omitempty"`
@@ -2029,12 +316,6 @@ func (agaso ApplicationGatewayAvailableSslOptions) MarshalJSON() ([]byte, error)
 	}
 	if agaso.ID != nil {
 		objectMap["id"] = agaso.ID
-	}
-	if agaso.Name != nil {
-		objectMap["name"] = agaso.Name
-	}
-	if agaso.Type != nil {
-		objectMap["type"] = agaso.Type
 	}
 	if agaso.Location != nil {
 		objectMap["location"] = agaso.Location
@@ -2114,8 +395,7 @@ func (agaso *ApplicationGatewayAvailableSslOptions) UnmarshalJSON(body []byte) e
 	return nil
 }
 
-// ApplicationGatewayAvailableSslOptionsPropertiesFormat properties of
-// ApplicationGatewayAvailableSslOptions
+// ApplicationGatewayAvailableSslOptionsPropertiesFormat properties of ApplicationGatewayAvailableSslOptions
 type ApplicationGatewayAvailableSslOptionsPropertiesFormat struct {
 	// PredefinedPolicies - List of available Ssl predefined policy.
 	PredefinedPolicies *[]SubResource `json:"predefinedPolicies,omitempty"`
@@ -2206,10 +486,15 @@ func (agaspp ApplicationGatewayAvailableSslPredefinedPolicies) IsEmpty() bool {
 	return agaspp.Value == nil || len(*agaspp.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (agaspp ApplicationGatewayAvailableSslPredefinedPolicies) hasNextLink() bool {
+	return agaspp.NextLink != nil && len(*agaspp.NextLink) != 0
+}
+
 // applicationGatewayAvailableSslPredefinedPoliciesPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (agaspp ApplicationGatewayAvailableSslPredefinedPolicies) applicationGatewayAvailableSslPredefinedPoliciesPreparer(ctx context.Context) (*http.Request, error) {
-	if agaspp.NextLink == nil || len(to.String(agaspp.NextLink)) < 1 {
+	if !agaspp.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -2238,11 +523,16 @@ func (page *ApplicationGatewayAvailableSslPredefinedPoliciesPage) NextWithContex
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.agaspp)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.agaspp)
+		if err != nil {
+			return err
+		}
+		page.agaspp = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.agaspp = next
 	return nil
 }
 
@@ -2276,8 +566,8 @@ func NewApplicationGatewayAvailableSslPredefinedPoliciesPage(getNextPage func(co
 	return ApplicationGatewayAvailableSslPredefinedPoliciesPage{fn: getNextPage}
 }
 
-// ApplicationGatewayAvailableWafRuleSetsResult response for ApplicationGatewayAvailableWafRuleSets API
-// service call.
+// ApplicationGatewayAvailableWafRuleSetsResult response for ApplicationGatewayAvailableWafRuleSets API service
+// call.
 type ApplicationGatewayAvailableWafRuleSetsResult struct {
 	autorest.Response `json:"-"`
 	// Value - The list of application gateway rule sets.
@@ -2386,8 +676,8 @@ func (agbap *ApplicationGatewayBackendAddressPool) UnmarshalJSON(body []byte) er
 	return nil
 }
 
-// ApplicationGatewayBackendAddressPoolPropertiesFormat properties of Backend Address Pool of an
-// application gateway.
+// ApplicationGatewayBackendAddressPoolPropertiesFormat properties of Backend Address Pool of an application
+// gateway.
 type ApplicationGatewayBackendAddressPoolPropertiesFormat struct {
 	// BackendIPConfigurations - Collection of references to IPs defined in network interfaces.
 	BackendIPConfigurations *[]InterfaceIPConfiguration `json:"backendIPConfigurations,omitempty"`
@@ -2556,8 +846,8 @@ type ApplicationGatewayBackendHTTPSettingsPropertiesFormat struct {
 	ProvisioningState *string `json:"provisioningState,omitempty"`
 }
 
-// ApplicationGatewayConnectionDraining connection draining allows open connections to a backend server to
-// be active for a specified time after the backend server got removed from the configuration.
+// ApplicationGatewayConnectionDraining connection draining allows open connections to a backend server to be
+// active for a specified time after the backend server got removed from the configuration.
 type ApplicationGatewayConnectionDraining struct {
 	// Enabled - Whether connection draining is enabled or not.
 	Enabled *bool `json:"enabled,omitempty"`
@@ -2573,8 +863,8 @@ type ApplicationGatewayCustomError struct {
 	CustomErrorPageURL *string `json:"customErrorPageUrl,omitempty"`
 }
 
-// ApplicationGatewayFirewallDisabledRuleGroup allows to disable rules within a rule group or an entire
-// rule group.
+// ApplicationGatewayFirewallDisabledRuleGroup allows to disable rules within a rule group or an entire rule
+// group.
 type ApplicationGatewayFirewallDisabledRuleGroup struct {
 	// RuleGroupName - The name of the rule group that will be disabled.
 	RuleGroupName *string `json:"ruleGroupName,omitempty"`
@@ -2582,8 +872,7 @@ type ApplicationGatewayFirewallDisabledRuleGroup struct {
 	Rules *[]int32 `json:"rules,omitempty"`
 }
 
-// ApplicationGatewayFirewallExclusion allow to exclude some variable satisfy the condition for the WAF
-// check
+// ApplicationGatewayFirewallExclusion allow to exclude some variable satisfy the condition for the WAF check
 type ApplicationGatewayFirewallExclusion struct {
 	// MatchVariable - The variable to be excluded.
 	MatchVariable *string `json:"matchVariable,omitempty"`
@@ -2616,9 +905,9 @@ type ApplicationGatewayFirewallRuleSet struct {
 	*ApplicationGatewayFirewallRuleSetPropertiesFormat `json:"properties,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name.
+	// Name - READ-ONLY; Resource name.
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type.
+	// Type - READ-ONLY; Resource type.
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location.
 	Location *string `json:"location,omitempty"`
@@ -2634,12 +923,6 @@ func (agfrs ApplicationGatewayFirewallRuleSet) MarshalJSON() ([]byte, error) {
 	}
 	if agfrs.ID != nil {
 		objectMap["id"] = agfrs.ID
-	}
-	if agfrs.Name != nil {
-		objectMap["name"] = agfrs.Name
-	}
-	if agfrs.Type != nil {
-		objectMap["type"] = agfrs.Type
 	}
 	if agfrs.Location != nil {
 		objectMap["location"] = agfrs.Location
@@ -3159,8 +1442,7 @@ func (agic *ApplicationGatewayIPConfiguration) UnmarshalJSON(body []byte) error 
 	return nil
 }
 
-// ApplicationGatewayIPConfigurationPropertiesFormat properties of IP configuration of an application
-// gateway.
+// ApplicationGatewayIPConfigurationPropertiesFormat properties of IP configuration of an application gateway.
 type ApplicationGatewayIPConfigurationPropertiesFormat struct {
 	// Subnet - Reference of the subnet resource. A subnet from where application gateway gets its private address.
 	Subnet *SubResource `json:"subnet,omitempty"`
@@ -3245,10 +1527,15 @@ func (aglr ApplicationGatewayListResult) IsEmpty() bool {
 	return aglr.Value == nil || len(*aglr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (aglr ApplicationGatewayListResult) hasNextLink() bool {
+	return aglr.NextLink != nil && len(*aglr.NextLink) != 0
+}
+
 // applicationGatewayListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (aglr ApplicationGatewayListResult) applicationGatewayListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if aglr.NextLink == nil || len(to.String(aglr.NextLink)) < 1 {
+	if !aglr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -3276,11 +1563,16 @@ func (page *ApplicationGatewayListResultPage) NextWithContext(ctx context.Contex
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.aglr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.aglr)
+		if err != nil {
+			return err
+		}
+		page.aglr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.aglr = next
 	return nil
 }
 
@@ -3556,7 +1848,7 @@ type ApplicationGatewayPropertiesFormat struct {
 	Sku *ApplicationGatewaySku `json:"sku,omitempty"`
 	// SslPolicy - SSL policy of the application gateway resource.
 	SslPolicy *ApplicationGatewaySslPolicy `json:"sslPolicy,omitempty"`
-	// OperationalState - Operational state of the application gateway resource. Possible values include: 'Stopped', 'Starting', 'Running', 'Stopping'
+	// OperationalState - READ-ONLY; Operational state of the application gateway resource. Possible values include: 'Stopped', 'Starting', 'Running', 'Stopping'
 	OperationalState ApplicationGatewayOperationalState `json:"operationalState,omitempty"`
 	// GatewayIPConfigurations - Subnets of application the gateway resource.
 	GatewayIPConfigurations *[]ApplicationGatewayIPConfiguration `json:"gatewayIPConfigurations,omitempty"`
@@ -3600,6 +1892,81 @@ type ApplicationGatewayPropertiesFormat struct {
 	ProvisioningState *string `json:"provisioningState,omitempty"`
 	// CustomErrorConfigurations - Custom error configurations of the application gateway resource.
 	CustomErrorConfigurations *[]ApplicationGatewayCustomError `json:"customErrorConfigurations,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for ApplicationGatewayPropertiesFormat.
+func (agpf ApplicationGatewayPropertiesFormat) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if agpf.Sku != nil {
+		objectMap["sku"] = agpf.Sku
+	}
+	if agpf.SslPolicy != nil {
+		objectMap["sslPolicy"] = agpf.SslPolicy
+	}
+	if agpf.GatewayIPConfigurations != nil {
+		objectMap["gatewayIPConfigurations"] = agpf.GatewayIPConfigurations
+	}
+	if agpf.AuthenticationCertificates != nil {
+		objectMap["authenticationCertificates"] = agpf.AuthenticationCertificates
+	}
+	if agpf.TrustedRootCertificates != nil {
+		objectMap["trustedRootCertificates"] = agpf.TrustedRootCertificates
+	}
+	if agpf.SslCertificates != nil {
+		objectMap["sslCertificates"] = agpf.SslCertificates
+	}
+	if agpf.FrontendIPConfigurations != nil {
+		objectMap["frontendIPConfigurations"] = agpf.FrontendIPConfigurations
+	}
+	if agpf.FrontendPorts != nil {
+		objectMap["frontendPorts"] = agpf.FrontendPorts
+	}
+	if agpf.Probes != nil {
+		objectMap["probes"] = agpf.Probes
+	}
+	if agpf.BackendAddressPools != nil {
+		objectMap["backendAddressPools"] = agpf.BackendAddressPools
+	}
+	if agpf.BackendHTTPSettingsCollection != nil {
+		objectMap["backendHttpSettingsCollection"] = agpf.BackendHTTPSettingsCollection
+	}
+	if agpf.HTTPListeners != nil {
+		objectMap["httpListeners"] = agpf.HTTPListeners
+	}
+	if agpf.URLPathMaps != nil {
+		objectMap["urlPathMaps"] = agpf.URLPathMaps
+	}
+	if agpf.RequestRoutingRules != nil {
+		objectMap["requestRoutingRules"] = agpf.RequestRoutingRules
+	}
+	if agpf.RewriteRuleSets != nil {
+		objectMap["rewriteRuleSets"] = agpf.RewriteRuleSets
+	}
+	if agpf.RedirectConfigurations != nil {
+		objectMap["redirectConfigurations"] = agpf.RedirectConfigurations
+	}
+	if agpf.WebApplicationFirewallConfiguration != nil {
+		objectMap["webApplicationFirewallConfiguration"] = agpf.WebApplicationFirewallConfiguration
+	}
+	if agpf.EnableHTTP2 != nil {
+		objectMap["enableHttp2"] = agpf.EnableHTTP2
+	}
+	if agpf.EnableFips != nil {
+		objectMap["enableFips"] = agpf.EnableFips
+	}
+	if agpf.AutoscaleConfiguration != nil {
+		objectMap["autoscaleConfiguration"] = agpf.AutoscaleConfiguration
+	}
+	if agpf.ResourceGUID != nil {
+		objectMap["resourceGuid"] = agpf.ResourceGUID
+	}
+	if agpf.ProvisioningState != nil {
+		objectMap["provisioningState"] = agpf.ProvisioningState
+	}
+	if agpf.CustomErrorConfigurations != nil {
+		objectMap["customErrorConfigurations"] = agpf.CustomErrorConfigurations
+	}
+	return json.Marshal(objectMap)
 }
 
 // ApplicationGatewayRedirectConfiguration redirect configuration of an application gateway.
@@ -3811,8 +2178,8 @@ func (agrrr *ApplicationGatewayRequestRoutingRule) UnmarshalJSON(body []byte) er
 	return nil
 }
 
-// ApplicationGatewayRequestRoutingRulePropertiesFormat properties of request routing rule of the
-// application gateway.
+// ApplicationGatewayRequestRoutingRulePropertiesFormat properties of request routing rule of the application
+// gateway.
 type ApplicationGatewayRequestRoutingRulePropertiesFormat struct {
 	// RuleType - Rule type. Possible values include: 'Basic', 'PathBasedRouting'
 	RuleType ApplicationGatewayRequestRoutingRuleType `json:"ruleType,omitempty"`
@@ -3853,7 +2220,7 @@ type ApplicationGatewayRewriteRuleSet struct {
 	*ApplicationGatewayRewriteRuleSetPropertiesFormat `json:"properties,omitempty"`
 	// Name - Name of the rewrite rule set that is unique within an Application Gateway.
 	Name *string `json:"name,omitempty"`
-	// Etag - A unique read-only string that changes whenever the resource is updated.
+	// Etag - READ-ONLY; A unique read-only string that changes whenever the resource is updated.
 	Etag *string `json:"etag,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
@@ -3867,9 +2234,6 @@ func (agrrs ApplicationGatewayRewriteRuleSet) MarshalJSON() ([]byte, error) {
 	}
 	if agrrs.Name != nil {
 		objectMap["name"] = agrrs.Name
-	}
-	if agrrs.Etag != nil {
-		objectMap["etag"] = agrrs.Etag
 	}
 	if agrrs.ID != nil {
 		objectMap["id"] = agrrs.ID
@@ -3928,13 +2292,21 @@ func (agrrs *ApplicationGatewayRewriteRuleSet) UnmarshalJSON(body []byte) error 
 	return nil
 }
 
-// ApplicationGatewayRewriteRuleSetPropertiesFormat properties of rewrite rule set of the application
-// gateway.
+// ApplicationGatewayRewriteRuleSetPropertiesFormat properties of rewrite rule set of the application gateway.
 type ApplicationGatewayRewriteRuleSetPropertiesFormat struct {
 	// RewriteRules - Rewrite rules in the rewrite rule set.
 	RewriteRules *[]ApplicationGatewayRewriteRule `json:"rewriteRules,omitempty"`
-	// ProvisioningState - Provisioning state of the rewrite rule set resource. Possible values are: 'Updating', 'Deleting', and 'Failed'.
+	// ProvisioningState - READ-ONLY; Provisioning state of the rewrite rule set resource. Possible values are: 'Updating', 'Deleting', and 'Failed'.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for ApplicationGatewayRewriteRuleSetPropertiesFormat.
+func (agrrspf ApplicationGatewayRewriteRuleSetPropertiesFormat) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if agrrspf.RewriteRules != nil {
+		objectMap["rewriteRules"] = agrrspf.RewriteRules
+	}
+	return json.Marshal(objectMap)
 }
 
 // ApplicationGatewaysBackendHealthFuture an abstraction for monitoring and retrieving the results of a
@@ -3947,7 +2319,7 @@ type ApplicationGatewaysBackendHealthFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ApplicationGatewaysBackendHealthFuture) Result(client ApplicationGatewaysClient) (agbh ApplicationGatewayBackendHealth, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ApplicationGatewaysBackendHealthFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -3976,7 +2348,7 @@ type ApplicationGatewaysCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ApplicationGatewaysCreateOrUpdateFuture) Result(client ApplicationGatewaysClient) (ag ApplicationGateway, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ApplicationGatewaysCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -3995,8 +2367,8 @@ func (future *ApplicationGatewaysCreateOrUpdateFuture) Result(client Application
 	return
 }
 
-// ApplicationGatewaysDeleteFuture an abstraction for monitoring and retrieving the results of a
-// long-running operation.
+// ApplicationGatewaysDeleteFuture an abstraction for monitoring and retrieving the results of a long-running
+// operation.
 type ApplicationGatewaysDeleteFuture struct {
 	azure.Future
 }
@@ -4005,7 +2377,7 @@ type ApplicationGatewaysDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ApplicationGatewaysDeleteFuture) Result(client ApplicationGatewaysClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ApplicationGatewaysDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -4122,8 +2494,7 @@ func (agsc *ApplicationGatewaySslCertificate) UnmarshalJSON(body []byte) error {
 	return nil
 }
 
-// ApplicationGatewaySslCertificatePropertiesFormat properties of SSL certificates of an application
-// gateway.
+// ApplicationGatewaySslCertificatePropertiesFormat properties of SSL certificates of an application gateway.
 type ApplicationGatewaySslCertificatePropertiesFormat struct {
 	// Data - Base-64 encoded pfx certificate. Only applicable in PUT Request.
 	Data *string `json:"data,omitempty"`
@@ -4218,8 +2589,7 @@ func (agspp *ApplicationGatewaySslPredefinedPolicy) UnmarshalJSON(body []byte) e
 	return nil
 }
 
-// ApplicationGatewaySslPredefinedPolicyPropertiesFormat properties of
-// ApplicationGatewaySslPredefinedPolicy
+// ApplicationGatewaySslPredefinedPolicyPropertiesFormat properties of ApplicationGatewaySslPredefinedPolicy
 type ApplicationGatewaySslPredefinedPolicyPropertiesFormat struct {
 	// CipherSuites - Ssl cipher suites to be enabled in the specified order for application gateway.
 	CipherSuites *[]ApplicationGatewaySslCipherSuite `json:"cipherSuites,omitempty"`
@@ -4227,8 +2597,8 @@ type ApplicationGatewaySslPredefinedPolicyPropertiesFormat struct {
 	MinProtocolVersion ApplicationGatewaySslProtocol `json:"minProtocolVersion,omitempty"`
 }
 
-// ApplicationGatewaysStartFuture an abstraction for monitoring and retrieving the results of a
-// long-running operation.
+// ApplicationGatewaysStartFuture an abstraction for monitoring and retrieving the results of a long-running
+// operation.
 type ApplicationGatewaysStartFuture struct {
 	azure.Future
 }
@@ -4237,7 +2607,7 @@ type ApplicationGatewaysStartFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ApplicationGatewaysStartFuture) Result(client ApplicationGatewaysClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ApplicationGatewaysStartFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -4260,7 +2630,7 @@ type ApplicationGatewaysStopFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ApplicationGatewaysStopFuture) Result(client ApplicationGatewaysClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ApplicationGatewaysStopFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -4283,7 +2653,7 @@ type ApplicationGatewaysUpdateTagsFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ApplicationGatewaysUpdateTagsFuture) Result(client ApplicationGatewaysClient) (ag ApplicationGateway, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ApplicationGatewaysUpdateTagsFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -4533,11 +2903,11 @@ type ApplicationGatewayWebApplicationFirewallConfiguration struct {
 	DisabledRuleGroups *[]ApplicationGatewayFirewallDisabledRuleGroup `json:"disabledRuleGroups,omitempty"`
 	// RequestBodyCheck - Whether allow WAF to check request Body.
 	RequestBodyCheck *bool `json:"requestBodyCheck,omitempty"`
-	// MaxRequestBodySize - Maxium request body size for WAF.
+	// MaxRequestBodySize - Maximum request body size for WAF.
 	MaxRequestBodySize *int32 `json:"maxRequestBodySize,omitempty"`
-	// MaxRequestBodySizeInKb - Maxium request body size in Kb for WAF.
+	// MaxRequestBodySizeInKb - Maximum request body size in Kb for WAF.
 	MaxRequestBodySizeInKb *int32 `json:"maxRequestBodySizeInKb,omitempty"`
-	// FileUploadLimitInMb - Maxium file upload size in Mb for WAF.
+	// FileUploadLimitInMb - Maximum file upload size in Mb for WAF.
 	FileUploadLimitInMb *int32 `json:"fileUploadLimitInMb,omitempty"`
 	// Exclusions - The exclusion list.
 	Exclusions *[]ApplicationGatewayFirewallExclusion `json:"exclusions,omitempty"`
@@ -4548,13 +2918,13 @@ type ApplicationSecurityGroup struct {
 	autorest.Response `json:"-"`
 	// ApplicationSecurityGroupPropertiesFormat - Properties of the application security group.
 	*ApplicationSecurityGroupPropertiesFormat `json:"properties,omitempty"`
-	// Etag - A unique read-only string that changes whenever the resource is updated.
+	// Etag - READ-ONLY; A unique read-only string that changes whenever the resource is updated.
 	Etag *string `json:"etag,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name.
+	// Name - READ-ONLY; Resource name.
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type.
+	// Type - READ-ONLY; Resource type.
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location.
 	Location *string `json:"location,omitempty"`
@@ -4568,17 +2938,8 @@ func (asg ApplicationSecurityGroup) MarshalJSON() ([]byte, error) {
 	if asg.ApplicationSecurityGroupPropertiesFormat != nil {
 		objectMap["properties"] = asg.ApplicationSecurityGroupPropertiesFormat
 	}
-	if asg.Etag != nil {
-		objectMap["etag"] = asg.Etag
-	}
 	if asg.ID != nil {
 		objectMap["id"] = asg.ID
-	}
-	if asg.Name != nil {
-		objectMap["name"] = asg.Name
-	}
-	if asg.Type != nil {
-		objectMap["type"] = asg.Type
 	}
 	if asg.Location != nil {
 		objectMap["location"] = asg.Location
@@ -4672,12 +3033,21 @@ type ApplicationSecurityGroupListResult struct {
 	autorest.Response `json:"-"`
 	// Value - A list of application security groups.
 	Value *[]ApplicationSecurityGroup `json:"value,omitempty"`
-	// NextLink - The URL to get the next set of results.
+	// NextLink - READ-ONLY; The URL to get the next set of results.
 	NextLink *string `json:"nextLink,omitempty"`
 }
 
-// ApplicationSecurityGroupListResultIterator provides access to a complete listing of
-// ApplicationSecurityGroup values.
+// MarshalJSON is the custom marshaler for ApplicationSecurityGroupListResult.
+func (asglr ApplicationSecurityGroupListResult) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if asglr.Value != nil {
+		objectMap["value"] = asglr.Value
+	}
+	return json.Marshal(objectMap)
+}
+
+// ApplicationSecurityGroupListResultIterator provides access to a complete listing of ApplicationSecurityGroup
+// values.
 type ApplicationSecurityGroupListResultIterator struct {
 	i    int
 	page ApplicationSecurityGroupListResultPage
@@ -4745,10 +3115,15 @@ func (asglr ApplicationSecurityGroupListResult) IsEmpty() bool {
 	return asglr.Value == nil || len(*asglr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (asglr ApplicationSecurityGroupListResult) hasNextLink() bool {
+	return asglr.NextLink != nil && len(*asglr.NextLink) != 0
+}
+
 // applicationSecurityGroupListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (asglr ApplicationSecurityGroupListResult) applicationSecurityGroupListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if asglr.NextLink == nil || len(to.String(asglr.NextLink)) < 1 {
+	if !asglr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -4776,11 +3151,16 @@ func (page *ApplicationSecurityGroupListResultPage) NextWithContext(ctx context.
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.asglr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.asglr)
+		if err != nil {
+			return err
+		}
+		page.asglr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.asglr = next
 	return nil
 }
 
@@ -4816,14 +3196,14 @@ func NewApplicationSecurityGroupListResultPage(getNextPage func(context.Context,
 
 // ApplicationSecurityGroupPropertiesFormat application security group properties.
 type ApplicationSecurityGroupPropertiesFormat struct {
-	// ResourceGUID - The resource GUID property of the application security group resource. It uniquely identifies a resource, even if the user changes its name or migrate the resource across subscriptions or resource groups.
+	// ResourceGUID - READ-ONLY; The resource GUID property of the application security group resource. It uniquely identifies a resource, even if the user changes its name or migrate the resource across subscriptions or resource groups.
 	ResourceGUID *string `json:"resourceGuid,omitempty"`
-	// ProvisioningState - The provisioning state of the application security group resource. Possible values are: 'Succeeded', 'Updating', 'Deleting', and 'Failed'.
+	// ProvisioningState - READ-ONLY; The provisioning state of the application security group resource. Possible values are: 'Succeeded', 'Updating', 'Deleting', and 'Failed'.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
 }
 
-// ApplicationSecurityGroupsCreateOrUpdateFuture an abstraction for monitoring and retrieving the results
-// of a long-running operation.
+// ApplicationSecurityGroupsCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of a
+// long-running operation.
 type ApplicationSecurityGroupsCreateOrUpdateFuture struct {
 	azure.Future
 }
@@ -4832,7 +3212,7 @@ type ApplicationSecurityGroupsCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ApplicationSecurityGroupsCreateOrUpdateFuture) Result(client ApplicationSecurityGroupsClient) (asg ApplicationSecurityGroup, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ApplicationSecurityGroupsCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -4861,7 +3241,7 @@ type ApplicationSecurityGroupsDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ApplicationSecurityGroupsDeleteFuture) Result(client ApplicationSecurityGroupsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ApplicationSecurityGroupsDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -4874,8 +3254,8 @@ func (future *ApplicationSecurityGroupsDeleteFuture) Result(client ApplicationSe
 	return
 }
 
-// AuthorizationListResult response for ListAuthorizations API service call retrieves all authorizations
-// that belongs to an ExpressRouteCircuit.
+// AuthorizationListResult response for ListAuthorizations API service call retrieves all authorizations that
+// belongs to an ExpressRouteCircuit.
 type AuthorizationListResult struct {
 	autorest.Response `json:"-"`
 	// Value - The authorizations in an ExpressRoute Circuit.
@@ -4884,8 +3264,8 @@ type AuthorizationListResult struct {
 	NextLink *string `json:"nextLink,omitempty"`
 }
 
-// AuthorizationListResultIterator provides access to a complete listing of
-// ExpressRouteCircuitAuthorization values.
+// AuthorizationListResultIterator provides access to a complete listing of ExpressRouteCircuitAuthorization
+// values.
 type AuthorizationListResultIterator struct {
 	i    int
 	page AuthorizationListResultPage
@@ -4953,10 +3333,15 @@ func (alr AuthorizationListResult) IsEmpty() bool {
 	return alr.Value == nil || len(*alr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (alr AuthorizationListResult) hasNextLink() bool {
+	return alr.NextLink != nil && len(*alr.NextLink) != 0
+}
+
 // authorizationListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (alr AuthorizationListResult) authorizationListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if alr.NextLink == nil || len(to.String(alr.NextLink)) < 1 {
+	if !alr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -4984,11 +3369,16 @@ func (page *AuthorizationListResultPage) NextWithContext(ctx context.Context) (e
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.alr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.alr)
+		if err != nil {
+			return err
+		}
+		page.alr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.alr = next
 	return nil
 }
 
@@ -5042,8 +3432,7 @@ type Availability struct {
 	BlobDuration *string `json:"blobDuration,omitempty"`
 }
 
-// AvailableDelegation the serviceName of an AvailableDelegation indicates a possible delegation for a
-// subnet.
+// AvailableDelegation the serviceName of an AvailableDelegation indicates a possible delegation for a subnet.
 type AvailableDelegation struct {
 	// Name - The name of the AvailableDelegation resource.
 	Name *string `json:"name,omitempty"`
@@ -5062,8 +3451,17 @@ type AvailableDelegationsResult struct {
 	autorest.Response `json:"-"`
 	// Value - An array of available delegations.
 	Value *[]AvailableDelegation `json:"value,omitempty"`
-	// NextLink - The URL to get the next set of results.
+	// NextLink - READ-ONLY; The URL to get the next set of results.
 	NextLink *string `json:"nextLink,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for AvailableDelegationsResult.
+func (adr AvailableDelegationsResult) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if adr.Value != nil {
+		objectMap["value"] = adr.Value
+	}
+	return json.Marshal(objectMap)
 }
 
 // AvailableDelegationsResultIterator provides access to a complete listing of AvailableDelegation values.
@@ -5134,10 +3532,15 @@ func (adr AvailableDelegationsResult) IsEmpty() bool {
 	return adr.Value == nil || len(*adr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (adr AvailableDelegationsResult) hasNextLink() bool {
+	return adr.NextLink != nil && len(*adr.NextLink) != 0
+}
+
 // availableDelegationsResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (adr AvailableDelegationsResult) availableDelegationsResultPreparer(ctx context.Context) (*http.Request, error) {
-	if adr.NextLink == nil || len(to.String(adr.NextLink)) < 1 {
+	if !adr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -5165,11 +3568,16 @@ func (page *AvailableDelegationsResultPage) NextWithContext(ctx context.Context)
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.adr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.adr)
+		if err != nil {
+			return err
+		}
+		page.adr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.adr = next
 	return nil
 }
 
@@ -5252,11 +3660,11 @@ type AvailableProvidersListState struct {
 }
 
 // AzureAsyncOperationResult the response body contains the status of the specified asynchronous operation,
-// indicating whether it has succeeded, is in progress, or has failed. Note that this status is distinct
-// from the HTTP status code returned for the Get Operation Status operation itself. If the asynchronous
-// operation succeeded, the response body includes the HTTP status code for the successful request. If the
-// asynchronous operation failed, the response body includes the HTTP status code for the failed request
-// and error information regarding the failure.
+// indicating whether it has succeeded, is in progress, or has failed. Note that this status is distinct from
+// the HTTP status code returned for the Get Operation Status operation itself. If the asynchronous operation
+// succeeded, the response body includes the HTTP status code for the successful request. If the asynchronous
+// operation failed, the response body includes the HTTP status code for the failed request and error
+// information regarding the failure.
 type AzureAsyncOperationResult struct {
 	// Status - Status of the Azure async operation. Possible values are: 'InProgress', 'Succeeded', and 'Failed'. Possible values include: 'OperationStatusInProgress', 'OperationStatusSucceeded', 'OperationStatusFailed'
 	Status OperationStatus `json:"status,omitempty"`
@@ -5267,13 +3675,13 @@ type AzureAsyncOperationResult struct {
 type AzureFirewall struct {
 	autorest.Response              `json:"-"`
 	*AzureFirewallPropertiesFormat `json:"properties,omitempty"`
-	// Etag - Gets a unique read-only string that changes whenever the resource is updated.
+	// Etag - READ-ONLY; Gets a unique read-only string that changes whenever the resource is updated.
 	Etag *string `json:"etag,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name.
+	// Name - READ-ONLY; Resource name.
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type.
+	// Type - READ-ONLY; Resource type.
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location.
 	Location *string `json:"location,omitempty"`
@@ -5287,17 +3695,8 @@ func (af AzureFirewall) MarshalJSON() ([]byte, error) {
 	if af.AzureFirewallPropertiesFormat != nil {
 		objectMap["properties"] = af.AzureFirewallPropertiesFormat
 	}
-	if af.Etag != nil {
-		objectMap["etag"] = af.Etag
-	}
 	if af.ID != nil {
 		objectMap["id"] = af.ID
-	}
-	if af.Name != nil {
-		objectMap["name"] = af.Name
-	}
-	if af.Type != nil {
-		objectMap["type"] = af.Type
 	}
 	if af.Location != nil {
 		objectMap["location"] = af.Location
@@ -5407,7 +3806,7 @@ type AzureFirewallApplicationRuleCollection struct {
 	*AzureFirewallApplicationRuleCollectionPropertiesFormat `json:"properties,omitempty"`
 	// Name - Gets name of the resource that is unique within a resource group. This name can be used to access the resource.
 	Name *string `json:"name,omitempty"`
-	// Etag - Gets a unique read-only string that changes whenever the resource is updated.
+	// Etag - READ-ONLY; Gets a unique read-only string that changes whenever the resource is updated.
 	Etag *string `json:"etag,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
@@ -5421,9 +3820,6 @@ func (afarc AzureFirewallApplicationRuleCollection) MarshalJSON() ([]byte, error
 	}
 	if afarc.Name != nil {
 		objectMap["name"] = afarc.Name
-	}
-	if afarc.Etag != nil {
-		objectMap["etag"] = afarc.Etag
 	}
 	if afarc.ID != nil {
 		objectMap["id"] = afarc.ID
@@ -5505,13 +3901,13 @@ type AzureFirewallApplicationRuleProtocol struct {
 // AzureFirewallFqdnTag azure Firewall FQDN Tag Resource
 type AzureFirewallFqdnTag struct {
 	*AzureFirewallFqdnTagPropertiesFormat `json:"properties,omitempty"`
-	// Etag - Gets a unique read-only string that changes whenever the resource is updated.
+	// Etag - READ-ONLY; Gets a unique read-only string that changes whenever the resource is updated.
 	Etag *string `json:"etag,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name.
+	// Name - READ-ONLY; Resource name.
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type.
+	// Type - READ-ONLY; Resource type.
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location.
 	Location *string `json:"location,omitempty"`
@@ -5525,17 +3921,8 @@ func (afft AzureFirewallFqdnTag) MarshalJSON() ([]byte, error) {
 	if afft.AzureFirewallFqdnTagPropertiesFormat != nil {
 		objectMap["properties"] = afft.AzureFirewallFqdnTagPropertiesFormat
 	}
-	if afft.Etag != nil {
-		objectMap["etag"] = afft.Etag
-	}
 	if afft.ID != nil {
 		objectMap["id"] = afft.ID
-	}
-	if afft.Name != nil {
-		objectMap["name"] = afft.Name
-	}
-	if afft.Type != nil {
-		objectMap["type"] = afft.Type
 	}
 	if afft.Location != nil {
 		objectMap["location"] = afft.Location
@@ -5633,8 +4020,7 @@ type AzureFirewallFqdnTagListResult struct {
 	NextLink *string `json:"nextLink,omitempty"`
 }
 
-// AzureFirewallFqdnTagListResultIterator provides access to a complete listing of AzureFirewallFqdnTag
-// values.
+// AzureFirewallFqdnTagListResultIterator provides access to a complete listing of AzureFirewallFqdnTag values.
 type AzureFirewallFqdnTagListResultIterator struct {
 	i    int
 	page AzureFirewallFqdnTagListResultPage
@@ -5702,10 +4088,15 @@ func (afftlr AzureFirewallFqdnTagListResult) IsEmpty() bool {
 	return afftlr.Value == nil || len(*afftlr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (afftlr AzureFirewallFqdnTagListResult) hasNextLink() bool {
+	return afftlr.NextLink != nil && len(*afftlr.NextLink) != 0
+}
+
 // azureFirewallFqdnTagListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (afftlr AzureFirewallFqdnTagListResult) azureFirewallFqdnTagListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if afftlr.NextLink == nil || len(to.String(afftlr.NextLink)) < 1 {
+	if !afftlr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -5733,11 +4124,16 @@ func (page *AzureFirewallFqdnTagListResultPage) NextWithContext(ctx context.Cont
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.afftlr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.afftlr)
+		if err != nil {
+			return err
+		}
+		page.afftlr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.afftlr = next
 	return nil
 }
 
@@ -5773,9 +4169,9 @@ func NewAzureFirewallFqdnTagListResultPage(getNextPage func(context.Context, Azu
 
 // AzureFirewallFqdnTagPropertiesFormat azure Firewall FQDN Tag Properties
 type AzureFirewallFqdnTagPropertiesFormat struct {
-	// ProvisioningState - The provisioning state of the resource.
+	// ProvisioningState - READ-ONLY; The provisioning state of the resource.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
-	// FqdnTagName - The name of this FQDN Tag.
+	// FqdnTagName - READ-ONLY; The name of this FQDN Tag.
 	FqdnTagName *string `json:"fqdnTagName,omitempty"`
 }
 
@@ -5784,7 +4180,7 @@ type AzureFirewallIPConfiguration struct {
 	*AzureFirewallIPConfigurationPropertiesFormat `json:"properties,omitempty"`
 	// Name - Name of the resource that is unique within a resource group. This name can be used to access the resource.
 	Name *string `json:"name,omitempty"`
-	// Etag - A unique read-only string that changes whenever the resource is updated.
+	// Etag - READ-ONLY; A unique read-only string that changes whenever the resource is updated.
 	Etag *string `json:"etag,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
@@ -5798,9 +4194,6 @@ func (afic AzureFirewallIPConfiguration) MarshalJSON() ([]byte, error) {
 	}
 	if afic.Name != nil {
 		objectMap["name"] = afic.Name
-	}
-	if afic.Etag != nil {
-		objectMap["etag"] = afic.Etag
 	}
 	if afic.ID != nil {
 		objectMap["id"] = afic.ID
@@ -5861,7 +4254,7 @@ func (afic *AzureFirewallIPConfiguration) UnmarshalJSON(body []byte) error {
 
 // AzureFirewallIPConfigurationPropertiesFormat properties of IP configuration of an Azure Firewall.
 type AzureFirewallIPConfigurationPropertiesFormat struct {
-	// PrivateIPAddress - The Firewall Internal Load Balancer IP to be used as the next hop in User Defined Routes.
+	// PrivateIPAddress - READ-ONLY; The Firewall Internal Load Balancer IP to be used as the next hop in User Defined Routes.
 	PrivateIPAddress *string `json:"privateIPAddress,omitempty"`
 	// Subnet - Reference of the subnet resource. This resource must be named 'AzureFirewallSubnet'.
 	Subnet *SubResource `json:"subnet,omitempty"`
@@ -5869,6 +4262,21 @@ type AzureFirewallIPConfigurationPropertiesFormat struct {
 	PublicIPAddress *SubResource `json:"publicIPAddress,omitempty"`
 	// ProvisioningState - The provisioning state of the resource. Possible values include: 'Succeeded', 'Updating', 'Deleting', 'Failed'
 	ProvisioningState ProvisioningState `json:"provisioningState,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for AzureFirewallIPConfigurationPropertiesFormat.
+func (aficpf AzureFirewallIPConfigurationPropertiesFormat) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if aficpf.Subnet != nil {
+		objectMap["subnet"] = aficpf.Subnet
+	}
+	if aficpf.PublicIPAddress != nil {
+		objectMap["publicIPAddress"] = aficpf.PublicIPAddress
+	}
+	if aficpf.ProvisioningState != "" {
+		objectMap["provisioningState"] = aficpf.ProvisioningState
+	}
+	return json.Marshal(objectMap)
 }
 
 // AzureFirewallListResult response for ListAzureFirewalls API service call.
@@ -5948,10 +4356,15 @@ func (aflr AzureFirewallListResult) IsEmpty() bool {
 	return aflr.Value == nil || len(*aflr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (aflr AzureFirewallListResult) hasNextLink() bool {
+	return aflr.NextLink != nil && len(*aflr.NextLink) != 0
+}
+
 // azureFirewallListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (aflr AzureFirewallListResult) azureFirewallListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if aflr.NextLink == nil || len(to.String(aflr.NextLink)) < 1 {
+	if !aflr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -5979,11 +4392,16 @@ func (page *AzureFirewallListResultPage) NextWithContext(ctx context.Context) (e
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.aflr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.aflr)
+		if err != nil {
+			return err
+		}
+		page.aflr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.aflr = next
 	return nil
 }
 
@@ -6048,7 +4466,7 @@ type AzureFirewallNatRuleCollection struct {
 	*AzureFirewallNatRuleCollectionProperties `json:"properties,omitempty"`
 	// Name - Gets name of the resource that is unique within a resource group. This name can be used to access the resource.
 	Name *string `json:"name,omitempty"`
-	// Etag - Gets a unique read-only string that changes whenever the resource is updated.
+	// Etag - READ-ONLY; Gets a unique read-only string that changes whenever the resource is updated.
 	Etag *string `json:"etag,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
@@ -6062,9 +4480,6 @@ func (afnrc AzureFirewallNatRuleCollection) MarshalJSON() ([]byte, error) {
 	}
 	if afnrc.Name != nil {
 		objectMap["name"] = afnrc.Name
-	}
-	if afnrc.Etag != nil {
-		objectMap["etag"] = afnrc.Etag
 	}
 	if afnrc.ID != nil {
 		objectMap["id"] = afnrc.ID
@@ -6156,7 +4571,7 @@ type AzureFirewallNetworkRuleCollection struct {
 	*AzureFirewallNetworkRuleCollectionPropertiesFormat `json:"properties,omitempty"`
 	// Name - Gets name of the resource that is unique within a resource group. This name can be used to access the resource.
 	Name *string `json:"name,omitempty"`
-	// Etag - Gets a unique read-only string that changes whenever the resource is updated.
+	// Etag - READ-ONLY; Gets a unique read-only string that changes whenever the resource is updated.
 	Etag *string `json:"etag,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
@@ -6170,9 +4585,6 @@ func (afnrc AzureFirewallNetworkRuleCollection) MarshalJSON() ([]byte, error) {
 	}
 	if afnrc.Name != nil {
 		objectMap["name"] = afnrc.Name
-	}
-	if afnrc.Etag != nil {
-		objectMap["etag"] = afnrc.Etag
 	}
 	if afnrc.ID != nil {
 		objectMap["id"] = afnrc.ID
@@ -6273,7 +4685,7 @@ type AzureFirewallsCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *AzureFirewallsCreateOrUpdateFuture) Result(client AzureFirewallsClient) (af AzureFirewall, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.AzureFirewallsCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -6302,7 +4714,7 @@ type AzureFirewallsDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *AzureFirewallsDeleteFuture) Result(client AzureFirewallsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.AzureFirewallsDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -6450,14 +4862,25 @@ func (bap *BackendAddressPool) UnmarshalJSON(body []byte) error {
 
 // BackendAddressPoolPropertiesFormat properties of the backend address pool.
 type BackendAddressPoolPropertiesFormat struct {
-	// BackendIPConfigurations - Gets collection of references to IP addresses defined in network interfaces.
+	// BackendIPConfigurations - READ-ONLY; Gets collection of references to IP addresses defined in network interfaces.
 	BackendIPConfigurations *[]InterfaceIPConfiguration `json:"backendIPConfigurations,omitempty"`
-	// LoadBalancingRules - Gets load balancing rules that use this backend address pool.
+	// LoadBalancingRules - READ-ONLY; Gets load balancing rules that use this backend address pool.
 	LoadBalancingRules *[]SubResource `json:"loadBalancingRules,omitempty"`
-	// OutboundRule - Gets outbound rules that use this backend address pool.
+	// OutboundRule - READ-ONLY; Gets outbound rules that use this backend address pool.
 	OutboundRule *SubResource `json:"outboundRule,omitempty"`
+	// OutboundRules - READ-ONLY; Gets outbound rules that use this backend address pool.
+	OutboundRules *[]SubResource `json:"outboundRules,omitempty"`
 	// ProvisioningState - Get provisioning state of the public IP resource. Possible values are: 'Updating', 'Deleting', and 'Failed'.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for BackendAddressPoolPropertiesFormat.
+func (bappf BackendAddressPoolPropertiesFormat) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if bappf.ProvisioningState != nil {
+		objectMap["provisioningState"] = bappf.ProvisioningState
+	}
+	return json.Marshal(objectMap)
 }
 
 // BGPCommunity contains bgp community information offered in Service Community resources.
@@ -6478,21 +4901,21 @@ type BGPCommunity struct {
 
 // BgpPeerStatus BGP peer status details
 type BgpPeerStatus struct {
-	// LocalAddress - The virtual network gateway's local address
+	// LocalAddress - READ-ONLY; The virtual network gateway's local address
 	LocalAddress *string `json:"localAddress,omitempty"`
-	// Neighbor - The remote BGP peer
+	// Neighbor - READ-ONLY; The remote BGP peer
 	Neighbor *string `json:"neighbor,omitempty"`
-	// Asn - The autonomous system number of the remote BGP peer
+	// Asn - READ-ONLY; The autonomous system number of the remote BGP peer
 	Asn *int32 `json:"asn,omitempty"`
-	// State - The BGP peer state. Possible values include: 'BgpPeerStateUnknown', 'BgpPeerStateStopped', 'BgpPeerStateIdle', 'BgpPeerStateConnecting', 'BgpPeerStateConnected'
+	// State - READ-ONLY; The BGP peer state. Possible values include: 'BgpPeerStateUnknown', 'BgpPeerStateStopped', 'BgpPeerStateIdle', 'BgpPeerStateConnecting', 'BgpPeerStateConnected'
 	State BgpPeerState `json:"state,omitempty"`
-	// ConnectedDuration - For how long the peering has been up
+	// ConnectedDuration - READ-ONLY; For how long the peering has been up
 	ConnectedDuration *string `json:"connectedDuration,omitempty"`
-	// RoutesReceived - The number of routes learned from this peer
+	// RoutesReceived - READ-ONLY; The number of routes learned from this peer
 	RoutesReceived *int64 `json:"routesReceived,omitempty"`
-	// MessagesSent - The number of BGP messages sent
+	// MessagesSent - READ-ONLY; The number of BGP messages sent
 	MessagesSent *int64 `json:"messagesSent,omitempty"`
-	// MessagesReceived - The number of BGP messages received
+	// MessagesReceived - READ-ONLY; The number of BGP messages received
 	MessagesReceived *int64 `json:"messagesReceived,omitempty"`
 }
 
@@ -6508,9 +4931,9 @@ type BgpServiceCommunity struct {
 	*BgpServiceCommunityPropertiesFormat `json:"properties,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name.
+	// Name - READ-ONLY; Resource name.
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type.
+	// Type - READ-ONLY; Resource type.
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location.
 	Location *string `json:"location,omitempty"`
@@ -6526,12 +4949,6 @@ func (bsc BgpServiceCommunity) MarshalJSON() ([]byte, error) {
 	}
 	if bsc.ID != nil {
 		objectMap["id"] = bsc.ID
-	}
-	if bsc.Name != nil {
-		objectMap["name"] = bsc.Name
-	}
-	if bsc.Type != nil {
-		objectMap["type"] = bsc.Type
 	}
 	if bsc.Location != nil {
 		objectMap["location"] = bsc.Location
@@ -6620,8 +5037,7 @@ type BgpServiceCommunityListResult struct {
 	NextLink *string `json:"nextLink,omitempty"`
 }
 
-// BgpServiceCommunityListResultIterator provides access to a complete listing of BgpServiceCommunity
-// values.
+// BgpServiceCommunityListResultIterator provides access to a complete listing of BgpServiceCommunity values.
 type BgpServiceCommunityListResultIterator struct {
 	i    int
 	page BgpServiceCommunityListResultPage
@@ -6689,10 +5105,15 @@ func (bsclr BgpServiceCommunityListResult) IsEmpty() bool {
 	return bsclr.Value == nil || len(*bsclr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (bsclr BgpServiceCommunityListResult) hasNextLink() bool {
+	return bsclr.NextLink != nil && len(*bsclr.NextLink) != 0
+}
+
 // bgpServiceCommunityListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (bsclr BgpServiceCommunityListResult) bgpServiceCommunityListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if bsclr.NextLink == nil || len(to.String(bsclr.NextLink)) < 1 {
+	if !bsclr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -6720,11 +5141,16 @@ func (page *BgpServiceCommunityListResultPage) NextWithContext(ctx context.Conte
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.bsclr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.bsclr)
+		if err != nil {
+			return err
+		}
+		page.bsclr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.bsclr = next
 	return nil
 }
 
@@ -6796,14 +5222,14 @@ type ConfigurationDiagnosticProfile struct {
 	Source *string `json:"source,omitempty"`
 	// Destination - Traffic destination. Accepted values are: '*', IP Address/CIDR, Service Tag.
 	Destination *string `json:"destination,omitempty"`
-	// DestinationPort - Traffice destination port. Accepted values are '*', port (for example, 3389) and port range (for example, 80-100).
+	// DestinationPort - Traffic destination port. Accepted values are '*', port (for example, 3389) and port range (for example, 80-100).
 	DestinationPort *string `json:"destinationPort,omitempty"`
 }
 
 // ConfigurationDiagnosticResponse results of network configuration diagnostic on the target resource.
 type ConfigurationDiagnosticResponse struct {
 	autorest.Response `json:"-"`
-	// Results - List of network configuration diagnostic results.
+	// Results - READ-ONLY; List of network configuration diagnostic results.
 	Results *[]ConfigurationDiagnosticResult `json:"results,omitempty"`
 }
 
@@ -6907,7 +5333,7 @@ type ConnectionMonitorParameters struct {
 	MonitoringIntervalInSeconds *int32 `json:"monitoringIntervalInSeconds,omitempty"`
 }
 
-// ConnectionMonitorQueryResult list of connection states snaphots.
+// ConnectionMonitorQueryResult list of connection states snapshots.
 type ConnectionMonitorQueryResult struct {
 	autorest.Response `json:"-"`
 	// SourceStatus - Status of connection monitor source. Possible values include: 'Uknown', 'Active', 'Inactive'
@@ -6919,12 +5345,12 @@ type ConnectionMonitorQueryResult struct {
 // ConnectionMonitorResult information about the connection monitor.
 type ConnectionMonitorResult struct {
 	autorest.Response `json:"-"`
-	// Name - Name of the connection monitor.
+	// Name - READ-ONLY; Name of the connection monitor.
 	Name *string `json:"name,omitempty"`
-	// ID - ID of the connection monitor.
+	// ID - READ-ONLY; ID of the connection monitor.
 	ID   *string `json:"id,omitempty"`
 	Etag *string `json:"etag,omitempty"`
-	// Type - Connection monitor type.
+	// Type - READ-ONLY; Connection monitor type.
 	Type *string `json:"type,omitempty"`
 	// Location - Connection monitor location.
 	Location *string `json:"location,omitempty"`
@@ -6936,17 +5362,8 @@ type ConnectionMonitorResult struct {
 // MarshalJSON is the custom marshaler for ConnectionMonitorResult.
 func (cmr ConnectionMonitorResult) MarshalJSON() ([]byte, error) {
 	objectMap := make(map[string]interface{})
-	if cmr.Name != nil {
-		objectMap["name"] = cmr.Name
-	}
-	if cmr.ID != nil {
-		objectMap["id"] = cmr.ID
-	}
 	if cmr.Etag != nil {
 		objectMap["etag"] = cmr.Etag
-	}
-	if cmr.Type != nil {
-		objectMap["type"] = cmr.Type
 	}
 	if cmr.Location != nil {
 		objectMap["location"] = cmr.Location
@@ -7064,7 +5481,7 @@ type ConnectionMonitorsCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ConnectionMonitorsCreateOrUpdateFuture) Result(client ConnectionMonitorsClient) (cmr ConnectionMonitorResult, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ConnectionMonitorsCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -7083,8 +5500,8 @@ func (future *ConnectionMonitorsCreateOrUpdateFuture) Result(client ConnectionMo
 	return
 }
 
-// ConnectionMonitorsDeleteFuture an abstraction for monitoring and retrieving the results of a
-// long-running operation.
+// ConnectionMonitorsDeleteFuture an abstraction for monitoring and retrieving the results of a long-running
+// operation.
 type ConnectionMonitorsDeleteFuture struct {
 	azure.Future
 }
@@ -7093,7 +5510,7 @@ type ConnectionMonitorsDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ConnectionMonitorsDeleteFuture) Result(client ConnectionMonitorsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ConnectionMonitorsDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -7124,7 +5541,7 @@ type ConnectionMonitorsQueryFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ConnectionMonitorsQueryFuture) Result(client ConnectionMonitorsClient) (cmqr ConnectionMonitorQueryResult, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ConnectionMonitorsQueryFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -7153,7 +5570,7 @@ type ConnectionMonitorsStartFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ConnectionMonitorsStartFuture) Result(client ConnectionMonitorsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ConnectionMonitorsStartFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -7176,7 +5593,7 @@ type ConnectionMonitorsStopFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ConnectionMonitorsStopFuture) Result(client ConnectionMonitorsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ConnectionMonitorsStopFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -7225,8 +5642,41 @@ type ConnectionStateSnapshot struct {
 	ProbesSent *int32 `json:"probesSent,omitempty"`
 	// ProbesFailed - The number of failed probes.
 	ProbesFailed *int32 `json:"probesFailed,omitempty"`
-	// Hops - List of hops between the source and the destination.
+	// Hops - READ-ONLY; List of hops between the source and the destination.
 	Hops *[]ConnectivityHop `json:"hops,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for ConnectionStateSnapshot.
+func (CSS ConnectionStateSnapshot) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if CSS.ConnectionState != "" {
+		objectMap["connectionState"] = CSS.ConnectionState
+	}
+	if CSS.StartTime != nil {
+		objectMap["startTime"] = CSS.StartTime
+	}
+	if CSS.EndTime != nil {
+		objectMap["endTime"] = CSS.EndTime
+	}
+	if CSS.EvaluationState != "" {
+		objectMap["evaluationState"] = CSS.EvaluationState
+	}
+	if CSS.AvgLatencyInMs != nil {
+		objectMap["avgLatencyInMs"] = CSS.AvgLatencyInMs
+	}
+	if CSS.MinLatencyInMs != nil {
+		objectMap["minLatencyInMs"] = CSS.MinLatencyInMs
+	}
+	if CSS.MaxLatencyInMs != nil {
+		objectMap["maxLatencyInMs"] = CSS.MaxLatencyInMs
+	}
+	if CSS.ProbesSent != nil {
+		objectMap["probesSent"] = CSS.ProbesSent
+	}
+	if CSS.ProbesFailed != nil {
+		objectMap["probesFailed"] = CSS.ProbesFailed
+	}
+	return json.Marshal(objectMap)
 }
 
 // ConnectivityDestination parameters that define destination of connection.
@@ -7241,48 +5691,48 @@ type ConnectivityDestination struct {
 
 // ConnectivityHop information about a hop between the source and the destination.
 type ConnectivityHop struct {
-	// Type - The type of the hop.
+	// Type - READ-ONLY; The type of the hop.
 	Type *string `json:"type,omitempty"`
-	// ID - The ID of the hop.
+	// ID - READ-ONLY; The ID of the hop.
 	ID *string `json:"id,omitempty"`
-	// Address - The IP address of the hop.
+	// Address - READ-ONLY; The IP address of the hop.
 	Address *string `json:"address,omitempty"`
-	// ResourceID - The ID of the resource corresponding to this hop.
+	// ResourceID - READ-ONLY; The ID of the resource corresponding to this hop.
 	ResourceID *string `json:"resourceId,omitempty"`
-	// NextHopIds - List of next hop identifiers.
+	// NextHopIds - READ-ONLY; List of next hop identifiers.
 	NextHopIds *[]string `json:"nextHopIds,omitempty"`
-	// Issues - List of issues.
+	// Issues - READ-ONLY; List of issues.
 	Issues *[]ConnectivityIssue `json:"issues,omitempty"`
 }
 
 // ConnectivityInformation information on the connectivity status.
 type ConnectivityInformation struct {
 	autorest.Response `json:"-"`
-	// Hops - List of hops between the source and the destination.
+	// Hops - READ-ONLY; List of hops between the source and the destination.
 	Hops *[]ConnectivityHop `json:"hops,omitempty"`
-	// ConnectionStatus - The connection status. Possible values include: 'ConnectionStatusUnknown', 'ConnectionStatusConnected', 'ConnectionStatusDisconnected', 'ConnectionStatusDegraded'
+	// ConnectionStatus - READ-ONLY; The connection status. Possible values include: 'ConnectionStatusUnknown', 'ConnectionStatusConnected', 'ConnectionStatusDisconnected', 'ConnectionStatusDegraded'
 	ConnectionStatus ConnectionStatus `json:"connectionStatus,omitempty"`
-	// AvgLatencyInMs - Average latency in milliseconds.
+	// AvgLatencyInMs - READ-ONLY; Average latency in milliseconds.
 	AvgLatencyInMs *int32 `json:"avgLatencyInMs,omitempty"`
-	// MinLatencyInMs - Minimum latency in milliseconds.
+	// MinLatencyInMs - READ-ONLY; Minimum latency in milliseconds.
 	MinLatencyInMs *int32 `json:"minLatencyInMs,omitempty"`
-	// MaxLatencyInMs - Maximum latency in milliseconds.
+	// MaxLatencyInMs - READ-ONLY; Maximum latency in milliseconds.
 	MaxLatencyInMs *int32 `json:"maxLatencyInMs,omitempty"`
-	// ProbesSent - Total number of probes sent.
+	// ProbesSent - READ-ONLY; Total number of probes sent.
 	ProbesSent *int32 `json:"probesSent,omitempty"`
-	// ProbesFailed - Number of failed probes.
+	// ProbesFailed - READ-ONLY; Number of failed probes.
 	ProbesFailed *int32 `json:"probesFailed,omitempty"`
 }
 
 // ConnectivityIssue information about an issue encountered in the process of checking for connectivity.
 type ConnectivityIssue struct {
-	// Origin - The origin of the issue. Possible values include: 'OriginLocal', 'OriginInbound', 'OriginOutbound'
+	// Origin - READ-ONLY; The origin of the issue. Possible values include: 'OriginLocal', 'OriginInbound', 'OriginOutbound'
 	Origin Origin `json:"origin,omitempty"`
-	// Severity - The severity of the issue. Possible values include: 'SeverityError', 'SeverityWarning'
+	// Severity - READ-ONLY; The severity of the issue. Possible values include: 'SeverityError', 'SeverityWarning'
 	Severity Severity `json:"severity,omitempty"`
-	// Type - The type of issue. Possible values include: 'IssueTypeUnknown', 'IssueTypeAgentStopped', 'IssueTypeGuestFirewall', 'IssueTypeDNSResolution', 'IssueTypeSocketBind', 'IssueTypeNetworkSecurityRule', 'IssueTypeUserDefinedRoute', 'IssueTypePortThrottled', 'IssueTypePlatform'
+	// Type - READ-ONLY; The type of issue. Possible values include: 'IssueTypeUnknown', 'IssueTypeAgentStopped', 'IssueTypeGuestFirewall', 'IssueTypeDNSResolution', 'IssueTypeSocketBind', 'IssueTypeNetworkSecurityRule', 'IssueTypeUserDefinedRoute', 'IssueTypePortThrottled', 'IssueTypePlatform'
 	Type IssueType `json:"type,omitempty"`
-	// Context - Provides additional context on the issue.
+	// Context - READ-ONLY; Provides additional context on the issue.
 	Context *[]map[string]*string `json:"context,omitempty"`
 }
 
@@ -7315,7 +5765,7 @@ type ContainerNetworkInterface struct {
 	*ContainerNetworkInterfacePropertiesFormat `json:"properties,omitempty"`
 	// Name - The name of the resource. This name can be used to access the resource.
 	Name *string `json:"name,omitempty"`
-	// Type - Sub Resource type.
+	// Type - READ-ONLY; Sub Resource type.
 	Type *string `json:"type,omitempty"`
 	// Etag - A unique read-only string that changes whenever the resource is updated.
 	Etag *string `json:"etag,omitempty"`
@@ -7331,9 +5781,6 @@ func (cni ContainerNetworkInterface) MarshalJSON() ([]byte, error) {
 	}
 	if cni.Name != nil {
 		objectMap["name"] = cni.Name
-	}
-	if cni.Type != nil {
-		objectMap["type"] = cni.Type
 	}
 	if cni.Etag != nil {
 		objectMap["etag"] = cni.Etag
@@ -7404,13 +5851,13 @@ func (cni *ContainerNetworkInterface) UnmarshalJSON(body []byte) error {
 	return nil
 }
 
-// ContainerNetworkInterfaceConfiguration container network interface configruation child resource.
+// ContainerNetworkInterfaceConfiguration container network interface configuration child resource.
 type ContainerNetworkInterfaceConfiguration struct {
 	// ContainerNetworkInterfaceConfigurationPropertiesFormat - Container network interface configuration properties.
 	*ContainerNetworkInterfaceConfigurationPropertiesFormat `json:"properties,omitempty"`
 	// Name - The name of the resource. This name can be used to access the resource.
 	Name *string `json:"name,omitempty"`
-	// Type - Sub Resource type.
+	// Type - READ-ONLY; Sub Resource type.
 	Type *string `json:"type,omitempty"`
 	// Etag - A unique read-only string that changes whenever the resource is updated.
 	Etag *string `json:"etag,omitempty"`
@@ -7426,9 +5873,6 @@ func (cnic ContainerNetworkInterfaceConfiguration) MarshalJSON() ([]byte, error)
 	}
 	if cnic.Name != nil {
 		objectMap["name"] = cnic.Name
-	}
-	if cnic.Type != nil {
-		objectMap["type"] = cnic.Type
 	}
 	if cnic.Etag != nil {
 		objectMap["etag"] = cnic.Etag
@@ -7499,15 +5943,26 @@ func (cnic *ContainerNetworkInterfaceConfiguration) UnmarshalJSON(body []byte) e
 	return nil
 }
 
-// ContainerNetworkInterfaceConfigurationPropertiesFormat container network interface configuration
-// properties.
+// ContainerNetworkInterfaceConfigurationPropertiesFormat container network interface configuration properties.
 type ContainerNetworkInterfaceConfigurationPropertiesFormat struct {
 	// IPConfigurations - A list of ip configurations of the container network interface configuration.
 	IPConfigurations *[]IPConfigurationProfile `json:"ipConfigurations,omitempty"`
 	// ContainerNetworkInterfaces - A list of container network interfaces created from this container network interface configuration.
 	ContainerNetworkInterfaces *[]SubResource `json:"containerNetworkInterfaces,omitempty"`
-	// ProvisioningState - The provisioning state of the resource.
+	// ProvisioningState - READ-ONLY; The provisioning state of the resource.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for ContainerNetworkInterfaceConfigurationPropertiesFormat.
+func (cnicpf ContainerNetworkInterfaceConfigurationPropertiesFormat) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if cnicpf.IPConfigurations != nil {
+		objectMap["ipConfigurations"] = cnicpf.IPConfigurations
+	}
+	if cnicpf.ContainerNetworkInterfaces != nil {
+		objectMap["containerNetworkInterfaces"] = cnicpf.ContainerNetworkInterfaces
+	}
+	return json.Marshal(objectMap)
 }
 
 // ContainerNetworkInterfaceIPConfiguration the ip configuration for a container network interface.
@@ -7516,7 +5971,7 @@ type ContainerNetworkInterfaceIPConfiguration struct {
 	*ContainerNetworkInterfaceIPConfigurationPropertiesFormat `json:"properties,omitempty"`
 	// Name - The name of the resource. This name can be used to access the resource.
 	Name *string `json:"name,omitempty"`
-	// Type - Sub Resource type.
+	// Type - READ-ONLY; Sub Resource type.
 	Type *string `json:"type,omitempty"`
 	// Etag - A unique read-only string that changes whenever the resource is updated.
 	Etag *string `json:"etag,omitempty"`
@@ -7530,9 +5985,6 @@ func (cniic ContainerNetworkInterfaceIPConfiguration) MarshalJSON() ([]byte, err
 	}
 	if cniic.Name != nil {
 		objectMap["name"] = cniic.Name
-	}
-	if cniic.Type != nil {
-		objectMap["type"] = cniic.Type
 	}
 	if cniic.Etag != nil {
 		objectMap["etag"] = cniic.Etag
@@ -7591,10 +6043,10 @@ func (cniic *ContainerNetworkInterfaceIPConfiguration) UnmarshalJSON(body []byte
 	return nil
 }
 
-// ContainerNetworkInterfaceIPConfigurationPropertiesFormat properties of the container network interface
-// IP configuration.
+// ContainerNetworkInterfaceIPConfigurationPropertiesFormat properties of the container network interface IP
+// configuration.
 type ContainerNetworkInterfaceIPConfigurationPropertiesFormat struct {
-	// ProvisioningState - The provisioning state of the resource.
+	// ProvisioningState - READ-ONLY; The provisioning state of the resource.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
 }
 
@@ -7602,22 +6054,37 @@ type ContainerNetworkInterfaceIPConfigurationPropertiesFormat struct {
 type ContainerNetworkInterfacePropertiesFormat struct {
 	// ContainerNetworkInterfaceConfiguration - Container network interface configuration from which this container network interface is created.
 	ContainerNetworkInterfaceConfiguration *ContainerNetworkInterfaceConfiguration `json:"containerNetworkInterfaceConfiguration,omitempty"`
-	// Container - Reference to the conatinaer to which this container network interface is attached.
+	// Container - Reference to the container to which this container network interface is attached.
 	Container *Container `json:"container,omitempty"`
 	// IPConfigurations - Reference to the ip configuration on this container nic.
 	IPConfigurations *[]ContainerNetworkInterfaceIPConfiguration `json:"ipConfigurations,omitempty"`
-	// ProvisioningState - The provisioning state of the resource.
+	// ProvisioningState - READ-ONLY; The provisioning state of the resource.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for ContainerNetworkInterfacePropertiesFormat.
+func (cnipf ContainerNetworkInterfacePropertiesFormat) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if cnipf.ContainerNetworkInterfaceConfiguration != nil {
+		objectMap["containerNetworkInterfaceConfiguration"] = cnipf.ContainerNetworkInterfaceConfiguration
+	}
+	if cnipf.Container != nil {
+		objectMap["container"] = cnipf.Container
+	}
+	if cnipf.IPConfigurations != nil {
+		objectMap["ipConfigurations"] = cnipf.IPConfigurations
+	}
+	return json.Marshal(objectMap)
 }
 
 // DdosProtectionPlan a DDoS protection plan in a resource group.
 type DdosProtectionPlan struct {
 	autorest.Response `json:"-"`
-	// ID - Resource ID.
+	// ID - READ-ONLY; Resource ID.
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name.
+	// Name - READ-ONLY; Resource name.
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type.
+	// Type - READ-ONLY; Resource type.
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location.
 	Location *string `json:"location,omitempty"`
@@ -7625,22 +6092,13 @@ type DdosProtectionPlan struct {
 	Tags map[string]*string `json:"tags"`
 	// DdosProtectionPlanPropertiesFormat - Properties of the DDoS protection plan.
 	*DdosProtectionPlanPropertiesFormat `json:"properties,omitempty"`
-	// Etag - A unique read-only string that changes whenever the resource is updated.
+	// Etag - READ-ONLY; A unique read-only string that changes whenever the resource is updated.
 	Etag *string `json:"etag,omitempty"`
 }
 
 // MarshalJSON is the custom marshaler for DdosProtectionPlan.
 func (dpp DdosProtectionPlan) MarshalJSON() ([]byte, error) {
 	objectMap := make(map[string]interface{})
-	if dpp.ID != nil {
-		objectMap["id"] = dpp.ID
-	}
-	if dpp.Name != nil {
-		objectMap["name"] = dpp.Name
-	}
-	if dpp.Type != nil {
-		objectMap["type"] = dpp.Type
-	}
 	if dpp.Location != nil {
 		objectMap["location"] = dpp.Location
 	}
@@ -7649,9 +6107,6 @@ func (dpp DdosProtectionPlan) MarshalJSON() ([]byte, error) {
 	}
 	if dpp.DdosProtectionPlanPropertiesFormat != nil {
 		objectMap["properties"] = dpp.DdosProtectionPlanPropertiesFormat
-	}
-	if dpp.Etag != nil {
-		objectMap["etag"] = dpp.Etag
 	}
 	return json.Marshal(objectMap)
 }
@@ -7739,8 +6194,17 @@ type DdosProtectionPlanListResult struct {
 	autorest.Response `json:"-"`
 	// Value - A list of DDoS protection plans.
 	Value *[]DdosProtectionPlan `json:"value,omitempty"`
-	// NextLink - The URL to get the next set of results.
+	// NextLink - READ-ONLY; The URL to get the next set of results.
 	NextLink *string `json:"nextLink,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for DdosProtectionPlanListResult.
+func (dpplr DdosProtectionPlanListResult) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if dpplr.Value != nil {
+		objectMap["value"] = dpplr.Value
+	}
+	return json.Marshal(objectMap)
 }
 
 // DdosProtectionPlanListResultIterator provides access to a complete listing of DdosProtectionPlan values.
@@ -7811,10 +6275,15 @@ func (dpplr DdosProtectionPlanListResult) IsEmpty() bool {
 	return dpplr.Value == nil || len(*dpplr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (dpplr DdosProtectionPlanListResult) hasNextLink() bool {
+	return dpplr.NextLink != nil && len(*dpplr.NextLink) != 0
+}
+
 // ddosProtectionPlanListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (dpplr DdosProtectionPlanListResult) ddosProtectionPlanListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if dpplr.NextLink == nil || len(to.String(dpplr.NextLink)) < 1 {
+	if !dpplr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -7842,11 +6311,16 @@ func (page *DdosProtectionPlanListResultPage) NextWithContext(ctx context.Contex
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.dpplr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.dpplr)
+		if err != nil {
+			return err
+		}
+		page.dpplr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.dpplr = next
 	return nil
 }
 
@@ -7882,11 +6356,11 @@ func NewDdosProtectionPlanListResultPage(getNextPage func(context.Context, DdosP
 
 // DdosProtectionPlanPropertiesFormat dDoS protection plan properties.
 type DdosProtectionPlanPropertiesFormat struct {
-	// ResourceGUID - The resource GUID property of the DDoS protection plan resource. It uniquely identifies the resource, even if the user changes its name or migrate the resource across subscriptions or resource groups.
+	// ResourceGUID - READ-ONLY; The resource GUID property of the DDoS protection plan resource. It uniquely identifies the resource, even if the user changes its name or migrate the resource across subscriptions or resource groups.
 	ResourceGUID *string `json:"resourceGuid,omitempty"`
-	// ProvisioningState - The provisioning state of the DDoS protection plan resource. Possible values are: 'Succeeded', 'Updating', 'Deleting', and 'Failed'.
+	// ProvisioningState - READ-ONLY; The provisioning state of the DDoS protection plan resource. Possible values are: 'Succeeded', 'Updating', 'Deleting', and 'Failed'.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
-	// VirtualNetworks - The list of virtual networks associated with the DDoS protection plan resource. This list is read-only.
+	// VirtualNetworks - READ-ONLY; The list of virtual networks associated with the DDoS protection plan resource. This list is read-only.
 	VirtualNetworks *[]SubResource `json:"virtualNetworks,omitempty"`
 }
 
@@ -7900,7 +6374,7 @@ type DdosProtectionPlansCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *DdosProtectionPlansCreateOrUpdateFuture) Result(client DdosProtectionPlansClient) (dpp DdosProtectionPlan, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.DdosProtectionPlansCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -7919,8 +6393,8 @@ func (future *DdosProtectionPlansCreateOrUpdateFuture) Result(client DdosProtect
 	return
 }
 
-// DdosProtectionPlansDeleteFuture an abstraction for monitoring and retrieving the results of a
-// long-running operation.
+// DdosProtectionPlansDeleteFuture an abstraction for monitoring and retrieving the results of a long-running
+// operation.
 type DdosProtectionPlansDeleteFuture struct {
 	azure.Future
 }
@@ -7929,7 +6403,7 @@ type DdosProtectionPlansDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *DdosProtectionPlansDeleteFuture) Result(client DdosProtectionPlansClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.DdosProtectionPlansDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -8033,8 +6507,8 @@ type DeviceProperties struct {
 	LinkSpeedInMbps *int32 `json:"linkSpeedInMbps,omitempty"`
 }
 
-// DhcpOptions dhcpOptions contains an array of DNS servers available to VMs deployed in the virtual
-// network. Standard DHCP option for a subnet overrides VNET DHCP options.
+// DhcpOptions dhcpOptions contains an array of DNS servers available to VMs deployed in the virtual network.
+// Standard DHCP option for a subnet overrides VNET DHCP options.
 type DhcpOptions struct {
 	// DNSServers - The list of DNS servers IP addresses.
 	DNSServers *[]string `json:"dnsServers,omitempty"`
@@ -8101,8 +6575,17 @@ type EffectiveNetworkSecurityGroupListResult struct {
 	autorest.Response `json:"-"`
 	// Value - A list of effective network security groups.
 	Value *[]EffectiveNetworkSecurityGroup `json:"value,omitempty"`
-	// NextLink - The URL to get the next set of results.
+	// NextLink - READ-ONLY; The URL to get the next set of results.
 	NextLink *string `json:"nextLink,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for EffectiveNetworkSecurityGroupListResult.
+func (ensglr EffectiveNetworkSecurityGroupListResult) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if ensglr.Value != nil {
+		objectMap["value"] = ensglr.Value
+	}
+	return json.Marshal(objectMap)
 }
 
 // EffectiveNetworkSecurityRule effective network security rules.
@@ -8115,17 +6598,17 @@ type EffectiveNetworkSecurityRule struct {
 	SourcePortRange *string `json:"sourcePortRange,omitempty"`
 	// DestinationPortRange - The destination port or range.
 	DestinationPortRange *string `json:"destinationPortRange,omitempty"`
-	// SourcePortRanges - The source port ranges. Expected values include a single integer between 0 and 65535, a range using '-' as seperator (e.g. 100-400), or an asterix (*)
+	// SourcePortRanges - The source port ranges. Expected values include a single integer between 0 and 65535, a range using '-' as separator (e.g. 100-400), or an asterisk (*)
 	SourcePortRanges *[]string `json:"sourcePortRanges,omitempty"`
-	// DestinationPortRanges - The destination port ranges. Expected values include a single integer between 0 and 65535, a range using '-' as seperator (e.g. 100-400), or an asterix (*)
+	// DestinationPortRanges - The destination port ranges. Expected values include a single integer between 0 and 65535, a range using '-' as separator (e.g. 100-400), or an asterisk (*)
 	DestinationPortRanges *[]string `json:"destinationPortRanges,omitempty"`
 	// SourceAddressPrefix - The source address prefix.
 	SourceAddressPrefix *string `json:"sourceAddressPrefix,omitempty"`
 	// DestinationAddressPrefix - The destination address prefix.
 	DestinationAddressPrefix *string `json:"destinationAddressPrefix,omitempty"`
-	// SourceAddressPrefixes - The source address prefixes. Expected values include CIDR IP ranges, Default Tags (VirtualNetwork, AureLoadBalancer, Internet), System Tags, and the asterix (*).
+	// SourceAddressPrefixes - The source address prefixes. Expected values include CIDR IP ranges, Default Tags (VirtualNetwork, AzureLoadBalancer, Internet), System Tags, and the asterisk (*).
 	SourceAddressPrefixes *[]string `json:"sourceAddressPrefixes,omitempty"`
-	// DestinationAddressPrefixes - The destination address prefixes. Expected values include CIDR IP ranges, Default Tags (VirtualNetwork, AureLoadBalancer, Internet), System Tags, and the asterix (*).
+	// DestinationAddressPrefixes - The destination address prefixes. Expected values include CIDR IP ranges, Default Tags (VirtualNetwork, AzureLoadBalancer, Internet), System Tags, and the asterisk (*).
 	DestinationAddressPrefixes *[]string `json:"destinationAddressPrefixes,omitempty"`
 	// ExpandedSourceAddressPrefix - The expanded source address prefix.
 	ExpandedSourceAddressPrefix *[]string `json:"expandedSourceAddressPrefix,omitempty"`
@@ -8160,8 +6643,17 @@ type EffectiveRouteListResult struct {
 	autorest.Response `json:"-"`
 	// Value - A list of effective routes.
 	Value *[]EffectiveRoute `json:"value,omitempty"`
-	// NextLink - The URL to get the next set of results.
+	// NextLink - READ-ONLY; The URL to get the next set of results.
 	NextLink *string `json:"nextLink,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for EffectiveRouteListResult.
+func (erlr EffectiveRouteListResult) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if erlr.Value != nil {
+		objectMap["value"] = erlr.Value
+	}
+	return json.Marshal(objectMap)
 }
 
 // EndpointService identifies the service being brought into the virtual network.
@@ -8172,12 +6664,21 @@ type EndpointService struct {
 
 // EndpointServiceResult endpoint service.
 type EndpointServiceResult struct {
-	// Name - Name of the endpoint service.
+	// Name - READ-ONLY; Name of the endpoint service.
 	Name *string `json:"name,omitempty"`
-	// Type - Type of the endpoint service.
+	// Type - READ-ONLY; Type of the endpoint service.
 	Type *string `json:"type,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for EndpointServiceResult.
+func (esr EndpointServiceResult) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if esr.ID != nil {
+		objectMap["id"] = esr.ID
+	}
+	return json.Marshal(objectMap)
 }
 
 // EndpointServicesListResult response for the ListAvailableEndpointServices API service call.
@@ -8189,8 +6690,7 @@ type EndpointServicesListResult struct {
 	NextLink *string `json:"nextLink,omitempty"`
 }
 
-// EndpointServicesListResultIterator provides access to a complete listing of EndpointServiceResult
-// values.
+// EndpointServicesListResultIterator provides access to a complete listing of EndpointServiceResult values.
 type EndpointServicesListResultIterator struct {
 	i    int
 	page EndpointServicesListResultPage
@@ -8258,10 +6758,15 @@ func (eslr EndpointServicesListResult) IsEmpty() bool {
 	return eslr.Value == nil || len(*eslr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (eslr EndpointServicesListResult) hasNextLink() bool {
+	return eslr.NextLink != nil && len(*eslr.NextLink) != 0
+}
+
 // endpointServicesListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (eslr EndpointServicesListResult) endpointServicesListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if eslr.NextLink == nil || len(to.String(eslr.NextLink)) < 1 {
+	if !eslr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -8289,11 +6794,16 @@ func (page *EndpointServicesListResultPage) NextWithContext(ctx context.Context)
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.eslr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.eslr)
+		if err != nil {
+			return err
+		}
+		page.eslr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.eslr = next
 	return nil
 }
 
@@ -8355,8 +6865,23 @@ type EvaluatedNetworkSecurityGroup struct {
 	// AppliedTo - Resource ID of nic or subnet to which network security group is applied.
 	AppliedTo   *string      `json:"appliedTo,omitempty"`
 	MatchedRule *MatchedRule `json:"matchedRule,omitempty"`
-	// RulesEvaluationResult - List of network security rules evaluation results.
+	// RulesEvaluationResult - READ-ONLY; List of network security rules evaluation results.
 	RulesEvaluationResult *[]SecurityRulesEvaluationResult `json:"rulesEvaluationResult,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for EvaluatedNetworkSecurityGroup.
+func (ensg EvaluatedNetworkSecurityGroup) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if ensg.NetworkSecurityGroupID != nil {
+		objectMap["networkSecurityGroupId"] = ensg.NetworkSecurityGroupID
+	}
+	if ensg.AppliedTo != nil {
+		objectMap["appliedTo"] = ensg.AppliedTo
+	}
+	if ensg.MatchedRule != nil {
+		objectMap["matchedRule"] = ensg.MatchedRule
+	}
+	return json.Marshal(objectMap)
 }
 
 // ExpressRouteCircuit expressRouteCircuit resource
@@ -8365,13 +6890,13 @@ type ExpressRouteCircuit struct {
 	// Sku - The SKU.
 	Sku                                  *ExpressRouteCircuitSku `json:"sku,omitempty"`
 	*ExpressRouteCircuitPropertiesFormat `json:"properties,omitempty"`
-	// Etag - Gets a unique read-only string that changes whenever the resource is updated.
+	// Etag - READ-ONLY; Gets a unique read-only string that changes whenever the resource is updated.
 	Etag *string `json:"etag,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name.
+	// Name - READ-ONLY; Resource name.
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type.
+	// Type - READ-ONLY; Resource type.
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location.
 	Location *string `json:"location,omitempty"`
@@ -8388,17 +6913,8 @@ func (erc ExpressRouteCircuit) MarshalJSON() ([]byte, error) {
 	if erc.ExpressRouteCircuitPropertiesFormat != nil {
 		objectMap["properties"] = erc.ExpressRouteCircuitPropertiesFormat
 	}
-	if erc.Etag != nil {
-		objectMap["etag"] = erc.Etag
-	}
 	if erc.ID != nil {
 		objectMap["id"] = erc.ID
-	}
-	if erc.Name != nil {
-		objectMap["name"] = erc.Name
-	}
-	if erc.Type != nil {
-		objectMap["type"] = erc.Type
 	}
 	if erc.Location != nil {
 		objectMap["location"] = erc.Location
@@ -8514,7 +7030,7 @@ type ExpressRouteCircuitAuthorization struct {
 	*AuthorizationPropertiesFormat `json:"properties,omitempty"`
 	// Name - Gets name of the resource that is unique within a resource group. This name can be used to access the resource.
 	Name *string `json:"name,omitempty"`
-	// Etag - A unique read-only string that changes whenever the resource is updated.
+	// Etag - READ-ONLY; A unique read-only string that changes whenever the resource is updated.
 	Etag *string `json:"etag,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
@@ -8528,9 +7044,6 @@ func (erca ExpressRouteCircuitAuthorization) MarshalJSON() ([]byte, error) {
 	}
 	if erca.Name != nil {
 		objectMap["name"] = erca.Name
-	}
-	if erca.Etag != nil {
-		objectMap["etag"] = erca.Etag
 	}
 	if erca.ID != nil {
 		objectMap["id"] = erca.ID
@@ -8599,7 +7112,7 @@ type ExpressRouteCircuitAuthorizationsCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ExpressRouteCircuitAuthorizationsCreateOrUpdateFuture) Result(client ExpressRouteCircuitAuthorizationsClient) (erca ExpressRouteCircuitAuthorization, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ExpressRouteCircuitAuthorizationsCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -8618,8 +7131,8 @@ func (future *ExpressRouteCircuitAuthorizationsCreateOrUpdateFuture) Result(clie
 	return
 }
 
-// ExpressRouteCircuitAuthorizationsDeleteFuture an abstraction for monitoring and retrieving the results
-// of a long-running operation.
+// ExpressRouteCircuitAuthorizationsDeleteFuture an abstraction for monitoring and retrieving the results of a
+// long-running operation.
 type ExpressRouteCircuitAuthorizationsDeleteFuture struct {
 	azure.Future
 }
@@ -8628,7 +7141,7 @@ type ExpressRouteCircuitAuthorizationsDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ExpressRouteCircuitAuthorizationsDeleteFuture) Result(client ExpressRouteCircuitAuthorizationsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ExpressRouteCircuitAuthorizationsDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -8641,14 +7154,13 @@ func (future *ExpressRouteCircuitAuthorizationsDeleteFuture) Result(client Expre
 	return
 }
 
-// ExpressRouteCircuitConnection express Route Circuit Connection in an ExpressRouteCircuitPeering
-// resource.
+// ExpressRouteCircuitConnection express Route Circuit Connection in an ExpressRouteCircuitPeering resource.
 type ExpressRouteCircuitConnection struct {
 	autorest.Response                              `json:"-"`
 	*ExpressRouteCircuitConnectionPropertiesFormat `json:"properties,omitempty"`
 	// Name - Gets name of the resource that is unique within a resource group. This name can be used to access the resource.
 	Name *string `json:"name,omitempty"`
-	// Etag - A unique read-only string that changes whenever the resource is updated.
+	// Etag - READ-ONLY; A unique read-only string that changes whenever the resource is updated.
 	Etag *string `json:"etag,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
@@ -8662,9 +7174,6 @@ func (ercc ExpressRouteCircuitConnection) MarshalJSON() ([]byte, error) {
 	}
 	if ercc.Name != nil {
 		objectMap["name"] = ercc.Name
-	}
-	if ercc.Etag != nil {
-		objectMap["etag"] = ercc.Etag
 	}
 	if ercc.ID != nil {
 		objectMap["id"] = ercc.ID
@@ -8723,6 +7232,164 @@ func (ercc *ExpressRouteCircuitConnection) UnmarshalJSON(body []byte) error {
 	return nil
 }
 
+// ExpressRouteCircuitConnectionListResult response for ListConnections API service call retrieves all global
+// reach connections that belongs to a Private Peering for an ExpressRouteCircuit.
+type ExpressRouteCircuitConnectionListResult struct {
+	autorest.Response `json:"-"`
+	// Value - The global reach connection associated with Private Peering in an ExpressRoute Circuit.
+	Value *[]ExpressRouteCircuitConnection `json:"value,omitempty"`
+	// NextLink - The URL to get the next set of results.
+	NextLink *string `json:"nextLink,omitempty"`
+}
+
+// ExpressRouteCircuitConnectionListResultIterator provides access to a complete listing of
+// ExpressRouteCircuitConnection values.
+type ExpressRouteCircuitConnectionListResultIterator struct {
+	i    int
+	page ExpressRouteCircuitConnectionListResultPage
+}
+
+// NextWithContext advances to the next value.  If there was an error making
+// the request the iterator does not advance and the error is returned.
+func (iter *ExpressRouteCircuitConnectionListResultIterator) NextWithContext(ctx context.Context) (err error) {
+	if tracing.IsEnabled() {
+		ctx = tracing.StartSpan(ctx, fqdn+"/ExpressRouteCircuitConnectionListResultIterator.NextWithContext")
+		defer func() {
+			sc := -1
+			if iter.Response().Response.Response != nil {
+				sc = iter.Response().Response.Response.StatusCode
+			}
+			tracing.EndSpan(ctx, sc, err)
+		}()
+	}
+	iter.i++
+	if iter.i < len(iter.page.Values()) {
+		return nil
+	}
+	err = iter.page.NextWithContext(ctx)
+	if err != nil {
+		iter.i--
+		return err
+	}
+	iter.i = 0
+	return nil
+}
+
+// Next advances to the next value.  If there was an error making
+// the request the iterator does not advance and the error is returned.
+// Deprecated: Use NextWithContext() instead.
+func (iter *ExpressRouteCircuitConnectionListResultIterator) Next() error {
+	return iter.NextWithContext(context.Background())
+}
+
+// NotDone returns true if the enumeration should be started or is not yet complete.
+func (iter ExpressRouteCircuitConnectionListResultIterator) NotDone() bool {
+	return iter.page.NotDone() && iter.i < len(iter.page.Values())
+}
+
+// Response returns the raw server response from the last page request.
+func (iter ExpressRouteCircuitConnectionListResultIterator) Response() ExpressRouteCircuitConnectionListResult {
+	return iter.page.Response()
+}
+
+// Value returns the current value or a zero-initialized value if the
+// iterator has advanced beyond the end of the collection.
+func (iter ExpressRouteCircuitConnectionListResultIterator) Value() ExpressRouteCircuitConnection {
+	if !iter.page.NotDone() {
+		return ExpressRouteCircuitConnection{}
+	}
+	return iter.page.Values()[iter.i]
+}
+
+// Creates a new instance of the ExpressRouteCircuitConnectionListResultIterator type.
+func NewExpressRouteCircuitConnectionListResultIterator(page ExpressRouteCircuitConnectionListResultPage) ExpressRouteCircuitConnectionListResultIterator {
+	return ExpressRouteCircuitConnectionListResultIterator{page: page}
+}
+
+// IsEmpty returns true if the ListResult contains no values.
+func (ercclr ExpressRouteCircuitConnectionListResult) IsEmpty() bool {
+	return ercclr.Value == nil || len(*ercclr.Value) == 0
+}
+
+// hasNextLink returns true if the NextLink is not empty.
+func (ercclr ExpressRouteCircuitConnectionListResult) hasNextLink() bool {
+	return ercclr.NextLink != nil && len(*ercclr.NextLink) != 0
+}
+
+// expressRouteCircuitConnectionListResultPreparer prepares a request to retrieve the next set of results.
+// It returns nil if no more results exist.
+func (ercclr ExpressRouteCircuitConnectionListResult) expressRouteCircuitConnectionListResultPreparer(ctx context.Context) (*http.Request, error) {
+	if !ercclr.hasNextLink() {
+		return nil, nil
+	}
+	return autorest.Prepare((&http.Request{}).WithContext(ctx),
+		autorest.AsJSON(),
+		autorest.AsGet(),
+		autorest.WithBaseURL(to.String(ercclr.NextLink)))
+}
+
+// ExpressRouteCircuitConnectionListResultPage contains a page of ExpressRouteCircuitConnection values.
+type ExpressRouteCircuitConnectionListResultPage struct {
+	fn     func(context.Context, ExpressRouteCircuitConnectionListResult) (ExpressRouteCircuitConnectionListResult, error)
+	ercclr ExpressRouteCircuitConnectionListResult
+}
+
+// NextWithContext advances to the next page of values.  If there was an error making
+// the request the page does not advance and the error is returned.
+func (page *ExpressRouteCircuitConnectionListResultPage) NextWithContext(ctx context.Context) (err error) {
+	if tracing.IsEnabled() {
+		ctx = tracing.StartSpan(ctx, fqdn+"/ExpressRouteCircuitConnectionListResultPage.NextWithContext")
+		defer func() {
+			sc := -1
+			if page.Response().Response.Response != nil {
+				sc = page.Response().Response.Response.StatusCode
+			}
+			tracing.EndSpan(ctx, sc, err)
+		}()
+	}
+	for {
+		next, err := page.fn(ctx, page.ercclr)
+		if err != nil {
+			return err
+		}
+		page.ercclr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
+	}
+	return nil
+}
+
+// Next advances to the next page of values.  If there was an error making
+// the request the page does not advance and the error is returned.
+// Deprecated: Use NextWithContext() instead.
+func (page *ExpressRouteCircuitConnectionListResultPage) Next() error {
+	return page.NextWithContext(context.Background())
+}
+
+// NotDone returns true if the page enumeration should be started or is not yet complete.
+func (page ExpressRouteCircuitConnectionListResultPage) NotDone() bool {
+	return !page.ercclr.IsEmpty()
+}
+
+// Response returns the raw server response from the last page request.
+func (page ExpressRouteCircuitConnectionListResultPage) Response() ExpressRouteCircuitConnectionListResult {
+	return page.ercclr
+}
+
+// Values returns the slice of values for the current page or nil if there are no values.
+func (page ExpressRouteCircuitConnectionListResultPage) Values() []ExpressRouteCircuitConnection {
+	if page.ercclr.IsEmpty() {
+		return nil
+	}
+	return *page.ercclr.Value
+}
+
+// Creates a new instance of the ExpressRouteCircuitConnectionListResultPage type.
+func NewExpressRouteCircuitConnectionListResultPage(getNextPage func(context.Context, ExpressRouteCircuitConnectionListResult) (ExpressRouteCircuitConnectionListResult, error)) ExpressRouteCircuitConnectionListResultPage {
+	return ExpressRouteCircuitConnectionListResultPage{fn: getNextPage}
+}
+
 // ExpressRouteCircuitConnectionPropertiesFormat ...
 type ExpressRouteCircuitConnectionPropertiesFormat struct {
 	// ExpressRouteCircuitPeering - Reference to Express Route Circuit Private Peering Resource of the circuit initiating connection.
@@ -8733,14 +7400,32 @@ type ExpressRouteCircuitConnectionPropertiesFormat struct {
 	AddressPrefix *string `json:"addressPrefix,omitempty"`
 	// AuthorizationKey - The authorization key.
 	AuthorizationKey *string `json:"authorizationKey,omitempty"`
-	// CircuitConnectionStatus - Express Route Circuit Connection State. Possible values are: 'Connected' and 'Disconnected'. Possible values include: 'Connected', 'Connecting', 'Disconnected'
+	// CircuitConnectionStatus - READ-ONLY; Express Route Circuit Connection State. Possible values are: 'Connected' and 'Disconnected'. Possible values include: 'Connected', 'Connecting', 'Disconnected'
 	CircuitConnectionStatus CircuitConnectionStatus `json:"circuitConnectionStatus,omitempty"`
-	// ProvisioningState - Provisioning state of the circuit connection resource. Possible values are: 'Succeded', 'Updating', 'Deleting', and 'Failed'.
+	// ProvisioningState - READ-ONLY; Provisioning state of the circuit connection resource. Possible values are: 'Succeeded', 'Updating', 'Deleting', and 'Failed'.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
 }
 
-// ExpressRouteCircuitConnectionsCreateOrUpdateFuture an abstraction for monitoring and retrieving the
-// results of a long-running operation.
+// MarshalJSON is the custom marshaler for ExpressRouteCircuitConnectionPropertiesFormat.
+func (erccpf ExpressRouteCircuitConnectionPropertiesFormat) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if erccpf.ExpressRouteCircuitPeering != nil {
+		objectMap["expressRouteCircuitPeering"] = erccpf.ExpressRouteCircuitPeering
+	}
+	if erccpf.PeerExpressRouteCircuitPeering != nil {
+		objectMap["peerExpressRouteCircuitPeering"] = erccpf.PeerExpressRouteCircuitPeering
+	}
+	if erccpf.AddressPrefix != nil {
+		objectMap["addressPrefix"] = erccpf.AddressPrefix
+	}
+	if erccpf.AuthorizationKey != nil {
+		objectMap["authorizationKey"] = erccpf.AuthorizationKey
+	}
+	return json.Marshal(objectMap)
+}
+
+// ExpressRouteCircuitConnectionsCreateOrUpdateFuture an abstraction for monitoring and retrieving the results
+// of a long-running operation.
 type ExpressRouteCircuitConnectionsCreateOrUpdateFuture struct {
 	azure.Future
 }
@@ -8749,7 +7434,7 @@ type ExpressRouteCircuitConnectionsCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ExpressRouteCircuitConnectionsCreateOrUpdateFuture) Result(client ExpressRouteCircuitConnectionsClient) (ercc ExpressRouteCircuitConnection, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ExpressRouteCircuitConnectionsCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -8778,7 +7463,7 @@ type ExpressRouteCircuitConnectionsDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ExpressRouteCircuitConnectionsDeleteFuture) Result(client ExpressRouteCircuitConnectionsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ExpressRouteCircuitConnectionsDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -8800,8 +7485,7 @@ type ExpressRouteCircuitListResult struct {
 	NextLink *string `json:"nextLink,omitempty"`
 }
 
-// ExpressRouteCircuitListResultIterator provides access to a complete listing of ExpressRouteCircuit
-// values.
+// ExpressRouteCircuitListResultIterator provides access to a complete listing of ExpressRouteCircuit values.
 type ExpressRouteCircuitListResultIterator struct {
 	i    int
 	page ExpressRouteCircuitListResultPage
@@ -8869,10 +7553,15 @@ func (erclr ExpressRouteCircuitListResult) IsEmpty() bool {
 	return erclr.Value == nil || len(*erclr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (erclr ExpressRouteCircuitListResult) hasNextLink() bool {
+	return erclr.NextLink != nil && len(*erclr.NextLink) != 0
+}
+
 // expressRouteCircuitListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (erclr ExpressRouteCircuitListResult) expressRouteCircuitListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if erclr.NextLink == nil || len(to.String(erclr.NextLink)) < 1 {
+	if !erclr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -8900,11 +7589,16 @@ func (page *ExpressRouteCircuitListResultPage) NextWithContext(ctx context.Conte
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.erclr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.erclr)
+		if err != nil {
+			return err
+		}
+		page.erclr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.erclr = next
 	return nil
 }
 
@@ -8944,7 +7638,7 @@ type ExpressRouteCircuitPeering struct {
 	*ExpressRouteCircuitPeeringPropertiesFormat `json:"properties,omitempty"`
 	// Name - Gets name of the resource that is unique within a resource group. This name can be used to access the resource.
 	Name *string `json:"name,omitempty"`
-	// Etag - A unique read-only string that changes whenever the resource is updated.
+	// Etag - READ-ONLY; A unique read-only string that changes whenever the resource is updated.
 	Etag *string `json:"etag,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
@@ -8958,9 +7652,6 @@ func (ercp ExpressRouteCircuitPeering) MarshalJSON() ([]byte, error) {
 	}
 	if ercp.Name != nil {
 		objectMap["name"] = ercp.Name
-	}
-	if ercp.Etag != nil {
-		objectMap["etag"] = ercp.Etag
 	}
 	if ercp.ID != nil {
 		objectMap["id"] = ercp.ID
@@ -9023,7 +7714,7 @@ func (ercp *ExpressRouteCircuitPeering) UnmarshalJSON(body []byte) error {
 type ExpressRouteCircuitPeeringConfig struct {
 	// AdvertisedPublicPrefixes - The reference of AdvertisedPublicPrefixes.
 	AdvertisedPublicPrefixes *[]string `json:"advertisedPublicPrefixes,omitempty"`
-	// AdvertisedCommunities - The communities of bgp peering. Spepcified for microsoft peering
+	// AdvertisedCommunities - The communities of bgp peering. Specified for microsoft peering
 	AdvertisedCommunities *[]string `json:"advertisedCommunities,omitempty"`
 	// AdvertisedPublicPrefixesState - AdvertisedPublicPrefixState of the Peering resource. Possible values are 'NotConfigured', 'Configuring', 'Configured', and 'ValidationNeeded'. Possible values include: 'NotConfigured', 'Configuring', 'Configured', 'ValidationNeeded'
 	AdvertisedPublicPrefixesState ExpressRouteCircuitPeeringAdvertisedPublicPrefixState `json:"advertisedPublicPrefixesState,omitempty"`
@@ -9041,8 +7732,8 @@ type ExpressRouteCircuitPeeringID struct {
 	ID *string `json:"id,omitempty"`
 }
 
-// ExpressRouteCircuitPeeringListResult response for ListPeering API service call retrieves all peerings
-// that belong to an ExpressRouteCircuit.
+// ExpressRouteCircuitPeeringListResult response for ListPeering API service call retrieves all peerings that
+// belong to an ExpressRouteCircuit.
 type ExpressRouteCircuitPeeringListResult struct {
 	autorest.Response `json:"-"`
 	// Value - The peerings in an express route circuit.
@@ -9120,10 +7811,15 @@ func (ercplr ExpressRouteCircuitPeeringListResult) IsEmpty() bool {
 	return ercplr.Value == nil || len(*ercplr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (ercplr ExpressRouteCircuitPeeringListResult) hasNextLink() bool {
+	return ercplr.NextLink != nil && len(*ercplr.NextLink) != 0
+}
+
 // expressRouteCircuitPeeringListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (ercplr ExpressRouteCircuitPeeringListResult) expressRouteCircuitPeeringListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if ercplr.NextLink == nil || len(to.String(ercplr.NextLink)) < 1 {
+	if !ercplr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -9151,11 +7847,16 @@ func (page *ExpressRouteCircuitPeeringListResultPage) NextWithContext(ctx contex
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.ercplr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.ercplr)
+		if err != nil {
+			return err
+		}
+		page.ercplr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.ercplr = next
 	return nil
 }
 
@@ -9231,8 +7932,8 @@ type ExpressRouteCircuitPeeringPropertiesFormat struct {
 	Connections *[]ExpressRouteCircuitConnection `json:"connections,omitempty"`
 }
 
-// ExpressRouteCircuitPeeringsCreateOrUpdateFuture an abstraction for monitoring and retrieving the results
-// of a long-running operation.
+// ExpressRouteCircuitPeeringsCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of
+// a long-running operation.
 type ExpressRouteCircuitPeeringsCreateOrUpdateFuture struct {
 	azure.Future
 }
@@ -9241,7 +7942,7 @@ type ExpressRouteCircuitPeeringsCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ExpressRouteCircuitPeeringsCreateOrUpdateFuture) Result(client ExpressRouteCircuitPeeringsClient) (ercp ExpressRouteCircuitPeering, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ExpressRouteCircuitPeeringsCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -9270,7 +7971,7 @@ type ExpressRouteCircuitPeeringsDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ExpressRouteCircuitPeeringsDeleteFuture) Result(client ExpressRouteCircuitPeeringsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ExpressRouteCircuitPeeringsDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -9305,7 +8006,7 @@ type ExpressRouteCircuitPropertiesFormat struct {
 	ExpressRoutePort *SubResource `json:"expressRoutePort,omitempty"`
 	// BandwidthInGbps - The bandwidth of the circuit when the circuit is provisioned on an ExpressRoutePort resource.
 	BandwidthInGbps *float64 `json:"bandwidthInGbps,omitempty"`
-	// Stag - The identifier of the circuit traffic. Outer tag for QinQ encapsulation.
+	// Stag - READ-ONLY; The identifier of the circuit traffic. Outer tag for QinQ encapsulation.
 	Stag *int32 `json:"stag,omitempty"`
 	// ProvisioningState - Gets the provisioning state of the public IP resource. Possible values are: 'Updating', 'Deleting', and 'Failed'.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
@@ -9313,6 +8014,51 @@ type ExpressRouteCircuitPropertiesFormat struct {
 	GatewayManagerEtag *string `json:"gatewayManagerEtag,omitempty"`
 	// AllowGlobalReach - Flag to enable Global Reach on the circuit.
 	AllowGlobalReach *bool `json:"allowGlobalReach,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for ExpressRouteCircuitPropertiesFormat.
+func (ercpf ExpressRouteCircuitPropertiesFormat) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if ercpf.AllowClassicOperations != nil {
+		objectMap["allowClassicOperations"] = ercpf.AllowClassicOperations
+	}
+	if ercpf.CircuitProvisioningState != nil {
+		objectMap["circuitProvisioningState"] = ercpf.CircuitProvisioningState
+	}
+	if ercpf.ServiceProviderProvisioningState != "" {
+		objectMap["serviceProviderProvisioningState"] = ercpf.ServiceProviderProvisioningState
+	}
+	if ercpf.Authorizations != nil {
+		objectMap["authorizations"] = ercpf.Authorizations
+	}
+	if ercpf.Peerings != nil {
+		objectMap["peerings"] = ercpf.Peerings
+	}
+	if ercpf.ServiceKey != nil {
+		objectMap["serviceKey"] = ercpf.ServiceKey
+	}
+	if ercpf.ServiceProviderNotes != nil {
+		objectMap["serviceProviderNotes"] = ercpf.ServiceProviderNotes
+	}
+	if ercpf.ServiceProviderProperties != nil {
+		objectMap["serviceProviderProperties"] = ercpf.ServiceProviderProperties
+	}
+	if ercpf.ExpressRoutePort != nil {
+		objectMap["expressRoutePort"] = ercpf.ExpressRoutePort
+	}
+	if ercpf.BandwidthInGbps != nil {
+		objectMap["bandwidthInGbps"] = ercpf.BandwidthInGbps
+	}
+	if ercpf.ProvisioningState != nil {
+		objectMap["provisioningState"] = ercpf.ProvisioningState
+	}
+	if ercpf.GatewayManagerEtag != nil {
+		objectMap["gatewayManagerEtag"] = ercpf.GatewayManagerEtag
+	}
+	if ercpf.AllowGlobalReach != nil {
+		objectMap["allowGlobalReach"] = ercpf.AllowGlobalReach
+	}
+	return json.Marshal(objectMap)
 }
 
 // ExpressRouteCircuitReference ...
@@ -9349,8 +8095,8 @@ type ExpressRouteCircuitRoutesTableSummary struct {
 	StatePfxRcd *string `json:"statePfxRcd,omitempty"`
 }
 
-// ExpressRouteCircuitsArpTableListResult response for ListArpTable associated with the Express Route
-// Circuits API.
+// ExpressRouteCircuitsArpTableListResult response for ListArpTable associated with the Express Route Circuits
+// API.
 type ExpressRouteCircuitsArpTableListResult struct {
 	autorest.Response `json:"-"`
 	// Value - Gets list of the ARP table.
@@ -9369,7 +8115,7 @@ type ExpressRouteCircuitsCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ExpressRouteCircuitsCreateOrUpdateFuture) Result(client ExpressRouteCircuitsClient) (erc ExpressRouteCircuit, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ExpressRouteCircuitsCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -9388,8 +8134,8 @@ func (future *ExpressRouteCircuitsCreateOrUpdateFuture) Result(client ExpressRou
 	return
 }
 
-// ExpressRouteCircuitsDeleteFuture an abstraction for monitoring and retrieving the results of a
-// long-running operation.
+// ExpressRouteCircuitsDeleteFuture an abstraction for monitoring and retrieving the results of a long-running
+// operation.
 type ExpressRouteCircuitsDeleteFuture struct {
 	azure.Future
 }
@@ -9398,7 +8144,7 @@ type ExpressRouteCircuitsDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ExpressRouteCircuitsDeleteFuture) Result(client ExpressRouteCircuitsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ExpressRouteCircuitsDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -9411,8 +8157,7 @@ func (future *ExpressRouteCircuitsDeleteFuture) Result(client ExpressRouteCircui
 	return
 }
 
-// ExpressRouteCircuitServiceProviderProperties contains ServiceProviderProperties in an
-// ExpressRouteCircuit.
+// ExpressRouteCircuitServiceProviderProperties contains ServiceProviderProperties in an ExpressRouteCircuit.
 type ExpressRouteCircuitServiceProviderProperties struct {
 	// ServiceProviderName - The serviceProviderName.
 	ServiceProviderName *string `json:"serviceProviderName,omitempty"`
@@ -9442,7 +8187,7 @@ type ExpressRouteCircuitsListArpTableFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ExpressRouteCircuitsListArpTableFuture) Result(client ExpressRouteCircuitsClient) (ercatlr ExpressRouteCircuitsArpTableListResult, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ExpressRouteCircuitsListArpTableFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -9471,7 +8216,7 @@ type ExpressRouteCircuitsListRoutesTableFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ExpressRouteCircuitsListRoutesTableFuture) Result(client ExpressRouteCircuitsClient) (ercrtlr ExpressRouteCircuitsRoutesTableListResult, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ExpressRouteCircuitsListRoutesTableFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -9490,8 +8235,8 @@ func (future *ExpressRouteCircuitsListRoutesTableFuture) Result(client ExpressRo
 	return
 }
 
-// ExpressRouteCircuitsListRoutesTableSummaryFuture an abstraction for monitoring and retrieving the
-// results of a long-running operation.
+// ExpressRouteCircuitsListRoutesTableSummaryFuture an abstraction for monitoring and retrieving the results of
+// a long-running operation.
 type ExpressRouteCircuitsListRoutesTableSummaryFuture struct {
 	azure.Future
 }
@@ -9500,7 +8245,7 @@ type ExpressRouteCircuitsListRoutesTableSummaryFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ExpressRouteCircuitsListRoutesTableSummaryFuture) Result(client ExpressRouteCircuitsClient) (ercrtslr ExpressRouteCircuitsRoutesTableSummaryListResult, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ExpressRouteCircuitsListRoutesTableSummaryFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -9529,8 +8274,8 @@ type ExpressRouteCircuitsRoutesTableListResult struct {
 	NextLink *string `json:"nextLink,omitempty"`
 }
 
-// ExpressRouteCircuitsRoutesTableSummaryListResult response for ListRoutesTable associated with the
-// Express Route Circuits API.
+// ExpressRouteCircuitsRoutesTableSummaryListResult response for ListRoutesTable associated with the Express
+// Route Circuits API.
 type ExpressRouteCircuitsRoutesTableSummaryListResult struct {
 	autorest.Response `json:"-"`
 	// Value - A list of the routes table.
@@ -9562,7 +8307,7 @@ type ExpressRouteCircuitsUpdateTagsFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ExpressRouteCircuitsUpdateTagsFuture) Result(client ExpressRouteCircuitsClient) (erc ExpressRouteCircuit, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ExpressRouteCircuitsUpdateTagsFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -9650,7 +8395,7 @@ func (erc *ExpressRouteConnection) UnmarshalJSON(body []byte) error {
 
 // ExpressRouteConnectionID the ID of the ExpressRouteConnection.
 type ExpressRouteConnectionID struct {
-	// ID - The ID of the ExpressRouteConnection.
+	// ID - READ-ONLY; The ID of the ExpressRouteConnection.
 	ID *string `json:"id,omitempty"`
 }
 
@@ -9663,7 +8408,7 @@ type ExpressRouteConnectionList struct {
 
 // ExpressRouteConnectionProperties properties of the ExpressRouteConnection subresource.
 type ExpressRouteConnectionProperties struct {
-	// ProvisioningState - The provisioning state of the resource. Possible values include: 'Succeeded', 'Updating', 'Deleting', 'Failed'
+	// ProvisioningState - READ-ONLY; The provisioning state of the resource. Possible values include: 'Succeeded', 'Updating', 'Deleting', 'Failed'
 	ProvisioningState ProvisioningState `json:"provisioningState,omitempty"`
 	// ExpressRouteCircuitPeering - The ExpressRoute circuit peering.
 	ExpressRouteCircuitPeering *ExpressRouteCircuitPeeringID `json:"expressRouteCircuitPeering,omitempty"`
@@ -9673,8 +8418,23 @@ type ExpressRouteConnectionProperties struct {
 	RoutingWeight *int32 `json:"routingWeight,omitempty"`
 }
 
-// ExpressRouteConnectionsCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of
-// a long-running operation.
+// MarshalJSON is the custom marshaler for ExpressRouteConnectionProperties.
+func (ercp ExpressRouteConnectionProperties) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if ercp.ExpressRouteCircuitPeering != nil {
+		objectMap["expressRouteCircuitPeering"] = ercp.ExpressRouteCircuitPeering
+	}
+	if ercp.AuthorizationKey != nil {
+		objectMap["authorizationKey"] = ercp.AuthorizationKey
+	}
+	if ercp.RoutingWeight != nil {
+		objectMap["routingWeight"] = ercp.RoutingWeight
+	}
+	return json.Marshal(objectMap)
+}
+
+// ExpressRouteConnectionsCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of a
+// long-running operation.
 type ExpressRouteConnectionsCreateOrUpdateFuture struct {
 	azure.Future
 }
@@ -9683,7 +8443,7 @@ type ExpressRouteConnectionsCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ExpressRouteConnectionsCreateOrUpdateFuture) Result(client ExpressRouteConnectionsClient) (erc ExpressRouteConnection, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ExpressRouteConnectionsCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -9712,7 +8472,7 @@ type ExpressRouteConnectionsDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ExpressRouteConnectionsDeleteFuture) Result(client ExpressRouteConnectionsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ExpressRouteConnectionsDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -9729,13 +8489,13 @@ func (future *ExpressRouteConnectionsDeleteFuture) Result(client ExpressRouteCon
 type ExpressRouteCrossConnection struct {
 	autorest.Response                      `json:"-"`
 	*ExpressRouteCrossConnectionProperties `json:"properties,omitempty"`
-	// Etag - Gets a unique read-only string that changes whenever the resource is updated.
+	// Etag - READ-ONLY; Gets a unique read-only string that changes whenever the resource is updated.
 	Etag *string `json:"etag,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name.
+	// Name - READ-ONLY; Resource name.
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type.
+	// Type - READ-ONLY; Resource type.
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location.
 	Location *string `json:"location,omitempty"`
@@ -9749,17 +8509,8 @@ func (ercc ExpressRouteCrossConnection) MarshalJSON() ([]byte, error) {
 	if ercc.ExpressRouteCrossConnectionProperties != nil {
 		objectMap["properties"] = ercc.ExpressRouteCrossConnectionProperties
 	}
-	if ercc.Etag != nil {
-		objectMap["etag"] = ercc.Etag
-	}
 	if ercc.ID != nil {
 		objectMap["id"] = ercc.ID
-	}
-	if ercc.Name != nil {
-		objectMap["name"] = ercc.Name
-	}
-	if ercc.Type != nil {
-		objectMap["type"] = ercc.Type
 	}
 	if ercc.Location != nil {
 		objectMap["location"] = ercc.Location
@@ -9853,8 +8604,17 @@ type ExpressRouteCrossConnectionListResult struct {
 	autorest.Response `json:"-"`
 	// Value - A list of ExpressRouteCrossConnection resources.
 	Value *[]ExpressRouteCrossConnection `json:"value,omitempty"`
-	// NextLink - The URL to get the next set of results.
+	// NextLink - READ-ONLY; The URL to get the next set of results.
 	NextLink *string `json:"nextLink,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for ExpressRouteCrossConnectionListResult.
+func (ercclr ExpressRouteCrossConnectionListResult) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if ercclr.Value != nil {
+		objectMap["value"] = ercclr.Value
+	}
+	return json.Marshal(objectMap)
 }
 
 // ExpressRouteCrossConnectionListResultIterator provides access to a complete listing of
@@ -9926,10 +8686,15 @@ func (ercclr ExpressRouteCrossConnectionListResult) IsEmpty() bool {
 	return ercclr.Value == nil || len(*ercclr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (ercclr ExpressRouteCrossConnectionListResult) hasNextLink() bool {
+	return ercclr.NextLink != nil && len(*ercclr.NextLink) != 0
+}
+
 // expressRouteCrossConnectionListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (ercclr ExpressRouteCrossConnectionListResult) expressRouteCrossConnectionListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if ercclr.NextLink == nil || len(to.String(ercclr.NextLink)) < 1 {
+	if !ercclr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -9957,11 +8722,16 @@ func (page *ExpressRouteCrossConnectionListResultPage) NextWithContext(ctx conte
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.ercclr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.ercclr)
+		if err != nil {
+			return err
+		}
+		page.ercclr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.ercclr = next
 	return nil
 }
 
@@ -10001,7 +8771,7 @@ type ExpressRouteCrossConnectionPeering struct {
 	*ExpressRouteCrossConnectionPeeringProperties `json:"properties,omitempty"`
 	// Name - Gets name of the resource that is unique within a resource group. This name can be used to access the resource.
 	Name *string `json:"name,omitempty"`
-	// Etag - A unique read-only string that changes whenever the resource is updated.
+	// Etag - READ-ONLY; A unique read-only string that changes whenever the resource is updated.
 	Etag *string `json:"etag,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
@@ -10015,9 +8785,6 @@ func (erccp ExpressRouteCrossConnectionPeering) MarshalJSON() ([]byte, error) {
 	}
 	if erccp.Name != nil {
 		objectMap["name"] = erccp.Name
-	}
-	if erccp.Etag != nil {
-		objectMap["etag"] = erccp.Etag
 	}
 	if erccp.ID != nil {
 		objectMap["id"] = erccp.ID
@@ -10076,14 +8843,23 @@ func (erccp *ExpressRouteCrossConnectionPeering) UnmarshalJSON(body []byte) erro
 	return nil
 }
 
-// ExpressRouteCrossConnectionPeeringList response for ListPeering API service call retrieves all peerings
-// that belong to an ExpressRouteCrossConnection.
+// ExpressRouteCrossConnectionPeeringList response for ListPeering API service call retrieves all peerings that
+// belong to an ExpressRouteCrossConnection.
 type ExpressRouteCrossConnectionPeeringList struct {
 	autorest.Response `json:"-"`
 	// Value - The peerings in an express route cross connection.
 	Value *[]ExpressRouteCrossConnectionPeering `json:"value,omitempty"`
-	// NextLink - The URL to get the next set of results.
+	// NextLink - READ-ONLY; The URL to get the next set of results.
 	NextLink *string `json:"nextLink,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for ExpressRouteCrossConnectionPeeringList.
+func (erccpl ExpressRouteCrossConnectionPeeringList) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if erccpl.Value != nil {
+		objectMap["value"] = erccpl.Value
+	}
+	return json.Marshal(objectMap)
 }
 
 // ExpressRouteCrossConnectionPeeringListIterator provides access to a complete listing of
@@ -10155,10 +8931,15 @@ func (erccpl ExpressRouteCrossConnectionPeeringList) IsEmpty() bool {
 	return erccpl.Value == nil || len(*erccpl.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (erccpl ExpressRouteCrossConnectionPeeringList) hasNextLink() bool {
+	return erccpl.NextLink != nil && len(*erccpl.NextLink) != 0
+}
+
 // expressRouteCrossConnectionPeeringListPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (erccpl ExpressRouteCrossConnectionPeeringList) expressRouteCrossConnectionPeeringListPreparer(ctx context.Context) (*http.Request, error) {
-	if erccpl.NextLink == nil || len(to.String(erccpl.NextLink)) < 1 {
+	if !erccpl.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -10186,11 +8967,16 @@ func (page *ExpressRouteCrossConnectionPeeringListPage) NextWithContext(ctx cont
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.erccpl)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.erccpl)
+		if err != nil {
+			return err
+		}
+		page.erccpl = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.erccpl = next
 	return nil
 }
 
@@ -10230,7 +9016,7 @@ type ExpressRouteCrossConnectionPeeringProperties struct {
 	PeeringType ExpressRoutePeeringType `json:"peeringType,omitempty"`
 	// State - The peering state. Possible values include: 'ExpressRoutePeeringStateDisabled', 'ExpressRoutePeeringStateEnabled'
 	State ExpressRoutePeeringState `json:"state,omitempty"`
-	// AzureASN - The Azure ASN.
+	// AzureASN - READ-ONLY; The Azure ASN.
 	AzureASN *int32 `json:"azureASN,omitempty"`
 	// PeerASN - The peer ASN.
 	PeerASN *int64 `json:"peerASN,omitempty"`
@@ -10238,9 +9024,9 @@ type ExpressRouteCrossConnectionPeeringProperties struct {
 	PrimaryPeerAddressPrefix *string `json:"primaryPeerAddressPrefix,omitempty"`
 	// SecondaryPeerAddressPrefix - The secondary address prefix.
 	SecondaryPeerAddressPrefix *string `json:"secondaryPeerAddressPrefix,omitempty"`
-	// PrimaryAzurePort - The primary port.
+	// PrimaryAzurePort - READ-ONLY; The primary port.
 	PrimaryAzurePort *string `json:"primaryAzurePort,omitempty"`
-	// SecondaryAzurePort - The secondary port.
+	// SecondaryAzurePort - READ-ONLY; The secondary port.
 	SecondaryAzurePort *string `json:"secondaryAzurePort,omitempty"`
 	// SharedKey - The shared key.
 	SharedKey *string `json:"sharedKey,omitempty"`
@@ -10248,7 +9034,7 @@ type ExpressRouteCrossConnectionPeeringProperties struct {
 	VlanID *int32 `json:"vlanId,omitempty"`
 	// MicrosoftPeeringConfig - The Microsoft peering configuration.
 	MicrosoftPeeringConfig *ExpressRouteCircuitPeeringConfig `json:"microsoftPeeringConfig,omitempty"`
-	// ProvisioningState - Gets the provisioning state of the public IP resource. Possible values are: 'Updating', 'Deleting', and 'Failed'.
+	// ProvisioningState - READ-ONLY; Gets the provisioning state of the public IP resource. Possible values are: 'Updating', 'Deleting', and 'Failed'.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
 	// GatewayManagerEtag - The GatewayManager Etag.
 	GatewayManagerEtag *string `json:"gatewayManagerEtag,omitempty"`
@@ -10256,6 +9042,45 @@ type ExpressRouteCrossConnectionPeeringProperties struct {
 	LastModifiedBy *string `json:"lastModifiedBy,omitempty"`
 	// Ipv6PeeringConfig - The IPv6 peering configuration.
 	Ipv6PeeringConfig *Ipv6ExpressRouteCircuitPeeringConfig `json:"ipv6PeeringConfig,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for ExpressRouteCrossConnectionPeeringProperties.
+func (erccpp ExpressRouteCrossConnectionPeeringProperties) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if erccpp.PeeringType != "" {
+		objectMap["peeringType"] = erccpp.PeeringType
+	}
+	if erccpp.State != "" {
+		objectMap["state"] = erccpp.State
+	}
+	if erccpp.PeerASN != nil {
+		objectMap["peerASN"] = erccpp.PeerASN
+	}
+	if erccpp.PrimaryPeerAddressPrefix != nil {
+		objectMap["primaryPeerAddressPrefix"] = erccpp.PrimaryPeerAddressPrefix
+	}
+	if erccpp.SecondaryPeerAddressPrefix != nil {
+		objectMap["secondaryPeerAddressPrefix"] = erccpp.SecondaryPeerAddressPrefix
+	}
+	if erccpp.SharedKey != nil {
+		objectMap["sharedKey"] = erccpp.SharedKey
+	}
+	if erccpp.VlanID != nil {
+		objectMap["vlanId"] = erccpp.VlanID
+	}
+	if erccpp.MicrosoftPeeringConfig != nil {
+		objectMap["microsoftPeeringConfig"] = erccpp.MicrosoftPeeringConfig
+	}
+	if erccpp.GatewayManagerEtag != nil {
+		objectMap["gatewayManagerEtag"] = erccpp.GatewayManagerEtag
+	}
+	if erccpp.LastModifiedBy != nil {
+		objectMap["lastModifiedBy"] = erccpp.LastModifiedBy
+	}
+	if erccpp.Ipv6PeeringConfig != nil {
+		objectMap["ipv6PeeringConfig"] = erccpp.Ipv6PeeringConfig
+	}
+	return json.Marshal(objectMap)
 }
 
 // ExpressRouteCrossConnectionPeeringsCreateOrUpdateFuture an abstraction for monitoring and retrieving the
@@ -10268,7 +9093,7 @@ type ExpressRouteCrossConnectionPeeringsCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ExpressRouteCrossConnectionPeeringsCreateOrUpdateFuture) Result(client ExpressRouteCrossConnectionPeeringsClient) (erccp ExpressRouteCrossConnectionPeering, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ExpressRouteCrossConnectionPeeringsCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -10287,8 +9112,8 @@ func (future *ExpressRouteCrossConnectionPeeringsCreateOrUpdateFuture) Result(cl
 	return
 }
 
-// ExpressRouteCrossConnectionPeeringsDeleteFuture an abstraction for monitoring and retrieving the results
-// of a long-running operation.
+// ExpressRouteCrossConnectionPeeringsDeleteFuture an abstraction for monitoring and retrieving the results of
+// a long-running operation.
 type ExpressRouteCrossConnectionPeeringsDeleteFuture struct {
 	azure.Future
 }
@@ -10297,7 +9122,7 @@ type ExpressRouteCrossConnectionPeeringsDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ExpressRouteCrossConnectionPeeringsDeleteFuture) Result(client ExpressRouteCrossConnectionPeeringsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ExpressRouteCrossConnectionPeeringsDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -10312,11 +9137,11 @@ func (future *ExpressRouteCrossConnectionPeeringsDeleteFuture) Result(client Exp
 
 // ExpressRouteCrossConnectionProperties properties of ExpressRouteCrossConnection.
 type ExpressRouteCrossConnectionProperties struct {
-	// PrimaryAzurePort - The name of the primary  port.
+	// PrimaryAzurePort - READ-ONLY; The name of the primary  port.
 	PrimaryAzurePort *string `json:"primaryAzurePort,omitempty"`
-	// SecondaryAzurePort - The name of the secondary  port.
+	// SecondaryAzurePort - READ-ONLY; The name of the secondary  port.
 	SecondaryAzurePort *string `json:"secondaryAzurePort,omitempty"`
-	// STag - The identifier of the circuit traffic.
+	// STag - READ-ONLY; The identifier of the circuit traffic.
 	STag *int32 `json:"sTag,omitempty"`
 	// PeeringLocation - The peering location of the ExpressRoute circuit.
 	PeeringLocation *string `json:"peeringLocation,omitempty"`
@@ -10328,10 +9153,34 @@ type ExpressRouteCrossConnectionProperties struct {
 	ServiceProviderProvisioningState ServiceProviderProvisioningState `json:"serviceProviderProvisioningState,omitempty"`
 	// ServiceProviderNotes - Additional read only notes set by the connectivity provider.
 	ServiceProviderNotes *string `json:"serviceProviderNotes,omitempty"`
-	// ProvisioningState - Gets the provisioning state of the public IP resource. Possible values are: 'Updating', 'Deleting', and 'Failed'.
+	// ProvisioningState - READ-ONLY; Gets the provisioning state of the public IP resource. Possible values are: 'Updating', 'Deleting', and 'Failed'.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
 	// Peerings - The list of peerings.
 	Peerings *[]ExpressRouteCrossConnectionPeering `json:"peerings,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for ExpressRouteCrossConnectionProperties.
+func (erccp ExpressRouteCrossConnectionProperties) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if erccp.PeeringLocation != nil {
+		objectMap["peeringLocation"] = erccp.PeeringLocation
+	}
+	if erccp.BandwidthInMbps != nil {
+		objectMap["bandwidthInMbps"] = erccp.BandwidthInMbps
+	}
+	if erccp.ExpressRouteCircuit != nil {
+		objectMap["expressRouteCircuit"] = erccp.ExpressRouteCircuit
+	}
+	if erccp.ServiceProviderProvisioningState != "" {
+		objectMap["serviceProviderProvisioningState"] = erccp.ServiceProviderProvisioningState
+	}
+	if erccp.ServiceProviderNotes != nil {
+		objectMap["serviceProviderNotes"] = erccp.ServiceProviderNotes
+	}
+	if erccp.Peerings != nil {
+		objectMap["peerings"] = erccp.Peerings
+	}
+	return json.Marshal(objectMap)
 }
 
 // ExpressRouteCrossConnectionRoutesTableSummary the routes table associated with the ExpressRouteCircuit.
@@ -10346,8 +9195,8 @@ type ExpressRouteCrossConnectionRoutesTableSummary struct {
 	StateOrPrefixesReceived *string `json:"stateOrPrefixesReceived,omitempty"`
 }
 
-// ExpressRouteCrossConnectionsCreateOrUpdateFuture an abstraction for monitoring and retrieving the
-// results of a long-running operation.
+// ExpressRouteCrossConnectionsCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of
+// a long-running operation.
 type ExpressRouteCrossConnectionsCreateOrUpdateFuture struct {
 	azure.Future
 }
@@ -10356,7 +9205,7 @@ type ExpressRouteCrossConnectionsCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ExpressRouteCrossConnectionsCreateOrUpdateFuture) Result(client ExpressRouteCrossConnectionsClient) (ercc ExpressRouteCrossConnection, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ExpressRouteCrossConnectionsCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -10375,8 +9224,8 @@ func (future *ExpressRouteCrossConnectionsCreateOrUpdateFuture) Result(client Ex
 	return
 }
 
-// ExpressRouteCrossConnectionsListArpTableFuture an abstraction for monitoring and retrieving the results
-// of a long-running operation.
+// ExpressRouteCrossConnectionsListArpTableFuture an abstraction for monitoring and retrieving the results of a
+// long-running operation.
 type ExpressRouteCrossConnectionsListArpTableFuture struct {
 	azure.Future
 }
@@ -10385,7 +9234,7 @@ type ExpressRouteCrossConnectionsListArpTableFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ExpressRouteCrossConnectionsListArpTableFuture) Result(client ExpressRouteCrossConnectionsClient) (ercatlr ExpressRouteCircuitsArpTableListResult, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ExpressRouteCrossConnectionsListArpTableFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -10404,8 +9253,8 @@ func (future *ExpressRouteCrossConnectionsListArpTableFuture) Result(client Expr
 	return
 }
 
-// ExpressRouteCrossConnectionsListRoutesTableFuture an abstraction for monitoring and retrieving the
-// results of a long-running operation.
+// ExpressRouteCrossConnectionsListRoutesTableFuture an abstraction for monitoring and retrieving the results
+// of a long-running operation.
 type ExpressRouteCrossConnectionsListRoutesTableFuture struct {
 	azure.Future
 }
@@ -10414,7 +9263,7 @@ type ExpressRouteCrossConnectionsListRoutesTableFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ExpressRouteCrossConnectionsListRoutesTableFuture) Result(client ExpressRouteCrossConnectionsClient) (ercrtlr ExpressRouteCircuitsRoutesTableListResult, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ExpressRouteCrossConnectionsListRoutesTableFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -10433,8 +9282,8 @@ func (future *ExpressRouteCrossConnectionsListRoutesTableFuture) Result(client E
 	return
 }
 
-// ExpressRouteCrossConnectionsListRoutesTableSummaryFuture an abstraction for monitoring and retrieving
-// the results of a long-running operation.
+// ExpressRouteCrossConnectionsListRoutesTableSummaryFuture an abstraction for monitoring and retrieving the
+// results of a long-running operation.
 type ExpressRouteCrossConnectionsListRoutesTableSummaryFuture struct {
 	azure.Future
 }
@@ -10443,7 +9292,7 @@ type ExpressRouteCrossConnectionsListRoutesTableSummaryFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ExpressRouteCrossConnectionsListRoutesTableSummaryFuture) Result(client ExpressRouteCrossConnectionsClient) (erccrtslr ExpressRouteCrossConnectionsRoutesTableSummaryListResult, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ExpressRouteCrossConnectionsListRoutesTableSummaryFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -10462,18 +9311,27 @@ func (future *ExpressRouteCrossConnectionsListRoutesTableSummaryFuture) Result(c
 	return
 }
 
-// ExpressRouteCrossConnectionsRoutesTableSummaryListResult response for ListRoutesTable associated with
-// the Express Route Cross Connections.
+// ExpressRouteCrossConnectionsRoutesTableSummaryListResult response for ListRoutesTable associated with the
+// Express Route Cross Connections.
 type ExpressRouteCrossConnectionsRoutesTableSummaryListResult struct {
 	autorest.Response `json:"-"`
 	// Value - A list of the routes table.
 	Value *[]ExpressRouteCrossConnectionRoutesTableSummary `json:"value,omitempty"`
-	// NextLink - The URL to get the next set of results.
+	// NextLink - READ-ONLY; The URL to get the next set of results.
 	NextLink *string `json:"nextLink,omitempty"`
 }
 
-// ExpressRouteCrossConnectionsUpdateTagsFuture an abstraction for monitoring and retrieving the results of
-// a long-running operation.
+// MarshalJSON is the custom marshaler for ExpressRouteCrossConnectionsRoutesTableSummaryListResult.
+func (erccrtslr ExpressRouteCrossConnectionsRoutesTableSummaryListResult) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if erccrtslr.Value != nil {
+		objectMap["value"] = erccrtslr.Value
+	}
+	return json.Marshal(objectMap)
+}
+
+// ExpressRouteCrossConnectionsUpdateTagsFuture an abstraction for monitoring and retrieving the results of a
+// long-running operation.
 type ExpressRouteCrossConnectionsUpdateTagsFuture struct {
 	azure.Future
 }
@@ -10482,7 +9340,7 @@ type ExpressRouteCrossConnectionsUpdateTagsFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ExpressRouteCrossConnectionsUpdateTagsFuture) Result(client ExpressRouteCrossConnectionsClient) (ercc ExpressRouteCrossConnection, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ExpressRouteCrossConnectionsUpdateTagsFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -10505,13 +9363,13 @@ func (future *ExpressRouteCrossConnectionsUpdateTagsFuture) Result(client Expres
 type ExpressRouteGateway struct {
 	autorest.Response              `json:"-"`
 	*ExpressRouteGatewayProperties `json:"properties,omitempty"`
-	// Etag - A unique read-only string that changes whenever the resource is updated.
+	// Etag - READ-ONLY; A unique read-only string that changes whenever the resource is updated.
 	Etag *string `json:"etag,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name.
+	// Name - READ-ONLY; Resource name.
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type.
+	// Type - READ-ONLY; Resource type.
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location.
 	Location *string `json:"location,omitempty"`
@@ -10525,17 +9383,8 @@ func (erg ExpressRouteGateway) MarshalJSON() ([]byte, error) {
 	if erg.ExpressRouteGatewayProperties != nil {
 		objectMap["properties"] = erg.ExpressRouteGatewayProperties
 	}
-	if erg.Etag != nil {
-		objectMap["etag"] = erg.Etag
-	}
 	if erg.ID != nil {
 		objectMap["id"] = erg.ID
-	}
-	if erg.Name != nil {
-		objectMap["name"] = erg.Name
-	}
-	if erg.Type != nil {
-		objectMap["type"] = erg.Type
 	}
 	if erg.Location != nil {
 		objectMap["location"] = erg.Location
@@ -10635,12 +9484,24 @@ type ExpressRouteGatewayList struct {
 type ExpressRouteGatewayProperties struct {
 	// AutoScaleConfiguration - Configuration for auto scaling.
 	AutoScaleConfiguration *ExpressRouteGatewayPropertiesAutoScaleConfiguration `json:"autoScaleConfiguration,omitempty"`
-	// ExpressRouteConnections - List of ExpressRoute connections to the ExpressRoute gateway.
+	// ExpressRouteConnections - READ-ONLY; List of ExpressRoute connections to the ExpressRoute gateway.
 	ExpressRouteConnections *[]ExpressRouteConnection `json:"expressRouteConnections,omitempty"`
-	// ProvisioningState - The provisioning state of the resource. Possible values include: 'Succeeded', 'Updating', 'Deleting', 'Failed'
+	// ProvisioningState - READ-ONLY; The provisioning state of the resource. Possible values include: 'Succeeded', 'Updating', 'Deleting', 'Failed'
 	ProvisioningState ProvisioningState `json:"provisioningState,omitempty"`
 	// VirtualHub - The Virtual Hub where the ExpressRoute gateway is or will be deployed.
 	VirtualHub *VirtualHubID `json:"virtualHub,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for ExpressRouteGatewayProperties.
+func (ergp ExpressRouteGatewayProperties) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if ergp.AutoScaleConfiguration != nil {
+		objectMap["autoScaleConfiguration"] = ergp.AutoScaleConfiguration
+	}
+	if ergp.VirtualHub != nil {
+		objectMap["virtualHub"] = ergp.VirtualHub
+	}
+	return json.Marshal(objectMap)
 }
 
 // ExpressRouteGatewayPropertiesAutoScaleConfiguration configuration for auto scaling.
@@ -10668,7 +9529,7 @@ type ExpressRouteGatewaysCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ExpressRouteGatewaysCreateOrUpdateFuture) Result(client ExpressRouteGatewaysClient) (erg ExpressRouteGateway, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ExpressRouteGatewaysCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -10687,8 +9548,8 @@ func (future *ExpressRouteGatewaysCreateOrUpdateFuture) Result(client ExpressRou
 	return
 }
 
-// ExpressRouteGatewaysDeleteFuture an abstraction for monitoring and retrieving the results of a
-// long-running operation.
+// ExpressRouteGatewaysDeleteFuture an abstraction for monitoring and retrieving the results of a long-running
+// operation.
 type ExpressRouteGatewaysDeleteFuture struct {
 	azure.Future
 }
@@ -10697,7 +9558,7 @@ type ExpressRouteGatewaysDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ExpressRouteGatewaysDeleteFuture) Result(client ExpressRouteGatewaysClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ExpressRouteGatewaysDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -10717,7 +9578,7 @@ type ExpressRouteLink struct {
 	*ExpressRouteLinkPropertiesFormat `json:"properties,omitempty"`
 	// Name - Name of child port resource that is unique among child port resources of the parent.
 	Name *string `json:"name,omitempty"`
-	// Etag - A unique read-only string that changes whenever the resource is updated.
+	// Etag - READ-ONLY; A unique read-only string that changes whenever the resource is updated.
 	Etag *string `json:"etag,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
@@ -10731,9 +9592,6 @@ func (erl ExpressRouteLink) MarshalJSON() ([]byte, error) {
 	}
 	if erl.Name != nil {
 		objectMap["name"] = erl.Name
-	}
-	if erl.Etag != nil {
-		objectMap["etag"] = erl.Etag
 	}
 	if erl.ID != nil {
 		objectMap["id"] = erl.ID
@@ -10869,10 +9727,15 @@ func (erllr ExpressRouteLinkListResult) IsEmpty() bool {
 	return erllr.Value == nil || len(*erllr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (erllr ExpressRouteLinkListResult) hasNextLink() bool {
+	return erllr.NextLink != nil && len(*erllr.NextLink) != 0
+}
+
 // expressRouteLinkListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (erllr ExpressRouteLinkListResult) expressRouteLinkListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if erllr.NextLink == nil || len(to.String(erllr.NextLink)) < 1 {
+	if !erllr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -10900,11 +9763,16 @@ func (page *ExpressRouteLinkListResultPage) NextWithContext(ctx context.Context)
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.erllr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.erllr)
+		if err != nil {
+			return err
+		}
+		page.erllr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.erllr = next
 	return nil
 }
 
@@ -10940,20 +9808,29 @@ func NewExpressRouteLinkListResultPage(getNextPage func(context.Context, Express
 
 // ExpressRouteLinkPropertiesFormat properties specific to ExpressRouteLink resources.
 type ExpressRouteLinkPropertiesFormat struct {
-	// RouterName - Name of Azure router associated with physical port.
+	// RouterName - READ-ONLY; Name of Azure router associated with physical port.
 	RouterName *string `json:"routerName,omitempty"`
-	// InterfaceName - Name of Azure router interface.
+	// InterfaceName - READ-ONLY; Name of Azure router interface.
 	InterfaceName *string `json:"interfaceName,omitempty"`
-	// PatchPanelID - Mapping between physical port to patch panel port.
+	// PatchPanelID - READ-ONLY; Mapping between physical port to patch panel port.
 	PatchPanelID *string `json:"patchPanelId,omitempty"`
-	// RackID - Mapping of physical patch panel to rack.
+	// RackID - READ-ONLY; Mapping of physical patch panel to rack.
 	RackID *string `json:"rackId,omitempty"`
-	// ConnectorType - Physical fiber port type. Possible values include: 'LC', 'SC'
+	// ConnectorType - READ-ONLY; Physical fiber port type. Possible values include: 'LC', 'SC'
 	ConnectorType ExpressRouteLinkConnectorType `json:"connectorType,omitempty"`
 	// AdminState - Administrative state of the physical port. Possible values include: 'ExpressRouteLinkAdminStateEnabled', 'ExpressRouteLinkAdminStateDisabled'
 	AdminState ExpressRouteLinkAdminState `json:"adminState,omitempty"`
-	// ProvisioningState - The provisioning state of the ExpressRouteLink resource. Possible values are: 'Succeeded', 'Updating', 'Deleting', and 'Failed'.
+	// ProvisioningState - READ-ONLY; The provisioning state of the ExpressRouteLink resource. Possible values are: 'Succeeded', 'Updating', 'Deleting', and 'Failed'.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for ExpressRouteLinkPropertiesFormat.
+func (erlpf ExpressRouteLinkPropertiesFormat) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if erlpf.AdminState != "" {
+		objectMap["adminState"] = erlpf.AdminState
+	}
+	return json.Marshal(objectMap)
 }
 
 // ExpressRoutePort expressRoutePort resource definition.
@@ -10961,13 +9838,13 @@ type ExpressRoutePort struct {
 	autorest.Response `json:"-"`
 	// ExpressRoutePortPropertiesFormat - ExpressRoutePort properties
 	*ExpressRoutePortPropertiesFormat `json:"properties,omitempty"`
-	// Etag - A unique read-only string that changes whenever the resource is updated.
+	// Etag - READ-ONLY; A unique read-only string that changes whenever the resource is updated.
 	Etag *string `json:"etag,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name.
+	// Name - READ-ONLY; Resource name.
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type.
+	// Type - READ-ONLY; Resource type.
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location.
 	Location *string `json:"location,omitempty"`
@@ -10981,17 +9858,8 @@ func (erp ExpressRoutePort) MarshalJSON() ([]byte, error) {
 	if erp.ExpressRoutePortPropertiesFormat != nil {
 		objectMap["properties"] = erp.ExpressRoutePortPropertiesFormat
 	}
-	if erp.Etag != nil {
-		objectMap["etag"] = erp.Etag
-	}
 	if erp.ID != nil {
 		objectMap["id"] = erp.ID
-	}
-	if erp.Name != nil {
-		objectMap["name"] = erp.Name
-	}
-	if erp.Type != nil {
-		objectMap["type"] = erp.Type
 	}
 	if erp.Location != nil {
 		objectMap["location"] = erp.Location
@@ -11157,10 +10025,15 @@ func (erplr ExpressRoutePortListResult) IsEmpty() bool {
 	return erplr.Value == nil || len(*erplr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (erplr ExpressRoutePortListResult) hasNextLink() bool {
+	return erplr.NextLink != nil && len(*erplr.NextLink) != 0
+}
+
 // expressRoutePortListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (erplr ExpressRoutePortListResult) expressRoutePortListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if erplr.NextLink == nil || len(to.String(erplr.NextLink)) < 1 {
+	if !erplr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -11188,11 +10061,16 @@ func (page *ExpressRoutePortListResultPage) NextWithContext(ctx context.Context)
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.erplr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.erplr)
+		if err != nil {
+			return err
+		}
+		page.erplr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.erplr = next
 	return nil
 }
 
@@ -11232,24 +10110,45 @@ type ExpressRoutePortPropertiesFormat struct {
 	PeeringLocation *string `json:"peeringLocation,omitempty"`
 	// BandwidthInGbps - Bandwidth of procured ports in Gbps
 	BandwidthInGbps *int32 `json:"bandwidthInGbps,omitempty"`
-	// ProvisionedBandwidthInGbps - Aggregate Gbps of associated circuit bandwidths.
+	// ProvisionedBandwidthInGbps - READ-ONLY; Aggregate Gbps of associated circuit bandwidths.
 	ProvisionedBandwidthInGbps *float64 `json:"provisionedBandwidthInGbps,omitempty"`
-	// Mtu - Maximum transmission unit of the physical port pair(s)
+	// Mtu - READ-ONLY; Maximum transmission unit of the physical port pair(s)
 	Mtu *string `json:"mtu,omitempty"`
 	// Encapsulation - Encapsulation method on physical ports. Possible values include: 'Dot1Q', 'QinQ'
 	Encapsulation ExpressRoutePortsEncapsulation `json:"encapsulation,omitempty"`
-	// EtherType - Ethertype of the physical port.
+	// EtherType - READ-ONLY; Ether type of the physical port.
 	EtherType *string `json:"etherType,omitempty"`
-	// AllocationDate - Date of the physical port allocation to be used in Letter of Authorization.
+	// AllocationDate - READ-ONLY; Date of the physical port allocation to be used in Letter of Authorization.
 	AllocationDate *string `json:"allocationDate,omitempty"`
 	// Links - The set of physical links of the ExpressRoutePort resource
 	Links *[]ExpressRouteLink `json:"links,omitempty"`
-	// Circuits - Reference the ExpressRoute circuit(s) that are provisioned on this ExpressRoutePort resource.
+	// Circuits - READ-ONLY; Reference the ExpressRoute circuit(s) that are provisioned on this ExpressRoutePort resource.
 	Circuits *[]SubResource `json:"circuits,omitempty"`
-	// ProvisioningState - The provisioning state of the ExpressRoutePort resource. Possible values are: 'Succeeded', 'Updating', 'Deleting', and 'Failed'.
+	// ProvisioningState - READ-ONLY; The provisioning state of the ExpressRoutePort resource. Possible values are: 'Succeeded', 'Updating', 'Deleting', and 'Failed'.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
 	// ResourceGUID - The resource GUID property of the ExpressRoutePort resource.
 	ResourceGUID *string `json:"resourceGuid,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for ExpressRoutePortPropertiesFormat.
+func (erppf ExpressRoutePortPropertiesFormat) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if erppf.PeeringLocation != nil {
+		objectMap["peeringLocation"] = erppf.PeeringLocation
+	}
+	if erppf.BandwidthInGbps != nil {
+		objectMap["bandwidthInGbps"] = erppf.BandwidthInGbps
+	}
+	if erppf.Encapsulation != "" {
+		objectMap["encapsulation"] = erppf.Encapsulation
+	}
+	if erppf.Links != nil {
+		objectMap["links"] = erppf.Links
+	}
+	if erppf.ResourceGUID != nil {
+		objectMap["resourceGuid"] = erppf.ResourceGUID
+	}
+	return json.Marshal(objectMap)
 }
 
 // ExpressRoutePortsCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of a
@@ -11262,7 +10161,7 @@ type ExpressRoutePortsCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ExpressRoutePortsCreateOrUpdateFuture) Result(client ExpressRoutePortsClient) (erp ExpressRoutePort, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ExpressRoutePortsCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -11291,7 +10190,7 @@ type ExpressRoutePortsDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ExpressRoutePortsDeleteFuture) Result(client ExpressRoutePortsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ExpressRoutePortsDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -11311,9 +10210,9 @@ type ExpressRoutePortsLocation struct {
 	*ExpressRoutePortsLocationPropertiesFormat `json:"properties,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name.
+	// Name - READ-ONLY; Resource name.
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type.
+	// Type - READ-ONLY; Resource type.
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location.
 	Location *string `json:"location,omitempty"`
@@ -11329,12 +10228,6 @@ func (erpl ExpressRoutePortsLocation) MarshalJSON() ([]byte, error) {
 	}
 	if erpl.ID != nil {
 		objectMap["id"] = erpl.ID
-	}
-	if erpl.Name != nil {
-		objectMap["name"] = erpl.Name
-	}
-	if erpl.Type != nil {
-		objectMap["type"] = erpl.Type
 	}
 	if erpl.Location != nil {
 		objectMap["location"] = erpl.Location
@@ -11416,9 +10309,9 @@ func (erpl *ExpressRoutePortsLocation) UnmarshalJSON(body []byte) error {
 
 // ExpressRoutePortsLocationBandwidths real-time inventory of available ExpressRoute port bandwidths.
 type ExpressRoutePortsLocationBandwidths struct {
-	// OfferName - Bandwidth descriptive name
+	// OfferName - READ-ONLY; Bandwidth descriptive name
 	OfferName *string `json:"offerName,omitempty"`
-	// ValueInGbps - Bandwidth value in Gbps
+	// ValueInGbps - READ-ONLY; Bandwidth value in Gbps
 	ValueInGbps *int32 `json:"valueInGbps,omitempty"`
 }
 
@@ -11500,10 +10393,15 @@ func (erpllr ExpressRoutePortsLocationListResult) IsEmpty() bool {
 	return erpllr.Value == nil || len(*erpllr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (erpllr ExpressRoutePortsLocationListResult) hasNextLink() bool {
+	return erpllr.NextLink != nil && len(*erpllr.NextLink) != 0
+}
+
 // expressRoutePortsLocationListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (erpllr ExpressRoutePortsLocationListResult) expressRoutePortsLocationListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if erpllr.NextLink == nil || len(to.String(erpllr.NextLink)) < 1 {
+	if !erpllr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -11531,11 +10429,16 @@ func (page *ExpressRoutePortsLocationListResultPage) NextWithContext(ctx context
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.erpllr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.erpllr)
+		if err != nil {
+			return err
+		}
+		page.erpllr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.erpllr = next
 	return nil
 }
 
@@ -11572,18 +10475,27 @@ func NewExpressRoutePortsLocationListResultPage(getNextPage func(context.Context
 // ExpressRoutePortsLocationPropertiesFormat properties specific to ExpressRoutePorts peering location
 // resources.
 type ExpressRoutePortsLocationPropertiesFormat struct {
-	// Address - Address of peering location.
+	// Address - READ-ONLY; Address of peering location.
 	Address *string `json:"address,omitempty"`
-	// Contact - Contact details of peering locations.
+	// Contact - READ-ONLY; Contact details of peering locations.
 	Contact *string `json:"contact,omitempty"`
 	// AvailableBandwidths - The inventory of available ExpressRoutePort bandwidths.
 	AvailableBandwidths *[]ExpressRoutePortsLocationBandwidths `json:"availableBandwidths,omitempty"`
-	// ProvisioningState - The provisioning state of the ExpressRoutePortLocation resource. Possible values are: 'Succeeded', 'Updating', 'Deleting', and 'Failed'.
+	// ProvisioningState - READ-ONLY; The provisioning state of the ExpressRoutePortLocation resource. Possible values are: 'Succeeded', 'Updating', 'Deleting', and 'Failed'.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
 }
 
-// ExpressRoutePortsUpdateTagsFuture an abstraction for monitoring and retrieving the results of a
-// long-running operation.
+// MarshalJSON is the custom marshaler for ExpressRoutePortsLocationPropertiesFormat.
+func (erplpf ExpressRoutePortsLocationPropertiesFormat) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if erplpf.AvailableBandwidths != nil {
+		objectMap["availableBandwidths"] = erplpf.AvailableBandwidths
+	}
+	return json.Marshal(objectMap)
+}
+
+// ExpressRoutePortsUpdateTagsFuture an abstraction for monitoring and retrieving the results of a long-running
+// operation.
 type ExpressRoutePortsUpdateTagsFuture struct {
 	azure.Future
 }
@@ -11592,7 +10504,7 @@ type ExpressRoutePortsUpdateTagsFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ExpressRoutePortsUpdateTagsFuture) Result(client ExpressRoutePortsClient) (erp ExpressRoutePort, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ExpressRoutePortsUpdateTagsFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -11616,9 +10528,9 @@ type ExpressRouteServiceProvider struct {
 	*ExpressRouteServiceProviderPropertiesFormat `json:"properties,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name.
+	// Name - READ-ONLY; Resource name.
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type.
+	// Type - READ-ONLY; Resource type.
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location.
 	Location *string `json:"location,omitempty"`
@@ -11634,12 +10546,6 @@ func (ersp ExpressRouteServiceProvider) MarshalJSON() ([]byte, error) {
 	}
 	if ersp.ID != nil {
 		objectMap["id"] = ersp.ID
-	}
-	if ersp.Name != nil {
-		objectMap["name"] = ersp.Name
-	}
-	if ersp.Type != nil {
-		objectMap["type"] = ersp.Type
 	}
 	if ersp.Location != nil {
 		objectMap["location"] = ersp.Location
@@ -11806,10 +10712,15 @@ func (ersplr ExpressRouteServiceProviderListResult) IsEmpty() bool {
 	return ersplr.Value == nil || len(*ersplr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (ersplr ExpressRouteServiceProviderListResult) hasNextLink() bool {
+	return ersplr.NextLink != nil && len(*ersplr.NextLink) != 0
+}
+
 // expressRouteServiceProviderListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (ersplr ExpressRouteServiceProviderListResult) expressRouteServiceProviderListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if ersplr.NextLink == nil || len(to.String(ersplr.NextLink)) < 1 {
+	if !ersplr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -11837,11 +10748,16 @@ func (page *ExpressRouteServiceProviderListResultPage) NextWithContext(ctx conte
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.ersplr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.ersplr)
+		if err != nil {
+			return err
+		}
+		page.ersplr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.ersplr = next
 	return nil
 }
 
@@ -11969,8 +10885,8 @@ type FlowLogProperties struct {
 	Format          *FlowLogFormatParameters   `json:"format,omitempty"`
 }
 
-// FlowLogStatusParameters parameters that define a resource to query flow log and traffic analytics
-// (optional) status.
+// FlowLogStatusParameters parameters that define a resource to query flow log and traffic analytics (optional)
+// status.
 type FlowLogStatusParameters struct {
 	// TargetResourceID - The target resource where getting the flow log and traffic analytics (optional) status.
 	TargetResourceID *string `json:"targetResourceId,omitempty"`
@@ -12074,13 +10990,13 @@ func (fic *FrontendIPConfiguration) UnmarshalJSON(body []byte) error {
 
 // FrontendIPConfigurationPropertiesFormat properties of Frontend IP Configuration of the load balancer.
 type FrontendIPConfigurationPropertiesFormat struct {
-	// InboundNatRules - Read only. Inbound rules URIs that use this frontend IP.
+	// InboundNatRules - READ-ONLY; Read only. Inbound rules URIs that use this frontend IP.
 	InboundNatRules *[]SubResource `json:"inboundNatRules,omitempty"`
-	// InboundNatPools - Read only. Inbound pools URIs that use this frontend IP.
+	// InboundNatPools - READ-ONLY; Read only. Inbound pools URIs that use this frontend IP.
 	InboundNatPools *[]SubResource `json:"inboundNatPools,omitempty"`
-	// OutboundRules - Read only. Outbound rules URIs that use this frontend IP.
+	// OutboundRules - READ-ONLY; Read only. Outbound rules URIs that use this frontend IP.
 	OutboundRules *[]SubResource `json:"outboundRules,omitempty"`
-	// LoadBalancingRules - Gets load balancing rules URIs that use this frontend IP.
+	// LoadBalancingRules - READ-ONLY; Gets load balancing rules URIs that use this frontend IP.
 	LoadBalancingRules *[]SubResource `json:"loadBalancingRules,omitempty"`
 	// PrivateIPAddress - The private IP address of the IP configuration.
 	PrivateIPAddress *string `json:"privateIPAddress,omitempty"`
@@ -12096,21 +11012,45 @@ type FrontendIPConfigurationPropertiesFormat struct {
 	ProvisioningState *string `json:"provisioningState,omitempty"`
 }
 
+// MarshalJSON is the custom marshaler for FrontendIPConfigurationPropertiesFormat.
+func (ficpf FrontendIPConfigurationPropertiesFormat) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if ficpf.PrivateIPAddress != nil {
+		objectMap["privateIPAddress"] = ficpf.PrivateIPAddress
+	}
+	if ficpf.PrivateIPAllocationMethod != "" {
+		objectMap["privateIPAllocationMethod"] = ficpf.PrivateIPAllocationMethod
+	}
+	if ficpf.Subnet != nil {
+		objectMap["subnet"] = ficpf.Subnet
+	}
+	if ficpf.PublicIPAddress != nil {
+		objectMap["publicIPAddress"] = ficpf.PublicIPAddress
+	}
+	if ficpf.PublicIPPrefix != nil {
+		objectMap["publicIPPrefix"] = ficpf.PublicIPPrefix
+	}
+	if ficpf.ProvisioningState != nil {
+		objectMap["provisioningState"] = ficpf.ProvisioningState
+	}
+	return json.Marshal(objectMap)
+}
+
 // GatewayRoute gateway routing details
 type GatewayRoute struct {
-	// LocalAddress - The gateway's local address
+	// LocalAddress - READ-ONLY; The gateway's local address
 	LocalAddress *string `json:"localAddress,omitempty"`
-	// NetworkProperty - The route's network prefix
+	// NetworkProperty - READ-ONLY; The route's network prefix
 	NetworkProperty *string `json:"network,omitempty"`
-	// NextHop - The route's next hop
+	// NextHop - READ-ONLY; The route's next hop
 	NextHop *string `json:"nextHop,omitempty"`
-	// SourcePeer - The peer this route was learned from
+	// SourcePeer - READ-ONLY; The peer this route was learned from
 	SourcePeer *string `json:"sourcePeer,omitempty"`
-	// Origin - The source this route was learned from
+	// Origin - READ-ONLY; The source this route was learned from
 	Origin *string `json:"origin,omitempty"`
-	// AsPath - The route's AS path sequence
+	// AsPath - READ-ONLY; The route's AS path sequence
 	AsPath *string `json:"asPath,omitempty"`
-	// Weight - The route's weight
+	// Weight - READ-ONLY; The route's weight
 	Weight *int32 `json:"weight,omitempty"`
 }
 
@@ -12153,7 +11093,7 @@ type HubVirtualNetworkConnection struct {
 	*HubVirtualNetworkConnectionProperties `json:"properties,omitempty"`
 	// Name - The name of the resource that is unique within a resource group. This name can be used to access the resource.
 	Name *string `json:"name,omitempty"`
-	// Etag - Gets a unique read-only string that changes whenever the resource is updated.
+	// Etag - READ-ONLY; Gets a unique read-only string that changes whenever the resource is updated.
 	Etag *string `json:"etag,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
@@ -12167,9 +11107,6 @@ func (hvnc HubVirtualNetworkConnection) MarshalJSON() ([]byte, error) {
 	}
 	if hvnc.Name != nil {
 		objectMap["name"] = hvnc.Name
-	}
-	if hvnc.Etag != nil {
-		objectMap["etag"] = hvnc.Etag
 	}
 	if hvnc.ID != nil {
 		objectMap["id"] = hvnc.ID
@@ -12432,8 +11369,17 @@ type InboundNatRuleListResult struct {
 	autorest.Response `json:"-"`
 	// Value - A list of inbound nat rules in a load balancer.
 	Value *[]InboundNatRule `json:"value,omitempty"`
-	// NextLink - The URL to get the next set of results.
+	// NextLink - READ-ONLY; The URL to get the next set of results.
 	NextLink *string `json:"nextLink,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for InboundNatRuleListResult.
+func (inrlr InboundNatRuleListResult) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if inrlr.Value != nil {
+		objectMap["value"] = inrlr.Value
+	}
+	return json.Marshal(objectMap)
 }
 
 // InboundNatRuleListResultIterator provides access to a complete listing of InboundNatRule values.
@@ -12504,10 +11450,15 @@ func (inrlr InboundNatRuleListResult) IsEmpty() bool {
 	return inrlr.Value == nil || len(*inrlr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (inrlr InboundNatRuleListResult) hasNextLink() bool {
+	return inrlr.NextLink != nil && len(*inrlr.NextLink) != 0
+}
+
 // inboundNatRuleListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (inrlr InboundNatRuleListResult) inboundNatRuleListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if inrlr.NextLink == nil || len(to.String(inrlr.NextLink)) < 1 {
+	if !inrlr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -12535,11 +11486,16 @@ func (page *InboundNatRuleListResultPage) NextWithContext(ctx context.Context) (
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.inrlr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.inrlr)
+		if err != nil {
+			return err
+		}
+		page.inrlr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.inrlr = next
 	return nil
 }
 
@@ -12577,7 +11533,7 @@ func NewInboundNatRuleListResultPage(getNextPage func(context.Context, InboundNa
 type InboundNatRulePropertiesFormat struct {
 	// FrontendIPConfiguration - A reference to frontend IP addresses.
 	FrontendIPConfiguration *SubResource `json:"frontendIPConfiguration,omitempty"`
-	// BackendIPConfiguration - A reference to a private IP address defined on a network interface of a VM. Traffic sent to the frontend port of each of the frontend IP configurations is forwarded to the backend IP.
+	// BackendIPConfiguration - READ-ONLY; A reference to a private IP address defined on a network interface of a VM. Traffic sent to the frontend port of each of the frontend IP configurations is forwarded to the backend IP.
 	BackendIPConfiguration *InterfaceIPConfiguration `json:"backendIPConfiguration,omitempty"`
 	// Protocol - Possible values include: 'TransportProtocolUDP', 'TransportProtocolTCP', 'TransportProtocolAll'
 	Protocol TransportProtocol `json:"protocol,omitempty"`
@@ -12595,6 +11551,36 @@ type InboundNatRulePropertiesFormat struct {
 	ProvisioningState *string `json:"provisioningState,omitempty"`
 }
 
+// MarshalJSON is the custom marshaler for InboundNatRulePropertiesFormat.
+func (inrpf InboundNatRulePropertiesFormat) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if inrpf.FrontendIPConfiguration != nil {
+		objectMap["frontendIPConfiguration"] = inrpf.FrontendIPConfiguration
+	}
+	if inrpf.Protocol != "" {
+		objectMap["protocol"] = inrpf.Protocol
+	}
+	if inrpf.FrontendPort != nil {
+		objectMap["frontendPort"] = inrpf.FrontendPort
+	}
+	if inrpf.BackendPort != nil {
+		objectMap["backendPort"] = inrpf.BackendPort
+	}
+	if inrpf.IdleTimeoutInMinutes != nil {
+		objectMap["idleTimeoutInMinutes"] = inrpf.IdleTimeoutInMinutes
+	}
+	if inrpf.EnableFloatingIP != nil {
+		objectMap["enableFloatingIP"] = inrpf.EnableFloatingIP
+	}
+	if inrpf.EnableTCPReset != nil {
+		objectMap["enableTcpReset"] = inrpf.EnableTCPReset
+	}
+	if inrpf.ProvisioningState != nil {
+		objectMap["provisioningState"] = inrpf.ProvisioningState
+	}
+	return json.Marshal(objectMap)
+}
+
 // InboundNatRulesCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of a
 // long-running operation.
 type InboundNatRulesCreateOrUpdateFuture struct {
@@ -12605,7 +11591,7 @@ type InboundNatRulesCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *InboundNatRulesCreateOrUpdateFuture) Result(client InboundNatRulesClient) (inr InboundNatRule, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.InboundNatRulesCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -12634,7 +11620,7 @@ type InboundNatRulesDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *InboundNatRulesDeleteFuture) Result(client InboundNatRulesClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.InboundNatRulesDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -12656,9 +11642,9 @@ type Interface struct {
 	Etag *string `json:"etag,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name.
+	// Name - READ-ONLY; Resource name.
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type.
+	// Type - READ-ONLY; Resource type.
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location.
 	Location *string `json:"location,omitempty"`
@@ -12677,12 +11663,6 @@ func (i Interface) MarshalJSON() ([]byte, error) {
 	}
 	if i.ID != nil {
 		objectMap["id"] = i.ID
-	}
-	if i.Name != nil {
-		objectMap["name"] = i.Name
-	}
-	if i.Type != nil {
-		objectMap["type"] = i.Type
 	}
 	if i.Location != nil {
 		objectMap["location"] = i.Location
@@ -12773,10 +11753,19 @@ func (i *Interface) UnmarshalJSON(body []byte) error {
 
 // InterfaceAssociation network interface and its custom security rules.
 type InterfaceAssociation struct {
-	// ID - Network interface ID.
+	// ID - READ-ONLY; Network interface ID.
 	ID *string `json:"id,omitempty"`
 	// SecurityRules - Collection of custom security rules.
 	SecurityRules *[]SecurityRule `json:"securityRules,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for InterfaceAssociation.
+func (ia InterfaceAssociation) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if ia.SecurityRules != nil {
+		objectMap["securityRules"] = ia.SecurityRules
+	}
+	return json.Marshal(objectMap)
 }
 
 // InterfaceDNSSettings DNS settings of a network interface.
@@ -12802,9 +11791,9 @@ type InterfaceEndpoint struct {
 	Etag *string `json:"etag,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name.
+	// Name - READ-ONLY; Resource name.
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type.
+	// Type - READ-ONLY; Resource type.
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location.
 	Location *string `json:"location,omitempty"`
@@ -12823,12 +11812,6 @@ func (ie InterfaceEndpoint) MarshalJSON() ([]byte, error) {
 	}
 	if ie.ID != nil {
 		objectMap["id"] = ie.ID
-	}
-	if ie.Name != nil {
-		objectMap["name"] = ie.Name
-	}
-	if ie.Type != nil {
-		objectMap["type"] = ie.Type
 	}
 	if ie.Location != nil {
 		objectMap["location"] = ie.Location
@@ -12922,8 +11905,17 @@ type InterfaceEndpointListResult struct {
 	autorest.Response `json:"-"`
 	// Value - Gets a list of InterfaceEndpoint resources in a resource group.
 	Value *[]InterfaceEndpoint `json:"value,omitempty"`
-	// NextLink - The URL to get the next set of results.
+	// NextLink - READ-ONLY; The URL to get the next set of results.
 	NextLink *string `json:"nextLink,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for InterfaceEndpointListResult.
+func (ielr InterfaceEndpointListResult) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if ielr.Value != nil {
+		objectMap["value"] = ielr.Value
+	}
+	return json.Marshal(objectMap)
 }
 
 // InterfaceEndpointListResultIterator provides access to a complete listing of InterfaceEndpoint values.
@@ -12994,10 +11986,15 @@ func (ielr InterfaceEndpointListResult) IsEmpty() bool {
 	return ielr.Value == nil || len(*ielr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (ielr InterfaceEndpointListResult) hasNextLink() bool {
+	return ielr.NextLink != nil && len(*ielr.NextLink) != 0
+}
+
 // interfaceEndpointListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (ielr InterfaceEndpointListResult) interfaceEndpointListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if ielr.NextLink == nil || len(to.String(ielr.NextLink)) < 1 {
+	if !ielr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -13025,11 +12022,16 @@ func (page *InterfaceEndpointListResultPage) NextWithContext(ctx context.Context
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.ielr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.ielr)
+		if err != nil {
+			return err
+		}
+		page.ielr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.ielr = next
 	return nil
 }
 
@@ -13071,12 +12073,27 @@ type InterfaceEndpointProperties struct {
 	EndpointService *EndpointService `json:"endpointService,omitempty"`
 	// Subnet - The ID of the subnet from which the private IP will be allocated.
 	Subnet *Subnet `json:"subnet,omitempty"`
-	// NetworkInterfaces - Gets an array of references to the network interfaces created for this interface endpoint.
+	// NetworkInterfaces - READ-ONLY; Gets an array of references to the network interfaces created for this interface endpoint.
 	NetworkInterfaces *[]Interface `json:"networkInterfaces,omitempty"`
-	// Owner - A read-only property that identifies who created this interface endpoint.
+	// Owner - READ-ONLY; A read-only property that identifies who created this interface endpoint.
 	Owner *string `json:"owner,omitempty"`
-	// ProvisioningState - The provisioning state of the interface endpoint. Possible values are: 'Updating', 'Deleting', and 'Failed'.
+	// ProvisioningState - READ-ONLY; The provisioning state of the interface endpoint. Possible values are: 'Updating', 'Deleting', and 'Failed'.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for InterfaceEndpointProperties.
+func (iep InterfaceEndpointProperties) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if iep.Fqdn != nil {
+		objectMap["fqdn"] = iep.Fqdn
+	}
+	if iep.EndpointService != nil {
+		objectMap["endpointService"] = iep.EndpointService
+	}
+	if iep.Subnet != nil {
+		objectMap["subnet"] = iep.Subnet
+	}
+	return json.Marshal(objectMap)
 }
 
 // InterfaceEndpointsCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of a
@@ -13089,7 +12106,7 @@ type InterfaceEndpointsCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *InterfaceEndpointsCreateOrUpdateFuture) Result(client InterfaceEndpointsClient) (ie InterfaceEndpoint, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.InterfaceEndpointsCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -13108,8 +12125,8 @@ func (future *InterfaceEndpointsCreateOrUpdateFuture) Result(client InterfaceEnd
 	return
 }
 
-// InterfaceEndpointsDeleteFuture an abstraction for monitoring and retrieving the results of a
-// long-running operation.
+// InterfaceEndpointsDeleteFuture an abstraction for monitoring and retrieving the results of a long-running
+// operation.
 type InterfaceEndpointsDeleteFuture struct {
 	azure.Future
 }
@@ -13118,7 +12135,7 @@ type InterfaceEndpointsDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *InterfaceEndpointsDeleteFuture) Result(client InterfaceEndpointsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.InterfaceEndpointsDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -13218,12 +12235,21 @@ type InterfaceIPConfigurationListResult struct {
 	autorest.Response `json:"-"`
 	// Value - A list of ip configurations.
 	Value *[]InterfaceIPConfiguration `json:"value,omitempty"`
-	// NextLink - The URL to get the next set of results.
+	// NextLink - READ-ONLY; The URL to get the next set of results.
 	NextLink *string `json:"nextLink,omitempty"`
 }
 
-// InterfaceIPConfigurationListResultIterator provides access to a complete listing of
-// InterfaceIPConfiguration values.
+// MarshalJSON is the custom marshaler for InterfaceIPConfigurationListResult.
+func (iiclr InterfaceIPConfigurationListResult) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if iiclr.Value != nil {
+		objectMap["value"] = iiclr.Value
+	}
+	return json.Marshal(objectMap)
+}
+
+// InterfaceIPConfigurationListResultIterator provides access to a complete listing of InterfaceIPConfiguration
+// values.
 type InterfaceIPConfigurationListResultIterator struct {
 	i    int
 	page InterfaceIPConfigurationListResultPage
@@ -13291,10 +12317,15 @@ func (iiclr InterfaceIPConfigurationListResult) IsEmpty() bool {
 	return iiclr.Value == nil || len(*iiclr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (iiclr InterfaceIPConfigurationListResult) hasNextLink() bool {
+	return iiclr.NextLink != nil && len(*iiclr.NextLink) != 0
+}
+
 // interfaceIPConfigurationListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (iiclr InterfaceIPConfigurationListResult) interfaceIPConfigurationListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if iiclr.NextLink == nil || len(to.String(iiclr.NextLink)) < 1 {
+	if !iiclr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -13322,11 +12353,16 @@ func (page *InterfaceIPConfigurationListResultPage) NextWithContext(ctx context.
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.iiclr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.iiclr)
+		if err != nil {
+			return err
+		}
+		page.iiclr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.iiclr = next
 	return nil
 }
 
@@ -13393,8 +12429,17 @@ type InterfaceListResult struct {
 	autorest.Response `json:"-"`
 	// Value - A list of network interfaces in a resource group.
 	Value *[]Interface `json:"value,omitempty"`
-	// NextLink - The URL to get the next set of results.
+	// NextLink - READ-ONLY; The URL to get the next set of results.
 	NextLink *string `json:"nextLink,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for InterfaceListResult.
+func (ilr InterfaceListResult) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if ilr.Value != nil {
+		objectMap["value"] = ilr.Value
+	}
+	return json.Marshal(objectMap)
 }
 
 // InterfaceListResultIterator provides access to a complete listing of Interface values.
@@ -13465,10 +12510,15 @@ func (ilr InterfaceListResult) IsEmpty() bool {
 	return ilr.Value == nil || len(*ilr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (ilr InterfaceListResult) hasNextLink() bool {
+	return ilr.NextLink != nil && len(*ilr.NextLink) != 0
+}
+
 // interfaceListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (ilr InterfaceListResult) interfaceListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if ilr.NextLink == nil || len(to.String(ilr.NextLink)) < 1 {
+	if !ilr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -13496,11 +12546,16 @@ func (page *InterfaceListResultPage) NextWithContext(ctx context.Context) (err e
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.ilr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.ilr)
+		if err != nil {
+			return err
+		}
+		page.ilr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.ilr = next
 	return nil
 }
 
@@ -13539,8 +12594,17 @@ type InterfaceLoadBalancerListResult struct {
 	autorest.Response `json:"-"`
 	// Value - A list of load balancers.
 	Value *[]LoadBalancer `json:"value,omitempty"`
-	// NextLink - The URL to get the next set of results.
+	// NextLink - READ-ONLY; The URL to get the next set of results.
 	NextLink *string `json:"nextLink,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for InterfaceLoadBalancerListResult.
+func (ilblr InterfaceLoadBalancerListResult) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if ilblr.Value != nil {
+		objectMap["value"] = ilblr.Value
+	}
+	return json.Marshal(objectMap)
 }
 
 // InterfaceLoadBalancerListResultIterator provides access to a complete listing of LoadBalancer values.
@@ -13611,10 +12675,15 @@ func (ilblr InterfaceLoadBalancerListResult) IsEmpty() bool {
 	return ilblr.Value == nil || len(*ilblr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (ilblr InterfaceLoadBalancerListResult) hasNextLink() bool {
+	return ilblr.NextLink != nil && len(*ilblr.NextLink) != 0
+}
+
 // interfaceLoadBalancerListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (ilblr InterfaceLoadBalancerListResult) interfaceLoadBalancerListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if ilblr.NextLink == nil || len(to.String(ilblr.NextLink)) < 1 {
+	if !ilblr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -13642,11 +12711,16 @@ func (page *InterfaceLoadBalancerListResultPage) NextWithContext(ctx context.Con
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.ilblr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.ilblr)
+		if err != nil {
+			return err
+		}
+		page.ilblr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.ilblr = next
 	return nil
 }
 
@@ -13682,11 +12756,11 @@ func NewInterfaceLoadBalancerListResultPage(getNextPage func(context.Context, In
 
 // InterfacePropertiesFormat networkInterface properties.
 type InterfacePropertiesFormat struct {
-	// VirtualMachine - The reference of a virtual machine.
+	// VirtualMachine - READ-ONLY; The reference of a virtual machine.
 	VirtualMachine *SubResource `json:"virtualMachine,omitempty"`
 	// NetworkSecurityGroup - The reference of the NetworkSecurityGroup resource.
 	NetworkSecurityGroup *SecurityGroup `json:"networkSecurityGroup,omitempty"`
-	// InterfaceEndpoint - A reference to the interface endpoint to which the network interface is linked.
+	// InterfaceEndpoint - READ-ONLY; A reference to the interface endpoint to which the network interface is linked.
 	InterfaceEndpoint *InterfaceEndpoint `json:"interfaceEndpoint,omitempty"`
 	// IPConfigurations - A list of IPConfigurations of the network interface.
 	IPConfigurations *[]InterfaceIPConfiguration `json:"ipConfigurations,omitempty"`
@@ -13702,7 +12776,7 @@ type InterfacePropertiesFormat struct {
 	EnableAcceleratedNetworking *bool `json:"enableAcceleratedNetworking,omitempty"`
 	// EnableIPForwarding - Indicates whether IP forwarding is enabled on this network interface.
 	EnableIPForwarding *bool `json:"enableIPForwarding,omitempty"`
-	// HostedWorkloads - A list of references to linked BareMetal resources
+	// HostedWorkloads - READ-ONLY; A list of references to linked BareMetal resources
 	HostedWorkloads *[]string `json:"hostedWorkloads,omitempty"`
 	// ResourceGUID - The resource GUID property of the network interface resource.
 	ResourceGUID *string `json:"resourceGuid,omitempty"`
@@ -13710,8 +12784,44 @@ type InterfacePropertiesFormat struct {
 	ProvisioningState *string `json:"provisioningState,omitempty"`
 }
 
-// InterfacesCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of a
-// long-running operation.
+// MarshalJSON is the custom marshaler for InterfacePropertiesFormat.
+func (ipf InterfacePropertiesFormat) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if ipf.NetworkSecurityGroup != nil {
+		objectMap["networkSecurityGroup"] = ipf.NetworkSecurityGroup
+	}
+	if ipf.IPConfigurations != nil {
+		objectMap["ipConfigurations"] = ipf.IPConfigurations
+	}
+	if ipf.TapConfigurations != nil {
+		objectMap["tapConfigurations"] = ipf.TapConfigurations
+	}
+	if ipf.DNSSettings != nil {
+		objectMap["dnsSettings"] = ipf.DNSSettings
+	}
+	if ipf.MacAddress != nil {
+		objectMap["macAddress"] = ipf.MacAddress
+	}
+	if ipf.Primary != nil {
+		objectMap["primary"] = ipf.Primary
+	}
+	if ipf.EnableAcceleratedNetworking != nil {
+		objectMap["enableAcceleratedNetworking"] = ipf.EnableAcceleratedNetworking
+	}
+	if ipf.EnableIPForwarding != nil {
+		objectMap["enableIPForwarding"] = ipf.EnableIPForwarding
+	}
+	if ipf.ResourceGUID != nil {
+		objectMap["resourceGuid"] = ipf.ResourceGUID
+	}
+	if ipf.ProvisioningState != nil {
+		objectMap["provisioningState"] = ipf.ProvisioningState
+	}
+	return json.Marshal(objectMap)
+}
+
+// InterfacesCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of a long-running
+// operation.
 type InterfacesCreateOrUpdateFuture struct {
 	azure.Future
 }
@@ -13720,7 +12830,7 @@ type InterfacesCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *InterfacesCreateOrUpdateFuture) Result(client InterfacesClient) (i Interface, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.InterfacesCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -13739,8 +12849,7 @@ func (future *InterfacesCreateOrUpdateFuture) Result(client InterfacesClient) (i
 	return
 }
 
-// InterfacesDeleteFuture an abstraction for monitoring and retrieving the results of a long-running
-// operation.
+// InterfacesDeleteFuture an abstraction for monitoring and retrieving the results of a long-running operation.
 type InterfacesDeleteFuture struct {
 	azure.Future
 }
@@ -13749,7 +12858,7 @@ type InterfacesDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *InterfacesDeleteFuture) Result(client InterfacesClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.InterfacesDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -13772,7 +12881,7 @@ type InterfacesGetEffectiveRouteTableFuture struct {
 // If the operation has not completed it will return an error.
 func (future *InterfacesGetEffectiveRouteTableFuture) Result(client InterfacesClient) (erlr EffectiveRouteListResult, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.InterfacesGetEffectiveRouteTableFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -13791,8 +12900,8 @@ func (future *InterfacesGetEffectiveRouteTableFuture) Result(client InterfacesCl
 	return
 }
 
-// InterfacesListEffectiveNetworkSecurityGroupsFuture an abstraction for monitoring and retrieving the
-// results of a long-running operation.
+// InterfacesListEffectiveNetworkSecurityGroupsFuture an abstraction for monitoring and retrieving the results
+// of a long-running operation.
 type InterfacesListEffectiveNetworkSecurityGroupsFuture struct {
 	azure.Future
 }
@@ -13801,7 +12910,7 @@ type InterfacesListEffectiveNetworkSecurityGroupsFuture struct {
 // If the operation has not completed it will return an error.
 func (future *InterfacesListEffectiveNetworkSecurityGroupsFuture) Result(client InterfacesClient) (ensglr EffectiveNetworkSecurityGroupListResult, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.InterfacesListEffectiveNetworkSecurityGroupsFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -13830,7 +12939,7 @@ type InterfacesUpdateTagsFuture struct {
 // If the operation has not completed it will return an error.
 func (future *InterfacesUpdateTagsFuture) Result(client InterfacesClient) (i Interface, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.InterfacesUpdateTagsFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -13858,7 +12967,7 @@ type InterfaceTapConfiguration struct {
 	Name *string `json:"name,omitempty"`
 	// Etag - A unique read-only string that changes whenever the resource is updated.
 	Etag *string `json:"etag,omitempty"`
-	// Type - Sub Resource type.
+	// Type - READ-ONLY; Sub Resource type.
 	Type *string `json:"type,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
@@ -13875,9 +12984,6 @@ func (itc InterfaceTapConfiguration) MarshalJSON() ([]byte, error) {
 	}
 	if itc.Etag != nil {
 		objectMap["etag"] = itc.Etag
-	}
-	if itc.Type != nil {
-		objectMap["type"] = itc.Type
 	}
 	if itc.ID != nil {
 		objectMap["id"] = itc.ID
@@ -13950,8 +13056,17 @@ type InterfaceTapConfigurationListResult struct {
 	autorest.Response `json:"-"`
 	// Value - A list of tap configurations.
 	Value *[]InterfaceTapConfiguration `json:"value,omitempty"`
-	// NextLink - The URL to get the next set of results.
+	// NextLink - READ-ONLY; The URL to get the next set of results.
 	NextLink *string `json:"nextLink,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for InterfaceTapConfigurationListResult.
+func (itclr InterfaceTapConfigurationListResult) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if itclr.Value != nil {
+		objectMap["value"] = itclr.Value
+	}
+	return json.Marshal(objectMap)
 }
 
 // InterfaceTapConfigurationListResultIterator provides access to a complete listing of
@@ -14023,10 +13138,15 @@ func (itclr InterfaceTapConfigurationListResult) IsEmpty() bool {
 	return itclr.Value == nil || len(*itclr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (itclr InterfaceTapConfigurationListResult) hasNextLink() bool {
+	return itclr.NextLink != nil && len(*itclr.NextLink) != 0
+}
+
 // interfaceTapConfigurationListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (itclr InterfaceTapConfigurationListResult) interfaceTapConfigurationListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if itclr.NextLink == nil || len(to.String(itclr.NextLink)) < 1 {
+	if !itclr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -14054,11 +13174,16 @@ func (page *InterfaceTapConfigurationListResultPage) NextWithContext(ctx context
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.itclr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.itclr)
+		if err != nil {
+			return err
+		}
+		page.itclr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.itclr = next
 	return nil
 }
 
@@ -14096,12 +13221,21 @@ func NewInterfaceTapConfigurationListResultPage(getNextPage func(context.Context
 type InterfaceTapConfigurationPropertiesFormat struct {
 	// VirtualNetworkTap - The reference of the Virtual Network Tap resource.
 	VirtualNetworkTap *VirtualNetworkTap `json:"virtualNetworkTap,omitempty"`
-	// ProvisioningState - The provisioning state of the network interface tap configuration. Possible values are: 'Updating', 'Deleting', and 'Failed'.
+	// ProvisioningState - READ-ONLY; The provisioning state of the network interface tap configuration. Possible values are: 'Updating', 'Deleting', and 'Failed'.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
 }
 
-// InterfaceTapConfigurationsCreateOrUpdateFuture an abstraction for monitoring and retrieving the results
-// of a long-running operation.
+// MarshalJSON is the custom marshaler for InterfaceTapConfigurationPropertiesFormat.
+func (itcpf InterfaceTapConfigurationPropertiesFormat) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if itcpf.VirtualNetworkTap != nil {
+		objectMap["virtualNetworkTap"] = itcpf.VirtualNetworkTap
+	}
+	return json.Marshal(objectMap)
+}
+
+// InterfaceTapConfigurationsCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of a
+// long-running operation.
 type InterfaceTapConfigurationsCreateOrUpdateFuture struct {
 	azure.Future
 }
@@ -14110,7 +13244,7 @@ type InterfaceTapConfigurationsCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *InterfaceTapConfigurationsCreateOrUpdateFuture) Result(client InterfaceTapConfigurationsClient) (itc InterfaceTapConfiguration, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.InterfaceTapConfigurationsCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -14139,7 +13273,7 @@ type InterfaceTapConfigurationsDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *InterfaceTapConfigurationsDeleteFuture) Result(client InterfaceTapConfigurationsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.InterfaceTapConfigurationsDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -14248,7 +13382,7 @@ type IPConfigurationProfile struct {
 	*IPConfigurationProfilePropertiesFormat `json:"properties,omitempty"`
 	// Name - The name of the resource. This name can be used to access the resource.
 	Name *string `json:"name,omitempty"`
-	// Type - Sub Resource type.
+	// Type - READ-ONLY; Sub Resource type.
 	Type *string `json:"type,omitempty"`
 	// Etag - A unique read-only string that changes whenever the resource is updated.
 	Etag *string `json:"etag,omitempty"`
@@ -14264,9 +13398,6 @@ func (icp IPConfigurationProfile) MarshalJSON() ([]byte, error) {
 	}
 	if icp.Name != nil {
 		objectMap["name"] = icp.Name
-	}
-	if icp.Type != nil {
-		objectMap["type"] = icp.Type
 	}
 	if icp.Etag != nil {
 		objectMap["etag"] = icp.Etag
@@ -14337,12 +13468,21 @@ func (icp *IPConfigurationProfile) UnmarshalJSON(body []byte) error {
 	return nil
 }
 
-// IPConfigurationProfilePropertiesFormat IP configruation profile properties.
+// IPConfigurationProfilePropertiesFormat IP configuration profile properties.
 type IPConfigurationProfilePropertiesFormat struct {
-	// Subnet - The reference of the subnet resource to create a contatainer network interface ip configruation.
+	// Subnet - The reference of the subnet resource to create a container network interface ip configuration.
 	Subnet *Subnet `json:"subnet,omitempty"`
-	// ProvisioningState - The provisioning state of the resource.
+	// ProvisioningState - READ-ONLY; The provisioning state of the resource.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for IPConfigurationProfilePropertiesFormat.
+func (icppf IPConfigurationProfilePropertiesFormat) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if icppf.Subnet != nil {
+		objectMap["subnet"] = icppf.Subnet
+	}
+	return json.Marshal(objectMap)
 }
 
 // IPConfigurationPropertiesFormat properties of IP configuration.
@@ -14401,8 +13541,8 @@ type Ipv6ExpressRouteCircuitPeeringConfig struct {
 	State ExpressRouteCircuitPeeringState `json:"state,omitempty"`
 }
 
-// ListHubVirtualNetworkConnectionsResult list of HubVirtualNetworkConnections and a URL nextLink to get
-// the next set of results.
+// ListHubVirtualNetworkConnectionsResult list of HubVirtualNetworkConnections and a URL nextLink to get the
+// next set of results.
 type ListHubVirtualNetworkConnectionsResult struct {
 	autorest.Response `json:"-"`
 	// Value - List of HubVirtualNetworkConnections.
@@ -14480,10 +13620,15 @@ func (lhvncr ListHubVirtualNetworkConnectionsResult) IsEmpty() bool {
 	return lhvncr.Value == nil || len(*lhvncr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (lhvncr ListHubVirtualNetworkConnectionsResult) hasNextLink() bool {
+	return lhvncr.NextLink != nil && len(*lhvncr.NextLink) != 0
+}
+
 // listHubVirtualNetworkConnectionsResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (lhvncr ListHubVirtualNetworkConnectionsResult) listHubVirtualNetworkConnectionsResultPreparer(ctx context.Context) (*http.Request, error) {
-	if lhvncr.NextLink == nil || len(to.String(lhvncr.NextLink)) < 1 {
+	if !lhvncr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -14511,11 +13656,16 @@ func (page *ListHubVirtualNetworkConnectionsResultPage) NextWithContext(ctx cont
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.lhvncr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.lhvncr)
+		if err != nil {
+			return err
+		}
+		page.lhvncr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.lhvncr = next
 	return nil
 }
 
@@ -14549,8 +13699,8 @@ func NewListHubVirtualNetworkConnectionsResultPage(getNextPage func(context.Cont
 	return ListHubVirtualNetworkConnectionsResultPage{fn: getNextPage}
 }
 
-// ListP2SVpnGatewaysResult result of the request to list P2SVpnGateways. It contains a list of
-// P2SVpnGateways and a URL nextLink to get the next set of results.
+// ListP2SVpnGatewaysResult result of the request to list P2SVpnGateways. It contains a list of P2SVpnGateways
+// and a URL nextLink to get the next set of results.
 type ListP2SVpnGatewaysResult struct {
 	autorest.Response `json:"-"`
 	// Value - List of P2SVpnGateways.
@@ -14627,10 +13777,15 @@ func (lpvgr ListP2SVpnGatewaysResult) IsEmpty() bool {
 	return lpvgr.Value == nil || len(*lpvgr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (lpvgr ListP2SVpnGatewaysResult) hasNextLink() bool {
+	return lpvgr.NextLink != nil && len(*lpvgr.NextLink) != 0
+}
+
 // listP2SVpnGatewaysResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (lpvgr ListP2SVpnGatewaysResult) listP2SVpnGatewaysResultPreparer(ctx context.Context) (*http.Request, error) {
-	if lpvgr.NextLink == nil || len(to.String(lpvgr.NextLink)) < 1 {
+	if !lpvgr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -14658,11 +13813,16 @@ func (page *ListP2SVpnGatewaysResultPage) NextWithContext(ctx context.Context) (
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.lpvgr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.lpvgr)
+		if err != nil {
+			return err
+		}
+		page.lpvgr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.lpvgr = next
 	return nil
 }
 
@@ -14696,9 +13856,9 @@ func NewListP2SVpnGatewaysResultPage(getNextPage func(context.Context, ListP2SVp
 	return ListP2SVpnGatewaysResultPage{fn: getNextPage}
 }
 
-// ListP2SVpnServerConfigurationsResult result of the request to list all P2SVpnServerConfigurations
-// associated to a VirtualWan. It contains a list of P2SVpnServerConfigurations and a URL nextLink to get
-// the next set of results.
+// ListP2SVpnServerConfigurationsResult result of the request to list all P2SVpnServerConfigurations associated
+// to a VirtualWan. It contains a list of P2SVpnServerConfigurations and a URL nextLink to get the next set of
+// results.
 type ListP2SVpnServerConfigurationsResult struct {
 	autorest.Response `json:"-"`
 	// Value - List of P2SVpnServerConfigurations.
@@ -14776,10 +13936,15 @@ func (lpvscr ListP2SVpnServerConfigurationsResult) IsEmpty() bool {
 	return lpvscr.Value == nil || len(*lpvscr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (lpvscr ListP2SVpnServerConfigurationsResult) hasNextLink() bool {
+	return lpvscr.NextLink != nil && len(*lpvscr.NextLink) != 0
+}
+
 // listP2SVpnServerConfigurationsResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (lpvscr ListP2SVpnServerConfigurationsResult) listP2SVpnServerConfigurationsResultPreparer(ctx context.Context) (*http.Request, error) {
-	if lpvscr.NextLink == nil || len(to.String(lpvscr.NextLink)) < 1 {
+	if !lpvscr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -14807,11 +13972,16 @@ func (page *ListP2SVpnServerConfigurationsResultPage) NextWithContext(ctx contex
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.lpvscr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.lpvscr)
+		if err != nil {
+			return err
+		}
+		page.lpvscr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.lpvscr = next
 	return nil
 }
 
@@ -14845,8 +14015,8 @@ func NewListP2SVpnServerConfigurationsResultPage(getNextPage func(context.Contex
 	return ListP2SVpnServerConfigurationsResultPage{fn: getNextPage}
 }
 
-// ListVirtualHubsResult result of the request to list VirtualHubs. It contains a list of VirtualHubs and a
-// URL nextLink to get the next set of results.
+// ListVirtualHubsResult result of the request to list VirtualHubs. It contains a list of VirtualHubs and a URL
+// nextLink to get the next set of results.
 type ListVirtualHubsResult struct {
 	autorest.Response `json:"-"`
 	// Value - List of VirtualHubs.
@@ -14923,10 +14093,15 @@ func (lvhr ListVirtualHubsResult) IsEmpty() bool {
 	return lvhr.Value == nil || len(*lvhr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (lvhr ListVirtualHubsResult) hasNextLink() bool {
+	return lvhr.NextLink != nil && len(*lvhr.NextLink) != 0
+}
+
 // listVirtualHubsResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (lvhr ListVirtualHubsResult) listVirtualHubsResultPreparer(ctx context.Context) (*http.Request, error) {
-	if lvhr.NextLink == nil || len(to.String(lvhr.NextLink)) < 1 {
+	if !lvhr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -14954,11 +14129,16 @@ func (page *ListVirtualHubsResultPage) NextWithContext(ctx context.Context) (err
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.lvhr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.lvhr)
+		if err != nil {
+			return err
+		}
+		page.lvhr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.lvhr = next
 	return nil
 }
 
@@ -14992,8 +14172,8 @@ func NewListVirtualHubsResultPage(getNextPage func(context.Context, ListVirtualH
 	return ListVirtualHubsResultPage{fn: getNextPage}
 }
 
-// ListVirtualWANsResult result of the request to list VirtualWANs. It contains a list of VirtualWANs and a
-// URL nextLink to get the next set of results.
+// ListVirtualWANsResult result of the request to list VirtualWANs. It contains a list of VirtualWANs and a URL
+// nextLink to get the next set of results.
 type ListVirtualWANsResult struct {
 	autorest.Response `json:"-"`
 	// Value - List of VirtualWANs.
@@ -15070,10 +14250,15 @@ func (lvwnr ListVirtualWANsResult) IsEmpty() bool {
 	return lvwnr.Value == nil || len(*lvwnr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (lvwnr ListVirtualWANsResult) hasNextLink() bool {
+	return lvwnr.NextLink != nil && len(*lvwnr.NextLink) != 0
+}
+
 // listVirtualWANsResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (lvwnr ListVirtualWANsResult) listVirtualWANsResultPreparer(ctx context.Context) (*http.Request, error) {
-	if lvwnr.NextLink == nil || len(to.String(lvwnr.NextLink)) < 1 {
+	if !lvwnr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -15101,11 +14286,16 @@ func (page *ListVirtualWANsResultPage) NextWithContext(ctx context.Context) (err
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.lvwnr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.lvwnr)
+		if err != nil {
+			return err
+		}
+		page.lvwnr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.lvwnr = next
 	return nil
 }
 
@@ -15139,8 +14329,8 @@ func NewListVirtualWANsResultPage(getNextPage func(context.Context, ListVirtualW
 	return ListVirtualWANsResultPage{fn: getNextPage}
 }
 
-// ListVpnConnectionsResult result of the request to list all vpn connections to a virtual wan vpn gateway.
-// It contains a list of Vpn Connections and a URL nextLink to get the next set of results.
+// ListVpnConnectionsResult result of the request to list all vpn connections to a virtual wan vpn gateway. It
+// contains a list of Vpn Connections and a URL nextLink to get the next set of results.
 type ListVpnConnectionsResult struct {
 	autorest.Response `json:"-"`
 	// Value - List of Vpn Connections.
@@ -15217,10 +14407,15 @@ func (lvcr ListVpnConnectionsResult) IsEmpty() bool {
 	return lvcr.Value == nil || len(*lvcr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (lvcr ListVpnConnectionsResult) hasNextLink() bool {
+	return lvcr.NextLink != nil && len(*lvcr.NextLink) != 0
+}
+
 // listVpnConnectionsResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (lvcr ListVpnConnectionsResult) listVpnConnectionsResultPreparer(ctx context.Context) (*http.Request, error) {
-	if lvcr.NextLink == nil || len(to.String(lvcr.NextLink)) < 1 {
+	if !lvcr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -15248,11 +14443,16 @@ func (page *ListVpnConnectionsResultPage) NextWithContext(ctx context.Context) (
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.lvcr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.lvcr)
+		if err != nil {
+			return err
+		}
+		page.lvcr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.lvcr = next
 	return nil
 }
 
@@ -15286,8 +14486,8 @@ func NewListVpnConnectionsResultPage(getNextPage func(context.Context, ListVpnCo
 	return ListVpnConnectionsResultPage{fn: getNextPage}
 }
 
-// ListVpnGatewaysResult result of the request to list VpnGateways. It contains a list of VpnGateways and a
-// URL nextLink to get the next set of results.
+// ListVpnGatewaysResult result of the request to list VpnGateways. It contains a list of VpnGateways and a URL
+// nextLink to get the next set of results.
 type ListVpnGatewaysResult struct {
 	autorest.Response `json:"-"`
 	// Value - List of VpnGateways.
@@ -15364,10 +14564,15 @@ func (lvgr ListVpnGatewaysResult) IsEmpty() bool {
 	return lvgr.Value == nil || len(*lvgr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (lvgr ListVpnGatewaysResult) hasNextLink() bool {
+	return lvgr.NextLink != nil && len(*lvgr.NextLink) != 0
+}
+
 // listVpnGatewaysResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (lvgr ListVpnGatewaysResult) listVpnGatewaysResultPreparer(ctx context.Context) (*http.Request, error) {
-	if lvgr.NextLink == nil || len(to.String(lvgr.NextLink)) < 1 {
+	if !lvgr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -15395,11 +14600,16 @@ func (page *ListVpnGatewaysResultPage) NextWithContext(ctx context.Context) (err
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.lvgr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.lvgr)
+		if err != nil {
+			return err
+		}
+		page.lvgr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.lvgr = next
 	return nil
 }
 
@@ -15433,8 +14643,8 @@ func NewListVpnGatewaysResultPage(getNextPage func(context.Context, ListVpnGatew
 	return ListVpnGatewaysResultPage{fn: getNextPage}
 }
 
-// ListVpnSitesResult result of the request to list VpnSites. It contains a list of VpnSites and a URL
-// nextLink to get the next set of results.
+// ListVpnSitesResult result of the request to list VpnSites. It contains a list of VpnSites and a URL nextLink
+// to get the next set of results.
 type ListVpnSitesResult struct {
 	autorest.Response `json:"-"`
 	// Value - List of VpnSites.
@@ -15511,10 +14721,15 @@ func (lvsr ListVpnSitesResult) IsEmpty() bool {
 	return lvsr.Value == nil || len(*lvsr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (lvsr ListVpnSitesResult) hasNextLink() bool {
+	return lvsr.NextLink != nil && len(*lvsr.NextLink) != 0
+}
+
 // listVpnSitesResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (lvsr ListVpnSitesResult) listVpnSitesResultPreparer(ctx context.Context) (*http.Request, error) {
-	if lvsr.NextLink == nil || len(to.String(lvsr.NextLink)) < 1 {
+	if !lvsr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -15542,11 +14757,16 @@ func (page *ListVpnSitesResultPage) NextWithContext(ctx context.Context) (err er
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.lvsr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.lvsr)
+		if err != nil {
+			return err
+		}
+		page.lvsr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.lvsr = next
 	return nil
 }
 
@@ -15591,9 +14811,9 @@ type LoadBalancer struct {
 	Etag *string `json:"etag,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name.
+	// Name - READ-ONLY; Resource name.
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type.
+	// Type - READ-ONLY; Resource type.
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location.
 	Location *string `json:"location,omitempty"`
@@ -15615,12 +14835,6 @@ func (lb LoadBalancer) MarshalJSON() ([]byte, error) {
 	}
 	if lb.ID != nil {
 		objectMap["id"] = lb.ID
-	}
-	if lb.Name != nil {
-		objectMap["name"] = lb.Name
-	}
-	if lb.Type != nil {
-		objectMap["type"] = lb.Type
 	}
 	if lb.Location != nil {
 		objectMap["location"] = lb.Location
@@ -15723,12 +14937,21 @@ type LoadBalancerBackendAddressPoolListResult struct {
 	autorest.Response `json:"-"`
 	// Value - A list of backend address pools in a load balancer.
 	Value *[]BackendAddressPool `json:"value,omitempty"`
-	// NextLink - The URL to get the next set of results.
+	// NextLink - READ-ONLY; The URL to get the next set of results.
 	NextLink *string `json:"nextLink,omitempty"`
 }
 
-// LoadBalancerBackendAddressPoolListResultIterator provides access to a complete listing of
-// BackendAddressPool values.
+// MarshalJSON is the custom marshaler for LoadBalancerBackendAddressPoolListResult.
+func (lbbaplr LoadBalancerBackendAddressPoolListResult) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if lbbaplr.Value != nil {
+		objectMap["value"] = lbbaplr.Value
+	}
+	return json.Marshal(objectMap)
+}
+
+// LoadBalancerBackendAddressPoolListResultIterator provides access to a complete listing of BackendAddressPool
+// values.
 type LoadBalancerBackendAddressPoolListResultIterator struct {
 	i    int
 	page LoadBalancerBackendAddressPoolListResultPage
@@ -15796,10 +15019,15 @@ func (lbbaplr LoadBalancerBackendAddressPoolListResult) IsEmpty() bool {
 	return lbbaplr.Value == nil || len(*lbbaplr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (lbbaplr LoadBalancerBackendAddressPoolListResult) hasNextLink() bool {
+	return lbbaplr.NextLink != nil && len(*lbbaplr.NextLink) != 0
+}
+
 // loadBalancerBackendAddressPoolListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (lbbaplr LoadBalancerBackendAddressPoolListResult) loadBalancerBackendAddressPoolListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if lbbaplr.NextLink == nil || len(to.String(lbbaplr.NextLink)) < 1 {
+	if !lbbaplr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -15827,11 +15055,16 @@ func (page *LoadBalancerBackendAddressPoolListResultPage) NextWithContext(ctx co
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.lbbaplr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.lbbaplr)
+		if err != nil {
+			return err
+		}
+		page.lbbaplr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.lbbaplr = next
 	return nil
 }
 
@@ -15870,8 +15103,17 @@ type LoadBalancerFrontendIPConfigurationListResult struct {
 	autorest.Response `json:"-"`
 	// Value - A list of frontend IP configurations in a load balancer.
 	Value *[]FrontendIPConfiguration `json:"value,omitempty"`
-	// NextLink - The URL to get the next set of results.
+	// NextLink - READ-ONLY; The URL to get the next set of results.
 	NextLink *string `json:"nextLink,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for LoadBalancerFrontendIPConfigurationListResult.
+func (lbficlr LoadBalancerFrontendIPConfigurationListResult) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if lbficlr.Value != nil {
+		objectMap["value"] = lbficlr.Value
+	}
+	return json.Marshal(objectMap)
 }
 
 // LoadBalancerFrontendIPConfigurationListResultIterator provides access to a complete listing of
@@ -15943,10 +15185,15 @@ func (lbficlr LoadBalancerFrontendIPConfigurationListResult) IsEmpty() bool {
 	return lbficlr.Value == nil || len(*lbficlr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (lbficlr LoadBalancerFrontendIPConfigurationListResult) hasNextLink() bool {
+	return lbficlr.NextLink != nil && len(*lbficlr.NextLink) != 0
+}
+
 // loadBalancerFrontendIPConfigurationListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (lbficlr LoadBalancerFrontendIPConfigurationListResult) loadBalancerFrontendIPConfigurationListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if lbficlr.NextLink == nil || len(to.String(lbficlr.NextLink)) < 1 {
+	if !lbficlr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -15974,11 +15221,16 @@ func (page *LoadBalancerFrontendIPConfigurationListResultPage) NextWithContext(c
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.lbficlr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.lbficlr)
+		if err != nil {
+			return err
+		}
+		page.lbficlr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.lbficlr = next
 	return nil
 }
 
@@ -16017,8 +15269,17 @@ type LoadBalancerListResult struct {
 	autorest.Response `json:"-"`
 	// Value - A list of load balancers in a resource group.
 	Value *[]LoadBalancer `json:"value,omitempty"`
-	// NextLink - The URL to get the next set of results.
+	// NextLink - READ-ONLY; The URL to get the next set of results.
 	NextLink *string `json:"nextLink,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for LoadBalancerListResult.
+func (lblr LoadBalancerListResult) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if lblr.Value != nil {
+		objectMap["value"] = lblr.Value
+	}
+	return json.Marshal(objectMap)
 }
 
 // LoadBalancerListResultIterator provides access to a complete listing of LoadBalancer values.
@@ -16089,10 +15350,15 @@ func (lblr LoadBalancerListResult) IsEmpty() bool {
 	return lblr.Value == nil || len(*lblr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (lblr LoadBalancerListResult) hasNextLink() bool {
+	return lblr.NextLink != nil && len(*lblr.NextLink) != 0
+}
+
 // loadBalancerListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (lblr LoadBalancerListResult) loadBalancerListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if lblr.NextLink == nil || len(to.String(lblr.NextLink)) < 1 {
+	if !lblr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -16120,11 +15386,16 @@ func (page *LoadBalancerListResultPage) NextWithContext(ctx context.Context) (er
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.lblr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.lblr)
+		if err != nil {
+			return err
+		}
+		page.lblr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.lblr = next
 	return nil
 }
 
@@ -16163,12 +15434,21 @@ type LoadBalancerLoadBalancingRuleListResult struct {
 	autorest.Response `json:"-"`
 	// Value - A list of load balancing rules in a load balancer.
 	Value *[]LoadBalancingRule `json:"value,omitempty"`
-	// NextLink - The URL to get the next set of results.
+	// NextLink - READ-ONLY; The URL to get the next set of results.
 	NextLink *string `json:"nextLink,omitempty"`
 }
 
-// LoadBalancerLoadBalancingRuleListResultIterator provides access to a complete listing of
-// LoadBalancingRule values.
+// MarshalJSON is the custom marshaler for LoadBalancerLoadBalancingRuleListResult.
+func (lblbrlr LoadBalancerLoadBalancingRuleListResult) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if lblbrlr.Value != nil {
+		objectMap["value"] = lblbrlr.Value
+	}
+	return json.Marshal(objectMap)
+}
+
+// LoadBalancerLoadBalancingRuleListResultIterator provides access to a complete listing of LoadBalancingRule
+// values.
 type LoadBalancerLoadBalancingRuleListResultIterator struct {
 	i    int
 	page LoadBalancerLoadBalancingRuleListResultPage
@@ -16236,10 +15516,15 @@ func (lblbrlr LoadBalancerLoadBalancingRuleListResult) IsEmpty() bool {
 	return lblbrlr.Value == nil || len(*lblbrlr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (lblbrlr LoadBalancerLoadBalancingRuleListResult) hasNextLink() bool {
+	return lblbrlr.NextLink != nil && len(*lblbrlr.NextLink) != 0
+}
+
 // loadBalancerLoadBalancingRuleListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (lblbrlr LoadBalancerLoadBalancingRuleListResult) loadBalancerLoadBalancingRuleListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if lblbrlr.NextLink == nil || len(to.String(lblbrlr.NextLink)) < 1 {
+	if !lblbrlr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -16267,11 +15552,16 @@ func (page *LoadBalancerLoadBalancingRuleListResultPage) NextWithContext(ctx con
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.lblbrlr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.lblbrlr)
+		if err != nil {
+			return err
+		}
+		page.lblbrlr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.lblbrlr = next
 	return nil
 }
 
@@ -16310,8 +15600,17 @@ type LoadBalancerOutboundRuleListResult struct {
 	autorest.Response `json:"-"`
 	// Value - A list of outbound rules in a load balancer.
 	Value *[]OutboundRule `json:"value,omitempty"`
-	// NextLink - The URL to get the next set of results.
+	// NextLink - READ-ONLY; The URL to get the next set of results.
 	NextLink *string `json:"nextLink,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for LoadBalancerOutboundRuleListResult.
+func (lborlr LoadBalancerOutboundRuleListResult) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if lborlr.Value != nil {
+		objectMap["value"] = lborlr.Value
+	}
+	return json.Marshal(objectMap)
 }
 
 // LoadBalancerOutboundRuleListResultIterator provides access to a complete listing of OutboundRule values.
@@ -16382,10 +15681,15 @@ func (lborlr LoadBalancerOutboundRuleListResult) IsEmpty() bool {
 	return lborlr.Value == nil || len(*lborlr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (lborlr LoadBalancerOutboundRuleListResult) hasNextLink() bool {
+	return lborlr.NextLink != nil && len(*lborlr.NextLink) != 0
+}
+
 // loadBalancerOutboundRuleListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (lborlr LoadBalancerOutboundRuleListResult) loadBalancerOutboundRuleListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if lborlr.NextLink == nil || len(to.String(lborlr.NextLink)) < 1 {
+	if !lborlr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -16413,11 +15717,16 @@ func (page *LoadBalancerOutboundRuleListResultPage) NextWithContext(ctx context.
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.lborlr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.lborlr)
+		if err != nil {
+			return err
+		}
+		page.lborlr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.lborlr = next
 	return nil
 }
 
@@ -16456,8 +15765,17 @@ type LoadBalancerProbeListResult struct {
 	autorest.Response `json:"-"`
 	// Value - A list of probes in a load balancer.
 	Value *[]Probe `json:"value,omitempty"`
-	// NextLink - The URL to get the next set of results.
+	// NextLink - READ-ONLY; The URL to get the next set of results.
 	NextLink *string `json:"nextLink,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for LoadBalancerProbeListResult.
+func (lbplr LoadBalancerProbeListResult) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if lbplr.Value != nil {
+		objectMap["value"] = lbplr.Value
+	}
+	return json.Marshal(objectMap)
 }
 
 // LoadBalancerProbeListResultIterator provides access to a complete listing of Probe values.
@@ -16528,10 +15846,15 @@ func (lbplr LoadBalancerProbeListResult) IsEmpty() bool {
 	return lbplr.Value == nil || len(*lbplr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (lbplr LoadBalancerProbeListResult) hasNextLink() bool {
+	return lbplr.NextLink != nil && len(*lbplr.NextLink) != 0
+}
+
 // loadBalancerProbeListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (lbplr LoadBalancerProbeListResult) loadBalancerProbeListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if lbplr.NextLink == nil || len(to.String(lbplr.NextLink)) < 1 {
+	if !lbplr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -16559,11 +15882,16 @@ func (page *LoadBalancerProbeListResultPage) NextWithContext(ctx context.Context
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.lbplr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.lbplr)
+		if err != nil {
+			return err
+		}
+		page.lbplr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.lbplr = next
 	return nil
 }
 
@@ -16619,8 +15947,8 @@ type LoadBalancerPropertiesFormat struct {
 	ProvisioningState *string `json:"provisioningState,omitempty"`
 }
 
-// LoadBalancersCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of a
-// long-running operation.
+// LoadBalancersCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of a long-running
+// operation.
 type LoadBalancersCreateOrUpdateFuture struct {
 	azure.Future
 }
@@ -16629,7 +15957,7 @@ type LoadBalancersCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *LoadBalancersCreateOrUpdateFuture) Result(client LoadBalancersClient) (lb LoadBalancer, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.LoadBalancersCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -16658,7 +15986,7 @@ type LoadBalancersDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *LoadBalancersDeleteFuture) Result(client LoadBalancersClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.LoadBalancersDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -16687,7 +16015,7 @@ type LoadBalancersUpdateTagsFuture struct {
 // If the operation has not completed it will return an error.
 func (future *LoadBalancersUpdateTagsFuture) Result(client LoadBalancersClient) (lb LoadBalancer, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.LoadBalancersUpdateTagsFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -16825,9 +16153,9 @@ type LocalNetworkGateway struct {
 	Etag *string `json:"etag,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name.
+	// Name - READ-ONLY; Resource name.
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type.
+	// Type - READ-ONLY; Resource type.
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location.
 	Location *string `json:"location,omitempty"`
@@ -16846,12 +16174,6 @@ func (lng LocalNetworkGateway) MarshalJSON() ([]byte, error) {
 	}
 	if lng.ID != nil {
 		objectMap["id"] = lng.ID
-	}
-	if lng.Name != nil {
-		objectMap["name"] = lng.Name
-	}
-	if lng.Type != nil {
-		objectMap["type"] = lng.Type
 	}
 	if lng.Location != nil {
 		objectMap["location"] = lng.Location
@@ -16945,12 +16267,20 @@ type LocalNetworkGatewayListResult struct {
 	autorest.Response `json:"-"`
 	// Value - A list of local network gateways that exists in a resource group.
 	Value *[]LocalNetworkGateway `json:"value,omitempty"`
-	// NextLink - The URL to get the next set of results.
+	// NextLink - READ-ONLY; The URL to get the next set of results.
 	NextLink *string `json:"nextLink,omitempty"`
 }
 
-// LocalNetworkGatewayListResultIterator provides access to a complete listing of LocalNetworkGateway
-// values.
+// MarshalJSON is the custom marshaler for LocalNetworkGatewayListResult.
+func (lnglr LocalNetworkGatewayListResult) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if lnglr.Value != nil {
+		objectMap["value"] = lnglr.Value
+	}
+	return json.Marshal(objectMap)
+}
+
+// LocalNetworkGatewayListResultIterator provides access to a complete listing of LocalNetworkGateway values.
 type LocalNetworkGatewayListResultIterator struct {
 	i    int
 	page LocalNetworkGatewayListResultPage
@@ -17018,10 +16348,15 @@ func (lnglr LocalNetworkGatewayListResult) IsEmpty() bool {
 	return lnglr.Value == nil || len(*lnglr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (lnglr LocalNetworkGatewayListResult) hasNextLink() bool {
+	return lnglr.NextLink != nil && len(*lnglr.NextLink) != 0
+}
+
 // localNetworkGatewayListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (lnglr LocalNetworkGatewayListResult) localNetworkGatewayListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if lnglr.NextLink == nil || len(to.String(lnglr.NextLink)) < 1 {
+	if !lnglr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -17049,11 +16384,16 @@ func (page *LocalNetworkGatewayListResultPage) NextWithContext(ctx context.Conte
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.lnglr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.lnglr)
+		if err != nil {
+			return err
+		}
+		page.lnglr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.lnglr = next
 	return nil
 }
 
@@ -17097,8 +16437,26 @@ type LocalNetworkGatewayPropertiesFormat struct {
 	BgpSettings *BgpSettings `json:"bgpSettings,omitempty"`
 	// ResourceGUID - The resource GUID property of the LocalNetworkGateway resource.
 	ResourceGUID *string `json:"resourceGuid,omitempty"`
-	// ProvisioningState - The provisioning state of the LocalNetworkGateway resource. Possible values are: 'Updating', 'Deleting', and 'Failed'.
+	// ProvisioningState - READ-ONLY; The provisioning state of the LocalNetworkGateway resource. Possible values are: 'Updating', 'Deleting', and 'Failed'.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for LocalNetworkGatewayPropertiesFormat.
+func (lngpf LocalNetworkGatewayPropertiesFormat) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if lngpf.LocalNetworkAddressSpace != nil {
+		objectMap["localNetworkAddressSpace"] = lngpf.LocalNetworkAddressSpace
+	}
+	if lngpf.GatewayIPAddress != nil {
+		objectMap["gatewayIpAddress"] = lngpf.GatewayIPAddress
+	}
+	if lngpf.BgpSettings != nil {
+		objectMap["bgpSettings"] = lngpf.BgpSettings
+	}
+	if lngpf.ResourceGUID != nil {
+		objectMap["resourceGuid"] = lngpf.ResourceGUID
+	}
+	return json.Marshal(objectMap)
 }
 
 // LocalNetworkGatewaysCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of a
@@ -17111,7 +16469,7 @@ type LocalNetworkGatewaysCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *LocalNetworkGatewaysCreateOrUpdateFuture) Result(client LocalNetworkGatewaysClient) (lng LocalNetworkGateway, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.LocalNetworkGatewaysCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -17130,8 +16488,8 @@ func (future *LocalNetworkGatewaysCreateOrUpdateFuture) Result(client LocalNetwo
 	return
 }
 
-// LocalNetworkGatewaysDeleteFuture an abstraction for monitoring and retrieving the results of a
-// long-running operation.
+// LocalNetworkGatewaysDeleteFuture an abstraction for monitoring and retrieving the results of a long-running
+// operation.
 type LocalNetworkGatewaysDeleteFuture struct {
 	azure.Future
 }
@@ -17140,7 +16498,7 @@ type LocalNetworkGatewaysDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *LocalNetworkGatewaysDeleteFuture) Result(client LocalNetworkGatewaysClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.LocalNetworkGatewaysDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -17163,7 +16521,7 @@ type LocalNetworkGatewaysUpdateTagsFuture struct {
 // If the operation has not completed it will return an error.
 func (future *LocalNetworkGatewaysUpdateTagsFuture) Result(client LocalNetworkGatewaysClient) (lng LocalNetworkGateway, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.LocalNetworkGatewaysUpdateTagsFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -17194,9 +16552,9 @@ type LogSpecification struct {
 
 // ManagedServiceIdentity identity for the resource.
 type ManagedServiceIdentity struct {
-	// PrincipalID - The principal id of the system assigned identity. This property will only be provided for a system assigned identity.
+	// PrincipalID - READ-ONLY; The principal id of the system assigned identity. This property will only be provided for a system assigned identity.
 	PrincipalID *string `json:"principalId,omitempty"`
-	// TenantID - The tenant id of the system assigned identity. This property will only be provided for a system assigned identity.
+	// TenantID - READ-ONLY; The tenant id of the system assigned identity. This property will only be provided for a system assigned identity.
 	TenantID *string `json:"tenantId,omitempty"`
 	// Type - The type of identity used for the resource. The type 'SystemAssigned, UserAssigned' includes both an implicitly created identity and a set of user assigned identities. The type 'None' will remove any identities from the virtual machine. Possible values include: 'ResourceIdentityTypeSystemAssigned', 'ResourceIdentityTypeUserAssigned', 'ResourceIdentityTypeSystemAssignedUserAssigned', 'ResourceIdentityTypeNone'
 	Type ResourceIdentityType `json:"type,omitempty"`
@@ -17207,12 +16565,6 @@ type ManagedServiceIdentity struct {
 // MarshalJSON is the custom marshaler for ManagedServiceIdentity.
 func (msi ManagedServiceIdentity) MarshalJSON() ([]byte, error) {
 	objectMap := make(map[string]interface{})
-	if msi.PrincipalID != nil {
-		objectMap["principalId"] = msi.PrincipalID
-	}
-	if msi.TenantID != nil {
-		objectMap["tenantId"] = msi.TenantID
-	}
 	if msi.Type != "" {
 		objectMap["type"] = msi.Type
 	}
@@ -17224,9 +16576,9 @@ func (msi ManagedServiceIdentity) MarshalJSON() ([]byte, error) {
 
 // ManagedServiceIdentityUserAssignedIdentitiesValue ...
 type ManagedServiceIdentityUserAssignedIdentitiesValue struct {
-	// PrincipalID - The principal id of user assigned identity.
+	// PrincipalID - READ-ONLY; The principal id of user assigned identity.
 	PrincipalID *string `json:"principalId,omitempty"`
-	// ClientID - The client id of user assigned identity.
+	// ClientID - READ-ONLY; The client id of user assigned identity.
 	ClientID *string `json:"clientId,omitempty"`
 }
 
@@ -17386,8 +16738,8 @@ type OperationDisplay struct {
 	Description *string `json:"description,omitempty"`
 }
 
-// OperationListResult result of the request to list Network operations. It contains a list of operations
-// and a URL link to get the next set of results.
+// OperationListResult result of the request to list Network operations. It contains a list of operations and a
+// URL link to get the next set of results.
 type OperationListResult struct {
 	autorest.Response `json:"-"`
 	// Value - List of Network operations supported by the Network resource provider.
@@ -17464,10 +16816,15 @@ func (olr OperationListResult) IsEmpty() bool {
 	return olr.Value == nil || len(*olr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (olr OperationListResult) hasNextLink() bool {
+	return olr.NextLink != nil && len(*olr.NextLink) != 0
+}
+
 // operationListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (olr OperationListResult) operationListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if olr.NextLink == nil || len(to.String(olr.NextLink)) < 1 {
+	if !olr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -17495,11 +16852,16 @@ func (page *OperationListResultPage) NextWithContext(ctx context.Context) (err e
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.olr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.olr)
+		if err != nil {
+			return err
+		}
+		page.olr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.olr = next
 	return nil
 }
 
@@ -17547,7 +16909,7 @@ type OperationPropertiesFormatServiceSpecification struct {
 	LogSpecifications *[]LogSpecification `json:"logSpecifications,omitempty"`
 }
 
-// OutboundRule outbound pool of the load balancer.
+// OutboundRule outbound rule of the load balancer.
 type OutboundRule struct {
 	autorest.Response `json:"-"`
 	// OutboundRulePropertiesFormat - Properties of load balancer outbound rule.
@@ -17629,7 +16991,7 @@ func (or *OutboundRule) UnmarshalJSON(body []byte) error {
 	return nil
 }
 
-// OutboundRulePropertiesFormat outbound pool of the load balancer.
+// OutboundRulePropertiesFormat outbound rule of the load balancer.
 type OutboundRulePropertiesFormat struct {
 	// AllocatedOutboundPorts - The number of outbound ports to be used for NAT.
 	AllocatedOutboundPorts *int32 `json:"allocatedOutboundPorts,omitempty"`
@@ -17651,13 +17013,13 @@ type OutboundRulePropertiesFormat struct {
 type P2SVpnGateway struct {
 	autorest.Response        `json:"-"`
 	*P2SVpnGatewayProperties `json:"properties,omitempty"`
-	// Etag - Gets a unique read-only string that changes whenever the resource is updated.
+	// Etag - READ-ONLY; Gets a unique read-only string that changes whenever the resource is updated.
 	Etag *string `json:"etag,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name.
+	// Name - READ-ONLY; Resource name.
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type.
+	// Type - READ-ONLY; Resource type.
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location.
 	Location *string `json:"location,omitempty"`
@@ -17671,17 +17033,8 @@ func (pvg P2SVpnGateway) MarshalJSON() ([]byte, error) {
 	if pvg.P2SVpnGatewayProperties != nil {
 		objectMap["properties"] = pvg.P2SVpnGatewayProperties
 	}
-	if pvg.Etag != nil {
-		objectMap["etag"] = pvg.Etag
-	}
 	if pvg.ID != nil {
 		objectMap["id"] = pvg.ID
-	}
-	if pvg.Name != nil {
-		objectMap["name"] = pvg.Name
-	}
-	if pvg.Type != nil {
-		objectMap["type"] = pvg.Type
 	}
 	if pvg.Location != nil {
 		objectMap["location"] = pvg.Location
@@ -17782,8 +17135,29 @@ type P2SVpnGatewayProperties struct {
 	P2SVpnServerConfiguration *SubResource `json:"p2SVpnServerConfiguration,omitempty"`
 	// VpnClientAddressPool - The reference of the address space resource which represents Address space for P2S VpnClient.
 	VpnClientAddressPool *AddressSpace `json:"vpnClientAddressPool,omitempty"`
-	// VpnClientConnectionHealth - All P2S vpnclients' connection health status.
+	// VpnClientConnectionHealth - READ-ONLY; All P2S VPN clients' connection health status.
 	VpnClientConnectionHealth *VpnClientConnectionHealth `json:"vpnClientConnectionHealth,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for P2SVpnGatewayProperties.
+func (pvgp P2SVpnGatewayProperties) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if pvgp.VirtualHub != nil {
+		objectMap["virtualHub"] = pvgp.VirtualHub
+	}
+	if pvgp.ProvisioningState != "" {
+		objectMap["provisioningState"] = pvgp.ProvisioningState
+	}
+	if pvgp.VpnGatewayScaleUnit != nil {
+		objectMap["vpnGatewayScaleUnit"] = pvgp.VpnGatewayScaleUnit
+	}
+	if pvgp.P2SVpnServerConfiguration != nil {
+		objectMap["p2SVpnServerConfiguration"] = pvgp.P2SVpnServerConfiguration
+	}
+	if pvgp.VpnClientAddressPool != nil {
+		objectMap["vpnClientAddressPool"] = pvgp.VpnClientAddressPool
+	}
+	return json.Marshal(objectMap)
 }
 
 // P2sVpnGatewaysCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of a
@@ -17796,7 +17170,7 @@ type P2sVpnGatewaysCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *P2sVpnGatewaysCreateOrUpdateFuture) Result(client P2sVpnGatewaysClient) (pvg P2SVpnGateway, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.P2sVpnGatewaysCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -17825,7 +17199,7 @@ type P2sVpnGatewaysDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *P2sVpnGatewaysDeleteFuture) Result(client P2sVpnGatewaysClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.P2sVpnGatewaysDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -17848,7 +17222,7 @@ type P2sVpnGatewaysGenerateVpnProfileFuture struct {
 // If the operation has not completed it will return an error.
 func (future *P2sVpnGatewaysGenerateVpnProfileFuture) Result(client P2sVpnGatewaysClient) (vpr VpnProfileResponse, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.P2sVpnGatewaysGenerateVpnProfileFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -17867,8 +17241,8 @@ func (future *P2sVpnGatewaysGenerateVpnProfileFuture) Result(client P2sVpnGatewa
 	return
 }
 
-// P2sVpnGatewaysUpdateTagsFuture an abstraction for monitoring and retrieving the results of a
-// long-running operation.
+// P2sVpnGatewaysUpdateTagsFuture an abstraction for monitoring and retrieving the results of a long-running
+// operation.
 type P2sVpnGatewaysUpdateTagsFuture struct {
 	azure.Future
 }
@@ -17877,7 +17251,7 @@ type P2sVpnGatewaysUpdateTagsFuture struct {
 // If the operation has not completed it will return an error.
 func (future *P2sVpnGatewaysUpdateTagsFuture) Result(client P2sVpnGatewaysClient) (pvg P2SVpnGateway, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.P2sVpnGatewaysUpdateTagsFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -17902,8 +17276,7 @@ type P2SVpnProfileParameters struct {
 	AuthenticationMethod AuthenticationMethod `json:"authenticationMethod,omitempty"`
 }
 
-// P2SVpnServerConfigRadiusClientRootCertificate radius client root certificate of
-// P2SVpnServerConfiguration.
+// P2SVpnServerConfigRadiusClientRootCertificate radius client root certificate of P2SVpnServerConfiguration.
 type P2SVpnServerConfigRadiusClientRootCertificate struct {
 	// P2SVpnServerConfigRadiusClientRootCertificatePropertiesFormat - Properties of the Radius client root certificate.
 	*P2SVpnServerConfigRadiusClientRootCertificatePropertiesFormat `json:"properties,omitempty"`
@@ -17989,12 +17362,20 @@ func (pvscrcrc *P2SVpnServerConfigRadiusClientRootCertificate) UnmarshalJSON(bod
 type P2SVpnServerConfigRadiusClientRootCertificatePropertiesFormat struct {
 	// Thumbprint - The Radius client root certificate thumbprint.
 	Thumbprint *string `json:"thumbprint,omitempty"`
-	// ProvisioningState - The provisioning state of the Radius client root certificate resource. Possible values are: 'Updating', 'Deleting', and 'Failed'.
+	// ProvisioningState - READ-ONLY; The provisioning state of the Radius client root certificate resource. Possible values are: 'Updating', 'Deleting', and 'Failed'.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
 }
 
-// P2SVpnServerConfigRadiusServerRootCertificate radius Server root certificate of
-// P2SVpnServerConfiguration.
+// MarshalJSON is the custom marshaler for P2SVpnServerConfigRadiusClientRootCertificatePropertiesFormat.
+func (pvscrcrcpf P2SVpnServerConfigRadiusClientRootCertificatePropertiesFormat) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if pvscrcrcpf.Thumbprint != nil {
+		objectMap["thumbprint"] = pvscrcrcpf.Thumbprint
+	}
+	return json.Marshal(objectMap)
+}
+
+// P2SVpnServerConfigRadiusServerRootCertificate radius Server root certificate of P2SVpnServerConfiguration.
 type P2SVpnServerConfigRadiusServerRootCertificate struct {
 	// P2SVpnServerConfigRadiusServerRootCertificatePropertiesFormat - Properties of the P2SVpnServerConfiguration Radius Server root certificate.
 	*P2SVpnServerConfigRadiusServerRootCertificatePropertiesFormat `json:"properties,omitempty"`
@@ -18075,13 +17456,22 @@ func (pvscrsrc *P2SVpnServerConfigRadiusServerRootCertificate) UnmarshalJSON(bod
 	return nil
 }
 
-// P2SVpnServerConfigRadiusServerRootCertificatePropertiesFormat properties of Radius Server root
-// certificate of P2SVpnServerConfiguration.
+// P2SVpnServerConfigRadiusServerRootCertificatePropertiesFormat properties of Radius Server root certificate
+// of P2SVpnServerConfiguration.
 type P2SVpnServerConfigRadiusServerRootCertificatePropertiesFormat struct {
 	// PublicCertData - The certificate public data.
 	PublicCertData *string `json:"publicCertData,omitempty"`
-	// ProvisioningState - The provisioning state of the P2SVpnServerConfiguration Radius Server root certificate resource. Possible values are: 'Updating', 'Deleting', and 'Failed'.
+	// ProvisioningState - READ-ONLY; The provisioning state of the P2SVpnServerConfiguration Radius Server root certificate resource. Possible values are: 'Updating', 'Deleting', and 'Failed'.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for P2SVpnServerConfigRadiusServerRootCertificatePropertiesFormat.
+func (pvscrsrcpf P2SVpnServerConfigRadiusServerRootCertificatePropertiesFormat) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if pvscrsrcpf.PublicCertData != nil {
+		objectMap["publicCertData"] = pvscrsrcpf.PublicCertData
+	}
+	return json.Marshal(objectMap)
 }
 
 // P2SVpnServerConfiguration p2SVpnServerConfiguration Resource.
@@ -18090,7 +17480,7 @@ type P2SVpnServerConfiguration struct {
 	*P2SVpnServerConfigurationProperties `json:"properties,omitempty"`
 	// Name - The name of the resource that is unique within a resource group. This name can be used to access the resource.
 	Name *string `json:"name,omitempty"`
-	// Etag - Gets a unique read-only string that changes whenever the resource is updated.
+	// Etag - READ-ONLY; Gets a unique read-only string that changes whenever the resource is updated.
 	Etag *string `json:"etag,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
@@ -18104,9 +17494,6 @@ func (pvsc P2SVpnServerConfiguration) MarshalJSON() ([]byte, error) {
 	}
 	if pvsc.Name != nil {
 		objectMap["name"] = pvsc.Name
-	}
-	if pvsc.Etag != nil {
-		objectMap["etag"] = pvsc.Etag
 	}
 	if pvsc.ID != nil {
 		objectMap["id"] = pvsc.ID
@@ -18167,7 +17554,7 @@ func (pvsc *P2SVpnServerConfiguration) UnmarshalJSON(body []byte) error {
 
 // P2SVpnServerConfigurationProperties parameters for P2SVpnServerConfiguration
 type P2SVpnServerConfigurationProperties struct {
-	// Name - The name of the P2SVpnServerConfiguration that is unique within a VirtualWan in a resource group. This name can be used to access the resource along with Paren VirtualWan resource name.
+	// Name - The name of the P2SVpnServerConfiguration that is unique within a VirtualWan in a resource group. This name can be used to access the resource along with Parent VirtualWan resource name.
 	Name *string `json:"name,omitempty"`
 	// VpnProtocols - vpnProtocols for the P2SVpnServerConfiguration.
 	VpnProtocols *[]VpnGatewayTunnelingProtocol `json:"vpnProtocols,omitempty"`
@@ -18183,17 +17570,54 @@ type P2SVpnServerConfigurationProperties struct {
 	VpnClientIpsecPolicies *[]IpsecPolicy `json:"vpnClientIpsecPolicies,omitempty"`
 	// RadiusServerAddress - The radius server address property of the P2SVpnServerConfiguration resource for point to site client connection.
 	RadiusServerAddress *string `json:"radiusServerAddress,omitempty"`
-	// RadiusServerSecret - The radius secret property of the P2SVpnServerConfiguration resource for for point to site client connection.
+	// RadiusServerSecret - The radius secret property of the P2SVpnServerConfiguration resource for point to site client connection.
 	RadiusServerSecret *string `json:"radiusServerSecret,omitempty"`
-	// ProvisioningState - The provisioning state of the P2SVpnServerConfiguration resource. Possible values are: 'Updating', 'Deleting', and 'Failed'.
-	ProvisioningState *string        `json:"provisioningState,omitempty"`
-	P2SVpnGateways    *[]SubResource `json:"p2SVpnGateways,omitempty"`
+	// ProvisioningState - READ-ONLY; The provisioning state of the P2SVpnServerConfiguration resource. Possible values are: 'Updating', 'Deleting', and 'Failed'.
+	ProvisioningState *string `json:"provisioningState,omitempty"`
+	// P2SVpnGateways - READ-ONLY
+	P2SVpnGateways *[]SubResource `json:"p2SVpnGateways,omitempty"`
 	// Etag - A unique read-only string that changes whenever the resource is updated.
 	Etag *string `json:"etag,omitempty"`
 }
 
-// P2sVpnServerConfigurationsCreateOrUpdateFuture an abstraction for monitoring and retrieving the results
-// of a long-running operation.
+// MarshalJSON is the custom marshaler for P2SVpnServerConfigurationProperties.
+func (pvscp P2SVpnServerConfigurationProperties) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if pvscp.Name != nil {
+		objectMap["name"] = pvscp.Name
+	}
+	if pvscp.VpnProtocols != nil {
+		objectMap["vpnProtocols"] = pvscp.VpnProtocols
+	}
+	if pvscp.P2SVpnServerConfigVpnClientRootCertificates != nil {
+		objectMap["p2SVpnServerConfigVpnClientRootCertificates"] = pvscp.P2SVpnServerConfigVpnClientRootCertificates
+	}
+	if pvscp.P2SVpnServerConfigVpnClientRevokedCertificates != nil {
+		objectMap["p2SVpnServerConfigVpnClientRevokedCertificates"] = pvscp.P2SVpnServerConfigVpnClientRevokedCertificates
+	}
+	if pvscp.P2SVpnServerConfigRadiusServerRootCertificates != nil {
+		objectMap["p2SVpnServerConfigRadiusServerRootCertificates"] = pvscp.P2SVpnServerConfigRadiusServerRootCertificates
+	}
+	if pvscp.P2SVpnServerConfigRadiusClientRootCertificates != nil {
+		objectMap["p2SVpnServerConfigRadiusClientRootCertificates"] = pvscp.P2SVpnServerConfigRadiusClientRootCertificates
+	}
+	if pvscp.VpnClientIpsecPolicies != nil {
+		objectMap["vpnClientIpsecPolicies"] = pvscp.VpnClientIpsecPolicies
+	}
+	if pvscp.RadiusServerAddress != nil {
+		objectMap["radiusServerAddress"] = pvscp.RadiusServerAddress
+	}
+	if pvscp.RadiusServerSecret != nil {
+		objectMap["radiusServerSecret"] = pvscp.RadiusServerSecret
+	}
+	if pvscp.Etag != nil {
+		objectMap["etag"] = pvscp.Etag
+	}
+	return json.Marshal(objectMap)
+}
+
+// P2sVpnServerConfigurationsCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of a
+// long-running operation.
 type P2sVpnServerConfigurationsCreateOrUpdateFuture struct {
 	azure.Future
 }
@@ -18202,7 +17626,7 @@ type P2sVpnServerConfigurationsCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *P2sVpnServerConfigurationsCreateOrUpdateFuture) Result(client P2sVpnServerConfigurationsClient) (pvsc P2SVpnServerConfiguration, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.P2sVpnServerConfigurationsCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -18231,7 +17655,7 @@ type P2sVpnServerConfigurationsDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *P2sVpnServerConfigurationsDeleteFuture) Result(client P2sVpnServerConfigurationsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.P2sVpnServerConfigurationsDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -18244,8 +17668,7 @@ func (future *P2sVpnServerConfigurationsDeleteFuture) Result(client P2sVpnServer
 	return
 }
 
-// P2SVpnServerConfigVpnClientRevokedCertificate VPN client revoked certificate of
-// P2SVpnServerConfiguration.
+// P2SVpnServerConfigVpnClientRevokedCertificate VPN client revoked certificate of P2SVpnServerConfiguration.
 type P2SVpnServerConfigVpnClientRevokedCertificate struct {
 	// P2SVpnServerConfigVpnClientRevokedCertificatePropertiesFormat - Properties of the vpn client revoked certificate.
 	*P2SVpnServerConfigVpnClientRevokedCertificatePropertiesFormat `json:"properties,omitempty"`
@@ -18331,8 +17754,17 @@ func (pvscvcrc *P2SVpnServerConfigVpnClientRevokedCertificate) UnmarshalJSON(bod
 type P2SVpnServerConfigVpnClientRevokedCertificatePropertiesFormat struct {
 	// Thumbprint - The revoked VPN client certificate thumbprint.
 	Thumbprint *string `json:"thumbprint,omitempty"`
-	// ProvisioningState - The provisioning state of the VPN client revoked certificate resource. Possible values are: 'Updating', 'Deleting', and 'Failed'.
+	// ProvisioningState - READ-ONLY; The provisioning state of the VPN client revoked certificate resource. Possible values are: 'Updating', 'Deleting', and 'Failed'.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for P2SVpnServerConfigVpnClientRevokedCertificatePropertiesFormat.
+func (pvscvcrcpf P2SVpnServerConfigVpnClientRevokedCertificatePropertiesFormat) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if pvscvcrcpf.Thumbprint != nil {
+		objectMap["thumbprint"] = pvscvcrcpf.Thumbprint
+	}
+	return json.Marshal(objectMap)
 }
 
 // P2SVpnServerConfigVpnClientRootCertificate VPN client root certificate of P2SVpnServerConfiguration.
@@ -18421,8 +17853,17 @@ func (pvscvcrc *P2SVpnServerConfigVpnClientRootCertificate) UnmarshalJSON(body [
 type P2SVpnServerConfigVpnClientRootCertificatePropertiesFormat struct {
 	// PublicCertData - The certificate public data.
 	PublicCertData *string `json:"publicCertData,omitempty"`
-	// ProvisioningState - The provisioning state of the P2SVpnServerConfiguration VPN client root certificate resource. Possible values are: 'Updating', 'Deleting', and 'Failed'.
+	// ProvisioningState - READ-ONLY; The provisioning state of the P2SVpnServerConfiguration VPN client root certificate resource. Possible values are: 'Updating', 'Deleting', and 'Failed'.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for P2SVpnServerConfigVpnClientRootCertificatePropertiesFormat.
+func (pvscvcrcpf P2SVpnServerConfigVpnClientRootCertificatePropertiesFormat) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if pvscvcrcpf.PublicCertData != nil {
+		objectMap["publicCertData"] = pvscvcrcpf.PublicCertData
+	}
+	return json.Marshal(objectMap)
 }
 
 // PacketCapture parameters that define the create packet capture operation.
@@ -18518,9 +17959,9 @@ type PacketCaptureQueryStatusResult struct {
 // PacketCaptureResult information about packet capture session.
 type PacketCaptureResult struct {
 	autorest.Response `json:"-"`
-	// Name - Name of the packet capture session.
+	// Name - READ-ONLY; Name of the packet capture session.
 	Name *string `json:"name,omitempty"`
-	// ID - ID of the packet capture operation.
+	// ID - READ-ONLY; ID of the packet capture operation.
 	ID                             *string `json:"id,omitempty"`
 	Etag                           *string `json:"etag,omitempty"`
 	*PacketCaptureResultProperties `json:"properties,omitempty"`
@@ -18529,12 +17970,6 @@ type PacketCaptureResult struct {
 // MarshalJSON is the custom marshaler for PacketCaptureResult.
 func (pcr PacketCaptureResult) MarshalJSON() ([]byte, error) {
 	objectMap := make(map[string]interface{})
-	if pcr.Name != nil {
-		objectMap["name"] = pcr.Name
-	}
-	if pcr.ID != nil {
-		objectMap["id"] = pcr.ID
-	}
 	if pcr.Etag != nil {
 		objectMap["etag"] = pcr.Etag
 	}
@@ -18621,7 +18056,7 @@ type PacketCapturesCreateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *PacketCapturesCreateFuture) Result(client PacketCapturesClient) (pcr PacketCaptureResult, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.PacketCapturesCreateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -18650,7 +18085,7 @@ type PacketCapturesDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *PacketCapturesDeleteFuture) Result(client PacketCapturesClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.PacketCapturesDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -18673,7 +18108,7 @@ type PacketCapturesGetStatusFuture struct {
 // If the operation has not completed it will return an error.
 func (future *PacketCapturesGetStatusFuture) Result(client PacketCapturesClient) (pcqsr PacketCaptureQueryStatusResult, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.PacketCapturesGetStatusFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -18702,7 +18137,7 @@ type PacketCapturesStopFuture struct {
 // If the operation has not completed it will return an error.
 func (future *PacketCapturesStopFuture) Result(client PacketCapturesClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.PacketCapturesStopFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -18728,11 +18163,11 @@ type PacketCaptureStorageLocation struct {
 // PatchRouteFilter route Filter Resource.
 type PatchRouteFilter struct {
 	*RouteFilterPropertiesFormat `json:"properties,omitempty"`
-	// Name - The name of the resource that is unique within a resource group. This name can be used to access the resource.
+	// Name - READ-ONLY; The name of the resource that is unique within a resource group. This name can be used to access the resource.
 	Name *string `json:"name,omitempty"`
-	// Etag - A unique read-only string that changes whenever the resource is updated.
+	// Etag - READ-ONLY; A unique read-only string that changes whenever the resource is updated.
 	Etag *string `json:"etag,omitempty"`
-	// Type - Resource type.
+	// Type - READ-ONLY; Resource type.
 	Type *string `json:"type,omitempty"`
 	// Tags - Resource tags.
 	Tags map[string]*string `json:"tags"`
@@ -18745,15 +18180,6 @@ func (prf PatchRouteFilter) MarshalJSON() ([]byte, error) {
 	objectMap := make(map[string]interface{})
 	if prf.RouteFilterPropertiesFormat != nil {
 		objectMap["properties"] = prf.RouteFilterPropertiesFormat
-	}
-	if prf.Name != nil {
-		objectMap["name"] = prf.Name
-	}
-	if prf.Etag != nil {
-		objectMap["etag"] = prf.Etag
-	}
-	if prf.Type != nil {
-		objectMap["type"] = prf.Type
 	}
 	if prf.Tags != nil {
 		objectMap["tags"] = prf.Tags
@@ -18836,9 +18262,9 @@ func (prf *PatchRouteFilter) UnmarshalJSON(body []byte) error {
 // PatchRouteFilterRule route Filter Rule Resource
 type PatchRouteFilterRule struct {
 	*RouteFilterRulePropertiesFormat `json:"properties,omitempty"`
-	// Name - The name of the resource that is unique within a resource group. This name can be used to access the resource.
+	// Name - READ-ONLY; The name of the resource that is unique within a resource group. This name can be used to access the resource.
 	Name *string `json:"name,omitempty"`
-	// Etag - A unique read-only string that changes whenever the resource is updated.
+	// Etag - READ-ONLY; A unique read-only string that changes whenever the resource is updated.
 	Etag *string `json:"etag,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
@@ -18849,12 +18275,6 @@ func (prfr PatchRouteFilterRule) MarshalJSON() ([]byte, error) {
 	objectMap := make(map[string]interface{})
 	if prfr.RouteFilterRulePropertiesFormat != nil {
 		objectMap["properties"] = prfr.RouteFilterRulePropertiesFormat
-	}
-	if prfr.Name != nil {
-		objectMap["name"] = prfr.Name
-	}
-	if prfr.Etag != nil {
-		objectMap["etag"] = prfr.Etag
 	}
 	if prfr.ID != nil {
 		objectMap["id"] = prfr.ID
@@ -18997,7 +18417,7 @@ func (p *Probe) UnmarshalJSON(body []byte) error {
 
 // ProbePropertiesFormat load balancer probe resource.
 type ProbePropertiesFormat struct {
-	// LoadBalancingRules - The load balancer rules that use this probe.
+	// LoadBalancingRules - READ-ONLY; The load balancer rules that use this probe.
 	LoadBalancingRules *[]SubResource `json:"loadBalancingRules,omitempty"`
 	// Protocol - The protocol of the end point. Possible values are: 'Http', 'Tcp', or 'Https'. If 'Tcp' is specified, a received ACK is required for the probe to be successful. If 'Http' or 'Https' is specified, a 200 OK response from the specifies URI is required for the probe to be successful. Possible values include: 'ProbeProtocolHTTP', 'ProbeProtocolTCP', 'ProbeProtocolHTTPS'
 	Protocol ProbeProtocol `json:"protocol,omitempty"`
@@ -19013,6 +18433,30 @@ type ProbePropertiesFormat struct {
 	ProvisioningState *string `json:"provisioningState,omitempty"`
 }
 
+// MarshalJSON is the custom marshaler for ProbePropertiesFormat.
+func (ppf ProbePropertiesFormat) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if ppf.Protocol != "" {
+		objectMap["protocol"] = ppf.Protocol
+	}
+	if ppf.Port != nil {
+		objectMap["port"] = ppf.Port
+	}
+	if ppf.IntervalInSeconds != nil {
+		objectMap["intervalInSeconds"] = ppf.IntervalInSeconds
+	}
+	if ppf.NumberOfProbes != nil {
+		objectMap["numberOfProbes"] = ppf.NumberOfProbes
+	}
+	if ppf.RequestPath != nil {
+		objectMap["requestPath"] = ppf.RequestPath
+	}
+	if ppf.ProvisioningState != nil {
+		objectMap["provisioningState"] = ppf.ProvisioningState
+	}
+	return json.Marshal(objectMap)
+}
+
 // Profile network profile resource.
 type Profile struct {
 	autorest.Response `json:"-"`
@@ -19022,9 +18466,9 @@ type Profile struct {
 	Etag *string `json:"etag,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name.
+	// Name - READ-ONLY; Resource name.
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type.
+	// Type - READ-ONLY; Resource type.
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location.
 	Location *string `json:"location,omitempty"`
@@ -19043,12 +18487,6 @@ func (p Profile) MarshalJSON() ([]byte, error) {
 	}
 	if p.ID != nil {
 		objectMap["id"] = p.ID
-	}
-	if p.Name != nil {
-		objectMap["name"] = p.Name
-	}
-	if p.Type != nil {
-		objectMap["type"] = p.Type
 	}
 	if p.Location != nil {
 		objectMap["location"] = p.Location
@@ -19214,10 +18652,15 @@ func (plr ProfileListResult) IsEmpty() bool {
 	return plr.Value == nil || len(*plr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (plr ProfileListResult) hasNextLink() bool {
+	return plr.NextLink != nil && len(*plr.NextLink) != 0
+}
+
 // profileListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (plr ProfileListResult) profileListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if plr.NextLink == nil || len(to.String(plr.NextLink)) < 1 {
+	if !plr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -19245,11 +18688,16 @@ func (page *ProfileListResultPage) NextWithContext(ctx context.Context) (err err
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.plr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.plr)
+		if err != nil {
+			return err
+		}
+		page.plr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.plr = next
 	return nil
 }
 
@@ -19289,10 +18737,44 @@ type ProfilePropertiesFormat struct {
 	ContainerNetworkInterfaces *[]ContainerNetworkInterface `json:"containerNetworkInterfaces,omitempty"`
 	// ContainerNetworkInterfaceConfigurations - List of chid container network interface configurations.
 	ContainerNetworkInterfaceConfigurations *[]ContainerNetworkInterfaceConfiguration `json:"containerNetworkInterfaceConfigurations,omitempty"`
-	// ResourceGUID - The resource GUID property of the network interface resource.
+	// ResourceGUID - READ-ONLY; The resource GUID property of the network interface resource.
 	ResourceGUID *string `json:"resourceGuid,omitempty"`
-	// ProvisioningState - The provisioning state of the resource.
+	// ProvisioningState - READ-ONLY; The provisioning state of the resource.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for ProfilePropertiesFormat.
+func (ppf ProfilePropertiesFormat) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if ppf.ContainerNetworkInterfaces != nil {
+		objectMap["containerNetworkInterfaces"] = ppf.ContainerNetworkInterfaces
+	}
+	if ppf.ContainerNetworkInterfaceConfigurations != nil {
+		objectMap["containerNetworkInterfaceConfigurations"] = ppf.ContainerNetworkInterfaceConfigurations
+	}
+	return json.Marshal(objectMap)
+}
+
+// ProfilesDeleteFuture an abstraction for monitoring and retrieving the results of a long-running operation.
+type ProfilesDeleteFuture struct {
+	azure.Future
+}
+
+// Result returns the result of the asynchronous operation.
+// If the operation has not completed it will return an error.
+func (future *ProfilesDeleteFuture) Result(client ProfilesClient) (ar autorest.Response, err error) {
+	var done bool
+	done, err = future.DoneWithContext(context.Background(), client)
+	if err != nil {
+		err = autorest.NewErrorWithError(err, "network.ProfilesDeleteFuture", "Result", future.Response(), "Polling failure")
+		return
+	}
+	if !done {
+		err = azure.NewAsyncOpIncompleteError("network.ProfilesDeleteFuture")
+		return
+	}
+	ar.Response = future.Response()
+	return
 }
 
 // ProtocolConfiguration configuration of the protocol.
@@ -19313,9 +18795,9 @@ type PublicIPAddress struct {
 	Zones *[]string `json:"zones,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name.
+	// Name - READ-ONLY; Resource name.
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type.
+	// Type - READ-ONLY; Resource type.
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location.
 	Location *string `json:"location,omitempty"`
@@ -19340,12 +18822,6 @@ func (pia PublicIPAddress) MarshalJSON() ([]byte, error) {
 	}
 	if pia.ID != nil {
 		objectMap["id"] = pia.ID
-	}
-	if pia.Name != nil {
-		objectMap["name"] = pia.Name
-	}
-	if pia.Type != nil {
-		objectMap["type"] = pia.Type
 	}
 	if pia.Location != nil {
 		objectMap["location"] = pia.Location
@@ -19472,7 +18948,7 @@ type PublicIPAddressesCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *PublicIPAddressesCreateOrUpdateFuture) Result(client PublicIPAddressesClient) (pia PublicIPAddress, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.PublicIPAddressesCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -19501,7 +18977,7 @@ type PublicIPAddressesDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *PublicIPAddressesDeleteFuture) Result(client PublicIPAddressesClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.PublicIPAddressesDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -19514,8 +18990,8 @@ func (future *PublicIPAddressesDeleteFuture) Result(client PublicIPAddressesClie
 	return
 }
 
-// PublicIPAddressesUpdateTagsFuture an abstraction for monitoring and retrieving the results of a
-// long-running operation.
+// PublicIPAddressesUpdateTagsFuture an abstraction for monitoring and retrieving the results of a long-running
+// operation.
 type PublicIPAddressesUpdateTagsFuture struct {
 	azure.Future
 }
@@ -19524,7 +19000,7 @@ type PublicIPAddressesUpdateTagsFuture struct {
 // If the operation has not completed it will return an error.
 func (future *PublicIPAddressesUpdateTagsFuture) Result(client PublicIPAddressesClient) (pia PublicIPAddress, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.PublicIPAddressesUpdateTagsFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -19620,10 +19096,15 @@ func (pialr PublicIPAddressListResult) IsEmpty() bool {
 	return pialr.Value == nil || len(*pialr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (pialr PublicIPAddressListResult) hasNextLink() bool {
+	return pialr.NextLink != nil && len(*pialr.NextLink) != 0
+}
+
 // publicIPAddressListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (pialr PublicIPAddressListResult) publicIPAddressListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if pialr.NextLink == nil || len(to.String(pialr.NextLink)) < 1 {
+	if !pialr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -19651,11 +19132,16 @@ func (page *PublicIPAddressListResultPage) NextWithContext(ctx context.Context) 
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.pialr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.pialr)
+		if err != nil {
+			return err
+		}
+		page.pialr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.pialr = next
 	return nil
 }
 
@@ -19695,7 +19181,7 @@ type PublicIPAddressPropertiesFormat struct {
 	PublicIPAllocationMethod IPAllocationMethod `json:"publicIPAllocationMethod,omitempty"`
 	// PublicIPAddressVersion - The public IP address version. Possible values are: 'IPv4' and 'IPv6'. Possible values include: 'IPv4', 'IPv6'
 	PublicIPAddressVersion IPVersion `json:"publicIPAddressVersion,omitempty"`
-	// IPConfiguration - The IP configuration associated with the public IP address.
+	// IPConfiguration - READ-ONLY; The IP configuration associated with the public IP address.
 	IPConfiguration *IPConfiguration `json:"ipConfiguration,omitempty"`
 	// DNSSettings - The FQDN of the DNS record associated with the public IP address.
 	DNSSettings *PublicIPAddressDNSSettings `json:"dnsSettings,omitempty"`
@@ -19711,6 +19197,39 @@ type PublicIPAddressPropertiesFormat struct {
 	ResourceGUID *string `json:"resourceGuid,omitempty"`
 	// ProvisioningState - The provisioning state of the PublicIP resource. Possible values are: 'Updating', 'Deleting', and 'Failed'.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for PublicIPAddressPropertiesFormat.
+func (piapf PublicIPAddressPropertiesFormat) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if piapf.PublicIPAllocationMethod != "" {
+		objectMap["publicIPAllocationMethod"] = piapf.PublicIPAllocationMethod
+	}
+	if piapf.PublicIPAddressVersion != "" {
+		objectMap["publicIPAddressVersion"] = piapf.PublicIPAddressVersion
+	}
+	if piapf.DNSSettings != nil {
+		objectMap["dnsSettings"] = piapf.DNSSettings
+	}
+	if piapf.IPTags != nil {
+		objectMap["ipTags"] = piapf.IPTags
+	}
+	if piapf.IPAddress != nil {
+		objectMap["ipAddress"] = piapf.IPAddress
+	}
+	if piapf.PublicIPPrefix != nil {
+		objectMap["publicIPPrefix"] = piapf.PublicIPPrefix
+	}
+	if piapf.IdleTimeoutInMinutes != nil {
+		objectMap["idleTimeoutInMinutes"] = piapf.IdleTimeoutInMinutes
+	}
+	if piapf.ResourceGUID != nil {
+		objectMap["resourceGuid"] = piapf.ResourceGUID
+	}
+	if piapf.ProvisioningState != nil {
+		objectMap["provisioningState"] = piapf.ProvisioningState
+	}
+	return json.Marshal(objectMap)
 }
 
 // PublicIPAddressSku SKU of a public IP address
@@ -19732,9 +19251,9 @@ type PublicIPPrefix struct {
 	Zones *[]string `json:"zones,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name.
+	// Name - READ-ONLY; Resource name.
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type.
+	// Type - READ-ONLY; Resource type.
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location.
 	Location *string `json:"location,omitempty"`
@@ -19759,12 +19278,6 @@ func (pip PublicIPPrefix) MarshalJSON() ([]byte, error) {
 	}
 	if pip.ID != nil {
 		objectMap["id"] = pip.ID
-	}
-	if pip.Name != nil {
-		objectMap["name"] = pip.Name
-	}
-	if pip.Type != nil {
-		objectMap["type"] = pip.Type
 	}
 	if pip.Location != nil {
 		objectMap["location"] = pip.Location
@@ -19881,7 +19394,7 @@ type PublicIPPrefixesCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *PublicIPPrefixesCreateOrUpdateFuture) Result(client PublicIPPrefixesClient) (pip PublicIPPrefix, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.PublicIPPrefixesCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -19910,7 +19423,7 @@ type PublicIPPrefixesDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *PublicIPPrefixesDeleteFuture) Result(client PublicIPPrefixesClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.PublicIPPrefixesDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -19923,8 +19436,8 @@ func (future *PublicIPPrefixesDeleteFuture) Result(client PublicIPPrefixesClient
 	return
 }
 
-// PublicIPPrefixesUpdateTagsFuture an abstraction for monitoring and retrieving the results of a
-// long-running operation.
+// PublicIPPrefixesUpdateTagsFuture an abstraction for monitoring and retrieving the results of a long-running
+// operation.
 type PublicIPPrefixesUpdateTagsFuture struct {
 	azure.Future
 }
@@ -19933,7 +19446,7 @@ type PublicIPPrefixesUpdateTagsFuture struct {
 // If the operation has not completed it will return an error.
 func (future *PublicIPPrefixesUpdateTagsFuture) Result(client PublicIPPrefixesClient) (pip PublicIPPrefix, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.PublicIPPrefixesUpdateTagsFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -20029,10 +19542,15 @@ func (piplr PublicIPPrefixListResult) IsEmpty() bool {
 	return piplr.Value == nil || len(*piplr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (piplr PublicIPPrefixListResult) hasNextLink() bool {
+	return piplr.NextLink != nil && len(*piplr.NextLink) != 0
+}
+
 // publicIPPrefixListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (piplr PublicIPPrefixListResult) publicIPPrefixListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if piplr.NextLink == nil || len(to.String(piplr.NextLink)) < 1 {
+	if !piplr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -20060,11 +19578,16 @@ func (page *PublicIPPrefixListResultPage) NextWithContext(ctx context.Context) (
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.piplr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.piplr)
+		if err != nil {
+			return err
+		}
+		page.piplr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.piplr = next
 	return nil
 }
 
@@ -20110,10 +19633,39 @@ type PublicIPPrefixPropertiesFormat struct {
 	IPPrefix *string `json:"ipPrefix,omitempty"`
 	// PublicIPAddresses - The list of all referenced PublicIPAddresses
 	PublicIPAddresses *[]ReferencedPublicIPAddress `json:"publicIPAddresses,omitempty"`
+	// LoadBalancerFrontendIPConfiguration - READ-ONLY; The reference to load balancer frontend IP configuration associated with the public IP prefix.
+	LoadBalancerFrontendIPConfiguration *SubResource `json:"loadBalancerFrontendIpConfiguration,omitempty"`
 	// ResourceGUID - The resource GUID property of the public IP prefix resource.
 	ResourceGUID *string `json:"resourceGuid,omitempty"`
 	// ProvisioningState - The provisioning state of the Public IP prefix resource. Possible values are: 'Updating', 'Deleting', and 'Failed'.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for PublicIPPrefixPropertiesFormat.
+func (pippf PublicIPPrefixPropertiesFormat) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if pippf.PublicIPAddressVersion != "" {
+		objectMap["publicIPAddressVersion"] = pippf.PublicIPAddressVersion
+	}
+	if pippf.IPTags != nil {
+		objectMap["ipTags"] = pippf.IPTags
+	}
+	if pippf.PrefixLength != nil {
+		objectMap["prefixLength"] = pippf.PrefixLength
+	}
+	if pippf.IPPrefix != nil {
+		objectMap["ipPrefix"] = pippf.IPPrefix
+	}
+	if pippf.PublicIPAddresses != nil {
+		objectMap["publicIPAddresses"] = pippf.PublicIPAddresses
+	}
+	if pippf.ResourceGUID != nil {
+		objectMap["resourceGuid"] = pippf.ResourceGUID
+	}
+	if pippf.ProvisioningState != nil {
+		objectMap["provisioningState"] = pippf.ProvisioningState
+	}
+	return json.Marshal(objectMap)
 }
 
 // PublicIPPrefixSku SKU of a public IP prefix
@@ -20138,9 +19690,9 @@ type ReferencedPublicIPAddress struct {
 type Resource struct {
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name.
+	// Name - READ-ONLY; Resource name.
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type.
+	// Type - READ-ONLY; Resource type.
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location.
 	Location *string `json:"location,omitempty"`
@@ -20153,12 +19705,6 @@ func (r Resource) MarshalJSON() ([]byte, error) {
 	objectMap := make(map[string]interface{})
 	if r.ID != nil {
 		objectMap["id"] = r.ID
-	}
-	if r.Name != nil {
-		objectMap["name"] = r.Name
-	}
-	if r.Type != nil {
-		objectMap["type"] = r.Type
 	}
 	if r.Location != nil {
 		objectMap["location"] = r.Location
@@ -20175,7 +19721,7 @@ type ResourceNavigationLink struct {
 	*ResourceNavigationLinkFormat `json:"properties,omitempty"`
 	// Name - Name of the resource that is unique within a resource group. This name can be used to access the resource.
 	Name *string `json:"name,omitempty"`
-	// Etag - A unique read-only string that changes whenever the resource is updated.
+	// Etag - READ-ONLY; A unique read-only string that changes whenever the resource is updated.
 	Etag *string `json:"etag,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
@@ -20189,9 +19735,6 @@ func (rnl ResourceNavigationLink) MarshalJSON() ([]byte, error) {
 	}
 	if rnl.Name != nil {
 		objectMap["name"] = rnl.Name
-	}
-	if rnl.Etag != nil {
-		objectMap["etag"] = rnl.Etag
 	}
 	if rnl.ID != nil {
 		objectMap["id"] = rnl.ID
@@ -20256,8 +19799,20 @@ type ResourceNavigationLinkFormat struct {
 	LinkedResourceType *string `json:"linkedResourceType,omitempty"`
 	// Link - Link to the external resource
 	Link *string `json:"link,omitempty"`
-	// ProvisioningState - Provisioning state of the ResourceNavigationLink resource.
+	// ProvisioningState - READ-ONLY; Provisioning state of the ResourceNavigationLink resource.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for ResourceNavigationLinkFormat.
+func (rnlf ResourceNavigationLinkFormat) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if rnlf.LinkedResourceType != nil {
+		objectMap["linkedResourceType"] = rnlf.LinkedResourceType
+	}
+	if rnlf.Link != nil {
+		objectMap["link"] = rnlf.Link
+	}
+	return json.Marshal(objectMap)
 }
 
 // RetentionPolicyParameters parameters that define the retention policy for flow log.
@@ -20354,13 +19909,13 @@ func (r *Route) UnmarshalJSON(body []byte) error {
 type RouteFilter struct {
 	autorest.Response            `json:"-"`
 	*RouteFilterPropertiesFormat `json:"properties,omitempty"`
-	// Etag - Gets a unique read-only string that changes whenever the resource is updated.
+	// Etag - READ-ONLY; Gets a unique read-only string that changes whenever the resource is updated.
 	Etag *string `json:"etag,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name.
+	// Name - READ-ONLY; Resource name.
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type.
+	// Type - READ-ONLY; Resource type.
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location.
 	Location *string `json:"location,omitempty"`
@@ -20374,17 +19929,8 @@ func (rf RouteFilter) MarshalJSON() ([]byte, error) {
 	if rf.RouteFilterPropertiesFormat != nil {
 		objectMap["properties"] = rf.RouteFilterPropertiesFormat
 	}
-	if rf.Etag != nil {
-		objectMap["etag"] = rf.Etag
-	}
 	if rf.ID != nil {
 		objectMap["id"] = rf.ID
-	}
-	if rf.Name != nil {
-		objectMap["name"] = rf.Name
-	}
-	if rf.Type != nil {
-		objectMap["type"] = rf.Type
 	}
 	if rf.Location != nil {
 		objectMap["location"] = rf.Location
@@ -20550,10 +20096,15 @@ func (rflr RouteFilterListResult) IsEmpty() bool {
 	return rflr.Value == nil || len(*rflr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (rflr RouteFilterListResult) hasNextLink() bool {
+	return rflr.NextLink != nil && len(*rflr.NextLink) != 0
+}
+
 // routeFilterListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (rflr RouteFilterListResult) routeFilterListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if rflr.NextLink == nil || len(to.String(rflr.NextLink)) < 1 {
+	if !rflr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -20581,11 +20132,16 @@ func (page *RouteFilterListResultPage) NextWithContext(ctx context.Context) (err
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.rflr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.rflr)
+		if err != nil {
+			return err
+		}
+		page.rflr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.rflr = next
 	return nil
 }
 
@@ -20625,8 +20181,20 @@ type RouteFilterPropertiesFormat struct {
 	Rules *[]RouteFilterRule `json:"rules,omitempty"`
 	// Peerings - A collection of references to express route circuit peerings.
 	Peerings *[]ExpressRouteCircuitPeering `json:"peerings,omitempty"`
-	// ProvisioningState - The provisioning state of the resource. Possible values are: 'Updating', 'Deleting', 'Succeeded' and 'Failed'.
+	// ProvisioningState - READ-ONLY; The provisioning state of the resource. Possible values are: 'Updating', 'Deleting', 'Succeeded' and 'Failed'.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for RouteFilterPropertiesFormat.
+func (rfpf RouteFilterPropertiesFormat) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if rfpf.Rules != nil {
+		objectMap["rules"] = rfpf.Rules
+	}
+	if rfpf.Peerings != nil {
+		objectMap["peerings"] = rfpf.Peerings
+	}
+	return json.Marshal(objectMap)
 }
 
 // RouteFilterRule route Filter Rule Resource
@@ -20637,7 +20205,7 @@ type RouteFilterRule struct {
 	Name *string `json:"name,omitempty"`
 	// Location - Resource location.
 	Location *string `json:"location,omitempty"`
-	// Etag - A unique read-only string that changes whenever the resource is updated.
+	// Etag - READ-ONLY; A unique read-only string that changes whenever the resource is updated.
 	Etag *string `json:"etag,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
@@ -20654,9 +20222,6 @@ func (rfr RouteFilterRule) MarshalJSON() ([]byte, error) {
 	}
 	if rfr.Location != nil {
 		objectMap["location"] = rfr.Location
-	}
-	if rfr.Etag != nil {
-		objectMap["etag"] = rfr.Etag
 	}
 	if rfr.ID != nil {
 		objectMap["id"] = rfr.ID
@@ -20801,10 +20366,15 @@ func (rfrlr RouteFilterRuleListResult) IsEmpty() bool {
 	return rfrlr.Value == nil || len(*rfrlr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (rfrlr RouteFilterRuleListResult) hasNextLink() bool {
+	return rfrlr.NextLink != nil && len(*rfrlr.NextLink) != 0
+}
+
 // routeFilterRuleListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (rfrlr RouteFilterRuleListResult) routeFilterRuleListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if rfrlr.NextLink == nil || len(to.String(rfrlr.NextLink)) < 1 {
+	if !rfrlr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -20832,11 +20402,16 @@ func (page *RouteFilterRuleListResultPage) NextWithContext(ctx context.Context) 
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.rfrlr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.rfrlr)
+		if err != nil {
+			return err
+		}
+		page.rfrlr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.rfrlr = next
 	return nil
 }
 
@@ -20878,8 +20453,23 @@ type RouteFilterRulePropertiesFormat struct {
 	RouteFilterRuleType *string `json:"routeFilterRuleType,omitempty"`
 	// Communities - The collection for bgp community values to filter on. e.g. ['12076:5010','12076:5020']
 	Communities *[]string `json:"communities,omitempty"`
-	// ProvisioningState - The provisioning state of the resource. Possible values are: 'Updating', 'Deleting', 'Succeeded' and 'Failed'.
+	// ProvisioningState - READ-ONLY; The provisioning state of the resource. Possible values are: 'Updating', 'Deleting', 'Succeeded' and 'Failed'.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for RouteFilterRulePropertiesFormat.
+func (rfrpf RouteFilterRulePropertiesFormat) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if rfrpf.Access != "" {
+		objectMap["access"] = rfrpf.Access
+	}
+	if rfrpf.RouteFilterRuleType != nil {
+		objectMap["routeFilterRuleType"] = rfrpf.RouteFilterRuleType
+	}
+	if rfrpf.Communities != nil {
+		objectMap["communities"] = rfrpf.Communities
+	}
+	return json.Marshal(objectMap)
 }
 
 // RouteFilterRulesCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of a
@@ -20892,7 +20482,7 @@ type RouteFilterRulesCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *RouteFilterRulesCreateOrUpdateFuture) Result(client RouteFilterRulesClient) (rfr RouteFilterRule, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.RouteFilterRulesCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -20921,7 +20511,7 @@ type RouteFilterRulesDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *RouteFilterRulesDeleteFuture) Result(client RouteFilterRulesClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.RouteFilterRulesDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -20944,7 +20534,7 @@ type RouteFilterRulesUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *RouteFilterRulesUpdateFuture) Result(client RouteFilterRulesClient) (rfr RouteFilterRule, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.RouteFilterRulesUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -20963,8 +20553,8 @@ func (future *RouteFilterRulesUpdateFuture) Result(client RouteFilterRulesClient
 	return
 }
 
-// RouteFiltersCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of a
-// long-running operation.
+// RouteFiltersCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of a long-running
+// operation.
 type RouteFiltersCreateOrUpdateFuture struct {
 	azure.Future
 }
@@ -20973,7 +20563,7 @@ type RouteFiltersCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *RouteFiltersCreateOrUpdateFuture) Result(client RouteFiltersClient) (rf RouteFilter, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.RouteFiltersCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -21002,7 +20592,7 @@ type RouteFiltersDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *RouteFiltersDeleteFuture) Result(client RouteFiltersClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.RouteFiltersDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -21025,7 +20615,7 @@ type RouteFiltersUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *RouteFiltersUpdateFuture) Result(client RouteFiltersClient) (rf RouteFilter, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.RouteFiltersUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -21121,10 +20711,15 @@ func (rlr RouteListResult) IsEmpty() bool {
 	return rlr.Value == nil || len(*rlr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (rlr RouteListResult) hasNextLink() bool {
+	return rlr.NextLink != nil && len(*rlr.NextLink) != 0
+}
+
 // routeListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (rlr RouteListResult) routeListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if rlr.NextLink == nil || len(to.String(rlr.NextLink)) < 1 {
+	if !rlr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -21152,11 +20747,16 @@ func (page *RouteListResultPage) NextWithContext(ctx context.Context) (err error
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.rlr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.rlr)
+		if err != nil {
+			return err
+		}
+		page.rlr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.rlr = next
 	return nil
 }
 
@@ -21212,7 +20812,7 @@ type RoutesCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *RoutesCreateOrUpdateFuture) Result(client RoutesClient) (r Route, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.RoutesCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -21240,7 +20840,7 @@ type RoutesDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *RoutesDeleteFuture) Result(client RoutesClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.RoutesDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -21262,9 +20862,9 @@ type RouteTable struct {
 	Etag *string `json:"etag,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name.
+	// Name - READ-ONLY; Resource name.
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type.
+	// Type - READ-ONLY; Resource type.
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location.
 	Location *string `json:"location,omitempty"`
@@ -21283,12 +20883,6 @@ func (rt RouteTable) MarshalJSON() ([]byte, error) {
 	}
 	if rt.ID != nil {
 		objectMap["id"] = rt.ID
-	}
-	if rt.Name != nil {
-		objectMap["name"] = rt.Name
-	}
-	if rt.Type != nil {
-		objectMap["type"] = rt.Type
 	}
 	if rt.Location != nil {
 		objectMap["location"] = rt.Location
@@ -21454,10 +21048,15 @@ func (rtlr RouteTableListResult) IsEmpty() bool {
 	return rtlr.Value == nil || len(*rtlr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (rtlr RouteTableListResult) hasNextLink() bool {
+	return rtlr.NextLink != nil && len(*rtlr.NextLink) != 0
+}
+
 // routeTableListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (rtlr RouteTableListResult) routeTableListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if rtlr.NextLink == nil || len(to.String(rtlr.NextLink)) < 1 {
+	if !rtlr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -21485,11 +21084,16 @@ func (page *RouteTableListResultPage) NextWithContext(ctx context.Context) (err 
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.rtlr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.rtlr)
+		if err != nil {
+			return err
+		}
+		page.rtlr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.rtlr = next
 	return nil
 }
 
@@ -21527,7 +21131,7 @@ func NewRouteTableListResultPage(getNextPage func(context.Context, RouteTableLis
 type RouteTablePropertiesFormat struct {
 	// Routes - Collection of routes contained within a route table.
 	Routes *[]Route `json:"routes,omitempty"`
-	// Subnets - A collection of references to subnets.
+	// Subnets - READ-ONLY; A collection of references to subnets.
 	Subnets *[]Subnet `json:"subnets,omitempty"`
 	// DisableBgpRoutePropagation - Gets or sets whether to disable the routes learned by BGP on that route table. True means disable.
 	DisableBgpRoutePropagation *bool `json:"disableBgpRoutePropagation,omitempty"`
@@ -21535,8 +21139,23 @@ type RouteTablePropertiesFormat struct {
 	ProvisioningState *string `json:"provisioningState,omitempty"`
 }
 
-// RouteTablesCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of a
-// long-running operation.
+// MarshalJSON is the custom marshaler for RouteTablePropertiesFormat.
+func (rtpf RouteTablePropertiesFormat) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if rtpf.Routes != nil {
+		objectMap["routes"] = rtpf.Routes
+	}
+	if rtpf.DisableBgpRoutePropagation != nil {
+		objectMap["disableBgpRoutePropagation"] = rtpf.DisableBgpRoutePropagation
+	}
+	if rtpf.ProvisioningState != nil {
+		objectMap["provisioningState"] = rtpf.ProvisioningState
+	}
+	return json.Marshal(objectMap)
+}
+
+// RouteTablesCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of a long-running
+// operation.
 type RouteTablesCreateOrUpdateFuture struct {
 	azure.Future
 }
@@ -21545,7 +21164,7 @@ type RouteTablesCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *RouteTablesCreateOrUpdateFuture) Result(client RouteTablesClient) (rt RouteTable, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.RouteTablesCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -21574,7 +21193,7 @@ type RouteTablesDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *RouteTablesDeleteFuture) Result(client RouteTablesClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.RouteTablesDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -21597,7 +21216,7 @@ type RouteTablesUpdateTagsFuture struct {
 // If the operation has not completed it will return an error.
 func (future *RouteTablesUpdateTagsFuture) Result(client RouteTablesClient) (rt RouteTable, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.RouteTablesUpdateTagsFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -21625,9 +21244,9 @@ type SecurityGroup struct {
 	Etag *string `json:"etag,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name.
+	// Name - READ-ONLY; Resource name.
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type.
+	// Type - READ-ONLY; Resource type.
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location.
 	Location *string `json:"location,omitempty"`
@@ -21646,12 +21265,6 @@ func (sg SecurityGroup) MarshalJSON() ([]byte, error) {
 	}
 	if sg.ID != nil {
 		objectMap["id"] = sg.ID
-	}
-	if sg.Name != nil {
-		objectMap["name"] = sg.Name
-	}
-	if sg.Type != nil {
-		objectMap["type"] = sg.Type
 	}
 	if sg.Location != nil {
 		objectMap["location"] = sg.Location
@@ -21817,10 +21430,15 @@ func (sglr SecurityGroupListResult) IsEmpty() bool {
 	return sglr.Value == nil || len(*sglr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (sglr SecurityGroupListResult) hasNextLink() bool {
+	return sglr.NextLink != nil && len(*sglr.NextLink) != 0
+}
+
 // securityGroupListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (sglr SecurityGroupListResult) securityGroupListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if sglr.NextLink == nil || len(to.String(sglr.NextLink)) < 1 {
+	if !sglr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -21848,11 +21466,16 @@ func (page *SecurityGroupListResultPage) NextWithContext(ctx context.Context) (e
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.sglr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.sglr)
+		if err != nil {
+			return err
+		}
+		page.sglr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.sglr = next
 	return nil
 }
 
@@ -21899,9 +21522,9 @@ type SecurityGroupPropertiesFormat struct {
 	SecurityRules *[]SecurityRule `json:"securityRules,omitempty"`
 	// DefaultSecurityRules - The default security rules of network security group.
 	DefaultSecurityRules *[]SecurityRule `json:"defaultSecurityRules,omitempty"`
-	// NetworkInterfaces - A collection of references to network interfaces.
+	// NetworkInterfaces - READ-ONLY; A collection of references to network interfaces.
 	NetworkInterfaces *[]Interface `json:"networkInterfaces,omitempty"`
-	// Subnets - A collection of references to subnets.
+	// Subnets - READ-ONLY; A collection of references to subnets.
 	Subnets *[]Subnet `json:"subnets,omitempty"`
 	// ResourceGUID - The resource GUID property of the network security group resource.
 	ResourceGUID *string `json:"resourceGuid,omitempty"`
@@ -21909,12 +21532,39 @@ type SecurityGroupPropertiesFormat struct {
 	ProvisioningState *string `json:"provisioningState,omitempty"`
 }
 
+// MarshalJSON is the custom marshaler for SecurityGroupPropertiesFormat.
+func (sgpf SecurityGroupPropertiesFormat) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if sgpf.SecurityRules != nil {
+		objectMap["securityRules"] = sgpf.SecurityRules
+	}
+	if sgpf.DefaultSecurityRules != nil {
+		objectMap["defaultSecurityRules"] = sgpf.DefaultSecurityRules
+	}
+	if sgpf.ResourceGUID != nil {
+		objectMap["resourceGuid"] = sgpf.ResourceGUID
+	}
+	if sgpf.ProvisioningState != nil {
+		objectMap["provisioningState"] = sgpf.ProvisioningState
+	}
+	return json.Marshal(objectMap)
+}
+
 // SecurityGroupResult network configuration diagnostic result corresponded provided traffic query.
 type SecurityGroupResult struct {
 	// SecurityRuleAccessResult - The network traffic is allowed or denied. Possible values are 'Allow' and 'Deny'. Possible values include: 'SecurityRuleAccessAllow', 'SecurityRuleAccessDeny'
 	SecurityRuleAccessResult SecurityRuleAccess `json:"securityRuleAccessResult,omitempty"`
-	// EvaluatedNetworkSecurityGroups - List of results network security groups diagnostic.
+	// EvaluatedNetworkSecurityGroups - READ-ONLY; List of results network security groups diagnostic.
 	EvaluatedNetworkSecurityGroups *[]EvaluatedNetworkSecurityGroup `json:"evaluatedNetworkSecurityGroups,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for SecurityGroupResult.
+func (sgr SecurityGroupResult) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if sgr.SecurityRuleAccessResult != "" {
+		objectMap["securityRuleAccessResult"] = sgr.SecurityRuleAccessResult
+	}
+	return json.Marshal(objectMap)
 }
 
 // SecurityGroupsCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of a
@@ -21927,7 +21577,7 @@ type SecurityGroupsCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *SecurityGroupsCreateOrUpdateFuture) Result(client SecurityGroupsClient) (sg SecurityGroup, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.SecurityGroupsCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -21956,7 +21606,7 @@ type SecurityGroupsDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *SecurityGroupsDeleteFuture) Result(client SecurityGroupsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.SecurityGroupsDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -21969,8 +21619,8 @@ func (future *SecurityGroupsDeleteFuture) Result(client SecurityGroupsClient) (a
 	return
 }
 
-// SecurityGroupsUpdateTagsFuture an abstraction for monitoring and retrieving the results of a
-// long-running operation.
+// SecurityGroupsUpdateTagsFuture an abstraction for monitoring and retrieving the results of a long-running
+// operation.
 type SecurityGroupsUpdateTagsFuture struct {
 	azure.Future
 }
@@ -21979,7 +21629,7 @@ type SecurityGroupsUpdateTagsFuture struct {
 // If the operation has not completed it will return an error.
 func (future *SecurityGroupsUpdateTagsFuture) Result(client SecurityGroupsClient) (sg SecurityGroup, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.SecurityGroupsUpdateTagsFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -22181,10 +21831,15 @@ func (srlr SecurityRuleListResult) IsEmpty() bool {
 	return srlr.Value == nil || len(*srlr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (srlr SecurityRuleListResult) hasNextLink() bool {
+	return srlr.NextLink != nil && len(*srlr.NextLink) != 0
+}
+
 // securityRuleListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (srlr SecurityRuleListResult) securityRuleListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if srlr.NextLink == nil || len(to.String(srlr.NextLink)) < 1 {
+	if !srlr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -22212,11 +21867,16 @@ func (page *SecurityRuleListResultPage) NextWithContext(ctx context.Context) (er
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.srlr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.srlr)
+		if err != nil {
+			return err
+		}
+		page.srlr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.srlr = next
 	return nil
 }
 
@@ -22256,17 +21916,17 @@ type SecurityRulePropertiesFormat struct {
 	Description *string `json:"description,omitempty"`
 	// Protocol - Network protocol this rule applies to. Possible values are 'Tcp', 'Udp', and '*'. Possible values include: 'SecurityRuleProtocolTCP', 'SecurityRuleProtocolUDP', 'SecurityRuleProtocolAsterisk'
 	Protocol SecurityRuleProtocol `json:"protocol,omitempty"`
-	// SourcePortRange - The source port or range. Integer or range between 0 and 65535. Asterix '*' can also be used to match all ports.
+	// SourcePortRange - The source port or range. Integer or range between 0 and 65535. Asterisk '*' can also be used to match all ports.
 	SourcePortRange *string `json:"sourcePortRange,omitempty"`
-	// DestinationPortRange - The destination port or range. Integer or range between 0 and 65535. Asterix '*' can also be used to match all ports.
+	// DestinationPortRange - The destination port or range. Integer or range between 0 and 65535. Asterisk '*' can also be used to match all ports.
 	DestinationPortRange *string `json:"destinationPortRange,omitempty"`
-	// SourceAddressPrefix - The CIDR or source IP range. Asterix '*' can also be used to match all source IPs. Default tags such as 'VirtualNetwork', 'AzureLoadBalancer' and 'Internet' can also be used. If this is an ingress rule, specifies where network traffic originates from.
+	// SourceAddressPrefix - The CIDR or source IP range. Asterisk '*' can also be used to match all source IPs. Default tags such as 'VirtualNetwork', 'AzureLoadBalancer' and 'Internet' can also be used. If this is an ingress rule, specifies where network traffic originates from.
 	SourceAddressPrefix *string `json:"sourceAddressPrefix,omitempty"`
 	// SourceAddressPrefixes - The CIDR or source IP ranges.
 	SourceAddressPrefixes *[]string `json:"sourceAddressPrefixes,omitempty"`
 	// SourceApplicationSecurityGroups - The application security group specified as source.
 	SourceApplicationSecurityGroups *[]ApplicationSecurityGroup `json:"sourceApplicationSecurityGroups,omitempty"`
-	// DestinationAddressPrefix - The destination address prefix. CIDR or destination IP range. Asterix '*' can also be used to match all source IPs. Default tags such as 'VirtualNetwork', 'AzureLoadBalancer' and 'Internet' can also be used.
+	// DestinationAddressPrefix - The destination address prefix. CIDR or destination IP range. Asterisk '*' can also be used to match all source IPs. Default tags such as 'VirtualNetwork', 'AzureLoadBalancer' and 'Internet' can also be used.
 	DestinationAddressPrefix *string `json:"destinationAddressPrefix,omitempty"`
 	// DestinationAddressPrefixes - The destination address prefixes. CIDR or destination IP ranges.
 	DestinationAddressPrefixes *[]string `json:"destinationAddressPrefixes,omitempty"`
@@ -22280,14 +21940,14 @@ type SecurityRulePropertiesFormat struct {
 	Access SecurityRuleAccess `json:"access,omitempty"`
 	// Priority - The priority of the rule. The value can be between 100 and 4096. The priority number must be unique for each rule in the collection. The lower the priority number, the higher the priority of the rule.
 	Priority *int32 `json:"priority,omitempty"`
-	// Direction - The direction of the rule. The direction specifies if rule will be evaluated on incoming or outcoming traffic. Possible values are: 'Inbound' and 'Outbound'. Possible values include: 'SecurityRuleDirectionInbound', 'SecurityRuleDirectionOutbound'
+	// Direction - The direction of the rule. The direction specifies if rule will be evaluated on incoming or outgoing traffic. Possible values are: 'Inbound' and 'Outbound'. Possible values include: 'SecurityRuleDirectionInbound', 'SecurityRuleDirectionOutbound'
 	Direction SecurityRuleDirection `json:"direction,omitempty"`
 	// ProvisioningState - The provisioning state of the public IP resource. Possible values are: 'Updating', 'Deleting', and 'Failed'.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
 }
 
-// SecurityRulesCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of a
-// long-running operation.
+// SecurityRulesCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of a long-running
+// operation.
 type SecurityRulesCreateOrUpdateFuture struct {
 	azure.Future
 }
@@ -22296,7 +21956,7 @@ type SecurityRulesCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *SecurityRulesCreateOrUpdateFuture) Result(client SecurityRulesClient) (sr SecurityRule, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.SecurityRulesCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -22325,7 +21985,7 @@ type SecurityRulesDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *SecurityRulesDeleteFuture) Result(client SecurityRulesClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.SecurityRulesDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -22360,7 +22020,7 @@ type ServiceAssociationLink struct {
 	*ServiceAssociationLinkPropertiesFormat `json:"properties,omitempty"`
 	// Name - Name of the resource that is unique within a resource group. This name can be used to access the resource.
 	Name *string `json:"name,omitempty"`
-	// Etag - A unique read-only string that changes whenever the resource is updated.
+	// Etag - READ-ONLY; A unique read-only string that changes whenever the resource is updated.
 	Etag *string `json:"etag,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
@@ -22374,9 +22034,6 @@ func (sal ServiceAssociationLink) MarshalJSON() ([]byte, error) {
 	}
 	if sal.Name != nil {
 		objectMap["name"] = sal.Name
-	}
-	if sal.Etag != nil {
-		objectMap["etag"] = sal.Etag
 	}
 	if sal.ID != nil {
 		objectMap["id"] = sal.ID
@@ -22441,8 +22098,20 @@ type ServiceAssociationLinkPropertiesFormat struct {
 	LinkedResourceType *string `json:"linkedResourceType,omitempty"`
 	// Link - Link to the external resource.
 	Link *string `json:"link,omitempty"`
-	// ProvisioningState - Provisioning state of the ServiceAssociationLink resource.
+	// ProvisioningState - READ-ONLY; Provisioning state of the ServiceAssociationLink resource.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for ServiceAssociationLinkPropertiesFormat.
+func (salpf ServiceAssociationLinkPropertiesFormat) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if salpf.LinkedResourceType != nil {
+		objectMap["linkedResourceType"] = salpf.LinkedResourceType
+	}
+	if salpf.Link != nil {
+		objectMap["link"] = salpf.Link
+	}
+	return json.Marshal(objectMap)
 }
 
 // ServiceDelegationPropertiesFormat properties of a service delegation.
@@ -22451,12 +22120,24 @@ type ServiceDelegationPropertiesFormat struct {
 	ServiceName *string `json:"serviceName,omitempty"`
 	// Actions - Describes the actions permitted to the service upon delegation
 	Actions *[]string `json:"actions,omitempty"`
-	// ProvisioningState - The provisioning state of the resource.
+	// ProvisioningState - READ-ONLY; The provisioning state of the resource.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
 }
 
-// ServiceEndpointPoliciesCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of
-// a long-running operation.
+// MarshalJSON is the custom marshaler for ServiceDelegationPropertiesFormat.
+func (sdpf ServiceDelegationPropertiesFormat) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if sdpf.ServiceName != nil {
+		objectMap["serviceName"] = sdpf.ServiceName
+	}
+	if sdpf.Actions != nil {
+		objectMap["actions"] = sdpf.Actions
+	}
+	return json.Marshal(objectMap)
+}
+
+// ServiceEndpointPoliciesCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of a
+// long-running operation.
 type ServiceEndpointPoliciesCreateOrUpdateFuture struct {
 	azure.Future
 }
@@ -22465,7 +22146,7 @@ type ServiceEndpointPoliciesCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ServiceEndpointPoliciesCreateOrUpdateFuture) Result(client ServiceEndpointPoliciesClient) (sep ServiceEndpointPolicy, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ServiceEndpointPoliciesCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -22494,7 +22175,7 @@ type ServiceEndpointPoliciesDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ServiceEndpointPoliciesDeleteFuture) Result(client ServiceEndpointPoliciesClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ServiceEndpointPoliciesDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -22517,7 +22198,7 @@ type ServiceEndpointPoliciesUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ServiceEndpointPoliciesUpdateFuture) Result(client ServiceEndpointPoliciesClient) (sep ServiceEndpointPolicy, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ServiceEndpointPoliciesUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -22545,9 +22226,9 @@ type ServiceEndpointPolicy struct {
 	Etag *string `json:"etag,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name.
+	// Name - READ-ONLY; Resource name.
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type.
+	// Type - READ-ONLY; Resource type.
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location.
 	Location *string `json:"location,omitempty"`
@@ -22566,12 +22247,6 @@ func (sep ServiceEndpointPolicy) MarshalJSON() ([]byte, error) {
 	}
 	if sep.ID != nil {
 		objectMap["id"] = sep.ID
-	}
-	if sep.Name != nil {
-		objectMap["name"] = sep.Name
-	}
-	if sep.Type != nil {
-		objectMap["type"] = sep.Type
 	}
 	if sep.Location != nil {
 		objectMap["location"] = sep.Location
@@ -22742,8 +22417,8 @@ func (sepd *ServiceEndpointPolicyDefinition) UnmarshalJSON(body []byte) error {
 	return nil
 }
 
-// ServiceEndpointPolicyDefinitionListResult response for ListServiceEndpointPolicyDefinition API service
-// call. Retrieves all service endpoint policy definition that belongs to a service endpoint policy.
+// ServiceEndpointPolicyDefinitionListResult response for ListServiceEndpointPolicyDefinition API service call.
+// Retrieves all service endpoint policy definition that belongs to a service endpoint policy.
 type ServiceEndpointPolicyDefinitionListResult struct {
 	autorest.Response `json:"-"`
 	// Value - The service endpoint policy definition in a service endpoint policy.
@@ -22821,10 +22496,15 @@ func (sepdlr ServiceEndpointPolicyDefinitionListResult) IsEmpty() bool {
 	return sepdlr.Value == nil || len(*sepdlr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (sepdlr ServiceEndpointPolicyDefinitionListResult) hasNextLink() bool {
+	return sepdlr.NextLink != nil && len(*sepdlr.NextLink) != 0
+}
+
 // serviceEndpointPolicyDefinitionListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (sepdlr ServiceEndpointPolicyDefinitionListResult) serviceEndpointPolicyDefinitionListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if sepdlr.NextLink == nil || len(to.String(sepdlr.NextLink)) < 1 {
+	if !sepdlr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -22852,11 +22532,16 @@ func (page *ServiceEndpointPolicyDefinitionListResultPage) NextWithContext(ctx c
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.sepdlr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.sepdlr)
+		if err != nil {
+			return err
+		}
+		page.sepdlr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.sepdlr = next
 	return nil
 }
 
@@ -22898,8 +22583,23 @@ type ServiceEndpointPolicyDefinitionPropertiesFormat struct {
 	Service *string `json:"service,omitempty"`
 	// ServiceResources - A list of service resources.
 	ServiceResources *[]string `json:"serviceResources,omitempty"`
-	// ProvisioningState - The provisioning state of the service end point policy definition. Possible values are: 'Updating', 'Deleting', and 'Failed'.
+	// ProvisioningState - READ-ONLY; The provisioning state of the service end point policy definition. Possible values are: 'Updating', 'Deleting', and 'Failed'.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for ServiceEndpointPolicyDefinitionPropertiesFormat.
+func (sepdpf ServiceEndpointPolicyDefinitionPropertiesFormat) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if sepdpf.Description != nil {
+		objectMap["description"] = sepdpf.Description
+	}
+	if sepdpf.Service != nil {
+		objectMap["service"] = sepdpf.Service
+	}
+	if sepdpf.ServiceResources != nil {
+		objectMap["serviceResources"] = sepdpf.ServiceResources
+	}
+	return json.Marshal(objectMap)
 }
 
 // ServiceEndpointPolicyDefinitionsCreateOrUpdateFuture an abstraction for monitoring and retrieving the
@@ -22912,7 +22612,7 @@ type ServiceEndpointPolicyDefinitionsCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ServiceEndpointPolicyDefinitionsCreateOrUpdateFuture) Result(client ServiceEndpointPolicyDefinitionsClient) (sepd ServiceEndpointPolicyDefinition, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ServiceEndpointPolicyDefinitionsCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -22931,8 +22631,8 @@ func (future *ServiceEndpointPolicyDefinitionsCreateOrUpdateFuture) Result(clien
 	return
 }
 
-// ServiceEndpointPolicyDefinitionsDeleteFuture an abstraction for monitoring and retrieving the results of
-// a long-running operation.
+// ServiceEndpointPolicyDefinitionsDeleteFuture an abstraction for monitoring and retrieving the results of a
+// long-running operation.
 type ServiceEndpointPolicyDefinitionsDeleteFuture struct {
 	azure.Future
 }
@@ -22941,7 +22641,7 @@ type ServiceEndpointPolicyDefinitionsDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *ServiceEndpointPolicyDefinitionsDeleteFuture) Result(client ServiceEndpointPolicyDefinitionsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ServiceEndpointPolicyDefinitionsDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -22959,8 +22659,17 @@ type ServiceEndpointPolicyListResult struct {
 	autorest.Response `json:"-"`
 	// Value - A list of ServiceEndpointPolicy resources.
 	Value *[]ServiceEndpointPolicy `json:"value,omitempty"`
-	// NextLink - The URL to get the next set of results.
+	// NextLink - READ-ONLY; The URL to get the next set of results.
 	NextLink *string `json:"nextLink,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for ServiceEndpointPolicyListResult.
+func (seplr ServiceEndpointPolicyListResult) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if seplr.Value != nil {
+		objectMap["value"] = seplr.Value
+	}
+	return json.Marshal(objectMap)
 }
 
 // ServiceEndpointPolicyListResultIterator provides access to a complete listing of ServiceEndpointPolicy
@@ -23032,10 +22741,15 @@ func (seplr ServiceEndpointPolicyListResult) IsEmpty() bool {
 	return seplr.Value == nil || len(*seplr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (seplr ServiceEndpointPolicyListResult) hasNextLink() bool {
+	return seplr.NextLink != nil && len(*seplr.NextLink) != 0
+}
+
 // serviceEndpointPolicyListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (seplr ServiceEndpointPolicyListResult) serviceEndpointPolicyListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if seplr.NextLink == nil || len(to.String(seplr.NextLink)) < 1 {
+	if !seplr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -23063,11 +22777,16 @@ func (page *ServiceEndpointPolicyListResultPage) NextWithContext(ctx context.Con
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.seplr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.seplr)
+		if err != nil {
+			return err
+		}
+		page.seplr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.seplr = next
 	return nil
 }
 
@@ -23105,12 +22824,21 @@ func NewServiceEndpointPolicyListResultPage(getNextPage func(context.Context, Se
 type ServiceEndpointPolicyPropertiesFormat struct {
 	// ServiceEndpointPolicyDefinitions - A collection of service endpoint policy definitions of the service endpoint policy.
 	ServiceEndpointPolicyDefinitions *[]ServiceEndpointPolicyDefinition `json:"serviceEndpointPolicyDefinitions,omitempty"`
-	// Subnets - A collection of references to subnets.
+	// Subnets - READ-ONLY; A collection of references to subnets.
 	Subnets *[]Subnet `json:"subnets,omitempty"`
-	// ResourceGUID - The resource GUID property of the service endpoint policy resource.
+	// ResourceGUID - READ-ONLY; The resource GUID property of the service endpoint policy resource.
 	ResourceGUID *string `json:"resourceGuid,omitempty"`
-	// ProvisioningState - The provisioning state of the service endpoint policy. Possible values are: 'Updating', 'Deleting', and 'Failed'.
+	// ProvisioningState - READ-ONLY; The provisioning state of the service endpoint policy. Possible values are: 'Updating', 'Deleting', and 'Failed'.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for ServiceEndpointPolicyPropertiesFormat.
+func (seppf ServiceEndpointPolicyPropertiesFormat) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if seppf.ServiceEndpointPolicyDefinitions != nil {
+		objectMap["serviceEndpointPolicyDefinitions"] = seppf.ServiceEndpointPolicyDefinitions
+	}
+	return json.Marshal(objectMap)
 }
 
 // ServiceEndpointPropertiesFormat the service endpoint properties.
@@ -23213,10 +22941,19 @@ func (s *Subnet) UnmarshalJSON(body []byte) error {
 
 // SubnetAssociation network interface and its custom security rules.
 type SubnetAssociation struct {
-	// ID - Subnet ID.
+	// ID - READ-ONLY; Subnet ID.
 	ID *string `json:"id,omitempty"`
 	// SecurityRules - Collection of custom security rules.
 	SecurityRules *[]SecurityRule `json:"securityRules,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for SubnetAssociation.
+func (sa SubnetAssociation) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if sa.SecurityRules != nil {
+		objectMap["securityRules"] = sa.SecurityRules
+	}
+	return json.Marshal(objectMap)
 }
 
 // SubnetListResult response for ListSubnets API service callRetrieves all subnet that belongs to a virtual
@@ -23297,10 +23034,15 @@ func (slr SubnetListResult) IsEmpty() bool {
 	return slr.Value == nil || len(*slr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (slr SubnetListResult) hasNextLink() bool {
+	return slr.NextLink != nil && len(*slr.NextLink) != 0
+}
+
 // subnetListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (slr SubnetListResult) subnetListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if slr.NextLink == nil || len(to.String(slr.NextLink)) < 1 {
+	if !slr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -23328,11 +23070,16 @@ func (page *SubnetListResultPage) NextWithContext(ctx context.Context) (err erro
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.slr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.slr)
+		if err != nil {
+			return err
+		}
+		page.slr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.slr = next
 	return nil
 }
 
@@ -23380,11 +23127,11 @@ type SubnetPropertiesFormat struct {
 	ServiceEndpoints *[]ServiceEndpointPropertiesFormat `json:"serviceEndpoints,omitempty"`
 	// ServiceEndpointPolicies - An array of service endpoint policies.
 	ServiceEndpointPolicies *[]ServiceEndpointPolicy `json:"serviceEndpointPolicies,omitempty"`
-	// InterfaceEndpoints - An array of references to interface endpoints
+	// InterfaceEndpoints - READ-ONLY; An array of references to interface endpoints
 	InterfaceEndpoints *[]InterfaceEndpoint `json:"interfaceEndpoints,omitempty"`
-	// IPConfigurations - Gets an array of references to the network interface IP configurations using subnet.
+	// IPConfigurations - READ-ONLY; Gets an array of references to the network interface IP configurations using subnet.
 	IPConfigurations *[]IPConfiguration `json:"ipConfigurations,omitempty"`
-	// IPConfigurationProfiles - Array of IP configuration profiles which reference this subnet.
+	// IPConfigurationProfiles - READ-ONLY; Array of IP configuration profiles which reference this subnet.
 	IPConfigurationProfiles *[]IPConfigurationProfile `json:"ipConfigurationProfiles,omitempty"`
 	// ResourceNavigationLinks - Gets an array of references to the external resources using subnet.
 	ResourceNavigationLinks *[]ResourceNavigationLink `json:"resourceNavigationLinks,omitempty"`
@@ -23392,10 +23139,46 @@ type SubnetPropertiesFormat struct {
 	ServiceAssociationLinks *[]ServiceAssociationLink `json:"serviceAssociationLinks,omitempty"`
 	// Delegations - Gets an array of references to the delegations on the subnet.
 	Delegations *[]Delegation `json:"delegations,omitempty"`
-	// Purpose - A read-only string identifying the intention of use for this subnet based on delegations and other user-defined properties.
+	// Purpose - READ-ONLY; A read-only string identifying the intention of use for this subnet based on delegations and other user-defined properties.
 	Purpose *string `json:"purpose,omitempty"`
 	// ProvisioningState - The provisioning state of the resource.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for SubnetPropertiesFormat.
+func (spf SubnetPropertiesFormat) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if spf.AddressPrefix != nil {
+		objectMap["addressPrefix"] = spf.AddressPrefix
+	}
+	if spf.AddressPrefixes != nil {
+		objectMap["addressPrefixes"] = spf.AddressPrefixes
+	}
+	if spf.NetworkSecurityGroup != nil {
+		objectMap["networkSecurityGroup"] = spf.NetworkSecurityGroup
+	}
+	if spf.RouteTable != nil {
+		objectMap["routeTable"] = spf.RouteTable
+	}
+	if spf.ServiceEndpoints != nil {
+		objectMap["serviceEndpoints"] = spf.ServiceEndpoints
+	}
+	if spf.ServiceEndpointPolicies != nil {
+		objectMap["serviceEndpointPolicies"] = spf.ServiceEndpointPolicies
+	}
+	if spf.ResourceNavigationLinks != nil {
+		objectMap["resourceNavigationLinks"] = spf.ResourceNavigationLinks
+	}
+	if spf.ServiceAssociationLinks != nil {
+		objectMap["serviceAssociationLinks"] = spf.ServiceAssociationLinks
+	}
+	if spf.Delegations != nil {
+		objectMap["delegations"] = spf.Delegations
+	}
+	if spf.ProvisioningState != nil {
+		objectMap["provisioningState"] = spf.ProvisioningState
+	}
+	return json.Marshal(objectMap)
 }
 
 // SubnetsCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of a long-running
@@ -23408,7 +23191,7 @@ type SubnetsCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *SubnetsCreateOrUpdateFuture) Result(client SubnetsClient) (s Subnet, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.SubnetsCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -23427,8 +23210,7 @@ func (future *SubnetsCreateOrUpdateFuture) Result(client SubnetsClient) (s Subne
 	return
 }
 
-// SubnetsDeleteFuture an abstraction for monitoring and retrieving the results of a long-running
-// operation.
+// SubnetsDeleteFuture an abstraction for monitoring and retrieving the results of a long-running operation.
 type SubnetsDeleteFuture struct {
 	azure.Future
 }
@@ -23437,7 +23219,7 @@ type SubnetsDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *SubnetsDeleteFuture) Result(client SubnetsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.SubnetsDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -23474,13 +23256,22 @@ func (toVar TagsObject) MarshalJSON() ([]byte, error) {
 // Topology topology of the specified resource group.
 type Topology struct {
 	autorest.Response `json:"-"`
-	// ID - GUID representing the operation id.
+	// ID - READ-ONLY; GUID representing the operation id.
 	ID *string `json:"id,omitempty"`
-	// CreatedDateTime - The datetime when the topology was initially created for the resource group.
+	// CreatedDateTime - READ-ONLY; The datetime when the topology was initially created for the resource group.
 	CreatedDateTime *date.Time `json:"createdDateTime,omitempty"`
-	// LastModified - The datetime when the topology was last modified.
+	// LastModified - READ-ONLY; The datetime when the topology was last modified.
 	LastModified *date.Time          `json:"lastModified,omitempty"`
 	Resources    *[]TopologyResource `json:"resources,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for Topology.
+func (t Topology) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if t.Resources != nil {
+		objectMap["resources"] = t.Resources
+	}
+	return json.Marshal(objectMap)
 }
 
 // TopologyAssociation resources that have an association with the parent resource.
@@ -23635,21 +23426,21 @@ type TroubleshootingResult struct {
 
 // TunnelConnectionHealth virtualNetworkGatewayConnection properties
 type TunnelConnectionHealth struct {
-	// Tunnel - Tunnel name.
+	// Tunnel - READ-ONLY; Tunnel name.
 	Tunnel *string `json:"tunnel,omitempty"`
-	// ConnectionStatus - Virtual network Gateway connection status. Possible values include: 'VirtualNetworkGatewayConnectionStatusUnknown', 'VirtualNetworkGatewayConnectionStatusConnecting', 'VirtualNetworkGatewayConnectionStatusConnected', 'VirtualNetworkGatewayConnectionStatusNotConnected'
+	// ConnectionStatus - READ-ONLY; Virtual network Gateway connection status. Possible values include: 'VirtualNetworkGatewayConnectionStatusUnknown', 'VirtualNetworkGatewayConnectionStatusConnecting', 'VirtualNetworkGatewayConnectionStatusConnected', 'VirtualNetworkGatewayConnectionStatusNotConnected'
 	ConnectionStatus VirtualNetworkGatewayConnectionStatus `json:"connectionStatus,omitempty"`
-	// IngressBytesTransferred - The Ingress Bytes Transferred in this connection
+	// IngressBytesTransferred - READ-ONLY; The Ingress Bytes Transferred in this connection
 	IngressBytesTransferred *int64 `json:"ingressBytesTransferred,omitempty"`
-	// EgressBytesTransferred - The Egress Bytes Transferred in this connection
+	// EgressBytesTransferred - READ-ONLY; The Egress Bytes Transferred in this connection
 	EgressBytesTransferred *int64 `json:"egressBytesTransferred,omitempty"`
-	// LastConnectionEstablishedUtcTime - The time at which connection was established in Utc format.
+	// LastConnectionEstablishedUtcTime - READ-ONLY; The time at which connection was established in Utc format.
 	LastConnectionEstablishedUtcTime *string `json:"lastConnectionEstablishedUtcTime,omitempty"`
 }
 
 // Usage describes network resource usage.
 type Usage struct {
-	// ID - Resource identifier.
+	// ID - READ-ONLY; Resource identifier.
 	ID *string `json:"id,omitempty"`
 	// Unit - An enum describing the unit of measurement.
 	Unit *string `json:"unit,omitempty"`
@@ -23659,6 +23450,24 @@ type Usage struct {
 	Limit *int64 `json:"limit,omitempty"`
 	// Name - The name of the type of usage.
 	Name *UsageName `json:"name,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for Usage.
+func (u Usage) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if u.Unit != nil {
+		objectMap["unit"] = u.Unit
+	}
+	if u.CurrentValue != nil {
+		objectMap["currentValue"] = u.CurrentValue
+	}
+	if u.Limit != nil {
+		objectMap["limit"] = u.Limit
+	}
+	if u.Name != nil {
+		objectMap["name"] = u.Name
+	}
+	return json.Marshal(objectMap)
 }
 
 // UsageName the usage names.
@@ -23746,10 +23555,15 @@ func (ulr UsagesListResult) IsEmpty() bool {
 	return ulr.Value == nil || len(*ulr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (ulr UsagesListResult) hasNextLink() bool {
+	return ulr.NextLink != nil && len(*ulr.NextLink) != 0
+}
+
 // usagesListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (ulr UsagesListResult) usagesListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if ulr.NextLink == nil || len(to.String(ulr.NextLink)) < 1 {
+	if !ulr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -23777,11 +23591,16 @@ func (page *UsagesListResultPage) NextWithContext(ctx context.Context) (err erro
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.ulr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.ulr)
+		if err != nil {
+			return err
+		}
+		page.ulr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.ulr = next
 	return nil
 }
 
@@ -23848,13 +23667,13 @@ type VerificationIPFlowResult struct {
 type VirtualHub struct {
 	autorest.Response     `json:"-"`
 	*VirtualHubProperties `json:"properties,omitempty"`
-	// Etag - Gets a unique read-only string that changes whenever the resource is updated.
+	// Etag - READ-ONLY; Gets a unique read-only string that changes whenever the resource is updated.
 	Etag *string `json:"etag,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name.
+	// Name - READ-ONLY; Resource name.
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type.
+	// Type - READ-ONLY; Resource type.
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location.
 	Location *string `json:"location,omitempty"`
@@ -23868,17 +23687,8 @@ func (vh VirtualHub) MarshalJSON() ([]byte, error) {
 	if vh.VirtualHubProperties != nil {
 		objectMap["properties"] = vh.VirtualHubProperties
 	}
-	if vh.Etag != nil {
-		objectMap["etag"] = vh.Etag
-	}
 	if vh.ID != nil {
 		objectMap["id"] = vh.ID
-	}
-	if vh.Name != nil {
-		objectMap["name"] = vh.Name
-	}
-	if vh.Type != nil {
-		objectMap["type"] = vh.Type
 	}
 	if vh.Location != nil {
 		objectMap["location"] = vh.Location
@@ -24007,8 +23817,8 @@ type VirtualHubRouteTable struct {
 	Routes *[]VirtualHubRoute `json:"routes,omitempty"`
 }
 
-// VirtualHubsCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of a
-// long-running operation.
+// VirtualHubsCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of a long-running
+// operation.
 type VirtualHubsCreateOrUpdateFuture struct {
 	azure.Future
 }
@@ -24017,7 +23827,7 @@ type VirtualHubsCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualHubsCreateOrUpdateFuture) Result(client VirtualHubsClient) (vh VirtualHub, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VirtualHubsCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -24046,7 +23856,7 @@ type VirtualHubsDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualHubsDeleteFuture) Result(client VirtualHubsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VirtualHubsDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -24069,7 +23879,7 @@ type VirtualHubsUpdateTagsFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualHubsUpdateTagsFuture) Result(client VirtualHubsClient) (vh VirtualHub, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VirtualHubsUpdateTagsFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -24097,9 +23907,9 @@ type VirtualNetwork struct {
 	Etag *string `json:"etag,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name.
+	// Name - READ-ONLY; Resource name.
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type.
+	// Type - READ-ONLY; Resource type.
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location.
 	Location *string `json:"location,omitempty"`
@@ -24118,12 +23928,6 @@ func (vn VirtualNetwork) MarshalJSON() ([]byte, error) {
 	}
 	if vn.ID != nil {
 		objectMap["id"] = vn.ID
-	}
-	if vn.Name != nil {
-		objectMap["name"] = vn.Name
-	}
-	if vn.Type != nil {
-		objectMap["type"] = vn.Type
 	}
 	if vn.Location != nil {
 		objectMap["location"] = vn.Location
@@ -24228,9 +24032,9 @@ type VirtualNetworkGateway struct {
 	Etag *string `json:"etag,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name.
+	// Name - READ-ONLY; Resource name.
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type.
+	// Type - READ-ONLY; Resource type.
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location.
 	Location *string `json:"location,omitempty"`
@@ -24249,12 +24053,6 @@ func (vng VirtualNetworkGateway) MarshalJSON() ([]byte, error) {
 	}
 	if vng.ID != nil {
 		objectMap["id"] = vng.ID
-	}
-	if vng.Name != nil {
-		objectMap["name"] = vng.Name
-	}
-	if vng.Type != nil {
-		objectMap["type"] = vng.Type
 	}
 	if vng.Location != nil {
 		objectMap["location"] = vng.Location
@@ -24352,9 +24150,9 @@ type VirtualNetworkGatewayConnection struct {
 	Etag *string `json:"etag,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name.
+	// Name - READ-ONLY; Resource name.
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type.
+	// Type - READ-ONLY; Resource type.
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location.
 	Location *string `json:"location,omitempty"`
@@ -24373,12 +24171,6 @@ func (vngc VirtualNetworkGatewayConnection) MarshalJSON() ([]byte, error) {
 	}
 	if vngc.ID != nil {
 		objectMap["id"] = vngc.ID
-	}
-	if vngc.Name != nil {
-		objectMap["name"] = vngc.Name
-	}
-	if vngc.Type != nil {
-		objectMap["type"] = vngc.Type
 	}
 	if vngc.Location != nil {
 		objectMap["location"] = vngc.Location
@@ -24475,9 +24267,9 @@ type VirtualNetworkGatewayConnectionListEntity struct {
 	Etag *string `json:"etag,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name.
+	// Name - READ-ONLY; Resource name.
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type.
+	// Type - READ-ONLY; Resource type.
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location.
 	Location *string `json:"location,omitempty"`
@@ -24496,12 +24288,6 @@ func (vngcle VirtualNetworkGatewayConnectionListEntity) MarshalJSON() ([]byte, e
 	}
 	if vngcle.ID != nil {
 		objectMap["id"] = vngcle.ID
-	}
-	if vngcle.Name != nil {
-		objectMap["name"] = vngcle.Name
-	}
-	if vngcle.Type != nil {
-		objectMap["type"] = vngcle.Type
 	}
 	if vngcle.Location != nil {
 		objectMap["location"] = vngcle.Location
@@ -24600,7 +24386,7 @@ type VirtualNetworkGatewayConnectionListEntityPropertiesFormat struct {
 	VirtualNetworkGateway2 *VirtualNetworkConnectionGatewayReference `json:"virtualNetworkGateway2,omitempty"`
 	// LocalNetworkGateway2 - The reference to local network gateway resource.
 	LocalNetworkGateway2 *VirtualNetworkConnectionGatewayReference `json:"localNetworkGateway2,omitempty"`
-	// ConnectionType - Gateway connection type. Possible values are: 'Ipsec','Vnet2Vnet','ExpressRoute', and 'VPNClient. Possible values include: 'IPsec', 'Vnet2Vnet', 'ExpressRoute', 'VPNClient'
+	// ConnectionType - Gateway connection type. Possible values are: 'IPsec','Vnet2Vnet','ExpressRoute', and 'VPNClient. Possible values include: 'IPsec', 'Vnet2Vnet', 'ExpressRoute', 'VPNClient'
 	ConnectionType VirtualNetworkGatewayConnectionType `json:"connectionType,omitempty"`
 	// ConnectionProtocol - Connection protocol used for this connection. Possible values include: 'IKEv2', 'IKEv1'
 	ConnectionProtocol VirtualNetworkGatewayConnectionProtocol `json:"connectionProtocol,omitempty"`
@@ -24608,13 +24394,13 @@ type VirtualNetworkGatewayConnectionListEntityPropertiesFormat struct {
 	RoutingWeight *int32 `json:"routingWeight,omitempty"`
 	// SharedKey - The IPSec shared key.
 	SharedKey *string `json:"sharedKey,omitempty"`
-	// ConnectionStatus - Virtual network Gateway connection status. Possible values are 'Unknown', 'Connecting', 'Connected' and 'NotConnected'. Possible values include: 'VirtualNetworkGatewayConnectionStatusUnknown', 'VirtualNetworkGatewayConnectionStatusConnecting', 'VirtualNetworkGatewayConnectionStatusConnected', 'VirtualNetworkGatewayConnectionStatusNotConnected'
+	// ConnectionStatus - READ-ONLY; Virtual network Gateway connection status. Possible values are 'Unknown', 'Connecting', 'Connected' and 'NotConnected'. Possible values include: 'VirtualNetworkGatewayConnectionStatusUnknown', 'VirtualNetworkGatewayConnectionStatusConnecting', 'VirtualNetworkGatewayConnectionStatusConnected', 'VirtualNetworkGatewayConnectionStatusNotConnected'
 	ConnectionStatus VirtualNetworkGatewayConnectionStatus `json:"connectionStatus,omitempty"`
-	// TunnelConnectionStatus - Collection of all tunnels' connection health status.
+	// TunnelConnectionStatus - READ-ONLY; Collection of all tunnels' connection health status.
 	TunnelConnectionStatus *[]TunnelConnectionHealth `json:"tunnelConnectionStatus,omitempty"`
-	// EgressBytesTransferred - The egress bytes transferred in this connection.
+	// EgressBytesTransferred - READ-ONLY; The egress bytes transferred in this connection.
 	EgressBytesTransferred *int64 `json:"egressBytesTransferred,omitempty"`
-	// IngressBytesTransferred - The ingress bytes transferred in this connection.
+	// IngressBytesTransferred - READ-ONLY; The ingress bytes transferred in this connection.
 	IngressBytesTransferred *int64 `json:"ingressBytesTransferred,omitempty"`
 	// Peer - The reference to peerings resource.
 	Peer *SubResource `json:"peer,omitempty"`
@@ -24626,20 +24412,77 @@ type VirtualNetworkGatewayConnectionListEntityPropertiesFormat struct {
 	IpsecPolicies *[]IpsecPolicy `json:"ipsecPolicies,omitempty"`
 	// ResourceGUID - The resource GUID property of the VirtualNetworkGatewayConnection resource.
 	ResourceGUID *string `json:"resourceGuid,omitempty"`
-	// ProvisioningState - The provisioning state of the VirtualNetworkGatewayConnection resource. Possible values are: 'Updating', 'Deleting', and 'Failed'.
+	// ProvisioningState - READ-ONLY; The provisioning state of the VirtualNetworkGatewayConnection resource. Possible values are: 'Updating', 'Deleting', and 'Failed'.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
 	// ExpressRouteGatewayBypass - Bypass ExpressRoute Gateway for data forwarding
 	ExpressRouteGatewayBypass *bool `json:"expressRouteGatewayBypass,omitempty"`
 }
 
-// VirtualNetworkGatewayConnectionListResult response for the ListVirtualNetworkGatewayConnections API
-// service call
+// MarshalJSON is the custom marshaler for VirtualNetworkGatewayConnectionListEntityPropertiesFormat.
+func (vngclepf VirtualNetworkGatewayConnectionListEntityPropertiesFormat) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if vngclepf.AuthorizationKey != nil {
+		objectMap["authorizationKey"] = vngclepf.AuthorizationKey
+	}
+	if vngclepf.VirtualNetworkGateway1 != nil {
+		objectMap["virtualNetworkGateway1"] = vngclepf.VirtualNetworkGateway1
+	}
+	if vngclepf.VirtualNetworkGateway2 != nil {
+		objectMap["virtualNetworkGateway2"] = vngclepf.VirtualNetworkGateway2
+	}
+	if vngclepf.LocalNetworkGateway2 != nil {
+		objectMap["localNetworkGateway2"] = vngclepf.LocalNetworkGateway2
+	}
+	if vngclepf.ConnectionType != "" {
+		objectMap["connectionType"] = vngclepf.ConnectionType
+	}
+	if vngclepf.ConnectionProtocol != "" {
+		objectMap["connectionProtocol"] = vngclepf.ConnectionProtocol
+	}
+	if vngclepf.RoutingWeight != nil {
+		objectMap["routingWeight"] = vngclepf.RoutingWeight
+	}
+	if vngclepf.SharedKey != nil {
+		objectMap["sharedKey"] = vngclepf.SharedKey
+	}
+	if vngclepf.Peer != nil {
+		objectMap["peer"] = vngclepf.Peer
+	}
+	if vngclepf.EnableBgp != nil {
+		objectMap["enableBgp"] = vngclepf.EnableBgp
+	}
+	if vngclepf.UsePolicyBasedTrafficSelectors != nil {
+		objectMap["usePolicyBasedTrafficSelectors"] = vngclepf.UsePolicyBasedTrafficSelectors
+	}
+	if vngclepf.IpsecPolicies != nil {
+		objectMap["ipsecPolicies"] = vngclepf.IpsecPolicies
+	}
+	if vngclepf.ResourceGUID != nil {
+		objectMap["resourceGuid"] = vngclepf.ResourceGUID
+	}
+	if vngclepf.ExpressRouteGatewayBypass != nil {
+		objectMap["expressRouteGatewayBypass"] = vngclepf.ExpressRouteGatewayBypass
+	}
+	return json.Marshal(objectMap)
+}
+
+// VirtualNetworkGatewayConnectionListResult response for the ListVirtualNetworkGatewayConnections API service
+// call
 type VirtualNetworkGatewayConnectionListResult struct {
 	autorest.Response `json:"-"`
 	// Value - Gets a list of VirtualNetworkGatewayConnection resources that exists in a resource group.
 	Value *[]VirtualNetworkGatewayConnection `json:"value,omitempty"`
-	// NextLink - The URL to get the next set of results.
+	// NextLink - READ-ONLY; The URL to get the next set of results.
 	NextLink *string `json:"nextLink,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for VirtualNetworkGatewayConnectionListResult.
+func (vngclr VirtualNetworkGatewayConnectionListResult) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if vngclr.Value != nil {
+		objectMap["value"] = vngclr.Value
+	}
+	return json.Marshal(objectMap)
 }
 
 // VirtualNetworkGatewayConnectionListResultIterator provides access to a complete listing of
@@ -24711,10 +24554,15 @@ func (vngclr VirtualNetworkGatewayConnectionListResult) IsEmpty() bool {
 	return vngclr.Value == nil || len(*vngclr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (vngclr VirtualNetworkGatewayConnectionListResult) hasNextLink() bool {
+	return vngclr.NextLink != nil && len(*vngclr.NextLink) != 0
+}
+
 // virtualNetworkGatewayConnectionListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (vngclr VirtualNetworkGatewayConnectionListResult) virtualNetworkGatewayConnectionListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if vngclr.NextLink == nil || len(to.String(vngclr.NextLink)) < 1 {
+	if !vngclr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -24742,11 +24590,16 @@ func (page *VirtualNetworkGatewayConnectionListResultPage) NextWithContext(ctx c
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.vngclr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.vngclr)
+		if err != nil {
+			return err
+		}
+		page.vngclr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.vngclr = next
 	return nil
 }
 
@@ -24798,13 +24651,13 @@ type VirtualNetworkGatewayConnectionPropertiesFormat struct {
 	RoutingWeight *int32 `json:"routingWeight,omitempty"`
 	// SharedKey - The IPSec shared key.
 	SharedKey *string `json:"sharedKey,omitempty"`
-	// ConnectionStatus - Virtual network Gateway connection status. Possible values are 'Unknown', 'Connecting', 'Connected' and 'NotConnected'. Possible values include: 'VirtualNetworkGatewayConnectionStatusUnknown', 'VirtualNetworkGatewayConnectionStatusConnecting', 'VirtualNetworkGatewayConnectionStatusConnected', 'VirtualNetworkGatewayConnectionStatusNotConnected'
+	// ConnectionStatus - READ-ONLY; Virtual network Gateway connection status. Possible values are 'Unknown', 'Connecting', 'Connected' and 'NotConnected'. Possible values include: 'VirtualNetworkGatewayConnectionStatusUnknown', 'VirtualNetworkGatewayConnectionStatusConnecting', 'VirtualNetworkGatewayConnectionStatusConnected', 'VirtualNetworkGatewayConnectionStatusNotConnected'
 	ConnectionStatus VirtualNetworkGatewayConnectionStatus `json:"connectionStatus,omitempty"`
-	// TunnelConnectionStatus - Collection of all tunnels' connection health status.
+	// TunnelConnectionStatus - READ-ONLY; Collection of all tunnels' connection health status.
 	TunnelConnectionStatus *[]TunnelConnectionHealth `json:"tunnelConnectionStatus,omitempty"`
-	// EgressBytesTransferred - The egress bytes transferred in this connection.
+	// EgressBytesTransferred - READ-ONLY; The egress bytes transferred in this connection.
 	EgressBytesTransferred *int64 `json:"egressBytesTransferred,omitempty"`
-	// IngressBytesTransferred - The ingress bytes transferred in this connection.
+	// IngressBytesTransferred - READ-ONLY; The ingress bytes transferred in this connection.
 	IngressBytesTransferred *int64 `json:"ingressBytesTransferred,omitempty"`
 	// Peer - The reference to peerings resource.
 	Peer *SubResource `json:"peer,omitempty"`
@@ -24816,10 +24669,58 @@ type VirtualNetworkGatewayConnectionPropertiesFormat struct {
 	IpsecPolicies *[]IpsecPolicy `json:"ipsecPolicies,omitempty"`
 	// ResourceGUID - The resource GUID property of the VirtualNetworkGatewayConnection resource.
 	ResourceGUID *string `json:"resourceGuid,omitempty"`
-	// ProvisioningState - The provisioning state of the VirtualNetworkGatewayConnection resource. Possible values are: 'Updating', 'Deleting', and 'Failed'.
+	// ProvisioningState - READ-ONLY; The provisioning state of the VirtualNetworkGatewayConnection resource. Possible values are: 'Updating', 'Deleting', and 'Failed'.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
 	// ExpressRouteGatewayBypass - Bypass ExpressRoute Gateway for data forwarding
 	ExpressRouteGatewayBypass *bool `json:"expressRouteGatewayBypass,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for VirtualNetworkGatewayConnectionPropertiesFormat.
+func (vngcpf VirtualNetworkGatewayConnectionPropertiesFormat) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if vngcpf.AuthorizationKey != nil {
+		objectMap["authorizationKey"] = vngcpf.AuthorizationKey
+	}
+	if vngcpf.VirtualNetworkGateway1 != nil {
+		objectMap["virtualNetworkGateway1"] = vngcpf.VirtualNetworkGateway1
+	}
+	if vngcpf.VirtualNetworkGateway2 != nil {
+		objectMap["virtualNetworkGateway2"] = vngcpf.VirtualNetworkGateway2
+	}
+	if vngcpf.LocalNetworkGateway2 != nil {
+		objectMap["localNetworkGateway2"] = vngcpf.LocalNetworkGateway2
+	}
+	if vngcpf.ConnectionType != "" {
+		objectMap["connectionType"] = vngcpf.ConnectionType
+	}
+	if vngcpf.ConnectionProtocol != "" {
+		objectMap["connectionProtocol"] = vngcpf.ConnectionProtocol
+	}
+	if vngcpf.RoutingWeight != nil {
+		objectMap["routingWeight"] = vngcpf.RoutingWeight
+	}
+	if vngcpf.SharedKey != nil {
+		objectMap["sharedKey"] = vngcpf.SharedKey
+	}
+	if vngcpf.Peer != nil {
+		objectMap["peer"] = vngcpf.Peer
+	}
+	if vngcpf.EnableBgp != nil {
+		objectMap["enableBgp"] = vngcpf.EnableBgp
+	}
+	if vngcpf.UsePolicyBasedTrafficSelectors != nil {
+		objectMap["usePolicyBasedTrafficSelectors"] = vngcpf.UsePolicyBasedTrafficSelectors
+	}
+	if vngcpf.IpsecPolicies != nil {
+		objectMap["ipsecPolicies"] = vngcpf.IpsecPolicies
+	}
+	if vngcpf.ResourceGUID != nil {
+		objectMap["resourceGuid"] = vngcpf.ResourceGUID
+	}
+	if vngcpf.ExpressRouteGatewayBypass != nil {
+		objectMap["expressRouteGatewayBypass"] = vngcpf.ExpressRouteGatewayBypass
+	}
+	return json.Marshal(objectMap)
 }
 
 // VirtualNetworkGatewayConnectionsCreateOrUpdateFuture an abstraction for monitoring and retrieving the
@@ -24832,7 +24733,7 @@ type VirtualNetworkGatewayConnectionsCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualNetworkGatewayConnectionsCreateOrUpdateFuture) Result(client VirtualNetworkGatewayConnectionsClient) (vngc VirtualNetworkGatewayConnection, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VirtualNetworkGatewayConnectionsCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -24851,8 +24752,8 @@ func (future *VirtualNetworkGatewayConnectionsCreateOrUpdateFuture) Result(clien
 	return
 }
 
-// VirtualNetworkGatewayConnectionsDeleteFuture an abstraction for monitoring and retrieving the results of
-// a long-running operation.
+// VirtualNetworkGatewayConnectionsDeleteFuture an abstraction for monitoring and retrieving the results of a
+// long-running operation.
 type VirtualNetworkGatewayConnectionsDeleteFuture struct {
 	azure.Future
 }
@@ -24861,7 +24762,7 @@ type VirtualNetworkGatewayConnectionsDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualNetworkGatewayConnectionsDeleteFuture) Result(client VirtualNetworkGatewayConnectionsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VirtualNetworkGatewayConnectionsDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -24884,7 +24785,7 @@ type VirtualNetworkGatewayConnectionsResetSharedKeyFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualNetworkGatewayConnectionsResetSharedKeyFuture) Result(client VirtualNetworkGatewayConnectionsClient) (crsk ConnectionResetSharedKey, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VirtualNetworkGatewayConnectionsResetSharedKeyFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -24903,8 +24804,8 @@ func (future *VirtualNetworkGatewayConnectionsResetSharedKeyFuture) Result(clien
 	return
 }
 
-// VirtualNetworkGatewayConnectionsSetSharedKeyFuture an abstraction for monitoring and retrieving the
-// results of a long-running operation.
+// VirtualNetworkGatewayConnectionsSetSharedKeyFuture an abstraction for monitoring and retrieving the results
+// of a long-running operation.
 type VirtualNetworkGatewayConnectionsSetSharedKeyFuture struct {
 	azure.Future
 }
@@ -24913,7 +24814,7 @@ type VirtualNetworkGatewayConnectionsSetSharedKeyFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualNetworkGatewayConnectionsSetSharedKeyFuture) Result(client VirtualNetworkGatewayConnectionsClient) (csk ConnectionSharedKey, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VirtualNetworkGatewayConnectionsSetSharedKeyFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -24932,8 +24833,8 @@ func (future *VirtualNetworkGatewayConnectionsSetSharedKeyFuture) Result(client 
 	return
 }
 
-// VirtualNetworkGatewayConnectionsUpdateTagsFuture an abstraction for monitoring and retrieving the
-// results of a long-running operation.
+// VirtualNetworkGatewayConnectionsUpdateTagsFuture an abstraction for monitoring and retrieving the results of
+// a long-running operation.
 type VirtualNetworkGatewayConnectionsUpdateTagsFuture struct {
 	azure.Future
 }
@@ -24942,7 +24843,7 @@ type VirtualNetworkGatewayConnectionsUpdateTagsFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualNetworkGatewayConnectionsUpdateTagsFuture) Result(client VirtualNetworkGatewayConnectionsClient) (vngc VirtualNetworkGatewayConnection, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VirtualNetworkGatewayConnectionsUpdateTagsFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -25050,18 +24951,42 @@ type VirtualNetworkGatewayIPConfigurationPropertiesFormat struct {
 	Subnet *SubResource `json:"subnet,omitempty"`
 	// PublicIPAddress - The reference of the public IP resource.
 	PublicIPAddress *SubResource `json:"publicIPAddress,omitempty"`
-	// ProvisioningState - The provisioning state of the public IP resource. Possible values are: 'Updating', 'Deleting', and 'Failed'.
+	// ProvisioningState - READ-ONLY; The provisioning state of the public IP resource. Possible values are: 'Updating', 'Deleting', and 'Failed'.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
 }
 
-// VirtualNetworkGatewayListConnectionsResult response for the VirtualNetworkGatewayListConnections API
-// service call
+// MarshalJSON is the custom marshaler for VirtualNetworkGatewayIPConfigurationPropertiesFormat.
+func (vngicpf VirtualNetworkGatewayIPConfigurationPropertiesFormat) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if vngicpf.PrivateIPAllocationMethod != "" {
+		objectMap["privateIPAllocationMethod"] = vngicpf.PrivateIPAllocationMethod
+	}
+	if vngicpf.Subnet != nil {
+		objectMap["subnet"] = vngicpf.Subnet
+	}
+	if vngicpf.PublicIPAddress != nil {
+		objectMap["publicIPAddress"] = vngicpf.PublicIPAddress
+	}
+	return json.Marshal(objectMap)
+}
+
+// VirtualNetworkGatewayListConnectionsResult response for the VirtualNetworkGatewayListConnections API service
+// call
 type VirtualNetworkGatewayListConnectionsResult struct {
 	autorest.Response `json:"-"`
 	// Value - Gets a list of VirtualNetworkGatewayConnection resources that exists in a resource group.
 	Value *[]VirtualNetworkGatewayConnectionListEntity `json:"value,omitempty"`
-	// NextLink - The URL to get the next set of results.
+	// NextLink - READ-ONLY; The URL to get the next set of results.
 	NextLink *string `json:"nextLink,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for VirtualNetworkGatewayListConnectionsResult.
+func (vnglcr VirtualNetworkGatewayListConnectionsResult) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if vnglcr.Value != nil {
+		objectMap["value"] = vnglcr.Value
+	}
+	return json.Marshal(objectMap)
 }
 
 // VirtualNetworkGatewayListConnectionsResultIterator provides access to a complete listing of
@@ -25133,10 +25058,15 @@ func (vnglcr VirtualNetworkGatewayListConnectionsResult) IsEmpty() bool {
 	return vnglcr.Value == nil || len(*vnglcr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (vnglcr VirtualNetworkGatewayListConnectionsResult) hasNextLink() bool {
+	return vnglcr.NextLink != nil && len(*vnglcr.NextLink) != 0
+}
+
 // virtualNetworkGatewayListConnectionsResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (vnglcr VirtualNetworkGatewayListConnectionsResult) virtualNetworkGatewayListConnectionsResultPreparer(ctx context.Context) (*http.Request, error) {
-	if vnglcr.NextLink == nil || len(to.String(vnglcr.NextLink)) < 1 {
+	if !vnglcr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -25145,8 +25075,8 @@ func (vnglcr VirtualNetworkGatewayListConnectionsResult) virtualNetworkGatewayLi
 		autorest.WithBaseURL(to.String(vnglcr.NextLink)))
 }
 
-// VirtualNetworkGatewayListConnectionsResultPage contains a page of
-// VirtualNetworkGatewayConnectionListEntity values.
+// VirtualNetworkGatewayListConnectionsResultPage contains a page of VirtualNetworkGatewayConnectionListEntity
+// values.
 type VirtualNetworkGatewayListConnectionsResultPage struct {
 	fn     func(context.Context, VirtualNetworkGatewayListConnectionsResult) (VirtualNetworkGatewayListConnectionsResult, error)
 	vnglcr VirtualNetworkGatewayListConnectionsResult
@@ -25165,11 +25095,16 @@ func (page *VirtualNetworkGatewayListConnectionsResultPage) NextWithContext(ctx 
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.vnglcr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.vnglcr)
+		if err != nil {
+			return err
+		}
+		page.vnglcr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.vnglcr = next
 	return nil
 }
 
@@ -25208,8 +25143,17 @@ type VirtualNetworkGatewayListResult struct {
 	autorest.Response `json:"-"`
 	// Value - Gets a list of VirtualNetworkGateway resources that exists in a resource group.
 	Value *[]VirtualNetworkGateway `json:"value,omitempty"`
-	// NextLink - The URL to get the next set of results.
+	// NextLink - READ-ONLY; The URL to get the next set of results.
 	NextLink *string `json:"nextLink,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for VirtualNetworkGatewayListResult.
+func (vnglr VirtualNetworkGatewayListResult) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if vnglr.Value != nil {
+		objectMap["value"] = vnglr.Value
+	}
+	return json.Marshal(objectMap)
 }
 
 // VirtualNetworkGatewayListResultIterator provides access to a complete listing of VirtualNetworkGateway
@@ -25281,10 +25225,15 @@ func (vnglr VirtualNetworkGatewayListResult) IsEmpty() bool {
 	return vnglr.Value == nil || len(*vnglr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (vnglr VirtualNetworkGatewayListResult) hasNextLink() bool {
+	return vnglr.NextLink != nil && len(*vnglr.NextLink) != 0
+}
+
 // virtualNetworkGatewayListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (vnglr VirtualNetworkGatewayListResult) virtualNetworkGatewayListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if vnglr.NextLink == nil || len(to.String(vnglr.NextLink)) < 1 {
+	if !vnglr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -25312,11 +25261,16 @@ func (page *VirtualNetworkGatewayListResultPage) NextWithContext(ctx context.Con
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.vnglr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.vnglr)
+		if err != nil {
+			return err
+		}
+		page.vnglr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.vnglr = next
 	return nil
 }
 
@@ -25372,8 +25326,44 @@ type VirtualNetworkGatewayPropertiesFormat struct {
 	BgpSettings *BgpSettings `json:"bgpSettings,omitempty"`
 	// ResourceGUID - The resource GUID property of the VirtualNetworkGateway resource.
 	ResourceGUID *string `json:"resourceGuid,omitempty"`
-	// ProvisioningState - The provisioning state of the VirtualNetworkGateway resource. Possible values are: 'Updating', 'Deleting', and 'Failed'.
+	// ProvisioningState - READ-ONLY; The provisioning state of the VirtualNetworkGateway resource. Possible values are: 'Updating', 'Deleting', and 'Failed'.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for VirtualNetworkGatewayPropertiesFormat.
+func (vngpf VirtualNetworkGatewayPropertiesFormat) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if vngpf.IPConfigurations != nil {
+		objectMap["ipConfigurations"] = vngpf.IPConfigurations
+	}
+	if vngpf.GatewayType != "" {
+		objectMap["gatewayType"] = vngpf.GatewayType
+	}
+	if vngpf.VpnType != "" {
+		objectMap["vpnType"] = vngpf.VpnType
+	}
+	if vngpf.EnableBgp != nil {
+		objectMap["enableBgp"] = vngpf.EnableBgp
+	}
+	if vngpf.ActiveActive != nil {
+		objectMap["activeActive"] = vngpf.ActiveActive
+	}
+	if vngpf.GatewayDefaultSite != nil {
+		objectMap["gatewayDefaultSite"] = vngpf.GatewayDefaultSite
+	}
+	if vngpf.Sku != nil {
+		objectMap["sku"] = vngpf.Sku
+	}
+	if vngpf.VpnClientConfiguration != nil {
+		objectMap["vpnClientConfiguration"] = vngpf.VpnClientConfiguration
+	}
+	if vngpf.BgpSettings != nil {
+		objectMap["bgpSettings"] = vngpf.BgpSettings
+	}
+	if vngpf.ResourceGUID != nil {
+		objectMap["resourceGuid"] = vngpf.ResourceGUID
+	}
+	return json.Marshal(objectMap)
 }
 
 // VirtualNetworkGatewaysCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of a
@@ -25386,7 +25376,7 @@ type VirtualNetworkGatewaysCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualNetworkGatewaysCreateOrUpdateFuture) Result(client VirtualNetworkGatewaysClient) (vng VirtualNetworkGateway, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VirtualNetworkGatewaysCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -25415,7 +25405,7 @@ type VirtualNetworkGatewaysDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualNetworkGatewaysDeleteFuture) Result(client VirtualNetworkGatewaysClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VirtualNetworkGatewaysDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -25438,7 +25428,7 @@ type VirtualNetworkGatewaysGeneratevpnclientpackageFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualNetworkGatewaysGeneratevpnclientpackageFuture) Result(client VirtualNetworkGatewaysClient) (s String, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VirtualNetworkGatewaysGeneratevpnclientpackageFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -25457,8 +25447,8 @@ func (future *VirtualNetworkGatewaysGeneratevpnclientpackageFuture) Result(clien
 	return
 }
 
-// VirtualNetworkGatewaysGenerateVpnProfileFuture an abstraction for monitoring and retrieving the results
-// of a long-running operation.
+// VirtualNetworkGatewaysGenerateVpnProfileFuture an abstraction for monitoring and retrieving the results of a
+// long-running operation.
 type VirtualNetworkGatewaysGenerateVpnProfileFuture struct {
 	azure.Future
 }
@@ -25467,7 +25457,7 @@ type VirtualNetworkGatewaysGenerateVpnProfileFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualNetworkGatewaysGenerateVpnProfileFuture) Result(client VirtualNetworkGatewaysClient) (s String, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VirtualNetworkGatewaysGenerateVpnProfileFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -25486,8 +25476,8 @@ func (future *VirtualNetworkGatewaysGenerateVpnProfileFuture) Result(client Virt
 	return
 }
 
-// VirtualNetworkGatewaysGetAdvertisedRoutesFuture an abstraction for monitoring and retrieving the results
-// of a long-running operation.
+// VirtualNetworkGatewaysGetAdvertisedRoutesFuture an abstraction for monitoring and retrieving the results of
+// a long-running operation.
 type VirtualNetworkGatewaysGetAdvertisedRoutesFuture struct {
 	azure.Future
 }
@@ -25496,7 +25486,7 @@ type VirtualNetworkGatewaysGetAdvertisedRoutesFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualNetworkGatewaysGetAdvertisedRoutesFuture) Result(client VirtualNetworkGatewaysClient) (grlr GatewayRouteListResult, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VirtualNetworkGatewaysGetAdvertisedRoutesFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -25515,8 +25505,8 @@ func (future *VirtualNetworkGatewaysGetAdvertisedRoutesFuture) Result(client Vir
 	return
 }
 
-// VirtualNetworkGatewaysGetBgpPeerStatusFuture an abstraction for monitoring and retrieving the results of
-// a long-running operation.
+// VirtualNetworkGatewaysGetBgpPeerStatusFuture an abstraction for monitoring and retrieving the results of a
+// long-running operation.
 type VirtualNetworkGatewaysGetBgpPeerStatusFuture struct {
 	azure.Future
 }
@@ -25525,7 +25515,7 @@ type VirtualNetworkGatewaysGetBgpPeerStatusFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualNetworkGatewaysGetBgpPeerStatusFuture) Result(client VirtualNetworkGatewaysClient) (bpslr BgpPeerStatusListResult, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VirtualNetworkGatewaysGetBgpPeerStatusFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -25544,8 +25534,8 @@ func (future *VirtualNetworkGatewaysGetBgpPeerStatusFuture) Result(client Virtua
 	return
 }
 
-// VirtualNetworkGatewaysGetLearnedRoutesFuture an abstraction for monitoring and retrieving the results of
-// a long-running operation.
+// VirtualNetworkGatewaysGetLearnedRoutesFuture an abstraction for monitoring and retrieving the results of a
+// long-running operation.
 type VirtualNetworkGatewaysGetLearnedRoutesFuture struct {
 	azure.Future
 }
@@ -25554,7 +25544,7 @@ type VirtualNetworkGatewaysGetLearnedRoutesFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualNetworkGatewaysGetLearnedRoutesFuture) Result(client VirtualNetworkGatewaysClient) (grlr GatewayRouteListResult, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VirtualNetworkGatewaysGetLearnedRoutesFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -25583,7 +25573,7 @@ type VirtualNetworkGatewaysGetVpnclientIpsecParametersFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualNetworkGatewaysGetVpnclientIpsecParametersFuture) Result(client VirtualNetworkGatewaysClient) (vcipp VpnClientIPsecParameters, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VirtualNetworkGatewaysGetVpnclientIpsecParametersFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -25602,8 +25592,8 @@ func (future *VirtualNetworkGatewaysGetVpnclientIpsecParametersFuture) Result(cl
 	return
 }
 
-// VirtualNetworkGatewaysGetVpnProfilePackageURLFuture an abstraction for monitoring and retrieving the
-// results of a long-running operation.
+// VirtualNetworkGatewaysGetVpnProfilePackageURLFuture an abstraction for monitoring and retrieving the results
+// of a long-running operation.
 type VirtualNetworkGatewaysGetVpnProfilePackageURLFuture struct {
 	azure.Future
 }
@@ -25612,7 +25602,7 @@ type VirtualNetworkGatewaysGetVpnProfilePackageURLFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualNetworkGatewaysGetVpnProfilePackageURLFuture) Result(client VirtualNetworkGatewaysClient) (s String, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VirtualNetworkGatewaysGetVpnProfilePackageURLFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -25641,8 +25631,8 @@ type VirtualNetworkGatewaySku struct {
 	Capacity *int32 `json:"capacity,omitempty"`
 }
 
-// VirtualNetworkGatewaysResetFuture an abstraction for monitoring and retrieving the results of a
-// long-running operation.
+// VirtualNetworkGatewaysResetFuture an abstraction for monitoring and retrieving the results of a long-running
+// operation.
 type VirtualNetworkGatewaysResetFuture struct {
 	azure.Future
 }
@@ -25651,7 +25641,7 @@ type VirtualNetworkGatewaysResetFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualNetworkGatewaysResetFuture) Result(client VirtualNetworkGatewaysClient) (vng VirtualNetworkGateway, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VirtualNetworkGatewaysResetFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -25670,8 +25660,8 @@ func (future *VirtualNetworkGatewaysResetFuture) Result(client VirtualNetworkGat
 	return
 }
 
-// VirtualNetworkGatewaysResetVpnClientSharedKeyFuture an abstraction for monitoring and retrieving the
-// results of a long-running operation.
+// VirtualNetworkGatewaysResetVpnClientSharedKeyFuture an abstraction for monitoring and retrieving the results
+// of a long-running operation.
 type VirtualNetworkGatewaysResetVpnClientSharedKeyFuture struct {
 	azure.Future
 }
@@ -25680,7 +25670,7 @@ type VirtualNetworkGatewaysResetVpnClientSharedKeyFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualNetworkGatewaysResetVpnClientSharedKeyFuture) Result(client VirtualNetworkGatewaysClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VirtualNetworkGatewaysResetVpnClientSharedKeyFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -25703,7 +25693,7 @@ type VirtualNetworkGatewaysSetVpnclientIpsecParametersFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualNetworkGatewaysSetVpnclientIpsecParametersFuture) Result(client VirtualNetworkGatewaysClient) (vcipp VpnClientIPsecParameters, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VirtualNetworkGatewaysSetVpnclientIpsecParametersFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -25732,7 +25722,7 @@ type VirtualNetworkGatewaysUpdateTagsFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualNetworkGatewaysUpdateTagsFuture) Result(client VirtualNetworkGatewaysClient) (vng VirtualNetworkGateway, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VirtualNetworkGatewaysUpdateTagsFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -25828,10 +25818,15 @@ func (vnlr VirtualNetworkListResult) IsEmpty() bool {
 	return vnlr.Value == nil || len(*vnlr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (vnlr VirtualNetworkListResult) hasNextLink() bool {
+	return vnlr.NextLink != nil && len(*vnlr.NextLink) != 0
+}
+
 // virtualNetworkListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (vnlr VirtualNetworkListResult) virtualNetworkListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if vnlr.NextLink == nil || len(to.String(vnlr.NextLink)) < 1 {
+	if !vnlr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -25859,11 +25854,16 @@ func (page *VirtualNetworkListResultPage) NextWithContext(ctx context.Context) (
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.vnlr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.vnlr)
+		if err != nil {
+			return err
+		}
+		page.vnlr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.vnlr = next
 	return nil
 }
 
@@ -25900,14 +25900,22 @@ func NewVirtualNetworkListResultPage(getNextPage func(context.Context, VirtualNe
 // VirtualNetworkListUsageResult response for the virtual networks GetUsage API service call.
 type VirtualNetworkListUsageResult struct {
 	autorest.Response `json:"-"`
-	// Value - VirtualNetwork usage stats.
+	// Value - READ-ONLY; VirtualNetwork usage stats.
 	Value *[]VirtualNetworkUsage `json:"value,omitempty"`
 	// NextLink - The URL to get the next set of results.
 	NextLink *string `json:"nextLink,omitempty"`
 }
 
-// VirtualNetworkListUsageResultIterator provides access to a complete listing of VirtualNetworkUsage
-// values.
+// MarshalJSON is the custom marshaler for VirtualNetworkListUsageResult.
+func (vnlur VirtualNetworkListUsageResult) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if vnlur.NextLink != nil {
+		objectMap["nextLink"] = vnlur.NextLink
+	}
+	return json.Marshal(objectMap)
+}
+
+// VirtualNetworkListUsageResultIterator provides access to a complete listing of VirtualNetworkUsage values.
 type VirtualNetworkListUsageResultIterator struct {
 	i    int
 	page VirtualNetworkListUsageResultPage
@@ -25975,10 +25983,15 @@ func (vnlur VirtualNetworkListUsageResult) IsEmpty() bool {
 	return vnlur.Value == nil || len(*vnlur.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (vnlur VirtualNetworkListUsageResult) hasNextLink() bool {
+	return vnlur.NextLink != nil && len(*vnlur.NextLink) != 0
+}
+
 // virtualNetworkListUsageResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (vnlur VirtualNetworkListUsageResult) virtualNetworkListUsageResultPreparer(ctx context.Context) (*http.Request, error) {
-	if vnlur.NextLink == nil || len(to.String(vnlur.NextLink)) < 1 {
+	if !vnlur.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -26006,11 +26019,16 @@ func (page *VirtualNetworkListUsageResultPage) NextWithContext(ctx context.Conte
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.vnlur)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.vnlur)
+		if err != nil {
+			return err
+		}
+		page.vnlur = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.vnlur = next
 	return nil
 }
 
@@ -26126,8 +26144,8 @@ func (vnp *VirtualNetworkPeering) UnmarshalJSON(body []byte) error {
 	return nil
 }
 
-// VirtualNetworkPeeringListResult response for ListSubnets API service call. Retrieves all subnets that
-// belong to a virtual network.
+// VirtualNetworkPeeringListResult response for ListSubnets API service call. Retrieves all subnets that belong
+// to a virtual network.
 type VirtualNetworkPeeringListResult struct {
 	autorest.Response `json:"-"`
 	// Value - The peerings in a virtual network.
@@ -26205,10 +26223,15 @@ func (vnplr VirtualNetworkPeeringListResult) IsEmpty() bool {
 	return vnplr.Value == nil || len(*vnplr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (vnplr VirtualNetworkPeeringListResult) hasNextLink() bool {
+	return vnplr.NextLink != nil && len(*vnplr.NextLink) != 0
+}
+
 // virtualNetworkPeeringListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (vnplr VirtualNetworkPeeringListResult) virtualNetworkPeeringListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if vnplr.NextLink == nil || len(to.String(vnplr.NextLink)) < 1 {
+	if !vnplr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -26236,11 +26259,16 @@ func (page *VirtualNetworkPeeringListResultPage) NextWithContext(ctx context.Con
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.vnplr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.vnplr)
+		if err != nil {
+			return err
+		}
+		page.vnplr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.vnplr = next
 	return nil
 }
 
@@ -26304,7 +26332,7 @@ type VirtualNetworkPeeringsCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualNetworkPeeringsCreateOrUpdateFuture) Result(client VirtualNetworkPeeringsClient) (vnp VirtualNetworkPeering, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VirtualNetworkPeeringsCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -26333,7 +26361,7 @@ type VirtualNetworkPeeringsDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualNetworkPeeringsDeleteFuture) Result(client VirtualNetworkPeeringsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VirtualNetworkPeeringsDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -26378,7 +26406,7 @@ type VirtualNetworksCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualNetworksCreateOrUpdateFuture) Result(client VirtualNetworksClient) (vn VirtualNetwork, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VirtualNetworksCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -26407,7 +26435,7 @@ type VirtualNetworksDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualNetworksDeleteFuture) Result(client VirtualNetworksClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VirtualNetworksDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -26420,8 +26448,8 @@ func (future *VirtualNetworksDeleteFuture) Result(client VirtualNetworksClient) 
 	return
 }
 
-// VirtualNetworksUpdateTagsFuture an abstraction for monitoring and retrieving the results of a
-// long-running operation.
+// VirtualNetworksUpdateTagsFuture an abstraction for monitoring and retrieving the results of a long-running
+// operation.
 type VirtualNetworksUpdateTagsFuture struct {
 	azure.Future
 }
@@ -26430,7 +26458,7 @@ type VirtualNetworksUpdateTagsFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualNetworksUpdateTagsFuture) Result(client VirtualNetworksClient) (vn VirtualNetwork, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VirtualNetworksUpdateTagsFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -26458,9 +26486,9 @@ type VirtualNetworkTap struct {
 	Etag *string `json:"etag,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name.
+	// Name - READ-ONLY; Resource name.
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type.
+	// Type - READ-ONLY; Resource type.
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location.
 	Location *string `json:"location,omitempty"`
@@ -26479,12 +26507,6 @@ func (vnt VirtualNetworkTap) MarshalJSON() ([]byte, error) {
 	}
 	if vnt.ID != nil {
 		objectMap["id"] = vnt.ID
-	}
-	if vnt.Name != nil {
-		objectMap["name"] = vnt.Name
-	}
-	if vnt.Type != nil {
-		objectMap["type"] = vnt.Type
 	}
 	if vnt.Location != nil {
 		objectMap["location"] = vnt.Location
@@ -26650,10 +26672,15 @@ func (vntlr VirtualNetworkTapListResult) IsEmpty() bool {
 	return vntlr.Value == nil || len(*vntlr.Value) == 0
 }
 
+// hasNextLink returns true if the NextLink is not empty.
+func (vntlr VirtualNetworkTapListResult) hasNextLink() bool {
+	return vntlr.NextLink != nil && len(*vntlr.NextLink) != 0
+}
+
 // virtualNetworkTapListResultPreparer prepares a request to retrieve the next set of results.
 // It returns nil if no more results exist.
 func (vntlr VirtualNetworkTapListResult) virtualNetworkTapListResultPreparer(ctx context.Context) (*http.Request, error) {
-	if vntlr.NextLink == nil || len(to.String(vntlr.NextLink)) < 1 {
+	if !vntlr.hasNextLink() {
 		return nil, nil
 	}
 	return autorest.Prepare((&http.Request{}).WithContext(ctx),
@@ -26681,11 +26708,16 @@ func (page *VirtualNetworkTapListResultPage) NextWithContext(ctx context.Context
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	next, err := page.fn(ctx, page.vntlr)
-	if err != nil {
-		return err
+	for {
+		next, err := page.fn(ctx, page.vntlr)
+		if err != nil {
+			return err
+		}
+		page.vntlr = next
+		if !next.hasNextLink() || !next.IsEmpty() {
+			break
+		}
 	}
-	page.vntlr = next
 	return nil
 }
 
@@ -26721,11 +26753,11 @@ func NewVirtualNetworkTapListResultPage(getNextPage func(context.Context, Virtua
 
 // VirtualNetworkTapPropertiesFormat virtual Network Tap properties.
 type VirtualNetworkTapPropertiesFormat struct {
-	// NetworkInterfaceTapConfigurations - Specifies the list of resource IDs for the network interface IP configuration that needs to be tapped.
+	// NetworkInterfaceTapConfigurations - READ-ONLY; Specifies the list of resource IDs for the network interface IP configuration that needs to be tapped.
 	NetworkInterfaceTapConfigurations *[]InterfaceTapConfiguration `json:"networkInterfaceTapConfigurations,omitempty"`
-	// ResourceGUID - The resourceGuid property of the virtual network tap.
+	// ResourceGUID - READ-ONLY; The resourceGuid property of the virtual network tap.
 	ResourceGUID *string `json:"resourceGuid,omitempty"`
-	// ProvisioningState - The provisioning state of the virtual network tap. Possible values are: 'Updating', 'Deleting', and 'Failed'.
+	// ProvisioningState - READ-ONLY; The provisioning state of the virtual network tap. Possible values are: 'Updating', 'Deleting', and 'Failed'.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
 	// DestinationNetworkInterfaceIPConfiguration - The reference to the private IP Address of the collector nic that will receive the tap
 	DestinationNetworkInterfaceIPConfiguration *InterfaceIPConfiguration `json:"destinationNetworkInterfaceIPConfiguration,omitempty"`
@@ -26733,6 +26765,21 @@ type VirtualNetworkTapPropertiesFormat struct {
 	DestinationLoadBalancerFrontEndIPConfiguration *FrontendIPConfiguration `json:"destinationLoadBalancerFrontEndIPConfiguration,omitempty"`
 	// DestinationPort - The VXLAN destination port that will receive the tapped traffic.
 	DestinationPort *int32 `json:"destinationPort,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for VirtualNetworkTapPropertiesFormat.
+func (vntpf VirtualNetworkTapPropertiesFormat) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if vntpf.DestinationNetworkInterfaceIPConfiguration != nil {
+		objectMap["destinationNetworkInterfaceIPConfiguration"] = vntpf.DestinationNetworkInterfaceIPConfiguration
+	}
+	if vntpf.DestinationLoadBalancerFrontEndIPConfiguration != nil {
+		objectMap["destinationLoadBalancerFrontEndIPConfiguration"] = vntpf.DestinationLoadBalancerFrontEndIPConfiguration
+	}
+	if vntpf.DestinationPort != nil {
+		objectMap["destinationPort"] = vntpf.DestinationPort
+	}
+	return json.Marshal(objectMap)
 }
 
 // VirtualNetworkTapsCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of a
@@ -26745,7 +26792,7 @@ type VirtualNetworkTapsCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualNetworkTapsCreateOrUpdateFuture) Result(client VirtualNetworkTapsClient) (vnt VirtualNetworkTap, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VirtualNetworkTapsCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -26764,8 +26811,8 @@ func (future *VirtualNetworkTapsCreateOrUpdateFuture) Result(client VirtualNetwo
 	return
 }
 
-// VirtualNetworkTapsDeleteFuture an abstraction for monitoring and retrieving the results of a
-// long-running operation.
+// VirtualNetworkTapsDeleteFuture an abstraction for monitoring and retrieving the results of a long-running
+// operation.
 type VirtualNetworkTapsDeleteFuture struct {
 	azure.Future
 }
@@ -26774,7 +26821,7 @@ type VirtualNetworkTapsDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualNetworkTapsDeleteFuture) Result(client VirtualNetworkTapsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VirtualNetworkTapsDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -26797,7 +26844,7 @@ type VirtualNetworkTapsUpdateTagsFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualNetworkTapsUpdateTagsFuture) Result(client VirtualNetworkTapsClient) (vnt VirtualNetworkTap, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VirtualNetworkTapsUpdateTagsFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -26818,23 +26865,23 @@ func (future *VirtualNetworkTapsUpdateTagsFuture) Result(client VirtualNetworkTa
 
 // VirtualNetworkUsage usage details for subnet.
 type VirtualNetworkUsage struct {
-	// CurrentValue - Indicates number of IPs used from the Subnet.
+	// CurrentValue - READ-ONLY; Indicates number of IPs used from the Subnet.
 	CurrentValue *float64 `json:"currentValue,omitempty"`
-	// ID - Subnet identifier.
+	// ID - READ-ONLY; Subnet identifier.
 	ID *string `json:"id,omitempty"`
-	// Limit - Indicates the size of the subnet.
+	// Limit - READ-ONLY; Indicates the size of the subnet.
 	Limit *float64 `json:"limit,omitempty"`
-	// Name - The name containing common and localized value for usage.
+	// Name - READ-ONLY; The name containing common and localized value for usage.
 	Name *VirtualNetworkUsageName `json:"name,omitempty"`
-	// Unit - Usage units. Returns 'Count'
+	// Unit - READ-ONLY; Usage units. Returns 'Count'
 	Unit *string `json:"unit,omitempty"`
 }
 
 // VirtualNetworkUsageName usage strings container.
 type VirtualNetworkUsageName struct {
-	// LocalizedValue - Localized subnet size and usage string.
+	// LocalizedValue - READ-ONLY; Localized subnet size and usage string.
 	LocalizedValue *string `json:"localizedValue,omitempty"`
-	// Value - Subnet size and usage string.
+	// Value - READ-ONLY; Subnet size and usage string.
 	Value *string `json:"value,omitempty"`
 }
 
@@ -26842,13 +26889,13 @@ type VirtualNetworkUsageName struct {
 type VirtualWAN struct {
 	autorest.Response     `json:"-"`
 	*VirtualWanProperties `json:"properties,omitempty"`
-	// Etag - Gets a unique read-only string that changes whenever the resource is updated.
+	// Etag - READ-ONLY; Gets a unique read-only string that changes whenever the resource is updated.
 	Etag *string `json:"etag,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name.
+	// Name - READ-ONLY; Resource name.
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type.
+	// Type - READ-ONLY; Resource type.
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location.
 	Location *string `json:"location,omitempty"`
@@ -26862,17 +26909,8 @@ func (vw VirtualWAN) MarshalJSON() ([]byte, error) {
 	if vw.VirtualWanProperties != nil {
 		objectMap["properties"] = vw.VirtualWanProperties
 	}
-	if vw.Etag != nil {
-		objectMap["etag"] = vw.Etag
-	}
 	if vw.ID != nil {
 		objectMap["id"] = vw.ID
-	}
-	if vw.Name != nil {
-		objectMap["name"] = vw.Name
-	}
-	if vw.Type != nil {
-		objectMap["type"] = vw.Type
 	}
 	if vw.Location != nil {
 		objectMap["location"] = vw.Location
@@ -26965,9 +27003,10 @@ func (vw *VirtualWAN) UnmarshalJSON(body []byte) error {
 type VirtualWanProperties struct {
 	// DisableVpnEncryption - Vpn encryption to be disabled or not.
 	DisableVpnEncryption *bool `json:"disableVpnEncryption,omitempty"`
-	// VirtualHubs - List of VirtualHubs in the VirtualWAN.
+	// VirtualHubs - READ-ONLY; List of VirtualHubs in the VirtualWAN.
 	VirtualHubs *[]SubResource `json:"virtualHubs,omitempty"`
-	VpnSites    *[]SubResource `json:"vpnSites,omitempty"`
+	// VpnSites - READ-ONLY
+	VpnSites *[]SubResource `json:"vpnSites,omitempty"`
 	// SecurityProviderName - The Security Provider name.
 	SecurityProviderName *string `json:"securityProviderName,omitempty"`
 	// AllowBranchToBranchTraffic - True if branch to branch traffic is allowed.
@@ -26982,8 +27021,35 @@ type VirtualWanProperties struct {
 	ProvisioningState ProvisioningState `json:"provisioningState,omitempty"`
 }
 
-// VirtualWansCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of a
-// long-running operation.
+// MarshalJSON is the custom marshaler for VirtualWanProperties.
+func (vwp VirtualWanProperties) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if vwp.DisableVpnEncryption != nil {
+		objectMap["disableVpnEncryption"] = vwp.DisableVpnEncryption
+	}
+	if vwp.SecurityProviderName != nil {
+		objectMap["securityProviderName"] = vwp.SecurityProviderName
+	}
+	if vwp.AllowBranchToBranchTraffic != nil {
+		objectMap["allowBranchToBranchTraffic"] = vwp.AllowBranchToBranchTraffic
+	}
+	if vwp.AllowVnetToVnetTraffic != nil {
+		objectMap["allowVnetToVnetTraffic"] = vwp.AllowVnetToVnetTraffic
+	}
+	if vwp.Office365LocalBreakoutCategory != "" {
+		objectMap["office365LocalBreakoutCategory"] = vwp.Office365LocalBreakoutCategory
+	}
+	if vwp.P2SVpnServerConfigurations != nil {
+		objectMap["p2SVpnServerConfigurations"] = vwp.P2SVpnServerConfigurations
+	}
+	if vwp.ProvisioningState != "" {
+		objectMap["provisioningState"] = vwp.ProvisioningState
+	}
+	return json.Marshal(objectMap)
+}
+
+// VirtualWansCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of a long-running
+// operation.
 type VirtualWansCreateOrUpdateFuture struct {
 	azure.Future
 }
@@ -26992,7 +27058,7 @@ type VirtualWansCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualWansCreateOrUpdateFuture) Result(client VirtualWansClient) (vw VirtualWAN, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VirtualWansCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -27021,7 +27087,7 @@ type VirtualWansDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualWansDeleteFuture) Result(client VirtualWansClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VirtualWansDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -27060,7 +27126,7 @@ type VirtualWansUpdateTagsFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VirtualWansUpdateTagsFuture) Result(client VirtualWansClient) (vw VirtualWAN, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VirtualWansUpdateTagsFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -27099,14 +27165,26 @@ type VpnClientConfiguration struct {
 
 // VpnClientConnectionHealth vpnClientConnectionHealth properties
 type VpnClientConnectionHealth struct {
-	// TotalIngressBytesTransferred - Total of the Ingress Bytes Transferred in this P2S Vpn connection
+	// TotalIngressBytesTransferred - READ-ONLY; Total of the Ingress Bytes Transferred in this P2S Vpn connection
 	TotalIngressBytesTransferred *int64 `json:"totalIngressBytesTransferred,omitempty"`
-	// TotalEgressBytesTransferred - Total of the Egress Bytes Transferred in this connection
+	// TotalEgressBytesTransferred - READ-ONLY; Total of the Egress Bytes Transferred in this connection
 	TotalEgressBytesTransferred *int64 `json:"totalEgressBytesTransferred,omitempty"`
 	// VpnClientConnectionsCount - The total of p2s vpn clients connected at this time to this P2SVpnGateway.
 	VpnClientConnectionsCount *int32 `json:"vpnClientConnectionsCount,omitempty"`
 	// AllocatedIPAddresses - List of allocated ip addresses to the connected p2s vpn clients.
 	AllocatedIPAddresses *[]string `json:"allocatedIpAddresses,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for VpnClientConnectionHealth.
+func (vcch VpnClientConnectionHealth) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if vcch.VpnClientConnectionsCount != nil {
+		objectMap["vpnClientConnectionsCount"] = vcch.VpnClientConnectionsCount
+	}
+	if vcch.AllocatedIPAddresses != nil {
+		objectMap["allocatedIpAddresses"] = vcch.AllocatedIPAddresses
+	}
+	return json.Marshal(objectMap)
 }
 
 // VpnClientIPsecParameters an IPSec parameters for a virtual network gateway P2S connection.
@@ -27228,8 +27306,17 @@ func (vcrc *VpnClientRevokedCertificate) UnmarshalJSON(body []byte) error {
 type VpnClientRevokedCertificatePropertiesFormat struct {
 	// Thumbprint - The revoked VPN client certificate thumbprint.
 	Thumbprint *string `json:"thumbprint,omitempty"`
-	// ProvisioningState - The provisioning state of the VPN client revoked certificate resource. Possible values are: 'Updating', 'Deleting', and 'Failed'.
+	// ProvisioningState - READ-ONLY; The provisioning state of the VPN client revoked certificate resource. Possible values are: 'Updating', 'Deleting', and 'Failed'.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for VpnClientRevokedCertificatePropertiesFormat.
+func (vcrcpf VpnClientRevokedCertificatePropertiesFormat) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if vcrcpf.Thumbprint != nil {
+		objectMap["thumbprint"] = vcrcpf.Thumbprint
+	}
+	return json.Marshal(objectMap)
 }
 
 // VpnClientRootCertificate VPN client root certificate of virtual network gateway
@@ -27317,8 +27404,17 @@ func (vcrc *VpnClientRootCertificate) UnmarshalJSON(body []byte) error {
 type VpnClientRootCertificatePropertiesFormat struct {
 	// PublicCertData - The certificate public data.
 	PublicCertData *string `json:"publicCertData,omitempty"`
-	// ProvisioningState - The provisioning state of the VPN client root certificate resource. Possible values are: 'Updating', 'Deleting', and 'Failed'.
+	// ProvisioningState - READ-ONLY; The provisioning state of the VPN client root certificate resource. Possible values are: 'Updating', 'Deleting', and 'Failed'.
 	ProvisioningState *string `json:"provisioningState,omitempty"`
+}
+
+// MarshalJSON is the custom marshaler for VpnClientRootCertificatePropertiesFormat.
+func (vcrcpf VpnClientRootCertificatePropertiesFormat) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if vcrcpf.PublicCertData != nil {
+		objectMap["publicCertData"] = vcrcpf.PublicCertData
+	}
+	return json.Marshal(objectMap)
 }
 
 // VpnConnection vpnConnection Resource.
@@ -27327,7 +27423,7 @@ type VpnConnection struct {
 	*VpnConnectionProperties `json:"properties,omitempty"`
 	// Name - The name of the resource that is unique within a resource group. This name can be used to access the resource.
 	Name *string `json:"name,omitempty"`
-	// Etag - Gets a unique read-only string that changes whenever the resource is updated.
+	// Etag - READ-ONLY; Gets a unique read-only string that changes whenever the resource is updated.
 	Etag *string `json:"etag,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
@@ -27341,9 +27437,6 @@ func (vc VpnConnection) MarshalJSON() ([]byte, error) {
 	}
 	if vc.Name != nil {
 		objectMap["name"] = vc.Name
-	}
-	if vc.Etag != nil {
-		objectMap["etag"] = vc.Etag
 	}
 	if vc.ID != nil {
 		objectMap["id"] = vc.ID
@@ -27412,9 +27505,9 @@ type VpnConnectionProperties struct {
 	ConnectionStatus VpnConnectionStatus `json:"connectionStatus,omitempty"`
 	// VpnConnectionProtocolType - Connection protocol used for this connection. Possible values include: 'IKEv2', 'IKEv1'
 	VpnConnectionProtocolType VirtualNetworkGatewayConnectionProtocol `json:"vpnConnectionProtocolType,omitempty"`
-	// IngressBytesTransferred - Ingress bytes transferred.
+	// IngressBytesTransferred - READ-ONLY; Ingress bytes transferred.
 	IngressBytesTransferred *int64 `json:"ingressBytesTransferred,omitempty"`
-	// EgressBytesTransferred - Egress bytes transferred.
+	// EgressBytesTransferred - READ-ONLY; Egress bytes transferred.
 	EgressBytesTransferred *int64 `json:"egressBytesTransferred,omitempty"`
 	// ConnectionBandwidth - Expected bandwidth in MBPS.
 	ConnectionBandwidth *int32 `json:"connectionBandwidth,omitempty"`
@@ -27432,6 +27525,45 @@ type VpnConnectionProperties struct {
 	ProvisioningState ProvisioningState `json:"provisioningState,omitempty"`
 }
 
+// MarshalJSON is the custom marshaler for VpnConnectionProperties.
+func (vcp VpnConnectionProperties) MarshalJSON() ([]byte, error) {
+	objectMap := make(map[string]interface{})
+	if vcp.RemoteVpnSite != nil {
+		objectMap["remoteVpnSite"] = vcp.RemoteVpnSite
+	}
+	if vcp.RoutingWeight != nil {
+		objectMap["routingWeight"] = vcp.RoutingWeight
+	}
+	if vcp.ConnectionStatus != "" {
+		objectMap["connectionStatus"] = vcp.ConnectionStatus
+	}
+	if vcp.VpnConnectionProtocolType != "" {
+		objectMap["vpnConnectionProtocolType"] = vcp.VpnConnectionProtocolType
+	}
+	if vcp.ConnectionBandwidth != nil {
+		objectMap["connectionBandwidth"] = vcp.ConnectionBandwidth
+	}
+	if vcp.SharedKey != nil {
+		objectMap["sharedKey"] = vcp.SharedKey
+	}
+	if vcp.EnableBgp != nil {
+		objectMap["enableBgp"] = vcp.EnableBgp
+	}
+	if vcp.IpsecPolicies != nil {
+		objectMap["ipsecPolicies"] = vcp.IpsecPolicies
+	}
+	if vcp.EnableRateLimiting != nil {
+		objectMap["enableRateLimiting"] = vcp.EnableRateLimiting
+	}
+	if vcp.EnableInternetSecurity != nil {
+		objectMap["enableInternetSecurity"] = vcp.EnableInternetSecurity
+	}
+	if vcp.ProvisioningState != "" {
+		objectMap["provisioningState"] = vcp.ProvisioningState
+	}
+	return json.Marshal(objectMap)
+}
+
 // VpnConnectionsCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of a
 // long-running operation.
 type VpnConnectionsCreateOrUpdateFuture struct {
@@ -27442,7 +27574,7 @@ type VpnConnectionsCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VpnConnectionsCreateOrUpdateFuture) Result(client VpnConnectionsClient) (vc VpnConnection, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VpnConnectionsCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -27471,7 +27603,7 @@ type VpnConnectionsDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VpnConnectionsDeleteFuture) Result(client VpnConnectionsClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VpnConnectionsDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -27498,13 +27630,13 @@ type VpnDeviceScriptParameters struct {
 type VpnGateway struct {
 	autorest.Response     `json:"-"`
 	*VpnGatewayProperties `json:"properties,omitempty"`
-	// Etag - Gets a unique read-only string that changes whenever the resource is updated.
+	// Etag - READ-ONLY; Gets a unique read-only string that changes whenever the resource is updated.
 	Etag *string `json:"etag,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name.
+	// Name - READ-ONLY; Resource name.
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type.
+	// Type - READ-ONLY; Resource type.
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location.
 	Location *string `json:"location,omitempty"`
@@ -27518,17 +27650,8 @@ func (vg VpnGateway) MarshalJSON() ([]byte, error) {
 	if vg.VpnGatewayProperties != nil {
 		objectMap["properties"] = vg.VpnGatewayProperties
 	}
-	if vg.Etag != nil {
-		objectMap["etag"] = vg.Etag
-	}
 	if vg.ID != nil {
 		objectMap["id"] = vg.ID
-	}
-	if vg.Name != nil {
-		objectMap["name"] = vg.Name
-	}
-	if vg.Type != nil {
-		objectMap["type"] = vg.Type
 	}
 	if vg.Location != nil {
 		objectMap["location"] = vg.Location
@@ -27631,8 +27754,8 @@ type VpnGatewayProperties struct {
 	VpnGatewayScaleUnit *int32 `json:"vpnGatewayScaleUnit,omitempty"`
 }
 
-// VpnGatewaysCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of a
-// long-running operation.
+// VpnGatewaysCreateOrUpdateFuture an abstraction for monitoring and retrieving the results of a long-running
+// operation.
 type VpnGatewaysCreateOrUpdateFuture struct {
 	azure.Future
 }
@@ -27641,7 +27764,7 @@ type VpnGatewaysCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VpnGatewaysCreateOrUpdateFuture) Result(client VpnGatewaysClient) (vg VpnGateway, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VpnGatewaysCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -27670,7 +27793,7 @@ type VpnGatewaysDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VpnGatewaysDeleteFuture) Result(client VpnGatewaysClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VpnGatewaysDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -27693,7 +27816,7 @@ type VpnGatewaysUpdateTagsFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VpnGatewaysUpdateTagsFuture) Result(client VpnGatewaysClient) (vg VpnGateway, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VpnGatewaysUpdateTagsFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -27723,13 +27846,13 @@ type VpnProfileResponse struct {
 type VpnSite struct {
 	autorest.Response  `json:"-"`
 	*VpnSiteProperties `json:"properties,omitempty"`
-	// Etag - Gets a unique read-only string that changes whenever the resource is updated.
+	// Etag - READ-ONLY; Gets a unique read-only string that changes whenever the resource is updated.
 	Etag *string `json:"etag,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name.
+	// Name - READ-ONLY; Resource name.
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type.
+	// Type - READ-ONLY; Resource type.
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location.
 	Location *string `json:"location,omitempty"`
@@ -27743,17 +27866,8 @@ func (vs VpnSite) MarshalJSON() ([]byte, error) {
 	if vs.VpnSiteProperties != nil {
 		objectMap["properties"] = vs.VpnSiteProperties
 	}
-	if vs.Etag != nil {
-		objectMap["etag"] = vs.Etag
-	}
 	if vs.ID != nil {
 		objectMap["id"] = vs.ID
-	}
-	if vs.Name != nil {
-		objectMap["name"] = vs.Name
-	}
-	if vs.Type != nil {
-		objectMap["type"] = vs.Type
 	}
 	if vs.Location != nil {
 		objectMap["location"] = vs.Location
@@ -27844,7 +27958,7 @@ func (vs *VpnSite) UnmarshalJSON(body []byte) error {
 
 // VpnSiteID vpnSite Resource.
 type VpnSiteID struct {
-	// VpnSite - The resource-uri of the vpn-site for which config is to be fetched.
+	// VpnSite - READ-ONLY; The resource-uri of the vpn-site for which config is to be fetched.
 	VpnSite *string `json:"vpnSite,omitempty"`
 }
 
@@ -27878,7 +27992,7 @@ type VpnSitesConfigurationDownloadFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VpnSitesConfigurationDownloadFuture) Result(client VpnSitesConfigurationClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VpnSitesConfigurationDownloadFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -27901,7 +28015,7 @@ type VpnSitesCreateOrUpdateFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VpnSitesCreateOrUpdateFuture) Result(client VpnSitesClient) (vs VpnSite, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VpnSitesCreateOrUpdateFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -27920,8 +28034,7 @@ func (future *VpnSitesCreateOrUpdateFuture) Result(client VpnSitesClient) (vs Vp
 	return
 }
 
-// VpnSitesDeleteFuture an abstraction for monitoring and retrieving the results of a long-running
-// operation.
+// VpnSitesDeleteFuture an abstraction for monitoring and retrieving the results of a long-running operation.
 type VpnSitesDeleteFuture struct {
 	azure.Future
 }
@@ -27930,7 +28043,7 @@ type VpnSitesDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VpnSitesDeleteFuture) Result(client VpnSitesClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VpnSitesDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -27953,7 +28066,7 @@ type VpnSitesUpdateTagsFuture struct {
 // If the operation has not completed it will return an error.
 func (future *VpnSitesUpdateTagsFuture) Result(client VpnSitesClient) (vs VpnSite, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VpnSitesUpdateTagsFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -27980,9 +28093,9 @@ type Watcher struct {
 	*WatcherPropertiesFormat `json:"properties,omitempty"`
 	// ID - Resource ID.
 	ID *string `json:"id,omitempty"`
-	// Name - Resource name.
+	// Name - READ-ONLY; Resource name.
 	Name *string `json:"name,omitempty"`
-	// Type - Resource type.
+	// Type - READ-ONLY; Resource type.
 	Type *string `json:"type,omitempty"`
 	// Location - Resource location.
 	Location *string `json:"location,omitempty"`
@@ -28001,12 +28114,6 @@ func (w Watcher) MarshalJSON() ([]byte, error) {
 	}
 	if w.ID != nil {
 		objectMap["id"] = w.ID
-	}
-	if w.Name != nil {
-		objectMap["name"] = w.Name
-	}
-	if w.Type != nil {
-		objectMap["type"] = w.Type
 	}
 	if w.Location != nil {
 		objectMap["location"] = w.Location
@@ -28103,12 +28210,12 @@ type WatcherListResult struct {
 
 // WatcherPropertiesFormat the network watcher properties.
 type WatcherPropertiesFormat struct {
-	// ProvisioningState - The provisioning state of the resource. Possible values include: 'Succeeded', 'Updating', 'Deleting', 'Failed'
+	// ProvisioningState - READ-ONLY; The provisioning state of the resource. Possible values include: 'Succeeded', 'Updating', 'Deleting', 'Failed'
 	ProvisioningState ProvisioningState `json:"provisioningState,omitempty"`
 }
 
-// WatchersCheckConnectivityFuture an abstraction for monitoring and retrieving the results of a
-// long-running operation.
+// WatchersCheckConnectivityFuture an abstraction for monitoring and retrieving the results of a long-running
+// operation.
 type WatchersCheckConnectivityFuture struct {
 	azure.Future
 }
@@ -28117,7 +28224,7 @@ type WatchersCheckConnectivityFuture struct {
 // If the operation has not completed it will return an error.
 func (future *WatchersCheckConnectivityFuture) Result(client WatchersClient) (ci ConnectivityInformation, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.WatchersCheckConnectivityFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -28136,8 +28243,7 @@ func (future *WatchersCheckConnectivityFuture) Result(client WatchersClient) (ci
 	return
 }
 
-// WatchersDeleteFuture an abstraction for monitoring and retrieving the results of a long-running
-// operation.
+// WatchersDeleteFuture an abstraction for monitoring and retrieving the results of a long-running operation.
 type WatchersDeleteFuture struct {
 	azure.Future
 }
@@ -28146,7 +28252,7 @@ type WatchersDeleteFuture struct {
 // If the operation has not completed it will return an error.
 func (future *WatchersDeleteFuture) Result(client WatchersClient) (ar autorest.Response, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.WatchersDeleteFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -28169,7 +28275,7 @@ type WatchersGetAzureReachabilityReportFuture struct {
 // If the operation has not completed it will return an error.
 func (future *WatchersGetAzureReachabilityReportFuture) Result(client WatchersClient) (arr AzureReachabilityReport, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.WatchersGetAzureReachabilityReportFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -28188,8 +28294,8 @@ func (future *WatchersGetAzureReachabilityReportFuture) Result(client WatchersCl
 	return
 }
 
-// WatchersGetFlowLogStatusFuture an abstraction for monitoring and retrieving the results of a
-// long-running operation.
+// WatchersGetFlowLogStatusFuture an abstraction for monitoring and retrieving the results of a long-running
+// operation.
 type WatchersGetFlowLogStatusFuture struct {
 	azure.Future
 }
@@ -28198,7 +28304,7 @@ type WatchersGetFlowLogStatusFuture struct {
 // If the operation has not completed it will return an error.
 func (future *WatchersGetFlowLogStatusFuture) Result(client WatchersClient) (fli FlowLogInformation, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.WatchersGetFlowLogStatusFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -28217,8 +28323,8 @@ func (future *WatchersGetFlowLogStatusFuture) Result(client WatchersClient) (fli
 	return
 }
 
-// WatchersGetNetworkConfigurationDiagnosticFuture an abstraction for monitoring and retrieving the results
-// of a long-running operation.
+// WatchersGetNetworkConfigurationDiagnosticFuture an abstraction for monitoring and retrieving the results of
+// a long-running operation.
 type WatchersGetNetworkConfigurationDiagnosticFuture struct {
 	azure.Future
 }
@@ -28227,7 +28333,7 @@ type WatchersGetNetworkConfigurationDiagnosticFuture struct {
 // If the operation has not completed it will return an error.
 func (future *WatchersGetNetworkConfigurationDiagnosticFuture) Result(client WatchersClient) (cdr ConfigurationDiagnosticResponse, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.WatchersGetNetworkConfigurationDiagnosticFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -28256,7 +28362,7 @@ type WatchersGetNextHopFuture struct {
 // If the operation has not completed it will return an error.
 func (future *WatchersGetNextHopFuture) Result(client WatchersClient) (nhr NextHopResult, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.WatchersGetNextHopFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -28275,8 +28381,8 @@ func (future *WatchersGetNextHopFuture) Result(client WatchersClient) (nhr NextH
 	return
 }
 
-// WatchersGetTroubleshootingFuture an abstraction for monitoring and retrieving the results of a
-// long-running operation.
+// WatchersGetTroubleshootingFuture an abstraction for monitoring and retrieving the results of a long-running
+// operation.
 type WatchersGetTroubleshootingFuture struct {
 	azure.Future
 }
@@ -28285,7 +28391,7 @@ type WatchersGetTroubleshootingFuture struct {
 // If the operation has not completed it will return an error.
 func (future *WatchersGetTroubleshootingFuture) Result(client WatchersClient) (tr TroubleshootingResult, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.WatchersGetTroubleshootingFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -28314,7 +28420,7 @@ type WatchersGetTroubleshootingResultFuture struct {
 // If the operation has not completed it will return an error.
 func (future *WatchersGetTroubleshootingResultFuture) Result(client WatchersClient) (tr TroubleshootingResult, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.WatchersGetTroubleshootingResultFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -28333,8 +28439,8 @@ func (future *WatchersGetTroubleshootingResultFuture) Result(client WatchersClie
 	return
 }
 
-// WatchersGetVMSecurityRulesFuture an abstraction for monitoring and retrieving the results of a
-// long-running operation.
+// WatchersGetVMSecurityRulesFuture an abstraction for monitoring and retrieving the results of a long-running
+// operation.
 type WatchersGetVMSecurityRulesFuture struct {
 	azure.Future
 }
@@ -28343,7 +28449,7 @@ type WatchersGetVMSecurityRulesFuture struct {
 // If the operation has not completed it will return an error.
 func (future *WatchersGetVMSecurityRulesFuture) Result(client WatchersClient) (sgvr SecurityGroupViewResult, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.WatchersGetVMSecurityRulesFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -28372,7 +28478,7 @@ type WatchersListAvailableProvidersFuture struct {
 // If the operation has not completed it will return an error.
 func (future *WatchersListAvailableProvidersFuture) Result(client WatchersClient) (apl AvailableProvidersList, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.WatchersListAvailableProvidersFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -28401,7 +28507,7 @@ type WatchersSetFlowLogConfigurationFuture struct {
 // If the operation has not completed it will return an error.
 func (future *WatchersSetFlowLogConfigurationFuture) Result(client WatchersClient) (fli FlowLogInformation, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.WatchersSetFlowLogConfigurationFuture", "Result", future.Response(), "Polling failure")
 		return
@@ -28430,7 +28536,7 @@ type WatchersVerifyIPFlowFuture struct {
 // If the operation has not completed it will return an error.
 func (future *WatchersVerifyIPFlowFuture) Result(client WatchersClient) (vifr VerificationIPFlowResult, err error) {
 	var done bool
-	done, err = future.Done(client)
+	done, err = future.DoneWithContext(context.Background(), client)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.WatchersVerifyIPFlowFuture", "Result", future.Response(), "Polling failure")
 		return

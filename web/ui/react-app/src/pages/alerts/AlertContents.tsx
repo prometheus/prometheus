@@ -1,22 +1,12 @@
-import React, { FC, useState, Fragment } from 'react';
-import { ButtonGroup, Button, Row, Badge } from 'reactstrap';
+import React, { FC, Fragment } from 'react';
+import { Badge } from 'reactstrap';
 import CollapsibleAlertPanel from './CollapsibleAlertPanel';
-import Checkbox from '../../Checkbox';
-import { isPresent } from '../../utils/func';
+import Checkbox from '../../components/Checkbox';
+import { isPresent } from '../../utils';
+import { Rule } from '../../types/types';
+import { useLocalStorage } from '../../hooks/useLocalStorage';
 
 export type RuleState = keyof RuleStatus<any>;
-
-export interface Rule {
-  alerts: Alert[];
-  annotations: Record<string, string>;
-  duration: number;
-  health: string;
-  labels: Record<string, string>;
-  name: string;
-  query: string;
-  state: RuleState;
-  type: string;
-}
 
 export interface RuleStatus<T> {
   firing: T;
@@ -29,7 +19,7 @@ export interface AlertsProps {
   statsCount: RuleStatus<number>;
 }
 
-interface Alert {
+export interface Alert {
   labels: Record<string, string>;
   state: RuleState;
   value: string;
@@ -44,68 +34,84 @@ interface RuleGroup {
   interval: number;
 }
 
+const stateColorTuples: Array<[RuleState, 'success' | 'warning' | 'danger']> = [
+  ['inactive', 'success'],
+  ['pending', 'warning'],
+  ['firing', 'danger'],
+];
+
 const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
-  const [state, setState] = useState<RuleStatus<boolean>>({
+  const [filter, setFilter] = useLocalStorage('alerts-status-filter', {
     firing: true,
     pending: true,
     inactive: true,
   });
-  const [showAnnotations, setShowAnnotations] = useState(false);
+  const [showAnnotations, setShowAnnotations] = useLocalStorage('alerts-annotations-status', { checked: false });
 
-  const toggle = (ruleState: RuleState) => () => {
-    setState({
-      ...state,
-      [ruleState]: !state[ruleState],
+  const toggleFilter = (ruleState: RuleState) => () => {
+    setFilter({
+      ...filter,
+      [ruleState]: !filter[ruleState],
     });
+  };
+
+  const toggleAnnotations = () => {
+    setShowAnnotations({ checked: !showAnnotations.checked });
   };
 
   return (
     <>
-      <ButtonGroup className="mb-3">
-        <Button active={state.inactive} onClick={toggle('inactive')} color="primary">
-          Inactive ({statsCount.inactive})
-        </Button>
-        <Button active={state.pending} onClick={toggle('pending')} color="primary">
-          Pending ({statsCount.pending})
-        </Button>
-        <Button active={state.firing} onClick={toggle('firing')} color="primary">
-          Firing ({statsCount.firing})
-        </Button>
-      </ButtonGroup>
-      <Row className="mb-2">
+      <div className="d-flex togglers-wrapper">
+        {stateColorTuples.map(([state, color]) => {
+          return (
+            <Checkbox
+              key={state}
+              wrapperStyles={{ marginRight: 10 }}
+              checked={filter[state]}
+              id={`${state}-toggler`}
+              onClick={toggleFilter(state)}
+            >
+              <Badge color={color} className="text-capitalize">
+                {state} ({statsCount[state]})
+              </Badge>
+            </Checkbox>
+          );
+        })}
         <Checkbox
-          id="show-annotations"
-          wrapperStyles={{ margin: '0 0 0 15px', alignSelf: 'center' }}
-          onClick={() => setShowAnnotations(!showAnnotations)}
+          wrapperStyles={{ marginLeft: 'auto' }}
+          checked={showAnnotations.checked}
+          id="show-annotations-toggler"
+          onClick={() => toggleAnnotations()}
         >
-          Show annotations
+          <span style={{ fontSize: '0.9rem', lineHeight: 1.9 }}>Show annotations</span>
         </Checkbox>
-      </Row>
+      </div>
       {groups.map((group, i) => {
-        return (
+        const hasFilterOn = group.rules.some(rule => filter[rule.state]);
+        return hasFilterOn ? (
           <Fragment key={i}>
-            <StatusBadges rules={group.rules}>
-              {group.file} > {group.name}
-            </StatusBadges>
+            <GroupInfo rules={group.rules}>
+              {group.file} &gt; {group.name}
+            </GroupInfo>
             {group.rules.map((rule, j) => {
               return (
-                state[rule.state] && (
-                  <CollapsibleAlertPanel key={rule.name + j} showAnnotations={showAnnotations} rule={rule} />
+                filter[rule.state] && (
+                  <CollapsibleAlertPanel key={rule.name + j} showAnnotations={showAnnotations.checked} rule={rule} />
                 )
               );
             })}
           </Fragment>
-        );
+        ) : null;
       })}
     </>
   );
 };
 
-interface StatusBadgesProps {
+interface GroupInfoProps {
   rules: Rule[];
 }
 
-const StatusBadges: FC<StatusBadgesProps> = ({ rules, children }) => {
+export const GroupInfo: FC<GroupInfoProps> = ({ rules, children }) => {
   const statesCounter = rules.reduce<any>(
     (acc, r) => {
       return {
@@ -120,7 +126,7 @@ const StatusBadges: FC<StatusBadgesProps> = ({ rules, children }) => {
   );
 
   return (
-    <div className="status-badges border rounded-sm" style={{ lineHeight: 1.1 }}>
+    <div className="group-info border rounded-sm" style={{ lineHeight: 1.1 }}>
       {children}
       <div className="badges-wrapper">
         {isPresent(statesCounter.inactive) && <Badge color="success">inactive</Badge>}

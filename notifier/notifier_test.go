@@ -16,20 +16,20 @@ package notifier
 import (
 	"bytes"
 	"context"
-	"crypto/md5"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/pkg/errors"
+	"github.com/prometheus/alertmanager/api/v2/models"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"go.uber.org/atomic"
 	yaml "gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/config"
@@ -102,10 +102,12 @@ func TestHandlerSendAll(t *testing.T) {
 	var (
 		errc             = make(chan error, 1)
 		expected         = make([]*Alert, 0, maxBatchSize)
-		status1, status2 = int32(http.StatusOK), int32(http.StatusOK)
+		status1, status2 atomic.Int32
 	)
+	status1.Store(int32(http.StatusOK))
+	status2.Store(int32(http.StatusOK))
 
-	newHTTPServer := func(u, p string, status *int32) *httptest.Server {
+	newHTTPServer := func(u, p string, status *atomic.Int32) *httptest.Server {
 		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			var err error
 			defer func() {
@@ -128,7 +130,7 @@ func TestHandlerSendAll(t *testing.T) {
 			if err == nil {
 				err = alertsEqual(expected, alerts)
 			}
-			w.WriteHeader(int(atomic.LoadInt32(status)))
+			w.WriteHeader(int(status.Load()))
 		}))
 	}
 	server1 := newHTTPServer("prometheus", "testing_password", &status1)
@@ -144,7 +146,7 @@ func TestHandlerSendAll(t *testing.T) {
 				Username: "prometheus",
 				Password: "testing_password",
 			},
-		}, "auth_alertmanager", false)
+		}, "auth_alertmanager", false, false)
 
 	h.alertmanagers = make(map[string]*alertmanagerSet)
 
@@ -194,11 +196,11 @@ func TestHandlerSendAll(t *testing.T) {
 	testutil.Assert(t, h.sendAll(h.queue...), "all sends failed unexpectedly")
 	checkNoErr()
 
-	atomic.StoreInt32(&status1, int32(http.StatusNotFound))
+	status1.Store(int32(http.StatusNotFound))
 	testutil.Assert(t, h.sendAll(h.queue...), "all sends failed unexpectedly")
 	checkNoErr()
 
-	atomic.StoreInt32(&status2, int32(http.StatusInternalServerError))
+	status2.Store(int32(http.StatusInternalServerError))
 	testutil.Assert(t, !h.sendAll(h.queue...), "all sends succeeded unexpectedly")
 	checkNoErr()
 }
@@ -300,7 +302,7 @@ func TestHandlerRelabel(t *testing.T) {
 	testutil.Ok(t, alertsEqual(expected, h.queue))
 }
 
-func TestHandlerQueueing(t *testing.T) {
+func TestHandlerQueuing(t *testing.T) {
 	var (
 		expectedc = make(chan []*Alert)
 		called    = make(chan struct{})
@@ -467,6 +469,7 @@ alerting:
 	if err := yaml.UnmarshalStrict([]byte(s), cfg); err != nil {
 		t.Fatalf("Unable to load YAML config: %s", err)
 	}
+	testutil.Equals(t, 1, len(cfg.AlertingConfig.AlertmanagerConfigs))
 
 	if err := n.ApplyConfig(cfg); err != nil {
 		t.Fatalf("Error Applying the config:%v", err)
@@ -474,18 +477,16 @@ alerting:
 
 	tgs := make(map[string][]*targetgroup.Group)
 	for _, tt := range tests {
-
-		b, err := json.Marshal(cfg.AlertingConfig.AlertmanagerConfigs[0])
-		if err != nil {
-			t.Fatalf("Error creating config hash:%v", err)
-		}
-		tgs[fmt.Sprintf("%x", md5.Sum(b))] = []*targetgroup.Group{
-			tt.in,
+		for k := range cfg.AlertingConfig.AlertmanagerConfigs.ToMap() {
+			tgs[k] = []*targetgroup.Group{
+				tt.in,
+			}
+			break
 		}
 		n.reload(tgs)
 		res := n.Alertmanagers()[0].String()
 
-		testutil.Equals(t, res, tt.out)
+		testutil.Equals(t, tt.out, res)
 	}
 
 }
@@ -522,6 +523,7 @@ alerting:
 	if err := yaml.UnmarshalStrict([]byte(s), cfg); err != nil {
 		t.Fatalf("Unable to load YAML config: %s", err)
 	}
+	testutil.Equals(t, 1, len(cfg.AlertingConfig.AlertmanagerConfigs))
 
 	if err := n.ApplyConfig(cfg); err != nil {
 		t.Fatalf("Error Applying the config:%v", err)
@@ -529,20 +531,18 @@ alerting:
 
 	tgs := make(map[string][]*targetgroup.Group)
 	for _, tt := range tests {
+		for k := range cfg.AlertingConfig.AlertmanagerConfigs.ToMap() {
+			tgs[k] = []*targetgroup.Group{
+				tt.in,
+			}
+			break
+		}
 
-		b, err := json.Marshal(cfg.AlertingConfig.AlertmanagerConfigs[0])
-		if err != nil {
-			t.Fatalf("Error creating config hash:%v", err)
-		}
-		tgs[fmt.Sprintf("%x", md5.Sum(b))] = []*targetgroup.Group{
-			tt.in,
-		}
 		n.reload(tgs)
 		res := n.DroppedAlertmanagers()[0].String()
 
 		testutil.Equals(t, res, tt.out)
 	}
-
 }
 
 func makeInputTargetGroup() *targetgroup.Group {
@@ -558,4 +558,8 @@ func makeInputTargetGroup() *targetgroup.Group {
 		},
 		Source: "testsource",
 	}
+}
+
+func TestLabelsToOpenAPILabelSet(t *testing.T) {
+	testutil.Equals(t, models.LabelSet{"aaa": "111", "bbb": "222"}, labelsToOpenAPILabelSet(labels.Labels{{Name: "aaa", Value: "111"}, {Name: "bbb", Value: "222"}}))
 }

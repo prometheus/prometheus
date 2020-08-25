@@ -28,7 +28,6 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/wal"
@@ -94,6 +93,7 @@ func TestSegmentWAL_Truncate(t *testing.T) {
 
 	w, err := OpenSegmentWAL(dir, nil, 0, nil)
 	testutil.Ok(t, err)
+	defer func(wal *SegmentWAL) { testutil.Ok(t, wal.Close()) }(w)
 	w.segmentSize = 10000
 
 	for i := 0; i < numMetrics; i += batch {
@@ -144,6 +144,7 @@ func TestSegmentWAL_Truncate(t *testing.T) {
 	// The same again with a new WAL.
 	w, err = OpenSegmentWAL(dir, nil, 0, nil)
 	testutil.Ok(t, err)
+	defer func(wal *SegmentWAL) { testutil.Ok(t, wal.Close()) }(w)
 
 	var readSeries []record.RefSeries
 	r := w.Reader()
@@ -162,7 +163,7 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 		iterations = 5
 		stepSize   = 5
 	)
-	// Generate testing data. It does not make semantical sense but
+	// Generate testing data. It does not make semantic sense but
 	// for the purpose of this test.
 	series, err := labels.ReadLabels(filepath.Join("testdata", "20kseries.json"), numMetrics)
 	testutil.Ok(t, err)
@@ -284,6 +285,7 @@ func TestWALRestoreCorrupted_invalidSegment(t *testing.T) {
 
 	wal, err := OpenSegmentWAL(dir, nil, 0, nil)
 	testutil.Ok(t, err)
+	defer func(wal *SegmentWAL) { testutil.Ok(t, wal.Close()) }(wal)
 
 	_, err = wal.createSegmentFile(filepath.Join(dir, "000000"))
 	testutil.Ok(t, err)
@@ -300,11 +302,16 @@ func TestWALRestoreCorrupted_invalidSegment(t *testing.T) {
 
 	testutil.Ok(t, wal.Close())
 
-	_, err = OpenSegmentWAL(dir, log.NewLogfmtLogger(os.Stderr), 0, nil)
+	wal, err = OpenSegmentWAL(dir, log.NewLogfmtLogger(os.Stderr), 0, nil)
 	testutil.Ok(t, err)
+	defer func(wal *SegmentWAL) { testutil.Ok(t, wal.Close()) }(wal)
 
-	fns, err := fileutil.ReadDir(dir)
+	files, err := ioutil.ReadDir(dir)
 	testutil.Ok(t, err)
+	fns := []string{}
+	for _, f := range files {
+		fns = append(fns, f.Name())
+	}
 	testutil.Equals(t, []string{"000000"}, fns)
 }
 
@@ -373,7 +380,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			// Generate testing data. It does not make semantical sense but
+			// Generate testing data. It does not make semantic sense but
 			// for the purpose of this test.
 			dir, err := ioutil.TempDir("", "test_corrupted")
 			testutil.Ok(t, err)
@@ -383,6 +390,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 
 			w, err := OpenSegmentWAL(dir, nil, 0, nil)
 			testutil.Ok(t, err)
+			defer func(wal *SegmentWAL) { testutil.Ok(t, wal.Close()) }(w)
 
 			testutil.Ok(t, w.LogSamples([]record.RefSample{{T: 1, V: 2}}))
 			testutil.Ok(t, w.LogSamples([]record.RefSample{{T: 2, V: 3}}))
@@ -413,6 +421,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 
 			w2, err := OpenSegmentWAL(dir, logger, 0, nil)
 			testutil.Ok(t, err)
+			defer func(wal *SegmentWAL) { testutil.Ok(t, wal.Close()) }(w2)
 
 			r := w2.Reader()
 
@@ -422,7 +431,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 
 			// Weird hack to check order of reads.
 			i := 0
-			samplf := func(s []record.RefSample) {
+			samplef := func(s []record.RefSample) {
 				if i == 0 {
 					testutil.Equals(t, []record.RefSample{{T: 1, V: 2}}, s)
 					i++
@@ -431,7 +440,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 				}
 			}
 
-			testutil.Ok(t, r.Read(serf, samplf, nil))
+			testutil.Ok(t, r.Read(serf, samplef, nil))
 
 			testutil.Ok(t, w2.LogSamples([]record.RefSample{{T: 99, V: 100}}))
 			testutil.Ok(t, w2.Close())
@@ -440,17 +449,18 @@ func TestWALRestoreCorrupted(t *testing.T) {
 			// is truncated.
 			w3, err := OpenSegmentWAL(dir, logger, 0, nil)
 			testutil.Ok(t, err)
+			defer func(wal *SegmentWAL) { testutil.Ok(t, wal.Close()) }(w3)
 
 			r = w3.Reader()
 
 			i = 0
-			testutil.Ok(t, r.Read(serf, samplf, nil))
+			testutil.Ok(t, r.Read(serf, samplef, nil))
 		})
 	}
 }
 
 func TestMigrateWAL_Empty(t *testing.T) {
-	// The migration proecedure must properly deal with a zero-length segment,
+	// The migration procedure must properly deal with a zero-length segment,
 	// which is valid in the new format.
 	dir, err := ioutil.TempDir("", "walmigrate")
 	testutil.Ok(t, err)

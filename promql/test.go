@@ -25,9 +25,10 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
-
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -44,7 +45,7 @@ const (
 	epsilon = 0.000001 // Relative error allowed for sample values.
 )
 
-var testStartTime = time.Unix(0, 0)
+var testStartTime = time.Unix(0, 0).UTC()
 
 // Test is a sequence of read and write commands that are run
 // against a test storage.
@@ -53,7 +54,7 @@ type Test struct {
 
 	cmds []testCommand
 
-	storage storage.Storage
+	storage *teststorage.TestStorage
 
 	queryEngine *Engine
 	context     context.Context
@@ -100,10 +101,15 @@ func (t *Test) Storage() storage.Storage {
 	return t.storage
 }
 
+// TSDB returns test's TSDB.
+func (t *Test) TSDB() *tsdb.DB {
+	return t.storage.DB
+}
+
 func raise(line int, format string, v ...interface{}) error {
-	return &ParseErr{
-		Line: line + 1,
-		Err:  errors.Errorf(format, v...),
+	return &parser.ParseErr{
+		LineOffset: line,
+		Err:        errors.Errorf(format, v...),
 	}
 }
 
@@ -125,10 +131,10 @@ func parseLoad(lines []string, i int) (int, *loadCmd, error) {
 			i--
 			break
 		}
-		metric, vals, err := parseSeriesDesc(defLine)
+		metric, vals, err := parser.ParseSeriesDesc(defLine)
 		if err != nil {
-			if perr, ok := err.(*ParseErr); ok {
-				perr.Line = i + 1
+			if perr, ok := err.(*parser.ParseErr); ok {
+				perr.LineOffset = i
 			}
 			return i, nil, err
 		}
@@ -147,11 +153,14 @@ func (t *Test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 		at   = parts[2]
 		expr = parts[3]
 	)
-	_, err := ParseExpr(expr)
+	_, err := parser.ParseExpr(expr)
 	if err != nil {
-		if perr, ok := err.(*ParseErr); ok {
-			perr.Line = i + 1
-			perr.Pos += strings.Index(lines[i], expr)
+		if perr, ok := err.(*parser.ParseErr); ok {
+			perr.LineOffset = i
+			posOffset := parser.Pos(strings.Index(lines[i], expr))
+			perr.PositionRange.Start += posOffset
+			perr.PositionRange.End += posOffset
+			perr.Query = lines[i]
 		}
 		return i, nil, err
 	}
@@ -178,13 +187,13 @@ func (t *Test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 			break
 		}
 		if f, err := parseNumber(defLine); err == nil {
-			cmd.expect(0, nil, sequenceValue{value: f})
+			cmd.expect(0, nil, parser.SequenceValue{Value: f})
 			break
 		}
-		metric, vals, err := parseSeriesDesc(defLine)
+		metric, vals, err := parser.ParseSeriesDesc(defLine)
 		if err != nil {
-			if perr, ok := err.(*ParseErr); ok {
-				perr.Line = i + 1
+			if perr, ok := err.(*parser.ParseErr); ok {
+				perr.LineOffset = i
 			}
 			return i, nil, err
 		}
@@ -272,16 +281,16 @@ func (cmd loadCmd) String() string {
 }
 
 // set a sequence of sample values for the given metric.
-func (cmd *loadCmd) set(m labels.Labels, vals ...sequenceValue) {
+func (cmd *loadCmd) set(m labels.Labels, vals ...parser.SequenceValue) {
 	h := m.Hash()
 
 	samples := make([]Point, 0, len(vals))
 	ts := testStartTime
 	for _, v := range vals {
-		if !v.omitted {
+		if !v.Omitted {
 			samples = append(samples, Point{
 				T: ts.UnixNano() / int64(time.Millisecond/time.Nanosecond),
-				V: v.value,
+				V: v.Value,
 			})
 		}
 		ts = ts.Add(cmd.gap)
@@ -319,7 +328,7 @@ type evalCmd struct {
 
 type entry struct {
 	pos  int
-	vals []sequenceValue
+	vals []parser.SequenceValue
 }
 
 func (e entry) String() string {
@@ -343,7 +352,7 @@ func (ev *evalCmd) String() string {
 
 // expect adds a new metric with a sequence of values to the set of expected
 // results for the query.
-func (ev *evalCmd) expect(pos int, m labels.Labels, vals ...sequenceValue) {
+func (ev *evalCmd) expect(pos int, m labels.Labels, vals ...parser.SequenceValue) {
 	if m == nil {
 		ev.expected[0] = entry{pos: pos, vals: vals}
 		return
@@ -354,7 +363,7 @@ func (ev *evalCmd) expect(pos int, m labels.Labels, vals ...sequenceValue) {
 }
 
 // compareResult compares the result value with the defined expectation.
-func (ev *evalCmd) compareResult(result Value) error {
+func (ev *evalCmd) compareResult(result parser.Value) error {
 	switch val := result.(type) {
 	case Matrix:
 		return errors.New("received range result on instant evaluation")
@@ -370,8 +379,8 @@ func (ev *evalCmd) compareResult(result Value) error {
 			if ev.ordered && exp.pos != pos+1 {
 				return errors.Errorf("expected metric %s with %v at position %d but was at %d", v.Metric, exp.vals, exp.pos, pos+1)
 			}
-			if !almostEqual(exp.vals[0].value, v.V) {
-				return errors.Errorf("expected %v for %s but got %v", exp.vals[0].value, v.Metric, v.V)
+			if !almostEqual(exp.vals[0].Value, v.V) {
+				return errors.Errorf("expected %v for %s but got %v", exp.vals[0].Value, v.Metric, v.V)
 			}
 
 			seen[fp] = true
@@ -387,8 +396,8 @@ func (ev *evalCmd) compareResult(result Value) error {
 		}
 
 	case Scalar:
-		if !almostEqual(ev.expected[0].vals[0].value, val.V) {
-			return errors.Errorf("expected Scalar %v but got %v", val.V, ev.expected[0].vals[0].value)
+		if !almostEqual(ev.expected[0].vals[0].Value, val.V) {
+			return errors.Errorf("expected Scalar %v but got %v", val.V, ev.expected[0].vals[0].Value)
 		}
 
 	default:
@@ -408,10 +417,9 @@ func (cmd clearCmd) String() string {
 // is reached, evaluation errors do not terminate execution.
 func (t *Test) Run() error {
 	for _, cmd := range t.cmds {
-		err := t.exec(cmd)
 		// TODO(fabxc): aggregate command errors, yield diffs for result
 		// comparison errors.
-		if err != nil {
+		if err := t.exec(cmd); err != nil {
 			return err
 		}
 	}
@@ -425,10 +433,7 @@ func (t *Test) exec(tc testCommand) error {
 		t.clear()
 
 	case *loadCmd:
-		app, err := t.storage.Appender()
-		if err != nil {
-			return err
-		}
+		app := t.storage.Appender(t.context)
 		if err := cmd.append(app); err != nil {
 			app.Rollback()
 			return err
@@ -443,6 +448,7 @@ func (t *Test) exec(tc testCommand) error {
 		if err != nil {
 			return err
 		}
+		defer q.Close()
 		res := q.Exec(t.context)
 		if res.Err != nil {
 			if cmd.fail {
@@ -450,7 +456,6 @@ func (t *Test) exec(tc testCommand) error {
 			}
 			return errors.Wrapf(res.Err, "error evaluating query %q (line %d)", cmd.expr, cmd.line)
 		}
-		defer q.Close()
 		if res.Err == nil && cmd.fail {
 			return errors.Errorf("expected error evaluating query %q (line %d) but got none", cmd.expr, cmd.line)
 		}
@@ -513,11 +518,11 @@ func (t *Test) clear() {
 	t.storage = teststorage.New(t)
 
 	opts := EngineOpts{
-		Logger:        nil,
-		Reg:           nil,
-		MaxConcurrent: 20,
-		MaxSamples:    10000,
-		Timeout:       100 * time.Second,
+		Logger:                   nil,
+		Reg:                      nil,
+		MaxSamples:               10000,
+		Timeout:                  100 * time.Second,
+		NoStepSubqueryIntervalFn: func(int64) int64 { return durationMilliseconds(1 * time.Minute) },
 	}
 
 	t.queryEngine = NewEngine(opts)
@@ -627,11 +632,10 @@ func (ll *LazyLoader) clear() {
 	ll.storage = teststorage.New(ll)
 
 	opts := EngineOpts{
-		Logger:        nil,
-		Reg:           nil,
-		MaxConcurrent: 20,
-		MaxSamples:    10000,
-		Timeout:       100 * time.Second,
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10000,
+		Timeout:    100 * time.Second,
 	}
 
 	ll.queryEngine = NewEngine(opts)
@@ -640,10 +644,7 @@ func (ll *LazyLoader) clear() {
 
 // appendTill appends the defined time series to the storage till the given timestamp (in milliseconds).
 func (ll *LazyLoader) appendTill(ts int64) error {
-	app, err := ll.storage.Appender()
-	if err != nil {
-		return err
-	}
+	app := ll.storage.Appender(ll.Context())
 	for h, smpls := range ll.loadCmd.defs {
 		m := ll.loadCmd.metrics[h]
 		for i, s := range smpls {
@@ -665,7 +666,7 @@ func (ll *LazyLoader) appendTill(ts int64) error {
 
 // WithSamplesTill loads the samples till given timestamp and executes the given function.
 func (ll *LazyLoader) WithSamplesTill(ts time.Time, fn func(error)) {
-	tsMilli := ts.Sub(time.Unix(0, 0)) / time.Millisecond
+	tsMilli := ts.Sub(time.Unix(0, 0).UTC()) / time.Millisecond
 	fn(ll.appendTill(int64(tsMilli)))
 }
 

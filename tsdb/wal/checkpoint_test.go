@@ -16,6 +16,7 @@ package wal
 
 import (
 	"fmt"
+	"github.com/go-kit/kit/log"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -24,7 +25,6 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -62,6 +62,18 @@ func TestLastCheckpoint(t *testing.T) {
 	testutil.Ok(t, err)
 	testutil.Equals(t, filepath.Join(dir, "checkpoint.1000"), s)
 	testutil.Equals(t, 1000, k)
+
+	testutil.Ok(t, os.MkdirAll(filepath.Join(dir, "checkpoint.99999999"), 0777))
+	s, k, err = LastCheckpoint(dir)
+	testutil.Ok(t, err)
+	testutil.Equals(t, filepath.Join(dir, "checkpoint.99999999"), s)
+	testutil.Equals(t, 99999999, k)
+
+	testutil.Ok(t, os.MkdirAll(filepath.Join(dir, "checkpoint.100000000"), 0777))
+	s, k, err = LastCheckpoint(dir)
+	testutil.Ok(t, err)
+	testutil.Equals(t, filepath.Join(dir, "checkpoint.100000000"), s)
+	testutil.Equals(t, 100000000, k)
 }
 
 func TestDeleteCheckpoints(t *testing.T) {
@@ -80,9 +92,27 @@ func TestDeleteCheckpoints(t *testing.T) {
 
 	testutil.Ok(t, DeleteCheckpoints(dir, 2))
 
-	files, err := fileutil.ReadDir(dir)
+	files, err := ioutil.ReadDir(dir)
 	testutil.Ok(t, err)
-	testutil.Equals(t, []string{"checkpoint.02", "checkpoint.03"}, files)
+	fns := []string{}
+	for _, f := range files {
+		fns = append(fns, f.Name())
+	}
+	testutil.Equals(t, []string{"checkpoint.02", "checkpoint.03"}, fns)
+
+	testutil.Ok(t, os.MkdirAll(filepath.Join(dir, "checkpoint.99999999"), 0777))
+	testutil.Ok(t, os.MkdirAll(filepath.Join(dir, "checkpoint.100000000"), 0777))
+	testutil.Ok(t, os.MkdirAll(filepath.Join(dir, "checkpoint.100000001"), 0777))
+
+	testutil.Ok(t, DeleteCheckpoints(dir, 100000000))
+
+	files, err = ioutil.ReadDir(dir)
+	testutil.Ok(t, err)
+	fns = []string{}
+	for _, f := range files {
+		fns = append(fns, f.Name())
+	}
+	testutil.Equals(t, []string{"checkpoint.100000000", "checkpoint.100000001"}, fns)
 }
 
 func TestCheckpoint(t *testing.T) {
@@ -148,7 +178,7 @@ func TestCheckpoint(t *testing.T) {
 			}
 			testutil.Ok(t, w.Close())
 
-			_, err = Checkpoint(w, 100, 106, func(x uint64) bool {
+			_, err = Checkpoint(log.NewNopLogger(), w, 100, 106, func(x uint64) bool {
 				return x%2 == 0
 			}, last/2)
 			testutil.Ok(t, err)
@@ -156,12 +186,12 @@ func TestCheckpoint(t *testing.T) {
 			testutil.Ok(t, DeleteCheckpoints(w.Dir(), 106))
 
 			// Only the new checkpoint should be left.
-			files, err := fileutil.ReadDir(dir)
+			files, err := ioutil.ReadDir(dir)
 			testutil.Ok(t, err)
 			testutil.Equals(t, 1, len(files))
-			testutil.Equals(t, "checkpoint.000106", files[0])
+			testutil.Equals(t, "checkpoint.00000106", files[0].Name())
 
-			sr, err := NewSegmentsReader(filepath.Join(dir, "checkpoint.000106"))
+			sr, err := NewSegmentsReader(filepath.Join(dir, "checkpoint.00000106"))
 			testutil.Ok(t, err)
 			defer sr.Close()
 
@@ -207,7 +237,7 @@ func TestCheckpointNoTmpFolderAfterError(t *testing.T) {
 	w.Close()
 
 	// Run the checkpoint and since the wal contains an invalid records this should return an error.
-	_, err = Checkpoint(w, 0, 1, nil, 0)
+	_, err = Checkpoint(log.NewNopLogger(), w, 0, 1, nil, 0)
 	testutil.NotOk(t, err)
 
 	// Walk the wal dir to make sure there are no tmp folder left behind after the error.

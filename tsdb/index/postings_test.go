@@ -193,7 +193,7 @@ func TestMultiIntersect(t *testing.T) {
 			},
 			res: []uint64{2, 5, 6, 1001},
 		},
-		// One of the reproduceable cases for:
+		// One of the reproducible cases for:
 		// https://github.com/prometheus/prometheus/issues/2616
 		// The initialisation of intersectPostings was moving the iterator forward
 		// prematurely making us miss some postings.
@@ -852,7 +852,7 @@ func TestMemPostings_Delete(t *testing.T) {
 
 	before := p.Get(allPostingsKey.Name, allPostingsKey.Value)
 	p.Delete(map[uint64]struct{}{
-		2: struct{}{},
+		2: {},
 	})
 	after := p.Get(allPostingsKey.Name, allPostingsKey.Value)
 

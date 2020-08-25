@@ -28,15 +28,16 @@ import (
 	conntrack "github.com/mwitkow/go-conntrack"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	config_util "github.com/prometheus/common/config"
+	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
 )
 
 const (
-	watchTimeout  = 30 * time.Second
+	watchTimeout  = 2 * time.Minute
 	retryInterval = 15 * time.Second
 
 	// addressLabel is the name for the label containing a target's address.
@@ -51,6 +52,8 @@ const (
 	tagsLabel = model.MetaLabelPrefix + "consul_tags"
 	// serviceLabel is the name of the label containing the service name.
 	serviceLabel = model.MetaLabelPrefix + "consul_service"
+	// healthLabel is the name of the label containing the health of the service instance
+	healthLabel = model.MetaLabelPrefix + "consul_health"
 	// serviceAddressLabel is the name of the label containing the (optional) service address.
 	serviceAddressLabel = model.MetaLabelPrefix + "consul_service_address"
 	//servicePortLabel is the name of the label containing the service port.
@@ -83,25 +86,35 @@ var (
 		[]string{"endpoint", "call"},
 	)
 
+	// Initialize metric vectors.
+	servicesRPCDuration = rpcDuration.WithLabelValues("catalog", "services")
+	serviceRPCDuration  = rpcDuration.WithLabelValues("catalog", "service")
+
 	// DefaultSDConfig is the default Consul SD configuration.
 	DefaultSDConfig = SDConfig{
 		TagSeparator:    ",",
 		Scheme:          "http",
 		Server:          "localhost:8500",
 		AllowStale:      true,
-		RefreshInterval: model.Duration(watchTimeout),
+		RefreshInterval: model.Duration(30 * time.Second),
 	}
 )
 
+func init() {
+	discovery.RegisterConfig(&SDConfig{})
+	prometheus.MustRegister(rpcFailuresCount)
+	prometheus.MustRegister(rpcDuration)
+}
+
 // SDConfig is the configuration for Consul service discovery.
 type SDConfig struct {
-	Server       string             `yaml:"server,omitempty"`
-	Token        config_util.Secret `yaml:"token,omitempty"`
-	Datacenter   string             `yaml:"datacenter,omitempty"`
-	TagSeparator string             `yaml:"tag_separator,omitempty"`
-	Scheme       string             `yaml:"scheme,omitempty"`
-	Username     string             `yaml:"username,omitempty"`
-	Password     config_util.Secret `yaml:"password,omitempty"`
+	Server       string        `yaml:"server,omitempty"`
+	Token        config.Secret `yaml:"token,omitempty"`
+	Datacenter   string        `yaml:"datacenter,omitempty"`
+	TagSeparator string        `yaml:"tag_separator,omitempty"`
+	Scheme       string        `yaml:"scheme,omitempty"`
+	Username     string        `yaml:"username,omitempty"`
+	Password     config.Secret `yaml:"password,omitempty"`
 
 	// See https://www.consul.io/docs/internals/consensus.html#consistency-modes,
 	// stale reads are a lot cheaper and are a necessity if you have >5k targets.
@@ -121,7 +134,20 @@ type SDConfig struct {
 	// Desired node metadata.
 	NodeMeta map[string]string `yaml:"node_meta,omitempty"`
 
-	TLSConfig config_util.TLSConfig `yaml:"tls_config,omitempty"`
+	TLSConfig config.TLSConfig `yaml:"tls_config,omitempty"`
+}
+
+// Name returns the name of the Config.
+func (*SDConfig) Name() string { return "consul" }
+
+// NewDiscoverer returns a Discoverer for the Config.
+func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
+	return NewDiscovery(c, opts.Logger)
+}
+
+// SetDirectory joins any relative file paths with dir.
+func (c *SDConfig) SetDirectory(dir string) {
+	c.TLSConfig.SetDirectory(dir)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -136,15 +162,6 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return errors.New("consul SD configuration requires a server address")
 	}
 	return nil
-}
-
-func init() {
-	prometheus.MustRegister(rpcFailuresCount)
-	prometheus.MustRegister(rpcDuration)
-
-	// Initialize metric vectors.
-	rpcDuration.WithLabelValues("catalog", "service")
-	rpcDuration.WithLabelValues("catalog", "services")
 }
 
 // Discovery retrieves target information from a Consul server
@@ -168,12 +185,12 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 		logger = log.NewNopLogger()
 	}
 
-	tls, err := config_util.NewTLSConfig(&conf.TLSConfig)
+	tls, err := config.NewTLSConfig(&conf.TLSConfig)
 	if err != nil {
 		return nil, err
 	}
 	transport := &http.Transport{
-		IdleConnTimeout: 5 * time.Duration(conf.RefreshInterval),
+		IdleConnTimeout: 2 * time.Duration(watchTimeout),
 		TLSClientConfig: tls,
 		DialContext: conntrack.NewDialContextFunc(
 			conntrack.DialWithTracing(),
@@ -182,7 +199,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 	}
 	wrapper := &http.Client{
 		Transport: transport,
-		Timeout:   35 * time.Second,
+		Timeout:   time.Duration(watchTimeout) + 15*time.Second,
 	}
 
 	clientConf := &consul.Config{
@@ -344,7 +361,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 // entire list of services.
 func (d *Discovery) watchServices(ctx context.Context, ch chan<- []*targetgroup.Group, lastIndex *uint64, services map[string]func()) {
 	catalog := d.client.Catalog()
-	level.Debug(d.logger).Log("msg", "Watching services", "tags", d.watchedTags)
+	level.Debug(d.logger).Log("msg", "Watching services", "tags", strings.Join(d.watchedTags, ","))
 
 	t0 := time.Now()
 	opts := &consul.QueryOptions{
@@ -355,7 +372,7 @@ func (d *Discovery) watchServices(ctx context.Context, ch chan<- []*targetgroup.
 	}
 	srvs, meta, err := catalog.Services(opts.WithContext(ctx))
 	elapsed := time.Since(t0)
-	rpcDuration.WithLabelValues("catalog", "services").Observe(elapsed.Seconds())
+	servicesRPCDuration.Observe(elapsed.Seconds())
 
 	// Check the context before in order to exit early.
 	select {
@@ -440,14 +457,14 @@ func (d *Discovery) watchService(ctx context.Context, ch chan<- []*targetgroup.G
 	go func() {
 		ticker := time.NewTicker(d.refreshInterval)
 		var lastIndex uint64
-		catalog := srv.client.Catalog()
+		health := srv.client.Health()
 		for {
 			select {
 			case <-ctx.Done():
 				ticker.Stop()
 				return
 			default:
-				srv.watch(ctx, ch, catalog, &lastIndex)
+				srv.watch(ctx, ch, health, &lastIndex)
 				select {
 				case <-ticker.C:
 				case <-ctx.Done():
@@ -458,8 +475,8 @@ func (d *Discovery) watchService(ctx context.Context, ch chan<- []*targetgroup.G
 }
 
 // Get updates for a service.
-func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Group, catalog *consul.Catalog, lastIndex *uint64) {
-	level.Debug(srv.logger).Log("msg", "Watching service", "service", srv.name, "tags", srv.tags)
+func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Group, health *consul.Health, lastIndex *uint64) {
+	level.Debug(srv.logger).Log("msg", "Watching service", "service", srv.name, "tags", strings.Join(srv.tags, ","))
 
 	t0 := time.Now()
 	opts := &consul.QueryOptions{
@@ -468,9 +485,10 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Gr
 		AllowStale: srv.discovery.allowStale,
 		NodeMeta:   srv.discovery.watchedNodeMeta,
 	}
-	nodes, meta, err := catalog.ServiceMultipleTags(srv.name, srv.tags, opts.WithContext(ctx))
+
+	serviceNodes, meta, err := health.ServiceMultipleTags(srv.name, srv.tags, false, opts.WithContext(ctx))
 	elapsed := time.Since(t0)
-	rpcDuration.WithLabelValues("catalog", "service").Observe(elapsed.Seconds())
+	serviceRPCDuration.Observe(elapsed.Seconds())
 
 	// Check the context before in order to exit early.
 	select {
@@ -481,7 +499,7 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Gr
 	}
 
 	if err != nil {
-		level.Error(srv.logger).Log("msg", "Error refreshing service", "service", srv.name, "tags", srv.tags, "err", err)
+		level.Error(srv.logger).Log("msg", "Error refreshing service", "service", srv.name, "tags", strings.Join(srv.tags, ","), "err", err)
 		rpcFailuresCount.Inc()
 		time.Sleep(retryInterval)
 		return
@@ -495,48 +513,48 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Gr
 	tgroup := targetgroup.Group{
 		Source:  srv.name,
 		Labels:  srv.labels,
-		Targets: make([]model.LabelSet, 0, len(nodes)),
+		Targets: make([]model.LabelSet, 0, len(serviceNodes)),
 	}
 
-	for _, node := range nodes {
-
+	for _, serviceNode := range serviceNodes {
 		// We surround the separated list with the separator as well. This way regular expressions
 		// in relabeling rules don't have to consider tag positions.
-		var tags = srv.tagSeparator + strings.Join(node.ServiceTags, srv.tagSeparator) + srv.tagSeparator
+		var tags = srv.tagSeparator + strings.Join(serviceNode.Service.Tags, srv.tagSeparator) + srv.tagSeparator
 
 		// If the service address is not empty it should be used instead of the node address
 		// since the service may be registered remotely through a different node.
 		var addr string
-		if node.ServiceAddress != "" {
-			addr = net.JoinHostPort(node.ServiceAddress, fmt.Sprintf("%d", node.ServicePort))
+		if serviceNode.Service.Address != "" {
+			addr = net.JoinHostPort(serviceNode.Service.Address, fmt.Sprintf("%d", serviceNode.Service.Port))
 		} else {
-			addr = net.JoinHostPort(node.Address, fmt.Sprintf("%d", node.ServicePort))
+			addr = net.JoinHostPort(serviceNode.Node.Address, fmt.Sprintf("%d", serviceNode.Service.Port))
 		}
 
 		labels := model.LabelSet{
 			model.AddressLabel:  model.LabelValue(addr),
-			addressLabel:        model.LabelValue(node.Address),
-			nodeLabel:           model.LabelValue(node.Node),
+			addressLabel:        model.LabelValue(serviceNode.Node.Address),
+			nodeLabel:           model.LabelValue(serviceNode.Node.Node),
 			tagsLabel:           model.LabelValue(tags),
-			serviceAddressLabel: model.LabelValue(node.ServiceAddress),
-			servicePortLabel:    model.LabelValue(strconv.Itoa(node.ServicePort)),
-			serviceIDLabel:      model.LabelValue(node.ServiceID),
+			serviceAddressLabel: model.LabelValue(serviceNode.Service.Address),
+			servicePortLabel:    model.LabelValue(strconv.Itoa(serviceNode.Service.Port)),
+			serviceIDLabel:      model.LabelValue(serviceNode.Service.ID),
+			healthLabel:         model.LabelValue(serviceNode.Checks.AggregatedStatus()),
 		}
 
 		// Add all key/value pairs from the node's metadata as their own labels.
-		for k, v := range node.NodeMeta {
+		for k, v := range serviceNode.Node.Meta {
 			name := strutil.SanitizeLabelName(k)
 			labels[metaDataLabel+model.LabelName(name)] = model.LabelValue(v)
 		}
 
 		// Add all key/value pairs from the service's metadata as their own labels.
-		for k, v := range node.ServiceMeta {
+		for k, v := range serviceNode.Service.Meta {
 			name := strutil.SanitizeLabelName(k)
 			labels[serviceMetaDataLabel+model.LabelName(name)] = model.LabelValue(v)
 		}
 
 		// Add all key/value pairs from the service's tagged addresses as their own labels.
-		for k, v := range node.TaggedAddresses {
+		for k, v := range serviceNode.Node.TaggedAddresses {
 			name := strutil.SanitizeLabelName(k)
 			labels[taggedAddressesLabel+model.LabelName(name)] = model.LabelValue(v)
 		}

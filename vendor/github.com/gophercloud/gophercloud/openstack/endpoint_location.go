@@ -29,11 +29,12 @@ func V2EndpointURL(catalog *tokens2.ServiceCatalog, opts gophercloud.EndpointOpt
 		}
 	}
 
-	// Report an error if the options were ambiguous.
+	// If multiple endpoints were found, use the first result
+	// and disregard the other endpoints.
+	//
+	// This behavior matches the Python library. See GH-1764.
 	if len(endpoints) > 1 {
-		err := &ErrMultipleMatchingEndpointsV2{}
-		err.Endpoints = endpoints
-		return "", err
+		endpoints = endpoints[0:1]
 	}
 
 	// Extract the appropriate URL from the matching Endpoint.
@@ -91,9 +92,12 @@ func V3EndpointURL(catalog *tokens3.ServiceCatalog, opts gophercloud.EndpointOpt
 		}
 	}
 
-	// Report an error if the options were ambiguous.
+	// If multiple endpoints were found, use the first result
+	// and disregard the other endpoints.
+	//
+	// This behavior matches the Python library. See GH-1764.
 	if len(endpoints) > 1 {
-		return "", ErrMultipleMatchingEndpointsV3{Endpoints: endpoints}
+		endpoints = endpoints[0:1]
 	}
 
 	// Extract the URL from the matching Endpoint.

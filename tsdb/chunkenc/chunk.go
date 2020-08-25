@@ -15,6 +15,7 @@ package chunkenc
 
 import (
 	"fmt"
+	"math"
 	"sync"
 
 	"github.com/pkg/errors"
@@ -41,14 +42,29 @@ const (
 
 // Chunk holds a sequence of sample pairs that can be iterated over and appended to.
 type Chunk interface {
+	// Bytes returns the underlying byte slice of the chunk.
 	Bytes() []byte
+
+	// Encoding returns the encoding type of the chunk.
 	Encoding() Encoding
+
+	// Appender returns an appender to append samples to the chunk.
 	Appender() (Appender, error)
+
 	// The iterator passed as argument is for re-use.
 	// Depending on implementation, the iterator can
 	// be re-used or a new iterator can be allocated.
 	Iterator(Iterator) Iterator
+
+	// NumSamples returns the number of samples in the chunk.
 	NumSamples() int
+
+	// Compact is called whenever a chunk is expected to be complete (no more
+	// samples appended) and the underlying implementation can eventually
+	// optimize the chunk.
+	// There's no strong guarantee that no samples will be appended once
+	// Compact() is called. Implementing this function is optional.
+	Compact()
 }
 
 // Appender adds sample pairs to a chunk.
@@ -57,10 +73,21 @@ type Appender interface {
 }
 
 // Iterator is a simple iterator that can only get the next value.
+// Iterator iterates over the samples of a time series, in timestamp-increasing order.
 type Iterator interface {
-	At() (int64, float64)
-	Err() error
+	// Next advances the iterator by one.
 	Next() bool
+	// Seek advances the iterator forward to the first sample with the timestamp equal or greater than t.
+	// If current sample found by previous `Next` or `Seek` operation already has this property, Seek has no effect.
+	// Seek returns true, if such sample exists, false otherwise.
+	// Iterator is exhausted when the Seek returns false.
+	Seek(t int64) bool
+	// At returns the current timestamp/value pair.
+	// Before the iterator has advanced At behaviour is unspecified.
+	At() (int64, float64)
+	// Err returns the current error. It should be used only after iterator is
+	// exhausted, that is `Next` or `Seek` returns false.
+	Err() error
 }
 
 // NewNopIterator returns a new chunk iterator that does not hold any data.
@@ -70,7 +97,8 @@ func NewNopIterator() Iterator {
 
 type nopIterator struct{}
 
-func (nopIterator) At() (int64, float64) { return 0, 0 }
+func (nopIterator) Seek(int64) bool      { return false }
+func (nopIterator) At() (int64, float64) { return math.MinInt64, 0 }
 func (nopIterator) Next() bool           { return false }
 func (nopIterator) Err() error           { return nil }
 

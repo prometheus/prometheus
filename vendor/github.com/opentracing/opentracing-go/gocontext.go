@@ -7,8 +7,13 @@ type contextKey struct{}
 var activeSpanKey = contextKey{}
 
 // ContextWithSpan returns a new `context.Context` that holds a reference to
-// `span`'s SpanContext.
+// the span. If span is nil, a new context without an active span is returned.
 func ContextWithSpan(ctx context.Context, span Span) context.Context {
+	if span != nil {
+		if tracerWithHook, ok := span.Tracer().(TracerContextWithSpanExtension); ok {
+			ctx = tracerWithHook.ContextWithSpanHook(ctx, span)
+		}
+	}
 	return context.WithValue(ctx, activeSpanKey, span)
 }
 

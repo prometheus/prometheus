@@ -78,6 +78,8 @@ func (t *Target) String() string {
 type MetricMetadataStore interface {
 	ListMetadata() []MetricMetadata
 	GetMetadata(metric string) (MetricMetadata, bool)
+	SizeMetadata() int
+	LengthMetadata() int
 }
 
 // MetricMetadata is a piece of metadata for a metric.
@@ -96,6 +98,28 @@ func (t *Target) MetadataList() []MetricMetadata {
 		return nil
 	}
 	return t.metadata.ListMetadata()
+}
+
+func (t *Target) MetadataSize() int {
+	t.mtx.RLock()
+	defer t.mtx.RUnlock()
+
+	if t.metadata == nil {
+		return 0
+	}
+
+	return t.metadata.SizeMetadata()
+}
+
+func (t *Target) MetadataLength() int {
+	t.mtx.RLock()
+	defer t.mtx.RUnlock()
+
+	if t.metadata == nil {
+		return 0
+	}
+
+	return t.metadata.LengthMetadata()
 }
 
 // Metadata returns type and help metadata for the given metric.
@@ -279,14 +303,14 @@ func (app *limitAppender) Add(lset labels.Labels, t int64, v float64) (uint64, e
 	return ref, nil
 }
 
-func (app *limitAppender) AddFast(lset labels.Labels, ref uint64, t int64, v float64) error {
+func (app *limitAppender) AddFast(ref uint64, t int64, v float64) error {
 	if !value.IsStaleNaN(v) {
 		app.i++
 		if app.i > app.limit {
 			return errSampleLimit
 		}
 	}
-	err := app.Appender.AddFast(lset, ref, t, v)
+	err := app.Appender.AddFast(ref, t, v)
 	return err
 }
 
@@ -308,11 +332,11 @@ func (app *timeLimitAppender) Add(lset labels.Labels, t int64, v float64) (uint6
 	return ref, nil
 }
 
-func (app *timeLimitAppender) AddFast(lset labels.Labels, ref uint64, t int64, v float64) error {
+func (app *timeLimitAppender) AddFast(ref uint64, t int64, v float64) error {
 	if t > app.maxTime {
 		return storage.ErrOutOfBounds
 	}
-	err := app.Appender.AddFast(lset, ref, t, v)
+	err := app.Appender.AddFast(ref, t, v)
 	return err
 }
 

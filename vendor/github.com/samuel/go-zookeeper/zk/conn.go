@@ -695,18 +695,26 @@ func (c *Conn) authenticate() error {
 
 	binary.BigEndian.PutUint32(buf[:4], uint32(n))
 
-	c.conn.SetWriteDeadline(time.Now().Add(c.recvTimeout * 10))
+	if err := c.conn.SetWriteDeadline(time.Now().Add(c.recvTimeout * 10)); err != nil {
+		return err
+	}
 	_, err = c.conn.Write(buf[:n+4])
-	c.conn.SetWriteDeadline(time.Time{})
 	if err != nil {
+		return err
+	}
+	if err := c.conn.SetWriteDeadline(time.Time{}); err != nil {
 		return err
 	}
 
 	// Receive and decode a connect response.
-	c.conn.SetReadDeadline(time.Now().Add(c.recvTimeout * 10))
+	if err := c.conn.SetReadDeadline(time.Now().Add(c.recvTimeout * 10)); err != nil {
+		return err
+	}
 	_, err = io.ReadFull(c.conn, buf[:4])
-	c.conn.SetReadDeadline(time.Time{})
 	if err != nil {
+		return err
+	}
+	if err := c.conn.SetReadDeadline(time.Time{}); err != nil {
 		return err
 	}
 
@@ -770,12 +778,16 @@ func (c *Conn) sendData(req *request) error {
 	c.requests[req.xid] = req
 	c.requestsLock.Unlock()
 
-	c.conn.SetWriteDeadline(time.Now().Add(c.recvTimeout))
+	if err := c.conn.SetWriteDeadline(time.Now().Add(c.recvTimeout)); err != nil {
+		return err
+	}
 	_, err = c.conn.Write(c.buf[:n+4])
-	c.conn.SetWriteDeadline(time.Time{})
 	if err != nil {
 		req.recvChan <- response{-1, err}
 		c.conn.Close()
+		return err
+	}
+	if err := c.conn.SetWriteDeadline(time.Time{}); err != nil {
 		return err
 	}
 
@@ -800,11 +812,15 @@ func (c *Conn) sendLoop() error {
 
 			binary.BigEndian.PutUint32(c.buf[:4], uint32(n))
 
-			c.conn.SetWriteDeadline(time.Now().Add(c.recvTimeout))
+			if err := c.conn.SetWriteDeadline(time.Now().Add(c.recvTimeout)); err != nil {
+				return err
+			}
 			_, err = c.conn.Write(c.buf[:n+4])
-			c.conn.SetWriteDeadline(time.Time{})
 			if err != nil {
 				c.conn.Close()
+				return err
+			}
+			if err := c.conn.SetWriteDeadline(time.Time{}); err != nil {
 				return err
 			}
 		case <-c.closeChan:
@@ -838,8 +854,10 @@ func (c *Conn) recvLoop(conn net.Conn) error {
 		}
 
 		_, err = io.ReadFull(conn, buf[:blen])
-		conn.SetReadDeadline(time.Time{})
 		if err != nil {
+			return err
+		}
+		if err := conn.SetReadDeadline(time.Time{}); err != nil {
 			return err
 		}
 
@@ -874,7 +892,7 @@ func (c *Conn) recvLoop(conn net.Conn) error {
 			c.watchersLock.Lock()
 			for _, t := range wTypes {
 				wpt := watchPathType{res.Path, t}
-				if watchers := c.watchers[wpt]; watchers != nil && len(watchers) > 0 {
+				if watchers, ok := c.watchers[wpt]; ok {
 					for _, ch := range watchers {
 						ch <- ev
 						close(ch)

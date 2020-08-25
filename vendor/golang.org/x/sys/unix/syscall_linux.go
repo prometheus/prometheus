@@ -97,6 +97,12 @@ func IoctlSetRTCTime(fd int, value *RTCTime) error {
 	return err
 }
 
+func IoctlSetRTCWkAlrm(fd int, value *RTCWkAlrm) error {
+	err := ioctl(fd, RTC_WKALM_SET, uintptr(unsafe.Pointer(value)))
+	runtime.KeepAlive(value)
+	return err
+}
+
 func IoctlGetUint32(fd int, req uint) (uint32, error) {
 	var value uint32
 	err := ioctl(fd, req, uintptr(unsafe.Pointer(&value)))
@@ -106,6 +112,12 @@ func IoctlGetUint32(fd int, req uint) (uint32, error) {
 func IoctlGetRTCTime(fd int) (*RTCTime, error) {
 	var value RTCTime
 	err := ioctl(fd, RTC_RD_TIME, uintptr(unsafe.Pointer(&value)))
+	return &value, err
+}
+
+func IoctlGetRTCWkAlrm(fd int) (*RTCWkAlrm, error) {
+	var value RTCWkAlrm
+	err := ioctl(fd, RTC_WKALM_RD, uintptr(unsafe.Pointer(&value)))
 	return &value, err
 }
 
@@ -839,6 +851,69 @@ func (sa *SockaddrTIPC) sockaddr() (unsafe.Pointer, _Socklen, error) {
 	return unsafe.Pointer(&sa.raw), SizeofSockaddrTIPC, nil
 }
 
+// SockaddrL2TPIP implements the Sockaddr interface for IPPROTO_L2TP/AF_INET sockets.
+type SockaddrL2TPIP struct {
+	Addr   [4]byte
+	ConnId uint32
+	raw    RawSockaddrL2TPIP
+}
+
+func (sa *SockaddrL2TPIP) sockaddr() (unsafe.Pointer, _Socklen, error) {
+	sa.raw.Family = AF_INET
+	sa.raw.Conn_id = sa.ConnId
+	for i := 0; i < len(sa.Addr); i++ {
+		sa.raw.Addr[i] = sa.Addr[i]
+	}
+	return unsafe.Pointer(&sa.raw), SizeofSockaddrL2TPIP, nil
+}
+
+// SockaddrL2TPIP6 implements the Sockaddr interface for IPPROTO_L2TP/AF_INET6 sockets.
+type SockaddrL2TPIP6 struct {
+	Addr   [16]byte
+	ZoneId uint32
+	ConnId uint32
+	raw    RawSockaddrL2TPIP6
+}
+
+func (sa *SockaddrL2TPIP6) sockaddr() (unsafe.Pointer, _Socklen, error) {
+	sa.raw.Family = AF_INET6
+	sa.raw.Conn_id = sa.ConnId
+	sa.raw.Scope_id = sa.ZoneId
+	for i := 0; i < len(sa.Addr); i++ {
+		sa.raw.Addr[i] = sa.Addr[i]
+	}
+	return unsafe.Pointer(&sa.raw), SizeofSockaddrL2TPIP6, nil
+}
+
+// SockaddrIUCV implements the Sockaddr interface for AF_IUCV sockets.
+type SockaddrIUCV struct {
+	UserID string
+	Name   string
+	raw    RawSockaddrIUCV
+}
+
+func (sa *SockaddrIUCV) sockaddr() (unsafe.Pointer, _Socklen, error) {
+	sa.raw.Family = AF_IUCV
+	// These are EBCDIC encoded by the kernel, but we still need to pad them
+	// with blanks. Initializing with blanks allows the caller to feed in either
+	// a padded or an unpadded string.
+	for i := 0; i < 8; i++ {
+		sa.raw.Nodeid[i] = ' '
+		sa.raw.User_id[i] = ' '
+		sa.raw.Name[i] = ' '
+	}
+	if len(sa.UserID) > 8 || len(sa.Name) > 8 {
+		return nil, 0, EINVAL
+	}
+	for i, b := range []byte(sa.UserID[:]) {
+		sa.raw.User_id[i] = int8(b)
+	}
+	for i, b := range []byte(sa.Name[:]) {
+		sa.raw.Name[i] = int8(b)
+	}
+	return unsafe.Pointer(&sa.raw), SizeofSockaddrIUCV, nil
+}
+
 func anyToSockaddr(fd int, rsa *RawSockaddrAny) (Sockaddr, error) {
 	switch rsa.Addr.Family {
 	case AF_NETLINK:
@@ -884,30 +959,63 @@ func anyToSockaddr(fd int, rsa *RawSockaddrAny) (Sockaddr, error) {
 		for n < len(pp.Path) && pp.Path[n] != 0 {
 			n++
 		}
-		bytes := (*[10000]byte)(unsafe.Pointer(&pp.Path[0]))[0:n]
+		bytes := (*[len(pp.Path)]byte)(unsafe.Pointer(&pp.Path[0]))[0:n]
 		sa.Name = string(bytes)
 		return sa, nil
 
 	case AF_INET:
-		pp := (*RawSockaddrInet4)(unsafe.Pointer(rsa))
-		sa := new(SockaddrInet4)
-		p := (*[2]byte)(unsafe.Pointer(&pp.Port))
-		sa.Port = int(p[0])<<8 + int(p[1])
-		for i := 0; i < len(sa.Addr); i++ {
-			sa.Addr[i] = pp.Addr[i]
+		proto, err := GetsockoptInt(fd, SOL_SOCKET, SO_PROTOCOL)
+		if err != nil {
+			return nil, err
 		}
-		return sa, nil
+
+		switch proto {
+		case IPPROTO_L2TP:
+			pp := (*RawSockaddrL2TPIP)(unsafe.Pointer(rsa))
+			sa := new(SockaddrL2TPIP)
+			sa.ConnId = pp.Conn_id
+			for i := 0; i < len(sa.Addr); i++ {
+				sa.Addr[i] = pp.Addr[i]
+			}
+			return sa, nil
+		default:
+			pp := (*RawSockaddrInet4)(unsafe.Pointer(rsa))
+			sa := new(SockaddrInet4)
+			p := (*[2]byte)(unsafe.Pointer(&pp.Port))
+			sa.Port = int(p[0])<<8 + int(p[1])
+			for i := 0; i < len(sa.Addr); i++ {
+				sa.Addr[i] = pp.Addr[i]
+			}
+			return sa, nil
+		}
 
 	case AF_INET6:
-		pp := (*RawSockaddrInet6)(unsafe.Pointer(rsa))
-		sa := new(SockaddrInet6)
-		p := (*[2]byte)(unsafe.Pointer(&pp.Port))
-		sa.Port = int(p[0])<<8 + int(p[1])
-		sa.ZoneId = pp.Scope_id
-		for i := 0; i < len(sa.Addr); i++ {
-			sa.Addr[i] = pp.Addr[i]
+		proto, err := GetsockoptInt(fd, SOL_SOCKET, SO_PROTOCOL)
+		if err != nil {
+			return nil, err
 		}
-		return sa, nil
+
+		switch proto {
+		case IPPROTO_L2TP:
+			pp := (*RawSockaddrL2TPIP6)(unsafe.Pointer(rsa))
+			sa := new(SockaddrL2TPIP6)
+			sa.ConnId = pp.Conn_id
+			sa.ZoneId = pp.Scope_id
+			for i := 0; i < len(sa.Addr); i++ {
+				sa.Addr[i] = pp.Addr[i]
+			}
+			return sa, nil
+		default:
+			pp := (*RawSockaddrInet6)(unsafe.Pointer(rsa))
+			sa := new(SockaddrInet6)
+			p := (*[2]byte)(unsafe.Pointer(&pp.Port))
+			sa.Port = int(p[0])<<8 + int(p[1])
+			sa.ZoneId = pp.Scope_id
+			for i := 0; i < len(sa.Addr); i++ {
+				sa.Addr[i] = pp.Addr[i]
+			}
+			return sa, nil
+		}
 
 	case AF_VSOCK:
 		pp := (*RawSockaddrVM)(unsafe.Pointer(rsa))
@@ -986,6 +1094,38 @@ func anyToSockaddr(fd int, rsa *RawSockaddrAny) (Sockaddr, error) {
 		}
 
 		return sa, nil
+	case AF_IUCV:
+		pp := (*RawSockaddrIUCV)(unsafe.Pointer(rsa))
+
+		var user [8]byte
+		var name [8]byte
+
+		for i := 0; i < 8; i++ {
+			user[i] = byte(pp.User_id[i])
+			name[i] = byte(pp.Name[i])
+		}
+
+		sa := &SockaddrIUCV{
+			UserID: string(user[:]),
+			Name:   string(name[:]),
+		}
+		return sa, nil
+
+	case AF_CAN:
+		pp := (*RawSockaddrCAN)(unsafe.Pointer(rsa))
+		sa := &SockaddrCAN{
+			Ifindex: int(pp.Ifindex),
+		}
+		rx := (*[4]byte)(unsafe.Pointer(&sa.RxID))
+		for i := 0; i < 4; i++ {
+			rx[i] = pp.Addr[i]
+		}
+		tx := (*[4]byte)(unsafe.Pointer(&sa.TxID))
+		for i := 0; i < 4; i++ {
+			tx[i] = pp.Addr[i+4]
+		}
+		return sa, nil
+
 	}
 	return nil, EAFNOSUPPORT
 }
@@ -1555,8 +1695,8 @@ func Sendfile(outfd int, infd int, offset *int64, count int) (written int, err e
 //sys	Acct(path string) (err error)
 //sys	AddKey(keyType string, description string, payload []byte, ringid int) (id int, err error)
 //sys	Adjtimex(buf *Timex) (state int, err error)
-//sys	Capget(hdr *CapUserHeader, data *CapUserData) (err error)
-//sys	Capset(hdr *CapUserHeader, data *CapUserData) (err error)
+//sysnb	Capget(hdr *CapUserHeader, data *CapUserData) (err error)
+//sysnb	Capset(hdr *CapUserHeader, data *CapUserData) (err error)
 //sys	Chdir(path string) (err error)
 //sys	Chroot(path string) (err error)
 //sys	ClockGetres(clockid int32, res *Timespec) (err error)
@@ -1566,6 +1706,15 @@ func Sendfile(outfd int, infd int, offset *int64, count int) (written int, err e
 //sys	CopyFileRange(rfd int, roff *int64, wfd int, woff *int64, len int, flags int) (n int, err error)
 //sys	DeleteModule(name string, flags int) (err error)
 //sys	Dup(oldfd int) (fd int, err error)
+
+func Dup2(oldfd, newfd int) error {
+	// Android O and newer blocks dup2; riscv and arm64 don't implement dup2.
+	if runtime.GOOS == "android" || runtime.GOARCH == "riscv64" || runtime.GOARCH == "arm64" {
+		return Dup3(oldfd, newfd, 0)
+	}
+	return dup2(oldfd, newfd)
+}
+
 //sys	Dup3(oldfd int, newfd int, flags int) (err error)
 //sysnb	EpollCreate1(flag int) (fd int, err error)
 //sysnb	EpollCtl(epfd int, op int, fd int, event *EpollEvent) (err error)
@@ -1575,7 +1724,6 @@ func Sendfile(outfd int, infd int, offset *int64, count int) (written int, err e
 //sys	Fchdir(fd int) (err error)
 //sys	Fchmod(fd int, mode uint32) (err error)
 //sys	Fchownat(dirfd int, path string, uid int, gid int, flags int) (err error)
-//sys	fcntl(fd int, cmd int, arg int) (val int, err error)
 //sys	Fdatasync(fd int) (err error)
 //sys	Fgetxattr(fd int, attr string, dest []byte) (sz int, err error)
 //sys	FinitModule(fd int, params string, flags int) (err error)
@@ -1631,6 +1779,17 @@ func Getpgrp() (pid int) {
 //sysnb	Settimeofday(tv *Timeval) (err error)
 //sys	Setns(fd int, nstype int) (err error)
 
+// PrctlRetInt performs a prctl operation specified by option and further
+// optional arguments arg2 through arg5 depending on option. It returns a
+// non-negative integer that is returned by the prctl syscall.
+func PrctlRetInt(option int, arg2 uintptr, arg3 uintptr, arg4 uintptr, arg5 uintptr) (int, error) {
+	ret, _, err := Syscall6(SYS_PRCTL, uintptr(option), uintptr(arg2), uintptr(arg3), uintptr(arg4), uintptr(arg5), 0)
+	if err != 0 {
+		return 0, err
+	}
+	return int(ret), nil
+}
+
 // issue 1435.
 // On linux Setuid and Setgid only affects the current thread, not the process.
 // This does not match what most callers expect so we must return an error
@@ -1642,6 +1801,30 @@ func Setuid(uid int) (err error) {
 
 func Setgid(uid int) (err error) {
 	return EOPNOTSUPP
+}
+
+// SetfsgidRetGid sets fsgid for current thread and returns previous fsgid set.
+// setfsgid(2) will return a non-nil error only if its caller lacks CAP_SETUID capability.
+// If the call fails due to other reasons, current fsgid will be returned.
+func SetfsgidRetGid(gid int) (int, error) {
+	return setfsgid(gid)
+}
+
+// SetfsuidRetUid sets fsuid for current thread and returns previous fsuid set.
+// setfsgid(2) will return a non-nil error only if its caller lacks CAP_SETUID capability
+// If the call fails due to other reasons, current fsuid will be returned.
+func SetfsuidRetUid(uid int) (int, error) {
+	return setfsuid(uid)
+}
+
+func Setfsgid(gid int) error {
+	_, err := setfsgid(gid)
+	return err
+}
+
+func Setfsuid(uid int) error {
+	_, err := setfsuid(uid)
+	return err
 }
 
 func Signalfd(fd int, sigmask *Sigset_t, flags int) (newfd int, err error) {
@@ -1656,6 +1839,9 @@ func Signalfd(fd int, sigmask *Sigset_t, flags int) (newfd int, err error) {
 //sys	Syncfs(fd int) (err error)
 //sysnb	Sysinfo(info *Sysinfo_t) (err error)
 //sys	Tee(rfd int, wfd int, len int, flags int) (n int64, err error)
+//sysnb TimerfdCreate(clockid int, flags int) (fd int, err error)
+//sysnb TimerfdGettime(fd int, currValue *ItimerSpec) (err error)
+//sysnb TimerfdSettime(fd int, flags int, newValue *ItimerSpec, oldValue *ItimerSpec) (err error)
 //sysnb	Tgkill(tgid int, tid int, sig syscall.Signal) (err error)
 //sysnb	Times(tms *Tms) (ticks uintptr, err error)
 //sysnb	Umask(mask int) (oldmask int)
@@ -1666,6 +1852,123 @@ func Signalfd(fd int, sigmask *Sigset_t, flags int) (newfd int, err error) {
 //sys	exitThread(code int) (err error) = SYS_EXIT
 //sys	readlen(fd int, p *byte, np int) (n int, err error) = SYS_READ
 //sys	writelen(fd int, p *byte, np int) (n int, err error) = SYS_WRITE
+//sys	readv(fd int, iovs []Iovec) (n int, err error) = SYS_READV
+//sys	writev(fd int, iovs []Iovec) (n int, err error) = SYS_WRITEV
+//sys	preadv(fd int, iovs []Iovec, offs_l uintptr, offs_h uintptr) (n int, err error) = SYS_PREADV
+//sys	pwritev(fd int, iovs []Iovec, offs_l uintptr, offs_h uintptr) (n int, err error) = SYS_PWRITEV
+//sys	preadv2(fd int, iovs []Iovec, offs_l uintptr, offs_h uintptr, flags int) (n int, err error) = SYS_PREADV2
+//sys	pwritev2(fd int, iovs []Iovec, offs_l uintptr, offs_h uintptr, flags int) (n int, err error) = SYS_PWRITEV2
+
+func bytes2iovec(bs [][]byte) []Iovec {
+	iovecs := make([]Iovec, len(bs))
+	for i, b := range bs {
+		iovecs[i].SetLen(len(b))
+		if len(b) > 0 {
+			iovecs[i].Base = &b[0]
+		} else {
+			iovecs[i].Base = (*byte)(unsafe.Pointer(&_zero))
+		}
+	}
+	return iovecs
+}
+
+// offs2lohi splits offs into its lower and upper unsigned long. On 64-bit
+// systems, hi will always be 0. On 32-bit systems, offs will be split in half.
+// preadv/pwritev chose this calling convention so they don't need to add a
+// padding-register for alignment on ARM.
+func offs2lohi(offs int64) (lo, hi uintptr) {
+	return uintptr(offs), uintptr(uint64(offs) >> SizeofLong)
+}
+
+func Readv(fd int, iovs [][]byte) (n int, err error) {
+	iovecs := bytes2iovec(iovs)
+	n, err = readv(fd, iovecs)
+	readvRacedetect(iovecs, n, err)
+	return n, err
+}
+
+func Preadv(fd int, iovs [][]byte, offset int64) (n int, err error) {
+	iovecs := bytes2iovec(iovs)
+	lo, hi := offs2lohi(offset)
+	n, err = preadv(fd, iovecs, lo, hi)
+	readvRacedetect(iovecs, n, err)
+	return n, err
+}
+
+func Preadv2(fd int, iovs [][]byte, offset int64, flags int) (n int, err error) {
+	iovecs := bytes2iovec(iovs)
+	lo, hi := offs2lohi(offset)
+	n, err = preadv2(fd, iovecs, lo, hi, flags)
+	readvRacedetect(iovecs, n, err)
+	return n, err
+}
+
+func readvRacedetect(iovecs []Iovec, n int, err error) {
+	if !raceenabled {
+		return
+	}
+	for i := 0; n > 0 && i < len(iovecs); i++ {
+		m := int(iovecs[i].Len)
+		if m > n {
+			m = n
+		}
+		n -= m
+		if m > 0 {
+			raceWriteRange(unsafe.Pointer(iovecs[i].Base), m)
+		}
+	}
+	if err == nil {
+		raceAcquire(unsafe.Pointer(&ioSync))
+	}
+}
+
+func Writev(fd int, iovs [][]byte) (n int, err error) {
+	iovecs := bytes2iovec(iovs)
+	if raceenabled {
+		raceReleaseMerge(unsafe.Pointer(&ioSync))
+	}
+	n, err = writev(fd, iovecs)
+	writevRacedetect(iovecs, n)
+	return n, err
+}
+
+func Pwritev(fd int, iovs [][]byte, offset int64) (n int, err error) {
+	iovecs := bytes2iovec(iovs)
+	if raceenabled {
+		raceReleaseMerge(unsafe.Pointer(&ioSync))
+	}
+	lo, hi := offs2lohi(offset)
+	n, err = pwritev(fd, iovecs, lo, hi)
+	writevRacedetect(iovecs, n)
+	return n, err
+}
+
+func Pwritev2(fd int, iovs [][]byte, offset int64, flags int) (n int, err error) {
+	iovecs := bytes2iovec(iovs)
+	if raceenabled {
+		raceReleaseMerge(unsafe.Pointer(&ioSync))
+	}
+	lo, hi := offs2lohi(offset)
+	n, err = pwritev2(fd, iovecs, lo, hi, flags)
+	writevRacedetect(iovecs, n)
+	return n, err
+}
+
+func writevRacedetect(iovecs []Iovec, n int) {
+	if !raceenabled {
+		return
+	}
+	for i := 0; n > 0 && i < len(iovecs); i++ {
+		m := int(iovecs[i].Len)
+		if m > n {
+			m = n
+		}
+		n -= m
+		if m > 0 {
+			raceReadRange(unsafe.Pointer(iovecs[i].Base), m)
+		}
+	}
+}
 
 // mmap varies by architecture; see syscall_linux_*.go.
 //sys	munmap(addr uintptr, length uintptr) (err error)
@@ -1708,11 +2011,30 @@ func Vmsplice(fd int, iovs []Iovec, flags int) (int, error) {
 	return int(n), nil
 }
 
+func isGroupMember(gid int) bool {
+	groups, err := Getgroups()
+	if err != nil {
+		return false
+	}
+
+	for _, g := range groups {
+		if g == gid {
+			return true
+		}
+	}
+	return false
+}
+
 //sys	faccessat(dirfd int, path string, mode uint32) (err error)
+//sys	Faccessat2(dirfd int, path string, mode uint32, flags int) (err error)
 
 func Faccessat(dirfd int, path string, mode uint32, flags int) (err error) {
-	if flags & ^(AT_SYMLINK_NOFOLLOW|AT_EACCESS) != 0 {
-		return EINVAL
+	if flags == 0 {
+		return faccessat(dirfd, path, mode)
+	}
+
+	if err := Faccessat2(dirfd, path, mode, flags); err != ENOSYS && err != EPERM {
+		return err
 	}
 
 	// The Linux kernel faccessat system call does not take any flags.
@@ -1721,8 +2043,8 @@ func Faccessat(dirfd int, path string, mode uint32, flags int) (err error) {
 	// Because people naturally expect syscall.Faccessat to act
 	// like C faccessat, we do the same.
 
-	if flags == 0 {
-		return faccessat(dirfd, path, mode)
+	if flags & ^(AT_SYMLINK_NOFOLLOW|AT_EACCESS) != 0 {
+		return EINVAL
 	}
 
 	var st Stat_t
@@ -1765,7 +2087,7 @@ func Faccessat(dirfd int, path string, mode uint32, flags int) (err error) {
 			gid = Getgid()
 		}
 
-		if uint32(gid) == st.Gid {
+		if uint32(gid) == st.Gid || isGroupMember(gid) {
 			fmode = (st.Mode >> 3) & 7
 		} else {
 			fmode = st.Mode & 7
@@ -1866,6 +2188,18 @@ func Klogset(typ int, arg int) (err error) {
 	return nil
 }
 
+// RemoteIovec is Iovec with the pointer replaced with an integer.
+// It is used for ProcessVMReadv and ProcessVMWritev, where the pointer
+// refers to a location in a different process' address space, which
+// would confuse the Go garbage collector.
+type RemoteIovec struct {
+	Base uintptr
+	Len  int
+}
+
+//sys	ProcessVMReadv(pid int, localIov []Iovec, remoteIov []RemoteIovec, flags uint) (n int, err error) = SYS_PROCESS_VM_READV
+//sys	ProcessVMWritev(pid int, localIov []Iovec, remoteIov []RemoteIovec, flags uint) (n int, err error) = SYS_PROCESS_VM_WRITEV
+
 /*
  * Unimplemented
  */
@@ -1960,7 +2294,6 @@ func Klogset(typ int, arg int) (err error) {
 // TimerGetoverrun
 // TimerGettime
 // TimerSettime
-// Timerfd
 // Tkill (obsolete)
 // Tuxcall
 // Umount2

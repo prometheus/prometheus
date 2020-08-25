@@ -36,8 +36,31 @@ absent(sum(nonexistent{job="myjob"}))
 # => {}
 ```
 
-In the second example, `absent()` tries to be smart about deriving labels of the
-1-element output vector from the input vector.
+In the first two examples, `absent()` tries to be smart about deriving labels
+of the 1-element output vector from the input vector.
+
+## `absent_over_time()`
+
+`absent_over_time(v range-vector)` returns an empty vector if the range vector
+passed to it has any elements and a 1-element vector with the value 1 if the
+range vector passed to it has no elements.
+
+This is useful for alerting on when no time series exist for a given metric name
+and label combination for a certain amount of time.
+
+```
+absent_over_time(nonexistent{job="myjob"}[1h])
+# => {job="myjob"}
+
+absent_over_time(nonexistent{job="myjob",instance=~".*"}[1h])
+# => {job="myjob"}
+
+absent_over_time(sum(nonexistent{job="myjob"})[1h:])
+# => {}
+```
+
+In the first two examples, `absent_over_time()` tries to be smart about deriving
+labels of the 1-element output vector from the input vector.
 
 ## `ceil()`
 
@@ -116,7 +139,7 @@ to the nearest integer.
 
 ## `histogram_quantile()`
 
-`histogram_quantile(φ float, b instant-vector)` calculates the φ-quantile (0 ≤ φ
+`histogram_quantile(φ scalar, b instant-vector)` calculates the φ-quantile (0 ≤ φ
 ≤ 1) from the buckets `b` of a
 [histogram](https://prometheus.io/docs/concepts/metric_types/#histogram). (See
 [histograms and summaries](https://prometheus.io/docs/practices/histograms) for
@@ -143,11 +166,11 @@ around the `rate()` function. Since the `le` label is required by
 `histogram_quantile()`, it has to be included in the `by` clause. The following
 expression aggregates the 90th percentile by `job`:
 
-    histogram_quantile(0.9, sum(rate(http_request_duration_seconds_bucket[10m])) by (job, le))
+    histogram_quantile(0.9, sum by (job, le) (rate(http_request_duration_seconds_bucket[10m])))
 
 To aggregate everything, specify only the `le` label:
 
-    histogram_quantile(0.9, sum(rate(http_request_duration_seconds_bucket[10m])) by (le))
+    histogram_quantile(0.9, sum by (le) (rate(http_request_duration_seconds_bucket[10m])))
 
 The `histogram_quantile()` function interpolates quantile values by
 assuming a linear distribution within a bucket. The highest bucket
@@ -159,8 +182,8 @@ is assumed to be 0 if the upper bound of that bucket is greater than
 bucket. Otherwise, the upper bound of the lowest bucket is returned
 for quantiles located in the lowest bucket.
 
-If `b` contains fewer than two buckets, `NaN` is returned. For φ < 0, `-Inf` is
-returned. For φ > 1, `+Inf` is returned.
+If `b` has 0 observations, `NaN` is returned. If `b` contains fewer than two buckets,
+`NaN` is returned. For φ < 0, `-Inf` is returned. For φ > 1, `+Inf` is returned.
 
 ## `holt_winters()`
 
@@ -178,8 +201,6 @@ more trends in the data is considered. Both `sf` and `tf` must be between 0 and
 for each of the given times in UTC. Returned values are from 0 to 23.
 
 ## `idelta()`
-
-`idelta(v range-vector)`
 
 `idelta(v range-vector)` calculates the difference between the last two samples
 in the range vector `v`, returning an instant vector with the given deltas and

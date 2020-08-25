@@ -151,21 +151,25 @@ eval instant at 50m histogram_quantile(0.5, rate(request_duration_seconds_bucket
 
 # A histogram with nonmonotonic bucket counts. This may happen when recording
 # rule evaluation or federation races scrape ingestion, causing some buckets
-# counts to be derived from fewer samples. The wrong answer we want to avoid
-# is for histogram_quantile(0.99, nonmonotonic_bucket) to return ~1000 instead
-# of 1.
+# counts to be derived from fewer samples.
 
 load 5m
-    nonmonotonic_bucket{le="0.1"}   0+1x10
-    nonmonotonic_bucket{le="1"}     0+9x10
-    nonmonotonic_bucket{le="10"}    0+8x10
-    nonmonotonic_bucket{le="100"}   0+8x10
+    nonmonotonic_bucket{le="0.1"}   0+2x10
+    nonmonotonic_bucket{le="1"}     0+1x10
+    nonmonotonic_bucket{le="10"}    0+5x10
+    nonmonotonic_bucket{le="100"}   0+4x10
     nonmonotonic_bucket{le="1000"}  0+9x10
-    nonmonotonic_bucket{le="+Inf"}  0+9x10
+    nonmonotonic_bucket{le="+Inf"}  0+8x10
 
 # Nonmonotonic buckets
+eval instant at 50m histogram_quantile(0.01, nonmonotonic_bucket)
+    {} 0.0045
+
+eval instant at 50m histogram_quantile(0.5, nonmonotonic_bucket)
+    {} 8.5
+
 eval instant at 50m histogram_quantile(0.99, nonmonotonic_bucket)
-    {} 0.989875
+    {} 979.75
 
 # Buckets with different representations of the same upper bound.
 eval instant at 50m histogram_quantile(0.5, rate(mixed_bucket[5m]))
@@ -179,3 +183,11 @@ eval instant at 50m histogram_quantile(0.75, rate(mixed_bucket[5m]))
 eval instant at 50m histogram_quantile(1, rate(mixed_bucket[5m]))
 	{instance="ins1", job="job1"} 0.2
 	{instance="ins2", job="job1"} NaN
+
+load 5m
+	empty_bucket{le="0.1", job="job1", instance="ins1"}    0x10
+	empty_bucket{le="0.2", job="job1", instance="ins1"}    0x10
+	empty_bucket{le="+Inf", job="job1", instance="ins1"}   0x10
+
+eval instant at 50m histogram_quantile(0.2, rate(empty_bucket[5m]))
+	{instance="ins1", job="job1"} NaN
