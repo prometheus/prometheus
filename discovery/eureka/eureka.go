@@ -162,21 +162,27 @@ func targetsForApp(app *Application) []model.LabelSet {
 			model.AddressLabel:  model.LabelValue(targetAddress),
 			model.InstanceLabel: model.LabelValue(t.InstanceID),
 
-			appNameLabel:                      lv(app.Name),
-			appInstanceHostNameLabel:          lv(t.HostName),
-			appInstanceHomePageURLLabel:       lv(t.HomePageURL),
-			appInstanceStatusPageURLLabel:     lv(t.StatusPageURL),
-			appInstanceHealthCheckURLLabel:    lv(t.HealthCheckURL),
-			appInstanceIPAddrLabel:            lv(t.IPAddr),
-			appInstanceVipAddressLabel:        lv(t.VipAddress),
-			appInstanceSecureVipAddressLabel:  lv(t.SecureVipAddress),
-			appInstanceStatusLabel:            lv(t.Status),
-			appInstancePortLabel:              lv(strconv.Itoa(t.Port.Port)),
-			appInstancePortEnabledLabel:       lv(strconv.FormatBool(t.Port.Enabled)),
-			appInstanceSecurePortLabel:        lv(strconv.Itoa(t.SecurePort.Port)),
-			appInstanceSecurePortEnabledLabel: lv(strconv.FormatBool(t.SecurePort.Enabled)),
-			appInstanceCountryIDLabel:         lv(strconv.Itoa(t.CountryID)),
-			appInstanceIDLabel:                lv(t.InstanceID),
+			appNameLabel:                     lv(app.Name),
+			appInstanceHostNameLabel:         lv(t.HostName),
+			appInstanceHomePageURLLabel:      lv(t.HomePageURL),
+			appInstanceStatusPageURLLabel:    lv(t.StatusPageURL),
+			appInstanceHealthCheckURLLabel:   lv(t.HealthCheckURL),
+			appInstanceIPAddrLabel:           lv(t.IPAddr),
+			appInstanceVipAddressLabel:       lv(t.VipAddress),
+			appInstanceSecureVipAddressLabel: lv(t.SecureVipAddress),
+			appInstanceStatusLabel:           lv(t.Status),
+			appInstanceCountryIDLabel:        lv(strconv.Itoa(t.CountryID)),
+			appInstanceIDLabel:               lv(t.InstanceID),
+		}
+
+		if t.Port != nil {
+			target[appInstancePortLabel] = lv(strconv.Itoa(t.Port.Port))
+			target[appInstancePortEnabledLabel] = lv(strconv.FormatBool(t.Port.Enabled))
+		}
+
+		if t.SecurePort != nil {
+			target[appInstanceSecurePortLabel] = lv(strconv.Itoa(t.SecurePort.Port))
+			target[appInstanceSecurePortEnabledLabel] = lv(strconv.FormatBool(t.SecurePort.Enabled))
 		}
 
 		if t.DataCenterInfo != nil {
