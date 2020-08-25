@@ -1063,8 +1063,8 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 			File:           grp.File(),
 			Interval:       grp.Interval().Seconds(),
 			Rules:          []rule{},
-			EvaluationTime: grp.GetEvaluationDuration().Seconds(),
-			LastEvaluation: grp.GetEvaluationTimestamp(),
+			EvaluationTime: grp.GetEvaluationTime().Seconds(),
+			LastEvaluation: grp.GetLastEvaluation(),
 		}
 		for _, r := range grp.Rules() {
 			var enrichedRule rule
