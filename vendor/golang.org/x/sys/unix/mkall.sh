@@ -48,7 +48,7 @@ esac
 
 if [[ "$GOOS" = "linux" ]]; then
 	# Use the Docker-based build system
-	# Files generated through docker (use $cmd so you can Ctl-C the build or run)
+	# Files generated through docker (use $cmd so you can Ctrl-C the build or run)
 	$cmd docker build --tag generate:$GOOS $GOOS
 	$cmd docker run --interactive --tty --volume $(cd -- "$(dirname -- "$0")" && /bin/pwd):/build generate:$GOOS
 	exit
