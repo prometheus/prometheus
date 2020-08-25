@@ -160,6 +160,8 @@ func targetsForApp(app *Application) []model.LabelSet {
 		var targetAddress string
 		if t.Port != nil {
 			targetAddress = net.JoinHostPort(t.HostName, strconv.Itoa(t.Port.Port))
+		} else {
+			targetAddress = net.JoinHostPort(t.HostName, "80")
 		}
 
 		target := model.LabelSet{
