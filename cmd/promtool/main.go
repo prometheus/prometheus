@@ -70,9 +70,11 @@ func main() {
 
 	queryCmd := app.Command("query", "Run query against a Prometheus server.")
 	queryCmdFmt := queryCmd.Flag("format", "Output format of the query.").Short('o').Default("promql").Enum("promql", "json")
+
 	queryInstantCmd := queryCmd.Command("instant", "Run instant query.")
-	queryServer := queryInstantCmd.Arg("server", "Prometheus server to query.").Required().String()
-	queryExpr := queryInstantCmd.Arg("expr", "PromQL query expression.").Required().String()
+	queryInstantServer := queryInstantCmd.Arg("server", "Prometheus server to query.").Required().String()
+	queryInstantExpr := queryInstantCmd.Arg("expr", "PromQL query expression.").Required().String()
+	queryInstantTime := queryInstantCmd.Flag("time", "Query evaluation time (RFC3339 or Unix timestamp).").String()
 
 	queryRangeCmd := queryCmd.Command("range", "Run range query.")
 	queryRangeServer := queryRangeCmd.Arg("server", "Prometheus server to query.").Required().String()
@@ -153,7 +155,7 @@ func main() {
 		os.Exit(CheckMetrics())
 
 	case queryInstantCmd.FullCommand():
-		os.Exit(QueryInstant(*queryServer, *queryExpr, p))
+		os.Exit(QueryInstant(*queryInstantServer, *queryInstantExpr, *queryInstantTime, p))
 
 	case queryRangeCmd.FullCommand():
 		os.Exit(QueryRange(*queryRangeServer, *queryRangeHeaders, *queryRangeExpr, *queryRangeBegin, *queryRangeEnd, *queryRangeStep, p))
@@ -427,7 +429,7 @@ func CheckMetrics() int {
 }
 
 // QueryInstant performs an instant query against a Prometheus server.
-func QueryInstant(url, query string, p printer) int {
+func QueryInstant(url, query, evalTime string, p printer) int {
 	config := api.Config{
 		Address: url,
 	}
@@ -439,11 +441,20 @@ func QueryInstant(url, query string, p printer) int {
 		return 1
 	}
 
+	eTime := time.Now()
+	if evalTime != "" {
+		eTime, err = parseTime(evalTime)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error parsing evaluation time:", err)
+			return 1
+		}
+	}
+
 	// Run query against client.
 	api := v1.NewAPI(c)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	val, _, err := api.Query(ctx, query, time.Now()) // Ignoring warnings for now.
+	val, _, err := api.Query(ctx, query, eTime) // Ignoring warnings for now.
 	cancel()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "query error:", err)
