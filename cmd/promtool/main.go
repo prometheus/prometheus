@@ -434,20 +434,20 @@ func CheckMetrics() int {
 // PrettifyRules prettifies the rule files.
 func PrettifyRules(files ...string) int {
 	var (
-		errors             []error
+		error              []error
 		formattedExprCount int
 	)
 	for _, filePath := range files {
 		rgs, errs := rulefmt.ParseFile(filePath)
 		if len(errs) > 0 {
-			errors = append(errors, errs...)
+			error = append(error, errs...)
 			continue
 		}
 		for i, groups := range rgs.Groups {
 			for j, rules := range groups.Rules {
 				prettifiedExpr, err := parser.PromqlPrettier(rules.Expr.Value).Prettify()
 				if err != nil {
-					errors = append(errors, err)
+					error = append(error, err)
 					continue
 				}
 				rgs.Groups[i].Rules[j].Expr.SetString(prettifiedExpr)
@@ -456,18 +456,28 @@ func PrettifyRules(files ...string) int {
 		}
 		data, err := yaml.Marshal(rgs)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err.Error())
+			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
-		if err = ioutil.WriteFile(filePath, data, 0666); err != nil {
-			fmt.Fprintln(os.Stderr, fmt.Sprintf("failed formatted %s file:", filePath), err.Error())
-			return 1
+		tempFile, err := ioutil.TempFile(".", "rules.*.temp")
+		if err != nil {
+			fmt.Fprintln(os.Stderr, errors.Wrap(err, "error creating a temporary rules file"))
+		}
+		defer os.Remove(tempFile.Name())
+		if _, err := tempFile.Write(data); err != nil {
+			fmt.Fprintln(os.Stderr, errors.Wrap(err, "error writing to temporary rules file"))
+		}
+		if err := os.Rename(tempFile.Name(), filePath); err != nil {
+			fmt.Fprintln(os.Stderr, errors.Wrap(err, "error renaming temporary rules file"))
+		}
+		if err := tempFile.Close(); err != nil {
+			fmt.Fprintln(os.Stderr, errors.Wrap(err, "error closing the temporary rules file"))
 		}
 	}
-	if len(errors) > 0 {
-		fmt.Fprintln(os.Stderr, "incomplete formatting due to errors.")
-		for _, err := range errors {
-			fmt.Fprintln(os.Stderr, err.Error())
+	if len(error) > 0 {
+		fmt.Fprintf(os.Stderr, "incomplete formatting due to %d errors", len(error))
+		for _, err := range error {
+			fmt.Fprintln(os.Stderr, err)
 		}
 		return 1
 	}
