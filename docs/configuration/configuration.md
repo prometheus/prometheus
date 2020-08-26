@@ -294,7 +294,7 @@ A `tls_config` allows configuring TLS connections.
 
 Azure SD configurations allow retrieving scrape targets from Azure VMs.
 
-The following meta labels are available on targets during relabeling:
+The following meta labels are available on targets during [relabeling](#relabel_config):
 
 * `__meta_azure_machine_id`: the machine ID
 * `__meta_azure_machine_location`: the location the machine runs in
@@ -1288,7 +1288,7 @@ stored in [Zookeeper](https://zookeeper.apache.org/). Serversets are commonly
 used by [Finagle](https://twitter.github.io/finagle/) and
 [Aurora](https://aurora.apache.org/).
 
-The following meta labels are available on targets during relabeling:
+The following meta labels are available on targets during [relabeling](#relabel_config):
 
 * `__meta_serverset_path`: the full path to the serverset member node in Zookeeper
 * `__meta_serverset_endpoint_host`: the host of the default endpoint
