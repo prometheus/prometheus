@@ -207,6 +207,10 @@ dns_sd_configs:
 ec2_sd_configs:
   [ - <ec2_sd_config> ... ]
 
+# List of Eureka service discovery configurations.
+eureka_sd_configs:
+  [ - <eureka_sd_config> ... ]
+
 # List of file service discovery configurations.
 file_sd_configs:
   [ - <file_sd_config> ... ]
@@ -1381,6 +1385,72 @@ tls_config:
   [ <tls_config> ]
 ```
 
+### `<eureka_sd_config>`
+
+Eureka SD configurations allow retrieving scrape targets using the
+[Eureka](https://github.com/Netflix/eureka) REST API. Prometheus
+will periodically check the REST endpoint and
+create a target for every app instance.
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_eureka_app_name`: the name of the app
+* `__meta_eureka_app_instance_id`: the ID of the app instance
+* `__meta_eureka_app_instance_hostname`: the hostname of the instance
+* `__meta_eureka_app_instance_homepage_url`: the homepage url of the app instance
+* `__meta_eureka_app_instance_statuspage_url`: the status page url of the app instance
+* `__meta_eureka_app_instance_healthcheck_url`: the health check url of the app instance
+* `__meta_eureka_app_instance_ip_addr`: the IP address of the app instance
+* `__meta_eureka_app_instance_vip_address`: the VIP address of the app instance
+* `__meta_eureka_app_instance_secure_vip_address`: the secure VIP address of the app instance
+* `__meta_eureka_app_instance_status`: the status of the app instance
+* `__meta_eureka_app_instance_port`: the port of the app instance
+* `__meta_eureka_app_instance_port_enabled`: the port enabled of the app instance
+* `__meta_eureka_app_instance_secure_port`: the secure port address of the app instance
+* `__meta_eureka_app_instance_secure_port_enabled`: the secure port of the app instance
+* `__meta_eureka_app_instance_country_id`: the country ID of the app instance
+* `__meta_eureka_app_instance_metadata_<metadataname>`: app instance metadata
+* `__meta_eureka_app_instance_datacenterinfo_name`: the datacenter name of the app instance
+* `__meta_eureka_app_instance_datacenterinfo_<metadataname>`: the datacenter metadata
+
+See below for the configuration options for Eureka discovery:
+
+```yaml
+# The URL to connect to the Eureka server.
+server: <string>
+
+# Sets the `Authorization` header on every request with the
+# configured username and password.
+# password and password_file are mutually exclusive.
+basic_auth:
+  [ username: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
+
+# Sets the `Authorization` header on every request with
+# the configured bearer token. It is mutually exclusive with `bearer_token_file`.
+[ bearer_token: <string> ]
+
+# Sets the `Authorization` header on every request with the bearer token
+# read from the configured file. It is mutually exclusive with `bearer_token`.
+[ bearer_token_file: <filename> ]
+
+# Configures the scrape request's TLS settings.
+tls_config:
+  [ <tls_config> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+
+# Refresh interval to re-read the app instance list.
+[ refresh_interval: <duration> | default = 30s ]
+```
+
+See [the Prometheus eureka-sd configuration file](/documentation/examples/prometheus-eureka.yml)
+for a practical example on how to set up your Eureka app and your Prometheus
+configuration.
+
+
 ### `<static_config>`
 
 A `static_config` allows specifying a list of targets and a common label set
@@ -1556,6 +1626,10 @@ dns_sd_configs:
 # List of EC2 service discovery configurations.
 ec2_sd_configs:
   [ - <ec2_sd_config> ... ]
+
+# List of Eureka service discovery configurations.
+eureka_sd_configs:
+  [ - <eureka_sd_config> ... ]
 
 # List of file service discovery configurations.
 file_sd_configs:
