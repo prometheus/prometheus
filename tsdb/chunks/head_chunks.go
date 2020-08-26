@@ -354,6 +354,7 @@ func (cdm *ChunkDiskMapper) cut() (returnErr error) {
 		return err
 	}
 
+	cdm.readPathMtx.Lock()
 	cdm.curFileSequence = seq
 	cdm.curFile = newFile
 	if cdm.chkWriter != nil {
@@ -362,7 +363,6 @@ func (cdm *ChunkDiskMapper) cut() (returnErr error) {
 		cdm.chkWriter = bufio.NewWriterSize(newFile, writeBufferSize)
 	}
 
-	cdm.readPathMtx.Lock()
 	cdm.closers[cdm.curFileSequence] = mmapFile
 	cdm.mmappedChunkFiles[cdm.curFileSequence] = &mmappedChunkFile{byteSlice: realByteSlice(mmapFile.Bytes())}
 	cdm.readPathMtx.Unlock()
@@ -720,13 +720,13 @@ func (cdm *ChunkDiskMapper) DeleteCorrupted(originalErr error) error {
 
 	// Delete all the head chunk files following the corrupt head chunk file.
 	segs := []int{}
-	cdm.readPathMtx.Lock()
+	cdm.readPathMtx.RLock()
 	for seg := range cdm.mmappedChunkFiles {
 		if seg >= cerr.FileIndex {
 			segs = append(segs, seg)
 		}
 	}
-	cdm.readPathMtx.Unlock()
+	cdm.readPathMtx.RUnlock()
 
 	return cdm.deleteFiles(segs)
 }
