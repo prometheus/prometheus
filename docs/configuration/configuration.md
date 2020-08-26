@@ -1419,6 +1419,29 @@ See below for the configuration options for Eureka discovery:
 # The URL to connect to the Eureka server.
 server: <string>
 
+# Sets the `Authorization` header on every request with the
+# configured username and password.
+# password and password_file are mutually exclusive.
+basic_auth:
+  [ username: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
+
+# Sets the `Authorization` header on every request with
+# the configured bearer token. It is mutually exclusive with `bearer_token_file`.
+[ bearer_token: <string> ]
+
+# Sets the `Authorization` header on every request with the bearer token
+# read from the configured file. It is mutually exclusive with `bearer_token`.
+[ bearer_token_file: <filename> ]
+
+# Configures the scrape request's TLS settings.
+tls_config:
+  [ <tls_config> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+
 # Refresh interval to re-read the app instance list.
 [ refresh_interval: <duration> | default = 30s ]
 ```
