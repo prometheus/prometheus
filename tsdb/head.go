@@ -736,7 +736,9 @@ func (h *Head) loadMmappedChunks() (map[uint64][]*mmappedChunk, error) {
 		slice := mmappedChunks[seriesRef]
 		if len(slice) > 0 {
 			if slice[len(slice)-1].maxTime >= mint {
-				return errors.Errorf("out of sequence m-mapped chunk for series ref %d", seriesRef)
+				return &chunks.CorruptionErr{
+					Err: errors.Errorf("out of sequence m-mapped chunk for series ref %d", seriesRef),
+				}
 			}
 		}
 

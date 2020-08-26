@@ -633,6 +633,11 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef, chunkRef uint64, 
 			}
 
 			if err := f(seriesRef, chunkRef, mint, maxt, numSamples); err != nil {
+				if cerr, ok := err.(*CorruptionErr); ok {
+					cerr.Dir = cdm.dir.Name()
+					cerr.FileIndex = segID
+					return cerr
+				}
 				return err
 			}
 		}
