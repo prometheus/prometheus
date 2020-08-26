@@ -539,9 +539,7 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef, chunkRef uint64, 
 	defer cdm.writePathMtx.Unlock()
 
 	defer func() {
-		if err == nil {
-			cdm.fileMaxtSet = true
-		}
+		cdm.fileMaxtSet = true
 	}()
 
 	chkCRC32 := newCRC32()
