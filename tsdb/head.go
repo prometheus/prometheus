@@ -171,8 +171,8 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			Help: "Total number of WAL corruptions.",
 		}),
 		walTotalReplayDuration: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "prometheus_tsdb_wal_total_replay_duration_seconds",
-			Help: "Duration of WAL to replay.",
+			Name: "prometheus_tsdb_data_replay_duration_seconds",
+			Help: "Time taken to replay the data on disk.",
 		}),
 		samplesAppended: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_head_samples_appended_total",
