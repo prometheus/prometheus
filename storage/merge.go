@@ -145,8 +145,8 @@ func (q *mergeGenericQuerier) Select(sortSeries bool, hints *SelectHints, matche
 
 type labelGenericQueriers []genericQuerier
 
-func (l labelGenericQueriers) Len() int               { return len(l) }
-func (l labelGenericQueriers) Get(i int) LabelQuerier { return l[i] }
+func (l labelGenericQueriers) Len() int                     { return len(l) }
+func (l labelGenericQueriers) Get(i int) LabelCloserQuerier { return l[i] }
 func (l labelGenericQueriers) SplitByHalf() (labelGenericQueriers, labelGenericQueriers) {
 	i := len(l) / 2
 	return l[:i], l[i:]

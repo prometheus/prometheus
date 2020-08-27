@@ -21,8 +21,7 @@ import (
 )
 
 type genericQuerier interface {
-	LabelQuerier
-	Closer
+	LabelCloserQuerier
 	Select(bool, *SelectHints, ...*labels.Matcher) genericSeriesSet
 }
 
@@ -52,8 +51,7 @@ func (a *genericChunkSeriesSetAdapter) At() Labels {
 }
 
 type genericQuerierAdapter struct {
-	LabelQuerier
-	Closer
+	LabelCloserQuerier
 
 	// One-of. If both are set, Querier will be used.
 	q  Querier
@@ -68,11 +66,11 @@ func (q *genericQuerierAdapter) Select(sortSeries bool, hints *SelectHints, matc
 }
 
 func newGenericQuerierFrom(q Querier) genericQuerier {
-	return &genericQuerierAdapter{Closer: q, LabelQuerier: q, q: q}
+	return &genericQuerierAdapter{LabelCloserQuerier: q, q: q}
 }
 
 func newGenericQuerierFromChunk(cq ChunkQuerier) genericQuerier {
-	return &genericQuerierAdapter{Closer: cq, LabelQuerier: cq, cq: cq}
+	return &genericQuerierAdapter{LabelCloserQuerier: cq, cq: cq}
 }
 
 type querierAdapter struct {

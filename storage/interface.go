@@ -66,10 +66,7 @@ type Queryable interface {
 
 // Querier provides querying access over time series data of a fixed time range.
 type Querier interface {
-	LabelQuerier
-
-	// Closer releases the resources of the Querier.
-	Closer
+	LabelCloserQuerier
 
 	// Select returns a set of series that matches the given label matchers.
 	// Caller can specify if it requires returned series to be sorted. Prefer not requiring sorting for better performance.
@@ -88,10 +85,7 @@ type ChunkQueryable interface {
 
 // ChunkQuerier provides querying access over time series data of a fixed time range.
 type ChunkQuerier interface {
-	LabelQuerier
-
-	// Closer releases the resources of the ChunkQuerier.
-	Closer
+	LabelCloserQuerier
 
 	// Select returns a set of series that matches the given label matchers.
 	// Caller can specify if it requires returned series to be sorted. Prefer not requiring sorting for better performance.
@@ -101,22 +95,19 @@ type ChunkQuerier interface {
 	Select(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) ChunkSeriesSet
 }
 
-// Closer is io.Closer.
-type Closer interface {
-	// Close releases all resources required by queriers.
-	// This might be mean that other operations like head compaction or block release are
-	// blocked until this is closed.
-	Close() error
-}
-
-// LabelQuerier provides querying access over labels.
-type LabelQuerier interface {
+// LabelCloserQuerier provides querying access over labels.
+type LabelCloserQuerier interface {
 	// LabelValues returns all potential values for a label name.
 	// It is not safe to use the strings beyond the lifefime of the querier.
 	LabelValues(name string) ([]string, Warnings, error)
 
 	// LabelNames returns all the unique label names present in the block in sorted order.
 	LabelNames() ([]string, Warnings, error)
+
+	// Close releases all resources required by queriers.
+	// This might be mean that other operations like head compaction or block release are
+	// blocked until this is closed.
+	Close() error
 }
 
 // SelectHints specifies hints passed for data selections.
