@@ -27,12 +27,10 @@ const (
 	defaultIndent = "  "
 )
 
-// Prettier handles the prettifying and formatting operation over a
-// list of rules files or a single expression.
-type Prettier struct {
-	Node       Expr
-	expression string
-	pd         *padder
+// prettier implements the prettifying functionality.
+type prettier struct {
+	Node Expr
+	pd   *padder
 }
 
 type padder struct {
@@ -59,31 +57,29 @@ type padder struct {
 	isFirstLabel     bool
 }
 
-// PromqlPrettier returns a new prettier.
-func PromqlPrettier(expression string) *Prettier {
-	return &Prettier{
-		expression: expression,
-		pd:         &padder{indent: defaultIndent, isNewLineApplied: true, columnLimit: columnLimit},
+// Prettify prettifies the expression passed as an argument. It standardizes
+// the input expression, rearranges the lexical items and calls prettify.
+// The returned string is a formatted expression.
+func Prettify(expression string) (string, error) {
+	ptr := &prettier{
+		pd: &padder{indent: defaultIndent, isNewLineApplied: true, columnLimit: columnLimit},
 	}
-}
-
-// Prettify prettifies the current expression in the prettier. It standardizes the input expression,
-// sorts the items slice and calls the prettify.
-func (p *Prettier) Prettify() (string, error) {
 	standardizeExprStr := stringifyItems(
-		p.sortItems(p.lexItems(p.expression)),
+		ptr.rearrangeItems(ptr.lexItems(expression)),
 	)
-	if err := p.parseExpr(standardizeExprStr); err != nil {
-		return p.expression, err
+	if err := ptr.parseExpr(standardizeExprStr); err != nil {
+		return expression, err
 	}
-	formattedExpr, err := p.prettify(p.lexItems(standardizeExprStr))
+	formattedExpr, err := ptr.prettify(ptr.lexItems(standardizeExprStr))
 	if err != nil {
-		return p.expression, errors.Wrap(err, "Prettify")
+		return expression, errors.Wrap(err, "Prettify")
 	}
 	return formattedExpr, nil
 }
 
-func (p *Prettier) sortItems(items []Item) []Item {
+// rearrangeItems rearranges the lexical items slice to ensure proper order
+// of items before prettifying the input expression.
+func (p *prettier) rearrangeItems(items []Item) []Item {
 	for i := 0; i < len(items); i++ {
 		item := items[i]
 		switch item.Typ {
@@ -275,7 +271,7 @@ func (p *Prettier) sortItems(items []Item) []Item {
 	return p.refreshLexItems(items)
 }
 
-func (p *Prettier) prettify(items []Item) (string, error) {
+func (p *prettier) prettify(items []Item) (string, error) {
 	var (
 		it     = itemsIterator{items, -1}
 		result = ""
@@ -453,12 +449,12 @@ func (p *Prettier) prettify(items []Item) (string, error) {
 // refreshLexItems refreshes the contents of the lex slice and the properties
 // within it. This is expected to be called after sorting the lexItems in the
 // pre-format checks.
-func (p *Prettier) refreshLexItems(items []Item) []Item {
+func (p *prettier) refreshLexItems(items []Item) []Item {
 	return p.lexItems(stringifyItems(items))
 }
 
 // lexItems converts the given expression into a slice of Items.
-func (p *Prettier) lexItems(expression string) (items []Item) {
+func (p *prettier) lexItems(expression string) (items []Item) {
 	var (
 		l    = Lex(expression)
 		item Item
@@ -469,7 +465,7 @@ func (p *Prettier) lexItems(expression string) (items []Item) {
 	return
 }
 
-func (p *Prettier) parseExpr(expression string) error {
+func (p *prettier) parseExpr(expression string) error {
 	expr, err := ParseExpr(expression)
 	if err != nil {
 		return errors.Wrap(err, "parse error")

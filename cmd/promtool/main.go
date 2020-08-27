@@ -445,7 +445,7 @@ func PrettifyRules(files ...string) int {
 		}
 		for i, groups := range rgs.Groups {
 			for j, rules := range groups.Rules {
-				prettifiedExpr, err := parser.PromqlPrettier(rules.Expr.Value).Prettify()
+				prettifiedExpr, err := parser.Prettify(rules.Expr.Value)
 				if err != nil {
 					error = append(error, err)
 					continue

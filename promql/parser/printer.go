@@ -15,13 +15,8 @@ package parser
 
 import (
 	"fmt"
-	"github.com/go-kit/kit/log/level"
-	"github.com/pkg/errors"
-	"github.com/prometheus/common/promlog"
 	"strings"
 )
-
-var logger = promlog.New(&promlog.Config{})
 
 // Tree returns a string of the tree structure of the given node.
 func Tree(node Node) string {
@@ -61,91 +56,72 @@ func (es Expressions) String() (s string) {
 }
 
 func (node *AggregateExpr) String() string {
-	prettyExpr, err := PromqlPrettier(node.ExprString()).Prettify()
-	if err != nil {
-		level.Error(logger).Log(errors.Wrap(err, "pretty-print"))
-		return node.ExprString()
-	}
-	return prettyExpr
+	return prettify(node)
 }
 
 func (node *BinaryExpr) String() string {
-	prettyExpr, err := PromqlPrettier(node.ExprString()).Prettify()
-	if err != nil {
-		level.Error(logger).Log(errors.Wrap(err, "pretty-print"))
-		return node.ExprString()
-	}
-	return prettyExpr
+	return prettify(node)
 }
 
 func (node *Call) String() string {
-	prettyExpr, err := PromqlPrettier(node.ExprString()).Prettify()
-	if err != nil {
-		level.Error(logger).Log(errors.Wrap(err, "pretty-print"))
-		return node.ExprString()
-	}
-	return prettyExpr
+	return prettify(node)
 }
 
 func (node *MatrixSelector) String() string {
-	prettyExpr, err := PromqlPrettier(node.ExprString()).Prettify()
-	if err != nil {
-		level.Error(logger).Log(errors.Wrap(err, "pretty-print"))
-		return node.ExprString()
-	}
-	return prettyExpr
+	return prettify(node)
 }
 
 func (node *SubqueryExpr) String() string {
-	prettyExpr, err := PromqlPrettier(node.ExprString()).Prettify()
-	if err != nil {
-		level.Error(logger).Log(errors.Wrap(err, "pretty-print"))
-		return node.ExprString()
-	}
-	return prettyExpr
+	return prettify(node)
 }
 
 func (node *NumberLiteral) String() string {
-	prettyExpr, err := PromqlPrettier(node.ExprString()).Prettify()
-	if err != nil {
-		level.Error(logger).Log(errors.Wrap(err, "pretty-print"))
-		return node.ExprString()
-	}
-	return prettyExpr
+	return prettify(node)
 }
 
 func (node *ParenExpr) String() string {
-	prettyExpr, err := PromqlPrettier(node.ExprString()).Prettify()
-	if err != nil {
-		level.Error(logger).Log(errors.Wrap(err, "pretty-print"))
-		return node.ExprString()
-	}
-	return prettyExpr
+	return prettify(node)
 }
 
 func (node *StringLiteral) String() string {
-	prettyExpr, err := PromqlPrettier(node.ExprString()).Prettify()
-	if err != nil {
-		level.Error(logger).Log(errors.Wrap(err, "pretty-print"))
-		return node.ExprString()
-	}
-	return prettyExpr
+	return prettify(node)
 }
 
 func (node *UnaryExpr) String() string {
-	prettyExpr, err := PromqlPrettier(node.ExprString()).Prettify()
-	if err != nil {
-		level.Error(logger).Log(errors.Wrap(err, "pretty-print"))
-		return node.ExprString()
-	}
-	return prettyExpr
+	return prettify(node)
 }
 
 func (node *VectorSelector) String() string {
-	prettyExpr, err := PromqlPrettier(node.ExprString()).Prettify()
-	if err != nil {
-		level.Error(logger).Log(errors.Wrap(err, "pretty-print"))
-		return node.ExprString()
+	return prettify(node)
+}
+
+func prettify(node Expr) string {
+	var expression string
+	switch n := node.(type) {
+	case *AggregateExpr:
+		expression = n.ExprString()
+	case *BinaryExpr:
+		expression = n.ExprString()
+	case *Call:
+		expression = n.ExprString()
+	case *MatrixSelector:
+		expression = n.ExprString()
+	case *SubqueryExpr:
+		expression = n.ExprString()
+	case *NumberLiteral:
+		expression = n.ExprString()
+	case *StringLiteral:
+		expression = n.ExprString()
+	case *VectorSelector:
+		expression = n.ExprString()
+	case *ParenExpr:
+		expression = n.ExprString()
+	case *UnaryExpr:
+		expression = n.ExprString()
 	}
-	return prettyExpr
+	formattedExpr, err := Prettify(expression)
+	if err != nil {
+		return expression
+	}
+	return formattedExpr
 }

@@ -179,27 +179,30 @@ func newParser(input string) *parser {
 }
 
 func setExprStr(expr *Expr, input string) {
+	if expr == nil {
+		return
+	}
 	switch e := (*expr).(type) {
 	case *AggregateExpr:
-		e.ExprExtensions.SetExprString(input)
+		e.SetExprString(input)
 	case *BinaryExpr:
-		e.ExprExtensions.SetExprString(input)
+		e.SetExprString(input)
 	case *Call:
-		e.ExprExtensions.SetExprString(input)
+		e.SetExprString(input)
 	case *SubqueryExpr:
-		e.ExprExtensions.SetExprString(input)
+		e.SetExprString(input)
 	case *ParenExpr:
-		e.ExprExtensions.SetExprString(input)
+		e.SetExprString(input)
 	case *UnaryExpr:
-		e.ExprExtensions.SetExprString(input)
+		e.SetExprString(input)
 	case *MatrixSelector:
-		e.ExprExtensions.SetExprString(input)
+		e.SetExprString(input)
 	case *NumberLiteral:
-		e.ExprExtensions.SetExprString(input)
+		e.SetExprString(input)
 	case *StringLiteral:
-		e.ExprExtensions.SetExprString(input)
+		e.SetExprString(input)
 	case *VectorSelector:
-		e.ExprExtensions.SetExprString(input)
+		e.SetExprString(input)
 	}
 }
 
