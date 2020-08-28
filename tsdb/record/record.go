@@ -254,7 +254,7 @@ func (e *Encoder) Metadata(series []RefMetadata, b []byte) []byte {
 		// Reserve space to write the size of the metadata fields
 		// so once we have encoded the fields, we can rewind, write the size
 		// then copy the encoded fields backwards. This allows for the
-		// buffer to be used bothed for staging the encoding of the
+		// buffer to be used both for staging the encoding of the
 		// fields, then also moving them into place once size is known
 		// and written to the stream.
 		buf.PutBE64(math.MaxUint64)

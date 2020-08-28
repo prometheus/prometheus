@@ -163,3 +163,71 @@ func TestRecord_Type(t *testing.T) {
 	recordType = dec.Type([]byte{0})
 	testutil.Equals(t, Unknown, recordType)
 }
+
+func TestRecord_MetadataDecodeUnknownFields(t *testing.T) {
+	var enc encoding.Encbuf
+	var encFields encoding.Encbuf
+	var dec Decoder
+
+	// Write record type.
+	enc.PutByte(byte(Metadata))
+
+	// Write first metadata entry, all known fields.
+	enc.PutUvarint64(100)
+	encFields.Reset()
+	encFields.PutUvarintStr(string(textparse.MetricTypeCounter))
+	encFields.PutUvarintStr("")
+	encFields.PutUvarintStr("counts the alphabet")
+	// Write size of encoded fields then the encoded fields.
+	enc.PutUvarint(encFields.Len())
+	enc.B = append(enc.B, encFields.B...)
+
+	// Write second metadata entry, known fields + unknown fields.
+	enc.PutUvarint64(1)
+	encFields.Reset()
+	// Known fields.
+	encFields.PutUvarintStr(string(textparse.MetricTypeCounter))
+	encFields.PutUvarintStr("seconds")
+	encFields.PutUvarintStr("counts CPU time")
+	// Unknown fields.
+	encFields.PutUvarintStr("some unknown field")
+	encFields.PutByte('a')
+	encFields.PutUvarint64(42)
+	// Write size of encoded fields then the encoded fields.
+	enc.PutUvarint(encFields.Len())
+	enc.B = append(enc.B, encFields.B...)
+
+	// Write third metadata entry, all known fields.
+	enc.PutUvarint64(435245)
+	encFields.Reset()
+	encFields.PutUvarintStr(string(textparse.MetricTypeCounter))
+	encFields.PutUvarintStr("bytes")
+	encFields.PutUvarintStr("counts bytes")
+	// Write size of encoded fields then the encoded fields.
+	enc.PutUvarint(encFields.Len())
+	enc.B = append(enc.B, encFields.B...)
+
+	// Should yield known fields for all entries and skip over unknown fields.
+	expectedMetadata := []RefMetadata{
+		{
+			Ref:  100,
+			Type: textparse.MetricTypeCounter,
+			Unit: "",
+			Help: "counts the alphabet",
+		}, {
+			Ref:  1,
+			Type: textparse.MetricTypeCounter,
+			Unit: "seconds",
+			Help: "counts CPU time",
+		}, {
+			Ref:  435245,
+			Type: textparse.MetricTypeCounter,
+			Unit: "bytes",
+			Help: "counts bytes",
+		},
+	}
+
+	decMetadata, err := dec.Metadata(enc.Get(), nil)
+	testutil.Ok(t, err)
+	testutil.Equals(t, expectedMetadata, decMetadata)
+}
