@@ -126,9 +126,22 @@ func (d *Decoder) Metadata(rec []byte, metadata []RefMetadata) ([]RefMetadata, e
 	}
 	for len(dec.B) > 0 && dec.Err() == nil {
 		ref := dec.Uvarint64()
+		size := dec.Uvarint()
+
+		remainingBeforeReadFields := dec.Len()
+
 		typ := dec.UvarintStr()
 		unit := dec.UvarintStr()
 		help := dec.UvarintStr()
+
+		// The bytes consumed will have shrunk, therefore delta between
+		// bytes unread before and bytes unread after is how much we consumed.
+		remainingAfterReadFields := dec.Len()
+		sizeFieldsRead := remainingBeforeReadFields - remainingAfterReadFields
+		if sizeFieldsUnread := size - sizeFieldsRead; sizeFieldsUnread > 0 {
+			// Need to skip fields that we didn't read and don't know about.
+			dec.Skip(sizeFieldsUnread)
+		}
 
 		metadata = append(metadata, RefMetadata{
 			Ref:  ref,
@@ -235,9 +248,38 @@ func (e *Encoder) Metadata(series []RefMetadata, b []byte) []byte {
 
 	for _, s := range series {
 		buf.PutUvarint64(s.Ref)
+
+		sizeAfterSeriesRef := buf.Len()
+
+		// Reserve space to write the size of the metadata fields
+		// so once we have encoded the fields, we can rewind, write the size
+		// then copy the encoded fields backwards. This allows for the
+		// buffer to be used bothed for staging the encoding of the
+		// fields, then also moving them into place once size is known
+		// and written to the stream.
+		buf.PutBE64(math.MaxUint64)
+
+		sizeBeforeEncodeFields := buf.Len()
 		buf.PutUvarintStr(string(s.Type))
 		buf.PutUvarintStr(string(s.Unit))
 		buf.PutUvarintStr(string(s.Help))
+		sizeAfterEncodeFields := buf.Len()
+		sizeFieldsWritten := sizeAfterEncodeFields - sizeBeforeEncodeFields
+
+		// Take slice of bytes for encoded fields.
+		b := buf.B
+		encodedFields := b[sizeBeforeEncodeFields:sizeAfterEncodeFields]
+
+		// Rewind the buffer to before any metadata was written and
+		// then encode the size, then copy back the metadata fields into place.
+		buf.B = b[:sizeAfterSeriesRef]
+		// PutUvarint will always use less space than writing fixed size
+		// big endian uint64 that we wrote to the stream to reserve space,
+		// thus not overwriting the byte buffer with the encoded fields content.
+		buf.PutUvarint(sizeFieldsWritten)
+
+		// Copy back the encoded fields into place.
+		buf.B = append(buf.B, encodedFields...)
 	}
 
 	return buf.Get()

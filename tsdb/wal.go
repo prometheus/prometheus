@@ -1174,9 +1174,22 @@ func (r *walReader) decodeMetadata(flag byte, b []byte, res *[]record.RefMetadat
 
 	for len(dec.B) > 0 && dec.Err() == nil {
 		ref := dec.Uvarint64()
+		size := dec.Uvarint()
+
+		remainingBeforeReadFields := dec.Len()
+
 		typ := dec.UvarintStr()
 		unit := dec.UvarintStr()
 		help := dec.UvarintStr()
+
+		// The bytes consumed will have shrunk, therefore delta between
+		// bytes unread before and bytes unread after is how much we consumed.
+		remainingAfterReadFields := dec.Len()
+		sizeFieldsRead := remainingBeforeReadFields - remainingAfterReadFields
+		if sizeFieldsUnread := size - sizeFieldsRead; sizeFieldsUnread > 0 {
+			// Need to skip fields that we didn't read and don't know about.
+			dec.Skip(sizeFieldsUnread)
+		}
 
 		*res = append(*res, record.RefMetadata{
 			Ref:  ref,

@@ -19,6 +19,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -43,6 +44,28 @@ func TestRecord_EncodeDecode(t *testing.T) {
 	decSeries, err := dec.Series(enc.Series(series, nil), nil)
 	testutil.Ok(t, err)
 	testutil.Equals(t, series, decSeries)
+
+	metadata := []RefMetadata{
+		{
+			Ref:  100,
+			Type: textparse.MetricTypeCounter,
+			Unit: "",
+			Help: "counts the alphabet",
+		}, {
+			Ref:  1,
+			Type: textparse.MetricTypeCounter,
+			Unit: "seconds",
+			Help: "counts CPU time",
+		}, {
+			Ref:  435245,
+			Type: textparse.MetricTypeCounter,
+			Unit: "bytes",
+			Help: "counts bytes",
+		},
+	}
+	decMetadata, err := dec.Metadata(enc.Metadata(metadata, nil), nil)
+	testutil.Ok(t, err)
+	testutil.Equals(t, metadata, decMetadata)
 
 	samples := []RefSample{
 		{Ref: 0, T: 12423423, V: 1.2345},
