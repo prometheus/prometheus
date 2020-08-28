@@ -936,6 +936,7 @@ changed with relabeling, as demonstrated in [the Prometheus hetzner-sd
 configuration file](/documentation/examples/prometheus-hetzner.yml).
 
 The following meta labels are available on all targets during [relabeling](#relabel_config):
+
 * `__meta_hetzner_server_id`: the ID of the server
 * `__meta_hetzner_server_name`: the name of the server
 * `__meta_hetzner_server_status`: the status of the server
@@ -944,6 +945,7 @@ The following meta labels are available on all targets during [relabeling](#rela
 * `__meta_hetzner_datacenter`: the datacenter of the server
 
 The labels below are only available for targets with `role` set to `hcloud`:
+
 * `__meta_hetzner_hcloud_image_name`: the image name of the server
 * `__meta_hetzner_hcloud_image_description`: the description of the server image
 * `__meta_hetzner_hcloud_image_os_flavor`: the OS flavor of the server image
@@ -960,6 +962,7 @@ The labels below are only available for targets with `role` set to `hcloud`:
 * `__meta_hetzner_hcloud_label_<labelname>`: each label of the server
 
 The labels below are only available for targets with `role` set to `robot`:
+
 * `__meta_hetzner_robot_product`: the product of the server
 * `__meta_hetzner_robot_cancelled`: the server cancellation status
 
