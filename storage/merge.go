@@ -331,7 +331,7 @@ func (c *genericMergeSeriesSet) Next() bool {
 	// If, for the current label set, all the next series sets come from
 	// failed remote storage sources, we want to keep trying with the next label set.
 	for {
-		// Firstly advance all the current series sets. If any of them have run out
+		// Firstly advance all the current series sets. If any of them have run out,
 		// we can drop them, otherwise they should be inserted back into the heap.
 		for _, set := range c.currentSets {
 			if set.Next() {
