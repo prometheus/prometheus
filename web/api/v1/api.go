@@ -603,7 +603,8 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 
 	var sets []storage.SeriesSet
 	for _, mset := range matcherSets {
-		s := q.Select(false, nil, mset...)
+		// We need to sort this select results to merge(deduplicate) the series sets later.
+		s := q.Select(true, nil, mset...)
 		sets = append(sets, s)
 	}
 

@@ -303,6 +303,11 @@ func TestEndpoints(t *testing.T) {
 			test_metric1{foo="bar"} 0+100x100
 			test_metric1{foo="boo"} 1+0x100
 			test_metric2{foo="boo"} 1+0x100
+			test_metric3{foo="bar", dup="1"} 1+0x100
+			test_metric3{foo="boo", dup="1"} 1+0x100
+			test_metric4{foo="bar", dup="1"} 1+0x100
+			test_metric4{foo="boo", dup="1"} 1+0x100
+			test_metric4{foo="boo"} 1+0x100
 	`)
 	testutil.Ok(t, err)
 	defer suite.Close()
@@ -735,6 +740,18 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 			},
 			response: []labels.Labels{
 				labels.FromStrings("__name__", "test_metric1", "foo", "boo"),
+			},
+		},
+		// Try to overlap the selected series set as much as possible to test the result de-duplication works well.
+		{
+			endpoint: api.series,
+			query: url.Values{
+				"match[]": []string{`test_metric4{foo=~".+o$"}`, `test_metric4{dup=~"^1"}`},
+			},
+			response: []labels.Labels{
+				labels.FromStrings("__name__", "test_metric4", "dup", "1", "foo", "bar"),
+				labels.FromStrings("__name__", "test_metric4", "dup", "1", "foo", "boo"),
+				labels.FromStrings("__name__", "test_metric4", "foo", "boo"),
 			},
 		},
 		{
@@ -1449,6 +1466,8 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 				response: []string{
 					"test_metric1",
 					"test_metric2",
+					"test_metric3",
+					"test_metric4",
 				},
 			},
 			{
@@ -1597,7 +1616,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 			// Label names.
 			{
 				endpoint: api.labelNames,
-				response: []string{"__name__", "foo"},
+				response: []string{"__name__", "dup", "foo"},
 			},
 			// Start and end before Label names starts.
 			{
@@ -1615,7 +1634,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 					"start": []string{"1"},
 					"end":   []string{"100"},
 				},
-				response: []string{"__name__", "foo"},
+				response: []string{"__name__", "dup", "foo"},
 			},
 			// Start before Label names, end within Label names.
 			{
@@ -1624,7 +1643,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 					"start": []string{"-1"},
 					"end":   []string{"10"},
 				},
-				response: []string{"__name__", "foo"},
+				response: []string{"__name__", "dup", "foo"},
 			},
 
 			// Start before Label names starts, end after Label names ends.
@@ -1634,7 +1653,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 					"start": []string{"-1"},
 					"end":   []string{"100000"},
 				},
-				response: []string{"__name__", "foo"},
+				response: []string{"__name__", "dup", "foo"},
 			},
 			// Start with bad data for Label names, end within Label names.
 			{
@@ -1652,7 +1671,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 					"start": []string{"1"},
 					"end":   []string{"1000000006"},
 				},
-				response: []string{"__name__", "foo"},
+				response: []string{"__name__", "dup", "foo"},
 			},
 			// Start and end after Label names ends.
 			{
@@ -1669,7 +1688,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 				query: url.Values{
 					"start": []string{"4"},
 				},
-				response: []string{"__name__", "foo"},
+				response: []string{"__name__", "dup", "foo"},
 			},
 			// Only provide End within Label names, don't provide a start time.
 			{
@@ -1677,7 +1696,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 				query: url.Values{
 					"end": []string{"20"},
 				},
-				response: []string{"__name__", "foo"},
+				response: []string{"__name__", "dup", "foo"},
 			},
 		}...)
 	}
