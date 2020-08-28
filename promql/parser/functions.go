@@ -259,7 +259,8 @@ var Functions = map[string]*Function{
 	},
 	"vector": {
 		Name:       "vector",
-		ArgTypes:   []ValueType{ValueTypeScalar},
+		ArgTypes:   []ValueType{ValueTypeScalar, ValueTypeString},
+		Variadic:   -1,
 		ReturnType: ValueTypeVector,
 	},
 	"year": {

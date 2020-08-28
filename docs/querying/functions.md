@@ -398,7 +398,18 @@ the given vector as the number of seconds since January 1, 1970 UTC.
 
 ## `vector()`
 
-`vector(s scalar)` returns the scalar `s` as a vector with no labels.
+`vector(s scalar, labelname_1, labelvalue_1, labelname_2, labelvalue_2, ...)`
+returns the scalar `s` as a vector:
+
+```
+vector(1)
+```
+
+Label names and values can be passed as optional parameters:
+
+```
+vector(1,"job","prometheus","instance","localhost")
+```
 
 ## `year()`
 

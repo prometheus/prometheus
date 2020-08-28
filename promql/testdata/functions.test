@@ -734,3 +734,15 @@ eval instant at 5m absent_over_time({job="ingress"}[4m])
 
 eval instant at 10m absent_over_time({job="ingress"}[4m])
 	{job="ingress"} 1
+
+# Test for vector
+clear
+
+eval instant at 10m vector(6)
+    {} 6
+
+eval instant at 10m vector(6, "job", "prometheus")
+    {job="prometheus"} 6
+
+eval instant at 10m vector(6, "job", "prometheus", "instance", "localhost")
+    {job="prometheus",instance="localhost"} 6

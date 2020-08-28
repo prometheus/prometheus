@@ -753,9 +753,23 @@ func funcLabelReplace(vals []parser.Value, args parser.Expressions, enh *EvalNod
 
 // === Vector(s Scalar) Vector ===
 func funcVector(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	l := labels.NewBuilder(labels.Labels{})
+
+	if len(args)%2 != 1 {
+		panic(errors.Errorf("expected an odd number of arguments"))
+	}
+
+	for i := 2; i <= len(args); i += 2 {
+		ln := args[i-1].(*parser.StringLiteral).Val
+		if !model.LabelName(ln).IsValid() {
+			panic(errors.Errorf("invalid source label name in label_join(): %s", ln))
+		}
+		l.Set(ln, args[i].(*parser.StringLiteral).Val)
+	}
+
 	return append(enh.Out,
 		Sample{
-			Metric: labels.Labels{},
+			Metric: l.Labels(),
 			Point:  Point{V: vals[0].(Vector)[0].V},
 		})
 }
