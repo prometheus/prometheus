@@ -470,7 +470,7 @@ func cleanupTestResponse(t *testing.T, resp *http.Response) {
 
 func cleanupSnapshot(t *testing.T, resp *http.Response) {
 	snapshot := &struct {
-		Name string `json:name`
+		Name string `json:"name"`
 	}{}
 	b, err := ioutil.ReadAll(resp.Body)
 	testutil.Ok(t, err)
