@@ -1514,7 +1514,7 @@ func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data inter
 	case errorBadData:
 		code = http.StatusBadRequest
 	case errorExec:
-		code = 422
+		code = http.StatusUnprocessableEntity
 	case errorCanceled, errorTimeout:
 		code = http.StatusServiceUnavailable
 	case errorInternal:
