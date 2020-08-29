@@ -36,7 +36,7 @@ func TestExprString(t *testing.T) {
 		},
 		{
 			in:  `sum without() (task:errors:rate10s{job="s"})`,
-			out: `sum(task:errors:rate10s{job="s"})`,
+			out: `sum without() (task:errors:rate10s{job="s"})`,
 		},
 		{
 			in:  `sum without(instance) (task:errors:rate10s{job="s"})`,
@@ -53,7 +53,7 @@ func TestExprString(t *testing.T) {
 		{
 			in: `a - on() c`,
 			out: `    a
-  -
+  - on()
     c`,
 		},
 		{
@@ -97,7 +97,7 @@ func TestExprString(t *testing.T) {
 		{
 			in: `a - ignoring() c`,
 			out: `    a
-  -
+  - ignoring()
     c`,
 		},
 		{

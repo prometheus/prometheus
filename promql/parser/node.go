@@ -44,16 +44,11 @@ type nodeInfo struct {
 }
 
 func (n *nodeInfo) violatesColumnLimit() bool {
+	var items []Item
 	if n.currentNode == nil {
 		panic("current node not set")
 	}
-	var (
-		it    = itemsIterator{n.items, -1}
-		item  Item
-		items []Item
-	)
-	for it.next() {
-		item = it.at()
+	for _, item := range n.items {
 		if n.currentNode.PositionRange().Contains(item.PositionRange()) && item.Typ != COMMENT {
 			items = append(items, item)
 		}
@@ -173,6 +168,18 @@ func reduceBinary(history []Node) []Node {
 	}
 	temp = append(temp, history[len(history)-1])
 	return temp
+}
+
+// containsIgnoring is used to check if the node contains IGNORING as item.
+// The current AST structure do not carry any information for cases like `... ignoring() ...`.
+// Hence, this is achieved by scanning individual lex items in that node.
+func containsIgnoring(nodeStr string) bool {
+	for _, item := range LexItems(nodeStr) {
+		if item.Typ == IGNORING {
+			return true
+		}
+	}
+	return false
 }
 
 func isNodeType(node Node, typ exprs) bool {

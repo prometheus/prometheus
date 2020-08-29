@@ -273,16 +273,14 @@ func (p *prettier) rearrangeItems(items []Item) []Item {
 
 func (p *prettier) prettify(items []Item) (string, error) {
 	var (
-		it     = itemsIterator{items, -1}
 		result = ""
 		root   struct {
 			node      Node
 			hasScalar bool
 		}
 	)
-	for it.next() {
+	for i, item := range items {
 		var (
-			item           = it.at()
 			nodeInfo       = &nodeInfo{head: p.Node, columnLimit: 100, item: item, items: items}
 			node           = nodeInfo.node()
 			nodeSplittable = nodeInfo.violatesColumnLimit()
@@ -296,13 +294,13 @@ func (p *prettier) prettify(items []Item) (string, error) {
 			p.pd.isPreviousItemComment = false
 			result += p.pd.newLine()
 		}
-		switch node.(type) {
+		switch n := node.(type) {
 		case *AggregateExpr:
 			isAggregation = true
 			aggregationGrouping = nodeInfo.has(grouping)
 		case *BinaryExpr:
 			hasImmediateScalar = nodeInfo.has(scalars)
-			hasGrouping = nodeInfo.has(grouping)
+			hasGrouping = nodeInfo.has(grouping) || containsIgnoring(n.ExprString())
 			if nodeInfo.baseIndent == 1 {
 				root.node = node
 				root.hasScalar = hasImmediateScalar
@@ -348,7 +346,7 @@ func (p *prettier) prettify(items []Item) (string, error) {
 			}
 		case RIGHT_BRACE:
 			if p.pd.labelsSplittable {
-				if it.prev().Typ != COMMA {
+				if items[i-1].Typ != COMMA {
 					// Edge-case: if the labels are multi-line split, but do not have
 					// a pre-applied comma.
 					result += ","
@@ -367,15 +365,12 @@ func (p *prettier) prettify(items []Item) (string, error) {
 				} else {
 					result += " "
 				}
-				result += item.Val
-			} else {
-				result += item.Val
 			}
+			result += item.Val
 		case STRING, NUMBER:
 			result += item.Val
 		case SUM, BOTTOMK, COUNT_VALUES, COUNT, MAX, MIN,
 			QUANTILE, STDVAR, STDDEV, TOPK, AVG:
-			// Aggregations.
 			if nodeInfo.has(aggregateParent) {
 				result = p.pd.removePreviousBlank(result)
 				result += p.pd.newLine() + p.pd.pad(nodeInfo.getBaseIndent(item))
@@ -387,11 +382,9 @@ func (p *prettier) prettify(items []Item) (string, error) {
 			}
 		case EQL, EQL_REGEX, NEQ, NEQ_REGEX, DURATION, COLON,
 			LEFT_BRACKET, RIGHT_BRACKET, ASSIGN:
-			// Comparison operators.
 			result += item.Val
 		case ADD, SUB, MUL, DIV, GTE, GTR, LOR, LAND,
 			LSS, LTE, LUNLESS, MOD, POW:
-			// Vector matching operators.
 			if hasImmediateScalar {
 				result += " " + item.Val + " "
 				hasImmediateScalar = false
@@ -405,7 +398,6 @@ func (p *prettier) prettify(items []Item) (string, error) {
 				}
 			}
 		case WITHOUT, BY, IGNORING, ON:
-			// Keywords.
 			if !p.pd.isPreviousBlank(result) {
 				// Edge-case: sum without() (metric_name)
 				result += " "
@@ -507,13 +499,8 @@ func skipComments(items []Item, index int) int {
 // stringifyItems returns a standardized string expression
 // from slice of items without any trailing whitespaces.
 func stringifyItems(items []Item) string {
-	var (
-		it         = itemsIterator{items, -1}
-		item       Item
-		expression string
-	)
-	for it.next() {
-		item = it.at()
+	var expression string
+	for _, item := range items {
 		if item.Typ.IsAggregator() {
 			expression += item.Val
 			continue
@@ -556,28 +543,4 @@ func (pd *padder) removePreviousBlank(result string) string {
 		result = result[:len(result)-1]
 	}
 	return result
-}
-
-type itemsIterator struct {
-	itemsSlice []Item
-	index      int
-}
-
-// next increments the index and returns the true if there exists an lex item after.
-func (it *itemsIterator) next() bool {
-	it.index++
-	return !(it.index >= len(it.itemsSlice))
-}
-
-// peek returns the lex item at the current index.
-func (it *itemsIterator) at() Item {
-	return it.itemsSlice[it.index]
-}
-
-// prev returns the previous lex item.
-func (it *itemsIterator) prev() Item {
-	if it.index == 0 {
-		return Item{}
-	}
-	return it.itemsSlice[it.index-1]
 }
