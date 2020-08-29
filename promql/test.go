@@ -57,15 +57,17 @@ type Test struct {
 	storage *teststorage.TestStorage
 
 	queryEngine *Engine
+	prettyExpr  bool
 	context     context.Context
 	cancelCtx   context.CancelFunc
 }
 
 // NewTest returns an initialized empty Test.
-func NewTest(t testutil.T, input string) (*Test, error) {
+func NewTest(t testutil.T, input string, prettify bool) (*Test, error) {
 	test := &Test{
-		T:    t,
-		cmds: []testCommand{},
+		T:          t,
+		cmds:       []testCommand{},
+		prettyExpr: prettify,
 	}
 	err := test.parse(input)
 	test.clear()
@@ -78,7 +80,15 @@ func newTestFromFile(t testutil.T, filename string) (*Test, error) {
 	if err != nil {
 		return nil, err
 	}
-	return NewTest(t, string(content))
+	return NewTest(t, string(content), false)
+}
+
+func newPrettyTestFromFile(t testutil.T, filename string) (*Test, error) {
+	content, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return nil, err
+	}
+	return NewTest(t, string(content), true)
 }
 
 // QueryEngine returns the test's query engine.
@@ -151,9 +161,18 @@ func (t *Test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 	var (
 		mod  = parts[1]
 		at   = parts[2]
-		expr = parts[3]
+		expr string
+		err  error
 	)
-	_, err := parser.ParseExpr(expr)
+	if t.prettyExpr {
+		expr, err = parser.Prettify(parts[3])
+		if err != nil {
+			return i, nil, err
+		}
+	} else {
+		expr = parts[3]
+	}
+	_, err = parser.ParseExpr(expr)
 	if err != nil {
 		if perr, ok := err.(*parser.ParseErr); ok {
 			perr.LineOffset = i

@@ -194,7 +194,7 @@ func TestFederation(t *testing.T) {
 			test_metric_without_labels 1+10x100
 			test_metric_stale                       1+10x99 stale
 			test_metric_old                         1+10x98
-	`)
+	`, false)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -303,7 +303,7 @@ func TestEndpoints(t *testing.T) {
 			test_metric1{foo="bar"} 0+100x100
 			test_metric1{foo="boo"} 1+0x100
 			test_metric2{foo="boo"} 1+0x100
-	`)
+	`, false)
 	testutil.Ok(t, err)
 	defer suite.Close()
 
@@ -409,7 +409,7 @@ func TestLabelNames(t *testing.T) {
 			test_metric1{foo2="boo"} 1+0x100
 			test_metric2{foo="boo"} 1+0x100
 			test_metric2{foo="boo", xyz="qwerty"} 1+0x100
-	`)
+	`, false)
 	testutil.Ok(t, err)
 	defer suite.Close()
 	testutil.Ok(t, suite.Run())
@@ -1801,7 +1801,7 @@ func TestSampledReadEndpoint(t *testing.T) {
 	suite, err := promql.NewTest(t, `
 		load 1m
 			test_metric1{foo="bar",baz="qux"} 1
-	`)
+	`, false)
 	testutil.Ok(t, err)
 
 	defer suite.Close()
@@ -1896,7 +1896,7 @@ func TestStreamReadEndpoint(t *testing.T) {
 			test_metric1{foo="bar1",baz="qux"} 0+100x119
             test_metric1{foo="bar2",baz="qux"} 0+100x120
             test_metric1{foo="bar3",baz="qux"} 0+100x240
-	`)
+	`, false)
 	testutil.Ok(t, err)
 
 	defer suite.Close()

@@ -49,7 +49,7 @@ func TestAlertingRule(t *testing.T) {
 		load 5m
 			http_requests{job="app-server", instance="0", group="canary", severity="overwrite-me"}	75 85  95 105 105  95  85
 			http_requests{job="app-server", instance="1", group="canary", severity="overwrite-me"}	80 90 100 110 120 130 140
-	`)
+	`, false)
 	testutil.Ok(t, err)
 	defer suite.Close()
 
@@ -190,7 +190,7 @@ func TestForStateAddSamples(t *testing.T) {
 		load 5m
 			http_requests{job="app-server", instance="0", group="canary", severity="overwrite-me"}	75 85  95 105 105  95  85
 			http_requests{job="app-server", instance="1", group="canary", severity="overwrite-me"}	80 90 100 110 120 130 140
-	`)
+	`, false)
 	testutil.Ok(t, err)
 	defer suite.Close()
 
@@ -351,7 +351,7 @@ func TestForStateRestore(t *testing.T) {
 		load 5m
 		http_requests{job="app-server", instance="0", group="canary", severity="overwrite-me"}	75  85 50 0 0 25 0 0 40 0 120
 		http_requests{job="app-server", instance="1", group="canary", severity="overwrite-me"}	125 90 60 0 0 25 0 0 40 0 130
-	`)
+	`, false)
 	testutil.Ok(t, err)
 	defer suite.Close()
 

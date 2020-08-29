@@ -89,7 +89,7 @@ func TestAlertingRuleLabelsUpdate(t *testing.T) {
 	suite, err := promql.NewTest(t, `
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 85 70 70
-	`)
+	`, false)
 	testutil.Ok(t, err)
 	defer suite.Close()
 
@@ -191,7 +191,7 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 	suite, err := promql.NewTest(t, `
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 85 70 70
-	`)
+	`, false)
 	testutil.Ok(t, err)
 	defer suite.Close()
 
@@ -283,7 +283,7 @@ func TestAlertingRuleEmptyLabelFromTemplate(t *testing.T) {
 	suite, err := promql.NewTest(t, `
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 85 70 70
-	`)
+	`, false)
 	testutil.Ok(t, err)
 	defer suite.Close()
 

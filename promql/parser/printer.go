@@ -56,69 +56,46 @@ func (es Expressions) String() (s string) {
 }
 
 func (node *AggregateExpr) String() string {
-	return prettify(node)
+	return prettify(node.ExprString())
 }
 
 func (node *BinaryExpr) String() string {
-	return prettify(node)
+	return prettify(node.ExprString())
 }
 
 func (node *Call) String() string {
-	return prettify(node)
+	return prettify(node.ExprString())
 }
 
 func (node *MatrixSelector) String() string {
-	return prettify(node)
+	return prettify(node.ExprString())
 }
 
 func (node *SubqueryExpr) String() string {
-	return prettify(node)
+	return prettify(node.ExprString())
 }
 
 func (node *NumberLiteral) String() string {
-	return prettify(node)
+	return prettify(node.ExprString())
 }
 
 func (node *ParenExpr) String() string {
-	return prettify(node)
+	return prettify(node.ExprString())
 }
 
 func (node *StringLiteral) String() string {
-	return prettify(node)
+	return prettify(node.ExprString())
 }
 
 func (node *UnaryExpr) String() string {
-	return prettify(node)
+	return prettify(node.ExprString())
 }
 
 func (node *VectorSelector) String() string {
-	return prettify(node)
+	return prettify(node.ExprString())
 }
 
-func prettify(node Expr) string {
-	var expression string
-	switch n := node.(type) {
-	case *AggregateExpr:
-		expression = n.ExprString()
-	case *BinaryExpr:
-		expression = n.ExprString()
-	case *Call:
-		expression = n.ExprString()
-	case *MatrixSelector:
-		expression = n.ExprString()
-	case *SubqueryExpr:
-		expression = n.ExprString()
-	case *NumberLiteral:
-		expression = n.ExprString()
-	case *StringLiteral:
-		expression = n.ExprString()
-	case *VectorSelector:
-		expression = n.ExprString()
-	case *ParenExpr:
-		expression = n.ExprString()
-	case *UnaryExpr:
-		expression = n.ExprString()
-	}
+func prettify(expression string) string {
 	formattedExpr, err := Prettify(expression)
 	if err != nil {
 		return expression

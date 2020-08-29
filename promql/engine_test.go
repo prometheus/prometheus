@@ -446,7 +446,7 @@ func TestEngineEvalStmtTimestamps(t *testing.T) {
 	test, err := NewTest(t, `
 load 10s
   metric 1 2
-`)
+`, false)
 	testutil.Ok(t, err)
 	defer test.Close()
 
@@ -547,7 +547,7 @@ load 10s
   metric 1 2
   bigmetric{a="1"} 1 2
   bigmetric{a="2"} 1 2
-`)
+`, false)
 	testutil.Ok(t, err)
 	defer test.Close()
 
@@ -1050,7 +1050,7 @@ func TestSubquerySelector(t *testing.T) {
 		},
 	} {
 		t.Run("", func(t *testing.T) {
-			test, err := NewTest(t, tst.loadString)
+			test, err := NewTest(t, tst.loadString, false)
 			testutil.Ok(t, err)
 			defer test.Close()
 

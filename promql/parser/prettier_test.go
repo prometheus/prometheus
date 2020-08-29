@@ -242,7 +242,7 @@ __name__="metric_name"}`,
 	},
 	{
 		expr:     `quantile(0.9, min by() (sum({__name__="metric_first", instance="first"} + {__name__="metric_second", instance="second"}) without())) ignoring()`,
-		expected: `quantile(0.9, min(sum(metric_first{instance="first"} + metric_second{instance="second"})))`,
+		expected: `quantile ignoring() (0.9, min(sum without() (metric_first{instance="first"} + metric_second{instance="second"})))`,
 	},
 	{
 		expr:     `a[1h:5m] offset 1m`,

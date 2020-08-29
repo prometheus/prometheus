@@ -14,14 +14,22 @@
 package parser
 
 const (
-	grouping = iota
+	grouping props = iota
 	scalars
 	multiArguments
 	aggregateParent
-	aggregateExpr
+)
+
+const (
+	aggregateExpr exprs = iota
 	binaryExpr
 	matrixExpr
 	subQueryExpr
+)
+
+type (
+	exprs uint8
+	props uint8
 )
 
 type nodeInfo struct {
@@ -45,7 +53,7 @@ func (n *nodeInfo) violatesColumnLimit() bool {
 		items []Item
 	)
 	for it.next() {
-		item = it.peek()
+		item = it.at()
 		if n.currentNode.PositionRange().Contains(item.PositionRange()) && item.Typ != COMMENT {
 			items = append(items, item)
 		}
@@ -80,7 +88,7 @@ func (n *nodeInfo) previousIndent() int {
 }
 
 // has verifies whether the current node contains a particular entity.
-func (n *nodeInfo) has(element uint) bool {
+func (n *nodeInfo) has(element props) bool {
 	switch element {
 	case grouping:
 		switch node := n.currentNode.(type) {
@@ -167,28 +175,24 @@ func reduceBinary(history []Node) []Node {
 	return temp
 }
 
-func isNodeType(node Node, typ uint) bool {
+func isNodeType(node Node, typ exprs) bool {
 	switch typ {
 	case aggregateExpr:
 		if _, ok := node.(*AggregateExpr); ok {
 			return true
 		}
-		return false
 	case binaryExpr:
 		if _, ok := node.(*BinaryExpr); ok {
 			return true
 		}
-		return false
 	case matrixExpr:
 		if _, ok := node.(*MatrixSelector); ok {
 			return true
 		}
-		return false
 	case subQueryExpr:
 		if _, ok := node.(*SubqueryExpr); ok {
 			return true
 		}
-		return false
 	}
 	return false
 }

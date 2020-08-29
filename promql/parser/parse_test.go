@@ -2757,13 +2757,11 @@ var testExpr = []struct {
 			Offset: 10 * time.Minute,
 			EndPos: 37,
 		},
-	},
-	{
+	}, {
 		input:  "test[5d] OFFSET 10s [10m:5s]",
 		fail:   true,
 		errMsg: `1:1: parse error: subquery is only allowed on instant vector, got matrix in ""`,
-	},
-	{
+	}, {
 		input:  `(foo + bar{nm="val"})[5m:][10m:5s]`,
 		fail:   true,
 		errMsg: `1:1: parse error: subquery is only allowed on instant vector, got matrix in "" instead`,

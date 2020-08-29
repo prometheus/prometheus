@@ -239,7 +239,7 @@ func (p *prettier) rearrangeItems(items []Item) []Item {
 				tmp = append(tmp, items[j])
 			}
 			items = tmp
-		case BY, IGNORING, ON, WITHOUT:
+		case BY:
 			// Case: sum by() (metric_name) => sum(metric_name)
 			var (
 				leftParenIndex       = itemNotFound
@@ -282,7 +282,7 @@ func (p *prettier) prettify(items []Item) (string, error) {
 	)
 	for it.next() {
 		var (
-			item           = it.peek()
+			item           = it.at()
 			nodeInfo       = &nodeInfo{head: p.Node, columnLimit: 100, item: item, items: items}
 			node           = nodeInfo.node()
 			nodeSplittable = nodeInfo.violatesColumnLimit()
@@ -359,7 +359,7 @@ func (p *prettier) prettify(items []Item) (string, error) {
 			}
 			p.pd.isFirstLabel = false
 			result += item.Val
-		case IDENTIFIER, METRIC_IDENTIFIER:
+		case IDENTIFIER, METRIC_IDENTIFIER, GROUP:
 			if p.pd.labelsSplittable {
 				if p.pd.isFirstLabel {
 					p.pd.isFirstLabel = false
@@ -373,7 +373,7 @@ func (p *prettier) prettify(items []Item) (string, error) {
 			}
 		case STRING, NUMBER:
 			result += item.Val
-		case SUM, BOTTOMK, COUNT_VALUES, COUNT, GROUP, MAX, MIN,
+		case SUM, BOTTOMK, COUNT_VALUES, COUNT, MAX, MIN,
 			QUANTILE, STDVAR, STDDEV, TOPK, AVG:
 			// Aggregations.
 			if nodeInfo.has(aggregateParent) {
@@ -406,6 +406,10 @@ func (p *prettier) prettify(items []Item) (string, error) {
 			}
 		case WITHOUT, BY, IGNORING, ON:
 			// Keywords.
+			if !p.pd.isPreviousBlank(result) {
+				// Edge-case: sum without() (metric_name)
+				result += " "
+			}
 			result += item.Val
 			if item.Typ == BOOL && hasImmediateScalar {
 				result += " "
@@ -509,7 +513,7 @@ func stringifyItems(items []Item) string {
 		expression string
 	)
 	for it.next() {
-		item = it.peek()
+		item = it.at()
 		if item.Typ.IsAggregator() {
 			expression += item.Val
 			continue
@@ -543,8 +547,12 @@ func (pd *padder) newLine() string {
 	return "\n"
 }
 
+func (pd *padder) isPreviousBlank(result string) bool {
+	return result[len(result)-1] == ' '
+}
+
 func (pd *padder) removePreviousBlank(result string) string {
-	if result[len(result)-1] == ' ' {
+	if pd.isPreviousBlank(result) {
 		result = result[:len(result)-1]
 	}
 	return result
@@ -558,11 +566,11 @@ type itemsIterator struct {
 // next increments the index and returns the true if there exists an lex item after.
 func (it *itemsIterator) next() bool {
 	it.index++
-	return it.index != len(it.itemsSlice)
+	return !(it.index >= len(it.itemsSlice))
 }
 
 // peek returns the lex item at the current index.
-func (it *itemsIterator) peek() Item {
+func (it *itemsIterator) at() Item {
 	return it.itemsSlice[it.index]
 }
 
