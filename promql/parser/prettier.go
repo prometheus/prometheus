@@ -45,9 +45,7 @@ type padder struct {
 	// a comment. This property is dependent on previous padder states and hence needs
 	// to be carried along while formatting.
 	isPreviousItemComment bool
-	// expectAggregationLabels expects the following item(s) to be labels of aggregation
-	// expression. Labels are used in AggregateExpr and in VectorSelector but only the ones
-	// in VectorSelector are splittable.
+	// expectAggregationLabels expects the following item(s) to be labels of aggregation expr.
 	expectAggregationLabels bool
 	// labelsSplittable determines whether the current formatting region lies in labels
 	// matchers in VectorSelector. Since labels in VectorSelectors are only splittable,
@@ -288,7 +286,7 @@ func (p *prettier) prettify(items []Item) (string, error) {
 			hasImmediateScalar               bool
 			hasGrouping, aggregationGrouping bool
 			// Aggregate expression use-case.
-			isAggregation, hasMultiArgumentCalls bool
+			isAggregation, isParen, hasMultiArgumentCalls bool
 		)
 		if p.pd.isPreviousItemComment {
 			p.pd.isPreviousItemComment = false
@@ -301,39 +299,48 @@ func (p *prettier) prettify(items []Item) (string, error) {
 		case *BinaryExpr:
 			hasImmediateScalar = nodeInfo.has(scalars)
 			hasGrouping = nodeInfo.has(grouping) || containsIgnoring(n.ExprString())
-			if nodeInfo.baseIndent == 1 {
-				root.node = node
-				root.hasScalar = hasImmediateScalar
-			}
 		case *Call:
 			hasMultiArgumentCalls = nodeInfo.has(multiArguments)
+		case *ParenExpr:
+			isParen = true
+		}
+
+		if nodeInfo.baseIndent == 1 {
+			// Base indent 1 signifies a root node.
+			root.node = node
+			root.hasScalar = hasImmediateScalar
 		}
 		if p.pd.isNewLineApplied {
 			result += p.pd.pad(nodeInfo.baseIndent)
 			p.pd.isNewLineApplied = false
 		}
 
+		var (
+			parenGenCondition    = (nodeSplittable && !hasGrouping) || hasMultiArgumentCalls
+			parenBinaryCondition = isParen && nodeInfo.childIsBinary()
+			commaLabelCondition  = !(hasGrouping || aggregationGrouping || p.pd.labelsSplittable)
+		)
+
 		switch item.Typ {
 		case LEFT_PAREN:
 			result += item.Val
-			if ((nodeSplittable && !hasGrouping) || hasMultiArgumentCalls) && !p.pd.expectAggregationLabels {
+			if parenGenCondition && !p.pd.expectAggregationLabels || parenBinaryCondition {
 				result += p.pd.newLine()
 			}
 		case RIGHT_PAREN:
-			if ((nodeSplittable && !hasGrouping) || hasMultiArgumentCalls) && !p.pd.expectAggregationLabels {
+			if parenGenCondition && !p.pd.expectAggregationLabels || parenBinaryCondition {
 				result += p.pd.newLine() + p.pd.pad(nodeInfo.baseIndent)
 				p.pd.isNewLineApplied = false
 			}
 			result += item.Val
-			if hasGrouping {
-				hasGrouping = false
-				result += p.pd.newLine()
-			}
 			if p.pd.expectAggregationLabels {
 				p.pd.expectAggregationLabels = false
 				result += " "
 			}
-			if isAggregation && nodeInfo.has(aggregateParent) && nodeInfo.isLastItem(item) {
+			if hasGrouping {
+				hasGrouping = false
+				result += p.pd.newLine()
+			} else if isAggregation && nodeInfo.has(aggregateParent) && nodeInfo.isLastItem(item) {
 				result += p.pd.newLine()
 			}
 		case LEFT_BRACE:
@@ -367,7 +374,13 @@ func (p *prettier) prettify(items []Item) (string, error) {
 				}
 			}
 			result += item.Val
-		case STRING, NUMBER:
+		case STRING:
+			result += item.Val
+		case NUMBER:
+			if !p.pd.isPreviousBlank(result) && isNodeType(nodeInfo.parent(), binaryExpr) {
+				// Only scalar binary expression require space before NUMBER item.
+				result += " "
+			}
 			result += item.Val
 		case SUM, BOTTOMK, COUNT_VALUES, COUNT, MAX, MIN,
 			QUANTILE, STDVAR, STDDEV, TOPK, AVG:
@@ -378,6 +391,7 @@ func (p *prettier) prettify(items []Item) (string, error) {
 			}
 			result += item.Val
 			if aggregationGrouping {
+				p.pd.expectAggregationLabels = true
 				result += " "
 			}
 		case EQL, EQL_REGEX, NEQ, NEQ_REGEX, DURATION, COLON,
@@ -419,7 +433,7 @@ func (p *prettier) prettify(items []Item) (string, error) {
 			result += " " + item.Val + " "
 		case COMMA:
 			result += item.Val
-			if (nodeSplittable || hasMultiArgumentCalls) && !(hasGrouping || aggregationGrouping || p.pd.labelsSplittable) {
+			if (nodeSplittable || hasMultiArgumentCalls) && commaLabelCondition {
 				result += p.pd.newLine()
 			} else if !p.pd.labelsSplittable {
 				result += " "
@@ -437,6 +451,8 @@ func (p *prettier) prettify(items []Item) (string, error) {
 		}
 	}
 	if isNodeType(root.node, binaryExpr) && !root.hasScalar {
+		return result, nil
+	} else if isNodeType(root.node, parenExpr) && isChildOfTypeBinary(root.node) {
 		return result, nil
 	}
 	return strings.TrimSpace(result), nil

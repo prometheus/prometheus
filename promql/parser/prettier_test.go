@@ -399,6 +399,14 @@ var prettierCases = []prettierTest{
     metric_two`,
 	},
 	{
+		expr: `(metric_one + metric_two)`,
+		expected: `  (
+      metric_one
+    +
+      metric_two
+  )`,
+	},
+	{
 		expr:     `(metric_name)`,
 		expected: `(metric_name)`,
 	},
@@ -599,7 +607,7 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `(label_join(up{job="api-server",src1="a",src2="b",src3="c"}, "foo", ",", "src1", "src2", "src3") + label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*"))`,
-		expected: `(
+		expected: `  (
       label_join(
         up{job="api-server", src1="a", src2="b", src3="c"},
         "foo",
@@ -663,6 +671,16 @@ var prettierCases = []prettierTest{
 	{
 		expr:     `sum (metric_name) without(label)`,
 		expected: `sum without(label) (metric_name)`,
+	},
+	{
+		expr: `sum by(a_very_long_label) (a_very_long_metric_name_a + a_very_long_metric_name_b + a_very_long_metric_name_c)`,
+		expected: `sum by(a_very_long_label) (
+      a_very_long_metric_name_a
+    +
+      a_very_long_metric_name_b
+    +
+      a_very_long_metric_name_c
+  )`,
 	},
 	{
 		expr: `sum without(label) (metric_three{a_some_very_large_label="a_very_large_value", label="a_very_large_value"})`,
@@ -747,7 +765,8 @@ var prettierCases = []prettierTest{
 	},
 	{
 		expr: `(sum(node_memory_MemTotal) - sum(node_memory_MemFree + node_memory_Buffers + node_memory_Cached) ) / sum(node_memory_MemTotal) * 100 > 85`,
-		expected: `(sum(node_memory_MemTotal)
+		expected: `(
+        sum(node_memory_MemTotal)
       -
         sum(node_memory_MemFree
           +
@@ -760,7 +779,9 @@ var prettierCases = []prettierTest{
 	{
 		expr: `100 - ((node_filesystem_avail_bytes{instance=~"$node",mountpoint="$maxmount",fstype=~"ext4|xfs"} * 100) / node_filesystem_size_bytes {instance=~"$node",mountpoint="$maxmount",fstype=~"ext4|xfs"})`,
 		expected: `100 - (
-        (node_filesystem_avail_bytes{instance=~"$node", mountpoint="$maxmount", fstype=~"ext4|xfs"} * 100)
+        (
+            node_filesystem_avail_bytes{instance=~"$node", mountpoint="$maxmount", fstype=~"ext4|xfs"} * 100
+        )
       /
         node_filesystem_size_bytes{instance=~"$node", mountpoint="$maxmount", fstype=~"ext4|xfs"}
     )`,

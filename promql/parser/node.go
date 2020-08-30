@@ -24,6 +24,7 @@ const (
 	aggregateExpr exprs = iota
 	binaryExpr
 	matrixExpr
+	parenExpr
 	subQueryExpr
 )
 
@@ -131,6 +132,29 @@ func (n *nodeInfo) nodeHistory(head Node, posRange PositionRange, stack []Node) 
 	return stack, head
 }
 
+func (n *nodeInfo) parent() Node {
+	stack, _ := n.nodeHistory(n.head, n.item.PositionRange(), []Node{})
+	if len(stack) < 2 {
+		return nil
+	}
+	return stack[len(stack)-2]
+}
+
+// childIs confirms the type of the child of current node.
+func (n *nodeInfo) childIsBinary() bool {
+	for _, child := range Children(n.currentNode) {
+		if _, ok := child.(*BinaryExpr); ok {
+			return true
+		}
+	}
+	return false
+}
+
+func isChildOfTypeBinary(node Node) bool {
+	info := &nodeInfo{currentNode: node}
+	return info.childIsBinary()
+}
+
 // reduceNonNewLineExprs reduces those expressions from the history that are not
 // necessary for base indent. Base indent is applied on those items that have the
 // tendency to fall on a new line. However, items like Left_Bracket, Right_Bracket
@@ -182,23 +206,29 @@ func containsIgnoring(nodeStr string) bool {
 	return false
 }
 
-func isNodeType(node Node, typ exprs) bool {
-	switch typ {
-	case aggregateExpr:
-		if _, ok := node.(*AggregateExpr); ok {
-			return true
-		}
-	case binaryExpr:
-		if _, ok := node.(*BinaryExpr); ok {
-			return true
-		}
-	case matrixExpr:
-		if _, ok := node.(*MatrixSelector); ok {
-			return true
-		}
-	case subQueryExpr:
-		if _, ok := node.(*SubqueryExpr); ok {
-			return true
+func isNodeType(node Node, typs ...exprs) bool {
+	for _, typ := range typs {
+		switch typ {
+		case aggregateExpr:
+			if _, ok := node.(*AggregateExpr); ok {
+				return true
+			}
+		case binaryExpr:
+			if _, ok := node.(*BinaryExpr); ok {
+				return true
+			}
+		case matrixExpr:
+			if _, ok := node.(*MatrixSelector); ok {
+				return true
+			}
+		case parenExpr:
+			if _, ok := node.(*ParenExpr); ok {
+				return true
+			}
+		case subQueryExpr:
+			if _, ok := node.(*SubqueryExpr); ok {
+				return true
+			}
 		}
 	}
 	return false
