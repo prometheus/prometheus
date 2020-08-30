@@ -665,6 +665,14 @@ var prettierCases = []prettierTest{
 		expected: `sum(metric_name)`,
 	},
 	{
+		expr: `sum(a_very_long_metric_name_a + a_very_long_metric_name_b + a_very_long_metric_name_c)`,
+		expected: `sum(a_very_long_metric_name_a
+    +
+      a_very_long_metric_name_b
+    +
+      a_very_long_metric_name_c)`,
+	},
+	{
 		expr:     `sum without(label) (metric_name)`,
 		expected: `sum without(label) (metric_name)`,
 	},
