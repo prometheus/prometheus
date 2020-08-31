@@ -419,10 +419,6 @@ func (b realByteSlice) Range(start, end int) []byte {
 	return b[start:end]
 }
 
-func (b realByteSlice) Sub(start, end int) ByteSlice {
-	return b[start:end]
-}
-
 // Reader implements a ChunkReader for a serialized byte stream
 // of series data.
 type Reader struct {
