@@ -77,8 +77,8 @@ func (d *robotDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, err
 		resp.Body.Close()
 	}()
 
-	if (resp.StatusCode < 200) || (resp.StatusCode >= 300) {
-		return nil, errors.Errorf("non 2xx status '%v' response during hetzner service discovery with role robot", resp.StatusCode)
+	if resp.StatusCode/100 != 2 {
+		return nil, errors.Errorf("non 2xx status '%d' response during hetzner service discovery with role robot", resp.StatusCode)
 	}
 
 	var servers serversList

@@ -550,17 +550,3 @@ func (m *SDMock) HandleRobotServers() {
 		)
 	})
 }
-
-// HandleRobotServers mocks the robot servers list endpoint.
-func (m *SDMock) HandleRobotServersWithError() {
-	m.Mux.HandleFunc("/server", func(w http.ResponseWriter, r *http.Request) {
-		username, password, ok := r.BasicAuth()
-		if username != robotTestUsername && password != robotTestPassword && !ok {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-
-		w.Header().Add("content-type", "application/json; charset=utf-8")
-		w.WriteHeader(http.StatusUnauthorized)
-	})
-}

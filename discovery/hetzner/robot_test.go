@@ -30,12 +30,13 @@ type robotSDTestSuite struct {
 func (s *robotSDTestSuite) SetupTest(t *testing.T) {
 	s.Mock = NewSDMock(t)
 	s.Mock.Setup()
+
+	s.Mock.HandleRobotServers()
 }
 
 func TestRobotSDRefresh(t *testing.T) {
 	suite := &robotSDTestSuite{}
 	suite.SetupTest(t)
-	suite.Mock.HandleRobotServers()
 	cfg := DefaultSDConfig
 	cfg.HTTPClientConfig.BasicAuth = &config.BasicAuth{Username: robotTestUsername, Password: robotTestPassword}
 	cfg.robotEndpoint = suite.Mock.Endpoint()
@@ -86,22 +87,15 @@ func TestRobotSDRefresh(t *testing.T) {
 func TestRobotSDRefreshHandleError(t *testing.T) {
 	suite := &robotSDTestSuite{}
 	suite.SetupTest(t)
-	suite.Mock.HandleRobotServersWithError()
 	cfg := DefaultSDConfig
-	cfg.HTTPClientConfig.BasicAuth = &config.BasicAuth{Username: robotTestUsername, Password: robotTestPassword}
 	cfg.robotEndpoint = suite.Mock.Endpoint()
 
 	d, err := newRobotDiscovery(&cfg, log.NewNopLogger())
 	testutil.Ok(t, err)
 
 	targetGroups, err := d.refresh(context.Background())
-	if err == nil {
-		t.Fatalf("Expected err got, nil")
-	}
-	if err.Error() != "non 2xx status '401' response during hetzner service discovery with role robot" {
-		t.Fatalf("Expected another error message, got %s", err)
-	}
-	if len(targetGroups) != 0 {
-		t.Fatal("Expected 0 target group, got", len(targetGroups))
-	}
+	testutil.NotOk(t, err)
+	testutil.Equals(t, "non 2xx status '401' response during hetzner service discovery with role robot", err.Error())
+
+	testutil.Equals(t, 0, len(targetGroups))
 }
