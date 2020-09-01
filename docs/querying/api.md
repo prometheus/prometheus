@@ -46,21 +46,20 @@ The JSON response envelope format is as follows:
 }
 ```
 
-Input timestamps may be provided either in
+Generic placeholders are defined as follows:
+
+* `<rfc3339 | unix_timestamp>`: Input timestamps may be provided either in
 [RFC3339](https://www.ietf.org/rfc/rfc3339.txt) format or as a Unix timestamp
 in seconds, with optional decimal places for sub-second precision. Output
 timestamps are always represented as Unix timestamps in seconds.
-
-Names of query parameters that may be repeated end with `[]`.
-
-`<series_selector>` placeholders refer to Prometheus [time series
+* `<series_selector>`: Prometheus [time series
 selectors](basics.md#time-series-selectors) like `http_requests_total` or
 `http_requests_total{method=~"(GET|POST)"}` and need to be URL-encoded.
-
-`<duration>` placeholders refer to [Prometheus duration strings](basics.md#time_durations).
+* `<duration>`: [Prometheus duration strings](basics.md#time_durations).
 For example, `5m` refers to a duration of 5 minutes.
+* `<bool>`: boolean values (strings `true` and `false`).
 
-`<bool>` placeholders refer to boolean values (strings `true` and `false`).
+Note: Names of query parameters that may be repeated end with `[]`.
 
 ## Expression queries
 
