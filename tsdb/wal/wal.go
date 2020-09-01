@@ -267,7 +267,7 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 	}
 	w.metrics = newWALMetrics(reg)
 
-	_, last, err := w.Segments()
+	_, last, err := Segments(w.Dir())
 	if err != nil {
 		return nil, errors.Wrap(err, "get segment range")
 	}
@@ -279,7 +279,7 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 		writeSegmentIndex = last + 1
 	}
 
-	segment, err := CreateSegment(w.dir, writeSegmentIndex)
+	segment, err := CreateSegment(w.Dir(), writeSegmentIndex)
 	if err != nil {
 		return nil, err
 	}
@@ -355,7 +355,7 @@ func (w *WAL) Repair(origErr error) error {
 		"segment", cerr.Segment, "offset", cerr.Offset)
 
 	// All segments behind the corruption can no longer be used.
-	segs, err := listSegments(w.dir)
+	segs, err := listSegments(w.Dir())
 	if err != nil {
 		return errors.Wrap(err, "list segments")
 	}
@@ -374,7 +374,7 @@ func (w *WAL) Repair(origErr error) error {
 		if s.index <= cerr.Segment {
 			continue
 		}
-		if err := os.Remove(filepath.Join(w.dir, s.name)); err != nil {
+		if err := os.Remove(filepath.Join(w.Dir(), s.name)); err != nil {
 			return errors.Wrapf(err, "delete segment:%v", s.index)
 		}
 	}
@@ -383,14 +383,14 @@ func (w *WAL) Repair(origErr error) error {
 	// its records up to the corruption.
 	level.Warn(w.logger).Log("msg", "Rewrite corrupted segment", "segment", cerr.Segment)
 
-	fn := SegmentName(w.dir, cerr.Segment)
+	fn := SegmentName(w.Dir(), cerr.Segment)
 	tmpfn := fn + ".repair"
 
 	if err := fileutil.Rename(fn, tmpfn); err != nil {
 		return err
 	}
 	// Create a clean segment and make it the active one.
-	s, err := CreateSegment(w.dir, cerr.Segment)
+	s, err := CreateSegment(w.Dir(), cerr.Segment)
 	if err != nil {
 		return err
 	}
@@ -438,7 +438,7 @@ func (w *WAL) Repair(origErr error) error {
 	// We always want to start writing to a new Segment rather than an existing
 	// Segment, which is handled by NewSize, but earlier in Repair we're deleting
 	// all segments that come after the corrupted Segment. Recreate a new Segment here.
-	s, err = CreateSegment(w.dir, cerr.Segment+1)
+	s, err = CreateSegment(w.Dir(), cerr.Segment+1)
 	if err != nil {
 		return err
 	}
@@ -468,7 +468,7 @@ func (w *WAL) nextSegment() error {
 			return err
 		}
 	}
-	next, err := CreateSegment(w.dir, w.segment.Index()+1)
+	next, err := CreateSegment(w.Dir(), w.segment.Index()+1)
 	if err != nil {
 		return errors.Wrap(err, "create new segment file")
 	}
@@ -679,19 +679,6 @@ func (w *WAL) log(rec []byte, final bool) error {
 	return nil
 }
 
-// Segments returns the range [first, n] of currently existing segments.
-// If no segments are found, first and n are -1.
-func (w *WAL) Segments() (first, last int, err error) {
-	refs, err := listSegments(w.dir)
-	if err != nil {
-		return 0, 0, err
-	}
-	if len(refs) == 0 {
-		return -1, -1, nil
-	}
-	return refs[0].index, refs[len(refs)-1].index, nil
-}
-
 // Truncate drops all segments before i.
 func (w *WAL) Truncate(i int) (err error) {
 	w.metrics.truncateTotal.Inc()
@@ -700,7 +687,7 @@ func (w *WAL) Truncate(i int) (err error) {
 			w.metrics.truncateFail.Inc()
 		}
 	}()
-	refs, err := listSegments(w.dir)
+	refs, err := listSegments(w.Dir())
 	if err != nil {
 		return err
 	}
@@ -708,7 +695,7 @@ func (w *WAL) Truncate(i int) (err error) {
 		if r.index >= i {
 			break
 		}
-		if err = os.Remove(filepath.Join(w.dir, r.name)); err != nil {
+		if err = os.Remove(filepath.Join(w.Dir(), r.name)); err != nil {
 			return err
 		}
 	}
@@ -757,6 +744,19 @@ func (w *WAL) Close() (err error) {
 	}
 	w.closed = true
 	return nil
+}
+
+// Segments returns the range [first, n] of currently existing segments.
+// If no segments are found, first and n are -1.
+func Segments(walDir string) (first, last int, err error) {
+	refs, err := listSegments(walDir)
+	if err != nil {
+		return 0, 0, err
+	}
+	if len(refs) == 0 {
+		return -1, -1, nil
+	}
+	return refs[0].index, refs[len(refs)-1].index, nil
 }
 
 type segmentRef struct {
