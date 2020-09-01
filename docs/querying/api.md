@@ -840,7 +840,6 @@ $ curl http://localhost:9090/api/v1/status/runtimeinfo
     "CWD": "/",
     "reloadConfigSuccess": true,
     "lastConfigTime": "2019-11-02T17:23:59+01:00",
-    "chunkCount": 873,
     "timeSeriesCount": 873,
     "corruptionCount": 0,
     "goroutineCount": 48,
@@ -892,6 +891,11 @@ The following endpoint returns various cardinality statistics about the Promethe
 ```
 GET /api/v1/status/tsdb
 ```
+- **headStats**: This provides the following data about the head block of the TSDB:
+  - **numSeries**: The number of series.
+  - **chunkCount**: The number of chunks.
+  - **minTime**: The current minimum timestamp in milliseconds.
+  - **maxTime**: The current maximum timestamp in milliseconds.
 - **seriesCountByMetricName:**  This will provide a list of metrics names and their series count.
 - **labelValueCountByLabelName:** This will provide a list of the label names and their value count.
 - **memoryInBytesByLabelName** This will provide a list of the label names and memory used in bytes. Memory usage is calculated by adding the length of all values for a given label name.
@@ -902,6 +906,12 @@ $ curl http://localhost:9090/api/v1/status/tsdb
 {
   "status": "success",
   "data": {
+    "headStats": {
+      "numSeries": 508,
+      "chunkCount": 937,
+      "minTime": 1591516800000,
+      "maxTime": 1598896800143,
+    },
     "seriesCountByMetricName": [
       {
         "name": "net_conntrack_dialer_conn_failed_total",
