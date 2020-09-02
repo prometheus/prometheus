@@ -303,17 +303,14 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 					})
 				}
 
+				sort.Sort(gotAlerts)
+				sort.Sort(expAlerts)
 				if gotAlerts.Len() != expAlerts.Len() {
+					errs = append(errs, errors.Errorf("    alertname:%s, time:%s, \n        exp:%v alerts %#v, \n        got:%v alerts %#v",
+						testcase.Alertname, testcase.EvalTime.String(), expAlerts.Len(), expAlerts.String(), gotAlerts.Len(), gotAlerts.String()))
+				} else if !reflect.DeepEqual(expAlerts, gotAlerts) {
 					errs = append(errs, errors.Errorf("    alertname:%s, time:%s, \n        exp:%#v, \n        got:%#v",
 						testcase.Alertname, testcase.EvalTime.String(), expAlerts.String(), gotAlerts.String()))
-				} else {
-					sort.Sort(gotAlerts)
-					sort.Sort(expAlerts)
-
-					if !reflect.DeepEqual(expAlerts, gotAlerts) {
-						errs = append(errs, errors.Errorf("    alertname:%s, time:%s, \n        exp:%#v, \n        got:%#v",
-							testcase.Alertname, testcase.EvalTime.String(), expAlerts.String(), gotAlerts.String()))
-					}
 				}
 			}
 
