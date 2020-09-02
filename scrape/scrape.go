@@ -435,7 +435,6 @@ func (sp *scrapePool) sync(targets []*Target) {
 	)
 
 	for _, t := range targets {
-		t := t
 		hash := t.hash()
 
 		if _, ok := sp.activeTargets[hash]; !ok {
