@@ -14,13 +14,14 @@
 package scrape
 
 import (
+	"context"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 )
 
 type nopAppendable struct{}
 
-func (a nopAppendable) Appender() storage.Appender {
+func (a nopAppendable) Appender(_ context.Context) storage.Appender {
 	return nopAppender{}
 }
 
@@ -40,8 +41,10 @@ type sample struct {
 // collectResultAppender records all samples that were added through the appender.
 // It can be used as its zero value or be backed by another appender it writes samples through.
 type collectResultAppender struct {
-	next   storage.Appender
-	result []sample
+	next             storage.Appender
+	result           []sample
+	pendingResult    []sample
+	rolledbackResult []sample
 
 	mapper map[uint64]labels.Labels
 }
@@ -55,7 +58,7 @@ func (a *collectResultAppender) AddFast(ref uint64, t int64, v float64) error {
 	if err != nil {
 		return err
 	}
-	a.result = append(a.result, sample{
+	a.pendingResult = append(a.pendingResult, sample{
 		metric: a.mapper[ref],
 		t:      t,
 		v:      v,
@@ -64,7 +67,7 @@ func (a *collectResultAppender) AddFast(ref uint64, t int64, v float64) error {
 }
 
 func (a *collectResultAppender) Add(m labels.Labels, t int64, v float64) (uint64, error) {
-	a.result = append(a.result, sample{
+	a.pendingResult = append(a.pendingResult, sample{
 		metric: m,
 		t:      t,
 		v:      v,
@@ -85,5 +88,20 @@ func (a *collectResultAppender) Add(m labels.Labels, t int64, v float64) (uint64
 	return ref, nil
 }
 
-func (a *collectResultAppender) Commit() error   { return nil }
-func (a *collectResultAppender) Rollback() error { return nil }
+func (a *collectResultAppender) Commit() error {
+	a.result = append(a.result, a.pendingResult...)
+	a.pendingResult = nil
+	if a.next == nil {
+		return nil
+	}
+	return a.next.Commit()
+}
+
+func (a *collectResultAppender) Rollback() error {
+	a.rolledbackResult = a.pendingResult
+	a.pendingResult = nil
+	if a.next == nil {
+		return nil
+	}
+	return a.next.Rollback()
+}

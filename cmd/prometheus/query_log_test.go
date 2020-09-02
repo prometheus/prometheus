@@ -246,7 +246,19 @@ func (p *queryLogTest) run(t *testing.T) {
 		p.setQueryLog(t, "")
 	}
 
-	params := append([]string{"-test.main", "--config.file=" + p.configFile.Name(), "--web.enable-lifecycle", fmt.Sprintf("--web.listen-address=%s:%d", p.host, p.port)}, p.params()...)
+	dir, err := ioutil.TempDir("", "query_log_test")
+	testutil.Ok(t, err)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
+
+	params := append([]string{
+		"-test.main",
+		"--config.file=" + p.configFile.Name(),
+		"--web.enable-lifecycle",
+		fmt.Sprintf("--web.listen-address=%s:%d", p.host, p.port),
+		"--storage.tsdb.path=" + dir,
+	}, p.params()...)
 
 	prom := exec.Command(promPath, params...)
 

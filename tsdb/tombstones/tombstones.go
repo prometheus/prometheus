@@ -22,6 +22,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 
 	"github.com/go-kit/kit/log"
@@ -286,47 +287,32 @@ type Intervals []Interval
 
 // Add the new time-range to the existing ones.
 // The existing ones must be sorted.
-func (itvs Intervals) Add(n Interval) Intervals {
-	for i, r := range itvs {
-		// TODO(gouthamve): Make this codepath easier to digest.
-		if r.InBounds(n.Mint-1) || r.InBounds(n.Mint) {
-			if n.Maxt > r.Maxt {
-				itvs[i].Maxt = n.Maxt
-			}
-
-			j := 0
-			for _, r2 := range itvs[i+1:] {
-				if n.Maxt < r2.Mint {
-					break
-				}
-				j++
-			}
-			if j != 0 {
-				if itvs[i+j].Maxt > n.Maxt {
-					itvs[i].Maxt = itvs[i+j].Maxt
-				}
-				itvs = append(itvs[:i+1], itvs[i+j+1:]...)
-			}
-			return itvs
-		}
-
-		if r.InBounds(n.Maxt+1) || r.InBounds(n.Maxt) {
-			if n.Mint < r.Maxt {
-				itvs[i].Mint = n.Mint
-			}
-			return itvs
-		}
-
-		if n.Mint < r.Mint {
-			newRange := make(Intervals, i, len(itvs[:i])+1)
-			copy(newRange, itvs[:i])
-			newRange = append(newRange, n)
-			newRange = append(newRange, itvs[i:]...)
-
-			return newRange
-		}
+func (in Intervals) Add(n Interval) Intervals {
+	if len(in) == 0 {
+		return append(in, n)
+	}
+	// Find min and max indexes of intervals that overlap with the new interval.
+	// Intervals are closed [t1, t2] and t is discreet, so if neighbour intervals are 1 step difference
+	// to the new one, we can merge those together.
+	mini := sort.Search(len(in), func(i int) bool { return in[i].Maxt >= n.Mint-1 })
+	if mini == len(in) {
+		return append(in, n)
 	}
 
-	itvs = append(itvs, n)
-	return itvs
+	maxi := sort.Search(len(in)-mini, func(i int) bool { return in[mini+i].Mint > n.Maxt+1 })
+	if maxi == 0 {
+		if mini == 0 {
+			return append(Intervals{n}, in...)
+		}
+		return append(in[:mini], append(Intervals{n}, in[mini:]...)...)
+	}
+
+	if n.Mint < in[mini].Mint {
+		in[mini].Mint = n.Mint
+	}
+	in[mini].Maxt = in[maxi+mini-1].Maxt
+	if n.Maxt > in[mini].Maxt {
+		in[mini].Maxt = n.Maxt
+	}
+	return append(in[:mini+1], in[maxi+mini:]...)
 }

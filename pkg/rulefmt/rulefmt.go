@@ -16,6 +16,7 @@ package rulefmt
 import (
 	"bytes"
 	"context"
+	"io"
 	"io/ioutil"
 	"strings"
 	"time"
@@ -178,7 +179,7 @@ func (r *Rule) Validate() (nodes []WrappedError) {
 	}
 
 	for k, v := range r.Labels {
-		if !model.LabelName(k).IsValid() {
+		if !model.LabelName(k).IsValid() || k == model.MetricNameLabel {
 			nodes = append(nodes, WrappedError{
 				err: errors.Errorf("invalid label name: %s", k),
 			})
@@ -263,7 +264,9 @@ func Parse(content []byte) (*RuleGroups, []error) {
 
 	decoder := yaml.NewDecoder(bytes.NewReader(content))
 	decoder.KnownFields(true)
-	if err = decoder.Decode(&groups); err != nil {
+	err = decoder.Decode(&groups)
+	// Ignore io.EOF which happens with empty input.
+	if err != nil && err != io.EOF {
 		errs = append(errs, err)
 	}
 

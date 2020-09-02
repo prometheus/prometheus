@@ -124,7 +124,6 @@ func (client ExpressRouteConnectionsClient) CreateOrUpdateSender(req *http.Reque
 func (client ExpressRouteConnectionsClient) CreateOrUpdateResponder(resp *http.Response) (result ExpressRouteConnection, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -202,7 +201,6 @@ func (client ExpressRouteConnectionsClient) DeleteSender(req *http.Request) (fut
 func (client ExpressRouteConnectionsClient) DeleteResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted, http.StatusNoContent),
 		autorest.ByClosing())
 	result.Response = resp
@@ -279,7 +277,6 @@ func (client ExpressRouteConnectionsClient) GetSender(req *http.Request) (*http.
 func (client ExpressRouteConnectionsClient) GetResponder(resp *http.Response) (result ExpressRouteConnection, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -355,7 +352,6 @@ func (client ExpressRouteConnectionsClient) ListSender(req *http.Request) (*http
 func (client ExpressRouteConnectionsClient) ListResponder(resp *http.Response) (result ExpressRouteConnectionList, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

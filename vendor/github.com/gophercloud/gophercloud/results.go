@@ -131,6 +131,18 @@ func (r Result) extractIntoPtr(to interface{}, label string) error {
 				// fields of the struct or composed extension struct
 				// at the end of this method.
 				toValue.Set(newSlice)
+
+				// jtopjian: This was put into place to resolve the issue
+				// described at
+				// https://github.com/gophercloud/gophercloud/issues/1963
+				//
+				// This probably isn't the best fix, but it appears to
+				// be resolving the issue, so I'm going to implement it
+				// for now.
+				//
+				// For future readers, this entire case statement could
+				// use a review.
+				return nil
 			}
 		}
 	case reflect.Struct:

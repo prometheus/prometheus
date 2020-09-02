@@ -16,6 +16,8 @@
 
 package config
 
+import "path/filepath"
+
 // Secret special type for storing secrets.
 type Secret string
 
@@ -31,4 +33,21 @@ func (s Secret) MarshalYAML() (interface{}, error) {
 func (s *Secret) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	type plain Secret
 	return unmarshal((*plain)(s))
+}
+
+// DirectorySetter is a config type that contains file paths that may
+// be relative to the file containing the config.
+type DirectorySetter interface {
+	// SetDirectory joins any relative file paths with dir.
+	// Any paths that are empty or absolute remain unchanged.
+	SetDirectory(dir string)
+}
+
+// JoinDir joins dir and path if path is relative.
+// If path is empty or absolute, it is returned unchanged.
+func JoinDir(dir, path string) string {
+	if path == "" || filepath.IsAbs(path) {
+		return path
+	}
+	return filepath.Join(dir, path)
 }

@@ -41,16 +41,15 @@
 
 package chunkenc
 
-import "io"
+import (
+	"encoding/binary"
+	"io"
+)
 
 // bstream is a stream of bits.
 type bstream struct {
 	stream []byte // the data stream
 	count  uint8  // how many bits are valid in current byte
-}
-
-func newBReader(b []byte) bstream {
-	return bstream{stream: b, count: 8}
 }
 
 func (b *bstream) bytes() []byte {
@@ -111,90 +110,131 @@ func (b *bstream) writeBits(u uint64, nbits int) {
 	}
 }
 
-func (b *bstream) readBit() (bit, error) {
-	if len(b.stream) == 0 {
+type bstreamReader struct {
+	stream       []byte
+	streamOffset int // The offset from which read the next byte from the stream.
+
+	buffer uint64 // The current buffer, filled from the stream, containing up to 8 bytes from which read bits.
+	valid  uint8  // The number of bits valid to read (from left) in the current buffer.
+}
+
+func newBReader(b []byte) bstreamReader {
+	return bstreamReader{
+		stream: b,
+	}
+}
+
+func (b *bstreamReader) readBit() (bit, error) {
+	if b.valid == 0 {
+		if !b.loadNextBuffer(1) {
+			return false, io.EOF
+		}
+	}
+
+	return b.readBitFast()
+}
+
+// readBitFast is like readBit but can return io.EOF if the internal buffer is empty.
+// If it returns io.EOF, the caller should retry reading bits calling readBit().
+// This function must be kept small and a leaf in order to help the compiler inlining it
+// and further improve performances.
+func (b *bstreamReader) readBitFast() (bit, error) {
+	if b.valid == 0 {
 		return false, io.EOF
 	}
 
-	if b.count == 0 {
-		b.stream = b.stream[1:]
+	b.valid--
+	bitmask := uint64(1) << b.valid
+	return (b.buffer & bitmask) != 0, nil
+}
 
-		if len(b.stream) == 0 {
-			return false, io.EOF
+func (b *bstreamReader) readBits(nbits uint8) (uint64, error) {
+	if b.valid == 0 {
+		if !b.loadNextBuffer(nbits) {
+			return 0, io.EOF
 		}
-		b.count = 8
 	}
 
-	d := (b.stream[0] << (8 - b.count)) & 0x80
-	b.count--
-	return d != 0, nil
-}
+	if nbits <= b.valid {
+		return b.readBitsFast(nbits)
+	}
 
-func (b *bstream) ReadByte() (byte, error) {
-	return b.readByte()
-}
+	// We have to read all remaining valid bits from the current buffer and a part from the next one.
+	bitmask := (uint64(1) << b.valid) - 1
+	nbits -= b.valid
+	v := (b.buffer & bitmask) << nbits
+	b.valid = 0
 
-func (b *bstream) readByte() (byte, error) {
-	if len(b.stream) == 0 {
+	if !b.loadNextBuffer(nbits) {
 		return 0, io.EOF
 	}
 
-	if b.count == 0 {
-		b.stream = b.stream[1:]
+	bitmask = (uint64(1) << nbits) - 1
+	v = v | ((b.buffer >> (b.valid - nbits)) & bitmask)
+	b.valid -= nbits
 
-		if len(b.stream) == 0 {
-			return 0, io.EOF
-		}
-		return b.stream[0], nil
-	}
+	return v, nil
+}
 
-	if b.count == 8 {
-		b.count = 0
-		return b.stream[0], nil
-	}
-
-	byt := b.stream[0] << (8 - b.count)
-	b.stream = b.stream[1:]
-
-	if len(b.stream) == 0 {
+// readBitsFast is like readBits but can return io.EOF if the internal buffer is empty.
+// If it returns io.EOF, the caller should retry reading bits calling readBits().
+// This function must be kept small and a leaf in order to help the compiler inlining it
+// and further improve performances.
+func (b *bstreamReader) readBitsFast(nbits uint8) (uint64, error) {
+	if nbits > b.valid {
 		return 0, io.EOF
 	}
 
-	// We just advanced the stream and can assume the shift to be 0.
-	byt |= b.stream[0] >> b.count
+	bitmask := (uint64(1) << nbits) - 1
+	b.valid -= nbits
 
-	return byt, nil
+	return (b.buffer >> b.valid) & bitmask, nil
 }
 
-func (b *bstream) readBits(nbits int) (uint64, error) {
-	var u uint64
+func (b *bstreamReader) ReadByte() (byte, error) {
+	v, err := b.readBits(8)
+	if err != nil {
+		return 0, err
+	}
+	return byte(v), nil
+}
 
-	for nbits >= 8 {
-		byt, err := b.readByte()
-		if err != nil {
-			return 0, err
-		}
-
-		u = (u << 8) | uint64(byt)
-		nbits -= 8
+// loadNextBuffer loads the next bytes from the stream into the internal buffer.
+// The input nbits is the minimum number of bits that must be read, but the implementation
+// can read more (if possible) to improve performances.
+func (b *bstreamReader) loadNextBuffer(nbits uint8) bool {
+	if b.streamOffset >= len(b.stream) {
+		return false
 	}
 
-	if nbits == 0 {
-		return u, nil
+	// Handle the case there are more then 8 bytes in the buffer (most common case)
+	// in a optimized way. It's guaranteed that this branch will never read from the
+	// very last byte of the stream (which suffers race conditions due to concurrent
+	// writes).
+	if b.streamOffset+8 < len(b.stream) {
+		b.buffer = binary.BigEndian.Uint64(b.stream[b.streamOffset:])
+		b.streamOffset += 8
+		b.valid = 64
+		return true
 	}
 
-	if nbits > int(b.count) {
-		u = (u << uint(b.count)) | uint64((b.stream[0]<<(8-b.count))>>(8-b.count))
-		nbits -= int(b.count)
-		b.stream = b.stream[1:]
-
-		if len(b.stream) == 0 {
-			return 0, io.EOF
-		}
-		b.count = 8
+	// We're here if the are 8 or less bytes left in the stream. Since this reader needs
+	// to handle race conditions with concurrent writes happening on the very last byte
+	// we make sure to never over more than the minimum requested bits (rounded up to
+	// the next byte). The following code is slower but called less frequently.
+	nbytes := int((nbits / 8) + 1)
+	if b.streamOffset+nbytes > len(b.stream) {
+		nbytes = len(b.stream) - b.streamOffset
 	}
 
-	u = (u << uint(nbits)) | uint64((b.stream[0]<<(8-b.count))>>(8-uint(nbits)))
-	b.count -= uint8(nbits)
-	return u, nil
+	buffer := uint64(0)
+	for i := 0; i < nbytes; i++ {
+		buffer = buffer | (uint64(b.stream[b.streamOffset+i]) << uint(8*(nbytes-i-1)))
+	}
+
+	b.buffer = buffer
+	b.streamOffset += nbytes
+	b.valid = uint8(nbytes * 8)
+
+	return true
 }

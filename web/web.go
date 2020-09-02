@@ -34,7 +34,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"sync/atomic"
 	template_text "text/template"
 	"time"
 
@@ -51,9 +50,8 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
 	"github.com/prometheus/common/server"
-	"github.com/prometheus/prometheus/tsdb"
-	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/soheilhy/cmux"
+	"go.uber.org/atomic"
 	"golang.org/x/net/netutil"
 	"google.golang.org/grpc"
 
@@ -64,6 +62,8 @@ import (
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/template"
+	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/util/httputil"
 	api_v1 "github.com/prometheus/prometheus/web/api/v1"
 	api_v2 "github.com/prometheus/prometheus/web/api/v2"
@@ -166,6 +166,11 @@ func (m *metrics) instrumentHandler(handlerName string, handler http.HandlerFunc
 // PrometheusVersion contains build information about Prometheus.
 type PrometheusVersion = api_v1.PrometheusVersion
 
+type LocalStorage interface {
+	storage.Storage
+	api_v1.TSDBAdminStats
+}
+
 // Handler serves various HTTP endpoints of the Prometheus server
 type Handler struct {
 	logger log.Logger
@@ -178,9 +183,8 @@ type Handler struct {
 	queryEngine   *promql.Engine
 	lookbackDelta time.Duration
 	context       context.Context
-	tsdb          func() *tsdb.DB
 	storage       storage.Storage
-	localStorage  storage.Storage
+	localStorage  LocalStorage
 	notifier      *notifier.Manager
 
 	apiV1 *api_v1.API
@@ -198,7 +202,7 @@ type Handler struct {
 	mtx sync.RWMutex
 	now func() model.Time
 
-	ready uint32 // ready is uint32 rather than boolean to be able to use atomic functions.
+	ready atomic.Uint32 // ready is uint32 rather than boolean to be able to use atomic functions.
 }
 
 // ApplyConfig updates the config field of the Handler struct
@@ -214,9 +218,10 @@ func (h *Handler) ApplyConfig(conf *config.Config) error {
 // Options for the web Handler.
 type Options struct {
 	Context               context.Context
-	TSDB                  func() *tsdb.DB
 	TSDBRetentionDuration model.Duration
+	TSDBDir               string
 	TSDBMaxBytes          units.Base2Bytes
+	LocalStorage          LocalStorage
 	Storage               storage.Storage
 	QueryEngine           *promql.Engine
 	LookbackDelta         time.Duration
@@ -283,20 +288,19 @@ func New(logger log.Logger, o *Options) *Handler {
 		ruleManager:   o.RuleManager,
 		queryEngine:   o.QueryEngine,
 		lookbackDelta: o.LookbackDelta,
-		tsdb:          o.TSDB,
 		storage:       o.Storage,
-		localStorage:  o.TSDB(),
+		localStorage:  o.LocalStorage,
 		notifier:      o.Notifier,
 
 		now: model.Now,
-
-		ready: 0,
 	}
+	h.ready.Store(0)
 
-	factoryTr := func(_ context.Context) api_v1.TargetRetriever {
-		return h.scrapeManager
-	}
-	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, factoryTr, h.notifier,
+	factoryTr := func(_ context.Context) api_v1.TargetRetriever { return h.scrapeManager }
+	factoryAr := func(_ context.Context) api_v1.AlertmanagerRetriever { return h.notifier }
+	FactoryRr := func(_ context.Context) api_v1.RulesRetriever { return h.ruleManager }
+
+	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, factoryTr, factoryAr,
 		func() config.Config {
 			h.mtx.RLock()
 			defer h.mtx.RUnlock()
@@ -309,12 +313,11 @@ func New(logger log.Logger, o *Options) *Handler {
 			Scheme:        o.ExternalURL.Scheme,
 		},
 		h.testReady,
-		func() api_v1.TSDBAdmin {
-			return h.options.TSDB()
-		},
+		h.options.LocalStorage,
+		h.options.TSDBDir,
 		h.options.EnableAdminAPI,
 		logger,
-		h.ruleManager,
+		FactoryRr,
 		h.options.RemoteReadSampleLimit,
 		h.options.RemoteReadConcurrencyLimit,
 		h.options.RemoteReadBytesInFrame,
@@ -392,9 +395,10 @@ func New(logger log.Logger, o *Options) *Handler {
 				fmt.Fprintf(w, "Error reading React index.html: %v", err)
 				return
 			}
-			prefixedIdx := bytes.ReplaceAll(idx, []byte("PATH_PREFIX_PLACEHOLDER"), []byte(o.ExternalURL.Path))
-			prefixedIdx = bytes.ReplaceAll(prefixedIdx, []byte("CONSOLES_LINK_PLACEHOLDER"), []byte(h.consolesPath()))
-			w.Write(prefixedIdx)
+			replacedIdx := bytes.ReplaceAll(idx, []byte("PATH_PREFIX_PLACEHOLDER"), []byte(o.ExternalURL.Path))
+			replacedIdx = bytes.ReplaceAll(replacedIdx, []byte("CONSOLES_LINK_PLACEHOLDER"), []byte(h.consolesPath()))
+			replacedIdx = bytes.ReplaceAll(replacedIdx, []byte("TITLE_PLACEHOLDER"), []byte(h.options.PageTitle))
+			w.Write(replacedIdx)
 			return
 		}
 
@@ -479,13 +483,12 @@ func serveDebug(w http.ResponseWriter, req *http.Request) {
 
 // Ready sets Handler to be ready.
 func (h *Handler) Ready() {
-	atomic.StoreUint32(&h.ready, 1)
+	h.ready.Store(1)
 }
 
 // Verifies whether the server is ready or not.
 func (h *Handler) isReady() bool {
-	ready := atomic.LoadUint32(&h.ready)
-	return ready > 0
+	return h.ready.Load() > 0
 }
 
 // Checks if server is ready, calls f if it is, returns 503 if it is not.
@@ -537,8 +540,13 @@ func (h *Handler) Run(ctx context.Context) error {
 		httpl   = m.Match(cmux.HTTP1Fast())
 		grpcSrv = grpc.NewServer()
 	)
+
+	// Prevent open connections to block the shutdown of the handler.
+	m.SetReadTimeout(h.options.ReadTimeout)
+
 	av2 := api_v2.New(
-		h.options.TSDB,
+		h.options.LocalStorage,
+		h.options.TSDBDir,
 		h.options.EnableAdminAPI,
 	)
 	av2.RegisterGRPC(grpcSrv)
@@ -599,8 +607,24 @@ func (h *Handler) Run(ctx context.Context) error {
 		return e
 	case <-ctx.Done():
 		httpSrv.Shutdown(ctx)
-		grpcSrv.GracefulStop()
+		stopGRPCSrv(grpcSrv)
 		return nil
+	}
+}
+
+// stopGRPCSrv stops a given GRPC server. An attempt to stop the server
+// gracefully is made first. After 15s, the server to forced to stop.
+func stopGRPCSrv(srv *grpc.Server) {
+	stop := make(chan struct{})
+	go func() {
+		srv.GracefulStop()
+		close(stop)
+	}()
+
+	select {
+	case <-time.After(15 * time.Second):
+		srv.Stop()
+	case <-stop:
 	}
 }
 
@@ -789,13 +813,22 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 			status.LastConfigTime = time.Unix(int64(toFloat64(mF)), 0).UTC()
 		}
 	}
-	db := h.tsdb()
+
 	startTime := time.Now().UnixNano()
-	status.Stats = db.Head().PostingsCardinalityStats("__name__")
+	s, err := h.localStorage.Stats("__name__")
+	if err != nil {
+		if errors.Cause(err) == tsdb.ErrNotReady {
+			http.Error(w, tsdb.ErrNotReady.Error(), http.StatusServiceUnavailable)
+			return
+		}
+		http.Error(w, fmt.Sprintf("error gathering local storage statistics: %s", err), http.StatusInternalServerError)
+		return
+	}
 	status.Duration = fmt.Sprintf("%.3f", float64(time.Now().UnixNano()-startTime)/float64(1e9))
-	status.NumSeries = db.Head().NumSeries()
-	status.MaxTime = db.Head().MaxTime()
-	status.MinTime = db.Head().MaxTime()
+	status.Stats = s.IndexPostingStats
+	status.NumSeries = s.NumSeries
+	status.MaxTime = s.MaxTime
+	status.MinTime = s.MinTime
 
 	h.executeTemplate(w, "status.html", status)
 }
@@ -967,6 +1000,10 @@ func tmplFuncs(consolesPath string, opts *Options) template_text.FuncMap {
 	return template_text.FuncMap{
 		"since": func(t time.Time) time.Duration {
 			return time.Since(t) / time.Millisecond * time.Millisecond
+		},
+		"unixToTime": func(i int64) time.Time {
+			t := time.Unix(i/int64(time.Microsecond), 0).UTC()
+			return t
 		},
 		"consolesPath": func() string { return consolesPath },
 		"pathPrefix":   func() string { return opts.ExternalURL.Path },

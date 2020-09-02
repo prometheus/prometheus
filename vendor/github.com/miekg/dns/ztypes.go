@@ -685,8 +685,8 @@ func (rr *ANY) copy() RR {
 }
 func (rr *APL) copy() RR {
 	Prefixes := make([]APLPrefix, len(rr.Prefixes))
-	for i := range rr.Prefixes {
-		Prefixes[i] = rr.Prefixes[i].copy()
+	for i, e := range rr.Prefixes {
+		Prefixes[i] = e.copy()
 	}
 	return &APL{rr.Hdr, Prefixes}
 }
@@ -697,6 +697,12 @@ func (rr *AVC) copy() RR {
 }
 func (rr *CAA) copy() RR {
 	return &CAA{rr.Hdr, rr.Flag, rr.Tag, rr.Value}
+}
+func (rr *CDNSKEY) copy() RR {
+	return &CDNSKEY{*rr.DNSKEY.copy().(*DNSKEY)}
+}
+func (rr *CDS) copy() RR {
+	return &CDS{*rr.DS.copy().(*DS)}
 }
 func (rr *CERT) copy() RR {
 	return &CERT{rr.Hdr, rr.Type, rr.KeyTag, rr.Algorithm, rr.Certificate}
@@ -711,6 +717,9 @@ func (rr *CSYNC) copy() RR {
 }
 func (rr *DHCID) copy() RR {
 	return &DHCID{rr.Hdr, rr.Digest}
+}
+func (rr *DLV) copy() RR {
+	return &DLV{*rr.DS.copy().(*DS)}
 }
 func (rr *DNAME) copy() RR {
 	return &DNAME{rr.Hdr, rr.Target}
@@ -743,6 +752,9 @@ func (rr *HIP) copy() RR {
 	RendezvousServers := make([]string, len(rr.RendezvousServers))
 	copy(RendezvousServers, rr.RendezvousServers)
 	return &HIP{rr.Hdr, rr.HitLength, rr.PublicKeyAlgorithm, rr.PublicKeyLength, rr.Hit, rr.PublicKey, RendezvousServers}
+}
+func (rr *KEY) copy() RR {
+	return &KEY{*rr.DNSKEY.copy().(*DNSKEY)}
 }
 func (rr *KX) copy() RR {
 	return &KX{rr.Hdr, rr.Preference, rr.Exchanger}
@@ -846,6 +858,9 @@ func (rr *RRSIG) copy() RR {
 }
 func (rr *RT) copy() RR {
 	return &RT{rr.Hdr, rr.Preference, rr.Host}
+}
+func (rr *SIG) copy() RR {
+	return &SIG{*rr.RRSIG.copy().(*RRSIG)}
 }
 func (rr *SMIMEA) copy() RR {
 	return &SMIMEA{rr.Hdr, rr.Usage, rr.Selector, rr.MatchingType, rr.Certificate}

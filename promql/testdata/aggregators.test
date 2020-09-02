@@ -298,3 +298,102 @@ eval instant at 1m quantile without(point)((scalar(foo)), data)
 	{test="two samples"} 0.8
 	{test="three samples"} 1.6
 	{test="uneven samples"} 2.8
+
+# Tests for group.
+clear
+
+load 10s
+	data{test="two samples",point="a"} 0
+	data{test="two samples",point="b"} 1
+	data{test="three samples",point="a"} 0
+	data{test="three samples",point="b"} 1
+	data{test="three samples",point="c"} 2
+	data{test="uneven samples",point="a"} 0
+	data{test="uneven samples",point="b"} 1
+	data{test="uneven samples",point="c"} 4
+	foo .8
+
+eval instant at 1m group without(point)(data)
+	{test="two samples"} 1
+	{test="three samples"} 1
+	{test="uneven samples"} 1
+
+eval instant at 1m group(foo)
+	{} 1
+
+# Tests for avg.
+clear
+
+load 10s
+	data{test="ten",point="a"} 8
+	data{test="ten",point="b"} 10
+	data{test="ten",point="c"} 12
+	data{test="inf",point="a"} 0
+	data{test="inf",point="b"} Inf
+	data{test="inf",point="d"} Inf
+	data{test="inf",point="c"} 0
+	data{test="-inf",point="a"} -Inf
+	data{test="-inf",point="b"} -Inf
+	data{test="-inf",point="c"} 0
+	data{test="inf2",point="a"} Inf
+	data{test="inf2",point="b"} 0
+	data{test="inf2",point="c"} Inf
+	data{test="-inf2",point="a"} -Inf
+	data{test="-inf2",point="b"} 0
+	data{test="-inf2",point="c"} -Inf
+	data{test="inf3",point="b"} Inf
+	data{test="inf3",point="d"} Inf
+	data{test="inf3",point="c"} Inf
+	data{test="inf3",point="d"} -Inf
+	data{test="-inf3",point="b"} -Inf
+	data{test="-inf3",point="d"} -Inf
+	data{test="-inf3",point="c"} -Inf
+	data{test="-inf3",point="c"} Inf
+	data{test="nan",point="a"} -Inf
+	data{test="nan",point="b"} 0
+	data{test="nan",point="c"} Inf
+	data{test="big",point="a"} 9.988465674311579e+307
+	data{test="big",point="b"} 9.988465674311579e+307
+	data{test="big",point="c"} 9.988465674311579e+307
+	data{test="big",point="d"} 9.988465674311579e+307
+	data{test="-big",point="a"} -9.988465674311579e+307
+	data{test="-big",point="b"} -9.988465674311579e+307
+	data{test="-big",point="c"} -9.988465674311579e+307
+	data{test="-big",point="d"} -9.988465674311579e+307
+	data{test="bigzero",point="a"} -9.988465674311579e+307
+	data{test="bigzero",point="b"} -9.988465674311579e+307
+	data{test="bigzero",point="c"} 9.988465674311579e+307
+	data{test="bigzero",point="d"} 9.988465674311579e+307
+
+eval instant at 1m avg(data{test="ten"})
+	{} 10
+
+eval instant at 1m avg(data{test="inf"})
+	{} Inf
+
+eval instant at 1m avg(data{test="inf2"})
+	{} Inf
+
+eval instant at 1m avg(data{test="inf3"})
+	{} NaN
+
+eval instant at 1m avg(data{test="-inf"})
+	{} -Inf
+
+eval instant at 1m avg(data{test="-inf2"})
+	{} -Inf
+
+eval instant at 1m avg(data{test="-inf3"})
+	{} NaN
+
+eval instant at 1m avg(data{test="nan"})
+	{} NaN
+
+eval instant at 1m avg(data{test="big"})
+	{} 9.988465674311579e+307
+
+eval instant at 1m avg(data{test="-big"})
+	{} -9.988465674311579e+307
+
+eval instant at 1m avg(data{test="bigzero"})
+	{} 0

@@ -27,28 +27,51 @@
 //
 // Registry and RegistryBuilder
 //
-// A Registry is an immutable store for ValueEncoders, ValueDecoders, and a type map. For looking up
-// ValueEncoders and Decoders the Registry first attempts to find a ValueEncoder or ValueDecoder for
-// the type provided; if one cannot be found it then checks to see if a registered ValueEncoder or
-// ValueDecoder exists for an interface the type implements. Finally, the reflect.Kind of the type
-// is used to lookup a default ValueEncoder or ValueDecoder for that kind. If no ValueEncoder or
-// ValueDecoder can be found, an error is returned.
+// A Registry is an immutable store for ValueEncoders, ValueDecoders, and a type map. See the Registry type
+// documentation for examples of registering various custom encoders and decoders. A Registry can be constructed using a
+// RegistryBuilder, which handles three main types of codecs:
 //
-// The Registry also holds a type map. This allows users to retrieve the Go type that should be used
-// when decoding a BSON value into an empty interface. This is primarily only used for the empty
-// interface ValueDecoder.
+// 1. Type encoders/decoders - These can be registered using the RegisterTypeEncoder and RegisterTypeDecoder methods.
+// The registered codec will be invoked when encoding/decoding a value whose type matches the registered type exactly.
+// If the registered type is an interface, the codec will be invoked when encoding or decoding values whose type is the
+// interface, but not for values with concrete types that implement the interface.
 //
-// A RegistryBuilder is used to construct a Registry. The Register methods are used to associate
-// either a reflect.Type or a reflect.Kind with a ValueEncoder or ValueDecoder. A RegistryBuilder
-// returned from NewRegistryBuilder contains no registered ValueEncoders nor ValueDecoders and
-// contains an empty type map.
+// 2. Hook encoders/decoders - These can be registered using the RegisterHookEncoder and RegisterHookDecoder methods.
+// These methods only accept interface types and the registered codecs will be invoked when encoding or decoding values
+// whose types implement the interface. An example of a hook defined by the driver is bson.Marshaler. The driver will
+// call the MarshalBSON method for any value whose type implements bson.Marshaler, regardless of the value's concrete
+// type.
 //
-// The RegisterTypeMapEntry method handles associating a BSON type with a Go type. For example, if
-// you want to decode BSON int64 and int32 values into Go int instances, you would do the following:
+// 3. Type map entries - This can be used to associate a BSON type with a Go type. These type associations are used when
+// decoding into a bson.D/bson.M or a struct field of type interface{}. For example, by default, BSON int32 and int64
+// values decode as Go int32 and int64 instances, respectively, when decoding into a bson.D. The following code would
+// change the behavior so these values decode as Go int instances instead:
 //
-//  var regbuilder *RegistryBuilder = ... intType := reflect.TypeOf(int(0))
-//  regbuilder.RegisterTypeMapEntry(bsontype.Int64, intType).RegisterTypeMapEntry(bsontype.Int32,
-//  intType)
+//		intType := reflect.TypeOf(int(0))
+//		registryBuilder.RegisterTypeMapEntry(bsontype.Int32, intType).RegisterTypeMapEntry(bsontype.Int64, intType)
+//
+// 4. Kind encoder/decoders - These can be registered using the RegisterDefaultEncoder and RegisterDefaultDecoder
+// methods. The registered codec will be invoked when encoding or decoding values whose reflect.Kind matches the
+// registered reflect.Kind as long as the value's type doesn't match a registered type or hook encoder/decoder first.
+// These methods should be used to change the behavior for all values for a specific kind.
+//
+// Registry Lookup Procedure
+//
+// When looking up an encoder in a Registry, the precedence rules are as follows:
+//
+// 1. A type encoder registered for the exact type of the value.
+//
+// 2. A hook encoder registered for an interface that is implemented by the value or by a pointer to the value. If the
+// value matches multiple hooks (e.g. the type implements bsoncodec.Marshaler and bsoncodec.ValueMarshaler), the first
+// one registered will be selected. Note that registries constructed using bson.NewRegistryBuilder have driver-defined
+// hooks registered for the bsoncodec.Marshaler, bsoncodec.ValueMarshaler, and bsoncodec.Proxy interfaces, so those
+// will take precedence over any new hooks.
+//
+// 3. A kind encoder registered for the value's kind.
+//
+// If all of these lookups fail to find an encoder, an error of type ErrNoEncoder is returned. The same precedence
+// rules apply for decoders, with the exception that an error of type ErrNoDecoder will be returned if no decoder is
+// found.
 //
 // DefaultValueEncoders and DefaultValueDecoders
 //

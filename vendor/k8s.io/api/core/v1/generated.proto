@@ -455,6 +455,14 @@ message ConfigMap {
   // +optional
   optional k8s.io.apimachinery.pkg.apis.meta.v1.ObjectMeta metadata = 1;
 
+  // Immutable, if set to true, ensures that data stored in the ConfigMap cannot
+  // be updated (only object metadata can be modified).
+  // If not set to true, the field can be modified at any time.
+  // Defaulted to nil.
+  // This is an alpha field enabled by ImmutableEphemeralVolumes feature gate.
+  // +optional
+  optional bool immutable = 4;
+
   // Data contains the configuration data.
   // Each key must consist of alphanumeric characters, '-', '_' or '.'.
   // Values with non-UTF-8 byte sequences must use the BinaryData field.
@@ -681,7 +689,6 @@ message Container {
   repeated VolumeMount volumeMounts = 9;
 
   // volumeDevices is the list of block devices to be used by the container.
-  // This is a beta feature.
   // +patchMergeKey=devicePath
   // +patchStrategy=merge
   // +optional
@@ -707,7 +714,7 @@ message Container {
   // This can be used to provide different probe parameters at the beginning of a Pod's lifecycle,
   // when it might take a long time to load data or warm a cache, than during steady-state operation.
   // This cannot be updated.
-  // This is an alpha feature enabled by the StartupProbe feature flag.
+  // This is a beta feature enabled by the StartupProbe feature flag.
   // More info: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle#container-probes
   // +optional
   optional Probe startupProbe = 22;
@@ -1034,6 +1041,16 @@ message EndpointPort {
   // Default is TCP.
   // +optional
   optional string protocol = 3;
+
+  // The application protocol for this port.
+  // This field follows standard Kubernetes label syntax.
+  // Un-prefixed names are reserved for IANA standard service names (as per
+  // RFC-6335 and http://www.iana.org/assignments/service-names).
+  // Non-standard protocols should use prefixed names such as
+  // mycompany.com/my-custom-protocol.
+  // Field can be enabled with ServiceAppProtocol feature gate.
+  // +optional
+  optional string appProtocol = 4;
 }
 
 // EndpointSubset is a group of addresses with a common set of ports. The
@@ -1258,7 +1275,6 @@ message EphemeralContainerCommon {
   repeated VolumeMount volumeMounts = 9;
 
   // volumeDevices is the list of block devices to be used by the container.
-  // This is a beta feature.
   // +patchMergeKey=devicePath
   // +patchStrategy=merge
   // +optional
@@ -1913,7 +1929,6 @@ message LimitRange {
 // LimitRangeItem defines a min/max usage limit for any resource that matches on kind.
 message LimitRangeItem {
   // Type of resource that this limit applies to.
-  // +optional
   optional string type = 1;
 
   // Max usage constraints on this kind by resource name.
@@ -2455,6 +2470,20 @@ message ObjectFieldSelector {
 }
 
 // ObjectReference contains enough information to let you inspect or modify the referred object.
+// ---
+// New uses of this type are discouraged because of difficulty describing its usage when embedded in APIs.
+//  1. Ignored fields.  It includes many fields which are not generally honored.  For instance, ResourceVersion and FieldPath are both very rarely valid in actual usage.
+//  2. Invalid usage help.  It is impossible to add specific help for individual usage.  In most embedded usages, there are particular
+//     restrictions like, "must refer only to types A and B" or "UID not honored" or "name must be restricted".
+//     Those cannot be well described when embedded.
+//  3. Inconsistent validation.  Because the usages are different, the validation rules are different by usage, which makes it hard for users to predict what will happen.
+//  4. The fields are both imprecise and overly precise.  Kind is not a precise mapping to a URL. This can produce ambiguity
+//     during interpretation and require a REST mapping.  In most cases, the dependency is on the group,resource tuple
+//     and the version of the actual struct is irrelevant.
+//  5. We cannot easily change it.  Because this type is embedded in many locations, updates to this type
+//     will affect numerous schemas.  Don't make new APIs embed an underspecified API type they do not control.
+// Instead of using this type, create a locally provided and used type that is well-focused on your reference.
+// For example, ServiceReferences for admission registration: https://github.com/kubernetes/api/blob/release-1.17/admissionregistration/v1/types.go#L533 .
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 message ObjectReference {
   // Kind of the referent.
@@ -2605,15 +2634,18 @@ message PersistentVolumeClaimSpec {
 
   // volumeMode defines what type of volume is required by the claim.
   // Value of Filesystem is implied when not included in claim spec.
-  // This is a beta feature.
   // +optional
   optional string volumeMode = 6;
 
-  // This field requires the VolumeSnapshotDataSource alpha feature gate to be
-  // enabled and currently VolumeSnapshot is the only supported data source.
-  // If the provisioner can support VolumeSnapshot data source, it will create
-  // a new volume and data will be restored to the volume at the same time.
-  // If the provisioner does not support VolumeSnapshot data source, volume will
+  // This field can be used to specify either:
+  // * An existing VolumeSnapshot object (snapshot.storage.k8s.io/VolumeSnapshot - Beta)
+  // * An existing PVC (PersistentVolumeClaim)
+  // * An existing custom resource/object that implements data population (Alpha)
+  // In order to use VolumeSnapshot object types, the appropriate feature gate
+  // must be enabled (VolumeSnapshotDataSource or AnyVolumeDataSource)
+  // If the provisioner or an external controller can support the specified data source,
+  // it will create a new volume based on the contents of the specified data source.
+  // If the specified data source is not supported, the volume will
   // not be created and the failure will be reported as an event.
   // In the future, we plan to support more data source types and the behavior
   // of the provisioner may change.
@@ -2821,7 +2853,6 @@ message PersistentVolumeSpec {
 
   // volumeMode defines if a volume is intended to be used with a formatted filesystem
   // or to remain in raw block state. Value of Filesystem is implied when not included in spec.
-  // This is a beta feature.
   // +optional
   optional string volumeMode = 8;
 
@@ -3247,6 +3278,15 @@ message PodSecurityContext {
   // sysctls (by the container runtime) might fail to launch.
   // +optional
   repeated Sysctl sysctls = 7;
+
+  // fsGroupChangePolicy defines behavior of changing ownership and permission of the volume
+  // before being exposed inside Pod. This field will only apply to
+  // volume types which support fsGroup based ownership(and permissions).
+  // It will have no effect on ephemeral volume types such as: secret, configmaps
+  // and emptydir.
+  // Valid values are "OnRootMismatch" and "Always". If not specified defaults to "Always".
+  // +optional
+  optional string fsGroupChangePolicy = 9;
 }
 
 // Describes the class of pods that should avoid this node.
@@ -3497,8 +3537,7 @@ message PodSpec {
 
   // TopologySpreadConstraints describes how a group of pods ought to spread across topology
   // domains. Scheduler will schedule pods in a way which abides by the constraints.
-  // This field is alpha-level and is only honored by clusters that enables the EvenPodsSpread
-  // feature.
+  // This field is only honored by clusters that enable the EvenPodsSpread feature.
   // All topologySpreadConstraints are ANDed.
   // +optional
   // +patchMergeKey=topologyKey
@@ -4256,6 +4295,14 @@ message Secret {
   // +optional
   optional k8s.io.apimachinery.pkg.apis.meta.v1.ObjectMeta metadata = 1;
 
+  // Immutable, if set to true, ensures that data stored in the Secret cannot
+  // be updated (only object metadata can be modified).
+  // If not set to true, the field can be modified at any time.
+  // Defaulted to nil.
+  // This is an alpha field enabled by ImmutableEphemeralVolumes feature gate.
+  // +optional
+  optional bool immutable = 5;
+
   // Data contains the secret data. Each key must consist of alphanumeric
   // characters, '-', '_' or '.'. The serialized form of the secret data is a
   // base64 encoded string, representing the arbitrary (possibly non-string)
@@ -4581,6 +4628,16 @@ message ServicePort {
   // +optional
   optional string protocol = 2;
 
+  // The application protocol for this port.
+  // This field follows standard Kubernetes label syntax.
+  // Un-prefixed names are reserved for IANA standard service names (as per
+  // RFC-6335 and http://www.iana.org/assignments/service-names).
+  // Non-standard protocols should use prefixed names such as
+  // mycompany.com/my-custom-protocol.
+  // Field can be enabled with ServiceAppProtocol feature gate.
+  // +optional
+  optional string appProtocol = 6;
+
   // The port that will be exposed by this service.
   optional int32 port = 3;
 
@@ -4864,7 +4921,7 @@ message Taint {
   // Required. The taint key to be applied to a node.
   optional string key = 1;
 
-  // Required. The taint value corresponding to the taint key.
+  // The taint value corresponding to the taint key.
   // +optional
   optional string value = 2;
 
@@ -5256,14 +5313,12 @@ message WeightedPodAffinityTerm {
 // WindowsSecurityContextOptions contain Windows-specific options and credentials.
 message WindowsSecurityContextOptions {
   // GMSACredentialSpecName is the name of the GMSA credential spec to use.
-  // This field is alpha-level and is only honored by servers that enable the WindowsGMSA feature flag.
   // +optional
   optional string gmsaCredentialSpecName = 1;
 
   // GMSACredentialSpec is where the GMSA admission webhook
   // (https://github.com/kubernetes-sigs/windows-gmsa) inlines the contents of the
   // GMSA credential spec named by the GMSACredentialSpecName field.
-  // This field is alpha-level and is only honored by servers that enable the WindowsGMSA feature flag.
   // +optional
   optional string gmsaCredentialSpec = 2;
 
@@ -5271,7 +5326,6 @@ message WindowsSecurityContextOptions {
   // Defaults to the user specified in image metadata if unspecified.
   // May also be set in PodSecurityContext. If set in both SecurityContext and
   // PodSecurityContext, the value specified in SecurityContext takes precedence.
-  // This field is beta-level and may be disabled with the WindowsRunAsUserName feature flag.
   // +optional
   optional string runAsUserName = 3;
 }

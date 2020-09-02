@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright 2020 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -11,588 +11,235 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package storage
+package storage_test
 
 import (
-	"fmt"
-	"math"
-	"sort"
+	"context"
 	"testing"
 
+	"github.com/pkg/errors"
+	"github.com/prometheus/common/model"
+
 	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/prometheus/tsdb/tsdbutil"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
-func TestMergeStringSlices(t *testing.T) {
-	for _, tc := range []struct {
-		input    [][]string
-		expected []string
-	}{
-		{},
-		{[][]string{{"foo"}}, []string{"foo"}},
-		{[][]string{{"foo"}, {"bar"}}, []string{"bar", "foo"}},
-		{[][]string{{"foo"}, {"bar"}, {"baz"}}, []string{"bar", "baz", "foo"}},
-	} {
-		testutil.Equals(t, tc.expected, mergeStringSlices(tc.input))
-	}
-}
+func TestFanout_SelectSorted(t *testing.T) {
+	inputLabel := labels.FromStrings(model.MetricNameLabel, "a")
+	outputLabel := labels.FromStrings(model.MetricNameLabel, "a")
 
-func TestMergeTwoStringSlices(t *testing.T) {
-	for _, tc := range []struct {
-		a, b, expected []string
-	}{
-		{[]string{}, []string{}, []string{}},
-		{[]string{"foo"}, nil, []string{"foo"}},
-		{nil, []string{"bar"}, []string{"bar"}},
-		{[]string{"foo"}, []string{"bar"}, []string{"bar", "foo"}},
-		{[]string{"foo"}, []string{"bar", "baz"}, []string{"bar", "baz", "foo"}},
-		{[]string{"foo"}, []string{"foo"}, []string{"foo"}},
-	} {
-		testutil.Equals(t, tc.expected, mergeTwoStringSlices(tc.a, tc.b))
-	}
-}
+	inputTotalSize := 0
+	ctx := context.Background()
 
-func TestMergeQuerierWithChainMerger(t *testing.T) {
-	for _, tc := range []struct {
-		name          string
-		querierSeries [][]Series
-		extraQueriers []Querier
+	priStorage := teststorage.New(t)
+	defer priStorage.Close()
+	app1 := priStorage.Appender(ctx)
+	app1.Add(inputLabel, 0, 0)
+	inputTotalSize++
+	app1.Add(inputLabel, 1000, 1)
+	inputTotalSize++
+	app1.Add(inputLabel, 2000, 2)
+	inputTotalSize++
+	err := app1.Commit()
+	testutil.Ok(t, err)
 
-		expected SeriesSet
-	}{
-		{
-			name:          "1 querier with no series",
-			querierSeries: [][]Series{{}},
-			expected:      NewMockSeriesSet(),
-		},
-		{
-			name:          "many queriers with no series",
-			querierSeries: [][]Series{{}, {}, {}, {}, {}, {}, {}},
-			expected:      NewMockSeriesSet(),
-		},
-		{
-			name: "1 querier, two series",
-			querierSeries: [][]Series{{
-				NewListSeries(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1}, sample{2, 2}, sample{3, 3}}),
-				NewListSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{0, 0}, sample{1, 1}, sample{2, 2}}),
-			}},
-			expected: NewMockSeriesSet(
-				NewListSeries(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1}, sample{2, 2}, sample{3, 3}}),
-				NewListSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{0, 0}, sample{1, 1}, sample{2, 2}}),
-			),
-		},
-		{
-			name: "2 queriers, 1 different series each",
-			querierSeries: [][]Series{{
-				NewListSeries(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1}, sample{2, 2}, sample{3, 3}}),
-			}, {
-				NewListSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{0, 0}, sample{1, 1}, sample{2, 2}}),
-			}},
-			expected: NewMockSeriesSet(
-				NewListSeries(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1}, sample{2, 2}, sample{3, 3}}),
-				NewListSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{0, 0}, sample{1, 1}, sample{2, 2}}),
-			),
-		},
-		{
-			name: "2 time unsorted queriers, 2 series each",
-			querierSeries: [][]Series{{
-				NewListSeries(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{5, 5}, sample{6, 6}}),
-				NewListSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{0, 0}, sample{1, 1}, sample{2, 2}}),
-			}, {
-				NewListSeries(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1}, sample{2, 2}, sample{3, 3}}),
-				NewListSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{3, 3}, sample{4, 4}}),
-			}},
-			expected: NewMockSeriesSet(
-				NewListSeries(
-					labels.FromStrings("bar", "baz"),
-					[]tsdbutil.Sample{sample{1, 1}, sample{2, 2}, sample{3, 3}, sample{5, 5}, sample{6, 6}},
-				),
-				NewListSeries(
-					labels.FromStrings("foo", "bar"),
-					[]tsdbutil.Sample{sample{0, 0}, sample{1, 1}, sample{2, 2}, sample{3, 3}, sample{4, 4}},
-				),
-			),
-		},
-		{
-			name: "5 queriers, only 2 queriers have 2 time unsorted series each",
-			querierSeries: [][]Series{{}, {}, {
-				NewListSeries(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{5, 5}, sample{6, 6}}),
-				NewListSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{0, 0}, sample{1, 1}, sample{2, 2}}),
-			}, {
-				NewListSeries(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1}, sample{2, 2}, sample{3, 3}}),
-				NewListSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{3, 3}, sample{4, 4}}),
-			}, {}},
-			expected: NewMockSeriesSet(
-				NewListSeries(
-					labels.FromStrings("bar", "baz"),
-					[]tsdbutil.Sample{sample{1, 1}, sample{2, 2}, sample{3, 3}, sample{5, 5}, sample{6, 6}},
-				),
-				NewListSeries(
-					labels.FromStrings("foo", "bar"),
-					[]tsdbutil.Sample{sample{0, 0}, sample{1, 1}, sample{2, 2}, sample{3, 3}, sample{4, 4}},
-				),
-			),
-		},
-		{
-			name: "2 queriers, only 2 queriers have 2 time unsorted series each, with 3 noop and one nil querier together",
-			querierSeries: [][]Series{{}, {}, {
-				NewListSeries(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{5, 5}, sample{6, 6}}),
-				NewListSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{0, 0}, sample{1, 1}, sample{2, 2}}),
-			}, {
-				NewListSeries(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1}, sample{2, 2}, sample{3, 3}}),
-				NewListSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{3, 3}, sample{4, 4}}),
-			}, {}},
-			extraQueriers: []Querier{NoopQuerier(), NoopQuerier(), nil, NoopQuerier()},
-			expected: NewMockSeriesSet(
-				NewListSeries(
-					labels.FromStrings("bar", "baz"),
-					[]tsdbutil.Sample{sample{1, 1}, sample{2, 2}, sample{3, 3}, sample{5, 5}, sample{6, 6}},
-				),
-				NewListSeries(
-					labels.FromStrings("foo", "bar"),
-					[]tsdbutil.Sample{sample{0, 0}, sample{1, 1}, sample{2, 2}, sample{3, 3}, sample{4, 4}},
-				),
-			),
-		},
-		{
-			name: "2 queriers, with 2 series, one is overlapping",
-			querierSeries: [][]Series{{}, {}, {
-				NewListSeries(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{2, 21}, sample{3, 31}, sample{5, 5}, sample{6, 6}}),
-				NewListSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{0, 0}, sample{1, 1}, sample{2, 2}}),
-			}, {
-				NewListSeries(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1}, sample{2, 22}, sample{3, 32}}),
-				NewListSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{3, 3}, sample{4, 4}}),
-			}, {}},
-			expected: NewMockSeriesSet(
-				NewListSeries(
-					labels.FromStrings("bar", "baz"),
-					[]tsdbutil.Sample{sample{1, 1}, sample{2, 21}, sample{3, 31}, sample{5, 5}, sample{6, 6}},
-				),
-				NewListSeries(
-					labels.FromStrings("foo", "bar"),
-					[]tsdbutil.Sample{sample{0, 0}, sample{1, 1}, sample{2, 2}, sample{3, 3}, sample{4, 4}},
-				),
-			),
-		},
-		{
-			name: "2 queries, one with NaN samples series",
-			querierSeries: [][]Series{{
-				NewListSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{0, math.NaN()}}),
-			}, {
-				NewListSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{1, 1}}),
-			}},
-			expected: NewMockSeriesSet(
-				NewListSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{0, math.NaN()}, sample{1, 1}}),
-			),
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			var qs []Querier
-			for _, in := range tc.querierSeries {
-				qs = append(qs, &mockQuerier{toReturn: in})
-			}
-			qs = append(qs, tc.extraQueriers...)
+	remoteStorage1 := teststorage.New(t)
+	defer remoteStorage1.Close()
+	app2 := remoteStorage1.Appender(ctx)
+	app2.Add(inputLabel, 3000, 3)
+	inputTotalSize++
+	app2.Add(inputLabel, 4000, 4)
+	inputTotalSize++
+	app2.Add(inputLabel, 5000, 5)
+	inputTotalSize++
+	err = app2.Commit()
+	testutil.Ok(t, err)
 
-			merged, _, _ := NewMergeQuerier(qs[0], qs, ChainedSeriesMerge).Select(false, nil)
-			for merged.Next() {
-				testutil.Assert(t, tc.expected.Next(), "Expected Next() to be true")
-				actualSeries := merged.At()
-				expectedSeries := tc.expected.At()
-				testutil.Equals(t, expectedSeries.Labels(), actualSeries.Labels())
+	remoteStorage2 := teststorage.New(t)
+	defer remoteStorage2.Close()
 
-				expSmpl, expErr := ExpandSamples(expectedSeries.Iterator())
-				actSmpl, actErr := ExpandSamples(actualSeries.Iterator())
-				testutil.Equals(t, expErr, actErr)
-				testutil.Equals(t, expSmpl, actSmpl)
-			}
-			testutil.Ok(t, merged.Err())
-			testutil.Assert(t, !tc.expected.Next(), "Expected Next() to be false")
-		})
-	}
-}
+	app3 := remoteStorage2.Appender(ctx)
+	app3.Add(inputLabel, 6000, 6)
+	inputTotalSize++
+	app3.Add(inputLabel, 7000, 7)
+	inputTotalSize++
+	app3.Add(inputLabel, 8000, 8)
+	inputTotalSize++
 
-func TestMergeChunkQuerierWithNoVerticalChunkSeriesMerger(t *testing.T) {
-	for _, tc := range []struct {
-		name             string
-		chkQuerierSeries [][]ChunkSeries
-		extraQueriers    []ChunkQuerier
+	err = app3.Commit()
+	testutil.Ok(t, err)
 
-		expected ChunkSeriesSet
-	}{
-		{
-			name:             "one querier with no series",
-			chkQuerierSeries: [][]ChunkSeries{{}},
-			expected:         NewMockChunkSeriesSet(),
-		},
-		{
-			name:             "many queriers with no series",
-			chkQuerierSeries: [][]ChunkSeries{{}, {}, {}, {}, {}, {}, {}},
-			expected:         NewMockChunkSeriesSet(),
-		},
-		{
-			name: "one querier, two series",
-			chkQuerierSeries: [][]ChunkSeries{{
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1}, sample{2, 2}}, []tsdbutil.Sample{sample{3, 3}}),
-				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{0, 0}, sample{1, 1}}, []tsdbutil.Sample{sample{2, 2}}),
-			}},
-			expected: NewMockChunkSeriesSet(
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1}, sample{2, 2}}, []tsdbutil.Sample{sample{3, 3}}),
-				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{0, 0}, sample{1, 1}}, []tsdbutil.Sample{sample{2, 2}}),
-			),
-		},
-		{
-			name: "two queriers, one different series each",
-			chkQuerierSeries: [][]ChunkSeries{{
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1}, sample{2, 2}}, []tsdbutil.Sample{sample{3, 3}}),
-			}, {
-				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{0, 0}, sample{1, 1}}, []tsdbutil.Sample{sample{2, 2}}),
-			}},
-			expected: NewMockChunkSeriesSet(
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1}, sample{2, 2}}, []tsdbutil.Sample{sample{3, 3}}),
-				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{0, 0}, sample{1, 1}}, []tsdbutil.Sample{sample{2, 2}}),
-			),
-		},
-		{
-			name: "two queriers, two not in time order series each",
-			chkQuerierSeries: [][]ChunkSeries{{
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{5, 5}}, []tsdbutil.Sample{sample{6, 6}}),
-				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{0, 0}, sample{1, 1}}, []tsdbutil.Sample{sample{2, 2}}),
-			}, {
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1}, sample{2, 2}}, []tsdbutil.Sample{sample{3, 3}}),
-				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{3, 3}}, []tsdbutil.Sample{sample{4, 4}}),
-			}},
-			expected: NewMockChunkSeriesSet(
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
-					[]tsdbutil.Sample{sample{1, 1}, sample{2, 2}},
-					[]tsdbutil.Sample{sample{3, 3}},
-					[]tsdbutil.Sample{sample{5, 5}},
-					[]tsdbutil.Sample{sample{6, 6}},
-				),
-				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"),
-					[]tsdbutil.Sample{sample{0, 0}, sample{1, 1}},
-					[]tsdbutil.Sample{sample{2, 2}},
-					[]tsdbutil.Sample{sample{3, 3}},
-					[]tsdbutil.Sample{sample{4, 4}},
-				),
-			),
-		},
-		{
-			name: "five queriers, only two have two not in time order series each",
-			chkQuerierSeries: [][]ChunkSeries{{}, {}, {
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{5, 5}}, []tsdbutil.Sample{sample{6, 6}}),
-				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{0, 0}, sample{1, 1}}, []tsdbutil.Sample{sample{2, 2}}),
-			}, {
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1}, sample{2, 2}}, []tsdbutil.Sample{sample{3, 3}}),
-				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{3, 3}}, []tsdbutil.Sample{sample{4, 4}}),
-			}, {}},
-			expected: NewMockChunkSeriesSet(
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
-					[]tsdbutil.Sample{sample{1, 1}, sample{2, 2}},
-					[]tsdbutil.Sample{sample{3, 3}},
-					[]tsdbutil.Sample{sample{5, 5}},
-					[]tsdbutil.Sample{sample{6, 6}},
-				),
-				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"),
-					[]tsdbutil.Sample{sample{0, 0}, sample{1, 1}},
-					[]tsdbutil.Sample{sample{2, 2}},
-					[]tsdbutil.Sample{sample{3, 3}},
-					[]tsdbutil.Sample{sample{4, 4}},
-				),
-			),
-		},
-		{
-			name: "two queriers, with two not in time order series each, with 3 noop queries and one nil together",
-			chkQuerierSeries: [][]ChunkSeries{{
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{5, 5}}, []tsdbutil.Sample{sample{6, 6}}),
-				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{0, 0}, sample{1, 1}}, []tsdbutil.Sample{sample{2, 2}}),
-			}, {
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1}, sample{2, 2}}, []tsdbutil.Sample{sample{3, 3}}),
-				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{3, 3}}, []tsdbutil.Sample{sample{4, 4}}),
-			}},
-			extraQueriers: []ChunkQuerier{NoopChunkedQuerier(), NoopChunkedQuerier(), nil, NoopChunkedQuerier()},
-			expected: NewMockChunkSeriesSet(
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
-					[]tsdbutil.Sample{sample{1, 1}, sample{2, 2}},
-					[]tsdbutil.Sample{sample{3, 3}},
-					[]tsdbutil.Sample{sample{5, 5}},
-					[]tsdbutil.Sample{sample{6, 6}},
-				),
-				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"),
-					[]tsdbutil.Sample{sample{0, 0}, sample{1, 1}},
-					[]tsdbutil.Sample{sample{2, 2}},
-					[]tsdbutil.Sample{sample{3, 3}},
-					[]tsdbutil.Sample{sample{4, 4}},
-				),
-			),
-		},
-		{
-			name: "two queries, one with NaN samples series",
-			chkQuerierSeries: [][]ChunkSeries{{
-				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{0, math.NaN()}}),
-			}, {
-				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{1, 1}}),
-			}},
-			expected: NewMockChunkSeriesSet(
-				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{sample{0, math.NaN()}}, []tsdbutil.Sample{sample{1, 1}}),
-			),
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			var qs []ChunkQuerier
-			for _, in := range tc.chkQuerierSeries {
-				qs = append(qs, &mockChunkQurier{toReturn: in})
-			}
-			qs = append(qs, tc.extraQueriers...)
+	fanoutStorage := storage.NewFanout(nil, priStorage, remoteStorage1, remoteStorage2)
 
-			merged, _, _ := NewMergeChunkQuerier(qs[0], qs, NewVerticalChunkSeriesMerger(nil)).Select(false, nil)
-			for merged.Next() {
-				testutil.Assert(t, tc.expected.Next(), "Expected Next() to be true")
-				actualSeries := merged.At()
-				expectedSeries := tc.expected.At()
-				testutil.Equals(t, expectedSeries.Labels(), actualSeries.Labels())
-
-				expChks, expErr := ExpandChunks(expectedSeries.Iterator())
-				actChks, actErr := ExpandChunks(actualSeries.Iterator())
-				testutil.Equals(t, expErr, actErr)
-				testutil.Equals(t, expChks, actChks)
-
-			}
-			testutil.Ok(t, merged.Err())
-			testutil.Assert(t, !tc.expected.Next(), "Expected Next() to be false")
-		})
-	}
-}
-
-type mockQuerier struct {
-	baseQuerier
-
-	toReturn []Series
-}
-
-type seriesByLabel []Series
-
-func (a seriesByLabel) Len() int           { return len(a) }
-func (a seriesByLabel) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a seriesByLabel) Less(i, j int) bool { return labels.Compare(a[i].Labels(), a[j].Labels()) < 0 }
-
-func (m *mockQuerier) Select(sortSeries bool, _ *SelectHints, _ ...*labels.Matcher) (SeriesSet, Warnings, error) {
-	cpy := make([]Series, len(m.toReturn))
-	copy(cpy, m.toReturn)
-	if sortSeries {
-		sort.Sort(seriesByLabel(cpy))
-	}
-
-	return NewMockSeriesSet(cpy...), nil, nil
-}
-
-type mockChunkQurier struct {
-	baseQuerier
-
-	toReturn []ChunkSeries
-}
-
-type chunkSeriesByLabel []ChunkSeries
-
-func (a chunkSeriesByLabel) Len() int      { return len(a) }
-func (a chunkSeriesByLabel) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
-func (a chunkSeriesByLabel) Less(i, j int) bool {
-	return labels.Compare(a[i].Labels(), a[j].Labels()) < 0
-}
-
-func (m *mockChunkQurier) Select(sortSeries bool, _ *SelectHints, _ ...*labels.Matcher) (ChunkSeriesSet, Warnings, error) {
-	cpy := make([]ChunkSeries, len(m.toReturn))
-	copy(cpy, m.toReturn)
-	if sortSeries {
-		sort.Sort(chunkSeriesByLabel(cpy))
-	}
-
-	return NewMockChunkSeriesSet(cpy...), nil, nil
-}
-
-type mockSeriesSet struct {
-	idx    int
-	series []Series
-}
-
-func NewMockSeriesSet(series ...Series) SeriesSet {
-	return &mockSeriesSet{
-		idx:    -1,
-		series: series,
-	}
-}
-
-func (m *mockSeriesSet) Next() bool {
-	m.idx++
-	return m.idx < len(m.series)
-}
-
-func (m *mockSeriesSet) At() Series { return m.series[m.idx] }
-
-func (m *mockSeriesSet) Err() error { return nil }
-
-type mockChunkSeriesSet struct {
-	idx    int
-	series []ChunkSeries
-}
-
-func NewMockChunkSeriesSet(series ...ChunkSeries) ChunkSeriesSet {
-	return &mockChunkSeriesSet{
-		idx:    -1,
-		series: series,
-	}
-}
-
-func (m *mockChunkSeriesSet) Next() bool {
-	m.idx++
-	return m.idx < len(m.series)
-}
-
-func (m *mockChunkSeriesSet) At() ChunkSeries { return m.series[m.idx] }
-
-func (m *mockChunkSeriesSet) Err() error { return nil }
-
-func TestChainSampleIterator(t *testing.T) {
-	for _, tc := range []struct {
-		input    []chunkenc.Iterator
-		expected []tsdbutil.Sample
-	}{
-		{
-			input: []chunkenc.Iterator{
-				NewListSeriesIterator([]tsdbutil.Sample{sample{0, 0}, sample{1, 1}}),
-			},
-			expected: []tsdbutil.Sample{sample{0, 0}, sample{1, 1}},
-		},
-		{
-			input: []chunkenc.Iterator{
-				NewListSeriesIterator([]tsdbutil.Sample{sample{0, 0}, sample{1, 1}}),
-				NewListSeriesIterator([]tsdbutil.Sample{sample{2, 2}, sample{3, 3}}),
-			},
-			expected: []tsdbutil.Sample{sample{0, 0}, sample{1, 1}, sample{2, 2}, sample{3, 3}},
-		},
-		{
-			input: []chunkenc.Iterator{
-				NewListSeriesIterator([]tsdbutil.Sample{sample{0, 0}, sample{3, 3}}),
-				NewListSeriesIterator([]tsdbutil.Sample{sample{1, 1}, sample{4, 4}}),
-				NewListSeriesIterator([]tsdbutil.Sample{sample{2, 2}, sample{5, 5}}),
-			},
-			expected: []tsdbutil.Sample{
-				sample{0, 0}, sample{1, 1}, sample{2, 2}, sample{3, 3}, sample{4, 4}, sample{5, 5}},
-		},
-		// Overlap.
-		{
-			input: []chunkenc.Iterator{
-				NewListSeriesIterator([]tsdbutil.Sample{sample{0, 0}, sample{1, 1}}),
-				NewListSeriesIterator([]tsdbutil.Sample{sample{0, 0}, sample{2, 2}}),
-				NewListSeriesIterator([]tsdbutil.Sample{sample{2, 2}, sample{3, 3}}),
-				NewListSeriesIterator([]tsdbutil.Sample{}),
-				NewListSeriesIterator([]tsdbutil.Sample{}),
-				NewListSeriesIterator([]tsdbutil.Sample{}),
-			},
-			expected: []tsdbutil.Sample{sample{0, 0}, sample{1, 1}, sample{2, 2}, sample{3, 3}},
-		},
-	} {
-		merged := newChainSampleIterator(tc.input)
-		actual, err := ExpandSamples(merged)
+	t.Run("querier", func(t *testing.T) {
+		querier, err := fanoutStorage.Querier(context.Background(), 0, 8000)
 		testutil.Ok(t, err)
-		testutil.Equals(t, tc.expected, actual)
-	}
-}
+		defer querier.Close()
 
-func TestChainSampleIteratorSeek(t *testing.T) {
-	for _, tc := range []struct {
-		input    []chunkenc.Iterator
-		seek     int64
-		expected []tsdbutil.Sample
-	}{
-		{
-			input: []chunkenc.Iterator{
-				NewListSeriesIterator([]tsdbutil.Sample{sample{0, 0}, sample{1, 1}, sample{2, 2}}),
-			},
-			seek:     1,
-			expected: []tsdbutil.Sample{sample{1, 1}, sample{2, 2}},
-		},
-		{
-			input: []chunkenc.Iterator{
-				NewListSeriesIterator([]tsdbutil.Sample{sample{0, 0}, sample{1, 1}}),
-				NewListSeriesIterator([]tsdbutil.Sample{sample{2, 2}, sample{3, 3}}),
-			},
-			seek:     2,
-			expected: []tsdbutil.Sample{sample{2, 2}, sample{3, 3}},
-		},
-		{
-			input: []chunkenc.Iterator{
-				NewListSeriesIterator([]tsdbutil.Sample{sample{0, 0}, sample{3, 3}}),
-				NewListSeriesIterator([]tsdbutil.Sample{sample{1, 1}, sample{4, 4}}),
-				NewListSeriesIterator([]tsdbutil.Sample{sample{2, 2}, sample{5, 5}}),
-			},
-			seek:     2,
-			expected: []tsdbutil.Sample{sample{2, 2}, sample{3, 3}, sample{4, 4}, sample{5, 5}},
-		},
-	} {
-		merged := newChainSampleIterator(tc.input)
-		actual := []tsdbutil.Sample{}
-		if merged.Seek(tc.seek) {
-			t, v := merged.At()
-			actual = append(actual, sample{t, v})
-		}
-		s, err := ExpandSamples(merged)
+		matcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "a")
 		testutil.Ok(t, err)
-		actual = append(actual, s...)
-		testutil.Equals(t, tc.expected, actual)
-	}
-}
 
-var result []tsdbutil.Sample
+		seriesSet := querier.Select(true, nil, matcher)
 
-func makeSeriesSet(numSeries, numSamples int) SeriesSet {
-	series := []Series{}
-	for j := 0; j < numSeries; j++ {
-		labels := labels.Labels{{Name: "foo", Value: fmt.Sprintf("bar%d", j)}}
-		samples := []tsdbutil.Sample{}
-		for k := 0; k < numSamples; k++ {
-			samples = append(samples, sample{t: int64(k), v: float64(k)})
-		}
-		series = append(series, NewListSeries(labels, samples))
-	}
-	return NewMockSeriesSet(series...)
-}
-
-func makeMergeSeriesSet(numSeriesSets, numSeries, numSamples int) SeriesSet {
-	seriesSets := []genericSeriesSet{}
-	for i := 0; i < numSeriesSets; i++ {
-		seriesSets = append(seriesSets, &genericSeriesSetAdapter{makeSeriesSet(numSeries, numSamples)})
-	}
-	return &seriesSetAdapter{newGenericMergeSeriesSet(seriesSets, nil, (&seriesMergerAdapter{VerticalSeriesMergeFunc: ChainedSeriesMerge}).Merge)}
-}
-
-func benchmarkDrain(seriesSet SeriesSet, b *testing.B) {
-	var err error
-	for n := 0; n < b.N; n++ {
+		result := make(map[int64]float64)
+		var labelsResult labels.Labels
 		for seriesSet.Next() {
-			result, err = ExpandSamples(seriesSet.At().Iterator())
-			testutil.Ok(b, err)
+			series := seriesSet.At()
+			seriesLabels := series.Labels()
+			labelsResult = seriesLabels
+			iterator := series.Iterator()
+			for iterator.Next() {
+				timestamp, value := iterator.At()
+				result[timestamp] = value
+			}
 		}
-	}
+
+		testutil.Equals(t, labelsResult, outputLabel)
+		testutil.Equals(t, inputTotalSize, len(result))
+	})
+	t.Run("chunk querier", func(t *testing.T) {
+		querier, err := fanoutStorage.ChunkQuerier(ctx, 0, 8000)
+		testutil.Ok(t, err)
+		defer querier.Close()
+
+		matcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "a")
+		testutil.Ok(t, err)
+
+		seriesSet := storage.NewSeriesSetFromChunkSeriesSet(querier.Select(true, nil, matcher))
+
+		result := make(map[int64]float64)
+		var labelsResult labels.Labels
+		for seriesSet.Next() {
+			series := seriesSet.At()
+			seriesLabels := series.Labels()
+			labelsResult = seriesLabels
+			iterator := series.Iterator()
+			for iterator.Next() {
+				timestamp, value := iterator.At()
+				result[timestamp] = value
+			}
+		}
+
+		testutil.Ok(t, seriesSet.Err())
+		testutil.Equals(t, labelsResult, outputLabel)
+		testutil.Equals(t, inputTotalSize, len(result))
+	})
 }
 
-func BenchmarkNoMergeSeriesSet_100_100(b *testing.B) {
-	seriesSet := makeSeriesSet(100, 100)
-	benchmarkDrain(seriesSet, b)
-}
+func TestFanoutErrors(t *testing.T) {
+	workingStorage := teststorage.New(t)
+	defer workingStorage.Close()
 
-func BenchmarkMergeSeriesSet(b *testing.B) {
-	for _, bm := range []struct {
-		numSeriesSets, numSeries, numSamples int
+	cases := []struct {
+		primary   storage.Storage
+		secondary storage.Storage
+		warning   error
+		err       error
 	}{
-		{1, 100, 100},
-		{10, 100, 100},
-		{100, 100, 100},
-	} {
-		seriesSet := makeMergeSeriesSet(bm.numSeriesSets, bm.numSeries, bm.numSamples)
-		b.Run(fmt.Sprintf("%d_%d_%d", bm.numSeriesSets, bm.numSeries, bm.numSamples), func(b *testing.B) {
-			benchmarkDrain(seriesSet, b)
+		{
+			primary:   workingStorage,
+			secondary: errStorage{},
+			warning:   errSelect,
+			err:       nil,
+		},
+		{
+			primary:   errStorage{},
+			secondary: workingStorage,
+			warning:   nil,
+			err:       errSelect,
+		},
+	}
+
+	for _, tc := range cases {
+		fanoutStorage := storage.NewFanout(nil, tc.primary, tc.secondary)
+
+		t.Run("samples", func(t *testing.T) {
+			querier, err := fanoutStorage.Querier(context.Background(), 0, 8000)
+			testutil.Ok(t, err)
+			defer querier.Close()
+
+			matcher := labels.MustNewMatcher(labels.MatchEqual, "a", "b")
+			ss := querier.Select(true, nil, matcher)
+
+			// Exhaust.
+			for ss.Next() {
+				ss.At()
+			}
+
+			if tc.err != nil {
+				testutil.NotOk(t, ss.Err())
+				testutil.Equals(t, tc.err.Error(), ss.Err().Error())
+			}
+
+			if tc.warning != nil {
+				testutil.Assert(t, len(ss.Warnings()) > 0, "warnings expected")
+				testutil.NotOk(t, ss.Warnings()[0])
+				testutil.Equals(t, tc.warning.Error(), ss.Warnings()[0].Error())
+			}
+		})
+		t.Run("chunks", func(t *testing.T) {
+			t.Skip("enable once TestStorage and TSDB implements ChunkQuerier")
+			querier, err := fanoutStorage.ChunkQuerier(context.Background(), 0, 8000)
+			testutil.Ok(t, err)
+			defer querier.Close()
+
+			matcher := labels.MustNewMatcher(labels.MatchEqual, "a", "b")
+			ss := querier.Select(true, nil, matcher)
+
+			// Exhaust.
+			for ss.Next() {
+				ss.At()
+			}
+
+			if tc.err != nil {
+				testutil.NotOk(t, ss.Err())
+				testutil.Equals(t, tc.err.Error(), ss.Err().Error())
+			}
+
+			if tc.warning != nil {
+				testutil.Assert(t, len(ss.Warnings()) > 0, "warnings expected")
+				testutil.NotOk(t, ss.Warnings()[0])
+				testutil.Equals(t, tc.warning.Error(), ss.Warnings()[0].Error())
+			}
 		})
 	}
+}
+
+var errSelect = errors.New("select error")
+
+type errStorage struct{}
+
+type errQuerier struct{}
+
+func (errStorage) Querier(_ context.Context, _, _ int64) (storage.Querier, error) {
+	return errQuerier{}, nil
+}
+
+type errChunkQuerier struct{ errQuerier }
+
+func (errStorage) ChunkQuerier(_ context.Context, _, _ int64) (storage.ChunkQuerier, error) {
+	return errChunkQuerier{}, nil
+}
+func (errStorage) Appender(_ context.Context) storage.Appender { return nil }
+func (errStorage) StartTime() (int64, error)                   { return 0, nil }
+func (errStorage) Close() error                                { return nil }
+
+func (errQuerier) Select(bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
+	return storage.ErrSeriesSet(errSelect)
+}
+
+func (errQuerier) LabelValues(name string) ([]string, storage.Warnings, error) {
+	return nil, nil, errors.New("label values error")
+}
+
+func (errQuerier) LabelNames() ([]string, storage.Warnings, error) {
+	return nil, nil, errors.New("label names error")
+}
+
+func (errQuerier) Close() error { return nil }
+
+func (errChunkQuerier) Select(bool, *storage.SelectHints, ...*labels.Matcher) storage.ChunkSeriesSet {
+	return storage.ErrChunkSeriesSet(errSelect)
 }

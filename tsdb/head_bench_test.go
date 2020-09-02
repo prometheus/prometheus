@@ -14,17 +14,25 @@
 package tsdb
 
 import (
+	"io/ioutil"
+	"os"
 	"strconv"
-	"sync/atomic"
 	"testing"
+
+	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func BenchmarkHeadStripeSeriesCreate(b *testing.B) {
+	chunkDir, err := ioutil.TempDir("", "chunk_dir")
+	testutil.Ok(b, err)
+	defer func() {
+		testutil.Ok(b, os.RemoveAll(chunkDir))
+	}()
 	// Put a series, select it. GC it and then access it.
-	h, err := NewHead(nil, nil, nil, 1000, DefaultStripeSize)
+	h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, DefaultStripeSize, nil)
 	testutil.Ok(b, err)
 	defer h.Close()
 
@@ -34,16 +42,21 @@ func BenchmarkHeadStripeSeriesCreate(b *testing.B) {
 }
 
 func BenchmarkHeadStripeSeriesCreateParallel(b *testing.B) {
+	chunkDir, err := ioutil.TempDir("", "chunk_dir")
+	testutil.Ok(b, err)
+	defer func() {
+		testutil.Ok(b, os.RemoveAll(chunkDir))
+	}()
 	// Put a series, select it. GC it and then access it.
-	h, err := NewHead(nil, nil, nil, 1000, DefaultStripeSize)
+	h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, DefaultStripeSize, nil)
 	testutil.Ok(b, err)
 	defer h.Close()
 
-	var count int64
+	var count atomic.Int64
 
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			i := atomic.AddInt64(&count, 1)
+			i := count.Inc()
 			h.getOrCreate(uint64(i), labels.FromStrings("a", strconv.Itoa(int(i))))
 		}
 	})

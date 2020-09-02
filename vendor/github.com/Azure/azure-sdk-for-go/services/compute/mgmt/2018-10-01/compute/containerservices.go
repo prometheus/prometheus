@@ -146,7 +146,6 @@ func (client ContainerServicesClient) CreateOrUpdateSender(req *http.Request) (f
 func (client ContainerServicesClient) CreateOrUpdateResponder(resp *http.Response) (result ContainerService, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated, http.StatusAccepted),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -225,7 +224,6 @@ func (client ContainerServicesClient) DeleteSender(req *http.Request) (future Co
 func (client ContainerServicesClient) DeleteResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted, http.StatusNoContent),
 		autorest.ByClosing())
 	result.Response = resp
@@ -302,7 +300,6 @@ func (client ContainerServicesClient) GetSender(req *http.Request) (*http.Respon
 func (client ContainerServicesClient) GetResponder(resp *http.Response) (result ContainerService, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -341,6 +338,9 @@ func (client ContainerServicesClient) List(ctx context.Context) (result Containe
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.ContainerServicesClient", "List", resp, "Failure responding to request")
 	}
+	if result.cslr.hasNextLink() && result.cslr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }
@@ -375,7 +375,6 @@ func (client ContainerServicesClient) ListSender(req *http.Request) (*http.Respo
 func (client ContainerServicesClient) ListResponder(resp *http.Response) (result ContainerServiceListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -454,6 +453,9 @@ func (client ContainerServicesClient) ListByResourceGroup(ctx context.Context, r
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.ContainerServicesClient", "ListByResourceGroup", resp, "Failure responding to request")
 	}
+	if result.cslr.hasNextLink() && result.cslr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }
@@ -489,7 +491,6 @@ func (client ContainerServicesClient) ListByResourceGroupSender(req *http.Reques
 func (client ContainerServicesClient) ListByResourceGroupResponder(resp *http.Response) (result ContainerServiceListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

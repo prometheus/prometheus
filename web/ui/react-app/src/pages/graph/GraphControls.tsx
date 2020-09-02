@@ -5,7 +5,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faPlus, faMinus, faChartArea, faChartLine } from '@fortawesome/free-solid-svg-icons';
 
 import TimeInput from './TimeInput';
-import { parseRange, formatRange } from '../../utils';
+import { parseDuration, formatDuration } from '../../utils';
 
 interface GraphControlsProps {
   range: number;
@@ -43,10 +43,10 @@ class GraphControls extends Component<GraphControlsProps> {
     56 * 24 * 60 * 60,
     365 * 24 * 60 * 60,
     730 * 24 * 60 * 60,
-  ];
+  ].map(s => s * 1000);
 
   onChangeRangeInput = (rangeText: string): void => {
-    const range = parseRange(rangeText);
+    const range = parseDuration(rangeText);
     if (range === null) {
       this.changeRangeInput(this.props.range);
     } else {
@@ -55,7 +55,7 @@ class GraphControls extends Component<GraphControlsProps> {
   };
 
   changeRangeInput = (range: number): void => {
-    this.rangeRef.current!.value = formatRange(range);
+    this.rangeRef.current!.value = formatDuration(range);
   };
 
   increaseRange = (): void => {
@@ -98,7 +98,7 @@ class GraphControls extends Component<GraphControlsProps> {
           </InputGroupAddon>
 
           <Input
-            defaultValue={formatRange(this.props.range)}
+            defaultValue={formatDuration(this.props.range)}
             innerRef={this.rangeRef}
             onBlur={() => this.onChangeRangeInput(this.rangeRef.current!.value)}
           />

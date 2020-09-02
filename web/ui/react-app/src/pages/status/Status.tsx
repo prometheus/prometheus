@@ -97,6 +97,7 @@ const Status: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix = '' }) 
         const { response, isLoading, error } = fetchResult;
         return (
           <StatusWithStatusIndicator
+            key={title}
             data={response.data}
             title={title}
             isLoading={isLoading}

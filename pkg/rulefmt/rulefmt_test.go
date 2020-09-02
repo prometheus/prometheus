@@ -68,8 +68,12 @@ func TestParseFileFailure(t *testing.T) {
 			errMsg:   "invalid recording rule name",
 		},
 		{
-			filename: "unknown_fields.bad.yaml",
-			errMsg:   "line 13: field anotations not found in type rulefmt.Rule",
+			filename: "bad_field.bad.yaml",
+			errMsg:   "field annotation not found",
+		},
+		{
+			filename: "invalid_label_name.bad.yaml",
+			errMsg:   "invalid label name",
 		},
 	}
 

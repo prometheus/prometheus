@@ -45,6 +45,46 @@ annotations:
 	testutil.Assert(t, want == got, "incorrect HTML snippet; want:\n\n|%v|\n\ngot:\n\n|%v|", want, got)
 }
 
+func TestAlertingRuleState(t *testing.T) {
+	tests := []struct {
+		name   string
+		active map[uint64]*Alert
+		want   AlertState
+	}{
+		{
+			name: "MaxStateFiring",
+			active: map[uint64]*Alert{
+				0: {State: StatePending},
+				1: {State: StateFiring},
+			},
+			want: StateFiring,
+		},
+		{
+			name: "MaxStatePending",
+			active: map[uint64]*Alert{
+				0: {State: StateInactive},
+				1: {State: StatePending},
+			},
+			want: StatePending,
+		},
+		{
+			name: "MaxStateInactive",
+			active: map[uint64]*Alert{
+				0: {State: StateInactive},
+				1: {State: StateInactive},
+			},
+			want: StateInactive,
+		},
+	}
+
+	for i, test := range tests {
+		rule := NewAlertingRule(test.name, nil, 0, nil, nil, nil, true, nil)
+		rule.active = test.active
+		got := rule.State()
+		testutil.Assert(t, test.want == got, "test case %d unexpected AlertState, want:%d got:%d", i, test.want, got)
+	}
+}
+
 func TestAlertingRuleLabelsUpdate(t *testing.T) {
 	suite, err := promql.NewTest(t, `
 		load 1m

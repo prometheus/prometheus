@@ -24,5 +24,4 @@ var ruleFilesExpectedConf = &Config{
 		"testdata/rules/second.rules",
 		"/absolute/third.rules",
 	},
-	original: "",
 }

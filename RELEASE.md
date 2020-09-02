@@ -23,7 +23,11 @@ Release cadence of first pre-releases being cut is 6 weeks.
 | v2.16          | 2020-01-29                                 | Callum Styan (GitHub: @cstyan)              |
 | v2.17          | 2020-03-11                                 | Julien Pivotto (GitHub: @roidelapluie)      |
 | v2.18          | 2020-04-22                                 | Bartek Plotka (GitHub: @bwplotka)           |
-| v2.19          | 2020-06-03                                 | **searching for volunteer**                 |
+| v2.19          | 2020-06-03                                 | Ganesh Vernekar (GitHub: @codesome)         |
+| v2.20          | 2020-07-15                                 | Björn Rabenstein (GitHub: @beorn7)          |
+| v2.21          | 2020-08-26                                 | Julien Pivotto (GitHub: @roidelapluie)      |
+| v2.22          | 2020-10-07                                 | Frederic Branczyk (GitHub: @brancz)         |
+| v2.23          | 2020-11-18                                 | **searching for volunteer**                 |
 
 If you are interested in volunteering please create a pull request against the [prometheus/prometheus](https://github.com/prometheus/prometheus) repository and propose yourself for the release series of your choice.
 
@@ -61,11 +65,9 @@ Maintaining the release branches for older minor releases happens on a best effo
 A few days before a major or minor release, consider updating the dependencies:
 
 ```
-export GO111MODULE=on
-go get -u ./...
-go mod tidy
-go mod vendor
+make update-go-deps
 git add go.mod go.sum vendor
+git commit -m "Update dependencies"
 ```
 
 Then create a pull request against the master branch.
@@ -103,10 +105,19 @@ Entries in the `CHANGELOG.md` are meant to be in this order:
 Tag the new release via the following commands:
 
 ```bash
-$ tag=$(< VERSION)
-$ git tag -s "v${tag}" -m "v${tag}"
-$ git push origin "v${tag}"
+$ tag="v$(< VERSION)"
+$ git tag -s "${tag}" -m "${tag}"
+$ git push origin "${tag}"
 ```
+
+Optionally, you can use this handy `.gitconfig` alias.
+
+```ini
+[alias]
+  tag-release = "!f() { tag=v${1:-$(cat VERSION)} ; git tag -s ${tag} -m ${tag} && git push origin ${tag}; }; f"
+```
+
+Then release with `git tag-release`.
 
 Signing a tag with a GPG key is appreciated, but in case you can't add a GPG key to your Github account using the following [procedure](https://help.github.com/articles/generating-a-gpg-key/), you can replace the `-s` flag by `-a` flag of the `git tag` command to only annotate the tag without signing.
 

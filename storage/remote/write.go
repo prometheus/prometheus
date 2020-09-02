@@ -14,6 +14,7 @@
 package remote
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -47,9 +48,9 @@ var (
 // WriteStorage represents all the remote write storage.
 type WriteStorage struct {
 	logger log.Logger
+	reg    prometheus.Registerer
 	mtx    sync.Mutex
 
-	queueMetrics      *queueManagerMetrics
 	watcherMetrics    *wal.WatcherMetrics
 	liveReaderMetrics *wal.LiveReaderMetrics
 	externalLabels    labels.Labels
@@ -66,10 +67,10 @@ func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, walDir string
 	}
 	rws := &WriteStorage{
 		queues:            make(map[string]*QueueManager),
-		queueMetrics:      newQueueManagerMetrics(reg),
 		watcherMetrics:    wal.NewWatcherMetrics(reg),
 		liveReaderMetrics: wal.NewLiveReaderMetrics(reg),
 		logger:            logger,
+		reg:               reg,
 		flushDeadline:     flushDeadline,
 		samplesIn:         newEWMARate(ewmaWeight, shardUpdateDuration),
 		walDir:            walDir,
@@ -113,12 +114,12 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 		// Set the queue name to the config hash if the user has not set
 		// a name in their remote write config so we can still differentiate
 		// between queues that have the same remote write endpoint.
-		name := string(hash[:6])
+		name := hash[:6]
 		if rwConf.Name != "" {
 			name = rwConf.Name
 		}
 
-		c, err := NewClient(name, &ClientConfig{
+		c, err := NewWriteClient(name, &ClientConfig{
 			URL:              rwConf.URL,
 			Timeout:          rwConf.RemoteTimeout,
 			HTTPClientConfig: rwConf.HTTPClientConfig,
@@ -136,8 +137,9 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			continue
 		}
 
+		endpoint := rwConf.URL.String()
 		newQueues[hash] = NewQueueManager(
-			rws.queueMetrics,
+			newQueueManagerMetrics(rws.reg, name, endpoint),
 			rws.watcherMetrics,
 			rws.liveReaderMetrics,
 			rws.logger,
@@ -169,7 +171,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 }
 
 // Appender implements storage.Storage.
-func (rws *WriteStorage) Appender() storage.Appender {
+func (rws *WriteStorage) Appender(_ context.Context) storage.Appender {
 	return &timestampTracker{
 		writeStorage: rws,
 	}

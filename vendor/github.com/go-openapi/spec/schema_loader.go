@@ -86,12 +86,7 @@ func (r *schemaLoader) transitiveResolver(basePath string, ref Ref) (*schemaLoad
 	newOptions := r.options
 	newOptions.RelativeBase = rootURL.String()
 	debugLog("setting new root: %s", newOptions.RelativeBase)
-	resolver, err := defaultSchemaLoader(root, newOptions, r.cache, r.context)
-	if err != nil {
-		return nil, err
-	}
-
-	return resolver, nil
+	return defaultSchemaLoader(root, newOptions, r.cache, r.context)
 }
 
 func (r *schemaLoader) updateBasePath(transitive *schemaLoader, basePath string) string {
@@ -154,12 +149,21 @@ func (r *schemaLoader) load(refURL *url.URL) (interface{}, url.URL, bool, error)
 	toFetch := *refURL
 	toFetch.Fragment = ""
 
-	normalized := normalizeAbsPath(toFetch.String())
+	var err error
+	path := toFetch.String()
+	if path == rootBase {
+		path, err = absPath(rootBase)
+		if err != nil {
+			return nil, url.URL{}, false, err
+		}
+	}
+	normalized := normalizeAbsPath(path)
 
 	data, fromCache := r.cache.Get(normalized)
 	if !fromCache {
 		b, err := r.loadDoc(normalized)
 		if err != nil {
+			debugLog("unable to load the document: %v", err)
 			return nil, url.URL{}, false, err
 		}
 

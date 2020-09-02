@@ -162,7 +162,7 @@ func TestParseBrokenJSON(t *testing.T) {
 		},
 	} {
 		t.Run("", func(t *testing.T) {
-			ok, out := parseBrokenJSON(tc.b)
+			out, ok := parseBrokenJSON(tc.b)
 			if tc.ok != ok {
 				t.Fatalf("expected %t, got %t", tc.ok, ok)
 				return

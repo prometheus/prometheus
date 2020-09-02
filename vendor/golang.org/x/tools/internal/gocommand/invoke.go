@@ -1,3 +1,7 @@
+// Copyright 2020 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
 // Package gocommand is a helper for calling the go command.
 package gocommand
 
@@ -5,11 +9,121 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
+	"sync"
 	"time"
+
+	"golang.org/x/tools/internal/event"
 )
+
+// An Runner will run go command invocations and serialize
+// them if it sees a concurrency error.
+type Runner struct {
+	// once guards the runner initialization.
+	once sync.Once
+
+	// inFlight tracks available workers.
+	inFlight chan struct{}
+
+	// serialized guards the ability to run a go command serially,
+	// to avoid deadlocks when claiming workers.
+	serialized chan struct{}
+}
+
+const maxInFlight = 10
+
+func (runner *Runner) initialize() {
+	runner.once.Do(func() {
+		runner.inFlight = make(chan struct{}, maxInFlight)
+		runner.serialized = make(chan struct{}, 1)
+	})
+}
+
+// 1.13: go: updates to go.mod needed, but contents have changed
+// 1.14: go: updating go.mod: existing contents have changed since last read
+var modConcurrencyError = regexp.MustCompile(`go:.*go.mod.*contents have changed`)
+
+// Run is a convenience wrapper around RunRaw.
+// It returns only stdout and a "friendly" error.
+func (runner *Runner) Run(ctx context.Context, inv Invocation) (*bytes.Buffer, error) {
+	stdout, _, friendly, _ := runner.RunRaw(ctx, inv)
+	return stdout, friendly
+}
+
+// RunPiped runs the invocation serially, always waiting for any concurrent
+// invocations to complete first.
+func (runner *Runner) RunPiped(ctx context.Context, inv Invocation, stdout, stderr io.Writer) error {
+	_, err := runner.runPiped(ctx, inv, stdout, stderr)
+	return err
+}
+
+// RunRaw runs the invocation, serializing requests only if they fight over
+// go.mod changes.
+func (runner *Runner) RunRaw(ctx context.Context, inv Invocation) (*bytes.Buffer, *bytes.Buffer, error, error) {
+	// Make sure the runner is always initialized.
+	runner.initialize()
+
+	// First, try to run the go command concurrently.
+	stdout, stderr, friendlyErr, err := runner.runConcurrent(ctx, inv)
+
+	// If we encounter a load concurrency error, we need to retry serially.
+	if friendlyErr == nil || !modConcurrencyError.MatchString(friendlyErr.Error()) {
+		return stdout, stderr, friendlyErr, err
+	}
+	event.Error(ctx, "Load concurrency error, will retry serially", err)
+
+	// Run serially by calling runPiped.
+	stdout.Reset()
+	stderr.Reset()
+	friendlyErr, err = runner.runPiped(ctx, inv, stdout, stderr)
+	return stdout, stderr, friendlyErr, err
+}
+
+func (runner *Runner) runConcurrent(ctx context.Context, inv Invocation) (*bytes.Buffer, *bytes.Buffer, error, error) {
+	// Wait for 1 worker to become available.
+	select {
+	case <-ctx.Done():
+		return nil, nil, nil, ctx.Err()
+	case runner.inFlight <- struct{}{}:
+		defer func() { <-runner.inFlight }()
+	}
+
+	stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
+	friendlyErr, err := inv.runWithFriendlyError(ctx, stdout, stderr)
+	return stdout, stderr, friendlyErr, err
+}
+
+func (runner *Runner) runPiped(ctx context.Context, inv Invocation, stdout, stderr io.Writer) (error, error) {
+	// Make sure the runner is always initialized.
+	runner.initialize()
+
+	// Acquire the serialization lock. This avoids deadlocks between two
+	// runPiped commands.
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case runner.serialized <- struct{}{}:
+		defer func() { <-runner.serialized }()
+	}
+
+	// Wait for all in-progress go commands to return before proceeding,
+	// to avoid load concurrency errors.
+	for i := 0; i < maxInFlight; i++ {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case runner.inFlight <- struct{}{}:
+			// Make sure we always "return" any workers we took.
+			defer func() { <-runner.inFlight }()
+		}
+	}
+
+	return inv.runWithFriendlyError(ctx, stdout, stderr)
+}
 
 // An Invocation represents a call to the go command.
 type Invocation struct {
@@ -21,16 +135,23 @@ type Invocation struct {
 	Logf       func(format string, args ...interface{})
 }
 
-// Run runs the invocation, returning its stdout and an error suitable for
-// human consumption, including stderr.
-func (i *Invocation) Run(ctx context.Context) (*bytes.Buffer, error) {
-	stdout, _, friendly, _ := i.RunRaw(ctx)
-	return stdout, friendly
+func (i *Invocation) runWithFriendlyError(ctx context.Context, stdout, stderr io.Writer) (friendlyError error, rawError error) {
+	rawError = i.run(ctx, stdout, stderr)
+	if rawError != nil {
+		friendlyError = rawError
+		// Check for 'go' executable not being found.
+		if ee, ok := rawError.(*exec.Error); ok && ee.Err == exec.ErrNotFound {
+			friendlyError = fmt.Errorf("go command required, not found: %v", ee)
+		}
+		if ctx.Err() != nil {
+			friendlyError = ctx.Err()
+		}
+		friendlyError = fmt.Errorf("err: %v: stderr: %s", friendlyError, stderr)
+	}
+	return
 }
 
-// RunRaw is like Run, but also returns the raw stderr and error for callers
-// that want to do low-level error handling/recovery.
-func (i *Invocation) RunRaw(ctx context.Context) (stdout *bytes.Buffer, stderr *bytes.Buffer, friendlyError error, rawError error) {
+func (i *Invocation) run(ctx context.Context, stdout, stderr io.Writer) error {
 	log := i.Logf
 	if log == nil {
 		log = func(string, ...interface{}) {}
@@ -51,8 +172,6 @@ func (i *Invocation) RunRaw(ctx context.Context) (stdout *bytes.Buffer, stderr *
 		goArgs = append(goArgs, i.Args...)
 	}
 	cmd := exec.Command("go", goArgs...)
-	stdout = &bytes.Buffer{}
-	stderr = &bytes.Buffer{}
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	// On darwin the cwd gets resolved to the real path, which breaks anything that
@@ -61,24 +180,14 @@ func (i *Invocation) RunRaw(ctx context.Context) (stdout *bytes.Buffer, stderr *
 	// The Go stdlib has a special feature where if the cwd and the PWD are the
 	// same node then it trusts the PWD, so by setting it in the env for the child
 	// process we fix up all the paths returned by the go command.
-	cmd.Env = append(append([]string{}, i.Env...), "PWD="+i.WorkingDir)
-	cmd.Dir = i.WorkingDir
-
+	cmd.Env = append(os.Environ(), i.Env...)
+	if i.WorkingDir != "" {
+		cmd.Env = append(cmd.Env, "PWD="+i.WorkingDir)
+		cmd.Dir = i.WorkingDir
+	}
 	defer func(start time.Time) { log("%s for %v", time.Since(start), cmdDebugStr(cmd)) }(time.Now())
 
-	rawError = runCmdContext(ctx, cmd)
-	friendlyError = rawError
-	if rawError != nil {
-		// Check for 'go' executable not being found.
-		if ee, ok := rawError.(*exec.Error); ok && ee.Err == exec.ErrNotFound {
-			friendlyError = fmt.Errorf("go command required, not found: %v", ee)
-		}
-		if ctx.Err() != nil {
-			friendlyError = ctx.Err()
-		}
-		friendlyError = fmt.Errorf("err: %v: stderr: %s", rawError, stderr)
-	}
-	return
+	return runCmdContext(ctx, cmd)
 }
 
 // runCmdContext is like exec.CommandContext except it sends os.Interrupt

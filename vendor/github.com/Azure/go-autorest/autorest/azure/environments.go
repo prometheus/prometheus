@@ -46,6 +46,7 @@ type ResourceIdentifier struct {
 	Batch               string `json:"batch"`
 	OperationalInsights string `json:"operationalInsights"`
 	Storage             string `json:"storage"`
+	Synapse             string `json:"synapse"`
 }
 
 // Environment represents a set of endpoints for each of Azure's Clouds.
@@ -71,6 +72,8 @@ type Environment struct {
 	ContainerRegistryDNSSuffix   string             `json:"containerRegistryDNSSuffix"`
 	CosmosDBDNSSuffix            string             `json:"cosmosDBDNSSuffix"`
 	TokenAudience                string             `json:"tokenAudience"`
+	APIManagementHostNameSuffix  string             `json:"apiManagementHostNameSuffix"`
+	SynapseEndpointSuffix        string             `json:"synapseEndpointSuffix"`
 	ResourceIdentifiers          ResourceIdentifier `json:"resourceIdentifiers"`
 }
 
@@ -98,6 +101,8 @@ var (
 		ContainerRegistryDNSSuffix:   "azurecr.io",
 		CosmosDBDNSSuffix:            "documents.azure.com",
 		TokenAudience:                "https://management.azure.com/",
+		APIManagementHostNameSuffix:  "azure-api.net",
+		SynapseEndpointSuffix:        "dev.azuresynapse.net",
 		ResourceIdentifiers: ResourceIdentifier{
 			Graph:               "https://graph.windows.net/",
 			KeyVault:            "https://vault.azure.net",
@@ -105,6 +110,7 @@ var (
 			Batch:               "https://batch.core.windows.net/",
 			OperationalInsights: "https://api.loganalytics.io",
 			Storage:             "https://storage.azure.com/",
+			Synapse:             "https://dev.azuresynapse.net",
 		},
 	}
 
@@ -127,10 +133,12 @@ var (
 		KeyVaultDNSSuffix:            "vault.usgovcloudapi.net",
 		ServiceBusEndpointSuffix:     "servicebus.usgovcloudapi.net",
 		ServiceManagementVMDNSSuffix: "usgovcloudapp.net",
-		ResourceManagerVMDNSSuffix:   "cloudapp.windowsazure.us",
+		ResourceManagerVMDNSSuffix:   "cloudapp.usgovcloudapi.net",
 		ContainerRegistryDNSSuffix:   "azurecr.us",
 		CosmosDBDNSSuffix:            "documents.azure.us",
 		TokenAudience:                "https://management.usgovcloudapi.net/",
+		APIManagementHostNameSuffix:  "azure-api.us",
+		SynapseEndpointSuffix:        NotAvailable,
 		ResourceIdentifiers: ResourceIdentifier{
 			Graph:               "https://graph.windows.net/",
 			KeyVault:            "https://vault.usgovcloudapi.net",
@@ -138,6 +146,7 @@ var (
 			Batch:               "https://batch.core.usgovcloudapi.net/",
 			OperationalInsights: "https://api.loganalytics.us",
 			Storage:             "https://storage.azure.com/",
+			Synapse:             NotAvailable,
 		},
 	}
 
@@ -160,10 +169,12 @@ var (
 		KeyVaultDNSSuffix:            "vault.azure.cn",
 		ServiceBusEndpointSuffix:     "servicebus.chinacloudapi.cn",
 		ServiceManagementVMDNSSuffix: "chinacloudapp.cn",
-		ResourceManagerVMDNSSuffix:   "cloudapp.azure.cn",
+		ResourceManagerVMDNSSuffix:   "cloudapp.chinacloudapi.cn",
 		ContainerRegistryDNSSuffix:   "azurecr.cn",
 		CosmosDBDNSSuffix:            "documents.azure.cn",
 		TokenAudience:                "https://management.chinacloudapi.cn/",
+		APIManagementHostNameSuffix:  "azure-api.cn",
+		SynapseEndpointSuffix:        "dev.azuresynapse.azure.cn",
 		ResourceIdentifiers: ResourceIdentifier{
 			Graph:               "https://graph.chinacloudapi.cn/",
 			KeyVault:            "https://vault.azure.cn",
@@ -171,6 +182,7 @@ var (
 			Batch:               "https://batch.chinacloudapi.cn/",
 			OperationalInsights: NotAvailable,
 			Storage:             "https://storage.azure.com/",
+			Synapse:             "https://dev.azuresynapse.net",
 		},
 	}
 
@@ -197,6 +209,8 @@ var (
 		ContainerRegistryDNSSuffix:   NotAvailable,
 		CosmosDBDNSSuffix:            "documents.microsoftazure.de",
 		TokenAudience:                "https://management.microsoftazure.de/",
+		APIManagementHostNameSuffix:  NotAvailable,
+		SynapseEndpointSuffix:        NotAvailable,
 		ResourceIdentifiers: ResourceIdentifier{
 			Graph:               "https://graph.cloudapi.de/",
 			KeyVault:            "https://vault.microsoftazure.de",
@@ -204,6 +218,7 @@ var (
 			Batch:               "https://batch.cloudapi.de/",
 			OperationalInsights: NotAvailable,
 			Storage:             "https://storage.azure.com/",
+			Synapse:             NotAvailable,
 		},
 	}
 )
@@ -241,4 +256,9 @@ func EnvironmentFromFile(location string) (unmarshaled Environment, err error) {
 	err = json.Unmarshal(fileContents, &unmarshaled)
 
 	return
+}
+
+// SetEnvironment updates the environment map with the specified values.
+func SetEnvironment(name string, env Environment) {
+	environments[strings.ToUpper(name)] = env
 }
