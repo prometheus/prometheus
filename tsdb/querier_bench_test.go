@@ -140,17 +140,18 @@ func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 }
 
 func BenchmarkQuerierSelect(b *testing.B) {
-	chunkDir, err := ioutil.TempDir("", "chunk_dir")
+	tmpDir, err := ioutil.TempDir("", "querier_select_chunk_dir")
 	testutil.Ok(b, err)
-	defer func() {
-		testutil.Ok(b, os.RemoveAll(chunkDir))
-	}()
-	h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, DefaultStripeSize, nil)
+	b.Cleanup(func() { testutil.Ok(b, os.RemoveAll(tmpDir)) })
+
+	h, err := NewHead(nil, nil, nil, 1000, tmpDir, nil, DefaultStripeSize, nil)
 	testutil.Ok(b, err)
-	defer h.Close()
+	b.Cleanup(func() { h.Close() })
+
 	app := h.Appender(context.Background())
 	numSeries := 1000000
 	for i := 0; i < numSeries; i++ {
+		// TODO(bwplotka): Add more samples to iterate with.
 		app.Add(labels.FromStrings("foo", "bar", "i", fmt.Sprintf("%d%s", i, postingsBenchSuffix)), int64(i), 0)
 	}
 	testutil.Ok(b, app.Commit())
