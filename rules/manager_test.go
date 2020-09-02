@@ -789,7 +789,7 @@ type ruleGroupsTest struct {
 
 // ruleGroupTest forms a testing struct for running tests over rules.
 type ruleGroupTest struct {
-	Name     string         `yaml:"name"`
+	Name     yaml.Node      `yaml:"name"`
 	Interval model.Duration `yaml:"interval,omitempty"`
 	Rules    []rule         `yaml:"rules"`
 }

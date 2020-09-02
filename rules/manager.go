@@ -1054,8 +1054,8 @@ func (m *Manager) LoadGroups(
 				))
 			}
 
-			groups[groupKey(fn, rg.Name)] = NewGroup(GroupOptions{
-				Name:          rg.Name,
+			groups[groupKey(fn, rg.Name.Value)] = NewGroup(GroupOptions{
+				Name:          rg.Name.Value,
 				File:          fn,
 				Interval:      itv,
 				Rules:         rules,

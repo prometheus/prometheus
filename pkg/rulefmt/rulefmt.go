@@ -59,12 +59,11 @@ func (err *Error) Error() string {
 // RuleGroups is a set of rule groups that are typically exposed in a file.
 type RuleGroups struct {
 	Groups []RuleGroup `yaml:"groups"`
-	nodes  ruleGroups
 }
 
 // RuleGroup is a list of sequentially evaluated recording and alerting rules.
 type RuleGroup struct {
-	Name     string         `yaml:"name"`
+	Name     yaml.Node      `yaml:"name"`
 	Interval model.Duration `yaml:"interval,omitempty"`
 	Rules    []Rule         `yaml:"rules"`
 }
@@ -79,28 +78,23 @@ type Rule struct {
 	Annotations map[string]string `yaml:"annotations,omitempty"`
 }
 
-// ruleGroups type for yaml.v3 features in the groups field.
-type ruleGroups struct {
-	Groups []yaml.Node `yaml:"groups"`
-}
-
 // Validate validates all rules in the rule groups.
 func (g *RuleGroups) Validate() (errs []error) {
 	set := map[string]struct{}{}
 
-	for j, grp := range g.Groups {
-		if grp.Name == "" {
-			errs = append(errs, errors.Errorf("%d:%d: group name should not be empty", g.nodes.Groups[j].Line, g.nodes.Groups[j].Column))
+	for _, grp := range g.Groups {
+		if grp.Name.Value == "" {
+			errs = append(errs, errors.Errorf("%d:%d: group name should not be empty", grp.Name.Line, grp.Name.Column))
 		}
 
-		if _, ok := set[grp.Name]; ok {
+		if _, ok := set[grp.Name.Value]; ok {
 			errs = append(
 				errs,
-				errors.Errorf("%d:%d: group name: \"%s\" is repeated in the same file", g.nodes.Groups[j].Line, g.nodes.Groups[j].Column, grp.Name),
+				errors.Errorf("%d:%d: group name: \"%s\" is repeated in the same file", grp.Name.Line, grp.Name.Column, grp.Name.Value),
 			)
 		}
 
-		set[grp.Name] = struct{}{}
+		set[grp.Name.Value] = struct{}{}
 
 		for i, r := range grp.Rules {
 			for _, node := range r.Validate() {
@@ -111,7 +105,7 @@ func (g *RuleGroups) Validate() (errs []error) {
 					ruleName = r.Record
 				}
 				errs = append(errs, &Error{
-					Group:    grp.Name,
+					Group:    grp.Name.Value,
 					Rule:     i,
 					RuleName: ruleName.Value,
 					Err:      node,
@@ -267,10 +261,6 @@ func Parse(content []byte) (*RuleGroups, []error) {
 	err = decoder.Decode(&groups)
 	// Ignore io.EOF which happens with empty input.
 	if err != nil && err != io.EOF {
-		errs = append(errs, err)
-	}
-
-	if err = yaml.Unmarshal(content, &groups.nodes); err != nil {
 		errs = append(errs, err)
 	}
 

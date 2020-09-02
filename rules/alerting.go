@@ -14,6 +14,7 @@
 package rules
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/url"
@@ -499,20 +500,23 @@ func (r *AlertingRule) sendAlerts(ctx context.Context, ts time.Time, resendDelay
 }
 
 func (r *AlertingRule) String() string {
-	ar := rulefmt.Rule{
-		Alert:       yaml.Node{Value: r.name},
-		Expr:        yaml.Node{Value: r.vector.String()},
-		For:         model.Duration(r.holdDuration),
-		Labels:      r.labels.Map(),
-		Annotations: r.annotations.Map(),
-	}
+	var (
+		buffer  bytes.Buffer
+		encoder = yaml.NewEncoder(&buffer)
+		ar      = rulefmt.Rule{
+			Alert:       yaml.Node{Value: r.name},
+			Expr:        yaml.Node{Value: r.vector.String()},
+			For:         model.Duration(r.holdDuration),
+			Labels:      r.labels.Map(),
+			Annotations: r.annotations.Map(),
+		}
+	)
 
-	byt, err := yaml.Marshal(ar)
-	if err != nil {
+	if err := encoder.Encode(&ar); err != nil {
 		return fmt.Sprintf("error marshaling alerting rule: %s", err.Error())
 	}
 
-	return string(byt)
+	return buffer.String()
 }
 
 // HTMLSnippet returns an HTML snippet representing this alerting rule. The

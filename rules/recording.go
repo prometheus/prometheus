@@ -14,6 +14,7 @@
 package rules
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"html/template"
@@ -110,18 +111,21 @@ func (rule *RecordingRule) Eval(ctx context.Context, ts time.Time, query QueryFu
 }
 
 func (rule *RecordingRule) String() string {
-	r := rulefmt.Rule{
-		Record: yaml.Node{Value: rule.name},
-		Expr:   yaml.Node{Value: rule.vector.String()},
-		Labels: rule.labels.Map(),
-	}
+	var (
+		buffer  bytes.Buffer
+		encoder = yaml.NewEncoder(&buffer)
+		r       = rulefmt.Rule{
+			Record: yaml.Node{Value: rule.name},
+			Expr:   yaml.Node{Value: rule.vector.String()},
+			Labels: rule.labels.Map(),
+		}
+	)
 
-	byt, err := yaml.Marshal(r)
-	if err != nil {
+	if err := encoder.Encode(&r); err != nil {
 		return fmt.Sprintf("error marshaling recording rule: %q", err.Error())
 	}
 
-	return string(byt)
+	return buffer.String()
 }
 
 // SetEvaluationDuration updates evaluationDuration to the time in seconds it took to evaluate the rule on its last evaluation.
