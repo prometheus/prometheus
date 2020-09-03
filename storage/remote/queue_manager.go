@@ -48,9 +48,6 @@ const (
 
 	// Allow 30% too many shards before scaling down.
 	shardToleranceFraction = 0.3
-
-	invalidSegmentNumber = -1
-	maxSegmentNumber     = 100000000
 )
 
 type queueManagerMetrics struct {
@@ -424,7 +421,8 @@ func (t *QueueManager) loadCheck() bool {
 			return false
 		}
 
-		if segmentNumber <= t.watcher.InvalidSegmentNumber || segmentNumber > maxSegmentNumber {
+		if segmentNumber <= wal.MinSegmentNumber || segmentNumber >= wal.MaxSegmentNumber {
+
 			return false
 		}
 

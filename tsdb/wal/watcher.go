@@ -81,8 +81,7 @@ type Watcher struct {
 	done chan struct{}
 
 	// For testing, stop when we hit this segment.
-	MaxSegment           int
-	InvalidSegmentNumber int
+	MaxSegment int
 
 	// Current Segment file
 	CurrSegmentFile string
@@ -154,9 +153,8 @@ func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logge
 		quit:          make(chan struct{}),
 		done:          make(chan struct{}),
 
-		MaxSegment:           -1,
-		InvalidSegmentNumber: -1,
-		CurrSegmentFile:      "",
+		MaxSegment:      -1,
+		CurrSegmentFile: "",
 	}
 }
 
