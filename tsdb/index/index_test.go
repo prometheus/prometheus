@@ -558,3 +558,33 @@ func TestSymbols(t *testing.T) {
 	}
 	testutil.Ok(t, iter.Err())
 }
+
+func TestIndexWriterStageString(t *testing.T) {
+	for _, tc := range []struct {
+		s        indexWriterStage
+		expected string
+	}{
+		{
+			s:        idxStageNone,
+			expected: "none",
+		},
+		{
+			s:        idxStageSymbols,
+			expected: "symbols",
+		},
+		{
+			s:        idxStageSeries,
+			expected: "series",
+		},
+		{
+			s:        idxStageDone,
+			expected: "done",
+		},
+		{
+			s:        4,
+			expected: "<unknown>",
+		},
+	} {
+		testutil.Equals(t, tc.expected, tc.s.String())
+	}
+}
