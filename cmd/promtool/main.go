@@ -18,6 +18,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"gopkg.in/yaml.v2"
+	"io/ioutil"
 	"math"
 	"net/http"
 	"net/url"
@@ -282,6 +285,33 @@ func checkConfig(filename string) ([]string, error) {
 						return nil, err
 					}
 					if len(files) != 0 {
+						for _, filesd := range files {
+							fd, err := os.Open(filesd)
+							if err != nil {
+								return nil, err
+							}
+							defer fd.Close()
+
+							content, err := ioutil.ReadAll(fd)
+							if err != nil {
+								return nil, err
+							}
+
+							var targetGroups []*targetgroup.Group
+
+							switch ext := filepath.Ext(filesd); strings.ToLower(ext) {
+							case ".json":
+								if err := json.Unmarshal(content, &targetGroups); err != nil {
+									return nil, errors.Errorf("%v in file_sd %v\n", err, filesd)
+								}
+							case ".yml", ".yaml":
+								if err := yaml.UnmarshalStrict(content, &targetGroups); err != nil {
+									return nil, errors.Errorf("%v in file_sd %v\n", err, filesd)
+								}
+							default:
+								return nil, errors.Errorf("file %q is not valid for file_sd\n", filesd)
+							}
+						}
 						// There was at least one match for the glob and we can assume checkFileExists
 						// for all matches would pass, we can continue the loop.
 						continue
