@@ -357,7 +357,7 @@ func (w *WAL) Repair(origErr error) error {
 	// All segments behind the corruption can no longer be used.
 	segs, err := listSegments(w.Dir())
 	if err != nil {
-		return errors.Wrap(err, "list segments")
+		return err
 	}
 	level.Warn(w.logger).Log("msg", "Deleting all segments newer than corrupted segment", "segment", cerr.Segment)
 
@@ -767,7 +767,7 @@ type segmentRef struct {
 func listSegments(dir string) (refs []segmentRef, err error) {
 	files, err := ioutil.ReadDir(dir)
 	if err != nil {
-		return nil, err
+		return nil, errors.Errorf("list segments in dir %s: %s", dir, err)
 	}
 	for _, f := range files {
 		fn := f.Name()
@@ -782,7 +782,7 @@ func listSegments(dir string) (refs []segmentRef, err error) {
 	})
 	for i := 0; i < len(refs)-1; i++ {
 		if refs[i].index+1 != refs[i+1].index {
-			return nil, errors.New("segments are not sequential")
+			return nil, errors.Errorf("list segments in dir %s: %s", dir, errors.New("segments are not sequential"))
 		}
 	}
 	return refs, nil
@@ -807,7 +807,7 @@ func NewSegmentsRangeReader(sr ...SegmentRange) (io.ReadCloser, error) {
 	for _, sgmRange := range sr {
 		refs, err := listSegments(sgmRange.Dir)
 		if err != nil {
-			return nil, errors.Wrapf(err, "list segment in dir:%v", sgmRange.Dir)
+			return nil, err
 		}
 
 		for _, r := range refs {
