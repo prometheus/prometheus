@@ -192,20 +192,19 @@ func (rule *RecordingRule) HTMLSnippet(pathPrefix string) template.HTML {
 		labels[l.Name] = template.HTMLEscapeString(l.Value)
 	}
 
-	r := struct {
-		Record string            `yaml:"record"`
-		Expr   string            `yaml:"expr"`
-		Labels map[string]string `yaml:"labels,omitempty"`
-	}{
-		Record: fmt.Sprintf(`<a href="%s">%s</a>`, pathPrefix+strutil.TableLinkForExpression(rule.name), rule.name),
-		Expr:   fmt.Sprintf(`<a href="%s">%s</a>`, pathPrefix+strutil.TableLinkForExpression(ruleExpr), template.HTMLEscapeString(ruleExpr)),
-		Labels: labels,
-	}
+	var (
+		buffer  bytes.Buffer
+		encoder = yaml.NewEncoder(&buffer)
+		r       = rulefmt.Rule{
+			Record: yaml.Node{Kind: 8, Value: fmt.Sprintf(`<a href="%s">%s</a>`, pathPrefix+strutil.TableLinkForExpression(rule.name), rule.name)},
+			Expr:   yaml.Node{Kind: 8, Value: fmt.Sprintf(`<a href="%s">%s</a>`, pathPrefix+strutil.TableLinkForExpression(ruleExpr), template.HTMLEscapeString(ruleExpr))},
+			Labels: labels,
+		}
+	)
 
-	byt, err := yaml.Marshal(r)
-	if err != nil {
+	if err := encoder.Encode(&r); err != nil {
 		return template.HTML(fmt.Sprintf("error marshaling recording rule: %q", template.HTMLEscapeString(err.Error())))
 	}
 
-	return template.HTML(byt)
+	return template.HTML(buffer.String())
 }

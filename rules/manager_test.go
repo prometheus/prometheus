@@ -756,7 +756,7 @@ func TestUpdate(t *testing.T) {
 	defer tmpFile.Close()
 
 	err = ruleManager.Update(10*time.Second, []string{tmpFile.Name()}, nil)
-	testutil.NotOk(t, err)
+	testutil.Ok(t, err)
 
 	for h, g := range ruleManager.groups {
 		ogs[h] = g
@@ -784,42 +784,35 @@ func TestUpdate(t *testing.T) {
 
 // ruleGroupsTest for running tests over rules.
 type ruleGroupsTest struct {
-	Groups []ruleGroupTest `yaml:"groups"`
+	Groups []rulefmt.RuleGroup `yaml:"groups"`
 }
 
 // ruleGroupTest forms a testing struct for running tests over rules.
-type ruleGroupTest struct {
-	Name     yaml.Node      `yaml:"name"`
-	Interval model.Duration `yaml:"interval,omitempty"`
-	Rules    []rule         `yaml:"rules"`
-}
-
-type rule struct {
-	Record      string            `yaml:"record,omitempty"`
-	Alert       string            `yaml:"alert,omitempty"`
-	Expr        string            `yaml:"expr"`
-	For         model.Duration    `yaml:"for,omitempty"`
-	Labels      map[string]string `yaml:"labels,omitempty"`
-	Annotations map[string]string `yaml:"annotations,omitempty"`
-}
+//type ruleGroupTest struct {
+//	Name     yaml.Node      `yaml:"name"`
+//	Interval model.Duration `yaml:"interval,omitempty"`
+//	Rules    []rulefmt.Rule         `yaml:"rules"`
+//}
 
 func formatRules(r *rulefmt.RuleGroups) ruleGroupsTest {
-	grps := r.Groups
-	tmp := []ruleGroupTest{}
+	var (
+		grps = r.Groups
+		tmp  []rulefmt.RuleGroup
+	)
 	for _, g := range grps {
-		rtmp := []rule{}
+		rtmp := []rulefmt.Rule{}
 		for _, r := range g.Rules {
-			rtmp = append(rtmp, rule{
-				Record:      r.Record.Value,
-				Alert:       r.Alert.Value,
-				Expr:        r.Expr.Value,
+			rtmp = append(rtmp, rulefmt.Rule{
+				Record:      r.Record,
+				Alert:       r.Alert,
+				Expr:        r.Expr,
 				For:         r.For,
 				Labels:      r.Labels,
 				Annotations: r.Annotations,
 			})
 		}
 
-		tmp = append(tmp, ruleGroupTest{
+		tmp = append(tmp, rulefmt.RuleGroup{
 			Name:     g.Name,
 			Interval: g.Interval,
 			Rules:    rtmp,

@@ -538,23 +538,20 @@ func (r *AlertingRule) HTMLSnippet(pathPrefix string) html_template.HTML {
 		annotationsMap[l.Name] = html_template.HTMLEscapeString(l.Value)
 	}
 
-	ar := struct {
-		Alert       string
-		Expr        string
-		For         model.Duration    `yaml:"for,omitempty"`
-		Labels      map[string]string `yaml:"labels,omitempty"`
-		Annotations map[string]string `yaml:"annotations,omitempty"`
-	}{
-		Alert:       fmt.Sprintf("<a href=%q>%s</a>", pathPrefix+strutil.TableLinkForExpression(alertMetric.String()), r.name),
-		Expr:        fmt.Sprintf("<a href=%q>%s</a>", pathPrefix+strutil.TableLinkForExpression(r.vector.String()), html_template.HTMLEscapeString(r.vector.String())),
-		For:         model.Duration(r.holdDuration),
-		Labels:      labelsMap,
-		Annotations: annotationsMap,
-	}
+	var (
+		buffer  bytes.Buffer
+		encoder = yaml.NewEncoder(&buffer)
+		ar      = rulefmt.Rule{
+			Alert:       yaml.Node{Kind: 8, Value: fmt.Sprintf("<a href=%q>%s</a>", pathPrefix+strutil.TableLinkForExpression(alertMetric.String()), r.name)},
+			Expr:        yaml.Node{Kind: 8, Value: fmt.Sprintf("<a href=%q>%s</a>", pathPrefix+strutil.TableLinkForExpression(r.vector.String()), html_template.HTMLEscapeString(r.vector.String()))},
+			For:         model.Duration(r.holdDuration),
+			Labels:      labelsMap,
+			Annotations: annotationsMap,
+		}
+	)
 
-	byt, err := yaml.Marshal(ar)
-	if err != nil {
+	if err := encoder.Encode(&ar); err != nil {
 		return html_template.HTML(fmt.Sprintf("error marshaling alerting rule: %q", html_template.HTMLEscapeString(err.Error())))
 	}
-	return html_template.HTML(byt)
+	return html_template.HTML(buffer.String())
 }
