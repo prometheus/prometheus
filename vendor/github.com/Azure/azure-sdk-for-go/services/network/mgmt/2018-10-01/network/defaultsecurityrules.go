@@ -152,6 +152,9 @@ func (client DefaultSecurityRulesClient) List(ctx context.Context, resourceGroup
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.DefaultSecurityRulesClient", "List", resp, "Failure responding to request")
 	}
+	if result.srlr.hasNextLink() && result.srlr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }

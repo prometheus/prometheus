@@ -72,6 +72,9 @@ func (client BgpServiceCommunitiesClient) List(ctx context.Context) (result BgpS
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.BgpServiceCommunitiesClient", "List", resp, "Failure responding to request")
 	}
+	if result.bsclr.hasNextLink() && result.bsclr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }

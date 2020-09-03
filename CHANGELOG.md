@@ -1,3 +1,7 @@
+## 2.20.1 / 2020-08-05
+
+* [BUGFIX] SD: Reduce the Consul watch timeout to 2m and adjust the request timeout accordingly. #7724
+
 ## 2.20.0 / 2020-07-22
 
 This release changes WAL compression from opt-in to default. WAL compression will prevent a downgrade to v2.10 or earlier without deleting the WAL. Disable WAL compression explicitly by setting the command line flag `--no-storage.tsdb.wal-compression` if you require downgrading to v2.10 or earlier.

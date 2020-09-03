@@ -74,6 +74,9 @@ func (client AvailableEndpointServicesClient) List(ctx context.Context, location
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.AvailableEndpointServicesClient", "List", resp, "Failure responding to request")
 	}
+	if result.eslr.hasNextLink() && result.eslr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }

@@ -14,13 +14,14 @@
 package scrape
 
 import (
+	"context"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 )
 
 type nopAppendable struct{}
 
-func (a nopAppendable) Appender() storage.Appender {
+func (a nopAppendable) Appender(_ context.Context) storage.Appender {
 	return nopAppender{}
 }
 

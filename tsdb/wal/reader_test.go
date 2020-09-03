@@ -371,7 +371,7 @@ func TestReaderFuzz_Live(t *testing.T) {
 			}()
 
 			// Tail the WAL and compare the results.
-			m, _, err := w.Segments()
+			m, _, err := Segments(w.Dir())
 			testutil.Ok(t, err)
 
 			seg, err := OpenReadSegment(SegmentName(dir, m))
@@ -398,7 +398,7 @@ func TestReaderFuzz_Live(t *testing.T) {
 				select {
 				case <-segmentTicker.C:
 					// check if new segments exist
-					_, last, err := w.Segments()
+					_, last, err := Segments(w.Dir())
 					testutil.Ok(t, err)
 					if last <= seg.i {
 						continue
@@ -463,7 +463,7 @@ func TestLiveReaderCorrupt_ShortFile(t *testing.T) {
 	testutil.Ok(t, err)
 
 	// Try and LiveReader it.
-	m, _, err := w.Segments()
+	m, _, err := Segments(w.Dir())
 	testutil.Ok(t, err)
 
 	seg, err := OpenReadSegment(SegmentName(dir, m))
@@ -511,7 +511,7 @@ func TestLiveReaderCorrupt_RecordTooLongAndShort(t *testing.T) {
 	testutil.Ok(t, err)
 
 	// Try and LiveReader it.
-	m, _, err := w.Segments()
+	m, _, err := Segments(w.Dir())
 	testutil.Ok(t, err)
 
 	seg, err := OpenReadSegment(SegmentName(dir, m))

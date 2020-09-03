@@ -303,6 +303,9 @@ func (client ServiceEndpointPoliciesClient) List(ctx context.Context) (result Se
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ServiceEndpointPoliciesClient", "List", resp, "Failure responding to request")
 	}
+	if result.seplr.hasNextLink() && result.seplr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }
@@ -412,6 +415,9 @@ func (client ServiceEndpointPoliciesClient) ListByResourceGroup(ctx context.Cont
 	result.seplr, err = client.ListByResourceGroupResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ServiceEndpointPoliciesClient", "ListByResourceGroup", resp, "Failure responding to request")
+	}
+	if result.seplr.hasNextLink() && result.seplr.IsEmpty() {
+		err = result.NextWithContext(ctx)
 	}
 
 	return

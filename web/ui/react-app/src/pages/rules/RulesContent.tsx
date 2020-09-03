@@ -3,7 +3,7 @@ import { RouteComponentProps } from '@reach/router';
 import { APIResponse } from '../../hooks/useFetch';
 import { Alert, Table, Badge } from 'reactstrap';
 import { Link } from '@reach/router';
-import { formatRelative, createExpressionLink, humanizeDuration, formatRange } from '../../utils';
+import { formatRelative, createExpressionLink, humanizeDuration, formatDuration } from '../../utils';
 import { Rule } from '../../types/types';
 import { now } from 'moment';
 
@@ -92,7 +92,7 @@ export const RulesContent: FC<RouteComponentProps & RulesContentProps> = ({ resp
                         <GraphExpressionLink title="expr" text={r.query} expr={r.query} />
                         {r.duration > 0 && (
                           <div>
-                            <strong>for:</strong> {formatRange(r.duration)}
+                            <strong>for:</strong> {formatDuration(r.duration * 1000)}
                           </div>
                         )}
                         {r.labels && Object.keys(r.labels).length > 0 && (

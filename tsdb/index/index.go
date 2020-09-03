@@ -1623,7 +1623,7 @@ func (r *Reader) LabelNames() ([]string, error) {
 	return labelNames, nil
 }
 
-// NewStringListIterator returns a StringIter for the given sorted list of strings.
+// NewStringListIter returns a StringIter for the given sorted list of strings.
 func NewStringListIter(s []string) StringIter {
 	return &stringListIter{l: s}
 }

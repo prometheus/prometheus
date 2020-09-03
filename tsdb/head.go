@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"path/filepath"
@@ -36,6 +37,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wal"
 	"go.uber.org/atomic"
 )
@@ -45,7 +47,7 @@ var (
 	// be ingested.
 	ErrInvalidSample = errors.New("invalid sample")
 	// ErrAppenderClosed is returned if an appender has already be successfully
-	// rolled back or commited.
+	// rolled back or committed.
 	ErrAppenderClosed = errors.New("appender closed")
 )
 
@@ -650,7 +652,7 @@ func (h *Head) Init(minValidTime int64) error {
 		}
 		// If this fails, data will be recovered from WAL.
 		// Hence we wont lose any data (given WAL is not corrupt).
-		h.removeCorruptedMmappedChunks(err)
+		mmappedChunks = h.removeCorruptedMmappedChunks(err)
 	}
 
 	level.Info(h.logger).Log("msg", "On-disk memory mappable chunks replay completed", "duration", time.Since(start).String())
@@ -691,7 +693,7 @@ func (h *Head) Init(minValidTime int64) error {
 
 	walReplayStart := time.Now()
 	// Find the last segment.
-	_, last, err := h.wal.Segments()
+	_, last, err := wal.Segments(h.wal.Dir())
 	if err != nil {
 		return errors.Wrap(err, "finding WAL segments")
 	}
@@ -734,7 +736,9 @@ func (h *Head) loadMmappedChunks() (map[uint64][]*mmappedChunk, error) {
 		slice := mmappedChunks[seriesRef]
 		if len(slice) > 0 {
 			if slice[len(slice)-1].maxTime >= mint {
-				return errors.Errorf("out of sequence m-mapped chunk for series ref %d", seriesRef)
+				return &chunks.CorruptionErr{
+					Err: errors.Errorf("out of sequence m-mapped chunk for series ref %d", seriesRef),
+				}
 			}
 		}
 
@@ -815,7 +819,7 @@ func (h *Head) Truncate(mint int64) (err error) {
 	}
 	start = time.Now()
 
-	first, last, err := h.wal.Segments()
+	first, last, err := wal.Segments(h.wal.Dir())
 	if err != nil {
 		return errors.Wrap(err, "get segment range")
 	}
@@ -890,16 +894,13 @@ func (h *Head) Truncate(mint int64) (err error) {
 
 // initTime initializes a head with the first timestamp. This only needs to be called
 // for a completely fresh head with an empty WAL.
-// Returns true if the initialization took an effect.
-func (h *Head) initTime(t int64) (initialized bool) {
+func (h *Head) initTime(t int64) {
 	if !h.minTime.CAS(math.MaxInt64, t) {
-		return false
+		return
 	}
 	// Ensure that max time is initialized to at least the min time we just set.
 	// Concurrent appenders may already have set it to a higher value.
 	h.maxTime.CAS(math.MinInt64, t)
-
-	return true
 }
 
 type Stats struct {
@@ -1007,7 +1008,7 @@ func (a *initAppender) Rollback() error {
 }
 
 // Appender returns a new Appender on the database.
-func (h *Head) Appender() storage.Appender {
+func (h *Head) Appender(_ context.Context) storage.Appender {
 	h.metrics.activeAppenders.Inc()
 
 	// The head cache might not have a starting point yet. The init appender
@@ -1324,7 +1325,7 @@ func (h *Head) gc() {
 	h.postings.Delete(deleted)
 
 	if h.wal != nil {
-		_, last, _ := h.wal.Segments()
+		_, last, _ := wal.Segments(h.wal.Dir())
 		h.deletedMtx.Lock()
 		// Keep series records until we're past segment 'last'
 		// because the WAL will still have samples records with
@@ -1396,11 +1397,10 @@ func (h *Head) chunksRange(mint, maxt int64, is *isolationState) (*headChunkRead
 		mint = hmin
 	}
 	return &headChunkReader{
-		head:         h,
-		mint:         mint,
-		maxt:         maxt,
-		isoState:     is,
-		memChunkPool: &h.memChunkPool,
+		head:     h,
+		mint:     mint,
+		maxt:     maxt,
+		isoState: is,
 	}, nil
 }
 
@@ -1455,10 +1455,9 @@ func (h *Head) Close() error {
 }
 
 type headChunkReader struct {
-	head         *Head
-	mint, maxt   int64
-	isoState     *isolationState
-	memChunkPool *sync.Pool
+	head       *Head
+	mint, maxt int64
+	isoState   *isolationState
 }
 
 func (h *headChunkReader) Close() error {
@@ -1502,7 +1501,7 @@ func (h *headChunkReader) Chunk(ref uint64) (chunkenc.Chunk, error) {
 		if garbageCollect {
 			// Set this to nil so that Go GC can collect it after it has been used.
 			c.chunk = nil
-			h.memChunkPool.Put(c)
+			s.memChunkPool.Put(c)
 		}
 	}()
 
@@ -1927,13 +1926,9 @@ type sample struct {
 	v float64
 }
 
-func (s sample) T() int64 {
-	return s.t
-}
-
-func (s sample) V() float64 {
-	return s.v
-}
+func newSample(t int64, v float64) tsdbutil.Sample { return sample{t, v} }
+func (s sample) T() int64                          { return s.t }
+func (s sample) V() float64                        { return s.v }
 
 // memSeries is the in-memory representation of a series. None of its methods
 // are goroutine safe and it is the caller's responsibility to lock it.

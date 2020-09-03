@@ -55,8 +55,8 @@ const namespace = "prometheus"
 type Metrics struct {
 	evalDuration        prometheus.Summary
 	iterationDuration   prometheus.Summary
-	iterationsMissed    prometheus.Counter
-	iterationsScheduled prometheus.Counter
+	iterationsMissed    *prometheus.CounterVec
+	iterationsScheduled *prometheus.CounterVec
 	evalTotal           *prometheus.CounterVec
 	evalFailures        *prometheus.CounterVec
 	groupInterval       *prometheus.GaugeVec
@@ -82,16 +82,22 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 			Help:       "The duration of rule group evaluations.",
 			Objectives: map[float64]float64{0.01: 0.001, 0.05: 0.005, 0.5: 0.05, 0.90: 0.01, 0.99: 0.001},
 		}),
-		iterationsMissed: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace: namespace,
-			Name:      "rule_group_iterations_missed_total",
-			Help:      "The total number of rule group evaluations missed due to slow rule group evaluation.",
-		}),
-		iterationsScheduled: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace: namespace,
-			Name:      "rule_group_iterations_total",
-			Help:      "The total number of scheduled rule group evaluations, whether executed or missed.",
-		}),
+		iterationsMissed: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: namespace,
+				Name:      "rule_group_iterations_missed_total",
+				Help:      "The total number of rule group evaluations missed due to slow rule group evaluation.",
+			},
+			[]string{"rule_group"},
+		),
+		iterationsScheduled: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: namespace,
+				Name:      "rule_group_iterations_total",
+				Help:      "The total number of scheduled rule group evaluations, whether executed or missed.",
+			},
+			[]string{"rule_group"},
+		),
 		evalTotal: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
 				Namespace: namespace,
@@ -231,8 +237,8 @@ type Group struct {
 	staleSeries          []labels.Labels
 	opts                 *ManagerOptions
 	mtx                  sync.Mutex
-	evaluationDuration   time.Duration
-	evaluationTimestamp  time.Time
+	evaluationTime       time.Duration
+	lastEvaluation       time.Time
 
 	shouldRestore bool
 
@@ -263,6 +269,8 @@ func NewGroup(o GroupOptions) *Group {
 	}
 
 	key := groupKey(o.File, o.Name)
+	metrics.iterationsMissed.WithLabelValues(key)
+	metrics.iterationsScheduled.WithLabelValues(key)
 	metrics.evalTotal.WithLabelValues(key)
 	metrics.evalFailures.WithLabelValues(key)
 	metrics.groupLastEvalTime.WithLabelValues(key)
@@ -317,15 +325,15 @@ func (g *Group) run(ctx context.Context) {
 	})
 
 	iter := func() {
-		g.metrics.iterationsScheduled.Inc()
+		g.metrics.iterationsScheduled.WithLabelValues(groupKey(g.file, g.name)).Inc()
 
 		start := time.Now()
 		g.Eval(ctx, evalTimestamp)
 		timeSinceStart := time.Since(start)
 
 		g.metrics.iterationDuration.Observe(timeSinceStart.Seconds())
-		g.setEvaluationDuration(timeSinceStart)
-		g.setEvaluationTimestamp(start)
+		g.setEvaluationTime(timeSinceStart)
+		g.setLastEvaluation(start)
 	}
 
 	// The assumption here is that since the ticker was started after having
@@ -352,7 +360,7 @@ func (g *Group) run(ctx context.Context) {
 			select {
 			case <-g.managerDone:
 			case <-time.After(2 * g.interval):
-				g.cleanupStaleSeries(now)
+				g.cleanupStaleSeries(ctx, now)
 			}
 		}(time.Now())
 	}()
@@ -369,8 +377,8 @@ func (g *Group) run(ctx context.Context) {
 		case <-tick.C:
 			missed := (time.Since(evalTimestamp) / g.interval) - 1
 			if missed > 0 {
-				g.metrics.iterationsMissed.Add(float64(missed))
-				g.metrics.iterationsScheduled.Add(float64(missed))
+				g.metrics.iterationsMissed.WithLabelValues(groupKey(g.file, g.name)).Add(float64(missed))
+				g.metrics.iterationsScheduled.WithLabelValues(groupKey(g.file, g.name)).Add(float64(missed))
 			}
 			evalTimestamp = evalTimestamp.Add((missed + 1) * g.interval)
 			iter()
@@ -391,8 +399,8 @@ func (g *Group) run(ctx context.Context) {
 			case <-tick.C:
 				missed := (time.Since(evalTimestamp) / g.interval) - 1
 				if missed > 0 {
-					g.metrics.iterationsMissed.Add(float64(missed))
-					g.metrics.iterationsScheduled.Add(float64(missed))
+					g.metrics.iterationsMissed.WithLabelValues(groupKey(g.file, g.name)).Add(float64(missed))
+					g.metrics.iterationsScheduled.WithLabelValues(groupKey(g.file, g.name)).Add(float64(missed))
 				}
 				evalTimestamp = evalTimestamp.Add((missed + 1) * g.interval)
 				iter()
@@ -446,36 +454,36 @@ func (g *Group) HasAlertingRules() bool {
 	return false
 }
 
-// GetEvaluationDuration returns the time in seconds it took to evaluate the rule group.
-func (g *Group) GetEvaluationDuration() time.Duration {
+// GetEvaluationTime returns the time in seconds it took to evaluate the rule group.
+func (g *Group) GetEvaluationTime() time.Duration {
 	g.mtx.Lock()
 	defer g.mtx.Unlock()
-	return g.evaluationDuration
+	return g.evaluationTime
 }
 
-// setEvaluationDuration sets the time in seconds the last evaluation took.
-func (g *Group) setEvaluationDuration(dur time.Duration) {
+// setEvaluationTime sets the time in seconds the last evaluation took.
+func (g *Group) setEvaluationTime(dur time.Duration) {
 	g.metrics.groupLastDuration.WithLabelValues(groupKey(g.file, g.name)).Set(dur.Seconds())
 
 	g.mtx.Lock()
 	defer g.mtx.Unlock()
-	g.evaluationDuration = dur
+	g.evaluationTime = dur
 }
 
-// GetEvaluationTimestamp returns the time the last evaluation of the rule group took place.
-func (g *Group) GetEvaluationTimestamp() time.Time {
+// GetLastEvaluation returns the time the last evaluation of the rule group took place.
+func (g *Group) GetLastEvaluation() time.Time {
 	g.mtx.Lock()
 	defer g.mtx.Unlock()
-	return g.evaluationTimestamp
+	return g.lastEvaluation
 }
 
-// setEvaluationTimestamp updates evaluationTimestamp to the timestamp of when the rule group was last evaluated.
-func (g *Group) setEvaluationTimestamp(ts time.Time) {
+// setLastEvaluation updates lastEvaluation to the timestamp of when the rule group was last evaluated.
+func (g *Group) setLastEvaluation(ts time.Time) {
 	g.metrics.groupLastEvalTime.WithLabelValues(groupKey(g.file, g.name)).Set(float64(ts.UnixNano()) / 1e9)
 
 	g.mtx.Lock()
 	defer g.mtx.Unlock()
-	g.evaluationTimestamp = ts
+	g.lastEvaluation = ts
 }
 
 // evalTimestamp returns the immediately preceding consistently slotted evaluation time.
@@ -499,7 +507,8 @@ func nameAndLabels(rule Rule) string {
 // Rules are matched based on their name and labels. If there are duplicates, the
 // first is matched with the first, second with the second etc.
 func (g *Group) CopyState(from *Group) {
-	g.evaluationDuration = from.evaluationDuration
+	g.evaluationTime = from.evaluationTime
+	g.lastEvaluation = from.lastEvaluation
 
 	ruleMap := make(map[string][]int, len(from.rules))
 
@@ -576,6 +585,8 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				if _, ok := err.(promql.ErrQueryCanceled); !ok {
 					level.Warn(g.logger).Log("msg", "Evaluating rule failed", "rule", rule, "err", err)
 				}
+				sp.SetTag("error", true)
+				sp.LogKV("error", err)
 				g.metrics.evalFailures.WithLabelValues(groupKey(g.File(), g.Name())).Inc()
 				return
 			}
@@ -588,7 +599,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				numDuplicates = 0
 			)
 
-			app := g.opts.Appendable.Appender()
+			app := g.opts.Appendable.Appender(ctx)
 			seriesReturned := make(map[string]labels.Labels, len(g.seriesInPreviousEval[i]))
 			defer func() {
 				if err := app.Commit(); err != nil {
@@ -636,14 +647,14 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			}
 		}(i, rule)
 	}
-	g.cleanupStaleSeries(ts)
+	g.cleanupStaleSeries(ctx, ts)
 }
 
-func (g *Group) cleanupStaleSeries(ts time.Time) {
+func (g *Group) cleanupStaleSeries(ctx context.Context, ts time.Time) {
 	if len(g.staleSeries) == 0 {
 		return
 	}
-	app := g.opts.Appendable.Appender()
+	app := g.opts.Appendable.Appender(ctx)
 	for _, s := range g.staleSeries {
 		// Rule that produced series no longer configured, mark it stale.
 		_, err := app.Add(s, timestamp.FromTime(ts), math.Float64frombits(value.StaleNaN))
@@ -876,7 +887,6 @@ func NewManager(o *ManagerOptions) *Manager {
 		logger: o.Logger,
 	}
 
-	o.Metrics.iterationsMissed.Inc()
 	return m
 }
 
@@ -962,6 +972,8 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 			g.markStale = true
 			g.stop()
 			if m := g.metrics; m != nil {
+				m.iterationsMissed.DeleteLabelValues(n)
+				m.iterationsScheduled.DeleteLabelValues(n)
 				m.evalTotal.DeleteLabelValues(n)
 				m.evalFailures.DeleteLabelValues(n)
 				m.groupInterval.DeleteLabelValues(n)

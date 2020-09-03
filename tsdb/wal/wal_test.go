@@ -138,7 +138,7 @@ func TestWALRepair_ReadingError(t *testing.T) {
 				records = append(records, b)
 				testutil.Ok(t, w.Log(b))
 			}
-			first, last, err := w.Segments()
+			first, last, err := Segments(w.Dir())
 			testutil.Ok(t, err)
 			testutil.Equals(t, 3, 1+last-first, "wal creation didn't result in expected number of segments")
 
@@ -156,7 +156,7 @@ func TestWALRepair_ReadingError(t *testing.T) {
 			testutil.Ok(t, err)
 			defer w.Close()
 
-			first, last, err = w.Segments()
+			first, last, err = Segments(w.Dir())
 			testutil.Ok(t, err)
 
 			// Backfill segments from the most recent checkpoint onwards.
@@ -201,7 +201,7 @@ func TestWALRepair_ReadingError(t *testing.T) {
 			}
 
 			// Make sure there is a new 0 size Segment after the corrupted Segment.
-			_, last, err = w.Segments()
+			_, last, err = Segments(w.Dir())
 			testutil.Ok(t, err)
 			testutil.Equals(t, test.corrSgm+1, last)
 			fi, err := os.Stat(SegmentName(dir, last))

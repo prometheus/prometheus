@@ -99,7 +99,7 @@ local template = grafana.template;
       ),
     // Remote write specific dashboard.
     'prometheus-remote-write.json':
-      local timestampComparison = 
+      local timestampComparison =
         graphPanel.new(
           'Highest Timestamp In vs. Highest Timestamp Sent',
           datasource='$datasource',
@@ -116,7 +116,7 @@ local template = grafana.template;
           legendFormat='{{cluster}}:{{instance}} {{remote_name}}:{{url}}',
         ));
 
-      local timestampComparisonRate = 
+      local timestampComparisonRate =
         graphPanel.new(
           'Rate[5m]',
           datasource='$datasource',
@@ -206,8 +206,8 @@ local template = grafana.template;
           'prometheus_remote_storage_shard_capacity{cluster=~"$cluster", instance=~"$instance"}',
           legendFormat='{{cluster}}:{{instance}} {{remote_name}}:{{url}}'
         ));
-       
-      
+
+
       local pendingSamples =
         graphPanel.new(
           'Pending Samples',
@@ -219,7 +219,7 @@ local template = grafana.template;
           legendFormat='{{cluster}}:{{instance}} {{remote_name}}:{{url}}'
         ));
 
-      local walSegment = 
+      local walSegment =
         graphPanel.new(
           'TSDB Current Segment',
           datasource='$datasource',
@@ -231,7 +231,7 @@ local template = grafana.template;
           legendFormat='{{cluster}}:{{instance}}'
         ));
 
-      local queueSegment = 
+      local queueSegment =
         graphPanel.new(
           'Remote Write Current Segment',
           datasource='$datasource',
@@ -288,7 +288,7 @@ local template = grafana.template;
         ));
 
       dashboard.new('Prometheus Remote Write',
-      editable=true)
+                    editable=true)
       .addTemplate(
         {
           hide: 0,
@@ -312,7 +312,7 @@ local template = grafana.template;
             text: 'All',
             value: '$__all',
           },
-          includeAll=true, 
+          includeAll=true,
         )
       )
       .addTemplate(
@@ -326,7 +326,7 @@ local template = grafana.template;
             text: 'All',
             value: '$__all',
           },
-          includeAll=true, 
+          includeAll=true,
         )
       )
       .addTemplate(
@@ -335,7 +335,7 @@ local template = grafana.template;
           '$datasource',
           'label_values(prometheus_remote_storage_shards{cluster=~"$cluster", instance=~"$instance"}, url)' % $._config,
           refresh='time',
-          includeAll=true, 
+          includeAll=true,
         )
       )
       .addRow(
@@ -348,7 +348,8 @@ local template = grafana.template;
         .addPanel(samplesRate)
       )
       .addRow(
-        row.new('Shards'
+        row.new(
+          'Shards'
         )
         .addPanel(currentShards)
         .addPanel(maxShards)
@@ -371,6 +372,6 @@ local template = grafana.template;
         .addPanel(failedSamples)
         .addPanel(retriedSamples)
         .addPanel(enqueueRetries)
-      )      
+      ),
   },
 }

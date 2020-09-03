@@ -65,7 +65,7 @@ func copyFile(src, dest string) error {
 		return err
 	}
 
-	err = ioutil.WriteFile(dest, data, 0644)
+	err = ioutil.WriteFile(dest, data, 0666)
 	if err != nil {
 		return err
 	}

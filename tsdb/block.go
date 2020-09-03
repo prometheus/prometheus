@@ -44,10 +44,9 @@ type IndexWriter interface {
 
 	// AddSeries populates the index writer with a series and its offsets
 	// of chunks that the index can reference.
-	// Implementations may require series to be insert in increasing order by
-	// their labels.
-	// The reference numbers are used to resolve entries in postings lists that
-	// are added later.
+	// Implementations may require series to be insert in strictly increasing order by
+	// their labels. The reference numbers are used to resolve entries in postings lists
+	// that are added later.
 	AddSeries(ref uint64, l labels.Labels, chunks ...chunks.Meta) error
 
 	// Close writes any finalization and closes the resources associated with

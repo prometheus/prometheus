@@ -53,7 +53,6 @@ import (
 	promlogflag "github.com/prometheus/common/promlog/flag"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
-	sd_config "github.com/prometheus/prometheus/discovery/config"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/logging"
@@ -67,6 +66,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/strutil"
 	"github.com/prometheus/prometheus/web"
+
+	_ "github.com/prometheus/prometheus/discovery/install" // Register service discovery implementations.
 )
 
 var (
@@ -436,56 +437,73 @@ func main() {
 		conntrack.DialWithTracing(),
 	)
 
-	reloaders := []func(cfg *config.Config) error{
-		remoteStorage.ApplyConfig,
-		webHandler.ApplyConfig,
-		func(cfg *config.Config) error {
-			if cfg.GlobalConfig.QueryLogFile == "" {
-				queryEngine.SetQueryLogger(nil)
-				return nil
-			}
-
-			l, err := logging.NewJSONFileLogger(cfg.GlobalConfig.QueryLogFile)
-			if err != nil {
-				return err
-			}
-			queryEngine.SetQueryLogger(l)
-			return nil
-		},
-		// The Scrape and notifier managers need to reload before the Discovery manager as
-		// they need to read the most updated config when receiving the new targets list.
-		scrapeManager.ApplyConfig,
-		func(cfg *config.Config) error {
-			c := make(map[string]sd_config.ServiceDiscoveryConfig)
-			for _, v := range cfg.ScrapeConfigs {
-				c[v.JobName] = v.ServiceDiscoveryConfig
-			}
-			return discoveryManagerScrape.ApplyConfig(c)
-		},
-		notifierManager.ApplyConfig,
-		func(cfg *config.Config) error {
-			c := make(map[string]sd_config.ServiceDiscoveryConfig)
-			for k, v := range cfg.AlertingConfig.AlertmanagerConfigs.ToMap() {
-				c[k] = v.ServiceDiscoveryConfig
-			}
-			return discoveryManagerNotify.ApplyConfig(c)
-		},
-		func(cfg *config.Config) error {
-			// Get all rule files matching the configuration paths.
-			var files []string
-			for _, pat := range cfg.RuleFiles {
-				fs, err := filepath.Glob(pat)
-				if err != nil {
-					// The only error can be a bad pattern.
-					return errors.Wrapf(err, "error retrieving rule files for %s", pat)
+	reloaders := []reloader{
+		{
+			name:     "remote_storage",
+			reloader: remoteStorage.ApplyConfig,
+		}, {
+			name:     "web_handler",
+			reloader: webHandler.ApplyConfig,
+		}, {
+			name: "query_engine",
+			reloader: func(cfg *config.Config) error {
+				if cfg.GlobalConfig.QueryLogFile == "" {
+					queryEngine.SetQueryLogger(nil)
+					return nil
 				}
-				files = append(files, fs...)
-			}
-			return ruleManager.Update(
-				time.Duration(cfg.GlobalConfig.EvaluationInterval),
-				files,
-				cfg.GlobalConfig.ExternalLabels,
-			)
+
+				l, err := logging.NewJSONFileLogger(cfg.GlobalConfig.QueryLogFile)
+				if err != nil {
+					return err
+				}
+				queryEngine.SetQueryLogger(l)
+				return nil
+			},
+		}, {
+			// The Scrape and notifier managers need to reload before the Discovery manager as
+			// they need to read the most updated config when receiving the new targets list.
+			name:     "scrape",
+			reloader: scrapeManager.ApplyConfig,
+		}, {
+			name: "scrape_sd",
+			reloader: func(cfg *config.Config) error {
+				c := make(map[string]discovery.Configs)
+				for _, v := range cfg.ScrapeConfigs {
+					c[v.JobName] = v.ServiceDiscoveryConfigs
+				}
+				return discoveryManagerScrape.ApplyConfig(c)
+			},
+		}, {
+			name:     "notify",
+			reloader: notifierManager.ApplyConfig,
+		}, {
+			name: "notify_sd",
+			reloader: func(cfg *config.Config) error {
+				c := make(map[string]discovery.Configs)
+				for k, v := range cfg.AlertingConfig.AlertmanagerConfigs.ToMap() {
+					c[k] = v.ServiceDiscoveryConfigs
+				}
+				return discoveryManagerNotify.ApplyConfig(c)
+			},
+		}, {
+			name: "rules",
+			reloader: func(cfg *config.Config) error {
+				// Get all rule files matching the configuration paths.
+				var files []string
+				for _, pat := range cfg.RuleFiles {
+					fs, err := filepath.Glob(pat)
+					if err != nil {
+						// The only error can be a bad pattern.
+						return errors.Wrapf(err, "error retrieving rule files for %s", pat)
+					}
+					files = append(files, fs...)
+				}
+				return ruleManager.Update(
+					time.Duration(cfg.GlobalConfig.EvaluationInterval),
+					files,
+					cfg.GlobalConfig.ExternalLabels,
+				)
+			},
 		},
 	}
 
@@ -821,7 +839,14 @@ func (i *safePromQLNoStepSubqueryInterval) Get(int64) int64 {
 	return i.value.Load()
 }
 
-func reloadConfig(filename string, logger log.Logger, noStepSuqueryInterval *safePromQLNoStepSubqueryInterval, rls ...func(*config.Config) error) (err error) {
+type reloader struct {
+	name     string
+	reloader func(*config.Config) error
+}
+
+func reloadConfig(filename string, logger log.Logger, noStepSuqueryInterval *safePromQLNoStepSubqueryInterval, rls ...reloader) (err error) {
+	start := time.Now()
+	timings := []interface{}{}
 	level.Info(logger).Log("msg", "Loading configuration file", "filename", filename)
 
 	defer func() {
@@ -840,17 +865,20 @@ func reloadConfig(filename string, logger log.Logger, noStepSuqueryInterval *saf
 
 	failed := false
 	for _, rl := range rls {
-		if err := rl(conf); err != nil {
+		rstart := time.Now()
+		if err := rl.reloader(conf); err != nil {
 			level.Error(logger).Log("msg", "Failed to apply configuration", "err", err)
 			failed = true
 		}
+		timings = append(timings, rl.name, time.Since(rstart))
 	}
 	if failed {
 		return errors.Errorf("one or more errors occurred while applying the new configuration (--config.file=%q)", filename)
 	}
 
 	noStepSuqueryInterval.Set(conf.GlobalConfig.EvaluationInterval)
-	level.Info(logger).Log("msg", "Completed loading of configuration file", "filename", filename)
+	l := []interface{}{"msg", "Completed loading of configuration file", "filename", filename, "totalDuration", time.Since(start)}
+	level.Info(logger).Log(append(l, timings...)...)
 	return nil
 }
 
@@ -990,9 +1018,9 @@ func (s *readyStorage) ChunkQuerier(ctx context.Context, mint, maxt int64) (stor
 }
 
 // Appender implements the Storage interface.
-func (s *readyStorage) Appender() storage.Appender {
+func (s *readyStorage) Appender(ctx context.Context) storage.Appender {
 	if x := s.get(); x != nil {
-		return x.Appender()
+		return x.Appender(ctx)
 	}
 	return notReadyAppender{}
 }

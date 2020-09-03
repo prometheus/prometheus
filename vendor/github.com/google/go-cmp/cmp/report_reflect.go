@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
-	"github.com/google/go-cmp/cmp/internal/flags"
 	"github.com/google/go-cmp/cmp/internal/value"
 )
 
@@ -20,14 +20,22 @@ type formatValueOptions struct {
 	// methods like error.Error or fmt.Stringer.String.
 	AvoidStringer bool
 
-	// ShallowPointers controls whether to avoid descending into pointers.
-	// Useful when printing map keys, where pointer comparison is performed
-	// on the pointer address rather than the pointed-at value.
-	ShallowPointers bool
-
 	// PrintAddresses controls whether to print the address of all pointers,
 	// slice elements, and maps.
 	PrintAddresses bool
+
+	// QualifiedNames controls whether FormatType uses the fully qualified name
+	// (including the full package path as opposed to just the package name).
+	QualifiedNames bool
+
+	// VerbosityLevel controls the amount of output to produce.
+	// A higher value produces more output. A value of zero or lower produces
+	// no output (represented using an ellipsis).
+	// If LimitVerbosity is false, then the level is treated as infinite.
+	VerbosityLevel int
+
+	// LimitVerbosity specifies that formatting should respect VerbosityLevel.
+	LimitVerbosity bool
 }
 
 // FormatType prints the type as if it were wrapping s.
@@ -44,12 +52,15 @@ func (opts formatOptions) FormatType(t reflect.Type, s textNode) textNode {
 		default:
 			return s
 		}
+		if opts.DiffMode == diffIdentical {
+			return s // elide type for identical nodes
+		}
 	case elideType:
 		return s
 	}
 
 	// Determine the type label, applying special handling for unnamed types.
-	typeName := t.String()
+	typeName := value.TypeString(t, opts.QualifiedNames)
 	if t.Name() == "" {
 		// According to Go grammar, certain type literals contain symbols that
 		// do not strongly bind to the next lexicographical token (e.g., *T).
@@ -57,39 +68,78 @@ func (opts formatOptions) FormatType(t reflect.Type, s textNode) textNode {
 		case reflect.Chan, reflect.Func, reflect.Ptr:
 			typeName = "(" + typeName + ")"
 		}
-		typeName = strings.Replace(typeName, "struct {", "struct{", -1)
-		typeName = strings.Replace(typeName, "interface {", "interface{", -1)
 	}
+	return &textWrap{Prefix: typeName, Value: wrapParens(s)}
+}
 
-	// Avoid wrap the value in parenthesis if unnecessary.
-	if s, ok := s.(textWrap); ok {
-		hasParens := strings.HasPrefix(s.Prefix, "(") && strings.HasSuffix(s.Suffix, ")")
-		hasBraces := strings.HasPrefix(s.Prefix, "{") && strings.HasSuffix(s.Suffix, "}")
+// wrapParens wraps s with a set of parenthesis, but avoids it if the
+// wrapped node itself is already surrounded by a pair of parenthesis or braces.
+// It handles unwrapping one level of pointer-reference nodes.
+func wrapParens(s textNode) textNode {
+	var refNode *textWrap
+	if s2, ok := s.(*textWrap); ok {
+		// Unwrap a single pointer reference node.
+		switch s2.Metadata.(type) {
+		case leafReference, trunkReference, trunkReferences:
+			refNode = s2
+			if s3, ok := refNode.Value.(*textWrap); ok {
+				s2 = s3
+			}
+		}
+
+		// Already has delimiters that make parenthesis unnecessary.
+		hasParens := strings.HasPrefix(s2.Prefix, "(") && strings.HasSuffix(s2.Suffix, ")")
+		hasBraces := strings.HasPrefix(s2.Prefix, "{") && strings.HasSuffix(s2.Suffix, "}")
 		if hasParens || hasBraces {
-			return textWrap{typeName, s, ""}
+			return s
 		}
 	}
-	return textWrap{typeName + "(", s, ")"}
+	if refNode != nil {
+		refNode.Value = &textWrap{Prefix: "(", Value: refNode.Value, Suffix: ")"}
+		return s
+	}
+	return &textWrap{Prefix: "(", Value: s, Suffix: ")"}
 }
 
 // FormatValue prints the reflect.Value, taking extra care to avoid descending
-// into pointers already in m. As pointers are visited, m is also updated.
-func (opts formatOptions) FormatValue(v reflect.Value, m visitedPointers) (out textNode) {
+// into pointers already in ptrs. As pointers are visited, ptrs is also updated.
+func (opts formatOptions) FormatValue(v reflect.Value, parentKind reflect.Kind, ptrs *pointerReferences) (out textNode) {
 	if !v.IsValid() {
 		return nil
 	}
 	t := v.Type()
+
+	// Check slice element for cycles.
+	if parentKind == reflect.Slice {
+		ptrRef, visited := ptrs.Push(v.Addr())
+		if visited {
+			return makeLeafReference(ptrRef, false)
+		}
+		defer ptrs.Pop()
+		defer func() { out = wrapTrunkReference(ptrRef, false, out) }()
+	}
 
 	// Check whether there is an Error or String method to call.
 	if !opts.AvoidStringer && v.CanInterface() {
 		// Avoid calling Error or String methods on nil receivers since many
 		// implementations crash when doing so.
 		if (t.Kind() != reflect.Ptr && t.Kind() != reflect.Interface) || !v.IsNil() {
+			var prefix, strVal string
 			switch v := v.Interface().(type) {
 			case error:
-				return textLine("e" + formatString(v.Error()))
+				prefix, strVal = "e", v.Error()
 			case fmt.Stringer:
-				return textLine("s" + formatString(v.String()))
+				prefix, strVal = "s", v.String()
+			}
+			if prefix != "" {
+				maxLen := len(strVal)
+				if opts.LimitVerbosity {
+					maxLen = (1 << opts.verbosity()) << 5 // 32, 64, 128, 256, etc...
+				}
+				if len(strVal) > maxLen+len(textEllipsis) {
+					return textLine(prefix + formatString(strVal[:maxLen]) + string(textEllipsis))
+				}
+				return textLine(prefix + formatString(strVal))
 			}
 		}
 	}
@@ -102,94 +152,136 @@ func (opts formatOptions) FormatValue(v reflect.Value, m visitedPointers) (out t
 		}
 	}()
 
-	var ptr string
 	switch t.Kind() {
 	case reflect.Bool:
 		return textLine(fmt.Sprint(v.Bool()))
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		return textLine(fmt.Sprint(v.Int()))
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
-		// Unnamed uints are usually bytes or words, so use hexadecimal.
-		if t.PkgPath() == "" || t.Kind() == reflect.Uintptr {
+	case reflect.Uint, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return textLine(fmt.Sprint(v.Uint()))
+	case reflect.Uint8:
+		if parentKind == reflect.Slice || parentKind == reflect.Array {
 			return textLine(formatHex(v.Uint()))
 		}
 		return textLine(fmt.Sprint(v.Uint()))
+	case reflect.Uintptr:
+		return textLine(formatHex(v.Uint()))
 	case reflect.Float32, reflect.Float64:
 		return textLine(fmt.Sprint(v.Float()))
 	case reflect.Complex64, reflect.Complex128:
 		return textLine(fmt.Sprint(v.Complex()))
 	case reflect.String:
+		maxLen := v.Len()
+		if opts.LimitVerbosity {
+			maxLen = (1 << opts.verbosity()) << 5 // 32, 64, 128, 256, etc...
+		}
+		if v.Len() > maxLen+len(textEllipsis) {
+			return textLine(formatString(v.String()[:maxLen]) + string(textEllipsis))
+		}
 		return textLine(formatString(v.String()))
 	case reflect.UnsafePointer, reflect.Chan, reflect.Func:
-		return textLine(formatPointer(v))
+		return textLine(formatPointer(value.PointerOf(v), true))
 	case reflect.Struct:
 		var list textList
+		v := makeAddressable(v) // needed for retrieveUnexportedField
+		maxLen := v.NumField()
+		if opts.LimitVerbosity {
+			maxLen = ((1 << opts.verbosity()) >> 1) << 2 // 0, 4, 8, 16, 32, etc...
+			opts.VerbosityLevel--
+		}
 		for i := 0; i < v.NumField(); i++ {
 			vv := v.Field(i)
 			if value.IsZero(vv) {
 				continue // Elide fields with zero values
 			}
-			s := opts.WithTypeMode(autoType).FormatValue(vv, m)
-			list = append(list, textRecord{Key: t.Field(i).Name, Value: s})
+			if len(list) == maxLen {
+				list.AppendEllipsis(diffStats{})
+				break
+			}
+			sf := t.Field(i)
+			if supportExporters && !isExported(sf.Name) {
+				vv = retrieveUnexportedField(v, sf, true)
+			}
+			s := opts.WithTypeMode(autoType).FormatValue(vv, t.Kind(), ptrs)
+			list = append(list, textRecord{Key: sf.Name, Value: s})
 		}
-		return textWrap{"{", list, "}"}
+		return &textWrap{Prefix: "{", Value: list, Suffix: "}"}
 	case reflect.Slice:
 		if v.IsNil() {
 			return textNil
 		}
-		if opts.PrintAddresses {
-			ptr = formatPointer(v)
-		}
 		fallthrough
 	case reflect.Array:
+		maxLen := v.Len()
+		if opts.LimitVerbosity {
+			maxLen = ((1 << opts.verbosity()) >> 1) << 2 // 0, 4, 8, 16, 32, etc...
+			opts.VerbosityLevel--
+		}
 		var list textList
 		for i := 0; i < v.Len(); i++ {
-			vi := v.Index(i)
-			if vi.CanAddr() { // Check for cyclic elements
-				p := vi.Addr()
-				if m.Visit(p) {
-					var out textNode
-					out = textLine(formatPointer(p))
-					out = opts.WithTypeMode(emitType).FormatType(p.Type(), out)
-					out = textWrap{"*", out, ""}
-					list = append(list, textRecord{Value: out})
-					continue
-				}
+			if len(list) == maxLen {
+				list.AppendEllipsis(diffStats{})
+				break
 			}
-			s := opts.WithTypeMode(elideType).FormatValue(vi, m)
+			s := opts.WithTypeMode(elideType).FormatValue(v.Index(i), t.Kind(), ptrs)
 			list = append(list, textRecord{Value: s})
 		}
-		return textWrap{ptr + "{", list, "}"}
+
+		out = &textWrap{Prefix: "{", Value: list, Suffix: "}"}
+		if t.Kind() == reflect.Slice && opts.PrintAddresses {
+			header := fmt.Sprintf("ptr:%v, len:%d, cap:%d", formatPointer(value.PointerOf(v), false), v.Len(), v.Cap())
+			out = &textWrap{Prefix: pointerDelimPrefix + header + pointerDelimSuffix, Value: out}
+		}
+		return out
 	case reflect.Map:
 		if v.IsNil() {
 			return textNil
 		}
-		if m.Visit(v) {
-			return textLine(formatPointer(v))
-		}
 
+		// Check pointer for cycles.
+		ptrRef, visited := ptrs.Push(v)
+		if visited {
+			return makeLeafReference(ptrRef, opts.PrintAddresses)
+		}
+		defer ptrs.Pop()
+
+		maxLen := v.Len()
+		if opts.LimitVerbosity {
+			maxLen = ((1 << opts.verbosity()) >> 1) << 2 // 0, 4, 8, 16, 32, etc...
+			opts.VerbosityLevel--
+		}
 		var list textList
 		for _, k := range value.SortKeys(v.MapKeys()) {
-			sk := formatMapKey(k)
-			sv := opts.WithTypeMode(elideType).FormatValue(v.MapIndex(k), m)
+			if len(list) == maxLen {
+				list.AppendEllipsis(diffStats{})
+				break
+			}
+			sk := formatMapKey(k, false, ptrs)
+			sv := opts.WithTypeMode(elideType).FormatValue(v.MapIndex(k), t.Kind(), ptrs)
 			list = append(list, textRecord{Key: sk, Value: sv})
 		}
-		if opts.PrintAddresses {
-			ptr = formatPointer(v)
-		}
-		return textWrap{ptr + "{", list, "}"}
+
+		out = &textWrap{Prefix: "{", Value: list, Suffix: "}"}
+		out = wrapTrunkReference(ptrRef, opts.PrintAddresses, out)
+		return out
 	case reflect.Ptr:
 		if v.IsNil() {
 			return textNil
 		}
-		if m.Visit(v) || opts.ShallowPointers {
-			return textLine(formatPointer(v))
+
+		// Check pointer for cycles.
+		ptrRef, visited := ptrs.Push(v)
+		if visited {
+			out = makeLeafReference(ptrRef, opts.PrintAddresses)
+			return &textWrap{Prefix: "&", Value: out}
 		}
-		if opts.PrintAddresses {
-			ptr = formatPointer(v)
-		}
+		defer ptrs.Pop()
+
 		skipType = true // Let the underlying value print the type instead
-		return textWrap{"&" + ptr, opts.FormatValue(v.Elem(), m), ""}
+		out = opts.FormatValue(v.Elem(), t.Kind(), ptrs)
+		out = wrapTrunkReference(ptrRef, opts.PrintAddresses, out)
+		out = &textWrap{Prefix: "&", Value: out}
+		return out
 	case reflect.Interface:
 		if v.IsNil() {
 			return textNil
@@ -197,7 +289,7 @@ func (opts formatOptions) FormatValue(v reflect.Value, m visitedPointers) (out t
 		// Interfaces accept different concrete types,
 		// so configure the underlying value to explicitly print the type.
 		skipType = true // Print the concrete type instead
-		return opts.WithTypeMode(emitType).FormatValue(v.Elem(), m)
+		return opts.WithTypeMode(emitType).FormatValue(v.Elem(), t.Kind(), ptrs)
 	default:
 		panic(fmt.Sprintf("%v kind not handled", v.Kind()))
 	}
@@ -205,11 +297,14 @@ func (opts formatOptions) FormatValue(v reflect.Value, m visitedPointers) (out t
 
 // formatMapKey formats v as if it were a map key.
 // The result is guaranteed to be a single line.
-func formatMapKey(v reflect.Value) string {
+func formatMapKey(v reflect.Value, disambiguate bool, ptrs *pointerReferences) string {
 	var opts formatOptions
+	opts.DiffMode = diffIdentical
 	opts.TypeMode = elideType
-	opts.ShallowPointers = true
-	s := opts.FormatValue(v, visitedPointers{}).String()
+	opts.PrintAddresses = disambiguate
+	opts.AvoidStringer = disambiguate
+	opts.QualifiedNames = disambiguate
+	s := opts.FormatValue(v, reflect.Map, ptrs).String()
 	return strings.TrimSpace(s)
 }
 
@@ -227,7 +322,7 @@ func formatString(s string) string {
 	rawInvalid := func(r rune) bool {
 		return r == '`' || r == '\n' || !(unicode.IsPrint(r) || r == '\t')
 	}
-	if strings.IndexFunc(s, rawInvalid) < 0 {
+	if utf8.ValidString(s) && strings.IndexFunc(s, rawInvalid) < 0 {
 		return "`" + s + "`"
 	}
 	return qs
@@ -255,24 +350,4 @@ func formatHex(u uint64) string {
 		f = "0x%016x"
 	}
 	return fmt.Sprintf(f, u)
-}
-
-// formatPointer prints the address of the pointer.
-func formatPointer(v reflect.Value) string {
-	p := v.Pointer()
-	if flags.Deterministic {
-		p = 0xdeadf00f // Only used for stable testing purposes
-	}
-	return fmt.Sprintf("⟪0x%x⟫", p)
-}
-
-type visitedPointers map[value.Pointer]struct{}
-
-// Visit inserts pointer v into the visited map and reports whether it had
-// already been visited before.
-func (m visitedPointers) Visit(v reflect.Value) bool {
-	p := value.PointerOf(v)
-	_, visited := m[p]
-	m[p] = struct{}{}
-	return visited
 }

@@ -310,6 +310,9 @@ func (client P2sVpnServerConfigurationsClient) ListByVirtualWan(ctx context.Cont
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.P2sVpnServerConfigurationsClient", "ListByVirtualWan", resp, "Failure responding to request")
 	}
+	if result.lpvscr.hasNextLink() && result.lpvscr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }

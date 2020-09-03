@@ -299,6 +299,9 @@ func (client GalleriesClient) List(ctx context.Context) (result GalleryListPage,
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.GalleriesClient", "List", resp, "Failure responding to request")
 	}
+	if result.gl.hasNextLink() && result.gl.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }
@@ -408,6 +411,9 @@ func (client GalleriesClient) ListByResourceGroup(ctx context.Context, resourceG
 	result.gl, err = client.ListByResourceGroupResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.GalleriesClient", "ListByResourceGroup", resp, "Failure responding to request")
+	}
+	if result.gl.hasNextLink() && result.gl.IsEmpty() {
+		err = result.NextWithContext(ctx)
 	}
 
 	return
