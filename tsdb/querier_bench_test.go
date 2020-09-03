@@ -197,19 +197,26 @@ func BenchmarkQuerierSelect(b *testing.B) {
 					b.Run(fmt.Sprintf("%dof%d", s, tcase.series), func(b *testing.B) {
 						q, err := NewBlockQuerier(br, 0, int64(s*tcase.samplesPerSeries-1))
 						testutil.Ok(b, err)
+						defer q.Close()
 
 						b.ResetTimer()
 						for i := 0; i < b.N; i++ {
 							counter := 0
 							ss := q.Select(sorted, nil, matcher)
 							for ss.Next() {
+								at := ss.At()
 								counter++
+								it := at.Iterator()
+								for it.Next() {
+									_, _ = it.At()
+								}
+								testutil.Ok(b, it.Err())
 							}
 							testutil.Ok(b, ss.Err())
 							testutil.Equals(b, 0, len(ss.Warnings()))
 							testutil.Equals(b, s, counter)
 						}
-						q.Close()
+
 					})
 				}
 			}
