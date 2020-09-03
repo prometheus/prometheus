@@ -42,7 +42,7 @@ func TestParseFileFailure(t *testing.T) {
 		},
 		{
 			filename: "unknown_fields.bad.yaml",
-			errMsg: "line 13: field anotations not found in type rulefmt.Rule",
+			errMsg:   "line 13: field anotations not found in type rulefmt.Rule",
 		},
 		{
 			filename: "bad_expr.bad.yaml",
