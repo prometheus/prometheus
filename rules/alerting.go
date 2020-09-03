@@ -504,8 +504,8 @@ func (r *AlertingRule) String() string {
 		buffer  bytes.Buffer
 		encoder = yaml.NewEncoder(&buffer)
 		ar      = rulefmt.Rule{
-			Alert:       yaml.Node{Value: r.name},
-			Expr:        yaml.Node{Value: r.vector.String()},
+			Alert:       yaml.Node{Kind: 8, Value: r.name},
+			Expr:        yaml.Node{Kind: 8, Value: r.vector.String()},
 			For:         model.Duration(r.holdDuration),
 			Labels:      r.labels.Map(),
 			Annotations: r.annotations.Map(),

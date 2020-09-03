@@ -782,49 +782,8 @@ func TestUpdate(t *testing.T) {
 	reloadAndValidate(rgs, t, tmpFile, ruleManager, expected, ogs)
 }
 
-// ruleGroupsTest for running tests over rules.
-type ruleGroupsTest struct {
-	Groups []rulefmt.RuleGroup `yaml:"groups"`
-}
-
-// ruleGroupTest forms a testing struct for running tests over rules.
-//type ruleGroupTest struct {
-//	Name     yaml.Node      `yaml:"name"`
-//	Interval model.Duration `yaml:"interval,omitempty"`
-//	Rules    []rulefmt.Rule         `yaml:"rules"`
-//}
-
-func formatRules(r *rulefmt.RuleGroups) ruleGroupsTest {
-	var (
-		grps = r.Groups
-		tmp  []rulefmt.RuleGroup
-	)
-	for _, g := range grps {
-		rtmp := []rulefmt.Rule{}
-		for _, r := range g.Rules {
-			rtmp = append(rtmp, rulefmt.Rule{
-				Record:      r.Record,
-				Alert:       r.Alert,
-				Expr:        r.Expr,
-				For:         r.For,
-				Labels:      r.Labels,
-				Annotations: r.Annotations,
-			})
-		}
-
-		tmp = append(tmp, rulefmt.RuleGroup{
-			Name:     g.Name,
-			Interval: g.Interval,
-			Rules:    rtmp,
-		})
-	}
-	return ruleGroupsTest{
-		Groups: tmp,
-	}
-}
-
 func reloadAndValidate(rgs *rulefmt.RuleGroups, t *testing.T, tmpFile *os.File, ruleManager *Manager, expected map[string]labels.Labels, ogs map[string]*Group) {
-	bs, err := yaml.Marshal(formatRules(rgs))
+	bs, err := yaml.Marshal(rgs)
 	testutil.Ok(t, err)
 	tmpFile.Seek(0, 0)
 	_, err = tmpFile.Write(bs)

@@ -115,8 +115,8 @@ func (rule *RecordingRule) String() string {
 		buffer  bytes.Buffer
 		encoder = yaml.NewEncoder(&buffer)
 		r       = rulefmt.Rule{
-			Record: yaml.Node{Value: rule.name},
-			Expr:   yaml.Node{Value: rule.vector.String()},
+			Record: yaml.Node{Kind: 8, Value: rule.name},
+			Expr:   yaml.Node{Kind: 8, Value: rule.vector.String()},
 			Labels: rule.labels.Map(),
 		}
 	)
