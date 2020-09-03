@@ -141,6 +141,8 @@ func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 	}
 }
 
+var StubForBenchmark int64
+
 func BenchmarkQuerierSelect(b *testing.B) {
 	tmpDir, err := ioutil.TempDir("", "test_querier_select_dir")
 	testutil.Ok(b, err)
@@ -199,6 +201,7 @@ func BenchmarkQuerierSelect(b *testing.B) {
 						testutil.Ok(b, err)
 						defer q.Close()
 
+						var t int64
 						b.ResetTimer()
 						for i := 0; i < b.N; i++ {
 							counter := 0
@@ -208,7 +211,7 @@ func BenchmarkQuerierSelect(b *testing.B) {
 								counter++
 								it := at.Iterator()
 								for it.Next() {
-									_, _ = it.At()
+									t, _ = it.At()
 								}
 								testutil.Ok(b, it.Err())
 							}
@@ -216,6 +219,7 @@ func BenchmarkQuerierSelect(b *testing.B) {
 							testutil.Equals(b, 0, len(ss.Warnings()))
 							testutil.Equals(b, s, counter)
 						}
+						StubForBenchmark = t
 
 					})
 				}
