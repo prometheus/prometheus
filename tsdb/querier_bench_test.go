@@ -17,7 +17,9 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
+	"math/rand"
 	"os"
+	"path/filepath"
 	"strconv"
 	"testing"
 
@@ -140,61 +142,91 @@ func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 }
 
 func BenchmarkQuerierSelect(b *testing.B) {
-	chunkDir, err := ioutil.TempDir("", "chunk_dir")
+	tmpDir, err := ioutil.TempDir("", "test_querier_select_dir")
 	testutil.Ok(b, err)
-	defer func() {
-		testutil.Ok(b, os.RemoveAll(chunkDir))
-	}()
-	h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, DefaultStripeSize, nil)
-	testutil.Ok(b, err)
-	defer h.Close()
-	app := h.Appender(context.Background())
-	numSeries := 1000000
-	for i := 0; i < numSeries; i++ {
-		app.Add(labels.FromStrings("foo", "bar", "i", fmt.Sprintf("%d%s", i, postingsBenchSuffix)), int64(i), 0)
-	}
-	testutil.Ok(b, app.Commit())
+	b.Cleanup(func() { testutil.Ok(b, os.RemoveAll(tmpDir)) })
 
-	bench := func(b *testing.B, br BlockReader, sorted bool) {
-		matcher := labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")
-		for s := 1; s <= numSeries; s *= 10 {
-			b.Run(fmt.Sprintf("%dof%d", s, numSeries), func(b *testing.B) {
-				q, err := NewBlockQuerier(br, 0, int64(s-1))
+	for i, tcase := range []struct {
+		series           int
+		samplesPerSeries int
+	}{
+		//{
+		//	series:           1,
+		//	samplesPerSeries: 1e8,
+		//},
+		{
+			series:           1e3,
+			samplesPerSeries: 1e5,
+		},
+		//{
+		//	series:           1e6,
+		//	samplesPerSeries: 1,
+		//},
+	} {
+		b.Run(fmt.Sprintf("series=%v_with_samples=%v", tcase.series, tcase.samplesPerSeries), func(b *testing.B) {
+			h, err := NewHead(
+				nil, nil, nil,
+				DefaultBlockDuration,
+				filepath.Join(tmpDir, fmt.Sprintf("%v", i)),
+				nil,
+				DefaultStripeSize,
+				nil,
+			)
+			testutil.Ok(b, err)
+			b.Cleanup(func() { h.Close() })
+
+			app := h.Appender(context.Background())
+			r := rand.New(rand.NewSource(123))
+			for i := 0; i < tcase.series; i++ {
+				ref, err := app.Add(labels.FromStrings("foo", "bar", "i", fmt.Sprintf("%d%s", i, postingsBenchSuffix)), int64(i*tcase.samplesPerSeries), r.Float64())
 				testutil.Ok(b, err)
-
-				b.ResetTimer()
-				for i := 0; i < b.N; i++ {
-					ss := q.Select(sorted, nil, matcher)
-					for ss.Next() {
-					}
-					testutil.Ok(b, ss.Err())
+				for j := 1; j < tcase.samplesPerSeries; j++ {
+					testutil.Ok(b, app.AddFast(ref, int64(i*tcase.samplesPerSeries+j), r.Float64()))
 				}
-				q.Close()
+			}
+			testutil.Ok(b, app.Commit())
+
+			bench := func(b *testing.B, br BlockReader, sorted bool) {
+				matcher := labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")
+
+				cases := []int{1, tcase.series / 2, tcase.series}
+				if tcase.series == 1 {
+					cases = []int{1}
+				}
+				for _, s := range cases {
+					b.Run(fmt.Sprintf("%dof%d", s, tcase.series), func(b *testing.B) {
+						q, err := NewBlockQuerier(br, 0, int64(s*tcase.samplesPerSeries-1))
+						testutil.Ok(b, err)
+
+						b.ResetTimer()
+						for i := 0; i < b.N; i++ {
+							counter := 0
+							ss := q.Select(sorted, nil, matcher)
+							for ss.Next() {
+								counter++
+							}
+							testutil.Ok(b, ss.Err())
+							testutil.Equals(b, 0, len(ss.Warnings()))
+							testutil.Equals(b, s, counter)
+						}
+						q.Close()
+					})
+				}
+			}
+
+			//b.Run("Head", func(b *testing.B) {
+			//	bench(b, h, false)
+			//})
+			//b.Run("SortedHead", func(b *testing.B) {
+			//	bench(b, h, true)
+			//})
+
+			block, err := OpenBlock(nil, createBlockFromHead(b, filepath.Join(tmpDir, fmt.Sprintf("block%v", i)), h), nil)
+			testutil.Ok(b, err)
+			b.Cleanup(func() { testutil.Ok(b, block.Close()) })
+			b.Run("Block", func(b *testing.B) {
+				bench(b, block, false)
 			})
-		}
+		})
 	}
-
-	b.Run("Head", func(b *testing.B) {
-		bench(b, h, false)
-	})
-	b.Run("SortedHead", func(b *testing.B) {
-		bench(b, h, true)
-	})
-
-	tmpdir, err := ioutil.TempDir("", "test_benchquerierselect")
-	testutil.Ok(b, err)
-	defer func() {
-		testutil.Ok(b, os.RemoveAll(tmpdir))
-	}()
-
-	blockdir := createBlockFromHead(b, tmpdir, h)
-	block, err := OpenBlock(nil, blockdir, nil)
-	testutil.Ok(b, err)
-	defer func() {
-		testutil.Ok(b, block.Close())
-	}()
-
-	b.Run("Block", func(b *testing.B) {
-		bench(b, block, false)
-	})
 }
