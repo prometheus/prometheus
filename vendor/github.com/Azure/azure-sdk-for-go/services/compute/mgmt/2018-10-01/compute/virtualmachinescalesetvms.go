@@ -388,6 +388,9 @@ func (client VirtualMachineScaleSetVMsClient) List(ctx context.Context, resource
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachineScaleSetVMsClient", "List", resp, "Failure responding to request")
 	}
+	if result.vmssvlr.hasNextLink() && result.vmssvlr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }

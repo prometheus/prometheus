@@ -546,7 +546,7 @@ func TestStaleness(t *testing.T) {
 	})
 
 	// A time series that has two samples and then goes stale.
-	app := st.Appender()
+	app := st.Appender(context.Background())
 	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 0, 1)
 	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2)
 	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 2000, math.Float64frombits(value.StaleNaN))
@@ -626,7 +626,7 @@ func TestCopyState(t *testing.T) {
 			{"r3c": labels.Labels{{Name: "l1", Value: "v3"}}},
 			{"a2": labels.Labels{{Name: "l2", Value: "v1"}}},
 		},
-		evaluationDuration: time.Second,
+		evaluationTime: time.Second,
 	}
 	oldGroup.rules[0].(*AlertingRule).active[42] = nil
 	newGroup := &Group{
@@ -656,7 +656,8 @@ func TestCopyState(t *testing.T) {
 	}
 	testutil.Equals(t, want, newGroup.seriesInPreviousEval)
 	testutil.Equals(t, oldGroup.rules[0], newGroup.rules[3])
-	testutil.Equals(t, oldGroup.evaluationDuration, newGroup.evaluationDuration)
+	testutil.Equals(t, oldGroup.evaluationTime, newGroup.evaluationTime)
+	testutil.Equals(t, oldGroup.lastEvaluation, newGroup.lastEvaluation)
 	testutil.Equals(t, []labels.Labels{{{Name: "l1", Value: "v3"}}}, newGroup.staleSeries)
 }
 
@@ -870,7 +871,7 @@ func TestNotify(t *testing.T) {
 		Opts:          opts,
 	})
 
-	app := storage.Appender()
+	app := storage.Appender(context.Background())
 	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2)
 	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 2000, 3)
 	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 5000, 3)

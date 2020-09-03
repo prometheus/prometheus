@@ -148,7 +148,7 @@ func TestCheckpoint(t *testing.T) {
 
 			var last int64
 			for i := 0; ; i++ {
-				_, n, err := w.Segments()
+				_, n, err := Segments(w.Dir())
 				testutil.Ok(t, err)
 				if n >= 106 {
 					break

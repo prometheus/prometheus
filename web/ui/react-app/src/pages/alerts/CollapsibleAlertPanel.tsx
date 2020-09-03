@@ -5,7 +5,7 @@ import { RuleStatus } from './AlertContents';
 import { Rule } from '../../types/types';
 import { faChevronDown, faChevronRight } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { createExpressionLink, parsePrometheusFloat, formatRange } from '../../utils/index';
+import { createExpressionLink, parsePrometheusFloat, formatDuration } from '../../utils/index';
 
 interface CollapsibleAlertPanelProps {
   rule: Rule;
@@ -38,7 +38,7 @@ const CollapsibleAlertPanel: FC<CollapsibleAlertPanelProps> = ({ rule, showAnnot
             </div>
             {rule.duration > 0 && (
               <div>
-                <div>for: {formatRange(rule.duration)}</div>
+                <div>for: {formatDuration(rule.duration * 1000)}</div>
               </div>
             )}
             {rule.labels && Object.keys(rule.labels).length > 0 && (

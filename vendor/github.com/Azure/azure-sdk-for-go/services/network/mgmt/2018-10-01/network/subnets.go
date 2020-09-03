@@ -311,6 +311,9 @@ func (client SubnetsClient) List(ctx context.Context, resourceGroupName string, 
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.SubnetsClient", "List", resp, "Failure responding to request")
 	}
+	if result.slr.hasNextLink() && result.slr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }

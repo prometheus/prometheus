@@ -304,6 +304,9 @@ func (client RouteTablesClient) List(ctx context.Context, resourceGroupName stri
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.RouteTablesClient", "List", resp, "Failure responding to request")
 	}
+	if result.rtlr.hasNextLink() && result.rtlr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }
@@ -412,6 +415,9 @@ func (client RouteTablesClient) ListAll(ctx context.Context) (result RouteTableL
 	result.rtlr, err = client.ListAllResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.RouteTablesClient", "ListAll", resp, "Failure responding to request")
+	}
+	if result.rtlr.hasNextLink() && result.rtlr.IsEmpty() {
+		err = result.NextWithContext(ctx)
 	}
 
 	return

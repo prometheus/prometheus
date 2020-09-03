@@ -152,6 +152,9 @@ func (client InterfaceIPConfigurationsClient) List(ctx context.Context, resource
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.InterfaceIPConfigurationsClient", "List", resp, "Failure responding to request")
 	}
+	if result.iiclr.hasNextLink() && result.iiclr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }

@@ -14,6 +14,7 @@
 package remote
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -179,7 +180,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 }
 
 // Appender implements storage.Storage.
-func (rws *WriteStorage) Appender() storage.Appender {
+func (rws *WriteStorage) Appender(_ context.Context) storage.Appender {
 	return &timestampTracker{
 		writeStorage: rws,
 	}
@@ -208,7 +209,7 @@ func (rws *WriteStorage) writeCheckpointRecordJSON() {
 
 	err = ioutil.WriteFile(filepath, data, 0600)
 	if err != nil {
-		level.Error(rws.logger).Log("Error with Writing to JSON: ", err)
+		level.Error(rws.logger).Log("error with writing to JSON: ", err)
 	}
 }
 

@@ -4,6 +4,7 @@ run:
 
 linters:
   enable:
+  - depguard
   - golint
 
 issues:
@@ -13,5 +14,12 @@ issues:
     - errcheck
 
 linters-settings:
+  depguard:
+    list-type: blacklist
+    include-go-root: true
+    packages:
+      - sync/atomic
+    packages-with-error-message:
+      - sync/atomic: "Use go.uber.org/atomic instead of sync/atomic"
   errcheck:
     exclude: scripts/errcheck_excludes.txt

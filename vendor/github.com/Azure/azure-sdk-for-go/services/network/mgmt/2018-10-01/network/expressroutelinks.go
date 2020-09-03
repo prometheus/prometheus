@@ -152,6 +152,9 @@ func (client ExpressRouteLinksClient) List(ctx context.Context, resourceGroupNam
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ExpressRouteLinksClient", "List", resp, "Failure responding to request")
 	}
+	if result.erllr.hasNextLink() && result.erllr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }

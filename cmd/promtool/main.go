@@ -40,7 +40,11 @@ import (
 	"gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery/file"
+	"github.com/prometheus/prometheus/discovery/kubernetes"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
+
+	_ "github.com/prometheus/prometheus/discovery/install" // Register service discovery implementations.
 )
 
 func main() {
@@ -66,9 +70,11 @@ func main() {
 
 	queryCmd := app.Command("query", "Run query against a Prometheus server.")
 	queryCmdFmt := queryCmd.Flag("format", "Output format of the query.").Short('o').Default("promql").Enum("promql", "json")
+
 	queryInstantCmd := queryCmd.Command("instant", "Run instant query.")
-	queryServer := queryInstantCmd.Arg("server", "Prometheus server to query.").Required().String()
-	queryExpr := queryInstantCmd.Arg("expr", "PromQL query expression.").Required().String()
+	queryInstantServer := queryInstantCmd.Arg("server", "Prometheus server to query.").Required().String()
+	queryInstantExpr := queryInstantCmd.Arg("expr", "PromQL query expression.").Required().String()
+	queryInstantTime := queryInstantCmd.Flag("time", "Query evaluation time (RFC3339 or Unix timestamp).").String()
 
 	queryRangeCmd := queryCmd.Command("range", "Run range query.")
 	queryRangeServer := queryRangeCmd.Arg("server", "Prometheus server to query.").Required().String()
@@ -149,7 +155,7 @@ func main() {
 		os.Exit(CheckMetrics())
 
 	case queryInstantCmd.FullCommand():
-		os.Exit(QueryInstant(*queryServer, *queryExpr, p))
+		os.Exit(QueryInstant(*queryInstantServer, *queryInstantExpr, *queryInstantTime, p))
 
 	case queryRangeCmd.FullCommand():
 		os.Exit(QueryRange(*queryRangeServer, *queryRangeHeaders, *queryRangeExpr, *queryRangeBegin, *queryRangeEnd, *queryRangeStep, p))
@@ -263,24 +269,25 @@ func checkConfig(filename string) ([]string, error) {
 			return nil, err
 		}
 
-		for _, kd := range scfg.ServiceDiscoveryConfig.KubernetesSDConfigs {
-			if err := checkTLSConfig(kd.HTTPClientConfig.TLSConfig); err != nil {
-				return nil, err
-			}
-		}
-
-		for _, filesd := range scfg.ServiceDiscoveryConfig.FileSDConfigs {
-			for _, file := range filesd.Files {
-				files, err := filepath.Glob(file)
-				if err != nil {
+		for _, c := range scfg.ServiceDiscoveryConfigs {
+			switch c := c.(type) {
+			case *kubernetes.SDConfig:
+				if err := checkTLSConfig(c.HTTPClientConfig.TLSConfig); err != nil {
 					return nil, err
 				}
-				if len(files) != 0 {
-					// There was at least one match for the glob and we can assume checkFileExists
-					// for all matches would pass, we can continue the loop.
-					continue
+			case *file.SDConfig:
+				for _, file := range c.Files {
+					files, err := filepath.Glob(file)
+					if err != nil {
+						return nil, err
+					}
+					if len(files) != 0 {
+						// There was at least one match for the glob and we can assume checkFileExists
+						// for all matches would pass, we can continue the loop.
+						continue
+					}
+					fmt.Printf("  WARNING: file %q for file_sd in scrape job %q does not exist\n", file, scfg.JobName)
 				}
-				fmt.Printf("  WARNING: file %q for file_sd in scrape job %q does not exist\n", file, scfg.JobName)
 			}
 		}
 	}
@@ -422,7 +429,7 @@ func CheckMetrics() int {
 }
 
 // QueryInstant performs an instant query against a Prometheus server.
-func QueryInstant(url, query string, p printer) int {
+func QueryInstant(url, query, evalTime string, p printer) int {
 	config := api.Config{
 		Address: url,
 	}
@@ -434,11 +441,20 @@ func QueryInstant(url, query string, p printer) int {
 		return 1
 	}
 
+	eTime := time.Now()
+	if evalTime != "" {
+		eTime, err = parseTime(evalTime)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error parsing evaluation time:", err)
+			return 1
+		}
+	}
+
 	// Run query against client.
 	api := v1.NewAPI(c)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	val, _, err := api.Query(ctx, query, time.Now()) // Ignoring warnings for now.
+	val, _, err := api.Query(ctx, query, eTime) // Ignoring warnings for now.
 	cancel()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "query error:", err)

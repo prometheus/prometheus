@@ -305,6 +305,9 @@ func (client PublicIPPrefixesClient) List(ctx context.Context, resourceGroupName
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.PublicIPPrefixesClient", "List", resp, "Failure responding to request")
 	}
+	if result.piplr.hasNextLink() && result.piplr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }
@@ -413,6 +416,9 @@ func (client PublicIPPrefixesClient) ListAll(ctx context.Context) (result Public
 	result.piplr, err = client.ListAllResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.PublicIPPrefixesClient", "ListAll", resp, "Failure responding to request")
+	}
+	if result.piplr.hasNextLink() && result.piplr.IsEmpty() {
+		err = result.NextWithContext(ctx)
 	}
 
 	return

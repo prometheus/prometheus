@@ -306,7 +306,7 @@ func TestWriteStorageApplyConfigsPartialUpdate(t *testing.T) {
 		RemoteTimeout: model.Duration(10 * time.Second),
 		QueueConfig:   config.DefaultQueueConfig,
 		WriteRelabelConfigs: []*relabel.Config{
-			&relabel.Config{
+			{
 				Regex: relabel.MustNewRegexp(".+"),
 			},
 		},
