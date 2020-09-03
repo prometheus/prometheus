@@ -38,7 +38,11 @@ func TestParseFileFailure(t *testing.T) {
 	}{
 		{
 			filename: "duplicate_grp.bad.yaml",
-			errMsg:   `testdata/duplicate_grp.bad.yaml: 3:9: group name: "yolo" is repeated in the same file`,
+			errMsg:   `group name: "yolo" is repeated in the same file`,
+		},
+		{
+			filename: "unknown_fields.bad.yaml",
+			errMsg: "line 13: field anotations not found in type rulefmt.Rule",
 		},
 		{
 			filename: "bad_expr.bad.yaml",
