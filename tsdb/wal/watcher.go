@@ -81,9 +81,11 @@ type Watcher struct {
 	done chan struct{}
 
 	// For testing, stop when we hit this segment.
-	MaxSegment int
+	MaxSegment           int
+	InvalidSegmentNumber int
+
 	// Current Segment file
-	SegmentFile string
+	CurrSegmentFile string
 }
 
 func NewWatcherMetrics(reg prometheus.Registerer) *WatcherMetrics {
@@ -141,6 +143,7 @@ func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logge
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
+
 	return &Watcher{
 		logger:        logger,
 		writer:        writer,
@@ -151,8 +154,9 @@ func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logge
 		quit:          make(chan struct{}),
 		done:          make(chan struct{}),
 
-		MaxSegment:  -1,
-		SegmentFile: "",
+		MaxSegment:           -1,
+		InvalidSegmentNumber: -1,
+		CurrSegmentFile:      "",
 	}
 }
 
@@ -259,8 +263,6 @@ func (w *Watcher) Run() error {
 			return nil
 		}
 
-		// Sets the current Segment files name
-		w.SegmentFile = SegmentName("", currentSegment)
 		currentSegment++
 	}
 
@@ -471,9 +473,13 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 		samples []record.RefSample
 		send    []record.RefSample
 	)
+
 	for r.Next() && !isClosed(w.quit) {
 		rec := r.Record()
 		w.recordsReadMetric.WithLabelValues(recordType(dec.Type(rec))).Inc()
+
+		// Sets the current Segment files it's reading from
+		w.CurrSegmentFile = SegmentName("", segmentNum)
 
 		switch dec.Type(rec) {
 		case record.Series:

@@ -14,11 +14,14 @@
 package remote
 
 import (
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"sync"
 	"time"
 
 	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/config"
@@ -42,6 +45,8 @@ var (
 			Help:      "Highest timestamp that has come into the remote storage via the Appender interface, in seconds since epoch.",
 		}),
 	}
+
+	saveTime = 5000 // time in ms to save the Checkpoint Record
 )
 
 // WriteStorage represents all the remote write storage.
@@ -57,6 +62,8 @@ type WriteStorage struct {
 	queues            map[string]*QueueManager
 	samplesIn         *ewmaRate
 	flushDeadline     time.Duration
+
+	checkpoint CheckpointRecord
 }
 
 // NewWriteStorage creates and runs a WriteStorage.
@@ -80,6 +87,8 @@ func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, walDir string
 
 func (rws *WriteStorage) run() {
 	ticker := time.NewTicker(shardUpdateDuration)
+	rws.startTimedRecording()
+
 	defer ticker.Stop()
 	for range ticker.C {
 		rws.samplesIn.tick()
@@ -176,6 +185,51 @@ func (rws *WriteStorage) Appender() storage.Appender {
 	}
 }
 
+// timedCheckpointRecord records the Checkpoint Record every set time
+func (rws *WriteStorage) startTimedRecording() {
+	for {
+		<-time.After(time.Duration(saveTime) * time.Millisecond)
+		rws.writeCheckpointRecordJSON()
+	}
+}
+
+// writeCheckpointRecordJSON writes the segment record in a JSON file
+func (rws *WriteStorage) writeCheckpointRecordJSON() {
+	filepath := "data/CheckpointRecord.json"
+
+	rws.checkpoint.TimeRecorded = time.Now()
+	rws.checkpoint.Checkpoints = rws.getEndpointRecordData()
+
+	// Marshal json
+	data, err := json.MarshalIndent(rws.checkpoint, "", "")
+	if err != nil {
+		level.Error(rws.logger).Log("error with Marshal: ", err)
+	}
+
+	err = ioutil.WriteFile(filepath, data, 0600)
+	if err != nil {
+		level.Error(rws.logger).Log("Error with Writing to JSON: ", err)
+	}
+}
+
+// getEndpointRecordData gets the EndpointRecord from each queue_manager an, rwConf.URLns a array of EndpointRecords.
+func (rws *WriteStorage) getEndpointRecordData() []EndpointRecord {
+	record := []EndpointRecord{}
+
+	for _, qMan := range rws.queues {
+		qMan.UpdateEndpointRecord()
+
+		tempRecord := EndpointRecord{
+			Segment:  qMan.endpointRecord.Segment,
+			Endpoint: qMan.endpointRecord.Endpoint,
+		}
+
+		record = append(record, tempRecord)
+	}
+
+	return record
+}
+
 // Close closes the WriteStorage.
 func (rws *WriteStorage) Close() error {
 	rws.mtx.Lock()
@@ -183,6 +237,9 @@ func (rws *WriteStorage) Close() error {
 	for _, q := range rws.queues {
 		q.Stop()
 	}
+
+	rws.writeCheckpointRecordJSON()
+
 	return nil
 }
 
