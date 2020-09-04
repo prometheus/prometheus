@@ -38,6 +38,9 @@ var (
 
 // Load parses the YAML input s into a Config.
 func Load(s string) (*Config, error) {
+	if len(s) == 0 {
+		return &DefaultConfig, nil
+	}
 	cfg := &Config{}
 	// If the entire config body is empty the UnmarshalYAML method is
 	// never called. We thus have to set the DefaultConfig at the entry

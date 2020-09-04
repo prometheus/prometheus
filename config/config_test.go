@@ -954,7 +954,7 @@ var expectedErrors = []struct {
 	},
 	{
 		filename: "section_key_dup.bad.yml",
-		errMsg:   "field scrape_configs already set in type config.plain",
+		errMsg:   "line 4: mapping key \"scrape_configs\" already defined at line 1",
 	},
 	{
 		filename: "azure_client_id_missing.bad.yml",
