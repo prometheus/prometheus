@@ -16,6 +16,7 @@ package storage
 import (
 	"bytes"
 	"container/heap"
+	"fmt"
 	"sort"
 	"strings"
 	"sync"
@@ -461,26 +462,21 @@ func (c *chainSampleIterator) Seek(t int64) bool {
 }
 
 func (c *chainSampleIterator) At() (t int64, v float64) {
-	if c.curr == nil {
-		panic("chainSampleIterator.At() called before first .Next() or after .Next() returned false.")
+	if c.h == nil {
+		panic("chainSampleIterator.At() called after .Next() returned false.")
 	}
 	return c.curr.At()
 }
 
 func (c *chainSampleIterator) Next() bool {
 	if c.h == nil {
-		for _, iter := range c.iterators {
+		c.curr = c.iterators[0]
+		for _, iter := range c.iterators[1:] {
 			if iter.Next() {
 				heap.Push(&c.h, iter)
 			}
 		}
-		if len(c.h) > 0 {
-			c.curr = heap.Pop(&c.h).(chunkenc.Iterator)
-			return true
-		}
-	}
-
-	if len(c.h) == 0 {
+	} else if len(c.h) == 0 {
 		return c.curr != nil && c.curr.Next()
 	}
 
@@ -492,12 +488,11 @@ func (c *chainSampleIterator) Next() bool {
 				return true
 			}
 			if currt == nextt {
+				fmt.Println("same ts", currt, nextt)
 				// Ignoring sample.
 				continue
 			}
 			heap.Push(&c.h, c.curr)
-			c.curr = heap.Pop(&c.h).(chunkenc.Iterator)
-			return true
 		}
 
 		c.curr = heap.Pop(&c.h).(chunkenc.Iterator)
