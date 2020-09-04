@@ -6339,10 +6339,10 @@ jquery.flot.tooltip@^0.9.0:
   resolved "https://registry.yarnpkg.com/jquery.flot.tooltip/-/jquery.flot.tooltip-0.9.0.tgz#ae16bf94b26c2ed9ab4db167bba52dfdb615c1df"
   integrity sha1-rha/lLJsLtmrTbFnu6Ut/bYVwd8=
 
-jquery@^3.0, jquery@^3.3.1:
-  version "3.4.1"
-  resolved "https://registry.yarnpkg.com/jquery/-/jquery-3.4.1.tgz#714f1f8d9dde4bdfa55764ba37ef214630d80ef2"
-  integrity sha512-36+AdBzCL+y6qjw5Tx7HgzeGCzC81MDDgaUP8ld2zhx58HdqXGoBd+tHdrBMiyjGQs0Hxs/MLZTu/eHNJJuWPw==
+jquery@^3.0, jquery@^3.5.0:
+  version "3.5.0"
+  resolved "https://registry.yarnpkg.com/jquery/-/jquery-3.5.0.tgz#9980b97d9e4194611c36530e7dc46a58d7340fc9"
+  integrity sha512-Xb7SVYMvygPxbFMpTFQiHh1J7HClEaThguL15N/Gg37Lri/qKyhRGZYzHRyLH8Stq3Aow0LsHO2O2ci86fCrNQ==
 
 js-levenshtein@^1.1.3:
   version "1.1.6"
