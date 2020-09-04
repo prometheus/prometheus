@@ -149,7 +149,9 @@ type DB struct {
 	blocksToDelete BlocksToDeleteFunc
 
 	// Mutex for that must be held when modifying the general block layout.
-	mtx    sync.RWMutex
+	mtx sync.RWMutex
+
+	// Blocks sorted by min time.
 	blocks []*Block
 
 	head *Head
@@ -369,6 +371,8 @@ func (db *DBReadOnly) loadDataAsQueryable(maxt int64) (storage.SampleAndChunkQue
 		return nil, ErrClosed
 	default:
 	}
+
+	// Blocks are sorted by minTime, make sure to persist this order and load head if needed as last one.
 	blockReaders, err := db.Blocks()
 	if err != nil {
 		return nil, err
@@ -1381,6 +1385,7 @@ func (db *DB) Querier(_ context.Context, mint, maxt int64) (storage.Querier, err
 	db.mtx.RLock()
 	defer db.mtx.RUnlock()
 
+	// Blocks are sorted by minTime, make sure to persist this order and load head if needed as last one.
 	for _, b := range db.blocks {
 		if b.OverlapsClosedInterval(mint, maxt) {
 			blocks = append(blocks, b)
@@ -1414,6 +1419,7 @@ func (db *DB) ChunkQuerier(_ context.Context, mint, maxt int64) (storage.ChunkQu
 	db.mtx.RLock()
 	defer db.mtx.RUnlock()
 
+	// Blocks are sorted by minTime, make sure to persist this order and load head if needed as last one.
 	for _, b := range db.blocks {
 		if b.OverlapsClosedInterval(mint, maxt) {
 			blocks = append(blocks, b)

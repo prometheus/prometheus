@@ -154,18 +154,18 @@ func BenchmarkQuerierSelect(b *testing.B) {
 		series           int
 		samplesPerSeries int
 	}{
-		//{
-		//	series:           1,
-		//	samplesPerSeries: 1e8,
-		//},
+		{
+			series:           1,
+			samplesPerSeries: 1e8,
+		},
 		{
 			series:           1e3,
 			samplesPerSeries: 1e5,
 		},
-		//{
-		//	series:           1e6,
-		//	samplesPerSeries: 1,
-		//},
+		{
+			series:           1e6,
+			samplesPerSeries: 1,
+		},
 	} {
 		b.Run(fmt.Sprintf("series=%v_with_samples=%v", tcase.series, tcase.samplesPerSeries), func(b *testing.B) {
 			h, err := NewHead(
@@ -227,12 +227,12 @@ func BenchmarkQuerierSelect(b *testing.B) {
 				}
 			}
 
-			//b.Run("Head", func(b *testing.B) {
-			//	bench(b, h, false)
-			//})
-			//b.Run("SortedHead", func(b *testing.B) {
-			//	bench(b, h, true)
-			//})
+			b.Run("Head", func(b *testing.B) {
+				bench(b, h, false)
+			})
+			b.Run("SortedHead", func(b *testing.B) {
+				bench(b, h, true)
+			})
 
 			block, err := OpenBlock(nil, createBlockFromHead(b, filepath.Join(tmpDir, fmt.Sprintf("block%v", i)), h), nil)
 			testutil.Ok(b, err)
@@ -245,6 +245,9 @@ func BenchmarkQuerierSelect(b *testing.B) {
 }
 
 func BenchmarkDBBlocksQuerierSelect(b *testing.B) {
+	testDir := filepath.Join("..", "..", "prometheus", "_dev", "test", "var", "lib", "prometheus")
+
+	b.Skip("Unskip if you want to use and have ready read data in testDir.")
 	tmpDir, err := ioutil.TempDir("", "test_querier_select")
 	testutil.Ok(b, err)
 	b.Cleanup(func() { testutil.Ok(b, os.RemoveAll(tmpDir)) })
@@ -254,13 +257,13 @@ func BenchmarkDBBlocksQuerierSelect(b *testing.B) {
 	}{
 		{
 			matchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchEqual, "__name__", "up"),
+				labels.MustNewMatcher(labels.MatchEqual, "__name__", "up"), // 10 series for 4w+.
 			},
 		},
 	} {
 		b.Run(fmt.Sprintf("%v", tcase.matchers), func(b *testing.B) {
-			// 4w data from demo Prometheus Server.
-			db, err := OpenDBReadOnly(filepath.Join("..", "..", "prometheus", "_dev", "test", "var", "lib", "prometheus"), log.NewNopLogger())
+			// 4w+ data from demo Prometheus Server.
+			db, err := OpenDBReadOnly(testDir, log.NewNopLogger())
 			testutil.Ok(b, err)
 			defer db.Close()
 
@@ -271,7 +274,6 @@ func BenchmarkDBBlocksQuerierSelect(b *testing.B) {
 
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				//now := time.Now()
 				// PromQL does not require sorted results.
 				ss := q.Select(false, nil, tcase.matchers...)
 				for ss.Next() {
@@ -284,10 +286,8 @@ func BenchmarkDBBlocksQuerierSelect(b *testing.B) {
 				}
 				testutil.Ok(b, ss.Err())
 				testutil.Equals(b, 0, len(ss.Warnings()))
-				//fmt.Println(time.Since(now))
 			}
 			StubForBenchmark = t
-
 		})
 	}
 }
