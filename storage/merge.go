@@ -478,15 +478,14 @@ func (c *chainSampleIterator) Next() bool {
 			c.curr = heap.Pop(&c.h).(chunkenc.Iterator)
 			return true
 		}
-		return false
+	}
+
+	if len(c.h) == 0 {
+		return c.curr != nil && c.curr.Next()
 	}
 
 	for {
 		if c.curr.Next() {
-			if len(c.h) == 0 {
-				return true
-			}
-
 			currt, _ := c.curr.At()
 			nextt, _ := c.h[0].At()
 			if currt < nextt {
@@ -494,10 +493,6 @@ func (c *chainSampleIterator) Next() bool {
 			}
 			if currt == nextt {
 				// Ignoring sample.
-				iter := heap.Pop(&c.h).(chunkenc.Iterator)
-				if iter.Next() {
-					heap.Push(&c.h, iter)
-				}
 				continue
 			}
 			heap.Push(&c.h, c.curr)
@@ -505,9 +500,6 @@ func (c *chainSampleIterator) Next() bool {
 			return true
 		}
 
-		if len(c.h) == 0 {
-			return false
-		}
 		c.curr = heap.Pop(&c.h).(chunkenc.Iterator)
 		return true
 	}
