@@ -16,6 +16,7 @@ package storage
 import (
 	"bytes"
 	"container/heap"
+	"math"
 	"sort"
 	"strings"
 	"sync"
@@ -442,13 +443,15 @@ type chainSampleIterator struct {
 	iterators []chunkenc.Iterator
 	h         samplesIteratorHeap
 
-	curr chunkenc.Iterator
+	curr  chunkenc.Iterator
+	lastt int64
 }
 
 func newChainSampleIterator(iterators []chunkenc.Iterator) chunkenc.Iterator {
 	return &chainSampleIterator{
 		iterators: iterators,
 		h:         nil,
+		lastt:     math.MinInt64,
 	}
 }
 
@@ -459,44 +462,58 @@ func (c *chainSampleIterator) Seek(t int64) bool {
 			heap.Push(&c.h, iter)
 		}
 	}
-	return len(c.h) > 0
+	if len(c.h) > 0 {
+		c.curr = heap.Pop(&c.h).(chunkenc.Iterator)
+		return true
+	}
+	return false
 }
 
 func (c *chainSampleIterator) At() (t int64, v float64) {
 	if c.h == nil {
-		panic("chainSampleIterator.At() called after .Next() returned false.")
+		panic("chainSampleIterator.At() called before first .Next()")
 	}
 	return c.curr.At()
 }
 
 func (c *chainSampleIterator) Next() bool {
 	if c.h == nil {
+		c.h = samplesIteratorHeap{}
 		c.curr = c.iterators[0]
 		for _, iter := range c.iterators[1:] {
 			if iter.Next() {
 				heap.Push(&c.h, iter)
 			}
 		}
-	} else if len(c.h) == 0 {
-		return c.curr != nil && c.curr.Next()
 	}
 
 	for {
 		if c.curr.Next() {
 			currt, _ := c.curr.At()
-			nextt, _ := c.h[0].At()
-			if currt < nextt {
-				return true
-			}
-			if currt == nextt {
-				// Ignoring sample.
+			if currt == c.lastt {
+				// Ignoring sample for the same timestamp.
 				continue
 			}
+			if len(c.h) == 0 {
+				return true
+			}
+			nextt, _ := c.h[0].At()
+			if currt < nextt {
+				c.lastt = currt
+				return true
+			}
 			heap.Push(&c.h, c.curr)
+
+		} else if len(c.h) == 0 {
+			return false
 		}
 
 		c.curr = heap.Pop(&c.h).(chunkenc.Iterator)
-		return true
+		currt, _ := c.curr.At()
+		if currt != c.lastt {
+			c.lastt = currt
+			return true
+		}
 	}
 }
 
