@@ -23,7 +23,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/miekg/dns"
 	"go.uber.org/goleak"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery/targetgroup"

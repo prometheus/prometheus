@@ -14,6 +14,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"io/ioutil"
 	"net/url"
@@ -25,7 +26,7 @@ import (
 
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/azure"
@@ -726,7 +727,9 @@ func TestYAMLRoundtrip(t *testing.T) {
 
 	testutil.Ok(t, err)
 	got := &Config{}
-	testutil.Ok(t, yaml.UnmarshalStrict(out, got))
+	decoder := yaml.NewDecoder(bytes.NewReader(out))
+	decoder.KnownFields(true)
+	testutil.Ok(t, decoder.Decode(got))
 
 	testutil.Equals(t, want, got)
 }
@@ -1044,7 +1047,9 @@ func TestBadStaticConfigsYML(t *testing.T) {
 	content, err := ioutil.ReadFile("testdata/static_config.bad.yml")
 	testutil.Ok(t, err)
 	var tg targetgroup.Group
-	err = yaml.UnmarshalStrict(content, &tg)
+	decoder := yaml.NewDecoder(bytes.NewReader(content))
+	decoder.KnownFields(true)
+	err = decoder.Decode(&tg)
 	testutil.NotOk(t, err)
 }
 

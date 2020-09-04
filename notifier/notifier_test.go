@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -30,7 +31,7 @@ import (
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"go.uber.org/atomic"
-	yaml "gopkg.in/yaml.v2"
+	yaml "gopkg.in/yaml.v3"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -466,7 +467,9 @@ alerting:
   alertmanagers:
   - static_configs:
 `
-	if err := yaml.UnmarshalStrict([]byte(s), cfg); err != nil {
+	decoder := yaml.NewDecoder(strings.NewReader(s))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&cfg); err != nil {
 		t.Fatalf("Unable to load YAML config: %s", err)
 	}
 	testutil.Equals(t, 1, len(cfg.AlertingConfig.AlertmanagerConfigs))
@@ -520,7 +523,9 @@ alerting:
         regex: 'alertmanager:9093'
         action: drop
 `
-	if err := yaml.UnmarshalStrict([]byte(s), cfg); err != nil {
+	decoder := yaml.NewDecoder(strings.NewReader(s))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&cfg); err != nil {
 		t.Fatalf("Unable to load YAML config: %s", err)
 	}
 	testutil.Equals(t, 1, len(cfg.AlertingConfig.AlertmanagerConfigs))

@@ -25,7 +25,7 @@ import (
 
 	"github.com/prometheus/prometheus/util/strutil"
 	"github.com/prometheus/prometheus/util/testutil"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 )
 
 // SDMock is the interface for the DigitalOcean mock

@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"

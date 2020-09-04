@@ -18,7 +18,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/common/model"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -86,7 +86,7 @@ func TestTargetGroupYamlMarshal(t *testing.T) {
 				{"__address__": "localhost:9090"},
 				{"__address__": "localhost:9091"}},
 				Labels: model.LabelSet{"foo": "bar", "bar": "baz"}},
-			expectedYaml: "targets:\n- localhost:9090\n- localhost:9091\nlabels:\n  bar: baz\n  foo: bar\n",
+			expectedYaml: "targets:\n    - localhost:9090\n    - localhost:9091\nlabels:\n    bar: baz\n    foo: bar\n",
 			expectedErr:  nil,
 		},
 	}

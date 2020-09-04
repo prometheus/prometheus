@@ -16,12 +16,13 @@ package scrape
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
-	yaml "gopkg.in/yaml.v2"
+	yaml "gopkg.in/yaml.v3"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -226,7 +227,9 @@ func loadConfiguration(t *testing.T, c string) *config.Config {
 	t.Helper()
 
 	cfg := &config.Config{}
-	if err := yaml.UnmarshalStrict([]byte(c), cfg); err != nil {
+	decoder := yaml.NewDecoder(strings.NewReader(c))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&cfg); err != nil {
 		t.Fatalf("Unable to load YAML config: %s", err)
 	}
 	return cfg
@@ -380,7 +383,9 @@ global:
 `
 
 		cfg := &config.Config{}
-		if err := yaml.UnmarshalStrict([]byte(cfgText), cfg); err != nil {
+		decoder := yaml.NewDecoder(strings.NewReader(cfgText))
+		decoder.KnownFields(true)
+		if err := decoder.Decode(&cfg); err != nil {
 			t.Fatalf("Unable to load YAML config cfgYaml: %s", err)
 		}
 
