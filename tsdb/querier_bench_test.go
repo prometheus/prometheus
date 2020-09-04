@@ -17,12 +17,14 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
+	"math"
 	"math/rand"
 	"os"
 	"path/filepath"
 	"strconv"
 	"testing"
 
+	"github.com/go-kit/kit/log"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -235,9 +237,57 @@ func BenchmarkQuerierSelect(b *testing.B) {
 			block, err := OpenBlock(nil, createBlockFromHead(b, filepath.Join(tmpDir, fmt.Sprintf("block%v", i)), h), nil)
 			testutil.Ok(b, err)
 			b.Cleanup(func() { testutil.Ok(b, block.Close()) })
-			b.Run("Block", func(b *testing.B) {
-				bench(b, block, false)
+			b.Run("Sorted Block", func(b *testing.B) {
+				bench(b, block, true)
 			})
+		})
+	}
+}
+
+func BenchmarkDBBlocksQuerierSelect(b *testing.B) {
+	tmpDir, err := ioutil.TempDir("", "test_querier_select")
+	testutil.Ok(b, err)
+	b.Cleanup(func() { testutil.Ok(b, os.RemoveAll(tmpDir)) })
+
+	for _, tcase := range []struct {
+		matchers []*labels.Matcher
+	}{
+		{
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "__name__", "up"),
+			},
+		},
+	} {
+		b.Run(fmt.Sprintf("%v", tcase.matchers), func(b *testing.B) {
+			// 4w data from demo Prometheus Server.
+			db, err := OpenDBReadOnly(filepath.Join("..", "..", "prometheus", "_dev", "test", "var", "lib", "prometheus"), log.NewNopLogger())
+			testutil.Ok(b, err)
+			defer db.Close()
+
+			var t int64
+			q, err := db.Querier(context.Background(), math.MinInt64, math.MaxInt64)
+			testutil.Ok(b, err)
+			defer q.Close()
+
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				//now := time.Now()
+				// PromQL does not require sorted results.
+				ss := q.Select(false, nil, tcase.matchers...)
+				for ss.Next() {
+					at := ss.At()
+					it := at.Iterator()
+					for it.Next() {
+						t, _ = it.At()
+					}
+					testutil.Ok(b, it.Err())
+				}
+				testutil.Ok(b, ss.Err())
+				testutil.Equals(b, 0, len(ss.Warnings()))
+				//fmt.Println(time.Since(now))
+			}
+			StubForBenchmark = t
+
 		})
 	}
 }
