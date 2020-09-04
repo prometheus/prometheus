@@ -1346,6 +1346,8 @@ func (db *DB) Snapshot(dir string, withHead bool) error {
 		return errors.Errorf("dir must not be a valid ULID")
 	}
 
+	level.Info(db.logger).Log("msg", "Starting to snapshot all blocks")
+
 	db.cmtx.Lock()
 	defer db.cmtx.Unlock()
 
@@ -1371,6 +1373,7 @@ func (db *DB) Snapshot(dir string, withHead bool) error {
 	if _, err := db.compactor.Write(dir, head, mint, maxt+1, nil); err != nil {
 		return errors.Wrap(err, "snapshot head block")
 	}
+	level.Info(db.logger).Log("msg", "Snapshot all blocks completed")
 	return nil
 }
 
