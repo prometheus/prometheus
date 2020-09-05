@@ -14,7 +14,6 @@
 package rulefmt
 
 import (
-	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -89,8 +88,6 @@ func TestParseFileFailure(t *testing.T) {
 			continue
 		}
 		if !strings.Contains(errs[0].Error(), c.errMsg) {
-			fmt.Println("at zero is :", errs[0].Error())
-			fmt.Println("wanted", c.errMsg)
 			t.Errorf("Expected error for %s to contain %q but got: %s", c.filename, c.errMsg, errs)
 		}
 	}

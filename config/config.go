@@ -15,6 +15,7 @@ package config
 
 import (
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/url"
 	"path/filepath"
@@ -38,18 +39,18 @@ var (
 
 // Load parses the YAML input s into a Config.
 func Load(s string) (*Config, error) {
-	if len(s) == 0 {
-		return &DefaultConfig, nil
-	}
 	cfg := &Config{}
-	// If the entire config body is empty the UnmarshalYAML method is
-	// never called. We thus have to set the DefaultConfig at the entry
+	// If the entire config body is empty the decoding cannot be used.
+	// We thus have to set the DefaultConfig at the entry
 	// point as well.
 	*cfg = DefaultConfig
 
 	decoder := yaml.NewDecoder(strings.NewReader(s))
 	decoder.KnownFields(true)
 	if err := decoder.Decode(&cfg); err != nil {
+		if err == io.EOF {
+			return cfg, nil
+		}
 		return nil, err
 	}
 	return cfg, nil
