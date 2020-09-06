@@ -27,7 +27,7 @@ const TargetLabels: FC<TargetLabelsProps> = ({ discoveredLabels, labels, idx, sc
       <div id={id} className="series-labels-container">
         {Object.keys(labels).map(labelName => {
           return (
-            <Badge color="primary" className={`mr-1 ${labelName}`} key={labelName}>
+            <Badge color="primary" className="mr-1" key={labelName}>
               {`${labelName}="${labels[labelName]}"`}
             </Badge>
           );
