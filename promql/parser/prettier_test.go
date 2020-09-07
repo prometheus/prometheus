@@ -255,7 +255,9 @@ func TestLexItemSorting(t *testing.T) {
 	for i, expr := range sortingLexItemCases {
 		expectedSlice := prettier.refreshLexItems(prettier.lexItems(expr.expected))
 		input := prettier.lexItems(expr.expr)
-		testutil.Equals(t, expectedSlice, prettier.rearrangeItems(input), "%d: input %q", i, expr.expr)
+		rearrangedItems, err := prettier.rearrangeItems(input)
+		testutil.Ok(t, err)
+		testutil.Equals(t, expectedSlice, rearrangedItems, "%d: input %q", i, expr.expr)
 	}
 }
 

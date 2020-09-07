@@ -35,13 +35,13 @@ func TestEvaluations(t *testing.T) {
 	}
 }
 
-func TestPrettyEvaluations(t *testing.T) {
+func TestPrettyExprEvaluations(t *testing.T) {
 	files, err := filepath.Glob("testdata/*.test")
 	testutil.Ok(t, err)
 
 	for _, fn := range files {
 		t.Run(fn, func(t *testing.T) {
-			test, err := newPrettyTestFromFile(t, fn)
+			test, err := newPrettyExprTestFromFile(t, fn)
 			testutil.Ok(t, err)
 			testutil.Ok(t, test.Run())
 

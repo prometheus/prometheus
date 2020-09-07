@@ -62,9 +62,11 @@ func Prettify(expression string) (string, error) {
 	ptr := &prettier{
 		pd: &padder{indent: defaultIndent, isNewLineApplied: true, columnLimit: columnLimit},
 	}
-	standardizeExprStr := stringifyItems(
-		ptr.rearrangeItems(ptr.lexItems(expression)),
-	)
+	rearrangedItems, err := ptr.rearrangeItems(ptr.lexItems(expression))
+	if err != nil {
+		return expression, errors.Wrap(err, "rearrange-items")
+	}
+	standardizeExprStr := stringifyItems(rearrangedItems)
 	if err := ptr.parseExpr(standardizeExprStr); err != nil {
 		return expression, err
 	}
@@ -77,7 +79,7 @@ func Prettify(expression string) (string, error) {
 
 // rearrangeItems rearranges the lexical items slice to ensure proper order
 // of items before prettifying the input expression.
-func (p *prettier) rearrangeItems(items []Item) []Item {
+func (p *prettier) rearrangeItems(items []Item) ([]Item, error) {
 	for i := 0; i < len(items); i++ {
 		item := items[i]
 		switch item.Typ {
@@ -129,41 +131,32 @@ func (p *prettier) rearrangeItems(items []Item) []Item {
 					formatItems = true
 				}
 			}
-			if formatItems {
-				var (
-					tempItems              []Item
-					finishedKeywordWriting bool
-				)
-				// Get index of the closing paren.
-				for j := keywordIndex; j <= len(items); j++ {
-					if items[j].Typ == RIGHT_PAREN {
-						closingParenIndex = j
-						break
-					}
-				}
-				if closingParenIndex == itemNotFound {
-					panic("invalid paren index: closing paren not found")
-				}
-				// Re-order lexical items. TODO: consider using slicing of lists.
-				for itemp := 0; itemp < len(items); itemp++ {
-					if itemp <= aggregatorIndex || itemp > closingParenIndex {
-						tempItems = append(tempItems, items[itemp])
-					} else if !finishedKeywordWriting {
-						// Immediately after writing the aggregator, write the keyword and
-						// the following expression till the closing paren. This is done
-						// to be in-order with the expected result.
-						for j := keywordIndex; j <= closingParenIndex; j++ {
-							tempItems = append(tempItems, items[j])
-						}
-						// itemp has not been updated yet and its holding the left paren.
-						tempItems = append(tempItems, items[itemp])
-						finishedKeywordWriting = true
-					} else if !(itemp >= keywordIndex && itemp <= closingParenIndex) {
-						tempItems = append(tempItems, items[itemp])
-					}
-				}
-				items = tempItems
+			if !formatItems {
+				continue
 			}
+			for j := keywordIndex; j <= len(items); j++ {
+				if items[j].Typ == RIGHT_PAREN {
+					closingParenIndex = j
+					break
+				}
+			}
+			if closingParenIndex == itemNotFound {
+				return items, errors.New("invalid paren index: closing paren not found")
+			}
+			tempItems := make([]Item, len(items[:aggregatorIndex+1]))
+			// Copy all the items in the items slice from starting till the aggregatorIndex
+			// by value.
+			copy(tempItems, items[:aggregatorIndex+1])
+			// Append items to itemItems from the keyword till the RIGHT_PAREN of the grouping_modifier.
+			tempItems = append(tempItems, items[keywordIndex:closingParenIndex+1]...)
+			// Append the remaining items of the node.
+			for itemp := aggregatorIndex + 1; itemp < len(items); itemp++ {
+				if itemp >= keywordIndex && itemp <= closingParenIndex {
+					continue
+				}
+				tempItems = append(tempItems, items[itemp])
+			}
+			items = tempItems
 
 		case IDENTIFIER, METRIC_IDENTIFIER:
 			// Case-1: {__name__="metric_name"} => metric_name
@@ -244,7 +237,6 @@ func (p *prettier) rearrangeItems(items []Item) []Item {
 				rightParenIndex      = itemNotFound
 				groupingKeywordIndex = i
 				itr                  = skipComments(items, i)
-				tempItems            []Item
 			)
 			for index := itr; index < len(items); index++ {
 				if items[index].Typ == LEFT_PAREN {
@@ -256,17 +248,16 @@ func (p *prettier) rearrangeItems(items []Item) []Item {
 				}
 			}
 			if leftParenIndex+1 == rightParenIndex || leftParenIndex == rightParenIndex {
-				for index := 0; index < len(items); index++ {
-					if index >= groupingKeywordIndex && index <= rightParenIndex {
-						continue
-					}
-					tempItems = append(tempItems, items[index])
-				}
+				tempItems := make([]Item, len(items[:groupingKeywordIndex]))
+				// Copy items which are just before keyword.
+				copy(tempItems, items[:groupingKeywordIndex])
+				// Append items after the RIGHT_PAREN of grouping_modifier.
+				tempItems = append(tempItems, items[rightParenIndex+1:]...)
 				items = tempItems
 			}
 		}
 	}
-	return p.refreshLexItems(items)
+	return p.refreshLexItems(items), nil
 }
 
 func (p *prettier) prettify(items []Item) (string, error) {

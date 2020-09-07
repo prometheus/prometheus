@@ -83,7 +83,7 @@ func newTestFromFile(t testutil.T, filename string) (*Test, error) {
 	return NewTest(t, string(content), false)
 }
 
-func newPrettyTestFromFile(t testutil.T, filename string) (*Test, error) {
+func newPrettyExprTestFromFile(t testutil.T, filename string) (*Test, error) {
 	content, err := ioutil.ReadFile(filename)
 	if err != nil {
 		return nil, err
@@ -161,7 +161,7 @@ func (t *Test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 	var (
 		mod  = parts[1]
 		at   = parts[2]
-		expr string
+		expr = parts[3]
 		err  error
 	)
 	if t.prettyExpr {
@@ -169,8 +169,6 @@ func (t *Test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 		if err != nil {
 			return i, nil, err
 		}
-	} else {
-		expr = parts[3]
 	}
 	_, err = parser.ParseExpr(expr)
 	if err != nil {
