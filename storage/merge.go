@@ -470,8 +470,8 @@ func (c *chainSampleIterator) Seek(t int64) bool {
 }
 
 func (c *chainSampleIterator) At() (t int64, v float64) {
-	if c.h == nil {
-		panic("chainSampleIterator.At() called before first .Next()")
+	if c.curr == nil {
+		panic("chainSampleIterator.At() called before first .Next() or after .Next() returned false.")
 	}
 	return c.curr.At()
 }
@@ -488,7 +488,7 @@ func (c *chainSampleIterator) Next() bool {
 	}
 
 	for {
-		if c.curr.Next() {
+		if c.curr != nil && c.curr.Next() {
 			currt, _ := c.curr.At()
 			if currt == c.lastt {
 				// Ignoring sample for the same timestamp.
@@ -503,8 +503,8 @@ func (c *chainSampleIterator) Next() bool {
 				return true
 			}
 			heap.Push(&c.h, c.curr)
-
 		} else if len(c.h) == 0 {
+			c.curr = nil
 			return false
 		}
 
