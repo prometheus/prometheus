@@ -193,9 +193,7 @@ func (qs *QuerySamples) Increment(samples int) {
 // UpdatePeak updates the peak number of samples only if the passed
 // samples count is more than the existing count.
 func (qs *QuerySamples) UpdatePeak(samples int) {
-	if samples > qs.PeakSamples {
-		qs.PeakSamples = samples
-	}
+	qs.PeakSamples += samples
 }
 
 func (qs *QuerySamples) SetTotalSeries(seriesCount int) {
