@@ -177,7 +177,7 @@ type QuerySamples struct {
 	// TotalSamples represents the total number of samples considered
 	// while evaluation a query.
 	TotalSamples int
-	TotalSeries int
+	TotalSeries  int
 }
 
 type Stats struct {
@@ -194,10 +194,6 @@ func (qs *QuerySamples) Increment(samples int) {
 // samples count is more than the existing count.
 func (qs *QuerySamples) UpdatePeak(samples int) {
 	qs.PeakSamples += samples
-}
-
-func (qs *QuerySamples) SetTotalSeries(seriesCount int) {
-	qs.TotalSeries = seriesCount
 }
 
 func NewQueryTimers() *QueryTimers {

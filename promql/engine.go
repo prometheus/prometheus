@@ -821,6 +821,10 @@ func (ev *evaluator) recover(errp *error) {
 
 func (ev *evaluator) Eval(expr parser.Expr) (v parser.Value, err error) {
 	defer ev.recover(&err)
+	value := ev.eval(expr)
+	if vector, ok := value.(Vector); ok {
+		ev.samplesStats.Increment(len(vector))
+	}
 	return ev.eval(expr), nil
 }
 
@@ -953,7 +957,6 @@ func (ev *evaluator) rangeEval(f func([]parser.Value, *EvalNodeHelper) Vector, e
 		enh.out = result[:0] // Reuse result vector.
 
 		ev.currentSamples += len(result)
-		ev.samplesStats.Increment(len(result))
 		// When we reset currentSamples to tempNumSamples during the next iteration of the loop it also
 		// needs to include the samples from the result here, as they're still in memory.
 		tempNumSamples += len(result)
@@ -1295,7 +1298,6 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 					if ev.currentSamples < ev.maxSamples {
 						ss.Points = append(ss.Points, Point{V: v, T: ts})
 						ev.currentSamples++
-						ev.samplesStats.Increment(1)
 					} else {
 						ev.error(ErrTooManySamples(env))
 					}
@@ -1376,7 +1378,6 @@ func (ev *evaluator) vectorSelector(node *parser.VectorSelector, ts int64) Vecto
 				Point:  Point{V: v, T: t},
 			})
 			ev.currentSamples++
-			ev.samplesStats.Increment(1)
 		}
 
 		if ev.currentSamples >= ev.maxSamples {
@@ -1399,6 +1400,7 @@ func (ev *evaluator) vectorSelectorSingle(it *storage.BufferedSeriesIterator, no
 		}
 	}
 
+	ev.samplesStats.UpdatePeak(1)
 	if ok {
 		t, v = it.Values()
 	}
@@ -1502,6 +1504,7 @@ func (ev *evaluator) matrixIterSlice(it *storage.BufferedSeriesIterator, mint, m
 	buf := it.Buffer()
 	for buf.Next() {
 		t, v := buf.At()
+		ev.samplesStats.UpdatePeak(1)
 		if value.IsStaleNaN(v) {
 			continue
 		}
@@ -1512,19 +1515,18 @@ func (ev *evaluator) matrixIterSlice(it *storage.BufferedSeriesIterator, mint, m
 			}
 			out = append(out, Point{T: t, V: v})
 			ev.currentSamples++
-			ev.samplesStats.Increment(1)
 		}
 	}
 	// The seeked sample might also be in the range.
 	if ok {
 		t, v := it.Values()
+		ev.samplesStats.UpdatePeak(1)
 		if t == maxt && !value.IsStaleNaN(v) {
 			if ev.currentSamples >= ev.maxSamples {
 				ev.error(ErrTooManySamples(env))
 			}
 			out = append(out, Point{T: t, V: v})
 			ev.currentSamples++
-			ev.samplesStats.Increment(1)
 		}
 	}
 	return out
