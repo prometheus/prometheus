@@ -1,8 +1,12 @@
-## 2.21.0-rc.0 / 2020-08-27
+## 2.21.0-rc.1 / 2020-09-08
 
 This release is built with Go 1.15, which deprecates [X.509
 CommonName](https://golang.org/doc/go1.15#commonname) in TLS certificates
 validation.
+
+In the unlikely case that you use the gRPC API v2 (which is limited to TSDB
+admin commands), please note that we will remove this experimental API in the
+next minor release 2.22.
 
 * [CHANGE] Disable HTTP2 because of concerns with the Go HTTP/2 client. #7588 #7701
 * [CHANGE] PromQL: `query_log_file` path is now relative to the config file. #7701
@@ -17,8 +21,12 @@ validation.
 * [ENHANCEMENT] Docker Swarm SD: Support tasks and service without published ports. #7686
 * [ENHANCEMENT] PromQL: Reduce the amount of data queried by remote read when a subquery has an offset. #7667
 * [ENHANCEMENT] Promtool: Add `--time` option to query instant command. #7829
-* [ENHANCEMENT] UI: Move "remove graph" closer to query area. #5990
+* [ENHANCEMENT] UI: Respect the `--web.page-title` parameter in the React UI. #7607
+* [ENHANCEMENT] UI: Add duration, labels, annotations to alerts page in the React UI. #7605
+* [ENHANCEMENT] UI: Add duration on the React UI rules page, hide annotation and labels if empty. #7606
+* [BUGFIX] API: Deduplicate series in /api/v1/series. #7862
 * [BUGFIX] PromQL: Drop metric name in bool comparison between two instant vectors. #7819
+* [BUGFIX] PromQL: Exit with an error when time parameters can't be parsed. #7505
 * [BUGFIX] Rules: Detect extra fields in rule files. #7767
 * [BUGFIX] Rules: Disallow overwriting the metric name in the `labels` section of recording rules. #7787
 * [BUGFIX] Rules: Keep evaluation timestamp across reloads. #7775
