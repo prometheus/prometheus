@@ -466,6 +466,7 @@ func (c *chainSampleIterator) Seek(t int64) bool {
 		c.curr = heap.Pop(&c.h).(chunkenc.Iterator)
 		return true
 	}
+	c.curr = nil
 	return false
 }
 
@@ -479,6 +480,8 @@ func (c *chainSampleIterator) At() (t int64, v float64) {
 func (c *chainSampleIterator) Next() bool {
 	if c.h == nil {
 		c.h = samplesIteratorHeap{}
+		// We call c.curr.Next() as the first thing below.
+		// So, we don't call Next() on it here.
 		c.curr = c.iterators[0]
 		for _, iter := range c.iterators[1:] {
 			if iter.Next() {
@@ -487,34 +490,46 @@ func (c *chainSampleIterator) Next() bool {
 		}
 	}
 
+	if c.curr == nil {
+		return false
+	}
+
+	var currt int64
 	for {
-		if c.curr != nil && c.curr.Next() {
-			currt, _ := c.curr.At()
+		if c.curr.Next() {
+			currt, _ = c.curr.At()
 			if currt == c.lastt {
 				// Ignoring sample for the same timestamp.
 				continue
 			}
 			if len(c.h) == 0 {
-				return true
+				// curr is the only iterator remaining,
+				// no need to check with the heap.
+				break
 			}
-			nextt, _ := c.h[0].At()
-			if currt < nextt {
-				c.lastt = currt
-				return true
+
+			// Check current iterator with the top of the heap.
+			if nextt, _ := c.h[0].At(); currt < nextt {
+				// Current iterator has smaller timestamp than the heap.
+				break
 			}
+			// Current iterator does not hold the smallest timestamp.
 			heap.Push(&c.h, c.curr)
 		} else if len(c.h) == 0 {
+			// No iterator left to iterate.
 			c.curr = nil
 			return false
 		}
 
 		c.curr = heap.Pop(&c.h).(chunkenc.Iterator)
-		currt, _ := c.curr.At()
+		currt, _ = c.curr.At()
 		if currt != c.lastt {
-			c.lastt = currt
-			return true
+			break
 		}
 	}
+
+	c.lastt = currt
+	return true
 }
 
 func (c *chainSampleIterator) Err() error {
