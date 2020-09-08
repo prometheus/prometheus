@@ -939,6 +939,7 @@ func (ev *evaluator) rangeEval(f func([]parser.Value, *EvalNodeHelper) Vector, e
 							// past points at the next step.
 							matrixes[i][si].Points = series.Points[1:]
 							ev.currentSamples++
+							ev.samplesStats.Increment(1)
 						} else {
 							ev.error(ErrTooManySamples(env))
 						}
@@ -957,6 +958,7 @@ func (ev *evaluator) rangeEval(f func([]parser.Value, *EvalNodeHelper) Vector, e
 		enh.out = result[:0] // Reuse result vector.
 
 		ev.currentSamples += len(result)
+		ev.samplesStats.Increment(len(result))
 		// When we reset currentSamples to tempNumSamples during the next iteration of the loop it also
 		// needs to include the samples from the result here, as they're still in memory.
 		tempNumSamples += len(result)
@@ -973,6 +975,7 @@ func (ev *evaluator) rangeEval(f func([]parser.Value, *EvalNodeHelper) Vector, e
 				mat[i] = Series{Metric: s.Metric, Points: []Point{s.Point}}
 			}
 			ev.currentSamples = originalNumSamples + mat.TotalSamples()
+			ev.samplesStats.UpdatePeak(ev.currentSamples)
 			return mat
 		}
 
@@ -989,7 +992,6 @@ func (ev *evaluator) rangeEval(f func([]parser.Value, *EvalNodeHelper) Vector, e
 			sample.Point.T = ts
 			ss.Points = append(ss.Points, sample.Point)
 			seriess[h] = ss
-
 		}
 	}
 
@@ -1005,6 +1007,7 @@ func (ev *evaluator) rangeEval(f func([]parser.Value, *EvalNodeHelper) Vector, e
 		mat = append(mat, ss)
 	}
 	ev.currentSamples = originalNumSamples + mat.TotalSamples()
+	ev.samplesStats.UpdatePeak(ev.currentSamples)
 	return mat
 }
 
@@ -1146,6 +1149,7 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 				}
 				maxt := ts - offset
 				mint := maxt - selRange
+
 				// Evaluate the matrix selector for this series for this step.
 				points = ev.matrixIterSlice(it, mint, maxt, points)
 				if len(points) == 0 {
@@ -1294,10 +1298,12 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 
 			for ts := ev.startTimestamp; ts <= ev.endTimestamp; ts += ev.interval {
 				_, v, ok := ev.vectorSelectorSingle(it, e, ts)
+				ev.samplesStats.Increment(1)
 				if ok {
 					if ev.currentSamples < ev.maxSamples {
 						ss.Points = append(ss.Points, Point{V: v, T: ts})
 						ev.currentSamples++
+						ev.samplesStats.IncrementPeak(1)
 					} else {
 						ev.error(ErrTooManySamples(env))
 					}
@@ -1400,7 +1406,6 @@ func (ev *evaluator) vectorSelectorSingle(it *storage.BufferedSeriesIterator, no
 		}
 	}
 
-	ev.samplesStats.UpdatePeak(1)
 	if ok {
 		t, v = it.Values()
 	}
@@ -1504,7 +1509,7 @@ func (ev *evaluator) matrixIterSlice(it *storage.BufferedSeriesIterator, mint, m
 	buf := it.Buffer()
 	for buf.Next() {
 		t, v := buf.At()
-		ev.samplesStats.UpdatePeak(1)
+		ev.samplesStats.Increment(1)
 		if value.IsStaleNaN(v) {
 			continue
 		}
@@ -1515,18 +1520,20 @@ func (ev *evaluator) matrixIterSlice(it *storage.BufferedSeriesIterator, mint, m
 			}
 			out = append(out, Point{T: t, V: v})
 			ev.currentSamples++
+			ev.samplesStats.IncrementPeak(1)
 		}
 	}
 	// The seeked sample might also be in the range.
 	if ok {
 		t, v := it.Values()
-		ev.samplesStats.UpdatePeak(1)
+		ev.samplesStats.Increment(1)
 		if t == maxt && !value.IsStaleNaN(v) {
 			if ev.currentSamples >= ev.maxSamples {
 				ev.error(ErrTooManySamples(env))
 			}
 			out = append(out, Point{T: t, V: v})
 			ev.currentSamples++
+			ev.samplesStats.IncrementPeak(1)
 		}
 	}
 	return out

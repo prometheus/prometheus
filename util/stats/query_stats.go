@@ -172,12 +172,13 @@ type QueryTimers struct {
 }
 
 type QuerySamples struct {
-	// PeakSamples represent the peak number of samples at once in memory.
+	// PeakSamples represent the highest count of samples considered
+	// while evaluating a query. It corresponds to the peak value of
+	// currentSamples.
 	PeakSamples int
-	// TotalSamples represents the total number of samples considered
+	// TotalSamples represents the total number of samples scanned
 	// while evaluation a query.
 	TotalSamples int
-	TotalSeries  int
 }
 
 type Stats struct {
@@ -185,15 +186,23 @@ type Stats struct {
 	SampleStats QuerySamples
 }
 
-// Increment increments the samples count.
+// Increment increments the total samples count.
 func (qs *QuerySamples) Increment(samples int) {
 	qs.TotalSamples += samples
 }
 
-// UpdatePeak updates the peak number of samples only if the passed
-// samples count is more than the existing count.
-func (qs *QuerySamples) UpdatePeak(samples int) {
+// IncrementPeak increments the value of peak by the number
+// of samples passed
+func (qs *QuerySamples) IncrementPeak(samples int) {
 	qs.PeakSamples += samples
+}
+
+// UpdatePeak updates the peak number of samples considered in
+// evaluation of query.
+func (qs *QuerySamples) UpdatePeak(samples int) {
+	if samples > qs.PeakSamples {
+		qs.PeakSamples = samples
+	}
 }
 
 func NewQueryTimers() *QueryTimers {
