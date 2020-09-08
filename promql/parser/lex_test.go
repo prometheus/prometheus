@@ -227,9 +227,10 @@ var tests = []struct {
 				input:    `=`,
 				expected: []Item{{ASSIGN, 0, `=`}},
 			}, {
-				// Inside braces equality is a single '=' character.
+				// Inside braces equality is a single '=' character but in terms of a token
+				// it should be treated as ASSIGN.
 				input:    `{=}`,
-				expected: []Item{{LEFT_BRACE, 0, `{`}, {EQL, 1, `=`}, {RIGHT_BRACE, 2, `}`}},
+				expected: []Item{{LEFT_BRACE, 0, `{`}, {ASSIGN, 1, `=`}, {RIGHT_BRACE, 2, `}`}},
 			}, {
 				input:    `==`,
 				expected: []Item{{EQL, 0, `==`}},
@@ -355,7 +356,7 @@ var tests = []struct {
 				expected: []Item{
 					{LEFT_BRACE, 0, `{`},
 					{IDENTIFIER, 1, `foo`},
-					{EQL, 4, `=`},
+					{ASSIGN, 4, `=`},
 					{STRING, 5, `'bar'`},
 					{RIGHT_BRACE, 10, `}`},
 				},
@@ -364,7 +365,7 @@ var tests = []struct {
 				expected: []Item{
 					{LEFT_BRACE, 0, `{`},
 					{IDENTIFIER, 1, `foo`},
-					{EQL, 4, `=`},
+					{ASSIGN, 4, `=`},
 					{STRING, 5, `"bar"`},
 					{RIGHT_BRACE, 10, `}`},
 				},
@@ -373,7 +374,7 @@ var tests = []struct {
 				expected: []Item{
 					{LEFT_BRACE, 0, `{`},
 					{IDENTIFIER, 1, `foo`},
-					{EQL, 4, `=`},
+					{ASSIGN, 4, `=`},
 					{STRING, 5, `"bar\"bar"`},
 					{RIGHT_BRACE, 15, `}`},
 				},
@@ -588,7 +589,7 @@ var tests = []struct {
 					{IDENTIFIER, 19, `foo`},
 					{LEFT_BRACE, 22, `{`},
 					{IDENTIFIER, 23, `bar`},
-					{EQL, 26, `=`},
+					{ASSIGN, 26, `=`},
 					{STRING, 27, `"baz"`},
 					{RIGHT_BRACE, 32, `}`},
 					{LEFT_BRACKET, 33, `[`},
@@ -636,7 +637,7 @@ var tests = []struct {
 					{IDENTIFIER, 19, `foo`},
 					{LEFT_BRACE, 22, `{`},
 					{IDENTIFIER, 23, `bar`},
-					{EQL, 26, `=`},
+					{ASSIGN, 26, `=`},
 					{STRING, 27, `"baz"`},
 					{RIGHT_BRACE, 32, `}`},
 					{LEFT_BRACKET, 33, `[`},

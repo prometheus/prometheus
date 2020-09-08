@@ -654,7 +654,7 @@ func (p *parser) newLabelMatcher(label Item, operator Item, value Item) *labels.
 	// Map the Item to the respective match type.
 	var matchType labels.MatchType
 	switch op {
-	case EQL:
+	case ASSIGN:
 		matchType = labels.MatchEqual
 	case NEQ:
 		matchType = labels.MatchNotEqual

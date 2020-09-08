@@ -1538,7 +1538,7 @@ var testExpr = []struct {
 	}, {
 		input:  `foo{__name__= =}`,
 		fail:   true,
-		errMsg: "unexpected <op:=> in label matching, expected string",
+		errMsg: `1:15: parse error: unexpected "=" in label matching, expected string`,
 	}, {
 		input:  `foo{,}`,
 		fail:   true,
@@ -1546,7 +1546,7 @@ var testExpr = []struct {
 	}, {
 		input:  `foo{__name__ == "bar"}`,
 		fail:   true,
-		errMsg: "unexpected <op:=> in label matching, expected string",
+		errMsg: `1:15: parse error: unexpected "=" in label matching, expected string`,
 	}, {
 		input:  `foo{__name__="bar" lol}`,
 		fail:   true,

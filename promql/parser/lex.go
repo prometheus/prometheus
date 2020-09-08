@@ -476,7 +476,7 @@ func lexInsideBraces(l *Lexer) stateFn {
 			break
 		}
 		l.backup()
-		l.emit(EQL)
+		l.emit(ASSIGN)
 	case r == '!':
 		switch nr := l.next(); {
 		case nr == '~':

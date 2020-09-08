@@ -557,9 +557,9 @@ label_set_list  : label_set_list COMMA label_set_item
 
                 ;
 
-label_set_item  : IDENTIFIER EQL STRING
+label_set_item  : IDENTIFIER ASSIGN STRING
                         { $$ = labels.Label{Name: $1.Val, Value: yylex.(*parser).unquoteString($3.Val) } }
-                | IDENTIFIER EQL error
+                | IDENTIFIER ASSIGN error
                         { yylex.(*parser).unexpected("label set", "string"); $$ = labels.Label{}}
                 | IDENTIFIER error
                         { yylex.(*parser).unexpected("label set", "\"=\""); $$ = labels.Label{}}
@@ -643,7 +643,7 @@ maybe_label     : AVG | BOOL | BOTTOMK | BY | COUNT | COUNT_VALUES | GROUP | GRO
 
 unary_op        : ADD | SUB;
 
-match_op        : EQL | NEQ | EQL_REGEX | NEQ_REGEX ;
+match_op        : ASSIGN | NEQ | EQL_REGEX | NEQ_REGEX ;
 
 /*
  * Literals.
