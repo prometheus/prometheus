@@ -173,7 +173,7 @@ var testExpr = []struct {
 	}, {
 		input: "1 == bool 1",
 		expected: &BinaryExpr{
-			Op: EQL,
+			Op: EQLC,
 			LHS: &NumberLiteral{
 				Val:      1,
 				PosRange: PositionRange{Start: 0, End: 1},
@@ -593,7 +593,7 @@ var testExpr = []struct {
 	}, {
 		input: "foo == 1",
 		expected: &BinaryExpr{
-			Op: EQL,
+			Op: EQLC,
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
@@ -612,7 +612,7 @@ var testExpr = []struct {
 	}, {
 		input: "foo == bool 1",
 		expected: &BinaryExpr{
-			Op: EQL,
+			Op: EQLC,
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{

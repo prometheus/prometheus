@@ -1811,7 +1811,7 @@ func scalarBinop(op parser.ItemType, lhs, rhs float64) float64 {
 		return math.Pow(lhs, rhs)
 	case parser.MOD:
 		return math.Mod(lhs, rhs)
-	case parser.EQL:
+	case parser.EQLC:
 		return btos(lhs == rhs)
 	case parser.NEQ:
 		return btos(lhs != rhs)
@@ -1842,7 +1842,7 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64) (float64, bool) {
 		return math.Pow(lhs, rhs), true
 	case parser.MOD:
 		return math.Mod(lhs, rhs), true
-	case parser.EQL:
+	case parser.EQLC:
 		return lhs, lhs == rhs
 	case parser.NEQ:
 		return lhs, lhs != rhs

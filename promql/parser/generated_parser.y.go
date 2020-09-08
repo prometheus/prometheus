@@ -33,7 +33,7 @@ type yySymType struct {
 	duration time.Duration
 }
 
-const ASSIGN = 57346
+const EQL = 57346
 const BLANK = 57347
 const COLON = 57348
 const COMMA = 57349
@@ -57,7 +57,7 @@ const TIMES = 57366
 const operatorsStart = 57367
 const ADD = 57368
 const DIV = 57369
-const EQL = 57370
+const EQLC = 57370
 const EQL_REGEX = 57371
 const GTE = 57372
 const GTR = 57373
@@ -108,7 +108,7 @@ var yyToknames = [...]string{
 	"$end",
 	"error",
 	"$unk",
-	"ASSIGN",
+	"EQL",
 	"BLANK",
 	"COLON",
 	"COMMA",
@@ -132,7 +132,7 @@ var yyToknames = [...]string{
 	"operatorsStart",
 	"ADD",
 	"DIV",
-	"EQL",
+	"EQLC",
 	"EQL_REGEX",
 	"GTE",
 	"GTR",

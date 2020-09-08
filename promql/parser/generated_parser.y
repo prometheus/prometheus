@@ -41,7 +41,7 @@ import (
 
 
 %token <item>
-ASSIGN
+EQL
 BLANK
 COLON
 COMMA
@@ -68,7 +68,7 @@ TIMES
 %token <item>
 ADD
 DIV
-EQL
+EQLC
 EQL_REGEX
 GTE
 GTR
@@ -146,7 +146,7 @@ START_METRIC_SELECTOR
 // Operators are listed with increasing precedence.
 %left LOR
 %left LAND LUNLESS
-%left EQL GTE GTR LSS LTE NEQ
+%left EQLC GTE GTR LSS LTE NEQ
 %left ADD SUB
 %left MUL DIV MOD
 %right POW
@@ -229,7 +229,7 @@ aggregate_modifier:
 // Operator precedence only works if each of those is listed separately.
 binary_expr     : expr ADD     bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
                 | expr DIV     bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
-                | expr EQL     bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
+                | expr EQLC     bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
                 | expr GTE     bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
                 | expr GTR     bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
                 | expr LAND    bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
@@ -557,9 +557,9 @@ label_set_list  : label_set_list COMMA label_set_item
 
                 ;
 
-label_set_item  : IDENTIFIER ASSIGN STRING
+label_set_item  : IDENTIFIER EQL STRING
                         { $$ = labels.Label{Name: $1.Val, Value: yylex.(*parser).unquoteString($3.Val) } }
-                | IDENTIFIER ASSIGN error
+                | IDENTIFIER EQL error
                         { yylex.(*parser).unexpected("label set", "string"); $$ = labels.Label{}}
                 | IDENTIFIER error
                         { yylex.(*parser).unexpected("label set", "\"=\""); $$ = labels.Label{}}
@@ -643,7 +643,7 @@ maybe_label     : AVG | BOOL | BOTTOMK | BY | COUNT | COUNT_VALUES | GROUP | GRO
 
 unary_op        : ADD | SUB;
 
-match_op        : ASSIGN | NEQ | EQL_REGEX | NEQ_REGEX ;
+match_op        : EQL | NEQ | EQL_REGEX | NEQ_REGEX ;
 
 /*
  * Literals.
