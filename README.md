@@ -93,6 +93,7 @@ The Makefile provides several targets:
   * *format*: format the source code
   * *vet*: check the source code for common errors
   * *docker*: build a docker container for the current `HEAD`
+  * *assets*: build the new experimental React UI
 
 ## React UI Development
 
