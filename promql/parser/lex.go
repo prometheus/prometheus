@@ -70,7 +70,7 @@ func (i ItemType) IsKeyword() bool { return i > keywordsStart && i < keywordsEnd
 // Returns false otherwise.
 func (i ItemType) IsComparisonOperator() bool {
 	switch i {
-	case EQL, NEQ, LTE, LSS, GTE, GTR:
+	case EQLC, NEQ, LTE, LSS, GTE, GTR:
 		return true
 	default:
 		return false
@@ -133,7 +133,7 @@ var ItemTypeStr = map[ItemType]string{
 	LEFT_BRACKET:  "[",
 	RIGHT_BRACKET: "]",
 	COMMA:         ",",
-	ASSIGN:        "=",
+	EQL:           "=",
 	COLON:         ":",
 	SEMICOLON:     ";",
 	BLANK:         "_",
@@ -145,7 +145,7 @@ var ItemTypeStr = map[ItemType]string{
 	MUL:       "*",
 	MOD:       "%",
 	DIV:       "/",
-	EQL:       "==",
+	EQLC:      "==",
 	NEQ:       "!=",
 	LTE:       "<=",
 	LSS:       "<",
@@ -363,11 +363,11 @@ func lexStatements(l *Lexer) stateFn {
 	case r == '=':
 		if t := l.peek(); t == '=' {
 			l.next()
-			l.emit(EQL)
+			l.emit(EQLC)
 		} else if t == '~' {
 			return l.errorf("unexpected character after '=': %q", t)
 		} else {
-			l.emit(ASSIGN)
+			l.emit(EQL)
 		}
 	case r == '!':
 		if t := l.next(); t == '=' {
