@@ -20,7 +20,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -73,7 +72,6 @@ type Head struct {
 
 	symMtx  sync.RWMutex
 	symbols map[string]struct{}
-	values  map[string]stringset // Label names to possible values.
 
 	deletedMtx sync.Mutex
 	deleted    map[uint64]int // Deleted series, and what WAL segment they must be kept until.
@@ -303,7 +301,6 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, chunkRange int
 		wal:        wal,
 		logger:     l,
 		series:     newStripeSeries(stripeSize, seriesCallback),
-		values:     map[string]stringset{},
 		symbols:    map[string]struct{}{},
 		postings:   index.NewUnorderedMemPostings(),
 		tombstones: tombstones.NewMemTombstones(),
@@ -1345,24 +1342,15 @@ func (h *Head) gc() {
 	defer h.symMtx.Unlock()
 
 	symbols := make(map[string]struct{}, len(h.symbols))
-	values := make(map[string]stringset, len(h.values))
-	if err := h.postings.Iter(func(t labels.Label, _ index.Postings) error {
-		symbols[t.Name] = struct{}{}
-		symbols[t.Value] = struct{}{}
-
-		ss, ok := values[t.Name]
-		if !ok {
-			ss = stringset{}
-			values[t.Name] = ss
-		}
-		ss.set(t.Value)
+	if err := h.postings.Iter(func(l labels.Label, _ index.Postings) error {
+		symbols[l.Name] = struct{}{}
+		symbols[l.Value] = struct{}{}
 		return nil
 	}); err != nil {
 		// This should never happen, as the iteration function only returns nil.
 		panic(err)
 	}
 	h.symbols = symbols
-	h.values = values
 }
 
 // Tombstones returns a new reader over the head's tombstones
@@ -1572,37 +1560,27 @@ func (h *headIndexReader) SortedLabelValues(name string) ([]string, error) {
 // specific label name that are within the time range mint to maxt.
 func (h *headIndexReader) LabelValues(name string) ([]string, error) {
 	h.head.symMtx.RLock()
-
+	defer h.head.symMtx.RUnlock()
 	if h.maxt < h.head.MinTime() || h.mint > h.head.MaxTime() {
-		h.head.symMtx.RUnlock()
 		return []string{}, nil
 	}
 
-	sl := make([]string, 0, len(h.head.values[name]))
-	for s := range h.head.values[name] {
-		sl = append(sl, s)
-	}
-	h.head.symMtx.RUnlock()
-	return sl, nil
+	values := h.head.postings.LabelValues(name)
+	return values, nil
 }
 
 // LabelNames returns all the unique label names present in the head
 // that are within the time range mint to maxt.
 func (h *headIndexReader) LabelNames() ([]string, error) {
 	h.head.symMtx.RLock()
-	defer h.head.symMtx.RUnlock()
-
 	if h.maxt < h.head.MinTime() || h.mint > h.head.MaxTime() {
+		h.head.symMtx.RUnlock()
 		return []string{}, nil
 	}
 
-	labelNames := make([]string, 0, len(h.head.values))
-	for name := range h.head.values {
-		if name == "" {
-			continue
-		}
-		labelNames = append(labelNames, name)
-	}
+	labelNames := h.head.postings.LabelNames()
+	h.head.symMtx.RUnlock()
+
 	sort.Strings(labelNames)
 	return labelNames, nil
 }
@@ -1714,13 +1692,6 @@ func (h *Head) getOrCreateWithID(id, hash uint64, lset labels.Labels) (*memSerie
 	defer h.symMtx.Unlock()
 
 	for _, l := range lset {
-		valset, ok := h.values[l.Name]
-		if !ok {
-			valset = stringset{}
-			h.values[l.Name] = valset
-		}
-		valset.set(l.Value)
-
 		h.symbols[l.Name] = struct{}{}
 		h.symbols[l.Value] = struct{}{}
 	}
@@ -2333,25 +2304,6 @@ func (it *memSafeIterator) At() (int64, float64) {
 	}
 	s := it.buf[4-(it.total-it.i)]
 	return s.t, s.v
-}
-
-type stringset map[string]struct{}
-
-func (ss stringset) set(s string) {
-	ss[s] = struct{}{}
-}
-
-func (ss stringset) String() string {
-	return strings.Join(ss.slice(), ",")
-}
-
-func (ss stringset) slice() []string {
-	slice := make([]string, 0, len(ss))
-	for k := range ss {
-		slice = append(slice, k)
-	}
-	sort.Strings(slice)
-	return slice
 }
 
 type mmappedChunk struct {
