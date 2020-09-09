@@ -111,10 +111,10 @@ var (
 		MinShards:         1,
 		MaxSamplesPerSend: 500,
 
-		// Each shard will have a max of 500 samples pending in its channel, plus the pending
-		// samples that have been enqueued. Theoretically we should only ever have about 1000 samples
-		// per shard pending. At 200 shards that's 200k.
-		Capacity:          500,
+		// Each shard will have a max of 2500 samples pending in its channel, plus the pending
+		// samples that have been enqueued. Theoretically we should only ever have about 3000 samples
+		// per shard pending. At 200 shards that's 600k.
+		Capacity:          2500,
 		BatchSendDeadline: model.Duration(5 * time.Second),
 
 		// Backoff times for retrying a batch of samples on recoverable errors.
