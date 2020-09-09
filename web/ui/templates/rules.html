@@ -10,8 +10,8 @@
         <thead>
           <tr>
             <td colspan="3"><h2><a href="#{{reReplaceAll "([^a-zA-Z0-9])" "$1" .Name}}" id="{{reReplaceAll "([^a-zA-Z0-9])" "$1" .Name}}">{{.Name}}</a></h2></td>
-            <td><h2>{{if .GetEvaluationTimestamp.IsZero}}Never{{else}}{{since .GetEvaluationTimestamp}} ago{{end}}</h2></td>
-            <td><h2>{{humanizeDuration .GetEvaluationDuration.Seconds}}</h2></td>
+            <td><h2>{{if .GetLastEvaluation.IsZero}}Never{{else}}{{since .GetLastEvaluation}} ago{{end}}</h2></td>
+            <td><h2>{{humanizeDuration .GetEvaluationTime.Seconds}}</h2></td>
           </tr>
         </thead>
         <tbody>
