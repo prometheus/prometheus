@@ -109,6 +109,11 @@ func NewReadClient(name string, conf *ClientConfig) (ReadClient, error) {
 		return nil, err
 	}
 
+	t := httpClient.Transport
+	httpClient.Transport = &nethttp.Transport{
+		RoundTripper: t,
+	}
+
 	return &Client{
 		remoteName:          name,
 		url:                 conf.URL,
