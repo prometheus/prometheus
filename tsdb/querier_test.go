@@ -106,7 +106,7 @@ func createIdxChkReaders(t *testing.T, tc []seriesSamples) (IndexReader, ChunkRe
 
 	postings := index.NewMemPostings()
 	chkReader := mockChunkReader(make(map[uint64]chunkenc.Chunk))
-	lblIdx := make(map[string]stringset)
+	lblIdx := make(map[string]map[string]struct{})
 	mi := newMockIndex()
 	blockMint := int64(math.MaxInt64)
 	blockMaxt := int64(math.MinInt64)
@@ -145,10 +145,10 @@ func createIdxChkReaders(t *testing.T, tc []seriesSamples) (IndexReader, ChunkRe
 		for _, l := range ls {
 			vs, present := lblIdx[l.Name]
 			if !present {
-				vs = stringset{}
+				vs = map[string]struct{}{}
 				lblIdx[l.Name] = vs
 			}
-			vs.set(l.Value)
+			vs[l.Value] = struct{}{}
 		}
 	}
 
