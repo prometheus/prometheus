@@ -151,7 +151,8 @@ type Admin struct {
 // NewAdmin returns a Admin server.
 func NewAdmin(db TSDBAdmin, dbDir string) *Admin {
 	return &Admin{
-		db: db,
+		db:    db,
+		dbDir: dbDir,
 	}
 }
 
