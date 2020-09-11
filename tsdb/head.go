@@ -58,13 +58,14 @@ type Head struct {
 	minValidTime     atomic.Int64 // Mint allowed to be added to the head. It shouldn't be lower than the maxt of the last persisted block.
 	lastSeriesID     atomic.Uint64
 
-	metrics      *headMetrics
-	wal          *wal.WAL
-	logger       log.Logger
-	appendPool   sync.Pool
-	seriesPool   sync.Pool
-	bytesPool    sync.Pool
-	memChunkPool sync.Pool
+	metrics       *headMetrics
+	wal           *wal.WAL
+	logger        log.Logger
+	appendPool    sync.Pool
+	seriesPool    sync.Pool
+	memSeriesPool sync.Pool
+	bytesPool     sync.Pool
+	memChunkPool  sync.Pool
 
 	// All series addressable by their ID or hash.
 	series         *stripeSeries
@@ -1029,8 +1030,9 @@ func (h *Head) appender() *headAppender {
 		minValidTime:          max(h.minValidTime.Load(), h.MaxTime()-h.chunkRange.Load()/2),
 		mint:                  math.MaxInt64,
 		maxt:                  math.MinInt64,
+		series:                h.getSeriesRefsBuffer(),
 		samples:               h.getAppendBuffer(),
-		sampleSeries:          h.getSeriesBuffer(),
+		sampleSeries:          h.getMemSeriesBuffer(),
 		appendID:              appendID,
 		cleanupAppendIDsBelow: cleanupAppendIDsBelow,
 	}
@@ -1056,15 +1058,28 @@ func (h *Head) putAppendBuffer(b []record.RefSample) {
 	h.appendPool.Put(b[:0])
 }
 
-func (h *Head) getSeriesBuffer() []*memSeries {
-	b := h.seriesPool.Get()
+func (h *Head) getMemSeriesBuffer() []*memSeries {
+	b := h.memSeriesPool.Get()
 	if b == nil {
 		return make([]*memSeries, 0, 512)
 	}
 	return b.([]*memSeries)
 }
 
-func (h *Head) putSeriesBuffer(b []*memSeries) {
+func (h *Head) putMemSeriesBuffer(b []*memSeries) {
+	//lint:ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
+	h.memSeriesPool.Put(b[:0])
+}
+
+func (h *Head) getSeriesRefsBuffer() []record.RefSeries {
+	b := h.seriesPool.Get()
+	if b == nil {
+		return make([]record.RefSeries, 0, 512)
+	}
+	return b.([]record.RefSeries)
+}
+
+func (h *Head) putSeriesRefsBuffer(b []record.RefSeries) {
 	//lint:ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 	h.seriesPool.Put(b[:0])
 }
@@ -1206,7 +1221,8 @@ func (a *headAppender) Commit() (err error) {
 
 	defer a.head.metrics.activeAppenders.Dec()
 	defer a.head.putAppendBuffer(a.samples)
-	defer a.head.putSeriesBuffer(a.sampleSeries)
+	defer a.head.putSeriesRefsBuffer(a.series)
+	defer a.head.putMemSeriesBuffer(a.sampleSeries)
 	defer a.head.iso.closeAppend(a.appendID)
 
 	total := len(a.samples)
@@ -1242,7 +1258,7 @@ func (a *headAppender) Rollback() (err error) {
 	defer func() { a.closed = true }()
 	defer a.head.metrics.activeAppenders.Dec()
 	defer a.head.iso.closeAppend(a.appendID)
-	defer a.head.putSeriesBuffer(a.sampleSeries)
+	defer a.head.putMemSeriesBuffer(a.sampleSeries)
 
 	var series *memSeries
 	for i := range a.samples {
@@ -1253,6 +1269,7 @@ func (a *headAppender) Rollback() (err error) {
 		series.Unlock()
 	}
 	a.head.putAppendBuffer(a.samples)
+	a.head.putSeriesRefsBuffer(a.series)
 	a.samples = nil
 
 	// Series are created in the head memory regardless of rollback. Thus we have

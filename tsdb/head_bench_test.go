@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"context"
 	"io/ioutil"
 	"os"
 	"strconv"
@@ -60,4 +61,32 @@ func BenchmarkHeadStripeSeriesCreateParallel(b *testing.B) {
 			h.getOrCreate(uint64(i), labels.FromStrings("a", strconv.Itoa(int(i))))
 		}
 	})
+}
+
+func BenchmarkHeadAppenderCommit(b *testing.B) {
+	head, _ := newTestHead(b, 1000000, false)
+	testutil.Ok(b, head.Init(0))
+
+	for i := 0; i < b.N; i++ {
+		app := head.Appender(context.Background())
+		for j := 0; j < 10000; j++ {
+			ls := labels.Labels{
+				{
+					Name:  "test",
+					Value: "test",
+				},
+				{
+					Name:  "num1",
+					Value: strconv.Itoa(i),
+				},
+				{
+					Name:  "num2",
+					Value: strconv.Itoa(j),
+				}}
+			_, err := app.Add(ls, int64(j), 0)
+			testutil.Ok(b, err)
+		}
+		testutil.Ok(b, app.Commit())
+	}
+	testutil.Ok(b, head.Close())
 }
