@@ -35,6 +35,7 @@ next minor release 2.22.
 * [BUGFIX] TSDB: Delete blocks atomically to prevent corruption when there is a panic/crash during deletion. #7772
 * [BUGFIX] Triton SD: Fix a panic when triton_sd_config is nil. #7671
 * [BUGFIX] UI: Fix react UI bug with series going on and off. #7804
+* [BUGFIX] UI: Fix styling bug for target labels with special names in React UI. #7902
 * [BUGFIX] Web: Stop CMUX and GRPC servers even with stale connections, preventing the server to stop on SIGTERM. #7810
 
 ## 2.20.1 / 2020-08-05
