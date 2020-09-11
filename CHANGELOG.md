@@ -1,14 +1,13 @@
-## 2.21.0-rc.1 / 2020-09-08
+## 2.21.0 / 2020-09-11
 
-This release is built with Go 1.15, which deprecates [X.509
-CommonName](https://golang.org/doc/go1.15#commonname) in TLS certificates
-validation.
+This release is built with Go 1.15, which deprecates [X.509 CommonName](https://golang.org/doc/go1.15#commonname)
+in TLS certificates validation.
 
 In the unlikely case that you use the gRPC API v2 (which is limited to TSDB
 admin commands), please note that we will remove this experimental API in the
 next minor release 2.22.
 
-* [CHANGE] Disable HTTP2 because of concerns with the Go HTTP/2 client. #7588 #7701
+* [CHANGE] Disable HTTP/2 because of concerns with the Go HTTP/2 client. #7588 #7701
 * [CHANGE] PromQL: `query_log_file` path is now relative to the config file. #7701
 * [CHANGE] Promtool: Replace the tsdb command line tool by a promtool tsdb subcommand. #6088
 * [CHANGE] Rules: Label `rule_group_iterations` metric with group name. #7823
@@ -27,6 +26,7 @@ next minor release 2.22.
 * [BUGFIX] API: Deduplicate series in /api/v1/series. #7862
 * [BUGFIX] PromQL: Drop metric name in bool comparison between two instant vectors. #7819
 * [BUGFIX] PromQL: Exit with an error when time parameters can't be parsed. #7505
+* [BUGFIX] Remote read: Re-add accidentally removed tracing for remote-read requests. #7916
 * [BUGFIX] Rules: Detect extra fields in rule files. #7767
 * [BUGFIX] Rules: Disallow overwriting the metric name in the `labels` section of recording rules. #7787
 * [BUGFIX] Rules: Keep evaluation timestamp across reloads. #7775
@@ -35,6 +35,7 @@ next minor release 2.22.
 * [BUGFIX] TSDB: Delete blocks atomically to prevent corruption when there is a panic/crash during deletion. #7772
 * [BUGFIX] Triton SD: Fix a panic when triton_sd_config is nil. #7671
 * [BUGFIX] UI: Fix react UI bug with series going on and off. #7804
+* [BUGFIX] UI: Fix styling bug for target labels with special names in React UI. #7902
 * [BUGFIX] Web: Stop CMUX and GRPC servers even with stale connections, preventing the server to stop on SIGTERM. #7810
 
 ## 2.20.1 / 2020-08-05
