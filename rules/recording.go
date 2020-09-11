@@ -18,11 +18,15 @@ import (
 	"fmt"
 	"html/template"
 	"net/url"
+	"os"
 	"sync"
 	"time"
 
 	yaml "gopkg.in/yaml.v2"
 
+	apic "github.com/prometheus/client_golang/api"
+	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/prometheus/prometheus/promql"
@@ -72,9 +76,36 @@ func (rule *RecordingRule) Labels() labels.Labels {
 	return rule.labels
 }
 
+func vmQueryRecording(ctx context.Context, rule *RecordingRule, ts time.Time) (promql.Vector, error) {
+	vmURL, ok := os.LookupEnv("VMSELECT_URL")
+	if !ok {
+		fmt.Println("FATAL: please specify VMSELECT_URL to run rules against to")
+		os.Exit(-1)
+	}
+	client, err := apic.NewClient(apic.Config{Address: vmURL})
+	if err != nil {
+		return nil, err
+	}
+
+	//stime := time.Now()
+	queryAPI := v1.NewAPI(client)
+	//fmt.Println("Evaluating:", time.Since(stime), rule.vector.String())
+	value, _, err := queryAPI.Query(context.Background(), rule.vector.String(), time.Now())
+	if err != nil {
+		return nil, err
+	}
+
+	if _, ok := value.(model.Vector); !ok {
+		err := fmt.Errorf("returned value is not a vector")
+		return nil, err
+	}
+	return modelToPromql(value.(model.Vector)), nil
+}
+
 // Eval evaluates the rule and then overrides the metric names and labels accordingly.
 func (rule *RecordingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, _ *url.URL) (promql.Vector, error) {
-	vector, err := query(ctx, rule.vector.String(), ts)
+	//vector, err := query(ctx, rule.vector.String(), ts)
+	vector, err := vmQueryRecording(ctx, rule, ts)
 	if err != nil {
 		rule.SetHealth(HealthBad)
 		rule.SetLastError(err)

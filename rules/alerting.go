@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -29,6 +30,9 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+
+	apic "github.com/prometheus/client_golang/api"
+	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
@@ -294,10 +298,51 @@ func (r *AlertingRule) SetRestored(restored bool) {
 // is kept in memory state and consequently repeatedly sent to the AlertManager.
 const resolvedRetention = 15 * time.Minute
 
+func modelToPromql(mv model.Vector) promql.Vector {
+	var vec promql.Vector
+
+	for _, m := range mv {
+		var lbs labels.Labels
+		for n, v := range m.Metric {
+			lbs = append(lbs, labels.Label{string(n), string(v)})
+		}
+		point := promql.Point{int64(m.Timestamp), float64(m.Value)}
+		vec = append(vec, promql.Sample{point, lbs})
+	}
+	return vec
+}
+
+func vmQueryAlerting(ctx context.Context, rule *AlertingRule, ts time.Time) (promql.Vector, error) {
+	vmURL, ok := os.LookupEnv("VMSELECT_URL")
+	if !ok {
+		level.Warn(rule.logger).Log("FATAL: evironment variable VMSELECT_URL doesn't exists")
+		os.Exit(-1)
+	}
+	client, err := apic.NewClient(apic.Config{Address: vmURL})
+	if err != nil {
+		return nil, err
+	}
+
+	//stime := time.Now()
+	queryAPI := v1.NewAPI(client)
+	//fmt.Println("Evaluating:", time.Since(stime), rule.vector.String())
+	value, _, err := queryAPI.Query(context.Background(), rule.vector.String(), time.Now())
+	if err != nil {
+		return nil, err
+	}
+
+	if _, ok := value.(model.Vector); !ok {
+		err := fmt.Errorf("returned value is not a vector")
+		return nil, err
+	}
+	return modelToPromql(value.(model.Vector)), nil
+}
+
 // Eval evaluates the rule expression and then creates pending alerts and fires
 // or removes previously pending alerts accordingly.
 func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, externalURL *url.URL) (promql.Vector, error) {
-	res, err := query(ctx, r.vector.String(), ts)
+	//res, err := query(ctx, r.vector.String(), ts)
+	res, err := vmQueryAlerting(ctx, r, ts)
 	if err != nil {
 		r.SetHealth(HealthBad)
 		r.SetLastError(err)
