@@ -1408,6 +1408,16 @@ func getPointSlice(sz int) []Point {
 }
 
 func putPointSlice(p []Point) {
+	// The sync.Pool works best when the Point slices are of similar
+	// capacity. We guarantee this by discarding very large slices
+	// instead of putting them into the pool.
+	//
+	// See: https://github.com/golang/go/issues/23199
+	// See: https://github.com/golang/go/blob/d277a361231485999cc2b7433e3244e559c7d7da/src/fmt/print.go#L147
+	if cap(p) > 12000 {
+		return
+	}
+
 	//lint:ignore SA6002 relax staticcheck verification.
 	pointPool.Put(p[:0])
 }
