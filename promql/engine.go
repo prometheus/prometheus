@@ -1399,10 +1399,21 @@ func (ev *evaluator) vectorSelectorSingle(it *storage.BufferedSeriesIterator, no
 
 var pointPool = sync.Pool{}
 
-func getPointSlice(sz int) []Point {
+func getPointSlice(maxSz int) []Point {
 	p := pointPool.Get()
 	if p != nil {
 		return p.([]Point)
+	}
+
+	// Some queries can blow up the heap (and then run into maxSamples)
+	// rather quickly and only use a fraction of maxSz samples. Clamp the
+	// requested capacity at the cost that some large queries will need
+	// to grow the slice.
+	var sz int
+	if maxSz > 12000 {
+		sz = 12000
+	} else {
+		sz = maxSz
 	}
 	return make([]Point, 0, sz)
 }
