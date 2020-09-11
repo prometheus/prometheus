@@ -27,10 +27,8 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 )
 
-// Shared interner
-var (
-	Global Interner = New(prometheus.DefaultRegisterer)
-)
+// Global is a shared interner.
+var Global = New(prometheus.DefaultRegisterer)
 
 // Iterner is a string interner.
 type Interner interface {
@@ -140,7 +138,7 @@ func (p *pool) Release(s string) {
 
 // InternLabels is a helper function for interning all label
 // names and values to a given interner.
-func InternLabels(interner Interner, lbls labels.Labels) {
+func InternLabels(interner Interner, lbls labels.Labels) { // nolint:golint
 	for i, l := range lbls {
 		lbls[i].Name = interner.Intern(l.Name)
 		lbls[i].Value = interner.Intern(l.Value)
