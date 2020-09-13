@@ -41,7 +41,6 @@ import (
 	"gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/importers"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
 )
 
@@ -132,16 +131,16 @@ func main() {
 
 	backfillCmd := app.Command("backfill", "Backfill Prometheus data.")
 	backfillRuleCmd := backfillCmd.Command("rules", "Backfill Prometheus data for new rules.")
-	backfillRuleURL := backfillRuleCmd.Flag("url", "Prometheus API url.").Required().String()
-	backfillRuleEvalInterval := backfillRuleCmd.Flag("evaluation_interval", "How frequently to evaluate rules when backfilling.").
-		Default("-3h").Duration()
 	backfillRuleStart := backfillRuleCmd.Flag("start", "The time to start backfilling the new rule from. It is required. Start time should be RFC3339 or Unix timestamp.").
-		Required().Duration()
-	backfillRuleEnd := backfillRuleCmd.Flag("end", "If an end time is provided, the new rule backfilling will end at this time. The default will backfill to the 3 hrs ago. End time should be RFC3339 or Unix timestamp.").
-		Default("").Duration()
+		Required().String()
+	backfillRuleEnd := backfillRuleCmd.Flag("end", "If an end time is provided, all recording rules in the rule files provided will be backfilled to the end time. Default will backfill up to 3 hrs ago. End time should be RFC3339 or Unix timestamp.").
+		Default("-3h").String()
+	backfillRuleURL := backfillRuleCmd.Flag("url", "Prometheus API url with the data where the rule will be backfilled from.").Default("localhost:9090").String()
+	backfillRuleEvalInterval := backfillRuleCmd.Flag("evaluation_interval", "How frequently to evaluate rules when backfilling.").
+		Default("15s").Duration()
 	backfillRuleFiles := backfillRuleCmd.Arg(
 		"rule-files",
-		"The file containing the new rule that needs to be backfilled.",
+		"A list of one or more files containing recording rules to be backfilled. All recording rules listed in the files will be backfilled. Alerting rules are not evaluated.",
 	).Required().ExistingFiles()
 
 	parsedCmd := kingpin.MustParse(app.Parse(os.Args[1:]))
@@ -767,24 +766,29 @@ func (j *jsonPrinter) printLabelValues(v model.LabelValues) {
 	json.NewEncoder(os.Stdout).Encode(v)
 }
 
-// BackfillRule backfills rules from the files provided
-func BackfillRule(url string, start, end, evalInterval time.Duration, files ...string) int {
+// BackfillRule backfills rules from the files provided.
+func BackfillRule(url, start, end string, evalInterval time.Duration, files ...string) int {
 	ctx := context.Background()
-	cfg := importers.RuleConfig{
-		Start:        start.String(),
-		End:          end.String(),
+	stime, etime, err := parseStartTimeAndEndTime(start, end)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	cfg := RuleImporterConfig{
+		Start:        stime,
+		End:          etime,
 		EvalInterval: evalInterval,
 		URL:          url,
 	}
 	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
-	ruleImporter := importers.NewRuleImporter(logger, cfg)
-	err := ruleImporter.Init()
+	ruleImporter := NewRuleImporter(logger, cfg)
+	err = ruleImporter.Init()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "rule importer init error", err)
 		return 1
 	}
 
-	errs := ruleImporter.Parse(ctx, files)
+	errs := ruleImporter.LoadGroups(ctx, files)
 	for _, err := range errs {
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "rule importer parse error", err)
