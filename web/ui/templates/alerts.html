@@ -6,17 +6,19 @@
 {{define "content"}}
 <div class="container-fluid">
   <h1>Alerts</h1>
-    <div id="alertFilters" class="btn-group btn-group-toggle" data-toggle="buttons">
-        <label class="btn btn-primary active">
-            <input type="checkbox" name="alertFilters" id="inactiveAlerts" autocomplete="off"> Inactive ({{ .Counts.Inactive }})
-        </label>
-        <label class="btn btn-primary active">
-            <input type="checkbox" name="alertFilters" id="pendingAlerts" autocomplete="off"> Pending ({{ .Counts.Pending }})
-        </label>
-        <label class="btn btn-primary active">
-            <input type="checkbox" name="alertFilters" id="firingAlerts" autocomplete="off"> Firing ({{ .Counts.Firing }})
-        </label>
-        </br>
+    <div id="alertFilters">
+      <div class="custom-control custom-switch d-inline my-1 mr-3">
+        <input type="checkbox" class="custom-control-input" id="inactiveAlerts" checked>
+        <label class="custom-control-label" for="inactiveAlerts">Inactive ({{ .Counts.Inactive }})</label>
+      </div>
+      <div class="custom-control custom-switch d-inline my-1 mr-3">
+        <input type="checkbox" class="custom-control-input" id="pendingAlerts" checked>
+        <label class="custom-control-label" for="pendingAlerts">Pending ({{ .Counts.Pending }})</label>
+      </div>
+      <div class="custom-control custom-switch d-inline my-1">
+        <input type="checkbox" class="custom-control-input" id="firingAlerts" checked>
+        <label class="custom-control-label" for="firingAlerts">Firing ({{ .Counts.Firing }})</label>
+      </div>
     </div>
   <div class="show-annotations">
      <i class="glyphicon glyphicon-unchecked"></i>

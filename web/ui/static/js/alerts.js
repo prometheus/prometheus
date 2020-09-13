@@ -34,21 +34,21 @@ function init() {
   }
 
   if(localStorage.hideInactiveAlerts === "true") {
-      $("#inactiveAlerts").parent().removeClass("active");
+      $("#inactiveAlerts").prop("checked", false);
       displayAlerts("alert-success", false);
   }
   if(localStorage.hidePendingAlerts === "true") {
-      $("#pendingAlerts").parent().removeClass("active");
+      $("#pendingAlerts").prop("checked", false);
       displayAlerts("alert-warning", false);
   }
   if(localStorage.hideFiringAlerts === "true") {
-      $("#firingAlerts").parent().removeClass("active");
+      $("#firingAlerts").prop("checked", false);
       displayAlerts("alert-danger", false);
   }
 
   $("#alertFilters :input").change(function() {
         const target = $(this).attr("id");
-        var shouldHide = $(this).parent().hasClass("active");
+        var shouldHide = !$(this).prop("checked");
         if (target === "inactiveAlerts") {
             localStorage.setItem("hideInactiveAlerts", shouldHide);
             displayAlerts("alert-success", !shouldHide);
