@@ -177,12 +177,12 @@ func TestReadyAndHealthy(t *testing.T) {
 		cleanupTestResponse(t, resp)
 	}
 
-	resp, err = http.Post("http://localhost:9090/api/v2/admin/tsdb/snapshot", "", strings.NewReader(""))
+	resp, err = http.Post("http://localhost:9090/api/v1/admin/tsdb/snapshot", "", strings.NewReader(""))
 	testutil.Ok(t, err)
 	testutil.Equals(t, http.StatusServiceUnavailable, resp.StatusCode)
 	cleanupTestResponse(t, resp)
 
-	resp, err = http.Post("http://localhost:9090/api/v2/admin/tsdb/delete_series", "", strings.NewReader("{}"))
+	resp, err = http.Post("http://localhost:9090/api/v1/admin/tsdb/delete_series", "", strings.NewReader("{}"))
 	testutil.Ok(t, err)
 	testutil.Equals(t, http.StatusServiceUnavailable, resp.StatusCode)
 	cleanupTestResponse(t, resp)
@@ -208,15 +208,15 @@ func TestReadyAndHealthy(t *testing.T) {
 		cleanupTestResponse(t, resp)
 	}
 
-	resp, err = http.Post("http://localhost:9090/api/v2/admin/tsdb/snapshot", "", strings.NewReader(""))
+	resp, err = http.Post("http://localhost:9090/api/v1/admin/tsdb/snapshot", "", strings.NewReader(""))
 	testutil.Ok(t, err)
 	testutil.Equals(t, http.StatusOK, resp.StatusCode)
-	cleanupSnapshot(t, resp)
+	cleanupSnapshot(t, dbDir, resp)
 	cleanupTestResponse(t, resp)
 
-	resp, err = http.Post("http://localhost:9090/api/v2/admin/tsdb/delete_series", "", strings.NewReader("{}"))
+	resp, err = http.Post("http://localhost:9090/api/v1/admin/tsdb/delete_series?match[]=up", "", nil)
 	testutil.Ok(t, err)
-	testutil.Equals(t, http.StatusOK, resp.StatusCode)
+	testutil.Equals(t, http.StatusNoContent, resp.StatusCode)
 	cleanupTestResponse(t, resp)
 }
 
@@ -280,12 +280,12 @@ func TestRoutePrefix(t *testing.T) {
 	testutil.Equals(t, http.StatusServiceUnavailable, resp.StatusCode)
 	cleanupTestResponse(t, resp)
 
-	resp, err = http.Post("http://localhost:9091"+opts.RoutePrefix+"/api/v2/admin/tsdb/snapshot", "", strings.NewReader(""))
+	resp, err = http.Post("http://localhost:9091"+opts.RoutePrefix+"/api/v1/admin/tsdb/snapshot", "", strings.NewReader(""))
 	testutil.Ok(t, err)
 	testutil.Equals(t, http.StatusServiceUnavailable, resp.StatusCode)
 	cleanupTestResponse(t, resp)
 
-	resp, err = http.Post("http://localhost:9091"+opts.RoutePrefix+"/api/v2/admin/tsdb/delete_series", "", strings.NewReader("{}"))
+	resp, err = http.Post("http://localhost:9091"+opts.RoutePrefix+"/api/v1/admin/tsdb/delete_series", "", strings.NewReader("{}"))
 	testutil.Ok(t, err)
 	testutil.Equals(t, http.StatusServiceUnavailable, resp.StatusCode)
 	cleanupTestResponse(t, resp)
@@ -308,15 +308,15 @@ func TestRoutePrefix(t *testing.T) {
 	testutil.Equals(t, http.StatusOK, resp.StatusCode)
 	cleanupTestResponse(t, resp)
 
-	resp, err = http.Post("http://localhost:9091"+opts.RoutePrefix+"/api/v2/admin/tsdb/snapshot", "", strings.NewReader(""))
+	resp, err = http.Post("http://localhost:9091"+opts.RoutePrefix+"/api/v1/admin/tsdb/snapshot", "", strings.NewReader(""))
 	testutil.Ok(t, err)
 	testutil.Equals(t, http.StatusOK, resp.StatusCode)
-	cleanupSnapshot(t, resp)
+	cleanupSnapshot(t, dbDir, resp)
 	cleanupTestResponse(t, resp)
 
-	resp, err = http.Post("http://localhost:9091"+opts.RoutePrefix+"/api/v2/admin/tsdb/delete_series", "", strings.NewReader("{}"))
+	resp, err = http.Post("http://localhost:9091"+opts.RoutePrefix+"/api/v1/admin/tsdb/delete_series?match[]=up", "", nil)
 	testutil.Ok(t, err)
-	testutil.Equals(t, http.StatusOK, resp.StatusCode)
+	testutil.Equals(t, http.StatusNoContent, resp.StatusCode)
 	cleanupTestResponse(t, resp)
 }
 
@@ -468,14 +468,16 @@ func cleanupTestResponse(t *testing.T, resp *http.Response) {
 	testutil.Ok(t, resp.Body.Close())
 }
 
-func cleanupSnapshot(t *testing.T, resp *http.Response) {
+func cleanupSnapshot(t *testing.T, dbDir string, resp *http.Response) {
 	snapshot := &struct {
-		Name string `json:"name"`
+		Data struct {
+			Name string `json:"name"`
+		} `json:"data"`
 	}{}
 	b, err := ioutil.ReadAll(resp.Body)
 	testutil.Ok(t, err)
 	testutil.Ok(t, json.Unmarshal(b, snapshot))
-	testutil.Assert(t, snapshot.Name != "", "snapshot directory not returned")
-	testutil.Ok(t, os.Remove(filepath.Join("snapshots", snapshot.Name)))
-	os.Remove("snapshots") // We do not check for err here to prevent existing setups to fail.
+	testutil.Assert(t, snapshot.Data.Name != "", "snapshot directory not returned")
+	testutil.Ok(t, os.Remove(filepath.Join(dbDir, "snapshots", snapshot.Data.Name)))
+	testutil.Ok(t, os.Remove(filepath.Join(dbDir, "snapshots")))
 }

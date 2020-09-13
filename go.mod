@@ -58,7 +58,6 @@ require (
 	github.com/samuel/go-zookeeper v0.0.0-20200724154423-2164a8ac840e
 	github.com/shurcooL/httpfs v0.0.0-20190707220628-8d4bc4ba7749
 	github.com/shurcooL/vfsgen v0.0.0-20200627165143-92b8a710ab6c
-	github.com/soheilhy/cmux v0.1.4
 	github.com/uber/jaeger-client-go v2.25.0+incompatible
 	github.com/uber/jaeger-lib v2.2.0+incompatible
 	go.mongodb.org/mongo-driver v1.3.2 // indirect
@@ -72,8 +71,7 @@ require (
 	golang.org/x/tools v0.0.0-20200822203824-307de81be3f4
 	google.golang.org/api v0.29.0
 	google.golang.org/appengine v1.6.6 // indirect
-	google.golang.org/genproto v0.0.0-20200815001618-f69a88009b70
-	google.golang.org/grpc v1.29.1
+	google.golang.org/genproto v0.0.0-20200815001618-f69a88009b70 // indirect
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	gopkg.in/fsnotify/fsnotify.v1 v1.4.7
 	gopkg.in/yaml.v2 v2.3.0
@@ -92,9 +90,6 @@ exclude (
 	// Exclude grpc v1.30.0 because of breaking changes. See #7621.
 	github.com/grpc-ecosystem/grpc-gateway v1.14.7
 	google.golang.org/api v0.30.0
-	google.golang.org/grpc v1.30.0
-	google.golang.org/grpc v1.31.0
-	google.golang.org/grpc v1.32.0-dev
 
 	// Exclude pre-go-mod kubernetes tags, as they are older
 	// than v0.x releases but are picked when we update the dependencies.
