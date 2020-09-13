@@ -675,7 +675,7 @@ func TestCalculateDesiredShards(t *testing.T) {
 		samplesIn.incr(s)
 		samplesIn.tick()
 
-		highestTimestamp.Set(float64(startedAt.Add(ts).Unix()))
+		metrics.highestRecvTimestamp.Set(float64(startedAt.Add(ts).Unix()))
 	}
 
 	// helper function for sending samples.

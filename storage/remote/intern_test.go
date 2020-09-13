@@ -27,61 +27,65 @@ import (
 )
 
 func TestIntern(t *testing.T) {
+	mgr := &QueueManager{interner: newPool()}
 	testString := "TestIntern"
-	interner.intern(testString)
-	interned, ok := interner.pool[testString]
+	mgr.interner.intern(testString)
+	interned, ok := mgr.interner.pool[testString]
 
 	testutil.Equals(t, true, ok)
 	testutil.Assert(t, interned.refs.Load() == 1, fmt.Sprintf("expected refs to be 1 but it was %d", interned.refs))
 }
 
 func TestIntern_MultiRef(t *testing.T) {
+	mgr := &QueueManager{interner: newPool()}
 	testString := "TestIntern_MultiRef"
 
-	interner.intern(testString)
-	interned, ok := interner.pool[testString]
+	mgr.interner.intern(testString)
+	interned, ok := mgr.interner.pool[testString]
 
 	testutil.Equals(t, true, ok)
 	testutil.Assert(t, interned.refs.Load() == 1, fmt.Sprintf("expected refs to be 1 but it was %d", interned.refs))
 
-	interner.intern(testString)
-	interned, ok = interner.pool[testString]
+	mgr.interner.intern(testString)
+	interned, ok = mgr.interner.pool[testString]
 
 	testutil.Equals(t, true, ok)
 	testutil.Assert(t, interned.refs.Load() == 2, fmt.Sprintf("expected refs to be 2 but it was %d", interned.refs))
 }
 
 func TestIntern_DeleteRef(t *testing.T) {
+	mgr := &QueueManager{interner: newPool()}
 	testString := "TestIntern_DeleteRef"
 
-	interner.intern(testString)
-	interned, ok := interner.pool[testString]
+	mgr.interner.intern(testString)
+	interned, ok := mgr.interner.pool[testString]
 
 	testutil.Equals(t, true, ok)
 	testutil.Assert(t, interned.refs.Load() == 1, fmt.Sprintf("expected refs to be 1 but it was %d", interned.refs))
 
-	interner.release(testString)
-	_, ok = interner.pool[testString]
+	mgr.interner.release(testString)
+	_, ok = mgr.interner.pool[testString]
 	testutil.Equals(t, false, ok)
 }
 
 func TestIntern_MultiRef_Concurrent(t *testing.T) {
+	mgr := &QueueManager{interner: newPool()}
 	testString := "TestIntern_MultiRef_Concurrent"
 
-	interner.intern(testString)
-	interned, ok := interner.pool[testString]
+	mgr.interner.intern(testString)
+	interned, ok := mgr.interner.pool[testString]
 	testutil.Equals(t, true, ok)
 	testutil.Assert(t, interned.refs.Load() == 1, fmt.Sprintf("expected refs to be 1 but it was %d", interned.refs))
 
-	go interner.release(testString)
+	go mgr.interner.release(testString)
 
-	interner.intern(testString)
+	mgr.interner.intern(testString)
 
 	time.Sleep(time.Millisecond)
 
-	interner.mtx.RLock()
-	interned, ok = interner.pool[testString]
-	interner.mtx.RUnlock()
+	mgr.interner.mtx.RLock()
+	interned, ok = mgr.interner.pool[testString]
+	mgr.interner.mtx.RUnlock()
 	testutil.Equals(t, true, ok)
 	testutil.Assert(t, interned.refs.Load() == 1, fmt.Sprintf("expected refs to be 1 but it was %d", interned.refs))
 }

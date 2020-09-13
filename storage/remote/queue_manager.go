@@ -57,6 +57,7 @@ type queueManagerMetrics struct {
 	enqueueRetriesTotal   prometheus.Counter
 	sentBatchDuration     prometheus.Histogram
 	highestSentTimestamp  *maxGauge
+	highestRecvTimestamp  *maxGauge
 	pendingSamples        prometheus.Gauge
 	shardCapacity         prometheus.Gauge
 	numShards             prometheus.Gauge
@@ -176,6 +177,16 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Help:        "The total number of bytes sent by the queue.",
 		ConstLabels: constLabels,
 	})
+	if m.highestRecvTimestamp == nil {
+		m.highestRecvTimestamp = &maxGauge{
+			Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "highest_timestamp_in_seconds",
+				Help:      "Highest timestamp that has come into the remote storage via the Appender interface, in seconds since epoch.",
+			}),
+		}
+	}
 
 	return m
 }
@@ -260,7 +271,8 @@ type QueueManager struct {
 
 	samplesIn, samplesDropped, samplesOut, samplesOutDuration *ewmaRate
 
-	metrics *queueManagerMetrics
+	metrics  *queueManagerMetrics
+	interner *pool
 }
 
 // NewQueueManager builds a new QueueManager.
@@ -303,7 +315,8 @@ func NewQueueManager(
 		samplesOut:         newEWMARate(ewmaWeight, shardUpdateDuration),
 		samplesOutDuration: newEWMARate(ewmaWeight, shardUpdateDuration),
 
-		metrics: metrics,
+		metrics:  metrics,
+		interner: newPool(),
 	}
 
 	t.watcher = wal.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, walDir)
@@ -392,7 +405,7 @@ func (t *QueueManager) Stop() {
 	// On shutdown, release the strings in the labels from the intern pool.
 	t.seriesMtx.Lock()
 	for _, labels := range t.seriesLabels {
-		releaseLabels(labels)
+		t.releaseLabels(labels)
 	}
 	t.seriesMtx.Unlock()
 	t.metrics.unregister()
@@ -410,13 +423,13 @@ func (t *QueueManager) StoreSeries(series []record.RefSeries, index int) {
 			continue
 		}
 		t.seriesSegmentIndexes[s.Ref] = index
-		internLabels(lbls)
+		t.internLabels(lbls)
 
 		// We should not ever be replacing a series labels in the map, but just
 		// in case we do we need to ensure we do not leak the replaced interned
 		// strings.
 		if orig, ok := t.seriesLabels[s.Ref]; ok {
-			releaseLabels(orig)
+			t.releaseLabels(orig)
 		}
 		t.seriesLabels[s.Ref] = lbls
 	}
@@ -433,7 +446,7 @@ func (t *QueueManager) SeriesReset(index int) {
 	for k, v := range t.seriesSegmentIndexes {
 		if v < index {
 			delete(t.seriesSegmentIndexes, k)
-			releaseLabels(t.seriesLabels[k])
+			t.releaseLabels(t.seriesLabels[k])
 			delete(t.seriesLabels, k)
 			delete(t.droppedSeries, k)
 		}
@@ -454,17 +467,17 @@ func (t *QueueManager) client() WriteClient {
 	return t.storeClient
 }
 
-func internLabels(lbls labels.Labels) {
+func (t *QueueManager) internLabels(lbls labels.Labels) {
 	for i, l := range lbls {
-		lbls[i].Name = interner.intern(l.Name)
-		lbls[i].Value = interner.intern(l.Value)
+		lbls[i].Name = t.interner.intern(l.Name)
+		lbls[i].Value = t.interner.intern(l.Value)
 	}
 }
 
-func releaseLabels(ls labels.Labels) {
+func (t *QueueManager) releaseLabels(ls labels.Labels) {
 	for _, l := range ls {
-		interner.release(l.Name)
-		interner.release(l.Value)
+		t.interner.release(l.Name)
+		t.interner.release(l.Value)
 	}
 }
 
@@ -564,7 +577,7 @@ func (t *QueueManager) calculateDesiredShards() int {
 		samplesOutDuration = t.samplesOutDuration.rate() / float64(time.Second)
 		samplesPendingRate = samplesInRate*samplesKeptRatio - samplesOutRate
 		highestSent        = t.metrics.highestSentTimestamp.Get()
-		highestRecv        = highestTimestamp.Get()
+		highestRecv        = t.metrics.highestRecvTimestamp.Get()
 		delay              = highestRecv - highestSent
 		samplesPending     = delay * samplesInRate * samplesKeptRatio
 	)
