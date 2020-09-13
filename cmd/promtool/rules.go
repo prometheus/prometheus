@@ -16,7 +16,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"time"
 
@@ -49,6 +48,7 @@ type RuleImporter struct {
 type RuleImporterConfig struct {
 	Start        time.Time
 	End          time.Time
+	OutputDir    string
 	EvalInterval time.Duration
 	URL          string
 }
@@ -64,12 +64,10 @@ func NewRuleImporter(logger log.Logger, config RuleImporterConfig) *RuleImporter
 // Init initializes the rule importer which creates a new block writer
 // and creates an Prometheus API client.
 func (importer *RuleImporter) Init() error {
-	// todo: clean up dir
-	newBlockDir, err := ioutil.TempDir("", "rule_blocks")
-	if err != nil {
-		return err
-	}
-	importer.writer = blocks.NewMultiWriter(importer.logger, newBlockDir, importer.config.EvalInterval.Nanoseconds())
+	importer.writer = blocks.NewMultiWriter(importer.logger,
+		importer.config.OutputDir,
+		importer.config.EvalInterval.Nanoseconds(),
+	)
 
 	config := api.Config{
 		Address: importer.config.URL,
@@ -84,7 +82,6 @@ func (importer *RuleImporter) Init() error {
 
 // Close cleans up any open resources.
 func (importer *RuleImporter) Close() error {
-	// todo: clean up any dirs that were created
 	return importer.writer.Close()
 }
 
@@ -99,21 +96,17 @@ func (importer *RuleImporter) LoadGroups(ctx context.Context, filenames []string
 		}
 
 		for _, ruleGroup := range rgs.Groups {
-
 			itv := importer.config.EvalInterval
 			if ruleGroup.Interval != 0 {
 				itv = time.Duration(ruleGroup.Interval)
 			}
 
 			rgRules := make([]rules.Rule, 0, len(ruleGroup.Rules))
-
 			for _, r := range ruleGroup.Rules {
-
 				expr, err := importer.groupLoader.Parse(r.Expr.Value)
 				if err != nil {
 					return []error{errors.Wrap(err, filename)}
 				}
-
 				rgRules = append(rgRules, rules.NewRecordingRule(
 					r.Record.Value,
 					expr,
@@ -158,7 +151,6 @@ func (importer *RuleImporter) ImportAll(ctx context.Context) []error {
 // ImportRule imports the historical data for a single rule.
 func (importer *RuleImporter) ImportRule(ctx context.Context, ruleExpr string, stimeWithAlignment time.Time, internval time.Duration) error {
 	ts := stimeWithAlignment
-
 	appender := importer.writer.Appender()
 
 	for ts.Before(importer.config.End) {

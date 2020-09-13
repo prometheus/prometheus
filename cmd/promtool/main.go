@@ -135,6 +135,7 @@ func main() {
 		Required().String()
 	backfillRuleEnd := backfillRuleCmd.Flag("end", "If an end time is provided, all recording rules in the rule files provided will be backfilled to the end time. Default will backfill up to 3 hrs ago. End time should be RFC3339 or Unix timestamp.").
 		Default("-3h").String()
+	backfillOutputDir := backfillRuleCmd.Flag("output dir", "The filepath on the local filesystem to write the output to. Output will be blocks containing the data of the backfilled recording rules.").Default("backfilldata/").String()
 	backfillRuleURL := backfillRuleCmd.Flag("url", "Prometheus API url with the data where the rule will be backfilled from.").Default("localhost:9090").String()
 	backfillRuleEvalInterval := backfillRuleCmd.Flag("evaluation_interval", "How frequently to evaluate rules when backfilling.").
 		Default("15s").Duration()
@@ -200,7 +201,7 @@ func main() {
 		os.Exit(checkErr(dumpSamples(*dumpPath, *dumpMinTime, *dumpMaxTime)))
 
 	case backfillRuleCmd.FullCommand():
-		os.Exit(BackfillRule(*backfillRuleURL, *backfillRuleStart, *backfillRuleEnd, *backfillRuleEvalInterval, *backfillRuleFiles...))
+		os.Exit(BackfillRule(*backfillRuleURL, *backfillRuleStart, *backfillRuleEnd, *backfillOutputDir, *backfillRuleEvalInterval, *backfillRuleFiles...))
 	}
 }
 
@@ -766,8 +767,9 @@ func (j *jsonPrinter) printLabelValues(v model.LabelValues) {
 	json.NewEncoder(os.Stdout).Encode(v)
 }
 
-// BackfillRule backfills rules from the files provided.
-func BackfillRule(url, start, end string, evalInterval time.Duration, files ...string) int {
+// BackfillRule backfills recording rules from the files provided. The output are blocks of data
+// at the outputDir location.
+func BackfillRule(url, start, end, outputDir string, evalInterval time.Duration, files ...string) int {
 	ctx := context.Background()
 	stime, etime, err := parseStartTimeAndEndTime(start, end)
 	if err != nil {
@@ -777,6 +779,7 @@ func BackfillRule(url, start, end string, evalInterval time.Duration, files ...s
 	cfg := RuleImporterConfig{
 		Start:        stime,
 		End:          etime,
+		OutputDir:    outputDir,
 		EvalInterval: evalInterval,
 		URL:          url,
 	}
