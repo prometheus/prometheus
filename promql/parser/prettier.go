@@ -386,8 +386,12 @@ func (p *prettier) prettify(items []Item) (string, error) {
 				result += " "
 			}
 		case EQL, EQL_REGEX, NEQ, NEQ_REGEX, DURATION, COLON,
-			LEFT_BRACKET, RIGHT_BRACKET, ASSIGN:
-			result += item.Val
+			LEFT_BRACKET, RIGHT_BRACKET:
+			if isNodeType(node, binaryExpr) {
+				result += " " + item.Val + " "
+			} else {
+				result += item.Val
+			}
 		case ADD, SUB, MUL, DIV, GTE, GTR, LOR, LAND,
 			LSS, LTE, LUNLESS, MOD, POW:
 			if hasImmediateScalar {
@@ -420,7 +424,7 @@ func (p *prettier) prettify(items []Item) (string, error) {
 			} else {
 				result += p.pd.newLine()
 			}
-		case OFFSET, GROUP_LEFT, GROUP_RIGHT:
+		case EQLC, OFFSET, GROUP_LEFT, GROUP_RIGHT:
 			result += " " + item.Val + " "
 		case COMMA:
 			result += item.Val
