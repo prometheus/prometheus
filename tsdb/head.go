@@ -811,10 +811,27 @@ func (h *Head) Truncate(mint int64) (err error) {
 		return errors.Wrap(err, "truncate chunks.HeadReadWriter")
 	}
 
+	keep := func(id uint64) bool {
+		if h.series.getByID(id) != nil {
+			return true
+		}
+		h.deletedMtx.Lock()
+		_, ok := h.deleted[id]
+		h.deletedMtx.Unlock()
+		return ok
+	}
+	if err := truncateWAL(h, mint, keep); err != nil {
+		return errors.Wrap(err, "wal-truncate")
+	}
+
+	return nil
+}
+
+func truncateWAL(h *Head, mint int64, keep func(uint642 uint64) bool) error {
 	if h.wal == nil {
 		return nil
 	}
-	start = time.Now()
+	start := time.Now()
 
 	first, last, err := wal.Segments(h.wal.Dir())
 	if err != nil {
@@ -839,15 +856,6 @@ func (h *Head) Truncate(mint int64) (err error) {
 		return nil
 	}
 
-	keep := func(id uint64) bool {
-		if h.series.getByID(id) != nil {
-			return true
-		}
-		h.deletedMtx.Lock()
-		_, ok := h.deleted[id]
-		h.deletedMtx.Unlock()
-		return ok
-	}
 	h.metrics.checkpointCreationTotal.Inc()
 	if _, err = wal.Checkpoint(h.logger, h.wal, first, last, keep, mint); err != nil {
 		h.metrics.checkpointCreationFail.Inc()
@@ -885,7 +893,6 @@ func (h *Head) Truncate(mint int64) (err error) {
 
 	level.Info(h.logger).Log("msg", "WAL checkpoint complete",
 		"first", first, "last", last, "duration", time.Since(start))
-
 	return nil
 }
 

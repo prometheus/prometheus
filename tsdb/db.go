@@ -657,6 +657,10 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 		minValidTime = blocks[len(blocks)-1].Meta().MaxTime
 	}
 
+	if err := truncateWAL(db.head, minValidTime, nil); err != nil {
+		return nil, errors.Wrap(err, "wal-truncate")
+	}
+
 	if initErr := db.head.Init(minValidTime); initErr != nil {
 		db.head.metrics.walCorruptionsTotal.Inc()
 		level.Warn(db.logger).Log("msg", "Encountered WAL read error, attempting repair", "err", initErr)
