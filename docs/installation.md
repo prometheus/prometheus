@@ -27,9 +27,9 @@ prom/prometheus`. This starts Prometheus with a sample
 configuration and exposes it on port 9090.
 
 The Prometheus image uses a volume to store the actual metrics. For
-production deployments it is highly recommended to use the
-[Data Volume Container](https://docs.docker.com/engine/admin/volumes/volumes/)
-pattern to ease managing the data on Prometheus upgrades.
+production deployments it is highly recommended to use a
+[named volume](https://docs.docker.com/storage/volumes/)
+to ease managing the data on Prometheus upgrades.
 
 To provide your own configuration, there are several options. Here are
 two examples.
@@ -41,11 +41,12 @@ Bind-mount your `prometheus.yml` from the host by running:
 ```bash
 docker run \
     -p 9090:9090 \
-    -v /tmp/prometheus.yml:/etc/prometheus/prometheus.yml \
+    -v /path/to/prometheus.yml:/etc/prometheus/prometheus.yml \
     prom/prometheus
 ```
 
-Or use an additional volume for the config:
+Or bind-mount the directory containing `prometheus.yml` onto
+`/etc/prometheus` by running:
 
 ```bash
 docker run \

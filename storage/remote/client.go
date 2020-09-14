@@ -40,7 +40,7 @@ import (
 
 const maxErrMsgLen = 256
 
-var userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
+var UserAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 
 var (
 	remoteReadQueriesTotal = prometheus.NewCounterVec(
@@ -77,11 +77,11 @@ func init() {
 	prometheus.MustRegister(remoteReadQueriesTotal, remoteReadQueries, remoteReadQueryDuration)
 }
 
-// client allows reading and writing from/to a remote HTTP endpoint.
-type client struct {
+// Client allows reading and writing from/to a remote HTTP endpoint.
+type Client struct {
 	remoteName string // Used to differentiate clients in metrics.
 	url        *config_util.URL
-	client     *http.Client
+	Client     *http.Client
 	timeout    time.Duration
 
 	readQueries         prometheus.Gauge
@@ -102,27 +102,9 @@ type ReadClient interface {
 	Read(ctx context.Context, query *prompb.Query) (*prompb.QueryResult, error)
 }
 
-// newReadClient creates a new client for remote read.
-func newReadClient(name string, conf *ClientConfig) (ReadClient, error) {
-	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage_read_client", false)
-	if err != nil {
-		return nil, err
-	}
-
-	return &client{
-		remoteName:          name,
-		url:                 conf.URL,
-		client:              httpClient,
-		timeout:             time.Duration(conf.Timeout),
-		readQueries:         remoteReadQueries.WithLabelValues(name, conf.URL.String()),
-		readQueriesTotal:    remoteReadQueriesTotal.MustCurryWith(prometheus.Labels{remoteName: name, endpoint: conf.URL.String()}),
-		readQueriesDuration: remoteReadQueryDuration.WithLabelValues(name, conf.URL.String()),
-	}, nil
-}
-
-// NewWriteClient creates a new client for remote write.
-func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
-	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage_write_client", false)
+// NewReadClient creates a new client for remote read.
+func NewReadClient(name string, conf *ClientConfig) (ReadClient, error) {
+	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage_read_client", false, false)
 	if err != nil {
 		return nil, err
 	}
@@ -132,10 +114,33 @@ func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
 		RoundTripper: t,
 	}
 
-	return &client{
+	return &Client{
+		remoteName:          name,
+		url:                 conf.URL,
+		Client:              httpClient,
+		timeout:             time.Duration(conf.Timeout),
+		readQueries:         remoteReadQueries.WithLabelValues(name, conf.URL.String()),
+		readQueriesTotal:    remoteReadQueriesTotal.MustCurryWith(prometheus.Labels{remoteName: name, endpoint: conf.URL.String()}),
+		readQueriesDuration: remoteReadQueryDuration.WithLabelValues(name, conf.URL.String()),
+	}, nil
+}
+
+// NewWriteClient creates a new client for remote write.
+func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
+	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage_write_client", false, false)
+	if err != nil {
+		return nil, err
+	}
+
+	t := httpClient.Transport
+	httpClient.Transport = &nethttp.Transport{
+		RoundTripper: t,
+	}
+
+	return &Client{
 		remoteName: name,
 		url:        conf.URL,
-		client:     httpClient,
+		Client:     httpClient,
 		timeout:    time.Duration(conf.Timeout),
 	}, nil
 }
@@ -146,7 +151,7 @@ type RecoverableError struct {
 
 // Store sends a batch of samples to the HTTP endpoint, the request is the proto marshalled
 // and encoded bytes from codec.go.
-func (c *client) Store(ctx context.Context, req []byte) error {
+func (c *Client) Store(ctx context.Context, req []byte) error {
 	httpReq, err := http.NewRequest("POST", c.url.String(), bytes.NewReader(req))
 	if err != nil {
 		// Errors from NewRequest are from unparsable URLs, so are not
@@ -155,7 +160,7 @@ func (c *client) Store(ctx context.Context, req []byte) error {
 	}
 	httpReq.Header.Add("Content-Encoding", "snappy")
 	httpReq.Header.Set("Content-Type", "application/x-protobuf")
-	httpReq.Header.Set("User-Agent", userAgent)
+	httpReq.Header.Set("User-Agent", UserAgent)
 	httpReq.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
@@ -173,9 +178,9 @@ func (c *client) Store(ctx context.Context, req []byte) error {
 		defer ht.Finish()
 	}
 
-	httpResp, err := c.client.Do(httpReq)
+	httpResp, err := c.Client.Do(httpReq)
 	if err != nil {
-		// Errors from client.Do are from (for example) network errors, so are
+		// Errors from Client.Do are from (for example) network errors, so are
 		// recoverable.
 		return RecoverableError{err}
 	}
@@ -199,17 +204,17 @@ func (c *client) Store(ctx context.Context, req []byte) error {
 }
 
 // Name uniquely identifies the client.
-func (c client) Name() string {
+func (c Client) Name() string {
 	return c.remoteName
 }
 
 // Endpoint is the remote read or write endpoint.
-func (c client) Endpoint() string {
+func (c Client) Endpoint() string {
 	return c.url.String()
 }
 
 // Read reads from a remote endpoint.
-func (c *client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryResult, error) {
+func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryResult, error) {
 	c.readQueries.Inc()
 	defer c.readQueries.Dec()
 
@@ -233,7 +238,7 @@ func (c *client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 	httpReq.Header.Add("Content-Encoding", "snappy")
 	httpReq.Header.Add("Accept-Encoding", "snappy")
 	httpReq.Header.Set("Content-Type", "application/x-protobuf")
-	httpReq.Header.Set("User-Agent", userAgent)
+	httpReq.Header.Set("User-Agent", UserAgent)
 	httpReq.Header.Set("X-Prometheus-Remote-Read-Version", "0.1.0")
 
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
@@ -253,7 +258,7 @@ func (c *client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 	}
 
 	start := time.Now()
-	httpResp, err := c.client.Do(httpReq)
+	httpResp, err := c.Client.Do(httpReq)
 	if err != nil {
 		return nil, errors.Wrap(err, "error sending request")
 	}

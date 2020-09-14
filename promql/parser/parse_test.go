@@ -191,7 +191,7 @@ var testExpr = []struct {
 		input: "1 == bool 1",
 		expected: &BinaryExpr{
 			ExprExtensions: ExprExtensions{ExprStr: "1 == bool 1"},
-			Op:             EQL,
+			Op:             EQLC,
 			LHS: &NumberLiteral{
 				Val:      1,
 				PosRange: PositionRange{Start: 0, End: 1},
@@ -631,7 +631,7 @@ var testExpr = []struct {
 		input: "foo == 1",
 		expected: &BinaryExpr{
 			ExprExtensions: ExprExtensions{ExprStr: "foo == 1"},
-			Op:             EQL,
+			Op:             EQLC,
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
@@ -651,7 +651,7 @@ var testExpr = []struct {
 		input: "foo == bool 1",
 		expected: &BinaryExpr{
 			ExprExtensions: ExprExtensions{ExprStr: "foo == bool 1"},
-			Op:             EQL,
+			Op:             EQLC,
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
@@ -1607,7 +1607,7 @@ var testExpr = []struct {
 	}, {
 		input:  `foo{__name__= =}`,
 		fail:   true,
-		errMsg: "unexpected <op:=> in label matching, expected string",
+		errMsg: `1:15: parse error: unexpected "=" in label matching, expected string`,
 	}, {
 		input:  `foo{,}`,
 		fail:   true,
@@ -1615,7 +1615,7 @@ var testExpr = []struct {
 	}, {
 		input:  `foo{__name__ == "bar"}`,
 		fail:   true,
-		errMsg: "unexpected <op:=> in label matching, expected string",
+		errMsg: `1:15: parse error: unexpected "=" in label matching, expected string`,
 	}, {
 		input:  `foo{__name__="bar" lol}`,
 		fail:   true,

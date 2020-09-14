@@ -25,6 +25,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/cache"
 
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -47,7 +48,7 @@ func makeDiscovery(role Role, nsDiscovery NamespaceDiscovery, objects ...runtime
 
 type k8sDiscoveryTest struct {
 	// discovery is instance of discovery.Discoverer
-	discovery discoverer
+	discovery discovery.Discoverer
 	// beforeRun runs before discoverer run
 	beforeRun func()
 	// afterStart runs after discoverer has synced
@@ -162,6 +163,7 @@ type hasSynced interface {
 var _ hasSynced = &Discovery{}
 var _ hasSynced = &Node{}
 var _ hasSynced = &Endpoints{}
+var _ hasSynced = &EndpointSlice{}
 var _ hasSynced = &Ingress{}
 var _ hasSynced = &Pod{}
 var _ hasSynced = &Service{}
@@ -185,6 +187,10 @@ func (n *Node) hasSynced() bool {
 
 func (e *Endpoints) hasSynced() bool {
 	return e.endpointsInf.HasSynced() && e.serviceInf.HasSynced() && e.podInf.HasSynced()
+}
+
+func (e *EndpointSlice) hasSynced() bool {
+	return e.endpointSliceInf.HasSynced() && e.serviceInf.HasSynced() && e.podInf.HasSynced()
 }
 
 func (i *Ingress) hasSynced() bool {

@@ -11,7 +11,7 @@ executors:
   # should also be updated.
   golang:
     docker:
-    - image: circleci/golang:1.14-node
+    - image: circleci/golang:1.15-node
 
   fuzzit:
     docker:
@@ -54,6 +54,7 @@ jobs:
         - /home/circleci/.cache/yarn
     - store_test_results:
         path: test-results
+
   test_windows:
     executor: win/default
     working_directory: /go/src/github.com/prometheus/prometheus
@@ -72,6 +73,28 @@ jobs:
         environment:
           GOGC: "20"
           GOOPTS: "-p 2 -mod=vendor"
+
+  test_mixins:
+    executor: golang
+    steps:
+    - checkout
+    - run: go install -mod=vendor ./cmd/promtool/.
+    - run:
+        command: go install -mod=readonly github.com/google/go-jsonnet/cmd/jsonnet github.com/google/go-jsonnet/cmd/jsonnetfmt github.com/jsonnet-bundler/jsonnet-bundler/cmd/jb
+        working_directory: ~/project/documentation/prometheus-mixin
+    - run:
+        command: make clean
+        working_directory: ~/project/documentation/prometheus-mixin
+    - run:
+        command: jb install
+        working_directory: ~/project/documentation/prometheus-mixin
+    - run:
+        command: make
+        working_directory: ~/project/documentation/prometheus-mixin
+    - run:
+        command: git diff --exit-code
+        working_directory: ~/project/documentation/prometheus-mixin
+
   fuzzit_regression:
     executor: fuzzit
     working_directory: /go/src/github.com/prometheus/prometheus
@@ -79,6 +102,7 @@ jobs:
       - checkout
       - setup_remote_docker
       - run: ./fuzzit.sh local-regression
+
   fuzzit_fuzzing:
     executor: fuzzit
     working_directory: /go/src/github.com/prometheus/prometheus
@@ -98,6 +122,10 @@ workflows:
   prometheus:
     jobs:
     - test:
+        filters:
+          tags:
+            only: /.*/
+    - test_mixins:
         filters:
           tags:
             only: /.*/

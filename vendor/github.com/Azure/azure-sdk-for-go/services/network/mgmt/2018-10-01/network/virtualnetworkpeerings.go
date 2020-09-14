@@ -309,6 +309,9 @@ func (client VirtualNetworkPeeringsClient) List(ctx context.Context, resourceGro
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VirtualNetworkPeeringsClient", "List", resp, "Failure responding to request")
 	}
+	if result.vnplr.hasNextLink() && result.vnplr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }

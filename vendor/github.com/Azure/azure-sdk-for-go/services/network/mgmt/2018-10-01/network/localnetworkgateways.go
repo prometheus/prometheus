@@ -322,6 +322,9 @@ func (client LocalNetworkGatewaysClient) List(ctx context.Context, resourceGroup
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.LocalNetworkGatewaysClient", "List", resp, "Failure responding to request")
 	}
+	if result.lnglr.hasNextLink() && result.lnglr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }

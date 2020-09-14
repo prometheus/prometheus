@@ -75,6 +75,9 @@ func (client InterfaceLoadBalancersClient) List(ctx context.Context, resourceGro
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.InterfaceLoadBalancersClient", "List", resp, "Failure responding to request")
 	}
+	if result.ilblr.hasNextLink() && result.ilblr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }

@@ -540,6 +540,10 @@ func (h *Handler) Run(ctx context.Context) error {
 		httpl   = m.Match(cmux.HTTP1Fast())
 		grpcSrv = grpc.NewServer()
 	)
+
+	// Prevent open connections to block the shutdown of the handler.
+	m.SetReadTimeout(h.options.ReadTimeout)
+
 	av2 := api_v2.New(
 		h.options.LocalStorage,
 		h.options.TSDBDir,
@@ -603,8 +607,24 @@ func (h *Handler) Run(ctx context.Context) error {
 		return e
 	case <-ctx.Done():
 		httpSrv.Shutdown(ctx)
-		grpcSrv.GracefulStop()
+		stopGRPCSrv(grpcSrv)
 		return nil
+	}
+}
+
+// stopGRPCSrv stops a given GRPC server. An attempt to stop the server
+// gracefully is made first. After 15s, the server to forced to stop.
+func stopGRPCSrv(srv *grpc.Server) {
+	stop := make(chan struct{})
+	go func() {
+		srv.GracefulStop()
+		close(stop)
+	}()
+
+	select {
+	case <-time.After(15 * time.Second):
+		srv.Stop()
+	case <-stop:
 	}
 }
 

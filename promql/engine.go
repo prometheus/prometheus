@@ -792,13 +792,13 @@ func (ev *evaluator) Eval(expr parser.Expr) (v parser.Value, ws storage.Warnings
 // EvalNodeHelper stores extra information and caches for evaluating a single node across steps.
 type EvalNodeHelper struct {
 	// Evaluation timestamp.
-	ts int64
+	Ts int64
 	// Vector that can be used for output.
-	out Vector
+	Out Vector
 
 	// Caches.
-	// dropMetricName and label_*.
-	dmn map[uint64]labels.Labels
+	// DropMetricName and label_*.
+	Dmn map[uint64]labels.Labels
 	// signatureFunc.
 	sigf map[string]string
 	// funcHistogramQuantile.
@@ -816,24 +816,24 @@ type EvalNodeHelper struct {
 	resultMetric map[string]labels.Labels
 }
 
-// dropMetricName is a cached version of dropMetricName.
-func (enh *EvalNodeHelper) dropMetricName(l labels.Labels) labels.Labels {
-	if enh.dmn == nil {
-		enh.dmn = make(map[uint64]labels.Labels, len(enh.out))
+// DropMetricName is a cached version of DropMetricName.
+func (enh *EvalNodeHelper) DropMetricName(l labels.Labels) labels.Labels {
+	if enh.Dmn == nil {
+		enh.Dmn = make(map[uint64]labels.Labels, len(enh.Out))
 	}
 	h := l.Hash()
-	ret, ok := enh.dmn[h]
+	ret, ok := enh.Dmn[h]
 	if ok {
 		return ret
 	}
 	ret = dropMetricName(l)
-	enh.dmn[h] = ret
+	enh.Dmn[h] = ret
 	return ret
 }
 
 func (enh *EvalNodeHelper) signatureFunc(on bool, names ...string) func(labels.Labels) string {
 	if enh.sigf == nil {
-		enh.sigf = make(map[string]string, len(enh.out))
+		enh.sigf = make(map[string]string, len(enh.Out))
 	}
 	f := signatureFunc(on, enh.lblBuf, names...)
 	return func(l labels.Labels) string {
@@ -885,7 +885,7 @@ func (ev *evaluator) rangeEval(f func([]parser.Value, *EvalNodeHelper) (Vector, 
 			biggestLen = len(matrixes[i])
 		}
 	}
-	enh := &EvalNodeHelper{out: make(Vector, 0, biggestLen)}
+	enh := &EvalNodeHelper{Out: make(Vector, 0, biggestLen)}
 	seriess := make(map[uint64]Series, biggestLen) // Output series by series hash.
 	tempNumSamples := ev.currentSamples
 	for ts := ev.startTimestamp; ts <= ev.endTimestamp; ts += ev.interval {
@@ -916,12 +916,12 @@ func (ev *evaluator) rangeEval(f func([]parser.Value, *EvalNodeHelper) (Vector, 
 			args[i] = vectors[i]
 		}
 		// Make the function call.
-		enh.ts = ts
+		enh.Ts = ts
 		result, ws := f(args, enh)
 		if result.ContainsSameLabelset() {
 			ev.errorf("vector cannot contain metrics with the same labelset")
 		}
-		enh.out = result[:0] // Reuse result vector.
+		enh.Out = result[:0] // Reuse result vector.
 		warnings = append(warnings, ws...)
 
 		ev.currentSamples += len(result)
@@ -1030,7 +1030,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			vs, ok := e.Args[0].(*parser.VectorSelector)
 			if ok {
 				return ev.rangeEval(func(v []parser.Value, enh *EvalNodeHelper) (Vector, storage.Warnings) {
-					val, ws := ev.vectorSelector(vs, enh.ts)
+					val, ws := ev.vectorSelector(vs, enh.Ts)
 					return call([]parser.Value{val}, e.Args, enh), ws
 				})
 			}
@@ -1101,7 +1101,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		points := getPointSlice(16)
 		inMatrix := make(Matrix, 1)
 		inArgs[matrixArgIndex] = inMatrix
-		enh := &EvalNodeHelper{out: make(Vector, 0, 1)}
+		enh := &EvalNodeHelper{Out: make(Vector, 0, 1)}
 		// Process all the calls for one time series at a time.
 		it := storage.NewBuffer(selRange)
 		for i, s := range selVS.Series {
@@ -1134,10 +1134,10 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 					continue
 				}
 				inMatrix[0].Points = points
-				enh.ts = ts
+				enh.Ts = ts
 				// Make the function call.
 				outVec := call(inArgs, e.Args, enh)
-				enh.out = outVec[:0]
+				enh.Out = outVec[:0]
 				if len(outVec) > 0 {
 					ss.Points = append(ss.Points, Point{V: outVec[0].Point.V, T: ts})
 				}
@@ -1227,7 +1227,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		case lt == parser.ValueTypeScalar && rt == parser.ValueTypeScalar:
 			return ev.rangeEval(func(v []parser.Value, enh *EvalNodeHelper) (Vector, storage.Warnings) {
 				val := scalarBinop(e.Op, v[0].(Vector)[0].Point.V, v[1].(Vector)[0].Point.V)
-				return append(enh.out, Sample{Point: Point{V: val}}), nil
+				return append(enh.Out, Sample{Point: Point{V: val}}), nil
 			}, e.LHS, e.RHS)
 		case lt == parser.ValueTypeVector && rt == parser.ValueTypeVector:
 			switch e.Op {
@@ -1262,7 +1262,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 
 	case *parser.NumberLiteral:
 		return ev.rangeEval(func(v []parser.Value, enh *EvalNodeHelper) (Vector, storage.Warnings) {
-			return append(enh.out, Sample{Point: Point{V: e.Val}}), nil
+			return append(enh.Out, Sample{Point: Point{V: e.Val}}), nil
 		})
 
 	case *parser.VectorSelector:
@@ -1530,10 +1530,10 @@ func (ev *evaluator) VectorAnd(lhs, rhs Vector, matching *parser.VectorMatching,
 	for _, ls := range lhs {
 		// If there's a matching entry in the right-hand side Vector, add the sample.
 		if _, ok := rightSigs[sigf(ls.Metric)]; ok {
-			enh.out = append(enh.out, ls)
+			enh.Out = append(enh.Out, ls)
 		}
 	}
-	return enh.out
+	return enh.Out
 }
 
 func (ev *evaluator) VectorOr(lhs, rhs Vector, matching *parser.VectorMatching, enh *EvalNodeHelper) Vector {
@@ -1546,15 +1546,15 @@ func (ev *evaluator) VectorOr(lhs, rhs Vector, matching *parser.VectorMatching, 
 	// Add everything from the left-hand-side Vector.
 	for _, ls := range lhs {
 		leftSigs[sigf(ls.Metric)] = struct{}{}
-		enh.out = append(enh.out, ls)
+		enh.Out = append(enh.Out, ls)
 	}
 	// Add all right-hand side elements which have not been added from the left-hand side.
 	for _, rs := range rhs {
 		if _, ok := leftSigs[sigf(rs.Metric)]; !ok {
-			enh.out = append(enh.out, rs)
+			enh.Out = append(enh.Out, rs)
 		}
 	}
-	return enh.out
+	return enh.Out
 }
 
 func (ev *evaluator) VectorUnless(lhs, rhs Vector, matching *parser.VectorMatching, enh *EvalNodeHelper) Vector {
@@ -1570,10 +1570,10 @@ func (ev *evaluator) VectorUnless(lhs, rhs Vector, matching *parser.VectorMatchi
 
 	for _, ls := range lhs {
 		if _, ok := rightSigs[sigf(ls.Metric)]; !ok {
-			enh.out = append(enh.out, ls)
+			enh.Out = append(enh.Out, ls)
 		}
 	}
-	return enh.out
+	return enh.Out
 }
 
 // VectorBinop evaluates a binary operation between two Vectors, excluding set operators.
@@ -1592,7 +1592,7 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 
 	// All samples from the rhs hashed by the matching label/values.
 	if enh.rightSigs == nil {
-		enh.rightSigs = make(map[string]Sample, len(enh.out))
+		enh.rightSigs = make(map[string]Sample, len(enh.Out))
 	} else {
 		for k := range enh.rightSigs {
 			delete(enh.rightSigs, k)
@@ -1656,6 +1656,9 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 			continue
 		}
 		metric := resultMetric(ls.Metric, rs.Metric, op, matching, enh)
+		if returnBool {
+			metric = enh.DropMetricName(metric)
+		}
 		insertedSigs, exists := matchedSigs[sig]
 		if matching.Card == parser.CardOneToOne {
 			if exists {
@@ -1677,12 +1680,12 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 			insertedSigs[insertSig] = struct{}{}
 		}
 
-		enh.out = append(enh.out, Sample{
+		enh.Out = append(enh.Out, Sample{
 			Metric: metric,
 			Point:  Point{V: value},
 		})
 	}
-	return enh.out
+	return enh.Out
 }
 
 func signatureFunc(on bool, b []byte, names ...string) func(labels.Labels) string {
@@ -1701,7 +1704,7 @@ func signatureFunc(on bool, b []byte, names ...string) func(labels.Labels) strin
 // binary operation and the matching options.
 func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.VectorMatching, enh *EvalNodeHelper) labels.Labels {
 	if enh.resultMetric == nil {
-		enh.resultMetric = make(map[string]labels.Labels, len(enh.out))
+		enh.resultMetric = make(map[string]labels.Labels, len(enh.Out))
 	}
 
 	if enh.lb == nil {
@@ -1781,12 +1784,12 @@ func (ev *evaluator) VectorscalarBinop(op parser.ItemType, lhs Vector, rhs Scala
 		if keep {
 			lhsSample.V = value
 			if shouldDropMetricName(op) || returnBool {
-				lhsSample.Metric = enh.dropMetricName(lhsSample.Metric)
+				lhsSample.Metric = enh.DropMetricName(lhsSample.Metric)
 			}
-			enh.out = append(enh.out, lhsSample)
+			enh.Out = append(enh.Out, lhsSample)
 		}
 	}
-	return enh.out
+	return enh.Out
 }
 
 func dropMetricName(l labels.Labels) labels.Labels {
@@ -1808,7 +1811,7 @@ func scalarBinop(op parser.ItemType, lhs, rhs float64) float64 {
 		return math.Pow(lhs, rhs)
 	case parser.MOD:
 		return math.Mod(lhs, rhs)
-	case parser.EQL:
+	case parser.EQLC:
 		return btos(lhs == rhs)
 	case parser.NEQ:
 		return btos(lhs != rhs)
@@ -1839,7 +1842,7 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64) (float64, bool) {
 		return math.Pow(lhs, rhs), true
 	case parser.MOD:
 		return math.Mod(lhs, rhs), true
-	case parser.EQL:
+	case parser.EQLC:
 		return lhs, lhs == rhs
 	case parser.NEQ:
 		return lhs, lhs != rhs
@@ -2066,7 +2069,7 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 			// The heap keeps the lowest value on top, so reverse it.
 			sort.Sort(sort.Reverse(aggr.heap))
 			for _, v := range aggr.heap {
-				enh.out = append(enh.out, Sample{
+				enh.Out = append(enh.Out, Sample{
 					Metric: v.Metric,
 					Point:  Point{V: v.V},
 				})
@@ -2077,7 +2080,7 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 			// The heap keeps the lowest value on top, so reverse it.
 			sort.Sort(sort.Reverse(aggr.reverseHeap))
 			for _, v := range aggr.reverseHeap {
-				enh.out = append(enh.out, Sample{
+				enh.Out = append(enh.Out, Sample{
 					Metric: v.Metric,
 					Point:  Point{V: v.V},
 				})
@@ -2091,12 +2094,12 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 			// For other aggregations, we already have the right value.
 		}
 
-		enh.out = append(enh.out, Sample{
+		enh.Out = append(enh.Out, Sample{
 			Metric: aggr.labels,
 			Point:  Point{V: aggr.value},
 		})
 	}
-	return enh.out
+	return enh.Out
 }
 
 // btos returns 1 if b is true, 0 otherwise.

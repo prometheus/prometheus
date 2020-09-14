@@ -502,7 +502,7 @@ func TestNewFileReaderErrorNoOpenFiles(t *testing.T) {
 	dir := testutil.NewTemporaryDirectory("block", t)
 
 	idxName := filepath.Join(dir.Path(), "index")
-	err := ioutil.WriteFile(idxName, []byte("corrupted contents"), 0644)
+	err := ioutil.WriteFile(idxName, []byte("corrupted contents"), 0666)
 	testutil.Ok(t, err)
 
 	_, err = NewFileReader(idxName)

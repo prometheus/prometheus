@@ -1261,7 +1261,7 @@ func TestSizeRetention(t *testing.T) {
 	testutil.Equals(t, expSize, actSize, "registered size doesn't match actual disk size")
 
 	// Create a WAL checkpoint, and compare sizes.
-	first, last, err := db.Head().wal.Segments()
+	first, last, err := wal.Segments(db.Head().wal.Dir())
 	testutil.Ok(t, err)
 	_, err = wal.Checkpoint(log.NewNopLogger(), db.Head().wal, first, last-1, func(x uint64) bool { return false }, 0)
 	testutil.Ok(t, err)
@@ -2576,6 +2576,28 @@ func TestChunkWriter_ReadAfterWrite(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestRangeForTimestamp(t *testing.T) {
+	type args struct {
+		t     int64
+		width int64
+	}
+	tests := []struct {
+		args     args
+		expected int64
+	}{
+		{args{0, 5}, 5},
+		{args{1, 5}, 5},
+		{args{5, 5}, 10},
+		{args{6, 5}, 10},
+		{args{13, 5}, 15},
+		{args{95, 5}, 100},
+	}
+	for _, tt := range tests {
+		got := rangeForTimestamp(tt.args.t, tt.args.width)
+		testutil.Equals(t, tt.expected, got)
 	}
 }
 

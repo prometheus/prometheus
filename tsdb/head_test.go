@@ -387,11 +387,21 @@ func TestHead_Truncate(t *testing.T) {
 		"2": {},
 	}, h.symbols)
 
-	testutil.Equals(t, map[string]stringset{
+	values := map[string]map[string]struct{}{}
+	for _, name := range h.postings.LabelNames() {
+		ss, ok := values[name]
+		if !ok {
+			ss = map[string]struct{}{}
+			values[name] = ss
+		}
+		for _, value := range h.postings.LabelValues(name) {
+			ss[value] = struct{}{}
+		}
+	}
+	testutil.Equals(t, map[string]map[string]struct{}{
 		"a": {"1": struct{}{}, "2": struct{}{}},
 		"b": {"1": struct{}{}},
-		"":  {"": struct{}{}},
-	}, h.values)
+	}, values)
 }
 
 // Validate various behaviors brought on by firstChunkID accounting for
@@ -1377,19 +1387,19 @@ func TestNewWalSegmentOnTruncate(t *testing.T) {
 	}
 
 	add(0)
-	_, last, err := wlog.Segments()
+	_, last, err := wal.Segments(wlog.Dir())
 	testutil.Ok(t, err)
 	testutil.Equals(t, 0, last)
 
 	add(1)
 	testutil.Ok(t, h.Truncate(1))
-	_, last, err = wlog.Segments()
+	_, last, err = wal.Segments(wlog.Dir())
 	testutil.Ok(t, err)
 	testutil.Equals(t, 1, last)
 
 	add(2)
 	testutil.Ok(t, h.Truncate(2))
-	_, last, err = wlog.Segments()
+	_, last, err = wal.Segments(wlog.Dir())
 	testutil.Ok(t, err)
 	testutil.Equals(t, 2, last)
 }

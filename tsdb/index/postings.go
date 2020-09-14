@@ -79,6 +79,36 @@ func (p *MemPostings) SortedKeys() []labels.Label {
 	return keys
 }
 
+// LabelNames returns all the unique label names.
+func (p *MemPostings) LabelNames() []string {
+	p.mtx.RLock()
+	defer p.mtx.RUnlock()
+	n := len(p.m)
+	if n == 0 {
+		return nil
+	}
+
+	names := make([]string, 0, n-1)
+	for name := range p.m {
+		if name != allPostingsKey.Name {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
+// LabelValues returns label values for the given name.
+func (p *MemPostings) LabelValues(name string) []string {
+	p.mtx.RLock()
+	defer p.mtx.RUnlock()
+
+	values := make([]string, 0, len(p.m[name]))
+	for v := range p.m[name] {
+		values = append(values, v)
+	}
+	return values
+}
+
 // PostingsStats contains cardinality based statistics for postings.
 type PostingsStats struct {
 	CardinalityMetricsStats []Stat

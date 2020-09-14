@@ -72,7 +72,7 @@ func (e *ParseErr) Error() string {
 		positionStr = "invalid position:"
 	} else {
 
-		for i, c := range e.Query[:e.PositionRange.Start] {
+		for i, c := range e.Query[:pos] {
 			if c == '\n' {
 				lastLineBreak = i
 				line++

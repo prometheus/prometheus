@@ -53,7 +53,6 @@ import (
 	promlogflag "github.com/prometheus/common/promlog/flag"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
-	sd_config "github.com/prometheus/prometheus/discovery/config"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/logging"
@@ -67,6 +66,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/strutil"
 	"github.com/prometheus/prometheus/web"
+
+	_ "github.com/prometheus/prometheus/discovery/install" // Register service discovery implementations.
 )
 
 var (
@@ -466,9 +467,9 @@ func main() {
 		}, {
 			name: "scrape_sd",
 			reloader: func(cfg *config.Config) error {
-				c := make(map[string]sd_config.ServiceDiscoveryConfig)
+				c := make(map[string]discovery.Configs)
 				for _, v := range cfg.ScrapeConfigs {
-					c[v.JobName] = v.ServiceDiscoveryConfig
+					c[v.JobName] = v.ServiceDiscoveryConfigs
 				}
 				return discoveryManagerScrape.ApplyConfig(c)
 			},
@@ -478,9 +479,9 @@ func main() {
 		}, {
 			name: "notify_sd",
 			reloader: func(cfg *config.Config) error {
-				c := make(map[string]sd_config.ServiceDiscoveryConfig)
+				c := make(map[string]discovery.Configs)
 				for k, v := range cfg.AlertingConfig.AlertmanagerConfigs.ToMap() {
-					c[k] = v.ServiceDiscoveryConfig
+					c[k] = v.ServiceDiscoveryConfigs
 				}
 				return discoveryManagerNotify.ApplyConfig(c)
 			},

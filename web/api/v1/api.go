@@ -603,7 +603,8 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 
 	var sets []storage.SeriesSet
 	for _, mset := range matcherSets {
-		s := q.Select(false, nil, mset...)
+		// We need to sort this select results to merge (deduplicate) the series sets later.
+		s := q.Select(true, nil, mset...)
 		sets = append(sets, s)
 	}
 
@@ -1063,8 +1064,8 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 			File:           grp.File(),
 			Interval:       grp.Interval().Seconds(),
 			Rules:          []rule{},
-			EvaluationTime: grp.GetEvaluationDuration().Seconds(),
-			LastEvaluation: grp.GetEvaluationTimestamp(),
+			EvaluationTime: grp.GetEvaluationTime().Seconds(),
+			LastEvaluation: grp.GetLastEvaluation(),
 		}
 		for _, r := range grp.Rules() {
 			var enrichedRule rule
@@ -1514,7 +1515,7 @@ func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data inter
 	case errorBadData:
 		code = http.StatusBadRequest
 	case errorExec:
-		code = 422
+		code = http.StatusUnprocessableEntity
 	case errorCanceled, errorTimeout:
 		code = http.StatusServiceUnavailable
 	case errorInternal:
