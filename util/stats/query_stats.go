@@ -198,7 +198,8 @@ func (qs *QuerySamples) IncrementPeak(samples int) {
 }
 
 // UpdatePeak updates the peak number of samples considered in
-// evaluation of query.
+// evaluation of query if the input samples are in more in
+// numbers than the peak.
 func (qs *QuerySamples) UpdatePeak(samples int) {
 	if samples > qs.PeakSamples {
 		qs.PeakSamples = samples

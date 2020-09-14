@@ -651,7 +651,7 @@ func (ng *Engine) findMinTime(s *parser.EvalStmt) time.Time {
 	return s.Start.Add(-maxOffset)
 }
 
-func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s *parser.EvalStmt) (storage.Warnings, error) {
+func (ng *Engine) populateSeries(_ context.Context, querier storage.Querier, s *parser.EvalStmt) (storage.Warnings, error) {
 	var (
 		// Whenever a MatrixSelector is evaluated, evalRange is set to the corresponding range.
 		// The evaluation of the VectorSelector inside then evaluates the given range and unsets
@@ -821,10 +821,6 @@ func (ev *evaluator) recover(errp *error) {
 
 func (ev *evaluator) Eval(expr parser.Expr) (v parser.Value, err error) {
 	defer ev.recover(&err)
-	value := ev.eval(expr)
-	if vector, ok := value.(Vector); ok {
-		ev.samplesStats.Increment(len(vector))
-	}
 	return ev.eval(expr), nil
 }
 
@@ -958,7 +954,7 @@ func (ev *evaluator) rangeEval(f func([]parser.Value, *EvalNodeHelper) Vector, e
 		enh.out = result[:0] // Reuse result vector.
 
 		ev.currentSamples += len(result)
-		ev.samplesStats.Increment(len(result))
+		ev.samplesStats.IncrementPeak(len(result))
 		// When we reset currentSamples to tempNumSamples during the next iteration of the loop it also
 		// needs to include the samples from the result here, as they're still in memory.
 		tempNumSamples += len(result)
@@ -1170,6 +1166,7 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 				if ev.currentSamples < ev.maxSamples {
 					mat = append(mat, ss)
 					ev.currentSamples += len(ss.Points)
+					ev.samplesStats.IncrementPeak(len(ss.Points))
 				} else {
 					ev.error(ErrTooManySamples(env))
 				}
@@ -1297,8 +1294,8 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 			}
 
 			for ts := ev.startTimestamp; ts <= ev.endTimestamp; ts += ev.interval {
-				_, v, ok := ev.vectorSelectorSingle(it, e, ts)
 				ev.samplesStats.Increment(1)
+				_, v, ok := ev.vectorSelectorSingle(it, e, ts)
 				if ok {
 					if ev.currentSamples < ev.maxSamples {
 						ss.Points = append(ss.Points, Point{V: v, T: ts})
@@ -1353,6 +1350,9 @@ func (ev *evaluator) eval(expr parser.Expr) parser.Value {
 
 		res := newEv.eval(e.Expr)
 		ev.currentSamples = newEv.currentSamples
+		// Only update the peak samples if result evaluated by the new evaluator is
+		// greater than existing peak samples.
+		ev.samplesStats.UpdatePeak(ev.currentSamples)
 		return res
 	case *parser.StringLiteral:
 		return String{V: e.Val, T: ev.startTimestamp}
@@ -1384,6 +1384,7 @@ func (ev *evaluator) vectorSelector(node *parser.VectorSelector, ts int64) Vecto
 				Point:  Point{V: v, T: t},
 			})
 			ev.currentSamples++
+			ev.samplesStats.IncrementPeak(1)
 		}
 
 		if ev.currentSamples >= ev.maxSamples {
