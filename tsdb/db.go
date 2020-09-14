@@ -583,6 +583,29 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	if err := removeBestEffortTmpDirs(l, dir); err != nil {
 		return nil, errors.Wrap(err, "remove tmp dirs")
 	}
+	if opts.WALSegmentSize >= 0 {
+		// Truncate WAL on startup.
+		first, last, err := wal.Segments(walDir)
+		if err != nil {
+			return nil, errors.Wrap(err, "wal-truncate")
+		}
+		last--
+		if !(last < 0 || first+(last-first)*2/3 < first) {
+			w, err := wal.New(l, nil, walDir, false)
+			if err != nil {
+				return nil, errors.Wrap(err, "wal creation")
+			}
+			if _, err = wal.Checkpoint(l, w, first, last, nil, int64(math.MinInt64)); err != nil {
+				return nil, errors.Wrap(err, "create checkpoint")
+			}
+			if err := w.Truncate(last + 1); err != nil {
+				level.Error(l).Log("msg", "truncating segments failed", "err", err)
+			}
+			if err := wal.DeleteCheckpoints(w.Dir(), last); err != nil {
+				level.Error(l).Log("msg", "delete old checkpoints", "err", err)
+			}
+		}
+	}
 
 	db = &DB{
 		dir:            dir,
@@ -655,10 +678,6 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	minValidTime := int64(math.MinInt64)
 	if len(blocks) > 0 {
 		minValidTime = blocks[len(blocks)-1].Meta().MaxTime
-	}
-
-	if err := truncateWAL(db.head, minValidTime, nil); err != nil {
-		return nil, errors.Wrap(err, "wal-truncate")
 	}
 
 	if initErr := db.head.Init(minValidTime); initErr != nil {
