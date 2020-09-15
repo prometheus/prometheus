@@ -50,10 +50,8 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
 	"github.com/prometheus/common/server"
-	"github.com/soheilhy/cmux"
 	"go.uber.org/atomic"
 	"golang.org/x/net/netutil"
-	"google.golang.org/grpc"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
@@ -66,7 +64,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/util/httputil"
 	api_v1 "github.com/prometheus/prometheus/web/api/v1"
-	api_v2 "github.com/prometheus/prometheus/web/api/v2"
 	"github.com/prometheus/prometheus/web/ui"
 )
 
@@ -503,11 +500,6 @@ func (h *Handler) testReady(f http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// Checks if server is ready, calls f if it is, returns 503 if it is not.
-func (h *Handler) testReadyHandler(f http.Handler) http.HandlerFunc {
-	return h.testReady(f.ServeHTTP)
-}
-
 // Quit returns the receive-only quit channel.
 func (h *Handler) Quit() <-chan struct{} {
 	return h.quitCh
@@ -533,31 +525,6 @@ func (h *Handler) Run(ctx context.Context) error {
 		conntrack.TrackWithName("http"),
 		conntrack.TrackWithTracing())
 
-	var (
-		m = cmux.New(listener)
-		// See https://github.com/grpc/grpc-go/issues/2636 for why we need to use MatchWithWriters().
-		grpcl   = m.MatchWithWriters(cmux.HTTP2MatchHeaderFieldSendSettings("content-type", "application/grpc"))
-		httpl   = m.Match(cmux.HTTP1Fast())
-		grpcSrv = grpc.NewServer()
-	)
-
-	// Prevent open connections to block the shutdown of the handler.
-	m.SetReadTimeout(h.options.ReadTimeout)
-
-	av2 := api_v2.New(
-		h.options.LocalStorage,
-		h.options.TSDBDir,
-		h.options.EnableAdminAPI,
-	)
-	av2.RegisterGRPC(grpcSrv)
-
-	hh, err := av2.HTTPHandler(ctx, h.options.ListenAddress)
-	if err != nil {
-		return err
-	}
-
-	hhFunc := h.testReadyHandler(hh)
-
 	operationName := nethttp.OperationNameFunc(func(r *http.Request) string {
 		return fmt.Sprintf("%s %s", r.Method, r.URL.Path)
 	})
@@ -576,13 +543,6 @@ func (h *Handler) Run(ctx context.Context) error {
 
 	mux.Handle(apiPath+"/v1/", http.StripPrefix(apiPath+"/v1", av1))
 
-	mux.Handle(apiPath+"/", http.StripPrefix(apiPath,
-		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			httputil.SetCORS(w, h.options.CORSOrigin, r)
-			hhFunc(w, r)
-		}),
-	))
-
 	errlog := stdlog.New(log.NewStdlibAdapter(level.Error(h.logger)), "", 0)
 
 	httpSrv := &http.Server{
@@ -593,13 +553,7 @@ func (h *Handler) Run(ctx context.Context) error {
 
 	errCh := make(chan error)
 	go func() {
-		errCh <- httpSrv.Serve(httpl)
-	}()
-	go func() {
-		errCh <- grpcSrv.Serve(grpcl)
-	}()
-	go func() {
-		errCh <- m.Serve()
+		errCh <- httpSrv.Serve(listener)
 	}()
 
 	select {
@@ -607,24 +561,7 @@ func (h *Handler) Run(ctx context.Context) error {
 		return e
 	case <-ctx.Done():
 		httpSrv.Shutdown(ctx)
-		stopGRPCSrv(grpcSrv)
 		return nil
-	}
-}
-
-// stopGRPCSrv stops a given GRPC server. An attempt to stop the server
-// gracefully is made first. After 15s, the server to forced to stop.
-func stopGRPCSrv(srv *grpc.Server) {
-	stop := make(chan struct{})
-	go func() {
-		srv.GracefulStop()
-		close(stop)
-	}()
-
-	select {
-	case <-time.After(15 * time.Second):
-		srv.Stop()
-	case <-stop:
 	}
 }
 
