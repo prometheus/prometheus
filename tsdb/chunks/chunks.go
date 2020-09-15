@@ -180,15 +180,17 @@ func (w *Writer) finalizeTail() error {
 	if err := w.wbuf.Flush(); err != nil {
 		return err
 	}
-	if err := tf.Sync(); err != nil {
-		return err
-	}
+
 	// As the file was pre-allocated, we truncate any superfluous zero bytes.
 	off, err := tf.Seek(0, io.SeekCurrent)
 	if err != nil {
 		return err
 	}
 	if err := tf.Truncate(off); err != nil {
+		return err
+	}
+
+	if err := tf.Sync(); err != nil {
 		return err
 	}
 
