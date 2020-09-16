@@ -26,7 +26,7 @@ The React UI depends on a large number of [npm](https://www.npmjs.com/) packages
 
 Yarn consults the `package.json` and `yarn.lock` files for dependencies to install. It creates a `node_modules` directory with all installed dependencies.
 
-**NOTE**: Remember to change directory to `web/ui/react-app` before running this command and the following commands
+**NOTE**: Remember to change directory to `web/ui/react-app` before running this command and the following commands.
 
 ## Running a local development server
 
