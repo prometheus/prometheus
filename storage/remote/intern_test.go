@@ -27,10 +27,10 @@ import (
 )
 
 func TestIntern(t *testing.T) {
-	mgr := &QueueManager{interner: newPool()}
+	interner := newPool()
 	testString := "TestIntern"
-	mgr.interner.intern(testString)
-	interned, ok := mgr.interner.pool[testString]
+	interner.intern(testString)
+	interned, ok := interner.pool[testString]
 
 	testutil.Equals(t, true, ok)
 	testutil.Assert(t, interned.refs.Load() == 1, fmt.Sprintf("expected refs to be 1 but it was %d", interned.refs))

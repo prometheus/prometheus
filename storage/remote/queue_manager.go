@@ -57,7 +57,6 @@ type queueManagerMetrics struct {
 	enqueueRetriesTotal   prometheus.Counter
 	sentBatchDuration     prometheus.Histogram
 	highestSentTimestamp  *maxGauge
-	highestRecvTimestamp  *maxGauge
 	pendingSamples        prometheus.Gauge
 	shardCapacity         prometheus.Gauge
 	numShards             prometheus.Gauge
@@ -177,16 +176,6 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Help:        "The total number of bytes sent by the queue.",
 		ConstLabels: constLabels,
 	})
-	if m.highestRecvTimestamp == nil {
-		m.highestRecvTimestamp = &maxGauge{
-			Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
-				Namespace: namespace,
-				Subsystem: subsystem,
-				Name:      "highest_timestamp_in_seconds",
-				Help:      "Highest timestamp that has come into the remote storage via the Appender interface, in seconds since epoch.",
-			}),
-		}
-	}
 
 	return m
 }
@@ -271,8 +260,9 @@ type QueueManager struct {
 
 	samplesIn, samplesDropped, samplesOut, samplesOutDuration *ewmaRate
 
-	metrics  *queueManagerMetrics
-	interner *pool
+	metrics              *queueManagerMetrics
+	interner             *pool
+	highestRecvTimestamp *maxGauge
 }
 
 // NewQueueManager builds a new QueueManager.
@@ -288,6 +278,7 @@ func NewQueueManager(
 	relabelConfigs []*relabel.Config,
 	client WriteClient,
 	flushDeadline time.Duration,
+	highestRecvTimestamp *maxGauge,
 ) *QueueManager {
 	if logger == nil {
 		logger = log.NewNopLogger()
@@ -315,8 +306,9 @@ func NewQueueManager(
 		samplesOut:         newEWMARate(ewmaWeight, shardUpdateDuration),
 		samplesOutDuration: newEWMARate(ewmaWeight, shardUpdateDuration),
 
-		metrics:  metrics,
-		interner: newPool(),
+		metrics:              metrics,
+		interner:             newPool(),
+		highestRecvTimestamp: highestRecvTimestamp,
 	}
 
 	t.watcher = wal.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, walDir)
@@ -577,7 +569,7 @@ func (t *QueueManager) calculateDesiredShards() int {
 		samplesOutDuration = t.samplesOutDuration.rate() / float64(time.Second)
 		samplesPendingRate = samplesInRate*samplesKeptRatio - samplesOutRate
 		highestSent        = t.metrics.highestSentTimestamp.Get()
-		highestRecv        = t.metrics.highestRecvTimestamp.Get()
+		highestRecv        = t.highestRecvTimestamp.Get()
 		delay              = highestRecv - highestSent
 		samplesPending     = delay * samplesInRate * samplesKeptRatio
 	)

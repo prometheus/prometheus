@@ -78,6 +78,9 @@ func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, walDir string
 			}),
 		},
 	}
+	if reg != nil {
+		reg.MustRegister(rws.highestTimestamp)
+	}
 	go rws.run()
 	return rws
 }
@@ -153,8 +156,8 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rwConf.WriteRelabelConfigs,
 			c,
 			rws.flushDeadline,
+			rws.highestTimestamp,
 		)
-		newQueues[hash].metrics.highestRecvTimestamp = rws.highestTimestamp
 		// Keep track of which queues are new so we know which to start.
 		newHashes = append(newHashes, hash)
 	}
