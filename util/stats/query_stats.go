@@ -122,7 +122,7 @@ func NewQueryStats(s *Statistics) *QueryStats {
 		}
 	}
 
-	if sp != nil {
+	if sp != (QuerySamples{}) {
 		samples = querySamples{
 			PeakSamples:  sp.PeakSamples,
 			TotalSamples: sp.TotalSamples,
@@ -163,8 +163,8 @@ func (s *SpanTimer) Finish() {
 }
 
 type Statistics struct {
-	Timers  *QueryTimers
-	Samples *QuerySamples
+	Timers  QueryTimers
+	Samples QuerySamples
 }
 
 type QueryTimers struct {
@@ -177,7 +177,7 @@ type QuerySamples struct {
 	// currentSamples.
 	PeakSamples int
 	// TotalSamples represents the total number of samples scanned
-	// while evaluation a query.
+	// while evaluating a query.
 	TotalSamples int
 }
 
@@ -191,12 +191,6 @@ func (qs *QuerySamples) Increment(samples int) {
 	qs.TotalSamples += samples
 }
 
-// IncrementPeak increments the value of peak by the number
-// of samples passed
-func (qs *QuerySamples) IncrementPeak(samples int) {
-	qs.PeakSamples += samples
-}
-
 // UpdatePeak updates the peak number of samples considered in
 // evaluation of query if the input samples are in more in
 // numbers than the peak.
@@ -206,12 +200,12 @@ func (qs *QuerySamples) UpdatePeak(samples int) {
 	}
 }
 
-func NewQueryTimers() *QueryTimers {
-	return &QueryTimers{NewTimerGroup()}
+func NewQueryTimers() QueryTimers {
+	return QueryTimers{NewTimerGroup()}
 }
 
-func NewQuerySamples() *QuerySamples {
-	return &QuerySamples{}
+func NewQuerySamples() QuerySamples {
+	return QuerySamples{}
 }
 
 func (qs *QueryTimers) GetSpanTimer(ctx context.Context, qt QueryTiming, observers ...prometheus.Observer) (*SpanTimer, context.Context) {
