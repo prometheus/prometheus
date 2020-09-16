@@ -8,13 +8,13 @@
   <h1>Alerts</h1>
     <div id="alertFilters" class="btn-group btn-group-toggle" data-toggle="buttons">
         <label class="btn btn-primary active">
-            <input type="checkbox" name="alertFilters" id="inactiveAlerts" autocomplete="off"> Inactive ({{ .Counts.Inactive }})
+            <input type="checkbox" name="alertFilters" id="inactiveAlerts" autocomplete="off"> <i class="glyphicon glyphicon-check"></i> Inactive ({{ .Counts.Inactive }})
         </label>
         <label class="btn btn-primary active">
-            <input type="checkbox" name="alertFilters" id="pendingAlerts" autocomplete="off"> Pending ({{ .Counts.Pending }})
+            <input type="checkbox" name="alertFilters" id="pendingAlerts" autocomplete="off"> <i class="glyphicon glyphicon-check"></i> Pending ({{ .Counts.Pending }})
         </label>
         <label class="btn btn-primary active">
-            <input type="checkbox" name="alertFilters" id="firingAlerts" autocomplete="off"> Firing ({{ .Counts.Firing }})
+            <input type="checkbox" name="alertFilters" id="firingAlerts" autocomplete="off"> <i class="glyphicon glyphicon-check"></i> Firing ({{ .Counts.Firing }})
         </label>
         </br>
     </div>
