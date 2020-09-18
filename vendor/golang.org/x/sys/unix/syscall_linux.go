@@ -82,15 +82,6 @@ func IoctlRetInt(fd int, req uint) (int, error) {
 	return int(ret), nil
 }
 
-// IoctlSetPointerInt performs an ioctl operation which sets an
-// integer value on fd, using the specified request number. The ioctl
-// argument is called with a pointer to the integer value, rather than
-// passing the integer value directly.
-func IoctlSetPointerInt(fd int, req uint, value int) error {
-	v := int32(value)
-	return ioctl(fd, req, uintptr(unsafe.Pointer(&v)))
-}
-
 func IoctlSetRTCTime(fd int, value *RTCTime) error {
 	err := ioctl(fd, RTC_SET_TIME, uintptr(unsafe.Pointer(value)))
 	runtime.KeepAlive(value)
@@ -143,6 +134,12 @@ func Open(path string, mode int, perm uint32) (fd int, err error) {
 
 func Openat(dirfd int, path string, flags int, mode uint32) (fd int, err error) {
 	return openat(dirfd, path, flags|O_LARGEFILE, mode)
+}
+
+//sys	openat2(dirfd int, path string, open_how *OpenHow, size int) (fd int, err error)
+
+func Openat2(dirfd int, path string, how *OpenHow) (fd int, err error) {
+	return openat2(dirfd, path, how, SizeofOpenHow)
 }
 
 //sys	ppoll(fds *PollFd, nfds int, timeout *Timespec, sigmask *Sigset_t) (n int, err error)
