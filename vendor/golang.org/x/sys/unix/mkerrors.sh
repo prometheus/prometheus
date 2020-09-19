@@ -58,6 +58,7 @@ includes_Darwin='
 #define _DARWIN_USE_64_BIT_INODE
 #include <stdint.h>
 #include <sys/attr.h>
+#include <sys/clonefile.h>
 #include <sys/types.h>
 #include <sys/event.h>
 #include <sys/ptrace.h>
@@ -193,6 +194,8 @@ struct ltchars {
 #include <sys/xattr.h>
 #include <linux/bpf.h>
 #include <linux/can.h>
+#include <linux/can/error.h>
+#include <linux/can/raw.h>
 #include <linux/capability.h>
 #include <linux/cryptouser.h>
 #include <linux/devlink.h>

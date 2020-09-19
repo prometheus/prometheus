@@ -752,6 +752,22 @@ const (
 	AT_EACCESS = 0x200
 )
 
+type OpenHow struct {
+	Flags   uint64
+	Mode    uint64
+	Resolve uint64
+}
+
+const SizeofOpenHow = 0x18
+
+const (
+	RESOLVE_BENEATH       = 0x8
+	RESOLVE_IN_ROOT       = 0x10
+	RESOLVE_NO_MAGICLINKS = 0x2
+	RESOLVE_NO_SYMLINKS   = 0x4
+	RESOLVE_NO_XDEV       = 0x1
+)
+
 type PollFd struct {
 	Fd      int32
 	Events  int16
@@ -2526,4 +2542,13 @@ const (
 	NHA_ENCAP      = 0x8
 	NHA_GROUPS     = 0x9
 	NHA_MASTER     = 0xa
+)
+
+const (
+	CAN_RAW_FILTER        = 0x1
+	CAN_RAW_ERR_FILTER    = 0x2
+	CAN_RAW_LOOPBACK      = 0x3
+	CAN_RAW_RECV_OWN_MSGS = 0x4
+	CAN_RAW_FD_FRAMES     = 0x5
+	CAN_RAW_JOIN_FILTERS  = 0x6
 )
