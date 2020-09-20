@@ -15,6 +15,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/prometheus/util/testutil"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -67,10 +68,7 @@ func TestQueryRange(t *testing.T) {
 func TestAddScheme(t *testing.T) {
 	url := "google.com"
 	urlWithScheme, err := addScheme(url)
-	if err != nil {
-		t.Errorf("Error while parsing url %s into URL object: ", url)
-		t.Error(err)
-	}
+	testutil.Ok(t, err)
 	if urlWithScheme != "http://google.com" {
 		t.Errorf("unexpected value %s for urlWithScheme", urlWithScheme)
 	}
