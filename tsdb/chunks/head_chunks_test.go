@@ -175,7 +175,7 @@ func TestHeadReadWriter_Truncate(t *testing.T) {
 	var timeToTruncate, timeToTruncateAfterRestart int64
 
 	addChunk := func() int {
-		mint := timeRange + 1                // Just after the the new file cut.
+		mint := timeRange + 1                // Just after the new file cut.
 		maxt := timeRange + fileTimeStep - 1 // Just before the next file.
 
 		// Write a chunks to set maxt for the segment.

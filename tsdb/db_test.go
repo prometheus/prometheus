@@ -196,7 +196,7 @@ func TestDataAvailableOnlyAfterCommit(t *testing.T) {
 func TestNoPanicAfterWALCorrutpion(t *testing.T) {
 	db := openTestDB(t, &Options{WALSegmentSize: 32 * 1024}, nil)
 
-	// Append until the the first mmaped head chunk.
+	// Append until the first mmaped head chunk.
 	// This is to ensure that all samples can be read from the mmaped chunks when the WAL is corrupted.
 	var expSamples []tsdbutil.Sample
 	var maxt int64
