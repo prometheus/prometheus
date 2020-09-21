@@ -954,14 +954,12 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 				oldg.stop()
 				newg.CopyState(oldg)
 			}
-			go func() {
-				// Wait with starting evaluation until the rule manager
-				// is told to run. This is necessary to avoid running
-				// queries against a bootstrapping storage.
-				<-m.block
-				newg.run(m.opts.Context)
-			}()
 			wg.Done()
+			// Wait with starting evaluation until the rule manager
+			// is told to run. This is necessary to avoid running
+			// queries against a bootstrapping storage.
+			<-m.block
+			newg.run(m.opts.Context)
 		}(newg)
 	}
 
