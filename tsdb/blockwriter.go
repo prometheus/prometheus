@@ -36,7 +36,7 @@ type Writer interface {
 
 	// Flush writes current data to disk.
 	// The block or blocks will contain values accumulated by `Write`.
-	Flush() (ulid.ULID, error)
+	Flush(ctx context.Context) (ulid.ULID, error)
 
 	// Close releases all resources.
 	Close() error
@@ -100,7 +100,7 @@ func (w *TSDBWriter) Appender(ctx context.Context) storage.Appender {
 
 // Flush implements the Writer interface. This is where actual block writing
 // happens. After flush completes, no writes can be done.
-func (w *TSDBWriter) Flush() (ulid.ULID, error) {
+func (w *TSDBWriter) Flush(ctx context.Context) (ulid.ULID, error) {
 	seriesCount := w.head.NumSeries()
 	if w.head.NumSeries() == 0 {
 		return ulid.ULID{}, errors.New("no series appended; aborting.")
@@ -110,8 +110,7 @@ func (w *TSDBWriter) Flush() (ulid.ULID, error) {
 	maxt := w.head.MaxTime()
 	level.Info(w.logger).Log("msg", "flushing", "series_count", seriesCount, "mint", timestamp.Time(mint), "maxt", timestamp.Time(maxt))
 
-	compactor, err := NewLeveledCompactor(
-		context.Background(),
+	compactor, err := NewLeveledCompactor(ctx,
 		nil,
 		w.logger,
 		[]int64{durationToMillis(2 * time.Hour)},

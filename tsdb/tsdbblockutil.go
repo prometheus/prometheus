@@ -46,7 +46,8 @@ func CreateBlock(samples []*MetricSample, dir string, mint, maxt int64, logger l
 		return "", err
 	}
 
-	app := w.Appender(context.Background())
+	ctx := context.Background()
+	app := w.Appender(ctx)
 
 	for _, sample := range samples {
 		_, err = app.Add(sample.Labels, sample.TimestampMs, sample.Value)
@@ -59,7 +60,7 @@ func CreateBlock(samples []*MetricSample, dir string, mint, maxt int64, logger l
 		return "", err
 	}
 
-	ulid, err := w.Flush()
+	ulid, err := w.Flush(ctx)
 	if err != nil {
 		return "", err
 	}
