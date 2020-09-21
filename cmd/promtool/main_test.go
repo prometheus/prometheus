@@ -23,6 +23,15 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
+func TestAddScheme(t *testing.T) {
+	url := "google.com"
+	urlWithScheme, err := addScheme(url)
+	testutil.Ok(t, err)
+	if urlWithScheme != "http://google.com" {
+		t.Errorf("unexpected value %s for urlWithScheme", urlWithScheme)
+	}
+}
+
 func TestQueryRange(t *testing.T) {
 	s, getRequest := mockServer(200, `{"status": "success", "data": {"resultType": "matrix", "result": []}}`)
 	defer s.Close()
