@@ -16,7 +16,6 @@ package tsdb
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/go-kit/kit/log"
@@ -31,27 +30,6 @@ type MetricSample struct {
 	Labels      labels.Labels
 }
 
-// CreateHead creates a TSDB writer head to write the sample data to.
-func CreateHead(samples []*MetricSample, chunkRange int64, chunkDir string, logger log.Logger) (*Head, error) {
-	head, err := NewHead(nil, logger, nil, chunkRange, chunkDir, nil, DefaultStripeSize, nil)
-
-	if err != nil {
-		return nil, err
-	}
-	app := head.Appender(context.TODO())
-	for _, sample := range samples {
-		_, err = app.Add(sample.Labels, sample.TimestampMs, sample.Value)
-		if err != nil {
-			return nil, err
-		}
-	}
-	err = app.Commit()
-	if err != nil {
-		return nil, err
-	}
-	return head, nil
-}
-
 // CreateBlock creates a chunkrange block from the samples passed to it, and writes it to disk.
 func CreateBlock(samples []*MetricSample, dir string, mint, maxt int64, logger log.Logger) (string, error) {
 	chunkRange := maxt - mint
@@ -61,30 +39,34 @@ func CreateBlock(samples []*MetricSample, dir string, mint, maxt int64, logger l
 	if chunkRange < 0 {
 		return "", ErrInvalidTimes
 	}
-	chunkDir := filepath.Join(dir, "chunks_tmp")
-	defer func() {
-		os.RemoveAll(chunkDir)
-	}()
-	head, err := CreateHead(samples, chunkRange, chunkDir, logger)
-	if err != nil {
-		return "", err
-	}
-	defer head.Close()
 
-	compactor, err := NewLeveledCompactor(context.Background(), nil, logger, ExponentialBlockRanges(DefaultBlockDuration, 3, 5), nil)
+	w := NewTSDBWriter(logger, dir)
+	err := w.initHead(chunkRange)
 	if err != nil {
 		return "", err
 	}
 
-	err = os.MkdirAll(dir, 0777)
+	app := w.Appender(context.Background())
+
+	for _, sample := range samples {
+		_, err = app.Add(sample.Labels, sample.TimestampMs, sample.Value)
+		if err != nil {
+			return "", err
+		}
+	}
+	err = app.Commit()
 	if err != nil {
 		return "", err
 	}
 
-	ulid, err := compactor.Write(dir, head, mint, maxt, nil)
+	ulid, err := w.Flush()
 	if err != nil {
 		return "", err
 	}
 
+	err = w.Close()
+	if err != nil {
+		return "", err
+	}
 	return filepath.Join(dir, ulid.String()), nil
 }
