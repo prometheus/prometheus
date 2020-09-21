@@ -30,6 +30,12 @@ func TestAddScheme(t *testing.T) {
 	if urlWithScheme != "http://google.com" {
 		t.Errorf("unexpected value %s for urlWithScheme", urlWithScheme)
 	}
+	url = "http://prometheus.io"
+	urlWithScheme, err = addScheme(url)
+	testutil.Ok(t, err)
+	if urlWithScheme != "http://prometheus.io" {
+		t.Errorf("unexpected value %s for urlWithScheme", urlWithScheme)
+	}
 }
 
 func TestQueryRange(t *testing.T) {
