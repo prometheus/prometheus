@@ -195,7 +195,7 @@ func addScheme(urlString string) (string, error) {
 	// Add HTTP Scheme to urlString
 	urlObject, err := url.Parse(urlString)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	if urlObject.Scheme == "" {
 		urlObject.Scheme = "http"

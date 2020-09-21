@@ -15,7 +15,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/util/testutil"
 	"net/http"
 	"net/http/httptest"
 	"testing"
