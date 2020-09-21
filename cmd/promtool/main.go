@@ -194,9 +194,9 @@ func checkFileExists(fn string) error {
 func addScheme(urlString string) (string, error) {
 	// Add HTTP Scheme to urlString
 	urlObject, err := url.Parse(urlString)
-  if err != nil {
-    return nil, err
-  }
+	if err != nil {
+		return nil, err
+	}
 	if urlObject.Scheme == "" {
 		urlObject.Scheme = "http"
 		return urlObject.String(), err
