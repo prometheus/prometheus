@@ -443,6 +443,11 @@ func CheckMetrics() int {
 
 // QueryInstant performs an instant query against a Prometheus server.
 func QueryInstant(url, query, evalTime string, p printer) int {
+	urlWithScheme, err := addScheme(url)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error parsing url", err)
+	}
+
 	config := api.Config{
 		Address: urlWithScheme,
 	}
@@ -594,6 +599,11 @@ func QuerySeries(url *url.URL, matchers []string, start, end string, p printer) 
 
 // QueryLabels queries for label values against a Prometheus server.
 func QueryLabels(url *url.URL, name string, start, end string, p printer) int {
+	urlWithScheme, err := addScheme(url.String())
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error parsing url", err)
+	}
+
 	config := api.Config{
 		Address: urlWithScheme,
 	}

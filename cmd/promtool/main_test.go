@@ -20,8 +20,6 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
-
-	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestQueryRange(t *testing.T) {
