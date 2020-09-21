@@ -363,7 +363,7 @@ const (
 //             Address yaml.Node
 //     }
 //     err := yaml.Unmarshal(data, &person)
-//
+// 
 // Or by itself:
 //
 //     var person Node
@@ -373,7 +373,7 @@ type Node struct {
 	// Kind defines whether the node is a document, a mapping, a sequence,
 	// a scalar value, or an alias to another node. The specific data type of
 	// scalar nodes may be obtained via the ShortTag and LongTag methods.
-	Kind Kind
+	Kind  Kind
 
 	// Style allows customizing the apperance of the node in the tree.
 	Style Style
