@@ -143,21 +143,16 @@ func (p *prettier) rearrangeItems(items []Item) ([]Item, error) {
 			if closingParenIndex == itemNotFound {
 				return items, errors.New("invalid paren index: closing paren not found")
 			}
-			tempItems := make([]Item, len(items[:aggregatorIndex+1]))
+			tempItems := make([]Item, 0, len(items))
 			// Copy all the items in the items slice from starting till the aggregatorIndex
 			// by value.
-			copy(tempItems, items[:aggregatorIndex+1])
+			tempItems = append(tempItems, items[:aggregatorIndex+1]...)
 			// Append items to itemItems from the keyword till the RIGHT_PAREN of the grouping_modifier.
 			tempItems = append(tempItems, items[keywordIndex:closingParenIndex+1]...)
 			// Append the remaining items of the node.
-			for itemp := aggregatorIndex + 1; itemp < len(items); itemp++ {
-				if itemp >= keywordIndex && itemp <= closingParenIndex {
-					continue
-				}
-				tempItems = append(tempItems, items[itemp])
-			}
+			tempItems = append(tempItems, items[aggregatorIndex+1:keywordIndex]...)
+			tempItems = append(tempItems, items[closingParenIndex+1:]...)
 			items = tempItems
-
 		case IDENTIFIER, METRIC_IDENTIFIER:
 			// Case-1: {__name__="metric_name"} => metric_name
 			// Case-2: {__name__="metric_name", job="prettier"} => metric_name{job="prettier"}
@@ -191,8 +186,12 @@ func (p *prettier) rearrangeItems(items []Item) ([]Item, error) {
 			if leftBraceIndex == itemNotFound || rightBraceIndex == itemNotFound {
 				continue
 			}
+
 			itr = skipComments(items, itr)
-			if items[itr+3].Typ == COMMA {
+			labelNameindex := itr // index of __name__.
+			commaIndex := itr + 3
+
+			if items[commaIndex].Typ == COMMA {
 				skipBraces = rightBraceIndex-5 == skipComments(items, leftBraceIndex)
 			} else {
 				skipBraces = rightBraceIndex-4 == skipComments(items, leftBraceIndex)
@@ -210,25 +209,17 @@ func (p *prettier) rearrangeItems(items []Item) ([]Item, error) {
 			// Also, we need to avoid `metric_name{}` case while re-ordering a `{__name__="metric_name"}`.
 			// Hence, if the indexes of left and right braces are next to each other, we skip
 			// appending them (braces) to the items slice.
-			for j := range items {
-				if j <= rightBraceIndex && j >= leftBraceIndex {
-					// Before printing the left_brace, we print the metric_name. After this, we check for metric_name{}
-					// situation. If __name__ is the only label_matcher, we skip printing '{' and '}'.
-					if j == leftBraceIndex {
-						tmp = append(tmp, identifierItem)
-						if !skipBraces {
-							tmp = append(tmp, items[j])
-						}
-						continue
-					} else if items[itr+3].Typ == COMMA && j == itr+3 || j >= itr && j < itr+3 {
+			tmp = append(tmp, items[:leftBraceIndex]...)
+			tmp = append(tmp, identifierItem)
+			if !skipBraces {
+				for j := leftBraceIndex; j <= rightBraceIndex; j++ {
+					if (items[commaIndex].Typ == COMMA && j == commaIndex) || (j >= labelNameindex && j < commaIndex) {
 						continue
 					}
-					if skipBraces && (items[j].Typ == LEFT_BRACE || items[j].Typ == RIGHT_BRACE) {
-						continue
-					}
+					tmp = append(tmp, items[j])
 				}
-				tmp = append(tmp, items[j])
 			}
+			tmp = append(tmp, items[rightBraceIndex+1:]...)
 			items = tmp
 		case BY:
 			// Case: sum by() (metric_name) => sum(metric_name)
@@ -248,12 +239,7 @@ func (p *prettier) rearrangeItems(items []Item) ([]Item, error) {
 				}
 			}
 			if leftParenIndex+1 == rightParenIndex || leftParenIndex == rightParenIndex {
-				tempItems := make([]Item, len(items[:groupingKeywordIndex]))
-				// Copy items which are just before keyword.
-				copy(tempItems, items[:groupingKeywordIndex])
-				// Append items after the RIGHT_PAREN of grouping_modifier.
-				tempItems = append(tempItems, items[rightParenIndex+1:]...)
-				items = tempItems
+				items = append(items[:groupingKeywordIndex], items[rightParenIndex+1:]...)
 			}
 		}
 	}
