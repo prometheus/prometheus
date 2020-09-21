@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/mwitkow/go-conntrack"
+	"golang.org/x/net/http2"
 	"gopkg.in/yaml.v2"
 )
 
@@ -41,6 +42,14 @@ type BasicAuth struct {
 	Username     string `yaml:"username"`
 	Password     Secret `yaml:"password,omitempty"`
 	PasswordFile string `yaml:"password_file,omitempty"`
+}
+
+// SetDirectory joins any relative file paths with dir.
+func (a *BasicAuth) SetDirectory(dir string) {
+	if a == nil {
+		return
+	}
+	a.PasswordFile = JoinDir(dir, a.PasswordFile)
 }
 
 // URL is a custom URL type that allows validation at configuration load time.
@@ -85,6 +94,16 @@ type HTTPClientConfig struct {
 	TLSConfig TLSConfig `yaml:"tls_config,omitempty"`
 }
 
+// SetDirectory joins any relative file paths with dir.
+func (c *HTTPClientConfig) SetDirectory(dir string) {
+	if c == nil {
+		return
+	}
+	c.TLSConfig.SetDirectory(dir)
+	c.BasicAuth.SetDirectory(dir)
+	c.BearerTokenFile = JoinDir(dir, c.BearerTokenFile)
+}
+
 // Validate validates the HTTPClientConfig to check only one of BearerToken,
 // BasicAuth and BearerTokenFile is configured.
 func (c *HTTPClientConfig) Validate() error {
@@ -122,8 +141,8 @@ func newClient(rt http.RoundTripper) *http.Client {
 
 // NewClientFromConfig returns a new HTTP client configured for the
 // given config.HTTPClientConfig. The name is used as go-conntrack metric label.
-func NewClientFromConfig(cfg HTTPClientConfig, name string, disableKeepAlives bool) (*http.Client, error) {
-	rt, err := NewRoundTripperFromConfig(cfg, name, disableKeepAlives)
+func NewClientFromConfig(cfg HTTPClientConfig, name string, disableKeepAlives, enableHTTP2 bool) (*http.Client, error) {
+	rt, err := NewRoundTripperFromConfig(cfg, name, disableKeepAlives, enableHTTP2)
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +151,7 @@ func NewClientFromConfig(cfg HTTPClientConfig, name string, disableKeepAlives bo
 
 // NewRoundTripperFromConfig returns a new HTTP RoundTripper configured for the
 // given config.HTTPClientConfig. The name is used as go-conntrack metric label.
-func NewRoundTripperFromConfig(cfg HTTPClientConfig, name string, disableKeepAlives bool) (http.RoundTripper, error) {
+func NewRoundTripperFromConfig(cfg HTTPClientConfig, name string, disableKeepAlives, enableHTTP2 bool) (http.RoundTripper, error) {
 	newRT := func(tlsConfig *tls.Config) (http.RoundTripper, error) {
 		// The only timeout we care about is the configured scrape timeout.
 		// It is applied on request. So we leave out any timings here.
@@ -152,6 +171,19 @@ func NewRoundTripperFromConfig(cfg HTTPClientConfig, name string, disableKeepAli
 				conntrack.DialWithTracing(),
 				conntrack.DialWithName(name),
 			),
+		}
+		if enableHTTP2 {
+			// HTTP/2 support is golang has many problematic cornercases where
+			// dead connections would be kept and used in connection pools.
+			// https://github.com/golang/go/issues/32388
+			// https://github.com/golang/go/issues/39337
+			// https://github.com/golang/go/issues/39750
+			// TODO: Re-Enable HTTP/2 once upstream issue is fixed.
+			// TODO: use ForceAttemptHTTP2 when we move to Go 1.13+.
+			err := http2.ConfigureTransport(rt.(*http.Transport))
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		// If a bearer token is provided, create a round tripper that will set the
@@ -336,6 +368,16 @@ type TLSConfig struct {
 	ServerName string `yaml:"server_name,omitempty"`
 	// Disable target certificate validation.
 	InsecureSkipVerify bool `yaml:"insecure_skip_verify"`
+}
+
+// SetDirectory joins any relative file paths with dir.
+func (c *TLSConfig) SetDirectory(dir string) {
+	if c == nil {
+		return
+	}
+	c.CAFile = JoinDir(dir, c.CAFile)
+	c.CertFile = JoinDir(dir, c.CertFile)
+	c.KeyFile = JoinDir(dir, c.KeyFile)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.

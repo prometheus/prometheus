@@ -51,7 +51,7 @@ const (
 	tHelp
 	tType
 	tUnit
-	tEofWord
+	tEOFWord
 	tText
 	tComment
 	tBlank
@@ -82,7 +82,7 @@ func (t token) String() string {
 		return "TYPE"
 	case tUnit:
 		return "UNIT"
-	case tEofWord:
+	case tEOFWord:
 		return "EOFWORD"
 	case tText:
 		return "TEXT"

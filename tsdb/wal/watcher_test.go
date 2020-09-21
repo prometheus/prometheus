@@ -22,6 +22,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/kit/log"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/record"
@@ -99,7 +101,9 @@ func TestTailSamples(t *testing.T) {
 
 			dir, err := ioutil.TempDir("", "readCheckpoint")
 			testutil.Ok(t, err)
-			defer os.RemoveAll(dir)
+			defer func() {
+				testutil.Ok(t, os.RemoveAll(dir))
+			}()
 
 			wdir := path.Join(dir, "wal")
 			err = os.Mkdir(wdir, 0777)
@@ -108,6 +112,9 @@ func TestTailSamples(t *testing.T) {
 			enc := record.Encoder{}
 			w, err := NewSize(nil, nil, wdir, 128*pageSize, compress)
 			testutil.Ok(t, err)
+			defer func() {
+				testutil.Ok(t, w.Close())
+			}()
 
 			// Write to the initial segment then checkpoint.
 			for i := 0; i < seriesCount; i++ {
@@ -134,11 +141,11 @@ func TestTailSamples(t *testing.T) {
 			}
 
 			// Start read after checkpoint, no more data written.
-			first, last, err := w.Segments()
+			first, last, err := Segments(w.Dir())
 			testutil.Ok(t, err)
 
 			wt := newWriteToMock()
-			watcher := NewWatcher(nil, wMetrics, nil, "", wt, dir)
+			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir)
 			watcher.SetStartTime(now)
 
 			// Set the Watcher's metrics so they're not nil pointers.
@@ -148,7 +155,7 @@ func TestTailSamples(t *testing.T) {
 				testutil.Ok(t, err)
 				defer segment.Close()
 
-				reader := NewLiveReader(nil, NewLiveReaderMetrics(prometheus.DefaultRegisterer), segment)
+				reader := NewLiveReader(nil, NewLiveReaderMetrics(nil), segment)
 				// Use tail true so we can ensure we got the right number of samples.
 				watcher.readSegment(reader, i, true)
 			}
@@ -173,13 +180,18 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
 			dir, err := ioutil.TempDir("", "readToEnd_noCheckpoint")
 			testutil.Ok(t, err)
-			defer os.RemoveAll(dir)
+			defer func() {
+				testutil.Ok(t, os.RemoveAll(dir))
+			}()
 			wdir := path.Join(dir, "wal")
 			err = os.Mkdir(wdir, 0777)
 			testutil.Ok(t, err)
 
 			w, err := NewSize(nil, nil, wdir, 128*pageSize, compress)
 			testutil.Ok(t, err)
+			defer func() {
+				testutil.Ok(t, w.Close())
+			}()
 
 			var recs [][]byte
 
@@ -213,11 +225,11 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 			}
 			testutil.Ok(t, w.Log(recs...))
 
-			_, _, err = w.Segments()
+			_, _, err = Segments(w.Dir())
 			testutil.Ok(t, err)
 
 			wt := newWriteToMock()
-			watcher := NewWatcher(nil, wMetrics, nil, "", wt, dir)
+			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir)
 			go watcher.Start()
 
 			expected := seriesCount
@@ -241,7 +253,9 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
 			dir, err := ioutil.TempDir("", "readToEnd_withCheckpoint")
 			testutil.Ok(t, err)
-			defer os.RemoveAll(dir)
+			defer func() {
+				testutil.Ok(t, os.RemoveAll(dir))
+			}()
 
 			wdir := path.Join(dir, "wal")
 			err = os.Mkdir(wdir, 0777)
@@ -250,6 +264,9 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 			enc := record.Encoder{}
 			w, err := NewSize(nil, nil, wdir, segmentSize, compress)
 			testutil.Ok(t, err)
+			defer func() {
+				testutil.Ok(t, w.Close())
+			}()
 
 			// Write to the initial segment then checkpoint.
 			for i := 0; i < seriesCount; i++ {
@@ -275,7 +292,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 				}
 			}
 
-			Checkpoint(w, 0, 1, func(x uint64) bool { return true }, 0)
+			Checkpoint(log.NewNopLogger(), w, 0, 1, func(x uint64) bool { return true }, 0)
 			w.Truncate(1)
 
 			// Write more records after checkpointing.
@@ -300,10 +317,10 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 				}
 			}
 
-			_, _, err = w.Segments()
+			_, _, err = Segments(w.Dir())
 			testutil.Ok(t, err)
 			wt := newWriteToMock()
-			watcher := NewWatcher(nil, wMetrics, nil, "", wt, dir)
+			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir)
 			go watcher.Start()
 
 			expected := seriesCount * 2
@@ -325,7 +342,9 @@ func TestReadCheckpoint(t *testing.T) {
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
 			dir, err := ioutil.TempDir("", "readCheckpoint")
 			testutil.Ok(t, err)
-			defer os.RemoveAll(dir)
+			defer func() {
+				testutil.Ok(t, os.RemoveAll(dir))
+			}()
 
 			wdir := path.Join(dir, "wal")
 			err = os.Mkdir(wdir, 0777)
@@ -336,6 +355,9 @@ func TestReadCheckpoint(t *testing.T) {
 			enc := record.Encoder{}
 			w, err := NewSize(nil, nil, wdir, 128*pageSize, compress)
 			testutil.Ok(t, err)
+			defer func() {
+				testutil.Ok(t, w.Close())
+			}()
 
 			// Write to the initial segment then checkpoint.
 			for i := 0; i < seriesCount; i++ {
@@ -360,15 +382,15 @@ func TestReadCheckpoint(t *testing.T) {
 					testutil.Ok(t, w.Log(sample))
 				}
 			}
-			Checkpoint(w, 30, 31, func(x uint64) bool { return true }, 0)
+			Checkpoint(log.NewNopLogger(), w, 30, 31, func(x uint64) bool { return true }, 0)
 			w.Truncate(32)
 
 			// Start read after checkpoint, no more data written.
-			_, _, err = w.Segments()
+			_, _, err = Segments(w.Dir())
 			testutil.Ok(t, err)
 
 			wt := newWriteToMock()
-			watcher := NewWatcher(nil, wMetrics, nil, "", wt, dir)
+			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir)
 			go watcher.Start()
 
 			expectedSeries := seriesCount
@@ -392,7 +414,9 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
 			dir, err := ioutil.TempDir("", "readCheckpoint")
 			testutil.Ok(t, err)
-			defer os.RemoveAll(dir)
+			defer func() {
+				testutil.Ok(t, os.RemoveAll(dir))
+			}()
 
 			wdir := path.Join(dir, "wal")
 			err = os.Mkdir(wdir, 0777)
@@ -439,7 +463,7 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 			}
 
 			wt := newWriteToMock()
-			watcher := NewWatcher(nil, wMetrics, nil, "", wt, dir)
+			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir)
 			watcher.MaxSegment = -1
 
 			// Set the Watcher's metrics so they're not nil pointers.
@@ -472,7 +496,9 @@ func TestCheckpointSeriesReset(t *testing.T) {
 		t.Run(fmt.Sprintf("compress=%t", tc.compress), func(t *testing.T) {
 			dir, err := ioutil.TempDir("", "seriesReset")
 			testutil.Ok(t, err)
-			defer os.RemoveAll(dir)
+			defer func() {
+				testutil.Ok(t, os.RemoveAll(dir))
+			}()
 
 			wdir := path.Join(dir, "wal")
 			err = os.Mkdir(wdir, 0777)
@@ -481,6 +507,9 @@ func TestCheckpointSeriesReset(t *testing.T) {
 			enc := record.Encoder{}
 			w, err := NewSize(nil, nil, wdir, segmentSize, tc.compress)
 			testutil.Ok(t, err)
+			defer func() {
+				testutil.Ok(t, w.Close())
+			}()
 
 			// Write to the initial segment, then checkpoint later.
 			for i := 0; i < seriesCount; i++ {
@@ -506,11 +535,11 @@ func TestCheckpointSeriesReset(t *testing.T) {
 				}
 			}
 
-			_, _, err = w.Segments()
+			_, _, err = Segments(w.Dir())
 			testutil.Ok(t, err)
 
 			wt := newWriteToMock()
-			watcher := NewWatcher(nil, wMetrics, nil, "", wt, dir)
+			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir)
 			watcher.MaxSegment = -1
 			go watcher.Start()
 
@@ -520,7 +549,7 @@ func TestCheckpointSeriesReset(t *testing.T) {
 			})
 			testutil.Equals(t, seriesCount, wt.checkNumLabels())
 
-			_, err = Checkpoint(w, 2, 4, func(x uint64) bool { return true }, 0)
+			_, err = Checkpoint(log.NewNopLogger(), w, 2, 4, func(x uint64) bool { return true }, 0)
 			testutil.Ok(t, err)
 
 			err = w.Truncate(5)

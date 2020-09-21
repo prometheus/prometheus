@@ -43,7 +43,7 @@ const (
 	entrySize int = 1000
 )
 
-func parseBrokenJSON(brokenJSON []byte) (bool, string) {
+func parseBrokenJSON(brokenJSON []byte) (string, bool) {
 	queries := strings.ReplaceAll(string(brokenJSON), "\x00", "")
 	if len(queries) > 0 {
 		queries = queries[:len(queries)-1] + "]"
@@ -51,10 +51,10 @@ func parseBrokenJSON(brokenJSON []byte) (bool, string) {
 
 	// Conditional because of implementation detail: len() = 1 implies file consisted of a single char: '['.
 	if len(queries) <= 1 {
-		return false, "[]"
+		return "[]", false
 	}
 
-	return true, queries
+	return queries, true
 }
 
 func logUnfinishedQueries(filename string, filesize int, logger log.Logger) {
@@ -72,7 +72,7 @@ func logUnfinishedQueries(filename string, filesize int, logger log.Logger) {
 			return
 		}
 
-		queriesExist, queries := parseBrokenJSON(brokenJSON)
+		queries, queriesExist := parseBrokenJSON(brokenJSON)
 		if !queriesExist {
 			return
 		}

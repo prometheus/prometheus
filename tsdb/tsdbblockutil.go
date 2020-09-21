@@ -23,7 +23,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 )
 
-var InvalidTimesError = fmt.Errorf("max time is lesser than min time")
+var ErrInvalidTimes = fmt.Errorf("max time is lesser than min time")
 
 type MetricSample struct {
 	TimestampMs int64
@@ -32,12 +32,13 @@ type MetricSample struct {
 }
 
 // CreateHead creates a TSDB writer head to write the sample data to.
-func CreateHead(samples []*MetricSample, chunkRange int64, logger log.Logger) (*Head, error) {
-	head, err := NewHead(nil, logger, nil, chunkRange, DefaultStripeSize)
+func CreateHead(samples []*MetricSample, chunkRange int64, chunkDir string, logger log.Logger) (*Head, error) {
+	head, err := NewHead(nil, logger, nil, chunkRange, chunkDir, nil, DefaultStripeSize, nil)
+
 	if err != nil {
 		return nil, err
 	}
-	app := head.Appender()
+	app := head.Appender(context.TODO())
 	for _, sample := range samples {
 		_, err = app.Add(sample.Labels, sample.TimestampMs, sample.Value)
 		if err != nil {
@@ -58,12 +59,17 @@ func CreateBlock(samples []*MetricSample, dir string, mint, maxt int64, logger l
 		chunkRange = DefaultBlockDuration
 	}
 	if chunkRange < 0 {
-		return "", InvalidTimesError
+		return "", ErrInvalidTimes
 	}
-	head, err := CreateHead(samples, chunkRange, logger)
+	chunkDir := filepath.Join(dir, "chunks_tmp")
+	defer func() {
+		os.RemoveAll(chunkDir)
+	}()
+	head, err := CreateHead(samples, chunkRange, chunkDir, logger)
 	if err != nil {
 		return "", err
 	}
+	defer head.Close()
 
 	compactor, err := NewLeveledCompactor(context.Background(), nil, logger, ExponentialBlockRanges(DefaultBlockDuration, 3, 5), nil)
 	if err != nil {

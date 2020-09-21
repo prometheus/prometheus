@@ -309,6 +309,8 @@ type CounterFunc interface {
 // provided function must be concurrency-safe. The function should also honor
 // the contract for a Counter (values only go up, not down), but compliance will
 // not be checked.
+//
+// Check out the ExampleGaugeFunc examples for the similar GaugeFunc.
 func NewCounterFunc(opts CounterOpts, function func() float64) CounterFunc {
 	return newValueFunc(NewDesc(
 		BuildFQName(opts.Namespace, opts.Subsystem, opts.Name),

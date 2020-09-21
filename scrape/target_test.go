@@ -151,7 +151,7 @@ func TestNewHTTPBearerToken(t *testing.T) {
 	cfg := config_util.HTTPClientConfig{
 		BearerToken: "1234",
 	}
-	c, err := config_util.NewClientFromConfig(cfg, "test", false)
+	c, err := config_util.NewClientFromConfig(cfg, "test", false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +178,7 @@ func TestNewHTTPBearerTokenFile(t *testing.T) {
 	cfg := config_util.HTTPClientConfig{
 		BearerTokenFile: "testdata/bearertoken.txt",
 	}
-	c, err := config_util.NewClientFromConfig(cfg, "test", false)
+	c, err := config_util.NewClientFromConfig(cfg, "test", false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +207,7 @@ func TestNewHTTPBasicAuth(t *testing.T) {
 			Password: "password123",
 		},
 	}
-	c, err := config_util.NewClientFromConfig(cfg, "test", false)
+	c, err := config_util.NewClientFromConfig(cfg, "test", false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,7 +235,7 @@ func TestNewHTTPCACert(t *testing.T) {
 			CAFile: caCertPath,
 		},
 	}
-	c, err := config_util.NewClientFromConfig(cfg, "test", false)
+	c, err := config_util.NewClientFromConfig(cfg, "test", false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -257,7 +257,6 @@ func TestNewHTTPClientCert(t *testing.T) {
 	tlsConfig := newTLSConfig("server", t)
 	tlsConfig.ClientAuth = tls.RequireAndVerifyClientCert
 	tlsConfig.ClientCAs = tlsConfig.RootCAs
-	tlsConfig.BuildNameToCertificate()
 	server.TLS = tlsConfig
 	server.StartTLS()
 	defer server.Close()
@@ -269,7 +268,7 @@ func TestNewHTTPClientCert(t *testing.T) {
 			KeyFile:  "testdata/client.key",
 		},
 	}
-	c, err := config_util.NewClientFromConfig(cfg, "test", false)
+	c, err := config_util.NewClientFromConfig(cfg, "test", false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -298,7 +297,7 @@ func TestNewHTTPWithServerName(t *testing.T) {
 			ServerName: "prometheus.rocks",
 		},
 	}
-	c, err := config_util.NewClientFromConfig(cfg, "test", false)
+	c, err := config_util.NewClientFromConfig(cfg, "test", false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -327,7 +326,7 @@ func TestNewHTTPWithBadServerName(t *testing.T) {
 			ServerName: "badname",
 		},
 	}
-	c, err := config_util.NewClientFromConfig(cfg, "test", false)
+	c, err := config_util.NewClientFromConfig(cfg, "test", false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -354,7 +353,6 @@ func newTLSConfig(certName string, t *testing.T) *tls.Config {
 		t.Errorf("Unable to use specified server cert (%s) & key (%v): %s", certPath, keyPath, err)
 	}
 	tlsConfig.Certificates = []tls.Certificate{cert}
-	tlsConfig.BuildNameToCertificate()
 	return tlsConfig
 }
 
@@ -366,7 +364,7 @@ func TestNewClientWithBadTLSConfig(t *testing.T) {
 			KeyFile:  "testdata/nonexistent_client.key",
 		},
 	}
-	_, err := config_util.NewClientFromConfig(cfg, "test", false)
+	_, err := config_util.NewClientFromConfig(cfg, "test", false, false)
 	if err == nil {
 		t.Fatalf("Expected error, got nil.")
 	}

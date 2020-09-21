@@ -37,7 +37,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
-
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/gate"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -100,17 +99,20 @@ func (e *apiError) Error() string {
 	return fmt.Sprintf("%s: %s", e.typ, e.err)
 }
 
-type targetRetriever interface {
+// TargetRetriever provides the list of active/dropped targets to scrape or not.
+type TargetRetriever interface {
 	TargetsActive() map[string][]*scrape.Target
 	TargetsDropped() map[string][]*scrape.Target
 }
 
-type alertmanagerRetriever interface {
+// AlertmanagerRetriever provides a list of all/dropped AlertManager URLs.
+type AlertmanagerRetriever interface {
 	Alertmanagers() []*url.URL
 	DroppedAlertmanagers() []*url.URL
 }
 
-type rulesRetriever interface {
+// RulesRetriever provides a list of active rules and alerts.
+type RulesRetriever interface {
 	RuleGroups() []*rules.Group
 	AlertingRules() []*rules.AlertingRule
 }
@@ -158,31 +160,32 @@ type apiFuncResult struct {
 
 type apiFunc func(r *http.Request) apiFuncResult
 
-// TSDBAdmin defines the tsdb interfaces used by the v1 API for admin operations.
-type TSDBAdmin interface {
+// TSDBAdminStats defines the tsdb interfaces used by the v1 API for admin operations as well as statistics.
+type TSDBAdminStats interface {
 	CleanTombstones() error
 	Delete(mint, maxt int64, ms ...*labels.Matcher) error
-	Dir() string
 	Snapshot(dir string, withHead bool) error
-	Head() *tsdb.Head
+
+	Stats(statsByLabelName string) (*tsdb.Stats, error)
 }
 
 // API can register a set of endpoints in a router and handle
 // them using the provided storage and query engine.
 type API struct {
-	Queryable   storage.Queryable
+	Queryable   storage.SampleAndChunkQueryable
 	QueryEngine *promql.Engine
 
-	targetRetriever       targetRetriever
-	alertmanagerRetriever alertmanagerRetriever
-	rulesRetriever        rulesRetriever
+	targetRetriever       func(context.Context) TargetRetriever
+	alertmanagerRetriever func(context.Context) AlertmanagerRetriever
+	rulesRetriever        func(context.Context) RulesRetriever
 	now                   func() time.Time
 	config                func() config.Config
 	flagsMap              map[string]string
 	ready                 func(http.HandlerFunc) http.HandlerFunc
 	globalURLOptions      GlobalURLOptions
 
-	db                        func() TSDBAdmin
+	db                        TSDBAdminStats
+	dbDir                     string
 	enableAdmin               bool
 	logger                    log.Logger
 	remoteReadSampleLimit     int
@@ -201,17 +204,18 @@ func init() {
 // NewAPI returns an initialized API type.
 func NewAPI(
 	qe *promql.Engine,
-	q storage.Queryable,
-	tr targetRetriever,
-	ar alertmanagerRetriever,
+	q storage.SampleAndChunkQueryable,
+	tr func(context.Context) TargetRetriever,
+	ar func(context.Context) AlertmanagerRetriever,
 	configFunc func() config.Config,
 	flagsMap map[string]string,
 	globalURLOptions GlobalURLOptions,
 	readyFunc func(http.HandlerFunc) http.HandlerFunc,
-	db func() TSDBAdmin,
+	db TSDBAdminStats,
+	dbDir string,
 	enableAdmin bool,
 	logger log.Logger,
-	rr rulesRetriever,
+	rr func(context.Context) RulesRetriever,
 	remoteReadSampleLimit int,
 	remoteReadConcurrencyLimit int,
 	remoteReadMaxBytesInFrame int,
@@ -231,6 +235,7 @@ func NewAPI(
 		ready:                     readyFunc,
 		globalURLOptions:          globalURLOptions,
 		db:                        db,
+		dbDir:                     dbDir,
 		enableAdmin:               enableAdmin,
 		rulesRetriever:            rr,
 		remoteReadSampleLimit:     remoteReadSampleLimit,
@@ -243,22 +248,32 @@ func NewAPI(
 	}
 }
 
+func setUnavailStatusOnTSDBNotReady(r apiFuncResult) apiFuncResult {
+	if r.err != nil && errors.Cause(r.err.err) == tsdb.ErrNotReady {
+		r.err.typ = errorUnavailable
+	}
+	return r
+}
+
 // Register the API's endpoints in the given router.
 func (api *API) Register(r *route.Router) {
 	wrap := func(f apiFunc) http.HandlerFunc {
 		hf := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			httputil.SetCORS(w, api.CORSOrigin, r)
-			result := f(r)
+			result := setUnavailStatusOnTSDBNotReady(f(r))
+			if result.finalizer != nil {
+				defer result.finalizer()
+			}
 			if result.err != nil {
 				api.respondError(w, result.err, result.data)
-			} else if result.data != nil {
+				return
+			}
+
+			if result.data != nil {
 				api.respond(w, result.data, result.warnings)
-			} else {
-				w.WriteHeader(http.StatusNoContent)
+				return
 			}
-			if result.finalizer != nil {
-				result.finalizer()
-			}
+			w.WriteHeader(http.StatusNoContent)
 		})
 		return api.ready(httputil.CompressionHandler{
 			Handler: hf,
@@ -317,7 +332,7 @@ func (api *API) options(r *http.Request) apiFuncResult {
 	return apiFuncResult{nil, nil, nil, nil}
 }
 
-func (api *API) query(r *http.Request) apiFuncResult {
+func (api *API) query(r *http.Request) (result apiFuncResult) {
 	ts, err := parseTimeParam(r, "time", api.now())
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
@@ -340,6 +355,14 @@ func (api *API) query(r *http.Request) apiFuncResult {
 		err = errors.Wrapf(err, "invalid parameter 'query'")
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
+	// From now on, we must only return with a finalizer in the result (to
+	// be called by the caller) or call qry.Close ourselves (which is
+	// required in the case of a panic).
+	defer func() {
+		if result.finalizer == nil {
+			qry.Close()
+		}
+	}()
 
 	ctx = httputil.ContextFromRequest(ctx, r)
 
@@ -361,7 +384,7 @@ func (api *API) query(r *http.Request) apiFuncResult {
 	}, nil, res.Warnings, qry.Close}
 }
 
-func (api *API) queryRange(r *http.Request) apiFuncResult {
+func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 	start, err := parseTime(r.FormValue("start"))
 	if err != nil {
 		err = errors.Wrapf(err, "invalid parameter 'start'")
@@ -412,6 +435,14 @@ func (api *API) queryRange(r *http.Request) apiFuncResult {
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
+	// From now on, we must only return with a finalizer in the result (to
+	// be called by the caller) or call qry.Close ourselves (which is
+	// required in the case of a panic).
+	defer func() {
+		if result.finalizer == nil {
+			qry.Close()
+		}
+	}()
 
 	ctx = httputil.ContextFromRequest(ctx, r)
 
@@ -438,7 +469,7 @@ func returnAPIError(err error) *apiError {
 		return nil
 	}
 
-	switch err.(type) {
+	switch errors.Cause(err).(type) {
 	case promql.ErrQueryCanceled:
 		return &apiError{errorCanceled, err}
 	case promql.ErrQueryTimeout:
@@ -451,7 +482,16 @@ func returnAPIError(err error) *apiError {
 }
 
 func (api *API) labelNames(r *http.Request) apiFuncResult {
-	q, err := api.Queryable.Querier(r.Context(), math.MinInt64, math.MaxInt64)
+	start, err := parseTimeParam(r, "start", minTime)
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrap(err, "invalid parameter 'start'")}, nil, nil}
+	}
+	end, err := parseTimeParam(r, "end", maxTime)
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrap(err, "invalid parameter 'end'")}, nil, nil}
+	}
+
+	q, err := api.Queryable.Querier(r.Context(), timestamp.FromTime(start), timestamp.FromTime(end))
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
 	}
@@ -461,21 +501,41 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
 	}
+	if names == nil {
+		names = []string{}
+	}
 	return apiFuncResult{names, nil, warnings, nil}
 }
 
-func (api *API) labelValues(r *http.Request) apiFuncResult {
+func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 	ctx := r.Context()
 	name := route.Param(ctx, "name")
 
 	if !model.LabelNameRE.MatchString(name) {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.Errorf("invalid label name: %q", name)}, nil, nil}
 	}
-	q, err := api.Queryable.Querier(ctx, math.MinInt64, math.MaxInt64)
+
+	start, err := parseTimeParam(r, "start", minTime)
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrap(err, "invalid parameter 'start'")}, nil, nil}
+	}
+	end, err := parseTimeParam(r, "end", maxTime)
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrap(err, "invalid parameter 'end'")}, nil, nil}
+	}
+
+	q, err := api.Queryable.Querier(r.Context(), timestamp.FromTime(start), timestamp.FromTime(end))
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
 	}
-
+	// From now on, we must only return with a finalizer in the result (to
+	// be called by the caller) or call q.Close ourselves (which is required
+	// in the case of a panic).
+	defer func() {
+		if result.finalizer == nil {
+			q.Close()
+		}
+	}()
 	closer := func() {
 		q.Close()
 	}
@@ -483,6 +543,9 @@ func (api *API) labelValues(r *http.Request) apiFuncResult {
 	vals, warnings, err := q.LabelValues(name)
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, warnings, closer}
+	}
+	if vals == nil {
+		vals = []string{}
 	}
 
 	return apiFuncResult{vals, nil, warnings, closer}
@@ -496,7 +559,7 @@ var (
 	maxTimeFormatted = maxTime.Format(time.RFC3339Nano)
 )
 
-func (api *API) series(r *http.Request) apiFuncResult {
+func (api *API) series(r *http.Request) (result apiFuncResult) {
 	if err := r.ParseForm(); err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrapf(err, "error parsing form values")}, nil, nil}
 	}
@@ -526,29 +589,37 @@ func (api *API) series(r *http.Request) apiFuncResult {
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
 	}
-	defer q.Close()
+	// From now on, we must only return with a finalizer in the result (to
+	// be called by the caller) or call q.Close ourselves (which is required
+	// in the case of a panic).
+	defer func() {
+		if result.finalizer == nil {
+			q.Close()
+		}
+	}()
+	closer := func() {
+		q.Close()
+	}
 
 	var sets []storage.SeriesSet
-	var warnings storage.Warnings
 	for _, mset := range matcherSets {
-		s, wrn, err := q.Select(false, nil, mset...)
-		warnings = append(warnings, wrn...)
-		if err != nil {
-			return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
-		}
+		// We need to sort this select results to merge (deduplicate) the series sets later.
+		s := q.Select(true, nil, mset...)
 		sets = append(sets, s)
 	}
 
-	set := storage.NewMergeSeriesSet(sets, nil)
+	set := storage.NewMergeSeriesSet(sets, storage.ChainedSeriesMerge)
 	metrics := []labels.Labels{}
 	for set.Next() {
 		metrics = append(metrics, set.At().Labels())
 	}
+
+	warnings := set.Warnings()
 	if set.Err() != nil {
-		return apiFuncResult{nil, &apiError{errorExec, set.Err()}, warnings, nil}
+		return apiFuncResult{nil, &apiError{errorExec, set.Err()}, warnings, closer}
 	}
 
-	return apiFuncResult{metrics, nil, warnings, nil}
+	return apiFuncResult{metrics, nil, warnings, closer}
 }
 
 func (api *API) dropSeries(r *http.Request) apiFuncResult {
@@ -659,7 +730,7 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 	res := &TargetDiscovery{}
 
 	if showActive {
-		targetsActive := api.targetRetriever.TargetsActive()
+		targetsActive := api.targetRetriever(r.Context()).TargetsActive()
 		activeKeys, numTargets := sortKeys(targetsActive)
 		res.ActiveTargets = make([]*Target, 0, numTargets)
 
@@ -697,7 +768,7 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 		res.ActiveTargets = []*Target{}
 	}
 	if showDropped {
-		tDropped := flatten(api.targetRetriever.TargetsDropped())
+		tDropped := flatten(api.targetRetriever(r.Context()).TargetsDropped())
 		res.DroppedTargets = make([]*DroppedTarget, 0, len(tDropped))
 		for _, t := range tDropped {
 			res.DroppedTargets = append(res.DroppedTargets, &DroppedTarget{
@@ -744,7 +815,7 @@ func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 	metric := r.FormValue("metric")
 
 	res := []metricMetadata{}
-	for _, tt := range api.targetRetriever.TargetsActive() {
+	for _, tt := range api.targetRetriever(r.Context()).TargetsActive() {
 		for _, t := range tt {
 			if limit >= 0 && len(res) >= limit {
 				break
@@ -801,8 +872,8 @@ type AlertmanagerTarget struct {
 }
 
 func (api *API) alertmanagers(r *http.Request) apiFuncResult {
-	urls := api.alertmanagerRetriever.Alertmanagers()
-	droppedURLS := api.alertmanagerRetriever.DroppedAlertmanagers()
+	urls := api.alertmanagerRetriever(r.Context()).Alertmanagers()
+	droppedURLS := api.alertmanagerRetriever(r.Context()).DroppedAlertmanagers()
 	ams := &AlertmanagerDiscovery{ActiveAlertmanagers: make([]*AlertmanagerTarget, len(urls)), DroppedAlertmanagers: make([]*AlertmanagerTarget, len(droppedURLS))}
 	for i, url := range urls {
 		ams.ActiveAlertmanagers[i] = &AlertmanagerTarget{URL: url.String()}
@@ -828,7 +899,7 @@ type Alert struct {
 }
 
 func (api *API) alerts(r *http.Request) apiFuncResult {
-	alertingRules := api.rulesRetriever.AlertingRules()
+	alertingRules := api.rulesRetriever(r.Context()).AlertingRules()
 	alerts := []*Alert{}
 
 	for _, alertingRule := range alertingRules {
@@ -877,7 +948,7 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 
 	metric := r.FormValue("metric")
 
-	for _, tt := range api.targetRetriever.TargetsActive() {
+	for _, tt := range api.targetRetriever(r.Context()).TargetsActive() {
 		for _, t := range tt {
 
 			if metric == "" {
@@ -975,7 +1046,7 @@ type recordingRule struct {
 }
 
 func (api *API) rules(r *http.Request) apiFuncResult {
-	ruleGroups := api.rulesRetriever.RuleGroups()
+	ruleGroups := api.rulesRetriever(r.Context()).RuleGroups()
 	res := &RuleDiscovery{RuleGroups: make([]*RuleGroup, len(ruleGroups))}
 	typeParam := strings.ToLower(r.URL.Query().Get("type"))
 
@@ -993,8 +1064,8 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 			File:           grp.File(),
 			Interval:       grp.Interval().Seconds(),
 			Rules:          []rule{},
-			EvaluationTime: grp.GetEvaluationDuration().Seconds(),
-			LastEvaluation: grp.GetEvaluationTimestamp(),
+			EvaluationTime: grp.GetEvaluationTime().Seconds(),
+			LastEvaluation: grp.GetLastEvaluation(),
 		}
 		for _, r := range grp.Rules() {
 			var enrichedRule rule
@@ -1090,29 +1161,27 @@ type tsdbStatus struct {
 	SeriesCountByLabelValuePair []stat `json:"seriesCountByLabelValuePair"`
 }
 
-func (api *API) serveTSDBStatus(r *http.Request) apiFuncResult {
-	db := api.db()
-	if db == nil {
-		return apiFuncResult{nil, &apiError{errorUnavailable, errors.New("TSDB not ready")}, nil, nil}
+func convertStats(stats []index.Stat) []stat {
+	result := make([]stat, 0, len(stats))
+	for _, item := range stats {
+		item := stat{Name: item.Name, Value: item.Count}
+		result = append(result, item)
 	}
-	convert := func(stats []index.Stat) []stat {
-		result := make([]stat, 0, len(stats))
-		for _, item := range stats {
-			item := stat{Name: item.Name, Value: item.Count}
-			result = append(result, item)
-		}
-		return result
+	return result
+}
+
+func (api *API) serveTSDBStatus(*http.Request) apiFuncResult {
+	s, err := api.db.Stats("__name__")
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}
 	}
 
-	posting := db.Head().PostingsCardinalityStats(model.MetricNameLabel)
-	response := tsdbStatus{
-		SeriesCountByMetricName:     convert(posting.CardinalityMetricsStats),
-		LabelValueCountByLabelName:  convert(posting.CardinalityLabelStats),
-		MemoryInBytesByLabelName:    convert(posting.LabelValueStats),
-		SeriesCountByLabelValuePair: convert(posting.LabelValuePairsStats),
-	}
-
-	return apiFuncResult{response, nil, nil, nil}
+	return apiFuncResult{tsdbStatus{
+		SeriesCountByMetricName:     convertStats(s.IndexPostingStats.CardinalityMetricsStats),
+		LabelValueCountByLabelName:  convertStats(s.IndexPostingStats.CardinalityLabelStats),
+		MemoryInBytesByLabelName:    convertStats(s.IndexPostingStats.LabelValueStats),
+		SeriesCountByLabelValuePair: convertStats(s.IndexPostingStats.LabelValuePairsStats),
+	}, nil, nil, nil}
 }
 
 func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
@@ -1137,8 +1206,8 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 	sortedExternalLabels := make([]prompb.Label, 0, len(externalLabels))
 	for name, value := range externalLabels {
 		sortedExternalLabels = append(sortedExternalLabels, prompb.Label{
-			Name:  string(name),
-			Value: string(value),
+			Name:  name,
+			Value: value,
 		})
 	}
 	sort.Slice(sortedExternalLabels, func(i, j int) bool {
@@ -1153,74 +1222,144 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 
 	switch responseType {
 	case prompb.ReadRequest_STREAMED_XOR_CHUNKS:
-		w.Header().Set("Content-Type", "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse")
+		api.remoteReadStreamedXORChunks(ctx, w, req, externalLabels, sortedExternalLabels)
+	default:
+		// On empty or unknown types in req.AcceptedResponseTypes we default to non streamed, raw samples response.
+		api.remoteReadSamples(ctx, w, req, externalLabels, sortedExternalLabels)
+	}
+}
 
-		f, ok := w.(http.Flusher)
-		if !ok {
-			http.Error(w, "internal http.ResponseWriter does not implement http.Flusher interface", http.StatusInternalServerError)
+func (api *API) remoteReadSamples(
+	ctx context.Context,
+	w http.ResponseWriter,
+	req *prompb.ReadRequest,
+	externalLabels map[string]string,
+	sortedExternalLabels []prompb.Label,
+) {
+	w.Header().Set("Content-Type", "application/x-protobuf")
+	w.Header().Set("Content-Encoding", "snappy")
+
+	resp := prompb.ReadResponse{
+		Results: make([]*prompb.QueryResult, len(req.Queries)),
+	}
+	for i, query := range req.Queries {
+		if err := func() error {
+			filteredMatchers, err := filterExtLabelsFromMatchers(query.Matchers, externalLabels)
+			if err != nil {
+				return err
+			}
+
+			querier, err := api.Queryable.Querier(ctx, query.StartTimestampMs, query.EndTimestampMs)
+			if err != nil {
+				return err
+			}
+			defer func() {
+				if err := querier.Close(); err != nil {
+					level.Warn(api.logger).Log("msg", "Error on querier close", "err", err.Error())
+				}
+			}()
+
+			var hints *storage.SelectHints
+			if query.Hints != nil {
+				hints = &storage.SelectHints{
+					Start:    query.Hints.StartMs,
+					End:      query.Hints.EndMs,
+					Step:     query.Hints.StepMs,
+					Func:     query.Hints.Func,
+					Grouping: query.Hints.Grouping,
+					Range:    query.Hints.RangeMs,
+					By:       query.Hints.By,
+				}
+			}
+
+			var ws storage.Warnings
+			resp.Results[i], ws, err = remote.ToQueryResult(querier.Select(false, hints, filteredMatchers...), api.remoteReadSampleLimit)
+			if err != nil {
+				return err
+			}
+			for _, w := range ws {
+				level.Warn(api.logger).Log("msg", "Warnings on remote read query", "err", w.Error())
+			}
+			for _, ts := range resp.Results[i].Timeseries {
+				ts.Labels = remote.MergeLabels(ts.Labels, sortedExternalLabels)
+			}
+			return nil
+		}(); err != nil {
+			if httpErr, ok := err.(remote.HTTPError); ok {
+				http.Error(w, httpErr.Error(), httpErr.Status())
+				return
+			}
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		for i, query := range req.Queries {
-			err := api.remoteReadQuery(ctx, query, externalLabels, func(querier storage.Querier, hints *storage.SelectHints, filteredMatchers []*labels.Matcher) error {
+	}
+
+	if err := remote.EncodeReadResponse(&resp, w); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
+func (api *API) remoteReadStreamedXORChunks(ctx context.Context, w http.ResponseWriter, req *prompb.ReadRequest, externalLabels map[string]string, sortedExternalLabels []prompb.Label) {
+	w.Header().Set("Content-Type", "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse")
+
+	f, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "internal http.ResponseWriter does not implement http.Flusher interface", http.StatusInternalServerError)
+		return
+	}
+
+	for i, query := range req.Queries {
+		if err := func() error {
+			filteredMatchers, err := filterExtLabelsFromMatchers(query.Matchers, externalLabels)
+			if err != nil {
+				return err
+			}
+
+			querier, err := api.Queryable.ChunkQuerier(ctx, query.StartTimestampMs, query.EndTimestampMs)
+			if err != nil {
+				return err
+			}
+			defer func() {
+				if err := querier.Close(); err != nil {
+					level.Warn(api.logger).Log("msg", "Error on chunk querier close", "err", err.Error())
+				}
+			}()
+
+			var hints *storage.SelectHints
+			if query.Hints != nil {
+				hints = &storage.SelectHints{
+					Start:    query.Hints.StartMs,
+					End:      query.Hints.EndMs,
+					Step:     query.Hints.StepMs,
+					Func:     query.Hints.Func,
+					Grouping: query.Hints.Grouping,
+					Range:    query.Hints.RangeMs,
+					By:       query.Hints.By,
+				}
+			}
+
+			ws, err := remote.StreamChunkedReadResponses(
+				remote.NewChunkedWriter(w, f),
+				int64(i),
 				// The streaming API has to provide the series sorted.
-				set, _, err := querier.Select(true, hints, filteredMatchers...)
-				if err != nil {
-					return err
-				}
-
-				return remote.StreamChunkedReadResponses(
-					remote.NewChunkedWriter(w, f),
-					int64(i),
-					set,
-					sortedExternalLabels,
-					api.remoteReadMaxBytesInFrame,
-				)
-			})
+				querier.Select(true, hints, filteredMatchers...),
+				sortedExternalLabels,
+				api.remoteReadMaxBytesInFrame,
+			)
 			if err != nil {
-				if httpErr, ok := err.(remote.HTTPError); ok {
-					http.Error(w, httpErr.Error(), httpErr.Status())
-					return
-				}
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return err
+			}
+
+			for _, w := range ws {
+				level.Warn(api.logger).Log("msg", "Warnings on chunked remote read query", "warnings", w.Error())
+			}
+			return nil
+		}(); err != nil {
+			if httpErr, ok := err.(remote.HTTPError); ok {
+				http.Error(w, httpErr.Error(), httpErr.Status())
 				return
 			}
-		}
-	default:
-		w.Header().Set("Content-Type", "application/x-protobuf")
-		w.Header().Set("Content-Encoding", "snappy")
-
-		// On empty or unknown types in req.AcceptedResponseTypes we default to non streamed, raw samples response.
-		resp := prompb.ReadResponse{
-			Results: make([]*prompb.QueryResult, len(req.Queries)),
-		}
-		for i, query := range req.Queries {
-			err := api.remoteReadQuery(ctx, query, externalLabels, func(querier storage.Querier, hints *storage.SelectHints, filteredMatchers []*labels.Matcher) error {
-				set, _, err := querier.Select(false, hints, filteredMatchers...)
-				if err != nil {
-					return err
-				}
-
-				resp.Results[i], err = remote.ToQueryResult(set, api.remoteReadSampleLimit)
-				if err != nil {
-					return err
-				}
-
-				for _, ts := range resp.Results[i].Timeseries {
-					ts.Labels = remote.MergeLabels(ts.Labels, sortedExternalLabels)
-				}
-				return nil
-			})
-			if err != nil {
-				if httpErr, ok := err.(remote.HTTPError); ok {
-					http.Error(w, httpErr.Error(), httpErr.Status())
-					return
-				}
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-		}
-
-		if err := remote.EncodeReadResponse(&resp, w); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -1253,46 +1392,10 @@ func filterExtLabelsFromMatchers(pbMatchers []*prompb.LabelMatcher, externalLabe
 	return filteredMatchers, nil
 }
 
-func (api *API) remoteReadQuery(ctx context.Context, query *prompb.Query, externalLabels map[string]string, seriesHandleFn func(querier storage.Querier, hints *storage.SelectHints, filteredMatchers []*labels.Matcher) error) error {
-	filteredMatchers, err := filterExtLabelsFromMatchers(query.Matchers, externalLabels)
-	if err != nil {
-		return err
-	}
-
-	querier, err := api.Queryable.Querier(ctx, query.StartTimestampMs, query.EndTimestampMs)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err := querier.Close(); err != nil {
-			level.Warn(api.logger).Log("msg", "error on querier close", "err", err.Error())
-		}
-	}()
-
-	var hints *storage.SelectHints
-	if query.Hints != nil {
-		hints = &storage.SelectHints{
-			Start:    query.Hints.StartMs,
-			End:      query.Hints.EndMs,
-			Step:     query.Hints.StepMs,
-			Func:     query.Hints.Func,
-			Grouping: query.Hints.Grouping,
-			Range:    query.Hints.RangeMs,
-			By:       query.Hints.By,
-		}
-	}
-	return seriesHandleFn(querier, hints, filteredMatchers)
-}
-
 func (api *API) deleteSeries(r *http.Request) apiFuncResult {
 	if !api.enableAdmin {
 		return apiFuncResult{nil, &apiError{errorUnavailable, errors.New("admin APIs disabled")}, nil, nil}
 	}
-	db := api.db()
-	if db == nil {
-		return apiFuncResult{nil, &apiError{errorUnavailable, errors.New("TSDB not ready")}, nil, nil}
-	}
-
 	if err := r.ParseForm(); err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrap(err, "error parsing form values")}, nil, nil}
 	}
@@ -1314,8 +1417,7 @@ func (api *API) deleteSeries(r *http.Request) apiFuncResult {
 		if err != nil {
 			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 		}
-
-		if err := db.Delete(timestamp.FromTime(start), timestamp.FromTime(end), matchers...); err != nil {
+		if err := api.db.Delete(timestamp.FromTime(start), timestamp.FromTime(end), matchers...); err != nil {
 			return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}
 		}
 	}
@@ -1338,13 +1440,8 @@ func (api *API) snapshot(r *http.Request) apiFuncResult {
 		}
 	}
 
-	db := api.db()
-	if db == nil {
-		return apiFuncResult{nil, &apiError{errorUnavailable, errors.New("TSDB not ready")}, nil, nil}
-	}
-
 	var (
-		snapdir = filepath.Join(db.Dir(), "snapshots")
+		snapdir = filepath.Join(api.dbDir, "snapshots")
 		name    = fmt.Sprintf("%s-%x",
 			time.Now().UTC().Format("20060102T150405Z0700"),
 			rand.Int())
@@ -1353,7 +1450,7 @@ func (api *API) snapshot(r *http.Request) apiFuncResult {
 	if err := os.MkdirAll(dir, 0777); err != nil {
 		return apiFuncResult{nil, &apiError{errorInternal, errors.Wrap(err, "create snapshot directory")}, nil, nil}
 	}
-	if err := db.Snapshot(dir, !skipHead); err != nil {
+	if err := api.db.Snapshot(dir, !skipHead); err != nil {
 		return apiFuncResult{nil, &apiError{errorInternal, errors.Wrap(err, "create snapshot")}, nil, nil}
 	}
 
@@ -1366,12 +1463,7 @@ func (api *API) cleanTombstones(r *http.Request) apiFuncResult {
 	if !api.enableAdmin {
 		return apiFuncResult{nil, &apiError{errorUnavailable, errors.New("admin APIs disabled")}, nil, nil}
 	}
-	db := api.db()
-	if db == nil {
-		return apiFuncResult{nil, &apiError{errorUnavailable, errors.New("TSDB not ready")}, nil, nil}
-	}
-
-	if err := db.CleanTombstones(); err != nil {
+	if err := api.db.CleanTombstones(); err != nil {
 		return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}
 	}
 
@@ -1423,7 +1515,7 @@ func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data inter
 	case errorBadData:
 		code = http.StatusBadRequest
 	case errorExec:
-		code = 422
+		code = http.StatusUnprocessableEntity
 	case errorCanceled, errorTimeout:
 		code = http.StatusServiceUnavailable
 	case errorInternal:
@@ -1457,7 +1549,7 @@ func parseTime(s string) (time.Time, error) {
 	if t, err := strconv.ParseFloat(s, 64); err == nil {
 		s, ns := math.Modf(t)
 		ns = math.Round(ns*1000) / 1000
-		return time.Unix(int64(s), int64(ns*float64(time.Second))), nil
+		return time.Unix(int64(s), int64(ns*float64(time.Second))).UTC(), nil
 	}
 	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
 		return t, nil

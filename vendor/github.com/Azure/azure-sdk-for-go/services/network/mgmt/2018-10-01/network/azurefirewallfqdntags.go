@@ -72,6 +72,9 @@ func (client AzureFirewallFqdnTagsClient) ListAll(ctx context.Context) (result A
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.AzureFirewallFqdnTagsClient", "ListAll", resp, "Failure responding to request")
 	}
+	if result.afftlr.hasNextLink() && result.afftlr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }
@@ -106,7 +109,6 @@ func (client AzureFirewallFqdnTagsClient) ListAllSender(req *http.Request) (*htt
 func (client AzureFirewallFqdnTagsClient) ListAllResponder(resp *http.Response) (result AzureFirewallFqdnTagListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

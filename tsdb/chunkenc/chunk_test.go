@@ -111,10 +111,10 @@ func testChunk(t *testing.T, c Chunk) {
 
 func benchmarkIterator(b *testing.B, newChunk func() Chunk) {
 	var (
-		t = int64(1234123324)
-		v = 1243535.123
+		t   = int64(1234123324)
+		v   = 1243535.123
+		exp []pair
 	)
-	var exp []pair
 	for i := 0; i < b.N; i++ {
 		// t += int64(rand.Intn(10000) + 1)
 		t += int64(1000)
@@ -146,7 +146,7 @@ func benchmarkIterator(b *testing.B, newChunk func() Chunk) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	fmt.Println("num", b.N, "created chunks", len(chunks))
+	b.Log("num", b.N, "created chunks", len(chunks))
 
 	res := make([]float64, 0, 1024)
 

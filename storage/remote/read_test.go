@@ -22,6 +22,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/pkg/errors"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -40,7 +41,7 @@ func TestNoDuplicateReadConfigs(t *testing.T) {
 		URL: &config_util.URL{
 			URL: &url.URL{
 				Scheme: "http",
-				Host:   "localhost",
+				Host:   "localhost1",
 			},
 		},
 	}
@@ -49,7 +50,7 @@ func TestNoDuplicateReadConfigs(t *testing.T) {
 		URL: &config_util.URL{
 			URL: &url.URL{
 				Scheme: "http",
-				Host:   "localhost",
+				Host:   "localhost2",
 			},
 		},
 	}
@@ -57,7 +58,7 @@ func TestNoDuplicateReadConfigs(t *testing.T) {
 		URL: &config_util.URL{
 			URL: &url.URL{
 				Scheme: "http",
-				Host:   "localhost",
+				Host:   "localhost3",
 			},
 		},
 	}
@@ -92,37 +93,17 @@ func TestNoDuplicateReadConfigs(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline)
-		conf := &config.Config{
-			GlobalConfig:      config.DefaultGlobalConfig,
-			RemoteReadConfigs: tc.cfgs,
-		}
-		err := s.ApplyConfig(conf)
-		gotError := err != nil
-		testutil.Equals(t, tc.err, gotError)
-
-		err = s.Close()
-		testutil.Ok(t, err)
-	}
-}
-
-func TestExternalLabelsQuerierSelect(t *testing.T) {
-	matchers := []*labels.Matcher{
-		labels.MustNewMatcher(labels.MatchEqual, "job", "api-server"),
-	}
-	q := &externalLabelsQuerier{
-		Querier: mockQuerier{},
-		externalLabels: labels.Labels{
-			{Name: "region", Value: "europe"},
-		},
-	}
-	want := newSeriesSetFilter(mockSeriesSet{}, q.externalLabels)
-	have, _, err := q.Select(false, nil, matchers...)
-	if err != nil {
-		t.Error(err)
-	}
-	if !reflect.DeepEqual(want, have) {
-		t.Errorf("expected series set %+v, got %+v", want, have)
+		t.Run("", func(t *testing.T) {
+			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline)
+			conf := &config.Config{
+				GlobalConfig:      config.DefaultGlobalConfig,
+				RemoteReadConfigs: tc.cfgs,
+			}
+			err := s.ApplyConfig(conf)
+			gotError := err != nil
+			testutil.Equals(t, tc.err, gotError)
+			testutil.Ok(t, s.Close())
+		})
 	}
 }
 
@@ -181,7 +162,7 @@ func TestExternalLabelsQuerierAddExternalLabels(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		q := &externalLabelsQuerier{Querier: mockQuerier{}, externalLabels: test.el}
+		q := &querier{externalLabels: test.el}
 		matchers, added := q.addExternalLabels(test.inMatchers)
 
 		sort.Slice(test.outMatchers, func(i, j int) bool { return test.outMatchers[i].Name < test.outMatchers[j].Name })
@@ -218,195 +199,316 @@ func TestSeriesSetFilter(t *testing.T) {
 		},
 	}
 
-	for i, tc := range tests {
+	for _, tc := range tests {
 		filtered := newSeriesSetFilter(FromQueryResult(true, tc.in), tc.toRemove)
-		have, err := ToQueryResult(filtered, 1e6)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		if !reflect.DeepEqual(have, tc.expected) {
-			t.Fatalf("%d. unexpected labels; want %v, got %v", i, tc.expected, have)
-		}
+		act, ws, err := ToQueryResult(filtered, 1e6)
+		testutil.Ok(t, err)
+		testutil.Equals(t, 0, len(ws))
+		testutil.Equals(t, tc.expected, act)
 	}
 }
 
-type mockQuerier struct {
-	ctx        context.Context
-	mint, maxt int64
-
-	storage.Querier
+type mockedRemoteClient struct {
+	got   *prompb.Query
+	store []*prompb.TimeSeries
 }
 
-type mockSeriesSet struct {
-	storage.SeriesSet
-}
-
-func (mockQuerier) Select(bool, *storage.SelectHints, ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
-	return mockSeriesSet{}, nil, nil
-}
-
-func TestPreferLocalStorageFilter(t *testing.T) {
-	ctx := context.Background()
-
-	tests := []struct {
-		localStartTime int64
-		mint           int64
-		maxt           int64
-		querier        storage.Querier
-	}{
-		{
-			localStartTime: int64(100),
-			mint:           int64(0),
-			maxt:           int64(50),
-			querier:        mockQuerier{ctx: ctx, mint: 0, maxt: 50},
-		},
-		{
-			localStartTime: int64(20),
-			mint:           int64(0),
-			maxt:           int64(50),
-			querier:        mockQuerier{ctx: ctx, mint: 0, maxt: 20},
-		},
-		{
-			localStartTime: int64(20),
-			mint:           int64(30),
-			maxt:           int64(50),
-			querier:        storage.NoopQuerier(),
-		},
+func (c *mockedRemoteClient) Read(_ context.Context, query *prompb.Query) (*prompb.QueryResult, error) {
+	if c.got != nil {
+		return nil, errors.Errorf("expected only one call to remote client got: %v", query)
 	}
+	c.got = query
 
-	for i, test := range tests {
-		f := PreferLocalStorageFilter(
-			storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-				return mockQuerier{ctx: ctx, mint: mint, maxt: maxt}, nil
-			}),
-			func() (int64, error) { return test.localStartTime, nil },
-		)
-
-		q, err := f.Querier(ctx, test.mint, test.maxt)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		if test.querier != q {
-			t.Errorf("%d. expected querier %+v, got %+v", i, test.querier, q)
-		}
-	}
-}
-
-func TestRequiredMatchersFilter(t *testing.T) {
-	ctx := context.Background()
-
-	f := RequiredMatchersFilter(
-		storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-			return mockQuerier{ctx: ctx, mint: mint, maxt: maxt}, nil
-		}),
-		[]*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "special", "label")},
-	)
-
-	want := &requiredMatchersQuerier{
-		Querier:          mockQuerier{ctx: ctx, mint: 0, maxt: 50},
-		requiredMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "special", "label")},
-	}
-	have, err := f.Querier(ctx, 0, 50)
+	matchers, err := FromLabelMatchers(query.Matchers)
 	if err != nil {
-		t.Fatal(err)
+		return nil, err
 	}
 
-	if !reflect.DeepEqual(want, have) {
-		t.Errorf("expected querier %+v, got %+v", want, have)
+	q := &prompb.QueryResult{}
+	for _, s := range c.store {
+		l := labelProtosToLabels(s.Labels)
+		var notMatch bool
+
+		for _, m := range matchers {
+			if v := l.Get(m.Name); v != "" {
+				if !m.Matches(v) {
+					notMatch = true
+					break
+				}
+			}
+		}
+
+		if !notMatch {
+			q.Timeseries = append(q.Timeseries, &prompb.TimeSeries{Labels: s.Labels})
+		}
 	}
+	return q, nil
 }
 
-func TestRequiredLabelsQuerierSelect(t *testing.T) {
-	tests := []struct {
-		requiredMatchers []*labels.Matcher
-		matchers         []*labels.Matcher
-		seriesSet        storage.SeriesSet
-	}{
-		{
-			requiredMatchers: []*labels.Matcher{},
-			matchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchEqual, "special", "label"),
-			},
-			seriesSet: mockSeriesSet{},
-		},
-		{
-			requiredMatchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchEqual, "special", "label"),
-			},
-			matchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchEqual, "special", "label"),
-			},
-			seriesSet: mockSeriesSet{},
-		},
-		{
-			requiredMatchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchEqual, "special", "label"),
-			},
-			matchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchRegexp, "special", "label"),
-			},
-			seriesSet: storage.NoopSeriesSet(),
-		},
-		{
-			requiredMatchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchEqual, "special", "label"),
-			},
-			matchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchEqual, "special", "different"),
-			},
-			seriesSet: storage.NoopSeriesSet(),
-		},
-		{
-			requiredMatchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchEqual, "special", "label"),
-			},
-			matchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchEqual, "special", "label"),
-				labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"),
-			},
-			seriesSet: mockSeriesSet{},
-		},
-		{
-			requiredMatchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchEqual, "special", "label"),
-				labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"),
-			},
-			matchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchEqual, "special", "label"),
-				labels.MustNewMatcher(labels.MatchEqual, "foo", "baz"),
-			},
-			seriesSet: storage.NoopSeriesSet(),
-		},
-		{
-			requiredMatchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchEqual, "special", "label"),
-				labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"),
-			},
-			matchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchEqual, "special", "label"),
-				labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"),
-			},
-			seriesSet: mockSeriesSet{},
+func (c *mockedRemoteClient) reset() {
+	c.got = nil
+}
+
+// NOTE: We don't need to test ChunkQuerier as it's uses querier for all operations anyway.
+func TestSampleAndChunkQueryableClient(t *testing.T) {
+	m := &mockedRemoteClient{
+		// Samples does not matter for below tests.
+		store: []*prompb.TimeSeries{
+			{Labels: []prompb.Label{{Name: "a", Value: "b"}}},
+			{Labels: []prompb.Label{{Name: "a", Value: "b3"}, {Name: "region", Value: "us"}}},
+			{Labels: []prompb.Label{{Name: "a", Value: "b2"}, {Name: "region", Value: "europe"}}},
 		},
 	}
 
-	for i, test := range tests {
-		q := &requiredMatchersQuerier{
-			Querier:          mockQuerier{},
-			requiredMatchers: test.requiredMatchers,
-		}
+	for _, tc := range []struct {
+		name             string
+		matchers         []*labels.Matcher
+		mint, maxt       int64
+		externalLabels   labels.Labels
+		requiredMatchers []*labels.Matcher
+		readRecent       bool
+		callback         startTimeCallback
 
-		have, _, err := q.Select(false, nil, test.matchers...)
-		if err != nil {
-			t.Error(err)
-		}
-		if want := test.seriesSet; want != have {
-			t.Errorf("%d. expected series set %+v, got %+v", i, want, have)
-		}
-		if want, have := test.requiredMatchers, q.requiredMatchers; !reflect.DeepEqual(want, have) {
-			t.Errorf("%d. requiredMatchersQuerier.Select() has modified the matchers", i)
-		}
+		expectedQuery  *prompb.Query
+		expectedSeries []labels.Labels
+	}{
+		{
+			name: "empty",
+			mint: 1, maxt: 2,
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchNotEqual, "a", "something"),
+			},
+			readRecent: true,
+
+			expectedQuery: &prompb.Query{
+				StartTimestampMs: 1,
+				EndTimestampMs:   2,
+				Matchers: []*prompb.LabelMatcher{
+					{Type: prompb.LabelMatcher_NEQ, Name: "a", Value: "something"},
+				},
+			},
+			expectedSeries: []labels.Labels{
+				labels.FromStrings("a", "b"),
+				labels.FromStrings("a", "b2", "region", "europe"),
+				labels.FromStrings("a", "b3", "region", "us"),
+			},
+		},
+		{
+			name: "external labels specified, not explicitly requested",
+			mint: 1, maxt: 2,
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchNotEqual, "a", "something"),
+			},
+			readRecent: true,
+			externalLabels: labels.Labels{
+				{Name: "region", Value: "europe"},
+			},
+
+			expectedQuery: &prompb.Query{
+				StartTimestampMs: 1,
+				EndTimestampMs:   2,
+				Matchers: []*prompb.LabelMatcher{
+					{Type: prompb.LabelMatcher_NEQ, Name: "a", Value: "something"},
+					{Type: prompb.LabelMatcher_EQ, Name: "region", Value: "europe"},
+				},
+			},
+			expectedSeries: []labels.Labels{
+				labels.FromStrings("a", "b"),
+				labels.FromStrings("a", "b2"),
+			},
+		},
+		{
+			name: "external labels specified, explicitly requested europe",
+			mint: 1, maxt: 2,
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchNotEqual, "a", "something"),
+				labels.MustNewMatcher(labels.MatchEqual, "region", "europe"),
+			},
+			readRecent: true,
+			externalLabels: labels.Labels{
+				{Name: "region", Value: "europe"},
+			},
+
+			expectedQuery: &prompb.Query{
+				StartTimestampMs: 1,
+				EndTimestampMs:   2,
+				Matchers: []*prompb.LabelMatcher{
+					{Type: prompb.LabelMatcher_NEQ, Name: "a", Value: "something"},
+					{Type: prompb.LabelMatcher_EQ, Name: "region", Value: "europe"},
+				},
+			},
+			expectedSeries: []labels.Labels{
+				labels.FromStrings("a", "b"),
+				labels.FromStrings("a", "b2", "region", "europe"),
+			},
+		},
+		{
+			name: "external labels specified, explicitly requested not europe",
+			mint: 1, maxt: 2,
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchNotEqual, "a", "something"),
+				labels.MustNewMatcher(labels.MatchEqual, "region", "us"),
+			},
+			readRecent: true,
+			externalLabels: labels.Labels{
+				{Name: "region", Value: "europe"},
+			},
+
+			expectedQuery: &prompb.Query{
+				StartTimestampMs: 1,
+				EndTimestampMs:   2,
+				Matchers: []*prompb.LabelMatcher{
+					{Type: prompb.LabelMatcher_NEQ, Name: "a", Value: "something"},
+					{Type: prompb.LabelMatcher_EQ, Name: "region", Value: "us"},
+				},
+			},
+			expectedSeries: []labels.Labels{
+				labels.FromStrings("a", "b"),
+				labels.FromStrings("a", "b3", "region", "us"),
+			},
+		},
+		{
+			name: "prefer local storage",
+			mint: 0, maxt: 50,
+			callback:   func() (i int64, err error) { return 100, nil },
+			readRecent: false,
+
+			expectedQuery: &prompb.Query{
+				StartTimestampMs: 0,
+				EndTimestampMs:   50,
+				Matchers:         []*prompb.LabelMatcher{},
+			},
+			expectedSeries: []labels.Labels{
+				labels.FromStrings("a", "b"),
+				labels.FromStrings("a", "b2", "region", "europe"),
+				labels.FromStrings("a", "b3", "region", "us"),
+			},
+		},
+		{
+			name: "prefer local storage, limited time",
+			mint: 0, maxt: 50,
+			callback:   func() (i int64, err error) { return 20, nil },
+			readRecent: false,
+
+			expectedQuery: &prompb.Query{
+				StartTimestampMs: 0,
+				EndTimestampMs:   20,
+				Matchers:         []*prompb.LabelMatcher{},
+			},
+			expectedSeries: []labels.Labels{
+				labels.FromStrings("a", "b"),
+				labels.FromStrings("a", "b2", "region", "europe"),
+				labels.FromStrings("a", "b3", "region", "us"),
+			},
+		},
+		{
+			name: "prefer local storage, skipped",
+			mint: 30, maxt: 50,
+			callback:   func() (i int64, err error) { return 20, nil },
+			readRecent: false,
+
+			expectedQuery:  nil,
+			expectedSeries: nil, // Noop should be used.
+		},
+		{
+			name: "required matcher specified, user also specifies same",
+			mint: 1, maxt: 2,
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "a", "b2"),
+			},
+			readRecent: true,
+			requiredMatchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "a", "b2"),
+			},
+
+			expectedQuery: &prompb.Query{
+				StartTimestampMs: 1,
+				EndTimestampMs:   2,
+				Matchers: []*prompb.LabelMatcher{
+					{Type: prompb.LabelMatcher_EQ, Name: "a", Value: "b2"},
+				},
+			},
+			expectedSeries: []labels.Labels{
+				labels.FromStrings("a", "b2", "region", "europe"),
+			},
+		},
+		{
+			name: "required matcher specified",
+			mint: 1, maxt: 2,
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "a", "b2"),
+			},
+			readRecent: true,
+			requiredMatchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "a", "b2"),
+			},
+
+			expectedQuery: &prompb.Query{
+				StartTimestampMs: 1,
+				EndTimestampMs:   2,
+				Matchers: []*prompb.LabelMatcher{
+					{Type: prompb.LabelMatcher_EQ, Name: "a", Value: "b2"},
+				},
+			},
+			expectedSeries: []labels.Labels{
+				labels.FromStrings("a", "b2", "region", "europe"),
+			},
+		},
+		{
+			name: "required matcher specified, given matcher does not match",
+			mint: 1, maxt: 2,
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchNotEqual, "a", "something"),
+			},
+			readRecent: true,
+			requiredMatchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "a", "b2"),
+			},
+
+			expectedQuery:  nil,
+			expectedSeries: nil, // Given matchers does not match with required ones, noop expected.
+		},
+		{
+			name: "required matcher specified, given matcher does not match2",
+			mint: 1, maxt: 2,
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchNotEqual, "x", "something"),
+			},
+			readRecent: true,
+			requiredMatchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "a", "b2"),
+			},
+			expectedQuery:  nil,
+			expectedSeries: nil, // Given matchers does not match with required ones, noop expected.
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m.reset()
+
+			c := NewSampleAndChunkQueryableClient(
+				m,
+				tc.externalLabels,
+				tc.requiredMatchers,
+				tc.readRecent,
+				tc.callback,
+			)
+			q, err := c.Querier(context.TODO(), tc.mint, tc.maxt)
+			testutil.Ok(t, err)
+			defer testutil.Ok(t, q.Close())
+
+			ss := q.Select(true, nil, tc.matchers...)
+			testutil.Ok(t, err)
+			testutil.Equals(t, storage.Warnings(nil), ss.Warnings())
+
+			testutil.Equals(t, tc.expectedQuery, m.got)
+
+			var got []labels.Labels
+			for ss.Next() {
+				got = append(got, ss.At().Labels())
+			}
+			testutil.Ok(t, ss.Err())
+			testutil.Equals(t, tc.expectedSeries, got)
+
+		})
 	}
 }

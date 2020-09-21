@@ -134,7 +134,6 @@ func (client InboundNatRulesClient) CreateOrUpdateSender(req *http.Request) (fut
 func (client InboundNatRulesClient) CreateOrUpdateResponder(resp *http.Response) (result InboundNatRule, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -212,7 +211,6 @@ func (client InboundNatRulesClient) DeleteSender(req *http.Request) (future Inbo
 func (client InboundNatRulesClient) DeleteResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted, http.StatusNoContent),
 		autorest.ByClosing())
 	result.Response = resp
@@ -293,7 +291,6 @@ func (client InboundNatRulesClient) GetSender(req *http.Request) (*http.Response
 func (client InboundNatRulesClient) GetResponder(resp *http.Response) (result InboundNatRule, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -334,6 +331,9 @@ func (client InboundNatRulesClient) List(ctx context.Context, resourceGroupName 
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.InboundNatRulesClient", "List", resp, "Failure responding to request")
 	}
+	if result.inrlr.hasNextLink() && result.inrlr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }
@@ -370,7 +370,6 @@ func (client InboundNatRulesClient) ListSender(req *http.Request) (*http.Respons
 func (client InboundNatRulesClient) ListResponder(resp *http.Response) (result InboundNatRuleListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

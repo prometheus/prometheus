@@ -20,7 +20,6 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/prometheus/prometheus/tsdb/tombstones"
 )
 
 // The errors exposed.
@@ -33,14 +32,22 @@ var (
 
 // Appendable allows creating appenders.
 type Appendable interface {
-	// Appender returns a new appender for the storage.
-	Appender() Appender
+	// Appender returns a new appender for the storage. The implementation
+	// can choose whether or not to use the context, for deadlines or to check
+	// for errors.
+	Appender(ctx context.Context) Appender
+}
+
+// SampleAndChunkQueryable allows retrieving samples as well as encoded samples in form of chunks.
+type SampleAndChunkQueryable interface {
+	Queryable
+	ChunkQueryable
 }
 
 // Storage ingests and manages samples, along with various indexes. All methods
 // are goroutine-safe. Storage implements storage.SampleAppender.
 type Storage interface {
-	Queryable
+	SampleAndChunkQueryable
 	Appendable
 
 	// StartTime returns the oldest timestamp stored in the storage.
@@ -51,19 +58,41 @@ type Storage interface {
 }
 
 // A Queryable handles queries against a storage.
+// Use it when you need to have access to all samples without chunk encoding abstraction e.g promQL.
 type Queryable interface {
 	// Querier returns a new Querier on the storage.
 	Querier(ctx context.Context, mint, maxt int64) (Querier, error)
 }
 
-// Querier provides querying access over time series data of a fixed
-// time range.
+// Querier provides querying access over time series data of a fixed time range.
 type Querier interface {
+	LabelQuerier
+
 	// Select returns a set of series that matches the given label matchers.
 	// Caller can specify if it requires returned series to be sorted. Prefer not requiring sorting for better performance.
 	// It allows passing hints that can help in optimising select, but it's up to implementation how this is used if used at all.
-	Select(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) (SeriesSet, Warnings, error)
+	Select(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) SeriesSet
+}
 
+// A ChunkQueryable handles queries against a storage.
+// Use it when you need to have access to samples in encoded format.
+type ChunkQueryable interface {
+	// ChunkQuerier returns a new ChunkQuerier on the storage.
+	ChunkQuerier(ctx context.Context, mint, maxt int64) (ChunkQuerier, error)
+}
+
+// ChunkQuerier provides querying access over time series data of a fixed time range.
+type ChunkQuerier interface {
+	LabelQuerier
+
+	// Select returns a set of series that matches the given label matchers.
+	// Caller can specify if it requires returned series to be sorted. Prefer not requiring sorting for better performance.
+	// It allows passing hints that can help in optimising select, but it's up to implementation how this is used if used at all.
+	Select(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) ChunkSeriesSet
+}
+
+// LabelQuerier provides querying access over labels.
+type LabelQuerier interface {
 	// LabelValues returns all potential values for a label name.
 	// It is not safe to use the strings beyond the lifefime of the querier.
 	LabelValues(name string) ([]string, Warnings, error)
@@ -89,6 +118,7 @@ type SelectHints struct {
 	Range    int64    // Range vector selector range in milliseconds.
 }
 
+// TODO(bwplotka): Move to promql/engine_test.go?
 // QueryableFunc is an adapter to allow the use of ordinary functions as
 // Queryables. It follows the idea of http.HandlerFunc.
 type QueryableFunc func(ctx context.Context, mint, maxt int64) (Querier, error)
@@ -130,8 +160,14 @@ type Appender interface {
 // SeriesSet contains a set of series.
 type SeriesSet interface {
 	Next() bool
+	// At returns full series. Returned series should be iteratable even after Next is called.
 	At() Series
+	// The error that iteration as failed with.
+	// When an error occurs, set cannot continue to iterate.
 	Err() error
+	// A collection of warnings for the whole set.
+	// Warnings could be return even iteration has not failed with error.
+	Warnings() Warnings
 }
 
 var emptySeriesSet = errSeriesSet{}
@@ -145,26 +181,77 @@ type errSeriesSet struct {
 	err error
 }
 
-func (s errSeriesSet) Next() bool { return false }
-func (s errSeriesSet) At() Series { return nil }
-func (s errSeriesSet) Err() error { return s.err }
+func (s errSeriesSet) Next() bool         { return false }
+func (s errSeriesSet) At() Series         { return nil }
+func (s errSeriesSet) Err() error         { return s.err }
+func (s errSeriesSet) Warnings() Warnings { return nil }
 
-// Series represents a single time series.
+// ErrSeriesSet returns a series set that wraps an error.
+func ErrSeriesSet(err error) SeriesSet {
+	return errSeriesSet{err: err}
+}
+
+var emptyChunkSeriesSet = errChunkSeriesSet{}
+
+// EmptyChunkSeriesSet returns a chunk series set that's always empty.
+func EmptyChunkSeriesSet() ChunkSeriesSet {
+	return emptyChunkSeriesSet
+}
+
+type errChunkSeriesSet struct {
+	err error
+}
+
+func (s errChunkSeriesSet) Next() bool         { return false }
+func (s errChunkSeriesSet) At() ChunkSeries    { return nil }
+func (s errChunkSeriesSet) Err() error         { return s.err }
+func (s errChunkSeriesSet) Warnings() Warnings { return nil }
+
+// ErrChunkSeriesSet returns a chunk series set that wraps an error.
+func ErrChunkSeriesSet(err error) ChunkSeriesSet {
+	return errChunkSeriesSet{err: err}
+}
+
+// Series exposes a single time series and allows iterating over samples.
 type Series interface {
-	// Labels returns the complete set of labels identifying the series.
-	Labels() labels.Labels
+	Labels
+	SampleIteratable
+}
 
-	// Iterator returns a new iterator of the data of the series.
+// ChunkSeriesSet contains a set of chunked series.
+type ChunkSeriesSet interface {
+	Next() bool
+	// At returns full chunk series. Returned series should be iteratable even after Next is called.
+	At() ChunkSeries
+	// The error that iteration has failed with.
+	// When an error occurs, set cannot continue to iterate.
+	Err() error
+	// A collection of warnings for the whole set.
+	// Warnings could be return even iteration has not failed with error.
+	Warnings() Warnings
+}
+
+// ChunkSeries exposes a single time series and allows iterating over chunks.
+type ChunkSeries interface {
+	Labels
+	ChunkIteratable
+}
+
+// Labels represents an item that has labels e.g. time series.
+type Labels interface {
+	// Labels returns the complete set of labels. For series it means all labels identifying the series.
+	Labels() labels.Labels
+}
+
+type SampleIteratable interface {
+	// Iterator returns a new, independent iterator of the data of the series.
 	Iterator() chunkenc.Iterator
 }
 
-// ChunkSeriesSet exposes the chunks and intervals of a series instead of the
-// actual series itself.
-// TODO(bwplotka): Move it to Series like Iterator that iterates over chunks and avoiding loading all of them at once.
-type ChunkSeriesSet interface {
-	Next() bool
-	At() (labels.Labels, []chunks.Meta, tombstones.Intervals)
-	Err() error
+type ChunkIteratable interface {
+	// Iterator returns a new, independent iterator that iterates over potentially overlapping
+	// chunks of the series, sorted by min time.
+	Iterator() chunks.Iterator
 }
 
 type Warnings []error

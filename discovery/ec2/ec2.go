@@ -28,9 +28,10 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
-	config_util "github.com/prometheus/common/config"
+	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
@@ -38,7 +39,9 @@ import (
 
 const (
 	ec2Label                  = model.MetaLabelPrefix + "ec2_"
+	ec2LabelAMI               = ec2Label + "ami"
 	ec2LabelAZ                = ec2Label + "availability_zone"
+	ec2LabelArch              = ec2Label + "architecture"
 	ec2LabelInstanceID        = ec2Label + "instance_id"
 	ec2LabelInstanceState     = ec2Label + "instance_state"
 	ec2LabelInstanceType      = ec2Label + "instance_type"
@@ -62,6 +65,10 @@ var DefaultSDConfig = SDConfig{
 	RefreshInterval: model.Duration(60 * time.Second),
 }
 
+func init() {
+	discovery.RegisterConfig(&SDConfig{})
+}
+
 // Filter is the configuration for filtering EC2 instances.
 type Filter struct {
 	Name   string   `yaml:"name"`
@@ -70,15 +77,23 @@ type Filter struct {
 
 // SDConfig is the configuration for EC2 based service discovery.
 type SDConfig struct {
-	Endpoint        string             `yaml:"endpoint"`
-	Region          string             `yaml:"region"`
-	AccessKey       string             `yaml:"access_key,omitempty"`
-	SecretKey       config_util.Secret `yaml:"secret_key,omitempty"`
-	Profile         string             `yaml:"profile,omitempty"`
-	RoleARN         string             `yaml:"role_arn,omitempty"`
-	RefreshInterval model.Duration     `yaml:"refresh_interval,omitempty"`
-	Port            int                `yaml:"port"`
-	Filters         []*Filter          `yaml:"filters"`
+	Endpoint        string         `yaml:"endpoint"`
+	Region          string         `yaml:"region"`
+	AccessKey       string         `yaml:"access_key,omitempty"`
+	SecretKey       config.Secret  `yaml:"secret_key,omitempty"`
+	Profile         string         `yaml:"profile,omitempty"`
+	RoleARN         string         `yaml:"role_arn,omitempty"`
+	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
+	Port            int            `yaml:"port"`
+	Filters         []*Filter      `yaml:"filters"`
+}
+
+// Name returns the name of the Config.
+func (*SDConfig) Name() string { return "ec2" }
+
+// NewDiscoverer returns a Discoverer for the Config.
+func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
+	return NewDiscovery(c, opts.Logger), nil
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -211,12 +226,17 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 					labels[ec2LabelPublicDNS] = model.LabelValue(*inst.PublicDnsName)
 				}
 
+				labels[ec2LabelAMI] = model.LabelValue(*inst.ImageId)
 				labels[ec2LabelAZ] = model.LabelValue(*inst.Placement.AvailabilityZone)
 				labels[ec2LabelInstanceState] = model.LabelValue(*inst.State.Name)
 				labels[ec2LabelInstanceType] = model.LabelValue(*inst.InstanceType)
 
 				if inst.InstanceLifecycle != nil {
 					labels[ec2LabelInstanceLifecycle] = model.LabelValue(*inst.InstanceLifecycle)
+				}
+
+				if inst.Architecture != nil {
+					labels[ec2LabelArch] = model.LabelValue(*inst.Architecture)
 				}
 
 				if inst.VpcId != nil {

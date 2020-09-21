@@ -635,7 +635,7 @@ yyrule4: // UNIT{S}
 yyrule5: // "EOF"\n?
 	{
 		l.state = sInit
-		return tEofWord
+		return tEOFWord
 		goto yystate0
 	}
 yyrule6: // {M}({M}|{D})*

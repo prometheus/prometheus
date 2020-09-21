@@ -34,7 +34,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"sync/atomic"
 	template_text "text/template"
 	"time"
 
@@ -51,11 +50,8 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
 	"github.com/prometheus/common/server"
-	"github.com/prometheus/prometheus/tsdb"
-	"github.com/prometheus/prometheus/tsdb/index"
-	"github.com/soheilhy/cmux"
+	"go.uber.org/atomic"
 	"golang.org/x/net/netutil"
-	"google.golang.org/grpc"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
@@ -64,9 +60,10 @@ import (
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/template"
+	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/util/httputil"
 	api_v1 "github.com/prometheus/prometheus/web/api/v1"
-	api_v2 "github.com/prometheus/prometheus/web/api/v2"
 	"github.com/prometheus/prometheus/web/ui"
 )
 
@@ -139,6 +136,7 @@ func newMetrics(r prometheus.Registerer) *metrics {
 
 	if r != nil {
 		r.MustRegister(m.requestCounter, m.requestDuration, m.responseSize)
+		registerFederationMetrics(r)
 	}
 	return m
 }
@@ -165,6 +163,11 @@ func (m *metrics) instrumentHandler(handlerName string, handler http.HandlerFunc
 // PrometheusVersion contains build information about Prometheus.
 type PrometheusVersion = api_v1.PrometheusVersion
 
+type LocalStorage interface {
+	storage.Storage
+	api_v1.TSDBAdminStats
+}
+
 // Handler serves various HTTP endpoints of the Prometheus server
 type Handler struct {
 	logger log.Logger
@@ -177,8 +180,8 @@ type Handler struct {
 	queryEngine   *promql.Engine
 	lookbackDelta time.Duration
 	context       context.Context
-	tsdb          func() *tsdb.DB
 	storage       storage.Storage
+	localStorage  LocalStorage
 	notifier      *notifier.Manager
 
 	apiV1 *api_v1.API
@@ -196,7 +199,7 @@ type Handler struct {
 	mtx sync.RWMutex
 	now func() model.Time
 
-	ready uint32 // ready is uint32 rather than boolean to be able to use atomic functions.
+	ready atomic.Uint32 // ready is uint32 rather than boolean to be able to use atomic functions.
 }
 
 // ApplyConfig updates the config field of the Handler struct
@@ -212,9 +215,10 @@ func (h *Handler) ApplyConfig(conf *config.Config) error {
 // Options for the web Handler.
 type Options struct {
 	Context               context.Context
-	TSDB                  func() *tsdb.DB
 	TSDBRetentionDuration model.Duration
+	TSDBDir               string
 	TSDBMaxBytes          units.Base2Bytes
+	LocalStorage          LocalStorage
 	Storage               storage.Storage
 	QueryEngine           *promql.Engine
 	LookbackDelta         time.Duration
@@ -272,7 +276,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		reloadCh:    make(chan chan error),
 		options:     o,
 		versionInfo: o.Version,
-		birth:       time.Now(),
+		birth:       time.Now().UTC(),
 		cwd:         cwd,
 		flagsMap:    o.Flags,
 
@@ -281,16 +285,19 @@ func New(logger log.Logger, o *Options) *Handler {
 		ruleManager:   o.RuleManager,
 		queryEngine:   o.QueryEngine,
 		lookbackDelta: o.LookbackDelta,
-		tsdb:          o.TSDB,
 		storage:       o.Storage,
+		localStorage:  o.LocalStorage,
 		notifier:      o.Notifier,
 
 		now: model.Now,
-
-		ready: 0,
 	}
+	h.ready.Store(0)
 
-	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, h.scrapeManager, h.notifier,
+	factoryTr := func(_ context.Context) api_v1.TargetRetriever { return h.scrapeManager }
+	factoryAr := func(_ context.Context) api_v1.AlertmanagerRetriever { return h.notifier }
+	FactoryRr := func(_ context.Context) api_v1.RulesRetriever { return h.ruleManager }
+
+	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, factoryTr, factoryAr,
 		func() config.Config {
 			h.mtx.RLock()
 			defer h.mtx.RUnlock()
@@ -303,12 +310,11 @@ func New(logger log.Logger, o *Options) *Handler {
 			Scheme:        o.ExternalURL.Scheme,
 		},
 		h.testReady,
-		func() api_v1.TSDBAdmin {
-			return h.options.TSDB()
-		},
+		h.options.LocalStorage,
+		h.options.TSDBDir,
 		h.options.EnableAdminAPI,
 		logger,
-		h.ruleManager,
+		FactoryRr,
 		h.options.RemoteReadSampleLimit,
 		h.options.RemoteReadConcurrencyLimit,
 		h.options.RemoteReadBytesInFrame,
@@ -386,9 +392,10 @@ func New(logger log.Logger, o *Options) *Handler {
 				fmt.Fprintf(w, "Error reading React index.html: %v", err)
 				return
 			}
-			prefixedIdx := bytes.ReplaceAll(idx, []byte("PATH_PREFIX_PLACEHOLDER"), []byte(o.ExternalURL.Path))
-			prefixedIdx = bytes.ReplaceAll(prefixedIdx, []byte("CONSOLES_LINK_PLACEHOLDER"), []byte(h.consolesPath()))
-			w.Write(prefixedIdx)
+			replacedIdx := bytes.ReplaceAll(idx, []byte("PATH_PREFIX_PLACEHOLDER"), []byte(o.ExternalURL.Path))
+			replacedIdx = bytes.ReplaceAll(replacedIdx, []byte("CONSOLES_LINK_PLACEHOLDER"), []byte(h.consolesPath()))
+			replacedIdx = bytes.ReplaceAll(replacedIdx, []byte("TITLE_PLACEHOLDER"), []byte(h.options.PageTitle))
+			w.Write(replacedIdx)
 			return
 		}
 
@@ -473,13 +480,12 @@ func serveDebug(w http.ResponseWriter, req *http.Request) {
 
 // Ready sets Handler to be ready.
 func (h *Handler) Ready() {
-	atomic.StoreUint32(&h.ready, 1)
+	h.ready.Store(1)
 }
 
 // Verifies whether the server is ready or not.
 func (h *Handler) isReady() bool {
-	ready := atomic.LoadUint32(&h.ready)
-	return ready > 0
+	return h.ready.Load() > 0
 }
 
 // Checks if server is ready, calls f if it is, returns 503 if it is not.
@@ -492,11 +498,6 @@ func (h *Handler) testReady(f http.HandlerFunc) http.HandlerFunc {
 			fmt.Fprintf(w, "Service Unavailable")
 		}
 	}
-}
-
-// Checks if server is ready, calls f if it is, returns 503 if it is not.
-func (h *Handler) testReadyHandler(f http.Handler) http.HandlerFunc {
-	return h.testReady(f.ServeHTTP)
 }
 
 // Quit returns the receive-only quit channel.
@@ -524,26 +525,6 @@ func (h *Handler) Run(ctx context.Context) error {
 		conntrack.TrackWithName("http"),
 		conntrack.TrackWithTracing())
 
-	var (
-		m = cmux.New(listener)
-		// See https://github.com/grpc/grpc-go/issues/2636 for why we need to use MatchWithWriters().
-		grpcl   = m.MatchWithWriters(cmux.HTTP2MatchHeaderFieldSendSettings("content-type", "application/grpc"))
-		httpl   = m.Match(cmux.HTTP1Fast())
-		grpcSrv = grpc.NewServer()
-	)
-	av2 := api_v2.New(
-		h.options.TSDB,
-		h.options.EnableAdminAPI,
-	)
-	av2.RegisterGRPC(grpcSrv)
-
-	hh, err := av2.HTTPHandler(ctx, h.options.ListenAddress)
-	if err != nil {
-		return err
-	}
-
-	hhFunc := h.testReadyHandler(hh)
-
 	operationName := nethttp.OperationNameFunc(func(r *http.Request) string {
 		return fmt.Sprintf("%s %s", r.Method, r.URL.Path)
 	})
@@ -553,7 +534,7 @@ func (h *Handler) Run(ctx context.Context) error {
 	apiPath := "/api"
 	if h.options.RoutePrefix != "/" {
 		apiPath = h.options.RoutePrefix + apiPath
-		level.Info(h.logger).Log("msg", "router prefix", "prefix", h.options.RoutePrefix)
+		level.Info(h.logger).Log("msg", "Router prefix", "prefix", h.options.RoutePrefix)
 	}
 	av1 := route.New().
 		WithInstrumentation(h.metrics.instrumentHandlerWithPrefix("/api/v1")).
@@ -561,13 +542,6 @@ func (h *Handler) Run(ctx context.Context) error {
 	h.apiV1.Register(av1)
 
 	mux.Handle(apiPath+"/v1/", http.StripPrefix(apiPath+"/v1", av1))
-
-	mux.Handle(apiPath+"/", http.StripPrefix(apiPath,
-		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			httputil.SetCORS(w, h.options.CORSOrigin, r)
-			hhFunc(w, r)
-		}),
-	))
 
 	errlog := stdlog.New(log.NewStdlibAdapter(level.Error(h.logger)), "", 0)
 
@@ -579,13 +553,7 @@ func (h *Handler) Run(ctx context.Context) error {
 
 	errCh := make(chan error)
 	go func() {
-		errCh <- httpSrv.Serve(httpl)
-	}()
-	go func() {
-		errCh <- grpcSrv.Serve(grpcl)
-	}()
-	go func() {
-		errCh <- m.Serve()
+		errCh <- httpSrv.Serve(listener)
 	}()
 
 	select {
@@ -593,7 +561,6 @@ func (h *Handler) Run(ctx context.Context) error {
 		return e
 	case <-ctx.Done():
 		httpSrv.Shutdown(ctx)
-		grpcSrv.GracefulStop()
 		return nil
 	}
 }
@@ -780,16 +747,25 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 		case "prometheus_config_last_reload_successful":
 			status.ReloadConfigSuccess = toFloat64(mF) != 0
 		case "prometheus_config_last_reload_success_timestamp_seconds":
-			status.LastConfigTime = time.Unix(int64(toFloat64(mF)), 0)
+			status.LastConfigTime = time.Unix(int64(toFloat64(mF)), 0).UTC()
 		}
 	}
-	db := h.tsdb()
+
 	startTime := time.Now().UnixNano()
-	status.Stats = db.Head().PostingsCardinalityStats("__name__")
+	s, err := h.localStorage.Stats("__name__")
+	if err != nil {
+		if errors.Cause(err) == tsdb.ErrNotReady {
+			http.Error(w, tsdb.ErrNotReady.Error(), http.StatusServiceUnavailable)
+			return
+		}
+		http.Error(w, fmt.Sprintf("error gathering local storage statistics: %s", err), http.StatusInternalServerError)
+		return
+	}
 	status.Duration = fmt.Sprintf("%.3f", float64(time.Now().UnixNano()-startTime)/float64(1e9))
-	status.NumSeries = db.Head().NumSeries()
-	status.MaxTime = db.Head().MaxTime()
-	status.MinTime = db.Head().MaxTime()
+	status.Stats = s.IndexPostingStats
+	status.NumSeries = s.NumSeries
+	status.MaxTime = s.MaxTime
+	status.MinTime = s.MinTime
 
 	h.executeTemplate(w, "status.html", status)
 }
@@ -829,7 +805,7 @@ func (h *Handler) runtimeInfo() (api_v1.RuntimeInfo, error) {
 		case "prometheus_config_last_reload_successful":
 			status.ReloadConfigSuccess = toFloat64(mF) != 0
 		case "prometheus_config_last_reload_success_timestamp_seconds":
-			status.LastConfigTime = time.Unix(int64(toFloat64(mF)), 0)
+			status.LastConfigTime = time.Unix(int64(toFloat64(mF)), 0).UTC()
 		}
 	}
 	return status, nil
@@ -961,6 +937,10 @@ func tmplFuncs(consolesPath string, opts *Options) template_text.FuncMap {
 	return template_text.FuncMap{
 		"since": func(t time.Time) time.Duration {
 			return time.Since(t) / time.Millisecond * time.Millisecond
+		},
+		"unixToTime": func(i int64) time.Time {
+			t := time.Unix(i/int64(time.Microsecond), 0).UTC()
+			return t
 		},
 		"consolesPath": func() string { return consolesPath },
 		"pathPrefix":   func() string { return opts.ExternalURL.Path },

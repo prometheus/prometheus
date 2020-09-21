@@ -14,17 +14,18 @@
 package remote
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/wal"
 )
 
 var (
@@ -46,13 +47,13 @@ var (
 
 // WriteStorage represents all the remote write storage.
 type WriteStorage struct {
-	reg    prometheus.Registerer
 	logger log.Logger
+	reg    prometheus.Registerer
 	mtx    sync.Mutex
 
-	queueMetrics      *queueManagerMetrics
-	configHash        string
-	externalLabelHash string
+	watcherMetrics    *wal.WatcherMetrics
+	liveReaderMetrics *wal.LiveReaderMetrics
+	externalLabels    labels.Labels
 	walDir            string
 	queues            map[string]*QueueManager
 	samplesIn         *ewmaRate
@@ -65,13 +66,14 @@ func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, walDir string
 		logger = log.NewNopLogger()
 	}
 	rws := &WriteStorage{
-		queues:        make(map[string]*QueueManager),
-		reg:           reg,
-		queueMetrics:  newQueueManagerMetrics(reg),
-		logger:        logger,
-		flushDeadline: flushDeadline,
-		samplesIn:     newEWMARate(ewmaWeight, shardUpdateDuration),
-		walDir:        walDir,
+		queues:            make(map[string]*QueueManager),
+		watcherMetrics:    wal.NewWatcherMetrics(reg),
+		liveReaderMetrics: wal.NewLiveReaderMetrics(reg),
+		logger:            logger,
+		reg:               reg,
+		flushDeadline:     flushDeadline,
+		samplesIn:         newEWMARate(ewmaWeight, shardUpdateDuration),
+		walDir:            walDir,
 	}
 	go rws.run()
 	return rws
@@ -91,25 +93,10 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 	rws.mtx.Lock()
 	defer rws.mtx.Unlock()
 
-	configHash, err := toHash(conf.RemoteWriteConfigs)
-	if err != nil {
-		return err
-	}
-	externalLabelHash, err := toHash(conf.GlobalConfig.ExternalLabels)
-	if err != nil {
-		return err
-	}
-
 	// Remote write queues only need to change if the remote write config or
 	// external labels change.
-	externalLabelUnchanged := externalLabelHash == rws.externalLabelHash
-	if configHash == rws.configHash && externalLabelUnchanged {
-		level.Debug(rws.logger).Log("msg", "remote write config has not changed, no need to restart QueueManagers")
-		return nil
-	}
-
-	rws.configHash = configHash
-	rws.externalLabelHash = externalLabelHash
+	externalLabelUnchanged := labels.Equal(conf.GlobalConfig.ExternalLabels, rws.externalLabels)
+	rws.externalLabels = conf.GlobalConfig.ExternalLabels
 
 	newQueues := make(map[string]*QueueManager)
 	newHashes := []string{}
@@ -119,31 +106,20 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			return err
 		}
 
-		// Set the queue name to the config hash if the user has not set
-		// a name in their remote write config so we can still differentiate
-		// between queues that have the same remote write endpoint.
-		name := string(hash[:6])
-		if rwConf.Name != "" {
-			name = rwConf.Name
-		}
-
 		// Don't allow duplicate remote write configs.
 		if _, ok := newQueues[hash]; ok {
 			return fmt.Errorf("duplicate remote write configs are not allowed, found duplicate for URL: %s", rwConf.URL)
 		}
 
-		var nameUnchanged bool
-		queue, ok := rws.queues[hash]
-		if ok {
-			nameUnchanged = queue.client.Name() == name
-		}
-		if externalLabelUnchanged && nameUnchanged {
-			newQueues[hash] = queue
-			delete(rws.queues, hash)
-			continue
+		// Set the queue name to the config hash if the user has not set
+		// a name in their remote write config so we can still differentiate
+		// between queues that have the same remote write endpoint.
+		name := hash[:6]
+		if rwConf.Name != "" {
+			name = rwConf.Name
 		}
 
-		c, err := NewClient(name, &ClientConfig{
+		c, err := NewWriteClient(name, &ClientConfig{
 			URL:              rwConf.URL,
 			Timeout:          rwConf.RemoteTimeout,
 			HTTPClientConfig: rwConf.HTTPClientConfig,
@@ -151,9 +127,21 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 		if err != nil {
 			return err
 		}
+
+		queue, ok := rws.queues[hash]
+		if externalLabelUnchanged && ok {
+			// Update the client in case any secret configuration has changed.
+			queue.SetClient(c)
+			newQueues[hash] = queue
+			delete(rws.queues, hash)
+			continue
+		}
+
+		endpoint := rwConf.URL.String()
 		newQueues[hash] = NewQueueManager(
-			rws.reg,
-			rws.queueMetrics,
+			newQueueManagerMetrics(rws.reg, name, endpoint),
+			rws.watcherMetrics,
+			rws.liveReaderMetrics,
 			rws.logger,
 			rws.walDir,
 			rws.samplesIn,
@@ -183,7 +171,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 }
 
 // Appender implements storage.Storage.
-func (rws *WriteStorage) Appender() storage.Appender {
+func (rws *WriteStorage) Appender(_ context.Context) storage.Appender {
 	return &timestampTracker{
 		writeStorage: rws,
 	}

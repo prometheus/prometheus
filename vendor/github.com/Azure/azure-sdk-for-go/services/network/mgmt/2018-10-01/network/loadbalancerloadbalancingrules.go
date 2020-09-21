@@ -112,7 +112,6 @@ func (client LoadBalancerLoadBalancingRulesClient) GetSender(req *http.Request) 
 func (client LoadBalancerLoadBalancingRulesClient) GetResponder(resp *http.Response) (result LoadBalancingRule, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -153,6 +152,9 @@ func (client LoadBalancerLoadBalancingRulesClient) List(ctx context.Context, res
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.LoadBalancerLoadBalancingRulesClient", "List", resp, "Failure responding to request")
 	}
+	if result.lblbrlr.hasNextLink() && result.lblbrlr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }
@@ -189,7 +191,6 @@ func (client LoadBalancerLoadBalancingRulesClient) ListSender(req *http.Request)
 func (client LoadBalancerLoadBalancingRulesClient) ListResponder(resp *http.Response) (result LoadBalancerLoadBalancingRuleListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

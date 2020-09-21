@@ -259,6 +259,15 @@ scrape_configs:
       cert_file: valid_cert_file
       key_file: valid_key_file
 
+- job_name: digitalocean-droplets
+  digitalocean_sd_configs:
+    - bearer_token: abcdef
+
+- job_name: dockerswarm
+  dockerswarm_sd_configs:
+  - host: http://127.0.0.1:2375
+    role: nodes
+
 - job_name: service-openstack
   openstack_sd_configs:
   - role: instance
@@ -269,6 +278,19 @@ scrape_configs:
       ca_file: valid_ca_file
       cert_file: valid_cert_file
       key_file:  valid_key_file
+
+- job_name: hetzner
+  hetzner_sd_configs:
+    - role: hcloud
+      bearer_token: abcdef
+    - role: robot
+      basic_auth:
+        username: abcdef
+        password: abcdef
+
+- job_name: service-eureka
+  eureka_sd_configs:
+    - server: 'http://eureka.example.com:8761/eureka'
 
 alerting:
   alertmanagers:

@@ -139,7 +139,7 @@ to the nearest integer.
 
 ## `histogram_quantile()`
 
-`histogram_quantile(φ float, b instant-vector)` calculates the φ-quantile (0 ≤ φ
+`histogram_quantile(φ scalar, b instant-vector)` calculates the φ-quantile (0 ≤ φ
 ≤ 1) from the buckets `b` of a
 [histogram](https://prometheus.io/docs/concepts/metric_types/#histogram). (See
 [histograms and summaries](https://prometheus.io/docs/practices/histograms) for
@@ -166,11 +166,11 @@ around the `rate()` function. Since the `le` label is required by
 `histogram_quantile()`, it has to be included in the `by` clause. The following
 expression aggregates the 90th percentile by `job`:
 
-    histogram_quantile(0.9, sum(rate(http_request_duration_seconds_bucket[10m])) by (job, le))
+    histogram_quantile(0.9, sum by (job, le) (rate(http_request_duration_seconds_bucket[10m])))
 
 To aggregate everything, specify only the `le` label:
 
-    histogram_quantile(0.9, sum(rate(http_request_duration_seconds_bucket[10m])) by (le))
+    histogram_quantile(0.9, sum by (le) (rate(http_request_duration_seconds_bucket[10m])))
 
 The `histogram_quantile()` function interpolates quantile values by
 assuming a linear distribution within a bucket. The highest bucket
@@ -182,8 +182,8 @@ is assumed to be 0 if the upper bound of that bucket is greater than
 bucket. Otherwise, the upper bound of the lowest bucket is returned
 for quantiles located in the lowest bucket.
 
-If `b` contains fewer than two buckets, `NaN` is returned. For φ < 0, `-Inf` is
-returned. For φ > 1, `+Inf` is returned.
+If `b` has 0 observations, `NaN` is returned. If `b` contains fewer than two buckets,
+`NaN` is returned. For φ < 0, `-Inf` is returned. For φ > 1, `+Inf` is returned.
 
 ## `holt_winters()`
 

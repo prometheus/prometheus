@@ -113,7 +113,7 @@ func (node *Call) String() string {
 
 func (node *MatrixSelector) String() string {
 	// Copy the Vector selector before changing the offset
-	var vecSelector VectorSelector = *node.VectorSelector.(*VectorSelector)
+	vecSelector := *node.VectorSelector.(*VectorSelector)
 	offset := ""
 	if vecSelector.Offset != time.Duration(0) {
 		offset = fmt.Sprintf(" offset %s", model.Duration(vecSelector.Offset))

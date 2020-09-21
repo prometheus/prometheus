@@ -22,5 +22,5 @@ func FromTime(t time.Time) int64 {
 
 // Time returns a new time.Time object from a millisecond timestamp.
 func Time(ts int64) time.Time {
-	return time.Unix(ts/1000, (ts%1000)*int64(time.Millisecond))
+	return time.Unix(ts/1000, (ts%1000)*int64(time.Millisecond)).UTC()
 }

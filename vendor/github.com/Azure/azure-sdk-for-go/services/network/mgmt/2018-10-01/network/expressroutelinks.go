@@ -112,7 +112,6 @@ func (client ExpressRouteLinksClient) GetSender(req *http.Request) (*http.Respon
 func (client ExpressRouteLinksClient) GetResponder(resp *http.Response) (result ExpressRouteLink, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -153,6 +152,9 @@ func (client ExpressRouteLinksClient) List(ctx context.Context, resourceGroupNam
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ExpressRouteLinksClient", "List", resp, "Failure responding to request")
 	}
+	if result.erllr.hasNextLink() && result.erllr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }
@@ -189,7 +191,6 @@ func (client ExpressRouteLinksClient) ListSender(req *http.Request) (*http.Respo
 func (client ExpressRouteLinksClient) ListResponder(resp *http.Response) (result ExpressRouteLinkListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

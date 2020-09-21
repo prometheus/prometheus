@@ -15,16 +15,22 @@ package web
 
 import (
 	"bytes"
+	"context"
+	"net/http"
 	"net/http/httptest"
 	"sort"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 var scenarios = map[string]struct {
@@ -199,8 +205,7 @@ func TestFederation(t *testing.T) {
 	}
 
 	h := &Handler{
-		storage:       suite.Storage(),
-		queryEngine:   suite.QueryEngine(),
+		localStorage:  &dbAdapter{suite.TSDB()},
 		lookbackDelta: 5 * time.Minute,
 		now:           func() model.Time { return 101 * 60 * 1000 }, // 101min after epoch.
 		config: &config.Config{
@@ -209,16 +214,59 @@ func TestFederation(t *testing.T) {
 	}
 
 	for name, scenario := range scenarios {
-		h.config.GlobalConfig.ExternalLabels = scenario.externalLabels
-		req := httptest.NewRequest("GET", "http://example.org/federate?"+scenario.params, nil)
-		res := httptest.NewRecorder()
-		h.federation(res, req)
-		if got, want := res.Code, scenario.code; got != want {
-			t.Errorf("Scenario %q: got code %d, want %d", name, got, want)
-		}
-		if got, want := normalizeBody(res.Body), scenario.body; got != want {
-			t.Errorf("Scenario %q: got body\n%s\n, want\n%s\n", name, got, want)
-		}
+		t.Run(name, func(t *testing.T) {
+			h.config.GlobalConfig.ExternalLabels = scenario.externalLabels
+			req := httptest.NewRequest("GET", "http://example.org/federate?"+scenario.params, nil)
+			res := httptest.NewRecorder()
+
+			h.federation(res, req)
+			testutil.Equals(t, scenario.code, res.Code)
+			testutil.Equals(t, scenario.body, normalizeBody(res.Body))
+		})
+	}
+}
+
+type notReadyReadStorage struct {
+	LocalStorage
+}
+
+func (notReadyReadStorage) Querier(context.Context, int64, int64) (storage.Querier, error) {
+	return nil, errors.Wrap(tsdb.ErrNotReady, "wrap")
+}
+
+func (notReadyReadStorage) StartTime() (int64, error) {
+	return 0, errors.Wrap(tsdb.ErrNotReady, "wrap")
+}
+
+func (notReadyReadStorage) Stats(string) (*tsdb.Stats, error) {
+	return nil, errors.Wrap(tsdb.ErrNotReady, "wrap")
+}
+
+// Regression test for https://github.com/prometheus/prometheus/issues/7181.
+func TestFederation_NotReady(t *testing.T) {
+	h := &Handler{
+		localStorage:  notReadyReadStorage{},
+		lookbackDelta: 5 * time.Minute,
+		now:           func() model.Time { return 101 * 60 * 1000 }, // 101min after epoch.
+		config: &config.Config{
+			GlobalConfig: config.GlobalConfig{},
+		},
+	}
+
+	for name, scenario := range scenarios {
+		t.Run(name, func(t *testing.T) {
+			h.config.GlobalConfig.ExternalLabels = scenario.externalLabels
+			req := httptest.NewRequest("GET", "http://example.org/federate?"+scenario.params, nil)
+			res := httptest.NewRecorder()
+
+			h.federation(res, req)
+			if scenario.code == http.StatusBadRequest {
+				// Request are expected to be checked before DB readiness.
+				testutil.Equals(t, http.StatusBadRequest, res.Code)
+				return
+			}
+			testutil.Equals(t, http.StatusServiceUnavailable, res.Code)
+		})
 	}
 }
 

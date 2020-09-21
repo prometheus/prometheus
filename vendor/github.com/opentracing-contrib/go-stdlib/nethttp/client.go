@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptrace"
+	"net/url"
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
@@ -33,6 +34,7 @@ type Transport struct {
 type clientOptions struct {
 	operationName            string
 	componentName            string
+	urlTagFunc         func(u *url.URL) string
 	disableClientTrace       bool
 	disableInjectSpanContext bool
 	spanObserver             func(span opentracing.Span, r *http.Request)
@@ -46,6 +48,15 @@ type ClientOption func(*clientOptions)
 func OperationName(operationName string) ClientOption {
 	return func(options *clientOptions) {
 		options.operationName = operationName
+	}
+}
+
+// URLTagFunc returns a ClientOption that uses given function f
+// to set the span's http.url tag. Can be used to change the default
+// http.url tag, eg to redact sensitive information.
+func URLTagFunc(f func(u *url.URL) string) ClientOption {
+	return func(options *clientOptions) {
+		options.urlTagFunc = f
 	}
 }
 
@@ -109,6 +120,9 @@ func ClientSpanObserver(f func(span opentracing.Span, r *http.Request)) ClientOp
 // 	}
 func TraceRequest(tr opentracing.Tracer, req *http.Request, options ...ClientOption) (*http.Request, *Tracer) {
 	opts := &clientOptions{
+		urlTagFunc: func(u *url.URL) string {
+			return u.String()
+		},
 		spanObserver: func(_ opentracing.Span, _ *http.Request) {},
 	}
 	for _, opt := range options {
@@ -159,7 +173,7 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	tracer.start(req)
 
 	ext.HTTPMethod.Set(tracer.sp, req.Method)
-	ext.HTTPUrl.Set(tracer.sp, req.URL.String())
+	ext.HTTPUrl.Set(tracer.sp, tracer.opts.urlTagFunc(req.URL))
 	tracer.opts.spanObserver(tracer.sp, req)
 
 	if !tracer.opts.disableInjectSpanContext {

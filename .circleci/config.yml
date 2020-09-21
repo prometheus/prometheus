@@ -11,7 +11,7 @@ executors:
   # should also be updated.
   golang:
     docker:
-    - image: circleci/golang:1.13-node
+    - image: circleci/golang:1.15-node
 
   fuzzit:
     docker:
@@ -27,8 +27,8 @@ jobs:
         key: v1
     - restore_cache:
         keys:
-        - v1-npm-deps-{{ checksum "web/ui/react-app/yarn.lock" }}
-        - v1-npm-deps-
+        - v3-npm-deps-{{ checksum "web/ui/react-app/yarn.lock" }}
+        - v3-npm-deps-
     - run:
         command: make
         environment:
@@ -41,7 +41,7 @@ jobs:
           GOOPTS: "-p 2"
           GOMAXPROCS: "2"
     - prometheus/check_proto:
-        version: "3.11.4"
+        version: "3.12.3"
     - prometheus/store_artifact:
         file: prometheus
     - prometheus/store_artifact:
@@ -49,24 +49,52 @@ jobs:
     - go/save-cache:
         key: v1
     - save_cache:
-        key: v1-npm-deps-{{ checksum "web/ui/react-app/yarn.lock" }}
+        key: v3-npm-deps-{{ checksum "web/ui/react-app/yarn.lock" }}
         paths:
-        - web/ui/react-app/node_modules
+        - /home/circleci/.cache/yarn
     - store_test_results:
         path: test-results
+
   test_windows:
     executor: win/default
     working_directory: /go/src/github.com/prometheus/prometheus
     steps:
     - checkout
     - run:
+        # Temporary workaround until circleci updates go.
+        shell: bash
+        command: |
+          choco upgrade -y golang
+    - run:
         shell: bash
         command: |
           (cd web/ui && GOOS= GOARCH= go generate -mod=vendor)
-          go test -mod=vendor -test.v `go list ./...|grep -Exv "(github.com/prometheus/prometheus/discovery.*|github.com/prometheus/prometheus/config|github.com/prometheus/prometheus/web)"`
+          go test -mod=vendor -vet=off -test.v `go list ./...|grep -Exv "(github.com/prometheus/prometheus/discovery.*|github.com/prometheus/prometheus/config|github.com/prometheus/prometheus/web)"`
         environment:
           GOGC: "20"
           GOOPTS: "-p 2 -mod=vendor"
+
+  test_mixins:
+    executor: golang
+    steps:
+    - checkout
+    - run: go install -mod=vendor ./cmd/promtool/.
+    - run:
+        command: go install -mod=readonly github.com/google/go-jsonnet/cmd/jsonnet github.com/google/go-jsonnet/cmd/jsonnetfmt github.com/jsonnet-bundler/jsonnet-bundler/cmd/jb
+        working_directory: ~/project/documentation/prometheus-mixin
+    - run:
+        command: make clean
+        working_directory: ~/project/documentation/prometheus-mixin
+    - run:
+        command: jb install
+        working_directory: ~/project/documentation/prometheus-mixin
+    - run:
+        command: make
+        working_directory: ~/project/documentation/prometheus-mixin
+    - run:
+        command: git diff --exit-code
+        working_directory: ~/project/documentation/prometheus-mixin
+
   fuzzit_regression:
     executor: fuzzit
     working_directory: /go/src/github.com/prometheus/prometheus
@@ -74,6 +102,7 @@ jobs:
       - checkout
       - setup_remote_docker
       - run: ./fuzzit.sh local-regression
+
   fuzzit_fuzzing:
     executor: fuzzit
     working_directory: /go/src/github.com/prometheus/prometheus
@@ -82,17 +111,21 @@ jobs:
       - setup_remote_docker
       - run: ./fuzzit.sh fuzzing
 
-  makefile_sync:
+  repo_sync:
     executor: golang
     steps:
     - checkout
-    - run: ./scripts/sync_makefiles.sh
+    - run: ./scripts/sync_repo_files.sh
 
 workflows:
   version: 2
   prometheus:
     jobs:
     - test:
+        filters:
+          tags:
+            only: /.*/
+    - test_mixins:
         filters:
           tags:
             only: /.*/
@@ -138,7 +171,7 @@ workflows:
               only:
                 - master
     jobs:
-    - makefile_sync:
+    - repo_sync:
         context: org-context
     - fuzzit_fuzzing:
         context: org-context
