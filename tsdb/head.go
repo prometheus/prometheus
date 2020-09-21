@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"os"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -75,6 +76,8 @@ type Head struct {
 
 	deletedMtx sync.Mutex
 	deleted    map[uint64]int // Deleted series, and what WAL segment they must be kept until.
+
+	walTruncMtx sync.Mutex
 
 	postings *index.MemPostings // Postings lists for terms.
 
@@ -814,21 +817,29 @@ func (h *Head) Truncate(mint int64) (err error) {
 	if h.wal == nil {
 		return nil
 	}
-	start = time.Now()
 
+	go truncateWAL(h, mint)
+
+	return nil
+}
+
+func truncateWAL(h *Head, mint int64) {
+	h.walTruncMtx.Lock()
+	defer h.walTruncMtx.Unlock()
+	start := time.Now()
 	first, last, err := wal.Segments(h.wal.Dir())
 	if err != nil {
-		return errors.Wrap(err, "get segment range")
+		fmt.Fprintln(os.Stderr, errors.Wrap(err, "get segment range"))
 	}
 	// Start a new segment, so low ingestion volume TSDB don't have more WAL than
 	// needed.
 	err = h.wal.NextSegment()
 	if err != nil {
-		return errors.Wrap(err, "next segment")
+		fmt.Fprintln(os.Stderr, errors.Wrap(err, "next segment"))
 	}
 	last-- // Never consider last segment for checkpoint.
 	if last < 0 {
-		return nil // no segments yet.
+		return // no segments yet.
 	}
 	// The lower two thirds of segments should contain mostly obsolete samples.
 	// If we have less than two segments, it's not worth checkpointing yet.
@@ -836,7 +847,7 @@ func (h *Head) Truncate(mint int64) (err error) {
 	// of WAL segments.
 	last = first + (last-first)*2/3
 	if last <= first {
-		return nil
+		return
 	}
 
 	keep := func(id uint64) bool {
@@ -854,7 +865,7 @@ func (h *Head) Truncate(mint int64) (err error) {
 		if _, ok := errors.Cause(err).(*wal.CorruptionErr); ok {
 			h.metrics.walCorruptionsTotal.Inc()
 		}
-		return errors.Wrap(err, "create checkpoint")
+		fmt.Fprintln(os.Stderr, errors.Wrap(err, "create checkpoint"))
 	}
 	if err := h.wal.Truncate(last + 1); err != nil {
 		// If truncating fails, we'll just try again at the next checkpoint.
@@ -885,8 +896,6 @@ func (h *Head) Truncate(mint int64) (err error) {
 
 	level.Info(h.logger).Log("msg", "WAL checkpoint complete",
 		"first", first, "last", last, "duration", time.Since(start))
-
-	return nil
 }
 
 // initTime initializes a head with the first timestamp. This only needs to be called

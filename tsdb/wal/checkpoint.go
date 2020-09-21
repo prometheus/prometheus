@@ -170,11 +170,9 @@ func Checkpoint(logger log.Logger, w *WAL, from, to int, keep func(id uint64) bo
 			}
 			// Drop irrelevant series in place.
 			repl := series[:0]
-			if keep != nil {
-				for _, s := range series {
-					if keep(s.Ref) {
-						repl = append(repl, s)
-					}
+			for _, s := range series {
+				if keep(s.Ref) {
+					repl = append(repl, s)
 				}
 			}
 			if len(repl) > 0 {

@@ -661,6 +661,14 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 		return nil, err
 	}
 
+	// Set the min valid time for the ingested samples
+	// to be no lower than the maxt of the last block.
+	blocks := db.Blocks()
+	minValidTime := int64(math.MinInt64)
+	if len(blocks) > 0 {
+		minValidTime = blocks[len(blocks)-1].Meta().MaxTime
+	}
+	go truncateWAL(db.head, minValidTime)
 	// Register metrics after assigning the head block.
 	db.metrics = newDBMetrics(db, r)
 	maxBytes := opts.MaxBytes
@@ -671,13 +679,6 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 
 	if err := db.reload(); err != nil {
 		return nil, err
-	}
-	// Set the min valid time for the ingested samples
-	// to be no lower than the maxt of the last block.
-	blocks := db.Blocks()
-	minValidTime := int64(math.MinInt64)
-	if len(blocks) > 0 {
-		minValidTime = blocks[len(blocks)-1].Meta().MaxTime
 	}
 
 	if initErr := db.head.Init(minValidTime); initErr != nil {
