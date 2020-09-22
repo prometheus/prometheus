@@ -172,8 +172,7 @@ type TSDBAdminStats interface {
 // API can register a set of endpoints in a router and handle
 // them using the provided storage and query engine.
 type API struct {
-	// TODO(bwplotka): Change to SampleAndChunkQueryable in next PR.
-	Queryable   storage.Queryable
+	Queryable   storage.SampleAndChunkQueryable
 	QueryEngine *promql.Engine
 
 	targetRetriever       func(context.Context) TargetRetriever
@@ -502,6 +501,9 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
 	}
+	if names == nil {
+		names = []string{}
+	}
 	return apiFuncResult{names, nil, warnings, nil}
 }
 
@@ -541,6 +543,9 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 	vals, warnings, err := q.LabelValues(name)
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, warnings, closer}
+	}
+	if vals == nil {
+		vals = []string{}
 	}
 
 	return apiFuncResult{vals, nil, warnings, closer}
@@ -598,7 +603,8 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 
 	var sets []storage.SeriesSet
 	for _, mset := range matcherSets {
-		s := q.Select(false, nil, mset...)
+		// We need to sort this select results to merge (deduplicate) the series sets later.
+		s := q.Select(true, nil, mset...)
 		sets = append(sets, s)
 	}
 
@@ -1058,8 +1064,8 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 			File:           grp.File(),
 			Interval:       grp.Interval().Seconds(),
 			Rules:          []rule{},
-			EvaluationTime: grp.GetEvaluationDuration().Seconds(),
-			LastEvaluation: grp.GetEvaluationTimestamp(),
+			EvaluationTime: grp.GetEvaluationTime().Seconds(),
+			LastEvaluation: grp.GetLastEvaluation(),
 		}
 		for _, r := range grp.Rules() {
 			var enrichedRule rule
@@ -1218,15 +1224,21 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 	case prompb.ReadRequest_STREAMED_XOR_CHUNKS:
 		api.remoteReadStreamedXORChunks(ctx, w, req, externalLabels, sortedExternalLabels)
 	default:
+		// On empty or unknown types in req.AcceptedResponseTypes we default to non streamed, raw samples response.
 		api.remoteReadSamples(ctx, w, req, externalLabels, sortedExternalLabels)
 	}
 }
 
-func (api *API) remoteReadSamples(ctx context.Context, w http.ResponseWriter, req *prompb.ReadRequest, externalLabels map[string]string, sortedExternalLabels []prompb.Label) {
+func (api *API) remoteReadSamples(
+	ctx context.Context,
+	w http.ResponseWriter,
+	req *prompb.ReadRequest,
+	externalLabels map[string]string,
+	sortedExternalLabels []prompb.Label,
+) {
 	w.Header().Set("Content-Type", "application/x-protobuf")
 	w.Header().Set("Content-Encoding", "snappy")
 
-	// On empty or unknown types in req.AcceptedResponseTypes we default to non streamed, raw samples response.
 	resp := prompb.ReadResponse{
 		Results: make([]*prompb.QueryResult, len(req.Queries)),
 	}
@@ -1265,15 +1277,12 @@ func (api *API) remoteReadSamples(ctx context.Context, w http.ResponseWriter, re
 			if err != nil {
 				return err
 			}
-
 			for _, w := range ws {
 				level.Warn(api.logger).Log("msg", "Warnings on remote read query", "err", w.Error())
 			}
-
 			for _, ts := range resp.Results[i].Timeseries {
 				ts.Labels = remote.MergeLabels(ts.Labels, sortedExternalLabels)
 			}
-
 			return nil
 		}(); err != nil {
 			if httpErr, ok := err.(remote.HTTPError); ok {
@@ -1307,14 +1316,13 @@ func (api *API) remoteReadStreamedXORChunks(ctx context.Context, w http.Response
 				return err
 			}
 
-			// TODO(bwplotka): Use ChunkQuerier once ready in tsdb package.
-			querier, err := api.Queryable.Querier(ctx, query.StartTimestampMs, query.EndTimestampMs)
+			querier, err := api.Queryable.ChunkQuerier(ctx, query.StartTimestampMs, query.EndTimestampMs)
 			if err != nil {
 				return err
 			}
 			defer func() {
 				if err := querier.Close(); err != nil {
-					level.Warn(api.logger).Log("msg", "Error on chunk querier close", "warnings", err.Error())
+					level.Warn(api.logger).Log("msg", "Error on chunk querier close", "err", err.Error())
 				}
 			}()
 
@@ -1331,7 +1339,7 @@ func (api *API) remoteReadStreamedXORChunks(ctx context.Context, w http.Response
 				}
 			}
 
-			ws, err := remote.DeprecatedStreamChunkedReadResponses(
+			ws, err := remote.StreamChunkedReadResponses(
 				remote.NewChunkedWriter(w, f),
 				int64(i),
 				// The streaming API has to provide the series sorted.
@@ -1507,7 +1515,7 @@ func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data inter
 	case errorBadData:
 		code = http.StatusBadRequest
 	case errorExec:
-		code = 422
+		code = http.StatusUnprocessableEntity
 	case errorCanceled, errorTimeout:
 		code = http.StatusServiceUnavailable
 	case errorInternal:

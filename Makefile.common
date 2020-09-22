@@ -78,7 +78,7 @@ ifneq ($(shell which gotestsum),)
 endif
 endif
 
-PROMU_VERSION ?= 0.5.0
+PROMU_VERSION ?= 0.6.0
 PROMU_URL     := https://github.com/prometheus/promu/releases/download/v$(PROMU_VERSION)/promu-$(PROMU_VERSION).$(GO_BUILD_PLATFORM).tar.gz
 
 GOLANGCI_LINT :=

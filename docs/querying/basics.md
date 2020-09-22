@@ -55,10 +55,23 @@ Example:
 
 ### Float literals
 
-Scalar float values can be literally written as numbers of the form
-`[-](digits)[.(digits)]`.
+Scalar float values can be written as literal integer or floating-point numbers in the format (whitespace only included for better readability):
 
+    [-+]?(
+          [0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?
+        | 0[xX][0-9a-fA-F]+
+        | [nN][aA][nN]
+        | [iI][nN][fF]
+    )
+
+Examples:
+
+    23
     -2.43
+    3.4e-9
+    0x8f
+    -Inf
+    NaN
 
 ## Time series Selectors
 
@@ -132,26 +145,39 @@ syntax](https://github.com/google/re2/wiki/Syntax).
 ### Range Vector Selectors
 
 Range vector literals work like instant vector literals, except that they
-select a range of samples back from the current instant. Syntactically, a range
-duration is appended in square brackets (`[]`) at the end of a vector selector
-to specify how far back in time values should be fetched for each resulting
-range vector element.
-
-Time durations are specified as a number, followed immediately by one of the
-following units:
-
-* `s` - seconds
-* `m` - minutes
-* `h` - hours
-* `d` - days
-* `w` - weeks
-* `y` - years
+select a range of samples back from the current instant. Syntactically, a [time
+duration](#time_durations) is appended in square brackets (`[]`) at the end of a
+vector selector to specify how far back in time values should be fetched for
+each resulting range vector element.
 
 In this example, we select all the values we have recorded within the last 5
 minutes for all time series that have the metric name `http_requests_total` and
 a `job` label set to `prometheus`:
 
     http_requests_total{job="prometheus"}[5m]
+
+### Time Durations
+
+Time durations are specified as a number, followed immediately by one of the
+following units:
+
+* `ms` - milliseconds
+* `s` - seconds
+* `m` - minutes
+* `h` - hours
+* `d` - days - assuming a day has always 24h
+* `w` - weeks - assuming a week has always 7d
+* `y` - years - assuming a year has always 365d
+
+Time durations can be combined, by concatenation. Units must be ordered from the
+longest to the shortest. A given unit must only appear once in a time duration.
+
+Here are some examples of valid time durations:
+
+    5h
+    1h30m
+    5m
+    10s
 
 ### Offset modifier
 
@@ -180,7 +206,7 @@ The same works for range vectors. This returns the 5-minute rate that
 
 ## Subquery
 
-Subquery allows you to run an instant query for a given range and resolution. The result of a subquery is a range vector. 
+Subquery allows you to run an instant query for a given range and resolution. The result of a subquery is a range vector.
 
 Syntax: `<instant_query> '[' <range> ':' [<resolution>] ']' [ offset <duration> ]`
 

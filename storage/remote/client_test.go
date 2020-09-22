@@ -49,7 +49,7 @@ func TestStoreHTTPErrorHandling(t *testing.T) {
 		},
 		{
 			code: 500,
-			err:  recoverableError{errors.New("server returned HTTP status 500 Internal Server Error: " + longErrMessage[:maxErrMsgLen])},
+			err:  RecoverableError{errors.New("server returned HTTP status 500 Internal Server Error: " + longErrMessage[:maxErrMsgLen])},
 		},
 	}
 

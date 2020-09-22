@@ -217,22 +217,35 @@ func (w *Writer) cut() error {
 	return nil
 }
 
-func cutSegmentFile(dirFile *os.File, magicNumber uint32, chunksFormat byte, allocSize int64) (headerSize int, newFile *os.File, seq int, err error) {
+func cutSegmentFile(dirFile *os.File, magicNumber uint32, chunksFormat byte, allocSize int64) (headerSize int, newFile *os.File, seq int, returnErr error) {
 	p, seq, err := nextSequenceFile(dirFile.Name())
 	if err != nil {
-		return 0, nil, 0, err
+		return 0, nil, 0, errors.Wrap(err, "next sequence file")
 	}
-	f, err := os.OpenFile(p, os.O_WRONLY|os.O_CREATE, 0666)
+	ptmp := p + ".tmp"
+	f, err := os.OpenFile(ptmp, os.O_WRONLY|os.O_CREATE, 0666)
 	if err != nil {
-		return 0, nil, 0, err
+		return 0, nil, 0, errors.Wrap(err, "open temp file")
 	}
+	defer func() {
+		if returnErr != nil {
+			var merr tsdb_errors.MultiError
+			merr.Add(returnErr)
+			if f != nil {
+				merr.Add(f.Close())
+			}
+			// Calling RemoveAll on a non-existent file does not return error.
+			merr.Add(os.RemoveAll(ptmp))
+			returnErr = merr.Err()
+		}
+	}()
 	if allocSize > 0 {
 		if err = fileutil.Preallocate(f, allocSize, true); err != nil {
-			return 0, nil, 0, err
+			return 0, nil, 0, errors.Wrap(err, "preallocate")
 		}
 	}
 	if err = dirFile.Sync(); err != nil {
-		return 0, nil, 0, err
+		return 0, nil, 0, errors.Wrap(err, "sync directory")
 	}
 
 	// Write header metadata for new file.
@@ -242,7 +255,24 @@ func cutSegmentFile(dirFile *os.File, magicNumber uint32, chunksFormat byte, all
 
 	n, err := f.Write(metab)
 	if err != nil {
-		return 0, nil, 0, err
+		return 0, nil, 0, errors.Wrap(err, "write header")
+	}
+	if err := f.Close(); err != nil {
+		return 0, nil, 0, errors.Wrap(err, "close temp file")
+	}
+	f = nil
+
+	if err := fileutil.Rename(ptmp, p); err != nil {
+		return 0, nil, 0, errors.Wrap(err, "replace file")
+	}
+
+	f, err = os.OpenFile(p, os.O_WRONLY, 0666)
+	if err != nil {
+		return 0, nil, 0, errors.Wrap(err, "open final file")
+	}
+	// Skip header for further writes.
+	if _, err := f.Seek(int64(n), 0); err != nil {
+		return 0, nil, 0, errors.Wrap(err, "seek in final file")
 	}
 	return n, f, seq, nil
 }
@@ -251,85 +281,6 @@ func (w *Writer) write(b []byte) error {
 	n, err := w.wbuf.Write(b)
 	w.n += int64(n)
 	return err
-}
-
-// MergeOverlappingChunks removes the samples whose timestamp is overlapping.
-// The last appearing sample is retained in case there is overlapping.
-// This assumes that `chks []Meta` is sorted w.r.t. MinTime.
-func MergeOverlappingChunks(chks []Meta) ([]Meta, error) {
-	if len(chks) < 2 {
-		return chks, nil
-	}
-	newChks := make([]Meta, 0, len(chks)) // Will contain the merged chunks.
-	newChks = append(newChks, chks[0])
-	last := 0
-	for _, c := range chks[1:] {
-		// We need to check only the last chunk in newChks.
-		// Reason: (1) newChks[last-1].MaxTime < newChks[last].MinTime (non overlapping)
-		//         (2) As chks are sorted w.r.t. MinTime, newChks[last].MinTime < c.MinTime.
-		// So never overlaps with newChks[last-1] or anything before that.
-		if c.MinTime > newChks[last].MaxTime {
-			newChks = append(newChks, c)
-			last++
-			continue
-		}
-		nc := &newChks[last]
-		if c.MaxTime > nc.MaxTime {
-			nc.MaxTime = c.MaxTime
-		}
-		chk, err := MergeChunks(nc.Chunk, c.Chunk)
-		if err != nil {
-			return nil, err
-		}
-		nc.Chunk = chk
-	}
-
-	return newChks, nil
-}
-
-// MergeChunks vertically merges a and b, i.e., if there is any sample
-// with same timestamp in both a and b, the sample in a is discarded.
-func MergeChunks(a, b chunkenc.Chunk) (*chunkenc.XORChunk, error) {
-	newChunk := chunkenc.NewXORChunk()
-	app, err := newChunk.Appender()
-	if err != nil {
-		return nil, err
-	}
-	ait := a.Iterator(nil)
-	bit := b.Iterator(nil)
-	aok, bok := ait.Next(), bit.Next()
-	for aok && bok {
-		at, av := ait.At()
-		bt, bv := bit.At()
-		if at < bt {
-			app.Append(at, av)
-			aok = ait.Next()
-		} else if bt < at {
-			app.Append(bt, bv)
-			bok = bit.Next()
-		} else {
-			app.Append(bt, bv)
-			aok = ait.Next()
-			bok = bit.Next()
-		}
-	}
-	for aok {
-		at, av := ait.At()
-		app.Append(at, av)
-		aok = ait.Next()
-	}
-	for bok {
-		bt, bv := bit.At()
-		app.Append(bt, bv)
-		bok = bit.Next()
-	}
-	if ait.Err() != nil {
-		return nil, ait.Err()
-	}
-	if bit.Err() != nil {
-		return nil, bit.Err()
-	}
-	return newChunk, nil
 }
 
 // WriteChunks writes as many chunks as possible to the current segment,
@@ -465,10 +416,6 @@ func (b realByteSlice) Len() int {
 }
 
 func (b realByteSlice) Range(start, end int) []byte {
-	return b[start:end]
-}
-
-func (b realByteSlice) Sub(start, end int) ByteSlice {
 	return b[start:end]
 }
 

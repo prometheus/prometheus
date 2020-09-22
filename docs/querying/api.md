@@ -46,21 +46,20 @@ The JSON response envelope format is as follows:
 }
 ```
 
-Input timestamps may be provided either in
+Generic placeholders are defined as follows:
+
+* `<rfc3339 | unix_timestamp>`: Input timestamps may be provided either in
 [RFC3339](https://www.ietf.org/rfc/rfc3339.txt) format or as a Unix timestamp
 in seconds, with optional decimal places for sub-second precision. Output
 timestamps are always represented as Unix timestamps in seconds.
-
-Names of query parameters that may be repeated end with `[]`.
-
-`<series_selector>` placeholders refer to Prometheus [time series
+* `<series_selector>`: Prometheus [time series
 selectors](basics.md#time-series-selectors) like `http_requests_total` or
 `http_requests_total{method=~"(GET|POST)"}` and need to be URL-encoded.
+* `<duration>`: [Prometheus duration strings](basics.md#time_durations).
+For example, `5m` refers to a duration of 5 minutes.
+* `<bool>`: boolean values (strings `true` and `false`).
 
-`<duration>` placeholders refer to Prometheus duration strings of the form
-`[0-9]+[smhdwy]`. For example, `5m` refers to a duration of 5 minutes.
-
-`<bool>` placeholders refer to boolean values (strings `true` and `false`).
+Note: Names of query parameters that may be repeated end with `[]`.
 
 ## Expression queries
 
@@ -951,8 +950,6 @@ $ curl http://localhost:9090/api/v1/status/tsdb
 ## TSDB Admin APIs
 These are APIs that expose database functionalities for the advanced user. These APIs are not enabled unless the `--web.enable-admin-api` is set.
 
-We also expose a gRPC API whose definition can be found [here](https://github.com/prometheus/prometheus/blob/master/prompb/rpc.proto). This is experimental and might change in the future.
-
 ### Snapshot
 Snapshot creates a snapshot of all current data into `snapshots/<datetime>-<rand>` under the TSDB's data directory and returns the directory as response.
 It will optionally skip snapshotting data that is only present in the head block, and which has not yet been compacted to disk.
@@ -980,7 +977,7 @@ The snapshot now exists at `<data-dir>/snapshots/20171210T211224Z-2be650b6d019eb
 *New in v2.1 and supports PUT from v2.9*
 
 ### Delete Series
-DeleteSeries deletes data for a selection of series in a time range. The actual data still exists on disk and is cleaned up in future compactions or can be explicitly cleaned up by hitting the Clean Tombstones endpoint.
+DeleteSeries deletes data for a selection of series in a time range. The actual data still exists on disk and is cleaned up in future compactions or can be explicitly cleaned up by hitting the [Clean Tombstones](#clean-tombstones) endpoint.
 
 If successful, a `204` is returned.
 

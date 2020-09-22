@@ -81,14 +81,34 @@ var (
 	targetScrapePoolReloads = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "prometheus_target_scrape_pool_reloads_total",
-			Help: "Total number of scrape loop reloads.",
+			Help: "Total number of scrape pool reloads.",
 		},
 	)
 	targetScrapePoolReloadsFailed = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "prometheus_target_scrape_pool_reloads_failed_total",
-			Help: "Total number of failed scrape loop reloads.",
+			Help: "Total number of failed scrape pool reloads.",
 		},
+	)
+	targetScrapePoolExceededTargetLimit = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "prometheus_target_scrape_pool_exceeded_target_limit_total",
+			Help: "Total number of times scrape pools hit the target limit, during sync or config reload.",
+		},
+	)
+	targetScrapePoolTargetLimit = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "prometheus_target_scrape_pool_target_limit",
+			Help: "Maximum number of targets allowed in this scrape pool.",
+		},
+		[]string{"scrape_job"},
+	)
+	targetScrapePoolTargetsAdded = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "prometheus_target_scrape_pool_targets",
+			Help: "Current number of targets in this scrape pool.",
+		},
+		[]string{"scrape_job"},
 	)
 	targetSyncIntervalLength = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
@@ -151,6 +171,9 @@ func init() {
 		targetScrapeSampleDuplicate,
 		targetScrapeSampleOutOfOrder,
 		targetScrapeSampleOutOfBounds,
+		targetScrapePoolExceededTargetLimit,
+		targetScrapePoolTargetLimit,
+		targetScrapePoolTargetsAdded,
 		targetScrapeCacheFlushForced,
 		targetMetadataCache,
 	)
@@ -170,6 +193,7 @@ type scrapePool struct {
 	droppedTargets []*Target
 	loops          map[uint64]loop
 	cancel         context.CancelFunc
+	targetLimitHit bool // Internal state to speed up the target_limit checks.
 
 	// Constructor for new scrape loops. This is settable for testing convenience.
 	newLoop func(scrapeLoopOptions) loop
@@ -195,7 +219,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 		logger = log.NewNopLogger()
 	}
 
-	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, cfg.JobName, false)
+	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, cfg.JobName, false, false)
 	if err != nil {
 		targetScrapePoolsFailed.Inc()
 		return nil, errors.Wrap(err, "error creating HTTP client")
@@ -230,7 +254,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 				return mutateSampleLabels(l, opts.target, opts.honorLabels, opts.mrc)
 			},
 			func(l labels.Labels) labels.Labels { return mutateReportSampleLabels(l, opts.target) },
-			func() storage.Appender { return appender(app.Appender(), opts.limit) },
+			func(ctx context.Context) storage.Appender { return appender(app.Appender(ctx), opts.limit) },
 			cache,
 			jitterSeed,
 			opts.honorTimestamps,
@@ -278,6 +302,13 @@ func (sp *scrapePool) stop() {
 	}
 	wg.Wait()
 	sp.client.CloseIdleConnections()
+
+	if sp.config != nil {
+		targetScrapePoolSyncsCounter.DeleteLabelValues(sp.config.JobName)
+		targetScrapePoolTargetLimit.DeleteLabelValues(sp.config.JobName)
+		targetScrapePoolTargetsAdded.DeleteLabelValues(sp.config.JobName)
+		targetSyncIntervalLength.DeleteLabelValues(sp.config.JobName)
+	}
 }
 
 // reload the scrape pool with the given scrape configuration. The target state is preserved
@@ -290,7 +321,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 	sp.mtx.Lock()
 	defer sp.mtx.Unlock()
 
-	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, cfg.JobName, false)
+	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, cfg.JobName, false, false)
 	if err != nil {
 		targetScrapePoolReloadsFailed.Inc()
 		return errors.Wrap(err, "error creating HTTP client")
@@ -300,6 +331,8 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 	sp.config = cfg
 	oldClient := sp.client
 	sp.client = client
+
+	targetScrapePoolTargetLimit.WithLabelValues(sp.config.JobName).Set(float64(sp.config.TargetLimit))
 
 	var (
 		wg              sync.WaitGroup
@@ -311,6 +344,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 		mrc             = sp.config.MetricRelabelConfigs
 	)
 
+	forcedErr := sp.refreshTargetLimitErr()
 	for fp, oldLoop := range sp.loops {
 		var cache *scrapeCache
 		if oc := oldLoop.getCache(); reuseCache && oc != nil {
@@ -338,7 +372,8 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 			oldLoop.stop()
 			wg.Done()
 
-			go newLoop.run(interval, timeout, nil)
+			newLoop.setForcedError(forcedErr)
+			newLoop.run(interval, timeout, nil)
 		}(oldLoop, newLoop)
 
 		sp.loops[fp] = newLoop
@@ -355,10 +390,12 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 // Sync converts target groups into actual scrape targets and synchronizes
 // the currently running scraper with the resulting set and returns all scraped and dropped targets.
 func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
+	sp.mtx.Lock()
+	defer sp.mtx.Unlock()
+
 	start := time.Now()
 
 	var all []*Target
-	sp.mtx.Lock()
 	sp.droppedTargets = []*Target{}
 	for _, tg := range tgs {
 		targets, err := targetsFromGroup(tg, sp.config)
@@ -374,7 +411,6 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 			}
 		}
 	}
-	sp.mtx.Unlock()
 	sp.sync(all)
 
 	targetSyncIntervalLength.WithLabelValues(sp.config.JobName).Observe(
@@ -387,11 +423,9 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 // scrape loops for new targets, and stops scrape loops for disappeared targets.
 // It returns after all stopped scrape loops terminated.
 func (sp *scrapePool) sync(targets []*Target) {
-	sp.mtx.Lock()
-	defer sp.mtx.Unlock()
-
+	// This function expects that you have acquired the sp.mtx lock.
 	var (
-		uniqueTargets   = map[uint64]struct{}{}
+		uniqueLoops     = make(map[uint64]loop)
 		interval        = time.Duration(sp.config.ScrapeInterval)
 		timeout         = time.Duration(sp.config.ScrapeTimeout)
 		limit           = int(sp.config.SampleLimit)
@@ -401,9 +435,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 	)
 
 	for _, t := range targets {
-		t := t
 		hash := t.hash()
-		uniqueTargets[hash] = struct{}{}
 
 		if _, ok := sp.activeTargets[hash]; !ok {
 			s := &targetScraper{Target: t, client: sp.client, timeout: timeout}
@@ -419,8 +451,12 @@ func (sp *scrapePool) sync(targets []*Target) {
 			sp.activeTargets[hash] = t
 			sp.loops[hash] = l
 
-			go l.run(interval, timeout, nil)
+			uniqueLoops[hash] = l
 		} else {
+			// This might be a duplicated target.
+			if _, ok := uniqueLoops[hash]; !ok {
+				uniqueLoops[hash] = nil
+			}
 			// Need to keep the most updated labels information
 			// for displaying it in the Service Discovery web page.
 			sp.activeTargets[hash].SetDiscoveredLabels(t.DiscoveredLabels())
@@ -431,12 +467,10 @@ func (sp *scrapePool) sync(targets []*Target) {
 
 	// Stop and remove old targets and scraper loops.
 	for hash := range sp.activeTargets {
-		if _, ok := uniqueTargets[hash]; !ok {
+		if _, ok := uniqueLoops[hash]; !ok {
 			wg.Add(1)
 			go func(l loop) {
-
 				l.stop()
-
 				wg.Done()
 			}(sp.loops[hash])
 
@@ -445,11 +479,41 @@ func (sp *scrapePool) sync(targets []*Target) {
 		}
 	}
 
+	targetScrapePoolTargetsAdded.WithLabelValues(sp.config.JobName).Set(float64(len(uniqueLoops)))
+	forcedErr := sp.refreshTargetLimitErr()
+	for _, l := range sp.loops {
+		l.setForcedError(forcedErr)
+	}
+	for _, l := range uniqueLoops {
+		if l != nil {
+			go l.run(interval, timeout, nil)
+		}
+	}
 	// Wait for all potentially stopped scrapers to terminate.
 	// This covers the case of flapping targets. If the server is under high load, a new scraper
 	// may be active and tries to insert. The old scraper that didn't terminate yet could still
 	// be inserting a previous sample set.
 	wg.Wait()
+}
+
+// refreshTargetLimitErr returns an error that can be passed to the scrape loops
+// if the number of targets exceeds the configured limit.
+func (sp *scrapePool) refreshTargetLimitErr() error {
+	// This function expects that you have acquired the sp.mtx lock.
+	if sp.config == nil || sp.config.TargetLimit == 0 && !sp.targetLimitHit {
+		return nil
+	}
+	l := len(sp.activeTargets)
+	if l <= int(sp.config.TargetLimit) && !sp.targetLimitHit {
+		return nil
+	}
+	var err error
+	sp.targetLimitHit = l > int(sp.config.TargetLimit)
+	if sp.targetLimitHit {
+		targetScrapePoolExceededTargetLimit.Inc()
+		err = fmt.Errorf("target_limit exceeded (number of targets: %d, limit: %d)", l, sp.config.TargetLimit)
+	}
+	return err
 }
 
 func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*relabel.Config) labels.Labels {
@@ -592,6 +656,7 @@ func (s *targetScraper) scrape(ctx context.Context, w io.Writer) (string, error)
 // A loop can run and be stopped again. It must not be reused after it was stopped.
 type loop interface {
 	run(interval, timeout time.Duration, errc chan<- error)
+	setForcedError(err error)
 	stop()
 	getCache() *scrapeCache
 	disableEndOfRunStalenessMarkers()
@@ -612,8 +677,10 @@ type scrapeLoop struct {
 	buffers         *pool.Pool
 	jitterSeed      uint64
 	honorTimestamps bool
+	forcedErr       error
+	forcedErrMtx    sync.Mutex
 
-	appender            func() storage.Appender
+	appender            func(ctx context.Context) storage.Appender
 	sampleMutator       labelsMutator
 	reportSampleMutator labelsMutator
 
@@ -875,7 +942,7 @@ func newScrapeLoop(ctx context.Context,
 	buffers *pool.Pool,
 	sampleMutator labelsMutator,
 	reportSampleMutator labelsMutator,
-	appender func() storage.Appender,
+	appender func(ctx context.Context) storage.Appender,
 	cache *scrapeCache,
 	jitterSeed uint64,
 	honorTimestamps bool,
@@ -932,61 +999,7 @@ mainLoop:
 		default:
 		}
 
-		var (
-			start             = time.Now()
-			scrapeCtx, cancel = context.WithTimeout(sl.ctx, timeout)
-		)
-
-		// Only record after the first scrape.
-		if !last.IsZero() {
-			targetIntervalLength.WithLabelValues(interval.String()).Observe(
-				time.Since(last).Seconds(),
-			)
-		}
-
-		b := sl.buffers.Get(sl.lastScrapeSize).([]byte)
-		buf := bytes.NewBuffer(b)
-
-		contentType, scrapeErr := sl.scraper.scrape(scrapeCtx, buf)
-		cancel()
-
-		if scrapeErr == nil {
-			b = buf.Bytes()
-			// NOTE: There were issues with misbehaving clients in the past
-			// that occasionally returned empty results. We don't want those
-			// to falsely reset our buffer size.
-			if len(b) > 0 {
-				sl.lastScrapeSize = len(b)
-			}
-		} else {
-			level.Debug(sl.l).Log("msg", "Scrape failed", "err", scrapeErr.Error())
-			if errc != nil {
-				errc <- scrapeErr
-			}
-		}
-
-		// A failed scrape is the same as an empty scrape,
-		// we still call sl.append to trigger stale markers.
-		total, added, seriesAdded, appErr := sl.append(b, contentType, start)
-		if appErr != nil {
-			level.Debug(sl.l).Log("msg", "Append failed", "err", appErr)
-			// The append failed, probably due to a parse error or sample limit.
-			// Call sl.append again with an empty scrape to trigger stale markers.
-			if _, _, _, err := sl.append([]byte{}, "", start); err != nil {
-				level.Warn(sl.l).Log("msg", "Append failed", "err", err)
-			}
-		}
-
-		sl.buffers.Put(b)
-
-		if scrapeErr == nil {
-			scrapeErr = appErr
-		}
-
-		if err := sl.report(start, time.Since(start), total, added, seriesAdded, scrapeErr); err != nil {
-			level.Warn(sl.l).Log("msg", "Appending scrape report failed", "err", err)
-		}
-		last = start
+		last = sl.scrapeAndReport(interval, timeout, last, errc)
 
 		select {
 		case <-sl.parentCtx.Done():
@@ -1003,6 +1016,116 @@ mainLoop:
 	if !sl.disabledEndOfRunStalenessMarkers {
 		sl.endOfRunStaleness(last, ticker, interval)
 	}
+}
+
+// scrapeAndReport performs a scrape and then appends the result to the storage
+// together with reporting metrics, by using as few appenders as possible.
+// In the happy scenario, a single appender is used.
+// This function uses sl.parentCtx instead of sl.ctx on purpose. A scrape should
+// only be cancelled on shutdown, not on reloads.
+func (sl *scrapeLoop) scrapeAndReport(interval, timeout time.Duration, last time.Time, errc chan<- error) time.Time {
+	start := time.Now()
+
+	// Only record after the first scrape.
+	if !last.IsZero() {
+		targetIntervalLength.WithLabelValues(interval.String()).Observe(
+			time.Since(last).Seconds(),
+		)
+	}
+
+	b := sl.buffers.Get(sl.lastScrapeSize).([]byte)
+	defer sl.buffers.Put(b)
+	buf := bytes.NewBuffer(b)
+
+	var total, added, seriesAdded int
+	var err, appErr, scrapeErr error
+
+	app := sl.appender(sl.parentCtx)
+	defer func() {
+		if err != nil {
+			app.Rollback()
+			return
+		}
+		err = app.Commit()
+		if err != nil {
+			level.Error(sl.l).Log("msg", "Scrape commit failed", "err", err)
+		}
+	}()
+
+	defer func() {
+		if err = sl.report(app, start, time.Since(start), total, added, seriesAdded, scrapeErr); err != nil {
+			level.Warn(sl.l).Log("msg", "Appending scrape report failed", "err", err)
+		}
+	}()
+
+	if forcedErr := sl.getForcedError(); forcedErr != nil {
+		scrapeErr = forcedErr
+		// Add stale markers.
+		if _, _, _, err := sl.append(app, []byte{}, "", start); err != nil {
+			app.Rollback()
+			app = sl.appender(sl.parentCtx)
+			level.Warn(sl.l).Log("msg", "Append failed", "err", err)
+		}
+		if errc != nil {
+			errc <- forcedErr
+		}
+
+		return start
+	}
+
+	var contentType string
+	scrapeCtx, cancel := context.WithTimeout(sl.parentCtx, timeout)
+	contentType, scrapeErr = sl.scraper.scrape(scrapeCtx, buf)
+	cancel()
+
+	if scrapeErr == nil {
+		b = buf.Bytes()
+		// NOTE: There were issues with misbehaving clients in the past
+		// that occasionally returned empty results. We don't want those
+		// to falsely reset our buffer size.
+		if len(b) > 0 {
+			sl.lastScrapeSize = len(b)
+		}
+	} else {
+		level.Debug(sl.l).Log("msg", "Scrape failed", "err", scrapeErr)
+		if errc != nil {
+			errc <- scrapeErr
+		}
+	}
+
+	// A failed scrape is the same as an empty scrape,
+	// we still call sl.append to trigger stale markers.
+	total, added, seriesAdded, appErr = sl.append(app, b, contentType, start)
+	if appErr != nil {
+		app.Rollback()
+		app = sl.appender(sl.parentCtx)
+		level.Debug(sl.l).Log("msg", "Append failed", "err", appErr)
+		// The append failed, probably due to a parse error or sample limit.
+		// Call sl.append again with an empty scrape to trigger stale markers.
+		if _, _, _, err := sl.append(app, []byte{}, "", start); err != nil {
+			app.Rollback()
+			app = sl.appender(sl.parentCtx)
+			level.Warn(sl.l).Log("msg", "Append failed", "err", err)
+		}
+	}
+
+	if scrapeErr == nil {
+		scrapeErr = appErr
+	}
+
+	return start
+}
+
+func (sl *scrapeLoop) setForcedError(err error) {
+	sl.forcedErrMtx.Lock()
+	defer sl.forcedErrMtx.Unlock()
+	sl.forcedErr = err
+}
+
+func (sl *scrapeLoop) getForcedError() error {
+	sl.forcedErrMtx.Lock()
+	defer sl.forcedErrMtx.Unlock()
+	return sl.forcedErr
 }
 
 func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, interval time.Duration) {
@@ -1045,11 +1168,25 @@ func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, int
 	// Call sl.append again with an empty scrape to trigger stale markers.
 	// If the target has since been recreated and scraped, the
 	// stale markers will be out of order and ignored.
-	if _, _, _, err := sl.append([]byte{}, "", staleTime); err != nil {
-		level.Error(sl.l).Log("msg", "stale append failed", "err", err)
+	app := sl.appender(sl.ctx)
+	var err error
+	defer func() {
+		if err != nil {
+			app.Rollback()
+			return
+		}
+		err = app.Commit()
+		if err != nil {
+			level.Warn(sl.l).Log("msg", "Stale commit failed", "err", err)
+		}
+	}()
+	if _, _, _, err = sl.append(app, []byte{}, "", staleTime); err != nil {
+		app.Rollback()
+		app = sl.appender(sl.ctx)
+		level.Warn(sl.l).Log("msg", "Stale append failed", "err", err)
 	}
-	if err := sl.reportStale(staleTime); err != nil {
-		level.Error(sl.l).Log("msg", "stale report failed", "err", err)
+	if err = sl.reportStale(app, staleTime); err != nil {
+		level.Warn(sl.l).Log("msg", "Stale report failed", "err", err)
 	}
 }
 
@@ -1074,9 +1211,8 @@ type appendErrors struct {
 	numOutOfBounds int
 }
 
-func (sl *scrapeLoop) append(b []byte, contentType string, ts time.Time) (total, added, seriesAdded int, err error) {
+func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string, ts time.Time) (total, added, seriesAdded int, err error) {
 	var (
-		app            = sl.appender()
 		p              = textparse.New(b, contentType)
 		defTime        = timestamp.FromTime(ts)
 		appErrs        = appendErrors{}
@@ -1085,10 +1221,6 @@ func (sl *scrapeLoop) append(b []byte, contentType string, ts time.Time) (total,
 
 	defer func() {
 		if err != nil {
-			app.Rollback()
-			return
-		}
-		if err = app.Commit(); err != nil {
 			return
 		}
 		// Only perform cache cleaning if the scrape was not empty.
@@ -1275,7 +1407,7 @@ const (
 	scrapeSeriesAddedMetricName  = "scrape_series_added" + "\xff"
 )
 
-func (sl *scrapeLoop) report(start time.Time, duration time.Duration, scraped, added, seriesAdded int, scrapeErr error) (err error) {
+func (sl *scrapeLoop) report(app storage.Appender, start time.Time, duration time.Duration, scraped, added, seriesAdded int, scrapeErr error) (err error) {
 	sl.scraper.Report(start, duration, scrapeErr)
 
 	ts := timestamp.FromTime(start)
@@ -1284,14 +1416,6 @@ func (sl *scrapeLoop) report(start time.Time, duration time.Duration, scraped, a
 	if scrapeErr == nil {
 		health = 1
 	}
-	app := sl.appender()
-	defer func() {
-		if err != nil {
-			app.Rollback()
-			return
-		}
-		err = app.Commit()
-	}()
 
 	if err = sl.addReportSample(app, scrapeHealthMetricName, ts, health); err != nil {
 		return
@@ -1311,16 +1435,8 @@ func (sl *scrapeLoop) report(start time.Time, duration time.Duration, scraped, a
 	return
 }
 
-func (sl *scrapeLoop) reportStale(start time.Time) (err error) {
+func (sl *scrapeLoop) reportStale(app storage.Appender, start time.Time) (err error) {
 	ts := timestamp.FromTime(start)
-	app := sl.appender()
-	defer func() {
-		if err != nil {
-			app.Rollback()
-			return
-		}
-		err = app.Commit()
-	}()
 
 	stale := math.Float64frombits(value.StaleNaN)
 

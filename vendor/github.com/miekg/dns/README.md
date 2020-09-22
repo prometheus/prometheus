@@ -71,6 +71,8 @@ A not-so-up-to-date-list-that-may-be-actually-current:
 * https://render.com
 * https://github.com/peterzen/goresolver
 * https://github.com/folbricht/routedns
+* https://domainr.com/
+* https://zonedb.org/
 
 Send pull request if you want to be listed here.
 

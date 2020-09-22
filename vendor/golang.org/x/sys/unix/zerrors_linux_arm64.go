@@ -192,6 +192,7 @@ const (
 	PPPIOCSRASYNCMAP                 = 0x40047454
 	PPPIOCSXASYNCMAP                 = 0x4020744f
 	PPPIOCXFERUNIT                   = 0x744e
+	PROT_BTI                         = 0x10
 	PR_SET_PTRACER_ANY               = 0xffffffffffffffff
 	PTRACE_SYSEMU                    = 0x1f
 	PTRACE_SYSEMU_SINGLESTEP         = 0x20

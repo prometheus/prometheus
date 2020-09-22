@@ -37,10 +37,14 @@ import (
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
-	kingpin "gopkg.in/alecthomas/kingpin.v2"
+	"gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery/file"
+	"github.com/prometheus/prometheus/discovery/kubernetes"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
+
+	_ "github.com/prometheus/prometheus/discovery/install" // Register service discovery implementations.
 )
 
 func main() {
@@ -66,9 +70,11 @@ func main() {
 
 	queryCmd := app.Command("query", "Run query against a Prometheus server.")
 	queryCmdFmt := queryCmd.Flag("format", "Output format of the query.").Short('o').Default("promql").Enum("promql", "json")
+
 	queryInstantCmd := queryCmd.Command("instant", "Run instant query.")
-	queryServer := queryInstantCmd.Arg("server", "Prometheus server to query.").Required().String()
-	queryExpr := queryInstantCmd.Arg("expr", "PromQL query expression.").Required().String()
+	queryInstantServer := queryInstantCmd.Arg("server", "Prometheus server to query.").Required().String()
+	queryInstantExpr := queryInstantCmd.Arg("expr", "PromQL query expression.").Required().String()
+	queryInstantTime := queryInstantCmd.Flag("time", "Query evaluation time (RFC3339 or Unix timestamp).").String()
 
 	queryRangeCmd := queryCmd.Command("range", "Run range query.")
 	queryRangeServer := queryRangeCmd.Arg("server", "Prometheus server to query.").Required().String()
@@ -105,6 +111,29 @@ func main() {
 		"The unit test file.",
 	).Required().ExistingFiles()
 
+	defaultDBPath := "data/"
+	tsdbCmd := app.Command("tsdb", "Run tsdb commands.")
+
+	tsdbBenchCmd := tsdbCmd.Command("bench", "Run benchmarks.")
+	tsdbBenchWriteCmd := tsdbBenchCmd.Command("write", "Run a write performance benchmark.")
+	benchWriteOutPath := tsdbBenchWriteCmd.Flag("out", "Set the output path.").Default("benchout").String()
+	benchWriteNumMetrics := tsdbBenchWriteCmd.Flag("metrics", "Number of metrics to read.").Default("10000").Int()
+	benchSamplesFile := tsdbBenchWriteCmd.Arg("file", "Input file with samples data, default is ("+filepath.Join("..", "..", "tsdb", "testdata", "20kseries.json")+").").Default(filepath.Join("..", "..", "tsdb", "testdata", "20kseries.json")).String()
+
+	tsdbAnalyzeCmd := tsdbCmd.Command("analyze", "Analyze churn, label pair cardinality.")
+	analyzePath := tsdbAnalyzeCmd.Arg("db path", "Database path (default is "+defaultDBPath+").").Default(defaultDBPath).String()
+	analyzeBlockID := tsdbAnalyzeCmd.Arg("block id", "Block to analyze (default is the last block).").String()
+	analyzeLimit := tsdbAnalyzeCmd.Flag("limit", "How many items to show in each list.").Default("20").Int()
+
+	tsdbListCmd := tsdbCmd.Command("list", "List tsdb blocks.")
+	listHumanReadable := tsdbListCmd.Flag("human-readable", "Print human readable values.").Short('r').Bool()
+	listPath := tsdbListCmd.Arg("db path", "Database path (default is "+defaultDBPath+").").Default(defaultDBPath).String()
+
+	tsdbDumpCmd := tsdbCmd.Command("dump", "Dump samples from a TSDB.")
+	dumpPath := tsdbDumpCmd.Arg("db path", "Database path (default is "+defaultDBPath+").").Default(defaultDBPath).String()
+	dumpMinTime := tsdbDumpCmd.Flag("min-time", "Minimum timestamp to dump.").Default(strconv.FormatInt(math.MinInt64, 10)).Int64()
+	dumpMaxTime := tsdbDumpCmd.Flag("max-time", "Maximum timestamp to dump.").Default(strconv.FormatInt(math.MaxInt64, 10)).Int64()
+
 	parsedCmd := kingpin.MustParse(app.Parse(os.Args[1:]))
 
 	var p printer
@@ -126,7 +155,7 @@ func main() {
 		os.Exit(CheckMetrics())
 
 	case queryInstantCmd.FullCommand():
-		os.Exit(QueryInstant(*queryServer, *queryExpr, p))
+		os.Exit(QueryInstant(*queryInstantServer, *queryInstantExpr, *queryInstantTime, p))
 
 	case queryRangeCmd.FullCommand():
 		os.Exit(QueryRange(*queryRangeServer, *queryRangeHeaders, *queryRangeExpr, *queryRangeBegin, *queryRangeEnd, *queryRangeStep, p))
@@ -148,6 +177,18 @@ func main() {
 
 	case testRulesCmd.FullCommand():
 		os.Exit(RulesUnitTest(*testRulesFiles...))
+
+	case tsdbBenchWriteCmd.FullCommand():
+		os.Exit(checkErr(benchmarkWrite(*benchWriteOutPath, *benchSamplesFile, *benchWriteNumMetrics)))
+
+	case tsdbAnalyzeCmd.FullCommand():
+		os.Exit(checkErr(analyzeBlock(*analyzePath, *analyzeBlockID, *analyzeLimit)))
+
+	case tsdbListCmd.FullCommand():
+		os.Exit(checkErr(listBlocks(*listPath, *listHumanReadable)))
+
+	case tsdbDumpCmd.FullCommand():
+		os.Exit(checkErr(dumpSamples(*dumpPath, *dumpMinTime, *dumpMaxTime)))
 	}
 }
 
@@ -228,24 +269,25 @@ func checkConfig(filename string) ([]string, error) {
 			return nil, err
 		}
 
-		for _, kd := range scfg.ServiceDiscoveryConfig.KubernetesSDConfigs {
-			if err := checkTLSConfig(kd.HTTPClientConfig.TLSConfig); err != nil {
-				return nil, err
-			}
-		}
-
-		for _, filesd := range scfg.ServiceDiscoveryConfig.FileSDConfigs {
-			for _, file := range filesd.Files {
-				files, err := filepath.Glob(file)
-				if err != nil {
+		for _, c := range scfg.ServiceDiscoveryConfigs {
+			switch c := c.(type) {
+			case *kubernetes.SDConfig:
+				if err := checkTLSConfig(c.HTTPClientConfig.TLSConfig); err != nil {
 					return nil, err
 				}
-				if len(files) != 0 {
-					// There was at least one match for the glob and we can assume checkFileExists
-					// for all matches would pass, we can continue the loop.
-					continue
+			case *file.SDConfig:
+				for _, file := range c.Files {
+					files, err := filepath.Glob(file)
+					if err != nil {
+						return nil, err
+					}
+					if len(files) != 0 {
+						// There was at least one match for the glob and we can assume checkFileExists
+						// for all matches would pass, we can continue the loop.
+						continue
+					}
+					fmt.Printf("  WARNING: file %q for file_sd in scrape job %q does not exist\n", file, scfg.JobName)
 				}
-				fmt.Printf("  WARNING: file %q for file_sd in scrape job %q does not exist\n", file, scfg.JobName)
 			}
 		}
 	}
@@ -387,7 +429,7 @@ func CheckMetrics() int {
 }
 
 // QueryInstant performs an instant query against a Prometheus server.
-func QueryInstant(url, query string, p printer) int {
+func QueryInstant(url, query, evalTime string, p printer) int {
 	config := api.Config{
 		Address: url,
 	}
@@ -399,11 +441,20 @@ func QueryInstant(url, query string, p printer) int {
 		return 1
 	}
 
+	eTime := time.Now()
+	if evalTime != "" {
+		eTime, err = parseTime(evalTime)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error parsing evaluation time:", err)
+			return 1
+		}
+	}
+
 	// Run query against client.
 	api := v1.NewAPI(c)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	val, _, err := api.Query(ctx, query, time.Now()) // Ignoring warnings for now.
+	val, _, err := api.Query(ctx, query, eTime) // Ignoring warnings for now.
 	cancel()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "query error:", err)
@@ -455,11 +506,13 @@ func QueryRange(url string, headers map[string]string, query, start, end string,
 		stime, err = parseTime(start)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "error parsing start time:", err)
+			return 1
 		}
 	}
 
 	if !stime.Before(etime) {
 		fmt.Fprintln(os.Stderr, "start time is not before end time")
+		return 1
 	}
 
 	if step == 0 {

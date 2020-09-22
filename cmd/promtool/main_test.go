@@ -19,6 +19,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestQueryRange(t *testing.T) {
@@ -27,41 +29,31 @@ func TestQueryRange(t *testing.T) {
 
 	p := &promqlPrinter{}
 	exitCode := QueryRange(s.URL, map[string]string{}, "up", "0", "300", 0, p)
-	expectedPath := "/api/v1/query_range"
-	gotPath := getRequest().URL.Path
-	if gotPath != expectedPath {
-		t.Errorf("unexpected URL path %s (wanted %s)", gotPath, expectedPath)
-	}
+	testutil.Equals(t, "/api/v1/query_range", getRequest().URL.Path)
 	form := getRequest().Form
-	actual := form.Get("query")
-	if actual != "up" {
-		t.Errorf("unexpected value %s for query", actual)
-	}
-	actual = form.Get("step")
-	if actual != "1" {
-		t.Errorf("unexpected value %s for step", actual)
-	}
-	if exitCode > 0 {
-		t.Error()
-	}
+	testutil.Equals(t, "up", form.Get("query"))
+	testutil.Equals(t, "1", form.Get("step"))
+	testutil.Equals(t, 0, exitCode)
 
 	exitCode = QueryRange(s.URL, map[string]string{}, "up", "0", "300", 10*time.Millisecond, p)
-	gotPath = getRequest().URL.Path
-	if gotPath != expectedPath {
-		t.Errorf("unexpected URL path %s (wanted %s)", gotPath, expectedPath)
-	}
+	testutil.Equals(t, "/api/v1/query_range", getRequest().URL.Path)
 	form = getRequest().Form
-	actual = form.Get("query")
-	if actual != "up" {
-		t.Errorf("unexpected value %s for query", actual)
-	}
-	actual = form.Get("step")
-	if actual != "0.01" {
-		t.Errorf("unexpected value %s for step", actual)
-	}
-	if exitCode > 0 {
-		t.Error()
-	}
+	testutil.Equals(t, "up", form.Get("query"))
+	testutil.Equals(t, "0.01", form.Get("step"))
+	testutil.Equals(t, 0, exitCode)
+}
+
+func TestQueryInstant(t *testing.T) {
+	s, getRequest := mockServer(200, `{"status": "success", "data": {"resultType": "vector", "result": []}}`)
+	defer s.Close()
+
+	p := &promqlPrinter{}
+	exitCode := QueryInstant(s.URL, "up", "300", p)
+	testutil.Equals(t, "/api/v1/query", getRequest().URL.Path)
+	form := getRequest().Form
+	testutil.Equals(t, "up", form.Get("query"))
+	testutil.Equals(t, "300", form.Get("time"))
+	testutil.Equals(t, 0, exitCode)
 }
 
 func mockServer(code int, body string) (*httptest.Server, func() *http.Request) {

@@ -226,6 +226,9 @@ func (client ExpressRouteCrossConnectionsClient) List(ctx context.Context) (resu
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ExpressRouteCrossConnectionsClient", "List", resp, "Failure responding to request")
 	}
+	if result.ercclr.hasNextLink() && result.ercclr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }
@@ -415,6 +418,9 @@ func (client ExpressRouteCrossConnectionsClient) ListByResourceGroup(ctx context
 	result.ercclr, err = client.ListByResourceGroupResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ExpressRouteCrossConnectionsClient", "ListByResourceGroup", resp, "Failure responding to request")
+	}
+	if result.ercclr.hasNextLink() && result.ercclr.IsEmpty() {
+		err = result.NextWithContext(ctx)
 	}
 
 	return

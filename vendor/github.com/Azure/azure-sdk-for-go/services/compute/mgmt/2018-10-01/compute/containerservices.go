@@ -338,6 +338,9 @@ func (client ContainerServicesClient) List(ctx context.Context) (result Containe
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.ContainerServicesClient", "List", resp, "Failure responding to request")
 	}
+	if result.cslr.hasNextLink() && result.cslr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }
@@ -449,6 +452,9 @@ func (client ContainerServicesClient) ListByResourceGroup(ctx context.Context, r
 	result.cslr, err = client.ListByResourceGroupResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.ContainerServicesClient", "ListByResourceGroup", resp, "Failure responding to request")
+	}
+	if result.cslr.hasNextLink() && result.cslr.IsEmpty() {
+		err = result.NextWithContext(ctx)
 	}
 
 	return

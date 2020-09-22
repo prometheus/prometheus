@@ -5,7 +5,7 @@ import { RuleStatus } from './AlertContents';
 import { Rule } from '../../types/types';
 import { faChevronDown, faChevronRight } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { createExpressionLink, parsePrometheusFloat } from '../../utils/index';
+import { createExpressionLink, parsePrometheusFloat, formatDuration } from '../../utils/index';
 
 interface CollapsibleAlertPanelProps {
   rule: Rule;
@@ -36,14 +36,31 @@ const CollapsibleAlertPanel: FC<CollapsibleAlertPanelProps> = ({ rule, showAnnot
             <div>
               expr: <Link to={createExpressionLink(rule.query)}>{rule.query}</Link>
             </div>
-            <div>
-              <div>labels:</div>
-              <div className="ml-5">severity: {rule.labels.severity}</div>
-            </div>
-            <div>
-              <div>annotations:</div>
-              <div className="ml-5">summary: {rule.annotations.summary}</div>
-            </div>
+            {rule.duration > 0 && (
+              <div>
+                <div>for: {formatDuration(rule.duration * 1000)}</div>
+              </div>
+            )}
+            {rule.labels && Object.keys(rule.labels).length > 0 && (
+              <div>
+                <div>labels:</div>
+                {Object.entries(rule.labels).map(([key, value]) => (
+                  <div className="ml-4" key={key}>
+                    {key}: {value}
+                  </div>
+                ))}
+              </div>
+            )}
+            {rule.annotations && Object.keys(rule.annotations).length > 0 && (
+              <div>
+                <div>annotations:</div>
+                {Object.entries(rule.annotations).map(([key, value]) => (
+                  <div className="ml-4" key={key}>
+                    {key}: {value}
+                  </div>
+                ))}
+              </div>
+            )}
           </code>
         </pre>
         {rule.alerts.length > 0 && (

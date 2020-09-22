@@ -37,10 +37,6 @@ func repairBadIndexVersion(logger log.Logger, dir string) error {
 		return errors.Wrapf(err, "list block dirs in %q", dir)
 	}
 
-	wrapErr := func(err error, d string) error {
-		return errors.Wrapf(err, "block dir: %q", d)
-	}
-
 	tmpFiles := make([]string, 0, len(dirs))
 	defer func() {
 		for _, tmp := range tmpFiles {
@@ -53,7 +49,8 @@ func repairBadIndexVersion(logger log.Logger, dir string) error {
 	for _, d := range dirs {
 		meta, err := readBogusMetaFile(d)
 		if err != nil {
-			return wrapErr(err, d)
+			level.Error(logger).Log("msg", "failed to read meta.json for a block during repair process; skipping", "dir", d, "err", err)
+			continue
 		}
 		if meta.Version == metaVersion1 {
 			level.Info(logger).Log(
@@ -73,44 +70,44 @@ func repairBadIndexVersion(logger log.Logger, dir string) error {
 
 		repl, err := os.Create(filepath.Join(d, "index.repaired"))
 		if err != nil {
-			return wrapErr(err, d)
+			return errors.Wrapf(err, "create index.repaired for block dir: %v", d)
 		}
 		tmpFiles = append(tmpFiles, repl.Name())
 
 		broken, err := os.Open(filepath.Join(d, indexFilename))
 		if err != nil {
-			return wrapErr(err, d)
+			return errors.Wrapf(err, "open broken index for block dir: %v", d)
 		}
 		if _, err := io.Copy(repl, broken); err != nil {
-			return wrapErr(err, d)
+			return errors.Wrapf(err, "copy content of index to index.repaired for block dir: %v", d)
 		}
 
 		var merr tsdb_errors.MultiError
 
 		// Set the 5th byte to 2 to indicate the correct file format version.
 		if _, err := repl.WriteAt([]byte{2}, 4); err != nil {
-			merr.Add(wrapErr(err, d))
-			merr.Add(wrapErr(repl.Close(), d))
-			return merr.Err()
+			merr.Add(errors.Wrap(err, "rewrite of index.repaired"))
+			merr.Add(errors.Wrap(repl.Close(), "close"))
+			return errors.Wrapf(merr.Err(), "block dir: %v", d)
 		}
 		if err := repl.Sync(); err != nil {
-			merr.Add(wrapErr(err, d))
-			merr.Add(wrapErr(repl.Close(), d))
-			return merr.Err()
+			merr.Add(errors.Wrap(err, "sync of index.repaired"))
+			merr.Add(errors.Wrap(repl.Close(), "close"))
+			return errors.Wrapf(merr.Err(), "block dir: %v", d)
 		}
 		if err := repl.Close(); err != nil {
-			return wrapErr(err, d)
+			return errors.Wrapf(repl.Close(), "close repaired index for block dir: %v", d)
 		}
 		if err := broken.Close(); err != nil {
-			return wrapErr(err, d)
+			return errors.Wrapf(repl.Close(), "close broken index for block dir: %v", d)
 		}
 		if err := fileutil.Replace(repl.Name(), broken.Name()); err != nil {
-			return wrapErr(err, d)
+			return errors.Wrapf(repl.Close(), "replaced broken index with index.repaired for block dir: %v", d)
 		}
 		// Reset version of meta.json to 1.
 		meta.Version = metaVersion1
 		if _, err := writeMetaFile(logger, d, meta); err != nil {
-			return wrapErr(err, d)
+			return errors.Wrapf(repl.Close(), "write meta for block dir: %v", d)
 		}
 	}
 	return nil

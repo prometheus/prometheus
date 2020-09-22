@@ -28,6 +28,8 @@ Should you wish to work on an issue, please claim it first by commenting on the 
 
 Please check the [`low-hanging-fruit`](https://github.com/prometheus/prometheus/issues?q=is%3Aissue+is%3Aopen+label%3A%22low+hanging+fruit%22) label to find issues that are good for getting started. If you have questions about one of the issues, with or without the tag, please comment on them and one of the maintainers will clarify it. For a quicker response, contact us over [IRC](https://prometheus.io/community).
 
+You can [spin up a prebuilt dev environment](https://gitpod.io/#https://github.com/prometheus/prometheus) using Gitpod.io.
+
 For complete instructions on how to compile see: [Building From Source](https://github.com/prometheus/prometheus#building-from-source)
 
 For quickly compiling and testing your changes do:
@@ -56,7 +58,7 @@ All our issues are regularly tagged so that you can also filter down the issues 
 
 ## Dependency management
 
-The Prometheus project uses [Go modules](https://golang.org/cmd/go/#hdr-Modules__module_versions__and_more) to manage dependencies on external packages. This requires a working Go environment with version 1.13 or greater installed.
+The Prometheus project uses [Go modules](https://golang.org/cmd/go/#hdr-Modules__module_versions__and_more) to manage dependencies on external packages.
 
 All dependencies are vendored in the `vendor/` directory.
 

@@ -25,7 +25,7 @@ go test -mod=vendor .
 
 Godo follows [semver](https://www.semver.org) versioning semantics.
 New functionality should be accompanied by increment to the minor
-version number. Any code merged to master is subject to release.
+version number. Any code merged to main is subject to release.
 
 ## Releasing
 

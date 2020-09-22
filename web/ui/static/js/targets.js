@@ -20,6 +20,8 @@ function showUnhealthy(_, container) {
   if (isHealthy) { $(container).hide(); }
 }
 
+var allCollapsed = false;
+
 function init() {
   if ($("#unhealthy-targets").length) {
     if (!localStorage.selectedTargetsTab || localStorage.selectedTargetsTab == "all-targets") {
@@ -43,6 +45,41 @@ function init() {
       localStorage.setItem(tableTitle, "collapsed");
       toggleJobTable($(this), false);
     }
+  });
+
+  $(".collapse-all").click(function() {
+
+    // locally store state of allCollapsed
+    previousAllCollapsed = allCollapsed;
+
+    // conditionally change the text of the button
+    if (allCollapsed == false) {
+      $(this).html("Expand All");
+      allCollapsed = true;
+    } else {
+      $(this).html("Collapse All");
+      allCollapsed = false;
+    }
+
+    $("button.targets").each(function(_, thisButton) {
+      const tableTitle = $(thisButton).closest("h2").find("a").attr("id");
+
+      if (previousAllCollapsed == false) {
+
+        // collapse all the jobs
+        if ($(this).hasClass("expanded-table")) {
+          localStorage.setItem(tableTitle, "collapsed");
+          toggleJobTable($(thisButton), false);
+        }
+      } else {
+
+        // expand all the jobs
+        if ($(this).hasClass("collapsed-table")) {
+          localStorage.setItem(tableTitle, "expanded");
+          toggleJobTable($(this), true);
+        }
+      }
+    });
   });
 
   $(".job_header a").each(function (_, link) {

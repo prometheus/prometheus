@@ -38,7 +38,7 @@ func CreateHead(samples []*MetricSample, chunkRange int64, chunkDir string, logg
 	if err != nil {
 		return nil, err
 	}
-	app := head.Appender()
+	app := head.Appender(context.TODO())
 	for _, sample := range samples {
 		_, err = app.Add(sample.Labels, sample.TimestampMs, sample.Value)
 		if err != nil {

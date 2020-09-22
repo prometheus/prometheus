@@ -28,7 +28,7 @@ const (
 	ISO8601TimeFormat = "2006-01-02T15:04:05.999999999Z"
 
 	// This format is used for output time without seconds precision
-	ISO8601OutputTimeFormat = "2006-01-02T15:04:05Z"
+	ISO8601OutputTimeFormat = "2006-01-02T15:04:05.999999999Z"
 )
 
 // IsKnownTimestampFormat returns if the timestamp format name

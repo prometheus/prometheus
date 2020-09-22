@@ -43,7 +43,9 @@ var cfg = config.RemoteWriteConfig{
 func TestNoDuplicateWriteConfigs(t *testing.T) {
 	dir, err := ioutil.TempDir("", "TestNoDuplicateWriteConfigs")
 	testutil.Ok(t, err)
-	defer os.RemoveAll(dir)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
 
 	cfg1 := config.RemoteWriteConfig{
 		Name: "write-1",
@@ -129,7 +131,9 @@ func TestNoDuplicateWriteConfigs(t *testing.T) {
 func TestRestartOnNameChange(t *testing.T) {
 	dir, err := ioutil.TempDir("", "TestRestartOnNameChange")
 	testutil.Ok(t, err)
-	defer os.RemoveAll(dir)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
 
 	hash, err := toHash(cfg)
 	testutil.Ok(t, err)
@@ -158,7 +162,9 @@ func TestRestartOnNameChange(t *testing.T) {
 func TestUpdateWithRegisterer(t *testing.T) {
 	dir, err := ioutil.TempDir("", "TestRestartWithRegisterer")
 	testutil.Ok(t, err)
-	defer os.RemoveAll(dir)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
 
 	s := NewWriteStorage(nil, prometheus.NewRegistry(), dir, time.Millisecond)
 	c1 := &config.RemoteWriteConfig{
@@ -200,7 +206,9 @@ func TestUpdateWithRegisterer(t *testing.T) {
 func TestWriteStorageLifecycle(t *testing.T) {
 	dir, err := ioutil.TempDir("", "TestWriteStorageLifecycle")
 	testutil.Ok(t, err)
-	defer os.RemoveAll(dir)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
 
 	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline)
 	conf := &config.Config{
@@ -219,7 +227,9 @@ func TestWriteStorageLifecycle(t *testing.T) {
 func TestUpdateExternalLabels(t *testing.T) {
 	dir, err := ioutil.TempDir("", "TestUpdateExternalLabels")
 	testutil.Ok(t, err)
-	defer os.RemoveAll(dir)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
 
 	s := NewWriteStorage(nil, prometheus.NewRegistry(), dir, time.Second)
 
@@ -250,7 +260,9 @@ func TestUpdateExternalLabels(t *testing.T) {
 func TestWriteStorageApplyConfigsIdempotent(t *testing.T) {
 	dir, err := ioutil.TempDir("", "TestWriteStorageApplyConfigsIdempotent")
 	testutil.Ok(t, err)
-	defer os.RemoveAll(dir)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
 
 	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline)
 
@@ -284,7 +296,9 @@ func TestWriteStorageApplyConfigsIdempotent(t *testing.T) {
 func TestWriteStorageApplyConfigsPartialUpdate(t *testing.T) {
 	dir, err := ioutil.TempDir("", "TestWriteStorageApplyConfigsPartialUpdate")
 	testutil.Ok(t, err)
-	defer os.RemoveAll(dir)
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(dir))
+	}()
 
 	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline)
 
@@ -292,7 +306,7 @@ func TestWriteStorageApplyConfigsPartialUpdate(t *testing.T) {
 		RemoteTimeout: model.Duration(10 * time.Second),
 		QueueConfig:   config.DefaultQueueConfig,
 		WriteRelabelConfigs: []*relabel.Config{
-			&relabel.Config{
+			{
 				Regex: relabel.MustNewRegexp(".+"),
 			},
 		},

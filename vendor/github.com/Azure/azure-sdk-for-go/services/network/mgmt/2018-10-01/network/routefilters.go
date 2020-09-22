@@ -303,6 +303,9 @@ func (client RouteFiltersClient) List(ctx context.Context) (result RouteFilterLi
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.RouteFiltersClient", "List", resp, "Failure responding to request")
 	}
+	if result.rflr.hasNextLink() && result.rflr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }
@@ -412,6 +415,9 @@ func (client RouteFiltersClient) ListByResourceGroup(ctx context.Context, resour
 	result.rflr, err = client.ListByResourceGroupResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.RouteFiltersClient", "ListByResourceGroup", resp, "Failure responding to request")
+	}
+	if result.rflr.hasNextLink() && result.rflr.IsEmpty() {
+		err = result.NextWithContext(ctx)
 	}
 
 	return

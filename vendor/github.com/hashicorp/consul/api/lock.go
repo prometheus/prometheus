@@ -227,6 +227,9 @@ WAIT:
 		// Determine why the lock failed
 		qOpts.WaitIndex = 0
 		pair, meta, err = kv.Get(l.opts.Key, &qOpts)
+		if err != nil {
+			return nil, err
+		}
 		if pair != nil && pair.Session != "" {
 			//If the session is not null, this means that a wait can safely happen
 			//using a long poll
