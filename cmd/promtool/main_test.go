@@ -24,17 +24,16 @@ import (
 )
 
 func TestAddScheme(t *testing.T) {
-	url := "google.com"
-	urlWithScheme, err := addScheme(url)
-	testutil.Ok(t, err)
-	if urlWithScheme != "http://google.com" {
-		t.Errorf("unexpected value %s for urlWithScheme", urlWithScheme)
-	}
-	url = "http://prometheus.io"
-	urlWithScheme, err = addScheme(url)
-	testutil.Ok(t, err)
-	if urlWithScheme != "http://prometheus.io" {
-		t.Errorf("unexpected value %s for urlWithScheme", urlWithScheme)
+	for input, result := range map[string]string{
+		"google.com":            "http://google.com",
+		"http://prometheus.io":  "http://prometheus.io",
+		"https://prometheus.io": "https://prometheus.io",
+	} {
+		urlWithScheme, err := addScheme(input)
+		testutil.Ok(t, err)
+		if urlWithScheme != result {
+			t.Errorf("unexpected value %s for urlWithScheme", urlWithScheme)
+		}
 	}
 }
 
