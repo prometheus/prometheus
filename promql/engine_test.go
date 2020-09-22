@@ -279,22 +279,22 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 	}, {
 		query: "foo[2m:1s]", start: 300000,
 		expected: []*storage.SelectHints{
-			{Start: 175000, End: 300000},
+			{Start: 175000, End: 300000, Step: 1000},
 		},
 	}, {
 		query: "count_over_time(foo[2m:1s])", start: 300000,
 		expected: []*storage.SelectHints{
-			{Start: 175000, End: 300000, Func: "count_over_time"},
+			{Start: 175000, End: 300000, Func: "count_over_time", Step: 1000},
 		},
 	}, {
 		query: "count_over_time(foo[2m:1s] offset 10s)", start: 300000,
 		expected: []*storage.SelectHints{
-			{Start: 165000, End: 290000, Func: "count_over_time"},
+			{Start: 165000, End: 290000, Func: "count_over_time", Step: 1000},
 		},
 	}, {
 		query: "count_over_time((foo offset 10s)[2m:1s] offset 10s)", start: 300000,
 		expected: []*storage.SelectHints{
-			{Start: 155000, End: 280000, Func: "count_over_time"},
+			{Start: 155000, End: 280000, Func: "count_over_time", Step: 1000},
 		},
 	}, {
 
@@ -355,13 +355,18 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 	}, {
 		query: "(max by (dim1) (foo))[5s:1s]", start: 10000,
 		expected: []*storage.SelectHints{
-			{Start: 0, End: 10000, Func: "max", By: true, Grouping: []string{"dim1"}},
+			{Start: 0, End: 10000, Func: "max", By: true, Grouping: []string{"dim1"}, Step: 1000},
 		},
 	}, {
 		query: "(sum(http_requests{group=~\"p.*\"})+max(http_requests{group=~\"c.*\"}))[20s:5s]", start: 120000,
 		expected: []*storage.SelectHints{
-			{Start: 95000, End: 120000, Func: "sum", By: true},
-			{Start: 95000, End: 120000, Func: "max", By: true},
+			{Start: 95000, End: 120000, Func: "sum", By: true, Step: 5000},
+			{Start: 95000, End: 120000, Func: "max", By: true, Step: 5000},
+		},
+	}, {
+		query: "sum_over_time(rate(node_cpu_seconds_total[3m:16s])[5m:20s])", start: 900000,
+		expected: []*storage.SelectHints{
+			{Start: 415000, End: 900000, Step: 4000, Func: "rate"},
 		},
 	}} {
 		t.Run(tc.query, func(t *testing.T) {
