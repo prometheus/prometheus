@@ -31,9 +31,7 @@ func TestAddScheme(t *testing.T) {
 	} {
 		urlWithScheme, err := addScheme(input)
 		testutil.Ok(t, err)
-		if urlWithScheme != result {
-			t.Errorf("unexpected value %s for urlWithScheme", urlWithScheme)
-		}
+		testutil.Equals(t, urlWithScheme, result)
 	}
 }
 
