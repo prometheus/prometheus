@@ -579,7 +579,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 // greatest common divisor (GCD) via Euclidean algorithm
 func gcd(a, b int64) int64 {
 	for b != 0 {
-		a, b = b, a % b
+		a, b = b, a%b
 	}
 	return a
 }
