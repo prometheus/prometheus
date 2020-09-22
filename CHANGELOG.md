@@ -1,3 +1,7 @@
+## 2.21.1 / 2020-09-23
+
+* [BUGFIX] Eureka SD: Make discovery work with 32-bit builds. #7961
+
 ## 2.21.0 / 2020-09-11
 
 This release is built with Go 1.15, which deprecates [X.509 CommonName](https://golang.org/doc/go1.15#commonname)
