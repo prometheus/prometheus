@@ -36,6 +36,7 @@ import (
 
 // CheckpointStats returns stats about a created checkpoint.
 type CheckpointStats struct {
+	Name              string
 	DroppedSeries     int
 	DroppedSamples    int
 	DroppedTombstones int
@@ -121,7 +122,7 @@ func Checkpoint(logger log.Logger, w *WAL, from, to int, keep func(id uint64) bo
 		defer sgmReader.Close()
 	}
 
-	cpdir := checkpointDir(w.Dir(), to)
+	cpdir := CheckpointDir(w.Dir(), to)
 	cpdirtmp := cpdir + ".tmp"
 
 	if err := os.RemoveAll(cpdirtmp); err != nil {
@@ -270,7 +271,11 @@ func Checkpoint(logger log.Logger, w *WAL, from, to int, keep func(id uint64) bo
 	return stats, nil
 }
 
-func checkpointDir(dir string, i int) string {
+func CheckpointSize(dir string) (int64, error) {
+	return fileutil.DirSize(dir)
+}
+
+func CheckpointDir(dir string, i int) string {
 	return filepath.Join(dir, fmt.Sprintf(checkpointPrefix+"%08d", i))
 }
 

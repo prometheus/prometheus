@@ -58,13 +58,14 @@ type Head struct {
 	minValidTime     atomic.Int64 // Mint allowed to be added to the head. It shouldn't be lower than the maxt of the last persisted block.
 	lastSeriesID     atomic.Uint64
 
-	metrics      *headMetrics
-	wal          *wal.WAL
-	logger       log.Logger
-	appendPool   sync.Pool
-	seriesPool   sync.Pool
-	bytesPool    sync.Pool
-	memChunkPool sync.Pool
+	metrics            *headMetrics
+	wal                *wal.WAL
+	lastCheckpointName string
+	logger             log.Logger
+	appendPool         sync.Pool
+	seriesPool         sync.Pool
+	bytesPool          sync.Pool
+	memChunkPool       sync.Pool
 
 	// All series addressable by their ID or hash.
 	series         *stripeSeries
@@ -857,13 +858,15 @@ func (h *Head) Truncate(mint int64) (err error) {
 		return ok
 	}
 	h.metrics.checkpointCreationTotal.Inc()
-	if _, err = wal.Checkpoint(h.logger, h.wal, first, last, keep, mint); err != nil {
+	cpStats, err := wal.Checkpoint(h.logger, h.wal, first, last, keep, mint)
+	if err != nil {
 		h.metrics.checkpointCreationFail.Inc()
 		if _, ok := errors.Cause(err).(*wal.CorruptionErr); ok {
 			h.metrics.walCorruptionsTotal.Inc()
 		}
 		return errors.Wrap(err, "create checkpoint")
 	}
+	h.lastCheckpointName = cpStats.Name
 	if err := h.wal.Truncate(last + 1); err != nil {
 		// If truncating fails, we'll just try again at the next checkpoint.
 		// Leftover segments will just be ignored in the future if there's a checkpoint
