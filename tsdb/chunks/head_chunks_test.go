@@ -25,10 +25,9 @@ import (
 )
 
 func TestChunkDiskMapper_WriteChunk_Chunk_IterateChunks(t *testing.T) {
-	hrw, close := testChunkDiskMapper(t)
+	hrw := testChunkDiskMapper(t)
 	defer func() {
 		testutil.Ok(t, hrw.Close())
-		close()
 	}()
 
 	expectedBytes := []byte{}
@@ -162,15 +161,14 @@ func TestChunkDiskMapper_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 // * Empty current file does not lead to creation of another file after truncation.
 // * Non-empty current file leads to creation of another file after truncation.
 func TestChunkDiskMapper_Truncate(t *testing.T) {
-	hrw, close := testChunkDiskMapper(t)
+	hrw := testChunkDiskMapper(t)
 	defer func() {
 		testutil.Ok(t, hrw.Close())
-		close()
 	}()
 
 	timeRange := 0
 	fileTimeStep := 100
-	var thirdFileMint, sixthFileMint int64
+	var thirdFileMinT, sixthFileMinT int64
 
 	addChunk := func() int {
 		mint := timeRange + 1                // Just after the the new file cut.
@@ -185,12 +183,6 @@ func TestChunkDiskMapper_Truncate(t *testing.T) {
 		return mint
 	}
 
-	cutFile := func(i int) int64 {
-		testutil.Ok(t, hrw.CutNewFile())
-		return int64(addChunk())
-	}
-
-	// Verifying the files.
 	verifyFiles := func(remainingFiles []int) {
 		t.Helper()
 
@@ -208,17 +200,18 @@ func TestChunkDiskMapper_Truncate(t *testing.T) {
 
 	// Create segments 1 to 7.
 	for i := 1; i <= 7; i++ {
-		mint := cutFile(i)
+		testutil.Ok(t, hrw.CutNewFile())
+		mint := int64(addChunk())
 		if i == 3 {
-			thirdFileMint = mint
+			thirdFileMinT = mint
 		} else if i == 6 {
-			sixthFileMint = mint
+			sixthFileMinT = mint
 		}
 	}
 	verifyFiles([]int{1, 2, 3, 4, 5, 6, 7})
 
 	// Truncating files.
-	testutil.Ok(t, hrw.Truncate(thirdFileMint))
+	testutil.Ok(t, hrw.Truncate(thirdFileMinT))
 	verifyFiles([]int{3, 4, 5, 6, 7, 8})
 
 	dir := hrw.dir.Name()
@@ -239,32 +232,27 @@ func TestChunkDiskMapper_Truncate(t *testing.T) {
 	verifyFiles([]int{3, 4, 5, 6, 7, 8, 9})
 
 	// Truncating files after restart.
-	testutil.Ok(t, hrw.Truncate(sixthFileMint))
+	testutil.Ok(t, hrw.Truncate(sixthFileMinT))
 	verifyFiles([]int{6, 7, 8, 9, 10})
 
 	// As the last file was empty, this creates no new files.
-	testutil.Ok(t, hrw.Truncate(sixthFileMint+1))
+	testutil.Ok(t, hrw.Truncate(sixthFileMinT+1))
 	verifyFiles([]int{6, 7, 8, 9, 10})
 	addChunk()
 
 	// Truncating till current time should not delete the current active file.
 	testutil.Ok(t, hrw.Truncate(int64(timeRange+(2*fileTimeStep))))
-	verifyFiles([]int{10, 11}) // One file is the previously active file and one was newly created.
+	verifyFiles([]int{10, 11}) // One file is the previously active file and one currently created.
 }
 
-// TestChunkDiskMapper_Truncate_NoUnsequentialFiles tests
-// that truncation leaves no unsequential files on disk, mainly under the following case
-// * There is an empty file in between the sequence while the truncation
-//   deletes files only upto a sequence before that (i.e. stops deleting
-//   after it has found a file that is not deletable).
-// This tests https://github.com/prometheus/prometheus/issues/7412 where
-// the truncation used to check all the files for deletion and end up
-// deleting empty files in between and breaking the sequence.
-func TestChunkDiskMapper_Truncate_NoUnsequentialFiles(t *testing.T) {
-	hrw, close := testChunkDiskMapper(t)
+// TestChunkDiskMapper_Truncate_PreservesFileSequence tests that truncation doesn't poke
+// holes into the file sequence, even if there are empty files in between non-empty files.
+// This test exposes https://github.com/prometheus/prometheus/issues/7412 where the truncation
+// simply deleted all empty files instead of stopping once it encountered a non-empty file.
+func TestChunkDiskMapper_Truncate_PreservesFileSequence(t *testing.T) {
+	hrw := testChunkDiskMapper(t)
 	defer func() {
 		testutil.Ok(t, hrw.Close())
-		close()
 	}()
 
 	timeRange := 0
@@ -290,7 +278,6 @@ func TestChunkDiskMapper_Truncate_NoUnsequentialFiles(t *testing.T) {
 	nonEmptyFile() // 5.
 	emptyFile()    // 6.
 
-	// Verifying the files.
 	verifyFiles := func(remainingFiles []int) {
 		t.Helper()
 
@@ -302,7 +289,7 @@ func TestChunkDiskMapper_Truncate_NoUnsequentialFiles(t *testing.T) {
 
 		for _, i := range remainingFiles {
 			_, ok := hrw.mmappedChunkFiles[i]
-			testutil.Equals(t, true, ok)
+			testutil.Assert(t, ok, "remaining file %d not in hrw.mmappedChunkFiles", i)
 		}
 	}
 
@@ -330,7 +317,7 @@ func TestChunkDiskMapper_Truncate_NoUnsequentialFiles(t *testing.T) {
 	verifyFiles([]int{3, 4, 5, 6, 7})
 }
 
-func testChunkDiskMapper(t *testing.T) (hrw *ChunkDiskMapper, close func()) {
+func testChunkDiskMapper(t *testing.T) (hrw *ChunkDiskMapper) {
 	tmpdir, err := ioutil.TempDir("", "data")
 	testutil.Ok(t, err)
 	hrw, err = NewChunkDiskMapper(tmpdir, chunkenc.NewPool())
@@ -338,9 +325,10 @@ func testChunkDiskMapper(t *testing.T) (hrw *ChunkDiskMapper, close func()) {
 	testutil.Assert(t, !hrw.fileMaxtSet, "")
 	testutil.Ok(t, hrw.IterateAllChunks(func(_, _ uint64, _, _ int64, _ uint16) error { return nil }))
 	testutil.Assert(t, hrw.fileMaxtSet, "")
-	return hrw, func() {
+	t.Cleanup(func() {
 		testutil.Ok(t, os.RemoveAll(tmpdir))
-	}
+	})
+	return hrw
 }
 
 func randomChunk(t *testing.T) chunkenc.Chunk {
