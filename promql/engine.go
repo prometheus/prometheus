@@ -631,7 +631,7 @@ func (ng *Engine) populateSeries(querier storage.Querier, s *parser.EvalStmt) {
 	// the variable.
 	var evalRange time.Duration
 	// Whenever a SubqueryExpr is evaluated, evalStep is set to the corresponding step size.
-	// This is then used during the evaluation of any VectorSelector nodes inside.
+	// This is then used for the evaluation of the VectorSelector inside.
 	var evalStep time.Duration
 
 	parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
