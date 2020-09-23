@@ -1,6 +1,88 @@
-## master / unreleased
+## 2.21.0 / 2020-09-11
 
-* [ENHANCEMENT] TSDB: WAL compression is enabled by default.
+This release is built with Go 1.15, which deprecates [X.509 CommonName](https://golang.org/doc/go1.15#commonname)
+in TLS certificates validation.
+
+In the unlikely case that you use the gRPC API v2 (which is limited to TSDB
+admin commands), please note that we will remove this experimental API in the
+next minor release 2.22.
+
+* [CHANGE] Disable HTTP/2 because of concerns with the Go HTTP/2 client. #7588 #7701
+* [CHANGE] PromQL: `query_log_file` path is now relative to the config file. #7701
+* [CHANGE] Promtool: Replace the tsdb command line tool by a promtool tsdb subcommand. #6088
+* [CHANGE] Rules: Label `rule_group_iterations` metric with group name. #7823
+* [FEATURE] Eureka SD: New service discovery. #3369
+* [FEATURE] Hetzner SD: New service discovery. #7822
+* [FEATURE] Kubernetes SD: Support Kubernetes EndpointSlices. #6838
+* [FEATURE] Scrape: Add per scrape-config targets limit. #7554
+* [ENHANCEMENT] Support composite durations in PromQL, config and UI, e.g. 1h30m. #7713 #7833
+* [ENHANCEMENT] DNS SD: Add SRV record target and port meta labels. #7678
+* [ENHANCEMENT] Docker Swarm SD: Support tasks and service without published ports. #7686
+* [ENHANCEMENT] PromQL: Reduce the amount of data queried by remote read when a subquery has an offset. #7667
+* [ENHANCEMENT] Promtool: Add `--time` option to query instant command. #7829
+* [ENHANCEMENT] UI: Respect the `--web.page-title` parameter in the React UI. #7607
+* [ENHANCEMENT] UI: Add duration, labels, annotations to alerts page in the React UI. #7605
+* [ENHANCEMENT] UI: Add duration on the React UI rules page, hide annotation and labels if empty. #7606
+* [BUGFIX] API: Deduplicate series in /api/v1/series. #7862
+* [BUGFIX] PromQL: Drop metric name in bool comparison between two instant vectors. #7819
+* [BUGFIX] PromQL: Exit with an error when time parameters can't be parsed. #7505
+* [BUGFIX] Remote read: Re-add accidentally removed tracing for remote-read requests. #7916
+* [BUGFIX] Rules: Detect extra fields in rule files. #7767
+* [BUGFIX] Rules: Disallow overwriting the metric name in the `labels` section of recording rules. #7787
+* [BUGFIX] Rules: Keep evaluation timestamp across reloads. #7775
+* [BUGFIX] Scrape: Do not stop scrapes in progress during reload. #7752
+* [BUGFIX] TSDB: Fix `chunks.HeadReadWriter: maxt of the files are not set` error. #7856
+* [BUGFIX] TSDB: Delete blocks atomically to prevent corruption when there is a panic/crash during deletion. #7772
+* [BUGFIX] Triton SD: Fix a panic when triton_sd_config is nil. #7671
+* [BUGFIX] UI: Fix react UI bug with series going on and off. #7804
+* [BUGFIX] UI: Fix styling bug for target labels with special names in React UI. #7902
+* [BUGFIX] Web: Stop CMUX and GRPC servers even with stale connections, preventing the server to stop on SIGTERM. #7810
+
+## 2.20.1 / 2020-08-05
+
+* [BUGFIX] SD: Reduce the Consul watch timeout to 2m and adjust the request timeout accordingly. #7724
+
+## 2.20.0 / 2020-07-22
+
+This release changes WAL compression from opt-in to default. WAL compression will prevent a downgrade to v2.10 or earlier without deleting the WAL. Disable WAL compression explicitly by setting the command line flag `--no-storage.tsdb.wal-compression` if you require downgrading to v2.10 or earlier.
+
+* [CHANGE] promtool: Changed rule numbering from 0-based to 1-based when reporting rule errors. #7495
+* [CHANGE] Remote read: Added `prometheus_remote_storage_read_queries_total` counter and `prometheus_remote_storage_read_request_duration_seconds` histogram, removed `prometheus_remote_storage_remote_read_queries_total` counter.
+* [CHANGE] Remote write: Added buckets for longer durations to `prometheus_remote_storage_sent_batch_duration_seconds` histogram.
+* [CHANGE] TSDB: WAL compression is enabled by default. #7410
+* [FEATURE] PromQL: Added `group()` aggregator. #7480
+* [FEATURE] SD: Added Docker Swarm SD. #7420
+* [FEATURE] SD: Added DigitalOcean SD. #7407
+* [FEATURE] SD: Added Openstack config option to query alternative endpoints. #7494
+* [ENHANCEMENT] Configuration: Exit early on invalid config file and signal it with exit code 2. #7399
+* [ENHANCEMENT] PromQL: `without` is now a valid metric identifier. #7533
+* [ENHANCEMENT] PromQL: Optimized regex label matching for literals within the pattern or as prefix/suffix. #7453 #7503
+* [ENHANCEMENT] promtool: Added time range parameters for labels API in promtool. #7463
+* [ENHANCEMENT] Remote write: Include samples waiting in channel in pending samples metric. Log number of dropped samples on hard shutdown. #7335
+* [ENHANCEMENT] Scrape: Ingest synthetic scrape report metrics atomically with the corresponding scraped metrics. #7562
+* [ENHANCEMENT] SD: Reduce timeouts for Openstack SD. #7507
+* [ENHANCEMENT] SD: Use 10m timeout for Consul watches. #7423
+* [ENHANCEMENT] SD: Added AMI meta label for EC2 SD. #7386
+* [ENHANCEMENT] TSDB: Increment WAL corruption metric also on WAL corruption during checkpointing. #7491
+* [ENHANCEMENT] TSDB: Improved query performance for high-cardinality labels. #7448
+* [ENHANCEMENT] UI: Display dates as well as timestamps in status page. #7544
+* [ENHANCEMENT] UI: Improved scrolling when following hash-fragment links. #7456
+* [ENHANCEMENT] UI: React UI renders numbers in alerts in a more human-readable way. #7426
+* [BUGFIX] API: Fixed error status code in the query API. #7435 
+* [BUGFIX] PromQL: Fixed `avg` and `avg_over_time` for NaN, Inf, and float64 overflows. #7346
+* [BUGFIX] PromQL: Fixed off-by-one error in `histogram_quantile`. #7393
+* [BUGFIX] promtool: Support extended durations in rules unit tests. #6297
+* [BUGFIX] Scrape: Fix undercounting for `scrape_samples_post_metric_relabeling` in case of errors. #7342
+* [BUGFIX] TSDB: Don't panic on WAL corruptions. #7550
+* [BUGFIX] TSDB: Avoid leaving behind empty files in `chunks_head`, causing startup failures. #7573
+* [BUGFIX] TSDB: Fixed race between compact (gc, populate) and head append causing unknown symbol error. #7560
+* [BUGFIX] TSDB: Fixed unknown symbol error during head compaction. #7526
+* [BUGFIX] TSDB: Fixed panic during TSDB metric registration. #7501
+* [BUGFIX] TSDB: Fixed `--limit` command line flag in `tsdb` tool. #7430
+
+## 2.19.2 / 2020-06-26
+
+* [BUGFIX] Remote Write: Fix panic when reloading config with modified queue parameters. #7452
 
 ## 2.19.1 / 2020-06-18
 

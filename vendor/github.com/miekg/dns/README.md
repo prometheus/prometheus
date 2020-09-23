@@ -28,6 +28,7 @@ A not-so-up-to-date-list-that-may-be-actually-current:
 * https://github.com/coredns/coredns
 * https://cloudflare.com
 * https://github.com/abh/geodns
+* https://github.com/baidu/bfe
 * http://www.statdns.com/
 * http://www.dnsinspect.com/
 * https://github.com/chuangbo/jianbing-dictionary-dns
@@ -70,6 +71,8 @@ A not-so-up-to-date-list-that-may-be-actually-current:
 * https://render.com
 * https://github.com/peterzen/goresolver
 * https://github.com/folbricht/routedns
+* https://domainr.com/
+* https://zonedb.org/
 
 Send pull request if you want to be listed here.
 

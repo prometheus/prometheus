@@ -1,0 +1,66 @@
+# A example scrape configuration for running Prometheus with Eureka.
+
+scrape_configs:
+
+  # Make Prometheus scrape itself for metrics.
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Discover Eureka services to scrape.
+  - job_name: 'eureka'
+
+    # Scrape Eureka itself to discover new services.
+    eureka_sd_configs:
+      - server: http://localhost:8761/eureka
+
+    relabel_configs:
+      # You can use Eureka's application instance metadata.
+      # If you are using SpringBoot, you can add metadata using eureka.instance.metadataMap like this:
+      # application.yaml (spring-boot)
+      # eureka:
+      #  instance:
+      #    metadataMap:
+      #      "prometheus.scrape": "true"
+      #      "prometheus.path": "/actuator/prometheus"
+      #      "prometheus.port": "8080"
+      #
+      #
+      # Example relabel to scrape only application that have
+      # "prometheus.scrape = true" metadata.
+      #  - source_labels: [__meta_eureka_app_instance_metadata_prometheus_scrape]
+      #    action: keep
+      #    regex: true
+      #
+      # application.yaml (spring-boot)
+      # eureka:
+      #  instance:
+      #    metadataMap:
+      #      "prometheus.scrape": "true"
+      #
+      # Example relabel to customize metric path based on application
+      # "prometheus.path = <metric path>" annotation.
+      #  - source_labels: [__meta_eureka_app_instance_metadata_prometheus_path]
+      #    action: replace
+      #    target_label: __metrics_path__
+      #    regex: (.+)
+      #
+      # application.yaml (spring-boot)
+      # eureka:
+      #  instance:
+      #    metadataMap:
+      #      "prometheus.path": "/actuator/prometheus"
+      #
+      # Example relabel to scrape only single, desired port for the application
+      # based on application "prometheus.port = <port>" metadata.
+      #  - source_labels: [__address__, __meta_eureka_app_instance_metadata_prometheus_port]
+      #    action: replace
+      #    regex: ([^:]+)(?::\d+)?;(\d+)
+      #    replacement: $1:$2
+      #    target_label: __address__
+      #
+      # application.yaml (spring-boot)
+      # eureka:
+      #  instance:
+      #    metadataMap:
+      #      "prometheus.port": "8080"

@@ -113,7 +113,6 @@ func (client AvailabilitySetsClient) CreateOrUpdateSender(req *http.Request) (*h
 func (client AvailabilitySetsClient) CreateOrUpdateResponder(resp *http.Response) (result AvailabilitySet, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -189,7 +188,6 @@ func (client AvailabilitySetsClient) DeleteSender(req *http.Request) (*http.Resp
 func (client AvailabilitySetsClient) DeleteResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusNoContent),
 		autorest.ByClosing())
 	result.Response = resp
@@ -264,7 +262,6 @@ func (client AvailabilitySetsClient) GetSender(req *http.Request) (*http.Respons
 func (client AvailabilitySetsClient) GetResponder(resp *http.Response) (result AvailabilitySet, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -304,6 +301,9 @@ func (client AvailabilitySetsClient) List(ctx context.Context, resourceGroupName
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.AvailabilitySetsClient", "List", resp, "Failure responding to request")
 	}
+	if result.aslr.hasNextLink() && result.aslr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }
@@ -339,7 +339,6 @@ func (client AvailabilitySetsClient) ListSender(req *http.Request) (*http.Respon
 func (client AvailabilitySetsClient) ListResponder(resp *http.Response) (result AvailabilitySetListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -453,7 +452,6 @@ func (client AvailabilitySetsClient) ListAvailableSizesSender(req *http.Request)
 func (client AvailabilitySetsClient) ListAvailableSizesResponder(resp *http.Response) (result VirtualMachineSizeListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -463,7 +461,7 @@ func (client AvailabilitySetsClient) ListAvailableSizesResponder(resp *http.Resp
 
 // ListBySubscription lists all availability sets in a subscription.
 // Parameters:
-// expand - the expand expression to apply to the operation.
+// expand - the expand expression to apply to the operation. Allowed values are 'instanceView'.
 func (client AvailabilitySetsClient) ListBySubscription(ctx context.Context, expand string) (result AvailabilitySetListResultPage, err error) {
 	if tracing.IsEnabled() {
 		ctx = tracing.StartSpan(ctx, fqdn+"/AvailabilitySetsClient.ListBySubscription")
@@ -492,6 +490,9 @@ func (client AvailabilitySetsClient) ListBySubscription(ctx context.Context, exp
 	result.aslr, err = client.ListBySubscriptionResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.AvailabilitySetsClient", "ListBySubscription", resp, "Failure responding to request")
+	}
+	if result.aslr.hasNextLink() && result.aslr.IsEmpty() {
+		err = result.NextWithContext(ctx)
 	}
 
 	return
@@ -530,7 +531,6 @@ func (client AvailabilitySetsClient) ListBySubscriptionSender(req *http.Request)
 func (client AvailabilitySetsClient) ListBySubscriptionResponder(resp *http.Response) (result AvailabilitySetListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -646,7 +646,6 @@ func (client AvailabilitySetsClient) UpdateSender(req *http.Request) (*http.Resp
 func (client AvailabilitySetsClient) UpdateResponder(resp *http.Response) (result AvailabilitySet, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

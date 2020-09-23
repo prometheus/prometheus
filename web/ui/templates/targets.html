@@ -7,15 +7,18 @@
 {{define "content"}}
   <div class="container-fluid">
     <h1>Targets</h1>
-    <div id="showTargets" class="btn-group btn-group-toggle" data-toggle="buttons">
-      <label class="btn btn-primary">
-        <input type="radio" name="targets" id="all-targets" autocomplete="off" checked> All
-      </label>
-      <label class="btn btn-primary">
-        <input type="radio" name="targets" id="unhealthy-targets" autocomplete="off"> Unhealthy
-      </label>
-      <br />
-  </div>
+    <div class="options-container">
+      <div id="showTargets" class="btn-group btn-group-toggle" data-toggle="buttons">
+        <label class="btn btn-primary">
+          <input type="radio" name="targets" id="all-targets" autocomplete="off" checked> All
+        </label>
+        <label class="btn btn-primary">
+          <input type="radio" name="targets" id="unhealthy-targets" autocomplete="off"> Unhealthy
+        </label>
+        <br />
+      </div>
+      <button type="button" class="collapse-all btn btn-primary">Collapse All</button>
+    </div>
 
     {{- range $job, $pool := .TargetPools}}
     {{- $healthy := numHealthy $pool}}

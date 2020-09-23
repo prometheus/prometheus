@@ -25,7 +25,9 @@ Release cadence of first pre-releases being cut is 6 weeks.
 | v2.18          | 2020-04-22                                 | Bartek Plotka (GitHub: @bwplotka)           |
 | v2.19          | 2020-06-03                                 | Ganesh Vernekar (GitHub: @codesome)         |
 | v2.20          | 2020-07-15                                 | Björn Rabenstein (GitHub: @beorn7)          |
-| v2.21          | 2020-08-26                                 | **searching for volunteer**                 |
+| v2.21          | 2020-08-26                                 | Julien Pivotto (GitHub: @roidelapluie)      |
+| v2.22          | 2020-10-07                                 | Frederic Branczyk (GitHub: @brancz)         |
+| v2.23          | 2020-11-18                                 | **searching for volunteer**                 |
 
 If you are interested in volunteering please create a pull request against the [prometheus/prometheus](https://github.com/prometheus/prometheus) repository and propose yourself for the release series of your choice.
 
@@ -36,7 +38,7 @@ The release shepherd is responsible for the entire release series of a minor rel
 * We aim to keep the master branch in a working state at all times. In principle, it should be possible to cut a release from master at any time. In practice, things might not work out as nicely. A few days before the pre-release is scheduled, the shepherd should check the state of master. Following their best judgement, the shepherd should try to expedite bug fixes that are still in progress but should make it into the release. On the other hand, the shepherd may hold back merging last-minute invasive and risky changes that are better suited for the next minor release.
 * On the date listed in the table above, the release shepherd cuts the first pre-release (using the suffix `-rc.0`) and creates a new branch called  `release-<major>.<minor>` starting at the commit tagged for the pre-release. In general, a pre-release is considered a release candidate (that's what `rc` stands for) and should therefore not contain any known bugs that are planned to be fixed in the final release.
 * With the pre-release, the release shepherd is responsible for running and monitoring a benchmark run of the pre-release for 3 days, after which, if successful, the pre-release is promoted to a stable release.
-* If regressions or critical bugs are detected, they need to get fixed before cutting a new pre-release (called `-rc.1`, `-rc.2`, etc.). 
+* If regressions or critical bugs are detected, they need to get fixed before cutting a new pre-release (called `-rc.1`, `-rc.2`, etc.).
 
 See the next section for details on cutting an individual release.
 
@@ -60,13 +62,7 @@ Maintaining the release branches for older minor releases happens on a best effo
 
 ### 0. Updating dependencies
 
-A few days before a major or minor release, consider updating the dependencies:
-
-```
-make update-go-deps
-git add go.mod go.sum vendor
-git commit -m "Update dependencies"
-```
+A few days before a major or minor release, consider updating the dependencies.
 
 Then create a pull request against the master branch.
 
@@ -78,6 +74,32 @@ In case of doubt or issues that can't be solved in a reasonable amount of time,
 you can skip the dependency update or only update select dependencies. In such a
 case, you have to create an issue or pull request in the GitHub project for
 later follow-up.
+
+#### Updating Go dependencies
+
+```
+make update-go-deps
+git add go.mod go.sum vendor
+git commit -m "Update dependencies"
+```
+
+#### Updating React dependencies
+
+Either upgrade the dependencies within their existing version constraints as specified in the `package.json` file (see https://docs.npmjs.com/files/package.json#dependencies):
+
+```
+cd web/ui/react-app
+yarn upgrade
+git add yarn.lock
+```
+
+Or alternatively, update all dependencies to their latest major versions. This is potentially more disruptive and will require more follow-up fixes, but should be done from time to time (use your best judgement):
+
+```
+cd web/ui/react-app
+yarn upgrade --latest
+git add package.json yarn.lock
+```
 
 ### 1. Prepare your release
 

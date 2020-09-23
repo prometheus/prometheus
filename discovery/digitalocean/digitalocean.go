@@ -24,10 +24,11 @@ import (
 
 	"github.com/digitalocean/godo"
 	"github.com/go-kit/kit/log"
-	config_util "github.com/prometheus/common/config"
+	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
 
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
@@ -54,12 +55,29 @@ var DefaultSDConfig = SDConfig{
 	RefreshInterval: model.Duration(60 * time.Second),
 }
 
+func init() {
+	discovery.RegisterConfig(&SDConfig{})
+}
+
 // SDConfig is the configuration for DigitalOcean based service discovery.
 type SDConfig struct {
-	HTTPClientConfig config_util.HTTPClientConfig `yaml:",inline"`
+	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 
 	RefreshInterval model.Duration `yaml:"refresh_interval"`
 	Port            int            `yaml:"port"`
+}
+
+// Name returns the name of the Config.
+func (*SDConfig) Name() string { return "digitalocean" }
+
+// NewDiscoverer returns a Discoverer for the Config.
+func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
+	return NewDiscovery(c, opts.Logger)
+}
+
+// SetDirectory joins any relative file paths with dir.
+func (c *SDConfig) SetDirectory(dir string) {
+	c.HTTPClientConfig.SetDirectory(dir)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -87,7 +105,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 		port: conf.Port,
 	}
 
-	rt, err := config_util.NewRoundTripperFromConfig(conf.HTTPClientConfig, "digitalocean_sd", false)
+	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "digitalocean_sd", false, false)
 	if err != nil {
 		return nil, err
 	}
@@ -176,7 +194,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 func (d *Discovery) listDroplets() ([]godo.Droplet, error) {
 	var (
 		droplets []godo.Droplet
-		opts     = &godo.ListOptions{Page: 1}
+		opts     = &godo.ListOptions{}
 	)
 	for {
 		paginatedDroplets, resp, err := d.client.Droplets.List(context.Background(), opts)
@@ -187,7 +205,13 @@ func (d *Discovery) listDroplets() ([]godo.Droplet, error) {
 		if resp.Links == nil || resp.Links.IsLastPage() {
 			break
 		}
-		opts.Page++
+
+		page, err := resp.Links.CurrentPage()
+		if err != nil {
+			return nil, err
+		}
+
+		opts.Page = page + 1
 	}
 	return droplets, nil
 }

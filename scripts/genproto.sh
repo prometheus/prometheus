@@ -10,8 +10,8 @@ if ! [[ "$0" =~ "scripts/genproto.sh" ]]; then
 	exit 255
 fi
 
-if ! [[ $(protoc --version) =~ "3.11.4" ]]; then
-	echo "could not find protoc 3.11.4, is it installed + in PATH?"
+if ! [[ $(protoc --version) =~ "3.12.3" ]]; then
+	echo "could not find protoc 3.12.3, is it installed + in PATH?"
 	exit 255
 fi
 
@@ -25,9 +25,9 @@ done
 
 PROM_ROOT="${PWD}"
 PROM_PATH="${PROM_ROOT}/prompb"
-GOGOPROTO_ROOT="$(GO111MODULE=on go list -f '{{ .Dir }}' -m github.com/gogo/protobuf)"
+GOGOPROTO_ROOT="$(GO111MODULE=on go list -mod=readonly -f '{{ .Dir }}' -m github.com/gogo/protobuf)"
 GOGOPROTO_PATH="${GOGOPROTO_ROOT}:${GOGOPROTO_ROOT}/protobuf"
-GRPC_GATEWAY_ROOT="$(GO111MODULE=on go list -f '{{ .Dir }}' -m github.com/grpc-ecosystem/grpc-gateway)"
+GRPC_GATEWAY_ROOT="$(GO111MODULE=on go list -mod=readonly -f '{{ .Dir }}' -m github.com/grpc-ecosystem/grpc-gateway)"
 
 DIRS="prompb"
 
@@ -39,15 +39,6 @@ for dir in ${DIRS}; do
             -I="${PROM_PATH}" \
             -I="${GRPC_GATEWAY_ROOT}/third_party/googleapis" \
             ./*.proto
-
-		protoc -I. \
-			-I="${GOGOPROTO_PATH}" \
-			-I="${PROM_PATH}" \
-			-I="${GRPC_GATEWAY_ROOT}/third_party/googleapis" \
-			--grpc-gateway_out=logtostderr=true:. \
-			--swagger_out=logtostderr=true:../documentation/dev/api/ \
-			rpc.proto
-		mv ../documentation/dev/api/rpc.swagger.json ../documentation/dev/api/swagger.json
 
 		sed -i.bak -E 's/import _ \"github.com\/gogo\/protobuf\/gogoproto\"//g' -- *.pb.go
 		sed -i.bak -E 's/import _ \"google\/protobuf\"//g' -- *.pb.go

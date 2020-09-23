@@ -129,7 +129,6 @@ func (client GalleryImagesClient) CreateOrUpdateSender(req *http.Request) (futur
 func (client GalleryImagesClient) CreateOrUpdateResponder(resp *http.Response) (result GalleryImage, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated, http.StatusAccepted),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -207,7 +206,6 @@ func (client GalleryImagesClient) DeleteSender(req *http.Request) (future Galler
 func (client GalleryImagesClient) DeleteResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted, http.StatusNoContent),
 		autorest.ByClosing())
 	result.Response = resp
@@ -284,7 +282,6 @@ func (client GalleryImagesClient) GetSender(req *http.Request) (*http.Response, 
 func (client GalleryImagesClient) GetResponder(resp *http.Response) (result GalleryImage, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -325,6 +322,9 @@ func (client GalleryImagesClient) ListByGallery(ctx context.Context, resourceGro
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.GalleryImagesClient", "ListByGallery", resp, "Failure responding to request")
 	}
+	if result.gil.hasNextLink() && result.gil.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }
@@ -361,7 +361,6 @@ func (client GalleryImagesClient) ListByGallerySender(req *http.Request) (*http.
 func (client GalleryImagesClient) ListByGalleryResponder(resp *http.Response) (result GalleryImageList, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

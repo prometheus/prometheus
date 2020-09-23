@@ -113,7 +113,6 @@ func (client VirtualHubsClient) CreateOrUpdateSender(req *http.Request) (future 
 func (client VirtualHubsClient) CreateOrUpdateResponder(resp *http.Response) (result VirtualHub, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -189,7 +188,6 @@ func (client VirtualHubsClient) DeleteSender(req *http.Request) (future VirtualH
 func (client VirtualHubsClient) DeleteResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted, http.StatusNoContent),
 		autorest.ByClosing())
 	result.Response = resp
@@ -264,7 +262,6 @@ func (client VirtualHubsClient) GetSender(req *http.Request) (*http.Response, er
 func (client VirtualHubsClient) GetResponder(resp *http.Response) (result VirtualHub, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -302,6 +299,9 @@ func (client VirtualHubsClient) List(ctx context.Context) (result ListVirtualHub
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VirtualHubsClient", "List", resp, "Failure responding to request")
 	}
+	if result.lvhr.hasNextLink() && result.lvhr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }
@@ -336,7 +336,6 @@ func (client VirtualHubsClient) ListSender(req *http.Request) (*http.Response, e
 func (client VirtualHubsClient) ListResponder(resp *http.Response) (result ListVirtualHubsResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -413,6 +412,9 @@ func (client VirtualHubsClient) ListByResourceGroup(ctx context.Context, resourc
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VirtualHubsClient", "ListByResourceGroup", resp, "Failure responding to request")
 	}
+	if result.lvhr.hasNextLink() && result.lvhr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }
@@ -448,7 +450,6 @@ func (client VirtualHubsClient) ListByResourceGroupSender(req *http.Request) (*h
 func (client VirtualHubsClient) ListByResourceGroupResponder(resp *http.Response) (result ListVirtualHubsResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -564,7 +565,6 @@ func (client VirtualHubsClient) UpdateTagsSender(req *http.Request) (future Virt
 func (client VirtualHubsClient) UpdateTagsResponder(resp *http.Response) (result VirtualHub, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

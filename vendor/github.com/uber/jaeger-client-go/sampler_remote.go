@@ -64,7 +64,7 @@ type RemotelyControlledSampler struct {
 	// Cf. https://github.com/uber/jaeger-client-go/issues/155, https://goo.gl/zW7dgq
 	closed int64 // 0 - not closed, 1 - closed
 
-	sync.RWMutex
+	sync.RWMutex // used to serialize access to samplerOptions.sampler
 	samplerOptions
 
 	serviceName string
@@ -95,22 +95,22 @@ func (s *RemotelyControlledSampler) IsSampled(id TraceID, operation string) (boo
 
 // OnCreateSpan implements OnCreateSpan of SamplerV2.
 func (s *RemotelyControlledSampler) OnCreateSpan(span *Span) SamplingDecision {
-	return s.sampler.OnCreateSpan(span)
+	return s.Sampler().OnCreateSpan(span)
 }
 
 // OnSetOperationName implements OnSetOperationName of SamplerV2.
 func (s *RemotelyControlledSampler) OnSetOperationName(span *Span, operationName string) SamplingDecision {
-	return s.sampler.OnSetOperationName(span, operationName)
+	return s.Sampler().OnSetOperationName(span, operationName)
 }
 
 // OnSetTag implements OnSetTag of SamplerV2.
 func (s *RemotelyControlledSampler) OnSetTag(span *Span, key string, value interface{}) SamplingDecision {
-	return s.sampler.OnSetTag(span, key, value)
+	return s.Sampler().OnSetTag(span, key, value)
 }
 
 // OnFinishSpan implements OnFinishSpan of SamplerV2.
 func (s *RemotelyControlledSampler) OnFinishSpan(span *Span) SamplingDecision {
-	return s.sampler.OnFinishSpan(span)
+	return s.Sampler().OnFinishSpan(span)
 }
 
 // Close implements Close() of Sampler.
@@ -153,8 +153,8 @@ func (s *RemotelyControlledSampler) pollControllerWithTicker(ticker *time.Ticker
 
 // Sampler returns the currently active sampler.
 func (s *RemotelyControlledSampler) Sampler() SamplerV2 {
-	s.Lock()
-	defer s.Unlock()
+	s.RLock()
+	defer s.RUnlock()
 	return s.sampler
 }
 

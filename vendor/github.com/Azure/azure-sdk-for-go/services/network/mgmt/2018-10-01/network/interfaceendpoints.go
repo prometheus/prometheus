@@ -113,7 +113,6 @@ func (client InterfaceEndpointsClient) CreateOrUpdateSender(req *http.Request) (
 func (client InterfaceEndpointsClient) CreateOrUpdateResponder(resp *http.Response) (result InterfaceEndpoint, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -189,7 +188,6 @@ func (client InterfaceEndpointsClient) DeleteSender(req *http.Request) (future I
 func (client InterfaceEndpointsClient) DeleteResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted, http.StatusNoContent),
 		autorest.ByClosing())
 	result.Response = resp
@@ -268,7 +266,6 @@ func (client InterfaceEndpointsClient) GetSender(req *http.Request) (*http.Respo
 func (client InterfaceEndpointsClient) GetResponder(resp *http.Response) (result InterfaceEndpoint, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -308,6 +305,9 @@ func (client InterfaceEndpointsClient) List(ctx context.Context, resourceGroupNa
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.InterfaceEndpointsClient", "List", resp, "Failure responding to request")
 	}
+	if result.ielr.hasNextLink() && result.ielr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }
@@ -343,7 +343,6 @@ func (client InterfaceEndpointsClient) ListSender(req *http.Request) (*http.Resp
 func (client InterfaceEndpointsClient) ListResponder(resp *http.Response) (result InterfaceEndpointListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -418,6 +417,9 @@ func (client InterfaceEndpointsClient) ListBySubscription(ctx context.Context) (
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.InterfaceEndpointsClient", "ListBySubscription", resp, "Failure responding to request")
 	}
+	if result.ielr.hasNextLink() && result.ielr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }
@@ -452,7 +454,6 @@ func (client InterfaceEndpointsClient) ListBySubscriptionSender(req *http.Reques
 func (client InterfaceEndpointsClient) ListBySubscriptionResponder(resp *http.Response) (result InterfaceEndpointListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

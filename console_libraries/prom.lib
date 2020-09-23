@@ -2,15 +2,15 @@
 {{/* Load Prometheus console library JS/CSS. Should go in <head> */}}
 {{ define "prom_console_head" }}
 <link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/vendor/rickshaw/rickshaw.min.css">
-<link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/vendor/bootstrap-4.3.1/css/bootstrap.min.css">
+<link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/vendor/bootstrap-4.5.2/css/bootstrap.min.css">
 <link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/css/prom_console.css">
 <link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/vendor/bootstrap4-glyphicons/css/bootstrap-glyphicons.min.css">
 <script src="{{ pathPrefix }}/static/vendor/rickshaw/vendor/d3.v3.js"></script>
 <script src="{{ pathPrefix }}/static/vendor/rickshaw/vendor/d3.layout.min.js"></script>
 <script src="{{ pathPrefix }}/static/vendor/rickshaw/rickshaw.min.js"></script>
-<script src="{{ pathPrefix }}/static/vendor/js/jquery-3.3.1.min.js"></script>
+<script src="{{ pathPrefix }}/static/vendor/js/jquery-3.5.1.min.js"></script>
 <script src="{{ pathPrefix }}/static/vendor/js/popper.min.js"></script>
-<script src="{{ pathPrefix }}/static/vendor/bootstrap-4.3.1/js/bootstrap.min.js"></script>
+<script src="{{ pathPrefix }}/static/vendor/bootstrap-4.5.2/js/bootstrap.min.js"></script>
 
 <script>
 var PATH_PREFIX = "{{ pathPrefix }}";

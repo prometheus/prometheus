@@ -98,7 +98,7 @@
 //        	requestCount = promauto.With(reg).NewCounterVec(
 //        		prometheus.CounterOpts{
 //        			Name: "http_requests_total",
-//        			Help: "Total number of HTTP requests by status code end method.",
+//        			Help: "Total number of HTTP requests by status code and method.",
 //        		},
 //        		[]string{"code", "method"},
 //        	)
@@ -117,7 +117,7 @@
 //        	requestCount = factory.NewCounterVec(
 //        		prometheus.CounterOpts{
 //        			Name: "http_requests_total",
-//        			Help: "Total number of HTTP requests by status code end method.",
+//        			Help: "Total number of HTTP requests by status code and method.",
 //        		},
 //        		[]string{"code", "method"},
 //        	)
@@ -127,29 +127,30 @@
 // separate package?
 //
 // The main problem is that registration may fail, e.g. if a metric inconsistent
-// with the newly to be registered one is already registered. Therefore, the
-// Register method in the prometheus.Registerer interface returns an error, and
-// the same is the case for the top-level prometheus.Register function that
-// registers with the global registry. The prometheus package also provides
-// MustRegister versions for both. They panic if the registration fails, and
-// they clearly call this out by using the Must… idiom. Panicking is a bit
-// problematic here because it doesn't just happen on input provided by the
-// caller that is invalid on its own. Things are a bit more subtle here: Metric
-// creation and registration tend to be spread widely over the codebase. It can
-// easily happen that an incompatible metric is added to an unrelated part of
-// the code, and suddenly code that used to work perfectly fine starts to panic
-// (provided that the registration of the newly added metric happens before the
-// registration of the previously existing metric). This may come as an even
-// bigger surprise with the global registry, where simply importing another
-// package can trigger a panic (if the newly imported package registers metrics
-// in its init function). At least, in the prometheus package, creation of
-// metrics and other collectors is separate from registration. You first create
-// the metric, and then you decide explicitly if you want to register it with a
-// local or the global registry, and if you want to handle the error or risk a
-// panic. With the constructors in the promauto package, registration is
-// automatic, and if it fails, it will always panic. Furthermore, the
-// constructors will often be called in the var section of a file, which means
-// that panicking will happen as a side effect of merely importing a package.
+// with or equal to the newly to be registered one is already registered.
+// Therefore, the Register method in the prometheus.Registerer interface returns
+// an error, and the same is the case for the top-level prometheus.Register
+// function that registers with the global registry. The prometheus package also
+// provides MustRegister versions for both. They panic if the registration
+// fails, and they clearly call this out by using the Must…  idiom. Panicking is
+// problematic in this case because it doesn't just happen on input provided by
+// the caller that is invalid on its own. Things are a bit more subtle here:
+// Metric creation and registration tend to be spread widely over the
+// codebase. It can easily happen that an incompatible metric is added to an
+// unrelated part of the code, and suddenly code that used to work perfectly
+// fine starts to panic (provided that the registration of the newly added
+// metric happens before the registration of the previously existing
+// metric). This may come as an even bigger surprise with the global registry,
+// where simply importing another package can trigger a panic (if the newly
+// imported package registers metrics in its init function). At least, in the
+// prometheus package, creation of metrics and other collectors is separate from
+// registration. You first create the metric, and then you decide explicitly if
+// you want to register it with a local or the global registry, and if you want
+// to handle the error or risk a panic. With the constructors in the promauto
+// package, registration is automatic, and if it fails, it will always
+// panic. Furthermore, the constructors will often be called in the var section
+// of a file, which means that panicking will happen as a side effect of merely
+// importing a package.
 //
 // A separate package allows conservative users to entirely ignore it. And
 // whoever wants to use it, will do so explicitly, with an opportunity to read
@@ -252,7 +253,8 @@ type Factory struct {
 }
 
 // With creates a Factory using the provided Registerer for registration of the
-// created Collectors.
+// created Collectors. If the provided Registerer is nil, the returned Factory
+// creates Collectors that are not registered with any Registerer.
 func With(r prometheus.Registerer) Factory { return Factory{r} }
 
 // NewCounter works like the function of the same name in the prometheus package

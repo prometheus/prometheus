@@ -40,40 +40,71 @@ import (
 
 const maxErrMsgLen = 256
 
-var userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
+var UserAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 
-var remoteReadQueriesTotal = prometheus.NewCounterVec(
-	prometheus.CounterOpts{
-		Namespace: namespace,
-		Subsystem: subsystem,
-		Name:      "read_queries_total",
-		Help:      "The total number of remote read queries.",
-	},
-	[]string{remoteName, endpoint, "code"},
+var (
+	remoteReadQueriesTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "read_queries_total",
+			Help:      "The total number of remote read queries.",
+		},
+		[]string{remoteName, endpoint, "code"},
+	)
+	remoteReadQueries = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "remote_read_queries",
+			Help:      "The number of in-flight remote read queries.",
+		},
+		[]string{remoteName, endpoint},
+	)
+	remoteReadQueryDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "read_request_duration_seconds",
+			Help:      "Histogram of the latency for remote read requests.",
+			Buckets:   append(prometheus.DefBuckets, 25, 60),
+		},
+		[]string{remoteName, endpoint},
+	)
 )
+
+func init() {
+	prometheus.MustRegister(remoteReadQueriesTotal, remoteReadQueries, remoteReadQueryDuration)
+}
 
 // Client allows reading and writing from/to a remote HTTP endpoint.
 type Client struct {
 	remoteName string // Used to differentiate clients in metrics.
 	url        *config_util.URL
-	client     *http.Client
+	Client     *http.Client
 	timeout    time.Duration
+
+	readQueries         prometheus.Gauge
+	readQueriesTotal    *prometheus.CounterVec
+	readQueriesDuration prometheus.Observer
 }
 
-// ClientConfig configures a Client.
+// ClientConfig configures a client.
 type ClientConfig struct {
 	URL              *config_util.URL
 	Timeout          model.Duration
 	HTTPClientConfig config_util.HTTPClientConfig
 }
 
-func init() {
-	prometheus.MustRegister(remoteReadQueriesTotal)
+// ReadClient uses the SAMPLES method of remote read to read series samples from remote server.
+// TODO(bwplotka): Add streamed chunked remote read method as well (https://github.com/prometheus/prometheus/issues/5926).
+type ReadClient interface {
+	Read(ctx context.Context, query *prompb.Query) (*prompb.QueryResult, error)
 }
 
-// NewClient creates a new Client.
-func NewClient(remoteName string, conf *ClientConfig) (*Client, error) {
-	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage", false)
+// NewReadClient creates a new client for remote read.
+func NewReadClient(name string, conf *ClientConfig) (ReadClient, error) {
+	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage_read_client", false, false)
 	if err != nil {
 		return nil, err
 	}
@@ -84,14 +115,37 @@ func NewClient(remoteName string, conf *ClientConfig) (*Client, error) {
 	}
 
 	return &Client{
-		remoteName: remoteName,
+		remoteName:          name,
+		url:                 conf.URL,
+		Client:              httpClient,
+		timeout:             time.Duration(conf.Timeout),
+		readQueries:         remoteReadQueries.WithLabelValues(name, conf.URL.String()),
+		readQueriesTotal:    remoteReadQueriesTotal.MustCurryWith(prometheus.Labels{remoteName: name, endpoint: conf.URL.String()}),
+		readQueriesDuration: remoteReadQueryDuration.WithLabelValues(name, conf.URL.String()),
+	}, nil
+}
+
+// NewWriteClient creates a new client for remote write.
+func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
+	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage_write_client", false, false)
+	if err != nil {
+		return nil, err
+	}
+
+	t := httpClient.Transport
+	httpClient.Transport = &nethttp.Transport{
+		RoundTripper: t,
+	}
+
+	return &Client{
+		remoteName: name,
 		url:        conf.URL,
-		client:     httpClient,
+		Client:     httpClient,
 		timeout:    time.Duration(conf.Timeout),
 	}, nil
 }
 
-type recoverableError struct {
+type RecoverableError struct {
 	error
 }
 
@@ -106,7 +160,7 @@ func (c *Client) Store(ctx context.Context, req []byte) error {
 	}
 	httpReq.Header.Add("Content-Encoding", "snappy")
 	httpReq.Header.Set("Content-Type", "application/x-protobuf")
-	httpReq.Header.Set("User-Agent", userAgent)
+	httpReq.Header.Set("User-Agent", UserAgent)
 	httpReq.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
@@ -124,11 +178,11 @@ func (c *Client) Store(ctx context.Context, req []byte) error {
 		defer ht.Finish()
 	}
 
-	httpResp, err := c.client.Do(httpReq)
+	httpResp, err := c.Client.Do(httpReq)
 	if err != nil {
-		// Errors from client.Do are from (for example) network errors, so are
+		// Errors from Client.Do are from (for example) network errors, so are
 		// recoverable.
-		return recoverableError{err}
+		return RecoverableError{err}
 	}
 	defer func() {
 		io.Copy(ioutil.Discard, httpResp.Body)
@@ -144,7 +198,7 @@ func (c *Client) Store(ctx context.Context, req []byte) error {
 		err = errors.Errorf("server returned HTTP status %s: %s", httpResp.Status, line)
 	}
 	if httpResp.StatusCode/100 == 5 {
-		return recoverableError{err}
+		return RecoverableError{err}
 	}
 	return err
 }
@@ -161,6 +215,9 @@ func (c Client) Endpoint() string {
 
 // Read reads from a remote endpoint.
 func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryResult, error) {
+	c.readQueries.Inc()
+	defer c.readQueries.Dec()
+
 	req := &prompb.ReadRequest{
 		// TODO: Support batching multiple queries into one read request,
 		// as the protobuf interface allows for it.
@@ -181,7 +238,7 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 	httpReq.Header.Add("Content-Encoding", "snappy")
 	httpReq.Header.Add("Accept-Encoding", "snappy")
 	httpReq.Header.Set("Content-Type", "application/x-protobuf")
-	httpReq.Header.Set("User-Agent", userAgent)
+	httpReq.Header.Set("User-Agent", UserAgent)
 	httpReq.Header.Set("X-Prometheus-Remote-Read-Version", "0.1.0")
 
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
@@ -200,7 +257,8 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 		defer ht.Finish()
 	}
 
-	httpResp, err := c.client.Do(httpReq)
+	start := time.Now()
+	httpResp, err := c.Client.Do(httpReq)
 	if err != nil {
 		return nil, errors.Wrap(err, "error sending request")
 	}
@@ -208,9 +266,8 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 		io.Copy(ioutil.Discard, httpResp.Body)
 		httpResp.Body.Close()
 	}()
-
-	remoteReadTotalCounter := remoteReadQueriesTotal.WithLabelValues(c.remoteName, c.url.String(), strconv.Itoa(httpResp.StatusCode))
-	remoteReadTotalCounter.Inc()
+	c.readQueriesDuration.Observe(time.Since(start).Seconds())
+	c.readQueriesTotal.WithLabelValues(strconv.Itoa(httpResp.StatusCode)).Inc()
 
 	compressed, err = ioutil.ReadAll(httpResp.Body)
 	if err != nil {

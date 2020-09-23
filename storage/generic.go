@@ -16,10 +16,12 @@
 
 package storage
 
-import "github.com/prometheus/prometheus/pkg/labels"
+import (
+	"github.com/prometheus/prometheus/pkg/labels"
+)
 
 type genericQuerier interface {
-	baseQuerier
+	LabelQuerier
 	Select(bool, *SelectHints, ...*labels.Matcher) genericSeriesSet
 }
 
@@ -49,7 +51,7 @@ func (a *genericChunkSeriesSetAdapter) At() Labels {
 }
 
 type genericQuerierAdapter struct {
-	baseQuerier
+	LabelQuerier
 
 	// One-of. If both are set, Querier will be used.
 	q  Querier
@@ -64,11 +66,11 @@ func (q *genericQuerierAdapter) Select(sortSeries bool, hints *SelectHints, matc
 }
 
 func newGenericQuerierFrom(q Querier) genericQuerier {
-	return &genericQuerierAdapter{baseQuerier: q, q: q}
+	return &genericQuerierAdapter{LabelQuerier: q, q: q}
 }
 
 func newGenericQuerierFromChunk(cq ChunkQuerier) genericQuerier {
-	return &genericQuerierAdapter{baseQuerier: cq, cq: cq}
+	return &genericQuerierAdapter{LabelQuerier: cq, cq: cq}
 }
 
 type querierAdapter struct {
@@ -116,7 +118,7 @@ func (a *seriesMergerAdapter) Merge(s ...Labels) Labels {
 }
 
 type chunkSeriesMergerAdapter struct {
-	VerticalChunkSeriesMergerFunc
+	VerticalChunkSeriesMergeFunc
 }
 
 func (a *chunkSeriesMergerAdapter) Merge(s ...Labels) Labels {
@@ -124,7 +126,7 @@ func (a *chunkSeriesMergerAdapter) Merge(s ...Labels) Labels {
 	for _, ser := range s {
 		buf = append(buf, ser.(ChunkSeries))
 	}
-	return a.VerticalChunkSeriesMergerFunc(buf...)
+	return a.VerticalChunkSeriesMergeFunc(buf...)
 }
 
 type noopGenericSeriesSet struct{}

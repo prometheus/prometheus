@@ -113,7 +113,6 @@ func (client LoadBalancerFrontendIPConfigurationsClient) GetSender(req *http.Req
 func (client LoadBalancerFrontendIPConfigurationsClient) GetResponder(resp *http.Response) (result FrontendIPConfiguration, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -154,6 +153,9 @@ func (client LoadBalancerFrontendIPConfigurationsClient) List(ctx context.Contex
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.LoadBalancerFrontendIPConfigurationsClient", "List", resp, "Failure responding to request")
 	}
+	if result.lbficlr.hasNextLink() && result.lbficlr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }
@@ -190,7 +192,6 @@ func (client LoadBalancerFrontendIPConfigurationsClient) ListSender(req *http.Re
 func (client LoadBalancerFrontendIPConfigurationsClient) ListResponder(resp *http.Response) (result LoadBalancerFrontendIPConfigurationListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

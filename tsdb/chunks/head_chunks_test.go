@@ -15,6 +15,7 @@ package chunks
 
 import (
 	"encoding/binary"
+	"errors"
 	"io/ioutil"
 	"math/rand"
 	"os"
@@ -171,7 +172,7 @@ func TestChunkDiskMapper_Truncate(t *testing.T) {
 	var thirdFileMinT, sixthFileMinT int64
 
 	addChunk := func() int {
-		mint := timeRange + 1                // Just after the the new file cut.
+		mint := timeRange + 1                // Just after the new file cut.
 		maxt := timeRange + fileTimeStep - 1 // Just before the next file.
 
 		// Write a chunks to set maxt for the segment.
@@ -317,17 +318,46 @@ func TestChunkDiskMapper_Truncate_PreservesFileSequence(t *testing.T) {
 	verifyFiles([]int{3, 4, 5, 6, 7})
 }
 
-func testChunkDiskMapper(t *testing.T) (hrw *ChunkDiskMapper) {
+// TestHeadReadWriter_TruncateAfterIterateChunksError tests for
+// https://github.com/prometheus/prometheus/issues/7753
+func TestHeadReadWriter_TruncateAfterFailedIterateChunks(t *testing.T) {
+	hrw := testChunkDiskMapper(t)
+	defer func() {
+		testutil.Ok(t, hrw.Close())
+	}()
+
+	// Write a chunks to iterate on it later.
+	_, err := hrw.WriteChunk(1, 0, 1000, randomChunk(t))
+	testutil.Ok(t, err)
+
+	dir := hrw.dir.Name()
+	testutil.Ok(t, hrw.Close())
+
+	// Restarting to recreate https://github.com/prometheus/prometheus/issues/7753.
+	hrw, err = NewChunkDiskMapper(dir, chunkenc.NewPool())
+	testutil.Ok(t, err)
+
+	// Forcefully failing IterateAllChunks.
+	testutil.NotOk(t, hrw.IterateAllChunks(func(_, _ uint64, _, _ int64, _ uint16) error {
+		return errors.New("random error")
+	}))
+
+	// Truncation call should not return error after IterateAllChunks fails.
+	testutil.Ok(t, hrw.Truncate(2000))
+}
+
+func testChunkDiskMapper(t *testing.T) *ChunkDiskMapper {
 	tmpdir, err := ioutil.TempDir("", "data")
 	testutil.Ok(t, err)
-	hrw, err = NewChunkDiskMapper(tmpdir, chunkenc.NewPool())
+	t.Cleanup(func() {
+		testutil.Ok(t, os.RemoveAll(tmpdir))
+	})
+
+	hrw, err := NewChunkDiskMapper(tmpdir, chunkenc.NewPool())
 	testutil.Ok(t, err)
 	testutil.Assert(t, !hrw.fileMaxtSet, "")
 	testutil.Ok(t, hrw.IterateAllChunks(func(_, _ uint64, _, _ int64, _ uint16) error { return nil }))
 	testutil.Assert(t, hrw.fileMaxtSet, "")
-	t.Cleanup(func() {
-		testutil.Ok(t, os.RemoveAll(tmpdir))
-	})
 	return hrw
 }
 

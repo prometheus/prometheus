@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -41,7 +42,7 @@ func BenchmarkPostingsForMatchers(b *testing.B) {
 		testutil.Ok(b, h.Close())
 	}()
 
-	app := h.Appender()
+	app := h.Appender(context.Background())
 	addSeries := func(l labels.Labels) {
 		app.Add(l, 0, 0)
 	}
@@ -91,12 +92,16 @@ func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 	jNotFoo := labels.MustNewMatcher(labels.MatchNotEqual, "j", "foo")
 
 	iStar := labels.MustNewMatcher(labels.MatchRegexp, "i", "^.*$")
+	i1Star := labels.MustNewMatcher(labels.MatchRegexp, "i", "^1.*$")
+	iStar1 := labels.MustNewMatcher(labels.MatchRegexp, "i", "^.*1$")
+	iStar1Star := labels.MustNewMatcher(labels.MatchRegexp, "i", "^.*1.*$")
 	iPlus := labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")
 	i1Plus := labels.MustNewMatcher(labels.MatchRegexp, "i", "^1.+$")
 	iEmptyRe := labels.MustNewMatcher(labels.MatchRegexp, "i", "^$")
 	iNotEmpty := labels.MustNewMatcher(labels.MatchNotEqual, "i", "")
 	iNot2 := labels.MustNewMatcher(labels.MatchNotEqual, "n", "2"+postingsBenchSuffix)
 	iNot2Star := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "^2.*$")
+	iNotStar2Star := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "^.*2.*$")
 
 	cases := []struct {
 		name     string
@@ -107,6 +112,8 @@ func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 		{`j="foo",n="1"`, []*labels.Matcher{jFoo, n1}},
 		{`n="1",j!="foo"`, []*labels.Matcher{n1, jNotFoo}},
 		{`i=~".*"`, []*labels.Matcher{iStar}},
+		{`i=~"1.*"`, []*labels.Matcher{i1Star}},
+		{`i=~".*1"`, []*labels.Matcher{iStar1}},
 		{`i=~".+"`, []*labels.Matcher{iPlus}},
 		{`i=~""`, []*labels.Matcher{iEmptyRe}},
 		{`i!=""`, []*labels.Matcher{iNotEmpty}},
@@ -116,8 +123,10 @@ func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 		{`n="1",i!="",j="foo"`, []*labels.Matcher{n1, iNotEmpty, jFoo}},
 		{`n="1",i=~".+",j="foo"`, []*labels.Matcher{n1, iPlus, jFoo}},
 		{`n="1",i=~"1.+",j="foo"`, []*labels.Matcher{n1, i1Plus, jFoo}},
+		{`n="1",i=~".*1.*",j="foo"`, []*labels.Matcher{n1, iStar1Star, jFoo}},
 		{`n="1",i=~".+",i!="2",j="foo"`, []*labels.Matcher{n1, iPlus, iNot2, jFoo}},
 		{`n="1",i=~".+",i!~"2.*",j="foo"`, []*labels.Matcher{n1, iPlus, iNot2Star, jFoo}},
+		{`n="1",i=~".+",i!~".*2.*",j="foo"`, []*labels.Matcher{n1, iPlus, iNotStar2Star, jFoo}},
 	}
 
 	for _, c := range cases {
@@ -139,7 +148,7 @@ func BenchmarkQuerierSelect(b *testing.B) {
 	h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, DefaultStripeSize, nil)
 	testutil.Ok(b, err)
 	defer h.Close()
-	app := h.Appender()
+	app := h.Appender(context.Background())
 	numSeries := 1000000
 	for i := 0; i < numSeries; i++ {
 		app.Add(labels.FromStrings("foo", "bar", "i", fmt.Sprintf("%d%s", i, postingsBenchSuffix)), int64(i), 0)

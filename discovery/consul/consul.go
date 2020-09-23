@@ -28,15 +28,16 @@ import (
 	conntrack "github.com/mwitkow/go-conntrack"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	config_util "github.com/prometheus/common/config"
+	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
 )
 
 const (
-	watchTimeout  = 10 * time.Minute
+	watchTimeout  = 2 * time.Minute
 	retryInterval = 15 * time.Second
 
 	// addressLabel is the name for the label containing a target's address.
@@ -86,8 +87,8 @@ var (
 	)
 
 	// Initialize metric vectors.
-	servicesRPCDuraion = rpcDuration.WithLabelValues("catalog", "services")
-	serviceRPCDuraion  = rpcDuration.WithLabelValues("catalog", "service")
+	servicesRPCDuration = rpcDuration.WithLabelValues("catalog", "services")
+	serviceRPCDuration  = rpcDuration.WithLabelValues("catalog", "service")
 
 	// DefaultSDConfig is the default Consul SD configuration.
 	DefaultSDConfig = SDConfig{
@@ -99,15 +100,21 @@ var (
 	}
 )
 
+func init() {
+	discovery.RegisterConfig(&SDConfig{})
+	prometheus.MustRegister(rpcFailuresCount)
+	prometheus.MustRegister(rpcDuration)
+}
+
 // SDConfig is the configuration for Consul service discovery.
 type SDConfig struct {
-	Server       string             `yaml:"server,omitempty"`
-	Token        config_util.Secret `yaml:"token,omitempty"`
-	Datacenter   string             `yaml:"datacenter,omitempty"`
-	TagSeparator string             `yaml:"tag_separator,omitempty"`
-	Scheme       string             `yaml:"scheme,omitempty"`
-	Username     string             `yaml:"username,omitempty"`
-	Password     config_util.Secret `yaml:"password,omitempty"`
+	Server       string        `yaml:"server,omitempty"`
+	Token        config.Secret `yaml:"token,omitempty"`
+	Datacenter   string        `yaml:"datacenter,omitempty"`
+	TagSeparator string        `yaml:"tag_separator,omitempty"`
+	Scheme       string        `yaml:"scheme,omitempty"`
+	Username     string        `yaml:"username,omitempty"`
+	Password     config.Secret `yaml:"password,omitempty"`
 
 	// See https://www.consul.io/docs/internals/consensus.html#consistency-modes,
 	// stale reads are a lot cheaper and are a necessity if you have >5k targets.
@@ -127,7 +134,20 @@ type SDConfig struct {
 	// Desired node metadata.
 	NodeMeta map[string]string `yaml:"node_meta,omitempty"`
 
-	TLSConfig config_util.TLSConfig `yaml:"tls_config,omitempty"`
+	TLSConfig config.TLSConfig `yaml:"tls_config,omitempty"`
+}
+
+// Name returns the name of the Config.
+func (*SDConfig) Name() string { return "consul" }
+
+// NewDiscoverer returns a Discoverer for the Config.
+func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
+	return NewDiscovery(c, opts.Logger)
+}
+
+// SetDirectory joins any relative file paths with dir.
+func (c *SDConfig) SetDirectory(dir string) {
+	c.TLSConfig.SetDirectory(dir)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -142,11 +162,6 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return errors.New("consul SD configuration requires a server address")
 	}
 	return nil
-}
-
-func init() {
-	prometheus.MustRegister(rpcFailuresCount)
-	prometheus.MustRegister(rpcDuration)
 }
 
 // Discovery retrieves target information from a Consul server
@@ -170,7 +185,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 		logger = log.NewNopLogger()
 	}
 
-	tls, err := config_util.NewTLSConfig(&conf.TLSConfig)
+	tls, err := config.NewTLSConfig(&conf.TLSConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -184,7 +199,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 	}
 	wrapper := &http.Client{
 		Transport: transport,
-		Timeout:   35 * time.Second,
+		Timeout:   time.Duration(watchTimeout) + 15*time.Second,
 	}
 
 	clientConf := &consul.Config{
@@ -348,16 +363,16 @@ func (d *Discovery) watchServices(ctx context.Context, ch chan<- []*targetgroup.
 	catalog := d.client.Catalog()
 	level.Debug(d.logger).Log("msg", "Watching services", "tags", strings.Join(d.watchedTags, ","))
 
-	t0 := time.Now()
 	opts := &consul.QueryOptions{
 		WaitIndex:  *lastIndex,
 		WaitTime:   watchTimeout,
 		AllowStale: d.allowStale,
 		NodeMeta:   d.watchedNodeMeta,
 	}
+	t0 := time.Now()
 	srvs, meta, err := catalog.Services(opts.WithContext(ctx))
 	elapsed := time.Since(t0)
-	servicesRPCDuraion.Observe(elapsed.Seconds())
+	servicesRPCDuration.Observe(elapsed.Seconds())
 
 	// Check the context before in order to exit early.
 	select {
@@ -441,18 +456,19 @@ func (d *Discovery) watchService(ctx context.Context, ch chan<- []*targetgroup.G
 
 	go func() {
 		ticker := time.NewTicker(d.refreshInterval)
+		defer ticker.Stop()
 		var lastIndex uint64
 		health := srv.client.Health()
 		for {
 			select {
 			case <-ctx.Done():
-				ticker.Stop()
 				return
 			default:
 				srv.watch(ctx, ch, health, &lastIndex)
 				select {
 				case <-ticker.C:
 				case <-ctx.Done():
+					return
 				}
 			}
 		}
@@ -463,7 +479,6 @@ func (d *Discovery) watchService(ctx context.Context, ch chan<- []*targetgroup.G
 func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Group, health *consul.Health, lastIndex *uint64) {
 	level.Debug(srv.logger).Log("msg", "Watching service", "service", srv.name, "tags", strings.Join(srv.tags, ","))
 
-	t0 := time.Now()
 	opts := &consul.QueryOptions{
 		WaitIndex:  *lastIndex,
 		WaitTime:   watchTimeout,
@@ -471,9 +486,10 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Gr
 		NodeMeta:   srv.discovery.watchedNodeMeta,
 	}
 
+	t0 := time.Now()
 	serviceNodes, meta, err := health.ServiceMultipleTags(srv.name, srv.tags, false, opts.WithContext(ctx))
 	elapsed := time.Since(t0)
-	serviceRPCDuraion.Observe(elapsed.Seconds())
+	serviceRPCDuration.Observe(elapsed.Seconds())
 
 	// Check the context before in order to exit early.
 	select {

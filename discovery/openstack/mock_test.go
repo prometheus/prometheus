@@ -43,11 +43,7 @@ func (m *SDMock) Endpoint() string {
 func (m *SDMock) Setup() {
 	m.Mux = http.NewServeMux()
 	m.Server = httptest.NewServer(m.Mux)
-}
-
-// ShutdownServer creates the mock server
-func (m *SDMock) ShutdownServer() {
-	m.Server.Close()
+	m.t.Cleanup(m.Server.Close)
 }
 
 const tokenID = "cbc36478b0bd8e67e89469c7749d4127"

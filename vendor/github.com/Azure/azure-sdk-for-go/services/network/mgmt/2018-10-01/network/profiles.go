@@ -112,7 +112,6 @@ func (client ProfilesClient) CreateOrUpdateSender(req *http.Request) (*http.Resp
 func (client ProfilesClient) CreateOrUpdateResponder(resp *http.Response) (result Profile, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -188,7 +187,6 @@ func (client ProfilesClient) DeleteSender(req *http.Request) (future ProfilesDel
 func (client ProfilesClient) DeleteResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted, http.StatusNoContent),
 		autorest.ByClosing())
 	result.Response = resp
@@ -267,7 +265,6 @@ func (client ProfilesClient) GetSender(req *http.Request) (*http.Response, error
 func (client ProfilesClient) GetResponder(resp *http.Response) (result Profile, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -307,6 +304,9 @@ func (client ProfilesClient) List(ctx context.Context, resourceGroupName string)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ProfilesClient", "List", resp, "Failure responding to request")
 	}
+	if result.plr.hasNextLink() && result.plr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }
@@ -342,7 +342,6 @@ func (client ProfilesClient) ListSender(req *http.Request) (*http.Response, erro
 func (client ProfilesClient) ListResponder(resp *http.Response) (result ProfileListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -417,6 +416,9 @@ func (client ProfilesClient) ListAll(ctx context.Context) (result ProfileListRes
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ProfilesClient", "ListAll", resp, "Failure responding to request")
 	}
+	if result.plr.hasNextLink() && result.plr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }
@@ -451,7 +453,6 @@ func (client ProfilesClient) ListAllSender(req *http.Request) (*http.Response, e
 func (client ProfilesClient) ListAllResponder(resp *http.Response) (result ProfileListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -567,7 +568,6 @@ func (client ProfilesClient) UpdateTagsSender(req *http.Request) (*http.Response
 func (client ProfilesClient) UpdateTagsResponder(resp *http.Response) (result Profile, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

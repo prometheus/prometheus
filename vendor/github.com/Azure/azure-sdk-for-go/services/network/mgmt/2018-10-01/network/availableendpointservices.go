@@ -74,6 +74,9 @@ func (client AvailableEndpointServicesClient) List(ctx context.Context, location
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.AvailableEndpointServicesClient", "List", resp, "Failure responding to request")
 	}
+	if result.eslr.hasNextLink() && result.eslr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }
@@ -109,7 +112,6 @@ func (client AvailableEndpointServicesClient) ListSender(req *http.Request) (*ht
 func (client AvailableEndpointServicesClient) ListResponder(resp *http.Response) (result EndpointServicesListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

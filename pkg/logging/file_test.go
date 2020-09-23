@@ -24,9 +24,12 @@ import (
 )
 
 func TestJSONFileLogger_basic(t *testing.T) {
-	f, err := ioutil.TempFile("", "")
+	f, err := ioutil.TempFile("", "logging")
 	testutil.Ok(t, err)
-	defer f.Close()
+	defer func() {
+		testutil.Ok(t, f.Close())
+		testutil.Ok(t, os.Remove(f.Name()))
+	}()
 
 	l, err := NewJSONFileLogger(f.Name())
 	testutil.Ok(t, err)
@@ -50,9 +53,12 @@ func TestJSONFileLogger_basic(t *testing.T) {
 }
 
 func TestJSONFileLogger_parallel(t *testing.T) {
-	f, err := ioutil.TempFile("", "")
+	f, err := ioutil.TempFile("", "logging")
 	testutil.Ok(t, err)
-	defer f.Close()
+	defer func() {
+		testutil.Ok(t, f.Close())
+		testutil.Ok(t, os.Remove(f.Name()))
+	}()
 
 	l, err := NewJSONFileLogger(f.Name())
 	testutil.Ok(t, err)

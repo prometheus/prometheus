@@ -368,6 +368,27 @@ func TestLabels_Equal(t *testing.T) {
 	}
 }
 
+func TestLabels_FromStrings(t *testing.T) {
+	labels := FromStrings("aaa", "111", "bbb", "222")
+	expected := Labels{
+		{
+			Name:  "aaa",
+			Value: "111",
+		},
+		{
+			Name:  "bbb",
+			Value: "222",
+		},
+	}
+
+	testutil.Equals(t, expected, labels, "unexpected labelset")
+
+	defer func() { recover() }()
+	FromStrings("aaa", "111", "bbb")
+
+	testutil.Assert(t, false, "did not panic as expected")
+}
+
 func TestLabels_Compare(t *testing.T) {
 	labels := Labels{
 		{
@@ -539,10 +560,6 @@ func TestLabels_WithLabels(t *testing.T) {
 func TestLabels_WithoutLabels(t *testing.T) {
 	testutil.Equals(t, Labels{{"aaa", "111"}}, Labels{{"aaa", "111"}, {"bbb", "222"}, {"ccc", "333"}}.WithoutLabels("bbb", "ccc"))
 	testutil.Equals(t, Labels{{"aaa", "111"}}, Labels{{"aaa", "111"}, {"bbb", "222"}, {MetricName, "333"}}.WithoutLabels("bbb"))
-}
-
-func TestLabels_FromStrings(t *testing.T) {
-	testutil.Equals(t, Labels{{"aaa", "111"}, {"bbb", "222"}}, FromStrings("aaa", "111", "bbb", "222"))
 }
 
 func TestBulider_NewBulider(t *testing.T) {
