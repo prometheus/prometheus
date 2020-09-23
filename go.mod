@@ -54,7 +54,7 @@ require (
 	github.com/prometheus/alertmanager v0.21.0
 	github.com/prometheus/client_golang v1.7.1
 	github.com/prometheus/client_model v0.2.0
-	github.com/prometheus/common v0.13.0
+	github.com/prometheus/common v0.14.0
 	github.com/samuel/go-zookeeper v0.0.0-20200724154423-2164a8ac840e
 	github.com/shurcooL/httpfs v0.0.0-20190707220628-8d4bc4ba7749
 	github.com/shurcooL/vfsgen v0.0.0-20200627165143-92b8a710ab6c
