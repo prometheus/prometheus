@@ -576,36 +576,26 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 	return mat, warnings, nil
 }
 
-// greatest common divisor (GCD) via Euclidean algorithm
-func gcd(a, b int64) int64 {
-	for b != 0 {
-		a, b = b, a%b
-	}
-	return a
-}
-
-// subqueryOffsetRange returns the resulting offset, range and step for all subqueries in the path.
-func (ng *Engine) subqueryOffsetRangeStep(path []parser.Node) (time.Duration, time.Duration, time.Duration) {
+// subqueryOffsetRange returns the sum of offsets and ranges of all subqueries in the path.
+func (ng *Engine) subqueryOffsetRange(path []parser.Node) (time.Duration, time.Duration) {
 	var (
 		subqOffset time.Duration
 		subqRange  time.Duration
-		subqStep   time.Duration
 	)
 	for _, node := range path {
 		switch n := node.(type) {
 		case *parser.SubqueryExpr:
 			subqOffset += n.Offset
 			subqRange += n.Range
-			subqStep = time.Duration(gcd(subqStep.Nanoseconds(), n.Step.Nanoseconds()))
 		}
 	}
-	return subqOffset, subqRange, subqStep
+	return subqOffset, subqRange
 }
 
 func (ng *Engine) findMinTime(s *parser.EvalStmt) time.Time {
 	var maxOffset time.Duration
 	parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
-		subqOffset, subqRange, _ := ng.subqueryOffsetRangeStep(path)
+		subqOffset, subqRange := ng.subqueryOffsetRange(path)
 		switch n := node.(type) {
 		case *parser.VectorSelector:
 			if maxOffset < ng.lookbackDelta+subqOffset+subqRange {
@@ -627,11 +617,22 @@ func (ng *Engine) findMinTime(s *parser.EvalStmt) time.Time {
 	return s.Start.Add(-maxOffset)
 }
 
+// greatest common divisor (GCD) via Euclidean algorithm
+func gcd(a, b int64) int64 {
+	for b != 0 {
+		a, b = b, a%b
+	}
+	return a
+}
+
 func (ng *Engine) populateSeries(querier storage.Querier, s *parser.EvalStmt) {
 	// Whenever a MatrixSelector is evaluated, evalRange is set to the corresponding range.
 	// The evaluation of the VectorSelector inside then evaluates the given range and unsets
 	// the variable.
 	var evalRange time.Duration
+	// Whenever a SubqueryExpr is evaluated, evalStep is set to the corresponding step size.
+	// This is then used during the evaluation of any VectorSelector nodes inside.
+	var evalStep time.Duration
 
 	parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
 		switch n := node.(type) {
@@ -639,18 +640,17 @@ func (ng *Engine) populateSeries(querier storage.Querier, s *parser.EvalStmt) {
 			hints := &storage.SelectHints{
 				Start: timestamp.FromTime(s.Start),
 				End:   timestamp.FromTime(s.End),
-				Step:  durationMilliseconds(s.Interval),
+				Step:  gcd(durationMilliseconds(s.Interval), durationMilliseconds(evalStep)),
 			}
 
-			// We need to make sure we select the timerange selected by the subqueries.
-			// The subqueryOffsetRangeStep function gives the sum of ranges,
-			// sum of offsets and GCD of steps of all subqueries in the path.
+			// We need to make sure we select the timerange selected by the subquery.
+			// The subqueryOffsetRange function gives the sum of range and the
+			// sum of offset.
 			// TODO(bwplotka): Add support for better hints when subquerying. See: https://github.com/prometheus/prometheus/issues/7630.
-			subqOffset, subqRange, subqStep := ng.subqueryOffsetRangeStep(path)
+			subqOffset, subqRange := ng.subqueryOffsetRange(path)
 			offsetMilliseconds := durationMilliseconds(subqOffset)
 			hints.Start = hints.Start - offsetMilliseconds - durationMilliseconds(subqRange)
 			hints.End = hints.End - offsetMilliseconds
-			hints.Step = gcd(hints.Step, durationMilliseconds(subqStep))
 
 			if evalRange == 0 {
 				hints.Start = hints.Start - durationMilliseconds(ng.lookbackDelta)
@@ -673,6 +673,8 @@ func (ng *Engine) populateSeries(querier storage.Querier, s *parser.EvalStmt) {
 			n.UnexpandedSeriesSet = querier.Select(false, hints, n.LabelMatchers...)
 		case *parser.MatrixSelector:
 			evalRange = n.Range
+		case *parser.SubqueryExpr:
+			evalStep = n.Step
 		}
 		return nil
 	})
