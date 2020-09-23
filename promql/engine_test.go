@@ -375,7 +375,7 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 			if tc.end == 0 {
 				query, err = engine.NewInstantQuery(hintsRecorder, tc.query, timestamp.Time(tc.start))
 			} else {
-				query, err = engine.NewRangeQuery(hintsRecorder, tc.query, timestamp.Time(tc.start), timestamp.Time(tc.end), 4 * time.Second)
+				query, err = engine.NewRangeQuery(hintsRecorder, tc.query, timestamp.Time(tc.start), timestamp.Time(tc.end), 4*time.Second)
 			}
 			testutil.Ok(t, err)
 
