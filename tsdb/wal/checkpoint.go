@@ -270,6 +270,16 @@ func Checkpoint(logger log.Logger, w *WAL, from, to int, keep func(id uint64) bo
 	return stats, nil
 }
 
+func GetCheckpointSize(walDir string) (sizes int64) {
+	walDir, _ = filepath.Abs(walDir)
+	dirs, _ := listCheckpointDirs(walDir)
+	for _, dirName := range dirs {
+		size, _ := fileutil.DirSize(fmt.Sprintf("%s/%s", walDir, dirName))
+		sizes += size
+	}
+	return
+}
+
 func checkpointDir(dir string, i int) string {
 	return filepath.Join(dir, fmt.Sprintf(checkpointPrefix+"%08d", i))
 }
@@ -280,25 +290,17 @@ type checkpointRef struct {
 }
 
 func listCheckpoints(dir string) (refs []checkpointRef, err error) {
-	files, err := ioutil.ReadDir(dir)
+	dirs, err := listCheckpointDirs(dir)
 	if err != nil {
 		return nil, err
 	}
 
-	for i := 0; i < len(files); i++ {
-		fi := files[i]
-		if !strings.HasPrefix(fi.Name(), checkpointPrefix) {
-			continue
-		}
-		if !fi.IsDir() {
-			return nil, errors.Errorf("checkpoint %s is not a directory", fi.Name())
-		}
-		idx, err := strconv.Atoi(fi.Name()[len(checkpointPrefix):])
+	for _, dirName := range dirs {
+		idx, err := strconv.Atoi(dirName[len(checkpointPrefix):])
 		if err != nil {
 			continue
 		}
-
-		refs = append(refs, checkpointRef{name: fi.Name(), index: idx})
+		refs = append(refs, checkpointRef{name: dirName, index: idx})
 	}
 
 	sort.Slice(refs, func(i, j int) bool {
@@ -306,4 +308,20 @@ func listCheckpoints(dir string) (refs []checkpointRef, err error) {
 	})
 
 	return refs, nil
+}
+
+func listCheckpointDirs(dir string) (dirs []string, err error) {
+	files, err := ioutil.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+
+	for i := 0; i < len(files); i++ {
+		fi := files[i]
+		if !strings.HasPrefix(fi.Name(), checkpointPrefix) || !fi.IsDir() {
+			continue
+		}
+		dirs = append(dirs, fi.Name())
+	}
+	return
 }
