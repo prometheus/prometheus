@@ -22,6 +22,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
@@ -1104,11 +1105,11 @@ func BeyondSizeRetention(db *DB, blocks []*Block) (deletable map[ulid.ULID]struc
 	deletable = make(map[ulid.ULID]struct{})
 
 	walSize, _ := db.Head().wal.Size()
-	checkpointSize, _ := wal.CheckpointSize(db.Head().lastCheckpointName)
+	checkpointsSize := getDirsSizeMatchingRegex(regexp.MustCompile("checkpoint..*"), db.Head().wal.Dir())
 	headChunksSize := db.Head().chunkDiskMapper.Size()
 	// Initializing size counter with WAL size and Head chunks
 	// written to disk, as that is part of the retention strategy.
-	blocksSize := walSize + checkpointSize + headChunksSize
+	blocksSize := walSize + checkpointsSize + headChunksSize
 	for i, block := range blocks {
 		blocksSize += block.Size()
 		if blocksSize > int64(db.opts.MaxBytes) {
@@ -1121,6 +1122,18 @@ func BeyondSizeRetention(db *DB, blocks []*Block) (deletable map[ulid.ULID]struc
 		}
 	}
 	return deletable
+}
+
+func getDirsSizeMatchingRegex(re *regexp.Regexp, dir string) (sizes int64) {
+	walk := func(fn string, fi os.FileInfo, err error) error {
+		if fi.IsDir() && re.MatchString(fn) {
+			size, _ := fileutil.DirSize(fn)
+			sizes += size
+		}
+		return nil
+	}
+	filepath.Walk(dir, walk)
+	return
 }
 
 // deleteBlocks closes the block if loaded and deletes blocks from the disk if exists.

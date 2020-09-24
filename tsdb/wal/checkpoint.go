@@ -122,7 +122,7 @@ func Checkpoint(logger log.Logger, w *WAL, from, to int, keep func(id uint64) bo
 		defer sgmReader.Close()
 	}
 
-	cpdir := CheckpointDir(w.Dir(), to)
+	cpdir := checkpointDir(w.Dir(), to)
 	cpdirtmp := cpdir + ".tmp"
 
 	if err := os.RemoveAll(cpdirtmp); err != nil {
@@ -271,11 +271,7 @@ func Checkpoint(logger log.Logger, w *WAL, from, to int, keep func(id uint64) bo
 	return stats, nil
 }
 
-func CheckpointSize(dir string) (int64, error) {
-	return fileutil.DirSize(dir)
-}
-
-func CheckpointDir(dir string, i int) string {
+func checkpointDir(dir string, i int) string {
 	return filepath.Join(dir, fmt.Sprintf(checkpointPrefix+"%08d", i))
 }
 
