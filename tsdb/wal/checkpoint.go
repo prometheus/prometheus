@@ -36,7 +36,6 @@ import (
 
 // CheckpointStats returns stats about a created checkpoint.
 type CheckpointStats struct {
-	Name              string
 	DroppedSeries     int
 	DroppedSamples    int
 	DroppedTombstones int
