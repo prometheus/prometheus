@@ -8,6 +8,14 @@ tests:
     input_series:
       - series: 'up{job="prometheus", instance="localhost:9090"}'
         values: "0+0x1440"
+
+    promql_expr_test:
+      - expr: count(ALERTS) by (alertname, alertstate)
+        eval_time: 4m
+        exp_samples:
+        - labels: '{alertname="InstanceDown",alertstate="pending"}'
+          value: 1
+
     alert_rule_test:
       - eval_time: 1d
         alertname: InstanceDown

@@ -209,7 +209,6 @@ github.com/gogo/protobuf/protoc-gen-gogo/grpc
 github.com/gogo/protobuf/protoc-gen-gogo/plugin
 github.com/gogo/protobuf/protoc-gen-gogofast
 github.com/gogo/protobuf/sortkeys
-github.com/gogo/protobuf/types
 github.com/gogo/protobuf/vanity
 github.com/gogo/protobuf/vanity/command
 # github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
@@ -227,7 +226,6 @@ github.com/golang/protobuf/ptypes/any
 github.com/golang/protobuf/ptypes/duration
 github.com/golang/protobuf/ptypes/struct
 github.com/golang/protobuf/ptypes/timestamp
-github.com/golang/protobuf/ptypes/wrappers
 # github.com/golang/snappy v0.0.1
 ## explicit
 github.com/golang/snappy
@@ -278,7 +276,6 @@ github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway/internal/gengatew
 github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger
 github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger/genswagger
 github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger/options
-github.com/grpc-ecosystem/grpc-gateway/runtime
 github.com/grpc-ecosystem/grpc-gateway/utilities
 # github.com/hashicorp/consul/api v1.6.0
 ## explicit
@@ -389,7 +386,7 @@ github.com/prometheus/client_golang/prometheus/testutil/promlint
 # github.com/prometheus/client_model v0.2.0
 ## explicit
 github.com/prometheus/client_model/go
-# github.com/prometheus/common v0.13.0
+# github.com/prometheus/common v0.14.0
 ## explicit
 github.com/prometheus/common/config
 github.com/prometheus/common/expfmt
@@ -417,9 +414,6 @@ github.com/shurcooL/httpfs/vfsutil
 github.com/shurcooL/vfsgen
 # github.com/sirupsen/logrus v1.6.0
 github.com/sirupsen/logrus
-# github.com/soheilhy/cmux v0.1.4
-## explicit
-github.com/soheilhy/cmux
 # github.com/uber/jaeger-client-go v2.25.0+incompatible
 ## explicit
 github.com/uber/jaeger-client-go
@@ -517,7 +511,7 @@ golang.org/x/oauth2/jwt
 # golang.org/x/sync v0.0.0-20200625203802-6e8e738ad208
 ## explicit
 golang.org/x/sync/errgroup
-# golang.org/x/sys v0.0.0-20200821140526-fda516888d29
+# golang.org/x/sys v0.0.0-20200918174421-af09f7315aff
 ## explicit
 golang.org/x/sys/internal/unsafeheader
 golang.org/x/sys/unix
@@ -576,11 +570,8 @@ google.golang.org/appengine/urlfetch
 # google.golang.org/genproto v0.0.0-20200815001618-f69a88009b70
 ## explicit
 google.golang.org/genproto/googleapis/api/annotations
-google.golang.org/genproto/googleapis/api/httpbody
 google.golang.org/genproto/googleapis/rpc/status
-google.golang.org/genproto/protobuf/field_mask
 # google.golang.org/grpc v1.29.1
-## explicit
 google.golang.org/grpc
 google.golang.org/grpc/attributes
 google.golang.org/grpc/backoff
@@ -655,10 +646,8 @@ google.golang.org/protobuf/runtime/protoimpl
 google.golang.org/protobuf/types/descriptorpb
 google.golang.org/protobuf/types/known/anypb
 google.golang.org/protobuf/types/known/durationpb
-google.golang.org/protobuf/types/known/fieldmaskpb
 google.golang.org/protobuf/types/known/structpb
 google.golang.org/protobuf/types/known/timestamppb
-google.golang.org/protobuf/types/known/wrapperspb
 google.golang.org/protobuf/types/pluginpb
 # gopkg.in/alecthomas/kingpin.v2 v2.2.6
 ## explicit

@@ -55,8 +55,6 @@ type Instance struct {
 	DataCenterInfo                *DataCenterInfo `xml:"dataCenterInfo"`
 	Metadata                      *MetaData       `xml:"metadata"`
 	IsCoordinatingDiscoveryServer bool            `xml:"isCoordinatingDiscoveryServer"`
-	LastUpdatedTimestamp          int             `xml:"lastUpdatedTimestamp"`
-	LastDirtyTimestamp            int             `xml:"lastDirtyTimestamp"`
 	ActionType                    string          `xml:"actionType"`
 	CountryID                     int             `xml:"countryId"`
 	InstanceID                    string          `xml:"instanceId"`
