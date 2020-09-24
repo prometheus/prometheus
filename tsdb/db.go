@@ -1105,7 +1105,7 @@ func BeyondSizeRetention(db *DB, blocks []*Block) (deletable map[ulid.ULID]struc
 	deletable = make(map[ulid.ULID]struct{})
 
 	walSize, _ := db.Head().wal.Size()
-	checkpointsSize := getDirsSizeMatchingRegex(regexp.MustCompile("checkpoint..*"), db.Head().wal.Dir())
+	checkpointsSize, _ := getDirsSizeMatchingRegex(regexp.MustCompile("checkpoint..*"), db.Head().wal.Dir())
 	headChunksSize := db.Head().chunkDiskMapper.Size()
 	// Initializing size counter with WAL size and Head chunks
 	// written to disk, as that is part of the retention strategy.
@@ -1124,7 +1124,7 @@ func BeyondSizeRetention(db *DB, blocks []*Block) (deletable map[ulid.ULID]struc
 	return deletable
 }
 
-func getDirsSizeMatchingRegex(re *regexp.Regexp, dir string) (sizes int64) {
+func getDirsSizeMatchingRegex(re *regexp.Regexp, dir string) (sizes int64, err error) {
 	walk := func(fn string, fi os.FileInfo, err error) error {
 		if fi.IsDir() && re.MatchString(fn) {
 			size, _ := fileutil.DirSize(fn)
@@ -1132,7 +1132,7 @@ func getDirsSizeMatchingRegex(re *regexp.Regexp, dir string) (sizes int64) {
 		}
 		return nil
 	}
-	filepath.Walk(dir, walk)
+	err = filepath.Walk(dir, walk)
 	return
 }
 
