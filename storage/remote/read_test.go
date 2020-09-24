@@ -23,6 +23,7 @@ import (
 	"testing"
 
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -100,6 +101,7 @@ func TestNoDuplicateReadConfigs(t *testing.T) {
 				RemoteReadConfigs: tc.cfgs,
 			}
 			err := s.ApplyConfig(conf)
+			prometheus.Unregister(s.rws.highestTimestamp)
 			gotError := err != nil
 			testutil.Equals(t, tc.err, gotError)
 			testutil.Ok(t, s.Close())
