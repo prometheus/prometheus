@@ -50,6 +50,7 @@ type WriteStorage struct {
 	queues            map[string]*QueueManager
 	samplesIn         *ewmaRate
 	flushDeadline     time.Duration
+	interner          *pool
 
 	// For timestampTracker.
 	highestTimestamp *maxGauge
@@ -69,6 +70,7 @@ func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, walDir string
 		flushDeadline:     flushDeadline,
 		samplesIn:         newEWMARate(ewmaWeight, shardUpdateDuration),
 		walDir:            walDir,
+		interner:          newPool(),
 		highestTimestamp: &maxGauge{
 			Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
 				Namespace: namespace,
@@ -156,6 +158,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rwConf.WriteRelabelConfigs,
 			c,
 			rws.flushDeadline,
+			rws.interner,
 			rws.highestTimestamp,
 		)
 		// Keep track of which queues are new so we know which to start.

@@ -278,6 +278,7 @@ func NewQueueManager(
 	relabelConfigs []*relabel.Config,
 	client WriteClient,
 	flushDeadline time.Duration,
+	interner *pool,
 	highestRecvTimestamp *maxGauge,
 ) *QueueManager {
 	if logger == nil {
@@ -307,7 +308,7 @@ func NewQueueManager(
 		samplesOutDuration: newEWMARate(ewmaWeight, shardUpdateDuration),
 
 		metrics:              metrics,
-		interner:             newPool(),
+		interner:             interner,
 		highestRecvTimestamp: highestRecvTimestamp,
 	}
 
