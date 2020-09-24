@@ -864,7 +864,6 @@ func (h *Head) Truncate(mint int64) (err error) {
 		}
 		return errors.Wrap(err, "create checkpoint")
 	}
-
 	if err := h.wal.Truncate(last + 1); err != nil {
 		// If truncating fails, we'll just try again at the next checkpoint.
 		// Leftover segments will just be ignored in the future if there's a checkpoint

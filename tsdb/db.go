@@ -22,7 +22,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
@@ -1122,18 +1121,6 @@ func BeyondSizeRetention(db *DB, blocks []*Block) (deletable map[ulid.ULID]struc
 		}
 	}
 	return deletable
-}
-
-func getDirsSizeMatchingRegex(re *regexp.Regexp, dir string) (sizes int64, err error) {
-	walk := func(fn string, fi os.FileInfo, err error) error {
-		if fi.IsDir() && re.MatchString(fn) {
-			size, _ := fileutil.DirSize(fn)
-			sizes += size
-		}
-		return nil
-	}
-	err = filepath.Walk(dir, walk)
-	return
 }
 
 // deleteBlocks closes the block if loaded and deletes blocks from the disk if exists.
