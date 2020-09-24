@@ -622,17 +622,18 @@ func (ng *Engine) populateSeries(querier storage.Querier, s *parser.EvalStmt) {
 	// The evaluation of the VectorSelector inside then evaluates the given range and unsets
 	// the variable.
 	var evalRange time.Duration
-	// Whenever a SubqueryExpr is evaluated, evalStep is set to the corresponding step.
-	// The evaluation of the VectorSelector inside then uses this step size.
-	var evalStep time.Duration
+	// Whenever a SubqueryExpr is evaluated, subqueryStep is set to the corresponding step.
+	// The evaluation of the VectorSelector inside then uses this.
+	var subqueryStep time.Duration
 
 	parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
 		switch n := node.(type) {
 		case *parser.VectorSelector:
 			hints := &storage.SelectHints{
-				Start: timestamp.FromTime(s.Start),
-				End:   timestamp.FromTime(s.End),
-				Step:  durationMilliseconds(s.Interval),
+				Start:        timestamp.FromTime(s.Start),
+				End:          timestamp.FromTime(s.End),
+				Step:         durationMilliseconds(s.Interval),
+				SubqueryStep: durationMilliseconds(subqueryStep),
 			}
 
 			// We need to make sure we select the timerange selected by the subquery.
@@ -654,10 +655,6 @@ func (ng *Engine) populateSeries(querier storage.Querier, s *parser.EvalStmt) {
 				evalRange = 0
 			}
 
-			if evalStep != 0 {
-				hints.Step = durationMilliseconds(evalStep)
-			}
-
 			hints.Func = extractFuncFromPath(path)
 			hints.By, hints.Grouping = extractGroupsFromPath(path)
 			if n.Offset > 0 {
@@ -670,7 +667,7 @@ func (ng *Engine) populateSeries(querier storage.Querier, s *parser.EvalStmt) {
 		case *parser.MatrixSelector:
 			evalRange = n.Range
 		case *parser.SubqueryExpr:
-			evalStep = n.Step
+			subqueryStep = n.Step
 		}
 		return nil
 	})
