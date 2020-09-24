@@ -617,21 +617,13 @@ func (ng *Engine) findMinTime(s *parser.EvalStmt) time.Time {
 	return s.Start.Add(-maxOffset)
 }
 
-// greatest common divisor (GCD) via Euclidean algorithm
-func gcd(a, b int64) int64 {
-	for b != 0 {
-		a, b = b, a%b
-	}
-	return a
-}
-
 func (ng *Engine) populateSeries(querier storage.Querier, s *parser.EvalStmt) {
 	// Whenever a MatrixSelector is evaluated, evalRange is set to the corresponding range.
 	// The evaluation of the VectorSelector inside then evaluates the given range and unsets
 	// the variable.
 	var evalRange time.Duration
-	// Whenever a SubqueryExpr is evaluated, evalStep is set to the corresponding step size.
-	// This is then used for the evaluation of the VectorSelector inside.
+	// Whenever a SubqueryExpr is evaluated, evalStep is set to the corresponding step.
+	// The evaluation of the VectorSelector inside then uses this step size.
 	var evalStep time.Duration
 
 	parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
@@ -640,7 +632,7 @@ func (ng *Engine) populateSeries(querier storage.Querier, s *parser.EvalStmt) {
 			hints := &storage.SelectHints{
 				Start: timestamp.FromTime(s.Start),
 				End:   timestamp.FromTime(s.End),
-				Step:  gcd(durationMilliseconds(s.Interval), durationMilliseconds(evalStep)),
+				Step:  durationMilliseconds(s.Interval),
 			}
 
 			// We need to make sure we select the timerange selected by the subquery.
@@ -660,6 +652,10 @@ func (ng *Engine) populateSeries(querier storage.Querier, s *parser.EvalStmt) {
 				// this way we have `range` data before the start time
 				hints.Start = hints.Start - durationMilliseconds(evalRange)
 				evalRange = 0
+			}
+
+			if evalStep != 0 {
+				hints.Step = durationMilliseconds(evalStep)
 			}
 
 			hints.Func = extractFuncFromPath(path)
