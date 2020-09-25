@@ -270,14 +270,28 @@ func Checkpoint(logger log.Logger, w *WAL, from, to int, keep func(id uint64) bo
 	return stats, nil
 }
 
-func GetCheckpointSize(walDir string) (sizes int64) {
-	walDir, _ = filepath.Abs(walDir)
-	dirs, _ := listCheckpointDirs(walDir)
-	for _, dirName := range dirs {
-		size, _ := fileutil.DirSize(fmt.Sprintf("%s/%s", walDir, dirName))
-		sizes += size
+func GetCheckpointSize(walDir string) (int64, error) {
+	var (
+		size   int64
+		err    error
+		errors tsdb_errors.MultiError
+	)
+	walDir, err = filepath.Abs(walDir)
+	if err != nil {
+		return 0, err
 	}
-	return
+	dirs, err := listCheckpointDirs(walDir)
+	if err != nil {
+		return 0, err
+	}
+	for _, dirName := range dirs {
+		s, err := fileutil.DirSize(fmt.Sprintf("%s/%s", walDir, dirName))
+		if err != nil {
+			errors.Add(err)
+		}
+		size += s
+	}
+	return size, errors.Err()
 }
 
 func checkpointDir(dir string, i int) string {
@@ -318,8 +332,11 @@ func listCheckpointDirs(dir string) (dirs []string, err error) {
 
 	for i := 0; i < len(files); i++ {
 		fi := files[i]
-		if !strings.HasPrefix(fi.Name(), checkpointPrefix) || !fi.IsDir() {
+		if !strings.HasPrefix(fi.Name(), checkpointPrefix) {
 			continue
+		}
+		if !fi.IsDir() {
+			return nil, errors.Errorf("checkpoint %s is not a directory", fi.Name())
 		}
 		dirs = append(dirs, fi.Name())
 	}

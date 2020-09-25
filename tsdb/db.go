@@ -1103,8 +1103,14 @@ func BeyondSizeRetention(db *DB, blocks []*Block) (deletable map[ulid.ULID]struc
 
 	deletable = make(map[ulid.ULID]struct{})
 
-	walSize, _ := db.Head().wal.Size()
-	checkpointsSize := wal.GetCheckpointSize(db.Head().wal.Dir())
+	walSize, err := db.Head().wal.Size()
+	if err != nil {
+		level.Error(db.logger).Log("msg", "failed to get wal segments size. Skipping", "err", err)
+	}
+	checkpointsSize, err := wal.GetCheckpointSize(db.Head().wal.Dir())
+	if err != nil {
+		level.Error(db.logger).Log("msg", "failed to get wal checkpoint size. Skipping", "err", err)
+	}
 	headChunksSize := db.Head().chunkDiskMapper.Size()
 	// Initializing size counter with WAL size and Head chunks
 	// written to disk, as that is part of the retention strategy.

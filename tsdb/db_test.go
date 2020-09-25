@@ -1254,8 +1254,10 @@ func TestSizeRetention(t *testing.T) {
 	blockSize := int64(prom_testutil.ToFloat64(db.metrics.blocksBytes)) // Use the actual internal metrics.
 	walSize, err := db.Head().wal.Size()
 	testutil.Ok(t, err)
-	// Expected size should take into account block size + WAL size
-	expSize := blockSize + walSize
+	checkpointSize, err := wal.GetCheckpointSize(db.Head().wal.Dir())
+	testutil.Ok(t, err)
+	// Expected size should take into account block size + WAL size + checkpoint size
+	expSize := blockSize + walSize + checkpointSize
 	actSize, err := fileutil.DirSize(db.Dir())
 	testutil.Ok(t, err)
 	testutil.Equals(t, expSize, actSize, "registered size doesn't match actual disk size")
@@ -1268,7 +1270,9 @@ func TestSizeRetention(t *testing.T) {
 	blockSize = int64(prom_testutil.ToFloat64(db.metrics.blocksBytes)) // Use the actual internal metrics.
 	walSize, err = db.Head().wal.Size()
 	testutil.Ok(t, err)
-	expSize = blockSize + walSize
+	checkpointSize, err = wal.GetCheckpointSize(db.Head().wal.Dir())
+	testutil.Ok(t, err)
+	expSize = blockSize + walSize + checkpointSize
 	actSize, err = fileutil.DirSize(db.Dir())
 	testutil.Ok(t, err)
 	testutil.Equals(t, expSize, actSize, "registered size doesn't match actual disk size")
@@ -1285,8 +1289,10 @@ func TestSizeRetention(t *testing.T) {
 	blockSize = int64(prom_testutil.ToFloat64(db.metrics.blocksBytes))
 	walSize, err = db.Head().wal.Size()
 	testutil.Ok(t, err)
-	// Expected size should take into account block size + WAL size
-	expSize = blockSize + walSize
+	checkpointSize, err = wal.GetCheckpointSize(db.Head().wal.Dir())
+	testutil.Ok(t, err)
+	// Expected size should take into account block size + WAL size + checkpoint size
+	expSize = blockSize + walSize + checkpointSize
 	actRetentionCount := int(prom_testutil.ToFloat64(db.metrics.sizeRetentionCount))
 	actSize, err = fileutil.DirSize(db.Dir())
 	testutil.Ok(t, err)
