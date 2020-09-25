@@ -47,6 +47,11 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
+// Temporary tolerance for scrape appends timestamps alignment, to enable better
+// compression at the TSDB level.
+// See https://github.com/prometheus/prometheus/issues/7846
+const scrapeTimestampTolerance = 2 * time.Millisecond
+
 var errNameLabelMandatory = fmt.Errorf("missing metric name (%s label)", labels.MetricName)
 
 var (
@@ -1031,6 +1036,16 @@ func (sl *scrapeLoop) scrapeAndReport(interval, timeout time.Duration, last time
 		targetIntervalLength.WithLabelValues(interval.String()).Observe(
 			time.Since(last).Seconds(),
 		)
+	}
+
+	// Temporary workaround for a jitter in go timers that causes disk space
+	// increase in TSDB.
+	// See https://github.com/prometheus/prometheus/issues/7846
+	if last.IsZero() && interval > 100*scrapeTimestampTolerance {
+		exactStart := last.Add(interval)
+		if t := start.Sub(exactStart); t >= -scrapeTimestampTolerance && t <= scrapeTimestampTolerance {
+			start = exactStart
+		}
 	}
 
 	b := sl.buffers.Get(sl.lastScrapeSize).([]byte)
