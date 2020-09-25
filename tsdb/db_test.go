@@ -1257,10 +1257,10 @@ func TestSizeRetention(t *testing.T) {
 	checkpointSize, err := wal.GetCheckpointSize(db.Head().wal.Dir())
 	testutil.Ok(t, err)
 	// Expected size should take into account block size + WAL size + checkpoint size
-	expSize := blockSize + walSize + checkpointSize
+	expSize := blockSize + walSize
 	actSize, err := fileutil.DirSize(db.Dir())
 	testutil.Ok(t, err)
-	testutil.Equals(t, expSize, actSize, "registered size doesn't match actual disk size")
+	testutil.Equals(t, expSize, actSize, "tregistered size doesn't match actual disk size")
 
 	// Create a WAL checkpoint, and compare sizes.
 	first, last, err := wal.Segments(db.Head().wal.Dir())
@@ -1272,10 +1272,10 @@ func TestSizeRetention(t *testing.T) {
 	testutil.Ok(t, err)
 	checkpointSize, err = wal.GetCheckpointSize(db.Head().wal.Dir())
 	testutil.Ok(t, err)
-	expSize = blockSize + walSize + checkpointSize
+	expSize = blockSize + walSize
 	actSize, err = fileutil.DirSize(db.Dir())
 	testutil.Ok(t, err)
-	testutil.Equals(t, expSize, actSize, "registered size doesn't match actual disk size")
+	testutil.Equals(t, expSize, actSize, "tregistered size doesn't match actual disk size")
 
 	// Decrease the max bytes limit so that a delete is triggered.
 	// Check total size, total count and check that the oldest block was deleted.
@@ -1298,7 +1298,7 @@ func TestSizeRetention(t *testing.T) {
 	testutil.Ok(t, err)
 
 	testutil.Equals(t, 1, actRetentionCount, "metric retention count mismatch")
-	testutil.Equals(t, actSize, expSize, "metric db size doesn't match actual disk size")
+	testutil.Equals(t, actSize, expSize, "=metric db size doesn't match actual disk size")
 	testutil.Assert(t, expSize <= sizeLimit, "actual size (%v) is expected to be less than or equal to limit (%v)", expSize, sizeLimit)
 	testutil.Equals(t, len(blocks)-1, len(actBlocks), "new block count should be decreased from:%v to:%v", len(blocks), len(blocks)-1)
 	testutil.Equals(t, expBlocks[0].MaxTime, actBlocks[0].meta.MaxTime, "maxT mismatch of the first block")
