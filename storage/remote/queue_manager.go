@@ -650,8 +650,8 @@ func (t *QueueManager) loadCheck() bool {
 			return false
 		}
 
-		if segmentNumber <= wal.MinSegmentNumber || segmentNumber >= wal.MaxSegmentNumber {
-
+		// Segmentnumber out of bounds
+		if segmentNumber < wal.MinSegmentNumber || segmentNumber > wal.MaxSegmentNumber {
 			return false
 		}
 
