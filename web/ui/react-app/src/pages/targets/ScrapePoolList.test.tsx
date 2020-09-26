@@ -7,12 +7,11 @@ import ScrapePoolList from './ScrapePoolList';
 import ScrapePoolPanel from './ScrapePoolPanel';
 import { Target } from './target';
 import { FetchMock } from 'jest-fetch-mock/types';
+import { PathPrefixContext, APIPathContext } from '../../contexts/PathContexts';
 
 describe('ScrapePoolList', () => {
   const defaultProps = {
     filter: { showHealthy: true, showUnhealthy: true },
-    pathPrefix: '..',
-    apiPath: 'api/v1',
   };
 
   beforeEach(() => {
@@ -37,7 +36,13 @@ describe('ScrapePoolList', () => {
 
     it('renders a table', async () => {
       await act(async () => {
-        scrapePoolList = mount(<ScrapePoolList {...defaultProps} />);
+        scrapePoolList = mount(
+          <PathPrefixContext.Provider value="..">
+            <APIPathContext.Provider value="api/v1">
+              <ScrapePoolList {...defaultProps} />
+            </APIPathContext.Provider>
+          </PathPrefixContext.Provider>
+        );
       });
       scrapePoolList.update();
       expect(mock).toHaveBeenCalledWith('../api/v1/targets?state=active', { cache: 'no-store', credentials: 'same-origin' });
@@ -56,7 +61,13 @@ describe('ScrapePoolList', () => {
         filter: { showHealthy: false, showUnhealthy: true },
       };
       await act(async () => {
-        scrapePoolList = mount(<ScrapePoolList {...props} />);
+        scrapePoolList = mount(
+          <PathPrefixContext.Provider value="..">
+            <APIPathContext.Provider value="api/v1">
+              <ScrapePoolList {...props} />
+            </APIPathContext.Provider>
+          </PathPrefixContext.Provider>
+        );
       });
       scrapePoolList.update();
       expect(mock).toHaveBeenCalledWith('../api/v1/targets?state=active', { cache: 'no-store', credentials: 'same-origin' });
@@ -71,7 +82,13 @@ describe('ScrapePoolList', () => {
 
       let scrapePoolList: any;
       await act(async () => {
-        scrapePoolList = mount(<ScrapePoolList {...defaultProps} />);
+        scrapePoolList = mount(
+          <PathPrefixContext.Provider value="..">
+            <APIPathContext.Provider value="api/v1">
+              <ScrapePoolList {...defaultProps} />
+            </APIPathContext.Provider>
+          </PathPrefixContext.Provider>
+        );
       });
       scrapePoolList.update();
 

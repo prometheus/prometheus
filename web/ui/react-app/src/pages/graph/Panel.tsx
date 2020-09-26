@@ -10,7 +10,6 @@ import { GraphTabContent } from './GraphTabContent';
 import DataTable from './DataTable';
 import TimeInput from './TimeInput';
 import QueryStatsView, { QueryStats } from './QueryStatsView';
-import PathPrefixProps from '../../types/PathPrefixProps';
 import { QueryParams } from '../../types/types';
 
 interface PanelProps {
@@ -21,6 +20,8 @@ interface PanelProps {
   metricNames: string[];
   removePanel: () => void;
   onExecuteQuery: (query: string) => void;
+  pathPrefix: string;
+  apiPath: string;
 }
 
 interface PanelState {
@@ -55,7 +56,7 @@ export const PanelDefaultOptions: PanelOptions = {
   stacked: false,
 };
 
-class Panel extends Component<PanelProps & PathPrefixProps, PanelState> {
+class Panel extends Component<PanelProps, PanelState> {
   private abortInFlightFetch: (() => void) | null = null;
 
   constructor(props: PanelProps) {
@@ -117,20 +118,20 @@ class Panel extends Component<PanelProps & PathPrefixProps, PanelState> {
     let path: string;
     switch (this.props.options.type) {
       case 'graph':
-        path = `/${this.props.apiPath}/query_range`;
+        path = `query_range`;
         params.append('start', startTime.toString());
         params.append('end', endTime.toString());
         params.append('step', resolution.toString());
         break;
       case 'table':
-        path = `/${this.props.apiPath}/query`;
+        path = `query`;
         params.append('time', endTime.toString());
         break;
       default:
         throw new Error('Invalid panel type "' + this.props.options.type + '"');
     }
 
-    fetch(`${this.props.pathPrefix}${path}?${params}`, {
+    fetch(`${this.props.pathPrefix}/${this.props.apiPath}/${path}?${params}`, {
       cache: 'no-store',
       credentials: 'same-origin',
       signal: abortController.signal,

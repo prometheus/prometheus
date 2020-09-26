@@ -12,15 +12,16 @@ import {
   DropdownMenu,
   DropdownItem,
 } from 'reactstrap';
-import PathPrefixProps from './types/PathPrefixProps';
+import { usePathPrefix } from './contexts/PathContexts';
 
 interface NavbarProps {
   consolesLink: string | null;
 }
 
-const Navigation: FC<PathPrefixProps & NavbarProps> = ({ pathPrefix, consolesLink }) => {
+const Navigation: FC<NavbarProps> = ({ consolesLink }) => {
   const [isOpen, setIsOpen] = useState(false);
   const toggle = () => setIsOpen(!isOpen);
+  const pathPrefix = usePathPrefix();
   return (
     <Navbar className="mb-3" dark color="dark" expand="md" fixed="top">
       <NavbarToggler onClick={toggle} />

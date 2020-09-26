@@ -3,8 +3,8 @@ import { RouteComponentProps } from '@reach/router';
 import { Table } from 'reactstrap';
 
 import { useFetch } from '../../hooks/useFetch';
-import PathPrefixProps from '../../types/PathPrefixProps';
 import { withStatusIndicator } from '../../components/withStatusIndicator';
+import { usePathPrefix, useAPIPath } from '../../contexts/PathContexts';
 
 interface Stats {
   name: string;
@@ -65,7 +65,9 @@ TSDBStatusContent.displayName = 'TSDBStatusContent';
 
 const TSDBStatusContentWithStatusIndicator = withStatusIndicator(TSDBStatusContent);
 
-const TSDBStatus: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix, apiPath }) => {
+const TSDBStatus: FC<RouteComponentProps> = () => {
+  const pathPrefix = usePathPrefix();
+  const apiPath = useAPIPath();
   const { response, error, isLoading } = useFetch<TSDBMap>(`${pathPrefix}/${apiPath}/status/tsdb`);
 
   return (

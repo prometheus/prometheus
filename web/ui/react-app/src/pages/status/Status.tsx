@@ -3,7 +3,7 @@ import { RouteComponentProps } from '@reach/router';
 import { Table } from 'reactstrap';
 import { withStatusIndicator } from '../../components/withStatusIndicator';
 import { useFetch } from '../../hooks/useFetch';
-import PathPrefixProps from '../../types/PathPrefixProps';
+import { usePathPrefix, useAPIPath } from '../../contexts/PathContexts';
 
 interface StatusPageProps {
   data: Record<string, string>;
@@ -84,7 +84,9 @@ const StatusWithStatusIndicator = withStatusIndicator(StatusContent);
 
 StatusContent.displayName = 'Status';
 
-const Status: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix, apiPath }) => {
+const Status: FC<RouteComponentProps> = () => {
+  const pathPrefix = usePathPrefix();
+  const apiPath = useAPIPath();
   const path = `${pathPrefix}/${apiPath}`;
 
   return (
