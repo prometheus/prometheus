@@ -79,7 +79,6 @@ var reactRouterPaths = []string{
 	"/status",
 	"/targets",
 	"/tsdb-status",
-	"/version",
 }
 
 // withStackTrace logs the stack trace in case the request panics. The function
