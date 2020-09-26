@@ -117,13 +117,13 @@ class Panel extends Component<PanelProps & PathPrefixProps, PanelState> {
     let path: string;
     switch (this.props.options.type) {
       case 'graph':
-        path = '/' + this.props.apiPath + '/query_range';
+        path = `/${this.props.apiPath}/query_range`;
         params.append('start', startTime.toString());
         params.append('end', endTime.toString());
         params.append('step', resolution.toString());
         break;
       case 'table':
-        path = '/' + this.props.apiPath + '/query';
+        path = `/${this.props.apiPath}/query`;
         params.append('time', endTime.toString());
         break;
       default:

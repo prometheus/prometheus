@@ -11,9 +11,9 @@ interface AppProps {
 }
 
 const App: FC<AppProps> = ({ consolesLink }) => {
-  // this dynamically/generically determines the pathPrefix by taking the window location path
-  // and stripping the known endpoint suffixes. works out of the box for both direct hosting
-  // and reverse proxy deployments with no additional configurations required
+  // This dynamically/generically determines the pathPrefix by stripping the first known
+  // endpoint suffix from the window location path. It works out of the box for both direct
+  // hosting and reverse proxy deployments with no additional configurations required.
   let basePath = window.location.pathname;
   const paths = [
     '/graph',
@@ -25,7 +25,6 @@ const App: FC<AppProps> = ({ consolesLink }) => {
     '/rules',
     '/targets',
     '/service-discovery',
-    '/',
   ];
   if (basePath.length > 1) {
     for (let i = 0; i < paths.length; i++) {
@@ -36,8 +35,8 @@ const App: FC<AppProps> = ({ consolesLink }) => {
     }
   }
 
-  // when the React version of the UI is relocated from /new to /,
-  // remove the "../" prefix here and all of the things will still work
+  // When the React version of the UI is relocated from /new to /,
+  // remove the "../" prefix here and all of the things will still work.
   const apiPath = '../api/v1';
 
   return (
