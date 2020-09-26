@@ -7,8 +7,8 @@ import { RulesMap, RulesContent } from './RulesContent';
 
 const RulesWithStatusIndicator = withStatusIndicator(RulesContent);
 
-const Rules: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
-  const { response, error, isLoading } = useFetch<RulesMap>(`${pathPrefix}/api/v1/rules`);
+const Rules: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix, apiPath }) => {
+  const { response, error, isLoading } = useFetch<RulesMap>(`${pathPrefix}/${apiPath}/rules`);
 
   return <RulesWithStatusIndicator response={response} error={error} isLoading={isLoading} />;
 };

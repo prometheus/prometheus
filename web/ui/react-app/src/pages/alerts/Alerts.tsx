@@ -7,8 +7,8 @@ import AlertsContent, { RuleStatus, AlertsProps } from './AlertContents';
 
 const AlertsWithStatusIndicator = withStatusIndicator(AlertsContent);
 
-const Alerts: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix = '' }) => {
-  const { response, error, isLoading } = useFetch<AlertsProps>(`${pathPrefix}/api/v1/rules?type=alert`);
+const Alerts: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix, apiPath }) => {
+  const { response, error, isLoading } = useFetch<AlertsProps>(`${pathPrefix}/${apiPath}/rules?type=alert`);
 
   const ruleStatsCount: RuleStatus<number> = {
     inactive: 0,

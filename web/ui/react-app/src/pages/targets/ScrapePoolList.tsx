@@ -30,8 +30,8 @@ ScrapePoolContent.displayName = 'ScrapePoolContent';
 
 const ScrapePoolListWithStatusIndicator = withStatusIndicator(ScrapePoolContent);
 
-const ScrapePoolList: FC<{ filter: FilterData } & PathPrefixProps> = ({ pathPrefix, filter }) => {
-  const { response, error, isLoading } = useFetch<ScrapePoolListProps>(`${pathPrefix}/api/v1/targets?state=active`);
+const ScrapePoolList: FC<{ filter: FilterData } & PathPrefixProps> = ({ pathPrefix, apiPath, filter }) => {
+  const { response, error, isLoading } = useFetch<ScrapePoolListProps>(`${pathPrefix}/${apiPath}/targets?state=active`);
   const { status: responseStatus } = response;
   const badResponse = responseStatus !== 'success' && responseStatus !== 'start fetching';
   return (

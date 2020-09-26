@@ -65,8 +65,8 @@ TSDBStatusContent.displayName = 'TSDBStatusContent';
 
 const TSDBStatusContentWithStatusIndicator = withStatusIndicator(TSDBStatusContent);
 
-const TSDBStatus: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
-  const { response, error, isLoading } = useFetch<TSDBMap>(`${pathPrefix}/api/v1/status/tsdb`);
+const TSDBStatus: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix, apiPath }) => {
+  const { response, error, isLoading } = useFetch<TSDBMap>(`${pathPrefix}/${apiPath}/status/tsdb`);
 
   return (
     <TSDBStatusContentWithStatusIndicator

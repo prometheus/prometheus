@@ -44,8 +44,8 @@ export const ConfigContent: FC<ConfigContentProps> = ({ error, data }) => {
   );
 };
 
-const Config: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
-  const { response, error } = useFetch<YamlConfig>(`${pathPrefix}/api/v1/status/config`);
+const Config: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix, apiPath }) => {
+  const { response, error } = useFetch<YamlConfig>(`${pathPrefix}/${apiPath}/status/config`);
   return <ConfigContent error={error} data={response.data} />;
 };
 

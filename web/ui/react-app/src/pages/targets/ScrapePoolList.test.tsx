@@ -12,6 +12,7 @@ describe('ScrapePoolList', () => {
   const defaultProps = {
     filter: { showHealthy: true, showUnhealthy: true },
     pathPrefix: '..',
+    apiPath: 'api/v1',
   };
 
   beforeEach(() => {

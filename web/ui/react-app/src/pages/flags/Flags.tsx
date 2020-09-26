@@ -34,8 +34,8 @@ const FlagsWithStatusIndicator = withStatusIndicator(FlagsContent);
 
 FlagsContent.displayName = 'Flags';
 
-const Flags: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix = '' }) => {
-  const { response, error, isLoading } = useFetch<FlagMap>(`${pathPrefix}/api/v1/status/flags`);
+const Flags: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix, apiPath }) => {
+  const { response, error, isLoading } = useFetch<FlagMap>(`${pathPrefix}/${apiPath}/status/flags`);
   return <FlagsWithStatusIndicator data={response.data} error={error} isLoading={isLoading} />;
 };
 

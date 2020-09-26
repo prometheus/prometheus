@@ -84,8 +84,8 @@ const StatusWithStatusIndicator = withStatusIndicator(StatusContent);
 
 StatusContent.displayName = 'Status';
 
-const Status: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix = '' }) => {
-  const path = `${pathPrefix}/api/v1`;
+const Status: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix, apiPath }) => {
+  const path = `${pathPrefix}/${apiPath}`;
 
   return (
     <>

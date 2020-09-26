@@ -5,10 +5,10 @@ import ScrapePoolList from './ScrapePoolList';
 import PathPrefixProps from '../../types/PathPrefixProps';
 import { useLocalStorage } from '../../hooks/useLocalStorage';
 
-const Targets: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
+const Targets: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix, apiPath }) => {
   const [filter, setFilter] = useLocalStorage('targets-page-filter', { showHealthy: true, showUnhealthy: true });
   const filterProps = { filter, setFilter };
-  const scrapePoolListProps = { filter, pathPrefix };
+  const scrapePoolListProps = { filter, pathPrefix, apiPath };
 
   return (
     <>

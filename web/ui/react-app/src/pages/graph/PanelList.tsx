@@ -27,6 +27,7 @@ export const PanelListContent: FC<PanelListProps> = ({
   metrics = [],
   useLocalTime,
   pathPrefix,
+  apiPath,
   queryHistoryEnabled,
   ...rest
 }) => {
@@ -98,6 +99,7 @@ export const PanelListContent: FC<PanelListProps> = ({
           metricNames={metrics}
           pastQueries={queryHistoryEnabled ? historyItems : []}
           pathPrefix={pathPrefix}
+          apiPath={apiPath}
         />
       ))}
       <Button className="mb-3" color="primary" onClick={addPanel}>
@@ -107,15 +109,17 @@ export const PanelListContent: FC<PanelListProps> = ({
   );
 };
 
-const PanelList: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix = '' }) => {
+const PanelList: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix, apiPath }) => {
   const [delta, setDelta] = useState(0);
   const [useLocalTime, setUseLocalTime] = useLocalStorage('use-local-time', false);
   const [enableQueryHistory, setEnableQueryHistory] = useLocalStorage('enable-query-history', false);
 
-  const { response: metricsRes, error: metricsErr } = useFetch<string[]>(`${pathPrefix}/api/v1/label/__name__/values`);
+  const { response: metricsRes, error: metricsErr } = useFetch<string[]>(`${pathPrefix}/${apiPath}/label/__name__/values`);
 
   const browserTime = new Date().getTime() / 1000;
-  const { response: timeRes, error: timeErr } = useFetch<{ result: number[] }>(`${pathPrefix}/api/v1/query?query=time()`);
+  const { response: timeRes, error: timeErr } = useFetch<{ result: number[] }>(
+    `${pathPrefix}/${apiPath}/query?query=time()`
+  );
 
   useEffect(() => {
     if (timeRes.data) {
@@ -165,6 +169,7 @@ const PanelList: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix = '' 
       <PanelListContent
         panels={decodePanelOptionsFromQueryString(window.location.search)}
         pathPrefix={pathPrefix}
+        apiPath={apiPath}
         useLocalTime={useLocalTime}
         metrics={metricsRes.data}
         queryHistoryEnabled={enableQueryHistory}
