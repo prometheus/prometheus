@@ -48,7 +48,7 @@ const (
 var (
 	castagnoliTable = crc32.MakeTable(crc32.Castagnoli)
 
-	MaxSegmentNumber = 100000000
+	MaxSegmentNumber = 99999999
 	MinSegmentNumber = 0
 )
 

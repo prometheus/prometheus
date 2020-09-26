@@ -28,7 +28,9 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/wal"
+	"go.uber.org/atomic"
 )
 
 var (
@@ -65,6 +67,15 @@ type WriteStorage struct {
 	flushDeadline     time.Duration
 
 	checkpoint CheckpointRecord
+
+	done chan struct{}
+	// Soft shutdown context will prevent new enqueues and deadlocks.
+	softShutdown chan struct{}
+
+	// Hard shutdown context is used to terminate outgoing HTTP connections
+	// after giving them a chance to terminate.
+	hardShutdown          context.CancelFunc
+	droppedOnHardShutdown atomic.Uint32
 }
 
 // NewWriteStorage creates and runs a WriteStorage.
@@ -88,7 +99,14 @@ func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, walDir string
 
 func (rws *WriteStorage) run() {
 	ticker := time.NewTicker(shardUpdateDuration)
-	rws.startTimedRecording()
+
+	var hardShutdownCtx context.Context
+	hardShutdownCtx, rws.hardShutdown = context.WithCancel(context.Background())
+	rws.softShutdown = make(chan struct{})
+	rws.done = make(chan struct{})
+	rws.droppedOnHardShutdown.Store(0)
+
+	go rws.startTimedRecording(hardShutdownCtx)
 
 	defer ticker.Stop()
 	for range ticker.C {
@@ -187,29 +205,53 @@ func (rws *WriteStorage) Appender(_ context.Context) storage.Appender {
 }
 
 // timedCheckpointRecord records the Checkpoint Record every set time
-func (rws *WriteStorage) startTimedRecording() {
+func (rws *WriteStorage) startTimedRecording(ctx context.Context) error {
 	for {
 		<-time.After(time.Duration(saveTime) * time.Millisecond)
 		rws.writeCheckpointRecordJSON()
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+
 	}
 }
 
 // writeCheckpointRecordJSON writes the segment record in a JSON file
 func (rws *WriteStorage) writeCheckpointRecordJSON() {
+	tempFilepath := "data/TempCheckpoint.json"
 	filepath := "data/CheckpointRecord.json"
 
 	rws.checkpoint.TimeRecorded = time.Now()
 	rws.checkpoint.Checkpoints = rws.getEndpointRecordData()
 
 	// Marshal json
-	data, err := json.MarshalIndent(rws.checkpoint, "", "")
+	data, err := json.MarshalIndent(rws.checkpoint, "", "\t")
 	if err != nil {
 		level.Error(rws.logger).Log("error with Marshal: ", err)
 	}
 
-	err = ioutil.WriteFile(filepath, data, 0600)
+	err = ioutil.WriteFile(tempFilepath, data, 0600)
 	if err != nil {
 		level.Error(rws.logger).Log("error with writing to JSON: ", err)
+	}
+
+	// Sync temporary directory before rename.
+	df, err := fileutil.OpenDir(tempFilepath)
+	if err != nil {
+		level.Error(rws.logger).Log("open temporary checkpoint directory", err)
+	}
+	if err := df.Sync(); err != nil {
+		df.Close()
+		level.Error(rws.logger).Log("Sync temporary checkpoint directory", err)
+	}
+	if err = df.Close(); err != nil {
+		level.Error(rws.logger).Log("Close temporary checkpoint directory", err)
+	}
+
+	if err := fileutil.Replace(tempFilepath, filepath); err != nil {
+		level.Error(rws.logger).Log("Rename checkpoint directory", err)
 	}
 }
 
@@ -224,10 +266,8 @@ func (rws *WriteStorage) getEndpointRecordData() []EndpointRecord {
 			Segment:  qMan.endpointRecord.Segment,
 			Endpoint: qMan.endpointRecord.Endpoint,
 		}
-
 		record = append(record, tempRecord)
 	}
-
 	return record
 }
 

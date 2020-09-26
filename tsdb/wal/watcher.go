@@ -23,6 +23,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-kit/kit/log"
@@ -85,6 +86,7 @@ type Watcher struct {
 
 	// Current Segment file
 	CurrSegmentFile string
+	mutex           sync.RWMutex
 }
 
 func NewWatcherMetrics(reg prometheus.Registerer) *WatcherMetrics {
@@ -476,8 +478,10 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 		rec := r.Record()
 		w.recordsReadMetric.WithLabelValues(recordType(dec.Type(rec))).Inc()
 
+		w.mutex.Lock()
 		// Sets the current Segment files it's reading from
 		w.CurrSegmentFile = SegmentName("", segmentNum)
+		w.mutex.Unlock()
 
 		switch dec.Type(rec) {
 		case record.Series:
