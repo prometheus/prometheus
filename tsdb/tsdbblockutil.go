@@ -35,7 +35,11 @@ func CreateBlock(series []storage.Series, dir string, mint, maxt int64, logger l
 	}
 
 	w := NewBlockWriter(logger, dir, chunkRange)
-	defer w.Close()
+	defer func() {
+		if err := w.Close(); err != nil {
+			logger.Log("err closing blockwriter", err.Error())
+		}
+	}()
 
 	if err := w.initHead(); err != nil {
 		return "", err

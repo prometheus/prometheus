@@ -117,6 +117,10 @@ func (w *BlockWriter) Flush(ctx context.Context) (ulid.ULID, error) {
 }
 
 func (w *BlockWriter) Close() error {
-	defer os.RemoveAll(w.chunkDir)
+	defer func() {
+		if err := os.RemoveAll(w.chunkDir); err != nil {
+			w.logger.Log("err BlockerWriter Close", err.Error())
+		}
+	}()
 	return w.head.Close()
 }
