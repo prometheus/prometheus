@@ -19,19 +19,13 @@ import (
 	"path/filepath"
 
 	"github.com/go-kit/kit/log"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/storage"
 )
 
 var ErrInvalidTimes = fmt.Errorf("max time is lesser than min time")
 
-type MetricSample struct {
-	TimestampMs int64
-	Value       float64
-	Labels      labels.Labels
-}
-
 // CreateBlock creates a chunkrange block from the samples passed to it, and writes it to disk.
-func CreateBlock(samples []*MetricSample, dir string, mint, maxt int64, logger log.Logger) (string, error) {
+func CreateBlock(series []storage.Series, dir string, mint, maxt int64, logger log.Logger) (_ string, err error) {
 	chunkRange := maxt - mint
 	if chunkRange == 0 {
 		chunkRange = DefaultBlockDuration
@@ -40,23 +34,37 @@ func CreateBlock(samples []*MetricSample, dir string, mint, maxt int64, logger l
 		return "", ErrInvalidTimes
 	}
 
-	w := NewTSDBWriter(logger, dir)
-	err := w.initHead(chunkRange)
-	if err != nil {
+	w := NewBlockWriter(logger, dir, chunkRange)
+	defer w.Close()
+
+	if err := w.initHead(); err != nil {
 		return "", err
 	}
 
 	ctx := context.Background()
 	app := w.Appender(ctx)
 
-	for _, sample := range samples {
-		_, err = app.Add(sample.Labels, sample.TimestampMs, sample.Value)
-		if err != nil {
-			return "", err
+	for _, s := range series {
+		ref := uint64(0)
+		it := s.Iterator()
+		for it.Next() {
+			t, v := it.At()
+			if ref != 0 {
+				if err := app.AddFast(ref, t, v); err == nil {
+					continue
+				}
+			}
+			ref, err = app.Add(s.Labels(), t, v)
+			if err != nil {
+				return "", err
+			}
+		}
+		if it.Err() != nil {
+			return "", it.Err()
 		}
 	}
-	err = app.Commit()
-	if err != nil {
+
+	if err = app.Commit(); err != nil {
 		return "", err
 	}
 
@@ -65,9 +73,5 @@ func CreateBlock(samples []*MetricSample, dir string, mint, maxt int64, logger l
 		return "", err
 	}
 
-	err = w.Close()
-	if err != nil {
-		return "", err
-	}
 	return filepath.Join(dir, ulid.String()), nil
 }

@@ -20,70 +20,58 @@ import (
 	"os"
 	"time"
 
-	"github.com/oklog/ulid"
-	"github.com/prometheus/prometheus/storage"
-
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
+
 	"github.com/prometheus/prometheus/pkg/timestamp"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
-// Writer is interface to write time series into Prometheus blocks.
-type Writer interface {
-	storage.Appendable
+// BlockWriter is a block writer that allows appending and flushing series to disk.
+type BlockWriter struct {
+	logger         log.Logger
+	destinationDir string
 
-	// Flush writes current data to disk.
-	// The block or blocks will contain values accumulated by `Write`.
-	Flush(ctx context.Context) (ulid.ULID, error)
-
-	// Close releases all resources.
-	Close() error
-}
-
-var _ Writer = &TSDBWriter{}
-
-// Writer is a block writer that allows appending and flushing series to disk.
-type TSDBWriter struct {
-	logger log.Logger
-	dir    string
-
-	head   *Head
-	tmpDir string
+	head      *Head
+	blockSize int64 // in ms
+	chunkDir  string
 }
 
 func durationToMillis(t time.Duration) int64 {
 	return int64(t.Seconds() * 1000)
 }
 
-// NewTSDBWriter create a new block writer.
+// NewBlockWriter create a new block writer.
 //
-// The returned writer accumulates all the series in memory until `Flush` is called.
+// The returned writer accumulates all the series in the Head block until `Flush` is called.
 //
 // Note that the writer will not check if the target directory exists or
 // contains anything at all. It is the caller's responsibility to
 // ensure that the resulting blocks do not overlap etc.
 // Writer ensures the block flush is atomic (via rename).
-func NewTSDBWriter(logger log.Logger, dir string) *TSDBWriter {
-	return &TSDBWriter{
-		logger: logger,
-		dir:    dir,
+func NewBlockWriter(logger log.Logger, dir string, blockSize int64) *BlockWriter {
+	return &BlockWriter{
+		logger:         logger,
+		destinationDir: dir,
+		blockSize:      blockSize,
 	}
 }
 
 // initHead creates and initialises a new TSDB head.
 // blockSize should be in milliseconds.
-func (w *TSDBWriter) initHead(blockSize int64) error {
+func (w *BlockWriter) initHead() error {
 	logger := w.logger
 
-	tmpDir, err := ioutil.TempDir(os.TempDir(), "head")
+	chunkDir, err := ioutil.TempDir(os.TempDir(), "head")
 	if err != nil {
 		return errors.Wrap(err, "create temp dir")
 	}
-	w.tmpDir = tmpDir
+	w.chunkDir = chunkDir
 
-	h, err := NewHead(nil, logger, nil, blockSize, w.tmpDir, nil, DefaultStripeSize, nil)
+	h, err := NewHead(nil, logger, nil, w.blockSize, w.chunkDir, nil, DefaultStripeSize, nil)
 	if err != nil {
 		return errors.Wrap(err, "tsdb.NewHead")
 	}
@@ -94,20 +82,22 @@ func (w *TSDBWriter) initHead(blockSize int64) error {
 
 // Appender returns a new appender on the database.
 // Appender can't be called concurrently. However, the returned Appender can safely be used concurrently.
-func (w *TSDBWriter) Appender(ctx context.Context) storage.Appender {
+func (w *BlockWriter) Appender(ctx context.Context) storage.Appender {
 	return w.head.Appender(ctx)
 }
 
 // Flush implements the Writer interface. This is where actual block writing
 // happens. After flush completes, no writes can be done.
-func (w *TSDBWriter) Flush(ctx context.Context) (ulid.ULID, error) {
+func (w *BlockWriter) Flush(ctx context.Context) (ulid.ULID, error) {
 	seriesCount := w.head.NumSeries()
 	if w.head.NumSeries() == 0 {
 		return ulid.ULID{}, errors.New("no series appended; aborting.")
 	}
 
 	mint := w.head.MinTime()
-	maxt := w.head.MaxTime()
+	// Add +1 millisecond to block maxt because block intervals are half-open: [b.MinTime, b.MaxTime).
+	// Because of this block intervals are always +1 than the total samples it includes.
+	maxt := w.head.MaxTime() + 1
 	level.Info(w.logger).Log("msg", "flushing", "series_count", seriesCount, "mint", timestamp.Time(mint), "maxt", timestamp.Time(maxt))
 
 	compactor, err := NewLeveledCompactor(ctx,
@@ -118,7 +108,7 @@ func (w *TSDBWriter) Flush(ctx context.Context) (ulid.ULID, error) {
 	if err != nil {
 		return ulid.ULID{}, errors.Wrap(err, "create leveled compactor")
 	}
-	id, err := compactor.Write(w.dir, w.head, mint, maxt, nil)
+	id, err := compactor.Write(w.destinationDir, w.head, mint, maxt, nil)
 	if err != nil {
 		return ulid.ULID{}, errors.Wrap(err, "compactor write")
 	}
@@ -126,7 +116,7 @@ func (w *TSDBWriter) Flush(ctx context.Context) (ulid.ULID, error) {
 	return id, nil
 }
 
-func (w *TSDBWriter) Close() error {
-	_ = os.RemoveAll(w.tmpDir)
+func (w *BlockWriter) Close() error {
+	defer os.RemoveAll(w.chunkDir)
 	return w.head.Close()
 }
