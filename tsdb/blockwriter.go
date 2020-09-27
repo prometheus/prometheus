@@ -91,7 +91,7 @@ func (w *BlockWriter) Appender(ctx context.Context) storage.Appender {
 func (w *BlockWriter) Flush(ctx context.Context) (ulid.ULID, error) {
 	seriesCount := w.head.NumSeries()
 	if w.head.NumSeries() == 0 {
-		return ulid.ULID{}, errors.New("no series appended; aborting.")
+		return ulid.ULID{}, errors.New("no series appended, aborting")
 	}
 
 	mint := w.head.MinTime()
