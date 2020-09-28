@@ -783,8 +783,13 @@ func (h *Head) removeCorruptedMmappedChunks(err error) map[uint64][]*mmappedChun
 
 // Truncate removes old data before mint from the head and WAL.
 func (h *Head) Truncate(mint int64) (err error) {
+	initialize := h.MinTime() == math.MaxInt64
+	dontTruncateWAL := initialize || (!initialize && h.MinTime() >= mint)
 	if err := h.TruncateInMemory(mint); err != nil {
 		return err
+	}
+	if dontTruncateWAL {
+		return nil
 	}
 	return h.TruncateWAL(mint)
 }

@@ -885,14 +885,14 @@ func (db *DB) compactHead(head *RangeHead) (walTruncationTime int64, err error) 
 		}
 		return walTruncationTime, errors.Wrap(err, "reload blocks")
 	}
+	walTruncationTime = maxt
 	if (uid == ulid.ULID{}) {
 		// in this case no new block will be persisted so manually truncate the head.
 		// Head truncating during db.reload() depends on the persisted blocks and
 		// Compaction resulted in an empty block.
-		if err = db.head.Truncate(maxt); err != nil {
+		if err = db.head.TruncateInMemory(maxt); err != nil {
 			return walTruncationTime, errors.Wrap(err, "head truncate failed (in compact)")
 		}
-		walTruncationTime = maxt
 	}
 	runtime.GC()
 
@@ -1558,7 +1558,7 @@ func (db *DB) CleanTombstones() (err error) {
 			newUIDs = append(newUIDs, *uid)
 		}
 	}
-	return errors.Wrap(db.reloadWithWALTruncation(), "reload blocks")
+	return errors.Wrap(db.reload(), "reload blocks")
 }
 
 func isBlockDir(fi os.FileInfo) bool {
