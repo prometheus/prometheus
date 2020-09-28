@@ -71,6 +71,14 @@ func convertibleToInt64(v float64) bool {
 	return v <= maxInt64 && v >= minInt64
 }
 
+// min returns the minimum value of the two parameters.
+func min(steps, upperLimit int) int {
+	if steps < upperLimit {
+		return steps
+	}
+	return upperLimit
+}
+
 type (
 	// ErrQueryTimeout is returned if a query timed out during processing.
 	ErrQueryTimeout string
@@ -924,12 +932,11 @@ func (ev *evaluator) rangeEval(f func([]parser.Value, *EvalNodeHelper) (Vector, 
 		enh.Out = result[:0] // Reuse result vector.
 		warnings = append(warnings, ws...)
 
-		ev.currentSamples += len(result)
 		// When we reset currentSamples to tempNumSamples during the next iteration of the loop it also
 		// needs to include the samples from the result here, as they're still in memory.
 		tempNumSamples += len(result)
 
-		if ev.currentSamples > ev.maxSamples {
+		if ev.currentSamples+len(result) > ev.maxSamples {
 			ev.error(ErrTooManySamples(env))
 		}
 
@@ -951,7 +958,7 @@ func (ev *evaluator) rangeEval(f func([]parser.Value, *EvalNodeHelper) (Vector, 
 			if !ok {
 				ss = Series{
 					Metric: sample.Metric,
-					Points: getPointSlice(numSteps),
+					Points: getPointSlice(min(numSteps, ev.maxSamples-ev.currentSamples)),
 				}
 			}
 			sample.Point.T = ts
@@ -959,6 +966,7 @@ func (ev *evaluator) rangeEval(f func([]parser.Value, *EvalNodeHelper) (Vector, 
 			seriess[h] = ss
 
 		}
+		ev.currentSamples += len(result)
 	}
 
 	// Reuse the original point slices.
@@ -1113,7 +1121,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 				// output labels is dropping the metric name so just do
 				// it once here.
 				Metric: dropMetricName(selVS.Series[i].Labels()),
-				Points: getPointSlice(numSteps),
+				Points: getPointSlice(min(numSteps, ev.maxSamples-ev.currentSamples)),
 			}
 			inMatrix[0].Metric = selVS.Series[i].Labels()
 			for ts, step := ev.startTimestamp, -1; ts <= ev.endTimestamp; ts += ev.interval {
@@ -1276,7 +1284,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			it.Reset(s.Iterator())
 			ss := Series{
 				Metric: e.Series[i].Labels(),
-				Points: getPointSlice(numSteps),
+				Points: getPointSlice(min(numSteps, ev.maxSamples-ev.currentSamples)),
 			}
 
 			for ts := ev.startTimestamp; ts <= ev.endTimestamp; ts += ev.interval {
