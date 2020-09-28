@@ -162,6 +162,10 @@ func (t *Target) offset(interval time.Duration, jitterSeed uint64) time.Duration
 		next   = base + int64(offset)
 	)
 
+	// We align the timestamp to 1/10 millisecond; to prevent changes in the
+	// scrape timestamp.
+	next = int64(time.Millisecond)*(next/int64(time.Millisecond)) + int64(time.Millisecond/10)
+
 	if next > int64(interval) {
 		next -= int64(interval)
 	}
