@@ -1,0 +1,10 @@
+# Matrix tests.
+load 1h
+	testmetric{aa="bb"} 1
+	testmetric{a="abb"} 2
+
+eval instant at 0h testmetric
+	testmetric{aa="bb"} 1
+	testmetric{a="abb"} 2
+
+clear
