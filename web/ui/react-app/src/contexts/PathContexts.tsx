@@ -3,8 +3,7 @@ import React from 'react';
 const PathPrefixContext = React.createContext('');
 
 function usePathPrefix() {
-  const context = React.useContext(PathPrefixContext);
-  return context;
+  return React.useContext(PathPrefixContext);
 }
 
 export { usePathPrefix, PathPrefixContext };
