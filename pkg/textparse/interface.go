@@ -15,7 +15,7 @@ package textparse
 
 import (
 	"mime"
-
+	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 )
@@ -55,8 +55,8 @@ type Parser interface {
 	// exemplar. It returns if an exemplar exists or not.
 	Exemplar(l *exemplar.Exemplar) bool
 
-	// Next advances the parser to the next sample. It returns false if no
-	// more samples were read or an error occurred.
+	// Next advances the parser to the next sample. It returns io.EOF if no
+	// more samples were read.
 	Next() (Entry, error)
 }
 
@@ -94,3 +94,21 @@ const (
 	MetricTypeStateset       = "stateset"
 	MetricTypeUnknown        = "unknown"
 )
+
+func (m *MetricType) ParseForProm(mtyp string) error {
+	switch mtyp {
+	case "counter":
+		*m = MetricTypeCounter
+	case "gauge":
+		*m = MetricTypeGauge
+	case "histogram":
+		*m = MetricTypeHistogram
+	case "summary":
+		*m = MetricTypeSummary
+	case "unknown":
+		*m = MetricTypeUnknown
+	default:
+		return errors.Errorf("invalid metric type %q", mtyp)
+	}
+	return nil
+}
