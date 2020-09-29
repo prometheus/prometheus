@@ -1194,6 +1194,7 @@ func (api *API) serveTSDBStatus(*http.Request) apiFuncResult {
 			m := *mF.Metric[0]
 			if m.Gauge != nil {
 				chunkCount = int64(m.Gauge.GetValue())
+				break
 			}
 		}
 	}
