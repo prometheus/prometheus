@@ -37,7 +37,6 @@ const App: FC<AppProps> = ({ consolesLink }) => {
   }
 
   return (
-    <>
       <PathPrefixContext.Provider value={basePath}>
         <Navigation consolesLink={consolesLink} />
         <Container fluid style={{ paddingTop: 70 }}>
@@ -59,7 +58,6 @@ const App: FC<AppProps> = ({ consolesLink }) => {
           </Router>
         </Container>
       </PathPrefixContext.Provider>
-    </>
   );
 };
 
