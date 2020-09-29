@@ -6,7 +6,8 @@ import { Target, Labels, DroppedTarget } from '../targets/target';
 
 import { withStatusIndicator } from '../../components/withStatusIndicator';
 import { mapObjEntries } from '../../utils';
-import { usePathPrefix, useAPIPath } from '../../contexts/PathContexts';
+import { usePathPrefix } from '../../contexts/PathContexts';
+import { APIPATH } from '../../constants/constants'
 
 interface ServiceMap {
   activeTargets: Target[];
@@ -107,8 +108,7 @@ const ServicesWithStatusIndicator = withStatusIndicator(ServiceDiscoveryContent)
 
 const ServiceDiscovery: FC<RouteComponentProps> = () => {
   const pathPrefix = usePathPrefix();
-  const apiPath = useAPIPath();
-  const { response, error, isLoading } = useFetch<ServiceMap>(`${pathPrefix}/${apiPath}/targets`);
+  const { response, error, isLoading } = useFetch<ServiceMap>(`${pathPrefix}/${APIPATH}/targets`);
   return (
     <ServicesWithStatusIndicator
       {...response.data}

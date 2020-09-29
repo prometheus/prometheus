@@ -3,7 +3,8 @@ import { RouteComponentProps } from '@reach/router';
 import { Table } from 'reactstrap';
 import { withStatusIndicator } from '../../components/withStatusIndicator';
 import { useFetch } from '../../hooks/useFetch';
-import { useAPIPath, usePathPrefix } from '../../contexts/PathContexts';
+import { usePathPrefix } from '../../contexts/PathContexts';
+import { APIPATH } from '../../constants/constants'
 
 interface FlagMap {
   [key: string]: string;
@@ -35,9 +36,8 @@ const FlagsWithStatusIndicator = withStatusIndicator(FlagsContent);
 FlagsContent.displayName = 'Flags';
 
 const Flags: FC<RouteComponentProps> = () => {
-  const apiPath = useAPIPath();
   const pathPrefix = usePathPrefix();
-  const { response, error, isLoading } = useFetch<FlagMap>(`${pathPrefix}/${apiPath}/status/flags`);
+  const { response, error, isLoading } = useFetch<FlagMap>(`${pathPrefix}/${APIPATH}/status/flags`);
   return <FlagsWithStatusIndicator data={response.data} error={error} isLoading={isLoading} />;
 };
 

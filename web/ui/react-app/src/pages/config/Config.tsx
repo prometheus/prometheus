@@ -6,7 +6,8 @@ import CopyToClipboard from 'react-copy-to-clipboard';
 import './Config.css';
 import { withStatusIndicator } from '../../components/withStatusIndicator';
 import { useFetch } from '../../hooks/useFetch';
-import { usePathPrefix, useAPIPath } from '../../contexts/PathContexts';
+import { usePathPrefix } from '../../contexts/PathContexts';
+import { APIPATH } from '../../constants/constants'
 
 type YamlConfig = { yaml?: string };
 
@@ -46,8 +47,7 @@ export const ConfigContent: FC<ConfigContentProps> = ({ error, data }) => {
 
 const Config: FC<RouteComponentProps> = () => {
   const pathPrefix = usePathPrefix();
-  const apiPath = useAPIPath();
-  const { response, error } = useFetch<YamlConfig>(`${pathPrefix}/${apiPath}/status/config`);
+  const { response, error } = useFetch<YamlConfig>(`${pathPrefix}/${APIPATH}/status/config`);
   return <ConfigContent error={error} data={response.data} />;
 };
 

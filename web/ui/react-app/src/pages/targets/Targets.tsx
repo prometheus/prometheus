@@ -3,14 +3,14 @@ import { RouteComponentProps } from '@reach/router';
 import Filter from './Filter';
 import ScrapePoolList from './ScrapePoolList';
 import { useLocalStorage } from '../../hooks/useLocalStorage';
-import { usePathPrefix, useAPIPath } from '../../contexts/PathContexts';
+import { usePathPrefix } from '../../contexts/PathContexts';
+import { APIPATH } from '../../constants/constants'
 
 const Targets: FC<RouteComponentProps> = () => {
   const pathPrefix = usePathPrefix();
-  const apiPath = useAPIPath();
   const [filter, setFilter] = useLocalStorage('targets-page-filter', { showHealthy: true, showUnhealthy: true });
   const filterProps = { filter, setFilter };
-  const scrapePoolListProps = { filter, pathPrefix, apiPath };
+  const scrapePoolListProps = { filter, pathPrefix, APIPATH };
 
   return (
     <>
