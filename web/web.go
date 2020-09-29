@@ -369,17 +369,6 @@ func New(logger log.Logger, o *Options) *Handler {
 		http.Redirect(w, r, path.Join(o.ExternalURL.Path, "new")+"/", http.StatusFound)
 	})
 
-	var reactIdx []byte
-	var loadReactIdx = func() {
-		if f, err := ui.Assets.Open("/static/react/index.html"); err == nil {
-			if reactIdx, err = ioutil.ReadAll(f); err == nil {
-				reactIdx = bytes.ReplaceAll(reactIdx, []byte("CONSOLES_LINK_PLACEHOLDER"), []byte(h.consolesPath()))
-				reactIdx = bytes.ReplaceAll(reactIdx, []byte("TITLE_PLACEHOLDER"), []byte(h.options.PageTitle))
-			}
-		}
-	}
-	loadReactIdx()
-
 	router.Get("/new/*filepath", func(w http.ResponseWriter, r *http.Request) {
 		p := route.Param(r.Context(), "filepath")
 
@@ -389,15 +378,22 @@ func New(logger log.Logger, o *Options) *Handler {
 			if p != rp {
 				continue
 			}
-			if reactIdx == nil { // if for some reason the index didn't load, try again
-				loadReactIdx()
-				if reactIdx == nil { // if it's still not loaded, serve an error to the user
-					w.WriteHeader(http.StatusInternalServerError)
-					fmt.Fprintf(w, "Error reading React index.html: %v", err)
-					return
-				}
+
+			f, err := ui.Assets.Open("/static/react/index.html")
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				fmt.Fprintf(w, "Error opening React index.html: %v", err)
+				return
 			}
-			w.Write(reactIdx)
+			idx, err := ioutil.ReadAll(f)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				fmt.Fprintf(w, "Error reading React index.html: %v", err)
+				return
+			}
+			replacedIdx := bytes.ReplaceAll(idx, []byte("CONSOLES_LINK_PLACEHOLDER"), []byte(h.consolesPath()))
+			replacedIdx = bytes.ReplaceAll(replacedIdx, []byte("TITLE_PLACEHOLDER"), []byte(h.options.PageTitle))
+			w.Write(replacedIdx)
 			return
 		}
 
