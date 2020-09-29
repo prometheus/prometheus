@@ -321,6 +321,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		h.options.CORSOrigin,
 		h.runtimeInfo,
 		h.versionInfo,
+		o.Gatherer,
 	)
 
 	if o.RoutePrefix != "/" {
@@ -796,10 +797,6 @@ func (h *Handler) runtimeInfo() (api_v1.RuntimeInfo, error) {
 	}
 	for _, mF := range metrics {
 		switch *mF.Name {
-		case "prometheus_tsdb_head_chunks":
-			status.ChunkCount = int64(toFloat64(mF))
-		case "prometheus_tsdb_head_series":
-			status.TimeSeriesCount = int64(toFloat64(mF))
 		case "prometheus_tsdb_wal_corruptions_total":
 			status.CorruptionCount = int64(toFloat64(mF))
 		case "prometheus_config_last_reload_successful":
