@@ -21,8 +21,6 @@ export const statusConfig: Record<
     customizeValue: (v: boolean) => (v ? 'Successful' : 'Unsuccessful'),
   },
   lastConfigTime: { title: 'Last successful configuration reload' },
-  chunkCount: { title: 'Head chunks' },
-  timeSeriesCount: { title: 'Head time series' },
   corruptionCount: { title: 'WAL corruptions' },
   goroutineCount: { title: 'Goroutines' },
   storageRetention: { title: 'Storage retention' },
