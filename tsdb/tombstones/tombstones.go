@@ -105,17 +105,17 @@ func WriteFile(logger log.Logger, dir string, tr Reader) (int64, error) {
 
 	bytes, err := Encode(tr)
 	if err != nil {
-		return 0, fmt.Errorf("error writing tombstones: %v", err)
+		return 0, errors.Wrap(err, "encoding tombstones")
 	}
 
-	// Ignore first byte which is the format type.
+	// Ignore first byte which is the format type. We do this for compatibility.
 	if _, err := hash.Write(bytes[1:]); err != nil {
-		return 0, fmt.Errorf("error writing tombstones: %v", err)
+		return 0, errors.Wrap(err, "calculating hash for tombstones")
 	}
 
 	n, err = f.Write(bytes)
 	if err != nil {
-		return 0, fmt.Errorf("error writing tombstones: %v", err)
+		return 0, errors.Wrap(err, "writing tombstones")
 	}
 	size += n
 
@@ -138,6 +138,8 @@ func WriteFile(logger log.Logger, dir string, tr Reader) (int64, error) {
 	return int64(size), fileutil.Replace(tmp, path)
 }
 
+// Encode encodes the tombstones from the reader.
+// It does not attach any magic number or checksum.
 func Encode(tr Reader) ([]byte, error) {
 	buf := encoding.Encbuf{}
 	buf.PutByte(tombstoneFormatV1)
@@ -149,9 +151,11 @@ func Encode(tr Reader) ([]byte, error) {
 		}
 		return nil
 	})
-	return buf.Get(), errors.Wrap(err, "encoding tombstones")
+	return buf.Get(), err
 }
 
+// Decode decodes the tombstones from the bytes
+// which was encoded using the Encode method.
 func Decode(b []byte) (Reader, error) {
 	d := &encoding.Decbuf{B: b}
 	if flag := d.Byte(); flag != tombstoneFormatV1 {
