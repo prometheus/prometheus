@@ -201,6 +201,16 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
 	},
+	"raw_counter_delta": {
+		Name:       "raw_counter_delta",
+		ArgTypes:   []ValueType{ValueTypeMatrix},
+		ReturnType: ValueTypeVector,
+	},
+	"raw_gauge_delta": {
+		Name:       "raw_gauge_delta",
+		ArgTypes:   []ValueType{ValueTypeMatrix},
+		ReturnType: ValueTypeVector,
+	},
 	"resets": {
 		Name:       "resets",
 		ArgTypes:   []ValueType{ValueTypeMatrix},

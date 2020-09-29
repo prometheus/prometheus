@@ -348,6 +348,26 @@ or a function aggregating over time (any function ending in `_over_time`),
 always take a `rate()` first, then aggregate. Otherwise `rate()` cannot detect
 counter resets when your target restarts.
 
+## `raw_counter_delta()`
+
+`raw_counter_delta(v range-vector)` calculates the difference between the
+first and last value of each time series element in a range vector `v`,
+returning an instant vector with the given deltas and equivalent labels.
+Contrary to `delta`, the calculated delta will not be extrapolated to 
+cover the full time range as specified in the range vector selector.
+
+`raw_counter_delta()` should only be used with counters.
+
+## `raw_gauge_delta()`
+
+`raw_gauge_delta(v range-vector)` calculates the difference between the
+first and last value of each time series element in a range vector `v`,
+returning an instant vector with the given deltas and equivalent labels.
+Contrary to `delta`, the calculated delta will not be extrapolated to 
+cover the full time range as specified in the range vector selector.
+
+`raw_gauge_delta()` should only be used with gauges.
+
 ## `resets()`
 
 For each input time series, `resets(v range-vector)` returns the number of

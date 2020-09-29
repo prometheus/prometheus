@@ -131,6 +131,46 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 	})
 }
 
+// === raw_counter_delta(Matrix parser.ValueTypeMatrix) Vector ===
+func funcRawCounterDelta(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return funcRawDelta(vals, args, enh, true)
+}
+
+// === raw_gauge_delta(Matrix parser.ValueTypeMatrix) Vector ===
+func funcRawGaugeDelta(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return funcRawDelta(vals, args, enh, false)
+}
+
+func funcRawDelta(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper, isCounter bool) Vector {
+	samples := vals[0].(Matrix)[0]
+	// No sense in trying to compute a rate without at least two points. Drop
+	// this Vector element.
+	if len(samples.Points) < 2 {
+		return enh.Out
+	}
+
+	counterCorrection := 0.0
+	if isCounter {
+		var (
+			lastValue float64
+		)
+		for _, sample := range samples.Points {
+			if isCounter && sample.V < lastValue {
+				counterCorrection += lastValue
+			}
+			lastValue = sample.V
+		}
+	}
+
+	lastSample := samples.Points[len(samples.Points)-1]
+	firstSample := samples.Points[0]
+
+	resultValue := lastSample.V - firstSample.V + counterCorrection
+	return append(enh.Out, Sample{
+		Point: Point{V: resultValue},
+	})
+}
+
 // === delta(Matrix parser.ValueTypeMatrix) Vector ===
 func funcDelta(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return extrapolatedRate(vals, args, enh, false, false)
@@ -923,6 +963,8 @@ var FunctionCalls = map[string]FunctionCall{
 	"predict_linear":     funcPredictLinear,
 	"quantile_over_time": funcQuantileOverTime,
 	"rate":               funcRate,
+	"raw_counter_delta":  funcRawCounterDelta,
+	"raw_gauge_delta":    funcRawGaugeDelta,
 	"resets":             funcResets,
 	"round":              funcRound,
 	"scalar":             funcScalar,
