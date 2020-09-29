@@ -7,7 +7,7 @@ import { Target, Labels, DroppedTarget } from '../targets/target';
 import { withStatusIndicator } from '../../components/withStatusIndicator';
 import { mapObjEntries } from '../../utils';
 import { usePathPrefix } from '../../contexts/PathContexts';
-import { APIPATH } from '../../constants/constants'
+import { APIPATH } from '../../constants/constants';
 
 interface ServiceMap {
   activeTargets: Target[];

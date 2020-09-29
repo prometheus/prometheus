@@ -37,27 +37,27 @@ const App: FC<AppProps> = ({ consolesLink }) => {
   }
 
   return (
-      <PathPrefixContext.Provider value={basePath}>
-        <Navigation consolesLink={consolesLink} />
-        <Container fluid style={{ paddingTop: 70 }}>
-          <Router basepath={`${basePath}`}>
-            <Redirect from="/" to={`graph`} noThrow />
-            {/*
+    <PathPrefixContext.Provider value={basePath}>
+      <Navigation consolesLink={consolesLink} />
+      <Container fluid style={{ paddingTop: 70 }}>
+        <Router basepath={`${basePath}`}>
+          <Redirect from="/" to={`graph`} noThrow />
+          {/*
               NOTE: Any route added here needs to also be added to the list of
               React-handled router paths ("reactRouterPaths") in /web/web.go.
             */}
-            <PanelList path="/graph" />
-            <Alerts path="/alerts" />
-            <Config path="/config" />
-            <Flags path="/flags" />
-            <Rules path="/rules" />
-            <ServiceDiscovery path="/service-discovery" />
-            <Status path="/status" />
-            <TSDBStatus path="/tsdb-status" />
-            <Targets path="/targets" />
-          </Router>
-        </Container>
-      </PathPrefixContext.Provider>
+          <PanelList path="/graph" />
+          <Alerts path="/alerts" />
+          <Config path="/config" />
+          <Flags path="/flags" />
+          <Rules path="/rules" />
+          <ServiceDiscovery path="/service-discovery" />
+          <Status path="/status" />
+          <TSDBStatus path="/tsdb-status" />
+          <Targets path="/targets" />
+        </Router>
+      </Container>
+    </PathPrefixContext.Provider>
   );
 };
 

@@ -4,7 +4,7 @@ import { useFetch } from '../../hooks/useFetch';
 import { withStatusIndicator } from '../../components/withStatusIndicator';
 import { RulesMap, RulesContent } from './RulesContent';
 import { usePathPrefix } from '../../contexts/PathContexts';
-import { APIPATH } from '../../constants/constants'
+import { APIPATH } from '../../constants/constants';
 
 const RulesWithStatusIndicator = withStatusIndicator(RulesContent);
 

@@ -7,7 +7,7 @@ import './Config.css';
 import { withStatusIndicator } from '../../components/withStatusIndicator';
 import { useFetch } from '../../hooks/useFetch';
 import { usePathPrefix } from '../../contexts/PathContexts';
-import { APIPATH } from '../../constants/constants'
+import { APIPATH } from '../../constants/constants';
 
 type YamlConfig = { yaml?: string };
 

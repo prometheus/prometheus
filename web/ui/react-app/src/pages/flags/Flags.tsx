@@ -4,7 +4,7 @@ import { Table } from 'reactstrap';
 import { withStatusIndicator } from '../../components/withStatusIndicator';
 import { useFetch } from '../../hooks/useFetch';
 import { usePathPrefix } from '../../contexts/PathContexts';
-import { APIPATH } from '../../constants/constants'
+import { APIPATH } from '../../constants/constants';
 
 interface FlagMap {
   [key: string]: string;

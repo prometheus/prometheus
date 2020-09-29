@@ -4,7 +4,7 @@ import Filter from './Filter';
 import ScrapePoolList from './ScrapePoolList';
 import { useLocalStorage } from '../../hooks/useLocalStorage';
 import { usePathPrefix } from '../../contexts/PathContexts';
-import { APIPATH } from '../../constants/constants'
+import { APIPATH } from '../../constants/constants';
 
 const Targets: FC<RouteComponentProps> = () => {
   const pathPrefix = usePathPrefix();
