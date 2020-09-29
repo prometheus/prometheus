@@ -5,7 +5,7 @@ import { Table } from 'reactstrap';
 
 import TSDBStatus from './TSDBStatus';
 import { TSDBMap } from './TSDBStatus';
-import { PathPrefixContext, APIPathContext } from '../../contexts/PathContexts';
+import { PathPrefixContext } from '../../contexts/PathContexts';
 
 const fakeTSDBStatusResponse: {
   status: string;
@@ -75,15 +75,13 @@ describe('TSDB Stats', () => {
       await act(async () => {
         page = mount(
           <PathPrefixContext.Provider value="/path/prefix">
-            <APIPathContext.Provider value="api/v1">
-              <TSDBStatus />
-            </APIPathContext.Provider>
+            <TSDBStatus />
           </PathPrefixContext.Provider>
         );
       });
       page.update();
 
-      expect(mock).toHaveBeenCalledWith('/path/prefix/api/v1/status/tsdb', {
+      expect(mock).toHaveBeenCalledWith('/path/prefix/../api/v1/status/tsdb', {
         cache: 'no-store',
         credentials: 'same-origin',
       });
