@@ -461,6 +461,7 @@ func (erringBReader) Index() (IndexReader, error)            { return nil, error
 func (erringBReader) Chunks() (ChunkReader, error)           { return nil, errors.New("chunks") }
 func (erringBReader) Tombstones() (tombstones.Reader, error) { return nil, errors.New("tombstones") }
 func (erringBReader) Meta() BlockMeta                        { return BlockMeta{} }
+func (erringBReader) Size() int64                            { return 0 }
 
 type nopChunkWriter struct{}
 
