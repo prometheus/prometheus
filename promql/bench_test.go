@@ -32,7 +32,7 @@ func BenchmarkRangeQuery(b *testing.B) {
 	opts := EngineOpts{
 		Logger:     nil,
 		Reg:        nil,
-		MaxSamples: 50000000,
+		MaxSamples: 5000000,
 		Timeout:    100 * time.Second,
 	}
 	engine := NewEngine(opts)
@@ -170,6 +170,12 @@ func BenchmarkRangeQuery(b *testing.B) {
 		},
 		{
 			expr: "histogram_quantile(0.9, rate(h_X[5m]))",
+		},
+		// Memory or compute intensive queries.
+		{
+			// Run for a single timeseries over a large amount of potential samples.
+			expr:  "count_over_time(a_one[999d:1s])",
+			steps: 1,
 		},
 	}
 
