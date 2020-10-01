@@ -28,7 +28,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
+	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -172,7 +174,7 @@ func TestWALRepair_ReadingError(t *testing.T) {
 				for r.Next() {
 				}
 
-				//Close the segment so we don't break things on Windows.
+				// Close the segment so we don't break things on Windows.
 				s.Close()
 
 				// No corruption in this segment.
@@ -354,6 +356,84 @@ func TestClose(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, w.Close())
 	require.Error(t, w.Close())
+}
+
+func TestRepairWithCorruptedCheckpoint(t *testing.T) {
+	dir, err := ioutil.TempDir("", "wal_repair")
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, os.RemoveAll(dir))
+	}()
+
+	logger := testutil.NewLogger(t)
+
+	// Append some records to the WAL and make sure to generate 2 segments.
+	w, err := NewSize(logger, nil, dir, pageSize, false)
+	require.NoError(t, err)
+
+	var (
+		enc        record.Encoder
+		i, written int
+	)
+	for {
+		i++
+		b := enc.Series(
+			[]record.RefSeries{
+				{Ref: uint64(i), Labels: labels.FromStrings("lbl", fmt.Sprintf("val%d", i))},
+			},
+			nil,
+		)
+		require.NoError(t, w.Log(b, nil))
+		written += len(b)
+		if written > pageSize {
+			break
+		}
+	}
+
+	// Generate a checkpoint and truncate the WAL.
+	_, err = Checkpoint(logger, w, 0, 0, func(uint64) bool { return true }, 1)
+	require.NoError(t, err)
+
+	require.NoError(t, w.Truncate(1))
+
+	// Confirm there's a checkpoint directory and a segment left.
+	checkpoint, _, err := LastCheckpoint(dir)
+	require.NoError(t, err)
+
+	segs, err := listSegments(w.Dir())
+	require.NoError(t, err)
+	require.NotEqual(t, 0, len(segs))
+
+	// Corrupt the checkpoint by zero-ing the CRC field of the first record.
+	f, err := os.OpenFile(filepath.Join(checkpoint, fmt.Sprintf("%08d", 0)), os.O_RDWR, 0)
+	require.NoError(t, err)
+
+	_, err = f.WriteAt([]byte{0x00, 0x00, 0x00, 0x00}, 3)
+	require.NoError(t, err)
+
+	require.NoError(t, f.Close())
+
+	// Verify that the checkpoint is corrupted.
+	sgr, err := NewSegmentsReader(checkpoint)
+	require.NoError(t, err)
+
+	r := NewReader(sgr)
+	for r.Next() {
+	}
+	require.Error(t, r.Err())
+
+	// Close the segment so we don't break things on Windows.
+	require.NoError(t, sgr.Close())
+
+	require.NoError(t, w.Repair(r.Err()))
+
+	// Reopen the WAL to make sure that it's been cleaned up.
+	require.NoError(t, w.Close())
+
+	w, err = NewSize(logger, nil, dir, pageSize, false)
+	require.NoError(t, err)
+
+	require.NoError(t, w.Close())
 }
 
 func TestSegmentMetric(t *testing.T) {

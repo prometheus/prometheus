@@ -21,6 +21,7 @@ import (
 	"hash/crc32"
 	"io"
 	"io/ioutil"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -362,7 +363,13 @@ func (w *WAL) Repair(origErr error) error {
 		return errors.New("corruption error does not specify position")
 	}
 	level.Warn(w.logger).Log("msg", "Starting corruption repair",
-		"segment", cerr.Segment, "offset", cerr.Offset)
+		"dir", cerr.Dir, "segment", cerr.Segment, "offset", cerr.Offset)
+
+	// The checkpoint is corrupted, we can only discard all data at this point.
+	if cerr.Dir != "" && cerr.Dir != w.Dir() {
+		level.Warn(w.logger).Log("msg", "Deleting all data from WAL because of corrupted checkpoint")
+		return w.dropAllData()
+	}
 
 	// All segments behind the corruption can no longer be used.
 	segs, err := listSegments(w.Dir())
@@ -385,7 +392,7 @@ func (w *WAL) Repair(origErr error) error {
 			continue
 		}
 		if err := os.Remove(filepath.Join(w.Dir(), s.name)); err != nil {
-			return errors.Wrapf(err, "delete segment:%v", s.index)
+			return errors.Wrapf(err, "delete segment: %v", s.index)
 		}
 	}
 	// Regardless of the corruption offset, no record reaches into the previous segment.
@@ -455,6 +462,44 @@ func (w *WAL) Repair(origErr error) error {
 	if err := w.setSegment(s); err != nil {
 		return err
 	}
+	return nil
+}
+
+func (w *WAL) dropAllData() error {
+	segs, err := listSegments(w.Dir())
+	if err != nil {
+		return errors.Wrap(err, "list segments")
+	}
+
+	for _, s := range segs {
+		if w.segment.i == s.index {
+			// The active segment needs to be removed,
+			// close it first (Windows!). Can be closed safely
+			// as we reset the current segment below.
+			if err := w.segment.Close(); err != nil {
+				return errors.Wrap(err, "close active segment")
+			}
+		}
+		if err := os.Remove(filepath.Join(w.Dir(), s.name)); err != nil {
+			return errors.Wrapf(err, "delete segment: %v", s.index)
+		}
+	}
+
+	err = DeleteCheckpoints(w.Dir(), math.MaxInt32)
+	if err != nil {
+		return errors.Wrap(err, "delete checkpoints")
+	}
+
+	// Initialize a new segment.
+	s, err := CreateSegment(w.Dir(), 0)
+	if err != nil {
+		return errors.Wrap(err, "create segment")
+	}
+
+	if err := w.setSegment(s); err != nil {
+		return errors.Wrap(err, "set segment")
+	}
+
 	return nil
 }
 
