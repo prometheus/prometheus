@@ -33,9 +33,11 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/importer/openmetrics"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 )
 
@@ -606,6 +608,28 @@ func dumpSamples(path string, mint, maxt int64) (err error) {
 		return ss.Err()
 	}
 	return nil
+}
+
+func readOM(path string) (err error) {
+	input := os.Stdin
+		if path != "" {
+			input, err = os.Open(path)
+			if err != nil {
+				return err
+			}
+			defer func() {
+				merr.Add(err)
+				merr.Add(input.Close())
+				err = merr.Err()
+			}()
+	}
+	var p textparse.Parser
+	p = openmetrics.NewParser(input)
+	return importer.Import(logger, p, blocks.NewMultiWriter(logger, *importDbPath, durToMillis(*importBlockSize)))
+}
+
+func durToMillis(t time.Duration) int64 {
+	return int64(t.Seconds() * 1000)
 }
 
 func checkErr(err error) int {
