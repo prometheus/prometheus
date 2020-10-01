@@ -909,7 +909,7 @@ Prometheus.Graph.prototype.formatKMBT = function(y) {
 
 Prometheus.Graph.prototype.limitSeries = function(result) {
   var self = this;
-  var MAX_SERIES_NUM = 10000;
+  var MAX_SERIES_NUM = 50000;
   var message = "<strong>Warning!</strong> Fetched " +
     result.length + " series, but displaying only first " +
     MAX_SERIES_NUM + ".";
