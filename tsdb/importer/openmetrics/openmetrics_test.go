@@ -193,6 +193,10 @@ func TestImport(t *testing.T) {
 		}
 	}{
 		{
+			ToParse: `# EOF`,
+			IsOk:    true,
+		},
+		{
 			ToParse: `# HELP http_requests_total The total number of HTTP requests.
 # TYPE http_requests_total counter
 http_requests_total{code="200"} 1021 1565133713989
@@ -225,7 +229,204 @@ http_requests_total{code="400"} 1 1565133713990
 					},
 				},
 			},
-		}
+		},
+		{
+			ToParse: `# HELP http_requests_total The total number of HTTP requests.
+# TYPE http_requests_total counter
+http_requests_total{code="200"} 1022 1565133713989
+http_requests_total{code="400"} 2 1575133713990
+# EOF
+`,
+			IsOk:         true,
+			MetricLabels: []string{"__name__", "http_requests_total"},
+			Expected: struct {
+				MinTime   int64
+				MaxTime   int64
+				NumBlocks int
+				Symbols   []string
+				Samples   []tsdb.MetricSample
+			}{
+				MinTime:   1565133713989,
+				MaxTime:   1575133713991,
+				NumBlocks: 2,
+				Symbols:   []string{"http_requests_total", "code", "200", "400", "__name__"},
+				Samples: []tsdb.MetricSample{
+					{
+						Timestamp: 1565133713989,
+						Value:     1022,
+						Labels:    labels2.FromStrings("__name__", "http_requests_total", "code", "200"),
+					},
+					{
+						Timestamp: 1575133713990,
+						Value:     2,
+						Labels:    labels2.FromStrings("__name__", "http_requests_total", "code", "400"),
+					},
+				},
+			},
+		},
+		{
+			ToParse: `# HELP http_requests_total The total number of HTTP requests.
+# TYPE http_requests_total counter
+http_requests_total{code="200"} 1023 1395066363000
+http_requests_total{code="400"} 3 1395066363000
+# EOF
+`,
+			IsOk:         true,
+			MetricLabels: []string{"__name__", "http_requests_total"},
+			Expected: struct {
+				MinTime   int64
+				MaxTime   int64
+				NumBlocks int
+				Symbols   []string
+				Samples   []tsdb.MetricSample
+			}{
+				MinTime:   1395066363000,
+				MaxTime:   1395066363001,
+				NumBlocks: 1,
+				Symbols:   []string{"http_requests_total", "code", "200", "400", "__name__"},
+				Samples: []tsdb.MetricSample{
+					{
+						Timestamp: 1395066363000,
+						Value:     1023,
+						Labels:    labels2.FromStrings("__name__", "http_requests_total", "code", "200"),
+					},
+					{
+						Timestamp: 1395066363000,
+						Value:     3,
+						Labels:    labels2.FromStrings("__name__", "http_requests_total", "code", "400"),
+					},
+				},
+			},
+		},
+		{
+			ToParse: `# HELP something_weird Something weird
+# TYPE something_weird gauge
+something_weird{problem="infinite timestamp"} +Inf -3982045
+# EOF
+`,
+			IsOk: false,
+		},
+		{
+			// Metric has no timestamp, hence invalid
+			ToParse: `# HELP rpc_duration_seconds A summary of the RPC duration in seconds.
+# TYPE rpc_duration_seconds summary
+rpc_duration_seconds{quantile="0.01"} 3102
+rpc_duration_seconds{quantile="0.05"} 3272
+# EOF
+`,
+			IsOk: false,
+		},
+		{
+			ToParse: `# HELP no_type_metric This is a metric with no TYPE string
+no_type_metric{type="bad_news_bears"} 0.0 111
+# EOF
+`,
+			IsOk:         true,
+			MetricLabels: []string{"__name__", "no_type_metric"},
+			Expected: struct {
+				MinTime   int64
+				MaxTime   int64
+				NumBlocks int
+				Symbols   []string
+				Samples   []tsdb.MetricSample
+			}{
+				MinTime:   111,
+				MaxTime:   112,
+				NumBlocks: 1,
+				Symbols:   []string{"no_type_metric", "type", "bad_news_bears", "__name__"},
+				Samples: []tsdb.MetricSample{
+					{
+						Timestamp: 111,
+						Value:     0.0,
+						Labels:    labels2.FromStrings("__name__", "no_type_metric", "type", "bad_news_bears"),
+					},
+				},
+			},
+		},
+		{
+			ToParse: `# HELP bad_ts This is a metric with an extreme timestamp
+# TYPE bad_ts gauge
+bad_ts{type="bad_timestamp"} 420 -1e99
+# EOF
+`,
+			IsOk: false,
+		},
+		{
+			ToParse: `# HELP bad_ts This is a metric with an extreme timestamp
+# TYPE bad_ts gauge
+bad_ts{type="bad_timestamp"} 420 1e99
+# EOF
+`,
+			IsOk: false,
+		},
+		{
+			ToParse: `no_help_no_type{foo="bar"} 42 6900
+# EOF
+`,
+			IsOk:         true,
+			MetricLabels: []string{"__name__", "no_help_no_type"},
+			Expected: struct {
+				MinTime   int64
+				MaxTime   int64
+				NumBlocks int
+				Symbols   []string
+				Samples   []tsdb.MetricSample
+			}{
+				MinTime:   6900,
+				MaxTime:   6901,
+				NumBlocks: 1,
+				Symbols:   []string{"no_help_no_type", "foo", "bar", "__name__"},
+				Samples: []tsdb.MetricSample{
+					{
+						Timestamp: 6900,
+						Value:     42,
+						Labels:    labels2.FromStrings("__name__", "no_help_no_type", "foo", "bar"),
+					},
+				},
+			},
+		},
+		{
+			ToParse: `bare_metric 42.24 1001
+# EOF
+`,
+			IsOk:         true,
+			MetricLabels: []string{"__name__", "bare_metric"},
+			Expected: struct {
+				MinTime   int64
+				MaxTime   int64
+				NumBlocks int
+				Symbols   []string
+				Samples   []tsdb.MetricSample
+			}{
+				MinTime:   1001,
+				MaxTime:   1002,
+				NumBlocks: 1,
+				Symbols:   []string{"bare_metric", "__name__"},
+				Samples: []tsdb.MetricSample{
+					{
+						Timestamp: 1001,
+						Value:     42.24,
+						Labels:    labels2.FromStrings("__name__", "bare_metric"),
+					},
+				},
+			},
+		},
+		{
+			ToParse: `# HELP bad_metric This a bad metric
+# TYPE bad_metric bad_type
+bad_metric{type="has no type information"} 0.0 111
+# EOF
+`,
+			IsOk: false,
+		},
+		{
+			ToParse: `# HELP no_nl This test has no newline so will fail
+# TYPE no_nl gauge
+no_nl{type="no newline"}
+# EOF`,
+			IsOk: false,
+		},
+	}
 	for _, test := range tests {
 		tmpDbDir, err := ioutil.TempDir("", "importer")
 		testutil.Ok(t, err)
@@ -482,3 +683,71 @@ func TestInvalidSyntaxQuickAbort(t *testing.T) {
 	// We should abort and return the error with the text, without reading till EOF.
 	testutil.Assert(t, r.Len() > 0, "import text has been completely read")
 }
+
+// func benchVirtual(vThresh int, b *testing.B) {
+// 	for n := 0; n < b.N; n++ {
+// 		type importTest struct {
+// 			MetricName                 string
+// 			MetricType                 string
+// 			MetricLabels               []string
+// 			GeneratorStep              int
+// 			DBMint, DBMaxt             int64
+// 			ImportShuffle              bool
+// 			ImportMint, ImportMaxt     int64
+// 			ExpectedMint, ExpectedMaxt int64
+// 			ExpectedSymbols            []string
+// 			ExpectedNumBlocks          int
+// 		}
+//
+// 		tests := []importTest{
+// 			{
+// 				// Test overlapping, and non-overlapping data, aligning the blocks.
+// 				// This test also creates a large number of samples, across a much wider time range, to test
+// 				// if the importer will divvy samples beyond DB time limits into progressively smaller blocks
+// 				// using the ranges in tsdb.DefaultOptions.BlockRanges.
+// 				MetricName:        "test_metric_3",
+// 				MetricType:        "gauge",
+// 				MetricLabels:      []string{"foo", "bar"},
+// 				GeneratorStep:     5000,
+// 				DBMint:            1000,
+// 				DBMaxt:            tsdb.DefaultOptions.BlockRanges[2],
+// 				ImportShuffle:     false,
+// 				ImportMint:        0,
+// 				ImportMaxt:        tsdb.DefaultOptions.BlockRanges[2]*2 + 10000,
+// 				ExpectedSymbols:   []string{"__name__", "test_metric_3", "foo", "bar"},
+// 				ExpectedMint:      0,
+// 				ExpectedMaxt:      (tsdb.DefaultOptions.BlockRanges[2] * 2) + 1,
+// 				ExpectedNumBlocks: 5,
+// 			},
+// 		}
+//
+// 		for _, test := range tests {
+// 			initSeries := genSeries(test.MetricLabels, test.DBMint, test.DBMaxt, test.GeneratorStep)
+// 			initText := genOpenMetricsText(test.MetricName, test.MetricType, initSeries)
+//
+// 			tmpDbDir, err := ioutil.TempDir("", "importer")
+// 			testutil.Ok(b, err)
+// 			err = ImportFromFile(strings.NewReader(initText), tmpDbDir, maxSamplesInMemory, vThresh, nil)
+// 			testutil.Ok(b, err)
+//
+// 			importSeries := genSeries(test.MetricLabels, test.ImportMint, test.ImportMaxt, test.GeneratorStep)
+// 			importText := genOpenMetricsText(test.MetricName, test.MetricType, importSeries)
+//
+// 			err = ImportFromFile(strings.NewReader(importText), tmpDbDir, maxSamplesInMemory, vThresh, nil)
+// 			testutil.Ok(b, err)
+// 		}
+// 	}
+// }
+//
+// func Benchmark_Vertical0(b *testing.B) {
+// 	benchVirtual(0, b)
+// }
+// func Benchmark_Vertical5(b *testing.B) {
+// 	benchVirtual(5, b)
+// }
+// func Benchmark_Vertical10(b *testing.B) {
+// 	benchVirtual(10, b)
+// }
+// func Benchmark_Vertical20(b *testing.B) {
+// 	benchVirtual(20, b)
+// }
