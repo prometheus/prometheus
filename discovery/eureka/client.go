@@ -22,7 +22,10 @@ import (
 	"net/http"
 
 	"github.com/pkg/errors"
+	"github.com/prometheus/common/version"
 )
+
+var userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 
 type Applications struct {
 	VersionsDelta int           `xml:"versions__delta"`
@@ -85,6 +88,7 @@ func fetchApps(ctx context.Context, server string, client *http.Client) (*Applic
 		return nil, err
 	}
 	request = request.WithContext(ctx)
+	request.Header.Add("User-Agent", userAgent)
 
 	resp, err := client.Do(request)
 	if err != nil {
