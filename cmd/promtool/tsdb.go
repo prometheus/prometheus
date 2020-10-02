@@ -610,7 +610,7 @@ func dumpSamples(path string, mint, maxt int64) (err error) {
 	return nil
 }
 
-func readOM(path string) (err error) {
+func readOpenMetrics(path string) (err error) {
 	input := os.Stdin
 		if path != "" {
 			input, err = os.Open(path)

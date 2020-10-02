@@ -199,7 +199,7 @@ func main() {
 		os.Exit(checkErr(dumpSamples(*dumpPath, *dumpMinTime, *dumpMaxTime)))
 	
 	case omImportCmd.FullCommand():
-		os.Exit(checkErr(readOM(*importFilePath)))
+		os.Exit(checkErr(readOpenMetrics(*importFilePath)))
 	}
 }
 
