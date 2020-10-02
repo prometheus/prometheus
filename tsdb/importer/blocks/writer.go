@@ -98,8 +98,8 @@ func (w *TSDBWriter) initHead() error {
 }
 
 // Appender is not thread-safe. Returned Appender is thread-save however.
-func (w *TSDBWriter) Appender() storage.Appender {
-	return w.head.Appender()
+func (w *TSDBWriter) Appender(ctx context.Context) storage.Appender {
+	return w.head.Appender(ctx)
 }
 
 // Flush implements Writer interface. This is where actual block writing

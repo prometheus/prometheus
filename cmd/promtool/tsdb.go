@@ -37,8 +37,8 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/prometheus/prometheus/tsdb/importer/openmetrics"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
+	"github.com/prometheus/prometheus/tsdb/importer/openmetrics"
 )
 
 var merr tsdb_errors.MultiError
@@ -612,20 +612,43 @@ func dumpSamples(path string, mint, maxt int64) (err error) {
 
 func readOpenMetrics(path string) (err error) {
 	input := os.Stdin
-		if path != "" {
-			input, err = os.Open(path)
-			if err != nil {
-				return err
-			}
-			defer func() {
-				merr.Add(err)
-				merr.Add(input.Close())
-				err = merr.Err()
-			}()
+	if path != "" {
+		input, err = os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer func() {
+			merr.Add(err)
+			merr.Add(input.Close())
+			err = merr.Err()
+		}()
 	}
 	var p textparse.Parser
 	p = openmetrics.NewParser(input)
-	return importer.Import(logger, p, blocks.NewMultiWriter(logger, *importDbPath, durToMillis(*importBlockSize)))
+
+	for {
+		e, err := p.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return errors.Wrap(err, "parse")
+		}
+
+		// For now care about series only.
+		if e != textparse.EntrySeries {
+			continue
+		}
+
+		// TODO(bwplotka): Avoid allocations using AddFast method and maintaining refs.
+		l := labels.Labels{}
+		p.Metric(&l)
+		_, ts, v := p.Series()
+		fmt.Println(l, ts, v)
+	}
+
+	return nil
+	// return importer.Import(nil, p, blocks.NewMultiWriter(logger, *importDbPath, durToMillis(*importBlockSize)))
 }
 
 func durToMillis(t time.Duration) int64 {

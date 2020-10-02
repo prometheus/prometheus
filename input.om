@@ -1,0 +1,5 @@
+# HELP http_requests_total The total number of HTTP requests.
+# TYPE http_requests_total counter
+http_requests_total{code="200"} 1021 1565133713989
+http_requests_total{code="400"} 1 1565133713990
+# EOF

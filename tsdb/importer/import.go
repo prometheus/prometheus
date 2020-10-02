@@ -14,6 +14,7 @@
 package importer
 
 import (
+	"context"
 	"fmt"
 	"io"
 
@@ -36,7 +37,7 @@ func Import(logger log.Logger, p textparse.Parser, w blocks.Writer) (err error) 
 	}
 
 	level.Info(logger).Log("msg", "started importing input data.")
-	app := w.Appender()
+	app := w.Appender(context.Background())
 
 	defer func() {
 		var merr tsdb_errors.MultiError
