@@ -221,7 +221,8 @@ func Checkpoint(logger log.Logger, w *WAL, from, to int, keep func(id uint64) bo
 			stats.DroppedTombstones += len(tstones) - len(repl)
 
 		default:
-			return nil, errors.New("invalid record type")
+			// Unknown record type, probably from a future Prometheus version.
+			continue
 		}
 		if len(buf[start:]) == 0 {
 			continue // All contents discarded.
