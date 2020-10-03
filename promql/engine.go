@@ -1329,38 +1329,75 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		})
 
 	case *parser.VectorSelector:
-		ws, err := checkAndExpandSeriesSet(ev.ctx, e)
-		if err != nil {
-			ev.error(errWithWarnings{errors.Wrap(err, "expanding series"), ws})
-		}
-		mat := make(Matrix, 0, len(e.Series))
+		// ws, err := checkAndExpandSeriesSet(ev.ctx, e)
+		// if err != nil {
+		// ev.error(errWithWarnings{errors.Wrap(err, "expanding series"), ws})
+		// }
+		// mat := make(Matrix, 0, len(e.Series))
+		var mat Matrix
 		it := storage.NewBuffer(durationMilliseconds(ev.lookbackDelta))
-		for i, s := range e.Series {
-			it.Reset(s.Iterator())
-			ss := Series{
-				Metric: e.Series[i].Labels(),
-				Points: getPointSlice(numSteps),
-			}
+		if e.Series == nil {
+			uexset := e.UnexpandedSeriesSet
+			for uexset.Next() {
+				s := uexset.At()
 
-			for ts := ev.startTimestamp; ts <= ev.endTimestamp; ts += ev.interval {
-				_, v, ok := ev.vectorSelectorSingle(it, e, ts)
-				if ok {
-					if ev.currentSamples < ev.maxSamples {
-						ss.Points = append(ss.Points, Point{V: v, T: ts})
-						ev.currentSamples++
-					} else {
-						ev.error(ErrTooManySamples(env))
+				it.Reset(s.Iterator())
+				ss := Series{
+					Metric: s.Labels(),
+					Points: getPointSlice(numSteps),
+				}
+
+				for ts := ev.startTimestamp; ts <= ev.endTimestamp; ts += ev.interval {
+					_, v, ok := ev.vectorSelectorSingle(it, e, ts)
+					if ok {
+						if ev.currentSamples < ev.maxSamples {
+							ss.Points = append(ss.Points, Point{V: v, T: ts})
+							ev.currentSamples++
+						} else {
+							ev.error(ErrTooManySamples(env))
+						}
 					}
 				}
-			}
 
-			if len(ss.Points) > 0 {
-				mat = append(mat, ss)
-			} else {
-				putPointSlice(ss.Points)
+				if len(ss.Points) > 0 {
+					mat = append(mat, ss)
+				} else {
+					putPointSlice(ss.Points)
+				}
 			}
+			ws := uexset.Warnings()
+			err := uexset.Err()
+			if err != nil {
+				ev.error(errWithWarnings{errors.Wrap(err, "expanding series"), ws})
+			}
+			return mat, ws
 		}
-		return mat, ws
+		// for i, s := range e.Series {
+		// it.Reset(s.Iterator())
+		// ss := Series{
+		// Metric: e.Series[i].Labels(),
+		// Points: getPointSlice(numSteps),
+		// }
+		//
+		// for ts := ev.startTimestamp; ts <= ev.endTimestamp; ts += ev.interval {
+		// _, v, ok := ev.vectorSelectorSingle(it, e, ts)
+		// if ok {
+		// if ev.currentSamples < ev.maxSamples {
+		// ss.Points = append(ss.Points, Point{V: v, T: ts})
+		// ev.currentSamples++
+		// } else {
+		// ev.error(ErrTooManySamples(env))
+		// }
+		// }
+		// }
+		//
+		// if len(ss.Points) > 0 {
+		// mat = append(mat, ss)
+		// } else {
+		// putPointSlice(ss.Points)
+		// }
+		// }
+		return mat, nil
 
 	case *parser.MatrixSelector:
 		if ev.startTimestamp != ev.endTimestamp {
