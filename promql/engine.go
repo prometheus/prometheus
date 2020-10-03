@@ -1443,29 +1443,56 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 
 // vectorSelector evaluates a *parser.VectorSelector expression.
 func (ev *evaluator) vectorSelector(node *parser.VectorSelector, ts int64) (Vector, storage.Warnings) {
-	ws, err := checkAndExpandSeriesSet(ev.ctx, node)
-	if err != nil {
-		ev.error(errWithWarnings{errors.Wrap(err, "expanding series"), ws})
-	}
-	vec := make(Vector, 0, len(node.Series))
+	// ws, err := checkAndExpandSeriesSet(ev.ctx, node)
+	// if err != nil {
+	// ev.error(errWithWarnings{errors.Wrap(err, "expanding series"), ws})
+	// }
+	// vec := make(Vector, 0, len(node.Series))
+	var vec Vector
 	it := storage.NewBuffer(durationMilliseconds(ev.lookbackDelta))
-	for i, s := range node.Series {
-		it.Reset(s.Iterator())
+	if node.Series == nil {
+		uexset := node.UnexpandedSeriesSet
+		for uexset.Next() {
+			s := uexset.At()
+			it.Reset(s.Iterator())
 
-		t, v, ok := ev.vectorSelectorSingle(it, node, ts)
-		if ok {
-			vec = append(vec, Sample{
-				Metric: node.Series[i].Labels(),
-				Point:  Point{V: v, T: t},
-			})
-			ev.currentSamples++
-		}
+			t, v, ok := ev.vectorSelectorSingle(it, node, ts)
+			if ok {
+				vec = append(vec, Sample{
+					Metric: s.Labels(),
+					Point:  Point{V: v, T: t},
+				})
+				ev.currentSamples++
+			}
 
-		if ev.currentSamples >= ev.maxSamples {
-			ev.error(ErrTooManySamples(env))
+			if ev.currentSamples >= ev.maxSamples {
+				ev.error(ErrTooManySamples(env))
+			}
 		}
+		ws := uexset.Warnings()
+		err := uexset.Err()
+		if err != nil {
+			ev.error(errWithWarnings{errors.Wrap(err, "expanding series"), ws})
+		}
+		return vec, ws
 	}
-	return vec, ws
+	// for i, s := range node.Series {
+	// it.Reset(s.Iterator())
+	//
+	// t, v, ok := ev.vectorSelectorSingle(it, node, ts)
+	// if ok {
+	// vec = append(vec, Sample{
+	// Metric: node.Series[i].Labels(),
+	// Point:  Point{V: v, T: t},
+	// })
+	// ev.currentSamples++
+	// }
+	//
+	// if ev.currentSamples >= ev.maxSamples {
+	// ev.error(ErrTooManySamples(env))
+	// }
+	// }
+	return vec, nil
 }
 
 // vectorSelectorSingle evaluates a instant vector for the iterator of one time series.
