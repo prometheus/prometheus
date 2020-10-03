@@ -623,6 +623,7 @@ func readOpenMetrics(path string) (err error) {
 			err = merr.Err()
 		}()
 	}
+	fmt.Println("Check Parser")
 	var p textparse.Parser
 	p = openmetrics.NewParser(input)
 

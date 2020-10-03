@@ -14,6 +14,7 @@
 package openmetrics
 
 import (
+	"fmt"
 	"bufio"
 	"io"
 
@@ -32,7 +33,9 @@ type Parser struct {
 
 // NewParser is a tiny layer between textparse.Parser and importer.Parser which works on io.Reader.
 // TODO(bwplotka): This is hacky, Parser should allow passing reader from scratch.
+// so this is working fine for now
 func NewParser(r io.Reader) textparse.Parser {
+	fmt.Println("in New parser");
 	// TODO(dipack95): Maybe use bufio.Reader.Readline instead?
 	// https://stackoverflow.com/questions/21124327/how-to-read-a-text-file-line-by-line-in-go-when-some-lines-are-long-enough-to-ca
 	return &Parser{s: bufio.NewScanner(r)}
@@ -41,12 +44,15 @@ func NewParser(r io.Reader) textparse.Parser {
 // Next advances the parser to the next sample. It returns io.EOF if no
 // more samples were read.
 // TODO(bwplotka): Rought implementation, not tested, please help dipack95! (:
+// issue here
 func (p *Parser) Next() (textparse.Entry, error) {
+	fmt.Println("In Next");
+	fmt.Println(p);
 	for p.s.Scan() {
 		// TODO(bwplotka): Assuming all line by line. If not do refetch like in previous version with more lines.
 		line := p.s.Bytes()
-
 		p.Parser = textparse.New(line, contentType)
+		fmt.Println(p.Parser)
 		if et, err := p.Parser.Next(); err != io.EOF {
 			return et, err
 		}
