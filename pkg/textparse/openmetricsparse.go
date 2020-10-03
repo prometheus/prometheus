@@ -100,6 +100,9 @@ type OpenMetricsParser struct {
 
 // NewOpenMetricsParser returns a new parser of the byte slice.
 func NewOpenMetricsParser(b []byte) Parser {
+	fmt.Println("In NewOpenMetricsParser")
+	p := OpenMetricsParser{l: &openMetricsLexer{b: b}}.text
+	fmt.Println(p)
 	return &OpenMetricsParser{l: &openMetricsLexer{b: b}}
 }
 
@@ -216,7 +219,10 @@ func (p *OpenMetricsParser) Exemplar(e *exemplar.Exemplar) bool {
 
 // nextToken returns the next token from the openMetricsLexer.
 func (p *OpenMetricsParser) nextToken() token {
+	fmt.Println("nextToken")
 	tok := p.l.Lex()
+	fmt.Println(tok)
+	// I think it is not able to read the text after the space
 	return tok
 }
 
@@ -231,7 +237,6 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 	p.exemplar = p.exemplar[:0]
 	p.exemplarVal = 0
 	p.hasExemplarTs = false
-
 	switch t := p.nextToken(); t {
 	case tEOFWord:
 		if t := p.nextToken(); t != tEOF {
@@ -255,6 +260,7 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 				p.text = []byte{}
 			}
 		default:
+			fmt.Println("in Next in oMparse")
 			return EntryInvalid, parseError("expected text in HELP", t)
 		}
 		switch t {
