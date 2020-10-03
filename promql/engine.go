@@ -1085,12 +1085,13 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		sel := e.Args[matrixArgIndex].(*parser.MatrixSelector)
 		selVS := sel.VectorSelector.(*parser.VectorSelector)
 
-		ws, err := checkAndExpandSeriesSet(ev.ctx, sel)
-		warnings = append(warnings, ws...)
-		if err != nil {
-			ev.error(errWithWarnings{errors.Wrap(err, "expanding series"), warnings})
-		}
-		mat := make(Matrix, 0, len(selVS.Series)) // Output matrix.
+		// ws, err := checkAndExpandSeriesSet(ev.ctx, sel)
+		// warnings = append(warnings, ws...)
+		// if err != nil {
+		// ev.error(errWithWarnings{errors.Wrap(err, "expanding series"), warnings})
+		// }
+		// mat := make(Matrix, 0, len(selVS.Series)) // Output matrix.
+		var mat Matrix
 		offset := durationMilliseconds(selVS.Offset)
 		selRange := durationMilliseconds(sel.Range)
 		stepRange := selRange
@@ -1104,58 +1105,120 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		enh := &EvalNodeHelper{Out: make(Vector, 0, 1)}
 		// Process all the calls for one time series at a time.
 		it := storage.NewBuffer(selRange)
-		for i, s := range selVS.Series {
-			ev.currentSamples -= len(points)
-			points = points[:0]
-			it.Reset(s.Iterator())
-			ss := Series{
-				// For all range vector functions, the only change to the
-				// output labels is dropping the metric name so just do
-				// it once here.
-				Metric: dropMetricName(selVS.Series[i].Labels()),
-				Points: getPointSlice(numSteps),
-			}
-			inMatrix[0].Metric = selVS.Series[i].Labels()
-			for ts, step := ev.startTimestamp, -1; ts <= ev.endTimestamp; ts += ev.interval {
-				step++
-				// Set the non-matrix arguments.
-				// They are scalar, so it is safe to use the step number
-				// when looking up the argument, as there will be no gaps.
-				for j := range e.Args {
-					if j != matrixArgIndex {
-						otherInArgs[j][0].V = otherArgs[j][0].Points[step].V
+		if selVS.Series == nil {
+			uexset := selVS.UnexpandedSeriesSet
+			for uexset.Next() {
+				s := uexset.At()
+				ev.currentSamples -= len(points)
+				points = points[:0]
+				it.Reset(s.Iterator())
+				ss := Series{
+					// For all range vector functions, the only change to the
+					// output labels is dropping the metric name so just do
+					// it once here.
+					Metric: dropMetricName(s.Labels()),
+					Points: getPointSlice(numSteps),
+				}
+				inMatrix[0].Metric = s.Labels()
+				for ts, step := ev.startTimestamp, -1; ts <= ev.endTimestamp; ts += ev.interval {
+					step++
+					// Set the non-matrix arguments.
+					// They are scalar, so it is safe to use the step number
+					// when looking up the argument, as there will be no gaps.
+					for j := range e.Args {
+						if j != matrixArgIndex {
+							otherInArgs[j][0].V = otherArgs[j][0].Points[step].V
+						}
 					}
+					maxt := ts - offset
+					mint := maxt - selRange
+					// Evaluate the matrix selector for this series for this step.
+					points = ev.matrixIterSlice(it, mint, maxt, points)
+					if len(points) == 0 {
+						continue
+					}
+					inMatrix[0].Points = points
+					enh.Ts = ts
+					// Make the function call.
+					outVec := call(inArgs, e.Args, enh)
+					enh.Out = outVec[:0]
+					if len(outVec) > 0 {
+						ss.Points = append(ss.Points, Point{V: outVec[0].Point.V, T: ts})
+					}
+					// Only buffer stepRange milliseconds from the second step on.
+					it.ReduceDelta(stepRange)
 				}
-				maxt := ts - offset
-				mint := maxt - selRange
-				// Evaluate the matrix selector for this series for this step.
-				points = ev.matrixIterSlice(it, mint, maxt, points)
-				if len(points) == 0 {
-					continue
-				}
-				inMatrix[0].Points = points
-				enh.Ts = ts
-				// Make the function call.
-				outVec := call(inArgs, e.Args, enh)
-				enh.Out = outVec[:0]
-				if len(outVec) > 0 {
-					ss.Points = append(ss.Points, Point{V: outVec[0].Point.V, T: ts})
-				}
-				// Only buffer stepRange milliseconds from the second step on.
-				it.ReduceDelta(stepRange)
-			}
-			if len(ss.Points) > 0 {
-				if ev.currentSamples < ev.maxSamples {
-					mat = append(mat, ss)
-					ev.currentSamples += len(ss.Points)
+				if len(ss.Points) > 0 {
+					if ev.currentSamples < ev.maxSamples {
+						mat = append(mat, ss)
+						ev.currentSamples += len(ss.Points)
+					} else {
+						ev.error(ErrTooManySamples(env))
+					}
 				} else {
-					ev.error(ErrTooManySamples(env))
+					putPointSlice(ss.Points)
 				}
-			} else {
-				putPointSlice(ss.Points)
+			}
+			ws := uexset.Warnings()
+			err := uexset.Err()
+
+			warnings = append(warnings, ws...)
+			if err != nil {
+				ev.error(errWithWarnings{errors.Wrap(err, "expanding series"), warnings})
 			}
 		}
-
+		// for i, s := range selVS.Series {
+		// ev.currentSamples -= len(points)
+		// points = points[:0]
+		// it.Reset(s.Iterator())
+		// ss := Series{
+		// For all range vector functions, the only change to the
+		// output labels is dropping the metric name so just do
+		// it once here.
+		// Metric: dropMetricName(selVS.Series[i].Labels()),
+		// Points: getPointSlice(numSteps),
+		// }
+		// inMatrix[0].Metric = selVS.Series[i].Labels()
+		// for ts, step := ev.startTimestamp, -1; ts <= ev.endTimestamp; ts += ev.interval {
+		// step++
+		// Set the non-matrix arguments.
+		// They are scalar, so it is safe to use the step number
+		// when looking up the argument, as there will be no gaps.
+		// for j := range e.Args {
+		// if j != matrixArgIndex {
+		// otherInArgs[j][0].V = otherArgs[j][0].Points[step].V
+		// }
+		// }
+		// maxt := ts - offset
+		// mint := maxt - selRange
+		// Evaluate the matrix selector for this series for this step.
+		// points = ev.matrixIterSlice(it, mint, maxt, points)
+		// if len(points) == 0 {
+		// continue
+		// }
+		// inMatrix[0].Points = points
+		// enh.Ts = ts
+		// Make the function call.
+		// outVec := call(inArgs, e.Args, enh)
+		// enh.Out = outVec[:0]
+		// if len(outVec) > 0 {
+		// ss.Points = append(ss.Points, Point{V: outVec[0].Point.V, T: ts})
+		// }
+		// Only buffer stepRange milliseconds from the second step on.
+		// it.ReduceDelta(stepRange)
+		// }
+		// if len(ss.Points) > 0 {
+		// if ev.currentSamples < ev.maxSamples {
+		// mat = append(mat, ss)
+		// ev.currentSamples += len(ss.Points)
+		// } else {
+		// ev.error(ErrTooManySamples(env))
+		// }
+		// } else {
+		// putPointSlice(ss.Points)
+		// }
+		// }
+		//
 		ev.currentSamples -= len(points)
 		putPointSlice(points)
 

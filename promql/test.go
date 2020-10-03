@@ -462,6 +462,7 @@ func (t *Test) exec(tc testCommand) error {
 
 		err = cmd.compareResult(res.Value)
 		if err != nil {
+			fmt.Println(res.Value)
 			return errors.Wrapf(err, "error in %s %s", cmd, cmd.expr)
 		}
 
