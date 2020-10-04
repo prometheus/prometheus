@@ -74,6 +74,22 @@ func (ds *DocumentSequence) DocumentCount() int {
 	}
 }
 
+// Empty returns true if the sequence is empty. It always returns true for unknown sequence styles.
+func (ds *DocumentSequence) Empty() bool {
+	if ds == nil {
+		return true
+	}
+
+	switch ds.Style {
+	case SequenceStyle:
+		return len(ds.Data) == 0
+	case ArrayStyle:
+		return len(ds.Data) <= 5
+	default:
+		return true
+	}
+}
+
 //ResetIterator resets the iteration point for the Next method to the beginning of the document
 //sequence.
 func (ds *DocumentSequence) ResetIterator() {
@@ -83,9 +99,9 @@ func (ds *DocumentSequence) ResetIterator() {
 	ds.Pos = 0
 }
 
-// documents returns a slice of the documents. If nil either the Data field is also nil or could not
+// Documents returns a slice of the documents. If nil either the Data field is also nil or could not
 // be properly read.
-func (ds *DocumentSequence) documents() ([]Document, error) {
+func (ds *DocumentSequence) Documents() ([]Document, error) {
 	if ds == nil {
 		return nil, nil
 	}

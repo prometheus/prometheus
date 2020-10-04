@@ -398,17 +398,12 @@ Loop:
 				return "", lenmsg, ErrLongDomain
 			}
 			for _, b := range msg[off : off+c] {
-				switch b {
-				case '.', '(', ')', ';', ' ', '@':
-					fallthrough
-				case '"', '\\':
+				if isDomainNameLabelSpecial(b) {
 					s = append(s, '\\', b)
-				default:
-					if b < ' ' || b > '~' { // unprintable, use \DDD
-						s = append(s, escapeByte(b)...)
-					} else {
-						s = append(s, b)
-					}
+				} else if b < ' ' || b > '~' {
+					s = append(s, escapeByte(b)...)
+				} else {
+					s = append(s, b)
 				}
 			}
 			s = append(s, '.')
@@ -661,7 +656,6 @@ func unpackRRslice(l int, msg []byte, off int) (dst1 []RR, off1 int, err error) 
 		}
 		// If offset does not increase anymore, l is a lie
 		if off1 == off {
-			l = i
 			break
 		}
 		dst = append(dst, r)

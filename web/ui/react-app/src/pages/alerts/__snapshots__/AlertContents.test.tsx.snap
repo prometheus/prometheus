@@ -1,0 +1,100 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`AlertsContent matches a snapshot 1`] = `
+<Fragment>
+  <div
+    className="d-flex togglers-wrapper"
+  >
+    <Memo(Checkbox)
+      checked={true}
+      id="inactive-toggler"
+      key="inactive"
+      onClick={[Function]}
+      wrapperStyles={
+        Object {
+          "marginRight": 10,
+        }
+      }
+    >
+      <Badge
+        className="text-capitalize"
+        color="success"
+        pill={false}
+        tag="span"
+      >
+        inactive
+         (
+        0
+        )
+      </Badge>
+    </Memo(Checkbox)>
+    <Memo(Checkbox)
+      checked={true}
+      id="pending-toggler"
+      key="pending"
+      onClick={[Function]}
+      wrapperStyles={
+        Object {
+          "marginRight": 10,
+        }
+      }
+    >
+      <Badge
+        className="text-capitalize"
+        color="warning"
+        pill={false}
+        tag="span"
+      >
+        pending
+         (
+        0
+        )
+      </Badge>
+    </Memo(Checkbox)>
+    <Memo(Checkbox)
+      checked={true}
+      id="firing-toggler"
+      key="firing"
+      onClick={[Function]}
+      wrapperStyles={
+        Object {
+          "marginRight": 10,
+        }
+      }
+    >
+      <Badge
+        className="text-capitalize"
+        color="danger"
+        pill={false}
+        tag="span"
+      >
+        firing
+         (
+        0
+        )
+      </Badge>
+    </Memo(Checkbox)>
+    <Memo(Checkbox)
+      checked={false}
+      id="show-annotations-toggler"
+      onClick={[Function]}
+      wrapperStyles={
+        Object {
+          "marginLeft": "auto",
+        }
+      }
+    >
+      <span
+        style={
+          Object {
+            "fontSize": "0.9rem",
+            "lineHeight": 1.9,
+          }
+        }
+      >
+        Show annotations
+      </span>
+    </Memo(Checkbox)>
+  </div>
+</Fragment>
+`;

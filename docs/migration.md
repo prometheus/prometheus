@@ -7,7 +7,7 @@ sort_rank: 8
 
 In line with our [stability promise](https://prometheus.io/blog/2016/07/18/prometheus-1-0-released/#fine-print),
 the Prometheus 2.0 release contains a number of backwards incompatible changes.
-This document offers guidance on migrating from Prometheus 1.8 to Prometheus 2.0.
+This document offers guidance on migrating from Prometheus 1.8 to Prometheus 2.0 and newer versions.
 
 ## Flags
 
@@ -88,7 +88,7 @@ An example of a recording rule and alert in the old format:
 
 ```
 job:request_duration_seconds:histogram_quantile99 =
-  histogram_quantile(0.99, sum(rate(request_duration_seconds_bucket[1m])) by (le, job))
+  histogram_quantile(0.99, sum by (le, job) (rate(request_duration_seconds_bucket[1m])))
 
 ALERT FrontendRequestLatency
   IF job:request_duration_seconds:histogram_quantile99{job="frontend"} > 0.1
@@ -105,8 +105,7 @@ groups:
 - name: example.rules
   rules:
   - record: job:request_duration_seconds:histogram_quantile99
-    expr: histogram_quantile(0.99, sum(rate(request_duration_seconds_bucket[1m]))
-      BY (le, job))
+    expr: histogram_quantile(0.99, sum by (le, job) (rate(request_duration_seconds_bucket[1m])))
   - alert: FrontendRequestLatency
     expr: job:request_duration_seconds:histogram_quantile99{job="frontend"} > 0.1
     for: 5m
@@ -121,12 +120,12 @@ new format. For example:
 $ promtool update rules example.rules
 ```
 
-Note that you will need to use promtool from 2.0, not 1.8.
+You will need to use `promtool` from [Prometheus 2.5](https://github.com/prometheus/prometheus/releases/tag/v2.5.0) as later versions no longer contain the above subcommand.
 
 ## Storage
 
 The data format in Prometheus 2.0 has completely changed and is not backwards
-compatible with 1.8. To retain access to your historic monitoring data we
+compatible with 1.8 and older versions. To retain access to your historic monitoring data we
 recommend you run a non-scraping Prometheus instance running at least version
 1.8.1 in parallel with your Prometheus 2.0 instance, and have the new server
 read existing data from the old one via the remote read protocol.
@@ -190,7 +189,7 @@ for more details.
 If you're using Docker, then the following snippet would be used:
 
 ```
-docker run -u root -p 80:80 prom/prometheus:v2.0.0-rc.2  --web.listen-address :80
+docker run -p 9090:9090 prom/prometheus:latest
 ```
 
 ### Prometheus lifecycle

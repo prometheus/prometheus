@@ -28,7 +28,7 @@ const (
 	ISO8601TimeFormat = "2006-01-02T15:04:05.999999999Z"
 
 	// This format is used for output time without seconds precision
-	ISO8601OutputTimeFormat = "2006-01-02T15:04:05Z"
+	ISO8601OutputTimeFormat = "2006-01-02T15:04:05.999999999Z"
 )
 
 // IsKnownTimestampFormat returns if the timestamp format name
@@ -56,7 +56,8 @@ func FormatTime(name string, t time.Time) string {
 	case ISO8601TimeFormatName:
 		return t.Format(ISO8601OutputTimeFormat)
 	case UnixTimeFormatName:
-		return strconv.FormatInt(t.Unix(), 10)
+		ms := t.UnixNano() / int64(time.Millisecond)
+		return strconv.FormatFloat(float64(ms)/1e3, 'f', -1, 64)
 	default:
 		panic("unknown timestamp format name, " + name)
 	}

@@ -5,8 +5,8 @@ import {
   metricToSeriesName,
   formatTime,
   parseTime,
-  formatRange,
-  parseRange,
+  formatDuration,
+  parseDuration,
   humanizeDuration,
   formatRelative,
   now,
@@ -14,6 +14,7 @@ import {
   encodePanelOptionsToQueryString,
   parseOption,
   decodePanelOptionsFromQueryString,
+  parsePrometheusFloat,
 } from '.';
 import { PanelType } from '../pages/graph/Panel';
 
@@ -66,25 +67,92 @@ describe('Utils', () => {
       });
     });
 
-    describe('formatRange', () => {
-      it('returns a time string representing the time in seconds in one unit', () => {
-        expect(formatRange(60 * 60 * 24 * 365)).toEqual('1y');
-        expect(formatRange(60 * 60 * 24 * 7)).toEqual('1w');
-        expect(formatRange(2 * 60 * 60 * 24)).toEqual('2d');
-        expect(formatRange(60 * 60)).toEqual('1h');
-        expect(formatRange(7 * 60)).toEqual('7m');
-        expect(formatRange(63)).toEqual('63s');
-      });
-    });
+    describe('parseDuration and formatDuration', () => {
+      describe('should parse and format durations correctly', () => {
+        const tests: { input: string; output: number; expectedString?: string }[] = [
+          {
+            input: '0',
+            output: 0,
+            expectedString: '0s',
+          },
+          {
+            input: '0w',
+            output: 0,
+            expectedString: '0s',
+          },
+          {
+            input: '0s',
+            output: 0,
+          },
+          {
+            input: '324ms',
+            output: 324,
+          },
+          {
+            input: '3s',
+            output: 3 * 1000,
+          },
+          {
+            input: '5m',
+            output: 5 * 60 * 1000,
+          },
+          {
+            input: '1h',
+            output: 60 * 60 * 1000,
+          },
+          {
+            input: '4d',
+            output: 4 * 24 * 60 * 60 * 1000,
+          },
+          {
+            input: '4d1h',
+            output: 4 * 24 * 60 * 60 * 1000 + 1 * 60 * 60 * 1000,
+          },
+          {
+            input: '14d',
+            output: 14 * 24 * 60 * 60 * 1000,
+            expectedString: '2w',
+          },
+          {
+            input: '3w',
+            output: 3 * 7 * 24 * 60 * 60 * 1000,
+          },
+          {
+            input: '3w2d1h',
+            output: 3 * 7 * 24 * 60 * 60 * 1000 + 2 * 24 * 60 * 60 * 1000 + 60 * 60 * 1000,
+            expectedString: '23d1h',
+          },
+          {
+            input: '1y2w3d4h5m6s7ms',
+            output:
+              1 * 365 * 24 * 60 * 60 * 1000 +
+              2 * 7 * 24 * 60 * 60 * 1000 +
+              3 * 24 * 60 * 60 * 1000 +
+              4 * 60 * 60 * 1000 +
+              5 * 60 * 1000 +
+              6 * 1000 +
+              7,
+            expectedString: '382d4h5m6s7ms',
+          },
+        ];
 
-    describe('parseRange', () => {
-      it('returns a time string representing the time in seconds in one unit', () => {
-        expect(parseRange('1y')).toEqual(60 * 60 * 24 * 365);
-        expect(parseRange('1w')).toEqual(60 * 60 * 24 * 7);
-        expect(parseRange('2d')).toEqual(2 * 60 * 60 * 24);
-        expect(parseRange('1h')).toEqual(60 * 60);
-        expect(parseRange('7m')).toEqual(7 * 60);
-        expect(parseRange('63s')).toEqual(63);
+        tests.forEach(t => {
+          it(t.input, () => {
+            const d = parseDuration(t.input);
+            expect(d).toEqual(t.output);
+            expect(formatDuration(d!)).toEqual(t.expectedString || t.input);
+          });
+        });
+      });
+
+      describe('should fail to parse invalid durations', () => {
+        const tests = ['1', '1y1m1d', '-1w', '1.5d', 'd', ''];
+
+        tests.forEach(t => {
+          it(t, () => {
+            expect(parseDuration(t)).toBe(null);
+          });
+        });
       });
     });
 
@@ -140,7 +208,7 @@ describe('Utils', () => {
         options: {
           endTime: 1572046620000,
           expr: 'rate(node_cpu_seconds_total{mode="system"}[1m])',
-          range: 3600,
+          range: 60 * 60 * 1000,
           resolution: null,
           stacked: false,
           type: PanelType.Graph,
@@ -151,7 +219,7 @@ describe('Utils', () => {
         options: {
           endTime: null,
           expr: 'node_filesystem_avail_bytes',
-          range: 3600,
+          range: 60 * 60 * 1000,
           resolution: null,
           stacked: false,
           type: PanelType.Table,
@@ -200,7 +268,7 @@ describe('Utils', () => {
 
       describe('range_input', () => {
         it('should return range parsed if its not null', () => {
-          expect(parseOption('range_input=2h')).toEqual({ range: 7200 });
+          expect(parseOption('range_input=2h')).toEqual({ range: 2 * 60 * 60 * 1000 });
         });
         it('should return empty object for invalid value', () => {
           expect(parseOption('range_input=h')).toEqual({});
@@ -225,7 +293,7 @@ describe('Utils', () => {
             key: '0',
             options: { expr: 'foo', type: PanelType.Graph, stacked: true, range: 0, endTime: null, resolution: 1 },
           })
-        ).toEqual('g0.expr=foo&g0.tab=0&g0.stacked=1&g0.range_input=0y&g0.step_input=1');
+        ).toEqual('g0.expr=foo&g0.tab=0&g0.stacked=1&g0.range_input=0s&g0.step_input=1');
       });
     });
 
@@ -235,6 +303,24 @@ describe('Utils', () => {
       });
       it('returns an encoded query string otherwise', () => {
         expect(encodePanelOptionsToQueryString(panels)).toEqual(query);
+      });
+    });
+
+    describe('parsePrometheusFloat', () => {
+      it('returns Inf when param is Inf', () => {
+        expect(parsePrometheusFloat('Inf')).toEqual('Inf');
+      });
+      it('returns +Inf when param is +Inf', () => {
+        expect(parsePrometheusFloat('+Inf')).toEqual('+Inf');
+      });
+      it('returns -Inf when param is -Inf', () => {
+        expect(parsePrometheusFloat('-Inf')).toEqual('-Inf');
+      });
+      it('returns 17 when param is 1.7e+01', () => {
+        expect(parsePrometheusFloat('1.7e+01')).toEqual(17);
+      });
+      it('returns -17 when param is -1.7e+01', () => {
+        expect(parsePrometheusFloat('-1.7e+01')).toEqual(-17);
       });
     });
   });

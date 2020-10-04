@@ -48,21 +48,21 @@ func (i Item) String() string {
 	return fmt.Sprintf("%q", i.Val)
 }
 
-// isOperator returns true if the Item corresponds to a arithmetic or set operator.
+// IsOperator returns true if the Item corresponds to a arithmetic or set operator.
 // Returns false otherwise.
 func (i ItemType) IsOperator() bool { return i > operatorsStart && i < operatorsEnd }
 
-// isAggregator returns true if the Item belongs to the aggregator functions.
+// IsAggregator returns true if the Item belongs to the aggregator functions.
 // Returns false otherwise
 func (i ItemType) IsAggregator() bool { return i > aggregatorsStart && i < aggregatorsEnd }
 
-// isAggregator returns true if the Item is an aggregator that takes a parameter.
+// IsAggregatorWithParam returns true if the Item is an aggregator that takes a parameter.
 // Returns false otherwise
 func (i ItemType) IsAggregatorWithParam() bool {
 	return i == TOPK || i == BOTTOMK || i == COUNT_VALUES || i == QUANTILE
 }
 
-// isKeyword returns true if the Item corresponds to a keyword.
+// IsKeyword returns true if the Item corresponds to a keyword.
 // Returns false otherwise.
 func (i ItemType) IsKeyword() bool { return i > keywordsStart && i < keywordsEnd }
 
@@ -70,14 +70,14 @@ func (i ItemType) IsKeyword() bool { return i > keywordsStart && i < keywordsEnd
 // Returns false otherwise.
 func (i ItemType) IsComparisonOperator() bool {
 	switch i {
-	case EQL, NEQ, LTE, LSS, GTE, GTR:
+	case EQLC, NEQ, LTE, LSS, GTE, GTR:
 		return true
 	default:
 		return false
 	}
 }
 
-// isSetOperator returns whether the Item corresponds to a set operator.
+// IsSetOperator returns whether the Item corresponds to a set operator.
 func (i ItemType) IsSetOperator() bool {
 	switch i {
 	case LAND, LOR, LUNLESS:
@@ -104,6 +104,7 @@ var key = map[string]ItemType{
 	"count":        COUNT,
 	"min":          MIN,
 	"max":          MAX,
+	"group":        GROUP,
 	"stddev":       STDDEV,
 	"stdvar":       STDVAR,
 	"topk":         TOPK,
@@ -132,7 +133,7 @@ var ItemTypeStr = map[ItemType]string{
 	LEFT_BRACKET:  "[",
 	RIGHT_BRACKET: "]",
 	COMMA:         ",",
-	ASSIGN:        "=",
+	EQL:           "=",
 	COLON:         ":",
 	SEMICOLON:     ";",
 	BLANK:         "_",
@@ -144,7 +145,7 @@ var ItemTypeStr = map[ItemType]string{
 	MUL:       "*",
 	MOD:       "%",
 	DIV:       "/",
-	EQL:       "==",
+	EQLC:      "==",
 	NEQ:       "!=",
 	LTE:       "<=",
 	LSS:       "<",
@@ -362,11 +363,11 @@ func lexStatements(l *Lexer) stateFn {
 	case r == '=':
 		if t := l.peek(); t == '=' {
 			l.next()
-			l.emit(EQL)
+			l.emit(EQLC)
 		} else if t == '~' {
 			return l.errorf("unexpected character after '=': %q", t)
 		} else {
-			l.emit(ASSIGN)
+			l.emit(EQL)
 		}
 	case r == '!':
 		if t := l.next(); t == '=' {
@@ -672,16 +673,12 @@ func lexDuration(l *Lexer) stateFn {
 	if l.scanNumber() {
 		return l.errorf("missing unit character in duration")
 	}
-	// Next two chars must be a valid unit and a non-alphanumeric.
-	if l.accept("smhdwy") {
-		if isAlphaNumeric(l.next()) {
-			return l.errorf("bad duration syntax: %q", l.input[l.start:l.pos])
-		}
-		l.backup()
-		l.emit(DURATION)
-		return lexStatements
+	if !acceptRemainingDuration(l) {
+		return l.errorf("bad duration syntax: %q", l.input[l.start:l.pos])
 	}
-	return l.errorf("bad duration syntax: %q", l.input[l.start:l.pos])
+	l.backup()
+	l.emit(DURATION)
+	return lexStatements
 }
 
 // lexNumber scans a number: decimal, hex, oct or float.
@@ -700,15 +697,36 @@ func lexNumberOrDuration(l *Lexer) stateFn {
 		return lexStatements
 	}
 	// Next two chars must be a valid unit and a non-alphanumeric.
-	if l.accept("smhdwy") {
-		if isAlphaNumeric(l.next()) {
-			return l.errorf("bad number or duration syntax: %q", l.input[l.start:l.pos])
-		}
+	if acceptRemainingDuration(l) {
 		l.backup()
 		l.emit(DURATION)
 		return lexStatements
 	}
 	return l.errorf("bad number or duration syntax: %q", l.input[l.start:l.pos])
+}
+
+func acceptRemainingDuration(l *Lexer) bool {
+	// Next two char must be a valid duration.
+	if !l.accept("smhdwy") {
+		return false
+	}
+	// Support for ms. Bad units like hs, ys will be caught when we actually
+	// parse the duration.
+	l.accept("s")
+	// Next char can be another number then a unit.
+	for l.accept("0123456789") {
+		for l.accept("0123456789") {
+		}
+		// y is no longer in the list as it should always come first in
+		// durations.
+		if !l.accept("smhdw") {
+			return false
+		}
+		// Support for ms. Bad units like hs, ys will be caught when we actually
+		// parse the duration.
+		l.accept("s")
+	}
+	return !isAlphaNumeric(l.next())
 }
 
 // scanNumber scans numbers of different formats. The scanned Item is

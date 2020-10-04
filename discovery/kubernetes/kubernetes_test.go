@@ -25,9 +25,14 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/cache"
 
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/testutil"
 )
+
+func TestMain(m *testing.M) {
+	testutil.TolerantVerifyLeak(m)
+}
 
 // makeDiscovery creates a kubernetes.Discovery instance for testing.
 func makeDiscovery(role Role, nsDiscovery NamespaceDiscovery, objects ...runtime.Object) (*Discovery, kubernetes.Interface) {
@@ -43,7 +48,7 @@ func makeDiscovery(role Role, nsDiscovery NamespaceDiscovery, objects ...runtime
 
 type k8sDiscoveryTest struct {
 	// discovery is instance of discovery.Discoverer
-	discovery discoverer
+	discovery discovery.Discoverer
 	// beforeRun runs before discoverer run
 	beforeRun func()
 	// afterStart runs after discoverer has synced
@@ -107,14 +112,18 @@ func (d k8sDiscoveryTest) Run(t *testing.T) {
 // readResultWithTimeout reads all targegroups from channel with timeout.
 // It merges targegroups by source and sends the result to result channel.
 func readResultWithTimeout(t *testing.T, ch <-chan []*targetgroup.Group, max int, timeout time.Duration, resChan chan<- map[string]*targetgroup.Group) {
-	allTgs := make([][]*targetgroup.Group, 0)
-
+	res := make(map[string]*targetgroup.Group)
 Loop:
 	for {
 		select {
 		case tgs := <-ch:
-			allTgs = append(allTgs, tgs)
-			if len(allTgs) == max {
+			for _, tg := range tgs {
+				if tg == nil {
+					continue
+				}
+				res[tg.Source] = tg
+			}
+			if len(res) == max {
 				// Reached max target groups we may get, break fast.
 				break Loop
 			}
@@ -122,21 +131,11 @@ Loop:
 			// Because we use queue, an object that is created then
 			// deleted or updated may be processed only once.
 			// So possibly we may skip events, timed out here.
-			t.Logf("timed out, got %d (max: %d) items, some events are skipped", len(allTgs), max)
+			t.Logf("timed out, got %d (max: %d) items, some events are skipped", len(res), max)
 			break Loop
 		}
 	}
 
-	// Merge by source and sent it to channel.
-	res := make(map[string]*targetgroup.Group)
-	for _, tgs := range allTgs {
-		for _, tg := range tgs {
-			if tg == nil {
-				continue
-			}
-			res[tg.Source] = tg
-		}
-	}
 	resChan <- res
 }
 
@@ -164,6 +163,7 @@ type hasSynced interface {
 var _ hasSynced = &Discovery{}
 var _ hasSynced = &Node{}
 var _ hasSynced = &Endpoints{}
+var _ hasSynced = &EndpointSlice{}
 var _ hasSynced = &Ingress{}
 var _ hasSynced = &Pod{}
 var _ hasSynced = &Service{}
@@ -187,6 +187,10 @@ func (n *Node) hasSynced() bool {
 
 func (e *Endpoints) hasSynced() bool {
 	return e.endpointsInf.HasSynced() && e.serviceInf.HasSynced() && e.podInf.HasSynced()
+}
+
+func (e *EndpointSlice) hasSynced() bool {
+	return e.endpointSliceInf.HasSynced() && e.serviceInf.HasSynced() && e.podInf.HasSynced()
 }
 
 func (i *Ingress) hasSynced() bool {

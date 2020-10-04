@@ -44,10 +44,9 @@ type IndexWriter interface {
 
 	// AddSeries populates the index writer with a series and its offsets
 	// of chunks that the index can reference.
-	// Implementations may require series to be insert in increasing order by
-	// their labels.
-	// The reference numbers are used to resolve entries in postings lists that
-	// are added later.
+	// Implementations may require series to be insert in strictly increasing order by
+	// their labels. The reference numbers are used to resolve entries in postings lists
+	// that are added later.
 	AddSeries(ref uint64, l labels.Labels, chunks ...chunks.Meta) error
 
 	// Close writes any finalization and closes the resources associated with
@@ -62,7 +61,10 @@ type IndexReader interface {
 	// beyond the lifetime of the index reader.
 	Symbols() index.StringIter
 
-	// LabelValues returns sorted possible label values.
+	// SortedLabelValues returns sorted possible label values.
+	SortedLabelValues(name string) ([]string, error)
+
+	// LabelValues returns possible label values which may not be sorted.
 	LabelValues(name string) ([]string, error)
 
 	// Postings returns the postings list iterator for the label pairs.
@@ -417,6 +419,11 @@ type blockIndexReader struct {
 
 func (r blockIndexReader) Symbols() index.StringIter {
 	return r.ir.Symbols()
+}
+
+func (r blockIndexReader) SortedLabelValues(name string) ([]string, error) {
+	st, err := r.ir.SortedLabelValues(name)
+	return st, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
 }
 
 func (r blockIndexReader) LabelValues(name string) ([]string, error) {

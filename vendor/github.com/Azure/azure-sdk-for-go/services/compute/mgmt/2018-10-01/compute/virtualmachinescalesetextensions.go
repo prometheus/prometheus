@@ -115,7 +115,6 @@ func (client VirtualMachineScaleSetExtensionsClient) CreateOrUpdateSender(req *h
 func (client VirtualMachineScaleSetExtensionsClient) CreateOrUpdateResponder(resp *http.Response) (result VirtualMachineScaleSetExtension, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -193,7 +192,6 @@ func (client VirtualMachineScaleSetExtensionsClient) DeleteSender(req *http.Requ
 func (client VirtualMachineScaleSetExtensionsClient) DeleteResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted, http.StatusNoContent),
 		autorest.ByClosing())
 	result.Response = resp
@@ -274,7 +272,6 @@ func (client VirtualMachineScaleSetExtensionsClient) GetSender(req *http.Request
 func (client VirtualMachineScaleSetExtensionsClient) GetResponder(resp *http.Response) (result VirtualMachineScaleSetExtension, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -315,6 +312,9 @@ func (client VirtualMachineScaleSetExtensionsClient) List(ctx context.Context, r
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachineScaleSetExtensionsClient", "List", resp, "Failure responding to request")
 	}
+	if result.vmsselr.hasNextLink() && result.vmsselr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }
@@ -351,7 +351,6 @@ func (client VirtualMachineScaleSetExtensionsClient) ListSender(req *http.Reques
 func (client VirtualMachineScaleSetExtensionsClient) ListResponder(resp *http.Response) (result VirtualMachineScaleSetExtensionListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

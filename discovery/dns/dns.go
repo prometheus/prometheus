@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
@@ -35,7 +36,10 @@ import (
 const (
 	resolvConf = "/etc/resolv.conf"
 
-	dnsNameLabel = model.MetaLabelPrefix + "dns_name"
+	dnsNameLabel            = model.MetaLabelPrefix + "dns_name"
+	dnsSrvRecordPrefix      = model.MetaLabelPrefix + "dns_srv_record_"
+	dnsSrvRecordTargetLabel = dnsSrvRecordPrefix + "target"
+	dnsSrvRecordPortLabel   = dnsSrvRecordPrefix + "port"
 
 	// Constants for instrumentation.
 	namespace = "prometheus"
@@ -62,12 +66,26 @@ var (
 	}
 )
 
+func init() {
+	discovery.RegisterConfig(&SDConfig{})
+	prometheus.MustRegister(dnsSDLookupFailuresCount)
+	prometheus.MustRegister(dnsSDLookupsCount)
+}
+
 // SDConfig is the configuration for DNS based service discovery.
 type SDConfig struct {
 	Names           []string       `yaml:"names"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 	Type            string         `yaml:"type"`
 	Port            int            `yaml:"port"` // Ignored for SRV records
+}
+
+// Name returns the name of the Config.
+func (*SDConfig) Name() string { return "dns" }
+
+// NewDiscoverer returns a Discoverer for the Config.
+func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
+	return NewDiscovery(*c, opts.Logger), nil
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -91,11 +109,6 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return errors.Errorf("invalid DNS-SD records type %s", c.Type)
 	}
 	return nil
-}
-
-func init() {
-	prometheus.MustRegister(dnsSDLookupFailuresCount)
-	prometheus.MustRegister(dnsSDLookupsCount)
 }
 
 // Discovery periodically performs DNS-SD requests. It implements
@@ -183,9 +196,13 @@ func (d *Discovery) refreshOne(ctx context.Context, name string, ch chan<- *targ
 	}
 
 	for _, record := range response.Answer {
-		var target model.LabelValue
+		var target, dnsSrvRecordTarget, dnsSrvRecordPort model.LabelValue
+
 		switch addr := record.(type) {
 		case *dns.SRV:
+			dnsSrvRecordTarget = model.LabelValue(addr.Target)
+			dnsSrvRecordPort = model.LabelValue(fmt.Sprintf("%d", addr.Port))
+
 			// Remove the final dot from rooted DNS names to make them look more usual.
 			addr.Target = strings.TrimRight(addr.Target, ".")
 
@@ -199,8 +216,10 @@ func (d *Discovery) refreshOne(ctx context.Context, name string, ch chan<- *targ
 			continue
 		}
 		tg.Targets = append(tg.Targets, model.LabelSet{
-			model.AddressLabel: target,
-			dnsNameLabel:       model.LabelValue(name),
+			model.AddressLabel:      target,
+			dnsNameLabel:            model.LabelValue(name),
+			dnsSrvRecordTargetLabel: dnsSrvRecordTarget,
+			dnsSrvRecordPortLabel:   dnsSrvRecordPort,
 		})
 	}
 

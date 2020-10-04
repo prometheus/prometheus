@@ -28,6 +28,15 @@ const (
 	// service will proxy connections based off the SNI header set by other
 	// connect proxies
 	ServiceKindMeshGateway ServiceKind = "mesh-gateway"
+
+	// ServiceKindTerminatingGateway is a Terminating Gateway for the Connect
+	// feature. This service will proxy connections to services outside the mesh.
+	ServiceKindTerminatingGateway ServiceKind = "terminating-gateway"
+
+	// ServiceKindIngressGateway is an Ingress Gateway for the Connect feature.
+	// This service will ingress connections based of configuration defined in
+	// the ingress-gateway config entry.
+	ServiceKindIngressGateway ServiceKind = "ingress-gateway"
 )
 
 // UpstreamDestType is the type of upstream discovery mechanism.
@@ -179,26 +188,28 @@ type AgentCheckRegistration struct {
 
 // AgentServiceCheck is used to define a node or service level check
 type AgentServiceCheck struct {
-	CheckID           string              `json:",omitempty"`
-	Name              string              `json:",omitempty"`
-	Args              []string            `json:"ScriptArgs,omitempty"`
-	DockerContainerID string              `json:",omitempty"`
-	Shell             string              `json:",omitempty"` // Only supported for Docker.
-	Interval          string              `json:",omitempty"`
-	Timeout           string              `json:",omitempty"`
-	TTL               string              `json:",omitempty"`
-	HTTP              string              `json:",omitempty"`
-	Header            map[string][]string `json:",omitempty"`
-	Method            string              `json:",omitempty"`
-	Body              string              `json:",omitempty"`
-	TCP               string              `json:",omitempty"`
-	Status            string              `json:",omitempty"`
-	Notes             string              `json:",omitempty"`
-	TLSSkipVerify     bool                `json:",omitempty"`
-	GRPC              string              `json:",omitempty"`
-	GRPCUseTLS        bool                `json:",omitempty"`
-	AliasNode         string              `json:",omitempty"`
-	AliasService      string              `json:",omitempty"`
+	CheckID                string              `json:",omitempty"`
+	Name                   string              `json:",omitempty"`
+	Args                   []string            `json:"ScriptArgs,omitempty"`
+	DockerContainerID      string              `json:",omitempty"`
+	Shell                  string              `json:",omitempty"` // Only supported for Docker.
+	Interval               string              `json:",omitempty"`
+	Timeout                string              `json:",omitempty"`
+	TTL                    string              `json:",omitempty"`
+	HTTP                   string              `json:",omitempty"`
+	Header                 map[string][]string `json:",omitempty"`
+	Method                 string              `json:",omitempty"`
+	Body                   string              `json:",omitempty"`
+	TCP                    string              `json:",omitempty"`
+	Status                 string              `json:",omitempty"`
+	Notes                  string              `json:",omitempty"`
+	TLSSkipVerify          bool                `json:",omitempty"`
+	GRPC                   string              `json:",omitempty"`
+	GRPCUseTLS             bool                `json:",omitempty"`
+	AliasNode              string              `json:",omitempty"`
+	AliasService           string              `json:",omitempty"`
+	SuccessBeforePassing   int                 `json:",omitempty"`
+	FailuresBeforeCritical int                 `json:",omitempty"`
 
 	// In Consul 0.7 and later, checks that are associated with a service
 	// may also contain this optional DeregisterCriticalServiceAfter field,

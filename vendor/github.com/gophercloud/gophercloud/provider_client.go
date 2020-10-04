@@ -94,10 +94,32 @@ type ProviderClient struct {
 // reauthlock represents a set of attributes used to help in the reauthentication process.
 type reauthlock struct {
 	sync.RWMutex
-	// This channel is non-nil during reauthentication. It can be used to ask the
-	// goroutine doing Reauthenticate() for its result. Look at the implementation
-	// of Reauthenticate() for details.
-	ongoing chan<- (chan<- error)
+	ongoing *reauthFuture
+}
+
+// reauthFuture represents future result of the reauthentication process.
+// while done channel is not closed, reauthentication is in progress.
+// when done channel is closed, err contains the result of reauthentication.
+type reauthFuture struct {
+	done chan struct{}
+	err  error
+}
+
+func newReauthFuture() *reauthFuture {
+	return &reauthFuture{
+		make(chan struct{}),
+		nil,
+	}
+}
+
+func (f *reauthFuture) Set(err error) {
+	f.err = err
+	close(f.done)
+}
+
+func (f *reauthFuture) Get() error {
+	<-f.done
+	return f.err
 }
 
 // AuthenticatedHeaders returns a map of HTTP headers that are common for all
@@ -112,9 +134,7 @@ func (client *ProviderClient) AuthenticatedHeaders() (m map[string]string) {
 		ongoing := client.reauthmut.ongoing
 		client.reauthmut.Unlock()
 		if ongoing != nil {
-			responseChannel := make(chan error)
-			ongoing <- responseChannel
-			_ = <-responseChannel
+			_ = ongoing.Get()
 		}
 	}
 	t := client.Token()
@@ -237,21 +257,19 @@ func (client *ProviderClient) Reauthenticate(previousToken string) error {
 		return client.ReauthFunc()
 	}
 
-	messages := make(chan (chan<- error))
+	future := newReauthFuture()
 
 	// Check if a Reauthenticate is in progress, or start one if not.
 	client.reauthmut.Lock()
 	ongoing := client.reauthmut.ongoing
 	if ongoing == nil {
-		client.reauthmut.ongoing = messages
+		client.reauthmut.ongoing = future
 	}
 	client.reauthmut.Unlock()
 
 	// If Reauthenticate is running elsewhere, wait for its result.
 	if ongoing != nil {
-		responseChannel := make(chan error)
-		ongoing <- responseChannel
-		return <-responseChannel
+		return ongoing.Get()
 	}
 
 	// Perform the actual reauthentication.
@@ -264,22 +282,10 @@ func (client *ProviderClient) Reauthenticate(previousToken string) error {
 
 	// Mark Reauthenticate as finished.
 	client.reauthmut.Lock()
+	client.reauthmut.ongoing.Set(err)
 	client.reauthmut.ongoing = nil
 	client.reauthmut.Unlock()
 
-	// Report result to all other interested goroutines.
-	//
-	// This happens in a separate goroutine because another goroutine might have
-	// acquired a copy of `client.reauthmut.ongoing` before we cleared it, but not
-	// have come around to sending its request. By answering in a goroutine, we
-	// can have that goroutine linger until all responseChannels have been sent.
-	// When GC has collected all sendings ends of the channel, our receiving end
-	// will be closed and the goroutine will end.
-	go func() {
-		for responseChannel := range messages {
-			responseChannel <- err
-		}
-	}()
 	return err
 }
 
@@ -305,6 +311,9 @@ type RequestOpts struct {
 	// ErrorContext specifies the resource error type to return if an error is encountered.
 	// This lets resources override default error messages based on the response status code.
 	ErrorContext error
+	// KeepResponseBody specifies whether to keep the HTTP response body. Usually used, when the HTTP
+	// response body is considered for further use. Valid when JSONResponse is nil.
+	KeepResponseBody bool
 }
 
 // requestState contains temporary state for a single ProviderClient.Request() call.
@@ -346,6 +355,11 @@ func (client *ProviderClient) doRequest(method, url string, options *RequestOpts
 		contentType = &applicationJSON
 	}
 
+	// Return an error, when "KeepResponseBody" is true and "JSONResponse" is not nil
+	if options.KeepResponseBody && options.JSONResponse != nil {
+		return nil, errors.New("cannot use KeepResponseBody when JSONResponse is not nil")
+	}
+
 	if options.RawBody != nil {
 		body = options.RawBody
 	}
@@ -384,9 +398,6 @@ func (client *ProviderClient) doRequest(method, url string, options *RequestOpts
 		req.Header.Set(k, v)
 	}
 
-	// Set connection parameter to close the connection immediately when we've got the response
-	req.Close = true
-
 	prereqtok := req.Header.Get("X-Auth-Token")
 
 	// Issue the request.
@@ -414,11 +425,12 @@ func (client *ProviderClient) doRequest(method, url string, options *RequestOpts
 		body, _ := ioutil.ReadAll(resp.Body)
 		resp.Body.Close()
 		respErr := ErrUnexpectedResponseCode{
-			URL:      url,
-			Method:   method,
-			Expected: options.OkCodes,
-			Actual:   resp.StatusCode,
-			Body:     body,
+			URL:            url,
+			Method:         method,
+			Expected:       options.OkCodes,
+			Actual:         resp.StatusCode,
+			Body:           body,
+			ResponseHeader: resp.Header,
 		}
 
 		errType := options.ErrorContext
@@ -513,7 +525,22 @@ func (client *ProviderClient) doRequest(method, url string, options *RequestOpts
 	// Parse the response body as JSON, if requested to do so.
 	if options.JSONResponse != nil {
 		defer resp.Body.Close()
+		// Don't decode JSON when there is no content
+		if resp.StatusCode == http.StatusNoContent {
+			// read till EOF, otherwise the connection will be closed and cannot be reused
+			_, err = io.Copy(ioutil.Discard, resp.Body)
+			return resp, err
+		}
 		if err := json.NewDecoder(resp.Body).Decode(options.JSONResponse); err != nil {
+			return nil, err
+		}
+	}
+
+	// Close unused body to allow the HTTP connection to be reused
+	if !options.KeepResponseBody && options.JSONResponse == nil {
+		defer resp.Body.Close()
+		// read till EOF, otherwise the connection will be closed and cannot be reused
+		if _, err := io.Copy(ioutil.Discard, resp.Body); err != nil {
 			return nil, err
 		}
 	}
@@ -522,16 +549,16 @@ func (client *ProviderClient) doRequest(method, url string, options *RequestOpts
 }
 
 func defaultOkCodes(method string) []int {
-	switch {
-	case method == "GET":
+	switch method {
+	case "GET", "HEAD":
 		return []int{200}
-	case method == "POST":
+	case "POST":
 		return []int{201, 202}
-	case method == "PUT":
+	case "PUT":
 		return []int{201, 202}
-	case method == "PATCH":
+	case "PATCH":
 		return []int{200, 202, 204}
-	case method == "DELETE":
+	case "DELETE":
 		return []int{202, 204}
 	}
 

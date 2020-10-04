@@ -29,10 +29,10 @@ import (
 // is described in the following man page.
 // http://man7.org/linux/man-pages/man5/proc.5.html
 type MountInfo struct {
-	// Unique Id for the mount
-	MountId int
-	// The Id of the parent mount
-	ParentId int
+	// Unique ID for the mount
+	MountID int
+	// The ID of the parent mount
+	ParentID int
 	// The value of `st_dev` for the files on this FS
 	MajorMinorVer string
 	// The pathname of the directory in the FS that forms
@@ -77,7 +77,7 @@ func parseMountInfoString(mountString string) (*MountInfo, error) {
 
 	mountInfo := strings.Split(mountString, " ")
 	mountInfoLength := len(mountInfo)
-	if mountInfoLength < 11 {
+	if mountInfoLength < 10 {
 		return nil, fmt.Errorf("couldn't find enough fields in mount string: %s", mountString)
 	}
 
@@ -96,11 +96,11 @@ func parseMountInfoString(mountString string) (*MountInfo, error) {
 		SuperOptions:   mountOptionsParser(mountInfo[mountInfoLength-1]),
 	}
 
-	mount.MountId, err = strconv.Atoi(mountInfo[0])
+	mount.MountID, err = strconv.Atoi(mountInfo[0])
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse mount ID")
 	}
-	mount.ParentId, err = strconv.Atoi(mountInfo[1])
+	mount.ParentID, err = strconv.Atoi(mountInfo[1])
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse parent ID")
 	}
@@ -144,7 +144,7 @@ func mountOptionsParseOptionalFields(o []string) (map[string]string, error) {
 	return optionalFields, nil
 }
 
-// Parses the mount options, superblock options.
+// mountOptionsParser parses the mount options, superblock options.
 func mountOptionsParser(mountOptions string) map[string]string {
 	opts := make(map[string]string)
 	options := strings.Split(mountOptions, ",")
@@ -161,7 +161,7 @@ func mountOptionsParser(mountOptions string) map[string]string {
 	return opts
 }
 
-// Retrieves mountinfo information from `/proc/self/mountinfo`.
+// GetMounts retrieves mountinfo information from `/proc/self/mountinfo`.
 func GetMounts() ([]*MountInfo, error) {
 	data, err := util.ReadFileNoStat("/proc/self/mountinfo")
 	if err != nil {
@@ -170,7 +170,7 @@ func GetMounts() ([]*MountInfo, error) {
 	return parseMountInfo(data)
 }
 
-// Retrieves mountinfo information from a processes' `/proc/<pid>/mountinfo`.
+// GetProcMounts retrieves mountinfo information from a processes' `/proc/<pid>/mountinfo`.
 func GetProcMounts(pid int) ([]*MountInfo, error) {
 	data, err := util.ReadFileNoStat(fmt.Sprintf("/proc/%d/mountinfo", pid))
 	if err != nil {

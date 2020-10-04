@@ -116,7 +116,6 @@ func (client VirtualMachineImagesClient) GetSender(req *http.Request) (*http.Res
 func (client VirtualMachineImagesClient) GetResponder(resp *http.Response) (result VirtualMachineImage, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -130,8 +129,8 @@ func (client VirtualMachineImagesClient) GetResponder(resp *http.Response) (resu
 // publisherName - a valid image publisher.
 // offer - a valid image publisher offer.
 // skus - a valid image SKU.
-// filter - the filter to apply on the operation.
-func (client VirtualMachineImagesClient) List(ctx context.Context, location string, publisherName string, offer string, skus string, filter string, top *int32, orderby string) (result ListVirtualMachineImageResource, err error) {
+// expand - the expand expression to apply on the operation.
+func (client VirtualMachineImagesClient) List(ctx context.Context, location string, publisherName string, offer string, skus string, expand string, top *int32, orderby string) (result ListVirtualMachineImageResource, err error) {
 	if tracing.IsEnabled() {
 		ctx = tracing.StartSpan(ctx, fqdn+"/VirtualMachineImagesClient.List")
 		defer func() {
@@ -142,7 +141,7 @@ func (client VirtualMachineImagesClient) List(ctx context.Context, location stri
 			tracing.EndSpan(ctx, sc, err)
 		}()
 	}
-	req, err := client.ListPreparer(ctx, location, publisherName, offer, skus, filter, top, orderby)
+	req, err := client.ListPreparer(ctx, location, publisherName, offer, skus, expand, top, orderby)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachineImagesClient", "List", nil, "Failure preparing request")
 		return
@@ -164,7 +163,7 @@ func (client VirtualMachineImagesClient) List(ctx context.Context, location stri
 }
 
 // ListPreparer prepares the List request.
-func (client VirtualMachineImagesClient) ListPreparer(ctx context.Context, location string, publisherName string, offer string, skus string, filter string, top *int32, orderby string) (*http.Request, error) {
+func (client VirtualMachineImagesClient) ListPreparer(ctx context.Context, location string, publisherName string, offer string, skus string, expand string, top *int32, orderby string) (*http.Request, error) {
 	pathParameters := map[string]interface{}{
 		"location":       autorest.Encode("path", location),
 		"offer":          autorest.Encode("path", offer),
@@ -177,8 +176,8 @@ func (client VirtualMachineImagesClient) ListPreparer(ctx context.Context, locat
 	queryParameters := map[string]interface{}{
 		"api-version": APIVersion,
 	}
-	if len(filter) > 0 {
-		queryParameters["$filter"] = autorest.Encode("query", filter)
+	if len(expand) > 0 {
+		queryParameters["$expand"] = autorest.Encode("query", expand)
 	}
 	if top != nil {
 		queryParameters["$top"] = autorest.Encode("query", *top)
@@ -206,7 +205,6 @@ func (client VirtualMachineImagesClient) ListSender(req *http.Request) (*http.Re
 func (client VirtualMachineImagesClient) ListResponder(resp *http.Response) (result ListVirtualMachineImageResource, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result.Value),
 		autorest.ByClosing())
@@ -282,7 +280,6 @@ func (client VirtualMachineImagesClient) ListOffersSender(req *http.Request) (*h
 func (client VirtualMachineImagesClient) ListOffersResponder(resp *http.Response) (result ListVirtualMachineImageResource, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result.Value),
 		autorest.ByClosing())
@@ -356,7 +353,6 @@ func (client VirtualMachineImagesClient) ListPublishersSender(req *http.Request)
 func (client VirtualMachineImagesClient) ListPublishersResponder(resp *http.Response) (result ListVirtualMachineImageResource, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result.Value),
 		autorest.ByClosing())
@@ -434,7 +430,6 @@ func (client VirtualMachineImagesClient) ListSkusSender(req *http.Request) (*htt
 func (client VirtualMachineImagesClient) ListSkusResponder(resp *http.Response) (result ListVirtualMachineImageResource, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result.Value),
 		autorest.ByClosing())

@@ -62,7 +62,7 @@ groups:
   - name: example
     rules:
     - record: job:http_inprogress_requests:sum
-      expr: sum(http_inprogress_requests) by (job)
+      expr: sum by (job) (http_inprogress_requests)
 ```
 
 ### `<rule_group>`
@@ -98,7 +98,7 @@ labels:
 The syntax for alerting rules is:
 
 ```
-# The name of the alert. Must be a valid metric name.
+# The name of the alert. Must be a valid label value.
 alert: <string>
 
 # The PromQL expression to evaluate. Every evaluation cycle this is

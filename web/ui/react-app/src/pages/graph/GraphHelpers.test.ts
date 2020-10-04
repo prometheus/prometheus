@@ -146,7 +146,7 @@ describe('GraphHelpers', () => {
       ).toEqual(`
             <div class="date">1970-01-19 04:42:08 +00:00</div>
             <div>
-              <span class="detail-swatch" style="background-color: " />
+              <span class="detail-swatch" style="background-color: "></span>
               <span>value: <strong>1572128592</strong></span>
             <div>
             <div class="labels mt-1">
@@ -163,7 +163,7 @@ describe('GraphHelpers', () => {
       ).toEqual(`
             <div class="date">1970-01-18 23:42:08 -05:00</div>
             <div>
-              <span class="detail-swatch" style="background-color: " />
+              <span class="detail-swatch" style="background-color: "></span>
               <span>value: <strong>1572128592</strong></span>
             <div>
             <div class="labels mt-1">

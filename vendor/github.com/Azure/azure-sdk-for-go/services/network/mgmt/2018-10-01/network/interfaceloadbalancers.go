@@ -75,6 +75,9 @@ func (client InterfaceLoadBalancersClient) List(ctx context.Context, resourceGro
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.InterfaceLoadBalancersClient", "List", resp, "Failure responding to request")
 	}
+	if result.ilblr.hasNextLink() && result.ilblr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }
@@ -111,7 +114,6 @@ func (client InterfaceLoadBalancersClient) ListSender(req *http.Request) (*http.
 func (client InterfaceLoadBalancersClient) ListResponder(resp *http.Response) (result InterfaceLoadBalancerListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

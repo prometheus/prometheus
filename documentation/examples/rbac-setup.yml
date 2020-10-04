@@ -1,4 +1,11 @@
-apiVersion: rbac.authorization.k8s.io/v1beta1
+# To have Prometheus retrieve metrics from Kubelets with authentication and
+# authorization enabled (which is highly recommended and included in security
+# benchmarks) the following flags must be set on the kubelet(s):
+#
+# --authentication-token-webhook
+# --authorization-mode=Webhook
+#
+apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: prometheus
@@ -6,7 +13,7 @@ rules:
 - apiGroups: [""]
   resources:
   - nodes
-  - nodes/proxy
+  - nodes/metrics
   - services
   - endpoints
   - pods
@@ -16,7 +23,7 @@ rules:
   resources:
   - ingresses
   verbs: ["get", "list", "watch"]
-- nonResourceURLs: ["/metrics"]
+- nonResourceURLs: ["/metrics", "/metrics/cadvisor"]
   verbs: ["get"]
 ---
 apiVersion: v1
@@ -25,7 +32,7 @@ metadata:
   name: prometheus
   namespace: default
 ---
-apiVersion: rbac.authorization.k8s.io/v1beta1
+apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: prometheus

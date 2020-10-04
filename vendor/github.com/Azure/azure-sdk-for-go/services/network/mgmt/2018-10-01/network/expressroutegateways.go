@@ -122,7 +122,6 @@ func (client ExpressRouteGatewaysClient) CreateOrUpdateSender(req *http.Request)
 func (client ExpressRouteGatewaysClient) CreateOrUpdateResponder(resp *http.Response) (result ExpressRouteGateway, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -199,7 +198,6 @@ func (client ExpressRouteGatewaysClient) DeleteSender(req *http.Request) (future
 func (client ExpressRouteGatewaysClient) DeleteResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusAccepted, http.StatusNoContent),
 		autorest.ByClosing())
 	result.Response = resp
@@ -274,7 +272,6 @@ func (client ExpressRouteGatewaysClient) GetSender(req *http.Request) (*http.Res
 func (client ExpressRouteGatewaysClient) GetResponder(resp *http.Response) (result ExpressRouteGateway, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -348,7 +345,6 @@ func (client ExpressRouteGatewaysClient) ListByResourceGroupSender(req *http.Req
 func (client ExpressRouteGatewaysClient) ListByResourceGroupResponder(resp *http.Response) (result ExpressRouteGatewayList, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -419,7 +415,6 @@ func (client ExpressRouteGatewaysClient) ListBySubscriptionSender(req *http.Requ
 func (client ExpressRouteGatewaysClient) ListBySubscriptionResponder(resp *http.Response) (result ExpressRouteGatewayList, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

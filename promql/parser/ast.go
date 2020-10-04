@@ -26,7 +26,7 @@ import (
 // Node is a generic interface for all nodes in an AST.
 //
 // Whenever numerous nodes are listed such as in a switch-case statement
-// or a chain of function definitions (e.g. String(), expr(), etc.) convention is
+// or a chain of function definitions (e.g. String(), PromQLExpr(), etc.) convention is
 // to list them as follows:
 //
 // 	- Statements
@@ -49,9 +49,9 @@ type Node interface {
 type Statement interface {
 	Node
 
-	// stmt ensures that no other type accidentally implements the interface
+	// PromQLStmt ensures that no other type accidentally implements the interface
 	// nolint:unused
-	stmt()
+	PromQLStmt()
 }
 
 // EvalStmt holds an expression and information on the range it should
@@ -66,7 +66,7 @@ type EvalStmt struct {
 	Interval time.Duration
 }
 
-func (*EvalStmt) stmt() {}
+func (*EvalStmt) PromQLStmt() {}
 
 // Expr is a generic interface for all expression types.
 type Expr interface {
@@ -75,8 +75,8 @@ type Expr interface {
 	// Type returns the type the expression evaluates to. It does not perform
 	// in-depth checks as this is done at parsing-time.
 	Type() ValueType
-	// expr ensures that no other types accidentally implement the interface.
-	expr()
+	// PromQLExpr ensures that no other types accidentally implement the interface.
+	PromQLExpr()
 }
 
 // Expressions is a list of expression nodes that implements Node.
@@ -180,7 +180,7 @@ type VectorSelector struct {
 type TestStmt func(context.Context) error
 
 func (TestStmt) String() string { return "test statement" }
-func (TestStmt) stmt()          {}
+func (TestStmt) PromQLStmt()    {}
 
 func (TestStmt) PositionRange() PositionRange {
 	return PositionRange{
@@ -204,16 +204,16 @@ func (e *BinaryExpr) Type() ValueType {
 	return ValueTypeVector
 }
 
-func (*AggregateExpr) expr()  {}
-func (*BinaryExpr) expr()     {}
-func (*Call) expr()           {}
-func (*MatrixSelector) expr() {}
-func (*SubqueryExpr) expr()   {}
-func (*NumberLiteral) expr()  {}
-func (*ParenExpr) expr()      {}
-func (*StringLiteral) expr()  {}
-func (*UnaryExpr) expr()      {}
-func (*VectorSelector) expr() {}
+func (*AggregateExpr) PromQLExpr()  {}
+func (*BinaryExpr) PromQLExpr()     {}
+func (*Call) PromQLExpr()           {}
+func (*MatrixSelector) PromQLExpr() {}
+func (*SubqueryExpr) PromQLExpr()   {}
+func (*NumberLiteral) PromQLExpr()  {}
+func (*ParenExpr) PromQLExpr()      {}
+func (*StringLiteral) PromQLExpr()  {}
+func (*UnaryExpr) PromQLExpr()      {}
+func (*VectorSelector) PromQLExpr() {}
 
 // VectorMatchCardinality describes the cardinality relationship
 // of two Vectors in a binary operation.

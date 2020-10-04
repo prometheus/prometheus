@@ -74,6 +74,7 @@ var tDecimal = reflect.TypeOf(primitive.Decimal128{})
 var tMinKey = reflect.TypeOf(primitive.MinKey{})
 var tMaxKey = reflect.TypeOf(primitive.MaxKey{})
 var tD = reflect.TypeOf(primitive.D{})
+var tM = reflect.TypeOf(primitive.M{})
 var tA = reflect.TypeOf(primitive.A{})
 var tE = reflect.TypeOf(primitive.E{})
 
