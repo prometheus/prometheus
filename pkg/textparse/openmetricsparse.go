@@ -213,16 +213,16 @@ func (p *OpenMetricsParser) Exemplar(e *exemplar.Exemplar) bool {
 
 	// Sort the labels.
 	sort.Sort(e.Labels)
-
+	
 	return true
 }
 
 // nextToken returns the next token from the openMetricsLexer.
 func (p *OpenMetricsParser) nextToken() token {
-	fmt.Println("nextToken")
+	fmt.Println("nextToken in openmetricsparse")
 	tok := p.l.Lex()
 	fmt.Println(tok)
-	// I think it is not able to read the text after the space
+	fmt.Println(p.l.Lex())
 	return tok
 }
 
@@ -260,7 +260,7 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 				p.text = []byte{}
 			}
 		default:
-			fmt.Println("in Next in oMparse")
+			fmt.Println("openmetricsparse print here")
 			return EntryInvalid, parseError("expected text in HELP", t)
 		}
 		switch t {

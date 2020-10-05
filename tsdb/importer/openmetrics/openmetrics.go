@@ -45,12 +45,14 @@ func NewParser(r io.Reader) textparse.Parser {
 // more samples were read.
 // TODO(bwplotka): Rought implementation, not tested, please help dipack95! (:
 // issue here
+// Issue is HERE
 func (p *Parser) Next() (textparse.Entry, error) {
 	fmt.Println("In Next");
 	fmt.Println(p);
 	for p.s.Scan() {
 		// TODO(bwplotka): Assuming all line by line. If not do refetch like in previous version with more lines.
 		line := p.s.Bytes()
+		fmt.Println(string(line))
 		p.Parser = textparse.New(line, contentType)
 		fmt.Println(p.Parser)
 		if et, err := p.Parser.Next(); err != io.EOF {

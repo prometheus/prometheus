@@ -16,11 +16,25 @@ package textparse
 import (
 	"io"
 	"testing"
+	"fmt"
 
 	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/util/testutil"
 )
+
+func Hello(t *testing.T) {
+	p := NewOpenMetricsParser([]byte(`# HELP http_requests_total The total number of HTTP requests
+	# TYPE http_requests_total counter
+	http_requests_total{method="post",code="200"} 1027 1395066363000
+	http_requests_total{method="post",code="400"}    3 1395066363000
+	#EOF`))
+	e, err := p.Next()
+	if err!=nil {
+		fmt.Println(err)
+	}
+	fmt.Println(e)
+}
 
 func TestOpenMetricsParse(t *testing.T) {
 	input := `# HELP go_gc_duration_seconds A summary of the GC invocation durations.
