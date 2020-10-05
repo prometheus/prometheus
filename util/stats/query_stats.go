@@ -15,7 +15,6 @@ package stats
 
 import (
 	"context"
-
 	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -182,8 +181,8 @@ type QuerySamples struct {
 }
 
 type Stats struct {
-	TimerStats  QueryTimers
-	SampleStats QuerySamples
+	TimerStats  *QueryTimers
+	SampleStats *QuerySamples
 }
 
 // Increment increments the total samples count.
@@ -200,12 +199,12 @@ func (qs *QuerySamples) UpdatePeak(samples int) {
 	}
 }
 
-func NewQueryTimers() QueryTimers {
-	return QueryTimers{NewTimerGroup()}
+func NewQueryTimers() *QueryTimers {
+	return &QueryTimers{NewTimerGroup()}
 }
 
-func NewQuerySamples() QuerySamples {
-	return QuerySamples{}
+func NewQuerySamples() *QuerySamples {
+	return &QuerySamples{}
 }
 
 func (qs *QueryTimers) GetSpanTimer(ctx context.Context, qt QueryTiming, observers ...prometheus.Observer) (*SpanTimer, context.Context) {

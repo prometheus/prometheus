@@ -555,17 +555,21 @@ load 10s
 	testutil.Ok(t, err)
 
 	cases := []struct {
-		Query      string
-		MaxSamples int
-		Result     Result
-		Start      time.Time
-		End        time.Time
-		Interval   time.Duration
+		Query        string
+		MaxSamples   int
+		TotalSamples int
+		PeakSamples  int
+		Result       Result
+		Start        time.Time
+		End          time.Time
+		Interval     time.Duration
 	}{
 		// Instant queries.
 		{
-			Query:      "1",
-			MaxSamples: 1,
+			Query:        "1",
+			MaxSamples:   1,
+			TotalSamples: 1,
+			PeakSamples:  1,
 			Result: Result{
 				nil,
 				Scalar{V: 1, T: 1000},
@@ -573,8 +577,10 @@ load 10s
 			Start: time.Unix(1, 0),
 		},
 		{
-			Query:      "1",
-			MaxSamples: 0,
+			Query:        "1",
+			MaxSamples:   0,
+			TotalSamples: 0,
+			PeakSamples:  1,
 			Result: Result{
 				ErrTooManySamples(env),
 				nil,
@@ -583,8 +589,10 @@ load 10s
 			Start: time.Unix(1, 0),
 		},
 		{
-			Query:      "metric",
-			MaxSamples: 0,
+			Query:        "metric",
+			MaxSamples:   0,
+			TotalSamples: 0,
+			PeakSamples:  0,
 			Result: Result{
 				ErrTooManySamples(env),
 				nil,
@@ -593,8 +601,10 @@ load 10s
 			Start: time.Unix(1, 0),
 		},
 		{
-			Query:      "metric",
-			MaxSamples: 1,
+			Query:        "metric",
+			MaxSamples:   1,
+			TotalSamples: 1,
+			PeakSamples:  1,
 			Result: Result{
 				nil,
 				Vector{
@@ -606,8 +616,10 @@ load 10s
 			Start: time.Unix(1, 0),
 		},
 		{
-			Query:      "metric[20s]",
-			MaxSamples: 2,
+			Query:        "metric[20s]",
+			MaxSamples:   2,
+			TotalSamples: 2,
+			PeakSamples:  2,
 			Result: Result{
 				nil,
 				Matrix{Series{
@@ -619,8 +631,10 @@ load 10s
 			Start: time.Unix(10, 0),
 		},
 		{
-			Query:      "rate(metric[20s])",
-			MaxSamples: 3,
+			Query:        "rate(metric[20s])",
+			MaxSamples:   3,
+			TotalSamples: 3,
+			PeakSamples:  3,
 			Result: Result{
 				nil,
 				Vector{
@@ -634,8 +648,10 @@ load 10s
 			Start: time.Unix(10, 0),
 		},
 		{
-			Query:      "metric[20s:5s]",
-			MaxSamples: 3,
+			Query:        "metric[20s:5s]",
+			MaxSamples:   3,
+			TotalSamples: 3,
+			PeakSamples:  3,
 			Result: Result{
 				nil,
 				Matrix{Series{
@@ -647,8 +663,10 @@ load 10s
 			Start: time.Unix(10, 0),
 		},
 		{
-			Query:      "metric[20s]",
-			MaxSamples: 0,
+			Query:        "metric[20s]",
+			MaxSamples:   0,
+			TotalSamples: 0,
+			PeakSamples:  0,
 			Result: Result{
 				ErrTooManySamples(env),
 				nil,
@@ -658,8 +676,10 @@ load 10s
 		},
 		// Range queries.
 		{
-			Query:      "1",
-			MaxSamples: 3,
+			Query:        "1",
+			MaxSamples:   3,
+			TotalSamples: 3,
+			PeakSamples:  3,
 			Result: Result{
 				nil,
 				Matrix{Series{
@@ -673,8 +693,10 @@ load 10s
 			Interval: time.Second,
 		},
 		{
-			Query:      "1",
-			MaxSamples: 0,
+			Query:        "1",
+			MaxSamples:   0,
+			TotalSamples: 0,
+			PeakSamples:  1,
 			Result: Result{
 				ErrTooManySamples(env),
 				nil,
@@ -685,8 +707,10 @@ load 10s
 			Interval: time.Second,
 		},
 		{
-			Query:      "metric",
-			MaxSamples: 3,
+			Query:        "metric",
+			MaxSamples:   3,
+			TotalSamples: 3,
+			PeakSamples:  3,
 			Result: Result{
 				nil,
 				Matrix{Series{
@@ -700,8 +724,10 @@ load 10s
 			Interval: time.Second,
 		},
 		{
-			Query:      "metric",
-			MaxSamples: 2,
+			Query:        "metric",
+			MaxSamples:   2,
+			TotalSamples: 0,
+			PeakSamples:  0,
 			Result: Result{
 				ErrTooManySamples(env),
 				nil,
@@ -712,8 +738,10 @@ load 10s
 			Interval: time.Second,
 		},
 		{
-			Query:      "metric",
-			MaxSamples: 3,
+			Query:        "metric",
+			MaxSamples:   3,
+			TotalSamples: 3,
+			PeakSamples:  3,
 			Result: Result{
 				nil,
 				Matrix{Series{
@@ -727,8 +755,10 @@ load 10s
 			Interval: 5 * time.Second,
 		},
 		{
-			Query:      "metric",
-			MaxSamples: 2,
+			Query:        "metric",
+			MaxSamples:   2,
+			TotalSamples: 0,
+			PeakSamples:  0,
 			Result: Result{
 				ErrTooManySamples(env),
 				nil,
@@ -739,8 +769,10 @@ load 10s
 			Interval: 5 * time.Second,
 		},
 		{
-			Query:      "rate(bigmetric[1s])",
-			MaxSamples: 1,
+			Query:        "rate(bigmetric[1s])",
+			MaxSamples:   1,
+			TotalSamples: 4,
+			PeakSamples:  1,
 			Result: Result{
 				nil,
 				Matrix{},
@@ -767,8 +799,11 @@ load 10s
 		testutil.Ok(t, err)
 
 		res := qry.Exec(test.Context())
+		samplesStats := qry.Stats().Samples
 		testutil.Equals(t, c.Result.Err, res.Err)
 		testutil.Equals(t, c.Result.Value, res.Value, "query %q failed", c.Query)
+		testutil.Equals(t, c.TotalSamples, samplesStats.TotalSamples, "total samples mismatch for query %q", c.Query)
+		testutil.Equals(t, c.PeakSamples, samplesStats.PeakSamples, "peak samples mismatch for query %q", c.Query)
 	}
 }
 

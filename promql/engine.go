@@ -127,9 +127,9 @@ type query struct {
 	// Statement of the parsed query.
 	stmt parser.Statement
 	// Timer stats for the query execution.
-	stats stats.QueryTimers
+	stats *stats.QueryTimers
 	// Sample stats for the query execution.
-	sampleStats stats.QuerySamples
+	sampleStats *stats.QuerySamples
 	// Result matrix for reuse.
 	matrix Matrix
 	// Cancellation function for the query.
@@ -149,8 +149,8 @@ func (q *query) Statement() parser.Statement {
 // Stats implements the Query interface.
 func (q *query) Stats() *stats.Statistics {
 	return &stats.Statistics{
-		Timers:  q.stats,
-		Samples: q.sampleStats,
+		Timers:  *q.stats,
+		Samples: *q.sampleStats,
 	}
 }
 
@@ -752,7 +752,7 @@ type evaluator struct {
 
 	maxSamples               int
 	currentSamples           int
-	samplesStats             stats.QuerySamples
+	samplesStats             *stats.QuerySamples
 	logger                   log.Logger
 	lookbackDelta            time.Duration
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
