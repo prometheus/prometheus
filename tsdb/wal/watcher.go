@@ -507,13 +507,10 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			}
 
 		case record.Tombstones:
-			// noop
-		case record.Invalid:
-			return errors.New("invalid record")
 
 		default:
+			// Could be corruption, or reading from a WAL from a newer Prometheus.
 			w.recordDecodeFailsMetric.Inc()
-			return errors.New("unknown TSDB record type")
 		}
 	}
 	return errors.Wrapf(r.Err(), "segment %d: %v", segmentNum, r.Err())
@@ -526,8 +523,6 @@ func (w *Watcher) SetStartTime(t time.Time) {
 
 func recordType(rt record.Type) string {
 	switch rt {
-	case record.Invalid:
-		return "invalid"
 	case record.Series:
 		return "series"
 	case record.Samples:

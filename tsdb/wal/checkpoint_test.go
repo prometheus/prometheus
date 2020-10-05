@@ -140,6 +140,8 @@ func TestCheckpoint(t *testing.T) {
 				{Ref: 1, Labels: labels.FromStrings("a", "b", "c", "1")},
 			}, nil))
 			testutil.Ok(t, err)
+			// Log an unknown record, that might have come from a future Prometheus version.
+			testutil.Ok(t, w.Log([]byte{255}))
 			testutil.Ok(t, w.Close())
 
 			// Start a WAL and write records to it as usual.
@@ -225,7 +227,7 @@ func TestCheckpoint(t *testing.T) {
 }
 
 func TestCheckpointNoTmpFolderAfterError(t *testing.T) {
-	// Create a new wal with an invalid records.
+	// Create a new wal with invalid data.
 	dir, err := ioutil.TempDir("", "test_checkpoint")
 	testutil.Ok(t, err)
 	defer func() {
@@ -233,10 +235,19 @@ func TestCheckpointNoTmpFolderAfterError(t *testing.T) {
 	}()
 	w, err := NewSize(nil, nil, dir, 64*1024, false)
 	testutil.Ok(t, err)
-	testutil.Ok(t, w.Log([]byte{99}))
-	w.Close()
+	var enc record.Encoder
+	testutil.Ok(t, w.Log(enc.Series([]record.RefSeries{
+		{Ref: 0, Labels: labels.FromStrings("a", "b", "c", "2")}}, nil)))
+	testutil.Ok(t, w.Close())
 
-	// Run the checkpoint and since the wal contains an invalid records this should return an error.
+	// Corrupt data.
+	f, err := os.OpenFile(filepath.Join(w.Dir(), "00000000"), os.O_WRONLY, 0666)
+	testutil.Ok(t, err)
+	_, err = f.WriteAt([]byte{42}, 1)
+	testutil.Ok(t, err)
+	testutil.Ok(t, f.Close())
+
+	// Run the checkpoint and since the wal contains corrupt data this should return an error.
 	_, err = Checkpoint(log.NewNopLogger(), w, 0, 1, nil, 0)
 	testutil.NotOk(t, err)
 
