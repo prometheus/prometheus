@@ -47,6 +47,14 @@ func initializeInfoCache() {
 	}
 }
 
+func EnableFileCache() {
+	fileCacheEnable = true
+}
+
+func EnableInfoCache() {
+	infoCacheEnable = true
+}
+
 func DisableFileCache() {
 	fileCacheEnable = false
 }
@@ -78,8 +86,17 @@ func GetInfoCache() map[string]interface{} {
 	return infoCache
 }
 
+func ClearFileCache() {
+	fileCache = make(map[string][]byte, 0)
+}
+
 func ClearInfoCache() {
 	infoCache = make(map[string]interface{})
+}
+
+func ClearCaches() {
+	ClearFileCache()
+	ClearInfoCache()
 }
 
 // FetchFile gets a specified file from the local filesystem or a remote location.
