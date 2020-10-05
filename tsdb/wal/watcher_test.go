@@ -278,6 +278,8 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 					},
 				}, nil)
 				testutil.Ok(t, w.Log(series))
+				// Add in an unknown record type, which should be ignored.
+				testutil.Ok(t, w.Log([]byte{255}))
 
 				for j := 0; j < samplesCount; j++ {
 					inner := rand.Intn(ref + 1)

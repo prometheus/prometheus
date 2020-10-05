@@ -135,8 +135,8 @@ func TestRecord_Type(t *testing.T) {
 	testutil.Equals(t, Tombstones, recordType)
 
 	recordType = dec.Type(nil)
-	testutil.Equals(t, Invalid, recordType)
+	testutil.Equals(t, Unknown, recordType)
 
 	recordType = dec.Type([]byte{0})
-	testutil.Equals(t, Invalid, recordType)
+	testutil.Equals(t, Unknown, recordType)
 }
