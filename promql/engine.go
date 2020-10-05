@@ -796,6 +796,7 @@ func (ev *evaluator) Eval(expr parser.Expr) (val parser.Value, ws storage.Warnin
 
 	val, ws = ev.eval(expr)
 	if mat, ok := val.(Matrix); ok {
+		// Consider output samples as single count of the overall samples touched during query evaluation.
 		ev.samplesStats.Increment(mat.TotalSamples())
 	}
 	return val, ws, nil
@@ -1526,7 +1527,6 @@ func (ev *evaluator) matrixIterSlice(it *storage.BufferedSeriesIterator, mint, m
 	// The seeked sample might also be in the range.
 	if ok {
 		t, v := it.Values()
-		ev.samplesStats.Increment(1)
 		if t == maxt && !value.IsStaleNaN(v) {
 			if ev.currentSamples >= ev.maxSamples {
 				ev.error(ErrTooManySamples(env))
