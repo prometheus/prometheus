@@ -16,6 +16,7 @@ package tsdb
 import (
 	"context"
 	"io/ioutil"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -23,6 +24,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -30,34 +32,43 @@ func TestBlockWriter(t *testing.T) {
 	ctx := context.Background()
 	outputDir, err := ioutil.TempDir(os.TempDir(), "output")
 	testutil.Ok(t, err)
-	w := NewBlockWriter(log.NewNopLogger(), outputDir, DefaultBlockDuration)
-	testutil.Ok(t, w.initHead())
+	w, err := NewBlockWriter(log.NewNopLogger(), outputDir, DefaultBlockDuration)
+	testutil.Ok(t, err)
 
-	// flush with no series results in error
+	// Flush with no series results in error.
 	_, err = w.Flush(ctx)
 	testutil.ErrorEqual(t, err, errors.New("no series appended, aborting"))
 
-	// add some series
+	// Add some series.
 	app := w.Appender(ctx)
-	expectedLabelNames := "a"
-	l := labels.Labels{{Name: expectedLabelNames, Value: "b"}}
-	ts := int64(44)
-	_, err = app.Add(l, ts, 7)
+	expectedLabelNames := []string{"a", "c"}
+	expectedValues := []string{"b", "d"}
+	l := labels.Labels{{Name: expectedLabelNames[0], Value: expectedValues[0]}}
+	ts1 := int64(44)
+	v1 := float64(7)
+	_, err = app.Add(l, ts1, v1)
+	testutil.Ok(t, err)
+	l = labels.Labels{{Name: expectedLabelNames[1], Value: expectedValues[1]}}
+	ts2 := int64(55)
+	v2 := float64(12)
+	_, err = app.Add(l, ts2, v2)
 	testutil.Ok(t, err)
 	err = app.Commit()
 	testutil.Ok(t, err)
 	id, err := w.Flush(ctx)
 	testutil.Ok(t, err)
 
-	// confirm block has the correct data
+	// Confirm the block has the correct data.
 	blockpath := filepath.Join(outputDir, id.String())
 	b, err := OpenBlock(nil, blockpath, nil)
 	testutil.Ok(t, err)
-	testutil.Equals(t, b.MinTime(), ts)
-	testutil.Equals(t, b.MaxTime(), ts+int64(1))
-	actualNames, err := b.LabelNames()
+	q, err := NewBlockQuerier(b, math.MinInt64, math.MaxInt64)
 	testutil.Ok(t, err)
-	testutil.Equals(t, actualNames, []string{expectedLabelNames})
+	series := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
+	sample1 := []tsdbutil.Sample{sample{t: ts1, v: v1}}
+	sample2 := []tsdbutil.Sample{sample{t: ts2, v: v2}}
+	expectedSeries := map[string][]tsdbutil.Sample{"{a=\"b\"}": sample1, "{c=\"d\"}": sample2}
+	testutil.Equals(t, expectedSeries, series)
 
 	testutil.Ok(t, w.Close())
 }

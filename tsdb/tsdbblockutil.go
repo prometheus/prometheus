@@ -25,8 +25,7 @@ import (
 var ErrInvalidTimes = fmt.Errorf("max time is lesser than min time")
 
 // CreateBlock creates a chunkrange block from the samples passed to it, and writes it to disk.
-func CreateBlock(series []storage.Series, dir string, mint, maxt int64, logger log.Logger) (_ string, err error) {
-	chunkRange := maxt - mint
+func CreateBlock(series []storage.Series, dir string, chunkRange int64, logger log.Logger) (string, error) {
 	if chunkRange == 0 {
 		chunkRange = DefaultBlockDuration
 	}
@@ -34,16 +33,15 @@ func CreateBlock(series []storage.Series, dir string, mint, maxt int64, logger l
 		return "", ErrInvalidTimes
 	}
 
-	w := NewBlockWriter(logger, dir, chunkRange)
+	w, err := NewBlockWriter(logger, dir, chunkRange)
+	if err != nil {
+		return "", err
+	}
 	defer func() {
 		if err := w.Close(); err != nil {
 			logger.Log("err closing blockwriter", err.Error())
 		}
 	}()
-
-	if err := w.initHead(); err != nil {
-		return "", err
-	}
 
 	ctx := context.Background()
 	app := w.Appender(ctx)

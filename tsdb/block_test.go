@@ -302,7 +302,7 @@ func TestReadIndexFormatV1(t *testing.T) {
 
 // createBlock creates a block with given set of series and returns its dir.
 func createBlock(tb testing.TB, dir string, series []storage.Series) string {
-	blockDir, err := CreateBlock(series, dir, 0, 0, log.NewNopLogger())
+	blockDir, err := CreateBlock(series, dir, 0, log.NewNopLogger())
 	testutil.Ok(tb, err)
 	return blockDir
 }

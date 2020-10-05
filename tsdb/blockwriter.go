@@ -52,26 +52,29 @@ func durationToMillis(t time.Duration) int64 {
 // contains anything at all. It is the caller's responsibility to
 // ensure that the resulting blocks do not overlap etc.
 // Writer ensures the block flush is atomic (via rename).
-func NewBlockWriter(logger log.Logger, dir string, blockSize int64) *BlockWriter {
-	return &BlockWriter{
+func NewBlockWriter(logger log.Logger, dir string, blockSize int64) (*BlockWriter, error) {
+	w := &BlockWriter{
 		logger:         logger,
 		destinationDir: dir,
 		blockSize:      blockSize,
 	}
+	err := w.initHead()
+	if err != nil {
+		return nil, err
+	}
+	return w, nil
 }
 
 // initHead creates and initialises a new TSDB head.
 // blockSize should be in milliseconds.
 func (w *BlockWriter) initHead() error {
-	logger := w.logger
-
 	chunkDir, err := ioutil.TempDir(os.TempDir(), "head")
 	if err != nil {
 		return errors.Wrap(err, "create temp dir")
 	}
 	w.chunkDir = chunkDir
 
-	h, err := NewHead(nil, logger, nil, w.blockSize, w.chunkDir, nil, DefaultStripeSize, nil)
+	h, err := NewHead(nil, w.logger, nil, w.blockSize, w.chunkDir, nil, DefaultStripeSize, nil)
 	if err != nil {
 		return errors.Wrap(err, "tsdb.NewHead")
 	}
@@ -119,7 +122,7 @@ func (w *BlockWriter) Flush(ctx context.Context) (ulid.ULID, error) {
 func (w *BlockWriter) Close() error {
 	defer func() {
 		if err := os.RemoveAll(w.chunkDir); err != nil {
-			w.logger.Log("err BlockerWriter Close", err.Error())
+			level.Error(w.logger).Log("msg", "error in deleting BlockWriter files", "err", err)
 		}
 	}()
 	return w.head.Close()
