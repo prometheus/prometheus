@@ -79,9 +79,13 @@ require (
 	k8s.io/apimachinery v0.19.2
 	k8s.io/client-go v0.19.2
 	k8s.io/klog v1.0.0
+	k8s.io/klog/v2 v2.2.0
 )
 
-replace k8s.io/klog => github.com/simonpasquier/klog-gokit v0.1.0
+replace (
+	k8s.io/klog => github.com/simonpasquier/klog-gokit v0.3.0
+	k8s.io/klog/v2 => github.com/simonpasquier/klog-gokit/v2 v2.0.1
+)
 
 exclude (
 	// Exclude grpc v1.30.0 because of breaking changes. See #7621.
