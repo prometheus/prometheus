@@ -2,4 +2,3 @@
 # TYPE http_requests_total counter
 http_requests_total{method="post",code="200"} 1027 1395066363000
 http_requests_total{method="post",code="400"} 3 1395066363000
-

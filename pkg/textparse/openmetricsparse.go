@@ -222,7 +222,6 @@ func (p *OpenMetricsParser) nextToken() token {
 	fmt.Println("nextToken")
 	tok := p.l.Lex()
 	fmt.Println(tok)
-	// I think it is not able to read the text after the space
 	return tok
 }
 
@@ -261,10 +260,14 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 			}
 		default:
 <<<<<<< HEAD
+<<<<<<< HEAD
 			fmt.Println("openmetricsparse print here")
 =======
 			fmt.Println("in Next in oMparse")
 >>>>>>> 05b8c9d279b90f881cdc34a2434efdab520def30
+=======
+			fmt.Println("in Next in oMparse")
+>>>>>>> 82cace7ee266925d9c98bda3ff23ddb3261b73de
 			return EntryInvalid, parseError("expected text in HELP", t)
 		}
 		switch t {
