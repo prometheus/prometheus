@@ -346,7 +346,7 @@ func main() {
 
 	level.Info(logger).Log("msg", "Starting Prometheus", "version", version.Info())
 	if bits.UintSize < 64 {
-		level.Warn(logger).Log("msg", "This Prometheus binary hasn't been compiled for a 64-bit architecture. Due to virtual memory constraints of 32-bit systems, it is highly recommended to switch to a 64-bit binary of Prometheus.", "GOARCH", runtime.GOARCH)
+		level.Warn(logger).Log("msg", "This Prometheus binary has not been compiled for a 64-bit architecture. Due to virtual memory constraints of 32-bit systems, it is highly recommended to switch to a 64-bit binary of Prometheus.", "GOARCH", runtime.GOARCH)
 	}
 
 	level.Info(logger).Log("build_context", version.BuildContext())
