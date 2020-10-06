@@ -86,10 +86,10 @@ func optimizeConcatRegex(r *syntax.Regexp) (prefix, suffix, contains string) {
 	// Given Prometheus regex matchers are always anchored to the begin/end
 	// of the text, if the first/last operations are literals, we can safely
 	// treat them as prefix/suffix.
-	if sub[0].Op == syntax.OpLiteral {
+	if sub[0].Op == syntax.OpLiteral && (sub[0].Flags&syntax.FoldCase) == 0 {
 		prefix = string(sub[0].Rune)
 	}
-	if last := len(sub) - 1; sub[last].Op == syntax.OpLiteral {
+	if last := len(sub) - 1; sub[last].Op == syntax.OpLiteral && (sub[last].Flags&syntax.FoldCase) == 0 {
 		suffix = string(sub[last].Rune)
 	}
 
@@ -97,7 +97,7 @@ func optimizeConcatRegex(r *syntax.Regexp) (prefix, suffix, contains string) {
 	// 1st one. We do not keep the whole list of literals to simplify the
 	// fast path.
 	for i := 1; i < len(sub)-1; i++ {
-		if sub[i].Op == syntax.OpLiteral {
+		if sub[i].Op == syntax.OpLiteral && (sub[i].Flags&syntax.FoldCase) == 0 {
 			contains = string(sub[i].Rune)
 			break
 		}
