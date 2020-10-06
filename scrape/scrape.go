@@ -990,8 +990,8 @@ func (sl *scrapeLoop) run(interval, timeout time.Duration, errc chan<- error) {
 
 	var last time.Time
 
-	ticker := time.NewTicker(interval)
 	alignedScrapeTime := time.Now()
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 mainLoop:
@@ -1016,7 +1016,7 @@ mainLoop:
 				alignedScrapeTime = alignedScrapeTime.Add(interval)
 			}
 			// Align the scrape time if we are in the tolerance boundaries.
-			if t := scrapeTime.Sub(alignedScrapeTime); t >= -scrapeTimestampTolerance && t <= scrapeTimestampTolerance {
+			if scrapeTime.Sub(alignedScrapeTime) <= scrapeTimestampTolerance {
 				scrapeTime = alignedScrapeTime
 			}
 		}
