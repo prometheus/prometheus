@@ -12,7 +12,7 @@ import {
   DropdownMenu,
   DropdownItem,
 } from 'reactstrap';
-import { usePathPrefix } from './contexts/PathContexts';
+import { usePathPrefix } from './contexts/PathPrefixContext';
 
 interface NavbarProps {
   consolesLink: string | null;

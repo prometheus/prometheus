@@ -4,8 +4,8 @@ import { useFetch } from '../../hooks/useFetch';
 import { groupTargets, Target } from './target';
 import ScrapePoolPanel from './ScrapePoolPanel';
 import { withStatusIndicator } from '../../components/withStatusIndicator';
-import { usePathPrefix } from '../../contexts/PathContexts';
-import { APIPATH } from '../../constants/constants';
+import { usePathPrefix } from '../../contexts/PathPrefixContext';
+import { API_PATH } from '../../constants/constants';
 
 interface ScrapePoolListProps {
   filter: FilterData;
@@ -33,7 +33,7 @@ const ScrapePoolListWithStatusIndicator = withStatusIndicator(ScrapePoolContent)
 
 const ScrapePoolList: FC<{ filter: FilterData }> = ({ filter }) => {
   const pathPrefix = usePathPrefix();
-  const { response, error, isLoading } = useFetch<ScrapePoolListProps>(`${pathPrefix}/${APIPATH}/targets?state=active`);
+  const { response, error, isLoading } = useFetch<ScrapePoolListProps>(`${pathPrefix}/${API_PATH}/targets?state=active`);
   const { status: responseStatus } = response;
   const badResponse = responseStatus !== 'success' && responseStatus !== 'start fetching';
   return (

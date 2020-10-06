@@ -7,8 +7,8 @@ import Checkbox from '../../components/Checkbox';
 import { generateID, decodePanelOptionsFromQueryString, encodePanelOptionsToQueryString, callAll } from '../../utils';
 import { useFetch } from '../../hooks/useFetch';
 import { useLocalStorage } from '../../hooks/useLocalStorage';
-import { usePathPrefix } from '../../contexts/PathContexts';
-import { APIPATH } from '../../constants/constants';
+import { usePathPrefix } from '../../contexts/PathPrefixContext';
+import { API_PATH } from '../../constants/constants';
 
 export type PanelMeta = { key: string; options: PanelOptions; id: string };
 
@@ -74,7 +74,6 @@ export const PanelListContent: FC<PanelListProps> = ({ metrics = [], useLocalTim
     <>
       {panels.map(({ id, options }) => (
         <Panel
-          apiPath={APIPATH}
           pathPrefix={pathPrefix}
           onExecuteQuery={handleExecuteQuery}
           key={id}
@@ -111,11 +110,11 @@ const PanelList: FC<RouteComponentProps> = () => {
   const [enableQueryHistory, setEnableQueryHistory] = useLocalStorage('enable-query-history', false);
 
   const pathPrefix = usePathPrefix();
-  const { response: metricsRes, error: metricsErr } = useFetch<string[]>(`${pathPrefix}/${APIPATH}/label/__name__/values`);
+  const { response: metricsRes, error: metricsErr } = useFetch<string[]>(`${pathPrefix}/${API_PATH}/label/__name__/values`);
 
   const browserTime = new Date().getTime() / 1000;
   const { response: timeRes, error: timeErr } = useFetch<{ result: number[] }>(
-    `${pathPrefix}/${APIPATH}/query?query=time()`
+    `${pathPrefix}/${API_PATH}/query?query=time()`
   );
 
   useEffect(() => {

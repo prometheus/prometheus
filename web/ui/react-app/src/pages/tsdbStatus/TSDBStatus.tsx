@@ -4,8 +4,8 @@ import { Table } from 'reactstrap';
 
 import { useFetch } from '../../hooks/useFetch';
 import { withStatusIndicator } from '../../components/withStatusIndicator';
-import { usePathPrefix } from '../../contexts/PathContexts';
-import { APIPATH } from '../../constants/constants';
+import { usePathPrefix } from '../../contexts/PathPrefixContext';
+import { API_PATH } from '../../constants/constants';
 
 interface Stats {
   name: string;
@@ -68,7 +68,7 @@ const TSDBStatusContentWithStatusIndicator = withStatusIndicator(TSDBStatusConte
 
 const TSDBStatus: FC<RouteComponentProps> = () => {
   const pathPrefix = usePathPrefix();
-  const { response, error, isLoading } = useFetch<TSDBMap>(`${pathPrefix}/${APIPATH}/status/tsdb`);
+  const { response, error, isLoading } = useFetch<TSDBMap>(`${pathPrefix}/${API_PATH}/status/tsdb`);
 
   return (
     <TSDBStatusContentWithStatusIndicator

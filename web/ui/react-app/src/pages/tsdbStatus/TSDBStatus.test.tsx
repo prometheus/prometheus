@@ -5,7 +5,7 @@ import { Table } from 'reactstrap';
 
 import TSDBStatus from './TSDBStatus';
 import { TSDBMap } from './TSDBStatus';
-import { PathPrefixContext } from '../../contexts/PathContexts';
+import { PathPrefixContext } from '../../contexts/PathPrefixContext';
 
 const fakeTSDBStatusResponse: {
   status: string;

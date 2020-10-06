@@ -5,7 +5,7 @@ import { Container } from 'reactstrap';
 import './App.css';
 import { Router, Redirect } from '@reach/router';
 import { Alerts, Config, Flags, Rules, ServiceDiscovery, Status, Targets, TSDBStatus, PanelList } from './pages';
-import { PathPrefixContext } from './contexts/PathContexts';
+import { PathPrefixContext } from './contexts/PathPrefixContext';
 
 interface AppProps {
   consolesLink: string | null;
@@ -27,6 +27,9 @@ const App: FC<AppProps> = ({ consolesLink }) => {
     '/targets',
     '/service-discovery',
   ];
+  if (basePath.endsWith('/')) {
+    basePath = basePath.slice(0, -1);
+  }
   if (basePath.length > 1) {
     for (let i = 0; i < paths.length; i++) {
       if (basePath.endsWith(paths[i])) {

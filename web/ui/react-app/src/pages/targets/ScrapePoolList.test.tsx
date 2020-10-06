@@ -7,8 +7,7 @@ import ScrapePoolList from './ScrapePoolList';
 import ScrapePoolPanel from './ScrapePoolPanel';
 import { Target } from './target';
 import { FetchMock } from 'jest-fetch-mock/types';
-import { PathPrefixContext } from '../../contexts/PathContexts';
-import { APIPATH } from '../../constants/constants';
+import { PathPrefixContext } from '../../contexts/PathPrefixContext';
 
 describe('ScrapePoolList', () => {
   const defaultProps = {

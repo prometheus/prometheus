@@ -11,6 +11,7 @@ import DataTable from './DataTable';
 import TimeInput from './TimeInput';
 import QueryStatsView, { QueryStats } from './QueryStatsView';
 import { QueryParams } from '../../types/types';
+import { API_PATH } from '../../constants/constants';
 
 interface PanelProps {
   options: PanelOptions;
@@ -21,7 +22,6 @@ interface PanelProps {
   removePanel: () => void;
   onExecuteQuery: (query: string) => void;
   pathPrefix: string;
-  apiPath: string;
 }
 
 interface PanelState {
@@ -118,20 +118,20 @@ class Panel extends Component<PanelProps, PanelState> {
     let path: string;
     switch (this.props.options.type) {
       case 'graph':
-        path = `query_range`;
+        path = 'query_range';
         params.append('start', startTime.toString());
         params.append('end', endTime.toString());
         params.append('step', resolution.toString());
         break;
       case 'table':
-        path = `query`;
+        path = 'query';
         params.append('time', endTime.toString());
         break;
       default:
         throw new Error('Invalid panel type "' + this.props.options.type + '"');
     }
 
-    fetch(`${this.props.pathPrefix}/${this.props.apiPath}/${path}?${params}`, {
+    fetch(`${this.props.pathPrefix}/${API_PATH}/${path}?${params}`, {
       cache: 'no-store',
       credentials: 'same-origin',
       signal: abortController.signal,
