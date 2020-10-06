@@ -1010,7 +1010,7 @@ mainLoop:
 		// See https://github.com/prometheus/prometheus/issues/7846
 		scrapeTime := time.Now()
 		if interval > 100*scrapeTimestampTolerance {
-			// For some reason, a ticker might have been skipped, in which case we
+			// For some reason, a tick might have been skipped, in which case we
 			// would call alignedScrapeTime.Add(interval) multiple times.
 			for scrapeTime.Sub(alignedScrapeTime) >= interval {
 				alignedScrapeTime = alignedScrapeTime.Add(interval)
