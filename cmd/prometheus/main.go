@@ -48,7 +48,8 @@ import (
 	jprom "github.com/uber/jaeger-lib/metrics/prometheus"
 	"go.uber.org/atomic"
 	kingpin "gopkg.in/alecthomas/kingpin.v2"
-	"k8s.io/klog"
+	klog "k8s.io/klog"
+	klogv2 "k8s.io/klog/v2"
 
 	promlogflag "github.com/prometheus/common/promlog/flag"
 	"github.com/prometheus/prometheus/config"
@@ -342,6 +343,8 @@ func main() {
 	// Above level 6, the k8s client would log bearer tokens in clear-text.
 	klog.ClampLevel(6)
 	klog.SetLogger(log.With(logger, "component", "k8s_client_runtime"))
+	klogv2.ClampLevel(6)
+	klogv2.SetLogger(log.With(logger, "component", "k8s_client_runtime"))
 
 	level.Info(logger).Log("msg", "Starting Prometheus", "version", version.Info())
 	level.Info(logger).Log("build_context", version.BuildContext())
