@@ -1,7 +1,9 @@
-# klog-gokit
+# klog-gokit [![CircleCI](https://circleci.com/gh/simonpasquier/klog-gokit.svg?style=svg)](https://circleci.com/gh/simonpasquier/klog-gokit)
 
-This packages is a replacement for [klog](https://github.com/kubernetes/klog)
+This package is a replacement for [k8s.io/klog](https://github.com/kubernetes/klog)
 in projects that use the [go-kit logger](https://godoc.org/github.com/go-kit/kit/log).
+
+It also supports [k8s.io/klog/v2](https://pkg.go.dev/k8s.io/klog/v2).
 
 It is heavily inspired by the [`github.com/kubermatic/glog-gokit`](https://github.com/kubermatic/glog-gokit) package.
 
@@ -24,7 +26,7 @@ In your `Gopkg.toml`:
 Add this line to your `go.mod` file:
 
 ```
-replace k8s.io/klog => github.com/kubermatic/klog-gokit master
+replace k8s.io/klog => github.com/simonpasquier/klog-gokit master
 ```
 
 In your `main.go`:
@@ -72,6 +74,11 @@ Setting the logger to the klog package **MUST** happen before using klog in any 
 | Fatalln      | Error |
 
 This table is rather opinionated and build for use with the Kubernetes' [Go client](https://github.com/kubernetes/client-go).
+
+## Disclaimer
+
+This project doesn't aim at covering the complete `klog` API. That being said, it should work ok for
+projects that use `k8s.io/client-go` (like [Prometheus](https://github.com/prometheus/prometheus) for instance).
 
 ## License
 
