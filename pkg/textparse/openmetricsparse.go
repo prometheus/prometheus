@@ -222,7 +222,6 @@ func (p *OpenMetricsParser) nextToken() token {
 	fmt.Println("nextToken in openmetricsparse")
 	tok := p.l.Lex()
 	fmt.Println(tok)
-	fmt.Println(p.l.Lex())
 	return tok
 }
 
@@ -260,7 +259,7 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 				p.text = []byte{}
 			}
 		default:
-			fmt.Println("openmetricsparse print here")
+			fmt.Println("in Next in oMparse")
 			return EntryInvalid, parseError("expected text in HELP", t)
 		}
 		switch t {
