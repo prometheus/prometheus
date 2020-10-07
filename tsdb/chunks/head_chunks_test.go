@@ -261,7 +261,7 @@ func TestHeadReadWriter_Truncate(t *testing.T) {
 // TestHeadReadWriter_Truncate_NoUnsequentialFiles tests
 // that truncation leaves no unsequential files on disk, mainly under the following case
 // * There is an empty file in between the sequence while the truncation
-//   deletes files only upto a sequence before that (i.e. stops deleting
+//   deletes files only up to a sequence before that (i.e. stops deleting
 //   after it has found a file that is not deletable).
 // This tests https://github.com/prometheus/prometheus/issues/7412 where
 // the truncation used to check all the files for deletion and end up
