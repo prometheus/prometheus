@@ -796,7 +796,7 @@ func (ev *evaluator) Eval(expr parser.Expr) (val parser.Value, ws storage.Warnin
 
 	val, ws = ev.eval(expr)
 	if mat, ok := val.(Matrix); ok {
-		// Consider output samples as single count of the overall samples touched during query evaluation.
+		// Include output samples in overall samples touched.
 		ev.samplesStats.Increment(mat.TotalSamples())
 	}
 	return val, ws, nil
