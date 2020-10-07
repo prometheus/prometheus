@@ -56,7 +56,7 @@ result [ 'a', 'c' ]
 result = [ { age: 35 }, { age: 40 } ]
 ```
 
-You can also pre-compile your query. This is usefull if 
+You can also pre-compile your query. This is useful if 
 you are going to run multiple searches with it:
 
 ```go

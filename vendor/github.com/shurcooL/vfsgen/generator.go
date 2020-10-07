@@ -244,7 +244,7 @@ var {{.VariableName}} = func() http.FileSystem {
 			name:             {{quote .Name}},
 			modTime:          {{template "Time" .ModTime}},
 			uncompressedSize: {{.UncompressedSize}},
-{{/* This blank line separating compressedContent is neccessary to prevent potential gofmt issues. See issue #19. */}}
+{{/* This blank line separating compressedContent is necessary to prevent potential gofmt issues. See issue #19. */}}
 			compressedContent: []byte("{{end}}{{define "CompressedFileInfo-After"}}"),
 		},
 {{end}}

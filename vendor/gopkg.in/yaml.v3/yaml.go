@@ -375,7 +375,7 @@ type Node struct {
 	// scalar nodes may be obtained via the ShortTag and LongTag methods.
 	Kind  Kind
 
-	// Style allows customizing the apperance of the node in the tree.
+	// Style allows customizing the appearance of the node in the tree.
 	Style Style
 
 	// Tag holds the YAML tag defining the data type for the value.

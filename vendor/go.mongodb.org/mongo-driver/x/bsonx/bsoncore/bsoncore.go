@@ -58,7 +58,7 @@ func AppendHeader(dst []byte, t bsontype.Type, key string) []byte {
 // was read.
 
 // ReadType will return the first byte of the provided []byte as a type. If
-// there is no availble byte, false is returned.
+// there is no available byte, false is returned.
 func ReadType(src []byte) (bsontype.Type, []byte, bool) {
 	if len(src) < 1 {
 		return 0, src, false
