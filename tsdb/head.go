@@ -2323,7 +2323,7 @@ func (mc *mmappedChunk) OverlapsClosedInterval(mint, maxt int64) bool {
 // SeriesLifecycleCallback specifies a list of callbacks that will be called during a lifecycle of a series.
 // It is always a no-op in Prometheus and mainly meant for external users who import TSDB.
 // All the callbacks should be safe to be called concurrently.
-// It is upto the user to implement soft or hard consistency by making the callbacks
+// It is up to the user to implement soft or hard consistency by making the callbacks
 // atomic or non-atomic. Atomic callbacks can cause degradation performance.
 type SeriesLifecycleCallback interface {
 	// PreCreation is called before creating a series to indicate if the series can be created.
