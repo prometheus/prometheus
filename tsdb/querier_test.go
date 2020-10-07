@@ -867,7 +867,7 @@ func TestPopulateWithDelSeriesIterator_DoubleSeek(t *testing.T) {
 	testutil.Equals(t, float64(2), v)
 }
 
-// Regression when sought chunks were still found via binary search and we always
+// Regression when seeked chunks were still found via binary search and we always
 // skipped to the end when seeking a value in the current chunk.
 func TestPopulateWithDelSeriesIterator_SeekInCurrentChunk(t *testing.T) {
 	f, chkMetas := createFakeReaderAndNotPopulatedChunks(
