@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"sort"
 	"strconv"
+	"unsafe"
 
 	"github.com/cespare/xxhash"
 )
@@ -32,6 +33,8 @@ const (
 	sep      = '\xff'
 	labelSep = '\xfe'
 )
+
+var seps = []byte{'\xff'}
 
 // Label is a key/value pair of strings.
 type Label struct {
@@ -132,11 +135,44 @@ func (ls Labels) MatchLabels(on bool, names ...string) Labels {
 	return matchedLabels
 }
 
+// noescape hides a pointer from escape analysis.  noescape is
+// the identity function but escape analysis doesn't think the
+// output depends on the input. noescape is inlined and currently
+// compiles down to zero instructions.
+// USE CAREFULLY!
+// This was copied from the runtime; see issues 23382 and 7921.
+//go:nosplit
+//go:nocheckptr
+func noescape(p unsafe.Pointer) unsafe.Pointer {
+	x := uintptr(p)
+	return unsafe.Pointer(x ^ 0) //nolint:staticcheck
+}
+
+//go:nosplit
+//go:checkptr
+func noAllocBytes(buf string) []byte {
+	return *(*[]byte)(unsafe.Pointer(&buf))
+}
+
 // Hash returns a hash value for the label set.
 func (ls Labels) Hash() uint64 {
 	b := make([]byte, 0, 1024)
+	for i, v := range ls {
+		if len(b)+len(v.Name)+len(v.Value)+2 >= cap(b) {
+			// If labels entry is 1KB+ allocate do not allocate whole entry.
+			h := xxhash.New()
+			// This allows b to be still on stack and reused. This is safe as xxhash.x
+			// is never used outside of this function.
+			_, _ = h.Write(*(*[]byte)(noescape(unsafe.Pointer(&b))))
+			for _, v := range ls[i:] {
+				_, _ = h.Write(noAllocBytes(v.Name))
+				_, _ = h.Write(seps)
+				_, _ = h.Write(noAllocBytes(v.Value))
+				_, _ = h.Write(seps)
+			}
+			return h.Sum64()
+		}
 
-	for _, v := range ls {
 		b = append(b, v.Name...)
 		b = append(b, sep)
 		b = append(b, v.Value...)

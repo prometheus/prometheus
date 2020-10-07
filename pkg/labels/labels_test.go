@@ -14,6 +14,8 @@
 package labels
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/prometheus/prometheus/util/testutil"
@@ -630,4 +632,69 @@ func TestBuilder_Labels(t *testing.T) {
 			add:  []Label{{"ddd", "444"}},
 		}).Labels(),
 	)
+}
+
+func TestLabels_Hash(t *testing.T) {
+	lbls := Labels{
+		{Name: "foo", Value: "bar"},
+		{Name: "baz", Value: "qux"},
+	}
+	testutil.Equals(t, lbls.Hash(), lbls.Hash())
+	testutil.Assert(t, lbls.Hash() != Labels{lbls[1], lbls[0]}.Hash(), "unordered labels match.")
+	testutil.Assert(t, lbls.Hash() != Labels{lbls[0]}.Hash(), "different labels match.")
+}
+
+var benchmarkLabelsResult uint64
+
+func BenchmarkLabels_Hash(b *testing.B) {
+	for _, tcase := range []struct {
+		name string
+		lbls Labels
+	}{
+		{
+			name: "typical labels under 1KB",
+			lbls: func() Labels {
+				lbls := make(Labels, 10)
+				for i := 0; i < len(lbls); i++ {
+					// Label ~20B name, 50B value.
+					lbls[i] = Label{Name: fmt.Sprintf("abcdefghijabcdefghijabcdefghij%d", i), Value: fmt.Sprintf("abcdefghijabcdefghijabcdefghijabcdefghijabcdefghij%d", i)}
+				}
+				return lbls
+			}(),
+		},
+		{
+			name: "bigger labels over 1KB",
+			lbls: func() Labels {
+				lbls := make(Labels, 10)
+				for i := 0; i < len(lbls); i++ {
+					//Label ~50B name, 50B value.
+					lbls[i] = Label{Name: fmt.Sprintf("abcdefghijabcdefghijabcdefghijabcdefghijabcdefghij%d", i), Value: fmt.Sprintf("abcdefghijabcdefghijabcdefghijabcdefghijabcdefghij%d", i)}
+				}
+				return lbls
+			}(),
+		},
+		{
+			name: "extremely large label value 10MB",
+			lbls: func() Labels {
+				lbl := &strings.Builder{}
+				lbl.Grow(1024 * 1024 * 10) // 10MB.
+				word := "abcdefghij"
+				for i := 0; i < lbl.Cap()/len(word); i++ {
+					_, _ = lbl.WriteString(word)
+				}
+				return Labels{{Name: "__name__", Value: lbl.String()}}
+			}(),
+		},
+	} {
+		b.Run(tcase.name, func(b *testing.B) {
+			var h uint64
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				h = tcase.lbls.Hash()
+			}
+			benchmarkLabelsResult = h
+		})
+	}
 }
