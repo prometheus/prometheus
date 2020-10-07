@@ -380,10 +380,11 @@ func (ng *Engine) newQuery(q storage.Queryable, expr parser.Expr, start, end tim
 
 func (ng *Engine) newTestQuery(f func(context.Context) error) Query {
 	qry := &query{
-		q:     "test statement",
-		stmt:  parser.TestStmt(f),
-		ng:    ng,
-		stats: stats.NewQueryTimers(),
+		q:           "test statement",
+		stmt:        parser.TestStmt(f),
+		ng:          ng,
+		stats:       stats.NewQueryTimers(),
+		sampleStats: stats.NewQuerySamples(),
 	}
 	return qry
 }
@@ -919,13 +920,13 @@ func (ev *evaluator) rangeEval(f func([]parser.Value, *EvalNodeHelper) (Vector, 
 							// past points at the next step.
 							matrixes[i][si].Points = series.Points[1:]
 							ev.currentSamples++
+							ev.samplesStats.Increment(1)
 						} else {
 							ev.error(ErrTooManySamples(env))
 						}
 					}
 					break
 				}
-				ev.samplesStats.Increment(len(series.Points))
 			}
 			args[i] = vectors[i]
 			ev.samplesStats.UpdatePeak(ev.currentSamples)

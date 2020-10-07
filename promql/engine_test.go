@@ -648,32 +648,15 @@ load 10s
 			Start: time.Unix(10, 0),
 		},
 		{
-			Query:        "irate(metric[100s])",
-			MaxSamples:   3,
-			TotalSamples: 3,
-			PeakSamples:  3,
+			Query:        "sum_over_time(metric[10s:1s])",
+			MaxSamples:   23,
+			TotalSamples: 12,
+			PeakSamples:  23,
 			Result: Result{
 				nil,
-				Vector{
-					Sample{
-						Point:  Point{V: 0.1, T: 10000},
-						Metric: labels.Labels{},
-					},
-				},
-				nil,
-			},
-			Start: time.Unix(10, 0),
-		},
-		{
-			Query:        "metric[20s:5s]",
-			MaxSamples:   3,
-			TotalSamples: 3,
-			PeakSamples:  3,
-			Result: Result{
-				nil,
-				Matrix{Series{
-					Points: []Point{{V: 1, T: 0}, {V: 1, T: 5000}, {V: 2, T: 10000}},
-					Metric: labels.FromStrings("__name__", "metric")},
+				Vector{Sample{
+					Point:  Point{V: 12, T: 10000},
+					Metric: labels.Labels{}},
 				},
 				nil,
 			},
@@ -788,7 +771,7 @@ load 10s
 		{
 			Query:        `sum(metric)`,
 			MaxSamples:   8,
-			TotalSamples: 9,
+			TotalSamples: 6,
 			PeakSamples:  7,
 			Result: Result{
 				nil,
@@ -800,41 +783,27 @@ load 10s
 			Interval: 5 * time.Second,
 		},
 		{
-			Query:        `count(metric)`,
-			MaxSamples:   8,
+			Query:        "rate(bigmetric[10s])",
+			MaxSamples:   4,
+			TotalSamples: 10,
+			PeakSamples:  4,
+			Result: Result{
+				nil,
+				Matrix{Series{Metric: labels.Labels{labels.Label{Name: "a", Value: "1"}}, Points: []Point{{T: 10000, V: 0.1}}}, Series{Metric: labels.Labels{labels.Label{Name: "a", Value: "2"}}, Points: []Point{{T: 10000, V: 0.1}}}},
+				nil,
+			},
+			Start:    time.Unix(0, 0),
+			End:      time.Unix(10, 0),
+			Interval: 5 * time.Second,
+		},
+		{
+			Query:        `metric + 1`,
+			MaxSamples:   11,
 			TotalSamples: 9,
-			PeakSamples:  7,
+			PeakSamples:  11,
 			Result: Result{
 				nil,
-				Matrix{Series{Metric: labels.Labels{}, Points: []Point{{T: 0, V: 1}, {T: 5000, V: 1}, {T: 10000, V: 1}}}},
-				nil,
-			},
-			Start:    time.Unix(0, 0),
-			End:      time.Unix(10, 0),
-			Interval: 5 * time.Second,
-		},
-		{
-			Query:        "rate(bigmetric[1s])",
-			MaxSamples:   1,
-			TotalSamples: 4,
-			PeakSamples:  1,
-			Result: Result{
-				nil,
-				Matrix{},
-				nil,
-			},
-			Start:    time.Unix(0, 0),
-			End:      time.Unix(10, 0),
-			Interval: 5 * time.Second,
-		},
-		{
-			Query:        "irate(bigmetric[1s])",
-			MaxSamples:   1,
-			TotalSamples: 4,
-			PeakSamples:  1,
-			Result: Result{
-				nil,
-				Matrix{},
+				Matrix{Series{Metric: labels.Labels{}, Points: []Point{{T: 0, V: 2}, {T: 5000, V: 2}, {T: 10000, V: 3}}}},
 				nil,
 			},
 			Start:    time.Unix(0, 0),
@@ -844,7 +813,7 @@ load 10s
 		{
 			Query:        `metric + metric`,
 			MaxSamples:   11,
-			TotalSamples: 15,
+			TotalSamples: 9,
 			PeakSamples:  11,
 			Result: Result{
 				nil,
