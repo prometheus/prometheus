@@ -239,7 +239,7 @@ func main() {
 	a.Flag("rules.alert.resend-delay", "Minimum amount of time to wait before resending an alert to Alertmanager.").
 		Default("1m").SetValue(&cfg.resendDelay)
 
-	a.Flag("scrape.adjust-timestamps", "Adjust scrape timestamps by up to 2ms to align them to the intended schedule. See https://github.com/prometheus/prometheus/issues/7846 for more context. Experimental. This flag will be removed in the future.").
+	a.Flag("scrape.adjust-timestamps", "Adjust scrape timestamps by up to 2ms to align them to the intended schedule. See https://github.com/prometheus/prometheus/issues/7846 for more context. Experimental. This flag will be removed in a future release.").
 		Hidden().Default("true").BoolVar(&scrape.AlignScrapeTimestamps)
 
 	a.Flag("alertmanager.notification-queue-capacity", "The capacity of the queue for pending Alertmanager notifications.").
