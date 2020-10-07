@@ -52,7 +52,7 @@ import (
 // See https://github.com/prometheus/prometheus/issues/7846
 const scrapeTimestampTolerance = 2 * time.Millisecond
 
-// Enable or disable the tolerance for scrape appends timestamps described above.
+// AlignScrapeTimestamps enables the tolerance for scrape appends timestamps described above.
 var AlignScrapeTimestamps = true
 
 var errNameLabelMandatory = fmt.Errorf("missing metric name (%s label)", labels.MetricName)
