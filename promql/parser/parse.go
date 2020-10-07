@@ -41,7 +41,7 @@ type parser struct {
 	inject    ItemType
 	injecting bool
 
-	// Everytime an Item is lexed that could be the end
+	// Every time an Item is lexed that could be the end
 	// of certain expressions its end position is stored here.
 	lastClosing Pos
 

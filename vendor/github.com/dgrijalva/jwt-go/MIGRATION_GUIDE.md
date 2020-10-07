@@ -4,7 +4,7 @@ Version 3 adds several new, frequently requested features.  To do so, it introdu
 
 ### `Token.Claims` is now an interface type
 
-The most requested feature from the 2.0 verison of this library was the ability to provide a custom type to the JSON parser for claims. This was implemented by introducing a new interface, `Claims`, to replace `map[string]interface{}`.  We also included two concrete implementations of `Claims`: `MapClaims` and `StandardClaims`.
+The most requested feature from the 2.0 version of this library was the ability to provide a custom type to the JSON parser for claims. This was implemented by introducing a new interface, `Claims`, to replace `map[string]interface{}`.  We also included two concrete implementations of `Claims`: `MapClaims` and `StandardClaims`.
 
 `MapClaims` is an alias for `map[string]interface{}` with built in validation behavior.  It is the default claims type when using `Parse`.  The usage is unchanged except you must type cast the claims property.
 

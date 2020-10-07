@@ -282,7 +282,7 @@ func HasLowerCase(str string) bool {
 	return rxHasLowerCase.MatchString(str)
 }
 
-// HasUpperCase check if the string contians as least 1 uppercase. Empty string is valid.
+// HasUpperCase check if the string contains as least 1 uppercase. Empty string is valid.
 func HasUpperCase(str string) bool {
 	if IsNull(str) {
 		return true

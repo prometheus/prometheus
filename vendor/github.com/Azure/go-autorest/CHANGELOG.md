@@ -785,7 +785,7 @@ longer work with golint.
 
 ## v9.0.0
 
-> **IMPORTANT:** This release was intially labeled incorrectly as `v8.4.0`. From the time it was released, it should have been marked `v9.0.0` because it contains breaking changes to the MSI packages. We appologize for any inconvenience this causes.
+> **IMPORTANT:** This release was initially labeled incorrectly as `v8.4.0`. From the time it was released, it should have been marked `v9.0.0` because it contains breaking changes to the MSI packages. We appologize for any inconvenience this causes.
 
 Adding MSI Endpoint Support and CLI token rehydration.
 
