@@ -50,7 +50,7 @@ import (
 // Temporary tolerance for scrape appends timestamps alignment, to enable better
 // compression at the TSDB level.
 // See https://github.com/prometheus/prometheus/issues/7846
-const scrapeTimestampTolerance = 2 * time.Millisecond
+var ScrapeTimestampTolerance = 2 * time.Millisecond
 
 var errNameLabelMandatory = fmt.Errorf("missing metric name (%s label)", labels.MetricName)
 
@@ -1009,14 +1009,14 @@ mainLoop:
 		// increase in TSDB.
 		// See https://github.com/prometheus/prometheus/issues/7846
 		scrapeTime := time.Now()
-		if interval > 100*scrapeTimestampTolerance {
+		if interval > 100*ScrapeTimestampTolerance {
 			// For some reason, a tick might have been skipped, in which case we
 			// would call alignedScrapeTime.Add(interval) multiple times.
 			for scrapeTime.Sub(alignedScrapeTime) >= interval {
 				alignedScrapeTime = alignedScrapeTime.Add(interval)
 			}
 			// Align the scrape time if we are in the tolerance boundaries.
-			if scrapeTime.Sub(alignedScrapeTime) <= scrapeTimestampTolerance {
+			if scrapeTime.Sub(alignedScrapeTime) <= ScrapeTimestampTolerance {
 				scrapeTime = alignedScrapeTime
 			}
 		}
