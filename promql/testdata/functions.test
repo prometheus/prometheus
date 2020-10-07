@@ -95,6 +95,64 @@ eval instant at 30m increase(http_requests[30m])
 
 clear
 
+# Tests for rate().
+load 5m
+	testcounter_reset_middle	0+10x4 0+10x5
+	testcounter_reset_end    	0+10x9 0 10
+
+# Counter resets at in the middle of range are handled correctly by rate().
+eval instant at 50m rate(testcounter_reset_middle[50m])
+	{} 0.03
+
+# Counter resets at end of range are ignored by rate().
+eval instant at 50m rate(testcounter_reset_end[5m])
+	{} 0
+
+clear
+
+load 5m
+	calculate_rate_offset{x="a"}	0+10x10
+	calculate_rate_offset{x="b"}	0+20x10
+	calculate_rate_window		0+80x10
+
+# Rates should calculate per-second rates.
+eval instant at 50m rate(calculate_rate_window[50m])
+	{} 0.26666666666666666
+
+eval instant at 50m rate(calculate_rate_offset[10m] offset 5m)
+	{x="a"} 0.03333333333333333
+	{x="b"} 0.06666666666666667
+
+clear
+
+load 4m
+	testcounter_zero_cutoff{start="0m"}	0+240x10
+	testcounter_zero_cutoff{start="1m"}	60+240x10
+	testcounter_zero_cutoff{start="2m"}	120+240x10
+	testcounter_zero_cutoff{start="3m"}	180+240x10
+	testcounter_zero_cutoff{start="4m"}	240+240x10
+	testcounter_zero_cutoff{start="5m"}	300+240x10
+
+# Zero cutoff for left-side extrapolation.
+eval instant at 10m rate(testcounter_zero_cutoff[20m])
+	{start="0m"} 0.5
+	{start="1m"} 0.55
+	{start="2m"} 0.6
+	{start="3m"} 0.65
+	{start="4m"} 0.7
+	{start="5m"} 0.6
+
+# Normal half-interval cutoff for left-side extrapolation.
+eval instant at 50m rate(testcounter_zero_cutoff[20m])
+	{start="0m"} 0.6
+	{start="1m"} 0.6
+	{start="2m"} 0.6
+	{start="3m"} 0.6
+	{start="4m"} 0.6
+	{start="5m"} 0.6
+
+clear
+
 # Tests for irate().
 load 5m
 	http_requests{path="/foo"}	0+10x10
@@ -578,6 +636,9 @@ eval instant at 0m year()
 eval instant at 1ms time()
   0.001
 
+eval instant at 50m time()
+  3000
+
 eval instant at 0m year(vector(1136239445))
   {} 2006
 
@@ -671,6 +732,54 @@ eval instant at 1m max_over_time(data[1m])
 
 clear
 
+# Test for absent()
+eval instant at 50m absent(nonexistent)
+	{} 1
+
+eval instant at 50m absent(nonexistent{job="testjob", instance="testinstance", method=~".x"})
+	{instance="testinstance", job="testjob"} 1
+
+eval instant at 50m absent(nonexistent{job="testjob",job="testjob2",foo="bar"})
+	{foo="bar"} 1
+
+eval instant at 50m absent(nonexistent{job="testjob",job="testjob2",job="three",foo="bar"})
+	{foo="bar"} 1
+
+eval instant at 50m absent(nonexistent{job="testjob",job=~"testjob2",foo="bar"})
+	{foo="bar"} 1
+
+clear
+
+# Don't return anything when there's something there.
+load 5m
+	http_requests{job="api-server", instance="0", group="production"}	0+10x10
+
+eval instant at 50m absent(http_requests)
+
+eval instant at 50m absent(sum(http_requests))
+
+clear
+
+eval instant at 50m absent(sum(nonexistent{job="testjob", instance="testinstance"}))
+	{} 1
+
+eval instant at 50m absent(max(nonexistant))
+	{} 1
+
+eval instant at 50m absent(nonexistant > 1)
+	{} 1
+
+eval instant at 50m absent(a + b)
+	{} 1
+
+eval instant at 50m absent(a and b)
+	{} 1
+
+eval instant at 50m absent(rate(nonexistant[5m]))
+	{} 1
+
+clear
+
 # Testdata for absent_over_time()
 eval instant at 1m absent_over_time(http_requests[5m])
     {} 1
@@ -734,3 +843,68 @@ eval instant at 5m absent_over_time({job="ingress"}[4m])
 
 eval instant at 10m absent_over_time({job="ingress"}[4m])
 	{job="ingress"} 1
+
+clear
+
+# Testing exp() sqrt() log2() log10() ln()
+load 5m
+	exp_root_log{l="x"} 10
+	exp_root_log{l="y"} 20
+
+eval instant at 5m exp(exp_root_log)
+	{l="x"} 22026.465794806718
+	{l="y"} 485165195.4097903
+
+eval instant at 5m exp(exp_root_log - 10)
+	{l="y"} 22026.465794806718
+	{l="x"} 1
+
+eval instant at 5m exp(exp_root_log - 20)
+	{l="x"} 4.5399929762484854e-05
+	{l="y"} 1
+
+eval instant at 5m ln(exp_root_log)
+	{l="x"} 2.302585092994046
+	{l="y"} 2.995732273553991
+
+eval instant at 5m ln(exp_root_log - 10)
+	{l="y"} 2.302585092994046
+	{l="x"} -Inf
+
+eval instant at 5m ln(exp_root_log - 20)
+	{l="y"} -Inf
+	{l="x"} NaN
+
+eval instant at 5m exp(ln(exp_root_log))
+	{l="y"} 20
+	{l="x"} 10
+
+eval instant at 5m sqrt(exp_root_log)
+	{l="x"} 3.1622776601683795
+	{l="y"} 4.47213595499958
+
+eval instant at 5m log2(exp_root_log)
+	{l="x"} 3.3219280948873626
+	{l="y"} 4.321928094887363
+
+eval instant at 5m log2(exp_root_log - 10)
+	{l="y"} 3.3219280948873626
+	{l="x"} -Inf
+
+eval instant at 5m log2(exp_root_log - 20)
+	{l="x"} NaN
+	{l="y"} -Inf
+
+eval instant at 5m log10(exp_root_log)
+	{l="x"} 1
+	{l="y"} 1.301029995663981
+
+eval instant at 5m log10(exp_root_log - 10)
+	{l="y"} 1
+	{l="x"} -Inf
+
+eval instant at 5m log10(exp_root_log - 20)
+	{l="x"} NaN
+	{l="y"} -Inf
+
+clear

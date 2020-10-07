@@ -9,3 +9,14 @@ eval instant at 4s count by(namespace, pod, cpu) (node_cpu_seconds_total{cpu=~".
     {cpu="10",namespace="observability",node="gke-search-infra-custom-96-253440-fli-d135b119-jx00",pod="node-exporter-l454v"} 1
     {cpu="35",namespace="observability",node="gke-search-infra-custom-96-253440-fli-d135b119-jx00",pod="node-exporter-l454v"} 1
     {cpu="89",namespace="observability",node="gke-search-infra-custom-96-253440-fli-d135b119-jx00",pod="node-exporter-l454v"} 1
+
+clear
+
+# Test duplicate labelset in promql output.
+load 5m
+  testmetric1{src="a",dst="b"} 0
+  testmetric2{src="a",dst="b"} 1
+
+eval_fail instant at 0m ceil({__name__=~'testmetric1|testmetric2'})
+
+clear
