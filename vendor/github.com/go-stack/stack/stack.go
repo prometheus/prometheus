@@ -151,7 +151,7 @@ func (c Call) Format(s fmt.State, verb rune) {
 	}
 }
 
-// Frame returns the call frame information for the Call.
+// Frame returns the call frame infomation for the Call.
 func (c Call) Frame() runtime.Frame {
 	return c.frame
 }

@@ -355,7 +355,7 @@ func (ejp *extJSONParser) readValue(t bsontype.Type) (*extJSONValue, error) {
 				if ejp.canonical {
 					return nil, invalidJSONErrorForType("object", t)
 				}
-				return nil, invalidJSONErrorForType("ISO-8601 Internet Date/Time Format as described in RFC-3339", t)
+				return nil, invalidJSONErrorForType("ISO-8601 Internet Date/Time Format as decribed in RFC-3339", t)
 			}
 
 			ejp.advanceState()

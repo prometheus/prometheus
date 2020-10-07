@@ -1,7 +1,7 @@
 # 1.6.0
 Fixes:
   * end of line cleanup
-  * revert the entry concurrency bug fix which leads to deadlock under some circumstances
+  * revert the entry concurrency bug fix whic leads to deadlock under some circumstances
   * update dependency on go-windows-terminal-sequences to fix a crash with go 1.14
 
 Features:

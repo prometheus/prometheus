@@ -8,7 +8,7 @@ generates Go code that statically implements the provided http.FileSystem.
 
 Features:
 
--	Efficient generated code without unnecessary overhead.
+-	Efficient generated code without unneccessary overhead.
 
 -	Uses gzip compression internally (selectively, only for files that compress well).
 
@@ -171,7 +171,7 @@ vfsgen aims to be conceptually simple to use. The [`http.FileSystem`](https://go
 
 That enables great flexibility through orthogonality, since helpers and wrappers can operate on `http.FileSystem` without knowing about vfsgen. If you want, you can perform pre-processing, minifying assets, merging folders, filtering out files and otherwise modifying input via generic `http.FileSystem` middleware.
 
-It avoids unnecessary overhead by merging what was previously done with two distinct packages into a single package.
+It avoids unneccessary overhead by merging what was previously done with two distinct packages into a single package.
 
 It strives to be the best in its class in terms of code quality and efficiency of generated code. However, if your use goals are different, there are other similar packages that may fit your needs better.
 

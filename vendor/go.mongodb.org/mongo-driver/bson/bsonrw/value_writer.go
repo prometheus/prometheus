@@ -527,7 +527,7 @@ func (vw *valueWriter) WriteDocumentEnd() error {
 	vw.pop()
 
 	if vw.stack[vw.frame].mode == mCodeWithScope {
-		// We ignore the error here because of the guarantee of writeLength.
+		// We ignore the error here because of the gaurantee of writeLength.
 		// See the docs for writeLength for more info.
 		_ = vw.writeLength()
 		vw.pop()

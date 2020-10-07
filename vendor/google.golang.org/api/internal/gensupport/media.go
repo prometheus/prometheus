@@ -55,7 +55,7 @@ func (cs *contentSniffer) Read(p []byte) (n int, err error) {
 	return cs.r.Read(p)
 }
 
-// ContentType returns the sniffed content type, and whether the content type was successfully sniffed.
+// ContentType returns the sniffed content type, and whether the content type was succesfully sniffed.
 func (cs *contentSniffer) ContentType() (string, bool) {
 	if cs.sniffed {
 		return cs.ctype, cs.ctype != ""
