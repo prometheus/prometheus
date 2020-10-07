@@ -239,7 +239,7 @@ func main() {
 	a.Flag("rules.alert.resend-delay", "Minimum amount of time to wait before resending an alert to Alertmanager.").
 		Default("1m").SetValue(&cfg.resendDelay)
 
-	a.Flag("scrape.timestamp-tolerance", "Tolerance applied to scrapes timestamp to improve timestamp compression. Experimental.").
+	a.Flag("scrape.timestamp-tolerance", "Adjust scrape timestamps by up to this amount to align them to the intended schedule. Experimental.").
 		Hidden().Default("2ms").DurationVar(&scrape.ScrapeTimestampTolerance)
 
 	a.Flag("alertmanager.notification-queue-capacity", "The capacity of the queue for pending Alertmanager notifications.").
