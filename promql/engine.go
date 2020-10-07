@@ -1500,7 +1500,7 @@ func (ev *evaluator) matrixIterSlice(it *storage.BufferedSeriesIterator, mint, m
 			ev.currentSamples++
 		}
 	}
-	// The sought sample might also be in the range.
+	// The seeked sample might also be in the range.
 	if ok {
 		t, v := it.Values()
 		if t == maxt && !value.IsStaleNaN(v) {
