@@ -160,6 +160,7 @@ func (c *Client) Store(ctx context.Context, req []byte) error {
 	}
 	httpReq.Header.Add("Content-Encoding", "snappy")
 	httpReq.Header.Set("Content-Type", "application/x-protobuf")
+	httpReq.Header.Set("Content-Length", fmt.Sprintf("%v", len(req)))
 	httpReq.Header.Set("User-Agent", UserAgent)
 	httpReq.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
