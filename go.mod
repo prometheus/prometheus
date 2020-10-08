@@ -3,21 +3,22 @@ module github.com/prometheus/prometheus
 go 1.14
 
 require (
-	github.com/Azure/azure-sdk-for-go v45.1.0+incompatible
+	github.com/Azure/azure-sdk-for-go v46.4.0+incompatible
 	github.com/Azure/go-ansiterm v0.0.0-20170929234023-d6e3b3328b78 // indirect
-	github.com/Azure/go-autorest/autorest v0.11.4
-	github.com/Azure/go-autorest/autorest/adal v0.9.2
+	github.com/Azure/go-autorest/autorest v0.11.10
+	github.com/Azure/go-autorest/autorest/adal v0.9.5
 	github.com/Azure/go-autorest/autorest/to v0.3.0 // indirect
 	github.com/Azure/go-autorest/autorest/validation v0.2.0 // indirect
+	github.com/HdrHistogram/hdrhistogram-go v0.9.0 // indirect
 	github.com/Microsoft/go-winio v0.4.14 // indirect
 	github.com/alecthomas/units v0.0.0-20190924025748-f65c72e2690d
 	github.com/armon/go-metrics v0.3.3 // indirect
-	github.com/aws/aws-sdk-go v1.34.9
+	github.com/aws/aws-sdk-go v1.35.5
 	github.com/cespare/xxhash v1.1.0
 	github.com/containerd/containerd v1.3.4 // indirect
 	github.com/davecgh/go-spew v1.1.1
-	github.com/dgryski/go-sip13 v0.0.0-20190329191031-25c5027a8c7b
-	github.com/digitalocean/godo v1.42.1
+	github.com/dgryski/go-sip13 v0.0.0-20200911182023-62edffca9245
+	github.com/digitalocean/godo v1.46.0
 	github.com/docker/distribution v2.7.1+incompatible // indirect
 	github.com/docker/docker v17.12.0-ce-rc1.0.20200706150819-a40b877fbb9e+incompatible
 	github.com/docker/go-connections v0.4.0 // indirect
@@ -26,16 +27,16 @@ require (
 	github.com/go-logfmt/logfmt v0.5.0
 	github.com/go-openapi/strfmt v0.19.5
 	github.com/gogo/protobuf v1.3.1
-	github.com/golang/snappy v0.0.1
-	github.com/google/pprof v0.0.0-20200708004538-1a94d8640e99
-	github.com/gophercloud/gophercloud v0.12.0
-	github.com/grpc-ecosystem/grpc-gateway v1.14.6
-	github.com/hashicorp/consul/api v1.6.0
+	github.com/golang/snappy v0.0.2
+	github.com/google/pprof v0.0.0-20201007051231-1066cbb265c7
+	github.com/gophercloud/gophercloud v0.13.0
+	github.com/grpc-ecosystem/grpc-gateway v1.15.0
+	github.com/hashicorp/consul/api v1.7.0
 	github.com/hashicorp/go-hclog v0.12.2 // indirect
 	github.com/hashicorp/go-immutable-radix v1.2.0 // indirect
 	github.com/hashicorp/golang-lru v0.5.4 // indirect
-	github.com/hetznercloud/hcloud-go v1.21.1
-	github.com/influxdata/influxdb v1.8.2
+	github.com/hetznercloud/hcloud-go v1.22.0
+	github.com/influxdata/influxdb v1.8.3
 	github.com/json-iterator/go v1.1.10
 	github.com/miekg/dns v1.1.31
 	github.com/mitchellh/mapstructure v1.2.2 // indirect
@@ -55,21 +56,19 @@ require (
 	github.com/prometheus/common v0.14.0
 	github.com/samuel/go-zookeeper v0.0.0-20200724154423-2164a8ac840e
 	github.com/shurcooL/httpfs v0.0.0-20190707220628-8d4bc4ba7749
-	github.com/shurcooL/vfsgen v0.0.0-20200627165143-92b8a710ab6c
+	github.com/shurcooL/vfsgen v0.0.0-20200824052919-0d455de96546
 	github.com/uber/jaeger-client-go v2.25.0+incompatible
-	github.com/uber/jaeger-lib v2.2.0+incompatible
+	github.com/uber/jaeger-lib v2.4.0+incompatible
 	go.mongodb.org/mongo-driver v1.3.2 // indirect
-	go.uber.org/atomic v1.6.0
+	go.uber.org/atomic v1.7.0
 	go.uber.org/goleak v1.1.10
-	golang.org/x/net v0.0.0-20200822124328-c89045814202
-	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d
-	golang.org/x/sync v0.0.0-20200625203802-6e8e738ad208
-	golang.org/x/sys v0.0.0-20200918174421-af09f7315aff
+	golang.org/x/net v0.0.0-20201006153459-a7d1128ccaa0
+	golang.org/x/oauth2 v0.0.0-20200902213428-5d25da1a8d43
+	golang.org/x/sync v0.0.0-20200930132711-30421366ff76
+	golang.org/x/sys v0.0.0-20201008064518-c1f3e3309c71
 	golang.org/x/time v0.0.0-20200630173020-3af7569d3a1e
-	golang.org/x/tools v0.0.0-20200822203824-307de81be3f4
-	google.golang.org/api v0.29.0
-	google.golang.org/appengine v1.6.6 // indirect
-	google.golang.org/genproto v0.0.0-20200815001618-f69a88009b70 // indirect
+	golang.org/x/tools v0.0.0-20201008025239-9df69603baec
+	google.golang.org/api v0.32.0
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	gopkg.in/fsnotify/fsnotify.v1 v1.4.7
 	gopkg.in/yaml.v2 v2.3.0
@@ -79,7 +78,7 @@ require (
 	k8s.io/apimachinery v0.19.2
 	k8s.io/client-go v0.19.2
 	k8s.io/klog v1.0.0
-	k8s.io/klog/v2 v2.2.0
+	k8s.io/klog/v2 v2.3.0
 )
 
 replace (

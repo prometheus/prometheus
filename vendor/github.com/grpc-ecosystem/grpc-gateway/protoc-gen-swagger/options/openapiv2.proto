@@ -11,6 +11,28 @@ import "google/protobuf/struct.proto";
 //
 // See: https://github.com/OAI/OpenAPI-Specification/blob/3.0.0/versions/2.0.md#swaggerObject
 //
+// Example:
+//
+//  option (grpc.gateway.protoc_gen_swagger.options.openapiv2_swagger) = {
+//    info: {
+//      title: "Echo API";
+//      version: "1.0";
+//      description: ";
+//      contact: {
+//        name: "gRPC-Gateway project";
+//        url: "https://github.com/grpc-ecosystem/grpc-gateway";
+//        email: "none@example.com";
+//      };
+//      license: {
+//        name: "BSD 3-Clause License";
+//        url: "https://github.com/grpc-ecosystem/grpc-gateway/blob/master/LICENSE.txt";
+//      };
+//    };
+//    schemes: HTTPS;
+//    consumes: "application/json";
+//    produces: "application/json";
+//  };
+//
 message Swagger {
   // Specifies the Swagger Specification version being used. It can be
   // used by the Swagger UI and other clients to interpret the API listing. The 
@@ -81,6 +103,27 @@ message Swagger {
 //
 // See: https://github.com/OAI/OpenAPI-Specification/blob/3.0.0/versions/2.0.md#operationObject
 //
+// Example:
+//
+//  service EchoService {
+//    rpc Echo(SimpleMessage) returns (SimpleMessage) {
+//      option (google.api.http) = {
+//        get: "/v1/example/echo/{id}"
+//      };
+//
+//      option (grpc.gateway.protoc_gen_swagger.options.openapiv2_operation) = {
+//        summary: "Get a message.";
+//        operation_id: "getMessage";
+//        tags: "echo";
+//        responses: {
+//          key: "200"
+//            value: {
+//            description: "OK";
+//          }
+//        }
+//      };
+//    }
+//  }
 message Operation {
   // A list of tags for API documentation control. Tags can be used for logical
   // grouping of operations by resources or any other qualifier.
@@ -150,6 +193,26 @@ message Response {
 //
 // See: https://github.com/OAI/OpenAPI-Specification/blob/3.0.0/versions/2.0.md#infoObject
 //
+// Example:
+//
+//  option (grpc.gateway.protoc_gen_swagger.options.openapiv2_swagger) = {
+//    info: {
+//      title: "Echo API";
+//      version: "1.0";
+//      description: ";
+//      contact: {
+//        name: "gRPC-Gateway project";
+//        url: "https://github.com/grpc-ecosystem/grpc-gateway";
+//        email: "none@example.com";
+//      };
+//      license: {
+//        name: "BSD 3-Clause License";
+//        url: "https://github.com/grpc-ecosystem/grpc-gateway/blob/master/LICENSE.txt";
+//      };
+//    };
+//    ...
+//  };
+//
 message Info {
   // The title of the application.
   string title = 1;
@@ -172,6 +235,21 @@ message Info {
 //
 // See: https://github.com/OAI/OpenAPI-Specification/blob/3.0.0/versions/2.0.md#contactObject
 //
+// Example:
+//
+//  option (grpc.gateway.protoc_gen_swagger.options.openapiv2_swagger) = {
+//    info: {
+//      ...
+//      contact: {
+//        name: "gRPC-Gateway project";
+//        url: "https://github.com/grpc-ecosystem/grpc-gateway";
+//        email: "none@example.com";
+//      };
+//      ...
+//    };
+//    ...
+//  };
+//
 message Contact {
   // The identifying name of the contact person/organization.
   string name = 1;
@@ -187,6 +265,20 @@ message Contact {
 //
 // See: https://github.com/OAI/OpenAPI-Specification/blob/3.0.0/versions/2.0.md#licenseObject
 //
+// Example:
+//
+//  option (grpc.gateway.protoc_gen_swagger.options.openapiv2_swagger) = {
+//    info: {
+//      ...
+//      license: {
+//        name: "BSD 3-Clause License";
+//        url: "https://github.com/grpc-ecosystem/grpc-gateway/blob/master/LICENSE.txt";
+//      };
+//      ...
+//    };
+//    ...
+//  };
+//
 message License {
   // The license name used for the API.
   string name = 1;
@@ -198,6 +290,17 @@ message License {
 // ExternalDocumentation object.
 //
 // See: https://github.com/OAI/OpenAPI-Specification/blob/3.0.0/versions/2.0.md#externalDocumentationObject
+//
+// Example:
+//
+//  option (grpc.gateway.protoc_gen_swagger.options.openapiv2_swagger) = {
+//    ...
+//    external_docs: {
+//      description: "More about gRPC-Gateway";
+//      url: "https://github.com/grpc-ecosystem/grpc-gateway";
+//    }
+//    ...
+//  };
 //
 message ExternalDocumentation {
   // A short description of the target documentation. GFM syntax can be used for
@@ -231,7 +334,13 @@ message Schema {
   // Additional external documentation for this schema.
   ExternalDocumentation external_docs = 5;
   // A free-form property to include an example of an instance for this schema.
-  google.protobuf.Any example = 6;
+  // Deprecated, please use example_string instead.
+  google.protobuf.Any example = 6 [
+    deprecated = true
+  ];
+  // A free-form property to include a JSON example of this field. This is copied
+  // verbatim to the output swagger.json. Quotes must be escaped.
+  string example_string = 7;
 }
 
 // `JSONSchema` represents properties from JSON Schema taken, and as used, in
@@ -244,7 +353,24 @@ message Schema {
 // See also: https://cswr.github.io/JsonSchema/spec/basic_types/,
 // https://github.com/json-schema-org/json-schema-spec/blob/master/schema.json
 //
-// TODO(ivucica): document fields
+// Example:
+//
+//  message SimpleMessage {
+//    option (grpc.gateway.protoc_gen_swagger.options.openapiv2_schema) = {
+//      json_schema: {
+//        title: "SimpleMessage"
+//        description: "A simple message."
+//        required: ["id"]
+//      }
+//    };
+//
+//    // Id represents the message identifier.
+//    string id = 1; [
+//        (grpc.gateway.protoc_gen_swagger.options.openapiv2_field) = {
+//          {description: "The unique identifier of the simple message."
+//        }];
+//  }
+//
 message JSONSchema {
   // field 1 is reserved for '$id', omitted from OpenAPI v2.
   reserved 1;
