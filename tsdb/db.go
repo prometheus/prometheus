@@ -595,6 +595,17 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 		chunkPool:      chunkenc.NewPool(),
 		blocksToDelete: opts.BlocksToDelete,
 	}
+	defer func() {
+		// Close files if startup fails somewhere.
+		if err == nil {
+			return
+		}
+
+		if dbErr := db.Close(); dbErr != nil {
+			level.Error(l).Log("msg", "failed to close files after failed TSDB startup", "err", dbErr)
+		}
+	}()
+
 	if db.blocksToDelete == nil {
 		db.blocksToDelete = DefaultBlocksToDelete(db)
 	}
@@ -621,6 +632,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 
 	var wlog *wal.WAL
 	segmentSize := wal.DefaultSegmentSize
+
 	// Wal is enabled.
 	if opts.WALSegmentSize >= 0 {
 		// Wal is set to a custom size.
@@ -1314,7 +1326,9 @@ func (db *DB) Close() error {
 	if db.lockf != nil {
 		merr.Add(db.lockf.Release())
 	}
-	merr.Add(db.head.Close())
+	if db.head != nil {
+		merr.Add(db.head.Close())
+	}
 	return merr.Err()
 }
 
