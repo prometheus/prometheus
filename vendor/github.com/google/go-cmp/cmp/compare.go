@@ -95,12 +95,12 @@ func Equal(x, y interface{}, opts ...Option) bool {
 	return s.result.Equal()
 }
 
-// Diff returns a human-readable report of the differences between two values.
-// It returns an empty string if and only if Equal returns true for the same
-// input values and options.
+// Diff returns a human-readable report of the differences between two values:
+// y - x. It returns an empty string if and only if Equal returns true for the
+// same input values and options.
 //
 // The output is displayed as a literal in pseudo-Go syntax.
-// At the start of each line, a "-" prefix indicates an element removed from x,
+// At the start of each line, a "-" prefix indicates an element removed from y,
 // a "+" prefix to indicates an element added to y, and the lack of a prefix
 // indicates an element common to both x and y. If possible, the output
 // uses fmt.Stringer.String or error.Error methods to produce more humanly

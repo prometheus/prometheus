@@ -121,6 +121,70 @@ type AgentServiceConnectProxyConfig struct {
 	Expose                 ExposeConfig           `json:",omitempty"`
 }
 
+const (
+	// MemberTagKeyACLMode is the key used to indicate what ACL mode the agent is
+	// operating in. The values of this key will be one of the MemberACLMode constants
+	// with the key not being present indicating ACLModeUnknown.
+	MemberTagKeyACLMode = "acls"
+
+	// MemberTagRole is the key used to indicate that the member is a server or not.
+	MemberTagKeyRole = "role"
+
+	// MemberTagValueRoleServer is the value of the MemberTagKeyRole used to indicate
+	// that the member represents a Consul server.
+	MemberTagValueRoleServer = "consul"
+
+	// MemberTagKeySegment is the key name of the tag used to indicate which network
+	// segment this member is in.
+	// Network Segments are a Consul Enterprise feature.
+	MemberTagKeySegment = "segment"
+
+	// MemberTagKeyBootstrap is the key name of the tag used to indicate whether this
+	// agent was started with the "bootstrap" configuration enabled
+	MemberTagKeyBootstrap = "bootstrap"
+	// MemberTagValueBootstrap is the value of the MemberTagKeyBootstrap key when the
+	// agent was started with the "bootstrap" configuration enabled.
+	MemberTagValueBootstrap = "1"
+
+	// MemberTagKeyBootstrapExpect is the key name of the tag used to indicate whether
+	// this agent was started with the "bootstrap_expect" configuration set to a non-zero
+	// value. The value of this key will be the string for of that configuration value.
+	MemberTagKeyBootstrapExpect = "expect"
+
+	// MemberTagKeyUseTLS is the key name of the tag used to indicate whther this agent
+	// was configured to use TLS.
+	MemberTagKeyUseTLS = "use_tls"
+	// MemberTagValueUseTLS is the value of the MemberTagKeyUseTLS when the agent was
+	// configured to use TLS. Any other value indicates that it was not setup in
+	// that manner.
+	MemberTagValueUseTLS = "1"
+
+	// MemberTagKeyReadReplica is the key used to indicate that the member is a read
+	// replica server (will remain a Raft non-voter).
+	// Read Replicas are a Consul Enterprise feature.
+	MemberTagKeyReadReplica = "nonvoter"
+	// MemberTagValueReadReplica is the value of the MemberTagKeyReadReplica key when
+	// the member is in fact a read-replica. Any other value indicates that it is not.
+	// Read Replicas are a Consul Enterprise feature.
+	MemberTagValueReadReplica = "1"
+)
+
+type MemberACLMode string
+
+const (
+	// ACLModeDisables indicates that ACLs are disabled for this agent
+	ACLModeDisabled MemberACLMode = "0"
+	// ACLModeEnabled indicates that ACLs are enabled and operating in new ACL
+	// mode (v1.4.0+ ACLs)
+	ACLModeEnabled MemberACLMode = "1"
+	// ACLModeLegacy indicates that ACLs are enabled and operating in legacy mode.
+	ACLModeLegacy MemberACLMode = "2"
+	// ACLModeUnkown is used to indicate that the AgentMember.Tags didn't advertise
+	// an ACL mode at all. This is the case for Consul versions before v1.4.0 and
+	// should be treated similarly to ACLModeLegacy.
+	ACLModeUnknown MemberACLMode = "3"
+)
+
 // AgentMember represents a cluster member known to the agent
 type AgentMember struct {
 	Name        string
@@ -134,6 +198,30 @@ type AgentMember struct {
 	DelegateMin uint8
 	DelegateMax uint8
 	DelegateCur uint8
+}
+
+// ACLMode returns the ACL mode this agent is operating in.
+func (m *AgentMember) ACLMode() MemberACLMode {
+	mode := m.Tags[MemberTagKeyACLMode]
+
+	// the key may not have existed but then an
+	// empty string will be returned and we will
+	// handle that in the default case of the switch
+	switch MemberACLMode(mode) {
+	case ACLModeDisabled:
+		return ACLModeDisabled
+	case ACLModeEnabled:
+		return ACLModeEnabled
+	case ACLModeLegacy:
+		return ACLModeLegacy
+	default:
+		return ACLModeUnknown
+	}
+}
+
+// IsConsulServer returns true when this member is a Consul server.
+func (m *AgentMember) IsConsulServer() bool {
+	return m.Tags[MemberTagKeyRole] == MemberTagValueRoleServer
 }
 
 // AllSegments is used to select for all segments in MembersOpts.

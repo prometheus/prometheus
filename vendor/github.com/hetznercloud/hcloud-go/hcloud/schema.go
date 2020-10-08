@@ -140,6 +140,7 @@ func ServerFromSchema(s schema.Server) *Server {
 		RescueEnabled:   s.RescueEnabled,
 		Datacenter:      DatacenterFromSchema(s.Datacenter),
 		Locked:          s.Locked,
+		PrimaryDiskSize: s.PrimaryDiskSize,
 		Protection: ServerProtection{
 			Delete:  s.Protection.Delete,
 			Rebuild: s.Protection.Rebuild,

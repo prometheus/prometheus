@@ -47,6 +47,7 @@ type ResourceIdentifier struct {
 	OperationalInsights string `json:"operationalInsights"`
 	Storage             string `json:"storage"`
 	Synapse             string `json:"synapse"`
+	ServiceBus          string `json:"serviceBus"`
 }
 
 // Environment represents a set of endpoints for each of Azure's Clouds.
@@ -111,6 +112,7 @@ var (
 			OperationalInsights: "https://api.loganalytics.io",
 			Storage:             "https://storage.azure.com/",
 			Synapse:             "https://dev.azuresynapse.net",
+			ServiceBus:          "https://servicebus.azure.net/",
 		},
 	}
 
@@ -147,6 +149,7 @@ var (
 			OperationalInsights: "https://api.loganalytics.us",
 			Storage:             "https://storage.azure.com/",
 			Synapse:             NotAvailable,
+			ServiceBus:          "https://servicebus.azure.net/",
 		},
 	}
 
@@ -183,6 +186,7 @@ var (
 			OperationalInsights: NotAvailable,
 			Storage:             "https://storage.azure.com/",
 			Synapse:             "https://dev.azuresynapse.net",
+			ServiceBus:          "https://servicebus.azure.net/",
 		},
 	}
 
@@ -219,6 +223,7 @@ var (
 			OperationalInsights: NotAvailable,
 			Storage:             "https://storage.azure.com/",
 			Synapse:             NotAvailable,
+			ServiceBus:          "https://servicebus.azure.net/",
 		},
 	}
 )
