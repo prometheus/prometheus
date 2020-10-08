@@ -199,10 +199,6 @@ type CreateOpts struct {
 	// Max specifies Maximum number of servers to launch.
 	Max int `json:"max_count,omitempty"`
 
-	// ServiceClient will allow calls to be made to retrieve an image or
-	// flavor ID by name.
-	ServiceClient *gophercloud.ServiceClient `json:"-"`
-
 	// Tags allows a server to be tagged with single-word metadata.
 	// Requires microversion 2.52 or later.
 	Tags []string `json:"tags,omitempty"`
@@ -211,7 +207,6 @@ type CreateOpts struct {
 // ToServerCreateMap assembles a request body based on the contents of a
 // CreateOpts.
 func (opts CreateOpts) ToServerCreateMap() (map[string]interface{}, error) {
-	opts.ServiceClient = nil
 	b, err := gophercloud.BuildRequestBody(opts, "")
 	if err != nil {
 		return nil, err
@@ -447,10 +442,6 @@ type RebuildOpts struct {
 	// Personality [optional] includes files to inject into the server at launch.
 	// Rebuild will base64-encode file contents for you.
 	Personality Personality `json:"personality,omitempty"`
-
-	// ServiceClient will allow calls to be made to retrieve an image or
-	// flavor ID by name.
-	ServiceClient *gophercloud.ServiceClient `json:"-"`
 }
 
 // ToServerRebuildMap formats a RebuildOpts struct into a map for use in JSON

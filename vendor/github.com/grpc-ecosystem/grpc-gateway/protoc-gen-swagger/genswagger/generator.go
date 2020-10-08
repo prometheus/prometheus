@@ -168,7 +168,7 @@ func (g *generator) Generate(targets []*descriptor.File) ([]*plugin.CodeGenerato
 		for _, f := range targets {
 			if mergedTarget == nil {
 				mergedTarget = f
-			} else {
+			} else if mergedTarget != f {
 				mergedTarget.Enums = append(mergedTarget.Enums, f.Enums...)
 				mergedTarget.Messages = append(mergedTarget.Messages, f.Messages...)
 				mergedTarget.Services = append(mergedTarget.Services, f.Services...)

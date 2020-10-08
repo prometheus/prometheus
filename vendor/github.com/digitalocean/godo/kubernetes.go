@@ -83,6 +83,21 @@ type KubernetesClusterUpgradeRequest struct {
 	VersionSlug string `json:"version,omitempty"`
 }
 
+// Taint represents a Kubernetes taint that can be associated with a node pool
+// (and, transitively, with all nodes of that pool).
+type Taint struct {
+	Key    string
+	Value  string
+	Effect string
+}
+
+func (t Taint) String() string {
+	if t.Value == "" {
+		return fmt.Sprintf("%s:%s", t.Key, t.Effect)
+	}
+	return fmt.Sprintf("%s=%s:%s", t.Key, t.Value, t.Effect)
+}
+
 // KubernetesNodePoolCreateRequest represents a request to create a node pool for a
 // Kubernetes cluster.
 type KubernetesNodePoolCreateRequest struct {
@@ -91,6 +106,7 @@ type KubernetesNodePoolCreateRequest struct {
 	Count     int               `json:"count,omitempty"`
 	Tags      []string          `json:"tags,omitempty"`
 	Labels    map[string]string `json:"labels,omitempty"`
+	Taints    []Taint           `json:"taints,omitempty"`
 	AutoScale bool              `json:"auto_scale,omitempty"`
 	MinNodes  int               `json:"min_nodes,omitempty"`
 	MaxNodes  int               `json:"max_nodes,omitempty"`
@@ -103,6 +119,7 @@ type KubernetesNodePoolUpdateRequest struct {
 	Count     *int              `json:"count,omitempty"`
 	Tags      []string          `json:"tags,omitempty"`
 	Labels    map[string]string `json:"labels,omitempty"`
+	Taints    *[]Taint          `json:"taints,omitempty"`
 	AutoScale *bool             `json:"auto_scale,omitempty"`
 	MinNodes  *int              `json:"min_nodes,omitempty"`
 	MaxNodes  *int              `json:"max_nodes,omitempty"`
@@ -308,6 +325,7 @@ type KubernetesNodePool struct {
 	Count     int               `json:"count,omitempty"`
 	Tags      []string          `json:"tags,omitempty"`
 	Labels    map[string]string `json:"labels,omitempty"`
+	Taints    []Taint           `json:"taints,omitempty"`
 	AutoScale bool              `json:"auto_scale,omitempty"`
 	MinNodes  int               `json:"min_nodes,omitempty"`
 	MaxNodes  int               `json:"max_nodes,omitempty"`

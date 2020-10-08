@@ -12,6 +12,7 @@ type ServiceRouterConfigEntry struct {
 
 	Routes []ServiceRoute `json:",omitempty"`
 
+	Meta        map[string]string `json:",omitempty"`
 	CreateIndex uint64
 	ModifyIndex uint64
 }
@@ -111,6 +112,7 @@ type ServiceSplitterConfigEntry struct {
 
 	Splits []ServiceSplit `json:",omitempty"`
 
+	Meta        map[string]string `json:",omitempty"`
 	CreateIndex uint64
 	ModifyIndex uint64
 }
@@ -138,6 +140,7 @@ type ServiceResolverConfigEntry struct {
 	Failover       map[string]ServiceResolverFailover `json:",omitempty"`
 	ConnectTimeout time.Duration                      `json:",omitempty" alias:"connect_timeout"`
 
+	Meta        map[string]string `json:",omitempty"`
 	CreateIndex uint64
 	ModifyIndex uint64
 }
