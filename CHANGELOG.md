@@ -1,3 +1,21 @@
+## 2.22.0-rc.0 / 2020-10-07
+
+As announced in the 2.21.0 release notes, the experimental gRPC API v2 has been
+removed.
+
+* [CHANGE] web: Remove APIv2. #7935
+* [ENHANCEMENT] React UI: Implement missing TSDB head stats section. #7876
+* [ENHANCEMENT] UI: Add Collapse all button. #6957
+* [ENHANCEMENT] UI: Clarify alert state toggle via checkbox icon. #7936
+* [ENHANCEMENT] Add `rule_group_last_evaluation_samples` and `prometheus_tsdb_data_replay_duration_seconds` metrics. #7737 #7977
+* [ENHANCEMENT] Gracefully handle unknown WAL record types. #8004
+* [ENHANCEMENT] Issue a warning for 64 bit systems running 32 bit binaries. #8012
+* [BUGFIX] Adjust scrape timestamps to align them to the intended schedule, effectively reducing block size. Workaround for a regression in go1.14+. #7976
+* [BUGFIX] promtool: Ensure alert rules are marked as restored in unit tests. #7661
+* [BUGFIX] Eureka: Fix service discovery when compiled in 32-bit. #7964
+* [BUGFIX] Don't do literal regex matching optimisation when case insensitive. #8013
+* [BUGFIX] Fix classic UI sometimes running queries for instant query when in range query mode. #7984
+
 ## 2.21.0 / 2020-09-11
 
 This release is built with Go 1.15, which deprecates [X.509 CommonName](https://golang.org/doc/go1.15#commonname)
