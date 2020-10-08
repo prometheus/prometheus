@@ -607,10 +607,10 @@ load 10s
 			PeakSamples:  1,
 			Result: Result{
 				nil,
-				Vector{
-					Sample{Point: Point{V: 1, T: 1000},
-						Metric: labels.FromStrings("__name__", "metric")},
-				},
+				Vector{Sample{
+					Point:  Point{V: 1, T: 1000},
+					Metric: labels.FromStrings("__name__", "metric"),
+				}},
 				nil,
 			},
 			Start: time.Unix(1, 0),
@@ -637,27 +637,71 @@ load 10s
 			PeakSamples:  3,
 			Result: Result{
 				nil,
-				Vector{
-					Sample{
-						Point:  Point{V: 0.1, T: 10000},
-						Metric: labels.Labels{},
-					},
-				},
+				Vector{Sample{
+					Point:  Point{V: 0.1, T: 10000},
+					Metric: labels.Labels{},
+				}},
+				nil,
+			},
+			Start: time.Unix(10, 0),
+		},
+		// Multilevel subquery tests for sum(count_over_time(sum_over_time(metric[10s:1s])[10s:]))[10s:2s]
+		{
+			Query:        "metric[10s:1s]",
+			MaxSamples:   25,
+			TotalSamples: 11,
+			PeakSamples:  11,
+			Result: Result{
+				nil,
+				Matrix{Series{
+					Metric: labels.Labels{labels.Label{Name: "__name__", Value: "metric"}},
+					Points: []Point{{T: 0, V: 1}, {T: 1000, V: 1}, {T: 2000, V: 1}, {T: 3000, V: 1}, {T: 4000, V: 1}, {T: 5000, V: 1}, {T: 6000, V: 1}, {T: 7000, V: 1}, {T: 8000, V: 1}, {T: 9000, V: 1}, {T: 10000, V: 2}},
+				}},
 				nil,
 			},
 			Start: time.Unix(10, 0),
 		},
 		{
-			Query:        "sum_over_time(metric[10s:1s])",
-			MaxSamples:   23,
-			TotalSamples: 12,
-			PeakSamples:  23,
+			Query:        "sum_over_time(metric[10s:1s])[10s:]",
+			MaxSamples:   25,
+			TotalSamples: 2,
+			PeakSamples:  13,
+			Result: Result{
+				nil,
+				Matrix{Series{
+					Metric: labels.Labels{},
+					Points: []Point{{T: 0, V: 1}},
+				}},
+				nil,
+			},
+			Start: time.Unix(10, 0),
+		},
+		{
+			Query:        "count_over_time(sum_over_time(metric[10s:1s])[10s:])",
+			MaxSamples:   25,
+			TotalSamples: 3,
+			PeakSamples:  14,
 			Result: Result{
 				nil,
 				Vector{Sample{
-					Point:  Point{V: 12, T: 10000},
-					Metric: labels.Labels{}},
-				},
+					Point:  Point{V: 1, T: 10000},
+					Metric: labels.Labels{},
+				}},
+				nil,
+			},
+			Start: time.Unix(10, 0),
+		},
+		{
+			Query:        "sum(count_over_time(sum_over_time(metric[10s:1s])[10s:]))[10s:2s]",
+			MaxSamples:   25,
+			TotalSamples: 19,
+			PeakSamples:  25,
+			Result: Result{
+				nil,
+				Matrix{Series{
+					Metric: labels.Labels{},
+					Points: []Point{{T: 0, V: 1}, {T: 2000, V: 1}, {T: 4000, V: 1}, {T: 6000, V: 1}, {T: 8000, V: 1}, {T: 10000, V: 1}},
+				}},
 				nil,
 			},
 			Start: time.Unix(10, 0),
