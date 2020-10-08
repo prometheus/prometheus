@@ -10,7 +10,7 @@ build:
           path: ./cmd/prometheus
         - name: promtool
           path: ./cmd/promtool
-    flags: -mod=vendor -a -tags netgo,builtinassets
+    flags: -a -tags netgo,builtinassets
     ldflags: |
         -X github.com/prometheus/common/version.Version={{.Version}}
         -X github.com/prometheus/common/version.Revision={{.Revision}}

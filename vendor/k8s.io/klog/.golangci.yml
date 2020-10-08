@@ -1,9 +1,0 @@
-issues:
-  exclude-rules:
-  - path: _test.go
-    linters:
-    - errcheck
-
-linters-settings:
-  errcheck:
-    exclude: .errcheck_excludes

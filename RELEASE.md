@@ -83,7 +83,7 @@ later follow-up.
 
 ```
 make update-go-deps
-git add go.mod go.sum vendor
+git add go.mod go.sum
 git commit -m "Update dependencies"
 ```
 
