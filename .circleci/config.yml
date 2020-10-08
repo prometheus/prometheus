@@ -25,6 +25,7 @@ jobs:
         keys:
         - v3-npm-deps-{{ checksum "web/ui/react-app/yarn.lock" }}
         - v3-npm-deps-
+    - run: go mod download
     - run:
         command: make
         environment:
@@ -64,17 +65,17 @@ jobs:
     - run:
         shell: bash
         command: |
-          (cd web/ui && GOOS= GOARCH= go generate -mod=vendor)
-          go test -mod=vendor -vet=off -test.v `go list ./...|grep -Exv "(github.com/prometheus/prometheus/discovery.*|github.com/prometheus/prometheus/config|github.com/prometheus/prometheus/web)"`
+          (cd web/ui && GOOS= GOARCH= go generate)
+          go test -vet=off -test.v `go list ./...|grep -Exv "(github.com/prometheus/prometheus/discovery.*|github.com/prometheus/prometheus/config|github.com/prometheus/prometheus/web)"`
         environment:
           GOGC: "20"
-          GOOPTS: "-p 2 -mod=vendor"
+          GOOPTS: "-p 2"
 
   test_mixins:
     executor: golang
     steps:
     - checkout
-    - run: go install -mod=vendor ./cmd/promtool/.
+    - run: go install ./cmd/promtool/.
     - run:
         command: go install -mod=readonly github.com/google/go-jsonnet/cmd/jsonnet github.com/google/go-jsonnet/cmd/jsonnetfmt github.com/jsonnet-bundler/jsonnet-bundler/cmd/jb
         working_directory: ~/project/documentation/prometheus-mixin

@@ -20,7 +20,7 @@ GO111MODULE=on go mod download
 
 INSTALL_PKGS="golang.org/x/tools/cmd/goimports github.com/gogo/protobuf/protoc-gen-gogofast github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger"
 for pkg in ${INSTALL_PKGS}; do
-    GO111MODULE=on go install -mod=vendor "$pkg"
+    GO111MODULE=on go install "$pkg"
 done
 
 PROM_ROOT="${PWD}"
