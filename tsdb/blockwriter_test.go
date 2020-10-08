@@ -41,20 +41,13 @@ func TestBlockWriter(t *testing.T) {
 
 	// Add some series.
 	app := w.Appender(ctx)
-	expectedLabelNames := []string{"a", "c"}
-	expectedValues := []string{"b", "d"}
-	l := labels.Labels{{Name: expectedLabelNames[0], Value: expectedValues[0]}}
-	ts1 := int64(44)
-	v1 := float64(7)
-	_, err = app.Add(l, ts1, v1)
+	ts1, v1 := int64(44), float64(7)
+	_, err = app.Add(labels.Labels{{Name: "a", Value: "b"}}, ts1, v1)
 	testutil.Ok(t, err)
-	l = labels.Labels{{Name: expectedLabelNames[1], Value: expectedValues[1]}}
-	ts2 := int64(55)
-	v2 := float64(12)
-	_, err = app.Add(l, ts2, v2)
+	ts2, v2 := int64(55), float64(12)
+	_, err = app.Add(labels.Labels{{Name: "c", Value: "d"}}, ts2, v2)
 	testutil.Ok(t, err)
-	err = app.Commit()
-	testutil.Ok(t, err)
+	testutil.Ok(t, app.Commit())
 	id, err := w.Flush(ctx)
 	testutil.Ok(t, err)
 

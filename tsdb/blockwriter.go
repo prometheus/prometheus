@@ -18,7 +18,6 @@ import (
 	"io/ioutil"
 	"math"
 	"os"
-	"time"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -40,10 +39,6 @@ type BlockWriter struct {
 	chunkDir  string
 }
 
-func durationToMillis(t time.Duration) int64 {
-	return int64(t.Seconds() * 1000)
-}
-
 // NewBlockWriter create a new block writer.
 //
 // The returned writer accumulates all the series in the Head block until `Flush` is called.
@@ -58,15 +53,13 @@ func NewBlockWriter(logger log.Logger, dir string, blockSize int64) (*BlockWrite
 		destinationDir: dir,
 		blockSize:      blockSize,
 	}
-	err := w.initHead()
-	if err != nil {
+	if err := w.initHead(); err != nil {
 		return nil, err
 	}
 	return w, nil
 }
 
 // initHead creates and initialises a new TSDB head.
-// blockSize should be in milliseconds.
 func (w *BlockWriter) initHead() error {
 	chunkDir, err := ioutil.TempDir(os.TempDir(), "head")
 	if err != nil {
@@ -106,7 +99,7 @@ func (w *BlockWriter) Flush(ctx context.Context) (ulid.ULID, error) {
 	compactor, err := NewLeveledCompactor(ctx,
 		nil,
 		w.logger,
-		[]int64{durationToMillis(2 * time.Hour)},
+		[]int64{w.blockSize},
 		chunkenc.NewPool())
 	if err != nil {
 		return ulid.ULID{}, errors.Wrap(err, "create leveled compactor")
