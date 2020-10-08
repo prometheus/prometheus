@@ -48,7 +48,6 @@ func TestQueryStatsWithTimers(t *testing.T) {
 	time.Sleep(2 * time.Millisecond)
 	timer.Stop()
 
-	// qs := NewQueryStats(qt)
 	qs := NewQueryStats(&Statistics{Timers: *qt, Samples: QuerySamples{}})
 	actual, err := json.Marshal(qs)
 	if err != nil {
