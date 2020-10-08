@@ -2,7 +2,7 @@
 
 package sip13
 
-//go:generate go run asm.go -out sip13_amd64.s
+//go:generate go run _avo/asm.go -out sip13_amd64.s
 //go:noescape
 
 func Sum64(k0, k1 uint64, p []byte) uint64

@@ -5,6 +5,7 @@
 package cmp
 
 import (
+	"bytes"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -125,21 +126,20 @@ func (opts formatOptions) FormatValue(v reflect.Value, parentKind reflect.Kind, 
 		// implementations crash when doing so.
 		if (t.Kind() != reflect.Ptr && t.Kind() != reflect.Interface) || !v.IsNil() {
 			var prefix, strVal string
-			switch v := v.Interface().(type) {
-			case error:
-				prefix, strVal = "e", v.Error()
-			case fmt.Stringer:
-				prefix, strVal = "s", v.String()
-			}
+			func() {
+				// Swallow and ignore any panics from String or Error.
+				defer func() { recover() }()
+				switch v := v.Interface().(type) {
+				case error:
+					strVal = v.Error()
+					prefix = "e"
+				case fmt.Stringer:
+					strVal = v.String()
+					prefix = "s"
+				}
+			}()
 			if prefix != "" {
-				maxLen := len(strVal)
-				if opts.LimitVerbosity {
-					maxLen = (1 << opts.verbosity()) << 5 // 32, 64, 128, 256, etc...
-				}
-				if len(strVal) > maxLen+len(textEllipsis) {
-					return textLine(prefix + formatString(strVal[:maxLen]) + string(textEllipsis))
-				}
-				return textLine(prefix + formatString(strVal))
+				return opts.formatString(prefix, strVal)
 			}
 		}
 	}
@@ -171,14 +171,7 @@ func (opts formatOptions) FormatValue(v reflect.Value, parentKind reflect.Kind, 
 	case reflect.Complex64, reflect.Complex128:
 		return textLine(fmt.Sprint(v.Complex()))
 	case reflect.String:
-		maxLen := v.Len()
-		if opts.LimitVerbosity {
-			maxLen = (1 << opts.verbosity()) << 5 // 32, 64, 128, 256, etc...
-		}
-		if v.Len() > maxLen+len(textEllipsis) {
-			return textLine(formatString(v.String()[:maxLen]) + string(textEllipsis))
-		}
-		return textLine(formatString(v.String()))
+		return opts.formatString("", v.String())
 	case reflect.UnsafePointer, reflect.Chan, reflect.Func:
 		return textLine(formatPointer(value.PointerOf(v), true))
 	case reflect.Struct:
@@ -210,6 +203,17 @@ func (opts formatOptions) FormatValue(v reflect.Value, parentKind reflect.Kind, 
 		if v.IsNil() {
 			return textNil
 		}
+
+		// Check whether this is a []byte of text data.
+		if t.Elem() == reflect.TypeOf(byte(0)) {
+			b := v.Bytes()
+			isPrintSpace := func(r rune) bool { return unicode.IsPrint(r) && unicode.IsSpace(r) }
+			if len(b) > 0 && utf8.Valid(b) && len(bytes.TrimFunc(b, isPrintSpace)) == 0 {
+				out = opts.formatString("", string(b))
+				return opts.WithTypeMode(emitType).FormatType(t, out)
+			}
+		}
+
 		fallthrough
 	case reflect.Array:
 		maxLen := v.Len()
@@ -293,6 +297,49 @@ func (opts formatOptions) FormatValue(v reflect.Value, parentKind reflect.Kind, 
 	default:
 		panic(fmt.Sprintf("%v kind not handled", v.Kind()))
 	}
+}
+
+func (opts formatOptions) formatString(prefix, s string) textNode {
+	maxLen := len(s)
+	maxLines := strings.Count(s, "\n") + 1
+	if opts.LimitVerbosity {
+		maxLen = (1 << opts.verbosity()) << 5   // 32, 64, 128, 256, etc...
+		maxLines = (1 << opts.verbosity()) << 2 //  4, 8, 16, 32, 64, etc...
+	}
+
+	// For multiline strings, use the triple-quote syntax,
+	// but only use it when printing removed or inserted nodes since
+	// we only want the extra verbosity for those cases.
+	lines := strings.Split(strings.TrimSuffix(s, "\n"), "\n")
+	isTripleQuoted := len(lines) >= 4 && (opts.DiffMode == '-' || opts.DiffMode == '+')
+	for i := 0; i < len(lines) && isTripleQuoted; i++ {
+		lines[i] = strings.TrimPrefix(strings.TrimSuffix(lines[i], "\r"), "\r") // trim leading/trailing carriage returns for legacy Windows endline support
+		isPrintable := func(r rune) bool {
+			return unicode.IsPrint(r) || r == '\t' // specially treat tab as printable
+		}
+		line := lines[i]
+		isTripleQuoted = !strings.HasPrefix(strings.TrimPrefix(line, prefix), `"""`) && !strings.HasPrefix(line, "...") && strings.TrimFunc(line, isPrintable) == "" && len(line) <= maxLen
+	}
+	if isTripleQuoted {
+		var list textList
+		list = append(list, textRecord{Diff: opts.DiffMode, Value: textLine(prefix + `"""`), ElideComma: true})
+		for i, line := range lines {
+			if numElided := len(lines) - i; i == maxLines-1 && numElided > 1 {
+				comment := commentString(fmt.Sprintf("%d elided lines", numElided))
+				list = append(list, textRecord{Diff: opts.DiffMode, Value: textEllipsis, ElideComma: true, Comment: comment})
+				break
+			}
+			list = append(list, textRecord{Diff: opts.DiffMode, Value: textLine(line), ElideComma: true})
+		}
+		list = append(list, textRecord{Diff: opts.DiffMode, Value: textLine(prefix + `"""`), ElideComma: true})
+		return &textWrap{Prefix: "(", Value: list, Suffix: ")"}
+	}
+
+	// Format the string as a single-line quoted string.
+	if len(s) > maxLen+len(textEllipsis) {
+		return textLine(prefix + formatString(s[:maxLen]) + string(textEllipsis))
+	}
+	return textLine(prefix + formatString(s))
 }
 
 // formatMapKey formats v as if it were a map key.

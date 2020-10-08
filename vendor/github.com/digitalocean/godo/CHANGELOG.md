@@ -1,5 +1,25 @@
 # Change Log
 
+## [v1.46.0] - 2020-10-05
+
+- #373 load balancers: add LB size field, currently in closed beta - @anitgandhi
+
+## [v1.45.0] - 2020-09-25
+
+**Note**: This release contains breaking changes to App Platform features currently in closed beta.
+
+- #369 update apps types to latest - @kamaln7
+- #368 Kubernetes: add taints field to node pool create and update requests - @timoreimann
+- #367 update apps types, address marshaling bug - @kamaln7
+
+## [v1.44.0] - 2020-09-08
+
+- #364 apps: support aggregate deployment logs - @kamaln7
+
+## [v1.43.0] - 2020-09-08
+
+- #362 update apps types - @kamaln7
+
 ## [v1.42.1] - 2020-08-06
 
 - #360 domains: Allow for SRV records with port 0. - @andrewsomething
