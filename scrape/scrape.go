@@ -1066,20 +1066,19 @@ func (sl *scrapeLoop) scrapeAndReport(interval, timeout time.Duration, last, app
 	var err, appErr, scrapeErr error
 
 	app := sl.appender(sl.parentCtx)
+
 	defer func() {
 		if err != nil {
 			app.Rollback()
 			return
 		}
-		err = app.Commit()
-		if err != nil {
-			level.Error(sl.l).Log("msg", "Scrape commit failed", "err", err)
-		}
-	}()
 
-	defer func() {
 		if err = sl.report(app, appendTime, time.Since(start), total, added, seriesAdded, scrapeErr); err != nil {
 			level.Warn(sl.l).Log("msg", "Appending scrape report failed", "err", err)
+		}
+
+		if err = app.Commit(); err != nil {
+			level.Error(sl.l).Log("msg", "Scrape commit failed", "err", err)
 		}
 	}()
 
