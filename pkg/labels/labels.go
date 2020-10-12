@@ -18,9 +18,8 @@ import (
 	"encoding/json"
 	"sort"
 	"strconv"
-	"unsafe"
 
-	"github.com/cespare/xxhash"
+	"github.com/cespare/xxhash/v2"
 )
 
 // Well-known label names used by Prometheus components.
@@ -135,39 +134,19 @@ func (ls Labels) MatchLabels(on bool, names ...string) Labels {
 	return matchedLabels
 }
 
-// noEscape hides a pointer from escape analysis.  noEscape is
-// the identity function but escape analysis doesn't think the
-// output depends on the input. noEscape is inlined and currently
-// compiles down to zero instructions.
-// USE CAREFULLY!
-// This was copied from the runtime; see issues 23382 and 7921.
-//go:nosplit
-//go:nocheckptr
-func noEscape(p unsafe.Pointer) unsafe.Pointer {
-	x := uintptr(p)
-	return unsafe.Pointer(x ^ 0) //nolint:staticcheck
-}
-
-//go:nosplit
-//go:checkptr
-func noAllocBytes(buf string) []byte {
-	return *(*[]byte)(unsafe.Pointer(&buf))
-}
-
 // Hash returns a hash value for the label set.
 func (ls Labels) Hash() uint64 {
+	// xxhash.Sum64(b) for fast path as it's faster.
 	b := make([]byte, 0, 1024)
 	for i, v := range ls {
 		if len(b)+len(v.Name)+len(v.Value)+2 >= cap(b) {
 			// If labels entry is 1KB+ allocate do not allocate whole entry.
 			h := xxhash.New()
-			// This allows b to be still on stack and reused. This is safe as xxhash.x
-			// is never used outside of this function.
-			_, _ = h.Write(*(*[]byte)(noEscape(unsafe.Pointer(&b))))
+			_, _ = h.Write(b)
 			for _, v := range ls[i:] {
-				_, _ = h.Write(noAllocBytes(v.Name))
+				_, _ = h.WriteString(v.Name)
 				_, _ = h.Write(seps)
-				_, _ = h.Write(noAllocBytes(v.Value))
+				_, _ = h.WriteString(v.Value)
 				_, _ = h.Write(seps)
 			}
 			return h.Sum64()
