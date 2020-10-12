@@ -135,15 +135,15 @@ func (ls Labels) MatchLabels(on bool, names ...string) Labels {
 	return matchedLabels
 }
 
-// noescape hides a pointer from escape analysis.  noescape is
+// noEscape hides a pointer from escape analysis.  noEscape is
 // the identity function but escape analysis doesn't think the
-// output depends on the input. noescape is inlined and currently
+// output depends on the input. noEscape is inlined and currently
 // compiles down to zero instructions.
 // USE CAREFULLY!
 // This was copied from the runtime; see issues 23382 and 7921.
 //go:nosplit
 //go:nocheckptr
-func noescape(p unsafe.Pointer) unsafe.Pointer {
+func noEscape(p unsafe.Pointer) unsafe.Pointer {
 	x := uintptr(p)
 	return unsafe.Pointer(x ^ 0) //nolint:staticcheck
 }
@@ -163,7 +163,7 @@ func (ls Labels) Hash() uint64 {
 			h := xxhash.New()
 			// This allows b to be still on stack and reused. This is safe as xxhash.x
 			// is never used outside of this function.
-			_, _ = h.Write(*(*[]byte)(noescape(unsafe.Pointer(&b))))
+			_, _ = h.Write(*(*[]byte)(noEscape(unsafe.Pointer(&b))))
 			for _, v := range ls[i:] {
 				_, _ = h.Write(noAllocBytes(v.Name))
 				_, _ = h.Write(seps)
