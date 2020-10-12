@@ -83,6 +83,7 @@ func TestOptimizeConcatRegex(t *testing.T) {
 		{regex: ".*(?i:abc)def.*", prefix: "", suffix: "", contains: "def"},
 		{regex: "(?i).*(?-i:abc)def", prefix: "", suffix: "", contains: "abc"},
 		{regex: ".*(?msU:abc).*", prefix: "", suffix: "", contains: "abc"},
+		{regex: "[aA]bc.*", prefix: "", suffix: "", contains: "bc"},
 	}
 
 	for _, c := range cases {
