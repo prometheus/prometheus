@@ -124,6 +124,9 @@ type BlockReader interface {
 
 	// Meta provides meta information about the block reader.
 	Meta() BlockMeta
+
+	// Size returns the number of bytes that the block takes up on disk.
+	Size() int64
 }
 
 // BlockMeta provides meta information about a block.

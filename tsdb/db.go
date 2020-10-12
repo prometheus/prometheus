@@ -1103,11 +1103,9 @@ func BeyondSizeRetention(db *DB, blocks []*Block) (deletable map[ulid.ULID]struc
 
 	deletable = make(map[ulid.ULID]struct{})
 
-	walSize, _ := db.Head().wal.Size()
-	headChunksSize := db.Head().chunkDiskMapper.Size()
 	// Initializing size counter with WAL size and Head chunks
 	// written to disk, as that is part of the retention strategy.
-	blocksSize := walSize + headChunksSize
+	blocksSize := db.Head().Size()
 	for i, block := range blocks {
 		blocksSize += block.Size()
 		if blocksSize > int64(db.opts.MaxBytes) {

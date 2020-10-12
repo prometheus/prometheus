@@ -2340,3 +2340,15 @@ type noopSeriesLifecycleCallback struct{}
 func (noopSeriesLifecycleCallback) PreCreation(labels.Labels) error { return nil }
 func (noopSeriesLifecycleCallback) PostCreation(labels.Labels)      {}
 func (noopSeriesLifecycleCallback) PostDeletion(...labels.Labels)   {}
+
+func (h *Head) Size() int64 {
+	var walSize int64
+	if h.wal != nil {
+		walSize, _ = h.wal.Size()
+	}
+	return walSize + h.chunkDiskMapper.Size()
+}
+
+func (h *RangeHead) Size() int64 {
+	return h.head.Size()
+}
