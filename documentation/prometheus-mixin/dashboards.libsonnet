@@ -124,11 +124,11 @@ local template = grafana.template;
         )
         .addTarget(prometheus.target(
           |||
-            (
+            clamp_min(
               rate(prometheus_remote_storage_highest_timestamp_in_seconds{cluster=~"$cluster", instance=~"$instance"}[5m])  
             - 
               ignoring (remote_name, url) group_right(instance) rate(prometheus_remote_storage_queue_highest_sent_timestamp_seconds{cluster=~"$cluster", instance=~"$instance"}[5m])
-            )
+            , 0)
           |||,
           legendFormat='{{cluster}}:{{instance}} {{remote_name}}:{{url}}',
         ));
