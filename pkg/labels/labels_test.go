@@ -210,81 +210,83 @@ func TestLabels_HasDuplicateLabelNames(t *testing.T) {
 }
 
 func TestLabels_WithoutEmpty(t *testing.T) {
-	tests := []struct {
+	for _, test := range []struct {
 		input    Labels
 		expected Labels
 	}{
 		{
 			input: Labels{
-				{
-					Name:  "__name__",
-					Value: "test",
-				},
-				{
-					Name: "foo",
-				},
-				{
-					Name:  "hostname",
-					Value: "localhost",
-				},
-				{
-					Name: "bar",
-				},
-				{
-					Name:  "job",
-					Value: "check",
-				},
+				{Name: "foo"},
+				{Name: "bar"},
+			},
+			expected: Labels{},
+		},
+		{
+			input: Labels{
+				{Name: "foo"},
+				{Name: "bar"},
+				{Name: "baz"},
+			},
+			expected: Labels{},
+		},
+		{
+			input: Labels{
+				{Name: "__name__", Value: "test"},
+				{Name: "hostname", Value: "localhost"},
+				{Name: "job", Value: "check"},
 			},
 			expected: Labels{
-				{
-					Name:  "__name__",
-					Value: "test",
-				},
-				{
-					Name:  "hostname",
-					Value: "localhost",
-				},
-				{
-					Name:  "job",
-					Value: "check",
-				},
+				{Name: "__name__", Value: "test"},
+				{Name: "hostname", Value: "localhost"},
+				{Name: "job", Value: "check"},
 			},
 		},
 		{
 			input: Labels{
-				{
-					Name:  "__name__",
-					Value: "test",
-				},
-				{
-					Name:  "hostname",
-					Value: "localhost",
-				},
-				{
-					Name:  "job",
-					Value: "check",
-				},
+				{Name: "__name__", Value: "test"},
+				{Name: "hostname", Value: "localhost"},
+				{Name: "bar"},
+				{Name: "job", Value: "check"},
 			},
 			expected: Labels{
-				{
-					Name:  "__name__",
-					Value: "test",
-				},
-				{
-					Name:  "hostname",
-					Value: "localhost",
-				},
-				{
-					Name:  "job",
-					Value: "check",
-				},
+				{Name: "__name__", Value: "test"},
+				{Name: "hostname", Value: "localhost"},
+				{Name: "job", Value: "check"},
 			},
 		},
-	}
-
-	for i, test := range tests {
-		got := test.input.WithoutEmpty()
-		testutil.Equals(t, test.expected, got, "unexpected labelset for test case %d", i)
+		{
+			input: Labels{
+				{Name: "__name__", Value: "test"},
+				{Name: "foo"},
+				{Name: "hostname", Value: "localhost"},
+				{Name: "bar"},
+				{Name: "job", Value: "check"},
+			},
+			expected: Labels{
+				{Name: "__name__", Value: "test"},
+				{Name: "hostname", Value: "localhost"},
+				{Name: "job", Value: "check"},
+			},
+		},
+		{
+			input: Labels{
+				{Name: "__name__", Value: "test"},
+				{Name: "foo"},
+				{Name: "baz"},
+				{Name: "hostname", Value: "localhost"},
+				{Name: "bar"},
+				{Name: "job", Value: "check"},
+			},
+			expected: Labels{
+				{Name: "__name__", Value: "test"},
+				{Name: "hostname", Value: "localhost"},
+				{Name: "job", Value: "check"},
+			},
+		},
+	} {
+		t.Run("", func(t *testing.T) {
+			testutil.Equals(t, test.expected, test.input.WithoutEmpty())
+		})
 	}
 }
 
