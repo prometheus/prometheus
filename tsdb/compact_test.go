@@ -1263,7 +1263,7 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 			for _, m := range blocks {
 				createBlock(t, db.Dir(), genSeries(1, 1, m.MinTime, m.MaxTime))
 			}
-			testutil.Ok(t, db.reloadWithWALTruncation())
+			testutil.Ok(t, db.reload())
 			testutil.Equals(t, len(blocks), len(db.Blocks()), "unexpected block count after a reload")
 
 			return len(blocks)

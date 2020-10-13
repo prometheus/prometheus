@@ -924,7 +924,7 @@ func (db *DB) compactBlocks() (err error) {
 		}
 		runtime.GC()
 
-		if err := db.reloadWithWALTruncation(); err != nil {
+		if err := db.reload(); err != nil {
 			if err := os.RemoveAll(filepath.Join(db.dir, uid.String())); err != nil {
 				return errors.Wrapf(err, "delete compacted block after failed db reload:%s", uid)
 			}
@@ -945,16 +945,6 @@ func getBlock(allBlocks []*Block, id ulid.ULID) (*Block, bool) {
 		}
 	}
 	return nil, false
-}
-
-// reloadWithWALTruncation reloads blocks and trigger head and WAL truncation if new blocks appeared.
-// Blocks that are obsolete due to replacement or retention will be deleted.
-func (db *DB) reloadWithWALTruncation() error {
-	if err := db.reload(); err != nil {
-		return err
-	}
-
-	return errors.Wrap(db.truncateWAL(math.MinInt64), "WAL truncation in reloadWithWALTruncation")
 }
 
 // reload blocks and trigger head truncation (but not WAL truncation) if new blocks appeared.
