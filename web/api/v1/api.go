@@ -602,10 +602,16 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 		q.Close()
 	}
 
+	hints := &storage.SelectHints{
+		Start: timestamp.FromTime(start),
+		End:   timestamp.FromTime(end),
+		Func:  "series", // There is no series function, this token is used for lookups that don't need samples.
+	}
+
 	var sets []storage.SeriesSet
 	for _, mset := range matcherSets {
 		// We need to sort this select results to merge (deduplicate) the series sets later.
-		s := q.Select(true, nil, mset...)
+		s := q.Select(true, hints, mset...)
 		sets = append(sets, s)
 	}
 
