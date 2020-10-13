@@ -646,7 +646,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	}
 	db.metrics.maxBytes.Set(float64(maxBytes))
 
-	if err := db.reloadWithWALTruncation(); err != nil {
+	if err := db.reload(); err != nil {
 		return nil, err
 	}
 	// Set the min valid time for the ingested samples
