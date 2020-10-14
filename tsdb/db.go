@@ -835,10 +835,9 @@ func (db *DB) compactHead(head *RangeHead) (err error) {
 	runtime.GC()
 
 	if err := db.reload(); err != nil {
-		var merr tsdb_errors.MultiError
-		merr.Add(err)
 		if errRemoveAll := os.RemoveAll(filepath.Join(db.dir, uid.String())); errRemoveAll != nil {
-			merr.Add(errRemoveAll)
+			var merr tsdb_errors.MultiError
+			merr.Add(errors.Wrap(err, "reload blocks"))
 			merr.Add(errors.Wrapf(errRemoveAll, "delete persisted head block after failed db reload:%s", uid))
 			return merr.Err()
 		}
