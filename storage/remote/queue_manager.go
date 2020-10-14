@@ -374,7 +374,7 @@ func (t *QueueManager) Start() {
 
 	t.shards.start(t.numShards)
 	t.watcher.Start()
-	t.metrics.highestSentTimestamp.Set(float64(t.watcher.GetStartTime().UnixNano()) / 1e9)
+	t.metrics.highestSentTimestamp.Set(float64(t.watcher.GetStartTime().Unix()))
 
 	t.metrics.register()
 
