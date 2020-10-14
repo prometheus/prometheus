@@ -516,6 +516,10 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 	return errors.Wrapf(r.Err(), "segment %d: %v", segmentNum, r.Err())
 }
 
+func (w *Watcher) GetStartTime() time.Time {
+	return w.startTime
+}
+
 func (w *Watcher) SetStartTime(t time.Time) {
 	w.startTime = t
 	w.startTimestamp = timestamp.FromTime(t)

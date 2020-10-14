@@ -367,7 +367,6 @@ outer:
 // Does not block.
 func (t *QueueManager) Start() {
 	// Register and initialise some metrics.
-	t.metrics.register()
 	t.metrics.shardCapacity.Set(float64(t.cfg.Capacity))
 	t.metrics.maxNumShards.Set(float64(t.cfg.MaxShards))
 	t.metrics.minNumShards.Set(float64(t.cfg.MinShards))
@@ -375,6 +374,9 @@ func (t *QueueManager) Start() {
 
 	t.shards.start(t.numShards)
 	t.watcher.Start()
+	t.metrics.highestSentTimestamp.Set(float64(t.watcher.GetStartTime().UnixNano()) / 1e9)
+
+	t.metrics.register()
 
 	t.wg.Add(2)
 	go t.updateShardsLoop()
