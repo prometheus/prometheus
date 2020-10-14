@@ -29,7 +29,6 @@ const (
 	BucketLabel  = "le"
 	InstanceName = "instance"
 
-	sep      = '\xff'
 	labelSep = '\xfe'
 )
 
@@ -72,10 +71,10 @@ func (ls Labels) Bytes(buf []byte) []byte {
 	b.WriteByte(labelSep)
 	for i, l := range ls {
 		if i > 0 {
-			b.WriteByte(sep)
+			b.WriteByte(seps[0])
 		}
 		b.WriteString(l.Name)
-		b.WriteByte(sep)
+		b.WriteByte(seps[0])
 		b.WriteString(l.Value)
 	}
 	return b.Bytes()
@@ -136,11 +135,11 @@ func (ls Labels) MatchLabels(on bool, names ...string) Labels {
 
 // Hash returns a hash value for the label set.
 func (ls Labels) Hash() uint64 {
-	// xxhash.Sum64(b) for fast path as it's faster.
+	// Use xxhash.Sum64(b) for fast path as it's faster.
 	b := make([]byte, 0, 1024)
 	for i, v := range ls {
 		if len(b)+len(v.Name)+len(v.Value)+2 >= cap(b) {
-			// If labels entry is 1KB+ allocate do not allocate whole entry.
+			// If labels entry is 1KB+ do not allocate whole entry.
 			h := xxhash.New()
 			_, _ = h.Write(b)
 			for _, v := range ls[i:] {
@@ -153,9 +152,9 @@ func (ls Labels) Hash() uint64 {
 		}
 
 		b = append(b, v.Name...)
-		b = append(b, sep)
+		b = append(b, seps[0])
 		b = append(b, v.Value...)
-		b = append(b, sep)
+		b = append(b, seps[0])
 	}
 	return xxhash.Sum64(b)
 }
@@ -172,9 +171,9 @@ func (ls Labels) HashForLabels(b []byte, names ...string) (uint64, []byte) {
 			i++
 		} else {
 			b = append(b, ls[i].Name...)
-			b = append(b, sep)
+			b = append(b, seps[0])
 			b = append(b, ls[i].Value...)
-			b = append(b, sep)
+			b = append(b, seps[0])
 			i++
 			j++
 		}
@@ -196,9 +195,9 @@ func (ls Labels) HashWithoutLabels(b []byte, names ...string) (uint64, []byte) {
 			continue
 		}
 		b = append(b, ls[i].Name...)
-		b = append(b, sep)
+		b = append(b, seps[0])
 		b = append(b, ls[i].Value...)
-		b = append(b, sep)
+		b = append(b, seps[0])
 	}
 	return xxhash.Sum64(b), b
 }

@@ -90,9 +90,6 @@ github.com/aws/aws-sdk-go/service/sts
 github.com/aws/aws-sdk-go/service/sts/stsiface
 # github.com/beorn7/perks v1.0.1
 github.com/beorn7/perks/quantile
-# github.com/cespare/xxhash v1.1.0
-## explicit
-github.com/cespare/xxhash
 # github.com/cespare/xxhash/v2 v2.1.2-0.20201007123935-e307e39619f5
 ## explicit
 github.com/cespare/xxhash/v2
