@@ -1,11 +1,11 @@
-## 2.22.0-rc.0 / 2020-10-07
+## 2.22.0 / 2020-10-07
 
 As announced in the 2.21.0 release notes, the experimental gRPC API v2 has been
 removed.
 
 * [CHANGE] web: Remove APIv2. #7935
 * [ENHANCEMENT] React UI: Implement missing TSDB head stats section. #7876
-* [ENHANCEMENT] UI: Add Collapse all button. #6957
+* [ENHANCEMENT] UI: Add Collapse all button to targets page. #6957
 * [ENHANCEMENT] UI: Clarify alert state toggle via checkbox icon. #7936
 * [ENHANCEMENT] Add `rule_group_last_evaluation_samples` and `prometheus_tsdb_data_replay_duration_seconds` metrics. #7737 #7977
 * [ENHANCEMENT] Gracefully handle unknown WAL record types. #8004
