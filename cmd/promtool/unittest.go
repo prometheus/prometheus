@@ -313,17 +313,14 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 					})
 				}
 
-				if gotAlerts.Len() != expAlerts.Len() {
-					errs = append(errs, errors.Errorf("    alertname:%s, time:%s, \n        exp:%#v, \n        got:%#v",
-						testcase.Alertname, testcase.EvalTime.String(), expAlerts.String(), gotAlerts.String()))
-				} else {
-					sort.Sort(gotAlerts)
-					sort.Sort(expAlerts)
+				sort.Sort(gotAlerts)
+				sort.Sort(expAlerts)
 
-					if !reflect.DeepEqual(expAlerts, gotAlerts) {
-						errs = append(errs, errors.Errorf("    alertname:%s, time:%s, \n        exp:%#v, \n        got:%#v",
-							testcase.Alertname, testcase.EvalTime.String(), expAlerts.String(), gotAlerts.String()))
-					}
+				if !reflect.DeepEqual(expAlerts, gotAlerts) {
+					expString := indentLines(expAlerts.String(), "            ")
+					gotString := indentLines(gotAlerts.String(), "            ")
+					errs = append(errs, errors.Errorf("    alertname:%s, time:%s, \n        exp:%v, \n        got:%v",
+						testcase.Alertname, testcase.EvalTime.String(), expString, gotString))
 				}
 			}
 
@@ -372,7 +369,7 @@ Outer:
 			return labels.Compare(gotSamples[i].Labels, gotSamples[j].Labels) <= 0
 		})
 		if !reflect.DeepEqual(expSamples, gotSamples) {
-			errs = append(errs, errors.Errorf("    expr: %q, time: %s,\n        exp:%#v\n        got:%#v", testCase.Expr,
+			errs = append(errs, errors.Errorf("    expr: %q, time: %s,\n        exp: %v\n        got: %v", testCase.Expr,
 				testCase.EvalTime.String(), parsedSamplesString(expSamples), parsedSamplesString(gotSamples)))
 		}
 	}
@@ -455,6 +452,23 @@ func query(ctx context.Context, qs string, t time.Time, engine *promql.Engine, q
 	}
 }
 
+// indentLines prefixes each line in the supplied string with the given "indent"
+// string.
+func indentLines(lines, indent string) string {
+	sb := strings.Builder{}
+	n := strings.Split(lines, "\n")
+	for i, l := range n {
+		if i > 0 {
+			sb.WriteString(indent)
+		}
+		sb.WriteString(l)
+		if i != len(n)-1 {
+			sb.WriteRune('\n')
+		}
+	}
+	return sb.String()
+}
+
 type labelsAndAnnotations []labelAndAnnotation
 
 func (la labelsAndAnnotations) Len() int      { return len(la) }
@@ -471,11 +485,11 @@ func (la labelsAndAnnotations) String() string {
 	if len(la) == 0 {
 		return "[]"
 	}
-	s := "[" + la[0].String()
-	for _, l := range la[1:] {
-		s += ", " + l.String()
+	s := "[\n0:\n  " + la[0].String()
+	for i, l := range la[1:] {
+		s += ",\n" + fmt.Sprintf("%d", i+1) + ":\n  " + l.String()
 	}
-	s += "]"
+	s += "\n]"
 
 	return s
 }
@@ -486,7 +500,7 @@ type labelAndAnnotation struct {
 }
 
 func (la *labelAndAnnotation) String() string {
-	return "Labels:" + la.Labels.String() + " Annotations:" + la.Annotations.String()
+	return "Labels:" + la.Labels.String() + "\n  Annotations:" + la.Annotations.String()
 }
 
 type series struct {
