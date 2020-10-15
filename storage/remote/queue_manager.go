@@ -56,7 +56,7 @@ type queueManagerMetrics struct {
 	droppedSamplesTotal   prometheus.Counter
 	enqueueRetriesTotal   prometheus.Counter
 	sentBatchDuration     prometheus.Histogram
-	highestSentTimestamp  *maxGauge
+	highestSentTimestamp  *maxTimestamp
 	pendingSamples        prometheus.Gauge
 	shardCapacity         prometheus.Gauge
 	numShards             prometheus.Gauge
@@ -118,7 +118,7 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Buckets:     append(prometheus.DefBuckets, 25, 60, 120, 300),
 		ConstLabels: constLabels,
 	})
-	m.highestSentTimestamp = &maxGauge{
+	m.highestSentTimestamp = &maxTimestamp{
 		Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace:   namespace,
 			Subsystem:   subsystem,
@@ -262,7 +262,7 @@ type QueueManager struct {
 
 	metrics              *queueManagerMetrics
 	interner             *pool
-	highestRecvTimestamp *maxGauge
+	highestRecvTimestamp *maxTimestamp
 }
 
 // NewQueueManager builds a new QueueManager.
@@ -279,7 +279,7 @@ func NewQueueManager(
 	client WriteClient,
 	flushDeadline time.Duration,
 	interner *pool,
-	highestRecvTimestamp *maxGauge,
+	highestRecvTimestamp *maxTimestamp,
 ) *QueueManager {
 	if logger == nil {
 		logger = log.NewNopLogger()

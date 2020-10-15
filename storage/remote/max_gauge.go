@@ -19,13 +19,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-type maxGauge struct {
+type maxTimestamp struct {
 	mtx   sync.Mutex
 	value float64
 	prometheus.Gauge
 }
 
-func (m *maxGauge) Set(value float64) {
+func (m *maxTimestamp) Set(value float64) {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 	if value > m.value {
@@ -34,13 +34,13 @@ func (m *maxGauge) Set(value float64) {
 	}
 }
 
-func (m *maxGauge) Get() float64 {
+func (m *maxTimestamp) Get() float64 {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 	return m.value
 }
 
-func (m *maxGauge) Collect(c chan<- prometheus.Metric) {
+func (m *maxTimestamp) Collect(c chan<- prometheus.Metric) {
 	if m.Get() > 0 {
 		m.Gauge.Collect(c)
 	}

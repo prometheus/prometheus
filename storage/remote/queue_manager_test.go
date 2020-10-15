@@ -47,8 +47,8 @@ import (
 
 const defaultFlushDeadline = 1 * time.Minute
 
-func newHighestTimestampMetric() *maxGauge {
-	return &maxGauge{
+func newHighestTimestampMetric() *maxTimestamp {
+	return &maxTimestamp{
 		Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
