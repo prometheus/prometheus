@@ -55,6 +55,7 @@ require (
 	github.com/prometheus/client_model v0.2.0
 	github.com/prometheus/common v0.14.0
 	github.com/samuel/go-zookeeper v0.0.0-20200724154423-2164a8ac840e
+	github.com/sergi/go-diff v1.0.0
 	github.com/shurcooL/httpfs v0.0.0-20190707220628-8d4bc4ba7749
 	github.com/shurcooL/vfsgen v0.0.0-20200824052919-0d455de96546
 	github.com/uber/jaeger-client-go v2.25.0+incompatible

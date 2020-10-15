@@ -27,6 +27,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
+	"github.com/sergi/go-diff/diffmatchpatch"
 	yaml "gopkg.in/yaml.v2"
 
 	"github.com/prometheus/common/model"
@@ -319,8 +320,10 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 				if !reflect.DeepEqual(expAlerts, gotAlerts) {
 					expString := indentLines(expAlerts.String(), "            ")
 					gotString := indentLines(gotAlerts.String(), "            ")
-					errs = append(errs, errors.Errorf("    alertname:%s, time:%s, \n        exp:%v, \n        got:%v",
-						testcase.Alertname, testcase.EvalTime.String(), expString, gotString))
+					dmp := diffmatchpatch.New()
+					diffs := dmp.DiffMain(gotString, expString, false)
+					errs = append(errs, errors.Errorf("    alertname:%s, time:%s, \n        exp:%v, \n        got:%v\n        diff:%v",
+						testcase.Alertname, testcase.EvalTime.String(), expString, gotString, dmp.DiffPrettyText(diffs)))
 				}
 			}
 
@@ -369,8 +372,12 @@ Outer:
 			return labels.Compare(gotSamples[i].Labels, gotSamples[j].Labels) <= 0
 		})
 		if !reflect.DeepEqual(expSamples, gotSamples) {
-			errs = append(errs, errors.Errorf("    expr: %q, time: %s,\n        exp: %v\n        got: %v", testCase.Expr,
-				testCase.EvalTime.String(), parsedSamplesString(expSamples), parsedSamplesString(gotSamples)))
+			dmp := diffmatchpatch.New()
+			expString := parsedSamplesString(expSamples)
+			gotString := parsedSamplesString(gotSamples)
+			diffs := dmp.DiffMain(gotString, expString, false)
+			errs = append(errs, errors.Errorf("    expr: %q, time: %s,\n        exp: %v\n        got: %v\n        diff: %v", testCase.Expr,
+				testCase.EvalTime.String(), expString, gotString, dmp.DiffPrettyText(diffs)))
 		}
 	}
 
