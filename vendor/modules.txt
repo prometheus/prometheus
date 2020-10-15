@@ -400,6 +400,9 @@ github.com/prometheus/procfs/internal/util
 # github.com/samuel/go-zookeeper v0.0.0-20200724154423-2164a8ac840e
 ## explicit
 github.com/samuel/go-zookeeper/zk
+# github.com/sergi/go-diff v1.0.0
+## explicit
+github.com/sergi/go-diff/diffmatchpatch
 # github.com/shurcooL/httpfs v0.0.0-20190707220628-8d4bc4ba7749
 ## explicit
 github.com/shurcooL/httpfs/filter
