@@ -451,17 +451,16 @@ func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) (u
 		return uid, nil
 	}
 
-	var merr tsdb_errors.MultiError
-	merr.Add(err)
+	errs := tsdb_errors.NewMulti(err)
 	if err != context.Canceled {
 		for _, b := range bs {
 			if err := b.setCompactionFailed(); err != nil {
-				merr.Add(errors.Wrapf(err, "setting compaction failed for block: %s", b.Dir()))
+				errs.Add(errors.Wrapf(err, "setting compaction failed for block: %s", b.Dir()))
 			}
 		}
 	}
 
-	return uid, merr
+	return uid, errs.Err()
 }
 
 func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, parent *BlockMeta) (ulid.ULID, error) {
@@ -534,10 +533,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 	tmp := dir + tmpForCreationBlockDirSuffix
 	var closers []io.Closer
 	defer func(t time.Time) {
-		var merr tsdb_errors.MultiError
-		merr.Add(err)
-		merr.Add(closeAll(closers))
-		err = merr.Err()
+		err = tsdb_errors.NewMulti(err, tsdb_errors.CloseAll(closers)).Err()
 
 		// RemoveAll returns no error when tmp doesn't exist so it is safe to always run it.
 		if err := os.RemoveAll(tmp); err != nil {
@@ -594,13 +590,13 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 	// though these are covered under defer. This is because in Windows,
 	// you cannot delete these unless they are closed and the defer is to
 	// make sure they are closed if the function exits due to an error above.
-	var merr tsdb_errors.MultiError
+	errs := tsdb_errors.NewMulti()
 	for _, w := range closers {
-		merr.Add(w.Close())
+		errs.Add(w.Close())
 	}
 	closers = closers[:0] // Avoid closing the writers twice in the defer.
-	if merr.Err() != nil {
-		return merr.Err()
+	if errs.Err() != nil {
+		return errs.Err()
 	}
 
 	// Populated block is empty, so exit early.
@@ -660,12 +656,11 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		overlapping bool
 	)
 	defer func() {
-		var merr tsdb_errors.MultiError
-		merr.Add(err)
-		if cerr := closeAll(closers); cerr != nil {
-			merr.Add(errors.Wrap(cerr, "close"))
+		errs := tsdb_errors.NewMulti(err)
+		if cerr := tsdb_errors.CloseAll(closers); cerr != nil {
+			errs.Add(errors.Wrap(cerr, "close"))
 		}
-		err = merr.Err()
+		err = errs.Err()
 		c.metrics.populatingBlocks.Set(0)
 	}()
 	c.metrics.populatingBlocks.Set(1)

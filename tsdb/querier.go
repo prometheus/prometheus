@@ -97,12 +97,12 @@ func (q *blockBaseQuerier) Close() error {
 	if q.closed {
 		return errors.New("block querier already closed")
 	}
-	var merr tsdb_errors.MultiError
-	merr.Add(q.index.Close())
-	merr.Add(q.chunks.Close())
-	merr.Add(q.tombstones.Close())
-	q.closed = true
-	return merr.Err()
+	defer func() { q.closed = true }()
+	return tsdb_errors.NewMulti(
+		q.index.Close(),
+		q.chunks.Close(),
+		q.tombstones.Close(),
+	).Err()
 }
 
 type blockQuerier struct {

@@ -280,11 +280,7 @@ func (m *multiReadCloser) Read(p []byte) (n int, err error) {
 	return m.reader.Read(p)
 }
 func (m *multiReadCloser) Close() error {
-	var merr tsdb_errors.MultiError
-	for _, closer := range m.closers {
-		merr.Add(closer.Close())
-	}
-	return merr.Err()
+	return tsdb_errors.NewMulti(tsdb_errors.CloseAll(m.closers)).Err()
 }
 
 func allSegments(dir string) (io.ReadCloser, error) {

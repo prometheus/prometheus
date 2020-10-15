@@ -1465,12 +1465,11 @@ func (h *Head) Close() error {
 	h.closedMtx.Lock()
 	defer h.closedMtx.Unlock()
 	h.closed = true
-	var merr tsdb_errors.MultiError
-	merr.Add(h.chunkDiskMapper.Close())
+	errs := tsdb_errors.NewMulti(h.chunkDiskMapper.Close())
 	if h.wal != nil {
-		merr.Add(h.wal.Close())
+		errs.Add(h.wal.Close())
 	}
-	return merr.Err()
+	return errs.Err()
 }
 
 type headChunkReader struct {
