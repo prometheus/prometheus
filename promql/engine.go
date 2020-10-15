@@ -1136,7 +1136,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 				ev.error(errWithWarnings{errors.Wrap(err, "expanding series"), warnings})
 			}
 			if mat == nil {
-				mat = make(Matrix, 0, 0) // Empty Matrix to avoid returning a nil Matrix
+				mat = make(Matrix, 0) // Empty Matrix to avoid returning a nil Matrix
 			}
 		} else {
 			for i, s := range selVS.Series {
@@ -1339,7 +1339,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			}
 			return mat, ws
 		}
-		mat := make(Matrix, 0, 0) // Empty Matrix to avoid returning a nil Matrix
+		mat := make(Matrix, 0) // Empty Matrix to avoid returning a nil Matrix
 		return mat, nil
 
 	case *parser.MatrixSelector:
@@ -1416,26 +1416,25 @@ func (ev *evaluator) vectorSelector(node *parser.VectorSelector, ts int64) (Vect
 			ev.error(errWithWarnings{errors.Wrap(err, "expanding series"), ws})
 		}
 		return vec, ws
-	} else {
-		vec := make(Vector, 0, len(node.Series))
-		for i, s := range node.Series {
-			it.Reset(s.Iterator())
-
-			t, v, ok := ev.vectorSelectorSingle(it, node, ts)
-			if ok {
-				vec = append(vec, Sample{
-					Metric: node.Series[i].Labels(),
-					Point:  Point{V: v, T: t},
-				})
-				ev.currentSamples++
-			}
-
-			if ev.currentSamples >= ev.maxSamples {
-				ev.error(ErrTooManySamples(env))
-			}
-		}
-		return vec, nil
 	}
+	vec := make(Vector, 0, len(node.Series))
+	for i, s := range node.Series {
+		it.Reset(s.Iterator())
+
+		t, v, ok := ev.vectorSelectorSingle(it, node, ts)
+		if ok {
+			vec = append(vec, Sample{
+				Metric: node.Series[i].Labels(),
+				Point:  Point{V: v, T: t},
+			})
+			ev.currentSamples++
+		}
+
+		if ev.currentSamples >= ev.maxSamples {
+			ev.error(ErrTooManySamples(env))
+		}
+	}
+	return vec, nil
 }
 
 // vectorSelectorSingle evaluates a instant vector for the iterator of one time series.
