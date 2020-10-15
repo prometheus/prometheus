@@ -510,12 +510,7 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64, mmappedChunks 
 				}
 				decoded <- tstones
 			default:
-				decodeErr = &wal.CorruptionErr{
-					Err:     errors.Errorf("invalid record type %v", dec.Type(rec)),
-					Segment: r.Segment(),
-					Offset:  r.Offset(),
-				}
-				return
+				// Noop.
 			}
 		}
 	}()
@@ -631,7 +626,7 @@ Outer:
 	}
 
 	if unknownRefs.Load() > 0 {
-		level.Warn(h.logger).Log("msg", "Unknown series references", "count", unknownRefs)
+		level.Warn(h.logger).Log("msg", "Unknown series references", "count", unknownRefs.Load())
 	}
 	return nil
 }
@@ -2346,7 +2341,7 @@ func (mc *mmappedChunk) OverlapsClosedInterval(mint, maxt int64) bool {
 // SeriesLifecycleCallback specifies a list of callbacks that will be called during a lifecycle of a series.
 // It is always a no-op in Prometheus and mainly meant for external users who import TSDB.
 // All the callbacks should be safe to be called concurrently.
-// It is upto the user to implement soft or hard consistency by making the callbacks
+// It is up to the user to implement soft or hard consistency by making the callbacks
 // atomic or non-atomic. Atomic callbacks can cause degradation performance.
 type SeriesLifecycleCallback interface {
 	// PreCreation is called before creating a series to indicate if the series can be created.
@@ -2363,3 +2358,15 @@ type noopSeriesLifecycleCallback struct{}
 func (noopSeriesLifecycleCallback) PreCreation(labels.Labels) error { return nil }
 func (noopSeriesLifecycleCallback) PostCreation(labels.Labels)      {}
 func (noopSeriesLifecycleCallback) PostDeletion(...labels.Labels)   {}
+
+func (h *Head) Size() int64 {
+	var walSize int64
+	if h.wal != nil {
+		walSize, _ = h.wal.Size()
+	}
+	return walSize + h.chunkDiskMapper.Size()
+}
+
+func (h *RangeHead) Size() int64 {
+	return h.head.Size()
+}

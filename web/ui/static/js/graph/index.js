@@ -937,9 +937,11 @@ Prometheus.Page.prototype.init = function() {
   if (graphOptions.length === 0) {
     graphOptions.push({});
   }
-
+  var pageInstance = this;
   graphOptions.forEach(this.addGraph, this);
-  $("#add_graph").click(this.addGraph.bind(this, {}));
+  $("#add_graph").click(function() {
+    pageInstance.addGraph({});
+  });
 };
 
 Prometheus.Page.prototype.parseURL = function() {

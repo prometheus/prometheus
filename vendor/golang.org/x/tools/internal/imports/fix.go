@@ -615,7 +615,7 @@ func getCandidatePkgs(ctx context.Context, wrappedCallback *scanCallback, filena
 			packageName:     path.Base(importPath),
 			relevance:       MaxRelevance,
 		}
-		if notSelf(p) && wrappedCallback.packageNameLoaded(p) {
+		if notSelf(p) && wrappedCallback.dirFound(p) && wrappedCallback.packageNameLoaded(p) {
 			wrappedCallback.exportsLoaded(p, exports)
 		}
 	}
@@ -827,7 +827,11 @@ func (e *ProcessEnv) goEnv() (map[string]string, error) {
 }
 
 func (e *ProcessEnv) matchFile(dir, name string) (bool, error) {
-	return build.Default.MatchFile(dir, name)
+	bctx, err := e.buildContext()
+	if err != nil {
+		return false, err
+	}
+	return bctx.MatchFile(dir, name)
 }
 
 // CopyConfig copies the env's configuration into a new env.
@@ -920,14 +924,20 @@ func (e *ProcessEnv) buildContext() (*build.Context, error) {
 	// Populate it only if present.
 	rc := reflect.ValueOf(&ctx).Elem()
 	dir := rc.FieldByName("Dir")
-	if !dir.IsValid() {
-		// Working drafts of Go 1.14 named the field "WorkingDir" instead.
-		// TODO(bcmills): Remove this case after the Go 1.14 beta has been released.
-		dir = rc.FieldByName("WorkingDir")
-	}
 	if dir.IsValid() && dir.Kind() == reflect.String {
 		dir.SetString(e.WorkingDir)
 	}
+
+	// Since Go 1.11, go/build.Context.Import may invoke 'go list' depending on
+	// the value in GO111MODULE in the process's environment. We always want to
+	// run in GOPATH mode when calling Import, so we need to prevent this from
+	// happening. In Go 1.16, GO111MODULE defaults to "on", so this problem comes
+	// up more frequently.
+	//
+	// HACK: setting any of the Context I/O hooks prevents Import from invoking
+	// 'go list', regardless of GO111MODULE. This is undocumented, but it's
+	// unlikely to change before GOPATH support is removed.
+	ctx.ReadDir = ioutil.ReadDir
 
 	return &ctx, nil
 }

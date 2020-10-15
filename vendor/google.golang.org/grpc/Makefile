@@ -21,12 +21,7 @@ test: testdeps
 
 testsubmodule: testdeps
 	cd security/advancedtls && go test -cpu 1,4 -timeout 7m google.golang.org/grpc/security/advancedtls/...
-
-testappengine: testappenginedeps
-	goapp test -cpu 1,4 -timeout 7m google.golang.org/grpc/...
-
-testappenginedeps:
-	goapp get -d -v -t -tags 'appengine appenginevm' google.golang.org/grpc/...
+	cd security/authorization && go test -cpu 1,4 -timeout 7m google.golang.org/grpc/security/authorization/...
 
 testdeps:
 	go get -d -v -t google.golang.org/grpc/...
@@ -53,8 +48,6 @@ vetdeps:
 	deps \
 	proto \
 	test \
-	testappengine \
-	testappenginedeps \
 	testdeps \
 	testrace \
 	updatedeps \

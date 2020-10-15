@@ -27,7 +27,7 @@ const (
 	// RFC3339 a subset of the ISO8601 timestamp format. e.g 2014-04-29T18:30:38Z
 	ISO8601TimeFormat = "2006-01-02T15:04:05.999999999Z"
 
-	// This format is used for output time without seconds precision
+	// This format is used for output time with fractional second precision up to milliseconds
 	ISO8601OutputTimeFormat = "2006-01-02T15:04:05.999999999Z"
 )
 
@@ -48,7 +48,7 @@ func IsKnownTimestampFormat(name string) bool {
 
 // FormatTime returns a string value of the time.
 func FormatTime(name string, t time.Time) string {
-	t = t.UTC()
+	t = t.UTC().Truncate(time.Millisecond)
 
 	switch name {
 	case RFC822TimeFormatName:

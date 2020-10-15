@@ -319,6 +319,13 @@ func TestHead_WALMultiRef(t *testing.T) {
 	}}, series)
 }
 
+func TestHead_UnknownWALRecord(t *testing.T) {
+	head, w := newTestHead(t, 1000, false)
+	w.Log([]byte{255, 42})
+	testutil.Ok(t, head.Init(0))
+	testutil.Ok(t, head.Close())
+}
+
 func TestHead_Truncate(t *testing.T) {
 	h, _ := newTestHead(t, 1000, false)
 	defer func() {
@@ -1208,18 +1215,6 @@ func TestWalRepair_DecodingError(t *testing.T) {
 		totalRecs int
 		expRecs   int
 	}{
-		"invalid_record": {
-			func(rec []byte) []byte {
-				// Do not modify the base record because it is Logged multiple times.
-				res := make([]byte, len(rec))
-				copy(res, rec)
-				res[0] = byte(record.Invalid)
-				return res
-			},
-			enc.Series([]record.RefSeries{{Ref: 1, Labels: labels.FromStrings("a", "b")}}, []byte{}),
-			9,
-			5,
-		},
 		"decode_series": {
 			func(rec []byte) []byte {
 				return rec[:3]

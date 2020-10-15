@@ -95,6 +95,7 @@ type ServiceConfigEntry struct {
 	MeshGateway MeshGatewayConfig `json:",omitempty" alias:"mesh_gateway"`
 	Expose      ExposeConfig      `json:",omitempty"`
 	ExternalSNI string            `json:",omitempty" alias:"external_sni"`
+	Meta        map[string]string `json:",omitempty"`
 	CreateIndex uint64
 	ModifyIndex uint64
 }
@@ -122,6 +123,7 @@ type ProxyConfigEntry struct {
 	Config      map[string]interface{} `json:",omitempty"`
 	MeshGateway MeshGatewayConfig      `json:",omitempty" alias:"mesh_gateway"`
 	Expose      ExposeConfig           `json:",omitempty"`
+	Meta        map[string]string      `json:",omitempty"`
 	CreateIndex uint64
 	ModifyIndex uint64
 }

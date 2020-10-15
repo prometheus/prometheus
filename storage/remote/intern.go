@@ -27,7 +27,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
-var interner = newPool()
 var noReferenceReleases = promauto.NewCounter(prometheus.CounterOpts{
 	Namespace: namespace,
 	Subsystem: subsystem,

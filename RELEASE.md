@@ -152,6 +152,4 @@ For release candidate versions (`v2.16.0-rc.0`), run the benchmark for 3 days us
 
 If the release has happened in the latest release branch, merge the changes into master.
 
-To update the docs, a PR needs to be created to `prometheus/docs`. See [this PR](https://github.com/prometheus/docs/pull/952/files) for inspiration (note: only actually merge this for final releases, not for pre-releases like a release candidate).
-
 Once the binaries have been uploaded, announce the release on `prometheus-announce@googlegroups.com`. (Please do not use `prometheus-users@googlegroups.com` for announcements anymore.) Check out previous announcement mails for inspiration.

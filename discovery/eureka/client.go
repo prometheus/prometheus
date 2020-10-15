@@ -22,7 +22,10 @@ import (
 	"net/http"
 
 	"github.com/pkg/errors"
+	"github.com/prometheus/common/version"
 )
+
+var userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 
 type Applications struct {
 	VersionsDelta int           `xml:"versions__delta"`
@@ -55,8 +58,6 @@ type Instance struct {
 	DataCenterInfo                *DataCenterInfo `xml:"dataCenterInfo"`
 	Metadata                      *MetaData       `xml:"metadata"`
 	IsCoordinatingDiscoveryServer bool            `xml:"isCoordinatingDiscoveryServer"`
-	LastUpdatedTimestamp          int             `xml:"lastUpdatedTimestamp"`
-	LastDirtyTimestamp            int             `xml:"lastDirtyTimestamp"`
 	ActionType                    string          `xml:"actionType"`
 	CountryID                     int             `xml:"countryId"`
 	InstanceID                    string          `xml:"instanceId"`
@@ -87,6 +88,7 @@ func fetchApps(ctx context.Context, server string, client *http.Client) (*Applic
 		return nil, err
 	}
 	request = request.WithContext(ctx)
+	request.Header.Add("User-Agent", userAgent)
 
 	resp, err := client.Do(request)
 	if err != nil {

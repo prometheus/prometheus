@@ -607,9 +607,11 @@ func NewClient(config *Config) (*Client, error) {
 			trans.DialContext = func(_ context.Context, _, _ string) (net.Conn, error) {
 				return net.Dial("unix", parts[1])
 			}
-			config.HttpClient = &http.Client{
-				Transport: trans,
+			httpClient, err := NewHttpClient(trans, config.TLSConfig)
+			if err != nil {
+				return nil, err
 			}
+			config.HttpClient = httpClient
 		default:
 			return nil, fmt.Errorf("Unknown protocol scheme: %s", parts[0])
 		}
