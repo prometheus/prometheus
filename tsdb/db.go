@@ -1077,7 +1077,7 @@ func deletableBlocks(db *DB, blocks []*Block) map[ulid.ULID]struct{} {
 // set in the db options.
 func BeyondTimeRetention(db *DB, blocks []*Block) (deletable map[ulid.ULID]struct{}) {
 	// Time retention is disabled or no blocks to work with.
-	if len(db.blocks) == 0 || db.opts.RetentionDuration == 0 {
+	if len(blocks) == 0 || db.opts.RetentionDuration == 0 {
 		return
 	}
 
@@ -1100,7 +1100,7 @@ func BeyondTimeRetention(db *DB, blocks []*Block) (deletable map[ulid.ULID]struc
 // set in the db options.
 func BeyondSizeRetention(db *DB, blocks []*Block) (deletable map[ulid.ULID]struct{}) {
 	// Size retention is disabled or no blocks to work with.
-	if len(db.blocks) == 0 || db.opts.MaxBytes <= 0 {
+	if len(blocks) == 0 || db.opts.MaxBytes <= 0 {
 		return
 	}
 
