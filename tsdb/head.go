@@ -779,18 +779,18 @@ func (h *Head) removeCorruptedMmappedChunks(err error) map[uint64][]*mmappedChun
 // Truncate removes old data before mint from the head and WAL.
 func (h *Head) Truncate(mint int64) (err error) {
 	initialize := h.MinTime() == math.MaxInt64
-	dontTruncateWAL := initialize || (!initialize && h.MinTime() >= mint)
-	if err := h.TruncateInMemory(mint); err != nil {
+	dontTruncateWAL := initialize || h.MinTime() >= mint
+	if err := h.truncateMemory(mint); err != nil {
 		return err
 	}
 	if dontTruncateWAL {
 		return nil
 	}
-	return h.TruncateWAL(mint)
+	return h.truncateWAL(mint)
 }
 
-// TruncateInMemory removes old data before mint from the head.
-func (h *Head) TruncateInMemory(mint int64) (err error) {
+// truncateMemory removes old data before mint from the head.
+func (h *Head) truncateMemory(mint int64) (err error) {
 	defer func() {
 		if err != nil {
 			h.metrics.headTruncateFail.Inc()
@@ -826,12 +826,11 @@ func (h *Head) TruncateInMemory(mint int64) (err error) {
 	if err := h.chunkDiskMapper.Truncate(mint); err != nil {
 		return errors.Wrap(err, "truncate chunks.HeadReadWriter")
 	}
-
 	return nil
 }
 
-// TruncateWAL removes old data before mint from the WAL.
-func (h *Head) TruncateWAL(mint int64) error {
+// truncateWAL removes old data before mint from the WAL.
+func (h *Head) truncateWAL(mint int64) error {
 	if h.wal == nil {
 		return nil
 	}
@@ -843,8 +842,7 @@ func (h *Head) TruncateWAL(mint int64) error {
 	}
 	// Start a new segment, so low ingestion volume TSDB don't have more WAL than
 	// needed.
-	err = h.wal.NextSegment()
-	if err != nil {
+	if err := h.wal.NextSegment(); err != nil {
 		return errors.Wrap(err, "next segment")
 	}
 	last-- // Never consider last segment for checkpoint.
@@ -968,8 +966,17 @@ func (h *RangeHead) MinTime() int64 {
 	return h.mint
 }
 
+// MaxTime returns the max time of actual data fetch-able from the head.
+// This controls the chunks time range which is closed [b.MinTime, b.MaxTime].
 func (h *RangeHead) MaxTime() int64 {
 	return h.maxt
+}
+
+// BlockMaxTime returns the max time of the potential block created from this head.
+// It's different to MaxTime as we need to add +1 millisecond to block maxt because block
+// intervals are half-open: [b.MinTime, b.MaxTime). Block intervals are always +1 than the total samples it includes.
+func (h *RangeHead) BlockMaxTime() int64 {
+	return h.MaxTime() + 1
 }
 
 func (h *RangeHead) NumSeries() uint64 {
