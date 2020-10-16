@@ -1526,19 +1526,9 @@ func TestFindSetMatches(t *testing.T) {
 	for _, c := range cases {
 		matches := findSetMatches(c.pattern)
 		if len(c.exp) == 0 {
-			if len(matches) != 0 {
-				t.Errorf("Evaluating %s, unexpected result %v", c.pattern, matches)
-			}
+			testutil.Assert(t, len(matches) == 0, "Evaluating %s, unexpected result %v", c.pattern, matches)
 		} else {
-			if len(matches) != len(c.exp) {
-				t.Errorf("Evaluating %s, length of result not equal to exp", c.pattern)
-			} else {
-				for i := 0; i < len(c.exp); i++ {
-					if c.exp[i] != matches[i] {
-						t.Errorf("Evaluating %s, unexpected result %s", c.pattern, matches[i])
-					}
-				}
-			}
+			testutil.Equals(t, c.exp, matches)
 		}
 	}
 }
@@ -1787,16 +1777,12 @@ func TestPostingsForMatchers(t *testing.T) {
 		for p.Next() {
 			lbls := labels.Labels{}
 			testutil.Ok(t, ir.Series(p.At(), &lbls, &[]chunks.Meta{}))
-			if _, ok := exp[lbls.String()]; !ok {
-				t.Errorf("Evaluating %v, unexpected result %s", c.matchers, lbls.String())
-			} else {
-				delete(exp, lbls.String())
-			}
+			_, ok := exp[lbls.String()]
+			testutil.Assert(t, ok, "Evaluating %v, unexpected result %s", c.matchers, lbls.String())
+			delete(exp, lbls.String())
 		}
 		testutil.Ok(t, p.Err())
-		if len(exp) != 0 {
-			t.Errorf("Evaluating %v, missing results %+v", c.matchers, exp)
-		}
+		testutil.Assert(t, len(exp) == 0, "Evaluating %v, missing results %+v", c.matchers, exp)
 	}
 
 }
@@ -1804,9 +1790,7 @@ func TestPostingsForMatchers(t *testing.T) {
 // TestClose ensures that calling Close more than once doesn't block and doesn't panic.
 func TestClose(t *testing.T) {
 	dir, err := ioutil.TempDir("", "test_storage")
-	if err != nil {
-		t.Fatalf("Opening test dir failed: %s", err)
-	}
+	testutil.Ok(t, err)
 	defer func() {
 		testutil.Ok(t, os.RemoveAll(dir))
 	}()
@@ -1815,9 +1799,7 @@ func TestClose(t *testing.T) {
 	createBlock(t, dir, genSeries(1, 1, 10, 20))
 
 	db, err := Open(dir, nil, nil, DefaultOptions())
-	if err != nil {
-		t.Fatalf("Opening test storage failed: %s", err)
-	}
+	testutil.Ok(t, err)
 	defer func() {
 		testutil.Ok(t, db.Close())
 	}()

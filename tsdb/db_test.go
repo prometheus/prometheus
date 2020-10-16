@@ -1994,9 +1994,8 @@ func TestBlockRanges(t *testing.T) {
 	app := db.Appender(ctx)
 	lbl := labels.Labels{{Name: "a", Value: "b"}}
 	_, err = app.Add(lbl, firstBlockMaxT-1, rand.Float64())
-	if err == nil {
-		t.Fatalf("appending a sample with a timestamp covered by a previous block shouldn't be possible")
-	}
+	testutil.Assert(t, err != nil,
+		"appending a sample with a timestamp covered by a previous block shouldn't be possible")
 	_, err = app.Add(lbl, firstBlockMaxT+1, rand.Float64())
 	testutil.Ok(t, err)
 	_, err = app.Add(lbl, firstBlockMaxT+2, rand.Float64())
@@ -2014,9 +2013,8 @@ func TestBlockRanges(t *testing.T) {
 	}
 	testutil.Equals(t, 2, len(db.Blocks()), "no new block created after the set timeout")
 
-	if db.Blocks()[0].Meta().MaxTime > db.Blocks()[1].Meta().MinTime {
-		t.Fatalf("new block overlaps  old:%v,new:%v", db.Blocks()[0].Meta(), db.Blocks()[1].Meta())
-	}
+	testutil.Assert(t, db.Blocks()[0].Meta().MaxTime <= db.Blocks()[1].Meta().MinTime,
+		"new block overlaps  old:%v,new:%v", db.Blocks()[0].Meta(), db.Blocks()[1].Meta())
 
 	// Test that wal records are skipped when an existing block covers the same time ranges
 	// and compaction doesn't create an overlapping block.
@@ -2055,10 +2053,8 @@ func TestBlockRanges(t *testing.T) {
 	}
 
 	testutil.Equals(t, 4, len(db.Blocks()), "no new block created after the set timeout")
-
-	if db.Blocks()[2].Meta().MaxTime > db.Blocks()[3].Meta().MinTime {
-		t.Fatalf("new block overlaps  old:%v,new:%v", db.Blocks()[2].Meta(), db.Blocks()[3].Meta())
-	}
+	testutil.Assert(t, db.Blocks()[2].Meta().MaxTime <= db.Blocks()[3].Meta().MinTime,
+		"new block overlaps  old:%v,new:%v", db.Blocks()[2].Meta(), db.Blocks()[3].Meta())
 }
 
 // TestDBReadOnly ensures that opening a DB in readonly mode doesn't modify any files on the disk.
@@ -2816,9 +2812,8 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 
 	var loaded int
 	for _, l := range loadedBlocks {
-		if _, ok := expectedLoadedDirs[filepath.Join(tmpDir, l.meta.ULID.String())]; !ok {
-			t.Fatal("unexpected block", l.meta.ULID, "was loaded")
-		}
+		_, ok := expectedLoadedDirs[filepath.Join(tmpDir, l.meta.ULID.String())]
+		testutil.Assert(t, ok, "unexpected block", l.meta.ULID, "was loaded")
 		loaded++
 	}
 	testutil.Equals(t, len(expectedLoadedDirs), loaded)
@@ -2829,9 +2824,8 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 
 	var ignored int
 	for _, f := range files {
-		if _, ok := expectedRemovedDirs[filepath.Join(tmpDir, f.Name())]; ok {
-			t.Fatal("expected", filepath.Join(tmpDir, f.Name()), "to be removed, but still exists")
-		}
+		_, ok := expectedRemovedDirs[filepath.Join(tmpDir, f.Name())]
+		testutil.Assert(t, !ok, "expected", filepath.Join(tmpDir, f.Name()), "to be removed, but still exists")
 		if _, ok := expectedIgnoredDirs[filepath.Join(tmpDir, f.Name())]; ok {
 			ignored++
 		}

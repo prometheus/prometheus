@@ -949,9 +949,7 @@ func TestComputeChunkEndTime(t *testing.T) {
 
 	for _, c := range cases {
 		got := computeChunkEndTime(c.start, c.cur, c.max)
-		if got != c.res {
-			t.Errorf("expected %d for (start: %d, cur: %d, max: %d), got %d", c.res, c.start, c.cur, c.max, got)
-		}
+		testutil.Equals(t, got, c.res)
 	}
 }
 
