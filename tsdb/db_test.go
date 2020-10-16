@@ -1994,7 +1994,7 @@ func TestBlockRanges(t *testing.T) {
 	app := db.Appender(ctx)
 	lbl := labels.Labels{{Name: "a", Value: "b"}}
 	_, err = app.Add(lbl, firstBlockMaxT-1, rand.Float64())
-	testutil.Assert(t, err != nil, 
+	testutil.Assert(t, err != nil,
 		"appending a sample with a timestamp covered by a previous block shouldn't be possible")
 	_, err = app.Add(lbl, firstBlockMaxT+1, rand.Float64())
 	testutil.Ok(t, err)
@@ -2013,7 +2013,7 @@ func TestBlockRanges(t *testing.T) {
 	}
 	testutil.Equals(t, 2, len(db.Blocks()), "no new block created after the set timeout")
 
-	testutil.Assert(t, db.Blocks()[0].Meta().MaxTime <= db.Blocks()[1].Meta().MinTime, 
+	testutil.Assert(t, db.Blocks()[0].Meta().MaxTime <= db.Blocks()[1].Meta().MinTime,
 		"new block overlaps  old:%v,new:%v", db.Blocks()[0].Meta(), db.Blocks()[1].Meta())
 
 	// Test that wal records are skipped when an existing block covers the same time ranges
@@ -2053,7 +2053,7 @@ func TestBlockRanges(t *testing.T) {
 	}
 
 	testutil.Equals(t, 4, len(db.Blocks()), "no new block created after the set timeout")
-	testutil.Assert(t, db.Blocks()[2].Meta().MaxTime <= db.Blocks()[3].Meta().MinTime, 
+	testutil.Assert(t, db.Blocks()[2].Meta().MaxTime <= db.Blocks()[3].Meta().MinTime,
 		"new block overlaps  old:%v,new:%v", db.Blocks()[2].Meta(), db.Blocks()[3].Meta())
 }
 
@@ -2812,7 +2812,7 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 
 	var loaded int
 	for _, l := range loadedBlocks {
-		_, ok := expectedLoadedDirs[filepath.Join(tmpDir, l.meta.ULID.String())] 
+		_, ok := expectedLoadedDirs[filepath.Join(tmpDir, l.meta.ULID.String())]
 		testutil.Assert(t, ok, "unexpected block", l.meta.ULID, "was loaded")
 		loaded++
 	}

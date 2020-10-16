@@ -43,7 +43,7 @@ func TestLocking(t *testing.T) {
 	testutil.Assert(t, lockedAgain == nil, "Unsuccessful locking did not return nil.")
 	testutil.Assert(t, existed, "Existing file %q not recognized.", fileName)
 
-	err := lock.Release() 
+	err := lock.Release()
 	testutil.Ok(t, err)
 
 	// File must still exist.
@@ -55,6 +55,6 @@ func TestLocking(t *testing.T) {
 	testutil.Ok(t, err)
 	testutil.Assert(t, existed, "Existing file %q not recognized.", fileName)
 
-	err := lock.Release() 
+	err := lock.Release()
 	testutil.Ok(t, err)
 }
