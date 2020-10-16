@@ -72,13 +72,6 @@ func TestSampleRing(t *testing.T) {
 					}
 				}
 
-				if test.valid {
-					testutil.Ok(t, err)
-				} else {
-					t.Logf("%+v", test, r)	
-					testutil.NotOk(t, err)
-				}
-
 				if sold.t >= s.t-c.delta {
 					testutil.Assert(t, found, "%d: expected sample %d to be in buffer but was not; buffer %v", i, sold.t, buffered)
 				} else {
