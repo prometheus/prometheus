@@ -177,17 +177,13 @@ func TestReader(t *testing.T) {
 				for j := 0; r.Next(); j++ {
 					t.Logf("record %d", j)
 					rec := r.Record()
-
-					if j >= len(c.exp) {
-						t.Fatal("received more records than expected")
-					}
+					testutil.Assert(t, j < len(c.exp), "received more records than expected")
 					testutil.Equals(t, c.exp[j], rec, "Bytes within record did not match expected Bytes")
 				}
-				if !c.fail && r.Err() != nil {
-					t.Fatalf("unexpected error: %s", r.Err())
-				}
-				if c.fail && r.Err() == nil {
-					t.Fatalf("expected error but got none")
+				if !c.fail {
+					testutil.Ok(t, r.Err())
+				} else {
+					testutil.NotOk(t, r.Err())
 				}
 			})
 		}

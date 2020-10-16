@@ -55,9 +55,7 @@ func TestMemPostings_ensureOrder(t *testing.T) {
 			ok := sort.SliceIsSorted(l, func(i, j int) bool {
 				return l[i] < l[j]
 			})
-			if !ok {
-				t.Fatalf("postings list %v is not sorted", l)
-			}
+			testutil.Assert(t, ok, "postings list %v is not sorted", l)
 		}
 	}
 }
@@ -155,9 +153,7 @@ func TestIntersect(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run("", func(t *testing.T) {
-			if c.res == nil {
-				t.Fatal("intersect result expectancy cannot be nil")
-			}
+			testutil.Assert(t, c.res != nil, "intersect result expectancy cannot be nil")
 
 			expected, err := ExpandPostings(c.res)
 			testutil.Ok(t, err)
@@ -168,10 +164,7 @@ func TestIntersect(t *testing.T) {
 				testutil.Equals(t, EmptyPostings(), i)
 				return
 			}
-
-			if i == EmptyPostings() {
-				t.Fatal("intersect unexpected result: EmptyPostings sentinel")
-			}
+			testutil.Assert(t, i != EmptyPostings(), "intersect unexpected result: EmptyPostings sentinel")
 
 			res, err := ExpandPostings(i)
 			testutil.Ok(t, err)
@@ -397,9 +390,7 @@ func TestMergedPostings(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run("", func(t *testing.T) {
-			if c.res == nil {
-				t.Fatal("merge result expectancy cannot be nil")
-			}
+			testutil.Assert(t, c.res, "merge result expectancy cannot be nil")
 
 			expected, err := ExpandPostings(c.res)
 			testutil.Ok(t, err)
@@ -410,10 +401,7 @@ func TestMergedPostings(t *testing.T) {
 				testutil.Equals(t, EmptyPostings(), m)
 				return
 			}
-
-			if m == EmptyPostings() {
-				t.Fatal("merge unexpected result: EmptyPostings sentinel")
-			}
+			testutil.Assert(t, m != EmptyPostings(), "merge unexpected result: EmptyPostings sentinel")
 
 			res, err := ExpandPostings(m)
 			testutil.Ok(t, err)
@@ -789,9 +777,7 @@ func TestWithoutPostings(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run("", func(t *testing.T) {
-			if c.res == nil {
-				t.Fatal("without result expectancy cannot be nil")
-			}
+			testutil.Assert(t, c.res != nil, "without result expectancy cannot be nil")
 
 			expected, err := ExpandPostings(c.res)
 			testutil.Ok(t, err)
@@ -802,10 +788,7 @@ func TestWithoutPostings(t *testing.T) {
 				testutil.Equals(t, EmptyPostings(), w)
 				return
 			}
-
-			if w == EmptyPostings() {
-				t.Fatal("without unexpected result: EmptyPostings sentinel")
-			}
+			testutil.Assert(t, w != EmptyPostings(), "without unexpected result: EmptyPostings sentinel")
 
 			res, err := ExpandPostings(w)
 			testutil.Ok(t, err)

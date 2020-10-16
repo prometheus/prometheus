@@ -26,55 +26,35 @@ func TestLocking(t *testing.T) {
 	defer dir.Close()
 
 	fileName := filepath.Join(dir.Path(), "LOCK")
-
-	if _, err := os.Stat(fileName); err == nil {
-		t.Fatalf("File %q unexpectedly exists.", fileName)
-	}
+	_, err := os.Stat(fileName)
+	testutil.Assert(t, err != nil, "File %q unexpectedly exists.", fileName)
 
 	lock, existed, err := Flock(fileName)
-	if err != nil {
-		t.Fatalf("Error locking file %q: %s", fileName, err)
-	}
-	if existed {
-		t.Errorf("File %q reported as existing during locking.", fileName)
-	}
+	testutil.Ok(t, err)
+	testutil.Assert(t, !existed, "File %q reported as existing during locking.", fileName)
 
 	// File must now exist.
-	if _, err = os.Stat(fileName); err != nil {
-		t.Errorf("Could not stat file %q expected to exist: %s", fileName, err)
-	}
+	_, err = os.Stat(fileName)
+	testutil.Ok(t, err)
 
 	// Try to lock again.
 	lockedAgain, existed, err := Flock(fileName)
-	if err == nil {
-		t.Fatalf("File %q locked twice.", fileName)
-	}
-	if lockedAgain != nil {
-		t.Error("Unsuccessful locking did not return nil.")
-	}
-	if !existed {
-		t.Errorf("Existing file %q not recognized.", fileName)
-	}
+	testutil.Assert(t, err != nil, "File %q locked twice.", fileName)
+	testutil.Assert(t, lockedAgain == nil, "Unsuccessful locking did not return nil.")
+	testutil.Assert(t, existed, "Existing file %q not recognized.", fileName)
 
-	if err := lock.Release(); err != nil {
-		t.Errorf("Error releasing lock for file %q: %s", fileName, err)
-	}
+	err := lock.Release() 
+	testutil.Ok(t, err)
 
 	// File must still exist.
-	if _, err = os.Stat(fileName); err != nil {
-		t.Errorf("Could not stat file %q expected to exist: %s", fileName, err)
-	}
+	_, err = os.Stat(fileName)
+	testutil.Ok(t, err)
 
 	// Lock existing file.
 	lock, existed, err = Flock(fileName)
-	if err != nil {
-		t.Fatalf("Error locking file %q: %s", fileName, err)
-	}
-	if !existed {
-		t.Errorf("Existing file %q not recognized.", fileName)
-	}
+	testutil.Ok(t, err)
+	testutil.Assert(t, existed, "Existing file %q not recognized.", fileName)
 
-	if err := lock.Release(); err != nil {
-		t.Errorf("Error releasing lock for file %q: %s", fileName, err)
-	}
+	err := lock.Release() 
+	testutil.Ok(t, err)
 }
