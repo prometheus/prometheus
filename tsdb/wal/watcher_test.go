@@ -55,8 +55,8 @@ type writeToMock struct {
 	seriesSegmentIndexes map[uint64]int
 }
 
-func (wtm *writeToMock) Append(s []record.RefSample) bool {
-	wtm.samplesAppended += len(s)
+func (wtm *writeToMock) Append(samples []record.RefSample) bool {
+	wtm.samplesAppended += len(samples)
 	return true
 }
 

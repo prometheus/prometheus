@@ -366,8 +366,7 @@ func TestReshard(t *testing.T) {
 	}()
 
 	for i := 1; i < len(samples)/config.DefaultQueueConfig.Capacity; i++ {
-		m.shards.stop()
-		m.shards.start(i)
+		m.reshard(i)
 		time.Sleep(100 * time.Millisecond)
 	}
 
