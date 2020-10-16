@@ -16,7 +16,6 @@ require (
 	github.com/aws/aws-sdk-go v1.35.5
 	github.com/cespare/xxhash/v2 v2.1.1
 	github.com/containerd/containerd v1.3.4 // indirect
-	github.com/davecgh/go-spew v1.1.1
 	github.com/dgryski/go-sip13 v0.0.0-20200911182023-62edffca9245
 	github.com/digitalocean/godo v1.46.0
 	github.com/docker/distribution v2.7.1+incompatible // indirect
@@ -28,6 +27,7 @@ require (
 	github.com/go-openapi/strfmt v0.19.5
 	github.com/gogo/protobuf v1.3.1
 	github.com/golang/snappy v0.0.2
+	github.com/google/go-cmp v0.5.2
 	github.com/google/pprof v0.0.0-20201007051231-1066cbb265c7
 	github.com/gophercloud/gophercloud v0.13.0
 	github.com/grpc-ecosystem/grpc-gateway v1.15.0
@@ -49,7 +49,6 @@ require (
 	github.com/opentracing-contrib/go-stdlib v1.0.0
 	github.com/opentracing/opentracing-go v1.2.0
 	github.com/pkg/errors v0.9.1
-	github.com/pmezard/go-difflib v1.0.0
 	github.com/prometheus/alertmanager v0.21.0
 	github.com/prometheus/client_golang v1.7.1
 	github.com/prometheus/client_model v0.2.0

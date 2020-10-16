@@ -97,7 +97,6 @@ github.com/cespare/xxhash/v2
 ## explicit
 github.com/containerd/containerd/errdefs
 # github.com/davecgh/go-spew v1.1.1
-## explicit
 github.com/davecgh/go-spew/spew
 # github.com/dgryski/go-sip13 v0.0.0-20200911182023-62edffca9245
 ## explicit
@@ -227,6 +226,7 @@ github.com/golang/protobuf/ptypes/timestamp
 ## explicit
 github.com/golang/snappy
 # github.com/google/go-cmp v0.5.2
+## explicit
 github.com/google/go-cmp/cmp
 github.com/google/go-cmp/cmp/internal/diff
 github.com/google/go-cmp/cmp/internal/flags
@@ -363,9 +363,6 @@ github.com/opentracing/opentracing-go/log
 # github.com/pkg/errors v0.9.1
 ## explicit
 github.com/pkg/errors
-# github.com/pmezard/go-difflib v1.0.0
-## explicit
-github.com/pmezard/go-difflib/difflib
 # github.com/prometheus/alertmanager v0.21.0
 ## explicit
 github.com/prometheus/alertmanager/api/v2/models
