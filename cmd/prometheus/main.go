@@ -290,6 +290,14 @@ func main() {
 		level.Error(logger).Log("msg", fmt.Sprintf("Error loading config (--config.file=%s)", cfg.configFile), "err", err)
 		os.Exit(2)
 	}
+	// Now that the validity of the config is established, set the config
+	// success metrics accordingly, although the config isn't really loaded
+	// yet. This will happen later (including setting these metrics again),
+	// but if we don't do it now, the metrics will stay at zero until the
+	// startup procedure is complete, which might take long enough to
+	// trigger alerts about an invalid config.
+	configSuccess.Set(1)
+	configSuccessTime.SetToCurrentTime()
 
 	cfg.web.ReadTimeout = time.Duration(cfg.webTimeout)
 	// Default -web.route-prefix to path of -web.external-url.

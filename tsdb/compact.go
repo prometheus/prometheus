@@ -488,6 +488,12 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, p
 	}
 
 	if meta.Stats.NumSamples == 0 {
+		level.Info(c.logger).Log(
+			"msg", "write block resulted in empty block",
+			"mint", meta.MinTime,
+			"maxt", meta.MaxTime,
+			"duration", time.Since(start),
+		)
 		return ulid.ULID{}, nil
 	}
 

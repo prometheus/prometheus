@@ -835,8 +835,11 @@ func (db *DB) compactHead(head *RangeHead) (err error) {
 	runtime.GC()
 
 	if err := db.reload(); err != nil {
-		if err := os.RemoveAll(filepath.Join(db.dir, uid.String())); err != nil {
-			return errors.Wrapf(err, "delete persisted head block after failed db reload:%s", uid)
+		if errRemoveAll := os.RemoveAll(filepath.Join(db.dir, uid.String())); errRemoveAll != nil {
+			var merr tsdb_errors.MultiError
+			merr.Add(errors.Wrap(err, "reload blocks"))
+			merr.Add(errors.Wrapf(errRemoveAll, "delete persisted head block after failed db reload:%s", uid))
+			return merr.Err()
 		}
 		return errors.Wrap(err, "reload blocks")
 	}
@@ -1103,11 +1106,9 @@ func BeyondSizeRetention(db *DB, blocks []*Block) (deletable map[ulid.ULID]struc
 
 	deletable = make(map[ulid.ULID]struct{})
 
-	walSize, _ := db.Head().wal.Size()
-	headChunksSize := db.Head().chunkDiskMapper.Size()
 	// Initializing size counter with WAL size and Head chunks
 	// written to disk, as that is part of the retention strategy.
-	blocksSize := walSize + headChunksSize
+	blocksSize := db.Head().Size()
 	for i, block := range blocks {
 		blocksSize += block.Size()
 		if blocksSize > int64(db.opts.MaxBytes) {

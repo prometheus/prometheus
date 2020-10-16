@@ -120,11 +120,6 @@ func NewBlockQuerier(b BlockReader, mint, maxt int64) (storage.Querier, error) {
 func (q *blockQuerier) Select(sortSeries bool, hints *storage.SelectHints, ms ...*labels.Matcher) storage.SeriesSet {
 	mint := q.mint
 	maxt := q.maxt
-	if hints != nil {
-		mint = hints.Start
-		maxt = hints.End
-	}
-
 	p, err := PostingsForMatchers(q.index, ms...)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
@@ -132,6 +127,16 @@ func (q *blockQuerier) Select(sortSeries bool, hints *storage.SelectHints, ms ..
 	if sortSeries {
 		p = q.index.SortedPostings(p)
 	}
+
+	if hints != nil {
+		mint = hints.Start
+		maxt = hints.End
+		if hints.Func == "series" {
+			// When you're only looking up metadata (for example series API), you don't need to load any chunks.
+			return newBlockSeriesSet(q.index, newNopChunkReader(), q.tombstones, p, mint, maxt)
+		}
+	}
+
 	return newBlockSeriesSet(q.index, q.chunks, q.tombstones, p, mint, maxt)
 }
 
@@ -821,3 +826,17 @@ Outer:
 }
 
 func (it *deletedIterator) Err() error { return it.it.Err() }
+
+type nopChunkReader struct {
+	emptyChunk chunkenc.Chunk
+}
+
+func newNopChunkReader() ChunkReader {
+	return nopChunkReader{
+		emptyChunk: chunkenc.NewXORChunk(),
+	}
+}
+
+func (cr nopChunkReader) Chunk(ref uint64) (chunkenc.Chunk, error) { return cr.emptyChunk, nil }
+
+func (cr nopChunkReader) Close() error { return nil }
