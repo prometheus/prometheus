@@ -1,4 +1,4 @@
-// Copyright 2020 The Prometheus Authors
+// Copyright 2016 The etcd Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -30,8 +30,8 @@ func NewMulti(errs ...error) multiError { // nolint:golint
 	return m
 }
 
-// Add adds the error to the error list if it is not nil.
-// If the error has a nonNilMultiError error, errors from passed multi errors are combine in the
+// Add adds single or many errors to the error list. Each error is added only if not nil.
+// If the error is a nonNilMultiError error, errors from passed multi errors are combine in the
 // same level as existing errors.
 func (es *multiError) Add(errs ...error) {
 	for _, err := range errs {
@@ -80,7 +80,7 @@ func (es nonNilMultiError) Error() string {
 	return buf.String()
 }
 
-// CloseAll closed all given closes with all errors recorded. All closers are closed.
+// CloseAll closes all given closers while recording error in MultiError.
 func CloseAll(cs []io.Closer) error {
 	errs := NewMulti()
 	for _, c := range cs {
