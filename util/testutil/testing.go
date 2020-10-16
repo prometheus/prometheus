@@ -24,6 +24,7 @@ package testutil
 
 import (
 	"fmt"
+	"reflect"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -69,7 +70,9 @@ func NotOk(tb TB, err error, a ...interface{}) {
 // Equals fails the test if exp is not equal to act.
 func Equals(tb TB, exp, act interface{}, msgAndArgs ...interface{}) {
 	tb.Helper()
-	if diff := cmp.Diff(exp, act); diff != "" {
+	if diff := cmp.Diff(exp, act,
+		cmp.Exporter(func(reflect.Type) bool { return true }), // Compare unexported fields.
+	); diff != "" {
 		tb.Fatalf("\033[31m%s\n\nexp: %#v\n\ngot: %#v\033[39m\n\ndiff:\n\n%s\n", formatMessage(msgAndArgs), exp, act, diff)
 	}
 }
