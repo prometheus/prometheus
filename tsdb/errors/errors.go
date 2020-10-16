@@ -20,7 +20,7 @@ import (
 	"io"
 )
 
-// multiError type allows to combine multiple errors into one.
+// multiError type allows combining multiple errors into one.
 type multiError []error
 
 // NewMulti returns multiError with provided errors added if not nil.
@@ -31,8 +31,7 @@ func NewMulti(errs ...error) multiError { // nolint:golint
 }
 
 // Add adds single or many errors to the error list. Each error is added only if not nil.
-// If the error is a nonNilMultiError error, errors from passed multi errors are combine in the
-// same level as existing errors.
+// If the error is a nonNilMultiError type, the errors inside nonNilMultiError are added to the main multiError.
 func (es *multiError) Add(errs ...error) {
 	for _, err := range errs {
 		if err == nil {
