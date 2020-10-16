@@ -1782,7 +1782,7 @@ func TestPostingsForMatchers(t *testing.T) {
 			delete(exp, lbls.String())
 		}
 		testutil.Ok(t, p.Err())
-		testutil.Assert(t, !exp, "Evaluating %v, missing results %+v", c.matchers, exp)
+		testutil.Assert(t, exp == nil, "Evaluating %v, missing results %+v", c.matchers, exp)
 	}
 
 }

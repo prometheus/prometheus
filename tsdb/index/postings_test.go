@@ -390,7 +390,7 @@ func TestMergedPostings(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run("", func(t *testing.T) {
-			testutil.Assert(t, c.res, "merge result expectancy cannot be nil")
+			testutil.Assert(t, c.res != nil, "merge result expectancy cannot be nil")
 
 			expected, err := ExpandPostings(c.res)
 			testutil.Ok(t, err)

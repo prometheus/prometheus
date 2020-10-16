@@ -15,7 +15,6 @@
 package wal
 
 import (
-	"bytes"
 	"fmt"
 	"io/ioutil"
 	"math/rand"
