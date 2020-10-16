@@ -1777,9 +1777,11 @@ func TestPostingsForMatchers(t *testing.T) {
 		for p.Next() {
 			lbls := labels.Labels{}
 			testutil.Ok(t, ir.Series(p.At(), &lbls, &[]chunks.Meta{}))
-			_, ok := exp[lbls.String()]
-			testutil.Assert(t, ok, "Evaluating %v, unexpected result %s", c.matchers, lbls.String())
-			delete(exp, lbls.String())
+			if _, ok := exp[lbls.String()]; !ok {
+				t.Errorf("Evaluating %v, unexpected result %s", c.matchers, lbls.String())
+			} else {
+				delete(exp, lbls.String())
+			}
 		}
 		testutil.Ok(t, p.Err())
 		testutil.Assert(t, len(exp) == 0, "Evaluating %v, missing results %+v", c.matchers, exp)
