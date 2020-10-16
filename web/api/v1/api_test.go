@@ -1784,23 +1784,7 @@ func assertAPIError(t *testing.T, got *apiError, exp errorType) {
 func assertAPIResponse(t *testing.T, got interface{}, exp interface{}) {
 	t.Helper()
 
-	if !reflect.DeepEqual(exp, got) {
-		respJSON, err := json.Marshal(got)
-		if err != nil {
-			t.Fatalf("failed to marshal response as JSON: %v", err.Error())
-		}
-
-		expectedRespJSON, err := json.Marshal(exp)
-		if err != nil {
-			t.Fatalf("failed to marshal expected response as JSON: %v", err.Error())
-		}
-
-		t.Fatalf(
-			"Response does not match, expected:\n%+v\ngot:\n%+v",
-			string(expectedRespJSON),
-			string(respJSON),
-		)
-	}
+	testutil.Equals(t, exp, got, "Response does not match")
 }
 
 func assertAPIResponseLength(t *testing.T, got interface{}, expLen int) {
@@ -2362,9 +2346,7 @@ func TestRespondSuccess(t *testing.T) {
 		Status: statusSuccess,
 		Data:   "test",
 	}
-	if !reflect.DeepEqual(&res, exp) {
-		t.Fatalf("Expected response \n%v\n but got \n%v\n", res, exp)
-	}
+	testutil.Equals(t, exp, &res, "Unexpected response")
 }
 
 func TestRespondError(t *testing.T) {
@@ -2402,9 +2384,7 @@ func TestRespondError(t *testing.T) {
 		ErrorType: errorTimeout,
 		Error:     "message",
 	}
-	if !reflect.DeepEqual(&res, exp) {
-		t.Fatalf("Expected response \n%v\n but got \n%v\n", res, exp)
-	}
+	testutil.Equals(t, exp, &res, "Unexpected response")
 }
 
 func TestParseTimeParam(t *testing.T) {

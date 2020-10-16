@@ -16,7 +16,6 @@ package discovery
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"sort"
 	"strconv"
 	"testing"
@@ -696,25 +695,12 @@ func TestTargetUpdatesOrder(t *testing.T) {
 
 func assertEqualGroups(t *testing.T, got, expected []*targetgroup.Group, msg func(got, expected string) string) {
 	t.Helper()
-	format := func(groups []*targetgroup.Group) string {
-		var s string
-		for i, group := range groups {
-			if i > 0 {
-				s += ","
-			}
-			s += group.Source + ":" + fmt.Sprint(group.Targets)
-		}
-		return s
-	}
 
 	// Need to sort by the groups's source as the received order is not guaranteed.
 	sort.Sort(byGroupSource(got))
 	sort.Sort(byGroupSource(expected))
 
-	if !reflect.DeepEqual(got, expected) {
-		t.Errorf(msg(format(got), format(expected)))
-	}
-
+	testutil.Equals(t, expected, got)
 }
 
 func staticConfig(addrs ...string) StaticConfig {
@@ -894,10 +880,7 @@ func TestApplyConfigDoesNotModifyStaticTargets(t *testing.T) {
 	<-discoveryManager.SyncCh()
 
 	for _, cfg := range cfgs {
-		if !reflect.DeepEqual(originalConfig, cfg) {
-			t.Fatalf("discovery manager modified static config \n  expected: %v\n  got: %v\n",
-				originalConfig, cfg)
-		}
+		testutil.Equals(t, originalConfig, cfg)
 	}
 }
 

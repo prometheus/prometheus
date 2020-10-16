@@ -19,7 +19,6 @@ import (
 	"io/ioutil"
 	"math"
 	"os"
-	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -32,6 +31,8 @@ import (
 	"github.com/golang/snappy"
 	"go.uber.org/atomic"
 
+	"net/url"
+
 	"github.com/prometheus/client_golang/prometheus"
 	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	common_config "github.com/prometheus/common/config"
@@ -42,7 +43,6 @@ import (
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/util/testutil"
-	"net/url"
 )
 
 const defaultFlushDeadline = 1 * time.Minute
@@ -456,9 +456,7 @@ func (c *TestWriteClient) waitForExpectedSamples(tb testing.TB) {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 	for ts, expectedSamples := range c.expectedSamples {
-		if !reflect.DeepEqual(expectedSamples, c.receivedSamples[ts]) {
-			tb.Fatalf("%s: Expected %v, got %v", ts, expectedSamples, c.receivedSamples[ts])
-		}
+		testutil.Equals(tb, expectedSamples, c.receivedSamples[ts], "%s", ts)
 	}
 }
 

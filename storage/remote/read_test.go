@@ -18,7 +18,6 @@ import (
 	"io/ioutil"
 	"net/url"
 	"os"
-	"reflect"
 	"sort"
 	"testing"
 
@@ -170,12 +169,8 @@ func TestExternalLabelsQuerierAddExternalLabels(t *testing.T) {
 		sort.Slice(test.outMatchers, func(i, j int) bool { return test.outMatchers[i].Name < test.outMatchers[j].Name })
 		sort.Slice(matchers, func(i, j int) bool { return matchers[i].Name < matchers[j].Name })
 
-		if !reflect.DeepEqual(matchers, test.outMatchers) {
-			t.Fatalf("%d. unexpected matchers; want %v, got %v", i, test.outMatchers, matchers)
-		}
-		if !reflect.DeepEqual(added, test.added) {
-			t.Fatalf("%d. unexpected added labels; want %v, got %v", i, test.added, added)
-		}
+		testutil.Equals(t, matchers, test.outMatchers, "%d: unexpected matchers", i)
+		testutil.Equals(t, added, test.added, "%d: unexpected added labels", i)
 	}
 }
 

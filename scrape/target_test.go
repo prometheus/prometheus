@@ -21,7 +21,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -30,6 +29,7 @@ import (
 
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 const (
@@ -40,9 +40,7 @@ func TestTargetLabels(t *testing.T) {
 	target := newTestTarget("example.com:80", 0, labels.FromStrings("job", "some_job", "foo", "bar"))
 	want := labels.FromStrings(model.JobLabel, "some_job", "foo", "bar")
 	got := target.Labels()
-	if !reflect.DeepEqual(want, got) {
-		t.Errorf("want base labels %v, got %v", want, got)
-	}
+	testutil.Equals(t, want, got)
 }
 
 func TestTargetOffset(t *testing.T) {
@@ -120,9 +118,7 @@ func TestTargetURL(t *testing.T) {
 		RawQuery: expectedParams.Encode(),
 	}
 
-	if u := target.URL(); !reflect.DeepEqual(u.String(), expectedURL.String()) {
-		t.Fatalf("Expected URL %q, but got %q", expectedURL.String(), u.String())
-	}
+	testutil.Equals(t, expectedURL.String(), target.URL().String())
 }
 
 func newTestTarget(targetURL string, deadline time.Duration, lbls labels.Labels) *Target {

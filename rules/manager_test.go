@@ -577,7 +577,7 @@ func TestStaleness(t *testing.T) {
 
 	testutil.Assert(t, ok, "Series %s not returned.", metric)
 	testutil.Assert(t, value.IsStaleNaN(metricSample[2].V), "Appended second sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(metricSample[2].V))
-	metricSample[2].V = 42 // reflect.DeepEqual cannot handle NaN.
+	metricSample[2].V = 42 // go-cmp cannot handle NaN.
 
 	want := map[string][]promql.Point{
 		metric: {{T: 0, V: 2}, {T: 1000, V: 3}, {T: 2000, V: 42}},
