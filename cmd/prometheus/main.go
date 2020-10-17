@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/bits"
 	"net"
 	"net/http"
 	_ "net/http/pprof" // Comment this line to disable pprof endpoint.
@@ -30,7 +31,6 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -47,13 +47,14 @@ import (
 	"github.com/prometheus/common/version"
 	jcfg "github.com/uber/jaeger-client-go/config"
 	jprom "github.com/uber/jaeger-lib/metrics/prometheus"
+	"go.uber.org/atomic"
 	kingpin "gopkg.in/alecthomas/kingpin.v2"
-	"k8s.io/klog"
+	klog "k8s.io/klog"
+	klogv2 "k8s.io/klog/v2"
 
 	promlogflag "github.com/prometheus/common/promlog/flag"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
-	sd_config "github.com/prometheus/prometheus/discovery/config"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/logging"
@@ -67,6 +68,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/strutil"
 	"github.com/prometheus/prometheus/web"
+
+	_ "github.com/prometheus/prometheus/discovery/install" // Register service discovery implementations.
 )
 
 var (
@@ -238,6 +241,9 @@ func main() {
 	a.Flag("rules.alert.resend-delay", "Minimum amount of time to wait before resending an alert to Alertmanager.").
 		Default("1m").SetValue(&cfg.resendDelay)
 
+	a.Flag("scrape.adjust-timestamps", "Adjust scrape timestamps by up to 2ms to align them to the intended schedule. See https://github.com/prometheus/prometheus/issues/7846 for more context. Experimental. This flag will be removed in a future release.").
+		Hidden().Default("true").BoolVar(&scrape.AlignScrapeTimestamps)
+
 	a.Flag("alertmanager.notification-queue-capacity", "The capacity of the queue for pending Alertmanager notifications.").
 		Default("10000").IntVar(&cfg.notifier.QueueCapacity)
 
@@ -284,6 +290,14 @@ func main() {
 		level.Error(logger).Log("msg", fmt.Sprintf("Error loading config (--config.file=%s)", cfg.configFile), "err", err)
 		os.Exit(2)
 	}
+	// Now that the validity of the config is established, set the config
+	// success metrics accordingly, although the config isn't really loaded
+	// yet. This will happen later (including setting these metrics again),
+	// but if we don't do it now, the metrics will stay at zero until the
+	// startup procedure is complete, which might take long enough to
+	// trigger alerts about an invalid config.
+	configSuccess.Set(1)
+	configSuccessTime.SetToCurrentTime()
 
 	cfg.web.ReadTimeout = time.Duration(cfg.webTimeout)
 	// Default -web.route-prefix to path of -web.external-url.
@@ -341,8 +355,14 @@ func main() {
 	// Above level 6, the k8s client would log bearer tokens in clear-text.
 	klog.ClampLevel(6)
 	klog.SetLogger(log.With(logger, "component", "k8s_client_runtime"))
+	klogv2.ClampLevel(6)
+	klogv2.SetLogger(log.With(logger, "component", "k8s_client_runtime"))
 
 	level.Info(logger).Log("msg", "Starting Prometheus", "version", version.Info())
+	if bits.UintSize < 64 {
+		level.Warn(logger).Log("msg", "This Prometheus binary has not been compiled for a 64-bit architecture. Due to virtual memory constraints of 32-bit systems, it is highly recommended to switch to a 64-bit binary of Prometheus.", "GOARCH", runtime.GOARCH)
+	}
+
 	level.Info(logger).Log("build_context", version.BuildContext())
 	level.Info(logger).Log("host_details", prom_runtime.Uname())
 	level.Info(logger).Log("fd_limits", prom_runtime.FdLimits())
@@ -436,56 +456,73 @@ func main() {
 		conntrack.DialWithTracing(),
 	)
 
-	reloaders := []func(cfg *config.Config) error{
-		remoteStorage.ApplyConfig,
-		webHandler.ApplyConfig,
-		func(cfg *config.Config) error {
-			if cfg.GlobalConfig.QueryLogFile == "" {
-				queryEngine.SetQueryLogger(nil)
-				return nil
-			}
-
-			l, err := logging.NewJSONFileLogger(cfg.GlobalConfig.QueryLogFile)
-			if err != nil {
-				return err
-			}
-			queryEngine.SetQueryLogger(l)
-			return nil
-		},
-		// The Scrape and notifier managers need to reload before the Discovery manager as
-		// they need to read the most updated config when receiving the new targets list.
-		scrapeManager.ApplyConfig,
-		func(cfg *config.Config) error {
-			c := make(map[string]sd_config.ServiceDiscoveryConfig)
-			for _, v := range cfg.ScrapeConfigs {
-				c[v.JobName] = v.ServiceDiscoveryConfig
-			}
-			return discoveryManagerScrape.ApplyConfig(c)
-		},
-		notifierManager.ApplyConfig,
-		func(cfg *config.Config) error {
-			c := make(map[string]sd_config.ServiceDiscoveryConfig)
-			for k, v := range cfg.AlertingConfig.AlertmanagerConfigs.ToMap() {
-				c[k] = v.ServiceDiscoveryConfig
-			}
-			return discoveryManagerNotify.ApplyConfig(c)
-		},
-		func(cfg *config.Config) error {
-			// Get all rule files matching the configuration paths.
-			var files []string
-			for _, pat := range cfg.RuleFiles {
-				fs, err := filepath.Glob(pat)
-				if err != nil {
-					// The only error can be a bad pattern.
-					return errors.Wrapf(err, "error retrieving rule files for %s", pat)
+	reloaders := []reloader{
+		{
+			name:     "remote_storage",
+			reloader: remoteStorage.ApplyConfig,
+		}, {
+			name:     "web_handler",
+			reloader: webHandler.ApplyConfig,
+		}, {
+			name: "query_engine",
+			reloader: func(cfg *config.Config) error {
+				if cfg.GlobalConfig.QueryLogFile == "" {
+					queryEngine.SetQueryLogger(nil)
+					return nil
 				}
-				files = append(files, fs...)
-			}
-			return ruleManager.Update(
-				time.Duration(cfg.GlobalConfig.EvaluationInterval),
-				files,
-				cfg.GlobalConfig.ExternalLabels,
-			)
+
+				l, err := logging.NewJSONFileLogger(cfg.GlobalConfig.QueryLogFile)
+				if err != nil {
+					return err
+				}
+				queryEngine.SetQueryLogger(l)
+				return nil
+			},
+		}, {
+			// The Scrape and notifier managers need to reload before the Discovery manager as
+			// they need to read the most updated config when receiving the new targets list.
+			name:     "scrape",
+			reloader: scrapeManager.ApplyConfig,
+		}, {
+			name: "scrape_sd",
+			reloader: func(cfg *config.Config) error {
+				c := make(map[string]discovery.Configs)
+				for _, v := range cfg.ScrapeConfigs {
+					c[v.JobName] = v.ServiceDiscoveryConfigs
+				}
+				return discoveryManagerScrape.ApplyConfig(c)
+			},
+		}, {
+			name:     "notify",
+			reloader: notifierManager.ApplyConfig,
+		}, {
+			name: "notify_sd",
+			reloader: func(cfg *config.Config) error {
+				c := make(map[string]discovery.Configs)
+				for k, v := range cfg.AlertingConfig.AlertmanagerConfigs.ToMap() {
+					c[k] = v.ServiceDiscoveryConfigs
+				}
+				return discoveryManagerNotify.ApplyConfig(c)
+			},
+		}, {
+			name: "rules",
+			reloader: func(cfg *config.Config) error {
+				// Get all rule files matching the configuration paths.
+				var files []string
+				for _, pat := range cfg.RuleFiles {
+					fs, err := filepath.Glob(pat)
+					if err != nil {
+						// The only error can be a bad pattern.
+						return errors.Wrapf(err, "error retrieving rule files for %s", pat)
+					}
+					files = append(files, fs...)
+				}
+				return ruleManager.Update(
+					time.Duration(cfg.GlobalConfig.EvaluationInterval),
+					files,
+					cfg.GlobalConfig.ExternalLabels,
+				)
+			},
 		},
 	}
 
@@ -696,7 +733,13 @@ func main() {
 					return errors.Wrapf(err, "opening storage failed")
 				}
 
-				level.Info(logger).Log("fs_type", prom_runtime.Statfs(cfg.localStoragePath))
+				switch fsType := prom_runtime.Statfs(cfg.localStoragePath); fsType {
+				case "NFS_SUPER_MAGIC":
+					level.Warn(logger).Log("fs_type", fsType, "msg", "This filesystem is not supported and may lead to data corruption and data loss. Please carefully read https://prometheus.io/docs/prometheus/latest/storage/ to learn more about supported filesystems.")
+				default:
+					level.Info(logger).Log("fs_type", fsType)
+				}
+
 				level.Info(logger).Log("msg", "TSDB started")
 				level.Debug(logger).Log("msg", "TSDB options",
 					"MinBlockDuration", cfg.tsdb.MinBlockDuration,
@@ -801,21 +844,28 @@ func openDBWithMetrics(dir string, logger log.Logger, reg prometheus.Registerer,
 }
 
 type safePromQLNoStepSubqueryInterval struct {
-	value int64
+	value atomic.Int64
 }
 
 func durationToInt64Millis(d time.Duration) int64 {
 	return int64(d / time.Millisecond)
 }
 func (i *safePromQLNoStepSubqueryInterval) Set(ev model.Duration) {
-	atomic.StoreInt64(&i.value, durationToInt64Millis(time.Duration(ev)))
+	i.value.Store(durationToInt64Millis(time.Duration(ev)))
 }
 
 func (i *safePromQLNoStepSubqueryInterval) Get(int64) int64 {
-	return atomic.LoadInt64(&i.value)
+	return i.value.Load()
 }
 
-func reloadConfig(filename string, logger log.Logger, noStepSuqueryInterval *safePromQLNoStepSubqueryInterval, rls ...func(*config.Config) error) (err error) {
+type reloader struct {
+	name     string
+	reloader func(*config.Config) error
+}
+
+func reloadConfig(filename string, logger log.Logger, noStepSuqueryInterval *safePromQLNoStepSubqueryInterval, rls ...reloader) (err error) {
+	start := time.Now()
+	timings := []interface{}{}
 	level.Info(logger).Log("msg", "Loading configuration file", "filename", filename)
 
 	defer func() {
@@ -834,17 +884,20 @@ func reloadConfig(filename string, logger log.Logger, noStepSuqueryInterval *saf
 
 	failed := false
 	for _, rl := range rls {
-		if err := rl(conf); err != nil {
+		rstart := time.Now()
+		if err := rl.reloader(conf); err != nil {
 			level.Error(logger).Log("msg", "Failed to apply configuration", "err", err)
 			failed = true
 		}
+		timings = append(timings, rl.name, time.Since(rstart))
 	}
 	if failed {
 		return errors.Errorf("one or more errors occurred while applying the new configuration (--config.file=%q)", filename)
 	}
 
 	noStepSuqueryInterval.Set(conf.GlobalConfig.EvaluationInterval)
-	level.Info(logger).Log("msg", "Completed loading of configuration file", "filename", filename)
+	l := []interface{}{"msg", "Completed loading of configuration file", "filename", filename, "totalDuration", time.Since(start)}
+	level.Info(logger).Log(append(l, timings...)...)
 	return nil
 }
 
@@ -984,9 +1037,9 @@ func (s *readyStorage) ChunkQuerier(ctx context.Context, mint, maxt int64) (stor
 }
 
 // Appender implements the Storage interface.
-func (s *readyStorage) Appender() storage.Appender {
+func (s *readyStorage) Appender(ctx context.Context) storage.Appender {
 	if x := s.get(); x != nil {
-		return x.Appender()
+		return x.Appender(ctx)
 	}
 	return notReadyAppender{}
 }

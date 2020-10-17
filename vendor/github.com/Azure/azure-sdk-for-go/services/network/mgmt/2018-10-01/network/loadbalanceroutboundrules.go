@@ -152,6 +152,9 @@ func (client LoadBalancerOutboundRulesClient) List(ctx context.Context, resource
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.LoadBalancerOutboundRulesClient", "List", resp, "Failure responding to request")
 	}
+	if result.lborlr.hasNextLink() && result.lborlr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }

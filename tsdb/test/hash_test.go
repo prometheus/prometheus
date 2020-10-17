@@ -19,7 +19,7 @@ import (
 	"hash/crc32"
 	"testing"
 
-	"github.com/cespare/xxhash"
+	"github.com/cespare/xxhash/v2"
 	sip13 "github.com/dgryski/go-sip13"
 )
 

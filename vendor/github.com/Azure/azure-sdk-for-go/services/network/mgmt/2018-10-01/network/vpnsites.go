@@ -299,6 +299,9 @@ func (client VpnSitesClient) List(ctx context.Context) (result ListVpnSitesResul
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VpnSitesClient", "List", resp, "Failure responding to request")
 	}
+	if result.lvsr.hasNextLink() && result.lvsr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }
@@ -408,6 +411,9 @@ func (client VpnSitesClient) ListByResourceGroup(ctx context.Context, resourceGr
 	result.lvsr, err = client.ListByResourceGroupResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VpnSitesClient", "ListByResourceGroup", resp, "Failure responding to request")
+	}
+	if result.lvsr.hasNextLink() && result.lvsr.IsEmpty() {
+		err = result.NextWithContext(ctx)
 	}
 
 	return

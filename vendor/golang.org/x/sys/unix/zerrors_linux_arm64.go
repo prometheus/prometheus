@@ -73,6 +73,8 @@ const (
 	EXTRA_MAGIC                      = 0x45585401
 	FF1                              = 0x8000
 	FFDLY                            = 0x8000
+	FICLONE                          = 0x40049409
+	FICLONERANGE                     = 0x4020940d
 	FLUSHO                           = 0x1000
 	FPSIMD_MAGIC                     = 0x46508001
 	FS_IOC_ENABLE_VERITY             = 0x40806685
@@ -192,6 +194,7 @@ const (
 	PPPIOCSRASYNCMAP                 = 0x40047454
 	PPPIOCSXASYNCMAP                 = 0x4020744f
 	PPPIOCXFERUNIT                   = 0x744e
+	PROT_BTI                         = 0x10
 	PR_SET_PTRACER_ANY               = 0xffffffffffffffff
 	PTRACE_SYSEMU                    = 0x1f
 	PTRACE_SYSEMU_SINGLESTEP         = 0x20

@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -41,7 +42,7 @@ func BenchmarkPostingsForMatchers(b *testing.B) {
 		testutil.Ok(b, h.Close())
 	}()
 
-	app := h.Appender()
+	app := h.Appender(context.Background())
 	addSeries := func(l labels.Labels) {
 		app.Add(l, 0, 0)
 	}
@@ -147,7 +148,7 @@ func BenchmarkQuerierSelect(b *testing.B) {
 	h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, DefaultStripeSize, nil)
 	testutil.Ok(b, err)
 	defer h.Close()
-	app := h.Appender()
+	app := h.Appender(context.Background())
 	numSeries := 1000000
 	for i := 0; i < numSeries; i++ {
 		app.Add(labels.FromStrings("foo", "bar", "i", fmt.Sprintf("%d%s", i, postingsBenchSuffix)), int64(i), 0)

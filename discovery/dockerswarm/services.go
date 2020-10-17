@@ -57,41 +57,67 @@ func (d *Discovery) refreshServices(ctx context.Context) ([]*targetgroup.Group, 
 	}
 
 	for _, s := range services {
-		for _, e := range s.Endpoint.Ports {
-			if e.Protocol != swarm.PortConfigProtocolTCP {
-				continue
+		commonLabels := map[string]string{
+			swarmLabelServiceID:                    s.ID,
+			swarmLabelServiceName:                  s.Spec.Name,
+			swarmLabelServiceTaskContainerHostname: s.Spec.TaskTemplate.ContainerSpec.Hostname,
+			swarmLabelServiceTaskContainerImage:    s.Spec.TaskTemplate.ContainerSpec.Image,
+		}
+		commonLabels[swarmLabelServiceMode] = getServiceValueMode(s)
+
+		if s.UpdateStatus != nil {
+			commonLabels[swarmLabelServiceUpdatingStatus] = string(s.UpdateStatus.State)
+		}
+
+		for k, v := range s.Spec.Labels {
+			ln := strutil.SanitizeLabelName(k)
+			commonLabels[swarmLabelServiceLabelPrefix+ln] = v
+		}
+
+		for _, p := range s.Endpoint.VirtualIPs {
+			var added bool
+			ip, _, err := net.ParseCIDR(p.Addr)
+			if err != nil {
+				return nil, fmt.Errorf("error while parsing address %s: %w", p.Addr, err)
 			}
-			for _, p := range s.Endpoint.VirtualIPs {
+
+			for _, e := range s.Endpoint.Ports {
+				if e.Protocol != swarm.PortConfigProtocolTCP {
+					continue
+				}
 				labels := model.LabelSet{
 					swarmLabelServiceEndpointPortName:        model.LabelValue(e.Name),
 					swarmLabelServiceEndpointPortPublishMode: model.LabelValue(e.PublishMode),
-					swarmLabelServiceID:                      model.LabelValue(s.ID),
-					swarmLabelServiceName:                    model.LabelValue(s.Spec.Name),
-					swarmLabelServiceTaskContainerHostname:   model.LabelValue(s.Spec.TaskTemplate.ContainerSpec.Hostname),
-					swarmLabelServiceTaskContainerImage:      model.LabelValue(s.Spec.TaskTemplate.ContainerSpec.Image),
 				}
 
-				labels[swarmLabelServiceMode] = model.LabelValue(getServiceValueMode(s))
-
-				if s.UpdateStatus != nil {
-					labels[swarmLabelServiceUpdatingStatus] = model.LabelValue(s.UpdateStatus.State)
+				for k, v := range commonLabels {
+					labels[model.LabelName(k)] = model.LabelValue(v)
 				}
-
-				for k, v := range s.Spec.Labels {
-					ln := strutil.SanitizeLabelName(k)
-					labels[model.LabelName(swarmLabelServiceLabelPrefix+ln)] = model.LabelValue(v)
-				}
-
-				ip, _, err := net.ParseCIDR(p.Addr)
-				if err != nil {
-					return nil, fmt.Errorf("error while parsing address %s: %w", p.Addr, err)
-				}
-				addr := net.JoinHostPort(ip.String(), strconv.FormatUint(uint64(e.PublishedPort), 10))
-				labels[model.AddressLabel] = model.LabelValue(addr)
 
 				for k, v := range networkLabels[p.NetworkID] {
 					labels[model.LabelName(k)] = model.LabelValue(v)
 				}
+
+				addr := net.JoinHostPort(ip.String(), strconv.FormatUint(uint64(e.PublishedPort), 10))
+				labels[model.AddressLabel] = model.LabelValue(addr)
+
+				tg.Targets = append(tg.Targets, labels)
+				added = true
+			}
+
+			if !added {
+				labels := model.LabelSet{}
+
+				for k, v := range commonLabels {
+					labels[model.LabelName(k)] = model.LabelValue(v)
+				}
+
+				for k, v := range networkLabels[p.NetworkID] {
+					labels[model.LabelName(k)] = model.LabelValue(v)
+				}
+
+				addr := net.JoinHostPort(ip.String(), fmt.Sprintf("%d", d.port))
+				labels[model.AddressLabel] = model.LabelValue(addr)
 
 				tg.Targets = append(tg.Targets, labels)
 			}

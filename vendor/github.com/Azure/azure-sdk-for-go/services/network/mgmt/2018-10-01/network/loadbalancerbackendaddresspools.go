@@ -152,6 +152,9 @@ func (client LoadBalancerBackendAddressPoolsClient) List(ctx context.Context, re
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.LoadBalancerBackendAddressPoolsClient", "List", resp, "Failure responding to request")
 	}
+	if result.lbbaplr.hasNextLink() && result.lbbaplr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }

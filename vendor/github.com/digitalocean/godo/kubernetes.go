@@ -66,6 +66,7 @@ type KubernetesClusterCreateRequest struct {
 
 	MaintenancePolicy *KubernetesMaintenancePolicy `json:"maintenance_policy"`
 	AutoUpgrade       bool                         `json:"auto_upgrade"`
+	SurgeUpgrade      bool                         `json:"surge_upgrade"`
 }
 
 // KubernetesClusterUpdateRequest represents a request to update a Kubernetes cluster.
@@ -74,11 +75,27 @@ type KubernetesClusterUpdateRequest struct {
 	Tags              []string                     `json:"tags,omitempty"`
 	MaintenancePolicy *KubernetesMaintenancePolicy `json:"maintenance_policy,omitempty"`
 	AutoUpgrade       *bool                        `json:"auto_upgrade,omitempty"`
+	SurgeUpgrade      bool                         `json:"surge_upgrade,omitempty"`
 }
 
 // KubernetesClusterUpgradeRequest represents a request to upgrade a Kubernetes cluster.
 type KubernetesClusterUpgradeRequest struct {
 	VersionSlug string `json:"version,omitempty"`
+}
+
+// Taint represents a Kubernetes taint that can be associated with a node pool
+// (and, transitively, with all nodes of that pool).
+type Taint struct {
+	Key    string
+	Value  string
+	Effect string
+}
+
+func (t Taint) String() string {
+	if t.Value == "" {
+		return fmt.Sprintf("%s:%s", t.Key, t.Effect)
+	}
+	return fmt.Sprintf("%s=%s:%s", t.Key, t.Value, t.Effect)
 }
 
 // KubernetesNodePoolCreateRequest represents a request to create a node pool for a
@@ -89,6 +106,7 @@ type KubernetesNodePoolCreateRequest struct {
 	Count     int               `json:"count,omitempty"`
 	Tags      []string          `json:"tags,omitempty"`
 	Labels    map[string]string `json:"labels,omitempty"`
+	Taints    []Taint           `json:"taints,omitempty"`
 	AutoScale bool              `json:"auto_scale,omitempty"`
 	MinNodes  int               `json:"min_nodes,omitempty"`
 	MaxNodes  int               `json:"max_nodes,omitempty"`
@@ -101,6 +119,7 @@ type KubernetesNodePoolUpdateRequest struct {
 	Count     *int              `json:"count,omitempty"`
 	Tags      []string          `json:"tags,omitempty"`
 	Labels    map[string]string `json:"labels,omitempty"`
+	Taints    *[]Taint          `json:"taints,omitempty"`
 	AutoScale *bool             `json:"auto_scale,omitempty"`
 	MinNodes  *int              `json:"min_nodes,omitempty"`
 	MaxNodes  *int              `json:"max_nodes,omitempty"`
@@ -143,6 +162,7 @@ type KubernetesCluster struct {
 
 	MaintenancePolicy *KubernetesMaintenancePolicy `json:"maintenance_policy,omitempty"`
 	AutoUpgrade       bool                         `json:"auto_upgrade,omitempty"`
+	SurgeUpgrade      bool                         `json:"surge_upgrade,omitempty"`
 
 	Status    *KubernetesClusterStatus `json:"status,omitempty"`
 	CreatedAt time.Time                `json:"created_at,omitempty"`
@@ -305,6 +325,7 @@ type KubernetesNodePool struct {
 	Count     int               `json:"count,omitempty"`
 	Tags      []string          `json:"tags,omitempty"`
 	Labels    map[string]string `json:"labels,omitempty"`
+	Taints    []Taint           `json:"taints,omitempty"`
 	AutoScale bool              `json:"auto_scale,omitempty"`
 	MinNodes  int               `json:"min_nodes,omitempty"`
 	MaxNodes  int               `json:"max_nodes,omitempty"`

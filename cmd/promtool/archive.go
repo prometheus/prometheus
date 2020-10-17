@@ -21,7 +21,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-const filePerm = 0644
+const filePerm = 0666
 
 type tarGzFileWriter struct {
 	tarWriter *tar.Writer

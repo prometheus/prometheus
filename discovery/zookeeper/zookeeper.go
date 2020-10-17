@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/samuel/go-zookeeper/zk"
 
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
 	"github.com/prometheus/prometheus/util/treecache"
@@ -43,11 +44,24 @@ var (
 	}
 )
 
+func init() {
+	discovery.RegisterConfig(&ServersetSDConfig{})
+	discovery.RegisterConfig(&NerveSDConfig{})
+}
+
 // ServersetSDConfig is the configuration for Twitter serversets in Zookeeper based discovery.
 type ServersetSDConfig struct {
 	Servers []string       `yaml:"servers"`
 	Paths   []string       `yaml:"paths"`
 	Timeout model.Duration `yaml:"timeout,omitempty"`
+}
+
+// Name returns the name of the Config.
+func (*ServersetSDConfig) Name() string { return "serverset" }
+
+// NewDiscoverer returns a Discoverer for the Config.
+func (c *ServersetSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
+	return NewServersetDiscovery(c, opts.Logger)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -77,6 +91,14 @@ type NerveSDConfig struct {
 	Servers []string       `yaml:"servers"`
 	Paths   []string       `yaml:"paths"`
 	Timeout model.Duration `yaml:"timeout,omitempty"`
+}
+
+// Name returns the name of the Config.
+func (*NerveSDConfig) Name() string { return "nerve" }
+
+// NewDiscoverer returns a Discoverer for the Config.
+func (c *NerveSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
+	return NewNerveDiscovery(c, opts.Logger)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.

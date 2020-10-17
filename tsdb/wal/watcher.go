@@ -391,7 +391,7 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 
 			// Ignore errors reading to end of segment whilst replaying the WAL.
 			if !tail {
-				if err != nil && err != io.EOF {
+				if err != nil && errors.Cause(err) != io.EOF {
 					level.Warn(w.logger).Log("msg", "Ignoring error reading to end of segment, may have dropped data", "err", err)
 				} else if reader.Offset() != size {
 					level.Warn(w.logger).Log("msg", "Expected to have read whole segment, may have dropped data", "segment", segmentNum, "read", reader.Offset(), "size", size)
@@ -400,7 +400,7 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 			}
 
 			// Otherwise, when we are tailing, non-EOFs are fatal.
-			if err != io.EOF {
+			if errors.Cause(err) != io.EOF {
 				return err
 			}
 
@@ -411,7 +411,7 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 
 			// Ignore all errors reading to end of segment whilst replaying the WAL.
 			if !tail {
-				if err != nil && err != io.EOF {
+				if err != nil && errors.Cause(err) != io.EOF {
 					level.Warn(w.logger).Log("msg", "Ignoring error reading to end of segment, may have dropped data", "segment", segmentNum, "err", err)
 				} else if reader.Offset() != size {
 					level.Warn(w.logger).Log("msg", "Expected to have read whole segment, may have dropped data", "segment", segmentNum, "read", reader.Offset(), "size", size)
@@ -420,7 +420,7 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 			}
 
 			// Otherwise, when we are tailing, non-EOFs are fatal.
-			if err != io.EOF {
+			if errors.Cause(err) != io.EOF {
 				return err
 			}
 		}
@@ -507,16 +507,13 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			}
 
 		case record.Tombstones:
-			// noop
-		case record.Invalid:
-			return errors.New("invalid record")
 
 		default:
+			// Could be corruption, or reading from a WAL from a newer Prometheus.
 			w.recordDecodeFailsMetric.Inc()
-			return errors.New("unknown TSDB record type")
 		}
 	}
-	return r.Err()
+	return errors.Wrapf(r.Err(), "segment %d: %v", segmentNum, r.Err())
 }
 
 func (w *Watcher) SetStartTime(t time.Time) {
@@ -526,8 +523,6 @@ func (w *Watcher) SetStartTime(t time.Time) {
 
 func recordType(rt record.Type) string {
 	switch rt {
-	case record.Invalid:
-		return "invalid"
 	case record.Series:
 		return "series"
 	case record.Samples:
@@ -565,7 +560,7 @@ func (w *Watcher) readCheckpoint(checkpointDir string) error {
 		defer sr.Close()
 
 		r := NewLiveReader(w.logger, w.readerMetrics, sr)
-		if err := w.readSegment(r, index, false); err != io.EOF && err != nil {
+		if err := w.readSegment(r, index, false); errors.Cause(err) != io.EOF && err != nil {
 			return errors.Wrap(err, "readSegment")
 		}
 

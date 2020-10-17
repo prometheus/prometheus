@@ -15,6 +15,7 @@ package kubernetes
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"strings"
 	"sync"
@@ -24,9 +25,11 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	config_util "github.com/prometheus/common/config"
+	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/version"
 	apiv1 "k8s.io/api/core/v1"
+	disv1beta1 "k8s.io/api/discovery/v1beta1"
 	"k8s.io/api/networking/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
@@ -36,6 +39,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
@@ -49,6 +53,8 @@ const (
 )
 
 var (
+	// Http header
+	userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 	// Custom events metric
 	eventCount = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -62,16 +68,30 @@ var (
 	DefaultSDConfig = SDConfig{}
 )
 
+func init() {
+	discovery.RegisterConfig(&SDConfig{})
+	prometheus.MustRegister(eventCount)
+	// Initialize metric vectors.
+	for _, role := range []string{"endpointslice", "endpoints", "node", "pod", "service", "ingress"} {
+		for _, evt := range []string{"add", "delete", "update"} {
+			eventCount.WithLabelValues(role, evt)
+		}
+	}
+	(&clientGoRequestMetricAdapter{}).Register(prometheus.DefaultRegisterer)
+	(&clientGoWorkqueueMetricsProvider{}).Register(prometheus.DefaultRegisterer)
+}
+
 // Role is role of the service in Kubernetes.
 type Role string
 
 // The valid options for Role.
 const (
-	RoleNode     Role = "node"
-	RolePod      Role = "pod"
-	RoleService  Role = "service"
-	RoleEndpoint Role = "endpoints"
-	RoleIngress  Role = "ingress"
+	RoleNode          Role = "node"
+	RolePod           Role = "pod"
+	RoleService       Role = "service"
+	RoleEndpoint      Role = "endpoints"
+	RoleEndpointSlice Role = "endpointslice"
+	RoleIngress       Role = "ingress"
 )
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -80,7 +100,7 @@ func (c *Role) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	switch *c {
-	case RoleNode, RolePod, RoleService, RoleEndpoint, RoleIngress:
+	case RoleNode, RolePod, RoleService, RoleEndpoint, RoleEndpointSlice, RoleIngress:
 		return nil
 	default:
 		return errors.Errorf("unknown Kubernetes SD role %q", *c)
@@ -89,19 +109,33 @@ func (c *Role) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 // SDConfig is the configuration for Kubernetes service discovery.
 type SDConfig struct {
-	APIServer          config_util.URL              `yaml:"api_server,omitempty"`
-	Role               Role                         `yaml:"role"`
-	HTTPClientConfig   config_util.HTTPClientConfig `yaml:",inline"`
-	NamespaceDiscovery NamespaceDiscovery           `yaml:"namespaces,omitempty"`
-	Selectors          []SelectorConfig             `yaml:"selectors,omitempty"`
+	APIServer          config.URL              `yaml:"api_server,omitempty"`
+	Role               Role                    `yaml:"role"`
+	HTTPClientConfig   config.HTTPClientConfig `yaml:",inline"`
+	NamespaceDiscovery NamespaceDiscovery      `yaml:"namespaces,omitempty"`
+	Selectors          []SelectorConfig        `yaml:"selectors,omitempty"`
+}
+
+// Name returns the name of the Config.
+func (*SDConfig) Name() string { return "kubernetes" }
+
+// NewDiscoverer returns a Discoverer for the Config.
+func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
+	return New(opts.Logger, c)
+}
+
+// SetDirectory joins any relative file paths with dir.
+func (c *SDConfig) SetDirectory(dir string) {
+	c.HTTPClientConfig.SetDirectory(dir)
 }
 
 type roleSelector struct {
-	node      resourceSelector
-	pod       resourceSelector
-	service   resourceSelector
-	endpoints resourceSelector
-	ingress   resourceSelector
+	node          resourceSelector
+	pod           resourceSelector
+	service       resourceSelector
+	endpoints     resourceSelector
+	endpointslice resourceSelector
+	ingress       resourceSelector
 }
 
 type SelectorConfig struct {
@@ -124,23 +158,24 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	if c.Role == "" {
-		return errors.Errorf("role missing (one of: pod, service, endpoints, node, ingress)")
+		return errors.Errorf("role missing (one of: pod, service, endpoints, endpointslice, node, ingress)")
 	}
 	err = c.HTTPClientConfig.Validate()
 	if err != nil {
 		return err
 	}
-	if c.APIServer.URL == nil && !reflect.DeepEqual(c.HTTPClientConfig, config_util.HTTPClientConfig{}) {
+	if c.APIServer.URL == nil && !reflect.DeepEqual(c.HTTPClientConfig, config.HTTPClientConfig{}) {
 		return errors.Errorf("to use custom HTTP client configuration please provide the 'api_server' URL explicitly")
 	}
 
 	foundSelectorRoles := make(map[Role]struct{})
 	allowedSelectors := map[Role][]string{
-		RolePod:      {string(RolePod)},
-		RoleService:  {string(RoleService)},
-		RoleEndpoint: {string(RolePod), string(RoleService), string(RoleEndpoint)},
-		RoleNode:     {string(RoleNode)},
-		RoleIngress:  {string(RoleIngress)},
+		RolePod:           {string(RolePod)},
+		RoleService:       {string(RoleService)},
+		RoleEndpointSlice: {string(RolePod), string(RoleService), string(RoleEndpointSlice)},
+		RoleEndpoint:      {string(RolePod), string(RoleService), string(RoleEndpoint)},
+		RoleNode:          {string(RoleNode)},
+		RoleIngress:       {string(RoleIngress)},
 	}
 
 	for _, selector := range c.Selectors {
@@ -150,7 +185,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		foundSelectorRoles[selector.Role] = struct{}{}
 
 		if _, ok := allowedSelectors[c.Role]; !ok {
-			return errors.Errorf("invalid role: %q, expecting one of: pod, service, endpoints, node or ingress", c.Role)
+			return errors.Errorf("invalid role: %q, expecting one of: pod, service, endpoints, endpointslice, node or ingress", c.Role)
 		}
 		var allowed bool
 		for _, role := range allowedSelectors[c.Role] {
@@ -189,31 +224,6 @@ func (c *NamespaceDiscovery) UnmarshalYAML(unmarshal func(interface{}) error) er
 	return unmarshal((*plain)(c))
 }
 
-func init() {
-	prometheus.MustRegister(eventCount)
-
-	// Initialize metric vectors.
-	for _, role := range []string{"endpoints", "node", "pod", "service", "ingress"} {
-		for _, evt := range []string{"add", "delete", "update"} {
-			eventCount.WithLabelValues(role, evt)
-		}
-	}
-
-	var (
-		clientGoRequestMetricAdapterInstance     = clientGoRequestMetricAdapter{}
-		clientGoWorkqueueMetricsProviderInstance = clientGoWorkqueueMetricsProvider{}
-	)
-
-	clientGoRequestMetricAdapterInstance.Register(prometheus.DefaultRegisterer)
-	clientGoWorkqueueMetricsProviderInstance.Register(prometheus.DefaultRegisterer)
-
-}
-
-// This is only for internal use.
-type discoverer interface {
-	Run(ctx context.Context, up chan<- []*targetgroup.Group)
-}
-
 // Discovery implements the discoverer interface for discovering
 // targets from Kubernetes.
 type Discovery struct {
@@ -222,7 +232,7 @@ type Discovery struct {
 	role               Role
 	logger             log.Logger
 	namespaceDiscovery *NamespaceDiscovery
-	discoverers        []discoverer
+	discoverers        []discovery.Discoverer
 	selectors          roleSelector
 }
 
@@ -252,7 +262,7 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 		}
 		level.Info(l).Log("msg", "Using pod service account via in-cluster config")
 	} else {
-		rt, err := config_util.NewRoundTripperFromConfig(conf.HTTPClientConfig, "kubernetes_sd", false)
+		rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "kubernetes_sd", false, false)
 		if err != nil {
 			return nil, err
 		}
@@ -262,7 +272,7 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 		}
 	}
 
-	kcfg.UserAgent = "Prometheus/discovery"
+	kcfg.UserAgent = userAgent
 
 	c, err := kubernetes.NewForConfig(kcfg)
 	if err != nil {
@@ -273,7 +283,7 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 		logger:             l,
 		role:               conf.Role,
 		namespaceDiscovery: &conf.NamespaceDiscovery,
-		discoverers:        make([]discoverer, 0),
+		discoverers:        make([]discovery.Discoverer, 0),
 		selectors:          mapSelector(conf.Selectors),
 	}, nil
 }
@@ -282,6 +292,9 @@ func mapSelector(rawSelector []SelectorConfig) roleSelector {
 	rs := roleSelector{}
 	for _, resourceSelectorRaw := range rawSelector {
 		switch resourceSelectorRaw.Role {
+		case RoleEndpointSlice:
+			rs.endpointslice.field = resourceSelectorRaw.Field
+			rs.endpointslice.label = resourceSelectorRaw.Label
 		case RoleEndpoint:
 			rs.endpoints.field = resourceSelectorRaw.Field
 			rs.endpoints.label = resourceSelectorRaw.Label
@@ -310,6 +323,58 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	namespaces := d.getNamespaces()
 
 	switch d.role {
+	case RoleEndpointSlice:
+		for _, namespace := range namespaces {
+			e := d.client.DiscoveryV1beta1().EndpointSlices(namespace)
+			elw := &cache.ListWatch{
+				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+					options.FieldSelector = d.selectors.endpointslice.field
+					options.LabelSelector = d.selectors.endpointslice.label
+					return e.List(ctx, options)
+				},
+				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+					options.FieldSelector = d.selectors.endpointslice.field
+					options.LabelSelector = d.selectors.endpointslice.label
+					return e.Watch(ctx, options)
+				},
+			}
+			s := d.client.CoreV1().Services(namespace)
+			slw := &cache.ListWatch{
+				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+					options.FieldSelector = d.selectors.service.field
+					options.LabelSelector = d.selectors.service.label
+					return s.List(ctx, options)
+				},
+				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+					options.FieldSelector = d.selectors.service.field
+					options.LabelSelector = d.selectors.service.label
+					return s.Watch(ctx, options)
+				},
+			}
+			p := d.client.CoreV1().Pods(namespace)
+			plw := &cache.ListWatch{
+				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+					options.FieldSelector = d.selectors.pod.field
+					options.LabelSelector = d.selectors.pod.label
+					return p.List(ctx, options)
+				},
+				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+					options.FieldSelector = d.selectors.pod.field
+					options.LabelSelector = d.selectors.pod.label
+					return p.Watch(ctx, options)
+				},
+			}
+			eps := NewEndpointSlice(
+				log.With(d.logger, "role", "endpointslice"),
+				cache.NewSharedInformer(slw, &apiv1.Service{}, resyncPeriod),
+				cache.NewSharedInformer(elw, &disv1beta1.EndpointSlice{}, resyncPeriod),
+				cache.NewSharedInformer(plw, &apiv1.Pod{}, resyncPeriod),
+			)
+			d.discoverers = append(d.discoverers, eps)
+			go eps.endpointSliceInf.Run(ctx.Done())
+			go eps.serviceInf.Run(ctx.Done())
+			go eps.podInf.Run(ctx.Done())
+		}
 	case RoleEndpoint:
 		for _, namespace := range namespaces {
 			e := d.client.CoreV1().Endpoints(namespace)
@@ -454,7 +519,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	var wg sync.WaitGroup
 	for _, dd := range d.discoverers {
 		wg.Add(1)
-		go func(d discoverer) {
+		go func(d discovery.Discoverer) {
 			defer wg.Done()
 			d.Run(ctx, ch)
 		}(dd)

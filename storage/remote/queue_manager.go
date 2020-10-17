@@ -18,7 +18,6 @@ import (
 	"math"
 	"strconv"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/go-kit/kit/log"
@@ -27,6 +26,7 @@ import (
 	"github.com/golang/snappy"
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
+	"go.uber.org/atomic"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/config"
@@ -56,7 +56,7 @@ type queueManagerMetrics struct {
 	droppedSamplesTotal   prometheus.Counter
 	enqueueRetriesTotal   prometheus.Counter
 	sentBatchDuration     prometheus.Histogram
-	highestSentTimestamp  *maxGauge
+	highestSentTimestamp  *maxTimestamp
 	pendingSamples        prometheus.Gauge
 	shardCapacity         prometheus.Gauge
 	numShards             prometheus.Gauge
@@ -118,7 +118,7 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Buckets:     append(prometheus.DefBuckets, 25, 60, 120, 300),
 		ConstLabels: constLabels,
 	})
-	m.highestSentTimestamp = &maxGauge{
+	m.highestSentTimestamp = &maxTimestamp{
 		Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace:   namespace,
 			Subsystem:   subsystem,
@@ -235,8 +235,7 @@ type WriteClient interface {
 // indicated by the provided WriteClient. Implements writeTo interface
 // used by WAL Watcher.
 type QueueManager struct {
-	// https://golang.org/pkg/sync/atomic/#pkg-note-BUG
-	lastSendTimestamp int64
+	lastSendTimestamp atomic.Int64
 
 	logger         log.Logger
 	flushDeadline  time.Duration
@@ -261,7 +260,9 @@ type QueueManager struct {
 
 	samplesIn, samplesDropped, samplesOut, samplesOutDuration *ewmaRate
 
-	metrics *queueManagerMetrics
+	metrics              *queueManagerMetrics
+	interner             *pool
+	highestRecvTimestamp *maxTimestamp
 }
 
 // NewQueueManager builds a new QueueManager.
@@ -277,6 +278,8 @@ func NewQueueManager(
 	relabelConfigs []*relabel.Config,
 	client WriteClient,
 	flushDeadline time.Duration,
+	interner *pool,
+	highestRecvTimestamp *maxTimestamp,
 ) *QueueManager {
 	if logger == nil {
 		logger = log.NewNopLogger()
@@ -304,7 +307,9 @@ func NewQueueManager(
 		samplesOut:         newEWMARate(ewmaWeight, shardUpdateDuration),
 		samplesOutDuration: newEWMARate(ewmaWeight, shardUpdateDuration),
 
-		metrics: metrics,
+		metrics:              metrics,
+		interner:             interner,
+		highestRecvTimestamp: highestRecvTimestamp,
 	}
 
 	t.watcher = wal.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, walDir)
@@ -393,7 +398,7 @@ func (t *QueueManager) Stop() {
 	// On shutdown, release the strings in the labels from the intern pool.
 	t.seriesMtx.Lock()
 	for _, labels := range t.seriesLabels {
-		releaseLabels(labels)
+		t.releaseLabels(labels)
 	}
 	t.seriesMtx.Unlock()
 	t.metrics.unregister()
@@ -411,13 +416,13 @@ func (t *QueueManager) StoreSeries(series []record.RefSeries, index int) {
 			continue
 		}
 		t.seriesSegmentIndexes[s.Ref] = index
-		internLabels(lbls)
+		t.internLabels(lbls)
 
 		// We should not ever be replacing a series labels in the map, but just
 		// in case we do we need to ensure we do not leak the replaced interned
 		// strings.
 		if orig, ok := t.seriesLabels[s.Ref]; ok {
-			releaseLabels(orig)
+			t.releaseLabels(orig)
 		}
 		t.seriesLabels[s.Ref] = lbls
 	}
@@ -434,7 +439,7 @@ func (t *QueueManager) SeriesReset(index int) {
 	for k, v := range t.seriesSegmentIndexes {
 		if v < index {
 			delete(t.seriesSegmentIndexes, k)
-			releaseLabels(t.seriesLabels[k])
+			t.releaseLabels(t.seriesLabels[k])
 			delete(t.seriesLabels, k)
 			delete(t.droppedSeries, k)
 		}
@@ -455,17 +460,17 @@ func (t *QueueManager) client() WriteClient {
 	return t.storeClient
 }
 
-func internLabels(lbls labels.Labels) {
+func (t *QueueManager) internLabels(lbls labels.Labels) {
 	for i, l := range lbls {
-		lbls[i].Name = interner.intern(l.Name)
-		lbls[i].Value = interner.intern(l.Value)
+		lbls[i].Name = t.interner.intern(l.Name)
+		lbls[i].Value = t.interner.intern(l.Value)
 	}
 }
 
-func releaseLabels(ls labels.Labels) {
+func (t *QueueManager) releaseLabels(ls labels.Labels) {
 	for _, l := range ls {
-		interner.release(l.Name)
-		interner.release(l.Value)
+		t.interner.release(l.Name)
+		t.interner.release(l.Value)
 	}
 }
 
@@ -537,7 +542,7 @@ func (t *QueueManager) shouldReshard(desiredShards int) bool {
 	// We shouldn't reshard if Prometheus hasn't been able to send to the
 	// remote endpoint successfully within some period of time.
 	minSendTimestamp := time.Now().Add(-2 * time.Duration(t.cfg.BatchSendDeadline)).Unix()
-	lsts := atomic.LoadInt64(&t.lastSendTimestamp)
+	lsts := t.lastSendTimestamp.Load()
 	if lsts < minSendTimestamp {
 		level.Warn(t.logger).Log("msg", "Skipping resharding, last successful send was beyond threshold", "lastSendTimestamp", lsts, "minSendTimestamp", minSendTimestamp)
 		return false
@@ -565,7 +570,7 @@ func (t *QueueManager) calculateDesiredShards() int {
 		samplesOutDuration = t.samplesOutDuration.rate() / float64(time.Second)
 		samplesPendingRate = samplesInRate*samplesKeptRatio - samplesOutRate
 		highestSent        = t.metrics.highestSentTimestamp.Get()
-		highestRecv        = highestTimestamp.Get()
+		highestRecv        = t.highestRecvTimestamp.Get()
 		delay              = highestRecv - highestSent
 		samplesPending     = delay * samplesInRate * samplesKeptRatio
 	)
@@ -663,7 +668,7 @@ type shards struct {
 	// Emulate a wait group with a channel and an atomic int, as you
 	// cannot select on a wait group.
 	done    chan struct{}
-	running int32
+	running atomic.Int32
 
 	// Soft shutdown context will prevent new enqueues and deadlocks.
 	softShutdown chan struct{}
@@ -671,7 +676,7 @@ type shards struct {
 	// Hard shutdown context is used to terminate outgoing HTTP connections
 	// after giving them a chance to terminate.
 	hardShutdown          context.CancelFunc
-	droppedOnHardShutdown uint32
+	droppedOnHardShutdown atomic.Uint32
 }
 
 // start the shards; must be called before any call to enqueue.
@@ -692,9 +697,9 @@ func (s *shards) start(n int) {
 	var hardShutdownCtx context.Context
 	hardShutdownCtx, s.hardShutdown = context.WithCancel(context.Background())
 	s.softShutdown = make(chan struct{})
-	s.running = int32(n)
+	s.running.Store(int32(n))
 	s.done = make(chan struct{})
-	atomic.StoreUint32(&s.droppedOnHardShutdown, 0)
+	s.droppedOnHardShutdown.Store(0)
 	for i := 0; i < n; i++ {
 		go s.runShard(hardShutdownCtx, i, newQueues[i])
 	}
@@ -727,7 +732,7 @@ func (s *shards) stop() {
 	// Force an unclean shutdown.
 	s.hardShutdown()
 	<-s.done
-	if dropped := atomic.LoadUint32(&s.droppedOnHardShutdown); dropped > 0 {
+	if dropped := s.droppedOnHardShutdown.Load(); dropped > 0 {
 		level.Error(s.qm.logger).Log("msg", "Failed to flush all samples on shutdown", "count", dropped)
 	}
 }
@@ -756,7 +761,7 @@ func (s *shards) enqueue(ref uint64, sample sample) bool {
 
 func (s *shards) runShard(ctx context.Context, shardID int, queue chan sample) {
 	defer func() {
-		if atomic.AddInt32(&s.running, -1) == 0 {
+		if s.running.Dec() == 0 {
 			close(s.done)
 		}
 	}()
@@ -792,7 +797,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan sample) {
 			droppedSamples := nPending + len(queue)
 			s.qm.metrics.pendingSamples.Sub(float64(droppedSamples))
 			s.qm.metrics.failedSamplesTotal.Add(float64(droppedSamples))
-			atomic.AddUint32(&s.droppedOnHardShutdown, uint32(droppedSamples))
+			s.droppedOnHardShutdown.Add(uint32(droppedSamples))
 			return
 
 		case sample, ok := <-queue:
@@ -847,7 +852,7 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, b
 	// should be maintained irrespective of success or failure.
 	s.qm.samplesOut.incr(int64(len(samples)))
 	s.qm.samplesOutDuration.incr(int64(time.Since(begin)))
-	atomic.StoreInt64(&s.qm.lastSendTimestamp, time.Now().Unix())
+	s.qm.lastSendTimestamp.Store(time.Now().Unix())
 }
 
 // sendSamples to the remote storage with backoff for recoverable errors.
@@ -902,7 +907,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 
 		if err != nil {
 			// If the error is unrecoverable, we should not retry.
-			if _, ok := err.(recoverableError); !ok {
+			if _, ok := err.(RecoverableError); !ok {
 				return err
 			}
 

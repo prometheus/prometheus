@@ -173,7 +173,7 @@ var testExpr = []struct {
 	}, {
 		input: "1 == bool 1",
 		expected: &BinaryExpr{
-			Op: EQL,
+			Op: EQLC,
 			LHS: &NumberLiteral{
 				Val:      1,
 				PosRange: PositionRange{Start: 0, End: 1},
@@ -593,7 +593,7 @@ var testExpr = []struct {
 	}, {
 		input: "foo == 1",
 		expected: &BinaryExpr{
-			Op: EQL,
+			Op: EQLC,
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
@@ -612,7 +612,7 @@ var testExpr = []struct {
 	}, {
 		input: "foo == bool 1",
 		expected: &BinaryExpr{
-			Op: EQL,
+			Op: EQLC,
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
@@ -1364,6 +1364,32 @@ var testExpr = []struct {
 			},
 		},
 	}, {
+		input: `foo OFFSET 1h30m`,
+		expected: &VectorSelector{
+			Name:   "foo",
+			Offset: 90 * time.Minute,
+			LabelMatchers: []*labels.Matcher{
+				mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+			},
+			PosRange: PositionRange{
+				Start: 0,
+				End:   16,
+			},
+		},
+	}, {
+		input: `foo OFFSET 1m30ms`,
+		expected: &VectorSelector{
+			Name:   "foo",
+			Offset: time.Minute + 30*time.Millisecond,
+			LabelMatchers: []*labels.Matcher{
+				mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+			},
+			PosRange: PositionRange{
+				Start: 0,
+				End:   17,
+			},
+		},
+	}, {
 		input: `foo:bar{a="bc"}`,
 		expected: &VectorSelector{
 			Name:   "foo:bar",
@@ -1512,7 +1538,7 @@ var testExpr = []struct {
 	}, {
 		input:  `foo{__name__= =}`,
 		fail:   true,
-		errMsg: "unexpected <op:=> in label matching, expected string",
+		errMsg: `1:15: parse error: unexpected "=" in label matching, expected string`,
 	}, {
 		input:  `foo{,}`,
 		fail:   true,
@@ -1520,7 +1546,7 @@ var testExpr = []struct {
 	}, {
 		input:  `foo{__name__ == "bar"}`,
 		fail:   true,
-		errMsg: "unexpected <op:=> in label matching, expected string",
+		errMsg: `1:15: parse error: unexpected "=" in label matching, expected string`,
 	}, {
 		input:  `foo{__name__="bar" lol}`,
 		fail:   true,
@@ -1560,6 +1586,23 @@ var testExpr = []struct {
 			},
 			Range:  5 * time.Minute,
 			EndPos: 8,
+		},
+	}, {
+		input: `foo[5m30s]`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name:   "foo",
+				Offset: 0,
+				LabelMatchers: []*labels.Matcher{
+					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+				},
+				PosRange: PositionRange{
+					Start: 0,
+					End:   3,
+				},
+			},
+			Range:  5*time.Minute + 30*time.Second,
+			EndPos: 10,
 		},
 	}, {
 		input: "test[5h] OFFSET 5m",
@@ -1635,17 +1678,29 @@ var testExpr = []struct {
 		fail:   true,
 		errMsg: "bad duration syntax: \"5mm\"",
 	}, {
+		input:  `foo[5m1]`,
+		fail:   true,
+		errMsg: "bad duration syntax: \"5m1\"",
+	}, {
+		input:  `foo[5m:1m1]`,
+		fail:   true,
+		errMsg: "bad number or duration syntax: \"1m1\"",
+	}, {
+		input:  `foo[5y1hs]`,
+		fail:   true,
+		errMsg: "not a valid duration string: \"5y1hs\"",
+	}, {
+		input:  `foo[5m1h]`,
+		fail:   true,
+		errMsg: "not a valid duration string: \"5m1h\"",
+	}, {
+		input:  `foo[5m1m]`,
+		fail:   true,
+		errMsg: "not a valid duration string: \"5m1m\"",
+	}, {
 		input:  `foo[0m]`,
 		fail:   true,
 		errMsg: "duration must be greater than 0",
-	}, {
-		input:  `foo[5m30s]`,
-		fail:   true,
-		errMsg: "bad duration syntax: \"5m3\"",
-	}, {
-		input:  `foo[5m] OFFSET 1h30m`,
-		fail:   true,
-		errMsg: "bad number or duration syntax: \"1h3\"",
 	}, {
 		input: `foo["5m"]`,
 		fail:  true,
@@ -2299,6 +2354,25 @@ var testExpr = []struct {
 			Step:   6 * time.Second,
 			EndPos: 22,
 		},
+	},
+	{
+		input: `foo{bar="baz"}[10m5s:1h6ms]`,
+		expected: &SubqueryExpr{
+			Expr: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					mustLabelMatcher(labels.MatchEqual, "bar", "baz"),
+					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+				},
+				PosRange: PositionRange{
+					Start: 0,
+					End:   14,
+				},
+			},
+			Range:  10*time.Minute + 5*time.Second,
+			Step:   time.Hour + 6*time.Millisecond,
+			EndPos: 27,
+		},
 	}, {
 		input: `foo[10m:]`,
 		expected: &SubqueryExpr{
@@ -2581,28 +2655,30 @@ var testExpr = []struct {
 
 func TestParseExpressions(t *testing.T) {
 	for _, test := range testExpr {
-		expr, err := ParseExpr(test.input)
+		t.Run(test.input, func(t *testing.T) {
+			expr, err := ParseExpr(test.input)
 
-		// Unexpected errors are always caused by a bug.
-		testutil.Assert(t, err != errUnexpected, "unexpected error occurred")
+			// Unexpected errors are always caused by a bug.
+			testutil.Assert(t, err != errUnexpected, "unexpected error occurred")
 
-		if !test.fail {
-			testutil.Ok(t, err)
-			testutil.Equals(t, test.expected, expr, "error on input '%s'", test.input)
-		} else {
-			testutil.NotOk(t, err)
-			testutil.Assert(t, strings.Contains(err.Error(), test.errMsg), "unexpected error on input '%s', expected '%s', got '%s'", test.input, test.errMsg, err.Error())
+			if !test.fail {
+				testutil.Ok(t, err)
+				testutil.Equals(t, test.expected, expr, "error on input '%s'", test.input)
+			} else {
+				testutil.NotOk(t, err)
+				testutil.Assert(t, strings.Contains(err.Error(), test.errMsg), "unexpected error on input '%s', expected '%s', got '%s'", test.input, test.errMsg, err.Error())
 
-			errorList, ok := err.(ParseErrors)
+				errorList, ok := err.(ParseErrors)
 
-			testutil.Assert(t, ok, "unexpected error type")
+				testutil.Assert(t, ok, "unexpected error type")
 
-			for _, e := range errorList {
-				testutil.Assert(t, 0 <= e.PositionRange.Start, "parse error has negative position\nExpression '%s'\nError: %v", test.input, e)
-				testutil.Assert(t, e.PositionRange.Start <= e.PositionRange.End, "parse error has negative length\nExpression '%s'\nError: %v", test.input, e)
-				testutil.Assert(t, e.PositionRange.End <= Pos(len(test.input)), "parse error is not contained in input\nExpression '%s'\nError: %v", test.input, e)
+				for _, e := range errorList {
+					testutil.Assert(t, 0 <= e.PositionRange.Start, "parse error has negative position\nExpression '%s'\nError: %v", test.input, e)
+					testutil.Assert(t, e.PositionRange.Start <= e.PositionRange.End, "parse error has negative length\nExpression '%s'\nError: %v", test.input, e)
+					testutil.Assert(t, e.PositionRange.End <= Pos(len(test.input)), "parse error is not contained in input\nExpression '%s'\nError: %v", test.input, e)
+				}
 			}
-		}
+		})
 	}
 }
 

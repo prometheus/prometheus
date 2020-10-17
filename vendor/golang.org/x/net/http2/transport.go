@@ -2006,8 +2006,8 @@ func (rl *clientConnReadLoop) handleResponse(cs *clientStream, f *MetaHeadersFra
 	if !streamEnded || isHead {
 		res.ContentLength = -1
 		if clens := res.Header["Content-Length"]; len(clens) == 1 {
-			if clen64, err := strconv.ParseInt(clens[0], 10, 64); err == nil {
-				res.ContentLength = clen64
+			if cl, err := strconv.ParseUint(clens[0], 10, 63); err == nil {
+				res.ContentLength = int64(cl)
 			} else {
 				// TODO: care? unlike http/1, it won't mess up our framing, so it's
 				// more safe smuggling-wise to ignore.
@@ -2525,6 +2525,7 @@ func strSliceContains(ss []string, s string) bool {
 
 type erringRoundTripper struct{ err error }
 
+func (rt erringRoundTripper) RoundTripErr() error                             { return rt.err }
 func (rt erringRoundTripper) RoundTrip(*http.Request) (*http.Response, error) { return nil, rt.err }
 
 // gzipReader wraps a response body so it can lazily

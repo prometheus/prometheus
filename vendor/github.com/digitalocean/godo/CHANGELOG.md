@@ -1,5 +1,47 @@
 # Change Log
 
+## [v1.46.0] - 2020-10-05
+
+- #373 load balancers: add LB size field, currently in closed beta - @anitgandhi
+
+## [v1.45.0] - 2020-09-25
+
+**Note**: This release contains breaking changes to App Platform features currently in closed beta.
+
+- #369 update apps types to latest - @kamaln7
+- #368 Kubernetes: add taints field to node pool create and update requests - @timoreimann
+- #367 update apps types, address marshaling bug - @kamaln7
+
+## [v1.44.0] - 2020-09-08
+
+- #364 apps: support aggregate deployment logs - @kamaln7
+
+## [v1.43.0] - 2020-09-08
+
+- #362 update apps types - @kamaln7
+
+## [v1.42.1] - 2020-08-06
+
+- #360 domains: Allow for SRV records with port 0. - @andrewsomething
+
+## [v1.42.0] - 2020-07-22
+
+- #357 invoices: add category to InvoiceItem - @rbutler
+- #358 apps: add support for following logs - @nanzhong
+
+## [v1.41.0] - 2020-07-17
+
+- #355 kubernetes: Add support for surge upgrades - @varshavaradarajan
+
+## [v1.40.0] - 2020-07-16
+
+- #347 Make Rate limits thread safe - @roidelapluie
+- #353 Reuse TCP connection - @itsksaurabh
+
+## [v1.39.0] - 2020-07-14
+
+- #345, #346 Add app platform support [beta] - @nanzhong
+
 ## [v1.38.0] - 2020-06-18
 
 - #341 Install 1-click applications on a Kubernetes cluster - @keladhruv

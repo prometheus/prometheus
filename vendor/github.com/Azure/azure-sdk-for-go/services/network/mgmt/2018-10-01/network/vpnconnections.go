@@ -309,6 +309,9 @@ func (client VpnConnectionsClient) ListByVpnGateway(ctx context.Context, resourc
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VpnConnectionsClient", "ListByVpnGateway", resp, "Failure responding to request")
 	}
+	if result.lvcr.hasNextLink() && result.lvcr.IsEmpty() {
+		err = result.NextWithContext(ctx)
+	}
 
 	return
 }

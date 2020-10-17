@@ -70,7 +70,7 @@ func (i ItemType) IsKeyword() bool { return i > keywordsStart && i < keywordsEnd
 // Returns false otherwise.
 func (i ItemType) IsComparisonOperator() bool {
 	switch i {
-	case EQL, NEQ, LTE, LSS, GTE, GTR:
+	case EQLC, NEQ, LTE, LSS, GTE, GTR:
 		return true
 	default:
 		return false
@@ -133,7 +133,7 @@ var ItemTypeStr = map[ItemType]string{
 	LEFT_BRACKET:  "[",
 	RIGHT_BRACKET: "]",
 	COMMA:         ",",
-	ASSIGN:        "=",
+	EQL:           "=",
 	COLON:         ":",
 	SEMICOLON:     ";",
 	BLANK:         "_",
@@ -145,7 +145,7 @@ var ItemTypeStr = map[ItemType]string{
 	MUL:       "*",
 	MOD:       "%",
 	DIV:       "/",
-	EQL:       "==",
+	EQLC:      "==",
 	NEQ:       "!=",
 	LTE:       "<=",
 	LSS:       "<",
@@ -363,11 +363,11 @@ func lexStatements(l *Lexer) stateFn {
 	case r == '=':
 		if t := l.peek(); t == '=' {
 			l.next()
-			l.emit(EQL)
+			l.emit(EQLC)
 		} else if t == '~' {
 			return l.errorf("unexpected character after '=': %q", t)
 		} else {
-			l.emit(ASSIGN)
+			l.emit(EQL)
 		}
 	case r == '!':
 		if t := l.next(); t == '=' {
@@ -673,16 +673,12 @@ func lexDuration(l *Lexer) stateFn {
 	if l.scanNumber() {
 		return l.errorf("missing unit character in duration")
 	}
-	// Next two chars must be a valid unit and a non-alphanumeric.
-	if l.accept("smhdwy") {
-		if isAlphaNumeric(l.next()) {
-			return l.errorf("bad duration syntax: %q", l.input[l.start:l.pos])
-		}
-		l.backup()
-		l.emit(DURATION)
-		return lexStatements
+	if !acceptRemainingDuration(l) {
+		return l.errorf("bad duration syntax: %q", l.input[l.start:l.pos])
 	}
-	return l.errorf("bad duration syntax: %q", l.input[l.start:l.pos])
+	l.backup()
+	l.emit(DURATION)
+	return lexStatements
 }
 
 // lexNumber scans a number: decimal, hex, oct or float.
@@ -701,15 +697,36 @@ func lexNumberOrDuration(l *Lexer) stateFn {
 		return lexStatements
 	}
 	// Next two chars must be a valid unit and a non-alphanumeric.
-	if l.accept("smhdwy") {
-		if isAlphaNumeric(l.next()) {
-			return l.errorf("bad number or duration syntax: %q", l.input[l.start:l.pos])
-		}
+	if acceptRemainingDuration(l) {
 		l.backup()
 		l.emit(DURATION)
 		return lexStatements
 	}
 	return l.errorf("bad number or duration syntax: %q", l.input[l.start:l.pos])
+}
+
+func acceptRemainingDuration(l *Lexer) bool {
+	// Next two char must be a valid duration.
+	if !l.accept("smhdwy") {
+		return false
+	}
+	// Support for ms. Bad units like hs, ys will be caught when we actually
+	// parse the duration.
+	l.accept("s")
+	// Next char can be another number then a unit.
+	for l.accept("0123456789") {
+		for l.accept("0123456789") {
+		}
+		// y is no longer in the list as it should always come first in
+		// durations.
+		if !l.accept("smhdw") {
+			return false
+		}
+		// Support for ms. Bad units like hs, ys will be caught when we actually
+		// parse the duration.
+		l.accept("s")
+	}
+	return !isAlphaNumeric(l.next())
 }
 
 // scanNumber scans numbers of different formats. The scanned Item is

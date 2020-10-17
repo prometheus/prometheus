@@ -20,7 +20,6 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/prometheus/prometheus/tsdb/tombstones"
 )
 
 // The errors exposed.
@@ -33,8 +32,10 @@ var (
 
 // Appendable allows creating appenders.
 type Appendable interface {
-	// Appender returns a new appender for the storage.
-	Appender() Appender
+	// Appender returns a new appender for the storage. The implementation
+	// can choose whether or not to use the context, for deadlines or to check
+	// for errors.
+	Appender(ctx context.Context) Appender
 }
 
 // SampleAndChunkQueryable allows retrieving samples as well as encoded samples in form of chunks.
@@ -159,6 +160,7 @@ type Appender interface {
 // SeriesSet contains a set of series.
 type SeriesSet interface {
 	Next() bool
+	// At returns full series. Returned series should be iteratable even after Next is called.
 	At() Series
 	// The error that iteration as failed with.
 	// When an error occurs, set cannot continue to iterate.
@@ -219,6 +221,7 @@ type Series interface {
 // ChunkSeriesSet contains a set of chunked series.
 type ChunkSeriesSet interface {
 	Next() bool
+	// At returns full chunk series. Returned series should be iteratable even after Next is called.
 	At() ChunkSeries
 	// The error that iteration has failed with.
 	// When an error occurs, set cannot continue to iterate.
@@ -241,20 +244,14 @@ type Labels interface {
 }
 
 type SampleIteratable interface {
-	// Iterator returns a new iterator of the data of the series.
+	// Iterator returns a new, independent iterator of the data of the series.
 	Iterator() chunkenc.Iterator
 }
 
 type ChunkIteratable interface {
-	// ChunkIterator returns a new iterator that iterates over non-overlapping chunks of the series.
+	// Iterator returns a new, independent iterator that iterates over potentially overlapping
+	// chunks of the series, sorted by min time.
 	Iterator() chunks.Iterator
-}
-
-// TODO(bwplotka): Remove in next Pr.
-type DeprecatedChunkSeriesSet interface {
-	Next() bool
-	At() (labels.Labels, []chunks.Meta, tombstones.Intervals)
-	Err() error
 }
 
 type Warnings []error

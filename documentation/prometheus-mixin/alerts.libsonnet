@@ -127,7 +127,15 @@
           {
             alert: 'PrometheusNotIngestingSamples',
             expr: |||
-              rate(prometheus_tsdb_head_samples_appended_total{%(prometheusSelector)s}[5m]) <= 0
+              (
+                rate(prometheus_tsdb_head_samples_appended_total{%(prometheusSelector)s}[5m]) <= 0
+              and
+                (
+                  sum without(scrape_job) (prometheus_target_metadata_cache_entries{%(prometheusSelector)s}) > 0
+                or
+                  sum without(rule_group) (prometheus_rule_group_rules{%(prometheusSelector)s}) > 0
+                )
+              )
             ||| % $._config,
             'for': '10m',
             labels: {
@@ -257,6 +265,20 @@
             annotations: {
               summary: 'Prometheus is missing rule evaluations due to slow rule group evaluation.',
               description: 'Prometheus %(prometheusName)s has missed {{ printf "%%.0f" $value }} rule group evaluations in the last 5m.' % $._config,
+            },
+          },
+          {
+            alert: 'PrometheusTargetLimitHit',
+            expr: |||
+              increase(prometheus_target_scrape_pool_exceeded_target_limit_total{%(prometheusSelector)s}[5m]) > 0
+            ||| % $._config,
+            'for': '15m',
+            labels: {
+              severity: 'warning',
+            },
+            annotations: {
+              summary: 'Prometheus has dropped targets because some scrape configs have exceeded the targets limit.',
+              description: 'Prometheus %(prometheusName)s has dropped {{ printf "%%.0f" $value }} targets because the number of targets exceeded the configured target_limit.' % $._config,
             },
           },
         ],

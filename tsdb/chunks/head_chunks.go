@@ -25,12 +25,12 @@ import (
 	"sort"
 	"strconv"
 	"sync"
-	"sync/atomic"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
+	"go.uber.org/atomic"
 )
 
 // Head chunk file header fields constants.
@@ -78,9 +78,7 @@ func (e *CorruptionErr) Error() string {
 // ChunkDiskMapper is for writing the Head block chunks to the disk
 // and access chunks via mmapped file.
 type ChunkDiskMapper struct {
-	// Keep all 64bit atomically accessed variables at the top of this struct.
-	// See https://golang.org/pkg/sync/atomic/#pkg-note-BUG for more info.
-	curFileNumBytes int64 // Bytes written in current open file.
+	curFileNumBytes atomic.Int64 // Bytes written in current open file.
 
 	/// Writer.
 	dir *os.File
@@ -108,7 +106,7 @@ type ChunkDiskMapper struct {
 
 	// The total size of bytes in the closed files.
 	// Needed to calculate the total size of all segments on disk.
-	size int64
+	size atomic.Int64
 
 	// If 'true', it indicated that the maxt of all the on-disk files were set
 	// after iterating through all the chunks in those files.
@@ -180,7 +178,7 @@ func (cdm *ChunkDiskMapper) openMMapFiles() (returnErr error) {
 		chkFileIndices = append(chkFileIndices, seq)
 	}
 
-	cdm.size = 0
+	cdm.size.Store(int64(0))
 
 	// Check for gaps in the files.
 	sort.Ints(chkFileIndices)
@@ -209,7 +207,7 @@ func (cdm *ChunkDiskMapper) openMMapFiles() (returnErr error) {
 			return errors.Errorf("%s: invalid chunk format version %d", files[i], v)
 		}
 
-		cdm.size += int64(b.byteSlice.Len())
+		cdm.size.Add(int64(b.byteSlice.Len()))
 	}
 
 	return nil
@@ -342,8 +340,8 @@ func (cdm *ChunkDiskMapper) cut() (returnErr error) {
 		}
 	}()
 
-	cdm.size += cdm.curFileSize()
-	atomic.StoreInt64(&cdm.curFileNumBytes, int64(n))
+	cdm.size.Add(cdm.curFileSize())
+	cdm.curFileNumBytes.Store(int64(n))
 
 	if cdm.curFile != nil {
 		cdm.readPathMtx.Lock()
@@ -356,6 +354,7 @@ func (cdm *ChunkDiskMapper) cut() (returnErr error) {
 		return err
 	}
 
+	cdm.readPathMtx.Lock()
 	cdm.curFileSequence = seq
 	cdm.curFile = newFile
 	if cdm.chkWriter != nil {
@@ -364,7 +363,6 @@ func (cdm *ChunkDiskMapper) cut() (returnErr error) {
 		cdm.chkWriter = bufio.NewWriterSize(newFile, writeBufferSize)
 	}
 
-	cdm.readPathMtx.Lock()
 	cdm.closers[cdm.curFileSequence] = mmapFile
 	cdm.mmappedChunkFiles[cdm.curFileSequence] = &mmappedChunkFile{byteSlice: realByteSlice(mmapFile.Bytes())}
 	cdm.readPathMtx.Unlock()
@@ -394,7 +392,7 @@ func (cdm *ChunkDiskMapper) finalizeCurFile() error {
 
 func (cdm *ChunkDiskMapper) write(b []byte) error {
 	n, err := cdm.chkWriter.Write(b)
-	atomic.AddInt64(&cdm.curFileNumBytes, int64(n))
+	cdm.curFileNumBytes.Add(int64(n))
 	return err
 }
 
@@ -541,9 +539,7 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef, chunkRef uint64, 
 	defer cdm.writePathMtx.Unlock()
 
 	defer func() {
-		if err == nil {
-			cdm.fileMaxtSet = true
-		}
+		cdm.fileMaxtSet = true
 	}()
 
 	chkCRC32 := newCRC32()
@@ -635,6 +631,11 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef, chunkRef uint64, 
 			}
 
 			if err := f(seriesRef, chunkRef, mint, maxt, numSamples); err != nil {
+				if cerr, ok := err.(*CorruptionErr); ok {
+					cerr.Dir = cdm.dir.Name()
+					cerr.FileIndex = segID
+					return cerr
+				}
 				return err
 			}
 		}
@@ -695,7 +696,7 @@ func (cdm *ChunkDiskMapper) deleteFiles(removedFiles []int) error {
 			cdm.readPathMtx.Unlock()
 			return err
 		}
-		cdm.size -= int64(cdm.mmappedChunkFiles[seq].byteSlice.Len())
+		cdm.size.Sub(int64(cdm.mmappedChunkFiles[seq].byteSlice.Len()))
 		delete(cdm.mmappedChunkFiles, seq)
 		delete(cdm.closers, seq)
 	}
@@ -722,21 +723,24 @@ func (cdm *ChunkDiskMapper) DeleteCorrupted(originalErr error) error {
 
 	// Delete all the head chunk files following the corrupt head chunk file.
 	segs := []int{}
+	cdm.readPathMtx.RLock()
 	for seg := range cdm.mmappedChunkFiles {
 		if seg >= cerr.FileIndex {
 			segs = append(segs, seg)
 		}
 	}
+	cdm.readPathMtx.RUnlock()
+
 	return cdm.deleteFiles(segs)
 }
 
 // Size returns the size of the chunk files.
 func (cdm *ChunkDiskMapper) Size() int64 {
-	return cdm.size + cdm.curFileSize()
+	return cdm.size.Load() + cdm.curFileSize()
 }
 
 func (cdm *ChunkDiskMapper) curFileSize() int64 {
-	return atomic.LoadInt64(&cdm.curFileNumBytes)
+	return cdm.curFileNumBytes.Load()
 }
 
 // Close closes all the open files in ChunkDiskMapper.
