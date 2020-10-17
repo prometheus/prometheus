@@ -26,7 +26,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/rules"
-	"github.com/prometheus/prometheus/tsdb/importer/blocks"
+	"github.com/prometheus/prometheus/tsdb"
 )
 
 const blockSize = 2 // in hours
@@ -64,9 +64,9 @@ func NewRuleImporter(logger log.Logger, config RuleImporterConfig) *RuleImporter
 // Init initializes the rule importer which creates a new block writer
 // and creates an Prometheus API client.
 func (importer *RuleImporter) Init() error {
-	importer.writer = blocks.NewMultiWriter(importer.logger,
+	importer.writer = tsdb.NewBlockWriter(importer.logger,
 		importer.config.OutputDir,
-		importer.config.EvalInterval.Nanoseconds(),
+		(blockSize * time.Hour).Milliseconds()
 	)
 
 	config := api.Config{

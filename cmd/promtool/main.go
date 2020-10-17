@@ -143,8 +143,8 @@ func main() {
 		Default("-3h").String()
 	backfillOutputDir := backfillRuleCmd.Flag("output dir", "The filepath on the local filesystem to write the output to. Output will be blocks containing the data of the backfilled recording rules.").Default("backfilldata/").String()
 	backfillRuleURL := backfillRuleCmd.Flag("url", "Prometheus API url with the data where the rule will be backfilled from.").Default("localhost:9090").String()
-	backfillRuleEvalInterval := backfillRuleCmd.Flag("evaluation_interval", "How frequently to evaluate rules when backfilling.").
-		Default("15s").Duration()
+	backfillRuleEvalInterval := backfillRuleCmd.Flag("evaluation_interval default", "How frequently to evaluate rules when backfilling. evaluation interval in the rules file will take precedence.").
+		Default("60s").Duration()
 	backfillRuleFiles := backfillRuleCmd.Arg(
 		"rule-files",
 		"A list of one or more files containing recording rules to be backfilled. All recording rules listed in the files will be backfilled. Alerting rules are not evaluated.",
@@ -207,7 +207,7 @@ func main() {
 		os.Exit(checkErr(dumpSamples(*dumpPath, *dumpMinTime, *dumpMaxTime)))
 
 	case backfillRuleCmd.FullCommand():
-		os.Exit(BackfillRule(*backfillRuleURL, *backfillRuleStart, *backfillRuleEnd, *backfillOutputDir, *backfillRuleEvalInterval, *backfillRuleFiles...))
+		os.Exit(checkErr(BackfillRule(*backfillRuleURL, *backfillRuleStart, *backfillRuleEnd, *backfillOutputDir, *backfillRuleEvalInterval, *backfillRuleFiles...)))
 	}
 }
 
@@ -785,12 +785,12 @@ func (j *jsonPrinter) printLabelValues(v model.LabelValues) {
 
 // BackfillRule backfills recording rules from the files provided. The output are blocks of data
 // at the outputDir location.
-func BackfillRule(url, start, end, outputDir string, evalInterval time.Duration, files ...string) int {
+func BackfillRule(url, start, end, outputDir string, evalInterval time.Duration, files ...string) error {
 	ctx := context.Background()
 	stime, etime, err := parseStartTimeAndEndTime(start, end)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return err
 	}
 	cfg := RuleImporterConfig{
 		Start:        stime,
@@ -801,17 +801,16 @@ func BackfillRule(url, start, end, outputDir string, evalInterval time.Duration,
 	}
 	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
 	ruleImporter := NewRuleImporter(logger, cfg)
-	err = ruleImporter.Init()
-	if err != nil {
+	if err = ruleImporter.Init(); err != nil {
 		fmt.Fprintln(os.Stderr, "rule importer init error", err)
-		return 1
+		return err
 	}
 
 	errs := ruleImporter.LoadGroups(ctx, files)
 	for _, err := range errs {
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "rule importer parse error", err)
-			return 1
+			return err
 		}
 	}
 
@@ -822,5 +821,5 @@ func BackfillRule(url, start, end, outputDir string, evalInterval time.Duration,
 		}
 	}
 
-	return 0
+	return nil
 }
