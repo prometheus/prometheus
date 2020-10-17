@@ -1525,11 +1525,7 @@ func TestFindSetMatches(t *testing.T) {
 
 	for _, c := range cases {
 		matches := findSetMatches(c.pattern)
-		if len(c.exp) == 0 {
-			testutil.Assert(t, len(matches) == 0, "Evaluating %s, unexpected result %v", c.pattern, matches)
-		} else {
-			testutil.Equals(t, c.exp, matches)
-		}
+		testutil.Equals(t, c.exp, matches)
 	}
 }
 
