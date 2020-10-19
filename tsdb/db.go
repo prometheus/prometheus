@@ -772,16 +772,22 @@ func (a dbAppender) Commit() error {
 // which will also delete the blocks that fall out of the retention window.
 // Old blocks are only deleted on reloadBlocks based on the new block's parent information.
 // See DB.reloadBlocks documentation for further information.
-func (db *DB) Compact() (err error) {
+func (db *DB) Compact() (returnErr error) {
 	db.cmtx.Lock()
 	defer db.cmtx.Unlock()
 	defer func() {
-		if err != nil {
+		if returnErr != nil {
 			db.metrics.compactionsFailed.Inc()
 		}
 	}()
 
 	lastBlockMaxt := int64(math.MinInt64)
+	defer func() {
+		var merr tsdb_errors.MultiError
+		merr.Add(returnErr)
+		merr.Add(errors.Wrap(db.head.truncateWAL(lastBlockMaxt), "WAL truncation in Compact defer"))
+		returnErr = merr.Err()
+	}()
 
 	// Check whether we have pending head blocks that are ready to be persisted.
 	// They have the highest priority.
@@ -795,7 +801,7 @@ func (db *DB) Compact() (err error) {
 			break
 		}
 		mint := db.head.MinTime()
-		lastBlockMaxt = rangeForTimestamp(mint, db.head.chunkRange.Load())
+		maxt := rangeForTimestamp(mint, db.head.chunkRange.Load())
 
 		// Wrap head into a range that bounds all reads to it.
 		// We remove 1 millisecond from maxt because block
@@ -804,16 +810,19 @@ func (db *DB) Compact() (err error) {
 		// so in order to make sure that overlaps are evaluated
 		// consistently, we explicitly remove the last value
 		// from the block interval here.
-		if err := db.compactHead(NewRangeHead(db.head, mint, lastBlockMaxt-1)); err != nil {
+		if err := db.compactHead(NewRangeHead(db.head, mint, maxt-1)); err != nil {
 			return errors.Wrap(err, "compact head")
 		}
+		// Consider only successful compactions for WAL truncation.
+		lastBlockMaxt = maxt
 	}
 
-	if lastBlockMaxt != math.MinInt64 {
-		if err := db.head.truncateWAL(lastBlockMaxt); err != nil {
-			return errors.Wrap(err, "WAL truncation in Compact")
-		}
+	// Clear some disk space before compacting blocks, especially important
+	// when Head compaction happened over a long time range.
+	if err := db.head.truncateWAL(lastBlockMaxt); err != nil {
+		return errors.Wrap(err, "WAL truncation in Compact")
 	}
+
 	return db.compactBlocks()
 }
 
@@ -850,7 +859,6 @@ func (db *DB) compactHead(head *RangeHead) error {
 		}
 		return errors.Wrap(err, "reloadBlocks blocks")
 	}
-	// TODO(bwplotka): Can we actually do this with WAL truncation, later on?
 	if err = db.head.truncateMemory(head.BlockMaxTime()); err != nil {
 		return errors.Wrap(err, "head memory truncate")
 	}

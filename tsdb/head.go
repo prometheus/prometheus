@@ -52,11 +52,12 @@ var (
 
 // Head handles reads and writes of time series data within a time window.
 type Head struct {
-	chunkRange       atomic.Int64
-	numSeries        atomic.Uint64
-	minTime, maxTime atomic.Int64 // Current min and max of the samples included in the head.
-	minValidTime     atomic.Int64 // Mint allowed to be added to the head. It shouldn't be lower than the maxt of the last persisted block.
-	lastSeriesID     atomic.Uint64
+	chunkRange            atomic.Int64
+	numSeries             atomic.Uint64
+	minTime, maxTime      atomic.Int64 // Current min and max of the samples included in the head.
+	minValidTime          atomic.Int64 // Mint allowed to be added to the head. It shouldn't be lower than the maxt of the last persisted block.
+	lastWALTruncationTime atomic.Int64
+	lastSeriesID          atomic.Uint64
 
 	metrics      *headMetrics
 	wal          *wal.WAL
@@ -323,6 +324,7 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, chunkRange int
 	h.chunkRange.Store(chunkRange)
 	h.minTime.Store(math.MaxInt64)
 	h.maxTime.Store(math.MinInt64)
+	h.lastWALTruncationTime.Store(math.MinInt64)
 	h.metrics = newHeadMetrics(h, r)
 
 	if pool == nil {
@@ -779,11 +781,10 @@ func (h *Head) removeCorruptedMmappedChunks(err error) map[uint64][]*mmappedChun
 // Truncate removes old data before mint from the head and WAL.
 func (h *Head) Truncate(mint int64) (err error) {
 	initialize := h.MinTime() == math.MaxInt64
-	dontTruncateWAL := initialize || h.MinTime() >= mint
 	if err := h.truncateMemory(mint); err != nil {
 		return err
 	}
-	if dontTruncateWAL {
+	if initialize {
 		return nil
 	}
 	return h.truncateWAL(mint)
@@ -831,10 +832,11 @@ func (h *Head) truncateMemory(mint int64) (err error) {
 
 // truncateWAL removes old data before mint from the WAL.
 func (h *Head) truncateWAL(mint int64) error {
-	if h.wal == nil {
+	if h.wal == nil || mint <= h.lastWALTruncationTime.Load() {
 		return nil
 	}
 	start := time.Now()
+	h.lastWALTruncationTime.Store(mint)
 
 	first, last, err := wal.Segments(h.wal.Dir())
 	if err != nil {
