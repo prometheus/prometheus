@@ -35,12 +35,7 @@ type prettier struct {
 
 type padder struct {
 	indent      string
-	columnLimit int
-	// isNewLineApplied represents a new line was added previously, after
-	// appending the item to the result. It should be set to default
-	// after applying baseIndent. This property is dependent across the padder states
-	// and hence needs to be carried along while formatting.
-	isNewLineApplied bool
+	columnLimit int16
 	// isPreviousItemComment confirms whether the previous formatted item was
 	// a comment. This property is dependent on previous padder states and hence needs
 	// to be carried along while formatting.
@@ -60,7 +55,7 @@ type padder struct {
 // The returned string is a formatted expression.
 func Prettify(expression string) (string, error) {
 	ptr := &prettier{
-		pd: &padder{indent: defaultIndent, isNewLineApplied: true, columnLimit: columnLimit},
+		pd: &padder{indent: defaultIndent, columnLimit: columnLimit},
 	}
 	rearrangedItems, err := ptr.rearrangeItems(ptr.lexItems(expression))
 	if err != nil {
@@ -168,7 +163,10 @@ func (p *prettier) rearrangeItems(items []Item) ([]Item, error) {
 				tmp             []Item
 				skipBraces      bool // For handling metric_name{} -> metric_name.
 			)
-			if isMetricNameNotAtomic(metricName) {
+			if isMetricNameValid(metricName) {
+				// Metric name invalid. This can be due to failing to match the accepted regex
+				// as per https://prometheus.io/docs/concepts/data_model/#metric-names-and-labels
+				// or containing bool keyword as value in label metric name.
 				continue
 			}
 			for backScanIndex := itr; backScanIndex >= 0; backScanIndex-- {
@@ -248,28 +246,28 @@ func (p *prettier) rearrangeItems(items []Item) ([]Item, error) {
 
 func (p *prettier) prettify(items []Item) (string, error) {
 	var (
-		result = ""
-		root   struct {
+		result           = ""
+		isNewLineApplied = true
+		root             struct {
 			node      Node
 			hasScalar bool
 		}
 	)
 	for i, item := range items {
 		var (
-			nodeInfo       = &nodeInfo{head: p.Node, columnLimit: 100, item: item, items: items}
-			node           = nodeInfo.node()
-			nodeSplittable = nodeInfo.violatesColumnLimit()
-			// Binary expression use-case.
-			hasImmediateScalar               bool
+			nodeInfo                         = &nodeInfo{head: p.Node, columnLimit: 100, item: item, items: items}
+			nodeOfCurrItem                   = nodeInfo.node()
+			hasImmediateScalar               bool // For binary expression.
 			hasGrouping, aggregationGrouping bool
 			// Aggregate expression use-case.
 			isAggregation, isParen, hasMultiArgumentCalls bool
 		)
 		if p.pd.isPreviousItemComment {
 			p.pd.isPreviousItemComment = false
-			result += p.pd.newLine()
+			result += "\n"
+			isNewLineApplied = true
 		}
-		switch n := node.(type) {
+		switch n := nodeOfCurrItem.(type) {
 		case *AggregateExpr:
 			isAggregation = true
 			aggregationGrouping = nodeInfo.has(grouping)
@@ -284,16 +282,16 @@ func (p *prettier) prettify(items []Item) (string, error) {
 
 		if nodeInfo.baseIndent == 1 {
 			// Base indent 1 signifies a root node.
-			root.node = node
+			root.node = nodeOfCurrItem
 			root.hasScalar = hasImmediateScalar
 		}
-		if p.pd.isNewLineApplied {
+		if isNewLineApplied {
 			result += p.pd.pad(nodeInfo.baseIndent)
-			p.pd.isNewLineApplied = false
+			isNewLineApplied = false
 		}
 
 		var (
-			parenGenCondition    = (nodeSplittable && !hasGrouping) || hasMultiArgumentCalls
+			parenGenCondition    = (nodeInfo.violatesColumnLimit() && !hasGrouping) || hasMultiArgumentCalls
 			parenBinaryCondition = isParen && nodeInfo.childIsBinary()
 			commaLabelCondition  = !(hasGrouping || aggregationGrouping || p.pd.labelsSplittable)
 		)
@@ -302,12 +300,13 @@ func (p *prettier) prettify(items []Item) (string, error) {
 		case LEFT_PAREN:
 			result += item.Val
 			if parenGenCondition && !p.pd.expectAggregationLabels || parenBinaryCondition {
-				result += p.pd.newLine()
+				result += "\n"
+				isNewLineApplied = true
 			}
 		case RIGHT_PAREN:
 			if parenGenCondition && !p.pd.expectAggregationLabels || parenBinaryCondition {
-				result += p.pd.newLine() + p.pd.pad(nodeInfo.baseIndent)
-				p.pd.isNewLineApplied = false
+				result += "\n" + p.pd.pad(nodeInfo.baseIndent)
+				isNewLineApplied = false
 			}
 			result += item.Val
 			if p.pd.expectAggregationLabels {
@@ -316,16 +315,19 @@ func (p *prettier) prettify(items []Item) (string, error) {
 			}
 			if hasGrouping {
 				hasGrouping = false
-				result += p.pd.newLine()
+				result += "\n"
+				isNewLineApplied = true
 			} else if isAggregation && nodeInfo.has(aggregateParent) && nodeInfo.isLastItem(item) {
-				result += p.pd.newLine()
+				result += "\n"
+				isNewLineApplied = true
 			}
 		case LEFT_BRACE:
 			result += item.Val
 			p.pd.isFirstLabel = true
-			if nodeSplittable {
+			if nodeInfo.violatesColumnLimit() {
 				// This situation arises only in vector selectors that violate column limit and have labels.
-				result += p.pd.newLine()
+				result += "\n"
+				isNewLineApplied = true
 				p.pd.labelsSplittable = true
 			}
 		case RIGHT_BRACE:
@@ -335,9 +337,9 @@ func (p *prettier) prettify(items []Item) (string, error) {
 					// a pre-applied comma.
 					result += ","
 				}
-				result += p.pd.newLine() + p.pd.pad(nodeInfo.getBaseIndent(item))
+				result += "\n" + p.pd.pad(nodeInfo.getBaseIndent(item))
 				p.pd.labelsSplittable = false
-				p.pd.isNewLineApplied = false
+				isNewLineApplied = false
 			}
 			p.pd.isFirstLabel = false
 			result += item.Val
@@ -354,7 +356,7 @@ func (p *prettier) prettify(items []Item) (string, error) {
 		case STRING:
 			result += item.Val
 		case NUMBER:
-			if !p.pd.isPreviousBlank(result) && isNodeType(nodeInfo.parent(), binaryExpr) {
+			if !p.pd.isPreviousBlank(result) && matchesType(nodeInfo.parent(), binaryExpr) {
 				// Only scalar binary expression require space before NUMBER item.
 				result += " "
 			}
@@ -363,8 +365,8 @@ func (p *prettier) prettify(items []Item) (string, error) {
 			QUANTILE, STDVAR, STDDEV, TOPK, AVG:
 			if nodeInfo.has(aggregateParent) {
 				result = p.pd.removePreviousBlank(result)
-				result += p.pd.newLine() + p.pd.pad(nodeInfo.getBaseIndent(item))
-				p.pd.isNewLineApplied = false
+				result += "\n" + p.pd.pad(nodeInfo.getBaseIndent(item))
+				isNewLineApplied = false
 			}
 			result += item.Val
 			if aggregationGrouping {
@@ -373,7 +375,7 @@ func (p *prettier) prettify(items []Item) (string, error) {
 			}
 		case EQL, EQL_REGEX, NEQ, NEQ_REGEX, DURATION, COLON,
 			LEFT_BRACKET, RIGHT_BRACKET:
-			if isNodeType(node, binaryExpr) {
+			if matchesType(nodeOfCurrItem, binaryExpr) {
 				result += " " + item.Val + " "
 			} else {
 				result += item.Val
@@ -383,14 +385,15 @@ func (p *prettier) prettify(items []Item) (string, error) {
 			if hasImmediateScalar {
 				result += " " + item.Val + " "
 				hasImmediateScalar = false
+				break
+			}
+			result += "\n" + p.pd.pad(nodeInfo.baseIndent) + item.Val
+			isNewLineApplied = true
+			if hasGrouping {
+				result += " "
+				isNewLineApplied = false
 			} else {
-				result += p.pd.newLine() + p.pd.pad(nodeInfo.baseIndent) + item.Val
-				if hasGrouping {
-					result += " "
-					p.pd.isNewLineApplied = false
-				} else {
-					result += p.pd.newLine()
-				}
+				result += "\n"
 			}
 		case WITHOUT, BY, IGNORING, ON:
 			if !p.pd.isPreviousBlank(result) {
@@ -400,22 +403,24 @@ func (p *prettier) prettify(items []Item) (string, error) {
 			result += item.Val
 			if item.Typ == BOOL && hasImmediateScalar {
 				result += " "
-			} else if isNodeType(node, aggregateExpr) {
+			} else if matchesType(nodeOfCurrItem, aggregateExpr) {
 				p.pd.expectAggregationLabels = true
 			}
 		case BOOL:
 			result += item.Val
 			if hasImmediateScalar {
 				result += " "
-			} else {
-				result += p.pd.newLine()
+				break
 			}
+			result += "\n"
+			isNewLineApplied = true
 		case EQLC, OFFSET, GROUP_LEFT, GROUP_RIGHT:
 			result += " " + item.Val + " "
 		case COMMA:
 			result += item.Val
-			if (nodeSplittable || hasMultiArgumentCalls) && commaLabelCondition {
-				result += p.pd.newLine()
+			if (nodeInfo.violatesColumnLimit() || hasMultiArgumentCalls) && commaLabelCondition {
+				result += "\n"
+				isNewLineApplied = true
 			} else if !p.pd.labelsSplittable {
 				result += " "
 			}
@@ -423,7 +428,7 @@ func (p *prettier) prettify(items []Item) (string, error) {
 			if result[len(result)-1] != ' ' {
 				result += " "
 			}
-			if p.pd.isNewLineApplied {
+			if isNewLineApplied {
 				result += p.pd.pad(nodeInfo.previousIndent()) + item.Val
 			} else {
 				result += item.Val
@@ -431,9 +436,9 @@ func (p *prettier) prettify(items []Item) (string, error) {
 			p.pd.isPreviousItemComment = true
 		}
 	}
-	if isNodeType(root.node, binaryExpr) && !root.hasScalar {
+	if matchesType(root.node, binaryExpr) && !root.hasScalar {
 		return result, nil
-	} else if isNodeType(root.node, parenExpr) && isChildOfTypeBinary(root.node) {
+	} else if matchesType(root.node, parenExpr) && isChildOfTypeBinary(root.node) {
 		return result, nil
 	}
 	return strings.TrimSpace(result), nil
@@ -467,14 +472,14 @@ func (p *prettier) parseExpr(expression string) error {
 	return nil
 }
 
-// isMetricNameAtomic returns true if the metric name is singular in nature.
+// isMetricNameValid returns true if the metric name is singular in nature.
 // This is used during sorting of lex items.
-func isMetricNameNotAtomic(metricName string) bool {
+func isMetricNameValid(metricName string) bool {
 	// We aim to convert __name__ to an ideal metric_name if the value of that labels is atomic.
 	// Since a non-atomic metric_name will contain alphabets other than a-z and A-Z including _,
 	// anything that violates this ceases the formatting of that particular label item.
 	// If this is not done then the output from the prettier might be an un-parsable expression.
-	if regexp.MustCompile("^[a-z_A-Z]+$").MatchString(metricName) && metricName != "bool" {
+	if regexp.MustCompile("[a-zA-Z_:][a-zA-Z0-9_:]*").MatchString(metricName) && metricName != "bool" {
 		return false
 	}
 	return true
@@ -498,37 +503,23 @@ func skipComments(items []Item, index int) int {
 func stringifyItems(items []Item) string {
 	var expression string
 	for _, item := range items {
-		if item.Typ.IsAggregator() {
-			expression += item.Val
-			continue
-		}
 		switch item.Typ {
-		case EQL, EQL_REGEX, NEQ, NEQ_REGEX, COLON, LEFT_BRACE, LEFT_BRACKET, LEFT_PAREN,
-			RIGHT_BRACE, RIGHT_BRACKET, RIGHT_PAREN, STRING, NUMBER, IDENTIFIER, METRIC_IDENTIFIER:
-			expression += item.Val
-		case COMMA:
-			expression += item.Val + " "
 		case COMMENT:
 			expression += item.Val + "\n"
 		default:
-			expression += " " + item.Val + " "
+			expression += item.Val + " "
 		}
 	}
-	return expression
+	return strings.TrimSpace(expression)
 }
 
-// pad provides an instantaneous padding.
+// pad returns `iter` times the configured indent.
 func (pd *padder) pad(iter int) string {
 	var pad string
 	for i := 1; i <= iter; i++ {
 		pad += pd.indent
 	}
 	return pad
-}
-
-func (pd *padder) newLine() string {
-	pd.isNewLineApplied = true
-	return "\n"
 }
 
 func (pd *padder) isPreviousBlank(result string) bool {

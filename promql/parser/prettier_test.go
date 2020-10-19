@@ -308,11 +308,15 @@ var prettierCases = []prettierTest{
 		expr: `metric_one{foo="bar"} + metric_two{foo="bar", instance="localhost:31233", job="two", first="second_", job="cluster-manager"}`,
 		expected: `    metric_one{foo="bar"}
   +
-    metric_two{foo="bar", instance="localhost:31233", job="two", first="second_", job="cluster-manager"}`,
+    metric_two{
+      foo="bar", instance="localhost:31233", job="two", first="second_", job="cluster-manager",
+    }`,
 	},
 	{
 		expr: `metric_two{foo="bar", instance="localhost:31233", job="two", first="second_", job="cluster-manager"} + metric_one{foo="bar"}`,
-		expected: `    metric_two{foo="bar", instance="localhost:31233", job="two", first="second_", job="cluster-manager"}
+		expected: `    metric_two{
+      foo="bar", instance="localhost:31233", job="two", first="second_", job="cluster-manager",
+    }
   +
     metric_one{foo="bar"}`,
 	},
@@ -322,7 +326,9 @@ var prettierCases = []prettierTest{
   +
     metric_two
   +
-    metric_three{some_very_large_label="a_very_large_value", some_very_large_label="a_very_large_value"}`,
+    metric_three{
+      some_very_large_label="a_very_large_value", some_very_large_label="a_very_large_value",
+    }`,
 	},
 	{
 		expr: `metric_one + metric_two + metric_three{a_some_very_large_label="a_very_large_value", some_very_large_label="a_very_large_value"}`,
@@ -790,7 +796,9 @@ var prettierCases = []prettierTest{
 		expr: `100 - ((node_filesystem_avail_bytes{instance=~"$node",mountpoint="$maxmount",fstype=~"ext4|xfs"} * 100) / node_filesystem_size_bytes {instance=~"$node",mountpoint="$maxmount",fstype=~"ext4|xfs"})`,
 		expected: `100 - (
         (
-            node_filesystem_avail_bytes{instance=~"$node", mountpoint="$maxmount", fstype=~"ext4|xfs"} * 100
+            node_filesystem_avail_bytes{
+              instance=~"$node", mountpoint="$maxmount", fstype=~"ext4|xfs",
+            } * 100
         )
       /
         node_filesystem_size_bytes{instance=~"$node", mountpoint="$maxmount", fstype=~"ext4|xfs"}
@@ -813,7 +821,9 @@ var prettierCases = []prettierTest{
 	{
 		expr: `irate(node_network_receive_bytes_total{instance=~'$node',device!~'tap.*|veth.*|br.*|docker.*|virbr*|lo*'}[30m])*8`,
 		expected: `irate(
-      node_network_receive_bytes_total{instance=~'$node', device!~'tap.*|veth.*|br.*|docker.*|virbr*|lo*'}[30m]
+      node_network_receive_bytes_total{
+        instance=~'$node', device!~'tap.*|veth.*|br.*|docker.*|virbr*|lo*',
+      }[30m]
     ) * 8`,
 	},
 	{
@@ -845,7 +855,9 @@ var prettierCases = []prettierTest{
 	{
 		expr: `(sum(kube_deployment_status_replicas_available{deployment=~".*$Deployment$Statefulset$Daemonset"}) or vector(0)) + (sum(kube_statefulset_status_replicas{statefulset=~".*$Deployment$Statefulset$Daemonset"}) or vector(0)) + (sum(kube_daemonset_status_number_ready{daemonset=~".*$Deployment$Statefulset$Daemonset"}) or vector(0))`,
 		expected: `    (
-        sum(kube_deployment_status_replicas_available{deployment=~".*$Deployment$Statefulset$Daemonset"})
+        sum(
+          kube_deployment_status_replicas_available{deployment=~".*$Deployment$Statefulset$Daemonset"}
+        )
       or
         vector(0)
     )
@@ -920,8 +932,10 @@ var prettierCases = []prettierTest{
     )`,
 	},
 	{
-		expr:     `sum(increase(alertmanager_notifications_failed_total{instance=~"$instance"}[5m])) by (integration)`,
-		expected: `sum by(integration) (increase(alertmanager_notifications_failed_total{instance=~"$instance"}[5m]))`,
+		expr: `sum(increase(alertmanager_notifications_failed_total{instance=~"$instance"}[5m])) by (integration)`,
+		expected: `sum by(integration) (
+    increase(alertmanager_notifications_failed_total{instance=~"$instance"}[5m])
+  )`,
 	},
 	{
 		expr: `sum(histogram_quantile(0.9,rate(alertmanager_notification_latency_seconds_bucket{instance=~"$instance"}[5m]))) by (integration)`,

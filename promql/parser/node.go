@@ -61,7 +61,7 @@ func (n *nodeInfo) violatesColumnLimit() bool {
 // node returns the node corresponding to the given position range in the AST.
 func (n *nodeInfo) node() Node {
 	ancestors, node := n.nodeHistory(n.head, n.item.PositionRange(), []Node{})
-	n.ancestors = reduceNonNewLineExprs(ancestors)
+	n.ancestors = reduceNodeIndent(ancestors)
 	n.baseIndent = len(n.ancestors)
 	n.currentNode = node
 	return node
@@ -69,7 +69,7 @@ func (n *nodeInfo) node() Node {
 
 func (n *nodeInfo) getBaseIndent(item Item) int {
 	ancestors, _ := n.nodeHistory(n.head, item.PositionRange(), []Node{})
-	ancestors = reduceNonNewLineExprs(ancestors)
+	ancestors = reduceNodeIndent(ancestors)
 	n.buf = len(ancestors)
 	return n.buf
 }
@@ -155,23 +155,19 @@ func isChildOfTypeBinary(node Node) bool {
 	return info.childIsBinary()
 }
 
-// reduceNonNewLineExprs reduces those expressions from the history that are not
-// necessary for base indent. Base indent is applied on those items that have the
-// tendency to fall on a new line. However, items like Left_Bracket, Right_Bracket
-// never fall on new line. This means that when they (node in which they are present)
-// will be encountered, the stack already has MatrixSelector or SubQuery in it, but
-// their very existence harms the base indent. This is because they never contribute
-// to the indent, meaning the (metric_name[5m]) will get base indent as 3 (ParenExpr,
-// MatrixSelector, VectorSelector) but it should actually be 2 according to the requirements.
-// Hence, these unwanted expressions that do not contribute to the base indent
-// should be reduced.
-func reduceNonNewLineExprs(history []Node) []Node {
+// reduceNodeIndent reduces the base (or node) indent by removing nodes from the history that are
+// not required for base indent. Items like Left_Bracket, Right_Bracket, Colon that
+// never fall on new line but their existence adds the base ident value.
+// Example:
+// Base indent of (metric_name[5m]) is 3 (ParenExpr, MatrixSelector, VectorSelector)
+// but it should actually be 2 (ParenExpr, VectorSelector).
+func reduceNodeIndent(history []Node) []Node {
 	var temp []Node
 	if !(len(history) > 1) {
 		return history
 	}
 	for i := range history {
-		if !(isNodeType(history[i], matrixExpr) || isNodeType(history[i], subQueryExpr)) {
+		if !(matchesType(history[i], matrixExpr) || matchesType(history[i], subQueryExpr)) {
 			temp = append(temp, history[i])
 		}
 	}
@@ -186,7 +182,7 @@ func reduceBinary(history []Node) []Node {
 		return history
 	}
 	for i := 0; i < len(history)-1; i++ {
-		if !(isNodeType(history[i], binaryExpr) && isNodeType(history[i+1], binaryExpr)) {
+		if !(matchesType(history[i], binaryExpr) && matchesType(history[i+1], binaryExpr)) {
 			temp = append(temp, history[i])
 		}
 	}
@@ -206,7 +202,7 @@ func containsIgnoring(nodeStr string) bool {
 	return false
 }
 
-func isNodeType(node Node, typs ...exprs) bool {
+func matchesType(node Node, typs ...exprs) bool {
 	for _, typ := range typs {
 		switch typ {
 		case aggregateExpr:
