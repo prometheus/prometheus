@@ -15,56 +15,65 @@ package importer
 
 import (
 	"fmt"
+	"io"
+	"math"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/textparse"
-	"github.com/prometheus/prometheus/tsdb"
 )
 
 func Import(p textparse.Parser, outputDir string, DefaultBlockDuration int64) (err error) {
 
 	logger := log.NewNopLogger()
 	level.Info(logger).Log("msg", "started importing input data.")
-	w, err := tsdb.NewBlockWriter(log.NewNopLogger(), outputDir, DefaultBlockDuration)
-	fmt.Println(w, err)
-	// for _, block := range blocks {
 
-	// }
-	// defer func() {
-	// 	var merr tsdb_errors.MultiError
-	// 	merr.Add(err)
-	// 	merr.Add(w.Close())
-	// 	err = merr.Err()
-	// }()
-
-	// var e textparse.Entry
-	// for {
-	// 	e, err = p.Next()
-	// 	if err == io.EOF {
-	// 		break
-	// 	}
-	// 	if err != nil {
-	// 		return errors.Wrap(err, "parse")
-	// 	}
-
-	// 	// For now care about series only.
-	// 	if e != textparse.EntrySeries {
-	// 		continue
-	// 	}
-
-	// 	// TODO(bwplotka): Avoid allocations using AddFast method and maintaining refs.
-	// 	l := labels.Labels{}
-	// 	p.Metric(&l)
-	// 	_, ts, v := p.Series()
-	// 	if ts == nil {
-	// 		return errors.Errorf("expected timestamp for series %v, got none", l.String())
-	// 	}
-	// 	if _, err := app.Add(l, *ts, v); err != nil {
-	// 		return errors.Wrap(err, "add sample")
-	// 	}
-	// }
-
+	var maxt int64 = math.MinInt16
+	var mint int64 = math.MaxInt16
+	var e textparse.Entry
+	for {
+		e, err = p.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return errors.Wrap(err, "parse")
+		}
+		if e != textparse.EntrySeries {
+			continue
+		}
+		l := labels.Labels{}
+		p.Metric(&l)
+		_, ts, v := p.Series()
+		fmt.Println(v)
+		fmt.Println(*ts)
+		if *ts >= maxt {
+			maxt = *ts
+		}
+		if *ts <= mint {
+			mint = *ts
+		}
+		if ts == nil {
+			return errors.Errorf("expected timestamp for series %v, got none", l.String())
+		}
+		// if _, err := app.Add(l, *ts, v); err != nil {
+		// 	return errors.Wrap(err, "add sample")
+		// }
+	}
+	// 2 hours parse
+	// Open metrics stuff store in blocks
+	// get that block, insert that into the block
+	var offset int64 = 2 * 60 * 60 * 1000
+	for t := mint; t < maxt; t = t + offset {
+		fmt.Println(t)
+		// tx = t - 2
+		// two  hour blocks write
+		// when we are parsing, check is ts is between t and t+offset
+		// put that in memory
+		// write into block
+	}
 	// level.Info(logger).Log("msg", "no more input data, committing appenders and flushing block(s)")
 	// if err := app.Commit(); err != nil {
 	// 	return errors.Wrap(err, "commit")

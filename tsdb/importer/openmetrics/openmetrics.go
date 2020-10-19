@@ -15,6 +15,7 @@ package openmetrics
 
 import (
 	"bufio"
+	"fmt"
 	"io"
 
 	"github.com/prometheus/prometheus/pkg/textparse"
@@ -47,6 +48,7 @@ func (p *Parser) Next() (textparse.Entry, error) {
 	for p.s.Scan() {
 		line := p.s.Bytes()
 		line = append(line, '\n')
+		fmt.Println(string(line))
 		p.Parser = textparse.New(line, contentType)
 		if et, err := p.Parser.Next(); err != io.EOF {
 			return et, err

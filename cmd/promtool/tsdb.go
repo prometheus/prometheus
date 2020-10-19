@@ -643,6 +643,7 @@ func readOM(path string, outputDir string, DefaultBlockDuration time.Duration) (
 	}
 	var p textparse.Parser
 	p = openmetrics.NewParser(input)
+	fmt.Println(p)
 	return importer.Import(p, outputDir, durToMillis(DefaultBlockDuration))
 }
 
