@@ -15,7 +15,6 @@ package openmetrics
 
 import (
 	"bufio"
-	"fmt"
 	"io"
 
 	"github.com/prometheus/prometheus/pkg/textparse"
@@ -35,7 +34,6 @@ type Parser struct {
 // TODO(bwplotka): This is hacky, Parser should allow passing reader from scratch.
 // so this is working fine for now
 func NewParser(r io.Reader) textparse.Parser {
-	fmt.Println("in New parser")
 	// TODO(dipack95): Maybe use bufio.Reader.Readline instead?
 	// https://stackoverflow.com/questions/21124327/how-to-read-a-text-file-line-by-line-in-go-when-some-lines-are-long-enough-to-ca
 	return &Parser{s: bufio.NewScanner(r)}
@@ -46,22 +44,13 @@ func NewParser(r io.Reader) textparse.Parser {
 // TODO(bwplotka): Rought implementation, not tested, please help dipack95! (:
 // issue here
 func (p *Parser) Next() (textparse.Entry, error) {
-	fmt.Println("In Next")
-	fmt.Println(p)
 	for p.s.Scan() {
-		// if starts with #, just discard
-		// 1. TODO(bwplotka): Assuming all line by line. If not do refetch like in previous version with more lines.
-		// 2. look at the code in textparse, how to modify to allow to read from io reader or scanner instead of string
-		// 3. try to parse the metric chunks, checking first line and just #, until u have non hash
-		line := p.s.Bytes() // extra line
+		line := p.s.Bytes()
 		line = append(line, '\n')
-
 		p.Parser = textparse.New(line, contentType)
-		fmt.Println(string(line))
 		if et, err := p.Parser.Next(); err != io.EOF {
 			return et, err
 		}
-		// EOF from parser, continue scanning.
 	}
 	if err := p.s.Err(); err != nil {
 		return 0, err

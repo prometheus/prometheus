@@ -39,6 +39,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
+	"github.com/prometheus/prometheus/tsdb/importer"
 	"github.com/prometheus/prometheus/tsdb/importer/openmetrics"
 )
 
@@ -627,7 +628,7 @@ func checkErr(err error) int {
 	return 0
 }
 
-func readOM(path string) (err error) {
+func readOM(path string, outputDir string, DefaultBlockDuration time.Duration) (err error) {
 	input := os.Stdin
 	if path != "" {
 		input, err = os.Open(path)
@@ -642,9 +643,7 @@ func readOM(path string) (err error) {
 	}
 	var p textparse.Parser
 	p = openmetrics.NewParser(input)
-	fmt.Println(p)
-	return nil
-	// return importer.Import(logger, p, blocks.NewMultiWriter(logger, *importDbPath, durToMillis(*importBlockSize)))
+	return importer.Import(p, outputDir, durToMillis(DefaultBlockDuration))
 }
 
 func durToMillis(t time.Duration) int64 {
