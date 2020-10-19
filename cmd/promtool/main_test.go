@@ -27,6 +27,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/api"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -56,14 +57,15 @@ func TestQueryRange(t *testing.T) {
 	require.Equal(t, nil, err)
 
 	p := &promqlPrinter{}
-	exitCode := QueryRange(urlObject, map[string]string{}, "up", "0", "300", 0, p)
+	rt := api.DefaultRoundTripper
+	exitCode := QueryRange(urlObject, map[string]string{}, "up", "0", "300", 0, p, rt)
 	require.Equal(t, "/api/v1/query_range", getRequest().URL.Path)
 	form := getRequest().Form
 	require.Equal(t, "up", form.Get("query"))
 	require.Equal(t, "1", form.Get("step"))
 	require.Equal(t, 0, exitCode)
 
-	exitCode = QueryRange(urlObject, map[string]string{}, "up", "0", "300", 10*time.Millisecond, p)
+	exitCode = QueryRange(urlObject, map[string]string{}, "up", "0", "300", 10*time.Millisecond, p, rt)
 	require.Equal(t, "/api/v1/query_range", getRequest().URL.Path)
 	form = getRequest().Form
 	require.Equal(t, "up", form.Get("query"))
@@ -79,7 +81,8 @@ func TestQueryInstant(t *testing.T) {
 	require.Equal(t, nil, err)
 
 	p := &promqlPrinter{}
-	exitCode := QueryInstant(urlObject, "up", "300", p)
+	rt := api.DefaultRoundTripper
+	exitCode := QueryInstant(urlObject, "up", "300", p, rt)
 	require.Equal(t, "/api/v1/query", getRequest().URL.Path)
 	form := getRequest().Form
 	require.Equal(t, "up", form.Get("query"))
