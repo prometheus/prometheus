@@ -579,14 +579,14 @@ func TestHeadDeleteSimple(t *testing.T) {
 				}
 				testutil.Ok(t, app.Commit())
 
-				// Compare the samples for both heads - before and after the reload.
-				reloadedW, err := wal.New(nil, nil, w.Dir(), compress) // Use a new wal to ensure deleted samples are gone even after a reload.
+				// Compare the samples for both heads - before and after the reloadBlocks.
+				reloadedW, err := wal.New(nil, nil, w.Dir(), compress) // Use a new wal to ensure deleted samples are gone even after a reloadBlocks.
 				testutil.Ok(t, err)
 				reloadedHead, err := NewHead(nil, nil, reloadedW, 1000, reloadedW.Dir(), nil, DefaultStripeSize, nil)
 				testutil.Ok(t, err)
 				testutil.Ok(t, reloadedHead.Init(0))
 
-				// Compare the query results for both heads - before and after the reload.
+				// Compare the query results for both heads - before and after the reloadBlocks.
 			Outer:
 				for _, h := range []*Head{head, reloadedHead} {
 					q, err := NewBlockQuerier(h, h.MinTime(), h.MaxTime())
