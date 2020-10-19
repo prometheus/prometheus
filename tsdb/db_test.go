@@ -1994,8 +1994,7 @@ func TestBlockRanges(t *testing.T) {
 	app := db.Appender(ctx)
 	lbl := labels.Labels{{Name: "a", Value: "b"}}
 	_, err = app.Add(lbl, firstBlockMaxT-1, rand.Float64())
-	testutil.Assert(t, err != nil,
-		"appending a sample with a timestamp covered by a previous block shouldn't be possible")
+	testutil.NotOk(t, err)
 	_, err = app.Add(lbl, firstBlockMaxT+1, rand.Float64())
 	testutil.Ok(t, err)
 	_, err = app.Add(lbl, firstBlockMaxT+2, rand.Float64())
@@ -2813,7 +2812,7 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 	var loaded int
 	for _, l := range loadedBlocks {
 		_, ok := expectedLoadedDirs[filepath.Join(tmpDir, l.meta.ULID.String())]
-		testutil.Assert(t, ok, "unexpected block", l.meta.ULID, "was loaded")
+		testutil.Assert(t, ok, "unexpected block %s was loaded", l.meta.ULID.String())
 		loaded++
 	}
 	testutil.Equals(t, len(expectedLoadedDirs), loaded)

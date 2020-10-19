@@ -180,10 +180,10 @@ func TestReader(t *testing.T) {
 					testutil.Assert(t, j < len(c.exp), "received more records than expected")
 					testutil.Equals(t, c.exp[j], rec, "Bytes within record did not match expected Bytes")
 				}
-				if !c.fail {
-					testutil.Ok(t, r.Err())
-				} else {
+				if c.fail {
 					testutil.NotOk(t, r.Err())
+				} else {
+					testutil.Ok(t, r.Err())
 				}
 			})
 		}

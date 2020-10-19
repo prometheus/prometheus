@@ -949,7 +949,7 @@ func TestComputeChunkEndTime(t *testing.T) {
 
 	for _, c := range cases {
 		got := computeChunkEndTime(c.start, c.cur, c.max)
-		testutil.Equals(t, got, c.res)
+		testutil.Equals(t, c.res, got)
 	}
 }
 

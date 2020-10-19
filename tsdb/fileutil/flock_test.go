@@ -27,7 +27,7 @@ func TestLocking(t *testing.T) {
 
 	fileName := filepath.Join(dir.Path(), "LOCK")
 	_, err := os.Stat(fileName)
-	testutil.Assert(t, err != nil, "File %q unexpectedly exists.", fileName)
+	testutil.NotOk(t, err)
 
 	lock, existed, err := Flock(fileName)
 	testutil.Ok(t, err)
@@ -39,7 +39,7 @@ func TestLocking(t *testing.T) {
 
 	// Try to lock again.
 	lockedAgain, existed, err := Flock(fileName)
-	testutil.Assert(t, err != nil, "File %q locked twice.", fileName)
+	testutil.NotOk(t, err)
 	testutil.Assert(t, lockedAgain == nil, "Unsuccessful locking did not return nil.")
 	testutil.Assert(t, existed, "Existing file %q not recognized.", fileName)
 	testutil.Ok(t, lock.Release())
