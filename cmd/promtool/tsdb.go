@@ -34,13 +34,11 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/importer"
-	"github.com/prometheus/prometheus/tsdb/importer/openmetrics"
 )
 
 var merr tsdb_errors.MultiError
@@ -628,23 +626,8 @@ func checkErr(err error) int {
 	return 0
 }
 
-func readOM(path string, outputDir string, DefaultBlockDuration time.Duration) (err error) {
-	input := os.Stdin
-	if path != "" {
-		input, err = os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer func() {
-			merr.Add(err)
-			merr.Add(input.Close())
-			err = merr.Err()
-		}()
-	}
-	var p textparse.Parser
-	p = openmetrics.NewParser(input)
-	fmt.Println(p)
-	return importer.Import(p, outputDir, durToMillis(DefaultBlockDuration))
+func readOpemmetrics(path string, outputDir string, DefaultBlockDuration time.Duration) (err error) {
+	return importer.Import(path, outputDir, durToMillis(DefaultBlockDuration))
 }
 
 func durToMillis(t time.Duration) int64 {

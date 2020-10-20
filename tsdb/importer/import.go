@@ -14,18 +14,47 @@
 package importer
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"math"
+	"os"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/textparse"
+	"github.com/prometheus/prometheus/tsdb"
+	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
+	"github.com/prometheus/prometheus/tsdb/importer/openmetrics"
 )
 
-func Import(p textparse.Parser, outputDir string, DefaultBlockDuration int64) (err error) {
+var merr tsdb_errors.MultiError
+
+func Min(x, y int64) int64 {
+	if x < y {
+		return x
+	}
+	return y
+}
+
+// Import function reads an OM file, creates two hour blocks and writes that to the TSDB.
+func Import(path string, outputDir string, DefaultBlockDuration int64) (err error) {
+	input := os.Stdin
+	if path != "" {
+		input, err = os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer func() {
+			merr.Add(err)
+			merr.Add(input.Close())
+			err = merr.Err()
+		}()
+	}
+	var p textparse.Parser
+	p = openmetrics.NewParser(input)
 
 	logger := log.NewNopLogger()
 	level.Info(logger).Log("msg", "started importing input data.")
@@ -58,32 +87,57 @@ func Import(p textparse.Parser, outputDir string, DefaultBlockDuration int64) (e
 		if ts == nil {
 			return errors.Errorf("expected timestamp for series %v, got none", l.String())
 		}
-		// if _, err := app.Add(l, *ts, v); err != nil {
-		// 	return errors.Wrap(err, "add sample")
-		// }
 	}
-	// 2 hours parse
-	// Open metrics stuff store in blocks
-	// get that block, insert that into the block
 	var offset int64 = 2 * 60 * 60 * 1000
-	for t := mint; t < maxt; t = t + offset {
-		fmt.Println(t)
-		// tx = t - 2
-		// two  hour blocks write
-		// when we are parsing, check is ts is between t and t+offset
-		// put that in memory
-		// write into block
-	}
-	// level.Info(logger).Log("msg", "no more input data, committing appenders and flushing block(s)")
-	// if err := app.Commit(); err != nil {
-	// 	return errors.Wrap(err, "commit")
-	// }
 
-	// ids, err := w.Flush()
-	// if err != nil {
-	// 	return errors.Wrap(err, "flush")
-	// }
-	// level.Info(logger).Log("msg", "blocks flushed", "ids", fmt.Sprintf("%v", ids))
-	// return nil
+	for t := mint; t < maxt; t = t + offset {
+		var e textparse.Entry
+		w, err := tsdb.NewBlockWriter(log.NewNopLogger(), outputDir, DefaultBlockDuration)
+		ctx := context.Background()
+		app := w.Appender(ctx)
+		var p2 textparse.Parser
+		p2 = openmetrics.NewParser(input)
+		tsUpper := Min(t+offset, maxt)
+		for {
+			e, err = p2.Next()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				return errors.Wrap(err, "parse")
+			}
+			if e != textparse.EntrySeries {
+				continue
+			}
+			l := labels.Labels{}
+			p2.Metric(&l)
+			_, ts, v := p2.Series()
+			if ts == nil {
+				return errors.Errorf("expected timestamp for series %v, got none", l.String())
+			}
+			if *ts >= t && *ts < tsUpper {
+				_, err := app.Add(l, *ts, v)
+				if err != nil {
+					return errors.Errorf("Unable to add chunk")
+				}
+			}
+
+		}
+		app.Commit()
+		_, errf := w.Flush(ctx)
+		if errf != nil {
+			return errors.Errorf("Unable to flush")
+		}
+
+	}
 	return nil
 }
+
+/*
+Notes :
+** TODO
+- For Testing :
+	- Query the block to get samples
+- Discard all samples that do not fall within specified time range.
+- Commit Appended after some number of samples.
+*/
