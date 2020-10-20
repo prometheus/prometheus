@@ -167,6 +167,11 @@ func (cdm *ChunkDiskMapper) openMMapFiles() (returnErr error) {
 		return err
 	}
 
+	files, err = repairLastChunkFile(files)
+	if err != nil {
+		return err
+	}
+
 	chkFileIndices := make([]int, 0, len(files))
 	for seq, fn := range files {
 		f, err := fileutil.OpenMmapFile(fn)
@@ -219,40 +224,49 @@ func listChunkFiles(dir string) (map[int]string, error) {
 		return nil, err
 	}
 	res := map[int]string{}
-	lastFile := uint64(0)
 	for _, fi := range files {
 		seq, err := strconv.ParseUint(fi.Name(), 10, 64)
 		if err != nil {
 			continue
 		}
-		if seq > lastFile {
-			lastFile = seq
-		}
 		res[int(seq)] = filepath.Join(dir, fi.Name())
 	}
 
-	if lastFile != uint64(0) {
-		// Because we don't fsync when creating these file, we could end
-		// up with an empty file at the end during abrupt shutdown.
-		// Hence we do a read repair here and delete the last file if it is empty.
-		f, err := os.Open(res[int(lastFile)])
-		if err != nil {
-			return nil, errors.Wrap(err, "open file during read repair")
-		}
-		info, err := f.Stat()
-		if err != nil {
-			return nil, errors.Wrap(err, "file stat during read repair")
-		}
-		if info.Size() == 0 {
-			// Corrupt file, hence remove it.
-			if err := os.RemoveAll(res[int(lastFile)]); err != nil {
-				return nil, errors.Wrap(err, "delete corrupt file during read repair")
-			}
-			delete(res, int(lastFile))
+	return res, nil
+}
+
+// repairLastChunkFile deletes the last file if it's empty.
+// Because we don't fsync when creating these file, we could end
+// up with an empty file at the end during an abrupt shutdown.
+func repairLastChunkFile(files map[int]string) (map[int]string, error) {
+	lastFile := -1
+	for seq := range files {
+		if seq > lastFile {
+			lastFile = seq
 		}
 	}
 
-	return res, nil
+	if lastFile <= 0 {
+		return files, nil
+	}
+
+	f, err := os.Open(files[lastFile])
+	if err != nil {
+		return files, errors.Wrap(err, "open file during repair")
+	}
+	info, err := f.Stat()
+	if err != nil {
+		return files, errors.Wrap(err, "file stat during repair")
+	}
+	if info.Size() == 0 {
+		// Corrupt file, hence remove it.
+		if err := os.RemoveAll(files[lastFile]); err != nil {
+			return files, errors.Wrap(err, "delete corrupt file during repair")
+		}
+		delete(files, lastFile)
+	}
+
+	return files, nil
 }
 
 // WriteChunk writes the chunk to the disk.
