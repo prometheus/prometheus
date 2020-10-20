@@ -41,6 +41,7 @@ func Min(x, y int64) int64 {
 
 // Import function reads an OM file, creates two hour blocks and writes that to the TSDB.
 func Import(path string, outputDir string, DefaultBlockDuration int64) (err error) {
+	logger := log.NewNopLogger()
 	input := os.Stdin
 	if path != "" {
 		input, err = os.Open(path)
@@ -55,10 +56,7 @@ func Import(path string, outputDir string, DefaultBlockDuration int64) (err erro
 	}
 	var p textparse.Parser
 	p = openmetrics.NewParser(input)
-
-	logger := log.NewNopLogger()
 	level.Info(logger).Log("msg", "started importing input data.")
-
 	var maxt int64 = math.MinInt16
 	var mint int64 = math.MaxInt16
 	var e textparse.Entry
@@ -75,9 +73,7 @@ func Import(path string, outputDir string, DefaultBlockDuration int64) (err erro
 		}
 		l := labels.Labels{}
 		p.Metric(&l)
-		_, ts, v := p.Series()
-		fmt.Println(v)
-		fmt.Println(*ts)
+		_, ts, _ := p.Series()
 		if *ts >= maxt {
 			maxt = *ts
 		}
@@ -118,17 +114,18 @@ func Import(path string, outputDir string, DefaultBlockDuration int64) (err erro
 			if *ts >= t && *ts < tsUpper {
 				_, err := app.Add(l, *ts, v)
 				if err != nil {
-					return errors.Errorf("Unable to add chunk")
+					return errors.Wrap(err, "add sample")
 				}
 			}
-
 		}
-		app.Commit()
-		_, errf := w.Flush(ctx)
-		if errf != nil {
-			return errors.Errorf("Unable to flush")
+		if err := app.Commit(); err != nil {
+			return errors.Wrap(err, "commit")
 		}
-
+		ids, err := w.Flush(ctx)
+		if err != nil {
+			return errors.Wrap(err, "flush")
+		}
+		level.Info(logger).Log("msg", "blocks flushed", "ids", fmt.Sprintf("%v", ids))
 	}
 	return nil
 }
