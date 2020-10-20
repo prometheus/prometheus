@@ -579,6 +579,17 @@ role: <string>
 
 # Optional filters to limit the discovery process to a subset of available
 # resources.
+# The avabilable filters are listed in the upstream documentation:
+# Services: https://docs.docker.com/engine/api/v1.40/#operation/ServiceList
+# Tasks: https://docs.docker.com/engine/api/v1.40/#operation/TaskList
+# Nodes: https://docs.docker.com/engine/api/v1.40/#operation/NodeList
+
+# Note: When making decision about using filters make sure that this is the best
+# approach - it will prevent Prometheus from reusing single list/watch for all
+# scrape configs. This might result in a bigger load on the Swarm API, because per
+# each filters combination there will be additional GET. On the other hand, if you
+# just want to monitor small subset of tasks in large cluster it's recommended to
+# use filters.
 [ filters:
   [ - name: <string>
       values: <string>, [...] ]
