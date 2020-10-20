@@ -19,6 +19,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"time"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -57,8 +58,8 @@ func Import(path string, outputDir string, DefaultBlockDuration int64) (err erro
 	var p textparse.Parser
 	p = openmetrics.NewParser(input)
 	level.Info(logger).Log("msg", "started importing input data.")
-	var maxt int64 = math.MinInt16
-	var mint int64 = math.MaxInt16
+	var maxt int64 = math.MinInt64
+	var mint int64 = math.MaxInt64
 	var e textparse.Entry
 	for {
 		e, err = p.Next()
@@ -84,7 +85,7 @@ func Import(path string, outputDir string, DefaultBlockDuration int64) (err erro
 			return errors.Errorf("expected timestamp for series %v, got none", l.String())
 		}
 	}
-	var offset int64 = 2 * 60 * 60 * 1000
+	var offset int64 = 2 * time.Hour.Milliseconds()
 
 	for t := mint; t < maxt; t = t + offset {
 		var e textparse.Entry
@@ -111,11 +112,13 @@ func Import(path string, outputDir string, DefaultBlockDuration int64) (err erro
 			if ts == nil {
 				return errors.Errorf("expected timestamp for series %v, got none", l.String())
 			}
+			fmt.Println(v, "Print samples outside")
 			if *ts >= t && *ts < tsUpper {
 				_, err := app.Add(l, *ts, v)
 				if err != nil {
 					return errors.Wrap(err, "add sample")
 				}
+
 			}
 		}
 		if err := app.Commit(); err != nil {
