@@ -26,10 +26,10 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/assert"
 	"go.uber.org/goleak"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestMain(m *testing.M) {
@@ -54,7 +54,7 @@ func newTestRunner(t *testing.T) *testRunner {
 	t.Helper()
 
 	tmpDir, err := ioutil.TempDir("", "prometheus-file-sd")
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 
 	return &testRunner{
 		T:       t,
@@ -77,19 +77,19 @@ func (t *testRunner) copyFileTo(src string, name string) string {
 	t.Helper()
 
 	newf, err := ioutil.TempFile(t.dir, "")
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 
 	f, err := os.Open(src)
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 
 	_, err = io.Copy(newf, f)
-	testutil.Ok(t, err)
-	testutil.Ok(t, f.Close())
-	testutil.Ok(t, newf.Close())
+	assert.NoError(t, err)
+	assert.NoError(t, f.Close())
+	assert.NoError(t, newf.Close())
 
 	dst := filepath.Join(t.dir, name)
 	err = os.Rename(newf.Name(), dst)
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 
 	return dst
 }
@@ -99,14 +99,14 @@ func (t *testRunner) writeString(file string, data string) {
 	t.Helper()
 
 	newf, err := ioutil.TempFile(t.dir, "")
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 
 	_, err = newf.WriteString(data)
-	testutil.Ok(t, err)
-	testutil.Ok(t, newf.Close())
+	assert.NoError(t, err)
+	assert.NoError(t, newf.Close())
 
 	err = os.Rename(newf.Name(), file)
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 }
 
 // appendString appends a string to a file.
@@ -114,11 +114,11 @@ func (t *testRunner) appendString(file, data string) {
 	t.Helper()
 
 	f, err := os.OpenFile(file, os.O_WRONLY|os.O_APPEND, 0)
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	defer f.Close()
 
 	_, err = f.WriteString(data)
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 }
 
 // run starts the file SD and the loop receiving target groups updates.
@@ -230,7 +230,7 @@ func (t *testRunner) requireTargetGroups(expected, got []*targetgroup.Group) {
 		panic(err)
 	}
 
-	testutil.Equals(t, string(b1), string(b2))
+	assert.Equal(t, string(b1), string(b2))
 }
 
 // validTg() maps to fixtures/valid.{json,yml}.
@@ -468,7 +468,7 @@ func TestRemoveFile(t *testing.T) {
 
 	// Verify that we receive the update about the target groups being removed.
 	ref := runner.lastReceive()
-	testutil.Ok(t, os.Remove(sdFile))
+	assert.NoError(t, os.Remove(sdFile))
 	runner.requireUpdate(
 		ref,
 		[]*targetgroup.Group{

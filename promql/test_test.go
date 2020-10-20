@@ -18,9 +18,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/stretchr/testify/assert"
 
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/pkg/labels"
 )
 
 func TestLazyLoader_WithSamplesTill(t *testing.T) {
@@ -110,12 +110,12 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 
 	for _, c := range cases {
 		suite, err := NewLazyLoader(t, c.loadString)
-		testutil.Ok(t, err)
+		assert.NoError(t, err)
 		defer suite.Close()
 
 		for _, tc := range c.testCases {
 			suite.WithSamplesTill(tc.ts, func(err error) {
-				testutil.Ok(t, err)
+				assert.NoError(t, err)
 				if tc.checkOnlyError {
 					return
 				}
@@ -123,20 +123,20 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 				// Check the series.
 				queryable := suite.Queryable()
 				querier, err := queryable.Querier(suite.Context(), math.MinInt64, math.MaxInt64)
-				testutil.Ok(t, err)
+				assert.NoError(t, err)
 				for _, s := range tc.series {
 					var matchers []*labels.Matcher
 					for _, label := range s.Metric {
 						m, err := labels.NewMatcher(labels.MatchEqual, label.Name, label.Value)
-						testutil.Ok(t, err)
+						assert.NoError(t, err)
 						matchers = append(matchers, m)
 					}
 
 					// Get the series for the matcher.
 					ss := querier.Select(false, nil, matchers...)
-					testutil.Assert(t, ss.Next(), "")
+					assert.True(t, ss.Next(), "")
 					storageSeries := ss.At()
-					testutil.Assert(t, !ss.Next(), "Expecting only 1 series")
+					assert.True(t, !ss.Next(), "Expecting only 1 series")
 
 					// Convert `storage.Series` to `promql.Series`.
 					got := Series{
@@ -147,9 +147,9 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 						t, v := it.At()
 						got.Points = append(got.Points, Point{T: t, V: v})
 					}
-					testutil.Ok(t, it.Err())
+					assert.NoError(t, it.Err())
 
-					testutil.Equals(t, s, got)
+					assert.Equal(t, s, got)
 				}
 			})
 		}

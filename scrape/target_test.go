@@ -21,14 +21,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/prometheus/common/model"
-
 	config_util "github.com/prometheus/common/config"
+	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/assert"
+
 	"github.com/prometheus/prometheus/pkg/labels"
 )
 
@@ -40,9 +40,7 @@ func TestTargetLabels(t *testing.T) {
 	target := newTestTarget("example.com:80", 0, labels.FromStrings("job", "some_job", "foo", "bar"))
 	want := labels.FromStrings(model.JobLabel, "some_job", "foo", "bar")
 	got := target.Labels()
-	if !reflect.DeepEqual(want, got) {
-		t.Errorf("want base labels %v, got %v", want, got)
-	}
+	assert.Equal(t, want, got)
 }
 
 func TestTargetOffset(t *testing.T) {
@@ -113,16 +111,14 @@ func TestTargetURL(t *testing.T) {
 		"cde": []string{"huu"},
 		"xyz": []string{"hoo"},
 	}
-	expectedURL := url.URL{
+	expectedURL := &url.URL{
 		Scheme:   "https",
 		Host:     "example.com:1234",
 		Path:     "/metricz",
 		RawQuery: expectedParams.Encode(),
 	}
 
-	if u := target.URL(); !reflect.DeepEqual(u.String(), expectedURL.String()) {
-		t.Fatalf("Expected URL %q, but got %q", expectedURL.String(), u.String())
-	}
+	assert.Equal(t, expectedURL, target.URL())
 }
 
 func newTestTarget(targetURL string, deadline time.Duration, lbls labels.Labels) *Target {

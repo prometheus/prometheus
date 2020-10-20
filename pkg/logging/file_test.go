@@ -20,71 +20,71 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestJSONFileLogger_basic(t *testing.T) {
 	f, err := ioutil.TempFile("", "logging")
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	defer func() {
-		testutil.Ok(t, f.Close())
-		testutil.Ok(t, os.Remove(f.Name()))
+		assert.NoError(t, f.Close())
+		assert.NoError(t, os.Remove(f.Name()))
 	}()
 
 	l, err := NewJSONFileLogger(f.Name())
-	testutil.Ok(t, err)
-	testutil.Assert(t, l != nil, "logger can't be nil")
+	assert.NoError(t, err)
+	assert.NotNil(t, l, "logger can't be nil")
 
 	err = l.Log("test", "yes")
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	r := make([]byte, 1024)
 	_, err = f.Read(r)
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	result, err := regexp.Match(`^{"test":"yes","ts":"[^"]+"}\n`, r)
-	testutil.Ok(t, err)
-	testutil.Assert(t, result, "unexpected content: %s", r)
+	assert.NoError(t, err)
+	assert.True(t, result, "unexpected content: %s", r)
 
 	err = l.Close()
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 
 	err = l.file.Close()
-	testutil.NotOk(t, err)
-	testutil.Assert(t, strings.HasSuffix(err.Error(), os.ErrClosed.Error()), "file not closed")
+	assert.Error(t, err)
+	assert.True(t, strings.HasSuffix(err.Error(), os.ErrClosed.Error()), "file not closed")
 }
 
 func TestJSONFileLogger_parallel(t *testing.T) {
 	f, err := ioutil.TempFile("", "logging")
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	defer func() {
-		testutil.Ok(t, f.Close())
-		testutil.Ok(t, os.Remove(f.Name()))
+		assert.NoError(t, f.Close())
+		assert.NoError(t, os.Remove(f.Name()))
 	}()
 
 	l, err := NewJSONFileLogger(f.Name())
-	testutil.Ok(t, err)
-	testutil.Assert(t, l != nil, "logger can't be nil")
+	assert.NoError(t, err)
+	assert.NotNil(t, l, "logger can't be nil")
 
 	err = l.Log("test", "yes")
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 
 	l2, err := NewJSONFileLogger(f.Name())
-	testutil.Ok(t, err)
-	testutil.Assert(t, l != nil, "logger can't be nil")
+	assert.NoError(t, err)
+	assert.NotNil(t, l, "logger can't be nil")
 
 	err = l2.Log("test", "yes")
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 
 	err = l.Close()
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 
 	err = l.file.Close()
-	testutil.NotOk(t, err)
-	testutil.Assert(t, strings.HasSuffix(err.Error(), os.ErrClosed.Error()), "file not closed")
+	assert.Error(t, err)
+	assert.True(t, strings.HasSuffix(err.Error(), os.ErrClosed.Error()), "file not closed")
 
 	err = l2.Close()
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 
 	err = l2.file.Close()
-	testutil.NotOk(t, err)
-	testutil.Assert(t, strings.HasSuffix(err.Error(), os.ErrClosed.Error()), "file not closed")
+	assert.Error(t, err)
+	assert.True(t, strings.HasSuffix(err.Error(), os.ErrClosed.Error()), "file not closed")
 }

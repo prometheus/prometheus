@@ -23,12 +23,13 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
+	"github.com/stretchr/testify/assert"
+	"go.uber.org/goleak"
+
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/util/testutil"
-	"go.uber.org/goleak"
 )
 
 func TestMain(m *testing.M) {
@@ -39,7 +40,7 @@ func TestQueryConcurrency(t *testing.T) {
 	maxConcurrency := 10
 
 	dir, err := ioutil.TempDir("", "test_concurrency")
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	defer os.RemoveAll(dir)
 	queryTracker := NewActiveQueryTracker(dir, maxConcurrency, nil)
 
@@ -118,10 +119,10 @@ func TestQueryTimeout(t *testing.T) {
 	})
 
 	res := query.Exec(ctx)
-	testutil.NotOk(t, res.Err, "expected timeout error but got none")
+	assert.Error(t, res.Err, "expected timeout error but got none")
 
 	var e ErrQueryTimeout
-	testutil.Assert(t, errors.As(res.Err, &e), "expected timeout error but got: %s", res.Err)
+	assert.True(t, errors.As(res.Err, &e), "expected timeout error but got: %s", res.Err)
 }
 
 const errQueryCanceled = ErrQueryCanceled("test statement execution")
@@ -159,8 +160,8 @@ func TestQueryCancel(t *testing.T) {
 	block <- struct{}{}
 	<-processing
 
-	testutil.NotOk(t, res.Err, "expected cancellation error for query1 but got none")
-	testutil.Equals(t, errQueryCanceled, res.Err)
+	assert.Error(t, res.Err, "expected cancellation error for query1 but got none")
+	assert.Equal(t, errQueryCanceled, res.Err)
 
 	// Canceling a query before starting it must have no effect.
 	query2 := engine.newTestQuery(func(ctx context.Context) error {
@@ -169,7 +170,7 @@ func TestQueryCancel(t *testing.T) {
 
 	query2.Cancel()
 	res = query2.Exec(ctx)
-	testutil.Ok(t, res.Err)
+	assert.NoError(t, res.Err)
 }
 
 // errQuerier implements storage.Querier which always returns error.
@@ -210,18 +211,18 @@ func TestQueryError(t *testing.T) {
 	defer cancelCtx()
 
 	vectorQuery, err := engine.NewInstantQuery(queryable, "foo", time.Unix(1, 0))
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 
 	res := vectorQuery.Exec(ctx)
-	testutil.NotOk(t, res.Err, "expected error on failed select but got none")
-	testutil.Assert(t, errors.Is(res.Err, errStorage), "expected error doesn't match")
+	assert.Error(t, res.Err, "expected error on failed select but got none")
+	assert.True(t, errors.Is(res.Err, errStorage), "expected error doesn't match")
 
 	matrixQuery, err := engine.NewInstantQuery(queryable, "foo[1m]", time.Unix(1, 0))
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 
 	res = matrixQuery.Exec(ctx)
-	testutil.NotOk(t, res.Err, "expected error on failed select but got none")
-	testutil.Assert(t, errors.Is(res.Err, errStorage), "expected error doesn't match")
+	assert.Error(t, res.Err, "expected error on failed select but got none")
+	assert.True(t, errors.Is(res.Err, errStorage), "expected error doesn't match")
 }
 
 type noopHintRecordingQueryable struct {
@@ -377,12 +378,12 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 			} else {
 				query, err = engine.NewRangeQuery(hintsRecorder, tc.query, timestamp.Time(tc.start), timestamp.Time(tc.end), time.Second)
 			}
-			testutil.Ok(t, err)
+			assert.NoError(t, err)
 
 			res := query.Exec(context.Background())
-			testutil.Ok(t, res.Err)
+			assert.NoError(t, res.Err)
 
-			testutil.Equals(t, tc.expected, hintsRecorder.hints)
+			assert.Equal(t, tc.expected, hintsRecorder.hints)
 		})
 
 	}
@@ -425,8 +426,8 @@ func TestEngineShutdown(t *testing.T) {
 	block <- struct{}{}
 	<-processing
 
-	testutil.NotOk(t, res.Err, "expected error on shutdown during query but got none")
-	testutil.Equals(t, errQueryCanceled, res.Err)
+	assert.Error(t, res.Err, "expected error on shutdown during query but got none")
+	assert.Equal(t, errQueryCanceled, res.Err)
 
 	query2 := engine.newTestQuery(func(context.Context) error {
 		t.Fatalf("reached query execution unexpectedly")
@@ -436,10 +437,10 @@ func TestEngineShutdown(t *testing.T) {
 	// The second query is started after the engine shut down. It must
 	// be canceled immediately.
 	res2 := query2.Exec(ctx)
-	testutil.NotOk(t, res2.Err, "expected error on querying with canceled context but got none")
+	assert.Error(t, res2.Err, "expected error on querying with canceled context but got none")
 
 	var e ErrQueryCanceled
-	testutil.Assert(t, errors.As(res2.Err, &e), "expected cancellation error but got: %s", res2.Err)
+	assert.True(t, errors.As(res2.Err, &e), "expected cancellation error but got: %s", res2.Err)
 }
 
 func TestEngineEvalStmtTimestamps(t *testing.T) {
@@ -447,11 +448,11 @@ func TestEngineEvalStmtTimestamps(t *testing.T) {
 load 10s
   metric 1 2
 `)
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	defer test.Close()
 
 	err = test.Run()
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 
 	cases := []struct {
 		Query       string
@@ -528,16 +529,16 @@ load 10s
 		} else {
 			qry, err = test.QueryEngine().NewRangeQuery(test.Queryable(), c.Query, c.Start, c.End, c.Interval)
 		}
-		testutil.Ok(t, err)
+		assert.NoError(t, err)
 
 		res := qry.Exec(test.Context())
 		if c.ShouldError {
-			testutil.NotOk(t, res.Err, "expected error for the query %q", c.Query)
+			assert.Error(t, res.Err, "expected error for the query %q", c.Query)
 			continue
 		}
 
-		testutil.Ok(t, res.Err)
-		testutil.Equals(t, c.Result, res.Value, "query %q failed", c.Query)
+		assert.NoError(t, res.Err)
+		assert.Equal(t, c.Result, res.Value, "query %q failed", c.Query)
 	}
 }
 
@@ -548,11 +549,11 @@ load 10s
   bigmetric{a="1"} 1 2
   bigmetric{a="2"} 1 2
 `)
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	defer test.Close()
 
 	err = test.Run()
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 
 	cases := []struct {
 		Query      string
@@ -764,11 +765,11 @@ load 10s
 		} else {
 			qry, err = engine.NewRangeQuery(test.Queryable(), c.Query, c.Start, c.End, c.Interval)
 		}
-		testutil.Ok(t, err)
+		assert.NoError(t, err)
 
 		res := qry.Exec(test.Context())
-		testutil.Equals(t, c.Result.Err, res.Err)
-		testutil.Equals(t, c.Result.Value, res.Value, "query %q failed", c.Query)
+		assert.Equal(t, c.Result.Err, res.Err)
+		assert.Equal(t, c.Result.Value, res.Value, "query %q failed", c.Query)
 	}
 }
 
@@ -1051,21 +1052,21 @@ func TestSubquerySelector(t *testing.T) {
 	} {
 		t.Run("", func(t *testing.T) {
 			test, err := NewTest(t, tst.loadString)
-			testutil.Ok(t, err)
+			assert.NoError(t, err)
 			defer test.Close()
 
-			testutil.Ok(t, test.Run())
+			assert.NoError(t, test.Run())
 			engine := test.QueryEngine()
 			for _, c := range tst.cases {
 				t.Run(c.Query, func(t *testing.T) {
 					qry, err := engine.NewInstantQuery(test.Queryable(), c.Query, c.Start)
-					testutil.Ok(t, err)
+					assert.NoError(t, err)
 
 					res := qry.Exec(test.Context())
-					testutil.Equals(t, c.Result.Err, res.Err)
+					assert.Equal(t, c.Result.Err, res.Err)
 					mat := res.Value.(Matrix)
 					sort.Sort(mat)
-					testutil.Equals(t, c.Result.Value, mat)
+					assert.Equal(t, c.Result.Value, mat)
 				})
 			}
 		})
@@ -1110,7 +1111,7 @@ func TestQueryLogger_basic(t *testing.T) {
 			return contextDone(ctx, "test statement execution")
 		})
 		res := query.Exec(ctx)
-		testutil.Ok(t, res.Err)
+		assert.NoError(t, res.Err)
 	}
 
 	// Query works without query log initialized.
@@ -1120,28 +1121,28 @@ func TestQueryLogger_basic(t *testing.T) {
 	engine.SetQueryLogger(f1)
 	queryExec()
 	for i, field := range []interface{}{"params", map[string]interface{}{"query": "test statement"}} {
-		testutil.Equals(t, field, f1.logs[i])
+		assert.Equal(t, field, f1.logs[i])
 	}
 
 	l := len(f1.logs)
 	queryExec()
-	testutil.Equals(t, 2*l, len(f1.logs))
+	assert.Equal(t, 2*l, len(f1.logs))
 
 	// Test that we close the query logger when unsetting it.
-	testutil.Assert(t, !f1.closed, "expected f1 to be open, got closed")
+	assert.True(t, !f1.closed, "expected f1 to be open, got closed")
 	engine.SetQueryLogger(nil)
-	testutil.Assert(t, f1.closed, "expected f1 to be closed, got open")
+	assert.True(t, f1.closed, "expected f1 to be closed, got open")
 	queryExec()
 
 	// Test that we close the query logger when swapping.
 	f2 := NewFakeQueryLogger()
 	f3 := NewFakeQueryLogger()
 	engine.SetQueryLogger(f2)
-	testutil.Assert(t, !f2.closed, "expected f2 to be open, got closed")
+	assert.True(t, !f2.closed, "expected f2 to be open, got closed")
 	queryExec()
 	engine.SetQueryLogger(f3)
-	testutil.Assert(t, f2.closed, "expected f2 to be closed, got open")
-	testutil.Assert(t, !f3.closed, "expected f3 to be open, got closed")
+	assert.True(t, f2.closed, "expected f2 to be closed, got open")
+	assert.True(t, !f3.closed, "expected f3 to be open, got closed")
 	queryExec()
 }
 
@@ -1165,12 +1166,12 @@ func TestQueryLogger_fields(t *testing.T) {
 	})
 
 	res := query.Exec(ctx)
-	testutil.Ok(t, res.Err)
+	assert.NoError(t, res.Err)
 
 	expected := []string{"foo", "bar"}
 	for i, field := range expected {
 		v := f1.logs[len(f1.logs)-len(expected)+i].(string)
-		testutil.Equals(t, field, v)
+		assert.Equal(t, field, v)
 	}
 }
 
@@ -1195,9 +1196,9 @@ func TestQueryLogger_error(t *testing.T) {
 	})
 
 	res := query.Exec(ctx)
-	testutil.NotOk(t, res.Err, "query should have failed")
+	assert.Error(t, res.Err, "query should have failed")
 
 	for i, field := range []interface{}{"params", map[string]interface{}{"query": "test statement"}, "error", testErr} {
-		testutil.Equals(t, f1.logs[i], field)
+		assert.Equal(t, f1.logs[i], field)
 	}
 }

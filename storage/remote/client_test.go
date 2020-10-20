@@ -25,7 +25,7 @@ import (
 	"github.com/pkg/errors"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/stretchr/testify/assert"
 )
 
 var longErrMessage = strings.Repeat("error message", maxErrMsgLen)
@@ -53,7 +53,7 @@ func TestStoreHTTPErrorHandling(t *testing.T) {
 		},
 	}
 
-	for i, test := range tests {
+	for _, test := range tests {
 		server := httptest.NewServer(
 			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, longErrMessage, test.code)
@@ -61,7 +61,7 @@ func TestStoreHTTPErrorHandling(t *testing.T) {
 		)
 
 		serverURL, err := url.Parse(server.URL)
-		testutil.Ok(t, err)
+		assert.NoError(t, err)
 
 		conf := &ClientConfig{
 			URL:     &config_util.URL{URL: serverURL},
@@ -69,12 +69,16 @@ func TestStoreHTTPErrorHandling(t *testing.T) {
 		}
 
 		hash, err := toHash(conf)
-		testutil.Ok(t, err)
+		assert.NoError(t, err)
 		c, err := NewWriteClient(hash, conf)
-		testutil.Ok(t, err)
+		assert.NoError(t, err)
 
 		err = c.Store(context.Background(), []byte{})
-		testutil.ErrorEqual(t, err, test.err, "unexpected error in test %d", i)
+		if test.err != nil {
+			assert.EqualError(t, err, test.err.Error())
+		} else {
+			assert.NoError(t, err)
+		}
 
 		server.Close()
 	}

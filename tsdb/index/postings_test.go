@@ -20,8 +20,9 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestMemPostings_addFor(t *testing.T) {
@@ -31,7 +32,7 @@ func TestMemPostings_addFor(t *testing.T) {
 
 	p.addFor(5, allPostingsKey)
 
-	testutil.Equals(t, []uint64{1, 2, 3, 4, 5, 6, 7, 8}, p.m[allPostingsKey.Name][allPostingsKey.Value])
+	assert.Equal(t, []uint64{1, 2, 3, 4, 5, 6, 7, 8}, p.m[allPostingsKey.Name][allPostingsKey.Value])
 }
 
 func TestMemPostings_ensureOrder(t *testing.T) {
@@ -160,12 +161,12 @@ func TestIntersect(t *testing.T) {
 			}
 
 			expected, err := ExpandPostings(c.res)
-			testutil.Ok(t, err)
+			assert.NoError(t, err)
 
 			i := Intersect(c.in...)
 
 			if c.res == EmptyPostings() {
-				testutil.Equals(t, EmptyPostings(), i)
+				assert.Equal(t, EmptyPostings(), i)
 				return
 			}
 
@@ -174,8 +175,8 @@ func TestIntersect(t *testing.T) {
 			}
 
 			res, err := ExpandPostings(i)
-			testutil.Ok(t, err)
-			testutil.Equals(t, expected, res)
+			assert.NoError(t, err)
+			assert.Equal(t, expected, res)
 		})
 	}
 }
@@ -216,8 +217,8 @@ func TestMultiIntersect(t *testing.T) {
 
 		res, err := ExpandPostings(Intersect(ps...))
 
-		testutil.Ok(t, err)
-		testutil.Equals(t, c.res, res)
+		assert.NoError(t, err)
+		assert.Equal(t, c.res, res)
 	}
 }
 
@@ -314,8 +315,8 @@ func TestMultiMerge(t *testing.T) {
 	i3 := newListPostings(1, 2, 5, 6, 7, 8, 1001, 1200)
 
 	res, err := ExpandPostings(Merge(i1, i2, i3))
-	testutil.Ok(t, err)
-	testutil.Equals(t, []uint64{1, 2, 3, 4, 5, 6, 7, 8, 999, 1000, 1001, 1200}, res)
+	assert.NoError(t, err)
+	assert.Equal(t, []uint64{1, 2, 3, 4, 5, 6, 7, 8, 999, 1000, 1001, 1200}, res)
 }
 
 func TestMergedPostings(t *testing.T) {
@@ -402,12 +403,12 @@ func TestMergedPostings(t *testing.T) {
 			}
 
 			expected, err := ExpandPostings(c.res)
-			testutil.Ok(t, err)
+			assert.NoError(t, err)
 
 			m := Merge(c.in...)
 
 			if c.res == EmptyPostings() {
-				testutil.Equals(t, EmptyPostings(), m)
+				assert.Equal(t, EmptyPostings(), m)
 				return
 			}
 
@@ -416,8 +417,8 @@ func TestMergedPostings(t *testing.T) {
 			}
 
 			res, err := ExpandPostings(m)
-			testutil.Ok(t, err)
-			testutil.Equals(t, expected, res)
+			assert.NoError(t, err)
+			assert.Equal(t, expected, res)
 		})
 	}
 }
@@ -470,16 +471,16 @@ func TestMergedPostingsSeek(t *testing.T) {
 
 		p := Merge(a, b)
 
-		testutil.Equals(t, c.success, p.Seek(c.seek))
+		assert.Equal(t, c.success, p.Seek(c.seek))
 
 		// After Seek(), At() should be called.
 		if c.success {
 			start := p.At()
 			lst, err := ExpandPostings(p)
-			testutil.Ok(t, err)
+			assert.NoError(t, err)
 
 			lst = append([]uint64{start}, lst...)
-			testutil.Equals(t, c.res, lst)
+			assert.Equal(t, c.res, lst)
 		}
 	}
 }
@@ -531,8 +532,8 @@ func TestRemovedPostings(t *testing.T) {
 		b := newListPostings(c.b...)
 
 		res, err := ExpandPostings(newRemovedPostings(a, b))
-		testutil.Ok(t, err)
-		testutil.Equals(t, c.res, res)
+		assert.NoError(t, err)
+		assert.Equal(t, c.res, res)
 	}
 
 }
@@ -555,8 +556,8 @@ func TestRemovedNextStackoverflow(t *testing.T) {
 		gotElem = true
 	}
 
-	testutil.Ok(t, rp.Err())
-	testutil.Assert(t, !gotElem, "")
+	assert.NoError(t, rp.Err())
+	assert.True(t, !gotElem, "")
 }
 
 func TestRemovedPostingsSeek(t *testing.T) {
@@ -631,16 +632,16 @@ func TestRemovedPostingsSeek(t *testing.T) {
 
 		p := newRemovedPostings(a, b)
 
-		testutil.Equals(t, c.success, p.Seek(c.seek))
+		assert.Equal(t, c.success, p.Seek(c.seek))
 
 		// After Seek(), At() should be called.
 		if c.success {
 			start := p.At()
 			lst, err := ExpandPostings(p)
-			testutil.Ok(t, err)
+			assert.NoError(t, err)
 
 			lst = append([]uint64{start}, lst...)
-			testutil.Equals(t, c.res, lst)
+			assert.Equal(t, c.res, lst)
 		}
 	}
 }
@@ -663,12 +664,12 @@ func TestBigEndian(t *testing.T) {
 	t.Run("Iteration", func(t *testing.T) {
 		bep := newBigEndianPostings(beLst)
 		for i := 0; i < num; i++ {
-			testutil.Assert(t, bep.Next() == true, "")
-			testutil.Equals(t, uint64(ls[i]), bep.At())
+			assert.True(t, bep.Next() == true, "")
+			assert.Equal(t, uint64(ls[i]), bep.At())
 		}
 
-		testutil.Assert(t, bep.Next() == false, "")
-		testutil.Assert(t, bep.Err() == nil, "")
+		assert.True(t, bep.Next() == false, "")
+		assert.True(t, bep.Err() == nil, "")
 	})
 
 	t.Run("Seek", func(t *testing.T) {
@@ -712,9 +713,9 @@ func TestBigEndian(t *testing.T) {
 		bep := newBigEndianPostings(beLst)
 
 		for _, v := range table {
-			testutil.Equals(t, v.found, bep.Seek(uint64(v.seek)))
-			testutil.Equals(t, uint64(v.val), bep.At())
-			testutil.Assert(t, bep.Err() == nil, "")
+			assert.Equal(t, v.found, bep.Seek(uint64(v.seek)))
+			assert.Equal(t, uint64(v.val), bep.At())
+			assert.True(t, bep.Err() == nil, "")
 		}
 	})
 }
@@ -732,8 +733,8 @@ func TestIntersectWithMerge(t *testing.T) {
 	p := Intersect(a, b)
 	res, err := ExpandPostings(p)
 
-	testutil.Ok(t, err)
-	testutil.Equals(t, []uint64{30}, res)
+	assert.NoError(t, err)
+	assert.Equal(t, []uint64{30}, res)
 }
 
 func TestWithoutPostings(t *testing.T) {
@@ -794,12 +795,12 @@ func TestWithoutPostings(t *testing.T) {
 			}
 
 			expected, err := ExpandPostings(c.res)
-			testutil.Ok(t, err)
+			assert.NoError(t, err)
 
 			w := Without(c.base, c.drop)
 
 			if c.res == EmptyPostings() {
-				testutil.Equals(t, EmptyPostings(), w)
+				assert.Equal(t, EmptyPostings(), w)
 				return
 			}
 
@@ -808,8 +809,8 @@ func TestWithoutPostings(t *testing.T) {
 			}
 
 			res, err := ExpandPostings(w)
-			testutil.Ok(t, err)
-			testutil.Equals(t, expected, res)
+			assert.NoError(t, err)
+			assert.Equal(t, expected, res)
 		})
 	}
 }
@@ -859,17 +860,17 @@ func TestMemPostings_Delete(t *testing.T) {
 	// Make sure postings gotten before the delete have the old data when
 	// iterated over.
 	expanded, err := ExpandPostings(before)
-	testutil.Ok(t, err)
-	testutil.Equals(t, []uint64{1, 2, 3}, expanded)
+	assert.NoError(t, err)
+	assert.Equal(t, []uint64{1, 2, 3}, expanded)
 
 	// Make sure postings gotten after the delete have the new data when
 	// iterated over.
 	expanded, err = ExpandPostings(after)
-	testutil.Ok(t, err)
-	testutil.Equals(t, []uint64{1, 3}, expanded)
+	assert.NoError(t, err)
+	assert.Equal(t, []uint64{1, 3}, expanded)
 
 	deleted := p.Get("lbl1", "b")
 	expanded, err = ExpandPostings(deleted)
-	testutil.Ok(t, err)
-	testutil.Assert(t, 0 == len(expanded), "expected empty postings, got %v", expanded)
+	assert.NoError(t, err)
+	assert.True(t, 0 == len(expanded), "expected empty postings, got %v", expanded)
 }

@@ -22,12 +22,12 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/miekg/dns"
+	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/assert"
 	"go.uber.org/goleak"
 	"gopkg.in/yaml.v2"
 
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestMain(m *testing.M) {
@@ -205,8 +205,8 @@ func TestDNS(t *testing.T) {
 			sd.lookupFn = tc.lookup
 
 			tgs, err := sd.refresh(context.Background())
-			testutil.Ok(t, err)
-			testutil.Equals(t, tc.expected, tgs)
+			assert.NoError(t, err)
+			assert.Equal(t, tc.expected, tgs)
 		})
 	}
 }
@@ -296,7 +296,7 @@ func TestSDConfigUnmarshalYAML(t *testing.T) {
 			var config SDConfig
 			d := marshal(c.input)
 			err := config.UnmarshalYAML(unmarshal(d))
-			testutil.Equals(t, c.expectErr, err != nil)
+			assert.Equal(t, c.expectErr, err != nil)
 		})
 	}
 }

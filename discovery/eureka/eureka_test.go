@@ -15,14 +15,14 @@ package eureka
 
 import (
 	"context"
-	"github.com/prometheus/prometheus/util/testutil"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/assert"
+
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
@@ -45,7 +45,7 @@ func testUpdateServices(respHandler http.HandlerFunc) ([]*targetgroup.Group, err
 
 func TestEurekaSDHandleError(t *testing.T) {
 	var (
-		errTesting  = errors.Errorf("non 2xx status '%d' response during eureka service discovery", http.StatusInternalServerError)
+		errTesting  = "non 2xx status '500' response during eureka service discovery"
 		respHandler = func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 			w.Header().Set("Content-Type", "application/xml")
@@ -54,8 +54,8 @@ func TestEurekaSDHandleError(t *testing.T) {
 	)
 	tgs, err := testUpdateServices(respHandler)
 
-	testutil.ErrorEqual(t, err, errTesting)
-	testutil.Equals(t, len(tgs), 0)
+	assert.EqualError(t, err, errTesting)
+	assert.Equal(t, len(tgs), 0)
 }
 
 func TestEurekaSDEmptyList(t *testing.T) {
@@ -71,8 +71,8 @@ func TestEurekaSDEmptyList(t *testing.T) {
 		}
 	)
 	tgs, err := testUpdateServices(respHandler)
-	testutil.Ok(t, err)
-	testutil.Equals(t, len(tgs), 1)
+	assert.NoError(t, err)
+	assert.Equal(t, len(tgs), 1)
 }
 
 func TestEurekaSDSendGroup(t *testing.T) {
@@ -231,16 +231,16 @@ func TestEurekaSDSendGroup(t *testing.T) {
 	)
 
 	tgs, err := testUpdateServices(respHandler)
-	testutil.Ok(t, err)
-	testutil.Equals(t, len(tgs), 1)
+	assert.NoError(t, err)
+	assert.Equal(t, len(tgs), 1)
 
 	tg := tgs[0]
-	testutil.Equals(t, tg.Source, "eureka")
-	testutil.Equals(t, len(tg.Targets), 4)
+	assert.Equal(t, tg.Source, "eureka")
+	assert.Equal(t, len(tg.Targets), 4)
 
 	tgt := tg.Targets[0]
-	testutil.Equals(t, tgt[model.AddressLabel], model.LabelValue("config-service001.test.com:8080"))
+	assert.Equal(t, tgt[model.AddressLabel], model.LabelValue("config-service001.test.com:8080"))
 
 	tgt = tg.Targets[2]
-	testutil.Equals(t, tgt[model.AddressLabel], model.LabelValue("meta-service002.test.com:8080"))
+	assert.Equal(t, tgt[model.AddressLabel], model.LabelValue("meta-service002.test.com:8080"))
 }

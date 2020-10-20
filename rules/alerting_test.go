@@ -15,22 +15,22 @@ package rules
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
 	"github.com/go-kit/kit/log"
+	"github.com/stretchr/testify/assert"
+
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/util/teststorage"
-	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestAlertingRuleHTMLSnippet(t *testing.T) {
 	expr, err := parser.ParseExpr(`foo{html="<b>BOLD<b>"}`)
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	rule := NewAlertingRule("testrule", expr, 0, labels.FromStrings("html", "<b>BOLD</b>"), labels.FromStrings("html", "<b>BOLD</b>"), nil, false, nil)
 
 	const want = `alert: <a href="/test/prefix/graph?g0.expr=ALERTS%7Balertname%3D%22testrule%22%7D&g0.tab=1">testrule</a>
@@ -42,7 +42,7 @@ annotations:
 `
 
 	got := rule.HTMLSnippet("/test/prefix")
-	testutil.Assert(t, want == got, "incorrect HTML snippet; want:\n\n|%v|\n\ngot:\n\n|%v|", want, got)
+	assert.True(t, want == got, "incorrect HTML snippet; want:\n\n|%v|\n\ngot:\n\n|%v|", want, got)
 }
 
 func TestAlertingRuleState(t *testing.T) {
@@ -81,7 +81,7 @@ func TestAlertingRuleState(t *testing.T) {
 		rule := NewAlertingRule(test.name, nil, 0, nil, nil, nil, true, nil)
 		rule.active = test.active
 		got := rule.State()
-		testutil.Assert(t, test.want == got, "test case %d unexpected AlertState, want:%d got:%d", i, test.want, got)
+		assert.True(t, test.want == got, "test case %d unexpected AlertState, want:%d got:%d", i, test.want, got)
 	}
 }
 
@@ -90,13 +90,13 @@ func TestAlertingRuleLabelsUpdate(t *testing.T) {
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 85 70 70
 	`)
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	defer suite.Close()
 
-	testutil.Ok(t, suite.Run())
+	assert.NoError(t, suite.Run())
 
 	expr, err := parser.ParseExpr(`http_requests < 100`)
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 
 	rule := NewAlertingRule(
 		"HTTPRequestRateLow",
@@ -170,7 +170,7 @@ func TestAlertingRuleLabelsUpdate(t *testing.T) {
 		evalTime := baseTime.Add(time.Duration(i) * time.Minute)
 		result[0].Point.T = timestamp.FromTime(evalTime)
 		res, err := rule.Eval(suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil)
-		testutil.Ok(t, err)
+		assert.NoError(t, err)
 
 		var filteredRes promql.Vector // After removing 'ALERTS_FOR_STATE' samples.
 		for _, smpl := range res {
@@ -179,11 +179,11 @@ func TestAlertingRuleLabelsUpdate(t *testing.T) {
 				filteredRes = append(filteredRes, smpl)
 			} else {
 				// If not 'ALERTS', it has to be 'ALERTS_FOR_STATE'.
-				testutil.Equals(t, "ALERTS_FOR_STATE", smplName)
+				assert.Equal(t, "ALERTS_FOR_STATE", smplName)
 			}
 		}
 
-		testutil.Equals(t, result, filteredRes)
+		assert.Equal(t, result, filteredRes)
 	}
 }
 
@@ -192,13 +192,13 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 85 70 70
 	`)
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	defer suite.Close()
 
-	testutil.Ok(t, suite.Run())
+	assert.NoError(t, suite.Run())
 
 	expr, err := parser.ParseExpr(`http_requests < 100`)
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 
 	ruleWithoutExternalLabels := NewAlertingRule(
 		"ExternalLabelDoesNotExist",
@@ -251,32 +251,32 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 	res, err := ruleWithoutExternalLabels.Eval(
 		suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil,
 	)
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	for _, smpl := range res {
 		smplName := smpl.Metric.Get("__name__")
 		if smplName == "ALERTS" {
 			filteredRes = append(filteredRes, smpl)
 		} else {
 			// If not 'ALERTS', it has to be 'ALERTS_FOR_STATE'.
-			testutil.Equals(t, "ALERTS_FOR_STATE", smplName)
+			assert.Equal(t, "ALERTS_FOR_STATE", smplName)
 		}
 	}
 
 	res, err = ruleWithExternalLabels.Eval(
 		suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil,
 	)
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	for _, smpl := range res {
 		smplName := smpl.Metric.Get("__name__")
 		if smplName == "ALERTS" {
 			filteredRes = append(filteredRes, smpl)
 		} else {
 			// If not 'ALERTS', it has to be 'ALERTS_FOR_STATE'.
-			testutil.Equals(t, "ALERTS_FOR_STATE", smplName)
+			assert.Equal(t, "ALERTS_FOR_STATE", smplName)
 		}
 	}
 
-	testutil.Equals(t, result, filteredRes)
+	assert.Equal(t, result, filteredRes)
 }
 
 func TestAlertingRuleEmptyLabelFromTemplate(t *testing.T) {
@@ -284,13 +284,13 @@ func TestAlertingRuleEmptyLabelFromTemplate(t *testing.T) {
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 85 70 70
 	`)
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	defer suite.Close()
 
-	testutil.Ok(t, suite.Run())
+	assert.NoError(t, suite.Run())
 
 	expr, err := parser.ParseExpr(`http_requests < 100`)
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 
 	rule := NewAlertingRule(
 		"EmptyLabel",
@@ -321,17 +321,17 @@ func TestAlertingRuleEmptyLabelFromTemplate(t *testing.T) {
 	res, err := rule.Eval(
 		suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil,
 	)
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	for _, smpl := range res {
 		smplName := smpl.Metric.Get("__name__")
 		if smplName == "ALERTS" {
 			filteredRes = append(filteredRes, smpl)
 		} else {
 			// If not 'ALERTS', it has to be 'ALERTS_FOR_STATE'.
-			testutil.Equals(t, "ALERTS_FOR_STATE", smplName)
+			assert.Equal(t, "ALERTS_FOR_STATE", smplName)
 		}
 	}
-	testutil.Equals(t, result, filteredRes)
+	assert.Equal(t, result, filteredRes)
 }
 
 func TestAlertingRuleDuplicate(t *testing.T) {
@@ -362,7 +362,6 @@ func TestAlertingRuleDuplicate(t *testing.T) {
 		true, log.NewNopLogger(),
 	)
 	_, err := rule.Eval(ctx, now, EngineQueryFunc(engine, storage), nil)
-	testutil.NotOk(t, err)
-	e := fmt.Errorf("vector contains metrics with the same labelset after applying alert labels")
-	testutil.ErrorEqual(t, e, err)
+	assert.Error(t, err)
+	assert.EqualError(t, err, "vector contains metrics with the same labelset after applying alert labels")
 }

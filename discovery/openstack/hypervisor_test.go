@@ -19,7 +19,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/stretchr/testify/assert"
 )
 
 type OpenstackSDHypervisorTestSuite struct {
@@ -55,12 +55,12 @@ func TestOpenstackSDHypervisorRefresh(t *testing.T) {
 	hypervisor, _ := mock.openstackAuthSuccess()
 	ctx := context.Background()
 	tgs, err := hypervisor.refresh(ctx)
-	testutil.Equals(t, 1, len(tgs))
+	assert.Equal(t, 1, len(tgs))
 	tg := tgs[0]
-	testutil.Ok(t, err)
-	testutil.Assert(t, tg != nil, "")
-	testutil.Assert(t, tg.Targets != nil, "")
-	testutil.Equals(t, 2, len(tg.Targets))
+	assert.NoError(t, err)
+	assert.NotNil(t, tg)
+	assert.NotNil(t, tg.Targets)
+	assert.Equal(t, 2, len(tg.Targets))
 
 	for l, v := range map[string]string{
 		"__address__":                          "172.16.70.14:0",
@@ -71,7 +71,7 @@ func TestOpenstackSDHypervisorRefresh(t *testing.T) {
 		"__meta_openstack_hypervisor_status":   "enabled",
 		"__meta_openstack_hypervisor_id":       "1",
 	} {
-		testutil.Equals(t, model.LabelValue(v), tg.Targets[0][model.LabelName(l)])
+		assert.Equal(t, model.LabelValue(v), tg.Targets[0][model.LabelName(l)])
 	}
 
 	for l, v := range map[string]string{
@@ -83,7 +83,7 @@ func TestOpenstackSDHypervisorRefresh(t *testing.T) {
 		"__meta_openstack_hypervisor_status":   "enabled",
 		"__meta_openstack_hypervisor_id":       "721",
 	} {
-		testutil.Equals(t, model.LabelValue(v), tg.Targets[1][model.LabelName(l)])
+		assert.Equal(t, model.LabelValue(v), tg.Targets[1][model.LabelName(l)])
 	}
 }
 
@@ -95,6 +95,6 @@ func TestOpenstackSDHypervisorRefreshWithDoneContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	_, err := hypervisor.refresh(ctx)
-	testutil.NotOk(t, err)
-	testutil.Assert(t, strings.Contains(err.Error(), context.Canceled.Error()), "%q doesn't contain %q", err, context.Canceled)
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), context.Canceled.Error()), "%q doesn't contain %q", err, context.Canceled)
 }

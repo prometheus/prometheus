@@ -16,11 +16,12 @@ package hetzner
 import (
 	"context"
 	"fmt"
+	"testing"
+
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/util/testutil"
-	"testing"
+	"github.com/stretchr/testify/assert"
 )
 
 type robotSDTestSuite struct {
@@ -42,16 +43,16 @@ func TestRobotSDRefresh(t *testing.T) {
 	cfg.robotEndpoint = suite.Mock.Endpoint()
 
 	d, err := newRobotDiscovery(&cfg, log.NewNopLogger())
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 
 	targetGroups, err := d.refresh(context.Background())
-	testutil.Ok(t, err)
-	testutil.Equals(t, 1, len(targetGroups))
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(targetGroups))
 
 	targetGroup := targetGroups[0]
-	testutil.Assert(t, targetGroup != nil, "targetGroup should not be nil")
-	testutil.Assert(t, targetGroup.Targets != nil, "targetGroup.targets should not be nil")
-	testutil.Equals(t, 2, len(targetGroup.Targets))
+	assert.NotNil(t, targetGroup, "targetGroup should not be nil")
+	assert.NotNil(t, targetGroup.Targets, "targetGroup.targets should not be nil")
+	assert.Equal(t, 2, len(targetGroup.Targets))
 
 	for i, labelSet := range []model.LabelSet{
 		{
@@ -79,7 +80,7 @@ func TestRobotSDRefresh(t *testing.T) {
 		},
 	} {
 		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
-			testutil.Equals(t, labelSet, targetGroup.Targets[i])
+			assert.Equal(t, labelSet, targetGroup.Targets[i])
 		})
 	}
 }
@@ -91,11 +92,11 @@ func TestRobotSDRefreshHandleError(t *testing.T) {
 	cfg.robotEndpoint = suite.Mock.Endpoint()
 
 	d, err := newRobotDiscovery(&cfg, log.NewNopLogger())
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 
 	targetGroups, err := d.refresh(context.Background())
-	testutil.NotOk(t, err)
-	testutil.Equals(t, "non 2xx status '401' response during hetzner service discovery with role robot", err.Error())
+	assert.Error(t, err)
+	assert.Equal(t, "non 2xx status '401' response during hetzner service discovery with role robot", err.Error())
 
-	testutil.Equals(t, 0, len(targetGroups))
+	assert.Equal(t, 0, len(targetGroups))
 }

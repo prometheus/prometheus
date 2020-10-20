@@ -21,6 +21,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 const (
@@ -137,32 +139,32 @@ func NewTemporaryDirectory(name string, t T) (handler TemporaryDirectory) {
 func DirHash(t *testing.T, path string) []byte {
 	hash := sha256.New()
 	err := filepath.Walk(path, func(path string, info os.FileInfo, err error) error {
-		Ok(t, err)
+		assert.NoError(t, err)
 
 		if info.IsDir() {
 			return nil
 		}
 		f, err := os.Open(path)
-		Ok(t, err)
+		assert.NoError(t, err)
 		defer f.Close()
 
 		_, err = io.Copy(hash, f)
-		Ok(t, err)
+		assert.NoError(t, err)
 
 		_, err = io.WriteString(hash, strconv.Itoa(int(info.Size())))
-		Ok(t, err)
+		assert.NoError(t, err)
 
 		_, err = io.WriteString(hash, info.Name())
-		Ok(t, err)
+		assert.NoError(t, err)
 
 		modTime, err := info.ModTime().GobEncode()
-		Ok(t, err)
+		assert.NoError(t, err)
 
 		_, err = io.WriteString(hash, string(modTime))
-		Ok(t, err)
+		assert.NoError(t, err)
 		return nil
 	})
-	Ok(t, err)
+	assert.NoError(t, err)
 
 	return hash.Sum(nil)
 }

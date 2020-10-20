@@ -18,7 +18,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestLabels_String(t *testing.T) {
@@ -50,7 +50,7 @@ func TestLabels_String(t *testing.T) {
 	}
 	for _, c := range cases {
 		str := c.lables.String()
-		testutil.Equals(t, c.expected, str)
+		assert.Equal(t, c.expected, str)
 	}
 }
 
@@ -181,7 +181,7 @@ func TestLabels_MatchLabels(t *testing.T) {
 
 	for i, test := range tests {
 		got := labels.MatchLabels(test.on, test.providedNames...)
-		testutil.Equals(t, test.expected, got, "unexpected labelset for test case %d", i)
+		assert.Equal(t, test.expected, got, "unexpected labelset for test case %d", i)
 	}
 }
 
@@ -206,8 +206,8 @@ func TestLabels_HasDuplicateLabelNames(t *testing.T) {
 
 	for i, c := range cases {
 		l, d := c.Input.HasDuplicateLabelNames()
-		testutil.Equals(t, c.Duplicate, d, "test %d: incorrect duplicate bool", i)
-		testutil.Equals(t, c.LabelName, l, "test %d: incorrect label name", i)
+		assert.Equal(t, c.Duplicate, d, "test %d: incorrect duplicate bool", i)
+		assert.Equal(t, c.LabelName, l, "test %d: incorrect label name", i)
 	}
 }
 
@@ -287,7 +287,7 @@ func TestLabels_WithoutEmpty(t *testing.T) {
 		},
 	} {
 		t.Run("", func(t *testing.T) {
-			testutil.Equals(t, test.expected, test.input.WithoutEmpty())
+			assert.Equal(t, test.expected, test.input.WithoutEmpty())
 		})
 	}
 }
@@ -368,7 +368,7 @@ func TestLabels_Equal(t *testing.T) {
 
 	for i, test := range tests {
 		got := Equal(labels, test.compared)
-		testutil.Equals(t, test.expected, got, "unexpected comparison result for test case %d", i)
+		assert.Equal(t, test.expected, got, "unexpected comparison result for test case %d", i)
 	}
 }
 
@@ -385,12 +385,12 @@ func TestLabels_FromStrings(t *testing.T) {
 		},
 	}
 
-	testutil.Equals(t, expected, labels, "unexpected labelset")
+	assert.Equal(t, expected, labels, "unexpected labelset")
 
 	defer func() { recover() }()
 	FromStrings("aaa", "111", "bbb")
 
-	testutil.Assert(t, false, "did not panic as expected")
+	assert.True(t, false, "did not panic as expected")
 }
 
 func TestLabels_Compare(t *testing.T) {
@@ -508,7 +508,7 @@ func TestLabels_Compare(t *testing.T) {
 
 	for i, test := range tests {
 		got := Compare(labels, test.compared)
-		testutil.Equals(t, test.expected, got, "unexpected comparison result for test case %d", i)
+		assert.Equal(t, test.expected, got, "unexpected comparison result for test case %d", i)
 	}
 }
 
@@ -540,34 +540,34 @@ func TestLabels_Has(t *testing.T) {
 
 	for i, test := range tests {
 		got := labelsSet.Has(test.input)
-		testutil.Equals(t, test.expected, got, "unexpected comparison result for test case %d", i)
+		assert.Equal(t, test.expected, got, "unexpected comparison result for test case %d", i)
 	}
 }
 
 func TestLabels_Get(t *testing.T) {
-	testutil.Equals(t, "", Labels{{"aaa", "111"}, {"bbb", "222"}}.Get("foo"))
-	testutil.Equals(t, "111", Labels{{"aaa", "111"}, {"bbb", "222"}}.Get("aaa"))
+	assert.Equal(t, "", Labels{{"aaa", "111"}, {"bbb", "222"}}.Get("foo"))
+	assert.Equal(t, "111", Labels{{"aaa", "111"}, {"bbb", "222"}}.Get("aaa"))
 }
 
 func TestLabels_Copy(t *testing.T) {
-	testutil.Equals(t, Labels{{"aaa", "111"}, {"bbb", "222"}}, Labels{{"aaa", "111"}, {"bbb", "222"}}.Copy())
+	assert.Equal(t, Labels{{"aaa", "111"}, {"bbb", "222"}}, Labels{{"aaa", "111"}, {"bbb", "222"}}.Copy())
 }
 
 func TestLabels_Map(t *testing.T) {
-	testutil.Equals(t, map[string]string{"aaa": "111", "bbb": "222"}, Labels{{"aaa", "111"}, {"bbb", "222"}}.Map())
+	assert.Equal(t, map[string]string{"aaa": "111", "bbb": "222"}, Labels{{"aaa", "111"}, {"bbb", "222"}}.Map())
 }
 
 func TestLabels_WithLabels(t *testing.T) {
-	testutil.Equals(t, Labels{{"aaa", "111"}, {"bbb", "222"}}, Labels{{"aaa", "111"}, {"bbb", "222"}, {"ccc", "333"}}.WithLabels("aaa", "bbb"))
+	assert.Equal(t, Labels{{"aaa", "111"}, {"bbb", "222"}}, Labels{{"aaa", "111"}, {"bbb", "222"}, {"ccc", "333"}}.WithLabels("aaa", "bbb"))
 }
 
 func TestLabels_WithoutLabels(t *testing.T) {
-	testutil.Equals(t, Labels{{"aaa", "111"}}, Labels{{"aaa", "111"}, {"bbb", "222"}, {"ccc", "333"}}.WithoutLabels("bbb", "ccc"))
-	testutil.Equals(t, Labels{{"aaa", "111"}}, Labels{{"aaa", "111"}, {"bbb", "222"}, {MetricName, "333"}}.WithoutLabels("bbb"))
+	assert.Equal(t, Labels{{"aaa", "111"}}, Labels{{"aaa", "111"}, {"bbb", "222"}, {"ccc", "333"}}.WithoutLabels("bbb", "ccc"))
+	assert.Equal(t, Labels{{"aaa", "111"}}, Labels{{"aaa", "111"}, {"bbb", "222"}, {MetricName, "333"}}.WithoutLabels("bbb"))
 }
 
 func TestBulider_NewBulider(t *testing.T) {
-	testutil.Equals(
+	assert.Equal(
 		t,
 		&Builder{
 			base: Labels{{"aaa", "111"}},
@@ -579,7 +579,7 @@ func TestBulider_NewBulider(t *testing.T) {
 }
 
 func TestBuilder_Del(t *testing.T) {
-	testutil.Equals(
+	assert.Equal(
 		t,
 		&Builder{
 			del: []string{"bbb"},
@@ -593,7 +593,7 @@ func TestBuilder_Del(t *testing.T) {
 }
 
 func TestBuilder_Set(t *testing.T) {
-	testutil.Equals(
+	assert.Equal(
 		t,
 		&Builder{
 			base: Labels{{"aaa", "111"}},
@@ -607,7 +607,7 @@ func TestBuilder_Set(t *testing.T) {
 		}).Set("bbb", "222"),
 	)
 
-	testutil.Equals(
+	assert.Equal(
 		t,
 		&Builder{
 			base: Labels{{"aaa", "111"}},
@@ -623,7 +623,7 @@ func TestBuilder_Set(t *testing.T) {
 }
 
 func TestBuilder_Labels(t *testing.T) {
-	testutil.Equals(
+	assert.Equal(
 		t,
 		Labels{{"aaa", "111"}, {"ccc", "333"}, {"ddd", "444"}},
 		(&Builder{
@@ -639,9 +639,9 @@ func TestLabels_Hash(t *testing.T) {
 		{Name: "foo", Value: "bar"},
 		{Name: "baz", Value: "qux"},
 	}
-	testutil.Equals(t, lbls.Hash(), lbls.Hash())
-	testutil.Assert(t, lbls.Hash() != Labels{lbls[1], lbls[0]}.Hash(), "unordered labels match.")
-	testutil.Assert(t, lbls.Hash() != Labels{lbls[0]}.Hash(), "different labels match.")
+	assert.Equal(t, lbls.Hash(), lbls.Hash())
+	assert.True(t, lbls.Hash() != Labels{lbls[1], lbls[0]}.Hash(), "unordered labels match.")
+	assert.True(t, lbls.Hash() != Labels{lbls[0]}.Hash(), "different labels match.")
 }
 
 var benchmarkLabelsResult uint64

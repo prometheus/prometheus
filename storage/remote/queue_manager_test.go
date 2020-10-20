@@ -18,8 +18,8 @@ import (
 	"fmt"
 	"io/ioutil"
 	"math"
+	"net/url"
 	"os"
-	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -30,19 +30,18 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
-	"go.uber.org/atomic"
-
 	"github.com/prometheus/client_golang/prometheus"
 	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	common_config "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/assert"
+	"go.uber.org/atomic"
+
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/tsdb/record"
-	"github.com/prometheus/prometheus/util/testutil"
-	"net/url"
 )
 
 const defaultFlushDeadline = 1 * time.Minute
@@ -74,9 +73,9 @@ func TestSampleDelivery(t *testing.T) {
 	queueConfig.MaxSamplesPerSend = len(samples) / 2
 
 	dir, err := ioutil.TempDir("", "TestSampleDeliver")
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	defer func() {
-		testutil.Ok(t, os.RemoveAll(dir))
+		assert.NoError(t, os.RemoveAll(dir))
 	}()
 
 	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline)
@@ -96,9 +95,9 @@ func TestSampleDelivery(t *testing.T) {
 		},
 	}
 	writeConfig.QueueConfig = queueConfig
-	testutil.Ok(t, s.ApplyConfig(conf))
+	assert.NoError(t, s.ApplyConfig(conf))
 	hash, err := toHash(writeConfig)
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	qm := s.rws.queues[hash]
 	qm.SetClient(c)
 
@@ -122,9 +121,9 @@ func TestSampleDeliveryTimeout(t *testing.T) {
 	cfg.BatchSendDeadline = model.Duration(100 * time.Millisecond)
 
 	dir, err := ioutil.TempDir("", "TestSampleDeliveryTimeout")
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	defer func() {
-		testutil.Ok(t, os.RemoveAll(dir))
+		assert.NoError(t, os.RemoveAll(dir))
 	}()
 
 	metrics := newQueueManagerMetrics(nil, "", "")
@@ -165,9 +164,9 @@ func TestSampleDeliveryOrder(t *testing.T) {
 	c.expectSamples(samples, series)
 
 	dir, err := ioutil.TempDir("", "TestSampleDeliveryOrder")
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	defer func() {
-		testutil.Ok(t, os.RemoveAll(dir))
+		assert.NoError(t, os.RemoveAll(dir))
 	}()
 
 	metrics := newQueueManagerMetrics(nil, "", "")
@@ -186,9 +185,9 @@ func TestShutdown(t *testing.T) {
 	c := NewTestBlockedWriteClient()
 
 	dir, err := ioutil.TempDir("", "TestShutdown")
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	defer func() {
-		testutil.Ok(t, os.RemoveAll(dir))
+		assert.NoError(t, os.RemoveAll(dir))
 	}()
 
 	metrics := newQueueManagerMetrics(nil, "", "")
@@ -227,9 +226,9 @@ func TestSeriesReset(t *testing.T) {
 	numSeries := 25
 
 	dir, err := ioutil.TempDir("", "TestSeriesReset")
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	defer func() {
-		testutil.Ok(t, os.RemoveAll(dir))
+		assert.NoError(t, os.RemoveAll(dir))
 	}()
 
 	metrics := newQueueManagerMetrics(nil, "", "")
@@ -241,9 +240,9 @@ func TestSeriesReset(t *testing.T) {
 		}
 		m.StoreSeries(series, i)
 	}
-	testutil.Equals(t, numSegments*numSeries, len(m.seriesLabels))
+	assert.Equal(t, numSegments*numSeries, len(m.seriesLabels))
 	m.SeriesReset(2)
-	testutil.Equals(t, numSegments*numSeries/2, len(m.seriesLabels))
+	assert.Equal(t, numSegments*numSeries/2, len(m.seriesLabels))
 }
 
 func TestReshard(t *testing.T) {
@@ -259,9 +258,9 @@ func TestReshard(t *testing.T) {
 	cfg.MaxShards = 1
 
 	dir, err := ioutil.TempDir("", "TestReshard")
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	defer func() {
-		testutil.Ok(t, os.RemoveAll(dir))
+		assert.NoError(t, os.RemoveAll(dir))
 	}()
 
 	metrics := newQueueManagerMetrics(nil, "", "")
@@ -274,7 +273,7 @@ func TestReshard(t *testing.T) {
 	go func() {
 		for i := 0; i < len(samples); i += config.DefaultQueueConfig.Capacity {
 			sent := m.Append(samples[i : i+config.DefaultQueueConfig.Capacity])
-			testutil.Assert(t, sent, "samples not sent")
+			assert.True(t, sent, "samples not sent")
 			time.Sleep(100 * time.Millisecond)
 		}
 	}()
@@ -335,7 +334,7 @@ func TestReleaseNoninternedString(t *testing.T) {
 	}
 
 	metric := client_testutil.ToFloat64(noReferenceReleases)
-	testutil.Assert(t, metric == 0, "expected there to be no calls to release for strings that were not already interned: %d", int(metric))
+	assert.True(t, metric == 0, "expected there to be no calls to release for strings that were not already interned: %d", int(metric))
 }
 
 func TestShouldReshard(t *testing.T) {
@@ -377,7 +376,7 @@ func TestShouldReshard(t *testing.T) {
 
 		m.Stop()
 
-		testutil.Equals(t, c.expectedToReshard, shouldReshard)
+		assert.Equal(t, c.expectedToReshard, shouldReshard)
 	}
 }
 
@@ -456,9 +455,7 @@ func (c *TestWriteClient) waitForExpectedSamples(tb testing.TB) {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 	for ts, expectedSamples := range c.expectedSamples {
-		if !reflect.DeepEqual(expectedSamples, c.receivedSamples[ts]) {
-			tb.Fatalf("%s: Expected %v, got %v", ts, expectedSamples, c.receivedSamples[ts])
-		}
+		assert.Equal(tb, expectedSamples, c.receivedSamples[ts], ts)
 	}
 }
 
@@ -567,7 +564,7 @@ func BenchmarkSampleDelivery(b *testing.B) {
 	cfg.MaxShards = 1
 
 	dir, err := ioutil.TempDir("", "BenchmarkSampleDelivery")
-	testutil.Ok(b, err)
+	assert.NoError(b, err)
 	defer os.RemoveAll(dir)
 
 	metrics := newQueueManagerMetrics(nil, "", "")
@@ -597,7 +594,7 @@ func BenchmarkStartup(b *testing.B) {
 	// Find the second largest segment; we will replay up to this.
 	// (Second largest as WALWatcher will start tailing the largest).
 	dirents, err := ioutil.ReadDir(dir)
-	testutil.Ok(b, err)
+	assert.NoError(b, err)
 
 	var segments []int
 	for _, dirent := range dirents {
@@ -619,7 +616,7 @@ func BenchmarkStartup(b *testing.B) {
 		m.watcher.SetStartTime(timestamp.Time(math.MaxInt64))
 		m.watcher.MaxSegment = segments[len(segments)-2]
 		err := m.watcher.Run()
-		testutil.Ok(b, err)
+		assert.NoError(b, err)
 	}
 }
 
@@ -650,7 +647,7 @@ func TestProcessExternalLabels(t *testing.T) {
 			expected:       labels.Labels{{Name: "a", Value: "b"}},
 		},
 	} {
-		testutil.Equals(t, tc.expected, processExternalLabels(tc.labels, tc.externalLabels))
+		assert.Equal(t, tc.expected, processExternalLabels(tc.labels, tc.externalLabels))
 	}
 }
 
@@ -659,9 +656,9 @@ func TestCalculateDesiredShards(t *testing.T) {
 	cfg := config.DefaultQueueConfig
 
 	dir, err := ioutil.TempDir("", "TestCalculateDesiredShards")
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	defer func() {
-		testutil.Ok(t, os.RemoveAll(dir))
+		assert.NoError(t, os.RemoveAll(dir))
 	}()
 
 	metrics := newQueueManagerMetrics(nil, "", "")
@@ -706,7 +703,7 @@ func TestCalculateDesiredShards(t *testing.T) {
 	for ; ts < 120*time.Second; ts += shardUpdateDuration {
 		addSamples(inputRate*int64(shardUpdateDuration/time.Second), ts)
 		m.numShards = m.calculateDesiredShards()
-		testutil.Equals(t, 1, m.numShards)
+		assert.Equal(t, 1, m.numShards)
 	}
 
 	// Assume 100ms per request, or 10 requests per second per shard.
@@ -728,10 +725,10 @@ func TestCalculateDesiredShards(t *testing.T) {
 
 		t.Log("desiredShards", m.numShards, "pendingSamples", pendingSamples)
 		m.numShards = m.calculateDesiredShards()
-		testutil.Assert(t, m.numShards >= minShards, "Shards are too low. desiredShards=%d, minShards=%d, t_seconds=%d", m.numShards, minShards, ts/time.Second)
-		testutil.Assert(t, m.numShards <= maxShards, "Shards are too high. desiredShards=%d, maxShards=%d, t_seconds=%d", m.numShards, maxShards, ts/time.Second)
+		assert.True(t, m.numShards >= minShards, "Shards are too low. desiredShards=%d, minShards=%d, t_seconds=%d", m.numShards, minShards, ts/time.Second)
+		assert.True(t, m.numShards <= maxShards, "Shards are too high. desiredShards=%d, maxShards=%d, t_seconds=%d", m.numShards, maxShards, ts/time.Second)
 	}
-	testutil.Assert(t, pendingSamples == 0, "Remote write never caught up, there are still %d pending samples.", pendingSamples)
+	assert.True(t, pendingSamples == 0, "Remote write never caught up, there are still %d pending samples.", pendingSamples)
 }
 
 func TestQueueManagerMetrics(t *testing.T) {
@@ -740,12 +737,12 @@ func TestQueueManagerMetrics(t *testing.T) {
 
 	// Make sure metrics pass linting.
 	problems, err := client_testutil.GatherAndLint(reg)
-	testutil.Ok(t, err)
-	testutil.Equals(t, 0, len(problems), "Metric linting problems detected: %v", problems)
+	assert.NoError(t, err)
+	assert.Equal(t, 0, len(problems), "Metric linting problems detected: %v", problems)
 
 	// Make sure all metrics were unregistered. A failure here means you need
 	// unregister a metric in `queueManagerMetrics.unregister()`.
 	metrics.unregister()
 	err = client_testutil.GatherAndCompare(reg, strings.NewReader(""))
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 }

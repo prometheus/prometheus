@@ -23,8 +23,9 @@ import (
 
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/assert"
+
 	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestPromParse(t *testing.T) {
@@ -179,7 +180,7 @@ testmetric{label="\"bar\""} 1`
 		if err == io.EOF {
 			break
 		}
-		testutil.Ok(t, err)
+		assert.NoError(t, err)
 
 		switch et {
 		case EntrySeries:
@@ -187,29 +188,29 @@ testmetric{label="\"bar\""} 1`
 
 			p.Metric(&res)
 
-			testutil.Equals(t, exp[i].m, string(m))
-			testutil.Equals(t, exp[i].t, ts)
-			testutil.Equals(t, exp[i].v, v)
-			testutil.Equals(t, exp[i].lset, res)
+			assert.Equal(t, exp[i].m, string(m))
+			assert.Equal(t, exp[i].t, ts)
+			assert.Equal(t, exp[i].v, v)
+			assert.Equal(t, exp[i].lset, res)
 			res = res[:0]
 
 		case EntryType:
 			m, typ := p.Type()
-			testutil.Equals(t, exp[i].m, string(m))
-			testutil.Equals(t, exp[i].typ, typ)
+			assert.Equal(t, exp[i].m, string(m))
+			assert.Equal(t, exp[i].typ, typ)
 
 		case EntryHelp:
 			m, h := p.Help()
-			testutil.Equals(t, exp[i].m, string(m))
-			testutil.Equals(t, exp[i].help, string(h))
+			assert.Equal(t, exp[i].m, string(m))
+			assert.Equal(t, exp[i].help, string(h))
 
 		case EntryComment:
-			testutil.Equals(t, exp[i].comment, string(p.Comment()))
+			assert.Equal(t, exp[i].comment, string(p.Comment()))
 		}
 
 		i++
 	}
-	testutil.Equals(t, len(exp), i)
+	assert.Equal(t, len(exp), i)
 }
 
 func TestPromParseErrors(t *testing.T) {
@@ -277,8 +278,8 @@ func TestPromParseErrors(t *testing.T) {
 		for err == nil {
 			_, err = p.Next()
 		}
-		testutil.NotOk(t, err)
-		testutil.Equals(t, c.err, err.Error(), "test %d", i)
+		assert.Error(t, err)
+		assert.Equal(t, c.err, err.Error(), "test %d", i)
 	}
 }
 
@@ -329,12 +330,12 @@ func TestPromNullByteHandling(t *testing.T) {
 		}
 
 		if c.err == "" {
-			testutil.Equals(t, io.EOF, err, "test %d", i)
+			assert.Equal(t, io.EOF, err, "test %d", i)
 			continue
 		}
 
-		testutil.NotOk(t, err)
-		testutil.Equals(t, c.err, err.Error(), "test %d", i)
+		assert.Error(t, err)
+		assert.Equal(t, c.err, err.Error(), "test %d", i)
 	}
 }
 
@@ -349,11 +350,11 @@ func BenchmarkParse(b *testing.B) {
 	} {
 		for _, fn := range []string{"promtestdata.txt", "promtestdata.nometa.txt"} {
 			f, err := os.Open(fn)
-			testutil.Ok(b, err)
+			assert.NoError(b, err)
 			defer f.Close()
 
 			buf, err := ioutil.ReadAll(f)
-			testutil.Ok(b, err)
+			assert.NoError(b, err)
 
 			b.Run(parserName+"/no-decode-metric/"+fn, func(b *testing.B) {
 				total := 0
@@ -483,18 +484,18 @@ func BenchmarkGzip(b *testing.B) {
 	for _, fn := range []string{"promtestdata.txt", "promtestdata.nometa.txt"} {
 		b.Run(fn, func(b *testing.B) {
 			f, err := os.Open(fn)
-			testutil.Ok(b, err)
+			assert.NoError(b, err)
 			defer f.Close()
 
 			var buf bytes.Buffer
 			gw := gzip.NewWriter(&buf)
 
 			n, err := io.Copy(gw, f)
-			testutil.Ok(b, err)
-			testutil.Ok(b, gw.Close())
+			assert.NoError(b, err)
+			assert.NoError(b, gw.Close())
 
 			gbuf, err := ioutil.ReadAll(&buf)
-			testutil.Ok(b, err)
+			assert.NoError(b, err)
 
 			k := b.N / promtestdataSampleCount
 
@@ -506,11 +507,11 @@ func BenchmarkGzip(b *testing.B) {
 
 			for i := 0; i < k; i++ {
 				gr, err := gzip.NewReader(bytes.NewReader(gbuf))
-				testutil.Ok(b, err)
+				assert.NoError(b, err)
 
 				d, err := ioutil.ReadAll(gr)
-				testutil.Ok(b, err)
-				testutil.Ok(b, gr.Close())
+				assert.NoError(b, err)
+				assert.NoError(b, gr.Close())
 
 				total += len(d)
 			}

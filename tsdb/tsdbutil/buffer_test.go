@@ -18,7 +18,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestSampleRing(t *testing.T) {
@@ -92,12 +92,12 @@ func TestBufferedSeriesIterator(t *testing.T) {
 			t, v := bit.At()
 			b = append(b, sample{t: t, v: v})
 		}
-		testutil.Equals(t, exp, b)
+		assert.Equal(t, exp, b)
 	}
 	sampleEq := func(ets int64, ev float64) {
 		ts, v := it.At()
-		testutil.Equals(t, ets, ts)
-		testutil.Equals(t, ev, v)
+		assert.Equal(t, ets, ts)
+		assert.Equal(t, ev, v)
 	}
 
 	it = NewBuffer(newListSeriesIterator([]sample{
@@ -111,29 +111,29 @@ func TestBufferedSeriesIterator(t *testing.T) {
 		{t: 101, v: 10},
 	}), 2)
 
-	testutil.Assert(t, it.Seek(-123) == true, "seek failed")
+	assert.True(t, it.Seek(-123) == true, "seek failed")
 	sampleEq(1, 2)
 	bufferEq(nil)
 
-	testutil.Assert(t, it.Next() == true, "next failed")
+	assert.True(t, it.Next() == true, "next failed")
 	sampleEq(2, 3)
 	bufferEq([]sample{{t: 1, v: 2}})
 
-	testutil.Assert(t, it.Next() == true, "next failed")
-	testutil.Assert(t, it.Next() == true, "next failed")
-	testutil.Assert(t, it.Next() == true, "next failed")
+	assert.True(t, it.Next() == true, "next failed")
+	assert.True(t, it.Next() == true, "next failed")
+	assert.True(t, it.Next() == true, "next failed")
 	sampleEq(5, 6)
 	bufferEq([]sample{{t: 2, v: 3}, {t: 3, v: 4}, {t: 4, v: 5}})
 
-	testutil.Assert(t, it.Seek(5) == true, "seek failed")
+	assert.True(t, it.Seek(5) == true, "seek failed")
 	sampleEq(5, 6)
 	bufferEq([]sample{{t: 2, v: 3}, {t: 3, v: 4}, {t: 4, v: 5}})
 
-	testutil.Assert(t, it.Seek(101) == true, "seek failed")
+	assert.True(t, it.Seek(101) == true, "seek failed")
 	sampleEq(101, 10)
 	bufferEq([]sample{{t: 99, v: 8}, {t: 100, v: 9}})
 
-	testutil.Assert(t, it.Next() == false, "next succeeded unexpectedly")
+	assert.True(t, it.Next() == false, "next succeeded unexpectedly")
 }
 
 type listSeriesIterator struct {
