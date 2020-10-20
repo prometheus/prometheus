@@ -238,7 +238,7 @@ func listChunkFiles(dir string) (map[int]string, error) {
 // repairLastChunkFile deletes the last file if it's empty.
 // Because we don't fsync when creating these file, we could end
 // up with an empty file at the end during an abrupt shutdown.
-func repairLastChunkFile(files map[int]string) (map[int]string, error) {
+func repairLastChunkFile(files map[int]string) (_ map[int]string, returnErr error) {
 	lastFile := -1
 	for seq := range files {
 		if seq > lastFile {
@@ -252,16 +252,25 @@ func repairLastChunkFile(files map[int]string) (map[int]string, error) {
 
 	f, err := os.Open(files[lastFile])
 	if err != nil {
-		return files, errors.Wrap(err, "open file during repair")
+		return files, errors.Wrap(err, "open file during last chunk file repair")
 	}
 	info, err := f.Stat()
 	if err != nil {
-		return files, errors.Wrap(err, "file stat during repair")
+		var merr tsdb_errors.MultiError
+		merr.Add(errors.Wrap(err, "file stat during last chunk file repair"))
+		merr.Add(f.Close())
+		return files, merr.Err()
 	}
-	if info.Size() == 0 {
+	size := info.Size()
+	// Close the file before removing it below in case of corruption.
+	// Windows complains otherwise.
+	if err := f.Close(); err != nil {
+		return files, errors.Wrap(err, "closing file during last chunk file repair")
+	}
+	if size == 0 {
 		// Corrupt file, hence remove it.
 		if err := os.RemoveAll(files[lastFile]); err != nil {
-			return files, errors.Wrap(err, "delete corrupt file during repair")
+			return files, errors.Wrap(err, "delete corrupt file during last chunk file repair")
 		}
 		delete(files, lastFile)
 	}
