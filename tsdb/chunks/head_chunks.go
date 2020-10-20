@@ -250,24 +250,11 @@ func repairLastChunkFile(files map[int]string) (_ map[int]string, returnErr erro
 		return files, nil
 	}
 
-	f, err := os.Open(files[lastFile])
+	info, err := os.Stat(files[lastFile])
 	if err != nil {
-		return files, errors.Wrap(err, "open file during last chunk file repair")
+		return files, errors.Wrap(err, "file stat during last chunk file repair")
 	}
-	info, err := f.Stat()
-	if err != nil {
-		var merr tsdb_errors.MultiError
-		merr.Add(errors.Wrap(err, "file stat during last chunk file repair"))
-		merr.Add(f.Close())
-		return files, merr.Err()
-	}
-	size := info.Size()
-	// Close the file before removing it below in case of corruption.
-	// Windows complains otherwise.
-	if err := f.Close(); err != nil {
-		return files, errors.Wrap(err, "closing file during last chunk file repair")
-	}
-	if size == 0 {
+	if info.Size() == 0 {
 		// Corrupt file, hence remove it.
 		if err := os.RemoveAll(files[lastFile]); err != nil {
 			return files, errors.Wrap(err, "delete corrupt file during last chunk file repair")
