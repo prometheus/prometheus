@@ -553,7 +553,7 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64) {
 	return opts, rngs
 }
 
-func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs []int64) (db *DB, err error) {
+func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs []int64) (db *DB, returnedErr error) {
 	if err := os.MkdirAll(dir, 0777); err != nil {
 		return nil, err
 	}
@@ -597,15 +597,15 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	}
 	defer func() {
 		// Close files if startup fails somewhere.
-		if err == nil {
+		if returnedErr == nil {
 			return
 		}
 
 		var merr tsdb_errors.MultiError
-		merr.Add(err)
+		merr.Add(returnedErr)
 		merr.Add(errors.Wrap(db.Close(), "close DB after failed startup"))
 
-		err = merr.Err()
+		returnedErr = merr.Err()
 	}()
 
 	if db.blocksToDelete == nil {
@@ -625,10 +625,10 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	db.compactor, err = NewLeveledCompactor(ctx, r, l, rngs, db.chunkPool)
-	if err != nil {
+	db.compactor, returnedErr = NewLeveledCompactor(ctx, r, l, rngs, db.chunkPool)
+	if returnedErr != nil {
 		cancel()
-		return nil, errors.Wrap(err, "create leveled compactor")
+		return nil, errors.Wrap(returnedErr, "create leveled compactor")
 	}
 	db.compactCancel = cancel
 
@@ -640,15 +640,15 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 		if opts.WALSegmentSize > 0 {
 			segmentSize = opts.WALSegmentSize
 		}
-		wlog, err = wal.NewSize(l, r, walDir, segmentSize, opts.WALCompression)
-		if err != nil {
-			return nil, err
+		wlog, returnedErr = wal.NewSize(l, r, walDir, segmentSize, opts.WALCompression)
+		if returnedErr != nil {
+			return nil, returnedErr
 		}
 	}
 
-	db.head, err = NewHead(r, l, wlog, rngs[0], dir, db.chunkPool, opts.StripeSize, opts.SeriesLifecycleCallback)
-	if err != nil {
-		return nil, err
+	db.head, returnedErr = NewHead(r, l, wlog, rngs[0], dir, db.chunkPool, opts.StripeSize, opts.SeriesLifecycleCallback)
+	if returnedErr != nil {
+		return nil, returnedErr
 	}
 
 	// Register metrics after assigning the head block.
