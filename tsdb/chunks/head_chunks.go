@@ -167,6 +167,11 @@ func (cdm *ChunkDiskMapper) openMMapFiles() (returnErr error) {
 		return err
 	}
 
+	files, err = repairLastChunkFile(files)
+	if err != nil {
+		return err
+	}
+
 	chkFileIndices := make([]int, 0, len(files))
 	for seq, fn := range files {
 		f, err := fileutil.OpenMmapFile(fn)
@@ -226,7 +231,38 @@ func listChunkFiles(dir string) (map[int]string, error) {
 		}
 		res[int(seq)] = filepath.Join(dir, fi.Name())
 	}
+
 	return res, nil
+}
+
+// repairLastChunkFile deletes the last file if it's empty.
+// Because we don't fsync when creating these file, we could end
+// up with an empty file at the end during an abrupt shutdown.
+func repairLastChunkFile(files map[int]string) (_ map[int]string, returnErr error) {
+	lastFile := -1
+	for seq := range files {
+		if seq > lastFile {
+			lastFile = seq
+		}
+	}
+
+	if lastFile <= 0 {
+		return files, nil
+	}
+
+	info, err := os.Stat(files[lastFile])
+	if err != nil {
+		return files, errors.Wrap(err, "file stat during last head chunk file repair")
+	}
+	if info.Size() == 0 {
+		// Corrupt file, hence remove it.
+		if err := os.RemoveAll(files[lastFile]); err != nil {
+			return files, errors.Wrap(err, "delete corrupted, empty head chunk file during last file repair")
+		}
+		delete(files, lastFile)
+	}
+
+	return files, nil
 }
 
 // WriteChunk writes the chunk to the disk.
