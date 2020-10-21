@@ -371,6 +371,17 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 	if res.Err != nil {
 		return apiFuncResult{nil, returnAPIError(res.Err), res.Warnings, qry.Close}
 	}
+	vec, ok := res.Value.(*promql.Vector)
+	if !ok {
+		panic("Error converting to vector")
+	}
+
+	sort.Slice(vec, func(i, j int) bool {
+		return (*vec)[i].V < (*vec)[j].V
+	})
+	// sort.Slice(vec, func(i, j int) bool {
+	// return labels.Compare((*vec)[i].Metric, (*vec)[j].Metric) < 0
+	// })
 
 	// Optional stats field in response if parameter "stats" is not empty.
 	var qs *stats.QueryStats
@@ -383,6 +394,14 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 		Result:     res.Value,
 		Stats:      qs,
 	}, nil, res.Warnings, qry.Close}
+}
+
+func sum(v promql.Series) float64 {
+	s := 0.0
+	for i := 0; i < len(v.Points); i++ {
+		s += v.Points[i].V
+	}
+	return s
 }
 
 func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
@@ -451,6 +470,16 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 	if res.Err != nil {
 		return apiFuncResult{nil, returnAPIError(res.Err), res.Warnings, qry.Close}
 	}
+
+	mat, ok := res.Value.(*promql.Matrix)
+	if !ok {
+		panic("Error converting to matrix")
+	}
+
+	fmt.Printf("HELLO")
+	sort.Slice(mat, func(i, j int) bool {
+		return (sum((*mat)[i]) < sum((*mat)[j]))
+	})
 
 	// Optional stats field in response if parameter "stats" is not empty.
 	var qs *stats.QueryStats
