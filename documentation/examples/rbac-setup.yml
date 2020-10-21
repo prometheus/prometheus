@@ -22,6 +22,7 @@ rules:
   - extensions
   resources:
   - ingresses
+  - networking.k8s.io
   verbs: ["get", "list", "watch"]
 - nonResourceURLs: ["/metrics", "/metrics/cadvisor"]
   verbs: ["get"]
