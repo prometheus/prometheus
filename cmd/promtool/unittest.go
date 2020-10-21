@@ -80,13 +80,7 @@ func ruleUnitTest(filename string) []error {
 		unitTestInp.EvaluationInterval = model.Duration(1 * time.Minute)
 	}
 
-	// Bounds for evaluating the rules.
-	mint := time.Unix(0, 0).UTC()
-	maxd := unitTestInp.maxEvalTime()
-	maxt := mint.Add(maxd)
 	evalInterval := time.Duration(unitTestInp.EvaluationInterval)
-	// Rounding off to nearest Eval time (> maxt).
-	maxt = maxt.Add(evalInterval / 2).Round(evalInterval)
 
 	// Giving number for groups mentioned in the file for ordering.
 	// Lower number group should be evaluated before higher number group.
@@ -101,8 +95,7 @@ func ruleUnitTest(filename string) []error {
 	// Testing.
 	var errs []error
 	for _, t := range unitTestInp.Tests {
-		ers := t.test(mint, maxt, evalInterval, groupOrderMap,
-			unitTestInp.RuleFiles...)
+		ers := t.test(evalInterval, groupOrderMap, unitTestInp.RuleFiles...)
 		if ers != nil {
 			errs = append(errs, ers...)
 		}
@@ -120,17 +113,6 @@ type unitTestFile struct {
 	EvaluationInterval model.Duration `yaml:"evaluation_interval,omitempty"`
 	GroupEvalOrder     []string       `yaml:"group_eval_order"`
 	Tests              []testGroup    `yaml:"tests"`
-}
-
-func (utf *unitTestFile) maxEvalTime() time.Duration {
-	var maxd time.Duration
-	for _, t := range utf.Tests {
-		d := t.maxEvalTime()
-		if d > maxd {
-			maxd = d
-		}
-	}
-	return maxd
 }
 
 // resolveAndGlobFilepaths joins all relative paths in a configuration
@@ -167,7 +149,7 @@ type testGroup struct {
 }
 
 // test performs the unit tests.
-func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, groupOrderMap map[string]int, ruleFiles ...string) []error {
+func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]int, ruleFiles ...string) []error {
 	// Setup testing suite.
 	suite, err := promql.NewLazyLoader(nil, tg.seriesLoadingString())
 	if err != nil {
@@ -189,6 +171,12 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 		return ers
 	}
 	groups := orderedGroups(groupsMap, groupOrderMap)
+
+	// Bounds for evaluating the rules.
+	mint := time.Unix(0, 0).UTC()
+	maxt := mint.Add(tg.maxEvalTime())
+	// Rounding off to nearest Eval time (> maxt).
+	maxt = maxt.Add(evalInterval / 2).Round(evalInterval)
 
 	// Pre-processing some data for testing alerts.
 	// All this preparation is so that we can test alerts as we evaluate the rules.
