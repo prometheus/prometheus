@@ -173,7 +173,9 @@ type Expiry struct {
 // the expiration time given to ensure no requests are made with expired
 // tokens.
 func (e *Expiry) SetExpiration(expiration time.Time, window time.Duration) {
-	e.expiration = expiration
+	// Passed in expirations should have the monotonic clock values stripped.
+	// This ensures time comparisons will be based on wall-time.
+	e.expiration = expiration.Round(0)
 	if window > 0 {
 		e.expiration = e.expiration.Add(-window)
 	}

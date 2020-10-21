@@ -65,3 +65,4 @@ func (r *mockBReader) Tombstones() (tombstones.Reader, error) {
 	return tombstones.NewMemTombstones(), nil
 }
 func (r *mockBReader) Meta() BlockMeta { return BlockMeta{MinTime: r.mint, MaxTime: r.maxt} }
+func (r *mockBReader) Size() int64     { return 0 }

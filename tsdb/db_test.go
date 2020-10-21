@@ -151,7 +151,7 @@ func TestDB_reloadOrder(t *testing.T) {
 		createBlock(t, db.Dir(), genSeries(1, 1, m.MinTime, m.MaxTime))
 	}
 
-	testutil.Ok(t, db.reload())
+	testutil.Ok(t, db.reloadBlocks())
 	blocks := db.Blocks()
 	testutil.Equals(t, 3, len(blocks))
 	testutil.Equals(t, metas[1].MinTime, blocks[0].Meta().MinTime)
@@ -1195,11 +1195,11 @@ func TestTimeRetention(t *testing.T) {
 		createBlock(t, db.Dir(), genSeries(10, 10, m.MinTime, m.MaxTime))
 	}
 
-	testutil.Ok(t, db.reload())                       // Reload the db to register the new blocks.
+	testutil.Ok(t, db.reloadBlocks())                 // Reload the db to register the new blocks.
 	testutil.Equals(t, len(blocks), len(db.Blocks())) // Ensure all blocks are registered.
 
 	db.opts.RetentionDuration = blocks[2].MaxTime - blocks[1].MinTime
-	testutil.Ok(t, db.reload())
+	testutil.Ok(t, db.reloadBlocks())
 
 	expBlocks := blocks[1:]
 	actBlocks := db.Blocks()
@@ -1249,7 +1249,7 @@ func TestSizeRetention(t *testing.T) {
 	testutil.Ok(t, headApp.Commit())
 
 	// Test that registered size matches the actual disk size.
-	testutil.Ok(t, db.reload())                                         // Reload the db to register the new db size.
+	testutil.Ok(t, db.reloadBlocks())                                   // Reload the db to register the new db size.
 	testutil.Equals(t, len(blocks), len(db.Blocks()))                   // Ensure all blocks are registered.
 	blockSize := int64(prom_testutil.ToFloat64(db.metrics.blocksBytes)) // Use the actual internal metrics.
 	walSize, err := db.Head().wal.Size()
@@ -1277,8 +1277,8 @@ func TestSizeRetention(t *testing.T) {
 	// Check total size, total count and check that the oldest block was deleted.
 	firstBlockSize := db.Blocks()[0].Size()
 	sizeLimit := actSize - firstBlockSize
-	db.opts.MaxBytes = sizeLimit // Set the new db size limit one block smaller that the actual size.
-	testutil.Ok(t, db.reload())  // Reload the db to register the new db size.
+	db.opts.MaxBytes = sizeLimit      // Set the new db size limit one block smaller that the actual size.
+	testutil.Ok(t, db.reloadBlocks()) // Reload the db to register the new db size.
 
 	expBlocks := blocks[1:]
 	actBlocks := db.Blocks()
@@ -1811,7 +1811,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 		}
 
 		oldBlocks := db.Blocks()
-		testutil.Ok(t, db.reload())                                      // Reload the db to register the new blocks.
+		testutil.Ok(t, db.reloadBlocks())                                // Reload the db to register the new blocks.
 		testutil.Equals(t, len(blocks)+len(oldBlocks), len(db.Blocks())) // Ensure all blocks are registered.
 		testutil.Ok(t, db.Delete(math.MinInt64, math.MaxInt64, defaultMatcher))
 		testutil.Ok(t, db.Compact())
@@ -2837,4 +2837,125 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 		}
 	}
 	testutil.Equals(t, len(expectedIgnoredDirs), ignored)
+}
+
+func TestOneCheckpointPerCompactCall(t *testing.T) {
+	blockRange := int64(1000)
+	tsdbCfg := &Options{
+		RetentionDuration: blockRange * 1000,
+		NoLockfile:        true,
+		MinBlockDuration:  blockRange,
+		MaxBlockDuration:  blockRange,
+	}
+
+	tmpDir, err := ioutil.TempDir("", "test")
+	testutil.Ok(t, err)
+	t.Cleanup(func() {
+		testutil.Ok(t, os.RemoveAll(tmpDir))
+	})
+
+	db, err := Open(tmpDir, log.NewNopLogger(), prometheus.NewRegistry(), tsdbCfg)
+	testutil.Ok(t, err)
+	t.Cleanup(func() {
+		testutil.Ok(t, db.Close())
+	})
+	db.DisableCompactions()
+
+	// Case 1: Lot's of uncompacted data in Head.
+
+	lbls := labels.Labels{labels.Label{Name: "foo_d", Value: "choco_bar"}}
+	// Append samples spanning 59 block ranges.
+	app := db.Appender(context.Background())
+	for i := int64(0); i < 60; i++ {
+		_, err := app.Add(lbls, blockRange*i, rand.Float64())
+		testutil.Ok(t, err)
+		_, err = app.Add(lbls, (blockRange*i)+blockRange/2, rand.Float64())
+		testutil.Ok(t, err)
+		// Rotate the WAL file so that there is >3 files for checkpoint to happen.
+		testutil.Ok(t, db.head.wal.NextSegment())
+	}
+	testutil.Ok(t, app.Commit())
+
+	// Check the existing WAL files.
+	first, last, err := wal.Segments(db.head.wal.Dir())
+	testutil.Ok(t, err)
+	testutil.Equals(t, 0, first)
+	testutil.Equals(t, 60, last)
+
+	testutil.Equals(t, 0.0, prom_testutil.ToFloat64(db.head.metrics.checkpointCreationTotal))
+	testutil.Ok(t, db.Compact())
+	testutil.Equals(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.checkpointCreationTotal))
+
+	// As the data spans for 59 blocks, 58 go to disk and 1 remains in Head.
+	testutil.Equals(t, 58, len(db.Blocks()))
+	// Though WAL was truncated only once, head should be truncated after each compaction.
+	testutil.Equals(t, 58.0, prom_testutil.ToFloat64(db.head.metrics.headTruncateTotal))
+
+	// The compaction should have only truncated first 2/3 of WAL (while also rotating the files).
+	first, last, err = wal.Segments(db.head.wal.Dir())
+	testutil.Ok(t, err)
+	testutil.Equals(t, 40, first)
+	testutil.Equals(t, 61, last)
+
+	// The first checkpoint would be for first 2/3rd of WAL, hence till 39.
+	// That should be the last checkpoint.
+	_, cno, err := wal.LastCheckpoint(db.head.wal.Dir())
+	testutil.Ok(t, err)
+	testutil.Equals(t, 39, cno)
+
+	// Case 2: Old blocks on disk.
+	// The above blocks will act as old blocks.
+
+	// Creating a block to cover the data in the Head so that
+	// Head will skip the data during replay and start fresh.
+	blocks := db.Blocks()
+	newBlockMint := blocks[len(blocks)-1].Meta().MaxTime
+	newBlockMaxt := db.Head().MaxTime() + 1
+	testutil.Ok(t, db.Close())
+
+	createBlock(t, db.dir, genSeries(1, 1, newBlockMint, newBlockMaxt))
+
+	db, err = Open(db.dir, log.NewNopLogger(), prometheus.NewRegistry(), tsdbCfg)
+	testutil.Ok(t, err)
+	db.DisableCompactions()
+
+	// 1 block more.
+	testutil.Equals(t, 59, len(db.Blocks()))
+	// No series in Head because of this new block.
+	testutil.Equals(t, 0, int(db.head.NumSeries()))
+
+	// Adding sample way into the future.
+	app = db.Appender(context.Background())
+	_, err = app.Add(lbls, blockRange*120, rand.Float64())
+	testutil.Ok(t, err)
+	testutil.Ok(t, app.Commit())
+
+	// The mint of head is the last block maxt, that means the gap between mint and maxt
+	// of Head is too large. This will trigger many compactions.
+	testutil.Equals(t, newBlockMaxt, db.head.MinTime())
+
+	// Another WAL file was rotated.
+	first, last, err = wal.Segments(db.head.wal.Dir())
+	testutil.Ok(t, err)
+	testutil.Equals(t, 40, first)
+	testutil.Equals(t, 62, last)
+
+	testutil.Equals(t, 0.0, prom_testutil.ToFloat64(db.head.metrics.checkpointCreationTotal))
+	testutil.Ok(t, db.Compact())
+	testutil.Equals(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.checkpointCreationTotal))
+
+	// No new blocks should be created as there was not data in between the new samples and the blocks.
+	testutil.Equals(t, 59, len(db.Blocks()))
+
+	// The compaction should have only truncated first 2/3 of WAL (while also rotating the files).
+	first, last, err = wal.Segments(db.head.wal.Dir())
+	testutil.Ok(t, err)
+	testutil.Equals(t, 55, first)
+	testutil.Equals(t, 63, last)
+
+	// The first checkpoint would be for first 2/3rd of WAL, hence till 54.
+	// That should be the last checkpoint.
+	_, cno, err = wal.LastCheckpoint(db.head.wal.Dir())
+	testutil.Ok(t, err)
+	testutil.Equals(t, 54, cno)
 }

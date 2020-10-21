@@ -10,7 +10,7 @@ scrape_configs:
 
   # Create a job for Docker daemons.
   #
-  # This exemple requires Docker daemons to be configured to expose
+  # This example requires Docker daemons to be configured to expose
   # Prometheus metrics, as documented here:
   # https://docs.docker.com/config/daemon/prometheus/
   - job_name: 'docker'

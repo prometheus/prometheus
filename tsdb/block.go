@@ -124,6 +124,9 @@ type BlockReader interface {
 
 	// Meta provides meta information about the block reader.
 	Meta() BlockMeta
+
+	// Size returns the number of bytes that the block takes up on disk.
+	Size() int64
 }
 
 // BlockMeta provides meta information about a block.
@@ -169,7 +172,7 @@ type BlockMetaCompaction struct {
 	// ULIDs of all source head blocks that went into the block.
 	Sources []ulid.ULID `json:"sources,omitempty"`
 	// Indicates that during compaction it resulted in a block without any samples
-	// so it should be deleted on the next reload.
+	// so it should be deleted on the next reloadBlocks.
 	Deletable bool `json:"deletable,omitempty"`
 	// Short descriptions of the direct blocks that were used to create
 	// this block.

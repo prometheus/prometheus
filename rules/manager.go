@@ -63,6 +63,7 @@ type Metrics struct {
 	groupLastEvalTime   *prometheus.GaugeVec
 	groupLastDuration   *prometheus.GaugeVec
 	groupRules          *prometheus.GaugeVec
+	groupSamples        *prometheus.GaugeVec
 }
 
 // NewGroupMetrics creates a new instance of Metrics and registers it with the provided registerer,
@@ -146,6 +147,14 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 			},
 			[]string{"rule_group"},
 		),
+		groupSamples: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Namespace: namespace,
+				Name:      "rule_group_last_evaluation_samples",
+				Help:      "The number of samples returned during the last rule group evaluation.",
+			},
+			[]string{"rule_group"},
+		),
 	}
 
 	if reg != nil {
@@ -160,6 +169,7 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 			m.groupLastEvalTime,
 			m.groupLastDuration,
 			m.groupRules,
+			m.groupSamples,
 		)
 	}
 
@@ -276,6 +286,7 @@ func NewGroup(o GroupOptions) *Group {
 	metrics.groupLastEvalTime.WithLabelValues(key)
 	metrics.groupLastDuration.WithLabelValues(key)
 	metrics.groupRules.WithLabelValues(key).Set(float64(len(o.Rules)))
+	metrics.groupSamples.WithLabelValues(key)
 	metrics.groupInterval.WithLabelValues(key).Set(o.Interval.Seconds())
 
 	return &Group{
@@ -557,6 +568,7 @@ func (g *Group) CopyState(from *Group) {
 
 // Eval runs a single evaluation cycle in which all rules are evaluated sequentially.
 func (g *Group) Eval(ctx context.Context, ts time.Time) {
+	var samplesTotal float64
 	for i, rule := range g.rules {
 		select {
 		case <-g.done:
@@ -590,6 +602,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				g.metrics.evalFailures.WithLabelValues(groupKey(g.File(), g.Name())).Inc()
 				return
 			}
+			samplesTotal += float64(len(vector))
 
 			if ar, ok := rule.(*AlertingRule); ok {
 				ar.sendAlerts(ctx, ts, g.opts.ResendDelay, g.interval, g.opts.NotifyFunc)
@@ -646,6 +659,9 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				}
 			}
 		}(i, rule)
+	}
+	if g.metrics != nil {
+		g.metrics.groupSamples.WithLabelValues(groupKey(g.File(), g.Name())).Set(samplesTotal)
 	}
 	g.cleanupStaleSeries(ctx, ts)
 }
@@ -978,6 +994,7 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 				m.groupLastEvalTime.DeleteLabelValues(n)
 				m.groupLastDuration.DeleteLabelValues(n)
 				m.groupRules.DeleteLabelValues(n)
+				m.groupSamples.DeleteLabelValues((n))
 			}
 			wg.Done()
 		}(n, oldg)
