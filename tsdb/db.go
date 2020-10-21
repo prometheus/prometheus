@@ -601,9 +601,11 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 			return
 		}
 
-		if dbErr := db.Close(); dbErr != nil {
-			level.Error(l).Log("msg", "failed to close files after failed TSDB startup", "err", dbErr)
-		}
+		var merr tsdb_errors.MultiError
+		merr.Add(err)
+		merr.Add(errors.Wrap(db.Close(), "close DB after failed startup"))
+
+		err = merr.Err()
 	}()
 
 	if db.blocksToDelete == nil {
@@ -632,7 +634,6 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 
 	var wlog *wal.WAL
 	segmentSize := wal.DefaultSegmentSize
-
 	// Wal is enabled.
 	if opts.WALSegmentSize >= 0 {
 		// Wal is set to a custom size.
