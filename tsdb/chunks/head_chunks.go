@@ -252,12 +252,12 @@ func repairLastChunkFile(files map[int]string) (_ map[int]string, returnErr erro
 
 	info, err := os.Stat(files[lastFile])
 	if err != nil {
-		return files, errors.Wrap(err, "file stat during last chunk file repair")
+		return files, errors.Wrap(err, "file stat during last head chunk file repair")
 	}
 	if info.Size() == 0 {
 		// Corrupt file, hence remove it.
 		if err := os.RemoveAll(files[lastFile]); err != nil {
-			return files, errors.Wrap(err, "delete corrupt file during last chunk file repair")
+			return files, errors.Wrap(err, "delete corrupted, empty head chunk file during last file repair")
 		}
 		delete(files, lastFile)
 	}
