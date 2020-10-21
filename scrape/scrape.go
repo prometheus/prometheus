@@ -192,9 +192,10 @@ type scrapePool struct {
 	appendable storage.Appendable
 	logger     log.Logger
 
-	mtx    sync.Mutex
-	config *config.ScrapeConfig
-	client *http.Client
+	mtx       sync.Mutex
+	reloadMtx sync.Mutex
+	config    *config.ScrapeConfig
+	client    *http.Client
 	// Targets and loops must always be synchronized to have the same
 	// set of hashes.
 	activeTargets  map[uint64]*Target
@@ -326,24 +327,23 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 	targetScrapePoolReloads.Inc()
 	start := time.Now()
 
+	var wg sync.WaitGroup
+	sp.reloadMtx.Lock()
 	sp.mtx.Lock()
-	defer sp.mtx.Unlock()
-
-	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, cfg.JobName, false, false)
-	if err != nil {
-		targetScrapePoolReloadsFailed.Inc()
-		return errors.Wrap(err, "error creating HTTP client")
-	}
+	defer func(client *http.Client) {
+		sp.mtx.Unlock()
+		wg.Wait()
+		client.CloseIdleConnections()
+		targetReloadIntervalLength.WithLabelValues(cfg.ScrapeInterval.String()).Observe(
+			time.Since(start).Seconds(),
+		)
+		sp.reloadMtx.Unlock()
+	}(sp.client)
 
 	reuseCache := reusableCache(sp.config, cfg)
 	sp.config = cfg
-	oldClient := sp.client
-	sp.client = client
-
-	targetScrapePoolTargetLimit.WithLabelValues(sp.config.JobName).Set(float64(sp.config.TargetLimit))
 
 	var (
-		wg              sync.WaitGroup
 		interval        = time.Duration(sp.config.ScrapeInterval)
 		timeout         = time.Duration(sp.config.ScrapeTimeout)
 		limit           = int(sp.config.SampleLimit)
@@ -351,6 +351,15 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 		honorTimestamps = sp.config.HonorTimestamps
 		mrc             = sp.config.MetricRelabelConfigs
 	)
+
+	targetScrapePoolTargetLimit.WithLabelValues(sp.config.JobName).Set(float64(sp.config.TargetLimit))
+
+	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, cfg.JobName, false, false)
+	if err != nil {
+		targetScrapePoolReloadsFailed.Inc()
+		return errors.Wrap(err, "error creating HTTP client")
+	}
+	sp.client = client
 
 	forcedErr := sp.refreshTargetLimitErr()
 	for fp, oldLoop := range sp.loops {
@@ -386,12 +395,6 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 
 		sp.loops[fp] = newLoop
 	}
-
-	wg.Wait()
-	oldClient.CloseIdleConnections()
-	targetReloadIntervalLength.WithLabelValues(interval.String()).Observe(
-		time.Since(start).Seconds(),
-	)
 	return nil
 }
 
