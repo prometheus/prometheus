@@ -26,8 +26,8 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
-func TestHeadReadWriter_WriteChunk_Chunk_IterateChunks(t *testing.T) {
-	hrw := testHeadReadWriter(t)
+func TestChunkDiskMapper_WriteChunk_Chunk_IterateChunks(t *testing.T) {
+	hrw := testChunkDiskMapper(t)
 	defer func() {
 		testutil.Ok(t, hrw.Close())
 	}()
@@ -157,23 +157,20 @@ func TestHeadReadWriter_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 
 }
 
-// TestHeadReadWriter_Truncate tests
+// TestChunkDiskMapper_Truncate tests
 // * If truncation is happening properly based on the time passed.
 // * The active file is not deleted even if the passed time makes it eligible to be deleted.
 // * Empty current file does not lead to creation of another file after truncation.
 // * Non-empty current file leads to creation of another file after truncation.
-func TestHeadReadWriter_Truncate(t *testing.T) {
-	hrw := testHeadReadWriter(t)
+func TestChunkDiskMapper_Truncate(t *testing.T) {
+	hrw := testChunkDiskMapper(t)
 	defer func() {
 		testutil.Ok(t, hrw.Close())
 	}()
 
 	timeRange := 0
 	fileTimeStep := 100
-	totalFiles := 7
-	startIndexAfter1stTruncation, startIndexAfter2ndTruncation := 3, 6
-	filesDeletedAfter1stTruncation, filesDeletedAfter2ndTruncation := 2, 5
-	var timeToTruncate, timeToTruncateAfterRestart int64
+	var thirdFileMinT, sixthFileMinT int64
 
 	addChunk := func() int {
 		mint := timeRange + 1                // Just after the new file cut.
@@ -188,51 +185,36 @@ func TestHeadReadWriter_Truncate(t *testing.T) {
 		return mint
 	}
 
-	cutFile := func(i int) {
-		testutil.Ok(t, hrw.CutNewFile())
-
-		mint := addChunk()
-
-		if i == startIndexAfter1stTruncation {
-			timeToTruncate = int64(mint)
-		} else if i == startIndexAfter2ndTruncation {
-			timeToTruncateAfterRestart = int64(mint)
-		}
-	}
-
-	// Cut segments.
-	for i := 1; i <= totalFiles; i++ {
-		cutFile(i)
-	}
-
-	// Verifying the files.
-	verifyFiles := func(remainingFiles, startIndex int) {
+	verifyFiles := func(remainingFiles []int) {
 		t.Helper()
 
 		files, err := ioutil.ReadDir(hrw.dir.Name())
 		testutil.Ok(t, err)
-		testutil.Equals(t, remainingFiles, len(files), "files on disk")
-		testutil.Equals(t, remainingFiles, len(hrw.mmappedChunkFiles), "hrw.mmappedChunkFiles")
-		testutil.Equals(t, remainingFiles, len(hrw.closers), "closers")
+		testutil.Equals(t, len(remainingFiles), len(files), "files on disk")
+		testutil.Equals(t, len(remainingFiles), len(hrw.mmappedChunkFiles), "hrw.mmappedChunkFiles")
+		testutil.Equals(t, len(remainingFiles), len(hrw.closers), "closers")
 
-		for i := 1; i <= totalFiles; i++ {
+		for _, i := range remainingFiles {
 			_, ok := hrw.mmappedChunkFiles[i]
-			if i < startIndex {
-				testutil.Equals(t, false, ok)
-			} else {
-				testutil.Equals(t, true, ok)
-			}
+			testutil.Equals(t, true, ok)
 		}
 	}
 
-	// Verify the number of segments.
-	verifyFiles(totalFiles, 1)
+	// Create segments 1 to 7.
+	for i := 1; i <= 7; i++ {
+		testutil.Ok(t, hrw.CutNewFile())
+		mint := int64(addChunk())
+		if i == 3 {
+			thirdFileMinT = mint
+		} else if i == 6 {
+			sixthFileMinT = mint
+		}
+	}
+	verifyFiles([]int{1, 2, 3, 4, 5, 6, 7})
 
 	// Truncating files.
-	testutil.Ok(t, hrw.Truncate(timeToTruncate))
-	totalFiles++ // Truncation creates a new file as the last file is not empty.
-	verifyFiles(totalFiles-filesDeletedAfter1stTruncation, startIndexAfter1stTruncation)
-	addChunk() // Add a chunk so that new file is not truncated.
+	testutil.Ok(t, hrw.Truncate(thirdFileMinT))
+	verifyFiles([]int{3, 4, 5, 6, 7, 8})
 
 	dir := hrw.dir.Name()
 	testutil.Ok(t, hrw.Close())
@@ -246,29 +228,31 @@ func TestHeadReadWriter_Truncate(t *testing.T) {
 	testutil.Ok(t, hrw.IterateAllChunks(func(_, _ uint64, _, _ int64, _ uint16) error { return nil }))
 	testutil.Assert(t, hrw.fileMaxtSet, "")
 
-	// Truncating files after restart. As the last file was empty, this creates no new files.
-	testutil.Ok(t, hrw.Truncate(timeToTruncateAfterRestart))
-	verifyFiles(totalFiles-filesDeletedAfter2ndTruncation, startIndexAfter2ndTruncation)
-
-	// First chunk after restart creates a new file.
+	verifyFiles([]int{3, 4, 5, 6, 7, 8})
+	// New file is created after restart even if last file was empty.
 	addChunk()
-	totalFiles++
+	verifyFiles([]int{3, 4, 5, 6, 7, 8, 9})
+
+	// Truncating files after restart.
+	testutil.Ok(t, hrw.Truncate(sixthFileMinT))
+	verifyFiles([]int{6, 7, 8, 9, 10})
+
+	// As the last file was empty, this creates no new files.
+	testutil.Ok(t, hrw.Truncate(sixthFileMinT+1))
+	verifyFiles([]int{6, 7, 8, 9, 10})
+	addChunk()
 
 	// Truncating till current time should not delete the current active file.
-	testutil.Ok(t, hrw.Truncate(int64(timeRange+fileTimeStep)))
-	verifyFiles(2, totalFiles) // One file is the active file and one was newly created.
+	testutil.Ok(t, hrw.Truncate(int64(timeRange+(2*fileTimeStep))))
+	verifyFiles([]int{10, 11}) // One file is the previously active file and one currently created.
 }
 
-// TestHeadReadWriter_Truncate_NoUnsequentialFiles tests
-// that truncation leaves no unsequential files on disk, mainly under the following case
-// * There is an empty file in between the sequence while the truncation
-//   deletes files only up to a sequence before that (i.e. stops deleting
-//   after it has found a file that is not deletable).
-// This tests https://github.com/prometheus/prometheus/issues/7412 where
-// the truncation used to check all the files for deletion and end up
-// deleting empty files in between and breaking the sequence.
-func TestHeadReadWriter_Truncate_NoUnsequentialFiles(t *testing.T) {
-	hrw := testHeadReadWriter(t)
+// TestChunkDiskMapper_Truncate_PreservesFileSequence tests that truncation doesn't poke
+// holes into the file sequence, even if there are empty files in between non-empty files.
+// This test exposes https://github.com/prometheus/prometheus/issues/7412 where the truncation
+// simply deleted all empty files instead of stopping once it encountered a non-empty file.
+func TestChunkDiskMapper_Truncate_PreservesFileSequence(t *testing.T) {
+	hrw := testChunkDiskMapper(t)
 	defer func() {
 		testutil.Ok(t, hrw.Close())
 	}()
@@ -296,7 +280,6 @@ func TestHeadReadWriter_Truncate_NoUnsequentialFiles(t *testing.T) {
 	nonEmptyFile() // 5.
 	emptyFile()    // 6.
 
-	// Verifying the files.
 	verifyFiles := func(remainingFiles []int) {
 		t.Helper()
 
@@ -308,7 +291,7 @@ func TestHeadReadWriter_Truncate_NoUnsequentialFiles(t *testing.T) {
 
 		for _, i := range remainingFiles {
 			_, ok := hrw.mmappedChunkFiles[i]
-			testutil.Equals(t, true, ok)
+			testutil.Assert(t, ok, "remaining file %d not in hrw.mmappedChunkFiles", i)
 		}
 	}
 
@@ -339,7 +322,7 @@ func TestHeadReadWriter_Truncate_NoUnsequentialFiles(t *testing.T) {
 // TestHeadReadWriter_TruncateAfterIterateChunksError tests for
 // https://github.com/prometheus/prometheus/issues/7753
 func TestHeadReadWriter_TruncateAfterFailedIterateChunks(t *testing.T) {
-	hrw := testHeadReadWriter(t)
+	hrw := testChunkDiskMapper(t)
 	defer func() {
 		testutil.Ok(t, hrw.Close())
 	}()
@@ -365,7 +348,7 @@ func TestHeadReadWriter_TruncateAfterFailedIterateChunks(t *testing.T) {
 }
 
 func TestHeadReadWriter_ReadRepairOnEmptyLastFile(t *testing.T) {
-	hrw := testHeadReadWriter(t)
+	hrw := testChunkDiskMapper(t)
 	defer func() {
 		testutil.Ok(t, hrw.Close())
 	}()
@@ -433,7 +416,7 @@ func TestHeadReadWriter_ReadRepairOnEmptyLastFile(t *testing.T) {
 
 }
 
-func testHeadReadWriter(t *testing.T) *ChunkDiskMapper {
+func testChunkDiskMapper(t *testing.T) *ChunkDiskMapper {
 	tmpdir, err := ioutil.TempDir("", "data")
 	testutil.Ok(t, err)
 	t.Cleanup(func() {
