@@ -152,6 +152,15 @@ func main() {
 	a.Flag("web.listen-address", "Address to listen on for UI, API, and telemetry.").
 		Default("0.0.0.0:9090").StringVar(&cfg.web.ListenAddress)
 
+	a.Flag("web.basic-auth-enabled", "Basic auth enabled for UI, API, and telemetry.").
+		BoolVar(&cfg.web.BasicAuthEnabled)
+
+	a.Flag("web.basic-auth-username", "Basic auth username for UI, API, and telemetry.").
+		Default("").StringVar(&cfg.web.BasicAuthUsername)
+
+	a.Flag("web.basic-auth-password", "Basic auth password for UI, API, and telemetry.").
+		Default("").StringVar(&cfg.web.BasicAuthPassword)
+
 	a.Flag("web.read-timeout",
 		"Maximum duration before timing out read of the request, and closing idle connections.").
 		Default("5m").SetValue(&cfg.webTimeout)

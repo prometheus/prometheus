@@ -39,9 +39,10 @@ func WithParam(ctx context.Context, p, v string) context.Context {
 // Router wraps httprouter.Router and adds support for prefixed sub-routers,
 // per-request context injections and instrumentation.
 type Router struct {
-	rtr    *httprouter.Router
-	prefix string
-	instrh func(handlerName string, handler http.HandlerFunc) http.HandlerFunc
+	rtr              *httprouter.Router
+	prefix           string
+	instrh           func(handlerName string, handler http.HandlerFunc) http.HandlerFunc
+	basicAuthHandler func(handler http.HandlerFunc) http.HandlerFunc
 }
 
 // New returns a new Router.
@@ -59,7 +60,25 @@ func (r *Router) WithInstrumentation(instrh func(handlerName string, handler htt
 			return newInstrh(handlerName, r.instrh(handlerName, handler))
 		}
 	}
-	return &Router{rtr: r.rtr, prefix: r.prefix, instrh: instrh}
+	return &Router{rtr: r.rtr, prefix: r.prefix, instrh: instrh, basicAuthHandler: r.basicAuthHandler}
+}
+
+// WithBasicAuth returns a router with HTTP basic auth support.
+func (r *Router) WithBasicAuth(requiredUsername, requiredPassword string) *Router {
+	basicAuthHandler := func(handler http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			user, password, hasAuth := r.BasicAuth()
+
+			if hasAuth && user == requiredUsername && password == requiredPassword {
+				handler(w, r)
+			} else {
+				w.Header().Set("WWW-Authenticate", "Basic realm=Restricted")
+				http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+			}
+		}
+	}
+
+	return &Router{rtr: r.rtr, prefix: r.prefix, instrh: r.instrh, basicAuthHandler: basicAuthHandler}
 }
 
 // WithPrefix returns a router that prefixes all registered routes with prefix.
@@ -73,6 +92,11 @@ func (r *Router) handle(handlerName string, h http.HandlerFunc) httprouter.Handl
 		// This needs to be outside the closure to avoid data race when reading and writing to 'h'.
 		h = r.instrh(handlerName, h)
 	}
+
+	if r.basicAuthHandler != nil {
+		h = r.basicAuthHandler(h)
+	}
+
 	return func(w http.ResponseWriter, req *http.Request, params httprouter.Params) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()

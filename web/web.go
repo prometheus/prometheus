@@ -245,6 +245,10 @@ type Options struct {
 	RemoteReadConcurrencyLimit int
 	RemoteReadBytesInFrame     int
 
+	BasicAuthUsername string
+	BasicAuthPassword string
+	BasicAuthEnabled  bool
+
 	Gatherer   prometheus.Gatherer
 	Registerer prometheus.Registerer
 }
@@ -259,6 +263,10 @@ func New(logger log.Logger, o *Options) *Handler {
 	router := route.New().
 		WithInstrumentation(m.instrumentHandler).
 		WithInstrumentation(setPathWithPrefix(""))
+
+	if o.BasicAuthEnabled {
+		router = router.WithBasicAuth(o.BasicAuthUsername, o.BasicAuthPassword)
+	}
 
 	cwd, err := os.Getwd()
 	if err != nil {
