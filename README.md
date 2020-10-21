@@ -102,7 +102,7 @@ For more information on building, running, and developing on the new React-based
 ## More information
 
   * The source code is periodically indexed: [Prometheus Core](https://godoc.org/github.com/prometheus/prometheus).
-  * You will find a CircleCI configuration in `.circleci/config.yml`.
+  * You will find a CircleCI configuration in [`.circleci/config.yml`](.circleci/config.yml).
   * See the [Community page](https://prometheus.io/community) for how to reach the Prometheus developers and users on various communication channels.
 
 ## Contributing
