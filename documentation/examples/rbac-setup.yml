@@ -20,9 +20,9 @@ rules:
   verbs: ["get", "list", "watch"]
 - apiGroups:
   - extensions
+  - networking.k8s.io
   resources:
   - ingresses
-  - networking.k8s.io
   verbs: ["get", "list", "watch"]
 - nonResourceURLs: ["/metrics", "/metrics/cadvisor"]
   verbs: ["get"]
