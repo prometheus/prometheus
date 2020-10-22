@@ -20,7 +20,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/stretchr/testify/assert"
 	"gopkg.in/yaml.v2"
 )
 
@@ -36,21 +36,21 @@ role: nodes
 host: %s
 `, url)
 	var cfg SDConfig
-	testutil.Ok(t, yaml.Unmarshal([]byte(cfgString), &cfg))
+	assert.NoError(t, yaml.Unmarshal([]byte(cfgString), &cfg))
 
 	d, err := NewDiscovery(&cfg, log.NewNopLogger())
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 
 	ctx := context.Background()
 	tgs, err := d.refresh(ctx)
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 
-	testutil.Equals(t, 1, len(tgs))
+	assert.Equal(t, 1, len(tgs))
 
 	tg := tgs[0]
-	testutil.Assert(t, tg != nil, "tg should not be nil")
-	testutil.Assert(t, tg.Targets != nil, "tg.targets should not be nil")
-	testutil.Equals(t, 5, len(tg.Targets))
+	assert.NotNil(t, tg)
+	assert.NotNil(t, tg.Targets)
+	assert.Equal(t, 5, len(tg.Targets))
 
 	for i, lbls := range []model.LabelSet{
 		{
@@ -124,7 +124,7 @@ host: %s
 		},
 	} {
 		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
-			testutil.Equals(t, lbls, tg.Targets[i])
+			assert.Equal(t, lbls, tg.Targets[i])
 		})
 	}
 }

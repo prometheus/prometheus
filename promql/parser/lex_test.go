@@ -16,7 +16,7 @@ package parser
 import (
 	"testing"
 
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/stretchr/testify/assert"
 )
 
 type testCase struct {
@@ -731,10 +731,10 @@ func TestLexer(t *testing.T) {
 				}
 
 				eofItem := Item{EOF, Pos(len(test.input)), ""}
-				testutil.Equals(t, lastItem, eofItem, "%d: input %q", i, test.input)
+				assert.Equal(t, lastItem, eofItem, "%d: input %q", i, test.input)
 
 				out = out[:len(out)-1]
-				testutil.Equals(t, test.expected, out, "%d: input %q", i, test.input)
+				assert.Equal(t, test.expected, out, "%d: input %q", i, test.input)
 			}
 		})
 	}

@@ -15,18 +15,18 @@ package consul
 
 import (
 	"context"
-	"testing"
-	"time"
-
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"testing"
+	"time"
 
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/stretchr/testify/assert"
 	"go.uber.org/goleak"
+
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
 func TestMain(m *testing.M) {
@@ -251,7 +251,7 @@ func newServer(t *testing.T) (*httptest.Server, *SDConfig) {
 		w.Write([]byte(response))
 	}))
 	stuburl, err := url.Parse(stub.URL)
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 
 	config := &SDConfig{
 		Server:          stuburl.Host,
@@ -264,18 +264,18 @@ func newServer(t *testing.T) (*httptest.Server, *SDConfig) {
 func newDiscovery(t *testing.T, config *SDConfig) *Discovery {
 	logger := log.NewNopLogger()
 	d, err := NewDiscovery(config, logger)
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	return d
 }
 
 func checkOneTarget(t *testing.T, tg []*targetgroup.Group) {
-	testutil.Equals(t, 1, len(tg))
+	assert.Equal(t, 1, len(tg))
 	target := tg[0]
-	testutil.Equals(t, "test-dc", string(target.Labels["__meta_consul_dc"]))
-	testutil.Equals(t, target.Source, string(target.Labels["__meta_consul_service"]))
+	assert.Equal(t, "test-dc", string(target.Labels["__meta_consul_dc"]))
+	assert.Equal(t, target.Source, string(target.Labels["__meta_consul_service"]))
 	if target.Source == "test" {
 		// test service should have one node.
-		testutil.Assert(t, len(target.Targets) > 0, "Test service should have one node")
+		assert.True(t, len(target.Targets) > 0, "Test service should have one node")
 	}
 }
 
@@ -359,7 +359,7 @@ func TestGetDatacenterShouldReturnError(t *testing.T) {
 	} {
 		stub := httptest.NewServer(http.HandlerFunc(tc.handler))
 		stuburl, err := url.Parse(stub.URL)
-		testutil.Ok(t, err)
+		assert.NoError(t, err)
 
 		config := &SDConfig{
 			Server:          stuburl.Host,
@@ -370,13 +370,13 @@ func TestGetDatacenterShouldReturnError(t *testing.T) {
 		d := newDiscovery(t, config)
 
 		// Should be empty if not initialized.
-		testutil.Equals(t, "", d.clientDatacenter)
+		assert.Equal(t, "", d.clientDatacenter)
 
 		err = d.getDatacenter()
 
 		// An error should be returned.
-		testutil.Equals(t, tc.errMessage, err.Error())
+		assert.Equal(t, tc.errMessage, err.Error())
 		// Should still be empty.
-		testutil.Equals(t, "", d.clientDatacenter)
+		assert.Equal(t, "", d.clientDatacenter)
 	}
 }

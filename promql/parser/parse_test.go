@@ -21,9 +21,9 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/assert"
 
 	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/util/testutil"
 )
 
 var testExpr = []struct {
@@ -2659,23 +2659,23 @@ func TestParseExpressions(t *testing.T) {
 			expr, err := ParseExpr(test.input)
 
 			// Unexpected errors are always caused by a bug.
-			testutil.Assert(t, err != errUnexpected, "unexpected error occurred")
+			assert.True(t, err != errUnexpected, "unexpected error occurred")
 
 			if !test.fail {
-				testutil.Ok(t, err)
-				testutil.Equals(t, test.expected, expr, "error on input '%s'", test.input)
+				assert.NoError(t, err)
+				assert.Equal(t, test.expected, expr, "error on input '%s'", test.input)
 			} else {
-				testutil.NotOk(t, err)
-				testutil.Assert(t, strings.Contains(err.Error(), test.errMsg), "unexpected error on input '%s', expected '%s', got '%s'", test.input, test.errMsg, err.Error())
+				assert.Error(t, err)
+				assert.True(t, strings.Contains(err.Error(), test.errMsg), "unexpected error on input '%s', expected '%s', got '%s'", test.input, test.errMsg, err.Error())
 
 				errorList, ok := err.(ParseErrors)
 
-				testutil.Assert(t, ok, "unexpected error type")
+				assert.True(t, ok, "unexpected error type")
 
 				for _, e := range errorList {
-					testutil.Assert(t, 0 <= e.PositionRange.Start, "parse error has negative position\nExpression '%s'\nError: %v", test.input, e)
-					testutil.Assert(t, e.PositionRange.Start <= e.PositionRange.End, "parse error has negative length\nExpression '%s'\nError: %v", test.input, e)
-					testutil.Assert(t, e.PositionRange.End <= Pos(len(test.input)), "parse error is not contained in input\nExpression '%s'\nError: %v", test.input, e)
+					assert.True(t, 0 <= e.PositionRange.Start, "parse error has negative position\nExpression '%s'\nError: %v", test.input, e)
+					assert.True(t, e.PositionRange.Start <= e.PositionRange.End, "parse error has negative length\nExpression '%s'\nError: %v", test.input, e)
+					assert.True(t, e.PositionRange.End <= Pos(len(test.input)), "parse error is not contained in input\nExpression '%s'\nError: %v", test.input, e)
 				}
 			}
 		})
@@ -2685,11 +2685,11 @@ func TestParseExpressions(t *testing.T) {
 // NaN has no equality. Thus, we need a separate test for it.
 func TestNaNExpression(t *testing.T) {
 	expr, err := ParseExpr("NaN")
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 
 	nl, ok := expr.(*NumberLiteral)
-	testutil.Assert(t, ok, "expected number literal but got %T", expr)
-	testutil.Assert(t, math.IsNaN(float64(nl.Val)), "expected 'NaN' in number literal but got %v", nl.Val)
+	assert.True(t, ok, "expected number literal but got %T", expr)
+	assert.True(t, math.IsNaN(float64(nl.Val)), "expected 'NaN' in number literal but got %v", nl.Val)
 }
 
 func mustLabelMatcher(mt labels.MatchType, name, val string) *labels.Matcher {
@@ -2804,14 +2804,14 @@ func TestParseSeries(t *testing.T) {
 		metric, vals, err := ParseSeriesDesc(test.input)
 
 		// Unexpected errors are always caused by a bug.
-		testutil.Assert(t, err != errUnexpected, "unexpected error occurred")
+		assert.True(t, err != errUnexpected, "unexpected error occurred")
 
 		if !test.fail {
-			testutil.Ok(t, err)
-			testutil.Equals(t, test.expectedMetric, metric, "error on input '%s'", test.input)
-			testutil.Equals(t, test.expectedValues, vals, "error in input '%s'", test.input)
+			assert.NoError(t, err)
+			assert.Equal(t, test.expectedMetric, metric, "error on input '%s'", test.input)
+			assert.Equal(t, test.expectedValues, vals, "error in input '%s'", test.input)
 		} else {
-			testutil.NotOk(t, err)
+			assert.Error(t, err)
 		}
 	}
 }
@@ -2821,7 +2821,7 @@ func TestRecoverParserRuntime(t *testing.T) {
 	var err error
 
 	defer func() {
-		testutil.Equals(t, errUnexpected, err)
+		assert.Equal(t, errUnexpected, err)
 	}()
 	defer p.recover(&err)
 	// Cause a runtime panic.
@@ -2837,7 +2837,7 @@ func TestRecoverParserError(t *testing.T) {
 	e := errors.New("custom error")
 
 	defer func() {
-		testutil.Equals(t, e.Error(), err.Error())
+		assert.Equal(t, e.Error(), err.Error())
 	}()
 	defer p.recover(&err)
 

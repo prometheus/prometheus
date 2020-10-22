@@ -16,7 +16,7 @@ package parser
 import (
 	"testing"
 
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestExprString(t *testing.T) {
@@ -102,13 +102,13 @@ func TestExprString(t *testing.T) {
 
 	for _, test := range inputs {
 		expr, err := ParseExpr(test.in)
-		testutil.Ok(t, err)
+		assert.NoError(t, err)
 
 		exp := test.in
 		if test.out != "" {
 			exp = test.out
 		}
 
-		testutil.Equals(t, exp, expr.String())
+		assert.Equal(t, exp, expr.String())
 	}
 }

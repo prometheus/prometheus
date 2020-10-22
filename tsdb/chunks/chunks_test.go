@@ -16,7 +16,7 @@ package chunks
 import (
 	"testing"
 
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestReaderWithInvalidBuffer(t *testing.T) {
@@ -24,5 +24,5 @@ func TestReaderWithInvalidBuffer(t *testing.T) {
 	r := &Reader{bs: []ByteSlice{b}}
 
 	_, err := r.Chunk(0)
-	testutil.NotOk(t, err)
+	assert.Error(t, err)
 }

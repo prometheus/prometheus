@@ -20,7 +20,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/stretchr/testify/assert"
 )
 
 type OpenstackSDInstanceTestSuite struct {
@@ -57,18 +57,18 @@ func TestOpenstackSDInstanceRefresh(t *testing.T) {
 	mock.SetupTest(t)
 
 	instance, err := mock.openstackAuthSuccess()
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 
 	ctx := context.Background()
 	tgs, err := instance.refresh(ctx)
 
-	testutil.Ok(t, err)
-	testutil.Equals(t, 1, len(tgs))
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(tgs))
 
 	tg := tgs[0]
-	testutil.Assert(t, tg != nil, "")
-	testutil.Assert(t, tg.Targets != nil, "")
-	testutil.Equals(t, 4, len(tg.Targets))
+	assert.NotNil(t, tg)
+	assert.NotNil(t, tg.Targets)
+	assert.Equal(t, 4, len(tg.Targets))
 
 	for i, lbls := range []model.LabelSet{
 		{
@@ -121,7 +121,7 @@ func TestOpenstackSDInstanceRefresh(t *testing.T) {
 		},
 	} {
 		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
-			testutil.Equals(t, lbls, tg.Targets[i])
+			assert.Equal(t, lbls, tg.Targets[i])
 		})
 	}
 }
@@ -134,6 +134,6 @@ func TestOpenstackSDInstanceRefreshWithDoneContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	_, err := hypervisor.refresh(ctx)
-	testutil.NotOk(t, err)
-	testutil.Assert(t, strings.Contains(err.Error(), context.Canceled.Error()), "%q doesn't contain %q", err, context.Canceled)
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), context.Canceled.Error()), "%q doesn't contain %q", err, context.Canceled)
 }

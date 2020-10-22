@@ -19,18 +19,19 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
-	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestRepairBadIndexVersion(t *testing.T) {
 	tmpDir, err := ioutil.TempDir("", "test")
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	t.Cleanup(func() {
-		testutil.Ok(t, os.RemoveAll(tmpDir))
+		assert.NoError(t, os.RemoveAll(tmpDir))
 	})
 
 	// The broken index used in this test was written by the following script
@@ -69,40 +70,40 @@ func TestRepairBadIndexVersion(t *testing.T) {
 	tmpDbDir := filepath.Join(tmpDir, "01BZJ9WJQPWHGNC2W4J9TA62KC")
 
 	// Create a copy DB to run test against.
-	testutil.Ok(t, fileutil.CopyDirs(filepath.Join("testdata", "repair_index_version", "01BZJ9WJQPWHGNC2W4J9TA62KC"), tmpDbDir))
+	assert.NoError(t, fileutil.CopyDirs(filepath.Join("testdata", "repair_index_version", "01BZJ9WJQPWHGNC2W4J9TA62KC"), tmpDbDir))
 
 	// Check the current db.
 	// In its current state, lookups should fail with the fixed code.
 	_, _, err = readMetaFile(tmpDbDir)
-	testutil.NotOk(t, err)
+	assert.Error(t, err)
 
 	// Touch chunks dir in block to imitate them.
-	testutil.Ok(t, os.MkdirAll(filepath.Join(tmpDbDir, "chunks"), 0777))
+	assert.NoError(t, os.MkdirAll(filepath.Join(tmpDbDir, "chunks"), 0777))
 
 	// Read current index to check integrity.
 	r, err := index.NewFileReader(filepath.Join(tmpDbDir, indexFilename))
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	p, err := r.Postings("b", "1")
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	for p.Next() {
 		t.Logf("next ID %d", p.At())
 
 		var lset labels.Labels
-		testutil.NotOk(t, r.Series(p.At(), &lset, nil))
+		assert.Error(t, r.Series(p.At(), &lset, nil))
 	}
-	testutil.Ok(t, p.Err())
-	testutil.Ok(t, r.Close())
+	assert.NoError(t, p.Err())
+	assert.NoError(t, r.Close())
 
 	// On DB opening all blocks in the base dir should be repaired.
 	db, err := Open(tmpDir, nil, nil, nil)
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	db.Close()
 
 	r, err = index.NewFileReader(filepath.Join(tmpDbDir, indexFilename))
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	defer r.Close()
 	p, err = r.Postings("b", "1")
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	res := []labels.Labels{}
 
 	for p.Next() {
@@ -110,17 +111,17 @@ func TestRepairBadIndexVersion(t *testing.T) {
 
 		var lset labels.Labels
 		var chks []chunks.Meta
-		testutil.Ok(t, r.Series(p.At(), &lset, &chks))
+		assert.NoError(t, r.Series(p.At(), &lset, &chks))
 		res = append(res, lset)
 	}
 
-	testutil.Ok(t, p.Err())
-	testutil.Equals(t, []labels.Labels{
+	assert.NoError(t, p.Err())
+	assert.Equal(t, []labels.Labels{
 		{{Name: "a", Value: "1"}, {Name: "b", Value: "1"}},
 		{{Name: "a", Value: "2"}, {Name: "b", Value: "1"}},
 	}, res)
 
 	meta, _, err := readMetaFile(tmpDbDir)
-	testutil.Ok(t, err)
-	testutil.Assert(t, meta.Version == metaVersion1, "unexpected meta version %d", meta.Version)
+	assert.NoError(t, err)
+	assert.True(t, meta.Version == metaVersion1, "unexpected meta version %d", meta.Version)
 }

@@ -15,16 +15,16 @@ package rules
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/util/teststorage"
-	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestRuleEval(t *testing.T) {
@@ -73,14 +73,14 @@ func TestRuleEval(t *testing.T) {
 	for _, test := range suite {
 		rule := NewRecordingRule(test.name, test.expr, test.labels)
 		result, err := rule.Eval(ctx, now, EngineQueryFunc(engine, storage), nil)
-		testutil.Ok(t, err)
-		testutil.Equals(t, test.result, result)
+		assert.NoError(t, err)
+		assert.Equal(t, test.result, result)
 	}
 }
 
 func TestRecordingRuleHTMLSnippet(t *testing.T) {
 	expr, err := parser.ParseExpr(`foo{html="<b>BOLD<b>"}`)
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	rule := NewRecordingRule("testrule", expr, labels.FromStrings("html", "<b>BOLD</b>"))
 
 	const want = `record: <a href="/test/prefix/graph?g0.expr=testrule&g0.tab=1">testrule</a>
@@ -90,7 +90,7 @@ labels:
 `
 
 	got := rule.HTMLSnippet("/test/prefix")
-	testutil.Assert(t, want == got, "incorrect HTML snippet; want:\n\n%s\n\ngot:\n\n%s", want, got)
+	assert.True(t, want == got, "incorrect HTML snippet; want:\n\n%s\n\ngot:\n\n%s", want, got)
 }
 
 // TestRuleEvalDuplicate tests for duplicate labels in recorded metrics, see #5529.
@@ -114,7 +114,6 @@ func TestRuleEvalDuplicate(t *testing.T) {
 	expr, _ := parser.ParseExpr(`vector(0) or label_replace(vector(0),"test","x","","")`)
 	rule := NewRecordingRule("foo", expr, labels.FromStrings("test", "test"))
 	_, err := rule.Eval(ctx, now, EngineQueryFunc(engine, storage), nil)
-	testutil.NotOk(t, err)
-	e := fmt.Errorf("vector contains metrics with the same labelset after applying rule labels")
-	testutil.ErrorEqual(t, e, err)
+	assert.Error(t, err)
+	assert.EqualError(t, err, "vector contains metrics with the same labelset after applying rule labels")
 }

@@ -21,7 +21,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/stretchr/testify/assert"
 )
 
 type DigitalOceanSDTestSuite struct {
@@ -47,21 +47,21 @@ func TestDigitalOceanSDRefresh(t *testing.T) {
 	cfg := DefaultSDConfig
 	cfg.HTTPClientConfig.BearerToken = tokenID
 	d, err := NewDiscovery(&cfg, log.NewNopLogger())
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	endpoint, err := url.Parse(sdmock.Mock.Endpoint())
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	d.client.BaseURL = endpoint
 
 	ctx := context.Background()
 	tgs, err := d.refresh(ctx)
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 
-	testutil.Equals(t, 1, len(tgs))
+	assert.Equal(t, 1, len(tgs))
 
 	tg := tgs[0]
-	testutil.Assert(t, tg != nil, "tg should not be nil")
-	testutil.Assert(t, tg.Targets != nil, "tg.targets should not be nil")
-	testutil.Equals(t, 4, len(tg.Targets))
+	assert.NotNil(t, tg)
+	assert.NotNil(t, tg.Targets)
+	assert.Equal(t, 4, len(tg.Targets))
 
 	for i, lbls := range []model.LabelSet{
 		{
@@ -119,7 +119,7 @@ func TestDigitalOceanSDRefresh(t *testing.T) {
 		},
 	} {
 		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
-			testutil.Equals(t, lbls, tg.Targets[i])
+			assert.Equal(t, lbls, tg.Targets[i])
 		})
 	}
 }

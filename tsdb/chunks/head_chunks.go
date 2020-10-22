@@ -27,10 +27,11 @@ import (
 	"sync"
 
 	"github.com/pkg/errors"
+	"go.uber.org/atomic"
+
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
-	"go.uber.org/atomic"
 )
 
 // Head chunk file header fields constants.

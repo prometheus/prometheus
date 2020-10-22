@@ -18,23 +18,23 @@ import (
 	"io/ioutil"
 	"net/url"
 	"os"
-	"reflect"
 	"sort"
 	"testing"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
+	"github.com/stretchr/testify/assert"
+
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestNoDuplicateReadConfigs(t *testing.T) {
 	dir, err := ioutil.TempDir("", "TestNoDuplicateReadConfigs")
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	defer os.RemoveAll(dir)
 
 	cfg1 := config.RemoteReadConfig{
@@ -103,8 +103,8 @@ func TestNoDuplicateReadConfigs(t *testing.T) {
 			err := s.ApplyConfig(conf)
 			prometheus.Unregister(s.rws.highestTimestamp)
 			gotError := err != nil
-			testutil.Equals(t, tc.err, gotError)
-			testutil.Ok(t, s.Close())
+			assert.Equal(t, tc.err, gotError)
+			assert.NoError(t, s.Close())
 		})
 	}
 }
@@ -170,12 +170,8 @@ func TestExternalLabelsQuerierAddExternalLabels(t *testing.T) {
 		sort.Slice(test.outMatchers, func(i, j int) bool { return test.outMatchers[i].Name < test.outMatchers[j].Name })
 		sort.Slice(matchers, func(i, j int) bool { return matchers[i].Name < matchers[j].Name })
 
-		if !reflect.DeepEqual(matchers, test.outMatchers) {
-			t.Fatalf("%d. unexpected matchers; want %v, got %v", i, test.outMatchers, matchers)
-		}
-		if !reflect.DeepEqual(added, test.added) {
-			t.Fatalf("%d. unexpected added labels; want %v, got %v", i, test.added, added)
-		}
+		assert.Equal(t, test.outMatchers, matchers, "%d", i)
+		assert.Equal(t, test.added, added, "%d", i)
 	}
 }
 
@@ -204,9 +200,9 @@ func TestSeriesSetFilter(t *testing.T) {
 	for _, tc := range tests {
 		filtered := newSeriesSetFilter(FromQueryResult(true, tc.in), tc.toRemove)
 		act, ws, err := ToQueryResult(filtered, 1e6)
-		testutil.Ok(t, err)
-		testutil.Equals(t, 0, len(ws))
-		testutil.Equals(t, tc.expected, act)
+		assert.NoError(t, err)
+		assert.Equal(t, 0, len(ws))
+		assert.Equal(t, tc.expected, act)
 	}
 }
 
@@ -495,21 +491,21 @@ func TestSampleAndChunkQueryableClient(t *testing.T) {
 				tc.callback,
 			)
 			q, err := c.Querier(context.TODO(), tc.mint, tc.maxt)
-			testutil.Ok(t, err)
-			defer testutil.Ok(t, q.Close())
+			assert.NoError(t, err)
+			defer assert.NoError(t, q.Close())
 
 			ss := q.Select(true, nil, tc.matchers...)
-			testutil.Ok(t, err)
-			testutil.Equals(t, storage.Warnings(nil), ss.Warnings())
+			assert.NoError(t, err)
+			assert.Equal(t, storage.Warnings(nil), ss.Warnings())
 
-			testutil.Equals(t, tc.expectedQuery, m.got)
+			assert.Equal(t, tc.expectedQuery, m.got)
 
 			var got []labels.Labels
 			for ss.Next() {
 				got = append(got, ss.At().Labels())
 			}
-			testutil.Ok(t, ss.Err())
-			testutil.Equals(t, tc.expectedSeries, got)
+			assert.NoError(t, ss.Err())
+			assert.Equal(t, tc.expectedSeries, got)
 
 		})
 	}

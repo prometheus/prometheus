@@ -17,7 +17,7 @@ import (
 	"regexp/syntax"
 	"testing"
 
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestNewFastRegexMatcher(t *testing.T) {
@@ -54,8 +54,8 @@ func TestNewFastRegexMatcher(t *testing.T) {
 
 	for _, c := range cases {
 		m, err := NewFastRegexMatcher(c.regex)
-		testutil.Ok(t, err)
-		testutil.Equals(t, c.expected, m.MatchString(c.value))
+		assert.NoError(t, err)
+		assert.Equal(t, c.expected, m.MatchString(c.value))
 	}
 }
 
@@ -88,11 +88,11 @@ func TestOptimizeConcatRegex(t *testing.T) {
 
 	for _, c := range cases {
 		parsed, err := syntax.Parse(c.regex, syntax.Perl)
-		testutil.Ok(t, err)
+		assert.NoError(t, err)
 
 		prefix, suffix, contains := optimizeConcatRegex(parsed)
-		testutil.Equals(t, c.prefix, prefix)
-		testutil.Equals(t, c.suffix, suffix)
-		testutil.Equals(t, c.contains, contains)
+		assert.Equal(t, c.prefix, prefix)
+		assert.Equal(t, c.suffix, suffix)
+		assert.Equal(t, c.contains, contains)
 	}
 }

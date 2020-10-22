@@ -25,12 +25,13 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/assert"
+
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
-	"github.com/prometheus/prometheus/util/testutil"
 )
 
 var scenarios = map[string]struct {
@@ -220,8 +221,8 @@ func TestFederation(t *testing.T) {
 			res := httptest.NewRecorder()
 
 			h.federation(res, req)
-			testutil.Equals(t, scenario.code, res.Code)
-			testutil.Equals(t, scenario.body, normalizeBody(res.Body))
+			assert.Equal(t, scenario.code, res.Code)
+			assert.Equal(t, scenario.body, normalizeBody(res.Body))
 		})
 	}
 }
@@ -262,10 +263,10 @@ func TestFederation_NotReady(t *testing.T) {
 			h.federation(res, req)
 			if scenario.code == http.StatusBadRequest {
 				// Request are expected to be checked before DB readiness.
-				testutil.Equals(t, http.StatusBadRequest, res.Code)
+				assert.Equal(t, http.StatusBadRequest, res.Code)
 				return
 			}
-			testutil.Equals(t, http.StatusServiceUnavailable, res.Code)
+			assert.Equal(t, http.StatusServiceUnavailable, res.Code)
 		})
 	}
 }
