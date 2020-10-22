@@ -7,11 +7,11 @@ import ScrapePoolList from './ScrapePoolList';
 import ScrapePoolPanel from './ScrapePoolPanel';
 import { Target } from './target';
 import { FetchMock } from 'jest-fetch-mock/types';
+import { PathPrefixContext } from '../../contexts/PathPrefixContext';
 
 describe('ScrapePoolList', () => {
   const defaultProps = {
     filter: { showHealthy: true, showUnhealthy: true },
-    pathPrefix: '..',
   };
 
   beforeEach(() => {
@@ -36,10 +36,17 @@ describe('ScrapePoolList', () => {
 
     it('renders a table', async () => {
       await act(async () => {
-        scrapePoolList = mount(<ScrapePoolList {...defaultProps} />);
+        scrapePoolList = mount(
+          <PathPrefixContext.Provider value="/path/prefix">
+            <ScrapePoolList {...defaultProps} />
+          </PathPrefixContext.Provider>
+        );
       });
       scrapePoolList.update();
-      expect(mock).toHaveBeenCalledWith('../api/v1/targets?state=active', { cache: 'no-store', credentials: 'same-origin' });
+      expect(mock).toHaveBeenCalledWith('/path/prefix/../api/v1/targets?state=active', {
+        cache: 'no-store',
+        credentials: 'same-origin',
+      });
       const panels = scrapePoolList.find(ScrapePoolPanel);
       expect(panels).toHaveLength(3);
       const activeTargets: Target[] = sampleApiResponse.data.activeTargets as Target[];
@@ -55,10 +62,17 @@ describe('ScrapePoolList', () => {
         filter: { showHealthy: false, showUnhealthy: true },
       };
       await act(async () => {
-        scrapePoolList = mount(<ScrapePoolList {...props} />);
+        scrapePoolList = mount(
+          <PathPrefixContext.Provider value="/path/prefix">
+            <ScrapePoolList {...props} />
+          </PathPrefixContext.Provider>
+        );
       });
       scrapePoolList.update();
-      expect(mock).toHaveBeenCalledWith('../api/v1/targets?state=active', { cache: 'no-store', credentials: 'same-origin' });
+      expect(mock).toHaveBeenCalledWith('/path/prefix/../api/v1/targets?state=active', {
+        cache: 'no-store',
+        credentials: 'same-origin',
+      });
       const panels = scrapePoolList.find(ScrapePoolPanel);
       expect(panels).toHaveLength(0);
     });
@@ -70,11 +84,18 @@ describe('ScrapePoolList', () => {
 
       let scrapePoolList: any;
       await act(async () => {
-        scrapePoolList = mount(<ScrapePoolList {...defaultProps} />);
+        scrapePoolList = mount(
+          <PathPrefixContext.Provider value="/path/prefix">
+            <ScrapePoolList {...defaultProps} />
+          </PathPrefixContext.Provider>
+        );
       });
       scrapePoolList.update();
 
-      expect(mock).toHaveBeenCalledWith('../api/v1/targets?state=active', { cache: 'no-store', credentials: 'same-origin' });
+      expect(mock).toHaveBeenCalledWith('/path/prefix/../api/v1/targets?state=active', {
+        cache: 'no-store',
+        credentials: 'same-origin',
+      });
       const alert = scrapePoolList.find(Alert);
       expect(alert.prop('color')).toBe('danger');
       expect(alert.text()).toContain('Error fetching targets');

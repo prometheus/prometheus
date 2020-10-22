@@ -12,19 +12,20 @@ import {
   DropdownMenu,
   DropdownItem,
 } from 'reactstrap';
-import PathPrefixProps from './types/PathPrefixProps';
+import { usePathPrefix } from './contexts/PathPrefixContext';
 
 interface NavbarProps {
   consolesLink: string | null;
 }
 
-const Navigation: FC<PathPrefixProps & NavbarProps> = ({ pathPrefix, consolesLink }) => {
+const Navigation: FC<NavbarProps> = ({ consolesLink }) => {
   const [isOpen, setIsOpen] = useState(false);
   const toggle = () => setIsOpen(!isOpen);
+  const pathPrefix = usePathPrefix();
   return (
     <Navbar className="mb-3" dark color="dark" expand="md" fixed="top">
       <NavbarToggler onClick={toggle} />
-      <Link className="pt-0 navbar-brand" to={`${pathPrefix}/new/graph`}>
+      <Link className="pt-0 navbar-brand" to={`${pathPrefix}/graph`}>
         Prometheus
       </Link>
       <Collapse isOpen={isOpen} navbar style={{ justifyContent: 'space-between' }}>
@@ -35,12 +36,12 @@ const Navigation: FC<PathPrefixProps & NavbarProps> = ({ pathPrefix, consolesLin
             </NavItem>
           )}
           <NavItem>
-            <NavLink tag={Link} to={`${pathPrefix}/new/alerts`}>
+            <NavLink tag={Link} to={`${pathPrefix}/alerts`}>
               Alerts
             </NavLink>
           </NavItem>
           <NavItem>
-            <NavLink tag={Link} to={`${pathPrefix}/new/graph`}>
+            <NavLink tag={Link} to={`${pathPrefix}/graph`}>
               Graph
             </NavLink>
           </NavItem>
@@ -49,25 +50,25 @@ const Navigation: FC<PathPrefixProps & NavbarProps> = ({ pathPrefix, consolesLin
               Status
             </DropdownToggle>
             <DropdownMenu>
-              <DropdownItem tag={Link} to={`${pathPrefix}/new/status`}>
+              <DropdownItem tag={Link} to={`${pathPrefix}/status`}>
                 Runtime & Build Information
               </DropdownItem>
-              <DropdownItem tag={Link} to={`${pathPrefix}/new/tsdb-status`}>
+              <DropdownItem tag={Link} to={`${pathPrefix}/tsdb-status`}>
                 TSDB Status
               </DropdownItem>
-              <DropdownItem tag={Link} to={`${pathPrefix}/new/flags`}>
+              <DropdownItem tag={Link} to={`${pathPrefix}/flags`}>
                 Command-Line Flags
               </DropdownItem>
-              <DropdownItem tag={Link} to={`${pathPrefix}/new/config`}>
+              <DropdownItem tag={Link} to={`${pathPrefix}/config`}>
                 Configuration
               </DropdownItem>
-              <DropdownItem tag={Link} to={`${pathPrefix}/new/rules`}>
+              <DropdownItem tag={Link} to={`${pathPrefix}/rules`}>
                 Rules
               </DropdownItem>
-              <DropdownItem tag={Link} to={`${pathPrefix}/new/targets`}>
+              <DropdownItem tag={Link} to={`${pathPrefix}/targets`}>
                 Targets
               </DropdownItem>
-              <DropdownItem tag={Link} to={`${pathPrefix}/new/service-discovery`}>
+              <DropdownItem tag={Link} to={`${pathPrefix}/service-discovery`}>
                 Service Discovery
               </DropdownItem>
             </DropdownMenu>
@@ -76,7 +77,7 @@ const Navigation: FC<PathPrefixProps & NavbarProps> = ({ pathPrefix, consolesLin
             <NavLink href="https://prometheus.io/docs/prometheus/latest/getting_started/">Help</NavLink>
           </NavItem>
           <NavItem>
-            <NavLink href={`${pathPrefix}/graph${window.location.search}`}>Classic UI</NavLink>
+            <NavLink href={`${pathPrefix}/../graph${window.location.search}`}>Classic UI</NavLink>
           </NavItem>
         </Nav>
       </Collapse>

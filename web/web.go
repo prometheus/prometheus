@@ -79,7 +79,6 @@ var reactRouterPaths = []string{
 	"/status",
 	"/targets",
 	"/tsdb-status",
-	"/version",
 }
 
 // withStackTrace logs the stack trace in case the request panics. The function
@@ -393,8 +392,7 @@ func New(logger log.Logger, o *Options) *Handler {
 				fmt.Fprintf(w, "Error reading React index.html: %v", err)
 				return
 			}
-			replacedIdx := bytes.ReplaceAll(idx, []byte("PATH_PREFIX_PLACEHOLDER"), []byte(o.ExternalURL.Path))
-			replacedIdx = bytes.ReplaceAll(replacedIdx, []byte("CONSOLES_LINK_PLACEHOLDER"), []byte(h.consolesPath()))
+			replacedIdx := bytes.ReplaceAll(idx, []byte("CONSOLES_LINK_PLACEHOLDER"), []byte(h.consolesPath()))
 			replacedIdx = bytes.ReplaceAll(replacedIdx, []byte("TITLE_PLACEHOLDER"), []byte(h.options.PageTitle))
 			w.Write(replacedIdx)
 			return
