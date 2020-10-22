@@ -91,7 +91,7 @@ func (m mockIndex) Close() error {
 	return nil
 }
 
-func (m mockIndex) LabelValues(name string) ([]string, error) {
+func (m mockIndex) UnsortedLabelValues(name string) ([]string, error) {
 	values := []string{}
 	for l := range m.postings {
 		if l.Name == name {
