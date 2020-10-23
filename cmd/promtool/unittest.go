@@ -175,8 +175,6 @@ func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]i
 	// Bounds for evaluating the rules.
 	mint := time.Unix(0, 0).UTC()
 	maxt := mint.Add(tg.maxEvalTime())
-	// Rounding off to nearest Eval time (> maxt).
-	maxt = maxt.Add(evalInterval / 2).Round(evalInterval)
 
 	// Pre-processing some data for testing alerts.
 	// All this preparation is so that we can test alerts as we evaluate the rules.
@@ -220,7 +218,7 @@ func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]i
 	}
 
 	var errs []error
-	for ts := mint; ts.Before(maxt); ts = ts.Add(evalInterval) {
+	for ts := mint; ts.Before(maxt) || ts.Equal(maxt); ts = ts.Add(evalInterval) {
 		// Collects the alerts asked for unit testing.
 		suite.WithSamplesTill(ts, func(err error) {
 			if err != nil {
