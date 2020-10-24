@@ -107,34 +107,34 @@ tests:
         values: '0+1x120'
 
     promql_expr_test:
-      - expr: job:test:count1m
+      - expr: job:test:count_over_time1m
         eval_time: 0m
         exp_samples:
           - value: 1
-            labels: 'job:test:count1m{job="test"}'
-      - expr: timestamp(job:test:count1m)
+            labels: 'job:test:count_over_time1m{job="test"}'
+      - expr: timestamp(job:test:count_over_time1m)
         eval_time: 10s
         exp_samples:
           - value: 0
             labels: '{job="test"}'
 
-      - expr: job:test:count1m
+      - expr: job:test:count_over_time1m
         eval_time: 1m
         exp_samples:
           - value: 61
-            labels: 'job:test:count1m{job="test"}'
-      - expr: timestamp(job:test:count1m)
+            labels: 'job:test:count_over_time1m{job="test"}'
+      - expr: timestamp(job:test:count_over_time1m)
         eval_time: 1m10s
         exp_samples:
           - value: 60
             labels: '{job="test"}'
 
-      - expr: job:test:count1m
+      - expr: job:test:count_over_time1m
         eval_time: 2m
         exp_samples:
           - value: 61
-            labels: 'job:test:count1m{job="test"}'
-      - expr: timestamp(job:test:count1m)
+            labels: 'job:test:count_over_time1m{job="test"}'
+      - expr: timestamp(job:test:count_over_time1m)
         eval_time: 2m59s999ms
         exp_samples:
           - value: 120

@@ -14,7 +14,7 @@ groups:
 
   - name: rules
     rules:
-      - record: job:test:count1m
+      - record: job:test:count_over_time1m
         expr: sum without(instance) (count_over_time(test[1m]))
 
       # A recording rule that doesn't depend on input series.
