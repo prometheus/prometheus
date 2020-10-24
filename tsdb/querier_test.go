@@ -1033,7 +1033,7 @@ func TestDeletedIterator(t *testing.T) {
 			}
 		}
 
-		assert.GreaterOrEqual(t, i, int64(1000), "")
+		assert.GreaterOrEqual(t, i, int64(1000))
 		assert.NoError(t, it.Err())
 	}
 }

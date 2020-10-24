@@ -304,7 +304,7 @@ func TestDBAppenderAddRef(t *testing.T) {
 	ref2, err := app2.Add(labels.FromStrings("a", "b"), 133, 1)
 	assert.NoError(t, err)
 
-	assert.Equal(t, ref1, ref2, "")
+	assert.Equal(t, ref1, ref2)
 
 	// Reference must be valid to add another sample.
 	err = app2.AddFast(ref2, 143, 2)
@@ -719,7 +719,7 @@ Outer:
 		})
 
 		if len(expSamples) == 0 {
-			assert.False(t, res.Next(), "")
+			assert.False(t, res.Next())
 			continue
 		}
 
@@ -1069,7 +1069,7 @@ func TestTombstoneClean(t *testing.T) {
 		})
 
 		if len(expSamples) == 0 {
-			assert.False(t, res.Next(), "")
+			assert.False(t, res.Next())
 			continue
 		}
 

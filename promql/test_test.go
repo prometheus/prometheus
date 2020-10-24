@@ -134,7 +134,7 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 
 					// Get the series for the matcher.
 					ss := querier.Select(false, nil, matchers...)
-					assert.True(t, ss.Next(), "")
+					assert.True(t, ss.Next())
 					storageSeries := ss.At()
 					assert.False(t, ss.Next(), "Expecting only 1 series")
 

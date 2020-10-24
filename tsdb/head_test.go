@@ -1733,7 +1733,7 @@ func TestOutOfOrderSamplesMetric(t *testing.T) {
 
 	assert.Equal(t, int64(math.MinInt64), db.head.minValidTime.Load())
 	assert.NoError(t, db.Compact())
-	assert.Greater(t, db.head.minValidTime.Load(), int64(0), "")
+	assert.Greater(t, db.head.minValidTime.Load(), int64(0))
 
 	app = db.Appender(ctx)
 	_, err = app.Add(labels.FromStrings("a", "b"), db.head.minValidTime.Load()-2, 99)
