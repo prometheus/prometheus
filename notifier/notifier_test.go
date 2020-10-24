@@ -83,7 +83,7 @@ func TestHandlerNextBatch(t *testing.T) {
 	assert.NoError(t, alertsEqual(expected[0:maxBatchSize], h.nextBatch()))
 	assert.NoError(t, alertsEqual(expected[maxBatchSize:2*maxBatchSize], h.nextBatch()))
 	assert.NoError(t, alertsEqual(expected[2*maxBatchSize:], h.nextBatch()))
-	assert.True(t, len(h.queue) == 0, "Expected queue to be empty but got %d alerts", len(h.queue))
+	assert.Equal(t, 0, len(h.queue), "Expected queue to be empty but got %d alerts", len(h.queue))
 }
 
 func alertsEqual(a, b []*Alert) error {
@@ -201,7 +201,7 @@ func TestHandlerSendAll(t *testing.T) {
 	checkNoErr()
 
 	status2.Store(int32(http.StatusInternalServerError))
-	assert.True(t, !h.sendAll(h.queue...), "all sends succeeded unexpectedly")
+	assert.False(t, h.sendAll(h.queue...), "all sends succeeded unexpectedly")
 	checkNoErr()
 }
 

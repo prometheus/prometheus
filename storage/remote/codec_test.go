@@ -140,7 +140,7 @@ func TestConcreteSeriesSet(t *testing.T) {
 	assert.Equal(t, series1, c.At(), "Unexpected series returned.")
 	assert.True(t, c.Next(), "Expected Next() to be true.")
 	assert.Equal(t, series2, c.At(), "Unexpected series returned.")
-	assert.True(t, !c.Next(), "Expected Next() to be false.")
+	assert.False(t, c.Next(), "Expected Next() to be false.")
 }
 
 func TestConcreteSeriesClonesLabels(t *testing.T) {
@@ -185,7 +185,7 @@ func TestFromQueryResultWithDuplicates(t *testing.T) {
 
 	assert.True(t, isErrSeriesSet, "Expected resulting series to be an errSeriesSet")
 	errMessage := errSeries.Err().Error()
-	assert.True(t, errMessage == "duplicate label with name: foo", fmt.Sprintf("Expected error to be from duplicate label, but got: %s", errMessage))
+	assert.Equal(t, "duplicate label with name: foo", errMessage, fmt.Sprintf("Expected error to be from duplicate label, but got: %s", errMessage))
 }
 
 func TestNegotiateResponseType(t *testing.T) {

@@ -15,6 +15,7 @@ package rules
 
 import (
 	"context"
+	"html/template"
 	"testing"
 	"time"
 
@@ -83,14 +84,14 @@ func TestRecordingRuleHTMLSnippet(t *testing.T) {
 	assert.NoError(t, err)
 	rule := NewRecordingRule("testrule", expr, labels.FromStrings("html", "<b>BOLD</b>"))
 
-	const want = `record: <a href="/test/prefix/graph?g0.expr=testrule&g0.tab=1">testrule</a>
+	const want = template.HTML(`record: <a href="/test/prefix/graph?g0.expr=testrule&g0.tab=1">testrule</a>
 expr: <a href="/test/prefix/graph?g0.expr=foo%7Bhtml%3D%22%3Cb%3EBOLD%3Cb%3E%22%7D&g0.tab=1">foo{html=&#34;&lt;b&gt;BOLD&lt;b&gt;&#34;}</a>
 labels:
   html: '&lt;b&gt;BOLD&lt;/b&gt;'
-`
+`)
 
 	got := rule.HTMLSnippet("/test/prefix")
-	assert.True(t, want == got, "incorrect HTML snippet; want:\n\n%s\n\ngot:\n\n%s", want, got)
+	assert.Equal(t, want, got, "incorrect HTML snippet; want:\n\n%s\n\ngot:\n\n%s", want, got)
 }
 
 // TestRuleEvalDuplicate tests for duplicate labels in recorded metrics, see #5529.

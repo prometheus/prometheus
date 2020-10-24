@@ -174,7 +174,7 @@ func TestFanoutErrors(t *testing.T) {
 			}
 
 			if tc.warning != nil {
-				assert.True(t, len(ss.Warnings()) > 0, "warnings expected")
+				assert.Greater(t, len(ss.Warnings()), 0, "warnings expected")
 				assert.Error(t, ss.Warnings()[0])
 				assert.Equal(t, tc.warning.Error(), ss.Warnings()[0].Error())
 			}
@@ -199,7 +199,7 @@ func TestFanoutErrors(t *testing.T) {
 			}
 
 			if tc.warning != nil {
-				assert.True(t, len(ss.Warnings()) > 0, "warnings expected")
+				assert.Greater(t, len(ss.Warnings()), 0, "warnings expected")
 				assert.Error(t, ss.Warnings()[0])
 				assert.Equal(t, tc.warning.Error(), ss.Warnings()[0].Error())
 			}

@@ -172,7 +172,7 @@ func TestAlertingRule(t *testing.T) {
 		for i := range test.result {
 			test.result[i].T = timestamp.FromTime(evalTime)
 		}
-		assert.True(t, len(test.result) == len(filteredRes), "%d. Number of samples in expected and actual output don't match (%d vs. %d)", i, len(test.result), len(res))
+		assert.Equal(t, len(test.result), len(filteredRes), "%d. Number of samples in expected and actual output don't match (%d vs. %d)", i, len(test.result), len(res))
 
 		sort.Slice(filteredRes, func(i, j int) bool {
 			return labels.Compare(filteredRes[i].Metric, filteredRes[j].Metric) < 0
@@ -180,7 +180,7 @@ func TestAlertingRule(t *testing.T) {
 		assert.Equal(t, test.result, filteredRes)
 
 		for _, aa := range rule.ActiveAlerts() {
-			assert.True(t, aa.Labels.Get(model.MetricNameLabel) == "", "%s label set on active alert: %s", model.MetricNameLabel, aa.Labels)
+			assert.Zero(t, aa.Labels.Get(model.MetricNameLabel), "%s label set on active alert: %s", model.MetricNameLabel, aa.Labels)
 		}
 	}
 }
@@ -325,7 +325,7 @@ func TestForStateAddSamples(t *testing.T) {
 				test.result[i].V = forState
 			}
 		}
-		assert.True(t, len(test.result) == len(filteredRes), "%d. Number of samples in expected and actual output don't match (%d vs. %d)", i, len(test.result), len(res))
+		assert.Equal(t, len(test.result), len(filteredRes), "%d. Number of samples in expected and actual output don't match (%d vs. %d)", i, len(test.result), len(res))
 
 		sort.Slice(filteredRes, func(i, j int) bool {
 			return labels.Compare(filteredRes[i].Metric, filteredRes[j].Metric) < 0
@@ -333,7 +333,7 @@ func TestForStateAddSamples(t *testing.T) {
 		assert.Equal(t, test.result, filteredRes)
 
 		for _, aa := range rule.ActiveAlerts() {
-			assert.True(t, aa.Labels.Get(model.MetricNameLabel) == "", "%s label set on active alert: %s", model.MetricNameLabel, aa.Labels)
+			assert.Zero(t, aa.Labels.Get(model.MetricNameLabel), "%s label set on active alert: %s", model.MetricNameLabel, aa.Labels)
 		}
 
 	}
@@ -402,7 +402,7 @@ func TestForStateRestore(t *testing.T) {
 
 	exp := rule.ActiveAlerts()
 	for _, aa := range exp {
-		assert.True(t, aa.Labels.Get(model.MetricNameLabel) == "", "%s label set on active alert: %s", model.MetricNameLabel, aa.Labels)
+		assert.Zero(t, aa.Labels.Get(model.MetricNameLabel), "%s label set on active alert: %s", model.MetricNameLabel, aa.Labels)
 	}
 	sort.Slice(exp, func(i, j int) bool {
 		return labels.Compare(exp[i].Labels, exp[j].Labels) < 0
@@ -466,7 +466,7 @@ func TestForStateRestore(t *testing.T) {
 
 		got := newRule.ActiveAlerts()
 		for _, aa := range got {
-			assert.True(t, aa.Labels.Get(model.MetricNameLabel) == "", "%s label set on active alert: %s", model.MetricNameLabel, aa.Labels)
+			assert.Zero(t, aa.Labels.Get(model.MetricNameLabel), "%s label set on active alert: %s", model.MetricNameLabel, aa.Labels)
 		}
 		sort.Slice(got, func(i, j int) bool {
 			return labels.Compare(got[i].Labels, got[j].Labels) < 0
@@ -494,7 +494,7 @@ func TestForStateRestore(t *testing.T) {
 				// Difference in time should be within 1e6 ns, i.e. 1ms
 				// (due to conversion between ns & ms, float64 & int64).
 				activeAtDiff := float64(e.ActiveAt.Unix() + int64(tst.downDuration/time.Second) - got[i].ActiveAt.Unix())
-				assert.True(t, math.Abs(activeAtDiff) == 0, "'for' state restored time is wrong")
+				assert.Equal(t, 0.0, math.Abs(activeAtDiff), "'for' state restored time is wrong")
 			}
 		}
 	}
@@ -727,7 +727,7 @@ func TestUpdate(t *testing.T) {
 
 	err := ruleManager.Update(10*time.Second, files, nil)
 	assert.NoError(t, err)
-	assert.True(t, len(ruleManager.groups) > 0, "expected non-empty rule groups")
+	assert.Greater(t, len(ruleManager.groups), 0, "expected non-empty rule groups")
 	ogs := map[string]*Group{}
 	for h, g := range ruleManager.groups {
 		g.seriesInPreviousEval = []map[string]labels.Labels{
@@ -748,7 +748,7 @@ func TestUpdate(t *testing.T) {
 
 	// Groups will be recreated if updated.
 	rgs, errs := rulefmt.ParseFile("fixtures/rules.yaml")
-	assert.True(t, len(errs) == 0, "file parsing failures")
+	assert.Equal(t, 0, len(errs), "file parsing failures")
 
 	tmpFile, err := ioutil.TempFile("", "rules.test.*.yaml")
 	assert.NoError(t, err)
@@ -885,7 +885,7 @@ func TestNotify(t *testing.T) {
 	// Alert sent right away
 	group.Eval(ctx, time.Unix(1, 0))
 	assert.Equal(t, 1, len(lastNotified))
-	assert.True(t, !lastNotified[0].ValidUntil.IsZero(), "ValidUntil should not be zero")
+	assert.NotZero(t, lastNotified[0].ValidUntil, "ValidUntil should not be zero")
 
 	// Alert is not sent 1s later
 	group.Eval(ctx, time.Unix(2, 0))
@@ -1160,6 +1160,6 @@ func TestGroupHasAlertingRules(t *testing.T) {
 
 	for i, test := range tests {
 		got := test.group.HasAlertingRules()
-		assert.True(t, test.want == got, "test case %d failed, expected:%t got:%t", i, test.want, got)
+		assert.Equal(t, test.want, got, "test case %d failed, expected:%t got:%t", i, test.want, got)
 	}
 }

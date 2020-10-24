@@ -19,7 +19,6 @@ import (
 	"net/url"
 	"path/filepath"
 	"regexp"
-	"strings"
 	"testing"
 	"time"
 
@@ -763,8 +762,8 @@ func TestElideSecrets(t *testing.T) {
 	yamlConfig := string(config)
 
 	matches := secretRe.FindAllStringIndex(yamlConfig, -1)
-	assert.True(t, len(matches) == 10, "wrong number of secret matches found")
-	assert.True(t, !strings.Contains(yamlConfig, "mysecret"),
+	assert.Equal(t, 10, len(matches), "wrong number of secret matches found")
+	assert.NotContains(t, yamlConfig, "mysecret",
 		"yaml marshal reveals authentication credentials.")
 }
 
@@ -1027,7 +1026,7 @@ func TestBadConfigs(t *testing.T) {
 	for _, ee := range expectedErrors {
 		_, err := LoadFile("testdata/" + ee.filename)
 		assert.Error(t, err, "%s", ee.filename)
-		assert.True(t, strings.Contains(err.Error(), ee.errMsg),
+		assert.Contains(t, err.Error(), ee.errMsg,
 			"Expected error for %s to contain %q but got: %s", ee.filename, ee.errMsg, err)
 	}
 }

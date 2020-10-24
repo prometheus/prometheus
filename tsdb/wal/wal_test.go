@@ -294,7 +294,7 @@ func TestCorruptAndCarryOn(t *testing.T) {
 			assert.Equal(t, recordSize, len(reader.Record()))
 		}
 		assert.Equal(t, 4, i, "not enough records")
-		assert.True(t, !reader.Next(), "unexpected record")
+		assert.False(t, reader.Next(), "unexpected record")
 
 		corruptionErr := reader.Err()
 		assert.Error(t, corruptionErr)
@@ -336,7 +336,7 @@ func TestCorruptAndCarryOn(t *testing.T) {
 			assert.Equal(t, recordSize, len(reader.Record()))
 		}
 		assert.Equal(t, 9, i, "wrong number of records")
-		assert.True(t, !reader.Next(), "unexpected record")
+		assert.False(t, reader.Next(), "unexpected record")
 		assert.Equal(t, nil, reader.Err())
 		sr.Close()
 	}
@@ -380,7 +380,7 @@ func TestSegmentMetric(t *testing.T) {
 		err = w.Log(buf)
 		assert.NoError(t, err)
 	}
-	assert.True(t, client_testutil.ToFloat64(w.metrics.currentSegment) == initialSegment+1, "segment metric did not increment after segment rotation")
+	assert.Equal(t, initialSegment+1, client_testutil.ToFloat64(w.metrics.currentSegment), "segment metric did not increment after segment rotation")
 	assert.NoError(t, w.Close())
 }
 
@@ -421,7 +421,7 @@ func TestCompression(t *testing.T) {
 	compressedSize, err := fileutil.DirSize(dirCompressed)
 	assert.NoError(t, err)
 
-	assert.True(t, float64(uncompressedSize)*0.75 > float64(compressedSize), "Compressing zeroes should save at least 25%% space - uncompressedSize: %d, compressedSize: %d", uncompressedSize, compressedSize)
+	assert.Greater(t, float64(uncompressedSize)*0.75, float64(compressedSize), "Compressing zeroes should save at least 25%% space - uncompressedSize: %d, compressedSize: %d", uncompressedSize, compressedSize)
 }
 
 func BenchmarkWAL_LogBatched(b *testing.B) {

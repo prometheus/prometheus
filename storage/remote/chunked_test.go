@@ -53,7 +53,7 @@ func TestChunkedReaderCanReadFromChunkedWriter(t *testing.T) {
 	for ; i < 4; i++ {
 		msg, err := r.Next()
 		assert.NoError(t, err)
-		assert.True(t, i < len(msgs), "more messages then expected")
+		assert.Less(t, i, len(msgs), "more messages then expected")
 		assert.Equal(t, msgs[i], msg)
 	}
 
@@ -62,7 +62,7 @@ func TestChunkedReaderCanReadFromChunkedWriter(t *testing.T) {
 
 	msg, err := r.Next()
 	assert.NoError(t, err)
-	assert.True(t, i < len(msgs), "more messages then expected")
+	assert.Less(t, i, len(msgs), "more messages then expected")
 	assert.Equal(t, msgs[i], msg)
 
 	_, err = r.Next()

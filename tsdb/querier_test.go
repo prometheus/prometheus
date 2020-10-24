@@ -860,9 +860,9 @@ func TestPopulateWithDelSeriesIterator_DoubleSeek(t *testing.T) {
 	)
 
 	it := newPopulateWithDelGenericSeriesIterator(f, chkMetas, nil).toSeriesIterator()
-	assert.True(t, it.Seek(1), "")
-	assert.True(t, it.Seek(2), "")
-	assert.True(t, it.Seek(2), "")
+	assert.True(t, it.Seek(1))
+	assert.True(t, it.Seek(2))
+	assert.True(t, it.Seek(2))
 	ts, v := it.At()
 	assert.Equal(t, int64(2), ts)
 	assert.Equal(t, float64(2), v)
@@ -878,12 +878,12 @@ func TestPopulateWithDelSeriesIterator_SeekInCurrentChunk(t *testing.T) {
 	)
 
 	it := newPopulateWithDelGenericSeriesIterator(f, chkMetas, nil).toSeriesIterator()
-	assert.True(t, it.Next(), "")
+	assert.True(t, it.Next())
 	ts, v := it.At()
 	assert.Equal(t, int64(1), ts)
 	assert.Equal(t, float64(2), v)
 
-	assert.True(t, it.Seek(4), "")
+	assert.True(t, it.Seek(4))
 	ts, v = it.At()
 	assert.Equal(t, int64(5), ts)
 	assert.Equal(t, float64(6), v)
@@ -1018,7 +1018,7 @@ func TestDeletedIterator(t *testing.T) {
 				}
 			}
 
-			assert.True(t, i < 1000, "")
+			assert.Less(t, i, int64(1000))
 
 			ts, v := it.At()
 			assert.Equal(t, act[i].t, ts)
@@ -1033,7 +1033,7 @@ func TestDeletedIterator(t *testing.T) {
 			}
 		}
 
-		assert.True(t, i >= 1000, "")
+		assert.GreaterOrEqual(t, i, int64(1000), "")
 		assert.NoError(t, it.Err())
 	}
 }

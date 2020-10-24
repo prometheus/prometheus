@@ -231,8 +231,8 @@ func TestScrapePoolStop(t *testing.T) {
 	assert.Equal(t, numTargets, len(stopped), "Unexpected number of stopped loops")
 	mtx.Unlock()
 
-	assert.True(t, len(sp.activeTargets) == 0, "Targets were not cleared on stopping: %d left", len(sp.activeTargets))
-	assert.True(t, len(sp.loops) == 0, "Loops were not cleared on stopping: %d left", len(sp.loops))
+	assert.Equal(t, 0, len(sp.activeTargets), "Targets were not cleared on stopping: %d left", len(sp.activeTargets))
+	assert.Equal(t, 0, len(sp.loops), "Loops were not cleared on stopping: %d left", len(sp.loops))
 }
 
 func TestScrapePoolReload(t *testing.T) {
@@ -872,19 +872,19 @@ test_metric 1
 
 	md, ok := cache.GetMetadata("test_metric")
 	assert.True(t, ok, "expected metadata to be present")
-	assert.True(t, textparse.MetricTypeCounter == md.Type, "unexpected metric type")
+	assert.Equal(t, textparse.MetricTypeCounter, md.Type, "unexpected metric type")
 	assert.Equal(t, "some help text", md.Help)
 	assert.Equal(t, "metric", md.Unit)
 
 	md, ok = cache.GetMetadata("test_metric_no_help")
 	assert.True(t, ok, "expected metadata to be present")
-	assert.True(t, textparse.MetricTypeGauge == md.Type, "unexpected metric type")
+	assert.Equal(t, textparse.MetricTypeGauge, md.Type, "unexpected metric type")
 	assert.Equal(t, "", md.Help)
 	assert.Equal(t, "", md.Unit)
 
 	md, ok = cache.GetMetadata("test_metric_no_type")
 	assert.True(t, ok, "expected metadata to be present")
-	assert.True(t, textparse.MetricTypeUnknown == md.Type, "unexpected metric type")
+	assert.Equal(t, textparse.MetricTypeUnknown, md.Type, "unexpected metric type")
 	assert.Equal(t, "other help text", md.Help)
 	assert.Equal(t, "", md.Unit)
 }
@@ -1352,7 +1352,7 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 
 	value := metric.GetCounter().GetValue()
 	change := value - beforeMetricValue
-	assert.True(t, change == 1, "Unexpected change of sample limit metric: %f", change)
+	assert.Equal(t, 1.0, change, "Unexpected change of sample limit metric: %f", change)
 
 	// And verify that we got the samples that fit under the limit.
 	want := []sample{
@@ -1765,7 +1765,7 @@ func TestTargetScrapeScrapeNotFound(t *testing.T) {
 	}
 
 	_, err = ts.scrape(context.Background(), ioutil.Discard)
-	assert.True(t, strings.Contains(err.Error(), "404"), "Expected \"404 NotFound\" error but got: %s", err)
+	assert.Contains(t, err.Error(), "404", "Expected \"404 NotFound\" error but got: %s", err)
 }
 
 // testScraper implements the scraper interface and allows setting values
@@ -2118,15 +2118,15 @@ func TestReuseScrapeCache(t *testing.T) {
 		sp.reload(s.newConfig)
 		for fp, newCacheAddr := range cacheAddr(sp) {
 			if s.keep {
-				assert.True(t, initCacheAddr[fp] == newCacheAddr, "step %d: old cache and new cache are not the same", i)
+				assert.Equal(t, initCacheAddr[fp], newCacheAddr, "step %d: old cache and new cache are not the same", i)
 			} else {
-				assert.True(t, initCacheAddr[fp] != newCacheAddr, "step %d: old cache and new cache are the same", i)
+				assert.NotEqual(t, initCacheAddr[fp], newCacheAddr, "step %d: old cache and new cache are the same", i)
 			}
 		}
 		initCacheAddr = cacheAddr(sp)
 		sp.reload(s.newConfig)
 		for fp, newCacheAddr := range cacheAddr(sp) {
-			assert.True(t, initCacheAddr[fp] == newCacheAddr, "step %d: reloading the exact config invalidates the cache", i)
+			assert.Equal(t, initCacheAddr[fp], newCacheAddr, "step %d: reloading the exact config invalidates the cache", i)
 		}
 	}
 }

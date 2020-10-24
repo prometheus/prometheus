@@ -362,12 +362,12 @@ func TestWriteStorageApplyConfigsPartialUpdate(t *testing.T) {
 	assert.Equal(t, 3, len(s.queues))
 
 	_, hashExists := s.queues[hashes[0]]
-	assert.True(t, !hashExists, "The queue for the first remote write configuration should have been restarted because the relabel configuration has changed.")
+	assert.False(t, hashExists, "The queue for the first remote write configuration should have been restarted because the relabel configuration has changed.")
 	q, hashExists := s.queues[hashes[1]]
 	assert.True(t, hashExists, "Hash of unchanged queue should have remained the same")
-	assert.True(t, q == queues[1], "Pointer of unchanged queue should have remained the same")
+	assert.Equal(t, q, queues[1], "Pointer of unchanged queue should have remained the same")
 	_, hashExists = s.queues[hashes[2]]
-	assert.True(t, !hashExists, "The queue for the third remote write configuration should have been restarted because the timeout has changed.")
+	assert.False(t, hashExists, "The queue for the third remote write configuration should have been restarted because the timeout has changed.")
 
 	storeHashes()
 	secondClient := s.queues[hashes[1]].client()
@@ -381,7 +381,7 @@ func TestWriteStorageApplyConfigsPartialUpdate(t *testing.T) {
 	assert.True(t, hashExists, "Pointer of unchanged queue should have remained the same")
 	q, hashExists = s.queues[hashes[1]]
 	assert.True(t, hashExists, "Hash of queue with secret change should have remained the same")
-	assert.True(t, secondClient != q.client(), "Pointer of a client with a secret change should not be the same")
+	assert.NotEqual(t, secondClient, q.client(), "Pointer of a client with a secret change should not be the same")
 	_, hashExists = s.queues[hashes[2]]
 	assert.True(t, hashExists, "Pointer of unchanged queue should have remained the same")
 
@@ -395,7 +395,7 @@ func TestWriteStorageApplyConfigsPartialUpdate(t *testing.T) {
 	assert.Equal(t, 2, len(s.queues))
 
 	_, hashExists = s.queues[hashes[0]]
-	assert.True(t, !hashExists, "If a config is removed, the queue should be stopped and recreated.")
+	assert.False(t, hashExists, "If a config is removed, the queue should be stopped and recreated.")
 	_, hashExists = s.queues[hashes[1]]
 	assert.True(t, hashExists, "Pointer of unchanged queue should have remained the same")
 	_, hashExists = s.queues[hashes[2]]

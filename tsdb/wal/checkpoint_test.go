@@ -213,7 +213,7 @@ func TestCheckpoint(t *testing.T) {
 					samples, err := dec.Samples(rec, nil)
 					assert.NoError(t, err)
 					for _, s := range samples {
-						assert.True(t, s.T >= last/2, "sample with wrong timestamp")
+						assert.GreaterOrEqual(t, s.T, last/2, "sample with wrong timestamp")
 					}
 				}
 			}

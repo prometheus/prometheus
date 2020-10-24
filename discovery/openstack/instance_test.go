@@ -16,7 +16,6 @@ package openstack
 import (
 	"context"
 	"fmt"
-	"strings"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -135,5 +134,5 @@ func TestOpenstackSDInstanceRefreshWithDoneContext(t *testing.T) {
 	cancel()
 	_, err := hypervisor.refresh(ctx)
 	assert.Error(t, err)
-	assert.True(t, strings.Contains(err.Error(), context.Canceled.Error()), "%q doesn't contain %q", err, context.Canceled)
+	assert.Contains(t, err.Error(), context.Canceled.Error(), "%q doesn't contain %q", err, context.Canceled)
 }

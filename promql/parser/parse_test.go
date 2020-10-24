@@ -15,7 +15,6 @@ package parser
 
 import (
 	"math"
-	"strings"
 	"testing"
 	"time"
 
@@ -2659,14 +2658,14 @@ func TestParseExpressions(t *testing.T) {
 			expr, err := ParseExpr(test.input)
 
 			// Unexpected errors are always caused by a bug.
-			assert.True(t, err != errUnexpected, "unexpected error occurred")
+			assert.NotEqual(t, err, errUnexpected, "unexpected error occurred")
 
 			if !test.fail {
 				assert.NoError(t, err)
 				assert.Equal(t, test.expected, expr, "error on input '%s'", test.input)
 			} else {
 				assert.Error(t, err)
-				assert.True(t, strings.Contains(err.Error(), test.errMsg), "unexpected error on input '%s', expected '%s', got '%s'", test.input, test.errMsg, err.Error())
+				assert.Contains(t, err.Error(), test.errMsg, "unexpected error on input '%s', expected '%s', got '%s'", test.input, test.errMsg, err.Error())
 
 				errorList, ok := err.(ParseErrors)
 
@@ -2804,7 +2803,7 @@ func TestParseSeries(t *testing.T) {
 		metric, vals, err := ParseSeriesDesc(test.input)
 
 		// Unexpected errors are always caused by a bug.
-		assert.True(t, err != errUnexpected, "unexpected error occurred")
+		assert.NotEqual(t, err, errUnexpected, "unexpected error occurred")
 
 		if !test.fail {
 			assert.NoError(t, err)

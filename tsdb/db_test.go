@@ -304,7 +304,7 @@ func TestDBAppenderAddRef(t *testing.T) {
 	ref2, err := app2.Add(labels.FromStrings("a", "b"), 133, 1)
 	assert.NoError(t, err)
 
-	assert.True(t, ref1 == ref2, "")
+	assert.Equal(t, ref1, ref2, "")
 
 	// Reference must be valid to add another sample.
 	err = app2.AddFast(ref2, 143, 2)
@@ -719,7 +719,7 @@ Outer:
 		})
 
 		if len(expSamples) == 0 {
-			assert.True(t, res.Next() == false, "")
+			assert.False(t, res.Next(), "")
 			continue
 		}
 
@@ -948,7 +948,7 @@ func TestWALSegmentSizeOptions(t *testing.T) {
 				assert.Equal(t, int64(DefaultOptions().WALSegmentSize), f.Size(), "WAL file size doesn't match WALSegmentSize option, filename: %v", f.Name())
 			}
 			lastFile := files[len(files)-1]
-			assert.True(t, int64(DefaultOptions().WALSegmentSize) > lastFile.Size(), "last WAL file size is not smaller than the WALSegmentSize option, filename: %v", lastFile.Name())
+			assert.Greater(t, int64(DefaultOptions().WALSegmentSize), lastFile.Size(), "last WAL file size is not smaller than the WALSegmentSize option, filename: %v", lastFile.Name())
 		},
 		// Custom Wal Size.
 		2 * 32 * 1024: func(dbDir string, segmentSize int) {
@@ -960,13 +960,13 @@ func TestWALSegmentSizeOptions(t *testing.T) {
 					files = append(files, f)
 				}
 			}
-			assert.True(t, len(files) > 1, "current WALSegmentSize should result in more than a single WAL file.")
+			assert.Greater(t, len(files), 1, "current WALSegmentSize should result in more than a single WAL file.")
 			// All the full segment files (all but the last) should match the segment size option.
 			for _, f := range files[:len(files)-1] {
 				assert.Equal(t, int64(segmentSize), f.Size(), "WAL file size doesn't match WALSegmentSize option, filename: %v", f.Name())
 			}
 			lastFile := files[len(files)-1]
-			assert.True(t, int64(segmentSize) > lastFile.Size(), "last WAL file size is not smaller than the WALSegmentSize option, filename: %v", lastFile.Name())
+			assert.Greater(t, int64(segmentSize), lastFile.Size(), "last WAL file size is not smaller than the WALSegmentSize option, filename: %v", lastFile.Name())
 		},
 		// Wal disabled.
 		-1: func(dbDir string, segmentSize int) {
@@ -1069,7 +1069,7 @@ func TestTombstoneClean(t *testing.T) {
 		})
 
 		if len(expSamples) == 0 {
-			assert.True(t, res.Next() == false, "")
+			assert.False(t, res.Next(), "")
 			continue
 		}
 
@@ -1295,7 +1295,7 @@ func TestSizeRetention(t *testing.T) {
 
 	assert.Equal(t, 1, actRetentionCount, "metric retention count mismatch")
 	assert.Equal(t, actSize, expSize, "metric db size doesn't match actual disk size")
-	assert.True(t, expSize <= sizeLimit, "actual size (%v) is expected to be less than or equal to limit (%v)", expSize, sizeLimit)
+	assert.LessOrEqual(t, expSize, sizeLimit, "actual size (%v) is expected to be less than or equal to limit (%v)", expSize, sizeLimit)
 	assert.Equal(t, len(blocks)-1, len(actBlocks), "new block count should be decreased from:%v to:%v", len(blocks), len(blocks)-1)
 	assert.Equal(t, expBlocks[0].MaxTime, actBlocks[0].meta.MaxTime, "maxT mismatch of the first block")
 	assert.Equal(t, expBlocks[len(expBlocks)-1].MaxTime, actBlocks[len(actBlocks)-1].meta.MaxTime, "maxT mismatch of the last block")
@@ -1425,7 +1425,7 @@ func TestOverlappingBlocksDetectsAllOverlaps(t *testing.T) {
 		metas[i] = BlockMeta{MinTime: int64(i * 10), MaxTime: int64((i + 1) * 10)}
 	}
 
-	assert.True(t, len(OverlappingBlocks(metas)) == 0, "we found unexpected overlaps")
+	assert.Equal(t, 0, len(OverlappingBlocks(metas)), "we found unexpected overlaps")
 
 	// Add overlapping blocks. We've to establish order again since we aren't interested
 	// in trivial overlaps caused by unorderedness.
@@ -1563,7 +1563,7 @@ func TestChunkAtBlockBoundary(t *testing.T) {
 				chunkCount++
 			}
 		}
-		assert.True(t, chunkCount == 1, "expected 1 chunk in block %s, got %d", meta.ULID, chunkCount)
+		assert.Equal(t, 1, chunkCount, "expected 1 chunk in block %s, got %d", meta.ULID, chunkCount)
 	}
 }
 
@@ -1592,7 +1592,7 @@ func TestQuerierWithBoundaryChunks(t *testing.T) {
 	err = db.Compact()
 	assert.NoError(t, err)
 
-	assert.True(t, len(db.blocks) >= 3, "invalid test, less than three blocks in DB")
+	assert.GreaterOrEqual(t, len(db.blocks), 3, "invalid test, less than three blocks in DB")
 
 	q, err := db.Querier(context.TODO(), blockRange, 2*blockRange)
 	assert.NoError(t, err)
@@ -1764,7 +1764,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 
 		app = db.Appender(ctx)
 		_, err = app.Add(defaultLabel, 1, 0)
-		assert.True(t, err == storage.ErrOutOfBounds, "the head should be truncated so no samples in the past should be allowed")
+		assert.Equal(t, storage.ErrOutOfBounds, err, "the head should be truncated so no samples in the past should be allowed")
 
 		// Adding new blocks.
 		currentTime := db.Head().MaxTime()
@@ -1781,7 +1781,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 		actBlocks, err = blockDirs(db.Dir())
 		assert.NoError(t, err)
 		assert.Equal(t, len(db.Blocks()), len(actBlocks))
-		assert.True(t, len(actBlocks) == 1, "No blocks created when compacting with >0 samples")
+		assert.Equal(t, 1, len(actBlocks), "No blocks created when compacting with >0 samples")
 	})
 
 	t.Run(`When no new block is created from head, and there are some blocks on disk
@@ -2120,7 +2120,7 @@ func TestDBReadOnly(t *testing.T) {
 		expBlocks = dbWritable.Blocks()
 		expDbSize, err := fileutil.DirSize(dbWritable.Dir())
 		assert.NoError(t, err)
-		assert.True(t, expDbSize > dbSizeBeforeAppend, "db size didn't increase after an append")
+		assert.Greater(t, expDbSize, dbSizeBeforeAppend, "db size didn't increase after an append")
 
 		q, err := dbWritable.Querier(context.TODO(), math.MinInt64, math.MaxInt64)
 		assert.NoError(t, err)
@@ -2559,7 +2559,7 @@ func TestChunkWriter_ReadAfterWrite(t *testing.T) {
 			for i, f := range files {
 				size := int(f.Size())
 				// Verify that the segment is the same or smaller than the expected size.
-				assert.True(t, chunks.SegmentHeaderSize+test.expSegmentSizes[i] >= size, "Segment:%v should NOT be bigger than:%v actual:%v", i, chunks.SegmentHeaderSize+test.expSegmentSizes[i], size)
+				assert.GreaterOrEqual(t, chunks.SegmentHeaderSize+test.expSegmentSizes[i], size, "Segment:%v should NOT be bigger than:%v actual:%v", i, chunks.SegmentHeaderSize+test.expSegmentSizes[i], size)
 
 				sizeAct += size
 			}

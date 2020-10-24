@@ -296,7 +296,7 @@ func TestHead_WALMultiRef(t *testing.T) {
 	assert.NoError(t, app.Commit())
 	assert.Equal(t, 4.0, prom_testutil.ToFloat64(head.metrics.chunksCreated))
 
-	assert.True(t, ref1 != ref2, "Refs are the same")
+	assert.NotEqual(t, ref1, ref2, "Refs are the same")
 	assert.NoError(t, head.Close())
 
 	w, err = wal.New(nil, nil, w.Dir(), false)
@@ -370,8 +370,8 @@ func TestHead_Truncate(t *testing.T) {
 		{minTime: 3000, maxTime: 3999},
 	}, h.series.getByID(s2.ref).mmappedChunks)
 
-	assert.True(t, h.series.getByID(s3.ref) == nil, "")
-	assert.True(t, h.series.getByID(s4.ref) == nil, "")
+	assert.Nil(t, h.series.getByID(s3.ref))
+	assert.Nil(t, h.series.getByID(s4.ref))
 
 	postingsA1, _ := index.ExpandPostings(h.postings.Get("a", "1"))
 	postingsA2, _ := index.ExpandPostings(h.postings.Get("a", "2"))
@@ -384,8 +384,8 @@ func TestHead_Truncate(t *testing.T) {
 	assert.Equal(t, []uint64{s2.ref}, postingsA2)
 	assert.Equal(t, []uint64{s1.ref, s2.ref}, postingsB1)
 	assert.Equal(t, []uint64{s1.ref, s2.ref}, postingsAll)
-	assert.True(t, postingsB2 == nil, "")
-	assert.True(t, postingsC1 == nil, "")
+	assert.Nil(t, postingsB2)
+	assert.Nil(t, postingsC1)
 
 	assert.Equal(t, map[string]struct{}{
 		"":  {}, // from 'all' postings list
@@ -437,7 +437,7 @@ func TestMemSeries_truncateChunks(t *testing.T) {
 
 	for i := 0; i < 4000; i += 5 {
 		ok, _ := s.append(int64(i), float64(i), 0, chunkDiskMapper)
-		assert.True(t, ok == true, "sample append failed")
+		assert.True(t, ok, "sample append failed")
 	}
 
 	// Check that truncate removes half of the chunks and afterwards
@@ -456,7 +456,7 @@ func TestMemSeries_truncateChunks(t *testing.T) {
 
 	assert.Equal(t, int64(2000), s.mmappedChunks[0].minTime)
 	_, _, err = s.chunk(0, chunkDiskMapper)
-	assert.True(t, err == storage.ErrNotFound, "first chunks not gone")
+	assert.Equal(t, storage.ErrNotFound, err, "first chunks not gone")
 	assert.Equal(t, countBefore/2, len(s.mmappedChunks)+1) // +1 for the head chunk.
 	chk, _, err = s.chunk(lastID, chunkDiskMapper)
 	assert.NoError(t, err)
@@ -466,11 +466,11 @@ func TestMemSeries_truncateChunks(t *testing.T) {
 	// after truncation.
 	it1 := s.iterator(s.chunkID(len(s.mmappedChunks)), nil, chunkDiskMapper, nil)
 	_, ok := it1.(*memSafeIterator)
-	assert.True(t, ok == true, "")
+	assert.True(t, ok)
 
 	it2 := s.iterator(s.chunkID(len(s.mmappedChunks)-1), nil, chunkDiskMapper, nil)
 	_, ok = it2.(*memSafeIterator)
-	assert.True(t, ok == false, "non-last chunk incorrectly wrapped with sample buffer")
+	assert.False(t, ok, "non-last chunk incorrectly wrapped with sample buffer")
 }
 
 func TestHeadDeleteSeriesWithoutSamples(t *testing.T) {
@@ -656,7 +656,7 @@ func TestDeleteUntilCurMax(t *testing.T) {
 	assert.True(t, res.Next(), "series is not present")
 	s := res.At()
 	it := s.Iterator()
-	assert.True(t, !it.Next(), "expected no samples")
+	assert.False(t, it.Next(), "expected no samples")
 	for res.Next() {
 	}
 	assert.NoError(t, res.Err())
@@ -980,7 +980,7 @@ func TestMemSeries_append(t *testing.T) {
 
 	ok, chunkCreated = s.append(999, 2, 0, chunkDiskMapper)
 	assert.True(t, ok, "append failed")
-	assert.True(t, !chunkCreated, "second sample should use same chunk")
+	assert.False(t, chunkCreated, "second sample should use same chunk")
 
 	ok, chunkCreated = s.append(1000, 3, 0, chunkDiskMapper)
 	assert.True(t, ok, "append failed")
@@ -988,11 +988,13 @@ func TestMemSeries_append(t *testing.T) {
 
 	ok, chunkCreated = s.append(1001, 4, 0, chunkDiskMapper)
 	assert.True(t, ok, "append failed")
-	assert.True(t, !chunkCreated, "second sample should use same chunk")
+	assert.False(t, chunkCreated, "second sample should use same chunk")
 
-	assert.True(t, len(s.mmappedChunks) == 1, "there should be only 1 mmapped chunk")
-	assert.True(t, s.mmappedChunks[0].minTime == 998 && s.mmappedChunks[0].maxTime == 999, "wrong chunk range")
-	assert.True(t, s.headChunk.minTime == 1000 && s.headChunk.maxTime == 1001, "wrong chunk range")
+	assert.Equal(t, 1, len(s.mmappedChunks), "there should be only 1 mmapped chunk")
+	assert.Equal(t, int64(998), s.mmappedChunks[0].minTime, "wrong chunk range")
+	assert.Equal(t, int64(999), s.mmappedChunks[0].maxTime, "wrong chunk range")
+	assert.Equal(t, int64(1000), s.headChunk.minTime, "wrong chunk range")
+	assert.Equal(t, int64(1001), s.headChunk.maxTime, "wrong chunk range")
 
 	// Fill the range [1000,2000) with many samples. Intermediate chunks should be cut
 	// at approximately 120 samples per chunk.
@@ -1001,13 +1003,13 @@ func TestMemSeries_append(t *testing.T) {
 		assert.True(t, ok, "append failed")
 	}
 
-	assert.True(t, len(s.mmappedChunks)+1 > 7, "expected intermediate chunks")
+	assert.Greater(t, len(s.mmappedChunks)+1, 7, "expected intermediate chunks")
 
 	// All chunks but the first and last should now be moderately full.
 	for i, c := range s.mmappedChunks[1:] {
 		chk, err := chunkDiskMapper.Chunk(c.ref)
 		assert.NoError(t, err)
-		assert.True(t, chk.NumSamples() > 100, "unexpected small chunk %d of length %d", i, chk.NumSamples())
+		assert.Greater(t, chk.NumSamples(), 100, "unexpected small chunk %d of length %d", i, chk.NumSamples())
 	}
 }
 
@@ -1028,7 +1030,7 @@ func TestGCChunkAccess(t *testing.T) {
 	assert.True(t, chunkCreated, "chunks was not created")
 	ok, chunkCreated = s.append(999, 999, 0, h.chunkDiskMapper)
 	assert.True(t, ok, "series append failed")
-	assert.True(t, !chunkCreated, "chunks was created")
+	assert.False(t, chunkCreated, "chunks was created")
 
 	// A new chunks should be created here as it's beyond the chunk range.
 	ok, chunkCreated = s.append(1000, 1000, 0, h.chunkDiskMapper)
@@ -1036,7 +1038,7 @@ func TestGCChunkAccess(t *testing.T) {
 	assert.True(t, chunkCreated, "chunks was not created")
 	ok, chunkCreated = s.append(1999, 1999, 0, h.chunkDiskMapper)
 	assert.True(t, ok, "series append failed")
-	assert.True(t, !chunkCreated, "chunks was created")
+	assert.False(t, chunkCreated, "chunks was created")
 
 	idx := h.indexRange(0, 1500)
 	var (
@@ -1082,7 +1084,7 @@ func TestGCSeriesAccess(t *testing.T) {
 	assert.True(t, chunkCreated, "chunks was not created")
 	ok, chunkCreated = s.append(999, 999, 0, h.chunkDiskMapper)
 	assert.True(t, ok, "series append failed")
-	assert.True(t, !chunkCreated, "chunks was created")
+	assert.False(t, chunkCreated, "chunks was created")
 
 	// A new chunks should be created here as it's beyond the chunk range.
 	ok, chunkCreated = s.append(1000, 1000, 0, h.chunkDiskMapper)
@@ -1090,7 +1092,7 @@ func TestGCSeriesAccess(t *testing.T) {
 	assert.True(t, chunkCreated, "chunks was not created")
 	ok, chunkCreated = s.append(1999, 1999, 0, h.chunkDiskMapper)
 	assert.True(t, ok, "series append failed")
-	assert.True(t, !chunkCreated, "chunks was created")
+	assert.False(t, chunkCreated, "chunks was created")
 
 	idx := h.indexRange(0, 2000)
 	var (
@@ -1135,7 +1137,7 @@ func TestUncommittedSamplesNotLostOnTruncate(t *testing.T) {
 	assert.NoError(t, err)
 
 	assert.NoError(t, h.Truncate(2000))
-	assert.True(t, nil != h.series.getByHash(lset.Hash(), lset), "series should not have been garbage collected")
+	assert.NotNil(t, h.series.getByHash(lset.Hash(), lset), "series should not have been garbage collected")
 
 	assert.NoError(t, app.Commit())
 
@@ -1165,7 +1167,7 @@ func TestRemoveSeriesAfterRollbackAndTruncate(t *testing.T) {
 	assert.NoError(t, err)
 
 	assert.NoError(t, h.Truncate(2000))
-	assert.True(t, nil != h.series.getByHash(lset.Hash(), lset), "series should not have been garbage collected")
+	assert.NotNil(t, h.series.getByHash(lset.Hash(), lset), "series should not have been garbage collected")
 
 	assert.NoError(t, app.Rollback())
 
@@ -1332,7 +1334,7 @@ func TestHeadReadWriterRepair(t *testing.T) {
 			assert.True(t, chunkCreated, "chunk was not created")
 			ok, chunkCreated = s.append(int64(i*chunkRange)+chunkRange-1, float64(i*chunkRange), 0, h.chunkDiskMapper)
 			assert.True(t, ok, "series append failed")
-			assert.True(t, !chunkCreated, "chunk was created")
+			assert.False(t, chunkCreated, "chunk was created")
 			assert.NoError(t, h.chunkDiskMapper.CutNewFile())
 		}
 		assert.NoError(t, h.Close())
@@ -1731,7 +1733,7 @@ func TestOutOfOrderSamplesMetric(t *testing.T) {
 
 	assert.Equal(t, int64(math.MinInt64), db.head.minValidTime.Load())
 	assert.NoError(t, db.Compact())
-	assert.True(t, db.head.minValidTime.Load() > 0, "")
+	assert.Greater(t, db.head.minValidTime.Load(), int64(0), "")
 
 	app = db.Appender(ctx)
 	_, err = app.Add(labels.FromStrings("a", "b"), db.head.minValidTime.Load()-2, 99)
