@@ -435,7 +435,7 @@ func TestLabelNames(t *testing.T) {
 		req, err := request(method)
 		assert.NoError(t, err)
 		res := api.labelNames(req.WithContext(ctx))
-		assertAPIError(t, res.err)
+		assertAPIError(t, res.err, "")
 		assertAPIResponse(t, res.data, []string{"__name__", "baz", "foo", "foo1", "foo2", "xyz"})
 	}
 }
