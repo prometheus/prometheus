@@ -33,8 +33,17 @@ import (
 
 var merr tsdb_errors.MultiError
 
-func Min(x, y int64) int64 {
+// Min functions returns the minimum value between two 64bit integers
+func MinInt64(x, y int64) int64 {
 	if x < y {
+		return x
+	}
+	return y
+}
+
+// Max functions returns the maximum value between two 64bit integers
+func MaxInt64(x, y int64) int64 {
+	if x > y {
 		return x
 	}
 	return y
@@ -94,7 +103,7 @@ func Import(path string, outputDir string, DefaultBlockDuration int64) (err erro
 		app := w.Appender(ctx)
 		var p2 textparse.Parser
 		p2 = openmetrics.NewParser(input)
-		tsUpper := Min(t+offset, maxt)
+		tsUpper := MinInt64(t+offset, maxt)
 		for {
 			e, err = p2.Next()
 			if err == io.EOF {
@@ -109,17 +118,17 @@ func Import(path string, outputDir string, DefaultBlockDuration int64) (err erro
 			l := labels.Labels{}
 			p2.Metric(&l)
 			_, ts, v := p2.Series()
+			fmt.Println(v)
 			if ts == nil {
 				return errors.Errorf("expected timestamp for series %v, got none", l.String())
 			}
-			fmt.Println(v, "Print samples outside")
-			if *ts >= t && *ts < tsUpper {
+			if *ts >= t && *ts < tsUpper { // always make even hour blocks when there is even hour in UTC
 				_, err := app.Add(l, *ts, v)
 				if err != nil {
 					return errors.Wrap(err, "add sample")
 				}
-
 			}
+
 		}
 		if err := app.Commit(); err != nil {
 			return errors.Wrap(err, "commit")
@@ -130,14 +139,6 @@ func Import(path string, outputDir string, DefaultBlockDuration int64) (err erro
 		}
 		level.Info(logger).Log("msg", "blocks flushed", "ids", fmt.Sprintf("%v", ids))
 	}
+
 	return nil
 }
-
-/*
-Notes :
-** TODO
-- For Testing :
-	- Query the block to get samples
-- Discard all samples that do not fall within specified time range.
-- Commit Appended after some number of samples.
-*/
