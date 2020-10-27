@@ -670,15 +670,15 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 			},
 			response: &queryData{
 				ResultType: parser.ValueTypeMatrix,
-				Result:     promql.Matrix{
-					// promql.Series{
-					// Points: []promql.Point{
-					// 	{V: 0, T: timestamp.FromTime(start)},
-					// 	{V: 1, T: timestamp.FromTime(start.Add(1 * time.Second))},
-					// 	{V: 2, T: timestamp.FromTime(start.Add(2 * time.Second))},
-					// },
-					// Metric: nil,
-					// },
+				Result: promql.Matrix{
+					promql.Series{
+						Points: []promql.Point{
+							{V: 0, T: timestamp.FromTime(start)},
+							{V: 1, T: timestamp.FromTime(start.Add(1 * time.Second))},
+							{V: 2, T: timestamp.FromTime(start.Add(2 * time.Second))},
+						},
+						Metric: nil,
+					},
 				},
 			},
 		},

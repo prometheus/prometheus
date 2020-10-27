@@ -378,7 +378,6 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 			panic("Error converting to vector")
 		}
 		sort.Slice(vec, func(i, j int) bool {
-			// return labels.Compare((vec)[i].Metric, (vec)[j].Metric) > 0
 			return vec[i].V > vec[j].V
 		})
 	} else if res.Value.Type() == "matrix" {
@@ -386,11 +385,9 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 		if !ok {
 			panic("Error converting to matrix")
 		}
-		if mat != nil {
-			sort.Slice(mat, func(i, j int) bool {
-				return (sum(mat[i]) > sum(mat[j]))
-			})
-		}
+		sort.Slice(mat, func(i, j int) bool {
+			return (sum(mat[i]) > sum(mat[j]))
+		})
 	}
 
 	// Optional stats field in response if parameter "stats" is not empty.
@@ -486,11 +483,9 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 		if !ok {
 			panic("Error converting to matrix")
 		}
-		if mat != nil {
-			sort.Slice(mat, func(i, j int) bool {
-				return (sum(mat[i]) > sum(mat[j]))
-			})
-		}
+		sort.Slice(mat, func(i, j int) bool {
+			return (sum(mat[i]) > sum(mat[j]))
+		})
 	}
 
 	// Optional stats field in response if parameter "stats" is not empty.
