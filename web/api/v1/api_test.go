@@ -614,6 +614,75 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 			},
 		},
 		{
+			endpoint: api.query,
+			query: url.Values{
+				"query": []string{"prometheus_target_interval_length_seconds"},
+			},
+			response: &queryData{
+				ResultType: parser.ValueTypeVector,
+				Result: promql.Vector{
+
+					{
+						Point: promql.Point{
+							V: 2.000542683,
+							T: timestamp.FromTime(api.now()),
+						},
+						Metric: nil,
+					},
+					{
+						Point: promql.Point{
+							V: 2.000355733,
+							T: timestamp.FromTime(api.now()),
+						},
+						Metric: nil,
+					},
+					{
+						Point: promql.Point{
+							V: 2.00001554,
+							T: timestamp.FromTime(api.now()),
+						},
+						Metric: nil,
+					},
+					{
+						Point: promql.Point{
+							V: 1.999594005,
+							T: timestamp.FromTime(api.now()),
+						},
+						Metric: nil,
+					},
+					{
+						Point: promql.Point{
+							V: 1.9994983290000001,
+							T: timestamp.FromTime(api.now()),
+						},
+						Metric: nil,
+					},
+				},
+			},
+		},
+		{
+			endpoint: api.queryRange,
+			query: url.Values{
+				"query": []string{"prometheus_target_interval_length_seconds"},
+				"start": []string{"0"},
+				"end":   []string{"2"},
+				"step":  []string{"1"},
+			},
+			response: &queryData{
+				ResultType: parser.ValueTypeMatrix,
+				Result:     promql.Matrix{
+					// promql.Series{
+					// Points: []promql.Point{
+					// 	{V: 0, T: timestamp.FromTime(start)},
+					// 	{V: 1, T: timestamp.FromTime(start.Add(1 * time.Second))},
+					// 	{V: 2, T: timestamp.FromTime(start.Add(2 * time.Second))},
+					// },
+					// Metric: nil,
+					// },
+				},
+			},
+		},
+		{
 			endpoint: api.queryRange,
 			query: url.Values{
 				"query": []string{"time()"},
