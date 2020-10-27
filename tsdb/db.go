@@ -600,6 +600,8 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 			return
 		}
 
+		close(db.donec) // DB is never run if it was an error, so close this channel here.
+
 		var merr tsdb_errors.MultiError
 		merr.Add(returnedErr)
 		merr.Add(errors.Wrap(db.Close(), "close DB after failed startup"))
@@ -1325,7 +1327,9 @@ func (db *DB) Head() *Head {
 // Close the partition.
 func (db *DB) Close() error {
 	close(db.stopc)
-	db.compactCancel()
+	if db.compactCancel != nil {
+		db.compactCancel()
+	}
 	<-db.donec
 
 	db.mtx.Lock()

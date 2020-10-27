@@ -2961,3 +2961,22 @@ func TestOneCheckpointPerCompactCall(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 54, cno)
 }
+
+func TestNoPanicOnTSDBOpenError(t *testing.T) {
+	tmpdir, err := ioutil.TempDir("", "test")
+	assert.NoError(t, err)
+	t.Cleanup(func() {
+		assert.NoError(t, os.RemoveAll(tmpdir))
+	})
+
+	absdir, err := filepath.Abs(tmpdir)
+	assert.NoError(t, err)
+	// Taking the file lock will cause TSDB startup error.
+	lockf, _, err := fileutil.Flock(filepath.Join(absdir, "lock"))
+	assert.NoError(t, err)
+
+	_, err = Open(tmpdir, nil, nil, DefaultOptions())
+	assert.Error(t, err)
+
+	assert.NoError(t, lockf.Release())
+}
