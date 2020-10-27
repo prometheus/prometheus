@@ -437,7 +437,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 		var chks, expchks []chunks.Meta
 
 		for gotp.Next() {
-			assert.True(t, expp.Next() == true, "")
+			assert.True(t, expp.Next())
 
 			ref := gotp.At()
 
@@ -449,7 +449,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 			assert.Equal(t, explset, lset)
 			assert.Equal(t, expchks, chks)
 		}
-		assert.True(t, expp.Next() == false, "Expected no more postings for %q=%q", p.Name, p.Value)
+		assert.False(t, expp.Next(), "Expected no more postings for %q=%q", p.Name, p.Value)
 		assert.NoError(t, gotp.Err())
 	}
 

@@ -334,7 +334,7 @@ func TestReleaseNoninternedString(t *testing.T) {
 	}
 
 	metric := client_testutil.ToFloat64(noReferenceReleases)
-	assert.True(t, metric == 0, "expected there to be no calls to release for strings that were not already interned: %d", int(metric))
+	assert.Equal(t, 0.0, metric, "expected there to be no calls to release for strings that were not already interned: %d", int(metric))
 }
 
 func TestShouldReshard(t *testing.T) {
@@ -725,10 +725,10 @@ func TestCalculateDesiredShards(t *testing.T) {
 
 		t.Log("desiredShards", m.numShards, "pendingSamples", pendingSamples)
 		m.numShards = m.calculateDesiredShards()
-		assert.True(t, m.numShards >= minShards, "Shards are too low. desiredShards=%d, minShards=%d, t_seconds=%d", m.numShards, minShards, ts/time.Second)
-		assert.True(t, m.numShards <= maxShards, "Shards are too high. desiredShards=%d, maxShards=%d, t_seconds=%d", m.numShards, maxShards, ts/time.Second)
+		assert.GreaterOrEqual(t, m.numShards, minShards, "Shards are too low. desiredShards=%d, minShards=%d, t_seconds=%d", m.numShards, minShards, ts/time.Second)
+		assert.LessOrEqual(t, m.numShards, maxShards, "Shards are too high. desiredShards=%d, maxShards=%d, t_seconds=%d", m.numShards, maxShards, ts/time.Second)
 	}
-	assert.True(t, pendingSamples == 0, "Remote write never caught up, there are still %d pending samples.", pendingSamples)
+	assert.Equal(t, int64(0), pendingSamples, "Remote write never caught up, there are still %d pending samples.", pendingSamples)
 }
 
 func TestQueueManagerMetrics(t *testing.T) {

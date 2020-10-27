@@ -206,7 +206,7 @@ func TestMergeQuerierWithChainMerger(t *testing.T) {
 				assert.Equal(t, expErr, actErr)
 				assert.Equal(t, expSmpl, actSmpl)
 			}
-			assert.True(t, !tc.expected.Next(), "Expected Next() to be false")
+			assert.False(t, tc.expected.Next(), "Expected Next() to be false")
 		})
 	}
 }
@@ -376,7 +376,7 @@ func TestMergeChunkQuerierWithNoVerticalChunkSeriesMerger(t *testing.T) {
 
 			}
 			assert.NoError(t, merged.Err())
-			assert.True(t, !tc.expected.Next(), "Expected Next() to be false")
+			assert.False(t, tc.expected.Next(), "Expected Next() to be false")
 		})
 	}
 }

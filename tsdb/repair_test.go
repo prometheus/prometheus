@@ -123,5 +123,5 @@ func TestRepairBadIndexVersion(t *testing.T) {
 
 	meta, _, err := readMetaFile(tmpDbDir)
 	assert.NoError(t, err)
-	assert.True(t, meta.Version == metaVersion1, "unexpected meta version %d", meta.Version)
+	assert.Equal(t, metaVersion1, meta.Version, "unexpected meta version %d", meta.Version)
 }

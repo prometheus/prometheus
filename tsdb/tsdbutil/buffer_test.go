@@ -111,29 +111,29 @@ func TestBufferedSeriesIterator(t *testing.T) {
 		{t: 101, v: 10},
 	}), 2)
 
-	assert.True(t, it.Seek(-123) == true, "seek failed")
+	assert.True(t, it.Seek(-123), "seek failed")
 	sampleEq(1, 2)
 	bufferEq(nil)
 
-	assert.True(t, it.Next() == true, "next failed")
+	assert.True(t, it.Next(), "next failed")
 	sampleEq(2, 3)
 	bufferEq([]sample{{t: 1, v: 2}})
 
-	assert.True(t, it.Next() == true, "next failed")
-	assert.True(t, it.Next() == true, "next failed")
-	assert.True(t, it.Next() == true, "next failed")
+	assert.True(t, it.Next(), "next failed")
+	assert.True(t, it.Next(), "next failed")
+	assert.True(t, it.Next(), "next failed")
 	sampleEq(5, 6)
 	bufferEq([]sample{{t: 2, v: 3}, {t: 3, v: 4}, {t: 4, v: 5}})
 
-	assert.True(t, it.Seek(5) == true, "seek failed")
+	assert.True(t, it.Seek(5), "seek failed")
 	sampleEq(5, 6)
 	bufferEq([]sample{{t: 2, v: 3}, {t: 3, v: 4}, {t: 4, v: 5}})
 
-	assert.True(t, it.Seek(101) == true, "seek failed")
+	assert.True(t, it.Seek(101), "seek failed")
 	sampleEq(101, 10)
 	bufferEq([]sample{{t: 99, v: 8}, {t: 100, v: 9}})
 
-	assert.True(t, it.Next() == false, "next succeeded unexpectedly")
+	assert.False(t, it.Next(), "next succeeded unexpectedly")
 }
 
 type listSeriesIterator struct {

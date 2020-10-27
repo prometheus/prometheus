@@ -221,7 +221,7 @@ func TestReader_Live(t *testing.T) {
 			reader := NewLiveReader(logger, NewLiveReaderMetrics(nil), readFd)
 			for _, exp := range testReaderCases[i].exp {
 				for !reader.Next() {
-					assert.True(t, reader.Err() == io.EOF, "expect EOF, got: %v", reader.Err())
+					assert.Equal(t, io.EOF, reader.Err(), "expect EOF, got: %v", reader.Err())
 					runtime.Gosched()
 				}
 
@@ -229,7 +229,7 @@ func TestReader_Live(t *testing.T) {
 				assert.Equal(t, exp, actual, "read wrong record")
 			}
 
-			assert.True(t, !reader.Next(), "unexpected record")
+			assert.False(t, reader.Next(), "unexpected record")
 			if testReaderCases[i].fail {
 				assert.Error(t, reader.Err())
 			}
@@ -341,7 +341,7 @@ func TestReaderFuzz(t *testing.T) {
 					assert.True(t, reader.Next(), "expected record: %v", reader.Err())
 					assert.Equal(t, expected, reader.Record(), "read wrong record")
 				}
-				assert.True(t, !reader.Next(), "unexpected record")
+				assert.False(t, reader.Next(), "unexpected record")
 			})
 		}
 	}
@@ -391,7 +391,7 @@ func TestReaderFuzz_Live(t *testing.T) {
 					assert.True(t, ok, "unexpected record")
 					assert.Equal(t, expected, rec, "record does not match expected")
 				}
-				assert.True(t, r.Err() == io.EOF, "expected EOF, got: %v", r.Err())
+				assert.Equal(t, io.EOF, r.Err(), "expected EOF, got: %v", r.Err())
 				return true
 			}
 
@@ -411,7 +411,7 @@ func TestReaderFuzz_Live(t *testing.T) {
 
 					fi, err := os.Stat(SegmentName(dir, seg.i))
 					assert.NoError(t, err)
-					assert.True(t, r.Offset() == fi.Size(), "expected to have read whole segment, but read %d of %d", r.Offset(), fi.Size())
+					assert.Equal(t, r.Offset(), fi.Size(), "expected to have read whole segment, but read %d of %d", r.Offset(), fi.Size())
 
 					seg, err = OpenReadSegment(SegmentName(dir, seg.i+1))
 					assert.NoError(t, err)
@@ -427,7 +427,7 @@ func TestReaderFuzz_Live(t *testing.T) {
 				}
 			}
 
-			assert.True(t, r.Err() == io.EOF, "expected EOF")
+			assert.Equal(t, io.EOF, r.Err(), "expected EOF")
 		})
 	}
 }
@@ -473,8 +473,8 @@ func TestLiveReaderCorrupt_ShortFile(t *testing.T) {
 	defer seg.Close()
 
 	r := NewLiveReader(logger, nil, seg)
-	assert.True(t, r.Next() == false, "expected no records")
-	assert.True(t, r.Err() == io.EOF, "expected error, got: %v", r.Err())
+	assert.False(t, r.Next(), "expected no records")
+	assert.Equal(t, io.EOF, r.Err(), "expected error, got: %v", r.Err())
 }
 
 func TestLiveReaderCorrupt_RecordTooLongAndShort(t *testing.T) {
@@ -521,8 +521,8 @@ func TestLiveReaderCorrupt_RecordTooLongAndShort(t *testing.T) {
 	defer seg.Close()
 
 	r := NewLiveReader(logger, NewLiveReaderMetrics(nil), seg)
-	assert.True(t, r.Next() == false, "expected no records")
-	assert.True(t, r.Err().Error() == "record length greater than a single page: 65542 > 32768", "expected error, got: %v", r.Err())
+	assert.False(t, r.Next(), "expected no records")
+	assert.EqualError(t, r.Err(), "record length greater than a single page: 65542 > 32768", "expected error, got: %v", r.Err())
 }
 
 func TestReaderData(t *testing.T) {

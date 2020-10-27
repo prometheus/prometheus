@@ -15,7 +15,6 @@ package promql
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
@@ -56,19 +55,19 @@ func TestDeriv(t *testing.T) {
 	assert.NoError(t, result.Err)
 
 	vec, _ := result.Vector()
-	assert.True(t, len(vec) == 1, "Expected 1 result, got %d", len(vec))
-	assert.True(t, vec[0].V == 0.0, "Expected 0.0 as value, got %f", vec[0].V)
+	assert.Equal(t, 1, len(vec), "Expected 1 result, got %d", len(vec))
+	assert.Equal(t, 0.0, vec[0].V, "Expected 0.0 as value, got %f", vec[0].V)
 }
 
 func TestFunctionList(t *testing.T) {
 	// Test that Functions and parser.Functions list the same functions.
 	for i := range FunctionCalls {
 		_, ok := parser.Functions[i]
-		assert.True(t, ok, fmt.Sprintf("function %s exists in promql package, but not in parser package", i))
+		assert.True(t, ok, "function %s exists in promql package, but not in parser package", i)
 	}
 
 	for i := range parser.Functions {
 		_, ok := FunctionCalls[i]
-		assert.True(t, ok, (fmt.Sprintf("function %s exists in parser package, but not in promql package", i)))
+		assert.True(t, ok, "function %s exists in parser package, but not in promql package", i)
 	}
 }

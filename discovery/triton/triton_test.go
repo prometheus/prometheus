@@ -87,7 +87,7 @@ func TestTritonSDNew(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, td)
 	assert.NotNil(t, td.client)
-	assert.True(t, td.interval != 0, "")
+	assert.NotZero(t, td.interval)
 	assert.NotNil(t, td.sdConfig)
 	assert.Equal(t, conf.Account, td.sdConfig.Account)
 	assert.Equal(t, conf.DNSSuffix, td.sdConfig.DNSSuffix)
@@ -98,7 +98,7 @@ func TestTritonSDNew(t *testing.T) {
 func TestTritonSDNewBadConfig(t *testing.T) {
 	td, err := newTritonDiscovery(badconf)
 	assert.Error(t, err)
-	assert.True(t, td == nil, "")
+	assert.Nil(t, td)
 }
 
 func TestTritonSDNewGroupsConfig(t *testing.T) {
@@ -106,7 +106,7 @@ func TestTritonSDNewGroupsConfig(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, td)
 	assert.NotNil(t, td.client)
-	assert.True(t, td.interval != 0, "")
+	assert.NotZero(t, td.interval)
 	assert.NotNil(t, td.sdConfig)
 	assert.Equal(t, groupsconf.Account, td.sdConfig.Account)
 	assert.Equal(t, groupsconf.DNSSuffix, td.sdConfig.DNSSuffix)
@@ -120,8 +120,8 @@ func TestTritonSDNewCNConfig(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, td)
 	assert.NotNil(t, td.client)
-	assert.True(t, td.interval != 0, "")
-	assert.NotNil(t, td.sdConfig)
+	assert.NotZero(t, td.interval)
+	assert.NotZero(t, td.sdConfig)
 	assert.Equal(t, cnconf.Role, td.sdConfig.Role)
 	assert.Equal(t, cnconf.Account, td.sdConfig.Account)
 	assert.Equal(t, cnconf.DNSSuffix, td.sdConfig.DNSSuffix)
@@ -131,7 +131,7 @@ func TestTritonSDNewCNConfig(t *testing.T) {
 
 func TestTritonSDRefreshNoTargets(t *testing.T) {
 	tgts := testTritonSDRefresh(t, conf, "{\"containers\":[]}")
-	assert.True(t, tgts == nil, "")
+	assert.Nil(t, tgts)
 }
 
 func TestTritonSDRefreshMultipleTargets(t *testing.T) {
@@ -234,12 +234,12 @@ func testTritonSDRefresh(t *testing.T, c SDConfig, dstr string) []model.LabelSet
 
 	host, strport, err := net.SplitHostPort(u.Host)
 	assert.NoError(t, err)
-	assert.True(t, host != "", "")
-	assert.True(t, strport != "", "")
+	assert.NotEmpty(t, host)
+	assert.NotEmpty(t, strport)
 
 	port, err := strconv.Atoi(strport)
 	assert.NoError(t, err)
-	assert.True(t, port != 0, "")
+	assert.NotZero(t, port)
 
 	td.sdConfig.Port = port
 

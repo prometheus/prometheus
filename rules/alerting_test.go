@@ -15,6 +15,7 @@ package rules
 
 import (
 	"context"
+	"html/template"
 	"testing"
 	"time"
 
@@ -33,16 +34,16 @@ func TestAlertingRuleHTMLSnippet(t *testing.T) {
 	assert.NoError(t, err)
 	rule := NewAlertingRule("testrule", expr, 0, labels.FromStrings("html", "<b>BOLD</b>"), labels.FromStrings("html", "<b>BOLD</b>"), nil, false, nil)
 
-	const want = `alert: <a href="/test/prefix/graph?g0.expr=ALERTS%7Balertname%3D%22testrule%22%7D&g0.tab=1">testrule</a>
+	const want = template.HTML(`alert: <a href="/test/prefix/graph?g0.expr=ALERTS%7Balertname%3D%22testrule%22%7D&g0.tab=1">testrule</a>
 expr: <a href="/test/prefix/graph?g0.expr=foo%7Bhtml%3D%22%3Cb%3EBOLD%3Cb%3E%22%7D&g0.tab=1">foo{html=&#34;&lt;b&gt;BOLD&lt;b&gt;&#34;}</a>
 labels:
   html: '&lt;b&gt;BOLD&lt;/b&gt;'
 annotations:
   html: '&lt;b&gt;BOLD&lt;/b&gt;'
-`
+`)
 
 	got := rule.HTMLSnippet("/test/prefix")
-	assert.True(t, want == got, "incorrect HTML snippet; want:\n\n|%v|\n\ngot:\n\n|%v|", want, got)
+	assert.Equal(t, want, got, "incorrect HTML snippet; want:\n\n|%v|\n\ngot:\n\n|%v|", want, got)
 }
 
 func TestAlertingRuleState(t *testing.T) {
@@ -81,7 +82,7 @@ func TestAlertingRuleState(t *testing.T) {
 		rule := NewAlertingRule(test.name, nil, 0, nil, nil, nil, true, nil)
 		rule.active = test.active
 		got := rule.State()
-		assert.True(t, test.want == got, "test case %d unexpected AlertState, want:%d got:%d", i, test.want, got)
+		assert.Equal(t, test.want, got, "test case %d unexpected AlertState, want:%d got:%d", i, test.want, got)
 	}
 }
 

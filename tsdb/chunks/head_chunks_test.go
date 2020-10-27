@@ -104,7 +104,8 @@ func TestChunkDiskMapper_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 	}
 
 	// Checking on-disk bytes for the first file.
-	assert.True(t, len(hrw.mmappedChunkFiles) == 3 && len(hrw.closers) == 3, "expected 3 mmapped files, got %d", len(hrw.mmappedChunkFiles))
+	assert.Equal(t, 3, len(hrw.mmappedChunkFiles), "expected 3 mmapped files, got %d", len(hrw.mmappedChunkFiles))
+	assert.Equal(t, len(hrw.mmappedChunkFiles), len(hrw.closers))
 
 	actualBytes, err := ioutil.ReadFile(firstFileName)
 	assert.NoError(t, err)
@@ -225,9 +226,9 @@ func TestChunkDiskMapper_Truncate(t *testing.T) {
 	hrw, err = NewChunkDiskMapper(dir, chunkenc.NewPool())
 	assert.NoError(t, err)
 
-	assert.True(t, !hrw.fileMaxtSet, "")
+	assert.False(t, hrw.fileMaxtSet)
 	assert.NoError(t, hrw.IterateAllChunks(func(_, _ uint64, _, _ int64, _ uint16) error { return nil }))
-	assert.True(t, hrw.fileMaxtSet, "")
+	assert.True(t, hrw.fileMaxtSet)
 
 	verifyFiles([]int{3, 4, 5, 6, 7, 8})
 	// New file is created after restart even if last file was empty.
@@ -395,14 +396,14 @@ func TestHeadReadWriter_ReadRepairOnEmptyLastFile(t *testing.T) {
 	// Open chunk disk mapper again, corrupt file should be removed.
 	hrw, err = NewChunkDiskMapper(dir, chunkenc.NewPool())
 	assert.NoError(t, err)
-	assert.True(t, !hrw.fileMaxtSet, "")
+	assert.False(t, hrw.fileMaxtSet)
 	assert.NoError(t, hrw.IterateAllChunks(func(_, _ uint64, _, _ int64, _ uint16) error { return nil }))
-	assert.True(t, hrw.fileMaxtSet, "")
+	assert.True(t, hrw.fileMaxtSet)
 
 	// Removed from memory.
 	assert.Equal(t, 3, len(hrw.mmappedChunkFiles))
 	for idx := range hrw.mmappedChunkFiles {
-		assert.True(t, idx <= lastFile, "file index is bigger than previous last file")
+		assert.LessOrEqual(t, idx, lastFile, "file index is bigger than previous last file")
 	}
 
 	// Removed even from disk.
@@ -412,7 +413,7 @@ func TestHeadReadWriter_ReadRepairOnEmptyLastFile(t *testing.T) {
 	for _, fi := range files {
 		seq, err := strconv.ParseUint(fi.Name(), 10, 64)
 		assert.NoError(t, err)
-		assert.True(t, seq <= uint64(lastFile), "file index on disk is bigger than previous last file")
+		assert.LessOrEqual(t, seq, uint64(lastFile), "file index on disk is bigger than previous last file")
 	}
 
 }
@@ -426,9 +427,9 @@ func testChunkDiskMapper(t *testing.T) *ChunkDiskMapper {
 
 	hrw, err := NewChunkDiskMapper(tmpdir, chunkenc.NewPool())
 	assert.NoError(t, err)
-	assert.True(t, !hrw.fileMaxtSet, "")
+	assert.False(t, hrw.fileMaxtSet)
 	assert.NoError(t, hrw.IterateAllChunks(func(_, _ uint64, _, _ int64, _ uint16) error { return nil }))
-	assert.True(t, hrw.fileMaxtSet, "")
+	assert.True(t, hrw.fileMaxtSet)
 	return hrw
 }
 

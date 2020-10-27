@@ -85,12 +85,12 @@ const (
 type MetricType string
 
 const (
-	MetricTypeCounter        = "counter"
-	MetricTypeGauge          = "gauge"
-	MetricTypeHistogram      = "histogram"
-	MetricTypeGaugeHistogram = "gaugehistogram"
-	MetricTypeSummary        = "summary"
-	MetricTypeInfo           = "info"
-	MetricTypeStateset       = "stateset"
-	MetricTypeUnknown        = "unknown"
+	MetricTypeCounter        = MetricType("counter")
+	MetricTypeGauge          = MetricType("gauge")
+	MetricTypeHistogram      = MetricType("histogram")
+	MetricTypeGaugeHistogram = MetricType("gaugehistogram")
+	MetricTypeSummary        = MetricType("summary")
+	MetricTypeInfo           = MetricType("info")
+	MetricTypeStateset       = MetricType("stateset")
+	MetricTypeUnknown        = MetricType("unknown")
 )

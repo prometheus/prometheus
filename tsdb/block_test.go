@@ -51,7 +51,7 @@ func TestBlockMetaMustNeverBeVersion2(t *testing.T) {
 
 	meta, _, err := readMetaFile(dir)
 	assert.NoError(t, err)
-	assert.True(t, meta.Version != 2, "meta.json version must never be 2")
+	assert.NotEqual(t, 2, meta.Version, "meta.json version must never be 2")
 }
 
 func TestSetCompactionFailed(t *testing.T) {
@@ -181,7 +181,7 @@ func TestCorruptedChunk(t *testing.T) {
 			blockDir := createBlock(t, tmpdir, []storage.Series{series})
 			files, err := sequenceFiles(chunkDir(blockDir))
 			assert.NoError(t, err)
-			assert.True(t, len(files) > 0, "No chunk created.")
+			assert.Greater(t, len(files), 0, "No chunk created.")
 
 			f, err := os.OpenFile(files[0], os.O_RDWR, 0666)
 			assert.NoError(t, err)
@@ -204,7 +204,7 @@ func TestCorruptedChunk(t *testing.T) {
 			set := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 
 			// Check chunk errors during iter time.
-			assert.True(t, set.Next(), "")
+			assert.True(t, set.Next())
 			it := set.At().Iterator()
 			assert.Equal(t, false, it.Next())
 			assert.Equal(t, tc.iterErr.Error(), it.Err().Error())
@@ -244,7 +244,7 @@ func TestBlockSize(t *testing.T) {
 	{
 		assert.NoError(t, blockInit.Delete(1, 10, labels.MustNewMatcher(labels.MatchRegexp, "", ".*")))
 		expAfterDelete := blockInit.Size()
-		assert.True(t, expAfterDelete > expSizeInit, "after a delete the block size should be bigger as the tombstone file should grow %v > %v", expAfterDelete, expSizeInit)
+		assert.Greater(t, expAfterDelete, expSizeInit, "after a delete the block size should be bigger as the tombstone file should grow %v > %v", expAfterDelete, expSizeInit)
 		actAfterDelete, err := fileutil.DirSize(blockDirInit)
 		assert.NoError(t, err)
 		assert.Equal(t, expAfterDelete, actAfterDelete, "after a delete reported block size doesn't match actual disk size")
@@ -261,7 +261,7 @@ func TestBlockSize(t *testing.T) {
 		expAfterCompact := blockAfterCompact.Size()
 		actAfterCompact, err := fileutil.DirSize(blockAfterCompact.Dir())
 		assert.NoError(t, err)
-		assert.True(t, actAfterDelete > actAfterCompact, "after a delete and compaction the block size should be smaller %v,%v", actAfterDelete, actAfterCompact)
+		assert.Greater(t, actAfterDelete, actAfterCompact, "after a delete and compaction the block size should be smaller %v,%v", actAfterDelete, actAfterCompact)
 		assert.Equal(t, expAfterCompact, actAfterCompact, "after a delete and compaction reported block size doesn't match actual disk size")
 	}
 }

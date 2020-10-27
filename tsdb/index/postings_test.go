@@ -557,7 +557,7 @@ func TestRemovedNextStackoverflow(t *testing.T) {
 	}
 
 	assert.NoError(t, rp.Err())
-	assert.True(t, !gotElem, "")
+	assert.False(t, gotElem)
 }
 
 func TestRemovedPostingsSeek(t *testing.T) {
@@ -664,12 +664,12 @@ func TestBigEndian(t *testing.T) {
 	t.Run("Iteration", func(t *testing.T) {
 		bep := newBigEndianPostings(beLst)
 		for i := 0; i < num; i++ {
-			assert.True(t, bep.Next() == true, "")
+			assert.True(t, bep.Next())
 			assert.Equal(t, uint64(ls[i]), bep.At())
 		}
 
-		assert.True(t, bep.Next() == false, "")
-		assert.True(t, bep.Err() == nil, "")
+		assert.False(t, bep.Next())
+		assert.NoError(t, bep.Err())
 	})
 
 	t.Run("Seek", func(t *testing.T) {
@@ -715,7 +715,7 @@ func TestBigEndian(t *testing.T) {
 		for _, v := range table {
 			assert.Equal(t, v.found, bep.Seek(uint64(v.seek)))
 			assert.Equal(t, uint64(v.val), bep.At())
-			assert.True(t, bep.Err() == nil, "")
+			assert.NoError(t, bep.Err())
 		}
 	})
 }
@@ -872,5 +872,5 @@ func TestMemPostings_Delete(t *testing.T) {
 	deleted := p.Get("lbl1", "b")
 	expanded, err = ExpandPostings(deleted)
 	assert.NoError(t, err)
-	assert.True(t, 0 == len(expanded), "expected empty postings, got %v", expanded)
+	assert.Equal(t, 0, len(expanded), "expected empty postings, got %v", expanded)
 }

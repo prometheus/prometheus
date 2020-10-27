@@ -440,7 +440,7 @@ func TestTargetLabelValidity(t *testing.T) {
 		{"foo${bar}foo", true},
 	}
 	for _, test := range tests {
-		assert.True(t, relabelTarget.Match([]byte(test.str)) == test.valid,
+		assert.Equal(t, test.valid, relabelTarget.Match([]byte(test.str)),
 			"Expected %q to be %v", test.str, test.valid)
 	}
 }
