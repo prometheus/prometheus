@@ -856,6 +856,9 @@ func (db *DB) CompactHead(head *RangeHead) error {
 // compactHead compacts the given RangeHead.
 // The compaction mutex should be held before calling this method.
 func (db *DB) compactHead(head *RangeHead) error {
+	if db.opts.RetentionDuration > 0 && head.MaxTime()-head.BlockMaxTime() > db.opts.RetentionDuration {
+		return nil
+	}
 	uid, err := db.compactor.Write(db.dir, head, head.MinTime(), head.BlockMaxTime(), nil)
 	if err != nil {
 		return errors.Wrap(err, "persist head block")
