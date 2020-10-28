@@ -552,7 +552,7 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64) {
 	return opts, rngs
 }
 
-func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs []int64) (db *DB, returnedErr error) {
+func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs []int64) (_ *DB, returnedErr error) {
 	if err := os.MkdirAll(dir, 0777); err != nil {
 		return nil, err
 	}
@@ -583,7 +583,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 		return nil, errors.Wrap(err, "remove tmp dirs")
 	}
 
-	db = &DB{
+	db := &DB{
 		dir:            dir,
 		logger:         l,
 		opts:           opts,
@@ -599,6 +599,8 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 		if returnedErr == nil {
 			return
 		}
+
+		close(db.donec) // DB is never run if it was an error, so close this channel here.
 
 		var merr tsdb_errors.MultiError
 		merr.Add(returnedErr)
@@ -623,11 +625,12 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 		db.lockf = lockf
 	}
 
+	var err error
 	ctx, cancel := context.WithCancel(context.Background())
-	db.compactor, returnedErr = NewLeveledCompactor(ctx, r, l, rngs, db.chunkPool)
-	if returnedErr != nil {
+	db.compactor, err = NewLeveledCompactor(ctx, r, l, rngs, db.chunkPool)
+	if err != nil {
 		cancel()
-		return nil, errors.Wrap(returnedErr, "create leveled compactor")
+		return nil, errors.Wrap(err, "create leveled compactor")
 	}
 	db.compactCancel = cancel
 
@@ -639,15 +642,15 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 		if opts.WALSegmentSize > 0 {
 			segmentSize = opts.WALSegmentSize
 		}
-		wlog, returnedErr = wal.NewSize(l, r, walDir, segmentSize, opts.WALCompression)
-		if returnedErr != nil {
-			return nil, returnedErr
+		wlog, err = wal.NewSize(l, r, walDir, segmentSize, opts.WALCompression)
+		if err != nil {
+			return nil, err
 		}
 	}
 
-	db.head, returnedErr = NewHead(r, l, wlog, rngs[0], dir, db.chunkPool, opts.StripeSize, opts.SeriesLifecycleCallback)
-	if returnedErr != nil {
-		return nil, returnedErr
+	db.head, err = NewHead(r, l, wlog, rngs[0], dir, db.chunkPool, opts.StripeSize, opts.SeriesLifecycleCallback)
+	if err != nil {
+		return nil, err
 	}
 
 	// Register metrics after assigning the head block.
@@ -1325,7 +1328,9 @@ func (db *DB) Head() *Head {
 // Close the partition.
 func (db *DB) Close() error {
 	close(db.stopc)
-	db.compactCancel()
+	if db.compactCancel != nil {
+		db.compactCancel()
+	}
 	<-db.donec
 
 	db.mtx.Lock()
