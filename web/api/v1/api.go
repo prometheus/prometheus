@@ -372,18 +372,20 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 		return apiFuncResult{nil, returnAPIError(res.Err), res.Warnings, qry.Close}
 	}
 
-	if res.Value.Type() == "vector" {
+	if res.Value.Type() == parser.ValueTypeVector {
 		vec, ok := res.Value.(promql.Vector)
 		if !ok {
-			panic("Error converting to vector")
+			err := errors.New("Cannot convert to vector")
+			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 		}
 		sort.Slice(vec, func(i, j int) bool {
 			return vec[i].V > vec[j].V
 		})
-	} else if res.Value.Type() == "matrix" {
+	} else if res.Value.Type() == parser.ValueTypeMatrix {
 		mat, ok := res.Value.(promql.Matrix)
 		if !ok {
-			panic("Error converting to matrix")
+			err := errors.New("Cannot convert to matrix")
+			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 		}
 		sort.Slice(mat, func(i, j int) bool {
 			return (sum(mat[i]) > sum(mat[j]))
@@ -478,10 +480,11 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 		return apiFuncResult{nil, returnAPIError(res.Err), res.Warnings, qry.Close}
 	}
 
-	if res.Value.Type() == "matrix" {
+	if res.Value.Type() == parser.ValueTypeMatrix {
 		mat, ok := res.Value.(promql.Matrix)
 		if !ok {
-			panic("Error converting to matrix")
+			err := errors.New("Cannot convert to matrix")
+			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 		}
 		sort.Slice(mat, func(i, j int) bool {
 			return (sum(mat[i]) > sum(mat[j]))
