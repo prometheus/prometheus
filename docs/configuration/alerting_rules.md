@@ -47,6 +47,7 @@ templates](https://prometheus.io/docs/visualization/consoles).  The `$labels`
 variable holds the label key/value pairs of an alert instance. The configured
 external labels can be accessed via the `$externalLabels` variable. The
 `$value` variable holds the evaluated value of an alert instance.
+When the alert is restored, that sample value will no longer be returned.
 
     # To insert a firing element's label values:
     {{ $labels.<labelname> }}
