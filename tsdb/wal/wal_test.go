@@ -17,6 +17,7 @@ package wal
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"math/rand"
 	"os"
@@ -422,6 +423,94 @@ func TestCompression(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Greater(t, float64(uncompressedSize)*0.75, float64(compressedSize), "Compressing zeroes should save at least 25%% space - uncompressedSize: %d, compressedSize: %d", uncompressedSize, compressedSize)
+}
+
+func TestLogPartialWrite(t *testing.T) {
+	const segmentSize = pageSize * 2
+	record := []byte{1, 2, 3, 4, 5}
+
+	tests := map[string]struct {
+		numRecords   int
+		faultyRecord int
+	}{
+		"partial write when logging first record in a page": {
+			numRecords:   10,
+			faultyRecord: 1,
+		},
+		"partial write when logging record in the middle of a page": {
+			numRecords:   10,
+			faultyRecord: 1,
+		},
+		"partial write when logging last record of a page": {
+			numRecords:   (pageSize / (recordHeaderSize + len(record))) + 10,
+			faultyRecord: pageSize / (recordHeaderSize + len(record)),
+		},
+		// TODO the current implementation suffers this:
+		//"partial write when logging a record overlapping two pages": {
+		//	numRecords:   (pageSize / (recordHeaderSize + len(record))) + 10,
+		//	faultyRecord: pageSize/(recordHeaderSize+len(record)) + 1,
+		//},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			dirPath, err := ioutil.TempDir("", "")
+			assert.NoError(t, err)
+
+			w, err := NewSize(nil, nil, dirPath, segmentSize, false)
+			assert.NoError(t, err)
+
+			// Replace the underlying segment file with a mocked one that injects a failure.
+			w.segment.SegmentFile = &faultySegmentFile{
+				SegmentFile:     w.segment.SegmentFile,
+				writeFailureAt:  ((recordHeaderSize + len(record)) * (testData.faultyRecord - 1)) + 1,
+				writeFailureErr: io.ErrShortWrite,
+			}
+
+			for i := 1; i <= testData.numRecords; i++ {
+				if err := w.Log(record); i == testData.faultyRecord {
+					assert.Error(t, io.ErrShortWrite, err)
+				} else {
+					assert.NoError(t, err)
+				}
+			}
+
+			assert.NoError(t, w.Close())
+
+			// Read it back. We expect no corruption.
+			s, err := OpenReadSegment(SegmentName(dirPath, 0))
+			assert.NoError(t, err)
+
+			r := NewReader(NewSegmentBufReader(s))
+			for i := 0; i < testData.numRecords; i++ {
+				assert.True(t, r.Next())
+				assert.NoError(t, r.Err())
+				assert.Equal(t, record, r.Record())
+			}
+		})
+	}
+}
+
+type faultySegmentFile struct {
+	SegmentFile
+
+	writeCount      int
+	writeFailureAt  int
+	writeFailureErr error
+}
+
+func (f *faultySegmentFile) Write(p []byte) (int, error) {
+	if f.writeFailureAt <= f.writeCount || f.writeFailureAt > f.writeCount+len(p) {
+		n, err := f.SegmentFile.Write(p)
+		f.writeCount += n
+		return n, err
+	}
+
+	// Inject failure.
+	partialLen := f.writeFailureAt - f.writeCount
+	n, _ := f.SegmentFile.Write(p[:partialLen])
+	f.writeCount += n
+	return n, f.writeFailureErr
 }
 
 func BenchmarkWAL_LogBatched(b *testing.B) {
