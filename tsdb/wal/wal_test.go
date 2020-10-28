@@ -294,7 +294,7 @@ func TestCorruptAndCarryOn(t *testing.T) {
 			require.Equal(t, recordSize, len(reader.Record()))
 		}
 		require.Equal(t, 4, i, "not enough records")
-		assert.False(t, reader.Next(), "unexpected record")
+		require.False(t, reader.Next(), "unexpected record")
 
 		corruptionErr := reader.Err()
 		require.Error(t, corruptionErr)
@@ -336,7 +336,7 @@ func TestCorruptAndCarryOn(t *testing.T) {
 			require.Equal(t, recordSize, len(reader.Record()))
 		}
 		require.Equal(t, 9, i, "wrong number of records")
-		assert.False(t, reader.Next(), "unexpected record")
+		require.False(t, reader.Next(), "unexpected record")
 		require.Equal(t, nil, reader.Err())
 		sr.Close()
 	}
@@ -421,7 +421,7 @@ func TestCompression(t *testing.T) {
 	compressedSize, err := fileutil.DirSize(dirCompressed)
 	require.NoError(t, err)
 
-	assert.Greater(t, float64(uncompressedSize)*0.75, float64(compressedSize), "Compressing zeroes should save at least 25%% space - uncompressedSize: %d, compressedSize: %d", uncompressedSize, compressedSize)
+	require.Greater(t, float64(uncompressedSize)*0.75, float64(compressedSize), "Compressing zeroes should save at least 25%% space - uncompressedSize: %d, compressedSize: %d", uncompressedSize, compressedSize)
 }
 
 func BenchmarkWAL_LogBatched(b *testing.B) {

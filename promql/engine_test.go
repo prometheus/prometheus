@@ -1129,7 +1129,7 @@ func TestQueryLogger_basic(t *testing.T) {
 	require.Equal(t, 2*l, len(f1.logs))
 
 	// Test that we close the query logger when unsetting it.
-	assert.False(t, f1.closed, "expected f1 to be open, got closed")
+	require.False(t, f1.closed, "expected f1 to be open, got closed")
 	engine.SetQueryLogger(nil)
 	require.True(t, f1.closed, "expected f1 to be closed, got open")
 	queryExec()
@@ -1138,11 +1138,11 @@ func TestQueryLogger_basic(t *testing.T) {
 	f2 := NewFakeQueryLogger()
 	f3 := NewFakeQueryLogger()
 	engine.SetQueryLogger(f2)
-	assert.False(t, f2.closed, "expected f2 to be open, got closed")
+	require.False(t, f2.closed, "expected f2 to be open, got closed")
 	queryExec()
 	engine.SetQueryLogger(f3)
 	require.True(t, f2.closed, "expected f2 to be closed, got open")
-	assert.False(t, f3.closed, "expected f3 to be open, got closed")
+	require.False(t, f3.closed, "expected f3 to be open, got closed")
 	queryExec()
 }
 

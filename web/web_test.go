@@ -478,7 +478,7 @@ func cleanupSnapshot(t *testing.T, dbDir string, resp *http.Response) {
 	b, err := ioutil.ReadAll(resp.Body)
 	require.NoError(t, err)
 	require.NoError(t, json.Unmarshal(b, snapshot))
-	assert.NotZero(t, snapshot.Data.Name, "snapshot directory not returned")
+	require.NotZero(t, snapshot.Data.Name, "snapshot directory not returned")
 	require.NoError(t, os.Remove(filepath.Join(dbDir, "snapshots", snapshot.Data.Name)))
 	require.NoError(t, os.Remove(filepath.Join(dbDir, "snapshots")))
 }

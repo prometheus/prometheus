@@ -133,7 +133,7 @@ func TestBufferedSeriesIterator(t *testing.T) {
 	sampleEq(101, 10)
 	bufferEq([]sample{{t: 99, v: 8}, {t: 100, v: 9}})
 
-	assert.False(t, it.Next(), "next succeeded unexpectedly")
+	require.False(t, it.Next(), "next succeeded unexpectedly")
 }
 
 type listSeriesIterator struct {

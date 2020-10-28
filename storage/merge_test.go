@@ -206,7 +206,7 @@ func TestMergeQuerierWithChainMerger(t *testing.T) {
 				require.Equal(t, expErr, actErr)
 				require.Equal(t, expSmpl, actSmpl)
 			}
-			assert.False(t, tc.expected.Next(), "Expected Next() to be false")
+			require.False(t, tc.expected.Next(), "Expected Next() to be false")
 		})
 	}
 }
@@ -376,7 +376,7 @@ func TestMergeChunkQuerierWithNoVerticalChunkSeriesMerger(t *testing.T) {
 
 			}
 			require.NoError(t, merged.Err())
-			assert.False(t, tc.expected.Next(), "Expected Next() to be false")
+			require.False(t, tc.expected.Next(), "Expected Next() to be false")
 		})
 	}
 }

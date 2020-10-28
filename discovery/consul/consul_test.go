@@ -275,7 +275,7 @@ func checkOneTarget(t *testing.T, tg []*targetgroup.Group) {
 	require.Equal(t, target.Source, string(target.Labels["__meta_consul_service"]))
 	if target.Source == "test" {
 		// test service should have one node.
-		assert.Greater(t, len(target.Targets), 0, "Test service should have one node")
+		require.Greater(t, len(target.Targets), 0, "Test service should have one node")
 	}
 }
 

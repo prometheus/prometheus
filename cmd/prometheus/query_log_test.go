@@ -298,7 +298,7 @@ func (p *queryLogTest) run(t *testing.T) {
 	if p.exactQueryCount() {
 		require.Equal(t, 1, qc)
 	} else {
-		assert.Greater(t, qc, 0, "no queries logged")
+		require.Greater(t, qc, 0, "no queries logged")
 	}
 	p.validateLastQuery(t, ql)
 
@@ -324,7 +324,7 @@ func (p *queryLogTest) run(t *testing.T) {
 	if p.exactQueryCount() {
 		require.Equal(t, qc, len(ql))
 	} else {
-		assert.Greater(t, len(ql), qc, "no queries logged")
+		require.Greater(t, len(ql), qc, "no queries logged")
 	}
 	p.validateLastQuery(t, ql)
 	qc = len(ql)
@@ -355,7 +355,7 @@ func (p *queryLogTest) run(t *testing.T) {
 	if p.exactQueryCount() {
 		require.Equal(t, qc, len(ql))
 	} else {
-		assert.Greater(t, len(ql), qc, "no queries logged")
+		require.Greater(t, len(ql), qc, "no queries logged")
 	}
 	p.validateLastQuery(t, ql)
 
@@ -368,7 +368,7 @@ func (p *queryLogTest) run(t *testing.T) {
 	if p.exactQueryCount() {
 		require.Equal(t, 1, qc)
 	} else {
-		assert.Greater(t, qc, 0, "no queries logged")
+		require.Greater(t, qc, 0, "no queries logged")
 	}
 }
 

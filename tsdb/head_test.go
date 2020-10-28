@@ -296,7 +296,7 @@ func TestHead_WALMultiRef(t *testing.T) {
 	require.NoError(t, app.Commit())
 	require.Equal(t, 4.0, prom_testutil.ToFloat64(head.metrics.chunksCreated))
 
-	assert.NotEqual(t, ref1, ref2, "Refs are the same")
+	require.NotEqual(t, ref1, ref2, "Refs are the same")
 	require.NoError(t, head.Close())
 
 	w, err = wal.New(nil, nil, w.Dir(), false)
@@ -470,7 +470,7 @@ func TestMemSeries_truncateChunks(t *testing.T) {
 
 	it2 := s.iterator(s.chunkID(len(s.mmappedChunks)-1), nil, chunkDiskMapper, nil)
 	_, ok = it2.(*memSafeIterator)
-	assert.False(t, ok, "non-last chunk incorrectly wrapped with sample buffer")
+	require.False(t, ok, "non-last chunk incorrectly wrapped with sample buffer")
 }
 
 func TestHeadDeleteSeriesWithoutSamples(t *testing.T) {
@@ -656,7 +656,7 @@ func TestDeleteUntilCurMax(t *testing.T) {
 	require.True(t, res.Next(), "series is not present")
 	s := res.At()
 	it := s.Iterator()
-	assert.False(t, it.Next(), "expected no samples")
+	require.False(t, it.Next(), "expected no samples")
 	for res.Next() {
 	}
 	require.NoError(t, res.Err())
@@ -980,7 +980,7 @@ func TestMemSeries_append(t *testing.T) {
 
 	ok, chunkCreated = s.append(999, 2, 0, chunkDiskMapper)
 	require.True(t, ok, "append failed")
-	assert.False(t, chunkCreated, "second sample should use same chunk")
+	require.False(t, chunkCreated, "second sample should use same chunk")
 
 	ok, chunkCreated = s.append(1000, 3, 0, chunkDiskMapper)
 	require.True(t, ok, "append failed")
@@ -988,7 +988,7 @@ func TestMemSeries_append(t *testing.T) {
 
 	ok, chunkCreated = s.append(1001, 4, 0, chunkDiskMapper)
 	require.True(t, ok, "append failed")
-	assert.False(t, chunkCreated, "second sample should use same chunk")
+	require.False(t, chunkCreated, "second sample should use same chunk")
 
 	require.Equal(t, 1, len(s.mmappedChunks), "there should be only 1 mmapped chunk")
 	require.Equal(t, int64(998), s.mmappedChunks[0].minTime, "wrong chunk range")
@@ -1003,13 +1003,13 @@ func TestMemSeries_append(t *testing.T) {
 		require.True(t, ok, "append failed")
 	}
 
-	assert.Greater(t, len(s.mmappedChunks)+1, 7, "expected intermediate chunks")
+	require.Greater(t, len(s.mmappedChunks)+1, 7, "expected intermediate chunks")
 
 	// All chunks but the first and last should now be moderately full.
 	for i, c := range s.mmappedChunks[1:] {
 		chk, err := chunkDiskMapper.Chunk(c.ref)
 		require.NoError(t, err)
-		assert.Greater(t, chk.NumSamples(), 100, "unexpected small chunk %d of length %d", i, chk.NumSamples())
+		require.Greater(t, chk.NumSamples(), 100, "unexpected small chunk %d of length %d", i, chk.NumSamples())
 	}
 }
 
@@ -1030,7 +1030,7 @@ func TestGCChunkAccess(t *testing.T) {
 	require.True(t, chunkCreated, "chunks was not created")
 	ok, chunkCreated = s.append(999, 999, 0, h.chunkDiskMapper)
 	require.True(t, ok, "series append failed")
-	assert.False(t, chunkCreated, "chunks was created")
+	require.False(t, chunkCreated, "chunks was created")
 
 	// A new chunks should be created here as it's beyond the chunk range.
 	ok, chunkCreated = s.append(1000, 1000, 0, h.chunkDiskMapper)
@@ -1038,7 +1038,7 @@ func TestGCChunkAccess(t *testing.T) {
 	require.True(t, chunkCreated, "chunks was not created")
 	ok, chunkCreated = s.append(1999, 1999, 0, h.chunkDiskMapper)
 	require.True(t, ok, "series append failed")
-	assert.False(t, chunkCreated, "chunks was created")
+	require.False(t, chunkCreated, "chunks was created")
 
 	idx := h.indexRange(0, 1500)
 	var (
@@ -1084,7 +1084,7 @@ func TestGCSeriesAccess(t *testing.T) {
 	require.True(t, chunkCreated, "chunks was not created")
 	ok, chunkCreated = s.append(999, 999, 0, h.chunkDiskMapper)
 	require.True(t, ok, "series append failed")
-	assert.False(t, chunkCreated, "chunks was created")
+	require.False(t, chunkCreated, "chunks was created")
 
 	// A new chunks should be created here as it's beyond the chunk range.
 	ok, chunkCreated = s.append(1000, 1000, 0, h.chunkDiskMapper)
@@ -1092,7 +1092,7 @@ func TestGCSeriesAccess(t *testing.T) {
 	require.True(t, chunkCreated, "chunks was not created")
 	ok, chunkCreated = s.append(1999, 1999, 0, h.chunkDiskMapper)
 	require.True(t, ok, "series append failed")
-	assert.False(t, chunkCreated, "chunks was created")
+	require.False(t, chunkCreated, "chunks was created")
 
 	idx := h.indexRange(0, 2000)
 	var (
@@ -1334,7 +1334,7 @@ func TestHeadReadWriterRepair(t *testing.T) {
 			require.True(t, chunkCreated, "chunk was not created")
 			ok, chunkCreated = s.append(int64(i*chunkRange)+chunkRange-1, float64(i*chunkRange), 0, h.chunkDiskMapper)
 			require.True(t, ok, "series append failed")
-			assert.False(t, chunkCreated, "chunk was created")
+			require.False(t, chunkCreated, "chunk was created")
 			require.NoError(t, h.chunkDiskMapper.CutNewFile())
 		}
 		require.NoError(t, h.Close())
@@ -1733,7 +1733,7 @@ func TestOutOfOrderSamplesMetric(t *testing.T) {
 
 	require.Equal(t, int64(math.MinInt64), db.head.minValidTime.Load())
 	require.NoError(t, db.Compact())
-	assert.Greater(t, db.head.minValidTime.Load(), int64(0))
+	require.Greater(t, db.head.minValidTime.Load(), int64(0))
 
 	app = db.Appender(ctx)
 	_, err = app.Add(labels.FromStrings("a", "b"), db.head.minValidTime.Load()-2, 99)

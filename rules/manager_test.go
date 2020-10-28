@@ -180,7 +180,7 @@ func TestAlertingRule(t *testing.T) {
 		require.Equal(t, test.result, filteredRes)
 
 		for _, aa := range rule.ActiveAlerts() {
-			assert.Zero(t, aa.Labels.Get(model.MetricNameLabel), "%s label set on active alert: %s", model.MetricNameLabel, aa.Labels)
+			require.Zero(t, aa.Labels.Get(model.MetricNameLabel), "%s label set on active alert: %s", model.MetricNameLabel, aa.Labels)
 		}
 	}
 }
@@ -333,7 +333,7 @@ func TestForStateAddSamples(t *testing.T) {
 		require.Equal(t, test.result, filteredRes)
 
 		for _, aa := range rule.ActiveAlerts() {
-			assert.Zero(t, aa.Labels.Get(model.MetricNameLabel), "%s label set on active alert: %s", model.MetricNameLabel, aa.Labels)
+			require.Zero(t, aa.Labels.Get(model.MetricNameLabel), "%s label set on active alert: %s", model.MetricNameLabel, aa.Labels)
 		}
 
 	}
@@ -402,7 +402,7 @@ func TestForStateRestore(t *testing.T) {
 
 	exp := rule.ActiveAlerts()
 	for _, aa := range exp {
-		assert.Zero(t, aa.Labels.Get(model.MetricNameLabel), "%s label set on active alert: %s", model.MetricNameLabel, aa.Labels)
+		require.Zero(t, aa.Labels.Get(model.MetricNameLabel), "%s label set on active alert: %s", model.MetricNameLabel, aa.Labels)
 	}
 	sort.Slice(exp, func(i, j int) bool {
 		return labels.Compare(exp[i].Labels, exp[j].Labels) < 0
@@ -466,7 +466,7 @@ func TestForStateRestore(t *testing.T) {
 
 		got := newRule.ActiveAlerts()
 		for _, aa := range got {
-			assert.Zero(t, aa.Labels.Get(model.MetricNameLabel), "%s label set on active alert: %s", model.MetricNameLabel, aa.Labels)
+			require.Zero(t, aa.Labels.Get(model.MetricNameLabel), "%s label set on active alert: %s", model.MetricNameLabel, aa.Labels)
 		}
 		sort.Slice(got, func(i, j int) bool {
 			return labels.Compare(got[i].Labels, got[j].Labels) < 0
@@ -727,7 +727,7 @@ func TestUpdate(t *testing.T) {
 
 	err := ruleManager.Update(10*time.Second, files, nil)
 	require.NoError(t, err)
-	assert.Greater(t, len(ruleManager.groups), 0, "expected non-empty rule groups")
+	require.Greater(t, len(ruleManager.groups), 0, "expected non-empty rule groups")
 	ogs := map[string]*Group{}
 	for h, g := range ruleManager.groups {
 		g.seriesInPreviousEval = []map[string]labels.Labels{
@@ -885,7 +885,7 @@ func TestNotify(t *testing.T) {
 	// Alert sent right away
 	group.Eval(ctx, time.Unix(1, 0))
 	require.Equal(t, 1, len(lastNotified))
-	assert.NotZero(t, lastNotified[0].ValidUntil, "ValidUntil should not be zero")
+	require.NotZero(t, lastNotified[0].ValidUntil, "ValidUntil should not be zero")
 
 	// Alert is not sent 1s later
 	group.Eval(ctx, time.Unix(2, 0))

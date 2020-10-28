@@ -229,7 +229,7 @@ func TestReader_Live(t *testing.T) {
 				require.Equal(t, exp, actual, "read wrong record")
 			}
 
-			assert.False(t, reader.Next(), "unexpected record")
+			require.False(t, reader.Next(), "unexpected record")
 			if testReaderCases[i].fail {
 				require.Error(t, reader.Err())
 			}
@@ -341,7 +341,7 @@ func TestReaderFuzz(t *testing.T) {
 					require.True(t, reader.Next(), "expected record: %v", reader.Err())
 					require.Equal(t, expected, reader.Record(), "read wrong record")
 				}
-				assert.False(t, reader.Next(), "unexpected record")
+				require.False(t, reader.Next(), "unexpected record")
 			})
 		}
 	}
@@ -473,7 +473,7 @@ func TestLiveReaderCorrupt_ShortFile(t *testing.T) {
 	defer seg.Close()
 
 	r := NewLiveReader(logger, nil, seg)
-	assert.False(t, r.Next(), "expected no records")
+	require.False(t, r.Next(), "expected no records")
 	require.Equal(t, io.EOF, r.Err(), "expected error, got: %v", r.Err())
 }
 
@@ -521,7 +521,7 @@ func TestLiveReaderCorrupt_RecordTooLongAndShort(t *testing.T) {
 	defer seg.Close()
 
 	r := NewLiveReader(logger, NewLiveReaderMetrics(nil), seg)
-	assert.False(t, r.Next(), "expected no records")
+	require.False(t, r.Next(), "expected no records")
 	require.EqualError(t, r.Err(), "record length greater than a single page: 65542 > 32768", "expected error, got: %v", r.Err())
 }
 

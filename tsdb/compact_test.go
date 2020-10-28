@@ -1150,7 +1150,7 @@ func TestDisableAutoCompactions(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	assert.Greater(t, prom_testutil.ToFloat64(db.metrics.compactionsSkipped), 0.0, "No compaction was skipped after the set timeout.")
+	require.Greater(t, prom_testutil.ToFloat64(db.metrics.compactionsSkipped), 0.0, "No compaction was skipped after the set timeout.")
 	require.Equal(t, 0, len(db.blocks))
 
 	// Enable the compaction, trigger it and check that the block is persisted.
@@ -1165,7 +1165,7 @@ func TestDisableAutoCompactions(t *testing.T) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	assert.Greater(t, len(db.Blocks()), 0, "No block was persisted after the set timeout.")
+	require.Greater(t, len(db.Blocks()), 0, "No block was persisted after the set timeout.")
 }
 
 // TestCancelCompactions ensures that when the db is closed

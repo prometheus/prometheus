@@ -2658,14 +2658,14 @@ func TestParseExpressions(t *testing.T) {
 			expr, err := ParseExpr(test.input)
 
 			// Unexpected errors are always caused by a bug.
-			assert.NotEqual(t, err, errUnexpected, "unexpected error occurred")
+			require.NotEqual(t, err, errUnexpected, "unexpected error occurred")
 
 			if !test.fail {
 				require.NoError(t, err)
 				require.Equal(t, test.expected, expr, "error on input '%s'", test.input)
 			} else {
 				require.Error(t, err)
-				assert.Contains(t, err.Error(), test.errMsg, "unexpected error on input '%s', expected '%s', got '%s'", test.input, test.errMsg, err.Error())
+				require.Contains(t, err.Error(), test.errMsg, "unexpected error on input '%s', expected '%s', got '%s'", test.input, test.errMsg, err.Error())
 
 				errorList, ok := err.(ParseErrors)
 
@@ -2803,7 +2803,7 @@ func TestParseSeries(t *testing.T) {
 		metric, vals, err := ParseSeriesDesc(test.input)
 
 		// Unexpected errors are always caused by a bug.
-		assert.NotEqual(t, err, errUnexpected, "unexpected error occurred")
+		require.NotEqual(t, err, errUnexpected, "unexpected error occurred")
 
 		if !test.fail {
 			require.NoError(t, err)

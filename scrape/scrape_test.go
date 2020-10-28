@@ -1765,7 +1765,7 @@ func TestTargetScrapeScrapeNotFound(t *testing.T) {
 	}
 
 	_, err = ts.scrape(context.Background(), ioutil.Discard)
-	assert.Contains(t, err.Error(), "404", "Expected \"404 NotFound\" error but got: %s", err)
+	require.Contains(t, err.Error(), "404", "Expected \"404 NotFound\" error but got: %s", err)
 }
 
 // testScraper implements the scraper interface and allows setting values
@@ -2120,7 +2120,7 @@ func TestReuseScrapeCache(t *testing.T) {
 			if s.keep {
 				require.Equal(t, initCacheAddr[fp], newCacheAddr, "step %d: old cache and new cache are not the same", i)
 			} else {
-				assert.NotEqual(t, initCacheAddr[fp], newCacheAddr, "step %d: old cache and new cache are the same", i)
+				require.NotEqual(t, initCacheAddr[fp], newCacheAddr, "step %d: old cache and new cache are the same", i)
 			}
 		}
 		initCacheAddr = cacheAddr(sp)

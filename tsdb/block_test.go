@@ -51,7 +51,7 @@ func TestBlockMetaMustNeverBeVersion2(t *testing.T) {
 
 	meta, _, err := readMetaFile(dir)
 	require.NoError(t, err)
-	assert.NotEqual(t, 2, meta.Version, "meta.json version must never be 2")
+	require.NotEqual(t, 2, meta.Version, "meta.json version must never be 2")
 }
 
 func TestSetCompactionFailed(t *testing.T) {
@@ -181,7 +181,7 @@ func TestCorruptedChunk(t *testing.T) {
 			blockDir := createBlock(t, tmpdir, []storage.Series{series})
 			files, err := sequenceFiles(chunkDir(blockDir))
 			require.NoError(t, err)
-			assert.Greater(t, len(files), 0, "No chunk created.")
+			require.Greater(t, len(files), 0, "No chunk created.")
 
 			f, err := os.OpenFile(files[0], os.O_RDWR, 0666)
 			require.NoError(t, err)
@@ -244,7 +244,7 @@ func TestBlockSize(t *testing.T) {
 	{
 		require.NoError(t, blockInit.Delete(1, 10, labels.MustNewMatcher(labels.MatchRegexp, "", ".*")))
 		expAfterDelete := blockInit.Size()
-		assert.Greater(t, expAfterDelete, expSizeInit, "after a delete the block size should be bigger as the tombstone file should grow %v > %v", expAfterDelete, expSizeInit)
+		require.Greater(t, expAfterDelete, expSizeInit, "after a delete the block size should be bigger as the tombstone file should grow %v > %v", expAfterDelete, expSizeInit)
 		actAfterDelete, err := fileutil.DirSize(blockDirInit)
 		require.NoError(t, err)
 		require.Equal(t, expAfterDelete, actAfterDelete, "after a delete reported block size doesn't match actual disk size")
@@ -261,7 +261,7 @@ func TestBlockSize(t *testing.T) {
 		expAfterCompact := blockAfterCompact.Size()
 		actAfterCompact, err := fileutil.DirSize(blockAfterCompact.Dir())
 		require.NoError(t, err)
-		assert.Greater(t, actAfterDelete, actAfterCompact, "after a delete and compaction the block size should be smaller %v,%v", actAfterDelete, actAfterCompact)
+		require.Greater(t, actAfterDelete, actAfterCompact, "after a delete and compaction the block size should be smaller %v,%v", actAfterDelete, actAfterCompact)
 		require.Equal(t, expAfterCompact, actAfterCompact, "after a delete and compaction reported block size doesn't match actual disk size")
 	}
 }

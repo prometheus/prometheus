@@ -226,7 +226,7 @@ func TestChunkDiskMapper_Truncate(t *testing.T) {
 	hrw, err = NewChunkDiskMapper(dir, chunkenc.NewPool())
 	require.NoError(t, err)
 
-	assert.False(t, hrw.fileMaxtSet)
+	require.False(t, hrw.fileMaxtSet)
 	require.NoError(t, hrw.IterateAllChunks(func(_, _ uint64, _, _ int64, _ uint16) error { return nil }))
 	require.True(t, hrw.fileMaxtSet)
 
@@ -396,14 +396,14 @@ func TestHeadReadWriter_ReadRepairOnEmptyLastFile(t *testing.T) {
 	// Open chunk disk mapper again, corrupt file should be removed.
 	hrw, err = NewChunkDiskMapper(dir, chunkenc.NewPool())
 	require.NoError(t, err)
-	assert.False(t, hrw.fileMaxtSet)
+	require.False(t, hrw.fileMaxtSet)
 	require.NoError(t, hrw.IterateAllChunks(func(_, _ uint64, _, _ int64, _ uint16) error { return nil }))
 	require.True(t, hrw.fileMaxtSet)
 
 	// Removed from memory.
 	require.Equal(t, 3, len(hrw.mmappedChunkFiles))
 	for idx := range hrw.mmappedChunkFiles {
-		assert.LessOrEqual(t, idx, lastFile, "file index is bigger than previous last file")
+		require.LessOrEqual(t, idx, lastFile, "file index is bigger than previous last file")
 	}
 
 	// Removed even from disk.
@@ -413,7 +413,7 @@ func TestHeadReadWriter_ReadRepairOnEmptyLastFile(t *testing.T) {
 	for _, fi := range files {
 		seq, err := strconv.ParseUint(fi.Name(), 10, 64)
 		require.NoError(t, err)
-		assert.LessOrEqual(t, seq, uint64(lastFile), "file index on disk is bigger than previous last file")
+		require.LessOrEqual(t, seq, uint64(lastFile), "file index on disk is bigger than previous last file")
 	}
 
 }
@@ -427,7 +427,7 @@ func testChunkDiskMapper(t *testing.T) *ChunkDiskMapper {
 
 	hrw, err := NewChunkDiskMapper(tmpdir, chunkenc.NewPool())
 	require.NoError(t, err)
-	assert.False(t, hrw.fileMaxtSet)
+	require.False(t, hrw.fileMaxtSet)
 	require.NoError(t, hrw.IterateAllChunks(func(_, _ uint64, _, _ int64, _ uint16) error { return nil }))
 	require.True(t, hrw.fileMaxtSet)
 	return hrw

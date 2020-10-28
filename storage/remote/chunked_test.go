@@ -53,7 +53,7 @@ func TestChunkedReaderCanReadFromChunkedWriter(t *testing.T) {
 	for ; i < 4; i++ {
 		msg, err := r.Next()
 		require.NoError(t, err)
-		assert.Less(t, i, len(msgs), "more messages then expected")
+		require.Less(t, i, len(msgs), "more messages then expected")
 		require.Equal(t, msgs[i], msg)
 	}
 
@@ -62,7 +62,7 @@ func TestChunkedReaderCanReadFromChunkedWriter(t *testing.T) {
 
 	msg, err := r.Next()
 	require.NoError(t, err)
-	assert.Less(t, i, len(msgs), "more messages then expected")
+	require.Less(t, i, len(msgs), "more messages then expected")
 	require.Equal(t, msgs[i], msg)
 
 	_, err = r.Next()

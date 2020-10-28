@@ -87,7 +87,7 @@ func TestTritonSDNew(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, td)
 	require.NotNil(t, td.client)
-	assert.NotZero(t, td.interval)
+	require.NotZero(t, td.interval)
 	require.NotNil(t, td.sdConfig)
 	require.Equal(t, conf.Account, td.sdConfig.Account)
 	require.Equal(t, conf.DNSSuffix, td.sdConfig.DNSSuffix)
@@ -106,7 +106,7 @@ func TestTritonSDNewGroupsConfig(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, td)
 	require.NotNil(t, td.client)
-	assert.NotZero(t, td.interval)
+	require.NotZero(t, td.interval)
 	require.NotNil(t, td.sdConfig)
 	require.Equal(t, groupsconf.Account, td.sdConfig.Account)
 	require.Equal(t, groupsconf.DNSSuffix, td.sdConfig.DNSSuffix)
@@ -120,8 +120,8 @@ func TestTritonSDNewCNConfig(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, td)
 	require.NotNil(t, td.client)
-	assert.NotZero(t, td.interval)
-	assert.NotZero(t, td.sdConfig)
+	require.NotZero(t, td.interval)
+	require.NotZero(t, td.sdConfig)
 	require.Equal(t, cnconf.Role, td.sdConfig.Role)
 	require.Equal(t, cnconf.Account, td.sdConfig.Account)
 	require.Equal(t, cnconf.DNSSuffix, td.sdConfig.DNSSuffix)
@@ -234,12 +234,12 @@ func testTritonSDRefresh(t *testing.T, c SDConfig, dstr string) []model.LabelSet
 
 	host, strport, err := net.SplitHostPort(u.Host)
 	require.NoError(t, err)
-	assert.NotEmpty(t, host)
-	assert.NotEmpty(t, strport)
+	require.NotEmpty(t, host)
+	require.NotEmpty(t, strport)
 
 	port, err := strconv.Atoi(strport)
 	require.NoError(t, err)
-	assert.NotZero(t, port)
+	require.NotZero(t, port)
 
 	td.sdConfig.Port = port
 

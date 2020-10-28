@@ -136,7 +136,7 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 					ss := querier.Select(false, nil, matchers...)
 					require.True(t, ss.Next())
 					storageSeries := ss.At()
-					assert.False(t, ss.Next(), "Expecting only 1 series")
+					require.False(t, ss.Next(), "Expecting only 1 series")
 
 					// Convert `storage.Series` to `promql.Series`.
 					got := Series{

@@ -140,7 +140,7 @@ func TestConcreteSeriesSet(t *testing.T) {
 	require.Equal(t, series1, c.At(), "Unexpected series returned.")
 	require.True(t, c.Next(), "Expected Next() to be true.")
 	require.Equal(t, series2, c.At(), "Unexpected series returned.")
-	assert.False(t, c.Next(), "Expected Next() to be false.")
+	require.False(t, c.Next(), "Expected Next() to be false.")
 }
 
 func TestConcreteSeriesClonesLabels(t *testing.T) {

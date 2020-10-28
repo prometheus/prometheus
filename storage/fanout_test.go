@@ -174,7 +174,7 @@ func TestFanoutErrors(t *testing.T) {
 			}
 
 			if tc.warning != nil {
-				assert.Greater(t, len(ss.Warnings()), 0, "warnings expected")
+				require.Greater(t, len(ss.Warnings()), 0, "warnings expected")
 				require.Error(t, ss.Warnings()[0])
 				require.Equal(t, tc.warning.Error(), ss.Warnings()[0].Error())
 			}
@@ -199,7 +199,7 @@ func TestFanoutErrors(t *testing.T) {
 			}
 
 			if tc.warning != nil {
-				assert.Greater(t, len(ss.Warnings()), 0, "warnings expected")
+				require.Greater(t, len(ss.Warnings()), 0, "warnings expected")
 				require.Error(t, ss.Warnings()[0])
 				require.Equal(t, tc.warning.Error(), ss.Warnings()[0].Error())
 			}

@@ -557,7 +557,7 @@ func TestRemovedNextStackoverflow(t *testing.T) {
 	}
 
 	require.NoError(t, rp.Err())
-	assert.False(t, gotElem)
+	require.False(t, gotElem)
 }
 
 func TestRemovedPostingsSeek(t *testing.T) {
@@ -668,7 +668,7 @@ func TestBigEndian(t *testing.T) {
 			require.Equal(t, uint64(ls[i]), bep.At())
 		}
 
-		assert.False(t, bep.Next())
+		require.False(t, bep.Next())
 		require.NoError(t, bep.Err())
 	})
 

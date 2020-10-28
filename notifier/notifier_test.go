@@ -201,7 +201,7 @@ func TestHandlerSendAll(t *testing.T) {
 	checkNoErr()
 
 	status2.Store(int32(http.StatusInternalServerError))
-	assert.False(t, h.sendAll(h.queue...), "all sends succeeded unexpectedly")
+	require.False(t, h.sendAll(h.queue...), "all sends succeeded unexpectedly")
 	checkNoErr()
 }
 

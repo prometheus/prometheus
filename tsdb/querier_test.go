@@ -1018,7 +1018,7 @@ func TestDeletedIterator(t *testing.T) {
 				}
 			}
 
-			assert.Less(t, i, int64(1000))
+			require.Less(t, i, int64(1000))
 
 			ts, v := it.At()
 			require.Equal(t, act[i].t, ts)
@@ -1033,7 +1033,7 @@ func TestDeletedIterator(t *testing.T) {
 			}
 		}
 
-		assert.GreaterOrEqual(t, i, int64(1000))
+		require.GreaterOrEqual(t, i, int64(1000))
 		require.NoError(t, it.Err())
 	}
 }

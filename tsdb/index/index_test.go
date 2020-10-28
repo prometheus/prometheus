@@ -449,7 +449,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 			require.Equal(t, explset, lset)
 			require.Equal(t, expchks, chks)
 		}
-		assert.False(t, expp.Next(), "Expected no more postings for %q=%q", p.Name, p.Value)
+		require.False(t, expp.Next(), "Expected no more postings for %q=%q", p.Name, p.Value)
 		require.NoError(t, gotp.Err())
 	}
 

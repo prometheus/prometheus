@@ -763,7 +763,7 @@ func TestElideSecrets(t *testing.T) {
 
 	matches := secretRe.FindAllStringIndex(yamlConfig, -1)
 	require.Equal(t, 10, len(matches), "wrong number of secret matches found")
-	assert.NotContains(t, yamlConfig, "mysecret",
+	require.NotContains(t, yamlConfig, "mysecret",
 		"yaml marshal reveals authentication credentials.")
 }
 
@@ -1026,7 +1026,7 @@ func TestBadConfigs(t *testing.T) {
 	for _, ee := range expectedErrors {
 		_, err := LoadFile("testdata/" + ee.filename)
 		require.Error(t, err, "%s", ee.filename)
-		assert.Contains(t, err.Error(), ee.errMsg,
+		require.Contains(t, err.Error(), ee.errMsg,
 			"Expected error for %s to contain %q but got: %s", ee.filename, ee.errMsg, err)
 	}
 }

@@ -719,7 +719,7 @@ Outer:
 		})
 
 		if len(expSamples) == 0 {
-			assert.False(t, res.Next())
+			require.False(t, res.Next())
 			continue
 		}
 
@@ -948,7 +948,7 @@ func TestWALSegmentSizeOptions(t *testing.T) {
 				require.Equal(t, int64(DefaultOptions().WALSegmentSize), f.Size(), "WAL file size doesn't match WALSegmentSize option, filename: %v", f.Name())
 			}
 			lastFile := files[len(files)-1]
-			assert.Greater(t, int64(DefaultOptions().WALSegmentSize), lastFile.Size(), "last WAL file size is not smaller than the WALSegmentSize option, filename: %v", lastFile.Name())
+			require.Greater(t, int64(DefaultOptions().WALSegmentSize), lastFile.Size(), "last WAL file size is not smaller than the WALSegmentSize option, filename: %v", lastFile.Name())
 		},
 		// Custom Wal Size.
 		2 * 32 * 1024: func(dbDir string, segmentSize int) {
@@ -960,13 +960,13 @@ func TestWALSegmentSizeOptions(t *testing.T) {
 					files = append(files, f)
 				}
 			}
-			assert.Greater(t, len(files), 1, "current WALSegmentSize should result in more than a single WAL file.")
+			require.Greater(t, len(files), 1, "current WALSegmentSize should result in more than a single WAL file.")
 			// All the full segment files (all but the last) should match the segment size option.
 			for _, f := range files[:len(files)-1] {
 				require.Equal(t, int64(segmentSize), f.Size(), "WAL file size doesn't match WALSegmentSize option, filename: %v", f.Name())
 			}
 			lastFile := files[len(files)-1]
-			assert.Greater(t, int64(segmentSize), lastFile.Size(), "last WAL file size is not smaller than the WALSegmentSize option, filename: %v", lastFile.Name())
+			require.Greater(t, int64(segmentSize), lastFile.Size(), "last WAL file size is not smaller than the WALSegmentSize option, filename: %v", lastFile.Name())
 		},
 		// Wal disabled.
 		-1: func(dbDir string, segmentSize int) {
@@ -1069,7 +1069,7 @@ func TestTombstoneClean(t *testing.T) {
 		})
 
 		if len(expSamples) == 0 {
-			assert.False(t, res.Next())
+			require.False(t, res.Next())
 			continue
 		}
 
@@ -1251,8 +1251,8 @@ func TestSizeRetention(t *testing.T) {
 	require.NoError(t, headApp.Commit())
 
 	// Test that registered size matches the actual disk size.
-	require.NoError(t, db.reloadBlocks())                                // Reload the db to register the new db size.
-	require.Equal(t, len(blocks), len(db.Blocks()))                      // Ensure all blocks are registered.
+	require.NoError(t, db.reloadBlocks())                               // Reload the db to register the new db size.
+	require.Equal(t, len(blocks), len(db.Blocks()))                     // Ensure all blocks are registered.
 	blockSize := int64(prom_testutil.ToFloat64(db.metrics.blocksBytes)) // Use the actual internal metrics.
 	walSize, err := db.Head().wal.Size()
 	require.NoError(t, err)
@@ -1279,7 +1279,7 @@ func TestSizeRetention(t *testing.T) {
 	// Check total size, total count and check that the oldest block was deleted.
 	firstBlockSize := db.Blocks()[0].Size()
 	sizeLimit := actSize - firstBlockSize
-	db.opts.MaxBytes = sizeLimit         // Set the new db size limit one block smaller that the actual size.
+	db.opts.MaxBytes = sizeLimit          // Set the new db size limit one block smaller that the actual size.
 	require.NoError(t, db.reloadBlocks()) // Reload the db to register the new db size.
 
 	expBlocks := blocks[1:]
@@ -1295,7 +1295,7 @@ func TestSizeRetention(t *testing.T) {
 
 	require.Equal(t, 1, actRetentionCount, "metric retention count mismatch")
 	require.Equal(t, actSize, expSize, "metric db size doesn't match actual disk size")
-	assert.LessOrEqual(t, expSize, sizeLimit, "actual size (%v) is expected to be less than or equal to limit (%v)", expSize, sizeLimit)
+	require.LessOrEqual(t, expSize, sizeLimit, "actual size (%v) is expected to be less than or equal to limit (%v)", expSize, sizeLimit)
 	require.Equal(t, len(blocks)-1, len(actBlocks), "new block count should be decreased from:%v to:%v", len(blocks), len(blocks)-1)
 	require.Equal(t, expBlocks[0].MaxTime, actBlocks[0].meta.MaxTime, "maxT mismatch of the first block")
 	require.Equal(t, expBlocks[len(expBlocks)-1].MaxTime, actBlocks[len(actBlocks)-1].meta.MaxTime, "maxT mismatch of the last block")
@@ -1592,7 +1592,7 @@ func TestQuerierWithBoundaryChunks(t *testing.T) {
 	err = db.Compact()
 	require.NoError(t, err)
 
-	assert.GreaterOrEqual(t, len(db.blocks), 3, "invalid test, less than three blocks in DB")
+	require.GreaterOrEqual(t, len(db.blocks), 3, "invalid test, less than three blocks in DB")
 
 	q, err := db.Querier(context.TODO(), blockRange, 2*blockRange)
 	require.NoError(t, err)
@@ -2120,7 +2120,7 @@ func TestDBReadOnly(t *testing.T) {
 		expBlocks = dbWritable.Blocks()
 		expDbSize, err := fileutil.DirSize(dbWritable.Dir())
 		require.NoError(t, err)
-		assert.Greater(t, expDbSize, dbSizeBeforeAppend, "db size didn't increase after an append")
+		require.Greater(t, expDbSize, dbSizeBeforeAppend, "db size didn't increase after an append")
 
 		q, err := dbWritable.Querier(context.TODO(), math.MinInt64, math.MaxInt64)
 		require.NoError(t, err)
@@ -2559,7 +2559,7 @@ func TestChunkWriter_ReadAfterWrite(t *testing.T) {
 			for i, f := range files {
 				size := int(f.Size())
 				// Verify that the segment is the same or smaller than the expected size.
-				assert.GreaterOrEqual(t, chunks.SegmentHeaderSize+test.expSegmentSizes[i], size, "Segment:%v should NOT be bigger than:%v actual:%v", i, chunks.SegmentHeaderSize+test.expSegmentSizes[i], size)
+				require.GreaterOrEqual(t, chunks.SegmentHeaderSize+test.expSegmentSizes[i], size, "Segment:%v should NOT be bigger than:%v actual:%v", i, chunks.SegmentHeaderSize+test.expSegmentSizes[i], size)
 
 				sizeAct += size
 			}

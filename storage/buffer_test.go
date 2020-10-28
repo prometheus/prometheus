@@ -77,9 +77,9 @@ func TestSampleRing(t *testing.T) {
 				}
 
 				if found {
-					assert.GreaterOrEqual(t, sold.t, s.t-c.delta, "%d: unexpected sample %d in buffer; buffer %v", i, sold.t, buffered)
+					require.GreaterOrEqual(t, sold.t, s.t-c.delta, "%d: unexpected sample %d in buffer; buffer %v", i, sold.t, buffered)
 				} else {
-					assert.Less(t, sold.t, s.t-c.delta, "%d: expected sample %d to be in buffer but was not; buffer %v", i, sold.t, buffered)
+					require.Less(t, sold.t, s.t-c.delta, "%d: expected sample %d to be in buffer but was not; buffer %v", i, sold.t, buffered)
 				}
 			}
 		}
@@ -137,7 +137,7 @@ func TestBufferedSeriesIterator(t *testing.T) {
 	sampleEq(101, 10)
 	bufferEq([]sample{{t: 99, v: 8}, {t: 100, v: 9}})
 
-	assert.False(t, it.Next(), "next succeeded unexpectedly")
+	require.False(t, it.Next(), "next succeeded unexpectedly")
 }
 
 // At() should not be called once Next() returns false.
@@ -147,7 +147,7 @@ func TestBufferedSeriesIteratorNoBadAt(t *testing.T) {
 	m := &mockSeriesIterator{
 		seek: func(int64) bool { return false },
 		at: func() (int64, float64) {
-			assert.False(t, done, "unexpectedly done")
+			require.False(t, done, "unexpectedly done")
 			done = true
 			return 0, 0
 		},

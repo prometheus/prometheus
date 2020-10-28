@@ -387,7 +387,7 @@ func TestLabels_FromStrings(t *testing.T) {
 
 	require.Equal(t, expected, labels, "unexpected labelset")
 
-	assert.Panics(t, func() { FromStrings("aaa", "111", "bbb") })
+	require.Panics(t, func() { FromStrings("aaa", "111", "bbb") })
 }
 
 func TestLabels_Compare(t *testing.T) {
@@ -637,8 +637,8 @@ func TestLabels_Hash(t *testing.T) {
 		{Name: "baz", Value: "qux"},
 	}
 	require.Equal(t, lbls.Hash(), lbls.Hash())
-	assert.NotEqual(t, lbls.Hash(), Labels{lbls[1], lbls[0]}.Hash(), "unordered labels match.")
-	assert.NotEqual(t, lbls.Hash(), Labels{lbls[0]}.Hash(), "different labels match.")
+	require.NotEqual(t, lbls.Hash(), Labels{lbls[1], lbls[0]}.Hash(), "unordered labels match.")
+	require.NotEqual(t, lbls.Hash(), Labels{lbls[0]}.Hash(), "different labels match.")
 }
 
 var benchmarkLabelsResult uint64
