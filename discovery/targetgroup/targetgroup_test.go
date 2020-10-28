@@ -18,7 +18,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/common/model"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
 )
 
@@ -53,8 +53,8 @@ func TestTargetGroupStrictJsonUnmarshal(t *testing.T) {
 	for _, test := range tests {
 		tg := Group{}
 		actual := tg.UnmarshalJSON([]byte(test.json))
-		assert.Equal(t, test.expectedReply, actual)
-		assert.Equal(t, test.expectedGroup, tg)
+		require.Equal(t, test.expectedReply, actual)
+		require.Equal(t, test.expectedGroup, tg)
 	}
 
 }
@@ -92,8 +92,8 @@ func TestTargetGroupYamlMarshal(t *testing.T) {
 
 	for _, test := range tests {
 		actual, err := test.group.MarshalYAML()
-		assert.Equal(t, test.expectedErr, err)
-		assert.Equal(t, test.expectedYaml, string(marshal(actual)))
+		require.Equal(t, test.expectedErr, err)
+		require.Equal(t, test.expectedYaml, string(marshal(actual)))
 	}
 }
 
@@ -132,8 +132,8 @@ func TestTargetGroupYamlUnmarshal(t *testing.T) {
 	for _, test := range tests {
 		tg := Group{}
 		actual := tg.UnmarshalYAML(unmarshal([]byte(test.yaml)))
-		assert.Equal(t, test.expectedReply, actual)
-		assert.Equal(t, test.expectedGroup, tg)
+		require.Equal(t, test.expectedReply, actual)
+		require.Equal(t, test.expectedGroup, tg)
 	}
 
 }
@@ -150,7 +150,7 @@ func TestString(t *testing.T) {
 		Group{Targets: []model.LabelSet{},
 			Source: "<source>",
 			Labels: model.LabelSet{}}
-	assert.Equal(t, "<source>", group1.String())
-	assert.Equal(t, "<source>", group2.String())
-	assert.Equal(t, group1.String(), group2.String())
+	require.Equal(t, "<source>", group1.String())
+	require.Equal(t, "<source>", group2.String())
+	require.Equal(t, group1.String(), group2.String())
 }

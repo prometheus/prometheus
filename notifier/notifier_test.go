@@ -29,7 +29,7 @@ import (
 	"github.com/prometheus/alertmanager/api/v2/models"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 	yaml "gopkg.in/yaml.v2"
 
@@ -65,7 +65,7 @@ func TestPostPath(t *testing.T) {
 		},
 	}
 	for _, c := range cases {
-		assert.Equal(t, c.out, postPath(c.in, config.AlertmanagerAPIVersionV1))
+		require.Equal(t, c.out, postPath(c.in, config.AlertmanagerAPIVersionV1))
 	}
 }
 
@@ -80,10 +80,10 @@ func TestHandlerNextBatch(t *testing.T) {
 
 	expected := append([]*Alert{}, h.queue...)
 
-	assert.NoError(t, alertsEqual(expected[0:maxBatchSize], h.nextBatch()))
-	assert.NoError(t, alertsEqual(expected[maxBatchSize:2*maxBatchSize], h.nextBatch()))
-	assert.NoError(t, alertsEqual(expected[2*maxBatchSize:], h.nextBatch()))
-	assert.Equal(t, 0, len(h.queue), "Expected queue to be empty but got %d alerts", len(h.queue))
+	require.NoError(t, alertsEqual(expected[0:maxBatchSize], h.nextBatch()))
+	require.NoError(t, alertsEqual(expected[maxBatchSize:2*maxBatchSize], h.nextBatch()))
+	require.NoError(t, alertsEqual(expected[2*maxBatchSize:], h.nextBatch()))
+	require.Equal(t, 0, len(h.queue), "Expected queue to be empty but got %d alerts", len(h.queue))
 }
 
 func alertsEqual(a, b []*Alert) error {
@@ -188,16 +188,16 @@ func TestHandlerSendAll(t *testing.T) {
 		t.Helper()
 		select {
 		case err := <-errc:
-			assert.NoError(t, err)
+			require.NoError(t, err)
 		default:
 		}
 	}
 
-	assert.True(t, h.sendAll(h.queue...), "all sends failed unexpectedly")
+	require.True(t, h.sendAll(h.queue...), "all sends failed unexpectedly")
 	checkNoErr()
 
 	status1.Store(int32(http.StatusNotFound))
-	assert.True(t, h.sendAll(h.queue...), "all sends failed unexpectedly")
+	require.True(t, h.sendAll(h.queue...), "all sends failed unexpectedly")
 	checkNoErr()
 
 	status2.Store(int32(http.StatusInternalServerError))
@@ -215,11 +215,11 @@ func TestCustomDo(t *testing.T) {
 			received = true
 			body, err := ioutil.ReadAll(req.Body)
 
-			assert.NoError(t, err)
+			require.NoError(t, err)
 
-			assert.Equal(t, testBody, string(body))
+			require.Equal(t, testBody, string(body))
 
-			assert.Equal(t, testURL, req.URL.String())
+			require.Equal(t, testURL, req.URL.String())
 
 			return &http.Response{
 				Body: ioutil.NopCloser(bytes.NewBuffer(nil)),
@@ -229,7 +229,7 @@ func TestCustomDo(t *testing.T) {
 
 	h.sendOne(context.Background(), nil, testURL, []byte(testBody))
 
-	assert.True(t, received, "Expected to receive an alert, but didn't")
+	require.True(t, received, "Expected to receive an alert, but didn't")
 }
 
 func TestExternalLabels(t *testing.T) {
@@ -263,7 +263,7 @@ func TestExternalLabels(t *testing.T) {
 		{Labels: labels.FromStrings("alertname", "externalrelabelthis", "a", "c")},
 	}
 
-	assert.NoError(t, alertsEqual(expected, h.queue))
+	require.NoError(t, alertsEqual(expected, h.queue))
 }
 
 func TestHandlerRelabel(t *testing.T) {
@@ -299,7 +299,7 @@ func TestHandlerRelabel(t *testing.T) {
 		{Labels: labels.FromStrings("alertname", "renamed")},
 	}
 
-	assert.NoError(t, alertsEqual(expected, h.queue))
+	require.NoError(t, alertsEqual(expected, h.queue))
 }
 
 func TestHandlerQueuing(t *testing.T) {
@@ -375,7 +375,7 @@ func TestHandlerQueuing(t *testing.T) {
 			case <-called:
 				expectedc <- expected
 			case err := <-errc:
-				assert.NoError(t, err)
+				require.NoError(t, err)
 				return
 			case <-time.After(5 * time.Second):
 				t.Fatalf("Alerts were not pushed")
@@ -408,7 +408,7 @@ func TestHandlerQueuing(t *testing.T) {
 	expectedc <- alerts[:maxBatchSize]
 	select {
 	case err := <-errc:
-		assert.NoError(t, err)
+		require.NoError(t, err)
 	case <-time.After(5 * time.Second):
 		t.Fatalf("Alerts were not pushed")
 	}
@@ -435,10 +435,10 @@ func TestLabelSetNotReused(t *testing.T) {
 	tg := makeInputTargetGroup()
 	_, _, err := alertmanagerFromGroup(tg, &config.AlertmanagerConfig{})
 
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	// Target modified during alertmanager extraction
-	assert.Equal(t, tg, makeInputTargetGroup())
+	require.Equal(t, tg, makeInputTargetGroup())
 }
 
 func TestReload(t *testing.T) {
@@ -469,7 +469,7 @@ alerting:
 	if err := yaml.UnmarshalStrict([]byte(s), cfg); err != nil {
 		t.Fatalf("Unable to load YAML config: %s", err)
 	}
-	assert.Equal(t, 1, len(cfg.AlertingConfig.AlertmanagerConfigs))
+	require.Equal(t, 1, len(cfg.AlertingConfig.AlertmanagerConfigs))
 
 	if err := n.ApplyConfig(cfg); err != nil {
 		t.Fatalf("Error Applying the config:%v", err)
@@ -486,7 +486,7 @@ alerting:
 		n.reload(tgs)
 		res := n.Alertmanagers()[0].String()
 
-		assert.Equal(t, tt.out, res)
+		require.Equal(t, tt.out, res)
 	}
 
 }
@@ -523,7 +523,7 @@ alerting:
 	if err := yaml.UnmarshalStrict([]byte(s), cfg); err != nil {
 		t.Fatalf("Unable to load YAML config: %s", err)
 	}
-	assert.Equal(t, 1, len(cfg.AlertingConfig.AlertmanagerConfigs))
+	require.Equal(t, 1, len(cfg.AlertingConfig.AlertmanagerConfigs))
 
 	if err := n.ApplyConfig(cfg); err != nil {
 		t.Fatalf("Error Applying the config:%v", err)
@@ -541,7 +541,7 @@ alerting:
 		n.reload(tgs)
 		res := n.DroppedAlertmanagers()[0].String()
 
-		assert.Equal(t, res, tt.out)
+		require.Equal(t, res, tt.out)
 	}
 }
 
@@ -561,5 +561,5 @@ func makeInputTargetGroup() *targetgroup.Group {
 }
 
 func TestLabelsToOpenAPILabelSet(t *testing.T) {
-	assert.Equal(t, models.LabelSet{"aaa": "111", "bbb": "222"}, labelsToOpenAPILabelSet(labels.Labels{{Name: "aaa", Value: "111"}, {Name: "bbb", Value: "222"}}))
+	require.Equal(t, models.LabelSet{"aaa": "111", "bbb": "222"}, labelsToOpenAPILabelSet(labels.Labels{{Name: "aaa", Value: "111"}, {Name: "bbb", Value: "222"}}))
 }

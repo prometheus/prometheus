@@ -41,7 +41,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promlog"
 	"github.com/prometheus/common/route"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/gate"
@@ -309,10 +309,10 @@ func TestEndpoints(t *testing.T) {
 			test_metric4{foo="boo", dup="1"} 1+0x100
 			test_metric4{foo="boo"} 1+0x100
 	`)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer suite.Close()
 
-	assert.NoError(t, suite.Run())
+	require.NoError(t, suite.Run())
 
 	now := time.Now()
 
@@ -349,13 +349,13 @@ func TestEndpoints(t *testing.T) {
 		defer server.Close()
 
 		u, err := url.Parse(server.URL)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		al := promlog.AllowedLevel{}
-		assert.NoError(t, al.Set("debug"))
+		require.NoError(t, al.Set("debug"))
 
 		af := promlog.AllowedFormat{}
-		assert.NoError(t, af.Set("logfmt"))
+		require.NoError(t, af.Set("logfmt"))
 
 		promlogConfig := promlog.Config{
 			Level:  &al,
@@ -363,7 +363,7 @@ func TestEndpoints(t *testing.T) {
 		}
 
 		dbDir, err := ioutil.TempDir("", "tsdb-api-ready")
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		defer os.RemoveAll(dbDir)
 
 		remote := remote.NewStorage(promlog.New(&promlogConfig), prometheus.DefaultRegisterer, nil, dbDir, 1*time.Second)
@@ -377,7 +377,7 @@ func TestEndpoints(t *testing.T) {
 				},
 			},
 		})
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		var algr rulesRetrieverMock
 		algr.testing = t
@@ -415,9 +415,9 @@ func TestLabelNames(t *testing.T) {
 			test_metric2{foo="boo"} 1+0x100
 			test_metric2{foo="boo", xyz="qwerty"} 1+0x100
 	`)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer suite.Close()
-	assert.NoError(t, suite.Run())
+	require.NoError(t, suite.Run())
 
 	api := &API{
 		Queryable: suite.Storage(),
@@ -433,7 +433,7 @@ func TestLabelNames(t *testing.T) {
 	for _, method := range []string{http.MethodGet, http.MethodPost} {
 		ctx := context.Background()
 		req, err := request(method)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		res := api.labelNames(req.WithContext(ctx))
 		assertAPIError(t, res.err, "")
 		assertAPIResponse(t, res.data, []string{"__name__", "baz", "foo", "foo1", "foo2", "xyz"})
@@ -1784,7 +1784,7 @@ func assertAPIError(t *testing.T, got *apiError, exp errorType) {
 func assertAPIResponse(t *testing.T, got interface{}, exp interface{}) {
 	t.Helper()
 
-	assert.Equal(t, exp, got)
+	require.Equal(t, exp, got)
 }
 
 func assertAPIResponseLength(t *testing.T, got interface{}, expLen int) {
@@ -1805,12 +1805,12 @@ func TestSampledReadEndpoint(t *testing.T) {
 		load 1m
 			test_metric1{foo="bar",baz="qux"} 1
 	`)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	defer suite.Close()
 
 	err = suite.Run()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	api := &API{
 		Queryable:   suite.Storage(),
@@ -1833,21 +1833,21 @@ func TestSampledReadEndpoint(t *testing.T) {
 
 	// Encode the request.
 	matcher1, err := labels.NewMatcher(labels.MatchEqual, "__name__", "test_metric1")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	matcher2, err := labels.NewMatcher(labels.MatchEqual, "d", "e")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	query, err := remote.ToQuery(0, 1, []*labels.Matcher{matcher1, matcher2}, &storage.SelectHints{Step: 0, Func: "avg"})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	req := &prompb.ReadRequest{Queries: []*prompb.Query{query}}
 	data, err := proto.Marshal(req)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	compressed := snappy.Encode(nil, data)
 	request, err := http.NewRequest("POST", "", bytes.NewBuffer(compressed))
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	recorder := httptest.NewRecorder()
 	api.remoteRead(recorder, request)
@@ -1856,25 +1856,25 @@ func TestSampledReadEndpoint(t *testing.T) {
 		t.Fatal(recorder.Code)
 	}
 
-	assert.Equal(t, "application/x-protobuf", recorder.Result().Header.Get("Content-Type"))
-	assert.Equal(t, "snappy", recorder.Result().Header.Get("Content-Encoding"))
+	require.Equal(t, "application/x-protobuf", recorder.Result().Header.Get("Content-Type"))
+	require.Equal(t, "snappy", recorder.Result().Header.Get("Content-Encoding"))
 
 	// Decode the response.
 	compressed, err = ioutil.ReadAll(recorder.Result().Body)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	uncompressed, err := snappy.Decode(nil, compressed)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	var resp prompb.ReadResponse
 	err = proto.Unmarshal(uncompressed, &resp)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	if len(resp.Results) != 1 {
 		t.Fatalf("Expected 1 result, got %d", len(resp.Results))
 	}
 
-	assert.Equal(t, &prompb.QueryResult{
+	require.Equal(t, &prompb.QueryResult{
 		Timeseries: []*prompb.TimeSeries{
 			{
 				Labels: []prompb.Label{
@@ -1900,11 +1900,11 @@ func TestStreamReadEndpoint(t *testing.T) {
             test_metric1{foo="bar2",baz="qux"} 0+100x120
             test_metric1{foo="bar3",baz="qux"} 0+100x240
 	`)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	defer suite.Close()
 
-	assert.NoError(t, suite.Run())
+	require.NoError(t, suite.Run())
 
 	api := &API{
 		Queryable:   suite.Storage(),
@@ -1929,13 +1929,13 @@ func TestStreamReadEndpoint(t *testing.T) {
 
 	// Encode the request.
 	matcher1, err := labels.NewMatcher(labels.MatchEqual, "__name__", "test_metric1")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	matcher2, err := labels.NewMatcher(labels.MatchEqual, "d", "e")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	matcher3, err := labels.NewMatcher(labels.MatchEqual, "foo", "bar1")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	query1, err := remote.ToQuery(0, 14400001, []*labels.Matcher{matcher1, matcher2}, &storage.SelectHints{
 		Step:  1,
@@ -1943,7 +1943,7 @@ func TestStreamReadEndpoint(t *testing.T) {
 		Start: 0,
 		End:   14400001,
 	})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	query2, err := remote.ToQuery(0, 14400001, []*labels.Matcher{matcher1, matcher3}, &storage.SelectHints{
 		Step:  1,
@@ -1951,18 +1951,18 @@ func TestStreamReadEndpoint(t *testing.T) {
 		Start: 0,
 		End:   14400001,
 	})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	req := &prompb.ReadRequest{
 		Queries:               []*prompb.Query{query1, query2},
 		AcceptedResponseTypes: []prompb.ReadRequest_ResponseType{prompb.ReadRequest_STREAMED_XOR_CHUNKS},
 	}
 	data, err := proto.Marshal(req)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	compressed := snappy.Encode(nil, data)
 	request, err := http.NewRequest("POST", "", bytes.NewBuffer(compressed))
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	recorder := httptest.NewRecorder()
 	api.remoteRead(recorder, request)
@@ -1971,8 +1971,8 @@ func TestStreamReadEndpoint(t *testing.T) {
 		t.Fatal(recorder.Code)
 	}
 
-	assert.Equal(t, "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse", recorder.Result().Header.Get("Content-Type"))
-	assert.Equal(t, "", recorder.Result().Header.Get("Content-Encoding"))
+	require.Equal(t, "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse", recorder.Result().Header.Get("Content-Type"))
+	require.Equal(t, "", recorder.Result().Header.Get("Content-Encoding"))
 
 	var results []*prompb.ChunkedReadResponse
 	stream := remote.NewChunkedReader(recorder.Result().Body, remote.DefaultChunkedReadLimit, nil)
@@ -1982,7 +1982,7 @@ func TestStreamReadEndpoint(t *testing.T) {
 		if err == io.EOF {
 			break
 		}
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		results = append(results, res)
 	}
 
@@ -1990,7 +1990,7 @@ func TestStreamReadEndpoint(t *testing.T) {
 		t.Fatalf("Expected 5 result, got %d", len(results))
 	}
 
-	assert.Equal(t, []*prompb.ChunkedReadResponse{
+	require.Equal(t, []*prompb.ChunkedReadResponse{
 		{
 			ChunkedSeries: []*prompb.ChunkedSeries{
 				{
@@ -2294,7 +2294,7 @@ func TestAdminEndpoints(t *testing.T) {
 		tc := tc
 		t.Run("", func(t *testing.T) {
 			dir, _ := ioutil.TempDir("", "fakeDB")
-			defer func() { assert.NoError(t, os.RemoveAll(dir)) }()
+			defer func() { require.NoError(t, os.RemoveAll(dir)) }()
 
 			api := &API{
 				db:          tc.db,
@@ -2305,7 +2305,7 @@ func TestAdminEndpoints(t *testing.T) {
 
 			endpoint := tc.endpoint(api)
 			req, err := http.NewRequest(tc.method, fmt.Sprintf("?%s", tc.values.Encode()), nil)
-			assert.NoError(t, err)
+			require.NoError(t, err)
 
 			res := setUnavailStatusOnTSDBNotReady(endpoint(req))
 			assertAPIError(t, res.err, tc.errType)
@@ -2346,7 +2346,7 @@ func TestRespondSuccess(t *testing.T) {
 		Status: statusSuccess,
 		Data:   "test",
 	}
-	assert.Equal(t, exp, &res)
+	require.Equal(t, exp, &res)
 }
 
 func TestRespondError(t *testing.T) {
@@ -2384,7 +2384,7 @@ func TestRespondError(t *testing.T) {
 		ErrorType: errorTimeout,
 		Error:     "message",
 	}
-	assert.Equal(t, exp, &res)
+	require.Equal(t, exp, &res)
 }
 
 func TestParseTimeParam(t *testing.T) {
@@ -2394,7 +2394,7 @@ func TestParseTimeParam(t *testing.T) {
 	}
 
 	ts, err := parseTime("1582468023986")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	var tests = []struct {
 		paramName    string
@@ -2436,15 +2436,15 @@ func TestParseTimeParam(t *testing.T) {
 
 	for _, test := range tests {
 		req, err := http.NewRequest("GET", "localhost:42/foo?"+test.paramName+"="+test.paramValue, nil)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		result := test.result
 		asTime, err := parseTimeParam(req, test.paramName, test.defaultValue)
 
 		if err != nil {
-			assert.EqualError(t, err, result.asError().Error())
+			require.EqualError(t, err, result.asError().Error())
 		} else {
-			assert.True(t, asTime.Equal(result.asTime), "time as return value: %s not parsed correctly. Expected %s. Actual %s", test.paramValue, result.asTime, asTime)
+			require.True(t, asTime.Equal(result.asTime), "time as return value: %s not parsed correctly. Expected %s. Actual %s", test.paramValue, result.asTime, asTime)
 		}
 	}
 }
@@ -2756,8 +2756,8 @@ func TestReturnAPIError(t *testing.T) {
 
 	for _, c := range cases {
 		actual := returnAPIError(c.err)
-		assert.Error(t, actual)
-		assert.Equal(t, c.expected, actual.typ)
+		require.Error(t, actual)
+		require.Equal(t, c.expected, actual.typ)
 	}
 }
 

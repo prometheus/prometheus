@@ -18,7 +18,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSampleRing(t *testing.T) {
@@ -92,12 +92,12 @@ func TestBufferedSeriesIterator(t *testing.T) {
 			t, v := bit.At()
 			b = append(b, sample{t: t, v: v})
 		}
-		assert.Equal(t, exp, b)
+		require.Equal(t, exp, b)
 	}
 	sampleEq := func(ets int64, ev float64) {
 		ts, v := it.At()
-		assert.Equal(t, ets, ts)
-		assert.Equal(t, ev, v)
+		require.Equal(t, ets, ts)
+		require.Equal(t, ev, v)
 	}
 
 	it = NewBuffer(newListSeriesIterator([]sample{
@@ -111,25 +111,25 @@ func TestBufferedSeriesIterator(t *testing.T) {
 		{t: 101, v: 10},
 	}), 2)
 
-	assert.True(t, it.Seek(-123), "seek failed")
+	require.True(t, it.Seek(-123), "seek failed")
 	sampleEq(1, 2)
 	bufferEq(nil)
 
-	assert.True(t, it.Next(), "next failed")
+	require.True(t, it.Next(), "next failed")
 	sampleEq(2, 3)
 	bufferEq([]sample{{t: 1, v: 2}})
 
-	assert.True(t, it.Next(), "next failed")
-	assert.True(t, it.Next(), "next failed")
-	assert.True(t, it.Next(), "next failed")
+	require.True(t, it.Next(), "next failed")
+	require.True(t, it.Next(), "next failed")
+	require.True(t, it.Next(), "next failed")
 	sampleEq(5, 6)
 	bufferEq([]sample{{t: 2, v: 3}, {t: 3, v: 4}, {t: 4, v: 5}})
 
-	assert.True(t, it.Seek(5), "seek failed")
+	require.True(t, it.Seek(5), "seek failed")
 	sampleEq(5, 6)
 	bufferEq([]sample{{t: 2, v: 3}, {t: 3, v: 4}, {t: 4, v: 5}})
 
-	assert.True(t, it.Seek(101), "seek failed")
+	require.True(t, it.Seek(101), "seek failed")
 	sampleEq(101, 10)
 	bufferEq([]sample{{t: 99, v: 8}, {t: 100, v: 9}})
 

@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 )
@@ -110,12 +110,12 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 
 	for _, c := range cases {
 		suite, err := NewLazyLoader(t, c.loadString)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		defer suite.Close()
 
 		for _, tc := range c.testCases {
 			suite.WithSamplesTill(tc.ts, func(err error) {
-				assert.NoError(t, err)
+				require.NoError(t, err)
 				if tc.checkOnlyError {
 					return
 				}
@@ -123,18 +123,18 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 				// Check the series.
 				queryable := suite.Queryable()
 				querier, err := queryable.Querier(suite.Context(), math.MinInt64, math.MaxInt64)
-				assert.NoError(t, err)
+				require.NoError(t, err)
 				for _, s := range tc.series {
 					var matchers []*labels.Matcher
 					for _, label := range s.Metric {
 						m, err := labels.NewMatcher(labels.MatchEqual, label.Name, label.Value)
-						assert.NoError(t, err)
+						require.NoError(t, err)
 						matchers = append(matchers, m)
 					}
 
 					// Get the series for the matcher.
 					ss := querier.Select(false, nil, matchers...)
-					assert.True(t, ss.Next())
+					require.True(t, ss.Next())
 					storageSeries := ss.At()
 					assert.False(t, ss.Next(), "Expecting only 1 series")
 
@@ -147,9 +147,9 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 						t, v := it.At()
 						got.Points = append(got.Points, Point{T: t, V: v})
 					}
-					assert.NoError(t, it.Err())
+					require.NoError(t, it.Err())
 
-					assert.Equal(t, s, got)
+					require.Equal(t, s, got)
 				}
 			})
 		}

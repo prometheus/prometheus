@@ -26,7 +26,7 @@ import (
 	"testing"
 
 	"github.com/go-kit/kit/log"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -41,51 +41,51 @@ import (
 // version 3 next time to avoid confusion and issues.
 func TestBlockMetaMustNeverBeVersion2(t *testing.T) {
 	dir, err := ioutil.TempDir("", "metaversion")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer func() {
-		assert.NoError(t, os.RemoveAll(dir))
+		require.NoError(t, os.RemoveAll(dir))
 	}()
 
 	_, err = writeMetaFile(log.NewNopLogger(), dir, &BlockMeta{})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	meta, _, err := readMetaFile(dir)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.NotEqual(t, 2, meta.Version, "meta.json version must never be 2")
 }
 
 func TestSetCompactionFailed(t *testing.T) {
 	tmpdir, err := ioutil.TempDir("", "test")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer func() {
-		assert.NoError(t, os.RemoveAll(tmpdir))
+		require.NoError(t, os.RemoveAll(tmpdir))
 	}()
 
 	blockDir := createBlock(t, tmpdir, genSeries(1, 1, 0, 1))
 	b, err := OpenBlock(nil, blockDir, nil)
-	assert.NoError(t, err)
-	assert.Equal(t, false, b.meta.Compaction.Failed)
-	assert.NoError(t, b.setCompactionFailed())
-	assert.Equal(t, true, b.meta.Compaction.Failed)
-	assert.NoError(t, b.Close())
+	require.NoError(t, err)
+	require.Equal(t, false, b.meta.Compaction.Failed)
+	require.NoError(t, b.setCompactionFailed())
+	require.Equal(t, true, b.meta.Compaction.Failed)
+	require.NoError(t, b.Close())
 
 	b, err = OpenBlock(nil, blockDir, nil)
-	assert.NoError(t, err)
-	assert.Equal(t, true, b.meta.Compaction.Failed)
-	assert.NoError(t, b.Close())
+	require.NoError(t, err)
+	require.Equal(t, true, b.meta.Compaction.Failed)
+	require.NoError(t, b.Close())
 }
 
 func TestCreateBlock(t *testing.T) {
 	tmpdir, err := ioutil.TempDir("", "test")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer func() {
-		assert.NoError(t, os.RemoveAll(tmpdir))
+		require.NoError(t, os.RemoveAll(tmpdir))
 	}()
 	b, err := OpenBlock(nil, createBlock(t, tmpdir, genSeries(1, 1, 0, 10)), nil)
 	if err == nil {
-		assert.NoError(t, b.Close())
+		require.NoError(t, b.Close())
 	}
-	assert.NoError(t, err)
+	require.NoError(t, err)
 }
 
 func TestCorruptedChunk(t *testing.T) {
@@ -98,7 +98,7 @@ func TestCorruptedChunk(t *testing.T) {
 		{
 			name: "invalid header size",
 			corrFunc: func(f *os.File) {
-				assert.NoError(t, f.Truncate(1))
+				require.NoError(t, f.Truncate(1))
 			},
 			openErr: errors.New("invalid segment header in segment 0: invalid size"),
 		},
@@ -107,14 +107,14 @@ func TestCorruptedChunk(t *testing.T) {
 			corrFunc: func(f *os.File) {
 				magicChunksOffset := int64(0)
 				_, err := f.Seek(magicChunksOffset, 0)
-				assert.NoError(t, err)
+				require.NoError(t, err)
 
 				// Set invalid magic number.
 				b := make([]byte, chunks.MagicChunksSize)
 				binary.BigEndian.PutUint32(b[:chunks.MagicChunksSize], 0x00000000)
 				n, err := f.Write(b)
-				assert.NoError(t, err)
-				assert.Equal(t, chunks.MagicChunksSize, n)
+				require.NoError(t, err)
+				require.Equal(t, chunks.MagicChunksSize, n)
 			},
 			openErr: errors.New("invalid magic number 0"),
 		},
@@ -123,14 +123,14 @@ func TestCorruptedChunk(t *testing.T) {
 			corrFunc: func(f *os.File) {
 				chunksFormatVersionOffset := int64(4)
 				_, err := f.Seek(chunksFormatVersionOffset, 0)
-				assert.NoError(t, err)
+				require.NoError(t, err)
 
 				// Set invalid chunk format version.
 				b := make([]byte, chunks.ChunksFormatVersionSize)
 				b[0] = 0
 				n, err := f.Write(b)
-				assert.NoError(t, err)
-				assert.Equal(t, chunks.ChunksFormatVersionSize, n)
+				require.NoError(t, err)
+				require.Equal(t, chunks.ChunksFormatVersionSize, n)
 			},
 			openErr: errors.New("invalid chunk format version 0"),
 		},
@@ -138,7 +138,7 @@ func TestCorruptedChunk(t *testing.T) {
 			name: "chunk not enough bytes to read the chunk length",
 			corrFunc: func(f *os.File) {
 				// Truncate one byte after the segment header.
-				assert.NoError(t, f.Truncate(chunks.SegmentHeaderSize+1))
+				require.NoError(t, f.Truncate(chunks.SegmentHeaderSize+1))
 			},
 			iterErr: errors.New("cannot populate chunk 8: segment doesn't include enough bytes to read the chunk size data field - required:13, available:9"),
 		},
@@ -146,8 +146,8 @@ func TestCorruptedChunk(t *testing.T) {
 			name: "chunk not enough bytes to read the data",
 			corrFunc: func(f *os.File) {
 				fi, err := f.Stat()
-				assert.NoError(t, err)
-				assert.NoError(t, f.Truncate(fi.Size()-1))
+				require.NoError(t, err)
+				require.NoError(t, f.Truncate(fi.Size()-1))
 			},
 			iterErr: errors.New("cannot populate chunk 8: segment doesn't include enough bytes to read the chunk - required:26, available:25"),
 		},
@@ -155,59 +155,59 @@ func TestCorruptedChunk(t *testing.T) {
 			name: "checksum mismatch",
 			corrFunc: func(f *os.File) {
 				fi, err := f.Stat()
-				assert.NoError(t, err)
+				require.NoError(t, err)
 
 				// Get the chunk data end offset.
 				chkEndOffset := int(fi.Size()) - crc32.Size
 
 				// Seek to the last byte of chunk data and modify it.
 				_, err = f.Seek(int64(chkEndOffset-1), 0)
-				assert.NoError(t, err)
+				require.NoError(t, err)
 				n, err := f.Write([]byte("x"))
-				assert.NoError(t, err)
-				assert.Equal(t, n, 1)
+				require.NoError(t, err)
+				require.Equal(t, n, 1)
 			},
 			iterErr: errors.New("cannot populate chunk 8: checksum mismatch expected:cfc0526c, actual:34815eae"),
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tmpdir, err := ioutil.TempDir("", "test_open_block_chunk_corrupted")
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			defer func() {
-				assert.NoError(t, os.RemoveAll(tmpdir))
+				require.NoError(t, os.RemoveAll(tmpdir))
 			}()
 
 			series := storage.NewListSeries(labels.FromStrings("a", "b"), []tsdbutil.Sample{sample{1, 1}})
 			blockDir := createBlock(t, tmpdir, []storage.Series{series})
 			files, err := sequenceFiles(chunkDir(blockDir))
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			assert.Greater(t, len(files), 0, "No chunk created.")
 
 			f, err := os.OpenFile(files[0], os.O_RDWR, 0666)
-			assert.NoError(t, err)
+			require.NoError(t, err)
 
 			// Apply corruption function.
 			tc.corrFunc(f)
-			assert.NoError(t, f.Close())
+			require.NoError(t, f.Close())
 
 			// Check open err.
 			b, err := OpenBlock(nil, blockDir, nil)
 			if tc.openErr != nil {
-				assert.Equal(t, tc.openErr.Error(), err.Error())
+				require.Equal(t, tc.openErr.Error(), err.Error())
 				return
 			}
-			defer func() { assert.NoError(t, b.Close()) }()
+			defer func() { require.NoError(t, b.Close()) }()
 
 			querier, err := NewBlockQuerier(b, 0, 1)
-			assert.NoError(t, err)
-			defer func() { assert.NoError(t, querier.Close()) }()
+			require.NoError(t, err)
+			defer func() { require.NoError(t, querier.Close()) }()
 			set := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 
 			// Check chunk errors during iter time.
-			assert.True(t, set.Next())
+			require.True(t, set.Next())
 			it := set.At().Iterator()
-			assert.Equal(t, false, it.Next())
-			assert.Equal(t, tc.iterErr.Error(), it.Err().Error())
+			require.Equal(t, false, it.Next())
+			require.Equal(t, tc.iterErr.Error(), it.Err().Error())
 		})
 	}
 }
@@ -215,9 +215,9 @@ func TestCorruptedChunk(t *testing.T) {
 // TestBlockSize ensures that the block size is calculated correctly.
 func TestBlockSize(t *testing.T) {
 	tmpdir, err := ioutil.TempDir("", "test_blockSize")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer func() {
-		assert.NoError(t, os.RemoveAll(tmpdir))
+		require.NoError(t, os.RemoveAll(tmpdir))
 	}()
 
 	var (
@@ -230,39 +230,39 @@ func TestBlockSize(t *testing.T) {
 	{
 		blockDirInit = createBlock(t, tmpdir, genSeries(10, 1, 1, 100))
 		blockInit, err = OpenBlock(nil, blockDirInit, nil)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		defer func() {
-			assert.NoError(t, blockInit.Close())
+			require.NoError(t, blockInit.Close())
 		}()
 		expSizeInit = blockInit.Size()
 		actSizeInit, err := fileutil.DirSize(blockInit.Dir())
-		assert.NoError(t, err)
-		assert.Equal(t, expSizeInit, actSizeInit)
+		require.NoError(t, err)
+		require.Equal(t, expSizeInit, actSizeInit)
 	}
 
 	// Delete some series and check the sizes again.
 	{
-		assert.NoError(t, blockInit.Delete(1, 10, labels.MustNewMatcher(labels.MatchRegexp, "", ".*")))
+		require.NoError(t, blockInit.Delete(1, 10, labels.MustNewMatcher(labels.MatchRegexp, "", ".*")))
 		expAfterDelete := blockInit.Size()
 		assert.Greater(t, expAfterDelete, expSizeInit, "after a delete the block size should be bigger as the tombstone file should grow %v > %v", expAfterDelete, expSizeInit)
 		actAfterDelete, err := fileutil.DirSize(blockDirInit)
-		assert.NoError(t, err)
-		assert.Equal(t, expAfterDelete, actAfterDelete, "after a delete reported block size doesn't match actual disk size")
+		require.NoError(t, err)
+		require.Equal(t, expAfterDelete, actAfterDelete, "after a delete reported block size doesn't match actual disk size")
 
 		c, err := NewLeveledCompactor(context.Background(), nil, log.NewNopLogger(), []int64{0}, nil)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		blockDirAfterCompact, err := c.Compact(tmpdir, []string{blockInit.Dir()}, nil)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		blockAfterCompact, err := OpenBlock(nil, filepath.Join(tmpdir, blockDirAfterCompact.String()), nil)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		defer func() {
-			assert.NoError(t, blockAfterCompact.Close())
+			require.NoError(t, blockAfterCompact.Close())
 		}()
 		expAfterCompact := blockAfterCompact.Size()
 		actAfterCompact, err := fileutil.DirSize(blockAfterCompact.Dir())
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.Greater(t, actAfterDelete, actAfterCompact, "after a delete and compaction the block size should be smaller %v,%v", actAfterDelete, actAfterCompact)
-		assert.Equal(t, expAfterCompact, actAfterCompact, "after a delete and compaction reported block size doesn't match actual disk size")
+		require.Equal(t, expAfterCompact, actAfterCompact, "after a delete and compaction reported block size doesn't match actual disk size")
 	}
 }
 
@@ -285,16 +285,16 @@ func TestReadIndexFormatV1(t *testing.T) {
 
 	blockDir := filepath.Join("testdata", "index_format_v1")
 	block, err := OpenBlock(nil, blockDir, nil)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	q, err := NewBlockQuerier(block, 0, 1000)
-	assert.NoError(t, err)
-	assert.Equal(t, query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")),
+	require.NoError(t, err)
+	require.Equal(t, query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")),
 		map[string][]tsdbutil.Sample{`{foo="bar"}`: {sample{t: 1, v: 2}}})
 
 	q, err = NewBlockQuerier(block, 0, 1000)
-	assert.NoError(t, err)
-	assert.Equal(t, query(t, q, labels.MustNewMatcher(labels.MatchNotRegexp, "foo", "^.?$")),
+	require.NoError(t, err)
+	require.Equal(t, query(t, q, labels.MustNewMatcher(labels.MatchNotRegexp, "foo", "^.?$")),
 		map[string][]tsdbutil.Sample{
 			`{foo="bar"}`: {sample{t: 1, v: 2}},
 			`{foo="baz"}`: {sample{t: 3, v: 4}},
@@ -304,26 +304,26 @@ func TestReadIndexFormatV1(t *testing.T) {
 // createBlock creates a block with given set of series and returns its dir.
 func createBlock(tb testing.TB, dir string, series []storage.Series) string {
 	blockDir, err := CreateBlock(series, dir, 0, log.NewNopLogger())
-	assert.NoError(tb, err)
+	require.NoError(tb, err)
 	return blockDir
 }
 
 func createBlockFromHead(tb testing.TB, dir string, head *Head) string {
 	compactor, err := NewLeveledCompactor(context.Background(), nil, log.NewNopLogger(), []int64{1000000}, nil)
-	assert.NoError(tb, err)
+	require.NoError(tb, err)
 
-	assert.NoError(tb, os.MkdirAll(dir, 0777))
+	require.NoError(tb, os.MkdirAll(dir, 0777))
 
 	// Add +1 millisecond to block maxt because block intervals are half-open: [b.MinTime, b.MaxTime).
 	// Because of this block intervals are always +1 than the total samples it includes.
 	ulid, err := compactor.Write(dir, head, head.MinTime(), head.MaxTime()+1, nil)
-	assert.NoError(tb, err)
+	require.NoError(tb, err)
 	return filepath.Join(dir, ulid.String())
 }
 
 func createHead(tb testing.TB, w *wal.WAL, series []storage.Series, chunkDir string) *Head {
 	head, err := NewHead(nil, nil, w, DefaultBlockDuration, chunkDir, nil, DefaultStripeSize, nil)
-	assert.NoError(tb, err)
+	require.NoError(tb, err)
 
 	app := head.Appender(context.Background())
 	for _, s := range series {
@@ -338,11 +338,11 @@ func createHead(tb testing.TB, w *wal.WAL, series []storage.Series, chunkDir str
 				}
 			}
 			ref, err = app.Add(s.Labels(), t, v)
-			assert.NoError(tb, err)
+			require.NoError(tb, err)
 		}
-		assert.NoError(tb, it.Err())
+		require.NoError(tb, it.Err())
 	}
-	assert.NoError(tb, app.Commit())
+	require.NoError(tb, app.Commit())
 	return head
 }
 

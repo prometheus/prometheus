@@ -23,7 +23,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/common/model"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -251,7 +251,7 @@ func newServer(t *testing.T) (*httptest.Server, *SDConfig) {
 		w.Write([]byte(response))
 	}))
 	stuburl, err := url.Parse(stub.URL)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	config := &SDConfig{
 		Server:          stuburl.Host,
@@ -264,15 +264,15 @@ func newServer(t *testing.T) (*httptest.Server, *SDConfig) {
 func newDiscovery(t *testing.T, config *SDConfig) *Discovery {
 	logger := log.NewNopLogger()
 	d, err := NewDiscovery(config, logger)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	return d
 }
 
 func checkOneTarget(t *testing.T, tg []*targetgroup.Group) {
-	assert.Equal(t, 1, len(tg))
+	require.Equal(t, 1, len(tg))
 	target := tg[0]
-	assert.Equal(t, "test-dc", string(target.Labels["__meta_consul_dc"]))
-	assert.Equal(t, target.Source, string(target.Labels["__meta_consul_service"]))
+	require.Equal(t, "test-dc", string(target.Labels["__meta_consul_dc"]))
+	require.Equal(t, target.Source, string(target.Labels["__meta_consul_service"]))
 	if target.Source == "test" {
 		// test service should have one node.
 		assert.Greater(t, len(target.Targets), 0, "Test service should have one node")
@@ -359,7 +359,7 @@ func TestGetDatacenterShouldReturnError(t *testing.T) {
 	} {
 		stub := httptest.NewServer(http.HandlerFunc(tc.handler))
 		stuburl, err := url.Parse(stub.URL)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		config := &SDConfig{
 			Server:          stuburl.Host,
@@ -370,13 +370,13 @@ func TestGetDatacenterShouldReturnError(t *testing.T) {
 		d := newDiscovery(t, config)
 
 		// Should be empty if not initialized.
-		assert.Equal(t, "", d.clientDatacenter)
+		require.Equal(t, "", d.clientDatacenter)
 
 		err = d.getDatacenter()
 
 		// An error should be returned.
-		assert.Equal(t, tc.errMessage, err.Error())
+		require.Equal(t, tc.errMessage, err.Error())
 		// Should still be empty.
-		assert.Equal(t, "", d.clientDatacenter)
+		require.Equal(t, "", d.clientDatacenter)
 	}
 }

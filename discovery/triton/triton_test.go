@@ -26,7 +26,7 @@ import (
 
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -84,54 +84,54 @@ func newTritonDiscovery(c SDConfig) (*Discovery, error) {
 
 func TestTritonSDNew(t *testing.T) {
 	td, err := newTritonDiscovery(conf)
-	assert.NoError(t, err)
-	assert.NotNil(t, td)
-	assert.NotNil(t, td.client)
+	require.NoError(t, err)
+	require.NotNil(t, td)
+	require.NotNil(t, td.client)
 	assert.NotZero(t, td.interval)
-	assert.NotNil(t, td.sdConfig)
-	assert.Equal(t, conf.Account, td.sdConfig.Account)
-	assert.Equal(t, conf.DNSSuffix, td.sdConfig.DNSSuffix)
-	assert.Equal(t, conf.Endpoint, td.sdConfig.Endpoint)
-	assert.Equal(t, conf.Port, td.sdConfig.Port)
+	require.NotNil(t, td.sdConfig)
+	require.Equal(t, conf.Account, td.sdConfig.Account)
+	require.Equal(t, conf.DNSSuffix, td.sdConfig.DNSSuffix)
+	require.Equal(t, conf.Endpoint, td.sdConfig.Endpoint)
+	require.Equal(t, conf.Port, td.sdConfig.Port)
 }
 
 func TestTritonSDNewBadConfig(t *testing.T) {
 	td, err := newTritonDiscovery(badconf)
-	assert.Error(t, err)
-	assert.Nil(t, td)
+	require.Error(t, err)
+	require.Nil(t, td)
 }
 
 func TestTritonSDNewGroupsConfig(t *testing.T) {
 	td, err := newTritonDiscovery(groupsconf)
-	assert.NoError(t, err)
-	assert.NotNil(t, td)
-	assert.NotNil(t, td.client)
+	require.NoError(t, err)
+	require.NotNil(t, td)
+	require.NotNil(t, td.client)
 	assert.NotZero(t, td.interval)
-	assert.NotNil(t, td.sdConfig)
-	assert.Equal(t, groupsconf.Account, td.sdConfig.Account)
-	assert.Equal(t, groupsconf.DNSSuffix, td.sdConfig.DNSSuffix)
-	assert.Equal(t, groupsconf.Endpoint, td.sdConfig.Endpoint)
-	assert.Equal(t, groupsconf.Groups, td.sdConfig.Groups)
-	assert.Equal(t, groupsconf.Port, td.sdConfig.Port)
+	require.NotNil(t, td.sdConfig)
+	require.Equal(t, groupsconf.Account, td.sdConfig.Account)
+	require.Equal(t, groupsconf.DNSSuffix, td.sdConfig.DNSSuffix)
+	require.Equal(t, groupsconf.Endpoint, td.sdConfig.Endpoint)
+	require.Equal(t, groupsconf.Groups, td.sdConfig.Groups)
+	require.Equal(t, groupsconf.Port, td.sdConfig.Port)
 }
 
 func TestTritonSDNewCNConfig(t *testing.T) {
 	td, err := newTritonDiscovery(cnconf)
-	assert.NoError(t, err)
-	assert.NotNil(t, td)
-	assert.NotNil(t, td.client)
+	require.NoError(t, err)
+	require.NotNil(t, td)
+	require.NotNil(t, td.client)
 	assert.NotZero(t, td.interval)
 	assert.NotZero(t, td.sdConfig)
-	assert.Equal(t, cnconf.Role, td.sdConfig.Role)
-	assert.Equal(t, cnconf.Account, td.sdConfig.Account)
-	assert.Equal(t, cnconf.DNSSuffix, td.sdConfig.DNSSuffix)
-	assert.Equal(t, cnconf.Endpoint, td.sdConfig.Endpoint)
-	assert.Equal(t, cnconf.Port, td.sdConfig.Port)
+	require.Equal(t, cnconf.Role, td.sdConfig.Role)
+	require.Equal(t, cnconf.Account, td.sdConfig.Account)
+	require.Equal(t, cnconf.DNSSuffix, td.sdConfig.DNSSuffix)
+	require.Equal(t, cnconf.Endpoint, td.sdConfig.Endpoint)
+	require.Equal(t, cnconf.Port, td.sdConfig.Port)
 }
 
 func TestTritonSDRefreshNoTargets(t *testing.T) {
 	tgts := testTritonSDRefresh(t, conf, "{\"containers\":[]}")
-	assert.Nil(t, tgts)
+	require.Nil(t, tgts)
 }
 
 func TestTritonSDRefreshMultipleTargets(t *testing.T) {
@@ -156,8 +156,8 @@ func TestTritonSDRefreshMultipleTargets(t *testing.T) {
 	)
 
 	tgts := testTritonSDRefresh(t, conf, dstr)
-	assert.NotNil(t, tgts)
-	assert.Equal(t, 2, len(tgts))
+	require.NotNil(t, tgts)
+	require.Equal(t, 2, len(tgts))
 }
 
 func TestTritonSDRefreshNoServer(t *testing.T) {
@@ -166,8 +166,8 @@ func TestTritonSDRefreshNoServer(t *testing.T) {
 	)
 
 	_, err := td.refresh(context.Background())
-	assert.Error(t, err)
-	assert.Equal(t, strings.Contains(err.Error(), "an error occurred when requesting targets from the discovery endpoint"), true)
+	require.Error(t, err)
+	require.Equal(t, strings.Contains(err.Error(), "an error occurred when requesting targets from the discovery endpoint"), true)
 }
 
 func TestTritonSDRefreshCancelled(t *testing.T) {
@@ -178,8 +178,8 @@ func TestTritonSDRefreshCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	_, err := td.refresh(ctx)
-	assert.Error(t, err)
-	assert.Equal(t, strings.Contains(err.Error(), context.Canceled.Error()), true)
+	require.Error(t, err)
+	require.Equal(t, strings.Contains(err.Error(), context.Canceled.Error()), true)
 }
 
 func TestTritonSDRefreshCNsUUIDOnly(t *testing.T) {
@@ -195,8 +195,8 @@ func TestTritonSDRefreshCNsUUIDOnly(t *testing.T) {
 	)
 
 	tgts := testTritonSDRefresh(t, cnconf, dstr)
-	assert.NotNil(t, tgts)
-	assert.Equal(t, 2, len(tgts))
+	require.NotNil(t, tgts)
+	require.Equal(t, 2, len(tgts))
 }
 
 func TestTritonSDRefreshCNsWithHostname(t *testing.T) {
@@ -214,8 +214,8 @@ func TestTritonSDRefreshCNsWithHostname(t *testing.T) {
 	)
 
 	tgts := testTritonSDRefresh(t, cnconf, dstr)
-	assert.NotNil(t, tgts)
-	assert.Equal(t, 2, len(tgts))
+	require.NotNil(t, tgts)
+	require.Equal(t, 2, len(tgts))
 }
 
 func testTritonSDRefresh(t *testing.T, c SDConfig, dstr string) []model.LabelSet {
@@ -229,25 +229,25 @@ func testTritonSDRefresh(t *testing.T, c SDConfig, dstr string) []model.LabelSet
 	defer s.Close()
 
 	u, err := url.Parse(s.URL)
-	assert.NoError(t, err)
-	assert.NotNil(t, u)
+	require.NoError(t, err)
+	require.NotNil(t, u)
 
 	host, strport, err := net.SplitHostPort(u.Host)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.NotEmpty(t, host)
 	assert.NotEmpty(t, strport)
 
 	port, err := strconv.Atoi(strport)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.NotZero(t, port)
 
 	td.sdConfig.Port = port
 
 	tgs, err := td.refresh(context.Background())
-	assert.NoError(t, err)
-	assert.Equal(t, 1, len(tgs))
+	require.NoError(t, err)
+	require.Equal(t, 1, len(tgs))
 	tg := tgs[0]
-	assert.NotNil(t, tg)
+	require.NotNil(t, tg)
 
 	return tg.Targets
 }

@@ -21,7 +21,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/common/model"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
@@ -54,8 +54,8 @@ func TestEurekaSDHandleError(t *testing.T) {
 	)
 	tgs, err := testUpdateServices(respHandler)
 
-	assert.EqualError(t, err, errTesting)
-	assert.Equal(t, len(tgs), 0)
+	require.EqualError(t, err, errTesting)
+	require.Equal(t, len(tgs), 0)
 }
 
 func TestEurekaSDEmptyList(t *testing.T) {
@@ -71,8 +71,8 @@ func TestEurekaSDEmptyList(t *testing.T) {
 		}
 	)
 	tgs, err := testUpdateServices(respHandler)
-	assert.NoError(t, err)
-	assert.Equal(t, len(tgs), 1)
+	require.NoError(t, err)
+	require.Equal(t, len(tgs), 1)
 }
 
 func TestEurekaSDSendGroup(t *testing.T) {
@@ -231,16 +231,16 @@ func TestEurekaSDSendGroup(t *testing.T) {
 	)
 
 	tgs, err := testUpdateServices(respHandler)
-	assert.NoError(t, err)
-	assert.Equal(t, len(tgs), 1)
+	require.NoError(t, err)
+	require.Equal(t, len(tgs), 1)
 
 	tg := tgs[0]
-	assert.Equal(t, tg.Source, "eureka")
-	assert.Equal(t, len(tg.Targets), 4)
+	require.Equal(t, tg.Source, "eureka")
+	require.Equal(t, len(tg.Targets), 4)
 
 	tgt := tg.Targets[0]
-	assert.Equal(t, tgt[model.AddressLabel], model.LabelValue("config-service001.test.com:8080"))
+	require.Equal(t, tgt[model.AddressLabel], model.LabelValue("config-service001.test.com:8080"))
 
 	tgt = tg.Targets[2]
-	assert.Equal(t, tgt[model.AddressLabel], model.LabelValue("meta-service002.test.com:8080"))
+	require.Equal(t, tgt[model.AddressLabel], model.LabelValue("meta-service002.test.com:8080"))
 }

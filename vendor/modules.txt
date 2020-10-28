@@ -411,6 +411,7 @@ github.com/sirupsen/logrus
 # github.com/stretchr/testify v1.6.1
 ## explicit
 github.com/stretchr/testify/assert
+github.com/stretchr/testify/require
 # github.com/uber/jaeger-client-go v2.25.0+incompatible
 ## explicit
 github.com/uber/jaeger-client-go

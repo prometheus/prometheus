@@ -21,7 +21,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/common/model"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type DigitalOceanSDTestSuite struct {
@@ -47,21 +47,21 @@ func TestDigitalOceanSDRefresh(t *testing.T) {
 	cfg := DefaultSDConfig
 	cfg.HTTPClientConfig.BearerToken = tokenID
 	d, err := NewDiscovery(&cfg, log.NewNopLogger())
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	endpoint, err := url.Parse(sdmock.Mock.Endpoint())
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	d.client.BaseURL = endpoint
 
 	ctx := context.Background()
 	tgs, err := d.refresh(ctx)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
-	assert.Equal(t, 1, len(tgs))
+	require.Equal(t, 1, len(tgs))
 
 	tg := tgs[0]
-	assert.NotNil(t, tg)
-	assert.NotNil(t, tg.Targets)
-	assert.Equal(t, 4, len(tg.Targets))
+	require.NotNil(t, tg)
+	require.NotNil(t, tg.Targets)
+	require.Equal(t, 4, len(tg.Targets))
 
 	for i, lbls := range []model.LabelSet{
 		{
@@ -119,7 +119,7 @@ func TestDigitalOceanSDRefresh(t *testing.T) {
 		},
 	} {
 		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
-			assert.Equal(t, lbls, tg.Targets[i])
+			require.Equal(t, lbls, tg.Targets[i])
 		})
 	}
 }

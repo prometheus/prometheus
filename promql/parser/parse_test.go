@@ -20,7 +20,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 )
@@ -2661,20 +2661,20 @@ func TestParseExpressions(t *testing.T) {
 			assert.NotEqual(t, err, errUnexpected, "unexpected error occurred")
 
 			if !test.fail {
-				assert.NoError(t, err)
-				assert.Equal(t, test.expected, expr, "error on input '%s'", test.input)
+				require.NoError(t, err)
+				require.Equal(t, test.expected, expr, "error on input '%s'", test.input)
 			} else {
-				assert.Error(t, err)
+				require.Error(t, err)
 				assert.Contains(t, err.Error(), test.errMsg, "unexpected error on input '%s', expected '%s', got '%s'", test.input, test.errMsg, err.Error())
 
 				errorList, ok := err.(ParseErrors)
 
-				assert.True(t, ok, "unexpected error type")
+				require.True(t, ok, "unexpected error type")
 
 				for _, e := range errorList {
-					assert.True(t, 0 <= e.PositionRange.Start, "parse error has negative position\nExpression '%s'\nError: %v", test.input, e)
-					assert.True(t, e.PositionRange.Start <= e.PositionRange.End, "parse error has negative length\nExpression '%s'\nError: %v", test.input, e)
-					assert.True(t, e.PositionRange.End <= Pos(len(test.input)), "parse error is not contained in input\nExpression '%s'\nError: %v", test.input, e)
+					require.True(t, 0 <= e.PositionRange.Start, "parse error has negative position\nExpression '%s'\nError: %v", test.input, e)
+					require.True(t, e.PositionRange.Start <= e.PositionRange.End, "parse error has negative length\nExpression '%s'\nError: %v", test.input, e)
+					require.True(t, e.PositionRange.End <= Pos(len(test.input)), "parse error is not contained in input\nExpression '%s'\nError: %v", test.input, e)
 				}
 			}
 		})
@@ -2684,11 +2684,11 @@ func TestParseExpressions(t *testing.T) {
 // NaN has no equality. Thus, we need a separate test for it.
 func TestNaNExpression(t *testing.T) {
 	expr, err := ParseExpr("NaN")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	nl, ok := expr.(*NumberLiteral)
-	assert.True(t, ok, "expected number literal but got %T", expr)
-	assert.True(t, math.IsNaN(float64(nl.Val)), "expected 'NaN' in number literal but got %v", nl.Val)
+	require.True(t, ok, "expected number literal but got %T", expr)
+	require.True(t, math.IsNaN(float64(nl.Val)), "expected 'NaN' in number literal but got %v", nl.Val)
 }
 
 func mustLabelMatcher(mt labels.MatchType, name, val string) *labels.Matcher {
@@ -2806,11 +2806,11 @@ func TestParseSeries(t *testing.T) {
 		assert.NotEqual(t, err, errUnexpected, "unexpected error occurred")
 
 		if !test.fail {
-			assert.NoError(t, err)
-			assert.Equal(t, test.expectedMetric, metric, "error on input '%s'", test.input)
-			assert.Equal(t, test.expectedValues, vals, "error in input '%s'", test.input)
+			require.NoError(t, err)
+			require.Equal(t, test.expectedMetric, metric, "error on input '%s'", test.input)
+			require.Equal(t, test.expectedValues, vals, "error in input '%s'", test.input)
 		} else {
-			assert.Error(t, err)
+			require.Error(t, err)
 		}
 	}
 }
@@ -2820,7 +2820,7 @@ func TestRecoverParserRuntime(t *testing.T) {
 	var err error
 
 	defer func() {
-		assert.Equal(t, errUnexpected, err)
+		require.Equal(t, errUnexpected, err)
 	}()
 	defer p.recover(&err)
 	// Cause a runtime panic.
@@ -2836,7 +2836,7 @@ func TestRecoverParserError(t *testing.T) {
 	e := errors.New("custom error")
 
 	defer func() {
-		assert.Equal(t, e.Error(), err.Error())
+		require.Equal(t, e.Error(), err.Error())
 	}()
 	defer p.recover(&err)
 

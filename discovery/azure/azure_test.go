@@ -17,7 +17,7 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2018-10-01/compute"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 )
 
@@ -63,7 +63,7 @@ func TestMapFromVMWithEmptyTags(t *testing.T) {
 
 	actualVM := mapFromVM(testVM)
 
-	assert.Equal(t, expectedVM, actualVM)
+	require.Equal(t, expectedVM, actualVM)
 }
 
 func TestMapFromVMWithTags(t *testing.T) {
@@ -107,7 +107,7 @@ func TestMapFromVMWithTags(t *testing.T) {
 
 	actualVM := mapFromVM(testVM)
 
-	assert.Equal(t, expectedVM, actualVM)
+	require.Equal(t, expectedVM, actualVM)
 }
 
 func TestMapFromVMScaleSetVMWithEmptyTags(t *testing.T) {
@@ -150,7 +150,7 @@ func TestMapFromVMScaleSetVMWithEmptyTags(t *testing.T) {
 
 	actualVM := mapFromVMScaleSetVM(testVM, scaleSet)
 
-	assert.Equal(t, expectedVM, actualVM)
+	require.Equal(t, expectedVM, actualVM)
 }
 
 func TestMapFromVMScaleSetVMWithTags(t *testing.T) {
@@ -196,7 +196,7 @@ func TestMapFromVMScaleSetVMWithTags(t *testing.T) {
 
 	actualVM := mapFromVMScaleSetVM(testVM, scaleSet)
 
-	assert.Equal(t, expectedVM, actualVM)
+	require.Equal(t, expectedVM, actualVM)
 }
 
 func TestNewAzureResourceFromID(t *testing.T) {
@@ -214,6 +214,6 @@ func TestNewAzureResourceFromID(t *testing.T) {
 		},
 	} {
 		actual, _ := newAzureResourceFromID(tc.id, nil)
-		assert.Equal(t, tc.expected, actual)
+		require.Equal(t, tc.expected, actual)
 	}
 }

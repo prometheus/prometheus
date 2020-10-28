@@ -24,7 +24,7 @@ import (
 	"github.com/go-kit/kit/log"
 	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -702,7 +702,7 @@ func assertEqualGroups(t *testing.T, got, expected []*targetgroup.Group, msg fun
 	sort.Sort(byGroupSource(got))
 	sort.Sort(byGroupSource(expected))
 
-	assert.Equal(t, expected, got)
+	require.Equal(t, expected, got)
 }
 
 func staticConfig(addrs ...string) StaticConfig {
@@ -882,7 +882,7 @@ func TestApplyConfigDoesNotModifyStaticTargets(t *testing.T) {
 	<-discoveryManager.SyncCh()
 
 	for _, cfg := range cfgs {
-		assert.Equal(t, originalConfig, cfg)
+		require.Equal(t, originalConfig, cfg)
 	}
 }
 
