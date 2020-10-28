@@ -597,11 +597,10 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 
 		close(db.donec) // DB is never run if it was an error, so close this channel here.
 
-		var merr tsdb_errors.MultiError
-		merr.Add(returnedErr)
-		merr.Add(errors.Wrap(db.Close(), "close DB after failed startup"))
-
-		returnedErr = merr.Err()
+		returnedErr = tsdb_errors.NewMulti(
+			returnedErr,
+			errors.Wrap(db.Close(), "close DB after failed startup"),
+		).Err()
 	}()
 
 	if db.blocksToDelete == nil {
@@ -793,10 +792,10 @@ func (db *DB) Compact() (returnErr error) {
 
 	lastBlockMaxt := int64(math.MinInt64)
 	defer func() {
-		var merr tsdb_errors.MultiError
-		merr.Add(returnErr)
-		merr.Add(errors.Wrap(db.head.truncateWAL(lastBlockMaxt), "WAL truncation in Compact defer"))
-		returnErr = merr.Err()
+		returnErr = tsdb_errors.NewMulti(
+			returnErr,
+			errors.Wrap(db.head.truncateWAL(lastBlockMaxt), "WAL truncation in Compact defer"),
+		).Err()
 	}()
 
 	// Check whether we have pending head blocks that are ready to be persisted.
