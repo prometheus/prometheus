@@ -153,10 +153,7 @@ func (cdm *ChunkDiskMapper) openMMapFiles() (returnErr error) {
 	cdm.closers = map[int]io.Closer{}
 	defer func() {
 		if returnErr != nil {
-			var merr tsdb_errors.MultiError
-			merr.Add(returnErr)
-			merr.Add(closeAllFromMap(cdm.closers))
-			returnErr = merr.Err()
+			returnErr = tsdb_errors.NewMulti(returnErr, closeAllFromMap(cdm.closers)).Err()
 
 			cdm.mmappedChunkFiles = nil
 			cdm.closers = nil
@@ -370,10 +367,7 @@ func (cdm *ChunkDiskMapper) cut() (returnErr error) {
 		// The file should not be closed if there is no error,
 		// its kept open in the ChunkDiskMapper.
 		if returnErr != nil {
-			var merr tsdb_errors.MultiError
-			merr.Add(returnErr)
-			merr.Add(newFile.Close())
-			returnErr = merr.Err()
+			returnErr = tsdb_errors.NewMulti(returnErr, newFile.Close()).Err()
 		}
 	}()
 
@@ -717,13 +711,13 @@ func (cdm *ChunkDiskMapper) Truncate(mint int64) error {
 	}
 	cdm.readPathMtx.RUnlock()
 
-	var merr tsdb_errors.MultiError
+	errs := tsdb_errors.NewMulti()
 	// Cut a new file only if the current file has some chunks.
 	if cdm.curFileSize() > HeadChunkFileHeaderSize {
-		merr.Add(cdm.CutNewFile())
+		errs.Add(cdm.CutNewFile())
 	}
-	merr.Add(cdm.deleteFiles(removedFiles))
-	return merr.Err()
+	errs.Add(cdm.deleteFiles(removedFiles))
+	return errs.Err()
 }
 
 func (cdm *ChunkDiskMapper) deleteFiles(removedFiles []int) error {
@@ -795,23 +789,23 @@ func (cdm *ChunkDiskMapper) Close() error {
 	}
 	cdm.closed = true
 
-	var merr tsdb_errors.MultiError
-	merr.Add(closeAllFromMap(cdm.closers))
-	merr.Add(cdm.finalizeCurFile())
-	merr.Add(cdm.dir.Close())
-
+	errs := tsdb_errors.NewMulti(
+		closeAllFromMap(cdm.closers),
+		cdm.finalizeCurFile(),
+		cdm.dir.Close(),
+	)
 	cdm.mmappedChunkFiles = map[int]*mmappedChunkFile{}
 	cdm.closers = map[int]io.Closer{}
 
-	return merr.Err()
+	return errs.Err()
 }
 
 func closeAllFromMap(cs map[int]io.Closer) error {
-	var merr tsdb_errors.MultiError
+	errs := tsdb_errors.NewMulti()
 	for _, c := range cs {
-		merr.Add(c.Close())
+		errs.Add(c.Close())
 	}
-	return merr.Err()
+	return errs.Err()
 }
 
 const inBufferShards = 128 // 128 is a randomly chosen number.

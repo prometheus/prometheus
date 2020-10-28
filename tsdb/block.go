@@ -226,19 +226,14 @@ func writeMetaFile(logger log.Logger, dir string, meta *BlockMeta) (int64, error
 		return 0, err
 	}
 
-	var merr tsdb_errors.MultiError
 	n, err := f.Write(jsonMeta)
 	if err != nil {
-		merr.Add(err)
-		merr.Add(f.Close())
-		return 0, merr.Err()
+		return 0, tsdb_errors.NewMulti(err, f.Close()).Err()
 	}
 
 	// Force the kernel to persist the file on disk to avoid data loss if the host crashes.
 	if err := f.Sync(); err != nil {
-		merr.Add(err)
-		merr.Add(f.Close())
-		return 0, merr.Err()
+		return 0, tsdb_errors.NewMulti(err, f.Close()).Err()
 	}
 	if err := f.Close(); err != nil {
 		return 0, err
@@ -280,10 +275,7 @@ func OpenBlock(logger log.Logger, dir string, pool chunkenc.Pool) (pb *Block, er
 	var closers []io.Closer
 	defer func() {
 		if err != nil {
-			var merr tsdb_errors.MultiError
-			merr.Add(err)
-			merr.Add(closeAll(closers))
-			err = merr.Err()
+			err = tsdb_errors.NewMulti(err, tsdb_errors.CloseAll(closers)).Err()
 		}
 	}()
 	meta, sizeMeta, err := readMetaFile(dir)
@@ -333,13 +325,11 @@ func (pb *Block) Close() error {
 
 	pb.pendingReaders.Wait()
 
-	var merr tsdb_errors.MultiError
-
-	merr.Add(pb.chunkr.Close())
-	merr.Add(pb.indexr.Close())
-	merr.Add(pb.tombstones.Close())
-
-	return merr.Err()
+	return tsdb_errors.NewMulti(
+		pb.chunkr.Close(),
+		pb.indexr.Close(),
+		pb.tombstones.Close(),
+	).Err()
 }
 
 func (pb *Block) String() string {

@@ -1075,10 +1075,10 @@ func NewFileReader(path string) (*Reader, error) {
 	}
 	r, err := newReader(realByteSlice(f.Bytes()), f)
 	if err != nil {
-		var merr tsdb_errors.MultiError
-		merr.Add(err)
-		merr.Add(f.Close())
-		return nil, merr
+		return nil, tsdb_errors.NewMulti(
+			err,
+			f.Close(),
+		).Err()
 	}
 
 	return r, nil

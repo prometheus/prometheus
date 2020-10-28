@@ -333,10 +333,10 @@ func (db *DBReadOnly) FlushWAL(dir string) (returnErr error) {
 		return err
 	}
 	defer func() {
-		var merr tsdb_errors.MultiError
-		merr.Add(returnErr)
-		merr.Add(errors.Wrap(head.Close(), "closing Head"))
-		returnErr = merr.Err()
+		returnErr = tsdb_errors.NewMulti(
+			returnErr,
+			errors.Wrap(head.Close(), "closing Head"),
+		).Err()
 	}()
 	// Set the min valid time for the ingested wal samples
 	// to be no lower than the maxt of the last block.
@@ -466,11 +466,11 @@ func (db *DBReadOnly) Blocks() ([]BlockReader, error) {
 				level.Warn(db.logger).Log("msg", "Closing block failed", "err", err, "block", b)
 			}
 		}
-		var merr tsdb_errors.MultiError
+		errs := tsdb_errors.NewMulti()
 		for ulid, err := range corrupted {
-			merr.Add(errors.Wrapf(err, "corrupted block %s", ulid.String()))
+			errs.Add(errors.Wrapf(err, "corrupted block %s", ulid.String()))
 		}
-		return nil, merr.Err()
+		return nil, errs.Err()
 	}
 
 	if len(loadable) == 0 {
@@ -514,12 +514,7 @@ func (db *DBReadOnly) Close() error {
 	}
 	close(db.closed)
 
-	var merr tsdb_errors.MultiError
-
-	for _, b := range db.closers {
-		merr.Add(b.Close())
-	}
-	return merr.Err()
+	return tsdb_errors.CloseAll(db.closers)
 }
 
 // Open returns a new DB in the given directory. If options are empty, DefaultOptions will be used.
@@ -602,11 +597,10 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 
 		close(db.donec) // DB is never run if it was an error, so close this channel here.
 
-		var merr tsdb_errors.MultiError
-		merr.Add(returnedErr)
-		merr.Add(errors.Wrap(db.Close(), "close DB after failed startup"))
-
-		returnedErr = merr.Err()
+		returnedErr = tsdb_errors.NewMulti(
+			returnedErr,
+			errors.Wrap(db.Close(), "close DB after failed startup"),
+		).Err()
 	}()
 
 	if db.blocksToDelete == nil {
@@ -798,10 +792,10 @@ func (db *DB) Compact() (returnErr error) {
 
 	lastBlockMaxt := int64(math.MinInt64)
 	defer func() {
-		var merr tsdb_errors.MultiError
-		merr.Add(returnErr)
-		merr.Add(errors.Wrap(db.head.truncateWAL(lastBlockMaxt), "WAL truncation in Compact defer"))
-		returnErr = merr.Err()
+		returnErr = tsdb_errors.NewMulti(
+			returnErr,
+			errors.Wrap(db.head.truncateWAL(lastBlockMaxt), "WAL truncation in Compact defer"),
+		).Err()
 	}()
 
 	// Check whether we have pending head blocks that are ready to be persisted.
@@ -867,10 +861,10 @@ func (db *DB) compactHead(head *RangeHead) error {
 	runtime.GC()
 	if err := db.reloadBlocks(); err != nil {
 		if errRemoveAll := os.RemoveAll(filepath.Join(db.dir, uid.String())); errRemoveAll != nil {
-			var merr tsdb_errors.MultiError
-			merr.Add(errors.Wrap(err, "reloadBlocks blocks"))
-			merr.Add(errors.Wrapf(errRemoveAll, "delete persisted head block after failed db reloadBlocks:%s", uid))
-			return merr.Err()
+			return tsdb_errors.NewMulti(
+				errors.Wrap(err, "reloadBlocks blocks"),
+				errors.Wrapf(errRemoveAll, "delete persisted head block after failed db reloadBlocks:%s", uid),
+			).Err()
 		}
 		return errors.Wrap(err, "reloadBlocks blocks")
 	}
@@ -984,11 +978,11 @@ func (db *DB) reloadBlocks() (err error) {
 				block.Close()
 			}
 		}
-		var merr tsdb_errors.MultiError
+		errs := tsdb_errors.NewMulti()
 		for ulid, err := range corrupted {
-			merr.Add(errors.Wrapf(err, "corrupted block %s", ulid.String()))
+			errs.Add(errors.Wrapf(err, "corrupted block %s", ulid.String()))
 		}
-		return merr.Err()
+		return errs.Err()
 	}
 
 	var (
@@ -1343,17 +1337,14 @@ func (db *DB) Close() error {
 		g.Go(pb.Close)
 	}
 
-	var merr tsdb_errors.MultiError
-
-	merr.Add(g.Wait())
-
+	errs := tsdb_errors.NewMulti(g.Wait())
 	if db.lockf != nil {
-		merr.Add(db.lockf.Release())
+		errs.Add(db.lockf.Release())
 	}
 	if db.head != nil {
-		merr.Add(db.head.Close())
+		errs.Add(db.head.Close())
 	}
-	return merr.Err()
+	return errs.Err()
 }
 
 // DisableCompactions disables auto compactions.
@@ -1616,15 +1607,6 @@ func nextSequenceFile(dir string) (string, int, error) {
 		i = j
 	}
 	return filepath.Join(dir, fmt.Sprintf("%0.6d", i+1)), int(i + 1), nil
-}
-
-func closeAll(cs []io.Closer) error {
-	var merr tsdb_errors.MultiError
-
-	for _, c := range cs {
-		merr.Add(c.Close())
-	}
-	return merr.Err()
 }
 
 func exponential(d, min, max time.Duration) time.Duration {

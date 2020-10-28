@@ -41,8 +41,6 @@ import (
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 )
 
-var merr tsdb_errors.MultiError
-
 const timeDelta = 30000
 
 type writeBenchmark struct {
@@ -349,9 +347,7 @@ func listBlocks(path string, humanReadable bool) error {
 		return err
 	}
 	defer func() {
-		merr.Add(err)
-		merr.Add(db.Close())
-		err = merr.Err()
+		err = tsdb_errors.NewMulti(err, db.Close()).Err()
 	}()
 	blocks, err := db.Blocks()
 	if err != nil {
@@ -429,9 +425,7 @@ func analyzeBlock(path, blockID string, limit int) error {
 		return err
 	}
 	defer func() {
-		merr.Add(err)
-		merr.Add(db.Close())
-		err = merr.Err()
+		err = tsdb_errors.NewMulti(err, db.Close()).Err()
 	}()
 
 	meta := block.Meta()
@@ -579,9 +573,7 @@ func dumpSamples(path string, mint, maxt int64) (err error) {
 		return err
 	}
 	defer func() {
-		merr.Add(err)
-		merr.Add(db.Close())
-		err = merr.Err()
+		err = tsdb_errors.NewMulti(err, db.Close()).Err()
 	}()
 	q, err := db.Querier(context.TODO(), mint, maxt)
 	if err != nil {
@@ -605,11 +597,7 @@ func dumpSamples(path string, mint, maxt int64) (err error) {
 	}
 
 	if ws := ss.Warnings(); len(ws) > 0 {
-		var merr tsdb_errors.MultiError
-		for _, w := range ws {
-			merr.Add(w)
-		}
-		return merr.Err()
+		return tsdb_errors.NewMulti(ws...).Err()
 	}
 
 	if ss.Err() != nil {
