@@ -494,22 +494,22 @@ func TestLogPartialWrite(t *testing.T) {
 type faultySegmentFile struct {
 	SegmentFile
 
-	writeCount      int
+	written         int
 	writeFailureAt  int
 	writeFailureErr error
 }
 
 func (f *faultySegmentFile) Write(p []byte) (int, error) {
-	if f.writeFailureAt <= f.writeCount || f.writeFailureAt > f.writeCount+len(p) {
+	if f.writeFailureAt <= f.written || f.writeFailureAt > f.written+len(p) {
 		n, err := f.SegmentFile.Write(p)
-		f.writeCount += n
+		f.written += n
 		return n, err
 	}
 
 	// Inject failure.
-	partialLen := f.writeFailureAt - f.writeCount
+	partialLen := f.writeFailureAt - f.written
 	n, _ := f.SegmentFile.Write(p[:partialLen])
-	f.writeCount += n
+	f.written += n
 	return n, f.writeFailureErr
 }
 
