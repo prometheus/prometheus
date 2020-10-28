@@ -47,7 +47,7 @@ chapter in the documentation for all the details.
 
 Docker images are available on [Quay.io](https://quay.io/repository/prometheus/prometheus) or [Docker Hub](https://hub.docker.com/r/prom/prometheus/).
 
-You can launch a Prometheus container for trying it out with
+You can launch a Prometheus container for trying it out with below command
 
     $ docker run --name prometheus -d -p 127.0.0.1:9090:9090 prom/prometheus
 
