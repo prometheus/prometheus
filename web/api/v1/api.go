@@ -195,6 +195,11 @@ type API struct {
 	gatherer                  prometheus.Gatherer
 }
 
+type RankingFunction interface {
+	sum(v promql.Series) float64
+	avg(v promql.Series) float64
+}
+
 func init() {
 	jsoniter.RegisterTypeEncoderFunc("promql.Point", marshalPointJSON, marshalPointJSONIsEmpty)
 	prometheus.MustRegister(remoteReadQueries)
@@ -333,6 +338,8 @@ func (api *API) options(r *http.Request) apiFuncResult {
 	return apiFuncResult{nil, nil, nil, nil}
 }
 
+type Rank struct{}
+
 func (api *API) query(r *http.Request) (result apiFuncResult) {
 	ts, err := parseTimeParam(r, "time", api.now())
 	if err != nil {
@@ -371,6 +378,7 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 	if res.Err != nil {
 		return apiFuncResult{nil, returnAPIError(res.Err), res.Warnings, qry.Close}
 	}
+	var rank RankingFunction = Rank{}
 
 	if res.Value.Type() == parser.ValueTypeVector {
 		vec, ok := res.Value.(promql.Vector)
@@ -388,7 +396,7 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 		}
 		sort.Slice(mat, func(i, j int) bool {
-			return (sum(mat[i]) > sum(mat[j]))
+			return (rank.sum(mat[i]) > rank.sum(mat[j]))
 		})
 	}
 
@@ -405,12 +413,17 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 	}, nil, res.Warnings, qry.Close}
 }
 
-func sum(v promql.Series) float64 {
+func (Rank) sum(v promql.Series) float64 {
 	s := 0.0
 	for i := 0; i < len(v.Points); i++ {
 		s += v.Points[i].V
 	}
 	return s
+}
+
+func (Rank) avg(v promql.Series) float64 {
+	r := Rank{}
+	return r.sum(v) / float64(len(v.Points))
 }
 
 func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
@@ -474,6 +487,7 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 	}()
 
 	ctx = httputil.ContextFromRequest(ctx, r)
+	var rank RankingFunction = Rank{}
 
 	res := qry.Exec(ctx)
 	if res.Err != nil {
@@ -487,7 +501,7 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 		}
 		sort.Slice(mat, func(i, j int) bool {
-			return (sum(mat[i]) > sum(mat[j]))
+			return (rank.sum(mat[i]) > rank.sum(mat[j]))
 		})
 	}
 
