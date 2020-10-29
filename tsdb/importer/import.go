@@ -33,6 +33,10 @@ import (
 
 var merr tsdb_errors.MultiError
 
+func blockMaxTimeForTheTimestamp(t int64, width int64) (maxt int64) {
+	return (t/width)*width + width
+}
+
 // MinInt64 functions returns the minimum value between two 64bit integers
 func MinInt64(x, y int64) int64 {
 	if x < y {
@@ -64,7 +68,6 @@ func Import(path string, outputDir string, DefaultBlockDuration int64) (err erro
 			err = merr.Err()
 		}()
 	}
-	// Create the text parser
 	var p textparse.Parser
 	p = openmetrics.NewParser(input)
 
@@ -105,7 +108,7 @@ func Import(path string, outputDir string, DefaultBlockDuration int64) (err erro
 			panic(errReset)
 		}
 		p2 = openmetrics.NewParser(input)
-		tsUpper := MinInt64(t+offset, maxt)
+		tsUpper := blockMaxTimeForTheTimestamp(t, offset)
 		for {
 			e, err = p2.Next()
 			fmt.Println(e)
@@ -144,11 +147,3 @@ func Import(path string, outputDir string, DefaultBlockDuration int64) (err erro
 
 	return nil
 }
-
-// always make even hour blocks when there is even hour in UTC
-// create blocks that are aligned at even hour
-/*
-	func rangeForTimestamp(t int64, width int64) (maxt int64) {
-		return (t/width)*width + width
-	}
-*/

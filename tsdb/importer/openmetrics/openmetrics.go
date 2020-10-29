@@ -15,14 +15,12 @@ package openmetrics
 
 import (
 	"bufio"
-	"fmt"
 	"io"
 
 	"github.com/prometheus/prometheus/pkg/textparse"
 )
 
 // Content Type for the Open Metrics Parser.
-// Needed to init the text parser.
 const contentType = "application/openmetrics-text;"
 
 type Parser struct {
@@ -32,23 +30,17 @@ type Parser struct {
 }
 
 // NewParser is a tiny layer between textparse.Parser and importer.Parser which works on io.Reader.
-// TODO(bwplotka): This is hacky, Parser should allow passing reader from scratch.
-// so this is working fine for now
 func NewParser(r io.Reader) textparse.Parser {
-	// TODO(dipack95): Maybe use bufio.Reader.Readline instead?
-	// https://stackoverflow.com/questions/21124327/how-to-read-a-text-file-line-by-line-in-go-when-some-lines-are-long-enough-to-ca
 	return &Parser{s: bufio.NewScanner(r)}
 }
 
 // Next advances the parser to the next sample. It returns io.EOF if no
 // more samples were read.
-// TODO(bwplotka): Rought implementation, not tested, please help dipack95! (:
-// issue here
 func (p *Parser) Next() (textparse.Entry, error) {
 	for p.s.Scan() {
 		line := p.s.Bytes()
 		line = append(line, '\n')
-		fmt.Println(string(line))
+		// fmt.Println(string(line))
 		p.Parser = textparse.New(line, contentType)
 		if et, err := p.Parser.Next(); err != io.EOF {
 			return et, err

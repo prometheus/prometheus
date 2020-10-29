@@ -1,0 +1,17 @@
+{
+	"ulid": "01ENSX5W3VEJFTVZ77ZBSB342B",
+	"minTime": 1565133713989000,
+	"maxTime": 1565133713990001,
+	"stats": {
+		"numSamples": 2,
+		"numSeries": 2,
+		"numChunks": 2
+	},
+	"compaction": {
+		"level": 1,
+		"sources": [
+			"01ENSX5W3VEJFTVZ77ZBSB342B"
+		]
+	},
+	"version": 1
+}
