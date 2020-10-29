@@ -439,7 +439,7 @@ func TestLogPartialWrite(t *testing.T) {
 		},
 		"partial write when logging record in the middle of a page": {
 			numRecords:   10,
-			faultyRecord: 1,
+			faultyRecord: 3,
 		},
 		"partial write when logging last record of a page": {
 			numRecords:   (pageSize / (recordHeaderSize + len(record))) + 10,
