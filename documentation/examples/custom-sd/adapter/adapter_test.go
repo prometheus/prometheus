@@ -21,7 +21,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/common/model"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
@@ -232,9 +232,9 @@ func TestGenerateTargetGroups(t *testing.T) {
 func TestWriteOutput(t *testing.T) {
 	ctx := context.Background()
 	tmpfile, err := ioutil.TempFile("", "sd_adapter_test")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer os.Remove(tmpfile.Name())
 	tmpfile.Close()
 	adapter := NewAdapter(ctx, tmpfile.Name(), "test_sd", nil, nil)
-	assert.NoError(t, adapter.writeOutput())
+	require.NoError(t, adapter.writeOutput())
 }

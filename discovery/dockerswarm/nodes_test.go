@@ -20,7 +20,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/common/model"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
 )
 
@@ -36,21 +36,21 @@ role: nodes
 host: %s
 `, url)
 	var cfg SDConfig
-	assert.NoError(t, yaml.Unmarshal([]byte(cfgString), &cfg))
+	require.NoError(t, yaml.Unmarshal([]byte(cfgString), &cfg))
 
 	d, err := NewDiscovery(&cfg, log.NewNopLogger())
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	ctx := context.Background()
 	tgs, err := d.refresh(ctx)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
-	assert.Equal(t, 1, len(tgs))
+	require.Equal(t, 1, len(tgs))
 
 	tg := tgs[0]
-	assert.NotNil(t, tg)
-	assert.NotNil(t, tg.Targets)
-	assert.Equal(t, 5, len(tg.Targets))
+	require.NotNil(t, tg)
+	require.NotNil(t, tg.Targets)
+	require.Equal(t, 5, len(tg.Targets))
 
 	for i, lbls := range []model.LabelSet{
 		{
@@ -124,7 +124,7 @@ host: %s
 		},
 	} {
 		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
-			assert.Equal(t, lbls, tg.Targets[i])
+			require.Equal(t, lbls, tg.Targets[i])
 		})
 	}
 }

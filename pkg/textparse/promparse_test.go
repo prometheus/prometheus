@@ -23,7 +23,7 @@ import (
 
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 )
@@ -180,7 +180,7 @@ testmetric{label="\"bar\""} 1`
 		if err == io.EOF {
 			break
 		}
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		switch et {
 		case EntrySeries:
@@ -188,29 +188,29 @@ testmetric{label="\"bar\""} 1`
 
 			p.Metric(&res)
 
-			assert.Equal(t, exp[i].m, string(m))
-			assert.Equal(t, exp[i].t, ts)
-			assert.Equal(t, exp[i].v, v)
-			assert.Equal(t, exp[i].lset, res)
+			require.Equal(t, exp[i].m, string(m))
+			require.Equal(t, exp[i].t, ts)
+			require.Equal(t, exp[i].v, v)
+			require.Equal(t, exp[i].lset, res)
 			res = res[:0]
 
 		case EntryType:
 			m, typ := p.Type()
-			assert.Equal(t, exp[i].m, string(m))
-			assert.Equal(t, exp[i].typ, typ)
+			require.Equal(t, exp[i].m, string(m))
+			require.Equal(t, exp[i].typ, typ)
 
 		case EntryHelp:
 			m, h := p.Help()
-			assert.Equal(t, exp[i].m, string(m))
-			assert.Equal(t, exp[i].help, string(h))
+			require.Equal(t, exp[i].m, string(m))
+			require.Equal(t, exp[i].help, string(h))
 
 		case EntryComment:
-			assert.Equal(t, exp[i].comment, string(p.Comment()))
+			require.Equal(t, exp[i].comment, string(p.Comment()))
 		}
 
 		i++
 	}
-	assert.Equal(t, len(exp), i)
+	require.Equal(t, len(exp), i)
 }
 
 func TestPromParseErrors(t *testing.T) {
@@ -278,8 +278,8 @@ func TestPromParseErrors(t *testing.T) {
 		for err == nil {
 			_, err = p.Next()
 		}
-		assert.Error(t, err)
-		assert.Equal(t, c.err, err.Error(), "test %d", i)
+		require.Error(t, err)
+		require.Equal(t, c.err, err.Error(), "test %d", i)
 	}
 }
 
@@ -330,12 +330,12 @@ func TestPromNullByteHandling(t *testing.T) {
 		}
 
 		if c.err == "" {
-			assert.Equal(t, io.EOF, err, "test %d", i)
+			require.Equal(t, io.EOF, err, "test %d", i)
 			continue
 		}
 
-		assert.Error(t, err)
-		assert.Equal(t, c.err, err.Error(), "test %d", i)
+		require.Error(t, err)
+		require.Equal(t, c.err, err.Error(), "test %d", i)
 	}
 }
 
@@ -350,11 +350,11 @@ func BenchmarkParse(b *testing.B) {
 	} {
 		for _, fn := range []string{"promtestdata.txt", "promtestdata.nometa.txt"} {
 			f, err := os.Open(fn)
-			assert.NoError(b, err)
+			require.NoError(b, err)
 			defer f.Close()
 
 			buf, err := ioutil.ReadAll(f)
-			assert.NoError(b, err)
+			require.NoError(b, err)
 
 			b.Run(parserName+"/no-decode-metric/"+fn, func(b *testing.B) {
 				total := 0
@@ -484,18 +484,18 @@ func BenchmarkGzip(b *testing.B) {
 	for _, fn := range []string{"promtestdata.txt", "promtestdata.nometa.txt"} {
 		b.Run(fn, func(b *testing.B) {
 			f, err := os.Open(fn)
-			assert.NoError(b, err)
+			require.NoError(b, err)
 			defer f.Close()
 
 			var buf bytes.Buffer
 			gw := gzip.NewWriter(&buf)
 
 			n, err := io.Copy(gw, f)
-			assert.NoError(b, err)
-			assert.NoError(b, gw.Close())
+			require.NoError(b, err)
+			require.NoError(b, gw.Close())
 
 			gbuf, err := ioutil.ReadAll(&buf)
-			assert.NoError(b, err)
+			require.NoError(b, err)
 
 			k := b.N / promtestdataSampleCount
 
@@ -507,11 +507,11 @@ func BenchmarkGzip(b *testing.B) {
 
 			for i := 0; i < k; i++ {
 				gr, err := gzip.NewReader(bytes.NewReader(gbuf))
-				assert.NoError(b, err)
+				require.NoError(b, err)
 
 				d, err := ioutil.ReadAll(gr)
-				assert.NoError(b, err)
-				assert.NoError(b, gr.Close())
+				require.NoError(b, err)
+				require.NoError(b, gr.Close())
 
 				total += len(d)
 			}

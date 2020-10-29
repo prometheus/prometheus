@@ -32,7 +32,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
@@ -86,12 +86,12 @@ func TestGlobalURL(t *testing.T) {
 	for _, test := range tests {
 		inURL, err := url.Parse(test.inURL)
 
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		globalURL := tmplFuncs("", opts)["globalURL"].(func(u *url.URL) *url.URL)
 		outURL := globalURL(inURL)
 
-		assert.Equal(t, test.outURL, outURL.String())
+		require.Equal(t, test.outURL, outURL.String())
 	}
 }
 
@@ -107,11 +107,11 @@ func TestReadyAndHealthy(t *testing.T) {
 	t.Parallel()
 
 	dbDir, err := ioutil.TempDir("", "tsdb-ready")
-	assert.NoError(t, err)
-	defer func() { assert.NoError(t, os.RemoveAll(dbDir)) }()
+	require.NoError(t, err)
+	defer func() { require.NoError(t, os.RemoveAll(dbDir)) }()
 
 	db, err := tsdb.Open(dbDir, nil, nil, nil)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	opts := &Options{
 		ListenAddress:  ":9090",
@@ -157,8 +157,8 @@ func TestReadyAndHealthy(t *testing.T) {
 	time.Sleep(5 * time.Second)
 
 	resp, err := http.Get("http://localhost:9090/-/healthy")
-	assert.NoError(t, err)
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
 	cleanupTestResponse(t, resp)
 
 	for _, u := range []string{
@@ -173,19 +173,19 @@ func TestReadyAndHealthy(t *testing.T) {
 		"http://localhost:9090/config",
 	} {
 		resp, err = http.Get(u)
-		assert.NoError(t, err)
-		assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 		cleanupTestResponse(t, resp)
 	}
 
 	resp, err = http.Post("http://localhost:9090/api/v1/admin/tsdb/snapshot", "", strings.NewReader(""))
-	assert.NoError(t, err)
-	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 	cleanupTestResponse(t, resp)
 
 	resp, err = http.Post("http://localhost:9090/api/v1/admin/tsdb/delete_series", "", strings.NewReader("{}"))
-	assert.NoError(t, err)
-	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 	cleanupTestResponse(t, resp)
 
 	// Set to ready.
@@ -204,31 +204,31 @@ func TestReadyAndHealthy(t *testing.T) {
 		"http://localhost:9090/config",
 	} {
 		resp, err = http.Get(u)
-		assert.NoError(t, err)
-		assert.Equal(t, http.StatusOK, resp.StatusCode)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
 		cleanupTestResponse(t, resp)
 	}
 
 	resp, err = http.Post("http://localhost:9090/api/v1/admin/tsdb/snapshot", "", strings.NewReader(""))
-	assert.NoError(t, err)
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
 	cleanupSnapshot(t, dbDir, resp)
 	cleanupTestResponse(t, resp)
 
 	resp, err = http.Post("http://localhost:9090/api/v1/admin/tsdb/delete_series?match[]=up", "", nil)
-	assert.NoError(t, err)
-	assert.Equal(t, http.StatusNoContent, resp.StatusCode)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusNoContent, resp.StatusCode)
 	cleanupTestResponse(t, resp)
 }
 
 func TestRoutePrefix(t *testing.T) {
 	t.Parallel()
 	dbDir, err := ioutil.TempDir("", "tsdb-ready")
-	assert.NoError(t, err)
-	defer func() { assert.NoError(t, os.RemoveAll(dbDir)) }()
+	require.NoError(t, err)
+	defer func() { require.NoError(t, os.RemoveAll(dbDir)) }()
 
 	db, err := tsdb.Open(dbDir, nil, nil, nil)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	opts := &Options{
 		ListenAddress:  ":9091",
@@ -267,57 +267,57 @@ func TestRoutePrefix(t *testing.T) {
 	time.Sleep(5 * time.Second)
 
 	resp, err := http.Get("http://localhost:9091" + opts.RoutePrefix + "/-/healthy")
-	assert.NoError(t, err)
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
 	cleanupTestResponse(t, resp)
 
 	resp, err = http.Get("http://localhost:9091" + opts.RoutePrefix + "/-/ready")
-	assert.NoError(t, err)
-	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 	cleanupTestResponse(t, resp)
 
 	resp, err = http.Get("http://localhost:9091" + opts.RoutePrefix + "/version")
-	assert.NoError(t, err)
-	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 	cleanupTestResponse(t, resp)
 
 	resp, err = http.Post("http://localhost:9091"+opts.RoutePrefix+"/api/v1/admin/tsdb/snapshot", "", strings.NewReader(""))
-	assert.NoError(t, err)
-	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 	cleanupTestResponse(t, resp)
 
 	resp, err = http.Post("http://localhost:9091"+opts.RoutePrefix+"/api/v1/admin/tsdb/delete_series", "", strings.NewReader("{}"))
-	assert.NoError(t, err)
-	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 	cleanupTestResponse(t, resp)
 
 	// Set to ready.
 	webHandler.Ready()
 
 	resp, err = http.Get("http://localhost:9091" + opts.RoutePrefix + "/-/healthy")
-	assert.NoError(t, err)
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
 	cleanupTestResponse(t, resp)
 
 	resp, err = http.Get("http://localhost:9091" + opts.RoutePrefix + "/-/ready")
-	assert.NoError(t, err)
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
 	cleanupTestResponse(t, resp)
 
 	resp, err = http.Get("http://localhost:9091" + opts.RoutePrefix + "/version")
-	assert.NoError(t, err)
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
 	cleanupTestResponse(t, resp)
 
 	resp, err = http.Post("http://localhost:9091"+opts.RoutePrefix+"/api/v1/admin/tsdb/snapshot", "", strings.NewReader(""))
-	assert.NoError(t, err)
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
 	cleanupSnapshot(t, dbDir, resp)
 	cleanupTestResponse(t, resp)
 
 	resp, err = http.Post("http://localhost:9091"+opts.RoutePrefix+"/api/v1/admin/tsdb/delete_series?match[]=up", "", nil)
-	assert.NoError(t, err)
-	assert.Equal(t, http.StatusNoContent, resp.StatusCode)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusNoContent, resp.StatusCode)
 	cleanupTestResponse(t, resp)
 }
 
@@ -350,11 +350,11 @@ func TestDebugHandler(t *testing.T) {
 
 		req, err := http.NewRequest("GET", tc.url, nil)
 
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		handler.router.ServeHTTP(w, req)
 
-		assert.Equal(t, tc.code, w.Code)
+		require.Equal(t, tc.code, w.Code)
 	}
 }
 
@@ -373,33 +373,33 @@ func TestHTTPMetrics(t *testing.T) {
 		w := httptest.NewRecorder()
 
 		req, err := http.NewRequest("GET", "/-/ready", nil)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		handler.router.ServeHTTP(w, req)
 		return w.Code
 	}
 
 	code := getReady()
-	assert.Equal(t, http.StatusServiceUnavailable, code)
+	require.Equal(t, http.StatusServiceUnavailable, code)
 	counter := handler.metrics.requestCounter
-	assert.Equal(t, 1, int(prom_testutil.ToFloat64(counter.WithLabelValues("/-/ready", strconv.Itoa(http.StatusServiceUnavailable)))))
+	require.Equal(t, 1, int(prom_testutil.ToFloat64(counter.WithLabelValues("/-/ready", strconv.Itoa(http.StatusServiceUnavailable)))))
 
 	handler.Ready()
 	for range [2]int{} {
 		code = getReady()
-		assert.Equal(t, http.StatusOK, code)
+		require.Equal(t, http.StatusOK, code)
 	}
-	assert.Equal(t, 2, int(prom_testutil.ToFloat64(counter.WithLabelValues("/-/ready", strconv.Itoa(http.StatusOK)))))
-	assert.Equal(t, 1, int(prom_testutil.ToFloat64(counter.WithLabelValues("/-/ready", strconv.Itoa(http.StatusServiceUnavailable)))))
+	require.Equal(t, 2, int(prom_testutil.ToFloat64(counter.WithLabelValues("/-/ready", strconv.Itoa(http.StatusOK)))))
+	require.Equal(t, 1, int(prom_testutil.ToFloat64(counter.WithLabelValues("/-/ready", strconv.Itoa(http.StatusServiceUnavailable)))))
 }
 
 func TestShutdownWithStaleConnection(t *testing.T) {
 	dbDir, err := ioutil.TempDir("", "tsdb-ready")
-	assert.NoError(t, err)
-	defer func() { assert.NoError(t, os.RemoveAll(dbDir)) }()
+	require.NoError(t, err)
+	defer func() { require.NoError(t, os.RemoveAll(dbDir)) }()
 
 	db, err := tsdb.Open(dbDir, nil, nil, nil)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	timeout := 10 * time.Second
 
@@ -450,8 +450,8 @@ func TestShutdownWithStaleConnection(t *testing.T) {
 	// Open a socket, and don't use it. This connection should then be closed
 	// after the ReadTimeout.
 	c, err := net.Dial("tcp", "localhost:9090")
-	assert.NoError(t, err)
-	t.Cleanup(func() { assert.NoError(t, c.Close()) })
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, c.Close()) })
 
 	// Stop the web handler.
 	cancel()
@@ -465,8 +465,8 @@ func TestShutdownWithStaleConnection(t *testing.T) {
 
 func cleanupTestResponse(t *testing.T, resp *http.Response) {
 	_, err := io.Copy(ioutil.Discard, resp.Body)
-	assert.NoError(t, err)
-	assert.NoError(t, resp.Body.Close())
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
 }
 
 func cleanupSnapshot(t *testing.T, dbDir string, resp *http.Response) {
@@ -476,9 +476,9 @@ func cleanupSnapshot(t *testing.T, dbDir string, resp *http.Response) {
 		} `json:"data"`
 	}{}
 	b, err := ioutil.ReadAll(resp.Body)
-	assert.NoError(t, err)
-	assert.NoError(t, json.Unmarshal(b, snapshot))
-	assert.NotZero(t, snapshot.Data.Name, "snapshot directory not returned")
-	assert.NoError(t, os.Remove(filepath.Join(dbDir, "snapshots", snapshot.Data.Name)))
-	assert.NoError(t, os.Remove(filepath.Join(dbDir, "snapshots")))
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(b, snapshot))
+	require.NotZero(t, snapshot.Data.Name, "snapshot directory not returned")
+	require.NoError(t, os.Remove(filepath.Join(dbDir, "snapshots", snapshot.Data.Name)))
+	require.NoError(t, os.Remove(filepath.Join(dbDir, "snapshots")))
 }

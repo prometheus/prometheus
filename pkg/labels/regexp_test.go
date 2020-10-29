@@ -17,7 +17,7 @@ import (
 	"regexp/syntax"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewFastRegexMatcher(t *testing.T) {
@@ -54,8 +54,8 @@ func TestNewFastRegexMatcher(t *testing.T) {
 
 	for _, c := range cases {
 		m, err := NewFastRegexMatcher(c.regex)
-		assert.NoError(t, err)
-		assert.Equal(t, c.expected, m.MatchString(c.value))
+		require.NoError(t, err)
+		require.Equal(t, c.expected, m.MatchString(c.value))
 	}
 }
 
@@ -88,11 +88,11 @@ func TestOptimizeConcatRegex(t *testing.T) {
 
 	for _, c := range cases {
 		parsed, err := syntax.Parse(c.regex, syntax.Perl)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		prefix, suffix, contains := optimizeConcatRegex(parsed)
-		assert.Equal(t, c.prefix, prefix)
-		assert.Equal(t, c.suffix, suffix)
-		assert.Equal(t, c.contains, contains)
+		require.Equal(t, c.prefix, prefix)
+		require.Equal(t, c.suffix, suffix)
+		require.Equal(t, c.contains, contains)
 	}
 }

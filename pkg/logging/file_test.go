@@ -20,71 +20,71 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestJSONFileLogger_basic(t *testing.T) {
 	f, err := ioutil.TempFile("", "logging")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer func() {
-		assert.NoError(t, f.Close())
-		assert.NoError(t, os.Remove(f.Name()))
+		require.NoError(t, f.Close())
+		require.NoError(t, os.Remove(f.Name()))
 	}()
 
 	l, err := NewJSONFileLogger(f.Name())
-	assert.NoError(t, err)
-	assert.NotNil(t, l, "logger can't be nil")
+	require.NoError(t, err)
+	require.NotNil(t, l, "logger can't be nil")
 
 	err = l.Log("test", "yes")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	r := make([]byte, 1024)
 	_, err = f.Read(r)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	result, err := regexp.Match(`^{"test":"yes","ts":"[^"]+"}\n`, r)
-	assert.NoError(t, err)
-	assert.True(t, result, "unexpected content: %s", r)
+	require.NoError(t, err)
+	require.True(t, result, "unexpected content: %s", r)
 
 	err = l.Close()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	err = l.file.Close()
-	assert.Error(t, err)
-	assert.True(t, strings.HasSuffix(err.Error(), os.ErrClosed.Error()), "file not closed")
+	require.Error(t, err)
+	require.True(t, strings.HasSuffix(err.Error(), os.ErrClosed.Error()), "file not closed")
 }
 
 func TestJSONFileLogger_parallel(t *testing.T) {
 	f, err := ioutil.TempFile("", "logging")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer func() {
-		assert.NoError(t, f.Close())
-		assert.NoError(t, os.Remove(f.Name()))
+		require.NoError(t, f.Close())
+		require.NoError(t, os.Remove(f.Name()))
 	}()
 
 	l, err := NewJSONFileLogger(f.Name())
-	assert.NoError(t, err)
-	assert.NotNil(t, l, "logger can't be nil")
+	require.NoError(t, err)
+	require.NotNil(t, l, "logger can't be nil")
 
 	err = l.Log("test", "yes")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	l2, err := NewJSONFileLogger(f.Name())
-	assert.NoError(t, err)
-	assert.NotNil(t, l, "logger can't be nil")
+	require.NoError(t, err)
+	require.NotNil(t, l, "logger can't be nil")
 
 	err = l2.Log("test", "yes")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	err = l.Close()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	err = l.file.Close()
-	assert.Error(t, err)
-	assert.True(t, strings.HasSuffix(err.Error(), os.ErrClosed.Error()), "file not closed")
+	require.Error(t, err)
+	require.True(t, strings.HasSuffix(err.Error(), os.ErrClosed.Error()), "file not closed")
 
 	err = l2.Close()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	err = l2.file.Close()
-	assert.Error(t, err)
-	assert.True(t, strings.HasSuffix(err.Error(), os.ErrClosed.Error()), "file not closed")
+	require.Error(t, err)
+	require.True(t, strings.HasSuffix(err.Error(), os.ErrClosed.Error()), "file not closed")
 }

@@ -16,7 +16,7 @@ package parser
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestExprString(t *testing.T) {
@@ -102,13 +102,13 @@ func TestExprString(t *testing.T) {
 
 	for _, test := range inputs {
 		expr, err := ParseExpr(test.in)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		exp := test.in
 		if test.out != "" {
 			exp = test.out
 		}
 
-		assert.Equal(t, exp, expr.String())
+		require.Equal(t, exp, expr.String())
 	}
 }

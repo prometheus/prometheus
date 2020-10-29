@@ -34,7 +34,7 @@ import (
 	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	common_config "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/config"
@@ -73,9 +73,9 @@ func TestSampleDelivery(t *testing.T) {
 	queueConfig.MaxSamplesPerSend = len(samples) / 2
 
 	dir, err := ioutil.TempDir("", "TestSampleDeliver")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer func() {
-		assert.NoError(t, os.RemoveAll(dir))
+		require.NoError(t, os.RemoveAll(dir))
 	}()
 
 	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline)
@@ -95,9 +95,9 @@ func TestSampleDelivery(t *testing.T) {
 		},
 	}
 	writeConfig.QueueConfig = queueConfig
-	assert.NoError(t, s.ApplyConfig(conf))
+	require.NoError(t, s.ApplyConfig(conf))
 	hash, err := toHash(writeConfig)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	qm := s.rws.queues[hash]
 	qm.SetClient(c)
 
@@ -121,9 +121,9 @@ func TestSampleDeliveryTimeout(t *testing.T) {
 	cfg.BatchSendDeadline = model.Duration(100 * time.Millisecond)
 
 	dir, err := ioutil.TempDir("", "TestSampleDeliveryTimeout")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer func() {
-		assert.NoError(t, os.RemoveAll(dir))
+		require.NoError(t, os.RemoveAll(dir))
 	}()
 
 	metrics := newQueueManagerMetrics(nil, "", "")
@@ -164,9 +164,9 @@ func TestSampleDeliveryOrder(t *testing.T) {
 	c.expectSamples(samples, series)
 
 	dir, err := ioutil.TempDir("", "TestSampleDeliveryOrder")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer func() {
-		assert.NoError(t, os.RemoveAll(dir))
+		require.NoError(t, os.RemoveAll(dir))
 	}()
 
 	metrics := newQueueManagerMetrics(nil, "", "")
@@ -185,9 +185,9 @@ func TestShutdown(t *testing.T) {
 	c := NewTestBlockedWriteClient()
 
 	dir, err := ioutil.TempDir("", "TestShutdown")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer func() {
-		assert.NoError(t, os.RemoveAll(dir))
+		require.NoError(t, os.RemoveAll(dir))
 	}()
 
 	metrics := newQueueManagerMetrics(nil, "", "")
@@ -226,9 +226,9 @@ func TestSeriesReset(t *testing.T) {
 	numSeries := 25
 
 	dir, err := ioutil.TempDir("", "TestSeriesReset")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer func() {
-		assert.NoError(t, os.RemoveAll(dir))
+		require.NoError(t, os.RemoveAll(dir))
 	}()
 
 	metrics := newQueueManagerMetrics(nil, "", "")
@@ -240,9 +240,9 @@ func TestSeriesReset(t *testing.T) {
 		}
 		m.StoreSeries(series, i)
 	}
-	assert.Equal(t, numSegments*numSeries, len(m.seriesLabels))
+	require.Equal(t, numSegments*numSeries, len(m.seriesLabels))
 	m.SeriesReset(2)
-	assert.Equal(t, numSegments*numSeries/2, len(m.seriesLabels))
+	require.Equal(t, numSegments*numSeries/2, len(m.seriesLabels))
 }
 
 func TestReshard(t *testing.T) {
@@ -258,9 +258,9 @@ func TestReshard(t *testing.T) {
 	cfg.MaxShards = 1
 
 	dir, err := ioutil.TempDir("", "TestReshard")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer func() {
-		assert.NoError(t, os.RemoveAll(dir))
+		require.NoError(t, os.RemoveAll(dir))
 	}()
 
 	metrics := newQueueManagerMetrics(nil, "", "")
@@ -273,7 +273,7 @@ func TestReshard(t *testing.T) {
 	go func() {
 		for i := 0; i < len(samples); i += config.DefaultQueueConfig.Capacity {
 			sent := m.Append(samples[i : i+config.DefaultQueueConfig.Capacity])
-			assert.True(t, sent, "samples not sent")
+			require.True(t, sent, "samples not sent")
 			time.Sleep(100 * time.Millisecond)
 		}
 	}()
@@ -334,7 +334,7 @@ func TestReleaseNoninternedString(t *testing.T) {
 	}
 
 	metric := client_testutil.ToFloat64(noReferenceReleases)
-	assert.Equal(t, 0.0, metric, "expected there to be no calls to release for strings that were not already interned: %d", int(metric))
+	require.Equal(t, 0.0, metric, "expected there to be no calls to release for strings that were not already interned: %d", int(metric))
 }
 
 func TestShouldReshard(t *testing.T) {
@@ -376,7 +376,7 @@ func TestShouldReshard(t *testing.T) {
 
 		m.Stop()
 
-		assert.Equal(t, c.expectedToReshard, shouldReshard)
+		require.Equal(t, c.expectedToReshard, shouldReshard)
 	}
 }
 
@@ -455,7 +455,7 @@ func (c *TestWriteClient) waitForExpectedSamples(tb testing.TB) {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 	for ts, expectedSamples := range c.expectedSamples {
-		assert.Equal(tb, expectedSamples, c.receivedSamples[ts], ts)
+		require.Equal(tb, expectedSamples, c.receivedSamples[ts], ts)
 	}
 }
 
@@ -564,7 +564,7 @@ func BenchmarkSampleDelivery(b *testing.B) {
 	cfg.MaxShards = 1
 
 	dir, err := ioutil.TempDir("", "BenchmarkSampleDelivery")
-	assert.NoError(b, err)
+	require.NoError(b, err)
 	defer os.RemoveAll(dir)
 
 	metrics := newQueueManagerMetrics(nil, "", "")
@@ -594,7 +594,7 @@ func BenchmarkStartup(b *testing.B) {
 	// Find the second largest segment; we will replay up to this.
 	// (Second largest as WALWatcher will start tailing the largest).
 	dirents, err := ioutil.ReadDir(dir)
-	assert.NoError(b, err)
+	require.NoError(b, err)
 
 	var segments []int
 	for _, dirent := range dirents {
@@ -616,7 +616,7 @@ func BenchmarkStartup(b *testing.B) {
 		m.watcher.SetStartTime(timestamp.Time(math.MaxInt64))
 		m.watcher.MaxSegment = segments[len(segments)-2]
 		err := m.watcher.Run()
-		assert.NoError(b, err)
+		require.NoError(b, err)
 	}
 }
 
@@ -647,7 +647,7 @@ func TestProcessExternalLabels(t *testing.T) {
 			expected:       labels.Labels{{Name: "a", Value: "b"}},
 		},
 	} {
-		assert.Equal(t, tc.expected, processExternalLabels(tc.labels, tc.externalLabels))
+		require.Equal(t, tc.expected, processExternalLabels(tc.labels, tc.externalLabels))
 	}
 }
 
@@ -656,9 +656,9 @@ func TestCalculateDesiredShards(t *testing.T) {
 	cfg := config.DefaultQueueConfig
 
 	dir, err := ioutil.TempDir("", "TestCalculateDesiredShards")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer func() {
-		assert.NoError(t, os.RemoveAll(dir))
+		require.NoError(t, os.RemoveAll(dir))
 	}()
 
 	metrics := newQueueManagerMetrics(nil, "", "")
@@ -703,7 +703,7 @@ func TestCalculateDesiredShards(t *testing.T) {
 	for ; ts < 120*time.Second; ts += shardUpdateDuration {
 		addSamples(inputRate*int64(shardUpdateDuration/time.Second), ts)
 		m.numShards = m.calculateDesiredShards()
-		assert.Equal(t, 1, m.numShards)
+		require.Equal(t, 1, m.numShards)
 	}
 
 	// Assume 100ms per request, or 10 requests per second per shard.
@@ -725,10 +725,10 @@ func TestCalculateDesiredShards(t *testing.T) {
 
 		t.Log("desiredShards", m.numShards, "pendingSamples", pendingSamples)
 		m.numShards = m.calculateDesiredShards()
-		assert.GreaterOrEqual(t, m.numShards, minShards, "Shards are too low. desiredShards=%d, minShards=%d, t_seconds=%d", m.numShards, minShards, ts/time.Second)
-		assert.LessOrEqual(t, m.numShards, maxShards, "Shards are too high. desiredShards=%d, maxShards=%d, t_seconds=%d", m.numShards, maxShards, ts/time.Second)
+		require.GreaterOrEqual(t, m.numShards, minShards, "Shards are too low. desiredShards=%d, minShards=%d, t_seconds=%d", m.numShards, minShards, ts/time.Second)
+		require.LessOrEqual(t, m.numShards, maxShards, "Shards are too high. desiredShards=%d, maxShards=%d, t_seconds=%d", m.numShards, maxShards, ts/time.Second)
 	}
-	assert.Equal(t, int64(0), pendingSamples, "Remote write never caught up, there are still %d pending samples.", pendingSamples)
+	require.Equal(t, int64(0), pendingSamples, "Remote write never caught up, there are still %d pending samples.", pendingSamples)
 }
 
 func TestQueueManagerMetrics(t *testing.T) {
@@ -737,12 +737,12 @@ func TestQueueManagerMetrics(t *testing.T) {
 
 	// Make sure metrics pass linting.
 	problems, err := client_testutil.GatherAndLint(reg)
-	assert.NoError(t, err)
-	assert.Equal(t, 0, len(problems), "Metric linting problems detected: %v", problems)
+	require.NoError(t, err)
+	require.Equal(t, 0, len(problems), "Metric linting problems detected: %v", problems)
 
 	// Make sure all metrics were unregistered. A failure here means you need
 	// unregister a metric in `queueManagerMetrics.unregister()`.
 	metrics.unregister()
 	err = client_testutil.GatherAndCompare(reg, strings.NewReader(""))
-	assert.NoError(t, err)
+	require.NoError(t, err)
 }

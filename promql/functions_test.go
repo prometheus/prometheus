@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
@@ -46,28 +46,28 @@ func TestDeriv(t *testing.T) {
 	a.Add(metric, 1493712816939, 1.0)
 	a.Add(metric, 1493712846939, 1.0)
 
-	assert.NoError(t, a.Commit())
+	require.NoError(t, a.Commit())
 
 	query, err := engine.NewInstantQuery(storage, "deriv(foo[30m])", timestamp.Time(1493712846939))
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	result := query.Exec(context.Background())
-	assert.NoError(t, result.Err)
+	require.NoError(t, result.Err)
 
 	vec, _ := result.Vector()
-	assert.Equal(t, 1, len(vec), "Expected 1 result, got %d", len(vec))
-	assert.Equal(t, 0.0, vec[0].V, "Expected 0.0 as value, got %f", vec[0].V)
+	require.Equal(t, 1, len(vec), "Expected 1 result, got %d", len(vec))
+	require.Equal(t, 0.0, vec[0].V, "Expected 0.0 as value, got %f", vec[0].V)
 }
 
 func TestFunctionList(t *testing.T) {
 	// Test that Functions and parser.Functions list the same functions.
 	for i := range FunctionCalls {
 		_, ok := parser.Functions[i]
-		assert.True(t, ok, "function %s exists in promql package, but not in parser package", i)
+		require.True(t, ok, "function %s exists in promql package, but not in parser package", i)
 	}
 
 	for i := range parser.Functions {
 		_, ok := FunctionCalls[i]
-		assert.True(t, ok, "function %s exists in parser package, but not in promql package", i)
+		require.True(t, ok, "function %s exists in parser package, but not in promql package", i)
 	}
 }

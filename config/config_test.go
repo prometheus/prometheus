@@ -24,7 +24,7 @@ import (
 
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/discovery"
@@ -719,77 +719,77 @@ var expectedConf = &Config{
 
 func TestYAMLRoundtrip(t *testing.T) {
 	want, err := LoadFile("testdata/roundtrip.good.yml")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	out, err := yaml.Marshal(want)
 
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	got := &Config{}
-	assert.NoError(t, yaml.UnmarshalStrict(out, got))
+	require.NoError(t, yaml.UnmarshalStrict(out, got))
 
-	assert.Equal(t, want, got)
+	require.Equal(t, want, got)
 }
 
 func TestLoadConfig(t *testing.T) {
 	// Parse a valid file that sets a global scrape timeout. This tests whether parsing
 	// an overwritten default field in the global config permanently changes the default.
 	_, err := LoadFile("testdata/global_timeout.good.yml")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	c, err := LoadFile("testdata/conf.good.yml")
-	assert.NoError(t, err)
-	assert.Equal(t, expectedConf, c)
+	require.NoError(t, err)
+	require.Equal(t, expectedConf, c)
 }
 
 func TestScrapeIntervalLarger(t *testing.T) {
 	c, err := LoadFile("testdata/scrape_interval_larger.good.yml")
-	assert.NoError(t, err)
-	assert.Equal(t, 1, len(c.ScrapeConfigs))
+	require.NoError(t, err)
+	require.Equal(t, 1, len(c.ScrapeConfigs))
 	for _, sc := range c.ScrapeConfigs {
-		assert.Equal(t, true, sc.ScrapeInterval >= sc.ScrapeTimeout)
+		require.Equal(t, true, sc.ScrapeInterval >= sc.ScrapeTimeout)
 	}
 }
 
 // YAML marshaling must not reveal authentication credentials.
 func TestElideSecrets(t *testing.T) {
 	c, err := LoadFile("testdata/conf.good.yml")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	secretRe := regexp.MustCompile(`\\u003csecret\\u003e|<secret>`)
 
 	config, err := yaml.Marshal(c)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	yamlConfig := string(config)
 
 	matches := secretRe.FindAllStringIndex(yamlConfig, -1)
-	assert.Equal(t, 10, len(matches), "wrong number of secret matches found")
-	assert.NotContains(t, yamlConfig, "mysecret",
+	require.Equal(t, 10, len(matches), "wrong number of secret matches found")
+	require.NotContains(t, yamlConfig, "mysecret",
 		"yaml marshal reveals authentication credentials.")
 }
 
 func TestLoadConfigRuleFilesAbsolutePath(t *testing.T) {
 	// Parse a valid file that sets a rule files with an absolute path
 	c, err := LoadFile(ruleFilesConfigFile)
-	assert.NoError(t, err)
-	assert.Equal(t, ruleFilesExpectedConf, c)
+	require.NoError(t, err)
+	require.Equal(t, ruleFilesExpectedConf, c)
 }
 
 func TestKubernetesEmptyAPIServer(t *testing.T) {
 	_, err := LoadFile("testdata/kubernetes_empty_apiserver.good.yml")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 }
 
 func TestKubernetesSelectors(t *testing.T) {
 	_, err := LoadFile("testdata/kubernetes_selectors_endpoints.good.yml")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	_, err = LoadFile("testdata/kubernetes_selectors_node.good.yml")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	_, err = LoadFile("testdata/kubernetes_selectors_ingress.good.yml")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	_, err = LoadFile("testdata/kubernetes_selectors_pod.good.yml")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	_, err = LoadFile("testdata/kubernetes_selectors_service.good.yml")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 }
 
 var expectedErrors = []struct {
@@ -1025,40 +1025,40 @@ var expectedErrors = []struct {
 func TestBadConfigs(t *testing.T) {
 	for _, ee := range expectedErrors {
 		_, err := LoadFile("testdata/" + ee.filename)
-		assert.Error(t, err, "%s", ee.filename)
-		assert.Contains(t, err.Error(), ee.errMsg,
+		require.Error(t, err, "%s", ee.filename)
+		require.Contains(t, err.Error(), ee.errMsg,
 			"Expected error for %s to contain %q but got: %s", ee.filename, ee.errMsg, err)
 	}
 }
 
 func TestBadStaticConfigsJSON(t *testing.T) {
 	content, err := ioutil.ReadFile("testdata/static_config.bad.json")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	var tg targetgroup.Group
 	err = json.Unmarshal(content, &tg)
-	assert.Error(t, err)
+	require.Error(t, err)
 }
 
 func TestBadStaticConfigsYML(t *testing.T) {
 	content, err := ioutil.ReadFile("testdata/static_config.bad.yml")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	var tg targetgroup.Group
 	err = yaml.UnmarshalStrict(content, &tg)
-	assert.Error(t, err)
+	require.Error(t, err)
 }
 
 func TestEmptyConfig(t *testing.T) {
 	c, err := Load("")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	exp := DefaultConfig
-	assert.Equal(t, exp, *c)
+	require.Equal(t, exp, *c)
 }
 
 func TestEmptyGlobalBlock(t *testing.T) {
 	c, err := Load("global:\n")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	exp := DefaultConfig
-	assert.Equal(t, exp, *c)
+	require.Equal(t, exp, *c)
 }
 
 func kubernetesSDHostURL() config.URL {

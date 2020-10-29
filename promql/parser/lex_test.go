@@ -16,7 +16,7 @@ package parser
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type testCase struct {
@@ -731,10 +731,10 @@ func TestLexer(t *testing.T) {
 				}
 
 				eofItem := Item{EOF, Pos(len(test.input)), ""}
-				assert.Equal(t, lastItem, eofItem, "%d: input %q", i, test.input)
+				require.Equal(t, lastItem, eofItem, "%d: input %q", i, test.input)
 
 				out = out[:len(out)-1]
-				assert.Equal(t, test.expected, out, "%d: input %q", i, test.input)
+				require.Equal(t, test.expected, out, "%d: input %q", i, test.input)
 			}
 		})
 	}

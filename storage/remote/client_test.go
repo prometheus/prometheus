@@ -25,7 +25,7 @@ import (
 	"github.com/pkg/errors"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 var longErrMessage = strings.Repeat("error message", maxErrMsgLen)
@@ -61,7 +61,7 @@ func TestStoreHTTPErrorHandling(t *testing.T) {
 		)
 
 		serverURL, err := url.Parse(server.URL)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		conf := &ClientConfig{
 			URL:     &config_util.URL{URL: serverURL},
@@ -69,15 +69,15 @@ func TestStoreHTTPErrorHandling(t *testing.T) {
 		}
 
 		hash, err := toHash(conf)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		c, err := NewWriteClient(hash, conf)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		err = c.Store(context.Background(), []byte{})
 		if test.err != nil {
-			assert.EqualError(t, err, test.err.Error())
+			require.EqualError(t, err, test.err.Error())
 		} else {
-			assert.NoError(t, err)
+			require.NoError(t, err)
 		}
 
 		server.Close()

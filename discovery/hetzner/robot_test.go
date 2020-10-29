@@ -21,7 +21,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type robotSDTestSuite struct {
@@ -43,16 +43,16 @@ func TestRobotSDRefresh(t *testing.T) {
 	cfg.robotEndpoint = suite.Mock.Endpoint()
 
 	d, err := newRobotDiscovery(&cfg, log.NewNopLogger())
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	targetGroups, err := d.refresh(context.Background())
-	assert.NoError(t, err)
-	assert.Equal(t, 1, len(targetGroups))
+	require.NoError(t, err)
+	require.Equal(t, 1, len(targetGroups))
 
 	targetGroup := targetGroups[0]
-	assert.NotNil(t, targetGroup, "targetGroup should not be nil")
-	assert.NotNil(t, targetGroup.Targets, "targetGroup.targets should not be nil")
-	assert.Equal(t, 2, len(targetGroup.Targets))
+	require.NotNil(t, targetGroup, "targetGroup should not be nil")
+	require.NotNil(t, targetGroup.Targets, "targetGroup.targets should not be nil")
+	require.Equal(t, 2, len(targetGroup.Targets))
 
 	for i, labelSet := range []model.LabelSet{
 		{
@@ -80,7 +80,7 @@ func TestRobotSDRefresh(t *testing.T) {
 		},
 	} {
 		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
-			assert.Equal(t, labelSet, targetGroup.Targets[i])
+			require.Equal(t, labelSet, targetGroup.Targets[i])
 		})
 	}
 }
@@ -92,11 +92,11 @@ func TestRobotSDRefreshHandleError(t *testing.T) {
 	cfg.robotEndpoint = suite.Mock.Endpoint()
 
 	d, err := newRobotDiscovery(&cfg, log.NewNopLogger())
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	targetGroups, err := d.refresh(context.Background())
-	assert.Error(t, err)
-	assert.Equal(t, "non 2xx status '401' response during hetzner service discovery with role robot", err.Error())
+	require.Error(t, err)
+	require.Equal(t, "non 2xx status '401' response during hetzner service discovery with role robot", err.Error())
 
-	assert.Equal(t, 0, len(targetGroups))
+	require.Equal(t, 0, len(targetGroups))
 }

@@ -21,7 +21,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 )
@@ -33,14 +33,14 @@ const (
 
 func BenchmarkPostingsForMatchers(b *testing.B) {
 	chunkDir, err := ioutil.TempDir("", "chunk_dir")
-	assert.NoError(b, err)
+	require.NoError(b, err)
 	defer func() {
-		assert.NoError(b, os.RemoveAll(chunkDir))
+		require.NoError(b, os.RemoveAll(chunkDir))
 	}()
 	h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, DefaultStripeSize, nil)
-	assert.NoError(b, err)
+	require.NoError(b, err)
 	defer func() {
-		assert.NoError(b, h.Close())
+		require.NoError(b, h.Close())
 	}()
 
 	app := h.Appender(context.Background())
@@ -58,28 +58,28 @@ func BenchmarkPostingsForMatchers(b *testing.B) {
 			addSeries(labels.FromStrings("i", strconv.Itoa(i)+postingsBenchSuffix, "n", "2_"+strconv.Itoa(n)+postingsBenchSuffix, "j", "foo"))
 		}
 	}
-	assert.NoError(b, app.Commit())
+	require.NoError(b, app.Commit())
 
 	ir, err := h.Index()
-	assert.NoError(b, err)
+	require.NoError(b, err)
 	b.Run("Head", func(b *testing.B) {
 		benchmarkPostingsForMatchers(b, ir)
 	})
 
 	tmpdir, err := ioutil.TempDir("", "test_benchpostingsformatchers")
-	assert.NoError(b, err)
+	require.NoError(b, err)
 	defer func() {
-		assert.NoError(b, os.RemoveAll(tmpdir))
+		require.NoError(b, os.RemoveAll(tmpdir))
 	}()
 
 	blockdir := createBlockFromHead(b, tmpdir, h)
 	block, err := OpenBlock(nil, blockdir, nil)
-	assert.NoError(b, err)
+	require.NoError(b, err)
 	defer func() {
-		assert.NoError(b, block.Close())
+		require.NoError(b, block.Close())
 	}()
 	ir, err = block.Index()
-	assert.NoError(b, err)
+	require.NoError(b, err)
 	defer ir.Close()
 	b.Run("Block", func(b *testing.B) {
 		benchmarkPostingsForMatchers(b, ir)
@@ -134,7 +134,7 @@ func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 		b.Run(c.name, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				_, err := PostingsForMatchers(ir, c.matchers...)
-				assert.NoError(b, err)
+				require.NoError(b, err)
 			}
 		})
 	}
@@ -142,33 +142,33 @@ func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 
 func BenchmarkQuerierSelect(b *testing.B) {
 	chunkDir, err := ioutil.TempDir("", "chunk_dir")
-	assert.NoError(b, err)
+	require.NoError(b, err)
 	defer func() {
-		assert.NoError(b, os.RemoveAll(chunkDir))
+		require.NoError(b, os.RemoveAll(chunkDir))
 	}()
 	h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, DefaultStripeSize, nil)
-	assert.NoError(b, err)
+	require.NoError(b, err)
 	defer h.Close()
 	app := h.Appender(context.Background())
 	numSeries := 1000000
 	for i := 0; i < numSeries; i++ {
 		app.Add(labels.FromStrings("foo", "bar", "i", fmt.Sprintf("%d%s", i, postingsBenchSuffix)), int64(i), 0)
 	}
-	assert.NoError(b, app.Commit())
+	require.NoError(b, app.Commit())
 
 	bench := func(b *testing.B, br BlockReader, sorted bool) {
 		matcher := labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")
 		for s := 1; s <= numSeries; s *= 10 {
 			b.Run(fmt.Sprintf("%dof%d", s, numSeries), func(b *testing.B) {
 				q, err := NewBlockQuerier(br, 0, int64(s-1))
-				assert.NoError(b, err)
+				require.NoError(b, err)
 
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
 					ss := q.Select(sorted, nil, matcher)
 					for ss.Next() {
 					}
-					assert.NoError(b, ss.Err())
+					require.NoError(b, ss.Err())
 				}
 				q.Close()
 			})
@@ -183,16 +183,16 @@ func BenchmarkQuerierSelect(b *testing.B) {
 	})
 
 	tmpdir, err := ioutil.TempDir("", "test_benchquerierselect")
-	assert.NoError(b, err)
+	require.NoError(b, err)
 	defer func() {
-		assert.NoError(b, os.RemoveAll(tmpdir))
+		require.NoError(b, os.RemoveAll(tmpdir))
 	}()
 
 	blockdir := createBlockFromHead(b, tmpdir, h)
 	block, err := OpenBlock(nil, blockdir, nil)
-	assert.NoError(b, err)
+	require.NoError(b, err)
 	defer func() {
-		assert.NoError(b, block.Close())
+		require.NoError(b, block.Close())
 	}()
 
 	b.Run("Block", func(b *testing.B) {

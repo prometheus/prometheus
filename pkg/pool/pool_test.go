@@ -16,7 +16,7 @@ package pool
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func makeFunc(size int) interface{} {
@@ -44,7 +44,7 @@ func TestPool(t *testing.T) {
 	}
 	for _, c := range cases {
 		ret := testPool.Get(c.size)
-		assert.Equal(t, c.expectedCap, cap(ret.([]int)))
+		require.Equal(t, c.expectedCap, cap(ret.([]int)))
 		testPool.Put(ret)
 	}
 }

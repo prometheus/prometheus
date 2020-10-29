@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
@@ -74,14 +74,14 @@ func TestRuleEval(t *testing.T) {
 	for _, test := range suite {
 		rule := NewRecordingRule(test.name, test.expr, test.labels)
 		result, err := rule.Eval(ctx, now, EngineQueryFunc(engine, storage), nil)
-		assert.NoError(t, err)
-		assert.Equal(t, test.result, result)
+		require.NoError(t, err)
+		require.Equal(t, test.result, result)
 	}
 }
 
 func TestRecordingRuleHTMLSnippet(t *testing.T) {
 	expr, err := parser.ParseExpr(`foo{html="<b>BOLD<b>"}`)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	rule := NewRecordingRule("testrule", expr, labels.FromStrings("html", "<b>BOLD</b>"))
 
 	const want = template.HTML(`record: <a href="/test/prefix/graph?g0.expr=testrule&g0.tab=1">testrule</a>
@@ -91,7 +91,7 @@ labels:
 `)
 
 	got := rule.HTMLSnippet("/test/prefix")
-	assert.Equal(t, want, got, "incorrect HTML snippet; want:\n\n%s\n\ngot:\n\n%s", want, got)
+	require.Equal(t, want, got, "incorrect HTML snippet; want:\n\n%s\n\ngot:\n\n%s", want, got)
 }
 
 // TestRuleEvalDuplicate tests for duplicate labels in recorded metrics, see #5529.
@@ -115,6 +115,6 @@ func TestRuleEvalDuplicate(t *testing.T) {
 	expr, _ := parser.ParseExpr(`vector(0) or label_replace(vector(0),"test","x","","")`)
 	rule := NewRecordingRule("foo", expr, labels.FromStrings("test", "test"))
 	_, err := rule.Eval(ctx, now, EngineQueryFunc(engine, storage), nil)
-	assert.Error(t, err)
-	assert.EqualError(t, err, "vector contains metrics with the same labelset after applying rule labels")
+	require.Error(t, err)
+	require.EqualError(t, err, "vector contains metrics with the same labelset after applying rule labels")
 }

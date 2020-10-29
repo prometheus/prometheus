@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 )
 
@@ -34,7 +34,7 @@ func TestMain(m *testing.M) {
 func TestWriteAndReadbackTombstones(t *testing.T) {
 	tmpdir, _ := ioutil.TempDir("", "test")
 	defer func() {
-		assert.NoError(t, os.RemoveAll(tmpdir))
+		require.NoError(t, os.RemoveAll(tmpdir))
 	}()
 
 	ref := uint64(0)
@@ -54,13 +54,13 @@ func TestWriteAndReadbackTombstones(t *testing.T) {
 	}
 
 	_, err := WriteFile(log.NewNopLogger(), tmpdir, stones)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	restr, _, err := ReadTombstones(tmpdir)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	// Compare the two readers.
-	assert.Equal(t, stones, restr)
+	require.Equal(t, stones, restr)
 }
 
 func TestAddingNewIntervals(t *testing.T) {
@@ -157,7 +157,7 @@ func TestAddingNewIntervals(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run("", func(t *testing.T) {
-			assert.Equal(t, c.exp, c.exist.Add(c.new))
+			require.Equal(t, c.exp, c.exist.Add(c.new))
 		})
 	}
 }
@@ -178,7 +178,7 @@ func TestMemTombstonesConcurrency(t *testing.T) {
 	go func() {
 		for x := 0; x < totalRuns; x++ {
 			_, err := tomb.Get(uint64(x))
-			assert.NoError(t, err)
+			require.NoError(t, err)
 		}
 		wg.Done()
 	}()

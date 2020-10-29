@@ -25,7 +25,7 @@ import (
 	"testing"
 
 	"github.com/pkg/errors"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -137,44 +137,44 @@ func (m mockIndex) Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) 
 
 func TestIndexRW_Create_Open(t *testing.T) {
 	dir, err := ioutil.TempDir("", "test_index_create")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer func() {
-		assert.NoError(t, os.RemoveAll(dir))
+		require.NoError(t, os.RemoveAll(dir))
 	}()
 
 	fn := filepath.Join(dir, indexFilename)
 
 	// An empty index must still result in a readable file.
 	iw, err := NewWriter(context.Background(), fn)
-	assert.NoError(t, err)
-	assert.NoError(t, iw.Close())
+	require.NoError(t, err)
+	require.NoError(t, iw.Close())
 
 	ir, err := NewFileReader(fn)
-	assert.NoError(t, err)
-	assert.NoError(t, ir.Close())
+	require.NoError(t, err)
+	require.NoError(t, ir.Close())
 
 	// Modify magic header must cause open to fail.
 	f, err := os.OpenFile(fn, os.O_WRONLY, 0666)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	_, err = f.WriteAt([]byte{0, 0}, 0)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	f.Close()
 
 	_, err = NewFileReader(dir)
-	assert.Error(t, err)
+	require.Error(t, err)
 }
 
 func TestIndexRW_Postings(t *testing.T) {
 	dir, err := ioutil.TempDir("", "test_index_postings")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer func() {
-		assert.NoError(t, os.RemoveAll(dir))
+		require.NoError(t, os.RemoveAll(dir))
 	}()
 
 	fn := filepath.Join(dir, indexFilename)
 
 	iw, err := NewWriter(context.Background(), fn)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	series := []labels.Labels{
 		labels.FromStrings("a", "1", "b", "1"),
@@ -183,27 +183,27 @@ func TestIndexRW_Postings(t *testing.T) {
 		labels.FromStrings("a", "1", "b", "4"),
 	}
 
-	assert.NoError(t, iw.AddSymbol("1"))
-	assert.NoError(t, iw.AddSymbol("2"))
-	assert.NoError(t, iw.AddSymbol("3"))
-	assert.NoError(t, iw.AddSymbol("4"))
-	assert.NoError(t, iw.AddSymbol("a"))
-	assert.NoError(t, iw.AddSymbol("b"))
+	require.NoError(t, iw.AddSymbol("1"))
+	require.NoError(t, iw.AddSymbol("2"))
+	require.NoError(t, iw.AddSymbol("3"))
+	require.NoError(t, iw.AddSymbol("4"))
+	require.NoError(t, iw.AddSymbol("a"))
+	require.NoError(t, iw.AddSymbol("b"))
 
 	// Postings lists are only written if a series with the respective
 	// reference was added before.
-	assert.NoError(t, iw.AddSeries(1, series[0]))
-	assert.NoError(t, iw.AddSeries(2, series[1]))
-	assert.NoError(t, iw.AddSeries(3, series[2]))
-	assert.NoError(t, iw.AddSeries(4, series[3]))
+	require.NoError(t, iw.AddSeries(1, series[0]))
+	require.NoError(t, iw.AddSeries(2, series[1]))
+	require.NoError(t, iw.AddSeries(3, series[2]))
+	require.NoError(t, iw.AddSeries(4, series[3]))
 
-	assert.NoError(t, iw.Close())
+	require.NoError(t, iw.Close())
 
 	ir, err := NewFileReader(fn)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	p, err := ir.Postings("a", "1")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	var l labels.Labels
 	var c []chunks.Meta
@@ -211,15 +211,15 @@ func TestIndexRW_Postings(t *testing.T) {
 	for i := 0; p.Next(); i++ {
 		err := ir.Series(p.At(), &l, &c)
 
-		assert.NoError(t, err)
-		assert.Equal(t, 0, len(c))
-		assert.Equal(t, series[i], l)
+		require.NoError(t, err)
+		require.Equal(t, 0, len(c))
+		require.Equal(t, series[i], l)
 	}
-	assert.NoError(t, p.Err())
+	require.NoError(t, p.Err())
 
 	// The label incides are no longer used, so test them by hand here.
 	labelIndices := map[string][]string{}
-	assert.NoError(t, ReadOffsetTable(ir.b, ir.toc.LabelIndicesTable, func(key []string, off uint64, _ int) error {
+	require.NoError(t, ReadOffsetTable(ir.b, ir.toc.LabelIndicesTable, func(key []string, off uint64, _ int) error {
 		if len(key) != 1 {
 			return errors.Errorf("unexpected key length for label indices table %d", len(key))
 		}
@@ -240,25 +240,25 @@ func TestIndexRW_Postings(t *testing.T) {
 		labelIndices[key[0]] = vals
 		return d.Err()
 	}))
-	assert.Equal(t, map[string][]string{
+	require.Equal(t, map[string][]string{
 		"a": {"1"},
 		"b": {"1", "2", "3", "4"},
 	}, labelIndices)
 
-	assert.NoError(t, ir.Close())
+	require.NoError(t, ir.Close())
 }
 
 func TestPostingsMany(t *testing.T) {
 	dir, err := ioutil.TempDir("", "test_postings_many")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer func() {
-		assert.NoError(t, os.RemoveAll(dir))
+		require.NoError(t, os.RemoveAll(dir))
 	}()
 
 	fn := filepath.Join(dir, indexFilename)
 
 	iw, err := NewWriter(context.Background(), fn)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	// Create a label in the index which has 999 values.
 	symbols := map[string]struct{}{}
@@ -277,17 +277,17 @@ func TestPostingsMany(t *testing.T) {
 	}
 	sort.Strings(syms)
 	for _, s := range syms {
-		assert.NoError(t, iw.AddSymbol(s))
+		require.NoError(t, iw.AddSymbol(s))
 	}
 
 	for i, s := range series {
-		assert.NoError(t, iw.AddSeries(uint64(i), s))
+		require.NoError(t, iw.AddSeries(uint64(i), s))
 	}
-	assert.NoError(t, iw.Close())
+	require.NoError(t, iw.Close())
 
 	ir, err := NewFileReader(fn)
-	assert.NoError(t, err)
-	defer func() { assert.NoError(t, ir.Close()) }()
+	require.NoError(t, err)
+	defer func() { require.NoError(t, ir.Close()) }()
 
 	cases := []struct {
 		in []string
@@ -322,36 +322,36 @@ func TestPostingsMany(t *testing.T) {
 
 	for _, c := range cases {
 		it, err := ir.Postings("i", c.in...)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		got := []string{}
 		var lbls labels.Labels
 		var metas []chunks.Meta
 		for it.Next() {
-			assert.NoError(t, ir.Series(it.At(), &lbls, &metas))
+			require.NoError(t, ir.Series(it.At(), &lbls, &metas))
 			got = append(got, lbls.Get("i"))
 		}
-		assert.NoError(t, it.Err())
+		require.NoError(t, it.Err())
 		exp := []string{}
 		for _, e := range c.in {
 			if _, ok := symbols[e]; ok && e != "l" {
 				exp = append(exp, e)
 			}
 		}
-		assert.Equal(t, exp, got, fmt.Sprintf("input: %v", c.in))
+		require.Equal(t, exp, got, fmt.Sprintf("input: %v", c.in))
 	}
 
 }
 
 func TestPersistence_index_e2e(t *testing.T) {
 	dir, err := ioutil.TempDir("", "test_persistence_e2e")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer func() {
-		assert.NoError(t, os.RemoveAll(dir))
+		require.NoError(t, os.RemoveAll(dir))
 	}()
 
 	lbls, err := labels.ReadLabels(filepath.Join("..", "testdata", "20kseries.json"), 20000)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	// Sort labels as the index writer expects series in sorted order.
 	sort.Sort(labels.Slice(lbls))
@@ -385,7 +385,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 	}
 
 	iw, err := NewWriter(context.Background(), filepath.Join(dir, indexFilename))
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	syms := []string{}
 	for s := range symbols {
@@ -393,7 +393,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 	}
 	sort.Strings(syms)
 	for _, s := range syms {
-		assert.NoError(t, iw.AddSymbol(s))
+		require.NoError(t, iw.AddSymbol(s))
 	}
 
 	// Population procedure as done by compaction.
@@ -406,8 +406,8 @@ func TestPersistence_index_e2e(t *testing.T) {
 
 	for i, s := range input {
 		err = iw.AddSeries(uint64(i), s.labels, s.chunks...)
-		assert.NoError(t, err)
-		assert.NoError(t, mi.AddSeries(uint64(i), s.labels, s.chunks...))
+		require.NoError(t, err)
+		require.NoError(t, mi.AddSeries(uint64(i), s.labels, s.chunks...))
 
 		for _, l := range s.labels {
 			valset, ok := values[l.Name]
@@ -421,36 +421,36 @@ func TestPersistence_index_e2e(t *testing.T) {
 	}
 
 	err = iw.Close()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	ir, err := NewFileReader(filepath.Join(dir, indexFilename))
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	for p := range mi.postings {
 		gotp, err := ir.Postings(p.Name, p.Value)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		expp, err := mi.Postings(p.Name, p.Value)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		var lset, explset labels.Labels
 		var chks, expchks []chunks.Meta
 
 		for gotp.Next() {
-			assert.True(t, expp.Next())
+			require.True(t, expp.Next())
 
 			ref := gotp.At()
 
 			err := ir.Series(ref, &lset, &chks)
-			assert.NoError(t, err)
+			require.NoError(t, err)
 
 			err = mi.Series(expp.At(), &explset, &expchks)
-			assert.NoError(t, err)
-			assert.Equal(t, explset, lset)
-			assert.Equal(t, expchks, chks)
+			require.NoError(t, err)
+			require.Equal(t, explset, lset)
+			require.Equal(t, expchks, chks)
 		}
-		assert.False(t, expp.Next(), "Expected no more postings for %q=%q", p.Name, p.Value)
-		assert.NoError(t, gotp.Err())
+		require.False(t, expp.Next(), "Expected no more postings for %q=%q", p.Name, p.Value)
+		require.NoError(t, gotp.Err())
 	}
 
 	labelPairs := map[string][]string{}
@@ -461,11 +461,11 @@ func TestPersistence_index_e2e(t *testing.T) {
 		sort.Strings(v)
 
 		res, err := ir.SortedLabelValues(k)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
-		assert.Equal(t, len(v), len(res))
+		require.Equal(t, len(v), len(res))
 		for i := 0; i < len(v); i++ {
-			assert.Equal(t, v[i], res[i])
+			require.Equal(t, v[i], res[i])
 		}
 	}
 
@@ -474,29 +474,29 @@ func TestPersistence_index_e2e(t *testing.T) {
 	for it.Next() {
 		gotSymbols = append(gotSymbols, it.At())
 	}
-	assert.NoError(t, it.Err())
+	require.NoError(t, it.Err())
 	expSymbols := []string{}
 	for s := range mi.symbols {
 		expSymbols = append(expSymbols, s)
 	}
 	sort.Strings(expSymbols)
-	assert.Equal(t, expSymbols, gotSymbols)
+	require.Equal(t, expSymbols, gotSymbols)
 
-	assert.NoError(t, ir.Close())
+	require.NoError(t, ir.Close())
 }
 
 func TestDecbufUvarintWithInvalidBuffer(t *testing.T) {
 	b := realByteSlice([]byte{0x81, 0x81, 0x81, 0x81, 0x81, 0x81})
 
 	db := encoding.NewDecbufUvarintAt(b, 0, castagnoliTable)
-	assert.Error(t, db.Err())
+	require.Error(t, db.Err())
 }
 
 func TestReaderWithInvalidBuffer(t *testing.T) {
 	b := realByteSlice([]byte{0x81, 0x81, 0x81, 0x81, 0x81, 0x81})
 
 	_, err := NewReader(b)
-	assert.Error(t, err)
+	require.Error(t, err)
 }
 
 // TestNewFileReaderErrorNoOpenFiles ensures that in case of an error no file remains open.
@@ -505,10 +505,10 @@ func TestNewFileReaderErrorNoOpenFiles(t *testing.T) {
 
 	idxName := filepath.Join(dir.Path(), "index")
 	err := ioutil.WriteFile(idxName, []byte("corrupted contents"), 0666)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	_, err = NewFileReader(idxName)
-	assert.Error(t, err)
+	require.Error(t, err)
 
 	// dir.Close will fail on Win if idxName fd is not closed on error path.
 	dir.Close()
@@ -531,32 +531,32 @@ func TestSymbols(t *testing.T) {
 	buf.PutBE32(checksum) // Check sum at the end.
 
 	s, err := NewSymbols(realByteSlice(buf.Get()), FormatV2, symbolsStart)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	// We store only 4 offsets to symbols.
-	assert.Equal(t, 32, s.Size())
+	require.Equal(t, 32, s.Size())
 
 	for i := 99; i >= 0; i-- {
 		s, err := s.Lookup(uint32(i))
-		assert.NoError(t, err)
-		assert.Equal(t, string(rune(i)), s)
+		require.NoError(t, err)
+		require.Equal(t, string(rune(i)), s)
 	}
 	_, err = s.Lookup(100)
-	assert.Error(t, err)
+	require.Error(t, err)
 
 	for i := 99; i >= 0; i-- {
 		r, err := s.ReverseLookup(string(rune(i)))
-		assert.NoError(t, err)
-		assert.Equal(t, uint32(i), r)
+		require.NoError(t, err)
+		require.Equal(t, uint32(i), r)
 	}
 	_, err = s.ReverseLookup(string(rune(100)))
-	assert.Error(t, err)
+	require.Error(t, err)
 
 	iter := s.Iter()
 	i := 0
 	for iter.Next() {
-		assert.Equal(t, string(rune(i)), iter.At())
+		require.Equal(t, string(rune(i)), iter.At())
 		i++
 	}
-	assert.NoError(t, iter.Err())
+	require.NoError(t, iter.Err())
 }

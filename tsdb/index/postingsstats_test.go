@@ -15,7 +15,7 @@ package index
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestPostingsStats(t *testing.T) {
@@ -33,9 +33,9 @@ func TestPostingsStats(t *testing.T) {
 	stats.push(Stat{Name: "Stuff", Count: 3000000})
 
 	data := stats.get()
-	assert.Equal(t, 10, len(data))
+	require.Equal(t, 10, len(data))
 	for i := 0; i < heapLength; i++ {
-		assert.Equal(t, uint64(max-i), data[i].Count)
+		require.Equal(t, uint64(max-i), data[i].Count)
 	}
 
 }
@@ -52,8 +52,8 @@ func TestPostingsStats2(t *testing.T) {
 
 	data := stats.get()
 
-	assert.Equal(t, 4, len(data))
-	assert.Equal(t, uint64(11), data[0].Count)
+	require.Equal(t, 4, len(data))
+	require.Equal(t, uint64(11), data[0].Count)
 }
 func BenchmarkPostingStatsMaxHep(b *testing.B) {
 	stats := &maxHeap{}
