@@ -68,9 +68,7 @@ func Import(path string, outputDir string, DefaultBlockDuration int64) (err erro
 			err = merr.Err()
 		}()
 	}
-	var p textparse.Parser
-	p = openmetrics.NewParser(input)
-
+	p := openmetrics.NewParser(input)
 	level.Info(logger).Log("msg", "started importing input data.")
 	var maxt int64 = math.MinInt64
 	var mint int64 = math.MaxInt64
@@ -99,15 +97,17 @@ func Import(path string, outputDir string, DefaultBlockDuration int64) (err erro
 	var offset int64 = 2 * time.Hour.Milliseconds()
 	for t := mint; t < maxt; t = t + offset {
 		var e textparse.Entry
-		w, err := tsdb.NewBlockWriter(log.NewNopLogger(), outputDir, DefaultBlockDuration)
+		w, errw := tsdb.NewBlockWriter(log.NewNopLogger(), outputDir, DefaultBlockDuration)
+		if errw != nil {
+			panic(errw)
+		}
 		ctx := context.Background()
 		app := w.Appender(ctx)
-		var p2 textparse.Parser
 		_, errReset := input.Seek(0, 0)
 		if errReset != nil {
 			panic(errReset)
 		}
-		p2 = openmetrics.NewParser(input)
+		p2 := openmetrics.NewParser(input)
 		tsUpper := blockMaxTimeForTheTimestamp(t, offset)
 		for {
 			e, err = p2.Next()
