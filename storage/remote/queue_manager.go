@@ -48,10 +48,6 @@ const (
 	// Allow 30% too many shards before scaling down.
 	shardToleranceFraction = 0.3
 
-	// We use a label to identify samples and metadata on some metrics. These represent the values they can have.
-	samples  = "samples"
-	metadata = "metadata"
-
 	// Controls how often we collect metadata from the scrape cache.
 	metadataCollectionInterval = model.Duration(5 * time.Minute)
 )
@@ -59,29 +55,24 @@ const (
 type queueManagerMetrics struct {
 	reg prometheus.Registerer
 
-	// Given bytesSent and metadataBytesSent have a single label value in difference, they
-	// are spawned from the same Counter Vector. We need to register the vector or
-	// MustRegister will panic about the individual registration.
-	commonBytesVector *prometheus.CounterVec
-
-	succeededSamplesTotal  prometheus.Counter
-	succeededMetadataTotal prometheus.Counter
-	failedSamplesTotal     prometheus.Counter
-	failedMetadataTotal    prometheus.Counter
-	retriedSamplesTotal    prometheus.Counter
-	retriedMetadataTotal   prometheus.Counter
-	droppedSamplesTotal    prometheus.Counter
-	enqueueRetriesTotal    prometheus.Counter
-	sentBatchDuration      prometheus.Histogram
-	highestSentTimestamp   *maxTimestamp
-	pendingSamples         prometheus.Gauge
-	shardCapacity          prometheus.Gauge
-	numShards              prometheus.Gauge
-	maxNumShards           prometheus.Gauge
-	minNumShards           prometheus.Gauge
-	desiredNumShards       prometheus.Gauge
-	bytesSent              prometheus.Counter
-	metadataBytesSent      prometheus.Counter
+	samplesTotal         prometheus.Counter
+	metadataTotal        prometheus.Counter
+	failedSamplesTotal   prometheus.Counter
+	failedMetadataTotal  prometheus.Counter
+	retriedSamplesTotal  prometheus.Counter
+	retriedMetadataTotal prometheus.Counter
+	droppedSamplesTotal  prometheus.Counter
+	enqueueRetriesTotal  prometheus.Counter
+	sentBatchDuration    prometheus.Histogram
+	highestSentTimestamp *maxTimestamp
+	pendingSamples       prometheus.Gauge
+	shardCapacity        prometheus.Gauge
+	numShards            prometheus.Gauge
+	maxNumShards         prometheus.Gauge
+	minNumShards         prometheus.Gauge
+	desiredNumShards     prometheus.Gauge
+	samplesBytesTotal    prometheus.Counter
+	metadataBytesTotal   prometheus.Counter
 }
 
 func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManagerMetrics {
@@ -93,18 +84,18 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		endpoint:   e,
 	}
 
-	m.succeededSamplesTotal = prometheus.NewCounter(prometheus.CounterOpts{
+	m.samplesTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace:   namespace,
 		Subsystem:   subsystem,
-		Name:        "succeeded_samples_total",
-		Help:        "Total number of samples successfully sent to remote storage.",
+		Name:        "samples_total",
+		Help:        "Total number of samples sent to remote storage.",
 		ConstLabels: constLabels,
 	})
-	m.succeededMetadataTotal = prometheus.NewCounter(prometheus.CounterOpts{
+	m.metadataTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace:   namespace,
 		Subsystem:   subsystem,
-		Name:        "succeeded_metadata_total",
-		Help:        "Total number of metadata entries successfully sent to remote storage.",
+		Name:        "metadata_total",
+		Help:        "Total number of metadata entries sent to remote storage.",
 		ConstLabels: constLabels,
 	})
 	m.failedSamplesTotal = prometheus.NewCounter(prometheus.CounterOpts{
@@ -208,16 +199,20 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Help:        "The number of shards that the queues shard calculation wants to run based on the rate of samples in vs. samples out.",
 		ConstLabels: constLabels,
 	})
-	m.commonBytesVector = prometheus.NewCounterVec(prometheus.CounterOpts{
+	m.samplesBytesTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace:   namespace,
 		Subsystem:   subsystem,
-		Name:        "sent_bytes_total",
+		Name:        "samples_bytes_total",
 		Help:        "The total number of bytes sent by the queue after compression.",
 		ConstLabels: constLabels,
-	}, []string{"type"})
-
-	m.bytesSent = m.commonBytesVector.WithLabelValues(samples)
-	m.metadataBytesSent = m.commonBytesVector.WithLabelValues(metadata)
+	})
+	m.metadataBytesTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace:   namespace,
+		Subsystem:   subsystem,
+		Name:        "metadata_bytes_total",
+		Help:        "The total number of bytes sent by the queue after compression.",
+		ConstLabels: constLabels,
+	})
 
 	return m
 }
@@ -225,8 +220,8 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 func (m *queueManagerMetrics) register() {
 	if m.reg != nil {
 		m.reg.MustRegister(
-			m.succeededSamplesTotal,
-			m.succeededMetadataTotal,
+			m.samplesTotal,
+			m.metadataTotal,
 			m.failedSamplesTotal,
 			m.failedMetadataTotal,
 			m.retriedSamplesTotal,
@@ -241,15 +236,16 @@ func (m *queueManagerMetrics) register() {
 			m.maxNumShards,
 			m.minNumShards,
 			m.desiredNumShards,
-			m.commonBytesVector,
+			m.samplesBytesTotal,
+			m.metadataBytesTotal,
 		)
 	}
 }
 
 func (m *queueManagerMetrics) unregister() {
 	if m.reg != nil {
-		m.reg.Unregister(m.succeededSamplesTotal)
-		m.reg.Unregister(m.succeededMetadataTotal)
+		m.reg.Unregister(m.samplesTotal)
+		m.reg.Unregister(m.metadataTotal)
 		m.reg.Unregister(m.failedSamplesTotal)
 		m.reg.Unregister(m.failedMetadataTotal)
 		m.reg.Unregister(m.retriedSamplesTotal)
@@ -264,7 +260,8 @@ func (m *queueManagerMetrics) unregister() {
 		m.reg.Unregister(m.maxNumShards)
 		m.reg.Unregister(m.minNumShards)
 		m.reg.Unregister(m.desiredNumShards)
-		m.reg.Unregister(m.commonBytesVector)
+		m.reg.Unregister(m.samplesBytesTotal)
+		m.reg.Unregister(m.metadataBytesTotal)
 	}
 }
 
@@ -410,6 +407,7 @@ func (t *QueueManager) sendMetadataWithBackoff(ctx context.Context, metadata []p
 		begin := time.Now()
 		err := t.storeClient.Store(ctx, req)
 		t.metrics.sentBatchDuration.Observe(time.Since(begin).Seconds())
+		t.metrics.metadataTotal.Add(float64(len(metadata)))
 
 		if err != nil {
 			span.LogKV("error", err)
@@ -420,16 +418,15 @@ func (t *QueueManager) sendMetadataWithBackoff(ctx context.Context, metadata []p
 		return nil
 	}
 
-	retry := func() {
+	onRetry := func() {
 		t.metrics.retriedMetadataTotal.Add(float64(len(metadata)))
 	}
-	err = sendWriteRequestWithBackoff(ctx, t.cfg, t.client(), t.logger, req, attemptStore, retry)
+	err = sendWriteRequestWithBackoff(ctx, t.cfg, t.logger, req, attemptStore, onRetry)
 	if err != nil {
 		return err
 	}
 
-	t.metrics.succeededMetadataTotal.Add(float64(len(metadata)))
-	t.metrics.metadataBytesSent.Add(float64(len(req)))
+	t.metrics.metadataBytesTotal.Add(float64(len(req)))
 	return nil
 }
 
@@ -1000,6 +997,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 		span.SetTag("remote_url", s.qm.storeClient.Endpoint())
 
 		begin := time.Now()
+		s.qm.metrics.samplesTotal.Add(float64(sampleCount))
 		err := s.qm.client().Store(ctx, *buf)
 		s.qm.metrics.sentBatchDuration.Observe(time.Since(begin).Seconds())
 
@@ -1012,21 +1010,20 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 		return nil
 	}
 
-	retry := func() {
+	onRetry := func() {
 		s.qm.metrics.retriedSamplesTotal.Add(float64(sampleCount))
 	}
 
-	err = sendWriteRequestWithBackoff(ctx, s.qm.cfg, s.qm.client(), s.qm.logger, req, attemptStore, retry)
+	err = sendWriteRequestWithBackoff(ctx, s.qm.cfg, s.qm.logger, req, attemptStore, onRetry)
 	if err != nil {
 		return err
 	}
-	s.qm.metrics.succeededSamplesTotal.Add(float64(sampleCount))
-	s.qm.metrics.bytesSent.Add(float64(reqSize))
+	s.qm.metrics.samplesBytesTotal.Add(float64(reqSize))
 	s.qm.metrics.highestSentTimestamp.Set(float64(highest / 1000))
 	return nil
 }
 
-func sendWriteRequestWithBackoff(ctx context.Context, cfg config.QueueConfig, s WriteClient, l log.Logger, req []byte, attempt func(int) error, retry func()) error {
+func sendWriteRequestWithBackoff(ctx context.Context, cfg config.QueueConfig, l log.Logger, req []byte, attempt func(int) error, onRetry func()) error {
 	backoff := cfg.MinBackoff
 	try := 0
 
@@ -1049,7 +1046,7 @@ func sendWriteRequestWithBackoff(ctx context.Context, cfg config.QueueConfig, s 
 		}
 
 		// If we make it this far, we've encountered a recoverable error and will retry.
-		retry()
+		onRetry()
 		level.Debug(l).Log("msg", "failed to send batch, retrying", "err", err)
 
 		time.Sleep(time.Duration(backoff))

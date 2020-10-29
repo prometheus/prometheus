@@ -87,7 +87,7 @@ func (mw *MetadataWatcher) Start() {
 
 // Stop the MetadataWatcher.
 func (mw *MetadataWatcher) Stop() {
-	level.Info(mw.logger).Log("msg", "Stoping metadata watcher...")
+	level.Info(mw.logger).Log("msg", "Stopping metadata watcher...")
 	defer level.Info(mw.logger).Log("msg", "Scraped metadata watcher stopped")
 
 	mw.softShutdownCancel()
