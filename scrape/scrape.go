@@ -133,7 +133,14 @@ var (
 		},
 		[]string{"scrape_job"},
 	)
-	targetScrapeSampleLimit = prometheus.NewCounter(
+	targetScrapeSampleLimit = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "prometheus_target_scrape_pool_sample_limit",
+			Help: "Maximum number of samples allowed in this scrape pool.",
+		},
+		[]string{"scrape_job"},
+	)
+	targetScrapeExceededSampleLimit = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "prometheus_target_scrapes_exceeded_sample_limit_total",
 			Help: "Total number of scrapes that hit the sample limit and were rejected.",
@@ -176,6 +183,7 @@ func init() {
 		targetSyncIntervalLength,
 		targetScrapePoolSyncsCounter,
 		targetScrapeSampleLimit,
+		targetScrapeExceededSampleLimit,
 		targetScrapeSampleDuplicate,
 		targetScrapeSampleOutOfOrder,
 		targetScrapeSampleOutOfBounds,
@@ -323,6 +331,7 @@ func (sp *scrapePool) stop() {
 		targetScrapePoolSyncsCounter.DeleteLabelValues(sp.config.JobName)
 		targetScrapePoolTargetLimit.DeleteLabelValues(sp.config.JobName)
 		targetScrapePoolTargetsAdded.DeleteLabelValues(sp.config.JobName)
+		targetScrapePoolTargetLimit.DeleteLabelValues(sp.config.JobName)
 		targetSyncIntervalLength.DeleteLabelValues(sp.config.JobName)
 	}
 }
@@ -346,6 +355,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 	sp.client = client
 
 	targetScrapePoolTargetLimit.WithLabelValues(sp.config.JobName).Set(float64(sp.config.TargetLimit))
+	targetScrapePoolTargetLimit.WithLabelValues(sp.config.JobName).Set(float64(sp.config.SampleLimit))
 
 	var (
 		wg              sync.WaitGroup
@@ -1363,7 +1373,7 @@ loop:
 			err = sampleLimitErr
 		}
 		// We only want to increment this once per scrape, so this is Inc'd outside the loop.
-		targetScrapeSampleLimit.Inc()
+		targetScrapeExceededSampleLimit.Inc()
 	}
 	if appErrs.numOutOfOrder > 0 {
 		level.Warn(sl.l).Log("msg", "Error on ingesting out-of-order samples", "num_dropped", appErrs.numOutOfOrder)

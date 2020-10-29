@@ -1328,7 +1328,7 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 
 	// Get the value of the Counter before performing the append.
 	beforeMetric := dto.Metric{}
-	err := targetScrapeSampleLimit.Write(&beforeMetric)
+	err := targetScrapeExceededSampleLimit.Write(&beforeMetric)
 	assert.NoError(t, err)
 
 	beforeMetricValue := beforeMetric.GetCounter().GetValue()
@@ -1347,7 +1347,7 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 	// Check that the Counter has been incremented a single time for the scrape,
 	// not multiple times for each sample.
 	metric := dto.Metric{}
-	err = targetScrapeSampleLimit.Write(&metric)
+	err = targetScrapeExceededSampleLimit.Write(&metric)
 	assert.NoError(t, err)
 
 	value := metric.GetCounter().GetValue()
