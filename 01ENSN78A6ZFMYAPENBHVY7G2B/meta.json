@@ -1,0 +1,17 @@
+{
+	"ulid": "01ENSN78A6ZFMYAPENBHVY7G2B",
+	"minTime": 1565133713989000,
+	"maxTime": 1565133713989001,
+	"stats": {
+		"numSamples": 1,
+		"numSeries": 1,
+		"numChunks": 1
+	},
+	"compaction": {
+		"level": 1,
+		"sources": [
+			"01ENSN78A6ZFMYAPENBHVY7G2B"
+		]
+	},
+	"version": 1
+}

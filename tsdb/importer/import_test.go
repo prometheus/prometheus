@@ -1,4 +1,4 @@
-// package importer
+package importer
 
 // import (
 // 	"io/ioutil"

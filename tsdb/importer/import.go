@@ -33,7 +33,7 @@ import (
 
 var merr tsdb_errors.MultiError
 
-// Min functions returns the minimum value between two 64bit integers
+// MinInt64 functions returns the minimum value between two 64bit integers
 func MinInt64(x, y int64) int64 {
 	if x < y {
 		return x
@@ -41,7 +41,7 @@ func MinInt64(x, y int64) int64 {
 	return y
 }
 
-// Max functions returns the maximum value between two 64bit integers
+// MaxInt64 functions returns the maximum value between two 64bit integers
 func MaxInt64(x, y int64) int64 {
 	if x > y {
 		return x
@@ -64,8 +64,10 @@ func Import(path string, outputDir string, DefaultBlockDuration int64) (err erro
 			err = merr.Err()
 		}()
 	}
+	// Create the text parser
 	var p textparse.Parser
 	p = openmetrics.NewParser(input)
+
 	level.Info(logger).Log("msg", "started importing input data.")
 	var maxt int64 = math.MinInt64
 	var mint int64 = math.MaxInt64
@@ -84,28 +86,29 @@ func Import(path string, outputDir string, DefaultBlockDuration int64) (err erro
 		l := labels.Labels{}
 		p.Metric(&l)
 		_, ts, _ := p.Series()
-		if *ts >= maxt {
-			maxt = *ts
-		}
-		if *ts <= mint {
-			mint = *ts
-		}
+		maxt = MaxInt64(*ts, maxt)
+		mint = MinInt64(*ts, mint)
 		if ts == nil {
 			return errors.Errorf("expected timestamp for series %v, got none", l.String())
 		}
 	}
-	var offset int64 = 2 * time.Hour.Milliseconds()
 
+	var offset int64 = 2 * time.Hour.Milliseconds()
 	for t := mint; t < maxt; t = t + offset {
 		var e textparse.Entry
 		w, err := tsdb.NewBlockWriter(log.NewNopLogger(), outputDir, DefaultBlockDuration)
 		ctx := context.Background()
 		app := w.Appender(ctx)
 		var p2 textparse.Parser
+		_, errReset := input.Seek(0, 0)
+		if errReset != nil {
+			panic(errReset)
+		}
 		p2 = openmetrics.NewParser(input)
 		tsUpper := MinInt64(t+offset, maxt)
 		for {
 			e, err = p2.Next()
+			fmt.Println(e)
 			if err == io.EOF {
 				break
 			}
@@ -118,11 +121,10 @@ func Import(path string, outputDir string, DefaultBlockDuration int64) (err erro
 			l := labels.Labels{}
 			p2.Metric(&l)
 			_, ts, v := p2.Series()
-			fmt.Println(v)
 			if ts == nil {
 				return errors.Errorf("expected timestamp for series %v, got none", l.String())
 			}
-			if *ts >= t && *ts < tsUpper { // always make even hour blocks when there is even hour in UTC
+			if *ts >= t && *ts < tsUpper {
 				_, err := app.Add(l, *ts, v)
 				if err != nil {
 					return errors.Wrap(err, "add sample")
@@ -142,3 +144,11 @@ func Import(path string, outputDir string, DefaultBlockDuration int64) (err erro
 
 	return nil
 }
+
+// always make even hour blocks when there is even hour in UTC
+// create blocks that are aligned at even hour
+/*
+	func rangeForTimestamp(t int64, width int64) (maxt int64) {
+		return (t/width)*width + width
+	}
+*/
