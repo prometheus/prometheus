@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
@@ -31,7 +31,7 @@ import (
 
 func TestAlertingRuleHTMLSnippet(t *testing.T) {
 	expr, err := parser.ParseExpr(`foo{html="<b>BOLD<b>"}`)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	rule := NewAlertingRule("testrule", expr, 0, labels.FromStrings("html", "<b>BOLD</b>"), labels.FromStrings("html", "<b>BOLD</b>"), nil, false, nil)
 
 	const want = template.HTML(`alert: <a href="/test/prefix/graph?g0.expr=ALERTS%7Balertname%3D%22testrule%22%7D&g0.tab=1">testrule</a>
@@ -43,7 +43,7 @@ annotations:
 `)
 
 	got := rule.HTMLSnippet("/test/prefix")
-	assert.Equal(t, want, got, "incorrect HTML snippet; want:\n\n|%v|\n\ngot:\n\n|%v|", want, got)
+	require.Equal(t, want, got, "incorrect HTML snippet; want:\n\n|%v|\n\ngot:\n\n|%v|", want, got)
 }
 
 func TestAlertingRuleState(t *testing.T) {
@@ -82,7 +82,7 @@ func TestAlertingRuleState(t *testing.T) {
 		rule := NewAlertingRule(test.name, nil, 0, nil, nil, nil, true, nil)
 		rule.active = test.active
 		got := rule.State()
-		assert.Equal(t, test.want, got, "test case %d unexpected AlertState, want:%d got:%d", i, test.want, got)
+		require.Equal(t, test.want, got, "test case %d unexpected AlertState, want:%d got:%d", i, test.want, got)
 	}
 }
 
@@ -91,13 +91,13 @@ func TestAlertingRuleLabelsUpdate(t *testing.T) {
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 85 70 70
 	`)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer suite.Close()
 
-	assert.NoError(t, suite.Run())
+	require.NoError(t, suite.Run())
 
 	expr, err := parser.ParseExpr(`http_requests < 100`)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	rule := NewAlertingRule(
 		"HTTPRequestRateLow",
@@ -171,7 +171,7 @@ func TestAlertingRuleLabelsUpdate(t *testing.T) {
 		evalTime := baseTime.Add(time.Duration(i) * time.Minute)
 		result[0].Point.T = timestamp.FromTime(evalTime)
 		res, err := rule.Eval(suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		var filteredRes promql.Vector // After removing 'ALERTS_FOR_STATE' samples.
 		for _, smpl := range res {
@@ -180,11 +180,11 @@ func TestAlertingRuleLabelsUpdate(t *testing.T) {
 				filteredRes = append(filteredRes, smpl)
 			} else {
 				// If not 'ALERTS', it has to be 'ALERTS_FOR_STATE'.
-				assert.Equal(t, "ALERTS_FOR_STATE", smplName)
+				require.Equal(t, "ALERTS_FOR_STATE", smplName)
 			}
 		}
 
-		assert.Equal(t, result, filteredRes)
+		require.Equal(t, result, filteredRes)
 	}
 }
 
@@ -193,13 +193,13 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 85 70 70
 	`)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer suite.Close()
 
-	assert.NoError(t, suite.Run())
+	require.NoError(t, suite.Run())
 
 	expr, err := parser.ParseExpr(`http_requests < 100`)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	ruleWithoutExternalLabels := NewAlertingRule(
 		"ExternalLabelDoesNotExist",
@@ -252,32 +252,32 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 	res, err := ruleWithoutExternalLabels.Eval(
 		suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil,
 	)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	for _, smpl := range res {
 		smplName := smpl.Metric.Get("__name__")
 		if smplName == "ALERTS" {
 			filteredRes = append(filteredRes, smpl)
 		} else {
 			// If not 'ALERTS', it has to be 'ALERTS_FOR_STATE'.
-			assert.Equal(t, "ALERTS_FOR_STATE", smplName)
+			require.Equal(t, "ALERTS_FOR_STATE", smplName)
 		}
 	}
 
 	res, err = ruleWithExternalLabels.Eval(
 		suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil,
 	)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	for _, smpl := range res {
 		smplName := smpl.Metric.Get("__name__")
 		if smplName == "ALERTS" {
 			filteredRes = append(filteredRes, smpl)
 		} else {
 			// If not 'ALERTS', it has to be 'ALERTS_FOR_STATE'.
-			assert.Equal(t, "ALERTS_FOR_STATE", smplName)
+			require.Equal(t, "ALERTS_FOR_STATE", smplName)
 		}
 	}
 
-	assert.Equal(t, result, filteredRes)
+	require.Equal(t, result, filteredRes)
 }
 
 func TestAlertingRuleEmptyLabelFromTemplate(t *testing.T) {
@@ -285,13 +285,13 @@ func TestAlertingRuleEmptyLabelFromTemplate(t *testing.T) {
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 85 70 70
 	`)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer suite.Close()
 
-	assert.NoError(t, suite.Run())
+	require.NoError(t, suite.Run())
 
 	expr, err := parser.ParseExpr(`http_requests < 100`)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	rule := NewAlertingRule(
 		"EmptyLabel",
@@ -322,17 +322,17 @@ func TestAlertingRuleEmptyLabelFromTemplate(t *testing.T) {
 	res, err := rule.Eval(
 		suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil,
 	)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	for _, smpl := range res {
 		smplName := smpl.Metric.Get("__name__")
 		if smplName == "ALERTS" {
 			filteredRes = append(filteredRes, smpl)
 		} else {
 			// If not 'ALERTS', it has to be 'ALERTS_FOR_STATE'.
-			assert.Equal(t, "ALERTS_FOR_STATE", smplName)
+			require.Equal(t, "ALERTS_FOR_STATE", smplName)
 		}
 	}
-	assert.Equal(t, result, filteredRes)
+	require.Equal(t, result, filteredRes)
 }
 
 func TestAlertingRuleDuplicate(t *testing.T) {
@@ -363,6 +363,6 @@ func TestAlertingRuleDuplicate(t *testing.T) {
 		true, log.NewNopLogger(),
 	)
 	_, err := rule.Eval(ctx, now, EngineQueryFunc(engine, storage), nil)
-	assert.Error(t, err)
-	assert.EqualError(t, err, "vector contains metrics with the same labelset after applying alert labels")
+	require.Error(t, err)
+	require.EqualError(t, err, "vector contains metrics with the same labelset after applying alert labels")
 }

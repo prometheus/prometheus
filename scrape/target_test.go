@@ -27,7 +27,7 @@ import (
 
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 )
@@ -40,7 +40,7 @@ func TestTargetLabels(t *testing.T) {
 	target := newTestTarget("example.com:80", 0, labels.FromStrings("job", "some_job", "foo", "bar"))
 	want := labels.FromStrings(model.JobLabel, "some_job", "foo", "bar")
 	got := target.Labels()
-	assert.Equal(t, want, got)
+	require.Equal(t, want, got)
 }
 
 func TestTargetOffset(t *testing.T) {
@@ -118,7 +118,7 @@ func TestTargetURL(t *testing.T) {
 		RawQuery: expectedParams.Encode(),
 	}
 
-	assert.Equal(t, expectedURL, target.URL())
+	require.Equal(t, expectedURL, target.URL())
 }
 
 func newTestTarget(targetURL string, deadline time.Duration, lbls labels.Labels) *Target {

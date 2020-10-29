@@ -18,7 +18,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestParseFileSuccess(t *testing.T) {
@@ -163,9 +163,9 @@ groups:
 
 	for _, tst := range tests {
 		rgs, errs := Parse([]byte(tst.ruleString))
-		assert.NotNil(t, rgs, "Rule parsing, rule=\n"+tst.ruleString)
+		require.NotNil(t, rgs, "Rule parsing, rule=\n"+tst.ruleString)
 		passed := (tst.shouldPass && len(errs) == 0) || (!tst.shouldPass && len(errs) > 0)
-		assert.True(t, passed, "Rule validation failed, rule=\n"+tst.ruleString)
+		require.True(t, passed, "Rule validation failed, rule=\n"+tst.ruleString)
 	}
 
 }

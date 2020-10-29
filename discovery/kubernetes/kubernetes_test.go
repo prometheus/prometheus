@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
@@ -151,7 +151,7 @@ func requireTargetGroups(t *testing.T, expected, res map[string]*targetgroup.Gro
 		panic(err)
 	}
 
-	assert.Equal(t, string(b1), string(b2))
+	require.Equal(t, string(b1), string(b2))
 }
 
 type hasSynced interface {

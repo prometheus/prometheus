@@ -20,7 +20,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql"
@@ -284,14 +284,14 @@ func TestTemplateExpansion(t *testing.T) {
 			result, err = expander.Expand()
 		}
 		if s.shouldFail {
-			assert.Error(t, err, "%v", s.text)
+			require.Error(t, err, "%v", s.text)
 			continue
 		}
 
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		if err == nil {
-			assert.Equal(t, result, s.output)
+			require.Equal(t, result, s.output)
 		}
 	}
 }

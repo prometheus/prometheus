@@ -16,7 +16,7 @@ package chunks
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestReaderWithInvalidBuffer(t *testing.T) {
@@ -24,5 +24,5 @@ func TestReaderWithInvalidBuffer(t *testing.T) {
 	r := &Reader{bs: []ByteSlice{b}}
 
 	_, err := r.Chunk(0)
-	assert.Error(t, err)
+	require.Error(t, err)
 }

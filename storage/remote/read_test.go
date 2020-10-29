@@ -24,7 +24,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -34,7 +34,7 @@ import (
 
 func TestNoDuplicateReadConfigs(t *testing.T) {
 	dir, err := ioutil.TempDir("", "TestNoDuplicateReadConfigs")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer os.RemoveAll(dir)
 
 	cfg1 := config.RemoteReadConfig{
@@ -103,8 +103,8 @@ func TestNoDuplicateReadConfigs(t *testing.T) {
 			err := s.ApplyConfig(conf)
 			prometheus.Unregister(s.rws.highestTimestamp)
 			gotError := err != nil
-			assert.Equal(t, tc.err, gotError)
-			assert.NoError(t, s.Close())
+			require.Equal(t, tc.err, gotError)
+			require.NoError(t, s.Close())
 		})
 	}
 }
@@ -170,8 +170,8 @@ func TestExternalLabelsQuerierAddExternalLabels(t *testing.T) {
 		sort.Slice(test.outMatchers, func(i, j int) bool { return test.outMatchers[i].Name < test.outMatchers[j].Name })
 		sort.Slice(matchers, func(i, j int) bool { return matchers[i].Name < matchers[j].Name })
 
-		assert.Equal(t, test.outMatchers, matchers, "%d", i)
-		assert.Equal(t, test.added, added, "%d", i)
+		require.Equal(t, test.outMatchers, matchers, "%d", i)
+		require.Equal(t, test.added, added, "%d", i)
 	}
 }
 
@@ -200,9 +200,9 @@ func TestSeriesSetFilter(t *testing.T) {
 	for _, tc := range tests {
 		filtered := newSeriesSetFilter(FromQueryResult(true, tc.in), tc.toRemove)
 		act, ws, err := ToQueryResult(filtered, 1e6)
-		assert.NoError(t, err)
-		assert.Equal(t, 0, len(ws))
-		assert.Equal(t, tc.expected, act)
+		require.NoError(t, err)
+		require.Equal(t, 0, len(ws))
+		require.Equal(t, tc.expected, act)
 	}
 }
 
@@ -491,21 +491,21 @@ func TestSampleAndChunkQueryableClient(t *testing.T) {
 				tc.callback,
 			)
 			q, err := c.Querier(context.TODO(), tc.mint, tc.maxt)
-			assert.NoError(t, err)
-			defer assert.NoError(t, q.Close())
+			require.NoError(t, err)
+			defer require.NoError(t, q.Close())
 
 			ss := q.Select(true, nil, tc.matchers...)
-			assert.NoError(t, err)
-			assert.Equal(t, storage.Warnings(nil), ss.Warnings())
+			require.NoError(t, err)
+			require.Equal(t, storage.Warnings(nil), ss.Warnings())
 
-			assert.Equal(t, tc.expectedQuery, m.got)
+			require.Equal(t, tc.expectedQuery, m.got)
 
 			var got []labels.Labels
 			for ss.Next() {
 				got = append(got, ss.At().Labels())
 			}
-			assert.NoError(t, ss.Err())
-			assert.Equal(t, tc.expectedSeries, got)
+			require.NoError(t, ss.Err())
+			require.Equal(t, tc.expectedSeries, got)
 
 		})
 	}

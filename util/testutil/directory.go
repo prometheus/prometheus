@@ -22,7 +22,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -139,32 +139,32 @@ func NewTemporaryDirectory(name string, t T) (handler TemporaryDirectory) {
 func DirHash(t *testing.T, path string) []byte {
 	hash := sha256.New()
 	err := filepath.Walk(path, func(path string, info os.FileInfo, err error) error {
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		if info.IsDir() {
 			return nil
 		}
 		f, err := os.Open(path)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		defer f.Close()
 
 		_, err = io.Copy(hash, f)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		_, err = io.WriteString(hash, strconv.Itoa(int(info.Size())))
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		_, err = io.WriteString(hash, info.Name())
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		modTime, err := info.ModTime().GobEncode()
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		_, err = io.WriteString(hash, string(modTime))
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		return nil
 	})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	return hash.Sum(nil)
 }

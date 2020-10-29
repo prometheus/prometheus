@@ -33,7 +33,7 @@ import (
 	dto "github.com/prometheus/client_model/go"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -135,7 +135,7 @@ func TestDiscoveredLabelsUpdate(t *testing.T) {
 	}
 	sp.sync([]*Target{t2})
 
-	assert.Equal(t, t2.DiscoveredLabels(), sp.activeTargets[t1.hash()].DiscoveredLabels())
+	require.Equal(t, t2.DiscoveredLabels(), sp.activeTargets[t1.hash()].DiscoveredLabels())
 }
 
 type testLoop struct {
@@ -228,11 +228,11 @@ func TestScrapePoolStop(t *testing.T) {
 	}
 
 	mtx.Lock()
-	assert.Equal(t, numTargets, len(stopped), "Unexpected number of stopped loops")
+	require.Equal(t, numTargets, len(stopped), "Unexpected number of stopped loops")
 	mtx.Unlock()
 
-	assert.Equal(t, 0, len(sp.activeTargets), "Targets were not cleared on stopping: %d left", len(sp.activeTargets))
-	assert.Equal(t, 0, len(sp.loops), "Loops were not cleared on stopping: %d left", len(sp.loops))
+	require.Equal(t, 0, len(sp.activeTargets), "Targets were not cleared on stopping: %d left", len(sp.activeTargets))
+	require.Equal(t, 0, len(sp.loops), "Loops were not cleared on stopping: %d left", len(sp.loops))
 }
 
 func TestScrapePoolReload(t *testing.T) {
@@ -250,12 +250,12 @@ func TestScrapePoolReload(t *testing.T) {
 	newLoop := func(opts scrapeLoopOptions) loop {
 		l := &testLoop{}
 		l.startFunc = func(interval, timeout time.Duration, errc chan<- error) {
-			assert.Equal(t, 3*time.Second, interval, "Unexpected scrape interval")
-			assert.Equal(t, 2*time.Second, timeout, "Unexpected scrape timeout")
+			require.Equal(t, 3*time.Second, interval, "Unexpected scrape interval")
+			require.Equal(t, 2*time.Second, timeout, "Unexpected scrape timeout")
 
 			mtx.Lock()
 			targetScraper := opts.scraper.(*targetScraper)
-			assert.True(t, stopped[targetScraper.hash()], "Scrape loop for %v not stopped yet", targetScraper)
+			require.True(t, stopped[targetScraper.hash()], "Scrape loop for %v not stopped yet", targetScraper)
 			mtx.Unlock()
 		}
 		return l
@@ -314,11 +314,11 @@ func TestScrapePoolReload(t *testing.T) {
 	}
 
 	mtx.Lock()
-	assert.Equal(t, numTargets, len(stopped), "Unexpected number of stopped loops")
+	require.Equal(t, numTargets, len(stopped), "Unexpected number of stopped loops")
 	mtx.Unlock()
 
-	assert.Equal(t, sp.activeTargets, beforeTargets, "Reloading affected target states unexpectedly")
-	assert.Equal(t, numTargets, len(sp.loops), "Unexpected number of stopped loops after reload")
+	require.Equal(t, sp.activeTargets, beforeTargets, "Reloading affected target states unexpectedly")
+	require.Equal(t, numTargets, len(sp.loops), "Unexpected number of stopped loops after reload")
 }
 
 func TestScrapePoolTargetLimit(t *testing.T) {
@@ -358,7 +358,7 @@ func TestScrapePoolTargetLimit(t *testing.T) {
 	var limit uint
 	reloadWithLimit := func(l uint) {
 		limit = l
-		assert.NoError(t, sp.reload(&config.ScrapeConfig{
+		require.NoError(t, sp.reload(&config.ScrapeConfig{
 			ScrapeInterval: model.Duration(3 * time.Second),
 			ScrapeTimeout:  model.Duration(2 * time.Second),
 			TargetLimit:    l,
@@ -374,7 +374,7 @@ func TestScrapePoolTargetLimit(t *testing.T) {
 	validateIsRunning := func() {
 		wg.Wait()
 		for _, l := range sp.loops {
-			assert.True(t, l.(*testLoop).runOnce, "loop should be running")
+			require.True(t, l.(*testLoop).runOnce, "loop should be running")
 		}
 	}
 
@@ -382,10 +382,10 @@ func TestScrapePoolTargetLimit(t *testing.T) {
 		for _, l := range sp.loops {
 			lerr := l.(*testLoop).getForcedError()
 			if shouldErr {
-				assert.NotNil(t, lerr, "error was expected for %d targets with a limit of %d", targets, limit)
-				assert.Equal(t, fmt.Sprintf("target_limit exceeded (number of targets: %d, limit: %d)", targets, limit), lerr.Error())
+				require.NotNil(t, lerr, "error was expected for %d targets with a limit of %d", targets, limit)
+				require.Equal(t, fmt.Sprintf("target_limit exceeded (number of targets: %d, limit: %d)", targets, limit), lerr.Error())
 			} else {
-				assert.Equal(t, nil, lerr)
+				require.Equal(t, nil, lerr)
 			}
 		}
 	}
@@ -452,33 +452,33 @@ func TestScrapePoolAppender(t *testing.T) {
 		target: &Target{},
 	})
 	appl, ok := loop.(*scrapeLoop)
-	assert.True(t, ok, "Expected scrapeLoop but got %T", loop)
+	require.True(t, ok, "Expected scrapeLoop but got %T", loop)
 
 	wrapped := appl.appender(context.Background())
 
 	tl, ok := wrapped.(*timeLimitAppender)
-	assert.True(t, ok, "Expected timeLimitAppender but got %T", wrapped)
+	require.True(t, ok, "Expected timeLimitAppender but got %T", wrapped)
 
 	_, ok = tl.Appender.(nopAppender)
-	assert.True(t, ok, "Expected base appender but got %T", tl.Appender)
+	require.True(t, ok, "Expected base appender but got %T", tl.Appender)
 
 	loop = sp.newLoop(scrapeLoopOptions{
 		target: &Target{},
 		limit:  100,
 	})
 	appl, ok = loop.(*scrapeLoop)
-	assert.True(t, ok, "Expected scrapeLoop but got %T", loop)
+	require.True(t, ok, "Expected scrapeLoop but got %T", loop)
 
 	wrapped = appl.appender(context.Background())
 
 	sl, ok := wrapped.(*limitAppender)
-	assert.True(t, ok, "Expected limitAppender but got %T", wrapped)
+	require.True(t, ok, "Expected limitAppender but got %T", wrapped)
 
 	tl, ok = sl.Appender.(*timeLimitAppender)
-	assert.True(t, ok, "Expected limitAppender but got %T", sl.Appender)
+	require.True(t, ok, "Expected limitAppender but got %T", sl.Appender)
 
 	_, ok = tl.Appender.(nopAppender)
-	assert.True(t, ok, "Expected base appender but got %T", tl.Appender)
+	require.True(t, ok, "Expected base appender but got %T", tl.Appender)
 }
 
 func TestScrapePoolRaces(t *testing.T) {
@@ -508,8 +508,8 @@ func TestScrapePoolRaces(t *testing.T) {
 	dropped := sp.DroppedTargets()
 	expectedActive, expectedDropped := len(tgts[0].Targets), 0
 
-	assert.Equal(t, expectedActive, len(active), "Invalid number of active targets")
-	assert.Equal(t, expectedDropped, len(dropped), "Invalid number of dropped targets")
+	require.Equal(t, expectedActive, len(active), "Invalid number of active targets")
+	require.Equal(t, expectedDropped, len(dropped), "Invalid number of dropped targets")
 
 	for i := 0; i < 20; i++ {
 		time.Sleep(time.Duration(10 * time.Millisecond))
@@ -552,17 +552,17 @@ func TestScrapePoolScrapeLoopsStarted(t *testing.T) {
 		},
 	}
 
-	assert.NoError(t, sp.reload(&config.ScrapeConfig{
+	require.NoError(t, sp.reload(&config.ScrapeConfig{
 		ScrapeInterval: model.Duration(3 * time.Second),
 		ScrapeTimeout:  model.Duration(2 * time.Second),
 	}))
 	sp.Sync(tgs)
 
-	assert.Equal(t, 1, len(sp.loops))
+	require.Equal(t, 1, len(sp.loops))
 
 	wg.Wait()
 	for _, l := range sp.loops {
-		assert.True(t, l.(*testLoop).runOnce, "loop should be running")
+		require.True(t, l.(*testLoop).runOnce, "loop should be running")
 	}
 }
 
@@ -866,27 +866,27 @@ test_metric 1
 # TYPE test_metric_no_help gauge
 # HELP test_metric_no_type other help text
 # EOF`), "application/openmetrics-text", time.Now())
-	assert.NoError(t, err)
-	assert.NoError(t, slApp.Commit())
-	assert.Equal(t, 1, total)
+	require.NoError(t, err)
+	require.NoError(t, slApp.Commit())
+	require.Equal(t, 1, total)
 
 	md, ok := cache.GetMetadata("test_metric")
-	assert.True(t, ok, "expected metadata to be present")
-	assert.Equal(t, textparse.MetricTypeCounter, md.Type, "unexpected metric type")
-	assert.Equal(t, "some help text", md.Help)
-	assert.Equal(t, "metric", md.Unit)
+	require.True(t, ok, "expected metadata to be present")
+	require.Equal(t, textparse.MetricTypeCounter, md.Type, "unexpected metric type")
+	require.Equal(t, "some help text", md.Help)
+	require.Equal(t, "metric", md.Unit)
 
 	md, ok = cache.GetMetadata("test_metric_no_help")
-	assert.True(t, ok, "expected metadata to be present")
-	assert.Equal(t, textparse.MetricTypeGauge, md.Type, "unexpected metric type")
-	assert.Equal(t, "", md.Help)
-	assert.Equal(t, "", md.Unit)
+	require.True(t, ok, "expected metadata to be present")
+	require.Equal(t, textparse.MetricTypeGauge, md.Type, "unexpected metric type")
+	require.Equal(t, "", md.Help)
+	require.Equal(t, "", md.Unit)
 
 	md, ok = cache.GetMetadata("test_metric_no_type")
-	assert.True(t, ok, "expected metadata to be present")
-	assert.Equal(t, textparse.MetricTypeUnknown, md.Type, "unexpected metric type")
-	assert.Equal(t, "other help text", md.Help)
-	assert.Equal(t, "", md.Unit)
+	require.True(t, ok, "expected metadata to be present")
+	require.Equal(t, textparse.MetricTypeUnknown, md.Type, "unexpected metric type")
+	require.Equal(t, "other help text", md.Help)
+	require.Equal(t, "", md.Unit)
 }
 
 func TestScrapeLoopSeriesAdded(t *testing.T) {
@@ -909,19 +909,19 @@ func TestScrapeLoopSeriesAdded(t *testing.T) {
 
 	slApp := sl.appender(ctx)
 	total, added, seriesAdded, err := sl.append(slApp, []byte("test_metric 1\n"), "", time.Time{})
-	assert.NoError(t, err)
-	assert.NoError(t, slApp.Commit())
-	assert.Equal(t, 1, total)
-	assert.Equal(t, 1, added)
-	assert.Equal(t, 1, seriesAdded)
+	require.NoError(t, err)
+	require.NoError(t, slApp.Commit())
+	require.Equal(t, 1, total)
+	require.Equal(t, 1, added)
+	require.Equal(t, 1, seriesAdded)
 
 	slApp = sl.appender(ctx)
 	total, added, seriesAdded, err = sl.append(slApp, []byte("test_metric 1\n"), "", time.Time{})
-	assert.NoError(t, slApp.Commit())
-	assert.NoError(t, err)
-	assert.Equal(t, 1, total)
-	assert.Equal(t, 1, added)
-	assert.Equal(t, 0, seriesAdded)
+	require.NoError(t, slApp.Commit())
+	require.NoError(t, err)
+	require.Equal(t, 1, total)
+	require.Equal(t, 1, added)
+	require.Equal(t, 0, seriesAdded)
 }
 
 func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrape(t *testing.T) {
@@ -971,9 +971,9 @@ func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrape(t *testing.T) {
 
 	// 1 successfully scraped sample, 1 stale marker after first fail, 5 report samples for
 	// each scrape successful or not.
-	assert.Equal(t, 27, len(appender.result), "Appended samples not as expected")
-	assert.Equal(t, 42.0, appender.result[0].v, "Appended first sample not as expected")
-	assert.True(t, value.IsStaleNaN(appender.result[6].v),
+	require.Equal(t, 27, len(appender.result), "Appended samples not as expected")
+	require.Equal(t, 42.0, appender.result[0].v, "Appended first sample not as expected")
+	require.True(t, value.IsStaleNaN(appender.result[6].v),
 		"Appended second sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(appender.result[6].v))
 }
 
@@ -1027,9 +1027,9 @@ func TestScrapeLoopRunCreatesStaleMarkersOnParseFailure(t *testing.T) {
 
 	// 1 successfully scraped sample, 1 stale marker after first fail, 5 report samples for
 	// each scrape successful or not.
-	assert.Equal(t, 17, len(appender.result), "Appended samples not as expected")
-	assert.Equal(t, 42.0, appender.result[0].v, "Appended first sample not as expected")
-	assert.True(t, value.IsStaleNaN(appender.result[6].v),
+	require.Equal(t, 17, len(appender.result), "Appended samples not as expected")
+	require.Equal(t, 42.0, appender.result[0].v, "Appended first sample not as expected")
+	require.True(t, value.IsStaleNaN(appender.result[6].v),
 		"Appended second sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(appender.result[6].v))
 }
 
@@ -1102,7 +1102,7 @@ func TestScrapeLoopCache(t *testing.T) {
 
 	// 1 successfully scraped sample, 1 stale marker after first fail, 5 report samples for
 	// each scrape successful or not.
-	assert.Equal(t, 26, len(appender.result), "Appended samples not as expected")
+	require.Equal(t, 26, len(appender.result), "Appended samples not as expected")
 }
 
 func TestScrapeLoopCacheMemoryExhaustionProtection(t *testing.T) {
@@ -1240,8 +1240,8 @@ func TestScrapeLoopAppend(t *testing.T) {
 
 		slApp := sl.appender(context.Background())
 		_, _, _, err := sl.append(slApp, []byte(test.scrapeLabels), "", now)
-		assert.NoError(t, err)
-		assert.NoError(t, slApp.Commit())
+		require.NoError(t, err)
+		require.NoError(t, slApp.Commit())
 
 		expected := []sample{
 			{
@@ -1259,7 +1259,7 @@ func TestScrapeLoopAppend(t *testing.T) {
 		}
 
 		t.Logf("Test:%s", test.title)
-		assert.Equal(t, expected, app.result)
+		require.Equal(t, expected, app.result)
 	}
 }
 
@@ -1293,8 +1293,8 @@ func TestScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T) {
 
 	slApp := sl.appender(context.Background())
 	_, _, _, err := sl.append(slApp, []byte(metric), "", now)
-	assert.NoError(t, err)
-	assert.NoError(t, slApp.Commit())
+	require.NoError(t, err)
+	require.NoError(t, slApp.Commit())
 
 	expected := []sample{
 		{
@@ -1304,7 +1304,7 @@ func TestScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T) {
 		},
 	}
 
-	assert.Equal(t, expected, app.result)
+	require.Equal(t, expected, app.result)
 }
 
 func TestScrapeLoopAppendSampleLimit(t *testing.T) {
@@ -1329,7 +1329,7 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 	// Get the value of the Counter before performing the append.
 	beforeMetric := dto.Metric{}
 	err := targetScrapeSampleLimit.Write(&beforeMetric)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	beforeMetricValue := beforeMetric.GetCounter().GetValue()
 
@@ -1339,20 +1339,20 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 	if err != errSampleLimit {
 		t.Fatalf("Did not see expected sample limit error: %s", err)
 	}
-	assert.NoError(t, slApp.Rollback())
-	assert.Equal(t, 3, total)
-	assert.Equal(t, 3, added)
-	assert.Equal(t, 1, seriesAdded)
+	require.NoError(t, slApp.Rollback())
+	require.Equal(t, 3, total)
+	require.Equal(t, 3, added)
+	require.Equal(t, 1, seriesAdded)
 
 	// Check that the Counter has been incremented a single time for the scrape,
 	// not multiple times for each sample.
 	metric := dto.Metric{}
 	err = targetScrapeSampleLimit.Write(&metric)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	value := metric.GetCounter().GetValue()
 	change := value - beforeMetricValue
-	assert.Equal(t, 1.0, change, "Unexpected change of sample limit metric: %f", change)
+	require.Equal(t, 1.0, change, "Unexpected change of sample limit metric: %f", change)
 
 	// And verify that we got the samples that fit under the limit.
 	want := []sample{
@@ -1362,7 +1362,7 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 			v:      1,
 		},
 	}
-	assert.Equal(t, want, resApp.rolledbackResult, "Appended samples not as expected")
+	require.Equal(t, want, resApp.rolledbackResult, "Appended samples not as expected")
 
 	now = time.Now()
 	slApp = sl.appender(context.Background())
@@ -1370,10 +1370,10 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 	if err != errSampleLimit {
 		t.Fatalf("Did not see expected sample limit error: %s", err)
 	}
-	assert.NoError(t, slApp.Rollback())
-	assert.Equal(t, 9, total)
-	assert.Equal(t, 6, added)
-	assert.Equal(t, 0, seriesAdded)
+	require.NoError(t, slApp.Rollback())
+	require.Equal(t, 9, total)
+	require.Equal(t, 6, added)
+	require.Equal(t, 0, seriesAdded)
 }
 
 func TestScrapeLoop_ChangingMetricString(t *testing.T) {
@@ -1398,13 +1398,13 @@ func TestScrapeLoop_ChangingMetricString(t *testing.T) {
 	now := time.Now()
 	slApp := sl.appender(context.Background())
 	_, _, _, err := sl.append(slApp, []byte(`metric_a{a="1",b="1"} 1`), "", now)
-	assert.NoError(t, err)
-	assert.NoError(t, slApp.Commit())
+	require.NoError(t, err)
+	require.NoError(t, slApp.Commit())
 
 	slApp = sl.appender(context.Background())
 	_, _, _, err = sl.append(slApp, []byte(`metric_a{b="1",a="1"} 2`), "", now.Add(time.Minute))
-	assert.NoError(t, err)
-	assert.NoError(t, slApp.Commit())
+	require.NoError(t, err)
+	require.NoError(t, slApp.Commit())
 
 	// DeepEqual will report NaNs as being different, so replace with a different value.
 	want := []sample{
@@ -1419,7 +1419,7 @@ func TestScrapeLoop_ChangingMetricString(t *testing.T) {
 			v:      2,
 		},
 	}
-	assert.Equal(t, want, capp.result, "Appended samples not as expected")
+	require.Equal(t, want, capp.result, "Appended samples not as expected")
 }
 
 func TestScrapeLoopAppendStaleness(t *testing.T) {
@@ -1438,16 +1438,16 @@ func TestScrapeLoopAppendStaleness(t *testing.T) {
 	now := time.Now()
 	slApp := sl.appender(context.Background())
 	_, _, _, err := sl.append(slApp, []byte("metric_a 1\n"), "", now)
-	assert.NoError(t, err)
-	assert.NoError(t, slApp.Commit())
+	require.NoError(t, err)
+	require.NoError(t, slApp.Commit())
 
 	slApp = sl.appender(context.Background())
 	_, _, _, err = sl.append(slApp, []byte(""), "", now.Add(time.Second))
-	assert.NoError(t, err)
-	assert.NoError(t, slApp.Commit())
+	require.NoError(t, err)
+	require.NoError(t, slApp.Commit())
 
 	ingestedNaN := math.Float64bits(app.result[1].v)
-	assert.Equal(t, value.StaleNaN, ingestedNaN, "Appended stale sample wasn't as expected")
+	require.Equal(t, value.StaleNaN, ingestedNaN, "Appended stale sample wasn't as expected")
 
 	// DeepEqual will report NaNs as being different, so replace with a different value.
 	app.result[1].v = 42
@@ -1463,7 +1463,7 @@ func TestScrapeLoopAppendStaleness(t *testing.T) {
 			v:      42,
 		},
 	}
-	assert.Equal(t, want, app.result, "Appended samples not as expected")
+	require.Equal(t, want, app.result, "Appended samples not as expected")
 }
 
 func TestScrapeLoopAppendNoStalenessIfTimestamp(t *testing.T) {
@@ -1481,13 +1481,13 @@ func TestScrapeLoopAppendNoStalenessIfTimestamp(t *testing.T) {
 	now := time.Now()
 	slApp := sl.appender(context.Background())
 	_, _, _, err := sl.append(slApp, []byte("metric_a 1 1000\n"), "", now)
-	assert.NoError(t, err)
-	assert.NoError(t, slApp.Commit())
+	require.NoError(t, err)
+	require.NoError(t, slApp.Commit())
 
 	slApp = sl.appender(context.Background())
 	_, _, _, err = sl.append(slApp, []byte(""), "", now.Add(time.Second))
-	assert.NoError(t, err)
-	assert.NoError(t, slApp.Commit())
+	require.NoError(t, err)
+	require.NoError(t, slApp.Commit())
 
 	want := []sample{
 		{
@@ -1496,7 +1496,7 @@ func TestScrapeLoopAppendNoStalenessIfTimestamp(t *testing.T) {
 			v:      1,
 		},
 	}
-	assert.Equal(t, want, app.result, "Appended samples not as expected")
+	require.Equal(t, want, app.result, "Appended samples not as expected")
 }
 
 func TestScrapeLoopRunReportsTargetDownOnScrapeError(t *testing.T) {
@@ -1524,7 +1524,7 @@ func TestScrapeLoopRunReportsTargetDownOnScrapeError(t *testing.T) {
 	}
 
 	sl.run(10*time.Millisecond, time.Hour, nil)
-	assert.Equal(t, 0.0, appender.result[0].v, "bad 'up' value")
+	require.Equal(t, 0.0, appender.result[0].v, "bad 'up' value")
 }
 
 func TestScrapeLoopRunReportsTargetDownOnInvalidUTF8(t *testing.T) {
@@ -1553,7 +1553,7 @@ func TestScrapeLoopRunReportsTargetDownOnInvalidUTF8(t *testing.T) {
 	}
 
 	sl.run(10*time.Millisecond, time.Hour, nil)
-	assert.Equal(t, 0.0, appender.result[0].v, "bad 'up' value")
+	require.Equal(t, 0.0, appender.result[0].v, "bad 'up' value")
 }
 
 type errorAppender struct {
@@ -1594,8 +1594,8 @@ func TestScrapeLoopAppendGracefullyIfAmendOrOutOfOrderOrOutOfBounds(t *testing.T
 	now := time.Unix(1, 0)
 	slApp := sl.appender(context.Background())
 	total, added, seriesAdded, err := sl.append(slApp, []byte("out_of_order 1\namend 1\nnormal 1\nout_of_bounds 1\n"), "", now)
-	assert.NoError(t, err)
-	assert.NoError(t, slApp.Commit())
+	require.NoError(t, err)
+	require.NoError(t, slApp.Commit())
 
 	want := []sample{
 		{
@@ -1604,10 +1604,10 @@ func TestScrapeLoopAppendGracefullyIfAmendOrOutOfOrderOrOutOfBounds(t *testing.T
 			v:      1,
 		},
 	}
-	assert.Equal(t, want, app.result, "Appended samples not as expected")
-	assert.Equal(t, 4, total)
-	assert.Equal(t, 4, added)
-	assert.Equal(t, 1, seriesAdded)
+	require.Equal(t, want, app.result, "Appended samples not as expected")
+	require.Equal(t, 4, total)
+	require.Equal(t, 4, added)
+	require.Equal(t, 1, seriesAdded)
 }
 
 func TestScrapeLoopOutOfBoundsTimeError(t *testing.T) {
@@ -1631,11 +1631,11 @@ func TestScrapeLoopOutOfBoundsTimeError(t *testing.T) {
 	now := time.Now().Add(20 * time.Minute)
 	slApp := sl.appender(context.Background())
 	total, added, seriesAdded, err := sl.append(slApp, []byte("normal 1\n"), "", now)
-	assert.NoError(t, err)
-	assert.NoError(t, slApp.Commit())
-	assert.Equal(t, 1, total)
-	assert.Equal(t, 1, added)
-	assert.Equal(t, 0, seriesAdded)
+	require.NoError(t, err)
+	require.NoError(t, slApp.Commit())
+	require.Equal(t, 1, total)
+	require.Equal(t, 1, added)
+	require.Equal(t, 0, seriesAdded)
 
 }
 
@@ -1681,9 +1681,9 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 	var buf bytes.Buffer
 
 	contentType, err := ts.scrape(context.Background(), &buf)
-	assert.NoError(t, err)
-	assert.Equal(t, "text/plain; version=0.0.4", contentType)
-	assert.Equal(t, "metric_a 1\nmetric_b 2\n", buf.String())
+	require.NoError(t, err)
+	require.Equal(t, "text/plain; version=0.0.4", contentType)
+	require.Equal(t, "metric_a 1\nmetric_b 2\n", buf.String())
 }
 
 func TestTargetScrapeScrapeCancel(t *testing.T) {
@@ -1734,7 +1734,7 @@ func TestTargetScrapeScrapeCancel(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatalf("Scrape function did not return unexpectedly")
 	case err := <-errc:
-		assert.NoError(t, err)
+		require.NoError(t, err)
 	}
 	// If this is closed in a defer above the function the test server
 	// doesn't terminate and the test doesn't complete.
@@ -1765,7 +1765,7 @@ func TestTargetScrapeScrapeNotFound(t *testing.T) {
 	}
 
 	_, err = ts.scrape(context.Background(), ioutil.Discard)
-	assert.Contains(t, err.Error(), "404", "Expected \"404 NotFound\" error but got: %s", err)
+	require.Contains(t, err.Error(), "404", "Expected \"404 NotFound\" error but got: %s", err)
 }
 
 // testScraper implements the scraper interface and allows setting values
@@ -1818,8 +1818,8 @@ func TestScrapeLoop_RespectTimestamps(t *testing.T) {
 	now := time.Now()
 	slApp := sl.appender(context.Background())
 	_, _, _, err := sl.append(slApp, []byte(`metric_a{a="1",b="1"} 1 0`), "", now)
-	assert.NoError(t, err)
-	assert.NoError(t, slApp.Commit())
+	require.NoError(t, err)
+	require.NoError(t, slApp.Commit())
 
 	want := []sample{
 		{
@@ -1828,7 +1828,7 @@ func TestScrapeLoop_RespectTimestamps(t *testing.T) {
 			v:      1,
 		},
 	}
-	assert.Equal(t, want, capp.result, "Appended samples not as expected")
+	require.Equal(t, want, capp.result, "Appended samples not as expected")
 }
 
 func TestScrapeLoop_DiscardTimestamps(t *testing.T) {
@@ -1851,8 +1851,8 @@ func TestScrapeLoop_DiscardTimestamps(t *testing.T) {
 	now := time.Now()
 	slApp := sl.appender(context.Background())
 	_, _, _, err := sl.append(slApp, []byte(`metric_a{a="1",b="1"} 1 0`), "", now)
-	assert.NoError(t, err)
-	assert.NoError(t, slApp.Commit())
+	require.NoError(t, err)
+	require.NoError(t, slApp.Commit())
 
 	want := []sample{
 		{
@@ -1861,7 +1861,7 @@ func TestScrapeLoop_DiscardTimestamps(t *testing.T) {
 			v:      1,
 		},
 	}
-	assert.Equal(t, want, capp.result, "Appended samples not as expected")
+	require.Equal(t, want, capp.result, "Appended samples not as expected")
 }
 
 func TestScrapeLoopDiscardDuplicateLabels(t *testing.T) {
@@ -1884,27 +1884,27 @@ func TestScrapeLoopDiscardDuplicateLabels(t *testing.T) {
 	// We add a good and a bad metric to check that both are discarded.
 	slApp := sl.appender(ctx)
 	_, _, _, err := sl.append(slApp, []byte("test_metric{le=\"500\"} 1\ntest_metric{le=\"600\",le=\"700\"} 1\n"), "", time.Time{})
-	assert.Error(t, err)
-	assert.NoError(t, slApp.Rollback())
+	require.Error(t, err)
+	require.NoError(t, slApp.Rollback())
 
 	q, err := s.Querier(ctx, time.Time{}.UnixNano(), 0)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	series := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
-	assert.Equal(t, false, series.Next(), "series found in tsdb")
-	assert.NoError(t, series.Err())
+	require.Equal(t, false, series.Next(), "series found in tsdb")
+	require.NoError(t, series.Err())
 
 	// We add a good metric to check that it is recorded.
 	slApp = sl.appender(ctx)
 	_, _, _, err = sl.append(slApp, []byte("test_metric{le=\"500\"} 1\n"), "", time.Time{})
-	assert.NoError(t, err)
-	assert.NoError(t, slApp.Commit())
+	require.NoError(t, err)
+	require.NoError(t, slApp.Commit())
 
 	q, err = s.Querier(ctx, time.Time{}.UnixNano(), 0)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	series = q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "le", "500"))
-	assert.Equal(t, true, series.Next(), "series not found in tsdb")
-	assert.NoError(t, series.Err())
-	assert.Equal(t, false, series.Next(), "more than one series found in tsdb")
+	require.Equal(t, true, series.Next(), "series not found in tsdb")
+	require.NoError(t, series.Err())
+	require.Equal(t, false, series.Next(), "more than one series found in tsdb")
 }
 
 func TestScrapeLoopDiscardUnnamedMetrics(t *testing.T) {
@@ -1933,15 +1933,15 @@ func TestScrapeLoopDiscardUnnamedMetrics(t *testing.T) {
 
 	slApp := sl.appender(context.Background())
 	_, _, _, err := sl.append(slApp, []byte("nok 1\nnok2{drop=\"drop\"} 1\n"), "", time.Time{})
-	assert.Error(t, err)
-	assert.NoError(t, slApp.Rollback())
-	assert.Equal(t, errNameLabelMandatory, err)
+	require.Error(t, err)
+	require.NoError(t, slApp.Rollback())
+	require.Equal(t, errNameLabelMandatory, err)
 
 	q, err := s.Querier(ctx, time.Time{}.UnixNano(), 0)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	series := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
-	assert.Equal(t, false, series.Next(), "series found in tsdb")
-	assert.NoError(t, series.Err())
+	require.Equal(t, false, series.Next(), "series found in tsdb")
+	require.NoError(t, series.Err())
 }
 
 func TestReusableConfig(t *testing.T) {
@@ -2000,14 +2000,14 @@ func TestReusableConfig(t *testing.T) {
 	}
 
 	for i, m := range match {
-		assert.Equal(t, true, reusableCache(variants[m[0]], variants[m[1]]), "match test %d", i)
-		assert.Equal(t, true, reusableCache(variants[m[1]], variants[m[0]]), "match test %d", i)
-		assert.Equal(t, true, reusableCache(variants[m[1]], variants[m[1]]), "match test %d", i)
-		assert.Equal(t, true, reusableCache(variants[m[0]], variants[m[0]]), "match test %d", i)
+		require.Equal(t, true, reusableCache(variants[m[0]], variants[m[1]]), "match test %d", i)
+		require.Equal(t, true, reusableCache(variants[m[1]], variants[m[0]]), "match test %d", i)
+		require.Equal(t, true, reusableCache(variants[m[1]], variants[m[1]]), "match test %d", i)
+		require.Equal(t, true, reusableCache(variants[m[0]], variants[m[0]]), "match test %d", i)
 	}
 	for i, m := range noMatch {
-		assert.Equal(t, false, reusableCache(variants[m[0]], variants[m[1]]), "not match test %d", i)
-		assert.Equal(t, false, reusableCache(variants[m[1]], variants[m[0]]), "not match test %d", i)
+		require.Equal(t, false, reusableCache(variants[m[0]], variants[m[1]]), "not match test %d", i)
+		require.Equal(t, false, reusableCache(variants[m[1]], variants[m[0]]), "not match test %d", i)
 	}
 }
 
@@ -2118,15 +2118,15 @@ func TestReuseScrapeCache(t *testing.T) {
 		sp.reload(s.newConfig)
 		for fp, newCacheAddr := range cacheAddr(sp) {
 			if s.keep {
-				assert.Equal(t, initCacheAddr[fp], newCacheAddr, "step %d: old cache and new cache are not the same", i)
+				require.Equal(t, initCacheAddr[fp], newCacheAddr, "step %d: old cache and new cache are not the same", i)
 			} else {
-				assert.NotEqual(t, initCacheAddr[fp], newCacheAddr, "step %d: old cache and new cache are the same", i)
+				require.NotEqual(t, initCacheAddr[fp], newCacheAddr, "step %d: old cache and new cache are the same", i)
 			}
 		}
 		initCacheAddr = cacheAddr(sp)
 		sp.reload(s.newConfig)
 		for fp, newCacheAddr := range cacheAddr(sp) {
-			assert.Equal(t, initCacheAddr[fp], newCacheAddr, "step %d: reloading the exact config invalidates the cache", i)
+			require.Equal(t, initCacheAddr[fp], newCacheAddr, "step %d: reloading the exact config invalidates the cache", i)
 		}
 	}
 }
@@ -2150,8 +2150,8 @@ func TestScrapeAddFast(t *testing.T) {
 
 	slApp := sl.appender(ctx)
 	_, _, _, err := sl.append(slApp, []byte("up 1\n"), "", time.Time{})
-	assert.NoError(t, err)
-	assert.NoError(t, slApp.Commit())
+	require.NoError(t, err)
+	require.NoError(t, slApp.Commit())
 
 	// Poison the cache. There is just one entry, and one series in the
 	// storage. Changing the ref will create a 'not found' error.
@@ -2161,8 +2161,8 @@ func TestScrapeAddFast(t *testing.T) {
 
 	slApp = sl.appender(ctx)
 	_, _, _, err = sl.append(slApp, []byte("up 1\n"), "", time.Time{}.Add(time.Second))
-	assert.NoError(t, err)
-	assert.NoError(t, slApp.Commit())
+	require.NoError(t, err)
+	require.NoError(t, slApp.Commit())
 }
 
 func TestReuseCacheRace(t *testing.T) {
@@ -2206,7 +2206,7 @@ func TestCheckAddError(t *testing.T) {
 	var appErrs appendErrors
 	sl := scrapeLoop{l: log.NewNopLogger()}
 	sl.checkAddError(nil, nil, nil, storage.ErrOutOfOrderSample, nil, &appErrs)
-	assert.Equal(t, 1, appErrs.numOutOfOrder)
+	require.Equal(t, 1, appErrs.numOutOfOrder)
 }
 
 func TestScrapeReportSingleAppender(t *testing.T) {
@@ -2249,7 +2249,7 @@ func TestScrapeReportSingleAppender(t *testing.T) {
 	start := time.Now()
 	for time.Since(start) < 3*time.Second {
 		q, err := s.Querier(ctx, time.Time{}.UnixNano(), time.Now().UnixNano())
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		series := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".+"))
 
 		c := 0
@@ -2260,7 +2260,7 @@ func TestScrapeReportSingleAppender(t *testing.T) {
 			}
 		}
 
-		assert.Equal(t, 0, c%9, "Appended samples not as expected: %d", c)
+		require.Equal(t, 0, c%9, "Appended samples not as expected: %d", c)
 		q.Close()
 	}
 	cancel()
