@@ -366,13 +366,9 @@ func TestEndpoints(t *testing.T) {
 		assert.NoError(t, err)
 		defer os.RemoveAll(dbDir)
 
-<<<<<<< HEAD
-		remote := remote.NewStorage(promlog.New(&promlogConfig), prometheus.DefaultRegisterer, nil, dbDir, 1*time.Second)
-=======
 		remote := remote.NewStorage(promlog.New(&promlogConfig), prometheus.DefaultRegisterer, func() (int64, error) {
 			return 0, nil
 		}, dbDir, 1*time.Second, nil)
->>>>>>> b65d76912 (Introduce a metadata watcher)
 
 		err = remote.ApplyConfig(&config.Config{
 			RemoteReadConfigs: []*config.RemoteReadConfig{

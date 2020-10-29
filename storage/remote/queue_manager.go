@@ -29,6 +29,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/relabel"
@@ -50,6 +51,9 @@ const (
 	// We use a label to identify samples and metadata on some metrics. These represent the values they can have.
 	samples  = "samples"
 	metadata = "metadata"
+
+	// Controls how often we collect metadata from the scrape cache.
+	metadataCollectionInterval = model.Duration(5 * time.Minute)
 )
 
 type queueManagerMetrics struct {
@@ -69,7 +73,7 @@ type queueManagerMetrics struct {
 	droppedSamplesTotal    prometheus.Counter
 	enqueueRetriesTotal    prometheus.Counter
 	sentBatchDuration      prometheus.Histogram
-	highestSentTimestamp   *maxGauge
+	highestSentTimestamp   *maxTimestamp
 	pendingSamples         prometheus.Gauge
 	shardCapacity          prometheus.Gauge
 	numShards              prometheus.Gauge
@@ -153,7 +157,7 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Buckets:     append(prometheus.DefBuckets, 25, 60, 120, 300),
 		ConstLabels: constLabels,
 	})
-	m.highestSentTimestamp = &maxGauge{
+	m.highestSentTimestamp = &maxTimestamp{
 		Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace:   namespace,
 			Subsystem:   subsystem,
@@ -284,7 +288,6 @@ type QueueManager struct {
 	logger          log.Logger
 	flushDeadline   time.Duration
 	cfg             config.QueueConfig
-	mcfg            config.MetadataConfig
 	externalLabels  labels.Labels
 	relabelConfigs  []*relabel.Config
 	watcher         *wal.Watcher
@@ -306,7 +309,9 @@ type QueueManager struct {
 
 	samplesIn, samplesDropped, samplesOut, samplesOutDuration *ewmaRate
 
-	metrics *queueManagerMetrics
+	metrics              *queueManagerMetrics
+	interner             *pool
+	highestRecvTimestamp *maxTimestamp
 }
 
 // NewQueueManager builds a new QueueManager.
@@ -317,12 +322,13 @@ func NewQueueManager(
 	logger log.Logger,
 	walDir string,
 	samplesIn *ewmaRate,
-	mCfg config.MetadataConfig,
 	cfg config.QueueConfig,
 	externalLabels labels.Labels,
 	relabelConfigs []*relabel.Config,
 	client WriteClient,
 	flushDeadline time.Duration,
+	interner *pool,
+	highestRecvTimestamp *maxTimestamp,
 	sm scrape.ReadyManager,
 ) *QueueManager {
 	if logger == nil {
@@ -334,7 +340,6 @@ func NewQueueManager(
 		logger:         logger,
 		flushDeadline:  flushDeadline,
 		cfg:            cfg,
-		mcfg:           mCfg,
 		externalLabels: externalLabels,
 		relabelConfigs: relabelConfigs,
 		storeClient:    client,
@@ -352,13 +357,13 @@ func NewQueueManager(
 		samplesOut:         newEWMARate(ewmaWeight, shardUpdateDuration),
 		samplesOutDuration: newEWMARate(ewmaWeight, shardUpdateDuration),
 
-		metrics: metrics,
+		metrics:              metrics,
+		interner:             interner,
+		highestRecvTimestamp: highestRecvTimestamp,
 	}
 
 	t.watcher = wal.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, walDir)
-	if t.mcfg.Send {
-		t.metadataWatcher = NewMetadataWatcher(logger, sm, client.Name(), t, t.mcfg.SendInterval, flushDeadline)
-	}
+	t.metadataWatcher = NewMetadataWatcher(logger, sm, client.Name(), t, metadataCollectionInterval, flushDeadline)
 	t.shards = t.newShards()
 
 	return t
@@ -485,9 +490,7 @@ func (t *QueueManager) Start() {
 
 	t.shards.start(t.numShards)
 	t.watcher.Start()
-	if t.mcfg.Send {
-		t.metadataWatcher.Start()
-	}
+	t.metadataWatcher.Start()
 
 	t.wg.Add(2)
 	go t.updateShardsLoop()
@@ -507,14 +510,12 @@ func (t *QueueManager) Stop() {
 	// causes a closed channel panic.
 	t.shards.stop()
 	t.watcher.Stop()
-	if t.mcfg.Send {
-		t.metadataWatcher.Stop()
-	}
+	t.metadataWatcher.Stop()
 
 	// On shutdown, release the strings in the labels from the intern pool.
 	t.seriesMtx.Lock()
 	for _, labels := range t.seriesLabels {
-		releaseLabels(labels)
+		t.releaseLabels(labels)
 	}
 	t.seriesMtx.Unlock()
 	t.metrics.unregister()
@@ -532,13 +533,13 @@ func (t *QueueManager) StoreSeries(series []record.RefSeries, index int) {
 			continue
 		}
 		t.seriesSegmentIndexes[s.Ref] = index
-		internLabels(lbls)
+		t.internLabels(lbls)
 
 		// We should not ever be replacing a series labels in the map, but just
 		// in case we do we need to ensure we do not leak the replaced interned
 		// strings.
 		if orig, ok := t.seriesLabels[s.Ref]; ok {
-			releaseLabels(orig)
+			t.releaseLabels(orig)
 		}
 		t.seriesLabels[s.Ref] = lbls
 	}
@@ -555,7 +556,7 @@ func (t *QueueManager) SeriesReset(index int) {
 	for k, v := range t.seriesSegmentIndexes {
 		if v < index {
 			delete(t.seriesSegmentIndexes, k)
-			releaseLabels(t.seriesLabels[k])
+			t.releaseLabels(t.seriesLabels[k])
 			delete(t.seriesLabels, k)
 			delete(t.droppedSeries, k)
 		}
@@ -576,17 +577,17 @@ func (t *QueueManager) client() WriteClient {
 	return t.storeClient
 }
 
-func internLabels(lbls labels.Labels) {
+func (t *QueueManager) internLabels(lbls labels.Labels) {
 	for i, l := range lbls {
-		lbls[i].Name = interner.intern(l.Name)
-		lbls[i].Value = interner.intern(l.Value)
+		lbls[i].Name = t.interner.intern(l.Name)
+		lbls[i].Value = t.interner.intern(l.Value)
 	}
 }
 
-func releaseLabels(ls labels.Labels) {
+func (t *QueueManager) releaseLabels(ls labels.Labels) {
 	for _, l := range ls {
-		interner.release(l.Name)
-		interner.release(l.Value)
+		t.interner.release(l.Name)
+		t.interner.release(l.Value)
 	}
 }
 
@@ -686,7 +687,7 @@ func (t *QueueManager) calculateDesiredShards() int {
 		samplesOutDuration = t.samplesOutDuration.rate() / float64(time.Second)
 		samplesPendingRate = samplesInRate*samplesKeptRatio - samplesOutRate
 		highestSent        = t.metrics.highestSentTimestamp.Get()
-		highestRecv        = highestTimestamp.Get()
+		highestRecv        = t.highestRecvTimestamp.Get()
 		delay              = highestRecv - highestSent
 		samplesPending     = delay * samplesInRate * samplesKeptRatio
 	)

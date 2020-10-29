@@ -25,7 +25,6 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/wal"
 )
@@ -52,19 +51,15 @@ type WriteStorage struct {
 	queues            map[string]*QueueManager
 	samplesIn         *ewmaRate
 	flushDeadline     time.Duration
-<<<<<<< HEAD
 	interner          *pool
-	scraper           scrape.ManagerGetter
+	scraper           ReadyScrapeManager
 
 	// For timestampTracker.
 	highestTimestamp *maxTimestamp
-=======
-	scraper           scrape.ReadyManager
->>>>>>> 37b08954c (Address review comments)
 }
 
 // NewWriteStorage creates and runs a WriteStorage.
-func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, walDir string, flushDeadline time.Duration, sm scrape.ReadyManager) *WriteStorage {
+func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, walDir string, flushDeadline time.Duration, sm ReadyScrapeManager) *WriteStorage {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -78,7 +73,7 @@ func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, walDir string
 		samplesIn:         newEWMARate(ewmaWeight, shardUpdateDuration),
 		walDir:            walDir,
 		interner:          newPool(),
-		scraper:       sm,
+		scraper:           sm,
 		highestTimestamp: &maxTimestamp{
 			Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
 				Namespace: namespace,
@@ -166,12 +161,9 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rwConf.WriteRelabelConfigs,
 			c,
 			rws.flushDeadline,
-<<<<<<< HEAD
 			rws.interner,
 			rws.highestTimestamp,
-=======
 			rws.scraper,
->>>>>>> b65d76912 (Introduce a metadata watcher)
 		)
 		// Keep track of which queues are new so we know which to start.
 		newHashes = append(newHashes, hash)

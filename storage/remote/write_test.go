@@ -167,7 +167,7 @@ func TestUpdateWithRegisterer(t *testing.T) {
 		assert.NoError(t, os.RemoveAll(dir))
 	}()
 
-	s := NewWriteStorage(nil, prometheus.NewRegistry(), dir, time.Millisecond)
+	s := NewWriteStorage(nil, prometheus.NewRegistry(), dir, time.Millisecond, nil)
 	c1 := &config.RemoteWriteConfig{
 		Name: "named",
 		URL: &common_config.URL{

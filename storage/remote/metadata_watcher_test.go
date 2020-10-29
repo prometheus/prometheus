@@ -22,7 +22,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/prometheus/prometheus/scrape"
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/stretchr/testify/assert"
 )
 
 var (
@@ -93,11 +93,11 @@ func TestWatchScrapeManager_NotReady(t *testing.T) {
 	}
 
 	mw := NewMetadataWatcher(nil, smm, "", wt, interval, deadline)
-	testutil.Equals(t, false, mw.ready())
+	assert.Equal(t, false, mw.ready())
 
 	mw.collect()
 
-	testutil.Equals(t, 0, wt.metadataAppended)
+	assert.Equal(t, 0, wt.metadataAppended)
 }
 
 func TestWatchScrapeManager_ReadyForCollection(t *testing.T) {
@@ -138,5 +138,5 @@ func TestWatchScrapeManager_ReadyForCollection(t *testing.T) {
 
 	mw.collect()
 
-	testutil.Equals(t, 2, wt.metadataAppended)
+	assert.Equal(t, 2, wt.metadataAppended)
 }
