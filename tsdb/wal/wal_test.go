@@ -455,38 +455,40 @@ func TestLogPartialWrite(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			dirPath, err := ioutil.TempDir("", "")
-			assert.NoError(t, err)
+			require.NoError(t, err)
 
 			w, err := NewSize(nil, nil, dirPath, segmentSize, false)
-			assert.NoError(t, err)
+			require.NoError(t, err)
 
 			// Replace the underlying segment file with a mocked one that injects a failure.
 			w.segment.SegmentFile = &faultySegmentFile{
-				SegmentFile:     w.segment.SegmentFile,
-				writeFailureAt:  ((recordHeaderSize + len(record)) * (testData.faultyRecord - 1)) + 1,
-				writeFailureErr: io.ErrShortWrite,
+				SegmentFile:       w.segment.SegmentFile,
+				writeFailureAfter: ((recordHeaderSize + len(record)) * (testData.faultyRecord - 1)) + 2,
+				writeFailureErr:   io.ErrShortWrite,
 			}
 
 			for i := 1; i <= testData.numRecords; i++ {
 				if err := w.Log(record); i == testData.faultyRecord {
-					assert.Error(t, io.ErrShortWrite, err)
+					require.Error(t, io.ErrShortWrite, err)
 				} else {
-					assert.NoError(t, err)
+					require.NoError(t, err)
 				}
 			}
 
-			assert.NoError(t, w.Close())
+			require.NoError(t, w.Close())
 
 			// Read it back. We expect no corruption.
 			s, err := OpenReadSegment(SegmentName(dirPath, 0))
-			assert.NoError(t, err)
+			require.NoError(t, err)
 
 			r := NewReader(NewSegmentBufReader(s))
 			for i := 0; i < testData.numRecords; i++ {
-				assert.True(t, r.Next())
-				assert.NoError(t, r.Err())
-				assert.Equal(t, record, r.Record())
+				require.True(t, r.Next())
+				require.NoError(t, r.Err())
+				require.Equal(t, record, r.Record())
 			}
+			require.False(t, r.Next())
+			require.NoError(t, r.Err())
 		})
 	}
 }
@@ -494,23 +496,30 @@ func TestLogPartialWrite(t *testing.T) {
 type faultySegmentFile struct {
 	SegmentFile
 
-	written         int
-	writeFailureAt  int
-	writeFailureErr error
+	written           int
+	writeFailureAfter int
+	writeFailureErr   error
 }
 
 func (f *faultySegmentFile) Write(p []byte) (int, error) {
-	if f.writeFailureAt <= f.written || f.writeFailureAt > f.written+len(p) {
-		n, err := f.SegmentFile.Write(p)
+	if f.writeFailureAfter >= 0 && f.writeFailureAfter < f.written+len(p) {
+		partialLen := f.writeFailureAfter - f.written
+		if partialLen <= 0 || partialLen >= len(p) {
+			partialLen = 1
+		}
+
+		// Inject failure.
+		n, _ := f.SegmentFile.Write(p[:partialLen])
 		f.written += n
-		return n, err
+		f.writeFailureAfter = -1
+
+		return n, f.writeFailureErr
 	}
 
-	// Inject failure.
-	partialLen := f.writeFailureAt - f.written
-	n, _ := f.SegmentFile.Write(p[:partialLen])
+	// Proxy the write to the underlying file.
+	n, err := f.SegmentFile.Write(p)
 	f.written += n
-	return n, f.writeFailureErr
+	return n, err
 }
 
 func BenchmarkWAL_LogBatched(b *testing.B) {
