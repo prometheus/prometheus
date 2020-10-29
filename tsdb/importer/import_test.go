@@ -1,5 +1,12 @@
 package importer
 
+import (
+	"os"
+	"testing"
+
+	"github.com/prometheus/prometheus/util/testutil"
+)
+
 // import (
 // 	"io/ioutil"
 // 	"os"
@@ -9,6 +16,12 @@ package importer
 // 	"github.com/prometheus/prometheus/tsdb"
 // 	"github.com/prometheus/prometheus/util/testutil"
 // )
+
+func TestCleanDir(t *testing.T) {
+	t.Cleanup(func() {
+		testutil.Ok(t, os.RemoveAll("/Users/atibhi/Desktop/prometheus/tmpDir"))
+	})
+}
 
 // func TestImport(t *testing.T) {
 // 	tests := []struct {
