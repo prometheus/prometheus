@@ -17,6 +17,7 @@ package wal
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"math/rand"
 	"os"
@@ -422,6 +423,103 @@ func TestCompression(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Greater(t, float64(uncompressedSize)*0.75, float64(compressedSize), "Compressing zeroes should save at least 25%% space - uncompressedSize: %d, compressedSize: %d", uncompressedSize, compressedSize)
+}
+
+func TestLogPartialWrite(t *testing.T) {
+	const segmentSize = pageSize * 2
+	record := []byte{1, 2, 3, 4, 5}
+
+	tests := map[string]struct {
+		numRecords   int
+		faultyRecord int
+	}{
+		"partial write when logging first record in a page": {
+			numRecords:   10,
+			faultyRecord: 1,
+		},
+		"partial write when logging record in the middle of a page": {
+			numRecords:   10,
+			faultyRecord: 3,
+		},
+		"partial write when logging last record of a page": {
+			numRecords:   (pageSize / (recordHeaderSize + len(record))) + 10,
+			faultyRecord: pageSize / (recordHeaderSize + len(record)),
+		},
+		// TODO the current implementation suffers this:
+		//"partial write when logging a record overlapping two pages": {
+		//	numRecords:   (pageSize / (recordHeaderSize + len(record))) + 10,
+		//	faultyRecord: pageSize/(recordHeaderSize+len(record)) + 1,
+		//},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			dirPath, err := ioutil.TempDir("", "")
+			require.NoError(t, err)
+
+			w, err := NewSize(nil, nil, dirPath, segmentSize, false)
+			require.NoError(t, err)
+
+			// Replace the underlying segment file with a mocked one that injects a failure.
+			w.segment.SegmentFile = &faultySegmentFile{
+				SegmentFile:       w.segment.SegmentFile,
+				writeFailureAfter: ((recordHeaderSize + len(record)) * (testData.faultyRecord - 1)) + 2,
+				writeFailureErr:   io.ErrShortWrite,
+			}
+
+			for i := 1; i <= testData.numRecords; i++ {
+				if err := w.Log(record); i == testData.faultyRecord {
+					require.Error(t, io.ErrShortWrite, err)
+				} else {
+					require.NoError(t, err)
+				}
+			}
+
+			require.NoError(t, w.Close())
+
+			// Read it back. We expect no corruption.
+			s, err := OpenReadSegment(SegmentName(dirPath, 0))
+			require.NoError(t, err)
+
+			r := NewReader(NewSegmentBufReader(s))
+			for i := 0; i < testData.numRecords; i++ {
+				require.True(t, r.Next())
+				require.NoError(t, r.Err())
+				require.Equal(t, record, r.Record())
+			}
+			require.False(t, r.Next())
+			require.NoError(t, r.Err())
+		})
+	}
+}
+
+type faultySegmentFile struct {
+	SegmentFile
+
+	written           int
+	writeFailureAfter int
+	writeFailureErr   error
+}
+
+func (f *faultySegmentFile) Write(p []byte) (int, error) {
+	if f.writeFailureAfter >= 0 && f.writeFailureAfter < f.written+len(p) {
+		partialLen := f.writeFailureAfter - f.written
+		if partialLen <= 0 || partialLen >= len(p) {
+			partialLen = 1
+		}
+
+		// Inject failure.
+		n, _ := f.SegmentFile.Write(p[:partialLen])
+		f.written += n
+		f.writeFailureAfter = -1
+
+		return n, f.writeFailureErr
+	}
+
+	// Proxy the write to the underlying file.
+	n, err := f.SegmentFile.Write(p)
+	f.written += n
+	return n, err
 }
 
 func BenchmarkWAL_LogBatched(b *testing.B) {
