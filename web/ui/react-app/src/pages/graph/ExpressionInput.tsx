@@ -14,6 +14,7 @@ interface ExpressionInputProps {
   autocompleteSections: { [key: string]: string[] };
   executeQuery: () => void;
   loading: boolean;
+  enable: boolean;
 }
 
 interface ExpressionInputState {
@@ -76,38 +77,39 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
     const { inputValue = '', closeMenu, highlightedIndex } = downshift;
     const { autocompleteSections } = this.props;
     let index = 0;
-    const sections = inputValue!.length
-      ? Object.entries(autocompleteSections).reduce((acc, [title, items]) => {
-          const matches = this.getSearchMatches(inputValue!, items);
-          return !matches.length
-            ? acc
-            : [
-                ...acc,
-                <ul className="autosuggest-dropdown-list" key={title}>
-                  <li className="autosuggest-dropdown-header">{title}</li>
-                  {matches
-                    .slice(0, 100) // Limit DOM rendering to 100 results, as DOM rendering is sloooow.
-                    .map(({ original, string: text }) => {
-                      const itemProps = downshift.getItemProps({
-                        key: original,
-                        index,
-                        item: original,
-                        style: {
-                          backgroundColor: highlightedIndex === index++ ? 'lightgray' : 'white',
-                        },
-                      });
-                      return (
-                        <li
-                          key={title}
-                          {...itemProps}
-                          dangerouslySetInnerHTML={{ __html: sanitizeHTML(text, { allowedTags: ['strong'] }) }}
-                        />
-                      );
-                    })}
-                </ul>,
-              ];
-        }, [] as JSX.Element[])
-      : [];
+    const sections =
+      inputValue!.length && this.props.enable
+        ? Object.entries(autocompleteSections).reduce((acc, [title, items]) => {
+            const matches = this.getSearchMatches(inputValue!, items);
+            return !matches.length
+              ? acc
+              : [
+                  ...acc,
+                  <ul className="autosuggest-dropdown-list" key={title}>
+                    <li className="autosuggest-dropdown-header">{title}</li>
+                    {matches
+                      .slice(0, 100) // Limit DOM rendering to 100 results, as DOM rendering is sloooow.
+                      .map(({ original, string: text }) => {
+                        const itemProps = downshift.getItemProps({
+                          key: original,
+                          index,
+                          item: original,
+                          style: {
+                            backgroundColor: highlightedIndex === index++ ? 'lightgray' : 'white',
+                          },
+                        });
+                        return (
+                          <li
+                            key={title}
+                            {...itemProps}
+                            dangerouslySetInnerHTML={{ __html: sanitizeHTML(text, { allowedTags: ['strong'] }) }}
+                          />
+                        );
+                      })}
+                  </ul>,
+                ];
+          }, [] as JSX.Element[])
+        : [];
 
     if (!sections.length) {
       // This is ugly but is needed in order to sync state updates.
