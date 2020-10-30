@@ -38,10 +38,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
-	"github.com/prometheus/prometheus/tsdb/importer"
 )
-
-var merr tsdb_errors.MultiError
 
 const timeDelta = 30000
 
@@ -626,10 +623,6 @@ func checkErr(err error) int {
 	return 0
 }
 
-func readOpemmetrics(path string, outputDir string, DefaultBlockDuration time.Duration) (err error) {
-	return importer.Import(path, outputDir, durToMillis(DefaultBlockDuration))
-}
-
-func durToMillis(t time.Duration) int64 {
-	return int64(t.Seconds() * 1000)
+func readOpenMetrics(path string, outputDir string, blockDuration time.Duration) (err error) {
+	return backfill(path, outputDir, blockDuration.Milliseconds())
 }

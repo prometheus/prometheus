@@ -25,7 +25,6 @@ const contentType = "application/openmetrics-text;"
 
 type Parser struct {
 	textparse.Parser
-
 	s *bufio.Scanner
 }
 
@@ -50,11 +49,4 @@ func (p *Parser) Next() (textparse.Entry, error) {
 		return 0, err
 	}
 	return 0, io.EOF
-}
-
-// Series returns the bytes of the series, the timestamp if set, and the value
-// of the current sample. Timestamps is milliseconds.
-func (p *Parser) Series() ([]byte, *int64, float64) {
-	b, ts, v := p.Parser.Series()
-	return b, ts, v
 }

@@ -133,11 +133,11 @@ func main() {
 	dumpPath := tsdbDumpCmd.Arg("db path", "Database path (default is "+defaultDBPath+").").Default(defaultDBPath).String()
 	dumpMinTime := tsdbDumpCmd.Flag("min-time", "Minimum timestamp to dump.").Default(strconv.FormatInt(math.MinInt64, 10)).Int64()
 	dumpMaxTime := tsdbDumpCmd.Flag("max-time", "Maximum timestamp to dump.").Default(strconv.FormatInt(math.MaxInt64, 10)).Int64()
-	importCmd := app.Command("import", "[Experimental] import samples from input and produce TSDB block. Please refer to the storage docs for more details.")
-	importDbPath := importCmd.Flag("output", "output directory for generated block").Default(".").String()
-	importFilePath := importCmd.Flag("input-file", "disables reading from input and using file to import samples from. If empty input is required").String()
+	importCmd := app.Command("import", "[Experimental] Import samples from input and produce TSDB blocks. Please refer to the storage docs for more details.")
+	importDBPath := importCmd.Flag("output", "Output directory for generated blocks.").Default(".").String()
+	importFilePath := importCmd.Flag("input-file", "Disables reading from input and use file instead to import samples from. If empty input is required.").String()
 	importBlockSize := importCmd.Flag("block-size", "The maximum block size. The actual block timestamps will be aligned with Prometheus time ranges.").Default("2h").Hidden().Duration()
-	omImportCmd := importCmd.Command("openmetrics", "import samples from OpenMetrics input and produce TSDB block. Please refer to the storage docs for more details.")
+	omImportCmd := importCmd.Command("openmetrics", "Import samples from OpenMetrics input and produce TSDB blocks. Please refer to the storage docs for more details.")
 
 	parsedCmd := kingpin.MustParse(app.Parse(os.Args[1:]))
 
@@ -194,9 +194,9 @@ func main() {
 
 	case tsdbDumpCmd.FullCommand():
 		os.Exit(checkErr(dumpSamples(*dumpPath, *dumpMinTime, *dumpMaxTime)))
-
+	//TODO Work on adding support for custom block size.
 	case omImportCmd.FullCommand():
-		os.Exit(checkErr(readOpemmetrics(*importFilePath, *importDbPath, *importBlockSize)))
+		os.Exit(checkErr(readOpenMetrics(*importFilePath, *importDBPath, *importBlockSize)))
 	}
 }
 

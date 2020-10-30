@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package importer
+package main
 
 import (
 	"context"
@@ -37,24 +37,39 @@ func blockMaxTimeForTheTimestamp(t int64, width int64) (maxt int64) {
 	return (t/width)*width + width
 }
 
-// MinInt64 functions returns the minimum value between two 64bit integers
-func MinInt64(x, y int64) int64 {
-	if x < y {
-		return x
+func getMinAndMaxTimestamps(p textparse.Parser, mint, maxt *int64) error {
+	var (
+		entry textparse.Entry
+		err   error
+	)
+	for {
+		entry, err = p.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return errors.Wrap(err, "parse")
+		}
+		if entry != textparse.EntrySeries {
+			continue
+		}
+		l := labels.Labels{}
+		p.Metric(&l)
+		_, ts, _ := p.Series()
+		if *ts > *maxt {
+			*maxt = *ts
+		}
+		if *ts < *mint {
+			*mint = *ts
+		}
+		if ts == nil {
+			return errors.Errorf("Expected timestamp for series %v, got none.", l.String())
+		}
 	}
-	return y
+	return nil
 }
 
-// MaxInt64 functions returns the maximum value between two 64bit integers
-func MaxInt64(x, y int64) int64 {
-	if x > y {
-		return x
-	}
-	return y
-}
-
-// Import function reads an OM file, creates two hour blocks and writes that to the TSDB.
-func Import(path string, outputDir string, DefaultBlockDuration int64) (err error) {
+func backfill(path string, outputDir string, DefaultBlockDuration int64) (err error) {
 	logger := log.NewNopLogger()
 	input := os.Stdin
 	if path != "" {
@@ -69,30 +84,15 @@ func Import(path string, outputDir string, DefaultBlockDuration int64) (err erro
 		}()
 	}
 	p := openmetrics.NewParser(input)
-	level.Info(logger).Log("msg", "started importing input data.")
-	var maxt int64 = math.MinInt64
-	var mint int64 = math.MaxInt64
-	var e textparse.Entry
-	for {
-		e, err = p.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return errors.Wrap(err, "parse")
-		}
-		if e != textparse.EntrySeries {
-			continue
-		}
-		l := labels.Labels{}
-		p.Metric(&l)
-		_, ts, _ := p.Series()
-		maxt = MaxInt64(*ts, maxt)
-		mint = MinInt64(*ts, mint)
-		if ts == nil {
-			return errors.Errorf("expected timestamp for series %v, got none", l.String())
-		}
+	var (
+		maxt int64 = math.MinInt64
+		mint int64 = math.MaxInt64
+	)
+	errTs := getMinAndMaxTimestamps(p, &mint, &maxt)
+	if errTs != nil {
+		return errors.Wrap(errTs, "Error getting min and max timestamp.")
 	}
+	level.Info(logger).Log("msg", "Started importing input data.")
 
 	var offset int64 = 2 * time.Hour.Milliseconds()
 	for t := mint; t < maxt; t = t + offset {
@@ -111,7 +111,6 @@ func Import(path string, outputDir string, DefaultBlockDuration int64) (err erro
 		tsUpper := blockMaxTimeForTheTimestamp(t, offset)
 		for {
 			e, err = p2.Next()
-			fmt.Println(e)
 			if err == io.EOF {
 				break
 			}
@@ -125,11 +124,10 @@ func Import(path string, outputDir string, DefaultBlockDuration int64) (err erro
 			p2.Metric(&l)
 			_, ts, v := p2.Series()
 			if ts == nil {
-				return errors.Errorf("expected timestamp for series %v, got none", l.String())
+				return errors.Errorf("Expected timestamp for series %v, got none.", l.String())
 			}
 			if *ts >= t && *ts < tsUpper {
-				_, err := app.Add(l, *ts, v)
-				if err != nil {
+				if _, err := app.Add(l, *ts, v); err != nil {
 					return errors.Wrap(err, "add sample")
 				}
 			}
