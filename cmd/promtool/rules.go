@@ -31,21 +31,21 @@ import (
 
 const blockSize = 2 // in hours
 
-// RuleImporter is the importer to backfill rules.
-type RuleImporter struct {
+// ruleImporter is the importer to backfill rules.
+type ruleImporter struct {
 	logger log.Logger
-	config RuleImporterConfig
+	config ruleImporterConfig
 
 	groups      map[string]*rules.Group
 	groupLoader rules.GroupLoader
 
 	apiClient v1.API
 
-	writer *blocks.MultiWriter
+	writer *tsdb.BlockWriter
 }
 
-// RuleImporterConfig is the config for the rule importer.
-type RuleImporterConfig struct {
+// ruleImporterConfig is the config for the rule importer.
+type ruleImporterConfig struct {
 	Start        time.Time
 	End          time.Time
 	OutputDir    string
@@ -53,21 +53,25 @@ type RuleImporterConfig struct {
 	URL          string
 }
 
-// NewRuleImporter creates a new rule importer that can be used to backfill rules.
-func NewRuleImporter(logger log.Logger, config RuleImporterConfig) *RuleImporter {
-	return &RuleImporter{
+// newRuleImporter creates a new rule importer that can be used to backfill rules.
+func newRuleImporter(logger log.Logger, config ruleImporterConfig) *ruleImporter {
+	return &ruleImporter{
 		config:      config,
 		groupLoader: rules.FileLoader{},
 	}
 }
 
-// Init initializes the rule importer which creates a new block writer
+// init initializes the rule importer which creates a new block writer
 // and creates an Prometheus API client.
-func (importer *RuleImporter) Init() error {
-	importer.writer = tsdb.NewBlockWriter(importer.logger,
+func (importer *ruleImporter) init() error {
+	w, err := tsdb.NewBlockWriter(importer.logger,
 		importer.config.OutputDir,
-		(blockSize * time.Hour).Milliseconds()
+		(blockSize * time.Hour).Milliseconds(),
 	)
+	if err != nil {
+		return err
+	}
+	importer.writer = w
 
 	config := api.Config{
 		Address: importer.config.URL,
@@ -80,13 +84,13 @@ func (importer *RuleImporter) Init() error {
 	return nil
 }
 
-// Close cleans up any open resources.
-func (importer *RuleImporter) Close() error {
+// close cleans up any open resources.
+func (importer *ruleImporter) close() error {
 	return importer.writer.Close()
 }
 
-// LoadGroups reads groups from a list of rule files.
-func (importer *RuleImporter) LoadGroups(ctx context.Context, filenames []string) (errs []error) {
+// loadGroups reads groups from a list of rule files.
+func (importer *ruleImporter) loadGroups(ctx context.Context, filenames []string) (errs []error) {
 	groups := make(map[string]*rules.Group)
 
 	for _, filename := range filenames {
@@ -127,31 +131,31 @@ func (importer *RuleImporter) LoadGroups(ctx context.Context, filenames []string
 	return nil
 }
 
-// ImportAll evaluates all the groups and rules and creates new time series
+// importAll evaluates all the groups and rules and creates new time series
 // and stores them in new blocks.
-func (importer *RuleImporter) ImportAll(ctx context.Context) []error {
+func (importer *ruleImporter) importAll(ctx context.Context) []error {
 	var errs = []error{}
 	for _, group := range importer.groups {
 		stimeWithAlignment := group.EvalTimestamp(importer.config.Start.UnixNano())
 
 		for _, r := range group.Rules() {
-			err := importer.ImportRule(ctx, r.Query().String(), stimeWithAlignment, group.Interval())
+			err := importer.importRule(ctx, r.Query().String(), stimeWithAlignment, group.Interval())
 			if err != nil {
 				errs = append(errs, err)
 			}
 		}
 	}
-	_, err := importer.writer.Flush()
+	_, err := importer.writer.Flush(ctx)
 	if err != nil {
 		errs = append(errs, err)
 	}
 	return errs
 }
 
-// ImportRule imports the historical data for a single rule.
-func (importer *RuleImporter) ImportRule(ctx context.Context, ruleExpr string, stimeWithAlignment time.Time, internval time.Duration) error {
+// importRule imports the historical data for a single rule.
+func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr string, stimeWithAlignment time.Time, internval time.Duration) error {
 	ts := stimeWithAlignment
-	appender := importer.writer.Appender()
+	appender := importer.writer.Appender(ctx)
 
 	for ts.Before(importer.config.End) {
 		currentBlockEnd := ts.Add(blockSize * time.Hour)
@@ -189,7 +193,6 @@ func (importer *RuleImporter) ImportRule(ctx context.Context, ruleExpr string, s
 				for _, value := range sample.Values {
 					_, err := appender.Add(currentLabels, value.Timestamp.Unix(), float64(value.Value))
 					if err != nil {
-						// todo: handle other errors, i.e. ErrOutOfOrderSample and ErrDuplicateSampleForTimestamp
 						return err
 					}
 				}
@@ -200,7 +203,7 @@ func (importer *RuleImporter) ImportRule(ctx context.Context, ruleExpr string, s
 
 		ts = currentBlockEnd
 	}
-	_, err := importer.writer.Flush()
+	_, err := importer.writer.Flush(ctx)
 	if err != nil {
 		return err
 	}

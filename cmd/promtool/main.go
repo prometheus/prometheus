@@ -792,7 +792,7 @@ func BackfillRule(url, start, end, outputDir string, evalInterval time.Duration,
 		fmt.Fprintln(os.Stderr, err)
 		return err
 	}
-	cfg := RuleImporterConfig{
+	cfg := ruleImporterConfig{
 		Start:        stime,
 		End:          etime,
 		OutputDir:    outputDir,
@@ -800,13 +800,13 @@ func BackfillRule(url, start, end, outputDir string, evalInterval time.Duration,
 		URL:          url,
 	}
 	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
-	ruleImporter := NewRuleImporter(logger, cfg)
-	if err = ruleImporter.Init(); err != nil {
+	ruleImporter := newRuleImporter(logger, cfg)
+	if err = ruleImporter.init(); err != nil {
 		fmt.Fprintln(os.Stderr, "rule importer init error", err)
 		return err
 	}
 
-	errs := ruleImporter.LoadGroups(ctx, files)
+	errs := ruleImporter.loadGroups(ctx, files)
 	for _, err := range errs {
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "rule importer parse error", err)
@@ -814,7 +814,7 @@ func BackfillRule(url, start, end, outputDir string, evalInterval time.Duration,
 		}
 	}
 
-	errs = ruleImporter.ImportAll(ctx)
+	errs = ruleImporter.importAll(ctx)
 	for _, err := range errs {
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "rule importer error", err)

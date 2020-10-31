@@ -280,13 +280,9 @@ func NewGroup(o GroupOptions) *Group {
 		metrics = NewGroupMetrics(o.Opts.Registerer)
 	}
 
-<<<<<<< HEAD
 	key := GroupKey(o.File, o.Name)
-=======
-	key := groupKey(o.File, o.Name)
 	metrics.iterationsMissed.WithLabelValues(key)
 	metrics.iterationsScheduled.WithLabelValues(key)
->>>>>>> master
 	metrics.evalTotal.WithLabelValues(key)
 	metrics.evalFailures.WithLabelValues(key)
 	metrics.groupLastEvalTime.WithLabelValues(key)
@@ -342,7 +338,7 @@ func (g *Group) run(ctx context.Context) {
 	})
 
 	iter := func() {
-		g.metrics.iterationsScheduled.WithLabelValues(groupKey(g.file, g.name)).Inc()
+		g.metrics.iterationsScheduled.WithLabelValues(GroupKey(g.file, g.name)).Inc()
 
 		start := time.Now()
 		g.Eval(ctx, evalTimestamp)
@@ -394,8 +390,8 @@ func (g *Group) run(ctx context.Context) {
 		case <-tick.C:
 			missed := (time.Since(evalTimestamp) / g.interval) - 1
 			if missed > 0 {
-				g.metrics.iterationsMissed.WithLabelValues(groupKey(g.file, g.name)).Add(float64(missed))
-				g.metrics.iterationsScheduled.WithLabelValues(groupKey(g.file, g.name)).Add(float64(missed))
+				g.metrics.iterationsMissed.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(missed))
+				g.metrics.iterationsScheduled.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(missed))
 			}
 			evalTimestamp = evalTimestamp.Add((missed + 1) * g.interval)
 			iter()
@@ -416,8 +412,8 @@ func (g *Group) run(ctx context.Context) {
 			case <-tick.C:
 				missed := (time.Since(evalTimestamp) / g.interval) - 1
 				if missed > 0 {
-					g.metrics.iterationsMissed.WithLabelValues(groupKey(g.file, g.name)).Add(float64(missed))
-					g.metrics.iterationsScheduled.WithLabelValues(groupKey(g.file, g.name)).Add(float64(missed))
+					g.metrics.iterationsMissed.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(missed))
+					g.metrics.iterationsScheduled.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(missed))
 				}
 				evalTimestamp = evalTimestamp.Add((missed + 1) * g.interval)
 				iter()
@@ -478,15 +474,9 @@ func (g *Group) GetEvaluationTime() time.Duration {
 	return g.evaluationTime
 }
 
-<<<<<<< HEAD
 // setEvaluationDuration sets the time in seconds the last evaluation took.
 func (g *Group) setEvaluationDuration(dur time.Duration) {
 	g.metrics.groupLastDuration.WithLabelValues(GroupKey(g.file, g.name)).Set(dur.Seconds())
-=======
-// setEvaluationTime sets the time in seconds the last evaluation took.
-func (g *Group) setEvaluationTime(dur time.Duration) {
-	g.metrics.groupLastDuration.WithLabelValues(groupKey(g.file, g.name)).Set(dur.Seconds())
->>>>>>> master
 
 	g.mtx.Lock()
 	defer g.mtx.Unlock()
@@ -500,15 +490,9 @@ func (g *Group) GetLastEvaluation() time.Time {
 	return g.lastEvaluation
 }
 
-<<<<<<< HEAD
 // setEvaluationTimestamp updates evaluationTimestamp to the timestamp of when the rule group was last evaluated.
 func (g *Group) setEvaluationTimestamp(ts time.Time) {
 	g.metrics.groupLastEvalTime.WithLabelValues(GroupKey(g.file, g.name)).Set(float64(ts.UnixNano()) / 1e9)
-=======
-// setLastEvaluation updates lastEvaluation to the timestamp of when the rule group was last evaluated.
-func (g *Group) setLastEvaluation(ts time.Time) {
-	g.metrics.groupLastEvalTime.WithLabelValues(groupKey(g.file, g.name)).Set(float64(ts.UnixNano()) / 1e9)
->>>>>>> master
 
 	g.mtx.Lock()
 	defer g.mtx.Unlock()
@@ -519,8 +503,7 @@ func (g *Group) setLastEvaluation(ts time.Time) {
 func (g *Group) EvalTimestamp(startTime int64) time.Time {
 	var (
 		offset = int64(g.hash() % uint64(g.interval))
-		start  = startTime
-		adjNow = start - offset
+		adjNow = startTime - offset
 		base   = adjNow - (adjNow % int64(g.interval))
 	)
 
@@ -615,13 +598,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				if _, ok := err.(promql.ErrQueryCanceled); !ok {
 					level.Warn(g.logger).Log("msg", "Evaluating rule failed", "rule", rule, "err", err)
 				}
-<<<<<<< HEAD
 				g.metrics.evalFailures.WithLabelValues(GroupKey(g.File(), g.Name())).Inc()
-=======
-				sp.SetTag("error", true)
-				sp.LogKV("error", err)
-				g.metrics.evalFailures.WithLabelValues(groupKey(g.File(), g.Name())).Inc()
->>>>>>> master
 				return
 			}
 			samplesTotal += float64(len(vector))
@@ -683,7 +660,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		}(i, rule)
 	}
 	if g.metrics != nil {
-		g.metrics.groupSamples.WithLabelValues(groupKey(g.File(), g.Name())).Set(samplesTotal)
+		g.metrics.groupSamples.WithLabelValues(GroupKey(g.File(), g.Name())).Set(samplesTotal)
 	}
 	g.cleanupStaleSeries(ctx, ts)
 }
