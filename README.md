@@ -26,7 +26,7 @@ The features that distinguish Prometheus from other metrics and monitoring syste
 - Multiple modes of **graphing and dashboarding support**
 - Support for hierarchical and horizontal **federation**
 
-## Architecture overview
+## Architecture Overview
 
 ![](https://cdn.jsdelivr.net/gh/prometheus/prometheus@c34257d069c630685da35bcef084632ffd5d6209/documentation/images/architecture.svg)
 
@@ -34,7 +34,7 @@ The features that distinguish Prometheus from other metrics and monitoring syste
 
 There are various ways of installing Prometheus.
 
-### Precompiled binaries
+### Precompiled Binaries
 
 Precompiled binaries for released versions are available in the
 [*download* section](https://prometheus.io/download/)
@@ -43,7 +43,7 @@ is the recommended way of installing Prometheus.
 See the [Installing](https://prometheus.io/docs/introduction/install/)
 chapter in the documentation for all the details.
 
-### Docker images
+### Docker Images
 
 Docker images are available on [Quay.io](https://quay.io/repository/prometheus/prometheus) or [Docker Hub](https://hub.docker.com/r/prom/prometheus/).
 
@@ -53,7 +53,7 @@ You can launch a Prometheus container for trying it out with
 
 Prometheus will now be reachable at http://localhost:9090/.
 
-### Building from source
+### Building From Source
 
 To build Prometheus from source code, first ensure that have a working
 Go environment with [version 1.13 or greater installed](https://golang.org/doc/install).
@@ -98,7 +98,7 @@ The Makefile provides several targets:
 
 For more information on building, running, and developing on the new React-based UI, see the React app's [README.md](https://github.com/prometheus/prometheus/blob/master/web/ui/react-app/README.md).
 
-## More information
+## More Information
 
   * The source code is periodically indexed: [Prometheus Core](https://godoc.org/github.com/prometheus/prometheus).
   * You will find a CircleCI configuration in [`.circleci/config.yml`](.circleci/config.yml).
