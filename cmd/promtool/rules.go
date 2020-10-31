@@ -29,8 +29,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 )
 
-const blockSize = 2 // in hours
-
 // ruleImporter is the importer to backfill rules.
 type ruleImporter struct {
 	logger log.Logger
@@ -66,7 +64,7 @@ func newRuleImporter(logger log.Logger, config ruleImporterConfig) *ruleImporter
 func (importer *ruleImporter) init() error {
 	w, err := tsdb.NewBlockWriter(importer.logger,
 		importer.config.OutputDir,
-		(blockSize * time.Hour).Milliseconds(),
+		tsdb.DefaultBlockDuration,
 	)
 	if err != nil {
 		return err
@@ -158,7 +156,7 @@ func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr string, s
 	appender := importer.writer.Appender(ctx)
 
 	for ts.Before(importer.config.End) {
-		currentBlockEnd := ts.Add(blockSize * time.Hour)
+		currentBlockEnd := ts.Add(time.Duration(tsdb.DefaultBlockDuration) * time.Millisecond)
 		if currentBlockEnd.After(importer.config.End) {
 			currentBlockEnd = importer.config.End
 		}
