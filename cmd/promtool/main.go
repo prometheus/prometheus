@@ -139,11 +139,10 @@ func main() {
 	backfillRuleCmd := backfillCmd.Command("rules", "Backfill Prometheus data for new rules.")
 	backfillRuleStart := backfillRuleCmd.Flag("start", "The time to start backfilling the new rule from. It is required. Start time should be RFC3339 or Unix timestamp.").
 		Required().String()
-	backfillRuleEnd := backfillRuleCmd.Flag("end", "If an end time is provided, all recording rules in the rule files provided will be backfilled to the end time. Default will backfill up to 3 hrs ago. End time should be RFC3339 or Unix timestamp.").
-		Default("-3h").String()
+	backfillRuleEnd := backfillRuleCmd.Flag("end", "If an end time is provided, all recording rules in the rule files provided will be backfilled to the end time. Default will backfill up to 3 hrs ago. End time should be RFC3339 or Unix timestamp.").String()
 	backfillOutputDir := backfillRuleCmd.Flag("output dir", "The filepath on the local filesystem to write the output to. Output will be blocks containing the data of the backfilled recording rules.").Default("backfilldata/").String()
-	backfillRuleURL := backfillRuleCmd.Flag("url", "Prometheus API url with the data where the rule will be backfilled from.").Default("localhost:9090").String()
-	backfillRuleEvalInterval := backfillRuleCmd.Flag("evaluation_interval default", "How frequently to evaluate rules when backfilling. evaluation interval in the rules file will take precedence.").
+	backfillRuleURL := backfillRuleCmd.Flag("url", "Prometheus API url with the data where the rule will be backfilled from.").Default("http://localhost:9090").String()
+	backfillRuleEvalInterval := backfillRuleCmd.Flag("evaluation_interval_default", "How frequently to evaluate rules when backfilling if a value is not set in the rules file.").
 		Default("60s").Duration()
 	backfillRuleFiles := backfillRuleCmd.Arg(
 		"rule-files",
@@ -787,11 +786,29 @@ func (j *jsonPrinter) printLabelValues(v model.LabelValues) {
 // at the outputDir location.
 func BackfillRule(url, start, end, outputDir string, evalInterval time.Duration, files ...string) error {
 	ctx := context.Background()
-	stime, etime, err := parseStartTimeAndEndTime(start, end)
+	var stime, etime time.Time
+	var err error
+	if end == "" {
+		etime = time.Now().Add(-3 * time.Hour)
+	} else {
+		etime, err = parseTime(end)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error parsing end time:", err)
+			return err
+		}
+	}
+
+	stime, err = parseTime(start)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(os.Stderr, "error parsing start time:", err)
 		return err
 	}
+
+	if !stime.Before(etime) {
+		fmt.Fprintln(os.Stderr, "start time is not before end time")
+		return nil
+	}
+
 	cfg := ruleImporterConfig{
 		Start:        stime,
 		End:          etime,

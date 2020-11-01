@@ -121,6 +121,7 @@ func (importer *ruleImporter) loadGroups(ctx context.Context, filenames []string
 				File:     filename,
 				Interval: itv,
 				Rules:    rgRules,
+				Opts:     &rules.ManagerOptions{},
 			})
 		}
 	}
