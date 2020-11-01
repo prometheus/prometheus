@@ -1478,9 +1478,9 @@ func (api *API) snapshot(r *http.Request) apiFuncResult {
 
 	var (
 		snapdir = filepath.Join(api.dbDir, "snapshots")
-		name    = fmt.Sprintf("%s-%x",
+		name    = fmt.Sprintf("%s-%016x",
 			time.Now().UTC().Format("20060102T150405Z0700"),
-			rand.Int())
+			rand.Int63())
 		dir = filepath.Join(snapdir, name)
 	)
 	if err := os.MkdirAll(dir, 0777); err != nil {
