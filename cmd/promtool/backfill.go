@@ -102,7 +102,7 @@ func backfill(path string, outputDir string, DefaultBlockDuration int64) (err er
 		app := w.Appender(ctx)
 		_, errReset := input.Seek(0, 0)
 		if errReset != nil {
-			errors.Wrap(errReset, "seek file")
+			return errors.Wrap(errReset, "seek file")
 		}
 		p2 := openmetrics.NewParser(input)
 		tsUpper := t + offset

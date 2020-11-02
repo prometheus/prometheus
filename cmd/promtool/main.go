@@ -135,6 +135,7 @@ func main() {
 	dumpMaxTime := tsdbDumpCmd.Flag("max-time", "Maximum timestamp to dump.").Default(strconv.FormatInt(math.MaxInt64, 10)).Int64()
 	importCmd := app.Command("import", "[Experimental] Import samples from input and produce TSDB blocks. Please refer to the storage docs for more details.")
 	importDBPath := importCmd.Flag("output", "Output directory for generated blocks.").Default(".").String()
+	// TODO: make input-file mandatory
 	importFilePath := importCmd.Flag("input-file", "Imports samples from file instead of stdin.").String()
 	importBlockSize := importCmd.Flag("block-size", "The maximum block size. The actual block timestamps will be aligned with Prometheus time ranges.").Default("2h").Hidden().Duration()
 	omImportCmd := importCmd.Command("openmetrics", "Import samples from OpenMetrics input and produce TSDB blocks. Please refer to the storage docs for more details.")
