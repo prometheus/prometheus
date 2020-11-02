@@ -32,6 +32,7 @@ const defaultProps = {
   onExecuteQuery: (): void => {
     // Do nothing.
   },
+  enableMetricAutocomplete: true,
 };
 
 describe('Panel', () => {

@@ -22,6 +22,7 @@ interface PanelProps {
   removePanel: () => void;
   onExecuteQuery: (query: string) => void;
   pathPrefix: string;
+  enableMetricAutocomplete: boolean;
 }
 
 interface PanelState {
@@ -233,6 +234,7 @@ class Panel extends Component<PanelProps, PanelState> {
               onExpressionChange={this.handleExpressionChange}
               executeQuery={this.executeQuery}
               loading={this.state.loading}
+              enableMetricAutocomplete={this.props.enableMetricAutocomplete}
               autocompleteSections={{
                 'Query History': pastQueries,
                 'Metric Names': metricNames,

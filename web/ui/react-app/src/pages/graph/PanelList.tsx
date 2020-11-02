@@ -22,9 +22,16 @@ interface PanelListProps extends RouteComponentProps {
   metrics: string[];
   useLocalTime: boolean;
   queryHistoryEnabled: boolean;
+  enableMetricAutocomplete: boolean;
 }
 
-export const PanelListContent: FC<PanelListProps> = ({ metrics = [], useLocalTime, queryHistoryEnabled, ...rest }) => {
+export const PanelListContent: FC<PanelListProps> = ({
+  metrics = [],
+  useLocalTime,
+  queryHistoryEnabled,
+  enableMetricAutocomplete,
+  ...rest
+}) => {
   const [panels, setPanels] = useState(rest.panels);
   const [historyItems, setLocalStorageHistoryItems] = useLocalStorage<string[]>('history', []);
 
@@ -95,6 +102,7 @@ export const PanelListContent: FC<PanelListProps> = ({ metrics = [], useLocalTim
           useLocalTime={useLocalTime}
           metricNames={metrics}
           pastQueries={queryHistoryEnabled ? historyItems : []}
+          enableMetricAutocomplete={enableMetricAutocomplete}
         />
       ))}
       <Button className="mb-3" color="primary" onClick={addPanel}>
@@ -108,6 +116,7 @@ const PanelList: FC<RouteComponentProps> = () => {
   const [delta, setDelta] = useState(0);
   const [useLocalTime, setUseLocalTime] = useLocalStorage('use-local-time', false);
   const [enableQueryHistory, setEnableQueryHistory] = useLocalStorage('enable-query-history', false);
+  const [enableMetricAutocomplete, setEnableMetricAutocomplete] = useLocalStorage('enable-metric-autocomplete', true);
 
   const pathPrefix = usePathPrefix();
   const { response: metricsRes, error: metricsErr } = useFetch<string[]>(`${pathPrefix}/${API_PATH}/label/__name__/values`);
@@ -148,6 +157,14 @@ const PanelList: FC<RouteComponentProps> = () => {
       >
         Use local time
       </Checkbox>
+      <Checkbox
+        wrapperStyles={{ marginLeft: 20, display: 'inline-block' }}
+        id="metric-autocomplete"
+        onChange={({ target }) => setEnableMetricAutocomplete(target.checked)}
+        defaultChecked={enableMetricAutocomplete}
+      >
+        Enable metric autocomplete
+      </Checkbox>
       {(delta > 30 || timeErr) && (
         <Alert color="danger">
           <strong>Warning: </strong>
@@ -167,6 +184,7 @@ const PanelList: FC<RouteComponentProps> = () => {
         useLocalTime={useLocalTime}
         metrics={metricsRes.data}
         queryHistoryEnabled={enableQueryHistory}
+        enableMetricAutocomplete={enableMetricAutocomplete}
       />
     </>
   );
