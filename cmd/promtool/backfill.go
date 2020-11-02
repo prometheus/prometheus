@@ -99,13 +99,14 @@ func backfill(path string, outputDir string, DefaultBlockDuration int64) (err er
 		var e textparse.Entry
 		w, errw := tsdb.NewBlockWriter(log.NewNopLogger(), outputDir, DefaultBlockDuration)
 		if errw != nil {
-			panic(errw)
+			os.RemoveAll(outputDir)
+			return errors.Wrap(errw, "block writer")
 		}
 		ctx := context.Background()
 		app := w.Appender(ctx)
 		_, errReset := input.Seek(0, 0)
 		if errReset != nil {
-			panic(errReset)
+			errors.Wrap(errReset, "seek file")
 		}
 		p2 := openmetrics.NewParser(input)
 		tsUpper := blockMaxTimeForTheTimestamp(t, offset)
@@ -142,6 +143,5 @@ func backfill(path string, outputDir string, DefaultBlockDuration int64) (err er
 		}
 		level.Info(logger).Log("msg", "blocks flushed", "ids", fmt.Sprintf("%v", ids))
 	}
-
 	return nil
 }

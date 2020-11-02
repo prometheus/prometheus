@@ -20,8 +20,8 @@ import (
 	"github.com/prometheus/prometheus/pkg/textparse"
 )
 
-// Content Type for the Open Metrics Parser.
-const contentType = "application/openmetrics-text;"
+// Content type of the latest OpenMetrics Parser.
+const contentTypeLatest = "application/openmetrics-text; version=0.0.0;"
 
 type Parser struct {
 	textparse.Parser
@@ -39,8 +39,7 @@ func (p *Parser) Next() (textparse.Entry, error) {
 	for p.s.Scan() {
 		line := p.s.Bytes()
 		line = append(line, '\n')
-		// fmt.Println(string(line))
-		p.Parser = textparse.New(line, contentType)
+		p.Parser = textparse.New(line, contentTypeLatest)
 		if et, err := p.Parser.Next(); err != io.EOF {
 			return et, err
 		}
