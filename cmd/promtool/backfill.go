@@ -33,10 +33,6 @@ import (
 
 var merr tsdb_errors.MultiError
 
-func blockMaxTimeForTheTimestamp(t int64, width int64) (maxt int64) {
-	return (t/width)*width + width
-}
-
 func getMinAndMaxTimestamps(p textparse.Parser, mint, maxt *int64) error {
 	var (
 		entry textparse.Entry
@@ -71,9 +67,8 @@ func getMinAndMaxTimestamps(p textparse.Parser, mint, maxt *int64) error {
 
 func backfill(path string, outputDir string, DefaultBlockDuration int64) (err error) {
 	logger := log.NewNopLogger()
-	input := os.Stdin
+	input, err := os.Open(path)
 	if path != "" {
-		input, err = os.Open(path)
 		if err != nil {
 			return err
 		}
@@ -95,7 +90,8 @@ func backfill(path string, outputDir string, DefaultBlockDuration int64) (err er
 	level.Info(logger).Log("msg", "Started importing input data.")
 
 	var offset int64 = 2 * time.Hour.Milliseconds()
-	for t := mint; t < maxt; t = t + offset {
+	mint = offset * (mint / offset)
+	for t := mint; t <= maxt; t = t + offset {
 		var e textparse.Entry
 		w, errw := tsdb.NewBlockWriter(log.NewNopLogger(), outputDir, DefaultBlockDuration)
 		if errw != nil {
@@ -109,7 +105,7 @@ func backfill(path string, outputDir string, DefaultBlockDuration int64) (err er
 			errors.Wrap(errReset, "seek file")
 		}
 		p2 := openmetrics.NewParser(input)
-		tsUpper := blockMaxTimeForTheTimestamp(t, offset)
+		tsUpper := t + offset
 		for {
 			e, err = p2.Next()
 			if err == io.EOF {
