@@ -130,6 +130,9 @@ type Invocation struct {
 	Verb       string
 	Args       []string
 	BuildFlags []string
+	ModFlag    string
+	ModFile    string
+	Overlay    string
 	Env        []string
 	WorkingDir string
 	Logf       func(format string, args ...interface{})
@@ -158,17 +161,41 @@ func (i *Invocation) run(ctx context.Context, stdout, stderr io.Writer) error {
 	}
 
 	goArgs := []string{i.Verb}
+
+	appendModFile := func() {
+		if i.ModFile != "" {
+			goArgs = append(goArgs, "-modfile="+i.ModFile)
+		}
+	}
+	appendModFlag := func() {
+		if i.ModFlag != "" {
+			goArgs = append(goArgs, "-mod="+i.ModFlag)
+		}
+	}
+	appendOverlayFlag := func() {
+		if i.Overlay != "" {
+			goArgs = append(goArgs, "-overlay="+i.Overlay)
+		}
+	}
+
 	switch i.Verb {
-	case "mod":
-		// mod needs the sub-verb before build flags.
-		goArgs = append(goArgs, i.Args[0])
-		goArgs = append(goArgs, i.BuildFlags...)
-		goArgs = append(goArgs, i.Args[1:]...)
-	case "env":
-		// env doesn't take build flags.
+	case "env", "version":
 		goArgs = append(goArgs, i.Args...)
-	default:
+	case "mod":
+		// mod needs the sub-verb before flags.
+		goArgs = append(goArgs, i.Args[0])
+		appendModFile()
+		goArgs = append(goArgs, i.Args[1:]...)
+	case "get":
 		goArgs = append(goArgs, i.BuildFlags...)
+		appendModFile()
+		goArgs = append(goArgs, i.Args...)
+
+	default: // notably list and build.
+		goArgs = append(goArgs, i.BuildFlags...)
+		appendModFile()
+		appendModFlag()
+		appendOverlayFlag()
 		goArgs = append(goArgs, i.Args...)
 	}
 	cmd := exec.Command("go", goArgs...)
