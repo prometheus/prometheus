@@ -14,7 +14,7 @@ interface ExpressionInputProps {
   autocompleteSections: { [key: string]: string[] };
   executeQuery: () => void;
   loading: boolean;
-  enable: boolean;
+  enableMetricAutocomplete: boolean;
 }
 
 interface ExpressionInputState {
@@ -78,7 +78,7 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
     const { autocompleteSections } = this.props;
     let index = 0;
     const sections =
-      inputValue!.length && this.props.enable
+      inputValue!.length && this.props.enableMetricAutocomplete
         ? Object.entries(autocompleteSections).reduce((acc, [title, items]) => {
             const matches = this.getSearchMatches(inputValue!, items);
             return !matches.length
