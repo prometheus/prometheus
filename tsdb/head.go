@@ -2373,7 +2373,8 @@ func (h *Head) Size() int64 {
 	if h.wal != nil {
 		walSize, _ = h.wal.Size()
 	}
-	return walSize + h.chunkDiskMapper.Size()
+	cdmSize, _ := h.chunkDiskMapper.Size()
+	return walSize + cdmSize
 }
 
 func (h *RangeHead) Size() int64 {
