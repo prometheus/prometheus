@@ -77,7 +77,7 @@ const Navigation: FC<NavbarProps> = ({ consolesLink }) => {
             <NavLink href="https://prometheus.io/docs/prometheus/latest/getting_started/">Help</NavLink>
           </NavItem>
           <NavItem>
-            <NavLink href={`${pathPrefix}/../graph${window.location.search}`}>Classic UI</NavLink>
+            <NavLink href={`${pathPrefix}/classic/graph${window.location.search}`}>Classic UI</NavLink>
           </NavItem>
         </Nav>
       </Collapse>

@@ -43,7 +43,7 @@ describe('ScrapePoolList', () => {
         );
       });
       scrapePoolList.update();
-      expect(mock).toHaveBeenCalledWith('/path/prefix/../api/v1/targets?state=active', {
+      expect(mock).toHaveBeenCalledWith('/path/prefix/api/v1/targets?state=active', {
         cache: 'no-store',
         credentials: 'same-origin',
       });
@@ -69,7 +69,7 @@ describe('ScrapePoolList', () => {
         );
       });
       scrapePoolList.update();
-      expect(mock).toHaveBeenCalledWith('/path/prefix/../api/v1/targets?state=active', {
+      expect(mock).toHaveBeenCalledWith('/path/prefix/api/v1/targets?state=active', {
         cache: 'no-store',
         credentials: 'same-origin',
       });
@@ -92,7 +92,7 @@ describe('ScrapePoolList', () => {
       });
       scrapePoolList.update();
 
-      expect(mock).toHaveBeenCalledWith('/path/prefix/../api/v1/targets?state=active', {
+      expect(mock).toHaveBeenCalledWith('/path/prefix/api/v1/targets?state=active', {
         cache: 'no-store',
         credentials: 'same-origin',
       });

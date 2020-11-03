@@ -163,14 +163,13 @@ func TestReadyAndHealthy(t *testing.T) {
 
 	for _, u := range []string{
 		"http://localhost:9090/-/ready",
-		"http://localhost:9090/version",
-		"http://localhost:9090/graph",
-		"http://localhost:9090/flags",
-		"http://localhost:9090/rules",
-		"http://localhost:9090/service-discovery",
-		"http://localhost:9090/targets",
-		"http://localhost:9090/status",
-		"http://localhost:9090/config",
+		"http://localhost:9090/classic/graph",
+		"http://localhost:9090/classic/flags",
+		"http://localhost:9090/classic/rules",
+		"http://localhost:9090/classic/service-discovery",
+		"http://localhost:9090/classic/targets",
+		"http://localhost:9090/classic/status",
+		"http://localhost:9090/classic/config",
 	} {
 		resp, err = http.Get(u)
 		require.NoError(t, err)
@@ -194,14 +193,13 @@ func TestReadyAndHealthy(t *testing.T) {
 	for _, u := range []string{
 		"http://localhost:9090/-/healthy",
 		"http://localhost:9090/-/ready",
-		"http://localhost:9090/version",
-		"http://localhost:9090/graph",
-		"http://localhost:9090/flags",
-		"http://localhost:9090/rules",
-		"http://localhost:9090/service-discovery",
-		"http://localhost:9090/targets",
-		"http://localhost:9090/status",
-		"http://localhost:9090/config",
+		"http://localhost:9090/classic/graph",
+		"http://localhost:9090/classic/flags",
+		"http://localhost:9090/classic/rules",
+		"http://localhost:9090/classic/service-discovery",
+		"http://localhost:9090/classic/targets",
+		"http://localhost:9090/classic/status",
+		"http://localhost:9090/classic/config",
 	} {
 		resp, err = http.Get(u)
 		require.NoError(t, err)
@@ -276,11 +274,6 @@ func TestRoutePrefix(t *testing.T) {
 	require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 	cleanupTestResponse(t, resp)
 
-	resp, err = http.Get("http://localhost:9091" + opts.RoutePrefix + "/version")
-	require.NoError(t, err)
-	require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
-	cleanupTestResponse(t, resp)
-
 	resp, err = http.Post("http://localhost:9091"+opts.RoutePrefix+"/api/v1/admin/tsdb/snapshot", "", strings.NewReader(""))
 	require.NoError(t, err)
 	require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
@@ -300,11 +293,6 @@ func TestRoutePrefix(t *testing.T) {
 	cleanupTestResponse(t, resp)
 
 	resp, err = http.Get("http://localhost:9091" + opts.RoutePrefix + "/-/ready")
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-	cleanupTestResponse(t, resp)
-
-	resp, err = http.Get("http://localhost:9091" + opts.RoutePrefix + "/version")
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	cleanupTestResponse(t, resp)
