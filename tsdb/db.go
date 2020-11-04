@@ -859,7 +859,7 @@ func (db *DB) compactHead(head *RangeHead) (err error) {
 		if err == nil && compactionDuration.Milliseconds() > head.BlockMaxTime()-head.MinTime() {
 			level.Warn(db.logger).Log(
 				"msg", "compaction is taking longer than the block time range, thus, may never finish. Consider deleting the wal directory.",
-				"duration", compactionDuration,
+				"duration", compactionDuration.String(),
 				"mint", head.MinTime(),
 				"maxt", head.BlockMaxTime(),
 			)
