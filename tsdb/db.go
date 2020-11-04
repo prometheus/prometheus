@@ -853,6 +853,19 @@ func (db *DB) CompactHead(head *RangeHead) error {
 // compactHead compacts the given RangeHead.
 // The compaction mutex should be held before calling this method.
 func (db *DB) compactHead(head *RangeHead) error {
+	start := time.Now()
+	defer func() {
+		compactionDuration := time.Since(start)
+		if compactionDuration.Milliseconds() > head.BlockMaxTime()-head.MinTime() {
+			level.Warn(db.logger).Log(
+				"msg", "compaction is taking longer than the block time range, thus, may never finish. Consider deleting the wal directory.",
+				"duration", compactionDuration,
+				"mint", head.MinTime(),
+				"maxt", head.BlockMaxTime(),
+			)
+		}
+	}()
+
 	uid, err := db.compactor.Write(db.dir, head, head.MinTime(), head.BlockMaxTime(), nil)
 	if err != nil {
 		return errors.Wrap(err, "persist head block")
