@@ -623,6 +623,17 @@ func checkErr(err error) int {
 	return 0
 }
 
-func readOpenMetrics(path string, outputDir string, blockDuration time.Duration) (err error) {
-	return backfill(path, outputDir, blockDuration.Milliseconds())
+func readOpenMetrics(path string, outputDir string) (err error) {
+	input, err := os.Open(path)
+	if path != "" {
+		if err != nil {
+			return err
+		}
+		defer func() {
+			merr.Add(err)
+			merr.Add(input.Close())
+			err = merr.Err()
+		}()
+	}
+	return backfill(input, outputDir)
 }
