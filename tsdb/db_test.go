@@ -1235,7 +1235,7 @@ func TestSizeRetention(t *testing.T) {
 	// Add some data to the WAL.
 	headApp := db.Head().Appender(context.Background())
 	for _, m := range headBlocks {
-		series := genSeries(100, 10, m.MinTime, m.MaxTime)
+		series := genSeries(100, 10, m.MinTime, m.MaxTime+1)
 		for _, s := range series {
 			it := s.Iterator()
 			for it.Next() {
@@ -1254,8 +1254,12 @@ func TestSizeRetention(t *testing.T) {
 	blockSize := int64(prom_testutil.ToFloat64(db.metrics.blocksBytes)) // Use the actual internal metrics.
 	walSize, err := db.Head().wal.Size()
 	testutil.Ok(t, err)
-	// Expected size should take into account block size + WAL size
-	expSize := blockSize + walSize
+	cdmSize, err := db.Head().chunkDiskMapper.Size()
+	testutil.Ok(t, err)
+	testutil.Assert(t, cdmSize > 0, "cdmSize is not greater than 0, value is %d", cdmSize)
+	// Expected size should take into account block size + WAL size + Head
+	// chunks size
+	expSize := blockSize + walSize + cdmSize
 	actSize, err := fileutil.DirSize(db.Dir())
 	testutil.Ok(t, err)
 	testutil.Equals(t, expSize, actSize, "registered size doesn't match actual disk size")
@@ -1268,7 +1272,20 @@ func TestSizeRetention(t *testing.T) {
 	blockSize = int64(prom_testutil.ToFloat64(db.metrics.blocksBytes)) // Use the actual internal metrics.
 	walSize, err = db.Head().wal.Size()
 	testutil.Ok(t, err)
-	expSize = blockSize + walSize
+	cdmSize, err = db.Head().chunkDiskMapper.Size()
+	testutil.Ok(t, err)
+	testutil.Assert(t, cdmSize > 0, "cdmSize is not greater than 0, value is %d", cdmSize)
+	expSize = blockSize + walSize + cdmSize
+	actSize, err = fileutil.DirSize(db.Dir())
+	testutil.Ok(t, err)
+	testutil.Equals(t, expSize, actSize, "registered size doesn't match actual disk size")
+
+	// Truncate Chunk Disk Mapper and compare sizes.
+	testutil.Ok(t, db.Head().chunkDiskMapper.Truncate(900))
+	cdmSize, err = db.Head().chunkDiskMapper.Size()
+	testutil.Ok(t, err)
+	testutil.Assert(t, cdmSize > 0, "cdmSize is not greater than 0, value is %d", cdmSize)
+	expSize = blockSize + walSize + cdmSize
 	actSize, err = fileutil.DirSize(db.Dir())
 	testutil.Ok(t, err)
 	testutil.Equals(t, expSize, actSize, "registered size doesn't match actual disk size")
@@ -1285,8 +1302,11 @@ func TestSizeRetention(t *testing.T) {
 	blockSize = int64(prom_testutil.ToFloat64(db.metrics.blocksBytes))
 	walSize, err = db.Head().wal.Size()
 	testutil.Ok(t, err)
+	cdmSize, err = db.Head().chunkDiskMapper.Size()
+	testutil.Ok(t, err)
+	testutil.Assert(t, cdmSize > 0, "cdmSize is not greater than 0, value is %d", cdmSize)
 	// Expected size should take into account block size + WAL size
-	expSize = blockSize + walSize
+	expSize = blockSize + walSize + cdmSize
 	actRetentionCount := int(prom_testutil.ToFloat64(db.metrics.sizeRetentionCount))
 	actSize, err = fileutil.DirSize(db.Dir())
 	testutil.Ok(t, err)
