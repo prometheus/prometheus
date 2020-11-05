@@ -63,7 +63,6 @@ func getMinAndMaxTimestamps(p textparse.Parser) (int64, int64, error) {
 			return maxt, mint, errors.Errorf("Expected timestamp for series %v, got none.", l.String())
 		}
 	}
-
 	return maxt, mint, nil
 }
 func createBlocks(input *os.File, mint, maxt *int64, outputDir string) error {

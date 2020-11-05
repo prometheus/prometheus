@@ -36,16 +36,6 @@ type sample1 struct {
 func (s sample1) T() int64   { return s.t }
 func (s sample1) V() float64 { return s.v }
 
-type expected struct {
-	ToParse  string
-	IsOk     bool
-	Expected struct {
-		MinTime int64
-		MaxTime int64
-		Series  map[string][]tsdbutil.Sample
-	}
-}
-
 func createTemporaryOpenmetricsFile(text string, omFile string) error {
 	f, err := os.Create(omFile)
 	if err != nil {
