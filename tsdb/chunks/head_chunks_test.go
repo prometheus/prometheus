@@ -19,6 +19,7 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"os"
+	"strconv"
 	"testing"
 
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -361,6 +362,75 @@ func TestHeadReadWriter_TruncateAfterFailedIterateChunks(t *testing.T) {
 
 	// Truncation call should not return error after IterateAllChunks fails.
 	testutil.Ok(t, hrw.Truncate(2000))
+}
+
+func TestHeadReadWriter_ReadRepairOnEmptyLastFile(t *testing.T) {
+	hrw := testHeadReadWriter(t)
+	defer func() {
+		testutil.Ok(t, hrw.Close())
+	}()
+
+	timeRange := 0
+	addChunk := func() {
+		step := 100
+		mint, maxt := timeRange+1, timeRange+step-1
+		_, err := hrw.WriteChunk(1, int64(mint), int64(maxt), randomChunk(t))
+		testutil.Ok(t, err)
+		timeRange += step
+	}
+	nonEmptyFile := func() {
+		testutil.Ok(t, hrw.CutNewFile())
+		addChunk()
+	}
+
+	addChunk()     // 1. Created with the first chunk.
+	nonEmptyFile() // 2.
+	nonEmptyFile() // 3.
+
+	testutil.Equals(t, 3, len(hrw.mmappedChunkFiles))
+	lastFile := 0
+	for idx := range hrw.mmappedChunkFiles {
+		if idx > lastFile {
+			lastFile = idx
+		}
+	}
+	testutil.Equals(t, 3, lastFile)
+	dir := hrw.dir.Name()
+	testutil.Ok(t, hrw.Close())
+
+	// Write an empty last file mimicking an abrupt shutdown on file creation.
+	emptyFileName := segmentFile(dir, lastFile+1)
+	f, err := os.OpenFile(emptyFileName, os.O_WRONLY|os.O_CREATE, 0666)
+	testutil.Ok(t, err)
+	testutil.Ok(t, f.Sync())
+	stat, err := f.Stat()
+	testutil.Ok(t, err)
+	testutil.Equals(t, int64(0), stat.Size())
+	testutil.Ok(t, f.Close())
+
+	// Open chunk disk mapper again, corrupt file should be removed.
+	hrw, err = NewChunkDiskMapper(dir, chunkenc.NewPool())
+	testutil.Ok(t, err)
+	testutil.Assert(t, !hrw.fileMaxtSet, "")
+	testutil.Ok(t, hrw.IterateAllChunks(func(_, _ uint64, _, _ int64, _ uint16) error { return nil }))
+	testutil.Assert(t, hrw.fileMaxtSet, "")
+
+	// Removed from memory.
+	testutil.Equals(t, 3, len(hrw.mmappedChunkFiles))
+	for idx := range hrw.mmappedChunkFiles {
+		testutil.Assert(t, idx <= lastFile, "file index is bigger than previous last file")
+	}
+
+	// Removed even from disk.
+	files, err := ioutil.ReadDir(dir)
+	testutil.Ok(t, err)
+	testutil.Equals(t, 3, len(files))
+	for _, fi := range files {
+		seq, err := strconv.ParseUint(fi.Name(), 10, 64)
+		testutil.Ok(t, err)
+		testutil.Assert(t, seq <= uint64(lastFile), "file index on disk is bigger than previous last file")
+	}
+
 }
 
 func testHeadReadWriter(t *testing.T) *ChunkDiskMapper {
