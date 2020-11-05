@@ -115,6 +115,7 @@ func createBlocks(input *os.File, mint, maxt *int64, outputDir string) error {
 			return errors.Wrap(err, "flush")
 		}
 		level.Info(logger).Log("msg", "blocks flushed", "ids", fmt.Sprintf("%v", ids))
+		w.Close()
 	}
 	return nil
 }
