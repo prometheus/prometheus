@@ -798,6 +798,7 @@ func (db *DB) Compact() (returnErr error) {
 		).Err()
 	}()
 
+	start := time.Now()
 	// Check whether we have pending head blocks that are ready to be persisted.
 	// They have the highest priority.
 	for {
@@ -812,7 +813,6 @@ func (db *DB) Compact() (returnErr error) {
 		mint := db.head.MinTime()
 		maxt := rangeForTimestamp(mint, db.head.chunkRange.Load())
 
-		start := time.Now()
 		// Wrap head into a range that bounds all reads to it.
 		// We remove 1 millisecond from maxt because block
 		// intervals are half-open: [b.MinTime, b.MaxTime). But
@@ -825,16 +825,6 @@ func (db *DB) Compact() (returnErr error) {
 		}
 		// Consider only successful compactions for WAL truncation.
 		lastBlockMaxt = maxt
-		compactionDuration := time.Since(start)
-
-		if compactionDuration.Milliseconds() > maxt-mint {
-			level.Warn(db.logger).Log(
-				"msg", "compaction took longer than the block time range, compactions are falling behind and won't be able to catch up.",
-				"duration", compactionDuration.String(),
-				"mint", mint,
-				"maxt", maxt,
-			)
-		}
 	}
 
 	// Clear some disk space before compacting blocks, especially important
@@ -843,6 +833,14 @@ func (db *DB) Compact() (returnErr error) {
 		return errors.Wrap(err, "WAL truncation in Compact")
 	}
 
+	compactionDuration := time.Since(start)
+	if compactionDuration.Milliseconds() > db.head.chunkRange.Load() {
+		level.Warn(db.logger).Log(
+			"msg", "compaction took longer than the chunk time range, compactions are falling behind and won't be able to catch up.",
+			"duration", compactionDuration.String(),
+			"chunkRange", db.head.chunkRange.Load(),
+		)
+	}
 	return db.compactBlocks()
 }
 
