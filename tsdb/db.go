@@ -812,6 +812,7 @@ func (db *DB) Compact() (returnErr error) {
 		mint := db.head.MinTime()
 		maxt := rangeForTimestamp(mint, db.head.chunkRange.Load())
 
+		start := time.Now()
 		// Wrap head into a range that bounds all reads to it.
 		// We remove 1 millisecond from maxt because block
 		// intervals are half-open: [b.MinTime, b.MaxTime). But
@@ -824,6 +825,16 @@ func (db *DB) Compact() (returnErr error) {
 		}
 		// Consider only successful compactions for WAL truncation.
 		lastBlockMaxt = maxt
+		compactionDuration := time.Since(start)
+
+		if compactionDuration.Milliseconds() > maxt-mint {
+			level.Warn(db.logger).Log(
+				"msg", "compaction took longer than the block time range, compactions are falling behind and won't be able to catch up.",
+				"duration", compactionDuration.String(),
+				"mint", mint,
+				"maxt", maxt,
+			)
+		}
 	}
 
 	// Clear some disk space before compacting blocks, especially important
@@ -853,19 +864,6 @@ func (db *DB) CompactHead(head *RangeHead) error {
 // compactHead compacts the given RangeHead.
 // The compaction mutex should be held before calling this method.
 func (db *DB) compactHead(head *RangeHead) (err error) {
-	start := time.Now()
-	defer func() {
-		compactionDuration := time.Since(start)
-		if err == nil && compactionDuration.Milliseconds() > head.BlockMaxTime()-head.MinTime() {
-			level.Warn(db.logger).Log(
-				"msg", "compaction is taking longer than the block time range, thus, may never finish. Consider deleting the wal directory.",
-				"duration", compactionDuration.String(),
-				"mint", head.MinTime(),
-				"maxt", head.BlockMaxTime(),
-			)
-		}
-	}()
-
 	uid, err := db.compactor.Write(db.dir, head, head.MinTime(), head.BlockMaxTime(), nil)
 	if err != nil {
 		return errors.Wrap(err, "persist head block")
