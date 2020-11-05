@@ -83,6 +83,7 @@ NEQ
 NEQ_REGEX
 POW
 SUB
+AT
 %token	operatorsEnd
 
 // Aggregators.
@@ -138,7 +139,7 @@ START_METRIC_SELECTOR
 %type <series> series_item series_values
 %type <uint> uint
 %type <float> number series_value signed_number
-%type <node> aggregate_expr aggregate_modifier bin_modifier binary_expr bool_modifier expr function_call function_call_args function_call_body group_modifiers label_matchers matrix_selector number_literal offset_expr on_or_ignoring paren_expr string_literal subquery_expr unary_expr vector_selector
+%type <node> instant_expr aggregate_expr aggregate_modifier bin_modifier binary_expr bool_modifier expr function_call function_call_args function_call_body group_modifiers label_matchers matrix_selector number_literal offset_expr on_or_ignoring paren_expr string_literal subquery_expr unary_expr vector_selector
 %type <duration> duration maybe_duration
 
 %start start
@@ -187,6 +188,7 @@ expr            :
                 | subquery_expr
                 | unary_expr
                 | vector_selector
+                | instant_expr
                 ;
 
 /*
@@ -200,8 +202,8 @@ aggregate_expr  : aggregate_op aggregate_modifier function_call_body
                 | aggregate_op function_call_body
                         { $$ = yylex.(*parser).newAggregateExpr($1, &AggregateExpr{}, $2) }
                 | aggregate_op error
-                        { 
-                        yylex.(*parser).unexpected("aggregation",""); 
+                        {
+                        yylex.(*parser).unexpected("aggregation","");
                         $$ = yylex.(*parser).newAggregateExpr($1, &AggregateExpr{}, Expressions{})
                         }
                 ;
@@ -379,6 +381,18 @@ offset_expr: expr OFFSET duration
                         }
                 | expr OFFSET error
                         { yylex.(*parser).unexpected("offset", "duration"); $$ = $1 }
+                ;
+/*
+ * @ modifiers.
+ */
+
+instant_expr: expr AT number
+                        {
+                        yylex.(*parser).setInstant($1, $3)
+                        $$ = $1
+                        }
+                | expr AT error
+                        { yylex.(*parser).unexpected("@", "timestamp"); $$ = $1 }
                 ;
 
 /*

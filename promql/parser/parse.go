@@ -707,3 +707,33 @@ func (p *parser) addOffset(e Node, offset time.Duration) {
 	*endPosp = p.lastClosing
 
 }
+
+func (p *parser) setInstant(e Node, timestamp float64) {
+	var timestampp *float64
+	var endPosp *Pos
+
+	switch s := e.(type) {
+	case *VectorSelector:
+		timestampp = &s.Timestamp
+		endPosp = &s.PosRange.End
+	case *MatrixSelector:
+		if vs, ok := s.VectorSelector.(*VectorSelector); ok {
+			timestampp = &vs.Timestamp
+		}
+		endPosp = &s.EndPos
+	case *SubqueryExpr:
+		timestampp = &s.Timestamp
+		endPosp = &s.EndPos
+	default:
+		p.addParseErrf(e.PositionRange(), "offset modifier must be preceded by an instant or range selector, but follows a %T instead", e)
+		return
+	}
+
+	if *timestampp != 0 {
+		p.addParseErrf(e.PositionRange(), "@ <timestamp> may not be set multiple times")
+	} else if timestampp != nil {
+		*timestampp = timestamp
+	}
+
+	*endPosp = p.lastClosing
+}

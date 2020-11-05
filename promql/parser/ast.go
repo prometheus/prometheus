@@ -125,10 +125,11 @@ type MatrixSelector struct {
 
 // SubqueryExpr represents a subquery.
 type SubqueryExpr struct {
-	Expr   Expr
-	Range  time.Duration
-	Offset time.Duration
-	Step   time.Duration
+	Expr      Expr
+	Range     time.Duration
+	Offset    time.Duration
+	Timestamp float64
+	Step      time.Duration
 
 	EndPos Pos
 }
@@ -166,6 +167,7 @@ type UnaryExpr struct {
 type VectorSelector struct {
 	Name          string
 	Offset        time.Duration
+	Timestamp     float64
 	LabelMatchers []*labels.Matcher
 
 	// The unexpanded seriesSet populated at query preparation time.

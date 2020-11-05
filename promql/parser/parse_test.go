@@ -21,7 +21,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
-	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/assert"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 )
@@ -1390,6 +1390,19 @@ var testExpr = []struct {
 			},
 		},
 	}, {
+		input: `foo @ 1603774568`,
+		expected: &VectorSelector{
+			Name:      "foo",
+			Timestamp: 1603774568,
+			LabelMatchers: []*labels.Matcher{
+				mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+			},
+			PosRange: PositionRange{
+				Start: 0,
+				End:   17, // TODO(codesome).
+			},
+		},
+	}, {
 		input: `foo:bar{a="bc"}`,
 		expected: &VectorSelector{
 			Name:   "foo:bar",
@@ -1672,6 +1685,24 @@ var testExpr = []struct {
 			},
 			Range:  5 * 365 * 24 * time.Hour,
 			EndPos: 25,
+		},
+	}, {
+		input: `test{a="b"}[5y] @ 1603774699`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name:      "test",
+				Timestamp: 1603774699,
+				LabelMatchers: []*labels.Matcher{
+					mustLabelMatcher(labels.MatchEqual, "a", "b"),
+					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
+				},
+				PosRange: PositionRange{
+					Start: 0,
+					End:   11,
+				},
+			},
+			Range:  5 * 365 * 24 * time.Hour,
+			EndPos: 15, // TODO(codesome).
 		},
 	}, {
 		input:  `foo[5mm]`,
@@ -2525,6 +2556,51 @@ var testExpr = []struct {
 			EndPos: 61,
 		},
 	}, {
+		input: `min_over_time(rate(foo{bar="baz"}[2s])[5m:] @ 1603775091)[4m:3s]`,
+		expected: &SubqueryExpr{
+			Expr: &Call{
+				Func: mustGetFunction("min_over_time"),
+				Args: Expressions{
+					&SubqueryExpr{
+						Expr: &Call{
+							Func: mustGetFunction("rate"),
+							Args: Expressions{
+								&MatrixSelector{
+									VectorSelector: &VectorSelector{
+										Name: "foo",
+										LabelMatchers: []*labels.Matcher{
+											mustLabelMatcher(labels.MatchEqual, "bar", "baz"),
+											mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+										},
+										PosRange: PositionRange{
+											Start: 19,
+											End:   33,
+										},
+									},
+									Range:  2 * time.Second,
+									EndPos: 37,
+								},
+							},
+							PosRange: PositionRange{
+								Start: 14,
+								End:   38,
+							},
+						},
+						Range:     5 * time.Minute,
+						Timestamp: 1603775091,
+						EndPos:    43, // TODO(codesome).
+					},
+				},
+				PosRange: PositionRange{
+					Start: 0,
+					End:   57, // TODO(codesome).
+				},
+			},
+			Range:  4 * time.Minute,
+			Step:   3 * time.Second,
+			EndPos: 64, // TODO(codesome).
+		},
+	}, {
 		input: "sum without(and, by, avg, count, alert, annotations)(some_metric) [30m:10s]",
 		expected: &SubqueryExpr{
 			Expr: &AggregateExpr{
@@ -2648,6 +2724,46 @@ var testExpr = []struct {
 			EndPos: 37,
 		},
 	}, {
+		input: `(foo + bar{nm="val"})[5m:] @ 1603775019`,
+		expected: &SubqueryExpr{
+			Expr: &ParenExpr{
+				Expr: &BinaryExpr{
+					Op: ADD,
+					VectorMatching: &VectorMatching{
+						Card: CardOneToOne,
+					},
+					LHS: &VectorSelector{
+						Name: "foo",
+						LabelMatchers: []*labels.Matcher{
+							mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+						},
+						PosRange: PositionRange{
+							Start: 1,
+							End:   4,
+						},
+					},
+					RHS: &VectorSelector{
+						Name: "bar",
+						LabelMatchers: []*labels.Matcher{
+							mustLabelMatcher(labels.MatchEqual, "nm", "val"),
+							mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
+						},
+						PosRange: PositionRange{
+							Start: 7,
+							End:   20,
+						},
+					},
+				},
+				PosRange: PositionRange{
+					Start: 0,
+					End:   21,
+				},
+			},
+			Range:     5 * time.Minute,
+			Timestamp: 1603775019,
+			EndPos:    26, // TODO(codesome).
+		},
+	}, {
 		input:  "test[5d] OFFSET 10s [10m:5s]",
 		fail:   true,
 		errMsg: "1:1: parse error: subquery is only allowed on instant vector, got matrix",
@@ -2664,23 +2780,23 @@ func TestParseExpressions(t *testing.T) {
 			expr, err := ParseExpr(test.input)
 
 			// Unexpected errors are always caused by a bug.
-			require.NotEqual(t, err, errUnexpected, "unexpected error occurred")
+			assert.True(t, err != errUnexpected, "unexpected error occurred")
 
 			if !test.fail {
-				require.NoError(t, err)
-				require.Equal(t, test.expected, expr, "error on input '%s'", test.input)
+				assert.NoError(t, err)
+				assert.Equal(t, test.expected, expr, "error on input '%s'", test.input)
 			} else {
-				require.Error(t, err)
-				require.Contains(t, err.Error(), test.errMsg, "unexpected error on input '%s', expected '%s', got '%s'", test.input, test.errMsg, err.Error())
+				assert.Error(t, err)
+				assert.True(t, strings.Contains(err.Error(), test.errMsg), "unexpected error on input '%s', expected '%s', got '%s'", test.input, test.errMsg, err.Error())
 
 				errorList, ok := err.(ParseErrors)
 
-				require.True(t, ok, "unexpected error type")
+				assert.True(t, ok, "unexpected error type")
 
 				for _, e := range errorList {
-					require.True(t, 0 <= e.PositionRange.Start, "parse error has negative position\nExpression '%s'\nError: %v", test.input, e)
-					require.True(t, e.PositionRange.Start <= e.PositionRange.End, "parse error has negative length\nExpression '%s'\nError: %v", test.input, e)
-					require.True(t, e.PositionRange.End <= Pos(len(test.input)), "parse error is not contained in input\nExpression '%s'\nError: %v", test.input, e)
+					assert.True(t, 0 <= e.PositionRange.Start, "parse error has negative position\nExpression '%s'\nError: %v", test.input, e)
+					assert.True(t, e.PositionRange.Start <= e.PositionRange.End, "parse error has negative length\nExpression '%s'\nError: %v", test.input, e)
+					assert.True(t, e.PositionRange.End <= Pos(len(test.input)), "parse error is not contained in input\nExpression '%s'\nError: %v", test.input, e)
 				}
 			}
 		})
@@ -2690,11 +2806,11 @@ func TestParseExpressions(t *testing.T) {
 // NaN has no equality. Thus, we need a separate test for it.
 func TestNaNExpression(t *testing.T) {
 	expr, err := ParseExpr("NaN")
-	require.NoError(t, err)
+	assert.NoError(t, err)
 
 	nl, ok := expr.(*NumberLiteral)
-	require.True(t, ok, "expected number literal but got %T", expr)
-	require.True(t, math.IsNaN(float64(nl.Val)), "expected 'NaN' in number literal but got %v", nl.Val)
+	assert.True(t, ok, "expected number literal but got %T", expr)
+	assert.True(t, math.IsNaN(float64(nl.Val)), "expected 'NaN' in number literal but got %v", nl.Val)
 }
 
 func mustLabelMatcher(mt labels.MatchType, name, val string) *labels.Matcher {
@@ -2809,14 +2925,14 @@ func TestParseSeries(t *testing.T) {
 		metric, vals, err := ParseSeriesDesc(test.input)
 
 		// Unexpected errors are always caused by a bug.
-		require.NotEqual(t, err, errUnexpected, "unexpected error occurred")
+		assert.True(t, err != errUnexpected, "unexpected error occurred")
 
 		if !test.fail {
-			require.NoError(t, err)
-			require.Equal(t, test.expectedMetric, metric, "error on input '%s'", test.input)
-			require.Equal(t, test.expectedValues, vals, "error in input '%s'", test.input)
+			assert.NoError(t, err)
+			assert.Equal(t, test.expectedMetric, metric, "error on input '%s'", test.input)
+			assert.Equal(t, test.expectedValues, vals, "error in input '%s'", test.input)
 		} else {
-			require.Error(t, err)
+			assert.Error(t, err)
 		}
 	}
 }
@@ -2826,7 +2942,7 @@ func TestRecoverParserRuntime(t *testing.T) {
 	var err error
 
 	defer func() {
-		require.Equal(t, errUnexpected, err)
+		assert.Equal(t, errUnexpected, err)
 	}()
 	defer p.recover(&err)
 	// Cause a runtime panic.
@@ -2842,7 +2958,7 @@ func TestRecoverParserError(t *testing.T) {
 	e := errors.New("custom error")
 
 	defer func() {
-		require.Equal(t, e.Error(), err.Error())
+		assert.Equal(t, e.Error(), err.Error())
 	}()
 	defer p.recover(&err)
 
