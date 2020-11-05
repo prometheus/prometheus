@@ -115,8 +115,7 @@ func createBlocks(input *os.File, mint, maxt *int64, outputDir string) error {
 			return errors.Wrap(err, "flush")
 		}
 		level.Info(logger).Log("msg", "blocks flushed", "ids", fmt.Sprintf("%v", ids))
-		errC := w.Close()
-		if errC != nil {
+		if errC := w.Close(); errC != nil {
 			return errors.Wrap(errC, "close")
 		}
 	}
@@ -130,8 +129,7 @@ func backfill(input *os.File, outputDir string) (err error) {
 		return errors.Wrap(errTs, "Error getting min and max timestamp.")
 	}
 	level.Info(logger).Log("msg", "Started importing input data.")
-	errCb := createBlocks(input, &mint, &maxt, outputDir)
-	if errCb != nil {
+	if errCb := createBlocks(input, &mint, &maxt, outputDir); errCb != nil {
 		return errors.Wrap(errCb, "block creation")
 	}
 	return nil
