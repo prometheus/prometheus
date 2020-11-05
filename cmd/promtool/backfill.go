@@ -65,11 +65,12 @@ func getMinAndMaxTimestamps(p textparse.Parser) (int64, int64, error) {
 	}
 	return maxt, mint, nil
 }
-func createBlocks(input *os.File, mint, maxt *int64, outputDir string) error {
+
+func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 	logger := log.NewNopLogger()
 	var offset int64 = 2 * time.Hour.Milliseconds()
-	(*mint) = offset * ((*mint) / offset)
-	for t := (*mint); t <= (*maxt); t = t + offset {
+	mint = offset * (mint / offset)
+	for t := mint; t <= maxt; t = t + offset {
 		w, errw := tsdb.NewBlockWriter(log.NewNopLogger(), outputDir, offset)
 		if errw != nil {
 			os.RemoveAll(outputDir)
@@ -121,6 +122,7 @@ func createBlocks(input *os.File, mint, maxt *int64, outputDir string) error {
 	}
 	return nil
 }
+
 func backfill(input *os.File, outputDir string) (err error) {
 	logger := log.NewNopLogger()
 	p := openmetrics.NewParser(input)
@@ -129,7 +131,7 @@ func backfill(input *os.File, outputDir string) (err error) {
 		return errors.Wrap(errTs, "Error getting min and max timestamp.")
 	}
 	level.Info(logger).Log("msg", "Started importing input data.")
-	if errCb := createBlocks(input, &mint, &maxt, outputDir); errCb != nil {
+	if errCb := createBlocks(input, mint, maxt, outputDir); errCb != nil {
 		return errors.Wrap(errCb, "block creation")
 	}
 	return nil

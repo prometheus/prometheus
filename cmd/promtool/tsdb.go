@@ -625,15 +625,13 @@ func checkErr(err error) int {
 
 func readOpenMetrics(path string, outputDir string) (err error) {
 	input, err := os.Open(path)
-	if path != "" {
-		if err != nil {
-			return err
-		}
-		defer func() {
-			merr.Add(err)
-			merr.Add(input.Close())
-			err = merr.Err()
-		}()
+	if err != nil {
+		return err
 	}
+	defer func() {
+		merr.Add(err)
+		merr.Add(input.Close())
+		err = merr.Err()
+	}()
 	return backfill(input, outputDir)
 }
