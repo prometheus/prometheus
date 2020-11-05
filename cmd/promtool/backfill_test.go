@@ -36,34 +36,12 @@ type sample1 struct {
 func (s sample1) T() int64   { return s.t }
 func (s sample1) V() float64 { return s.v }
 
-// // writeString writes atomically a string to a file.
-// func (t *testRunner) createTemporaryOpenmetricsFile(file string, data string) {
-// 	t.Helper()
-
-// 	newf, err := ioutil.TempFile(t.dir, "")
-// 	testutil.Ok(t, err)
-
-// 	_, err = newf.WriteString(data)
-// 	testutil.Ok(t, err)
-// 	testutil.Ok(t, newf.Close())
-
-// 	err = os.Rename(newf.Name(), file)
-// 	testutil.Ok(t, err)
-// }
-func createTemporaryOpenmetricsFile(omFile string, text string) error {
+func createTemporaryOpenmetricsFile(t *testing.T, omFile string, text string) error {
 	f, err := os.Create(omFile)
-	if err != nil {
-		return err
-	}
+	testutil.Ok(t, err)
 	_, errW := f.WriteString(text)
-	if errW != nil {
-		f.Close()
-		return errW
-	}
-	err = f.Close()
-	if err != nil {
-		return err
-	}
+	testutil.Ok(t, errW)
+	testutil.Ok(t, f.Close())
 	return nil
 }
 func testBlocks(t *testing.T, blockpath string, mint, maxt int64, expectedSeries map[string][]tsdbutil.Sample) {
@@ -76,6 +54,7 @@ func testBlocks(t *testing.T, blockpath string, mint, maxt int64, expectedSeries
 		series := ss.At()
 		testutil.Equals(t, expectedSeries, series)
 	}
+	testutil.Ok(t, db.Close())
 }
 func TestBackfill(t *testing.T) {
 	tests := []struct {
@@ -108,7 +87,7 @@ http_requests_total{code="400"} 1 1565133713990
 	}
 	for _, test := range tests {
 		omFile := "backfill_test.om"
-		testutil.Ok(t, createTemporaryOpenmetricsFile(omFile, test.ToParse))
+		testutil.Ok(t, createTemporaryOpenmetricsFile(t, omFile, test.ToParse))
 		input, errOpen := os.Open(omFile)
 		testutil.Ok(t, errOpen)
 		outputDir := "./tmpDir"
