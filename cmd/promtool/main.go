@@ -137,7 +137,7 @@ func main() {
 	importCmd := tsdbCmd.Command("create-blocks-from", "[Experimental] Import samples from input and produce TSDB blocks. Please refer to the storage docs for more details.")
 	openMetricsImportCmd := importCmd.Command("openmetrics", "Import samples from OpenMetrics input and produce TSDB blocks. Please refer to the storage docs for more details.")
 	// TODO: add flag to set default block duration
-	importFilePath := openMetricsImportCmd.Arg("input file", "Imports samples from file instead of stdin.").String()
+	importFilePath := openMetricsImportCmd.Arg("input file", "OpenMetrics file to read samples from.").Required().String()
 	importDBPath := openMetricsImportCmd.Arg("output directory", "Output directory for generated blocks.").Default(defaultDBPath).String()
 
 	parsedCmd := kingpin.MustParse(app.Parse(os.Args[1:]))

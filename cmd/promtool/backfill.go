@@ -84,10 +84,10 @@ func getMinAndMaxTimestamps(p textparse.Parser) (int64, int64, error) {
 			return maxt, mint, errors.Errorf("Expected timestamp for series %v, got none.", l.String())
 		}
 	}
-	if maxt == math.MinInt64 || maxt <= 0 {
+	if maxt == math.MinInt64 {
 		maxt = 0
 	}
-	if mint == math.MaxInt64 || mint <= 0 {
+	if mint == math.MaxInt64 {
 		mint = 0
 	}
 	return maxt, mint, nil
@@ -95,10 +95,6 @@ func getMinAndMaxTimestamps(p textparse.Parser) (int64, int64, error) {
 func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 	var offset int64 = 2 * time.Hour.Milliseconds()
 	mint = offset * (mint / offset)
-	blocklen := maxt - mint
-	if blocklen == 0 {
-		return nil
-	}
 	for t := mint; t <= maxt; t = t + offset {
 		w, errw := tsdb.NewBlockWriter(log.NewNopLogger(), outputDir, offset)
 		if errw != nil {
@@ -127,7 +123,7 @@ func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 			p2.Metric(&l)
 			_, ts, v := p2.Series()
 			if ts == nil {
-				return errors.Errorf("Expected timestamp for series %v, got none.", l.String())
+				return errors.Errorf("expected timestamp for series %v, got none", l.String())
 			}
 			if *ts >= t && *ts < tsUpper {
 				if _, err := app.Add(l, *ts, v); err != nil {
@@ -153,7 +149,7 @@ func backfill(input *os.File, outputDir string) (err error) {
 	p := NewParser(input)
 	maxt, mint, errTs := getMinAndMaxTimestamps(p)
 	if errTs != nil {
-		return errors.Wrap(errTs, "Error getting min and max timestamp.")
+		return errors.Wrap(errTs, "error getting min and max timestamp")
 	}
 	if errCb := createBlocks(input, mint, maxt, outputDir); errCb != nil {
 		os.RemoveAll(outputDir)
