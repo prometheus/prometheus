@@ -14,6 +14,7 @@
 package main
 
 import (
+	"fmt"
 	"io/ioutil"
 	"math"
 	"os"
@@ -233,14 +234,15 @@ http_requests_total{code="400"} 3 1395066363000
 			IsOk: false,
 		},
 	}
-	for _, test := range tests {
+	for testID, test := range tests {
 		omFile := "backfill_test.om"
 		testutil.Ok(t, createTemporaryOpenmetricsFile(t, omFile, test.ToParse))
 		defer os.RemoveAll("backfill_test.om")
 		input, errOpen := os.Open(omFile)
 		testutil.Ok(t, errOpen)
-		outputDir := "./data"
+		outputDir := "./data" + fmt.Sprint(testID)
 		errb := backfill(input, outputDir)
+		defer os.RemoveAll(outputDir)
 		if test.IsOk {
 			_, errReset := input.Seek(0, 0)
 			testutil.Ok(t, errReset)
@@ -259,6 +261,5 @@ http_requests_total{code="400"} 3 1395066363000
 		} else {
 			testutil.NotOk(t, errb)
 		}
-		os.RemoveAll(outputDir)
 	}
 }
