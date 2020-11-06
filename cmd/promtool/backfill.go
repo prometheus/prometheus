@@ -14,6 +14,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"io"
 	"math"
@@ -25,8 +26,37 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/prometheus/prometheus/tsdb"
-	"github.com/prometheus/prometheus/tsdb/importer/openmetrics"
 )
+
+// Content type of the latest OpenMetrics Parser.
+const contentTypeLatest = "application/openmetrics-text; version=0.0.0;"
+
+type Parser struct {
+	textparse.Parser
+	s *bufio.Scanner
+}
+
+// NewParser is a tiny layer between textparse.Parser and importer.Parser which works on io.Reader.
+func NewParser(r io.Reader) textparse.Parser {
+	return &Parser{s: bufio.NewScanner(r)}
+}
+
+// Next advances the parser to the next sample. It returns io.EOF if no
+// more samples were read.
+func (p *Parser) Next() (textparse.Entry, error) {
+	for p.s.Scan() {
+		line := p.s.Bytes()
+		line = append(line, '\n')
+		p.Parser = textparse.New(line, contentTypeLatest)
+		if et, err := p.Parser.Next(); err != io.EOF {
+			return et, err
+		}
+	}
+	if err := p.s.Err(); err != nil {
+		return 0, err
+	}
+	return 0, io.EOF
+}
 
 func getMinAndMaxTimestamps(p textparse.Parser) (int64, int64, error) {
 	var maxt, mint int64 = math.MinInt64, math.MaxInt64
@@ -71,7 +101,7 @@ func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 		if errReset != nil {
 			return errors.Wrap(errReset, "seek file")
 		}
-		p2 := openmetrics.NewParser(input)
+		p2 := NewParser(input)
 		tsUpper := t + offset
 		for {
 			e, err := p2.Next()
@@ -111,7 +141,7 @@ func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 }
 
 func backfill(input *os.File, outputDir string) (err error) {
-	p := openmetrics.NewParser(input)
+	p := NewParser(input)
 	maxt, mint, errTs := getMinAndMaxTimestamps(p)
 	if errTs != nil {
 		return errors.Wrap(errTs, "Error getting min and max timestamp.")

@@ -23,7 +23,6 @@ import (
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb"
-	"github.com/prometheus/prometheus/tsdb/importer/openmetrics"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -96,7 +95,7 @@ http_requests_total{code="400"} 1 1565133713990
 		defer os.RemoveAll(outputDir)
 		_, errReset := input.Seek(0, 0)
 		testutil.Ok(t, errReset)
-		p := openmetrics.NewParser(input)
+		p := NewParser(input)
 		maxt, mint, errTs := getMinAndMaxTimestamps(p)
 		testutil.Equals(t, test.Expected.MinTime, mint)
 		testutil.Equals(t, test.Expected.MaxTime, maxt)
