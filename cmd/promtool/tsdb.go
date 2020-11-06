@@ -43,8 +43,6 @@ import (
 
 const timeDelta = 30000
 
-var merr tsdb_errors.MultiError
-
 type writeBenchmark struct {
 	outPath     string
 	samplesFile string
@@ -622,9 +620,7 @@ func readOpenMetrics(path string, outputDir string) (err error) {
 		return err
 	}
 	defer func() {
-		merr.Add(err)
-		merr.Add(input.Close())
-		err = merr.Err()
+		input.Close()
 	}()
 	return backfill(input, outputDir)
 }

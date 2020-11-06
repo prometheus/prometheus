@@ -26,7 +26,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/stretchr/testify/assert"
 )
 
 type backfillSample struct {
@@ -39,10 +39,10 @@ func (s backfillSample) V() float64 { return s.v }
 
 func createTemporaryOpenmetricsFile(t *testing.T, omFile string, text string) error {
 	f, err := os.Create(omFile)
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	_, errW := f.WriteString(text)
-	testutil.Ok(t, errW)
-	testutil.Ok(t, f.Close())
+	assert.NoError(t, errW)
+	assert.NoError(t, f.Close())
 	return nil
 }
 
@@ -51,7 +51,7 @@ func createTemporaryOpenmetricsFile(t *testing.T, omFile string, text string) er
 func queryblock(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) map[string][]tsdbutil.Sample {
 	ss := q.Select(false, nil, matchers...)
 	defer func() {
-		testutil.Ok(t, q.Close())
+		assert.NoError(t, q.Close())
 	}()
 
 	result := map[string][]tsdbutil.Sample{}
@@ -64,7 +64,7 @@ func queryblock(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) ma
 			t, v := it.At()
 			samples = append(samples, backfillSample{t: t, v: v})
 		}
-		testutil.Ok(t, it.Err())
+		assert.NoError(t, it.Err())
 
 		if len(samples) == 0 {
 			continue
@@ -73,19 +73,19 @@ func queryblock(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) ma
 		name := series.Labels().String()
 		result[name] = samples
 	}
-	testutil.Ok(t, ss.Err())
-	testutil.Equals(t, 0, len(ss.Warnings()))
+	assert.NoError(t, ss.Err())
+	assert.Equal(t, 0, len(ss.Warnings()))
 
 	return result
 }
 
 func testBlocks(t *testing.T, blockpath string, mint, maxt int64, expectedSeries map[string][]tsdbutil.Sample) {
 	b, err := tsdb.OpenBlock(nil, blockpath, nil)
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	q, err := tsdb.NewBlockQuerier(b, math.MinInt64, math.MaxInt64)
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	series := queryblock(t, q, labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
-	testutil.Equals(t, expectedSeries, series)
+	assert.Equal(t, expectedSeries, series)
 }
 func TestBackfill(t *testing.T) {
 	tests := []struct {
@@ -236,30 +236,30 @@ http_requests_total{code="400"} 3 1395066363000
 	}
 	for testID, test := range tests {
 		omFile := "backfill_test.om"
-		testutil.Ok(t, createTemporaryOpenmetricsFile(t, omFile, test.ToParse))
+		assert.NoError(t, createTemporaryOpenmetricsFile(t, omFile, test.ToParse))
 		defer os.RemoveAll("backfill_test.om")
 		input, errOpen := os.Open(omFile)
-		testutil.Ok(t, errOpen)
+		assert.NoError(t, errOpen)
 		outputDir := "./data" + fmt.Sprint(testID)
 		errb := backfill(input, outputDir)
 		defer os.RemoveAll(outputDir)
 		if test.IsOk {
 			_, errReset := input.Seek(0, 0)
-			testutil.Ok(t, errReset)
+			assert.NoError(t, errReset)
 			p := NewParser(input)
 			maxt, mint, errTs := getMinAndMaxTimestamps(p)
-			testutil.Ok(t, errTs)
-			testutil.Equals(t, test.Expected.MinTime, mint)
-			testutil.Equals(t, test.Expected.MaxTime, maxt)
-			testutil.Ok(t, input.Close())
+			assert.NoError(t, errTs)
+			assert.Equal(t, test.Expected.MinTime, mint)
+			assert.Equal(t, test.Expected.MaxTime, maxt)
+			assert.NoError(t, input.Close())
 			blocks, _ := ioutil.ReadDir(outputDir)
 			for _, block := range blocks {
 				blockpath := filepath.Join(outputDir, block.Name())
-				testutil.Ok(t, os.MkdirAll(path.Join(blockpath, "wal"), 0777))
+				assert.NoError(t, os.MkdirAll(path.Join(blockpath, "wal"), 0777))
 				testBlocks(t, blockpath, mint, maxt, test.Expected.Series)
 			}
 		} else {
-			testutil.NotOk(t, errb)
+			assert.Error(t, errb)
 		}
 	}
 }
