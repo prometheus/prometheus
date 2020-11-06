@@ -241,7 +241,6 @@ http_requests_total{code="400"} 3 1395066363000
 		testutil.Ok(t, errOpen)
 		outputDir := "./data"
 		errb := backfill(input, outputDir)
-		defer os.RemoveAll(outputDir)
 		if test.IsOk {
 			_, errReset := input.Seek(0, 0)
 			testutil.Ok(t, errReset)

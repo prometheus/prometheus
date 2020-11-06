@@ -90,6 +90,7 @@ func getMinAndMaxTimestamps(p textparse.Parser) (int64, int64, error) {
 	}
 	return maxt, mint, nil
 }
+
 func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 	var offset int64 = 2 * time.Hour.Milliseconds()
 	mint = offset * (mint / offset)
@@ -98,12 +99,8 @@ func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 		if errw != nil {
 			return errors.Wrap(errw, "block writer")
 		}
-		defer func() error {
-			if ferr := w.Close(); ferr != nil {
-				return errors.Wrap(errw, "close block writer")
-			}
-			return nil
-		}()
+		//TODO: Debug how to fix this lint error later
+		defer w.Close()
 		ctx := context.Background()
 		app := w.Appender(ctx)
 		_, errReset := input.Seek(0, 0)
