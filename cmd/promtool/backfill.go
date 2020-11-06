@@ -84,12 +84,21 @@ func getMinAndMaxTimestamps(p textparse.Parser) (int64, int64, error) {
 			return maxt, mint, errors.Errorf("Expected timestamp for series %v, got none.", l.String())
 		}
 	}
+	if maxt == math.MinInt64 || maxt <= 0 {
+		maxt = 0
+	}
+	if mint == math.MaxInt64 || mint <= 0 {
+		mint = 0
+	}
 	return maxt, mint, nil
 }
-
 func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 	var offset int64 = 2 * time.Hour.Milliseconds()
 	mint = offset * (mint / offset)
+	blocklen := maxt - mint
+	if blocklen == 0 {
+		return nil
+	}
 	for t := mint; t <= maxt; t = t + offset {
 		w, errw := tsdb.NewBlockWriter(log.NewNopLogger(), outputDir, offset)
 		if errw != nil {

@@ -65,6 +65,11 @@ func TestBackfill(t *testing.T) {
 			Series  map[string][]tsdbutil.Sample
 		}
 	}{
+		// Handle empty file
+		// {
+		// 	ToParse: `# EOF`,
+		// 	IsOk:    true,
+		// },
 		{
 			ToParse: `# HELP http_requests_total The total number of HTTP requests.
 # TYPE http_requests_total counter
@@ -83,6 +88,67 @@ http_requests_total{code="400"} 1 1565133713990
 				Series:  map[string][]tsdbutil.Sample{"{http_requests_total=\"200\"}": []tsdbutil.Sample{backfillSample{1565133713989, 1021}}, "{http_requests_total=\"400\"}": []tsdbutil.Sample{backfillSample{1565133713990, 1}}},
 			},
 		},
+		{
+			ToParse: `# HELP http_requests_total The total number of HTTP requests.
+# TYPE http_requests_total counter
+http_requests_total{code="200"} 1022 1565133713989
+http_requests_total{code="400"} 2 1565133713990
+# EOF
+`,
+			IsOk: true,
+			Expected: struct {
+				MinTime int64
+				MaxTime int64
+				Series  map[string][]tsdbutil.Sample
+			}{
+				MinTime: 1565133713989000,
+				MaxTime: 1565133713990000,
+				Series:  map[string][]tsdbutil.Sample{"{http_requests_total=\"200\"}": []tsdbutil.Sample{backfillSample{1565133713989, 1022}}, "{http_requests_total=\"400\"}": []tsdbutil.Sample{backfillSample{1565133713990, 2}}},
+			},
+		},
+		{
+			ToParse: `# HELP http_requests_total The total number of HTTP requests.
+# TYPE http_requests_total counter
+http_requests_total{code="200"} 1023 1395066363000
+http_requests_total{code="400"} 3 1395066363000
+# EOF
+`,
+			IsOk: true,
+			Expected: struct {
+				MinTime int64
+				MaxTime int64
+				Series  map[string][]tsdbutil.Sample
+			}{
+				MinTime: 1395066363000000,
+				MaxTime: 1395066363000000,
+				Series:  map[string][]tsdbutil.Sample{"{http_requests_total=\"200\"}": []tsdbutil.Sample{backfillSample{1395066363000000, 1023}}, "{http_requests_total=\"400\"}": []tsdbutil.Sample{backfillSample{1395066363000000, 3}}},
+			},
+		},
+		{
+			ToParse: `# HELP something_weird Something weird
+# TYPE something_weird gauge
+something_weird{problem="infinite timestamp"} +Inf -3982045
+# EOF
+`,
+			IsOk: false,
+		},
+		// {
+		// 	ToParse: `# HELP rpc_duration_seconds A summary of the RPC duration in seconds.
+		// # TYPE rpc_duration_seconds summary
+		// rpc_duration_seconds{quantile="0.01"} 3102
+		// rpc_duration_seconds{quantile="0.05"} 3272
+		// # EOF
+		// `,
+		// 	IsOk: false,
+		// },
+		// 		{
+		// 			ToParse: `# HELP bad_ts This is a metric with an extreme timestamp
+		// # TYPE bad_ts gauge
+		// bad_ts{type="bad_timestamp"} 420 1e99
+		// # EOF
+		// `,
+		// 			IsOk: false,
+		// 		},
 	}
 	for _, test := range tests {
 		omFile := "backfill_test.om"
@@ -91,16 +157,17 @@ http_requests_total{code="400"} 1 1565133713990
 		input, errOpen := os.Open(omFile)
 		testutil.Ok(t, errOpen)
 		outputDir := "./data"
-		testutil.Ok(t, backfill(input, outputDir))
+		errb := backfill(input, outputDir)
 		defer os.RemoveAll(outputDir)
-		_, errReset := input.Seek(0, 0)
-		testutil.Ok(t, errReset)
-		p := NewParser(input)
-		maxt, mint, errTs := getMinAndMaxTimestamps(p)
-		testutil.Equals(t, test.Expected.MinTime, mint)
-		testutil.Equals(t, test.Expected.MaxTime, maxt)
-		testutil.Ok(t, input.Close())
 		if test.IsOk {
+			_, errReset := input.Seek(0, 0)
+			testutil.Ok(t, errReset)
+			p := NewParser(input)
+			maxt, mint, errTs := getMinAndMaxTimestamps(p)
+			testutil.Ok(t, errTs)
+			testutil.Equals(t, test.Expected.MinTime, mint)
+			testutil.Equals(t, test.Expected.MaxTime, maxt)
+			testutil.Ok(t, input.Close())
 			blocks, _ := ioutil.ReadDir(outputDir)
 			for _, block := range blocks {
 				blockpath := filepath.Join(outputDir, block.Name())
@@ -108,8 +175,7 @@ http_requests_total{code="400"} 1 1565133713990
 				testBlocks(t, blockpath, mint, maxt, test.Expected.Series)
 			}
 		} else {
-			testutil.NotOk(t, errTs)
+			testutil.NotOk(t, errb)
 		}
-
 	}
 }
