@@ -28,13 +28,13 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
-type sample1 struct {
+type backfillSample struct {
 	t int64
 	v float64
 }
 
-func (s sample1) T() int64   { return s.t }
-func (s sample1) V() float64 { return s.v }
+func (s backfillSample) T() int64   { return s.t }
+func (s backfillSample) V() float64 { return s.v }
 
 func createTemporaryOpenmetricsFile(t *testing.T, omFile string, text string) error {
 	f, err := os.Create(omFile)
@@ -81,17 +81,19 @@ http_requests_total{code="400"} 1 1565133713990
 			}{
 				MinTime: 1565133713989000,
 				MaxTime: 1565133713990000,
-				Series:  map[string][]tsdbutil.Sample{"{http_requests_total=\"200\"}": []tsdbutil.Sample{sample1{1565133713989, 1021}}, "{http_requests_total=\"400\"}": []tsdbutil.Sample{sample1{1565133713990, 1}}},
+				Series:  map[string][]tsdbutil.Sample{"{http_requests_total=\"200\"}": []tsdbutil.Sample{backfillSample{1565133713989, 1021}}, "{http_requests_total=\"400\"}": []tsdbutil.Sample{backfillSample{1565133713990, 1}}},
 			},
 		},
 	}
 	for _, test := range tests {
 		omFile := "backfill_test.om"
 		testutil.Ok(t, createTemporaryOpenmetricsFile(t, omFile, test.ToParse))
+		defer os.RemoveAll("backfill_test.om")
 		input, errOpen := os.Open(omFile)
 		testutil.Ok(t, errOpen)
-		outputDir := "./tmpDir"
+		outputDir := "./data"
 		testutil.Ok(t, backfill(input, outputDir))
+		defer os.RemoveAll(outputDir)
 		_, errReset := input.Seek(0, 0)
 		testutil.Ok(t, errReset)
 		p := openmetrics.NewParser(input)
@@ -109,7 +111,6 @@ http_requests_total{code="400"} 1 1565133713990
 		} else {
 			testutil.NotOk(t, errTs)
 		}
-		testutil.Ok(t, os.RemoveAll("backfill_test.om"))
-		testutil.Ok(t, os.RemoveAll(outputDir))
+
 	}
 }

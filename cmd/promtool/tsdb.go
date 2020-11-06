@@ -42,6 +42,8 @@ import (
 
 const timeDelta = 30000
 
+var merr tsdb_errors.MultiError
+
 type writeBenchmark struct {
 	outPath     string
 	samplesFile string

@@ -15,32 +15,23 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"math"
 	"os"
 	"time"
 
 	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/prometheus/prometheus/tsdb"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/importer/openmetrics"
 )
 
-var merr tsdb_errors.MultiError
-
 func getMinAndMaxTimestamps(p textparse.Parser) (int64, int64, error) {
-	var (
-		entry textparse.Entry
-		err   error
-	)
-	maxt, mint := int64(math.MinInt64), int64(math.MaxInt64)
+	var maxt, mint int64 = math.MinInt64, math.MaxInt64
 	for {
-		entry, err = p.Next()
+		entry, err := p.Next()
 		if err == io.EOF {
 			break
 		}
@@ -67,13 +58,11 @@ func getMinAndMaxTimestamps(p textparse.Parser) (int64, int64, error) {
 }
 
 func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
-	logger := log.NewNopLogger()
 	var offset int64 = 2 * time.Hour.Milliseconds()
 	mint = offset * (mint / offset)
 	for t := mint; t <= maxt; t = t + offset {
 		w, errw := tsdb.NewBlockWriter(log.NewNopLogger(), outputDir, offset)
 		if errw != nil {
-			os.RemoveAll(outputDir)
 			return errors.Wrap(errw, "block writer")
 		}
 		ctx := context.Background()
@@ -106,16 +95,14 @@ func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 					return errors.Wrap(err, "add sample")
 				}
 			}
-
 		}
 		if err := app.Commit(); err != nil {
 			return errors.Wrap(err, "commit")
 		}
-		ids, err := w.Flush(ctx)
-		if err != nil {
-			return errors.Wrap(err, "flush")
+		_, errF := w.Flush(ctx)
+		if errF != nil {
+			return errors.Wrap(errF, "flush")
 		}
-		level.Info(logger).Log("msg", "blocks flushed", "ids", fmt.Sprintf("%v", ids))
 		if errC := w.Close(); errC != nil {
 			return errors.Wrap(errC, "close")
 		}
@@ -124,14 +111,13 @@ func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 }
 
 func backfill(input *os.File, outputDir string) (err error) {
-	logger := log.NewNopLogger()
 	p := openmetrics.NewParser(input)
 	maxt, mint, errTs := getMinAndMaxTimestamps(p)
 	if errTs != nil {
 		return errors.Wrap(errTs, "Error getting min and max timestamp.")
 	}
-	level.Info(logger).Log("msg", "Started importing input data.")
 	if errCb := createBlocks(input, mint, maxt, outputDir); errCb != nil {
+		os.RemoveAll(outputDir)
 		return errors.Wrap(errCb, "block creation")
 	}
 	return nil
