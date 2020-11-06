@@ -14,14 +14,15 @@
 package main
 
 import (
-	"context"
 	"io/ioutil"
+	"math"
 	"os"
 	"path"
 	"path/filepath"
 	"testing"
 
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -43,17 +44,45 @@ func createTemporaryOpenmetricsFile(t *testing.T, omFile string, text string) er
 	testutil.Ok(t, f.Close())
 	return nil
 }
-func testBlocks(t *testing.T, blockpath string, mint, maxt int64, expectedSeries map[string][]tsdbutil.Sample) {
-	db, err := tsdb.OpenDBReadOnly(blockpath, nil)
-	testutil.Ok(t, err)
-	q, err := db.Querier(context.TODO(), mint, maxt)
-	testutil.Ok(t, err)
-	ss := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
+
+func queryblock(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) map[string][]tsdbutil.Sample {
+	ss := q.Select(false, nil, matchers...)
+	defer func() {
+		testutil.Ok(t, q.Close())
+	}()
+
+	result := map[string][]tsdbutil.Sample{}
 	for ss.Next() {
 		series := ss.At()
-		testutil.Equals(t, expectedSeries, series)
+
+		samples := []tsdbutil.Sample{}
+		it := series.Iterator()
+		for it.Next() {
+			t, v := it.At()
+			samples = append(samples, backfillSample{t: t, v: v})
+		}
+		testutil.Ok(t, it.Err())
+
+		if len(samples) == 0 {
+			continue
+		}
+
+		name := series.Labels().String()
+		result[name] = samples
 	}
-	testutil.Ok(t, db.Close())
+	testutil.Ok(t, ss.Err())
+	testutil.Equals(t, 0, len(ss.Warnings()))
+
+	return result
+}
+
+func testBlocks(t *testing.T, blockpath string, mint, maxt int64, expectedSeries map[string][]tsdbutil.Sample) {
+	b, err := tsdb.OpenBlock(nil, blockpath, nil)
+	testutil.Ok(t, err)
+	q, err := tsdb.NewBlockQuerier(b, math.MinInt64, math.MaxInt64)
+	testutil.Ok(t, err)
+	series := queryblock(t, q, labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
+	testutil.Equals(t, expectedSeries, series)
 }
 func TestBackfill(t *testing.T) {
 	tests := []struct {
@@ -65,11 +94,10 @@ func TestBackfill(t *testing.T) {
 			Series  map[string][]tsdbutil.Sample
 		}
 	}{
-		// Handle empty file
-		// {
-		// 	ToParse: `# EOF`,
-		// 	IsOk:    true,
-		// },
+		{
+			ToParse: `# EOF`,
+			IsOk:    true,
+		},
 		{
 			ToParse: `# HELP http_requests_total The total number of HTTP requests.
 # TYPE http_requests_total counter
@@ -85,7 +113,7 @@ http_requests_total{code="400"} 1 1565133713990
 			}{
 				MinTime: 1565133713989000,
 				MaxTime: 1565133713990000,
-				Series:  map[string][]tsdbutil.Sample{"{http_requests_total=\"200\"}": []tsdbutil.Sample{backfillSample{1565133713989, 1021}}, "{http_requests_total=\"400\"}": []tsdbutil.Sample{backfillSample{1565133713990, 1}}},
+				Series:  map[string][]tsdbutil.Sample{"{__name__=\"http_requests_total\", code=\"200\"}": []tsdbutil.Sample{backfillSample{t: 1565133713989000, v: 1021}}, "{__name__=\"http_requests_total\", code=\"400\"}": []tsdbutil.Sample{backfillSample{t: 1565133713990000, v: 1}}},
 			},
 		},
 		{
@@ -103,7 +131,7 @@ http_requests_total{code="400"} 2 1565133713990
 			}{
 				MinTime: 1565133713989000,
 				MaxTime: 1565133713990000,
-				Series:  map[string][]tsdbutil.Sample{"{http_requests_total=\"200\"}": []tsdbutil.Sample{backfillSample{1565133713989, 1022}}, "{http_requests_total=\"400\"}": []tsdbutil.Sample{backfillSample{1565133713990, 2}}},
+				Series:  map[string][]tsdbutil.Sample{"{__name__=\"http_requests_total\", code=\"200\"}": []tsdbutil.Sample{backfillSample{t: 1565133713989000, v: 1022}}, "{__name__=\"http_requests_total\", code=\"400\"}": []tsdbutil.Sample{backfillSample{t: 1565133713990000, v: 2}}},
 			},
 		},
 		{
@@ -121,34 +149,87 @@ http_requests_total{code="400"} 3 1395066363000
 			}{
 				MinTime: 1395066363000000,
 				MaxTime: 1395066363000000,
-				Series:  map[string][]tsdbutil.Sample{"{http_requests_total=\"200\"}": []tsdbutil.Sample{backfillSample{1395066363000000, 1023}}, "{http_requests_total=\"400\"}": []tsdbutil.Sample{backfillSample{1395066363000000, 3}}},
+				Series:  map[string][]tsdbutil.Sample{"{__name__=\"http_requests_total\", code=\"200\"}": []tsdbutil.Sample{backfillSample{t: 1395066363000000, v: 1023}}, "{__name__=\"http_requests_total\", code=\"400\"}": []tsdbutil.Sample{backfillSample{t: 1395066363000000, v: 3}}},
 			},
 		},
 		{
 			ToParse: `# HELP something_weird Something weird
-# TYPE something_weird gauge
-something_weird{problem="infinite timestamp"} +Inf -3982045
-# EOF
-`,
+		# TYPE something_weird gauge
+		something_weird{problem="infinite timestamp"} +Inf -3982045
+		# EOF
+		`,
 			IsOk: false,
 		},
-		// {
-		// 	ToParse: `# HELP rpc_duration_seconds A summary of the RPC duration in seconds.
-		// # TYPE rpc_duration_seconds summary
-		// rpc_duration_seconds{quantile="0.01"} 3102
-		// rpc_duration_seconds{quantile="0.05"} 3272
-		// # EOF
-		// `,
-		// 	IsOk: false,
-		// },
-		// 		{
-		// 			ToParse: `# HELP bad_ts This is a metric with an extreme timestamp
-		// # TYPE bad_ts gauge
-		// bad_ts{type="bad_timestamp"} 420 1e99
-		// # EOF
-		// `,
-		// 			IsOk: false,
-		// 		},
+		{
+			ToParse: `# HELP rpc_duration_seconds A summary of the RPC duration in seconds.
+		# TYPE rpc_duration_seconds summary
+		rpc_duration_seconds{quantile="0.01"} 3102
+		rpc_duration_seconds{quantile="0.05"} 3272
+		# EOF
+		`,
+			IsOk: false,
+		},
+		{
+			ToParse: `# HELP bad_ts This is a metric with an extreme timestamp
+		# TYPE bad_ts gauge
+		bad_ts{type="bad_timestamp"} 420 -1e99
+		# EOF
+		`,
+			IsOk: false,
+		},
+		{
+			ToParse: `# HELP bad_ts This is a metric with an extreme timestamp
+		# TYPE bad_ts gauge
+		bad_ts{type="bad_timestamp"} 420 1e99
+		# EOF
+		`,
+			IsOk: false,
+		},
+		{
+			ToParse: `no_help_no_type{foo="bar"} 42 6900
+# EOF
+`,
+			IsOk: true,
+			Expected: struct {
+				MinTime int64
+				MaxTime int64
+				Series  map[string][]tsdbutil.Sample
+			}{
+				MinTime: 6900000,
+				MaxTime: 6900000,
+				Series:  map[string][]tsdbutil.Sample{"{__name__=\"no_help_no_type\", foo=\"bar\"}": []tsdbutil.Sample{backfillSample{t: 6900000, v: 42}}},
+			},
+		},
+		{
+			ToParse: `bare_metric 42.24 1001
+# EOF
+`,
+			IsOk: true,
+			Expected: struct {
+				MinTime int64
+				MaxTime int64
+				Series  map[string][]tsdbutil.Sample
+			}{
+				MinTime: 1001000,
+				MaxTime: 1001000,
+				Series:  map[string][]tsdbutil.Sample{"{__name__=\"bare_metric\"}": []tsdbutil.Sample{backfillSample{t: 1001000, v: 42.24}}},
+			},
+		},
+		{
+			ToParse: `# HELP bad_metric This a bad metric
+		# TYPE bad_metric bad_type
+		bad_metric{type="has no type information"} 0.0 111
+		# EOF
+		`,
+			IsOk: false,
+		},
+		{
+			ToParse: `# HELP no_nl This test has no newline so will fail
+		# TYPE no_nl gauge
+		no_nl{type="no newline"}
+		# EOF`,
+			IsOk: false,
+		},
 	}
 	for _, test := range tests {
 		omFile := "backfill_test.om"
@@ -177,5 +258,6 @@ something_weird{problem="infinite timestamp"} +Inf -3982045
 		} else {
 			testutil.NotOk(t, errb)
 		}
+		os.RemoveAll(outputDir)
 	}
 }
