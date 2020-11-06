@@ -133,11 +133,13 @@ func main() {
 	dumpPath := tsdbDumpCmd.Arg("db path", "Database path (default is "+defaultDBPath+").").Default(defaultDBPath).String()
 	dumpMinTime := tsdbDumpCmd.Flag("min-time", "Minimum timestamp to dump.").Default(strconv.FormatInt(math.MinInt64, 10)).Int64()
 	dumpMaxTime := tsdbDumpCmd.Flag("max-time", "Maximum timestamp to dump.").Default(strconv.FormatInt(math.MaxInt64, 10)).Int64()
+
 	importCmd := tsdbCmd.Command("create-blocks-from", "[Experimental] Import samples from input and produce TSDB blocks. Please refer to the storage docs for more details.")
-	omImportCmd := importCmd.Command("openmetrics", "Import samples from OpenMetrics input and produce TSDB blocks. Please refer to the storage docs for more details.")
-	importFilePath := importCmd.Flag("input-file", "Imports samples from file instead of stdin.").String()
-	importDBPath := importCmd.Flag("output", "Output directory for generated blocks.").Default(defaultDBPath).String()
-	// TODO: add option to set default block duration
+	openMetricsImportCmd := importCmd.Command("openmetrics", "Import samples from OpenMetrics input and produce TSDB blocks. Please refer to the storage docs for more details.")
+	// TODO: add flag to set default block duration
+	importFilePath := openMetricsImportCmd.Arg("input file", "Imports samples from file instead of stdin.").String()
+	importDBPath := openMetricsImportCmd.Arg("output directory", "Output directory for generated blocks.").Default(defaultDBPath).String()
+
 	parsedCmd := kingpin.MustParse(app.Parse(os.Args[1:]))
 
 	var p printer
@@ -194,7 +196,7 @@ func main() {
 	case tsdbDumpCmd.FullCommand():
 		os.Exit(checkErr(dumpSamples(*dumpPath, *dumpMinTime, *dumpMaxTime)))
 	//TODO Work on adding support for custom block size.
-	case omImportCmd.FullCommand():
+	case openMetricsImportCmd.FullCommand():
 		os.Exit(checkErr(readOpenMetrics(*importFilePath, *importDBPath)))
 	}
 }
