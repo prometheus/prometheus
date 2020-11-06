@@ -334,7 +334,7 @@ func (ng *Engine) NewInstantQuery(q storage.Queryable, qs string, ts time.Time) 
 	if err != nil {
 		return nil, err
 	}
-	qry := ng.newQuery(q, expr, ts, ts, 0)
+	qry := ng.newQuery(q, ReduceConstantExpr(expr), ts, ts, 0)
 	qry.q = qs
 
 	return qry, nil
@@ -350,7 +350,7 @@ func (ng *Engine) NewRangeQuery(q storage.Queryable, qs string, start, end time.
 	if expr.Type() != parser.ValueTypeVector && expr.Type() != parser.ValueTypeScalar {
 		return nil, errors.Errorf("invalid expression type %q for range query, must be Scalar or instant Vector", parser.DocumentedType(expr.Type()))
 	}
-	qry := ng.newQuery(q, expr, start, end, interval)
+	qry := ng.newQuery(q, ReduceConstantExpr(expr), start, end, interval)
 	qry.q = qs
 
 	return qry, nil
@@ -582,6 +582,7 @@ func (ng *Engine) subqueryOffsetRange(path []parser.Node) (time.Duration, time.D
 		subqOffset time.Duration
 		subqRange  time.Duration
 	)
+	// TODO(codesome): check timestamp.
 	for _, node := range path {
 		switch n := node.(type) {
 		case *parser.SubqueryExpr:
@@ -594,6 +595,7 @@ func (ng *Engine) subqueryOffsetRange(path []parser.Node) (time.Duration, time.D
 
 func (ng *Engine) findMinTime(s *parser.EvalStmt) time.Time {
 	var maxOffset time.Duration
+	var minTimestamp int64 = math.MaxInt64
 	parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
 		subqOffset, subqRange := ng.subqueryOffsetRange(path)
 		switch n := node.(type) {
@@ -604,6 +606,9 @@ func (ng *Engine) findMinTime(s *parser.EvalStmt) time.Time {
 			if n.Offset+ng.lookbackDelta+subqOffset+subqRange > maxOffset {
 				maxOffset = n.Offset + ng.lookbackDelta + subqOffset + subqRange
 			}
+			if ts := timestamp.FromFloatSeconds(n.Timestamp); ts < minTimestamp {
+				minTimestamp = ts
+			}
 		case *parser.MatrixSelector:
 			if maxOffset < n.Range+subqOffset+subqRange {
 				maxOffset = n.Range + subqOffset + subqRange
@@ -611,9 +616,15 @@ func (ng *Engine) findMinTime(s *parser.EvalStmt) time.Time {
 			if m := n.VectorSelector.(*parser.VectorSelector).Offset + n.Range + subqOffset + subqRange; m > maxOffset {
 				maxOffset = m
 			}
+			if ts := timestamp.FromFloatSeconds(n.VectorSelector.(*parser.VectorSelector).Timestamp); ts < minTimestamp {
+				minTimestamp = ts
+			}
 		}
 		return nil
 	})
+	if minTimestamp != 0 && minTimestamp != math.MaxInt64 && minTimestamp < s.Start.Add(-maxOffset).UnixNano()/1000 {
+		return time.Unix(0, minTimestamp*1000)
+	}
 	return s.Start.Add(-maxOffset)
 }
 
@@ -630,6 +641,16 @@ func (ng *Engine) populateSeries(querier storage.Querier, s *parser.EvalStmt) {
 				Start: timestamp.FromTime(s.Start),
 				End:   timestamp.FromTime(s.End),
 				Step:  durationMilliseconds(s.Interval),
+			}
+
+			if n.Timestamp > 0 {
+				ts := timestamp.FromFloatSeconds(n.Timestamp)
+				if ts < hints.Start {
+					hints.Start = ts
+				}
+				if ts > hints.End {
+					hints.End = ts
+				}
 			}
 
 			// We need to make sure we select the timerange selected by the subquery.
@@ -1128,6 +1149,9 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 					}
 				}
 				maxt := ts - offset
+				if selVS.Timestamp > 0 {
+					maxt = timestamp.FromFloatSeconds(selVS.Timestamp) - offset
+				}
 				mint := maxt - selRange
 				// Evaluate the matrix selector for this series for this step.
 				points = ev.matrixIterSlice(it, mint, maxt, points)
@@ -1307,6 +1331,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		return ev.matrixSelector(e)
 
 	case *parser.SubqueryExpr:
+		// TODO(codesome): check timestamp.
 		offsetMillis := durationMilliseconds(e.Offset)
 		rangeMillis := durationMilliseconds(e.Range)
 		newEv := &evaluator{
@@ -1335,6 +1360,35 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		res, ws := newEv.eval(e.Expr)
 		ev.currentSamples = newEv.currentSamples
 		return res, ws
+	case *parser.ConstantExpr:
+		switch ce := e.Expr.(type) {
+		case *parser.StringLiteral, *parser.NumberLiteral:
+			return ev.eval(ce)
+		default:
+
+		}
+
+		if e.Result != nil {
+			return e.Result, nil
+		}
+		newEv := &evaluator{
+			startTimestamp:           ev.startTimestamp,
+			endTimestamp:             ev.endTimestamp,
+			interval:                 ev.interval,
+			ctx:                      ev.ctx,
+			currentSamples:           ev.currentSamples,
+			maxSamples:               ev.maxSamples,
+			logger:                   ev.logger,
+			lookbackDelta:            ev.lookbackDelta,
+			noStepSubqueryIntervalFn: ev.noStepSubqueryIntervalFn,
+		}
+		// TODO(codesome): do single eval and extrapolate.
+		res, ws := newEv.eval(e.Expr)
+		ev.currentSamples = newEv.currentSamples
+
+		e.Result = res
+		return res, ws
+
 	case *parser.StringLiteral:
 		return String{V: e.Val, T: ev.startTimestamp}, nil
 	}
@@ -1371,6 +1425,9 @@ func (ev *evaluator) vectorSelector(node *parser.VectorSelector, ts int64) (Vect
 
 // vectorSelectorSingle evaluates a instant vector for the iterator of one time series.
 func (ev *evaluator) vectorSelectorSingle(it *storage.BufferedSeriesIterator, node *parser.VectorSelector, ts int64) (int64, float64, bool) {
+	if node.Timestamp > 0 {
+		ts = timestamp.FromFloatSeconds(node.Timestamp)
+	}
 	refTime := ts - durationMilliseconds(node.Offset)
 	var t int64
 	var v float64
@@ -1425,6 +1482,11 @@ func (ev *evaluator) matrixSelector(node *parser.MatrixSelector) (Matrix, storag
 
 		it = storage.NewBuffer(durationMilliseconds(node.Range))
 	)
+	if vs.Timestamp > 0 {
+		maxt = timestamp.FromFloatSeconds(vs.Timestamp) - offset
+		mint = maxt - durationMilliseconds(node.Range)
+	}
+
 	ws, err := checkAndExpandSeriesSet(ev.ctx, node)
 	if err != nil {
 		ev.error(errWithWarnings{errors.Wrap(err, "expanding series"), ws})
@@ -1870,7 +1932,6 @@ type groupedAggregation struct {
 
 // aggregation evaluates an aggregation operation on a Vector.
 func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without bool, param interface{}, vec Vector, enh *EvalNodeHelper) Vector {
-
 	result := map[uint64]*groupedAggregation{}
 	var k int64
 	if op == parser.TOPK || op == parser.BOTTOMK {
@@ -2140,4 +2201,118 @@ func unwrapParenExpr(e *parser.Expr) {
 			break
 		}
 	}
+}
+
+func ReduceConstantExpr(expr parser.Expr) parser.Expr {
+	isConstant := isConstantExpr(expr)
+	if isConstant {
+		return newConstantExpr(expr)
+	}
+	return expr
+}
+
+func isConstantExpr(expr parser.Expr) bool {
+	switch n := expr.(type) {
+	case *parser.VectorSelector:
+		if n.Timestamp > 0 {
+			return true
+		}
+
+	case *parser.AggregateExpr:
+		// TODO(codesome): check Param?
+		e := isConstantExpr(n.Expr)
+		if e {
+			return true
+		}
+		return false
+
+	case *parser.BinaryExpr:
+		e1, e2 := isConstantExpr(n.LHS), isConstantExpr(n.RHS)
+		if e1 && e2 {
+			return true
+		}
+
+		if e1 {
+			n.LHS = newConstantExpr(n.LHS)
+		}
+		if e2 {
+			n.RHS = newConstantExpr(n.RHS)
+		}
+
+		return false
+
+	case *parser.Call:
+		isConstant := true
+		isConstantSlice := make([]bool, len(n.Args))
+		for i := range n.Args {
+			isConstantSlice[i] = isConstantExpr(n.Args[i])
+			isConstant = isConstant && isConstantSlice[i]
+		}
+
+		if isConstant {
+			return true
+		}
+
+		for i, ic := range isConstantSlice {
+			if ic {
+				n.Args[i] = newConstantExpr(n.Args[i])
+			}
+		}
+		return false
+
+	case *parser.MatrixSelector:
+		ts := timestamp.FromFloatSeconds(n.VectorSelector.(*parser.VectorSelector).Timestamp)
+		if ts > 0 {
+			return true
+		}
+		return false
+
+	case *parser.SubqueryExpr:
+		if n.Timestamp > 0 {
+			return true
+		}
+
+		e := isConstantExpr(n.Expr)
+		if e {
+			n.Expr = newConstantExpr(n.Expr)
+		}
+		return false
+
+	case *parser.ParenExpr:
+		return isConstantExpr(n.Expr)
+
+	case *parser.UnaryExpr:
+		return isConstantExpr(n.Expr)
+
+	case *parser.StringLiteral, *parser.NumberLiteral:
+		return true
+
+	default:
+		// TODO(codesome): verify this.
+		panic("not possible")
+	}
+
+	return false
+}
+
+func newConstantExpr(expr parser.Expr) parser.Expr {
+	if dontWrapConstantExpr(expr) {
+		return expr
+	}
+	return &parser.ConstantExpr{Expr: expr}
+}
+
+func dontWrapConstantExpr(expr parser.Expr) bool {
+	switch e := expr.(type) {
+	case *parser.StringLiteral, *parser.NumberLiteral:
+		return true
+	case *parser.ParenExpr:
+		return dontWrapConstantExpr(e.Expr)
+	case *parser.Call:
+		switch e.Func.Name {
+		case "time", "vector":
+			return true
+		}
+	}
+	return false
 }

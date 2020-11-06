@@ -163,6 +163,22 @@ type UnaryExpr struct {
 	StartPos Pos
 }
 
+// ConstantExpr represents a query which evaluates to the same result
+// irrespective of the evaluation time.
+// Currently this is only used for engine optimisations and the parser
+// does not produce this.
+type ConstantExpr struct {
+	Expr Expr
+
+	// Once this node is executed, we store the result here to
+	// avoid re-calculation of the result.
+	Result Value
+}
+
+func (e *ConstantExpr) String() string { return e.Expr.String() }
+
+func (e *ConstantExpr) PositionRange() PositionRange { return e.Expr.PositionRange() }
+
 // VectorSelector represents a Vector selection.
 type VectorSelector struct {
 	Name          string
@@ -205,6 +221,7 @@ func (e *BinaryExpr) Type() ValueType {
 	}
 	return ValueTypeVector
 }
+func (e *ConstantExpr) Type() ValueType { return e.Expr.Type() }
 
 func (*AggregateExpr) PromQLExpr()  {}
 func (*BinaryExpr) PromQLExpr()     {}
@@ -216,6 +233,7 @@ func (*ParenExpr) PromQLExpr()      {}
 func (*StringLiteral) PromQLExpr()  {}
 func (*UnaryExpr) PromQLExpr()      {}
 func (*VectorSelector) PromQLExpr() {}
+func (*ConstantExpr) PromQLExpr()   {}
 
 // VectorMatchCardinality describes the cardinality relationship
 // of two Vectors in a binary operation.
@@ -349,6 +367,8 @@ func Children(node Node) []Node {
 		return []Node{n.Expr}
 	case *MatrixSelector:
 		return []Node{n.VectorSelector}
+	case *ConstantExpr:
+		return []Node{n.Expr}
 	case *NumberLiteral, *StringLiteral, *VectorSelector:
 		// nothing to do
 		return []Node{}
