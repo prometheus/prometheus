@@ -28,6 +28,8 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"go.uber.org/atomic"
+
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -38,7 +40,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wal"
-	"go.uber.org/atomic"
 )
 
 var (
@@ -52,11 +53,12 @@ var (
 
 // Head handles reads and writes of time series data within a time window.
 type Head struct {
-	chunkRange       atomic.Int64
-	numSeries        atomic.Uint64
-	minTime, maxTime atomic.Int64 // Current min and max of the samples included in the head.
-	minValidTime     atomic.Int64 // Mint allowed to be added to the head. It shouldn't be lower than the maxt of the last persisted block.
-	lastSeriesID     atomic.Uint64
+	chunkRange            atomic.Int64
+	numSeries             atomic.Uint64
+	minTime, maxTime      atomic.Int64 // Current min and max of the samples included in the head.
+	minValidTime          atomic.Int64 // Mint allowed to be added to the head. It shouldn't be lower than the maxt of the last persisted block.
+	lastWALTruncationTime atomic.Int64
+	lastSeriesID          atomic.Uint64
 
 	metrics      *headMetrics
 	wal          *wal.WAL
@@ -323,6 +325,7 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, chunkRange int
 	h.chunkRange.Store(chunkRange)
 	h.minTime.Store(math.MaxInt64)
 	h.maxTime.Store(math.MinInt64)
+	h.lastWALTruncationTime.Store(math.MinInt64)
 	h.metrics = newHeadMetrics(h, r)
 
 	if pool == nil {
@@ -776,8 +779,20 @@ func (h *Head) removeCorruptedMmappedChunks(err error) map[uint64][]*mmappedChun
 	return mmappedChunks
 }
 
-// Truncate removes old data before mint from the head.
+// Truncate removes old data before mint from the head and WAL.
 func (h *Head) Truncate(mint int64) (err error) {
+	initialize := h.MinTime() == math.MaxInt64
+	if err := h.truncateMemory(mint); err != nil {
+		return err
+	}
+	if initialize {
+		return nil
+	}
+	return h.truncateWAL(mint)
+}
+
+// truncateMemory removes old data before mint from the head.
+func (h *Head) truncateMemory(mint int64) (err error) {
 	defer func() {
 		if err != nil {
 			h.metrics.headTruncateFail.Inc()
@@ -813,11 +828,16 @@ func (h *Head) Truncate(mint int64) (err error) {
 	if err := h.chunkDiskMapper.Truncate(mint); err != nil {
 		return errors.Wrap(err, "truncate chunks.HeadReadWriter")
 	}
+	return nil
+}
 
-	if h.wal == nil {
+// truncateWAL removes old data before mint from the WAL.
+func (h *Head) truncateWAL(mint int64) error {
+	if h.wal == nil || mint <= h.lastWALTruncationTime.Load() {
 		return nil
 	}
-	start = time.Now()
+	start := time.Now()
+	h.lastWALTruncationTime.Store(mint)
 
 	first, last, err := wal.Segments(h.wal.Dir())
 	if err != nil {
@@ -825,8 +845,7 @@ func (h *Head) Truncate(mint int64) (err error) {
 	}
 	// Start a new segment, so low ingestion volume TSDB don't have more WAL than
 	// needed.
-	err = h.wal.NextSegment()
-	if err != nil {
+	if err := h.wal.NextSegment(); err != nil {
 		return errors.Wrap(err, "next segment")
 	}
 	last-- // Never consider last segment for checkpoint.
@@ -950,8 +969,17 @@ func (h *RangeHead) MinTime() int64 {
 	return h.mint
 }
 
+// MaxTime returns the max time of actual data fetch-able from the head.
+// This controls the chunks time range which is closed [b.MinTime, b.MaxTime].
 func (h *RangeHead) MaxTime() int64 {
 	return h.maxt
+}
+
+// BlockMaxTime returns the max time of the potential block created from this head.
+// It's different to MaxTime as we need to add +1 millisecond to block maxt because block
+// intervals are half-open: [b.MinTime, b.MaxTime). Block intervals are always +1 than the total samples it includes.
+func (h *RangeHead) BlockMaxTime() int64 {
+	return h.MaxTime() + 1
 }
 
 func (h *RangeHead) NumSeries() uint64 {
@@ -1437,12 +1465,11 @@ func (h *Head) Close() error {
 	h.closedMtx.Lock()
 	defer h.closedMtx.Unlock()
 	h.closed = true
-	var merr tsdb_errors.MultiError
-	merr.Add(h.chunkDiskMapper.Close())
+	errs := tsdb_errors.NewMulti(h.chunkDiskMapper.Close())
 	if h.wal != nil {
-		merr.Add(h.wal.Close())
+		errs.Add(h.wal.Close())
 	}
-	return merr.Err()
+	return errs.Err()
 }
 
 type headChunkReader struct {
@@ -2346,7 +2373,8 @@ func (h *Head) Size() int64 {
 	if h.wal != nil {
 		walSize, _ = h.wal.Size()
 	}
-	return walSize + h.chunkDiskMapper.Size()
+	cdmSize, _ := h.chunkDiskMapper.Size()
+	return walSize + cdmSize
 }
 
 func (h *RangeHead) Size() int64 {

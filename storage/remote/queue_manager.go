@@ -26,9 +26,9 @@ import (
 	"github.com/golang/snappy"
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
+	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/relabel"
@@ -64,6 +64,7 @@ type queueManagerMetrics struct {
 	minNumShards          prometheus.Gauge
 	desiredNumShards      prometheus.Gauge
 	bytesSent             prometheus.Counter
+	maxSamplesPerSend     prometheus.Gauge
 }
 
 func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManagerMetrics {
@@ -176,6 +177,13 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Help:        "The total number of bytes sent by the queue.",
 		ConstLabels: constLabels,
 	})
+	m.maxSamplesPerSend = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace:   namespace,
+		Subsystem:   subsystem,
+		Name:        "max_samples_per_send",
+		Help:        "The maximum number of samples to be sent, in a single request, to the remote storage.",
+		ConstLabels: constLabels,
+	})
 
 	return m
 }
@@ -197,6 +205,7 @@ func (m *queueManagerMetrics) register() {
 			m.minNumShards,
 			m.desiredNumShards,
 			m.bytesSent,
+			m.maxSamplesPerSend,
 		)
 	}
 }
@@ -217,6 +226,7 @@ func (m *queueManagerMetrics) unregister() {
 		m.reg.Unregister(m.minNumShards)
 		m.reg.Unregister(m.desiredNumShards)
 		m.reg.Unregister(m.bytesSent)
+		m.reg.Unregister(m.maxSamplesPerSend)
 	}
 }
 
@@ -372,6 +382,7 @@ func (t *QueueManager) Start() {
 	t.metrics.maxNumShards.Set(float64(t.cfg.MaxShards))
 	t.metrics.minNumShards.Set(float64(t.cfg.MinShards))
 	t.metrics.desiredNumShards.Set(float64(t.cfg.MinShards))
+	t.metrics.maxSamplesPerSend.Set(float64(t.cfg.MaxSamplesPerSend))
 
 	t.shards.start(t.numShards)
 	t.watcher.Start()

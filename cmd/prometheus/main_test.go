@@ -28,10 +28,11 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/require"
+
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/rules"
-	"github.com/prometheus/prometheus/util/testutil"
 )
 
 var promPath = os.Args[0]
@@ -97,9 +98,9 @@ func TestComputeExternalURL(t *testing.T) {
 	for _, test := range tests {
 		_, err := computeExternalURL(test.input, "0.0.0.0:9090")
 		if test.valid {
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 		} else {
-			testutil.NotOk(t, err, "input=%q", test.input)
+			require.Error(t, err, "input=%q", test.input)
 		}
 	}
 }
@@ -115,11 +116,11 @@ func TestFailedStartupExitCode(t *testing.T) {
 
 	prom := exec.Command(promPath, "-test.main", "--config.file="+fakeInputFile)
 	err := prom.Run()
-	testutil.NotOk(t, err)
+	require.Error(t, err)
 
 	if exitError, ok := err.(*exec.ExitError); ok {
 		status := exitError.Sys().(syscall.WaitStatus)
-		testutil.Equals(t, expectedExitStatus, status.ExitStatus())
+		require.Equal(t, expectedExitStatus, status.ExitStatus())
 	} else {
 		t.Errorf("unable to retrieve the exit status for prometheus: %v", err)
 	}
@@ -188,7 +189,7 @@ func TestSendAlerts(t *testing.T) {
 				if len(tc.in) == 0 {
 					t.Fatalf("sender called with 0 alert")
 				}
-				testutil.Equals(t, tc.exp, alerts)
+				require.Equal(t, tc.exp, alerts)
 			})
 			sendAlerts(senderFunc, "http://localhost:9090")(context.TODO(), "up", tc.in...)
 		})
@@ -205,14 +206,14 @@ func TestWALSegmentSizeBounds(t *testing.T) {
 
 		// Log stderr in case of failure.
 		stderr, err := prom.StderrPipe()
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 		go func() {
 			slurp, _ := ioutil.ReadAll(stderr)
 			t.Log(string(slurp))
 		}()
 
 		err = prom.Start()
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 
 		if expectedExitStatus == 0 {
 			done := make(chan error, 1)
@@ -227,10 +228,10 @@ func TestWALSegmentSizeBounds(t *testing.T) {
 		}
 
 		err = prom.Wait()
-		testutil.NotOk(t, err)
+		require.Error(t, err)
 		if exitError, ok := err.(*exec.ExitError); ok {
 			status := exitError.Sys().(syscall.WaitStatus)
-			testutil.Equals(t, expectedExitStatus, status.ExitStatus())
+			require.Equal(t, expectedExitStatus, status.ExitStatus())
 		} else {
 			t.Errorf("unable to retrieve the exit status for prometheus: %v", err)
 		}
@@ -239,21 +240,21 @@ func TestWALSegmentSizeBounds(t *testing.T) {
 
 func TestTimeMetrics(t *testing.T) {
 	tmpDir, err := ioutil.TempDir("", "time_metrics_e2e")
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	defer func() {
-		testutil.Ok(t, os.RemoveAll(tmpDir))
+		require.NoError(t, os.RemoveAll(tmpDir))
 	}()
 
 	reg := prometheus.NewRegistry()
 	db, err := openDBWithMetrics(tmpDir, log.NewNopLogger(), reg, nil)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 	defer func() {
-		testutil.Ok(t, db.Close())
+		require.NoError(t, db.Close())
 	}()
 
 	// Check initial values.
-	testutil.Equals(t, map[string]float64{
+	require.Equal(t, map[string]float64{
 		"prometheus_tsdb_lowest_timestamp_seconds": float64(math.MaxInt64) / 1000,
 		"prometheus_tsdb_head_min_time_seconds":    float64(math.MaxInt64) / 1000,
 		"prometheus_tsdb_head_max_time_seconds":    float64(math.MinInt64) / 1000,
@@ -265,14 +266,14 @@ func TestTimeMetrics(t *testing.T) {
 
 	app := db.Appender(context.Background())
 	_, err = app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 1000, 1)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 	_, err = app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 2000, 1)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 	_, err = app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 3000, 1)
-	testutil.Ok(t, err)
-	testutil.Ok(t, app.Commit())
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
 
-	testutil.Equals(t, map[string]float64{
+	require.Equal(t, map[string]float64{
 		"prometheus_tsdb_lowest_timestamp_seconds": 1.0,
 		"prometheus_tsdb_head_min_time_seconds":    1.0,
 		"prometheus_tsdb_head_max_time_seconds":    3.0,
@@ -285,7 +286,7 @@ func TestTimeMetrics(t *testing.T) {
 
 func getCurrentGaugeValuesFor(t *testing.T, reg prometheus.Gatherer, metricNames ...string) map[string]float64 {
 	f, err := reg.Gather()
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	res := make(map[string]float64, len(metricNames))
 	for _, g := range f {
@@ -294,7 +295,7 @@ func getCurrentGaugeValuesFor(t *testing.T, reg prometheus.Gatherer, metricNames
 				continue
 			}
 
-			testutil.Equals(t, 1, len(g.GetMetric()))
+			require.Equal(t, 1, len(g.GetMetric()))
 			if _, ok := res[m]; ok {
 				t.Error("expected only one metric family for", m)
 				t.FailNow()

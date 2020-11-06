@@ -16,12 +16,12 @@ package labels
 import (
 	"testing"
 
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/stretchr/testify/require"
 )
 
 func mustNewMatcher(t *testing.T, mType MatchType, value string) *Matcher {
 	m, err := NewMatcher(mType, "", value)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 	return m
 }
 
@@ -84,7 +84,7 @@ func TestMatcher(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		testutil.Equals(t, test.matcher.Matches(test.value), test.match)
+		require.Equal(t, test.matcher.Matches(test.value), test.match)
 	}
 }
 
@@ -113,7 +113,7 @@ func TestInverse(t *testing.T) {
 
 	for _, test := range tests {
 		result, err := test.matcher.Inverse()
-		testutil.Ok(t, err)
-		testutil.Equals(t, test.expected.Type, result.Type)
+		require.NoError(t, err)
+		require.Equal(t, test.expected.Type, result.Type)
 	}
 }

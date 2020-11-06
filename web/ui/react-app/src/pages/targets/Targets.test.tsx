@@ -28,6 +28,5 @@ describe('Targets', () => {
     const scrapePoolList = targets.find(ScrapePoolList);
     expect(scrapePoolList).toHaveLength(1);
     expect(scrapePoolList.prop('filter')).toEqual({ showHealthy: true, showUnhealthy: true });
-    expect(scrapePoolList.prop('pathPrefix')).toEqual(defaultProps.pathPrefix);
   });
 });

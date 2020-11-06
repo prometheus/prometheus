@@ -36,6 +36,9 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
+
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -46,7 +49,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wal"
 	"github.com/prometheus/prometheus/util/testutil"
-	"go.uber.org/goleak"
 )
 
 func TestMain(m *testing.M) {
@@ -55,7 +57,7 @@ func TestMain(m *testing.M) {
 
 func openTestDB(t testing.TB, opts *Options, rngs []int64) (db *DB) {
 	tmpdir, err := ioutil.TempDir("", "test")
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	if len(rngs) == 0 {
 		db, err = Open(tmpdir, nil, nil, opts)
@@ -63,11 +65,11 @@ func openTestDB(t testing.TB, opts *Options, rngs []int64) (db *DB) {
 		opts, rngs = validateOpts(opts, rngs)
 		db, err = open(tmpdir, nil, nil, opts, rngs)
 	}
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	// Do not Close() the test database by default as it will deadlock on test failures.
 	t.Cleanup(func() {
-		testutil.Ok(t, os.RemoveAll(tmpdir))
+		require.NoError(t, os.RemoveAll(tmpdir))
 	})
 	return db
 }
@@ -77,7 +79,7 @@ func openTestDB(t testing.TB, opts *Options, rngs []int64) (db *DB) {
 func query(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) map[string][]tsdbutil.Sample {
 	ss := q.Select(false, nil, matchers...)
 	defer func() {
-		testutil.Ok(t, q.Close())
+		require.NoError(t, q.Close())
 	}()
 
 	result := map[string][]tsdbutil.Sample{}
@@ -90,7 +92,7 @@ func query(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) map[str
 			t, v := it.At()
 			samples = append(samples, sample{t: t, v: v})
 		}
-		testutil.Ok(t, it.Err())
+		require.NoError(t, it.Err())
 
 		if len(samples) == 0 {
 			continue
@@ -99,8 +101,8 @@ func query(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) map[str
 		name := series.Labels().String()
 		result[name] = samples
 	}
-	testutil.Ok(t, ss.Err())
-	testutil.Equals(t, 0, len(ss.Warnings()))
+	require.NoError(t, ss.Err())
+	require.Equal(t, 0, len(ss.Warnings()))
 
 	return result
 }
@@ -109,7 +111,7 @@ func query(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) map[str
 func queryChunks(t testing.TB, q storage.ChunkQuerier, matchers ...*labels.Matcher) map[string][]chunks.Meta {
 	ss := q.Select(false, nil, matchers...)
 	defer func() {
-		testutil.Ok(t, q.Close())
+		require.NoError(t, q.Close())
 	}()
 
 	result := map[string][]chunks.Meta{}
@@ -121,7 +123,7 @@ func queryChunks(t testing.TB, q storage.ChunkQuerier, matchers ...*labels.Match
 		for it.Next() {
 			chks = append(chks, it.At())
 		}
-		testutil.Ok(t, it.Err())
+		require.NoError(t, it.Err())
 
 		if len(chks) == 0 {
 			continue
@@ -130,8 +132,8 @@ func queryChunks(t testing.TB, q storage.ChunkQuerier, matchers ...*labels.Match
 		name := series.Labels().String()
 		result[name] = chks
 	}
-	testutil.Ok(t, ss.Err())
-	testutil.Equals(t, 0, len(ss.Warnings()))
+	require.NoError(t, ss.Err())
+	require.Equal(t, 0, len(ss.Warnings()))
 	return result
 }
 
@@ -140,7 +142,7 @@ func queryChunks(t testing.TB, q storage.ChunkQuerier, matchers ...*labels.Match
 func TestDB_reloadOrder(t *testing.T) {
 	db := openTestDB(t, nil, nil)
 	defer func() {
-		testutil.Ok(t, db.Close())
+		require.NoError(t, db.Close())
 	}()
 
 	metas := []BlockMeta{
@@ -152,44 +154,44 @@ func TestDB_reloadOrder(t *testing.T) {
 		createBlock(t, db.Dir(), genSeries(1, 1, m.MinTime, m.MaxTime))
 	}
 
-	testutil.Ok(t, db.reload())
+	require.NoError(t, db.reloadBlocks())
 	blocks := db.Blocks()
-	testutil.Equals(t, 3, len(blocks))
-	testutil.Equals(t, metas[1].MinTime, blocks[0].Meta().MinTime)
-	testutil.Equals(t, metas[1].MaxTime, blocks[0].Meta().MaxTime)
-	testutil.Equals(t, metas[0].MinTime, blocks[1].Meta().MinTime)
-	testutil.Equals(t, metas[0].MaxTime, blocks[1].Meta().MaxTime)
-	testutil.Equals(t, metas[2].MinTime, blocks[2].Meta().MinTime)
-	testutil.Equals(t, metas[2].MaxTime, blocks[2].Meta().MaxTime)
+	require.Equal(t, 3, len(blocks))
+	require.Equal(t, metas[1].MinTime, blocks[0].Meta().MinTime)
+	require.Equal(t, metas[1].MaxTime, blocks[0].Meta().MaxTime)
+	require.Equal(t, metas[0].MinTime, blocks[1].Meta().MinTime)
+	require.Equal(t, metas[0].MaxTime, blocks[1].Meta().MaxTime)
+	require.Equal(t, metas[2].MinTime, blocks[2].Meta().MinTime)
+	require.Equal(t, metas[2].MaxTime, blocks[2].Meta().MaxTime)
 }
 
 func TestDataAvailableOnlyAfterCommit(t *testing.T) {
 	db := openTestDB(t, nil, nil)
 	defer func() {
-		testutil.Ok(t, db.Close())
+		require.NoError(t, db.Close())
 	}()
 
 	ctx := context.Background()
 	app := db.Appender(ctx)
 
 	_, err := app.Add(labels.FromStrings("foo", "bar"), 0, 0)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	querier, err := db.Querier(context.TODO(), 0, 1)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 	seriesSet := query(t, querier, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
-	testutil.Equals(t, map[string][]tsdbutil.Sample{}, seriesSet)
+	require.Equal(t, map[string][]tsdbutil.Sample{}, seriesSet)
 
 	err = app.Commit()
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	querier, err = db.Querier(context.TODO(), 0, 1)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 	defer querier.Close()
 
 	seriesSet = query(t, querier, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 
-	testutil.Equals(t, map[string][]tsdbutil.Sample{`{foo="bar"}`: {sample{t: 0, v: 0}}}, seriesSet)
+	require.Equal(t, map[string][]tsdbutil.Sample{`{foo="bar"}`: {sample{t: 0, v: 0}}}, seriesSet)
 }
 
 // TestNoPanicAfterWALCorrutpion ensures that querying the db after a WAL corruption doesn't cause a panic.
@@ -207,16 +209,16 @@ func TestNoPanicAfterWALCorrutpion(t *testing.T) {
 			app := db.Appender(ctx)
 			_, err := app.Add(labels.FromStrings("foo", "bar"), maxt, 0)
 			expSamples = append(expSamples, sample{t: maxt, v: 0})
-			testutil.Ok(t, err)
-			testutil.Ok(t, app.Commit())
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
 			mmapedChunks, err := ioutil.ReadDir(mmappedChunksDir(db.Dir()))
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 			if len(mmapedChunks) > 0 {
 				break
 			}
 			maxt++
 		}
-		testutil.Ok(t, db.Close())
+		require.NoError(t, db.Close())
 	}
 
 	// Corrupt the WAL after the first sample of the series so that it has at least one sample and
@@ -224,102 +226,102 @@ func TestNoPanicAfterWALCorrutpion(t *testing.T) {
 	// The repair deletes all WAL records after the corrupted record and these are read from the mmaped chunk.
 	{
 		walFiles, err := ioutil.ReadDir(path.Join(db.Dir(), "wal"))
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 		f, err := os.OpenFile(path.Join(db.Dir(), "wal", walFiles[0].Name()), os.O_RDWR, 0666)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 		r := wal.NewReader(bufio.NewReader(f))
-		testutil.Assert(t, r.Next(), "reading the series record")
-		testutil.Assert(t, r.Next(), "reading the first sample record")
+		require.True(t, r.Next(), "reading the series record")
+		require.True(t, r.Next(), "reading the first sample record")
 		// Write an invalid record header to corrupt everything after the first wal sample.
 		_, err = f.WriteAt([]byte{99}, r.Offset())
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 		f.Close()
 	}
 
 	// Query the data.
 	{
 		db, err := Open(db.Dir(), nil, nil, nil)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 		defer func() {
-			testutil.Ok(t, db.Close())
+			require.NoError(t, db.Close())
 		}()
-		testutil.Equals(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.walCorruptionsTotal), "WAL corruption count mismatch")
+		require.Equal(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.walCorruptionsTotal), "WAL corruption count mismatch")
 
 		querier, err := db.Querier(context.TODO(), 0, maxt)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 		seriesSet := query(t, querier, labels.MustNewMatcher(labels.MatchEqual, "", ""))
 		// The last sample should be missing as it was after the WAL segment corruption.
-		testutil.Equals(t, map[string][]tsdbutil.Sample{`{foo="bar"}`: expSamples[0 : len(expSamples)-1]}, seriesSet)
+		require.Equal(t, map[string][]tsdbutil.Sample{`{foo="bar"}`: expSamples[0 : len(expSamples)-1]}, seriesSet)
 	}
 }
 
 func TestDataNotAvailableAfterRollback(t *testing.T) {
 	db := openTestDB(t, nil, nil)
 	defer func() {
-		testutil.Ok(t, db.Close())
+		require.NoError(t, db.Close())
 	}()
 
 	app := db.Appender(context.Background())
 	_, err := app.Add(labels.FromStrings("foo", "bar"), 0, 0)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	err = app.Rollback()
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	querier, err := db.Querier(context.TODO(), 0, 1)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 	defer querier.Close()
 
 	seriesSet := query(t, querier, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 
-	testutil.Equals(t, map[string][]tsdbutil.Sample{}, seriesSet)
+	require.Equal(t, map[string][]tsdbutil.Sample{}, seriesSet)
 }
 
 func TestDBAppenderAddRef(t *testing.T) {
 	db := openTestDB(t, nil, nil)
 	defer func() {
-		testutil.Ok(t, db.Close())
+		require.NoError(t, db.Close())
 	}()
 
 	ctx := context.Background()
 	app1 := db.Appender(ctx)
 
 	ref1, err := app1.Add(labels.FromStrings("a", "b"), 123, 0)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	// Reference should already work before commit.
 	err = app1.AddFast(ref1, 124, 1)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	err = app1.Commit()
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	app2 := db.Appender(ctx)
 
 	// first ref should already work in next transaction.
 	err = app2.AddFast(ref1, 125, 0)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	ref2, err := app2.Add(labels.FromStrings("a", "b"), 133, 1)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
-	testutil.Assert(t, ref1 == ref2, "")
+	require.Equal(t, ref1, ref2)
 
 	// Reference must be valid to add another sample.
 	err = app2.AddFast(ref2, 143, 2)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	err = app2.AddFast(9999999, 1, 1)
-	testutil.Equals(t, storage.ErrNotFound, errors.Cause(err))
+	require.Equal(t, storage.ErrNotFound, errors.Cause(err))
 
-	testutil.Ok(t, app2.Commit())
+	require.NoError(t, app2.Commit())
 
 	q, err := db.Querier(context.TODO(), 0, 200)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	res := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 
-	testutil.Equals(t, map[string][]tsdbutil.Sample{
+	require.Equal(t, map[string][]tsdbutil.Sample{
 		labels.FromStrings("a", "b").String(): {
 			sample{t: 123, v: 0},
 			sample{t: 124, v: 1},
@@ -333,24 +335,24 @@ func TestDBAppenderAddRef(t *testing.T) {
 func TestAppendEmptyLabelsIgnored(t *testing.T) {
 	db := openTestDB(t, nil, nil)
 	defer func() {
-		testutil.Ok(t, db.Close())
+		require.NoError(t, db.Close())
 	}()
 
 	ctx := context.Background()
 	app1 := db.Appender(ctx)
 
 	ref1, err := app1.Add(labels.FromStrings("a", "b"), 123, 0)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	// Construct labels manually so there is an empty label.
 	ref2, err := app1.Add(labels.Labels{labels.Label{Name: "a", Value: "b"}, labels.Label{Name: "c", Value: ""}}, 124, 0)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	// Should be the same series.
-	testutil.Equals(t, ref1, ref2)
+	require.Equal(t, ref1, ref2)
 
 	err = app1.Commit()
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 }
 
 func TestDeleteSimple(t *testing.T) {
@@ -386,7 +388,7 @@ Outer:
 	for _, c := range cases {
 		db := openTestDB(t, nil, nil)
 		defer func() {
-			testutil.Ok(t, db.Close())
+			require.NoError(t, db.Close())
 		}()
 
 		ctx := context.Background()
@@ -398,17 +400,17 @@ Outer:
 			app.Add(labels.Labels{{Name: "a", Value: "b"}}, i, smpls[i])
 		}
 
-		testutil.Ok(t, app.Commit())
+		require.NoError(t, app.Commit())
 
 		// TODO(gouthamve): Reset the tombstones somehow.
 		// Delete the ranges.
 		for _, r := range c.Intervals {
-			testutil.Ok(t, db.Delete(r.Mint, r.Maxt, labels.MustNewMatcher(labels.MatchEqual, "a", "b")))
+			require.NoError(t, db.Delete(r.Mint, r.Maxt, labels.MustNewMatcher(labels.MatchEqual, "a", "b")))
 		}
 
 		// Compare the result.
 		q, err := db.Querier(context.TODO(), 0, numSamples)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 
 		res := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 
@@ -423,22 +425,22 @@ Outer:
 
 		for {
 			eok, rok := expss.Next(), res.Next()
-			testutil.Equals(t, eok, rok)
+			require.Equal(t, eok, rok)
 
 			if !eok {
-				testutil.Equals(t, 0, len(res.Warnings()))
+				require.Equal(t, 0, len(res.Warnings()))
 				continue Outer
 			}
 			sexp := expss.At()
 			sres := res.At()
 
-			testutil.Equals(t, sexp.Labels(), sres.Labels())
+			require.Equal(t, sexp.Labels(), sres.Labels())
 
 			smplExp, errExp := storage.ExpandSamples(sexp.Iterator(), nil)
 			smplRes, errRes := storage.ExpandSamples(sres.Iterator(), nil)
 
-			testutil.Equals(t, errExp, errRes)
-			testutil.Equals(t, smplExp, smplRes)
+			require.Equal(t, errExp, errRes)
+			require.Equal(t, smplExp, smplRes)
 		}
 	}
 }
@@ -446,107 +448,107 @@ Outer:
 func TestAmendDatapointCausesError(t *testing.T) {
 	db := openTestDB(t, nil, nil)
 	defer func() {
-		testutil.Ok(t, db.Close())
+		require.NoError(t, db.Close())
 	}()
 
 	ctx := context.Background()
 	app := db.Appender(ctx)
 	_, err := app.Add(labels.Labels{{Name: "a", Value: "b"}}, 0, 0)
-	testutil.Ok(t, err)
-	testutil.Ok(t, app.Commit())
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
 
 	app = db.Appender(ctx)
 	_, err = app.Add(labels.Labels{{Name: "a", Value: "b"}}, 0, 1)
-	testutil.Equals(t, storage.ErrDuplicateSampleForTimestamp, err)
-	testutil.Ok(t, app.Rollback())
+	require.Equal(t, storage.ErrDuplicateSampleForTimestamp, err)
+	require.NoError(t, app.Rollback())
 }
 
 func TestDuplicateNaNDatapointNoAmendError(t *testing.T) {
 	db := openTestDB(t, nil, nil)
 	defer func() {
-		testutil.Ok(t, db.Close())
+		require.NoError(t, db.Close())
 	}()
 
 	ctx := context.Background()
 	app := db.Appender(ctx)
 	_, err := app.Add(labels.Labels{{Name: "a", Value: "b"}}, 0, math.NaN())
-	testutil.Ok(t, err)
-	testutil.Ok(t, app.Commit())
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
 
 	app = db.Appender(ctx)
 	_, err = app.Add(labels.Labels{{Name: "a", Value: "b"}}, 0, math.NaN())
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 }
 
 func TestNonDuplicateNaNDatapointsCausesAmendError(t *testing.T) {
 	db := openTestDB(t, nil, nil)
 	defer func() {
-		testutil.Ok(t, db.Close())
+		require.NoError(t, db.Close())
 	}()
 
 	ctx := context.Background()
 	app := db.Appender(ctx)
 	_, err := app.Add(labels.Labels{{Name: "a", Value: "b"}}, 0, math.Float64frombits(0x7ff0000000000001))
-	testutil.Ok(t, err)
-	testutil.Ok(t, app.Commit())
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
 
 	app = db.Appender(ctx)
 	_, err = app.Add(labels.Labels{{Name: "a", Value: "b"}}, 0, math.Float64frombits(0x7ff0000000000002))
-	testutil.Equals(t, storage.ErrDuplicateSampleForTimestamp, err)
+	require.Equal(t, storage.ErrDuplicateSampleForTimestamp, err)
 }
 
 func TestEmptyLabelsetCausesError(t *testing.T) {
 	db := openTestDB(t, nil, nil)
 	defer func() {
-		testutil.Ok(t, db.Close())
+		require.NoError(t, db.Close())
 	}()
 
 	ctx := context.Background()
 	app := db.Appender(ctx)
 	_, err := app.Add(labels.Labels{}, 0, 0)
-	testutil.NotOk(t, err)
-	testutil.Equals(t, "empty labelset: invalid sample", err.Error())
+	require.Error(t, err)
+	require.Equal(t, "empty labelset: invalid sample", err.Error())
 }
 
 func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
 	db := openTestDB(t, nil, nil)
 	defer func() {
-		testutil.Ok(t, db.Close())
+		require.NoError(t, db.Close())
 	}()
 
 	// Append AmendedValue.
 	ctx := context.Background()
 	app := db.Appender(ctx)
 	_, err := app.Add(labels.Labels{{Name: "a", Value: "b"}}, 0, 1)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 	_, err = app.Add(labels.Labels{{Name: "a", Value: "b"}}, 0, 2)
-	testutil.Ok(t, err)
-	testutil.Ok(t, app.Commit())
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
 
 	// Make sure the right value is stored.
 	q, err := db.Querier(context.TODO(), 0, 10)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	ssMap := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 
-	testutil.Equals(t, map[string][]tsdbutil.Sample{
+	require.Equal(t, map[string][]tsdbutil.Sample{
 		labels.New(labels.Label{Name: "a", Value: "b"}).String(): {sample{0, 1}},
 	}, ssMap)
 
 	// Append Out of Order Value.
 	app = db.Appender(ctx)
 	_, err = app.Add(labels.Labels{{Name: "a", Value: "b"}}, 10, 3)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 	_, err = app.Add(labels.Labels{{Name: "a", Value: "b"}}, 7, 5)
-	testutil.Ok(t, err)
-	testutil.Ok(t, app.Commit())
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
 
 	q, err = db.Querier(context.TODO(), 0, 10)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	ssMap = query(t, q, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 
-	testutil.Equals(t, map[string][]tsdbutil.Sample{
+	require.Equal(t, map[string][]tsdbutil.Sample{
 		labels.New(labels.Label{Name: "a", Value: "b"}).String(): {sample{0, 1}, sample{10, 3}},
 	}, ssMap)
 }
@@ -560,28 +562,28 @@ func TestDB_Snapshot(t *testing.T) {
 	mint := int64(1414141414000)
 	for i := 0; i < 1000; i++ {
 		_, err := app.Add(labels.FromStrings("foo", "bar"), mint+int64(i), 1.0)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 	}
-	testutil.Ok(t, app.Commit())
+	require.NoError(t, app.Commit())
 
 	// create snapshot
 	snap, err := ioutil.TempDir("", "snap")
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	defer func() {
-		testutil.Ok(t, os.RemoveAll(snap))
+		require.NoError(t, os.RemoveAll(snap))
 	}()
-	testutil.Ok(t, db.Snapshot(snap, true))
-	testutil.Ok(t, db.Close())
+	require.NoError(t, db.Snapshot(snap, true))
+	require.NoError(t, db.Close())
 
 	// reopen DB from snapshot
 	db, err = Open(snap, nil, nil, nil)
-	testutil.Ok(t, err)
-	defer func() { testutil.Ok(t, db.Close()) }()
+	require.NoError(t, err)
+	defer func() { require.NoError(t, db.Close()) }()
 
 	querier, err := db.Querier(context.TODO(), mint, mint+1000)
-	testutil.Ok(t, err)
-	defer func() { testutil.Ok(t, querier.Close()) }()
+	require.NoError(t, err)
+	defer func() { require.NoError(t, querier.Close()) }()
 
 	// sum values
 	seriesSet := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
@@ -592,11 +594,11 @@ func TestDB_Snapshot(t *testing.T) {
 			_, v := series.At()
 			sum += v
 		}
-		testutil.Ok(t, series.Err())
+		require.NoError(t, series.Err())
 	}
-	testutil.Ok(t, seriesSet.Err())
-	testutil.Equals(t, 0, len(seriesSet.Warnings()))
-	testutil.Equals(t, 1000.0, sum)
+	require.NoError(t, seriesSet.Err())
+	require.Equal(t, 0, len(seriesSet.Warnings()))
+	require.Equal(t, 1000.0, sum)
 }
 
 // TestDB_Snapshot_ChunksOutsideOfCompactedRange ensures that a snapshot removes chunks samples
@@ -610,30 +612,30 @@ func TestDB_Snapshot_ChunksOutsideOfCompactedRange(t *testing.T) {
 	mint := int64(1414141414000)
 	for i := 0; i < 1000; i++ {
 		_, err := app.Add(labels.FromStrings("foo", "bar"), mint+int64(i), 1.0)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 	}
-	testutil.Ok(t, app.Commit())
+	require.NoError(t, app.Commit())
 
 	snap, err := ioutil.TempDir("", "snap")
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	// Hackingly introduce "race", by having lower max time then maxTime in last chunk.
 	db.head.maxTime.Sub(10)
 
 	defer func() {
-		testutil.Ok(t, os.RemoveAll(snap))
+		require.NoError(t, os.RemoveAll(snap))
 	}()
-	testutil.Ok(t, db.Snapshot(snap, true))
-	testutil.Ok(t, db.Close())
+	require.NoError(t, db.Snapshot(snap, true))
+	require.NoError(t, db.Close())
 
 	// Reopen DB from snapshot.
 	db, err = Open(snap, nil, nil, nil)
-	testutil.Ok(t, err)
-	defer func() { testutil.Ok(t, db.Close()) }()
+	require.NoError(t, err)
+	defer func() { require.NoError(t, db.Close()) }()
 
 	querier, err := db.Querier(context.TODO(), mint, mint+1000)
-	testutil.Ok(t, err)
-	defer func() { testutil.Ok(t, querier.Close()) }()
+	require.NoError(t, err)
+	defer func() { require.NoError(t, querier.Close()) }()
 
 	// Sum values.
 	seriesSet := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
@@ -644,13 +646,13 @@ func TestDB_Snapshot_ChunksOutsideOfCompactedRange(t *testing.T) {
 			_, v := series.At()
 			sum += v
 		}
-		testutil.Ok(t, series.Err())
+		require.NoError(t, series.Err())
 	}
-	testutil.Ok(t, seriesSet.Err())
-	testutil.Equals(t, 0, len(seriesSet.Warnings()))
+	require.NoError(t, seriesSet.Err())
+	require.Equal(t, 0, len(seriesSet.Warnings()))
 
 	// Since we snapshotted with MaxTime - 10, so expect 10 less samples.
-	testutil.Equals(t, 1000.0-10, sum)
+	require.Equal(t, 1000.0-10, sum)
 }
 
 func TestDB_SnapshotWithDelete(t *testing.T) {
@@ -667,7 +669,7 @@ func TestDB_SnapshotWithDelete(t *testing.T) {
 		app.Add(labels.Labels{{Name: "a", Value: "b"}}, i, smpls[i])
 	}
 
-	testutil.Ok(t, app.Commit())
+	require.NoError(t, app.Commit())
 	cases := []struct {
 		intervals tombstones.Intervals
 		remaint   []int64
@@ -683,28 +685,28 @@ Outer:
 		// TODO(gouthamve): Reset the tombstones somehow.
 		// Delete the ranges.
 		for _, r := range c.intervals {
-			testutil.Ok(t, db.Delete(r.Mint, r.Maxt, labels.MustNewMatcher(labels.MatchEqual, "a", "b")))
+			require.NoError(t, db.Delete(r.Mint, r.Maxt, labels.MustNewMatcher(labels.MatchEqual, "a", "b")))
 		}
 
 		// create snapshot
 		snap, err := ioutil.TempDir("", "snap")
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 
 		defer func() {
-			testutil.Ok(t, os.RemoveAll(snap))
+			require.NoError(t, os.RemoveAll(snap))
 		}()
-		testutil.Ok(t, db.Snapshot(snap, true))
-		testutil.Ok(t, db.Close())
+		require.NoError(t, db.Snapshot(snap, true))
+		require.NoError(t, db.Close())
 
 		// reopen DB from snapshot
 		db, err = Open(snap, nil, nil, nil)
-		testutil.Ok(t, err)
-		defer func() { testutil.Ok(t, db.Close()) }()
+		require.NoError(t, err)
+		defer func() { require.NoError(t, db.Close()) }()
 
 		// Compare the result.
 		q, err := db.Querier(context.TODO(), 0, numSamples)
-		testutil.Ok(t, err)
-		defer func() { testutil.Ok(t, q.Close()) }()
+		require.NoError(t, err)
+		defer func() { require.NoError(t, q.Close()) }()
 
 		res := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 
@@ -718,28 +720,28 @@ Outer:
 		})
 
 		if len(expSamples) == 0 {
-			testutil.Assert(t, res.Next() == false, "")
+			require.False(t, res.Next())
 			continue
 		}
 
 		for {
 			eok, rok := expss.Next(), res.Next()
-			testutil.Equals(t, eok, rok)
+			require.Equal(t, eok, rok)
 
 			if !eok {
-				testutil.Equals(t, 0, len(res.Warnings()))
+				require.Equal(t, 0, len(res.Warnings()))
 				continue Outer
 			}
 			sexp := expss.At()
 			sres := res.At()
 
-			testutil.Equals(t, sexp.Labels(), sres.Labels())
+			require.Equal(t, sexp.Labels(), sres.Labels())
 
 			smplExp, errExp := storage.ExpandSamples(sexp.Iterator(), nil)
 			smplRes, errRes := storage.ExpandSamples(sres.Iterator(), nil)
 
-			testutil.Equals(t, errExp, errRes)
-			testutil.Equals(t, smplExp, smplRes)
+			require.Equal(t, errExp, errRes)
+			require.Equal(t, smplExp, smplRes)
 		}
 	}
 }
@@ -801,7 +803,7 @@ func TestDB_e2e(t *testing.T) {
 
 	db := openTestDB(t, nil, nil)
 	defer func() {
-		testutil.Ok(t, db.Close())
+		require.NoError(t, db.Close())
 	}()
 
 	ctx := context.Background()
@@ -818,7 +820,7 @@ func TestDB_e2e(t *testing.T) {
 			series = append(series, sample{ts, v})
 
 			_, err := app.Add(lset, ts, v)
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 
 			ts += rand.Int63n(timeInterval) + 1
 		}
@@ -826,7 +828,7 @@ func TestDB_e2e(t *testing.T) {
 		seriesMap[lset.String()] = series
 	}
 
-	testutil.Ok(t, app.Commit())
+	require.NoError(t, app.Commit())
 
 	// Query each selector on 1000 random time-ranges.
 	queries := []struct {
@@ -877,7 +879,7 @@ func TestDB_e2e(t *testing.T) {
 			}
 
 			q, err := db.Querier(context.TODO(), mint, maxt)
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 
 			ss := q.Select(false, nil, qry.ms...)
 			result := map[string][]tsdbutil.Sample{}
@@ -886,16 +888,16 @@ func TestDB_e2e(t *testing.T) {
 				x := ss.At()
 
 				smpls, err := storage.ExpandSamples(x.Iterator(), newSample)
-				testutil.Ok(t, err)
+				require.NoError(t, err)
 
 				if len(smpls) > 0 {
 					result[x.Labels().String()] = smpls
 				}
 			}
 
-			testutil.Ok(t, ss.Err())
-			testutil.Equals(t, 0, len(ss.Warnings()))
-			testutil.Equals(t, expected, result)
+			require.NoError(t, ss.Err())
+			require.Equal(t, 0, len(ss.Warnings()))
+			require.Equal(t, expected, result)
 
 			q.Close()
 		}
@@ -912,22 +914,22 @@ func TestWALFlushedOnDBClose(t *testing.T) {
 	ctx := context.Background()
 	app := db.Appender(ctx)
 	_, err := app.Add(lbls, 0, 1)
-	testutil.Ok(t, err)
-	testutil.Ok(t, app.Commit())
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
 
-	testutil.Ok(t, db.Close())
+	require.NoError(t, db.Close())
 
 	db, err = Open(dirDb, nil, nil, nil)
-	testutil.Ok(t, err)
-	defer func() { testutil.Ok(t, db.Close()) }()
+	require.NoError(t, err)
+	defer func() { require.NoError(t, db.Close()) }()
 
 	q, err := db.Querier(context.TODO(), 0, 1)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	values, ws, err := q.LabelValues("labelname")
-	testutil.Ok(t, err)
-	testutil.Equals(t, 0, len(ws))
-	testutil.Equals(t, []string{"labelvalue"}, values)
+	require.NoError(t, err)
+	require.Equal(t, 0, len(ws))
+	require.Equal(t, []string{"labelvalue"}, values)
 }
 
 func TestWALSegmentSizeOptions(t *testing.T) {
@@ -935,7 +937,7 @@ func TestWALSegmentSizeOptions(t *testing.T) {
 		// Default Wal Size.
 		0: func(dbDir string, segmentSize int) {
 			filesAndDir, err := ioutil.ReadDir(filepath.Join(dbDir, "wal"))
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 			files := []os.FileInfo{}
 			for _, f := range filesAndDir {
 				if !f.IsDir() {
@@ -944,37 +946,37 @@ func TestWALSegmentSizeOptions(t *testing.T) {
 			}
 			// All the full segment files (all but the last) should match the segment size option.
 			for _, f := range files[:len(files)-1] {
-				testutil.Equals(t, int64(DefaultOptions().WALSegmentSize), f.Size(), "WAL file size doesn't match WALSegmentSize option, filename: %v", f.Name())
+				require.Equal(t, int64(DefaultOptions().WALSegmentSize), f.Size(), "WAL file size doesn't match WALSegmentSize option, filename: %v", f.Name())
 			}
 			lastFile := files[len(files)-1]
-			testutil.Assert(t, int64(DefaultOptions().WALSegmentSize) > lastFile.Size(), "last WAL file size is not smaller than the WALSegmentSize option, filename: %v", lastFile.Name())
+			require.Greater(t, int64(DefaultOptions().WALSegmentSize), lastFile.Size(), "last WAL file size is not smaller than the WALSegmentSize option, filename: %v", lastFile.Name())
 		},
 		// Custom Wal Size.
 		2 * 32 * 1024: func(dbDir string, segmentSize int) {
 			filesAndDir, err := ioutil.ReadDir(filepath.Join(dbDir, "wal"))
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 			files := []os.FileInfo{}
 			for _, f := range filesAndDir {
 				if !f.IsDir() {
 					files = append(files, f)
 				}
 			}
-			testutil.Assert(t, len(files) > 1, "current WALSegmentSize should result in more than a single WAL file.")
+			require.Greater(t, len(files), 1, "current WALSegmentSize should result in more than a single WAL file.")
 			// All the full segment files (all but the last) should match the segment size option.
 			for _, f := range files[:len(files)-1] {
-				testutil.Equals(t, int64(segmentSize), f.Size(), "WAL file size doesn't match WALSegmentSize option, filename: %v", f.Name())
+				require.Equal(t, int64(segmentSize), f.Size(), "WAL file size doesn't match WALSegmentSize option, filename: %v", f.Name())
 			}
 			lastFile := files[len(files)-1]
-			testutil.Assert(t, int64(segmentSize) > lastFile.Size(), "last WAL file size is not smaller than the WALSegmentSize option, filename: %v", lastFile.Name())
+			require.Greater(t, int64(segmentSize), lastFile.Size(), "last WAL file size is not smaller than the WALSegmentSize option, filename: %v", lastFile.Name())
 		},
 		// Wal disabled.
 		-1: func(dbDir string, segmentSize int) {
 			// Check that WAL dir is not there.
 			_, err := os.Stat(filepath.Join(dbDir, "wal"))
-			testutil.NotOk(t, err)
+			require.Error(t, err)
 			// Check that there is chunks dir.
 			_, err = os.Stat(mmappedChunksDir(dbDir))
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 		},
 	}
 	for segmentSize, testFunc := range tests {
@@ -986,16 +988,16 @@ func TestWALSegmentSizeOptions(t *testing.T) {
 			for i := int64(0); i < 155; i++ {
 				app := db.Appender(context.Background())
 				ref, err := app.Add(labels.Labels{labels.Label{Name: "wal" + fmt.Sprintf("%d", i), Value: "size"}}, i, rand.Float64())
-				testutil.Ok(t, err)
+				require.NoError(t, err)
 				for j := int64(1); j <= 78; j++ {
 					err := app.AddFast(ref, i+j, rand.Float64())
-					testutil.Ok(t, err)
+					require.NoError(t, err)
 				}
-				testutil.Ok(t, app.Commit())
+				require.NoError(t, app.Commit())
 			}
 
 			dbDir := db.Dir()
-			testutil.Ok(t, db.Close())
+			require.NoError(t, db.Close())
 			testFunc(dbDir, int(opts.WALSegmentSize))
 		})
 	}
@@ -1015,7 +1017,7 @@ func TestTombstoneClean(t *testing.T) {
 		app.Add(labels.Labels{{Name: "a", Value: "b"}}, i, smpls[i])
 	}
 
-	testutil.Ok(t, app.Commit())
+	require.NoError(t, app.Commit())
 	cases := []struct {
 		intervals tombstones.Intervals
 		remaint   []int64
@@ -1031,29 +1033,29 @@ func TestTombstoneClean(t *testing.T) {
 
 		// create snapshot
 		snap, err := ioutil.TempDir("", "snap")
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 
 		defer func() {
-			testutil.Ok(t, os.RemoveAll(snap))
+			require.NoError(t, os.RemoveAll(snap))
 		}()
-		testutil.Ok(t, db.Snapshot(snap, true))
-		testutil.Ok(t, db.Close())
+		require.NoError(t, db.Snapshot(snap, true))
+		require.NoError(t, db.Close())
 
 		// reopen DB from snapshot
 		db, err = Open(snap, nil, nil, nil)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 		defer db.Close()
 
 		for _, r := range c.intervals {
-			testutil.Ok(t, db.Delete(r.Mint, r.Maxt, labels.MustNewMatcher(labels.MatchEqual, "a", "b")))
+			require.NoError(t, db.Delete(r.Mint, r.Maxt, labels.MustNewMatcher(labels.MatchEqual, "a", "b")))
 		}
 
 		// All of the setup for THIS line.
-		testutil.Ok(t, db.CleanTombstones())
+		require.NoError(t, db.CleanTombstones())
 
 		// Compare the result.
 		q, err := db.Querier(context.TODO(), 0, numSamples)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 		defer q.Close()
 
 		res := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
@@ -1068,13 +1070,13 @@ func TestTombstoneClean(t *testing.T) {
 		})
 
 		if len(expSamples) == 0 {
-			testutil.Assert(t, res.Next() == false, "")
+			require.False(t, res.Next())
 			continue
 		}
 
 		for {
 			eok, rok := expss.Next(), res.Next()
-			testutil.Equals(t, eok, rok)
+			require.Equal(t, eok, rok)
 
 			if !eok {
 				break
@@ -1082,18 +1084,18 @@ func TestTombstoneClean(t *testing.T) {
 			sexp := expss.At()
 			sres := res.At()
 
-			testutil.Equals(t, sexp.Labels(), sres.Labels())
+			require.Equal(t, sexp.Labels(), sres.Labels())
 
 			smplExp, errExp := storage.ExpandSamples(sexp.Iterator(), nil)
 			smplRes, errRes := storage.ExpandSamples(sres.Iterator(), nil)
 
-			testutil.Equals(t, errExp, errRes)
-			testutil.Equals(t, smplExp, smplRes)
+			require.Equal(t, errExp, errRes)
+			require.Equal(t, smplExp, smplRes)
 		}
-		testutil.Equals(t, 0, len(res.Warnings()))
+		require.Equal(t, 0, len(res.Warnings()))
 
 		for _, b := range db.Blocks() {
-			testutil.Equals(t, tombstones.NewMemTombstones(), b.tombstones)
+			require.Equal(t, tombstones.NewMemTombstones(), b.tombstones)
 		}
 	}
 }
@@ -1104,7 +1106,7 @@ func TestTombstoneClean(t *testing.T) {
 func TestTombstoneCleanFail(t *testing.T) {
 	db := openTestDB(t, nil, nil)
 	defer func() {
-		testutil.Ok(t, db.Close())
+		require.NoError(t, db.Close())
 	}()
 
 	var expectedBlockDirs []string
@@ -1115,7 +1117,7 @@ func TestTombstoneCleanFail(t *testing.T) {
 	for i := 0; i < totalBlocks; i++ {
 		blockDir := createBlock(t, db.Dir(), genSeries(1, 1, 0, 1))
 		block, err := OpenBlock(nil, blockDir, nil)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 		// Add some fake tombstones to trigger the compaction.
 		tomb := tombstones.NewMemTombstones()
 		tomb.AddInterval(0, tombstones.Interval{Mint: 0, Maxt: 1})
@@ -1134,12 +1136,12 @@ func TestTombstoneCleanFail(t *testing.T) {
 	}
 
 	// The compactor should trigger a failure here.
-	testutil.NotOk(t, db.CleanTombstones())
+	require.Error(t, db.CleanTombstones())
 
 	// Now check that the CleanTombstones didn't leave any blocks behind after a failure.
 	actualBlockDirs, err := blockDirs(db.dir)
-	testutil.Ok(t, err)
-	testutil.Equals(t, expectedBlockDirs, actualBlockDirs)
+	require.NoError(t, err)
+	require.Equal(t, expectedBlockDirs, actualBlockDirs)
 }
 
 // mockCompactorFailing creates a new empty block on every write and fails when reached the max allowed total.
@@ -1158,8 +1160,8 @@ func (c *mockCompactorFailing) Write(dest string, b BlockReader, mint, maxt int6
 	}
 
 	block, err := OpenBlock(nil, createBlock(c.t, dest, genSeries(1, 1, 0, 1)), nil)
-	testutil.Ok(c.t, err)
-	testutil.Ok(c.t, block.Close()) // Close block as we won't be using anywhere.
+	require.NoError(c.t, err)
+	require.NoError(c.t, block.Close()) // Close block as we won't be using anywhere.
 	c.blocks = append(c.blocks, block)
 
 	// Now check that all expected blocks are actually persisted on disk.
@@ -1169,9 +1171,9 @@ func (c *mockCompactorFailing) Write(dest string, b BlockReader, mint, maxt int6
 		expectedBlocks = append(expectedBlocks, filepath.Join(dest, b.Meta().ULID.String()))
 	}
 	actualBlockDirs, err := blockDirs(dest)
-	testutil.Ok(c.t, err)
+	require.NoError(c.t, err)
 
-	testutil.Equals(c.t, expectedBlocks, actualBlockDirs)
+	require.Equal(c.t, expectedBlocks, actualBlockDirs)
 
 	return block.Meta().ULID, nil
 }
@@ -1183,7 +1185,7 @@ func (*mockCompactorFailing) Compact(string, []string, []*Block) (ulid.ULID, err
 func TestTimeRetention(t *testing.T) {
 	db := openTestDB(t, nil, []int64{1000})
 	defer func() {
-		testutil.Ok(t, db.Close())
+		require.NoError(t, db.Close())
 	}()
 
 	blocks := []*BlockMeta{
@@ -1196,25 +1198,25 @@ func TestTimeRetention(t *testing.T) {
 		createBlock(t, db.Dir(), genSeries(10, 10, m.MinTime, m.MaxTime))
 	}
 
-	testutil.Ok(t, db.reload())                       // Reload the db to register the new blocks.
-	testutil.Equals(t, len(blocks), len(db.Blocks())) // Ensure all blocks are registered.
+	require.NoError(t, db.reloadBlocks())           // Reload the db to register the new blocks.
+	require.Equal(t, len(blocks), len(db.Blocks())) // Ensure all blocks are registered.
 
 	db.opts.RetentionDuration = blocks[2].MaxTime - blocks[1].MinTime
-	testutil.Ok(t, db.reload())
+	require.NoError(t, db.reloadBlocks())
 
 	expBlocks := blocks[1:]
 	actBlocks := db.Blocks()
 
-	testutil.Equals(t, 1, int(prom_testutil.ToFloat64(db.metrics.timeRetentionCount)), "metric retention count mismatch")
-	testutil.Equals(t, len(expBlocks), len(actBlocks))
-	testutil.Equals(t, expBlocks[0].MaxTime, actBlocks[0].meta.MaxTime)
-	testutil.Equals(t, expBlocks[len(expBlocks)-1].MaxTime, actBlocks[len(actBlocks)-1].meta.MaxTime)
+	require.Equal(t, 1, int(prom_testutil.ToFloat64(db.metrics.timeRetentionCount)), "metric retention count mismatch")
+	require.Equal(t, len(expBlocks), len(actBlocks))
+	require.Equal(t, expBlocks[0].MaxTime, actBlocks[0].meta.MaxTime)
+	require.Equal(t, expBlocks[len(expBlocks)-1].MaxTime, actBlocks[len(actBlocks)-1].meta.MaxTime)
 }
 
 func TestSizeRetention(t *testing.T) {
 	db := openTestDB(t, nil, []int64{100})
 	defer func() {
-		testutil.Ok(t, db.Close())
+		require.NoError(t, db.Close())
 	}()
 
 	blocks := []*BlockMeta{
@@ -1236,68 +1238,88 @@ func TestSizeRetention(t *testing.T) {
 	// Add some data to the WAL.
 	headApp := db.Head().Appender(context.Background())
 	for _, m := range headBlocks {
-		series := genSeries(100, 10, m.MinTime, m.MaxTime)
+		series := genSeries(100, 10, m.MinTime, m.MaxTime+1)
 		for _, s := range series {
 			it := s.Iterator()
 			for it.Next() {
 				tim, v := it.At()
 				_, err := headApp.Add(s.Labels(), tim, v)
-				testutil.Ok(t, err)
+				require.NoError(t, err)
 			}
-			testutil.Ok(t, it.Err())
+			require.NoError(t, it.Err())
 		}
 	}
-	testutil.Ok(t, headApp.Commit())
+	require.NoError(t, headApp.Commit())
 
 	// Test that registered size matches the actual disk size.
-	testutil.Ok(t, db.reload())                                         // Reload the db to register the new db size.
-	testutil.Equals(t, len(blocks), len(db.Blocks()))                   // Ensure all blocks are registered.
+	require.NoError(t, db.reloadBlocks())                               // Reload the db to register the new db size.
+	require.Equal(t, len(blocks), len(db.Blocks()))                     // Ensure all blocks are registered.
 	blockSize := int64(prom_testutil.ToFloat64(db.metrics.blocksBytes)) // Use the actual internal metrics.
 	walSize, err := db.Head().wal.Size()
-	testutil.Ok(t, err)
-	// Expected size should take into account block size + WAL size
-	expSize := blockSize + walSize
+	require.NoError(t, err)
+	cdmSize, err := db.Head().chunkDiskMapper.Size()
+	require.NoError(t, err)
+	require.NotZero(t, cdmSize)
+	// Expected size should take into account block size + WAL size + Head
+	// chunks size
+	expSize := blockSize + walSize + cdmSize
 	actSize, err := fileutil.DirSize(db.Dir())
-	testutil.Ok(t, err)
-	testutil.Equals(t, expSize, actSize, "registered size doesn't match actual disk size")
+	require.NoError(t, err)
+	require.Equal(t, expSize, actSize, "registered size doesn't match actual disk size")
 
 	// Create a WAL checkpoint, and compare sizes.
 	first, last, err := wal.Segments(db.Head().wal.Dir())
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 	_, err = wal.Checkpoint(log.NewNopLogger(), db.Head().wal, first, last-1, func(x uint64) bool { return false }, 0)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 	blockSize = int64(prom_testutil.ToFloat64(db.metrics.blocksBytes)) // Use the actual internal metrics.
 	walSize, err = db.Head().wal.Size()
-	testutil.Ok(t, err)
-	expSize = blockSize + walSize
+	require.NoError(t, err)
+	cdmSize, err = db.Head().chunkDiskMapper.Size()
+	require.NoError(t, err)
+	require.NotZero(t, cdmSize)
+	expSize = blockSize + walSize + cdmSize
 	actSize, err = fileutil.DirSize(db.Dir())
-	testutil.Ok(t, err)
-	testutil.Equals(t, expSize, actSize, "registered size doesn't match actual disk size")
+	require.NoError(t, err)
+	require.Equal(t, expSize, actSize, "registered size doesn't match actual disk size")
+
+	// Truncate Chunk Disk Mapper and compare sizes.
+	require.NoError(t, db.Head().chunkDiskMapper.Truncate(900))
+	cdmSize, err = db.Head().chunkDiskMapper.Size()
+	require.NoError(t, err)
+	require.NotZero(t, cdmSize)
+	expSize = blockSize + walSize + cdmSize
+	actSize, err = fileutil.DirSize(db.Dir())
+	require.NoError(t, err)
+	require.Equal(t, expSize, actSize, "registered size doesn't match actual disk size")
 
 	// Decrease the max bytes limit so that a delete is triggered.
 	// Check total size, total count and check that the oldest block was deleted.
 	firstBlockSize := db.Blocks()[0].Size()
 	sizeLimit := actSize - firstBlockSize
-	db.opts.MaxBytes = sizeLimit // Set the new db size limit one block smaller that the actual size.
-	testutil.Ok(t, db.reload())  // Reload the db to register the new db size.
+	db.opts.MaxBytes = sizeLimit          // Set the new db size limit one block smaller that the actual size.
+	require.NoError(t, db.reloadBlocks()) // Reload the db to register the new db size.
 
 	expBlocks := blocks[1:]
 	actBlocks := db.Blocks()
 	blockSize = int64(prom_testutil.ToFloat64(db.metrics.blocksBytes))
 	walSize, err = db.Head().wal.Size()
-	testutil.Ok(t, err)
+	require.NoError(t, err)
+	cdmSize, err = db.Head().chunkDiskMapper.Size()
+	require.NoError(t, err)
+	require.NotZero(t, cdmSize)
 	// Expected size should take into account block size + WAL size
-	expSize = blockSize + walSize
+	expSize = blockSize + walSize + cdmSize
 	actRetentionCount := int(prom_testutil.ToFloat64(db.metrics.sizeRetentionCount))
 	actSize, err = fileutil.DirSize(db.Dir())
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
-	testutil.Equals(t, 1, actRetentionCount, "metric retention count mismatch")
-	testutil.Equals(t, actSize, expSize, "metric db size doesn't match actual disk size")
-	testutil.Assert(t, expSize <= sizeLimit, "actual size (%v) is expected to be less than or equal to limit (%v)", expSize, sizeLimit)
-	testutil.Equals(t, len(blocks)-1, len(actBlocks), "new block count should be decreased from:%v to:%v", len(blocks), len(blocks)-1)
-	testutil.Equals(t, expBlocks[0].MaxTime, actBlocks[0].meta.MaxTime, "maxT mismatch of the first block")
-	testutil.Equals(t, expBlocks[len(expBlocks)-1].MaxTime, actBlocks[len(actBlocks)-1].meta.MaxTime, "maxT mismatch of the last block")
+	require.Equal(t, 1, actRetentionCount, "metric retention count mismatch")
+	require.Equal(t, actSize, expSize, "metric db size doesn't match actual disk size")
+	require.LessOrEqual(t, expSize, sizeLimit, "actual size (%v) is expected to be less than or equal to limit (%v)", expSize, sizeLimit)
+	require.Equal(t, len(blocks)-1, len(actBlocks), "new block count should be decreased from:%v to:%v", len(blocks), len(blocks)-1)
+	require.Equal(t, expBlocks[0].MaxTime, actBlocks[0].meta.MaxTime, "maxT mismatch of the first block")
+	require.Equal(t, expBlocks[len(expBlocks)-1].MaxTime, actBlocks[len(actBlocks)-1].meta.MaxTime, "maxT mismatch of the last block")
 }
 
 func TestSizeRetentionMetric(t *testing.T) {
@@ -1315,18 +1337,18 @@ func TestSizeRetentionMetric(t *testing.T) {
 			MaxBytes: c.maxBytes,
 		}, []int64{100})
 		defer func() {
-			testutil.Ok(t, db.Close())
+			require.NoError(t, db.Close())
 		}()
 
 		actMaxBytes := int64(prom_testutil.ToFloat64(db.metrics.maxBytes))
-		testutil.Equals(t, actMaxBytes, c.expMaxBytes, "metric retention limit bytes mismatch")
+		require.Equal(t, actMaxBytes, c.expMaxBytes, "metric retention limit bytes mismatch")
 	}
 }
 
 func TestNotMatcherSelectsLabelsUnsetSeries(t *testing.T) {
 	db := openTestDB(t, nil, nil)
 	defer func() {
-		testutil.Ok(t, db.Close())
+		require.NoError(t, db.Close())
 	}()
 
 	labelpairs := []labels.Labels{
@@ -1338,9 +1360,9 @@ func TestNotMatcherSelectsLabelsUnsetSeries(t *testing.T) {
 	app := db.Appender(ctx)
 	for _, lbls := range labelpairs {
 		_, err := app.Add(lbls, 0, 1)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 	}
-	testutil.Ok(t, app.Commit())
+	require.NoError(t, app.Commit())
 
 	cases := []struct {
 		selector labels.Selector
@@ -1385,15 +1407,15 @@ func TestNotMatcherSelectsLabelsUnsetSeries(t *testing.T) {
 	}}
 
 	q, err := db.Querier(context.TODO(), 0, 10)
-	testutil.Ok(t, err)
-	defer func() { testutil.Ok(t, q.Close()) }()
+	require.NoError(t, err)
+	defer func() { require.NoError(t, q.Close()) }()
 
 	for _, c := range cases {
 		ss := q.Select(false, nil, c.selector...)
 		lres, _, ws, err := expandSeriesSet(ss)
-		testutil.Ok(t, err)
-		testutil.Equals(t, 0, len(ws))
-		testutil.Equals(t, c.series, lres)
+		require.NoError(t, err)
+		require.Equal(t, 0, len(ws))
+		require.Equal(t, c.series, lres)
 	}
 }
 
@@ -1424,7 +1446,7 @@ func TestOverlappingBlocksDetectsAllOverlaps(t *testing.T) {
 		metas[i] = BlockMeta{MinTime: int64(i * 10), MaxTime: int64((i + 1) * 10)}
 	}
 
-	testutil.Assert(t, len(OverlappingBlocks(metas)) == 0, "we found unexpected overlaps")
+	require.Equal(t, 0, len(OverlappingBlocks(metas)), "we found unexpected overlaps")
 
 	// Add overlapping blocks. We've to establish order again since we aren't interested
 	// in trivial overlaps caused by unorderedness.
@@ -1438,13 +1460,13 @@ func TestOverlappingBlocksDetectsAllOverlaps(t *testing.T) {
 
 	// o1 overlaps with 10-20.
 	o1 := BlockMeta{MinTime: 15, MaxTime: 17}
-	testutil.Equals(t, Overlaps{
+	require.Equal(t, Overlaps{
 		{Min: 15, Max: 17}: {metas[1], o1},
 	}, OverlappingBlocks(add(o1)))
 
 	// o2 overlaps with 20-30 and 30-40.
 	o2 := BlockMeta{MinTime: 21, MaxTime: 31}
-	testutil.Equals(t, Overlaps{
+	require.Equal(t, Overlaps{
 		{Min: 21, Max: 30}: {metas[2], o2},
 		{Min: 30, Max: 31}: {o2, metas[3]},
 	}, OverlappingBlocks(add(o2)))
@@ -1452,19 +1474,19 @@ func TestOverlappingBlocksDetectsAllOverlaps(t *testing.T) {
 	// o3a and o3b overlaps with 30-40 and each other.
 	o3a := BlockMeta{MinTime: 33, MaxTime: 39}
 	o3b := BlockMeta{MinTime: 34, MaxTime: 36}
-	testutil.Equals(t, Overlaps{
+	require.Equal(t, Overlaps{
 		{Min: 34, Max: 36}: {metas[3], o3a, o3b},
 	}, OverlappingBlocks(add(o3a, o3b)))
 
 	// o4 is 1:1 overlap with 50-60.
 	o4 := BlockMeta{MinTime: 50, MaxTime: 60}
-	testutil.Equals(t, Overlaps{
+	require.Equal(t, Overlaps{
 		{Min: 50, Max: 60}: {metas[5], o4},
 	}, OverlappingBlocks(add(o4)))
 
 	// o5 overlaps with 60-70, 70-80 and 80-90.
 	o5 := BlockMeta{MinTime: 61, MaxTime: 85}
-	testutil.Equals(t, Overlaps{
+	require.Equal(t, Overlaps{
 		{Min: 61, Max: 70}: {metas[6], o5},
 		{Min: 70, Max: 80}: {o5, metas[7]},
 		{Min: 80, Max: 85}: {o5, metas[8]},
@@ -1473,13 +1495,13 @@ func TestOverlappingBlocksDetectsAllOverlaps(t *testing.T) {
 	// o6a overlaps with 90-100, 100-110 and o6b, o6b overlaps with 90-100 and o6a.
 	o6a := BlockMeta{MinTime: 92, MaxTime: 105}
 	o6b := BlockMeta{MinTime: 94, MaxTime: 99}
-	testutil.Equals(t, Overlaps{
+	require.Equal(t, Overlaps{
 		{Min: 94, Max: 99}:   {metas[9], o6a, o6b},
 		{Min: 100, Max: 105}: {o6a, metas[10]},
 	}, OverlappingBlocks(add(o6a, o6b)))
 
 	// All together.
-	testutil.Equals(t, Overlaps{
+	require.Equal(t, Overlaps{
 		{Min: 15, Max: 17}: {metas[1], o1},
 		{Min: 21, Max: 30}: {metas[2], o2}, {Min: 30, Max: 31}: {o2, metas[3]},
 		{Min: 34, Max: 36}: {metas[3], o3a, o3b},
@@ -1500,7 +1522,7 @@ func TestOverlappingBlocksDetectsAllOverlaps(t *testing.T) {
 	nc1 = append(nc1, BlockMeta{MinTime: 5, MaxTime: 7})
 	nc1 = append(nc1, BlockMeta{MinTime: 7, MaxTime: 10})
 	nc1 = append(nc1, BlockMeta{MinTime: 8, MaxTime: 9})
-	testutil.Equals(t, Overlaps{
+	require.Equal(t, Overlaps{
 		{Min: 2, Max: 3}: {nc1[0], nc1[1], nc1[2], nc1[3], nc1[4], nc1[5]}, // 1-5, 2-3, 2-3, 2-3, 2-3, 2,6
 		{Min: 3, Max: 5}: {nc1[0], nc1[5], nc1[6]},                         // 1-5, 2-6, 3-5
 		{Min: 5, Max: 6}: {nc1[5], nc1[7]},                                 // 2-6, 5-7
@@ -1512,7 +1534,7 @@ func TestOverlappingBlocksDetectsAllOverlaps(t *testing.T) {
 func TestChunkAtBlockBoundary(t *testing.T) {
 	db := openTestDB(t, nil, nil)
 	defer func() {
-		testutil.Ok(t, db.Close())
+		require.NoError(t, db.Close())
 	}()
 
 	ctx := context.Background()
@@ -1523,27 +1545,27 @@ func TestChunkAtBlockBoundary(t *testing.T) {
 
 	for i := int64(0); i < 3; i++ {
 		_, err := app.Add(label, i*blockRange, 0)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 		_, err = app.Add(label, i*blockRange+1000, 0)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 	}
 
 	err := app.Commit()
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	err = db.Compact()
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	for _, block := range db.Blocks() {
 		r, err := block.Index()
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 		defer r.Close()
 
 		meta := block.Meta()
 
 		k, v := index.AllPostingsKey()
 		p, err := r.Postings(k, v)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 
 		var (
 			lset labels.Labels
@@ -1554,22 +1576,22 @@ func TestChunkAtBlockBoundary(t *testing.T) {
 
 		for p.Next() {
 			err = r.Series(p.At(), &lset, &chks)
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 			for _, c := range chks {
-				testutil.Assert(t, meta.MinTime <= c.MinTime && c.MaxTime <= meta.MaxTime,
+				require.True(t, meta.MinTime <= c.MinTime && c.MaxTime <= meta.MaxTime,
 					"chunk spans beyond block boundaries: [block.MinTime=%d, block.MaxTime=%d]; [chunk.MinTime=%d, chunk.MaxTime=%d]",
 					meta.MinTime, meta.MaxTime, c.MinTime, c.MaxTime)
 				chunkCount++
 			}
 		}
-		testutil.Assert(t, chunkCount == 1, "expected 1 chunk in block %s, got %d", meta.ULID, chunkCount)
+		require.Equal(t, 1, chunkCount, "expected 1 chunk in block %s, got %d", meta.ULID, chunkCount)
 	}
 }
 
 func TestQuerierWithBoundaryChunks(t *testing.T) {
 	db := openTestDB(t, nil, nil)
 	defer func() {
-		testutil.Ok(t, db.Close())
+		require.NoError(t, db.Close())
 	}()
 
 	ctx := context.Background()
@@ -1580,28 +1602,28 @@ func TestQuerierWithBoundaryChunks(t *testing.T) {
 
 	for i := int64(0); i < 5; i++ {
 		_, err := app.Add(label, i*blockRange, 0)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 		_, err = app.Add(labels.FromStrings("blockID", strconv.FormatInt(i, 10)), i*blockRange, 0)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 	}
 
 	err := app.Commit()
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	err = db.Compact()
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
-	testutil.Assert(t, len(db.blocks) >= 3, "invalid test, less than three blocks in DB")
+	require.GreaterOrEqual(t, len(db.blocks), 3, "invalid test, less than three blocks in DB")
 
 	q, err := db.Querier(context.TODO(), blockRange, 2*blockRange)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 	defer q.Close()
 
 	// The requested interval covers 2 blocks, so the querier's label values for blockID should give us 2 values, one from each block.
 	b, ws, err := q.LabelValues("blockID")
-	testutil.Ok(t, err)
-	testutil.Equals(t, storage.Warnings(nil), ws)
-	testutil.Equals(t, []string{"1", "2"}, b)
+	require.NoError(t, err)
+	require.Equal(t, storage.Warnings(nil), ws)
+	require.Equal(t, []string{"1", "2"}, b)
 }
 
 // TestInitializeHeadTimestamp ensures that the h.minTime is set properly.
@@ -1612,38 +1634,38 @@ func TestQuerierWithBoundaryChunks(t *testing.T) {
 func TestInitializeHeadTimestamp(t *testing.T) {
 	t.Run("clean", func(t *testing.T) {
 		dir, err := ioutil.TempDir("", "test_head_init")
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 		defer func() {
-			testutil.Ok(t, os.RemoveAll(dir))
+			require.NoError(t, os.RemoveAll(dir))
 		}()
 
 		db, err := Open(dir, nil, nil, nil)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 		defer db.Close()
 
 		// Should be set to init values if no WAL or blocks exist so far.
-		testutil.Equals(t, int64(math.MaxInt64), db.head.MinTime())
-		testutil.Equals(t, int64(math.MinInt64), db.head.MaxTime())
+		require.Equal(t, int64(math.MaxInt64), db.head.MinTime())
+		require.Equal(t, int64(math.MinInt64), db.head.MaxTime())
 
 		// First added sample initializes the writable range.
 		ctx := context.Background()
 		app := db.Appender(ctx)
 		_, err = app.Add(labels.FromStrings("a", "b"), 1000, 1)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 
-		testutil.Equals(t, int64(1000), db.head.MinTime())
-		testutil.Equals(t, int64(1000), db.head.MaxTime())
+		require.Equal(t, int64(1000), db.head.MinTime())
+		require.Equal(t, int64(1000), db.head.MaxTime())
 	})
 	t.Run("wal-only", func(t *testing.T) {
 		dir, err := ioutil.TempDir("", "test_head_init")
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 		defer func() {
-			testutil.Ok(t, os.RemoveAll(dir))
+			require.NoError(t, os.RemoveAll(dir))
 		}()
 
-		testutil.Ok(t, os.MkdirAll(path.Join(dir, "wal"), 0777))
+		require.NoError(t, os.MkdirAll(path.Join(dir, "wal"), 0777))
 		w, err := wal.New(nil, nil, path.Join(dir, "wal"), false)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 
 		var enc record.Encoder
 		err = w.Log(
@@ -1656,44 +1678,44 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 				{Ref: 124, T: 15000, V: 1},
 			}, nil),
 		)
-		testutil.Ok(t, err)
-		testutil.Ok(t, w.Close())
+		require.NoError(t, err)
+		require.NoError(t, w.Close())
 
 		db, err := Open(dir, nil, nil, nil)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 		defer db.Close()
 
-		testutil.Equals(t, int64(5000), db.head.MinTime())
-		testutil.Equals(t, int64(15000), db.head.MaxTime())
+		require.Equal(t, int64(5000), db.head.MinTime())
+		require.Equal(t, int64(15000), db.head.MaxTime())
 	})
 	t.Run("existing-block", func(t *testing.T) {
 		dir, err := ioutil.TempDir("", "test_head_init")
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 		defer func() {
-			testutil.Ok(t, os.RemoveAll(dir))
+			require.NoError(t, os.RemoveAll(dir))
 		}()
 
 		createBlock(t, dir, genSeries(1, 1, 1000, 2000))
 
 		db, err := Open(dir, nil, nil, nil)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 		defer db.Close()
 
-		testutil.Equals(t, int64(2000), db.head.MinTime())
-		testutil.Equals(t, int64(2000), db.head.MaxTime())
+		require.Equal(t, int64(2000), db.head.MinTime())
+		require.Equal(t, int64(2000), db.head.MaxTime())
 	})
 	t.Run("existing-block-and-wal", func(t *testing.T) {
 		dir, err := ioutil.TempDir("", "test_head_init")
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 		defer func() {
-			testutil.Ok(t, os.RemoveAll(dir))
+			require.NoError(t, os.RemoveAll(dir))
 		}()
 
 		createBlock(t, dir, genSeries(1, 1, 1000, 6000))
 
-		testutil.Ok(t, os.MkdirAll(path.Join(dir, "wal"), 0777))
+		require.NoError(t, os.MkdirAll(path.Join(dir, "wal"), 0777))
 		w, err := wal.New(nil, nil, path.Join(dir, "wal"), false)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 
 		var enc record.Encoder
 		err = w.Log(
@@ -1706,19 +1728,19 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 				{Ref: 124, T: 15000, V: 1},
 			}, nil),
 		)
-		testutil.Ok(t, err)
-		testutil.Ok(t, w.Close())
+		require.NoError(t, err)
+		require.NoError(t, w.Close())
 
 		r := prometheus.NewRegistry()
 
 		db, err := Open(dir, nil, r, nil)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 		defer db.Close()
 
-		testutil.Equals(t, int64(6000), db.head.MinTime())
-		testutil.Equals(t, int64(15000), db.head.MaxTime())
+		require.Equal(t, int64(6000), db.head.MinTime())
+		require.Equal(t, int64(15000), db.head.MaxTime())
 		// Check that old series has been GCed.
-		testutil.Equals(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.series))
+		require.Equal(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.series))
 	})
 }
 
@@ -1726,7 +1748,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 	db := openTestDB(t, nil, []int64{100})
 	ctx := context.Background()
 	defer func() {
-		testutil.Ok(t, db.Close())
+		require.NoError(t, db.Close())
 	}()
 	db.DisableCompactions()
 
@@ -1735,52 +1757,52 @@ func TestNoEmptyBlocks(t *testing.T) {
 	defaultMatcher := labels.MustNewMatcher(labels.MatchRegexp, "", ".*")
 
 	t.Run("Test no blocks after compact with empty head.", func(t *testing.T) {
-		testutil.Ok(t, db.Compact())
+		require.NoError(t, db.Compact())
 		actBlocks, err := blockDirs(db.Dir())
-		testutil.Ok(t, err)
-		testutil.Equals(t, len(db.Blocks()), len(actBlocks))
-		testutil.Equals(t, 0, len(actBlocks))
-		testutil.Equals(t, 0, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran)), "no compaction should be triggered here")
+		require.NoError(t, err)
+		require.Equal(t, len(db.Blocks()), len(actBlocks))
+		require.Equal(t, 0, len(actBlocks))
+		require.Equal(t, 0, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran)), "no compaction should be triggered here")
 	})
 
 	t.Run("Test no blocks after deleting all samples from head.", func(t *testing.T) {
 		app := db.Appender(ctx)
 		_, err := app.Add(defaultLabel, 1, 0)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 		_, err = app.Add(defaultLabel, 2, 0)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 		_, err = app.Add(defaultLabel, 3+rangeToTriggerCompaction, 0)
-		testutil.Ok(t, err)
-		testutil.Ok(t, app.Commit())
-		testutil.Ok(t, db.Delete(math.MinInt64, math.MaxInt64, defaultMatcher))
-		testutil.Ok(t, db.Compact())
-		testutil.Equals(t, 1, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran)), "compaction should have been triggered here")
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		require.NoError(t, db.Delete(math.MinInt64, math.MaxInt64, defaultMatcher))
+		require.NoError(t, db.Compact())
+		require.Equal(t, 1, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran)), "compaction should have been triggered here")
 
 		actBlocks, err := blockDirs(db.Dir())
-		testutil.Ok(t, err)
-		testutil.Equals(t, len(db.Blocks()), len(actBlocks))
-		testutil.Equals(t, 0, len(actBlocks))
+		require.NoError(t, err)
+		require.Equal(t, len(db.Blocks()), len(actBlocks))
+		require.Equal(t, 0, len(actBlocks))
 
 		app = db.Appender(ctx)
 		_, err = app.Add(defaultLabel, 1, 0)
-		testutil.Assert(t, err == storage.ErrOutOfBounds, "the head should be truncated so no samples in the past should be allowed")
+		require.Equal(t, storage.ErrOutOfBounds, err, "the head should be truncated so no samples in the past should be allowed")
 
 		// Adding new blocks.
 		currentTime := db.Head().MaxTime()
 		_, err = app.Add(defaultLabel, currentTime, 0)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 		_, err = app.Add(defaultLabel, currentTime+1, 0)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 		_, err = app.Add(defaultLabel, currentTime+rangeToTriggerCompaction, 0)
-		testutil.Ok(t, err)
-		testutil.Ok(t, app.Commit())
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
 
-		testutil.Ok(t, db.Compact())
-		testutil.Equals(t, 2, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran)), "compaction should have been triggered here")
+		require.NoError(t, db.Compact())
+		require.Equal(t, 2, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran)), "compaction should have been triggered here")
 		actBlocks, err = blockDirs(db.Dir())
-		testutil.Ok(t, err)
-		testutil.Equals(t, len(db.Blocks()), len(actBlocks))
-		testutil.Assert(t, len(actBlocks) == 1, "No blocks created when compacting with >0 samples")
+		require.NoError(t, err)
+		require.Equal(t, len(db.Blocks()), len(actBlocks))
+		require.Equal(t, 1, len(actBlocks), "No blocks created when compacting with >0 samples")
 	})
 
 	t.Run(`When no new block is created from head, and there are some blocks on disk
@@ -1789,16 +1811,16 @@ func TestNoEmptyBlocks(t *testing.T) {
 		app := db.Appender(ctx)
 		currentTime := db.Head().MaxTime()
 		_, err := app.Add(defaultLabel, currentTime, 0)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 		_, err = app.Add(defaultLabel, currentTime+1, 0)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 		_, err = app.Add(defaultLabel, currentTime+rangeToTriggerCompaction, 0)
-		testutil.Ok(t, err)
-		testutil.Ok(t, app.Commit())
-		testutil.Ok(t, db.head.Delete(math.MinInt64, math.MaxInt64, defaultMatcher))
-		testutil.Ok(t, db.Compact())
-		testutil.Equals(t, 3, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran)), "compaction should have been triggered here")
-		testutil.Equals(t, oldBlocks, db.Blocks())
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		require.NoError(t, db.head.Delete(math.MinInt64, math.MaxInt64, defaultMatcher))
+		require.NoError(t, db.Compact())
+		require.Equal(t, 3, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran)), "compaction should have been triggered here")
+		require.Equal(t, oldBlocks, db.Blocks())
 	})
 
 	t.Run("Test no blocks remaining after deleting all samples from disk.", func(t *testing.T) {
@@ -1812,16 +1834,16 @@ func TestNoEmptyBlocks(t *testing.T) {
 		}
 
 		oldBlocks := db.Blocks()
-		testutil.Ok(t, db.reload())                                      // Reload the db to register the new blocks.
-		testutil.Equals(t, len(blocks)+len(oldBlocks), len(db.Blocks())) // Ensure all blocks are registered.
-		testutil.Ok(t, db.Delete(math.MinInt64, math.MaxInt64, defaultMatcher))
-		testutil.Ok(t, db.Compact())
-		testutil.Equals(t, 5, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran)), "compaction should have been triggered here once for each block that have tombstones")
+		require.NoError(t, db.reloadBlocks())                          // Reload the db to register the new blocks.
+		require.Equal(t, len(blocks)+len(oldBlocks), len(db.Blocks())) // Ensure all blocks are registered.
+		require.NoError(t, db.Delete(math.MinInt64, math.MaxInt64, defaultMatcher))
+		require.NoError(t, db.Compact())
+		require.Equal(t, 5, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran)), "compaction should have been triggered here once for each block that have tombstones")
 
 		actBlocks, err := blockDirs(db.Dir())
-		testutil.Ok(t, err)
-		testutil.Equals(t, len(db.Blocks()), len(actBlocks))
-		testutil.Equals(t, 1, len(actBlocks), "All samples are deleted. Only the most recent block should remain after compaction.")
+		require.NoError(t, err)
+		require.Equal(t, len(db.Blocks()), len(actBlocks))
+		require.Equal(t, 1, len(actBlocks), "All samples are deleted. Only the most recent block should remain after compaction.")
 	})
 }
 
@@ -1875,40 +1897,40 @@ func TestDB_LabelNames(t *testing.T) {
 			for _, tuple := range sampleLabels {
 				label := labels.FromStrings(tuple[0], tuple[1])
 				_, err := app.Add(label, i*blockRange, 0)
-				testutil.Ok(t, err)
+				require.NoError(t, err)
 			}
 		}
 		err := app.Commit()
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 	}
 	for _, tst := range tests {
 		db := openTestDB(t, nil, nil)
 		defer func() {
-			testutil.Ok(t, db.Close())
+			require.NoError(t, db.Close())
 		}()
 
 		appendSamples(db, 0, 4, tst.sampleLabels1)
 
 		// Testing head.
 		headIndexr, err := db.head.Index()
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 		labelNames, err := headIndexr.LabelNames()
-		testutil.Ok(t, err)
-		testutil.Equals(t, tst.exp1, labelNames)
-		testutil.Ok(t, headIndexr.Close())
+		require.NoError(t, err)
+		require.Equal(t, tst.exp1, labelNames)
+		require.NoError(t, headIndexr.Close())
 
 		// Testing disk.
 		err = db.Compact()
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 		// All blocks have same label names, hence check them individually.
 		// No need to aggregate and check.
 		for _, b := range db.Blocks() {
 			blockIndexr, err := b.Index()
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 			labelNames, err = blockIndexr.LabelNames()
-			testutil.Ok(t, err)
-			testutil.Equals(t, tst.exp1, labelNames)
-			testutil.Ok(t, blockIndexr.Close())
+			require.NoError(t, err)
+			require.Equal(t, tst.exp1, labelNames)
+			require.NoError(t, blockIndexr.Close())
 		}
 
 		// Adding more samples to head with new label names
@@ -1917,20 +1939,20 @@ func TestDB_LabelNames(t *testing.T) {
 
 		// Testing DB (union).
 		q, err := db.Querier(context.TODO(), math.MinInt64, math.MaxInt64)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 		var ws storage.Warnings
 		labelNames, ws, err = q.LabelNames()
-		testutil.Ok(t, err)
-		testutil.Equals(t, 0, len(ws))
-		testutil.Ok(t, q.Close())
-		testutil.Equals(t, tst.exp2, labelNames)
+		require.NoError(t, err)
+		require.Equal(t, 0, len(ws))
+		require.NoError(t, q.Close())
+		require.Equal(t, tst.exp2, labelNames)
 	}
 }
 
 func TestCorrectNumTombstones(t *testing.T) {
 	db := openTestDB(t, nil, nil)
 	defer func() {
-		testutil.Ok(t, db.Close())
+		require.NoError(t, db.Close())
 	}()
 
 	blockRange := db.compactor.(*LeveledCompactor).ranges[0]
@@ -1942,27 +1964,27 @@ func TestCorrectNumTombstones(t *testing.T) {
 	for i := int64(0); i < 3; i++ {
 		for j := int64(0); j < 15; j++ {
 			_, err := app.Add(defaultLabel, i*blockRange+j, 0)
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 		}
 	}
-	testutil.Ok(t, app.Commit())
+	require.NoError(t, app.Commit())
 
 	err := db.Compact()
-	testutil.Ok(t, err)
-	testutil.Equals(t, 1, len(db.blocks))
+	require.NoError(t, err)
+	require.Equal(t, 1, len(db.blocks))
 
-	testutil.Ok(t, db.Delete(0, 1, defaultMatcher))
-	testutil.Equals(t, uint64(1), db.blocks[0].meta.Stats.NumTombstones)
+	require.NoError(t, db.Delete(0, 1, defaultMatcher))
+	require.Equal(t, uint64(1), db.blocks[0].meta.Stats.NumTombstones)
 
 	// {0, 1} and {2, 3} are merged to form 1 tombstone.
-	testutil.Ok(t, db.Delete(2, 3, defaultMatcher))
-	testutil.Equals(t, uint64(1), db.blocks[0].meta.Stats.NumTombstones)
+	require.NoError(t, db.Delete(2, 3, defaultMatcher))
+	require.Equal(t, uint64(1), db.blocks[0].meta.Stats.NumTombstones)
 
-	testutil.Ok(t, db.Delete(5, 6, defaultMatcher))
-	testutil.Equals(t, uint64(2), db.blocks[0].meta.Stats.NumTombstones)
+	require.NoError(t, db.Delete(5, 6, defaultMatcher))
+	require.Equal(t, uint64(2), db.blocks[0].meta.Stats.NumTombstones)
 
-	testutil.Ok(t, db.Delete(9, 11, defaultMatcher))
-	testutil.Equals(t, uint64(3), db.blocks[0].meta.Stats.NumTombstones)
+	require.NoError(t, db.Delete(9, 11, defaultMatcher))
+	require.Equal(t, uint64(3), db.blocks[0].meta.Stats.NumTombstones)
 }
 
 // TestBlockRanges checks the following use cases:
@@ -1979,14 +2001,14 @@ func TestBlockRanges(t *testing.T) {
 	ctx := context.Background()
 
 	dir, err := ioutil.TempDir("", "test_storage")
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	// Test that the compactor doesn't create overlapping blocks
 	// when a non standard block already exists.
 	firstBlockMaxT := int64(3)
 	createBlock(t, dir, genSeries(1, 1, 0, firstBlockMaxT))
 	db, err := open(dir, logger, nil, DefaultOptions(), []int64{10000})
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	rangeToTriggerCompaction := db.compactor.(*LeveledCompactor).ranges[0]/2*3 + 1
 	defer func() {
@@ -1999,21 +2021,21 @@ func TestBlockRanges(t *testing.T) {
 		t.Fatalf("appending a sample with a timestamp covered by a previous block shouldn't be possible")
 	}
 	_, err = app.Add(lbl, firstBlockMaxT+1, rand.Float64())
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 	_, err = app.Add(lbl, firstBlockMaxT+2, rand.Float64())
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 	secondBlockMaxt := firstBlockMaxT + rangeToTriggerCompaction
 	_, err = app.Add(lbl, secondBlockMaxt, rand.Float64()) // Add samples to trigger a new compaction
 
-	testutil.Ok(t, err)
-	testutil.Ok(t, app.Commit())
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
 	for x := 0; x < 100; x++ {
 		if len(db.Blocks()) == 2 {
 			break
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	testutil.Equals(t, 2, len(db.Blocks()), "no new block created after the set timeout")
+	require.Equal(t, 2, len(db.Blocks()), "no new block created after the set timeout")
 
 	if db.Blocks()[0].Meta().MaxTime > db.Blocks()[1].Meta().MinTime {
 		t.Fatalf("new block overlaps  old:%v,new:%v", db.Blocks()[0].Meta(), db.Blocks()[1].Meta())
@@ -2024,30 +2046,30 @@ func TestBlockRanges(t *testing.T) {
 	app = db.Appender(ctx)
 	db.DisableCompactions()
 	_, err = app.Add(lbl, secondBlockMaxt+1, rand.Float64())
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 	_, err = app.Add(lbl, secondBlockMaxt+2, rand.Float64())
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 	_, err = app.Add(lbl, secondBlockMaxt+3, rand.Float64())
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 	_, err = app.Add(lbl, secondBlockMaxt+4, rand.Float64())
-	testutil.Ok(t, err)
-	testutil.Ok(t, app.Commit())
-	testutil.Ok(t, db.Close())
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	require.NoError(t, db.Close())
 
 	thirdBlockMaxt := secondBlockMaxt + 2
 	createBlock(t, dir, genSeries(1, 1, secondBlockMaxt+1, thirdBlockMaxt))
 
 	db, err = open(dir, logger, nil, DefaultOptions(), []int64{10000})
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	defer db.Close()
-	testutil.Equals(t, 3, len(db.Blocks()), "db doesn't include expected number of blocks")
-	testutil.Equals(t, db.Blocks()[2].Meta().MaxTime, thirdBlockMaxt, "unexpected maxt of the last block")
+	require.Equal(t, 3, len(db.Blocks()), "db doesn't include expected number of blocks")
+	require.Equal(t, db.Blocks()[2].Meta().MaxTime, thirdBlockMaxt, "unexpected maxt of the last block")
 
 	app = db.Appender(ctx)
 	_, err = app.Add(lbl, thirdBlockMaxt+rangeToTriggerCompaction, rand.Float64()) // Trigger a compaction
-	testutil.Ok(t, err)
-	testutil.Ok(t, app.Commit())
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
 	for x := 0; x < 100; x++ {
 		if len(db.Blocks()) == 4 {
 			break
@@ -2055,7 +2077,7 @@ func TestBlockRanges(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	testutil.Equals(t, 4, len(db.Blocks()), "no new block created after the set timeout")
+	require.Equal(t, 4, len(db.Blocks()), "no new block created after the set timeout")
 
 	if db.Blocks()[2].Meta().MaxTime > db.Blocks()[3].Meta().MinTime {
 		t.Fatalf("new block overlaps  old:%v,new:%v", db.Blocks()[2].Meta(), db.Blocks()[3].Meta())
@@ -2079,10 +2101,10 @@ func TestDBReadOnly(t *testing.T) {
 	// Bootstrap the db.
 	{
 		dbDir, err = ioutil.TempDir("", "test")
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 
 		defer func() {
-			testutil.Ok(t, os.RemoveAll(dbDir))
+			require.NoError(t, os.RemoveAll(dbDir))
 		}()
 
 		dbBlocks := []*BlockMeta{
@@ -2098,74 +2120,74 @@ func TestDBReadOnly(t *testing.T) {
 
 		// Add head to test DBReadOnly WAL reading capabilities.
 		w, err := wal.New(logger, nil, filepath.Join(dbDir, "wal"), true)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 		h := createHead(t, w, genSeries(1, 1, 16, 18), dbDir)
-		testutil.Ok(t, h.Close())
+		require.NoError(t, h.Close())
 	}
 
 	// Open a normal db to use for a comparison.
 	{
 		dbWritable, err := Open(dbDir, logger, nil, nil)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 		dbWritable.DisableCompactions()
 
 		dbSizeBeforeAppend, err := fileutil.DirSize(dbWritable.Dir())
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 		app := dbWritable.Appender(context.Background())
 		_, err = app.Add(labels.FromStrings("foo", "bar"), dbWritable.Head().MaxTime()+1, 0)
-		testutil.Ok(t, err)
-		testutil.Ok(t, app.Commit())
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
 
 		expBlocks = dbWritable.Blocks()
 		expDbSize, err := fileutil.DirSize(dbWritable.Dir())
-		testutil.Ok(t, err)
-		testutil.Assert(t, expDbSize > dbSizeBeforeAppend, "db size didn't increase after an append")
+		require.NoError(t, err)
+		require.Greater(t, expDbSize, dbSizeBeforeAppend, "db size didn't increase after an append")
 
 		q, err := dbWritable.Querier(context.TODO(), math.MinInt64, math.MaxInt64)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 		expSeries = query(t, q, matchAll)
 		cq, err := dbWritable.ChunkQuerier(context.TODO(), math.MinInt64, math.MaxInt64)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 		expChunks = queryChunks(t, cq, matchAll)
 
-		testutil.Ok(t, dbWritable.Close()) // Close here to allow getting the dir hash for windows.
+		require.NoError(t, dbWritable.Close()) // Close here to allow getting the dir hash for windows.
 		expDBHash = testutil.DirHash(t, dbWritable.Dir())
 	}
 
 	// Open a read only db and ensure that the API returns the same result as the normal DB.
 	dbReadOnly, err := OpenDBReadOnly(dbDir, logger)
-	testutil.Ok(t, err)
-	defer func() { testutil.Ok(t, dbReadOnly.Close()) }()
+	require.NoError(t, err)
+	defer func() { require.NoError(t, dbReadOnly.Close()) }()
 
 	t.Run("blocks", func(t *testing.T) {
 		blocks, err := dbReadOnly.Blocks()
-		testutil.Ok(t, err)
-		testutil.Equals(t, len(expBlocks), len(blocks))
+		require.NoError(t, err)
+		require.Equal(t, len(expBlocks), len(blocks))
 		for i, expBlock := range expBlocks {
-			testutil.Equals(t, expBlock.Meta(), blocks[i].Meta(), "block meta mismatch")
+			require.Equal(t, expBlock.Meta(), blocks[i].Meta(), "block meta mismatch")
 		}
 	})
 
 	t.Run("querier", func(t *testing.T) {
 		// Open a read only db and ensure that the API returns the same result as the normal DB.
 		q, err := dbReadOnly.Querier(context.TODO(), math.MinInt64, math.MaxInt64)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 		readOnlySeries := query(t, q, matchAll)
 		readOnlyDBHash := testutil.DirHash(t, dbDir)
 
-		testutil.Equals(t, len(expSeries), len(readOnlySeries), "total series mismatch")
-		testutil.Equals(t, expSeries, readOnlySeries, "series mismatch")
-		testutil.Equals(t, expDBHash, readOnlyDBHash, "after all read operations the db hash should remain the same")
+		require.Equal(t, len(expSeries), len(readOnlySeries), "total series mismatch")
+		require.Equal(t, expSeries, readOnlySeries, "series mismatch")
+		require.Equal(t, expDBHash, readOnlyDBHash, "after all read operations the db hash should remain the same")
 	})
 	t.Run("chunk querier", func(t *testing.T) {
 		cq, err := dbReadOnly.ChunkQuerier(context.TODO(), math.MinInt64, math.MaxInt64)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 		readOnlySeries := queryChunks(t, cq, matchAll)
 		readOnlyDBHash := testutil.DirHash(t, dbDir)
 
-		testutil.Equals(t, len(expChunks), len(readOnlySeries), "total series mismatch")
-		testutil.Equals(t, expChunks, readOnlySeries, "series chunks mismatch")
-		testutil.Equals(t, expDBHash, readOnlyDBHash, "after all read operations the db hash should remain the same")
+		require.Equal(t, len(expChunks), len(readOnlySeries), "total series mismatch")
+		require.Equal(t, expChunks, readOnlySeries, "series chunks mismatch")
+		require.Equal(t, expDBHash, readOnlyDBHash, "after all read operations the db hash should remain the same")
 	})
 }
 
@@ -2173,19 +2195,19 @@ func TestDBReadOnly(t *testing.T) {
 // all api methods return an ErrClosed.
 func TestDBReadOnlyClosing(t *testing.T) {
 	dbDir, err := ioutil.TempDir("", "test")
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	defer func() {
-		testutil.Ok(t, os.RemoveAll(dbDir))
+		require.NoError(t, os.RemoveAll(dbDir))
 	}()
 	db, err := OpenDBReadOnly(dbDir, log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr)))
-	testutil.Ok(t, err)
-	testutil.Ok(t, db.Close())
-	testutil.Equals(t, db.Close(), ErrClosed)
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+	require.Equal(t, db.Close(), ErrClosed)
 	_, err = db.Blocks()
-	testutil.Equals(t, err, ErrClosed)
+	require.Equal(t, err, ErrClosed)
 	_, err = db.Querier(context.TODO(), 0, 1)
-	testutil.Equals(t, err, ErrClosed)
+	require.Equal(t, err, ErrClosed)
 }
 
 func TestDBReadOnly_FlushWAL(t *testing.T) {
@@ -2200,50 +2222,50 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 	// Bootstrap the db.
 	{
 		dbDir, err = ioutil.TempDir("", "test")
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 
 		defer func() {
-			testutil.Ok(t, os.RemoveAll(dbDir))
+			require.NoError(t, os.RemoveAll(dbDir))
 		}()
 
 		// Append data to the WAL.
 		db, err := Open(dbDir, logger, nil, nil)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 		db.DisableCompactions()
 		app := db.Appender(ctx)
 		maxt = 1000
 		for i := 0; i < maxt; i++ {
 			_, err := app.Add(labels.FromStrings(defaultLabelName, "flush"), int64(i), 1.0)
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 		}
-		testutil.Ok(t, app.Commit())
-		defer func() { testutil.Ok(t, db.Close()) }()
+		require.NoError(t, app.Commit())
+		defer func() { require.NoError(t, db.Close()) }()
 	}
 
 	// Flush WAL.
 	db, err := OpenDBReadOnly(dbDir, logger)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	flush, err := ioutil.TempDir("", "flush")
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	defer func() {
-		testutil.Ok(t, os.RemoveAll(flush))
+		require.NoError(t, os.RemoveAll(flush))
 	}()
-	testutil.Ok(t, db.FlushWAL(flush))
-	testutil.Ok(t, db.Close())
+	require.NoError(t, db.FlushWAL(flush))
+	require.NoError(t, db.Close())
 
 	// Reopen the DB from the flushed WAL block.
 	db, err = OpenDBReadOnly(flush, logger)
-	testutil.Ok(t, err)
-	defer func() { testutil.Ok(t, db.Close()) }()
+	require.NoError(t, err)
+	defer func() { require.NoError(t, db.Close()) }()
 	blocks, err := db.Blocks()
-	testutil.Ok(t, err)
-	testutil.Equals(t, len(blocks), 1)
+	require.NoError(t, err)
+	require.Equal(t, len(blocks), 1)
 
 	querier, err := db.Querier(context.TODO(), 0, int64(maxt)-1)
-	testutil.Ok(t, err)
-	defer func() { testutil.Ok(t, querier.Close()) }()
+	require.NoError(t, err)
+	defer func() { require.NoError(t, querier.Close()) }()
 
 	// Sum the values.
 	seriesSet := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, defaultLabelName, "flush"))
@@ -2255,21 +2277,21 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 			_, v := series.At()
 			sum += v
 		}
-		testutil.Ok(t, series.Err())
+		require.NoError(t, series.Err())
 	}
-	testutil.Ok(t, seriesSet.Err())
-	testutil.Equals(t, 0, len(seriesSet.Warnings()))
-	testutil.Equals(t, 1000.0, sum)
+	require.NoError(t, seriesSet.Err())
+	require.Equal(t, 0, len(seriesSet.Warnings()))
+	require.Equal(t, 1000.0, sum)
 }
 
 func TestDBCannotSeePartialCommits(t *testing.T) {
 	tmpdir, _ := ioutil.TempDir("", "test")
 	defer func() {
-		testutil.Ok(t, os.RemoveAll(tmpdir))
+		require.NoError(t, os.RemoveAll(tmpdir))
 	}()
 
 	db, err := Open(tmpdir, nil, nil, nil)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 	defer db.Close()
 
 	stop := make(chan struct{})
@@ -2284,10 +2306,10 @@ func TestDBCannotSeePartialCommits(t *testing.T) {
 
 			for j := 0; j < 100; j++ {
 				_, err := app.Add(labels.FromStrings("foo", "bar", "a", strconv.Itoa(j)), int64(iter), float64(iter))
-				testutil.Ok(t, err)
+				require.NoError(t, err)
 			}
 			err = app.Commit()
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 
 			if iter == 0 {
 				close(firstInsert)
@@ -2310,13 +2332,13 @@ func TestDBCannotSeePartialCommits(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		func() {
 			querier, err := db.Querier(context.Background(), 0, 1000000)
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 			defer querier.Close()
 
 			ss := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 			_, seriesSet, ws, err := expandSeriesSet(ss)
-			testutil.Ok(t, err)
-			testutil.Equals(t, 0, len(ws))
+			require.NoError(t, err)
+			require.Equal(t, 0, len(ws))
 
 			values := map[float64]struct{}{}
 			for _, series := range seriesSet {
@@ -2329,73 +2351,73 @@ func TestDBCannotSeePartialCommits(t *testing.T) {
 	}
 	stop <- struct{}{}
 
-	testutil.Equals(t, 0, inconsistencies, "Some queries saw inconsistent results.")
+	require.Equal(t, 0, inconsistencies, "Some queries saw inconsistent results.")
 }
 
 func TestDBQueryDoesntSeeAppendsAfterCreation(t *testing.T) {
 	tmpdir, _ := ioutil.TempDir("", "test")
 	defer func() {
-		testutil.Ok(t, os.RemoveAll(tmpdir))
+		require.NoError(t, os.RemoveAll(tmpdir))
 	}()
 
 	db, err := Open(tmpdir, nil, nil, nil)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 	defer db.Close()
 
 	querierBeforeAdd, err := db.Querier(context.Background(), 0, 1000000)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 	defer querierBeforeAdd.Close()
 
 	ctx := context.Background()
 	app := db.Appender(ctx)
 	_, err = app.Add(labels.FromStrings("foo", "bar"), 0, 0)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	querierAfterAddButBeforeCommit, err := db.Querier(context.Background(), 0, 1000000)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 	defer querierAfterAddButBeforeCommit.Close()
 
 	// None of the queriers should return anything after the Add but before the commit.
 	ss := querierBeforeAdd.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 	_, seriesSet, ws, err := expandSeriesSet(ss)
-	testutil.Ok(t, err)
-	testutil.Equals(t, 0, len(ws))
-	testutil.Equals(t, map[string][]sample{}, seriesSet)
+	require.NoError(t, err)
+	require.Equal(t, 0, len(ws))
+	require.Equal(t, map[string][]sample{}, seriesSet)
 
 	ss = querierAfterAddButBeforeCommit.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 	_, seriesSet, ws, err = expandSeriesSet(ss)
-	testutil.Ok(t, err)
-	testutil.Equals(t, 0, len(ws))
-	testutil.Equals(t, map[string][]sample{}, seriesSet)
+	require.NoError(t, err)
+	require.Equal(t, 0, len(ws))
+	require.Equal(t, map[string][]sample{}, seriesSet)
 
 	// This commit is after the queriers are created, so should not be returned.
 	err = app.Commit()
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	// Nothing returned for querier created before the Add.
 	ss = querierBeforeAdd.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 	_, seriesSet, ws, err = expandSeriesSet(ss)
-	testutil.Ok(t, err)
-	testutil.Equals(t, 0, len(ws))
-	testutil.Equals(t, map[string][]sample{}, seriesSet)
+	require.NoError(t, err)
+	require.Equal(t, 0, len(ws))
+	require.Equal(t, map[string][]sample{}, seriesSet)
 
 	// Series exists but has no samples for querier created after Add.
 	ss = querierAfterAddButBeforeCommit.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 	_, seriesSet, ws, err = expandSeriesSet(ss)
-	testutil.Ok(t, err)
-	testutil.Equals(t, 0, len(ws))
-	testutil.Equals(t, map[string][]sample{`{foo="bar"}`: {}}, seriesSet)
+	require.NoError(t, err)
+	require.Equal(t, 0, len(ws))
+	require.Equal(t, map[string][]sample{`{foo="bar"}`: {}}, seriesSet)
 
 	querierAfterCommit, err := db.Querier(context.Background(), 0, 1000000)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 	defer querierAfterCommit.Close()
 
 	// Samples are returned for querier created after Commit.
 	ss = querierAfterCommit.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 	_, seriesSet, ws, err = expandSeriesSet(ss)
-	testutil.Ok(t, err)
-	testutil.Equals(t, 0, len(ws))
-	testutil.Equals(t, map[string][]sample{`{foo="bar"}`: {{t: 0, v: 0}}}, seriesSet)
+	require.NoError(t, err)
+	require.Equal(t, 0, len(ws))
+	require.Equal(t, map[string][]sample{`{foo="bar"}`: {{t: 0, v: 0}}}, seriesSet)
 }
 
 // TestChunkWriter_ReadAfterWrite ensures that chunk segment are cut at the set segment size and
@@ -2525,20 +2547,20 @@ func TestChunkWriter_ReadAfterWrite(t *testing.T) {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 
 			tempDir, err := ioutil.TempDir("", "test_chunk_writer")
-			testutil.Ok(t, err)
-			defer func() { testutil.Ok(t, os.RemoveAll(tempDir)) }()
+			require.NoError(t, err)
+			defer func() { require.NoError(t, os.RemoveAll(tempDir)) }()
 
 			chunkw, err := chunks.NewWriterWithSegSize(tempDir, chunks.SegmentHeaderSize+int64(test.segmentSize))
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 
 			for _, chks := range test.chks {
-				testutil.Ok(t, chunkw.WriteChunks(chks...))
+				require.NoError(t, chunkw.WriteChunks(chks...))
 			}
-			testutil.Ok(t, chunkw.Close())
+			require.NoError(t, chunkw.Close())
 
 			files, err := ioutil.ReadDir(tempDir)
-			testutil.Ok(t, err)
-			testutil.Equals(t, test.expSegmentsCount, len(files), "expected segments count mismatch")
+			require.NoError(t, err)
+			require.Equal(t, test.expSegmentsCount, len(files), "expected segments count mismatch")
 
 			// Verify that all data is written to the segments.
 			sizeExp := 0
@@ -2558,22 +2580,22 @@ func TestChunkWriter_ReadAfterWrite(t *testing.T) {
 			for i, f := range files {
 				size := int(f.Size())
 				// Verify that the segment is the same or smaller than the expected size.
-				testutil.Assert(t, chunks.SegmentHeaderSize+test.expSegmentSizes[i] >= size, "Segment:%v should NOT be bigger than:%v actual:%v", i, chunks.SegmentHeaderSize+test.expSegmentSizes[i], size)
+				require.GreaterOrEqual(t, chunks.SegmentHeaderSize+test.expSegmentSizes[i], size, "Segment:%v should NOT be bigger than:%v actual:%v", i, chunks.SegmentHeaderSize+test.expSegmentSizes[i], size)
 
 				sizeAct += size
 			}
-			testutil.Equals(t, sizeExp, sizeAct)
+			require.Equal(t, sizeExp, sizeAct)
 
 			// Check the content of the chunks.
 			r, err := chunks.NewDirReader(tempDir, nil)
-			testutil.Ok(t, err)
-			defer func() { testutil.Ok(t, r.Close()) }()
+			require.NoError(t, err)
+			defer func() { require.NoError(t, r.Close()) }()
 
 			for _, chks := range test.chks {
 				for _, chkExp := range chks {
 					chkAct, err := r.Chunk(chkExp.Ref)
-					testutil.Ok(t, err)
-					testutil.Equals(t, chkExp.Chunk.Bytes(), chkAct.Bytes())
+					require.NoError(t, err)
+					require.Equal(t, chkExp.Chunk.Bytes(), chkAct.Bytes())
 				}
 			}
 		})
@@ -2598,7 +2620,7 @@ func TestRangeForTimestamp(t *testing.T) {
 	}
 	for _, tt := range tests {
 		got := rangeForTimestamp(tt.args.t, tt.args.width)
-		testutil.Equals(t, tt.expected, got)
+		require.Equal(t, tt.expected, got)
 	}
 }
 
@@ -2614,17 +2636,17 @@ func TestChunkReader_ConcurrentReads(t *testing.T) {
 	}
 
 	tempDir, err := ioutil.TempDir("", "test_chunk_writer")
-	testutil.Ok(t, err)
-	defer func() { testutil.Ok(t, os.RemoveAll(tempDir)) }()
+	require.NoError(t, err)
+	defer func() { require.NoError(t, os.RemoveAll(tempDir)) }()
 
 	chunkw, err := chunks.NewWriter(tempDir)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
-	testutil.Ok(t, chunkw.WriteChunks(chks...))
-	testutil.Ok(t, chunkw.Close())
+	require.NoError(t, chunkw.WriteChunks(chks...))
+	require.NoError(t, chunkw.Close())
 
 	r, err := chunks.NewDirReader(tempDir, nil)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	var wg sync.WaitGroup
 	for _, chk := range chks {
@@ -2634,13 +2656,13 @@ func TestChunkReader_ConcurrentReads(t *testing.T) {
 				defer wg.Done()
 
 				chkAct, err := r.Chunk(chunk.Ref)
-				testutil.Ok(t, err)
-				testutil.Equals(t, chunk.Chunk.Bytes(), chkAct.Bytes())
+				require.NoError(t, err)
+				require.Equal(t, chunk.Chunk.Bytes(), chkAct.Bytes())
 			}(chk)
 		}
 		wg.Wait()
 	}
-	testutil.Ok(t, r.Close())
+	require.NoError(t, r.Close())
 }
 
 // TestCompactHead ensures that the head compaction
@@ -2653,8 +2675,8 @@ func TestChunkReader_ConcurrentReads(t *testing.T) {
 // * queries the db to ensure the samples are present from the compacted head.
 func TestCompactHead(t *testing.T) {
 	dbDir, err := ioutil.TempDir("", "testFlush")
-	testutil.Ok(t, err)
-	defer func() { testutil.Ok(t, os.RemoveAll(dbDir)) }()
+	require.NoError(t, err)
+	defer func() { require.NoError(t, os.RemoveAll(dbDir)) }()
 
 	// Open a DB and append data to the WAL.
 	tsdbCfg := &Options{
@@ -2666,7 +2688,7 @@ func TestCompactHead(t *testing.T) {
 	}
 
 	db, err := Open(dbDir, log.NewNopLogger(), prometheus.NewRegistry(), tsdbCfg)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 	ctx := context.Background()
 	app := db.Appender(ctx)
 	var expSamples []sample
@@ -2674,26 +2696,26 @@ func TestCompactHead(t *testing.T) {
 	for i := 0; i < maxt; i++ {
 		val := rand.Float64()
 		_, err := app.Add(labels.FromStrings("a", "b"), int64(i), val)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 		expSamples = append(expSamples, sample{int64(i), val})
 	}
-	testutil.Ok(t, app.Commit())
+	require.NoError(t, app.Commit())
 
 	// Compact the Head to create a new block.
-	testutil.Ok(t, db.CompactHead(NewRangeHead(db.Head(), 0, int64(maxt)-1)))
-	testutil.Ok(t, db.Close())
+	require.NoError(t, db.CompactHead(NewRangeHead(db.Head(), 0, int64(maxt)-1)))
+	require.NoError(t, db.Close())
 
 	// Delete everything but the new block and
 	// reopen the db to query it to ensure it includes the head data.
-	testutil.Ok(t, deleteNonBlocks(db.Dir()))
+	require.NoError(t, deleteNonBlocks(db.Dir()))
 	db, err = Open(dbDir, log.NewNopLogger(), prometheus.NewRegistry(), tsdbCfg)
-	testutil.Ok(t, err)
-	testutil.Equals(t, 1, len(db.Blocks()))
-	testutil.Equals(t, int64(maxt), db.Head().MinTime())
-	defer func() { testutil.Ok(t, db.Close()) }()
+	require.NoError(t, err)
+	require.Equal(t, 1, len(db.Blocks()))
+	require.Equal(t, int64(maxt), db.Head().MinTime())
+	defer func() { require.NoError(t, db.Close()) }()
 	querier, err := db.Querier(context.Background(), 0, int64(maxt)-1)
-	testutil.Ok(t, err)
-	defer func() { testutil.Ok(t, querier.Close()) }()
+	require.NoError(t, err)
+	defer func() { require.NoError(t, querier.Close()) }()
 
 	seriesSet := querier.Select(false, nil, &labels.Matcher{Type: labels.MatchEqual, Name: "a", Value: "b"})
 	var actSamples []sample
@@ -2704,10 +2726,10 @@ func TestCompactHead(t *testing.T) {
 			time, val := series.At()
 			actSamples = append(actSamples, sample{int64(time), val})
 		}
-		testutil.Ok(t, series.Err())
+		require.NoError(t, series.Err())
 	}
-	testutil.Equals(t, expSamples, actSamples)
-	testutil.Ok(t, seriesSet.Err())
+	require.Equal(t, expSamples, actSamples)
+	require.NoError(t, seriesSet.Err())
 }
 
 func deleteNonBlocks(dbDir string) error {
@@ -2736,9 +2758,9 @@ func deleteNonBlocks(dbDir string) error {
 
 func TestOpen_VariousBlockStates(t *testing.T) {
 	tmpDir, err := ioutil.TempDir("", "test")
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 	t.Cleanup(func() {
-		testutil.Ok(t, os.RemoveAll(tmpDir))
+		require.NoError(t, os.RemoveAll(tmpDir))
 	})
 
 	var (
@@ -2759,29 +2781,29 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 		expectedLoadedDirs[outDir] = struct{}{}
 
 		// Touch chunks dir in block.
-		testutil.Ok(t, os.MkdirAll(filepath.Join(dbDir, "chunks"), 0777))
+		require.NoError(t, os.MkdirAll(filepath.Join(dbDir, "chunks"), 0777))
 		defer func() {
-			testutil.Ok(t, os.RemoveAll(filepath.Join(dbDir, "chunks")))
+			require.NoError(t, os.RemoveAll(filepath.Join(dbDir, "chunks")))
 		}()
-		testutil.Ok(t, os.Mkdir(outDir, os.ModePerm))
-		testutil.Ok(t, fileutil.CopyDirs(dbDir, outDir))
+		require.NoError(t, os.Mkdir(outDir, os.ModePerm))
+		require.NoError(t, fileutil.CopyDirs(dbDir, outDir))
 	}
 	{
 		// Missing meta.json; should be ignored and only logged.
 		// TODO(bwplotka): Probably add metric.
 		dir := createBlock(t, tmpDir, genSeries(10, 2, 20, 30))
 		expectedIgnoredDirs[dir] = struct{}{}
-		testutil.Ok(t, os.Remove(filepath.Join(dir, metaFilename)))
+		require.NoError(t, os.Remove(filepath.Join(dir, metaFilename)))
 	}
 	{
 		// Tmp blocks during creation & deletion; those should be removed on start.
 		dir := createBlock(t, tmpDir, genSeries(10, 2, 30, 40))
-		testutil.Ok(t, fileutil.Replace(dir, dir+tmpForCreationBlockDirSuffix))
+		require.NoError(t, fileutil.Replace(dir, dir+tmpForCreationBlockDirSuffix))
 		expectedRemovedDirs[dir+tmpForCreationBlockDirSuffix] = struct{}{}
 
 		// Tmp blocks during creation & deletion; those should be removed on start.
 		dir = createBlock(t, tmpDir, genSeries(10, 2, 40, 50))
-		testutil.Ok(t, fileutil.Replace(dir, dir+tmpForDeletionBlockDirSuffix))
+		require.NoError(t, fileutil.Replace(dir, dir+tmpForDeletionBlockDirSuffix))
 		expectedRemovedDirs[dir+tmpForDeletionBlockDirSuffix] = struct{}{}
 	}
 	{
@@ -2790,7 +2812,7 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 		expectedLoadedDirs[dir] = struct{}{}
 
 		m, _, err := readMetaFile(dir)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 
 		compacted := createBlock(t, tmpDir, genSeries(10, 2, 50, 55))
 		expectedRemovedDirs[compacted] = struct{}{}
@@ -2805,13 +2827,13 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 		m.Compaction.Parents = append(m.Compaction.Parents, BlockDesc{ULID: ulid.MustParse(filepath.Base(compacted))})
 		m.Compaction.Parents = append(m.Compaction.Parents, BlockDesc{ULID: ulid.MustParse(filepath.Base(compacted))})
 		_, err = writeMetaFile(log.NewLogfmtLogger(os.Stderr), dir, m)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 	}
 
 	opts := DefaultOptions()
 	opts.RetentionDuration = 0
 	db, err := Open(tmpDir, log.NewLogfmtLogger(os.Stderr), nil, opts)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	loadedBlocks := db.Blocks()
 
@@ -2822,11 +2844,11 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 		}
 		loaded++
 	}
-	testutil.Equals(t, len(expectedLoadedDirs), loaded)
-	testutil.Ok(t, db.Close())
+	require.Equal(t, len(expectedLoadedDirs), loaded)
+	require.NoError(t, db.Close())
 
 	files, err := ioutil.ReadDir(tmpDir)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	var ignored int
 	for _, f := range files {
@@ -2837,5 +2859,145 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 			ignored++
 		}
 	}
-	testutil.Equals(t, len(expectedIgnoredDirs), ignored)
+	require.Equal(t, len(expectedIgnoredDirs), ignored)
+}
+
+func TestOneCheckpointPerCompactCall(t *testing.T) {
+	blockRange := int64(1000)
+	tsdbCfg := &Options{
+		RetentionDuration: blockRange * 1000,
+		NoLockfile:        true,
+		MinBlockDuration:  blockRange,
+		MaxBlockDuration:  blockRange,
+	}
+
+	tmpDir, err := ioutil.TempDir("", "test")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, os.RemoveAll(tmpDir))
+	})
+
+	db, err := Open(tmpDir, log.NewNopLogger(), prometheus.NewRegistry(), tsdbCfg)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, db.Close())
+	})
+	db.DisableCompactions()
+
+	// Case 1: Lot's of uncompacted data in Head.
+
+	lbls := labels.Labels{labels.Label{Name: "foo_d", Value: "choco_bar"}}
+	// Append samples spanning 59 block ranges.
+	app := db.Appender(context.Background())
+	for i := int64(0); i < 60; i++ {
+		_, err := app.Add(lbls, blockRange*i, rand.Float64())
+		require.NoError(t, err)
+		_, err = app.Add(lbls, (blockRange*i)+blockRange/2, rand.Float64())
+		require.NoError(t, err)
+		// Rotate the WAL file so that there is >3 files for checkpoint to happen.
+		require.NoError(t, db.head.wal.NextSegment())
+	}
+	require.NoError(t, app.Commit())
+
+	// Check the existing WAL files.
+	first, last, err := wal.Segments(db.head.wal.Dir())
+	require.NoError(t, err)
+	require.Equal(t, 0, first)
+	require.Equal(t, 60, last)
+
+	require.Equal(t, 0.0, prom_testutil.ToFloat64(db.head.metrics.checkpointCreationTotal))
+	require.NoError(t, db.Compact())
+	require.Equal(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.checkpointCreationTotal))
+
+	// As the data spans for 59 blocks, 58 go to disk and 1 remains in Head.
+	require.Equal(t, 58, len(db.Blocks()))
+	// Though WAL was truncated only once, head should be truncated after each compaction.
+	require.Equal(t, 58.0, prom_testutil.ToFloat64(db.head.metrics.headTruncateTotal))
+
+	// The compaction should have only truncated first 2/3 of WAL (while also rotating the files).
+	first, last, err = wal.Segments(db.head.wal.Dir())
+	require.NoError(t, err)
+	require.Equal(t, 40, first)
+	require.Equal(t, 61, last)
+
+	// The first checkpoint would be for first 2/3rd of WAL, hence till 39.
+	// That should be the last checkpoint.
+	_, cno, err := wal.LastCheckpoint(db.head.wal.Dir())
+	require.NoError(t, err)
+	require.Equal(t, 39, cno)
+
+	// Case 2: Old blocks on disk.
+	// The above blocks will act as old blocks.
+
+	// Creating a block to cover the data in the Head so that
+	// Head will skip the data during replay and start fresh.
+	blocks := db.Blocks()
+	newBlockMint := blocks[len(blocks)-1].Meta().MaxTime
+	newBlockMaxt := db.Head().MaxTime() + 1
+	require.NoError(t, db.Close())
+
+	createBlock(t, db.dir, genSeries(1, 1, newBlockMint, newBlockMaxt))
+
+	db, err = Open(db.dir, log.NewNopLogger(), prometheus.NewRegistry(), tsdbCfg)
+	require.NoError(t, err)
+	db.DisableCompactions()
+
+	// 1 block more.
+	require.Equal(t, 59, len(db.Blocks()))
+	// No series in Head because of this new block.
+	require.Equal(t, 0, int(db.head.NumSeries()))
+
+	// Adding sample way into the future.
+	app = db.Appender(context.Background())
+	_, err = app.Add(lbls, blockRange*120, rand.Float64())
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// The mint of head is the last block maxt, that means the gap between mint and maxt
+	// of Head is too large. This will trigger many compactions.
+	require.Equal(t, newBlockMaxt, db.head.MinTime())
+
+	// Another WAL file was rotated.
+	first, last, err = wal.Segments(db.head.wal.Dir())
+	require.NoError(t, err)
+	require.Equal(t, 40, first)
+	require.Equal(t, 62, last)
+
+	require.Equal(t, 0.0, prom_testutil.ToFloat64(db.head.metrics.checkpointCreationTotal))
+	require.NoError(t, db.Compact())
+	require.Equal(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.checkpointCreationTotal))
+
+	// No new blocks should be created as there was not data in between the new samples and the blocks.
+	require.Equal(t, 59, len(db.Blocks()))
+
+	// The compaction should have only truncated first 2/3 of WAL (while also rotating the files).
+	first, last, err = wal.Segments(db.head.wal.Dir())
+	require.NoError(t, err)
+	require.Equal(t, 55, first)
+	require.Equal(t, 63, last)
+
+	// The first checkpoint would be for first 2/3rd of WAL, hence till 54.
+	// That should be the last checkpoint.
+	_, cno, err = wal.LastCheckpoint(db.head.wal.Dir())
+	require.NoError(t, err)
+	require.Equal(t, 54, cno)
+}
+
+func TestNoPanicOnTSDBOpenError(t *testing.T) {
+	tmpdir, err := ioutil.TempDir("", "test")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, os.RemoveAll(tmpdir))
+	})
+
+	absdir, err := filepath.Abs(tmpdir)
+	require.NoError(t, err)
+	// Taking the file lock will cause TSDB startup error.
+	lockf, _, err := fileutil.Flock(filepath.Join(absdir, "lock"))
+	require.NoError(t, err)
+
+	_, err = Open(tmpdir, nil, nil, DefaultOptions())
+	require.Error(t, err)
+
+	require.NoError(t, lockf.Release())
 }

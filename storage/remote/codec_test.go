@@ -17,10 +17,11 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestValidateLabelsAndMetricName(t *testing.T) {
@@ -114,10 +115,10 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 		t.Run(test.description, func(t *testing.T) {
 			err := validateLabelsAndMetricName(test.input)
 			if test.expectedErr != "" {
-				testutil.NotOk(t, err)
-				testutil.Equals(t, test.expectedErr, err.Error())
+				require.Error(t, err)
+				require.Equal(t, test.expectedErr, err.Error())
 			} else {
-				testutil.Ok(t, err)
+				require.NoError(t, err)
 			}
 		})
 	}
@@ -135,11 +136,11 @@ func TestConcreteSeriesSet(t *testing.T) {
 	c := &concreteSeriesSet{
 		series: []storage.Series{series1, series2},
 	}
-	testutil.Assert(t, c.Next(), "Expected Next() to be true.")
-	testutil.Equals(t, series1, c.At(), "Unexpected series returned.")
-	testutil.Assert(t, c.Next(), "Expected Next() to be true.")
-	testutil.Equals(t, series2, c.At(), "Unexpected series returned.")
-	testutil.Assert(t, !c.Next(), "Expected Next() to be false.")
+	require.True(t, c.Next(), "Expected Next() to be true.")
+	require.Equal(t, series1, c.At(), "Unexpected series returned.")
+	require.True(t, c.Next(), "Expected Next() to be true.")
+	require.Equal(t, series2, c.At(), "Unexpected series returned.")
+	require.False(t, c.Next(), "Expected Next() to be false.")
 }
 
 func TestConcreteSeriesClonesLabels(t *testing.T) {
@@ -152,13 +153,13 @@ func TestConcreteSeriesClonesLabels(t *testing.T) {
 	}
 
 	gotLabels := cs.Labels()
-	testutil.Equals(t, lbls, gotLabels)
+	require.Equal(t, lbls, gotLabels)
 
 	gotLabels[0].Value = "foo"
 	gotLabels[1].Value = "bar"
 
 	gotLabels = cs.Labels()
-	testutil.Equals(t, lbls, gotLabels)
+	require.Equal(t, lbls, gotLabels)
 }
 
 func TestFromQueryResultWithDuplicates(t *testing.T) {
@@ -182,9 +183,9 @@ func TestFromQueryResultWithDuplicates(t *testing.T) {
 
 	errSeries, isErrSeriesSet := series.(errSeriesSet)
 
-	testutil.Assert(t, isErrSeriesSet, "Expected resulting series to be an errSeriesSet")
+	require.True(t, isErrSeriesSet, "Expected resulting series to be an errSeriesSet")
 	errMessage := errSeries.Err().Error()
-	testutil.Assert(t, errMessage == "duplicate label with name: foo", fmt.Sprintf("Expected error to be from duplicate label, but got: %s", errMessage))
+	require.Equal(t, "duplicate label with name: foo", errMessage, fmt.Sprintf("Expected error to be from duplicate label, but got: %s", errMessage))
 }
 
 func TestNegotiateResponseType(t *testing.T) {
@@ -192,23 +193,23 @@ func TestNegotiateResponseType(t *testing.T) {
 		prompb.ReadRequest_STREAMED_XOR_CHUNKS,
 		prompb.ReadRequest_SAMPLES,
 	})
-	testutil.Ok(t, err)
-	testutil.Equals(t, prompb.ReadRequest_STREAMED_XOR_CHUNKS, r)
+	require.NoError(t, err)
+	require.Equal(t, prompb.ReadRequest_STREAMED_XOR_CHUNKS, r)
 
 	r2, err := NegotiateResponseType([]prompb.ReadRequest_ResponseType{
 		prompb.ReadRequest_SAMPLES,
 		prompb.ReadRequest_STREAMED_XOR_CHUNKS,
 	})
-	testutil.Ok(t, err)
-	testutil.Equals(t, prompb.ReadRequest_SAMPLES, r2)
+	require.NoError(t, err)
+	require.Equal(t, prompb.ReadRequest_SAMPLES, r2)
 
 	r3, err := NegotiateResponseType([]prompb.ReadRequest_ResponseType{})
-	testutil.Ok(t, err)
-	testutil.Equals(t, prompb.ReadRequest_SAMPLES, r3)
+	require.NoError(t, err)
+	require.Equal(t, prompb.ReadRequest_SAMPLES, r3)
 
 	_, err = NegotiateResponseType([]prompb.ReadRequest_ResponseType{20})
-	testutil.NotOk(t, err, "expected error due to not supported requested response types")
-	testutil.Equals(t, "server does not support any of the requested response types: [20]; supported: map[SAMPLES:{} STREAMED_XOR_CHUNKS:{}]", err.Error())
+	require.Error(t, err, "expected error due to not supported requested response types")
+	require.Equal(t, "server does not support any of the requested response types: [20]; supported: map[SAMPLES:{} STREAMED_XOR_CHUNKS:{}]", err.Error())
 }
 
 func TestMergeLabels(t *testing.T) {
@@ -226,6 +227,6 @@ func TestMergeLabels(t *testing.T) {
 			expected:  []prompb.Label{{Name: "aaa", Value: "foo"}, {Name: "bbb", Value: "bar"}, {Name: "ccc", Value: "bar"}, {Name: "ddd", Value: "foo"}},
 		},
 	} {
-		testutil.Equals(t, tc.expected, MergeLabels(tc.primary, tc.secondary))
+		require.Equal(t, tc.expected, MergeLabels(tc.primary, tc.secondary))
 	}
 }

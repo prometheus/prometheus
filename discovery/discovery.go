@@ -18,8 +18,8 @@ import (
 	"reflect"
 
 	"github.com/go-kit/kit/log"
-
 	"github.com/prometheus/common/config"
+
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 

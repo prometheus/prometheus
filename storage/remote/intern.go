@@ -21,10 +21,9 @@ package remote
 import (
 	"sync"
 
-	"go.uber.org/atomic"
-
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.uber.org/atomic"
 )
 
 var noReferenceReleases = promauto.NewCounter(prometheus.CounterOpts{

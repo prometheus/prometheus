@@ -30,6 +30,7 @@ describe('ExpressionInput', () => {
       // Do nothing.
     },
     loading: false,
+    enableMetricAutocomplete: true,
   };
 
   let expressionInput: ReactWrapper;
@@ -174,8 +175,27 @@ describe('ExpressionInput', () => {
       instance.createAutocompleteSection({ closeMenu: spyCloseMenu });
       setTimeout(() => expect(spyCloseMenu).toHaveBeenCalled());
     });
+    it('should not render list if enableMetricAutocomplete is false', () => {
+      const input = mount(
+        <ExpressionInput
+          autocompleteSections={{ title: ['foo', 'bar', 'baz'] }}
+          {...({} as any)}
+          enableMetricAutocomplete={false}
+        />
+      );
+      const instance: any = input.instance();
+      const spyCloseMenu = jest.fn();
+      instance.createAutocompleteSection({ closeMenu: spyCloseMenu });
+      setTimeout(() => expect(spyCloseMenu).toHaveBeenCalled());
+    });
     it('should render autosuggest-dropdown', () => {
-      const input = mount(<ExpressionInput autocompleteSections={{ title: ['foo', 'bar', 'baz'] }} {...({} as any)} />);
+      const input = mount(
+        <ExpressionInput
+          autocompleteSections={{ title: ['foo', 'bar', 'baz'] }}
+          {...({} as any)}
+          enableMetricAutocomplete={true}
+        />
+      );
       const instance: any = input.instance();
       const spyGetMenuProps = jest.fn();
       const sections = instance.createAutocompleteSection({
