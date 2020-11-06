@@ -23,13 +23,11 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
+	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/prometheus/prometheus/tsdb"
 )
-
-// Content type of the latest OpenMetrics Parser.
-const contentTypeLatest = "application/openmetrics-text; version=0.0.0;"
 
 type Parser struct {
 	textparse.Parser
@@ -47,7 +45,7 @@ func (p *Parser) Next() (textparse.Entry, error) {
 	for p.s.Scan() {
 		line := p.s.Bytes()
 		line = append(line, '\n')
-		p.Parser = textparse.New(line, contentTypeLatest)
+		p.Parser = textparse.New(line, string(expfmt.FmtOpenMetrics))
 		if et, err := p.Parser.Next(); err != io.EOF {
 			return et, err
 		}
