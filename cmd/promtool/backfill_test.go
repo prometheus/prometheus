@@ -39,10 +39,10 @@ func (s backfillSample) V() float64 { return s.v }
 
 func createTemporaryOpenmetricsFile(t *testing.T, omFile string, text string) error {
 	f, err := os.Create(omFile)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	_, errW := f.WriteString(text)
-	assert.NoError(t, errW)
-	assert.NoError(t, f.Close())
+	require.NoError(t, errW)
+	require.NoError(t, f.Close())
 	return nil
 }
 
@@ -51,7 +51,7 @@ func createTemporaryOpenmetricsFile(t *testing.T, omFile string, text string) er
 func queryblock(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) map[string][]tsdbutil.Sample {
 	ss := q.Select(false, nil, matchers...)
 	defer func() {
-		assert.NoError(t, q.Close())
+		require.NoError(t, q.Close())
 	}()
 
 	result := map[string][]tsdbutil.Sample{}
@@ -64,7 +64,7 @@ func queryblock(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) ma
 			t, v := it.At()
 			samples = append(samples, backfillSample{t: t, v: v})
 		}
-		assert.NoError(t, it.Err())
+		require.NoError(t, it.Err())
 
 		if len(samples) == 0 {
 			continue
@@ -73,19 +73,19 @@ func queryblock(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) ma
 		name := series.Labels().String()
 		result[name] = samples
 	}
-	assert.NoError(t, ss.Err())
-	assert.Equal(t, 0, len(ss.Warnings()))
+	require.NoError(t, ss.Err())
+	require.Equal(t, 0, len(ss.Warnings()))
 
 	return result
 }
 
 func testBlocks(t *testing.T, blockpath string, mint, maxt int64, expectedSeries map[string][]tsdbutil.Sample) {
 	b, err := tsdb.OpenBlock(nil, blockpath, nil)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	q, err := tsdb.NewBlockQuerier(b, math.MinInt64, math.MaxInt64)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	series := queryblock(t, q, labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
-	assert.Equal(t, expectedSeries, series)
+	require.Equal(t, expectedSeries, series)
 }
 func TestBackfill(t *testing.T) {
 	tests := []struct {
@@ -236,30 +236,30 @@ http_requests_total{code="400"} 3 1395066363000
 	}
 	for testID, test := range tests {
 		omFile := "backfill_test.om"
-		assert.NoError(t, createTemporaryOpenmetricsFile(t, omFile, test.ToParse))
+		require.NoError(t, createTemporaryOpenmetricsFile(t, omFile, test.ToParse))
 		defer os.RemoveAll("backfill_test.om")
 		input, errOpen := os.Open(omFile)
-		assert.NoError(t, errOpen)
+		require.NoError(t, errOpen)
 		outputDir := "./data" + fmt.Sprint(testID)
 		errb := backfill(input, outputDir)
 		defer os.RemoveAll(outputDir)
 		if test.IsOk {
 			_, errReset := input.Seek(0, 0)
-			assert.NoError(t, errReset)
+			require.NoError(t, errReset)
 			p := NewParser(input)
 			maxt, mint, errTs := getMinAndMaxTimestamps(p)
-			assert.NoError(t, errTs)
-			assert.Equal(t, test.Expected.MinTime, mint)
-			assert.Equal(t, test.Expected.MaxTime, maxt)
-			assert.NoError(t, input.Close())
+			require.NoError(t, errTs)
+			require.Equal(t, test.Expected.MinTime, mint)
+			require.Equal(t, test.Expected.MaxTime, maxt)
+			require.NoError(t, input.Close())
 			blocks, _ := ioutil.ReadDir(outputDir)
 			for _, block := range blocks {
 				blockpath := filepath.Join(outputDir, block.Name())
-				assert.NoError(t, os.MkdirAll(path.Join(blockpath, "wal"), 0777))
+				require.NoError(t, os.MkdirAll(path.Join(blockpath, "wal"), 0777))
 				testBlocks(t, blockpath, mint, maxt, test.Expected.Series)
 			}
 		} else {
-			assert.Error(t, errb)
+			require.Error(t, errb)
 		}
 	}
 }
