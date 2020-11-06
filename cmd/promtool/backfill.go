@@ -97,6 +97,12 @@ func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 	mint = offset * (mint / offset)
 	for t := mint; t <= maxt; t = t + offset {
 		w, errw := tsdb.NewBlockWriter(log.NewNopLogger(), outputDir, offset)
+		defer func() error {
+			if errC := w.Close(); errC != nil {
+				return errors.Wrap(errC, "close")
+			}
+			return nil
+		}()
 		if errw != nil {
 			return errors.Wrap(errw, "block writer")
 		}
@@ -138,9 +144,6 @@ func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 		if errF != nil {
 			return errors.Wrap(errF, "flush")
 		}
-		if errC := w.Close(); errC != nil {
-			return errors.Wrap(errC, "close")
-		}
 	}
 	return nil
 }
@@ -152,7 +155,6 @@ func backfill(input *os.File, outputDir string) (err error) {
 		return errors.Wrap(errTs, "error getting min and max timestamp")
 	}
 	if errCb := createBlocks(input, mint, maxt, outputDir); errCb != nil {
-		os.RemoveAll(outputDir)
 		return errors.Wrap(errCb, "block creation")
 	}
 	return nil
