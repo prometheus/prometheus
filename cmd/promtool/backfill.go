@@ -97,12 +97,7 @@ func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 	mint = offset * (mint / offset)
 	for t := mint; t <= maxt; t = t + offset {
 		w, errw := tsdb.NewBlockWriter(log.NewNopLogger(), outputDir, offset)
-		defer func() error {
-			if errC := w.Close(); errC != nil {
-				return errors.Wrap(errC, "close")
-			}
-			return nil
-		}()
+		defer w.Close()
 		if errw != nil {
 			return errors.Wrap(errw, "block writer")
 		}
