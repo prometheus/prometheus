@@ -481,7 +481,7 @@ golang.org/x/lint/golint
 # golang.org/x/mod v0.3.0
 golang.org/x/mod/module
 golang.org/x/mod/semver
-# golang.org/x/net v0.0.0-20201021035429-f5854403a974
+# golang.org/x/net v0.0.0-20201006153459-a7d1128ccaa0
 ## explicit
 golang.org/x/net/bpf
 golang.org/x/net/context
@@ -506,7 +506,7 @@ golang.org/x/oauth2/google
 golang.org/x/oauth2/internal
 golang.org/x/oauth2/jws
 golang.org/x/oauth2/jwt
-# golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9
+# golang.org/x/sync v0.0.0-20200930132711-30421366ff76
 ## explicit
 golang.org/x/sync/errgroup
 # golang.org/x/sys v0.0.0-20201008064518-c1f3e3309c71
