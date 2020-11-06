@@ -45,6 +45,8 @@ func createTemporaryOpenmetricsFile(t *testing.T, omFile string, text string) er
 	return nil
 }
 
+// queryblock runs a matcher query against the querier and fully expands its data.
+// This function is same as query from tsdb/db_test.go If you change either, please make sure to change at both places.
 func queryblock(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) map[string][]tsdbutil.Sample {
 	ss := q.Select(false, nil, matchers...)
 	defer func() {
