@@ -201,7 +201,7 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		Help: "Size of symbol table in memory for loaded blocks",
 	}, func() float64 {
 		db.mtx.RLock()
-		blocks := db.blocks[:]
+		blocks := db.blocks
 		db.mtx.RUnlock()
 		symTblSize := uint64(0)
 		for _, b := range blocks {
@@ -1519,7 +1519,7 @@ func (db *DB) CleanTombstones() (err error) {
 	}()
 
 	db.mtx.RLock()
-	blocks := db.blocks[:]
+	blocks := db.blocks
 	db.mtx.RUnlock()
 
 	for _, b := range blocks {
