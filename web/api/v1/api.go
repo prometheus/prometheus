@@ -487,13 +487,13 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 	}()
 
 	ctx = httputil.ContextFromRequest(ctx, r)
-	var rank RankingFunction = Rank{}
 
 	res := qry.Exec(ctx)
 	if res.Err != nil {
 		return apiFuncResult{nil, returnAPIError(res.Err), res.Warnings, qry.Close}
 	}
 
+	var rank RankingFunction = Rank{}
 	if res.Value.Type() == parser.ValueTypeMatrix {
 		mat, ok := res.Value.(promql.Matrix)
 		if !ok {
