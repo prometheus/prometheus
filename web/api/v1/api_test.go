@@ -229,9 +229,8 @@ func (m rulesRetrieverMock) AlertingRules() []*rules.AlertingRule {
 		log.NewNopLogger(),
 	)
 	var r []*rules.AlertingRule
-	r = append(r, rule1)
-	r = append(r, rule2)
-	return r
+	r = append(r, rule1, rule2)
+    return r
 }
 
 func (m rulesRetrieverMock) RuleGroups() []*rules.Group {

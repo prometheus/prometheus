@@ -704,8 +704,7 @@ func alertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig
 			lbls = append(lbls, labels.Label{Name: string(ln), Value: string(lv)})
 		}
 		// Set configured scheme as the initial scheme label for overwrite.
-		lbls = append(lbls, labels.Label{Name: model.SchemeLabel, Value: cfg.Scheme})
-		lbls = append(lbls, labels.Label{Name: pathLabel, Value: postPath(cfg.PathPrefix, cfg.APIVersion)})
+        lbls = append(lbls, labels.Label{Name: model.SchemeLabel, Value: cfg.Scheme}, labels.Label{Name: pathLabel, Value: postPath(cfg.PathPrefix, cfg.APIVersion)})
 
 		// Combine target labels with target group labels.
 		for ln, lv := range tg.Labels {
