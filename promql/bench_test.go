@@ -39,14 +39,14 @@ func BenchmarkRangeQuery(b *testing.B) {
 
 	metrics := []labels.Labels{}
 	metrics = append(metrics, labels.FromStrings("__name__", "a_one"), labels.FromStrings("__name__", "b_one"))
-    for j := 0; j < 10; j++ {
+	for j := 0; j < 10; j++ {
 		metrics = append(metrics, labels.FromStrings("__name__", "h_one", "le", strconv.Itoa(j)))
 	}
 	metrics = append(metrics, labels.FromStrings("__name__", "h_one", "le", "+Inf"))
 
 	for i := 0; i < 10; i++ {
 		metrics = append(metrics, labels.FromStrings("__name__", "a_ten", "l", strconv.Itoa(i)), labels.FromStrings("__name__", "b_ten", "l", strconv.Itoa(i)))
-        for j := 0; j < 10; j++ {
+		for j := 0; j < 10; j++ {
 			metrics = append(metrics, labels.FromStrings("__name__", "h_ten", "l", strconv.Itoa(i), "le", strconv.Itoa(j)))
 		}
 		metrics = append(metrics, labels.FromStrings("__name__", "h_ten", "l", strconv.Itoa(i), "le", "+Inf"))
@@ -54,7 +54,7 @@ func BenchmarkRangeQuery(b *testing.B) {
 
 	for i := 0; i < 100; i++ {
 		metrics = append(metrics, labels.FromStrings("__name__", "a_hundred", "l", strconv.Itoa(i)), labels.FromStrings("__name__", "b_hundred", "l", strconv.Itoa(i)))
-        for j := 0; j < 10; j++ {
+		for j := 0; j < 10; j++ {
 			metrics = append(metrics, labels.FromStrings("__name__", "h_hundred", "l", strconv.Itoa(i), "le", strconv.Itoa(j)))
 		}
 		metrics = append(metrics, labels.FromStrings("__name__", "h_hundred", "l", strconv.Itoa(i), "le", "+Inf"))
@@ -176,7 +176,7 @@ func BenchmarkRangeQuery(b *testing.B) {
 		if !strings.Contains(c.expr, "X") {
 			tmp = append(tmp, c)
 		} else {
-            tmp = append(tmp, benchCase{expr: strings.Replace(c.expr, "X", "one", -1), steps: c.steps}, benchCase{expr: strings.Replace(c.expr, "X", "ten", -1), steps: c.steps}, benchCase{expr: strings.Replace(c.expr, "X", "hundred", -1), steps: c.steps})
+			tmp = append(tmp, benchCase{expr: strings.Replace(c.expr, "X", "one", -1), steps: c.steps}, benchCase{expr: strings.Replace(c.expr, "X", "ten", -1), steps: c.steps}, benchCase{expr: strings.Replace(c.expr, "X", "hundred", -1), steps: c.steps})
 		}
 	}
 	cases = tmp
@@ -187,7 +187,7 @@ func BenchmarkRangeQuery(b *testing.B) {
 		if c.steps != 0 {
 			tmp = append(tmp, c)
 		} else {
-            tmp = append(tmp, benchCase{expr: c.expr, steps: 1}, benchCase{expr: c.expr, steps: 10}, benchCase{expr: c.expr, steps: 100}, benchCase{expr: c.expr, steps: 1000})
+			tmp = append(tmp, benchCase{expr: c.expr, steps: 1}, benchCase{expr: c.expr, steps: 10}, benchCase{expr: c.expr, steps: 100}, benchCase{expr: c.expr, steps: 1000})
 		}
 	}
 	cases = tmp

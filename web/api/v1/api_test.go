@@ -230,7 +230,7 @@ func (m rulesRetrieverMock) AlertingRules() []*rules.AlertingRule {
 	)
 	var r []*rules.AlertingRule
 	r = append(r, rule1, rule2)
-    return r
+	return r
 }
 
 func (m rulesRetrieverMock) RuleGroups() []*rules.Group {

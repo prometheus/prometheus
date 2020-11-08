@@ -1512,7 +1512,7 @@ func TestOverlappingBlocksDetectsAllOverlaps(t *testing.T) {
 	// Additional case.
 	var nc1 []BlockMeta
 	nc1 = append(nc1, BlockMeta{MinTime: 1, MaxTime: 5}, BlockMeta{MinTime: 2, MaxTime: 3}, BlockMeta{MinTime: 2, MaxTime: 3}, BlockMeta{MinTime: 2, MaxTime: 3}, BlockMeta{MinTime: 2, MaxTime: 3}, BlockMeta{MinTime: 2, MaxTime: 6}, BlockMeta{MinTime: 3, MaxTime: 5}, BlockMeta{MinTime: 5, MaxTime: 7}, BlockMeta{MinTime: 7, MaxTime: 10}, BlockMeta{MinTime: 8, MaxTime: 9})
-    require.Equal(t, Overlaps{
+	require.Equal(t, Overlaps{
 		{Min: 2, Max: 3}: {nc1[0], nc1[1], nc1[2], nc1[3], nc1[4], nc1[5]}, // 1-5, 2-3, 2-3, 2-3, 2-3, 2,6
 		{Min: 3, Max: 5}: {nc1[0], nc1[5], nc1[6]},                         // 1-5, 2-6, 3-5
 		{Min: 5, Max: 6}: {nc1[5], nc1[7]},                                 // 2-6, 5-7

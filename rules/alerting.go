@@ -412,7 +412,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 		}
 
 		if r.restored {
-            vec = append(vec, r.sample(a, ts), r.forStateSample(a, ts, float64(a.ActiveAt.Unix())))
+			vec = append(vec, r.sample(a, ts), r.forStateSample(a, ts, float64(a.ActiveAt.Unix())))
 		}
 	}
 
