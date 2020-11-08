@@ -583,13 +583,6 @@ role: <string>
 # Services: https://docs.docker.com/engine/api/v1.40/#operation/ServiceList
 # Tasks: https://docs.docker.com/engine/api/v1.40/#operation/TaskList
 # Nodes: https://docs.docker.com/engine/api/v1.40/#operation/NodeList
-
-# Note: When making decision about using filters make sure that this is the best
-# approach - it will prevent Prometheus from reusing single list/watch for all
-# scrape configs. This might result in a bigger load on the Swarm API, because per
-# each filters combination there will be additional GET. On the other hand, if you
-# just want to monitor small subset of tasks in large cluster it's recommended to
-# use filters.
 [ filters:
   [ - name: <string>
       values: <string>, [...] ]
@@ -614,6 +607,11 @@ basic_auth:
 # Optional bearer token file authentication information.
 [ bearer_token_file: <filename> ]
 ```
+
+The [relabeling phase](#relabel_config) is the preferred and more powerful
+way to filter tasks, services or nodes. For users with thousands of tasks it
+can be more efficient to use the Swarm API directly which has basic support for
+filtering nodes (using `filters`).
 
 See [this example Prometheus configuration file](/documentation/examples/prometheus-dockerswarm.yml)
 for a detailed example of configuring Prometheus for Docker Swarm.
