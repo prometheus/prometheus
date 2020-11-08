@@ -330,7 +330,10 @@ func splitByRange(ds []dirMeta, tr int64) [][]dirMeta {
 	return splitDirs
 }
 
-func compactBlockMetas(uid ulid.ULID, blocks ...*BlockMeta) *BlockMeta {
+// CompactBlockMetas merges many block metas into one, combining it's source blocks together
+// and adjusting compaction level.
+// NOTE(bwplotka): Used by Thanos code.
+func CompactBlockMetas(uid ulid.ULID, blocks ...*BlockMeta) *BlockMeta {
 	res := &BlockMeta{
 		ULID:    uid,
 		MinTime: blocks[0].MinTime,
@@ -415,7 +418,7 @@ func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) (u
 
 	uid = ulid.MustNew(ulid.Now(), rand.Reader)
 
-	meta := compactBlockMetas(uid, metas...)
+	meta := CompactBlockMetas(uid, metas...)
 	err = c.write(dest, meta, blocks...)
 	if err == nil {
 		if meta.Stats.NumSamples == 0 {
@@ -527,7 +530,6 @@ func (w *instrumentedChunkWriter) WriteChunks(chunks ...chunks.Meta) error {
 }
 
 // write creates a new block that is the union of the provided blocks into dir.
-// It cleans up all files of the old blocks after completing successfully.
 func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockReader) (err error) {
 	dir := filepath.Join(dest, meta.ULID.String())
 	tmp := dir + tmpForCreationBlockDirSuffix
@@ -633,7 +635,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 	}
 	df = nil
 
-	// Block successfully written, make visible and remove old ones.
+	// Block successfully written, make it visible in destination dir by moving it from tmp one.
 	if err := fileutil.Replace(tmp, dir); err != nil {
 		return errors.Wrap(err, "rename block dir")
 	}
@@ -715,7 +717,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 			symbols = syms
 			continue
 		}
-		symbols = newMergedStringIter(symbols, syms)
+		symbols = NewMergedStringIter(symbols, syms)
 	}
 
 	for symbols.Next() {
