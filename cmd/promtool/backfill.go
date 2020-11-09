@@ -99,7 +99,6 @@ func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 		if errw != nil {
 			return errors.Wrap(errw, "block writer")
 		}
-		//TODO: Debug how to fix this lint error later
 		defer w.Close()
 		ctx := context.Background()
 		app := w.Appender(ctx)
