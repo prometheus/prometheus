@@ -918,8 +918,13 @@ func (h *Handler) version(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) quit(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "Requesting termination... Goodbye!")
-	close(h.quitCh)
+	select {
+	case <-h.quitCh:
+		fmt.Fprintf(w, "Termination already in progress.")
+	default:
+		fmt.Fprintf(w, "Requesting termination... Goodbye!")
+		close(h.quitCh)
+	}
 }
 
 func (h *Handler) reload(w http.ResponseWriter, r *http.Request) {
