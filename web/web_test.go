@@ -27,6 +27,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -448,6 +449,60 @@ func TestShutdownWithStaleConnection(t *testing.T) {
 	case <-closed:
 	case <-time.After(timeout + 5*time.Second):
 		t.Fatalf("Server still running after read timeout.")
+	}
+}
+
+func TestHandleMultipleQuitRequests(t *testing.T) {
+	opts := &Options{
+		ListenAddress:   ":9090",
+		MaxConnections:  512,
+		EnableLifecycle: true,
+		RoutePrefix:     "/",
+		ExternalURL: &url.URL{
+			Scheme: "http",
+			Host:   "localhost:9090",
+			Path:   "/",
+		},
+	}
+	webHandler := New(nil, opts)
+	webHandler.config = &config.Config{}
+	webHandler.notifier = &notifier.Manager{}
+	ctx, cancel := context.WithCancel(context.Background())
+	closed := make(chan struct{})
+	go func() {
+		err := webHandler.Run(ctx)
+		if err != nil {
+			panic(fmt.Sprintf("Can't start web handler:%s", err))
+		}
+		close(closed)
+	}()
+
+	// Give some time for the web goroutine to run since we need the server
+	// to be up before starting tests.
+	time.Sleep(5 * time.Second)
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := 0; i < 3; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			resp, err := http.Post("http://localhost:9090/-/quit", "", strings.NewReader(""))
+			require.NoError(t, err)
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	// Stop the web handler.
+	cancel()
+
+	select {
+	case <-closed:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("Server still running after 5 seconds.")
 	}
 }
 
