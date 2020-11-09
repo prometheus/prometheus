@@ -300,6 +300,9 @@ eval instant at 0s timestamp(metric)
 eval instant at 5s timestamp(metric)
   {} 0
 
+eval instant at 5s timestamp(((metric)))
+  {} 0
+
 eval instant at 10s timestamp(metric)
   {} 10
 
