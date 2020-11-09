@@ -156,14 +156,6 @@ http_requests_total{code="400"} 3 1395066363000
 			},
 		},
 		{
-			ToParse: `# HELP something_weird Something weird
-		# TYPE something_weird gauge
-		something_weird{problem="infinite timestamp"} +Inf -3982045
-		# EOF
-		`,
-			IsOk: false,
-		},
-		{
 			ToParse: `# HELP rpc_duration_seconds A summary of the RPC duration in seconds.
 		# TYPE rpc_duration_seconds summary
 		rpc_duration_seconds{quantile="0.01"} 3102
@@ -221,7 +213,7 @@ http_requests_total{code="400"} 3 1395066363000
 		{
 			ToParse: `# HELP bad_metric This a bad metric
 		# TYPE bad_metric bad_type
-		bad_metric{type="has no type information"} 0.0 111
+		bad_metric{type="has bad type information"} 0.0 111
 		# EOF
 		`,
 			IsOk: false,
