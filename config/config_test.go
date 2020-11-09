@@ -619,6 +619,7 @@ var expectedConf = &Config{
 
 			ServiceDiscoveryConfigs: discovery.Configs{
 				&dockerswarm.SDConfig{
+					Filters:         []dockerswarm.Filter{},
 					Host:            "http://127.0.0.1:2375",
 					Role:            "nodes",
 					Port:            80,
