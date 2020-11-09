@@ -1007,7 +1007,7 @@ func TestDeletedIterator(t *testing.T) {
 
 	for _, c := range cases {
 		i := int64(-1)
-		it := &deletedIterator{it: chk.Iterator(nil), intervals: c.r[:]}
+		it := &DeletedIterator{Iter: chk.Iterator(nil), Intervals: c.r[:]}
 		ranges := c.r[:]
 		for it.Next() {
 			i++
@@ -1069,7 +1069,7 @@ func TestDeletedIterator_WithSeek(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		it := &deletedIterator{it: chk.Iterator(nil), intervals: c.r[:]}
+		it := &DeletedIterator{Iter: chk.Iterator(nil), Intervals: c.r[:]}
 
 		require.Equal(t, c.ok, it.Seek(c.seek))
 		if c.ok {
