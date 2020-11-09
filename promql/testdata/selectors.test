@@ -20,6 +20,19 @@ eval instant at 8000s rate(http_requests{group=~"pro.*"}[1m])
 	{job="api-server", instance="0", group="production"} 1
 	{job="api-server", instance="1", group="production"} 2
 
+eval instant at 8000s rate(http_requests{group=~"pro.*"}[1m] @ 8000)
+	{job="api-server", instance="0", group="production"} 1
+	{job="api-server", instance="1", group="production"} 2
+
+# TODO(codesome): Why does this not work?
+#eval instant at 1s rate(http_requests{group=~"pro.*"}[1m] @ 8000)
+#	{job="api-server", instance="0", group="production"} 1
+#	{job="api-server", instance="1", group="production"} 2
+
+eval instant at 20000s rate(http_requests{group=~"pro.*"}[1m] @ 8000)
+	{job="api-server", instance="0", group="production"} 1
+	{job="api-server", instance="1", group="production"} 2
+
 eval instant at 18000s rate(http_requests{group=~".*ry", instance="1"}[1m])
 	{job="api-server", instance="1", group="canary"} 4
 
@@ -30,6 +43,25 @@ eval instant at 18000s rate(http_requests{instance!="3"}[1m] offset 10000s)
 	{job="api-server", instance="1", group="canary"} 4
 
 eval instant at 18000s rate(http_requests[40s]) - rate(http_requests[1m] offset 10000s)
+	{job="api-server", instance="0", group="production"} 2
+	{job="api-server", instance="1", group="production"} 1
+	{job="api-server", instance="0", group="canary"} 5
+	{job="api-server", instance="1", group="canary"} 0
+
+eval instant at 18000s rate(http_requests[40s] @ 18000) - rate(http_requests[1m] @ 18000 offset 10000s)
+	{job="api-server", instance="0", group="production"} 2
+	{job="api-server", instance="1", group="production"} 1
+	{job="api-server", instance="0", group="canary"} 5
+	{job="api-server", instance="1", group="canary"} 0
+
+# TODO(codesome): why does this not work?
+#eval instant at 18s rate(http_requests[40s] @ 18000) - rate(http_requests[1m] @ 18000 offset 10000s)
+#	{job="api-server", instance="0", group="production"} 2
+#	{job="api-server", instance="1", group="production"} 1
+#	{job="api-server", instance="0", group="canary"} 5
+#	{job="api-server", instance="1", group="canary"} 0
+
+eval instant at 80000s rate(http_requests[40s] @ 18000) - rate(http_requests[1m] @ 18000 offset 10000s)
 	{job="api-server", instance="0", group="production"} 2
 	{job="api-server", instance="1", group="production"} 1
 	{job="api-server", instance="0", group="canary"} 5
@@ -170,6 +202,24 @@ eval instant at 50m http_requests{group!="canary"}
 	http_requests{group="production", instance="0", job="api-server"} 100
 
 eval instant at 50m http_requests{job=~".+-server",group!="canary"}
+	http_requests{group="production", instance="1", job="app-server"} 600
+	http_requests{group="production", instance="0", job="app-server"} 500
+	http_requests{group="production", instance="1", job="api-server"} 200
+	http_requests{group="production", instance="0", job="api-server"} 100
+
+eval instant at 50m http_requests{job=~".+-server",group!="canary"} @ 3000
+	http_requests{group="production", instance="1", job="app-server"} 600
+	http_requests{group="production", instance="0", job="app-server"} 500
+	http_requests{group="production", instance="1", job="api-server"} 200
+	http_requests{group="production", instance="0", job="api-server"} 100
+
+eval instant at 1s http_requests{job=~".+-server",group!="canary"} @ 3000
+	http_requests{group="production", instance="1", job="app-server"} 600
+	http_requests{group="production", instance="0", job="app-server"} 500
+	http_requests{group="production", instance="1", job="api-server"} 200
+	http_requests{group="production", instance="0", job="api-server"} 100
+
+eval instant at 5000m http_requests{job=~".+-server",group!="canary"} @ 3000
 	http_requests{group="production", instance="1", job="app-server"} 600
 	http_requests{group="production", instance="0", job="app-server"} 500
 	http_requests{group="production", instance="1", job="api-server"} 200

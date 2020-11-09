@@ -18,7 +18,31 @@ eval instant at 50m SUM(http_requests) BY (job) - COUNT(http_requests) BY (job)
 	{job="api-server"} 996
 	{job="app-server"} 2596
 
+eval instant at 50m SUM(http_requests @ 3000) BY (job) - COUNT(http_requests @ 3000) BY (job)
+	{job="api-server"} 996
+	{job="app-server"} 2596
+
+eval instant at 5m SUM(http_requests @ 3000) BY (job) - COUNT(http_requests @ 3000) BY (job)
+	{job="api-server"} 996
+	{job="app-server"} 2596
+
+eval instant at 500m SUM(http_requests @ 3000) BY (job) - COUNT(http_requests @ 3000) BY (job)
+	{job="api-server"} 996
+	{job="app-server"} 2596
+
 eval instant at 50m 2 - SUM(http_requests) BY (job)
+	{job="api-server"} -998
+	{job="app-server"} -2598
+
+eval instant at 50m 2 - SUM(http_requests @ 3000) BY (job)
+	{job="api-server"} -998
+	{job="app-server"} -2598
+
+eval instant at 1m 2 - SUM(http_requests @ 3000) BY (job)
+	{job="api-server"} -998
+	{job="app-server"} -2598
+
+eval instant at 5000m 2 - SUM(http_requests @ 3000) BY (job)
 	{job="api-server"} -998
 	{job="app-server"} -2598
 
@@ -45,7 +69,23 @@ eval instant at 50m -10^3 * - SUM(http_requests) BY (job) ^ -1
 	{job="api-server"} 1
 	{job="app-server"} 0.38461538461538464
 
+eval instant at 5m -10^3 * - SUM(http_requests @ 3000) BY (job) ^ -1
+	{job="api-server"} 1
+	{job="app-server"} 0.38461538461538464
+
+eval instant at 500m -10^3 * - SUM(http_requests @ 3000) BY (job) ^ -1
+	{job="api-server"} 1
+	{job="app-server"} 0.38461538461538464
+
 eval instant at 50m 1000 / SUM(http_requests) BY (job)
+	{job="api-server"} 1
+	{job="app-server"} 0.38461538461538464
+
+eval instant at 5m 1000 / SUM(http_requests @ 3000) BY (job)
+	{job="api-server"} 1
+	{job="app-server"} 0.38461538461538464
+
+eval instant at 500m 1000 / SUM(http_requests @ 3000) BY (job)
 	{job="api-server"} 1
 	{job="app-server"} 0.38461538461538464
 
@@ -85,6 +125,10 @@ eval instant at 50m COUNT(http_requests) BY (job) ^ COUNT(http_requests) BY (job
 	{job="api-server"} 256
 	{job="app-server"} 256
 
+eval instant at 500m COUNT(http_requests @ 3000) BY (job) ^ COUNT(http_requests @ 3000) BY (job)
+	{job="api-server"} 256
+	{job="app-server"} 256
+
 eval instant at 50m SUM(http_requests) BY (job) / 0
 	{job="api-server"} +Inf
 	{job="app-server"} +Inf
@@ -117,6 +161,18 @@ eval instant at 50m http_requests{job="api-server", group="canary"} + rate(http_
 	{group="canary", instance="0", job="api-server"} 330
 	{group="canary", instance="1", job="api-server"} 440
 
+eval instant at 50m http_requests{job="api-server", group="canary"} @ 3000 + rate(http_requests{job="api-server"}[5m] @ 3000) * 5 * 60
+	{group="canary", instance="0", job="api-server"} 330
+	{group="canary", instance="1", job="api-server"} 440
+
+eval instant at 5m http_requests{job="api-server", group="canary"} @ 3000 + rate(http_requests{job="api-server"}[5m] @ 3000) * 5 * 60
+	{group="canary", instance="0", job="api-server"} 330
+	{group="canary", instance="1", job="api-server"} 440
+
+eval instant at 5000m http_requests{job="api-server", group="canary"} @ 3000 + rate(http_requests{job="api-server"}[5m] @ 3000) * 5 * 60
+	{group="canary", instance="0", job="api-server"} 330
+	{group="canary", instance="1", job="api-server"} 440
+
 eval instant at 50m rate(http_requests[25m]) * 25 * 60
   {group="canary", instance="0", job="api-server"} 150
   {group="canary", instance="0", job="app-server"} 350
@@ -137,12 +193,44 @@ eval instant at 50m (rate((http_requests[25m])) * 25) * 60
   {group="production", instance="1", job="api-server"} 100
   {group="production", instance="1", job="app-server"} 300
 
+eval instant at 5m (rate((http_requests[25m] @ 3000)) * 25) * 60
+  {group="canary", instance="0", job="api-server"} 150
+  {group="canary", instance="0", job="app-server"} 350
+  {group="canary", instance="1", job="api-server"} 200
+  {group="canary", instance="1", job="app-server"} 400
+  {group="production", instance="0", job="api-server"} 50
+  {group="production", instance="0", job="app-server"} 249.99999999999997
+  {group="production", instance="1", job="api-server"} 100
+  {group="production", instance="1", job="app-server"} 300
+
+eval instant at 5000m (rate((http_requests[25m] @ 3000)) * 25) * 60
+  {group="canary", instance="0", job="api-server"} 150
+  {group="canary", instance="0", job="app-server"} 350
+  {group="canary", instance="1", job="api-server"} 200
+  {group="canary", instance="1", job="app-server"} 400
+  {group="production", instance="0", job="api-server"} 50
+  {group="production", instance="0", job="app-server"} 249.99999999999997
+  {group="production", instance="1", job="api-server"} 100
+  {group="production", instance="1", job="app-server"} 300
+
 
 eval instant at 50m http_requests{group="canary"} and http_requests{instance="0"}
 	http_requests{group="canary", instance="0", job="api-server"} 300
 	http_requests{group="canary", instance="0", job="app-server"} 700
 
 eval instant at 50m (http_requests{group="canary"} + 1) and http_requests{instance="0"}
+	{group="canary", instance="0", job="api-server"} 301
+	{group="canary", instance="0", job="app-server"} 701
+
+eval instant at 50m (http_requests{group="canary"} @ 3000 + 1) and http_requests{instance="0"} @ 3000
+	{group="canary", instance="0", job="api-server"} 301
+	{group="canary", instance="0", job="app-server"} 701
+
+eval instant at 1s (http_requests{group="canary"} @ 3000 + 1) and http_requests{instance="0"} @ 3000
+	{group="canary", instance="0", job="api-server"} 301
+	{group="canary", instance="0", job="app-server"} 701
+
+eval instant at 5000m (http_requests{group="canary"} @ 3000 + 1) and http_requests{instance="0"} @ 3000
 	{group="canary", instance="0", job="api-server"} 301
 	{group="canary", instance="0", job="app-server"} 701
 
@@ -200,7 +288,43 @@ eval instant at 50m (http_requests{group="canary"} + 1) or ignoring(l, group, jo
 	vector_matching_a{l="x"} 10
 	vector_matching_a{l="y"} 20
 
+eval instant at 50m (http_requests{group="canary"} @ 3000 + 1) or ignoring(l, group, job) (http_requests @ 3000 or cpu_count @ 3000 or vector_matching_a @ 3000)
+	{group="canary", instance="0", job="api-server"} 301
+	{group="canary", instance="0", job="app-server"} 701
+	{group="canary", instance="1", job="api-server"} 401
+	{group="canary", instance="1", job="app-server"} 801
+	vector_matching_a{l="x"} 10
+	vector_matching_a{l="y"} 20
+
+eval instant at 5m (http_requests{group="canary"} @ 3000 + 1) or ignoring(l, group, job) (http_requests @ 3000 or cpu_count @ 3000 or vector_matching_a @ 3000)
+	{group="canary", instance="0", job="api-server"} 301
+	{group="canary", instance="0", job="app-server"} 701
+	{group="canary", instance="1", job="api-server"} 401
+	{group="canary", instance="1", job="app-server"} 801
+	vector_matching_a{l="x"} 10
+	vector_matching_a{l="y"} 20
+
+eval instant at 5000m (http_requests{group="canary"} @ 3000 + 1) or ignoring(l, group, job) (http_requests @ 3000 or cpu_count @ 3000 or vector_matching_a @ 3000)
+	{group="canary", instance="0", job="api-server"} 301
+	{group="canary", instance="0", job="app-server"} 701
+	{group="canary", instance="1", job="api-server"} 401
+	{group="canary", instance="1", job="app-server"} 801
+	vector_matching_a{l="x"} 10
+	vector_matching_a{l="y"} 20
+
 eval instant at 50m http_requests{group="canary"} unless http_requests{instance="0"}
+	http_requests{group="canary", instance="1", job="api-server"} 400
+	http_requests{group="canary", instance="1", job="app-server"} 800
+
+eval instant at 50m http_requests{group="canary"} @ 3000 unless http_requests{instance="0"} @ 3000
+	http_requests{group="canary", instance="1", job="api-server"} 400
+	http_requests{group="canary", instance="1", job="app-server"} 800
+
+eval instant at 5m http_requests{group="canary"} @ 3000 unless http_requests{instance="0"} @ 3000
+	http_requests{group="canary", instance="1", job="api-server"} 400
+	http_requests{group="canary", instance="1", job="app-server"} 800
+
+eval instant at 5000m http_requests{group="canary"} @ 3000 unless http_requests{instance="0"} @ 3000
 	http_requests{group="canary", instance="1", job="api-server"} 400
 	http_requests{group="canary", instance="1", job="app-server"} 800
 
@@ -249,6 +373,36 @@ eval instant at 50m http_requests AND IGNORING (group, instance, job) vector(1)
 	http_requests{group="production", instance="1", job="api-server"} 200
 	http_requests{group="production", instance="1", job="app-server"} 600
 
+eval instant at 50m http_requests @ 3000 AND IGNORING (group, instance, job) vector(1)
+	http_requests{group="canary", instance="0", job="api-server"} 300
+	http_requests{group="canary", instance="0", job="app-server"} 700
+	http_requests{group="canary", instance="1", job="api-server"} 400
+	http_requests{group="canary", instance="1", job="app-server"} 800
+	http_requests{group="production", instance="0", job="api-server"} 100
+	http_requests{group="production", instance="0", job="app-server"} 500
+	http_requests{group="production", instance="1", job="api-server"} 200
+	http_requests{group="production", instance="1", job="app-server"} 600
+
+eval instant at 5m http_requests @ 3000 AND IGNORING (group, instance, job) vector(1)
+	http_requests{group="canary", instance="0", job="api-server"} 300
+	http_requests{group="canary", instance="0", job="app-server"} 700
+	http_requests{group="canary", instance="1", job="api-server"} 400
+	http_requests{group="canary", instance="1", job="app-server"} 800
+	http_requests{group="production", instance="0", job="api-server"} 100
+	http_requests{group="production", instance="0", job="app-server"} 500
+	http_requests{group="production", instance="1", job="api-server"} 200
+	http_requests{group="production", instance="1", job="app-server"} 600
+
+eval instant at 5000m http_requests @ 3000 AND IGNORING (group, instance, job) vector(1)
+	http_requests{group="canary", instance="0", job="api-server"} 300
+	http_requests{group="canary", instance="0", job="app-server"} 700
+	http_requests{group="canary", instance="1", job="api-server"} 400
+	http_requests{group="canary", instance="1", job="app-server"} 800
+	http_requests{group="production", instance="0", job="api-server"} 100
+	http_requests{group="production", instance="0", job="app-server"} 500
+	http_requests{group="production", instance="1", job="api-server"} 200
+	http_requests{group="production", instance="1", job="app-server"} 600
+
 
 # Comparisons.
 eval instant at 50m SUM(http_requests) BY (job) > 1000
@@ -258,6 +412,15 @@ eval instant at 50m 1000 < SUM(http_requests) BY (job)
 	{job="app-server"} 2600
 
 eval instant at 50m SUM(http_requests) BY (job) <= 1000
+	{job="api-server"} 1000
+
+eval instant at 50m SUM(http_requests @ 3000) BY (job) <= 1000
+	{job="api-server"} 1000
+
+eval instant at 5m SUM(http_requests @ 3000) BY (job) <= 1000
+	{job="api-server"} 1000
+
+eval instant at 1000m SUM(http_requests @ 3000) BY (job) <= 1000
 	{job="api-server"} 1000
 
 eval instant at 50m SUM(http_requests) BY (job) != 1000
@@ -292,17 +455,17 @@ eval instant at 50m http_requests{job="api-server", instance="0", group="product
 clear
 
 load 5m
-  node_var{instance="abc",job="node"} 2
-  node_role{instance="abc",job="node",role="prometheus"} 1
+  node_var{instance="abc",job="node"} 0 2
+  node_role{instance="abc",job="node",role="prometheus"} 0 1
 
 load 5m
-  node_cpu{instance="abc",job="node",mode="idle"} 3
-  node_cpu{instance="abc",job="node",mode="user"} 1
-  node_cpu{instance="def",job="node",mode="idle"} 8
-  node_cpu{instance="def",job="node",mode="user"} 2
+  node_cpu{instance="abc",job="node",mode="idle"} 0 3
+  node_cpu{instance="abc",job="node",mode="user"} 0 1
+  node_cpu{instance="def",job="node",mode="idle"} 0 8
+  node_cpu{instance="def",job="node",mode="user"} 0 2
 
 load 5m
-  random{foo="bar"} 1
+  random{foo="bar"} 0 1
 
 load 5m
   threshold{instance="abc",job="node",target="a@b.com"} 0
@@ -318,6 +481,15 @@ eval instant at 5m node_var * ignoring (role) group_left (role) node_role
   {instance="abc",job="node",role="prometheus"} 2
 
 eval instant at 5m node_role * ignoring (role) group_right (role) node_var
+  {instance="abc",job="node",role="prometheus"} 2
+
+eval instant at 1s node_role @ 300 * ignoring (role) group_right (role) node_var @ 300
+  {instance="abc",job="node",role="prometheus"} 2
+
+eval instant at 5m node_role @ 300 * ignoring (role) group_right (role) node_var @ 300
+  {instance="abc",job="node",role="prometheus"} 2
+
+eval instant at 1000m node_role @ 300 * ignoring (role) group_right (role) node_var @ 300
   {instance="abc",job="node",role="prometheus"} 2
 
 # Copy machine role to node variable with instrumentation labels.
@@ -384,6 +556,25 @@ eval instant at 5m node_cpu > on(job, instance) group_left(target) (threshold or
   node_cpu{instance="abc",job="node",mode="user",target="a@b.com"} 1
   node_cpu{instance="def",job="node",mode="idle"} 8
   node_cpu{instance="def",job="node",mode="user"} 2
+
+eval instant at 5m node_cpu @ 300 > on(job, instance) group_left(target) (threshold @ 300 or on (job, instance) (sum by (job, instance)(node_cpu @ 300) * 0 + 1))
+  node_cpu{instance="abc",job="node",mode="idle",target="a@b.com"} 3
+  node_cpu{instance="abc",job="node",mode="user",target="a@b.com"} 1
+  node_cpu{instance="def",job="node",mode="idle"} 8
+  node_cpu{instance="def",job="node",mode="user"} 2
+
+eval instant at 1s node_cpu @ 300 > on(job, instance) group_left(target) (threshold @ 300 or on (job, instance) (sum by (job, instance)(node_cpu @ 300) * 0 + 1))
+  node_cpu{instance="abc",job="node",mode="idle",target="a@b.com"} 3
+  node_cpu{instance="abc",job="node",mode="user",target="a@b.com"} 1
+  node_cpu{instance="def",job="node",mode="idle"} 8
+  node_cpu{instance="def",job="node",mode="user"} 2
+
+# TODO(codesome): Check why would this not work. Staleness?
+#eval instant at 1000m node_cpu @ 300 > on(job, instance) group_left(target) (threshold @ 300 or on (job, instance) (sum by (job, instance)(node_cpu @ 300) * 0 + 1))
+#  node_cpu{instance="abc",job="node",mode="idle",target="a@b.com"} 3
+#  node_cpu{instance="abc",job="node",mode="user",target="a@b.com"} 1
+#  node_cpu{instance="def",job="node",mode="idle"} 8
+#  node_cpu{instance="def",job="node",mode="user"} 2
 
 
 # Check that binops drop the metric name.

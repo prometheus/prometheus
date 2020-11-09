@@ -465,7 +465,6 @@ func (t *Test) exec(tc testCommand) error {
 		if err != nil {
 			return errors.Wrapf(err, "error in %s %s", cmd, cmd.expr)
 		}
-
 		// Check query returns same result in range mode,
 		// by checking against the middle step.
 		q, err = t.queryEngine.NewRangeQuery(t.storage, cmd.expr, cmd.start.Add(-time.Minute), cmd.start.Add(time.Minute), time.Minute)

@@ -679,7 +679,6 @@ func (ng *Engine) populateSeries(querier storage.Querier, s *parser.EvalStmt) {
 				hints.Start = hints.Start - offsetMilliseconds
 				hints.End = hints.End - offsetMilliseconds
 			}
-
 			n.UnexpandedSeriesSet = querier.Select(false, hints, n.LabelMatchers...)
 		case *parser.MatrixSelector:
 			evalRange = n.Range
@@ -1154,7 +1153,10 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 				}
 				mint := maxt - selRange
 				// Evaluate the matrix selector for this series for this step.
-				points = ev.matrixIterSlice(it, mint, maxt, points)
+				if selVS.Timestamp <= 0 || (selVS.Timestamp > 0 && ts == ev.startTimestamp) {
+					// We only evaluate once for the constant selector.
+					points = ev.matrixIterSlice(it, mint, maxt, points)
+				}
 				if len(points) == 0 {
 					continue
 				}
@@ -1180,7 +1182,6 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 				putPointSlice(ss.Points)
 			}
 		}
-
 		ev.currentSamples -= len(points)
 		putPointSlice(points)
 
@@ -2310,8 +2311,10 @@ func dontWrapConstantExpr(expr parser.Expr) bool {
 		return dontWrapConstantExpr(e.Expr)
 	case *parser.Call:
 		switch e.Func.Name {
-		case "time", "vector":
+		case "time":
 			return true
+		case "vector":
+			return dontWrapConstantExpr(e.Args[0])
 		}
 	}
 	return false
