@@ -769,7 +769,6 @@ func (m mergedStringIter) Err() error {
 }
 
 // DeletedIterator wraps chunk Iterator and makes sure any deleted metrics are not returned.
-// NOTE(bwplotka): Used by Thanos code.
 type DeletedIterator struct {
 	// Iter is an Iterator to be wrapped.
 	Iter chunkenc.Iterator

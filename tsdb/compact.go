@@ -332,7 +332,6 @@ func splitByRange(ds []dirMeta, tr int64) [][]dirMeta {
 
 // CompactBlockMetas merges many block metas into one, combining it's source blocks together
 // and adjusting compaction level.
-// NOTE(bwplotka): Used by Thanos code.
 func CompactBlockMetas(uid ulid.ULID, blocks ...*BlockMeta) *BlockMeta {
 	res := &BlockMeta{
 		ULID:    uid,
