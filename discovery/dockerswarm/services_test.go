@@ -330,21 +330,21 @@ filters:
   values: ["mon_node-exporter", "mon_grafana"]
 `, url)
 	var cfg SDConfig
-	testutil.Ok(t, yaml.Unmarshal([]byte(cfgString), &cfg))
+	require.NoError(t, yaml.Unmarshal([]byte(cfgString), &cfg))
 
 	d, err := NewDiscovery(&cfg, log.NewNopLogger())
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	ctx := context.Background()
 	tgs, err := d.refresh(ctx)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
-	testutil.Equals(t, 1, len(tgs))
+	require.Equal(t, 1, len(tgs))
 
 	tg := tgs[0]
-	testutil.Assert(t, tg != nil, "tg should not be nil")
-	testutil.Assert(t, tg.Targets != nil, "tg.targets should not be nil")
-	testutil.Equals(t, 4, len(tg.Targets))
+	require.NotNil(t, tg, "tg should not be nil")
+	require.NotNil(t, tg.Targets, "tg.targets should not be nil")
+	require.Equal(t, 4, len(tg.Targets))
 
 	for i, lbls := range []model.LabelSet{
 		{
@@ -419,7 +419,7 @@ filters:
 		},
 	} {
 		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
-			testutil.Equals(t, lbls, tg.Targets[i])
+			require.Equal(t, lbls, tg.Targets[i])
 		})
 	}
 }
