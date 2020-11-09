@@ -79,7 +79,7 @@ func getMinAndMaxTimestamps(p textparse.Parser) (int64, int64, error) {
 			mint = *ts
 		}
 		if ts == nil {
-			return maxt, mint, errors.Errorf("Expected timestamp for series %v, got none.", l.String())
+			return maxt, mint, errors.Errorf("expected timestamp for series %v, got none", l.String())
 		}
 	}
 	if maxt == math.MinInt64 {
