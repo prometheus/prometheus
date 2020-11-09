@@ -194,7 +194,7 @@ func main() {
 
 	case tsdbDumpCmd.FullCommand():
 		os.Exit(checkErr(dumpSamples(*dumpPath, *dumpMinTime, *dumpMaxTime)))
-	//TODO Work on adding support for custom block size.
+	//TODO(aSquare14): Work on adding support for custom block size.
 	case openMetricsImportCmd.FullCommand():
 		os.Exit(checkErr(readOpenMetrics(*importFilePath, *importDBPath)))
 	}
