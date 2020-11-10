@@ -213,7 +213,7 @@ http_requests_total{code="400"} 3 1395066363000
 		{
 			ToParse: `# HELP bad_metric This a bad metric
 		# TYPE bad_metric bad_type
-		bad_metric{type="has bad type information"} 0.0 111
+		bad_metric{type="has a bad type information"} 0.0 111
 		# EOF
 		`,
 			IsOk: false,

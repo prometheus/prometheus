@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 )
 
+// Parser is the openmetrics parser.
 type Parser struct {
 	textparse.Parser
 	s *bufio.Scanner
@@ -95,49 +96,51 @@ func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 	var offset int64 = 2 * time.Hour.Milliseconds()
 	mint = offset * (mint / offset)
 	for t := mint; t <= maxt; t = t + offset {
-		w, errw := tsdb.NewBlockWriter(log.NewNopLogger(), outputDir, offset)
-		if errw != nil {
-			return errors.Wrap(errw, "block writer")
-		}
-		defer w.Close()
-		ctx := context.Background()
-		app := w.Appender(ctx)
-		_, errReset := input.Seek(0, 0)
-		if errReset != nil {
-			return errors.Wrap(errReset, "seek file")
-		}
-		p2 := NewParser(input)
-		tsUpper := t + offset
-		for {
-			e, err := p2.Next()
-			if err == io.EOF {
-				break
+		func() error {
+			w, errw := tsdb.NewBlockWriter(log.NewNopLogger(), outputDir, offset)
+			if errw != nil {
+				return errors.Wrap(errw, "block writer")
 			}
-			if err != nil {
-				return errors.Wrap(err, "parse")
+			defer w.Close()
+			ctx := context.Background()
+			app := w.Appender(ctx)
+			_, errReset := input.Seek(0, 0)
+			if errReset != nil {
+				return errors.Wrap(errReset, "seek file")
 			}
-			if e != textparse.EntrySeries {
-				continue
-			}
-			l := labels.Labels{}
-			p2.Metric(&l)
-			_, ts, v := p2.Series()
-			if ts == nil {
-				return errors.Errorf("expected timestamp for series %v, got none", l.String())
-			}
-			if *ts >= t && *ts < tsUpper {
-				if _, err := app.Add(l, *ts, v); err != nil {
-					return errors.Wrap(err, "add sample")
+			p2 := NewParser(input)
+			tsUpper := t + offset
+			for {
+				e, err := p2.Next()
+				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					return errors.Wrap(err, "parse")
+				}
+				if e != textparse.EntrySeries {
+					continue
+				}
+				l := labels.Labels{}
+				p2.Metric(&l)
+				_, ts, v := p2.Series()
+				if ts == nil {
+					return errors.Errorf("expected timestamp for series %v, got none", l.String())
+				}
+				if *ts >= t && *ts < tsUpper {
+					if _, err := app.Add(l, *ts, v); err != nil {
+						return errors.Wrap(err, "add sample")
+					}
 				}
 			}
-		}
-		if err := app.Commit(); err != nil {
-			return errors.Wrap(err, "commit")
-		}
-		_, errF := w.Flush(ctx)
-		if errF != nil {
-			return errors.Wrap(errF, "flush")
-		}
+			if err := app.Commit(); err != nil {
+				return errors.Wrap(err, "commit")
+			}
+			_, errF := w.Flush(ctx)
+			if errF != nil {
+				return errors.Wrap(errF, "flush")
+			}
+		}()
 	}
 	return nil
 }
