@@ -39,6 +39,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wal"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func newTestHead(t testing.TB, chunkRange int64, compressWAL bool) (*Head, *wal.WAL) {
@@ -311,7 +312,7 @@ func TestHead_WALMultiRef(t *testing.T) {
 
 	q, err := NewBlockQuerier(head, 0, 2100)
 	require.NoError(t, err)
-	series := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+	series := testutil.QueryBlock(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 	require.Equal(t, map[string][]tsdbutil.Sample{`{foo="bar"}`: {
 		sample{100, 1},
 		sample{1500, 2},

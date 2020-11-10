@@ -26,6 +26,7 @@ import (
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestBlockWriter(t *testing.T) {
@@ -57,7 +58,7 @@ func TestBlockWriter(t *testing.T) {
 	require.NoError(t, err)
 	q, err := NewBlockQuerier(b, math.MinInt64, math.MaxInt64)
 	require.NoError(t, err)
-	series := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
+	series := testutil.QueryBlock(t, q, labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
 	sample1 := []tsdbutil.Sample{sample{t: ts1, v: v1}}
 	sample2 := []tsdbutil.Sample{sample{t: ts2, v: v2}}
 	expectedSeries := map[string][]tsdbutil.Sample{"{a=\"b\"}": sample1, "{c=\"d\"}": sample2}

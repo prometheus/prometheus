@@ -74,38 +74,6 @@ func openTestDB(t testing.TB, opts *Options, rngs []int64) (db *DB) {
 	return db
 }
 
-// query runs a matcher query against the querier and fully expands its data.
-func query(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) map[string][]tsdbutil.Sample {
-	ss := q.Select(false, nil, matchers...)
-	defer func() {
-		require.NoError(t, q.Close())
-	}()
-
-	result := map[string][]tsdbutil.Sample{}
-	for ss.Next() {
-		series := ss.At()
-
-		samples := []tsdbutil.Sample{}
-		it := series.Iterator()
-		for it.Next() {
-			t, v := it.At()
-			samples = append(samples, sample{t: t, v: v})
-		}
-		require.NoError(t, it.Err())
-
-		if len(samples) == 0 {
-			continue
-		}
-
-		name := series.Labels().String()
-		result[name] = samples
-	}
-	require.NoError(t, ss.Err())
-	require.Equal(t, 0, len(ss.Warnings()))
-
-	return result
-}
-
 // queryChunks runs a matcher query against the querier and fully expands its data.
 func queryChunks(t testing.TB, q storage.ChunkQuerier, matchers ...*labels.Matcher) map[string][]chunks.Meta {
 	ss := q.Select(false, nil, matchers...)
@@ -178,7 +146,7 @@ func TestDataAvailableOnlyAfterCommit(t *testing.T) {
 
 	querier, err := db.Querier(context.TODO(), 0, 1)
 	require.NoError(t, err)
-	seriesSet := query(t, querier, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+	seriesSet := testutil.QueryBlock(t, querier, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 	require.Equal(t, map[string][]tsdbutil.Sample{}, seriesSet)
 
 	err = app.Commit()
@@ -188,7 +156,7 @@ func TestDataAvailableOnlyAfterCommit(t *testing.T) {
 	require.NoError(t, err)
 	defer querier.Close()
 
-	seriesSet = query(t, querier, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+	seriesSet = testutil.QueryBlock(t, querier, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 
 	require.Equal(t, map[string][]tsdbutil.Sample{`{foo="bar"}`: {sample{t: 0, v: 0}}}, seriesSet)
 }
@@ -248,7 +216,7 @@ func TestNoPanicAfterWALCorrutpion(t *testing.T) {
 
 		querier, err := db.Querier(context.TODO(), 0, maxt)
 		require.NoError(t, err)
-		seriesSet := query(t, querier, labels.MustNewMatcher(labels.MatchEqual, "", ""))
+		seriesSet := testutil.QueryBlock(t, querier, labels.MustNewMatcher(labels.MatchEqual, "", ""))
 		// The last sample should be missing as it was after the WAL segment corruption.
 		require.Equal(t, map[string][]tsdbutil.Sample{`{foo="bar"}`: expSamples[0 : len(expSamples)-1]}, seriesSet)
 	}
@@ -271,7 +239,7 @@ func TestDataNotAvailableAfterRollback(t *testing.T) {
 	require.NoError(t, err)
 	defer querier.Close()
 
-	seriesSet := query(t, querier, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+	seriesSet := testutil.QueryBlock(t, querier, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 
 	require.Equal(t, map[string][]tsdbutil.Sample{}, seriesSet)
 }
@@ -318,7 +286,7 @@ func TestDBAppenderAddRef(t *testing.T) {
 	q, err := db.Querier(context.TODO(), 0, 200)
 	require.NoError(t, err)
 
-	res := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+	res := testutil.QueryBlock(t, q, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 
 	require.Equal(t, map[string][]tsdbutil.Sample{
 		labels.FromStrings("a", "b").String(): {
@@ -528,7 +496,7 @@ func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
 	q, err := db.Querier(context.TODO(), 0, 10)
 	require.NoError(t, err)
 
-	ssMap := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+	ssMap := testutil.QueryBlock(t, q, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 
 	require.Equal(t, map[string][]tsdbutil.Sample{
 		labels.New(labels.Label{Name: "a", Value: "b"}).String(): {sample{0, 1}},
@@ -545,7 +513,7 @@ func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
 	q, err = db.Querier(context.TODO(), 0, 10)
 	require.NoError(t, err)
 
-	ssMap = query(t, q, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+	ssMap = testutil.QueryBlock(t, q, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 
 	require.Equal(t, map[string][]tsdbutil.Sample{
 		labels.New(labels.Label{Name: "a", Value: "b"}).String(): {sample{0, 1}, sample{10, 3}},
@@ -2144,7 +2112,7 @@ func TestDBReadOnly(t *testing.T) {
 
 		q, err := dbWritable.Querier(context.TODO(), math.MinInt64, math.MaxInt64)
 		require.NoError(t, err)
-		expSeries = query(t, q, matchAll)
+		expSeries = testutil.QueryBlock(t, q, matchAll)
 		cq, err := dbWritable.ChunkQuerier(context.TODO(), math.MinInt64, math.MaxInt64)
 		require.NoError(t, err)
 		expChunks = queryChunks(t, cq, matchAll)
@@ -2171,7 +2139,7 @@ func TestDBReadOnly(t *testing.T) {
 		// Open a read only db and ensure that the API returns the same result as the normal DB.
 		q, err := dbReadOnly.Querier(context.TODO(), math.MinInt64, math.MaxInt64)
 		require.NoError(t, err)
-		readOnlySeries := query(t, q, matchAll)
+		readOnlySeries := testutil.QueryBlock(t, q, matchAll)
 		readOnlyDBHash := testutil.DirHash(t, dbDir)
 
 		require.Equal(t, len(expSeries), len(readOnlySeries), "total series mismatch")
