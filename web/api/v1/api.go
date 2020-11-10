@@ -195,9 +195,8 @@ type API struct {
 	gatherer                  prometheus.Gatherer
 }
 
-type RankingFunction interface {
-	sum(v promql.Series) float64
-	avg(v promql.Series) float64
+type Ranker interface {
+	rank(v promql.Series) float64
 }
 
 func init() {
@@ -338,7 +337,8 @@ func (api *API) options(r *http.Request) apiFuncResult {
 	return apiFuncResult{nil, nil, nil, nil}
 }
 
-type Rank struct{}
+type sum struct{}
+type avg struct{}
 
 func (api *API) query(r *http.Request) (result apiFuncResult) {
 	ts, err := parseTimeParam(r, "time", api.now())
@@ -378,7 +378,7 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 	if res.Err != nil {
 		return apiFuncResult{nil, returnAPIError(res.Err), res.Warnings, qry.Close}
 	}
-	var rank RankingFunction = Rank{}
+	var ranker Ranker = sum{}
 
 	if res.Value.Type() == parser.ValueTypeVector {
 		vec, ok := res.Value.(promql.Vector)
@@ -396,7 +396,7 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 		}
 		sort.Slice(mat, func(i, j int) bool {
-			return (rank.sum(mat[i]) > rank.sum(mat[j]))
+			return (ranker.rank(mat[i]) > ranker.rank(mat[j]))
 		})
 	}
 
@@ -413,17 +413,16 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 	}, nil, res.Warnings, qry.Close}
 }
 
-func (Rank) sum(v promql.Series) float64 {
-	s := 0.0
+func (s sum) rank(v promql.Series) float64 {
+	ans := 0.0
 	for i := 0; i < len(v.Points); i++ {
-		s += v.Points[i].V
+		ans += v.Points[i].V
 	}
-	return s
+	return ans
 }
-
-func (Rank) avg(v promql.Series) float64 {
-	r := Rank{}
-	return r.sum(v) / float64(len(v.Points))
+func (a avg) rank(v promql.Series) float64 {
+	var ranker Ranker = sum{}
+	return ranker.rank(v) / float64(len(v.Points))
 }
 
 func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
@@ -493,7 +492,7 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 		return apiFuncResult{nil, returnAPIError(res.Err), res.Warnings, qry.Close}
 	}
 
-	var rank RankingFunction = Rank{}
+	var ranker Ranker = sum{}
 	if res.Value.Type() == parser.ValueTypeMatrix {
 		mat, ok := res.Value.(promql.Matrix)
 		if !ok {
@@ -501,7 +500,7 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 		}
 		sort.Slice(mat, func(i, j int) bool {
-			return (rank.sum(mat[i]) > rank.sum(mat[j]))
+			return (ranker.rank(mat[i]) > ranker.rank(mat[j]))
 		})
 	}
 
