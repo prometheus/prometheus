@@ -337,9 +337,6 @@ func (api *API) options(r *http.Request) apiFuncResult {
 	return apiFuncResult{nil, nil, nil, nil}
 }
 
-type sum struct{}
-type avg struct{}
-
 func (api *API) query(r *http.Request) (result apiFuncResult) {
 	ts, err := parseTimeParam(r, "time", api.now())
 	if err != nil {
@@ -378,12 +375,12 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 	if res.Err != nil {
 		return apiFuncResult{nil, returnAPIError(res.Err), res.Warnings, qry.Close}
 	}
-	var ranker Ranker = sum{}
+	var ranker Ranker = avg{}
 
 	if res.Value.Type() == parser.ValueTypeVector {
 		vec, ok := res.Value.(promql.Vector)
 		if !ok {
-			err := errors.New("Cannot convert to vector")
+			err := errors.New("cannot convert to vector")
 			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 		}
 		sort.Slice(vec, func(i, j int) bool {
@@ -392,7 +389,7 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 	} else if res.Value.Type() == parser.ValueTypeMatrix {
 		mat, ok := res.Value.(promql.Matrix)
 		if !ok {
-			err := errors.New("Cannot convert to matrix")
+			err := errors.New("cannot convert to matrix")
 			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 		}
 		sort.Slice(mat, func(i, j int) bool {
@@ -413,6 +410,8 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 	}, nil, res.Warnings, qry.Close}
 }
 
+type sum struct{}
+
 func (s sum) rank(v promql.Series) float64 {
 	ans := 0.0
 	for i := 0; i < len(v.Points); i++ {
@@ -420,6 +419,9 @@ func (s sum) rank(v promql.Series) float64 {
 	}
 	return ans
 }
+
+type avg struct{}
+
 func (a avg) rank(v promql.Series) float64 {
 	var ranker Ranker = sum{}
 	return ranker.rank(v) / float64(len(v.Points))
