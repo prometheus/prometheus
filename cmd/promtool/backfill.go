@@ -96,7 +96,7 @@ func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 	var offset int64 = 2 * time.Hour.Milliseconds()
 	mint = offset * (mint / offset)
 	for t := mint; t <= maxt; t = t + offset {
-		func() error {
+		err := func() error {
 			w, errw := tsdb.NewBlockWriter(log.NewNopLogger(), outputDir, offset)
 			if errw != nil {
 				return errors.Wrap(errw, "block writer")
@@ -142,6 +142,9 @@ func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 			}
 			return nil
 		}()
+		if err != nil {
+			return errors.Wrap(err, "process blocks")
+		}
 	}
 	return nil
 }
