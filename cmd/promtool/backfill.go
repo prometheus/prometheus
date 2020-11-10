@@ -140,6 +140,7 @@ func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 			if errF != nil {
 				return errors.Wrap(errF, "flush")
 			}
+			return nil
 		}()
 	}
 	return nil
