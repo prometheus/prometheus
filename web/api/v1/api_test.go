@@ -308,6 +308,9 @@ func TestEndpoints(t *testing.T) {
 			test_metric4{foo="bar", dup="1"} 1+0x100
 			test_metric4{foo="boo", dup="1"} 1+0x100
 			test_metric4{foo="boo"} 1+0x100
+			test_metric5{foo="bar"} 0+100x100
+			test_metric5{foo="boo"} 1+0x100
+			test_metric5{foo="boo", dup="1"} 100-1x100
 	`)
 	assert.NoError(t, err)
 	defer suite.Close()
@@ -414,6 +417,9 @@ func TestLabelNames(t *testing.T) {
 			test_metric1{foo2="boo"} 1+0x100
 			test_metric2{foo="boo"} 1+0x100
 			test_metric2{foo="boo", xyz="qwerty"} 1+0x100
+			test_metric5{foo1="bar", baz="abc"} 0+100x100
+			test_metric5{foo2="boo"} 1+0x100
+			test_metric5{foo="boo"} 100-1x100					
 	`)
 	assert.NoError(t, err)
 	defer suite.Close()
@@ -614,9 +620,68 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 			},
 		},
 		{
+			endpoint: api.query,
+			query: url.Values{
+				"query": []string{"test_metric1"},
+				"time":  []string{"123.4"},
+			},
+			response: &queryData{
+				ResultType: parser.ValueTypeVector,
+				Result: promql.Vector{
+					{
+						Point: promql.Point{
+							V: 200,
+							T: timestamp.FromTime(start.Add(123*time.Second + 400*time.Millisecond)),
+						},
+						Metric: labels.FromStrings("__name__", "test_metric1", "foo", "bar"),
+					},
+					{
+						Point: promql.Point{
+							V: 1,
+							T: timestamp.FromTime(start.Add(123*time.Second + 400*time.Millisecond)),
+						},
+						Metric: labels.FromStrings("__name__", "test_metric1", "foo", "boo"),
+					},
+				},
+			},
+		},
+		{
+			endpoint: api.query,
+			query: url.Values{
+				"query": []string{"test_metric5"},
+				"time":  []string{"123.4"},
+			},
+			response: &queryData{
+				ResultType: parser.ValueTypeVector,
+				Result: promql.Vector{
+					{
+						Point: promql.Point{
+							V: 200,
+							T: timestamp.FromTime(start.Add(123*time.Second + 400*time.Millisecond)),
+						},
+						Metric: labels.FromStrings("__name__", "test_metric5", "foo", "bar"),
+					},
+					{
+						Point: promql.Point{
+							V: 98,
+							T: timestamp.FromTime(start.Add(123*time.Second + 400*time.Millisecond)),
+						},
+						Metric: labels.FromStrings("__name__", "test_metric5", "dup", "1", "foo", "boo"),
+					},
+					{
+						Point: promql.Point{
+							V: 1,
+							T: timestamp.FromTime(start.Add(123*time.Second + 400*time.Millisecond)),
+						},
+						Metric: labels.FromStrings("__name__", "test_metric5", "foo", "boo"),
+					},
+				},
+			},
+		},
+		{
 			endpoint: api.queryRange,
 			query: url.Values{
-				"query": []string{"time()"},
+				"query": []string{"test_metric1"},
 				"start": []string{"0"},
 				"end":   []string{"2"},
 				"step":  []string{"1"},
@@ -626,11 +691,57 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 				Result: promql.Matrix{
 					promql.Series{
 						Points: []promql.Point{
-							{V: 0, T: timestamp.FromTime(start)},
+							{V: 1, T: timestamp.FromTime(start)},
 							{V: 1, T: timestamp.FromTime(start.Add(1 * time.Second))},
-							{V: 2, T: timestamp.FromTime(start.Add(2 * time.Second))},
+							{V: 1, T: timestamp.FromTime(start.Add(2 * time.Second))},
 						},
-						Metric: nil,
+						Metric: labels.FromStrings("__name__", "test_metric1", "foo", "boo"),
+					},
+					promql.Series{
+						Points: []promql.Point{
+							{V: 0, T: timestamp.FromTime(start)},
+							{V: 0, T: timestamp.FromTime(start.Add(1 * time.Second))},
+							{V: 0, T: timestamp.FromTime(start.Add(2 * time.Second))},
+						},
+						Metric: labels.FromStrings("__name__", "test_metric1", "foo", "bar"),
+					},
+				},
+			},
+		},
+		{
+			endpoint: api.queryRange,
+			query: url.Values{
+				"query": []string{"test_metric5"},
+				"start": []string{"0"},
+				"end":   []string{"2"},
+				"step":  []string{"1"},
+			},
+			response: &queryData{
+				ResultType: parser.ValueTypeMatrix,
+				Result: promql.Matrix{
+					promql.Series{
+						Points: []promql.Point{
+							{V: 100, T: timestamp.FromTime(start)},
+							{V: 100, T: timestamp.FromTime(start.Add(1 * time.Second))},
+							{V: 100, T: timestamp.FromTime(start.Add(2 * time.Second))},
+						},
+						Metric: labels.FromStrings("__name__", "test_metric5", "dup", "1", "foo", "boo"),
+					},
+					promql.Series{
+						Points: []promql.Point{
+							{V: 1, T: timestamp.FromTime(start)},
+							{V: 1, T: timestamp.FromTime(start.Add(1 * time.Second))},
+							{V: 1, T: timestamp.FromTime(start.Add(2 * time.Second))},
+						},
+						Metric: labels.FromStrings("__name__", "test_metric5", "foo", "boo"),
+					},
+					promql.Series{
+						Points: []promql.Point{
+							{V: 0, T: timestamp.FromTime(start)},
+							{V: 0, T: timestamp.FromTime(start.Add(1 * time.Second))},
+							{V: 0, T: timestamp.FromTime(start.Add(2 * time.Second))},
+						},
+						Metric: labels.FromStrings("__name__", "test_metric5", "foo", "bar"),
 					},
 				},
 			},
@@ -1468,6 +1579,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 					"test_metric2",
 					"test_metric3",
 					"test_metric4",
+					"test_metric5",
 				},
 			},
 			{

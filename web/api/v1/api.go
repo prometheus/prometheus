@@ -196,6 +196,10 @@ type API struct {
 	gatherer                  prometheus.Gatherer
 }
 
+type Ranker interface {
+	rank(v promql.Series) float64
+}
+
 func init() {
 	jsoniter.RegisterTypeEncoderFunc("promql.Point", marshalPointJSON, marshalPointJSONIsEmpty)
 	prometheus.MustRegister(remoteReadQueries)
@@ -372,6 +376,27 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 	if res.Err != nil {
 		return apiFuncResult{nil, returnAPIError(res.Err), res.Warnings, qry.Close}
 	}
+	var ranker Ranker = avg{}
+
+	if res.Value.Type() == parser.ValueTypeVector {
+		vec, ok := res.Value.(promql.Vector)
+		if !ok {
+			err := errors.New("cannot convert to vector")
+			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+		}
+		sort.Slice(vec, func(i, j int) bool {
+			return vec[i].V > vec[j].V
+		})
+	} else if res.Value.Type() == parser.ValueTypeMatrix {
+		mat, ok := res.Value.(promql.Matrix)
+		if !ok {
+			err := errors.New("cannot convert to matrix")
+			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+		}
+		sort.Slice(mat, func(i, j int) bool {
+			return (ranker.rank(mat[i]) > ranker.rank(mat[j]))
+		})
+	}
 
 	// Optional stats field in response if parameter "stats" is not empty.
 	var qs *stats.QueryStats
@@ -384,6 +409,23 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 		Result:     res.Value,
 		Stats:      qs,
 	}, nil, res.Warnings, qry.Close}
+}
+
+type sum struct{}
+
+func (s sum) rank(v promql.Series) float64 {
+	ans := 0.0
+	for i := 0; i < len(v.Points); i++ {
+		ans += v.Points[i].V
+	}
+	return ans
+}
+
+type avg struct{}
+
+func (a avg) rank(v promql.Series) float64 {
+	var ranker Ranker = sum{}
+	return ranker.rank(v) / float64(len(v.Points))
 }
 
 func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
@@ -451,6 +493,18 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 	res := qry.Exec(ctx)
 	if res.Err != nil {
 		return apiFuncResult{nil, returnAPIError(res.Err), res.Warnings, qry.Close}
+	}
+
+	var ranker Ranker = sum{}
+	if res.Value.Type() == parser.ValueTypeMatrix {
+		mat, ok := res.Value.(promql.Matrix)
+		if !ok {
+			err := errors.New("Cannot convert to matrix")
+			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+		}
+		sort.Slice(mat, func(i, j int) bool {
+			return (ranker.rank(mat[i]) > ranker.rank(mat[j]))
+		})
 	}
 
 	// Optional stats field in response if parameter "stats" is not empty.
