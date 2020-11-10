@@ -75,7 +75,8 @@ func openTestDB(t testing.TB, opts *Options, rngs []int64) (db *DB) {
 }
 
 // query runs a matcher query against the querier and fully expands its data.
-// This function is reused as queryblock in cmd/promtool/backfill_test.go If you change either, please make sure to change at both places.
+// The verbatim copy of this function exists in cmd/promtool/backfill_test.go, named queryblock there.
+// Consider to apply any changes here to the other copy, too.
 func query(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) map[string][]tsdbutil.Sample {
 	ss := q.Select(false, nil, matchers...)
 	defer func() {
