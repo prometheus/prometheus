@@ -4,6 +4,9 @@ package xmlrpc
 
 import (
 	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"runtime"
 	"sync"
 	"testing"
@@ -131,11 +134,54 @@ func Test_CloseMemoryLeak(t *testing.T) {
 	}
 }
 
+func Test_BadStatus(t *testing.T) {
+
+	// this is a mock xmlrpc server which sends an invalid status code on the first request
+	// and an empty methodResponse for all subsequence requests
+	first := true
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if first {
+			first = false
+			http.Error(w, "bad status", http.StatusInternalServerError)
+		} else {
+			io.WriteString(w, `
+				<?xml version="1.0" encoding="UTF-8"?>
+				<methodResponse>
+					<params>
+						<param>
+							<value>
+								<struct></struct>
+							</value>
+						</param>
+					</params>
+				</methodResponse>
+			`)
+		}
+	}))
+
+	client, err := NewClient(ts.URL, nil)
+	if err != nil {
+		t.Fatalf("Can't create client: %v", err)
+	}
+	defer client.Close()
+
+	var result interface{}
+
+	// expect an error due to the bad status code
+	if err := client.Call("method", nil, &result); err == nil {
+		t.Fatalf("Bad status didn't result in error")
+	}
+
+	// expect subsequent calls to succeed
+	if err := client.Call("method", nil, &result); err != nil {
+		t.Fatalf("Failed to recover after bad status: %v", err)
+	}
+}
+
 func newClient(t *testing.T) *Client {
 	client, err := NewClient("http://localhost:5001", nil)
 	if err != nil {
 		t.Fatalf("Can't create client: %v", err)
 	}
-
 	return client
 }

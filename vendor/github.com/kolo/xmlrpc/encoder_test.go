@@ -39,6 +39,22 @@ var marshalTests = []struct {
 			"Dates": map[string]interface{}{"Birth": time.Date(1829, time.November, 10, 23, 0, 0, 0, time.UTC), "Death": time.Date(2009, time.November, 10, 23, 0, 0, 0, time.UTC)}},
 		"<value><struct><member><name>Age</name><value><int>6</int></value></member><member><name>Dates</name><value><struct><member><name>Birth</name><value><dateTime.iso8601>18291110T23:00:00</dateTime.iso8601></value></member><member><name>Death</name><value><dateTime.iso8601>20091110T23:00:00</dateTime.iso8601></value></member></struct></value></member><member><name>Name</name><value><string>John Smith</string></value></member><member><name>Wight</name><value><array><data><value><double>66.67</double></value><value><double>100.5</double></value></data></array></value></member></struct></value>",
 	},
+	{&struct {
+		Title  string
+		Amount int
+		Author string `xmlrpc:"author,omitempty"`
+	}{
+		Title: "War and Piece", Amount: 20,
+	}, "<value><struct><member><name>Title</name><value><string>War and Piece</string></value></member><member><name>Amount</name><value><int>20</int></value></member></struct></value>"},
+	{&struct {
+		Title  string
+		Amount int
+		Author string `xmlrpc:"author,omitempty"`
+	}{
+		Title: "War and Piece", Amount: 20, Author: "Leo Tolstoy",
+	}, "<value><struct><member><name>Title</name><value><string>War and Piece</string></value></member><member><name>Amount</name><value><int>20</int></value></member><member><name>author</name><value><string>Leo Tolstoy</string></value></member></struct></value>"},
+	{&struct {
+	}{}, "<value><struct></struct></value>"},
 }
 
 func Test_marshal(t *testing.T) {
