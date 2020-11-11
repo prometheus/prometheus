@@ -111,12 +111,12 @@ func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 			p2 := NewParser(input)
 			tsUpper := t + offset
 			for {
-				e, err := p2.Next()
-				if err == io.EOF {
+				e, errP := p2.Next()
+				if errP == io.EOF {
 					break
 				}
-				if err != nil {
-					return errors.Wrap(err, "parse")
+				if errP != nil {
+					return errors.Wrap(errP, "parse")
 				}
 				if e != textparse.EntrySeries {
 					continue
@@ -136,8 +136,9 @@ func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 			if err := app.Commit(); err != nil {
 				return errors.Wrap(err, "commit")
 			}
+
 			_, errF := w.Flush(ctx)
-			if errF != nil {
+			if tsdb.SeriesCount != 0 && errF != nil {
 				return errors.Wrap(errF, "flush")
 			}
 			return nil

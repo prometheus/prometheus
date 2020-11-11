@@ -39,6 +39,8 @@ type BlockWriter struct {
 	chunkDir  string
 }
 
+var SeriesCount uint64
+
 // NewBlockWriter create a new block writer.
 //
 // The returned writer accumulates all the series in the Head block until `Flush` is called.
@@ -85,7 +87,7 @@ func (w *BlockWriter) Appender(ctx context.Context) storage.Appender {
 // Flush implements the Writer interface. This is where actual block writing
 // happens. After flush completes, no writes can be done.
 func (w *BlockWriter) Flush(ctx context.Context) (ulid.ULID, error) {
-	seriesCount := w.head.NumSeries()
+	SeriesCount = w.head.NumSeries()
 	if w.head.NumSeries() == 0 {
 		return ulid.ULID{}, errors.New("no series appended, aborting")
 	}
@@ -94,7 +96,7 @@ func (w *BlockWriter) Flush(ctx context.Context) (ulid.ULID, error) {
 	// Add +1 millisecond to block maxt because block intervals are half-open: [b.MinTime, b.MaxTime).
 	// Because of this block intervals are always +1 than the total samples it includes.
 	maxt := w.head.MaxTime() + 1
-	level.Info(w.logger).Log("msg", "flushing", "series_count", seriesCount, "mint", timestamp.Time(mint), "maxt", timestamp.Time(maxt))
+	level.Info(w.logger).Log("msg", "flushing", "series_count", SeriesCount, "mint", timestamp.Time(mint), "maxt", timestamp.Time(maxt))
 
 	compactor, err := NewLeveledCompactor(ctx,
 		nil,
