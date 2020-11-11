@@ -29,20 +29,20 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 )
 
-// Parser is the openmetrics parser.
-type Parser struct {
+// OpenMetricsParser is returned by NewParser on the given reader.
+type OpenMetricsParser struct {
 	textparse.Parser
 	s *bufio.Scanner
 }
 
-// NewParser is a tiny layer between textparse.Parser and importer.Parser which works on io.Reader.
+// NewParser returns an OpenMetricsParser.
 func NewParser(r io.Reader) textparse.Parser {
-	return &Parser{s: bufio.NewScanner(r)}
+	return &OpenMetricsParser{s: bufio.NewScanner(r)}
 }
 
 // Next advances the parser to the next sample. It returns io.EOF if no
 // more samples were read.
-func (p *Parser) Next() (textparse.Entry, error) {
+func (p *OpenMetricsParser) Next() (textparse.Entry, error) {
 	for p.s.Scan() {
 		line := p.s.Bytes()
 		line = append(line, '\n')
@@ -108,10 +108,10 @@ func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 			if errReset != nil {
 				return errors.Wrap(errReset, "seek file")
 			}
-			p2 := NewParser(input)
+			p := NewParser(input)
 			tsUpper := t + offset
 			for {
-				e, errP := p2.Next()
+				e, errP := p.Next()
 				if errP == io.EOF {
 					break
 				}
@@ -122,8 +122,8 @@ func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 					continue
 				}
 				l := labels.Labels{}
-				p2.Metric(&l)
-				_, ts, v := p2.Series()
+				p.Metric(&l)
+				_, ts, v := p.Series()
 				if ts == nil {
 					return errors.Errorf("expected timestamp for series %v, got none", l.String())
 				}
@@ -156,8 +156,5 @@ func backfill(input *os.File, outputDir string) (err error) {
 	if errTs != nil {
 		return errors.Wrap(errTs, "error getting min and max timestamp")
 	}
-	if errCb := createBlocks(input, mint, maxt, outputDir); errCb != nil {
-		return errors.Wrap(errCb, "block creation")
-	}
-	return nil
+	return errors.Wrap(createBlocks(input, mint, maxt, outputDir), "block creation")
 }

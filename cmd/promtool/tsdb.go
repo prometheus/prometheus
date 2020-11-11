@@ -614,7 +614,7 @@ func checkErr(err error) int {
 	return 0
 }
 
-func readOpenMetrics(path string, outputDir string) (err error) {
+func backfillOpenMetrics(path string, outputDir string) (err error) {
 	input, err := os.Open(path)
 	if err != nil {
 		return err
