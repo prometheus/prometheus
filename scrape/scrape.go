@@ -191,23 +191,20 @@ func init() {
 type scrapePool struct {
 	appendable storage.Appendable
 	logger     log.Logger
+	cancel     context.CancelFunc
 
-	// targetMtx protects activeTargets and droppedTargets from concurrent reads
-	// and writes. Only one of Sync/stop/reload may be called at once due to
-	// manager.mtxScrape so we only need to protect from concurrent reads from
-	// the ActiveTargets and DroppedTargets methods. This allows those two
-	// methods to always complete without having to wait on scrape loops to gracefull stop.
+	// mtx must not be taken after targetMtx.
+	mtx            sync.Mutex
+	config         *config.ScrapeConfig
+	client         *http.Client
+	loops          map[uint64]loop
+	targetLimitHit bool // Internal state to speed up the target_limit checks.
+
 	targetMtx sync.Mutex
-
-	config *config.ScrapeConfig
-	client *http.Client
-	// Targets and loops must always be synchronized to have the same
+	// activeTargets and loops must always be synchronized to have the same
 	// set of hashes.
 	activeTargets  map[uint64]*Target
 	droppedTargets []*Target
-	loops          map[uint64]loop
-	cancel         context.CancelFunc
-	targetLimitHit bool // Internal state to speed up the target_limit checks.
 
 	// Constructor for new scrape loops. This is settable for testing convenience.
 	newLoop func(scrapeLoopOptions) loop
@@ -297,6 +294,8 @@ func (sp *scrapePool) DroppedTargets() []*Target {
 
 // stop terminates all scrape loops and returns after they all terminated.
 func (sp *scrapePool) stop() {
+	sp.mtx.Lock()
+	defer sp.mtx.Unlock()
 	sp.cancel()
 	var wg sync.WaitGroup
 
@@ -331,6 +330,8 @@ func (sp *scrapePool) stop() {
 // but all scrape loops are restarted with the new scrape configuration.
 // This method returns after all scrape loops that were stopped have stopped scraping.
 func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
+	sp.mtx.Lock()
+	defer sp.mtx.Unlock()
 	targetScrapePoolReloads.Inc()
 	start := time.Now()
 
@@ -407,6 +408,8 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 // Sync converts target groups into actual scrape targets and synchronizes
 // the currently running scraper with the resulting set and returns all scraped and dropped targets.
 func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
+	sp.mtx.Lock()
+	defer sp.mtx.Unlock()
 	start := time.Now()
 
 	sp.targetMtx.Lock()
