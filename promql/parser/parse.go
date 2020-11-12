@@ -577,7 +577,7 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 	case *SubqueryExpr:
 		ty := p.checkAST(n.Expr)
 		if ty != ValueTypeVector {
-			p.addParseErrf(n.PositionRange(), "subquery is only allowed on instant vector, got %s in %q instead", ty, n.String())
+			p.addParseErrf(n.PositionRange(), "subquery is only allowed on instant vector, got %s instead", ty)
 		}
 	case *MatrixSelector:
 		p.checkAST(n.VectorSelector)

@@ -15,6 +15,7 @@ package parser
 
 import (
 	"math"
+	"strings"
 	"testing"
 	"time"
 
@@ -2235,6 +2236,11 @@ var testExpr = []struct {
 		fail:   true,
 		errMsg: `expected type range vector`,
 	}, {
+		// This is testing that we are not re-rendering the expression string for each error, which would timeout.
+		input:  "(" + strings.Repeat("-{}-1", 10000) + ")" + strings.Repeat("[1m:]", 1000),
+		fail:   true,
+		errMsg: `1:3: parse error: vector selector must contain at least one non-empty matcher`,
+	}, {
 		input: "sum(sum)",
 		expected: &AggregateExpr{
 			Op: SUM,
@@ -2644,11 +2650,11 @@ var testExpr = []struct {
 	}, {
 		input:  "test[5d] OFFSET 10s [10m:5s]",
 		fail:   true,
-		errMsg: "1:1: parse error: subquery is only allowed on instant vector, got matrix in \"test[5d] offset 10s[10m:5s]\"",
+		errMsg: "1:1: parse error: subquery is only allowed on instant vector, got matrix",
 	}, {
 		input:  `(foo + bar{nm="val"})[5m:][10m:5s]`,
 		fail:   true,
-		errMsg: `1:1: parse error: subquery is only allowed on instant vector, got matrix in "(foo + bar{nm=\"val\"})[5m:][10m:5s]" instead`,
+		errMsg: `1:1: parse error: subquery is only allowed on instant vector, got matrix`,
 	},
 }
 
