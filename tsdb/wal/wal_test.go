@@ -454,8 +454,9 @@ func TestLogPartialWrite(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			dirPath, err := ioutil.TempDir("", "")
+			dirPath, err := ioutil.TempDir("", "logpartialwrite")
 			require.NoError(t, err)
+			defer func() { require.NoError(t, os.RemoveAll(dirPath)) }()
 
 			w, err := NewSize(nil, nil, dirPath, segmentSize, false)
 			require.NoError(t, err)
@@ -480,6 +481,7 @@ func TestLogPartialWrite(t *testing.T) {
 			// Read it back. We expect no corruption.
 			s, err := OpenReadSegment(SegmentName(dirPath, 0))
 			require.NoError(t, err)
+			defer func() { require.NoError(t, s.Close()) }()
 
 			r := NewReader(NewSegmentBufReader(s))
 			for i := 0; i < testData.numRecords; i++ {
