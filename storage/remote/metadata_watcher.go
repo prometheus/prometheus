@@ -128,12 +128,10 @@ func (mw *MetadataWatcher) collect() {
 	// scrape.MetricMetadata. In this case, a combination of metric name, help, type, and unit.
 	metadataSet := map[scrape.MetricMetadata]struct{}{}
 	metadata := []scrape.MetricMetadata{}
-	for _, t := range mw.manager.TargetsActive() {
-		for _, tt := range t {
-			for _, entry := range tt.MetadataList() {
-				_, ok := metadataSet[entry]
-
-				if !ok {
+	for _, tset := range mw.manager.TargetsActive() {
+		for _, target := range tset {
+			for _, entry := range target.MetadataList() {
+				if _, ok := metadataSet[entry]; !ok {
 					metadata = append(metadata, entry)
 					continue
 				}
