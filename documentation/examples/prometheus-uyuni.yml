@@ -1,0 +1,17 @@
+# A example scrape configuration for running Prometheus with Uyuni.
+
+scrape_configs:
+
+  # Make Prometheus scrape itself for metrics.
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Discover Uyuni managed targets to scrape.
+  - job_name: 'uyuni'
+
+    # Scrape Eureka itself to discover new services.
+    uyuni_sd_configs:
+      - server: http://uyuni-project.org
+        user: gopher
+        password: hole
