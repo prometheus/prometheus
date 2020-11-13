@@ -30,7 +30,9 @@ jobs:
         - v3-npm-deps-{{ checksum "web/ui/react-app/yarn.lock" }}
         - v3-npm-deps-
     - run:
-        command: make
+        command: |
+          export TMPDIR=$(mktemp -d)
+          make test && (! ls $TMPDIR/* 2>/dev/null) && make && rm -rf $TMPDIR
         environment:
           # Run garbage collection more aggressively to avoid getting OOMed during the lint phase.
           GOGC: "20"
