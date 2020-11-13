@@ -341,7 +341,7 @@ func readPrometheusLabels(r io.Reader, n int) ([]labels.Labels, error) {
 	return mets, nil
 }
 
-func listBlocks(path string, humanReadable bool) error {
+func ListBlocks(path string, humanReadable bool) error {
 	db, err := tsdb.OpenDBReadOnly(path, nil)
 	if err != nil {
 		return err

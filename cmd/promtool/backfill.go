@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/prometheus/prometheus/tsdb"
+	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 )
 
 // OpenMetricsParser is returned by NewParser on the given reader.
@@ -97,11 +98,13 @@ func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 	mint = offset * (mint / offset)
 	for t := mint; t <= maxt; t = t + offset {
 		err := func() error {
-			w, errw := tsdb.NewBlockWriter(log.NewNopLogger(), outputDir, offset)
-			if errw != nil {
-				return errors.Wrap(errw, "block writer")
+			w, err := tsdb.NewBlockWriter(log.NewNopLogger(), outputDir, offset)
+			if err != nil {
+				return errors.Wrap(err, "block writer")
 			}
-			defer w.Close()
+			defer func() {
+				err = tsdb_errors.NewMulti(err, w.Close()).Err()
+			}()
 			ctx := context.Background()
 			app := w.Appender(ctx)
 			_, errReset := input.Seek(0, 0)
@@ -136,8 +139,11 @@ func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 			if err := app.Commit(); err != nil {
 				return errors.Wrap(err, "commit")
 			}
-
 			_, errF := w.Flush(ctx)
+			errL := ListBlocks(outputDir, true)
+			if errL != nil {
+				return errors.Wrap(errF, "print blocks")
+			}
 			if tsdb.SeriesCount != 0 && errF != nil {
 				return errors.Wrap(errF, "flush")
 			}
