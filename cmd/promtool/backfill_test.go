@@ -237,43 +237,43 @@ http_requests_total{code="400"} 1 1565144513989
 		},
 		{
 			ToParse: `# HELP rpc_duration_seconds A summary of the RPC duration in seconds.
-# TYPE rpc_duration_seconds summary
-rpc_duration_seconds{quantile="0.01"} 3102
-rpc_duration_seconds{quantile="0.05"} 3272
-# EOF
-`,
+		# TYPE rpc_duration_seconds summary
+		rpc_duration_seconds{quantile="0.01"} 3102
+		rpc_duration_seconds{quantile="0.05"} 3272
+		# EOF
+		`,
 			IsOk: false,
 		},
 		{
 			ToParse: `# HELP bad_ts This is a metric with an extreme timestamp
-# TYPE bad_ts gauge
-bad_ts{type="bad_timestamp"} 420 -1e99
-# EOF
-`,
+		# TYPE bad_ts gauge
+		bad_ts{type="bad_timestamp"} 420 -1e99
+		# EOF
+		`,
 			IsOk: false,
 		},
 		{
 			ToParse: `# HELP bad_ts This is a metric with an extreme timestamp
-# TYPE bad_ts gauge
-bad_ts{type="bad_timestamp"} 420 1e99
-# EOF
-`,
+		# TYPE bad_ts gauge
+		bad_ts{type="bad_timestamp"} 420 1e99
+		# EOF
+		`,
 			IsOk: false,
 		},
 		{
 			ToParse: `# HELP bad_metric This a bad metric
-# TYPE bad_metric bad_type
-bad_metric{type="has a bad type information"} 0.0 111
-# EOF
-`,
+		# TYPE bad_metric bad_type
+		bad_metric{type="has a bad type information"} 0.0 111
+		# EOF
+		`,
 			IsOk: false,
 		},
 		{
 			ToParse: `# HELP no_nl This test has no newline so will fail
-# TYPE no_nl gauge
-no_nl{type="no newline"}
-# EOF
-`,
+		# TYPE no_nl gauge
+		no_nl{type="no newline"}
+		# EOF
+		`,
 			IsOk: false,
 		},
 	}
