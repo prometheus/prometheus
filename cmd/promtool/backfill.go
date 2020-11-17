@@ -140,10 +140,10 @@ func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 				return errors.Wrap(err, "commit")
 			}
 			_, errF := w.Flush(ctx)
-			errL := ListBlocks(outputDir, true)
-			if errL != nil {
-				return errors.Wrap(errF, "print blocks")
-			}
+			// errL := ListBlocks(outputDir, true)
+			// if errL != nil {
+			// 	return errors.Wrap(errF, "print blocks")
+			// }
 			if tsdb.SeriesCount != 0 && errF != nil {
 				return errors.Wrap(errF, "flush")
 			}
