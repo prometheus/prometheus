@@ -103,6 +103,12 @@ func newCRC32() hash.Hash32 {
 	return crc32.New(castagnoliTable)
 }
 
+type symbolCacheEntry struct {
+	index          uint32
+	lastValue      string
+	lastValueIndex uint32
+}
+
 // Writer implements the IndexWriter interface for the standard
 // serialization format.
 type Writer struct {
@@ -125,11 +131,11 @@ type Writer struct {
 	buf1 encoding.Encbuf
 	buf2 encoding.Encbuf
 
-	numSymbols     int
-	symbols        *Symbols
-	symbolFile     *fileutil.MmapFile
-	lastSymbol     string
-	labelNameCache map[string]uint32
+	numSymbols  int
+	symbols     *Symbols
+	symbolFile  *fileutil.MmapFile
+	lastSymbol  string
+	symbolCache map[string]symbolCacheEntry
 
 	labelIndexes []labelIndexHashEntry // Label index offsets.
 	labelNames   map[string]uint64     // Label names, and their usage.
@@ -225,9 +231,9 @@ func NewWriter(ctx context.Context, fn string) (*Writer, error) {
 		buf1: encoding.Encbuf{B: make([]byte, 0, 1<<22)},
 		buf2: encoding.Encbuf{B: make([]byte, 0, 1<<22)},
 
-		labelNameCache: make(map[string]uint32, 1<<8),
-		labelNames:     make(map[string]uint64, 1<<8),
-		crc32:          newCRC32(),
+		symbolCache: make(map[string]symbolCacheEntry, 1<<8),
+		labelNames:  make(map[string]uint64, 1<<8),
+		crc32:       newCRC32(),
 	}
 	if err := iw.writeMeta(); err != nil {
 		return nil, err
@@ -432,23 +438,31 @@ func (w *Writer) AddSeries(ref uint64, lset labels.Labels, chunks ...chunks.Meta
 	w.buf2.PutUvarint(len(lset))
 
 	for _, l := range lset {
-		index, ok := w.labelNameCache[l.Name]
+		var err error
+		cacheEntry, ok := w.symbolCache[l.Name]
+		nameIndex := cacheEntry.index
 		if !ok {
-			var err error
-			index, err = w.symbols.ReverseLookup(l.Name)
+			nameIndex, err = w.symbols.ReverseLookup(l.Name)
 			if err != nil {
 				return errors.Errorf("symbol entry for %q does not exist, %v", l.Name, err)
 			}
-			w.labelNameCache[l.Name] = index
 		}
 		w.labelNames[l.Name]++
-		w.buf2.PutUvarint32(index)
+		w.buf2.PutUvarint32(nameIndex)
 
-		index, err := w.symbols.ReverseLookup(l.Value)
-		if err != nil {
-			return errors.Errorf("symbol entry for %q does not exist, %v", l.Value, err)
+		valueIndex := cacheEntry.lastValueIndex
+		if !ok || cacheEntry.lastValue != l.Value {
+			valueIndex, err = w.symbols.ReverseLookup(l.Value)
+			if err != nil {
+				return errors.Errorf("symbol entry for %q does not exist, %v", l.Value, err)
+			}
+			w.symbolCache[l.Name] = symbolCacheEntry{
+				index:          nameIndex,
+				lastValue:      l.Value,
+				lastValueIndex: valueIndex,
+			}
 		}
-		w.buf2.PutUvarint32(index)
+		w.buf2.PutUvarint32(valueIndex)
 	}
 
 	w.buf2.PutUvarint(len(chunks))
