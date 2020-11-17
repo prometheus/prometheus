@@ -98,6 +98,10 @@ func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 	mint = offset * (mint / offset)
 	for t := mint; t <= maxt; t = t + offset {
 		err := func() error {
+			errL := ListBlocks(outputDir, true)
+			if errL != nil {
+				return errors.Wrap(errL, "print blocks")
+			}
 			w, err := tsdb.NewBlockWriter(log.NewNopLogger(), outputDir, offset)
 			if err != nil {
 				return errors.Wrap(err, "block writer")
@@ -140,11 +144,6 @@ func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 				return errors.Wrap(err, "commit")
 			}
 			_, errF := w.Flush(ctx)
-			// TODO: debug what to do with this during test
-			// errL := ListBlocks(outputDir, true)
-			// if errL != nil {
-			// 	return errors.Wrap(errF, "print blocks")
-			// }
 			if tsdb.SeriesCount != 0 && errF != nil {
 				return errors.Wrap(errF, "flush")
 			}

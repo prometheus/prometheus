@@ -126,6 +126,7 @@ func TestBackfill(t *testing.T) {
 		ToParse      string
 		IsOk         bool
 		MetricLabels []string
+		Description  string
 		Expected     struct {
 			MinTime   int64
 			MaxTime   int64
@@ -135,8 +136,9 @@ func TestBackfill(t *testing.T) {
 		}
 	}{
 		{
-			ToParse: `# EOF`,
-			IsOk:    true,
+			ToParse:     `# EOF`,
+			IsOk:        true,
+			Description: "Empty file.",
 		},
 		{
 			ToParse: `# HELP http_requests_total The total number of HTTP requests.
@@ -145,7 +147,8 @@ http_requests_total{code="200"} 1021 1565133713989
 http_requests_total{code="400"} 1 1565133713990
 # EOF
 `,
-			IsOk: true,
+			IsOk:        true,
+			Description: "Multiple samples with different timestamp for different series.",
 			Expected: struct {
 				MinTime   int64
 				MaxTime   int64
@@ -170,10 +173,42 @@ http_requests_total{code="400"} 1 1565133713990
 			ToParse: `# HELP http_requests_total The total number of HTTP requests.
 # TYPE http_requests_total counter
 http_requests_total{code="200"} 1021 1565133713989
+http_requests_total{code="200"} 1 1565133714989
+http_requests_total{code="400"} 2 1565133715989
+# EOF
+`,
+			IsOk:         true,
+			Description:  "Multiple samples with different timestamp for the same series",
+			MetricLabels: []string{"__name__", "http_requests_total"},
+			Expected: struct {
+				MinTime   int64
+				MaxTime   int64
+				Symbols   []string
+				NumBlocks int
+				Samples   []backfillSample
+			}{
+				MinTime:   1565133713989000,
+				MaxTime:   1565133715989001,
+				Symbols:   []string{"http_requests_total", "code", "200", "400", "__name__"},
+				NumBlocks: 1,
+				Samples: []backfillSample{
+					{
+						Timestamp: 1565133713989000,
+						Value:     1021,
+						Labels:    labels.FromStrings("__name__", "http_requests_total", "code", "200"),
+					},
+				},
+			},
+		},
+		{
+			ToParse: `# HELP http_requests_total The total number of HTTP requests.
+# TYPE http_requests_total counter
+http_requests_total{code="200"} 1021 1565133713989
 http_requests_total{code="400"} 1 1565144513989
 # EOF
 `,
 			IsOk:         true,
+			Description:  "Multiple samples that end up in different blocks.",
 			MetricLabels: []string{"__name__", "http_requests_total"},
 			Expected: struct {
 				MinTime   int64
@@ -204,7 +239,8 @@ http_requests_total{code="400"} 1 1565144513989
 			ToParse: `no_help_no_type{foo="bar"} 42 6900
 # EOF
 `,
-			IsOk: true,
+			IsOk:        true,
+			Description: "Sample with no #HELP or #TYPE keyword.",
 			Expected: struct {
 				MinTime   int64
 				MaxTime   int64
@@ -229,7 +265,8 @@ http_requests_total{code="400"} 1 1565144513989
 			ToParse: `bare_metric 42.24 1001
 # EOF
 `,
-			IsOk: true,
+			IsOk:        true,
+			Description: "Bare sample.",
 			Expected: struct {
 				MinTime   int64
 				MaxTime   int64
@@ -257,23 +294,8 @@ http_requests_total{code="400"} 1 1565144513989
 		rpc_duration_seconds{quantile="0.05"} 3272
 		# EOF
 		`,
-			IsOk: false,
-		},
-		{
-			ToParse: `# HELP bad_ts This is a metric with an extreme timestamp
-		# TYPE bad_ts gauge
-		bad_ts{type="bad_timestamp"} 420 -1e99
-		# EOF
-		`,
-			IsOk: false,
-		},
-		{
-			ToParse: `# HELP bad_ts This is a metric with an extreme timestamp
-		# TYPE bad_ts gauge
-		bad_ts{type="bad_timestamp"} 420 1e99
-		# EOF
-		`,
-			IsOk: false,
+			IsOk:        false,
+			Description: "Does not have timestamp.",
 		},
 		{
 			ToParse: `# HELP bad_metric This a bad metric
@@ -281,7 +303,8 @@ http_requests_total{code="400"} 1 1565144513989
 		bad_metric{type="has a bad type information"} 0.0 111
 		# EOF
 		`,
-			IsOk: false,
+			IsOk:        false,
+			Description: "Has a bad type information.",
 		},
 		{
 			ToParse: `# HELP no_nl This test has no newline so will fail
@@ -289,7 +312,8 @@ http_requests_total{code="400"} 1 1565144513989
 		no_nl{type="no newline"}
 		# EOF
 		`,
-			IsOk: false,
+			IsOk:        false,
+			Description: "No newline.",
 		},
 	}
 	for _, test := range tests {
@@ -306,14 +330,14 @@ http_requests_total{code="400"} 1 1565144513989
 			require.NoError(t, errb)
 			if len(test.Expected.Symbols) > 0 {
 				db, err := tsdb.OpenDBReadOnly(outputDir, nil)
-				defer db.Close()
 				require.NoError(t, err)
+				defer db.Close()
 				blocks, err := db.Blocks()
 				require.NoError(t, err)
 				testBlocks(t, blocks, test.Expected.MinTime, test.Expected.MaxTime, test.Expected.Samples, test.MetricLabels, test.Expected.Symbols, test.Expected.NumBlocks)
 			}
 		} else {
-			require.Error(t, errb)
+			require.Error(t, errb, test.Description)
 		}
 	}
 }
