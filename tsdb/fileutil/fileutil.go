@@ -18,7 +18,7 @@
 package fileutil
 
 import (
-	"io/ioutil"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -59,13 +59,20 @@ func CopyDirs(src, dest string) error {
 	return nil
 }
 
+// Making changes for running benchmark in Prometheus.
 func copyFile(src, dest string) error {
-	data, err := ioutil.ReadFile(src)
+	source, err := os.Open(src)
 	if err != nil {
 		return err
 	}
+	defer source.Close()
 
-	err = ioutil.WriteFile(dest, data, 0666)
+	destination, err := os.Create(dest)
+	if err != nil {
+		return err
+	}
+	defer destination.Close()
+	_, err = io.Copy(destination, source)
 	if err != nil {
 		return err
 	}
