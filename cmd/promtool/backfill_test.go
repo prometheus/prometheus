@@ -26,19 +26,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type mySample struct {
+type backfillSample struct {
 	Timestamp int64
 	Value     float64
 	Labels    labels.Labels
 }
-
-type backfillSample struct {
-	t int64
-	v float64
-}
-
-func (s backfillSample) T() int64   { return s.t }
-func (s backfillSample) V() float64 { return s.v }
 
 func createTemporaryOpenmetricsFile(t *testing.T, omFile string, text string) error {
 	f, err := os.Create(omFile)
@@ -49,18 +41,28 @@ func createTemporaryOpenmetricsFile(t *testing.T, omFile string, text string) er
 	return nil
 }
 
-func queryblock(t testing.TB, q storage.Querier, lbls labels.Labels, matchers ...*labels.Matcher) ([]mySample, error) {
+func sortSamples(samples []backfillSample) {
+	sort.Slice(samples, func(x, y int) bool {
+		sx, sy := samples[x], samples[y]
+		if sx.Timestamp != sy.Timestamp {
+			return sx.Timestamp < sy.Timestamp
+		}
+		return sx.Value < sy.Value
+	})
+}
+
+func queryblock(t testing.TB, q storage.Querier, lbls labels.Labels, matchers ...*labels.Matcher) ([]backfillSample, error) {
 	ss := q.Select(false, nil, matchers...)
 	defer func() {
 		require.NoError(t, q.Close())
 	}()
-	samples := []mySample{}
+	samples := []backfillSample{}
 	for ss.Next() {
 		series := ss.At()
 		it := series.Iterator()
 		for it.Next() {
 			ts, v := it.At()
-			samples = append(samples, mySample{Timestamp: ts, Value: v, Labels: lbls})
+			samples = append(samples, backfillSample{Timestamp: ts, Value: v, Labels: series.Labels()})
 		}
 		require.NoError(t, it.Err())
 		if len(samples) == 0 {
@@ -70,10 +72,10 @@ func queryblock(t testing.TB, q storage.Querier, lbls labels.Labels, matchers ..
 	return samples, nil
 }
 
-func testBlocks(t *testing.T, blocks []tsdb.BlockReader, expectedSamples []mySample, metricLabels []string, expectedSymbols []string, expectedNumBlocks int) {
+func testBlocks(t *testing.T, blocks []tsdb.BlockReader, expectedSamples []backfillSample, metricLabels []string, expectedSymbols []string, expectedNumBlocks int) {
 	require.Equal(t, expectedNumBlocks, len(blocks))
 	allSymbols := make(map[string]struct{})
-	allSamples := make([]mySample, 0)
+	allSamples := make([]backfillSample, 0)
 	for _, block := range blocks {
 		index, err := block.Index()
 		require.NoError(t, err)
@@ -89,7 +91,8 @@ func testBlocks(t *testing.T, blocks []tsdb.BlockReader, expectedSamples []mySam
 		series, err := queryblock(t, q, labels.FromStrings(metricLabels...), labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
 		require.NoError(t, err)
 		allSamples = append(allSamples, series[0])
-		_ = index.Close()
+		// fix close put in defer
+		index.Close()
 	}
 	allSymbolsSlice := make([]string, 0)
 	for key := range allSymbols {
@@ -98,8 +101,9 @@ func testBlocks(t *testing.T, blocks []tsdb.BlockReader, expectedSamples []mySam
 	sort.Strings(allSymbolsSlice)
 	sort.Strings(expectedSymbols)
 	require.Equal(t, expectedSymbols, allSymbolsSlice)
-	// sortSamples expected and allSamples and compare
-	// check if dB time ranges are correct
+	sortSamples(allSamples)
+	sortSamples(expectedSamples)
+	require.Equal(t, expectedSamples, allSamples)
 }
 
 func TestBackfill(t *testing.T) {
@@ -112,9 +116,41 @@ func TestBackfill(t *testing.T) {
 			MaxTime   int64
 			Symbols   []string
 			NumBlocks int
-			Samples   []mySample
+			Samples   []backfillSample
 		}
 	}{
+		{
+			ToParse: `# EOF`,
+			IsOk:    true,
+		},
+		{
+			ToParse: `# HELP http_requests_total The total number of HTTP requests.
+# TYPE http_requests_total counter
+http_requests_total{code="200"} 1021 1565133713989
+http_requests_total{code="400"} 1 1565133713990
+# EOF
+`,
+			IsOk: true,
+			Expected: struct {
+				MinTime   int64
+				MaxTime   int64
+				Symbols   []string
+				NumBlocks int
+				Samples   []backfillSample
+			}{
+				MinTime:   1565133713989000,
+				MaxTime:   1565133713990000,
+				Symbols:   []string{"http_requests_total", "code", "200", "400", "__name__"},
+				NumBlocks: 1,
+				Samples: []backfillSample{
+					{
+						Timestamp: 1565133713989000,
+						Value:     1021,
+						Labels:    labels.FromStrings("__name__", "http_requests_total", "code", "200"),
+					},
+				},
+			},
+		},
 		{
 			ToParse: `# HELP http_requests_total The total number of HTTP requests.
 # TYPE http_requests_total counter
@@ -129,13 +165,13 @@ http_requests_total{code="400"} 1 1565144513989
 				MaxTime   int64
 				Symbols   []string
 				NumBlocks int
-				Samples   []mySample
+				Samples   []backfillSample
 			}{
 				MinTime:   1565133713989000,
 				MaxTime:   1565144513989000,
 				Symbols:   []string{"http_requests_total", "code", "200", "400", "__name__"},
 				NumBlocks: 2,
-				Samples: []mySample{
+				Samples: []backfillSample{
 					{
 						Timestamp: 1565133713989000,
 						Value:     1021,
@@ -149,6 +185,97 @@ http_requests_total{code="400"} 1 1565144513989
 				},
 			},
 		},
+		{
+			ToParse: `no_help_no_type{foo="bar"} 42 6900
+# EOF
+`,
+			IsOk: true,
+			Expected: struct {
+				MinTime   int64
+				MaxTime   int64
+				Symbols   []string
+				NumBlocks int
+				Samples   []backfillSample
+			}{
+				MinTime:   6900000,
+				MaxTime:   6900000,
+				Symbols:   []string{"no_help_no_type", "foo", "bar", "__name__"},
+				NumBlocks: 1,
+				Samples: []backfillSample{
+					{
+						Timestamp: 6900000,
+						Value:     42,
+						Labels:    labels.FromStrings("__name__", "no_help_no_type", "foo", "bar"),
+					},
+				},
+			},
+		},
+		{
+			ToParse: `bare_metric 42.24 1001
+# EOF
+`,
+			IsOk: true,
+			Expected: struct {
+				MinTime   int64
+				MaxTime   int64
+				Symbols   []string
+				NumBlocks int
+				Samples   []backfillSample
+			}{
+				MinTime:   1001000,
+				MaxTime:   1001000,
+				Symbols:   []string{"bare_metric", "__name__"},
+				NumBlocks: 1,
+				Samples: []backfillSample{
+					{
+						Timestamp: 1001000,
+						Value:     42.24,
+						Labels:    labels.FromStrings("__name__", "bare_metric"),
+					},
+				},
+			},
+		},
+		{
+			ToParse: `# HELP rpc_duration_seconds A summary of the RPC duration in seconds.
+# TYPE rpc_duration_seconds summary
+rpc_duration_seconds{quantile="0.01"} 3102
+rpc_duration_seconds{quantile="0.05"} 3272
+# EOF
+`,
+			IsOk: false,
+		},
+		{
+			ToParse: `# HELP bad_ts This is a metric with an extreme timestamp
+# TYPE bad_ts gauge
+bad_ts{type="bad_timestamp"} 420 -1e99
+# EOF
+`,
+			IsOk: false,
+		},
+		{
+			ToParse: `# HELP bad_ts This is a metric with an extreme timestamp
+# TYPE bad_ts gauge
+bad_ts{type="bad_timestamp"} 420 1e99
+# EOF
+`,
+			IsOk: false,
+		},
+		{
+			ToParse: `# HELP bad_metric This a bad metric
+# TYPE bad_metric bad_type
+bad_metric{type="has a bad type information"} 0.0 111
+# EOF
+`,
+			IsOk: false,
+		},
+		{
+			ToParse: `# HELP no_nl This test has no newline so will fail
+# TYPE no_nl gauge
+no_nl{type="no newline"}
+# EOF
+`,
+			IsOk: false,
+		},
 	}
 	for _, test := range tests {
 		omFile := "backfill_test.om"
@@ -158,204 +285,19 @@ http_requests_total{code="400"} 1 1565144513989
 		require.NoError(t, errOpen)
 		outputDir, errd := ioutil.TempDir("", "data")
 		require.NoError(t, errd)
-		// outputDir := "./data" + fmt.Sprint(testID)
 		errb := backfill(input, outputDir)
-		// ranges
 		defer os.RemoveAll(outputDir)
 		if test.IsOk {
 			require.NoError(t, errb)
 			if len(test.Expected.Symbols) > 0 {
-				db, err := tsdb.OpenDBReadOnly(outputDir, nil) // change
+				db, err := tsdb.OpenDBReadOnly(outputDir, nil)
 				require.NoError(t, err)
 				blocks, err := db.Blocks()
 				testBlocks(t, blocks, test.Expected.Samples, test.MetricLabels, test.Expected.Symbols, test.Expected.NumBlocks)
+				db.Close() // close defer
 			}
-			// _, errReset := input.Seek(0, 0)
-			// require.NoError(t, errReset)
-			// p := NewParser(input)
-			// maxt, mint, errTs := getMinAndMaxTimestamps(p)
-			// require.NoError(t, errTs)
-			// require.Equal(t, test.Expected.MinTime, mint)
-			// require.Equal(t, test.Expected.MaxTime, maxt)
-			// require.NoError(t, input.Close())
-			// blocks, _ := ioutil.ReadDir(outputDir)
-			// require.Equal(t, test.Expected.NumBlocks, len(blocks))
-			// for _, block := range blocks {
-			// 	blockpath := filepath.Join(outputDir, block.Name())
-			// 	require.NoError(t, os.MkdirAll(path.Join(blockpath, "wal"), 0777))
-			// 	// testBlocks(t, blockpath, mint, maxt)
-			//}
 		} else {
 			require.Error(t, errb)
 		}
 	}
 }
-
-// func TestBackfill(t *testing.T) {
-// 	tests := []struct {
-// 		ToParse  string
-// 		IsOk     bool
-// 		Expected struct {
-// 			MinTime int64
-// 			MaxTime int64
-// 			Series  map[string][]tsdbutil.Sample
-// 		}
-// 	}{
-// 		{
-// 			ToParse: `# EOF`,
-// 			IsOk:    true,
-// 		},
-// 		{
-// 			ToParse: `# HELP http_requests_total The total number of HTTP requests.
-// # TYPE http_requests_total counter
-// http_requests_total{code="200"} 1021 1565133713989
-// http_requests_total{code="400"} 1 1565133713990
-// # EOF
-// `,
-// 			IsOk: true,
-// 			Expected: struct {
-// 				MinTime int64
-// 				MaxTime int64
-// 				Series  map[string][]tsdbutil.Sample
-// 			}{
-// 				MinTime: 1565133713989000,
-// 				MaxTime: 1565133713990000,
-// 				Series:  map[string][]tsdbutil.Sample{"{__name__=\"http_requests_total\", code=\"200\"}": []tsdbutil.Sample{backfillSample{t: 1565133713989000, v: 1021}}, "{__name__=\"http_requests_total\", code=\"400\"}": []tsdbutil.Sample{backfillSample{t: 1565133713990000, v: 1}}},
-// 			},
-// 		},
-// 		{
-// 			ToParse: `# HELP http_requests_total The total number of HTTP requests.
-// # TYPE http_requests_total counter
-// http_requests_total{code="200"} 1022 1565133713989
-// http_requests_total{code="400"} 2 1565133713990
-// # EOF
-// `,
-// 			IsOk: true,
-// 			Expected: struct {
-// 				MinTime int64
-// 				MaxTime int64
-// 				Series  map[string][]tsdbutil.Sample
-// 			}{
-// 				MinTime: 1565133713989000,
-// 				MaxTime: 1565133713990000,
-// 				Series:  map[string][]tsdbutil.Sample{"{__name__=\"http_requests_total\", code=\"200\"}": []tsdbutil.Sample{backfillSample{t: 1565133713989000, v: 1022}}, "{__name__=\"http_requests_total\", code=\"400\"}": []tsdbutil.Sample{backfillSample{t: 1565133713990000, v: 2}}},
-// 			},
-// 		},
-// 		{
-// 			ToParse: `# HELP http_requests_total The total number of HTTP requests.
-// # TYPE http_requests_total counter
-// http_requests_total{code="200"} 1023 1395066363000
-// http_requests_total{code="400"} 3 1395066363000
-// # EOF
-// `,
-// 			IsOk: true,
-// 			Expected: struct {
-// 				MinTime int64
-// 				MaxTime int64
-// 				Series  map[string][]tsdbutil.Sample
-// 			}{
-// 				MinTime: 1395066363000000,
-// 				MaxTime: 1395066363000000,
-// 				Series:  map[string][]tsdbutil.Sample{"{__name__=\"http_requests_total\", code=\"200\"}": []tsdbutil.Sample{backfillSample{t: 1395066363000000, v: 1023}}, "{__name__=\"http_requests_total\", code=\"400\"}": []tsdbutil.Sample{backfillSample{t: 1395066363000000, v: 3}}},
-// 			},
-// 		},
-// 		{
-// 			ToParse: `# HELP rpc_duration_seconds A summary of the RPC duration in seconds.
-// 		# TYPE rpc_duration_seconds summary
-// 		rpc_duration_seconds{quantile="0.01"} 3102
-// 		rpc_duration_seconds{quantile="0.05"} 3272
-// 		# EOF
-// 		`,
-// 			IsOk: false,
-// 		},
-// 		{
-// 			ToParse: `# HELP bad_ts This is a metric with an extreme timestamp
-// 		# TYPE bad_ts gauge
-// 		bad_ts{type="bad_timestamp"} 420 -1e99
-// 		# EOF
-// 		`,
-// 			IsOk: false,
-// 		},
-// 		{
-// 			ToParse: `# HELP bad_ts This is a metric with an extreme timestamp
-// 		# TYPE bad_ts gauge
-// 		bad_ts{type="bad_timestamp"} 420 1e99
-// 		# EOF
-// 		`,
-// 			IsOk: false,
-// 		},
-// 		{
-// 			ToParse: `no_help_no_type{foo="bar"} 42 6900
-// # EOF
-// `,
-// 			IsOk: true,
-// 			Expected: struct {
-// 				MinTime int64
-// 				MaxTime int64
-// 				Series  map[string][]tsdbutil.Sample
-// 			}{
-// 				MinTime: 6900000,
-// 				MaxTime: 6900000,
-// 				Series:  map[string][]tsdbutil.Sample{"{__name__=\"no_help_no_type\", foo=\"bar\"}": []tsdbutil.Sample{backfillSample{t: 6900000, v: 42}}},
-// 			},
-// 		},
-// 		{
-// 			ToParse: `bare_metric 42.24 1001
-// # EOF
-// `,
-// 			IsOk: true,
-// 			Expected: struct {
-// 				MinTime int64
-// 				MaxTime int64
-// 				Series  map[string][]tsdbutil.Sample
-// 			}{
-// 				MinTime: 1001000,
-// 				MaxTime: 1001000,
-// 				Series:  map[string][]tsdbutil.Sample{"{__name__=\"bare_metric\"}": []tsdbutil.Sample{backfillSample{t: 1001000, v: 42.24}}},
-// 			},
-// 		},
-// 		{
-// 			ToParse: `# HELP bad_metric This a bad metric
-// 		# TYPE bad_metric bad_type
-// 		bad_metric{type="has a bad type information"} 0.0 111
-// 		# EOF
-// 		`,
-// 			IsOk: false,
-// 		},
-// 		{
-// 			ToParse: `# HELP no_nl This test has no newline so will fail
-// 		# TYPE no_nl gauge
-// 		no_nl{type="no newline"}
-// 		# EOF`,
-// 			IsOk: false,
-// 		},
-// 	}
-// 	for testID, test := range tests {
-// 		omFile := "backfill_test.om"
-// 		require.NoError(t, createTemporaryOpenmetricsFile(t, omFile, test.ToParse))
-// 		defer os.RemoveAll("backfill_test.om")
-// 		input, errOpen := os.Open(omFile)
-// 		require.NoError(t, errOpen)
-// 		outputDir := "./data" + fmt.Sprint(testID)
-// 		errb := backfill(input, outputDir)
-// 		defer os.RemoveAll(outputDir)
-// 		if test.IsOk {
-// 			_, errReset := input.Seek(0, 0)
-// 			require.NoError(t, errReset)
-// 			p := NewParser(input)
-// 			maxt, mint, errTs := getMinAndMaxTimestamps(p)
-// 			require.NoError(t, errTs)
-// 			require.Equal(t, test.Expected.MinTime, mint)
-// 			require.Equal(t, test.Expected.MaxTime, maxt)
-// 			require.NoError(t, input.Close())
-// 			blocks, _ := ioutil.ReadDir(outputDir)
-// 			for _, block := range blocks {
-// 				blockpath := filepath.Join(outputDir, block.Name())
-// 				require.NoError(t, os.MkdirAll(path.Join(blockpath, "wal"), 0777))
-// 				testBlocks(t, blockpath, mint, maxt, test.Expected.Series)
-// 			}
-// 		} else {
-// 			require.Error(t, errb)
-// 		}
-// 	}
-// }
