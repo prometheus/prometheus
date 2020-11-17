@@ -425,7 +425,7 @@ func (t *QueueManager) sendMetadataWithBackoff(ctx context.Context, metadata []p
 	if err != nil {
 		return err
 	}
-
+	t.metrics.metadataTotal.Add(float64(len(metadata)))
 	t.metrics.metadataBytesTotal.Add(float64(len(req)))
 	return nil
 }

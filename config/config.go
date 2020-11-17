@@ -629,12 +629,6 @@ type QueueConfig struct {
 	// On recoverable errors, backoff exponentially.
 	MinBackoff model.Duration `yaml:"min_backoff,omitempty"`
 	MaxBackoff model.Duration `yaml:"max_backoff,omitempty"`
-
-	// SendMetadata controls whenever we send metric metadata to remote storage.
-	SendMetadata bool `yaml:"send_metadata"`
-
-	// MetadataSendInterval how frequently we send metric metadata by default.
-	MetadataSendInterval model.Duration `yaml:"metadata_send_interval"`
 }
 
 // MetadataConfig is the configuration for sending metadata to remote
