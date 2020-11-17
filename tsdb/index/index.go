@@ -125,10 +125,11 @@ type Writer struct {
 	buf1 encoding.Encbuf
 	buf2 encoding.Encbuf
 
-	numSymbols int
-	symbols    *Symbols
-	symbolFile *fileutil.MmapFile
-	lastSymbol string
+	numSymbols     int
+	symbols        *Symbols
+	symbolFile     *fileutil.MmapFile
+	lastSymbol     string
+	labelNameCache map[string]uint32
 
 	labelIndexes []labelIndexHashEntry // Label index offsets.
 	labelNames   map[string]uint64     // Label names, and their usage.
@@ -224,8 +225,9 @@ func NewWriter(ctx context.Context, fn string) (*Writer, error) {
 		buf1: encoding.Encbuf{B: make([]byte, 0, 1<<22)},
 		buf2: encoding.Encbuf{B: make([]byte, 0, 1<<22)},
 
-		labelNames: make(map[string]uint64, 1<<8),
-		crc32:      newCRC32(),
+		labelNameCache: make(map[string]uint32, 1<<8),
+		labelNames:     make(map[string]uint64, 1<<8),
+		crc32:          newCRC32(),
 	}
 	if err := iw.writeMeta(); err != nil {
 		return nil, err
@@ -430,14 +432,19 @@ func (w *Writer) AddSeries(ref uint64, lset labels.Labels, chunks ...chunks.Meta
 	w.buf2.PutUvarint(len(lset))
 
 	for _, l := range lset {
-		index, err := w.symbols.ReverseLookup(l.Name)
-		if err != nil {
-			return errors.Errorf("symbol entry for %q does not exist, %v", l.Name, err)
+		index, ok := w.labelNameCache[l.Name]
+		if !ok {
+			var err error
+			index, err = w.symbols.ReverseLookup(l.Name)
+			if err != nil {
+				return errors.Errorf("symbol entry for %q does not exist, %v", l.Name, err)
+			}
+			w.labelNameCache[l.Name] = index
 		}
 		w.labelNames[l.Name]++
 		w.buf2.PutUvarint32(index)
 
-		index, err = w.symbols.ReverseLookup(l.Value)
+		index, err := w.symbols.ReverseLookup(l.Value)
 		if err != nil {
 			return errors.Errorf("symbol entry for %q does not exist, %v", l.Value, err)
 		}
