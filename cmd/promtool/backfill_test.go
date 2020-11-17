@@ -72,27 +72,40 @@ func queryblock(t testing.TB, q storage.Querier, lbls labels.Labels, matchers ..
 	return samples, nil
 }
 
-func testBlocks(t *testing.T, blocks []tsdb.BlockReader, expectedSamples []backfillSample, metricLabels []string, expectedSymbols []string, expectedNumBlocks int) {
+func testBlocks(t *testing.T, blocks []tsdb.BlockReader, expectedMinTime, expectedMaxTime int64, expectedSamples []backfillSample, metricLabels []string, expectedSymbols []string, expectedNumBlocks int) {
 	require.Equal(t, expectedNumBlocks, len(blocks))
 	allSymbols := make(map[string]struct{})
 	allSamples := make([]backfillSample, 0)
+	var maxt, mint int64 = math.MinInt64, math.MaxInt64
 	for _, block := range blocks {
-		index, err := block.Index()
-		require.NoError(t, err)
-		symbols := index.Symbols()
-		for symbols.Next() {
-			key := symbols.At()
-			if _, ok := allSymbols[key]; !ok {
-				allSymbols[key] = struct{}{}
+		err := func() error {
+			index, err := block.Index()
+			defer func() {
+				err = index.Close()
+				require.NoError(t, err)
+			}()
+			if maxt < block.Meta().MaxTime {
+				maxt = block.Meta().MaxTime
 			}
-		}
-		q, err := tsdb.NewBlockQuerier(block, math.MinInt64, math.MaxInt64)
+			if mint > block.Meta().MinTime {
+				mint = block.Meta().MinTime
+			}
+			require.NoError(t, err)
+			symbols := index.Symbols()
+			for symbols.Next() {
+				key := symbols.At()
+				if _, ok := allSymbols[key]; !ok {
+					allSymbols[key] = struct{}{}
+				}
+			}
+			q, err := tsdb.NewBlockQuerier(block, math.MinInt64, math.MaxInt64)
+			require.NoError(t, err)
+			series, err := queryblock(t, q, labels.FromStrings(metricLabels...), labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
+			require.NoError(t, err)
+			allSamples = append(allSamples, series[0])
+			return nil
+		}()
 		require.NoError(t, err)
-		series, err := queryblock(t, q, labels.FromStrings(metricLabels...), labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
-		require.NoError(t, err)
-		allSamples = append(allSamples, series[0])
-		// fix close put in defer
-		index.Close()
 	}
 	allSymbolsSlice := make([]string, 0)
 	for key := range allSymbols {
@@ -104,6 +117,8 @@ func testBlocks(t *testing.T, blocks []tsdb.BlockReader, expectedSamples []backf
 	sortSamples(allSamples)
 	sortSamples(expectedSamples)
 	require.Equal(t, expectedSamples, allSamples)
+	require.Equal(t, expectedMinTime, mint)
+	require.Equal(t, expectedMaxTime, maxt)
 }
 
 func TestBackfill(t *testing.T) {
@@ -139,7 +154,7 @@ http_requests_total{code="400"} 1 1565133713990
 				Samples   []backfillSample
 			}{
 				MinTime:   1565133713989000,
-				MaxTime:   1565133713990000,
+				MaxTime:   1565133713990001,
 				Symbols:   []string{"http_requests_total", "code", "200", "400", "__name__"},
 				NumBlocks: 1,
 				Samples: []backfillSample{
@@ -168,7 +183,7 @@ http_requests_total{code="400"} 1 1565144513989
 				Samples   []backfillSample
 			}{
 				MinTime:   1565133713989000,
-				MaxTime:   1565144513989000,
+				MaxTime:   1565144513989001,
 				Symbols:   []string{"http_requests_total", "code", "200", "400", "__name__"},
 				NumBlocks: 2,
 				Samples: []backfillSample{
@@ -198,7 +213,7 @@ http_requests_total{code="400"} 1 1565144513989
 				Samples   []backfillSample
 			}{
 				MinTime:   6900000,
-				MaxTime:   6900000,
+				MaxTime:   6900001,
 				Symbols:   []string{"no_help_no_type", "foo", "bar", "__name__"},
 				NumBlocks: 1,
 				Samples: []backfillSample{
@@ -223,7 +238,7 @@ http_requests_total{code="400"} 1 1565144513989
 				Samples   []backfillSample
 			}{
 				MinTime:   1001000,
-				MaxTime:   1001000,
+				MaxTime:   1001001,
 				Symbols:   []string{"bare_metric", "__name__"},
 				NumBlocks: 1,
 				Samples: []backfillSample{
@@ -291,10 +306,11 @@ http_requests_total{code="400"} 1 1565144513989
 			require.NoError(t, errb)
 			if len(test.Expected.Symbols) > 0 {
 				db, err := tsdb.OpenDBReadOnly(outputDir, nil)
+				defer db.Close()
 				require.NoError(t, err)
 				blocks, err := db.Blocks()
-				testBlocks(t, blocks, test.Expected.Samples, test.MetricLabels, test.Expected.Symbols, test.Expected.NumBlocks)
-				db.Close() // close defer
+				require.NoError(t, err)
+				testBlocks(t, blocks, test.Expected.MinTime, test.Expected.MaxTime, test.Expected.Samples, test.MetricLabels, test.Expected.Symbols, test.Expected.NumBlocks)
 			}
 		} else {
 			require.Error(t, errb)

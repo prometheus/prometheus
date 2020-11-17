@@ -140,6 +140,7 @@ func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 				return errors.Wrap(err, "commit")
 			}
 			_, errF := w.Flush(ctx)
+			// TODO: debug what to do with this during test
 			// errL := ListBlocks(outputDir, true)
 			// if errL != nil {
 			// 	return errors.Wrap(errF, "print blocks")
