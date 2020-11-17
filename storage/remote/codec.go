@@ -489,10 +489,10 @@ func labelsToLabelsProto(labels labels.Labels, buf []prompb.Label) []prompb.Labe
 
 // metricTypeToMetricTypeProto transforms a Prometheus metricType into prompb metricType. Since the former is a string we need to transform it to an enum.
 func metricTypeToMetricTypeProto(t textparse.MetricType) prompb.MetricMetadata_MetricType {
-	mt := strings.ToLower(string(t))
+	mt := strings.ToUpper(string(t))
 	v, ok := prompb.MetricMetadata_MetricType_value[mt]
 	if !ok {
-		return prompb.MetricMetadata_Unknown
+		return prompb.MetricMetadata_UNKNOWN
 	}
 
 	return prompb.MetricMetadata_MetricType(v)

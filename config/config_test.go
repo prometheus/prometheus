@@ -87,13 +87,15 @@ var expectedConf = &Config{
 					Action:       relabel.Drop,
 				},
 			},
-			QueueConfig: DefaultQueueConfig,
+			QueueConfig:    DefaultQueueConfig,
+			MetadataConfig: DefaultMetadataConfig,
 		},
 		{
-			URL:           mustParseURL("http://remote2/push"),
-			RemoteTimeout: model.Duration(30 * time.Second),
-			QueueConfig:   DefaultQueueConfig,
-			Name:          "rw_tls",
+			URL:            mustParseURL("http://remote2/push"),
+			RemoteTimeout:  model.Duration(30 * time.Second),
+			QueueConfig:    DefaultQueueConfig,
+			MetadataConfig: DefaultMetadataConfig,
+			Name:           "rw_tls",
 			HTTPClientConfig: config.HTTPClientConfig{
 				TLSConfig: config.TLSConfig{
 					CertFile: filepath.FromSlash("testdata/valid_cert_file"),

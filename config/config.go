@@ -98,8 +98,9 @@ var (
 
 	// DefaultRemoteWriteConfig is the default remote write configuration.
 	DefaultRemoteWriteConfig = RemoteWriteConfig{
-		RemoteTimeout: model.Duration(30 * time.Second),
-		QueueConfig:   DefaultQueueConfig,
+		RemoteTimeout:  model.Duration(30 * time.Second),
+		QueueConfig:    DefaultQueueConfig,
+		MetadataConfig: DefaultMetadataConfig,
 	}
 
 	// DefaultQueueConfig is the default remote queue configuration.
@@ -119,10 +120,12 @@ var (
 		// Backoff times for retrying a batch of samples on recoverable errors.
 		MinBackoff: model.Duration(30 * time.Millisecond),
 		MaxBackoff: model.Duration(100 * time.Millisecond),
+	}
 
-		// Send metric metadata to remote write at the same interval we scrape.
-		SendMetadata:         true,
-		MetadataSendInterval: model.Duration(15 * time.Second),
+	// DefaultMetadataConfig is the default metadata configuration for a remote write endpoint.
+	DefaultMetadataConfig = MetadataConfig{
+		Send:         true,
+		SendInterval: model.Duration(1 * time.Minute),
 	}
 
 	// DefaultRemoteReadConfig is the default remote read configuration.
@@ -574,6 +577,7 @@ type RemoteWriteConfig struct {
 	// values arbitrarily into the overflow maps of further-down types.
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 	QueueConfig      QueueConfig             `yaml:"queue_config,omitempty"`
+	MetadataConfig   MetadataConfig          `yaml:"metadata_config,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -631,6 +635,15 @@ type QueueConfig struct {
 
 	// MetadataSendInterval how frequently we send metric metadata by default.
 	MetadataSendInterval model.Duration `yaml:"metadata_send_interval"`
+}
+
+// MetadataConfig is the configuration for sending metadata to remote
+// storage.
+type MetadataConfig struct {
+	// Send controls whenever we send metric metadata to remote storage.
+	Send bool `yaml:"send"`
+	// SendInterval controls how frequently we send metric metadata.
+	SendInterval model.Duration `yaml:"send_interval"`
 }
 
 // RemoteReadConfig is the configuration for reading from remote storage.

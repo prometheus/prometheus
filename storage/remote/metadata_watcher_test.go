@@ -119,13 +119,26 @@ func TestWatchScrapeManager_ReadyForCollection(t *testing.T) {
 			},
 		},
 	}
+	metadataDup := &TestMetaStore{
+		Metadata: []scrape.MetricMetadata{
+			{
+				Metric: "prometheus_tsdb_head_chunks_created_total",
+				Type:   textparse.MetricTypeCounter,
+				Help:   "Total number",
+				Unit:   "",
+			},
+		},
+	}
 
 	target := &scrape.Target{}
 	target.SetMetadataStore(metadata)
+	targetWithDup := &scrape.Target{}
+	targetWithDup.SetMetadataStore(metadataDup)
 
 	manager := &fakeManager{
 		activeTargets: map[string][]*scrape.Target{
 			"job": []*scrape.Target{target},
+			"dup": []*scrape.Target{targetWithDup},
 		},
 	}
 

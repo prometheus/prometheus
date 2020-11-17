@@ -29,7 +29,6 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/relabel"
@@ -47,9 +46,6 @@ const (
 
 	// Allow 30% too many shards before scaling down.
 	shardToleranceFraction = 0.3
-
-	// Controls how often we collect metadata from the scrape cache.
-	metadataCollectionInterval = model.Duration(5 * time.Minute)
 )
 
 type queueManagerMetrics struct {
@@ -285,6 +281,7 @@ type QueueManager struct {
 	logger          log.Logger
 	flushDeadline   time.Duration
 	cfg             config.QueueConfig
+	mcfg            config.MetadataConfig
 	externalLabels  labels.Labels
 	relabelConfigs  []*relabel.Config
 	watcher         *wal.Watcher
@@ -320,13 +317,14 @@ func NewQueueManager(
 	walDir string,
 	samplesIn *ewmaRate,
 	cfg config.QueueConfig,
+	mCfg config.MetadataConfig,
 	externalLabels labels.Labels,
 	relabelConfigs []*relabel.Config,
 	client WriteClient,
 	flushDeadline time.Duration,
 	interner *pool,
 	highestRecvTimestamp *maxTimestamp,
-	sm scrape.ReadyManager,
+	sm ReadyScrapeManager,
 ) *QueueManager {
 	if logger == nil {
 		logger = log.NewNopLogger()
@@ -337,6 +335,7 @@ func NewQueueManager(
 		logger:         logger,
 		flushDeadline:  flushDeadline,
 		cfg:            cfg,
+		mcfg:           mCfg,
 		externalLabels: externalLabels,
 		relabelConfigs: relabelConfigs,
 		storeClient:    client,
@@ -360,13 +359,15 @@ func NewQueueManager(
 	}
 
 	t.watcher = wal.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, walDir)
-	t.metadataWatcher = NewMetadataWatcher(logger, sm, client.Name(), t, metadataCollectionInterval, flushDeadline)
+	if t.mcfg.Send {
+		t.metadataWatcher = NewMetadataWatcher(logger, sm, client.Name(), t, t.mcfg.SendInterval, flushDeadline)
+	}
 	t.shards = t.newShards()
 
 	return t
 }
 
-// AppendMetadata queues metadata to be sent to the remote storage. Metadata is sent all at once and is not parallelized.
+// AppendMetadata sends metadata the remote storage. Metadata is sent all at once and is not parallelized.
 func (t *QueueManager) AppendMetadata(ctx context.Context, metadata []scrape.MetricMetadata) {
 	mm := make([]prompb.MetricMetadata, 0, len(metadata))
 	for _, entry := range metadata {
@@ -407,7 +408,6 @@ func (t *QueueManager) sendMetadataWithBackoff(ctx context.Context, metadata []p
 		begin := time.Now()
 		err := t.storeClient.Store(ctx, req)
 		t.metrics.sentBatchDuration.Observe(time.Since(begin).Seconds())
-		t.metrics.metadataTotal.Add(float64(len(metadata)))
 
 		if err != nil {
 			span.LogKV("error", err)
@@ -418,10 +418,10 @@ func (t *QueueManager) sendMetadataWithBackoff(ctx context.Context, metadata []p
 		return nil
 	}
 
-	onRetry := func() {
+	retry := func() {
 		t.metrics.retriedMetadataTotal.Add(float64(len(metadata)))
 	}
-	err = sendWriteRequestWithBackoff(ctx, t.cfg, t.logger, req, attemptStore, onRetry)
+	err = sendWriteRequestWithBackoff(ctx, t.cfg, t.client(), t.logger, req, attemptStore, retry)
 	if err != nil {
 		return err
 	}
@@ -487,7 +487,9 @@ func (t *QueueManager) Start() {
 
 	t.shards.start(t.numShards)
 	t.watcher.Start()
-	t.metadataWatcher.Start()
+	if t.mcfg.Send {
+		t.metadataWatcher.Start()
+	}
 
 	t.wg.Add(2)
 	go t.updateShardsLoop()
@@ -507,7 +509,9 @@ func (t *QueueManager) Stop() {
 	// causes a closed channel panic.
 	t.shards.stop()
 	t.watcher.Stop()
-	t.metadataWatcher.Stop()
+	if t.mcfg.Send {
+		t.metadataWatcher.Stop()
+	}
 
 	// On shutdown, release the strings in the labels from the intern pool.
 	t.seriesMtx.Lock()
@@ -1014,7 +1018,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 		s.qm.metrics.retriedSamplesTotal.Add(float64(sampleCount))
 	}
 
-	err = sendWriteRequestWithBackoff(ctx, s.qm.cfg, s.qm.logger, req, attemptStore, onRetry)
+	err = sendWriteRequestWithBackoff(ctx, s.qm.cfg, s.qm.client(), s.qm.logger, req, attemptStore, onRetry)
 	if err != nil {
 		return err
 	}
@@ -1023,7 +1027,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 	return nil
 }
 
-func sendWriteRequestWithBackoff(ctx context.Context, cfg config.QueueConfig, l log.Logger, req []byte, attempt func(int) error, onRetry func()) error {
+func sendWriteRequestWithBackoff(ctx context.Context, cfg config.QueueConfig, s WriteClient, l log.Logger, req []byte, attempt func(int) error, onRetry func()) error {
 	backoff := cfg.MinBackoff
 	try := 0
 

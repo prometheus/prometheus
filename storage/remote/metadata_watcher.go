@@ -19,6 +19,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/scrape"
 )
@@ -28,9 +29,15 @@ type MetadataAppender interface {
 	AppendMetadata(context.Context, []scrape.MetricMetadata)
 }
 
-// Watchable is an interface used to represent a scrape manager from which we fetch metadata.
+// Watchable represents from where we fetch active targets for metadata.
 type Watchable interface {
 	TargetsActive() map[string][]*scrape.Target
+}
+
+type noopScrapeManager struct{}
+
+func (noop *noopScrapeManager) Get() (*scrape.Manager, error) {
+	return nil, errors.New("Scrape manager not ready")
 }
 
 // MetadataWatcher watches the Scrape Manager for a given WriteMetadataTo.
@@ -38,7 +45,7 @@ type MetadataWatcher struct {
 	name   string
 	logger log.Logger
 
-	managerGetter scrape.ReadyManager
+	managerGetter ReadyScrapeManager
 	manager       Watchable
 	writer        MetadataAppender
 
@@ -54,13 +61,13 @@ type MetadataWatcher struct {
 }
 
 // NewMetadataWatcher builds a new MetadataWatcher.
-func NewMetadataWatcher(l log.Logger, mg scrape.ReadyManager, name string, w MetadataAppender, interval model.Duration, deadline time.Duration) *MetadataWatcher {
+func NewMetadataWatcher(l log.Logger, mg ReadyScrapeManager, name string, w MetadataAppender, interval model.Duration, deadline time.Duration) *MetadataWatcher {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
 
 	if mg == nil {
-		mg = &scrape.ReadyScrapeManager{}
+		mg = &noopScrapeManager{}
 	}
 
 	return &MetadataWatcher{
@@ -81,7 +88,7 @@ func NewMetadataWatcher(l log.Logger, mg scrape.ReadyManager, name string, w Met
 func (mw *MetadataWatcher) Start() {
 	level.Info(mw.logger).Log("msg", "Starting scraped metadata watcher")
 	mw.hardShutdownCtx, mw.hardShutdownCancel = context.WithCancel(context.Background())
-	mw.softShutdownCtx, mw.softShutdownCancel = context.WithCancel(context.Background())
+	mw.softShutdownCtx, mw.softShutdownCancel = context.WithCancel(mw.hardShutdownCtx)
 	go mw.loop()
 }
 
@@ -111,8 +118,6 @@ func (mw *MetadataWatcher) loop() {
 		select {
 		case <-mw.softShutdownCtx.Done():
 			return
-		case <-mw.hardShutdownCtx.Done():
-			return
 		case <-ticker.C:
 			mw.collect()
 		}
@@ -133,10 +138,8 @@ func (mw *MetadataWatcher) collect() {
 			for _, entry := range target.MetadataList() {
 				if _, ok := metadataSet[entry]; !ok {
 					metadata = append(metadata, entry)
-					continue
+					metadataSet[entry] = struct{}{}
 				}
-
-				metadataSet[entry] = struct{}{}
 			}
 		}
 	}

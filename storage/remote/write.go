@@ -157,6 +157,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rws.walDir,
 			rws.samplesIn,
 			rwConf.QueueConfig,
+			rwConf.MetadataConfig,
 			conf.GlobalConfig.ExternalLabels,
 			rwConf.WriteRelabelConfigs,
 			c,
