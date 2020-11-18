@@ -576,11 +576,12 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 	return mat, warnings, nil
 }
 
-// subqueryOffsetRange returns the sum of offsets and ranges of all subqueries in the path.
-func (ng *Engine) subqueryOffsetRange(path []parser.Node) (time.Duration, time.Duration) {
+// subqueryOffsetRangeTimestamp returns the sum of offsets and ranges of all subqueries in the path.
+// It also returns the min and max timestamp seen associated with the subquery.
+func (ng *Engine) subqueryOffsetRangeTimestamp(path []parser.Node) (time.Duration, time.Duration, int64, int64) {
 	var (
-		subqOffset time.Duration
-		subqRange  time.Duration
+		subqOffset, subqRange      time.Duration
+		minTimestamp, maxTimestamp int64 = math.MaxInt64, math.MinInt64
 	)
 	// TODO(codesome): check timestamp.
 	for _, node := range path {
@@ -588,16 +589,25 @@ func (ng *Engine) subqueryOffsetRange(path []parser.Node) (time.Duration, time.D
 		case *parser.SubqueryExpr:
 			subqOffset += n.Offset
 			subqRange += n.Range
+			if n.Timestamp > 0 {
+				ts := timestamp.FromFloatSeconds(n.Timestamp)
+				if ts < minTimestamp {
+					minTimestamp = ts
+				}
+				if ts > maxTimestamp {
+					maxTimestamp = ts
+				}
+			}
 		}
 	}
-	return subqOffset, subqRange
+	return subqOffset, subqRange, minTimestamp, maxTimestamp
 }
 
 func (ng *Engine) findMinTime(s *parser.EvalStmt) time.Time {
 	var maxOffset time.Duration
 	var minTimestamp int64 = math.MaxInt64
 	parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
-		subqOffset, subqRange := ng.subqueryOffsetRange(path)
+		subqOffset, subqRange, mint, _ := ng.subqueryOffsetRangeTimestamp(path)
 		switch n := node.(type) {
 		case *parser.VectorSelector:
 			if maxOffset < ng.lookbackDelta+subqOffset+subqRange {
@@ -606,9 +616,16 @@ func (ng *Engine) findMinTime(s *parser.EvalStmt) time.Time {
 			if n.Offset+ng.lookbackDelta+subqOffset+subqRange > maxOffset {
 				maxOffset = n.Offset + ng.lookbackDelta + subqOffset + subqRange
 			}
-			if ts := timestamp.FromFloatSeconds(n.Timestamp); ts < minTimestamp {
+			ts := timestamp.FromFloatSeconds(n.Timestamp)
+			if ts == 0 && mint != math.MaxInt64 && mint > 0 {
+				ts = mint
+			} else if ts != 0 && mint != math.MaxInt64 && mint > 0 && mint < ts {
+				ts = mint
+			}
+			if ts > 0 && ts < minTimestamp {
 				minTimestamp = ts
 			}
+
 		case *parser.MatrixSelector:
 			if maxOffset < n.Range+subqOffset+subqRange {
 				maxOffset = n.Range + subqOffset + subqRange
@@ -616,7 +633,13 @@ func (ng *Engine) findMinTime(s *parser.EvalStmt) time.Time {
 			if m := n.VectorSelector.(*parser.VectorSelector).Offset + n.Range + subqOffset + subqRange; m > maxOffset {
 				maxOffset = m
 			}
-			if ts := timestamp.FromFloatSeconds(n.VectorSelector.(*parser.VectorSelector).Timestamp); ts < minTimestamp {
+			ts := timestamp.FromFloatSeconds(n.VectorSelector.(*parser.VectorSelector).Timestamp)
+			if ts == 0 && mint != math.MaxInt64 && mint > 0 {
+				ts = mint
+			} else if ts != 0 && mint != math.MaxInt64 && mint > 0 && mint < ts {
+				ts = mint
+			}
+			if ts > 0 && ts < minTimestamp {
 				minTimestamp = ts
 			}
 		}
@@ -657,8 +680,15 @@ func (ng *Engine) populateSeries(querier storage.Querier, s *parser.EvalStmt) {
 			// The subqueryOffsetRange function gives the sum of range and the
 			// sum of offset.
 			// TODO(bwplotka): Add support for better hints when subquerying. See: https://github.com/prometheus/prometheus/issues/7630.
-			subqOffset, subqRange := ng.subqueryOffsetRange(path)
+			subqOffset, subqRange, subqMint, subqMaxt := ng.subqueryOffsetRangeTimestamp(path)
 			offsetMilliseconds := durationMilliseconds(subqOffset)
+			if subqMint != math.MaxInt64 && subqMint < hints.Start {
+				hints.Start = subqMint
+			}
+			if subqMaxt != math.MinInt64 && subqMaxt > hints.End {
+				hints.End = subqMaxt
+			}
+
 			hints.Start = hints.Start - offsetMilliseconds - durationMilliseconds(subqRange)
 			hints.End = hints.End - offsetMilliseconds
 
@@ -1002,8 +1032,9 @@ func (ev *evaluator) evalSubquery(subq *parser.SubqueryExpr) (*parser.MatrixSele
 	val, ws := ev.eval(subq)
 	mat := val.(Matrix)
 	vs := &parser.VectorSelector{
-		Offset: subq.Offset,
-		Series: make([]storage.Series, 0, len(mat)),
+		Offset:    subq.Offset,
+		Series:    make([]storage.Series, 0, len(mat)),
+		Timestamp: subq.Timestamp,
 	}
 	ms := &parser.MatrixSelector{
 		Range:          subq.Range,
@@ -1345,16 +1376,25 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			noStepSubqueryIntervalFn: ev.noStepSubqueryIntervalFn,
 		}
 
+		subqueryEvalTime := timestamp.FromFloatSeconds(e.Timestamp)
 		if e.Step != 0 {
 			newEv.interval = durationMilliseconds(e.Step)
 		} else {
 			newEv.interval = ev.noStepSubqueryIntervalFn(rangeMillis)
 		}
 
-		// Start with the first timestamp after (ev.startTimestamp - offset - range)
+		if subqueryEvalTime != 0 && subqueryEvalTime > ev.endTimestamp {
+			newEv.endTimestamp = subqueryEvalTime - offsetMillis
+		}
+
+		subqueryStartTime := ev.startTimestamp
+		if subqueryEvalTime < subqueryStartTime {
+			subqueryStartTime = subqueryEvalTime
+		}
+		// Start with the first timestamp after (subqueryStartTime - offset - range)
 		// that is aligned with the step (multiple of 'newEv.interval').
-		newEv.startTimestamp = newEv.interval * ((ev.startTimestamp - offsetMillis - rangeMillis) / newEv.interval)
-		if newEv.startTimestamp < (ev.startTimestamp - offsetMillis - rangeMillis) {
+		newEv.startTimestamp = newEv.interval * ((subqueryStartTime - offsetMillis - rangeMillis) / newEv.interval)
+		if newEv.startTimestamp < (subqueryStartTime - offsetMillis - rangeMillis) {
 			newEv.startTimestamp += newEv.interval
 		}
 
