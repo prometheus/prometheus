@@ -836,9 +836,9 @@ func (db *DB) Compact() (returnErr error) {
 	compactionDuration := time.Since(start)
 	if compactionDuration.Milliseconds() > db.head.chunkRange.Load() {
 		level.Warn(db.logger).Log(
-			"msg", "compaction took longer than the chunk time range, compactions are falling behind and won't be able to catch up.",
+			"msg", "Head compaction took longer than the block time range, compactions are falling behind and won't be able to catch up",
 			"duration", compactionDuration.String(),
-			"chunkRange", db.head.chunkRange.Load(),
+			"block_range", db.head.chunkRange.Load(),
 		)
 	}
 	return db.compactBlocks()
