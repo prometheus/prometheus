@@ -327,7 +327,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 			"{{$value := .Value}}",
 		}
 
-		expand := func(text string) string {
+		expand := func(text string) (string, error) {
 			tmpl := template.NewTemplateExpander(
 				ctx,
 				strings.Join(append(defs, text), ""),
@@ -339,22 +339,30 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 			)
 			result, err := tmpl.Expand()
 			if err != nil {
-				result = fmt.Sprintf("<error expanding template: %s>", err)
 				level.Warn(r.logger).Log("msg", "Expanding alert template failed", "err", err, "data", tmplData)
+				return "", err
 			}
-			return result
+			return result, nil
 		}
 
 		lb := labels.NewBuilder(smpl.Metric).Del(labels.MetricName)
 
 		for _, l := range r.labels {
-			lb.Set(l.Name, expand(l.Value))
+			result, err := expand(l.Value)
+			if err != nil {
+				return nil, err
+			}
+			lb.Set(l.Name, result)
 		}
 		lb.Set(labels.AlertName, r.Name())
 
 		annotations := make(labels.Labels, 0, len(r.annotations))
 		for _, a := range r.annotations {
-			annotations = append(annotations, labels.Label{Name: a.Name, Value: expand(a.Value)})
+			result, err := expand(a.Value)
+			if err != nil {
+				return nil, err
+			}
+			annotations = append(annotations, labels.Label{Name: a.Name, Value: result})
 		}
 
 		lbs := lb.Labels()
