@@ -199,14 +199,14 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Namespace:   namespace,
 		Subsystem:   subsystem,
 		Name:        "samples_bytes_total",
-		Help:        "The total number of bytes sent by the queue after compression.",
+		Help:        "The total number of bytes of samples sent by the queue after compression.",
 		ConstLabels: constLabels,
 	})
 	m.metadataBytesTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace:   namespace,
 		Subsystem:   subsystem,
 		Name:        "metadata_bytes_total",
-		Help:        "The total number of bytes sent by the queue after compression.",
+		Help:        "The total number of bytes of metadata sent by the queue after compression.",
 		ConstLabels: constLabels,
 	})
 
@@ -372,10 +372,10 @@ func (t *QueueManager) AppendMetadata(ctx context.Context, metadata []scrape.Met
 	mm := make([]prompb.MetricMetadata, 0, len(metadata))
 	for _, entry := range metadata {
 		mm = append(mm, prompb.MetricMetadata{
-			MetricName: entry.Metric,
-			Help:       entry.Help,
-			Type:       metricTypeToMetricTypeProto(entry.Type),
-			Unit:       entry.Unit,
+			MetricFamilyName: entry.Metric,
+			Help:             entry.Help,
+			Type:             metricTypeToMetricTypeProto(entry.Type),
+			Unit:             entry.Unit,
 		})
 	}
 

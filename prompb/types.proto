@@ -33,7 +33,7 @@ message MetricMetadata {
   // Represents the metric type, these match the set from Prometheus.
   // Refer to pkg/textparse/interface.go for details.
   MetricType type = 1;
-  string metric_name = 2;
+  string metric_family_name = 2;
   string help = 4;
   string unit = 5;
 }

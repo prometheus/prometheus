@@ -559,7 +559,7 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte) error {
 	}
 
 	for _, m := range reqProto.Metadata {
-		c.receivedMetadata[m.MetricName] = append(c.receivedMetadata[m.MetricName], m)
+		c.receivedMetadata[m.MetricFamilyName] = append(c.receivedMetadata[m.MetricFamilyName], m)
 	}
 
 	return nil
