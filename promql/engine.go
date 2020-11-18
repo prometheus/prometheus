@@ -583,7 +583,6 @@ func (ng *Engine) subqueryOffsetRangeTimestamp(path []parser.Node) (time.Duratio
 		subqOffset, subqRange      time.Duration
 		minTimestamp, maxTimestamp int64 = math.MaxInt64, math.MinInt64
 	)
-	// TODO(codesome): check timestamp.
 	for _, node := range path {
 		switch n := node.(type) {
 		case *parser.SubqueryExpr:
@@ -1363,7 +1362,6 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		return ev.matrixSelector(e)
 
 	case *parser.SubqueryExpr:
-		// TODO(codesome): check timestamp.
 		offsetMillis := durationMilliseconds(e.Offset)
 		rangeMillis := durationMilliseconds(e.Range)
 		newEv := &evaluator{
@@ -1376,21 +1374,23 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			noStepSubqueryIntervalFn: ev.noStepSubqueryIntervalFn,
 		}
 
-		subqueryEvalTime := timestamp.FromFloatSeconds(e.Timestamp)
 		if e.Step != 0 {
 			newEv.interval = durationMilliseconds(e.Step)
 		} else {
 			newEv.interval = ev.noStepSubqueryIntervalFn(rangeMillis)
 		}
 
-		if subqueryEvalTime != 0 && subqueryEvalTime > ev.endTimestamp {
-			newEv.endTimestamp = subqueryEvalTime - offsetMillis
+		subqueryEvalTime := timestamp.FromFloatSeconds(e.Timestamp)
+		subqueryStartTime := ev.startTimestamp
+		if subqueryEvalTime != 0 {
+			if subqueryEvalTime > ev.endTimestamp {
+				newEv.endTimestamp = subqueryEvalTime - offsetMillis
+			}
+			if subqueryEvalTime < subqueryStartTime {
+				subqueryStartTime = subqueryEvalTime
+			}
 		}
 
-		subqueryStartTime := ev.startTimestamp
-		if subqueryEvalTime < subqueryStartTime {
-			subqueryStartTime = subqueryEvalTime
-		}
 		// Start with the first timestamp after (subqueryStartTime - offset - range)
 		// that is aligned with the step (multiple of 'newEv.interval').
 		newEv.startTimestamp = newEv.interval * ((subqueryStartTime - offsetMillis - rangeMillis) / newEv.interval)
@@ -1405,8 +1405,6 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		switch ce := e.Expr.(type) {
 		case *parser.StringLiteral, *parser.NumberLiteral:
 			return ev.eval(ce)
-		default:
-
 		}
 
 		if e.Result != nil {
@@ -1414,7 +1412,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		}
 		newEv := &evaluator{
 			startTimestamp:           ev.startTimestamp,
-			endTimestamp:             ev.endTimestamp,
+			endTimestamp:             ev.startTimestamp,
 			interval:                 ev.interval,
 			ctx:                      ev.ctx,
 			currentSamples:           ev.currentSamples,
@@ -1423,9 +1421,56 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			lookbackDelta:            ev.lookbackDelta,
 			noStepSubqueryIntervalFn: ev.noStepSubqueryIntervalFn,
 		}
-		// TODO(codesome): do single eval and extrapolate.
+
+		canExtrapolate := canExtrapolateConstantExpr(e.Expr)
+		if !canExtrapolate {
+			newEv.endTimestamp = ev.endTimestamp
+		}
+
 		res, ws := newEv.eval(e.Expr)
 		ev.currentSamples = newEv.currentSamples
+
+		if canExtrapolate {
+			switch val := res.(type) {
+			case Matrix:
+				for i := range val {
+					if len(val[i].Points) != 1 {
+						panic(errors.Errorf("unexpected number of samples"))
+					}
+					for ts := ev.startTimestamp + ev.interval; ts <= ev.endTimestamp; ts = ts + ev.interval {
+						val[i].Points = append(val[i].Points, Point{
+							T: ts,
+							V: val[i].Points[0].V,
+						})
+						ev.currentSamples++
+						if ev.currentSamples >= ev.maxSamples {
+							ev.error(ErrTooManySamples(env))
+						}
+					}
+				}
+			case Vector:
+				mat := make(Matrix, len(val))
+				for i, smpl := range val {
+					mat[i] = Series{
+						Metric: smpl.Metric,
+						Points: make([]Point, 0, 1+(ev.endTimestamp-ev.startTimestamp)/ev.interval),
+					}
+					for ts := ev.startTimestamp + ev.interval; ts <= ev.endTimestamp; ts = ts + ev.interval {
+						mat[i].Points = append(mat[i].Points, Point{
+							T: ts,
+							V: smpl.V,
+						})
+						ev.currentSamples++
+						if ev.currentSamples >= ev.maxSamples {
+							ev.error(ErrTooManySamples(env))
+						}
+					}
+				}
+				res = mat
+			default:
+				panic(errors.Errorf("unexpected result: %T", expr))
+			}
+		}
 
 		e.Result = res
 		return res, ws
@@ -2283,6 +2328,9 @@ func isConstantExpr(expr parser.Expr) bool {
 		return false
 
 	case *parser.Call:
+		if len(n.Args) == 0 {
+			return false
+		}
 		isConstant := true
 		isConstantSlice := make([]bool, len(n.Args))
 		for i := range n.Args {
@@ -2358,4 +2406,26 @@ func dontWrapConstantExpr(expr parser.Expr) bool {
 		}
 	}
 	return false
+}
+
+func canExtrapolateConstantExpr(expr parser.Expr) bool {
+	switch expr.(type) {
+	case *parser.VectorSelector, *parser.MatrixSelector, *parser.SubqueryExpr:
+		return false
+	}
+
+	canExtrapolate := true
+	parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
+		switch n := node.(type) {
+		case *parser.Call:
+			if n.Func.Name == "predict_linear" {
+				// predict_linear behaves weirdly with the extrapolation of result,
+				// so we don't do that here.
+				canExtrapolate = false
+			}
+		}
+		return nil
+	})
+
+	return canExtrapolate
 }
