@@ -117,6 +117,7 @@ func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 			}
 			p := NewParser(input)
 			tsUpper := t + offset
+			var samplesCount int64
 			for {
 				e, errP := p.Next()
 				if errP == io.EOF {
@@ -135,9 +136,18 @@ func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 					return errors.Errorf("expected timestamp for series %v, got none", l.String())
 				}
 				if *ts >= t && *ts < tsUpper {
+					samplesCount++
 					if _, err := app.Add(l, *ts, v); err != nil {
 						return errors.Wrap(err, "add sample")
 					}
+				}
+				if samplesCount >= 5000 {
+					err := app.Commit()
+					if err != nil {
+						return errors.Wrap(err, "commit")
+					}
+					app = w.Appender(ctx)
+					samplesCount = 0
 				}
 			}
 			if err := app.Commit(); err != nil {
