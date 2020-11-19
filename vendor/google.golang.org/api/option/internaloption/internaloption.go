@@ -50,3 +50,18 @@ type skipDialSettingsValidation struct{}
 func (s skipDialSettingsValidation) Apply(settings *internal.DialSettings) {
 	settings.SkipValidation = true
 }
+
+// EnableDirectPath returns a ClientOption that overrides the default
+// attempt to use DirectPath.
+//
+// It should only be used internally by generated clients.
+// This is an EXPERIMENTAL API and may be changed or removed in the future.
+func EnableDirectPath(dp bool) option.ClientOption {
+	return enableDirectPath(dp)
+}
+
+type enableDirectPath bool
+
+func (e enableDirectPath) Apply(o *internal.DialSettings) {
+	o.EnableDirectPath = bool(e)
+}

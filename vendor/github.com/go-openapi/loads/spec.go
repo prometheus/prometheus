@@ -49,7 +49,6 @@ var (
 func init() {
 	defaultLoader = &loader{Match: func(_ string) bool { return true }, Fn: JSONDoc}
 	loaders = defaultLoader
-	spec.PathLoader = loaders.Fn
 	AddLoader(swag.YAMLMatcher, swag.YAMLDoc)
 
 	gob.Register(map[string]interface{}{})
@@ -65,7 +64,6 @@ func AddLoader(predicate DocMatcher, load DocLoader) {
 		Fn:    load,
 		Next:  prev,
 	}
-	spec.PathLoader = loaders.Fn
 }
 
 type loader struct {
@@ -118,9 +116,10 @@ func Spec(path string) (*Document, error) {
 		return nil, err
 	}
 	var lastErr error
-	for l := loaders.Next; l != nil; l = l.Next {
-		if loaders.Match(specURL.Path) {
-			b, err2 := loaders.Fn(path)
+	for l := loaders; l != nil; l = l.Next {
+		if l.Match(specURL.Path) {
+			spec.PathLoader = l.Fn
+			b, err2 := l.Fn(path)
 			if err2 != nil {
 				lastErr = err2
 				continue
@@ -142,6 +141,7 @@ func Spec(path string) (*Document, error) {
 	if err != nil {
 		return nil, err
 	}
+	spec.PathLoader = defaultLoader.Fn
 
 	document, err := Analyzed(b, "")
 	if document != nil {

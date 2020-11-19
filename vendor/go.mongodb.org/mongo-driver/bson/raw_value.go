@@ -104,7 +104,9 @@ func (rv RawValue) UnmarshalWithContext(dc *bsoncodec.DecodeContext, val interfa
 }
 
 func convertFromCoreValue(v bsoncore.Value) RawValue { return RawValue{Type: v.Type, Value: v.Data} }
-func convertToCoreValue(v RawValue) bsoncore.Value   { return bsoncore.Value{Type: v.Type, Data: v.Value} }
+func convertToCoreValue(v RawValue) bsoncore.Value {
+	return bsoncore.Value{Type: v.Type, Data: v.Value}
+}
 
 // Validate ensures the value is a valid BSON value.
 func (rv RawValue) Validate() error { return convertToCoreValue(rv).Validate() }
@@ -176,7 +178,9 @@ func (rv RawValue) ObjectID() primitive.ObjectID { return convertToCoreValue(rv)
 
 // ObjectIDOK is the same as ObjectID, except it returns a boolean instead of
 // panicking.
-func (rv RawValue) ObjectIDOK() (primitive.ObjectID, bool) { return convertToCoreValue(rv).ObjectIDOK() }
+func (rv RawValue) ObjectIDOK() (primitive.ObjectID, bool) {
+	return convertToCoreValue(rv).ObjectIDOK()
+}
 
 // Boolean returns the boolean value the Value represents. It panics if the
 // value is a BSON type other than boolean.
@@ -214,7 +218,9 @@ func (rv RawValue) RegexOK() (pattern, options string, ok bool) {
 
 // DBPointer returns the BSON dbpointer value the Value represents. It panics if the value is a BSON
 // type other than DBPointer.
-func (rv RawValue) DBPointer() (string, primitive.ObjectID) { return convertToCoreValue(rv).DBPointer() }
+func (rv RawValue) DBPointer() (string, primitive.ObjectID) {
+	return convertToCoreValue(rv).DBPointer()
+}
 
 // DBPointerOK is the same as DBPoitner, except that it returns a boolean
 // instead of panicking.

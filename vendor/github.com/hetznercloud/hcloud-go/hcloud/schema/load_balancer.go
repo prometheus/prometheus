@@ -384,3 +384,20 @@ type LoadBalancerActionChangeTypeRequest struct {
 type LoadBalancerActionChangeTypeResponse struct {
 	Action Action `json:"action"`
 }
+
+// LoadBalancerGetMetricsResponse defines the schema of the response when
+// requesting metrics for a Load Balancer.
+type LoadBalancerGetMetricsResponse struct {
+	Metrics struct {
+		Start      time.Time                             `json:"start"`
+		End        time.Time                             `json:"end"`
+		Step       float64                               `json:"step"`
+		TimeSeries map[string]LoadBalancerTimeSeriesVals `json:"time_series"`
+	} `json:"metrics"`
+}
+
+// LoadBalancerTimeSeriesVals contains the values for a Load Balancer time
+// series.
+type LoadBalancerTimeSeriesVals struct {
+	Values []interface{} `json:"values"`
+}

@@ -104,7 +104,7 @@ func (dve DefaultValueEncoders) RegisterDefaultEncoders(rb *RegistryBuilder) {
 		RegisterDefaultEncoder(reflect.Map, defaultMapCodec).
 		RegisterDefaultEncoder(reflect.Slice, defaultSliceCodec).
 		RegisterDefaultEncoder(reflect.String, defaultStringCodec).
-		RegisterDefaultEncoder(reflect.Struct, defaultStructCodec).
+		RegisterDefaultEncoder(reflect.Struct, newDefaultStructCodec()).
 		RegisterDefaultEncoder(reflect.Ptr, NewPointerCodec()).
 		RegisterHookEncoder(tValueMarshaler, ValueEncoderFunc(dve.ValueMarshalerEncodeValue)).
 		RegisterHookEncoder(tMarshaler, ValueEncoderFunc(dve.MarshalerEncodeValue)).
@@ -150,8 +150,8 @@ func (dve DefaultValueEncoders) IntEncodeValue(ec EncodeContext, vw bsonrw.Value
 }
 
 // UintEncodeValue is the ValueEncoderFunc for uint types.
-// This method is deprecated and does not have any stability guarantees. It may be removed in the
-// future. Use UIntCodec.EncodeValue instead.
+//
+// Deprecated: UintEncodeValue is not registered by default. Use UintCodec.EncodeValue instead.
 func (dve DefaultValueEncoders) UintEncodeValue(ec EncodeContext, vw bsonrw.ValueWriter, val reflect.Value) error {
 	switch val.Kind() {
 	case reflect.Uint8, reflect.Uint16:
@@ -185,8 +185,8 @@ func (dve DefaultValueEncoders) FloatEncodeValue(ec EncodeContext, vw bsonrw.Val
 }
 
 // StringEncodeValue is the ValueEncoderFunc for string types.
-// This method is deprecated and does not have any stability guarantees. It may be removed in the
-// future. Use StringCodec.EncodeValue instead.
+//
+// Deprecated: StringEncodeValue is not registered by default. Use StringCodec.EncodeValue instead.
 func (dve DefaultValueEncoders) StringEncodeValue(ectx EncodeContext, vw bsonrw.ValueWriter, val reflect.Value) error {
 	if val.Kind() != reflect.String {
 		return ValueEncoderError{
@@ -245,19 +245,20 @@ func (dve DefaultValueEncoders) URLEncodeValue(ec EncodeContext, vw bsonrw.Value
 }
 
 // TimeEncodeValue is the ValueEncoderFunc for time.TIme.
-// This method is deprecated and does not have any stability guarantees. It may be removed in the
-// future. Use TimeCodec.EncodeValue instead.
+//
+// Deprecated: TimeEncodeValue is not registered by default. Use TimeCodec.EncodeValue instead.
 func (dve DefaultValueEncoders) TimeEncodeValue(ec EncodeContext, vw bsonrw.ValueWriter, val reflect.Value) error {
 	if !val.IsValid() || val.Type() != tTime {
 		return ValueEncoderError{Name: "TimeEncodeValue", Types: []reflect.Type{tTime}, Received: val}
 	}
 	tt := val.Interface().(time.Time)
-	return vw.WriteDateTime(tt.Unix()*1000 + int64(tt.Nanosecond()/1e6))
+	dt := primitive.NewDateTimeFromTime(tt)
+	return vw.WriteDateTime(int64(dt))
 }
 
 // ByteSliceEncodeValue is the ValueEncoderFunc for []byte.
-// This method is deprecated and does not have any stability guarantees. It may be removed in the
-// future. Use ByteSliceCodec.EncodeValue instead.
+//
+// Deprecated: ByteSliceEncodeValue is not registered by default. Use ByteSliceCodec.EncodeValue instead.
 func (dve DefaultValueEncoders) ByteSliceEncodeValue(ec EncodeContext, vw bsonrw.ValueWriter, val reflect.Value) error {
 	if !val.IsValid() || val.Type() != tByteSlice {
 		return ValueEncoderError{Name: "ByteSliceEncodeValue", Types: []reflect.Type{tByteSlice}, Received: val}
@@ -269,8 +270,8 @@ func (dve DefaultValueEncoders) ByteSliceEncodeValue(ec EncodeContext, vw bsonrw
 }
 
 // MapEncodeValue is the ValueEncoderFunc for map[string]* types.
-// This method is deprecated and does not have any stability guarantees. It may be removed in the
-// future. Use MapCodec.EncodeValue instead.
+//
+// Deprecated: MapEncodeValue is not registered by default. Use MapCodec.EncodeValue instead.
 func (dve DefaultValueEncoders) MapEncodeValue(ec EncodeContext, vw bsonrw.ValueWriter, val reflect.Value) error {
 	if !val.IsValid() || val.Kind() != reflect.Map || val.Type().Key().Kind() != reflect.String {
 		return ValueEncoderError{Name: "MapEncodeValue", Kinds: []reflect.Kind{reflect.Map}, Received: val}
@@ -419,8 +420,8 @@ func (dve DefaultValueEncoders) ArrayEncodeValue(ec EncodeContext, vw bsonrw.Val
 }
 
 // SliceEncodeValue is the ValueEncoderFunc for slice types.
-// This method is deprecated and does not have any stability guarantees. It may be removed in the
-// future. Use SliceCodec.EncodeValue instead.
+//
+// Deprecated: SliceEncodeValue is not registered by default. Use SliceCodec.EncodeValue instead.
 func (dve DefaultValueEncoders) SliceEncodeValue(ec EncodeContext, vw bsonrw.ValueWriter, val reflect.Value) error {
 	if !val.IsValid() || val.Kind() != reflect.Slice {
 		return ValueEncoderError{Name: "SliceEncodeValue", Kinds: []reflect.Kind{reflect.Slice}, Received: val}
@@ -501,8 +502,8 @@ func (dve DefaultValueEncoders) lookupElementEncoder(ec EncodeContext, origEncod
 }
 
 // EmptyInterfaceEncodeValue is the ValueEncoderFunc for interface{}.
-// This method is deprecated and does not have any stability guarantees. It may be removed in the
-// future. Use EmptyInterfaceCodec.EncodeValue instead.
+//
+// Deprecated: EmptyInterfaceEncodeValue is not registered by default. Use EmptyInterfaceCodec.EncodeValue instead.
 func (dve DefaultValueEncoders) EmptyInterfaceEncodeValue(ec EncodeContext, vw bsonrw.ValueWriter, val reflect.Value) error {
 	if !val.IsValid() || val.Type() != tEmpty {
 		return ValueEncoderError{Name: "EmptyInterfaceEncodeValue", Types: []reflect.Type{tEmpty}, Received: val}

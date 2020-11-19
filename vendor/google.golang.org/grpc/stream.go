@@ -929,7 +929,7 @@ func (a *csAttempt) recvMsg(m interface{}, payInfo *payloadInfo) (err error) {
 			Payload:  m,
 			// TODO truncate large payload.
 			Data:       payInfo.uncompressedBytes,
-			WireLength: payInfo.wireLength,
+			WireLength: payInfo.wireLength + headerLen,
 			Length:     len(payInfo.uncompressedBytes),
 		})
 	}
@@ -1511,7 +1511,7 @@ func (ss *serverStream) RecvMsg(m interface{}) (err error) {
 			Payload:  m,
 			// TODO truncate large payload.
 			Data:       payInfo.uncompressedBytes,
-			WireLength: payInfo.wireLength,
+			WireLength: payInfo.wireLength + headerLen,
 			Length:     len(payInfo.uncompressedBytes),
 		})
 	}
