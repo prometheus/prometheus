@@ -17,6 +17,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"hash"
 	"io"
 	"io/ioutil"
@@ -40,7 +41,6 @@ const (
 	MagicHeadChunks = 0x0130BC91
 
 	headChunksFormatV1 = 1
-	writeBufferSize    = 4 * 1024 * 1024 // 4 MiB.
 )
 
 var (
@@ -63,6 +63,12 @@ const (
 	// MaxHeadChunkMetaSize is the max size of an mmapped chunks minus the chunks data.
 	// Max because the uvarint size can be smaller.
 	MaxHeadChunkMetaSize = SeriesRefSize + 2*MintMaxtSize + ChunksFormatVersionSize + MaxChunkLengthFieldSize + CRCSize
+	// MinWriteBufferSize is the minimum write buffer size allowed.
+	MinWriteBufferSize = 64 * 1024 // 64KB.
+	// MaxWriteBufferSize is the maximum write buffer size allowed.
+	MaxWriteBufferSize = 8 * 1024 * 1024 // 8 MiB.
+	// DefaultWriteBufferSize is the default write buffer size.
+	DefaultWriteBufferSize = 4 * 1024 * 1024 // 4 MiB.
 )
 
 // corruptionErr is an error that's returned when corruption is encountered.
@@ -82,7 +88,8 @@ type ChunkDiskMapper struct {
 	curFileNumBytes atomic.Int64 // Bytes written in current open file.
 
 	/// Writer.
-	dir *os.File
+	dir             *os.File
+	writeBufferSize int
 
 	curFile         *os.File // File being written to.
 	curFileSequence int      // Index of current open file being appended to.
@@ -121,7 +128,15 @@ type mmappedChunkFile struct {
 // using the default head chunk file duration.
 // NOTE: 'IterateAllChunks' method needs to be called at least once after creating ChunkDiskMapper
 // to set the maxt of all the file.
-func NewChunkDiskMapper(dir string, pool chunkenc.Pool) (*ChunkDiskMapper, error) {
+func NewChunkDiskMapper(dir string, pool chunkenc.Pool, writeBufferSize int) (*ChunkDiskMapper, error) {
+	// Validate write buffer size.
+	if writeBufferSize < MinWriteBufferSize || writeBufferSize > MaxWriteBufferSize {
+		return nil, fmt.Errorf("ChunkDiskMapper write buffer size should be between %d and %d (actual: %d)", MinWriteBufferSize, MaxHeadChunkFileSize, writeBufferSize)
+	}
+	if writeBufferSize%1024 != 0 {
+		return nil, fmt.Errorf("ChunkDiskMapper write buffer size should be a multiple of 1024 (actual: %d)", writeBufferSize)
+	}
+
 	if err := os.MkdirAll(dir, 0777); err != nil {
 		return nil, err
 	}
@@ -131,10 +146,11 @@ func NewChunkDiskMapper(dir string, pool chunkenc.Pool) (*ChunkDiskMapper, error
 	}
 
 	m := &ChunkDiskMapper{
-		dir:         dirFile,
-		pool:        pool,
-		crc32:       newCRC32(),
-		chunkBuffer: newChunkBuffer(),
+		dir:             dirFile,
+		pool:            pool,
+		writeBufferSize: writeBufferSize,
+		crc32:           newCRC32(),
+		chunkBuffer:     newChunkBuffer(),
 	}
 
 	if m.pool == nil {
@@ -273,7 +289,7 @@ func (cdm *ChunkDiskMapper) WriteChunk(seriesRef uint64, mint, maxt int64, chk c
 
 	// if len(chk.Bytes())+MaxHeadChunkMetaSize >= writeBufferSize, it means that chunk >= the buffer size;
 	// so no need to flush here, as we have to flush at the end (to not keep partial chunks in buffer).
-	if len(chk.Bytes())+MaxHeadChunkMetaSize < writeBufferSize && cdm.chkWriter.Available() < MaxHeadChunkMetaSize+len(chk.Bytes()) {
+	if len(chk.Bytes())+MaxHeadChunkMetaSize < cdm.writeBufferSize && cdm.chkWriter.Available() < MaxHeadChunkMetaSize+len(chk.Bytes()) {
 		if err := cdm.flushBuffer(); err != nil {
 			return 0, err
 		}
@@ -313,7 +329,7 @@ func (cdm *ChunkDiskMapper) WriteChunk(seriesRef uint64, mint, maxt int64, chk c
 
 	cdm.chunkBuffer.put(chkRef, chk)
 
-	if len(chk.Bytes())+MaxHeadChunkMetaSize >= writeBufferSize {
+	if len(chk.Bytes())+MaxHeadChunkMetaSize >= cdm.writeBufferSize {
 		// The chunk was bigger than the buffer itself.
 		// Flushing to not keep partial chunks in buffer.
 		if err := cdm.flushBuffer(); err != nil {
@@ -382,7 +398,7 @@ func (cdm *ChunkDiskMapper) cut() (returnErr error) {
 	if cdm.chkWriter != nil {
 		cdm.chkWriter.Reset(newFile)
 	} else {
-		cdm.chkWriter = bufio.NewWriterSize(newFile, writeBufferSize)
+		cdm.chkWriter = bufio.NewWriterSize(newFile, cdm.writeBufferSize)
 	}
 
 	cdm.closers[cdm.curFileSequence] = mmapFile

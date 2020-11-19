@@ -322,7 +322,7 @@ func createBlockFromHead(tb testing.TB, dir string, head *Head) string {
 }
 
 func createHead(tb testing.TB, w *wal.WAL, series []storage.Series, chunkDir string) *Head {
-	head, err := NewHead(nil, nil, w, DefaultBlockDuration, chunkDir, nil, DefaultStripeSize, nil)
+	head, err := NewHead(nil, nil, w, DefaultBlockDuration, chunkDir, nil, chunks.DefaultWriteBufferSize, DefaultStripeSize, nil)
 	require.NoError(tb, err)
 
 	app := head.Appender(context.Background())
