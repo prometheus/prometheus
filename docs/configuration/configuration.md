@@ -1755,7 +1755,8 @@ queue_config:
   # Maximum retry delay.
   [ max_backoff: <duration> | default = 100ms ]
 # Configures the sending of series metadata to remote storage.
-# It is experimental and subject to change at any point.
+# Metadata configuration is subject to change at any point
+# or be removed in future releases.
 metadata_config:
   # Whether metric metadata is sent to remote storage or not.
   [ send: <boolean> | default = true ]

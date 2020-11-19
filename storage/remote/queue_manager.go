@@ -97,35 +97,35 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 	m.failedSamplesTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace:   namespace,
 		Subsystem:   subsystem,
-		Name:        "failed_samples_total",
+		Name:        "samples_failed_total",
 		Help:        "Total number of samples which failed on send to remote storage, non-recoverable errors.",
 		ConstLabels: constLabels,
 	})
 	m.failedMetadataTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace:   namespace,
 		Subsystem:   subsystem,
-		Name:        "failed_metadata_total",
+		Name:        "metadata_failed_total",
 		Help:        "Total number of metadata entries which failed on send to remote storage, non-recoverable errors.",
 		ConstLabels: constLabels,
 	})
 	m.retriedSamplesTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace:   namespace,
 		Subsystem:   subsystem,
-		Name:        "retried_samples_total",
+		Name:        "samples_retried_total",
 		Help:        "Total number of samples which failed on send to remote storage but were retried because the send error was recoverable.",
 		ConstLabels: constLabels,
 	})
 	m.retriedMetadataTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace:   namespace,
 		Subsystem:   subsystem,
-		Name:        "retried_metadata_total",
+		Name:        "metadata_retried_total",
 		Help:        "Total number of metadata entries which failed on send to remote storage but were retried because the send error was recoverable.",
 		ConstLabels: constLabels,
 	})
 	m.droppedSamplesTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace:   namespace,
 		Subsystem:   subsystem,
-		Name:        "dropped_samples_total",
+		Name:        "samples_dropped_total",
 		Help:        "Total number of samples which were dropped after being read from the WAL before being sent via remote write.",
 		ConstLabels: constLabels,
 	})
@@ -156,7 +156,7 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 	m.pendingSamples = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace:   namespace,
 		Subsystem:   subsystem,
-		Name:        "pending_samples",
+		Name:        "samples_pending",
 		Help:        "The number of samples pending in the queues shards to be sent to the remote storage.",
 		ConstLabels: constLabels,
 	})
