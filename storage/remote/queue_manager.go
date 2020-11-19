@@ -69,6 +69,7 @@ type queueManagerMetrics struct {
 	desiredNumShards     prometheus.Gauge
 	samplesBytesTotal    prometheus.Counter
 	metadataBytesTotal   prometheus.Counter
+	maxSamplesPerSend    prometheus.Gauge
 }
 
 func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManagerMetrics {
@@ -209,6 +210,13 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Help:        "The total number of bytes of metadata sent by the queue after compression.",
 		ConstLabels: constLabels,
 	})
+	m.maxSamplesPerSend = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace:   namespace,
+		Subsystem:   subsystem,
+		Name:        "max_samples_per_send",
+		Help:        "The maximum number of samples to be sent, in a single request, to the remote storage.",
+		ConstLabels: constLabels,
+	})
 
 	return m
 }
@@ -234,6 +242,7 @@ func (m *queueManagerMetrics) register() {
 			m.desiredNumShards,
 			m.samplesBytesTotal,
 			m.metadataBytesTotal,
+			m.maxSamplesPerSend,
 		)
 	}
 }
@@ -258,6 +267,7 @@ func (m *queueManagerMetrics) unregister() {
 		m.reg.Unregister(m.desiredNumShards)
 		m.reg.Unregister(m.samplesBytesTotal)
 		m.reg.Unregister(m.metadataBytesTotal)
+		m.reg.Unregister(m.maxSamplesPerSend)
 	}
 }
 
@@ -484,6 +494,7 @@ func (t *QueueManager) Start() {
 	t.metrics.maxNumShards.Set(float64(t.cfg.MaxShards))
 	t.metrics.minNumShards.Set(float64(t.cfg.MinShards))
 	t.metrics.desiredNumShards.Set(float64(t.cfg.MinShards))
+	t.metrics.maxSamplesPerSend.Set(float64(t.cfg.MaxSamplesPerSend))
 
 	t.shards.start(t.numShards)
 	t.watcher.Start()
