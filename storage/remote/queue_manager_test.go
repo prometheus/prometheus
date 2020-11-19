@@ -116,7 +116,7 @@ func TestMetadataDelivery(t *testing.T) {
 	c := NewTestWriteClient()
 
 	dir, err := ioutil.TempDir("", "TestMetadataDelivery")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer os.RemoveAll(dir)
 
 	cfg := config.DefaultQueueConfig
@@ -136,7 +136,7 @@ func TestMetadataDelivery(t *testing.T) {
 		},
 	})
 
-	assert.Equal(t, len(c.receivedMetadata), 1)
+	require.Equal(t, len(c.receivedMetadata), 1)
 }
 
 func TestSampleDeliveryTimeout(t *testing.T) {
