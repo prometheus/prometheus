@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -73,10 +73,10 @@ func TestRefresh(t *testing.T) {
 	go d.Run(ctx, ch)
 
 	tg := <-ch
-	assert.Equal(t, tg1, tg)
+	require.Equal(t, tg1, tg)
 
 	tg = <-ch
-	assert.Equal(t, tg2, tg)
+	require.Equal(t, tg2, tg)
 
 	tick := time.NewTicker(2 * interval)
 	defer tick.Stop()

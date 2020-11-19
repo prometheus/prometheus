@@ -20,7 +20,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/common/model"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
 )
 
@@ -36,21 +36,21 @@ role: services
 host: %s
 `, url)
 	var cfg SDConfig
-	assert.NoError(t, yaml.Unmarshal([]byte(cfgString), &cfg))
+	require.NoError(t, yaml.Unmarshal([]byte(cfgString), &cfg))
 
 	d, err := NewDiscovery(&cfg, log.NewNopLogger())
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	ctx := context.Background()
 	tgs, err := d.refresh(ctx)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
-	assert.Equal(t, 1, len(tgs))
+	require.Equal(t, 1, len(tgs))
 
 	tg := tgs[0]
-	assert.NotNil(t, tg)
-	assert.NotNil(t, tg.Targets)
-	assert.Equal(t, 15, len(tg.Targets))
+	require.NotNil(t, tg)
+	require.NotNil(t, tg.Targets)
+	require.Equal(t, 15, len(tg.Targets))
 
 	for i, lbls := range []model.LabelSet{
 		{
@@ -310,7 +310,116 @@ host: %s
 		},
 	} {
 		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
-			assert.Equal(t, lbls, tg.Targets[i])
+			require.Equal(t, lbls, tg.Targets[i])
+		})
+	}
+}
+
+func TestDockerSwarmSDServicesRefreshWithFilters(t *testing.T) {
+	sdmock := NewSDMock(t, "swarmprom")
+	sdmock.Setup()
+
+	e := sdmock.Endpoint()
+	url := e[:len(e)-1]
+	cfgString := fmt.Sprintf(`
+---
+role: services
+host: %s
+filters:
+- name: name
+  values: ["mon_node-exporter", "mon_grafana"]
+`, url)
+	var cfg SDConfig
+	require.NoError(t, yaml.Unmarshal([]byte(cfgString), &cfg))
+
+	d, err := NewDiscovery(&cfg, log.NewNopLogger())
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	tgs, err := d.refresh(ctx)
+	require.NoError(t, err)
+
+	require.Equal(t, 1, len(tgs))
+
+	tg := tgs[0]
+	require.NotNil(t, tg, "tg should not be nil")
+	require.NotNil(t, tg.Targets, "tg.targets should not be nil")
+	require.Equal(t, 4, len(tg.Targets))
+
+	for i, lbls := range []model.LabelSet{
+		{
+			"__address__":                                                 model.LabelValue("10.0.0.7:9100"),
+			"__meta_dockerswarm_network_id":                               model.LabelValue("qvwhwd6p61k4o0ulsknqb066z"),
+			"__meta_dockerswarm_network_ingress":                          model.LabelValue("true"),
+			"__meta_dockerswarm_network_internal":                         model.LabelValue("false"),
+			"__meta_dockerswarm_network_name":                             model.LabelValue("ingress"),
+			"__meta_dockerswarm_network_scope":                            model.LabelValue("swarm"),
+			"__meta_dockerswarm_service_endpoint_port_name":               model.LabelValue(""),
+			"__meta_dockerswarm_service_endpoint_port_publish_mode":       model.LabelValue("ingress"),
+			"__meta_dockerswarm_service_id":                               model.LabelValue("3qvd7bwfptmoht16t1f7jllb6"),
+			"__meta_dockerswarm_service_label_com_docker_stack_image":     model.LabelValue("stefanprodan/swarmprom-node-exporter:v0.16.0"),
+			"__meta_dockerswarm_service_label_com_docker_stack_namespace": model.LabelValue("mon"),
+			"__meta_dockerswarm_service_mode":                             model.LabelValue("global"),
+			"__meta_dockerswarm_service_name":                             model.LabelValue("mon_node-exporter"),
+			"__meta_dockerswarm_service_task_container_hostname":          model.LabelValue(""),
+			"__meta_dockerswarm_service_task_container_image":             model.LabelValue("stefanprodan/swarmprom-node-exporter:v0.16.0@sha256:1d2518ec0501dd848e718bf008df37852b1448c862d6f256f2d39244975758d6"),
+		},
+		{
+			"__address__":                                                 model.LabelValue("10.0.1.2:9100"),
+			"__meta_dockerswarm_network_id":                               model.LabelValue("npq2closzy836m07eaq1425k3"),
+			"__meta_dockerswarm_network_ingress":                          model.LabelValue("false"),
+			"__meta_dockerswarm_network_internal":                         model.LabelValue("false"),
+			"__meta_dockerswarm_network_label_com_docker_stack_namespace": model.LabelValue("mon"),
+			"__meta_dockerswarm_network_name":                             model.LabelValue("mon_net"),
+			"__meta_dockerswarm_network_scope":                            model.LabelValue("swarm"),
+			"__meta_dockerswarm_service_endpoint_port_name":               model.LabelValue(""),
+			"__meta_dockerswarm_service_endpoint_port_publish_mode":       model.LabelValue("ingress"),
+			"__meta_dockerswarm_service_id":                               model.LabelValue("3qvd7bwfptmoht16t1f7jllb6"),
+			"__meta_dockerswarm_service_label_com_docker_stack_image":     model.LabelValue("stefanprodan/swarmprom-node-exporter:v0.16.0"),
+			"__meta_dockerswarm_service_label_com_docker_stack_namespace": model.LabelValue("mon"),
+			"__meta_dockerswarm_service_mode":                             model.LabelValue("global"),
+			"__meta_dockerswarm_service_name":                             model.LabelValue("mon_node-exporter"),
+			"__meta_dockerswarm_service_task_container_hostname":          model.LabelValue(""),
+			"__meta_dockerswarm_service_task_container_image":             model.LabelValue("stefanprodan/swarmprom-node-exporter:v0.16.0@sha256:1d2518ec0501dd848e718bf008df37852b1448c862d6f256f2d39244975758d6"),
+		},
+		{
+			"__address__":                                                 model.LabelValue("10.0.0.15:3000"),
+			"__meta_dockerswarm_network_id":                               model.LabelValue("qvwhwd6p61k4o0ulsknqb066z"),
+			"__meta_dockerswarm_network_ingress":                          model.LabelValue("true"),
+			"__meta_dockerswarm_network_internal":                         model.LabelValue("false"),
+			"__meta_dockerswarm_network_name":                             model.LabelValue("ingress"),
+			"__meta_dockerswarm_network_scope":                            model.LabelValue("swarm"),
+			"__meta_dockerswarm_service_endpoint_port_name":               model.LabelValue(""),
+			"__meta_dockerswarm_service_endpoint_port_publish_mode":       model.LabelValue("ingress"),
+			"__meta_dockerswarm_service_id":                               model.LabelValue("uk9su5tb9ykfzew3qtmp14uzh"),
+			"__meta_dockerswarm_service_label_com_docker_stack_image":     model.LabelValue("stefanprodan/swarmprom-grafana:5.3.4"),
+			"__meta_dockerswarm_service_label_com_docker_stack_namespace": model.LabelValue("mon"),
+			"__meta_dockerswarm_service_mode":                             model.LabelValue("replicated"),
+			"__meta_dockerswarm_service_name":                             model.LabelValue("mon_grafana"),
+			"__meta_dockerswarm_service_task_container_hostname":          model.LabelValue(""),
+			"__meta_dockerswarm_service_task_container_image":             model.LabelValue("stefanprodan/swarmprom-grafana:5.3.4@sha256:2aca8aa5716e6e0eed3fcdc88fec256a0a1828c491a8cf240486ae7cc473092d"),
+		},
+		{
+			"__address__":                                                 model.LabelValue("10.0.1.29:3000"),
+			"__meta_dockerswarm_network_id":                               model.LabelValue("npq2closzy836m07eaq1425k3"),
+			"__meta_dockerswarm_network_ingress":                          model.LabelValue("false"),
+			"__meta_dockerswarm_network_internal":                         model.LabelValue("false"),
+			"__meta_dockerswarm_network_label_com_docker_stack_namespace": model.LabelValue("mon"),
+			"__meta_dockerswarm_network_name":                             model.LabelValue("mon_net"),
+			"__meta_dockerswarm_network_scope":                            model.LabelValue("swarm"),
+			"__meta_dockerswarm_service_endpoint_port_name":               model.LabelValue(""),
+			"__meta_dockerswarm_service_endpoint_port_publish_mode":       model.LabelValue("ingress"),
+			"__meta_dockerswarm_service_id":                               model.LabelValue("uk9su5tb9ykfzew3qtmp14uzh"),
+			"__meta_dockerswarm_service_label_com_docker_stack_image":     model.LabelValue("stefanprodan/swarmprom-grafana:5.3.4"),
+			"__meta_dockerswarm_service_label_com_docker_stack_namespace": model.LabelValue("mon"),
+			"__meta_dockerswarm_service_mode":                             model.LabelValue("replicated"),
+			"__meta_dockerswarm_service_name":                             model.LabelValue("mon_grafana"),
+			"__meta_dockerswarm_service_task_container_hostname":          model.LabelValue(""),
+			"__meta_dockerswarm_service_task_container_image":             model.LabelValue("stefanprodan/swarmprom-grafana:5.3.4@sha256:2aca8aa5716e6e0eed3fcdc88fec256a0a1828c491a8cf240486ae7cc473092d"),
+		},
+	} {
+		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
+			require.Equal(t, lbls, tg.Targets[i])
 		})
 	}
 }

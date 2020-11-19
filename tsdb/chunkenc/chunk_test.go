@@ -19,7 +19,7 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type pair struct {
@@ -42,7 +42,7 @@ func TestChunk(t *testing.T) {
 
 func testChunk(t *testing.T, c Chunk) {
 	app, err := c.Appender()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	var exp []pair
 	var (
@@ -61,7 +61,7 @@ func testChunk(t *testing.T, c Chunk) {
 		// appending to a partially filled chunk.
 		if i%10 == 0 {
 			app, err = c.Appender()
-			assert.NoError(t, err)
+			require.NoError(t, err)
 		}
 
 		app.Append(ts, v)
@@ -75,8 +75,8 @@ func testChunk(t *testing.T, c Chunk) {
 		ts, v := it1.At()
 		res1 = append(res1, pair{t: ts, v: v})
 	}
-	assert.NoError(t, it1.Err())
-	assert.Equal(t, exp, res1)
+	require.NoError(t, it1.Err())
+	require.Equal(t, exp, res1)
 
 	// 2. Expand second iterator while reusing first one.
 	it2 := c.Iterator(it1)
@@ -85,18 +85,18 @@ func testChunk(t *testing.T, c Chunk) {
 		ts, v := it2.At()
 		res2 = append(res2, pair{t: ts, v: v})
 	}
-	assert.NoError(t, it2.Err())
-	assert.Equal(t, exp, res2)
+	require.NoError(t, it2.Err())
+	require.Equal(t, exp, res2)
 
 	// 3. Test iterator Seek.
 	mid := len(exp) / 2
 
 	it3 := c.Iterator(nil)
 	var res3 []pair
-	assert.Equal(t, true, it3.Seek(exp[mid].t))
+	require.Equal(t, true, it3.Seek(exp[mid].t))
 	// Below ones should not matter.
-	assert.Equal(t, true, it3.Seek(exp[mid].t))
-	assert.Equal(t, true, it3.Seek(exp[mid].t))
+	require.Equal(t, true, it3.Seek(exp[mid].t))
+	require.Equal(t, true, it3.Seek(exp[mid].t))
 	ts, v = it3.At()
 	res3 = append(res3, pair{t: ts, v: v})
 
@@ -104,9 +104,9 @@ func testChunk(t *testing.T, c Chunk) {
 		ts, v := it3.At()
 		res3 = append(res3, pair{t: ts, v: v})
 	}
-	assert.NoError(t, it3.Err())
-	assert.Equal(t, exp[mid:], res3)
-	assert.Equal(t, false, it3.Seek(exp[len(exp)-1].t+1))
+	require.NoError(t, it3.Err())
+	require.Equal(t, exp[mid:], res3)
+	require.Equal(t, false, it3.Seek(exp[len(exp)-1].t+1))
 }
 
 func benchmarkIterator(b *testing.B, newChunk func() Chunk) {
@@ -160,7 +160,7 @@ func benchmarkIterator(b *testing.B, newChunk func() Chunk) {
 			res = append(res, v)
 		}
 		if it.Err() != io.EOF {
-			assert.NoError(b, it.Err())
+			require.NoError(b, it.Err())
 		}
 		res = res[:0]
 	}

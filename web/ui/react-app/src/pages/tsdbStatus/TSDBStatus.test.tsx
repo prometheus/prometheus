@@ -75,7 +75,7 @@ describe('TSDB Stats', () => {
       });
       page.update();
 
-      expect(mock).toHaveBeenCalledWith('/path/prefix/../api/v1/status/tsdb', {
+      expect(mock).toHaveBeenCalledWith('/path/prefix/api/v1/status/tsdb', {
         cache: 'no-store',
         credentials: 'same-origin',
       });

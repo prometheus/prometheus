@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	yaml "gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/config"
@@ -215,13 +215,13 @@ func TestPopulateLabels(t *testing.T) {
 
 		res, orig, err := populateLabels(c.in, c.cfg)
 		if c.err != "" {
-			assert.EqualError(t, err, c.err)
+			require.EqualError(t, err, c.err)
 		} else {
-			assert.NoError(t, err)
+			require.NoError(t, err)
 		}
-		assert.Equal(t, c.in, in)
-		assert.Equal(t, c.res, res)
-		assert.Equal(t, c.resOrig, orig)
+		require.Equal(t, c.in, in)
+		require.Equal(t, c.res, res)
+		require.Equal(t, c.resOrig, orig)
 	}
 }
 
@@ -365,7 +365,7 @@ func TestManagerTargetsUpdates(t *testing.T) {
 	m.mtxScrape.Unlock()
 
 	// Make sure all updates have been received.
-	assert.Equal(t, tgSent, tsetActual)
+	require.Equal(t, tgSent, tsetActual)
 
 	select {
 	case <-m.triggerReload:

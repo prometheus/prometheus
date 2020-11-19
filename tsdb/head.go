@@ -295,7 +295,7 @@ func (h *Head) PostingsCardinalityStats(statsByLabelName string) *index.Postings
 // stripeSize sets the number of entries in the hash map, it must be a power of 2.
 // A larger stripeSize will allocate more memory up-front, but will increase performance when handling a large number of series.
 // A smaller stripeSize reduces the memory allocated, but can decrease performance with large number of series.
-func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, chunkRange int64, chkDirRoot string, pool chunkenc.Pool, stripeSize int, seriesCallback SeriesLifecycleCallback) (*Head, error) {
+func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, chunkRange int64, chkDirRoot string, chkPool chunkenc.Pool, chkWriteBufferSize, stripeSize int, seriesCallback SeriesLifecycleCallback) (*Head, error) {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
@@ -328,12 +328,12 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, chunkRange int
 	h.lastWALTruncationTime.Store(math.MinInt64)
 	h.metrics = newHeadMetrics(h, r)
 
-	if pool == nil {
-		pool = chunkenc.NewPool()
+	if chkPool == nil {
+		chkPool = chunkenc.NewPool()
 	}
 
 	var err error
-	h.chunkDiskMapper, err = chunks.NewChunkDiskMapper(mmappedChunksDir(chkDirRoot), pool)
+	h.chunkDiskMapper, err = chunks.NewChunkDiskMapper(mmappedChunksDir(chkDirRoot), chkPool, chkWriteBufferSize)
 	if err != nil {
 		return nil, err
 	}
@@ -2373,7 +2373,8 @@ func (h *Head) Size() int64 {
 	if h.wal != nil {
 		walSize, _ = h.wal.Size()
 	}
-	return walSize + h.chunkDiskMapper.Size()
+	cdmSize, _ := h.chunkDiskMapper.Size()
+	return walSize + cdmSize
 }
 
 func (h *RangeHead) Size() int64 {

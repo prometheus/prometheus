@@ -19,21 +19,22 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 )
 
 func BenchmarkHeadStripeSeriesCreate(b *testing.B) {
 	chunkDir, err := ioutil.TempDir("", "chunk_dir")
-	assert.NoError(b, err)
+	require.NoError(b, err)
 	defer func() {
-		assert.NoError(b, os.RemoveAll(chunkDir))
+		require.NoError(b, os.RemoveAll(chunkDir))
 	}()
 	// Put a series, select it. GC it and then access it.
-	h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, DefaultStripeSize, nil)
-	assert.NoError(b, err)
+	h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, chunks.DefaultWriteBufferSize, DefaultStripeSize, nil)
+	require.NoError(b, err)
 	defer h.Close()
 
 	for i := 0; i < b.N; i++ {
@@ -43,13 +44,13 @@ func BenchmarkHeadStripeSeriesCreate(b *testing.B) {
 
 func BenchmarkHeadStripeSeriesCreateParallel(b *testing.B) {
 	chunkDir, err := ioutil.TempDir("", "chunk_dir")
-	assert.NoError(b, err)
+	require.NoError(b, err)
 	defer func() {
-		assert.NoError(b, os.RemoveAll(chunkDir))
+		require.NoError(b, os.RemoveAll(chunkDir))
 	}()
 	// Put a series, select it. GC it and then access it.
-	h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, DefaultStripeSize, nil)
-	assert.NoError(b, err)
+	h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, chunks.DefaultWriteBufferSize, DefaultStripeSize, nil)
+	require.NoError(b, err)
 	defer h.Close()
 
 	var count atomic.Int64

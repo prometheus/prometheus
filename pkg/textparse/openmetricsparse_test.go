@@ -17,7 +17,7 @@ import (
 	"io"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -221,7 +221,7 @@ foo_total 17.0 1520879607.789 # {xx="yy"} 5`
 		if err == io.EOF {
 			break
 		}
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		switch et {
 		case EntrySeries:
@@ -231,40 +231,40 @@ foo_total 17.0 1520879607.789 # {xx="yy"} 5`
 			p.Metric(&res)
 			found := p.Exemplar(&e)
 
-			assert.Equal(t, exp[i].m, string(m))
-			assert.Equal(t, exp[i].t, ts)
-			assert.Equal(t, exp[i].v, v)
-			assert.Equal(t, exp[i].lset, res)
+			require.Equal(t, exp[i].m, string(m))
+			require.Equal(t, exp[i].t, ts)
+			require.Equal(t, exp[i].v, v)
+			require.Equal(t, exp[i].lset, res)
 			if exp[i].e == nil {
-				assert.Equal(t, false, found)
+				require.Equal(t, false, found)
 			} else {
-				assert.Equal(t, true, found)
-				assert.Equal(t, *exp[i].e, e)
+				require.Equal(t, true, found)
+				require.Equal(t, *exp[i].e, e)
 			}
 			res = res[:0]
 
 		case EntryType:
 			m, typ := p.Type()
-			assert.Equal(t, exp[i].m, string(m))
-			assert.Equal(t, exp[i].typ, typ)
+			require.Equal(t, exp[i].m, string(m))
+			require.Equal(t, exp[i].typ, typ)
 
 		case EntryHelp:
 			m, h := p.Help()
-			assert.Equal(t, exp[i].m, string(m))
-			assert.Equal(t, exp[i].help, string(h))
+			require.Equal(t, exp[i].m, string(m))
+			require.Equal(t, exp[i].help, string(h))
 
 		case EntryUnit:
 			m, u := p.Unit()
-			assert.Equal(t, exp[i].m, string(m))
-			assert.Equal(t, exp[i].unit, string(u))
+			require.Equal(t, exp[i].m, string(m))
+			require.Equal(t, exp[i].unit, string(u))
 
 		case EntryComment:
-			assert.Equal(t, exp[i].comment, string(p.Comment()))
+			require.Equal(t, exp[i].comment, string(p.Comment()))
 		}
 
 		i++
 	}
-	assert.Equal(t, len(exp), i)
+	require.Equal(t, len(exp), i)
 }
 
 func TestOpenMetricsParseErrors(t *testing.T) {
@@ -511,7 +511,7 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 		for err == nil {
 			_, err = p.Next()
 		}
-		assert.Equal(t, c.err, err.Error(), "test %d: %s", i, c.input)
+		require.Equal(t, c.err, err.Error(), "test %d: %s", i, c.input)
 	}
 }
 
@@ -578,10 +578,10 @@ func TestOMNullByteHandling(t *testing.T) {
 		}
 
 		if c.err == "" {
-			assert.Equal(t, io.EOF, err, "test %d", i)
+			require.Equal(t, io.EOF, err, "test %d", i)
 			continue
 		}
 
-		assert.Equal(t, c.err, err.Error(), "test %d", i)
+		require.Equal(t, c.err, err.Error(), "test %d", i)
 	}
 }

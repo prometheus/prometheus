@@ -19,7 +19,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -43,7 +43,7 @@ func TestFanout_SelectSorted(t *testing.T) {
 	app1.Add(inputLabel, 2000, 2)
 	inputTotalSize++
 	err := app1.Commit()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	remoteStorage1 := teststorage.New(t)
 	defer remoteStorage1.Close()
@@ -55,7 +55,7 @@ func TestFanout_SelectSorted(t *testing.T) {
 	app2.Add(inputLabel, 5000, 5)
 	inputTotalSize++
 	err = app2.Commit()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	remoteStorage2 := teststorage.New(t)
 	defer remoteStorage2.Close()
@@ -69,17 +69,17 @@ func TestFanout_SelectSorted(t *testing.T) {
 	inputTotalSize++
 
 	err = app3.Commit()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	fanoutStorage := storage.NewFanout(nil, priStorage, remoteStorage1, remoteStorage2)
 
 	t.Run("querier", func(t *testing.T) {
 		querier, err := fanoutStorage.Querier(context.Background(), 0, 8000)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		defer querier.Close()
 
 		matcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "a")
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		seriesSet := querier.Select(true, nil, matcher)
 
@@ -96,16 +96,16 @@ func TestFanout_SelectSorted(t *testing.T) {
 			}
 		}
 
-		assert.Equal(t, labelsResult, outputLabel)
-		assert.Equal(t, inputTotalSize, len(result))
+		require.Equal(t, labelsResult, outputLabel)
+		require.Equal(t, inputTotalSize, len(result))
 	})
 	t.Run("chunk querier", func(t *testing.T) {
 		querier, err := fanoutStorage.ChunkQuerier(ctx, 0, 8000)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		defer querier.Close()
 
 		matcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "a")
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		seriesSet := storage.NewSeriesSetFromChunkSeriesSet(querier.Select(true, nil, matcher))
 
@@ -122,9 +122,9 @@ func TestFanout_SelectSorted(t *testing.T) {
 			}
 		}
 
-		assert.NoError(t, seriesSet.Err())
-		assert.Equal(t, labelsResult, outputLabel)
-		assert.Equal(t, inputTotalSize, len(result))
+		require.NoError(t, seriesSet.Err())
+		require.Equal(t, labelsResult, outputLabel)
+		require.Equal(t, inputTotalSize, len(result))
 	})
 }
 
@@ -157,7 +157,7 @@ func TestFanoutErrors(t *testing.T) {
 
 		t.Run("samples", func(t *testing.T) {
 			querier, err := fanoutStorage.Querier(context.Background(), 0, 8000)
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			defer querier.Close()
 
 			matcher := labels.MustNewMatcher(labels.MatchEqual, "a", "b")
@@ -169,20 +169,20 @@ func TestFanoutErrors(t *testing.T) {
 			}
 
 			if tc.err != nil {
-				assert.Error(t, ss.Err())
-				assert.Equal(t, tc.err.Error(), ss.Err().Error())
+				require.Error(t, ss.Err())
+				require.Equal(t, tc.err.Error(), ss.Err().Error())
 			}
 
 			if tc.warning != nil {
-				assert.Greater(t, len(ss.Warnings()), 0, "warnings expected")
-				assert.Error(t, ss.Warnings()[0])
-				assert.Equal(t, tc.warning.Error(), ss.Warnings()[0].Error())
+				require.Greater(t, len(ss.Warnings()), 0, "warnings expected")
+				require.Error(t, ss.Warnings()[0])
+				require.Equal(t, tc.warning.Error(), ss.Warnings()[0].Error())
 			}
 		})
 		t.Run("chunks", func(t *testing.T) {
 			t.Skip("enable once TestStorage and TSDB implements ChunkQuerier")
 			querier, err := fanoutStorage.ChunkQuerier(context.Background(), 0, 8000)
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			defer querier.Close()
 
 			matcher := labels.MustNewMatcher(labels.MatchEqual, "a", "b")
@@ -194,14 +194,14 @@ func TestFanoutErrors(t *testing.T) {
 			}
 
 			if tc.err != nil {
-				assert.Error(t, ss.Err())
-				assert.Equal(t, tc.err.Error(), ss.Err().Error())
+				require.Error(t, ss.Err())
+				require.Equal(t, tc.err.Error(), ss.Err().Error())
 			}
 
 			if tc.warning != nil {
-				assert.Greater(t, len(ss.Warnings()), 0, "warnings expected")
-				assert.Error(t, ss.Warnings()[0])
-				assert.Equal(t, tc.warning.Error(), ss.Warnings()[0].Error())
+				require.Greater(t, len(ss.Warnings()), 0, "warnings expected")
+				require.Error(t, ss.Warnings()[0])
+				require.Equal(t, tc.warning.Error(), ss.Warnings()[0].Error())
 			}
 		})
 	}

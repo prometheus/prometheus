@@ -1,3 +1,9 @@
+## 2.22.1 / 2020-11-03
+
+* [BUGFIX] Fix potential "mmap: invalid argument" errors in loading the head chunks, after an unclean shutdown, by performing read repairs. #8061
+* [BUGFIX] Fix serving metrics and API when reloading scrape config. #8104
+* [BUGFIX] Fix head chunk size calculation for size based retention. #8139
+
 ## 2.22.0 / 2020-10-07
 
 As announced in the 2.21.0 release notes, the experimental gRPC API v2 has been

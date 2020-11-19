@@ -23,7 +23,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/util/strutil"
@@ -64,7 +64,7 @@ func (m *SDMock) Setup() {
 func (m *SDMock) SetupHandlers() {
 	headers := make(map[string]string)
 	rawHeaders, err := ioutil.ReadFile(filepath.Join("testdata", m.directory, "headers.yml"))
-	assert.NoError(m.t, err)
+	require.NoError(m.t, err)
 	yaml.Unmarshal(rawHeaders, &headers)
 
 	prefix := "/"
@@ -94,7 +94,7 @@ func (m *SDMock) SetupHandlers() {
 				f = filepath.Join(p[:len(p)-1], strutil.SanitizeLabelName(parts[len(parts)-1]))
 			} else {
 				query := strings.Split(parts[len(parts)-1], "?")
-				f = query[0]
+				f = query[0] + ".json"
 				if len(query) == 2 {
 					h := sha1.New()
 					h.Write([]byte(query[1]))

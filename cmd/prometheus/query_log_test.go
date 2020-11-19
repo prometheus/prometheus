@@ -30,7 +30,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type origin int
@@ -82,22 +82,22 @@ func (p *queryLogTest) waitForPrometheus() error {
 // then reloads the configuration if needed.
 func (p *queryLogTest) setQueryLog(t *testing.T, queryLogFile string) {
 	err := p.configFile.Truncate(0)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	_, err = p.configFile.Seek(0, 0)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	if queryLogFile != "" {
 		_, err = p.configFile.Write([]byte(fmt.Sprintf("global:\n  query_log_file: %s\n", queryLogFile)))
-		assert.NoError(t, err)
+		require.NoError(t, err)
 	}
 	_, err = p.configFile.Write([]byte(p.configuration()))
-	assert.NoError(t, err)
+	require.NoError(t, err)
 }
 
 // reloadConfig reloads the configuration using POST.
 func (p *queryLogTest) reloadConfig(t *testing.T) {
 	r, err := http.Post(fmt.Sprintf("http://%s:%d%s/-/reload", p.host, p.port, p.prefix), "text/plain", nil)
-	assert.NoError(t, err)
-	assert.Equal(t, 200, r.StatusCode)
+	require.NoError(t, err)
+	require.Equal(t, 200, r.StatusCode)
 }
 
 // query runs a query according to the test origin.
@@ -111,8 +111,8 @@ func (p *queryLogTest) query(t *testing.T) {
 			p.prefix,
 			url.QueryEscape("query_with_api"),
 		))
-		assert.NoError(t, err)
-		assert.Equal(t, 200, r.StatusCode)
+		require.NoError(t, err)
+		require.Equal(t, 200, r.StatusCode)
 	case consoleOrigin:
 		r, err := http.Get(fmt.Sprintf(
 			"http://%s:%d%s/consoles/test.html",
@@ -120,8 +120,8 @@ func (p *queryLogTest) query(t *testing.T) {
 			p.port,
 			p.prefix,
 		))
-		assert.NoError(t, err)
-		assert.Equal(t, 200, r.StatusCode)
+		require.NoError(t, err)
+		require.Equal(t, 200, r.StatusCode)
 	case ruleOrigin:
 		time.Sleep(2 * time.Second)
 	default:
@@ -147,15 +147,15 @@ func (p *queryLogTest) queryString() string {
 // test parameters.
 func (p *queryLogTest) validateLastQuery(t *testing.T, ql []queryLogLine) {
 	q := ql[len(ql)-1]
-	assert.Equal(t, p.queryString(), q.Params.Query)
+	require.Equal(t, p.queryString(), q.Params.Query)
 
 	switch p.origin {
 	case apiOrigin:
-		assert.Equal(t, 5, q.Params.Step)
-		assert.Equal(t, "1970-01-01T00:00:00.000Z", q.Params.Start)
-		assert.Equal(t, "1970-01-01T01:00:00.000Z", q.Params.End)
+		require.Equal(t, 5, q.Params.Step)
+		require.Equal(t, "1970-01-01T00:00:00.000Z", q.Params.Start)
+		require.Equal(t, "1970-01-01T01:00:00.000Z", q.Params.End)
 	default:
-		assert.Equal(t, 0, q.Params.Step)
+		require.Equal(t, 0, q.Params.Step)
 	}
 
 	if p.origin != ruleOrigin {
@@ -163,17 +163,17 @@ func (p *queryLogTest) validateLastQuery(t *testing.T, ql []queryLogLine) {
 		if host == "[::1]" {
 			host = "::1"
 		}
-		assert.Equal(t, host, q.Request.ClientIP)
+		require.Equal(t, host, q.Request.ClientIP)
 	}
 
 	switch p.origin {
 	case apiOrigin:
-		assert.Equal(t, p.prefix+"/api/v1/query_range", q.Request.Path)
+		require.Equal(t, p.prefix+"/api/v1/query_range", q.Request.Path)
 	case consoleOrigin:
-		assert.Equal(t, p.prefix+"/consoles/test.html", q.Request.Path)
+		require.Equal(t, p.prefix+"/consoles/test.html", q.Request.Path)
 	case ruleOrigin:
-		assert.Equal(t, "querylogtest", q.RuleGroup.Name)
-		assert.Equal(t, filepath.Join(p.cwd, "testdata", "rules", "test.yml"), q.RuleGroup.File)
+		require.Equal(t, "querylogtest", q.RuleGroup.Name)
+		require.Equal(t, filepath.Join(p.cwd, "testdata", "rules", "test.yml"), q.RuleGroup.File)
 	default:
 		panic("unknown origin")
 	}
@@ -234,10 +234,10 @@ func (p *queryLogTest) run(t *testing.T) {
 
 	// Setup temporary files for this test.
 	queryLogFile, err := ioutil.TempFile("", "query")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer os.Remove(queryLogFile.Name())
 	p.configFile, err = ioutil.TempFile("", "config")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer os.Remove(p.configFile.Name())
 
 	if p.enabledAtStart {
@@ -247,9 +247,9 @@ func (p *queryLogTest) run(t *testing.T) {
 	}
 
 	dir, err := ioutil.TempDir("", "query_log_test")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer func() {
-		assert.NoError(t, os.RemoveAll(dir))
+		require.NoError(t, os.RemoveAll(dir))
 	}()
 
 	params := append([]string{
@@ -264,7 +264,7 @@ func (p *queryLogTest) run(t *testing.T) {
 
 	// Log stderr in case of failure.
 	stderr, err := prom.StderrPipe()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	// We use a WaitGroup to avoid calling t.Log after the test is done.
 	var wg sync.WaitGroup
@@ -276,17 +276,17 @@ func (p *queryLogTest) run(t *testing.T) {
 		wg.Done()
 	}()
 
-	assert.NoError(t, prom.Start())
+	require.NoError(t, prom.Start())
 
 	defer func() {
 		prom.Process.Kill()
 		prom.Wait()
 	}()
-	assert.NoError(t, p.waitForPrometheus())
+	require.NoError(t, p.waitForPrometheus())
 
 	if !p.enabledAtStart {
 		p.query(t)
-		assert.Equal(t, 0, len(readQueryLog(t, queryLogFile.Name())))
+		require.Equal(t, 0, len(readQueryLog(t, queryLogFile.Name())))
 		p.setQueryLog(t, queryLogFile.Name())
 		p.reloadConfig(t)
 	}
@@ -296,9 +296,9 @@ func (p *queryLogTest) run(t *testing.T) {
 	ql := readQueryLog(t, queryLogFile.Name())
 	qc := len(ql)
 	if p.exactQueryCount() {
-		assert.Equal(t, 1, qc)
+		require.Equal(t, 1, qc)
 	} else {
-		assert.Greater(t, qc, 0, "no queries logged")
+		require.Greater(t, qc, 0, "no queries logged")
 	}
 	p.validateLastQuery(t, ql)
 
@@ -311,7 +311,7 @@ func (p *queryLogTest) run(t *testing.T) {
 	p.query(t)
 
 	ql = readQueryLog(t, queryLogFile.Name())
-	assert.Equal(t, qc, len(ql))
+	require.Equal(t, qc, len(ql))
 
 	qc = len(ql)
 	p.setQueryLog(t, queryLogFile.Name())
@@ -322,9 +322,9 @@ func (p *queryLogTest) run(t *testing.T) {
 
 	ql = readQueryLog(t, queryLogFile.Name())
 	if p.exactQueryCount() {
-		assert.Equal(t, qc, len(ql))
+		require.Equal(t, qc, len(ql))
 	} else {
-		assert.Greater(t, len(ql), qc, "no queries logged")
+		require.Greater(t, len(ql), qc, "no queries logged")
 	}
 	p.validateLastQuery(t, ql)
 	qc = len(ql)
@@ -336,13 +336,13 @@ func (p *queryLogTest) run(t *testing.T) {
 	}
 	// Move the file, Prometheus should still write to the old file.
 	newFile, err := ioutil.TempFile("", "newLoc")
-	assert.NoError(t, err)
-	assert.NoError(t, newFile.Close())
+	require.NoError(t, err)
+	require.NoError(t, newFile.Close())
 	defer os.Remove(newFile.Name())
-	assert.NoError(t, os.Rename(queryLogFile.Name(), newFile.Name()))
+	require.NoError(t, os.Rename(queryLogFile.Name(), newFile.Name()))
 	ql = readQueryLog(t, newFile.Name())
 	if p.exactQueryCount() {
-		assert.Equal(t, qc, len(ql))
+		require.Equal(t, qc, len(ql))
 	}
 	p.validateLastQuery(t, ql)
 	qc = len(ql)
@@ -353,9 +353,9 @@ func (p *queryLogTest) run(t *testing.T) {
 
 	ql = readQueryLog(t, newFile.Name())
 	if p.exactQueryCount() {
-		assert.Equal(t, qc, len(ql))
+		require.Equal(t, qc, len(ql))
 	} else {
-		assert.Greater(t, len(ql), qc, "no queries logged")
+		require.Greater(t, len(ql), qc, "no queries logged")
 	}
 	p.validateLastQuery(t, ql)
 
@@ -366,9 +366,9 @@ func (p *queryLogTest) run(t *testing.T) {
 	ql = readQueryLog(t, queryLogFile.Name())
 	qc = len(ql)
 	if p.exactQueryCount() {
-		assert.Equal(t, 1, qc)
+		require.Equal(t, 1, qc)
 	} else {
-		assert.Greater(t, qc, 0, "no queries logged")
+		require.Greater(t, qc, 0, "no queries logged")
 	}
 }
 
@@ -393,12 +393,12 @@ type queryLogLine struct {
 func readQueryLog(t *testing.T, path string) []queryLogLine {
 	ql := []queryLogLine{}
 	file, err := os.Open(path)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer file.Close()
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		var q queryLogLine
-		assert.NoError(t, json.Unmarshal(scanner.Bytes(), &q))
+		require.NoError(t, json.Unmarshal(scanner.Bytes(), &q))
 		ql = append(ql, q)
 	}
 	return ql
@@ -410,7 +410,7 @@ func TestQueryLog(t *testing.T) {
 	}
 
 	cwd, err := os.Getwd()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	port := 15000
 	for _, host := range []string{"127.0.0.1", "[::1]"} {

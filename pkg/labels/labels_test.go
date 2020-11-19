@@ -18,7 +18,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestLabels_String(t *testing.T) {
@@ -50,7 +50,7 @@ func TestLabels_String(t *testing.T) {
 	}
 	for _, c := range cases {
 		str := c.lables.String()
-		assert.Equal(t, c.expected, str)
+		require.Equal(t, c.expected, str)
 	}
 }
 
@@ -181,7 +181,7 @@ func TestLabels_MatchLabels(t *testing.T) {
 
 	for i, test := range tests {
 		got := labels.MatchLabels(test.on, test.providedNames...)
-		assert.Equal(t, test.expected, got, "unexpected labelset for test case %d", i)
+		require.Equal(t, test.expected, got, "unexpected labelset for test case %d", i)
 	}
 }
 
@@ -206,8 +206,8 @@ func TestLabels_HasDuplicateLabelNames(t *testing.T) {
 
 	for i, c := range cases {
 		l, d := c.Input.HasDuplicateLabelNames()
-		assert.Equal(t, c.Duplicate, d, "test %d: incorrect duplicate bool", i)
-		assert.Equal(t, c.LabelName, l, "test %d: incorrect label name", i)
+		require.Equal(t, c.Duplicate, d, "test %d: incorrect duplicate bool", i)
+		require.Equal(t, c.LabelName, l, "test %d: incorrect label name", i)
 	}
 }
 
@@ -287,7 +287,7 @@ func TestLabels_WithoutEmpty(t *testing.T) {
 		},
 	} {
 		t.Run("", func(t *testing.T) {
-			assert.Equal(t, test.expected, test.input.WithoutEmpty())
+			require.Equal(t, test.expected, test.input.WithoutEmpty())
 		})
 	}
 }
@@ -368,7 +368,7 @@ func TestLabels_Equal(t *testing.T) {
 
 	for i, test := range tests {
 		got := Equal(labels, test.compared)
-		assert.Equal(t, test.expected, got, "unexpected comparison result for test case %d", i)
+		require.Equal(t, test.expected, got, "unexpected comparison result for test case %d", i)
 	}
 }
 
@@ -385,9 +385,9 @@ func TestLabels_FromStrings(t *testing.T) {
 		},
 	}
 
-	assert.Equal(t, expected, labels, "unexpected labelset")
+	require.Equal(t, expected, labels, "unexpected labelset")
 
-	assert.Panics(t, func() { FromStrings("aaa", "111", "bbb") })
+	require.Panics(t, func() { FromStrings("aaa", "111", "bbb") })
 }
 
 func TestLabels_Compare(t *testing.T) {
@@ -505,7 +505,7 @@ func TestLabels_Compare(t *testing.T) {
 
 	for i, test := range tests {
 		got := Compare(labels, test.compared)
-		assert.Equal(t, test.expected, got, "unexpected comparison result for test case %d", i)
+		require.Equal(t, test.expected, got, "unexpected comparison result for test case %d", i)
 	}
 }
 
@@ -537,34 +537,34 @@ func TestLabels_Has(t *testing.T) {
 
 	for i, test := range tests {
 		got := labelsSet.Has(test.input)
-		assert.Equal(t, test.expected, got, "unexpected comparison result for test case %d", i)
+		require.Equal(t, test.expected, got, "unexpected comparison result for test case %d", i)
 	}
 }
 
 func TestLabels_Get(t *testing.T) {
-	assert.Equal(t, "", Labels{{"aaa", "111"}, {"bbb", "222"}}.Get("foo"))
-	assert.Equal(t, "111", Labels{{"aaa", "111"}, {"bbb", "222"}}.Get("aaa"))
+	require.Equal(t, "", Labels{{"aaa", "111"}, {"bbb", "222"}}.Get("foo"))
+	require.Equal(t, "111", Labels{{"aaa", "111"}, {"bbb", "222"}}.Get("aaa"))
 }
 
 func TestLabels_Copy(t *testing.T) {
-	assert.Equal(t, Labels{{"aaa", "111"}, {"bbb", "222"}}, Labels{{"aaa", "111"}, {"bbb", "222"}}.Copy())
+	require.Equal(t, Labels{{"aaa", "111"}, {"bbb", "222"}}, Labels{{"aaa", "111"}, {"bbb", "222"}}.Copy())
 }
 
 func TestLabels_Map(t *testing.T) {
-	assert.Equal(t, map[string]string{"aaa": "111", "bbb": "222"}, Labels{{"aaa", "111"}, {"bbb", "222"}}.Map())
+	require.Equal(t, map[string]string{"aaa": "111", "bbb": "222"}, Labels{{"aaa", "111"}, {"bbb", "222"}}.Map())
 }
 
 func TestLabels_WithLabels(t *testing.T) {
-	assert.Equal(t, Labels{{"aaa", "111"}, {"bbb", "222"}}, Labels{{"aaa", "111"}, {"bbb", "222"}, {"ccc", "333"}}.WithLabels("aaa", "bbb"))
+	require.Equal(t, Labels{{"aaa", "111"}, {"bbb", "222"}}, Labels{{"aaa", "111"}, {"bbb", "222"}, {"ccc", "333"}}.WithLabels("aaa", "bbb"))
 }
 
 func TestLabels_WithoutLabels(t *testing.T) {
-	assert.Equal(t, Labels{{"aaa", "111"}}, Labels{{"aaa", "111"}, {"bbb", "222"}, {"ccc", "333"}}.WithoutLabels("bbb", "ccc"))
-	assert.Equal(t, Labels{{"aaa", "111"}}, Labels{{"aaa", "111"}, {"bbb", "222"}, {MetricName, "333"}}.WithoutLabels("bbb"))
+	require.Equal(t, Labels{{"aaa", "111"}}, Labels{{"aaa", "111"}, {"bbb", "222"}, {"ccc", "333"}}.WithoutLabels("bbb", "ccc"))
+	require.Equal(t, Labels{{"aaa", "111"}}, Labels{{"aaa", "111"}, {"bbb", "222"}, {MetricName, "333"}}.WithoutLabels("bbb"))
 }
 
 func TestBulider_NewBulider(t *testing.T) {
-	assert.Equal(
+	require.Equal(
 		t,
 		&Builder{
 			base: Labels{{"aaa", "111"}},
@@ -576,7 +576,7 @@ func TestBulider_NewBulider(t *testing.T) {
 }
 
 func TestBuilder_Del(t *testing.T) {
-	assert.Equal(
+	require.Equal(
 		t,
 		&Builder{
 			del: []string{"bbb"},
@@ -590,7 +590,7 @@ func TestBuilder_Del(t *testing.T) {
 }
 
 func TestBuilder_Set(t *testing.T) {
-	assert.Equal(
+	require.Equal(
 		t,
 		&Builder{
 			base: Labels{{"aaa", "111"}},
@@ -604,7 +604,7 @@ func TestBuilder_Set(t *testing.T) {
 		}).Set("bbb", "222"),
 	)
 
-	assert.Equal(
+	require.Equal(
 		t,
 		&Builder{
 			base: Labels{{"aaa", "111"}},
@@ -620,7 +620,7 @@ func TestBuilder_Set(t *testing.T) {
 }
 
 func TestBuilder_Labels(t *testing.T) {
-	assert.Equal(
+	require.Equal(
 		t,
 		Labels{{"aaa", "111"}, {"ccc", "333"}, {"ddd", "444"}},
 		(&Builder{
@@ -636,9 +636,9 @@ func TestLabels_Hash(t *testing.T) {
 		{Name: "foo", Value: "bar"},
 		{Name: "baz", Value: "qux"},
 	}
-	assert.Equal(t, lbls.Hash(), lbls.Hash())
-	assert.NotEqual(t, lbls.Hash(), Labels{lbls[1], lbls[0]}.Hash(), "unordered labels match.")
-	assert.NotEqual(t, lbls.Hash(), Labels{lbls[0]}.Hash(), "different labels match.")
+	require.Equal(t, lbls.Hash(), lbls.Hash())
+	require.NotEqual(t, lbls.Hash(), Labels{lbls[1], lbls[0]}.Hash(), "unordered labels match.")
+	require.NotEqual(t, lbls.Hash(), Labels{lbls[0]}.Hash(), "different labels match.")
 }
 
 var benchmarkLabelsResult uint64

@@ -23,7 +23,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	common_config "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -43,9 +43,9 @@ var cfg = config.RemoteWriteConfig{
 
 func TestNoDuplicateWriteConfigs(t *testing.T) {
 	dir, err := ioutil.TempDir("", "TestNoDuplicateWriteConfigs")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer func() {
-		assert.NoError(t, os.RemoveAll(dir))
+		require.NoError(t, os.RemoveAll(dir))
 	}()
 
 	cfg1 := config.RemoteWriteConfig{
@@ -122,22 +122,22 @@ func TestNoDuplicateWriteConfigs(t *testing.T) {
 		}
 		err := s.ApplyConfig(conf)
 		gotError := err != nil
-		assert.Equal(t, tc.err, gotError)
+		require.Equal(t, tc.err, gotError)
 
 		err = s.Close()
-		assert.NoError(t, err)
+		require.NoError(t, err)
 	}
 }
 
 func TestRestartOnNameChange(t *testing.T) {
 	dir, err := ioutil.TempDir("", "TestRestartOnNameChange")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer func() {
-		assert.NoError(t, os.RemoveAll(dir))
+		require.NoError(t, os.RemoveAll(dir))
 	}()
 
 	hash, err := toHash(cfg)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	s := NewWriteStorage(nil, nil, dir, time.Millisecond, nil)
 	conf := &config.Config{
@@ -146,25 +146,25 @@ func TestRestartOnNameChange(t *testing.T) {
 			&cfg,
 		},
 	}
-	assert.NoError(t, s.ApplyConfig(conf))
-	assert.Equal(t, s.queues[hash].client().Name(), cfg.Name)
+	require.NoError(t, s.ApplyConfig(conf))
+	require.Equal(t, s.queues[hash].client().Name(), cfg.Name)
 
 	// Change the queues name, ensure the queue has been restarted.
 	conf.RemoteWriteConfigs[0].Name = "dev-2"
-	assert.NoError(t, s.ApplyConfig(conf))
+	require.NoError(t, s.ApplyConfig(conf))
 	hash, err = toHash(cfg)
-	assert.NoError(t, err)
-	assert.Equal(t, s.queues[hash].client().Name(), conf.RemoteWriteConfigs[0].Name)
+	require.NoError(t, err)
+	require.Equal(t, s.queues[hash].client().Name(), conf.RemoteWriteConfigs[0].Name)
 
 	err = s.Close()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 }
 
 func TestUpdateWithRegisterer(t *testing.T) {
 	dir, err := ioutil.TempDir("", "TestRestartWithRegisterer")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer func() {
-		assert.NoError(t, os.RemoveAll(dir))
+		require.NoError(t, os.RemoveAll(dir))
 	}()
 
 	s := NewWriteStorage(nil, prometheus.NewRegistry(), dir, time.Millisecond, nil)
@@ -191,24 +191,24 @@ func TestUpdateWithRegisterer(t *testing.T) {
 		GlobalConfig:       config.DefaultGlobalConfig,
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{c1, c2},
 	}
-	assert.NoError(t, s.ApplyConfig(conf))
+	require.NoError(t, s.ApplyConfig(conf))
 
 	c1.QueueConfig.MaxShards = 10
 	c2.QueueConfig.MaxShards = 10
-	assert.NoError(t, s.ApplyConfig(conf))
+	require.NoError(t, s.ApplyConfig(conf))
 	for _, queue := range s.queues {
-		assert.Equal(t, 10, queue.cfg.MaxShards)
+		require.Equal(t, 10, queue.cfg.MaxShards)
 	}
 
 	err = s.Close()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 }
 
 func TestWriteStorageLifecycle(t *testing.T) {
 	dir, err := ioutil.TempDir("", "TestWriteStorageLifecycle")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer func() {
-		assert.NoError(t, os.RemoveAll(dir))
+		require.NoError(t, os.RemoveAll(dir))
 	}()
 
 	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil)
@@ -219,17 +219,17 @@ func TestWriteStorageLifecycle(t *testing.T) {
 		},
 	}
 	s.ApplyConfig(conf)
-	assert.Equal(t, 1, len(s.queues))
+	require.Equal(t, 1, len(s.queues))
 
 	err = s.Close()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 }
 
 func TestUpdateExternalLabels(t *testing.T) {
 	dir, err := ioutil.TempDir("", "TestUpdateExternalLabels")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer func() {
-		assert.NoError(t, os.RemoveAll(dir))
+		require.NoError(t, os.RemoveAll(dir))
 	}()
 
 	s := NewWriteStorage(nil, prometheus.NewRegistry(), dir, time.Second, nil)
@@ -242,27 +242,27 @@ func TestUpdateExternalLabels(t *testing.T) {
 		},
 	}
 	hash, err := toHash(conf.RemoteWriteConfigs[0])
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	s.ApplyConfig(conf)
-	assert.Equal(t, 1, len(s.queues))
-	assert.Equal(t, labels.Labels(nil), s.queues[hash].externalLabels)
+	require.Equal(t, 1, len(s.queues))
+	require.Equal(t, labels.Labels(nil), s.queues[hash].externalLabels)
 
 	conf.GlobalConfig.ExternalLabels = externalLabels
 	hash, err = toHash(conf.RemoteWriteConfigs[0])
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	s.ApplyConfig(conf)
-	assert.Equal(t, 1, len(s.queues))
-	assert.Equal(t, externalLabels, s.queues[hash].externalLabels)
+	require.Equal(t, 1, len(s.queues))
+	require.Equal(t, externalLabels, s.queues[hash].externalLabels)
 
 	err = s.Close()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 }
 
 func TestWriteStorageApplyConfigsIdempotent(t *testing.T) {
 	dir, err := ioutil.TempDir("", "TestWriteStorageApplyConfigsIdempotent")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer func() {
-		assert.NoError(t, os.RemoveAll(dir))
+		require.NoError(t, os.RemoveAll(dir))
 	}()
 
 	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil)
@@ -280,25 +280,25 @@ func TestWriteStorageApplyConfigsIdempotent(t *testing.T) {
 		},
 	}
 	hash, err := toHash(conf.RemoteWriteConfigs[0])
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	s.ApplyConfig(conf)
-	assert.Equal(t, 1, len(s.queues))
+	require.Equal(t, 1, len(s.queues))
 
 	s.ApplyConfig(conf)
-	assert.Equal(t, 1, len(s.queues))
+	require.Equal(t, 1, len(s.queues))
 	_, hashExists := s.queues[hash]
-	assert.True(t, hashExists, "Queue pointer should have remained the same")
+	require.True(t, hashExists, "Queue pointer should have remained the same")
 
 	err = s.Close()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 }
 
 func TestWriteStorageApplyConfigsPartialUpdate(t *testing.T) {
 	dir, err := ioutil.TempDir("", "TestWriteStorageApplyConfigsPartialUpdate")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer func() {
-		assert.NoError(t, os.RemoveAll(dir))
+		require.NoError(t, os.RemoveAll(dir))
 	}()
 
 	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil)
@@ -336,15 +336,15 @@ func TestWriteStorageApplyConfigsPartialUpdate(t *testing.T) {
 			},
 		}
 	}
-	assert.NoError(t, s.ApplyConfig(conf))
-	assert.Equal(t, 3, len(s.queues))
+	require.NoError(t, s.ApplyConfig(conf))
+	require.Equal(t, 3, len(s.queues))
 
 	hashes := make([]string, len(conf.RemoteWriteConfigs))
 	queues := make([]*QueueManager, len(conf.RemoteWriteConfigs))
 	storeHashes := func() {
 		for i := range conf.RemoteWriteConfigs {
 			hash, err := toHash(conf.RemoteWriteConfigs[i])
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			hashes[i] = hash
 			queues[i] = s.queues[hash]
 		}
@@ -358,32 +358,32 @@ func TestWriteStorageApplyConfigsPartialUpdate(t *testing.T) {
 		GlobalConfig:       config.GlobalConfig{},
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{c0, c1, c2},
 	}
-	assert.NoError(t, s.ApplyConfig(conf))
-	assert.Equal(t, 3, len(s.queues))
+	require.NoError(t, s.ApplyConfig(conf))
+	require.Equal(t, 3, len(s.queues))
 
 	_, hashExists := s.queues[hashes[0]]
-	assert.False(t, hashExists, "The queue for the first remote write configuration should have been restarted because the relabel configuration has changed.")
+	require.False(t, hashExists, "The queue for the first remote write configuration should have been restarted because the relabel configuration has changed.")
 	q, hashExists := s.queues[hashes[1]]
-	assert.True(t, hashExists, "Hash of unchanged queue should have remained the same")
-	assert.Equal(t, q, queues[1], "Pointer of unchanged queue should have remained the same")
+	require.True(t, hashExists, "Hash of unchanged queue should have remained the same")
+	require.Equal(t, q, queues[1], "Pointer of unchanged queue should have remained the same")
 	_, hashExists = s.queues[hashes[2]]
-	assert.False(t, hashExists, "The queue for the third remote write configuration should have been restarted because the timeout has changed.")
+	require.False(t, hashExists, "The queue for the third remote write configuration should have been restarted because the timeout has changed.")
 
 	storeHashes()
 	secondClient := s.queues[hashes[1]].client()
 	// Update c1.
 	c1.HTTPClientConfig.BearerToken = "bar"
 	err = s.ApplyConfig(conf)
-	assert.NoError(t, err)
-	assert.Equal(t, 3, len(s.queues))
+	require.NoError(t, err)
+	require.Equal(t, 3, len(s.queues))
 
 	_, hashExists = s.queues[hashes[0]]
-	assert.True(t, hashExists, "Pointer of unchanged queue should have remained the same")
+	require.True(t, hashExists, "Pointer of unchanged queue should have remained the same")
 	q, hashExists = s.queues[hashes[1]]
-	assert.True(t, hashExists, "Hash of queue with secret change should have remained the same")
-	assert.NotEqual(t, secondClient, q.client(), "Pointer of a client with a secret change should not be the same")
+	require.True(t, hashExists, "Hash of queue with secret change should have remained the same")
+	require.NotEqual(t, secondClient, q.client(), "Pointer of a client with a secret change should not be the same")
 	_, hashExists = s.queues[hashes[2]]
-	assert.True(t, hashExists, "Pointer of unchanged queue should have remained the same")
+	require.True(t, hashExists, "Pointer of unchanged queue should have remained the same")
 
 	storeHashes()
 	// Delete c0.
@@ -392,15 +392,15 @@ func TestWriteStorageApplyConfigsPartialUpdate(t *testing.T) {
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{c1, c2},
 	}
 	s.ApplyConfig(conf)
-	assert.Equal(t, 2, len(s.queues))
+	require.Equal(t, 2, len(s.queues))
 
 	_, hashExists = s.queues[hashes[0]]
-	assert.False(t, hashExists, "If a config is removed, the queue should be stopped and recreated.")
+	require.False(t, hashExists, "If a config is removed, the queue should be stopped and recreated.")
 	_, hashExists = s.queues[hashes[1]]
-	assert.True(t, hashExists, "Pointer of unchanged queue should have remained the same")
+	require.True(t, hashExists, "Pointer of unchanged queue should have remained the same")
 	_, hashExists = s.queues[hashes[2]]
-	assert.True(t, hashExists, "Pointer of unchanged queue should have remained the same")
+	require.True(t, hashExists, "Pointer of unchanged queue should have remained the same")
 
 	err = s.Close()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 }

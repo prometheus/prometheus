@@ -20,7 +20,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestFetchApps(t *testing.T) {
@@ -182,19 +182,19 @@ func TestFetchApps(t *testing.T) {
 	defer ts.Close()
 
 	apps, err := fetchApps(context.TODO(), ts.URL, &http.Client{})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
-	assert.Equal(t, len(apps.Applications), 2)
-	assert.Equal(t, apps.Applications[0].Name, "CONFIG-SERVICE")
-	assert.Equal(t, apps.Applications[1].Name, "META-SERVICE")
+	require.Equal(t, len(apps.Applications), 2)
+	require.Equal(t, apps.Applications[0].Name, "CONFIG-SERVICE")
+	require.Equal(t, apps.Applications[1].Name, "META-SERVICE")
 
-	assert.Equal(t, len(apps.Applications[1].Instances), 2)
-	assert.Equal(t, apps.Applications[1].Instances[0].InstanceID, "meta-service002.test.com:meta-service:8080")
-	assert.Equal(t, apps.Applications[1].Instances[0].Metadata.Items[0].XMLName.Local, "project")
-	assert.Equal(t, apps.Applications[1].Instances[0].Metadata.Items[0].Content, "meta-service")
-	assert.Equal(t, apps.Applications[1].Instances[0].Metadata.Items[1].XMLName.Local, "management.port")
-	assert.Equal(t, apps.Applications[1].Instances[0].Metadata.Items[1].Content, "8090")
-	assert.Equal(t, apps.Applications[1].Instances[1].InstanceID, "meta-service001.test.com:meta-service:8080")
+	require.Equal(t, len(apps.Applications[1].Instances), 2)
+	require.Equal(t, apps.Applications[1].Instances[0].InstanceID, "meta-service002.test.com:meta-service:8080")
+	require.Equal(t, apps.Applications[1].Instances[0].Metadata.Items[0].XMLName.Local, "project")
+	require.Equal(t, apps.Applications[1].Instances[0].Metadata.Items[0].Content, "meta-service")
+	require.Equal(t, apps.Applications[1].Instances[0].Metadata.Items[1].XMLName.Local, "management.port")
+	require.Equal(t, apps.Applications[1].Instances[0].Metadata.Items[1].Content, "8090")
+	require.Equal(t, apps.Applications[1].Instances[1].InstanceID, "meta-service001.test.com:meta-service:8080")
 }
 
 func Test500ErrorHttpResponse(t *testing.T) {
@@ -209,5 +209,5 @@ func Test500ErrorHttpResponse(t *testing.T) {
 	defer ts.Close()
 
 	_, err := fetchApps(context.TODO(), ts.URL, &http.Client{})
-	assert.Error(t, err, "5xx HTTP response")
+	require.Error(t, err, "5xx HTTP response")
 }

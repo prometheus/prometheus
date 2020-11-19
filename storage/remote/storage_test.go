@@ -20,14 +20,14 @@ import (
 	"testing"
 
 	common_config "github.com/prometheus/common/config"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/config"
 )
 
 func TestStorageLifecycle(t *testing.T) {
 	dir, err := ioutil.TempDir("", "TestStorageLifecycle")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer os.RemoveAll(dir)
 
 	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
@@ -52,21 +52,21 @@ func TestStorageLifecycle(t *testing.T) {
 		},
 	}
 
-	assert.NoError(t, s.ApplyConfig(conf))
+	require.NoError(t, s.ApplyConfig(conf))
 
 	// make sure remote write has a queue.
-	assert.Equal(t, 1, len(s.rws.queues))
+	require.Equal(t, 1, len(s.rws.queues))
 
 	// make sure remote write has a queue.
-	assert.Equal(t, 1, len(s.queryables))
+	require.Equal(t, 1, len(s.queryables))
 
 	err = s.Close()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 }
 
 func TestUpdateRemoteReadConfigs(t *testing.T) {
 	dir, err := ioutil.TempDir("", "TestUpdateRemoteReadConfigs")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer os.RemoveAll(dir)
 
 	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
@@ -74,15 +74,15 @@ func TestUpdateRemoteReadConfigs(t *testing.T) {
 	conf := &config.Config{
 		GlobalConfig: config.GlobalConfig{},
 	}
-	assert.NoError(t, s.ApplyConfig(conf))
-	assert.Equal(t, 0, len(s.queryables))
+	require.NoError(t, s.ApplyConfig(conf))
+	require.Equal(t, 0, len(s.queryables))
 
 	conf.RemoteReadConfigs = []*config.RemoteReadConfig{
 		&config.DefaultRemoteReadConfig,
 	}
-	assert.NoError(t, s.ApplyConfig(conf))
-	assert.Equal(t, 1, len(s.queryables))
+	require.NoError(t, s.ApplyConfig(conf))
+	require.Equal(t, 1, len(s.queryables))
 
 	err = s.Close()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 }

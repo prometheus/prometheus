@@ -17,7 +17,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/common/model"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 )
@@ -414,7 +414,7 @@ func TestRelabel(t *testing.T) {
 
 	for _, test := range tests {
 		res := Process(test.input, test.relabel...)
-		assert.Equal(t, test.output, res)
+		require.Equal(t, test.output, res)
 	}
 }
 
@@ -440,7 +440,7 @@ func TestTargetLabelValidity(t *testing.T) {
 		{"foo${bar}foo", true},
 	}
 	for _, test := range tests {
-		assert.Equal(t, test.valid, relabelTarget.Match([]byte(test.str)),
+		require.Equal(t, test.valid, relabelTarget.Match([]byte(test.str)),
 			"Expected %q to be %v", test.str, test.valid)
 	}
 }

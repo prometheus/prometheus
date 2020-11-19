@@ -20,7 +20,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/common/model"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type hcloudSDTestSuite struct {
@@ -44,16 +44,16 @@ func TestHCloudSDRefresh(t *testing.T) {
 	cfg.hcloudEndpoint = suite.Mock.Endpoint()
 
 	d, err := newHcloudDiscovery(&cfg, log.NewNopLogger())
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	targetGroups, err := d.refresh(context.Background())
-	assert.NoError(t, err)
-	assert.Equal(t, 1, len(targetGroups))
+	require.NoError(t, err)
+	require.Equal(t, 1, len(targetGroups))
 
 	targetGroup := targetGroups[0]
-	assert.NotNil(t, targetGroup, "targetGroup should not be nil")
-	assert.NotNil(t, targetGroup.Targets, "targetGroup.targets should not be nil")
-	assert.Equal(t, 3, len(targetGroup.Targets))
+	require.NotNil(t, targetGroup, "targetGroup should not be nil")
+	require.NotNil(t, targetGroup.Targets, "targetGroup.targets should not be nil")
+	require.Equal(t, 3, len(targetGroup.Targets))
 
 	for i, labelSet := range []model.LabelSet{
 		{
@@ -119,7 +119,7 @@ func TestHCloudSDRefresh(t *testing.T) {
 		},
 	} {
 		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
-			assert.Equal(t, labelSet, targetGroup.Targets[i])
+			require.Equal(t, labelSet, targetGroup.Targets[i])
 		})
 	}
 }
