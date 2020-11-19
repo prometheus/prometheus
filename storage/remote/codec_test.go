@@ -258,7 +258,7 @@ func TestMetricTypeToMetricTypeProto(t *testing.T) {
 	for _, tt := range tc {
 		t.Run(tt.desc, func(t *testing.T) {
 			m := metricTypeToMetricTypeProto(tt.input)
-			assert.Equal(t, tt.expected, m)
+			require.Equal(t, tt.expected, m)
 		})
 	}
 }
