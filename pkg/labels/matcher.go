@@ -14,6 +14,7 @@
 package labels
 
 import (
+	"bytes"
 	"fmt"
 )
 
@@ -91,6 +92,20 @@ func (m *Matcher) Matches(s string) bool {
 		return m.re.MatchString(s)
 	case MatchNotRegexp:
 		return !m.re.MatchString(s)
+	}
+	panic("labels.Matcher.Matches: invalid match type")
+}
+
+func (m *Matcher) MatchesBytes(s []byte) bool {
+	switch m.Type {
+	case MatchEqual:
+		return bytes.Equal(s, []byte(m.Value))
+	case MatchNotEqual:
+		return !bytes.Equal(s, []byte(m.Value))
+	case MatchRegexp:
+		return m.re.MatchBytes(s)
+	case MatchNotRegexp:
+		return !m.re.MatchBytes(s)
 	}
 	panic("labels.Matcher.Matches: invalid match type")
 }

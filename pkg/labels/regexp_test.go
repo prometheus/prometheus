@@ -56,6 +56,8 @@ func TestNewFastRegexMatcher(t *testing.T) {
 		m, err := NewFastRegexMatcher(c.regex)
 		require.NoError(t, err)
 		require.Equal(t, c.expected, m.MatchString(c.value))
+		require.Equal(t, c.expected, m.MatchBytes([]byte(c.value)))
+
 	}
 }
 

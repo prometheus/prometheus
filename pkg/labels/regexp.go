@@ -14,6 +14,7 @@
 package labels
 
 import (
+	"bytes"
 	"regexp"
 	"regexp/syntax"
 	"strings"
@@ -59,6 +60,19 @@ func (m *FastRegexMatcher) MatchString(s string) bool {
 		return false
 	}
 	return m.re.MatchString(s)
+}
+
+func (m *FastRegexMatcher) MatchBytes(s []byte) bool {
+	if m.prefix != "" && !bytes.HasPrefix(s, []byte(m.prefix)) {
+		return false
+	}
+	if m.suffix != "" && !bytes.HasSuffix(s, []byte(m.suffix)) {
+		return false
+	}
+	if m.contains != "" && !bytes.Contains(s, []byte(m.contains)) {
+		return false
+	}
+	return m.re.Match(s)
 }
 
 func (m *FastRegexMatcher) GetRegexString() string {

@@ -85,6 +85,8 @@ func TestMatcher(t *testing.T) {
 
 	for _, test := range tests {
 		require.Equal(t, test.matcher.Matches(test.value), test.match)
+		require.Equal(t, test.matcher.MatchesBytes([]byte(test.value)), test.match)
+
 	}
 }
 
