@@ -17,7 +17,6 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/binary"
-	"fmt"
 	"hash"
 	"io"
 	"io/ioutil"
@@ -131,10 +130,10 @@ type mmappedChunkFile struct {
 func NewChunkDiskMapper(dir string, pool chunkenc.Pool, writeBufferSize int) (*ChunkDiskMapper, error) {
 	// Validate write buffer size.
 	if writeBufferSize < MinWriteBufferSize || writeBufferSize > MaxWriteBufferSize {
-		return nil, fmt.Errorf("ChunkDiskMapper write buffer size should be between %d and %d (actual: %d)", MinWriteBufferSize, MaxHeadChunkFileSize, writeBufferSize)
+		return nil, errors.Errorf("ChunkDiskMapper write buffer size should be between %d and %d (actual: %d)", MinWriteBufferSize, MaxHeadChunkFileSize, writeBufferSize)
 	}
 	if writeBufferSize%1024 != 0 {
-		return nil, fmt.Errorf("ChunkDiskMapper write buffer size should be a multiple of 1024 (actual: %d)", writeBufferSize)
+		return nil, errors.Errorf("ChunkDiskMapper write buffer size should be a multiple of 1024 (actual: %d)", writeBufferSize)
 	}
 
 	if err := os.MkdirAll(dir, 0777); err != nil {
