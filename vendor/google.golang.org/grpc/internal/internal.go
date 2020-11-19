@@ -52,6 +52,11 @@ var (
 	// This function compares the config without rawJSON stripped, in case the
 	// there's difference in white space.
 	EqualServiceConfigForTesting func(a, b serviceconfig.Config) bool
+	// GetCertificateProviderBuilder returns the registered builder for the
+	// given name. This is set by package certprovider for use from xDS
+	// bootstrap code while parsing certificate provider configs in the
+	// bootstrap file.
+	GetCertificateProviderBuilder interface{} // func(string) certprovider.Builder
 )
 
 // HealthChecker defines the signature of the client-side LB channel health checking function.

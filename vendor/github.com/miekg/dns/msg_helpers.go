@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"net"
+	"sort"
 	"strings"
 )
 
@@ -612,6 +613,65 @@ func packDataNsec(bitmap []uint16, msg []byte, off int) (int, error) {
 	return off, nil
 }
 
+func unpackDataSVCB(msg []byte, off int) ([]SVCBKeyValue, int, error) {
+	var xs []SVCBKeyValue
+	var code uint16
+	var length uint16
+	var err error
+	for off < len(msg) {
+		code, off, err = unpackUint16(msg, off)
+		if err != nil {
+			return nil, len(msg), &Error{err: "overflow unpacking SVCB"}
+		}
+		length, off, err = unpackUint16(msg, off)
+		if err != nil || off+int(length) > len(msg) {
+			return nil, len(msg), &Error{err: "overflow unpacking SVCB"}
+		}
+		e := makeSVCBKeyValue(SVCBKey(code))
+		if e == nil {
+			return nil, len(msg), &Error{err: "bad SVCB key"}
+		}
+		if err := e.unpack(msg[off : off+int(length)]); err != nil {
+			return nil, len(msg), err
+		}
+		if len(xs) > 0 && e.Key() <= xs[len(xs)-1].Key() {
+			return nil, len(msg), &Error{err: "SVCB keys not in strictly increasing order"}
+		}
+		xs = append(xs, e)
+		off += int(length)
+	}
+	return xs, off, nil
+}
+
+func packDataSVCB(pairs []SVCBKeyValue, msg []byte, off int) (int, error) {
+	pairs = append([]SVCBKeyValue(nil), pairs...)
+	sort.Slice(pairs, func(i, j int) bool {
+		return pairs[i].Key() < pairs[j].Key()
+	})
+	prev := svcb_RESERVED
+	for _, el := range pairs {
+		if el.Key() == prev {
+			return len(msg), &Error{err: "repeated SVCB keys are not allowed"}
+		}
+		prev = el.Key()
+		packed, err := el.pack()
+		if err != nil {
+			return len(msg), err
+		}
+		off, err = packUint16(uint16(el.Key()), msg, off)
+		if err != nil {
+			return len(msg), &Error{err: "overflow packing SVCB"}
+		}
+		off, err = packUint16(uint16(len(packed)), msg, off)
+		if err != nil || off+len(packed) > len(msg) {
+			return len(msg), &Error{err: "overflow packing SVCB"}
+		}
+		copy(msg[off:off+len(packed)], packed)
+		off += len(packed)
+	}
+	return off, nil
+}
+
 func unpackDataDomainNames(msg []byte, off, end int) ([]string, int, error) {
 	var (
 		servers []string
@@ -683,6 +743,13 @@ func packDataAplPrefix(p *APLPrefix, msg []byte, off int) (int, error) {
 	if p.Negation {
 		n = 0x80
 	}
+
+	// trim trailing zero bytes as specified in RFC3123 Sections 4.1 and 4.2.
+	i := len(addr) - 1
+	for ; i >= 0 && addr[i] == 0; i-- {
+	}
+	addr = addr[:i+1]
+
 	adflen := uint8(len(addr)) & 0x7f
 	off, err = packUint8(n|adflen, msg, off)
 	if err != nil {

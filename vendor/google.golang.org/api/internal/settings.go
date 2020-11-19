@@ -41,6 +41,7 @@ type DialSettings struct {
 	CustomClaims        map[string]interface{}
 	SkipValidation      bool
 	ImpersonationConfig *impersonate.Config
+	EnableDirectPath    bool
 
 	// Google API system parameters. For more information please read:
 	// https://cloud.google.com/apis/docs/system-parameters

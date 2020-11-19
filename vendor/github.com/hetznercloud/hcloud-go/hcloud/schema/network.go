@@ -20,7 +20,8 @@ type NetworkSubnet struct {
 	Type        string `json:"type"`
 	IPRange     string `json:"ip_range"`
 	NetworkZone string `json:"network_zone"`
-	Gateway     string `json:"gateway"`
+	Gateway     string `json:"gateway,omitempty"`
+	VSwitchID   int    `json:"vswitch_id,omitempty"`
 }
 
 // NetworkRoute represents a route of a network.
@@ -91,6 +92,7 @@ type NetworkActionAddSubnetRequest struct {
 	IPRange     string `json:"ip_range,omitempty"`
 	NetworkZone string `json:"network_zone"`
 	Gateway     string `json:"gateway"`
+	VSwitchID   int    `json:"vswitch_id,omitempty"`
 }
 
 // NetworkActionAddSubnetResponse defines the schema of the response when

@@ -60,6 +60,7 @@ func (f Volume) String() string {
 	return Stringify(f)
 }
 
+// URN returns the volume ID as a valid DO API URN
 func (f Volume) URN() string {
 	return ToURN("Volume", f.ID)
 }

@@ -32,6 +32,8 @@ type DLLError struct {
 
 func (e *DLLError) Error() string { return e.Msg }
 
+func (e *DLLError) Unwrap() error { return e.Err }
+
 // A DLL implements access to a single DLL.
 type DLL struct {
 	Name   string

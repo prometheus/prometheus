@@ -402,6 +402,27 @@ func (r1 *HIP) isDuplicate(_r2 RR) bool {
 	return true
 }
 
+func (r1 *HTTPS) isDuplicate(_r2 RR) bool {
+	r2, ok := _r2.(*HTTPS)
+	if !ok {
+		return false
+	}
+	_ = r2
+	if r1.Priority != r2.Priority {
+		return false
+	}
+	if !isDuplicateName(r1.Target, r2.Target) {
+		return false
+	}
+	if len(r1.Value) != len(r2.Value) {
+		return false
+	}
+	if !areSVCBPairArraysEqual(r1.Value, r2.Value) {
+		return false
+	}
+	return true
+}
+
 func (r1 *KEY) isDuplicate(_r2 RR) bool {
 	r2, ok := _r2.(*KEY)
 	if !ok {
@@ -1071,6 +1092,27 @@ func (r1 *SSHFP) isDuplicate(_r2 RR) bool {
 		return false
 	}
 	if r1.FingerPrint != r2.FingerPrint {
+		return false
+	}
+	return true
+}
+
+func (r1 *SVCB) isDuplicate(_r2 RR) bool {
+	r2, ok := _r2.(*SVCB)
+	if !ok {
+		return false
+	}
+	_ = r2
+	if r1.Priority != r2.Priority {
+		return false
+	}
+	if !isDuplicateName(r1.Target, r2.Target) {
+		return false
+	}
+	if len(r1.Value) != len(r2.Value) {
+		return false
+	}
+	if !areSVCBPairArraysEqual(r1.Value, r2.Value) {
 		return false
 	}
 	return true

@@ -30,11 +30,13 @@ before_install:
 install:
   - try3() { eval "$*" || eval "$*" || eval "$*"; }
   - try3 'if [[ "${GO111MODULE}" = "on" ]]; then go mod download; else make testdeps; fi'
+  - if [[ -n "${GAE}" ]]; then source ./install_gae.sh; make testappenginedeps; fi
   - if [[ -n "${VET}" ]]; then ./vet.sh -install; fi
 
 script:
   - set -e
   - if [[ -n "${TESTEXTRAS}" ]]; then examples/examples_test.sh; interop/interop_test.sh; make testsubmodule; exit 0; fi
   - if [[ -n "${VET}" ]]; then ./vet.sh; fi
+  - if [[ -n "${GAE}" ]]; then make testappengine; exit 0; fi
   - if [[ -n "${RACE}" ]]; then make testrace; exit 0; fi
   - make test

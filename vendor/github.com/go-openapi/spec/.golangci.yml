@@ -26,3 +26,13 @@ linters:
     - gocognit
     - whitespace
     - wsl
+    - wrapcheck
+    - testpackage
+    - nlreturn
+    - gomnd
+    - exhaustivestruct
+    - goerr113
+    - errorlint
+    - nestif
+    - godot
+    - gofumpt

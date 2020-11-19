@@ -1,5 +1,43 @@
 # Change Log
 
+## [v1.52.0] - 2020-11-05
+
+- #411 - @nicktate - apps: add unspecified type to image source registry types
+- #409 - @andrewsomething - registry: Add support for updating a subscription.
+- #408 - @nicktate - apps: update spec to include image source
+- #407 - @kamaln7 - apps: add the option to force build a new deployment
+
+## [v1.51.0] - 2020-11-02
+
+- #405 - @adamwg - registry: Support subscription options
+- #398 - @reeseconor - Add support for caching dependencies between GitHub Action runs
+- #404 - @andrewsomething - CONTRIBUTING.md: Suggest using github-changelog-generator.
+
+## [v1.50.0] - 2020-10-26
+
+- #400 - @waynr - registry: add garbage collection support
+- #402 - @snormore - apps: add catchall_document static site spec field and failed-deploy job type
+- #401 - @andrewlouis93 - VPC: adds option to set a VPC as the regional default
+
+## [v1.49.0] - 2020-10-21
+
+- #383 - @kamaln7 - apps: add ListRegions, Get/ListTiers, Get/ListInstanceSizes
+- #390 - @snormore - apps: add service spec internal_ports
+
+## [v1.48.0] - 2020-10-16
+
+- #388 - @varshavaradarajan - kubernetes - change docr integration api routes
+- #386 - @snormore - apps: pull in recent updates to jobs and domains
+
+## [v1.47.0] - 2020-10-14
+
+- #384 kubernetes - add registry related doks apis - @varshavaradarajan
+- #385 Fixed some typo in apps.gen.go and databases.go file - @devil-cyber
+- #382 Add GetKubeConfigWithExpiry (#334) - @ivanlemeshev
+- #381 Fix golint issues #377 - @sidsbrmnn
+- #380 refactor: Cyclomatic complexity issue - @DonRenando
+- #379 Run gofmt to fix some issues in codebase - @mycodeself
+
 ## [v1.46.0] - 2020-10-05
 
 - #373 load balancers: add LB size field, currently in closed beta - @anitgandhi

@@ -73,13 +73,6 @@ var (
 		http2.ErrCodeInadequateSecurity: codes.PermissionDenied,
 		http2.ErrCodeHTTP11Required:     codes.Internal,
 	}
-	statusCodeConvTab = map[codes.Code]http2.ErrCode{
-		codes.Internal:          http2.ErrCodeInternal,
-		codes.Canceled:          http2.ErrCodeCancel,
-		codes.Unavailable:       http2.ErrCodeRefusedStream,
-		codes.ResourceExhausted: http2.ErrCodeEnhanceYourCalm,
-		codes.PermissionDenied:  http2.ErrCodeInadequateSecurity,
-	}
 	// HTTPStatusConvTab is the HTTP status code to gRPC error code conversion table.
 	HTTPStatusConvTab = map[int]codes.Code{
 		// 400 Bad Request - INTERNAL.
@@ -222,11 +215,11 @@ func decodeMetadataHeader(k, v string) (string, error) {
 	return v, nil
 }
 
-func (d *decodeState) decodeHeader(frame *http2.MetaHeadersFrame) error {
+func (d *decodeState) decodeHeader(frame *http2.MetaHeadersFrame) (http2.ErrCode, error) {
 	// frame.Truncated is set to true when framer detects that the current header
 	// list size hits MaxHeaderListSize limit.
 	if frame.Truncated {
-		return status.Error(codes.Internal, "peer header list size exceeded limit")
+		return http2.ErrCodeFrameSize, status.Error(codes.Internal, "peer header list size exceeded limit")
 	}
 
 	for _, hf := range frame.Fields {
@@ -235,10 +228,10 @@ func (d *decodeState) decodeHeader(frame *http2.MetaHeadersFrame) error {
 
 	if d.data.isGRPC {
 		if d.data.grpcErr != nil {
-			return d.data.grpcErr
+			return http2.ErrCodeProtocol, d.data.grpcErr
 		}
 		if d.serverSide {
-			return nil
+			return http2.ErrCodeNo, nil
 		}
 		if d.data.rawStatusCode == nil && d.data.statusGen == nil {
 			// gRPC status doesn't exist.
@@ -250,12 +243,12 @@ func (d *decodeState) decodeHeader(frame *http2.MetaHeadersFrame) error {
 			code := int(codes.Unknown)
 			d.data.rawStatusCode = &code
 		}
-		return nil
+		return http2.ErrCodeNo, nil
 	}
 
 	// HTTP fallback mode
 	if d.data.httpErr != nil {
-		return d.data.httpErr
+		return http2.ErrCodeProtocol, d.data.httpErr
 	}
 
 	var (
@@ -270,7 +263,7 @@ func (d *decodeState) decodeHeader(frame *http2.MetaHeadersFrame) error {
 		}
 	}
 
-	return status.Error(code, d.constructHTTPErrMsg())
+	return http2.ErrCodeProtocol, status.Error(code, d.constructHTTPErrMsg())
 }
 
 // constructErrMsg constructs error message to be returned in HTTP fallback mode.
