@@ -318,7 +318,7 @@ func (p *parser) Lex(lval *yySymType) int {
 	case EOF:
 		lval.item.Typ = EOF
 		p.InjectItem(0)
-	case RIGHT_BRACE, RIGHT_PAREN, RIGHT_BRACKET, DURATION:
+	case RIGHT_BRACE, RIGHT_PAREN, RIGHT_BRACKET, DURATION, NUMBER:
 		p.lastClosing = lval.item.Pos + Pos(len(lval.item.Val))
 	}
 
@@ -705,7 +705,6 @@ func (p *parser) addOffset(e Node, offset time.Duration) {
 	}
 
 	*endPosp = p.lastClosing
-
 }
 
 func (p *parser) setInstant(e Node, timestamp float64) {
@@ -725,7 +724,7 @@ func (p *parser) setInstant(e Node, timestamp float64) {
 		timestampp = &s.Timestamp
 		endPosp = &s.EndPos
 	default:
-		p.addParseErrf(e.PositionRange(), "offset modifier must be preceded by an instant or range selector, but follows a %T instead", e)
+		p.addParseErrf(e.PositionRange(), "@ modifier must be preceded by an instant or range selector, but follows a %T instead", e)
 		return
 	}
 

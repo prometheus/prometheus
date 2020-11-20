@@ -407,6 +407,8 @@ matrix_selector : expr LEFT_BRACKET duration RIGHT_BRACKET
                                 errMsg = "ranges only allowed for vector selectors"
                         } else if vs.Offset != 0{
                                 errMsg = "no offset modifiers allowed before range"
+                        } else if vs.Timestamp != 0 {
+                                errMsg = "no @ modifiers allowed before range"
                         }
 
                         if errMsg != ""{

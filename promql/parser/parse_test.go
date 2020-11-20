@@ -1399,7 +1399,7 @@ var testExpr = []struct {
 			},
 			PosRange: PositionRange{
 				Start: 0,
-				End:   17, // TODO(codesome).
+				End:   16,
 			},
 		},
 	}, {
@@ -1702,7 +1702,7 @@ var testExpr = []struct {
 				},
 			},
 			Range:  5 * 365 * 24 * time.Hour,
-			EndPos: 15, // TODO(codesome).
+			EndPos: 28,
 		},
 	}, {
 		input:  `foo[5mm]`,
@@ -1760,6 +1760,19 @@ var testExpr = []struct {
 		fail:   true,
 		errMsg: "1:22: parse error: no offset modifiers allowed before range",
 	}, {
+		input:  `some_metric[5m] @ 1m`,
+		fail:   true,
+		errMsg: "1:19: parse error: unexpected duration \"1m\" in @, expected timestamp",
+	}, {
+		input:  `some_metric[5m] @`,
+		fail:   true,
+		errMsg: "1:18: parse error: unexpected end of input in @, expected timestamp",
+	}, {
+		input:  `some_metric @ 1234 [5m]`,
+		fail:   true,
+		errMsg: "1:20: parse error: no @ modifiers allowed before range",
+	},
+	{
 		input:  `(foo + bar)[5m]`,
 		fail:   true,
 		errMsg: "1:12: parse error: ranges only allowed for vector selectors",
@@ -2100,6 +2113,10 @@ var testExpr = []struct {
 		input:  `count_values(5, other_metric)`,
 		fail:   true,
 		errMsg: "1:14: parse error: expected type string in aggregation parameter, got scalar",
+	}, {
+		input:  `rate(some_metric[5m]) @ 1234`,
+		fail:   true,
+		errMsg: "1:1: parse error: @ modifier must be preceded by an instant or range selector, but follows a *parser.Call instead",
 	},
 	// Test function calls.
 	{
@@ -2588,17 +2605,17 @@ var testExpr = []struct {
 						},
 						Range:     5 * time.Minute,
 						Timestamp: 1603775091,
-						EndPos:    43, // TODO(codesome).
+						EndPos:    56,
 					},
 				},
 				PosRange: PositionRange{
 					Start: 0,
-					End:   57, // TODO(codesome).
+					End:   57,
 				},
 			},
 			Range:  4 * time.Minute,
 			Step:   3 * time.Second,
-			EndPos: 64, // TODO(codesome).
+			EndPos: 64,
 		},
 	}, {
 		input: "sum without(and, by, avg, count, alert, annotations)(some_metric) [30m:10s]",
@@ -2643,6 +2660,81 @@ var testExpr = []struct {
 			Range:  10 * time.Minute,
 			Step:   5 * time.Second,
 			EndPos: 30,
+		},
+	}, {
+		input: `some_metric @ 123 [10m:5s]`,
+		expected: &SubqueryExpr{
+			Expr: &VectorSelector{
+				Name: "some_metric",
+				LabelMatchers: []*labels.Matcher{
+					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+				},
+				PosRange: PositionRange{
+					Start: 0,
+					End:   17,
+				},
+				Timestamp: 123,
+			},
+			Range:  10 * time.Minute,
+			Step:   5 * time.Second,
+			EndPos: 26,
+		},
+	}, {
+		input: `some_metric @ 123 offset 1m [10m:5s]`,
+		expected: &SubqueryExpr{
+			Expr: &VectorSelector{
+				Name: "some_metric",
+				LabelMatchers: []*labels.Matcher{
+					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+				},
+				PosRange: PositionRange{
+					Start: 0,
+					End:   27,
+				},
+				Timestamp: 123,
+				Offset:    1 * time.Minute,
+			},
+			Range:  10 * time.Minute,
+			Step:   5 * time.Second,
+			EndPos: 36,
+		},
+	}, {
+		input: `some_metric offset 1m @ 123 [10m:5s]`,
+		expected: &SubqueryExpr{
+			Expr: &VectorSelector{
+				Name: "some_metric",
+				LabelMatchers: []*labels.Matcher{
+					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+				},
+				PosRange: PositionRange{
+					Start: 0,
+					End:   27,
+				},
+				Timestamp: 123,
+				Offset:    1 * time.Minute,
+			},
+			Range:  10 * time.Minute,
+			Step:   5 * time.Second,
+			EndPos: 36,
+		},
+	}, {
+		input: `some_metric[10m:5s] offset 1m @ 123`,
+		expected: &SubqueryExpr{
+			Expr: &VectorSelector{
+				Name: "some_metric",
+				LabelMatchers: []*labels.Matcher{
+					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+				},
+				PosRange: PositionRange{
+					Start: 0,
+					End:   11,
+				},
+			},
+			Timestamp: 123,
+			Offset:    1 * time.Minute,
+			Range:     10 * time.Minute,
+			Step:      5 * time.Second,
+			EndPos:    35,
 		},
 	}, {
 		input: `(foo + bar{nm="val"})[5m:]`,
@@ -2724,7 +2816,7 @@ var testExpr = []struct {
 			EndPos: 37,
 		},
 	}, {
-		input: `(foo + bar{nm="val"})[5m:] @ 1603775019`,
+		input: `(foo + bar{nm="val"} @ 1234)[5m:] @ 1603775019`,
 		expected: &SubqueryExpr{
 			Expr: &ParenExpr{
 				Expr: &BinaryExpr{
@@ -2748,20 +2840,21 @@ var testExpr = []struct {
 							mustLabelMatcher(labels.MatchEqual, "nm", "val"),
 							mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 						},
+						Timestamp: 1234,
 						PosRange: PositionRange{
 							Start: 7,
-							End:   20,
+							End:   27,
 						},
 					},
 				},
 				PosRange: PositionRange{
 					Start: 0,
-					End:   21,
+					End:   28,
 				},
 			},
 			Range:     5 * time.Minute,
 			Timestamp: 1603775019,
-			EndPos:    26, // TODO(codesome).
+			EndPos:    46,
 		},
 	}, {
 		input:  "test[5d] OFFSET 10s [10m:5s]",

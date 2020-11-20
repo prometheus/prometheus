@@ -187,7 +187,7 @@ const yyEofCode = 1
 const yyErrCode = 2
 const yyInitialStackSize = 16
 
-//line generated_parser.y:724
+//line generated_parser.y:726
 
 //line yacctab:1
 var yyExca = [...]int{
@@ -1259,6 +1259,8 @@ yydefault:
 				errMsg = "ranges only allowed for vector selectors"
 			} else if vs.Offset != 0 {
 				errMsg = "no offset modifiers allowed before range"
+			} else if vs.Timestamp != 0 {
+				errMsg = "no @ modifiers allowed before range"
 			}
 
 			if errMsg != "" {
@@ -1274,7 +1276,7 @@ yydefault:
 		}
 	case 71:
 		yyDollar = yyS[yypt-6 : yypt+1]
-//line generated_parser.y:426
+//line generated_parser.y:428
 		{
 			yyVAL.node = &SubqueryExpr{
 				Expr:  yyDollar[1].node.(Expr),
@@ -1286,35 +1288,35 @@ yydefault:
 		}
 	case 72:
 		yyDollar = yyS[yypt-6 : yypt+1]
-//line generated_parser.y:436
+//line generated_parser.y:438
 		{
 			yylex.(*parser).unexpected("subquery selector", "\"]\"")
 			yyVAL.node = yyDollar[1].node
 		}
 	case 73:
 		yyDollar = yyS[yypt-5 : yypt+1]
-//line generated_parser.y:438
+//line generated_parser.y:440
 		{
 			yylex.(*parser).unexpected("subquery selector", "duration or \"]\"")
 			yyVAL.node = yyDollar[1].node
 		}
 	case 74:
 		yyDollar = yyS[yypt-4 : yypt+1]
-//line generated_parser.y:440
+//line generated_parser.y:442
 		{
 			yylex.(*parser).unexpected("subquery or range", "\":\" or \"]\"")
 			yyVAL.node = yyDollar[1].node
 		}
 	case 75:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line generated_parser.y:442
+//line generated_parser.y:444
 		{
 			yylex.(*parser).unexpected("subquery selector", "duration")
 			yyVAL.node = yyDollar[1].node
 		}
 	case 76:
 		yyDollar = yyS[yypt-2 : yypt+1]
-//line generated_parser.y:452
+//line generated_parser.y:454
 		{
 			if nl, ok := yyDollar[2].node.(*NumberLiteral); ok {
 				if yyDollar[1].item.Typ == SUB {
@@ -1328,7 +1330,7 @@ yydefault:
 		}
 	case 77:
 		yyDollar = yyS[yypt-2 : yypt+1]
-//line generated_parser.y:470
+//line generated_parser.y:472
 		{
 			vs := yyDollar[2].node.(*VectorSelector)
 			vs.PosRange = mergeRanges(&yyDollar[1].item, vs)
@@ -1338,7 +1340,7 @@ yydefault:
 		}
 	case 78:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line generated_parser.y:478
+//line generated_parser.y:480
 		{
 			vs := &VectorSelector{
 				Name:          yyDollar[1].item.Val,
@@ -1350,7 +1352,7 @@ yydefault:
 		}
 	case 79:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line generated_parser.y:488
+//line generated_parser.y:490
 		{
 			vs := yyDollar[1].node.(*VectorSelector)
 			yylex.(*parser).assembleVectorSelector(vs)
@@ -1358,7 +1360,7 @@ yydefault:
 		}
 	case 80:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line generated_parser.y:496
+//line generated_parser.y:498
 		{
 			yyVAL.node = &VectorSelector{
 				LabelMatchers: yyDollar[2].matchers,
@@ -1367,7 +1369,7 @@ yydefault:
 		}
 	case 81:
 		yyDollar = yyS[yypt-4 : yypt+1]
-//line generated_parser.y:503
+//line generated_parser.y:505
 		{
 			yyVAL.node = &VectorSelector{
 				LabelMatchers: yyDollar[2].matchers,
@@ -1376,7 +1378,7 @@ yydefault:
 		}
 	case 82:
 		yyDollar = yyS[yypt-2 : yypt+1]
-//line generated_parser.y:510
+//line generated_parser.y:512
 		{
 			yyVAL.node = &VectorSelector{
 				LabelMatchers: []*labels.Matcher{},
@@ -1385,7 +1387,7 @@ yydefault:
 		}
 	case 83:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line generated_parser.y:519
+//line generated_parser.y:521
 		{
 			if yyDollar[1].matchers != nil {
 				yyVAL.matchers = append(yyDollar[1].matchers, yyDollar[3].matcher)
@@ -1395,130 +1397,130 @@ yydefault:
 		}
 	case 84:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line generated_parser.y:527
+//line generated_parser.y:529
 		{
 			yyVAL.matchers = []*labels.Matcher{yyDollar[1].matcher}
 		}
 	case 85:
 		yyDollar = yyS[yypt-2 : yypt+1]
-//line generated_parser.y:529
+//line generated_parser.y:531
 		{
 			yylex.(*parser).unexpected("label matching", "\",\" or \"}\"")
 			yyVAL.matchers = yyDollar[1].matchers
 		}
 	case 86:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line generated_parser.y:533
+//line generated_parser.y:535
 		{
 			yyVAL.matcher = yylex.(*parser).newLabelMatcher(yyDollar[1].item, yyDollar[2].item, yyDollar[3].item)
 		}
 	case 87:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line generated_parser.y:535
+//line generated_parser.y:537
 		{
 			yylex.(*parser).unexpected("label matching", "string")
 			yyVAL.matcher = nil
 		}
 	case 88:
 		yyDollar = yyS[yypt-2 : yypt+1]
-//line generated_parser.y:537
+//line generated_parser.y:539
 		{
 			yylex.(*parser).unexpected("label matching", "label matching operator")
 			yyVAL.matcher = nil
 		}
 	case 89:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line generated_parser.y:539
+//line generated_parser.y:541
 		{
 			yylex.(*parser).unexpected("label matching", "identifier or \"}\"")
 			yyVAL.matcher = nil
 		}
 	case 90:
 		yyDollar = yyS[yypt-2 : yypt+1]
-//line generated_parser.y:547
+//line generated_parser.y:549
 		{
 			yyVAL.labels = append(yyDollar[2].labels, labels.Label{Name: labels.MetricName, Value: yyDollar[1].item.Val})
 			sort.Sort(yyVAL.labels)
 		}
 	case 91:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line generated_parser.y:549
+//line generated_parser.y:551
 		{
 			yyVAL.labels = yyDollar[1].labels
 		}
 	case 112:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line generated_parser.y:556
+//line generated_parser.y:558
 		{
 			yyVAL.labels = labels.New(yyDollar[2].labels...)
 		}
 	case 113:
 		yyDollar = yyS[yypt-4 : yypt+1]
-//line generated_parser.y:558
+//line generated_parser.y:560
 		{
 			yyVAL.labels = labels.New(yyDollar[2].labels...)
 		}
 	case 114:
 		yyDollar = yyS[yypt-2 : yypt+1]
-//line generated_parser.y:560
+//line generated_parser.y:562
 		{
 			yyVAL.labels = labels.New()
 		}
 	case 115:
 		yyDollar = yyS[yypt-0 : yypt+1]
-//line generated_parser.y:562
+//line generated_parser.y:564
 		{
 			yyVAL.labels = labels.New()
 		}
 	case 116:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line generated_parser.y:566
+//line generated_parser.y:568
 		{
 			yyVAL.labels = append(yyDollar[1].labels, yyDollar[3].label)
 		}
 	case 117:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line generated_parser.y:568
+//line generated_parser.y:570
 		{
 			yyVAL.labels = []labels.Label{yyDollar[1].label}
 		}
 	case 118:
 		yyDollar = yyS[yypt-2 : yypt+1]
-//line generated_parser.y:570
+//line generated_parser.y:572
 		{
 			yylex.(*parser).unexpected("label set", "\",\" or \"}\"")
 			yyVAL.labels = yyDollar[1].labels
 		}
 	case 119:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line generated_parser.y:575
+//line generated_parser.y:577
 		{
 			yyVAL.label = labels.Label{Name: yyDollar[1].item.Val, Value: yylex.(*parser).unquoteString(yyDollar[3].item.Val)}
 		}
 	case 120:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line generated_parser.y:577
+//line generated_parser.y:579
 		{
 			yylex.(*parser).unexpected("label set", "string")
 			yyVAL.label = labels.Label{}
 		}
 	case 121:
 		yyDollar = yyS[yypt-2 : yypt+1]
-//line generated_parser.y:579
+//line generated_parser.y:581
 		{
 			yylex.(*parser).unexpected("label set", "\"=\"")
 			yyVAL.label = labels.Label{}
 		}
 	case 122:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line generated_parser.y:581
+//line generated_parser.y:583
 		{
 			yylex.(*parser).unexpected("label set", "identifier or \"}\"")
 			yyVAL.label = labels.Label{}
 		}
 	case 123:
 		yyDollar = yyS[yypt-2 : yypt+1]
-//line generated_parser.y:589
+//line generated_parser.y:591
 		{
 			yylex.(*parser).generatedParserResult = &seriesDescription{
 				labels: yyDollar[1].labels,
@@ -1527,38 +1529,38 @@ yydefault:
 		}
 	case 124:
 		yyDollar = yyS[yypt-0 : yypt+1]
-//line generated_parser.y:598
+//line generated_parser.y:600
 		{
 			yyVAL.series = []SequenceValue{}
 		}
 	case 125:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line generated_parser.y:600
+//line generated_parser.y:602
 		{
 			yyVAL.series = append(yyDollar[1].series, yyDollar[3].series...)
 		}
 	case 126:
 		yyDollar = yyS[yypt-2 : yypt+1]
-//line generated_parser.y:602
+//line generated_parser.y:604
 		{
 			yyVAL.series = yyDollar[1].series
 		}
 	case 127:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line generated_parser.y:604
+//line generated_parser.y:606
 		{
 			yylex.(*parser).unexpected("series values", "")
 			yyVAL.series = nil
 		}
 	case 128:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line generated_parser.y:608
+//line generated_parser.y:610
 		{
 			yyVAL.series = []SequenceValue{{Omitted: true}}
 		}
 	case 129:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line generated_parser.y:610
+//line generated_parser.y:612
 		{
 			yyVAL.series = []SequenceValue{}
 			for i := uint64(0); i < yyDollar[3].uint; i++ {
@@ -1567,13 +1569,13 @@ yydefault:
 		}
 	case 130:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line generated_parser.y:617
+//line generated_parser.y:619
 		{
 			yyVAL.series = []SequenceValue{{Value: yyDollar[1].float}}
 		}
 	case 131:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line generated_parser.y:619
+//line generated_parser.y:621
 		{
 			yyVAL.series = []SequenceValue{}
 			for i := uint64(0); i <= yyDollar[3].uint; i++ {
@@ -1582,7 +1584,7 @@ yydefault:
 		}
 	case 132:
 		yyDollar = yyS[yypt-4 : yypt+1]
-//line generated_parser.y:626
+//line generated_parser.y:628
 		{
 			yyVAL.series = []SequenceValue{}
 			for i := uint64(0); i <= yyDollar[4].uint; i++ {
@@ -1592,7 +1594,7 @@ yydefault:
 		}
 	case 133:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line generated_parser.y:636
+//line generated_parser.y:638
 		{
 			if yyDollar[1].item.Val != "stale" {
 				yylex.(*parser).unexpected("series values", "number or \"stale\"")
@@ -1601,7 +1603,7 @@ yydefault:
 		}
 	case 178:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line generated_parser.y:667
+//line generated_parser.y:669
 		{
 			yyVAL.node = &NumberLiteral{
 				Val:      yylex.(*parser).number(yyDollar[1].item.Val),
@@ -1610,25 +1612,25 @@ yydefault:
 		}
 	case 179:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line generated_parser.y:675
+//line generated_parser.y:677
 		{
 			yyVAL.float = yylex.(*parser).number(yyDollar[1].item.Val)
 		}
 	case 180:
 		yyDollar = yyS[yypt-2 : yypt+1]
-//line generated_parser.y:677
+//line generated_parser.y:679
 		{
 			yyVAL.float = yyDollar[2].float
 		}
 	case 181:
 		yyDollar = yyS[yypt-2 : yypt+1]
-//line generated_parser.y:678
+//line generated_parser.y:680
 		{
 			yyVAL.float = -yyDollar[2].float
 		}
 	case 182:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line generated_parser.y:682
+//line generated_parser.y:684
 		{
 			var err error
 			yyVAL.uint, err = strconv.ParseUint(yyDollar[1].item.Val, 10, 64)
@@ -1638,7 +1640,7 @@ yydefault:
 		}
 	case 183:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line generated_parser.y:692
+//line generated_parser.y:694
 		{
 			var err error
 			yyVAL.duration, err = parseDuration(yyDollar[1].item.Val)
@@ -1648,7 +1650,7 @@ yydefault:
 		}
 	case 184:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line generated_parser.y:703
+//line generated_parser.y:705
 		{
 			yyVAL.node = &StringLiteral{
 				Val:      yylex.(*parser).unquoteString(yyDollar[1].item.Val),
@@ -1657,13 +1659,13 @@ yydefault:
 		}
 	case 185:
 		yyDollar = yyS[yypt-0 : yypt+1]
-//line generated_parser.y:716
+//line generated_parser.y:718
 		{
 			yyVAL.duration = 0
 		}
 	case 187:
 		yyDollar = yyS[yypt-0 : yypt+1]
-//line generated_parser.y:720
+//line generated_parser.y:722
 		{
 			yyVAL.strings = nil
 		}
