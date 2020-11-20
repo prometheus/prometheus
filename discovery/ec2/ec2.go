@@ -40,7 +40,7 @@ const (
 	ec2Label                  = model.MetaLabelPrefix + "ec2_"
 	ec2LabelAZ                = ec2Label + "availability_zone"
 	ec2LabelArch              = ec2Label + "architecture"
-	ec2LabelIPv6Address       = ec2Label + "ipv6_address"
+	ec2LabelIPv6Addresses     = ec2Label + "ipv6_addresses"
 	ec2LabelInstanceID        = ec2Label + "instance_id"
 	ec2LabelInstanceLifecycle = ec2Label + "instance_lifecycle"
 	ec2LabelInstanceState     = ec2Label + "instance_state"
@@ -229,37 +229,33 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 					labels[ec2LabelVPCID] = model.LabelValue(*inst.VpcId)
 					labels[ec2LabelPrimarySubnetID] = model.LabelValue(*inst.SubnetId)
 
-					// Deduplicate IPv6s & VPC Subnet IDs maintaining the order of the network interfaces returned by EC2.
 					var subnets []string
 					var ipv6addrs []string
 					subnetsMap := make(map[string]struct{})
-					ipv6Map := make(map[string]struct{})
 					for _, eni := range inst.NetworkInterfaces {
-						if eni.Ipv6Addresses != nil {
-							for _, ipv6addr := range eni.Ipv6Addresses {
-								i := ipv6addr.String()
-								if _, ok := ipv6Map[i]; !ok {
-									ipv6Map[i] = struct{}{}
-									ipv6addrs = append(ipv6addrs, i)
-								}
-							}
-						}
 						if eni.SubnetId == nil {
 							continue
 						}
+						// Deduplicate IPv6s & VPC Subnet IDs maintaining the order of the subnets returned by EC2.
 						if _, ok := subnetsMap[*eni.SubnetId]; !ok {
 							subnetsMap[*eni.SubnetId] = struct{}{}
 							subnets = append(subnets, *eni.SubnetId)
+						}
+
+						for _, ipv6addr := range eni.Ipv6Addresses {
+							ipv6addrs = append(ipv6addrs, *ipv6addr.Ipv6Address)
 						}
 					}
 					labels[ec2LabelSubnetID] = model.LabelValue(
 						ec2LabelSeparator +
 							strings.Join(subnets, ec2LabelSeparator) +
 							ec2LabelSeparator)
-					labels[ec2LabelIPv6Address] = model.LabelValue(
-						ec2LabelSeparator +
-							strings.Join(ipv6addrs, ec2LabelSeparator) +
-							ec2LabelSeparator)
+					if len(ipv6addrs) > 0 {
+						labels[ec2LabelIPv6Addresses] = model.LabelValue(
+							ec2LabelSeparator +
+								strings.Join(ipv6addrs, ec2LabelSeparator) +
+								ec2LabelSeparator)
+					}
 				}
 
 				for _, t := range inst.Tags {
