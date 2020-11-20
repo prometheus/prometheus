@@ -143,8 +143,8 @@ func TestBackfill(t *testing.T) {
 		{
 			ToParse: `# HELP http_requests_total The total number of HTTP requests.
 # TYPE http_requests_total counter
-http_requests_total{code="200"} 1021 1565133713989
-http_requests_total{code="400"} 1 1565133713990
+http_requests_total{code="200"} 1021 1565133713.989
+http_requests_total{code="400"} 1 1565133713.990
 # EOF
 `,
 			IsOk:        true,
@@ -156,18 +156,18 @@ http_requests_total{code="400"} 1 1565133713990
 				NumBlocks int
 				Samples   []backfillSample
 			}{
-				MinTime:   1565133713989000,
-				MaxTime:   1565133713990001,
+				MinTime:   1565133713989,
+				MaxTime:   1565133713991,
 				Symbols:   []string{"http_requests_total", "code", "200", "400", "__name__"},
 				NumBlocks: 1,
 				Samples: []backfillSample{
 					{
-						Timestamp: 1565133713989000,
+						Timestamp: 1565133713989,
 						Value:     1021,
 						Labels:    labels.FromStrings("__name__", "http_requests_total", "code", "200"),
 					},
 					{
-						Timestamp: 1565133713990000,
+						Timestamp: 1565133713990,
 						Value:     1,
 						Labels:    labels.FromStrings("__name__", "http_requests_total", "code", "400"),
 					},
@@ -177,9 +177,9 @@ http_requests_total{code="400"} 1 1565133713990
 		{
 			ToParse: `# HELP http_requests_total The total number of HTTP requests.
 # TYPE http_requests_total counter
-http_requests_total{code="200"} 1021 1565133713989
-http_requests_total{code="200"} 1 1565133714989
-http_requests_total{code="400"} 2 1565133715989
+http_requests_total{code="200"} 1021 1565133713.989
+http_requests_total{code="200"} 1 1565133714.989
+http_requests_total{code="400"} 2 1565133715.989
 # EOF
 `,
 			IsOk:         true,
@@ -192,23 +192,23 @@ http_requests_total{code="400"} 2 1565133715989
 				NumBlocks int
 				Samples   []backfillSample
 			}{
-				MinTime:   1565133713989000,
-				MaxTime:   1565133715989001,
+				MinTime:   1565133713989,
+				MaxTime:   1565133715990,
 				Symbols:   []string{"http_requests_total", "code", "200", "400", "__name__"},
 				NumBlocks: 1,
 				Samples: []backfillSample{
 					{
-						Timestamp: 1565133713989000,
+						Timestamp: 1565133713989,
 						Value:     1021,
 						Labels:    labels.FromStrings("__name__", "http_requests_total", "code", "200"),
 					},
 					{
-						Timestamp: 1565133714989000,
+						Timestamp: 1565133714989,
 						Value:     1,
 						Labels:    labels.FromStrings("__name__", "http_requests_total", "code", "200"),
 					},
 					{
-						Timestamp: 1565133715989000,
+						Timestamp: 1565133715989,
 						Value:     2,
 						Labels:    labels.FromStrings("__name__", "http_requests_total", "code", "400"),
 					},
@@ -218,10 +218,10 @@ http_requests_total{code="400"} 2 1565133715989
 		{
 			ToParse: `# HELP http_requests_total The total number of HTTP requests.
 # TYPE http_requests_total counter
-http_requests_total{code="200"} 1021 1565133713989
-http_requests_total{code="200"} 1022 1565144513989
-http_requests_total{code="400"} 2 1565155313989
-http_requests_total{code="400"} 1 1565166113989
+http_requests_total{code="200"} 1021 1565133713.989
+http_requests_total{code="200"} 1022 1565144513.989
+http_requests_total{code="400"} 2 1565155313.989
+http_requests_total{code="400"} 1 1565166113.989
 # EOF
 `,
 			IsOk:         true,
@@ -234,28 +234,28 @@ http_requests_total{code="400"} 1 1565166113989
 				NumBlocks int
 				Samples   []backfillSample
 			}{
-				MinTime:   1565133713989000,
-				MaxTime:   1565166113989001,
+				MinTime:   1565133713989,
+				MaxTime:   1565166113990,
 				Symbols:   []string{"http_requests_total", "code", "200", "400", "__name__"},
 				NumBlocks: 4,
 				Samples: []backfillSample{
 					{
-						Timestamp: 1565133713989000,
+						Timestamp: 1565133713989,
 						Value:     1021,
 						Labels:    labels.FromStrings("__name__", "http_requests_total", "code", "200"),
 					},
 					{
-						Timestamp: 1565144513989000,
+						Timestamp: 1565144513989,
 						Value:     1022,
 						Labels:    labels.FromStrings("__name__", "http_requests_total", "code", "200"),
 					},
 					{
-						Timestamp: 1565155313989000,
+						Timestamp: 1565155313989,
 						Value:     2,
 						Labels:    labels.FromStrings("__name__", "http_requests_total", "code", "400"),
 					},
 					{
-						Timestamp: 1565166113989000,
+						Timestamp: 1565166113989,
 						Value:     1,
 						Labels:    labels.FromStrings("__name__", "http_requests_total", "code", "400"),
 					},
@@ -344,6 +344,7 @@ no_nl{type="no newline"}
 		},
 	}
 	for _, test := range tests {
+		t.Logf("Test:%s", test.Description)
 		omFile := "backfill_test.om"
 		require.NoError(t, createTemporaryOpenmetricsFile(t, omFile, test.ToParse))
 		defer os.RemoveAll("backfill_test.om")
