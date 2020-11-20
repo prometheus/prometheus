@@ -432,6 +432,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_ec2_instance_lifecycle`: the lifecycle of the EC2 instance, set only for 'spot' or 'scheduled' instances, absent otherwise
 * `__meta_ec2_instance_state`: the state of the EC2 instance
 * `__meta_ec2_instance_type`: the type of the EC2 instance
+* `__meta_ec2_ipv6_addresses`: comma seperated list of IPv6 addresses for the all the network interfaces of the instance, if available
 * `__meta_ec2_owner_id`: the ID of the AWS account that owns the EC2 instance
 * `__meta_ec2_platform`: the Operating System platform, set to 'windows' on Windows servers, absent otherwise
 * `__meta_ec2_primary_subnet_id`: the subnet ID of the primary network interface, if available
@@ -442,7 +443,6 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_ec2_subnet_id`: comma separated list of subnets IDs in which the instance is running, if available
 * `__meta_ec2_tag_<tagkey>`: each tag value of the instance
 * `__meta_ec2_vpc_id`: the ID of the VPC in which the instance is running, if available
-* `__meta_ec2_ipv6_address`: comma seperated list of IPv6 addresses for the all the network interfaces of the instance, if available
 
 See below for the configuration options for EC2 discovery:
 

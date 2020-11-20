@@ -236,7 +236,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 						if eni.SubnetId == nil {
 							continue
 						}
-						// Deduplicate IPv6s & VPC Subnet IDs maintaining the order of the subnets returned by EC2.
+						// Deduplicate VPC Subnet IDs maintaining the order of the subnets returned by EC2.
 						if _, ok := subnetsMap[*eni.SubnetId]; !ok {
 							subnetsMap[*eni.SubnetId] = struct{}{}
 							subnets = append(subnets, *eni.SubnetId)
