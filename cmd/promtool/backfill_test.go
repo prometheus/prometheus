@@ -102,9 +102,7 @@ func testBlocks(t *testing.T, blocks []tsdb.BlockReader, expectedMinTime, expect
 			require.NoError(t, err)
 			series, err := queryblock(t, q, labels.FromStrings(metricLabels...), labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
 			require.NoError(t, err)
-			for _, samples := range series {
-				allSamples = append(allSamples, samples)
-			}
+			allSamples = append(allSamples, series...)
 			return nil
 		}()
 		require.NoError(t, err)
@@ -137,11 +135,11 @@ func TestBackfill(t *testing.T) {
 			Samples   []backfillSample
 		}
 	}{
-		// {
-		// 	ToParse:     `# EOF`,
-		// 	IsOk:        true,
-		// 	Description: "Empty file.",
-		// },
+		{
+			ToParse:     `# EOF`,
+			IsOk:        true,
+			Description: "Empty file.",
+		},
 		{
 			ToParse: `# HELP http_requests_total The total number of HTTP requests.
 # TYPE http_requests_total counter
@@ -346,7 +344,6 @@ no_nl{type="no newline"}
 		},
 	}
 	for _, test := range tests {
-		t.Log(test.Description)
 		omFile := "backfill_test.om"
 		require.NoError(t, createTemporaryOpenmetricsFile(t, omFile, test.ToParse))
 		defer os.RemoveAll("backfill_test.om")
