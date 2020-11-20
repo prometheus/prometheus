@@ -163,11 +163,10 @@ type UnaryExpr struct {
 	StartPos Pos
 }
 
-// ConstantExpr represents a query which evaluates to the same result
-// irrespective of the evaluation time.
-// Currently this is only used for engine optimisations and the parser
-// does not produce this.
-type ConstantExpr struct {
+// StepInvariantExpr represents a query which evaluates to the same result
+// irrespective of the evaluation time given the raw samples from TSDB remain unchanged.
+// Currently this is only used for engine optimisations and the parser does not produce this.
+type StepInvariantExpr struct {
 	Expr Expr
 
 	// Once this node is executed, we store the result here to
@@ -175,9 +174,9 @@ type ConstantExpr struct {
 	Result Value
 }
 
-func (e *ConstantExpr) String() string { return e.Expr.String() }
+func (e *StepInvariantExpr) String() string { return e.Expr.String() }
 
-func (e *ConstantExpr) PositionRange() PositionRange { return e.Expr.PositionRange() }
+func (e *StepInvariantExpr) PositionRange() PositionRange { return e.Expr.PositionRange() }
 
 // VectorSelector represents a Vector selection.
 type VectorSelector struct {
@@ -221,19 +220,19 @@ func (e *BinaryExpr) Type() ValueType {
 	}
 	return ValueTypeVector
 }
-func (e *ConstantExpr) Type() ValueType { return e.Expr.Type() }
+func (e *StepInvariantExpr) Type() ValueType { return e.Expr.Type() }
 
-func (*AggregateExpr) PromQLExpr()  {}
-func (*BinaryExpr) PromQLExpr()     {}
-func (*Call) PromQLExpr()           {}
-func (*MatrixSelector) PromQLExpr() {}
-func (*SubqueryExpr) PromQLExpr()   {}
-func (*NumberLiteral) PromQLExpr()  {}
-func (*ParenExpr) PromQLExpr()      {}
-func (*StringLiteral) PromQLExpr()  {}
-func (*UnaryExpr) PromQLExpr()      {}
-func (*VectorSelector) PromQLExpr() {}
-func (*ConstantExpr) PromQLExpr()   {}
+func (*AggregateExpr) PromQLExpr()     {}
+func (*BinaryExpr) PromQLExpr()        {}
+func (*Call) PromQLExpr()              {}
+func (*MatrixSelector) PromQLExpr()    {}
+func (*SubqueryExpr) PromQLExpr()      {}
+func (*NumberLiteral) PromQLExpr()     {}
+func (*ParenExpr) PromQLExpr()         {}
+func (*StringLiteral) PromQLExpr()     {}
+func (*UnaryExpr) PromQLExpr()         {}
+func (*VectorSelector) PromQLExpr()    {}
+func (*StepInvariantExpr) PromQLExpr() {}
 
 // VectorMatchCardinality describes the cardinality relationship
 // of two Vectors in a binary operation.
@@ -367,7 +366,7 @@ func Children(node Node) []Node {
 		return []Node{n.Expr}
 	case *MatrixSelector:
 		return []Node{n.VectorSelector}
-	case *ConstantExpr:
+	case *StepInvariantExpr:
 		return []Node{n.Expr}
 	case *NumberLiteral, *StringLiteral, *VectorSelector:
 		// nothing to do

@@ -2116,7 +2116,7 @@ var testExpr = []struct {
 	}, {
 		input:  `rate(some_metric[5m]) @ 1234`,
 		fail:   true,
-		errMsg: "1:1: parse error: @ modifier must be preceded by an instant or range selector, but follows a *parser.Call instead",
+		errMsg: "1:1: parse error: @ modifier must be preceded by an instant or range selector or a subquery, but follows a *parser.Call instead",
 	},
 	// Test function calls.
 	{

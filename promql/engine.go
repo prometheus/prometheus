@@ -334,7 +334,7 @@ func (ng *Engine) NewInstantQuery(q storage.Queryable, qs string, ts time.Time) 
 	if err != nil {
 		return nil, err
 	}
-	qry := ng.newQuery(q, ReduceConstantExpr(expr), ts, ts, 0)
+	qry := ng.newQuery(q, WrapWithStepInvariantExpr(expr), ts, ts, 0)
 	qry.q = qs
 
 	return qry, nil
@@ -350,7 +350,7 @@ func (ng *Engine) NewRangeQuery(q storage.Queryable, qs string, start, end time.
 	if expr.Type() != parser.ValueTypeVector && expr.Type() != parser.ValueTypeScalar {
 		return nil, errors.Errorf("invalid expression type %q for range query, must be Scalar or instant Vector", parser.DocumentedType(expr.Type()))
 	}
-	qry := ng.newQuery(q, ReduceConstantExpr(expr), start, end, interval)
+	qry := ng.newQuery(q, WrapWithStepInvariantExpr(expr), start, end, interval)
 	qry.q = qs
 
 	return qry, nil
@@ -1403,7 +1403,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		res, ws := newEv.eval(e.Expr)
 		ev.currentSamples = newEv.currentSamples
 		return res, ws
-	case *parser.ConstantExpr:
+	case *parser.StepInvariantExpr:
 		switch ce := e.Expr.(type) {
 		case *parser.StringLiteral, *parser.NumberLiteral:
 			return ev.eval(ce)
@@ -1424,7 +1424,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			noStepSubqueryIntervalFn: ev.noStepSubqueryIntervalFn,
 		}
 
-		canExtrapolate := canExtrapolateConstantExpr(e.Expr)
+		canExtrapolate := canExtrapolateStepInvariantExpr(e.Expr)
 		if !canExtrapolate {
 			newEv.endTimestamp = ev.endTimestamp
 		}
@@ -1470,6 +1470,8 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 					}
 				}
 				res = mat
+			case Scalar:
+				// Do nothing.
 			default:
 				panic(errors.Errorf("unexpected result: %T", expr))
 			}
@@ -2292,15 +2294,20 @@ func unwrapParenExpr(e *parser.Expr) {
 	}
 }
 
-func ReduceConstantExpr(expr parser.Expr) parser.Expr {
-	isConstant := isConstantExpr(expr)
-	if isConstant {
-		return newConstantExpr(expr)
+// WrapWithStepInvariantExpr wraps all possible parts of the given
+// expression with StepInvariantExpr wherever valid.
+func WrapWithStepInvariantExpr(expr parser.Expr) parser.Expr {
+	isStepInvariant := wrapWithStepInvariantExprHelper(expr)
+	if isStepInvariant {
+		return newStepInvariantExpr(expr)
 	}
 	return expr
 }
 
-func isConstantExpr(expr parser.Expr) bool {
+// wrapWithStepInvariantExprHelper wraps the child nodes of the expression
+// with a StepInvariantExpr wherever valid. The returned boolean is true if the
+// passed expression qualifies to be wrapped by StepInvariantExpr.
+func wrapWithStepInvariantExprHelper(expr parser.Expr) bool {
 	switch n := expr.(type) {
 	case *parser.VectorSelector:
 		if n.Timestamp > 0 {
@@ -2309,23 +2316,23 @@ func isConstantExpr(expr parser.Expr) bool {
 
 	case *parser.AggregateExpr:
 		// TODO(codesome): check Param?
-		e := isConstantExpr(n.Expr)
+		e := wrapWithStepInvariantExprHelper(n.Expr)
 		if e {
 			return true
 		}
 		return false
 
 	case *parser.BinaryExpr:
-		e1, e2 := isConstantExpr(n.LHS), isConstantExpr(n.RHS)
+		e1, e2 := wrapWithStepInvariantExprHelper(n.LHS), wrapWithStepInvariantExprHelper(n.RHS)
 		if e1 && e2 {
 			return true
 		}
 
 		if e1 {
-			n.LHS = newConstantExpr(n.LHS)
+			n.LHS = newStepInvariantExpr(n.LHS)
 		}
 		if e2 {
-			n.RHS = newConstantExpr(n.RHS)
+			n.RHS = newStepInvariantExpr(n.RHS)
 		}
 
 		return false
@@ -2334,20 +2341,20 @@ func isConstantExpr(expr parser.Expr) bool {
 		if len(n.Args) == 0 {
 			return false
 		}
-		isConstant := true
-		isConstantSlice := make([]bool, len(n.Args))
+		isStepInvariant := true
+		isStepInvariantSlice := make([]bool, len(n.Args))
 		for i := range n.Args {
-			isConstantSlice[i] = isConstantExpr(n.Args[i])
-			isConstant = isConstant && isConstantSlice[i]
+			isStepInvariantSlice[i] = wrapWithStepInvariantExprHelper(n.Args[i])
+			isStepInvariant = isStepInvariant && isStepInvariantSlice[i]
 		}
 
-		if isConstant {
+		if isStepInvariant {
 			return true
 		}
 
-		for i, ic := range isConstantSlice {
+		for i, ic := range isStepInvariantSlice {
 			if ic {
-				n.Args[i] = newConstantExpr(n.Args[i])
+				n.Args[i] = newStepInvariantExpr(n.Args[i])
 			}
 		}
 		return false
@@ -2364,17 +2371,17 @@ func isConstantExpr(expr parser.Expr) bool {
 			return true
 		}
 
-		e := isConstantExpr(n.Expr)
+		e := wrapWithStepInvariantExprHelper(n.Expr)
 		if e {
-			n.Expr = newConstantExpr(n.Expr)
+			n.Expr = newStepInvariantExpr(n.Expr)
 		}
 		return false
 
 	case *parser.ParenExpr:
-		return isConstantExpr(n.Expr)
+		return wrapWithStepInvariantExprHelper(n.Expr)
 
 	case *parser.UnaryExpr:
-		return isConstantExpr(n.Expr)
+		return wrapWithStepInvariantExprHelper(n.Expr)
 
 	case *parser.StringLiteral, *parser.NumberLiteral:
 		return true
@@ -2387,31 +2394,24 @@ func isConstantExpr(expr parser.Expr) bool {
 	return false
 }
 
-func newConstantExpr(expr parser.Expr) parser.Expr {
-	if dontWrapConstantExpr(expr) {
+func newStepInvariantExpr(expr parser.Expr) parser.Expr {
+	if dontWrapStepInvariantExpr(expr) {
 		return expr
 	}
-	return &parser.ConstantExpr{Expr: expr}
+	return &parser.StepInvariantExpr{Expr: expr}
 }
 
-func dontWrapConstantExpr(expr parser.Expr) bool {
+func dontWrapStepInvariantExpr(expr parser.Expr) bool {
 	switch e := expr.(type) {
 	case *parser.StringLiteral, *parser.NumberLiteral:
 		return true
 	case *parser.ParenExpr:
-		return dontWrapConstantExpr(e.Expr)
-	case *parser.Call:
-		switch e.Func.Name {
-		case "time":
-			return true
-		case "vector":
-			return dontWrapConstantExpr(e.Args[0])
-		}
+		return dontWrapStepInvariantExpr(e.Expr)
 	}
 	return false
 }
 
-func canExtrapolateConstantExpr(expr parser.Expr) bool {
+func canExtrapolateStepInvariantExpr(expr parser.Expr) bool {
 	switch expr.(type) {
 	case *parser.VectorSelector, *parser.MatrixSelector, *parser.SubqueryExpr:
 		return false
