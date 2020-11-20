@@ -137,11 +137,11 @@ func TestBackfill(t *testing.T) {
 			Samples   []backfillSample
 		}
 	}{
-		{
-			ToParse:     `# EOF`,
-			IsOk:        true,
-			Description: "Empty file.",
-		},
+		// {
+		// 	ToParse:     `# EOF`,
+		// 	IsOk:        true,
+		// 	Description: "Empty file.",
+		// },
 		{
 			ToParse: `# HELP http_requests_total The total number of HTTP requests.
 # TYPE http_requests_total counter

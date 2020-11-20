@@ -37,7 +37,7 @@ type OpenMetricsParser struct {
 }
 
 // NewOpenMetricsParser returns an OpenMetricsParser reading from the provided reader.
-func NewOpenMetricsParser(r io.Reader) textparse.Parser {
+func NewOpenMetricsParser(r io.Reader) *OpenMetricsParser {
 	return &OpenMetricsParser{s: bufio.NewScanner(r)}
 }
 
@@ -98,10 +98,7 @@ func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 	mint = offset * (mint / offset)
 	for t := mint; t <= maxt; t = t + offset {
 		err := func() error {
-			// errL := ListBlocks(outputDir, true)
-			// if errL != nil {
-			// 	return errors.Wrap(errL, "print blocks")
-			// }
+			//TODO(aSquare14) : Print Blocks
 			w, err := tsdb.NewBlockWriter(log.NewNopLogger(), outputDir, offset)
 			if err != nil {
 				return errors.Wrap(err, "block writer")
@@ -154,7 +151,7 @@ func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 				return errors.Wrap(err, "commit")
 			}
 			_, errF := w.Flush(ctx)
-			if tsdb.SeriesCount != 0 && errF != nil {
+			if w.SeriesCount(ctx) != 0 && errF != nil {
 				return errors.Wrap(errF, "flush")
 			}
 			return nil
