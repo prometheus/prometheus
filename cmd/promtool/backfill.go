@@ -30,14 +30,14 @@ import (
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 )
 
-// OpenMetricsParser is returned by NewParser on the given reader.
+// OpenMetricsParser implements textparse.Parser. Use NewOpenMetricsParser to create new instances.
 type OpenMetricsParser struct {
 	textparse.Parser
 	s *bufio.Scanner
 }
 
-// NewParser returns an OpenMetricsParser.
-func NewParser(r io.Reader) textparse.Parser {
+// NewOpenMetricsParser returns an OpenMetricsParser reading from the provided reader.
+func NewOpenMetricsParser(r io.Reader) textparse.Parser {
 	return &OpenMetricsParser{s: bufio.NewScanner(r)}
 }
 
@@ -98,10 +98,10 @@ func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 	mint = offset * (mint / offset)
 	for t := mint; t <= maxt; t = t + offset {
 		err := func() error {
-			errL := ListBlocks(outputDir, true)
-			if errL != nil {
-				return errors.Wrap(errL, "print blocks")
-			}
+			// errL := ListBlocks(outputDir, true)
+			// if errL != nil {
+			// 	return errors.Wrap(errL, "print blocks")
+			// }
 			w, err := tsdb.NewBlockWriter(log.NewNopLogger(), outputDir, offset)
 			if err != nil {
 				return errors.Wrap(err, "block writer")
@@ -115,7 +115,7 @@ func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 			if errReset != nil {
 				return errors.Wrap(errReset, "seek file")
 			}
-			p := NewParser(input)
+			p := NewOpenMetricsParser(input)
 			tsUpper := t + offset
 			var samplesCount int64
 			for {
@@ -167,7 +167,7 @@ func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 }
 
 func backfill(input *os.File, outputDir string) (err error) {
-	p := NewParser(input)
+	p := NewOpenMetricsParser(input)
 	maxt, mint, errTs := getMinAndMaxTimestamps(p)
 	if errTs != nil {
 		return errors.Wrap(errTs, "error getting min and max timestamp")

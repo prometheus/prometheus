@@ -102,7 +102,9 @@ func testBlocks(t *testing.T, blocks []tsdb.BlockReader, expectedMinTime, expect
 			require.NoError(t, err)
 			series, err := queryblock(t, q, labels.FromStrings(metricLabels...), labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
 			require.NoError(t, err)
-			allSamples = append(allSamples, series[0])
+			for _, samples := range series {
+				allSamples = append(allSamples, samples)
+			}
 			return nil
 		}()
 		require.NoError(t, err)
@@ -166,6 +168,11 @@ http_requests_total{code="400"} 1 1565133713990
 						Value:     1021,
 						Labels:    labels.FromStrings("__name__", "http_requests_total", "code", "200"),
 					},
+					{
+						Timestamp: 1565133713990000,
+						Value:     1,
+						Labels:    labels.FromStrings("__name__", "http_requests_total", "code", "400"),
+					},
 				},
 			},
 		},
@@ -178,7 +185,7 @@ http_requests_total{code="400"} 2 1565133715989
 # EOF
 `,
 			IsOk:         true,
-			Description:  "Multiple samples with different timestamp for the same series",
+			Description:  "Multiple samples with different timestamp for the same series.",
 			MetricLabels: []string{"__name__", "http_requests_total"},
 			Expected: struct {
 				MinTime   int64
@@ -197,6 +204,16 @@ http_requests_total{code="400"} 2 1565133715989
 						Value:     1021,
 						Labels:    labels.FromStrings("__name__", "http_requests_total", "code", "200"),
 					},
+					{
+						Timestamp: 1565133714989000,
+						Value:     1,
+						Labels:    labels.FromStrings("__name__", "http_requests_total", "code", "200"),
+					},
+					{
+						Timestamp: 1565133715989000,
+						Value:     2,
+						Labels:    labels.FromStrings("__name__", "http_requests_total", "code", "400"),
+					},
 				},
 			},
 		},
@@ -204,7 +221,9 @@ http_requests_total{code="400"} 2 1565133715989
 			ToParse: `# HELP http_requests_total The total number of HTTP requests.
 # TYPE http_requests_total counter
 http_requests_total{code="200"} 1021 1565133713989
-http_requests_total{code="400"} 1 1565144513989
+http_requests_total{code="200"} 1022 1565144513989
+http_requests_total{code="400"} 2 1565155313989
+http_requests_total{code="400"} 1 1565166113989
 # EOF
 `,
 			IsOk:         true,
@@ -218,9 +237,9 @@ http_requests_total{code="400"} 1 1565144513989
 				Samples   []backfillSample
 			}{
 				MinTime:   1565133713989000,
-				MaxTime:   1565144513989001,
+				MaxTime:   1565166113989001,
 				Symbols:   []string{"http_requests_total", "code", "200", "400", "__name__"},
-				NumBlocks: 2,
+				NumBlocks: 4,
 				Samples: []backfillSample{
 					{
 						Timestamp: 1565133713989000,
@@ -229,6 +248,16 @@ http_requests_total{code="400"} 1 1565144513989
 					},
 					{
 						Timestamp: 1565144513989000,
+						Value:     1022,
+						Labels:    labels.FromStrings("__name__", "http_requests_total", "code", "200"),
+					},
+					{
+						Timestamp: 1565155313989000,
+						Value:     2,
+						Labels:    labels.FromStrings("__name__", "http_requests_total", "code", "400"),
+					},
+					{
+						Timestamp: 1565166113989000,
 						Value:     1,
 						Labels:    labels.FromStrings("__name__", "http_requests_total", "code", "400"),
 					},
@@ -289,40 +318,41 @@ http_requests_total{code="400"} 1 1565144513989
 		},
 		{
 			ToParse: `# HELP rpc_duration_seconds A summary of the RPC duration in seconds.
-		# TYPE rpc_duration_seconds summary
-		rpc_duration_seconds{quantile="0.01"} 3102
-		rpc_duration_seconds{quantile="0.05"} 3272
-		# EOF
-		`,
+# TYPE rpc_duration_seconds summary
+rpc_duration_seconds{quantile="0.01"} 3102
+rpc_duration_seconds{quantile="0.05"} 3272
+# EOF
+`,
 			IsOk:        false,
 			Description: "Does not have timestamp.",
 		},
 		{
 			ToParse: `# HELP bad_metric This a bad metric
-		# TYPE bad_metric bad_type
-		bad_metric{type="has a bad type information"} 0.0 111
-		# EOF
-		`,
+# TYPE bad_metric bad_type
+bad_metric{type="has a bad type information"} 0.0 111
+# EOF
+`,
 			IsOk:        false,
 			Description: "Has a bad type information.",
 		},
 		{
 			ToParse: `# HELP no_nl This test has no newline so will fail
-		# TYPE no_nl gauge
-		no_nl{type="no newline"}
-		# EOF
-		`,
+# TYPE no_nl gauge
+no_nl{type="no newline"}
+# EOF
+`,
 			IsOk:        false,
 			Description: "No newline.",
 		},
 	}
 	for _, test := range tests {
+		t.Log(test.Description)
 		omFile := "backfill_test.om"
 		require.NoError(t, createTemporaryOpenmetricsFile(t, omFile, test.ToParse))
 		defer os.RemoveAll("backfill_test.om")
 		input, errOpen := os.Open(omFile)
 		require.NoError(t, errOpen)
-		outputDir, errd := ioutil.TempDir("", "data")
+		outputDir, errd := ioutil.TempDir("", "myDir")
 		require.NoError(t, errd)
 		errb := backfill(input, outputDir)
 		defer os.RemoveAll(outputDir)
