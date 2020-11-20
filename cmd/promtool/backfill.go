@@ -151,7 +151,7 @@ func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 				return errors.Wrap(err, "commit")
 			}
 			_, errF := w.Flush(ctx)
-			if w.SeriesCount(ctx) != 0 && errF != nil {
+			if errF != nil && errF.Error() != "no series appended, aborting" {
 				return errors.Wrap(errF, "flush")
 			}
 			return nil
