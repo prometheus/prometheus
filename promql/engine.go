@@ -577,7 +577,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 }
 
 // subqueryOffsetRangeTimestamp returns the sum of offsets and ranges of all subqueries in the path.
-// It also returns the min and max timestamp seen associated with the subquery.
+// It also returns the min and max timestamp associated with the subquery.
 func (ng *Engine) subqueryOffsetRangeTimestamp(path []parser.Node) (time.Duration, time.Duration, int64, int64) {
 	var (
 		subqOffset, subqRange      time.Duration
@@ -1177,9 +1177,11 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 						otherInArgs[j][0].V = otherArgs[j][0].Points[step].V
 					}
 				}
+				enh.Ts = ts
 				maxt := ts - offset
 				if selVS.Timestamp > 0 {
-					maxt = timestamp.FromFloatSeconds(selVS.Timestamp) - offset
+					enh.Ts = timestamp.FromFloatSeconds(selVS.Timestamp)
+					maxt = enh.Ts - offset
 				}
 				mint := maxt - selRange
 				// Evaluate the matrix selector for this series for this step.
@@ -1191,7 +1193,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 					continue
 				}
 				inMatrix[0].Points = points
-				enh.Ts = ts
+
 				// Make the function call.
 				outVec := call(inArgs, e.Args, enh)
 				enh.Out = outVec[:0]
@@ -1430,7 +1432,8 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		res, ws := newEv.eval(e.Expr)
 		ev.currentSamples = newEv.currentSamples
 
-		if canExtrapolate {
+		_, isSubquery := e.Expr.(*parser.SubqueryExpr)
+		if canExtrapolate && !isSubquery {
 			switch val := res.(type) {
 			case Matrix:
 				for i := range val {
@@ -2413,19 +2416,5 @@ func canExtrapolateConstantExpr(expr parser.Expr) bool {
 	case *parser.VectorSelector, *parser.MatrixSelector, *parser.SubqueryExpr:
 		return false
 	}
-
-	canExtrapolate := true
-	parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
-		switch n := node.(type) {
-		case *parser.Call:
-			if n.Func.Name == "predict_linear" {
-				// predict_linear behaves weirdly with the extrapolation of result,
-				// so we don't do that here.
-				canExtrapolate = false
-			}
-		}
-		return nil
-	})
-
-	return canExtrapolate
+	return true
 }

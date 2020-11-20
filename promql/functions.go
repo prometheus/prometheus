@@ -25,7 +25,6 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
@@ -60,16 +59,10 @@ func funcTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper)
 func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper, isCounter bool, isRate bool) Vector {
 	ms := args[0].(*parser.MatrixSelector)
 	vs := ms.VectorSelector.(*parser.VectorSelector)
-
-	enhTs := enh.Ts
-	if vs.Timestamp > 0 {
-		enhTs = timestamp.FromFloatSeconds(vs.Timestamp)
-	}
-
 	var (
 		samples    = vals[0].(Matrix)[0]
-		rangeStart = enhTs - durationMilliseconds(ms.Range+vs.Offset)
-		rangeEnd   = enhTs - durationMilliseconds(vs.Offset)
+		rangeStart = enh.Ts - durationMilliseconds(ms.Range+vs.Offset)
+		rangeEnd   = enh.Ts - durationMilliseconds(vs.Offset)
 	)
 
 	// No sense in trying to compute a rate without at least two points. Drop
