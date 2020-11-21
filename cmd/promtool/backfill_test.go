@@ -32,6 +32,8 @@ type backfillSample struct {
 	Labels    labels.Labels
 }
 
+// TODO(aSquare14): Add a test that exercises the committing of the appender and creation of a
+// new appender after 5000 samples have been appended.
 func createTemporaryOpenmetricsFile(t *testing.T, omFile string, text string) error {
 	f, err := os.Create(omFile)
 	require.NoError(t, err)

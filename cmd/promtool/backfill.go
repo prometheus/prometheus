@@ -157,7 +157,6 @@ func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 			}
 			return nil
 		}()
-
 		if err != nil {
 			return errors.Wrap(err, "process blocks")
 		}
