@@ -19,7 +19,6 @@ import (
 	"io"
 	"math"
 	"os"
-	"time"
 
 	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
@@ -94,12 +93,12 @@ func getMinAndMaxTimestamps(p textparse.Parser) (int64, int64, error) {
 }
 
 func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
-	var offset int64 = 2 * time.Hour.Milliseconds()
+	offset := tsdb.DefaultBlockDuration
 	mint = offset * (mint / offset)
 	for t := mint; t <= maxt; t = t + offset {
 		err := func() error {
-			//TODO(aSquare14) : Print Blocks
 			w, err := tsdb.NewBlockWriter(log.NewNopLogger(), outputDir, offset)
+			// TODO(aSquare14) : Print block metadata.
 			if err != nil {
 				return errors.Wrap(err, "block writer")
 			}
@@ -130,14 +129,16 @@ func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 				p.Metric(&l)
 				_, ts, v := p.Series()
 				if ts == nil {
-					return errors.Errorf("expected timestamp for series %v, got none", l.String())
+					return errors.Errorf("expected timestamp for series %v, got none", l)
 				}
-				if *ts >= t && *ts < tsUpper {
-					samplesCount++
-					if _, err := app.Add(l, *ts, v); err != nil {
-						return errors.Wrap(err, "add sample")
-					}
+				if *ts < t || *ts >= tsUpper {
+					continue
 				}
+				if _, err := app.Add(l, *ts, v); err != nil {
+					return errors.Wrap(err, "add sample")
+				}
+				samplesCount++
+				// TODO(aSquare14) : Put 5000 in a constant.
 				if samplesCount >= 5000 {
 					err := app.Commit()
 					if err != nil {
@@ -156,6 +157,7 @@ func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 			}
 			return nil
 		}()
+
 		if err != nil {
 			return errors.Wrap(err, "process blocks")
 		}
