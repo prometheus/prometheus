@@ -135,16 +135,16 @@ func main() {
 	dumpMinTime := tsdbDumpCmd.Flag("min-time", "Minimum timestamp to dump.").Default(strconv.FormatInt(math.MinInt64, 10)).Int64()
 	dumpMaxTime := tsdbDumpCmd.Flag("max-time", "Maximum timestamp to dump.").Default(strconv.FormatInt(math.MaxInt64, 10)).Int64()
 
-	backfillCmd := app.Command("backfill", "Backfill Prometheus data.")
-	backfillRuleCmd := backfillCmd.Command("rules", "Backfill Prometheus data for new rules.")
-	backfillRuleStart := backfillRuleCmd.Flag("start", "The time to start backfilling the new rule from. It is required. Start time should be RFC3339 or Unix timestamp.").
+	createBlocksFromCmd := tsdbCmd.Command("create-blocks-from", "Create blocks from new input data.")
+	createBlocksFromRulesCmd := createBlocksFromCmd.Command("rules", "Create new blocks of data from Prometheus data for new rules.")
+	createBlocksFromRulesStart := createBlocksFromRulesCmd.Flag("start", "The time to start backfilling the new rule from. It is required. Start time should be RFC3339 or Unix timestamp.").
 		Required().String()
-	backfillRuleEnd := backfillRuleCmd.Flag("end", "If an end time is provided, all recording rules in the rule files provided will be backfilled to the end time. Default will backfill up to 3 hrs ago. End time should be RFC3339 or Unix timestamp.").String()
-	backfillOutputDir := backfillRuleCmd.Flag("output dir", "The filepath on the local filesystem to write the output to. Output will be blocks containing the data of the backfilled recording rules.").Default("backfilldata/").String()
-	backfillRuleURL := backfillRuleCmd.Flag("url", "Prometheus API url with the data where the rule will be backfilled from.").Default("http://localhost:9090").String()
-	backfillRuleEvalInterval := backfillRuleCmd.Flag("evaluation_interval_default", "How frequently to evaluate rules when backfilling if a value is not set in the rules file.").
+	createBlocksFromRulesEnd := createBlocksFromRulesCmd.Flag("end", "If an end time is provided, all recording rules in the rule files provided will be backfilled to the end time. Default will backfill up to 3 hrs ago. End time should be RFC3339 or Unix timestamp.").String()
+	createBlocksFromRulesOutputDir := createBlocksFromRulesCmd.Flag("output dir", "The filepath on the local filesystem to write the output to. Output will be blocks containing the data of the backfilled recording rules.").Default("backfilldata/").String()
+	createBlocksFromRulesURL := createBlocksFromRulesCmd.Flag("url", "Prometheus API url with the data where the rule will be backfilled from.").Default("http://localhost:9090").String()
+	createBlocksFromRulesEvalInterval := createBlocksFromRulesCmd.Flag("evaluation-interval-default", "How frequently to evaluate rules when backfilling if a value is not set in the rules file.").
 		Default("60s").Duration()
-	backfillRuleFiles := backfillRuleCmd.Arg(
+	createBlocksFromRulesFiles := createBlocksFromRulesCmd.Arg(
 		"rule-files",
 		"A list of one or more files containing recording rules to be backfilled. All recording rules listed in the files will be backfilled. Alerting rules are not evaluated.",
 	).Required().ExistingFiles()
@@ -205,8 +205,8 @@ func main() {
 	case tsdbDumpCmd.FullCommand():
 		os.Exit(checkErr(dumpSamples(*dumpPath, *dumpMinTime, *dumpMaxTime)))
 
-	case backfillRuleCmd.FullCommand():
-		os.Exit(checkErr(BackfillRule(*backfillRuleURL, *backfillRuleStart, *backfillRuleEnd, *backfillOutputDir, *backfillRuleEvalInterval, *backfillRuleFiles...)))
+	case createBlocksFromRulesCmd.FullCommand():
+		os.Exit(checkErr(BackfillRule(*createBlocksFromRulesURL, *createBlocksFromRulesStart, *createBlocksFromRulesEnd, *createBlocksFromRulesOutputDir, *createBlocksFromRulesEvalInterval, *createBlocksFromRulesFiles...)))
 	}
 }
 
