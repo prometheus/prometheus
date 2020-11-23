@@ -70,11 +70,9 @@ func getMinAndMaxTimestamps(p textparse.Parser) (int64, int64, error) {
 		if entry != textparse.EntrySeries {
 			continue
 		}
-		l := labels.Labels{}
-		p.Metric(&l)
 		_, ts, _ := p.Series()
 		if ts == nil {
-			return 0, 0, errors.Errorf("expected timestamp for series %v, got none", l.String())
+			return 0, 0, errors.Errorf("expected timestamp for series got none")
 		}
 		if *ts > maxt {
 			maxt = *ts
@@ -93,11 +91,11 @@ func getMinAndMaxTimestamps(p textparse.Parser) (int64, int64, error) {
 }
 
 func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
-	offset := tsdb.DefaultBlockDuration
-	mint = offset * (mint / offset)
-	for t := mint; t <= maxt; t = t + offset {
+	blockDuration := tsdb.DefaultBlockDuration
+	mint = blockDuration * (mint / blockDuration)
+	for t := mint; t <= maxt; t = t + blockDuration {
 		err := func() error {
-			w, err := tsdb.NewBlockWriter(log.NewNopLogger(), outputDir, offset)
+			w, err := tsdb.NewBlockWriter(log.NewNopLogger(), outputDir, blockDuration)
 			// TODO(aSquare14) : Print block metadata.
 			if err != nil {
 				return errors.Wrap(err, "block writer")
@@ -112,7 +110,7 @@ func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 				return errors.Wrap(errReset, "seek file")
 			}
 			p := NewOpenMetricsParser(input)
-			tsUpper := t + offset
+			tsUpper := t + blockDuration
 			var samplesCount int64
 			for {
 				e, errP := p.Next()
@@ -140,8 +138,7 @@ func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 				samplesCount++
 				// TODO(aSquare14) : Put 5000 in a constant.
 				if samplesCount >= 5000 {
-					err := app.Commit()
-					if err != nil {
+					if err := app.Commit(); err != nil {
 						return errors.Wrap(err, "commit")
 					}
 					app = w.Appender(ctx)
@@ -151,8 +148,7 @@ func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 			if err := app.Commit(); err != nil {
 				return errors.Wrap(err, "commit")
 			}
-			_, errF := w.Flush(ctx)
-			if errF != nil && errF.Error() != "no series appended, aborting" {
+			if _, errF := w.Flush(ctx); errF != nil && errF.Error() != "no series appended, aborting" {
 				return errors.Wrap(errF, "flush")
 			}
 			return nil

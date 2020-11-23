@@ -34,13 +34,17 @@ type backfillSample struct {
 
 // TODO(aSquare14): Add a test that exercises the committing of the appender and creation of a
 // new appender after 5000 samples have been appended.
-func createTemporaryOpenmetricsFile(t *testing.T, omFile string, text string) error {
-	f, err := os.Create(omFile)
+func createTemporaryOpenmetricsFile(t *testing.T, openmetricsFile string, text string) {
+
+	newf, err := ioutil.TempFile("", openmetricsFile)
 	require.NoError(t, err)
-	_, errW := f.WriteString(text)
-	require.NoError(t, errW)
-	require.NoError(t, f.Close())
-	return nil
+
+	_, err = newf.WriteString(text)
+	require.NoError(t, err)
+	require.NoError(t, newf.Close())
+
+	err = os.Rename(newf.Name(), openmetricsFile)
+	require.NoError(t, err)
 }
 
 func sortSamples(samples []backfillSample) {
@@ -80,33 +84,28 @@ func testBlocks(t *testing.T, blocks []tsdb.BlockReader, expectedMinTime, expect
 	allSamples := make([]backfillSample, 0)
 	var maxt, mint int64 = math.MinInt64, math.MaxInt64
 	for _, block := range blocks {
-		err := func() error {
-			index, err := block.Index()
-			defer func() {
-				err = index.Close()
-				require.NoError(t, err)
-			}()
-			if maxt < block.Meta().MaxTime {
-				maxt = block.Meta().MaxTime
-			}
-			if mint > block.Meta().MinTime {
-				mint = block.Meta().MinTime
-			}
-			require.NoError(t, err)
-			symbols := index.Symbols()
-			for symbols.Next() {
-				key := symbols.At()
-				if _, ok := allSymbols[key]; !ok {
-					allSymbols[key] = struct{}{}
-				}
-			}
-			q, err := tsdb.NewBlockQuerier(block, math.MinInt64, math.MaxInt64)
-			require.NoError(t, err)
-			series, err := queryblock(t, q, labels.FromStrings(metricLabels...), labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
-			require.NoError(t, err)
-			allSamples = append(allSamples, series...)
-			return nil
+		index, err := block.Index()
+		defer func() {
+			require.NoError(t, index.Close())
 		}()
+		if maxt < block.Meta().MaxTime {
+			maxt = block.Meta().MaxTime
+		}
+		if mint > block.Meta().MinTime {
+			mint = block.Meta().MinTime
+		}
+		symbols := index.Symbols()
+		for symbols.Next() {
+			key := symbols.At()
+			if _, ok := allSymbols[key]; !ok {
+				allSymbols[key] = struct{}{}
+			}
+		}
+		q, err := tsdb.NewBlockQuerier(block, math.MinInt64, math.MaxInt64)
+		require.NoError(t, err)
+		series, err := queryblock(t, q, labels.FromStrings(metricLabels...), labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
+		require.NoError(t, err)
+		allSamples = append(allSamples, series...)
 		require.NoError(t, err)
 	}
 	allSymbolsSlice := make([]string, 0)
@@ -347,27 +346,36 @@ no_nl{type="no newline"}
 	}
 	for _, test := range tests {
 		t.Logf("Test:%s", test.Description)
-		omFile := "backfill_test.om"
-		require.NoError(t, createTemporaryOpenmetricsFile(t, omFile, test.ToParse))
-		defer os.RemoveAll("backfill_test.om")
-		input, errOpen := os.Open(omFile)
+
+		openmetricsFile := "backfill_test.om"
+		createTemporaryOpenmetricsFile(t, openmetricsFile, test.ToParse)
+
+		input, errOpen := os.Open(openmetricsFile)
 		require.NoError(t, errOpen)
+
 		outputDir, errd := ioutil.TempDir("", "myDir")
 		require.NoError(t, errd)
+
 		errb := backfill(input, outputDir)
-		defer os.RemoveAll(outputDir)
-		if test.IsOk {
-			require.NoError(t, errb)
-			if len(test.Expected.Symbols) > 0 {
-				db, err := tsdb.OpenDBReadOnly(outputDir, nil)
-				require.NoError(t, err)
-				defer db.Close()
-				blocks, err := db.Blocks()
-				require.NoError(t, err)
-				testBlocks(t, blocks, test.Expected.MinTime, test.Expected.MaxTime, test.Expected.Samples, test.MetricLabels, test.Expected.Symbols, test.Expected.NumBlocks)
-			}
-		} else {
+		defer func() {
+			require.NoError(t, os.RemoveAll(outputDir))
+		}()
+
+		if !test.IsOk {
 			require.Error(t, errb, test.Description)
+			continue
+		}
+		if len(test.Expected.Symbols) > 0 {
+			db, err := tsdb.OpenDBReadOnly(outputDir, nil)
+			require.NoError(t, err)
+			defer func() {
+				require.NoError(t, db.Close())
+			}()
+
+			blocks, err := db.Blocks()
+			require.NoError(t, err)
+
+			testBlocks(t, blocks, test.Expected.MinTime, test.Expected.MaxTime, test.Expected.Samples, test.MetricLabels, test.Expected.Symbols, test.Expected.NumBlocks)
 		}
 	}
 }
