@@ -1067,9 +1067,7 @@ func (h *Head) appender() *headAppender {
 	cleanupAppendIDsBelow := h.iso.lowWatermark()
 
 	return &headAppender{
-		head: h,
-		// Set the minimum valid time to whichever is greater the head min valid time or the compaction window.
-		// This ensures that no samples will be added within the compaction window to avoid races.
+		head:                  h,
 		minValidTime:          h.appendableMinValidTime(),
 		mint:                  math.MaxInt64,
 		maxt:                  math.MinInt64,
@@ -1081,6 +1079,8 @@ func (h *Head) appender() *headAppender {
 }
 
 func (h *Head) appendableMinValidTime() int64 {
+	// Setting the minimum valid time to whichever is greater, the head min valid time or the compaction window,
+	// ensures that no samples will be added within the compaction window to avoid races.
 	return max(h.minValidTime.Load(), h.MaxTime()-h.chunkRange.Load()/2)
 }
 

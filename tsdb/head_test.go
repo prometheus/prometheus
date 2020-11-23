@@ -1903,11 +1903,11 @@ func TestHeadMintAfterTruncation(t *testing.T) {
 	head, _ := newTestHead(t, chunkRange, false)
 
 	app := head.Appender(context.Background())
-	_, err := app.Add(labels.Labels{{"a", "b"}}, 100, 100)
+	_, err := app.Add(labels.Labels{{Name: "a", Value: "b"}}, 100, 100)
 	require.NoError(t, err)
-	_, err = app.Add(labels.Labels{{"a", "b"}}, 4000, 200)
+	_, err = app.Add(labels.Labels{{Name: "a", Value: "b"}}, 4000, 200)
 	require.NoError(t, err)
-	_, err = app.Add(labels.Labels{{"a", "b"}}, 8000, 300)
+	_, err = app.Add(labels.Labels{{Name: "a", Value: "b"}}, 8000, 300)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
@@ -1920,8 +1920,8 @@ func TestHeadMintAfterTruncation(t *testing.T) {
 	// After truncation outside the appendable windown if the actual min time
 	// is in the appendable window then we should leave mint at the start of appendable window.
 	require.NoError(t, head.Truncate(5000))
-	require.Equal(t, 8000-chunkRange/2, head.MinTime())
-	require.Equal(t, 8000-chunkRange/2, head.minValidTime.Load())
+	require.Equal(t, head.appendableMinValidTime(), head.MinTime())
+	require.Equal(t, head.appendableMinValidTime(), head.minValidTime.Load())
 
 	// If the truncation time is inside the appendable window, then the min time
 	// should be the truncation time.
