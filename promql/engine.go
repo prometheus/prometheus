@@ -477,8 +477,8 @@ func durationMilliseconds(d time.Duration) int64 {
 // execEvalStmt evaluates the expression of an evaluation statement for the given time range.
 func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.EvalStmt) (parser.Value, storage.Warnings, error) {
 	prepareSpanTimer, ctxPrepare := query.stats.GetSpanTimer(ctx, stats.QueryPreparationTime, ng.metrics.queryPrepareTime)
-	mint := ng.findMinTime(s)
-	querier, err := query.queryable.Querier(ctxPrepare, timestamp.FromTime(mint), timestamp.FromTime(s.End))
+	mint, maxt := ng.findMinTime(s)
+	querier, err := query.queryable.Querier(ctxPrepare, mint, maxt)
 	if err != nil {
 		prepareSpanTimer.Finish()
 		return nil, nil, err
@@ -602,11 +602,31 @@ func (ng *Engine) subqueryOffsetRangeTimestamp(path []parser.Node) (time.Duratio
 	return subqOffset, subqRange, minTimestamp, maxTimestamp
 }
 
-func (ng *Engine) findMinTime(s *parser.EvalStmt) time.Time {
+func (ng *Engine) findMinTime(s *parser.EvalStmt) (int64, int64) {
 	var maxOffset time.Duration
-	var minTimestamp int64 = math.MaxInt64
+	var minTimestamp, maxTimestamp int64 = math.MaxInt64, math.MinInt64
+
+	setMinMaxt := func(vsTs, subqMint, subqMaxt int64, vsOffset, subqOffset, subqRange time.Duration) {
+		if vsTs != 0 && vsTs > maxTimestamp {
+			maxTimestamp = vsTs
+		}
+		if subqMaxt != math.MinInt64 && subqMaxt > maxTimestamp {
+			maxTimestamp = subqMaxt
+		}
+
+		if subqMint != math.MaxInt64 && (vsTs == 0 || (vsTs != 0 && subqMint < vsTs)) {
+			vsTs = subqMint - subqOffset.Milliseconds() - subqRange.Milliseconds()
+		} else {
+			vsTs -= vsOffset.Milliseconds() + ng.lookbackDelta.Milliseconds()
+		}
+
+		if vsTs < minTimestamp {
+			minTimestamp = vsTs
+		}
+	}
+
 	parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
-		subqOffset, subqRange, mint, _ := ng.subqueryOffsetRangeTimestamp(path)
+		subqOffset, subqRange, subqMint, subqMaxt := ng.subqueryOffsetRangeTimestamp(path)
 		switch n := node.(type) {
 		case *parser.VectorSelector:
 			if maxOffset < ng.lookbackDelta+subqOffset+subqRange {
@@ -616,38 +636,39 @@ func (ng *Engine) findMinTime(s *parser.EvalStmt) time.Time {
 				maxOffset = n.Offset + ng.lookbackDelta + subqOffset + subqRange
 			}
 			ts := timestamp.FromFloatSeconds(n.Timestamp)
-			if ts == 0 && mint != math.MaxInt64 && mint > 0 {
-				ts = mint
-			} else if ts != 0 && mint != math.MaxInt64 && mint > 0 && mint < ts {
-				ts = mint
-			}
-			if ts > 0 && ts < minTimestamp {
-				minTimestamp = ts
+			if ts == 0 && subqMint == math.MaxInt64 {
+				return nil
 			}
 
+			setMinMaxt(ts, subqMint, subqMaxt, n.Offset, subqOffset, subqRange)
+
 		case *parser.MatrixSelector:
+			vs := n.VectorSelector.(*parser.VectorSelector)
 			if maxOffset < n.Range+subqOffset+subqRange {
 				maxOffset = n.Range + subqOffset + subqRange
 			}
-			if m := n.VectorSelector.(*parser.VectorSelector).Offset + n.Range + subqOffset + subqRange; m > maxOffset {
+			if m := vs.Offset + n.Range + subqOffset + subqRange; m > maxOffset {
 				maxOffset = m
 			}
-			ts := timestamp.FromFloatSeconds(n.VectorSelector.(*parser.VectorSelector).Timestamp)
-			if ts == 0 && mint != math.MaxInt64 && mint > 0 {
-				ts = mint
-			} else if ts != 0 && mint != math.MaxInt64 && mint > 0 && mint < ts {
-				ts = mint
+			ts := timestamp.FromFloatSeconds(vs.Timestamp)
+			if ts == 0 && subqMint == math.MaxInt64 {
+				return nil
 			}
-			if ts > 0 && ts < minTimestamp {
-				minTimestamp = ts
-			}
+
+			setMinMaxt(ts, subqMint, subqMaxt, vs.Offset, subqOffset, subqRange)
 		}
 		return nil
 	})
-	if minTimestamp != 0 && minTimestamp != math.MaxInt64 && minTimestamp < s.Start.Add(-maxOffset).UnixNano()/1000 {
-		return time.Unix(0, minTimestamp*1000)
+
+	sStartTs, sEndTs := timestamp.FromTime(s.Start.Add(-maxOffset)), timestamp.FromTime(s.End)
+	if sEndTs > maxTimestamp {
+		maxTimestamp = sEndTs
 	}
-	return s.Start.Add(-maxOffset)
+	if sStartTs < minTimestamp {
+		minTimestamp = sStartTs
+	}
+
+	return minTimestamp, maxTimestamp
 }
 
 func (ng *Engine) populateSeries(querier storage.Querier, s *parser.EvalStmt) {

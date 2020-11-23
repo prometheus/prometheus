@@ -65,12 +65,11 @@ eval instant at 20000s avg_over_time(rate(http_requests[1m])[1m:1s] @ 20000)
   {job="api-server", instance="1", group="production"} 3
   {job="api-server", instance="0", group="production"} 3
 
-# TODO(codesome) why does this not work? Why does the rate(...) result in empty result?
-#eval instant at 2s avg_over_time(rate(http_requests[1m])[1m:1s] @ 20000)
-#  {job="api-server", instance="0", group="canary"}     8
-#  {job="api-server", instance="1", group="canary"}     4
-#  {job="api-server", instance="1", group="production"} 3
-#  {job="api-server", instance="0", group="production"} 3
+eval instant at 2s avg_over_time(rate(http_requests[1m])[1m:1s] @ 20000)
+  {job="api-server", instance="0", group="canary"}     8
+  {job="api-server", instance="1", group="canary"}     4
+  {job="api-server", instance="1", group="production"} 3
+  {job="api-server", instance="0", group="production"} 3
 
 clear
 

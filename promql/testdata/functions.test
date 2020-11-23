@@ -644,12 +644,11 @@ eval instant at 160000s holt_winters(http_requests[1m] @ 8000, 0.01, 0.1)
 	{job="api-server", instance="0", group="canary"} 24000
 	{job="api-server", instance="1", group="canary"} 32000
 
-# TODO(codesome): Why is the series not being populated properly?
-#eval instant at 4000s holt_winters(http_requests[1m] @ 8000, 0.01, 0.1)
-#	{job="api-server", instance="0", group="production"} 8000
-#	{job="api-server", instance="1", group="production"} 16000
-#	{job="api-server", instance="0", group="canary"} 24000
-#	{job="api-server", instance="1", group="canary"} 32000
+eval instant at 4000s holt_winters(http_requests[1m] @ 8000, 0.01, 0.1)
+	{job="api-server", instance="0", group="production"} 8000
+	{job="api-server", instance="1", group="production"} 16000
+	{job="api-server", instance="0", group="canary"} 24000
+	{job="api-server", instance="1", group="canary"} 32000
 
 # negative trends
 clear

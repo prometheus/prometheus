@@ -569,12 +569,11 @@ eval instant at 1s node_cpu @ 300 > on(job, instance) group_left(target) (thresh
   node_cpu{instance="def",job="node",mode="idle"} 8
   node_cpu{instance="def",job="node",mode="user"} 2
 
-# TODO(codesome): Check why would this not work. Staleness?
-#eval instant at 1000m node_cpu @ 300 > on(job, instance) group_left(target) (threshold @ 300 or on (job, instance) (sum by (job, instance)(node_cpu @ 300) * 0 + 1))
-#  node_cpu{instance="abc",job="node",mode="idle",target="a@b.com"} 3
-#  node_cpu{instance="abc",job="node",mode="user",target="a@b.com"} 1
-#  node_cpu{instance="def",job="node",mode="idle"} 8
-#  node_cpu{instance="def",job="node",mode="user"} 2
+eval instant at 1000m node_cpu @ 300 > on(job, instance) group_left(target) (threshold @ 300 or on (job, instance) (sum by (job, instance)(node_cpu @ 300) * 0 + 1))
+  node_cpu{instance="abc",job="node",mode="idle",target="a@b.com"} 3
+  node_cpu{instance="abc",job="node",mode="user",target="a@b.com"} 1
+  node_cpu{instance="def",job="node",mode="idle"} 8
+  node_cpu{instance="def",job="node",mode="user"} 2
 
 
 # Check that binops drop the metric name.

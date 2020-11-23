@@ -543,11 +543,10 @@ eval instant at 5m quantile without(point)(0.8, data @ 60)
 	{test="three samples"} 1.6
 	{test="uneven samples"} 2.8
 
-# TODO(codesome): why does it fail? staleness?
-#eval instant at 6m quantile without(point)(0.8, data @ 60)
-#	{test="two samples"} 0.8
-#	{test="three samples"} 1.6
-#	{test="uneven samples"} 2.8
+eval instant at 6m quantile without(point)(0.8, data @ 60)
+	{test="two samples"} 0.8
+	{test="three samples"} 1.6
+	{test="uneven samples"} 2.8
 
 
 # Bug #5276.
