@@ -153,6 +153,19 @@ func TestBackfill(t *testing.T) {
 			ToParse:     `# EOF`,
 			IsOk:        true,
 			Description: "Empty file.",
+			Expected: struct {
+				MinTime   int64
+				MaxTime   int64
+				Symbols   []string
+				NumBlocks int
+				Samples   []backfillSample
+			}{
+				MinTime:   math.MaxInt64,
+				MaxTime:   math.MinInt64,
+				Symbols:   []string{},
+				NumBlocks: 0,
+				Samples:   []backfillSample{},
+			},
 		},
 		{
 			ToParse: `# HELP http_requests_total The total number of HTTP requests.
@@ -378,7 +391,7 @@ no_nl{type="no newline"}
 			require.Error(t, errb, test.Description)
 			continue
 		}
-		if len(test.Expected.Symbols) > 0 {
+		if len(test.Expected.Symbols) >= 0 {
 			opts := tsdb.DefaultOptions()
 			db, err := tsdb.Open(outputDir, nil, nil, opts)
 			require.NoError(t, err)
