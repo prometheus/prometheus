@@ -172,7 +172,7 @@ func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 				return errors.Wrap(err, "commit")
 			}
 
-			if _, errF := w.Flush(ctx); errF != nil && errF != tsdb.ErrForNoSeriesAppended {
+			if _, errF := w.Flush(ctx); errF != nil && errF != tsdb.ErrNoSeriesAppended {
 				return errors.Wrap(errF, "flush")
 			}
 			return nil
