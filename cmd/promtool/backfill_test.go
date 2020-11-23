@@ -117,12 +117,12 @@ func testBlocks(t *testing.T, blocks []*tsdb.Block, expectedMinTime, expectedMax
 
 func TestBackfill(t *testing.T) {
 	tests := []struct {
-		ToParse          string
-		IsOk             bool
-		MetricLabels     []string
-		Description      string
-		SamplesBatchSize int64
-		Expected         struct {
+		ToParse              string
+		IsOk                 bool
+		MetricLabels         []string
+		Description          string
+		MaxSamplesInAppender int64
+		Expected             struct {
 			MinTime   int64
 			MaxTime   int64
 			NumBlocks int
@@ -130,10 +130,10 @@ func TestBackfill(t *testing.T) {
 		}
 	}{
 		{
-			ToParse:          `# EOF`,
-			IsOk:             true,
-			Description:      "Empty file.",
-			SamplesBatchSize: 5000,
+			ToParse:              `# EOF`,
+			IsOk:                 true,
+			Description:          "Empty file.",
+			MaxSamplesInAppender: 5000,
 			Expected: struct {
 				MinTime   int64
 				MaxTime   int64
@@ -153,10 +153,10 @@ http_requests_total{code="200"} 1021 1565133713.989
 http_requests_total{code="400"} 1 1565133713.990
 # EOF
 `,
-			IsOk:             true,
-			Description:      "Multiple samples with different timestamp for different series.",
-			SamplesBatchSize: 5000,
-			MetricLabels:     []string{"__name__", "http_requests_total"},
+			IsOk:                 true,
+			Description:          "Multiple samples with different timestamp for different series.",
+			MaxSamplesInAppender: 5000,
+			MetricLabels:         []string{"__name__", "http_requests_total"},
 			Expected: struct {
 				MinTime   int64
 				MaxTime   int64
@@ -188,10 +188,10 @@ http_requests_total{code="200"} 1 1565133714.989
 http_requests_total{code="400"} 2 1565133715.989
 # EOF
 `,
-			IsOk:             true,
-			Description:      "Multiple samples with different timestamp for the same series.",
-			SamplesBatchSize: 5000,
-			MetricLabels:     []string{"__name__", "http_requests_total"},
+			IsOk:                 true,
+			Description:          "Multiple samples with different timestamp for the same series.",
+			MaxSamplesInAppender: 5000,
+			MetricLabels:         []string{"__name__", "http_requests_total"},
 			Expected: struct {
 				MinTime   int64
 				MaxTime   int64
@@ -229,10 +229,10 @@ http_requests_total{code="400"} 2 1565155313.989
 http_requests_total{code="400"} 1 1565166113.989
 # EOF
 `,
-			IsOk:             true,
-			Description:      "Multiple samples that end up in different blocks.",
-			SamplesBatchSize: 5000,
-			MetricLabels:     []string{"__name__", "http_requests_total"},
+			IsOk:                 true,
+			Description:          "Multiple samples that end up in different blocks.",
+			MaxSamplesInAppender: 5000,
+			MetricLabels:         []string{"__name__", "http_requests_total"},
 			Expected: struct {
 				MinTime   int64
 				MaxTime   int64
@@ -278,10 +278,10 @@ http_requests_total{code="400"} 3 1565155314
 http_requests_total{code="400"} 1 1565166113.989
 # EOF
 `,
-			IsOk:             true,
-			Description:      "Number of samples are greater than the sample batch size.",
-			SamplesBatchSize: 2,
-			MetricLabels:     []string{"__name__", "http_requests_total"},
+			IsOk:                 true,
+			Description:          "Number of samples are greater than the sample batch size.",
+			MaxSamplesInAppender: 2,
+			MetricLabels:         []string{"__name__", "http_requests_total"},
 			Expected: struct {
 				MinTime   int64
 				MaxTime   int64
@@ -334,10 +334,10 @@ http_requests_total{code="400"} 1 1565166113.989
 			ToParse: `no_help_no_type{foo="bar"} 42 6900
 # EOF
 `,
-			IsOk:             true,
-			Description:      "Sample with no #HELP or #TYPE keyword.",
-			SamplesBatchSize: 5000,
-			MetricLabels:     []string{"__name__", "no_help_no_type"},
+			IsOk:                 true,
+			Description:          "Sample with no #HELP or #TYPE keyword.",
+			MaxSamplesInAppender: 5000,
+			MetricLabels:         []string{"__name__", "no_help_no_type"},
 			Expected: struct {
 				MinTime   int64
 				MaxTime   int64
@@ -360,10 +360,10 @@ http_requests_total{code="400"} 1 1565166113.989
 			ToParse: `bare_metric 42.24 1001
 # EOF
 `,
-			IsOk:             true,
-			Description:      "Bare sample.",
-			SamplesBatchSize: 5000,
-			MetricLabels:     []string{"__name__", "bare_metric"},
+			IsOk:                 true,
+			Description:          "Bare sample.",
+			MaxSamplesInAppender: 5000,
+			MetricLabels:         []string{"__name__", "bare_metric"},
 			Expected: struct {
 				MinTime   int64
 				MaxTime   int64
@@ -423,8 +423,7 @@ no_nl{type="no newline"}
 		outputDir, errd := ioutil.TempDir("", "myDir")
 		require.NoError(t, errd)
 
-		var samplesBatchSize int64 = 5000
-		errb := backfill(samplesBatchSize, input, outputDir)
+		errb := backfill(test.MaxSamplesInAppender, input, outputDir)
 		defer func() {
 			require.NoError(t, os.RemoveAll(outputDir))
 		}()
