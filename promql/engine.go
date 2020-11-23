@@ -665,16 +665,6 @@ func (ng *Engine) populateSeries(querier storage.Querier, s *parser.EvalStmt) {
 				Step:  durationMilliseconds(s.Interval),
 			}
 
-			if n.Timestamp > 0 {
-				ts := timestamp.FromFloatSeconds(n.Timestamp)
-				if ts < hints.Start {
-					hints.Start = ts
-				}
-				if ts > hints.End {
-					hints.End = ts
-				}
-			}
-
 			// We need to make sure we select the timerange selected by the subquery.
 			// The subqueryOffsetRange function gives the sum of range and the
 			// sum of offset.
@@ -686,6 +676,12 @@ func (ng *Engine) populateSeries(querier storage.Querier, s *parser.EvalStmt) {
 			}
 			if subqMaxt != math.MinInt64 && subqMaxt > hints.End {
 				hints.End = subqMaxt
+			}
+
+			if n.Timestamp > 0 {
+				ts := timestamp.FromFloatSeconds(n.Timestamp)
+				hints.Start = ts
+				hints.End = ts
 			}
 
 			hints.Start = hints.Start - offsetMilliseconds - durationMilliseconds(subqRange)
@@ -1184,11 +1180,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 					maxt = enh.Ts - offset
 				}
 				mint := maxt - selRange
-				// Evaluate the matrix selector for this series for this step.
-				if selVS.Timestamp <= 0 || (selVS.Timestamp > 0 && ts == ev.startTimestamp) {
-					// We only evaluate once for the constant selector.
-					points = ev.matrixIterSlice(it, mint, maxt, points)
-				}
+				points = ev.matrixIterSlice(it, mint, maxt, points)
 				if len(points) == 0 {
 					continue
 				}
@@ -1383,20 +1375,16 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		}
 
 		subqueryEvalTime := timestamp.FromFloatSeconds(e.Timestamp)
-		subqueryStartTime := ev.startTimestamp
+		subqueryStartTime := ev.startTimestamp - offsetMillis - rangeMillis
 		if subqueryEvalTime != 0 {
-			if subqueryEvalTime > ev.endTimestamp {
-				newEv.endTimestamp = subqueryEvalTime - offsetMillis
-			}
-			if subqueryEvalTime < subqueryStartTime {
-				subqueryStartTime = subqueryEvalTime
-			}
+			newEv.endTimestamp = subqueryEvalTime - offsetMillis
+			subqueryStartTime = newEv.endTimestamp - rangeMillis
 		}
 
-		// Start with the first timestamp after (subqueryStartTime - offset - range)
+		// Start with the first timestamp after subqueryStartTime
 		// that is aligned with the step (multiple of 'newEv.interval').
-		newEv.startTimestamp = newEv.interval * ((subqueryStartTime - offsetMillis - rangeMillis) / newEv.interval)
-		if newEv.startTimestamp < (subqueryStartTime - offsetMillis - rangeMillis) {
+		newEv.startTimestamp = newEv.interval * (subqueryStartTime / newEv.interval)
+		if newEv.startTimestamp < subqueryStartTime {
 			newEv.startTimestamp += newEv.interval
 		}
 

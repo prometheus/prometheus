@@ -567,11 +567,11 @@ eval instant at 1m quantile without(point)((scalar(foo)), data @ 60)
 	{test="three samples"} 1.6
 	{test="uneven samples"} 2.8
 
-# TODO(codesome): Investigate this panic.
-#eval instant at 10s quantile without(point)((scalar(foo)), data @ 60)
-#	{test="two samples"} 0.8
-#	{test="three samples"} 1.6
-#	{test="uneven samples"} 2.8
+# Since foo does not exist before 10s, we need to specify time for that here.
+eval instant at 10s quantile without(point)((scalar(foo @ 60)), data @ 60)
+	{test="two samples"} 0.8
+	{test="three samples"} 1.6
+	{test="uneven samples"} 2.8
 
 eval instant at 4m quantile without(point)((scalar(foo)), data @ 60)
 	{test="two samples"} 0.8

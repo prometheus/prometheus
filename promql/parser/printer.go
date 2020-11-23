@@ -119,11 +119,21 @@ func (node *MatrixSelector) String() string {
 	if vecSelector.Offset != time.Duration(0) {
 		offset = fmt.Sprintf(" offset %s", model.Duration(vecSelector.Offset))
 	}
+	at := ""
+	if vecSelector.Timestamp != 0 {
+		at = fmt.Sprintf(" @ %f", vecSelector.Timestamp)
+	}
 
-	// Do not print the offset twice.
+	// Do not print the @ and offset twice.
+	offsetVal, atVal := vecSelector.Offset, vecSelector.Timestamp
 	vecSelector.Offset = 0
+	vecSelector.Timestamp = 0
 
-	return fmt.Sprintf("%s[%s]%s", vecSelector.String(), model.Duration(node.Range), offset)
+	str := fmt.Sprintf("%s[%s]%s%s", vecSelector.String(), model.Duration(node.Range), at, offset)
+
+	vecSelector.Offset, vecSelector.Timestamp = offsetVal, atVal
+
+	return str
 }
 
 func (node *SubqueryExpr) String() string {
@@ -135,7 +145,11 @@ func (node *SubqueryExpr) String() string {
 	if node.Offset != time.Duration(0) {
 		offset = fmt.Sprintf(" offset %s", model.Duration(node.Offset))
 	}
-	return fmt.Sprintf("%s[%s:%s]%s", node.Expr.String(), model.Duration(node.Range), step, offset)
+	at := ""
+	if node.Timestamp != 0 {
+		at = fmt.Sprintf(" @ %f", node.Timestamp)
+	}
+	return fmt.Sprintf("%s[%s:%s]%s%s", node.Expr.String(), model.Duration(node.Range), step, at, offset)
 }
 
 func (node *NumberLiteral) String() string {
@@ -167,10 +181,14 @@ func (node *VectorSelector) String() string {
 	if node.Offset != time.Duration(0) {
 		offset = fmt.Sprintf(" offset %s", model.Duration(node.Offset))
 	}
+	at := ""
+	if node.Timestamp != 0 {
+		at = fmt.Sprintf(" @ %f", node.Timestamp)
+	}
 
 	if len(labelStrings) == 0 {
-		return fmt.Sprintf("%s%s", node.Name, offset)
+		return fmt.Sprintf("%s%s%s", node.Name, at, offset)
 	}
 	sort.Strings(labelStrings)
-	return fmt.Sprintf("%s{%s}%s", node.Name, strings.Join(labelStrings, ","), offset)
+	return fmt.Sprintf("%s{%s}%s%s", node.Name, strings.Join(labelStrings, ","), at, offset)
 }
