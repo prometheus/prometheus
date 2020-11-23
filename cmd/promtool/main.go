@@ -190,7 +190,7 @@ func main() {
 		os.Exit(checkErr(analyzeBlock(*analyzePath, *analyzeBlockID, *analyzeLimit)))
 
 	case tsdbListCmd.FullCommand():
-		os.Exit(checkErr(ListBlocks(*listPath, *listHumanReadable)))
+		os.Exit(checkErr(listBlocks(*listPath, *listHumanReadable)))
 
 	case tsdbDumpCmd.FullCommand():
 		os.Exit(checkErr(dumpSamples(*dumpPath, *dumpMinTime, *dumpMaxTime)))
