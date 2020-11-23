@@ -86,6 +86,11 @@ func (w *BlockWriter) Appender(ctx context.Context) storage.Appender {
 
 // Flush implements the Writer interface. This is where actual block writing
 // happens. After flush completes, no writes can be done.
+
+func (w *BlockWriter) SeriesCount(ctx context.Context) uint64 {
+	return w.head.NumSeries()
+}
+
 func (w *BlockWriter) Flush(ctx context.Context) (ulid.ULID, error) {
 	seriesCount := w.head.NumSeries()
 	if w.head.NumSeries() == 0 {
