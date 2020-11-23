@@ -77,11 +77,10 @@ func queryblock(t testing.TB, q storage.Querier, lbls labels.Labels, matchers ..
 	return samples, nil
 }
 
-func testBlocks(t *testing.T, blocks []*tsdb.Block, expectedMinTime, expectedMaxTime int64, expectedSamples []backfillSample, metricLabels []string, expectedSymbols []string, expectedNumBlocks int) {
+func testBlocks(t *testing.T, blocks []*tsdb.Block, expectedMinTime, expectedMaxTime int64, expectedSamples []backfillSample, metricLabels []string, expectedNumBlocks int) {
 
 	require.Equal(t, expectedNumBlocks, len(blocks))
 
-	allSymbols := make(map[string]struct{})
 	allSamples := make([]backfillSample, 0)
 
 	var maxt, mint int64 = math.MinInt64, math.MaxInt64
@@ -100,14 +99,6 @@ func testBlocks(t *testing.T, blocks []*tsdb.Block, expectedMinTime, expectedMax
 			mint = block.Meta().MinTime
 		}
 
-		symbols := index.Symbols()
-		for symbols.Next() {
-			key := symbols.At()
-			if _, ok := allSymbols[key]; !ok {
-				allSymbols[key] = struct{}{}
-			}
-		}
-
 		q, err := tsdb.NewBlockQuerier(block, math.MinInt64, math.MaxInt64)
 		require.NoError(t, err)
 
@@ -117,15 +108,6 @@ func testBlocks(t *testing.T, blocks []*tsdb.Block, expectedMinTime, expectedMax
 		allSamples = append(allSamples, series...)
 		require.NoError(t, err)
 	}
-
-	allSymbolsSlice := make([]string, 0)
-	for key := range allSymbols {
-		allSymbolsSlice = append(allSymbolsSlice, key)
-	}
-
-	sort.Strings(allSymbolsSlice)
-	sort.Strings(expectedSymbols)
-	require.Equal(t, expectedSymbols, allSymbolsSlice)
 
 	sortSamples(allSamples)
 	sortSamples(expectedSamples)
@@ -144,7 +126,6 @@ func TestBackfill(t *testing.T) {
 		Expected     struct {
 			MinTime   int64
 			MaxTime   int64
-			Symbols   []string
 			NumBlocks int
 			Samples   []backfillSample
 		}
@@ -156,13 +137,11 @@ func TestBackfill(t *testing.T) {
 			Expected: struct {
 				MinTime   int64
 				MaxTime   int64
-				Symbols   []string
 				NumBlocks int
 				Samples   []backfillSample
 			}{
 				MinTime:   math.MaxInt64,
 				MaxTime:   math.MinInt64,
-				Symbols:   []string{},
 				NumBlocks: 0,
 				Samples:   []backfillSample{},
 			},
@@ -179,13 +158,11 @@ http_requests_total{code="400"} 1 1565133713.990
 			Expected: struct {
 				MinTime   int64
 				MaxTime   int64
-				Symbols   []string
 				NumBlocks int
 				Samples   []backfillSample
 			}{
 				MinTime:   1565133713989,
 				MaxTime:   1565133713991,
-				Symbols:   []string{"http_requests_total", "code", "200", "400", "__name__"},
 				NumBlocks: 1,
 				Samples: []backfillSample{
 					{
@@ -215,13 +192,11 @@ http_requests_total{code="400"} 2 1565133715.989
 			Expected: struct {
 				MinTime   int64
 				MaxTime   int64
-				Symbols   []string
 				NumBlocks int
 				Samples   []backfillSample
 			}{
 				MinTime:   1565133713989,
 				MaxTime:   1565133715990,
-				Symbols:   []string{"http_requests_total", "code", "200", "400", "__name__"},
 				NumBlocks: 1,
 				Samples: []backfillSample{
 					{
@@ -257,13 +232,11 @@ http_requests_total{code="400"} 1 1565166113.989
 			Expected: struct {
 				MinTime   int64
 				MaxTime   int64
-				Symbols   []string
 				NumBlocks int
 				Samples   []backfillSample
 			}{
 				MinTime:   1565133713989,
 				MaxTime:   1565166113990,
-				Symbols:   []string{"http_requests_total", "code", "200", "400", "__name__"},
 				NumBlocks: 4,
 				Samples: []backfillSample{
 					{
@@ -298,13 +271,11 @@ http_requests_total{code="400"} 1 1565166113.989
 			Expected: struct {
 				MinTime   int64
 				MaxTime   int64
-				Symbols   []string
 				NumBlocks int
 				Samples   []backfillSample
 			}{
 				MinTime:   6900000,
 				MaxTime:   6900001,
-				Symbols:   []string{"no_help_no_type", "foo", "bar", "__name__"},
 				NumBlocks: 1,
 				Samples: []backfillSample{
 					{
@@ -324,13 +295,11 @@ http_requests_total{code="400"} 1 1565166113.989
 			Expected: struct {
 				MinTime   int64
 				MaxTime   int64
-				Symbols   []string
 				NumBlocks int
 				Samples   []backfillSample
 			}{
 				MinTime:   1001000,
 				MaxTime:   1001001,
-				Symbols:   []string{"bare_metric", "__name__"},
 				NumBlocks: 1,
 				Samples: []backfillSample{
 					{
@@ -391,15 +360,16 @@ no_nl{type="no newline"}
 			require.Error(t, errb, test.Description)
 			continue
 		}
-		if len(test.Expected.Symbols) >= 0 {
-			opts := tsdb.DefaultOptions()
-			db, err := tsdb.Open(outputDir, nil, nil, opts)
-			require.NoError(t, err)
-			defer func() {
-				require.NoError(t, db.Close())
-			}()
-			blocks := db.Blocks()
-			testBlocks(t, blocks, test.Expected.MinTime, test.Expected.MaxTime, test.Expected.Samples, test.MetricLabels, test.Expected.Symbols, test.Expected.NumBlocks)
-		}
+
+		opts := tsdb.DefaultOptions()
+		db, err := tsdb.Open(outputDir, nil, nil, opts)
+		require.NoError(t, err)
+		defer func() {
+			require.NoError(t, db.Close())
+		}()
+
+		blocks := db.Blocks()
+		testBlocks(t, blocks, test.Expected.MinTime, test.Expected.MaxTime, test.Expected.Samples, test.MetricLabels, test.Expected.NumBlocks)
+
 	}
 }
