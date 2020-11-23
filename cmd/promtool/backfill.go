@@ -56,7 +56,6 @@ func (p *OpenMetricsParser) Next() (textparse.Entry, error) {
 	if err := p.s.Err(); err != nil {
 		return 0, err
 	}
-
 	return 0, io.EOF
 }
 
@@ -118,12 +117,12 @@ func createBlocks(input *os.File, mint, maxt, maxSamplesInAppender int64, output
 
 			ctx := context.Background()
 			app := w.Appender(ctx)
-			_, errReset := input.Seek(0, 0)
-			if errReset != nil {
+
+			if _, errReset := input.Seek(0, 0); errReset != nil {
 				return errors.Wrap(errReset, "seek file")
 			}
-
 			p := NewOpenMetricsParser(input)
+
 			tsUpper := t + blockDuration
 			var samplesCount int64
 
@@ -186,11 +185,9 @@ func createBlocks(input *os.File, mint, maxt, maxSamplesInAppender int64, output
 func backfill(maxSamplesInAppender int64, input *os.File, outputDir string) (err error) {
 
 	p := NewOpenMetricsParser(input)
-
 	maxt, mint, errTs := getMinAndMaxTimestamps(p)
 	if errTs != nil {
 		return errors.Wrap(errTs, "error getting min and max timestamp")
 	}
-
 	return errors.Wrap(createBlocks(input, mint, maxt, maxSamplesInAppender, outputDir), "block creation")
 }

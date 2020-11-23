@@ -63,11 +63,11 @@ func queryblock(t testing.TB, q storage.Querier, lbls labels.Labels, matchers ..
 	for ss.Next() {
 		series := ss.At()
 		it := series.Iterator()
+		require.NoError(t, it.Err())
 		for it.Next() {
 			ts, v := it.At()
 			samples = append(samples, backfillSample{Timestamp: ts, Value: v, Labels: series.Labels()})
 		}
-		require.NoError(t, it.Err())
 		if len(samples) == 0 {
 			continue
 		}
@@ -104,7 +104,6 @@ func testBlocks(t *testing.T, blocks []*tsdb.Block, expectedMinTime, expectedMax
 		require.NoError(t, err)
 
 		allSamples = append(allSamples, series...)
-		require.NoError(t, err)
 	}
 
 	sortSamples(allSamples)
@@ -419,14 +418,17 @@ no_nl{type="no newline"}
 
 		input, errOpen := os.Open(openMetricsFile)
 		require.NoError(t, errOpen)
+		defer func() {
+			require.NoError(t, input.Close())
+		}()
 
 		outputDir, errd := ioutil.TempDir("", "myDir")
 		require.NoError(t, errd)
-
-		errb := backfill(test.MaxSamplesInAppender, input, outputDir)
 		defer func() {
 			require.NoError(t, os.RemoveAll(outputDir))
 		}()
+
+		errb := backfill(test.MaxSamplesInAppender, input, outputDir)
 
 		if !test.IsOk {
 			require.Error(t, errb, test.Description)
@@ -434,6 +436,7 @@ no_nl{type="no newline"}
 		}
 
 		opts := tsdb.DefaultOptions()
+
 		db, err := tsdb.Open(outputDir, nil, nil, opts)
 		require.NoError(t, err)
 		defer func() {
