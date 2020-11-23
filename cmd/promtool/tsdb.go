@@ -622,5 +622,6 @@ func backfillOpenMetrics(path string, outputDir string) (err error) {
 	defer func() {
 		input.Close()
 	}()
-	return backfill(input, outputDir)
+	var samplesLimit int64 = 5000
+	return backfill(samplesLimit, input, outputDir)
 }

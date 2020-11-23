@@ -34,7 +34,7 @@ type backfillSample struct {
 
 // TODO(aSquare14): Add a test that exercises the committing of the appender and creation of a
 // new appender after 5000 samples have been appended.
-func createTemporaryOpenmetricsFile(t *testing.T, text string) string {
+func createTemporaryOpenMetricsFile(t *testing.T, text string) string {
 
 	newf, err := ioutil.TempFile("", "")
 	require.NoError(t, err)
@@ -343,15 +343,16 @@ no_nl{type="no newline"}
 
 		t.Logf("Test:%s", test.Description)
 
-		openmetricsFile := createTemporaryOpenmetricsFile(t, test.ToParse)
+		openMetricsFile := createTemporaryOpenMetricsFile(t, test.ToParse)
 
-		input, errOpen := os.Open(openmetricsFile)
+		input, errOpen := os.Open(openMetricsFile)
 		require.NoError(t, errOpen)
 
 		outputDir, errd := ioutil.TempDir("", "myDir")
 		require.NoError(t, errd)
 
-		errb := backfill(input, outputDir)
+		var samplesLimit int64 = 5000
+		errb := backfill(samplesLimit, input, outputDir)
 		defer func() {
 			require.NoError(t, os.RemoveAll(outputDir))
 		}()

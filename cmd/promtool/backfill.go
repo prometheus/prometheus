@@ -99,7 +99,7 @@ func getMinAndMaxTimestamps(p textparse.Parser) (int64, int64, error) {
 	return maxt, mint, nil
 }
 
-func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
+func createBlocks(input *os.File, mint, maxt, samplesLimit int64, outputDir string) error {
 
 	blockDuration := tsdb.DefaultBlockDuration
 	mint = blockDuration * (mint / blockDuration)
@@ -124,7 +124,6 @@ func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 			}
 
 			p := NewOpenMetricsParser(input)
-
 			tsUpper := t + blockDuration
 			var samplesCount int64
 
@@ -154,9 +153,8 @@ func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 					return errors.Wrap(err, "add sample")
 				}
 
-				// TODO(aSquare14) : Put 5000 in a constant.
 				samplesCount++
-				if samplesCount < 5000 {
+				if samplesCount < samplesLimit {
 					continue
 				}
 
@@ -185,7 +183,7 @@ func createBlocks(input *os.File, mint, maxt int64, outputDir string) error {
 	return nil
 }
 
-func backfill(input *os.File, outputDir string) (err error) {
+func backfill(samplesLimit int64, input *os.File, outputDir string) (err error) {
 
 	p := NewOpenMetricsParser(input)
 
@@ -194,5 +192,5 @@ func backfill(input *os.File, outputDir string) (err error) {
 		return errors.Wrap(errTs, "error getting min and max timestamp")
 	}
 
-	return errors.Wrap(createBlocks(input, mint, maxt, outputDir), "block creation")
+	return errors.Wrap(createBlocks(input, mint, maxt, samplesLimit, outputDir), "block creation")
 }
