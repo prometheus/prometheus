@@ -1,4 +1,0 @@
-# HELP no_nl This test has no newline so will fail
-# TYPE no_nl gauge
-no_nl{type="no newline"}
-# EOF

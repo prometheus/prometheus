@@ -112,7 +112,6 @@ func (w *BlockWriter) Flush(ctx context.Context) (ulid.ULID, error) {
 	return id, nil
 }
 
-// Close closes the on-disk block. It blocks as long as there are readers reading from the block.
 func (w *BlockWriter) Close() error {
 	defer func() {
 		if err := os.RemoveAll(w.chunkDir); err != nil {
