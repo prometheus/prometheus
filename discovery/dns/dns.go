@@ -211,6 +211,8 @@ func (d *Discovery) refreshOne(ctx context.Context, name string, ch chan<- *targ
 			target = hostPort(addr.A.String(), d.port)
 		case *dns.AAAA:
 			target = hostPort(addr.AAAA.String(), d.port)
+		case *dns.CNAME:
+			// Ignore to prevent warning message from default case.
 		default:
 			level.Warn(d.logger).Log("msg", "Invalid SRV record", "record", record)
 			continue
