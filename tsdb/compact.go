@@ -220,6 +220,14 @@ func (c *LeveledCompactor) plan(dms []dirMeta) ([]string, error) {
 			return []string{dms[i].dir}, nil
 		}
 	}
+	// If the block is entirely deleted, then we don't care about
+	// the block being big enough.
+	for i := len(dms) - 1; i >= 0; i-- {
+		meta := dms[i].meta
+		if meta.Stats.NumTombstones > 0 && meta.Stats.NumTombstones == meta.Stats.NumSeries {
+			return []string{dms[i].dir}, nil
+		}
+	}
 
 	return nil, nil
 }
