@@ -127,7 +127,7 @@ export const RemoteWritePanel: FC<RemoteWritePanelProps> = ({ queue: q }) => {
                 <td>{shard.pendingSamples}</td>
                 <td>{formatRelative(shard.lastSentTime, now())}</td>
                 <td>{humanizeDuration(shard.lastSentDuration * 1000)}</td>
-                <td>{shard.lastError}</td>
+                <td>{shard.lastError ? <Badge color="danger">{shard.lastError}</Badge> : null}</td>
               </tr>
             ))}
           </tbody>

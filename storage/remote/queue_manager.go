@@ -326,7 +326,7 @@ type QueueManager struct {
 	shards    *shards
 	numShards int
 
-	shardingCalcMtx      sync.Mutex
+	shardingCalcMtx      sync.RWMutex
 	shardingCalculations ShardingCalculations
 
 	isResharding bool
@@ -628,9 +628,9 @@ func (t *QueueManager) ShardingCalculations() ShardingCalculations {
 // SetClient updates the client used by a queue. Used when only client specific
 // fields are updated to avoid restarting the queue.
 func (t *QueueManager) SetClient(c WriteClient) {
-	t.clientMtx.Lock()
+	t.clientMtx.RLock()
 	t.storeClient = c
-	t.clientMtx.Unlock()
+	t.clientMtx.RUnlock()
 }
 
 func (t *QueueManager) client() WriteClient {
