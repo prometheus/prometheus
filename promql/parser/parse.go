@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/util/strutil"
 )
 
@@ -693,7 +694,7 @@ func (p *parser) addOffset(e Node, offset time.Duration) {
 		offsetp = &s.Offset
 		endPosp = &s.EndPos
 	default:
-		p.addParseErrf(e.PositionRange(), "offset modifier must be preceded by an instant or range selector or a subquery, but follows a %T instead", e)
+		p.addParseErrf(e.PositionRange(), "offset modifier must be preceded by an vector or range selector or a subquery, but follows a %T instead", e)
 		return
 	}
 
@@ -707,8 +708,8 @@ func (p *parser) addOffset(e Node, offset time.Duration) {
 	*endPosp = p.lastClosing
 }
 
-func (p *parser) setInstant(e Node, timestamp float64) {
-	var timestampp *float64
+func (p *parser) setStepInvariant(e Node, ts float64) {
+	var timestampp *int64
 	var endPosp *Pos
 
 	switch s := e.(type) {
@@ -724,14 +725,14 @@ func (p *parser) setInstant(e Node, timestamp float64) {
 		timestampp = &s.Timestamp
 		endPosp = &s.EndPos
 	default:
-		p.addParseErrf(e.PositionRange(), "@ modifier must be preceded by an instant or range selector or a subquery, but follows a %T instead", e)
+		p.addParseErrf(e.PositionRange(), "@ modifier must be preceded by an vector or range selector or a subquery, but follows a %T instead", e)
 		return
 	}
 
 	if *timestampp != 0 {
 		p.addParseErrf(e.PositionRange(), "@ <timestamp> may not be set multiple times")
 	} else if timestampp != nil {
-		*timestampp = timestamp
+		*timestampp = timestamp.FromFloatSeconds(ts)
 	}
 
 	*endPosp = p.lastClosing

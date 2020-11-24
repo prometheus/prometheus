@@ -334,7 +334,7 @@ func (ng *Engine) NewInstantQuery(q storage.Queryable, qs string, ts time.Time) 
 	if err != nil {
 		return nil, err
 	}
-	qry := ng.newQuery(q, WrapWithStepInvariantExpr(expr), ts, ts, 0)
+	qry := ng.newQuery(q, expr, ts, ts, 0)
 	qry.q = qs
 
 	return qry, nil
@@ -350,7 +350,7 @@ func (ng *Engine) NewRangeQuery(q storage.Queryable, qs string, start, end time.
 	if expr.Type() != parser.ValueTypeVector && expr.Type() != parser.ValueTypeScalar {
 		return nil, errors.Errorf("invalid expression type %q for range query, must be Scalar or instant Vector", parser.DocumentedType(expr.Type()))
 	}
-	qry := ng.newQuery(q, WrapWithStepInvariantExpr(expr), start, end, interval)
+	qry := ng.newQuery(q, expr, start, end, interval)
 	qry.q = qs
 
 	return qry, nil
@@ -358,7 +358,7 @@ func (ng *Engine) NewRangeQuery(q storage.Queryable, qs string, start, end time.
 
 func (ng *Engine) newQuery(q storage.Queryable, expr parser.Expr, start, end time.Time, interval time.Duration) *query {
 	es := &parser.EvalStmt{
-		Expr:     expr,
+		Expr:     WrapWithStepInvariantExpr(expr),
 		Start:    start,
 		End:      end,
 		Interval: interval,
@@ -477,7 +477,7 @@ func durationMilliseconds(d time.Duration) int64 {
 // execEvalStmt evaluates the expression of an evaluation statement for the given time range.
 func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.EvalStmt) (parser.Value, storage.Warnings, error) {
 	prepareSpanTimer, ctxPrepare := query.stats.GetSpanTimer(ctx, stats.QueryPreparationTime, ng.metrics.queryPrepareTime)
-	mint, maxt := ng.findMinTime(s)
+	mint, maxt := ng.findMinMaxTime(s)
 	querier, err := query.queryable.Querier(ctxPrepare, mint, maxt)
 	if err != nil {
 		prepareSpanTimer.Finish()
@@ -576,9 +576,9 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 	return mat, warnings, nil
 }
 
-// subqueryOffsetRangeTimestamp returns the sum of offsets and ranges of all subqueries in the path.
+// subqueryTimes returns the sum of offsets and ranges of all subqueries in the path.
 // It also returns the min and max timestamp associated with the subquery.
-func (ng *Engine) subqueryOffsetRangeTimestamp(path []parser.Node) (time.Duration, time.Duration, int64, int64) {
+func (ng *Engine) subqueryTimes(path []parser.Node) (time.Duration, time.Duration, int64, int64) {
 	var (
 		subqOffset, subqRange      time.Duration
 		minTimestamp, maxTimestamp int64 = math.MaxInt64, math.MinInt64
@@ -589,12 +589,11 @@ func (ng *Engine) subqueryOffsetRangeTimestamp(path []parser.Node) (time.Duratio
 			subqOffset += n.Offset
 			subqRange += n.Range
 			if n.Timestamp > 0 {
-				ts := timestamp.FromFloatSeconds(n.Timestamp)
-				if ts < minTimestamp {
-					minTimestamp = ts
+				if n.Timestamp < minTimestamp {
+					minTimestamp = n.Timestamp
 				}
-				if ts > maxTimestamp {
-					maxTimestamp = ts
+				if n.Timestamp > maxTimestamp {
+					maxTimestamp = n.Timestamp
 				}
 			}
 		}
@@ -602,7 +601,7 @@ func (ng *Engine) subqueryOffsetRangeTimestamp(path []parser.Node) (time.Duratio
 	return subqOffset, subqRange, minTimestamp, maxTimestamp
 }
 
-func (ng *Engine) findMinTime(s *parser.EvalStmt) (int64, int64) {
+func (ng *Engine) findMinMaxTime(s *parser.EvalStmt) (int64, int64) {
 	var maxOffset time.Duration
 	var minTimestamp, maxTimestamp int64 = math.MaxInt64, math.MinInt64
 
@@ -626,7 +625,7 @@ func (ng *Engine) findMinTime(s *parser.EvalStmt) (int64, int64) {
 	}
 
 	parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
-		subqOffset, subqRange, subqMint, subqMaxt := ng.subqueryOffsetRangeTimestamp(path)
+		subqOffset, subqRange, subqMint, subqMaxt := ng.subqueryTimes(path)
 		switch n := node.(type) {
 		case *parser.VectorSelector:
 			if maxOffset < ng.lookbackDelta+subqOffset+subqRange {
@@ -635,12 +634,11 @@ func (ng *Engine) findMinTime(s *parser.EvalStmt) (int64, int64) {
 			if n.Offset+ng.lookbackDelta+subqOffset+subqRange > maxOffset {
 				maxOffset = n.Offset + ng.lookbackDelta + subqOffset + subqRange
 			}
-			ts := timestamp.FromFloatSeconds(n.Timestamp)
-			if ts == 0 && subqMint == math.MaxInt64 {
+			if n.Timestamp == 0 && subqMint == math.MaxInt64 {
 				return nil
 			}
 
-			setMinMaxt(ts, subqMint, subqMaxt, n.Offset, subqOffset, subqRange)
+			setMinMaxt(n.Timestamp, subqMint, subqMaxt, n.Offset, subqOffset, subqRange)
 
 		case *parser.MatrixSelector:
 			vs := n.VectorSelector.(*parser.VectorSelector)
@@ -650,12 +648,11 @@ func (ng *Engine) findMinTime(s *parser.EvalStmt) (int64, int64) {
 			if m := vs.Offset + n.Range + subqOffset + subqRange; m > maxOffset {
 				maxOffset = m
 			}
-			ts := timestamp.FromFloatSeconds(vs.Timestamp)
-			if ts == 0 && subqMint == math.MaxInt64 {
+			if vs.Timestamp == 0 && subqMint == math.MaxInt64 {
 				return nil
 			}
 
-			setMinMaxt(ts, subqMint, subqMaxt, vs.Offset, subqOffset, subqRange)
+			setMinMaxt(vs.Timestamp, subqMint, subqMaxt, vs.Offset, subqOffset, subqRange)
 		}
 		return nil
 	})
@@ -690,19 +687,18 @@ func (ng *Engine) populateSeries(querier storage.Querier, s *parser.EvalStmt) {
 			// The subqueryOffsetRange function gives the sum of range and the
 			// sum of offset.
 			// TODO(bwplotka): Add support for better hints when subquerying. See: https://github.com/prometheus/prometheus/issues/7630.
-			subqOffset, subqRange, subqMint, subqMaxt := ng.subqueryOffsetRangeTimestamp(path)
+			subqOffset, subqRange, subqMint, subqMaxt := ng.subqueryTimes(path)
 			offsetMilliseconds := durationMilliseconds(subqOffset)
-			if subqMint != math.MaxInt64 && subqMint < hints.Start {
+			if subqMint < hints.Start {
 				hints.Start = subqMint
 			}
-			if subqMaxt != math.MinInt64 && subqMaxt > hints.End {
+			if subqMaxt > hints.End {
 				hints.End = subqMaxt
 			}
 
 			if n.Timestamp > 0 {
-				ts := timestamp.FromFloatSeconds(n.Timestamp)
-				hints.Start = ts
-				hints.End = ts
+				hints.Start = n.Timestamp
+				hints.End = n.Timestamp
 			}
 
 			hints.Start = hints.Start - offsetMilliseconds - durationMilliseconds(subqRange)
@@ -1195,11 +1191,10 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 					}
 				}
 				enh.Ts = ts
-				maxt := ts - offset
 				if selVS.Timestamp > 0 {
-					enh.Ts = timestamp.FromFloatSeconds(selVS.Timestamp)
-					maxt = enh.Ts - offset
+					enh.Ts = selVS.Timestamp
 				}
+				maxt := enh.Ts - offset
 				mint := maxt - selRange
 				points = ev.matrixIterSlice(it, mint, maxt, points)
 				if len(points) == 0 {
@@ -1395,10 +1390,9 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			newEv.interval = ev.noStepSubqueryIntervalFn(rangeMillis)
 		}
 
-		subqueryEvalTime := timestamp.FromFloatSeconds(e.Timestamp)
 		subqueryStartTime := ev.startTimestamp - offsetMillis - rangeMillis
-		if subqueryEvalTime != 0 {
-			newEv.endTimestamp = subqueryEvalTime - offsetMillis
+		if e.Timestamp != 0 {
+			newEv.endTimestamp = e.Timestamp - offsetMillis
 			subqueryStartTime = newEv.endTimestamp - rangeMillis
 		}
 
@@ -1443,6 +1437,9 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 
 		_, isSubquery := e.Expr.(*parser.SubqueryExpr)
 		if canExtrapolate && !isSubquery {
+			// For every evaluation while the value remains same, the timestamp for that
+			// value would change for different eval times. Hence we duplicate the result
+			// with changed timestamps.
 			switch val := res.(type) {
 			case Matrix:
 				for i := range val {
@@ -1482,7 +1479,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			case Scalar:
 				// Do nothing.
 			default:
-				panic(errors.Errorf("unexpected result: %T", expr))
+				panic(errors.Errorf("unexpected result in StepInvariantExpr evaluation: %T", expr))
 			}
 		}
 
@@ -1526,7 +1523,7 @@ func (ev *evaluator) vectorSelector(node *parser.VectorSelector, ts int64) (Vect
 // vectorSelectorSingle evaluates a instant vector for the iterator of one time series.
 func (ev *evaluator) vectorSelectorSingle(it *storage.BufferedSeriesIterator, node *parser.VectorSelector, ts int64) (int64, float64, bool) {
 	if node.Timestamp > 0 {
-		ts = timestamp.FromFloatSeconds(node.Timestamp)
+		ts = node.Timestamp
 	}
 	refTime := ts - durationMilliseconds(node.Offset)
 	var t int64
@@ -1583,7 +1580,7 @@ func (ev *evaluator) matrixSelector(node *parser.MatrixSelector) (Matrix, storag
 		it = storage.NewBuffer(durationMilliseconds(node.Range))
 	)
 	if vs.Timestamp > 0 {
-		maxt = timestamp.FromFloatSeconds(vs.Timestamp) - offset
+		maxt = vs.Timestamp - offset
 		mint = maxt - durationMilliseconds(node.Range)
 	}
 
@@ -2319,9 +2316,7 @@ func WrapWithStepInvariantExpr(expr parser.Expr) parser.Expr {
 func wrapWithStepInvariantExprHelper(expr parser.Expr) bool {
 	switch n := expr.(type) {
 	case *parser.VectorSelector:
-		if n.Timestamp > 0 {
-			return true
-		}
+		return n.Timestamp > 0
 
 	case *parser.AggregateExpr:
 		// TODO(codesome): check Param?
@@ -2369,11 +2364,7 @@ func wrapWithStepInvariantExprHelper(expr parser.Expr) bool {
 		return false
 
 	case *parser.MatrixSelector:
-		ts := timestamp.FromFloatSeconds(n.VectorSelector.(*parser.VectorSelector).Timestamp)
-		if ts > 0 {
-			return true
-		}
-		return false
+		return n.VectorSelector.(*parser.VectorSelector).Timestamp > 0
 
 	case *parser.SubqueryExpr:
 		if n.Timestamp > 0 {

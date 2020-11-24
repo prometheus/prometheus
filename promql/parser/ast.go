@@ -128,7 +128,7 @@ type SubqueryExpr struct {
 	Expr      Expr
 	Range     time.Duration
 	Offset    time.Duration
-	Timestamp float64
+	Timestamp int64
 	Step      time.Duration
 
 	EndPos Pos
@@ -182,7 +182,7 @@ func (e *StepInvariantExpr) PositionRange() PositionRange { return e.Expr.Positi
 type VectorSelector struct {
 	Name          string
 	Offset        time.Duration
-	Timestamp     float64
+	Timestamp     int64
 	LabelMatchers []*labels.Matcher
 
 	// The unexpanded seriesSet populated at query preparation time.

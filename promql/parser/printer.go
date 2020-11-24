@@ -121,7 +121,7 @@ func (node *MatrixSelector) String() string {
 	}
 	at := ""
 	if vecSelector.Timestamp != 0 {
-		at = fmt.Sprintf(" @ %f", vecSelector.Timestamp)
+		at = fmt.Sprintf(" @ %.3f", float64(vecSelector.Timestamp)/1000.0)
 	}
 
 	// Do not print the @ and offset twice.
@@ -147,7 +147,7 @@ func (node *SubqueryExpr) String() string {
 	}
 	at := ""
 	if node.Timestamp != 0 {
-		at = fmt.Sprintf(" @ %f", node.Timestamp)
+		at = fmt.Sprintf(" @ %.3f", float64(node.Timestamp)/1000.0)
 	}
 	return fmt.Sprintf("%s[%s:%s]%s%s", node.Expr.String(), model.Duration(node.Range), step, at, offset)
 }
@@ -183,7 +183,7 @@ func (node *VectorSelector) String() string {
 	}
 	at := ""
 	if node.Timestamp != 0 {
-		at = fmt.Sprintf(" @ %f", node.Timestamp)
+		at = fmt.Sprintf(" @ %.3f", float64(node.Timestamp)/1000.0)
 	}
 
 	if len(labelStrings) == 0 {

@@ -139,7 +139,7 @@ START_METRIC_SELECTOR
 %type <series> series_item series_values
 %type <uint> uint
 %type <float> number series_value signed_number
-%type <node> instant_expr aggregate_expr aggregate_modifier bin_modifier binary_expr bool_modifier expr function_call function_call_args function_call_body group_modifiers label_matchers matrix_selector number_literal offset_expr on_or_ignoring paren_expr string_literal subquery_expr unary_expr vector_selector
+%type <node> step_invariant_expr aggregate_expr aggregate_modifier bin_modifier binary_expr bool_modifier expr function_call function_call_args function_call_body group_modifiers label_matchers matrix_selector number_literal offset_expr on_or_ignoring paren_expr string_literal subquery_expr unary_expr vector_selector
 %type <duration> duration maybe_duration
 
 %start start
@@ -188,7 +188,7 @@ expr            :
                 | subquery_expr
                 | unary_expr
                 | vector_selector
-                | instant_expr
+                | step_invariant_expr
                 ;
 
 /*
@@ -386,9 +386,9 @@ offset_expr: expr OFFSET duration
  * @ modifiers.
  */
 
-instant_expr: expr AT number
+step_invariant_expr: expr AT number
                         {
-                        yylex.(*parser).setInstant($1, $3)
+                        yylex.(*parser).setStepInvariant($1, $3)
                         $$ = $1
                         }
                 | expr AT error
