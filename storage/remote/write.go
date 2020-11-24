@@ -203,6 +203,19 @@ func (rws *WriteStorage) Close() error {
 	return nil
 }
 
+// Queues returns all of the queues that have been configured
+func (rws *WriteStorage) Queues() []*QueueManager {
+	rws.mtx.Lock()
+	defer rws.mtx.Unlock()
+
+	queues := make([]*QueueManager, 0, len(rws.queues))
+	for _, queue := range rws.queues {
+		queues = append(queues, queue)
+	}
+
+	return queues
+}
+
 type timestampTracker struct {
 	writeStorage         *WriteStorage
 	samples              int64

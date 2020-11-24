@@ -282,6 +282,24 @@ type WriteClient interface {
 	Endpoint() string
 }
 
+// ShardingCalculations represents the key values that are used when calculating the number of shards
+type ShardingCalculations struct {
+	// The time that the sharding calculations last ran.
+	LastRan time.Time
+
+	Delay              float64
+	DesiredShards      float64
+	HighestRecv        float64
+	HighestSent        float64
+	SamplesInRate      float64
+	SamplesKeptRatio   float64
+	SamplesOutDuration float64
+	SamplesOutRate     float64
+	SamplesPending     float64
+	SamplesPendingRate float64
+	TimePerSample      float64
+}
+
 // QueueManager manages a queue of samples to be sent to the Storage
 // indicated by the provided WriteClient. Implements writeTo interface
 // used by WAL Watcher.
@@ -305,8 +323,14 @@ type QueueManager struct {
 	seriesSegmentIndexes map[uint64]int
 	droppedSeries        map[uint64]struct{}
 
-	shards      *shards
-	numShards   int
+	shards    *shards
+	numShards int
+
+	shardingCalcMtx      sync.Mutex
+	shardingCalculations ShardingCalculations
+
+	isResharding bool
+
 	reshardChan chan int
 	quit        chan struct{}
 	wg          sync.WaitGroup
@@ -375,6 +399,10 @@ func NewQueueManager(
 	t.shards = t.newShards()
 
 	return t
+}
+
+func (t *QueueManager) StoreClient() WriteClient {
+	return t.storeClient
 }
 
 // AppendMetadata sends metadata the remote storage. Metadata is sent all at once and is not parallelized.
@@ -575,6 +603,28 @@ func (t *QueueManager) SeriesReset(index int) {
 	}
 }
 
+// Config returns the queues currently active config
+func (t *QueueManager) Config() config.QueueConfig {
+	return t.cfg
+}
+
+// CurrentShardNum returns the current number of shards
+func (t *QueueManager) CurrentShardNum() int {
+	return t.numShards
+}
+
+// IsResharding returns whether or not the queue is in a state of resharding.
+func (t *QueueManager) IsResharding() bool {
+	return t.isResharding
+}
+
+// IsResharding returns whether or not the queue is in a state of resharding.
+func (t *QueueManager) ShardingCalculations() ShardingCalculations {
+	t.shardingCalcMtx.Lock()
+	defer t.shardingCalcMtx.Unlock()
+	return t.shardingCalculations
+}
+
 // SetClient updates the client used by a queue. Used when only client specific
 // fields are updated to avoid restarting the queue.
 func (t *QueueManager) SetClient(c WriteClient) {
@@ -692,19 +742,18 @@ func (t *QueueManager) calculateDesiredShards() int {
 	// will need to do next iteration.  We add to this any pending samples
 	// (received - send) so we can catch up with any backlog. We use the average
 	// outgoing batch latency to work out how many shards we need.
-	var (
-		samplesInRate      = t.samplesIn.rate()
-		samplesOutRate     = t.samplesOut.rate()
-		samplesKeptRatio   = samplesOutRate / (t.samplesDropped.rate() + samplesOutRate)
-		samplesOutDuration = t.samplesOutDuration.rate() / float64(time.Second)
-		samplesPendingRate = samplesInRate*samplesKeptRatio - samplesOutRate
-		highestSent        = t.metrics.highestSentTimestamp.Get()
-		highestRecv        = t.highestRecvTimestamp.Get()
-		delay              = highestRecv - highestSent
-		samplesPending     = delay * samplesInRate * samplesKeptRatio
-	)
+	var c ShardingCalculations
+	c.SamplesInRate = t.samplesIn.rate()
+	c.SamplesOutRate = t.samplesOut.rate()
+	c.SamplesKeptRatio = c.SamplesOutRate / (t.samplesDropped.rate() + c.SamplesOutRate)
+	c.SamplesOutDuration = t.samplesOutDuration.rate() / float64(time.Second)
+	c.SamplesPendingRate = c.SamplesInRate*c.SamplesKeptRatio - c.SamplesOutRate
+	c.HighestSent = t.metrics.highestSentTimestamp.Get()
+	c.HighestRecv = t.highestRecvTimestamp.Get()
+	c.Delay = c.HighestRecv - c.HighestSent
+	c.SamplesPending = c.Delay * c.SamplesInRate * c.SamplesKeptRatio
 
-	if samplesOutRate <= 0 {
+	if c.SamplesOutRate <= 0 {
 		return t.numShards
 	}
 
@@ -713,23 +762,17 @@ func (t *QueueManager) calculateDesiredShards() int {
 	// is the result of the error integral.
 	const integralGain = 0.1 / float64(shardUpdateDuration/time.Second)
 
-	var (
-		timePerSample = samplesOutDuration / samplesOutRate
-		desiredShards = timePerSample * (samplesInRate*samplesKeptRatio + integralGain*samplesPending)
-	)
-	t.metrics.desiredNumShards.Set(desiredShards)
-	level.Debug(t.logger).Log("msg", "QueueManager.calculateDesiredShards",
-		"samplesInRate", samplesInRate,
-		"samplesOutRate", samplesOutRate,
-		"samplesKeptRatio", samplesKeptRatio,
-		"samplesPendingRate", samplesPendingRate,
-		"samplesPending", samplesPending,
-		"samplesOutDuration", samplesOutDuration,
-		"timePerSample", timePerSample,
-		"desiredShards", desiredShards,
-		"highestSent", highestSent,
-		"highestRecv", highestRecv,
-	)
+	c.TimePerSample = c.SamplesOutDuration / c.SamplesOutRate
+	c.DesiredShards = c.TimePerSample * (c.SamplesInRate*c.SamplesKeptRatio + integralGain*c.SamplesPending)
+
+	t.metrics.desiredNumShards.Set(c.DesiredShards)
+
+	t.shardingCalcMtx.Lock()
+	c.LastRan = time.Now()
+	t.shardingCalculations = c
+	t.shardingCalcMtx.Unlock()
+
+	level.Debug(t.logger).Log("msg", "QueueManager.calculateDesiredShards", c)
 
 	// Changes in the number of shards must be greater than shardToleranceFraction.
 	var (
@@ -737,14 +780,14 @@ func (t *QueueManager) calculateDesiredShards() int {
 		upperBound = float64(t.numShards) * (1. + shardToleranceFraction)
 	)
 	level.Debug(t.logger).Log("msg", "QueueManager.updateShardsLoop",
-		"lowerBound", lowerBound, "desiredShards", desiredShards, "upperBound", upperBound)
-	if lowerBound <= desiredShards && desiredShards <= upperBound {
+		"lowerBound", lowerBound, "desiredShards", c.DesiredShards, "upperBound", upperBound)
+	if lowerBound <= c.DesiredShards && c.DesiredShards <= upperBound {
 		return t.numShards
 	}
 
-	numShards := int(math.Ceil(desiredShards))
+	numShards := int(math.Ceil(c.DesiredShards))
 	// Do not downshard if we are more than ten seconds back.
-	if numShards < t.numShards && delay > 10.0 {
+	if numShards < t.numShards && c.Delay > 10.0 {
 		level.Debug(t.logger).Log("msg", "Not downsharding due to being too far behind")
 		return t.numShards
 	}
@@ -766,8 +809,12 @@ func (t *QueueManager) reshardLoop() {
 			// We start the newShards after we have stopped (the therefore completely
 			// flushed) the oldShards, to guarantee we only every deliver samples in
 			// order.
+			t.isResharding = true
+
 			t.shards.stop()
 			t.shards.start(numShards)
+
+			t.isResharding = false
 		case <-t.quit:
 			return
 		}

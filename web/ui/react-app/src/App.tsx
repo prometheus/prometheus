@@ -4,7 +4,7 @@ import { Container } from 'reactstrap';
 
 import './App.css';
 import { Router, Redirect } from '@reach/router';
-import { Alerts, Config, Flags, Rules, ServiceDiscovery, Status, Targets, TSDBStatus, PanelList } from './pages';
+import { Alerts, Config, Flags, Rules, ServiceDiscovery, Status, Targets, TSDBStatus, PanelList, RemoteWrites } from './pages';
 import { PathPrefixContext } from './contexts/PathPrefixContext';
 
 interface AppProps {
@@ -25,6 +25,7 @@ const App: FC<AppProps> = ({ consolesLink }) => {
     '/config',
     '/rules',
     '/targets',
+    '/remote-writes',
     '/service-discovery',
   ];
   if (basePath.endsWith('/')) {
@@ -58,6 +59,7 @@ const App: FC<AppProps> = ({ consolesLink }) => {
           <Status path="/status" />
           <TSDBStatus path="/tsdb-status" />
           <Targets path="/targets" />
+          <RemoteWrites path="/remote-writes" />
         </Router>
       </Container>
     </PathPrefixContext.Provider>

@@ -62,6 +62,9 @@ const Navigation: FC<NavbarProps> = ({ consolesLink }) => {
               <DropdownItem tag={Link} to={`${pathPrefix}/config`}>
                 Configuration
               </DropdownItem>
+              <DropdownItem tag={Link} to={`${pathPrefix}/remote-writes`}>
+                Remote Writes
+              </DropdownItem>
               <DropdownItem tag={Link} to={`${pathPrefix}/rules`}>
                 Rules
               </DropdownItem>

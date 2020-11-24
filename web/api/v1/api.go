@@ -176,6 +176,7 @@ type API struct {
 
 	targetRetriever       func(context.Context) TargetRetriever
 	alertmanagerRetriever func(context.Context) AlertmanagerRetriever
+	queueRetriever        func(context.Context) QueueRetriever
 	rulesRetriever        func(context.Context) RulesRetriever
 	now                   func() time.Time
 	config                func() config.Config
@@ -216,6 +217,7 @@ func NewAPI(
 	enableAdmin bool,
 	logger log.Logger,
 	rr func(context.Context) RulesRetriever,
+	qr func(context.Context) QueueRetriever,
 	remoteReadSampleLimit int,
 	remoteReadConcurrencyLimit int,
 	remoteReadMaxBytesInFrame int,
@@ -238,6 +240,7 @@ func NewAPI(
 		db:                        db,
 		dbDir:                     dbDir,
 		enableAdmin:               enableAdmin,
+		queueRetriever:            qr,
 		rulesRetriever:            rr,
 		remoteReadSampleLimit:     remoteReadSampleLimit,
 		remoteReadGate:            gate.New(remoteReadConcurrencyLimit),
@@ -296,6 +299,8 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/series", wrap(api.series))
 	r.Post("/series", wrap(api.series))
 	r.Del("/series", wrap(api.dropSeries))
+
+	r.Get("/remote_writes", wrap(api.remoteWrites))
 
 	r.Get("/targets", wrap(api.targets))
 	r.Get("/targets/metadata", wrap(api.targetMetadata))

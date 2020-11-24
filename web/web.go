@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/prometheus/prometheus/storage/remote"
 	"io"
 	"io/ioutil"
 	stdlog "log"
@@ -73,6 +74,7 @@ var reactRouterPaths = []string{
 	"/config",
 	"/flags",
 	"/graph",
+	"/remote-writes",
 	"/rules",
 	"/service-discovery",
 	"/status",
@@ -175,6 +177,7 @@ type Handler struct {
 
 	scrapeManager *scrape.Manager
 	ruleManager   *rules.Manager
+	remoteStorage *remote.Storage
 	queryEngine   *promql.Engine
 	lookbackDelta time.Duration
 	context       context.Context
@@ -222,6 +225,7 @@ type Options struct {
 	LookbackDelta         time.Duration
 	ScrapeManager         *scrape.Manager
 	RuleManager           *rules.Manager
+	RemoteStorage         *remote.Storage
 	Notifier              *notifier.Manager
 	Version               *PrometheusVersion
 	Flags                 map[string]string
@@ -285,6 +289,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		lookbackDelta: o.LookbackDelta,
 		storage:       o.Storage,
 		localStorage:  o.LocalStorage,
+		remoteStorage: o.RemoteStorage,
 		notifier:      o.Notifier,
 
 		now: model.Now,
@@ -294,6 +299,7 @@ func New(logger log.Logger, o *Options) *Handler {
 	factoryTr := func(_ context.Context) api_v1.TargetRetriever { return h.scrapeManager }
 	factoryAr := func(_ context.Context) api_v1.AlertmanagerRetriever { return h.notifier }
 	FactoryRr := func(_ context.Context) api_v1.RulesRetriever { return h.ruleManager }
+	factoryQr := func(_ context.Context) api_v1.QueueRetriever { return h.remoteStorage.WriteStorage() }
 
 	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, factoryTr, factoryAr,
 		func() config.Config {
@@ -313,6 +319,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		h.options.EnableAdminAPI,
 		logger,
 		FactoryRr,
+		factoryQr,
 		h.options.RemoteReadSampleLimit,
 		h.options.RemoteReadConcurrencyLimit,
 		h.options.RemoteReadBytesInFrame,
