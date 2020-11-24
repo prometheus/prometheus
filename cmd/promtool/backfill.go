@@ -29,7 +29,7 @@ import (
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 )
 
-// OpenMetricsParser implements textparse.Parser. Use NewOpenMetricsParser to create new instances.
+// OpenMetricsParser implements textparse.Parser.
 type OpenMetricsParser struct {
 	textparse.Parser
 	s *bufio.Scanner
@@ -99,14 +99,13 @@ func getMinAndMaxTimestamps(p textparse.Parser) (int64, int64, error) {
 }
 
 func createBlocks(input *os.File, mint, maxt, maxSamplesInAppender int64, outputDir string) error {
-
 	blockDuration := tsdb.DefaultBlockDuration
 	mint = blockDuration * (mint / blockDuration)
 
 	for t := mint; t <= maxt; t = t + blockDuration {
-
 		err := func() error {
-			// TODO(aSquare14) : Print block metadata.
+			// TODO(aSquare14): Print block metadata.
+			ctx := context.Background()
 			w, err := tsdb.NewBlockWriter(log.NewNopLogger(), outputDir, blockDuration)
 			if err != nil {
 				return errors.Wrap(err, "block writer")
@@ -114,25 +113,20 @@ func createBlocks(input *os.File, mint, maxt, maxSamplesInAppender int64, output
 			defer func() {
 				err = tsdb_errors.NewMulti(err, w.Close()).Err()
 			}()
-
-			ctx := context.Background()
 			app := w.Appender(ctx)
-
-			if _, errReset := input.Seek(0, 0); errReset != nil {
-				return errors.Wrap(errReset, "seek file")
+			if _, err := input.Seek(0, 0); err != nil {
+				return errors.Wrap(err, "seek file")
 			}
 			p := NewOpenMetricsParser(input)
-
 			tsUpper := t + blockDuration
 			var samplesCount int64
-
 			for {
-				e, errP := p.Next()
-				if errP == io.EOF {
+				e, err := p.Next()
+				if err == io.EOF {
 					break
 				}
-				if errP != nil {
-					return errors.Wrap(errP, "parse")
+				if err != nil {
+					return errors.Wrap(err, "parse")
 				}
 				if e != textparse.EntrySeries {
 					continue
@@ -169,8 +163,8 @@ func createBlocks(input *os.File, mint, maxt, maxSamplesInAppender int64, output
 				return errors.Wrap(err, "commit")
 			}
 
-			if _, errF := w.Flush(ctx); errF != nil && errF != tsdb.ErrNoSeriesAppended {
-				return errors.Wrap(errF, "flush")
+			if _, err := w.Flush(ctx); err != nil && err != tsdb.ErrNoSeriesAppended {
+				return errors.Wrap(err, "flush")
 			}
 			return nil
 		}()
@@ -183,11 +177,10 @@ func createBlocks(input *os.File, mint, maxt, maxSamplesInAppender int64, output
 }
 
 func backfill(maxSamplesInAppender int64, input *os.File, outputDir string) (err error) {
-
 	p := NewOpenMetricsParser(input)
-	maxt, mint, errTs := getMinAndMaxTimestamps(p)
-	if errTs != nil {
-		return errors.Wrap(errTs, "error getting min and max timestamp")
+	maxt, mint, err := getMinAndMaxTimestamps(p)
+	if err != nil {
+		return errors.Wrap(err, "getting min and max timestamp")
 	}
 	return errors.Wrap(createBlocks(input, mint, maxt, maxSamplesInAppender, outputDir), "block creation")
 }

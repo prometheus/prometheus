@@ -39,6 +39,7 @@ type BlockWriter struct {
 	chunkDir  string
 }
 
+// ErrNoSeriesAppended throws an error if the series count is zero while flushing blocks.
 var ErrNoSeriesAppended error = errors.New("no series appended, aborting")
 
 // NewBlockWriter create a new block writer.

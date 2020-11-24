@@ -33,7 +33,6 @@ type backfillSample struct {
 }
 
 func createTemporaryOpenMetricsFile(t *testing.T, text string) string {
-
 	newf, err := ioutil.TempFile("", "")
 	require.NoError(t, err)
 
@@ -76,7 +75,6 @@ func queryblock(t testing.TB, q storage.Querier, lbls labels.Labels, matchers ..
 }
 
 func testBlocks(t *testing.T, blocks []*tsdb.Block, expectedMinTime, expectedMaxTime int64, expectedSamples []backfillSample, metricLabels []string, expectedNumBlocks int) {
-
 	require.Equal(t, expectedNumBlocks, len(blocks))
 
 	allSamples := make([]backfillSample, 0)
