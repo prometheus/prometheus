@@ -102,9 +102,16 @@ func createBlocks(input *os.File, mint, maxt, maxSamplesInAppender int64, output
 	blockDuration := tsdb.DefaultBlockDuration
 	mint = blockDuration * (mint / blockDuration)
 
+	db, err := tsdb.OpenDBReadOnly(outputDir, nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		err = tsdb_errors.NewMulti(err, db.Close()).Err()
+	}()
+
 	for t := mint; t <= maxt; t = t + blockDuration {
 		err := func() error {
-			// TODO(aSquare14): Print block metadata.
 			ctx := context.Background()
 			w, err := tsdb.NewBlockWriter(log.NewNopLogger(), outputDir, blockDuration)
 			if err != nil {
@@ -114,9 +121,11 @@ func createBlocks(input *os.File, mint, maxt, maxSamplesInAppender int64, output
 				err = tsdb_errors.NewMulti(err, w.Close()).Err()
 			}()
 			app := w.Appender(ctx)
+
 			if _, err := input.Seek(0, 0); err != nil {
 				return errors.Wrap(err, "seek file")
 			}
+
 			p := NewOpenMetricsParser(input)
 			tsUpper := t + blockDuration
 			var samplesCount int64
@@ -158,11 +167,9 @@ func createBlocks(input *os.File, mint, maxt, maxSamplesInAppender int64, output
 				app = w.Appender(ctx)
 				samplesCount = 0
 			}
-
 			if err := app.Commit(); err != nil {
 				return errors.Wrap(err, "commit")
 			}
-
 			if _, err := w.Flush(ctx); err != nil && err != tsdb.ErrNoSeriesAppended {
 				return errors.Wrap(err, "flush")
 			}
@@ -172,7 +179,17 @@ func createBlocks(input *os.File, mint, maxt, maxSamplesInAppender int64, output
 		if err != nil {
 			return errors.Wrap(err, "process blocks")
 		}
+
+		blocks, err := db.Blocks()
+		if err != nil {
+			return errors.Wrap(err, "get blocks")
+		}
+		if len(blocks) <= 0 {
+			continue
+		}
+		printBlocks(blocks[len(blocks)-1:], true)
 	}
+
 	return nil
 }
 
