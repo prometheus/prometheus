@@ -1,0 +1,31 @@
+# An example pillar data for Uyuni Salt formula.
+
+# (Optional) Defines if exporters reverse proxy enabled.
+proxy_enabled: False
+# (Optional) Specifies the port on which the exporters reverse proxy exposes
+# metrics.
+proxy_port: 9999
+
+# List of exporter configurations
+exporters:
+  # Exporter name
+  node_exporter:
+    # Defines if exporter is enabled.
+    enabled: True
+    # (Optional) Specifies the address the exporter exposes its metrics on.
+    # Alternatively the address can be specified in `args` field.
+    # `args` takes precedence over `address`.
+    address: ':9100'
+    # (Optional) The module name as configured in exporter reverse proxy.
+    proxy_module: 'node'
+
+  apache_exporter:
+    enabled: False
+    # (Optional) Specifies the arguments to start the exporter with.
+    # Alternatively the address can be specified in `address` field.
+    # `args` takes precedence over `address`.
+    args: '--telemetry.address=:9117'
+
+  mtail:
+    enabled: False
+    address: ':3903'

@@ -354,6 +354,8 @@ scrape_configs:
     - host: http://example.uyuni-project.org
       username: gopher
       password: hole
+      formulas:
+        - prometheus-exporters
 
 alerting:
   alertmanagers:

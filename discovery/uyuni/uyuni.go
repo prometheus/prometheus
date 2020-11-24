@@ -1,4 +1,4 @@
-// Copyright 2019 The Prometheus Authors
+// Copyright 2020 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -26,6 +26,7 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/kolo/xmlrpc"
 	"github.com/pkg/errors"
+	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/discovery"
@@ -34,13 +35,14 @@ import (
 )
 
 const (
-	monitoringEntitlementLabel    = "monitoring_entitled"
-	prometheusExporterFormulaName = "prometheus-exporters"
-	uyuniXMLRPCAPIPath            = "/rpc/api"
+	monitoringEntitlementLabel = "monitoring_entitled"
+	uyuniXMLRPCAPIPath         = "/rpc/api"
+	uyuniMetaLabelPrefix       = model.MetaLabelPrefix + "uyuni_"
 )
 
 // DefaultSDConfig is the default Uyuni SD configuration.
 var DefaultSDConfig = SDConfig{
+	Formulas:        []string{"prometheus-exporters"},
 	RefreshInterval: model.Duration(1 * time.Minute),
 }
 
@@ -55,7 +57,8 @@ func init() {
 type SDConfig struct {
 	Host            string         `yaml:"host"`
 	User            string         `yaml:"username"`
-	Pass            string         `yaml:"password"`
+	Pass            config.Secret  `yaml:"password"`
+	Formulas        []string       `yaml:"formulas,omitempty"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 }
 
@@ -72,17 +75,16 @@ type networkInfo struct {
 }
 
 type exporterConfig struct {
-	Address string `xmlrpc:"address"`
-	Args    string `xmlrpc:"args"`
-	Enabled bool   `xmlrpc:"enabled"`
+	Address     string `xmlrpc:"address"`
+	Args        string `xmlrpc:"args"`
+	Enabled     bool   `xmlrpc:"enabled"`
+	ProxyModule string `xmlrpc:"proxy_module"`
 }
 
 type proxiedExporterConfig struct {
-	ProxyIsEnabled   bool           `xmlrpc:"proxy_enabled"`
-	ProxyPort        float32        `xmlrpc:"proxy_port"`
-	NodeExporter     exporterConfig `xmlrpc:"node_exporter"`
-	ApacheExporter   exporterConfig `xmlrpc:"apache_exporter"`
-	PostgresExporter exporterConfig `xmlrpc:"postgres_exporter"`
+	ProxyIsEnabled  bool                      `xmlrpc:"proxy_enabled"`
+	ProxyPort       float32                   `xmlrpc:"proxy_port"`
+	ExporterConfigs map[string]exporterConfig `xmlrpc:"exporters"`
 }
 
 // Discovery periodically performs Uyuni API requests. It implements the Discoverer interface.
@@ -173,6 +175,7 @@ func getNetworkInformationForSystems(rpcclient *xmlrpc.Client, token string, sys
 func getExporterDataForSystems(
 	rpcclient *xmlrpc.Client,
 	token string,
+	formulaName string,
 	systemIDs []int,
 ) (map[int]proxiedExporterConfig, error) {
 	var combinedFormulaData []struct {
@@ -181,8 +184,7 @@ func getExporterDataForSystems(
 	}
 	err := rpcclient.Call(
 		"formula.getCombinedFormulaDataByServerIds",
-		[]interface{}{token, prometheusExporterFormulaName, systemIDs},
-		&combinedFormulaData)
+		[]interface{}{token, formulaName, systemIDs}, &combinedFormulaData)
 	if err != nil {
 		return nil, err
 	}
@@ -235,7 +237,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) *Discovery {
 
 func initializeExporterTargets(
 	targets *[]model.LabelSet,
-	module string, config exporterConfig,
+	exporterName string, config exporterConfig,
 	proxyPort string,
 	errors *[]error,
 ) {
@@ -255,11 +257,13 @@ func initializeExporterTargets(
 	}
 
 	labels := model.LabelSet{}
-	labels["exporter"] = model.LabelValue(module + "_exporter")
+	labels[uyuniMetaLabelPrefix+"exporter"] = model.LabelValue(exporterName)
 	// for now set only port number here
 	labels[model.AddressLabel] = model.LabelValue(port)
-	if len(proxyPort) > 0 {
-		labels[model.ParamLabelPrefix+"module"] = model.LabelValue(module)
+	if len(proxyPort) > 0 && len(config.ProxyModule) > 0 {
+		labels[uyuniMetaLabelPrefix+"proxy_module"] = model.LabelValue(config.ProxyModule)
+	} else if len(proxyPort) > 0 {
+		labels[uyuniMetaLabelPrefix+"proxy_module"] = model.LabelValue(exporterName)
 	}
 	*targets = append(*targets, labels)
 }
@@ -277,18 +281,18 @@ func (d *Discovery) getTargetsForSystem(
 	if combinedFormulaData.ProxyIsEnabled {
 		proxyPortNumber = fmt.Sprintf("%d", int(combinedFormulaData.ProxyPort))
 	}
-	initializeExporterTargets(&labelSets, "node", combinedFormulaData.NodeExporter, proxyPortNumber, &errors)
-	initializeExporterTargets(&labelSets, "apache", combinedFormulaData.ApacheExporter, proxyPortNumber, &errors)
-	initializeExporterTargets(&labelSets, "postgres", combinedFormulaData.PostgresExporter, proxyPortNumber, &errors)
+	for exporterName, formulaValues := range combinedFormulaData.ExporterConfigs {
+		initializeExporterTargets(&labelSets, exporterName, formulaValues, proxyPortNumber, &errors)
+	}
 	managedGroupNames := getSystemGroupNames(systemGroupsIDs)
 	for _, labels := range labelSets {
 		// add hostname to the address label
 		addr := fmt.Sprintf("%s:%s", networkInfo.IP, labels[model.AddressLabel])
 		labels[model.AddressLabel] = model.LabelValue(addr)
 		labels["hostname"] = model.LabelValue(networkInfo.Hostname)
-		labels["groups"] = model.LabelValue(strings.Join(managedGroupNames, ","))
+		labels[uyuniMetaLabelPrefix+"groups"] = model.LabelValue(strings.Join(managedGroupNames, ","))
 		if combinedFormulaData.ProxyIsEnabled {
-			labels[model.MetricsPathLabel] = "/proxy"
+			labels[uyuniMetaLabelPrefix+"metrics_path"] = "/proxy"
 		}
 		_ = level.Debug(d.logger).Log("msg", "Configured target", "Labels", fmt.Sprintf("%+v", labels))
 	}
@@ -324,30 +328,32 @@ func (d *Discovery) getTargetsForSystems(
 		systemIDs = append(systemIDs, systemID)
 	}
 
-	combinedFormulaDataBySystemID, err := getExporterDataForSystems(rpcClient, token, systemIDs)
-	if err != nil {
-		return nil, errors.Wrap(err, "Unable to get systems combined formula data")
-	}
-	networkInfoBySystemID, err := getNetworkInformationForSystems(rpcClient, token, systemIDs)
-	if err != nil {
-		return nil, errors.Wrap(err, "Unable to get the systems network information")
-	}
+	for _, formulaName := range d.sdConfig.Formulas {
+		combinedFormulaDataBySystemID, err := getExporterDataForSystems(rpcClient, token, formulaName, systemIDs)
+		if err != nil {
+			return nil, errors.Wrap(err, "Unable to get systems combined formula data")
+		}
+		networkInfoBySystemID, err := getNetworkInformationForSystems(rpcClient, token, systemIDs)
+		if err != nil {
+			return nil, errors.Wrap(err, "Unable to get the systems network information")
+		}
 
-	for _, systemID := range systemIDs {
-		targets := d.getTargetsForSystem(
-			systemID,
-			systemGroupIDsBySystemID[systemID],
-			networkInfoBySystemID[systemID],
-			combinedFormulaDataBySystemID[systemID])
-		result = append(result, targets...)
+		for _, systemID := range systemIDs {
+			targets := d.getTargetsForSystem(
+				systemID,
+				systemGroupIDsBySystemID[systemID],
+				networkInfoBySystemID[systemID],
+				combinedFormulaDataBySystemID[systemID])
+			result = append(result, targets...)
 
-		// Log debug information
-		if networkInfoBySystemID[systemID].IP != "" {
-			level.Debug(d.logger).Log("msg", "Found monitored system",
-				"Host", networkInfoBySystemID[systemID].Hostname,
-				"Network", fmt.Sprintf("%+v", networkInfoBySystemID[systemID]),
-				"Groups", fmt.Sprintf("%+v", systemGroupIDsBySystemID[systemID]),
-				"Formulas", fmt.Sprintf("%+v", combinedFormulaDataBySystemID[systemID]))
+			// Log debug information
+			if networkInfoBySystemID[systemID].IP != "" {
+				level.Debug(d.logger).Log("msg", "Found monitored system",
+					"Host", networkInfoBySystemID[systemID].Hostname,
+					"Network", fmt.Sprintf("%+v", networkInfoBySystemID[systemID]),
+					"Groups", fmt.Sprintf("%+v", systemGroupIDsBySystemID[systemID]),
+					"Formulas", fmt.Sprintf("%+v", combinedFormulaDataBySystemID[systemID]))
+			}
 		}
 	}
 	return result, nil
@@ -365,12 +371,22 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		return nil, errors.Wrap(err, "Uyuni Server URL is not valid")
 	}
 
-	rpcClient, _ := xmlrpc.NewClient(apiURL, nil)
+	rpcClient, err := xmlrpc.NewClient(apiURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer rpcClient.Close()
 
-	token, err := login(rpcClient, config.User, config.Pass)
+	token, err := login(rpcClient, config.User, string(config.Pass))
 	if err != nil {
 		return nil, errors.Wrap(err, "Unable to login to Uyuni API")
 	}
+	defer func() {
+		if err := logout(rpcClient, token); err != nil {
+			level.Warn(d.logger).Log("msg", "Failed to log out from Uyuni API", "err", err)
+		}
+	}()
+
 	systemGroupIDsBySystemID, err := getSystemGroupsInfoOfMonitoredClients(rpcClient, token)
 	if err != nil {
 		return nil, errors.Wrap(err, "Unable to get the managed system groups information of monitored clients")
@@ -385,13 +401,8 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		targets = append(targets, targetsForSystems...)
 		level.Info(d.logger).Log("msg", "Total discovery time", "time", time.Since(startTime))
 	} else {
-		fmt.Printf("\tFound 0 systems.\n")
+		level.Debug(d.logger).Log("msg", "Found 0 systems")
 	}
 
-	err = logout(rpcClient, token)
-	if err != nil {
-		level.Warn(d.logger).Log("msg", "Failed to log out from Uyuni API", "err", err)
-	}
-	rpcClient.Close()
 	return []*targetgroup.Group{&targetgroup.Group{Targets: targets, Source: config.Host}}, nil
 }

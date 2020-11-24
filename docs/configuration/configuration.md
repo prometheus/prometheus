@@ -2242,6 +2242,15 @@ tls_config:
 Uyuni SD configurations allow retrieving scrape targets from managed systems
 via [Uyuni](https://www.uyuni-project.org/) API.
 
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_uyuni_exporter`: the exporter exposing metrics for the target
+* `__meta_uyuni_groups`: Uyuni system groups of the target
+* `__meta_uyuni_metrics_path`: metrics path for the target
+* `__meta_uyuni_proxy_module`: the module name if
+[exporter_exporter](https://github.com/QubitProducts/exporter_exporter/blob/master/README.md)
+ is configured for the target
+
 See below for the configuration options for Uyuni discovery:
 
 ```yaml
@@ -2250,11 +2259,20 @@ host: <string>
 
 # Credentials are used to authenticate the requests to Uyuni API.
 username: <string>
-password: <string>
+password: <secret>
+
+# A list of formulas used to install exporters
+[ formulas:
+  [ - <string> | default = "prometheus-exporters" ] ]
 
 # Refresh interval to re-read the managed targets list.
 [ refresh_interval: <duration> | default = 60s ]
 ```
+
+The formula should implement the expected contract. In particular, it should
+contain the field `exporters` with the list of exporter configurations.
+See [the uyuni-pillar.example file](/documentation/examples/uyuni-pillar)
+for complete structure of possible configuration items.
 
 See [the Prometheus uyuni-sd configuration file](/documentation/examples/prometheus-uyuni.yml)
 for a practical example on how to set up Uyuni Prometheus configuration.

@@ -15,3 +15,5 @@ scrape_configs:
       - server: http://uyuni-project.org
         user: gopher
         password: hole
+        formulas:
+          - prometheus-exporters
