@@ -5,8 +5,8 @@ import Rules from './rules/Rules';
 import ServiceDiscovery from './serviceDiscovery/Services';
 import Status from './status/Status';
 import Targets from './targets/Targets';
-import RemoteWrites from './remoteWrites/RemoteWrites';
+import RemoteWrite from './remoteWrite/RemoteWrite';
 import PanelList from './graph/PanelList';
 import TSDBStatus from './tsdbStatus/TSDBStatus';
 
-export { Alerts, Config, Flags, Rules, ServiceDiscovery, Status, Targets, TSDBStatus, RemoteWrites, PanelList };
+export { Alerts, Config, Flags, Rules, ServiceDiscovery, Status, Targets, TSDBStatus, RemoteWrite, PanelList };

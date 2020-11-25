@@ -74,7 +74,7 @@ var reactRouterPaths = []string{
 	"/config",
 	"/flags",
 	"/graph",
-	"/remote-writes",
+	"/remote-write",
 	"/rules",
 	"/service-discovery",
 	"/status",

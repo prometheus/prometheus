@@ -137,7 +137,7 @@ export const RemoteWritePanel: FC<RemoteWritePanelProps> = ({ queue: q }) => {
   );
 };
 
-export const RemoteWritesContent: FC<RouteComponentProps & RemoteWritesContentProps> = ({ response: res }) => {
+export const RemoteWriteContent: FC<RouteComponentProps & RemoteWritesContentProps> = ({ response: res }) => {
   // Rough testing data whilst building page out. REMOVE THIS.
   res.data.queues = [
     ...res.data.queues,

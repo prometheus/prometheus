@@ -1,4 +1,4 @@
-// Copyright 2016 The Prometheus Authors
+// Copyright 2020 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -39,26 +39,10 @@ type RemoteWriteQueue struct {
 	ShardsMin     int `json:"shardsMin"`
 	ShardsCurrent int `json:"shardsCurrent"`
 
-	ShardingCalculations RemoteWriteShardingCalculations `json:"shardingCalculations"`
-	IsResharding         bool                            `json:"isResharding"`
+	ShardingCalculations remote.ShardingCalculations `json:"shardingCalculations"`
+	IsResharding         bool                        `json:"isResharding"`
 
 	Shards []*RemoteWriteShard `json:"shards"`
-}
-
-// RemoteWriteShardingCalculations provides insight into the values that are used to calculate the required shard num
-type RemoteWriteShardingCalculations struct {
-	LastRan            time.Time `json:"lastRan"`
-	Delay              float64   `json:"delay"`
-	DesiredShards      float64   `json:"desiredShards"`
-	HighestRecv        float64   `json:"highestRecv"`
-	HighestSent        float64   `json:"highestSent"`
-	SamplesInRate      float64   `json:"samplesInRate"`
-	SamplesKeptRatio   float64   `json:"samplesKeptRatio"`
-	SamplesOutDuration float64   `json:"samplesOutDuration"`
-	SamplesOutRate     float64   `json:"samplesOutRate"`
-	SamplesPending     float64   `json:"samplesPending"`
-	SamplesPendingRate float64   `json:"samplesPendingRate"`
-	TimePerSample      float64   `json:"timePerSample"`
 }
 
 // RemoteWriteShard represents a single shard of a remote write queue and its state
@@ -70,8 +54,8 @@ type RemoteWriteShard struct {
 	LastSentDuration float64   `json:"lastSentDuration"`
 }
 
-// remoteWrites handles an API request for fetching all of the configured remote writes
-func (api *API) remoteWrites(r *http.Request) apiFuncResult {
+// remoteWrite handles an API request for fetching all of the configured remote writes
+func (api *API) remoteWrite(r *http.Request) apiFuncResult {
 	queues := api.queueRetriever(r.Context()).Queues()
 	res := RemoteWritesDiscovery{
 		Queues: make([]*RemoteWriteQueue, 0, len(queues)),
@@ -91,22 +75,7 @@ func (api *API) remoteWrites(r *http.Request) apiFuncResult {
 		rRQ.ShardsMin = cfg.MinShards
 		rRQ.ShardsCurrent = q.CurrentShardNum()
 		rRQ.IsResharding = q.IsResharding()
-
-		c := q.ShardingCalculations()
-		rRQ.ShardingCalculations = RemoteWriteShardingCalculations{
-			LastRan:            c.LastRan,
-			Delay:              c.Delay,
-			DesiredShards:      c.DesiredShards,
-			HighestRecv:        c.HighestRecv,
-			HighestSent:        c.HighestSent,
-			SamplesInRate:      c.SamplesInRate,
-			SamplesKeptRatio:   c.SamplesKeptRatio,
-			SamplesOutDuration: c.SamplesOutDuration,
-			SamplesOutRate:     c.SamplesOutRate,
-			SamplesPending:     c.SamplesPending,
-			SamplesPendingRate: c.SamplesPendingRate,
-			TimePerSample:      c.TimePerSample,
-		}
+		rRQ.ShardingCalculations = q.ShardingCalculations()
 
 		// for _, shard := ranges rRQ.shards {
 		// 		TODO: fetch various shard data.

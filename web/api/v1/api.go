@@ -300,7 +300,7 @@ func (api *API) Register(r *route.Router) {
 	r.Post("/series", wrap(api.series))
 	r.Del("/series", wrap(api.dropSeries))
 
-	r.Get("/remote_writes", wrap(api.remoteWrites))
+	r.Get("/remote_write", wrap(api.remoteWrite))
 
 	r.Get("/targets", wrap(api.targets))
 	r.Get("/targets/metadata", wrap(api.targetMetadata))
