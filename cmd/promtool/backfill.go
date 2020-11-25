@@ -155,6 +155,9 @@ func createBlocks(input *os.File, mint, maxt, maxSamplesInAppender int64, output
 					return errors.Wrap(err, "add sample")
 				}
 
+				// If we arrive here, the samples count is greater than the maxSamplesInAppender.
+				// Therefore will commit the old appender and create a new one.
+				// This prevents keeping too many samples lined up in an appender and thus in RAM.
 				samplesCount++
 				if samplesCount < maxSamplesInAppender {
 					continue
@@ -189,7 +192,6 @@ func createBlocks(input *os.File, mint, maxt, maxSamplesInAppender int64, output
 		}
 		printBlocks(blocks[len(blocks)-1:], true)
 	}
-
 	return nil
 }
 
