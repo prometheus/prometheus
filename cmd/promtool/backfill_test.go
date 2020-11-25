@@ -54,11 +54,8 @@ func sortSamples(samples []backfillSample) {
 	})
 }
 
-func queryblock(t testing.TB, q storage.Querier, expectedMinTime, expectedMaxTime int64, lbls labels.Labels, matchers ...*labels.Matcher) ([]backfillSample, error) {
-	ss := q.Select(false, nil, matchers...)
-	defer func() {
-		require.NoError(t, q.Close())
-	}()
+func queryAllSeries(t testing.TB, q storage.Querier, expectedMinTime, expectedMaxTime int64) []backfillSample {
+	ss := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
 	samples := []backfillSample{}
 	for ss.Next() {
 		series := ss.At()
@@ -68,34 +65,25 @@ func queryblock(t testing.TB, q storage.Querier, expectedMinTime, expectedMaxTim
 			ts, v := it.At()
 			samples = append(samples, backfillSample{Timestamp: ts, Value: v, Labels: series.Labels()})
 		}
-		if len(samples) == 0 {
-			continue
-		}
 	}
-	return samples, nil
+	return samples
 }
 
-func testBlocks(t *testing.T, db *tsdb.DB, expectedMinTime, expectedMaxTime int64, expectedSamples []backfillSample, metricLabels []string, expectedNumBlocks int) {
+func testBlocks(t *testing.T, db *tsdb.DB, expectedMinTime, expectedMaxTime int64, expectedSamples []backfillSample, expectedNumBlocks int) {
 	blocks := db.Blocks()
 	require.Equal(t, expectedNumBlocks, len(blocks))
 
-	allSamples := make([]backfillSample, 0)
-
 	for _, block := range blocks {
-		index, err := block.Index()
-		require.NoError(t, err)
-		defer func() {
-			require.NoError(t, index.Close())
-		}()
-		require.Equal(t, true, block.Meta().MaxTime-block.Meta().MinTime <= (tsdb.DefaultBlockDuration))
+		require.Equal(t, true, block.MinTime()/tsdb.DefaultBlockDuration == (block.MaxTime()-1)/tsdb.DefaultBlockDuration)
 	}
 
 	q, err := db.Querier(context.Background(), math.MinInt64, math.MaxInt64)
 	require.NoError(t, err)
-	series, err := queryblock(t, q, expectedMinTime, expectedMaxTime, labels.FromStrings(metricLabels...), labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
-	require.NoError(t, err)
-	allSamples = append(allSamples, series...)
+	defer func() {
+		require.NoError(t, q.Close())
+	}()
 
+	allSamples := queryAllSeries(t, q, expectedMinTime, expectedMaxTime)
 	sortSamples(allSamples)
 	sortSamples(expectedSamples)
 	require.Equal(t, expectedSamples, allSamples)
@@ -110,9 +98,8 @@ func TestBackfill(t *testing.T) {
 	tests := []struct {
 		ToParse              string
 		IsOk                 bool
-		MetricLabels         []string
 		Description          string
-		MaxSamplesInAppender int64
+		MaxSamplesInAppender int
 		Expected             struct {
 			MinTime   int64
 			MaxTime   int64
@@ -147,7 +134,6 @@ http_requests_total{code="400"} 1 1565133713.990
 			IsOk:                 true,
 			Description:          "Multiple samples with different timestamp for different series.",
 			MaxSamplesInAppender: 5000,
-			MetricLabels:         []string{"__name__", "http_requests_total"},
 			Expected: struct {
 				MinTime   int64
 				MaxTime   int64
@@ -182,7 +168,6 @@ http_requests_total{code="400"} 2 1565133715.989
 			IsOk:                 true,
 			Description:          "Multiple samples with different timestamp for the same series.",
 			MaxSamplesInAppender: 5000,
-			MetricLabels:         []string{"__name__", "http_requests_total"},
 			Expected: struct {
 				MinTime   int64
 				MaxTime   int64
@@ -223,7 +208,6 @@ http_requests_total{code="400"} 1 1565166113.989
 			IsOk:                 true,
 			Description:          "Multiple samples that end up in different blocks.",
 			MaxSamplesInAppender: 5000,
-			MetricLabels:         []string{"__name__", "http_requests_total"},
 			Expected: struct {
 				MinTime   int64
 				MaxTime   int64
@@ -272,7 +256,6 @@ http_requests_total{code="400"} 1 1565166113.989
 			IsOk:                 true,
 			Description:          "Number of samples are greater than the sample batch size.",
 			MaxSamplesInAppender: 2,
-			MetricLabels:         []string{"__name__", "http_requests_total"},
 			Expected: struct {
 				MinTime   int64
 				MaxTime   int64
@@ -328,7 +311,6 @@ http_requests_total{code="400"} 1 1565166113.989
 			IsOk:                 true,
 			Description:          "Sample with no #HELP or #TYPE keyword.",
 			MaxSamplesInAppender: 5000,
-			MetricLabels:         []string{"__name__", "no_help_no_type"},
 			Expected: struct {
 				MinTime   int64
 				MaxTime   int64
@@ -354,7 +336,6 @@ http_requests_total{code="400"} 1 1565166113.989
 			IsOk:                 true,
 			Description:          "Bare sample.",
 			MaxSamplesInAppender: 5000,
-			MetricLabels:         []string{"__name__", "bare_metric"},
 			Expected: struct {
 				MinTime   int64
 				MaxTime   int64
@@ -403,19 +384,17 @@ no_nl{type="no newline"}
 		},
 	}
 	for _, test := range tests {
-
 		t.Logf("Test:%s", test.Description)
 
 		openMetricsFile := createTemporaryOpenMetricsFile(t, test.ToParse)
-
-		input, errOpen := os.Open(openMetricsFile)
-		require.NoError(t, errOpen)
+		input, err := os.Open(openMetricsFile)
+		require.NoError(t, err)
 		defer func() {
 			require.NoError(t, input.Close())
 		}()
 
-		outputDir, errd := ioutil.TempDir("", "myDir")
-		require.NoError(t, errd)
+		outputDir, err := ioutil.TempDir("", "myDir")
+		require.NoError(t, err)
 		defer func() {
 			require.NoError(t, os.RemoveAll(outputDir))
 		}()
@@ -427,15 +406,12 @@ no_nl{type="no newline"}
 			continue
 		}
 
-		opts := tsdb.DefaultOptions()
-
-		db, err := tsdb.Open(outputDir, nil, nil, opts)
+		db, err := tsdb.Open(outputDir, nil, nil, tsdb.DefaultOptions())
 		require.NoError(t, err)
 		defer func() {
 			require.NoError(t, db.Close())
 		}()
 
-		testBlocks(t, db, test.Expected.MinTime, test.Expected.MaxTime, test.Expected.Samples, test.MetricLabels, test.Expected.NumBlocks)
-
+		testBlocks(t, db, test.Expected.MinTime, test.Expected.MaxTime, test.Expected.Samples, test.Expected.NumBlocks)
 	}
 }

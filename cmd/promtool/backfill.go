@@ -98,7 +98,7 @@ func getMinAndMaxTimestamps(p textparse.Parser) (int64, int64, error) {
 	return maxt, mint, nil
 }
 
-func createBlocks(input *os.File, mint, maxt, maxSamplesInAppender int64, outputDir string) error {
+func createBlocks(input *os.File, mint, maxt int64, maxSamplesInAppender int, outputDir string) error {
 	blockDuration := tsdb.DefaultBlockDuration
 	mint = blockDuration * (mint / blockDuration)
 
@@ -112,7 +112,6 @@ func createBlocks(input *os.File, mint, maxt, maxSamplesInAppender int64, output
 
 	for t := mint; t <= maxt; t = t + blockDuration {
 		err := func() error {
-			ctx := context.Background()
 			w, err := tsdb.NewBlockWriter(log.NewNopLogger(), outputDir, blockDuration)
 			if err != nil {
 				return errors.Wrap(err, "block writer")
@@ -120,15 +119,15 @@ func createBlocks(input *os.File, mint, maxt, maxSamplesInAppender int64, output
 			defer func() {
 				err = tsdb_errors.NewMulti(err, w.Close()).Err()
 			}()
-			app := w.Appender(ctx)
 
 			if _, err := input.Seek(0, 0); err != nil {
 				return errors.Wrap(err, "seek file")
 			}
-
+			ctx := context.Background()
+			app := w.Appender(ctx)
 			p := NewOpenMetricsParser(input)
 			tsUpper := t + blockDuration
-			var samplesCount int64
+			samplesCount := 0
 			for {
 				e, err := p.Next()
 				if err == io.EOF {
@@ -155,14 +154,14 @@ func createBlocks(input *os.File, mint, maxt, maxSamplesInAppender int64, output
 					return errors.Wrap(err, "add sample")
 				}
 
-				// If we arrive here, the samples count is greater than the maxSamplesInAppender.
-				// Therefore will commit the old appender and create a new one.
-				// This prevents keeping too many samples lined up in an appender and thus in RAM.
 				samplesCount++
 				if samplesCount < maxSamplesInAppender {
 					continue
 				}
 
+				// If we arrive here, the samples count is greater than the maxSamplesInAppender.
+				// Therefore will commit the old appender and create a new one.
+				// This prevents keeping too many samples lined up in an appender and thus in RAM.
 				if err := app.Commit(); err != nil {
 					return errors.Wrap(err, "commit")
 				}
@@ -195,7 +194,7 @@ func createBlocks(input *os.File, mint, maxt, maxSamplesInAppender int64, output
 	return nil
 }
 
-func backfill(maxSamplesInAppender int64, input *os.File, outputDir string) (err error) {
+func backfill(maxSamplesInAppender int, input *os.File, outputDir string) (err error) {
 	p := NewOpenMetricsParser(input)
 	maxt, mint, err := getMinAndMaxTimestamps(p)
 	if err != nil {
