@@ -285,19 +285,19 @@ type WriteClient interface {
 // ShardingCalculations represents the key values that are used when calculating the number of shards
 type ShardingCalculations struct {
 	// The time that the sharding calculations last ran.
-	LastRan time.Time
+	LastRan time.Time `json:"lastRan"`
 
-	Delay              float64
-	DesiredShards      float64
-	HighestRecv        float64
-	HighestSent        float64
-	SamplesInRate      float64
-	SamplesKeptRatio   float64
-	SamplesOutDuration float64
-	SamplesOutRate     float64
-	SamplesPending     float64
-	SamplesPendingRate float64
-	TimePerSample      float64
+	Delay              float64 `json:"delay"`
+	DesiredShards      float64 `json:"desiredShards"`
+	HighestRecv        float64 `json:"highestRecv"`
+	HighestSent        float64 `json:"highestSent"`
+	SamplesInRate      float64 `json:"samplesInRate"`
+	SamplesKeptRatio   float64 `json:"samplesKeptRatio"`
+	SamplesOutDuration float64 `json:"samplesOutDuration"`
+	SamplesOutRate     float64 `json:"samplesOutRate"`
+	SamplesPending     float64 `json:"samplesPending"`
+	SamplesPendingRate float64 `json:"samplesPendingRate"`
+	TimePerSample      float64 `json:"timePerSample"`
 }
 
 // QueueManager manages a queue of samples to be sent to the Storage
