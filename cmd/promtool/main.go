@@ -71,12 +71,12 @@ func main() {
 	queryCmdFmt := queryCmd.Flag("format", "Output format of the query.").Short('o').Default("promql").Enum("promql", "json")
 
 	queryInstantCmd := queryCmd.Command("instant", "Run instant query.")
-	queryInstantServer := queryInstantCmd.Arg("server", "Prometheus server to query.").Required().String()
+	queryInstantServer := queryInstantCmd.Arg("server", "Prometheus server to query.").Required().URL()
 	queryInstantExpr := queryInstantCmd.Arg("expr", "PromQL query expression.").Required().String()
 	queryInstantTime := queryInstantCmd.Flag("time", "Query evaluation time (RFC3339 or Unix timestamp).").String()
 
 	queryRangeCmd := queryCmd.Command("range", "Run range query.")
-	queryRangeServer := queryRangeCmd.Arg("server", "Prometheus server to query.").Required().String()
+	queryRangeServer := queryRangeCmd.Arg("server", "Prometheus server to query.").Required().URL()
 	queryRangeExpr := queryRangeCmd.Arg("expr", "PromQL query expression.").Required().String()
 	queryRangeHeaders := queryRangeCmd.Flag("header", "Extra headers to send to server.").StringMap()
 	queryRangeBegin := queryRangeCmd.Flag("start", "Query range start time (RFC3339 or Unix timestamp).").String()
@@ -231,18 +231,6 @@ func checkFileExists(fn string) error {
 	}
 	_, err := os.Stat(fn)
 	return err
-}
-
-func addScheme(urlString string) (string, error) {
-	urlObject, err := url.Parse(urlString)
-	if err != nil {
-		return "", err
-	}
-	if urlObject.Scheme == "" {
-		urlObject.Scheme = "http"
-		return urlObject.String(), err
-	}
-	return urlString, nil
 }
 
 func checkConfig(filename string) ([]string, error) {
@@ -440,13 +428,12 @@ func CheckMetrics() int {
 }
 
 // QueryInstant performs an instant query against a Prometheus server.
-func QueryInstant(url, query, evalTime string, p printer) int {
-	urlWithScheme, err := addScheme(url)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "error parsing url", err)
+func QueryInstant(url *url.URL, query, evalTime string, p printer) int {
+	if url.Scheme == "" {
+		url.Scheme = "http"
 	}
 	config := api.Config{
-		Address: urlWithScheme,
+		Address: url.String(),
 	}
 
 	// Create new client.
@@ -482,13 +469,12 @@ func QueryInstant(url, query, evalTime string, p printer) int {
 }
 
 // QueryRange performs a range query against a Prometheus server.
-func QueryRange(url string, headers map[string]string, query, start, end string, step time.Duration, p printer) int {
-	urlWithScheme, err := addScheme(url)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "error parsing url", err)
+func QueryRange(url *url.URL, headers map[string]string, query, start, end string, step time.Duration, p printer) int {
+	if url.Scheme == "" {
+		url.Scheme = "http"
 	}
 	config := api.Config{
-		Address: urlWithScheme,
+		Address: url.String(),
 	}
 
 	if len(headers) > 0 {
@@ -558,12 +544,11 @@ func QueryRange(url string, headers map[string]string, query, start, end string,
 
 // QuerySeries queries for a series against a Prometheus server.
 func QuerySeries(url *url.URL, matchers []string, start, end string, p printer) int {
-	urlWithScheme, err := addScheme(url.String())
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "error parsing url", err)
+	if url.Scheme == "" {
+		url.Scheme = "http"
 	}
 	config := api.Config{
-		Address: urlWithScheme,
+		Address: url.String(),
 	}
 
 	// Create new client.
@@ -596,12 +581,11 @@ func QuerySeries(url *url.URL, matchers []string, start, end string, p printer) 
 
 // QueryLabels queries for label values against a Prometheus server.
 func QueryLabels(url *url.URL, name string, start, end string, p printer) int {
-	urlWithScheme, err := addScheme(url.String())
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "error parsing url", err)
+	if url.Scheme == "" {
+		url.Scheme = "http"
 	}
 	config := api.Config{
-		Address: urlWithScheme,
+		Address: url.String(),
 	}
 
 	// Create new client.
