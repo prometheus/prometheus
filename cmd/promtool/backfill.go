@@ -102,12 +102,12 @@ func createBlocks(input *os.File, mint, maxt int64, maxSamplesInAppender int, ou
 	blockDuration := tsdb.DefaultBlockDuration
 	mint = blockDuration * (mint / blockDuration)
 
-	db, err := tsdb.OpenDBReadOnly(outputDir, nil)
-	if err != nil {
-		return err
+	db, returnErr := tsdb.OpenDBReadOnly(outputDir, nil)
+	if returnErr != nil {
+		return returnErr
 	}
 	defer func() {
-		err = tsdb_errors.NewMulti(err, db.Close()).Err()
+		returnErr = tsdb_errors.NewMulti(returnErr, db.Close()).Err()
 	}()
 
 	for t := mint; t <= maxt; t = t + blockDuration {
@@ -191,7 +191,7 @@ func createBlocks(input *os.File, mint, maxt int64, maxSamplesInAppender int, ou
 		}
 		printBlocks(blocks[len(blocks)-1:], true)
 	}
-	return nil
+	return returnErr
 }
 
 func backfill(maxSamplesInAppender int, input *os.File, outputDir string) (err error) {
