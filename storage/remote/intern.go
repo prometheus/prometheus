@@ -21,13 +21,11 @@ package remote
 import (
 	"sync"
 
-	"go.uber.org/atomic"
-
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.uber.org/atomic"
 )
 
-var interner = newPool()
 var noReferenceReleases = promauto.NewCounter(prometheus.CounterOpts{
 	Namespace: namespace,
 	Subsystem: subsystem,

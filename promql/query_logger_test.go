@@ -20,7 +20,7 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/stretchr/testify/require"
 )
 
 func TestQueryLogging(t *testing.T) {
@@ -109,18 +109,18 @@ func TestIndexReuse(t *testing.T) {
 
 func TestMMapFile(t *testing.T) {
 	file, err := ioutil.TempFile("", "mmapedFile")
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	filename := file.Name()
 	defer os.Remove(filename)
 
 	fileAsBytes, err := getMMapedFile(filename, 2, nil)
 
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 	copy(fileAsBytes, "ab")
 
 	f, err := os.Open(filename)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	bytes := make([]byte, 4)
 	n, err := f.Read(bytes)

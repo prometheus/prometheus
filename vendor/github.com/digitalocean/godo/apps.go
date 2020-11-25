@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"time"
 )
 
 const (
@@ -34,74 +33,17 @@ type AppsService interface {
 
 	GetDeployment(ctx context.Context, appID, deploymentID string) (*Deployment, *Response, error)
 	ListDeployments(ctx context.Context, appID string, opts *ListOptions) ([]*Deployment, *Response, error)
-	CreateDeployment(ctx context.Context, appID string) (*Deployment, *Response, error)
+	CreateDeployment(ctx context.Context, appID string, create ...*DeploymentCreateRequest) (*Deployment, *Response, error)
 
 	GetLogs(ctx context.Context, appID, deploymentID, component string, logType AppLogType, follow bool) (*AppLogs, *Response, error)
-}
 
-// App represents an app.
-type App struct {
-	ID                   string      `json:"id"`
-	Spec                 *AppSpec    `json:"spec"`
-	DefaultIngress       string      `json:"default_ingress"`
-	CreatedAt            time.Time   `json:"created_at"`
-	UpdatedAt            time.Time   `json:"updated_at,omitempty"`
-	ActiveDeployment     *Deployment `json:"active_deployment,omitempty"`
-	InProgressDeployment *Deployment `json:"in_progress_deployment,omitempty"`
-}
+	ListRegions(ctx context.Context) ([]*AppRegion, *Response, error)
 
-// Deployment represents a deployment for an app.
-type Deployment struct {
-	ID          string                  `json:"id"`
-	Spec        *AppSpec                `json:"spec"`
-	Services    []*DeploymentService    `json:"services,omitempty"`
-	Workers     []*DeploymentWorker     `json:"workers,omitempty"`
-	StaticSites []*DeploymentStaticSite `json:"static_sites,omitempty"`
+	ListTiers(ctx context.Context) ([]*AppTier, *Response, error)
+	GetTier(ctx context.Context, slug string) (*AppTier, *Response, error)
 
-	Cause    string              `json:"cause"`
-	Progress *DeploymentProgress `json:"progress"`
-
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at,omitempty"`
-}
-
-// DeploymentService represents a service component in a deployment.
-type DeploymentService struct {
-	Name             string `json:"name,omitempty"`
-	SourceCommitHash string `json:"source_commit_hash"`
-}
-
-// DeploymentWorker represents a worker component in a deployment.
-type DeploymentWorker struct {
-	Name             string `json:"name,omitempty"`
-	SourceCommitHash string `json:"source_commit_hash"`
-}
-
-// DeploymentStaticSite represents a static site component in a deployment.
-type DeploymentStaticSite struct {
-	Name             string `json:"name,omitempty"`
-	SourceCommitHash string `json:"source_commit_hash"`
-}
-
-// DeploymentProgress represents the total progress of a deployment.
-type DeploymentProgress struct {
-	PendingSteps int `json:"pending_steps"`
-	RunningSteps int `json:"running_steps"`
-	SuccessSteps int `json:"success_steps"`
-	ErrorSteps   int `json:"error_steps"`
-	TotalSteps   int `json:"total_steps"`
-
-	Steps []*DeploymentProgressStep `json:"steps"`
-}
-
-// DeploymentProgressStep represents the progress of a deployment step.
-type DeploymentProgressStep struct {
-	Name      string                    `json:"name"`
-	Status    string                    `json:"status"`
-	Steps     []*DeploymentProgressStep `json:"steps,omitempty"`
-	Attempts  uint32                    `json:"attempts"`
-	StartedAt time.Time                 `json:"started_at,omitempty"`
-	EndedAt   time.Time                 `json:"ended_at,omitempty"`
+	ListInstanceSizes(ctx context.Context) ([]*AppInstanceSize, *Response, error)
+	GetInstanceSize(ctx context.Context, slug string) (*AppInstanceSize, *Response, error)
 }
 
 // AppLogs represent app logs.
@@ -120,6 +62,11 @@ type AppUpdateRequest struct {
 	Spec *AppSpec `json:"spec"`
 }
 
+// DeploymentCreateRequest represents a request to create a deployment.
+type DeploymentCreateRequest struct {
+	ForceBuild bool `json:"force_build"`
+}
+
 type appRoot struct {
 	App *App `json:"app"`
 }
@@ -136,12 +83,32 @@ type deploymentsRoot struct {
 	Deployments []*Deployment `json:"deployments"`
 }
 
+type appTierRoot struct {
+	Tier *AppTier `json:"tier"`
+}
+
+type appTiersRoot struct {
+	Tiers []*AppTier `json:"tiers"`
+}
+
+type instanceSizeRoot struct {
+	InstanceSize *AppInstanceSize `json:"instance_size"`
+}
+
+type instanceSizesRoot struct {
+	InstanceSizes []*AppInstanceSize `json:"instance_sizes"`
+}
+
+type appRegionsRoot struct {
+	Regions []*AppRegion `json:"regions"`
+}
+
 // AppsServiceOp handles communication with Apps methods of the DigitalOcean API.
 type AppsServiceOp struct {
 	client *Client
 }
 
-// Creates an app.
+// Create an app.
 func (s *AppsServiceOp) Create(ctx context.Context, create *AppCreateRequest) (*App, *Response, error) {
 	path := appsBasePath
 	req, err := s.client.NewRequest(ctx, http.MethodPost, path, create)
@@ -248,9 +215,15 @@ func (s *AppsServiceOp) ListDeployments(ctx context.Context, appID string, opts 
 }
 
 // CreateDeployment creates an app deployment.
-func (s *AppsServiceOp) CreateDeployment(ctx context.Context, appID string) (*Deployment, *Response, error) {
+func (s *AppsServiceOp) CreateDeployment(ctx context.Context, appID string, create ...*DeploymentCreateRequest) (*Deployment, *Response, error) {
 	path := fmt.Sprintf("%s/%s/deployments", appsBasePath, appID)
-	req, err := s.client.NewRequest(ctx, http.MethodPost, path, nil)
+
+	var createReq *DeploymentCreateRequest
+	for _, c := range create {
+		createReq = c
+	}
+
+	req, err := s.client.NewRequest(ctx, http.MethodPost, path, createReq)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -264,7 +237,11 @@ func (s *AppsServiceOp) CreateDeployment(ctx context.Context, appID string) (*De
 
 // GetLogs retrieves app logs.
 func (s *AppsServiceOp) GetLogs(ctx context.Context, appID, deploymentID, component string, logType AppLogType, follow bool) (*AppLogs, *Response, error) {
-	url := fmt.Sprintf("%s/%s/deployments/%s/components/%s/logs?type=%s&follow=%t", appsBasePath, appID, deploymentID, component, logType, follow)
+	url := fmt.Sprintf("%s/%s/deployments/%s/logs?type=%s&follow=%t", appsBasePath, appID, deploymentID, logType, follow)
+	if component != "" {
+		url = fmt.Sprintf("%s&component_name=%s", url, component)
+	}
+
 	req, err := s.client.NewRequest(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, nil, err
@@ -275,4 +252,79 @@ func (s *AppsServiceOp) GetLogs(ctx context.Context, appID, deploymentID, compon
 		return nil, resp, err
 	}
 	return logs, resp, nil
+}
+
+// ListRegions lists all regions supported by App Platform.
+func (s *AppsServiceOp) ListRegions(ctx context.Context) ([]*AppRegion, *Response, error) {
+	path := fmt.Sprintf("%s/regions", appsBasePath)
+	req, err := s.client.NewRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	root := new(appRegionsRoot)
+	resp, err := s.client.Do(ctx, req, root)
+	if err != nil {
+		return nil, resp, err
+	}
+	return root.Regions, resp, nil
+}
+
+// ListTiers lists available app tiers.
+func (s *AppsServiceOp) ListTiers(ctx context.Context) ([]*AppTier, *Response, error) {
+	path := fmt.Sprintf("%s/tiers", appsBasePath)
+	req, err := s.client.NewRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	root := new(appTiersRoot)
+	resp, err := s.client.Do(ctx, req, root)
+	if err != nil {
+		return nil, resp, err
+	}
+	return root.Tiers, resp, nil
+}
+
+// GetTier retrieves information about a specific app tier.
+func (s *AppsServiceOp) GetTier(ctx context.Context, slug string) (*AppTier, *Response, error) {
+	path := fmt.Sprintf("%s/tiers/%s", appsBasePath, slug)
+	req, err := s.client.NewRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	root := new(appTierRoot)
+	resp, err := s.client.Do(ctx, req, root)
+	if err != nil {
+		return nil, resp, err
+	}
+	return root.Tier, resp, nil
+}
+
+// ListInstanceSizes lists available instance sizes for service, worker, and job components.
+func (s *AppsServiceOp) ListInstanceSizes(ctx context.Context) ([]*AppInstanceSize, *Response, error) {
+	path := fmt.Sprintf("%s/tiers/instance_sizes", appsBasePath)
+	req, err := s.client.NewRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	root := new(instanceSizesRoot)
+	resp, err := s.client.Do(ctx, req, root)
+	if err != nil {
+		return nil, resp, err
+	}
+	return root.InstanceSizes, resp, nil
+}
+
+// GetInstanceSize retreives information about a specific instance size for service, worker, and job components.
+func (s *AppsServiceOp) GetInstanceSize(ctx context.Context, slug string) (*AppInstanceSize, *Response, error) {
+	path := fmt.Sprintf("%s/tiers/instance_sizes/%s", appsBasePath, slug)
+	req, err := s.client.NewRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	root := new(instanceSizeRoot)
+	resp, err := s.client.Do(ctx, req, root)
+	if err != nil {
+		return nil, resp, err
+	}
+	return root.InstanceSize, resp, nil
 }

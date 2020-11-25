@@ -61,6 +61,7 @@ var versionInfoTmpl = `
   build user:       {{.buildUser}}
   build date:       {{.buildDate}}
   go version:       {{.goVersion}}
+  platform:         {{.platform}}
 `
 
 // Print returns version information.
@@ -73,6 +74,7 @@ func Print(program string) string {
 		"buildUser": BuildUser,
 		"buildDate": BuildDate,
 		"goVersion": GoVersion,
+		"platform":  runtime.GOOS + "/" + runtime.GOARCH,
 	}
 	t := template.Must(template.New("version").Parse(versionInfoTmpl))
 

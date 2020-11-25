@@ -28,6 +28,7 @@ type KubernetesService interface {
 	GetUser(context.Context, string) (*KubernetesClusterUser, *Response, error)
 	GetUpgrades(context.Context, string) ([]*KubernetesVersion, *Response, error)
 	GetKubeConfig(context.Context, string) (*KubernetesClusterConfig, *Response, error)
+	GetKubeConfigWithExpiry(context.Context, string, int64) (*KubernetesClusterConfig, *Response, error)
 	GetCredentials(context.Context, string, *KubernetesClusterCredentialsGetRequest) (*KubernetesClusterCredentials, *Response, error)
 	List(context.Context, *ListOptions) ([]*KubernetesCluster, *Response, error)
 	Update(context.Context, string, *KubernetesClusterUpdateRequest) (*KubernetesCluster, *Response, error)
@@ -45,6 +46,8 @@ type KubernetesService interface {
 	DeleteNode(ctx context.Context, clusterID, poolID, nodeID string, req *KubernetesNodeDeleteRequest) (*Response, error)
 
 	GetOptions(context.Context) (*KubernetesOptions, *Response, error)
+	AddRegistry(ctx context.Context, req *KubernetesClusterRegistryRequest) (*Response, error)
+	RemoveRegistry(ctx context.Context, req *KubernetesClusterRegistryRequest) (*Response, error)
 }
 
 var _ KubernetesService = &KubernetesServiceOp{}
@@ -83,6 +86,21 @@ type KubernetesClusterUpgradeRequest struct {
 	VersionSlug string `json:"version,omitempty"`
 }
 
+// Taint represents a Kubernetes taint that can be associated with a node pool
+// (and, transitively, with all nodes of that pool).
+type Taint struct {
+	Key    string
+	Value  string
+	Effect string
+}
+
+func (t Taint) String() string {
+	if t.Value == "" {
+		return fmt.Sprintf("%s:%s", t.Key, t.Effect)
+	}
+	return fmt.Sprintf("%s=%s:%s", t.Key, t.Value, t.Effect)
+}
+
 // KubernetesNodePoolCreateRequest represents a request to create a node pool for a
 // Kubernetes cluster.
 type KubernetesNodePoolCreateRequest struct {
@@ -91,6 +109,7 @@ type KubernetesNodePoolCreateRequest struct {
 	Count     int               `json:"count,omitempty"`
 	Tags      []string          `json:"tags,omitempty"`
 	Labels    map[string]string `json:"labels,omitempty"`
+	Taints    []Taint           `json:"taints,omitempty"`
 	AutoScale bool              `json:"auto_scale,omitempty"`
 	MinNodes  int               `json:"min_nodes,omitempty"`
 	MaxNodes  int               `json:"max_nodes,omitempty"`
@@ -103,6 +122,7 @@ type KubernetesNodePoolUpdateRequest struct {
 	Count     *int              `json:"count,omitempty"`
 	Tags      []string          `json:"tags,omitempty"`
 	Labels    map[string]string `json:"labels,omitempty"`
+	Taints    *[]Taint          `json:"taints,omitempty"`
 	AutoScale *bool             `json:"auto_scale,omitempty"`
 	MinNodes  *int              `json:"min_nodes,omitempty"`
 	MaxNodes  *int              `json:"max_nodes,omitempty"`
@@ -128,6 +148,11 @@ type KubernetesClusterCredentialsGetRequest struct {
 	ExpirySeconds *int `json:"expiry_seconds,omitempty"`
 }
 
+// KubernetesClusterRegistryRequest represents clusters to integrate with docr registry
+type KubernetesClusterRegistryRequest struct {
+	ClusterUUIDs []string `json:"cluster_uuids,omitempty"`
+}
+
 // KubernetesCluster represents a Kubernetes cluster.
 type KubernetesCluster struct {
 	ID            string   `json:"id,omitempty"`
@@ -146,6 +171,7 @@ type KubernetesCluster struct {
 	MaintenancePolicy *KubernetesMaintenancePolicy `json:"maintenance_policy,omitempty"`
 	AutoUpgrade       bool                         `json:"auto_upgrade,omitempty"`
 	SurgeUpgrade      bool                         `json:"surge_upgrade,omitempty"`
+	RegistryEnabled   bool                         `json:"registry_enabled,omitempty"`
 
 	Status    *KubernetesClusterStatus `json:"status,omitempty"`
 	CreatedAt time.Time                `json:"created_at,omitempty"`
@@ -181,13 +207,36 @@ type KubernetesMaintenancePolicy struct {
 type KubernetesMaintenancePolicyDay int
 
 const (
+	// KubernetesMaintenanceDayAny sets the KubernetesMaintenancePolicyDay to any
+	// day of the week
 	KubernetesMaintenanceDayAny KubernetesMaintenancePolicyDay = iota
+
+	// KubernetesMaintenanceDayMonday sets the KubernetesMaintenancePolicyDay to
+	// Monday
 	KubernetesMaintenanceDayMonday
+
+	// KubernetesMaintenanceDayTuesday sets the KubernetesMaintenancePolicyDay to
+	// Tuesday
 	KubernetesMaintenanceDayTuesday
+
+	// KubernetesMaintenanceDayWednesday sets the KubernetesMaintenancePolicyDay to
+	// Wednesday
 	KubernetesMaintenanceDayWednesday
+
+	// KubernetesMaintenanceDayThursday sets the KubernetesMaintenancePolicyDay to
+	// Thursday
 	KubernetesMaintenanceDayThursday
+
+	// KubernetesMaintenanceDayFriday sets the KubernetesMaintenancePolicyDay to
+	// Friday
 	KubernetesMaintenanceDayFriday
+
+	// KubernetesMaintenanceDaySaturday sets the KubernetesMaintenancePolicyDay to
+	// Saturday
 	KubernetesMaintenanceDaySaturday
+
+	// KubernetesMaintenanceDaySunday sets the KubernetesMaintenancePolicyDay to
+	// Sunday
 	KubernetesMaintenanceDaySunday
 )
 
@@ -233,6 +282,7 @@ func (k KubernetesMaintenancePolicyDay) String() string {
 
 }
 
+// UnmarshalJSON parses the JSON string into KubernetesMaintenancePolicyDay
 func (k *KubernetesMaintenancePolicyDay) UnmarshalJSON(data []byte) error {
 	var val string
 	if err := json.Unmarshal(data, &val); err != nil {
@@ -247,6 +297,7 @@ func (k *KubernetesMaintenancePolicyDay) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// MarshalJSON returns the JSON string for KubernetesMaintenancePolicyDay
 func (k KubernetesMaintenancePolicyDay) MarshalJSON() ([]byte, error) {
 	if KubernetesMaintenanceDayAny <= k && k <= KubernetesMaintenanceDaySunday {
 		return json.Marshal(days[k])
@@ -308,6 +359,7 @@ type KubernetesNodePool struct {
 	Count     int               `json:"count,omitempty"`
 	Tags      []string          `json:"tags,omitempty"`
 	Labels    map[string]string `json:"labels,omitempty"`
+	Taints    []Taint           `json:"taints,omitempty"`
 	AutoScale bool              `json:"auto_scale,omitempty"`
 	MinNodes  int               `json:"min_nodes,omitempty"`
 	MaxNodes  int               `json:"max_nodes,omitempty"`
@@ -512,6 +564,27 @@ func (svc *KubernetesServiceOp) GetKubeConfig(ctx context.Context, clusterID str
 	return res, resp, nil
 }
 
+// GetKubeConfigWithExpiry returns a Kubernetes config file for the specified cluster with expiry_seconds.
+func (svc *KubernetesServiceOp) GetKubeConfigWithExpiry(ctx context.Context, clusterID string, expirySeconds int64) (*KubernetesClusterConfig, *Response, error) {
+	path := fmt.Sprintf("%s/%s/kubeconfig", kubernetesClustersPath, clusterID)
+	req, err := svc.client.NewRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	q := req.URL.Query()
+	q.Add("expiry_seconds", fmt.Sprintf("%d", expirySeconds))
+	req.URL.RawQuery = q.Encode()
+	configBytes := bytes.NewBuffer(nil)
+	resp, err := svc.client.Do(ctx, req, configBytes)
+	if err != nil {
+		return nil, resp, err
+	}
+	res := &KubernetesClusterConfig{
+		KubeconfigYAML: configBytes.Bytes(),
+	}
+	return res, resp, nil
+}
+
 // GetCredentials returns a Kubernetes API server credentials for the specified cluster.
 func (svc *KubernetesServiceOp) GetCredentials(ctx context.Context, clusterID string, get *KubernetesClusterCredentialsGetRequest) (*KubernetesClusterCredentials, *Response, error) {
 	path := fmt.Sprintf("%s/%s/credentials", kubernetesClustersPath, clusterID)
@@ -697,4 +770,32 @@ func (svc *KubernetesServiceOp) GetOptions(ctx context.Context) (*KubernetesOpti
 		return nil, resp, err
 	}
 	return root.Options, resp, nil
+}
+
+// AddRegistry integrates docr registry with all the specified clusters
+func (svc *KubernetesServiceOp) AddRegistry(ctx context.Context, req *KubernetesClusterRegistryRequest) (*Response, error) {
+	path := fmt.Sprintf("%s/registry", kubernetesBasePath)
+	request, err := svc.client.NewRequest(ctx, http.MethodPost, path, req)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := svc.client.Do(ctx, request, nil)
+	if err != nil {
+		return resp, err
+	}
+	return resp, nil
+}
+
+// RemoveRegistry removes docr registry support for all the specified clusters
+func (svc *KubernetesServiceOp) RemoveRegistry(ctx context.Context, req *KubernetesClusterRegistryRequest) (*Response, error) {
+	path := fmt.Sprintf("%s/registry", kubernetesBasePath)
+	request, err := svc.client.NewRequest(ctx, http.MethodDelete, path, req)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := svc.client.Do(ctx, request, nil)
+	if err != nil {
+		return resp, err
+	}
+	return resp, nil
 }

@@ -17,18 +17,18 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/stretchr/testify/require"
 )
 
 func TestEvaluations(t *testing.T) {
 	files, err := filepath.Glob("testdata/*.test")
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	for _, fn := range files {
 		t.Run(fn, func(t *testing.T) {
 			test, err := newTestFromFile(t, fn)
-			testutil.Ok(t, err)
-			testutil.Ok(t, test.Run())
+			require.NoError(t, err)
+			require.NoError(t, test.Run())
 
 			test.Close()
 		})

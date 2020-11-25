@@ -3,7 +3,8 @@ import { RouteComponentProps } from '@reach/router';
 import { Table } from 'reactstrap';
 import { withStatusIndicator } from '../../components/withStatusIndicator';
 import { useFetch } from '../../hooks/useFetch';
-import PathPrefixProps from '../../types/PathPrefixProps';
+import { usePathPrefix } from '../../contexts/PathPrefixContext';
+import { API_PATH } from '../../constants/constants';
 
 interface StatusPageProps {
   data: Record<string, string>;
@@ -21,8 +22,6 @@ export const statusConfig: Record<
     customizeValue: (v: boolean) => (v ? 'Successful' : 'Unsuccessful'),
   },
   lastConfigTime: { title: 'Last successful configuration reload' },
-  chunkCount: { title: 'Head chunks' },
-  timeSeriesCount: { title: 'Head time series' },
   corruptionCount: { title: 'WAL corruptions' },
   goroutineCount: { title: 'Goroutines' },
   storageRetention: { title: 'Storage retention' },
@@ -84,8 +83,9 @@ const StatusWithStatusIndicator = withStatusIndicator(StatusContent);
 
 StatusContent.displayName = 'Status';
 
-const Status: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix = '' }) => {
-  const path = `${pathPrefix}/api/v1`;
+const Status: FC<RouteComponentProps> = () => {
+  const pathPrefix = usePathPrefix();
+  const path = `${pathPrefix}/${API_PATH}`;
 
   return (
     <>

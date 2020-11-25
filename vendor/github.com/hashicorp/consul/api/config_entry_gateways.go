@@ -21,6 +21,8 @@ type IngressGatewayConfigEntry struct {
 	// what services to associated to those ports.
 	Listeners []IngressListener
 
+	Meta map[string]string `json:",omitempty"`
+
 	// CreateIndex is the Raft index this entry was created at. This is a
 	// read-only field.
 	CreateIndex uint64
@@ -44,7 +46,7 @@ type IngressListener struct {
 	// Protocol declares what type of traffic this listener is expected to
 	// receive. Depending on the protocol, a listener might support multiplexing
 	// services over a single port, or additional discovery chain features. The
-	// current supported values are: (tcp | http).
+	// current supported values are: (tcp | http | http2 | grpc).
 	Protocol string
 
 	// Services declares the set of services to which the listener forwards
@@ -114,6 +116,8 @@ type TerminatingGatewayConfigEntry struct {
 
 	// Services is a list of service names represented by the terminating gateway.
 	Services []LinkedService `json:",omitempty"`
+
+	Meta map[string]string `json:",omitempty"`
 
 	// CreateIndex is the Raft index this entry was created at. This is a
 	// read-only field.

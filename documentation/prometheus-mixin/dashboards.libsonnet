@@ -1,5 +1,5 @@
-local g = import 'grafana-builder/grafana.libsonnet';
-local grafana = import 'grafonnet/grafana.libsonnet';
+local grafana = import 'github.com/grafana/grafonnet-lib/grafonnet/grafana.libsonnet';
+local g = import 'github.com/grafana/jsonnet-libs/grafana-builder/grafana.libsonnet';
 local dashboard = grafana.dashboard;
 local row = grafana.row;
 local singlestat = grafana.singlestat;
@@ -110,7 +110,7 @@ local template = grafana.template;
             (
               prometheus_remote_storage_highest_timestamp_in_seconds{cluster=~"$cluster", instance=~"$instance"} 
             -  
-              ignoring(remote_name, url) group_right(instance) prometheus_remote_storage_queue_highest_sent_timestamp_seconds{cluster=~"$cluster", instance=~"$instance"}
+              ignoring(remote_name, url) group_right(instance) (prometheus_remote_storage_queue_highest_sent_timestamp_seconds{cluster=~"$cluster", instance=~"$instance"} != 0)
             )
           |||,
           legendFormat='{{cluster}}:{{instance}} {{remote_name}}:{{url}}',
@@ -124,11 +124,11 @@ local template = grafana.template;
         )
         .addTarget(prometheus.target(
           |||
-            (
+            clamp_min(
               rate(prometheus_remote_storage_highest_timestamp_in_seconds{cluster=~"$cluster", instance=~"$instance"}[5m])  
             - 
               ignoring (remote_name, url) group_right(instance) rate(prometheus_remote_storage_queue_highest_sent_timestamp_seconds{cluster=~"$cluster", instance=~"$instance"}[5m])
-            )
+            , 0)
           |||,
           legendFormat='{{cluster}}:{{instance}} {{remote_name}}:{{url}}',
         ));

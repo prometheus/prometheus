@@ -17,20 +17,19 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	html_template "html/template"
 	"math"
 	"net/url"
 	"regexp"
 	"sort"
 	"strings"
+	text_template "text/template"
 	"time"
 
-	html_template "html/template"
-	text_template "text/template"
-
 	"github.com/pkg/errors"
-
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/strutil"
 )

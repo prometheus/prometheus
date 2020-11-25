@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	"github.com/docker/docker/api/types"
+
 	"github.com/prometheus/prometheus/util/strutil"
 )
 

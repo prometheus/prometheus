@@ -15,11 +15,10 @@ package openstack
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/stretchr/testify/require"
 )
 
 type OpenstackSDHypervisorTestSuite struct {
@@ -55,12 +54,12 @@ func TestOpenstackSDHypervisorRefresh(t *testing.T) {
 	hypervisor, _ := mock.openstackAuthSuccess()
 	ctx := context.Background()
 	tgs, err := hypervisor.refresh(ctx)
-	testutil.Equals(t, 1, len(tgs))
+	require.Equal(t, 1, len(tgs))
 	tg := tgs[0]
-	testutil.Ok(t, err)
-	testutil.Assert(t, tg != nil, "")
-	testutil.Assert(t, tg.Targets != nil, "")
-	testutil.Equals(t, 2, len(tg.Targets))
+	require.NoError(t, err)
+	require.NotNil(t, tg)
+	require.NotNil(t, tg.Targets)
+	require.Equal(t, 2, len(tg.Targets))
 
 	for l, v := range map[string]string{
 		"__address__":                          "172.16.70.14:0",
@@ -71,7 +70,7 @@ func TestOpenstackSDHypervisorRefresh(t *testing.T) {
 		"__meta_openstack_hypervisor_status":   "enabled",
 		"__meta_openstack_hypervisor_id":       "1",
 	} {
-		testutil.Equals(t, model.LabelValue(v), tg.Targets[0][model.LabelName(l)])
+		require.Equal(t, model.LabelValue(v), tg.Targets[0][model.LabelName(l)])
 	}
 
 	for l, v := range map[string]string{
@@ -83,7 +82,7 @@ func TestOpenstackSDHypervisorRefresh(t *testing.T) {
 		"__meta_openstack_hypervisor_status":   "enabled",
 		"__meta_openstack_hypervisor_id":       "721",
 	} {
-		testutil.Equals(t, model.LabelValue(v), tg.Targets[1][model.LabelName(l)])
+		require.Equal(t, model.LabelValue(v), tg.Targets[1][model.LabelName(l)])
 	}
 }
 
@@ -95,6 +94,6 @@ func TestOpenstackSDHypervisorRefreshWithDoneContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	_, err := hypervisor.refresh(ctx)
-	testutil.NotOk(t, err)
-	testutil.Assert(t, strings.Contains(err.Error(), context.Canceled.Error()), "%q doesn't contain %q", err, context.Canceled)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), context.Canceled.Error(), "%q doesn't contain %q", err, context.Canceled)
 }

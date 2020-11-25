@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/bits"
 	"net"
 	"net/http"
 	_ "net/http/pprof" // Comment this line to disable pprof endpoint.
@@ -43,16 +44,18 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promlog"
+	promlogflag "github.com/prometheus/common/promlog/flag"
 	"github.com/prometheus/common/version"
 	jcfg "github.com/uber/jaeger-client-go/config"
 	jprom "github.com/uber/jaeger-lib/metrics/prometheus"
 	"go.uber.org/atomic"
 	kingpin "gopkg.in/alecthomas/kingpin.v2"
-	"k8s.io/klog"
+	klog "k8s.io/klog"
+	klogv2 "k8s.io/klog/v2"
 
-	promlogflag "github.com/prometheus/common/promlog/flag"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
+	_ "github.com/prometheus/prometheus/discovery/install" // Register service discovery implementations.
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/logging"
@@ -66,8 +69,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/strutil"
 	"github.com/prometheus/prometheus/web"
-
-	_ "github.com/prometheus/prometheus/discovery/install" // Register service discovery implementations.
 )
 
 var (
@@ -239,6 +240,9 @@ func main() {
 	a.Flag("rules.alert.resend-delay", "Minimum amount of time to wait before resending an alert to Alertmanager.").
 		Default("1m").SetValue(&cfg.resendDelay)
 
+	a.Flag("scrape.adjust-timestamps", "Adjust scrape timestamps by up to 2ms to align them to the intended schedule. See https://github.com/prometheus/prometheus/issues/7846 for more context. Experimental. This flag will be removed in a future release.").
+		Hidden().Default("true").BoolVar(&scrape.AlignScrapeTimestamps)
+
 	a.Flag("alertmanager.notification-queue-capacity", "The capacity of the queue for pending Alertmanager notifications.").
 		Default("10000").IntVar(&cfg.notifier.QueueCapacity)
 
@@ -285,6 +289,14 @@ func main() {
 		level.Error(logger).Log("msg", fmt.Sprintf("Error loading config (--config.file=%s)", cfg.configFile), "err", err)
 		os.Exit(2)
 	}
+	// Now that the validity of the config is established, set the config
+	// success metrics accordingly, although the config isn't really loaded
+	// yet. This will happen later (including setting these metrics again),
+	// but if we don't do it now, the metrics will stay at zero until the
+	// startup procedure is complete, which might take long enough to
+	// trigger alerts about an invalid config.
+	configSuccess.Set(1)
+	configSuccessTime.SetToCurrentTime()
 
 	cfg.web.ReadTimeout = time.Duration(cfg.webTimeout)
 	// Default -web.route-prefix to path of -web.external-url.
@@ -342,8 +354,14 @@ func main() {
 	// Above level 6, the k8s client would log bearer tokens in clear-text.
 	klog.ClampLevel(6)
 	klog.SetLogger(log.With(logger, "component", "k8s_client_runtime"))
+	klogv2.ClampLevel(6)
+	klogv2.SetLogger(log.With(logger, "component", "k8s_client_runtime"))
 
 	level.Info(logger).Log("msg", "Starting Prometheus", "version", version.Info())
+	if bits.UintSize < 64 {
+		level.Warn(logger).Log("msg", "This Prometheus binary has not been compiled for a 64-bit architecture. Due to virtual memory constraints of 32-bit systems, it is highly recommended to switch to a 64-bit binary of Prometheus.", "GOARCH", runtime.GOARCH)
+	}
+
 	level.Info(logger).Log("build_context", version.BuildContext())
 	level.Info(logger).Log("host_details", prom_runtime.Uname())
 	level.Info(logger).Log("fd_limits", prom_runtime.FdLimits())
@@ -351,7 +369,8 @@ func main() {
 
 	var (
 		localStorage  = &readyStorage{}
-		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, cfg.localStoragePath, time.Duration(cfg.RemoteFlushDeadline))
+		scraper       = &readyScrapeManager{}
+		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, cfg.localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper)
 		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
 	)
 
@@ -395,6 +414,8 @@ func main() {
 			ResendDelay:     time.Duration(cfg.resendDelay),
 		})
 	)
+
+	scraper.Set(scrapeManager)
 
 	cfg.web.Context = ctxWeb
 	cfg.web.TSDBRetentionDuration = cfg.tsdb.RetentionDuration
@@ -1075,6 +1096,35 @@ func (s *readyStorage) Stats(statsByLabelName string) (*tsdb.Stats, error) {
 		return x.Head().Stats(statsByLabelName), nil
 	}
 	return nil, tsdb.ErrNotReady
+}
+
+// ErrNotReady is returned if the underlying scrape manager is not ready yet.
+var ErrNotReady = errors.New("Scrape manager not ready")
+
+// ReadyScrapeManager allows a scrape manager to be retrieved. Even if it's set at a later point in time.
+type readyScrapeManager struct {
+	mtx sync.RWMutex
+	m   *scrape.Manager
+}
+
+// Set the scrape manager.
+func (rm *readyScrapeManager) Set(m *scrape.Manager) {
+	rm.mtx.Lock()
+	defer rm.mtx.Unlock()
+
+	rm.m = m
+}
+
+// Get the scrape manager. If is not ready, return an error.
+func (rm *readyScrapeManager) Get() (*scrape.Manager, error) {
+	rm.mtx.RLock()
+	defer rm.mtx.RUnlock()
+
+	if rm.m != nil {
+		return rm.m, nil
+	}
+
+	return nil, ErrNotReady
 }
 
 // tsdbOptions is tsdb.Option version with defined units.

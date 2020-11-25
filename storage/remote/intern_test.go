@@ -23,55 +23,59 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/stretchr/testify/require"
 )
 
 func TestIntern(t *testing.T) {
+	interner := newPool()
 	testString := "TestIntern"
 	interner.intern(testString)
 	interned, ok := interner.pool[testString]
 
-	testutil.Equals(t, true, ok)
-	testutil.Assert(t, interned.refs.Load() == 1, fmt.Sprintf("expected refs to be 1 but it was %d", interned.refs))
+	require.Equal(t, true, ok)
+	require.Equal(t, int64(1), interned.refs.Load(), fmt.Sprintf("expected refs to be 1 but it was %d", interned.refs.Load()))
 }
 
 func TestIntern_MultiRef(t *testing.T) {
+	interner := newPool()
 	testString := "TestIntern_MultiRef"
 
 	interner.intern(testString)
 	interned, ok := interner.pool[testString]
 
-	testutil.Equals(t, true, ok)
-	testutil.Assert(t, interned.refs.Load() == 1, fmt.Sprintf("expected refs to be 1 but it was %d", interned.refs))
+	require.Equal(t, true, ok)
+	require.Equal(t, int64(1), interned.refs.Load(), fmt.Sprintf("expected refs to be 1 but it was %d", interned.refs.Load()))
 
 	interner.intern(testString)
 	interned, ok = interner.pool[testString]
 
-	testutil.Equals(t, true, ok)
-	testutil.Assert(t, interned.refs.Load() == 2, fmt.Sprintf("expected refs to be 2 but it was %d", interned.refs))
+	require.Equal(t, true, ok)
+	require.Equal(t, int64(2), interned.refs.Load(), fmt.Sprintf("expected refs to be 2 but it was %d", interned.refs.Load()))
 }
 
 func TestIntern_DeleteRef(t *testing.T) {
+	interner := newPool()
 	testString := "TestIntern_DeleteRef"
 
 	interner.intern(testString)
 	interned, ok := interner.pool[testString]
 
-	testutil.Equals(t, true, ok)
-	testutil.Assert(t, interned.refs.Load() == 1, fmt.Sprintf("expected refs to be 1 but it was %d", interned.refs))
+	require.Equal(t, true, ok)
+	require.Equal(t, int64(1), interned.refs.Load(), fmt.Sprintf("expected refs to be 1 but it was %d", interned.refs.Load()))
 
 	interner.release(testString)
 	_, ok = interner.pool[testString]
-	testutil.Equals(t, false, ok)
+	require.Equal(t, false, ok)
 }
 
 func TestIntern_MultiRef_Concurrent(t *testing.T) {
+	interner := newPool()
 	testString := "TestIntern_MultiRef_Concurrent"
 
 	interner.intern(testString)
 	interned, ok := interner.pool[testString]
-	testutil.Equals(t, true, ok)
-	testutil.Assert(t, interned.refs.Load() == 1, fmt.Sprintf("expected refs to be 1 but it was %d", interned.refs))
+	require.Equal(t, true, ok)
+	require.Equal(t, int64(1), interned.refs.Load(), fmt.Sprintf("expected refs to be 1 but it was %d", interned.refs.Load()))
 
 	go interner.release(testString)
 
@@ -82,6 +86,6 @@ func TestIntern_MultiRef_Concurrent(t *testing.T) {
 	interner.mtx.RLock()
 	interned, ok = interner.pool[testString]
 	interner.mtx.RUnlock()
-	testutil.Equals(t, true, ok)
-	testutil.Assert(t, interned.refs.Load() == 1, fmt.Sprintf("expected refs to be 1 but it was %d", interned.refs))
+	require.Equal(t, true, ok)
+	require.Equal(t, int64(1), interned.refs.Load(), fmt.Sprintf("expected refs to be 1 but it was %d", interned.refs.Load()))
 }

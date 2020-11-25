@@ -23,6 +23,7 @@ type Server struct {
 	Protection      ServerProtection   `json:"protection"`
 	Labels          map[string]string  `json:"labels"`
 	Volumes         []int              `json:"volumes"`
+	PrimaryDiskSize int                `json:"primary_disk_size"`
 }
 
 // ServerProtection defines the schema of a server's resource protection.
@@ -363,4 +364,20 @@ type ServerActionChangeAliasIPsRequest struct {
 // creating an change_alias_ips server action.
 type ServerActionChangeAliasIPsResponse struct {
 	Action Action `json:"action"`
+}
+
+// ServerGetMetricsResponse defines the schema of the response when requesting
+// metrics for a server.
+type ServerGetMetricsResponse struct {
+	Metrics struct {
+		Start      time.Time                       `json:"start"`
+		End        time.Time                       `json:"end"`
+		Step       float64                         `json:"step"`
+		TimeSeries map[string]ServerTimeSeriesVals `json:"time_series"`
+	} `json:"metrics"`
+}
+
+// ServerTimeSeriesVals contains the values for a Server time series.
+type ServerTimeSeriesVals struct {
+	Values []interface{} `json:"values"`
 }

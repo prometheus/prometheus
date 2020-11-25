@@ -15,6 +15,7 @@ package tsdb
 
 import (
 	"github.com/pkg/errors"
+
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -65,3 +66,4 @@ func (r *mockBReader) Tombstones() (tombstones.Reader, error) {
 	return tombstones.NewMemTombstones(), nil
 }
 func (r *mockBReader) Meta() BlockMeta { return BlockMeta{MinTime: r.mint, MaxTime: r.maxt} }
+func (r *mockBReader) Size() int64     { return 0 }

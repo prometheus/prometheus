@@ -30,16 +30,16 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/alecthomas/units"
 	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
+
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 )
-
-var merr tsdb_errors.MultiError
 
 const timeDelta = 30000
 
@@ -347,9 +347,7 @@ func listBlocks(path string, humanReadable bool) error {
 		return err
 	}
 	defer func() {
-		merr.Add(err)
-		merr.Add(db.Close())
-		err = merr.Err()
+		err = tsdb_errors.NewMulti(err, db.Close()).Err()
 	}()
 	blocks, err := db.Blocks()
 	if err != nil {
@@ -363,12 +361,12 @@ func printBlocks(blocks []tsdb.BlockReader, humanReadable bool) {
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	defer tw.Flush()
 
-	fmt.Fprintln(tw, "BLOCK ULID\tMIN TIME\tMAX TIME\tDURATION\tNUM SAMPLES\tNUM CHUNKS\tNUM SERIES")
+	fmt.Fprintln(tw, "BLOCK ULID\tMIN TIME\tMAX TIME\tDURATION\tNUM SAMPLES\tNUM CHUNKS\tNUM SERIES\tSIZE")
 	for _, b := range blocks {
 		meta := b.Meta()
 
 		fmt.Fprintf(tw,
-			"%v\t%v\t%v\t%v\t%v\t%v\t%v\n",
+			"%v\t%v\t%v\t%v\t%v\t%v\t%v\t%v\n",
 			meta.ULID,
 			getFormatedTime(meta.MinTime, humanReadable),
 			getFormatedTime(meta.MaxTime, humanReadable),
@@ -376,6 +374,7 @@ func printBlocks(blocks []tsdb.BlockReader, humanReadable bool) {
 			meta.Stats.NumSamples,
 			meta.Stats.NumChunks,
 			meta.Stats.NumSeries,
+			getFormatedBytes(b.Size(), humanReadable),
 		)
 	}
 }
@@ -385,6 +384,13 @@ func getFormatedTime(timestamp int64, humanReadable bool) string {
 		return time.Unix(timestamp/1000, 0).UTC().String()
 	}
 	return strconv.FormatInt(timestamp, 10)
+}
+
+func getFormatedBytes(bytes int64, humanReadable bool) string {
+	if humanReadable {
+		return units.Base2Bytes(bytes).String()
+	}
+	return strconv.FormatInt(bytes, 10)
 }
 
 func openBlock(path, blockID string) (*tsdb.DBReadOnly, tsdb.BlockReader, error) {
@@ -419,9 +425,7 @@ func analyzeBlock(path, blockID string, limit int) error {
 		return err
 	}
 	defer func() {
-		merr.Add(err)
-		merr.Add(db.Close())
-		err = merr.Err()
+		err = tsdb_errors.NewMulti(err, db.Close()).Err()
 	}()
 
 	meta := block.Meta()
@@ -569,9 +573,7 @@ func dumpSamples(path string, mint, maxt int64) (err error) {
 		return err
 	}
 	defer func() {
-		merr.Add(err)
-		merr.Add(db.Close())
-		err = merr.Err()
+		err = tsdb_errors.NewMulti(err, db.Close()).Err()
 	}()
 	q, err := db.Querier(context.TODO(), mint, maxt)
 	if err != nil {
@@ -595,11 +597,7 @@ func dumpSamples(path string, mint, maxt int64) (err error) {
 	}
 
 	if ws := ss.Warnings(); len(ws) > 0 {
-		var merr tsdb_errors.MultiError
-		for _, w := range ws {
-			merr.Add(w)
-		}
-		return merr.Err()
+		return tsdb_errors.NewMulti(ws...).Err()
 	}
 
 	if ss.Err() != nil {

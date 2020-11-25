@@ -22,6 +22,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -35,14 +36,6 @@ var (
 		Name:      "samples_in_total",
 		Help:      "Samples in to remote storage, compare to samples out for queue managers.",
 	})
-	highestTimestamp = maxGauge{
-		Gauge: promauto.NewGauge(prometheus.GaugeOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "highest_timestamp_in_seconds",
-			Help:      "Highest timestamp that has come into the remote storage via the Appender interface, in seconds since epoch.",
-		}),
-	}
 )
 
 // WriteStorage represents all the remote write storage.
@@ -58,10 +51,15 @@ type WriteStorage struct {
 	queues            map[string]*QueueManager
 	samplesIn         *ewmaRate
 	flushDeadline     time.Duration
+	interner          *pool
+	scraper           ReadyScrapeManager
+
+	// For timestampTracker.
+	highestTimestamp *maxTimestamp
 }
 
 // NewWriteStorage creates and runs a WriteStorage.
-func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, walDir string, flushDeadline time.Duration) *WriteStorage {
+func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, walDir string, flushDeadline time.Duration, sm ReadyScrapeManager) *WriteStorage {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -74,6 +72,19 @@ func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, walDir string
 		flushDeadline:     flushDeadline,
 		samplesIn:         newEWMARate(ewmaWeight, shardUpdateDuration),
 		walDir:            walDir,
+		interner:          newPool(),
+		scraper:           sm,
+		highestTimestamp: &maxTimestamp{
+			Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "highest_timestamp_in_seconds",
+				Help:      "Highest timestamp that has come into the remote storage via the Appender interface, in seconds since epoch.",
+			}),
+		},
+	}
+	if reg != nil {
+		reg.MustRegister(rws.highestTimestamp)
 	}
 	go rws.run()
 	return rws
@@ -146,10 +157,14 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rws.walDir,
 			rws.samplesIn,
 			rwConf.QueueConfig,
+			rwConf.MetadataConfig,
 			conf.GlobalConfig.ExternalLabels,
 			rwConf.WriteRelabelConfigs,
 			c,
 			rws.flushDeadline,
+			rws.interner,
+			rws.highestTimestamp,
+			rws.scraper,
 		)
 		// Keep track of which queues are new so we know which to start.
 		newHashes = append(newHashes, hash)
@@ -173,7 +188,8 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 // Appender implements storage.Storage.
 func (rws *WriteStorage) Appender(_ context.Context) storage.Appender {
 	return &timestampTracker{
-		writeStorage: rws,
+		writeStorage:         rws,
+		highestRecvTimestamp: rws.highestTimestamp,
 	}
 }
 
@@ -188,9 +204,10 @@ func (rws *WriteStorage) Close() error {
 }
 
 type timestampTracker struct {
-	writeStorage     *WriteStorage
-	samples          int64
-	highestTimestamp int64
+	writeStorage         *WriteStorage
+	samples              int64
+	highestTimestamp     int64
+	highestRecvTimestamp *maxTimestamp
 }
 
 // Add implements storage.Appender.
@@ -213,7 +230,7 @@ func (t *timestampTracker) Commit() error {
 	t.writeStorage.samplesIn.incr(t.samples)
 
 	samplesIn.Add(float64(t.samples))
-	highestTimestamp.Set(float64(t.highestTimestamp / 1000))
+	t.highestRecvTimestamp.Set(float64(t.highestTimestamp / 1000))
 	return nil
 }
 

@@ -29,6 +29,8 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/version"
+
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
@@ -38,6 +40,8 @@ const (
 	hetznerLabelRobotProduct   = hetznerRobotLabelPrefix + "product"
 	hetznerLabelRobotCancelled = hetznerRobotLabelPrefix + "cancelled"
 )
+
+var userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 
 // Discovery periodically performs Hetzner Robot requests. It implements
 // the Discoverer interface.
@@ -67,7 +71,14 @@ func newRobotDiscovery(conf *SDConfig, logger log.Logger) (*robotDiscovery, erro
 	return d, nil
 }
 func (d *robotDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
-	resp, err := d.client.Get(d.endpoint + "/server")
+	req, err := http.NewRequest("GET", d.endpoint+"/server", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("User-Agent", userAgent)
+
+	resp, err := d.client.Do(req)
 	if err != nil {
 		return nil, err
 	}

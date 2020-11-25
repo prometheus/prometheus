@@ -19,7 +19,7 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/cespare/xxhash"
+	"github.com/cespare/xxhash/v2"
 )
 
 // Well-known label names used by Prometheus components.
@@ -29,9 +29,10 @@ const (
 	BucketLabel  = "le"
 	InstanceName = "instance"
 
-	sep      = '\xff'
 	labelSep = '\xfe'
 )
+
+var seps = []byte{'\xff'}
 
 // Label is a key/value pair of strings.
 type Label struct {
@@ -70,10 +71,10 @@ func (ls Labels) Bytes(buf []byte) []byte {
 	b.WriteByte(labelSep)
 	for i, l := range ls {
 		if i > 0 {
-			b.WriteByte(sep)
+			b.WriteByte(seps[0])
 		}
 		b.WriteString(l.Name)
-		b.WriteByte(sep)
+		b.WriteByte(seps[0])
 		b.WriteString(l.Value)
 	}
 	return b.Bytes()
@@ -134,13 +135,26 @@ func (ls Labels) MatchLabels(on bool, names ...string) Labels {
 
 // Hash returns a hash value for the label set.
 func (ls Labels) Hash() uint64 {
+	// Use xxhash.Sum64(b) for fast path as it's faster.
 	b := make([]byte, 0, 1024)
+	for i, v := range ls {
+		if len(b)+len(v.Name)+len(v.Value)+2 >= cap(b) {
+			// If labels entry is 1KB+ do not allocate whole entry.
+			h := xxhash.New()
+			_, _ = h.Write(b)
+			for _, v := range ls[i:] {
+				_, _ = h.WriteString(v.Name)
+				_, _ = h.Write(seps)
+				_, _ = h.WriteString(v.Value)
+				_, _ = h.Write(seps)
+			}
+			return h.Sum64()
+		}
 
-	for _, v := range ls {
 		b = append(b, v.Name...)
-		b = append(b, sep)
+		b = append(b, seps[0])
 		b = append(b, v.Value...)
-		b = append(b, sep)
+		b = append(b, seps[0])
 	}
 	return xxhash.Sum64(b)
 }
@@ -157,9 +171,9 @@ func (ls Labels) HashForLabels(b []byte, names ...string) (uint64, []byte) {
 			i++
 		} else {
 			b = append(b, ls[i].Name...)
-			b = append(b, sep)
+			b = append(b, seps[0])
 			b = append(b, ls[i].Value...)
-			b = append(b, sep)
+			b = append(b, seps[0])
 			i++
 			j++
 		}
@@ -181,9 +195,9 @@ func (ls Labels) HashWithoutLabels(b []byte, names ...string) (uint64, []byte) {
 			continue
 		}
 		b = append(b, ls[i].Name...)
-		b = append(b, sep)
+		b = append(b, seps[0])
 		b = append(b, ls[i].Value...)
-		b = append(b, sep)
+		b = append(b, seps[0])
 	}
 	return xxhash.Sum64(b), b
 }
@@ -275,6 +289,7 @@ func (ls Labels) WithoutEmpty() Labels {
 		if v.Value != "" {
 			continue
 		}
+		// Do not copy the slice until it's necessary.
 		els := make(Labels, 0, len(ls)-1)
 		for _, v := range ls {
 			if v.Value != "" {

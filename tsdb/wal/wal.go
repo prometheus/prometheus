@@ -33,6 +33,7 @@ import (
 	"github.com/golang/snappy"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 )
 
@@ -73,9 +74,18 @@ func (p *page) reset() {
 	p.flushed = 0
 }
 
+// SegmentFile represents the underlying file used to store a segment.
+type SegmentFile interface {
+	Stat() (os.FileInfo, error)
+	Sync() error
+	io.Writer
+	io.Reader
+	io.Closer
+}
+
 // Segment represents a segment file.
 type Segment struct {
-	*os.File
+	SegmentFile
 	dir string
 	i   int
 }
@@ -129,7 +139,7 @@ func OpenWriteSegment(logger log.Logger, dir string, k int) (*Segment, error) {
 			return nil, errors.Wrap(err, "zero-pad torn page")
 		}
 	}
-	return &Segment{File: f, i: k, dir: dir}, nil
+	return &Segment{SegmentFile: f, i: k, dir: dir}, nil
 }
 
 // CreateSegment creates a new segment k in dir.
@@ -138,7 +148,7 @@ func CreateSegment(dir string, k int) (*Segment, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Segment{File: f, i: k, dir: dir}, nil
+	return &Segment{SegmentFile: f, i: k, dir: dir}, nil
 }
 
 // OpenReadSegment opens the segment with the given filename.
@@ -151,7 +161,7 @@ func OpenReadSegment(fn string) (*Segment, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Segment{File: f, i: k, dir: filepath.Dir(fn)}, nil
+	return &Segment{SegmentFile: f, i: k, dir: filepath.Dir(fn)}, nil
 }
 
 // WAL is a write ahead log that stores records in segment files.
@@ -516,8 +526,10 @@ func (w *WAL) flushPage(clear bool) error {
 	if clear {
 		p.alloc = pageSize // Write till end of page.
 	}
+
 	n, err := w.segment.Write(p.buf[p.flushed:p.alloc])
 	if err != nil {
+		p.flushed += n
 		return err
 	}
 	p.flushed += n
@@ -663,6 +675,9 @@ func (w *WAL) log(rec []byte, final bool) error {
 
 		if w.page.full() {
 			if err := w.flushPage(true); err != nil {
+				// TODO When the flushing fails at this point and the record has not been
+				// fully written to the buffer, we end up with a corrupted WAL because some part of the
+				// record have been written to the buffer, while the rest of the record will be discarded.
 				return err
 			}
 		}
@@ -704,7 +719,7 @@ func (w *WAL) Truncate(i int) (err error) {
 
 func (w *WAL) fsync(f *Segment) error {
 	start := time.Now()
-	err := f.File.Sync()
+	err := f.Sync()
 	w.metrics.fsyncDuration.Observe(time.Since(start).Seconds())
 	return err
 }

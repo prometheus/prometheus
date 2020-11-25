@@ -21,9 +21,9 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/util/testutil"
 )
 
 var testExpr = []struct {
@@ -2236,6 +2236,11 @@ var testExpr = []struct {
 		fail:   true,
 		errMsg: `expected type range vector`,
 	}, {
+		// This is testing that we are not re-rendering the expression string for each error, which would timeout.
+		input:  "(" + strings.Repeat("-{}-1", 10000) + ")" + strings.Repeat("[1m:]", 1000),
+		fail:   true,
+		errMsg: `1:3: parse error: vector selector must contain at least one non-empty matcher`,
+	}, {
 		input: "sum(sum)",
 		expected: &AggregateExpr{
 			Op: SUM,
@@ -2645,11 +2650,11 @@ var testExpr = []struct {
 	}, {
 		input:  "test[5d] OFFSET 10s [10m:5s]",
 		fail:   true,
-		errMsg: "1:1: parse error: subquery is only allowed on instant vector, got matrix in \"test[5d] offset 10s[10m:5s]\"",
+		errMsg: "1:1: parse error: subquery is only allowed on instant vector, got matrix",
 	}, {
 		input:  `(foo + bar{nm="val"})[5m:][10m:5s]`,
 		fail:   true,
-		errMsg: `1:1: parse error: subquery is only allowed on instant vector, got matrix in "(foo + bar{nm=\"val\"})[5m:][10m:5s]" instead`,
+		errMsg: `1:1: parse error: subquery is only allowed on instant vector, got matrix`,
 	},
 }
 
@@ -2659,23 +2664,23 @@ func TestParseExpressions(t *testing.T) {
 			expr, err := ParseExpr(test.input)
 
 			// Unexpected errors are always caused by a bug.
-			testutil.Assert(t, err != errUnexpected, "unexpected error occurred")
+			require.NotEqual(t, err, errUnexpected, "unexpected error occurred")
 
 			if !test.fail {
-				testutil.Ok(t, err)
-				testutil.Equals(t, test.expected, expr, "error on input '%s'", test.input)
+				require.NoError(t, err)
+				require.Equal(t, test.expected, expr, "error on input '%s'", test.input)
 			} else {
-				testutil.NotOk(t, err)
-				testutil.Assert(t, strings.Contains(err.Error(), test.errMsg), "unexpected error on input '%s', expected '%s', got '%s'", test.input, test.errMsg, err.Error())
+				require.Error(t, err)
+				require.Contains(t, err.Error(), test.errMsg, "unexpected error on input '%s', expected '%s', got '%s'", test.input, test.errMsg, err.Error())
 
 				errorList, ok := err.(ParseErrors)
 
-				testutil.Assert(t, ok, "unexpected error type")
+				require.True(t, ok, "unexpected error type")
 
 				for _, e := range errorList {
-					testutil.Assert(t, 0 <= e.PositionRange.Start, "parse error has negative position\nExpression '%s'\nError: %v", test.input, e)
-					testutil.Assert(t, e.PositionRange.Start <= e.PositionRange.End, "parse error has negative length\nExpression '%s'\nError: %v", test.input, e)
-					testutil.Assert(t, e.PositionRange.End <= Pos(len(test.input)), "parse error is not contained in input\nExpression '%s'\nError: %v", test.input, e)
+					require.True(t, 0 <= e.PositionRange.Start, "parse error has negative position\nExpression '%s'\nError: %v", test.input, e)
+					require.True(t, e.PositionRange.Start <= e.PositionRange.End, "parse error has negative length\nExpression '%s'\nError: %v", test.input, e)
+					require.True(t, e.PositionRange.End <= Pos(len(test.input)), "parse error is not contained in input\nExpression '%s'\nError: %v", test.input, e)
 				}
 			}
 		})
@@ -2685,11 +2690,11 @@ func TestParseExpressions(t *testing.T) {
 // NaN has no equality. Thus, we need a separate test for it.
 func TestNaNExpression(t *testing.T) {
 	expr, err := ParseExpr("NaN")
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	nl, ok := expr.(*NumberLiteral)
-	testutil.Assert(t, ok, "expected number literal but got %T", expr)
-	testutil.Assert(t, math.IsNaN(float64(nl.Val)), "expected 'NaN' in number literal but got %v", nl.Val)
+	require.True(t, ok, "expected number literal but got %T", expr)
+	require.True(t, math.IsNaN(float64(nl.Val)), "expected 'NaN' in number literal but got %v", nl.Val)
 }
 
 func mustLabelMatcher(mt labels.MatchType, name, val string) *labels.Matcher {
@@ -2804,14 +2809,14 @@ func TestParseSeries(t *testing.T) {
 		metric, vals, err := ParseSeriesDesc(test.input)
 
 		// Unexpected errors are always caused by a bug.
-		testutil.Assert(t, err != errUnexpected, "unexpected error occurred")
+		require.NotEqual(t, err, errUnexpected, "unexpected error occurred")
 
 		if !test.fail {
-			testutil.Ok(t, err)
-			testutil.Equals(t, test.expectedMetric, metric, "error on input '%s'", test.input)
-			testutil.Equals(t, test.expectedValues, vals, "error in input '%s'", test.input)
+			require.NoError(t, err)
+			require.Equal(t, test.expectedMetric, metric, "error on input '%s'", test.input)
+			require.Equal(t, test.expectedValues, vals, "error in input '%s'", test.input)
 		} else {
-			testutil.NotOk(t, err)
+			require.Error(t, err)
 		}
 	}
 }
@@ -2821,7 +2826,7 @@ func TestRecoverParserRuntime(t *testing.T) {
 	var err error
 
 	defer func() {
-		testutil.Equals(t, errUnexpected, err)
+		require.Equal(t, errUnexpected, err)
 	}()
 	defer p.recover(&err)
 	// Cause a runtime panic.
@@ -2837,7 +2842,7 @@ func TestRecoverParserError(t *testing.T) {
 	e := errors.New("custom error")
 
 	defer func() {
-		testutil.Equals(t, e.Error(), err.Error())
+		require.Equal(t, e.Error(), err.Error())
 	}()
 	defer p.recover(&err)
 

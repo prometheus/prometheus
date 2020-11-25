@@ -212,7 +212,7 @@ func (s *Spec) initialize() {
 		}
 	}
 	for path, pathItem := range s.AllPaths() {
-		s.analyzeOperations(path, &pathItem)
+		s.analyzeOperations(path, &pathItem) //#nosec
 	}
 
 	for name, parameter := range s.spec.Parameters {
@@ -277,7 +277,7 @@ func (s *Spec) analyzeOperations(path string, pi *spec.PathItem) {
 	for i, param := range op.Parameters {
 		refPref := slashpath.Join("/paths", jsonpointer.Escape(path), "parameters", strconv.Itoa(i))
 		if param.Ref.String() != "" {
-			s.references.addParamRef(refPref, &param)
+			s.references.addParamRef(refPref, &param) //#nosec
 		}
 		if param.Pattern != "" {
 			s.patterns.addParameterPattern(refPref, param.Pattern)
@@ -335,7 +335,7 @@ func (s *Spec) analyzeOperation(method, path string, op *spec.Operation) {
 	for i, param := range op.Parameters {
 		refPref := slashpath.Join(prefix, "parameters", strconv.Itoa(i))
 		if param.Ref.String() != "" {
-			s.references.addParamRef(refPref, &param)
+			s.references.addParamRef(refPref, &param) //#nosec
 		}
 		if param.Pattern != "" {
 			s.patterns.addParameterPattern(refPref, param.Pattern)
@@ -368,7 +368,7 @@ func (s *Spec) analyzeOperation(method, path string, op *spec.Operation) {
 		for k, res := range op.Responses.StatusCodeResponses {
 			refPref := slashpath.Join(prefix, "responses", strconv.Itoa(k))
 			if res.Ref.String() != "" {
-				s.references.addResponseRef(refPref, &res)
+				s.references.addResponseRef(refPref, &res) //#nosec
 			}
 			for k, v := range res.Headers {
 				hRefPref := slashpath.Join(refPref, "headers", k)
@@ -665,25 +665,25 @@ func (s *Spec) SafeParametersFor(operationID string, callmeOnError ErrorOnParamF
 	}
 	for _, pi := range s.spec.Paths.Paths {
 		if pi.Get != nil && pi.Get.ID == operationID {
-			return gatherParams(&pi, pi.Get)
+			return gatherParams(&pi, pi.Get) //#nosec
 		}
 		if pi.Head != nil && pi.Head.ID == operationID {
-			return gatherParams(&pi, pi.Head)
+			return gatherParams(&pi, pi.Head) //#nosec
 		}
 		if pi.Options != nil && pi.Options.ID == operationID {
-			return gatherParams(&pi, pi.Options)
+			return gatherParams(&pi, pi.Options) //#nosec
 		}
 		if pi.Post != nil && pi.Post.ID == operationID {
-			return gatherParams(&pi, pi.Post)
+			return gatherParams(&pi, pi.Post) //#nosec
 		}
 		if pi.Patch != nil && pi.Patch.ID == operationID {
-			return gatherParams(&pi, pi.Patch)
+			return gatherParams(&pi, pi.Patch) //#nosec
 		}
 		if pi.Put != nil && pi.Put.ID == operationID {
-			return gatherParams(&pi, pi.Put)
+			return gatherParams(&pi, pi.Put) //#nosec
 		}
 		if pi.Delete != nil && pi.Delete.ID == operationID {
-			return gatherParams(&pi, pi.Delete)
+			return gatherParams(&pi, pi.Delete) //#nosec
 		}
 	}
 	return nil

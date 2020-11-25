@@ -77,7 +77,108 @@ eval instant at 50m sum by (group) (http_requests{job="api-server"})
 eval instant at 50m sum(sum by (group) (http_requests{job="api-server"})) by (job)
   {} 1000
 
+eval instant at 50m SUM(http_requests)
+	{} 3600
 
+eval instant at 50m SUM(http_requests{instance="0"}) BY(job)
+	{job="api-server"} 400
+	{job="app-server"} 1200
+
+eval instant at 50m SUM(http_requests) BY (job)
+	{job="api-server"} 1000
+	{job="app-server"} 2600
+
+# Non-existent labels mentioned in BY-clauses shouldn't propagate to output.
+eval instant at 50m SUM(http_requests) BY (job, nonexistent)
+	{job="api-server"} 1000
+	{job="app-server"} 2600
+
+eval instant at 50m COUNT(http_requests) BY (job)
+	{job="api-server"} 4
+	{job="app-server"} 4
+
+eval instant at 50m SUM(http_requests) BY (job, group)
+	{group="canary", job="api-server"} 700
+	{group="canary", job="app-server"} 1500
+	{group="production", job="api-server"} 300
+	{group="production", job="app-server"} 1100
+
+eval instant at 50m AVG(http_requests) BY (job)
+	{job="api-server"} 250
+	{job="app-server"} 650
+
+eval instant at 50m MIN(http_requests) BY (job)
+	{job="api-server"} 100
+	{job="app-server"} 500
+
+eval instant at 50m MAX(http_requests) BY (job)
+	{job="api-server"} 400
+	{job="app-server"} 800
+
+eval instant at 50m abs(-1 * http_requests{group="production",job="api-server"})
+	{group="production", instance="0", job="api-server"} 100
+	{group="production", instance="1", job="api-server"} 200
+
+eval instant at 50m floor(0.004 * http_requests{group="production",job="api-server"})
+	{group="production", instance="0", job="api-server"} 0
+	{group="production", instance="1", job="api-server"} 0
+
+eval instant at 50m ceil(0.004 * http_requests{group="production",job="api-server"})
+	{group="production", instance="0", job="api-server"} 1
+	{group="production", instance="1", job="api-server"} 1
+
+eval instant at 50m round(0.004 * http_requests{group="production",job="api-server"})
+	{group="production", instance="0", job="api-server"} 0
+	{group="production", instance="1", job="api-server"} 1
+
+# Round should correctly handle negative numbers.
+eval instant at 50m round(-1 * (0.004 * http_requests{group="production",job="api-server"}))
+	{group="production", instance="0", job="api-server"} 0
+	{group="production", instance="1", job="api-server"} -1
+
+# Round should round half up.
+eval instant at 50m round(0.005 * http_requests{group="production",job="api-server"})
+	{group="production", instance="0", job="api-server"} 1
+	{group="production", instance="1", job="api-server"} 1
+
+eval instant at 50m round(-1 * (0.005 * http_requests{group="production",job="api-server"}))
+	{group="production", instance="0", job="api-server"} 0
+	{group="production", instance="1", job="api-server"} -1
+
+eval instant at 50m round(1 + 0.005 * http_requests{group="production",job="api-server"})
+	{group="production", instance="0", job="api-server"} 2
+	{group="production", instance="1", job="api-server"} 2
+
+eval instant at 50m round(-1 * (1 + 0.005 * http_requests{group="production",job="api-server"}))
+	{group="production", instance="0", job="api-server"} -1
+	{group="production", instance="1", job="api-server"} -2
+
+# Round should accept the number to round nearest to.
+eval instant at 50m round(0.0005 * http_requests{group="production",job="api-server"}, 0.1)
+	{group="production", instance="0", job="api-server"} 0.1
+	{group="production", instance="1", job="api-server"} 0.1
+
+eval instant at 50m round(2.1 + 0.0005 * http_requests{group="production",job="api-server"}, 0.1)
+	{group="production", instance="0", job="api-server"} 2.2
+	{group="production", instance="1", job="api-server"} 2.2
+
+eval instant at 50m round(5.2 + 0.0005 * http_requests{group="production",job="api-server"}, 0.1)
+	{group="production", instance="0", job="api-server"} 5.3
+	{group="production", instance="1", job="api-server"} 5.3
+
+# Round should work correctly with negative numbers and multiple decimal places.
+eval instant at 50m round(-1 * (5.2 + 0.0005 * http_requests{group="production",job="api-server"}), 0.1)
+	{group="production", instance="0", job="api-server"} -5.2
+	{group="production", instance="1", job="api-server"} -5.3
+
+# Round should work correctly with big toNearests.
+eval instant at 50m round(0.025 * http_requests{group="production",job="api-server"}, 5)
+	{group="production", instance="0", job="api-server"} 5
+	{group="production", instance="1", job="api-server"} 5
+
+eval instant at 50m round(0.045 * http_requests{group="production",job="api-server"}, 5)
+	{group="production", instance="0", job="api-server"} 5
+	{group="production", instance="1", job="api-server"} 10
 
 # Standard deviation and variance.
 eval instant at 50m stddev(http_requests)
@@ -106,7 +207,6 @@ eval instant at 50m stddev(http_requests)
 
 eval instant at 50m stdvar(http_requests)
   {} 0.0
-
 
 
 # Regression test for missing separator byte in labelsToGroupingKey.

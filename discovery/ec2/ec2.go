@@ -42,21 +42,22 @@ const (
 	ec2LabelAMI               = ec2Label + "ami"
 	ec2LabelAZ                = ec2Label + "availability_zone"
 	ec2LabelArch              = ec2Label + "architecture"
+	ec2LabelIPv6Addresses     = ec2Label + "ipv6_addresses"
 	ec2LabelInstanceID        = ec2Label + "instance_id"
+	ec2LabelInstanceLifecycle = ec2Label + "instance_lifecycle"
 	ec2LabelInstanceState     = ec2Label + "instance_state"
 	ec2LabelInstanceType      = ec2Label + "instance_type"
-	ec2LabelInstanceLifecycle = ec2Label + "instance_lifecycle"
 	ec2LabelOwnerID           = ec2Label + "owner_id"
 	ec2LabelPlatform          = ec2Label + "platform"
-	ec2LabelPublicDNS         = ec2Label + "public_dns_name"
-	ec2LabelPublicIP          = ec2Label + "public_ip"
+	ec2LabelPrimarySubnetID   = ec2Label + "primary_subnet_id"
 	ec2LabelPrivateDNS        = ec2Label + "private_dns_name"
 	ec2LabelPrivateIP         = ec2Label + "private_ip"
-	ec2LabelPrimarySubnetID   = ec2Label + "primary_subnet_id"
+	ec2LabelPublicDNS         = ec2Label + "public_dns_name"
+	ec2LabelPublicIP          = ec2Label + "public_ip"
 	ec2LabelSubnetID          = ec2Label + "subnet_id"
 	ec2LabelTag               = ec2Label + "tag_"
 	ec2LabelVPCID             = ec2Label + "vpc_id"
-	subnetSeparator           = ","
+	ec2LabelSeparator         = ","
 )
 
 // DefaultSDConfig is the default EC2 SD configuration.
@@ -243,22 +244,33 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 					labels[ec2LabelVPCID] = model.LabelValue(*inst.VpcId)
 					labels[ec2LabelPrimarySubnetID] = model.LabelValue(*inst.SubnetId)
 
-					// Deduplicate VPC Subnet IDs maintaining the order of the network interfaces returned by EC2.
 					var subnets []string
+					var ipv6addrs []string
 					subnetsMap := make(map[string]struct{})
 					for _, eni := range inst.NetworkInterfaces {
 						if eni.SubnetId == nil {
 							continue
 						}
+						// Deduplicate VPC Subnet IDs maintaining the order of the subnets returned by EC2.
 						if _, ok := subnetsMap[*eni.SubnetId]; !ok {
 							subnetsMap[*eni.SubnetId] = struct{}{}
 							subnets = append(subnets, *eni.SubnetId)
 						}
+
+						for _, ipv6addr := range eni.Ipv6Addresses {
+							ipv6addrs = append(ipv6addrs, *ipv6addr.Ipv6Address)
+						}
 					}
 					labels[ec2LabelSubnetID] = model.LabelValue(
-						subnetSeparator +
-							strings.Join(subnets, subnetSeparator) +
-							subnetSeparator)
+						ec2LabelSeparator +
+							strings.Join(subnets, ec2LabelSeparator) +
+							ec2LabelSeparator)
+					if len(ipv6addrs) > 0 {
+						labels[ec2LabelIPv6Addresses] = model.LabelValue(
+							ec2LabelSeparator +
+								strings.Join(ipv6addrs, ec2LabelSeparator) +
+								ec2LabelSeparator)
+					}
 				}
 
 				for _, t := range inst.Tags {

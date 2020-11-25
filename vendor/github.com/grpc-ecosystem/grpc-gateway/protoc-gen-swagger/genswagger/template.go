@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"math"
+	"net/textproto"
 	"os"
 	"reflect"
 	"regexp"
@@ -13,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"text/template"
+	"time"
 
 	"github.com/golang/glog"
 	"github.com/golang/protobuf/jsonpb"
@@ -64,8 +67,7 @@ var wktSchemas = map[string]schemaCore{
 		Format: "double",
 	},
 	".google.protobuf.BoolValue": schemaCore{
-		Type:   "boolean",
-		Format: "boolean",
+		Type: "boolean",
 	},
 	".google.protobuf.Empty": schemaCore{},
 	".google.protobuf.Struct": schemaCore{
@@ -109,9 +111,9 @@ func getEnumDefault(enum *descriptor.Enum) string {
 }
 
 // messageToQueryParameters converts a message to a list of swagger query parameters.
-func messageToQueryParameters(message *descriptor.Message, reg *descriptor.Registry, pathParams []descriptor.Parameter) (params []swaggerParameterObject, err error) {
+func messageToQueryParameters(message *descriptor.Message, reg *descriptor.Registry, pathParams []descriptor.Parameter, body *descriptor.Body) (params []swaggerParameterObject, err error) {
 	for _, field := range message.Fields {
-		p, err := queryParams(message, field, "", reg, pathParams)
+		p, err := queryParams(message, field, "", reg, pathParams, body)
 		if err != nil {
 			return nil, err
 		}
@@ -121,8 +123,8 @@ func messageToQueryParameters(message *descriptor.Message, reg *descriptor.Regis
 }
 
 // queryParams converts a field to a list of swagger query parameters recursively through the use of nestedQueryParams.
-func queryParams(message *descriptor.Message, field *descriptor.Field, prefix string, reg *descriptor.Registry, pathParams []descriptor.Parameter) (params []swaggerParameterObject, err error) {
-    return nestedQueryParams(message, field, prefix, reg, pathParams, map[string]bool{})
+func queryParams(message *descriptor.Message, field *descriptor.Field, prefix string, reg *descriptor.Registry, pathParams []descriptor.Parameter, body *descriptor.Body) (params []swaggerParameterObject, err error) {
+	return nestedQueryParams(message, field, prefix, reg, pathParams, body, map[string]bool{})
 }
 
 // nestedQueryParams converts a field to a list of swagger query parameters recursively.
@@ -131,11 +133,22 @@ func queryParams(message *descriptor.Message, field *descriptor.Field, prefix st
 //      touched map[string]bool
 // If a cycle is discovered, an error is returned, as cyclical data structures aren't allowed
 //  in query parameters.
-func nestedQueryParams(message *descriptor.Message, field *descriptor.Field, prefix string, reg *descriptor.Registry, pathParams []descriptor.Parameter, touched map[string]bool) (params []swaggerParameterObject, err error) {
+func nestedQueryParams(message *descriptor.Message, field *descriptor.Field, prefix string, reg *descriptor.Registry, pathParams []descriptor.Parameter, body *descriptor.Body, touchedIn map[string]bool) (params []swaggerParameterObject, err error) {
 	// make sure the parameter is not already listed as a path parameter
 	for _, pathParam := range pathParams {
 		if pathParam.Target == field {
 			return nil, nil
+		}
+	}
+	// make sure the parameter is not already listed as a body parameter
+	if body != nil {
+		if body.FieldPath == nil {
+			return nil, nil
+		}
+		for _, fieldPath := range body.FieldPath {
+			if fieldPath.Target == field {
+				return nil, nil
+			}
 		}
 	}
 	schema := schemaOfField(field, reg, nil)
@@ -226,13 +239,21 @@ func nestedQueryParams(message *descriptor.Message, field *descriptor.Field, pre
 	if err != nil {
 		return nil, fmt.Errorf("unknown message type %s", fieldType)
 	}
-        // Check for cyclical message reference:
-        isCycle := touched[*msg.Name]
-        if isCycle {
-            return nil, fmt.Errorf("Recursive types are not allowed for query parameters, cycle found on %q", fieldType)
-        }
-        // Update map with the massage name so a cycle further down the recursive path can be detected. 
-        touched[*msg.Name] = true
+
+	// Check for cyclical message reference:
+	isCycle := touchedIn[*msg.Name]
+	if isCycle {
+		return nil, fmt.Errorf("Recursive types are not allowed for query parameters, cycle found on %q", fieldType)
+	}
+
+	// Construct a new map with the message name so a cycle further down the recursive path can be detected.
+	// Do not keep anything in the original touched reference and do not pass that reference along.  This will
+	// prevent clobbering adjacent records while recursing.
+	touchedOut := make(map[string]bool)
+	for k, v := range touchedIn {
+		touchedOut[k] = v
+	}
+	touchedOut[*msg.Name] = true
 
 	for _, nestedField := range msg.Fields {
 		var fieldName string
@@ -241,7 +262,7 @@ func nestedQueryParams(message *descriptor.Message, field *descriptor.Field, pre
 		} else {
 			fieldName = field.GetName()
 		}
-		p, err := nestedQueryParams(msg, nestedField, prefix+fieldName+".", reg, pathParams, touched)
+		p, err := nestedQueryParams(msg, nestedField, prefix+fieldName+".", reg, pathParams, body, touchedOut)
 		if err != nil {
 			return nil, err
 		}
@@ -486,7 +507,7 @@ func schemaOfField(f *descriptor.Field, reg *descriptor.Registry, refs refMap) s
 		}
 	}
 
-	if j, err := extractJSONSchemaFromFieldDescriptor(fd); err == nil {
+	if j, err := extractJSONSchemaFromFieldDescriptor(f.FieldDescriptorProto); err == nil {
 		updateSwaggerObjectFromJSONSchema(&ret, j, reg, f)
 	}
 
@@ -520,9 +541,10 @@ func primitiveSchema(t pbdescriptor.FieldDescriptorProto_Type) (ftype, format st
 		// Ditto.
 		return "integer", "int64", true
 	case pbdescriptor.FieldDescriptorProto_TYPE_BOOL:
-		return "boolean", "boolean", true
+		// NOTE: in swagger specification, format should be empty on boolean type
+		return "boolean", "", true
 	case pbdescriptor.FieldDescriptorProto_TYPE_STRING:
-		// NOTE: in swagger specifition, format should be empty on string type
+		// NOTE: in swagger specification, format should be empty on string type
 		return "string", "", true
 	case pbdescriptor.FieldDescriptorProto_TYPE_BYTES:
 		return "string", "byte", true
@@ -751,7 +773,13 @@ func isResourceName(prefix string) bool {
 
 func renderServices(services []*descriptor.Service, paths swaggerPathsObject, reg *descriptor.Registry, requestResponseRefs, customRefs refMap, msgs []*descriptor.Message) error {
 	// Correctness of svcIdx and methIdx depends on 'services' containing the services in the same order as the 'file.Service' array.
+	svcBaseIdx := 0
+	var lastFile *descriptor.File = nil
 	for svcIdx, svc := range services {
+		if svc.File != lastFile {
+			lastFile = svc.File
+			svcBaseIdx = svcIdx
+		}
 		for methIdx, meth := range svc.Methods {
 			for bIdx, b := range meth.Bindings {
 				// Iterate over all the swagger parameters
@@ -885,9 +913,15 @@ func renderServices(services []*descriptor.Service, paths swaggerPathsObject, re
 						Required:    true,
 						Schema:      &schema,
 					})
+					// add the parameters to the query string
+					queryParams, err := messageToQueryParameters(meth.RequestType, reg, b.PathParams, b.Body)
+					if err != nil {
+						return err
+					}
+					parameters = append(parameters, queryParams...)
 				} else if b.HTTPMethod == "GET" || b.HTTPMethod == "DELETE" {
 					// add the parameters to the query string
-					queryParams, err := messageToQueryParameters(meth.RequestType, reg, b.PathParams)
+					queryParams, err := messageToQueryParameters(meth.RequestType, reg, b.PathParams, b.Body)
 					if err != nil {
 						return err
 					}
@@ -970,7 +1004,6 @@ func renderServices(services []*descriptor.Service, paths swaggerPathsObject, re
 				if pkg := svc.File.GetPackage(); pkg != "" && reg.IsIncludePackageInTags() {
 					tag = pkg + "." + tag
 				}
-
 				operationObject := &swaggerOperationObject{
 					Tags:       []string{tag},
 					Parameters: parameters,
@@ -978,6 +1011,7 @@ func renderServices(services []*descriptor.Service, paths swaggerPathsObject, re
 						"200": swaggerResponseObject{
 							Description: desc,
 							Schema:      responseSchema,
+							Headers:     swaggerHeadersObject{},
 						},
 					},
 				}
@@ -986,7 +1020,7 @@ func renderServices(services []*descriptor.Service, paths swaggerPathsObject, re
 					if hasErrDef {
 						// https://github.com/OAI/OpenAPI-Specification/blob/3.0.0/versions/2.0.md#responses-object
 						operationObject.Responses["default"] = swaggerResponseObject{
-							Description: "An unexpected error response",
+							Description: "An unexpected error response.",
 							Schema: swaggerSchemaObject{
 								schemaCore: schemaCore{
 									Ref: fmt.Sprintf("#/definitions/%s", errDef),
@@ -1011,7 +1045,7 @@ func renderServices(services []*descriptor.Service, paths swaggerPathsObject, re
 					}
 				}
 
-				methComments := protoComments(reg, svc.File, nil, "Service", int32(svcIdx), methProtoPath, int32(methIdx))
+				methComments := protoComments(reg, svc.File, nil, "Service", int32(svcIdx-svcBaseIdx), methProtoPath, int32(methIdx))
 				if err := updateSwaggerDataFromComments(reg, operationObject, meth, methComments, false); err != nil {
 					panic(err)
 				}
@@ -1073,6 +1107,13 @@ func renderServices(services []*descriptor.Service, paths swaggerPathsObject, re
 							}
 							if resp.Examples != nil {
 								respObj.Examples = swaggerExamplesFromProtoExamples(resp.Examples)
+							}
+							if resp.Headers != nil {
+								hdrs, err := processHeaders(resp.Headers)
+								if err != nil {
+									return err
+								}
+								respObj.Headers = hdrs
 							}
 							if resp.Extensions != nil {
 								exts, err := processExtensions(resp.Extensions)
@@ -1415,6 +1456,180 @@ func processExtensions(inputExts map[string]*structpb.Value) ([]extension, error
 	}
 	sort.Slice(exts, func(i, j int) bool { return exts[i].key < exts[j].key })
 	return exts, nil
+}
+
+func validateHeaderTypeAndFormat(headerType string, format string) error {
+	// The type of the object. The value MUST be one of "string", "number", "integer", "boolean", or "array"
+	// See: https://github.com/OAI/OpenAPI-Specification/blob/3.0.0/versions/2.0.md#headerObject
+	// Note: currently not implementing array as we are only implementing this in the operation response context
+	switch headerType {
+	// the format property is an open string-valued property, and can have any value to support documentation needs
+	// primary check for format is to ensure that the number/integer formats are extensions of the specified type
+	// See: https://github.com/OAI/OpenAPI-Specification/blob/3.0.0/versions/2.0.md#dataTypeFormat
+	case "string":
+		return nil
+	case "number":
+		switch format {
+		case "uint",
+			"uint8",
+			"uint16",
+			"uint32",
+			"uint64",
+			"int",
+			"int8",
+			"int16",
+			"int32",
+			"int64",
+			"float",
+			"float32",
+			"float64",
+			"complex64",
+			"complex128",
+			"double",
+			"byte",
+			"rune",
+			"uintptr",
+			"":
+			return nil
+		default:
+			return fmt.Errorf("the provided format %q is not a valid extension of the type %q", format, headerType)
+		}
+	case "integer":
+		switch format {
+		case "uint",
+			"uint8",
+			"uint16",
+			"uint32",
+			"uint64",
+			"int",
+			"int8",
+			"int16",
+			"int32",
+			"int64",
+			"":
+			return nil
+		default:
+			return fmt.Errorf("the provided format %q is not a valid extension of the type %q", format, headerType)
+		}
+	case "boolean":
+		return nil
+	}
+	return fmt.Errorf("the provided header type %q is not supported", headerType)
+}
+
+func validateDefaultValueTypeAndFormat(headerType string, defaultValue string, format string) error {
+	switch headerType {
+	case "string":
+		if !isQuotedString(defaultValue) {
+			return fmt.Errorf("the provided default value %q does not match provider type %q, or is not properly quoted with escaped quotations", defaultValue, headerType)
+		}
+		switch format {
+		case "date-time":
+			unquoteTime := strings.Trim(defaultValue, `"`)
+			_, err := time.Parse(time.RFC3339, unquoteTime)
+			if err != nil {
+				return fmt.Errorf("the provided default value %q is not a valid RFC3339 date-time string", defaultValue)
+			}
+		case "date":
+			const (
+				layoutRFC3339Date = "2006-01-02"
+			)
+			unquoteDate := strings.Trim(defaultValue, `"`)
+			_, err := time.Parse(layoutRFC3339Date, unquoteDate)
+			if err != nil {
+				return fmt.Errorf("the provided default value %q is not a valid RFC3339 date-time string", defaultValue)
+			}
+		}
+	case "number":
+		err := isJSONNumber(defaultValue, headerType)
+		if err != nil {
+			return err
+		}
+	case "integer":
+		switch format {
+		case "int32":
+			_, err := strconv.ParseInt(defaultValue, 0, 32)
+			if err != nil {
+				return fmt.Errorf("the provided default value %q does not match provided format %q", defaultValue, format)
+			}
+		case "uint32":
+			_, err := strconv.ParseUint(defaultValue, 0, 32)
+			if err != nil {
+				return fmt.Errorf("the provided default value %q does not match provided format %q", defaultValue, format)
+			}
+		case "int64":
+			_, err := strconv.ParseInt(defaultValue, 0, 64)
+			if err != nil {
+				return fmt.Errorf("the provided default value %q does not match provided format %q", defaultValue, format)
+			}
+		case "uint64":
+			_, err := strconv.ParseUint(defaultValue, 0, 64)
+			if err != nil {
+				return fmt.Errorf("the provided default value %q does not match provided format %q", defaultValue, format)
+			}
+		default:
+			_, err := strconv.ParseInt(defaultValue, 0, 64)
+			if err != nil {
+				return fmt.Errorf("the provided default value %q does not match provided type %q", defaultValue, headerType)
+			}
+		}
+	case "boolean":
+		if !isBool(defaultValue) {
+			return fmt.Errorf("the provided default value %q does not match provider type %q", defaultValue, headerType)
+		}
+	}
+	return nil
+}
+
+func isQuotedString(s string) bool {
+	return len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"'
+}
+
+func isJSONNumber(s string, t string) error {
+	val, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return fmt.Errorf("the provided default value %q does not match provider type %q", s, t)
+	}
+	// Floating point values that cannot be represented as sequences of digits (such as Infinity and NaN) are not permitted.
+	// See: https://tools.ietf.org/html/rfc4627#section-2.4
+	if math.IsInf(val, 0) || math.IsNaN(val) {
+		return fmt.Errorf("the provided number %q is not a valid JSON number", s)
+	}
+
+	return nil
+}
+
+func isBool(s string) bool {
+	// Unable to use strconv.ParseBool because it returns truthy values https://golang.org/pkg/strconv/#example_ParseBool
+	// per https://swagger.io/specification/v2/#data-types
+	// type: boolean represents two values: true and false. Note that truthy and falsy values such as "true", "", 0 or null are not considered boolean values.
+	return s == "true" || s == "false"
+}
+
+func processHeaders(inputHdrs map[string]*swagger_options.Header) (swaggerHeadersObject, error) {
+	hdrs := map[string]swaggerHeaderObject{}
+	for k, v := range inputHdrs {
+		header := textproto.CanonicalMIMEHeaderKey(k)
+		ret := swaggerHeaderObject{
+			Description: v.Description,
+			Format:      v.Format,
+			Pattern:     v.Pattern,
+		}
+		err := validateHeaderTypeAndFormat(v.Type, v.Format)
+		if err != nil {
+			return nil, err
+		}
+		ret.Type = v.Type
+		if v.Default != "" {
+			err := validateDefaultValueTypeAndFormat(v.Type, v.Default, v.Format)
+			if err != nil {
+				return nil, err
+			}
+			ret.Default = json.RawMessage(v.Default)
+		}
+		hdrs[header] = ret
+	}
+	return hdrs, nil
 }
 
 // updateSwaggerDataFromComments updates a Swagger object based on a comment
@@ -1830,8 +2045,15 @@ func updateSwaggerObjectFromJSONSchema(s *swaggerSchemaObject, j *swagger_option
 	s.MaxProperties = j.GetMaxProperties()
 	s.MinProperties = j.GetMinProperties()
 	s.Required = j.GetRequired()
+	s.Enum = j.GetEnum()
 	if overrideType := j.GetType(); len(overrideType) > 0 {
 		s.Type = strings.ToLower(overrideType[0].String())
+	}
+	if j != nil && j.GetExample() != "" {
+		s.Example = json.RawMessage(j.GetExample())
+	}
+	if j != nil && j.GetFormat() != "" {
+		s.Format = j.GetFormat()
 	}
 }
 
@@ -1845,6 +2067,9 @@ func swaggerSchemaFromProtoSchema(s *swagger_options.Schema, reg *descriptor.Reg
 
 	if s != nil && s.Example != nil {
 		ret.Example = json.RawMessage(s.Example.Value)
+	}
+	if s != nil && s.ExampleString != "" {
+		ret.Example = json.RawMessage(s.ExampleString)
 	}
 
 	return ret
@@ -1889,13 +2114,14 @@ func protoJSONSchemaTypeToFormat(in []swagger_options.JSONSchema_JSONSchemaSimpl
 	case swagger_options.JSONSchema_ARRAY:
 		return "array", ""
 	case swagger_options.JSONSchema_BOOLEAN:
-		return "boolean", "boolean"
+		// NOTE: in swagger specification, format should be empty on boolean type
+		return "boolean", ""
 	case swagger_options.JSONSchema_INTEGER:
 		return "integer", "int32"
 	case swagger_options.JSONSchema_NUMBER:
 		return "number", "double"
 	case swagger_options.JSONSchema_STRING:
-		// NOTE: in swagger specifition, format should be empty on string type
+		// NOTE: in swagger specification, format should be empty on string type
 		return "string", ""
 	default:
 		// Maybe panic?

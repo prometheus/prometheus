@@ -19,6 +19,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/common/model"
+
 	"github.com/prometheus/prometheus/pkg/labels"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 )
@@ -79,8 +80,7 @@ func (f *fanout) Querier(ctx context.Context, mint, maxt int64) (Querier, error)
 		querier, err := storage.Querier(ctx, mint, maxt)
 		if err != nil {
 			// Close already open Queriers, append potential errors to returned error.
-			errs := tsdb_errors.MultiError{err}
-			errs.Add(primary.Close())
+			errs := tsdb_errors.NewMulti(err, primary.Close())
 			for _, q := range secondaries {
 				errs.Add(q.Close())
 			}
@@ -102,8 +102,7 @@ func (f *fanout) ChunkQuerier(ctx context.Context, mint, maxt int64) (ChunkQueri
 		querier, err := storage.ChunkQuerier(ctx, mint, maxt)
 		if err != nil {
 			// Close already open Queriers, append potential errors to returned error.
-			errs := tsdb_errors.MultiError{err}
-			errs.Add(primary.Close())
+			errs := tsdb_errors.NewMulti(err, primary.Close())
 			for _, q := range secondaries {
 				errs.Add(q.Close())
 			}
@@ -129,8 +128,7 @@ func (f *fanout) Appender(ctx context.Context) Appender {
 
 // Close closes the storage and all its underlying resources.
 func (f *fanout) Close() error {
-	errs := tsdb_errors.MultiError{}
-	errs.Add(f.primary.Close())
+	errs := tsdb_errors.NewMulti(f.primary.Close())
 	for _, s := range f.secondaries {
 		errs.Add(s.Close())
 	}

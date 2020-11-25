@@ -16,7 +16,7 @@ package chunkenc
 import (
 	"testing"
 
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/stretchr/testify/require"
 )
 
 func TestBstreamReader(t *testing.T) {
@@ -39,23 +39,23 @@ func TestBstreamReader(t *testing.T) {
 		if err != nil {
 			v, err = r.readBit()
 		}
-		testutil.Ok(t, err)
-		testutil.Equals(t, bit, v)
+		require.NoError(t, err)
+		require.Equal(t, bit, v)
 	}
 	for nbits := uint8(1); nbits <= 64; nbits++ {
 		v, err := r.readBitsFast(nbits)
 		if err != nil {
 			v, err = r.readBits(nbits)
 		}
-		testutil.Ok(t, err)
-		testutil.Equals(t, uint64(nbits), v, "nbits=%d", nbits)
+		require.NoError(t, err)
+		require.Equal(t, uint64(nbits), v, "nbits=%d", nbits)
 	}
 	for v := 1; v < 10000; v += 123 {
 		actual, err := r.readBitsFast(29)
 		if err != nil {
 			actual, err = r.readBits(29)
 		}
-		testutil.Ok(t, err)
-		testutil.Equals(t, uint64(v), actual, "v=%d", v)
+		require.NoError(t, err)
+		require.Equal(t, uint64(v), actual, "v=%d", v)
 	}
 }

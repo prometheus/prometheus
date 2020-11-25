@@ -23,11 +23,11 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
-
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/stretchr/testify/require"
+
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/record"
-	"github.com/prometheus/prometheus/util/testutil"
 )
 
 var defaultRetryInterval = 100 * time.Millisecond
@@ -100,20 +100,20 @@ func TestTailSamples(t *testing.T) {
 			now := time.Now()
 
 			dir, err := ioutil.TempDir("", "readCheckpoint")
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 			defer func() {
-				testutil.Ok(t, os.RemoveAll(dir))
+				require.NoError(t, os.RemoveAll(dir))
 			}()
 
 			wdir := path.Join(dir, "wal")
 			err = os.Mkdir(wdir, 0777)
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 
 			enc := record.Encoder{}
 			w, err := NewSize(nil, nil, wdir, 128*pageSize, compress)
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 			defer func() {
-				testutil.Ok(t, w.Close())
+				require.NoError(t, w.Close())
 			}()
 
 			// Write to the initial segment then checkpoint.
@@ -125,7 +125,7 @@ func TestTailSamples(t *testing.T) {
 						Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
 					},
 				}, nil)
-				testutil.Ok(t, w.Log(series))
+				require.NoError(t, w.Log(series))
 
 				for j := 0; j < samplesCount; j++ {
 					inner := rand.Intn(ref + 1)
@@ -136,13 +136,13 @@ func TestTailSamples(t *testing.T) {
 							V:   float64(i),
 						},
 					}, nil)
-					testutil.Ok(t, w.Log(sample))
+					require.NoError(t, w.Log(sample))
 				}
 			}
 
 			// Start read after checkpoint, no more data written.
 			first, last, err := Segments(w.Dir())
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 
 			wt := newWriteToMock()
 			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir)
@@ -152,7 +152,7 @@ func TestTailSamples(t *testing.T) {
 			watcher.setMetrics()
 			for i := first; i <= last; i++ {
 				segment, err := OpenReadSegment(SegmentName(watcher.walDir, i))
-				testutil.Ok(t, err)
+				require.NoError(t, err)
 				defer segment.Close()
 
 				reader := NewLiveReader(nil, NewLiveReaderMetrics(nil), segment)
@@ -165,8 +165,8 @@ func TestTailSamples(t *testing.T) {
 			retry(t, defaultRetryInterval, defaultRetries, func() bool {
 				return wt.checkNumLabels() >= expectedSeries
 			})
-			testutil.Equals(t, expectedSeries, wt.checkNumLabels())
-			testutil.Equals(t, expectedSamples, wt.samplesAppended)
+			require.Equal(t, expectedSeries, wt.checkNumLabels())
+			require.Equal(t, expectedSamples, wt.samplesAppended)
 		})
 	}
 }
@@ -179,18 +179,18 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 	for _, compress := range []bool{false, true} {
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
 			dir, err := ioutil.TempDir("", "readToEnd_noCheckpoint")
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 			defer func() {
-				testutil.Ok(t, os.RemoveAll(dir))
+				require.NoError(t, os.RemoveAll(dir))
 			}()
 			wdir := path.Join(dir, "wal")
 			err = os.Mkdir(wdir, 0777)
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 
 			w, err := NewSize(nil, nil, wdir, 128*pageSize, compress)
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 			defer func() {
-				testutil.Ok(t, w.Close())
+				require.NoError(t, w.Close())
 			}()
 
 			var recs [][]byte
@@ -218,15 +218,15 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 
 					// Randomly batch up records.
 					if rand.Intn(4) < 3 {
-						testutil.Ok(t, w.Log(recs...))
+						require.NoError(t, w.Log(recs...))
 						recs = recs[:0]
 					}
 				}
 			}
-			testutil.Ok(t, w.Log(recs...))
+			require.NoError(t, w.Log(recs...))
 
 			_, _, err = Segments(w.Dir())
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 
 			wt := newWriteToMock()
 			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir)
@@ -237,7 +237,7 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 				return wt.checkNumLabels() >= expected
 			})
 			watcher.Stop()
-			testutil.Equals(t, expected, wt.checkNumLabels())
+			require.Equal(t, expected, wt.checkNumLabels())
 		})
 	}
 }
@@ -252,20 +252,20 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 	for _, compress := range []bool{false, true} {
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
 			dir, err := ioutil.TempDir("", "readToEnd_withCheckpoint")
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 			defer func() {
-				testutil.Ok(t, os.RemoveAll(dir))
+				require.NoError(t, os.RemoveAll(dir))
 			}()
 
 			wdir := path.Join(dir, "wal")
 			err = os.Mkdir(wdir, 0777)
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 
 			enc := record.Encoder{}
 			w, err := NewSize(nil, nil, wdir, segmentSize, compress)
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 			defer func() {
-				testutil.Ok(t, w.Close())
+				require.NoError(t, w.Close())
 			}()
 
 			// Write to the initial segment then checkpoint.
@@ -277,7 +277,9 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 						Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
 					},
 				}, nil)
-				testutil.Ok(t, w.Log(series))
+				require.NoError(t, w.Log(series))
+				// Add in an unknown record type, which should be ignored.
+				require.NoError(t, w.Log([]byte{255}))
 
 				for j := 0; j < samplesCount; j++ {
 					inner := rand.Intn(ref + 1)
@@ -288,7 +290,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 							V:   float64(i),
 						},
 					}, nil)
-					testutil.Ok(t, w.Log(sample))
+					require.NoError(t, w.Log(sample))
 				}
 			}
 
@@ -303,7 +305,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 						Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
 					},
 				}, nil)
-				testutil.Ok(t, w.Log(series))
+				require.NoError(t, w.Log(series))
 
 				for j := 0; j < samplesCount; j++ {
 					sample := enc.Samples([]record.RefSample{
@@ -313,12 +315,12 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 							V:   float64(i),
 						},
 					}, nil)
-					testutil.Ok(t, w.Log(sample))
+					require.NoError(t, w.Log(sample))
 				}
 			}
 
 			_, _, err = Segments(w.Dir())
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 			wt := newWriteToMock()
 			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir)
 			go watcher.Start()
@@ -328,7 +330,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 				return wt.checkNumLabels() >= expected
 			})
 			watcher.Stop()
-			testutil.Equals(t, expected, wt.checkNumLabels())
+			require.Equal(t, expected, wt.checkNumLabels())
 		})
 	}
 }
@@ -341,22 +343,22 @@ func TestReadCheckpoint(t *testing.T) {
 	for _, compress := range []bool{false, true} {
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
 			dir, err := ioutil.TempDir("", "readCheckpoint")
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 			defer func() {
-				testutil.Ok(t, os.RemoveAll(dir))
+				require.NoError(t, os.RemoveAll(dir))
 			}()
 
 			wdir := path.Join(dir, "wal")
 			err = os.Mkdir(wdir, 0777)
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 
 			os.Create(SegmentName(wdir, 30))
 
 			enc := record.Encoder{}
 			w, err := NewSize(nil, nil, wdir, 128*pageSize, compress)
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 			defer func() {
-				testutil.Ok(t, w.Close())
+				require.NoError(t, w.Close())
 			}()
 
 			// Write to the initial segment then checkpoint.
@@ -368,7 +370,7 @@ func TestReadCheckpoint(t *testing.T) {
 						Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
 					},
 				}, nil)
-				testutil.Ok(t, w.Log(series))
+				require.NoError(t, w.Log(series))
 
 				for j := 0; j < samplesCount; j++ {
 					inner := rand.Intn(ref + 1)
@@ -379,7 +381,7 @@ func TestReadCheckpoint(t *testing.T) {
 							V:   float64(i),
 						},
 					}, nil)
-					testutil.Ok(t, w.Log(sample))
+					require.NoError(t, w.Log(sample))
 				}
 			}
 			Checkpoint(log.NewNopLogger(), w, 30, 31, func(x uint64) bool { return true }, 0)
@@ -387,7 +389,7 @@ func TestReadCheckpoint(t *testing.T) {
 
 			// Start read after checkpoint, no more data written.
 			_, _, err = Segments(w.Dir())
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 
 			wt := newWriteToMock()
 			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir)
@@ -398,7 +400,7 @@ func TestReadCheckpoint(t *testing.T) {
 				return wt.checkNumLabels() >= expectedSeries
 			})
 			watcher.Stop()
-			testutil.Equals(t, expectedSeries, wt.checkNumLabels())
+			require.Equal(t, expectedSeries, wt.checkNumLabels())
 		})
 	}
 }
@@ -413,18 +415,18 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 	for _, compress := range []bool{false, true} {
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
 			dir, err := ioutil.TempDir("", "readCheckpoint")
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 			defer func() {
-				testutil.Ok(t, os.RemoveAll(dir))
+				require.NoError(t, os.RemoveAll(dir))
 			}()
 
 			wdir := path.Join(dir, "wal")
 			err = os.Mkdir(wdir, 0777)
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 
 			enc := record.Encoder{}
 			w, err := NewSize(nil, nil, wdir, pageSize, compress)
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 
 			// Write a bunch of data.
 			for i := 0; i < segments; i++ {
@@ -436,7 +438,7 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 							Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", j)}},
 						},
 					}, nil)
-					testutil.Ok(t, w.Log(series))
+					require.NoError(t, w.Log(series))
 
 					for k := 0; k < samplesCount; k++ {
 						inner := rand.Intn(ref + 1)
@@ -447,19 +449,19 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 								V:   float64(i),
 							},
 						}, nil)
-						testutil.Ok(t, w.Log(sample))
+						require.NoError(t, w.Log(sample))
 					}
 				}
 			}
-			testutil.Ok(t, w.Close())
+			require.NoError(t, w.Close())
 
 			// At this point we should have at least 6 segments, lets create a checkpoint dir of the first 5.
 			checkpointDir := dir + "/wal/checkpoint.000004"
 			err = os.Mkdir(checkpointDir, 0777)
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 			for i := 0; i <= 4; i++ {
 				err := os.Rename(SegmentName(dir+"/wal", i), SegmentName(checkpointDir, i))
-				testutil.Ok(t, err)
+				require.NoError(t, err)
 			}
 
 			wt := newWriteToMock()
@@ -470,10 +472,10 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 			watcher.setMetrics()
 
 			lastCheckpoint, _, err := LastCheckpoint(watcher.walDir)
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 
 			err = watcher.readCheckpoint(lastCheckpoint)
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 		})
 	}
 }
@@ -495,20 +497,20 @@ func TestCheckpointSeriesReset(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(fmt.Sprintf("compress=%t", tc.compress), func(t *testing.T) {
 			dir, err := ioutil.TempDir("", "seriesReset")
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 			defer func() {
-				testutil.Ok(t, os.RemoveAll(dir))
+				require.NoError(t, os.RemoveAll(dir))
 			}()
 
 			wdir := path.Join(dir, "wal")
 			err = os.Mkdir(wdir, 0777)
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 
 			enc := record.Encoder{}
 			w, err := NewSize(nil, nil, wdir, segmentSize, tc.compress)
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 			defer func() {
-				testutil.Ok(t, w.Close())
+				require.NoError(t, w.Close())
 			}()
 
 			// Write to the initial segment, then checkpoint later.
@@ -520,7 +522,7 @@ func TestCheckpointSeriesReset(t *testing.T) {
 						Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
 					},
 				}, nil)
-				testutil.Ok(t, w.Log(series))
+				require.NoError(t, w.Log(series))
 
 				for j := 0; j < samplesCount; j++ {
 					inner := rand.Intn(ref + 1)
@@ -531,12 +533,12 @@ func TestCheckpointSeriesReset(t *testing.T) {
 							V:   float64(i),
 						},
 					}, nil)
-					testutil.Ok(t, w.Log(sample))
+					require.NoError(t, w.Log(sample))
 				}
 			}
 
 			_, _, err = Segments(w.Dir())
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 
 			wt := newWriteToMock()
 			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir)
@@ -547,24 +549,24 @@ func TestCheckpointSeriesReset(t *testing.T) {
 			retry(t, defaultRetryInterval, defaultRetries, func() bool {
 				return wt.checkNumLabels() >= expected
 			})
-			testutil.Equals(t, seriesCount, wt.checkNumLabels())
+			require.Equal(t, seriesCount, wt.checkNumLabels())
 
 			_, err = Checkpoint(log.NewNopLogger(), w, 2, 4, func(x uint64) bool { return true }, 0)
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 
 			err = w.Truncate(5)
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 
 			_, cpi, err := LastCheckpoint(path.Join(dir, "wal"))
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 			err = watcher.garbageCollectSeries(cpi + 1)
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 
 			watcher.Stop()
 			// If you modify the checkpoint and truncate segment #'s run the test to see how
 			// many series records you end up with and change the last Equals check accordingly
 			// or modify the Equals to Assert(len(wt.seriesLabels) < seriesCount*10)
-			testutil.Equals(t, tc.segments, wt.checkNumLabels())
+			require.Equal(t, tc.segments, wt.checkNumLabels())
 		})
 	}
 }

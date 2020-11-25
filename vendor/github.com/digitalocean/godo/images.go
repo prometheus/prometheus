@@ -132,6 +132,7 @@ func (s *ImagesServiceOp) GetBySlug(ctx context.Context, slug string) (*Image, *
 	return s.get(ctx, interface{}(slug))
 }
 
+// Create a new image
 func (s *ImagesServiceOp) Create(ctx context.Context, createRequest *CustomImageCreateRequest) (*Image, *Response, error) {
 	if createRequest == nil {
 		return nil, nil, NewArgError("createRequest", "cannot be nil")

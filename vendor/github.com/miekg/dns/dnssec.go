@@ -3,10 +3,8 @@ package dns
 import (
 	"bytes"
 	"crypto"
-	"crypto/dsa"
 	"crypto/ecdsa"
 	"crypto/elliptic"
-	_ "crypto/md5"
 	"crypto/rand"
 	"crypto/rsa"
 	_ "crypto/sha1"
@@ -318,6 +316,7 @@ func (rr *RRSIG) Sign(k crypto.Signer, rrset []RR) error {
 		}
 
 		rr.Signature = toBase64(signature)
+		return nil
 	case RSAMD5, DSA, DSANSEC3SHA1:
 		// See RFC 6944.
 		return ErrAlg
@@ -332,9 +331,8 @@ func (rr *RRSIG) Sign(k crypto.Signer, rrset []RR) error {
 		}
 
 		rr.Signature = toBase64(signature)
+		return nil
 	}
-
-	return nil
 }
 
 func sign(k crypto.Signer, hashed []byte, hash crypto.Hash, alg uint8) ([]byte, error) {
@@ -346,7 +344,6 @@ func sign(k crypto.Signer, hashed []byte, hash crypto.Hash, alg uint8) ([]byte, 
 	switch alg {
 	case RSASHA1, RSASHA1NSEC3SHA1, RSASHA256, RSASHA512:
 		return signature, nil
-
 	case ECDSAP256SHA256, ECDSAP384SHA384:
 		ecdsaSignature := &struct {
 			R, S *big.Int
@@ -366,20 +363,11 @@ func sign(k crypto.Signer, hashed []byte, hash crypto.Hash, alg uint8) ([]byte, 
 		signature := intToBytes(ecdsaSignature.R, intlen)
 		signature = append(signature, intToBytes(ecdsaSignature.S, intlen)...)
 		return signature, nil
-
-	// There is no defined interface for what a DSA backed crypto.Signer returns
-	case DSA, DSANSEC3SHA1:
-		// 	t := divRoundUp(divRoundUp(p.PublicKey.Y.BitLen(), 8)-64, 8)
-		// 	signature := []byte{byte(t)}
-		// 	signature = append(signature, intToBytes(r1, 20)...)
-		// 	signature = append(signature, intToBytes(s1, 20)...)
-		// 	rr.Signature = signature
-
 	case ED25519:
 		return signature, nil
+	default:
+		return nil, ErrAlg
 	}
-
-	return nil, ErrAlg
 }
 
 // Verify validates an RRSet with the signature and key. This is only the
@@ -448,7 +436,7 @@ func (rr *RRSIG) Verify(k *DNSKEY, rrset []RR) error {
 	}
 
 	switch rr.Algorithm {
-	case RSASHA1, RSASHA1NSEC3SHA1, RSASHA256, RSASHA512, RSAMD5:
+	case RSASHA1, RSASHA1NSEC3SHA1, RSASHA256, RSASHA512:
 		// TODO(mg): this can be done quicker, ie. cache the pubkey data somewhere??
 		pubkey := k.publicKeyRSA() // Get the key
 		if pubkey == nil {
@@ -597,30 +585,6 @@ func (k *DNSKEY) publicKeyECDSA() *ecdsa.PublicKey {
 	}
 	pubkey.X = new(big.Int).SetBytes(keybuf[:len(keybuf)/2])
 	pubkey.Y = new(big.Int).SetBytes(keybuf[len(keybuf)/2:])
-	return pubkey
-}
-
-func (k *DNSKEY) publicKeyDSA() *dsa.PublicKey {
-	keybuf, err := fromBase64([]byte(k.PublicKey))
-	if err != nil {
-		return nil
-	}
-	if len(keybuf) < 22 {
-		return nil
-	}
-	t, keybuf := int(keybuf[0]), keybuf[1:]
-	size := 64 + t*8
-	q, keybuf := keybuf[:20], keybuf[20:]
-	if len(keybuf) != 3*size {
-		return nil
-	}
-	p, keybuf := keybuf[:size], keybuf[size:]
-	g, y := keybuf[:size], keybuf[size:]
-	pubkey := new(dsa.PublicKey)
-	pubkey.Parameters.Q = new(big.Int).SetBytes(q)
-	pubkey.Parameters.P = new(big.Int).SetBytes(p)
-	pubkey.Parameters.G = new(big.Int).SetBytes(g)
-	pubkey.Y = new(big.Int).SetBytes(y)
 	return pubkey
 }
 

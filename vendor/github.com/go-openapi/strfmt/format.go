@@ -65,7 +65,7 @@ type NameNormalizer func(string) string
 
 // DefaultNameNormalizer removes all dashes
 func DefaultNameNormalizer(name string) string {
-	return strings.Replace(name, "-", "", -1)
+	return strings.ReplaceAll(name, "-", "")
 }
 
 type defaultFormats struct {

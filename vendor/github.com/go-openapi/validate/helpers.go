@@ -47,7 +47,7 @@ const (
 	jsonProperties = "properties"
 	jsonItems      = "items"
 	jsonType       = "type"
-	//jsonSchema     = "schema"
+	// jsonSchema     = "schema"
 	jsonDefault = "default"
 )
 
@@ -56,7 +56,7 @@ const (
 	stringFormatDateTime = "date-time"
 	stringFormatPassword = "password"
 	stringFormatByte     = "byte"
-	//stringFormatBinary       = "binary"
+	// stringFormatBinary       = "binary"
 	stringFormatCreditCard   = "creditcard"
 	stringFormatDuration     = "duration"
 	stringFormatEmail        = "email"
@@ -165,7 +165,7 @@ func (h *valueHelper) asInt64(val interface{}) int64 {
 	case reflect.Float32, reflect.Float64:
 		return int64(v.Float())
 	default:
-		//panic("Non numeric value in asInt64()")
+		// panic("Non numeric value in asInt64()")
 		return 0
 	}
 }
@@ -182,7 +182,7 @@ func (h *valueHelper) asUint64(val interface{}) uint64 {
 	case reflect.Float32, reflect.Float64:
 		return uint64(v.Float())
 	default:
-		//panic("Non numeric value in asUint64()")
+		// panic("Non numeric value in asUint64()")
 		return 0
 	}
 }
@@ -200,7 +200,7 @@ func (h *valueHelper) asFloat64(val interface{}) float64 {
 	case reflect.Float32, reflect.Float64:
 		return v.Float()
 	default:
-		//panic("Non numeric value in asFloat64()")
+		// panic("Non numeric value in asFloat64()")
 		return 0
 	}
 }
@@ -215,7 +215,7 @@ func (h *paramHelper) safeExpandedParamsFor(path, method, operationID string, re
 		// expand parameters first if necessary
 		resolvedParams := []spec.Parameter{}
 		for _, ppr := range operation.Parameters {
-			resolvedParam, red := h.resolveParam(path, method, operationID, &ppr, s)
+			resolvedParam, red := h.resolveParam(path, method, operationID, &ppr, s) //#nosec
 			res.Merge(red)
 			if resolvedParam != nil {
 				resolvedParams = append(resolvedParams, *resolvedParam)

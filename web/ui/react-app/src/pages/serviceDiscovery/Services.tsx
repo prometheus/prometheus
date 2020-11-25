@@ -1,12 +1,13 @@
 import React, { FC } from 'react';
 import { RouteComponentProps } from '@reach/router';
-import PathPrefixProps from '../../types/PathPrefixProps';
 import { useFetch } from '../../hooks/useFetch';
 import { LabelsTable } from './LabelsTable';
 import { Target, Labels, DroppedTarget } from '../targets/target';
 
 import { withStatusIndicator } from '../../components/withStatusIndicator';
 import { mapObjEntries } from '../../utils';
+import { usePathPrefix } from '../../contexts/PathPrefixContext';
+import { API_PATH } from '../../constants/constants';
 
 interface ServiceMap {
   activeTargets: Target[];
@@ -105,8 +106,9 @@ ServiceDiscoveryContent.displayName = 'ServiceDiscoveryContent';
 
 const ServicesWithStatusIndicator = withStatusIndicator(ServiceDiscoveryContent);
 
-const ServiceDiscovery: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
-  const { response, error, isLoading } = useFetch<ServiceMap>(`${pathPrefix}/api/v1/targets`);
+const ServiceDiscovery: FC<RouteComponentProps> = () => {
+  const pathPrefix = usePathPrefix();
+  const { response, error, isLoading } = useFetch<ServiceMap>(`${pathPrefix}/${API_PATH}/targets`);
   return (
     <ServicesWithStatusIndicator
       {...response.data}

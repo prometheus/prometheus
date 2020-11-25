@@ -35,7 +35,7 @@ import (
 	"time"
 
 	"github.com/Azure/go-autorest/autorest/date"
-	"github.com/dgrijalva/jwt-go"
+	"github.com/form3tech-oss/jwt-go"
 )
 
 const (
@@ -941,9 +941,13 @@ func (spt *ServicePrincipalToken) refreshInternal(ctx context.Context, resource 
 	}
 
 	var resp *http.Response
-	if isMSIEndpoint(spt.inner.OauthConfig.TokenEndpoint) && !MSIAvailable(ctx, spt.sender) {
-		// return a TokenRefreshError here so that we don't keep retrying
-		return newTokenRefreshError("the MSI endpoint is not available", nil)
+	if isMSIEndpoint(spt.inner.OauthConfig.TokenEndpoint) {
+		resp, err = getMSIEndpoint(ctx, spt.sender)
+		if err != nil {
+			// return a TokenRefreshError here so that we don't keep retrying
+			return newTokenRefreshError(fmt.Sprintf("the MSI endpoint is not available. Failed HTTP request to MSI endpoint: %v", err), nil)
+		}
+		resp.Body.Close()
 	}
 	if isIMDS(spt.inner.OauthConfig.TokenEndpoint) {
 		resp, err = retryForIMDS(spt.sender, req, spt.MaxMSIRefreshAttempts)
@@ -1186,14 +1190,9 @@ func NewMultiTenantServicePrincipalToken(multiTenantCfg MultiTenantOAuthConfig, 
 
 // MSIAvailable returns true if the MSI endpoint is available for authentication.
 func MSIAvailable(ctx context.Context, sender Sender) bool {
-	// this cannot fail, the return sig is due to legacy reasons
-	msiEndpoint, _ := GetMSIVMEndpoint()
-	tempCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
-	defer cancel()
-	req, _ := http.NewRequestWithContext(tempCtx, http.MethodGet, msiEndpoint, nil)
-	q := req.URL.Query()
-	q.Add("api-version", msiAPIVersion)
-	req.URL.RawQuery = q.Encode()
-	_, err := sender.Do(req)
+	resp, err := getMSIEndpoint(ctx, sender)
+	if err == nil {
+		resp.Body.Close()
+	}
 	return err == nil
 }

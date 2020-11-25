@@ -1,6 +1,7 @@
 package hcloud
 
 import (
+	"fmt"
 	"net"
 	"strconv"
 	"time"
@@ -140,6 +141,7 @@ func ServerFromSchema(s schema.Server) *Server {
 		RescueEnabled:   s.RescueEnabled,
 		Datacenter:      DatacenterFromSchema(s.Datacenter),
 		Locked:          s.Locked,
+		PrimaryDiskSize: s.PrimaryDiskSize,
 		Protection: ServerProtection{
 			Delete:  s.Protection.Delete,
 			Rebuild: s.Protection.Rebuild,
@@ -370,6 +372,7 @@ func NetworkSubnetFromSchema(s schema.NetworkSubnet) NetworkSubnet {
 		Type:        NetworkSubnetType(s.Type),
 		NetworkZone: NetworkZone(s.NetworkZone),
 		Gateway:     net.ParseIP(s.Gateway),
+		VSwitchID:   s.VSwitchID,
 	}
 	_, sn.IPRange, _ = net.ParseCIDR(s.IPRange)
 	return sn
@@ -888,4 +891,88 @@ func loadBalancerUpdateServiceOptsToSchema(opts LoadBalancerUpdateServiceOpts) s
 		}
 	}
 	return req
+}
+
+func serverMetricsFromSchema(s *schema.ServerGetMetricsResponse) (*ServerMetrics, error) {
+	ms := ServerMetrics{
+		Start: s.Metrics.Start,
+		End:   s.Metrics.End,
+		Step:  s.Metrics.Step,
+	}
+
+	timeSeries := make(map[string][]ServerMetricsValue)
+	for tsName, v := range s.Metrics.TimeSeries {
+		vals := make([]ServerMetricsValue, len(v.Values))
+
+		for i, rawVal := range v.Values {
+			var val ServerMetricsValue
+
+			tup, ok := rawVal.([]interface{})
+			if !ok {
+				return nil, fmt.Errorf("failed to convert value to tuple: %v", rawVal)
+			}
+			if len(tup) != 2 {
+				return nil, fmt.Errorf("invalid tuple size: %d: %v", len(tup), rawVal)
+			}
+			ts, ok := tup[0].(float64)
+			if !ok {
+				return nil, fmt.Errorf("convert to float64: %v", tup[0])
+			}
+			val.Timestamp = ts
+
+			v, ok := tup[1].(string)
+			if !ok {
+				return nil, fmt.Errorf("not a string: %v", tup[1])
+			}
+			val.Value = v
+			vals[i] = val
+		}
+
+		timeSeries[tsName] = vals
+	}
+	ms.TimeSeries = timeSeries
+
+	return &ms, nil
+}
+
+func loadBalancerMetricsFromSchema(s *schema.LoadBalancerGetMetricsResponse) (*LoadBalancerMetrics, error) {
+	ms := LoadBalancerMetrics{
+		Start: s.Metrics.Start,
+		End:   s.Metrics.End,
+		Step:  s.Metrics.Step,
+	}
+
+	timeSeries := make(map[string][]LoadBalancerMetricsValue)
+	for tsName, v := range s.Metrics.TimeSeries {
+		vals := make([]LoadBalancerMetricsValue, len(v.Values))
+
+		for i, rawVal := range v.Values {
+			var val LoadBalancerMetricsValue
+
+			tup, ok := rawVal.([]interface{})
+			if !ok {
+				return nil, fmt.Errorf("failed to convert value to tuple: %v", rawVal)
+			}
+			if len(tup) != 2 {
+				return nil, fmt.Errorf("invalid tuple size: %d: %v", len(tup), rawVal)
+			}
+			ts, ok := tup[0].(float64)
+			if !ok {
+				return nil, fmt.Errorf("convert to float64: %v", tup[0])
+			}
+			val.Timestamp = ts
+
+			v, ok := tup[1].(string)
+			if !ok {
+				return nil, fmt.Errorf("not a string: %v", tup[1])
+			}
+			val.Value = v
+			vals[i] = val
+		}
+
+		timeSeries[tsName] = vals
+	}
+	ms.TimeSeries = timeSeries
+
+	return &ms, nil
 }
