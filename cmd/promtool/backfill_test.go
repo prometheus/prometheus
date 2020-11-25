@@ -399,13 +399,14 @@ no_nl{type="no newline"}
 			require.NoError(t, os.RemoveAll(outputDir))
 		}()
 
-		errb := backfill(test.MaxSamplesInAppender, input, outputDir)
+		err = backfill(test.MaxSamplesInAppender, input, outputDir)
 
 		if !test.IsOk {
-			require.Error(t, errb, test.Description)
+			require.Error(t, err, test.Description)
 			continue
 		}
 
+		require.NoError(t, err, test.Description)
 		db, err := tsdb.Open(outputDir, nil, nil, tsdb.DefaultOptions())
 		require.NoError(t, err)
 		defer func() {
