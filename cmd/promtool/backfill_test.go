@@ -91,6 +91,7 @@ func testBlocks(t *testing.T, db *tsdb.DB, expectedMinTime, expectedMaxTime int6
 	}
 
 	q, err := db.Querier(context.Background(), math.MinInt64, math.MaxInt64)
+	require.NoError(t, err)
 	series, err := queryblock(t, q, expectedMinTime, expectedMaxTime, labels.FromStrings(metricLabels...), labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
 	require.NoError(t, err)
 	allSamples = append(allSamples, series...)
