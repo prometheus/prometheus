@@ -214,6 +214,11 @@ func (c *LeveledCompactor) plan(dms []dirMeta) ([]string, error) {
 	for i := len(dms) - 1; i >= 0; i-- {
 		meta := dms[i].meta
 		if meta.MaxTime-meta.MinTime < c.ranges[len(c.ranges)/2] {
+			// If the block is entirely deleted, then we don't care about the block being big enough.
+			// TODO: This is assuming single tombstone is for distinct series, which might be no true.
+			if meta.Stats.NumTombstones > 0 && meta.Stats.NumTombstones >= meta.Stats.NumSeries {
+				return []string{dms[i].dir}, nil
+			}
 			break
 		}
 		if float64(meta.Stats.NumTombstones)/float64(meta.Stats.NumSeries+1) > 0.05 {
