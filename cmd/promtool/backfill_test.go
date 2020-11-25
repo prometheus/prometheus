@@ -60,7 +60,6 @@ func queryblock(t testing.TB, q storage.Querier, expectedMinTime, expectedMaxTim
 		require.NoError(t, q.Close())
 	}()
 	samples := []backfillSample{}
-	// var maxt, mint int64 = math.MinInt64, math.MaxInt64
 	for ss.Next() {
 		series := ss.At()
 		it := series.Iterator()
@@ -81,6 +80,15 @@ func testBlocks(t *testing.T, db *tsdb.DB, expectedMinTime, expectedMaxTime int6
 	require.Equal(t, expectedNumBlocks, len(blocks))
 
 	allSamples := make([]backfillSample, 0)
+
+	for _, block := range blocks {
+		index, err := block.Index()
+		require.NoError(t, err)
+		defer func() {
+			require.NoError(t, index.Close())
+		}()
+		require.Equal(t, true, block.Meta().MaxTime-block.Meta().MinTime <= (tsdb.DefaultBlockDuration))
+	}
 
 	q, err := db.Querier(context.Background(), math.MinInt64, math.MaxInt64)
 	series, err := queryblock(t, q, expectedMinTime, expectedMaxTime, labels.FromStrings(metricLabels...), labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
