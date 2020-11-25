@@ -14,6 +14,7 @@
 package main
 
 import (
+	"context"
 	"io/ioutil"
 	"math"
 	"os"
@@ -53,12 +54,13 @@ func sortSamples(samples []backfillSample) {
 	})
 }
 
-func queryblock(t testing.TB, q storage.Querier, lbls labels.Labels, matchers ...*labels.Matcher) ([]backfillSample, error) {
+func queryblock(t testing.TB, q storage.Querier, expectedMinTime, expectedMaxTime int64, lbls labels.Labels, matchers ...*labels.Matcher) ([]backfillSample, error) {
 	ss := q.Select(false, nil, matchers...)
 	defer func() {
 		require.NoError(t, q.Close())
 	}()
 	samples := []backfillSample{}
+	// var maxt, mint int64 = math.MinInt64, math.MaxInt64
 	for ss.Next() {
 		series := ss.At()
 		it := series.Iterator()
@@ -74,42 +76,25 @@ func queryblock(t testing.TB, q storage.Querier, lbls labels.Labels, matchers ..
 	return samples, nil
 }
 
-func testBlocks(t *testing.T, blocks []*tsdb.Block, expectedMinTime, expectedMaxTime int64, expectedSamples []backfillSample, metricLabels []string, expectedNumBlocks int) {
+func testBlocks(t *testing.T, db *tsdb.DB, expectedMinTime, expectedMaxTime int64, expectedSamples []backfillSample, metricLabels []string, expectedNumBlocks int) {
+	blocks := db.Blocks()
 	require.Equal(t, expectedNumBlocks, len(blocks))
 
 	allSamples := make([]backfillSample, 0)
 
-	var maxt, mint int64 = math.MinInt64, math.MaxInt64
-
-	for _, block := range blocks {
-		index, err := block.Index()
-		require.NoError(t, err)
-		defer func() {
-			require.NoError(t, index.Close())
-		}()
-
-		if maxt < block.Meta().MaxTime {
-			maxt = block.Meta().MaxTime
-		}
-		if mint > block.Meta().MinTime {
-			mint = block.Meta().MinTime
-		}
-
-		q, err := tsdb.NewBlockQuerier(block, math.MinInt64, math.MaxInt64)
-		require.NoError(t, err)
-
-		series, err := queryblock(t, q, labels.FromStrings(metricLabels...), labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
-		require.NoError(t, err)
-
-		allSamples = append(allSamples, series...)
-	}
+	q, err := db.Querier(context.Background(), math.MinInt64, math.MaxInt64)
+	series, err := queryblock(t, q, expectedMinTime, expectedMaxTime, labels.FromStrings(metricLabels...), labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
+	require.NoError(t, err)
+	allSamples = append(allSamples, series...)
 
 	sortSamples(allSamples)
 	sortSamples(expectedSamples)
 	require.Equal(t, expectedSamples, allSamples)
 
-	require.Equal(t, expectedMinTime, mint)
-	require.Equal(t, expectedMaxTime, maxt)
+	if len(allSamples) > 0 {
+		require.Equal(t, expectedMinTime, allSamples[0].Timestamp)
+		require.Equal(t, expectedMaxTime, allSamples[len(allSamples)-1].Timestamp)
+	}
 }
 
 func TestBackfill(t *testing.T) {
@@ -161,7 +146,7 @@ http_requests_total{code="400"} 1 1565133713.990
 				Samples   []backfillSample
 			}{
 				MinTime:   1565133713989,
-				MaxTime:   1565133713991,
+				MaxTime:   1565133713990,
 				NumBlocks: 1,
 				Samples: []backfillSample{
 					{
@@ -196,7 +181,7 @@ http_requests_total{code="400"} 2 1565133715.989
 				Samples   []backfillSample
 			}{
 				MinTime:   1565133713989,
-				MaxTime:   1565133715990,
+				MaxTime:   1565133715989,
 				NumBlocks: 1,
 				Samples: []backfillSample{
 					{
@@ -237,7 +222,7 @@ http_requests_total{code="400"} 1 1565166113.989
 				Samples   []backfillSample
 			}{
 				MinTime:   1565133713989,
-				MaxTime:   1565166113990,
+				MaxTime:   1565166113989,
 				NumBlocks: 4,
 				Samples: []backfillSample{
 					{
@@ -286,7 +271,7 @@ http_requests_total{code="400"} 1 1565166113.989
 				Samples   []backfillSample
 			}{
 				MinTime:   1565133713989,
-				MaxTime:   1565166113990,
+				MaxTime:   1565166113989,
 				NumBlocks: 4,
 				Samples: []backfillSample{
 					{
@@ -342,7 +327,7 @@ http_requests_total{code="400"} 1 1565166113.989
 				Samples   []backfillSample
 			}{
 				MinTime:   6900000,
-				MaxTime:   6900001,
+				MaxTime:   6900000,
 				NumBlocks: 1,
 				Samples: []backfillSample{
 					{
@@ -368,7 +353,7 @@ http_requests_total{code="400"} 1 1565166113.989
 				Samples   []backfillSample
 			}{
 				MinTime:   1001000,
-				MaxTime:   1001001,
+				MaxTime:   1001000,
 				NumBlocks: 1,
 				Samples: []backfillSample{
 					{
@@ -441,8 +426,7 @@ no_nl{type="no newline"}
 			require.NoError(t, db.Close())
 		}()
 
-		blocks := db.Blocks()
-		testBlocks(t, blocks, test.Expected.MinTime, test.Expected.MaxTime, test.Expected.Samples, test.MetricLabels, test.Expected.NumBlocks)
+		testBlocks(t, db, test.Expected.MinTime, test.Expected.MaxTime, test.Expected.Samples, test.MetricLabels, test.Expected.NumBlocks)
 
 	}
 }
