@@ -1196,7 +1196,12 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 				}
 				maxt := enh.Ts - offset
 				mint := maxt - selRange
-				points = ev.matrixIterSlice(it, mint, maxt, points)
+				if selVS.Timestamp == 0 || ts == ev.startTimestamp {
+					// We only evaluate once for the step invariant matrix.
+					// This is to avoid duplicate calculation and at the same time
+					// to keep the optimisation of always going forward in the matrix.
+					points = ev.matrixIterSlice(it, mint, maxt, points)
+				}
 				if len(points) == 0 {
 					continue
 				}
@@ -1477,7 +1482,8 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 				}
 				res = mat
 			case Scalar:
-				// Do nothing.
+				// The timestamp of the scalar does not matter, so we use it
+				// as is everytime. Hence do no duplication.
 			default:
 				panic(errors.Errorf("unexpected result in StepInvariantExpr evaluation: %T", expr))
 			}
