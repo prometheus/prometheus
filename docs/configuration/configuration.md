@@ -2245,11 +2245,13 @@ via [Uyuni](https://www.uyuni-project.org/) API.
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
 * `__meta_uyuni_exporter`: the exporter exposing metrics for the target
-* `__meta_uyuni_groups`: Uyuni system groups of the target
+* `__meta_uyuni_formulas`: list of formulas installed on the system
+* `__meta_uyuni_groups`: system groups of the target
 * `__meta_uyuni_metrics_path`: metrics path for the target
 * `__meta_uyuni_proxy_module`: the module name if
 [exporter_exporter](https://github.com/QubitProducts/exporter_exporter/blob/master/README.md)
  is configured for the target
+* `__meta_uyuni_system_id`: system ID of the client
 
 See below for the configuration options for Uyuni discovery:
 
@@ -2261,18 +2263,22 @@ host: <string>
 username: <string>
 password: <secret>
 
-# A list of formulas used to install exporters
-[ formulas:
+# A list of formulas used to install exporters.
+[ exporter_formulas:
   [ - <string> | default = "prometheus-exporters" ] ]
+
+# The string by which Uyuni formulas are joined into the formulas label.
+[ formulas_separator: <string> | default = , ]
 
 # Refresh interval to re-read the managed targets list.
 [ refresh_interval: <duration> | default = 60s ]
 ```
 
-The formula should implement the expected contract. In particular, it should
-contain the field `exporters` with the list of exporter configurations.
+The formulas in `exporter_formulas` list should implement the expected contract.
+In particular, they should contain the field `exporters` with the list of exporter
+configurations.
 See [the uyuni-pillar.example file](/documentation/examples/uyuni-pillar)
-for complete structure of possible configuration items.
+for complete structure of possible exporter configuration items.
 
 See [the Prometheus uyuni-sd configuration file](/documentation/examples/prometheus-uyuni.yml)
 for a practical example on how to set up Uyuni Prometheus configuration.

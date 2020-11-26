@@ -42,8 +42,9 @@ const (
 
 // DefaultSDConfig is the default Uyuni SD configuration.
 var DefaultSDConfig = SDConfig{
-	Formulas:        []string{"prometheus-exporters"},
-	RefreshInterval: model.Duration(1 * time.Minute),
+	ExporterFormulas:  []string{"prometheus-exporters"},
+	FormulasSeparator: ",",
+	RefreshInterval:   model.Duration(1 * time.Minute),
 }
 
 // Regular expression to extract port from formula data
@@ -55,11 +56,12 @@ func init() {
 
 // SDConfig is the configuration for Uyuni based service discovery.
 type SDConfig struct {
-	Host            string         `yaml:"host"`
-	User            string         `yaml:"username"`
-	Pass            config.Secret  `yaml:"password"`
-	Formulas        []string       `yaml:"formulas,omitempty"`
-	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
+	Host              string         `yaml:"host"`
+	User              string         `yaml:"username"`
+	Pass              config.Secret  `yaml:"password"`
+	ExporterFormulas  []string       `yaml:"exporter_formulas,omitempty"`
+	FormulasSeparator string         `yaml:"formulas_separator,omitempty"`
+	RefreshInterval   model.Duration `yaml:"refresh_interval,omitempty"`
 }
 
 // Uyuni API Response structures
@@ -195,6 +197,22 @@ func getExporterDataForSystems(
 	return result, nil
 }
 
+// Get list of formulas a server and all his groups have
+func getFormulas(
+	rpcclient *xmlrpc.Client,
+	token string,
+	systemID int,
+) ([]string, error) {
+	var formulas []string
+	err := rpcclient.Call(
+		"formula.getCombinedFormulasByServerId",
+		[]interface{}{token, systemID}, &formulas)
+	if err != nil {
+		return nil, err
+	}
+	return formulas, nil
+}
+
 // extractPortFromFormulaData gets exporter port configuration from the formula.
 // args takes precedence over address.
 func extractPortFromFormulaData(args string, address string) (string, error) {
@@ -272,6 +290,7 @@ func (d *Discovery) getTargetsForSystem(
 	systemID int,
 	systemGroupsIDs []systemGroupID,
 	networkInfo networkInfo,
+	formulas []string,
 	combinedFormulaData proxiedExporterConfig,
 ) []model.LabelSet {
 
@@ -284,13 +303,23 @@ func (d *Discovery) getTargetsForSystem(
 	for exporterName, formulaValues := range combinedFormulaData.ExporterConfigs {
 		initializeExporterTargets(&labelSets, exporterName, formulaValues, proxyPortNumber, &errors)
 	}
+	// Initialize targets without exporters
+	if len(labelSets) == 0 {
+		labels := model.LabelSet{}
+		labelSets = append(labelSets, labels)
+	}
 	managedGroupNames := getSystemGroupNames(systemGroupsIDs)
 	for _, labels := range labelSets {
 		// add hostname to the address label
 		addr := fmt.Sprintf("%s:%s", networkInfo.IP, labels[model.AddressLabel])
 		labels[model.AddressLabel] = model.LabelValue(addr)
 		labels["hostname"] = model.LabelValue(networkInfo.Hostname)
+		labels[uyuniMetaLabelPrefix+"system_id"] = model.LabelValue(fmt.Sprintf("%d", systemID))
 		labels[uyuniMetaLabelPrefix+"groups"] = model.LabelValue(strings.Join(managedGroupNames, ","))
+		var formulasLabelValue = d.sdConfig.FormulasSeparator +
+			strings.Join(formulas, d.sdConfig.FormulasSeparator) +
+			d.sdConfig.FormulasSeparator
+		labels[uyuniMetaLabelPrefix+"formulas"] = model.LabelValue(formulasLabelValue)
 		if combinedFormulaData.ProxyIsEnabled {
 			labels[uyuniMetaLabelPrefix+"metrics_path"] = "/proxy"
 		}
@@ -324,12 +353,18 @@ func (d *Discovery) getTargetsForSystems(
 	result := make([]model.LabelSet, 0)
 
 	systemIDs := make([]int, 0, len(systemGroupIDsBySystemID))
+	formulas := make(map[int][]string)
 	for systemID := range systemGroupIDsBySystemID {
 		systemIDs = append(systemIDs, systemID)
+		systemFormulas, err := getFormulas(rpcClient, token, systemID)
+		if err != nil {
+			return nil, errors.Wrap(err, "Unable to get list of system formulas")
+		}
+		formulas[systemID] = systemFormulas
 	}
 
-	for _, formulaName := range d.sdConfig.Formulas {
-		combinedFormulaDataBySystemID, err := getExporterDataForSystems(rpcClient, token, formulaName, systemIDs)
+	for _, exportersFormulaName := range d.sdConfig.ExporterFormulas {
+		combinedFormulaDataBySystemID, err := getExporterDataForSystems(rpcClient, token, exportersFormulaName, systemIDs)
 		if err != nil {
 			return nil, errors.Wrap(err, "Unable to get systems combined formula data")
 		}
@@ -343,6 +378,7 @@ func (d *Discovery) getTargetsForSystems(
 				systemID,
 				systemGroupIDsBySystemID[systemID],
 				networkInfoBySystemID[systemID],
+				formulas[systemID],
 				combinedFormulaDataBySystemID[systemID])
 			result = append(result, targets...)
 
@@ -352,7 +388,8 @@ func (d *Discovery) getTargetsForSystems(
 					"Host", networkInfoBySystemID[systemID].Hostname,
 					"Network", fmt.Sprintf("%+v", networkInfoBySystemID[systemID]),
 					"Groups", fmt.Sprintf("%+v", systemGroupIDsBySystemID[systemID]),
-					"Formulas", fmt.Sprintf("%+v", combinedFormulaDataBySystemID[systemID]))
+					"Formulas", fmt.Sprintf("%+v", formulas[systemID]),
+					"FormulaValues", fmt.Sprintf("%+v", combinedFormulaDataBySystemID[systemID]))
 			}
 		}
 	}
