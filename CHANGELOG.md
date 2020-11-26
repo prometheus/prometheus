@@ -1,4 +1,4 @@
-## 2.23.0-rc.0 / 2020-11-23
+## 2.23.0 / 2020-11-26
 
 * [CHANGE] UI: Make the React UI default. #8142
 * [CHANGE] Remote write: The following metrics were removed/renamed in remote write. #6815
