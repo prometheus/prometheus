@@ -694,7 +694,7 @@ func (p *parser) addOffset(e Node, offset time.Duration) {
 		offsetp = &s.Offset
 		endPosp = &s.EndPos
 	default:
-		p.addParseErrf(e.PositionRange(), "offset modifier must be preceded by an vector or range selector or a subquery, but follows a %T instead", e)
+		p.addParseErrf(e.PositionRange(), "offset modifier must be preceded by a vector or range selector or a subquery, but follows a %T instead", e)
 		return
 	}
 
@@ -725,7 +725,7 @@ func (p *parser) setStepInvariant(e Node, ts float64) {
 		timestampp = &s.Timestamp
 		endPosp = &s.EndPos
 	default:
-		p.addParseErrf(e.PositionRange(), "@ modifier must be preceded by an vector or range selector or a subquery, but follows a %T instead", e)
+		p.addParseErrf(e.PositionRange(), "@ modifier must be preceded by a vector or range selector or a subquery, but follows a %T instead", e)
 		return
 	}
 
@@ -736,4 +736,20 @@ func (p *parser) setStepInvariant(e Node, ts float64) {
 	}
 
 	*endPosp = p.lastClosing
+}
+
+func MustLabelMatcher(mt labels.MatchType, name, val string) *labels.Matcher {
+	m, err := labels.NewMatcher(mt, name, val)
+	if err != nil {
+		panic(err)
+	}
+	return m
+}
+
+func MustGetFunction(name string) *Function {
+	f, ok := getFunction(name)
+	if !ok {
+		panic(errors.Errorf("function %q does not exist", name))
+	}
+	return f
 }

@@ -2405,6 +2405,8 @@ func dontWrapStepInvariantExpr(expr parser.Expr) bool {
 	switch e := expr.(type) {
 	case *parser.StringLiteral, *parser.NumberLiteral:
 		return true
+	case *parser.BinaryExpr:
+		return dontWrapStepInvariantExpr(e.LHS) && dontWrapStepInvariantExpr(e.RHS)
 	case *parser.ParenExpr:
 		return dontWrapStepInvariantExpr(e.Expr)
 	}

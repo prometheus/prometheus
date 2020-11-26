@@ -397,7 +397,7 @@ var testExpr = []struct {
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 				},
 				PosRange: PositionRange{
 					Start: 1,
@@ -412,7 +412,7 @@ var testExpr = []struct {
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 				},
 				PosRange: PositionRange{
 					Start: 1,
@@ -427,7 +427,7 @@ var testExpr = []struct {
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 				},
 				PosRange: PositionRange{
 					Start: 2,
@@ -527,7 +527,7 @@ var testExpr = []struct {
 	}, {
 		input:  "1 offset 1d",
 		fail:   true,
-		errMsg: "offset modifier must be preceded by an instant or range selector",
+		errMsg: "offset modifier must be preceded by a vector or range selector",
 	}, {
 		input:  "foo offset 1s offset 2s",
 		fail:   true,
@@ -545,7 +545,7 @@ var testExpr = []struct {
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
 				PosRange: PositionRange{
 					Start: 0,
@@ -555,7 +555,7 @@ var testExpr = []struct {
 			RHS: &VectorSelector{
 				Name: "bar",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 				},
 				PosRange: PositionRange{
 					Start: 6,
@@ -571,7 +571,7 @@ var testExpr = []struct {
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
 				PosRange: PositionRange{
 					Start: 0,
@@ -581,7 +581,7 @@ var testExpr = []struct {
 			RHS: &VectorSelector{
 				Name: "sum",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "sum"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "sum"),
 				},
 				PosRange: PositionRange{
 					Start: 6,
@@ -597,7 +597,7 @@ var testExpr = []struct {
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
 				PosRange: PositionRange{
 					Start: 0,
@@ -616,7 +616,7 @@ var testExpr = []struct {
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
 				PosRange: PositionRange{
 					Start: 0,
@@ -640,7 +640,7 @@ var testExpr = []struct {
 			RHS: &VectorSelector{
 				Name: "bar",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 				},
 				PosRange: PositionRange{
 					Start: 6,
@@ -655,7 +655,7 @@ var testExpr = []struct {
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
 				PosRange: PositionRange{
 					Start: 0,
@@ -665,7 +665,7 @@ var testExpr = []struct {
 			RHS: &VectorSelector{
 				Name: "bar",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 				},
 				PosRange: PositionRange{
 					Start: 8,
@@ -681,7 +681,7 @@ var testExpr = []struct {
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
 				PosRange: PositionRange{
 					Start: 0,
@@ -691,7 +691,7 @@ var testExpr = []struct {
 			RHS: &VectorSelector{
 				Name: "bar",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 				},
 				PosRange: PositionRange{
 					Start: 7,
@@ -707,7 +707,7 @@ var testExpr = []struct {
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
 				PosRange: PositionRange{
 					Start: 0,
@@ -717,7 +717,7 @@ var testExpr = []struct {
 			RHS: &VectorSelector{
 				Name: "bar",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 				},
 				PosRange: PositionRange{
 					Start: 11,
@@ -736,7 +736,7 @@ var testExpr = []struct {
 				LHS: &VectorSelector{
 					Name: "foo",
 					LabelMatchers: []*labels.Matcher{
-						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+						MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 					},
 					PosRange: PositionRange{
 						Start: 0,
@@ -746,7 +746,7 @@ var testExpr = []struct {
 				RHS: &VectorSelector{
 					Name: "bar",
 					LabelMatchers: []*labels.Matcher{
-						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
+						MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 					},
 					PosRange: PositionRange{
 						Start: 6,
@@ -760,7 +760,7 @@ var testExpr = []struct {
 				LHS: &VectorSelector{
 					Name: "bla",
 					LabelMatchers: []*labels.Matcher{
-						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bla"),
+						MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bla"),
 					},
 					PosRange: PositionRange{
 						Start: 13,
@@ -770,7 +770,7 @@ var testExpr = []struct {
 				RHS: &VectorSelector{
 					Name: "blub",
 					LabelMatchers: []*labels.Matcher{
-						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "blub"),
+						MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "blub"),
 					},
 					PosRange: PositionRange{
 						Start: 21,
@@ -793,7 +793,7 @@ var testExpr = []struct {
 					LHS: &VectorSelector{
 						Name: "foo",
 						LabelMatchers: []*labels.Matcher{
-							mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+							MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 						},
 						PosRange: PositionRange{
 							Start: 0,
@@ -803,7 +803,7 @@ var testExpr = []struct {
 					RHS: &VectorSelector{
 						Name: "bar",
 						LabelMatchers: []*labels.Matcher{
-							mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
+							MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 						},
 						PosRange: PositionRange{
 							Start: 8,
@@ -815,7 +815,7 @@ var testExpr = []struct {
 				RHS: &VectorSelector{
 					Name: "baz",
 					LabelMatchers: []*labels.Matcher{
-						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "baz"),
+						MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "baz"),
 					},
 					PosRange: PositionRange{
 						Start: 19,
@@ -827,7 +827,7 @@ var testExpr = []struct {
 			RHS: &VectorSelector{
 				Name: "qux",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "qux"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "qux"),
 				},
 				PosRange: PositionRange{
 					Start: 26,
@@ -844,7 +844,7 @@ var testExpr = []struct {
 			LHS: &VectorSelector{
 				Name: "bar",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 				},
 				PosRange: PositionRange{
 					Start: 0,
@@ -856,7 +856,7 @@ var testExpr = []struct {
 				LHS: &VectorSelector{
 					Name: "bla",
 					LabelMatchers: []*labels.Matcher{
-						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bla"),
+						MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bla"),
 					},
 					PosRange: PositionRange{
 						Start: 14,
@@ -866,7 +866,7 @@ var testExpr = []struct {
 				RHS: &VectorSelector{
 					Name: "blub",
 					LabelMatchers: []*labels.Matcher{
-						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "blub"),
+						MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "blub"),
 					},
 					PosRange: PositionRange{
 						Start: 51,
@@ -893,7 +893,7 @@ var testExpr = []struct {
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
 				PosRange: PositionRange{
 					Start: 0,
@@ -903,7 +903,7 @@ var testExpr = []struct {
 			RHS: &VectorSelector{
 				Name: "bar",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 				},
 				PosRange: PositionRange{
 					Start: 20,
@@ -923,7 +923,7 @@ var testExpr = []struct {
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
 				PosRange: PositionRange{
 					Start: 0,
@@ -933,7 +933,7 @@ var testExpr = []struct {
 			RHS: &VectorSelector{
 				Name: "bar",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 				},
 				PosRange: PositionRange{
 					Start: 31,
@@ -953,7 +953,7 @@ var testExpr = []struct {
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
 				PosRange: PositionRange{
 					Start: 0,
@@ -963,7 +963,7 @@ var testExpr = []struct {
 			RHS: &VectorSelector{
 				Name: "bar",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 				},
 				PosRange: PositionRange{
 					Start: 22,
@@ -983,7 +983,7 @@ var testExpr = []struct {
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
 				PosRange: PositionRange{
 					Start: 0,
@@ -993,7 +993,7 @@ var testExpr = []struct {
 			RHS: &VectorSelector{
 				Name: "bar",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 				},
 				PosRange: PositionRange{
 					Start: 13,
@@ -1013,7 +1013,7 @@ var testExpr = []struct {
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
 				PosRange: PositionRange{
 					Start: 0,
@@ -1023,7 +1023,7 @@ var testExpr = []struct {
 			RHS: &VectorSelector{
 				Name: "bar",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 				},
 				PosRange: PositionRange{
 					Start: 28,
@@ -1042,7 +1042,7 @@ var testExpr = []struct {
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
 				PosRange: PositionRange{
 					Start: 0,
@@ -1052,7 +1052,7 @@ var testExpr = []struct {
 			RHS: &VectorSelector{
 				Name: "bar",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 				},
 				PosRange: PositionRange{
 					Start: 19,
@@ -1071,7 +1071,7 @@ var testExpr = []struct {
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
 				PosRange: PositionRange{
 					Start: 0,
@@ -1081,7 +1081,7 @@ var testExpr = []struct {
 			RHS: &VectorSelector{
 				Name: "baz",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "baz"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "baz"),
 				},
 				PosRange: PositionRange{
 					Start: 19,
@@ -1101,7 +1101,7 @@ var testExpr = []struct {
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
 				PosRange: PositionRange{
 					Start: 0,
@@ -1111,7 +1111,7 @@ var testExpr = []struct {
 			RHS: &VectorSelector{
 				Name: "bar",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 				},
 				PosRange: PositionRange{
 					Start: 36,
@@ -1132,7 +1132,7 @@ var testExpr = []struct {
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
 				PosRange: PositionRange{
 					Start: 0,
@@ -1142,7 +1142,7 @@ var testExpr = []struct {
 			RHS: &VectorSelector{
 				Name: "bar",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 				},
 				PosRange: PositionRange{
 					Start: 43,
@@ -1162,7 +1162,7 @@ var testExpr = []struct {
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
 				PosRange: PositionRange{
 					Start: 0,
@@ -1172,7 +1172,7 @@ var testExpr = []struct {
 			RHS: &VectorSelector{
 				Name: "bar",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 				},
 				PosRange: PositionRange{
 					Start: 42,
@@ -1192,7 +1192,7 @@ var testExpr = []struct {
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
 				PosRange: PositionRange{
 					Start: 0,
@@ -1202,7 +1202,7 @@ var testExpr = []struct {
 			RHS: &VectorSelector{
 				Name: "bar",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 				},
 				PosRange: PositionRange{
 					Start: 41,
@@ -1223,7 +1223,7 @@ var testExpr = []struct {
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
 				PosRange: PositionRange{
 					Start: 0,
@@ -1233,7 +1233,7 @@ var testExpr = []struct {
 			RHS: &VectorSelector{
 				Name: "bar",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 				},
 				PosRange: PositionRange{
 					Start: 47,
@@ -1330,7 +1330,7 @@ var testExpr = []struct {
 			Name:   "foo",
 			Offset: 0,
 			LabelMatchers: []*labels.Matcher{
-				mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+				MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 			},
 			PosRange: PositionRange{
 				Start: 0,
@@ -1343,7 +1343,7 @@ var testExpr = []struct {
 			Name:   "min",
 			Offset: 0,
 			LabelMatchers: []*labels.Matcher{
-				mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "min"),
+				MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "min"),
 			},
 			PosRange: PositionRange{
 				Start: 0,
@@ -1356,7 +1356,7 @@ var testExpr = []struct {
 			Name:   "foo",
 			Offset: 5 * time.Minute,
 			LabelMatchers: []*labels.Matcher{
-				mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+				MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 			},
 			PosRange: PositionRange{
 				Start: 0,
@@ -1369,7 +1369,7 @@ var testExpr = []struct {
 			Name:   "foo",
 			Offset: 90 * time.Minute,
 			LabelMatchers: []*labels.Matcher{
-				mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+				MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 			},
 			PosRange: PositionRange{
 				Start: 0,
@@ -1382,7 +1382,7 @@ var testExpr = []struct {
 			Name:   "foo",
 			Offset: time.Minute + 30*time.Millisecond,
 			LabelMatchers: []*labels.Matcher{
-				mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+				MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 			},
 			PosRange: PositionRange{
 				Start: 0,
@@ -1393,9 +1393,9 @@ var testExpr = []struct {
 		input: `foo @ 1603774568`,
 		expected: &VectorSelector{
 			Name:      "foo",
-			Timestamp: 1603774568,
+			Timestamp: 1603774568000,
 			LabelMatchers: []*labels.Matcher{
-				mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+				MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 			},
 			PosRange: PositionRange{
 				Start: 0,
@@ -1408,8 +1408,8 @@ var testExpr = []struct {
 			Name:   "foo:bar",
 			Offset: 0,
 			LabelMatchers: []*labels.Matcher{
-				mustLabelMatcher(labels.MatchEqual, "a", "bc"),
-				mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo:bar"),
+				MustLabelMatcher(labels.MatchEqual, "a", "bc"),
+				MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo:bar"),
 			},
 			PosRange: PositionRange{
 				Start: 0,
@@ -1422,8 +1422,8 @@ var testExpr = []struct {
 			Name:   "foo",
 			Offset: 0,
 			LabelMatchers: []*labels.Matcher{
-				mustLabelMatcher(labels.MatchEqual, "NaN", "bc"),
-				mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+				MustLabelMatcher(labels.MatchEqual, "NaN", "bc"),
+				MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 			},
 			PosRange: PositionRange{
 				Start: 0,
@@ -1436,8 +1436,8 @@ var testExpr = []struct {
 			Name:   "foo",
 			Offset: 0,
 			LabelMatchers: []*labels.Matcher{
-				mustLabelMatcher(labels.MatchEqual, "bar", "}"),
-				mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+				MustLabelMatcher(labels.MatchEqual, "bar", "}"),
+				MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 			},
 			PosRange: PositionRange{
 				Start: 0,
@@ -1450,11 +1450,11 @@ var testExpr = []struct {
 			Name:   "foo",
 			Offset: 0,
 			LabelMatchers: []*labels.Matcher{
-				mustLabelMatcher(labels.MatchEqual, "a", "b"),
-				mustLabelMatcher(labels.MatchNotEqual, "foo", "bar"),
-				mustLabelMatcher(labels.MatchRegexp, "test", "test"),
-				mustLabelMatcher(labels.MatchNotRegexp, "bar", "baz"),
-				mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+				MustLabelMatcher(labels.MatchEqual, "a", "b"),
+				MustLabelMatcher(labels.MatchNotEqual, "foo", "bar"),
+				MustLabelMatcher(labels.MatchRegexp, "test", "test"),
+				MustLabelMatcher(labels.MatchNotRegexp, "bar", "baz"),
+				MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 			},
 			PosRange: PositionRange{
 				Start: 0,
@@ -1467,11 +1467,11 @@ var testExpr = []struct {
 			Name:   "foo",
 			Offset: 0,
 			LabelMatchers: []*labels.Matcher{
-				mustLabelMatcher(labels.MatchEqual, "a", "b"),
-				mustLabelMatcher(labels.MatchNotEqual, "foo", "bar"),
-				mustLabelMatcher(labels.MatchRegexp, "test", "test"),
-				mustLabelMatcher(labels.MatchNotRegexp, "bar", "baz"),
-				mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+				MustLabelMatcher(labels.MatchEqual, "a", "b"),
+				MustLabelMatcher(labels.MatchNotEqual, "foo", "bar"),
+				MustLabelMatcher(labels.MatchRegexp, "test", "test"),
+				MustLabelMatcher(labels.MatchNotRegexp, "bar", "baz"),
+				MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 			},
 			PosRange: PositionRange{
 				Start: 0,
@@ -1573,7 +1573,7 @@ var testExpr = []struct {
 				Name:   "test",
 				Offset: 0,
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
 				},
 				PosRange: PositionRange{
 					Start: 0,
@@ -1590,7 +1590,7 @@ var testExpr = []struct {
 				Name:   "test",
 				Offset: 0,
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
 				},
 				PosRange: PositionRange{
 					Start: 0,
@@ -1607,7 +1607,7 @@ var testExpr = []struct {
 				Name:   "foo",
 				Offset: 0,
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
 				PosRange: PositionRange{
 					Start: 0,
@@ -1624,7 +1624,7 @@ var testExpr = []struct {
 				Name:   "test",
 				Offset: 5 * time.Minute,
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
 				},
 				PosRange: PositionRange{
 					Start: 0,
@@ -1641,7 +1641,7 @@ var testExpr = []struct {
 				Name:   "test",
 				Offset: 10 * time.Second,
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
 				},
 				PosRange: PositionRange{
 					Start: 0,
@@ -1658,7 +1658,7 @@ var testExpr = []struct {
 				Name:   "test",
 				Offset: 14 * 24 * time.Hour,
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
 				},
 				PosRange: PositionRange{
 					Start: 0,
@@ -1675,8 +1675,8 @@ var testExpr = []struct {
 				Name:   "test",
 				Offset: 3 * 24 * time.Hour,
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, "a", "b"),
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
+					MustLabelMatcher(labels.MatchEqual, "a", "b"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
 				},
 				PosRange: PositionRange{
 					Start: 0,
@@ -1691,10 +1691,10 @@ var testExpr = []struct {
 		expected: &MatrixSelector{
 			VectorSelector: &VectorSelector{
 				Name:      "test",
-				Timestamp: 1603774699,
+				Timestamp: 1603774699000,
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, "a", "b"),
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
+					MustLabelMatcher(labels.MatchEqual, "a", "b"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
 				},
 				PosRange: PositionRange{
 					Start: 0,
@@ -1785,7 +1785,7 @@ var testExpr = []struct {
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 				},
 				PosRange: PositionRange{
 					Start: 13,
@@ -1805,7 +1805,7 @@ var testExpr = []struct {
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 				},
 				PosRange: PositionRange{
 					Start: 13,
@@ -1825,7 +1825,7 @@ var testExpr = []struct {
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 				},
 				PosRange: PositionRange{
 					Start: 13,
@@ -1846,7 +1846,7 @@ var testExpr = []struct {
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 				},
 				PosRange: PositionRange{
 					Start: 19,
@@ -1867,7 +1867,7 @@ var testExpr = []struct {
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 				},
 				PosRange: PositionRange{
 					Start: 5,
@@ -1887,7 +1887,7 @@ var testExpr = []struct {
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 				},
 				PosRange: PositionRange{
 					Start: 7,
@@ -1906,7 +1906,7 @@ var testExpr = []struct {
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 				},
 				PosRange: PositionRange{
 					Start: 16,
@@ -1926,7 +1926,7 @@ var testExpr = []struct {
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 				},
 				PosRange: PositionRange{
 					Start: 10,
@@ -1946,7 +1946,7 @@ var testExpr = []struct {
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 				},
 				PosRange: PositionRange{
 					Start: 18,
@@ -1966,7 +1966,7 @@ var testExpr = []struct {
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 				},
 				PosRange: PositionRange{
 					Start: 14,
@@ -1986,7 +1986,7 @@ var testExpr = []struct {
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 				},
 				PosRange: PositionRange{
 					Start: 8,
@@ -2012,7 +2012,7 @@ var testExpr = []struct {
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 				},
 				PosRange: PositionRange{
 					Start: 22,
@@ -2040,7 +2040,7 @@ var testExpr = []struct {
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 				},
 				PosRange: PositionRange{
 					Start: 53,
@@ -2116,13 +2116,13 @@ var testExpr = []struct {
 	}, {
 		input:  `rate(some_metric[5m]) @ 1234`,
 		fail:   true,
-		errMsg: "1:1: parse error: @ modifier must be preceded by an instant or range selector or a subquery, but follows a *parser.Call instead",
+		errMsg: "1:1: parse error: @ modifier must be preceded by a vector or range selector or a subquery, but follows a *parser.Call instead",
 	},
 	// Test function calls.
 	{
 		input: "time()",
 		expected: &Call{
-			Func: mustGetFunction("time"),
+			Func: MustGetFunction("time"),
 			Args: Expressions{},
 			PosRange: PositionRange{
 				Start: 0,
@@ -2132,13 +2132,13 @@ var testExpr = []struct {
 	}, {
 		input: `floor(some_metric{foo!="bar"})`,
 		expected: &Call{
-			Func: mustGetFunction("floor"),
+			Func: MustGetFunction("floor"),
 			Args: Expressions{
 				&VectorSelector{
 					Name: "some_metric",
 					LabelMatchers: []*labels.Matcher{
-						mustLabelMatcher(labels.MatchNotEqual, "foo", "bar"),
-						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+						MustLabelMatcher(labels.MatchNotEqual, "foo", "bar"),
+						MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 					},
 					PosRange: PositionRange{
 						Start: 6,
@@ -2154,13 +2154,13 @@ var testExpr = []struct {
 	}, {
 		input: "rate(some_metric[5m])",
 		expected: &Call{
-			Func: mustGetFunction("rate"),
+			Func: MustGetFunction("rate"),
 			Args: Expressions{
 				&MatrixSelector{
 					VectorSelector: &VectorSelector{
 						Name: "some_metric",
 						LabelMatchers: []*labels.Matcher{
-							mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+							MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 						},
 						PosRange: PositionRange{
 							Start: 5,
@@ -2179,12 +2179,12 @@ var testExpr = []struct {
 	}, {
 		input: "round(some_metric)",
 		expected: &Call{
-			Func: mustGetFunction("round"),
+			Func: MustGetFunction("round"),
 			Args: Expressions{
 				&VectorSelector{
 					Name: "some_metric",
 					LabelMatchers: []*labels.Matcher{
-						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+						MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 					},
 					PosRange: PositionRange{
 						Start: 6,
@@ -2200,12 +2200,12 @@ var testExpr = []struct {
 	}, {
 		input: "round(some_metric, 5)",
 		expected: &Call{
-			Func: mustGetFunction("round"),
+			Func: MustGetFunction("round"),
 			Args: Expressions{
 				&VectorSelector{
 					Name: "some_metric",
 					LabelMatchers: []*labels.Matcher{
-						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+						MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 					},
 					PosRange: PositionRange{
 						Start: 6,
@@ -2295,7 +2295,7 @@ var testExpr = []struct {
 			Expr: &VectorSelector{
 				Name: "sum",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "sum"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "sum"),
 				},
 				PosRange: PositionRange{
 					Start: 4,
@@ -2314,7 +2314,7 @@ var testExpr = []struct {
 			LHS: &VectorSelector{
 				Name: "a",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "a"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "a"),
 				},
 				PosRange: PositionRange{
 					Start: 0,
@@ -2324,7 +2324,7 @@ var testExpr = []struct {
 			RHS: &VectorSelector{
 				Name: "sum",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "sum"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "sum"),
 				},
 				PosRange: PositionRange{
 					Start: 4,
@@ -2395,8 +2395,8 @@ var testExpr = []struct {
 			Expr: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, "bar", "baz"),
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+					MustLabelMatcher(labels.MatchEqual, "bar", "baz"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
 				PosRange: PositionRange{
 					Start: 0,
@@ -2414,8 +2414,8 @@ var testExpr = []struct {
 			Expr: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, "bar", "baz"),
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+					MustLabelMatcher(labels.MatchEqual, "bar", "baz"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
 				PosRange: PositionRange{
 					Start: 0,
@@ -2432,7 +2432,7 @@ var testExpr = []struct {
 			Expr: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
 				PosRange: PositionRange{
 					Start: 0,
@@ -2445,18 +2445,18 @@ var testExpr = []struct {
 	}, {
 		input: `min_over_time(rate(foo{bar="baz"}[2s])[5m:5s])`,
 		expected: &Call{
-			Func: mustGetFunction("min_over_time"),
+			Func: MustGetFunction("min_over_time"),
 			Args: Expressions{
 				&SubqueryExpr{
 					Expr: &Call{
-						Func: mustGetFunction("rate"),
+						Func: MustGetFunction("rate"),
 						Args: Expressions{
 							&MatrixSelector{
 								VectorSelector: &VectorSelector{
 									Name: "foo",
 									LabelMatchers: []*labels.Matcher{
-										mustLabelMatcher(labels.MatchEqual, "bar", "baz"),
-										mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+										MustLabelMatcher(labels.MatchEqual, "bar", "baz"),
+										MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 									},
 									PosRange: PositionRange{
 										Start: 19,
@@ -2487,18 +2487,18 @@ var testExpr = []struct {
 		input: `min_over_time(rate(foo{bar="baz"}[2s])[5m:])[4m:3s]`,
 		expected: &SubqueryExpr{
 			Expr: &Call{
-				Func: mustGetFunction("min_over_time"),
+				Func: MustGetFunction("min_over_time"),
 				Args: Expressions{
 					&SubqueryExpr{
 						Expr: &Call{
-							Func: mustGetFunction("rate"),
+							Func: MustGetFunction("rate"),
 							Args: Expressions{
 								&MatrixSelector{
 									VectorSelector: &VectorSelector{
 										Name: "foo",
 										LabelMatchers: []*labels.Matcher{
-											mustLabelMatcher(labels.MatchEqual, "bar", "baz"),
-											mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+											MustLabelMatcher(labels.MatchEqual, "bar", "baz"),
+											MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 										},
 										PosRange: PositionRange{
 											Start: 19,
@@ -2531,18 +2531,18 @@ var testExpr = []struct {
 		input: `min_over_time(rate(foo{bar="baz"}[2s])[5m:] offset 4m)[4m:3s]`,
 		expected: &SubqueryExpr{
 			Expr: &Call{
-				Func: mustGetFunction("min_over_time"),
+				Func: MustGetFunction("min_over_time"),
 				Args: Expressions{
 					&SubqueryExpr{
 						Expr: &Call{
-							Func: mustGetFunction("rate"),
+							Func: MustGetFunction("rate"),
 							Args: Expressions{
 								&MatrixSelector{
 									VectorSelector: &VectorSelector{
 										Name: "foo",
 										LabelMatchers: []*labels.Matcher{
-											mustLabelMatcher(labels.MatchEqual, "bar", "baz"),
-											mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+											MustLabelMatcher(labels.MatchEqual, "bar", "baz"),
+											MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 										},
 										PosRange: PositionRange{
 											Start: 19,
@@ -2576,18 +2576,18 @@ var testExpr = []struct {
 		input: `min_over_time(rate(foo{bar="baz"}[2s])[5m:] @ 1603775091)[4m:3s]`,
 		expected: &SubqueryExpr{
 			Expr: &Call{
-				Func: mustGetFunction("min_over_time"),
+				Func: MustGetFunction("min_over_time"),
 				Args: Expressions{
 					&SubqueryExpr{
 						Expr: &Call{
-							Func: mustGetFunction("rate"),
+							Func: MustGetFunction("rate"),
 							Args: Expressions{
 								&MatrixSelector{
 									VectorSelector: &VectorSelector{
 										Name: "foo",
 										LabelMatchers: []*labels.Matcher{
-											mustLabelMatcher(labels.MatchEqual, "bar", "baz"),
-											mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+											MustLabelMatcher(labels.MatchEqual, "bar", "baz"),
+											MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 										},
 										PosRange: PositionRange{
 											Start: 19,
@@ -2604,7 +2604,7 @@ var testExpr = []struct {
 							},
 						},
 						Range:     5 * time.Minute,
-						Timestamp: 1603775091,
+						Timestamp: 1603775091000,
 						EndPos:    56,
 					},
 				},
@@ -2626,7 +2626,7 @@ var testExpr = []struct {
 				Expr: &VectorSelector{
 					Name: "some_metric",
 					LabelMatchers: []*labels.Matcher{
-						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+						MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 					},
 					PosRange: PositionRange{
 						Start: 53,
@@ -2649,7 +2649,7 @@ var testExpr = []struct {
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 				},
 				PosRange: PositionRange{
 					Start: 0,
@@ -2667,13 +2667,13 @@ var testExpr = []struct {
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 				},
 				PosRange: PositionRange{
 					Start: 0,
 					End:   17,
 				},
-				Timestamp: 123,
+				Timestamp: 123000,
 			},
 			Range:  10 * time.Minute,
 			Step:   5 * time.Second,
@@ -2685,13 +2685,13 @@ var testExpr = []struct {
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 				},
 				PosRange: PositionRange{
 					Start: 0,
 					End:   27,
 				},
-				Timestamp: 123,
+				Timestamp: 123000,
 				Offset:    1 * time.Minute,
 			},
 			Range:  10 * time.Minute,
@@ -2704,13 +2704,13 @@ var testExpr = []struct {
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 				},
 				PosRange: PositionRange{
 					Start: 0,
 					End:   27,
 				},
-				Timestamp: 123,
+				Timestamp: 123000,
 				Offset:    1 * time.Minute,
 			},
 			Range:  10 * time.Minute,
@@ -2723,14 +2723,14 @@ var testExpr = []struct {
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 				},
 				PosRange: PositionRange{
 					Start: 0,
 					End:   11,
 				},
 			},
-			Timestamp: 123,
+			Timestamp: 123000,
 			Offset:    1 * time.Minute,
 			Range:     10 * time.Minute,
 			Step:      5 * time.Second,
@@ -2748,7 +2748,7 @@ var testExpr = []struct {
 					LHS: &VectorSelector{
 						Name: "foo",
 						LabelMatchers: []*labels.Matcher{
-							mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+							MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 						},
 						PosRange: PositionRange{
 							Start: 1,
@@ -2758,8 +2758,8 @@ var testExpr = []struct {
 					RHS: &VectorSelector{
 						Name: "bar",
 						LabelMatchers: []*labels.Matcher{
-							mustLabelMatcher(labels.MatchEqual, "nm", "val"),
-							mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
+							MustLabelMatcher(labels.MatchEqual, "nm", "val"),
+							MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 						},
 						PosRange: PositionRange{
 							Start: 7,
@@ -2787,7 +2787,7 @@ var testExpr = []struct {
 					LHS: &VectorSelector{
 						Name: "foo",
 						LabelMatchers: []*labels.Matcher{
-							mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+							MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 						},
 						PosRange: PositionRange{
 							Start: 1,
@@ -2797,8 +2797,8 @@ var testExpr = []struct {
 					RHS: &VectorSelector{
 						Name: "bar",
 						LabelMatchers: []*labels.Matcher{
-							mustLabelMatcher(labels.MatchEqual, "nm", "val"),
-							mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
+							MustLabelMatcher(labels.MatchEqual, "nm", "val"),
+							MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 						},
 						PosRange: PositionRange{
 							Start: 7,
@@ -2827,7 +2827,7 @@ var testExpr = []struct {
 					LHS: &VectorSelector{
 						Name: "foo",
 						LabelMatchers: []*labels.Matcher{
-							mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+							MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 						},
 						PosRange: PositionRange{
 							Start: 1,
@@ -2837,10 +2837,10 @@ var testExpr = []struct {
 					RHS: &VectorSelector{
 						Name: "bar",
 						LabelMatchers: []*labels.Matcher{
-							mustLabelMatcher(labels.MatchEqual, "nm", "val"),
-							mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
+							MustLabelMatcher(labels.MatchEqual, "nm", "val"),
+							MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 						},
-						Timestamp: 1234,
+						Timestamp: 1234000,
 						PosRange: PositionRange{
 							Start: 7,
 							End:   27,
@@ -2853,7 +2853,7 @@ var testExpr = []struct {
 				},
 			},
 			Range:     5 * time.Minute,
-			Timestamp: 1603775019,
+			Timestamp: 1603775019000,
 			EndPos:    46,
 		},
 	}, {
@@ -2904,22 +2904,6 @@ func TestNaNExpression(t *testing.T) {
 	nl, ok := expr.(*NumberLiteral)
 	require.True(t, ok, "expected number literal but got %T", expr)
 	require.True(t, math.IsNaN(float64(nl.Val)), "expected 'NaN' in number literal but got %v", nl.Val)
-}
-
-func mustLabelMatcher(mt labels.MatchType, name, val string) *labels.Matcher {
-	m, err := labels.NewMatcher(mt, name, val)
-	if err != nil {
-		panic(err)
-	}
-	return m
-}
-
-func mustGetFunction(name string) *Function {
-	f, ok := getFunction(name)
-	if !ok {
-		panic(errors.Errorf("function %q does not exist", name))
-	}
-	return f
 }
 
 var testSeries = []struct {
