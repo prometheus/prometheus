@@ -406,7 +406,7 @@ no_nl{type="no newline"}
 			continue
 		}
 
-		require.NoError(t, err, test.Description)
+		require.NoError(t, err)
 		db, err := tsdb.Open(outputDir, nil, nil, tsdb.DefaultOptions())
 		require.NoError(t, err)
 		defer func() {

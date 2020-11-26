@@ -98,16 +98,18 @@ func getMinAndMaxTimestamps(p textparse.Parser) (int64, int64, error) {
 	return maxt, mint, nil
 }
 
-func createBlocks(input *os.File, mint, maxt int64, maxSamplesInAppender int, outputDir string) error {
+func createBlocks(input *os.File, mint, maxt int64, maxSamplesInAppender int, outputDir string) (returnErr error) {
 	blockDuration := tsdb.DefaultBlockDuration
 	mint = blockDuration * (mint / blockDuration)
 
-	db, returnErr := tsdb.OpenDBReadOnly(outputDir, nil)
-	if returnErr != nil {
-		return returnErr
+	db, err := tsdb.OpenDBReadOnly(outputDir, nil)
+	if err != nil {
+		return err
 	}
 	defer func() {
-		returnErr = tsdb_errors.NewMulti(returnErr, db.Close()).Err()
+		if returnErr != nil {
+			returnErr = tsdb_errors.NewMulti(returnErr, db.Close()).Err()
+		}
 	}()
 
 	for t := mint; t <= maxt; t = t + blockDuration {
@@ -191,7 +193,7 @@ func createBlocks(input *os.File, mint, maxt int64, maxSamplesInAppender int, ou
 		}
 		printBlocks(blocks[len(blocks)-1:], true)
 	}
-	return returnErr
+	return nil
 }
 
 func backfill(maxSamplesInAppender int, input *os.File, outputDir string) (err error) {
