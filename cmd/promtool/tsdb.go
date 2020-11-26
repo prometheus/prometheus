@@ -613,3 +613,14 @@ func checkErr(err error) int {
 	}
 	return 0
 }
+
+func backfillOpenMetrics(path string, outputDir string) (err error) {
+	input, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		input.Close()
+	}()
+	return backfill(5000, input, outputDir)
+}
