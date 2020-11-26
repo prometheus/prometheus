@@ -107,9 +107,7 @@ func createBlocks(input *os.File, mint, maxt int64, maxSamplesInAppender int, ou
 		return err
 	}
 	defer func() {
-		if returnErr != nil {
-			returnErr = tsdb_errors.NewMulti(returnErr, db.Close()).Err()
-		}
+		returnErr = tsdb_errors.NewMulti(returnErr, db.Close()).Err()
 	}()
 
 	for t := mint; t <= maxt; t = t + blockDuration {
