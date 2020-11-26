@@ -47,7 +47,7 @@ func newTestHead(t testing.TB, chunkRange int64, compressWAL bool) (*Head, *wal.
 	wlog, err := wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compressWAL)
 	require.NoError(t, err)
 
-	h, err := NewHead(nil, nil, wlog, chunkRange, dir, nil, DefaultStripeSize, nil)
+	h, err := NewHead(nil, nil, wlog, chunkRange, dir, nil, chunks.DefaultWriteBufferSize, DefaultStripeSize, nil)
 	require.NoError(t, err)
 
 	require.NoError(t, h.chunkDiskMapper.IterateAllChunks(func(_, _ uint64, _, _ int64, _ uint16) error { return nil }))
@@ -191,7 +191,7 @@ func BenchmarkLoadWAL(b *testing.B) {
 
 				// Load the WAL.
 				for i := 0; i < b.N; i++ {
-					h, err := NewHead(nil, nil, w, 1000, w.Dir(), nil, DefaultStripeSize, nil)
+					h, err := NewHead(nil, nil, w, 1000, w.Dir(), nil, chunks.DefaultWriteBufferSize, DefaultStripeSize, nil)
 					require.NoError(b, err)
 					h.Init(0)
 				}
@@ -302,7 +302,7 @@ func TestHead_WALMultiRef(t *testing.T) {
 	w, err = wal.New(nil, nil, w.Dir(), false)
 	require.NoError(t, err)
 
-	head, err = NewHead(nil, nil, w, 1000, w.Dir(), nil, DefaultStripeSize, nil)
+	head, err = NewHead(nil, nil, w, 1000, w.Dir(), nil, chunks.DefaultWriteBufferSize, DefaultStripeSize, nil)
 	require.NoError(t, err)
 	require.NoError(t, head.Init(0))
 	defer func() {
@@ -421,7 +421,7 @@ func TestMemSeries_truncateChunks(t *testing.T) {
 		require.NoError(t, os.RemoveAll(dir))
 	}()
 	// This is usually taken from the Head, but passing manually here.
-	chunkDiskMapper, err := chunks.NewChunkDiskMapper(dir, chunkenc.NewPool())
+	chunkDiskMapper, err := chunks.NewChunkDiskMapper(dir, chunkenc.NewPool(), chunks.DefaultWriteBufferSize)
 	require.NoError(t, err)
 	defer func() {
 		require.NoError(t, chunkDiskMapper.Close())
@@ -583,7 +583,7 @@ func TestHeadDeleteSimple(t *testing.T) {
 				// Compare the samples for both heads - before and after the reloadBlocks.
 				reloadedW, err := wal.New(nil, nil, w.Dir(), compress) // Use a new wal to ensure deleted samples are gone even after a reloadBlocks.
 				require.NoError(t, err)
-				reloadedHead, err := NewHead(nil, nil, reloadedW, 1000, reloadedW.Dir(), nil, DefaultStripeSize, nil)
+				reloadedHead, err := NewHead(nil, nil, reloadedW, 1000, reloadedW.Dir(), nil, chunks.DefaultWriteBufferSize, DefaultStripeSize, nil)
 				require.NoError(t, err)
 				require.NoError(t, reloadedHead.Init(0))
 
@@ -963,7 +963,7 @@ func TestMemSeries_append(t *testing.T) {
 		require.NoError(t, os.RemoveAll(dir))
 	}()
 	// This is usually taken from the Head, but passing manually here.
-	chunkDiskMapper, err := chunks.NewChunkDiskMapper(dir, chunkenc.NewPool())
+	chunkDiskMapper, err := chunks.NewChunkDiskMapper(dir, chunkenc.NewPool(), chunks.DefaultWriteBufferSize)
 	require.NoError(t, err)
 	defer func() {
 		require.NoError(t, chunkDiskMapper.Close())
@@ -1265,7 +1265,7 @@ func TestWalRepair_DecodingError(t *testing.T) {
 						require.NoError(t, w.Log(test.rec))
 					}
 
-					h, err := NewHead(nil, nil, w, 1, w.Dir(), nil, DefaultStripeSize, nil)
+					h, err := NewHead(nil, nil, w, 1, w.Dir(), nil, chunks.DefaultWriteBufferSize, DefaultStripeSize, nil)
 					require.NoError(t, err)
 					require.Equal(t, 0.0, prom_testutil.ToFloat64(h.metrics.walCorruptionsTotal))
 					initErr := h.Init(math.MinInt64)
@@ -1320,7 +1320,7 @@ func TestHeadReadWriterRepair(t *testing.T) {
 		w, err := wal.New(nil, nil, walDir, false)
 		require.NoError(t, err)
 
-		h, err := NewHead(nil, nil, w, chunkRange, dir, nil, DefaultStripeSize, nil)
+		h, err := NewHead(nil, nil, w, chunkRange, dir, nil, chunks.DefaultWriteBufferSize, DefaultStripeSize, nil)
 		require.NoError(t, err)
 		require.Equal(t, 0.0, prom_testutil.ToFloat64(h.metrics.mmapChunkCorruptionTotal))
 		require.NoError(t, h.Init(math.MinInt64))
@@ -1550,7 +1550,7 @@ func TestMemSeriesIsolation(t *testing.T) {
 
 	wlog, err := wal.NewSize(nil, nil, w.Dir(), 32768, false)
 	require.NoError(t, err)
-	hb, err = NewHead(nil, nil, wlog, 1000, wlog.Dir(), nil, DefaultStripeSize, nil)
+	hb, err = NewHead(nil, nil, wlog, 1000, wlog.Dir(), nil, chunks.DefaultWriteBufferSize, DefaultStripeSize, nil)
 	defer func() { require.NoError(t, hb.Close()) }()
 	require.NoError(t, err)
 	require.NoError(t, hb.Init(0))
@@ -1896,4 +1896,38 @@ func TestErrReuseAppender(t *testing.T) {
 	require.NoError(t, app.Rollback())
 	require.Error(t, app.Commit())
 	require.Error(t, app.Rollback())
+}
+
+func TestHeadMintAfterTruncation(t *testing.T) {
+	chunkRange := int64(2000)
+	head, _ := newTestHead(t, chunkRange, false)
+
+	app := head.Appender(context.Background())
+	_, err := app.Add(labels.Labels{{Name: "a", Value: "b"}}, 100, 100)
+	require.NoError(t, err)
+	_, err = app.Add(labels.Labels{{Name: "a", Value: "b"}}, 4000, 200)
+	require.NoError(t, err)
+	_, err = app.Add(labels.Labels{{Name: "a", Value: "b"}}, 8000, 300)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Truncating outside the appendable window and actual mint being outside
+	// appendable window should leave mint at the actual mint.
+	require.NoError(t, head.Truncate(3500))
+	require.Equal(t, int64(4000), head.MinTime())
+	require.Equal(t, int64(4000), head.minValidTime.Load())
+
+	// After truncation outside the appendable windown if the actual min time
+	// is in the appendable window then we should leave mint at the start of appendable window.
+	require.NoError(t, head.Truncate(5000))
+	require.Equal(t, head.appendableMinValidTime(), head.MinTime())
+	require.Equal(t, head.appendableMinValidTime(), head.minValidTime.Load())
+
+	// If the truncation time is inside the appendable window, then the min time
+	// should be the truncation time.
+	require.NoError(t, head.Truncate(7500))
+	require.Equal(t, int64(7500), head.MinTime())
+	require.Equal(t, int64(7500), head.minValidTime.Load())
+
+	require.NoError(t, head.Close())
 }

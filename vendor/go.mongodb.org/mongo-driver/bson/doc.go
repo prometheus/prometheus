@@ -53,7 +53,7 @@
 // 		16. BSON min key unmarshals to an primitive.MinKey.
 // 		17. BSON max key unmarshals to an primitive.MaxKey.
 // 		18. BSON undefined unmarshals to a primitive.Undefined.
-// 		19. BSON null unmarshals to a primitive.Null.
+// 		19. BSON null unmarshals to nil.
 // 		20. BSON DBPointer unmarshals to a primitive.DBPointer.
 // 		21. BSON symbol unmarshals to a primitive.Symbol.
 //
@@ -67,13 +67,13 @@
 //       5. uint8 and uint16 marshal to a BSON int32.
 //       6. uint, uint32, and uint64 marshal to a BSON int32 if the value is between math.MinInt32 and math.MaxInt32,
 //       inclusive, and BSON int64 otherwise.
-//       7. BSON null values will unmarshal into the zero value of a field (e.g. unmarshalling a BSON null value into a string
-//       will yield the empty string.).
+//       7. BSON null and undefined values will unmarshal into the zero value of a field (e.g. unmarshalling a BSON null or
+//       undefined value into a string will yield the empty string.).
 //
 // Structs
 //
-// Structs can be marshalled/unmarshalled to/from BSON. When transforming structs to/from BSON, the following rules
-// apply:
+// Structs can be marshalled/unmarshalled to/from BSON or Extended JSON. When transforming structs to/from BSON or Extended
+// JSON, the following rules apply:
 //
 //     1. Only exported fields in structs will be marshalled or unmarshalled.
 //
@@ -89,7 +89,10 @@
 //     5. When unmarshalling, a field of type interface{} will follow the D/M type mappings listed above. BSON documents
 //     unmarshalled into an interface{} field will be unmarshalled as a D.
 //
-// The following struct tags can be used to configure behavior:
+// The encoding of each struct field can be customized by the "bson" struct tag.
+// The tag gives the name of the field, possibly followed by a comma-separated list of options.
+// The name may be empty in order to specify options without overriding the default field name. The following options can be used
+// to configure behavior:
 //
 //     1. omitempty: If the omitempty struct tag is specified on a field, the field will not be marshalled if it is set to
 //     the zero value. By default, a struct field is only considered empty if the field's type implements the Zeroer

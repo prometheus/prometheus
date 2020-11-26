@@ -1206,8 +1206,8 @@ func (t *http2Client) operateHeaders(frame *http2.MetaHeadersFrame) {
 	state := &decodeState{}
 	// Initialize isGRPC value to be !initialHeader, since if a gRPC Response-Headers has already been received, then it means that the peer is speaking gRPC and we are in gRPC mode.
 	state.data.isGRPC = !initialHeader
-	if err := state.decodeHeader(frame); err != nil {
-		t.closeStream(s, err, true, http2.ErrCodeProtocol, status.Convert(err), nil, endStream)
+	if h2code, err := state.decodeHeader(frame); err != nil {
+		t.closeStream(s, err, true, h2code, status.Convert(err), nil, endStream)
 		return
 	}
 
@@ -1306,7 +1306,13 @@ func (t *http2Client) reader() {
 				if s != nil {
 					// use error detail to provide better err message
 					code := http2ErrConvTab[se.Code]
-					msg := t.framer.fr.ErrorDetail().Error()
+					errorDetail := t.framer.fr.ErrorDetail()
+					var msg string
+					if errorDetail != nil {
+						msg = errorDetail.Error()
+					} else {
+						msg = "received invalid frame"
+					}
 					t.closeStream(s, status.Error(code, msg), true, http2.ErrCodeProtocol, status.New(code, msg), nil, false)
 				}
 				continue

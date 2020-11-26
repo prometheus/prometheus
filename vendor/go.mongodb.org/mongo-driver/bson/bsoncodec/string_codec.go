@@ -85,6 +85,10 @@ func (sc *StringCodec) DecodeValue(dctx DecodeContext, vr bsonrw.ValueReader, va
 		if err = vr.ReadNull(); err != nil {
 			return err
 		}
+	case bsontype.Undefined:
+		if err = vr.ReadUndefined(); err != nil {
+			return err
+		}
 	default:
 		return fmt.Errorf("cannot decode %v into a string type", vr.Type())
 	}

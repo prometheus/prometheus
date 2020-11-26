@@ -1,3 +1,24 @@
+## 1.3.3
+
+* Decoding maps from maps creates a settable value for decode hooks [GH-203]
+
+## 1.3.2
+
+* Decode into interface type with a struct value is supported [GH-187]
+
+## 1.3.1
+
+* Squash should only squash embedded structs. [GH-194]
+
+## 1.3.0
+
+* Added `",omitempty"` support. This will ignore zero values in the source
+  structure when encoding. [GH-145]
+
+## 1.2.3
+
+* Fix duplicate entries in Keys list with pointer values. [GH-185]
+
 ## 1.2.2
 
 * Do not add unsettable (unexported) values to the unused metadata key

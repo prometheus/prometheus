@@ -590,7 +590,7 @@ func (rr *LOC) parse(c *zlexer, o string) *ParseError {
 	// North
 	l, _ := c.Next()
 	i, e := strconv.ParseUint(l.token, 10, 32)
-	if e != nil || l.err {
+	if e != nil || l.err || i > 90 {
 		return &ParseError{"", "bad LOC Latitude", l}
 	}
 	rr.Latitude = 1000 * 60 * 60 * uint32(i)
@@ -601,7 +601,7 @@ func (rr *LOC) parse(c *zlexer, o string) *ParseError {
 	if rr.Latitude, ok = locCheckNorth(l.token, rr.Latitude); ok {
 		goto East
 	}
-	if i, err := strconv.ParseUint(l.token, 10, 32); err != nil || l.err {
+	if i, err := strconv.ParseUint(l.token, 10, 32); err != nil || l.err || i > 59 {
 		return &ParseError{"", "bad LOC Latitude minutes", l}
 	} else {
 		rr.Latitude += 1000 * 60 * uint32(i)
@@ -609,7 +609,7 @@ func (rr *LOC) parse(c *zlexer, o string) *ParseError {
 
 	c.Next() // zBlank
 	l, _ = c.Next()
-	if i, err := strconv.ParseFloat(l.token, 32); err != nil || l.err {
+	if i, err := strconv.ParseFloat(l.token, 32); err != nil || l.err || i < 0 || i >= 60 {
 		return &ParseError{"", "bad LOC Latitude seconds", l}
 	} else {
 		rr.Latitude += uint32(1000 * i)
@@ -627,7 +627,7 @@ East:
 	// East
 	c.Next() // zBlank
 	l, _ = c.Next()
-	if i, err := strconv.ParseUint(l.token, 10, 32); err != nil || l.err {
+	if i, err := strconv.ParseUint(l.token, 10, 32); err != nil || l.err || i > 180 {
 		return &ParseError{"", "bad LOC Longitude", l}
 	} else {
 		rr.Longitude = 1000 * 60 * 60 * uint32(i)
@@ -638,14 +638,14 @@ East:
 	if rr.Longitude, ok = locCheckEast(l.token, rr.Longitude); ok {
 		goto Altitude
 	}
-	if i, err := strconv.ParseUint(l.token, 10, 32); err != nil || l.err {
+	if i, err := strconv.ParseUint(l.token, 10, 32); err != nil || l.err || i > 59 {
 		return &ParseError{"", "bad LOC Longitude minutes", l}
 	} else {
 		rr.Longitude += 1000 * 60 * uint32(i)
 	}
 	c.Next() // zBlank
 	l, _ = c.Next()
-	if i, err := strconv.ParseFloat(l.token, 32); err != nil || l.err {
+	if i, err := strconv.ParseFloat(l.token, 32); err != nil || l.err || i < 0 || i >= 60 {
 		return &ParseError{"", "bad LOC Longitude seconds", l}
 	} else {
 		rr.Longitude += uint32(1000 * i)
@@ -668,7 +668,7 @@ Altitude:
 	if l.token[len(l.token)-1] == 'M' || l.token[len(l.token)-1] == 'm' {
 		l.token = l.token[0 : len(l.token)-1]
 	}
-	if i, err := strconv.ParseFloat(l.token, 32); err != nil {
+	if i, err := strconv.ParseFloat(l.token, 64); err != nil {
 		return &ParseError{"", "bad LOC Altitude", l}
 	} else {
 		rr.Altitude = uint32(i*100.0 + 10000000.0 + 0.5)
@@ -893,8 +893,7 @@ func (rr *RRSIG) parse(c *zlexer, o string) *ParseError {
 	l, _ = c.Next()
 	if i, err := StringToTime(l.token); err != nil {
 		// Try to see if all numeric and use it as epoch
-		if i, err := strconv.ParseInt(l.token, 10, 64); err == nil {
-			// TODO(miek): error out on > MAX_UINT32, same below
+		if i, err := strconv.ParseUint(l.token, 10, 32); err == nil {
 			rr.Expiration = uint32(i)
 		} else {
 			return &ParseError{"", "bad RRSIG Expiration", l}
@@ -906,7 +905,7 @@ func (rr *RRSIG) parse(c *zlexer, o string) *ParseError {
 	c.Next() // zBlank
 	l, _ = c.Next()
 	if i, err := StringToTime(l.token); err != nil {
-		if i, err := strconv.ParseInt(l.token, 10, 64); err == nil {
+		if i, err := strconv.ParseUint(l.token, 10, 32); err == nil {
 			rr.Inception = uint32(i)
 		} else {
 			return &ParseError{"", "bad RRSIG Inception", l}

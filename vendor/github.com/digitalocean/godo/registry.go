@@ -28,6 +28,13 @@ type RegistryService interface {
 	ListRepositoryTags(context.Context, string, string, *ListOptions) ([]*RepositoryTag, *Response, error)
 	DeleteTag(context.Context, string, string, string) (*Response, error)
 	DeleteManifest(context.Context, string, string, string) (*Response, error)
+	StartGarbageCollection(context.Context, string) (*GarbageCollection, *Response, error)
+	GetGarbageCollection(context.Context, string) (*GarbageCollection, *Response, error)
+	ListGarbageCollections(context.Context, string, *ListOptions) ([]*GarbageCollection, *Response, error)
+	UpdateGarbageCollection(context.Context, string, string, *UpdateGarbageCollectionRequest) (*GarbageCollection, *Response, error)
+	GetOptions(context.Context) (*RegistryOptions, *Response, error)
+	GetSubscription(context.Context) (*RegistrySubscription, *Response, error)
+	UpdateSubscription(context.Context, *RegistrySubscriptionUpdateRequest) (*RegistrySubscription, *Response, error)
 }
 
 var _ RegistryService = &RegistryServiceOp{}
@@ -39,7 +46,8 @@ type RegistryServiceOp struct {
 
 // RegistryCreateRequest represents a request to create a registry.
 type RegistryCreateRequest struct {
-	Name string `json:"name,omitempty"`
+	Name                 string `json:"name,omitempty"`
+	SubscriptionTierSlug string `json:"subscription_tier_slug,omitempty"`
 }
 
 // RegistryDockerCredentialsRequest represents a request to retrieve docker
@@ -88,6 +96,74 @@ type repositoryTagsRoot struct {
 	Tags  []*RepositoryTag `json:"tags,omitempty"`
 	Links *Links           `json:"links,omitempty"`
 	Meta  *Meta            `json:"meta"`
+}
+
+// GarbageCollection represents a garbage collection.
+type GarbageCollection struct {
+	UUID         string    `json:"uuid"`
+	RegistryName string    `json:"registry_name"`
+	Status       string    `json:"status"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	BlobsDeleted uint64    `json:"blobs_deleted"`
+	FreedBytes   uint64    `json:"freed_bytes"`
+}
+
+type garbageCollectionRoot struct {
+	GarbageCollection *GarbageCollection `json:"garbage_collection,omitempty"`
+}
+
+type garbageCollectionsRoot struct {
+	GarbageCollections []*GarbageCollection `json:"garbage_collections,omitempty"`
+	Links              *Links               `json:"links,omitempty"`
+	Meta               *Meta                `json:"meta"`
+}
+
+// UpdateGarbageCollectionRequest represents a request to update a garbage
+// collection.
+type UpdateGarbageCollectionRequest struct {
+	Cancel bool `json:"cancel"`
+}
+
+// RegistryOptions are options for users when creating or updating a registry.
+type RegistryOptions struct {
+	SubscriptionTiers []*RegistrySubscriptionTier `json:"subscription_tiers,omitempty"`
+}
+
+type registryOptionsRoot struct {
+	Options *RegistryOptions `json:"options"`
+}
+
+// RegistrySubscriptionTier is a subscription tier for container registry.
+type RegistrySubscriptionTier struct {
+	Name                   string `json:"name"`
+	Slug                   string `json:"slug"`
+	IncludedRepositories   uint64 `json:"included_repositories"`
+	IncludedStorageBytes   uint64 `json:"included_storage_bytes"`
+	AllowStorageOverage    bool   `json:"allow_storage_overage"`
+	IncludedBandwidthBytes uint64 `json:"included_bandwidth_bytes"`
+	MonthlyPriceInCents    uint64 `json:"monthly_price_in_cents"`
+	Eligible               bool   `json:"eligible,omitempty"`
+	// EligibilityReaons is included when Eligible is false, and indicates the
+	// reasons why this tier is not availble to the user.
+	EligibilityReasons []string `json:"eligibility_reasons,omitempty"`
+}
+
+// RegistrySubscription is a user's subscription.
+type RegistrySubscription struct {
+	Tier      *RegistrySubscriptionTier `json:"tier"`
+	CreatedAt time.Time                 `json:"created_at"`
+	UpdatedAt time.Time                 `json:"updated_at"`
+}
+
+type registrySubscriptionRoot struct {
+	Subscription *RegistrySubscription `json:"subscription"`
+}
+
+// RegistrySubscriptionUpdateRequest represents a request to update the
+// subscription plan for a registry.
+type RegistrySubscriptionUpdateRequest struct {
+	TierSlug string `json:"tier_slug"`
 }
 
 // Get retrieves the details of a Registry.
@@ -250,4 +326,141 @@ func (svc *RegistryServiceOp) DeleteManifest(ctx context.Context, registry, repo
 	}
 
 	return resp, nil
+}
+
+// StartGarbageCollection requests a garbage collection for the specified
+// registry.
+func (svc *RegistryServiceOp) StartGarbageCollection(ctx context.Context, registry string) (*GarbageCollection, *Response, error) {
+	path := fmt.Sprintf("%s/%s/garbage-collection", registryPath, registry)
+	req, err := svc.client.NewRequest(ctx, http.MethodPost, path, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	root := new(garbageCollectionRoot)
+	resp, err := svc.client.Do(ctx, req, root)
+	if err != nil {
+		return nil, resp, err
+	}
+
+	return root.GarbageCollection, resp, err
+}
+
+// GetGarbageCollection retrieves the currently-active garbage collection for
+// the specified registry; if there are no active garbage collections, then
+// return a 404/NotFound error. There can only be one active garbage
+// collection on a registry.
+func (svc *RegistryServiceOp) GetGarbageCollection(ctx context.Context, registry string) (*GarbageCollection, *Response, error) {
+	path := fmt.Sprintf("%s/%s/garbage-collection", registryPath, registry)
+	req, err := svc.client.NewRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	root := new(garbageCollectionRoot)
+	resp, err := svc.client.Do(ctx, req, root)
+	if err != nil {
+		return nil, resp, err
+	}
+
+	return root.GarbageCollection, resp, nil
+}
+
+// ListGarbageCollections retrieves all garbage collections (active and
+// inactive) for the specified registry.
+func (svc *RegistryServiceOp) ListGarbageCollections(ctx context.Context, registry string, opts *ListOptions) ([]*GarbageCollection, *Response, error) {
+	path := fmt.Sprintf("%s/%s/garbage-collections", registryPath, registry)
+	path, err := addOptions(path, opts)
+	if err != nil {
+		return nil, nil, err
+	}
+	req, err := svc.client.NewRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	root := new(garbageCollectionsRoot)
+	resp, err := svc.client.Do(ctx, req, root)
+	if err != nil {
+		return nil, resp, err
+	}
+
+	if root.Links != nil {
+		resp.Links = root.Links
+	}
+	if root.Meta != nil {
+		resp.Meta = root.Meta
+	}
+
+	return root.GarbageCollections, resp, nil
+}
+
+// UpdateGarbageCollection updates the specified garbage collection for the
+// specified registry. While only the currently-active garbage collection can
+// be updated we still require the exact garbage collection to be specified to
+// avoid race conditions that might may arise from issuing an update to the
+// implicit "currently-active" garbage collection. Returns the updated garbage
+// collection.
+func (svc *RegistryServiceOp) UpdateGarbageCollection(ctx context.Context, registry, gcUUID string, request *UpdateGarbageCollectionRequest) (*GarbageCollection, *Response, error) {
+	path := fmt.Sprintf("%s/%s/garbage-collection/%s", registryPath, registry, gcUUID)
+	req, err := svc.client.NewRequest(ctx, http.MethodPut, path, request)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	root := new(garbageCollectionRoot)
+	resp, err := svc.client.Do(ctx, req, root)
+	if err != nil {
+		return nil, resp, err
+	}
+
+	return root.GarbageCollection, resp, nil
+}
+
+// GetOptions returns options the user can use when creating or updating a
+// registry.
+func (svc *RegistryServiceOp) GetOptions(ctx context.Context) (*RegistryOptions, *Response, error) {
+	path := fmt.Sprintf("%s/options", registryPath)
+	req, err := svc.client.NewRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	root := new(registryOptionsRoot)
+	resp, err := svc.client.Do(ctx, req, root)
+	if err != nil {
+		return nil, resp, err
+	}
+
+	return root.Options, resp, nil
+}
+
+// GetSubscription retrieves the user's subscription.
+func (svc *RegistryServiceOp) GetSubscription(ctx context.Context) (*RegistrySubscription, *Response, error) {
+	path := fmt.Sprintf("%s/subscription", registryPath)
+	req, err := svc.client.NewRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	root := new(registrySubscriptionRoot)
+	resp, err := svc.client.Do(ctx, req, root)
+	if err != nil {
+		return nil, resp, err
+	}
+	return root.Subscription, resp, nil
+}
+
+// UpdateSubscription updates the user's registry subscription.
+func (svc *RegistryServiceOp) UpdateSubscription(ctx context.Context, request *RegistrySubscriptionUpdateRequest) (*RegistrySubscription, *Response, error) {
+	path := fmt.Sprintf("%s/subscription", registryPath)
+	req, err := svc.client.NewRequest(ctx, http.MethodPost, path, request)
+	if err != nil {
+		return nil, nil, err
+	}
+	root := new(registrySubscriptionRoot)
+	resp, err := svc.client.Do(ctx, req, root)
+	if err != nil {
+		return nil, resp, err
+	}
+	return root.Subscription, resp, nil
 }

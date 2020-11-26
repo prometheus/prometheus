@@ -21,6 +21,10 @@ import "gogoproto/gogo.proto";
 
 message WriteRequest {
   repeated prometheus.TimeSeries timeseries = 1 [(gogoproto.nullable) = false];
+  // Cortex uses this field to determine the source of the write request.
+  // We reserve it to avoid any compatibility issues.
+  reserved  2;
+  repeated prometheus.MetricMetadata metadata = 3 [(gogoproto.nullable) = false];
 }
 
 // ReadRequest represents a remote read request.

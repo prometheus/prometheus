@@ -53,6 +53,7 @@ func (l LoadBalancer) String() string {
 	return Stringify(l)
 }
 
+// URN returns the load balancer ID in a valid DO API URN form.
 func (l LoadBalancer) URN() string {
 	return ToURN("LoadBalancer", l.ID)
 }

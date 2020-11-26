@@ -662,6 +662,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_ec2_instance_lifecycle`: the lifecycle of the EC2 instance, set only for 'spot' or 'scheduled' instances, absent otherwise
 * `__meta_ec2_instance_state`: the state of the EC2 instance
 * `__meta_ec2_instance_type`: the type of the EC2 instance
+* `__meta_ec2_ipv6_addresses`: comma seperated list of IPv6 addresses assigned to the instance's network interfaces, if present
 * `__meta_ec2_owner_id`: the ID of the AWS account that owns the EC2 instance
 * `__meta_ec2_platform`: the Operating System platform, set to 'windows' on Windows servers, absent otherwise
 * `__meta_ec2_primary_subnet_id`: the subnet ID of the primary network interface, if available
@@ -1769,7 +1770,15 @@ queue_config:
   [ min_backoff: <duration> | default = 30ms ]
   # Maximum retry delay.
   [ max_backoff: <duration> | default = 100ms ]
-
+# Configures the sending of series metadata to remote storage.
+# Metadata configuration is subject to change at any point
+# or be removed in future releases.
+metadata_config:
+  # Whether metric metadata is sent to remote storage or not.
+  [ send: <boolean> | default = true ]
+  # How frequently metric metadata is sent to remote storage.
+  [ send_interval: <duration> | default = 1m ]
+  
 ```
 
 There is a list of

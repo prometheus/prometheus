@@ -27,8 +27,9 @@ type NetworkSubnetType string
 
 // List of available network subnet types.
 const (
-	NetworkSubnetTypeCloud  NetworkSubnetType = "cloud"
-	NetworkSubnetTypeServer NetworkSubnetType = "server"
+	NetworkSubnetTypeCloud   NetworkSubnetType = "cloud"
+	NetworkSubnetTypeServer  NetworkSubnetType = "server"
+	NetworkSubnetTypeVSwitch NetworkSubnetType = "vswitch"
 )
 
 // Network represents a network in the Hetzner Cloud.
@@ -50,6 +51,7 @@ type NetworkSubnet struct {
 	IPRange     *net.IPNet
 	NetworkZone NetworkZone
 	Gateway     net.IP
+	VSwitchID   int
 }
 
 // NetworkRoute represents a route of a network.
@@ -241,11 +243,15 @@ func (c *NetworkClient) Create(ctx context.Context, opts NetworkCreateOpts) (*Ne
 		IPRange: opts.IPRange.String(),
 	}
 	for _, subnet := range opts.Subnets {
-		reqBody.Subnets = append(reqBody.Subnets, schema.NetworkSubnet{
+		s := schema.NetworkSubnet{
 			Type:        string(subnet.Type),
 			IPRange:     subnet.IPRange.String(),
 			NetworkZone: string(subnet.NetworkZone),
-		})
+		}
+		if subnet.VSwitchID != 0 {
+			s.VSwitchID = subnet.VSwitchID
+		}
+		reqBody.Subnets = append(reqBody.Subnets, s)
 	}
 	for _, route := range opts.Routes {
 		reqBody.Routes = append(reqBody.Routes, schema.NetworkRoute{
@@ -315,6 +321,9 @@ func (c *NetworkClient) AddSubnet(ctx context.Context, network *Network, opts Ne
 	}
 	if opts.Subnet.IPRange != nil {
 		reqBody.IPRange = opts.Subnet.IPRange.String()
+	}
+	if opts.Subnet.VSwitchID != 0 {
+		reqBody.VSwitchID = opts.Subnet.VSwitchID
 	}
 	reqBodyData, err := json.Marshal(reqBody)
 	if err != nil {
