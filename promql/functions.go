@@ -887,6 +887,19 @@ func funcYear(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper)
 	})
 }
 
+// === wave(a scalar, p scalar, s scalar) Vector ===
+func funcWave(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	amplitude := vals[0].(Vector)[0].Point.V
+	period := vals[1].(Vector)[0].Point.V
+	shift := vals[2].(Vector)[0].Point.V
+
+	// y = a * sin((2π/p * x) + s)
+	v := amplitude * math.Sin((2*math.Pi/period)*((float64(enh.Ts)/1000)+shift))
+	return Vector{Sample{Point: Point{
+		V: v,
+	}}}
+}
+
 // FunctionCalls is a list of all functions supported by PromQL, including their types.
 var FunctionCalls = map[string]FunctionCall{
 	"abs":                funcAbs,
@@ -935,6 +948,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"time":               funcTime,
 	"timestamp":          funcTimestamp,
 	"vector":             funcVector,
+	"wave":               funcWave,
 	"year":               funcYear,
 }
 

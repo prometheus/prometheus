@@ -400,6 +400,11 @@ the given vector as the number of seconds since January 1, 1970 UTC.
 
 `vector(s scalar)` returns the scalar `s` as a vector with no labels.
 
+## `wave()`
+
+`wave(a scalar, p scalar, s scalar)` returns the value of a sine wave with amplitude `a`, period
+`p` and horizontal shift of `s` seconds
+
 ## `year()`
 
 `year(v=vector(time()) instant-vector)` returns the year

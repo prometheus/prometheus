@@ -262,6 +262,11 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeScalar},
 		ReturnType: ValueTypeVector,
 	},
+	"wave": {
+		Name:       "wave",
+		ArgTypes:   []ValueType{ValueTypeScalar, ValueTypeScalar, ValueTypeScalar},
+		ReturnType: ValueTypeVector,
+	},
 	"year": {
 		Name:       "year",
 		ArgTypes:   []ValueType{ValueTypeVector},
