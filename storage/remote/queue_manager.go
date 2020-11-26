@@ -839,7 +839,7 @@ type shards struct {
 	mtx sync.RWMutex // With the WAL, this is never actually contended.
 
 	qm     *QueueManager
-	queues []chan sample
+	shards []*shard
 
 	// Emulate a wait group with a channel and an atomic int, as you
 	// cannot select on a wait group.
@@ -855,6 +855,94 @@ type shards struct {
 	droppedOnHardShutdown atomic.Uint32
 }
 
+type shard struct {
+	queue       chan sample
+	shutdownCtx context.Context
+
+	shards *shards
+	id     string
+}
+
+// runs the main loop for an individual shard, sending samples
+func (s *shard) run() {
+	defer func() {
+		if s.shards.running.Dec() == 0 {
+			close(s.shards.done)
+		}
+	}()
+
+	// Send batches of at most MaxSamplesPerSend samples to the remote storage.
+	// If we have fewer samples than that, flush them out after a deadline
+	// anyways.
+	var (
+		max            = s.shards.qm.cfg.MaxSamplesPerSend
+		nPending       = 0
+		pendingSamples = allocateTimeSeries(max)
+		buf            []byte
+	)
+
+	timer := time.NewTimer(time.Duration(s.shards.qm.cfg.BatchSendDeadline))
+	stop := func() {
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+	}
+	defer stop()
+
+	for {
+		select {
+		case <-s.shutdownCtx.Done():
+			// In this case we drop all samples in the buffer and the queue.
+			// Remove them from pending and mark them as failed.
+			droppedSamples := nPending + len(s.queue)
+			s.shards.qm.metrics.pendingSamples.Sub(float64(droppedSamples))
+			s.shards.qm.metrics.failedSamplesTotal.Add(float64(droppedSamples))
+			s.shards.droppedOnHardShutdown.Add(uint32(droppedSamples))
+			return
+
+		case sample, ok := <-s.queue:
+			if !ok {
+				if nPending > 0 {
+					level.Debug(s.shards.qm.logger).Log("msg", "Flushing samples to remote storage...", "count", nPending)
+					s.shards.sendSamples(s.shutdownCtx, pendingSamples[:nPending], &buf)
+					s.shards.qm.metrics.pendingSamples.Sub(float64(nPending))
+					level.Debug(s.shards.qm.logger).Log("msg", "Done flushing.")
+				}
+				return
+			}
+
+			// Number of pending samples is limited by the fact that sendSamples (via sendSamplesWithBackoff)
+			// retries endlessly, so once we reach max samples, if we can never send to the endpoint we'll
+			// stop reading from the queue. This makes it safe to reference pendingSamples by index.
+			pendingSamples[nPending].Labels = labelsToLabelsProto(sample.labels, pendingSamples[nPending].Labels)
+			pendingSamples[nPending].Samples[0].Timestamp = sample.t
+			pendingSamples[nPending].Samples[0].Value = sample.v
+			nPending++
+
+			if nPending >= max {
+				s.shards.sendSamples(s.shutdownCtx, pendingSamples, &buf)
+				nPending = 0
+				s.shards.qm.metrics.pendingSamples.Sub(float64(max))
+
+				stop()
+				timer.Reset(time.Duration(s.shards.qm.cfg.BatchSendDeadline))
+			}
+
+		case <-timer.C:
+			if nPending > 0 {
+				level.Debug(s.shards.qm.logger).Log("msg", "runShard timer ticked, sending samples", "samples", nPending, "shard", s.id)
+				s.shards.sendSamples(s.shutdownCtx, pendingSamples[:nPending], &buf)
+				s.shards.qm.metrics.pendingSamples.Sub(float64(nPending))
+				nPending = 0
+			}
+			timer.Reset(time.Duration(s.shards.qm.cfg.BatchSendDeadline))
+		}
+	}
+}
+
 // start the shards; must be called before any call to enqueue.
 func (s *shards) start(n int) {
 	s.mtx.Lock()
@@ -863,21 +951,26 @@ func (s *shards) start(n int) {
 	s.qm.metrics.pendingSamples.Set(0)
 	s.qm.metrics.numShards.Set(float64(n))
 
-	newQueues := make([]chan sample, n)
-	for i := 0; i < n; i++ {
-		newQueues[i] = make(chan sample, s.qm.cfg.Capacity)
-	}
-
-	s.queues = newQueues
-
 	var hardShutdownCtx context.Context
 	hardShutdownCtx, s.hardShutdown = context.WithCancel(context.Background())
 	s.softShutdown = make(chan struct{})
 	s.running.Store(int32(n))
 	s.done = make(chan struct{})
 	s.droppedOnHardShutdown.Store(0)
+
+	newShards := make([]*shard, n)
 	for i := 0; i < n; i++ {
-		go s.runShard(hardShutdownCtx, i, newQueues[i])
+		newShards[i] = &shard{
+			queue:       make(chan sample, s.qm.cfg.Capacity),
+			shutdownCtx: hardShutdownCtx,
+			id:          strconv.Itoa(i),
+		}
+	}
+
+	s.shards = newShards
+
+	for _, shard := range s.shards {
+		go shard.run()
 	}
 }
 
@@ -896,8 +989,8 @@ func (s *shards) stop() {
 	// send on closed channel.
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
-	for _, queue := range s.queues {
-		close(queue)
+	for _, shard := range s.shards {
+		close(shard.queue)
 	}
 	select {
 	case <-s.done:
@@ -925,94 +1018,13 @@ func (s *shards) enqueue(ref uint64, sample sample) bool {
 	default:
 	}
 
-	shard := uint64(ref) % uint64(len(s.queues))
+	shard := uint64(ref) % uint64(len(s.shards))
 	select {
 	case <-s.softShutdown:
 		return false
-	case s.queues[shard] <- sample:
+	case s.shards[shard].queue <- sample:
 		s.qm.metrics.pendingSamples.Inc()
 		return true
-	}
-}
-
-func (s *shards) runShard(ctx context.Context, shardID int, queue chan sample) {
-	defer func() {
-		if s.running.Dec() == 0 {
-			close(s.done)
-		}
-	}()
-
-	shardNum := strconv.Itoa(shardID)
-
-	// Send batches of at most MaxSamplesPerSend samples to the remote storage.
-	// If we have fewer samples than that, flush them out after a deadline
-	// anyways.
-	var (
-		max            = s.qm.cfg.MaxSamplesPerSend
-		nPending       = 0
-		pendingSamples = allocateTimeSeries(max)
-		buf            []byte
-	)
-
-	timer := time.NewTimer(time.Duration(s.qm.cfg.BatchSendDeadline))
-	stop := func() {
-		if !timer.Stop() {
-			select {
-			case <-timer.C:
-			default:
-			}
-		}
-	}
-	defer stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			// In this case we drop all samples in the buffer and the queue.
-			// Remove them from pending and mark them as failed.
-			droppedSamples := nPending + len(queue)
-			s.qm.metrics.pendingSamples.Sub(float64(droppedSamples))
-			s.qm.metrics.failedSamplesTotal.Add(float64(droppedSamples))
-			s.droppedOnHardShutdown.Add(uint32(droppedSamples))
-			return
-
-		case sample, ok := <-queue:
-			if !ok {
-				if nPending > 0 {
-					level.Debug(s.qm.logger).Log("msg", "Flushing samples to remote storage...", "count", nPending)
-					s.sendSamples(ctx, pendingSamples[:nPending], &buf)
-					s.qm.metrics.pendingSamples.Sub(float64(nPending))
-					level.Debug(s.qm.logger).Log("msg", "Done flushing.")
-				}
-				return
-			}
-
-			// Number of pending samples is limited by the fact that sendSamples (via sendSamplesWithBackoff)
-			// retries endlessly, so once we reach max samples, if we can never send to the endpoint we'll
-			// stop reading from the queue. This makes it safe to reference pendingSamples by index.
-			pendingSamples[nPending].Labels = labelsToLabelsProto(sample.labels, pendingSamples[nPending].Labels)
-			pendingSamples[nPending].Samples[0].Timestamp = sample.t
-			pendingSamples[nPending].Samples[0].Value = sample.v
-			nPending++
-
-			if nPending >= max {
-				s.sendSamples(ctx, pendingSamples, &buf)
-				nPending = 0
-				s.qm.metrics.pendingSamples.Sub(float64(max))
-
-				stop()
-				timer.Reset(time.Duration(s.qm.cfg.BatchSendDeadline))
-			}
-
-		case <-timer.C:
-			if nPending > 0 {
-				level.Debug(s.qm.logger).Log("msg", "runShard timer ticked, sending samples", "samples", nPending, "shard", shardNum)
-				s.sendSamples(ctx, pendingSamples[:nPending], &buf)
-				s.qm.metrics.pendingSamples.Sub(float64(nPending))
-				nPending = 0
-			}
-			timer.Reset(time.Duration(s.qm.cfg.BatchSendDeadline))
-		}
 	}
 }
 
