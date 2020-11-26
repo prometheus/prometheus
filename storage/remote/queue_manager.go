@@ -863,7 +863,9 @@ type shard struct {
 	id     string
 }
 
-// runs the main loop for an individual shard, sending samples
+// run is the main loop for an individual shard, collecting samples from its queue and submitting them when the max
+// samples per send is reached or when the batch send deadline is reached. It exits on the closure of its queue chan
+// or when the shutdown context is cancelled.
 func (s *shard) run() {
 	defer func() {
 		if s.shards.running.Dec() == 0 {
@@ -904,6 +906,7 @@ func (s *shard) run() {
 			return
 
 		case sample, ok := <-s.queue:
+			// If shards queue is closed, we should return once drained.
 			if !ok {
 				if nPending > 0 {
 					level.Debug(s.shards.qm.logger).Log("msg", "Flushing samples to remote storage...", "count", nPending)
