@@ -44,6 +44,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/file"
 	"github.com/prometheus/prometheus/discovery/kubernetes"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
+	"github.com/prometheus/prometheus/tsdb"
 
 	_ "github.com/prometheus/prometheus/discovery/install" // Register service discovery implementations.
 )
@@ -140,7 +141,7 @@ func main() {
 	createBlocksFromRulesStart := createBlocksFromRulesCmd.Flag("start", "The time to start backfilling the new rule from. It is required. Start time should be RFC3339 or Unix timestamp.").
 		Required().String()
 	createBlocksFromRulesEnd := createBlocksFromRulesCmd.Flag("end", "If an end time is provided, all recording rules in the rule files provided will be backfilled to the end time. Default will backfill up to 3 hrs ago. End time should be RFC3339 or Unix timestamp.").String()
-	createBlocksFromRulesOutputDir := createBlocksFromRulesCmd.Flag("output dir", "The filepath on the local filesystem to write the output to. Output will be blocks containing the data of the backfilled recording rules.").Default("backfilldata/").String()
+	createBlocksFromRulesOutputDir := createBlocksFromRulesCmd.Flag("output dir", "The filepath on the local filesystem to write the output to. Output will be blocks containing the data of the backfilled recording rules. Don't use an active Prometheus data directory. If command is run many times with same start/end time, it will create duplicate series.").Default("backfilldata/").String()
 	createBlocksFromRulesURL := createBlocksFromRulesCmd.Flag("url", "Prometheus API url with the data where the rule will be backfilled from.").Default("http://localhost:9090").String()
 	createBlocksFromRulesEvalInterval := createBlocksFromRulesCmd.Flag("evaluation-interval-default", "How frequently to evaluate rules when backfilling if a value is not set in the rules file.").
 		Default("60s").Duration()
@@ -206,7 +207,7 @@ func main() {
 		os.Exit(checkErr(dumpSamples(*dumpPath, *dumpMinTime, *dumpMaxTime)))
 
 	case createBlocksFromRulesCmd.FullCommand():
-		os.Exit(checkErr(BackfillRule(*createBlocksFromRulesURL, *createBlocksFromRulesStart, *createBlocksFromRulesEnd, *createBlocksFromRulesOutputDir, *createBlocksFromRulesEvalInterval, *createBlocksFromRulesFiles...)))
+		os.Exit(checkErr(CreateBlocksFromRules(*createBlocksFromRulesURL, *createBlocksFromRulesStart, *createBlocksFromRulesEnd, *createBlocksFromRulesOutputDir, *createBlocksFromRulesEvalInterval, *createBlocksFromRulesFiles...)))
 	}
 }
 
@@ -782,9 +783,9 @@ func (j *jsonPrinter) printLabelValues(v model.LabelValues) {
 	json.NewEncoder(os.Stdout).Encode(v)
 }
 
-// BackfillRule backfills recording rules from the files provided. The output are blocks of data
+// CreateBlocksFromRules backfills recording rules from the files provided. The output are blocks of data
 // at the outputDir location.
-func BackfillRule(url, start, end, outputDir string, evalInterval time.Duration, files ...string) error {
+func CreateBlocksFromRules(url, start, end, outputDir string, evalInterval time.Duration, files ...string) error {
 	ctx := context.Background()
 	var stime, etime time.Time
 	var err error
@@ -809,19 +810,29 @@ func BackfillRule(url, start, end, outputDir string, evalInterval time.Duration,
 		return nil
 	}
 
+	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
+	writer, err := tsdb.NewBlockWriter(logger,
+		outputDir,
+		tsdb.DefaultBlockDuration,
+	)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "new writer error", err)
+		return err
+	}
+
 	cfg := ruleImporterConfig{
 		Start:        stime,
 		End:          etime,
-		OutputDir:    outputDir,
 		EvalInterval: evalInterval,
-		URL:          url,
 	}
-	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
-	ruleImporter := newRuleImporter(logger, cfg)
-	if err = ruleImporter.init(); err != nil {
-		fmt.Fprintln(os.Stderr, "rule importer init error", err)
+	c, err := api.NewClient(api.Config{
+		Address: url,
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "new api client error", err)
 		return err
 	}
+	ruleImporter := newRuleImporter(logger, cfg, v1.NewAPI(c), newMultipleAppender(ctx, maxSamplesInMemory, writer))
 
 	errs := ruleImporter.loadGroups(ctx, files)
 	for _, err := range errs {
