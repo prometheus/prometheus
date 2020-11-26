@@ -72,6 +72,14 @@ func ruleUnitTest(filename string) []error {
 	if err := yaml.UnmarshalStrict(b, &unitTestInp); err != nil {
 		return []error{err}
 	}
+	// Allow "x-" fields at the top level to contain user defined partial data.
+	for key := range unitTestInp.ExtraFields {
+		if len(key) > 2 && key[:2] == "x-" {
+			continue
+		}
+		return []error{fmt.Errorf("Unknown field %q at top level", key)}
+	}
+
 	if err := resolveAndGlobFilepaths(filepath.Dir(filename), &unitTestInp); err != nil {
 		return []error{err}
 	}
@@ -113,6 +121,10 @@ type unitTestFile struct {
 	EvaluationInterval model.Duration `yaml:"evaluation_interval,omitempty"`
 	GroupEvalOrder     []string       `yaml:"group_eval_order"`
 	Tests              []testGroup    `yaml:"tests"`
+	// Collect extra fields at the top level, this is to allow the user to use
+	// "x-*" fields as a place to put data to merge into tests. It is an error if
+	// this map contains keys not matching "x-*".
+	ExtraFields map[string]interface{} `yaml:"-,inline"`
 }
 
 // resolveAndGlobFilepaths joins all relative paths in a configuration

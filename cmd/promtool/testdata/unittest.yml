@@ -3,6 +3,13 @@ rule_files:
 
 evaluation_interval: 1m
 
+# User data, not interpreted by test.
+x-test_merge: &test_merge
+  interval: 1m
+  input_series:
+    - series: test
+      values: 0+1x10
+
 tests:
   # Basic tests for promql_expr_test, not dependent on rules.
   - interval: 1m
@@ -49,6 +56,16 @@ tests:
       - expr: timestamp(test_missing)
         eval_time: 5m1s
         exp_samples: []
+
+  # Test that YAML anchors and merges are applied.
+  - <<: *test_merge
+
+    promql_expr_test:
+      - expr: test
+        eval_time: 10m
+        exp_samples:
+          - value: 10
+            labels: test
 
   # Minimal test case to check edge case of a single sample.
   - input_series:
