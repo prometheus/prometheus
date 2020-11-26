@@ -1,5 +1,5 @@
-local g = import 'grafana-builder/grafana.libsonnet';
-local grafana = import 'grafonnet/grafana.libsonnet';
+local grafana = import 'github.com/grafana/grafonnet-lib/grafonnet/grafana.libsonnet';
+local g = import 'github.com/grafana/jsonnet-libs/grafana-builder/grafana.libsonnet';
 local dashboard = grafana.dashboard;
 local row = grafana.row;
 local singlestat = grafana.singlestat;

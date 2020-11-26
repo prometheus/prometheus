@@ -11,10 +11,10 @@ This document offers guidance on migrating from Prometheus 1.8 to Prometheus 2.0
 
 ## Flags
 
-The format of the Prometheus command line flags has changed. Instead of a
+The format of Prometheus command line flags has changed. Instead of a
 single dash, all flags now use a double dash. Common flags (`--config.file`,
-`--web.listen-address` and `--web.external-url`) are still the same but beyond
-that, almost all the storage-related flags have been removed.
+`--web.listen-address` and `--web.external-url`) remain but
+almost all storage-related flags have been removed.
 
 Some notable flags which have been removed:
 
@@ -27,11 +27,11 @@ Some notable flags which have been removed:
 - `-query.staleness-delta` has been renamed to `--query.lookback-delta`; Prometheus
   2.0 introduces a new mechanism for handling staleness, see [staleness](querying/basics.md#staleness).
 
-- `-storage.local.*` Prometheus 2.0 introduces a new storage engine, as such all
+- `-storage.local.*` Prometheus 2.0 introduces a new storage engine; as such all
   flags relating to the old engine have been removed.  For information on the
   new engine, see [Storage](#storage).
 
-- `-storage.remote.*` Prometheus 2.0 has removed the already deprecated remote
+- `-storage.remote.*` Prometheus 2.0 has removed the deprecated remote
   storage flags, and will fail to start if they are supplied. To write to
   InfluxDB, Graphite, or OpenTSDB use the relevant storage adapter.
 

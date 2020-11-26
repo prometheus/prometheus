@@ -28,6 +28,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
+
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/record"
@@ -67,14 +68,12 @@ func DeleteCheckpoints(dir string, maxIndex int) error {
 		return err
 	}
 
-	var errs tsdb_errors.MultiError
+	errs := tsdb_errors.NewMulti()
 	for _, checkpoint := range checkpoints {
 		if checkpoint.index >= maxIndex {
 			break
 		}
-		if err := os.RemoveAll(filepath.Join(dir, checkpoint.name)); err != nil {
-			errs.Add(err)
-		}
+		errs.Add(os.RemoveAll(filepath.Join(dir, checkpoint.name)))
 	}
 	return errs.Err()
 }

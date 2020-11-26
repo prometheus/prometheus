@@ -69,7 +69,6 @@ import (
 
 // Paths that are handled by the React / Reach router that should all be served the main React app's index.html.
 var reactRouterPaths = []string{
-	"/",
 	"/alerts",
 	"/config",
 	"/flags",
@@ -79,7 +78,6 @@ var reactRouterPaths = []string{
 	"/status",
 	"/targets",
 	"/tsdb-status",
-	"/version",
 }
 
 // withStackTrace logs the stack trace in case the request panics. The function
@@ -337,17 +335,40 @@ func New(logger log.Logger, o *Options) *Handler {
 	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, path.Join(o.ExternalURL.Path, "/graph"), http.StatusFound)
 	})
+	router.Get("/classic/", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, path.Join(o.ExternalURL.Path, "/classic/graph"), http.StatusFound)
+	})
 
-	router.Get("/alerts", readyf(h.alerts))
-	router.Get("/graph", readyf(h.graph))
-	router.Get("/status", readyf(h.status))
-	router.Get("/flags", readyf(h.flags))
-	router.Get("/config", readyf(h.serveConfig))
-	router.Get("/rules", readyf(h.rules))
-	router.Get("/targets", readyf(h.targets))
-	router.Get("/version", readyf(h.version))
-	router.Get("/service-discovery", readyf(h.serviceDiscovery))
+	// Redirect the original React UI's path (under "/new") to its new path at the root.
+	router.Get("/new/*path", func(w http.ResponseWriter, r *http.Request) {
+		p := route.Param(r.Context(), "path")
+		http.Redirect(w, r, path.Join(o.ExternalURL.Path, strings.TrimPrefix(p, "/new"))+"?"+r.URL.RawQuery, http.StatusFound)
+	})
 
+	router.Get("/classic/alerts", readyf(h.alerts))
+	router.Get("/classic/graph", readyf(h.graph))
+	router.Get("/classic/status", readyf(h.status))
+	router.Get("/classic/flags", readyf(h.flags))
+	router.Get("/classic/config", readyf(h.serveConfig))
+	router.Get("/classic/rules", readyf(h.rules))
+	router.Get("/classic/targets", readyf(h.targets))
+	router.Get("/classic/service-discovery", readyf(h.serviceDiscovery))
+	router.Get("/classic/static/*filepath", func(w http.ResponseWriter, r *http.Request) {
+		r.URL.Path = path.Join("/static", route.Param(r.Context(), "filepath"))
+		fs := server.StaticFileServer(ui.Assets)
+		fs.ServeHTTP(w, r)
+	})
+	// Make sure that "<path-prefix>/classic" is redirected to "<path-prefix>/classic/" and
+	// not just the naked "/classic/", which would be the default behavior of the router
+	// with the "RedirectTrailingSlash" option (https://godoc.org/github.com/julienschmidt/httprouter#Router.RedirectTrailingSlash),
+	// and which breaks users with a --web.route-prefix that deviates from the path derived
+	// from the external URL.
+	// See https://github.com/prometheus/prometheus/issues/6163#issuecomment-553855129.
+	router.Get("/classic", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, path.Join(o.ExternalURL.Path, "classic")+"/", http.StatusFound)
+	})
+
+	router.Get("/version", h.version)
 	router.Get("/metrics", promhttp.Handler().ServeHTTP)
 
 	router.Get("/federate", readyf(httputil.CompressionHandler{
@@ -356,52 +377,43 @@ func New(logger log.Logger, o *Options) *Handler {
 
 	router.Get("/consoles/*filepath", readyf(h.consoles))
 
-	router.Get("/static/*filepath", func(w http.ResponseWriter, r *http.Request) {
-		r.URL.Path = path.Join("/static", route.Param(r.Context(), "filepath"))
-		fs := server.StaticFileServer(ui.Assets)
-		fs.ServeHTTP(w, r)
-	})
-
-	// Make sure that "<path-prefix>/new" is redirected to "<path-prefix>/new/" and
-	// not just the naked "/new/", which would be the default behavior of the router
-	// with the "RedirectTrailingSlash" option (https://godoc.org/github.com/julienschmidt/httprouter#Router.RedirectTrailingSlash),
-	// and which breaks users with a --web.route-prefix that deviates from the path derived
-	// from the external URL.
-	router.Get("/new", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, path.Join(o.ExternalURL.Path, "new")+"/", http.StatusFound)
-	})
-
-	router.Get("/new/*filepath", func(w http.ResponseWriter, r *http.Request) {
-		p := route.Param(r.Context(), "filepath")
-
-		// For paths that the React/Reach router handles, we want to serve the
-		// index.html, but with replaced path prefix placeholder.
-		for _, rp := range reactRouterPaths {
-			if p != rp {
-				continue
-			}
-
-			f, err := ui.Assets.Open("/static/react/index.html")
-			if err != nil {
-				w.WriteHeader(http.StatusInternalServerError)
-				fmt.Fprintf(w, "Error opening React index.html: %v", err)
-				return
-			}
-			idx, err := ioutil.ReadAll(f)
-			if err != nil {
-				w.WriteHeader(http.StatusInternalServerError)
-				fmt.Fprintf(w, "Error reading React index.html: %v", err)
-				return
-			}
-			replacedIdx := bytes.ReplaceAll(idx, []byte("PATH_PREFIX_PLACEHOLDER"), []byte(o.ExternalURL.Path))
-			replacedIdx = bytes.ReplaceAll(replacedIdx, []byte("CONSOLES_LINK_PLACEHOLDER"), []byte(h.consolesPath()))
-			replacedIdx = bytes.ReplaceAll(replacedIdx, []byte("TITLE_PLACEHOLDER"), []byte(h.options.PageTitle))
-			w.Write(replacedIdx)
+	serveReactApp := func(w http.ResponseWriter, r *http.Request) {
+		f, err := ui.Assets.Open("/static/react/index.html")
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintf(w, "Error opening React index.html: %v", err)
 			return
 		}
+		idx, err := ioutil.ReadAll(f)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintf(w, "Error reading React index.html: %v", err)
+			return
+		}
+		replacedIdx := bytes.ReplaceAll(idx, []byte("CONSOLES_LINK_PLACEHOLDER"), []byte(h.consolesPath()))
+		replacedIdx = bytes.ReplaceAll(replacedIdx, []byte("TITLE_PLACEHOLDER"), []byte(h.options.PageTitle))
+		w.Write(replacedIdx)
+	}
 
-		// For all other paths, serve auxiliary assets.
-		r.URL.Path = path.Join("/static/react/", p)
+	// Serve the React app.
+	for _, p := range reactRouterPaths {
+		router.Get(p, serveReactApp)
+	}
+
+	// The favicon and manifest are bundled as part of the React app, but we want to serve
+	// them on the root.
+	for _, p := range []string{"/favicon.ico", "/manifest.json"} {
+		assetPath := "/static/react" + p
+		router.Get(p, func(w http.ResponseWriter, r *http.Request) {
+			r.URL.Path = assetPath
+			fs := server.StaticFileServer(ui.Assets)
+			fs.ServeHTTP(w, r)
+		})
+	}
+
+	// Static files required by the React app.
+	router.Get("/static/*filepath", func(w http.ResponseWriter, r *http.Request) {
+		r.URL.Path = path.Join("/static/react/static", route.Param(r.Context(), "filepath"))
 		fs := server.StaticFileServer(ui.Assets)
 		fs.ServeHTTP(w, r)
 	})
@@ -906,8 +918,13 @@ func (h *Handler) version(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) quit(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "Requesting termination... Goodbye!")
-	close(h.quitCh)
+	select {
+	case <-h.quitCh:
+		fmt.Fprintf(w, "Termination already in progress.")
+	default:
+		fmt.Fprintf(w, "Requesting termination... Goodbye!")
+		close(h.quitCh)
+	}
 }
 
 func (h *Handler) reload(w http.ResponseWriter, r *http.Request) {

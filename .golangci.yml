@@ -19,7 +19,9 @@ linters-settings:
     include-go-root: true
     packages:
       - sync/atomic
+      - github.com/stretchr/testify/assert
     packages-with-error-message:
       - sync/atomic: "Use go.uber.org/atomic instead of sync/atomic"
+      - github.com/stretchr/testify/assert: "Use github.com/stretchr/testify/require instead of github.com/stretchr/testify/assert"
   errcheck:
     exclude: scripts/errcheck_excludes.txt

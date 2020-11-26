@@ -38,7 +38,7 @@ const (
 	URLPort           string = `(:(\d{1,5}))`
 	URLIP             string = `([1-9]\d?|1\d\d|2[01]\d|22[0-3]|24\d|25[0-5])(\.(\d{1,2}|1\d\d|2[0-4]\d|25[0-5])){2}(?:\.([0-9]\d?|1\d\d|2[0-4]\d|25[0-5]))`
 	URLSubdomain      string = `((www\.)|([a-zA-Z0-9]+([-_\.]?[a-zA-Z0-9])*[a-zA-Z0-9]\.[a-zA-Z0-9]+))`
-	URL               string = `^` + URLSchema + `?` + URLUsername + `?` + `((` + URLIP + `|(\[` + IP + `\])|(([a-zA-Z0-9]([a-zA-Z0-9-_]+)?[a-zA-Z0-9]([-\.][a-zA-Z0-9]+)*)|(` + URLSubdomain + `?))?(([a-zA-Z\x{00a1}-\x{ffff}0-9]+-?-?)*[a-zA-Z\x{00a1}-\x{ffff}0-9]+)(?:\.([a-zA-Z\x{00a1}-\x{ffff}]{1,}))?))\.?` + URLPort + `?` + URLPath + `?$`
+	URL                      = `^` + URLSchema + `?` + URLUsername + `?` + `((` + URLIP + `|(\[` + IP + `\])|(([a-zA-Z0-9]([a-zA-Z0-9-_]+)?[a-zA-Z0-9]([-\.][a-zA-Z0-9]+)*)|(` + URLSubdomain + `?))?(([a-zA-Z\x{00a1}-\x{ffff}0-9]+-?-?)*[a-zA-Z\x{00a1}-\x{ffff}0-9]+)(?:\.([a-zA-Z\x{00a1}-\x{ffff}]{1,}))?))\.?` + URLPort + `?` + URLPath + `?$`
 	SSN               string = `^\d{3}[- ]?\d{2}[- ]?\d{4}$`
 	WinPath           string = `^[a-zA-Z]:\\(?:[^\\/:*?"<>|\r\n]+\\)*[^\\/:*?"<>|\r\n]*$`
 	UnixPath          string = `^(/[^/\x00]*)+/?$`
@@ -48,6 +48,8 @@ const (
 	hasUpperCase      string = ".*[[:upper:]]"
 	hasWhitespace     string = ".*[[:space:]]"
 	hasWhitespaceOnly string = "^[[:space:]]+$"
+	IMEI              string = "^[0-9a-f]{14}$|^\\d{15}$|^\\d{18}$"
+	IMSI              string = "^\\d{14,15}$"
 )
 
 // Used by IsFilePath func
@@ -100,4 +102,6 @@ var (
 	rxHasUpperCase      = regexp.MustCompile(hasUpperCase)
 	rxHasWhitespace     = regexp.MustCompile(hasWhitespace)
 	rxHasWhitespaceOnly = regexp.MustCompile(hasWhitespaceOnly)
+	rxIMEI              = regexp.MustCompile(IMEI)
+	rxIMSI              = regexp.MustCompile(IMSI)
 )

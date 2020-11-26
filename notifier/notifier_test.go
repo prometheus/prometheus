@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/alertmanager/api/v2/models"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 	yaml "gopkg.in/yaml.v2"
 
@@ -36,7 +37,6 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/relabel"
-	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestPostPath(t *testing.T) {
@@ -65,7 +65,7 @@ func TestPostPath(t *testing.T) {
 		},
 	}
 	for _, c := range cases {
-		testutil.Equals(t, c.out, postPath(c.in, config.AlertmanagerAPIVersionV1))
+		require.Equal(t, c.out, postPath(c.in, config.AlertmanagerAPIVersionV1))
 	}
 }
 
@@ -80,10 +80,10 @@ func TestHandlerNextBatch(t *testing.T) {
 
 	expected := append([]*Alert{}, h.queue...)
 
-	testutil.Ok(t, alertsEqual(expected[0:maxBatchSize], h.nextBatch()))
-	testutil.Ok(t, alertsEqual(expected[maxBatchSize:2*maxBatchSize], h.nextBatch()))
-	testutil.Ok(t, alertsEqual(expected[2*maxBatchSize:], h.nextBatch()))
-	testutil.Assert(t, len(h.queue) == 0, "Expected queue to be empty but got %d alerts", len(h.queue))
+	require.NoError(t, alertsEqual(expected[0:maxBatchSize], h.nextBatch()))
+	require.NoError(t, alertsEqual(expected[maxBatchSize:2*maxBatchSize], h.nextBatch()))
+	require.NoError(t, alertsEqual(expected[2*maxBatchSize:], h.nextBatch()))
+	require.Equal(t, 0, len(h.queue), "Expected queue to be empty but got %d alerts", len(h.queue))
 }
 
 func alertsEqual(a, b []*Alert) error {
@@ -188,20 +188,20 @@ func TestHandlerSendAll(t *testing.T) {
 		t.Helper()
 		select {
 		case err := <-errc:
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 		default:
 		}
 	}
 
-	testutil.Assert(t, h.sendAll(h.queue...), "all sends failed unexpectedly")
+	require.True(t, h.sendAll(h.queue...), "all sends failed unexpectedly")
 	checkNoErr()
 
 	status1.Store(int32(http.StatusNotFound))
-	testutil.Assert(t, h.sendAll(h.queue...), "all sends failed unexpectedly")
+	require.True(t, h.sendAll(h.queue...), "all sends failed unexpectedly")
 	checkNoErr()
 
 	status2.Store(int32(http.StatusInternalServerError))
-	testutil.Assert(t, !h.sendAll(h.queue...), "all sends succeeded unexpectedly")
+	require.False(t, h.sendAll(h.queue...), "all sends succeeded unexpectedly")
 	checkNoErr()
 }
 
@@ -215,11 +215,11 @@ func TestCustomDo(t *testing.T) {
 			received = true
 			body, err := ioutil.ReadAll(req.Body)
 
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 
-			testutil.Equals(t, testBody, string(body))
+			require.Equal(t, testBody, string(body))
 
-			testutil.Equals(t, testURL, req.URL.String())
+			require.Equal(t, testURL, req.URL.String())
 
 			return &http.Response{
 				Body: ioutil.NopCloser(bytes.NewBuffer(nil)),
@@ -229,7 +229,7 @@ func TestCustomDo(t *testing.T) {
 
 	h.sendOne(context.Background(), nil, testURL, []byte(testBody))
 
-	testutil.Assert(t, received, "Expected to receive an alert, but didn't")
+	require.True(t, received, "Expected to receive an alert, but didn't")
 }
 
 func TestExternalLabels(t *testing.T) {
@@ -263,7 +263,7 @@ func TestExternalLabels(t *testing.T) {
 		{Labels: labels.FromStrings("alertname", "externalrelabelthis", "a", "c")},
 	}
 
-	testutil.Ok(t, alertsEqual(expected, h.queue))
+	require.NoError(t, alertsEqual(expected, h.queue))
 }
 
 func TestHandlerRelabel(t *testing.T) {
@@ -299,7 +299,7 @@ func TestHandlerRelabel(t *testing.T) {
 		{Labels: labels.FromStrings("alertname", "renamed")},
 	}
 
-	testutil.Ok(t, alertsEqual(expected, h.queue))
+	require.NoError(t, alertsEqual(expected, h.queue))
 }
 
 func TestHandlerQueuing(t *testing.T) {
@@ -375,7 +375,7 @@ func TestHandlerQueuing(t *testing.T) {
 			case <-called:
 				expectedc <- expected
 			case err := <-errc:
-				testutil.Ok(t, err)
+				require.NoError(t, err)
 				return
 			case <-time.After(5 * time.Second):
 				t.Fatalf("Alerts were not pushed")
@@ -408,7 +408,7 @@ func TestHandlerQueuing(t *testing.T) {
 	expectedc <- alerts[:maxBatchSize]
 	select {
 	case err := <-errc:
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 	case <-time.After(5 * time.Second):
 		t.Fatalf("Alerts were not pushed")
 	}
@@ -435,10 +435,10 @@ func TestLabelSetNotReused(t *testing.T) {
 	tg := makeInputTargetGroup()
 	_, _, err := alertmanagerFromGroup(tg, &config.AlertmanagerConfig{})
 
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	// Target modified during alertmanager extraction
-	testutil.Equals(t, tg, makeInputTargetGroup())
+	require.Equal(t, tg, makeInputTargetGroup())
 }
 
 func TestReload(t *testing.T) {
@@ -469,7 +469,7 @@ alerting:
 	if err := yaml.UnmarshalStrict([]byte(s), cfg); err != nil {
 		t.Fatalf("Unable to load YAML config: %s", err)
 	}
-	testutil.Equals(t, 1, len(cfg.AlertingConfig.AlertmanagerConfigs))
+	require.Equal(t, 1, len(cfg.AlertingConfig.AlertmanagerConfigs))
 
 	if err := n.ApplyConfig(cfg); err != nil {
 		t.Fatalf("Error Applying the config:%v", err)
@@ -486,7 +486,7 @@ alerting:
 		n.reload(tgs)
 		res := n.Alertmanagers()[0].String()
 
-		testutil.Equals(t, tt.out, res)
+		require.Equal(t, tt.out, res)
 	}
 
 }
@@ -523,7 +523,7 @@ alerting:
 	if err := yaml.UnmarshalStrict([]byte(s), cfg); err != nil {
 		t.Fatalf("Unable to load YAML config: %s", err)
 	}
-	testutil.Equals(t, 1, len(cfg.AlertingConfig.AlertmanagerConfigs))
+	require.Equal(t, 1, len(cfg.AlertingConfig.AlertmanagerConfigs))
 
 	if err := n.ApplyConfig(cfg); err != nil {
 		t.Fatalf("Error Applying the config:%v", err)
@@ -541,7 +541,7 @@ alerting:
 		n.reload(tgs)
 		res := n.DroppedAlertmanagers()[0].String()
 
-		testutil.Equals(t, res, tt.out)
+		require.Equal(t, res, tt.out)
 	}
 }
 
@@ -561,5 +561,5 @@ func makeInputTargetGroup() *targetgroup.Group {
 }
 
 func TestLabelsToOpenAPILabelSet(t *testing.T) {
-	testutil.Equals(t, models.LabelSet{"aaa": "111", "bbb": "222"}, labelsToOpenAPILabelSet(labels.Labels{{Name: "aaa", Value: "111"}, {Name: "bbb", Value: "222"}}))
+	require.Equal(t, models.LabelSet{"aaa": "111", "bbb": "222"}, labelsToOpenAPILabelSet(labels.Labels{{Name: "aaa", Value: "111"}, {Name: "bbb", Value: "222"}}))
 }

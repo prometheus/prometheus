@@ -25,6 +25,15 @@ linters:
     - whitespace
     - wsl
     - funlen
+    - wrapcheck
+    - testpackage
+    - nlreturn
+    - gofumpt
+    - goerr113
+    - gci
+    - gomnd
+    - godot
+    - exhaustivestruct
 
 issues:
   exclude-rules:

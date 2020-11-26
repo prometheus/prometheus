@@ -2,7 +2,6 @@ package dns
 
 import (
 	"crypto/hmac"
-	"crypto/md5"
 	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/sha512"
@@ -16,12 +15,13 @@ import (
 
 // HMAC hashing codes. These are transmitted as domain names.
 const (
-	HmacMD5    = "hmac-md5.sig-alg.reg.int."
 	HmacSHA1   = "hmac-sha1."
 	HmacSHA224 = "hmac-sha224."
 	HmacSHA256 = "hmac-sha256."
 	HmacSHA384 = "hmac-sha384."
 	HmacSHA512 = "hmac-sha512."
+
+	HmacMD5 = "hmac-md5.sig-alg.reg.int." // Deprecated: HmacMD5 is no longer supported.
 )
 
 // TSIG is the RR the holds the transaction signature of a message.
@@ -121,8 +121,6 @@ func TsigGenerate(m *Msg, secret, requestMAC string, timersOnly bool) ([]byte, s
 	t := new(TSIG)
 	var h hash.Hash
 	switch CanonicalName(rr.Algorithm) {
-	case HmacMD5:
-		h = hmac.New(md5.New, rawsecret)
 	case HmacSHA1:
 		h = hmac.New(sha1.New, rawsecret)
 	case HmacSHA224:
@@ -185,8 +183,6 @@ func tsigVerify(msg []byte, secret, requestMAC string, timersOnly bool, now uint
 
 	var h hash.Hash
 	switch CanonicalName(tsig.Algorithm) {
-	case HmacMD5:
-		h = hmac.New(md5.New, rawsecret)
 	case HmacSHA1:
 		h = hmac.New(sha1.New, rawsecret)
 	case HmacSHA224:

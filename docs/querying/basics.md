@@ -146,7 +146,7 @@ syntax](https://github.com/google/re2/wiki/Syntax).
 
 Range vector literals work like instant vector literals, except that they
 select a range of samples back from the current instant. Syntactically, a [time
-duration](#time_durations) is appended in square brackets (`[]`) at the end of a
+duration](#time-durations) is appended in square brackets (`[]`) at the end of a
 vector selector to specify how far back in time values should be fetched for
 each resulting range vector element.
 

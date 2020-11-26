@@ -20,16 +20,17 @@ import (
 	"testing"
 
 	common_config "github.com/prometheus/common/config"
+	"github.com/stretchr/testify/require"
+
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestStorageLifecycle(t *testing.T) {
 	dir, err := ioutil.TempDir("", "TestStorageLifecycle")
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 	defer os.RemoveAll(dir)
 
-	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline)
+	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
 	conf := &config.Config{
 		GlobalConfig: config.DefaultGlobalConfig,
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{
@@ -51,37 +52,37 @@ func TestStorageLifecycle(t *testing.T) {
 		},
 	}
 
-	testutil.Ok(t, s.ApplyConfig(conf))
+	require.NoError(t, s.ApplyConfig(conf))
 
 	// make sure remote write has a queue.
-	testutil.Equals(t, 1, len(s.rws.queues))
+	require.Equal(t, 1, len(s.rws.queues))
 
 	// make sure remote write has a queue.
-	testutil.Equals(t, 1, len(s.queryables))
+	require.Equal(t, 1, len(s.queryables))
 
 	err = s.Close()
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 }
 
 func TestUpdateRemoteReadConfigs(t *testing.T) {
 	dir, err := ioutil.TempDir("", "TestUpdateRemoteReadConfigs")
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 	defer os.RemoveAll(dir)
 
-	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline)
+	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
 
 	conf := &config.Config{
 		GlobalConfig: config.GlobalConfig{},
 	}
-	testutil.Ok(t, s.ApplyConfig(conf))
-	testutil.Equals(t, 0, len(s.queryables))
+	require.NoError(t, s.ApplyConfig(conf))
+	require.Equal(t, 0, len(s.queryables))
 
 	conf.RemoteReadConfigs = []*config.RemoteReadConfig{
 		&config.DefaultRemoteReadConfig,
 	}
-	testutil.Ok(t, s.ApplyConfig(conf))
-	testutil.Equals(t, 1, len(s.queryables))
+	require.NoError(t, s.ApplyConfig(conf))
+	require.Equal(t, 1, len(s.queryables))
 
 	err = s.Close()
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 }

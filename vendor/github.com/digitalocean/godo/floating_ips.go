@@ -37,6 +37,7 @@ func (f FloatingIP) String() string {
 	return Stringify(f)
 }
 
+// URN returns the floating IP in a valid DO API URN form.
 func (f FloatingIP) URN() string {
 	return ToURN("FloatingIP", f.IP)
 }

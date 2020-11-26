@@ -22,13 +22,14 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
-	"gopkg.in/yaml.v2"
-
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"gopkg.in/yaml.v2"
+
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/logging"
+	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 )
 
@@ -39,6 +40,10 @@ const (
 	remoteName = "remote_name"
 	endpoint   = "url"
 )
+
+type ReadyScrapeManager interface {
+	Get() (*scrape.Manager, error)
+}
 
 // startTimeCallback is a callback func that return the oldest timestamp stored in a storage.
 type startTimeCallback func() (int64, error)
@@ -57,7 +62,7 @@ type Storage struct {
 }
 
 // NewStorage returns a remote.Storage.
-func NewStorage(l log.Logger, reg prometheus.Registerer, stCallback startTimeCallback, walDir string, flushDeadline time.Duration) *Storage {
+func NewStorage(l log.Logger, reg prometheus.Registerer, stCallback startTimeCallback, walDir string, flushDeadline time.Duration, sm ReadyScrapeManager) *Storage {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
@@ -66,7 +71,7 @@ func NewStorage(l log.Logger, reg prometheus.Registerer, stCallback startTimeCal
 		logger:                 logging.Dedupe(l, 1*time.Minute),
 		localStartTimeCallback: stCallback,
 	}
-	s.rws = NewWriteStorage(s.logger, reg, walDir, flushDeadline)
+	s.rws = NewWriteStorage(s.logger, reg, walDir, flushDeadline, sm)
 	return s
 }
 

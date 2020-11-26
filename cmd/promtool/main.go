@@ -42,6 +42,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/file"
+	_ "github.com/prometheus/prometheus/discovery/install" // Register service discovery implementations.
 	"github.com/prometheus/prometheus/discovery/kubernetes"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/prometheus/prometheus/tsdb"
@@ -136,16 +137,20 @@ func main() {
 	dumpMinTime := tsdbDumpCmd.Flag("min-time", "Minimum timestamp to dump.").Default(strconv.FormatInt(math.MinInt64, 10)).Int64()
 	dumpMaxTime := tsdbDumpCmd.Flag("max-time", "Maximum timestamp to dump.").Default(strconv.FormatInt(math.MaxInt64, 10)).Int64()
 
-	createBlocksFromCmd := tsdbCmd.Command("create-blocks-from", "Create blocks from new input data.")
-	createBlocksFromRulesCmd := createBlocksFromCmd.Command("rules", "Create new blocks of data from Prometheus data for new rules.")
-	createBlocksFromRulesStart := createBlocksFromRulesCmd.Flag("start", "The time to start backfilling the new rule from. It is required. Start time should be RFC3339 or Unix timestamp.").
+	importCmd := tsdbCmd.Command("create-blocks-from", "[Experimental] Import samples from input and produce TSDB blocks. Please refer to the storage docs for more details.")
+	openMetricsImportCmd := importCmd.Command("openmetrics", "Import samples from OpenMetrics input and produce TSDB blocks. Please refer to the storage docs for more details.")
+	// TODO(aSquare14): add flag to set default block duration
+	importFilePath := openMetricsImportCmd.Arg("input file", "OpenMetrics file to read samples from.").Required().String()
+	importDBPath := openMetricsImportCmd.Arg("output directory", "Output directory for generated blocks.").Default(defaultDBPath).String()
+	importRulesCmd := importCmd.Command("rules", "Create new blocks of data from Prometheus data for new rules.")
+	importRulesStart := importRulesCmd.Flag("start", "The time to start backfilling the new rule from. It is required. Start time should be RFC3339 or Unix timestamp.").
 		Required().String()
-	createBlocksFromRulesEnd := createBlocksFromRulesCmd.Flag("end", "If an end time is provided, all recording rules in the rule files provided will be backfilled to the end time. Default will backfill up to 3 hrs ago. End time should be RFC3339 or Unix timestamp.").String()
-	createBlocksFromRulesOutputDir := createBlocksFromRulesCmd.Flag("output dir", "The filepath on the local filesystem to write the output to. Output will be blocks containing the data of the backfilled recording rules. Don't use an active Prometheus data directory. If command is run many times with same start/end time, it will create duplicate series.").Default("backfilldata/").String()
-	createBlocksFromRulesURL := createBlocksFromRulesCmd.Flag("url", "Prometheus API url with the data where the rule will be backfilled from.").Default("http://localhost:9090").String()
-	createBlocksFromRulesEvalInterval := createBlocksFromRulesCmd.Flag("evaluation-interval-default", "How frequently to evaluate rules when backfilling if a value is not set in the rules file.").
+	importRulesEnd := importRulesCmd.Flag("end", "If an end time is provided, all recording rules in the rule files provided will be backfilled to the end time. Default will backfill up to 3 hrs ago. End time should be RFC3339 or Unix timestamp.").String()
+	importRulesOutputDir := importRulesCmd.Flag("output dir", "The filepath on the local filesystem to write the output to. Output will be blocks containing the data of the backfilled recording rules. Don't use an active Prometheus data directory. If command is run many times with same start/end time, it will create duplicate series.").Default("backfilldata/").String()
+	importRulesURL := importRulesCmd.Flag("url", "Prometheus API url with the data where the rule will be backfilled from.").Default("http://localhost:9090").String()
+	importRulesEvalInterval := importRulesCmd.Flag("evaluation-interval-default", "How frequently to evaluate rules when backfilling if a value is not set in the rules file.").
 		Default("60s").Duration()
-	createBlocksFromRulesFiles := createBlocksFromRulesCmd.Arg(
+	importRulesFiles := importRulesCmd.Arg(
 		"rule-files",
 		"A list of one or more files containing recording rules to be backfilled. All recording rules listed in the files will be backfilled. Alerting rules are not evaluated.",
 	).Required().ExistingFiles()
@@ -206,8 +211,12 @@ func main() {
 	case tsdbDumpCmd.FullCommand():
 		os.Exit(checkErr(dumpSamples(*dumpPath, *dumpMinTime, *dumpMaxTime)))
 
-	case createBlocksFromRulesCmd.FullCommand():
-		os.Exit(checkErr(CreateBlocksFromRules(*createBlocksFromRulesURL, *createBlocksFromRulesStart, *createBlocksFromRulesEnd, *createBlocksFromRulesOutputDir, *createBlocksFromRulesEvalInterval, *createBlocksFromRulesFiles...)))
+	//TODO(aSquare14): Work on adding support for custom block size.
+	case openMetricsImportCmd.FullCommand():
+		os.Exit(checkErr(backfillOpenMetrics(*importFilePath, *importDBPath)))
+
+	case importRulesCmd.FullCommand():
+		os.Exit(checkErr(ImportRules(*importRulesURL, *importRulesStart, *importRulesEnd, *importRulesOutputDir, *importRulesEvalInterval, *importRulesFiles...)))
 	}
 }
 
@@ -783,9 +792,9 @@ func (j *jsonPrinter) printLabelValues(v model.LabelValues) {
 	json.NewEncoder(os.Stdout).Encode(v)
 }
 
-// CreateBlocksFromRules backfills recording rules from the files provided. The output are blocks of data
+// ImportRules backfills recording rules from the files provided. The output are blocks of data
 // at the outputDir location.
-func CreateBlocksFromRules(url, start, end, outputDir string, evalInterval time.Duration, files ...string) error {
+func ImportRules(url, start, end, outputDir string, evalInterval time.Duration, files ...string) error {
 	ctx := context.Background()
 	var stime, etime time.Time
 	var err error

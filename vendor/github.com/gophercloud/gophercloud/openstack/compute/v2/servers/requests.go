@@ -29,6 +29,14 @@ type ListOpts struct {
 	// Flavor is the name of the flavor in URL format.
 	Flavor string `q:"flavor"`
 
+	// IP is a regular expression to match the IPv4 address of the server.
+	IP string `q:"ip"`
+
+	// This requires the client to be set to microversion 2.5 or later, unless
+	// the user is an admin.
+	// IP is a regular expression to match the IPv6 address of the server.
+	IP6 string `q:"ip6"`
+
 	// Name of the server as a string; can be queried with regular expressions.
 	// Realize that ?name=bob returns both bob and bobb. If you need to match bob
 	// only, you can use a regular expression matching the syntax of the
@@ -54,6 +62,11 @@ type ListOpts struct {
 	// TenantID lists servers for a particular tenant.
 	// Setting "AllTenants = true" is required.
 	TenantID string `q:"tenant_id"`
+
+	// This requires the client to be set to microversion 2.83 or later, unless
+	// the user is an admin.
+	// UserID lists servers for a particular user.
+	UserID string `q:"user_id"`
 
 	// This requires the client to be set to microversion 2.26 or later.
 	// Tags filters on specific server tags. All tags must be present for the server.
