@@ -151,7 +151,9 @@ Backfilling is implemented by doing multiple passes through the OpenMetrics file
 
 ### Usage 
 
-Backfilling can be used via the promtool command line. This tool will create all Prometheus blocks, in a temporary workspace. By default temp workspace is data/, you can change it by passing the name of the desired output directory.
+Backfilling can be used via the promtool command line. This tool will create all Prometheus blocks, in a temporary workspace. The blocks might be read later by prometheus and compacted, so you should make sure that the blocks belong to the prometheus users.
+
+By default temp workspace is data/, you can change it by passing the name of the desired output directory.
 
 ```
 ./promtool create-blocks-from openmetrics name_of_input_file name_of_output_file
