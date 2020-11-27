@@ -130,30 +130,17 @@ Note that on the read path, Prometheus only fetches raw series data for a set of
 
 To learn more about existing integrations with remote storage systems, see the [Integrations documentation](https://prometheus.io/docs/operating/integrations/#remote-endpoints-and-storage).
 
-## Backfilling for OpenMetrics format
+## Backfilling from OpenMetrics format
 
 ### Overview
 
-If a user wants to migrate from an existing monitoring system (source) to Prometheus, they can add their older data to TSDB easily using backfilling. The source system may be Prometheus or another TSDB which is capable of dumping data in [OpenMetrics](https://openmetrics.io/) format. 
+If a user wants to migrate from an existing monitoring system (source) to Prometheus, they can add their older data to TSDB easily using backfilling. The source system may be another TSDB which is capable of dumping data in [OpenMetrics](https://openmetrics.io/) format. However,one should be careful and note that it is not safe to backfill data from the last 3 hours (the current head block).
 
-Sample OpenMetrics file:
-
-```
-# HELP http_requests_total The total number of HTTP requests.
-# TYPE http_requests_total counter
-http_requests_total{code="200"} 1021 1565133713.989
-http_requests_total{code="200"} 1 1565133714.989
-http_requests_total{code="400"} 2 1565133715.989
-# EOF
-```
-
-Backfilling is implemented by doing multiple passes through the OpenMetrics file and processing a 2-hour block at a time. OpenMetrics input file is read separately for each future block to only read the lines that belong into the respective block. This ensures Prometheus keeps at most 2 hours of data in the memory.
+Prometheus keeps at most 2 hours of data in the memory. Hence, make sure that there is enough RAM for 2 hours worth of data at a time.
 
 ### Usage 
 
-Backfilling can be used via the promtool command line. This tool will create all Prometheus blocks, in a temporary workspace. The blocks might be read later by prometheus and compacted, so you should make sure that the blocks belong to the prometheus users.
-
-By default temp workspace is data/, you can change it by passing the name of the desired output directory.
+Backfilling can be used via the promtool command line. Promtool will write the blocks to a directory. By default this is data/, you can change it by passing the name of the desired output directory.
 
 ```
 ./promtool create-blocks-from openmetrics name_of_input_file name_of_output_file
