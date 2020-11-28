@@ -206,6 +206,9 @@ func (c *Client) Store(ctx context.Context, req []byte) error {
 	if httpResp.StatusCode/100 == 5 {
 		return RecoverableError{err}
 	}
+	if httpResp.StatusCode/100 == 4 && httpResp.StatusCode%100 == 29 {
+		return RecoverableError{err}
+	}
 	return err
 }
 
