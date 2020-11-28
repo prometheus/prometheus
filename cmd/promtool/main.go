@@ -46,8 +46,6 @@ import (
 	"github.com/prometheus/prometheus/discovery/kubernetes"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/prometheus/prometheus/tsdb"
-
-	_ "github.com/prometheus/prometheus/discovery/install" // Register service discovery implementations.
 )
 
 func main() {
@@ -216,7 +214,7 @@ func main() {
 		os.Exit(checkErr(backfillOpenMetrics(*importFilePath, *importDBPath)))
 
 	case importRulesCmd.FullCommand():
-		os.Exit(checkErr(ImportRules(*importRulesURL, *importRulesStart, *importRulesEnd, *importRulesOutputDir, *importRulesEvalInterval, *importRulesFiles...)))
+		os.Exit(checkErr(importRules(*importRulesURL, *importRulesStart, *importRulesEnd, *importRulesOutputDir, *importRulesEvalInterval, *importRulesFiles...)))
 	}
 }
 
@@ -792,9 +790,9 @@ func (j *jsonPrinter) printLabelValues(v model.LabelValues) {
 	json.NewEncoder(os.Stdout).Encode(v)
 }
 
-// ImportRules backfills recording rules from the files provided. The output are blocks of data
+// importRules backfills recording rules from the files provided. The output are blocks of data
 // at the outputDir location.
-func ImportRules(url, start, end, outputDir string, evalInterval time.Duration, files ...string) error {
+func importRules(url, start, end, outputDir string, evalInterval time.Duration, files ...string) error {
 	ctx := context.Background()
 	var stime, etime time.Time
 	var err error
@@ -828,6 +826,9 @@ func ImportRules(url, start, end, outputDir string, evalInterval time.Duration, 
 		fmt.Fprintln(os.Stderr, "new writer error", err)
 		return err
 	}
+	defer func() {
+		err = writer.Close()
+	}()
 
 	cfg := ruleImporterConfig{
 		Start:        stime,
@@ -841,6 +842,7 @@ func ImportRules(url, start, end, outputDir string, evalInterval time.Duration, 
 		fmt.Fprintln(os.Stderr, "new api client error", err)
 		return err
 	}
+	const maxSamplesInMemory = 5000
 	ruleImporter := newRuleImporter(logger, cfg, v1.NewAPI(c), newMultipleAppender(ctx, maxSamplesInMemory, writer))
 
 	errs := ruleImporter.loadGroups(ctx, files)
@@ -858,5 +860,5 @@ func ImportRules(url, start, end, outputDir string, evalInterval time.Duration, 
 		}
 	}
 
-	return nil
+	return err
 }
