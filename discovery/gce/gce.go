@@ -157,7 +157,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 				continue
 			}
 			networkFullPath := "https://www.googleapis.com/compute/v1/projects/" + d.project + "/global/networks/" + d.network
-			if inst.NetworkInterfaces[0].network != networkFullPath {
+			if inst.NetworkInterfaces[0].Network != networkFullPath {
 				continue
 			}
 			labels := model.LabelSet{
