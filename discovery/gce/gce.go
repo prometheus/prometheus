@@ -65,6 +65,7 @@ type SDConfig struct {
 	// Zone: The zone of the scrape targets.
 	// If you need to configure multiple zones use multiple gce_sd_configs
 	Zone string `yaml:"zone"`
+	Network string `yaml:"network"`
 
 	// Filter: Can be used optionally to filter the instance list by other criteria.
 	// Syntax of this filter string is described here in the filter query parameter section:
@@ -90,6 +91,9 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if c.Zone == "" {
 		return errors.New("GCE SD configuration requires a zone")
 	}
+	if c.Network == "" {
+		c.Network = "default"
+	}
 	return nil
 }
 
@@ -99,6 +103,7 @@ type Discovery struct {
 	*refresh.Discovery
 	project      string
 	zone         string
+	network      string
 	filter       string
 	client       *http.Client
 	svc          *compute.Service
@@ -112,6 +117,7 @@ func NewDiscovery(conf SDConfig, logger log.Logger) (*Discovery, error) {
 	d := &Discovery{
 		project:      conf.Project,
 		zone:         conf.Zone,
+		network:      conf.Network,
 		filter:       conf.Filter,
 		port:         conf.Port,
 		tagSeparator: conf.TagSeparator,
@@ -148,6 +154,10 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	err := ilc.Pages(ctx, func(l *compute.InstanceList) error {
 		for _, inst := range l.Items {
 			if len(inst.NetworkInterfaces) == 0 {
+				continue
+			}
+			networkFullPath := "https://www.googleapis.com/compute/v1/projects/" + d.project + "/global/networks/" + d.network
+			if inst.NetworkInterfaces[0].network != networkPath {
 				continue
 			}
 			labels := model.LabelSet{
