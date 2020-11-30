@@ -919,14 +919,15 @@ func (h *Handler) version(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) quit(w http.ResponseWriter, r *http.Request) {
-	select {
-	case <-h.quitCh:
-		fmt.Fprintf(w, "Termination already in progress.")
-	default:
+	var stopped bool
+	h.quitOnce.Do(func() {
+		stopped = true
+		close(h.quitCh)
+	})
+	if stopped {
 		fmt.Fprintf(w, "Requesting termination... Goodbye!")
-		h.quitOnce.Do(func() {
-			close(h.quitCh)
-		})
+	} else {
+		fmt.Fprintf(w, "Termination already in progress.")
 	}
 }
 
