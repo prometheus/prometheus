@@ -140,13 +140,13 @@ func main() {
 	// TODO(aSquare14): add flag to set default block duration
 	importFilePath := openMetricsImportCmd.Arg("input file", "OpenMetrics file to read samples from.").Required().String()
 	importDBPath := openMetricsImportCmd.Arg("output directory", "Output directory for generated blocks.").Default(defaultDBPath).String()
-	importRulesCmd := importCmd.Command("rules", "Create new blocks of data from Prometheus data for new rules.")
+	importRulesCmd := importCmd.Command("rules", "Create new blocks of data from Prometheus data for new rules from recording rule files.")
 	importRulesStart := importRulesCmd.Flag("start", "The time to start backfilling the new rule from. It is required. Start time should be RFC3339 or Unix timestamp.").
 		Required().String()
 	importRulesEnd := importRulesCmd.Flag("end", "If an end time is provided, all recording rules in the rule files provided will be backfilled to the end time. Default will backfill up to 3 hrs ago. End time should be RFC3339 or Unix timestamp.").String()
-	importRulesOutputDir := importRulesCmd.Flag("output dir", "The filepath on the local filesystem to write the output to. Output will be blocks containing the data of the backfilled recording rules. Don't use an active Prometheus data directory. If command is run many times with same start/end time, it will create duplicate series.").Default("backfilldata/").String()
-	importRulesURL := importRulesCmd.Flag("url", "Prometheus API url with the data where the rule will be backfilled from.").Default("http://localhost:9090").String()
-	importRulesEvalInterval := importRulesCmd.Flag("evaluation-interval-default", "How frequently to evaluate rules when backfilling if a value is not set in the rules file.").
+	importRulesOutputDir := importRulesCmd.Flag("output-dir", "The filepath on the local filesystem to write the output to. Output will be blocks containing the data of the backfilled recording rules. Don't use an active Prometheus data directory. If command is run many times with same start/end time, it will create duplicate series.").Default("backfilldata/").String()
+	importRulesURL := importRulesCmd.Flag("url", "The URL for the Prometheus API with the data where the rule will be backfilled from.").Default("http://localhost:9090").String()
+	importRulesEvalInterval := importRulesCmd.Flag("eval-interval-default", "How frequently to evaluate rules when backfilling if a value is not set in the recording rule files.").
 		Default("60s").Duration()
 	importRulesFiles := importRulesCmd.Arg(
 		"rule-files",

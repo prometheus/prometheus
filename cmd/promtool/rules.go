@@ -129,9 +129,9 @@ func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName
 					Name:  labels.MetricName,
 					Value: ruleName,
 				})
-				for _, ruleLabel := range ruleLabels {
-					currentLabels = append(currentLabels, ruleLabel)
-				}
+
+				currentLabels = append(currentLabels, ruleLabels...)
+
 				for name, value := range sample.Metric {
 					currentLabels = append(currentLabels, labels.Label{
 						Name:  string(name),
