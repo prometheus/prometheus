@@ -185,10 +185,10 @@ func (m *multipleAppender) flushAndCommit(ctx context.Context) error {
 	if m.currentSampleCount == 0 {
 		return nil
 	}
-	if _, err := m.writer.Flush(ctx); err != nil {
+	if err := m.appender.Commit(); err != nil {
 		return err
 	}
-	if err := m.appender.Commit(); err != nil {
+	if _, err := m.writer.Flush(ctx); err != nil {
 		return err
 	}
 	m.appender = m.writer.Appender(ctx)

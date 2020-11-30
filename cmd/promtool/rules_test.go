@@ -30,7 +30,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const testMaxSampleCount = 500
+const (
+	testMaxSampleCount = 50
+	testValue          = 123
+)
+
+var testTime = model.Time(time.Now().Add(-20 * time.Minute).Unix())
 
 type mockQueryRangeAPI struct{}
 
@@ -38,12 +43,12 @@ func (mockAPI mockQueryRangeAPI) QueryRange(ctx context.Context, query string, r
 	var testMatrix model.Matrix = []*model.SampleStream{
 		{
 			Metric: model.Metric{
-				"labelname1": "val1",
+				"name1": "val1",
 			},
 			Values: []model.SamplePair{
 				{
-					Timestamp: model.Time(123456789123),
-					Value:     123,
+					Timestamp: testTime,
+					Value:     testValue,
 				},
 			},
 		},
@@ -71,6 +76,7 @@ func TestBackfillRuleIntegration(t *testing.T) {
 	// Execute test two times in a row to simulate running the rule importer twice with the same data.
 	// We expect that duplicate blocks with the same series are created when run more than once.
 	for i := 0; i < 2; i++ {
+
 		ruleImporter, err := newTestRuleImporter(ctx, start, tmpDir)
 		require.NoError(t, err)
 		path := tmpDir + "/test.file"
@@ -122,14 +128,15 @@ func TestBackfillRuleIntegration(t *testing.T) {
 			it := series.Iterator()
 			for it.Next() {
 				samplesCount++
-				_, v := it.At()
-				require.Equal(t, 123, v)
+				ts, v := it.At()
+				require.Equal(t, float64(testValue), v)
+				require.Equal(t, int64(testTime), ts)
 			}
 			require.NoError(t, it.Err())
 		}
 		require.NoError(t, selectedSeries.Err())
 		require.Equal(t, 1, seriesCount)
-		require.Equal(t, 2, samplesCount)
+		require.Equal(t, 1, samplesCount)
 		require.NoError(t, q.Close())
 		require.NoError(t, db.Close())
 	}
@@ -156,8 +163,7 @@ func newTestRuleImporter(ctx context.Context, start time.Time, tmpDir string) (*
 }
 
 func createTestFiles(groupName, ruleName, ruleExpr, ruleLabels, path string) error {
-	x := fmt.Sprintf(`
-groups:
+	recordingRules := fmt.Sprintf(`groups:
 - name: %s
   rules:
   - record: %s
@@ -167,5 +173,5 @@ groups:
 `,
 		groupName, ruleName, ruleExpr, ruleLabels,
 	)
-	return ioutil.WriteFile(path, []byte(x), 0777)
+	return ioutil.WriteFile(path, []byte(recordingRules), 0777)
 }
