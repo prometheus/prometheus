@@ -214,7 +214,7 @@ func (d *Discovery) refreshOne(ctx context.Context, name string, ch chan<- *targ
 		case *dns.CNAME:
 			// Ignore to prevent warning message from default case.
 		default:
-			level.Warn(d.logger).Log("msg", "Invalid SRV record", "record", record)
+			level.Warn(d.logger).Log("msg", "Invalid record", "record", record)
 			continue
 		}
 		tg.Targets = append(tg.Targets, model.LabelSet{
