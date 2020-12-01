@@ -134,13 +134,17 @@ To learn more about existing integrations with remote storage systems, see the [
 
 ### Overview
 
-If a user wants to migrate from an existing monitoring system (source) to Prometheus, they can add their older data to TSDB easily using backfilling. The source system may be another TSDB which is capable of dumping data in [OpenMetrics](https://openmetrics.io/) format. However,one should be careful and note that it is not safe to backfill data from the last 3 hours (the current head block).
+If a user wants to create blocks into the TSDB from data which is in [OpenMetrics](https://openmetrics.io/) format, they can do so using backfilling. However, they should be careful and note that it is not safe to backfill data from the last 3 hours (the current head block).
 
-The backfill sub-command is implemented such that it keeps at most 2 hours of data in the memory. Hence, make sure that there is enough RAM for 2 hours worth of data at a time.
+
+The backfill sub-command is implemented such that it keeps at most 2 hours of data in the memory. Hence, it is important to make sure that there is enough RAM for 2 hours worth of data at a time.
+
+An example use case of backfilling is :
+If a user wants to migrate from an existing monitoring system (source) to Prometheus, they can add their older data to TSDB easily using backfilling. The source system may be another TSDB which is capable of dumping data in [OpenMetrics](https://openmetrics.io/) format. 
 
 ### Usage 
 
-Backfilling can be used via the promtool command line. Promtool will write the blocks to a directory. By default this output directory is data/, you can change it by using the name of the desired output directory as an optional argument.
+Backfilling can be used via the promtool command line. Promtool will write the blocks to a directory. By default this output directory is data/, you can change it by using the name of the desired output directory as an optional argument in the sub-command.
 
 ```
 ./promtool create-blocks-from openmetrics name_of_input_file name_of_output_directory
