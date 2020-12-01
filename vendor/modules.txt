@@ -145,6 +145,9 @@ github.com/evanphx/json-patch
 github.com/fatih/color
 # github.com/form3tech-oss/jwt-go v3.2.2+incompatible
 github.com/form3tech-oss/jwt-go
+# github.com/fsnotify/fsnotify v1.4.9
+## explicit
+github.com/fsnotify/fsnotify
 # github.com/ghodss/yaml v1.0.0
 github.com/ghodss/yaml
 # github.com/go-kit/kit v0.10.0
@@ -652,9 +655,6 @@ google.golang.org/protobuf/types/pluginpb
 # gopkg.in/alecthomas/kingpin.v2 v2.2.6
 ## explicit
 gopkg.in/alecthomas/kingpin.v2
-# gopkg.in/fsnotify/fsnotify.v1 v1.4.7
-## explicit
-gopkg.in/fsnotify/fsnotify.v1
 # gopkg.in/inf.v0 v0.9.1
 gopkg.in/inf.v0
 # gopkg.in/yaml.v2 v2.3.0
