@@ -136,17 +136,16 @@ To learn more about existing integrations with remote storage systems, see the [
 
 If a user wants to migrate from an existing monitoring system (source) to Prometheus, they can add their older data to TSDB easily using backfilling. The source system may be another TSDB which is capable of dumping data in [OpenMetrics](https://openmetrics.io/) format. However,one should be careful and note that it is not safe to backfill data from the last 3 hours (the current head block).
 
-Prometheus keeps at most 2 hours of data in the memory. Hence, make sure that there is enough RAM for 2 hours worth of data at a time.
+The backfill sub-command is implemented such that it keeps at most 2 hours of data in the memory. Hence, make sure that there is enough RAM for 2 hours worth of data at a time.
 
 ### Usage 
 
-Backfilling can be used via the promtool command line. Promtool will write the blocks to a directory. By default this is data/, you can change it by passing the name of the desired output directory.
+Backfilling can be used via the promtool command line. Promtool will write the blocks to a directory. By default this output directory is data/, you can change it by using the name of the desired output directory as an optional argument.
 
 ```
-./promtool create-blocks-from openmetrics name_of_input_file name_of_output_file
+./promtool create-blocks-from openmetrics name_of_input_file name_of_output_directory
 ```
 
 If there is an overlap, you will need to shut down Prometheus, and restart it with `--storage.tsdb.allow-overlapping-blocks`. If there is no overlap or if the flag is already set, no shut-down is required. 
 
-Do not forget the `--storage.tsdb.retention.time=X` flag, if you not want to lose any imported data points.
-
+If you do not want to lose any importannt data points, use the `--storage.tsdb.retention.time=X` flag. 
