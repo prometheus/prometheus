@@ -186,6 +186,7 @@ type Handler struct {
 
 	router      *route.Router
 	quitCh      chan struct{}
+	quitOnce    sync.Once
 	reloadCh    chan chan error
 	options     *Options
 	config      *config.Config
@@ -918,12 +919,14 @@ func (h *Handler) version(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) quit(w http.ResponseWriter, r *http.Request) {
-	select {
-	case <-h.quitCh:
-		fmt.Fprintf(w, "Termination already in progress.")
-	default:
-		fmt.Fprintf(w, "Requesting termination... Goodbye!")
+	var closed bool
+	h.quitOnce.Do(func() {
+		closed = true
 		close(h.quitCh)
+		fmt.Fprintf(w, "Requesting termination... Goodbye!")
+	})
+	if !closed {
+		fmt.Fprintf(w, "Termination already in progress.")
 	}
 }
 
