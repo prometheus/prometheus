@@ -81,7 +81,11 @@ type IndexReader interface {
 	// Series populates the given labels and chunk metas for the series identified
 	// by the reference.
 	// Returns storage.ErrNotFound if the ref does not resolve to a known series.
-	Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) error
+	//Series(id uint64, s *index.SymbolizedLabels, chks *[]chunks.Meta, skipChunks bool, selectMint, selectMaxt int64) (ok bool, err error)
+
+	// Series
+	// TODO(bwplotka): Add commentary.
+	Series() index.SeriesSelector
 
 	// LabelNames returns all the unique label names present in the index in sorted order.
 	LabelNames() ([]string, error)
@@ -437,11 +441,8 @@ func (r blockIndexReader) SortedPostings(p index.Postings) index.Postings {
 	return r.ir.SortedPostings(p)
 }
 
-func (r blockIndexReader) Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) error {
-	if err := r.ir.Series(ref, lset, chks); err != nil {
-		return errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
-	}
-	return nil
+func (r blockIndexReader) Series() index.SeriesSelector {
+	return r.ir.Series()
 }
 
 func (r blockIndexReader) LabelNames() ([]string, error) {
@@ -487,17 +488,13 @@ func (pb *Block) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
 		return errors.Wrap(err, "select series")
 	}
 
-	ir := pb.indexr
+	series := pb.indexr.Series()
 
 	// Choose only valid postings which have chunks in the time-range.
 	stones := tombstones.NewMemTombstones()
-
-	var lset labels.Labels
-	var chks []chunks.Meta
-
 Outer:
 	for p.Next() {
-		err := ir.Series(p.At(), &lset, &chks)
+		_, chks, err := series.Select(p.At(), false)
 		if err != nil {
 			return err
 		}
@@ -516,13 +513,12 @@ Outer:
 		return p.Err()
 	}
 
-	err = pb.tombstones.Iter(func(id uint64, ivs tombstones.Intervals) error {
+	if err = pb.tombstones.Iter(func(id uint64, ivs tombstones.Intervals) error {
 		for _, iv := range ivs {
 			stones.AddInterval(id, iv)
 		}
 		return nil
-	})
-	if err != nil {
+	}); err != nil {
 		return err
 	}
 	pb.tombstones = stones

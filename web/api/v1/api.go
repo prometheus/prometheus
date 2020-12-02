@@ -606,7 +606,7 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 	hints := &storage.SelectHints{
 		Start: timestamp.FromTime(start),
 		End:   timestamp.FromTime(end),
-		Func:  "series", // There is no series function, this token is used for lookups that don't need samples.
+		Func:  storage.DiscardSamplesFunc,
 	}
 
 	var sets []storage.SeriesSet

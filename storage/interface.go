@@ -104,6 +104,10 @@ type LabelQuerier interface {
 	Close() error
 }
 
+// DiscardSamplesFunc is a special token to be placed in hint's Func field.
+// There is no series function, this token is used for lookups that don't need samples.
+const DiscardSamplesFunc = "series"
+
 // SelectHints specifies hints passed for data selections.
 // This is used only as an option for implementation to use.
 type SelectHints struct {
@@ -111,7 +115,7 @@ type SelectHints struct {
 	End   int64 // End time in milliseconds for this select.
 
 	Step int64  // Query step size in milliseconds.
-	Func string // String representation of surrounding function or aggregation.
+	Func string // String representation of surrounding function or aggregation or "series" if samples can be skipped.
 
 	Grouping []string // List of label names used in aggregation.
 	By       bool     // Indicate whether it is without or by.

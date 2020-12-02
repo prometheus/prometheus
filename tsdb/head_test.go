@@ -1041,29 +1041,26 @@ func TestGCChunkAccess(t *testing.T) {
 	require.False(t, chunkCreated, "chunks was created")
 
 	idx := h.indexRange(0, 1500)
-	var (
-		lset   labels.Labels
-		chunks []chunks.Meta
-	)
-	require.NoError(t, idx.Series(1, &lset, &chunks))
+	lset, chks, err := idx.Series().Select(1, true)
+	require.NoError(t, err)
 
 	require.Equal(t, labels.Labels{{
 		Name: "a", Value: "1",
 	}}, lset)
-	require.Equal(t, 2, len(chunks))
+	require.Equal(t, 2, len(chks))
 
 	cr, err := h.chunksRange(0, 1500, nil)
 	require.NoError(t, err)
-	_, err = cr.Chunk(chunks[0].Ref)
+	_, err = cr.Chunk(chks[0].Ref)
 	require.NoError(t, err)
-	_, err = cr.Chunk(chunks[1].Ref)
+	_, err = cr.Chunk(chks[1].Ref)
 	require.NoError(t, err)
 
 	require.NoError(t, h.Truncate(1500)) // Remove a chunk.
 
-	_, err = cr.Chunk(chunks[0].Ref)
+	_, err = cr.Chunk(chks[0].Ref)
 	require.Equal(t, storage.ErrNotFound, err)
-	_, err = cr.Chunk(chunks[1].Ref)
+	_, err = cr.Chunk(chks[1].Ref)
 	require.NoError(t, err)
 }
 
@@ -1095,31 +1092,28 @@ func TestGCSeriesAccess(t *testing.T) {
 	require.False(t, chunkCreated, "chunks was created")
 
 	idx := h.indexRange(0, 2000)
-	var (
-		lset   labels.Labels
-		chunks []chunks.Meta
-	)
-	require.NoError(t, idx.Series(1, &lset, &chunks))
+	lset, chks, err := idx.Series().Select(1, false)
+	require.NoError(t, err)
 
 	require.Equal(t, labels.Labels{{
 		Name: "a", Value: "1",
 	}}, lset)
-	require.Equal(t, 2, len(chunks))
+	require.Equal(t, 2, len(chks))
 
 	cr, err := h.chunksRange(0, 2000, nil)
 	require.NoError(t, err)
-	_, err = cr.Chunk(chunks[0].Ref)
+	_, err = cr.Chunk(chks[0].Ref)
 	require.NoError(t, err)
-	_, err = cr.Chunk(chunks[1].Ref)
+	_, err = cr.Chunk(chks[1].Ref)
 	require.NoError(t, err)
 
 	require.NoError(t, h.Truncate(2000)) // Remove the series.
 
 	require.Equal(t, (*memSeries)(nil), h.series.getByID(1))
 
-	_, err = cr.Chunk(chunks[0].Ref)
+	_, err = cr.Chunk(chks[0].Ref)
 	require.Equal(t, storage.ErrNotFound, err)
-	_, err = cr.Chunk(chunks[1].Ref)
+	_, err = cr.Chunk(chks[1].Ref)
 	require.Equal(t, storage.ErrNotFound, err)
 }
 

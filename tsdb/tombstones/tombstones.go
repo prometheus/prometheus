@@ -292,10 +292,12 @@ type Interval struct {
 	Mint, Maxt int64
 }
 
+// InBounds returns true if t is within interval.
 func (tr Interval) InBounds(t int64) bool {
 	return t >= tr.Mint && t <= tr.Maxt
 }
 
+// IsSubrange returns true if at least one interval covers fully the tr interval.
 func (tr Interval) IsSubrange(dranges Intervals) bool {
 	for _, r := range dranges {
 		if r.InBounds(tr.Mint) && r.InBounds(tr.Maxt) {

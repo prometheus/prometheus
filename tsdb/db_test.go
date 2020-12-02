@@ -1566,15 +1566,12 @@ func TestChunkAtBlockBoundary(t *testing.T) {
 		p, err := r.Postings(k, v)
 		require.NoError(t, err)
 
-		var (
-			lset labels.Labels
-			chks []chunks.Meta
-		)
+		s := r.Series()
 
 		chunkCount := 0
 
 		for p.Next() {
-			err = r.Series(p.At(), &lset, &chks)
+			_, chks, err := s.Select(p.At(), false)
 			require.NoError(t, err)
 			for _, c := range chks {
 				require.True(t, meta.MinTime <= c.MinTime && c.MaxTime <= meta.MaxTime,

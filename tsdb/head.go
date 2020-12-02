@@ -1672,41 +1672,79 @@ func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {
 	return index.NewListPostings(ep)
 }
 
+// Series returns the series selector.
+func (h *headIndexReader) Series() index.SeriesSelector {
+	return &headSeriesSelector{r: h}
+}
+
+type headSeriesSelector struct {
+	r *headIndexReader
+
+	bufLset labels.Labels
+	bufChks []chunks.Meta
+}
+
 // Series returns the series for the given reference.
-func (h *headIndexReader) Series(ref uint64, lbls *labels.Labels, chks *[]chunks.Meta) error {
-	s := h.head.series.getByID(ref)
+func (h *headSeriesSelector) Select(ref uint64, skipChunks bool, dranges ...tombstones.Interval) (labels.Labels, []chunks.Meta, error) {
+	s := h.r.head.series.getByID(ref)
 
 	if s == nil {
-		h.head.metrics.seriesNotFound.Inc()
-		return storage.ErrNotFound
+		h.r.head.metrics.seriesNotFound.Inc()
+		return nil, nil, storage.ErrNotFound
 	}
-	*lbls = append((*lbls)[:0], s.lset...)
+	h.bufLset = append(h.bufLset[:0], s.lset...)
 
 	s.Lock()
 	defer s.Unlock()
 
-	*chks = (*chks)[:0]
+	h.bufChks = (h.bufChks)[:0]
 
-	for i, c := range s.mmappedChunks {
-		// Do not expose chunks that are outside of the specified range.
-		if !c.OverlapsClosedInterval(h.mint, h.maxt) {
-			continue
-		}
-		*chks = append(*chks, chunks.Meta{
-			MinTime: c.minTime,
-			MaxTime: c.maxTime,
-			Ref:     packChunkID(s.ref, uint64(s.chunkID(i))),
-		})
+	mintScope := dranges[0].Maxt
+	if mintScope < h.r.mint {
+		mintScope = h.r.mint
 	}
-	if s.headChunk != nil && s.headChunk.OverlapsClosedInterval(h.mint, h.maxt) {
-		*chks = append(*chks, chunks.Meta{
+	maxtScope := dranges[len(dranges)-1].Mint
+	if maxtScope > h.r.maxt {
+		maxtScope = h.r.maxt
+	}
+
+	// We are assuming mmapped chunk are sorted by min time.
+	for i, c := range s.mmappedChunks {
+		if c.minTime > maxtScope {
+			break
+		}
+
+		if c.maxTime >= mintScope && !(tombstones.Interval{Mint: c.minTime, Maxt: c.maxTime}).IsSubrange(dranges) {
+			// Found a full or partial chunk.
+			if skipChunks {
+				// We are not interested in chunks and we know there is at least one, that's enough to return series.
+				return h.bufLset, nil, nil
+			}
+
+			h.bufChks = append(h.bufChks, chunks.Meta{
+				MinTime: c.minTime,
+				MaxTime: c.maxTime,
+				Ref:     packChunkID(s.ref, uint64(s.chunkID(i))),
+			})
+		}
+	}
+
+	if s.headChunk != nil && !(tombstones.Interval{Mint: s.headChunk.minTime, Maxt: s.headChunk.maxTime}).IsSubrange(dranges) {
+		if skipChunks {
+			return h.bufLset, nil, nil
+		}
+
+		h.bufChks = append(h.bufChks, chunks.Meta{
 			MinTime: s.headChunk.minTime,
 			MaxTime: math.MaxInt64, // Set the head chunks as open (being appended to).
 			Ref:     packChunkID(s.ref, uint64(s.chunkID(len(s.mmappedChunks)))),
 		})
 	}
 
-	return nil
+	if len(h.bufChks) == 0 {
+		return nil, nil, index.ErrNoChunkMatched
+	}
+	return h.bufLset, h.bufChks, nil
 }
 
 func (h *Head) getOrCreate(hash uint64, lset labels.Labels) (*memSeries, bool, error) {

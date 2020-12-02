@@ -22,7 +22,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
 )
@@ -85,11 +84,12 @@ func TestRepairBadIndexVersion(t *testing.T) {
 	require.NoError(t, err)
 	p, err := r.Postings("b", "1")
 	require.NoError(t, err)
+	s := r.Series()
 	for p.Next() {
 		t.Logf("next ID %d", p.At())
 
-		var lset labels.Labels
-		require.Error(t, r.Series(p.At(), &lset, nil))
+		_, _, err := s.Select(p.At(), false)
+		require.Error(t, err)
 	}
 	require.NoError(t, p.Err())
 	require.NoError(t, r.Close())
@@ -106,12 +106,12 @@ func TestRepairBadIndexVersion(t *testing.T) {
 	require.NoError(t, err)
 	res := []labels.Labels{}
 
+	s = r.Series()
 	for p.Next() {
 		t.Logf("next ID %d", p.At())
 
-		var lset labels.Labels
-		var chks []chunks.Meta
-		require.NoError(t, r.Series(p.At(), &lset, &chks))
+		lset, _, err := s.Select(p.At(), false)
+		require.NoError(t, err)
 		res = append(res, lset)
 	}
 

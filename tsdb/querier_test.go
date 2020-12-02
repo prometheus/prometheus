@@ -1182,15 +1182,8 @@ func (m mockIndex) SortedPostings(p index.Postings) index.Postings {
 	return index.NewListPostings(ep)
 }
 
-func (m mockIndex) Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) error {
-	s, ok := m.series[ref]
-	if !ok {
-		return storage.ErrNotFound
-	}
-	*lset = append((*lset)[:0], s.l...)
-	*chks = append((*chks)[:0], s.chunks...)
-
-	return nil
+func (m mockIndex) Series() index.SeriesSelector {
+	return nil // TODO
 }
 
 func (m mockIndex) LabelNames() ([]string, error) {
@@ -1785,9 +1778,10 @@ func TestPostingsForMatchers(t *testing.T) {
 		p, err := PostingsForMatchers(ir, c.matchers...)
 		require.NoError(t, err)
 
+		s := ir.Series()
 		for p.Next() {
-			lbls := labels.Labels{}
-			require.NoError(t, ir.Series(p.At(), &lbls, &[]chunks.Meta{}))
+			lbls, _, err := s.Select(p.At(), true)
+			require.NoError(t, err)
 			if _, ok := exp[lbls.String()]; !ok {
 				t.Errorf("Evaluating %v, unexpected result %s", c.matchers, lbls.String())
 			} else {
@@ -1982,7 +1976,7 @@ func (m mockMatcherIndex) SortedPostings(p index.Postings) index.Postings {
 	return index.EmptyPostings()
 }
 
-func (m mockMatcherIndex) Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) error {
+func (m mockMatcherIndex) Series() index.SeriesSelector {
 	return nil
 }
 
@@ -2101,7 +2095,7 @@ func TestBlockBaseSeriesSet(t *testing.T) {
 
 		bcs := &blockBaseSeriesSet{
 			p:          index.NewListPostings(tc.postings),
-			index:      mi,
+			series:     mi.Series(),
 			tombstones: tombstones.NewMemTombstones(),
 		}
 

@@ -29,6 +29,7 @@ import (
 	"unsafe"
 
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/tsdb/tombstones"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -1505,19 +1506,71 @@ func (r *Reader) LabelValues(name string) ([]string, error) {
 	return values, nil
 }
 
-// Series reads the series with the given ID and writes its labels and chunks into lbls and chks.
-func (r *Reader) Series(id uint64, lbls *labels.Labels, chks *[]chunks.Meta) error {
+var ErrNoChunkMatched = errors.New("series Querier: No chunk matched mint and maxt")
+
+// SeriesSelector is selector that allows selecting series entries from index matching time selection.
+// Use this reader within single block querying to reuse chunk and label buffers.
+type SeriesSelector interface {
+	// Select returns symbolized labels and chunks (if SeriesSelector was created with skipChunk set to false).
+	// Label set is turned in form of Labels interface that allows to ... ?
+	// It returns ErrNoChunkMatched if no chunks matched time selection.
+	// It's caller responsibility to copy labels and chunks if needed: they are valid only until next SeriesEntry Selection.
+	Select(id uint64, skipChunks bool, dranges ...tombstones.Interval) (labels.Labels, []chunks.Meta, error)
+}
+
+type seriesSelector struct {
+	r *Reader
+
+	bufChks    []chunks.Meta
+	bufLabels  labels.Labels
+	bufSLabels []symbolizedLabel
+}
+
+func (r *Reader) Series() SeriesSelector {
+	return &seriesSelector{
+		r: r,
+	}
+}
+
+// Postings returns a postings list for b and its number of elements.
+func (dec *Decoder) Postings(b []byte) (int, Postings, error) {
+	d := encoding.Decbuf{B: b}
+	n := d.Be32int()
+	l := d.Get()
+	return n, newBigEndianPostings(l), d.Err()
+}
+
+// TODO(bwplotka): Add commentary.
+func (s *seriesSelector) Select(id uint64, skipChunks bool, dranges ...tombstones.Interval) (labels.Labels, []chunks.Meta, error) {
 	offset := id
 	// In version 2 series IDs are no longer exact references but series are 16-byte padded
 	// and the ID is the multiple of 16 of the actual position.
-	if r.version == FormatV2 {
+	if s.r.version == FormatV2 {
 		offset = id * 16
 	}
-	d := encoding.NewDecbufUvarintAt(r.b, int(offset), castagnoliTable)
+	d := encoding.NewDecbufUvarintAt(s.r.b, int(offset), castagnoliTable)
 	if d.Err() != nil {
-		return d.Err()
+		return nil, nil, d.Err()
 	}
-	return errors.Wrap(r.dec.Series(d.Get(), lbls, chks), "read series")
+
+	if err := DecodeSeriesForTime(d.Get(), &s.bufSLabels, &s.bufChks, skipChunks, dranges); err != nil {
+		return nil, nil, errors.Wrap(err, "read series")
+	}
+
+	s.bufLabels = s.bufLabels[:0]
+	for _, l := range s.bufSLabels {
+		// TODO(bwplotka): Cache it. It sometimes takes majority of query time.
+		ln, err := s.r.dec.LookupSymbol(l.Name)
+		if err != nil {
+			return nil, nil, errors.Wrap(err, "lookup label name")
+		}
+		lv, err := s.r.dec.LookupSymbol(l.Value)
+		if err != nil {
+			return nil, nil, errors.Wrap(err, "lookup label value")
+		}
+		s.bufLabels = append(s.bufLabels, labels.Label{Name: ln, Value: lv})
+	}
+	return s.bufLabels, s.bufChks, nil
 }
 
 func (r *Reader) Postings(name string, values ...string) (Postings, error) {
@@ -1675,12 +1728,78 @@ type Decoder struct {
 	LookupSymbol func(uint32) (string, error)
 }
 
-// Postings returns a postings list for b and its number of elements.
-func (dec *Decoder) Postings(b []byte) (int, Postings, error) {
+type symbolizedLabel struct {
+	Name, Value uint32
+}
+
+// DecodeSeriesForTime decodes a series entry from the given byte slice decoding only chunk metas that are within given min and max time.
+// If skipChunks is specified DecodeSeriesForTime does not return any chunks, but only labels and only if at least single chunk is within time range.
+// DecodeSeriesForTime returns false, when there are no series data for given time range.
+func DecodeSeriesForTime(b []byte, lset *[]symbolizedLabel, chks *[]chunks.Meta, skipChunks bool, dranges tombstones.Intervals) error {
+	*lset = (*lset)[:0]
+	*chks = (*chks)[:0]
+
 	d := encoding.Decbuf{B: b}
-	n := d.Be32int()
-	l := d.Get()
-	return n, newBigEndianPostings(l), d.Err()
+
+	// Read labels without looking up symbols.
+	k := d.Uvarint()
+	for i := 0; i < k; i++ {
+		lno := uint32(d.Uvarint())
+		lvo := uint32(d.Uvarint())
+		*lset = append(*lset, symbolizedLabel{Name: lno, Value: lvo})
+	}
+	// Read the chunks meta data.
+	k = d.Uvarint()
+	if k == 0 {
+		// Series without chunks.
+		if err := d.Err(); err != nil {
+			return d.Err()
+		}
+		return ErrNoChunkMatched
+	}
+
+	// First t0 is absolute, rest is just diff so different type is used (Uvarint64).
+	mint := d.Varint64()
+	maxt := int64(d.Uvarint64()) + mint
+	// Similar for first ref.
+	ref := int64(d.Uvarint64())
+
+	mintScope := dranges[0].Maxt
+	maxtScope := dranges[len(dranges)-1].Mint
+	for i := 0; i < k; i++ {
+		if i > 0 {
+			mint += int64(d.Uvarint64())
+			maxt = int64(d.Uvarint64()) + mint
+			ref += d.Varint64()
+		}
+
+		if mint > maxtScope {
+			break
+		}
+
+		if maxt >= mintScope && !(tombstones.Interval{Mint: mint, Maxt: maxt}).IsSubrange(dranges) {
+			// Found a full or partial chunk.
+			if skipChunks {
+				// We are not interested in chunks and we know there is at least one, that's enough to return series.
+				return d.Err()
+			}
+
+			*chks = append(*chks, chunks.Meta{
+				Ref:     uint64(ref),
+				MinTime: mint,
+				MaxTime: maxt,
+			})
+		}
+
+		mint = maxt
+	}
+	if err := d.Err(); err != nil {
+		return d.Err()
+	}
+	if len(*chks) == 0 {
+		return ErrNoChunkMatched
+	}
+	return nil
 }
 
 // Series decodes a series entry from the given byte slice into lset and chks.
