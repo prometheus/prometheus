@@ -45,8 +45,9 @@ dashboards, which need to query the same expression repeatedly every time they
 refresh.
 
 Recording and alerting rules exist in a rule group. Rules within a group are
-run sequentially at a regular interval. The names of recording rules
-must be [valid metric names](https://prometheus.io/docs/concepts/data_model/#metric-names-and-labels).
+run sequentially at a regular interval, with the same evaluation time.
+The names of recording rules must be
+[valid metric names](https://prometheus.io/docs/concepts/data_model/#metric-names-and-labels).
 The names of alerting rules must be
 [valid label values](https://prometheus.io/docs/concepts/data_model/#metric-names-and-labels).
 
