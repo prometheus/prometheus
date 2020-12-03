@@ -29,9 +29,9 @@ import (
 	"github.com/prometheus/prometheus/pkg/relabel"
 )
 
-func TestPopulateLabels(t *testing.T) {
+func TestApplyRelabeling(t *testing.T) {
 	cases := []struct {
-		in      labels.Labels
+		in      model.LabelSet
 		cfg     *config.ScrapeConfig
 		res     labels.Labels
 		resOrig labels.Labels
@@ -39,10 +39,10 @@ func TestPopulateLabels(t *testing.T) {
 	}{
 		// Regular population of scrape config options.
 		{
-			in: labels.FromMap(map[string]string{
+			in: model.LabelSet{
 				model.AddressLabel: "1.2.3.4:1000",
 				"custom":           "value",
-			}),
+			},
 			cfg: &config.ScrapeConfig{
 				Scheme:      "https",
 				MetricsPath: "/metrics",
@@ -67,12 +67,12 @@ func TestPopulateLabels(t *testing.T) {
 		// Pre-define/overwrite scrape config labels.
 		// Leave out port and expect it to be defaulted to scheme.
 		{
-			in: labels.FromMap(map[string]string{
+			in: model.LabelSet{
 				model.AddressLabel:     "1.2.3.4",
 				model.SchemeLabel:      "http",
 				model.MetricsPathLabel: "/custom",
 				model.JobLabel:         "custom-job",
-			}),
+			},
 			cfg: &config.ScrapeConfig{
 				Scheme:      "https",
 				MetricsPath: "/metrics",
@@ -94,10 +94,10 @@ func TestPopulateLabels(t *testing.T) {
 		},
 		// Provide instance label. HTTPS port default for IPv6.
 		{
-			in: labels.FromMap(map[string]string{
+			in: model.LabelSet{
 				model.AddressLabel:  "[::1]",
 				model.InstanceLabel: "custom-instance",
-			}),
+			},
 			cfg: &config.ScrapeConfig{
 				Scheme:      "https",
 				MetricsPath: "/metrics",
@@ -120,7 +120,7 @@ func TestPopulateLabels(t *testing.T) {
 		},
 		// Address label missing.
 		{
-			in: labels.FromStrings("custom", "value"),
+			in: model.LabelSet{"custom": "value"},
 			cfg: &config.ScrapeConfig{
 				Scheme:      "https",
 				MetricsPath: "/metrics",
@@ -132,7 +132,7 @@ func TestPopulateLabels(t *testing.T) {
 		},
 		// Address label missing, but added in relabelling.
 		{
-			in: labels.FromStrings("custom", "host:1234"),
+			in: model.LabelSet{"custom": "host:1234"},
 			cfg: &config.ScrapeConfig{
 				Scheme:      "https",
 				MetricsPath: "/metrics",
@@ -143,7 +143,7 @@ func TestPopulateLabels(t *testing.T) {
 						Regex:        relabel.MustNewRegexp("(.*)"),
 						SourceLabels: model.LabelNames{"custom"},
 						Replacement:  "${1}",
-						TargetLabel:  string(model.AddressLabel),
+						TargetLabel:  model.AddressLabel,
 					},
 				},
 			},
@@ -164,7 +164,7 @@ func TestPopulateLabels(t *testing.T) {
 		},
 		// Address label missing, but added in relabelling.
 		{
-			in: labels.FromStrings("custom", "host:1234"),
+			in: model.LabelSet{"custom": "host:1234"},
 			cfg: &config.ScrapeConfig{
 				Scheme:      "https",
 				MetricsPath: "/metrics",
@@ -175,7 +175,7 @@ func TestPopulateLabels(t *testing.T) {
 						Regex:        relabel.MustNewRegexp("(.*)"),
 						SourceLabels: model.LabelNames{"custom"},
 						Replacement:  "${1}",
-						TargetLabel:  string(model.AddressLabel),
+						TargetLabel:  model.AddressLabel,
 					},
 				},
 			},
@@ -196,10 +196,10 @@ func TestPopulateLabels(t *testing.T) {
 		},
 		// Invalid UTF-8 in label.
 		{
-			in: labels.FromMap(map[string]string{
+			in: model.LabelSet{
 				model.AddressLabel: "1.2.3.4:1000",
 				"custom":           "\xbd",
-			}),
+			},
 			cfg: &config.ScrapeConfig{
 				Scheme:      "https",
 				MetricsPath: "/metrics",
@@ -211,11 +211,12 @@ func TestPopulateLabels(t *testing.T) {
 		},
 	}
 	for _, c := range cases {
-		in := c.in.Copy()
-
-		res, orig, err := populateLabels(c.in, c.cfg)
+		in := c.in.Clone()
+		orig := buildTargetLabels(c.in, nil, c.cfg)
+		res, err := applyRelabeling(orig, c.cfg)
 		if c.err != "" {
 			require.EqualError(t, err, c.err)
+			orig = nil
 		} else {
 			require.NoError(t, err)
 		}

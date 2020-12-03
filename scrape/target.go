@@ -26,7 +26,6 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/relabel"
 	"github.com/prometheus/prometheus/pkg/textparse"
@@ -341,42 +340,20 @@ func (app *timeLimitAppender) AddFast(ref uint64, t int64, v float64) error {
 	return err
 }
 
-// populateLabels builds a label set from the given label set and scrape configuration.
-// It returns a label set before relabeling was applied as the second return value.
-// Returns the original discovered label set found before relabelling was applied if the target is dropped during relabeling.
-func populateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig labels.Labels, err error) {
-	// Copy labels into the labelset for the target if they are not set already.
-	scrapeLabels := []labels.Label{
-		{Name: model.JobLabel, Value: cfg.JobName},
-		{Name: model.MetricsPathLabel, Value: cfg.MetricsPath},
-		{Name: model.SchemeLabel, Value: cfg.Scheme},
-	}
-	lb := labels.NewBuilder(lset)
-
-	for _, l := range scrapeLabels {
-		if lv := lset.Get(l.Name); lv == "" {
-			lb.Set(l.Name, l.Value)
-		}
-	}
-	// Encode scrape query parameters as labels.
-	for k, v := range cfg.Params {
-		if len(v) > 0 {
-			lb.Set(model.ParamLabelPrefix+k, v[0])
-		}
-	}
-
-	preRelabelLabels := lb.Labels()
-	lset = relabel.Process(preRelabelLabels, cfg.RelabelConfigs...)
+// applyRelabeling takes the original label set and runs relabeling against it.
+// It also does some processing like removing all meta labels.
+func applyRelabeling(origLabels labels.Labels, cfg *config.ScrapeConfig) (labels.Labels, error) {
+	lset := relabel.Process(origLabels, cfg.RelabelConfigs...)
 
 	// Check if the target was dropped.
 	if lset == nil {
-		return nil, preRelabelLabels, nil
+		return nil, nil
 	}
 	if v := lset.Get(model.AddressLabel); v == "" {
-		return nil, nil, errors.New("no address")
+		return nil, errors.New("no address")
 	}
 
-	lb = labels.NewBuilder(lset)
+	lb := labels.NewBuilder(lset)
 
 	// addPort checks whether we should add a default port to the address.
 	// If the address is not valid, we don't append a port either.
@@ -400,13 +377,13 @@ func populateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 		case "https":
 			addr = addr + ":443"
 		default:
-			return nil, nil, errors.Errorf("invalid scheme: %q", cfg.Scheme)
+			return nil, errors.Errorf("invalid scheme: %q", cfg.Scheme)
 		}
 		lb.Set(model.AddressLabel, addr)
 	}
 
 	if err := config.CheckTargetAddress(model.LabelValue(addr)); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	// Meta labels are deleted after relabelling. Other internal labels propagate to
@@ -422,41 +399,47 @@ func populateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 		lb.Set(model.InstanceLabel, addr)
 	}
 
-	res = lb.Labels()
+	res := lb.Labels()
 	for _, l := range res {
 		// Check label values are valid, drop the target if not.
 		if !model.LabelValue(l.Value).IsValid() {
-			return nil, nil, errors.Errorf("invalid label value for %q: %q", l.Name, l.Value)
+			return nil, errors.Errorf("invalid label value for %q: %q", l.Name, l.Value)
 		}
 	}
-	return res, preRelabelLabels, nil
+	return res, nil
 }
 
-// targetsFromGroup builds targets based on the given TargetGroup and config.
-func targetsFromGroup(tg *targetgroup.Group, cfg *config.ScrapeConfig) ([]*Target, error) {
-	targets := make([]*Target, 0, len(tg.Targets))
+// buildTargetLabels builds final target labels based on the given target label set, target group label set and scrape config.
+func buildTargetLabels(tlset model.LabelSet, tglset model.LabelSet, cfg *config.ScrapeConfig) labels.Labels {
+	lb := labels.NewBuilder(make([]labels.Label, 0, len(tlset)+len(tglset)))
 
-	for i, tlset := range tg.Targets {
-		lbls := make([]labels.Label, 0, len(tlset)+len(tg.Labels))
+	// Labels from scrape config.
+	scrapeLabels := []labels.Label{
+		{Name: model.JobLabel, Value: cfg.JobName},
+		{Name: model.MetricsPathLabel, Value: cfg.MetricsPath},
+		{Name: model.SchemeLabel, Value: cfg.Scheme},
+	}
 
-		for ln, lv := range tlset {
-			lbls = append(lbls, labels.Label{Name: string(ln), Value: string(lv)})
-		}
-		for ln, lv := range tg.Labels {
-			if _, ok := tlset[ln]; !ok {
-				lbls = append(lbls, labels.Label{Name: string(ln), Value: string(lv)})
-			}
-		}
+	for _, l := range scrapeLabels {
+		lb.Set(l.Name, l.Value)
+	}
 
-		lset := labels.New(lbls...)
+	// Target group labels.
+	for ln, lv := range tglset {
+		lb.Set(string(ln), string(lv))
+	}
 
-		lbls, origLabels, err := populateLabels(lset, cfg)
-		if err != nil {
-			return nil, errors.Wrapf(err, "instance %d in group %s", i, tg)
-		}
-		if lbls != nil || origLabels != nil {
-			targets = append(targets, NewTarget(lbls, origLabels, cfg.Params))
+	// Target labels.
+	for ln, lv := range tlset {
+		lb.Set(string(ln), string(lv))
+	}
+
+	// Labels from config query params.
+	for k, v := range cfg.Params {
+		if len(v) > 0 {
+			lb.Set(model.ParamLabelPrefix+k, v[0])
 		}
 	}
-	return targets, nil
+
+	return lb.Labels()
 }

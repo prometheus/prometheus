@@ -203,8 +203,10 @@ type scrapePool struct {
 	targetMtx sync.Mutex
 	// activeTargets and loops must always be synchronized to have the same
 	// set of hashes.
-	activeTargets  map[uint64]*Target
-	droppedTargets []*Target
+	activeTargets map[uint64]*Target
+	// Targets which was dropped on prev sync
+	// it is used to skip heavy target processing.
+	droppedTargets map[uint64]*Target
 
 	// Constructor for new scrape loops. This is settable for testing convenience.
 	newLoop func(scrapeLoopOptions) loop
@@ -289,7 +291,13 @@ func (sp *scrapePool) ActiveTargets() []*Target {
 func (sp *scrapePool) DroppedTargets() []*Target {
 	sp.targetMtx.Lock()
 	defer sp.targetMtx.Unlock()
-	return sp.droppedTargets
+
+	r := make([]*Target, 0, len(sp.droppedTargets))
+	for _, t := range sp.droppedTargets {
+		r = append(r, t)
+	}
+
+	return r
 }
 
 // stop terminates all scrape loops and returns after they all terminated.
@@ -413,23 +421,44 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 	start := time.Now()
 
 	sp.targetMtx.Lock()
-	var all []*Target
-	sp.droppedTargets = []*Target{}
+
+	targetCount := 0
 	for _, tg := range tgs {
-		targets, err := targetsFromGroup(tg, sp.config)
-		if err != nil {
-			level.Error(sp.logger).Log("msg", "creating targets failed", "err", err)
-			continue
-		}
-		for _, t := range targets {
-			if t.Labels().Len() > 0 {
-				all = append(all, t)
-			} else if t.DiscoveredLabels().Len() > 0 {
-				sp.droppedTargets = append(sp.droppedTargets, t)
+		targetCount += len(tg.Targets)
+	}
+
+	all := make([]*Target, 0, targetCount)
+	dropped := make(map[uint64]*Target, len(sp.droppedTargets))
+	for _, tg := range tgs {
+		for _, tlset := range tg.Targets {
+			origLabels := buildTargetLabels(tlset, tg.Labels, sp.config)
+
+			// Skips compute-heavy relabeling if the target was previously dropped.
+			hash := origLabels.Hash()
+			if _, ok := sp.droppedTargets[hash]; ok {
+				dropped[hash] = sp.droppedTargets[hash]
+				continue
 			}
+
+			reLabels, err := applyRelabeling(origLabels, sp.config)
+			if err != nil {
+				level.Error(sp.logger).Log("msg", "creating target failed", "lset", tlset, "group lset", tg.Labels)
+				continue
+			}
+
+			target := NewTarget(reLabels, origLabels, sp.config.Params)
+			if reLabels == nil || reLabels.Len() == 0 {
+				dropped[hash] = target
+				continue
+			}
+
+			all = append(all, target)
 		}
 	}
+
+	sp.droppedTargets = dropped
 	sp.targetMtx.Unlock()
+
 	sp.sync(all)
 
 	targetSyncIntervalLength.WithLabelValues(sp.config.JobName).Observe(

@@ -99,7 +99,7 @@ func TestDroppedTargetsList(t *testing.T) {
 	if len(sp.droppedTargets) != expectedLength {
 		t.Fatalf("Length of dropped targets exceeded expected length, expected %v, got %v", expectedLength, len(sp.droppedTargets))
 	}
-	if sp.droppedTargets[0].DiscoveredLabels().String() != expectedLabelSetString {
+	if sp.DroppedTargets()[0].DiscoveredLabels().String() != expectedLabelSetString {
 		t.Fatalf("Got %v, expected %v", sp.droppedTargets[0].DiscoveredLabels().String(), expectedLabelSetString)
 	}
 }
