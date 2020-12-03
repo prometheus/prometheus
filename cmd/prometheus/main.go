@@ -558,6 +558,12 @@ func main() {
 	}
 	defer closer.Close()
 
+	listener, err := webHandler.Listener()
+	if err != nil {
+		level.Error(logger).Log("msg", "Unable to start web listener", "err", err)
+		os.Exit(1)
+	}
+
 	var g run.Group
 	{
 		// Termination handler.
@@ -772,7 +778,7 @@ func main() {
 		// Web handler.
 		g.Add(
 			func() error {
-				if err := webHandler.Run(ctxWeb); err != nil {
+				if err := webHandler.Run(ctxWeb, listener); err != nil {
 					return errors.Wrapf(err, "error starting web server")
 				}
 				return nil
