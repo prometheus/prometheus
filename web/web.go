@@ -524,13 +524,13 @@ func (h *Handler) Reload() <-chan chan error {
 	return h.reloadCh
 }
 
-// Run serves the HTTP endpoints.
-func (h *Handler) Run(ctx context.Context) error {
+// Listener creates the TCP listener for web requests.
+func (h *Handler) Listener() (net.Listener, error) {
 	level.Info(h.logger).Log("msg", "Start listening for connections", "address", h.options.ListenAddress)
 
 	listener, err := net.Listen("tcp", h.options.ListenAddress)
 	if err != nil {
-		return err
+		return listener, err
 	}
 	listener = netutil.LimitListener(listener, h.options.MaxConnections)
 
@@ -539,6 +539,11 @@ func (h *Handler) Run(ctx context.Context) error {
 		conntrack.TrackWithName("http"),
 		conntrack.TrackWithTracing())
 
+	return listener, nil
+}
+
+// Run serves the HTTP endpoints.
+func (h *Handler) Run(ctx context.Context, listener net.Listener) error {
 	operationName := nethttp.OperationNameFunc(func(r *http.Request) string {
 		return fmt.Sprintf("%s %s", r.Method, r.URL.Path)
 	})
