@@ -37,6 +37,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
+	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/gate"
@@ -80,6 +81,33 @@ const (
 	errorUnavailable errorType = "unavailable"
 	errorNotFound    errorType = "not_found"
 )
+
+// partialResponseStrategy controls the behaviour of given server API on how to treat temporary unavailability of remote components.
+// For example configured remote read APIs in case of Prometheus.
+// TODO(bwplotka): Move to storage and pass through hints so we can abort early if chosen.
+type partialResponseStrategy string
+
+const (
+	// partialResponseStrategyWarn strategy tells server that inconsistent results given unavailability of remote components are
+	// acceptable as long as warnings are provided in response.
+	partialResponseStrategyWarn = "warn"
+	// partialResponseStrategyAbort strategy tells server that inconsistent results given unavailability of remote components are
+	// not acceptable and such request should fail.
+	partialResponseStrategyAbort = "abort"
+)
+
+func (s *partialResponseStrategy) Parse(value string) error {
+	*s = partialResponseStrategyWarn // Default.
+	if value != "" {
+		switch v := strings.ToLower(value); v {
+		case partialResponseStrategyWarn, partialResponseStrategyAbort:
+			*s = partialResponseStrategy(v)
+		default:
+			return errors.Errorf("got not supported value %q, allowed: [%v %v]", v, partialResponseStrategyWarn, partialResponseStrategyWarn)
+		}
+	}
+	return nil
+}
 
 var (
 	LocalhostRepresentations = []string{"127.0.0.1", "localhost"}
@@ -432,6 +460,11 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 		defer cancel()
 	}
 
+	var partialStrategy partialResponseStrategy
+	if err := partialStrategy.Parse(r.FormValue("partial_response_strategy")); err != nil {
+		return invalidParamError(err, "partial_response_strategy")
+	}
+
 	qry, err := api.QueryEngine.NewRangeQuery(api.Queryable, r.FormValue("query"), start, end, step)
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
@@ -446,10 +479,14 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 	}()
 
 	ctx = httputil.ContextFromRequest(ctx, r)
-
 	res := qry.Exec(ctx)
 	if res.Err != nil {
 		return apiFuncResult{nil, returnAPIError(res.Err), res.Warnings, qry.Close}
+	}
+
+	if len(res.Warnings) > 0 && partialStrategy == partialResponseStrategyAbort {
+		// TODO(bwplotka): Pass partialStrategy to Querier instead so we can fail fast.
+		return apiFuncResult{nil, returnAPIError(tsdb_errors.NewMulti(res.Warnings...).Err()), res.Warnings, qry.Close}
 	}
 
 	// Optional stats field in response if parameter "stats" is not empty.
@@ -492,16 +529,28 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 		return invalidParamError(err, "end")
 	}
 
+	var partialStrategy partialResponseStrategy
+	if err := partialStrategy.Parse(r.FormValue("partial_response_strategy")); err != nil {
+		return invalidParamError(err, "partial_response_strategy")
+	}
+
 	q, err := api.Queryable.Querier(r.Context(), timestamp.FromTime(start), timestamp.FromTime(end))
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
 	}
+	// TODO(bwplotka): Add finalizer similar to query handler.
 	defer q.Close()
 
 	names, warnings, err := q.LabelNames()
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
 	}
+
+	if len(warnings) > 0 && partialStrategy == partialResponseStrategyAbort {
+		// TODO(bwplotka): Pass partialStrategy to Querier instead so we can fail fast.
+		return apiFuncResult{nil, returnAPIError(tsdb_errors.NewMulti(warnings...).Err()), nil, nil}
+	}
+
 	if names == nil {
 		names = []string{}
 	}
@@ -525,6 +574,11 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 		return invalidParamError(err, "end")
 	}
 
+	var partialStrategy partialResponseStrategy
+	if err := partialStrategy.Parse(r.FormValue("partial_response_strategy")); err != nil {
+		return invalidParamError(err, "partial_response_strategy")
+	}
+
 	q, err := api.Queryable.Querier(r.Context(), timestamp.FromTime(start), timestamp.FromTime(end))
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
@@ -545,6 +599,12 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, warnings, closer}
 	}
+
+	if len(warnings) > 0 && partialStrategy == partialResponseStrategyAbort {
+		// TODO(bwplotka): Pass partialStrategy to Querier instead so we can fail fast.
+		return apiFuncResult{nil, returnAPIError(tsdb_errors.NewMulti(warnings...).Err()), nil, closer}
+	}
+
 	if vals == nil {
 		vals = []string{}
 	}
@@ -586,10 +646,16 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 		matcherSets = append(matcherSets, matchers)
 	}
 
+	var partialStrategy partialResponseStrategy
+	if err := partialStrategy.Parse(r.FormValue("partial_response_strategy")); err != nil {
+		return invalidParamError(err, "partial_response_strategy")
+	}
+
 	q, err := api.Queryable.Querier(r.Context(), timestamp.FromTime(start), timestamp.FromTime(end))
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
 	}
+
 	// From now on, we must only return with a finalizer in the result (to
 	// be called by the caller) or call q.Close ourselves (which is required
 	// in the case of a panic).
@@ -622,6 +688,11 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 	}
 
 	warnings := set.Warnings()
+	if len(warnings) > 0 && partialStrategy == partialResponseStrategyAbort {
+		// TODO(bwplotka): Pass partialStrategy to Querier instead so we can fail fast.
+		return apiFuncResult{nil, returnAPIError(tsdb_errors.NewMulti(warnings...).Err()), nil, closer}
+	}
+
 	if set.Err() != nil {
 		return apiFuncResult{nil, &apiError{errorExec, set.Err()}, warnings, closer}
 	}
