@@ -47,8 +47,6 @@ export const formatValue = (y: number | null): string => {
     return (y / 1e-6).toFixed(2) + 'µ';
   } else if (absY < 1e-2) {
     return (y / 1e-3).toFixed(2) + 'm';
-  } else if (absY <= 1) {
-    return y.toFixed(2);
   }
   throw Error("couldn't format a value, this is a bug");
 };
