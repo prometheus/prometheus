@@ -699,10 +699,10 @@ func (ng *Engine) populateSeries(querier storage.Querier, s *parser.EvalStmt) {
 			if n.Timestamp > 0 {
 				hints.Start = n.Timestamp
 				hints.End = n.Timestamp
+			} else {
+				hints.Start = hints.Start - offsetMilliseconds - durationMilliseconds(subqRange)
+				hints.End = hints.End - offsetMilliseconds
 			}
-
-			hints.Start = hints.Start - offsetMilliseconds - durationMilliseconds(subqRange)
-			hints.End = hints.End - offsetMilliseconds
 
 			if evalRange == 0 {
 				hints.Start = hints.Start - durationMilliseconds(ng.lookbackDelta)
