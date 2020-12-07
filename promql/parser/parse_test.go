@@ -2864,6 +2864,14 @@ var testExpr = []struct {
 		input:  `(foo + bar{nm="val"})[5m:][10m:5s]`,
 		fail:   true,
 		errMsg: `1:1: parse error: subquery is only allowed on instant vector, got matrix`,
+	}, {
+		input:  "rate(food[1m])[1h] offset 1h",
+		fail:   true,
+		errMsg: `1:15: parse error: ranges only allowed for vector selectors`,
+	}, {
+		input:  "rate(food[1m])[1h] @ 100",
+		fail:   true,
+		errMsg: `1:15: parse error: ranges only allowed for vector selectors`,
 	},
 }
 

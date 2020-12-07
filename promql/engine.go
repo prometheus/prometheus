@@ -2425,13 +2425,9 @@ func wrapWithStepInvariantExprHelper(expr parser.Expr) bool {
 
 	case *parser.StringLiteral, *parser.NumberLiteral:
 		return true
-
-	default:
-		// TODO(codesome): verify this.
-		panic("not possible")
 	}
 
-	return false
+	panic(fmt.Sprintf("found unexpected node %#v", expr))
 }
 
 func newStepInvariantExpr(expr parser.Expr) parser.Expr {

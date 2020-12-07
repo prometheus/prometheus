@@ -686,9 +686,12 @@ func (p *parser) addOffset(e Node, offset time.Duration) {
 		offsetp = &s.Offset
 		endPosp = &s.PosRange.End
 	case *MatrixSelector:
-		if vs, ok := s.VectorSelector.(*VectorSelector); ok {
-			offsetp = &vs.Offset
+		vs, ok := s.VectorSelector.(*VectorSelector)
+		if !ok {
+			// This invalid query will be caught at some other layer.
+			return
 		}
+		offsetp = &vs.Offset
 		endPosp = &s.EndPos
 	case *SubqueryExpr:
 		offsetp = &s.Offset
@@ -717,9 +720,12 @@ func (p *parser) setStepInvariant(e Node, ts float64) {
 		timestampp = &s.Timestamp
 		endPosp = &s.PosRange.End
 	case *MatrixSelector:
-		if vs, ok := s.VectorSelector.(*VectorSelector); ok {
-			timestampp = &vs.Timestamp
+		vs, ok := s.VectorSelector.(*VectorSelector)
+		if !ok {
+			// This invalid query will be caught at some other layer.
+			return
 		}
+		timestampp = &vs.Timestamp
 		endPosp = &s.EndPos
 	case *SubqueryExpr:
 		timestampp = &s.Timestamp
