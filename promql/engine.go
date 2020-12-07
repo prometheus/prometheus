@@ -1458,61 +1458,69 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			noStepSubqueryIntervalFn: ev.noStepSubqueryIntervalFn,
 		}
 
-		canExtrapolate := canExtrapolateStepInvariantExpr(e.Expr)
-		if !canExtrapolate {
+		isSelector := false
+		switch e.Expr.(type) {
+		case *parser.VectorSelector, *parser.MatrixSelector, *parser.SubqueryExpr:
+			isSelector = true
+		}
+		if isSelector {
+			// We do not duplicate results for selectors since results have their
+			// unique timestamps and can be a matrix with multiple samples.
 			newEv.endTimestamp = ev.endTimestamp
 		}
 
 		res, ws := newEv.eval(e.Expr)
 		ev.currentSamples = newEv.currentSamples
 
-		_, isSubquery := e.Expr.(*parser.SubqueryExpr)
-		if canExtrapolate && !isSubquery {
-			// For every evaluation while the value remains same, the timestamp for that
-			// value would change for different eval times. Hence we duplicate the result
-			// with changed timestamps.
-			switch val := res.(type) {
-			case Matrix:
-				for i := range val {
-					if len(val[i].Points) != 1 {
-						panic(errors.Errorf("unexpected number of samples"))
-					}
-					for ts := ev.startTimestamp + ev.interval; ts <= ev.endTimestamp; ts = ts + ev.interval {
-						val[i].Points = append(val[i].Points, Point{
-							T: ts,
-							V: val[i].Points[0].V,
-						})
-						ev.currentSamples++
-						if ev.currentSamples >= ev.maxSamples {
-							ev.error(ErrTooManySamples(env))
-						}
+		if isSelector {
+			e.Result = res
+			return res, ws
+		}
+
+		// For every evaluation while the value remains same, the timestamp for that
+		// value would change for different eval times. Hence we duplicate the result
+		// with changed timestamps.
+		switch val := res.(type) {
+		case Matrix:
+			for i := range val {
+				if len(val[i].Points) != 1 {
+					panic(errors.Errorf("unexpected number of samples"))
+				}
+				for ts := ev.startTimestamp + ev.interval; ts <= ev.endTimestamp; ts = ts + ev.interval {
+					val[i].Points = append(val[i].Points, Point{
+						T: ts,
+						V: val[i].Points[0].V,
+					})
+					ev.currentSamples++
+					if ev.currentSamples >= ev.maxSamples {
+						ev.error(ErrTooManySamples(env))
 					}
 				}
-			case Vector:
-				mat := make(Matrix, len(val))
-				for i, smpl := range val {
-					mat[i] = Series{
-						Metric: smpl.Metric,
-						Points: make([]Point, 0, 1+(ev.endTimestamp-ev.startTimestamp)/ev.interval),
-					}
-					for ts := ev.startTimestamp + ev.interval; ts <= ev.endTimestamp; ts = ts + ev.interval {
-						mat[i].Points = append(mat[i].Points, Point{
-							T: ts,
-							V: smpl.V,
-						})
-						ev.currentSamples++
-						if ev.currentSamples >= ev.maxSamples {
-							ev.error(ErrTooManySamples(env))
-						}
-					}
-				}
-				res = mat
-			case Scalar:
-				// The timestamp of the scalar does not matter, so we use it
-				// as is everytime. Hence do no duplication.
-			default:
-				panic(errors.Errorf("unexpected result in StepInvariantExpr evaluation: %T", expr))
 			}
+		case Vector:
+			mat := make(Matrix, len(val))
+			for i, smpl := range val {
+				mat[i] = Series{
+					Metric: smpl.Metric,
+					Points: make([]Point, 0, 1+(ev.endTimestamp-ev.startTimestamp)/ev.interval),
+				}
+				for ts := ev.startTimestamp + ev.interval; ts <= ev.endTimestamp; ts = ts + ev.interval {
+					mat[i].Points = append(mat[i].Points, Point{
+						T: ts,
+						V: smpl.V,
+					})
+					ev.currentSamples++
+					if ev.currentSamples >= ev.maxSamples {
+						ev.error(ErrTooManySamples(env))
+					}
+				}
+			}
+			res = mat
+		case Scalar:
+			// The timestamp of the scalar does not matter, so we use it
+			// as is everytime. Hence do no duplication.
+		default:
+			panic(errors.Errorf("unexpected result in StepInvariantExpr evaluation: %T", expr))
 		}
 
 		e.Result = res
@@ -2443,12 +2451,4 @@ func dontWrapStepInvariantExpr(expr parser.Expr) bool {
 		return dontWrapStepInvariantExpr(e.Expr)
 	}
 	return false
-}
-
-func canExtrapolateStepInvariantExpr(expr parser.Expr) bool {
-	switch expr.(type) {
-	case *parser.VectorSelector, *parser.MatrixSelector, *parser.SubqueryExpr:
-		return false
-	}
-	return true
 }
