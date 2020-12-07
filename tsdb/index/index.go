@@ -1035,6 +1035,8 @@ type StringIter interface {
 	Err() error
 }
 
+const valueSymbolsCacheSize = 1024
+
 type Reader struct {
 	b   ByteSlice
 	toc *TOC
@@ -1048,9 +1050,17 @@ type Reader struct {
 	// For the v1 format, labelname -> labelvalue -> offset.
 	postingsV1 map[string]map[string]uint64
 
-	symbols     *Symbols
-	nameSymbols map[uint32]string // Cache of the label name symbol lookups,
-	// as there are not many and they are half of all lookups.
+	symbols *Symbols
+
+	// Cache of the label name symbol lookups, as there are not many and they
+	// are half of all lookups.
+	nameSymbols map[uint32]string
+	// Direct cache of values. This is much faster than an LRU cache and still provides
+	// a reasonable cache hit ratio.
+	valueSymbols [valueSymbolsCacheSize]struct {
+		index  uint32
+		symbol string
+	}
 
 	dec *Decoder
 
@@ -1424,10 +1434,22 @@ func (r *Reader) Close() error {
 }
 
 func (r *Reader) lookupSymbol(o uint32) (string, error) {
+	cacheIndex := o % valueSymbolsCacheSize
+	if cached := r.valueSymbols[cacheIndex]; cached.index == o && cached.symbol != "" {
+		return cached.symbol, nil
+	}
+
 	if s, ok := r.nameSymbols[o]; ok {
 		return s, nil
 	}
-	return r.symbols.Lookup(o)
+
+	s, err := r.symbols.Lookup(o)
+	if err != nil {
+		return s, err
+	}
+	r.valueSymbols[cacheIndex].index = o
+	r.valueSymbols[cacheIndex].symbol = s
+	return s, nil
 }
 
 // Symbols returns an iterator over the symbols that exist within the index.
