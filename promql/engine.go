@@ -605,64 +605,90 @@ func (ng *Engine) findMinMaxTime(s *parser.EvalStmt) (int64, int64) {
 	var maxOffset time.Duration
 	var minTimestamp, maxTimestamp int64 = math.MaxInt64, math.MinInt64
 
-	setMinMaxt := func(vsTs, subqMint, subqMaxt int64, vsOffset, subqOffset, subqRange time.Duration) {
-		if vsTs != 0 && vsTs > maxTimestamp {
+	setMinMaxt := func(vsTs, subqMint, subqMaxt int64, vsOffset, vsRange, subqOffset, subqRange time.Duration) {
+		if vsTs == 0 {
+			// If we reached here, then subqMaxt is not math.MinInt64.
+			subqMaxt -= subqOffset.Milliseconds() + vsOffset.Milliseconds()
+			if subqMaxt > maxTimestamp {
+				maxTimestamp = subqMaxt
+			}
+			subqMint -= subqOffset.Milliseconds() + subqRange.Milliseconds()
+			subqMint -= vsOffset.Milliseconds() + vsRange.Milliseconds()
+			subqMint -= ng.lookbackDelta.Milliseconds()
+			if subqMint < minTimestamp {
+				minTimestamp = subqMint
+			}
+			return
+		}
+
+		// If the timestamp was set for vector/matrix selector, then
+		// the timestamp on the subquery does not matter.
+		vsTs -= vsOffset.Milliseconds()
+		if vsTs > maxTimestamp {
 			maxTimestamp = vsTs
 		}
-		if subqMaxt != math.MinInt64 && subqMaxt > maxTimestamp {
-			maxTimestamp = subqMaxt
-		}
-
-		if subqMint != math.MaxInt64 && (vsTs == 0 || (vsTs != 0 && subqMint < vsTs)) {
-			vsTs = subqMint - subqOffset.Milliseconds() - subqRange.Milliseconds()
+		if vsRange > 0 {
+			vsTs -= vsRange.Milliseconds()
 		} else {
-			vsTs -= vsOffset.Milliseconds() + ng.lookbackDelta.Milliseconds()
+			vsTs -= ng.lookbackDelta.Milliseconds()
 		}
-
 		if vsTs < minTimestamp {
 			minTimestamp = vsTs
 		}
 	}
 
+	nodeWithNoTimestamp := false
+	wasAMatrixSelector := false
 	parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
 		subqOffset, subqRange, subqMint, subqMaxt := ng.subqueryTimes(path)
 		switch n := node.(type) {
 		case *parser.VectorSelector:
+			if wasAMatrixSelector {
+				// We have already checked this as part of matrix selector.
+				wasAMatrixSelector = false
+				return nil
+			}
+			if n.Timestamp != 0 || subqMint != math.MaxInt64 {
+				setMinMaxt(n.Timestamp, subqMint, subqMaxt, n.Offset, 0, subqOffset, subqRange)
+				return nil
+			}
+
+			nodeWithNoTimestamp = true
 			if maxOffset < ng.lookbackDelta+subqOffset+subqRange {
 				maxOffset = ng.lookbackDelta + subqOffset + subqRange
 			}
 			if n.Offset+ng.lookbackDelta+subqOffset+subqRange > maxOffset {
 				maxOffset = n.Offset + ng.lookbackDelta + subqOffset + subqRange
 			}
-			if n.Timestamp == 0 && subqMint == math.MaxInt64 {
+
+		case *parser.MatrixSelector:
+			wasAMatrixSelector = true
+			vs := n.VectorSelector.(*parser.VectorSelector)
+
+			if vs.Timestamp != 0 || subqMint != math.MaxInt64 {
+				setMinMaxt(vs.Timestamp, subqMint, subqMaxt, vs.Offset, n.Range, subqOffset, subqRange)
 				return nil
 			}
 
-			setMinMaxt(n.Timestamp, subqMint, subqMaxt, n.Offset, subqOffset, subqRange)
-
-		case *parser.MatrixSelector:
-			vs := n.VectorSelector.(*parser.VectorSelector)
+			nodeWithNoTimestamp = true
 			if maxOffset < n.Range+subqOffset+subqRange {
 				maxOffset = n.Range + subqOffset + subqRange
 			}
 			if m := vs.Offset + n.Range + subqOffset + subqRange; m > maxOffset {
 				maxOffset = m
 			}
-			if vs.Timestamp == 0 && subqMint == math.MaxInt64 {
-				return nil
-			}
-
-			setMinMaxt(vs.Timestamp, subqMint, subqMaxt, vs.Offset, subqOffset, subqRange)
 		}
 		return nil
 	})
 
-	sStartTs, sEndTs := timestamp.FromTime(s.Start.Add(-maxOffset)), timestamp.FromTime(s.End)
-	if sEndTs > maxTimestamp {
-		maxTimestamp = sEndTs
-	}
-	if sStartTs < minTimestamp {
-		minTimestamp = sStartTs
+	if nodeWithNoTimestamp {
+		sStartTs, sEndTs := timestamp.FromTime(s.Start.Add(-maxOffset)), timestamp.FromTime(s.End)
+		if sEndTs > maxTimestamp {
+			maxTimestamp = sEndTs
+		}
+		if sStartTs < minTimestamp {
+			minTimestamp = sStartTs
+		}
 	}
 
 	return minTimestamp, maxTimestamp
@@ -689,10 +715,10 @@ func (ng *Engine) populateSeries(querier storage.Querier, s *parser.EvalStmt) {
 			// TODO(bwplotka): Add support for better hints when subquerying. See: https://github.com/prometheus/prometheus/issues/7630.
 			subqOffset, subqRange, subqMint, subqMaxt := ng.subqueryTimes(path)
 			offsetMilliseconds := durationMilliseconds(subqOffset)
-			if subqMint < hints.Start {
+			if subqMint != math.MaxInt64 {
 				hints.Start = subqMint
 			}
-			if subqMaxt > hints.End {
+			if subqMaxt != math.MinInt64 {
 				hints.End = subqMaxt
 			}
 

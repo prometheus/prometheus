@@ -319,10 +319,9 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 			{Start: 175000, End: 300000, Func: "count_over_time"},
 		},
 	}, {
-		// When the @ is for a subquery, the hints take the min of the @ time and the query time.
 		query: "count_over_time(foo[2m:1s] @ 300)", start: 200000,
 		expected: []*storage.SelectHints{
-			{Start: 75000, End: 300000, Func: "count_over_time"},
+			{Start: 175000, End: 300000, Func: "count_over_time"},
 		},
 	}, {
 		query: "count_over_time(foo[2m:1s] @ 200)", start: 200000,
@@ -330,10 +329,9 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 			{Start: 75000, End: 200000, Func: "count_over_time"},
 		},
 	}, {
-		// When the @ is for a subquery, the hints take the max of the @ time and the query time.
 		query: "count_over_time(foo[2m:1s] @ 100)", start: 200000,
 		expected: []*storage.SelectHints{
-			{Start: -25000, End: 200000, Func: "count_over_time"},
+			{Start: -25000, End: 100000, Func: "count_over_time"},
 		},
 	}, {
 		query: "count_over_time(foo[2m:1s] offset 10s)", start: 300000,
@@ -362,7 +360,7 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 	}, {
 		query: "count_over_time((foo offset 10s)[2m:1s] @ 100 offset 10s)", start: 300000,
 		expected: []*storage.SelectHints{
-			{Start: -45000, End: 280000, Func: "count_over_time"},
+			{Start: -45000, End: 80000, Func: "count_over_time"},
 		},
 	}, {
 
@@ -421,21 +419,19 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 			{Start: 165000, End: 490000, Func: "count_over_time", Step: 1000},
 		},
 	}, {
-		// When the @ is for a subquery, the hints take the min of the @ time and the query time.
 		query: "count_over_time(foo[2m:1s] @ 300)", start: 200000, end: 500000,
 		expected: []*storage.SelectHints{
-			{Start: 75000, End: 500000, Func: "count_over_time", Step: 1000},
+			{Start: 175000, End: 300000, Func: "count_over_time", Step: 1000},
 		},
 	}, {
 		query: "count_over_time(foo[2m:1s] @ 200)", start: 200000, end: 500000,
 		expected: []*storage.SelectHints{
-			{Start: 75000, End: 500000, Func: "count_over_time", Step: 1000},
+			{Start: 75000, End: 200000, Func: "count_over_time", Step: 1000},
 		},
 	}, {
-		// When the @ is for a subquery, the hints take the max of the @ time and the query time.
 		query: "count_over_time(foo[2m:1s] @ 100)", start: 200000, end: 500000,
 		expected: []*storage.SelectHints{
-			{Start: -25000, End: 500000, Func: "count_over_time", Step: 1000},
+			{Start: -25000, End: 100000, Func: "count_over_time", Step: 1000},
 		},
 	}, {
 		query: "count_over_time((foo offset 10s)[2m:1s] offset 10s)", start: 300000, end: 500000,
@@ -459,7 +455,7 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 	}, {
 		query: "count_over_time((foo offset 10s)[2m:1s] @ 100 offset 10s)", start: 300000, end: 500000,
 		expected: []*storage.SelectHints{
-			{Start: -45000, End: 480000, Func: "count_over_time", Step: 1000},
+			{Start: -45000, End: 80000, Func: "count_over_time", Step: 1000},
 		},
 	}, {
 		query: "sum by (dim1) (foo)", start: 10000,
@@ -492,7 +488,44 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 			{Start: 95000, End: 120000, Func: "sum", By: true},
 			{Start: 95000, End: 120000, Func: "max", By: true},
 		},
-	}} {
+	}, {
+		query: "foo @ 50 + bar @ 250 + baz @ 900", start: 100000, end: 500000,
+		expected: []*storage.SelectHints{
+			{Start: 45000, End: 50000, Step: 1000},
+			{Start: 245000, End: 250000, Step: 1000},
+			{Start: 895000, End: 900000, Step: 1000},
+		},
+	}, {
+		query: "foo @ 50 + bar + baz @ 900", start: 100000, end: 500000,
+		expected: []*storage.SelectHints{
+			{Start: 45000, End: 50000, Step: 1000},
+			{Start: 95000, End: 500000, Step: 1000},
+			{Start: 895000, End: 900000, Step: 1000},
+		},
+	}, {
+		query: "rate(foo[2s] @ 50) + bar @ 250 + baz @ 900", start: 100000, end: 500000,
+		expected: []*storage.SelectHints{
+			{Start: 48000, End: 50000, Step: 1000, Func: "rate", Range: 2000},
+			{Start: 245000, End: 250000, Step: 1000},
+			{Start: 895000, End: 900000, Step: 1000},
+		},
+	}, {
+		query: "rate(foo[2s:1s] @ 50) + bar + baz", start: 100000, end: 500000,
+		expected: []*storage.SelectHints{
+			{Start: 43000, End: 50000, Step: 1000, Func: "rate"},
+			{Start: 95000, End: 500000, Step: 1000},
+			{Start: 95000, End: 500000, Step: 1000},
+		},
+	},
+		{
+			query: "rate(foo[2s:1s] @ 50) + bar + rate(baz[2m:1s] @ 900 offset 2m) ", start: 100000, end: 500000,
+			expected: []*storage.SelectHints{
+				{Start: 43000, End: 50000, Step: 1000, Func: "rate"},
+				{Start: 95000, End: 500000, Step: 1000},
+				{Start: 655000, End: 780000, Step: 1000, Func: "rate"},
+			},
+		},
+	} {
 		t.Run(tc.query, func(t *testing.T) {
 			engine := NewEngine(opts)
 			hintsRecorder := &noopHintRecordingQueryable{}
@@ -512,6 +545,107 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 			require.NoError(t, res.Err)
 
 			require.Equal(t, tc.expected, hintsRecorder.hints)
+		})
+
+	}
+}
+
+func TestFindMintMaxt(t *testing.T) {
+	opts := EngineOpts{
+		MaxSamples:    10,
+		Timeout:       10 * time.Second,
+		LookbackDelta: 5 * time.Second,
+	}
+
+	for _, tc := range []struct {
+		query string
+
+		// All times are in milliseconds.
+		start, end       int64
+		expMint, expMaxt int64
+	}{
+		{query: "foo", start: 10000, expMint: 5000, expMaxt: 10000},
+		{query: "foo @ 15", start: 10000, expMint: 10000, expMaxt: 15000},
+		{query: "foo @ 1", start: 10000, expMint: -4000, expMaxt: 1000},
+		{query: "foo[2m]", start: 200000, expMint: 80000, expMaxt: 200000},
+		{query: "foo[2m] @ 180", start: 200000, expMint: 60000, expMaxt: 180000},
+		{query: "foo[2m] @ 300", start: 200000, expMint: 180000, expMaxt: 300000},
+		{query: "foo[2m] @ 60", start: 200000, expMint: -60000, expMaxt: 60000},
+		{query: "foo[2m] offset 2m", start: 300000, expMint: 60000, expMaxt: 300000},
+		{query: "foo[2m] @ 200 offset 2m", start: 300000, expMint: -40000, expMaxt: 80000},
+		{query: "foo[2m:1s]", start: 300000, expMint: 175000, expMaxt: 300000},
+		{query: "count_over_time(foo[2m:1s])", start: 300000, expMint: 175000, expMaxt: 300000},
+		{query: "count_over_time(foo[2m:1s] @ 300)", start: 200000, expMint: 175000, expMaxt: 300000},
+		{query: "count_over_time(foo[2m:1s] @ 200)", start: 200000, expMint: 75000, expMaxt: 200000},
+		{query: "count_over_time(foo[2m:1s] @ 100)", start: 200000, expMint: -25000, expMaxt: 100000},
+		{query: "count_over_time(foo[2m:1s] offset 10s)", start: 300000, expMint: 165000, expMaxt: 300000},
+		{query: "count_over_time((foo offset 10s)[2m:1s] offset 10s)", start: 300000, expMint: 155000, expMaxt: 300000},
+		{
+			// When the @ is on the vector selector, the enclosing subquery parameters
+			// don't affect the mint.
+			query: "count_over_time((foo @ 200 offset 10s)[2m:1s] offset 10s)", start: 300000, expMint: 185000, expMaxt: 190000,
+		},
+		{
+			// When the @ is on the vector selector, the enclosing subquery parameters
+			// don't affect the mint.
+			query: "count_over_time((foo @ 200 offset 10s)[2m:1s] @ 100 offset 10s)", start: 300000, expMint: 185000, expMaxt: 190000,
+		},
+		{query: "count_over_time((foo offset 10s)[2m:1s] @ 100 offset 10s)", start: 300000, expMint: -45000, expMaxt: 80000},
+		{query: "foo", start: 10000, end: 20000, expMint: 5000, expMaxt: 20000},
+		{query: "foo @ 15", start: 10000, end: 20000, expMint: 10000, expMaxt: 15000},
+		{query: "foo @ 1", start: 10000, end: 20000, expMint: -4000, expMaxt: 1000},
+		{query: "rate(foo[2m] @ 180)", start: 200000, end: 500000, expMint: 60000, expMaxt: 180000},
+		{query: "rate(foo[2m] @ 300)", start: 200000, end: 500000, expMint: 180000, expMaxt: 300000},
+		{query: "rate(foo[2m] @ 60)", start: 200000, end: 500000, expMint: -60000, expMaxt: 60000},
+		{query: "rate(foo[2m])", start: 200000, end: 500000, expMint: 80000, expMaxt: 500000},
+		{query: "rate(foo[2m] offset 2m)", start: 300000, end: 500000, expMint: 60000, expMaxt: 500000},
+		{query: "rate(foo[2m:1s])", start: 300000, end: 500000, expMint: 175000, expMaxt: 500000},
+		{query: "count_over_time(foo[2m:1s])", start: 300000, end: 500000, expMint: 175000, expMaxt: 500000},
+		{query: "count_over_time(foo[2m:1s] offset 10s)", start: 300000, end: 500000, expMint: 165000, expMaxt: 500000},
+		{query: "count_over_time(foo[2m:1s] @ 300)", start: 200000, end: 500000, expMint: 175000, expMaxt: 300000},
+		{query: "count_over_time(foo[2m:1s] @ 200)", start: 200000, end: 500000, expMint: 75000, expMaxt: 200000},
+		{query: "count_over_time(foo[2m:1s] @ 100)", start: 200000, end: 500000, expMint: -25000, expMaxt: 100000},
+		{query: "count_over_time((foo offset 10s)[2m:1s] offset 10s)", start: 300000, end: 500000, expMint: 155000, expMaxt: 500000},
+		{
+			// When the @ is on the vector selector, the enclosing subquery parameters
+			// don't affect the mint.
+			query: "count_over_time((foo @ 200 offset 10s)[2m:1s] offset 10s)", start: 300000, end: 500000, expMint: 185000, expMaxt: 190000,
+		},
+		{
+			// When the @ is on the vector selector, the enclosing subquery parameters
+			// don't affect the mint.
+			query: "count_over_time((foo @ 200 offset 10s)[2m:1s] @ 100 offset 10s)", start: 300000, end: 500000, expMint: 185000, expMaxt: 190000,
+		},
+		{query: "count_over_time((foo offset 10s)[2m:1s] @ 100 offset 10s)", start: 300000, end: 500000, expMint: -45000, expMaxt: 80000},
+		{query: "sum by (dim1) (foo)", start: 10000, expMint: 5000, expMaxt: 10000},
+		{query: "sum without (dim1) (foo)", start: 10000, expMint: 5000, expMaxt: 10000},
+		{query: "sum by (dim1) (avg_over_time(foo[1s]))", start: 10000, expMint: 9000, expMaxt: 10000},
+		{query: "sum by (dim1) (max by (dim2) (foo))", start: 10000, expMint: 5000, expMaxt: 10000},
+		{query: "(max by (dim1) (foo))[5s:1s]", start: 10000, expMint: 0, expMaxt: 10000},
+		{query: "foo @ 50 + bar @ 250 + baz @ 900", start: 100000, end: 500000, expMint: 45000, expMaxt: 900000},
+		{query: "foo + bar @ 250 + baz @ 900", start: 100000, end: 500000, expMint: 95000, expMaxt: 900000},
+		{query: "foo @ 50 + bar @ 250 + baz", start: 100000, end: 500000, expMint: 45000, expMaxt: 500000},
+		{query: "foo @ 50 + bar + baz @ 900", start: 100000, end: 500000, expMint: 45000, expMaxt: 900000},
+		{query: "rate(foo[2s] @ 50) + bar @ 250 + baz @ 900", start: 100000, end: 500000, expMint: 48000, expMaxt: 900000},
+		{query: "rate(foo[2s] @ 50) + bar + baz", start: 100000, end: 500000, expMint: 48000, expMaxt: 500000},
+		{query: "rate(foo[2s:1s] @ 50) + bar + baz", start: 100000, end: 500000, expMint: 43000, expMaxt: 500000},
+		{query: "rate(foo[2s:1s] @ 50) + bar + rate(baz[2m:1s] @ 900 offset 2m) ", start: 100000, end: 500000, expMint: 43000, expMaxt: 780000},
+	} {
+		t.Run(tc.query, func(t *testing.T) {
+			engine := NewEngine(opts)
+			var (
+				query Query
+				err   error
+			)
+			if tc.end == 0 {
+				query, err = engine.NewInstantQuery(nil, tc.query, timestamp.Time(tc.start))
+			} else {
+				query, err = engine.NewRangeQuery(nil, tc.query, timestamp.Time(tc.start), timestamp.Time(tc.end), time.Second)
+			}
+			require.NoError(t, err)
+			actMint, actMaxt := engine.findMinMaxTime(query.Statement().(*parser.EvalStmt))
+			require.Equal(t, tc.expMint, actMint, "mint")
+			require.Equal(t, tc.expMaxt, actMaxt, "maxt")
 		})
 
 	}
