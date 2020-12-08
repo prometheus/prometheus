@@ -1458,21 +1458,13 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			noStepSubqueryIntervalFn: ev.noStepSubqueryIntervalFn,
 		}
 
-		isSelector := false
-		switch e.Expr.(type) {
-		case *parser.VectorSelector, *parser.MatrixSelector, *parser.SubqueryExpr:
-			isSelector = true
-		}
-		if isSelector {
-			// We do not duplicate results for selectors since results have their
-			// unique timestamps and can be a matrix with multiple samples.
-			newEv.endTimestamp = ev.endTimestamp
-		}
-
 		res, ws := newEv.eval(e.Expr)
 		ev.currentSamples = newEv.currentSamples
 
-		if isSelector {
+		switch e.Expr.(type) {
+		case *parser.MatrixSelector, *parser.SubqueryExpr:
+			// We do not duplicate results for range selectors since result is a matrix
+			// with their unique timestamps which does not depend on the step.
 			e.Result = res
 			return res, ws
 		}

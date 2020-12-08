@@ -804,6 +804,203 @@ load 10s
 	}
 }
 
+func TestAtModifier(t *testing.T) {
+	test, err := NewTest(t, `
+load 10s
+  metric{job="1"} 0+1x1000
+  metric{job="2"} 0+2x1000
+`)
+	require.NoError(t, err)
+	defer test.Close()
+
+	err = test.Run()
+	require.NoError(t, err)
+
+	lbls1 := labels.FromStrings("__name__", "metric", "job", "1")
+	lbls2 := labels.FromStrings("__name__", "metric", "job", "2")
+
+	cases := []struct {
+		query    string
+		evalTime time.Time
+		result   parser.Value
+	}{
+		{
+			query:    `metric`,
+			evalTime: time.Unix(20, 0),
+			result: Vector{
+				Sample{Point: Point{V: 2, T: 20000}, Metric: lbls1},
+				Sample{Point: Point{V: 4, T: 20000}, Metric: lbls2},
+			},
+		},
+		{
+			query:    "metric[20s]",
+			evalTime: time.Unix(10, 0),
+			result: Matrix{
+				Series{
+					Points: []Point{{V: 0, T: 0}, {V: 1, T: 10000}},
+					Metric: lbls1,
+				},
+				Series{
+					Points: []Point{{V: 0, T: 0}, {V: 2, T: 10000}},
+					Metric: lbls2,
+				},
+			},
+		},
+		{
+			query:    "metric[100s:25s]",
+			evalTime: time.Unix(100, 0),
+			result: Matrix{
+				Series{
+					Points: []Point{{V: 0, T: 0}, {V: 2, T: 25000}, {V: 5, T: 50000}, {V: 7, T: 75000}, {V: 10, T: 100000}},
+					Metric: lbls1,
+				},
+				Series{
+					Points: []Point{{V: 0, T: 0}, {V: 4, T: 25000}, {V: 10, T: 50000}, {V: 14, T: 75000}, {V: 20, T: 100000}},
+					Metric: lbls2,
+				},
+			},
+		},
+		{ // Time of the result is the evaluation time.
+			query:    `metric{job="1"} @ 50`,
+			evalTime: time.Unix(25, 0),
+			result: Vector{
+				Sample{Point: Point{V: 5, T: 25000}, Metric: lbls1},
+			},
+		},
+		{ // Time of the result is the evaluation time.
+			query:    `metric{job="2"} @ 50`,
+			evalTime: time.Unix(100, 0),
+			result: Vector{
+				Sample{Point: Point{V: 10, T: 100000}, Metric: lbls2},
+			},
+		},
+		{ // Timestamps for matrix selector does not depend on the evaluation time.
+			query:    "metric[20s] @ 300",
+			evalTime: time.Unix(10, 0),
+			result: Matrix{
+				Series{
+					Points: []Point{{V: 28, T: 280000}, {V: 29, T: 290000}, {V: 30, T: 300000}},
+					Metric: lbls1,
+				},
+				Series{
+					Points: []Point{{V: 56, T: 280000}, {V: 58, T: 290000}, {V: 60, T: 300000}},
+					Metric: lbls2,
+				},
+			},
+		},
+		{ // Timestamps for matrix selector does not depend on the evaluation time.
+			query:    "metric[20s] @ 300",
+			evalTime: time.Unix(1000, 0),
+			result: Matrix{
+				Series{
+					Points: []Point{{V: 28, T: 280000}, {V: 29, T: 290000}, {V: 30, T: 300000}},
+					Metric: lbls1,
+				},
+				Series{
+					Points: []Point{{V: 56, T: 280000}, {V: 58, T: 290000}, {V: 60, T: 300000}},
+					Metric: lbls2,
+				},
+			},
+		},
+		{
+			query:    "metric[100s:25s] @ 300",
+			evalTime: time.Unix(100, 0),
+			result: Matrix{
+				Series{
+					Points: []Point{{V: 20, T: 200000}, {V: 22, T: 225000}, {V: 25, T: 250000}, {V: 27, T: 275000}, {V: 30, T: 300000}},
+					Metric: lbls1,
+				},
+				Series{
+					Points: []Point{{V: 40, T: 200000}, {V: 44, T: 225000}, {V: 50, T: 250000}, {V: 54, T: 275000}, {V: 60, T: 300000}},
+					Metric: lbls2,
+				},
+			},
+		},
+		{
+			query:    "metric[100s:25s] @ 50",
+			evalTime: time.Unix(100, 0),
+			result: Matrix{
+				Series{
+					Points: []Point{{V: 0, T: 0}, {V: 2, T: 25000}, {V: 5, T: 50000}},
+					Metric: lbls1,
+				},
+				Series{
+					Points: []Point{{V: 0, T: 0}, {V: 4, T: 25000}, {V: 10, T: 50000}},
+					Metric: lbls2,
+				},
+			},
+		},
+		{
+			query:    `metric{job="1"} @ 50 + metric{job="1"} @ 100`,
+			evalTime: time.Unix(25, 0),
+			result: Vector{
+				Sample{Point: Point{V: 15, T: 25000}, Metric: labels.FromStrings("job", "1")},
+			},
+		},
+		{
+			query:    `rate(metric{job="1"}[100s] @ 100) + label_replace(rate(metric{job="2"}[123s] @ 200), "job", "1", "", "")`,
+			evalTime: time.Unix(25, 0),
+			result: Vector{
+				Sample{Point: Point{V: 0.3, T: 25000}, Metric: labels.FromStrings("job", "1")},
+			},
+		},
+		{
+			query: `sum_over_time(metric{job="1"}[100s] @ 100) 
+                      + 
+                    label_replace(sum_over_time(metric{job="2"}[100s] @ 100), "job", "1", "", "")`,
+			evalTime: time.Unix(25, 0),
+			result: Vector{
+				Sample{Point: Point{V: 165, T: 25000}, Metric: labels.FromStrings("job", "1")},
+			},
+		},
+		{
+			query: `sum_over_time(metric{job="1"}[100s] @ 100) 
+                      + 
+                    label_replace(sum_over_time(metric{job="2"}[100s] @ 200), "job", "1", "", "")`,
+			evalTime: time.Unix(25, 0),
+			result: Vector{
+				Sample{Point: Point{V: 385, T: 25000}, Metric: labels.FromStrings("job", "1")},
+			},
+		},
+		{
+			query:    "sum_over_time(metric{job=\"1\"}[100s] @ 100)[100s:25s] @ 50",
+			evalTime: time.Unix(100, 0),
+			result: Matrix{
+				Series{
+					Points: []Point{{V: 55, T: -50000}, {V: 55, T: -25000}, {V: 55, T: 0}, {V: 55, T: 25000}, {V: 55, T: 50000}},
+					Metric: labels.FromStrings("job", "1"),
+				},
+			},
+		},
+		{
+			query:    "sum_over_time(sum_over_time(metric{job=\"1\"}[100s] @ 100)[100s:25s] @ 50)",
+			evalTime: time.Unix(100, 0),
+			result: Vector{
+				Sample{Point: Point{V: 275, T: 100000}, Metric: labels.FromStrings("job", "1")},
+			},
+		},
+		{
+			query:    "sum_over_time(sum_over_time(metric{job=\"1\"}[100s] @ 100)[100s:25s] @ 50)[3s:1s] @ 3000",
+			evalTime: time.Unix(100, 0),
+			result: Matrix{
+				Series{
+					Points: []Point{{V: 275, T: 2997000}, {V: 275, T: 2998000}, {V: 275, T: 2999000}, {V: 275, T: 3000000}},
+					Metric: labels.FromStrings("job", "1"),
+				},
+			},
+		},
+	}
+
+	for _, c := range cases {
+		qry, err := test.QueryEngine().NewInstantQuery(test.Queryable(), c.query, c.evalTime)
+		require.NoError(t, err)
+
+		res := qry.Exec(test.Context())
+		require.NoError(t, res.Err)
+		require.Equal(t, c.result, res.Value, "query %q failed", c.query)
+	}
+}
+
 func TestMaxQuerySamples(t *testing.T) {
 	test, err := NewTest(t, `
 load 10s
