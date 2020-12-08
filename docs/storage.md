@@ -89,12 +89,12 @@ needed_disk_space = retention_time_seconds * ingested_samples_per_second * bytes
 To lower the rate of ingested samples, you can either reduce the number of time series you scrape (fewer targets or fewer series per target), or you can increase the scrape interval. However, reducing the number of series is likely more effective, due to compression of samples within a series.
 
 If your local storage becomes corrupted for whatever reason, the best 
-strategy to address the problenm is to shut down Prometheus then remove the
+strategy to address the problem is to shut down Prometheus then remove the
 entire storage directory. You can also try removing individual block directories,
 or the WAL directory to resolve the problem.  Note that this means losing
 approximately two hours data per block directory. Again, Prometheus's local
 storage is not intended to be durable long-term storage; external solutions
-offer exteded retention and data durability.
+offer extended retention and data durability.
 
 CAUTION: Non-POSIX compliant filesystems are not supported for Prometheus' local storage as unrecoverable corruptions may happen. NFS filesystems (including AWS's EFS) are not supported. NFS could be POSIX-compliant, but most implementations are not. It is strongly recommended to use a local filesystem for reliability.
 

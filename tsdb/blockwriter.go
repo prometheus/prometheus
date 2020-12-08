@@ -40,6 +40,9 @@ type BlockWriter struct {
 	chunkDir  string
 }
 
+// ErrNoSeriesAppended is returned if the series count is zero while flushing blocks.
+var ErrNoSeriesAppended error = errors.New("no series appended, aborting")
+
 // NewBlockWriter create a new block writer.
 //
 // The returned writer accumulates all the series in the Head block until `Flush` is called.
@@ -88,7 +91,7 @@ func (w *BlockWriter) Appender(ctx context.Context) storage.Appender {
 func (w *BlockWriter) Flush(ctx context.Context) (ulid.ULID, error) {
 	seriesCount := w.head.NumSeries()
 	if w.head.NumSeries() == 0 {
-		return ulid.ULID{}, errors.New("no series appended, aborting")
+		return ulid.ULID{}, ErrNoSeriesAppended
 	}
 
 	mint := w.head.MinTime()

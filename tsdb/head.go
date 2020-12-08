@@ -2115,26 +2115,25 @@ func (s *memSeries) chunkID(pos int) int {
 // have no timestamp at or after mint.
 // Chunk IDs remain unchanged.
 func (s *memSeries) truncateChunksBefore(mint int64) (removed int) {
-	var k int
 	if s.headChunk != nil && s.headChunk.maxTime < mint {
 		// If head chunk is truncated, we can truncate all mmapped chunks.
-		k = 1 + len(s.mmappedChunks)
-		s.firstChunkID += k
+		removed = 1 + len(s.mmappedChunks)
+		s.firstChunkID += removed
 		s.headChunk = nil
 		s.mmappedChunks = nil
-		return k
+		return removed
 	}
 	if len(s.mmappedChunks) > 0 {
 		for i, c := range s.mmappedChunks {
 			if c.maxTime >= mint {
 				break
 			}
-			k = i + 1
+			removed = i + 1
 		}
-		s.mmappedChunks = append(s.mmappedChunks[:0], s.mmappedChunks[k:]...)
-		s.firstChunkID += k
+		s.mmappedChunks = append(s.mmappedChunks[:0], s.mmappedChunks[removed:]...)
+		s.firstChunkID += removed
 	}
-	return k
+	return removed
 }
 
 // append adds the sample (t, v) to the series. The caller also has to provide
