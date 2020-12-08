@@ -638,15 +638,16 @@ func (ng *Engine) findMinMaxTime(s *parser.EvalStmt) (int64, int64) {
 	}
 
 	nodeWithNoTimestamp := false
-	wasAMatrixSelector := false
 	parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
 		subqOffset, subqRange, subqMint, subqMaxt := ng.subqueryTimes(path)
 		switch n := node.(type) {
 		case *parser.VectorSelector:
-			if wasAMatrixSelector {
-				// We have already checked this as part of matrix selector.
-				wasAMatrixSelector = false
-				return nil
+			if len(path) > 0 {
+				_, ok := path[len(path)-1].(*parser.MatrixSelector)
+				if ok {
+					// We have already checked this as part of matrix selector.
+					return nil
+				}
 			}
 			if n.Timestamp != 0 || subqMint != math.MaxInt64 {
 				setMinMaxt(n.Timestamp, subqMint, subqMaxt, n.Offset, 0, subqOffset, subqRange)
@@ -662,7 +663,6 @@ func (ng *Engine) findMinMaxTime(s *parser.EvalStmt) (int64, int64) {
 			}
 
 		case *parser.MatrixSelector:
-			wasAMatrixSelector = true
 			vs := n.VectorSelector.(*parser.VectorSelector)
 
 			if vs.Timestamp != 0 || subqMint != math.MaxInt64 {
@@ -682,6 +682,8 @@ func (ng *Engine) findMinMaxTime(s *parser.EvalStmt) (int64, int64) {
 	})
 
 	if nodeWithNoTimestamp {
+		// Only if there exit selectors without @ modifier, we consider the start and end
+		// of the eval statement.
 		sStartTs, sEndTs := timestamp.FromTime(s.Start.Add(-maxOffset)), timestamp.FromTime(s.End)
 		if sEndTs > maxTimestamp {
 			maxTimestamp = sEndTs
@@ -689,6 +691,11 @@ func (ng *Engine) findMinMaxTime(s *parser.EvalStmt) (int64, int64) {
 		if sStartTs < minTimestamp {
 			minTimestamp = sStartTs
 		}
+	}
+
+	if maxTimestamp == math.MinInt64 {
+		minTimestamp = 0
+		maxTimestamp = 0
 	}
 
 	return minTimestamp, maxTimestamp
@@ -1117,7 +1124,8 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			// so this function needs special handling when given
 			// a vector selector.
 			unwrapParenExpr(&e.Args[0])
-			vs, ok := e.Args[0].(*parser.VectorSelector)
+			arg := unwrapStepInvariantExpr(e.Args[0])
+			vs, ok := arg.(*parser.VectorSelector)
 			if ok {
 				return ev.rangeEval(func(v []parser.Value, enh *EvalNodeHelper) (Vector, storage.Warnings) {
 					val, ws := ev.vectorSelector(vs, enh.Ts)
@@ -1134,7 +1142,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		)
 		for i := range e.Args {
 			unwrapParenExpr(&e.Args[i])
-			a := e.Args[i]
+			a := unwrapStepInvariantExpr(e.Args[i])
 			if _, ok := a.(*parser.MatrixSelector); ok {
 				matrixArgIndex = i
 				matrixArg = true
@@ -1172,7 +1180,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			}
 		}
 
-		sel := e.Args[matrixArgIndex].(*parser.MatrixSelector)
+		sel := unwrapStepInvariantExpr(e.Args[matrixArgIndex]).(*parser.MatrixSelector)
 		selVS := sel.VectorSelector.(*parser.VectorSelector)
 
 		ws, err := checkAndExpandSeriesSet(ev.ctx, sel)
@@ -1216,11 +1224,12 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 						otherInArgs[j][0].V = otherArgs[j][0].Points[step].V
 					}
 				}
+
 				enh.Ts = ts
-				if selVS.Timestamp > 0 {
-					enh.Ts = selVS.Timestamp
-				}
 				maxt := enh.Ts - offset
+				if selVS.Timestamp > 0 {
+					maxt = selVS.Timestamp - offset
+				}
 				mint := maxt - selRange
 				if selVS.Timestamp == 0 || ts == ev.startTimestamp {
 					// We only evaluate once for the step invariant matrix.
@@ -1234,6 +1243,9 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 				inMatrix[0].Points = points
 
 				// Make the function call.
+				if selVS.Timestamp > 0 && IsFunctionStepInvariant(e) {
+					enh.Ts = selVS.Timestamp
+				}
 				outVec := call(inArgs, e.Args, enh)
 				enh.Out = outVec[:0]
 				if len(outVec) > 0 {
@@ -1535,7 +1547,6 @@ func (ev *evaluator) vectorSelector(node *parser.VectorSelector, ts int64) (Vect
 	it := storage.NewBuffer(durationMilliseconds(ev.lookbackDelta))
 	for i, s := range node.Series {
 		it.Reset(s.Iterator())
-
 		t, v, ok := ev.vectorSelectorSingle(it, node, ts)
 		if ok {
 			vec = append(vec, Sample{
@@ -1555,6 +1566,8 @@ func (ev *evaluator) vectorSelector(node *parser.VectorSelector, ts int64) (Vect
 // vectorSelectorSingle evaluates a instant vector for the iterator of one time series.
 func (ev *evaluator) vectorSelectorSingle(it *storage.BufferedSeriesIterator, node *parser.VectorSelector, ts int64) (int64, float64, bool) {
 	if node.Timestamp > 0 {
+		// The higher layers will pass the evaluation times, hence
+		// take care of the timestamp here.
 		ts = node.Timestamp
 	}
 	refTime := ts - durationMilliseconds(node.Offset)
@@ -2332,6 +2345,13 @@ func unwrapParenExpr(e *parser.Expr) {
 	}
 }
 
+func unwrapStepInvariantExpr(e parser.Expr) parser.Expr {
+	if p, ok := e.(*parser.StepInvariantExpr); ok {
+		return p.Expr
+	}
+	return e
+}
+
 // WrapWithStepInvariantExpr wraps all possible parts of the given
 // expression with StepInvariantExpr wherever valid.
 func WrapWithStepInvariantExpr(expr parser.Expr) parser.Expr {
@@ -2377,7 +2397,7 @@ func wrapWithStepInvariantExprHelper(expr parser.Expr) bool {
 		if len(n.Args) == 0 {
 			return false
 		}
-		isStepInvariant := true
+		isStepInvariant := IsFunctionStepInvariant(n)
 		isStepInvariantSlice := make([]bool, len(n.Args))
 		for i := range n.Args {
 			isStepInvariantSlice[i] = wrapWithStepInvariantExprHelper(n.Args[i])
@@ -2423,6 +2443,10 @@ func wrapWithStepInvariantExprHelper(expr parser.Expr) bool {
 }
 
 func newStepInvariantExpr(expr parser.Expr) parser.Expr {
+	switch e := expr.(type) {
+	case *parser.ParenExpr:
+		return newStepInvariantExpr(e.Expr)
+	}
 	if dontWrapStepInvariantExpr(expr) {
 		return expr
 	}

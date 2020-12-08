@@ -809,6 +809,9 @@ func TestAtModifier(t *testing.T) {
 load 10s
   metric{job="1"} 0+1x1000
   metric{job="2"} 0+2x1000
+
+load 1ms
+  metric_ms 0+1x10000
 `)
 	require.NoError(t, err)
 	defer test.Close()
@@ -818,93 +821,72 @@ load 10s
 
 	lbls1 := labels.FromStrings("__name__", "metric", "job", "1")
 	lbls2 := labels.FromStrings("__name__", "metric", "job", "2")
+	lblsms := labels.FromStrings("__name__", "metric_ms")
 
 	cases := []struct {
-		query    string
-		evalTime time.Time
-		result   parser.Value
+		query                string
+		start, end, interval int64 // Time in second.
+		result               parser.Value
 	}{
-		{
-			query:    `metric`,
-			evalTime: time.Unix(20, 0),
-			result: Vector{
-				Sample{Point: Point{V: 2, T: 20000}, Metric: lbls1},
-				Sample{Point: Point{V: 4, T: 20000}, Metric: lbls2},
-			},
-		},
-		{
-			query:    "metric[20s]",
-			evalTime: time.Unix(10, 0),
-			result: Matrix{
-				Series{
-					Points: []Point{{V: 0, T: 0}, {V: 1, T: 10000}},
-					Metric: lbls1,
-				},
-				Series{
-					Points: []Point{{V: 0, T: 0}, {V: 2, T: 10000}},
-					Metric: lbls2,
-				},
-			},
-		},
-		{
-			query:    "metric[100s:25s]",
-			evalTime: time.Unix(100, 0),
-			result: Matrix{
-				Series{
-					Points: []Point{{V: 0, T: 0}, {V: 2, T: 25000}, {V: 5, T: 50000}, {V: 7, T: 75000}, {V: 10, T: 100000}},
-					Metric: lbls1,
-				},
-				Series{
-					Points: []Point{{V: 0, T: 0}, {V: 4, T: 25000}, {V: 10, T: 50000}, {V: 14, T: 75000}, {V: 20, T: 100000}},
-					Metric: lbls2,
-				},
-			},
-		},
 		{ // Time of the result is the evaluation time.
-			query:    `metric{job="1"} @ 50`,
-			evalTime: time.Unix(25, 0),
+			query: `metric{job="1"} @ 50`,
+			start: 25,
 			result: Vector{
 				Sample{Point: Point{V: 5, T: 25000}, Metric: lbls1},
 			},
-		},
-		{ // Time of the result is the evaluation time.
-			query:    `metric{job="2"} @ 50`,
-			evalTime: time.Unix(100, 0),
+		}, { // Time of the result is the evaluation time.
+			query: `metric{job="2"} @ 50`,
+			start: 100, end: 102,
+			result: Matrix{
+				Series{
+					Points: []Point{{V: 10, T: 100000}, {V: 10, T: 101000}, {V: 10, T: 102000}},
+					Metric: lbls2,
+				},
+			},
+		}, { // Timestamps for matrix selector does not depend on the evaluation time.
+			query: "metric[20s] @ 300",
+			start: 10,
+			result: Matrix{
+				Series{
+					Points: []Point{{V: 28, T: 280000}, {V: 29, T: 290000}, {V: 30, T: 300000}},
+					Metric: lbls1,
+				},
+				Series{
+					Points: []Point{{V: 56, T: 280000}, {V: 58, T: 290000}, {V: 60, T: 300000}},
+					Metric: lbls2,
+				},
+			},
+		}, { // Timestamps for matrix selector does not depend on the evaluation time.
+			query: "metric[20s] @ 300",
+			start: 1000,
+			result: Matrix{
+				Series{
+					Points: []Point{{V: 28, T: 280000}, {V: 29, T: 290000}, {V: 30, T: 300000}},
+					Metric: lbls1,
+				},
+				Series{
+					Points: []Point{{V: 56, T: 280000}, {V: 58, T: 290000}, {V: 60, T: 300000}},
+					Metric: lbls2,
+				},
+			},
+		}, {
+			query: `metric_ms @ 1.234`,
+			start: 100,
 			result: Vector{
-				Sample{Point: Point{V: 10, T: 100000}, Metric: lbls2},
+				Sample{Point: Point{V: 1234, T: 100000}, Metric: lblsms},
 			},
-		},
-		{ // Timestamps for matrix selector does not depend on the evaluation time.
-			query:    "metric[20s] @ 300",
-			evalTime: time.Unix(10, 0),
+		}, {
+			query: `metric_ms[3ms] @ 2.345`,
+			start: 100,
 			result: Matrix{
 				Series{
-					Points: []Point{{V: 28, T: 280000}, {V: 29, T: 290000}, {V: 30, T: 300000}},
-					Metric: lbls1,
-				},
-				Series{
-					Points: []Point{{V: 56, T: 280000}, {V: 58, T: 290000}, {V: 60, T: 300000}},
-					Metric: lbls2,
+					Points: []Point{{V: 2342, T: 2342}, {V: 2343, T: 2343}, {V: 2344, T: 2344}, {V: 2345, T: 2345}},
+					Metric: lblsms,
 				},
 			},
-		},
-		{ // Timestamps for matrix selector does not depend on the evaluation time.
-			query:    "metric[20s] @ 300",
-			evalTime: time.Unix(1000, 0),
-			result: Matrix{
-				Series{
-					Points: []Point{{V: 28, T: 280000}, {V: 29, T: 290000}, {V: 30, T: 300000}},
-					Metric: lbls1,
-				},
-				Series{
-					Points: []Point{{V: 56, T: 280000}, {V: 58, T: 290000}, {V: 60, T: 300000}},
-					Metric: lbls2,
-				},
-			},
-		},
-		{
-			query:    "metric[100s:25s] @ 300",
-			evalTime: time.Unix(100, 0),
+		}, {
+			query: "metric[100s:25s] @ 300",
+			start: 100,
 			result: Matrix{
 				Series{
 					Points: []Point{{V: 20, T: 200000}, {V: 22, T: 225000}, {V: 25, T: 250000}, {V: 27, T: 275000}, {V: 30, T: 300000}},
@@ -915,10 +897,9 @@ load 10s
 					Metric: lbls2,
 				},
 			},
-		},
-		{
-			query:    "metric[100s:25s] @ 50",
-			evalTime: time.Unix(100, 0),
+		}, {
+			query: "metric[100s:25s] @ 50",
+			start: 100,
 			result: Matrix{
 				Series{
 					Points: []Point{{V: 0, T: 0}, {V: 2, T: 25000}, {V: 5, T: 50000}},
@@ -929,70 +910,91 @@ load 10s
 					Metric: lbls2,
 				},
 			},
-		},
-		{
-			query:    `metric{job="1"} @ 50 + metric{job="1"} @ 100`,
-			evalTime: time.Unix(25, 0),
+		}, {
+			query: `metric{job="1"} @ 50 + metric{job="1"} @ 100`,
+			start: 25,
 			result: Vector{
 				Sample{Point: Point{V: 15, T: 25000}, Metric: labels.FromStrings("job", "1")},
 			},
-		},
-		{
-			query:    `rate(metric{job="1"}[100s] @ 100) + label_replace(rate(metric{job="2"}[123s] @ 200), "job", "1", "", "")`,
-			evalTime: time.Unix(25, 0),
+		}, {
+			query: `rate(metric{job="1"}[100s] @ 100) + label_replace(rate(metric{job="2"}[123s] @ 200), "job", "1", "", "")`,
+			start: 25,
 			result: Vector{
 				Sample{Point: Point{V: 0.3, T: 25000}, Metric: labels.FromStrings("job", "1")},
 			},
-		},
-		{
+		}, {
 			query: `sum_over_time(metric{job="1"}[100s] @ 100) 
                       + 
                     label_replace(sum_over_time(metric{job="2"}[100s] @ 100), "job", "1", "", "")`,
-			evalTime: time.Unix(25, 0),
+			start: 25,
 			result: Vector{
 				Sample{Point: Point{V: 165, T: 25000}, Metric: labels.FromStrings("job", "1")},
 			},
-		},
-		{
+		}, {
 			query: `sum_over_time(metric{job="1"}[100s] @ 100) 
                       + 
                     label_replace(sum_over_time(metric{job="2"}[100s] @ 200), "job", "1", "", "")`,
-			evalTime: time.Unix(25, 0),
+			start: 25,
 			result: Vector{
 				Sample{Point: Point{V: 385, T: 25000}, Metric: labels.FromStrings("job", "1")},
 			},
-		},
-		{
-			query:    "sum_over_time(metric{job=\"1\"}[100s] @ 100)[100s:25s] @ 50",
-			evalTime: time.Unix(100, 0),
+		}, {
+			query: `sum_over_time(metric{job="1"}[100s] @ 100)[100s:25s] @ 50`,
+			start: 100,
 			result: Matrix{
 				Series{
 					Points: []Point{{V: 55, T: -50000}, {V: 55, T: -25000}, {V: 55, T: 0}, {V: 55, T: 25000}, {V: 55, T: 50000}},
 					Metric: labels.FromStrings("job", "1"),
 				},
 			},
-		},
-		{
-			query:    "sum_over_time(sum_over_time(metric{job=\"1\"}[100s] @ 100)[100s:25s] @ 50)",
-			evalTime: time.Unix(100, 0),
+		}, {
+			query: `sum_over_time(sum_over_time(metric{job="1"}[100s] @ 100)[100s:25s] @ 50)`,
+			start: 100,
 			result: Vector{
 				Sample{Point: Point{V: 275, T: 100000}, Metric: labels.FromStrings("job", "1")},
 			},
-		},
-		{
-			query:    "sum_over_time(sum_over_time(metric{job=\"1\"}[100s] @ 100)[100s:25s] @ 50)[3s:1s] @ 3000",
-			evalTime: time.Unix(100, 0),
+		}, {
+			query: `sum_over_time(sum_over_time(metric{job="1"}[100s] @ 100)[100s:25s] @ 50)[3s:1s] @ 3000`,
+			start: 100,
 			result: Matrix{
 				Series{
 					Points: []Point{{V: 275, T: 2997000}, {V: 275, T: 2998000}, {V: 275, T: 2999000}, {V: 275, T: 3000000}},
 					Metric: labels.FromStrings("job", "1"),
 				},
 			},
+		}, { // timestamp() takes the time of the sample and not the evaluation time.
+			query: `timestamp(((metric{job="2"} @ 50)))`,
+			start: 100, end: 102,
+			result: Matrix{
+				Series{
+					Points: []Point{{V: 50, T: 100000}, {V: 50, T: 101000}, {V: 50, T: 102000}},
+					Metric: labels.FromStrings("job", "2"),
+				},
+			},
+		}, {
+			query: `minute()`,
+			start: 30, end: 210, interval: 60,
+			result: Matrix{
+				Series{
+					Points: []Point{{V: 0, T: 30000}, {V: 1, T: 90000}, {V: 2, T: 150000}, {V: 3, T: 210000}},
+					Metric: labels.Labels{},
+				},
+			},
 		},
 	}
 
 	for _, c := range cases {
-		qry, err := test.QueryEngine().NewInstantQuery(test.Queryable(), c.query, c.evalTime)
+		if c.interval == 0 {
+			c.interval = 1
+		}
+		start, end, interval := time.Unix(c.start, 0), time.Unix(c.end, 0), time.Duration(c.interval)*time.Second
+		var err error
+		var qry Query
+		if c.end == 0 {
+			qry, err = test.QueryEngine().NewInstantQuery(test.Queryable(), c.query, start)
+		} else {
+			qry, err = test.QueryEngine().NewRangeQuery(test.Queryable(), c.query, start, end, interval)
+		}
 		require.NoError(t, err)
 
 		res := qry.Exec(test.Context())
@@ -1688,63 +1690,6 @@ var testExpr = []struct {
 			},
 		},
 	}, {
-		input: "1 == bool 1",
-		expected: &parser.BinaryExpr{
-			Op: parser.EQLC,
-			LHS: &parser.NumberLiteral{
-				Val:      1,
-				PosRange: parser.PositionRange{Start: 0, End: 1},
-			},
-			RHS: &parser.NumberLiteral{
-				Val:      1,
-				PosRange: parser.PositionRange{Start: 10, End: 11},
-			},
-			ReturnBool: true,
-		},
-	}, {
-		input: "1 < bool 2 - 1 * 2",
-		expected: &parser.BinaryExpr{
-			Op:         parser.LSS,
-			ReturnBool: true,
-			LHS: &parser.NumberLiteral{
-				Val:      1,
-				PosRange: parser.PositionRange{Start: 0, End: 1},
-			},
-			RHS: &parser.BinaryExpr{
-				Op: parser.SUB,
-				LHS: &parser.NumberLiteral{
-					Val:      2,
-					PosRange: parser.PositionRange{Start: 9, End: 10},
-				},
-				RHS: &parser.BinaryExpr{
-					Op: parser.MUL,
-					LHS: &parser.NumberLiteral{
-						Val:      1,
-						PosRange: parser.PositionRange{Start: 13, End: 14},
-					},
-					RHS: &parser.NumberLiteral{
-						Val:      2,
-						PosRange: parser.PositionRange{Start: 17, End: 18},
-					},
-				},
-			},
-		},
-	}, {
-		input: "-some_metric",
-		expected: &parser.UnaryExpr{
-			Op: parser.SUB,
-			Expr: &parser.VectorSelector{
-				Name: "some_metric",
-				LabelMatchers: []*labels.Matcher{
-					parser.MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
-				},
-				PosRange: parser.PositionRange{
-					Start: 1,
-					End:   12,
-				},
-			},
-		},
-	}, {
 		input: "foo * bar",
 		expected: &parser.BinaryExpr{
 			Op: parser.MUL,
@@ -1827,66 +1772,6 @@ var testExpr = []struct {
 					Timestamp: 10000,
 				},
 				VectorMatching: &parser.VectorMatching{Card: parser.CardOneToOne},
-			},
-		},
-	}, {
-		input: "2.5 / bar",
-		expected: &parser.BinaryExpr{
-			Op: parser.DIV,
-			LHS: &parser.NumberLiteral{
-				Val:      2.5,
-				PosRange: parser.PositionRange{Start: 0, End: 3},
-			},
-			RHS: &parser.VectorSelector{
-				Name: "bar",
-				LabelMatchers: []*labels.Matcher{
-					parser.MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "bar"),
-				},
-				PosRange: parser.PositionRange{
-					Start: 6,
-					End:   9,
-				},
-			},
-		},
-	}, {
-		input: "foo",
-		expected: &parser.VectorSelector{
-			Name:   "foo",
-			Offset: 0,
-			LabelMatchers: []*labels.Matcher{
-				parser.MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
-			},
-			PosRange: parser.PositionRange{
-				Start: 0,
-				End:   3,
-			},
-		},
-	}, {
-		input: "foo offset 5m",
-		expected: &parser.VectorSelector{
-			Name:   "foo",
-			Offset: 5 * time.Minute,
-			LabelMatchers: []*labels.Matcher{
-				parser.MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
-			},
-			PosRange: parser.PositionRange{
-				Start: 0,
-				End:   13,
-			},
-		},
-	}, {
-		input: `foo @ 1603774568`,
-		expected: &parser.StepInvariantExpr{
-			Expr: &parser.VectorSelector{
-				Name:      "foo",
-				Timestamp: 1603774568000,
-				LabelMatchers: []*labels.Matcher{
-					parser.MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
-				},
-				PosRange: parser.PositionRange{
-					Start: 0,
-					End:   16,
-				},
 			},
 		},
 	}, {
@@ -2229,6 +2114,94 @@ var testExpr = []struct {
 				Range:     5 * time.Minute,
 				Timestamp: 1603775019000,
 				EndPos:    46,
+			},
+		},
+	}, {
+		input: "abs(abs(metric @ 10))",
+		expected: &parser.StepInvariantExpr{
+			Expr: &parser.Call{
+				Func: &parser.Function{
+					Name:       "abs",
+					ArgTypes:   []parser.ValueType{parser.ValueTypeVector},
+					ReturnType: parser.ValueTypeVector,
+				},
+				Args: parser.Expressions{&parser.Call{
+					Func: &parser.Function{
+						Name:       "abs",
+						ArgTypes:   []parser.ValueType{parser.ValueTypeVector},
+						ReturnType: parser.ValueTypeVector,
+					},
+					Args: parser.Expressions{&parser.VectorSelector{
+						Name: "metric",
+						LabelMatchers: []*labels.Matcher{
+							parser.MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "metric"),
+						},
+						PosRange: parser.PositionRange{
+							Start: 8,
+							End:   19,
+						},
+						Timestamp: 10000,
+					}},
+					PosRange: parser.PositionRange{
+						Start: 4,
+						End:   20,
+					},
+				}},
+				PosRange: parser.PositionRange{
+					Start: 0,
+					End:   21,
+				},
+			},
+		},
+	}, {
+		input: "sum(sum(some_metric1 @ 10) + sum(some_metric2 @ 20))",
+		expected: &parser.StepInvariantExpr{
+			Expr: &parser.AggregateExpr{
+				Op: parser.SUM,
+				Expr: &parser.BinaryExpr{
+					Op:             parser.ADD,
+					VectorMatching: &parser.VectorMatching{}, // TODO(codesome): why does it require this?
+					LHS: &parser.AggregateExpr{
+						Op: parser.SUM,
+						Expr: &parser.VectorSelector{
+							Name: "some_metric1",
+							LabelMatchers: []*labels.Matcher{
+								parser.MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric1"),
+							},
+							PosRange: parser.PositionRange{
+								Start: 8,
+								End:   25,
+							},
+							Timestamp: 10000,
+						},
+						PosRange: parser.PositionRange{
+							Start: 4,
+							End:   26,
+						},
+					},
+					RHS: &parser.AggregateExpr{
+						Op: parser.SUM,
+						Expr: &parser.VectorSelector{
+							Name: "some_metric2",
+							LabelMatchers: []*labels.Matcher{
+								parser.MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric2"),
+							},
+							PosRange: parser.PositionRange{
+								Start: 33,
+								End:   50,
+							},
+							Timestamp: 20000,
+						},
+						PosRange: parser.PositionRange{
+							Start: 29,
+							End:   52,
+						},
+					},
+				},
+				PosRange: parser.PositionRange{
+					Start: 0,
+					End:   52,
+				},
 			},
 		},
 	},

@@ -597,7 +597,6 @@ func funcDeriv(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper
 func funcPredictLinear(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	samples := vals[0].(Matrix)[0]
 	duration := vals[1].(Vector)[0].V
-
 	// No sense in trying to predict anything without at least two points.
 	// Drop this Vector element.
 	if len(samples.Points) < 2 {
@@ -935,6 +934,36 @@ var FunctionCalls = map[string]FunctionCall{
 	"timestamp":          funcTimestamp,
 	"vector":             funcVector,
 	"year":               funcYear,
+
+	// is_function_step_invariant is not a part of PromQL but a helper function.
+	// It takes exactly 1 argument of type *parser.Call and expects 1 sample
+	// which is either 1.0 (meaning the function is step invariant) or
+	// 0.0 (meaning the function is not step invariant).
+	"is_function_step_invariant": funcIsFunctionStepInvariant,
+}
+
+func funcIsFunctionStepInvariant(_ []parser.Value, args parser.Expressions, _ *EvalNodeHelper) Vector {
+	call, ok := args[0].(*parser.Call)
+	if !ok {
+		panic("the argument in funcIsFunctionStepInvariant is not a function call")
+	}
+	sampleValue := float64(1)
+	switch call.Func.Name {
+	case "days_in_month", "day_of_month", "day_of_week",
+		"hour", "minute", "month", "year",
+		"predict_linear", "time":
+		sampleValue = 0
+	}
+	return Vector{Sample{Point: Point{V: sampleValue}}}
+}
+
+// IsFunctionStepInvariant returns true if the result of the function
+// call remains same for all timestamps if the given arguments
+// remain same. Generally the result of time functions change
+// for different evaluation time for the same input arguments.
+func IsFunctionStepInvariant(e *parser.Call) bool {
+	res := FunctionCalls["is_function_step_invariant"](nil, parser.Expressions{e}, nil)
+	return res[0].Point.V == 1
 }
 
 type vectorByValueHeap Vector

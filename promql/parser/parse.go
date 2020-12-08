@@ -688,7 +688,7 @@ func (p *parser) addOffset(e Node, offset time.Duration) {
 	case *MatrixSelector:
 		vs, ok := s.VectorSelector.(*VectorSelector)
 		if !ok {
-			// This invalid query will be caught at some other layer.
+			p.addParseErrf(e.PositionRange(), "ranges only allowed for vector selectors")
 			return
 		}
 		offsetp = &vs.Offset
@@ -722,7 +722,7 @@ func (p *parser) setStepInvariant(e Node, ts float64) {
 	case *MatrixSelector:
 		vs, ok := s.VectorSelector.(*VectorSelector)
 		if !ok {
-			// This invalid query will be caught at some other layer.
+			p.addParseErrf(e.PositionRange(), "ranges only allowed for vector selectors")
 			return
 		}
 		timestampp = &vs.Timestamp
