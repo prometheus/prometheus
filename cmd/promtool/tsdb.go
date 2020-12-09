@@ -620,8 +620,6 @@ func backfillOpenMetrics(path string, outputDir string) (err error) {
 	if err != nil {
 		return err
 	}
-	defer func() {
-		inputFile.Close()
-	}()
+	defer inputFile.Close()
 	return backfill(5000, inputFile.Bytes(), outputDir)
 }
