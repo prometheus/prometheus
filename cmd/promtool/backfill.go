@@ -65,7 +65,7 @@ func getMinAndMaxTimestamps(p textparse.Parser) (int64, int64, error) {
 	return maxt, mint, nil
 }
 
-func createBlocks(input []byte, mint, maxt int64, maxSamplesInAppender int, outputDir string) (returnErr error) {
+func createBlocks(input []byte, mint, maxt int64, maxSamplesInAppender int, outputDir string, humanReadable bool) (returnErr error) {
 	blockDuration := tsdb.DefaultBlockDuration
 	mint = blockDuration * (mint / blockDuration)
 
@@ -76,6 +76,8 @@ func createBlocks(input []byte, mint, maxt int64, maxSamplesInAppender int, outp
 	defer func() {
 		returnErr = tsdb_errors.NewMulti(returnErr, db.Close()).Err()
 	}()
+
+	var wroteHeader bool
 
 	for t := mint; t <= maxt; t = t + blockDuration {
 		err := func() error {
@@ -133,36 +135,46 @@ func createBlocks(input []byte, mint, maxt int64, maxSamplesInAppender int, outp
 				app = w.Appender(ctx)
 				samplesCount = 0
 			}
+
 			if err := app.Commit(); err != nil {
 				return errors.Wrap(err, "commit")
 			}
-			if _, err := w.Flush(ctx); err != nil && err != tsdb.ErrNoSeriesAppended {
+
+			block, err := w.Flush(ctx)
+			switch err {
+			case nil:
+				blocks, err := db.Blocks()
+				if err != nil {
+					return errors.Wrap(err, "get blocks")
+				}
+				for _, b := range blocks {
+					if b.Meta().ULID == block {
+						printBlocks([]tsdb.BlockReader{b}, !wroteHeader, humanReadable)
+						wroteHeader = true
+						break
+					}
+				}
+			case tsdb.ErrNoSeriesAppended:
+			default:
 				return errors.Wrap(err, "flush")
 			}
+
 			return nil
 		}()
 
 		if err != nil {
 			return errors.Wrap(err, "process blocks")
 		}
-
-		blocks, err := db.Blocks()
-		if err != nil {
-			return errors.Wrap(err, "get blocks")
-		}
-		if len(blocks) <= 0 {
-			continue
-		}
-		printBlocks(blocks[len(blocks)-1:], true)
 	}
 	return nil
+
 }
 
-func backfill(maxSamplesInAppender int, input []byte, outputDir string) (err error) {
+func backfill(maxSamplesInAppender int, input []byte, outputDir string, humanReadable bool) (err error) {
 	p := textparse.NewOpenMetricsParser(input)
 	maxt, mint, err := getMinAndMaxTimestamps(p)
 	if err != nil {
 		return errors.Wrap(err, "getting min and max timestamp")
 	}
-	return errors.Wrap(createBlocks(input, mint, maxt, maxSamplesInAppender, outputDir), "block creation")
+	return errors.Wrap(createBlocks(input, mint, maxt, maxSamplesInAppender, outputDir, humanReadable), "block creation")
 }
