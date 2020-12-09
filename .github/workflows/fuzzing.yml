@@ -1,5 +1,8 @@
 name: CIFuzz
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 7bc48123e (Restrict fuzzing on go paths)
 on:
   pull_request:
     paths:
