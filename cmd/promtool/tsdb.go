@@ -354,15 +354,18 @@ func listBlocks(path string, humanReadable bool) error {
 	if err != nil {
 		return err
 	}
-	printBlocks(blocks, humanReadable)
+	printBlocks(blocks, true, humanReadable)
 	return nil
 }
 
-func printBlocks(blocks []tsdb.BlockReader, humanReadable bool) {
+func printBlocks(blocks []tsdb.BlockReader, writeHeader, humanReadable bool) {
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	defer tw.Flush()
 
-	fmt.Fprintln(tw, "BLOCK ULID\tMIN TIME\tMAX TIME\tDURATION\tNUM SAMPLES\tNUM CHUNKS\tNUM SERIES\tSIZE")
+	if writeHeader {
+		fmt.Fprintln(tw, "BLOCK ULID\tMIN TIME\tMAX TIME\tDURATION\tNUM SAMPLES\tNUM CHUNKS\tNUM SERIES\tSIZE")
+	}
+
 	for _, b := range blocks {
 		meta := b.Meta()
 
@@ -615,11 +618,11 @@ func checkErr(err error) int {
 	return 0
 }
 
-func backfillOpenMetrics(path string, outputDir string) (err error) {
+func backfillOpenMetrics(path string, outputDir string, humanReadable bool) (err error) {
 	inputFile, err := fileutil.OpenMmapFile(path)
 	if err != nil {
 		return err
 	}
 	defer inputFile.Close()
-	return backfill(5000, inputFile.Bytes(), outputDir)
+	return backfill(5000, inputFile.Bytes(), outputDir, humanReadable)
 }
