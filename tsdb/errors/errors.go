@@ -21,41 +21,43 @@ import (
 	"io"
 )
 
-// nilOrMultiError type allows combining multiple errors into one.
-type nilOrMultiError []error
+// NilOrMultiError type allows combining multiple errors into one.
+type NilOrMultiError struct {
+	errs []error
+}
 
-// NewMulti returns nilOrMultiError with provided errors added if not nil.
-func NewMulti(errs ...error) nilOrMultiError { // nolint:golint
-	m := nilOrMultiError{}
+// NewMulti returns NilOrMultiError with provided errors added if not nil.
+func NewMulti(errs ...error) *NilOrMultiError {
+	m := &NilOrMultiError{}
 	m.Add(errs...)
 	return m
 }
 
 // Add adds single or many errors to the error list. Each error is added only if not nil.
-// If the error is a multiError type, the errors inside multiError are added to the main nilOrMultiError.
-func (es *nilOrMultiError) Add(errs ...error) {
+// If the error is a multiError type, the errors inside multiError are added to the main NilOrMultiError.
+func (e *NilOrMultiError) Add(errs ...error) {
 	for _, err := range errs {
 		if err == nil {
 			continue
 		}
 		if merr, ok := err.(multiError); ok {
-			*es = append(*es, merr.errs...)
+			e.errs = append(e.errs, merr.errs...)
 			continue
 		}
-		*es = append(*es, err)
+		e.errs = append(e.errs, err)
 	}
 }
 
-// Err returns the error list as an error or nil if it is empty.
-func (es nilOrMultiError) Err() MultiError {
-	if len(es) == 0 {
+// Err returns the error list as an Result (also implements error) or nil if it is empty.
+func (e *NilOrMultiError) Err() Result {
+	if len(e.errs) == 0 {
 		return nil
 	}
-	return multiError{errs: es}
+	return multiError(*e)
 }
 
-// MultiError is extended error interface that allows to use returned read-only multi error in more advanced ways.
-type MultiError interface {
+// Result is extended error interface that allows to use returned read-only multi error in more advanced ways.
+type Result interface {
 	error
 
 	// Errors returns underlying errors.
@@ -80,8 +82,8 @@ type MultiError interface {
 	Count(target error) int
 }
 
-// multiError implements the error and MultiError interfaces, and it represents nilOrMultiError (in other words []error) with at least one error inside it.
-// NOTE: This type is useful to make sure that nilOrMultiError is not accidentally used for err != nil check.
+// multiError implements the error and Result interfaces, and it represents NilOrMultiError (in other words []error) with at least one error inside it.
+// NOTE: This type is useful to make sure that NilOrMultiError is not accidentally used for err != nil check.
 type multiError struct {
 	errs []error
 }
@@ -171,9 +173,9 @@ func (e multiError) Count(target error) (count int) {
 	return count
 }
 
-// AsMulti casts error to multi error read only interface. It returns multi error and true if error matches multi error as
+// As casts error to multi error read only interface. It returns multi error and true if error matches multi error as
 // defined by As method. If returns false if no multi error can be found.
-func AsMulti(err error) (MultiError, bool) {
+func AsMulti(err error) (Result, bool) {
 	m := multiError{}
 	if !stderrors.As(err, &m) {
 		return nil, false
