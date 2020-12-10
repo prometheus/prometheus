@@ -1327,8 +1327,7 @@ var testExpr = []struct {
 	{
 		input: "foo",
 		expected: &VectorSelector{
-			Name:   "foo",
-			Offset: 0,
+			Name: "foo",
 			LabelMatchers: []*labels.Matcher{
 				MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 			},
@@ -1340,8 +1339,7 @@ var testExpr = []struct {
 	}, {
 		input: "min",
 		expected: &VectorSelector{
-			Name:   "min",
-			Offset: 0,
+			Name: "min",
 			LabelMatchers: []*labels.Matcher{
 				MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "min"),
 			},
@@ -1353,8 +1351,9 @@ var testExpr = []struct {
 	}, {
 		input: "foo offset 5m",
 		expected: &VectorSelector{
-			Name:   "foo",
-			Offset: 5 * time.Minute,
+			Name:           "foo",
+			Offset:         5 * time.Minute,
+			OriginalOffset: 5 * time.Minute,
 			LabelMatchers: []*labels.Matcher{
 				MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 			},
@@ -1366,8 +1365,9 @@ var testExpr = []struct {
 	}, {
 		input: `foo OFFSET 1h30m`,
 		expected: &VectorSelector{
-			Name:   "foo",
-			Offset: 90 * time.Minute,
+			Name:           "foo",
+			Offset:         90 * time.Minute,
+			OriginalOffset: 90 * time.Minute,
 			LabelMatchers: []*labels.Matcher{
 				MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 			},
@@ -1379,8 +1379,9 @@ var testExpr = []struct {
 	}, {
 		input: `foo OFFSET 1m30ms`,
 		expected: &VectorSelector{
-			Name:   "foo",
-			Offset: time.Minute + 30*time.Millisecond,
+			Name:           "foo",
+			Offset:         time.Minute + 30*time.Millisecond,
+			OriginalOffset: time.Minute + 30*time.Millisecond,
 			LabelMatchers: []*labels.Matcher{
 				MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 			},
@@ -1393,7 +1394,7 @@ var testExpr = []struct {
 		input: `foo @ 1603774568`,
 		expected: &VectorSelector{
 			Name:      "foo",
-			Timestamp: 1603774568000,
+			Timestamp: makeInt64Pointer(1603774568000),
 			LabelMatchers: []*labels.Matcher{
 				MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 			},
@@ -1405,8 +1406,7 @@ var testExpr = []struct {
 	}, {
 		input: `foo:bar{a="bc"}`,
 		expected: &VectorSelector{
-			Name:   "foo:bar",
-			Offset: 0,
+			Name: "foo:bar",
 			LabelMatchers: []*labels.Matcher{
 				MustLabelMatcher(labels.MatchEqual, "a", "bc"),
 				MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo:bar"),
@@ -1419,8 +1419,7 @@ var testExpr = []struct {
 	}, {
 		input: `foo{NaN='bc'}`,
 		expected: &VectorSelector{
-			Name:   "foo",
-			Offset: 0,
+			Name: "foo",
 			LabelMatchers: []*labels.Matcher{
 				MustLabelMatcher(labels.MatchEqual, "NaN", "bc"),
 				MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
@@ -1433,8 +1432,7 @@ var testExpr = []struct {
 	}, {
 		input: `foo{bar='}'}`,
 		expected: &VectorSelector{
-			Name:   "foo",
-			Offset: 0,
+			Name: "foo",
 			LabelMatchers: []*labels.Matcher{
 				MustLabelMatcher(labels.MatchEqual, "bar", "}"),
 				MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
@@ -1447,8 +1445,7 @@ var testExpr = []struct {
 	}, {
 		input: `foo{a="b", foo!="bar", test=~"test", bar!~"baz"}`,
 		expected: &VectorSelector{
-			Name:   "foo",
-			Offset: 0,
+			Name: "foo",
 			LabelMatchers: []*labels.Matcher{
 				MustLabelMatcher(labels.MatchEqual, "a", "b"),
 				MustLabelMatcher(labels.MatchNotEqual, "foo", "bar"),
@@ -1464,8 +1461,7 @@ var testExpr = []struct {
 	}, {
 		input: `foo{a="b", foo!="bar", test=~"test", bar!~"baz",}`,
 		expected: &VectorSelector{
-			Name:   "foo",
-			Offset: 0,
+			Name: "foo",
 			LabelMatchers: []*labels.Matcher{
 				MustLabelMatcher(labels.MatchEqual, "a", "b"),
 				MustLabelMatcher(labels.MatchNotEqual, "foo", "bar"),
@@ -1570,8 +1566,7 @@ var testExpr = []struct {
 		input: "test[5s]",
 		expected: &MatrixSelector{
 			VectorSelector: &VectorSelector{
-				Name:   "test",
-				Offset: 0,
+				Name: "test",
 				LabelMatchers: []*labels.Matcher{
 					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
 				},
@@ -1587,8 +1582,7 @@ var testExpr = []struct {
 		input: "test[5m]",
 		expected: &MatrixSelector{
 			VectorSelector: &VectorSelector{
-				Name:   "test",
-				Offset: 0,
+				Name: "test",
 				LabelMatchers: []*labels.Matcher{
 					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
 				},
@@ -1604,8 +1598,7 @@ var testExpr = []struct {
 		input: `foo[5m30s]`,
 		expected: &MatrixSelector{
 			VectorSelector: &VectorSelector{
-				Name:   "foo",
-				Offset: 0,
+				Name: "foo",
 				LabelMatchers: []*labels.Matcher{
 					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
 				},
@@ -1621,8 +1614,9 @@ var testExpr = []struct {
 		input: "test[5h] OFFSET 5m",
 		expected: &MatrixSelector{
 			VectorSelector: &VectorSelector{
-				Name:   "test",
-				Offset: 5 * time.Minute,
+				Name:           "test",
+				Offset:         5 * time.Minute,
+				OriginalOffset: 5 * time.Minute,
 				LabelMatchers: []*labels.Matcher{
 					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
 				},
@@ -1638,8 +1632,9 @@ var testExpr = []struct {
 		input: "test[5d] OFFSET 10s",
 		expected: &MatrixSelector{
 			VectorSelector: &VectorSelector{
-				Name:   "test",
-				Offset: 10 * time.Second,
+				Name:           "test",
+				Offset:         10 * time.Second,
+				OriginalOffset: 10 * time.Second,
 				LabelMatchers: []*labels.Matcher{
 					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
 				},
@@ -1655,8 +1650,9 @@ var testExpr = []struct {
 		input: "test[5w] offset 2w",
 		expected: &MatrixSelector{
 			VectorSelector: &VectorSelector{
-				Name:   "test",
-				Offset: 14 * 24 * time.Hour,
+				Name:           "test",
+				Offset:         14 * 24 * time.Hour,
+				OriginalOffset: 14 * 24 * time.Hour,
 				LabelMatchers: []*labels.Matcher{
 					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
 				},
@@ -1672,8 +1668,9 @@ var testExpr = []struct {
 		input: `test{a="b"}[5y] OFFSET 3d`,
 		expected: &MatrixSelector{
 			VectorSelector: &VectorSelector{
-				Name:   "test",
-				Offset: 3 * 24 * time.Hour,
+				Name:           "test",
+				Offset:         3 * 24 * time.Hour,
+				OriginalOffset: 3 * 24 * time.Hour,
 				LabelMatchers: []*labels.Matcher{
 					MustLabelMatcher(labels.MatchEqual, "a", "b"),
 					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
@@ -1691,7 +1688,7 @@ var testExpr = []struct {
 		expected: &MatrixSelector{
 			VectorSelector: &VectorSelector{
 				Name:      "test",
-				Timestamp: 1603774699000,
+				Timestamp: makeInt64Pointer(1603774699000),
 				LabelMatchers: []*labels.Matcher{
 					MustLabelMatcher(labels.MatchEqual, "a", "b"),
 					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
@@ -2558,9 +2555,10 @@ var testExpr = []struct {
 								End:   38,
 							},
 						},
-						Range:  5 * time.Minute,
-						Offset: 4 * time.Minute,
-						EndPos: 53,
+						Range:          5 * time.Minute,
+						Offset:         4 * time.Minute,
+						OriginalOffset: 4 * time.Minute,
+						EndPos:         53,
 					},
 				},
 				PosRange: PositionRange{
@@ -2604,7 +2602,7 @@ var testExpr = []struct {
 							},
 						},
 						Range:     5 * time.Minute,
-						Timestamp: 1603775091000,
+						Timestamp: makeInt64Pointer(1603775091000),
 						EndPos:    56,
 					},
 				},
@@ -2655,7 +2653,8 @@ var testExpr = []struct {
 					Start: 0,
 					End:   21,
 				},
-				Offset: 1 * time.Minute,
+				Offset:         1 * time.Minute,
+				OriginalOffset: 1 * time.Minute,
 			},
 			Range:  10 * time.Minute,
 			Step:   5 * time.Second,
@@ -2673,7 +2672,7 @@ var testExpr = []struct {
 					Start: 0,
 					End:   17,
 				},
-				Timestamp: 123000,
+				Timestamp: makeInt64Pointer(123000),
 			},
 			Range:  10 * time.Minute,
 			Step:   5 * time.Second,
@@ -2691,8 +2690,9 @@ var testExpr = []struct {
 					Start: 0,
 					End:   27,
 				},
-				Timestamp: 123000,
-				Offset:    1 * time.Minute,
+				Timestamp:      makeInt64Pointer(123000),
+				Offset:         1 * time.Minute,
+				OriginalOffset: 1 * time.Minute,
 			},
 			Range:  10 * time.Minute,
 			Step:   5 * time.Second,
@@ -2710,8 +2710,9 @@ var testExpr = []struct {
 					Start: 0,
 					End:   27,
 				},
-				Timestamp: 123000,
-				Offset:    1 * time.Minute,
+				Timestamp:      makeInt64Pointer(123000),
+				Offset:         1 * time.Minute,
+				OriginalOffset: 1 * time.Minute,
 			},
 			Range:  10 * time.Minute,
 			Step:   5 * time.Second,
@@ -2730,11 +2731,12 @@ var testExpr = []struct {
 					End:   11,
 				},
 			},
-			Timestamp: 123000,
-			Offset:    1 * time.Minute,
-			Range:     10 * time.Minute,
-			Step:      5 * time.Second,
-			EndPos:    35,
+			Timestamp:      makeInt64Pointer(123000),
+			Offset:         1 * time.Minute,
+			OriginalOffset: 1 * time.Minute,
+			Range:          10 * time.Minute,
+			Step:           5 * time.Second,
+			EndPos:         35,
 		},
 	}, {
 		input: `(foo + bar{nm="val"})[5m:]`,
@@ -2811,9 +2813,10 @@ var testExpr = []struct {
 					End:   21,
 				},
 			},
-			Range:  5 * time.Minute,
-			Offset: 10 * time.Minute,
-			EndPos: 37,
+			Range:          5 * time.Minute,
+			Offset:         10 * time.Minute,
+			OriginalOffset: 10 * time.Minute,
+			EndPos:         37,
 		},
 	}, {
 		input: `(foo + bar{nm="val"} @ 1234)[5m:] @ 1603775019`,
@@ -2840,7 +2843,7 @@ var testExpr = []struct {
 							MustLabelMatcher(labels.MatchEqual, "nm", "val"),
 							MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 						},
-						Timestamp: 1234000,
+						Timestamp: makeInt64Pointer(1234000),
 						PosRange: PositionRange{
 							Start: 7,
 							End:   27,
@@ -2853,7 +2856,7 @@ var testExpr = []struct {
 				},
 			},
 			Range:     5 * time.Minute,
-			Timestamp: 1603775019000,
+			Timestamp: makeInt64Pointer(1603775019000),
 			EndPos:    46,
 		},
 	}, {
@@ -2873,6 +2876,12 @@ var testExpr = []struct {
 		fail:   true,
 		errMsg: `1:15: parse error: ranges only allowed for vector selectors`,
 	},
+}
+
+func makeInt64Pointer(val int64) *int64 {
+	valp := new(int64)
+	*valp = val
+	return valp
 }
 
 func TestParseExpressions(t *testing.T) {

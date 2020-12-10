@@ -335,11 +335,6 @@ eval instant at 5m min by (group) (http_requests @ 60)
   {group="production"} 1
   {group="canary"} 3
 
-# Zero is not a valid timestamp to pass, so it is ignored.
-eval instant at 5m min by (group) (http_requests @ 0)
-  {group="production"} 5
-  {group="canary"} 7
-
 clear
 
 # Tests for topk/bottomk.

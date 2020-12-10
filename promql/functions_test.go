@@ -62,6 +62,9 @@ func TestDeriv(t *testing.T) {
 func TestFunctionList(t *testing.T) {
 	// Test that Functions and parser.Functions list the same functions.
 	for i := range FunctionCalls {
+		if i == IsFunctionStepInvariantMapKey {
+			continue
+		}
 		_, ok := parser.Functions[i]
 		require.True(t, ok, "function %s exists in promql package, but not in parser package", i)
 	}

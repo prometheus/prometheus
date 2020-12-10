@@ -984,22 +984,24 @@ load 1ms
 	}
 
 	for _, c := range cases {
-		if c.interval == 0 {
-			c.interval = 1
-		}
-		start, end, interval := time.Unix(c.start, 0), time.Unix(c.end, 0), time.Duration(c.interval)*time.Second
-		var err error
-		var qry Query
-		if c.end == 0 {
-			qry, err = test.QueryEngine().NewInstantQuery(test.Queryable(), c.query, start)
-		} else {
-			qry, err = test.QueryEngine().NewRangeQuery(test.Queryable(), c.query, start, end, interval)
-		}
-		require.NoError(t, err)
+		t.Run(c.query, func(t *testing.T) {
+			if c.interval == 0 {
+				c.interval = 1
+			}
+			start, end, interval := time.Unix(c.start, 0), time.Unix(c.end, 0), time.Duration(c.interval)*time.Second
+			var err error
+			var qry Query
+			if c.end == 0 {
+				qry, err = test.QueryEngine().NewInstantQuery(test.Queryable(), c.query, start)
+			} else {
+				qry, err = test.QueryEngine().NewRangeQuery(test.Queryable(), c.query, start, end, interval)
+			}
+			require.NoError(t, err)
 
-		res := qry.Exec(test.Context())
-		require.NoError(t, res.Err)
-		require.Equal(t, c.result, res.Value, "query %q failed", c.query)
+			res := qry.Exec(test.Context())
+			require.NoError(t, res.Err)
+			require.Equal(t, c.result, res.Value, "query %q failed", c.query)
+		})
 	}
 }
 
@@ -1739,7 +1741,7 @@ var testExpr = []struct {
 						Start: 6,
 						End:   14,
 					},
-					Timestamp: 10000,
+					Timestamp: makeInt64Pointer(10000),
 				},
 			},
 			VectorMatching: &parser.VectorMatching{Card: parser.CardOneToOne},
@@ -1758,7 +1760,7 @@ var testExpr = []struct {
 						Start: 0,
 						End:   8,
 					},
-					Timestamp: 20000,
+					Timestamp: makeInt64Pointer(20000),
 				},
 				RHS: &parser.VectorSelector{
 					Name: "bar",
@@ -1769,7 +1771,7 @@ var testExpr = []struct {
 						Start: 11,
 						End:   19,
 					},
-					Timestamp: 10000,
+					Timestamp: makeInt64Pointer(10000),
 				},
 				VectorMatching: &parser.VectorMatching{Card: parser.CardOneToOne},
 			},
@@ -1778,8 +1780,7 @@ var testExpr = []struct {
 		input: "test[5s]",
 		expected: &parser.MatrixSelector{
 			VectorSelector: &parser.VectorSelector{
-				Name:   "test",
-				Offset: 0,
+				Name: "test",
 				LabelMatchers: []*labels.Matcher{
 					parser.MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "test"),
 				},
@@ -1797,7 +1798,7 @@ var testExpr = []struct {
 			Expr: &parser.MatrixSelector{
 				VectorSelector: &parser.VectorSelector{
 					Name:      "test",
-					Timestamp: 1603774699000,
+					Timestamp: makeInt64Pointer(1603774699000),
 					LabelMatchers: []*labels.Matcher{
 						parser.MustLabelMatcher(labels.MatchEqual, "a", "b"),
 						parser.MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "test"),
@@ -1845,7 +1846,7 @@ var testExpr = []struct {
 						Start: 13,
 						End:   29,
 					},
-					Timestamp: 10000,
+					Timestamp: makeInt64Pointer(10000),
 				},
 				Grouping: []string{"foo"},
 				PosRange: parser.PositionRange{
@@ -1871,7 +1872,7 @@ var testExpr = []struct {
 							Start: 4,
 							End:   21,
 						},
-						Timestamp: 10000,
+						Timestamp: makeInt64Pointer(10000),
 					},
 					PosRange: parser.PositionRange{
 						Start: 0,
@@ -1889,7 +1890,7 @@ var testExpr = []struct {
 							Start: 29,
 							End:   46,
 						},
-						Timestamp: 20000,
+						Timestamp: makeInt64Pointer(20000),
 					},
 					PosRange: parser.PositionRange{
 						Start: 25,
@@ -1931,7 +1932,7 @@ var testExpr = []struct {
 										Start: 29,
 										End:   40,
 									},
-									Timestamp: 20000,
+									Timestamp: makeInt64Pointer(20000),
 								},
 								Range:  1 * time.Minute,
 								EndPos: 49,
@@ -2017,7 +2018,7 @@ var testExpr = []struct {
 								},
 							},
 							Range:     5 * time.Minute,
-							Timestamp: 1603775091000,
+							Timestamp: makeInt64Pointer(1603775091000),
 							EndPos:    56,
 						},
 					},
@@ -2044,8 +2045,9 @@ var testExpr = []struct {
 						Start: 0,
 						End:   27,
 					},
-					Timestamp: 123000,
-					Offset:    1 * time.Minute,
+					Timestamp:      makeInt64Pointer(123000),
+					Offset:         1 * time.Minute,
+					OriginalOffset: 1 * time.Minute,
 				},
 			},
 			Range:  10 * time.Minute,
@@ -2066,11 +2068,12 @@ var testExpr = []struct {
 						End:   11,
 					},
 				},
-				Timestamp: 123000,
-				Offset:    1 * time.Minute,
-				Range:     10 * time.Minute,
-				Step:      5 * time.Second,
-				EndPos:    35,
+				Timestamp:      makeInt64Pointer(123000),
+				Offset:         1 * time.Minute,
+				OriginalOffset: 1 * time.Minute,
+				Range:          10 * time.Minute,
+				Step:           5 * time.Second,
+				EndPos:         35,
 			},
 		},
 	}, {
@@ -2093,16 +2096,18 @@ var testExpr = []struct {
 								End:   4,
 							},
 						},
-						RHS: &parser.VectorSelector{
-							Name: "bar",
-							LabelMatchers: []*labels.Matcher{
-								parser.MustLabelMatcher(labels.MatchEqual, "nm", "val"),
-								parser.MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "bar"),
-							},
-							Timestamp: 1234000,
-							PosRange: parser.PositionRange{
-								Start: 7,
-								End:   27,
+						RHS: &parser.StepInvariantExpr{
+							Expr: &parser.VectorSelector{
+								Name: "bar",
+								LabelMatchers: []*labels.Matcher{
+									parser.MustLabelMatcher(labels.MatchEqual, "nm", "val"),
+									parser.MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "bar"),
+								},
+								Timestamp: makeInt64Pointer(1234000),
+								PosRange: parser.PositionRange{
+									Start: 7,
+									End:   27,
+								},
 							},
 						},
 					},
@@ -2112,7 +2117,7 @@ var testExpr = []struct {
 					},
 				},
 				Range:     5 * time.Minute,
-				Timestamp: 1603775019000,
+				Timestamp: makeInt64Pointer(1603775019000),
 				EndPos:    46,
 			},
 		},
@@ -2140,7 +2145,7 @@ var testExpr = []struct {
 							Start: 8,
 							End:   19,
 						},
-						Timestamp: 10000,
+						Timestamp: makeInt64Pointer(10000),
 					}},
 					PosRange: parser.PositionRange{
 						Start: 4,
@@ -2172,7 +2177,7 @@ var testExpr = []struct {
 								Start: 8,
 								End:   25,
 							},
-							Timestamp: 10000,
+							Timestamp: makeInt64Pointer(10000),
 						},
 						PosRange: parser.PositionRange{
 							Start: 4,
@@ -2190,7 +2195,7 @@ var testExpr = []struct {
 								Start: 33,
 								End:   50,
 							},
-							Timestamp: 20000,
+							Timestamp: makeInt64Pointer(20000),
 						},
 						PosRange: parser.PositionRange{
 							Start: 29,
@@ -2216,4 +2221,10 @@ func TestWrapWithStepInvariantExpr(t *testing.T) {
 			require.Equal(t, test.expected, expr, "error on input '%s'", test.input)
 		})
 	}
+}
+
+func makeInt64Pointer(val int64) *int64 {
+	valp := new(int64)
+	*valp = val
+	return valp
 }

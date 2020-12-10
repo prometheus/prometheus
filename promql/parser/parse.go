@@ -678,12 +678,13 @@ func (p *parser) newLabelMatcher(label Item, operator Item, value Item) *labels.
 }
 
 func (p *parser) addOffset(e Node, offset time.Duration) {
-	var offsetp *time.Duration
+	var offsetp, orgoffsetp *time.Duration
 	var endPosp *Pos
 
 	switch s := e.(type) {
 	case *VectorSelector:
 		offsetp = &s.Offset
+		orgoffsetp = &s.OriginalOffset
 		endPosp = &s.PosRange.End
 	case *MatrixSelector:
 		vs, ok := s.VectorSelector.(*VectorSelector)
@@ -692,9 +693,11 @@ func (p *parser) addOffset(e Node, offset time.Duration) {
 			return
 		}
 		offsetp = &vs.Offset
+		orgoffsetp = &vs.OriginalOffset
 		endPosp = &s.EndPos
 	case *SubqueryExpr:
 		offsetp = &s.Offset
+		orgoffsetp = &s.OriginalOffset
 		endPosp = &s.EndPos
 	default:
 		p.addParseErrf(e.PositionRange(), "offset modifier must be preceded by a vector or range selector or a subquery, but follows a %T instead", e)
@@ -706,13 +709,14 @@ func (p *parser) addOffset(e Node, offset time.Duration) {
 		p.addParseErrf(e.PositionRange(), "offset may not be set multiple times")
 	} else if offsetp != nil {
 		*offsetp = offset
+		*orgoffsetp = offset
 	}
 
 	*endPosp = p.lastClosing
 }
 
 func (p *parser) setStepInvariant(e Node, ts float64) {
-	var timestampp *int64
+	var timestampp **int64
 	var endPosp *Pos
 
 	switch s := e.(type) {
@@ -735,10 +739,11 @@ func (p *parser) setStepInvariant(e Node, ts float64) {
 		return
 	}
 
-	if *timestampp != 0 {
+	if *timestampp != nil {
 		p.addParseErrf(e.PositionRange(), "@ <timestamp> may not be set multiple times")
 	} else if timestampp != nil {
-		*timestampp = timestamp.FromFloatSeconds(ts)
+		*timestampp = new(int64)
+		**timestampp = timestamp.FromFloatSeconds(ts)
 	}
 
 	*endPosp = p.lastClosing

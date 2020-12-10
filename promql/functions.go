@@ -885,6 +885,8 @@ func funcYear(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper)
 	})
 }
 
+const IsFunctionStepInvariantMapKey = "is_function_step_invariant"
+
 // FunctionCalls is a list of all functions supported by PromQL, including their types.
 var FunctionCalls = map[string]FunctionCall{
 	"abs":                funcAbs,
@@ -939,7 +941,7 @@ var FunctionCalls = map[string]FunctionCall{
 	// It takes exactly 1 argument of type *parser.Call and expects 1 sample
 	// which is either 1.0 (meaning the function is step invariant) or
 	// 0.0 (meaning the function is not step invariant).
-	"is_function_step_invariant": funcIsFunctionStepInvariant,
+	IsFunctionStepInvariantMapKey: funcIsFunctionStepInvariant,
 }
 
 func funcIsFunctionStepInvariant(_ []parser.Value, args parser.Expressions, _ *EvalNodeHelper) Vector {
@@ -962,7 +964,7 @@ func funcIsFunctionStepInvariant(_ []parser.Value, args parser.Expressions, _ *E
 // remain same. Generally the result of time functions change
 // for different evaluation time for the same input arguments.
 func IsFunctionStepInvariant(e *parser.Call) bool {
-	res := FunctionCalls["is_function_step_invariant"](nil, parser.Expressions{e}, nil)
+	res := FunctionCalls[IsFunctionStepInvariantMapKey](nil, parser.Expressions{e}, nil)
 	return res[0].Point.V == 1
 }
 

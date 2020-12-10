@@ -1259,7 +1259,7 @@ yydefault:
 				errMsg = "ranges only allowed for vector selectors"
 			} else if vs.Offset != 0 {
 				errMsg = "no offset modifiers allowed before range"
-			} else if vs.Timestamp != 0 {
+			} else if vs.Timestamp != nil {
 				errMsg = "no @ modifiers allowed before range"
 			}
 

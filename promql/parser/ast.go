@@ -125,10 +125,15 @@ type MatrixSelector struct {
 
 // SubqueryExpr represents a subquery.
 type SubqueryExpr struct {
-	Expr      Expr
-	Range     time.Duration
+	Expr  Expr
+	Range time.Duration
+	// OriginalOffset is the actual offset that was set in the query.
+	// This never changes.
+	OriginalOffset time.Duration
+	// Offset is the offset used during the query execution.
+	// This can change because of the @ modifier.
 	Offset    time.Duration
-	Timestamp int64
+	Timestamp *int64
 	Step      time.Duration
 
 	EndPos Pos
@@ -180,9 +185,14 @@ func (e *StepInvariantExpr) PositionRange() PositionRange { return e.Expr.Positi
 
 // VectorSelector represents a Vector selection.
 type VectorSelector struct {
-	Name          string
+	Name string
+	// OriginalOffset is the actual offset that was set in the query.
+	// This never changes.
+	OriginalOffset time.Duration
+	// Offset is the offset used during the query execution.
+	// This can change because of the @ modifier.
 	Offset        time.Duration
-	Timestamp     int64
+	Timestamp     *int64
 	LabelMatchers []*labels.Matcher
 
 	// The unexpanded seriesSet populated at query preparation time.
