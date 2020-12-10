@@ -134,19 +134,16 @@ To learn more about existing integrations with remote storage systems, see the [
 
 ### Overview
 
-If a user wants to create blocks into the TSDB from data which is in [OpenMetrics](https://openmetrics.io/) format, they can do so using backfilling. However, they should be careful and note that it is not safe to backfill data from the last 3 hours (the current head block).
+If a user wants to create blocks into the TSDB from data that is in [OpenMetrics](https://openmetrics.io/) format, they can do so using backfilling. However, they should be careful and note that it is not safe to backfill data from the last 3 hours (the current head block) as this time range may overlap with the current head block Prometheus is still mutating.
 
-
-The backfill command is implemented such that Prometheus keeps at most 2 hours of data in the memory. 
-
-An example use case of backfilling is :
-If a user wants to migrate from an existing monitoring system (source) to Prometheus, they can add their older data to TSDB using backfilling if their data is in [OpenMetrics](https://openmetrics.io/) format. 
+A typical use case is to migrate metrics data from a different monitoring system or time-series database to Prometheus. To do so, the user must first convert the source data into [OpenMetrics](https://openmetrics.io/)  format, which is the input format for the backfilling as described below.
 
 ### Usage 
 
-Backfilling can be used via the promtool command line. Promtool will write the blocks to a directory. By default this output directory is data/, you can change it by using the name of the desired output directory as an optional argument in the sub-command.
+Backfilling can be used via the Promtool command line. Promtool will write the blocks to a directory. By default this output directory is ./data/, you can change it by using the name of the desired output directory as an optional argument in the sub-command.
 
 ```
-./promtool create-blocks-from openmetrics name_of_input_file [name_of_output_directory]
+promtool tsdb create-blocks-from openmetrics <input file> [<output directory>]
 ```
-After the creation of the blocks, move it to the desired directory. If there is an overlap with older data, the flag `--storage.tsdb.allow-overlapping-blocks` needs to be set. Also, if `--storage.tsdb.retention.time=X` flag is not set the data older than the retention will be deleted.
+
+After the creation of the blocks, move it to the data directory of Prometheus. If there is an overlap with the existing blocks in Prometheus, the flag `--storage.tsdb.allow-overlapping-blocks` needs to be set. Note that any backfilled data is subject to the retention configured for your Prometheus server (by time or size). Use `--storage.tsdb.retention.time=X` Promethues flag so that your existing blocks are not affected by the blocks created by backfilling.
