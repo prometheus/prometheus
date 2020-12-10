@@ -893,7 +893,7 @@ func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 	if matchTarget != "" {
 		matchers, err = parser.ParseMetricSelector(matchTarget)
 		if err != nil {
-			return invalidParamError(err, "match[]")
+			return invalidParamError(err, "match_target")
 		}
 	}
 
