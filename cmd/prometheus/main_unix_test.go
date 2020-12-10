@@ -37,7 +37,7 @@ func TestStartupInterrupt(t *testing.T) {
 		return
 	}
 
-	done := make(chan error)
+	done := make(chan error, 1)
 	go func() {
 		done <- prom.Wait()
 	}()
