@@ -135,6 +135,7 @@ func main() {
 
 	importCmd := tsdbCmd.Command("create-blocks-from", "[Experimental] Import samples from input and produce TSDB blocks. Please refer to the storage docs for more details.")
 	openMetricsImportCmd := importCmd.Command("openmetrics", "Import samples from OpenMetrics input and produce TSDB blocks. Please refer to the storage docs for more details.")
+	importServerHotReload := importCmd.Flag("server", "Prometheus server to perform hot reload after import.").Default("").String()
 	// TODO(aSquare14): add flag to set default block duration
 	importFilePath := openMetricsImportCmd.Arg("input file", "OpenMetrics file to read samples from.").Required().String()
 	importDBPath := openMetricsImportCmd.Arg("output directory", "Output directory for generated blocks.").Default(defaultDBPath).String()
@@ -196,7 +197,7 @@ func main() {
 		os.Exit(checkErr(dumpSamples(*dumpPath, *dumpMinTime, *dumpMaxTime)))
 	//TODO(aSquare14): Work on adding support for custom block size.
 	case openMetricsImportCmd.FullCommand():
-		os.Exit(checkErr(backfillOpenMetrics(*importFilePath, *importDBPath)))
+		os.Exit(checkErr(backfillOpenMetrics(*importFilePath, *importDBPath, *importServerHotReload)))
 	}
 }
 

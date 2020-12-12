@@ -34,6 +34,8 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
 
+	"github.com/prometheus/client_golang/api"
+	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
@@ -615,11 +617,37 @@ func checkErr(err error) int {
 	return 0
 }
 
-func backfillOpenMetrics(path string, outputDir string) (err error) {
+func backfillOpenMetrics(path string, outputDir string, url string) (err error) {
+	var promApi v1.API
+	if url != "" {
+		config := api.Config{
+			Address: url,
+		}
+		client, err := api.NewClient(config)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error creating API client:", err)
+			return err
+		}
+		promApi = v1.NewAPI(client)
+	}
+
 	inputFile, err := fileutil.OpenMmapFile(path)
 	if err != nil {
 		return err
 	}
 	defer inputFile.Close()
-	return backfill(5000, inputFile.Bytes(), outputDir)
+	if err := backfill(5000, inputFile.Bytes(), outputDir); err != nil {
+		return err
+	}
+
+	if promApi != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		err := promApi.ReloadTSDB(ctx)
+		cancel()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "backfill was succesful but failed to hot reload TSDB:", err)
+			return err
+		}
+	}
+	return nil
 }
