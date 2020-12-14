@@ -8,15 +8,6 @@ eval instant at 10s sum_over_time(metric[50s:10s])
 eval instant at 10s sum_over_time(metric[50s:5s])
   {} 4
 
-eval instant at 10s sum_over_time(metric[50s:5s] @ 10)
-  {} 4
-
-eval instant at 0s sum_over_time(metric[50s:5s] @ 10)
-  {} 4
-
-eval instant at 2m sum_over_time(metric[50s:5s] @ 10)
-  {} 4
-
 # Every evaluation yields the last value, i.e. 2
 eval instant at 5m sum_over_time(metric[50s:10s])
   {} 12
@@ -27,15 +18,6 @@ eval instant at 6m sum_over_time(metric[50s:10s])
   {} 2
 
 eval instant at 10s rate(metric[20s:10s])
-  {} 0.1
-
-eval instant at 10s rate(metric[20s:10s] @ 10)
-  {} 0.1
-
-eval instant at 1s rate(metric[20s:10s] @ 10)
-  {} 0.1
-
-eval instant at 1m rate(metric[20s:10s] @ 10)
   {} 0.1
 
 eval instant at 20s rate(metric[20s:5s])
@@ -59,18 +41,6 @@ eval instant at 20000s avg_over_time(rate(http_requests[1m])[1m:1s])
   {job="api-server", instance="1", group="production"} 3
   {job="api-server", instance="0", group="production"} 3
 
-eval instant at 20000s avg_over_time(rate(http_requests[1m])[1m:1s] @ 20000)
-  {job="api-server", instance="0", group="canary"}     8
-  {job="api-server", instance="1", group="canary"}     4
-  {job="api-server", instance="1", group="production"} 3
-  {job="api-server", instance="0", group="production"} 3
-
-eval instant at 2s avg_over_time(rate(http_requests[1m])[1m:1s] @ 20000)
-  {job="api-server", instance="0", group="canary"}     8
-  {job="api-server", instance="1", group="canary"}     4
-  {job="api-server", instance="1", group="production"} 3
-  {job="api-server", instance="0", group="production"} 3
-
 clear
 
 load 10s
@@ -79,15 +49,6 @@ load 10s
   metric3 0+3x1000
 
 eval instant at 1000s sum_over_time(metric1[30s:10s])
-  {} 394
-
-eval instant at 1000s sum_over_time(metric1[30s:10s] @ 1000)
-  {} 394
-
-eval instant at 100000s sum_over_time(metric1[30s:10s] @ 1000)
-  {} 394
-
-eval instant at 1s sum_over_time(metric1[30s:10s] @ 1000)
   {} 394
 
 # This is (394*2 - 100), because other than the last 100 at 1000s,
@@ -99,15 +60,6 @@ eval instant at 1000s sum_over_time(metric1[30s:5s])
 eval instant at 1010s sum_over_time(metric1[30s:10s] offset 10s)
   {} 394
 
-eval instant at 1010s sum_over_time(metric1[30s:10s] offset 10s @ 1010)
-  {} 394
-
-eval instant at 101010s sum_over_time(metric1[30s:10s] offset 10s @ 1010)
-  {} 394
-
-eval instant at 1s sum_over_time(metric1[30s:10s] @ 1010 offset 10s)
-  {} 394
-
 # Same result for different offsets due to step alignment.
 eval instant at 1010s sum_over_time(metric1[30s:10s] offset 9s)
   {} 297
@@ -116,15 +68,6 @@ eval instant at 1010s sum_over_time(metric1[30s:10s] offset 7s)
   {} 297
 
 eval instant at 1010s sum_over_time(metric1[30s:10s] offset 5s)
-  {} 297
-
-eval instant at 1010s sum_over_time(metric1[30s:10s] offset 3s @ 1010)
-  {} 297
-
-eval instant at 10101010s sum_over_time(metric1[30s:10s] offset 3s @ 1010)
-  {} 297
-
-eval instant at 10s sum_over_time(metric1[30s:10s] @ 1010 offset 3s)
   {} 297
 
 eval instant at 1010s sum_over_time(metric1[30s:10s] offset 3s)
@@ -146,16 +89,6 @@ eval instant at 1000s rate(sum_over_time(metric3[30s:10s])[50s:10s])
 eval instant at 1000s rate(sum_over_time((metric1+metric2+metric3)[30s:10s])[30s:10s])
   {} 2.4
 
-eval instant at 1000s rate(sum_over_time((metric1+metric2+metric3)[30s:10s])[30s:10s] @ 1000)
-  {} 2.4
-
-eval instant at 100000s rate(sum_over_time((metric1+metric2+metric3)[30s:10s])[30s:10s] @ 1000)
-  {} 2.4
-
-eval instant at 1s rate(sum_over_time((metric1+metric2+metric3)[30s:10s])[30s:10s] @ 1000)
-  {} 2.4
-
-
 clear
 
 # Fibonacci sequence, to ensure the rate is not constant.
@@ -171,15 +104,6 @@ eval instant at 80s rate(metric[1m])
 eval instant at 80s rate(metric[1m:10s])
   {} 2.366666667
 
-eval instant at 80s rate(metric[1m:10s] @ 80)
-  {} 2.366666667
-
-eval instant at 8000s rate(metric[1m:10s] @ 80)
-  {} 2.366666667
-
-eval instant at 8s rate(metric[1m:10s] @ 80)
-  {} 2.366666667
-
 # Only one value between 10s and 20s, 2@14
 eval instant at 20s min_over_time(metric[10s])
   {} 2
@@ -189,14 +113,5 @@ eval instant at 20s min_over_time(metric[10s:10s])
   {} 1
 
 eval instant at 20m min_over_time(rate(metric[5m])[20m:1m])
-  {} 0.12119047619047618
-
-eval instant at 20m min_over_time(rate(metric[5m])[20m:1m] @ 1200)
-  {} 0.12119047619047618
-
-eval instant at 2000m min_over_time(rate(metric[5m])[20m:1m] @ 1200)
-  {} 0.12119047619047618
-
-eval instant at 2s min_over_time(rate(metric[5m])[20m:1m] @ 1200)
   {} 0.12119047619047618
 

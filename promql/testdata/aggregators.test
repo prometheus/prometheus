@@ -21,18 +21,6 @@ eval instant at 50m SUM BY (group) (((http_requests{job="api-server"})))
   {group="canary"} 700
   {group="production"} 300
 
-eval instant at 50m SUM BY (group) (((http_requests{job="api-server"} @ 3000)))
-  {group="canary"} 700
-  {group="production"} 300
-
-eval instant at 35m SUM BY (group) (((http_requests{job="api-server"} @ 3000)))
-  {group="canary"} 700
-  {group="production"} 300
-
-eval instant at 65m SUM BY (group) (((http_requests{job="api-server"} @ 3000)))
-  {group="canary"} 700
-  {group="production"} 300
-
 # Test alternative "by"-clause order.
 eval instant at 50m sum by (group) (http_requests{job="api-server"})
   {group="canary"} 700
@@ -40,18 +28,6 @@ eval instant at 50m sum by (group) (http_requests{job="api-server"})
 
 # Simple average.
 eval instant at 50m avg by (group) (http_requests{job="api-server"})
-  {group="canary"} 350
-  {group="production"} 150
-
-eval instant at 50m avg by (group) (http_requests{job="api-server"} @ 3000)
-  {group="canary"} 350
-  {group="production"} 150
-
-eval instant at 40m avg by (group) (http_requests{job="api-server"} @ 3000)
-  {group="canary"} 350
-  {group="production"} 150
-
-eval instant at 60m avg by (group) (http_requests{job="api-server"} @ 3000)
   {group="canary"} 350
   {group="production"} 150
 
@@ -67,15 +43,6 @@ eval instant at 50m sum without (instance) (http_requests{job="api-server"})
 
 # Empty by.
 eval instant at 50m sum by () (http_requests{job="api-server"})
-  {} 1000
-
-eval instant at 50m sum by () (http_requests{job="api-server"} @ 3000)
-  {} 1000
-
-eval instant at 20m sum by () (http_requests{job="api-server"} @ 3000)
-  {} 1000
-
-eval instant at 90m sum by () (http_requests{job="api-server"} @ 3000)
   {} 1000
 
 # No by/without.
@@ -99,23 +66,6 @@ eval instant at 50m sum(http_requests) by (job) + min(http_requests) by (job) + 
   {job="app-server"} 4550
   {job="api-server"} 1750
 
-eval instant at 50m sum(http_requests @ 3000) by (job) + min(http_requests @ 3000) by (job) + max(http_requests @ 3000) by (job) + avg(http_requests @ 3000) by (job)
-  {job="app-server"} 4550
-  {job="api-server"} 1750
-
-eval instant at 40m sum(http_requests @ 3000) by (job) + min(http_requests @ 3000) by (job) + max(http_requests @ 3000) by (job) + avg(http_requests @ 3000) by (job)
-  {job="app-server"} 4550
-  {job="api-server"} 1750
-
-eval instant at 60m sum(http_requests @ 3000) by (job) + min(http_requests @ 3000) by (job) + max(http_requests @ 3000) by (job) + avg(http_requests @ 3000) by (job)
-  {job="app-server"} 4550
-  {job="api-server"} 1750
-
-# Different timestamps for every aggregation.
-eval instant at 999m sum(http_requests @ 2100) by (job) + min(http_requests @ 2400) by (job) + max(http_requests @ 2700) by (job) + avg(http_requests @ 3000) by (job)
-  {job="app-server"} 3590
-  {job="api-server"} 1390
-
 # Test alternative "by"-clause order.
 eval instant at 50m sum by (group) (http_requests{job="api-server"})
   {group="canary"} 700
@@ -125,15 +75,6 @@ eval instant at 50m sum by (group) (http_requests{job="api-server"})
 # Public health warning: stick to one form within an expression (or even
 # in an organization), or risk serious user confusion.
 eval instant at 50m sum(sum by (group) (http_requests{job="api-server"})) by (job)
-  {} 1000
-
-eval instant at 50m sum(sum by (group) (http_requests{job="api-server"} @ 3000)) by (job)
-  {} 1000
-
-eval instant at 40m sum(sum by (group) (http_requests{job="api-server"} @ 3000)) by (job)
-  {} 1000
-
-eval instant at 60m sum(sum by (group) (http_requests{job="api-server"} @ 3000)) by (job)
   {} 1000
 
 eval instant at 50m SUM(http_requests)
@@ -178,18 +119,6 @@ eval instant at 50m abs(-1 * http_requests{group="production",job="api-server"})
 	{group="production", instance="0", job="api-server"} 100
 	{group="production", instance="1", job="api-server"} 200
 
-eval instant at 50m abs(-1 * http_requests{group="production",job="api-server"} @ 3000)
-	{group="production", instance="0", job="api-server"} 100
-	{group="production", instance="1", job="api-server"} 200
-
-eval instant at 40m abs(-1 * http_requests{group="production",job="api-server"} @ 3000)
-	{group="production", instance="0", job="api-server"} 100
-	{group="production", instance="1", job="api-server"} 200
-
-eval instant at 60m abs(-1 * http_requests{group="production",job="api-server"} @ 3000)
-	{group="production", instance="0", job="api-server"} 100
-	{group="production", instance="1", job="api-server"} 200
-
 eval instant at 50m floor(0.004 * http_requests{group="production",job="api-server"})
 	{group="production", instance="0", job="api-server"} 0
 	{group="production", instance="1", job="api-server"} 0
@@ -207,18 +136,6 @@ eval instant at 50m round(-1 * (0.004 * http_requests{group="production",job="ap
 	{group="production", instance="0", job="api-server"} 0
 	{group="production", instance="1", job="api-server"} -1
 
-eval instant at 50m round(-1 * (0.004 * http_requests{group="production",job="api-server"} @ 3000))
-	{group="production", instance="0", job="api-server"} 0
-	{group="production", instance="1", job="api-server"} -1
-
-eval instant at 40m round(-1 * (0.004 * http_requests{group="production",job="api-server"} @ 3000))
-	{group="production", instance="0", job="api-server"} 0
-	{group="production", instance="1", job="api-server"} -1
-
-eval instant at 60m round(-1 * (0.004 * http_requests{group="production",job="api-server"} @ 3000))
-	{group="production", instance="0", job="api-server"} 0
-	{group="production", instance="1", job="api-server"} -1
-
 # Round should round half up.
 eval instant at 50m round(0.005 * http_requests{group="production",job="api-server"})
 	{group="production", instance="0", job="api-server"} 1
@@ -233,10 +150,6 @@ eval instant at 50m round(1 + 0.005 * http_requests{group="production",job="api-
 	{group="production", instance="1", job="api-server"} 2
 
 eval instant at 50m round(-1 * (1 + 0.005 * http_requests{group="production",job="api-server"}))
-	{group="production", instance="0", job="api-server"} -1
-	{group="production", instance="1", job="api-server"} -2
-
-eval instant at 40m round(-1 * (1 + 0.005 * http_requests{group="production",job="api-server"} @ 3000))
 	{group="production", instance="0", job="api-server"} -1
 	{group="production", instance="1", job="api-server"} -2
 
@@ -311,11 +224,11 @@ eval instant at 50m sum(label_grouping_test) by (a, b)
 # Tests for min/max.
 clear
 load 5m
-  http_requests{job="api-server", instance="0", group="production"}	1 5
-  http_requests{job="api-server", instance="1", group="production"}	2 6
-  http_requests{job="api-server", instance="0", group="canary"}		NaN 7
-  http_requests{job="api-server", instance="1", group="canary"}		3 8
-  http_requests{job="api-server", instance="2", group="canary"}		4 9
+  http_requests{job="api-server", instance="0", group="production"}	1
+  http_requests{job="api-server", instance="1", group="production"}	2
+  http_requests{job="api-server", instance="0", group="canary"}		NaN
+  http_requests{job="api-server", instance="1", group="canary"}		3
+  http_requests{job="api-server", instance="2", group="canary"}		4
 
 eval instant at 0m max(http_requests)
   {} 4
@@ -328,10 +241,6 @@ eval instant at 0m max by (group) (http_requests)
   {group="canary"} 4
 
 eval instant at 0m min by (group) (http_requests)
-  {group="production"} 1
-  {group="canary"} 3
-
-eval instant at 5m min by (group) (http_requests @ 60)
   {group="production"} 1
   {group="canary"} 3
 
@@ -364,18 +273,6 @@ eval_ordered instant at 50m topk(5, http_requests{group="canary",job="app-server
 	http_requests{group="canary", instance="1", job="app-server"} 800
 	http_requests{group="canary", instance="0", job="app-server"} 700
 
-eval_ordered instant at 50m topk(5, http_requests{group="canary",job="app-server"} @ 3000)
-	http_requests{group="canary", instance="1", job="app-server"} 800
-	http_requests{group="canary", instance="0", job="app-server"} 700
-
-eval_ordered instant at 30m topk(5, http_requests{group="canary",job="app-server"} @ 3000)
-	http_requests{group="canary", instance="1", job="app-server"} 800
-	http_requests{group="canary", instance="0", job="app-server"} 700
-
-eval_ordered instant at 70m topk(5, http_requests{group="canary",job="app-server"} @ 3000)
-	http_requests{group="canary", instance="1", job="app-server"} 800
-	http_requests{group="canary", instance="0", job="app-server"} 700
-
 eval_ordered instant at 50m bottomk(3, http_requests)
 	http_requests{group="production", instance="0", job="api-server"} 100
 	http_requests{group="production", instance="1", job="api-server"} 200
@@ -390,24 +287,6 @@ eval instant at 50m topk by (group) (1, http_requests)
   http_requests{group="canary", instance="1", job="app-server"} 800
 
 eval instant at 50m bottomk by (group) (2, http_requests)
-  http_requests{group="canary", instance="0", job="api-server"} 300
-  http_requests{group="canary", instance="1", job="api-server"} 400
-  http_requests{group="production", instance="0", job="api-server"} 100
-  http_requests{group="production", instance="1", job="api-server"} 200
-
-eval instant at 50m bottomk by (group) (2, http_requests @ 3000)
-  http_requests{group="canary", instance="0", job="api-server"} 300
-  http_requests{group="canary", instance="1", job="api-server"} 400
-  http_requests{group="production", instance="0", job="api-server"} 100
-  http_requests{group="production", instance="1", job="api-server"} 200
-
-eval instant at 20m bottomk by (group) (2, http_requests @ 3000)
-  http_requests{group="canary", instance="0", job="api-server"} 300
-  http_requests{group="canary", instance="1", job="api-server"} 400
-  http_requests{group="production", instance="0", job="api-server"} 100
-  http_requests{group="production", instance="1", job="api-server"} 200
-
-eval instant at 500m bottomk by (group) (2, http_requests @ 3000)
   http_requests{group="canary", instance="0", job="api-server"} 300
   http_requests{group="canary", instance="1", job="api-server"} 400
   http_requests{group="production", instance="0", job="api-server"} 100
@@ -440,21 +319,6 @@ eval_ordered instant at 50m topk(9999999999, http_requests{job="api-server",grou
 
 # Bug #5276.
 eval_ordered instant at 50m topk(scalar(foo), http_requests)
-	http_requests{group="canary", instance="1", job="app-server"} 800
-	http_requests{group="canary", instance="0", job="app-server"} 700
-	http_requests{group="production", instance="1", job="app-server"} 600
-
-eval_ordered instant at 50m topk(scalar(foo @ 1000), http_requests @ 3000)
-	http_requests{group="canary", instance="1", job="app-server"} 800
-	http_requests{group="canary", instance="0", job="app-server"} 700
-	http_requests{group="production", instance="1", job="app-server"} 600
-
-eval_ordered instant at 20m topk(scalar(foo @ 2000), http_requests @ 3000)
-	http_requests{group="canary", instance="1", job="app-server"} 800
-	http_requests{group="canary", instance="0", job="app-server"} 700
-	http_requests{group="production", instance="1", job="app-server"} 600
-
-eval_ordered instant at 90m topk(scalar(foo @ 3000), http_requests @ 3000)
 	http_requests{group="canary", instance="1", job="app-server"} 800
 	http_requests{group="canary", instance="0", job="app-server"} 700
 	http_requests{group="production", instance="1", job="app-server"} 600
@@ -523,27 +387,6 @@ eval instant at 1m quantile without(point)(0.8, data)
 	{test="three samples"} 1.6
 	{test="uneven samples"} 2.8
 
-eval instant at 1m quantile without(point)(0.8, data @ 60)
-	{test="two samples"} 0.8
-	{test="three samples"} 1.6
-	{test="uneven samples"} 2.8
-
-eval instant at 30s quantile without(point)(0.8, data @ 60)
-	{test="two samples"} 0.8
-	{test="three samples"} 1.6
-	{test="uneven samples"} 2.8
-
-eval instant at 5m quantile without(point)(0.8, data @ 60)
-	{test="two samples"} 0.8
-	{test="three samples"} 1.6
-	{test="uneven samples"} 2.8
-
-eval instant at 6m quantile without(point)(0.8, data @ 60)
-	{test="two samples"} 0.8
-	{test="three samples"} 1.6
-	{test="uneven samples"} 2.8
-
-
 # Bug #5276.
 eval instant at 1m quantile without(point)(scalar(foo), data)
 	{test="two samples"} 0.8
@@ -552,22 +395,6 @@ eval instant at 1m quantile without(point)(scalar(foo), data)
 
 
 eval instant at 1m quantile without(point)((scalar(foo)), data)
-	{test="two samples"} 0.8
-	{test="three samples"} 1.6
-	{test="uneven samples"} 2.8
-
-eval instant at 1m quantile without(point)((scalar(foo)), data @ 60)
-	{test="two samples"} 0.8
-	{test="three samples"} 1.6
-	{test="uneven samples"} 2.8
-
-# Since foo does not exist before 10s, we need to specify time for that here.
-eval instant at 10s quantile without(point)((scalar(foo @ 60)), data @ 60)
-	{test="two samples"} 0.8
-	{test="three samples"} 1.6
-	{test="uneven samples"} 2.8
-
-eval instant at 4m quantile without(point)((scalar(foo)), data @ 60)
 	{test="two samples"} 0.8
 	{test="three samples"} 1.6
 	{test="uneven samples"} 2.8
@@ -587,21 +414,6 @@ load 10s
 	foo .8
 
 eval instant at 1m group without(point)(data)
-	{test="two samples"} 1
-	{test="three samples"} 1
-	{test="uneven samples"} 1
-
-eval instant at 1m group without(point)(data @ 60)
-	{test="two samples"} 1
-	{test="three samples"} 1
-	{test="uneven samples"} 1
-
-eval instant at 10s group without(point)(data @ 60)
-	{test="two samples"} 1
-	{test="three samples"} 1
-	{test="uneven samples"} 1
-
-eval instant at 4m group without(point)(data @ 60)
 	{test="two samples"} 1
 	{test="three samples"} 1
 	{test="uneven samples"} 1
@@ -656,15 +468,6 @@ load 10s
 eval instant at 1m avg(data{test="ten"})
 	{} 10
 
-eval instant at 1m avg(data{test="ten"} @ 60)
-	{} 10
-
-eval instant at 10s avg(data{test="ten"} @ 60)
-	{} 10
-
-eval instant at 4m avg(data{test="ten"} @ 60)
-	{} 10
-
 eval instant at 1m avg(data{test="inf"})
 	{} Inf
 
@@ -690,15 +493,6 @@ eval instant at 1m avg(data{test="big"})
 	{} 9.988465674311579e+307
 
 eval instant at 1m avg(data{test="-big"})
-	{} -9.988465674311579e+307
-
-eval instant at 1m avg(data{test="-big"} @ 60)
-	{} -9.988465674311579e+307
-
-eval instant at 10s avg(data{test="-big"} @ 60)
-	{} -9.988465674311579e+307
-
-eval instant at 5m avg(data{test="-big"} @ 60)
 	{} -9.988465674311579e+307
 
 eval instant at 1m avg(data{test="bigzero"})

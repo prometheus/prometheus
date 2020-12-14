@@ -25,21 +25,6 @@ eval instant at 50m resets(http_requests[50m])
 	{path="/bar"} 1
 	{path="/biz"} 0
 
-eval instant at 50m resets(http_requests[50m] @ 3000)
-	{path="/foo"} 3
-	{path="/bar"} 1
-	{path="/biz"} 0
-
-eval instant at 10m resets(http_requests[50m] @ 3000)
-	{path="/foo"} 3
-	{path="/bar"} 1
-	{path="/biz"} 0
-
-eval instant at 100m resets(http_requests[50m] @ 3000)
-	{path="/foo"} 3
-	{path="/bar"} 1
-	{path="/biz"} 0
-
 eval instant at 50m resets(nonexistent_metric[50m])
 
 # Tests for changes().
@@ -68,21 +53,6 @@ eval instant at 50m changes((http_requests[50m]))
 	{path="/bar"} 9
 	{path="/biz"} 1
 
-eval instant at 50m changes((http_requests[50m] @ 3000))
-	{path="/foo"} 8
-	{path="/bar"} 9
-	{path="/biz"} 1
-
-eval instant at 30m changes((http_requests[50m] @ 3000))
-	{path="/foo"} 8
-	{path="/bar"} 9
-	{path="/biz"} 1
-
-eval instant at 90m changes((http_requests[50m] @ 3000))
-	{path="/foo"} 8
-	{path="/bar"} 9
-	{path="/biz"} 1
-
 eval instant at 50m changes(nonexistent_metric[50m])
 
 clear
@@ -104,18 +74,6 @@ load 5m
 
 # Tests for increase().
 eval instant at 50m increase(http_requests[50m])
-	{path="/foo"} 100
-	{path="/bar"}  90
-
-eval instant at 50m increase(http_requests[50m] @ 3000)
-	{path="/foo"} 100
-	{path="/bar"}  90
-
-eval instant at 30m increase(http_requests[50m] @ 3000)
-	{path="/foo"} 100
-	{path="/bar"}  90
-
-eval instant at 60m increase(http_requests[50m] @ 3000)
 	{path="/foo"} 100
 	{path="/bar"}  90
 
@@ -153,40 +111,15 @@ eval instant at 50m rate(testcounter_reset_end[5m])
 clear
 
 load 5m
-	calculate_rate_offset{x="a"}	0+10x1000
-	calculate_rate_offset{x="b"}	0+20x1000
-	calculate_rate_window		0+80x1000
+	calculate_rate_offset{x="a"}	0+10x10
+	calculate_rate_offset{x="b"}	0+20x10
+	calculate_rate_window		0+80x10
 
 # Rates should calculate per-second rates.
 eval instant at 50m rate(calculate_rate_window[50m])
 	{} 0.26666666666666666
 
-eval instant at 50m rate(calculate_rate_window[50m] @ 3000)
-	{} 0.26666666666666666
-
-eval instant at 10m rate(calculate_rate_window[50m] @ 3000)
-	{} 0.26666666666666666
-
-eval instant at 80m rate(calculate_rate_window[50m] @ 3000)
-	{} 0.26666666666666666
-
 eval instant at 50m rate(calculate_rate_offset[10m] offset 5m)
-	{x="a"} 0.03333333333333333
-	{x="b"} 0.06666666666666667
-
-eval instant at 50m rate(calculate_rate_offset[10m] offset 5m @ 3000)
-	{x="a"} 0.03333333333333333
-	{x="b"} 0.06666666666666667
-
-eval instant at 50m rate(calculate_rate_offset[10m] @ 3000 offset 5m)
-	{x="a"} 0.03333333333333333
-	{x="b"} 0.06666666666666667
-
-eval instant at 10m rate(calculate_rate_offset[10m] @ 3000 offset 5m)
-	{x="a"} 0.03333333333333333
-	{x="b"} 0.06666666666666667
-
-eval instant at 80m rate(calculate_rate_offset[10m] @ 3000 offset 5m)
 	{x="a"} 0.03333333333333333
 	{x="b"} 0.06666666666666667
 
@@ -234,18 +167,6 @@ eval instant at 30m irate(http_requests[50m])
 	{path="/foo"} .03333333333333333333
 	{path="/bar"} 0
 
-eval instant at 30m irate(http_requests[50m] @ 1800)
-	{path="/foo"} .03333333333333333333
-	{path="/bar"} 0
-
-eval instant at 10m irate(http_requests[50m] @ 1800)
-	{path="/foo"} .03333333333333333333
-	{path="/bar"} 0
-
-eval instant at 300m irate(http_requests[50m] @ 1800)
-	{path="/foo"} .03333333333333333333
-	{path="/bar"} 0
-
 clear
 
 # Tests for delta().
@@ -257,18 +178,6 @@ eval instant at 20m delta(http_requests[20m])
 	{path="/foo"} 200
 	{path="/bar"} -200
 
-eval instant at 20m delta(http_requests[20m] @ 1200)
-	{path="/foo"} 200
-	{path="/bar"} -200
-
-eval instant at 2m delta(http_requests[20m] @ 1200)
-	{path="/foo"} 200
-	{path="/bar"} -200
-
-eval instant at 200m delta(http_requests[20m] @ 1200)
-	{path="/foo"} 200
-	{path="/bar"} -200
-
 clear
 
 # Tests for idelta().
@@ -277,18 +186,6 @@ load 5m
 	http_requests{path="/bar"}	0 50 100 50
 
 eval instant at 20m idelta(http_requests[20m])
-	{path="/foo"} 50
-	{path="/bar"} -50
-
-eval instant at 20m idelta(http_requests[20m] @ 1200)
-	{path="/foo"} 50
-	{path="/bar"} -50
-
-eval instant at 2m idelta(http_requests[20m] @ 1200)
-	{path="/foo"} 50
-	{path="/bar"} -50
-
-eval instant at 200m idelta(http_requests[20m] @ 1200)
 	{path="/foo"} 50
 	{path="/bar"} -50
 
@@ -308,15 +205,6 @@ eval instant at 50m deriv(http_requests{group="canary", instance="1", job="app-s
 
 # deriv should return correct result.
 eval instant at 50m deriv(testcounter_reset_middle[100m])
-	{} 0.010606060606060607
-
-eval instant at 50m deriv(testcounter_reset_middle[100m] @ 3000)
-	{} 0.010606060606060607
-
-eval instant at 5m deriv(testcounter_reset_middle[100m] @ 3000)
-	{} 0.010606060606060607
-
-eval instant at 500m deriv(testcounter_reset_middle[100m] @ 3000)
 	{} 0.010606060606060607
 
 # predict_linear should return correct result.
@@ -358,25 +246,13 @@ clear
 
 # Tests for label_replace.
 load 5m
-  testmetric{src="source-value-10",dst="original-destination-value"} 0+1x10
-  testmetric{src="source-value-20",dst="original-destination-value"} 1+1x10
+  testmetric{src="source-value-10",dst="original-destination-value"} 0
+  testmetric{src="source-value-20",dst="original-destination-value"} 1
 
 # label_replace does a full-string match and replace.
 eval instant at 0m label_replace(testmetric, "dst", "destination-value-$1", "src", "source-value-(.*)")
   testmetric{src="source-value-10",dst="destination-value-10"} 0
   testmetric{src="source-value-20",dst="destination-value-20"} 1
-
-eval instant at 40m label_replace(testmetric @ 2400, "dst", "destination-value-$1", "src", "source-value-(.*)")
-  testmetric{src="source-value-10",dst="destination-value-10"} 8
-  testmetric{src="source-value-20",dst="destination-value-20"} 9
-
-eval instant at 0m label_replace(testmetric @ 2400, "dst", "destination-value-$1", "src", "source-value-(.*)")
-  testmetric{src="source-value-10",dst="destination-value-10"} 8
-  testmetric{src="source-value-20",dst="destination-value-20"} 9
-
-eval instant at 50m label_replace(testmetric @ 2400, "dst", "destination-value-$1", "src", "source-value-(.*)")
-  testmetric{src="source-value-10",dst="destination-value-10"} 8
-  testmetric{src="source-value-20",dst="destination-value-20"} 9
 
 # label_replace does not do a sub-string match.
 eval instant at 0m label_replace(testmetric, "dst", "destination-value-$1", "src", "value-(.*)")
@@ -428,7 +304,7 @@ clear
 
 # Tests for vector, time and timestamp.
 load 10s
-  metric 1+1x100
+  metric 1 1
 
 eval instant at 0s timestamp(metric)
   {} 0
@@ -444,12 +320,6 @@ eval instant at 10s timestamp(metric)
 
 eval instant at 10s timestamp(((metric)))
   {} 10
-
-eval instant at 5s timestamp(metric @ 1000)
-  {} 1000
-
-eval instant at 5m timestamp(((metric @ 1000)))
-  {} 1000
 
 # Tests for label_join.
 load 5m
@@ -504,9 +374,9 @@ eval instant at 60m vector(time())
 
 # Tests for clamp_max and clamp_min().
 load 5m
-	test_clamp{src="clamp-a"}	-50-1x10
-	test_clamp{src="clamp-b"}	0+1x10
-	test_clamp{src="clamp-c"}	100+1x10
+	test_clamp{src="clamp-a"}	-50
+	test_clamp{src="clamp-b"}	0
+	test_clamp{src="clamp-c"}	100
 
 eval instant at 0m clamp_max(test_clamp, 75)
 	{src="clamp-a"}	-50
@@ -514,11 +384,6 @@ eval instant at 0m clamp_max(test_clamp, 75)
 	{src="clamp-c"}	75
 
 eval instant at 0m clamp_min(test_clamp, -25)
-	{src="clamp-a"}	-25
-	{src="clamp-b"}	0
-	{src="clamp-c"}	100
-
-eval instant at 40m clamp_min(test_clamp @ 1, -25)
 	{src="clamp-a"}	-25
 	{src="clamp-b"}	0
 	{src="clamp-c"}	100
@@ -531,11 +396,6 @@ eval instant at 0m clamp_max(clamp_min(test_clamp, -20), 70)
 eval instant at 0m clamp_max((clamp_min(test_clamp, (-20))), (70))
 	{src="clamp-a"}	-20
 	{src="clamp-b"}	0
-	{src="clamp-c"}	70
-
-eval instant at 50m clamp_max((clamp_min(test_clamp @ 1800, (-20))), (70))
-	{src="clamp-a"}	-20
-	{src="clamp-b"}	6
 	{src="clamp-c"}	70
 
 
@@ -553,39 +413,6 @@ load 5m
 	http_requests{job="app-server", instance="1", group="canary"}		0+80x10
 
 eval_ordered instant at 50m sort(http_requests)
-	http_requests{group="production", instance="0", job="api-server"} 100
-	http_requests{group="production", instance="1", job="api-server"} 200
-	http_requests{group="canary", instance="0", job="api-server"} 300
-	http_requests{group="canary", instance="1", job="api-server"} 400
-	http_requests{group="production", instance="0", job="app-server"} 500
-	http_requests{group="production", instance="1", job="app-server"} 600
-	http_requests{group="canary", instance="0", job="app-server"} 700
-	http_requests{group="canary", instance="1", job="app-server"} 800
-	http_requests{group="canary", instance="2", job="api-server"} NaN
-
-eval_ordered instant at 50m sort(http_requests @ 3000)
-	http_requests{group="production", instance="0", job="api-server"} 100
-	http_requests{group="production", instance="1", job="api-server"} 200
-	http_requests{group="canary", instance="0", job="api-server"} 300
-	http_requests{group="canary", instance="1", job="api-server"} 400
-	http_requests{group="production", instance="0", job="app-server"} 500
-	http_requests{group="production", instance="1", job="app-server"} 600
-	http_requests{group="canary", instance="0", job="app-server"} 700
-	http_requests{group="canary", instance="1", job="app-server"} 800
-	http_requests{group="canary", instance="2", job="api-server"} NaN
-
-eval_ordered instant at 10m sort(http_requests @ 3000)
-	http_requests{group="production", instance="0", job="api-server"} 100
-	http_requests{group="production", instance="1", job="api-server"} 200
-	http_requests{group="canary", instance="0", job="api-server"} 300
-	http_requests{group="canary", instance="1", job="api-server"} 400
-	http_requests{group="production", instance="0", job="app-server"} 500
-	http_requests{group="production", instance="1", job="app-server"} 600
-	http_requests{group="canary", instance="0", job="app-server"} 700
-	http_requests{group="canary", instance="1", job="app-server"} 800
-	http_requests{group="canary", instance="2", job="api-server"} NaN
-
-eval_ordered instant at 500m sort(http_requests @ 3000)
 	http_requests{group="production", instance="0", job="api-server"} 100
 	http_requests{group="production", instance="1", job="api-server"} 200
 	http_requests{group="canary", instance="0", job="api-server"} 300
@@ -618,24 +445,6 @@ load 10s
 	http_requests{job="api-server", instance="1", group="canary"}		0+40x2000
 
 eval instant at 8000s holt_winters(http_requests[1m], 0.01, 0.1)
-	{job="api-server", instance="0", group="production"} 8000
-	{job="api-server", instance="1", group="production"} 16000
-	{job="api-server", instance="0", group="canary"} 24000
-	{job="api-server", instance="1", group="canary"} 32000
-
-eval instant at 8000s holt_winters(http_requests[1m] @ 8000, 0.01, 0.1)
-	{job="api-server", instance="0", group="production"} 8000
-	{job="api-server", instance="1", group="production"} 16000
-	{job="api-server", instance="0", group="canary"} 24000
-	{job="api-server", instance="1", group="canary"} 32000
-
-eval instant at 160000s holt_winters(http_requests[1m] @ 8000, 0.01, 0.1)
-	{job="api-server", instance="0", group="production"} 8000
-	{job="api-server", instance="1", group="production"} 16000
-	{job="api-server", instance="0", group="canary"} 24000
-	{job="api-server", instance="1", group="canary"} 32000
-
-eval instant at 4000s holt_winters(http_requests[1m] @ 8000, 0.01, 0.1)
 	{job="api-server", instance="0", group="production"} 8000
 	{job="api-server", instance="1", group="production"} 16000
 	{job="api-server", instance="0", group="canary"} 24000
@@ -691,15 +500,6 @@ eval instant at 1m avg_over_time(metric3[1m])
 eval instant at 1m sum_over_time(metric3[1m])/count_over_time(metric3[1m])
   {} -Inf
 
-eval instant at 1m sum_over_time(metric3[1m] @ 60)/count_over_time(metric3[1m] @ 60)
-  {} -Inf
-
-eval instant at 20s sum_over_time(metric3[1m] @ 60)/count_over_time(metric3[1m] @ 60)
-  {} -Inf
-
-eval instant at 10m sum_over_time(metric3[1m] @ 60)/count_over_time(metric3[1m] @ 60)
-  {} -Inf
-
 eval instant at 1m avg_over_time(metric4[1m])
   {} NaN
 
@@ -752,15 +552,6 @@ eval instant at 1m sum_over_time(metric7[1m])/count_over_time(metric7[1m])
 eval instant at 1m avg_over_time(metric8[1m])
   {} 9.988465674311579e+307
 
-eval instant at 1m avg_over_time(metric8[1m] @ 60)
-  {} 9.988465674311579e+307
-
-eval instant at 1s avg_over_time(metric8[1m] @ 60)
-  {} 9.988465674311579e+307
-
-eval instant at 100m avg_over_time(metric8[1m] @ 60)
-  {} 9.988465674311579e+307
-
 # This overflows float64.
 eval instant at 1m sum_over_time(metric8[1m])/count_over_time(metric8[1m])
   {} Inf
@@ -770,15 +561,6 @@ eval instant at 1m avg_over_time(metric9[1m])
 
 # This overflows float64.
 eval instant at 1m sum_over_time(metric9[1m])/count_over_time(metric9[1m])
-  {} -Inf
-
-eval instant at 1m sum_over_time(metric9[1m] @ 60)/count_over_time(metric9[1m] @ 60)
-  {} -Inf
-
-eval instant at 1s sum_over_time(metric9[1m] @ 60)/count_over_time(metric9[1m] @ 60)
-  {} -Inf
-
-eval instant at 10m sum_over_time(metric9[1m] @ 60)/count_over_time(metric9[1m] @ 60)
   {} -Inf
 
 eval instant at 1m avg_over_time(metric10[1m])
@@ -799,15 +581,6 @@ eval instant at 1m stddev_over_time(metric[1m])
   {} 3.249615
 
 eval instant at 1m stddev_over_time((metric[1m]))
-  {} 3.249615
-
-eval instant at 1m stddev_over_time((metric[1m] @ 60))
-  {} 3.249615
-
-eval instant at 1s stddev_over_time((metric[1m] @ 60))
-  {} 3.249615
-
-eval instant at 100m stddev_over_time((metric[1m] @ 60))
   {} 3.249615
 
 # Tests for stddev_over_time and stdvar_over_time #4927.
@@ -840,21 +613,6 @@ eval instant at 1m quantile_over_time(0.5, data[1m])
 	{test="uneven samples"} 1
 
 eval instant at 1m quantile_over_time(0.75, data[1m])
-	{test="two samples"} 0.75
-	{test="three samples"} 1.5
-	{test="uneven samples"} 2.5
-
-eval instant at 1m quantile_over_time(0.75, data[1m] @ 60)
-	{test="two samples"} 0.75
-	{test="three samples"} 1.5
-	{test="uneven samples"} 2.5
-
-eval instant at 1s quantile_over_time(0.75, data[1m] @ 60)
-	{test="two samples"} 0.75
-	{test="three samples"} 1.5
-	{test="uneven samples"} 2.5
-
-eval instant at 100m ((quantile_over_time(0.75, ((data[1m] @ 60)))))
 	{test="two samples"} 0.75
 	{test="three samples"} 1.5
 	{test="uneven samples"} 2.5
@@ -996,9 +754,6 @@ eval instant at 50m absent(nonexistent)
 eval instant at 50m absent(nonexistent{job="testjob", instance="testinstance", method=~".x"})
 	{instance="testinstance", job="testjob"} 1
 
-eval instant at 50m absent(nonexistent{job="testjob", instance="testinstance", method=~".x"} @ 12345)
-	{instance="testinstance", job="testjob"} 1
-
 eval instant at 50m absent(nonexistent{job="testjob",job="testjob2",foo="bar"})
 	{foo="bar"} 1
 
@@ -1018,16 +773,9 @@ eval instant at 50m absent(http_requests)
 
 eval instant at 50m absent(sum(http_requests))
 
-eval instant at 20m absent(sum(http_requests @ 3000))
-
-eval instant at 20000m absent(sum(http_requests @ 3000))
-
 clear
 
 eval instant at 50m absent(sum(nonexistent{job="testjob", instance="testinstance"}))
-	{} 1
-
-eval instant at 1m absent(sum(nonexistent{job="testjob", instance="testinstance"} @ 3000))
 	{} 1
 
 eval instant at 50m absent(max(nonexistant))
@@ -1066,9 +814,6 @@ eval instant at 1m absent_over_time(rate(nonexistant[5m])[5m:])
 eval instant at 1m absent_over_time(http_requests{handler="/foo", handler="/bar", instance="127.0.0.1"}[5m])
     {instance="127.0.0.1"} 1
 
-eval instant at 100m absent_over_time(http_requests{handler="/foo", handler="/bar", instance="127.0.0.1"}[5m] @ 60)
-    {instance="127.0.0.1"} 1
-
 load 1m
 	http_requests{path="/foo",instance="127.0.0.1",job="httpd"}	1+1x10
 	http_requests{path="/bar",instance="127.0.0.1",job="httpd"}	1+1x10
@@ -1096,10 +841,6 @@ eval instant at 16m absent_over_time(httpd_handshake_failures_total[1m])
 
 eval instant at 16m absent_over_time({instance="127.0.0.1"}[5m])
 
-eval instant at 1600m absent_over_time({instance="127.0.0.1"}[5m] @ 960)
-
-eval instant at 16m absent_over_time({instance="127.0.0.1"}[5m])
-
 eval instant at 21m absent_over_time({instance="127.0.0.1"}[5m])
     {instance="127.0.0.1"} 1
 
@@ -1120,22 +861,10 @@ clear
 
 # Testing exp() sqrt() log2() log10() ln()
 load 5m
-	exp_root_log{l="x"} 0 10+1x100
-	exp_root_log{l="y"} 0 20+1x100
+	exp_root_log{l="x"} 10
+	exp_root_log{l="y"} 20
 
 eval instant at 5m exp(exp_root_log)
-	{l="x"} 22026.465794806718
-	{l="y"} 485165195.4097903
-
-eval instant at 5m exp(exp_root_log @ 300)
-	{l="x"} 22026.465794806718
-	{l="y"} 485165195.4097903
-
-eval instant at 1m exp(exp_root_log @ 300)
-	{l="x"} 22026.465794806718
-	{l="y"} 485165195.4097903
-
-eval instant at 500m exp(exp_root_log @ 300)
 	{l="x"} 22026.465794806718
 	{l="y"} 485165195.4097903
 
@@ -1144,18 +873,6 @@ eval instant at 5m exp(exp_root_log - 10)
 	{l="x"} 1
 
 eval instant at 5m exp(exp_root_log - 20)
-	{l="x"} 4.5399929762484854e-05
-	{l="y"} 1
-
-eval instant at 5m exp(exp_root_log @ 300 - 20)
-	{l="x"} 4.5399929762484854e-05
-	{l="y"} 1
-
-eval instant at 1m exp(exp_root_log @ 300 - 20)
-	{l="x"} 4.5399929762484854e-05
-	{l="y"} 1
-
-eval instant at 500m exp(exp_root_log @ 300 - 20)
 	{l="x"} 4.5399929762484854e-05
 	{l="y"} 1
 

@@ -2128,9 +2128,3 @@ func TestWrapWithStepInvariantExpr(t *testing.T) {
 		})
 	}
 }
-
-func makeInt64Pointer(val int64) *int64 {
-	valp := new(int64)
-	*valp = val
-	return valp
-}
