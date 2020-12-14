@@ -527,7 +527,7 @@ var testExpr = []struct {
 	}, {
 		input:  "1 offset 1d",
 		fail:   true,
-		errMsg: "offset modifier must be preceded by a vector or range selector",
+		errMsg: "1:1: parse error: offset modifier must be preceded by an instant selector vector or range vector selector or a subquery, but follows a *parser.NumberLiteral instead",
 	}, {
 		input:  "foo offset 1s offset 2s",
 		fail:   true,
@@ -2113,7 +2113,7 @@ var testExpr = []struct {
 	}, {
 		input:  `rate(some_metric[5m]) @ 1234`,
 		fail:   true,
-		errMsg: "1:1: parse error: @ modifier must be preceded by a vector or range selector or a subquery, but follows a *parser.Call instead",
+		errMsg: "1:1: parse error: @ modifier must be preceded by an instant selector vector or range vector selector or a subquery, but follows a *parser.Call instead",
 	},
 	// Test function calls.
 	{

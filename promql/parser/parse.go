@@ -677,6 +677,7 @@ func (p *parser) newLabelMatcher(label Item, operator Item, value Item) *labels.
 	return m
 }
 
+// addOffset is used to set the offset in the generated parser.
 func (p *parser) addOffset(e Node, offset time.Duration) {
 	var offsetp, orgoffsetp *time.Duration
 	var endPosp *Pos
@@ -700,7 +701,7 @@ func (p *parser) addOffset(e Node, offset time.Duration) {
 		orgoffsetp = &s.OriginalOffset
 		endPosp = &s.EndPos
 	default:
-		p.addParseErrf(e.PositionRange(), "offset modifier must be preceded by a vector or range selector or a subquery, but follows a %T instead", e)
+		p.addParseErrf(e.PositionRange(), "offset modifier must be preceded by an instant selector vector or range vector selector or a subquery, but follows a %T instead", e)
 		return
 	}
 
@@ -715,7 +716,8 @@ func (p *parser) addOffset(e Node, offset time.Duration) {
 	*endPosp = p.lastClosing
 }
 
-func (p *parser) setStepInvariant(e Node, ts float64) {
+// setTimestamp is used to set the timestamp from the @ modifier in the generated parser.
+func (p *parser) setTimestamp(e Node, ts float64) {
 	var timestampp **int64
 	var endPosp *Pos
 
@@ -735,7 +737,7 @@ func (p *parser) setStepInvariant(e Node, ts float64) {
 		timestampp = &s.Timestamp
 		endPosp = &s.EndPos
 	default:
-		p.addParseErrf(e.PositionRange(), "@ modifier must be preceded by a vector or range selector or a subquery, but follows a %T instead", e)
+		p.addParseErrf(e.PositionRange(), "@ modifier must be preceded by an instant selector vector or range vector selector or a subquery, but follows a %T instead", e)
 		return
 	}
 

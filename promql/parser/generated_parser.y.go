@@ -1239,7 +1239,7 @@ yydefault:
 		yyDollar = yyS[yypt-3 : yypt+1]
 //line generated_parser.y:390
 		{
-			yylex.(*parser).setStepInvariant(yyDollar[1].node, yyDollar[3].float)
+			yylex.(*parser).setTimestamp(yyDollar[1].node, yyDollar[3].float)
 			yyVAL.node = yyDollar[1].node
 		}
 	case 69:

@@ -388,7 +388,7 @@ offset_expr: expr OFFSET duration
 
 step_invariant_expr: expr AT number
                         {
-                        yylex.(*parser).setStepInvariant($1, $3)
+                        yylex.(*parser).setTimestamp($1, $3)
                         $$ = $1
                         }
                 | expr AT error

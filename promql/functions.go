@@ -885,8 +885,6 @@ func funcYear(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper)
 	})
 }
 
-const IsFunctionStepInvariantMapKey = "is_function_step_invariant"
-
 // FunctionCalls is a list of all functions supported by PromQL, including their types.
 var FunctionCalls = map[string]FunctionCall{
 	"abs":                funcAbs,
@@ -936,27 +934,24 @@ var FunctionCalls = map[string]FunctionCall{
 	"timestamp":          funcTimestamp,
 	"vector":             funcVector,
 	"year":               funcYear,
-
-	// is_function_step_invariant is not a part of PromQL but a helper function.
-	// It takes exactly 1 argument of type *parser.Call and expects 1 sample
-	// which is either 1.0 (meaning the function is step invariant) or
-	// 0.0 (meaning the function is not step invariant).
-	IsFunctionStepInvariantMapKey: funcIsFunctionStepInvariant,
 }
 
-func funcIsFunctionStepInvariant(_ []parser.Value, args parser.Expressions, _ *EvalNodeHelper) Vector {
-	call, ok := args[0].(*parser.Call)
-	if !ok {
-		panic("the argument in funcIsFunctionStepInvariant is not a function call")
-	}
-	sampleValue := float64(1)
+type FunctionHelper func(call *parser.Call) interface{}
+
+var FunctionHelpers = map[string]FunctionHelper{
+	// is_function_step_invariant return true for is step invariant functions
+	// and false otherwise. The return type should be a boolean.
+	"is_function_step_invariant": funcIsFunctionStepInvariant,
+}
+
+func funcIsFunctionStepInvariant(call *parser.Call) interface{} {
 	switch call.Func.Name {
 	case "days_in_month", "day_of_month", "day_of_week",
 		"hour", "minute", "month", "year",
 		"predict_linear", "time":
-		sampleValue = 0
+		return false
 	}
-	return Vector{Sample{Point: Point{V: sampleValue}}}
+	return true
 }
 
 // IsFunctionStepInvariant returns true if the result of the function
@@ -964,8 +959,7 @@ func funcIsFunctionStepInvariant(_ []parser.Value, args parser.Expressions, _ *E
 // remain same. Generally the result of time functions change
 // for different evaluation time for the same input arguments.
 func IsFunctionStepInvariant(e *parser.Call) bool {
-	res := FunctionCalls[IsFunctionStepInvariantMapKey](nil, parser.Expressions{e}, nil)
-	return res[0].Point.V == 1
+	return FunctionHelpers["is_function_step_invariant"](e).(bool)
 }
 
 type vectorByValueHeap Vector

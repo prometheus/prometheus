@@ -580,128 +580,60 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 }
 
 // subqueryTimes returns the sum of offsets and ranges of all subqueries in the path.
-// It also returns the min and max timestamp associated with the subquery.
-// If the @ modifier is used, then the offset is w.r.t. the startTime passed.
-func subqueryTimes(path []parser.Node) (time.Duration, time.Duration, int64, int64) {
+// If the @ modifier is used, then the offset and range is w.r.t. that timestamp
+// (i.e. the sum is reset when we have @ modifier).
+// The returned *int64 is the closest timestamp that was seen. nil for no @ modifier.
+func subqueryTimes(path []parser.Node) (time.Duration, time.Duration, *int64) {
 	var (
-		subqOffset, subqRange      time.Duration
-		minTimestamp, maxTimestamp int64 = math.MaxInt64, math.MinInt64
+		subqOffset, subqRange time.Duration
+		ts                    int64 = math.MaxInt64
 	)
 	for _, node := range path {
 		switch n := node.(type) {
 		case *parser.SubqueryExpr:
-			subqOffset += n.OriginalOffset // TODO(codesome): fix this calculation
+			subqOffset += n.OriginalOffset
 			subqRange += n.Range
 			if n.Timestamp != nil {
-				if *n.Timestamp < minTimestamp {
-					minTimestamp = *n.Timestamp
-				}
-				if *n.Timestamp > maxTimestamp {
-					maxTimestamp = *n.Timestamp
-				}
+				// The @ modifier on subquery invalidates all the offset and
+				// range till now. Hence resetting it here.
+				subqOffset = n.OriginalOffset
+				subqRange = n.Range
+				ts = *n.Timestamp
 			}
 		}
 	}
-	return subqOffset, subqRange, minTimestamp, maxTimestamp
+	var tsp *int64
+	if ts != math.MaxInt64 {
+		tsp = &ts
+	}
+	return subqOffset, subqRange, tsp
 }
 
 func (ng *Engine) findMinMaxTime(s *parser.EvalStmt) (int64, int64) {
-	var maxOffset time.Duration
 	var minTimestamp, maxTimestamp int64 = math.MaxInt64, math.MinInt64
-
-	setMinMaxt := func(vsTsp *int64, subqMint, subqMaxt int64, vsOffset, vsRange, subqOffset, subqRange time.Duration) {
-		if vsTsp == nil {
-			// Only the timestamp on the subquery is set.
-			subqMaxt -= subqOffset.Milliseconds() + vsOffset.Milliseconds()
-			if subqMaxt > maxTimestamp {
-				maxTimestamp = subqMaxt
-			}
-			subqMint -= subqOffset.Milliseconds() + subqRange.Milliseconds()
-			subqMint -= vsOffset.Milliseconds() + vsRange.Milliseconds()
-			subqMint -= ng.lookbackDelta.Milliseconds()
-			if subqMint < minTimestamp {
-				minTimestamp = subqMint
-			}
-			return
-		}
-
-		// If the timestamp was set for vector/matrix selector, then
-		// the timestamp on the subquery does not matter.
-		vsTs := *vsTsp - vsOffset.Milliseconds()
-		if vsTs > maxTimestamp {
-			maxTimestamp = vsTs
-		}
-		if vsRange > 0 {
-			// For a range selection, we don't look beyond the range.
-			// Hence no lookbackDelta.
-			vsTs -= vsRange.Milliseconds()
-		} else {
-			vsTs -= ng.lookbackDelta.Milliseconds()
-		}
-		if vsTs < minTimestamp {
-			minTimestamp = vsTs
-		}
-	}
-
-	nodeWithNoTimestamp := false
+	// Whenever a MatrixSelector is evaluated, evalRange is set to the corresponding range.
+	// The evaluation of the VectorSelector inside then evaluates the given range and unsets
+	// the variable.
+	var evalRange time.Duration
 	parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
-		subqOffset, subqRange, subqMint, subqMaxt := subqueryTimes(path)
 		switch n := node.(type) {
 		case *parser.VectorSelector:
-			if len(path) > 0 {
-				_, ok := path[len(path)-1].(*parser.MatrixSelector)
-				if ok {
-					// We have already checked this as part of matrix selector.
-					return nil
-				}
+			start, end := ng.getTimeRangesForSelector(s, n, path, evalRange)
+			if start < minTimestamp {
+				minTimestamp = start
 			}
-			if n.Timestamp != nil || subqMint != math.MaxInt64 {
-				// One of the vector selector of a subquery in the path
-				// has the @ modifier set.
-				setMinMaxt(n.Timestamp, subqMint, subqMaxt, n.OriginalOffset, 0, subqOffset, subqRange)
-				return nil
+			if end > maxTimestamp {
+				maxTimestamp = end
 			}
-
-			nodeWithNoTimestamp = true
-			if maxOffset < ng.lookbackDelta+subqOffset+subqRange {
-				maxOffset = ng.lookbackDelta + subqOffset + subqRange
-			}
-			if n.OriginalOffset+ng.lookbackDelta+subqOffset+subqRange > maxOffset {
-				maxOffset = n.OriginalOffset + ng.lookbackDelta + subqOffset + subqRange
+			if evalRange != 0 {
+				evalRange = 0
 			}
 
 		case *parser.MatrixSelector:
-			vs := n.VectorSelector.(*parser.VectorSelector)
-
-			if vs.Timestamp != nil || subqMint != math.MaxInt64 {
-				// One of the matrix selector of a subquery in the path
-				// has the @ modifier set.
-				setMinMaxt(vs.Timestamp, subqMint, subqMaxt, vs.OriginalOffset, n.Range, subqOffset, subqRange)
-				return nil
-			}
-
-			nodeWithNoTimestamp = true
-			if maxOffset < n.Range+subqOffset+subqRange {
-				maxOffset = n.Range + subqOffset + subqRange
-			}
-			if m := vs.OriginalOffset + n.Range + subqOffset + subqRange; m > maxOffset {
-				maxOffset = m
-			}
+			evalRange = n.Range
 		}
 		return nil
 	})
-
-	if nodeWithNoTimestamp {
-		// Only if there exit selectors without @ modifier, we consider the max offset
-		// w.r.t the start time.
-		sStartTs, sEndTs := timestamp.FromTime(s.Start.Add(-maxOffset)), timestamp.FromTime(s.End)
-		if sEndTs > maxTimestamp {
-			maxTimestamp = sEndTs
-		}
-		if sStartTs < minTimestamp {
-			minTimestamp = sStartTs
-		}
-	}
 
 	if maxTimestamp == math.MinInt64 {
 		// This happens when there was no selector. Hence no time range to select.
@@ -710,6 +642,43 @@ func (ng *Engine) findMinMaxTime(s *parser.EvalStmt) (int64, int64) {
 	}
 
 	return minTimestamp, maxTimestamp
+}
+
+func (ng *Engine) getTimeRangesForSelector(s *parser.EvalStmt, n *parser.VectorSelector, path []parser.Node, evalRange time.Duration) (int64, int64) {
+	start, end := timestamp.FromTime(s.Start), timestamp.FromTime(s.End)
+	subqOffset, subqRange, subqTs := subqueryTimes(path)
+
+	if subqTs != nil {
+		// The timestamp on the subquery overrides the eval statement time ranges.
+		start = *subqTs
+		end = *subqTs
+	}
+
+	if n.Timestamp != nil {
+		// The timestamp on the selector overrides everything.
+		start = *n.Timestamp
+		end = *n.Timestamp
+	} else {
+		offsetMilliseconds := durationMilliseconds(subqOffset)
+		start = start - offsetMilliseconds - durationMilliseconds(subqRange)
+		end = end - offsetMilliseconds
+	}
+
+	if evalRange == 0 {
+		start = start - durationMilliseconds(ng.lookbackDelta)
+	} else {
+		// For all matrix queries we want to ensure that we have (end-start) + range selected
+		// this way we have `range` data before the start time
+		start = start - durationMilliseconds(evalRange)
+	}
+
+	if n.OriginalOffset > 0 {
+		offsetMilliseconds := durationMilliseconds(n.OriginalOffset)
+		start = start - offsetMilliseconds
+		end = end - offsetMilliseconds
+	}
+
+	return start, end
 }
 
 func (ng *Engine) populateSeries(querier storage.Querier, s *parser.EvalStmt) {
@@ -721,52 +690,18 @@ func (ng *Engine) populateSeries(querier storage.Querier, s *parser.EvalStmt) {
 	parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
 		switch n := node.(type) {
 		case *parser.VectorSelector:
+			start, end := ng.getTimeRangesForSelector(s, n, path, evalRange)
 			hints := &storage.SelectHints{
-				Start: timestamp.FromTime(s.Start),
-				End:   timestamp.FromTime(s.End),
+				Start: start,
+				End:   end,
 				Step:  durationMilliseconds(s.Interval),
 			}
-
-			// We need to make sure we select the timerange selected by the subquery.
-			// The subqueryOffsetRange function gives the sum of range and the
-			// sum of offset.
-			// TODO(bwplotka): Add support for better hints when subquerying. See: https://github.com/prometheus/prometheus/issues/7630.
-			subqOffset, subqRange, subqMint, subqMaxt := subqueryTimes(path)
-
-			if subqMint != math.MaxInt64 {
-				hints.Start = subqMint
-			}
-			if subqMaxt != math.MinInt64 {
-				hints.End = subqMaxt
-			}
-
-			if n.Timestamp != nil {
-				// The timestamp on the selector overrides everything.
-				hints.Start = *n.Timestamp
-				hints.End = *n.Timestamp
-			} else {
-				offsetMilliseconds := durationMilliseconds(subqOffset)
-				hints.Start = hints.Start - offsetMilliseconds - durationMilliseconds(subqRange)
-				hints.End = hints.End - offsetMilliseconds
-			}
-
-			if evalRange == 0 {
-				hints.Start = hints.Start - durationMilliseconds(ng.lookbackDelta)
-			} else {
+			if evalRange != 0 {
 				hints.Range = durationMilliseconds(evalRange)
-				// For all matrix queries we want to ensure that we have (end-start) + range selected
-				// this way we have `range` data before the start time
-				hints.Start = hints.Start - durationMilliseconds(evalRange)
 				evalRange = 0
 			}
-
 			hints.Func = extractFuncFromPath(path)
 			hints.By, hints.Grouping = extractGroupsFromPath(path)
-			if n.OriginalOffset > 0 {
-				offsetMilliseconds := durationMilliseconds(n.OriginalOffset)
-				hints.Start = hints.Start - offsetMilliseconds
-				hints.End = hints.End - offsetMilliseconds
-			}
 			n.UnexpandedSeriesSet = querier.Select(false, hints, n.LabelMatchers...)
 		case *parser.MatrixSelector:
 			evalRange = n.Range
@@ -1425,7 +1360,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		return ev.matrixSelector(e)
 
 	case *parser.SubqueryExpr:
-		offsetMillis := durationMilliseconds(e.OriginalOffset)
+		offsetMillis := durationMilliseconds(e.Offset)
 		rangeMillis := durationMilliseconds(e.Range)
 		newEv := &evaluator{
 			endTimestamp:             ev.endTimestamp - offsetMillis,
@@ -1443,33 +1378,24 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			newEv.interval = ev.noStepSubqueryIntervalFn(rangeMillis)
 		}
 
-		subqueryStartTime := ev.startTimestamp - offsetMillis - rangeMillis
-		if e.Timestamp != nil {
-			// We adjust the evaluator times in case of @ modifier.
-			// We don't adjust the offset in case of a subquery
-			// because nested subqueries get tricky with offset.
-			newEv.endTimestamp = *e.Timestamp - offsetMillis
-			subqueryStartTime = newEv.endTimestamp - rangeMillis
-		}
-
-		// Start with the first timestamp after subqueryStartTime
+		// Start with the first timestamp after (ev.startTimestamp - offset - range)
 		// that is aligned with the step (multiple of 'newEv.interval').
-		newEv.startTimestamp = newEv.interval * (subqueryStartTime / newEv.interval)
-		if newEv.startTimestamp < subqueryStartTime {
+		newEv.startTimestamp = newEv.interval * ((ev.startTimestamp - offsetMillis - rangeMillis) / newEv.interval)
+		if newEv.startTimestamp < (ev.startTimestamp - offsetMillis - rangeMillis) {
 			newEv.startTimestamp += newEv.interval
 		}
 
 		if newEv.startTimestamp != ev.startTimestamp {
 			// Adjust the offset of selectors based on the new
-			// start time of the evaluator.
+			// start time of the evaluator since the calculation
+			// of the offset with @ happens w.r.t. the start time.
 			setOffsetForAtModifier(newEv.startTimestamp, e.Expr)
 		}
 
 		res, ws := newEv.eval(e.Expr)
 		ev.currentSamples = newEv.currentSamples
 		if newEv.startTimestamp != ev.startTimestamp {
-			// Adjust back the offset of selectors based on the parent
-			// evaluator.
+			// Adjust back the offset of selectors based on the parent evaluator.
 			setOffsetForAtModifier(ev.startTimestamp, e.Expr)
 		}
 		return res, ws
@@ -1526,28 +1452,6 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 					}
 				}
 			}
-		case Vector:
-			mat := make(Matrix, len(val))
-			for i, smpl := range val {
-				mat[i] = Series{
-					Metric: smpl.Metric,
-					Points: make([]Point, 0, 1+(ev.endTimestamp-ev.startTimestamp)/ev.interval),
-				}
-				for ts := ev.startTimestamp + ev.interval; ts <= ev.endTimestamp; ts = ts + ev.interval {
-					mat[i].Points = append(mat[i].Points, Point{
-						T: ts,
-						V: smpl.V,
-					})
-					ev.currentSamples++
-					if ev.currentSamples >= ev.maxSamples {
-						ev.error(ErrTooManySamples(env))
-					}
-				}
-			}
-			res = mat
-		case Scalar:
-			// The timestamp of the scalar does not matter, so we use it
-			// as is everytime. Hence do no duplication.
 		default:
 			panic(errors.Errorf("unexpected result in StepInvariantExpr evaluation: %T", expr))
 		}
@@ -2385,11 +2289,7 @@ func wrapWithStepInvariantExprHelper(expr parser.Expr) bool {
 		return n.Timestamp != nil
 
 	case *parser.AggregateExpr:
-		isInvariant := wrapWithStepInvariantExprHelper(n.Expr)
-		if isInvariant {
-			return true
-		}
-		return false
+		return wrapWithStepInvariantExprHelper(n.Expr)
 
 	case *parser.BinaryExpr:
 		isInvariant1, isInvariant2 := wrapWithStepInvariantExprHelper(n.LHS), wrapWithStepInvariantExprHelper(n.RHS)
@@ -2407,9 +2307,6 @@ func wrapWithStepInvariantExprHelper(expr parser.Expr) bool {
 		return false
 
 	case *parser.Call:
-		if len(n.Args) == 0 {
-			return false
-		}
 		isStepInvariant := IsFunctionStepInvariant(n)
 		isStepInvariantSlice := make([]bool, len(n.Args))
 		for i := range n.Args {
@@ -2436,17 +2333,13 @@ func wrapWithStepInvariantExprHelper(expr parser.Expr) bool {
 		// Since we adjust offset for the @ modifier evaluation,
 		// it gets tricky to adjust it for every subquery step.
 		// Hence we wrap the inside of subquery irrespective of
-		// @ on subquery so that it's evaluated only once
-		// w.r.t. the start time of subquery.
+		// @ on subquery (given it is also step invariant) so that
+		// it is evaluated only once w.r.t. the start time of subquery.
 		isInvariant := wrapWithStepInvariantExprHelper(n.Expr)
 		if isInvariant {
 			n.Expr = newStepInvariantExpr(n.Expr)
 		}
-		if n.Timestamp != nil {
-			return true
-		}
-
-		return false
+		return n.Timestamp != nil
 
 	case *parser.ParenExpr:
 		return wrapWithStepInvariantExprHelper(n.Expr)
@@ -2486,18 +2379,17 @@ func dontWrapStepInvariantExpr(expr parser.Expr) bool {
 }
 
 // setOffsetForAtModifier modifies the offset of vector and matrix selector
-// in the tree to accommodate the timestamp of @ modifier. The offset is
-// adjusted w.r.t. the given evaluation time.
+// and subquery in the tree to accommodate the timestamp of @ modifier.
+// The offset is adjusted w.r.t. the given evaluation time.
 func setOffsetForAtModifier(evalTime int64, expr parser.Expr) {
 	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
-		subqOffset := subqueryOffset(path, evalTime)
 		switch n := node.(type) {
 		case *parser.VectorSelector:
 			if n.Timestamp == nil {
 				return nil
 			}
 			offsetForTs := evalTime - *n.Timestamp
-			offsetDiff := offsetForTs - subqOffset
+			offsetDiff := offsetForTs - subqueryOffset(path, evalTime)
 			n.Offset = n.OriginalOffset + time.Duration(offsetDiff)*time.Millisecond
 
 		case *parser.MatrixSelector:
@@ -2506,8 +2398,16 @@ func setOffsetForAtModifier(evalTime int64, expr parser.Expr) {
 				return nil
 			}
 			offsetForTs := evalTime - *vs.Timestamp
-			offsetDiff := offsetForTs - subqOffset
+			offsetDiff := offsetForTs - subqueryOffset(path, evalTime)
 			vs.Offset = vs.OriginalOffset + time.Duration(offsetDiff)*time.Millisecond
+
+		case *parser.SubqueryExpr:
+			if n.Timestamp == nil {
+				return nil
+			}
+			offsetForTs := evalTime - *n.Timestamp
+			offsetDiff := offsetForTs - subqueryOffset(path, evalTime)
+			n.Offset = n.OriginalOffset + time.Duration(offsetDiff)*time.Millisecond
 		}
 		return nil
 	})
