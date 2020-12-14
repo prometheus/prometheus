@@ -64,13 +64,16 @@ type Test struct {
 
 // NewTest returns an initialized empty Test.
 func NewTest(t testutil.T, input string) (*Test, error) {
+	cmds, err := parse(input)
+	if err != nil {
+		return nil, err
+	}
+
 	test := &Test{
 		T:    t,
-		cmds: []testCommand{},
+		cmds: cmds,
 	}
-	err := test.parse(input)
 	test.clear()
-
 	return test, err
 }
 
@@ -114,7 +117,8 @@ func raise(line int, format string, v ...interface{}) error {
 	}
 }
 
-func parseLoad(lines []string, i int) (int, *loadCmd, error) {
+// ParseLoad parses load statements.
+func ParseLoad(lines []string, i int) (int, *LoadCmd, error) {
 	if !patLoad.MatchString(lines[i]) {
 		return i, nil, raise(i, "invalid load command. (load <step:duration>)")
 	}
@@ -144,7 +148,8 @@ func parseLoad(lines []string, i int) (int, *loadCmd, error) {
 	return i, cmd, nil
 }
 
-func (t *Test) parseEval(lines []string, i int) (int, *evalCmd, error) {
+// ParseEval parses eval statements.
+func ParseEval(lines []string, i int) (int, *EvalCmd, error) {
 	if !patEvalInstant.MatchString(lines[i]) {
 		return i, nil, raise(i, "invalid evaluation command. (eval[_fail|_ordered] instant [at <offset:duration>] <query>")
 	}
@@ -221,10 +226,10 @@ func getLines(input string) []string {
 	return lines
 }
 
-// parse the given command sequence and appends it to the test.
-func (t *Test) parse(input string) error {
+// parse parses the given input and returns command sequence.
+func parse(input string) (cmds []testCommand, err error) {
 	lines := getLines(input)
-	var err error
+
 	// Scan for steps line by line.
 	for i := 0; i < len(lines); i++ {
 		l := lines[i]
@@ -235,54 +240,54 @@ func (t *Test) parse(input string) error {
 
 		switch c := strings.ToLower(patSpace.Split(l, 2)[0]); {
 		case c == "clear":
-			cmd = &clearCmd{}
+			cmd = &ClearCmd{}
 		case c == "load":
-			i, cmd, err = parseLoad(lines, i)
+			i, cmd, err = ParseLoad(lines, i)
 		case strings.HasPrefix(c, "eval"):
-			i, cmd, err = t.parseEval(lines, i)
+			i, cmd, err = ParseEval(lines, i)
 		default:
-			return raise(i, "invalid command %q", l)
+			return nil, raise(i, "invalid command %q", l)
 		}
 		if err != nil {
-			return err
+			return nil, err
 		}
-		t.cmds = append(t.cmds, cmd)
+		cmds = append(cmds, cmd)
 	}
-	return nil
+	return cmds, nil
 }
 
 // testCommand is an interface that ensures that only the package internal
-// types can be a valid command for a test.
+// types can be a valid command for test execution.
 type testCommand interface {
 	testCmd()
 }
 
-func (*clearCmd) testCmd() {}
-func (*loadCmd) testCmd()  {}
-func (*evalCmd) testCmd()  {}
+func (*ClearCmd) testCmd() {}
+func (*LoadCmd) testCmd()  {}
+func (*EvalCmd) testCmd()  {}
 
-// loadCmd is a command that loads sequences of sample values for specific
+// LoadCmd is a command that loads sequences of sample values for specific
 // metrics into the storage.
-type loadCmd struct {
+type LoadCmd struct {
 	gap     time.Duration
 	metrics map[uint64]labels.Labels
 	defs    map[uint64][]Point
 }
 
-func newLoadCmd(gap time.Duration) *loadCmd {
-	return &loadCmd{
+func newLoadCmd(gap time.Duration) *LoadCmd {
+	return &LoadCmd{
 		gap:     gap,
 		metrics: map[uint64]labels.Labels{},
 		defs:    map[uint64][]Point{},
 	}
 }
 
-func (cmd loadCmd) String() string {
+func (cmd LoadCmd) String() string {
 	return "load"
 }
 
 // set a sequence of sample values for the given metric.
-func (cmd *loadCmd) set(m labels.Labels, vals ...parser.SequenceValue) {
+func (cmd *LoadCmd) set(m labels.Labels, vals ...parser.SequenceValue) {
 	h := m.Hash()
 
 	samples := make([]Point, 0, len(vals))
@@ -300,8 +305,8 @@ func (cmd *loadCmd) set(m labels.Labels, vals ...parser.SequenceValue) {
 	cmd.metrics[h] = m
 }
 
-// append the defined time series to the storage.
-func (cmd *loadCmd) append(a storage.Appender) error {
+// Append the defined time series to the storage.
+func (cmd *LoadCmd) Append(a storage.Appender) error {
 	for h, smpls := range cmd.defs {
 		m := cmd.metrics[h]
 
@@ -314,9 +319,9 @@ func (cmd *loadCmd) append(a storage.Appender) error {
 	return nil
 }
 
-// evalCmd is a command that evaluates an expression for the given time (range)
+// EvalCmd is a command that evaluates an expression for the given time (range)
 // and expects a specific result.
-type evalCmd struct {
+type EvalCmd struct {
 	expr  string
 	start time.Time
 	line  int
@@ -336,8 +341,8 @@ func (e entry) String() string {
 	return fmt.Sprintf("%d: %s", e.pos, e.vals)
 }
 
-func newEvalCmd(expr string, start time.Time, line int) *evalCmd {
-	return &evalCmd{
+func newEvalCmd(expr string, start time.Time, line int) *EvalCmd {
+	return &EvalCmd{
 		expr:  expr,
 		start: start,
 		line:  line,
@@ -347,13 +352,13 @@ func newEvalCmd(expr string, start time.Time, line int) *evalCmd {
 	}
 }
 
-func (ev *evalCmd) String() string {
+func (ev *EvalCmd) String() string {
 	return "eval"
 }
 
 // expect adds a new metric with a sequence of values to the set of expected
 // results for the query.
-func (ev *evalCmd) expect(pos int, m labels.Labels, vals ...parser.SequenceValue) {
+func (ev *EvalCmd) expect(pos int, m labels.Labels, vals ...parser.SequenceValue) {
 	if m == nil {
 		ev.expected[0] = entry{pos: pos, vals: vals}
 		return
@@ -364,7 +369,7 @@ func (ev *evalCmd) expect(pos int, m labels.Labels, vals ...parser.SequenceValue
 }
 
 // compareResult compares the result value with the defined expectation.
-func (ev *evalCmd) compareResult(result parser.Value) error {
+func (ev *EvalCmd) compareResult(result parser.Value) error {
 	switch val := result.(type) {
 	case Matrix:
 		return errors.New("received range result on instant evaluation")
@@ -407,10 +412,69 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 	return nil
 }
 
-// clearCmd is a command that wipes the test's storage state.
-type clearCmd struct{}
+func (ev *EvalCmd) Eval(ctx context.Context, queryEngine *Engine, queryable storage.Queryable) error {
+	q, err := queryEngine.NewInstantQuery(queryable, ev.expr, ev.start)
+	if err != nil {
+		return err
+	}
+	defer q.Close()
 
-func (cmd clearCmd) String() string {
+	res := q.Exec(ctx)
+	if res.Err != nil {
+		if ev.fail {
+			return nil
+		}
+		return errors.Wrapf(res.Err, "error evaluating query %q (line %d)", ev.expr, ev.line)
+	}
+	if res.Err == nil && ev.fail {
+		return errors.Errorf("expected error evaluating query %q (line %d) but got none", ev.expr, ev.line)
+	}
+
+	err = ev.compareResult(res.Value)
+	if err != nil {
+		return errors.Wrapf(err, "error in %s %s", ev, ev.expr)
+	}
+
+	// Check query returns same result in range mode,
+	// by checking against the middle step.
+	q, err = queryEngine.NewRangeQuery(queryable, ev.expr, ev.start.Add(-time.Minute), ev.start.Add(time.Minute), time.Minute)
+	if err != nil {
+		return err
+	}
+	rangeRes := q.Exec(ctx)
+	if rangeRes.Err != nil {
+		return errors.Wrapf(rangeRes.Err, "error evaluating query %q (line %d) in range mode", ev.expr, ev.line)
+	}
+	defer q.Close()
+	if ev.ordered {
+		// Ordering isn't defined for range queries.
+		return nil
+	}
+	mat := rangeRes.Value.(Matrix)
+	vec := make(Vector, 0, len(mat))
+	for _, series := range mat {
+		for _, point := range series.Points {
+			if point.T == timeMilliseconds(ev.start) {
+				vec = append(vec, Sample{Metric: series.Metric, Point: point})
+				break
+			}
+		}
+	}
+	if _, ok := res.Value.(Scalar); ok {
+		err = ev.compareResult(Scalar{V: vec[0].Point.V})
+	} else {
+		err = ev.compareResult(vec)
+	}
+	if err != nil {
+		return errors.Wrapf(err, "error in %s %s (line %d) rande mode", ev, ev.expr, ev.line)
+	}
+	return nil
+}
+
+// ClearCmd is a command that wipes the test's storage state.
+type ClearCmd struct{}
+
+func (cmd ClearCmd) String() string {
 	return "clear"
 }
 
@@ -430,12 +494,12 @@ func (t *Test) Run() error {
 // exec processes a single step of the test.
 func (t *Test) exec(tc testCommand) error {
 	switch cmd := tc.(type) {
-	case *clearCmd:
+	case *ClearCmd:
 		t.clear()
 
-	case *loadCmd:
+	case *LoadCmd:
 		app := t.storage.Appender(t.context)
-		if err := cmd.append(app); err != nil {
+		if err := cmd.Append(app); err != nil {
 			app.Rollback()
 			return err
 		}
@@ -444,62 +508,10 @@ func (t *Test) exec(tc testCommand) error {
 			return err
 		}
 
-	case *evalCmd:
-		q, err := t.QueryEngine().NewInstantQuery(t.storage, cmd.expr, cmd.start)
-		if err != nil {
+	case *EvalCmd:
+		if err := cmd.Eval(t.context, t.queryEngine, t.storage); err != nil {
 			return err
 		}
-		defer q.Close()
-		res := q.Exec(t.context)
-		if res.Err != nil {
-			if cmd.fail {
-				return nil
-			}
-			return errors.Wrapf(res.Err, "error evaluating query %q (line %d)", cmd.expr, cmd.line)
-		}
-		if res.Err == nil && cmd.fail {
-			return errors.Errorf("expected error evaluating query %q (line %d) but got none", cmd.expr, cmd.line)
-		}
-
-		err = cmd.compareResult(res.Value)
-		if err != nil {
-			return errors.Wrapf(err, "error in %s %s", cmd, cmd.expr)
-		}
-
-		// Check query returns same result in range mode,
-		// by checking against the middle step.
-		q, err = t.queryEngine.NewRangeQuery(t.storage, cmd.expr, cmd.start.Add(-time.Minute), cmd.start.Add(time.Minute), time.Minute)
-		if err != nil {
-			return err
-		}
-		rangeRes := q.Exec(t.context)
-		if rangeRes.Err != nil {
-			return errors.Wrapf(rangeRes.Err, "error evaluating query %q (line %d) in range mode", cmd.expr, cmd.line)
-		}
-		defer q.Close()
-		if cmd.ordered {
-			// Ordering isn't defined for range queries.
-			return nil
-		}
-		mat := rangeRes.Value.(Matrix)
-		vec := make(Vector, 0, len(mat))
-		for _, series := range mat {
-			for _, point := range series.Points {
-				if point.T == timeMilliseconds(cmd.start) {
-					vec = append(vec, Sample{Metric: series.Metric, Point: point})
-					break
-				}
-			}
-		}
-		if _, ok := res.Value.(Scalar); ok {
-			err = cmd.compareResult(Scalar{V: vec[0].Point.V})
-		} else {
-			err = cmd.compareResult(vec)
-		}
-		if err != nil {
-			return errors.Wrapf(err, "error in %s %s (line %d) rande mode", cmd, cmd.expr, cmd.line)
-		}
-
 	default:
 		panic("promql.Test.exec: unknown test command type")
 	}
@@ -578,7 +590,7 @@ func parseNumber(s string) (float64, error) {
 type LazyLoader struct {
 	testutil.T
 
-	loadCmd *loadCmd
+	loadCmd *LoadCmd
 
 	storage storage.Storage
 
@@ -607,7 +619,7 @@ func (ll *LazyLoader) parse(input string) error {
 			continue
 		}
 		if strings.ToLower(patSpace.Split(l, 2)[0]) == "load" {
-			_, cmd, err := parseLoad(lines, i)
+			_, cmd, err := ParseLoad(lines, i)
 			if err != nil {
 				return err
 			}

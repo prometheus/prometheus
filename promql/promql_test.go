@@ -23,6 +23,7 @@ import (
 func TestEvaluations(t *testing.T) {
 	files, err := filepath.Glob("testdata/*.test")
 	require.NoError(t, err)
+	require.Equal(t, 9, len(files))
 
 	for _, fn := range files {
 		t.Run(fn, func(t *testing.T) {
