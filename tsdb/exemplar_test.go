@@ -530,3 +530,31 @@ func TestSelectExemplar_TimeRange(t *testing.T) {
 		assert.True(t, el[i].Equals(exemplars[i+1]), "")
 	}
 }
+
+func TestIndexOverwrite(t *testing.T) {
+	es := NewCircularExemplarStorage(2)
+
+	l1 := labels.Labels{
+		{Name: "service", Value: "asdf"},
+	}
+
+	l2 := labels.Labels{
+		{Name: "service", Value: "qwer"},
+	}
+
+	err := es.AddExemplar(l1, 1, exemplar.Exemplar{Value: 1, Ts: 1})
+	assert.NoError(t, err)
+	err = es.AddExemplar(l2, 2, exemplar.Exemplar{Value: 2, Ts: 2})
+	assert.NoError(t, err)
+	err = es.AddExemplar(l2, 3, exemplar.Exemplar{Value: 3, Ts: 3})
+	assert.NoError(t, err)
+
+	_, ok := es.index[l1.String()]
+	assert.False(t, ok)
+
+	err = es.AddExemplar(l1, 4, exemplar.Exemplar{Value: 4, Ts: 4})
+	assert.NoError(t, err)
+
+	i, ok := es.index[l2.String()]
+	assert.Equal(t, 0, i)
+}

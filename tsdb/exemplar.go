@@ -114,6 +114,31 @@ func (ce *CircularExemplarStorage) Select(start, end int64, l labels.Labels) ([]
 	return ret, nil
 }
 
+// Takes the circularBufferEntry that will be overwritten and updates the
+// storages index for that entries labelset if necessary.
+func (ce *CircularExemplarStorage) indexGcCheck(cbe *circularBufferEntry) {
+	if cbe == nil {
+		return
+	}
+
+	l := cbe.se.seriesLabels
+	i := cbe.prev
+	if cbe.prev == -1 {
+		delete(ce.index, l.String())
+		return
+	}
+
+	if ce.exemplars[ce.nextIndex] != nil {
+		l2 := ce.exemplars[i].se.seriesLabels
+		if !labels.Equal(l2, l) { // No more exemplars for series l.
+			delete(ce.index, cbe.se.seriesLabels.String())
+			return
+		}
+		// There's still at least one exemplar for the series l, so we can update the index.
+		ce.index[l.String()] = i
+	}
+}
+
 func (ce *CircularExemplarStorage) addExemplar(l labels.Labels, t int64, e exemplar.Exemplar) error {
 	seriesLabels := l.String()
 	ce.lock.RLock()
@@ -124,8 +149,9 @@ func (ce *CircularExemplarStorage) addExemplar(l labels.Labels, t int64, e exemp
 	defer ce.lock.Unlock()
 
 	if !ok {
-		// default the prev value to -1 (which we use to detect that we've iterated through all exemplars for a series in Select)
-		// since this is the first exemplar stored for this series
+		ce.indexGcCheck(ce.exemplars[ce.nextIndex])
+		// Default the prev value to -1 (which we use to detect that we've iterated through all exemplars for a series in Select)
+		// since this is the first exemplar stored for this series.
 		ce.exemplars[ce.nextIndex] = &circularBufferEntry{
 			se: storageExemplar{
 				exemplar:     e,
@@ -138,7 +164,6 @@ func (ce *CircularExemplarStorage) addExemplar(l labels.Labels, t int64, e exemp
 			ce.nextIndex = 0
 		}
 		return nil
-
 	}
 
 	// Check for duplicate vs last stored exemplar for this series.
@@ -148,6 +173,7 @@ func (ce *CircularExemplarStorage) addExemplar(l labels.Labels, t int64, e exemp
 	if e.Ts <= ce.exemplars[idx].se.scrapeTimestamp || t <= ce.exemplars[idx].se.scrapeTimestamp {
 		return storage.ErrOutOfOrderExemplar
 	}
+	ce.indexGcCheck(ce.exemplars[ce.nextIndex])
 	ce.exemplars[ce.nextIndex] = &circularBufferEntry{
 		se: storageExemplar{
 			exemplar:        e,
