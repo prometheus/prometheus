@@ -730,6 +730,13 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 		{
 			endpoint: api.series,
 			query: url.Values{
+				"match[]": []string{`{foo=""}`},
+			},
+			errType: errorBadData,
+		},
+		{
+			endpoint: api.series,
+			query: url.Values{
 				"match[]": []string{`test_metric1{foo=~".+o"}`},
 			},
 			response: []labels.Labels{

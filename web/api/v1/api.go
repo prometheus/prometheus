@@ -587,6 +587,19 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 		matcherSets = append(matcherSets, matchers)
 	}
 
+	for _, ms := range matcherSets {
+		var nonEmpty bool
+		for _, lm := range ms {
+			if lm != nil && !lm.Matches("") {
+				nonEmpty = true
+				break
+			}
+		}
+		if !nonEmpty {
+			return apiFuncResult{nil, &apiError{errorBadData, errors.New("match[] must contain at least one non-empty matcher")}, nil, nil}
+		}
+	}
+
 	q, err := api.Queryable.Querier(r.Context(), timestamp.FromTime(start), timestamp.FromTime(end))
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
