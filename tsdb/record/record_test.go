@@ -18,7 +18,6 @@ import (
 	"testing"
 
 	"github.com/pkg/errors"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -82,8 +81,8 @@ func TestRecord_EncodeDecode(t *testing.T) {
 		{Ref: 2, T: 0, V: 99999, Labels: labels.FromStrings("traceID", "zxcv")},
 	}
 	decExemplars, err := dec.Exemplars(enc.Exemplars(exemplars, nil), nil)
-	assert.NoError(t, err)
-	assert.Equal(t, exemplars, decExemplars)
+	require.NoError(t, err)
+	require.Equal(t, exemplars, decExemplars)
 }
 
 // TestRecord_Corrupted ensures that corrupted records return the correct error.
@@ -135,7 +134,7 @@ func TestRecord_Corrupted(t *testing.T) {
 
 		corrupted := enc.Exemplars(exemplars, nil)[:8]
 		_, err := dec.Exemplars(corrupted, nil)
-		assert.Equal(t, errors.Cause(err), encoding.ErrInvalidSize)
+		require.Equal(t, errors.Cause(err), encoding.ErrInvalidSize)
 	})
 }
 
@@ -157,7 +156,7 @@ func TestRecord_Type(t *testing.T) {
 
 	exemplars := []RefExemplar{{Ref: 123, T: 12345, V: 1.2345, Labels: labels.FromStrings("traceID", "qwerty123456")}}
 	recordType = dec.Type(enc.Exemplars(exemplars, nil))
-	assert.Equal(t, Exemplars, recordType)
+	require.Equal(t, Exemplars, recordType)
 
 	recordType = dec.Type(nil)
 	require.Equal(t, Unknown, recordType)

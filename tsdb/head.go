@@ -47,7 +47,7 @@ var (
 	// ErrInvalidSample is returned if an appended sample is not valid and can't
 	// be ingested.
 	ErrInvalidSample = errors.New("invalid sample")
-	// ErrInvalidSample is returned if an appended sample is not valid and can't
+	// ErrInvalidExemplar is returned if an appended sample is not valid and can't
 	// be ingested.
 	ErrInvalidExemplar = errors.New("invalid exemplar")
 	// ErrAppenderClosed is returned if an appender has already be successfully

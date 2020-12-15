@@ -17,7 +17,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -42,8 +42,8 @@ func TestAddExemplar(t *testing.T) {
 	}
 
 	err := es.AddExemplar(l, 0, e)
-	assert.NoError(t, err)
-	assert.Equal(t, es.index[l.String()], 0, "exemplar was not stored correctly")
+	require.NoError(t, err)
+	require.Equal(t, es.index[l.String()], 0, "exemplar was not stored correctly")
 
 	e2 := exemplar.Exemplar{
 		Labels: labels.Labels{
@@ -57,10 +57,10 @@ func TestAddExemplar(t *testing.T) {
 	}
 
 	err = es.AddExemplar(l, 3, e2)
-	assert.NoError(t, err)
-	assert.Equal(t, es.index[l.String()], 1, "exemplar was not stored correctly, location of newest exemplar for series in index did not update")
-	assert.True(t, es.exemplars[es.index[l.String()]].Exemplar().Equals(e2), "exemplar was not stored correctly, expected %+v got: %+v", e2, es.exemplars[es.index[l.String()]].Exemplar())
-	assert.True(t, es.exemplars[es.index[l.String()]].se.scrapeTimestamp == 3, "exemplar was not stored correctly, scrape timestamp was not correct")
+	require.NoError(t, err)
+	require.Equal(t, es.index[l.String()], 1, "exemplar was not stored correctly, location of newest exemplar for series in index did not update")
+	require.True(t, es.exemplars[es.index[l.String()]].Exemplar().Equals(e2), "exemplar was not stored correctly, expected %+v got: %+v", e2, es.exemplars[es.index[l.String()]].Exemplar())
+	require.True(t, es.exemplars[es.index[l.String()]].se.scrapeTimestamp == 3, "exemplar was not stored correctly, scrape timestamp was not correct")
 }
 
 func TestAddDuplicateExemplar(t *testing.T) {
@@ -93,11 +93,11 @@ func TestAddDuplicateExemplar(t *testing.T) {
 	}
 
 	es.AddExemplar(l, 0, e)
-	assert.True(t, reflect.DeepEqual(es.exemplars[0].Exemplar(), e), "exemplar was not stored correctly")
+	require.True(t, reflect.DeepEqual(es.exemplars[0].Exemplar(), e), "exemplar was not stored correctly")
 
 	err := es.AddExemplar(l, 0, e2)
-	assert.Error(t, err, "no error when attempting to add duplicate exemplar")
-	assert.True(t, err == storage.ErrDuplicateExemplar, "duplicate exemplar was added")
+	require.Error(t, err, "no error when attempting to add duplicate exemplar")
+	require.True(t, err == storage.ErrDuplicateExemplar, "duplicate exemplar was added")
 }
 
 func TestAddOutOfOrderExemplar(t *testing.T) {
@@ -130,11 +130,11 @@ func TestAddOutOfOrderExemplar(t *testing.T) {
 	}
 
 	es.AddExemplar(l, 0, e)
-	assert.True(t, reflect.DeepEqual(es.exemplars[0].Exemplar(), e), "exemplar was not stored correctly")
+	require.True(t, reflect.DeepEqual(es.exemplars[0].Exemplar(), e), "exemplar was not stored correctly")
 
 	err := es.AddExemplar(l, 0, e2)
-	assert.Error(t, err, "no error when attempting to add out of order exemplar")
-	assert.True(t, err == storage.ErrOutOfOrderExemplar, "out of order exemplar was added")
+	require.Error(t, err, "no error when attempting to add out of order exemplar")
+	require.True(t, err == storage.ErrOutOfOrderExemplar, "out of order exemplar was added")
 }
 
 func TestAddExtraExemplar(t *testing.T) {
@@ -209,7 +209,7 @@ func TestAddExtraExemplar(t *testing.T) {
 	for _, e := range exemplars {
 		es.AddExemplar(l, e.Ts-1, e)
 	}
-	assert.True(t, reflect.DeepEqual(es.exemplars[0].Exemplar(), exemplars[5]), "exemplar was not stored correctly")
+	require.True(t, reflect.DeepEqual(es.exemplars[0].Exemplar(), exemplars[5]), "exemplar was not stored correctly")
 }
 
 func TestSelectExemplar(t *testing.T) {
@@ -230,12 +230,12 @@ func TestSelectExemplar(t *testing.T) {
 	}
 
 	es.AddExemplar(l, 0, e)
-	assert.True(t, reflect.DeepEqual(es.exemplars[0].Exemplar(), e), "exemplar was not stored correctly")
+	require.True(t, reflect.DeepEqual(es.exemplars[0].Exemplar(), e), "exemplar was not stored correctly")
 
 	exemplars, err := es.Select(0, 100, l)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
-	assert.True(t, reflect.DeepEqual([]exemplar.Exemplar{e}, exemplars), "select did not return all exemplars")
+	require.True(t, reflect.DeepEqual([]exemplar.Exemplar{e}, exemplars), "select did not return all exemplars")
 }
 
 func TestSelectExemplarOrdering(t *testing.T) {
@@ -310,12 +310,12 @@ func TestSelectExemplarOrdering(t *testing.T) {
 	for _, e := range exemplars {
 		es.AddExemplar(l, e.Ts-1, e)
 	}
-	assert.True(t, reflect.DeepEqual(es.exemplars[0].Exemplar(), exemplars[5]), "exemplar was not stored correctly")
+	require.True(t, reflect.DeepEqual(es.exemplars[0].Exemplar(), exemplars[5]), "exemplar was not stored correctly")
 
 	ret, err := es.Select(100, 110, l)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
-	assert.True(t, reflect.DeepEqual(exemplars[1:], ret), "select did not return all exemplars")
+	require.True(t, reflect.DeepEqual(exemplars[1:], ret), "select did not return all exemplars")
 }
 
 func TestSelectExemplar_Circ(t *testing.T) {
@@ -359,16 +359,16 @@ func TestSelectExemplar_Circ(t *testing.T) {
 
 	for i, e := range exemplars {
 		err := es.AddExemplar(l, e.Ts-1, e)
-		assert.NoError(t, err)
-		assert.Equal(t, es.index[l.String()], i, "exemplar was not stored correctly")
+		require.NoError(t, err)
+		require.Equal(t, es.index[l.String()], i, "exemplar was not stored correctly")
 	}
 
 	el, err := es.Select(100, 105, l)
-	assert.NoError(t, err)
-	assert.True(t, len(el) == 3, "didn't get expected one exemplar")
+	require.NoError(t, err)
+	require.True(t, len(el) == 3, "didn't get expected one exemplar")
 
 	for i := range exemplars {
-		assert.True(t, el[i].Equals(exemplars[i]), "")
+		require.True(t, el[i].Equals(exemplars[i]), "")
 	}
 }
 
@@ -462,9 +462,9 @@ func TestSelectExemplar_OverwriteLoop(t *testing.T) {
 	}
 
 	el, err := es.Select(0, 100, l2)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
-	assert.True(t, len(el) == 8, "didn't get expected 8 exemplars, got %d", len(el))
+	require.True(t, len(el) == 8, "didn't get expected 8 exemplars, got %d", len(el))
 }
 
 func TestSelectExemplar_TimeRange(t *testing.T) {
@@ -518,16 +518,16 @@ func TestSelectExemplar_TimeRange(t *testing.T) {
 
 	for i, e := range exemplars {
 		err := es.AddExemplar(l, e.Ts-1, e)
-		assert.NoError(t, err)
-		assert.Equal(t, es.index[l.String()], i, "exemplar was not stored correctly")
+		require.NoError(t, err)
+		require.Equal(t, es.index[l.String()], i, "exemplar was not stored correctly")
 	}
 
 	el, err := es.Select(102, 105, l)
-	assert.NoError(t, err)
-	assert.True(t, len(el) == 2, "didn't get expected one exemplar")
+	require.NoError(t, err)
+	require.True(t, len(el) == 2, "didn't get expected one exemplar")
 
 	for i := range el {
-		assert.True(t, el[i].Equals(exemplars[i+1]), "")
+		require.True(t, el[i].Equals(exemplars[i+1]), "")
 	}
 }
 
@@ -543,18 +543,18 @@ func TestIndexOverwrite(t *testing.T) {
 	}
 
 	err := es.AddExemplar(l1, 1, exemplar.Exemplar{Value: 1, Ts: 1})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	err = es.AddExemplar(l2, 2, exemplar.Exemplar{Value: 2, Ts: 2})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	err = es.AddExemplar(l2, 3, exemplar.Exemplar{Value: 3, Ts: 3})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	_, ok := es.index[l1.String()]
-	assert.False(t, ok)
+	require.False(t, ok)
 
 	err = es.AddExemplar(l1, 4, exemplar.Exemplar{Value: 4, Ts: 4})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
-	i, ok := es.index[l2.String()]
-	assert.Equal(t, 0, i)
+	i := es.index[l2.String()]
+	require.Equal(t, 0, i)
 }

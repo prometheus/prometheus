@@ -33,7 +33,6 @@ import (
 	dto "github.com/prometheus/client_model/go"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/config"
@@ -1596,7 +1595,7 @@ func TestScrapeLoopAppendExemplar(t *testing.T) {
 		now := time.Now()
 
 		_, _, _, err := sl.append(app, []byte(test.scrapeLabels), "application/openmetrics-text", now)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		expected := []sampleWithExemplar{
 			{
@@ -1610,10 +1609,10 @@ func TestScrapeLoopAppendExemplar(t *testing.T) {
 		}
 
 		e, err := exemplarApp.Select(0, math.MaxInt64, test.expLset)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		t.Logf("Test:%s", test.title)
-		assert.Equal(t, expected[0].e, e[0])
+		require.Equal(t, expected[0].e, e[0])
 	}
 }
 
