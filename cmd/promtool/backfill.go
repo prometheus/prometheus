@@ -14,50 +14,17 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"io"
 	"math"
-	"os"
 
 	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
-	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/prometheus/prometheus/tsdb"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 )
-
-// OpenMetricsParser implements textparse.Parser.
-type OpenMetricsParser struct {
-	textparse.Parser
-	s *bufio.Scanner
-}
-
-// NewOpenMetricsParser returns an OpenMetricsParser reading from the provided reader.
-func NewOpenMetricsParser(r io.Reader) *OpenMetricsParser {
-	return &OpenMetricsParser{s: bufio.NewScanner(r)}
-}
-
-// Next advances the parser to the next sample. It returns io.EOF if no
-// more samples were read.
-func (p *OpenMetricsParser) Next() (textparse.Entry, error) {
-	for p.s.Scan() {
-		line := p.s.Bytes()
-		line = append(line, '\n')
-
-		p.Parser = textparse.New(line, string(expfmt.FmtOpenMetrics))
-		if et, err := p.Parser.Next(); err != io.EOF {
-			return et, err
-		}
-	}
-
-	if err := p.s.Err(); err != nil {
-		return 0, err
-	}
-	return 0, io.EOF
-}
 
 func getMinAndMaxTimestamps(p textparse.Parser) (int64, int64, error) {
 	var maxt, mint int64 = math.MinInt64, math.MaxInt64
@@ -98,7 +65,7 @@ func getMinAndMaxTimestamps(p textparse.Parser) (int64, int64, error) {
 	return maxt, mint, nil
 }
 
-func createBlocks(input *os.File, mint, maxt int64, maxSamplesInAppender int, outputDir string) (returnErr error) {
+func createBlocks(input []byte, mint, maxt int64, maxSamplesInAppender int, outputDir string) (returnErr error) {
 	blockDuration := tsdb.DefaultBlockDuration
 	mint = blockDuration * (mint / blockDuration)
 
@@ -120,12 +87,9 @@ func createBlocks(input *os.File, mint, maxt int64, maxSamplesInAppender int, ou
 				err = tsdb_errors.NewMulti(err, w.Close()).Err()
 			}()
 
-			if _, err := input.Seek(0, 0); err != nil {
-				return errors.Wrap(err, "seek file")
-			}
 			ctx := context.Background()
 			app := w.Appender(ctx)
-			p := NewOpenMetricsParser(input)
+			p := textparse.NewOpenMetricsParser(input)
 			tsUpper := t + blockDuration
 			samplesCount := 0
 			for {
@@ -194,8 +158,8 @@ func createBlocks(input *os.File, mint, maxt int64, maxSamplesInAppender int, ou
 	return nil
 }
 
-func backfill(maxSamplesInAppender int, input *os.File, outputDir string) (err error) {
-	p := NewOpenMetricsParser(input)
+func backfill(maxSamplesInAppender int, input []byte, outputDir string) (err error) {
+	p := textparse.NewOpenMetricsParser(input)
 	maxt, mint, err := getMinAndMaxTimestamps(p)
 	if err != nil {
 		return errors.Wrap(err, "getting min and max timestamp")

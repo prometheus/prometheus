@@ -144,9 +144,9 @@ local template = grafana.template;
             rate(
               prometheus_remote_storage_samples_in_total{cluster=~"$cluster", instance=~"$instance"}[5m])
             - 
-              ignoring(remote_name, url) group_right(instance) rate(prometheus_remote_storage_succeeded_samples_total{cluster=~"$cluster", instance=~"$instance"}[5m])
+              ignoring(remote_name, url) group_right(instance) (rate(prometheus_remote_storage_succeeded_samples_total{cluster=~"$cluster", instance=~"$instance"}[5m]) or rate(prometheus_remote_storage_samples_total{cluster=~"$cluster", instance=~"$instance"}[5m]))
             - 
-              rate(prometheus_remote_storage_dropped_samples_total{cluster=~"$cluster", instance=~"$instance"}[5m])
+              (rate(prometheus_remote_storage_dropped_samples_total{cluster=~"$cluster", instance=~"$instance"}[5m]) or rate(prometheus_remote_storage_samples_dropped_total{cluster=~"$cluster", instance=~"$instance"}[5m]))
           |||,
           legendFormat='{{cluster}}:{{instance}} {{remote_name}}:{{url}}'
         ));
@@ -215,7 +215,7 @@ local template = grafana.template;
           span=6,
         )
         .addTarget(prometheus.target(
-          'prometheus_remote_storage_pending_samples{cluster=~"$cluster", instance=~"$instance"}',
+          'prometheus_remote_storage_pending_samples{cluster=~"$cluster", instance=~"$instance"} or prometheus_remote_storage_samples_pending{cluster=~"$cluster", instance=~"$instance"}',
           legendFormat='{{cluster}}:{{instance}} {{remote_name}}:{{url}}'
         ));
 
@@ -250,7 +250,7 @@ local template = grafana.template;
           span=3,
         )
         .addTarget(prometheus.target(
-          'rate(prometheus_remote_storage_dropped_samples_total{cluster=~"$cluster", instance=~"$instance"}[5m])',
+          'rate(prometheus_remote_storage_dropped_samples_total{cluster=~"$cluster", instance=~"$instance"}[5m]) or rate(prometheus_remote_storage_samples_dropped_total{cluster=~"$cluster", instance=~"$instance"}[5m])',
           legendFormat='{{cluster}}:{{instance}} {{remote_name}}:{{url}}'
         ));
 
@@ -261,7 +261,7 @@ local template = grafana.template;
           span=3,
         )
         .addTarget(prometheus.target(
-          'rate(prometheus_remote_storage_failed_samples_total{cluster=~"$cluster", instance=~"$instance"}[5m])',
+          'rate(prometheus_remote_storage_failed_samples_total{cluster=~"$cluster", instance=~"$instance"}[5m]) or rate(prometheus_remote_storage_samples_failed_total{cluster=~"$cluster", instance=~"$instance"}[5m])',
           legendFormat='{{cluster}}:{{instance}} {{remote_name}}:{{url}}'
         ));
 
@@ -272,7 +272,7 @@ local template = grafana.template;
           span=3,
         )
         .addTarget(prometheus.target(
-          'rate(prometheus_remote_storage_retried_samples_total{cluster=~"$cluster", instance=~"$instance"}[5m])',
+          'rate(prometheus_remote_storage_retried_samples_total{cluster=~"$cluster", instance=~"$instance"}[5m]) or rate(prometheus_remote_storage_samples_retried_total{cluster=~"$cluster", instance=~"$instance"}[5m])',
           legendFormat='{{cluster}}:{{instance}} {{remote_name}}:{{url}}'
         ));
 
