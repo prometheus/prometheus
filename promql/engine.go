@@ -1196,7 +1196,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 				it.ReduceDelta(stepRange)
 			}
 			if len(ss.Points) > 0 {
-				if ev.currentSamples < ev.maxSamples {
+				if ev.currentSamples+len(ss.Points) <= ev.maxSamples {
 					mat = append(mat, ss)
 					ev.currentSamples += len(ss.Points)
 				} else {
@@ -1420,10 +1420,8 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			lookbackDelta:            ev.lookbackDelta,
 			noStepSubqueryIntervalFn: ev.noStepSubqueryIntervalFn,
 		}
-
 		res, ws := newEv.eval(e.Expr)
 		ev.currentSamples = newEv.currentSamples
-
 		switch e.Expr.(type) {
 		case *parser.MatrixSelector, *parser.SubqueryExpr:
 			// We do not duplicate results for range selectors since result is a matrix
@@ -1446,16 +1444,15 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 						T: ts,
 						V: val[i].Points[0].V,
 					})
-					ev.currentSamples++
 					if ev.currentSamples >= ev.maxSamples {
 						ev.error(ErrTooManySamples(env))
 					}
+					ev.currentSamples++
 				}
 			}
 		default:
 			panic(errors.Errorf("unexpected result in StepInvariantExpr evaluation: %T", expr))
 		}
-
 		e.Result = res
 		return res, ws
 	}
@@ -1480,12 +1477,13 @@ func (ev *evaluator) vectorSelector(node *parser.VectorSelector, ts int64) (Vect
 				Metric: node.Series[i].Labels(),
 				Point:  Point{V: v, T: t},
 			})
+
+			if ev.currentSamples >= ev.maxSamples {
+				ev.error(ErrTooManySamples(env))
+			}
 			ev.currentSamples++
 		}
 
-		if ev.currentSamples >= ev.maxSamples {
-			ev.error(ErrTooManySamples(env))
-		}
 	}
 	return vec, ws
 }

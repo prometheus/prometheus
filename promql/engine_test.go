@@ -1222,25 +1222,106 @@ load 10s
 			End:      time.Unix(10, 0),
 			Interval: 5 * time.Second,
 		},
+		{
+			// Result is duplicated, so @ also produces 3 samples.
+			Query:      "metric @ 10",
+			MaxSamples: 3,
+			Result: Result{
+				nil,
+				Matrix{Series{
+					Points: []Point{{V: 2, T: 0}, {V: 2, T: 5000}, {V: 2, T: 10000}},
+					Metric: labels.FromStrings("__name__", "metric")},
+				},
+				nil,
+			},
+			Start:    time.Unix(0, 0),
+			End:      time.Unix(10, 0),
+			Interval: 5 * time.Second,
+		},
+		{
+			// Result is duplicated, so @ also produces 3 samples.
+			Query:      "metric @ 10",
+			MaxSamples: 2,
+			Result: Result{
+				ErrTooManySamples(env),
+				nil,
+				nil,
+			},
+			Start:    time.Unix(0, 0),
+			End:      time.Unix(10, 0),
+			Interval: 5 * time.Second,
+		},
+		{
+			Query:      "metric[20s] @ 10",
+			MaxSamples: 2,
+			Result: Result{
+				nil,
+				Matrix{Series{
+					Points: []Point{{V: 1, T: 0}, {V: 2, T: 10000}},
+					Metric: labels.FromStrings("__name__", "metric")},
+				},
+				nil,
+			},
+			Start: time.Unix(0, 0),
+		},
+		{
+			// With @ modifier, the result is duplicated and cached in the memory, hence it counts.
+			// Here it's 6 samples cached, hence hits the limit.
+			Query:      `rate(bigmetric[10s] @ 10)`,
+			MaxSamples: 5,
+			Result: Result{
+				ErrTooManySamples(env),
+				nil,
+				nil,
+			},
+			Start:    time.Unix(0, 0),
+			End:      time.Unix(10, 0),
+			Interval: 5 * time.Second,
+		},
+		{
+			// With @ modifier, the result is duplicated and cached in the memory, hence it counts.
+			// Here it's 6 samples cached, hence just touches the limit.
+			Query:      `rate(bigmetric[10s] @ 10)`,
+			MaxSamples: 6,
+			Result: Result{
+				nil,
+				Matrix{
+					Series{
+						Points: []Point{{V: 0.1, T: 0}, {V: 0.1, T: 5000}, {V: 0.1, T: 10000}},
+						Metric: labels.FromStrings("a", "1"),
+					},
+					Series{
+						Points: []Point{{V: 0.1, T: 0}, {V: 0.1, T: 5000}, {V: 0.1, T: 10000}},
+						Metric: labels.FromStrings("a", "2"),
+					},
+				},
+				nil,
+			},
+			Start:    time.Unix(0, 0),
+			End:      time.Unix(10, 0),
+			Interval: 5 * time.Second,
+		},
 	}
 
 	engine := test.QueryEngine()
 	for _, c := range cases {
-		var err error
-		var qry Query
+		t.Run(c.Query, func(t *testing.T) {
+			var err error
+			var qry Query
 
-		engine.maxSamplesPerQuery = c.MaxSamples
+			engine.maxSamplesPerQuery = c.MaxSamples
 
-		if c.Interval == 0 {
-			qry, err = engine.NewInstantQuery(test.Queryable(), c.Query, c.Start)
-		} else {
-			qry, err = engine.NewRangeQuery(test.Queryable(), c.Query, c.Start, c.End, c.Interval)
-		}
-		require.NoError(t, err)
+			if c.Interval == 0 {
+				qry, err = engine.NewInstantQuery(test.Queryable(), c.Query, c.Start)
+			} else {
+				qry, err = engine.NewRangeQuery(test.Queryable(), c.Query, c.Start, c.End, c.Interval)
+			}
+			require.NoError(t, err)
 
-		res := qry.Exec(test.Context())
-		require.Equal(t, c.Result.Err, res.Err)
-		require.Equal(t, c.Result.Value, res.Value, "query %q failed", c.Query)
+			res := qry.Exec(test.Context())
+			require.Equal(t, c.Result.Err, res.Err)
+			require.Equal(t, c.Result.Value, res.Value, "query %q failed", c.Query)
+		})
 	}
 }
 
