@@ -20,7 +20,7 @@ if [ -z "${GITHUB_TOKEN}" ]; then
 fi
 
 # List of files that should be synced.
-SYNC_FILES="CODE_OF_CONDUCT.md LICENSE Makefile.common"
+SYNC_FILES="CODE_OF_CONDUCT.md LICENSE Makefile.common SECURITY.md"
 
 # Go to the root of the repo
 cd "$(git rev-parse --show-cdup)" || exit 1
