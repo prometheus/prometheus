@@ -730,6 +730,17 @@ load 1ms
 	lbls1 := labels.FromStrings("__name__", "metric", "job", "1")
 	lbls2 := labels.FromStrings("__name__", "metric", "job", "2")
 	lblsms := labels.FromStrings("__name__", "metric_ms")
+	lblsneg := labels.FromStrings("__name__", "metric_neg")
+
+	// Add some samples with negative timestamp.
+	db := test.TSDB()
+	app := db.Appender(context.Background())
+	ref, err := app.Add(lblsneg, -1000000, 1000)
+	require.NoError(t, err)
+	for ts := int64(-1000000 + 1000); ts <= 0; ts += 1000 {
+		require.NoError(t, app.AddFast(ref, ts, -float64(ts/1000)+1))
+	}
+	require.NoError(t, app.Commit())
 
 	cases := []struct {
 		query                string
@@ -748,6 +759,15 @@ load 1ms
 			result: Matrix{
 				Series{
 					Points: []Point{{V: 10, T: 100000}, {V: 10, T: 101000}, {V: 10, T: 102000}},
+					Metric: lbls2,
+				},
+			},
+		}, { // Time of the result is the evaluation time.
+			query: `metric{job="2"} @ 50`,
+			start: -102, end: -100,
+			result: Matrix{
+				Series{
+					Points: []Point{{V: 10, T: -102000}, {V: 10, T: -101000}, {V: 10, T: -100000}},
 					Metric: lbls2,
 				},
 			},
@@ -777,6 +797,19 @@ load 1ms
 					Metric: lbls2,
 				},
 			},
+		}, { // Timestamps for matrix selector does not depend on the evaluation time.
+			query: "metric[20s] @ 300",
+			start: -1000,
+			result: Matrix{
+				Series{
+					Points: []Point{{V: 28, T: 280000}, {V: 29, T: 290000}, {V: 30, T: 300000}},
+					Metric: lbls1,
+				},
+				Series{
+					Points: []Point{{V: 56, T: 280000}, {V: 58, T: 290000}, {V: 60, T: 300000}},
+					Metric: lbls2,
+				},
+			},
 		}, {
 			query: `metric_ms @ 1.234`,
 			start: 100,
@@ -790,6 +823,45 @@ load 1ms
 				Series{
 					Points: []Point{{V: 2342, T: 2342}, {V: 2343, T: 2343}, {V: 2344, T: 2344}, {V: 2345, T: 2345}},
 					Metric: lblsms,
+				},
+			},
+		}, {
+			query: `metric_neg @ 0`,
+			start: 100,
+			result: Vector{
+				Sample{Point: Point{V: 1, T: 100000}, Metric: lblsneg},
+			},
+		}, {
+			query: `metric_neg[2s] @ 0`,
+			start: 100,
+			result: Matrix{
+				Series{
+					Points: []Point{{V: 3, T: -2000}, {V: 2, T: -1000}, {V: 1, T: 0}},
+					Metric: lblsneg,
+				},
+			},
+		}, {
+			query: `metric_neg[2s] @ -0`,
+			start: 100,
+			result: Matrix{
+				Series{
+					Points: []Point{{V: 3, T: -2000}, {V: 2, T: -1000}, {V: 1, T: 0}},
+					Metric: lblsneg,
+				},
+			},
+		}, {
+			query: `metric_neg @ -200`,
+			start: 100,
+			result: Vector{
+				Sample{Point: Point{V: 201, T: 100000}, Metric: lblsneg},
+			},
+		}, {
+			query: `metric_neg[3s] @ -500`,
+			start: 100,
+			result: Matrix{
+				Series{
+					Points: []Point{{V: 504, T: -503000}, {V: 503, T: -502000}, {V: 502, T: -501000}, {V: 501, T: -500000}},
+					Metric: lblsneg,
 				},
 			},
 		}, {
@@ -856,6 +928,8 @@ load 1ms
 				},
 			},
 		}, {
+			// Inner most sum = 1+2+...+10 = 55.
+			// With [100s:25s] subquery, it's 55*5.
 			query: `sum_over_time(sum_over_time(metric{job="1"}[100s] @ 100)[100s:25s] @ 50)`,
 			start: 100,
 			result: Vector{
@@ -870,7 +944,33 @@ load 1ms
 					Metric: labels.FromStrings("job", "1"),
 				},
 			},
-		}, { // timestamp() takes the time of the sample and not the evaluation time.
+		}, {
+			// Testing the inner subquery timestamp.
+			// Inner sum for subquery [100s:25s] @ 50 are
+			// at -50 = 0, at -25 = 0, at 0 = 0, at 25 = 2, at 50 = 4+5 = 9.
+			query: `sum_over_time(sum_over_time(metric{job="1"}[10s])[100s:25s] @ 50)[3s:1s] @ 200`,
+			start: 100,
+			result: Matrix{
+				Series{
+					Points: []Point{{V: 11, T: 197000}, {V: 11, T: 198000}, {V: 11, T: 199000}, {V: 11, T: 200000}},
+					Metric: labels.FromStrings("job", "1"),
+				},
+			},
+		},
+		{
+			// Testing the inner subquery timestamp.
+			// Inner sum for subquery [100s:25s] @ 200 are
+			// at 100 = 9+10, at 125 = 12, at 150 = 14+15, at 175 = 17, at 200 = 19+20.
+			query: `sum_over_time(sum_over_time(metric{job="1"}[10s])[100s:25s] @ 200)[3s:1s] @ 50`,
+			start: 100,
+			result: Matrix{
+				Series{
+					Points: []Point{{V: 116, T: 47000}, {V: 116, T: 48000}, {V: 116, T: 49000}, {V: 116, T: 50000}},
+					Metric: labels.FromStrings("job", "1"),
+				},
+			},
+		},
+		{ // timestamp() takes the time of the sample and not the evaluation time.
 			query: `timestamp(((metric{job="2"} @ 50)))`,
 			start: 100, end: 102,
 			result: Matrix{
@@ -1953,7 +2053,6 @@ func TestWrapWithStepInvariantExpr(t *testing.T) {
 							End:   27,
 						},
 						Timestamp:      makeInt64Pointer(123000),
-						Offset:         1 * time.Minute,
 						OriginalOffset: 1 * time.Minute,
 					},
 				},
@@ -1976,7 +2075,6 @@ func TestWrapWithStepInvariantExpr(t *testing.T) {
 						},
 					},
 					Timestamp:      makeInt64Pointer(123000),
-					Offset:         1 * time.Minute,
 					OriginalOffset: 1 * time.Minute,
 					Range:          10 * time.Minute,
 					Step:           5 * time.Second,

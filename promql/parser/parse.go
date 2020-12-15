@@ -679,12 +679,11 @@ func (p *parser) newLabelMatcher(label Item, operator Item, value Item) *labels.
 
 // addOffset is used to set the offset in the generated parser.
 func (p *parser) addOffset(e Node, offset time.Duration) {
-	var offsetp, orgoffsetp *time.Duration
+	var orgoffsetp *time.Duration
 	var endPosp *Pos
 
 	switch s := e.(type) {
 	case *VectorSelector:
-		offsetp = &s.Offset
 		orgoffsetp = &s.OriginalOffset
 		endPosp = &s.PosRange.End
 	case *MatrixSelector:
@@ -693,11 +692,9 @@ func (p *parser) addOffset(e Node, offset time.Duration) {
 			p.addParseErrf(e.PositionRange(), "ranges only allowed for vector selectors")
 			return
 		}
-		offsetp = &vs.Offset
 		orgoffsetp = &vs.OriginalOffset
 		endPosp = &s.EndPos
 	case *SubqueryExpr:
-		offsetp = &s.Offset
 		orgoffsetp = &s.OriginalOffset
 		endPosp = &s.EndPos
 	default:
@@ -706,10 +703,9 @@ func (p *parser) addOffset(e Node, offset time.Duration) {
 	}
 
 	// it is already ensured by parseDuration func that there never will be a zero offset modifier
-	if *offsetp != 0 {
+	if *orgoffsetp != 0 {
 		p.addParseErrf(e.PositionRange(), "offset may not be set multiple times")
-	} else if offsetp != nil {
-		*offsetp = offset
+	} else if orgoffsetp != nil {
 		*orgoffsetp = offset
 	}
 

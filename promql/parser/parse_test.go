@@ -1352,7 +1352,6 @@ var testExpr = []struct {
 		input: "foo offset 5m",
 		expected: &VectorSelector{
 			Name:           "foo",
-			Offset:         5 * time.Minute,
 			OriginalOffset: 5 * time.Minute,
 			LabelMatchers: []*labels.Matcher{
 				MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
@@ -1366,7 +1365,6 @@ var testExpr = []struct {
 		input: `foo OFFSET 1h30m`,
 		expected: &VectorSelector{
 			Name:           "foo",
-			Offset:         90 * time.Minute,
 			OriginalOffset: 90 * time.Minute,
 			LabelMatchers: []*labels.Matcher{
 				MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
@@ -1380,7 +1378,6 @@ var testExpr = []struct {
 		input: `foo OFFSET 1m30ms`,
 		expected: &VectorSelector{
 			Name:           "foo",
-			Offset:         time.Minute + 30*time.Millisecond,
 			OriginalOffset: time.Minute + 30*time.Millisecond,
 			LabelMatchers: []*labels.Matcher{
 				MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
@@ -1401,6 +1398,19 @@ var testExpr = []struct {
 			PosRange: PositionRange{
 				Start: 0,
 				End:   16,
+			},
+		},
+	}, {
+		input: `foo @ -100`,
+		expected: &VectorSelector{
+			Name:      "foo",
+			Timestamp: makeInt64Pointer(-100000),
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+			},
+			PosRange: PositionRange{
+				Start: 0,
+				End:   10,
 			},
 		},
 	}, {
@@ -1615,7 +1625,6 @@ var testExpr = []struct {
 		expected: &MatrixSelector{
 			VectorSelector: &VectorSelector{
 				Name:           "test",
-				Offset:         5 * time.Minute,
 				OriginalOffset: 5 * time.Minute,
 				LabelMatchers: []*labels.Matcher{
 					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
@@ -1633,7 +1642,6 @@ var testExpr = []struct {
 		expected: &MatrixSelector{
 			VectorSelector: &VectorSelector{
 				Name:           "test",
-				Offset:         10 * time.Second,
 				OriginalOffset: 10 * time.Second,
 				LabelMatchers: []*labels.Matcher{
 					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
@@ -1651,7 +1659,6 @@ var testExpr = []struct {
 		expected: &MatrixSelector{
 			VectorSelector: &VectorSelector{
 				Name:           "test",
-				Offset:         14 * 24 * time.Hour,
 				OriginalOffset: 14 * 24 * time.Hour,
 				LabelMatchers: []*labels.Matcher{
 					MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "test"),
@@ -1669,7 +1676,6 @@ var testExpr = []struct {
 		expected: &MatrixSelector{
 			VectorSelector: &VectorSelector{
 				Name:           "test",
-				Offset:         3 * 24 * time.Hour,
 				OriginalOffset: 3 * 24 * time.Hour,
 				LabelMatchers: []*labels.Matcher{
 					MustLabelMatcher(labels.MatchEqual, "a", "b"),
@@ -2556,7 +2562,6 @@ var testExpr = []struct {
 							},
 						},
 						Range:          5 * time.Minute,
-						Offset:         4 * time.Minute,
 						OriginalOffset: 4 * time.Minute,
 						EndPos:         53,
 					},
@@ -2616,6 +2621,51 @@ var testExpr = []struct {
 			EndPos: 64,
 		},
 	}, {
+		input: `min_over_time(rate(foo{bar="baz"}[2s])[5m:] @ -160377509)[4m:3s]`,
+		expected: &SubqueryExpr{
+			Expr: &Call{
+				Func: MustGetFunction("min_over_time"),
+				Args: Expressions{
+					&SubqueryExpr{
+						Expr: &Call{
+							Func: MustGetFunction("rate"),
+							Args: Expressions{
+								&MatrixSelector{
+									VectorSelector: &VectorSelector{
+										Name: "foo",
+										LabelMatchers: []*labels.Matcher{
+											MustLabelMatcher(labels.MatchEqual, "bar", "baz"),
+											MustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "foo"),
+										},
+										PosRange: PositionRange{
+											Start: 19,
+											End:   33,
+										},
+									},
+									Range:  2 * time.Second,
+									EndPos: 37,
+								},
+							},
+							PosRange: PositionRange{
+								Start: 14,
+								End:   38,
+							},
+						},
+						Range:     5 * time.Minute,
+						Timestamp: makeInt64Pointer(-160377509000),
+						EndPos:    56,
+					},
+				},
+				PosRange: PositionRange{
+					Start: 0,
+					End:   57,
+				},
+			},
+			Range:  4 * time.Minute,
+			Step:   3 * time.Second,
+			EndPos: 64,
+		},
+	}, {
 		input: "sum without(and, by, avg, count, alert, annotations)(some_metric) [30m:10s]",
 		expected: &SubqueryExpr{
 			Expr: &AggregateExpr{
@@ -2653,7 +2703,6 @@ var testExpr = []struct {
 					Start: 0,
 					End:   21,
 				},
-				Offset:         1 * time.Minute,
 				OriginalOffset: 1 * time.Minute,
 			},
 			Range:  10 * time.Minute,
@@ -2691,7 +2740,6 @@ var testExpr = []struct {
 					End:   27,
 				},
 				Timestamp:      makeInt64Pointer(123000),
-				Offset:         1 * time.Minute,
 				OriginalOffset: 1 * time.Minute,
 			},
 			Range:  10 * time.Minute,
@@ -2711,7 +2759,6 @@ var testExpr = []struct {
 					End:   27,
 				},
 				Timestamp:      makeInt64Pointer(123000),
-				Offset:         1 * time.Minute,
 				OriginalOffset: 1 * time.Minute,
 			},
 			Range:  10 * time.Minute,
@@ -2732,7 +2779,6 @@ var testExpr = []struct {
 				},
 			},
 			Timestamp:      makeInt64Pointer(123000),
-			Offset:         1 * time.Minute,
 			OriginalOffset: 1 * time.Minute,
 			Range:          10 * time.Minute,
 			Step:           5 * time.Second,
@@ -2814,7 +2860,6 @@ var testExpr = []struct {
 				},
 			},
 			Range:          5 * time.Minute,
-			Offset:         10 * time.Minute,
 			OriginalOffset: 10 * time.Minute,
 			EndPos:         37,
 		},

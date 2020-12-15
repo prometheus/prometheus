@@ -2382,48 +2382,33 @@ func dontWrapStepInvariantExpr(expr parser.Expr) bool {
 // and subquery in the tree to accommodate the timestamp of @ modifier.
 // The offset is adjusted w.r.t. the given evaluation time.
 func setOffsetForAtModifier(evalTime int64, expr parser.Expr) {
+	getOffset := func(ts *int64, originalOffset time.Duration, path []parser.Node) time.Duration {
+		if ts == nil {
+			return originalOffset
+		}
+
+		subqOffset, _, subqTs := subqueryTimes(path)
+		if subqTs != nil {
+			subqOffset += time.Duration(evalTime-*subqTs) * time.Millisecond
+		}
+
+		offsetForTs := time.Duration(evalTime-*ts) * time.Millisecond
+		offsetDiff := offsetForTs - subqOffset
+		return originalOffset + offsetDiff
+	}
+
 	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
 		switch n := node.(type) {
 		case *parser.VectorSelector:
-			if n.Timestamp == nil {
-				return nil
-			}
-			offsetForTs := evalTime - *n.Timestamp
-			offsetDiff := offsetForTs - subqueryOffset(path, evalTime)
-			n.Offset = n.OriginalOffset + time.Duration(offsetDiff)*time.Millisecond
+			n.Offset = getOffset(n.Timestamp, n.OriginalOffset, path)
 
 		case *parser.MatrixSelector:
 			vs := n.VectorSelector.(*parser.VectorSelector)
-			if vs.Timestamp == nil {
-				return nil
-			}
-			offsetForTs := evalTime - *vs.Timestamp
-			offsetDiff := offsetForTs - subqueryOffset(path, evalTime)
-			vs.Offset = vs.OriginalOffset + time.Duration(offsetDiff)*time.Millisecond
+			vs.Offset = getOffset(vs.Timestamp, vs.OriginalOffset, path)
 
 		case *parser.SubqueryExpr:
-			if n.Timestamp == nil {
-				return nil
-			}
-			offsetForTs := evalTime - *n.Timestamp
-			offsetDiff := offsetForTs - subqueryOffset(path, evalTime)
-			n.Offset = n.OriginalOffset + time.Duration(offsetDiff)*time.Millisecond
+			n.Offset = getOffset(n.Timestamp, n.OriginalOffset, path)
 		}
 		return nil
 	})
-}
-
-func subqueryOffset(path []parser.Node, startTime int64) int64 {
-	var subqOffset time.Duration
-	for _, node := range path {
-		switch n := node.(type) {
-		case *parser.SubqueryExpr:
-			subqOffset += n.OriginalOffset
-			if n.Timestamp != nil {
-				// @ modifier on subquery resets all the offset till now.
-				subqOffset = time.Duration(startTime-*n.Timestamp) * time.Millisecond
-			}
-		}
-	}
-	return subqOffset.Milliseconds()
 }
