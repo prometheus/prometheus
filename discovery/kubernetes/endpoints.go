@@ -15,6 +15,7 @@ package kubernetes
 
 import (
 	"context"
+	"github.com/prometheus/prometheus/util/strutil"
 	"net"
 	"strconv"
 
