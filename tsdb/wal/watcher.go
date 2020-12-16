@@ -46,7 +46,6 @@ const (
 // and it is left to the implementer to make sure they are safe.
 type WriteTo interface {
 	Append([]record.RefSample) bool
-	AppendExemplars([]record.RefExemplar) bool
 	StoreSeries([]record.RefSeries, int)
 	// SeriesReset is called after reading a checkpoint to allow the deletion
 	// of all series created in a segment lower than the argument.
@@ -463,11 +462,10 @@ func (w *Watcher) garbageCollectSeries(segmentNum int) error {
 
 func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 	var (
-		dec       record.Decoder
-		series    []record.RefSeries
-		samples   []record.RefSample
-		send      []record.RefSample
-		exemplars []record.RefExemplar
+		dec     record.Decoder
+		series  []record.RefSeries
+		samples []record.RefSample
+		send    []record.RefSample
 	)
 	for r.Next() && !isClosed(w.quit) {
 		rec := r.Record()
@@ -508,19 +506,6 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 				w.writer.Append(send)
 				send = send[:0]
 			}
-
-		case record.Exemplars:
-			// If we're not tailing a segment we can ignore any exemplars records we see.
-			// This speeds up replay of the WAL by > 10x.
-			if !tail {
-				break
-			}
-			exemplars, err := dec.Exemplars(rec, exemplars[:0])
-			if err != nil {
-				w.recordDecodeFailsMetric.Inc()
-				return err
-			}
-			w.writer.AppendExemplars(exemplars)
 
 		case record.Tombstones:
 

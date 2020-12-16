@@ -488,46 +488,6 @@ outer:
 	return true
 }
 
-func (t *QueueManager) AppendExemplars(exemplars []record.RefExemplar) bool {
-outer:
-	for _, e := range exemplars {
-		t.seriesMtx.Lock()
-		lbls, ok := t.seriesLabels[e.Ref]
-		if !ok {
-			// todo: metric to track dropped exemplars?
-			t.seriesMtx.Unlock()
-			continue
-		}
-		t.seriesMtx.Unlock()
-		// This will only loop if the queues are being resharded.
-		backoff := t.cfg.MinBackoff
-		for {
-			select {
-			case <-t.quit:
-				return false
-			default:
-			}
-
-			if t.shards.enqueue(e.Ref, rwExemplar{
-				seriesLabels: lbls,
-				labels:       e.Labels,
-				t:            e.T,
-				v:            e.V,
-			}) {
-				continue outer
-			}
-
-			t.metrics.enqueueRetriesTotal.Inc()
-			time.Sleep(time.Duration(backoff))
-			backoff = backoff * 2
-			if backoff > t.cfg.MaxBackoff {
-				backoff = t.cfg.MaxBackoff
-			}
-		}
-	}
-	return true
-}
-
 // Start the queue manager sending samples to the remote storage.
 // Does not block.
 func (t *QueueManager) Start() {
@@ -831,13 +791,6 @@ type rwSample struct {
 	v      float64
 }
 
-type rwExemplar struct {
-	seriesLabels labels.Labels
-	labels       labels.Labels
-	t            int64
-	v            float64
-}
-
 type shards struct {
 	mtx sync.RWMutex // With the WAL, this is never actually contended.
 
@@ -993,29 +946,20 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 			// Number of pending samples is limited by the fact that sendSamples (via sendSamplesWithBackoff)
 			// retries endlessly, so once we reach max samples, if we can never send to the endpoint we'll
 			// stop reading from the queue. This makes it safe to reference pendingSamples by index.
-			switch s := sample.(type) {
+			switch sample := sample.(type) {
 			case rwSample:
-				pendingSamples[nPending].Labels = labelsToLabelsProto(s.labels, pendingSamples[nPending].Labels)
-				pendingSamples[nPending].Samples[0].Timestamp = s.t
-				pendingSamples[nPending].Samples[0].Value = s.v
+				pendingSamples[nPending].Labels = labelsToLabelsProto(sample.labels, pendingSamples[nPending].Labels)
+				pendingSamples[nPending].Samples[0].Timestamp = sample.t
+				pendingSamples[nPending].Samples[0].Value = sample.v
 				nPending++
-			case rwExemplar:
-				pendingSamples[nPending].Labels = labelsToLabelsProto(s.seriesLabels, pendingSamples[nPending].Labels)
-				pendingSamples[nPending].Exemplars = append(pendingSamples[nPending].Exemplars[:0], prompb.Exemplar{
-					Labels:    labelsToLabelsProto(s.labels, nil),
-					Value:     s.v,
-					Timestamp: s.t,
-				})
-				nPending++
-			}
+				if nPending >= max {
+					s.sendSamples(ctx, pendingSamples, &buf)
+					nPending = 0
+					s.qm.metrics.pendingSamples.Sub(float64(max))
 
-			if nPending >= max {
-				s.sendSamples(ctx, pendingSamples, &buf)
-				nPending = 0
-				s.qm.metrics.pendingSamples.Sub(float64(max))
-
-				stop()
-				timer.Reset(time.Duration(s.qm.cfg.BatchSendDeadline))
+					stop()
+					timer.Reset(time.Duration(s.qm.cfg.BatchSendDeadline))
+				}
 			}
 
 		case <-timer.C:

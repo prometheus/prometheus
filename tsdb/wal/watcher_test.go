@@ -59,11 +59,6 @@ func (wtm *writeToMock) Append(s []record.RefSample) bool {
 	return true
 }
 
-func (wtm *writeToMock) AppendExemplars(e []record.RefExemplar) bool {
-	//todo
-	return true
-}
-
 func (wtm *writeToMock) StoreSeries(series []record.RefSeries, index int) {
 	wtm.seriesLock.Lock()
 	defer wtm.seriesLock.Unlock()
