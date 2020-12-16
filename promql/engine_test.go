@@ -1767,19 +1767,6 @@ func TestWrapWithStepInvariantExpr(t *testing.T) {
 				PosRange: parser.PositionRange{Start: 0, End: 8},
 			},
 		}, {
-			input: "1 + 1",
-			expected: &parser.BinaryExpr{
-				Op: parser.ADD,
-				LHS: &parser.NumberLiteral{
-					Val:      1,
-					PosRange: parser.PositionRange{Start: 0, End: 1},
-				},
-				RHS: &parser.NumberLiteral{
-					Val:      1,
-					PosRange: parser.PositionRange{Start: 4, End: 5},
-				},
-			},
-		}, {
 			input: "foo * bar",
 			expected: &parser.BinaryExpr{
 				Op: parser.MUL,
@@ -1948,7 +1935,7 @@ func TestWrapWithStepInvariantExpr(t *testing.T) {
 			expected: &parser.StepInvariantExpr{
 				Expr: &parser.BinaryExpr{
 					Op:             parser.ADD,
-					VectorMatching: &parser.VectorMatching{}, // TODO(codesome): why does it require this?
+					VectorMatching: &parser.VectorMatching{},
 					LHS: &parser.AggregateExpr{
 						Op: parser.SUM,
 						Expr: &parser.VectorSelector{
@@ -2072,6 +2059,58 @@ func TestWrapWithStepInvariantExpr(t *testing.T) {
 				Range:  10 * time.Minute,
 				Step:   6 * time.Second,
 				EndPos: 22,
+			},
+		}, {
+			input: `foo{bar="baz"}[10m:6s] @ 10`,
+			expected: &parser.StepInvariantExpr{
+				Expr: &parser.SubqueryExpr{
+					Expr: &parser.VectorSelector{
+						Name: "foo",
+						LabelMatchers: []*labels.Matcher{
+							parser.MustLabelMatcher(labels.MatchEqual, "bar", "baz"),
+							parser.MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+						},
+						PosRange: parser.PositionRange{
+							Start: 0,
+							End:   14,
+						},
+					},
+					Range:     10 * time.Minute,
+					Step:      6 * time.Second,
+					Timestamp: makeInt64Pointer(10000),
+					EndPos:    27,
+				},
+			},
+		}, { // Even though the subquery is step invariant, the inside is also wrapped separately.
+			input: `sum(foo{bar="baz"} @ 20)[10m:6s] @ 10`,
+			expected: &parser.StepInvariantExpr{
+				Expr: &parser.SubqueryExpr{
+					Expr: &parser.StepInvariantExpr{
+						Expr: &parser.AggregateExpr{
+							Op: parser.SUM,
+							Expr: &parser.VectorSelector{
+								Name: "foo",
+								LabelMatchers: []*labels.Matcher{
+									parser.MustLabelMatcher(labels.MatchEqual, "bar", "baz"),
+									parser.MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+								},
+								PosRange: parser.PositionRange{
+									Start: 4,
+									End:   23,
+								},
+								Timestamp: makeInt64Pointer(20000),
+							},
+							PosRange: parser.PositionRange{
+								Start: 0,
+								End:   24,
+							},
+						},
+					},
+					Range:     10 * time.Minute,
+					Step:      6 * time.Second,
+					Timestamp: makeInt64Pointer(10000),
+					EndPos:    37,
+				},
 			},
 		}, {
 			input: `min_over_time(rate(foo{bar="baz"}[2s])[5m:] @ 1603775091)[4m:3s]`,
@@ -2251,7 +2290,7 @@ func TestWrapWithStepInvariantExpr(t *testing.T) {
 					Op: parser.SUM,
 					Expr: &parser.BinaryExpr{
 						Op:             parser.ADD,
-						VectorMatching: &parser.VectorMatching{}, // TODO(codesome): why does it require this?
+						VectorMatching: &parser.VectorMatching{},
 						LHS: &parser.AggregateExpr{
 							Op: parser.SUM,
 							Expr: &parser.VectorSelector{
