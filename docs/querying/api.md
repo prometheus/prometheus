@@ -351,8 +351,6 @@ URL query parameters:
 - `start=<rfc3339 | unix_timestamp>`: Start timestamp.
 - `end=<rfc3339 | unix_timestamp>`: End timestamp.
 
-Exemplar storage is not part of Prometheus' TSDB, so this endpoint doesn't allow filtering based on time.
-
 ```json
 $ curl -g 'http://localhost:9090/api/v1/query_exemplar?query=test_exemplar_metric_total&start=2020-09-14T15:22:25.479Z&end=020-09-14T15:23:25.479Z'
 {

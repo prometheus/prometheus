@@ -1544,14 +1544,14 @@ func TestScrapeLoopAppendExemplar(t *testing.T) {
 		expValue        float64
 		exemplar        exemplar.Exemplar
 	}{
-		// {
-		// 	title:           "Metric without exemplars",
-		// 	scrapeLabels:    "metric_total{n=\"1\"} 0\n# EOF",
-		// 	discoveryLabels: []string{"n", "2"},
-		// 	expLset:         labels.FromStrings("__name__", "metric_total", "exported_n", "1", "n", "2"),
-		// 	expValue:        0,
-		// 	exemplar:        exemplar.Exemplar{},
-		// }, {
+		{
+			title:           "Metric without exemplars",
+			scrapeLabels:    "metric_total{n=\"1\"} 0\n# EOF",
+			discoveryLabels: []string{"n", "2"},
+			expLset:         labels.FromStrings("__name__", "metric_total", "exported_n", "1", "n", "2"),
+			expValue:        0,
+			exemplar:        exemplar.Exemplar{},
+		},
 		{
 			title:           "Metric with exemplars",
 			scrapeLabels:    "metric_total{n=\"1\"} 0 # {a=\"abc\"} 1.0\n# EOF",
@@ -1612,7 +1612,11 @@ func TestScrapeLoopAppendExemplar(t *testing.T) {
 		require.NoError(t, err)
 
 		t.Logf("Test:%s", test.title)
-		require.Equal(t, expected[0].e, e[0])
+		if !expected[0].e.Equals(exemplar.Exemplar{}) {
+			require.Equal(t, expected[0].e, e[0])
+		} else {
+			require.Equal(t, len(e), 0)
+		}
 	}
 }
 

@@ -22,7 +22,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
-// single circular buffer for all exemplars
 type CircularExemplarStorage struct {
 	lock        sync.RWMutex
 	index       map[string]int
@@ -43,7 +42,7 @@ func (ce circularBufferEntry) Exemplar() exemplar.Exemplar {
 
 type storageExemplar struct {
 	exemplar        exemplar.Exemplar
-	seriesLabels    labels.Labels // need to store labels so we can double check when querying
+	seriesLabels    labels.Labels
 	scrapeTimestamp int64
 }
 
@@ -90,16 +89,17 @@ func (ce *CircularExemplarStorage) Select(start, end int64, l labels.Labels) ([]
 	lastTs := ce.exemplars[idx].se.scrapeTimestamp
 
 	for {
-		// we need the labels check here in case what was the previous exemplar for the series
+		// We need the labels check here in case what was the previous exemplar for the series
 		// when the exemplar from the last loop iteration was written has since been overwritten
-		// with an exemplar from another series
-		// TODO: come up with a way to update the
+		// with an exemplar from another series.
+		// todo (callum) confirm if this check is still needed now that adding an exemplar should
+		// update the index and previous pointer for the series whose exemplar was overwritten.
 		if idx == -1 || string(ce.exemplars[idx].se.seriesLabels.Bytes(buf)) != string(l.Bytes(buf)) {
 			break
 		}
 
 		e = ce.exemplars[idx].Exemplar()
-		// This line is needed to avoid an infinite loop, consider redesign of buffer entry struct.
+		// todo (callum) This line is needed to avoid an infinite loop, consider redesign of buffer entry struct.
 		if ce.exemplars[idx].se.scrapeTimestamp > lastTs {
 			break
 		}
@@ -202,7 +202,7 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, t int64, e exemp
 	return nil
 }
 
-// For use in tests, clears the entire exemplar storage
+// For use in tests, clears the entire exemplar storage.
 func (ce *CircularExemplarStorage) Reset() {
 	ce.exemplars = make([]*circularBufferEntry, ce.len)
 	ce.index = make(map[string]int)
