@@ -294,7 +294,8 @@ local template = grafana.template;
 
       dashboard.new(
         title='%(prefix)sRemote Write' % $._config.grafana,
-        editable=true)
+        editable=true
+      )
       .addTemplate(
         {
           hide: 0,
@@ -378,7 +379,7 @@ local template = grafana.template;
         .addPanel(failedSamples)
         .addPanel(retriedSamples)
         .addPanel(enqueueRetries)
-      )  + {
+      ) + {
         tags: $._config.grafana.tags,
         refresh: $._config.grafana.refresh,
       },
