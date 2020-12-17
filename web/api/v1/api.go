@@ -492,6 +492,14 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrap(err, "invalid parameter 'end'")}, nil, nil}
 	}
+	var matcherSets [][]*labels.Matcher
+	for _, s := range r.Form["match[]"] {
+		matchers, err := parser.ParseMetricSelector(s)
+		if err != nil {
+			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+		}
+		matcherSets = append(matcherSets, matchers)
+	}
 
 	q, err := api.Queryable.Querier(r.Context(), timestamp.FromTime(start), timestamp.FromTime(end))
 	if err != nil {
@@ -499,7 +507,27 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 	}
 	defer q.Close()
 
-	names, warnings, err := q.LabelNames()
+	var names []string
+	var warnings storage.Warnings
+	if len(r.Form["match[]"]) > 0 {
+		hints := &storage.SelectHints{
+			Start: timestamp.FromTime(start),
+			End:   timestamp.FromTime(end),
+			Func:  "series", // There is no series function, this token is used for lookups that don't need samples.
+		}
+
+		// Get all series which match matchers.
+		var sets []storage.SeriesSet
+		for _, mset := range matcherSets {
+			s := q.Select(false, hints, mset...)
+			sets = append(sets, s)
+		}
+		// TODO(yeya24): match these at TSDB level.
+		names, warnings, err = labelNamesByMatchers(sets)
+	} else {
+		names, warnings, err = q.LabelNames()
+	}
+
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
 	}
@@ -553,12 +581,19 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 	var vals []string
 	var warnings storage.Warnings
 	if len(r.Form["match[]"]) > 0 {
+		hints := &storage.SelectHints{
+			Start: timestamp.FromTime(start),
+			End:   timestamp.FromTime(end),
+			Func:  "series", // There is no series function, this token is used for lookups that don't need samples.
+		}
+
 		// Get all series which match matchers.
 		var sets []storage.SeriesSet
 		for _, mset := range matcherSets {
-			s := q.Select(false, nil, mset...)
+			s := q.Select(false, hints, mset...)
 			sets = append(sets, s)
 		}
+		// TODO(yeya24): match these at TSDB level.
 		vals, warnings, err = labelValuesByMatchers(sets, name)
 	} else {
 		vals, warnings, err = q.LabelValues(name)
@@ -589,12 +624,36 @@ func labelValuesByMatchers(sets []storage.SeriesSet, name string) ([]string, sto
 		return nil, warnings, set.Err()
 	}
 	// Convert the map to an array.
-	labelValues := []string{}
+	labelValues := make([]string, 0, len(labelValuesSet))
 	for key := range labelValuesSet {
 		labelValues = append(labelValues, key)
 	}
 	sort.Strings(labelValues)
 	return labelValues, warnings, nil
+}
+
+// labelNamesByMatchers uses matchers to filter out matching series, then label names are extracted.
+func labelNamesByMatchers(sets []storage.SeriesSet) ([]string, storage.Warnings, error) {
+	set := storage.NewMergeSeriesSet(sets, storage.ChainedSeriesMerge)
+	labelNamesSet := make(map[string]struct{})
+	for set.Next() {
+		series := set.At()
+		for _, lb := range series.Labels() {
+			labelNamesSet[lb.Name] = struct{}{}
+		}
+	}
+
+	warnings := set.Warnings()
+	if set.Err() != nil {
+		return nil, warnings, set.Err()
+	}
+	// Convert the map to an array.
+	labelNames := make([]string, 0, len(labelNamesSet))
+	for key := range labelNamesSet {
+		labelNames = append(labelNames, key)
+	}
+	sort.Strings(labelNames)
+	return labelNames, warnings, nil
 }
 
 var (

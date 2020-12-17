@@ -1622,6 +1622,17 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 					"boo",
 				},
 			},
+			// Label values with bad matchers.
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "foo",
+				},
+				query: url.Values{
+					"match[]": []string{`{foo=""`, `test_metric2`},
+				},
+				errType: errorBadData,
+			},
 			// Label values with matcher.
 			{
 				endpoint: api.labelValues,
@@ -1670,8 +1681,8 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 				},
 				query: url.Values{
 					"match[]": []string{`test_metric1`},
-					"start": []string{"1"},
-					"end":   []string{"100000000"},
+					"start":   []string{"1"},
+					"end":     []string{"100000000"},
 				},
 				response: []string{
 					"bar",
@@ -1762,6 +1773,49 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 					"end": []string{"20"},
 				},
 				response: []string{"__name__", "dup", "foo"},
+			},
+			// Label names with bad matchers.
+			{
+				endpoint: api.labelNames,
+				query: url.Values{
+					"match[]": []string{`{foo=""`, `test_metric2`},
+				},
+				errType: errorBadData,
+			},
+			// Label names with matcher.
+			{
+				endpoint: api.labelNames,
+				query: url.Values{
+					"match[]": []string{`test_metric2`},
+				},
+				response: []string{"__name__", "foo"},
+			},
+			// Label names with matcher.
+			{
+				endpoint: api.labelNames,
+				query: url.Values{
+					"match[]": []string{`test_metric3`},
+				},
+				response: []string{"__name__", "dup", "foo"},
+			},
+			// Label names with matcher using label filter.
+			// There is no matching series.
+			{
+				endpoint: api.labelNames,
+				query: url.Values{
+					"match[]": []string{`test_metric1{foo="test"}`},
+				},
+				response: []string{},
+			},
+			// Label names with matcher and time range.
+			{
+				endpoint: api.labelNames,
+				query: url.Values{
+					"match[]": []string{`test_metric2`},
+					"start":   []string{"1"},
+					"end":     []string{"100000000"},
+				},
+				response: []string{"__name__", "foo"},
 			},
 		}...)
 	}
