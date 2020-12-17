@@ -492,13 +492,10 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrap(err, "invalid parameter 'end'")}, nil, nil}
 	}
-	var matcherSets [][]*labels.Matcher
-	for _, s := range r.Form["match[]"] {
-		matchers, err := parser.ParseMetricSelector(s)
-		if err != nil {
-			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
-		}
-		matcherSets = append(matcherSets, matchers)
+
+	matcherSets, err := parseMatchersParam(r.Form["match[]"])
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 
 	q, err := api.Queryable.Querier(r.Context(), timestamp.FromTime(start), timestamp.FromTime(end))
@@ -509,7 +506,7 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 
 	var names []string
 	var warnings storage.Warnings
-	if len(r.Form["match[]"]) > 0 {
+	if len(matcherSets) > 0 {
 		hints := &storage.SelectHints{
 			Start: timestamp.FromTime(start),
 			End:   timestamp.FromTime(end),
@@ -522,8 +519,7 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 			s := q.Select(false, hints, mset...)
 			sets = append(sets, s)
 		}
-		// TODO(yeya24): match these at TSDB level.
-		names, warnings, err = labelNamesByMatchers(sets)
+		names, warnings, err = getLabelNamesFromSeriesSet(sets)
 	} else {
 		names, warnings, err = q.LabelNames()
 	}
@@ -553,13 +549,10 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrap(err, "invalid parameter 'end'")}, nil, nil}
 	}
-	var matcherSets [][]*labels.Matcher
-	for _, s := range r.Form["match[]"] {
-		matchers, err := parser.ParseMetricSelector(s)
-		if err != nil {
-			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
-		}
-		matcherSets = append(matcherSets, matchers)
+
+	matcherSets, err := parseMatchersParam(r.Form["match[]"])
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 
 	q, err := api.Queryable.Querier(r.Context(), timestamp.FromTime(start), timestamp.FromTime(end))
@@ -580,7 +573,7 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 
 	var vals []string
 	var warnings storage.Warnings
-	if len(r.Form["match[]"]) > 0 {
+	if len(matcherSets) > 0 {
 		hints := &storage.SelectHints{
 			Start: timestamp.FromTime(start),
 			End:   timestamp.FromTime(end),
@@ -593,8 +586,7 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 			s := q.Select(false, hints, mset...)
 			sets = append(sets, s)
 		}
-		// TODO(yeya24): match these at TSDB level.
-		vals, warnings, err = labelValuesByMatchers(sets, name)
+		vals, warnings, err = getLabelValuesFromSeriesSet(sets, name)
 	} else {
 		vals, warnings, err = q.LabelValues(name)
 	}
@@ -609,13 +601,17 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 	return apiFuncResult{vals, nil, warnings, closer}
 }
 
-// LabelValuesByMatchers uses matchers to filter out matching series, then label values are extracted.
-func labelValuesByMatchers(sets []storage.SeriesSet, name string) ([]string, storage.Warnings, error) {
+// getLabelValuesFromSeriesSet extracts label values from matching series.
+func getLabelValuesFromSeriesSet(sets []storage.SeriesSet, name string) ([]string, storage.Warnings, error) {
 	set := storage.NewMergeSeriesSet(sets, storage.ChainedSeriesMerge)
 	labelValuesSet := make(map[string]struct{})
 	for set.Next() {
 		series := set.At()
 		labelValue := series.Labels().Get(name)
+		// Filter out empty value.
+		if labelValue == "" {
+			continue
+		}
 		labelValuesSet[labelValue] = struct{}{}
 	}
 
@@ -632,8 +628,8 @@ func labelValuesByMatchers(sets []storage.SeriesSet, name string) ([]string, sto
 	return labelValues, warnings, nil
 }
 
-// labelNamesByMatchers uses matchers to filter out matching series, then label names are extracted.
-func labelNamesByMatchers(sets []storage.SeriesSet) ([]string, storage.Warnings, error) {
+// getLabelNamesFromSeriesSet extracts label names from matching series.
+func getLabelNamesFromSeriesSet(sets []storage.SeriesSet) ([]string, storage.Warnings, error) {
 	set := storage.NewMergeSeriesSet(sets, storage.ChainedSeriesMerge)
 	labelNamesSet := make(map[string]struct{})
 	for set.Next() {
@@ -681,26 +677,9 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 
-	var matcherSets [][]*labels.Matcher
-	for _, s := range r.Form["match[]"] {
-		matchers, err := parser.ParseMetricSelector(s)
-		if err != nil {
-			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
-		}
-		matcherSets = append(matcherSets, matchers)
-	}
-
-	for _, ms := range matcherSets {
-		var nonEmpty bool
-		for _, lm := range ms {
-			if lm != nil && !lm.Matches("") {
-				nonEmpty = true
-				break
-			}
-		}
-		if !nonEmpty {
-			return apiFuncResult{nil, &apiError{errorBadData, errors.New("match[] must contain at least one non-empty matcher")}, nil, nil}
-		}
+	matcherSets, err := parseMatchersParam(r.Form["match[]"])
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 
 	q, err := api.Queryable.Querier(r.Context(), timestamp.FromTime(start), timestamp.FromTime(end))
@@ -1732,6 +1711,31 @@ func parseDuration(s string) (time.Duration, error) {
 		return time.Duration(d), nil
 	}
 	return 0, errors.Errorf("cannot parse %q to a valid duration", s)
+}
+
+func parseMatchersParam(matchers []string) ([][]*labels.Matcher, error) {
+	var matcherSets [][]*labels.Matcher
+	for _, s := range matchers {
+		matchers, err := parser.ParseMetricSelector(s)
+		if err != nil {
+			return nil, err
+		}
+		matcherSets = append(matcherSets, matchers)
+	}
+
+	for _, ms := range matcherSets {
+		var nonEmpty bool
+		for _, lm := range ms {
+			if lm != nil && !lm.Matches("") {
+				nonEmpty = true
+				break
+			}
+		}
+		if !nonEmpty {
+			return nil, errors.New("match[] must contain at least one non-empty matcher")
+		}
+	}
+	return matcherSets, nil
 }
 
 func marshalPointJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {

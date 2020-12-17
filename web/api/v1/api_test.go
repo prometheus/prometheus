@@ -1633,6 +1633,17 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 				},
 				errType: errorBadData,
 			},
+			// Label values with empty matchers.
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "foo",
+				},
+				query: url.Values{
+					"match[]": []string{`{foo=""}`},
+				},
+				errType: errorBadData,
+			},
 			// Label values with matcher.
 			{
 				endpoint: api.labelValues,
@@ -1779,6 +1790,17 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 				endpoint: api.labelNames,
 				query: url.Values{
 					"match[]": []string{`{foo=""`, `test_metric2`},
+				},
+				errType: errorBadData,
+			},
+			// Label values with empty matchers.
+			{
+				endpoint: api.labelNames,
+				params: map[string]string{
+					"name": "foo",
+				},
+				query: url.Values{
+					"match[]": []string{`{foo=""}`},
 				},
 				errType: errorBadData,
 			},
