@@ -526,8 +526,8 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 				}
 			}
 			warnings = append(warnings, s.Warnings()...)
-			if s.Err() != nil {
-				return apiFuncResult{nil, &apiError{errorExec, s.Err()}, warnings, nil}
+			if err := s.Err(); err != nil {
+				return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
 			}
 		}
 
@@ -588,8 +588,10 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 		q.Close()
 	}
 
-	var vals []string
-	var warnings storage.Warnings
+	var (
+		vals     []string
+		warnings storage.Warnings
+	)
 	if len(matcherSets) > 0 {
 		hints := &storage.SelectHints{
 			Start: timestamp.FromTime(start),
@@ -597,52 +599,43 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 			Func:  "series", // There is no series function, this token is used for lookups that don't need samples.
 		}
 
+		labelValuesSet := make(map[string]struct{})
 		// Get all series which match matchers.
-		var sets []storage.SeriesSet
 		for _, mset := range matcherSets {
 			s := q.Select(false, hints, mset...)
-			sets = append(sets, s)
+			for s.Next() {
+				series := s.At()
+				labelValue := series.Labels().Get(name)
+				// Filter out empty value.
+				if labelValue == "" {
+					continue
+				}
+				labelValuesSet[labelValue] = struct{}{}
+			}
+			warnings = append(warnings, s.Warnings()...)
+			if err := s.Err(); err != nil {
+				return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
+			}
 		}
-		vals, warnings, err = getLabelValuesFromSeriesSet(sets, name)
+
+		// Convert the map to an array.
+		vals = make([]string, 0, len(labelValuesSet))
+		for key := range labelValuesSet {
+			vals = append(vals, key)
+		}
+		sort.Strings(vals)
 	} else {
 		vals, warnings, err = q.LabelValues(name)
+		if err != nil {
+			return apiFuncResult{nil, &apiError{errorExec, err}, warnings, closer}
+		}
 	}
 
-	if err != nil {
-		return apiFuncResult{nil, &apiError{errorExec, err}, warnings, closer}
-	}
 	if vals == nil {
 		vals = []string{}
 	}
 
 	return apiFuncResult{vals, nil, warnings, closer}
-}
-
-// getLabelValuesFromSeriesSet extracts label values from matching series.
-func getLabelValuesFromSeriesSet(sets []storage.SeriesSet, name string) ([]string, storage.Warnings, error) {
-	set := storage.NewMergeSeriesSet(sets, storage.ChainedSeriesMerge)
-	labelValuesSet := make(map[string]struct{})
-	for set.Next() {
-		series := set.At()
-		labelValue := series.Labels().Get(name)
-		// Filter out empty value.
-		if labelValue == "" {
-			continue
-		}
-		labelValuesSet[labelValue] = struct{}{}
-	}
-
-	warnings := set.Warnings()
-	if set.Err() != nil {
-		return nil, warnings, set.Err()
-	}
-	// Convert the map to an array.
-	labelValues := make([]string, 0, len(labelValuesSet))
-	for key := range labelValuesSet {
-		labelValues = append(labelValues, key)
-	}
-	sort.Strings(labelValues)
-	return labelValues, warnings, nil
 }
 
 var (
