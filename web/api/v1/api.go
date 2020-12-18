@@ -504,8 +504,10 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 	}
 	defer q.Close()
 
-	var names []string
-	var warnings storage.Warnings
+	var (
+		names    []string
+		warnings storage.Warnings
+	)
 	if len(matcherSets) > 0 {
 		hints := &storage.SelectHints{
 			Start: timestamp.FromTime(start),
@@ -513,20 +515,35 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 			Func:  "series", // There is no series function, this token is used for lookups that don't need samples.
 		}
 
+		labelNamesSet := make(map[string]struct{})
 		// Get all series which match matchers.
-		var sets []storage.SeriesSet
 		for _, mset := range matcherSets {
 			s := q.Select(false, hints, mset...)
-			sets = append(sets, s)
+			for s.Next() {
+				series := s.At()
+				for _, lb := range series.Labels() {
+					labelNamesSet[lb.Name] = struct{}{}
+				}
+			}
+			warnings = append(warnings, s.Warnings()...)
+			if s.Err() != nil {
+				return apiFuncResult{nil, &apiError{errorExec, s.Err()}, warnings, nil}
+			}
 		}
-		names, warnings, err = getLabelNamesFromSeriesSet(sets)
+
+		// Convert the map to an array.
+		names = make([]string, 0, len(labelNamesSet))
+		for key := range labelNamesSet {
+			names = append(names, key)
+		}
+		sort.Strings(names)
 	} else {
 		names, warnings, err = q.LabelNames()
+		if err != nil {
+			return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
+		}
 	}
 
-	if err != nil {
-		return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
-	}
 	if names == nil {
 		names = []string{}
 	}
@@ -626,30 +643,6 @@ func getLabelValuesFromSeriesSet(sets []storage.SeriesSet, name string) ([]strin
 	}
 	sort.Strings(labelValues)
 	return labelValues, warnings, nil
-}
-
-// getLabelNamesFromSeriesSet extracts label names from matching series.
-func getLabelNamesFromSeriesSet(sets []storage.SeriesSet) ([]string, storage.Warnings, error) {
-	set := storage.NewMergeSeriesSet(sets, storage.ChainedSeriesMerge)
-	labelNamesSet := make(map[string]struct{})
-	for set.Next() {
-		series := set.At()
-		for _, lb := range series.Labels() {
-			labelNamesSet[lb.Name] = struct{}{}
-		}
-	}
-
-	warnings := set.Warnings()
-	if set.Err() != nil {
-		return nil, warnings, set.Err()
-	}
-	// Convert the map to an array.
-	labelNames := make([]string, 0, len(labelNamesSet))
-	for key := range labelNamesSet {
-		labelNames = append(labelNames, key)
-	}
-	sort.Strings(labelNames)
-	return labelNames, warnings, nil
 }
 
 var (
@@ -1723,17 +1716,14 @@ func parseMatchersParam(matchers []string) ([][]*labels.Matcher, error) {
 		matcherSets = append(matcherSets, matchers)
 	}
 
+OUTER:
 	for _, ms := range matcherSets {
-		var nonEmpty bool
 		for _, lm := range ms {
 			if lm != nil && !lm.Matches("") {
-				nonEmpty = true
-				break
+				continue OUTER
 			}
 		}
-		if !nonEmpty {
-			return nil, errors.New("match[] must contain at least one non-empty matcher")
-		}
+		return nil, errors.New("match[] must contain at least one non-empty matcher")
 	}
 	return matcherSets, nil
 }
