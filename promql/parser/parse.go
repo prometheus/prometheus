@@ -698,7 +698,7 @@ func (p *parser) addOffset(e Node, offset time.Duration) {
 		orgoffsetp = &s.OriginalOffset
 		endPosp = &s.EndPos
 	default:
-		p.addParseErrf(e.PositionRange(), "offset modifier must be preceded by an instant selector vector or range vector selector or a subquery, but follows a %T instead", e)
+		p.addParseErrf(e.PositionRange(), "offset modifier must be preceded by an instant selector vector or range vector selector or a subquery")
 		return
 	}
 
@@ -733,7 +733,7 @@ func (p *parser) setTimestamp(e Node, ts float64) {
 		timestampp = &s.Timestamp
 		endPosp = &s.EndPos
 	default:
-		p.addParseErrf(e.PositionRange(), "@ modifier must be preceded by an instant selector vector or range vector selector or a subquery, but follows a %T instead", e)
+		p.addParseErrf(e.PositionRange(), "@ modifier must be preceded by an instant selector vector or range vector selector or a subquery")
 		return
 	}
 

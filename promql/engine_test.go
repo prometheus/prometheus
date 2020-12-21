@@ -26,7 +26,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -717,6 +716,9 @@ func TestAtModifier(t *testing.T) {
 load 10s
   metric{job="1"} 0+1x1000
   metric{job="2"} 0+2x1000
+  metric_topk{instance="1"} 0+1x1000
+  metric_topk{instance="2"} 0+2x1000
+  metric_topk{instance="3"} 1000-1x1000
 
 load 1ms
   metric_ms 0+1x10000
@@ -729,6 +731,9 @@ load 1ms
 
 	lbls1 := labels.FromStrings("__name__", "metric", "job", "1")
 	lbls2 := labels.FromStrings("__name__", "metric", "job", "2")
+	//lblstopk1 := labels.FromStrings("__name__", "metric_topk", "instance", "1")
+	lblstopk2 := labels.FromStrings("__name__", "metric_topk", "instance", "2")
+	lblstopk3 := labels.FromStrings("__name__", "metric_topk", "instance", "3")
 	lblsms := labels.FromStrings("__name__", "metric_ms")
 	lblsneg := labels.FromStrings("__name__", "metric_neg")
 
@@ -747,11 +752,17 @@ load 1ms
 		start, end, interval int64 // Time in second.
 		result               parser.Value
 	}{
-		{ // Time of the result is the evaluation time.
-			query: `metric{job="1"} @ 50`,
-			start: 25,
+		{
+			query: `metric_neg @ 0`,
+			start: 100,
 			result: Vector{
-				Sample{Point: Point{V: 5, T: 25000}, Metric: lbls1},
+				Sample{Point: Point{V: 1, T: 100000}, Metric: lblsneg},
+			},
+		}, {
+			query: `metric_neg @ -200`,
+			start: 100,
+			result: Vector{
+				Sample{Point: Point{V: 201, T: 100000}, Metric: lblsneg},
 			},
 		}, { // Time of the result is the evaluation time.
 			query: `metric{job="2"} @ 50`,
@@ -811,12 +822,6 @@ load 1ms
 				},
 			},
 		}, {
-			query: `metric_ms @ 1.234`,
-			start: 100,
-			result: Vector{
-				Sample{Point: Point{V: 1234, T: 100000}, Metric: lblsms},
-			},
-		}, {
 			query: `metric_ms[3ms] @ 2.345`,
 			start: 100,
 			result: Matrix{
@@ -824,12 +829,6 @@ load 1ms
 					Points: []Point{{V: 2342, T: 2342}, {V: 2343, T: 2343}, {V: 2344, T: 2344}, {V: 2345, T: 2345}},
 					Metric: lblsms,
 				},
-			},
-		}, {
-			query: `metric_neg @ 0`,
-			start: 100,
-			result: Vector{
-				Sample{Point: Point{V: 1, T: 100000}, Metric: lblsneg},
 			},
 		}, {
 			query: `metric_neg[2s] @ 0`,
@@ -848,12 +847,6 @@ load 1ms
 					Points: []Point{{V: 3, T: -2000}, {V: 2, T: -1000}, {V: 1, T: 0}},
 					Metric: lblsneg,
 				},
-			},
-		}, {
-			query: `metric_neg @ -200`,
-			start: 100,
-			result: Vector{
-				Sample{Point: Point{V: 201, T: 100000}, Metric: lblsneg},
 			},
 		}, {
 			query: `metric_neg[3s] @ -500`,
@@ -890,35 +883,7 @@ load 1ms
 					Metric: lbls2,
 				},
 			},
-		}, {
-			query: `metric{job="1"} @ 50 + metric{job="1"} @ 100`,
-			start: 25,
-			result: Vector{
-				Sample{Point: Point{V: 15, T: 25000}, Metric: labels.FromStrings("job", "1")},
-			},
-		}, {
-			query: `rate(metric{job="1"}[100s] @ 100) + label_replace(rate(metric{job="2"}[123s] @ 200), "job", "1", "", "")`,
-			start: 25,
-			result: Vector{
-				Sample{Point: Point{V: 0.3, T: 25000}, Metric: labels.FromStrings("job", "1")},
-			},
-		}, {
-			query: `sum_over_time(metric{job="1"}[100s] @ 100) 
-                      + 
-                    label_replace(sum_over_time(metric{job="2"}[100s] @ 100), "job", "1", "", "")`,
-			start: 25,
-			result: Vector{
-				Sample{Point: Point{V: 165, T: 25000}, Metric: labels.FromStrings("job", "1")},
-			},
-		}, {
-			query: `sum_over_time(metric{job="1"}[100s] @ 100) 
-                      + 
-                    label_replace(sum_over_time(metric{job="2"}[100s] @ 200), "job", "1", "", "")`,
-			start: 25,
-			result: Vector{
-				Sample{Point: Point{V: 385, T: 25000}, Metric: labels.FromStrings("job", "1")},
-			},
-		}, {
+		}, { // Different nested timestamps.
 			query: `sum_over_time(metric{job="1"}[100s] @ 100)[100s:25s] @ 50`,
 			start: 100,
 			result: Matrix{
@@ -927,15 +892,7 @@ load 1ms
 					Metric: labels.FromStrings("job", "1"),
 				},
 			},
-		}, {
-			// Inner most sum = 1+2+...+10 = 55.
-			// With [100s:25s] subquery, it's 55*5.
-			query: `sum_over_time(sum_over_time(metric{job="1"}[100s] @ 100)[100s:25s] @ 50)`,
-			start: 100,
-			result: Vector{
-				Sample{Point: Point{V: 275, T: 100000}, Metric: labels.FromStrings("job", "1")},
-			},
-		}, {
+		}, { // Nested subqueries with different timestamps.
 			query: `sum_over_time(sum_over_time(metric{job="1"}[100s] @ 100)[100s:25s] @ 50)[3s:1s] @ 3000`,
 			start: 100,
 			result: Matrix{
@@ -945,7 +902,7 @@ load 1ms
 				},
 			},
 		}, {
-			// Testing the inner subquery timestamp.
+			// Testing the inner subquery timestamp (since vector selector does not have @).
 			// Inner sum for subquery [100s:25s] @ 50 are
 			// at -50 = 0, at -25 = 0, at 0 = 0, at 25 = 2, at 50 = 4+5 = 9.
 			query: `sum_over_time(sum_over_time(metric{job="1"}[10s])[100s:25s] @ 50)[3s:1s] @ 200`,
@@ -958,7 +915,7 @@ load 1ms
 			},
 		},
 		{
-			// Testing the inner subquery timestamp.
+			// Testing the inner subquery timestamp (since vector selector does not have @)
 			// Inner sum for subquery [100s:25s] @ 200 are
 			// at 100 = 9+10, at 125 = 12, at 150 = 14+15, at 175 = 17, at 200 = 19+20.
 			query: `sum_over_time(sum_over_time(metric{job="1"}[10s])[100s:25s] @ 200)[3s:1s] @ 50`,
@@ -969,23 +926,49 @@ load 1ms
 					Metric: labels.FromStrings("job", "1"),
 				},
 			},
-		},
-		{ // timestamp() takes the time of the sample and not the evaluation time.
-			query: `timestamp(((metric{job="2"} @ 50)))`,
-			start: 100, end: 102,
+		}, {
+			query: `metric_topk and topk(1, sum_over_time(metric_topk[50s] @ 100))`,
+			start: 50, end: 80, interval: 10,
 			result: Matrix{
 				Series{
-					Points: []Point{{V: 50, T: 100000}, {V: 50, T: 101000}, {V: 50, T: 102000}},
-					Metric: labels.FromStrings("job", "2"),
+					Points: []Point{{V: 995, T: 50000}, {V: 994, T: 60000}, {V: 993, T: 70000}, {V: 992, T: 80000}},
+					Metric: lblstopk3,
 				},
 			},
 		}, {
-			query: `minute()`,
-			start: 30, end: 210, interval: 60,
+			query: `metric_topk and topk(1, sum_over_time(metric_topk[50s] @ 5000))`,
+			start: 50, end: 80, interval: 10,
 			result: Matrix{
 				Series{
-					Points: []Point{{V: 0, T: 30000}, {V: 1, T: 90000}, {V: 2, T: 150000}, {V: 3, T: 210000}},
-					Metric: labels.Labels{},
+					Points: []Point{{V: 10, T: 50000}, {V: 12, T: 60000}, {V: 14, T: 70000}, {V: 16, T: 80000}},
+					Metric: lblstopk2,
+				},
+			},
+		}, { // timestamp() takes the time of the sample and not the evaluation time.
+			query: `timestamp(metric{job="2"} @ 50)[100s:25s]`,
+			start: 100,
+			result: Matrix{
+				Series{
+					Points: []Point{{V: 50, T: 0}, {V: 50, T: 25000}, {V: 50, T: 50000}, {V: 50, T: 75000}, {V: 50, T: 100000}},
+					Metric: labels.FromStrings("job", "2"),
+				},
+			},
+		}, { // With nesting of timestamp(), the inner timestamp takes the eval time for it's result.
+			query: `timestamp(timestamp(metric{job="2"} @ 50))`,
+			start: 100, end: 130, interval: 10,
+			result: Matrix{
+				Series{
+					Points: []Point{{V: 100, T: 100000}, {V: 110, T: 110000}, {V: 120, T: 120000}, {V: 130, T: 130000}},
+					Metric: labels.FromStrings("job", "2"),
+				},
+			},
+		}, { // timestamp() takes the time of the sample and not the evaluation time.
+			query: `(time() + timestamp(metric{job="2"} @ 50))[100s:25s]`,
+			start: 100,
+			result: Matrix{
+				Series{
+					Points: []Point{{V: 50, T: 0}, {V: 75, T: 25000}, {V: 100, T: 50000}, {V: 125, T: 75000}, {V: 150, T: 100000}},
+					Metric: labels.FromStrings("job", "2"),
 				},
 			},
 		},
@@ -1016,9 +999,9 @@ load 1ms
 func TestMaxQuerySamples(t *testing.T) {
 	test, err := NewTest(t, `
 load 10s
-  metric 1 2
-  bigmetric{a="1"} 1 2
-  bigmetric{a="2"} 1 2
+  metric 1+1x100
+  bigmetric{a="1"} 1+1x100
+  bigmetric{a="2"} 1+1x100
 `)
 	require.NoError(t, err)
 	defer test.Close()
@@ -1026,282 +1009,175 @@ load 10s
 	err = test.Run()
 	require.NoError(t, err)
 
-	cases := []struct {
-		Query      string
-		MaxSamples int
-		Result     Result
-		Start      time.Time
-		End        time.Time
-		Interval   time.Duration
-	}{
+	type testCase struct {
+		Query             string
+		MaxSamples        int
+		Start             time.Time
+		End               time.Time
+		Interval          time.Duration
+		exceedsMaxSamples bool
+	}
+
+	// These handwritten test cases should be touching the limit exactly (hence no exceeding).
+	// Additional test cases with exceeding the limit will be autogenerated
+	// below by doing -1 to the MaxSamples.
+	cases := []testCase{
 		// Instant queries.
 		{
 			Query:      "1",
 			MaxSamples: 1,
-			Result: Result{
-				nil,
-				Scalar{V: 1, T: 1000},
-				nil},
-			Start: time.Unix(1, 0),
-		},
-		{
-			Query:      "1",
-			MaxSamples: 0,
-			Result: Result{
-				ErrTooManySamples(env),
-				nil,
-				nil,
-			},
-			Start: time.Unix(1, 0),
-		},
-		{
-			Query:      "metric",
-			MaxSamples: 0,
-			Result: Result{
-				ErrTooManySamples(env),
-				nil,
-				nil,
-			},
-			Start: time.Unix(1, 0),
+			Start:      time.Unix(1, 0),
 		},
 		{
 			Query:      "metric",
 			MaxSamples: 1,
-			Result: Result{
-				nil,
-				Vector{
-					Sample{Point: Point{V: 1, T: 1000},
-						Metric: labels.FromStrings("__name__", "metric")},
-				},
-				nil,
-			},
-			Start: time.Unix(1, 0),
+			Start:      time.Unix(1, 0),
 		},
 		{
 			Query:      "metric[20s]",
 			MaxSamples: 2,
-			Result: Result{
-				nil,
-				Matrix{Series{
-					Points: []Point{{V: 1, T: 0}, {V: 2, T: 10000}},
-					Metric: labels.FromStrings("__name__", "metric")},
-				},
-				nil,
-			},
-			Start: time.Unix(10, 0),
+			Start:      time.Unix(10, 0),
 		},
 		{
 			Query:      "rate(metric[20s])",
 			MaxSamples: 3,
-			Result: Result{
-				nil,
-				Vector{
-					Sample{
-						Point:  Point{V: 0.1, T: 10000},
-						Metric: labels.Labels{},
-					},
-				},
-				nil,
-			},
-			Start: time.Unix(10, 0),
+			Start:      time.Unix(10, 0),
 		},
 		{
 			Query:      "metric[20s:5s]",
 			MaxSamples: 3,
-			Result: Result{
-				nil,
-				Matrix{Series{
-					Points: []Point{{V: 1, T: 0}, {V: 1, T: 5000}, {V: 2, T: 10000}},
-					Metric: labels.FromStrings("__name__", "metric")},
-				},
-				nil,
-			},
-			Start: time.Unix(10, 0),
+			Start:      time.Unix(10, 0),
 		},
 		{
-			Query:      "metric[20s]",
-			MaxSamples: 0,
-			Result: Result{
-				ErrTooManySamples(env),
-				nil,
-				nil,
-			},
-			Start: time.Unix(10, 0),
+			Query:      "metric[20s] @ 10",
+			MaxSamples: 2,
+			Start:      time.Unix(0, 0),
 		},
 		// Range queries.
 		{
 			Query:      "1",
 			MaxSamples: 3,
-			Result: Result{
-				nil,
-				Matrix{Series{
-					Points: []Point{{V: 1, T: 0}, {V: 1, T: 1000}, {V: 1, T: 2000}},
-					Metric: labels.FromStrings()},
-				},
-				nil,
-			},
-			Start:    time.Unix(0, 0),
-			End:      time.Unix(2, 0),
-			Interval: time.Second,
+			Start:      time.Unix(0, 0),
+			End:        time.Unix(2, 0),
+			Interval:   time.Second,
 		},
 		{
 			Query:      "1",
-			MaxSamples: 0,
-			Result: Result{
-				ErrTooManySamples(env),
-				nil,
-				nil,
-			},
-			Start:    time.Unix(0, 0),
-			End:      time.Unix(2, 0),
-			Interval: time.Second,
+			MaxSamples: 3,
+			Start:      time.Unix(0, 0),
+			End:        time.Unix(2, 0),
+			Interval:   time.Second,
 		},
 		{
 			Query:      "metric",
 			MaxSamples: 3,
-			Result: Result{
-				nil,
-				Matrix{Series{
-					Points: []Point{{V: 1, T: 0}, {V: 1, T: 1000}, {V: 1, T: 2000}},
-					Metric: labels.FromStrings("__name__", "metric")},
-				},
-				nil,
-			},
-			Start:    time.Unix(0, 0),
-			End:      time.Unix(2, 0),
-			Interval: time.Second,
-		},
-		{
-			Query:      "metric",
-			MaxSamples: 2,
-			Result: Result{
-				ErrTooManySamples(env),
-				nil,
-				nil,
-			},
-			Start:    time.Unix(0, 0),
-			End:      time.Unix(2, 0),
-			Interval: time.Second,
+			Start:      time.Unix(0, 0),
+			End:        time.Unix(2, 0),
+			Interval:   time.Second,
 		},
 		{
 			Query:      "metric",
 			MaxSamples: 3,
-			Result: Result{
-				nil,
-				Matrix{Series{
-					Points: []Point{{V: 1, T: 0}, {V: 1, T: 5000}, {V: 2, T: 10000}},
-					Metric: labels.FromStrings("__name__", "metric")},
-				},
-				nil,
-			},
-			Start:    time.Unix(0, 0),
-			End:      time.Unix(10, 0),
-			Interval: 5 * time.Second,
-		},
-		{
-			Query:      "metric",
-			MaxSamples: 2,
-			Result: Result{
-				ErrTooManySamples(env),
-				nil,
-				nil,
-			},
-			Start:    time.Unix(0, 0),
-			End:      time.Unix(10, 0),
-			Interval: 5 * time.Second,
+			Start:      time.Unix(0, 0),
+			End:        time.Unix(10, 0),
+			Interval:   5 * time.Second,
 		},
 		{
 			Query:      "rate(bigmetric[1s])",
 			MaxSamples: 1,
-			Result: Result{
-				nil,
-				Matrix{},
-				nil,
-			},
-			Start:    time.Unix(0, 0),
-			End:      time.Unix(10, 0),
-			Interval: 5 * time.Second,
+			Start:      time.Unix(0, 0),
+			End:        time.Unix(10, 0),
+			Interval:   5 * time.Second,
 		},
 		{
 			// Result is duplicated, so @ also produces 3 samples.
 			Query:      "metric @ 10",
 			MaxSamples: 3,
-			Result: Result{
-				nil,
-				Matrix{Series{
-					Points: []Point{{V: 2, T: 0}, {V: 2, T: 5000}, {V: 2, T: 10000}},
-					Metric: labels.FromStrings("__name__", "metric")},
-				},
-				nil,
-			},
-			Start:    time.Unix(0, 0),
-			End:      time.Unix(10, 0),
-			Interval: 5 * time.Second,
+			Start:      time.Unix(0, 0),
+			End:        time.Unix(10, 0),
+			Interval:   5 * time.Second,
 		},
 		{
-			// Result is duplicated, so @ also produces 3 samples.
-			Query:      "metric @ 10",
-			MaxSamples: 2,
-			Result: Result{
-				ErrTooManySamples(env),
-				nil,
-				nil,
-			},
-			Start:    time.Unix(0, 0),
-			End:      time.Unix(10, 0),
-			Interval: 5 * time.Second,
-		},
-		{
-			Query:      "metric[20s] @ 10",
-			MaxSamples: 2,
-			Result: Result{
-				nil,
-				Matrix{Series{
-					Points: []Point{{V: 1, T: 0}, {V: 2, T: 10000}},
-					Metric: labels.FromStrings("__name__", "metric")},
-				},
-				nil,
-			},
-			Start: time.Unix(0, 0),
-		},
-		{
-			// With @ modifier, the result is duplicated and cached in the memory, hence it counts.
-			// Here it's 6 samples cached, hence hits the limit.
-			Query:      `rate(bigmetric[10s] @ 10)`,
-			MaxSamples: 5,
-			Result: Result{
-				ErrTooManySamples(env),
-				nil,
-				nil,
-			},
-			Start:    time.Unix(0, 0),
-			End:      time.Unix(10, 0),
-			Interval: 5 * time.Second,
-		},
-		{
-			// With @ modifier, the result is duplicated and cached in the memory, hence it counts.
-			// Here it's 6 samples cached, hence just touches the limit.
+			// With @ modifier, the result is duplicated for the time range, hence it counts.
+			// The selector itself counts does not count for any sample.
+			// During execution, the buffer per series maxes out at 2 samples and storing result
+			// per series for 1 evaluation takes 2 more samples. Hence 4 here. After discarding buffer and
+			// duplication of result, it is 6 at max.
 			Query:      `rate(bigmetric[10s] @ 10)`,
 			MaxSamples: 6,
-			Result: Result{
-				nil,
-				Matrix{
-					Series{
-						Points: []Point{{V: 0.1, T: 0}, {V: 0.1, T: 5000}, {V: 0.1, T: 10000}},
-						Metric: labels.FromStrings("a", "1"),
-					},
-					Series{
-						Points: []Point{{V: 0.1, T: 0}, {V: 0.1, T: 5000}, {V: 0.1, T: 10000}},
-						Metric: labels.FromStrings("a", "2"),
-					},
-				},
-				nil,
-			},
-			Start:    time.Unix(0, 0),
-			End:      time.Unix(10, 0),
-			Interval: 5 * time.Second,
+			Start:      time.Unix(0, 0),
+			End:        time.Unix(10, 0),
+			Interval:   5 * time.Second,
+		},
+		{
+			// The peak samples in memory is during first evaluation:
+			//   - Subquery takes 22 samples, 11 for each bigmetric,
+			//   - Result is calculated per series where the series samples is buffered, hence 11 more here.
+			//   - The result of two series is added before the last series buffer is discarded, so 2 more here.
+			//   Hence at peak it is 22 (subquery) + 11 (buffer of a series) + 2 (result from 2 series).
+			// The subquery samples and the buffer is discarded before duplicating.
+			Query:      `rate(bigmetric[10s:1s] @ 10)`,
+			MaxSamples: 35,
+			Start:      time.Unix(0, 0),
+			End:        time.Unix(10, 0),
+			Interval:   5 * time.Second,
+		},
+		{
+			// Here the reasoning is same as above. But LHS and RHS are done one after another.
+			// So while one of them takes 35 samples at peak, we need to hold the 2 sample
+			// result of the other till then.
+			Query:      `rate(bigmetric[10s:1s] @ 10) + rate(bigmetric[10s:1s] @ 30)`,
+			MaxSamples: 37,
+			Start:      time.Unix(0, 0),
+			End:        time.Unix(10, 0),
+			Interval:   5 * time.Second,
+		},
+		{
+			// Sample as above but with only 1 part as step invariant.
+			// Here the peak is causes by the non-step invariant part as it touches more time range.
+			// Hence at peak it is 2*21 (subquery) + 11 (buffer of a series per evaluation) + 6 (result from 2 series at 3 eval times).
+			Query:      `rate(bigmetric[10s:1s]) + rate(bigmetric[10s:1s] @ 30)`,
+			MaxSamples: 59,
+			Start:      time.Unix(10, 0),
+			End:        time.Unix(20, 0),
+			Interval:   5 * time.Second,
+		},
+		{
+			// Nested subquery.
+			// We saw that inner most rate takes 35 samples which is still the peak
+			// since the other two subquery just duplicates the result.
+			Query:             `rate(rate(bigmetric[10s:1s] @ 10)[100s:25s] @ 1000)[100s:20s] @ 2000`,
+			MaxSamples:        35,
+			Start:             time.Unix(10, 0),
+			exceedsMaxSamples: false,
+		},
+		{
+			// Nested subquery.
+			// Now the out most subquery produces more samples than inner most rate.
+			Query:             `rate(rate(bigmetric[10s:1s] @ 10)[100s:25s] @ 1000)[17s:1s] @ 2000`,
+			MaxSamples:        36,
+			Start:             time.Unix(10, 0),
+			exceedsMaxSamples: false,
 		},
 	}
+
+	// Adding additional test cases for exceeding limit.
+	additionalCases := make([]testCase, 0, len(cases))
+	for _, c := range cases {
+		if c.exceedsMaxSamples {
+			continue
+		}
+
+		additionalCases = append(additionalCases, testCase{
+			Query:             c.Query,
+			MaxSamples:        c.MaxSamples - 1,
+			Start:             c.Start,
+			End:               c.End,
+			Interval:          c.Interval,
+			exceedsMaxSamples: true,
+		})
+	}
+	cases = append(cases, additionalCases...)
 
 	engine := test.QueryEngine()
 	for _, c := range cases {
@@ -1319,8 +1195,11 @@ load 10s
 			require.NoError(t, err)
 
 			res := qry.Exec(test.Context())
-			require.Equal(t, c.Result.Err, res.Err)
-			require.Equal(t, c.Result.Value, res.Value, "query %q failed", c.Query)
+			if c.exceedsMaxSamples {
+				require.Equal(t, ErrTooManySamples(env), res.Err)
+			} else {
+				require.NoError(t, res.Err)
+			}
 		})
 	}
 }
@@ -1773,7 +1652,7 @@ func TestWrapWithStepInvariantExpr(t *testing.T) {
 				LHS: &parser.VectorSelector{
 					Name: "foo",
 					LabelMatchers: []*labels.Matcher{
-						parser.MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
 					},
 					PosRange: parser.PositionRange{
 						Start: 0,
@@ -1783,7 +1662,7 @@ func TestWrapWithStepInvariantExpr(t *testing.T) {
 				RHS: &parser.VectorSelector{
 					Name: "bar",
 					LabelMatchers: []*labels.Matcher{
-						parser.MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "bar"),
+						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "bar"),
 					},
 					PosRange: parser.PositionRange{
 						Start: 6,
@@ -1799,7 +1678,7 @@ func TestWrapWithStepInvariantExpr(t *testing.T) {
 				LHS: &parser.VectorSelector{
 					Name: "foo",
 					LabelMatchers: []*labels.Matcher{
-						parser.MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
 					},
 					PosRange: parser.PositionRange{
 						Start: 0,
@@ -1810,7 +1689,7 @@ func TestWrapWithStepInvariantExpr(t *testing.T) {
 					Expr: &parser.VectorSelector{
 						Name: "bar",
 						LabelMatchers: []*labels.Matcher{
-							parser.MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "bar"),
+							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "bar"),
 						},
 						PosRange: parser.PositionRange{
 							Start: 6,
@@ -1829,7 +1708,7 @@ func TestWrapWithStepInvariantExpr(t *testing.T) {
 					LHS: &parser.VectorSelector{
 						Name: "foo",
 						LabelMatchers: []*labels.Matcher{
-							parser.MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
 						},
 						PosRange: parser.PositionRange{
 							Start: 0,
@@ -1840,7 +1719,7 @@ func TestWrapWithStepInvariantExpr(t *testing.T) {
 					RHS: &parser.VectorSelector{
 						Name: "bar",
 						LabelMatchers: []*labels.Matcher{
-							parser.MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "bar"),
+							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "bar"),
 						},
 						PosRange: parser.PositionRange{
 							Start: 11,
@@ -1857,7 +1736,7 @@ func TestWrapWithStepInvariantExpr(t *testing.T) {
 				VectorSelector: &parser.VectorSelector{
 					Name: "test",
 					LabelMatchers: []*labels.Matcher{
-						parser.MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "test"),
+						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "test"),
 					},
 					PosRange: parser.PositionRange{
 						Start: 0,
@@ -1876,7 +1755,7 @@ func TestWrapWithStepInvariantExpr(t *testing.T) {
 						Timestamp: makeInt64Pointer(1603774699000),
 						LabelMatchers: []*labels.Matcher{
 							parser.MustLabelMatcher(labels.MatchEqual, "a", "b"),
-							parser.MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "test"),
+							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "test"),
 						},
 						PosRange: parser.PositionRange{
 							Start: 0,
@@ -1894,7 +1773,7 @@ func TestWrapWithStepInvariantExpr(t *testing.T) {
 				Expr: &parser.VectorSelector{
 					Name: "some_metric",
 					LabelMatchers: []*labels.Matcher{
-						parser.MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
+						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric"),
 					},
 					PosRange: parser.PositionRange{
 						Start: 13,
@@ -1915,7 +1794,7 @@ func TestWrapWithStepInvariantExpr(t *testing.T) {
 					Expr: &parser.VectorSelector{
 						Name: "some_metric",
 						LabelMatchers: []*labels.Matcher{
-							parser.MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
+							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric"),
 						},
 						PosRange: parser.PositionRange{
 							Start: 13,
@@ -1941,7 +1820,7 @@ func TestWrapWithStepInvariantExpr(t *testing.T) {
 						Expr: &parser.VectorSelector{
 							Name: "some_metric1",
 							LabelMatchers: []*labels.Matcher{
-								parser.MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric1"),
+								parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric1"),
 							},
 							PosRange: parser.PositionRange{
 								Start: 4,
@@ -1959,7 +1838,7 @@ func TestWrapWithStepInvariantExpr(t *testing.T) {
 						Expr: &parser.VectorSelector{
 							Name: "some_metric2",
 							LabelMatchers: []*labels.Matcher{
-								parser.MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric2"),
+								parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric2"),
 							},
 							PosRange: parser.PositionRange{
 								Start: 29,
@@ -1984,7 +1863,7 @@ func TestWrapWithStepInvariantExpr(t *testing.T) {
 				LHS: &parser.VectorSelector{
 					Name: "some_metric",
 					LabelMatchers: []*labels.Matcher{
-						parser.MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
+						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric"),
 					},
 					PosRange: parser.PositionRange{
 						Start: 0,
@@ -2001,7 +1880,7 @@ func TestWrapWithStepInvariantExpr(t *testing.T) {
 									VectorSelector: &parser.VectorSelector{
 										Name: "some_metric",
 										LabelMatchers: []*labels.Matcher{
-											parser.MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
+											parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric"),
 										},
 										PosRange: parser.PositionRange{
 											Start: 29,
@@ -2049,7 +1928,7 @@ func TestWrapWithStepInvariantExpr(t *testing.T) {
 					Name: "foo",
 					LabelMatchers: []*labels.Matcher{
 						parser.MustLabelMatcher(labels.MatchEqual, "bar", "baz"),
-						parser.MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
 					},
 					PosRange: parser.PositionRange{
 						Start: 0,
@@ -2068,7 +1947,7 @@ func TestWrapWithStepInvariantExpr(t *testing.T) {
 						Name: "foo",
 						LabelMatchers: []*labels.Matcher{
 							parser.MustLabelMatcher(labels.MatchEqual, "bar", "baz"),
-							parser.MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
 						},
 						PosRange: parser.PositionRange{
 							Start: 0,
@@ -2092,7 +1971,7 @@ func TestWrapWithStepInvariantExpr(t *testing.T) {
 								Name: "foo",
 								LabelMatchers: []*labels.Matcher{
 									parser.MustLabelMatcher(labels.MatchEqual, "bar", "baz"),
-									parser.MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+									parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
 								},
 								PosRange: parser.PositionRange{
 									Start: 4,
@@ -2128,7 +2007,7 @@ func TestWrapWithStepInvariantExpr(t *testing.T) {
 												Name: "foo",
 												LabelMatchers: []*labels.Matcher{
 													parser.MustLabelMatcher(labels.MatchEqual, "bar", "baz"),
-													parser.MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+													parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
 												},
 												PosRange: parser.PositionRange{
 													Start: 19,
@@ -2166,7 +2045,7 @@ func TestWrapWithStepInvariantExpr(t *testing.T) {
 					Expr: &parser.VectorSelector{
 						Name: "some_metric",
 						LabelMatchers: []*labels.Matcher{
-							parser.MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
+							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric"),
 						},
 						PosRange: parser.PositionRange{
 							Start: 0,
@@ -2187,7 +2066,7 @@ func TestWrapWithStepInvariantExpr(t *testing.T) {
 					Expr: &parser.VectorSelector{
 						Name: "some_metric",
 						LabelMatchers: []*labels.Matcher{
-							parser.MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
+							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric"),
 						},
 						PosRange: parser.PositionRange{
 							Start: 0,
@@ -2214,7 +2093,7 @@ func TestWrapWithStepInvariantExpr(t *testing.T) {
 							LHS: &parser.VectorSelector{
 								Name: "foo",
 								LabelMatchers: []*labels.Matcher{
-									parser.MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+									parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
 								},
 								PosRange: parser.PositionRange{
 									Start: 1,
@@ -2226,7 +2105,7 @@ func TestWrapWithStepInvariantExpr(t *testing.T) {
 									Name: "bar",
 									LabelMatchers: []*labels.Matcher{
 										parser.MustLabelMatcher(labels.MatchEqual, "nm", "val"),
-										parser.MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "bar"),
+										parser.MustLabelMatcher(labels.MatchEqual, "__name__", "bar"),
 									},
 									Timestamp: makeInt64Pointer(1234000),
 									PosRange: parser.PositionRange{
@@ -2264,7 +2143,7 @@ func TestWrapWithStepInvariantExpr(t *testing.T) {
 						Args: parser.Expressions{&parser.VectorSelector{
 							Name: "metric",
 							LabelMatchers: []*labels.Matcher{
-								parser.MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "metric"),
+								parser.MustLabelMatcher(labels.MatchEqual, "__name__", "metric"),
 							},
 							PosRange: parser.PositionRange{
 								Start: 8,
@@ -2296,7 +2175,7 @@ func TestWrapWithStepInvariantExpr(t *testing.T) {
 							Expr: &parser.VectorSelector{
 								Name: "some_metric1",
 								LabelMatchers: []*labels.Matcher{
-									parser.MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric1"),
+									parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric1"),
 								},
 								PosRange: parser.PositionRange{
 									Start: 8,
@@ -2314,7 +2193,7 @@ func TestWrapWithStepInvariantExpr(t *testing.T) {
 							Expr: &parser.VectorSelector{
 								Name: "some_metric2",
 								LabelMatchers: []*labels.Matcher{
-									parser.MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric2"),
+									parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric2"),
 								},
 								PosRange: parser.PositionRange{
 									Start: 33,

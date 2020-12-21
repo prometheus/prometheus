@@ -173,10 +173,6 @@ type UnaryExpr struct {
 // Currently this is only used for engine optimisations and the parser does not produce this.
 type StepInvariantExpr struct {
 	Expr Expr
-
-	// Once this node is executed, we store the result here to
-	// avoid re-calculation of the result.
-	Result Value
 }
 
 func (e *StepInvariantExpr) String() string { return e.Expr.String() }

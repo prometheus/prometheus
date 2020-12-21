@@ -441,6 +441,9 @@ func atModifierTestCases(exprStr string, evalTime time.Time) ([]atModifierTestCa
 	ts := timestamp.FromTime(evalTime)
 
 	containsNonStepInvariant := false
+	// Setting the @ timestamp for all selectors to be evalTime.
+	// If there is a subquery, then the selectors inside it don't get the @ timestamp.
+	// If any selector already has the @ timestamp set, then it is untouched.
 	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
 		_, _, subqTs := subqueryTimes(path)
 		if subqTs != nil {
@@ -466,21 +469,29 @@ func atModifierTestCases(exprStr string, evalTime time.Time) ([]atModifierTestCa
 
 		case *parser.Call:
 			containsNonStepInvariant = containsNonStepInvariant || !IsFunctionStepInvariant(n)
+			if n.Func.Name == "timestamp" {
+				// If timestamp(..) has something other than vector selector inside,
+				// then it is not step invariant.
+				_, ok := n.Args[0].(*parser.VectorSelector)
+				containsNonStepInvariant = containsNonStepInvariant || !ok
+			}
 		}
 		return nil
 	})
 
 	if containsNonStepInvariant {
+		// Since there is a step invariant function, we cannot automatically
+		// generate step invariant test cases for it sanely.
 		return nil, nil
 	}
 
-	newExpr := expr.String()
-	evalTimes := []int64{-10 * ts, -ts, 0, ts / 5, ts / 2, ts, 2 * ts, 10 * ts, 100 * ts}
+	newExpr := expr.String() // With all the @ evalTime set.
+	additionalEvalTimes := []int64{-10 * ts, 0, ts / 5, ts, 10 * ts}
 	if ts == 0 {
-		evalTimes = []int64{-1000, -ts, 1000}
+		additionalEvalTimes = []int64{-1000, -ts, 1000}
 	}
-	testCases := make([]atModifierTestCase, 0, len(evalTimes))
-	for _, et := range evalTimes {
+	testCases := make([]atModifierTestCase, 0, len(additionalEvalTimes))
+	for _, et := range additionalEvalTimes {
 		testCases = append(testCases, atModifierTestCase{
 			expr:     newExpr,
 			evalTime: timestamp.Time(et),
@@ -522,7 +533,7 @@ func (t *Test) exec(tc testCommand) error {
 			res := q.Exec(t.context)
 			if res.Err != nil {
 				if cmd.fail {
-					return nil
+					continue
 				}
 				return errors.Wrapf(res.Err, "error evaluating query %q (line %d)", iq.expr, cmd.line)
 			}
@@ -547,7 +558,7 @@ func (t *Test) exec(tc testCommand) error {
 			defer q.Close()
 			if cmd.ordered {
 				// Ordering isn't defined for range queries.
-				return nil
+				continue
 			}
 			mat := rangeRes.Value.(Matrix)
 			vec := make(Vector, 0, len(mat))

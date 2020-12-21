@@ -672,11 +672,9 @@ func (ng *Engine) getTimeRangesForSelector(s *parser.EvalStmt, n *parser.VectorS
 		start = start - durationMilliseconds(evalRange)
 	}
 
-	if n.OriginalOffset > 0 {
-		offsetMilliseconds := durationMilliseconds(n.OriginalOffset)
-		start = start - offsetMilliseconds
-		end = end - offsetMilliseconds
-	}
+	offsetMilliseconds := durationMilliseconds(n.OriginalOffset)
+	start = start - offsetMilliseconds
+	end = end - offsetMilliseconds
 
 	return start, end
 }
@@ -695,14 +693,13 @@ func (ng *Engine) populateSeries(querier storage.Querier, s *parser.EvalStmt) {
 				Start: start,
 				End:   end,
 				Step:  durationMilliseconds(s.Interval),
+				Range: durationMilliseconds(evalRange),
+				Func:  extractFuncFromPath(path),
 			}
-			if evalRange != 0 {
-				hints.Range = durationMilliseconds(evalRange)
-				evalRange = 0
-			}
-			hints.Func = extractFuncFromPath(path)
+			evalRange = 0
 			hints.By, hints.Grouping = extractGroupsFromPath(path)
 			n.UnexpandedSeriesSet = querier.Select(false, hints, n.LabelMatchers...)
+
 		case *parser.MatrixSelector:
 			evalRange = n.Range
 		}
@@ -895,7 +892,7 @@ func (enh *EvalNodeHelper) signatureFunc(on bool, names ...string) func(labels.L
 // the given function with the values computed for each expression at that
 // step.  The return value is the combination into time series of all the
 // function call results.
-func (ev *evaluator) rangeEval(f func([]parser.Value, *EvalNodeHelper) (Vector, storage.Warnings), exprs ...parser.Expr) (Matrix, storage.Warnings) {
+func (ev *evaluator) rangeEval(funcCall func([]parser.Value, *EvalNodeHelper) (Vector, storage.Warnings), exprs ...parser.Expr) (Matrix, storage.Warnings) {
 	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
 	matrixes := make([]Matrix, len(exprs))
 	origMatrixes := make([]Matrix, len(exprs))
@@ -960,7 +957,7 @@ func (ev *evaluator) rangeEval(f func([]parser.Value, *EvalNodeHelper) (Vector, 
 		}
 		// Make the function call.
 		enh.Ts = ts
-		result, ws := f(args, enh)
+		result, ws := funcCall(args, enh)
 		if result.ContainsSameLabelset() {
 			ev.errorf("vector cannot contain metrics with the same labelset")
 		}
@@ -1021,7 +1018,7 @@ func (ev *evaluator) rangeEval(f func([]parser.Value, *EvalNodeHelper) (Vector, 
 
 // evalSubquery evaluates given SubqueryExpr and returns an equivalent
 // evaluated MatrixSelector in its place. Note that the Name and LabelMatchers are not set.
-func (ev *evaluator) evalSubquery(subq *parser.SubqueryExpr) (*parser.MatrixSelector, storage.Warnings) {
+func (ev *evaluator) evalSubquery(subq *parser.SubqueryExpr) (*parser.MatrixSelector, int, storage.Warnings) {
 	val, ws := ev.eval(subq)
 	mat := val.(Matrix)
 	vs := &parser.VectorSelector{
@@ -1039,10 +1036,12 @@ func (ev *evaluator) evalSubquery(subq *parser.SubqueryExpr) (*parser.MatrixSele
 		Range:          subq.Range,
 		VectorSelector: vs,
 	}
+	totalSamples := 0
 	for _, s := range mat {
+		totalSamples += len(s.Points)
 		vs.Series = append(vs.Series, NewStorageSeries(s))
 	}
-	return ms, ws
+	return ms, totalSamples, ws
 }
 
 // eval evaluates the given expression as the given AST expression node requires.
@@ -1106,9 +1105,14 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 				matrixArgIndex = i
 				matrixArg = true
 				// Replacing parser.SubqueryExpr with parser.MatrixSelector.
-				val, ws := ev.evalSubquery(subq)
+				val, totalSamples, ws := ev.evalSubquery(subq)
 				e.Args[i] = val
 				warnings = append(warnings, ws...)
+				defer func() {
+					// subquery result takes space in the memory. Get rid of that at the end.
+					val.VectorSelector.(*parser.VectorSelector).Series = nil
+					ev.currentSamples -= totalSamples
+				}()
 				break
 			}
 		}
@@ -1394,19 +1398,11 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 
 		res, ws := newEv.eval(e.Expr)
 		ev.currentSamples = newEv.currentSamples
-		if newEv.startTimestamp != ev.startTimestamp {
-			// Adjust back the offset of selectors based on the parent evaluator.
-			setOffsetForAtModifier(ev.startTimestamp, e.Expr)
-		}
 		return res, ws
 	case *parser.StepInvariantExpr:
 		switch ce := e.Expr.(type) {
 		case *parser.StringLiteral, *parser.NumberLiteral:
 			return ev.eval(ce)
-		}
-
-		if e.Result != nil {
-			return e.Result, nil
 		}
 
 		newEv := &evaluator{
@@ -1426,34 +1422,31 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		case *parser.MatrixSelector, *parser.SubqueryExpr:
 			// We do not duplicate results for range selectors since result is a matrix
 			// with their unique timestamps which does not depend on the step.
-			e.Result = res
 			return res, ws
 		}
 
 		// For every evaluation while the value remains same, the timestamp for that
 		// value would change for different eval times. Hence we duplicate the result
 		// with changed timestamps.
-		switch val := res.(type) {
-		case Matrix:
-			for i := range val {
-				if len(val[i].Points) != 1 {
-					panic(errors.Errorf("unexpected number of samples"))
-				}
-				for ts := ev.startTimestamp + ev.interval; ts <= ev.endTimestamp; ts = ts + ev.interval {
-					val[i].Points = append(val[i].Points, Point{
-						T: ts,
-						V: val[i].Points[0].V,
-					})
-					if ev.currentSamples >= ev.maxSamples {
-						ev.error(ErrTooManySamples(env))
-					}
-					ev.currentSamples++
-				}
-			}
-		default:
+		mat, ok := res.(Matrix)
+		if !ok {
 			panic(errors.Errorf("unexpected result in StepInvariantExpr evaluation: %T", expr))
 		}
-		e.Result = res
+		for i := range mat {
+			if len(mat[i].Points) != 1 {
+				panic(errors.Errorf("unexpected number of samples"))
+			}
+			for ts := ev.startTimestamp + ev.interval; ts <= ev.endTimestamp; ts = ts + ev.interval {
+				mat[i].Points = append(mat[i].Points, Point{
+					T: ts,
+					V: mat[i].Points[0].V,
+				})
+				ev.currentSamples++
+				if ev.currentSamples > ev.maxSamples {
+					ev.error(ErrTooManySamples(env))
+				}
+			}
+		}
 		return res, ws
 	}
 
@@ -1478,10 +1471,10 @@ func (ev *evaluator) vectorSelector(node *parser.VectorSelector, ts int64) (Vect
 				Point:  Point{V: v, T: t},
 			})
 
-			if ev.currentSamples >= ev.maxSamples {
+			ev.currentSamples++
+			if ev.currentSamples > ev.maxSamples {
 				ev.error(ErrTooManySamples(env))
 			}
-			ev.currentSamples++
 		}
 
 	}
@@ -1616,8 +1609,8 @@ func (ev *evaluator) matrixIterSlice(it *storage.BufferedSeriesIterator, mint, m
 			if ev.currentSamples >= ev.maxSamples {
 				ev.error(ErrTooManySamples(env))
 			}
-			out = append(out, Point{T: t, V: v})
 			ev.currentSamples++
+			out = append(out, Point{T: t, V: v})
 		}
 	}
 	// The seeked sample might also be in the range.
@@ -2312,7 +2305,14 @@ func wrapWithStepInvariantExprHelper(expr parser.Expr) bool {
 			isStepInvariant = isStepInvariant && isStepInvariantSlice[i]
 		}
 
+		if n.Func.Name == "timestamp" {
+			// If timestamp(..) has something other than vector selector inside,
+			// then it is not step invariant.
+			_, ok := n.Args[0].(*parser.VectorSelector)
+			isStepInvariant = isStepInvariant && ok
+		}
 		if isStepInvariant {
+
 			// The function and all arguments are step invariant.
 			return true
 		}
@@ -2364,6 +2364,9 @@ func newStepInvariantExpr(expr parser.Expr) parser.Expr {
 	return &parser.StepInvariantExpr{Expr: expr}
 }
 
+// dontWrapStepInvariantExpr returns true if we should not wrap an expression even
+// if it step invariant. That includes constant literals like numbers and string where we don't
+// need any kind special handling for result hence reduce engine complexity in handling them.
 func dontWrapStepInvariantExpr(expr parser.Expr) bool {
 	switch e := expr.(type) {
 	case *parser.StringLiteral, *parser.NumberLiteral:

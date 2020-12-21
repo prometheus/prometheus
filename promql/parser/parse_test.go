@@ -527,7 +527,7 @@ var testExpr = []struct {
 	}, {
 		input:  "1 offset 1d",
 		fail:   true,
-		errMsg: "1:1: parse error: offset modifier must be preceded by an instant selector vector or range vector selector or a subquery, but follows a *parser.NumberLiteral instead",
+		errMsg: "1:1: parse error: offset modifier must be preceded by an instant selector vector or range vector selector or a subquery",
 	}, {
 		input:  "foo offset 1s offset 2s",
 		fail:   true,
@@ -1414,6 +1414,162 @@ var testExpr = []struct {
 			},
 		},
 	}, {
+		input: `foo @ .3`,
+		expected: &VectorSelector{
+			Name:      "foo",
+			Timestamp: makeInt64Pointer(300),
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+			},
+			PosRange: PositionRange{
+				Start: 0,
+				End:   8,
+			},
+		},
+	}, {
+		input: `foo @ 3.`,
+		expected: &VectorSelector{
+			Name:      "foo",
+			Timestamp: makeInt64Pointer(3000),
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+			},
+			PosRange: PositionRange{
+				Start: 0,
+				End:   8,
+			},
+		},
+	}, {
+		input: `foo @ 3.33`,
+		expected: &VectorSelector{
+			Name:      "foo",
+			Timestamp: makeInt64Pointer(3330),
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+			},
+			PosRange: PositionRange{
+				Start: 0,
+				End:   10,
+			},
+		},
+	}, { // Rounding off.
+		input: `foo @ 3.3333`,
+		expected: &VectorSelector{
+			Name:      "foo",
+			Timestamp: makeInt64Pointer(3333),
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+			},
+			PosRange: PositionRange{
+				Start: 0,
+				End:   12,
+			},
+		},
+	}, { // Rounding off.
+		input: `foo @ 3.3335`,
+		expected: &VectorSelector{
+			Name:      "foo",
+			Timestamp: makeInt64Pointer(3334),
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+			},
+			PosRange: PositionRange{
+				Start: 0,
+				End:   12,
+			},
+		},
+	}, {
+		input: `foo @ 3e2`,
+		expected: &VectorSelector{
+			Name:      "foo",
+			Timestamp: makeInt64Pointer(300000),
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+			},
+			PosRange: PositionRange{
+				Start: 0,
+				End:   9,
+			},
+		},
+	}, {
+		input: `foo @ 3e-1`,
+		expected: &VectorSelector{
+			Name:      "foo",
+			Timestamp: makeInt64Pointer(300),
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+			},
+			PosRange: PositionRange{
+				Start: 0,
+				End:   10,
+			},
+		},
+	}, {
+		input: `foo @ 0xA`,
+		expected: &VectorSelector{
+			Name:      "foo",
+			Timestamp: makeInt64Pointer(10000),
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+			},
+			PosRange: PositionRange{
+				Start: 0,
+				End:   9,
+			},
+		},
+	}, {
+		input: `foo @ -3.3e1`,
+		expected: &VectorSelector{
+			Name:      "foo",
+			Timestamp: makeInt64Pointer(-33000),
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+			},
+			PosRange: PositionRange{
+				Start: 0,
+				End:   12,
+			},
+		},
+	}, {
+		input: `foo @ +Inf`,
+		expected: &VectorSelector{
+			Name:      "foo",
+			Timestamp: makeInt64Pointer(math.MinInt64), // This is how the API behaves.
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+			},
+			PosRange: PositionRange{
+				Start: 0,
+				End:   10,
+			},
+		},
+	}, {
+		input: `foo @ -Inf`,
+		expected: &VectorSelector{
+			Name:      "foo",
+			Timestamp: makeInt64Pointer(math.MinInt64), // This is how the API behaves.
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+			},
+			PosRange: PositionRange{
+				Start: 0,
+				End:   10,
+			},
+		},
+	}, {
+		input: `foo @ NaN`,
+		expected: &VectorSelector{
+			Name:      "foo",
+			Timestamp: makeInt64Pointer(math.MinInt64), // This is how the API behaves.
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+			},
+			PosRange: PositionRange{
+				Start: 0,
+				End:   9,
+			},
+		},
+	}, {
 		input: `foo:bar{a="bc"}`,
 		expected: &VectorSelector{
 			Name: "foo:bar",
@@ -2119,7 +2275,7 @@ var testExpr = []struct {
 	}, {
 		input:  `rate(some_metric[5m]) @ 1234`,
 		fail:   true,
-		errMsg: "1:1: parse error: @ modifier must be preceded by an instant selector vector or range vector selector or a subquery, but follows a *parser.Call instead",
+		errMsg: "1:1: parse error: @ modifier must be preceded by an instant selector vector or range vector selector or a subquery",
 	},
 	// Test function calls.
 	{

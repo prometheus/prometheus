@@ -936,22 +936,10 @@ var FunctionCalls = map[string]FunctionCall{
 	"year":               funcYear,
 }
 
-type FunctionHelper func(call *parser.Call) interface{}
-
-var FunctionHelpers = map[string]FunctionHelper{
-	// is_function_step_invariant return true for is step invariant functions
-	// and false otherwise. The return type should be a boolean.
-	"is_function_step_invariant": funcIsFunctionStepInvariant,
-}
-
-func funcIsFunctionStepInvariant(call *parser.Call) interface{} {
-	switch call.Func.Name {
-	case "days_in_month", "day_of_month", "day_of_week",
-		"hour", "minute", "month", "year",
-		"predict_linear", "time":
-		return false
-	}
-	return true
+var NonStepInvariantFunctions = map[string]struct{}{
+	"days_in_month": {}, "day_of_month": {}, "day_of_week": {},
+	"hour": {}, "minute": {}, "month": {}, "year": {},
+	"predict_linear": {}, "time": {},
 }
 
 // IsFunctionStepInvariant returns true if the result of the function
@@ -959,7 +947,8 @@ func funcIsFunctionStepInvariant(call *parser.Call) interface{} {
 // remain same. Generally the result of time functions change
 // for different evaluation time for the same input arguments.
 func IsFunctionStepInvariant(e *parser.Call) bool {
-	return FunctionHelpers["is_function_step_invariant"](e).(bool)
+	_, ok := NonStepInvariantFunctions[e.Func.Name]
+	return !ok
 }
 
 type vectorByValueHeap Vector
