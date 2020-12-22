@@ -129,12 +129,11 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 // the Discoverer interface.
 type Discovery struct {
 	*refresh.Discovery
-	aws      *aws.Config
+	region   string
 	interval time.Duration
-	profile  string
-	roleARN  string
 	port     int
 	filters  []*Filter
+	ec2      *ec2.EC2
 }
 
 // NewDiscovery returns a new EC2Discovery which periodically refreshes its targets.
@@ -146,17 +145,33 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) *Discovery {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
-	d := &Discovery{
-		aws: &aws.Config{
+
+	sess, err := session.NewSessionWithOptions(session.Options{
+		Config: aws.Config{
 			Endpoint:    &conf.Endpoint,
 			Region:      &conf.Region,
 			Credentials: creds,
 		},
-		profile:  conf.Profile,
-		roleARN:  conf.RoleARN,
+		Profile: conf.Profile,
+	})
+	if err != nil {
+		return nil
+	}
+
+	var ec2s *ec2.EC2
+	if conf.RoleARN != "" {
+		creds := stscreds.NewCredentials(sess, conf.RoleARN)
+		ec2s = ec2.New(sess, &aws.Config{Credentials: creds})
+	} else {
+		ec2s = ec2.New(sess)
+	}
+
+	d := &Discovery{
+		region:   conf.Region,
 		filters:  conf.Filters,
 		interval: time.Duration(conf.RefreshInterval),
 		port:     conf.Port,
+		ec2:      ec2s,
 	}
 	d.Discovery = refresh.NewDiscovery(
 		logger,
@@ -168,23 +183,8 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) *Discovery {
 }
 
 func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
-	sess, err := session.NewSessionWithOptions(session.Options{
-		Config:  *d.aws,
-		Profile: d.profile,
-	})
-	if err != nil {
-		return nil, errors.Wrap(err, "could not create aws session")
-	}
-
-	var ec2s *ec2.EC2
-	if d.roleARN != "" {
-		creds := stscreds.NewCredentials(sess, d.roleARN)
-		ec2s = ec2.New(sess, &aws.Config{Credentials: creds})
-	} else {
-		ec2s = ec2.New(sess)
-	}
 	tg := &targetgroup.Group{
-		Source: *d.aws.Region,
+		Source: d.region,
 	}
 
 	var filters []*ec2.Filter
@@ -197,7 +197,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 	input := &ec2.DescribeInstancesInput{Filters: filters}
 
-	if err = ec2s.DescribeInstancesPagesWithContext(ctx, input, func(p *ec2.DescribeInstancesOutput, lastPage bool) bool {
+	if err := d.ec2.DescribeInstancesPagesWithContext(ctx, input, func(p *ec2.DescribeInstancesOutput, lastPage bool) bool {
 		for _, r := range p.Reservations {
 			for _, inst := range r.Instances {
 				if inst.PrivateIpAddress == nil {
