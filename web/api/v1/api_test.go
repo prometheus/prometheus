@@ -1622,7 +1622,84 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 					"boo",
 				},
 			},
-
+			// Label values with bad matchers.
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "foo",
+				},
+				query: url.Values{
+					"match[]": []string{`{foo=""`, `test_metric2`},
+				},
+				errType: errorBadData,
+			},
+			// Label values with empty matchers.
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "foo",
+				},
+				query: url.Values{
+					"match[]": []string{`{foo=""}`},
+				},
+				errType: errorBadData,
+			},
+			// Label values with matcher.
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "foo",
+				},
+				query: url.Values{
+					"match[]": []string{`test_metric2`},
+				},
+				response: []string{
+					"boo",
+				},
+			},
+			// Label values with matcher.
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "foo",
+				},
+				query: url.Values{
+					"match[]": []string{`test_metric1`},
+				},
+				response: []string{
+					"bar",
+					"boo",
+				},
+			},
+			// Label values with matcher using label filter.
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "foo",
+				},
+				query: url.Values{
+					"match[]": []string{`test_metric1{foo="bar"}`},
+				},
+				response: []string{
+					"bar",
+				},
+			},
+			// Label values with matcher and time range.
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "foo",
+				},
+				query: url.Values{
+					"match[]": []string{`test_metric1`},
+					"start":   []string{"1"},
+					"end":     []string{"100000000"},
+				},
+				response: []string{
+					"bar",
+					"boo",
+				},
+			},
 			// Label names.
 			{
 				endpoint: api.labelNames,
@@ -1707,6 +1784,60 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 					"end": []string{"20"},
 				},
 				response: []string{"__name__", "dup", "foo"},
+			},
+			// Label names with bad matchers.
+			{
+				endpoint: api.labelNames,
+				query: url.Values{
+					"match[]": []string{`{foo=""`, `test_metric2`},
+				},
+				errType: errorBadData,
+			},
+			// Label values with empty matchers.
+			{
+				endpoint: api.labelNames,
+				params: map[string]string{
+					"name": "foo",
+				},
+				query: url.Values{
+					"match[]": []string{`{foo=""}`},
+				},
+				errType: errorBadData,
+			},
+			// Label names with matcher.
+			{
+				endpoint: api.labelNames,
+				query: url.Values{
+					"match[]": []string{`test_metric2`},
+				},
+				response: []string{"__name__", "foo"},
+			},
+			// Label names with matcher.
+			{
+				endpoint: api.labelNames,
+				query: url.Values{
+					"match[]": []string{`test_metric3`},
+				},
+				response: []string{"__name__", "dup", "foo"},
+			},
+			// Label names with matcher using label filter.
+			// There is no matching series.
+			{
+				endpoint: api.labelNames,
+				query: url.Values{
+					"match[]": []string{`test_metric1{foo="test"}`},
+				},
+				response: []string{},
+			},
+			// Label names with matcher and time range.
+			{
+				endpoint: api.labelNames,
+				query: url.Values{
+					"match[]": []string{`test_metric2`},
+					"start":   []string{"1"},
+					"end":     []string{"100000000"},
+				},
+				response: []string{"__name__", "foo"},
 			},
 		}...)
 	}

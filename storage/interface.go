@@ -95,9 +95,11 @@ type ChunkQuerier interface {
 type LabelQuerier interface {
 	// LabelValues returns all potential values for a label name.
 	// It is not safe to use the strings beyond the lifefime of the querier.
+	// TODO(yeya24): support matchers or hints.
 	LabelValues(name string) ([]string, Warnings, error)
 
 	// LabelNames returns all the unique label names present in the block in sorted order.
+	// TODO(yeya24): support matchers or hints.
 	LabelNames() ([]string, Warnings, error)
 
 	// Close releases the resources of the Querier.
