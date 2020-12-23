@@ -493,16 +493,57 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrap(err, "invalid parameter 'end'")}, nil, nil}
 	}
 
+	matcherSets, err := parseMatchersParam(r.Form["match[]"])
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+	}
+
 	q, err := api.Queryable.Querier(r.Context(), timestamp.FromTime(start), timestamp.FromTime(end))
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
 	}
 	defer q.Close()
 
-	names, warnings, err := q.LabelNames()
-	if err != nil {
-		return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
+	var (
+		names    []string
+		warnings storage.Warnings
+	)
+	if len(matcherSets) > 0 {
+		hints := &storage.SelectHints{
+			Start: timestamp.FromTime(start),
+			End:   timestamp.FromTime(end),
+			Func:  "series", // There is no series function, this token is used for lookups that don't need samples.
+		}
+
+		labelNamesSet := make(map[string]struct{})
+		// Get all series which match matchers.
+		for _, mset := range matcherSets {
+			s := q.Select(false, hints, mset...)
+			for s.Next() {
+				series := s.At()
+				for _, lb := range series.Labels() {
+					labelNamesSet[lb.Name] = struct{}{}
+				}
+			}
+			warnings = append(warnings, s.Warnings()...)
+			if err := s.Err(); err != nil {
+				return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
+			}
+		}
+
+		// Convert the map to an array.
+		names = make([]string, 0, len(labelNamesSet))
+		for key := range labelNamesSet {
+			names = append(names, key)
+		}
+		sort.Strings(names)
+	} else {
+		names, warnings, err = q.LabelNames()
+		if err != nil {
+			return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
+		}
 	}
+
 	if names == nil {
 		names = []string{}
 	}
@@ -526,6 +567,11 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrap(err, "invalid parameter 'end'")}, nil, nil}
 	}
 
+	matcherSets, err := parseMatchersParam(r.Form["match[]"])
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+	}
+
 	q, err := api.Queryable.Querier(r.Context(), timestamp.FromTime(start), timestamp.FromTime(end))
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
@@ -542,10 +588,49 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 		q.Close()
 	}
 
-	vals, warnings, err := q.LabelValues(name)
-	if err != nil {
-		return apiFuncResult{nil, &apiError{errorExec, err}, warnings, closer}
+	var (
+		vals     []string
+		warnings storage.Warnings
+	)
+	if len(matcherSets) > 0 {
+		hints := &storage.SelectHints{
+			Start: timestamp.FromTime(start),
+			End:   timestamp.FromTime(end),
+			Func:  "series", // There is no series function, this token is used for lookups that don't need samples.
+		}
+
+		labelValuesSet := make(map[string]struct{})
+		// Get all series which match matchers.
+		for _, mset := range matcherSets {
+			s := q.Select(false, hints, mset...)
+			for s.Next() {
+				series := s.At()
+				labelValue := series.Labels().Get(name)
+				// Filter out empty value.
+				if labelValue == "" {
+					continue
+				}
+				labelValuesSet[labelValue] = struct{}{}
+			}
+			warnings = append(warnings, s.Warnings()...)
+			if err := s.Err(); err != nil {
+				return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
+			}
+		}
+
+		// Convert the map to an array.
+		vals = make([]string, 0, len(labelValuesSet))
+		for key := range labelValuesSet {
+			vals = append(vals, key)
+		}
+		sort.Strings(vals)
+	} else {
+		vals, warnings, err = q.LabelValues(name)
+		if err != nil {
+			return apiFuncResult{nil, &apiError{errorExec, err}, warnings, closer}
+		}
 	}
+
 	if vals == nil {
 		vals = []string{}
 	}
@@ -578,13 +663,9 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 
-	var matcherSets [][]*labels.Matcher
-	for _, s := range r.Form["match[]"] {
-		matchers, err := parser.ParseMetricSelector(s)
-		if err != nil {
-			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
-		}
-		matcherSets = append(matcherSets, matchers)
+	matcherSets, err := parseMatchersParam(r.Form["match[]"])
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 
 	q, err := api.Queryable.Querier(r.Context(), timestamp.FromTime(start), timestamp.FromTime(end))
@@ -1616,6 +1697,28 @@ func parseDuration(s string) (time.Duration, error) {
 		return time.Duration(d), nil
 	}
 	return 0, errors.Errorf("cannot parse %q to a valid duration", s)
+}
+
+func parseMatchersParam(matchers []string) ([][]*labels.Matcher, error) {
+	var matcherSets [][]*labels.Matcher
+	for _, s := range matchers {
+		matchers, err := parser.ParseMetricSelector(s)
+		if err != nil {
+			return nil, err
+		}
+		matcherSets = append(matcherSets, matchers)
+	}
+
+OUTER:
+	for _, ms := range matcherSets {
+		for _, lm := range ms {
+			if lm != nil && !lm.Matches("") {
+				continue OUTER
+			}
+		}
+		return nil, errors.New("match[] must contain at least one non-empty matcher")
+	}
+	return matcherSets, nil
 }
 
 func marshalPointJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
