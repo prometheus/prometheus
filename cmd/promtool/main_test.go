@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
@@ -27,15 +28,18 @@ func TestQueryRange(t *testing.T) {
 	s, getRequest := mockServer(200, `{"status": "success", "data": {"resultType": "matrix", "result": []}}`)
 	defer s.Close()
 
+	urlObject, err := url.Parse(s.URL)
+	require.Equal(t, nil, err)
+
 	p := &promqlPrinter{}
-	exitCode := QueryRange(s.URL, map[string]string{}, "up", "0", "300", 0, p)
+	exitCode := QueryRange(urlObject, map[string]string{}, "up", "0", "300", 0, p)
 	require.Equal(t, "/api/v1/query_range", getRequest().URL.Path)
 	form := getRequest().Form
 	require.Equal(t, "up", form.Get("query"))
 	require.Equal(t, "1", form.Get("step"))
 	require.Equal(t, 0, exitCode)
 
-	exitCode = QueryRange(s.URL, map[string]string{}, "up", "0", "300", 10*time.Millisecond, p)
+	exitCode = QueryRange(urlObject, map[string]string{}, "up", "0", "300", 10*time.Millisecond, p)
 	require.Equal(t, "/api/v1/query_range", getRequest().URL.Path)
 	form = getRequest().Form
 	require.Equal(t, "up", form.Get("query"))
@@ -47,8 +51,11 @@ func TestQueryInstant(t *testing.T) {
 	s, getRequest := mockServer(200, `{"status": "success", "data": {"resultType": "vector", "result": []}}`)
 	defer s.Close()
 
+	urlObject, err := url.Parse(s.URL)
+	require.Equal(t, nil, err)
+
 	p := &promqlPrinter{}
-	exitCode := QueryInstant(s.URL, "up", "300", p)
+	exitCode := QueryInstant(urlObject, "up", "300", p)
 	require.Equal(t, "/api/v1/query", getRequest().URL.Path)
 	form := getRequest().Form
 	require.Equal(t, "up", form.Get("query"))
