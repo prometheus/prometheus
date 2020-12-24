@@ -14,6 +14,7 @@
 package parser
 
 import (
+	"fmt"
 	"math"
 	"strings"
 	"testing"
@@ -1531,44 +1532,25 @@ var testExpr = []struct {
 			},
 		},
 	}, {
-		input: `foo @ +Inf`,
-		expected: &VectorSelector{
-			Name:      "foo",
-			Timestamp: makeInt64Pointer(math.MinInt64), // This is how the API behaves.
-			LabelMatchers: []*labels.Matcher{
-				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
-			},
-			PosRange: PositionRange{
-				Start: 0,
-				End:   10,
-			},
-		},
+		input:  `foo @ +Inf`,
+		fail:   true,
+		errMsg: "1:1: parse error: timestamp out of bound for @ modifier: +Inf",
 	}, {
-		input: `foo @ -Inf`,
-		expected: &VectorSelector{
-			Name:      "foo",
-			Timestamp: makeInt64Pointer(math.MinInt64), // This is how the API behaves.
-			LabelMatchers: []*labels.Matcher{
-				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
-			},
-			PosRange: PositionRange{
-				Start: 0,
-				End:   10,
-			},
-		},
+		input:  `foo @ -Inf`,
+		fail:   true,
+		errMsg: "1:1: parse error: timestamp out of bound for @ modifier: -Inf",
 	}, {
-		input: `foo @ NaN`,
-		expected: &VectorSelector{
-			Name:      "foo",
-			Timestamp: makeInt64Pointer(math.MinInt64), // This is how the API behaves.
-			LabelMatchers: []*labels.Matcher{
-				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
-			},
-			PosRange: PositionRange{
-				Start: 0,
-				End:   9,
-			},
-		},
+		input:  `foo @ NaN`,
+		fail:   true,
+		errMsg: "1:1: parse error: timestamp out of bound for @ modifier: NaN",
+	}, {
+		input:  fmt.Sprintf(`foo @ %f`, float64(math.MaxInt64)+1),
+		fail:   true,
+		errMsg: fmt.Sprintf("1:1: parse error: timestamp out of bound for @ modifier: %f", float64(math.MaxInt64)+1),
+	}, {
+		input:  fmt.Sprintf(`foo @ %f`, float64(math.MinInt64)-1),
+		fail:   true,
+		errMsg: fmt.Sprintf("1:1: parse error: timestamp out of bound for @ modifier: %f", float64(math.MinInt64)-1),
 	}, {
 		input: `foo:bar{a="bc"}`,
 		expected: &VectorSelector{

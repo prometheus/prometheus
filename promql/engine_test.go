@@ -731,7 +731,6 @@ load 1ms
 
 	lbls1 := labels.FromStrings("__name__", "metric", "job", "1")
 	lbls2 := labels.FromStrings("__name__", "metric", "job", "2")
-	//lblstopk1 := labels.FromStrings("__name__", "metric_topk", "instance", "1")
 	lblstopk2 := labels.FromStrings("__name__", "metric_topk", "instance", "2")
 	lblstopk3 := labels.FromStrings("__name__", "metric_topk", "instance", "3")
 	lblsms := labels.FromStrings("__name__", "metric_ms")
@@ -749,10 +748,10 @@ load 1ms
 
 	cases := []struct {
 		query                string
-		start, end, interval int64 // Time in second.
+		start, end, interval int64 // Time in seconds.
 		result               parser.Value
 	}{
-		{
+		{ // Time of the result is the evaluation time.
 			query: `metric_neg @ 0`,
 			start: 100,
 			result: Vector{
@@ -764,21 +763,12 @@ load 1ms
 			result: Vector{
 				Sample{Point: Point{V: 201, T: 100000}, Metric: lblsneg},
 			},
-		}, { // Time of the result is the evaluation time.
+		}, {
 			query: `metric{job="2"} @ 50`,
-			start: 100, end: 102,
+			start: -2, end: 2, interval: 1,
 			result: Matrix{
 				Series{
-					Points: []Point{{V: 10, T: 100000}, {V: 10, T: 101000}, {V: 10, T: 102000}},
-					Metric: lbls2,
-				},
-			},
-		}, { // Time of the result is the evaluation time.
-			query: `metric{job="2"} @ 50`,
-			start: -102, end: -100,
-			result: Matrix{
-				Series{
-					Points: []Point{{V: 10, T: -102000}, {V: 10, T: -101000}, {V: 10, T: -100000}},
+					Points: []Point{{V: 10, T: -2000}, {V: 10, T: -1000}, {V: 10, T: 0}, {V: 10, T: 1000}, {V: 10, T: 2000}},
 					Metric: lbls2,
 				},
 			},
@@ -795,52 +785,8 @@ load 1ms
 					Metric: lbls2,
 				},
 			},
-		}, { // Timestamps for matrix selector does not depend on the evaluation time.
-			query: "metric[20s] @ 300",
-			start: 1000,
-			result: Matrix{
-				Series{
-					Points: []Point{{V: 28, T: 280000}, {V: 29, T: 290000}, {V: 30, T: 300000}},
-					Metric: lbls1,
-				},
-				Series{
-					Points: []Point{{V: 56, T: 280000}, {V: 58, T: 290000}, {V: 60, T: 300000}},
-					Metric: lbls2,
-				},
-			},
-		}, { // Timestamps for matrix selector does not depend on the evaluation time.
-			query: "metric[20s] @ 300",
-			start: -1000,
-			result: Matrix{
-				Series{
-					Points: []Point{{V: 28, T: 280000}, {V: 29, T: 290000}, {V: 30, T: 300000}},
-					Metric: lbls1,
-				},
-				Series{
-					Points: []Point{{V: 56, T: 280000}, {V: 58, T: 290000}, {V: 60, T: 300000}},
-					Metric: lbls2,
-				},
-			},
-		}, {
-			query: `metric_ms[3ms] @ 2.345`,
-			start: 100,
-			result: Matrix{
-				Series{
-					Points: []Point{{V: 2342, T: 2342}, {V: 2343, T: 2343}, {V: 2344, T: 2344}, {V: 2345, T: 2345}},
-					Metric: lblsms,
-				},
-			},
 		}, {
 			query: `metric_neg[2s] @ 0`,
-			start: 100,
-			result: Matrix{
-				Series{
-					Points: []Point{{V: 3, T: -2000}, {V: 2, T: -1000}, {V: 1, T: 0}},
-					Metric: lblsneg,
-				},
-			},
-		}, {
-			query: `metric_neg[2s] @ -0`,
 			start: 100,
 			result: Matrix{
 				Series{
@@ -858,6 +804,15 @@ load 1ms
 				},
 			},
 		}, {
+			query: `metric_ms[3ms] @ 2.345`,
+			start: 100,
+			result: Matrix{
+				Series{
+					Points: []Point{{V: 2342, T: 2342}, {V: 2343, T: 2343}, {V: 2344, T: 2344}, {V: 2345, T: 2345}},
+					Metric: lblsms,
+				},
+			},
+		}, {
 			query: "metric[100s:25s] @ 300",
 			start: 100,
 			result: Matrix{
@@ -871,59 +826,30 @@ load 1ms
 				},
 			},
 		}, {
-			query: "metric[100s:25s] @ 50",
+			query: "metric_neg[50s:25s] @ 0",
 			start: 100,
 			result: Matrix{
 				Series{
-					Points: []Point{{V: 0, T: 0}, {V: 2, T: 25000}, {V: 5, T: 50000}},
-					Metric: lbls1,
-				},
-				Series{
-					Points: []Point{{V: 0, T: 0}, {V: 4, T: 25000}, {V: 10, T: 50000}},
-					Metric: lbls2,
-				},
-			},
-		}, { // Different nested timestamps.
-			query: `sum_over_time(metric{job="1"}[100s] @ 100)[100s:25s] @ 50`,
-			start: 100,
-			result: Matrix{
-				Series{
-					Points: []Point{{V: 55, T: -50000}, {V: 55, T: -25000}, {V: 55, T: 0}, {V: 55, T: 25000}, {V: 55, T: 50000}},
-					Metric: labels.FromStrings("job", "1"),
-				},
-			},
-		}, { // Nested subqueries with different timestamps.
-			query: `sum_over_time(sum_over_time(metric{job="1"}[100s] @ 100)[100s:25s] @ 50)[3s:1s] @ 3000`,
-			start: 100,
-			result: Matrix{
-				Series{
-					Points: []Point{{V: 275, T: 2997000}, {V: 275, T: 2998000}, {V: 275, T: 2999000}, {V: 275, T: 3000000}},
-					Metric: labels.FromStrings("job", "1"),
+					Points: []Point{{V: 51, T: -50000}, {V: 26, T: -25000}, {V: 1, T: 0}},
+					Metric: lblsneg,
 				},
 			},
 		}, {
-			// Testing the inner subquery timestamp (since vector selector does not have @).
-			// Inner sum for subquery [100s:25s] @ 50 are
-			// at -50 = 0, at -25 = 0, at 0 = 0, at 25 = 2, at 50 = 4+5 = 9.
-			query: `sum_over_time(sum_over_time(metric{job="1"}[10s])[100s:25s] @ 50)[3s:1s] @ 200`,
+			query: "metric_neg[50s:25s] @ -100",
 			start: 100,
 			result: Matrix{
 				Series{
-					Points: []Point{{V: 11, T: 197000}, {V: 11, T: 198000}, {V: 11, T: 199000}, {V: 11, T: 200000}},
-					Metric: labels.FromStrings("job", "1"),
+					Points: []Point{{V: 151, T: -150000}, {V: 126, T: -125000}, {V: 101, T: -100000}},
+					Metric: lblsneg,
 				},
 			},
-		},
-		{
-			// Testing the inner subquery timestamp (since vector selector does not have @)
-			// Inner sum for subquery [100s:25s] @ 200 are
-			// at 100 = 9+10, at 125 = 12, at 150 = 14+15, at 175 = 17, at 200 = 19+20.
-			query: `sum_over_time(sum_over_time(metric{job="1"}[10s])[100s:25s] @ 200)[3s:1s] @ 50`,
+		}, {
+			query: `metric_ms[100ms:25ms] @ 2.345`,
 			start: 100,
 			result: Matrix{
 				Series{
-					Points: []Point{{V: 116, T: 47000}, {V: 116, T: 48000}, {V: 116, T: 49000}, {V: 116, T: 50000}},
-					Metric: labels.FromStrings("job", "1"),
+					Points: []Point{{V: 2250, T: 2250}, {V: 2275, T: 2275}, {V: 2300, T: 2300}, {V: 2325, T: 2325}},
+					Metric: lblsms,
 				},
 			},
 		}, {
@@ -942,33 +868,6 @@ load 1ms
 				Series{
 					Points: []Point{{V: 10, T: 50000}, {V: 12, T: 60000}, {V: 14, T: 70000}, {V: 16, T: 80000}},
 					Metric: lblstopk2,
-				},
-			},
-		}, { // timestamp() takes the time of the sample and not the evaluation time.
-			query: `timestamp(metric{job="2"} @ 50)[100s:25s]`,
-			start: 100,
-			result: Matrix{
-				Series{
-					Points: []Point{{V: 50, T: 0}, {V: 50, T: 25000}, {V: 50, T: 50000}, {V: 50, T: 75000}, {V: 50, T: 100000}},
-					Metric: labels.FromStrings("job", "2"),
-				},
-			},
-		}, { // With nesting of timestamp(), the inner timestamp takes the eval time for it's result.
-			query: `timestamp(timestamp(metric{job="2"} @ 50))`,
-			start: 100, end: 130, interval: 10,
-			result: Matrix{
-				Series{
-					Points: []Point{{V: 100, T: 100000}, {V: 110, T: 110000}, {V: 120, T: 120000}, {V: 130, T: 130000}},
-					Metric: labels.FromStrings("job", "2"),
-				},
-			},
-		}, { // timestamp() takes the time of the sample and not the evaluation time.
-			query: `(time() + timestamp(metric{job="2"} @ 50))[100s:25s]`,
-			start: 100,
-			result: Matrix{
-				Series{
-					Points: []Point{{V: 50, T: 0}, {V: 75, T: 25000}, {V: 100, T: 50000}, {V: 125, T: 75000}, {V: 150, T: 100000}},
-					Metric: labels.FromStrings("job", "2"),
 				},
 			},
 		},
@@ -1098,18 +997,6 @@ load 10s
 			Interval:   5 * time.Second,
 		},
 		{
-			// With @ modifier, the result is duplicated for the time range, hence it counts.
-			// The selector itself counts does not count for any sample.
-			// During execution, the buffer per series maxes out at 2 samples and storing result
-			// per series for 1 evaluation takes 2 more samples. Hence 4 here. After discarding buffer and
-			// duplication of result, it is 6 at max.
-			Query:      `rate(bigmetric[10s] @ 10)`,
-			MaxSamples: 6,
-			Start:      time.Unix(0, 0),
-			End:        time.Unix(10, 0),
-			Interval:   5 * time.Second,
-		},
-		{
 			// The peak samples in memory is during first evaluation:
 			//   - Subquery takes 22 samples, 11 for each bigmetric,
 			//   - Result is calculated per series where the series samples is buffered, hence 11 more here.
@@ -1134,8 +1021,10 @@ load 10s
 		},
 		{
 			// Sample as above but with only 1 part as step invariant.
-			// Here the peak is causes by the non-step invariant part as it touches more time range.
-			// Hence at peak it is 2*21 (subquery) + 11 (buffer of a series per evaluation) + 6 (result from 2 series at 3 eval times).
+			// Here the peak is caused by the non-step invariant part as it touches more time range.
+			// Hence at peak it is 2*21 (subquery from 0s to 20s)
+			//                     + 11 (buffer of a series per evaluation)
+			//                     + 6 (result from 2 series at 3 eval times).
 			Query:      `rate(bigmetric[10s:1s]) + rate(bigmetric[10s:1s] @ 30)`,
 			MaxSamples: 59,
 			Start:      time.Unix(10, 0),
@@ -1145,29 +1034,23 @@ load 10s
 		{
 			// Nested subquery.
 			// We saw that inner most rate takes 35 samples which is still the peak
-			// since the other two subquery just duplicates the result.
-			Query:             `rate(rate(bigmetric[10s:1s] @ 10)[100s:25s] @ 1000)[100s:20s] @ 2000`,
-			MaxSamples:        35,
-			Start:             time.Unix(10, 0),
-			exceedsMaxSamples: false,
+			// since the other two subqueries just duplicate the result.
+			Query:      `rate(rate(bigmetric[10s:1s] @ 10)[100s:25s] @ 1000)[100s:20s] @ 2000`,
+			MaxSamples: 35,
+			Start:      time.Unix(10, 0),
 		},
 		{
 			// Nested subquery.
 			// Now the out most subquery produces more samples than inner most rate.
-			Query:             `rate(rate(bigmetric[10s:1s] @ 10)[100s:25s] @ 1000)[17s:1s] @ 2000`,
-			MaxSamples:        36,
-			Start:             time.Unix(10, 0),
-			exceedsMaxSamples: false,
+			Query:      `rate(rate(bigmetric[10s:1s] @ 10)[100s:25s] @ 1000)[17s:1s] @ 2000`,
+			MaxSamples: 36,
+			Start:      time.Unix(10, 0),
 		},
 	}
 
 	// Adding additional test cases for exceeding limit.
 	additionalCases := make([]testCase, 0, len(cases))
 	for _, c := range cases {
-		if c.exceedsMaxSamples {
-			continue
-		}
-
 		additionalCases = append(additionalCases, testCase{
 			Query:             c.Query,
 			MaxSamples:        c.MaxSamples - 1,
@@ -1641,9 +1524,19 @@ func TestWrapWithStepInvariantExpr(t *testing.T) {
 	}{
 		{
 			input: "123.4567",
-			expected: &parser.NumberLiteral{
-				Val:      123.4567,
-				PosRange: parser.PositionRange{Start: 0, End: 8},
+			expected: &parser.StepInvariantExpr{
+				Expr: &parser.NumberLiteral{
+					Val:      123.4567,
+					PosRange: parser.PositionRange{Start: 0, End: 8},
+				},
+			},
+		}, {
+			input: `"foo"`,
+			expected: &parser.StepInvariantExpr{
+				Expr: &parser.StringLiteral{
+					Val:      "foo",
+					PosRange: parser.PositionRange{Start: 0, End: 5},
+				},
 			},
 		}, {
 			input: "foo * bar",

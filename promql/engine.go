@@ -625,9 +625,7 @@ func (ng *Engine) findMinMaxTime(s *parser.EvalStmt) (int64, int64) {
 			if end > maxTimestamp {
 				maxTimestamp = end
 			}
-			if evalRange != 0 {
-				evalRange = 0
-			}
+			evalRange = 0
 
 		case *parser.MatrixSelector:
 			evalRange = n.Range
@@ -1056,7 +1054,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 	switch e := expr.(type) {
 	case *parser.AggregateExpr:
 		unwrapParenExpr(&e.Param)
-		if s, ok := e.Param.(*parser.StringLiteral); ok {
+		if s, ok := unwrapStepInvariantExpr(e.Param).(*parser.StringLiteral); ok {
 			return ev.rangeEval(func(v []parser.Value, enh *EvalNodeHelper) (Vector, storage.Warnings) {
 				return ev.aggregation(e.Op, e.Grouping, e.Without, s.Val, v[0].(Vector), enh), nil
 			}, e.Expr)
@@ -2298,27 +2296,22 @@ func wrapWithStepInvariantExprHelper(expr parser.Expr) bool {
 		return false
 
 	case *parser.Call:
-		isStepInvariant := IsFunctionStepInvariant(n)
+		_, ok := AtModifierUnsafeFunctions[n.Func.Name]
+		isStepInvariant := !ok
 		isStepInvariantSlice := make([]bool, len(n.Args))
 		for i := range n.Args {
 			isStepInvariantSlice[i] = wrapWithStepInvariantExprHelper(n.Args[i])
 			isStepInvariant = isStepInvariant && isStepInvariantSlice[i]
 		}
 
-		if n.Func.Name == "timestamp" {
-			// If timestamp(..) has something other than vector selector inside,
-			// then it is not step invariant.
-			_, ok := n.Args[0].(*parser.VectorSelector)
-			isStepInvariant = isStepInvariant && ok
-		}
 		if isStepInvariant {
 
 			// The function and all arguments are step invariant.
 			return true
 		}
 
-		for i, ic := range isStepInvariantSlice {
-			if ic {
+		for i, isi := range isStepInvariantSlice {
+			if isi {
 				n.Args[i] = newStepInvariantExpr(n.Args[i])
 			}
 		}
@@ -2353,30 +2346,13 @@ func wrapWithStepInvariantExprHelper(expr parser.Expr) bool {
 }
 
 func newStepInvariantExpr(expr parser.Expr) parser.Expr {
-	switch e := expr.(type) {
-	case *parser.ParenExpr:
+	if e, ok := expr.(*parser.ParenExpr); ok {
 		// Wrapping the inside of () makes it easy to unwrap the paren later.
+		// But this effectively unwraps the paren.
 		return newStepInvariantExpr(e.Expr)
-	}
-	if dontWrapStepInvariantExpr(expr) {
-		return expr
+
 	}
 	return &parser.StepInvariantExpr{Expr: expr}
-}
-
-// dontWrapStepInvariantExpr returns true if we should not wrap an expression even
-// if it step invariant. That includes constant literals like numbers and string where we don't
-// need any kind special handling for result hence reduce engine complexity in handling them.
-func dontWrapStepInvariantExpr(expr parser.Expr) bool {
-	switch e := expr.(type) {
-	case *parser.StringLiteral, *parser.NumberLiteral:
-		return true
-	case *parser.BinaryExpr:
-		return dontWrapStepInvariantExpr(e.LHS) && dontWrapStepInvariantExpr(e.RHS)
-	case *parser.ParenExpr:
-		return dontWrapStepInvariantExpr(e.Expr)
-	}
-	return false
 }
 
 // setOffsetForAtModifier modifies the offset of vector and matrix selector

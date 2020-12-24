@@ -448,7 +448,7 @@ func atModifierTestCases(exprStr string, evalTime time.Time) ([]atModifierTestCa
 		_, _, subqTs := subqueryTimes(path)
 		if subqTs != nil {
 			// There is a subquery with timestamp in the path,
-			// hence don't change any timestamp further.
+			// hence don't change any timestamps further.
 			return nil
 		}
 		switch n := node.(type) {
@@ -468,13 +468,8 @@ func atModifierTestCases(exprStr string, evalTime time.Time) ([]atModifierTestCa
 			}
 
 		case *parser.Call:
-			containsNonStepInvariant = containsNonStepInvariant || !IsFunctionStepInvariant(n)
-			if n.Func.Name == "timestamp" {
-				// If timestamp(..) has something other than vector selector inside,
-				// then it is not step invariant.
-				_, ok := n.Args[0].(*parser.VectorSelector)
-				containsNonStepInvariant = containsNonStepInvariant || !ok
-			}
+			_, ok := AtModifierUnsafeFunctions[n.Func.Name]
+			containsNonStepInvariant = containsNonStepInvariant || ok
 		}
 		return nil
 	})
@@ -782,6 +777,7 @@ func (ll *LazyLoader) Close() {
 		ll.T.Fatalf("closing test storage: %s", err)
 	}
 }
+
 func makeInt64Pointer(val int64) *int64 {
 	valp := new(int64)
 	*valp = val

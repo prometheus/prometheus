@@ -5,9 +5,40 @@ load 10s
 load 1ms
   metric_ms 0+1x10000
 
+# Instant vector selectors.
+eval instant at 10s metric @ 100
+  metric{job="1"} 10
+  metric{job="2"} 20
+
+eval instant at 10s metric @ 100 offset 50s
+  metric{job="1"} 5
+  metric{job="2"} 10
+
+eval instant at 10s metric offset 50s @ 100
+  metric{job="1"} 5
+  metric{job="2"} 10
+
+eval instant at 10s -metric @ 100
+  {job="1"} -10
+  {job="2"} -20
+
+eval instant at 10s ---metric @ 100
+  {job="1"} -10
+  {job="2"} -20
+
 # Millisecond precision.
 eval instant at 100s metric_ms @ 1.234
-  {__name__="metric_ms"} 1234
+  metric_ms 1234
+
+# Range vector selectors.
+eval instant at 25s sum_over_time(metric{job="1"}[100s] @ 100)
+  {job="1"} 55
+
+eval instant at 25s sum_over_time(metric{job="1"}[100s] @ 100 offset 50s)
+  {job="1"} 15
+
+eval instant at 25s sum_over_time(metric{job="1"}[100s] offset 50s @ 100)
+  {job="1"} 15
 
 # Different timestamps.
 eval instant at 25s metric{job="1"} @ 50 + metric{job="1"} @ 100
@@ -19,7 +50,23 @@ eval instant at 25s rate(metric{job="1"}[100s] @ 100) + label_replace(rate(metri
 eval instant at 25s sum_over_time(metric{job="1"}[100s] @ 100) + label_replace(sum_over_time(metric{job="2"}[100s] @ 100), "job", "1", "", "")
   {job="1"} 165
 
+# Subqueries.
+
+# 10*(1+2+...+9) + 10.
+eval instant at 25s sum_over_time(metric{job="1"}[100s:1s] @ 100)
+  {job="1"} 460
+
+# 10*(1+2+...+7) + 8.
+eval instant at 25s sum_over_time(metric{job="1"}[100s:1s] @ 100 offset 20s)
+  {job="1"} 288
+
+# 10*(1+2+...+7) + 8.
+eval instant at 25s sum_over_time(metric{job="1"}[100s:1s] offset 20s @ 100)
+  {job="1"} 288
+
 # Subquery with different timestamps.
+
+# Since vector selector has timestamp, the result value does not depend on the timestamp of subqueries.
 # Inner most sum=1+2+...+10=55.
 # With [100s:25s] subquery, it's 55*5.
 eval instant at 100s sum_over_time(sum_over_time(metric{job="1"}[100s] @ 100)[100s:25s] @ 50)
@@ -35,7 +82,7 @@ eval instant at 0s sum_over_time(sum_over_time(sum_over_time(metric{job="1"}[100
 # Testing the inner subquery timestamp since vector selector does not have @.
 
 # Inner sum for subquery [100s:25s] @ 50 are
-#   at -50=0, at -25=0, at 0=0, at 25=2, at 50=4+5=9.
+#   at -50 nothing, at -25 nothing, at 0=0, at 25=2, at 50=4+5=9.
 # This sum of 11 is repeated 4 times by outer subquery.
 eval instant at 0s sum_over_time(sum_over_time(sum_over_time(metric{job="1"}[10s])[100s:25s] @ 50)[3s:1s] @ 200)
   {job="1"} 44
@@ -66,7 +113,7 @@ eval instant at 10s minute(metric @ 1500)
   {job="1"} 2
   {job="2"} 5
 
-# If nothing passes, minute() takes eval time.
+# If nothing passed, minute() takes eval time.
 # Verifying that the optimisations for @ modifier does not affect this.
 eval instant at 90s minute()
   {} 1
@@ -85,5 +132,43 @@ eval instant at 10m timestamp(timestamp(metric{job="1"} @ 10))
 
 eval instant at 15m timestamp(timestamp(metric{job="1"} @ 10))
   {job="1"} 900
+
+# Time functions inside a subquery.
+
+# minute is counted on the value of the sample.
+eval instant at 0s sum_over_time(minute(metric @ 1500)[100s:10s])
+  {job="1"} 22
+  {job="2"} 55
+
+# If nothing passed, minute() takes eval time.
+# Here the eval time is decided by the subquery.
+# [50m:1m] at 6000, i.e. 100m, is 50m to 100m.
+# sum=50+51+52+...+59+0+1+2+...+40.
+eval instant at 0s sum_over_time(minute()[50m:1m] @ 6000)
+  {} 1365
+
+# sum=45+46+47+...+59+0+1+2+...+35.
+eval instant at 0s sum_over_time(minute()[50m:1m] @ 6000 offset 5m)
+  {} 1410
+
+# time() is the eval time which is decided by subquery here.
+# 2900+2901+...+3000 = (3000*3001 - 2899*2900)/2.
+eval instant at 0s sum_over_time(vector(time())[100s:1s] @ 3000)
+  {} 297950
+
+# 2300+2301+...+2400 = (2400*2401 - 2299*2300)/2.
+eval instant at 0s sum_over_time(vector(time())[100s:1s] @ 3000 offset 600s)
+  {} 237350
+
+# timestamp() takes the time of the sample and not the evaluation time.
+eval instant at 0s sum_over_time(timestamp(metric{job="1"} @ 10)[100s:10s] @ 3000)
+  {job="1"} 110
+
+# The result of inner timestamp() will have the timestamp as the
+# eval time, hence entire expression is not step invariant and depends on eval time.
+# Here eval time is decided by the subquery.
+eval instant at 0s sum_over_time(timestamp(timestamp(metric{job="1"} @ 999))[10s:1s] @ 10)
+  {job="1"} 55
+
 
 clear

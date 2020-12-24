@@ -15,6 +15,7 @@ package parser
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"runtime"
 	"strconv"
@@ -714,6 +715,10 @@ func (p *parser) addOffset(e Node, offset time.Duration) {
 
 // setTimestamp is used to set the timestamp from the @ modifier in the generated parser.
 func (p *parser) setTimestamp(e Node, ts float64) {
+	if math.IsInf(ts, -1) || math.IsInf(ts, 1) || math.IsNaN(ts) ||
+		ts >= float64(math.MaxInt64) || ts <= float64(math.MinInt64) {
+		p.addParseErrf(e.PositionRange(), "timestamp out of bound for @ modifier: %f", ts)
+	}
 	var timestampp **int64
 	var endPosp *Pos
 

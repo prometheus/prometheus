@@ -699,10 +699,10 @@ func funcChanges(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelp
 func funcLabelReplace(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	var (
 		vector   = vals[0].(Vector)
-		dst      = args[1].(*parser.StringLiteral).Val
-		repl     = args[2].(*parser.StringLiteral).Val
-		src      = args[3].(*parser.StringLiteral).Val
-		regexStr = args[4].(*parser.StringLiteral).Val
+		dst      = stringFromArg(args[1])
+		repl     = stringFromArg(args[2])
+		src      = stringFromArg(args[3])
+		regexStr = stringFromArg(args[4])
 	)
 
 	if enh.regex == nil {
@@ -762,8 +762,8 @@ func funcVector(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelpe
 func funcLabelJoin(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	var (
 		vector    = vals[0].(Vector)
-		dst       = args[1].(*parser.StringLiteral).Val
-		sep       = args[2].(*parser.StringLiteral).Val
+		dst       = stringFromArg(args[1])
+		sep       = stringFromArg(args[2])
 		srcLabels = make([]string, len(args)-3)
 	)
 
@@ -772,7 +772,7 @@ func funcLabelJoin(vals []parser.Value, args parser.Expressions, enh *EvalNodeHe
 	}
 
 	for i := 3; i < len(args); i++ {
-		src := args[i].(*parser.StringLiteral).Val
+		src := stringFromArg(args[i])
 		if !model.LabelName(src).IsValid() {
 			panic(errors.Errorf("invalid source label name in label_join(): %s", src))
 		}
@@ -936,19 +936,19 @@ var FunctionCalls = map[string]FunctionCall{
 	"year":               funcYear,
 }
 
-var NonStepInvariantFunctions = map[string]struct{}{
+// AtModifierUnsafeFunctions are the functions whose result
+// can vary if evaluation time is changed when the arguments are
+// step invariant. It also includes functions that use the timestamp
+// of the passed argument to calculate a result since that can
+// also change with change in eval time.
+var AtModifierUnsafeFunctions = map[string]struct{}{
+	// Step invariant functions.
 	"days_in_month": {}, "day_of_month": {}, "day_of_week": {},
 	"hour": {}, "minute": {}, "month": {}, "year": {},
 	"predict_linear": {}, "time": {},
-}
-
-// IsFunctionStepInvariant returns true if the result of the function
-// call remains same for all timestamps if the given arguments
-// remain same. Generally the result of time functions change
-// for different evaluation time for the same input arguments.
-func IsFunctionStepInvariant(e *parser.Call) bool {
-	_, ok := NonStepInvariantFunctions[e.Func.Name]
-	return !ok
+	// Uses timestamp of the argument for the result,
+	// hence unsafe to use with @ modifier.
+	"timestamp": {},
 }
 
 type vectorByValueHeap Vector
@@ -1040,4 +1040,8 @@ func createLabelsForAbsentFunction(expr parser.Expr) labels.Labels {
 		m = labels.NewBuilder(m).Del(v).Labels()
 	}
 	return m
+}
+
+func stringFromArg(e parser.Expr) string {
+	return unwrapStepInvariantExpr(e).(*parser.StringLiteral).Val
 }
