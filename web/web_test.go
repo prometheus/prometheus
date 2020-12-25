@@ -151,7 +151,7 @@ func TestReadyAndHealthy(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() {
-		err := webHandler.Run(ctx, l)
+		err := webHandler.Run(ctx, l, "")
 		if err != nil {
 			panic(fmt.Sprintf("Can't start web handler:%s", err))
 		}
@@ -263,7 +263,7 @@ func TestRoutePrefix(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() {
-		err := webHandler.Run(ctx, l)
+		err := webHandler.Run(ctx, l, "")
 		if err != nil {
 			panic(fmt.Sprintf("Can't start web handler:%s", err))
 		}
@@ -437,7 +437,7 @@ func TestShutdownWithStaleConnection(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
-		err := webHandler.Run(ctx, l)
+		err := webHandler.Run(ctx, l, "")
 		if err != nil {
 			panic(fmt.Sprintf("Can't start web handler:%s", err))
 		}
@@ -486,7 +486,7 @@ func TestHandleMultipleQuitRequests(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	closed := make(chan struct{})
 	go func() {
-		err := webHandler.Run(ctx, l)
+		err := webHandler.Run(ctx, l, "")
 		if err != nil {
 			panic(fmt.Sprintf("Can't start web handler:%s", err))
 		}
