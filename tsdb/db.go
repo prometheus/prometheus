@@ -840,8 +840,7 @@ func (db *DB) Compact() (returnErr error) {
 	}
 
 	compactionDuration := time.Since(start)
-	// TODO: change to milliseconds once fuzzit tests are removed
-	if int64(compactionDuration.Seconds())*1000 > db.head.chunkRange.Load() {
+	if compactionDuration.Milliseconds() > db.head.chunkRange.Load() {
 		level.Warn(db.logger).Log(
 			"msg", "Head compaction took longer than the block time range, compactions are falling behind and won't be able to catch up",
 			"duration", compactionDuration.String(),
