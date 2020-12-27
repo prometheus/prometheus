@@ -56,6 +56,7 @@ const (
 	tComment
 	tBlank
 	tMName
+	tMNameLabel
 	tBraceOpen
 	tBraceClose
 	tLName
@@ -92,6 +93,8 @@ func (t token) String() string {
 		return "BLANK"
 	case tMName:
 		return "MNAME"
+	case tMNameLabel:
+		return "MNAMELABEL"
 	case tBraceOpen:
 		return "BOPEN"
 	case tBraceClose:
