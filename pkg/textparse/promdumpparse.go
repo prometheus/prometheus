@@ -44,10 +44,6 @@ func (l *promDumpLexer) buf() []byte {
 	return l.b[l.start:l.i]
 }
 
-func (l *promDumpLexer) cur() byte {
-	return l.b[l.i]
-}
-
 // next advances the promDumpLexer to the next character.
 func (l *promDumpLexer) next() byte {
 	l.i++
@@ -72,8 +68,6 @@ func (l *promDumpLexer) Error(es string) {
 type PromDumpParser struct {
 	l       *promDumpLexer
 	series  []byte
-	text    []byte
-	mtype   MetricType
 	val     float64
 	ts      int64
 	start   int
