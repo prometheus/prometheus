@@ -359,7 +359,7 @@ func listBlocks(path string, humanReadable bool) error {
 }
 
 func printBlocks(blocks []tsdb.BlockReader, writeHeader, humanReadable bool) {
-	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	tw := tabwriter.NewWriter(os.Stdout, 13, 0, 2, ' ', 0)
 	defer tw.Flush()
 
 	if writeHeader {
