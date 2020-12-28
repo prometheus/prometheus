@@ -206,6 +206,10 @@ func startSpanInternal(name string, hasParent bool, parent SpanContext, remotePa
 	span.spanContext = parent
 
 	cfg := config.Load().(*Config)
+	if gen, ok := cfg.IDGenerator.(*defaultIDGenerator); ok {
+		// lazy initialization
+		gen.init()
+	}
 
 	if !hasParent {
 		span.spanContext.TraceID = cfg.IDGenerator.NewTraceID()
@@ -534,20 +538,9 @@ func (s *Span) String() string {
 var config atomic.Value // access atomically
 
 func init() {
-	gen := &defaultIDGenerator{}
-	// initialize traceID and spanID generators.
-	var rngSeed int64
-	for _, p := range []interface{}{
-		&rngSeed, &gen.traceIDAdd, &gen.nextSpanID, &gen.spanIDInc,
-	} {
-		binary.Read(crand.Reader, binary.LittleEndian, p)
-	}
-	gen.traceIDRand = rand.New(rand.NewSource(rngSeed))
-	gen.spanIDInc |= 1
-
 	config.Store(&Config{
 		DefaultSampler:             ProbabilitySampler(defaultSamplingProbability),
-		IDGenerator:                gen,
+		IDGenerator:                &defaultIDGenerator{},
 		MaxAttributesPerSpan:       DefaultMaxAttributesPerSpan,
 		MaxAnnotationEventsPerSpan: DefaultMaxAnnotationEventsPerSpan,
 		MaxMessageEventsPerSpan:    DefaultMaxMessageEventsPerSpan,
@@ -571,6 +564,24 @@ type defaultIDGenerator struct {
 
 	traceIDAdd  [2]uint64
 	traceIDRand *rand.Rand
+
+	initOnce sync.Once
+}
+
+// init initializes the generator on the first call to avoid consuming entropy
+// unnecessarily.
+func (gen *defaultIDGenerator) init() {
+	gen.initOnce.Do(func() {
+		// initialize traceID and spanID generators.
+		var rngSeed int64
+		for _, p := range []interface{}{
+			&rngSeed, &gen.traceIDAdd, &gen.nextSpanID, &gen.spanIDInc,
+		} {
+			binary.Read(crand.Reader, binary.LittleEndian, p)
+		}
+		gen.traceIDRand = rand.New(rand.NewSource(rngSeed))
+		gen.spanIDInc |= 1
+	})
 }
 
 // NewSpanID returns a non-zero span ID from a randomly-chosen sequence.

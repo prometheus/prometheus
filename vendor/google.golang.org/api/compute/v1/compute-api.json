@@ -23,13 +23,13 @@
       }
     }
   },
-  "basePath": "/compute/v1/projects/",
-  "baseUrl": "https://compute.googleapis.com/compute/v1/projects/",
+  "basePath": "/compute/v1/",
+  "baseUrl": "https://compute.googleapis.com/compute/v1/",
   "batchPath": "batch/compute/v1",
   "description": "Creates and runs virtual machines on Google Cloud Platform.",
   "discoveryVersion": "v1",
   "documentationLink": "https://developers.google.com/compute/docs/reference/latest/",
-  "etag": "\"-2NioU2H8y8siEzrBOV_qzRI6kQ/AubvcHOOmrHBNbxRjSZ8CR3OwJo\"",
+  "etag": "\"-2NioU2H8y8siEzrBOV_qzRI6kQ/ygG4zaVGMh6_TRd5MOsh3erj_7M\"",
   "icons": {
     "x16": "https://www.google.com/images/icons/product/compute_engine-16.png",
     "x32": "https://www.google.com/images/icons/product/compute_engine-32.png"
@@ -137,7 +137,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/aggregated/acceleratorTypes",
+          "path": "projects/{project}/aggregated/acceleratorTypes",
           "response": {
             "$ref": "AcceleratorTypeAggregatedList"
           },
@@ -179,7 +179,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/acceleratorTypes/{acceleratorType}",
+          "path": "projects/{project}/zones/{zone}/acceleratorTypes/{acceleratorType}",
           "response": {
             "$ref": "AcceleratorType"
           },
@@ -241,7 +241,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/acceleratorTypes",
+          "path": "projects/{project}/zones/{zone}/acceleratorTypes",
           "response": {
             "$ref": "AcceleratorTypeList"
           },
@@ -304,7 +304,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/aggregated/addresses",
+          "path": "projects/{project}/aggregated/addresses",
           "response": {
             "$ref": "AddressAggregatedList"
           },
@@ -351,7 +351,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/addresses/{address}",
+          "path": "projects/{project}/regions/{region}/addresses/{address}",
           "response": {
             "$ref": "Operation"
           },
@@ -392,7 +392,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/addresses/{address}",
+          "path": "projects/{project}/regions/{region}/addresses/{address}",
           "response": {
             "$ref": "Address"
           },
@@ -431,7 +431,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/addresses",
+          "path": "projects/{project}/regions/{region}/addresses",
           "request": {
             "$ref": "Address"
           },
@@ -495,7 +495,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/regions/{region}/addresses",
+          "path": "projects/{project}/regions/{region}/addresses",
           "response": {
             "$ref": "AddressList"
           },
@@ -558,7 +558,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/aggregated/autoscalers",
+          "path": "projects/{project}/aggregated/autoscalers",
           "response": {
             "$ref": "AutoscalerAggregatedList"
           },
@@ -605,7 +605,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/autoscalers/{autoscaler}",
+          "path": "projects/{project}/zones/{zone}/autoscalers/{autoscaler}",
           "response": {
             "$ref": "Operation"
           },
@@ -646,7 +646,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/autoscalers/{autoscaler}",
+          "path": "projects/{project}/zones/{zone}/autoscalers/{autoscaler}",
           "response": {
             "$ref": "Autoscaler"
           },
@@ -685,7 +685,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/autoscalers",
+          "path": "projects/{project}/zones/{zone}/autoscalers",
           "request": {
             "$ref": "Autoscaler"
           },
@@ -749,7 +749,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/autoscalers",
+          "path": "projects/{project}/zones/{zone}/autoscalers",
           "response": {
             "$ref": "AutoscalerList"
           },
@@ -794,7 +794,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/autoscalers",
+          "path": "projects/{project}/zones/{zone}/autoscalers",
           "request": {
             "$ref": "Autoscaler"
           },
@@ -841,7 +841,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/autoscalers",
+          "path": "projects/{project}/zones/{zone}/autoscalers",
           "request": {
             "$ref": "Autoscaler"
           },
@@ -885,7 +885,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/backendBuckets/{backendBucket}/addSignedUrlKey",
+          "path": "projects/{project}/global/backendBuckets/{backendBucket}/addSignedUrlKey",
           "request": {
             "$ref": "SignedUrlKey"
           },
@@ -926,7 +926,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/backendBuckets/{backendBucket}",
+          "path": "projects/{project}/global/backendBuckets/{backendBucket}",
           "response": {
             "$ref": "Operation"
           },
@@ -970,7 +970,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/backendBuckets/{backendBucket}/deleteSignedUrlKey",
+          "path": "projects/{project}/global/backendBuckets/{backendBucket}/deleteSignedUrlKey",
           "response": {
             "$ref": "Operation"
           },
@@ -1003,7 +1003,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/backendBuckets/{backendBucket}",
+          "path": "projects/{project}/global/backendBuckets/{backendBucket}",
           "response": {
             "$ref": "BackendBucket"
           },
@@ -1034,7 +1034,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/backendBuckets",
+          "path": "projects/{project}/global/backendBuckets",
           "request": {
             "$ref": "BackendBucket"
           },
@@ -1090,7 +1090,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/global/backendBuckets",
+          "path": "projects/{project}/global/backendBuckets",
           "response": {
             "$ref": "BackendBucketList"
           },
@@ -1129,7 +1129,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/backendBuckets/{backendBucket}",
+          "path": "projects/{project}/global/backendBuckets/{backendBucket}",
           "request": {
             "$ref": "BackendBucket"
           },
@@ -1170,7 +1170,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/backendBuckets/{backendBucket}",
+          "path": "projects/{project}/global/backendBuckets/{backendBucket}",
           "request": {
             "$ref": "BackendBucket"
           },
@@ -1214,7 +1214,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/backendServices/{backendService}/addSignedUrlKey",
+          "path": "projects/{project}/global/backendServices/{backendService}/addSignedUrlKey",
           "request": {
             "$ref": "SignedUrlKey"
           },
@@ -1275,7 +1275,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/aggregated/backendServices",
+          "path": "projects/{project}/aggregated/backendServices",
           "response": {
             "$ref": "BackendServiceAggregatedList"
           },
@@ -1314,7 +1314,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/backendServices/{backendService}",
+          "path": "projects/{project}/global/backendServices/{backendService}",
           "response": {
             "$ref": "Operation"
           },
@@ -1358,7 +1358,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/backendServices/{backendService}/deleteSignedUrlKey",
+          "path": "projects/{project}/global/backendServices/{backendService}/deleteSignedUrlKey",
           "response": {
             "$ref": "Operation"
           },
@@ -1391,7 +1391,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/backendServices/{backendService}",
+          "path": "projects/{project}/global/backendServices/{backendService}",
           "response": {
             "$ref": "BackendService"
           },
@@ -1424,7 +1424,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/backendServices/{backendService}/getHealth",
+          "path": "projects/{project}/global/backendServices/{backendService}/getHealth",
           "request": {
             "$ref": "ResourceGroupReference"
           },
@@ -1458,7 +1458,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/backendServices",
+          "path": "projects/{project}/global/backendServices",
           "request": {
             "$ref": "BackendService"
           },
@@ -1514,7 +1514,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/global/backendServices",
+          "path": "projects/{project}/global/backendServices",
           "response": {
             "$ref": "BackendServiceList"
           },
@@ -1553,7 +1553,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/backendServices/{backendService}",
+          "path": "projects/{project}/global/backendServices/{backendService}",
           "request": {
             "$ref": "BackendService"
           },
@@ -1593,7 +1593,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/backendServices/{backendService}/setSecurityPolicy",
+          "path": "projects/{project}/global/backendServices/{backendService}/setSecurityPolicy",
           "request": {
             "$ref": "SecurityPolicyReference"
           },
@@ -1634,7 +1634,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/backendServices/{backendService}",
+          "path": "projects/{project}/global/backendServices/{backendService}",
           "request": {
             "$ref": "BackendService"
           },
@@ -1699,7 +1699,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/aggregated/diskTypes",
+          "path": "projects/{project}/aggregated/diskTypes",
           "response": {
             "$ref": "DiskTypeAggregatedList"
           },
@@ -1741,7 +1741,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/diskTypes/{diskType}",
+          "path": "projects/{project}/zones/{zone}/diskTypes/{diskType}",
           "response": {
             "$ref": "DiskType"
           },
@@ -1803,7 +1803,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/diskTypes",
+          "path": "projects/{project}/zones/{zone}/diskTypes",
           "response": {
             "$ref": "DiskTypeList"
           },
@@ -1854,7 +1854,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/disks/{disk}/addResourcePolicies",
+          "path": "projects/{project}/zones/{zone}/disks/{disk}/addResourcePolicies",
           "request": {
             "$ref": "DisksAddResourcePoliciesRequest"
           },
@@ -1915,7 +1915,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/aggregated/disks",
+          "path": "projects/{project}/aggregated/disks",
           "response": {
             "$ref": "DiskAggregatedList"
           },
@@ -1967,7 +1967,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/disks/{disk}/createSnapshot",
+          "path": "projects/{project}/zones/{zone}/disks/{disk}/createSnapshot",
           "request": {
             "$ref": "Snapshot"
           },
@@ -2015,7 +2015,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/disks/{disk}",
+          "path": "projects/{project}/zones/{zone}/disks/{disk}",
           "response": {
             "$ref": "Operation"
           },
@@ -2056,7 +2056,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/disks/{disk}",
+          "path": "projects/{project}/zones/{zone}/disks/{disk}",
           "response": {
             "$ref": "Disk"
           },
@@ -2104,7 +2104,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/disks/{resource}/getIamPolicy",
+          "path": "projects/{project}/zones/{zone}/disks/{resource}/getIamPolicy",
           "response": {
             "$ref": "Policy"
           },
@@ -2148,7 +2148,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/disks",
+          "path": "projects/{project}/zones/{zone}/disks",
           "request": {
             "$ref": "Disk"
           },
@@ -2212,7 +2212,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/disks",
+          "path": "projects/{project}/zones/{zone}/disks",
           "response": {
             "$ref": "DiskList"
           },
@@ -2259,7 +2259,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/disks/{disk}/removeResourcePolicies",
+          "path": "projects/{project}/zones/{zone}/disks/{disk}/removeResourcePolicies",
           "request": {
             "$ref": "DisksRemoveResourcePoliciesRequest"
           },
@@ -2308,7 +2308,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/disks/{disk}/resize",
+          "path": "projects/{project}/zones/{zone}/disks/{disk}/resize",
           "request": {
             "$ref": "DisksResizeRequest"
           },
@@ -2352,7 +2352,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/disks/{resource}/setIamPolicy",
+          "path": "projects/{project}/zones/{zone}/disks/{resource}/setIamPolicy",
           "request": {
             "$ref": "ZoneSetPolicyRequest"
           },
@@ -2401,7 +2401,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/disks/{resource}/setLabels",
+          "path": "projects/{project}/zones/{zone}/disks/{resource}/setLabels",
           "request": {
             "$ref": "ZoneSetLabelsRequest"
           },
@@ -2445,7 +2445,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/disks/{resource}/testIamPermissions",
+          "path": "projects/{project}/zones/{zone}/disks/{resource}/testIamPermissions",
           "request": {
             "$ref": "TestPermissionsRequest"
           },
@@ -2491,7 +2491,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/externalVpnGateways/{externalVpnGateway}",
+          "path": "projects/{project}/global/externalVpnGateways/{externalVpnGateway}",
           "response": {
             "$ref": "Operation"
           },
@@ -2524,7 +2524,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/externalVpnGateways/{externalVpnGateway}",
+          "path": "projects/{project}/global/externalVpnGateways/{externalVpnGateway}",
           "response": {
             "$ref": "ExternalVpnGateway"
           },
@@ -2555,7 +2555,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/externalVpnGateways",
+          "path": "projects/{project}/global/externalVpnGateways",
           "request": {
             "$ref": "ExternalVpnGateway"
           },
@@ -2611,7 +2611,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/global/externalVpnGateways",
+          "path": "projects/{project}/global/externalVpnGateways",
           "response": {
             "$ref": "ExternalVpnGatewayList"
           },
@@ -2645,7 +2645,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/externalVpnGateways/{resource}/setLabels",
+          "path": "projects/{project}/global/externalVpnGateways/{resource}/setLabels",
           "request": {
             "$ref": "GlobalSetLabelsRequest"
           },
@@ -2681,7 +2681,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/externalVpnGateways/{resource}/testIamPermissions",
+          "path": "projects/{project}/global/externalVpnGateways/{resource}/testIamPermissions",
           "request": {
             "$ref": "TestPermissionsRequest"
           },
@@ -2727,7 +2727,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/firewalls/{firewall}",
+          "path": "projects/{project}/global/firewalls/{firewall}",
           "response": {
             "$ref": "Operation"
           },
@@ -2760,7 +2760,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/firewalls/{firewall}",
+          "path": "projects/{project}/global/firewalls/{firewall}",
           "response": {
             "$ref": "Firewall"
           },
@@ -2791,7 +2791,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/firewalls",
+          "path": "projects/{project}/global/firewalls",
           "request": {
             "$ref": "Firewall"
           },
@@ -2847,7 +2847,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/global/firewalls",
+          "path": "projects/{project}/global/firewalls",
           "response": {
             "$ref": "FirewallList"
           },
@@ -2886,7 +2886,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/firewalls/{firewall}",
+          "path": "projects/{project}/global/firewalls/{firewall}",
           "request": {
             "$ref": "Firewall"
           },
@@ -2927,7 +2927,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/firewalls/{firewall}",
+          "path": "projects/{project}/global/firewalls/{firewall}",
           "request": {
             "$ref": "Firewall"
           },
@@ -2992,7 +2992,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/aggregated/forwardingRules",
+          "path": "projects/{project}/aggregated/forwardingRules",
           "response": {
             "$ref": "ForwardingRuleAggregatedList"
           },
@@ -3039,7 +3039,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/forwardingRules/{forwardingRule}",
+          "path": "projects/{project}/regions/{region}/forwardingRules/{forwardingRule}",
           "response": {
             "$ref": "Operation"
           },
@@ -3080,7 +3080,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/forwardingRules/{forwardingRule}",
+          "path": "projects/{project}/regions/{region}/forwardingRules/{forwardingRule}",
           "response": {
             "$ref": "ForwardingRule"
           },
@@ -3119,7 +3119,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/forwardingRules",
+          "path": "projects/{project}/regions/{region}/forwardingRules",
           "request": {
             "$ref": "ForwardingRule"
           },
@@ -3183,7 +3183,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/regions/{region}/forwardingRules",
+          "path": "projects/{project}/regions/{region}/forwardingRules",
           "response": {
             "$ref": "ForwardingRuleList"
           },
@@ -3230,7 +3230,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/forwardingRules/{forwardingRule}",
+          "path": "projects/{project}/regions/{region}/forwardingRules/{forwardingRule}",
           "request": {
             "$ref": "ForwardingRule"
           },
@@ -3279,7 +3279,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/forwardingRules/{forwardingRule}/setTarget",
+          "path": "projects/{project}/regions/{region}/forwardingRules/{forwardingRule}/setTarget",
           "request": {
             "$ref": "TargetReference"
           },
@@ -3324,7 +3324,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/addresses/{address}",
+          "path": "projects/{project}/global/addresses/{address}",
           "response": {
             "$ref": "Operation"
           },
@@ -3357,7 +3357,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/addresses/{address}",
+          "path": "projects/{project}/global/addresses/{address}",
           "response": {
             "$ref": "Address"
           },
@@ -3388,7 +3388,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/addresses",
+          "path": "projects/{project}/global/addresses",
           "request": {
             "$ref": "Address"
           },
@@ -3444,7 +3444,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/global/addresses",
+          "path": "projects/{project}/global/addresses",
           "response": {
             "$ref": "AddressList"
           },
@@ -3487,7 +3487,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/forwardingRules/{forwardingRule}",
+          "path": "projects/{project}/global/forwardingRules/{forwardingRule}",
           "response": {
             "$ref": "Operation"
           },
@@ -3520,7 +3520,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/forwardingRules/{forwardingRule}",
+          "path": "projects/{project}/global/forwardingRules/{forwardingRule}",
           "response": {
             "$ref": "ForwardingRule"
           },
@@ -3551,7 +3551,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/forwardingRules",
+          "path": "projects/{project}/global/forwardingRules",
           "request": {
             "$ref": "ForwardingRule"
           },
@@ -3607,7 +3607,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/global/forwardingRules",
+          "path": "projects/{project}/global/forwardingRules",
           "response": {
             "$ref": "ForwardingRuleList"
           },
@@ -3646,7 +3646,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/forwardingRules/{forwardingRule}",
+          "path": "projects/{project}/global/forwardingRules/{forwardingRule}",
           "request": {
             "$ref": "ForwardingRule"
           },
@@ -3687,7 +3687,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/forwardingRules/{forwardingRule}/setTarget",
+          "path": "projects/{project}/global/forwardingRules/{forwardingRule}/setTarget",
           "request": {
             "$ref": "TargetReference"
           },
@@ -3731,7 +3731,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/networkEndpointGroups/{networkEndpointGroup}/attachNetworkEndpoints",
+          "path": "projects/{project}/global/networkEndpointGroups/{networkEndpointGroup}/attachNetworkEndpoints",
           "request": {
             "$ref": "GlobalNetworkEndpointGroupsAttachEndpointsRequest"
           },
@@ -3771,7 +3771,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/networkEndpointGroups/{networkEndpointGroup}",
+          "path": "projects/{project}/global/networkEndpointGroups/{networkEndpointGroup}",
           "response": {
             "$ref": "Operation"
           },
@@ -3808,7 +3808,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/networkEndpointGroups/{networkEndpointGroup}/detachNetworkEndpoints",
+          "path": "projects/{project}/global/networkEndpointGroups/{networkEndpointGroup}/detachNetworkEndpoints",
           "request": {
             "$ref": "GlobalNetworkEndpointGroupsDetachEndpointsRequest"
           },
@@ -3843,7 +3843,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/networkEndpointGroups/{networkEndpointGroup}",
+          "path": "projects/{project}/global/networkEndpointGroups/{networkEndpointGroup}",
           "response": {
             "$ref": "NetworkEndpointGroup"
           },
@@ -3874,7 +3874,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/networkEndpointGroups",
+          "path": "projects/{project}/global/networkEndpointGroups",
           "request": {
             "$ref": "NetworkEndpointGroup"
           },
@@ -3930,7 +3930,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/global/networkEndpointGroups",
+          "path": "projects/{project}/global/networkEndpointGroups",
           "response": {
             "$ref": "NetworkEndpointGroupList"
           },
@@ -3991,7 +3991,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/global/networkEndpointGroups/{networkEndpointGroup}/listNetworkEndpoints",
+          "path": "projects/{project}/global/networkEndpointGroups/{networkEndpointGroup}/listNetworkEndpoints",
           "response": {
             "$ref": "NetworkEndpointGroupsListNetworkEndpoints"
           },
@@ -4054,7 +4054,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/aggregated/operations",
+          "path": "projects/{project}/aggregated/operations",
           "response": {
             "$ref": "OperationAggregatedList"
           },
@@ -4088,7 +4088,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/operations/{operation}",
+          "path": "projects/{project}/global/operations/{operation}",
           "scopes": [
             "https://www.googleapis.com/auth/cloud-platform",
             "https://www.googleapis.com/auth/compute"
@@ -4118,7 +4118,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/operations/{operation}",
+          "path": "projects/{project}/global/operations/{operation}",
           "response": {
             "$ref": "Operation"
           },
@@ -4172,7 +4172,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/global/operations",
+          "path": "projects/{project}/global/operations",
           "response": {
             "$ref": "OperationList"
           },
@@ -4206,9 +4206,120 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/operations/{operation}/wait",
+          "path": "projects/{project}/global/operations/{operation}/wait",
           "response": {
             "$ref": "Operation"
+          },
+          "scopes": [
+            "https://www.googleapis.com/auth/cloud-platform",
+            "https://www.googleapis.com/auth/compute",
+            "https://www.googleapis.com/auth/compute.readonly"
+          ]
+        }
+      }
+    },
+    "globalOrganizationOperations": {
+      "methods": {
+        "delete": {
+          "description": "Deletes the specified Operations resource.",
+          "httpMethod": "DELETE",
+          "id": "compute.globalOrganizationOperations.delete",
+          "parameterOrder": [
+            "operation"
+          ],
+          "parameters": {
+            "operation": {
+              "description": "Name of the Operations resource to delete.",
+              "location": "path",
+              "pattern": "[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?|[1-9][0-9]{0,19}",
+              "required": true,
+              "type": "string"
+            },
+            "parentId": {
+              "description": "Parent ID for this request.",
+              "location": "query",
+              "type": "string"
+            }
+          },
+          "path": "locations/global/operations/{operation}",
+          "scopes": [
+            "https://www.googleapis.com/auth/cloud-platform",
+            "https://www.googleapis.com/auth/compute"
+          ]
+        },
+        "get": {
+          "description": "Retrieves the specified Operations resource. Gets a list of operations by making a `list()` request.",
+          "httpMethod": "GET",
+          "id": "compute.globalOrganizationOperations.get",
+          "parameterOrder": [
+            "operation"
+          ],
+          "parameters": {
+            "operation": {
+              "description": "Name of the Operations resource to return.",
+              "location": "path",
+              "pattern": "[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?|[1-9][0-9]{0,19}",
+              "required": true,
+              "type": "string"
+            },
+            "parentId": {
+              "description": "Parent ID for this request.",
+              "location": "query",
+              "type": "string"
+            }
+          },
+          "path": "locations/global/operations/{operation}",
+          "response": {
+            "$ref": "Operation"
+          },
+          "scopes": [
+            "https://www.googleapis.com/auth/cloud-platform",
+            "https://www.googleapis.com/auth/compute",
+            "https://www.googleapis.com/auth/compute.readonly"
+          ]
+        },
+        "list": {
+          "description": "Retrieves a list of Operation resources contained within the specified organization.",
+          "httpMethod": "GET",
+          "id": "compute.globalOrganizationOperations.list",
+          "parameters": {
+            "filter": {
+              "description": "A filter expression that filters resources listed in the response. The expression must specify the field name, a comparison operator, and the value that you want to use for filtering. The value must be a string, a number, or a boolean. The comparison operator must be either `=`, `!=`, `\u003e`, or `\u003c`.\n\nFor example, if you are filtering Compute Engine instances, you can exclude instances named `example-instance` by specifying `name != example-instance`.\n\nYou can also filter nested fields. For example, you could specify `scheduling.automaticRestart = false` to include instances only if they are not scheduled for automatic restarts. You can use filtering on nested fields to filter based on resource labels.\n\nTo filter on multiple expressions, provide each separate expression within parentheses. For example: ``` (scheduling.automaticRestart = true) (cpuPlatform = \"Intel Skylake\") ``` By default, each expression is an `AND` expression. However, you can include `AND` and `OR` expressions explicitly. For example: ``` (cpuPlatform = \"Intel Skylake\") OR (cpuPlatform = \"Intel Broadwell\") AND (scheduling.automaticRestart = true) ```",
+              "location": "query",
+              "type": "string"
+            },
+            "maxResults": {
+              "default": "500",
+              "description": "The maximum number of results per page that should be returned. If the number of available results is larger than `maxResults`, Compute Engine returns a `nextPageToken` that can be used to get the next page of results in subsequent list requests. Acceptable values are `0` to `500`, inclusive. (Default: `500`)",
+              "format": "uint32",
+              "location": "query",
+              "minimum": "0",
+              "type": "integer"
+            },
+            "orderBy": {
+              "description": "Sorts list results by a certain order. By default, results are returned in alphanumerical order based on the resource name.\n\nYou can also sort results in descending order based on the creation timestamp using `orderBy=\"creationTimestamp desc\"`. This sorts results based on the `creationTimestamp` field in reverse chronological order (newest result first). Use this to sort resources like operations so that the newest operation is returned first.\n\nCurrently, only sorting by `name` or `creationTimestamp desc` is supported.",
+              "location": "query",
+              "type": "string"
+            },
+            "pageToken": {
+              "description": "Specifies a page token to use. Set `pageToken` to the `nextPageToken` returned by a previous list request to get the next page of results.",
+              "location": "query",
+              "type": "string"
+            },
+            "parentId": {
+              "description": "Parent ID for this request.",
+              "location": "query",
+              "type": "string"
+            },
+            "returnPartialSuccess": {
+              "description": "Opt-in for partial success behavior which provides partial results in case of failure. The default value is false and the logic is the same as today.",
+              "location": "query",
+              "type": "boolean"
+            }
+          },
+          "path": "locations/global/operations",
+          "response": {
+            "$ref": "OperationList"
           },
           "scopes": [
             "https://www.googleapis.com/auth/cloud-platform",
@@ -4269,7 +4380,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/aggregated/healthChecks",
+          "path": "projects/{project}/aggregated/healthChecks",
           "response": {
             "$ref": "HealthChecksAggregatedList"
           },
@@ -4308,7 +4419,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/healthChecks/{healthCheck}",
+          "path": "projects/{project}/global/healthChecks/{healthCheck}",
           "response": {
             "$ref": "Operation"
           },
@@ -4341,7 +4452,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/healthChecks/{healthCheck}",
+          "path": "projects/{project}/global/healthChecks/{healthCheck}",
           "response": {
             "$ref": "HealthCheck"
           },
@@ -4372,7 +4483,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/healthChecks",
+          "path": "projects/{project}/global/healthChecks",
           "request": {
             "$ref": "HealthCheck"
           },
@@ -4428,7 +4539,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/global/healthChecks",
+          "path": "projects/{project}/global/healthChecks",
           "response": {
             "$ref": "HealthCheckList"
           },
@@ -4467,7 +4578,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/healthChecks/{healthCheck}",
+          "path": "projects/{project}/global/healthChecks/{healthCheck}",
           "request": {
             "$ref": "HealthCheck"
           },
@@ -4508,7 +4619,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/healthChecks/{healthCheck}",
+          "path": "projects/{project}/global/healthChecks/{healthCheck}",
           "request": {
             "$ref": "HealthCheck"
           },
@@ -4553,7 +4664,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/httpHealthChecks/{httpHealthCheck}",
+          "path": "projects/{project}/global/httpHealthChecks/{httpHealthCheck}",
           "response": {
             "$ref": "Operation"
           },
@@ -4586,7 +4697,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/httpHealthChecks/{httpHealthCheck}",
+          "path": "projects/{project}/global/httpHealthChecks/{httpHealthCheck}",
           "response": {
             "$ref": "HttpHealthCheck"
           },
@@ -4617,7 +4728,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/httpHealthChecks",
+          "path": "projects/{project}/global/httpHealthChecks",
           "request": {
             "$ref": "HttpHealthCheck"
           },
@@ -4673,7 +4784,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/global/httpHealthChecks",
+          "path": "projects/{project}/global/httpHealthChecks",
           "response": {
             "$ref": "HttpHealthCheckList"
           },
@@ -4712,7 +4823,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/httpHealthChecks/{httpHealthCheck}",
+          "path": "projects/{project}/global/httpHealthChecks/{httpHealthCheck}",
           "request": {
             "$ref": "HttpHealthCheck"
           },
@@ -4753,7 +4864,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/httpHealthChecks/{httpHealthCheck}",
+          "path": "projects/{project}/global/httpHealthChecks/{httpHealthCheck}",
           "request": {
             "$ref": "HttpHealthCheck"
           },
@@ -4798,7 +4909,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/httpsHealthChecks/{httpsHealthCheck}",
+          "path": "projects/{project}/global/httpsHealthChecks/{httpsHealthCheck}",
           "response": {
             "$ref": "Operation"
           },
@@ -4831,7 +4942,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/httpsHealthChecks/{httpsHealthCheck}",
+          "path": "projects/{project}/global/httpsHealthChecks/{httpsHealthCheck}",
           "response": {
             "$ref": "HttpsHealthCheck"
           },
@@ -4862,7 +4973,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/httpsHealthChecks",
+          "path": "projects/{project}/global/httpsHealthChecks",
           "request": {
             "$ref": "HttpsHealthCheck"
           },
@@ -4918,7 +5029,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/global/httpsHealthChecks",
+          "path": "projects/{project}/global/httpsHealthChecks",
           "response": {
             "$ref": "HttpsHealthCheckList"
           },
@@ -4957,7 +5068,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/httpsHealthChecks/{httpsHealthCheck}",
+          "path": "projects/{project}/global/httpsHealthChecks/{httpsHealthCheck}",
           "request": {
             "$ref": "HttpsHealthCheck"
           },
@@ -4998,7 +5109,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/httpsHealthChecks/{httpsHealthCheck}",
+          "path": "projects/{project}/global/httpsHealthChecks/{httpsHealthCheck}",
           "request": {
             "$ref": "HttpsHealthCheck"
           },
@@ -5043,7 +5154,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/images/{image}",
+          "path": "projects/{project}/global/images/{image}",
           "response": {
             "$ref": "Operation"
           },
@@ -5081,7 +5192,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/images/{image}/deprecate",
+          "path": "projects/{project}/global/images/{image}/deprecate",
           "request": {
             "$ref": "DeprecationStatus"
           },
@@ -5117,7 +5228,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/images/{image}",
+          "path": "projects/{project}/global/images/{image}",
           "response": {
             "$ref": "Image"
           },
@@ -5151,7 +5262,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/images/family/{family}",
+          "path": "projects/{project}/global/images/family/{family}",
           "response": {
             "$ref": "Image"
           },
@@ -5191,7 +5302,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/images/{resource}/getIamPolicy",
+          "path": "projects/{project}/global/images/{resource}/getIamPolicy",
           "response": {
             "$ref": "Policy"
           },
@@ -5227,7 +5338,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/images",
+          "path": "projects/{project}/global/images",
           "request": {
             "$ref": "Image"
           },
@@ -5286,7 +5397,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/global/images",
+          "path": "projects/{project}/global/images",
           "response": {
             "$ref": "ImageList"
           },
@@ -5325,7 +5436,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/images/{image}",
+          "path": "projects/{project}/global/images/{image}",
           "request": {
             "$ref": "Image"
           },
@@ -5361,7 +5472,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/images/{resource}/setIamPolicy",
+          "path": "projects/{project}/global/images/{resource}/setIamPolicy",
           "request": {
             "$ref": "GlobalSetPolicyRequest"
           },
@@ -5397,7 +5508,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/images/{resource}/setLabels",
+          "path": "projects/{project}/global/images/{resource}/setLabels",
           "request": {
             "$ref": "GlobalSetLabelsRequest"
           },
@@ -5433,7 +5544,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/images/{resource}/testIamPermissions",
+          "path": "projects/{project}/global/images/{resource}/testIamPermissions",
           "request": {
             "$ref": "TestPermissionsRequest"
           },
@@ -5485,7 +5596,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instanceGroupManagers/{instanceGroupManager}/abandonInstances",
+          "path": "projects/{project}/zones/{zone}/instanceGroupManagers/{instanceGroupManager}/abandonInstances",
           "request": {
             "$ref": "InstanceGroupManagersAbandonInstancesRequest"
           },
@@ -5546,7 +5657,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/aggregated/instanceGroupManagers",
+          "path": "projects/{project}/aggregated/instanceGroupManagers",
           "response": {
             "$ref": "InstanceGroupManagerAggregatedList"
           },
@@ -5586,7 +5697,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instanceGroupManagers/{instanceGroupManager}/applyUpdatesToInstances",
+          "path": "projects/{project}/zones/{zone}/instanceGroupManagers/{instanceGroupManager}/applyUpdatesToInstances",
           "request": {
             "$ref": "InstanceGroupManagersApplyUpdatesRequest"
           },
@@ -5633,7 +5744,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instanceGroupManagers/{instanceGroupManager}/createInstances",
+          "path": "projects/{project}/zones/{zone}/instanceGroupManagers/{instanceGroupManager}/createInstances",
           "request": {
             "$ref": "InstanceGroupManagersCreateInstancesRequest"
           },
@@ -5680,7 +5791,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instanceGroupManagers/{instanceGroupManager}",
+          "path": "projects/{project}/zones/{zone}/instanceGroupManagers/{instanceGroupManager}",
           "response": {
             "$ref": "Operation"
           },
@@ -5724,7 +5835,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instanceGroupManagers/{instanceGroupManager}/deleteInstances",
+          "path": "projects/{project}/zones/{zone}/instanceGroupManagers/{instanceGroupManager}/deleteInstances",
           "request": {
             "$ref": "InstanceGroupManagersDeleteInstancesRequest"
           },
@@ -5766,7 +5877,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instanceGroupManagers/{instanceGroupManager}/deletePerInstanceConfigs",
+          "path": "projects/{project}/zones/{zone}/instanceGroupManagers/{instanceGroupManager}/deletePerInstanceConfigs",
           "request": {
             "$ref": "InstanceGroupManagersDeletePerInstanceConfigsReq"
           },
@@ -5808,7 +5919,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instanceGroupManagers/{instanceGroupManager}",
+          "path": "projects/{project}/zones/{zone}/instanceGroupManagers/{instanceGroupManager}",
           "response": {
             "$ref": "InstanceGroupManager"
           },
@@ -5846,7 +5957,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instanceGroupManagers",
+          "path": "projects/{project}/zones/{zone}/instanceGroupManagers",
           "request": {
             "$ref": "InstanceGroupManager"
           },
@@ -5909,7 +6020,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instanceGroupManagers",
+          "path": "projects/{project}/zones/{zone}/instanceGroupManagers",
           "response": {
             "$ref": "InstanceGroupManagerList"
           },
@@ -5977,7 +6088,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instanceGroupManagers/{instanceGroupManager}/listErrors",
+          "path": "projects/{project}/zones/{zone}/instanceGroupManagers/{instanceGroupManager}/listErrors",
           "response": {
             "$ref": "InstanceGroupManagersListErrorsResponse"
           },
@@ -6045,7 +6156,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instanceGroupManagers/{instanceGroupManager}/listManagedInstances",
+          "path": "projects/{project}/zones/{zone}/instanceGroupManagers/{instanceGroupManager}/listManagedInstances",
           "response": {
             "$ref": "InstanceGroupManagersListManagedInstancesResponse"
           },
@@ -6113,7 +6224,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instanceGroupManagers/{instanceGroupManager}/listPerInstanceConfigs",
+          "path": "projects/{project}/zones/{zone}/instanceGroupManagers/{instanceGroupManager}/listPerInstanceConfigs",
           "response": {
             "$ref": "InstanceGroupManagersListPerInstanceConfigsResp"
           },
@@ -6158,7 +6269,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instanceGroupManagers/{instanceGroupManager}",
+          "path": "projects/{project}/zones/{zone}/instanceGroupManagers/{instanceGroupManager}",
           "request": {
             "$ref": "InstanceGroupManager"
           },
@@ -6205,7 +6316,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instanceGroupManagers/{instanceGroupManager}/patchPerInstanceConfigs",
+          "path": "projects/{project}/zones/{zone}/instanceGroupManagers/{instanceGroupManager}/patchPerInstanceConfigs",
           "request": {
             "$ref": "InstanceGroupManagersPatchPerInstanceConfigsReq"
           },
@@ -6252,7 +6363,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instanceGroupManagers/{instanceGroupManager}/recreateInstances",
+          "path": "projects/{project}/zones/{zone}/instanceGroupManagers/{instanceGroupManager}/recreateInstances",
           "request": {
             "$ref": "InstanceGroupManagersRecreateInstancesRequest"
           },
@@ -6307,7 +6418,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instanceGroupManagers/{instanceGroupManager}/resize",
+          "path": "projects/{project}/zones/{zone}/instanceGroupManagers/{instanceGroupManager}/resize",
           "response": {
             "$ref": "Operation"
           },
@@ -6317,7 +6428,7 @@
           ]
         },
         "setInstanceTemplate": {
-          "description": "Specifies the instance template to use when creating new instances in this group. The templates for existing instances in the group do not change unless you recreate them.",
+          "description": "Specifies the instance template to use when creating new instances in this group. The templates for existing instances in the group do not change unless you run recreateInstances, run applyUpdatesToInstances, or set the group's updatePolicy.type to PROACTIVE.",
           "httpMethod": "POST",
           "id": "compute.instanceGroupManagers.setInstanceTemplate",
           "parameterOrder": [
@@ -6351,7 +6462,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instanceGroupManagers/{instanceGroupManager}/setInstanceTemplate",
+          "path": "projects/{project}/zones/{zone}/instanceGroupManagers/{instanceGroupManager}/setInstanceTemplate",
           "request": {
             "$ref": "InstanceGroupManagersSetInstanceTemplateRequest"
           },
@@ -6398,7 +6509,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instanceGroupManagers/{instanceGroupManager}/setTargetPools",
+          "path": "projects/{project}/zones/{zone}/instanceGroupManagers/{instanceGroupManager}/setTargetPools",
           "request": {
             "$ref": "InstanceGroupManagersSetTargetPoolsRequest"
           },
@@ -6445,7 +6556,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instanceGroupManagers/{instanceGroupManager}/updatePerInstanceConfigs",
+          "path": "projects/{project}/zones/{zone}/instanceGroupManagers/{instanceGroupManager}/updatePerInstanceConfigs",
           "request": {
             "$ref": "InstanceGroupManagersUpdatePerInstanceConfigsReq"
           },
@@ -6496,7 +6607,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instanceGroups/{instanceGroup}/addInstances",
+          "path": "projects/{project}/zones/{zone}/instanceGroups/{instanceGroup}/addInstances",
           "request": {
             "$ref": "InstanceGroupsAddInstancesRequest"
           },
@@ -6557,7 +6668,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/aggregated/instanceGroups",
+          "path": "projects/{project}/aggregated/instanceGroups",
           "response": {
             "$ref": "InstanceGroupAggregatedList"
           },
@@ -6602,7 +6713,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instanceGroups/{instanceGroup}",
+          "path": "projects/{project}/zones/{zone}/instanceGroups/{instanceGroup}",
           "response": {
             "$ref": "Operation"
           },
@@ -6641,7 +6752,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instanceGroups/{instanceGroup}",
+          "path": "projects/{project}/zones/{zone}/instanceGroups/{instanceGroup}",
           "response": {
             "$ref": "InstanceGroup"
           },
@@ -6679,7 +6790,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instanceGroups",
+          "path": "projects/{project}/zones/{zone}/instanceGroups",
           "request": {
             "$ref": "InstanceGroup"
           },
@@ -6742,7 +6853,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instanceGroups",
+          "path": "projects/{project}/zones/{zone}/instanceGroups",
           "response": {
             "$ref": "InstanceGroupList"
           },
@@ -6810,7 +6921,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instanceGroups/{instanceGroup}/listInstances",
+          "path": "projects/{project}/zones/{zone}/instanceGroups/{instanceGroup}/listInstances",
           "request": {
             "$ref": "InstanceGroupsListInstancesRequest"
           },
@@ -6858,7 +6969,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instanceGroups/{instanceGroup}/removeInstances",
+          "path": "projects/{project}/zones/{zone}/instanceGroups/{instanceGroup}/removeInstances",
           "request": {
             "$ref": "InstanceGroupsRemoveInstancesRequest"
           },
@@ -6905,7 +7016,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instanceGroups/{instanceGroup}/setNamedPorts",
+          "path": "projects/{project}/zones/{zone}/instanceGroups/{instanceGroup}/setNamedPorts",
           "request": {
             "$ref": "InstanceGroupsSetNamedPortsRequest"
           },
@@ -6950,7 +7061,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/instanceTemplates/{instanceTemplate}",
+          "path": "projects/{project}/global/instanceTemplates/{instanceTemplate}",
           "response": {
             "$ref": "Operation"
           },
@@ -6983,7 +7094,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/instanceTemplates/{instanceTemplate}",
+          "path": "projects/{project}/global/instanceTemplates/{instanceTemplate}",
           "response": {
             "$ref": "InstanceTemplate"
           },
@@ -7023,7 +7134,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/instanceTemplates/{resource}/getIamPolicy",
+          "path": "projects/{project}/global/instanceTemplates/{resource}/getIamPolicy",
           "response": {
             "$ref": "Policy"
           },
@@ -7054,7 +7165,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/instanceTemplates",
+          "path": "projects/{project}/global/instanceTemplates",
           "request": {
             "$ref": "InstanceTemplate"
           },
@@ -7110,7 +7221,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/global/instanceTemplates",
+          "path": "projects/{project}/global/instanceTemplates",
           "response": {
             "$ref": "InstanceTemplateList"
           },
@@ -7144,7 +7255,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/instanceTemplates/{resource}/setIamPolicy",
+          "path": "projects/{project}/global/instanceTemplates/{resource}/setIamPolicy",
           "request": {
             "$ref": "GlobalSetPolicyRequest"
           },
@@ -7180,7 +7291,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/instanceTemplates/{resource}/testIamPermissions",
+          "path": "projects/{project}/global/instanceTemplates/{resource}/testIamPermissions",
           "request": {
             "$ref": "TestPermissionsRequest"
           },
@@ -7241,7 +7352,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instances/{instance}/addAccessConfig",
+          "path": "projects/{project}/zones/{zone}/instances/{instance}/addAccessConfig",
           "request": {
             "$ref": "AccessConfig"
           },
@@ -7290,7 +7401,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instances/{instance}/addResourcePolicies",
+          "path": "projects/{project}/zones/{zone}/instances/{instance}/addResourcePolicies",
           "request": {
             "$ref": "InstancesAddResourcePoliciesRequest"
           },
@@ -7351,7 +7462,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/aggregated/instances",
+          "path": "projects/{project}/aggregated/instances",
           "response": {
             "$ref": "InstanceAggregatedList"
           },
@@ -7403,7 +7514,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instances/{instance}/attachDisk",
+          "path": "projects/{project}/zones/{zone}/instances/{instance}/attachDisk",
           "request": {
             "$ref": "AttachedDisk"
           },
@@ -7452,7 +7563,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instances/{instance}",
+          "path": "projects/{project}/zones/{zone}/instances/{instance}",
           "response": {
             "$ref": "Operation"
           },
@@ -7512,7 +7623,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instances/{instance}/deleteAccessConfig",
+          "path": "projects/{project}/zones/{zone}/instances/{instance}/deleteAccessConfig",
           "response": {
             "$ref": "Operation"
           },
@@ -7565,7 +7676,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instances/{instance}/detachDisk",
+          "path": "projects/{project}/zones/{zone}/instances/{instance}/detachDisk",
           "response": {
             "$ref": "Operation"
           },
@@ -7606,7 +7717,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instances/{instance}",
+          "path": "projects/{project}/zones/{zone}/instances/{instance}",
           "response": {
             "$ref": "Instance"
           },
@@ -7658,7 +7769,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instances/{instance}/getGuestAttributes",
+          "path": "projects/{project}/zones/{zone}/instances/{instance}/getGuestAttributes",
           "response": {
             "$ref": "GuestAttributes"
           },
@@ -7706,7 +7817,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instances/{resource}/getIamPolicy",
+          "path": "projects/{project}/zones/{zone}/instances/{resource}/getIamPolicy",
           "response": {
             "$ref": "Policy"
           },
@@ -7748,7 +7859,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instances/{instance}/screenshot",
+          "path": "projects/{project}/zones/{zone}/instances/{instance}/screenshot",
           "response": {
             "$ref": "Screenshot"
           },
@@ -7805,7 +7916,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instances/{instance}/serialPort",
+          "path": "projects/{project}/zones/{zone}/instances/{instance}/serialPort",
           "response": {
             "$ref": "SerialPortOutput"
           },
@@ -7847,7 +7958,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instances/{instance}/getShieldedInstanceIdentity",
+          "path": "projects/{project}/zones/{zone}/instances/{instance}/getShieldedInstanceIdentity",
           "response": {
             "$ref": "ShieldedInstanceIdentity"
           },
@@ -7891,7 +8002,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instances",
+          "path": "projects/{project}/zones/{zone}/instances",
           "request": {
             "$ref": "Instance"
           },
@@ -7955,7 +8066,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instances",
+          "path": "projects/{project}/zones/{zone}/instances",
           "response": {
             "$ref": "InstanceList"
           },
@@ -8025,7 +8136,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instances/{instance}/referrers",
+          "path": "projects/{project}/zones/{zone}/instances/{instance}/referrers",
           "response": {
             "$ref": "InstanceListReferrers"
           },
@@ -8072,7 +8183,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instances/{instance}/removeResourcePolicies",
+          "path": "projects/{project}/zones/{zone}/instances/{instance}/removeResourcePolicies",
           "request": {
             "$ref": "InstancesRemoveResourcePoliciesRequest"
           },
@@ -8121,7 +8232,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instances/{instance}/reset",
+          "path": "projects/{project}/zones/{zone}/instances/{instance}/reset",
           "response": {
             "$ref": "Operation"
           },
@@ -8173,7 +8284,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instances/{resource}/setDeletionProtection",
+          "path": "projects/{project}/zones/{zone}/instances/{resource}/setDeletionProtection",
           "response": {
             "$ref": "Operation"
           },
@@ -8234,7 +8345,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instances/{instance}/setDiskAutoDelete",
+          "path": "projects/{project}/zones/{zone}/instances/{instance}/setDiskAutoDelete",
           "response": {
             "$ref": "Operation"
           },
@@ -8275,7 +8386,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instances/{resource}/setIamPolicy",
+          "path": "projects/{project}/zones/{zone}/instances/{resource}/setIamPolicy",
           "request": {
             "$ref": "ZoneSetPolicyRequest"
           },
@@ -8324,7 +8435,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instances/{instance}/setLabels",
+          "path": "projects/{project}/zones/{zone}/instances/{instance}/setLabels",
           "request": {
             "$ref": "InstancesSetLabelsRequest"
           },
@@ -8373,7 +8484,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instances/{instance}/setMachineResources",
+          "path": "projects/{project}/zones/{zone}/instances/{instance}/setMachineResources",
           "request": {
             "$ref": "InstancesSetMachineResourcesRequest"
           },
@@ -8422,7 +8533,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instances/{instance}/setMachineType",
+          "path": "projects/{project}/zones/{zone}/instances/{instance}/setMachineType",
           "request": {
             "$ref": "InstancesSetMachineTypeRequest"
           },
@@ -8471,7 +8582,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instances/{instance}/setMetadata",
+          "path": "projects/{project}/zones/{zone}/instances/{instance}/setMetadata",
           "request": {
             "$ref": "Metadata"
           },
@@ -8520,7 +8631,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instances/{instance}/setMinCpuPlatform",
+          "path": "projects/{project}/zones/{zone}/instances/{instance}/setMinCpuPlatform",
           "request": {
             "$ref": "InstancesSetMinCpuPlatformRequest"
           },
@@ -8569,7 +8680,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instances/{instance}/setScheduling",
+          "path": "projects/{project}/zones/{zone}/instances/{instance}/setScheduling",
           "request": {
             "$ref": "Scheduling"
           },
@@ -8618,7 +8729,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instances/{instance}/setServiceAccount",
+          "path": "projects/{project}/zones/{zone}/instances/{instance}/setServiceAccount",
           "request": {
             "$ref": "InstancesSetServiceAccountRequest"
           },
@@ -8667,7 +8778,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instances/{instance}/setShieldedInstanceIntegrityPolicy",
+          "path": "projects/{project}/zones/{zone}/instances/{instance}/setShieldedInstanceIntegrityPolicy",
           "request": {
             "$ref": "ShieldedInstanceIntegrityPolicy"
           },
@@ -8716,7 +8827,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instances/{instance}/setTags",
+          "path": "projects/{project}/zones/{zone}/instances/{instance}/setTags",
           "request": {
             "$ref": "Tags"
           },
@@ -8760,7 +8871,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instances/{instance}/simulateMaintenanceEvent",
+          "path": "projects/{project}/zones/{zone}/instances/{instance}/simulateMaintenanceEvent",
           "response": {
             "$ref": "Operation"
           },
@@ -8806,7 +8917,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instances/{instance}/start",
+          "path": "projects/{project}/zones/{zone}/instances/{instance}/start",
           "response": {
             "$ref": "Operation"
           },
@@ -8852,7 +8963,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instances/{instance}/startWithEncryptionKey",
+          "path": "projects/{project}/zones/{zone}/instances/{instance}/startWithEncryptionKey",
           "request": {
             "$ref": "InstancesStartWithEncryptionKeyRequest"
           },
@@ -8901,7 +9012,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instances/{instance}/stop",
+          "path": "projects/{project}/zones/{zone}/instances/{instance}/stop",
           "response": {
             "$ref": "Operation"
           },
@@ -8942,7 +9053,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instances/{resource}/testIamPermissions",
+          "path": "projects/{project}/zones/{zone}/instances/{resource}/testIamPermissions",
           "request": {
             "$ref": "TestPermissionsRequest"
           },
@@ -9026,7 +9137,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instances/{instance}",
+          "path": "projects/{project}/zones/{zone}/instances/{instance}",
           "request": {
             "$ref": "Instance"
           },
@@ -9082,7 +9193,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instances/{instance}/updateAccessConfig",
+          "path": "projects/{project}/zones/{zone}/instances/{instance}/updateAccessConfig",
           "request": {
             "$ref": "AccessConfig"
           },
@@ -9131,7 +9242,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instances/{instance}/updateDisplayDevice",
+          "path": "projects/{project}/zones/{zone}/instances/{instance}/updateDisplayDevice",
           "request": {
             "$ref": "DisplayDevice"
           },
@@ -9187,7 +9298,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instances/{instance}/updateNetworkInterface",
+          "path": "projects/{project}/zones/{zone}/instances/{instance}/updateNetworkInterface",
           "request": {
             "$ref": "NetworkInterface"
           },
@@ -9236,7 +9347,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/instances/{instance}/updateShieldedInstanceConfig",
+          "path": "projects/{project}/zones/{zone}/instances/{instance}/updateShieldedInstanceConfig",
           "request": {
             "$ref": "ShieldedInstanceConfig"
           },
@@ -9301,7 +9412,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/aggregated/interconnectAttachments",
+          "path": "projects/{project}/aggregated/interconnectAttachments",
           "response": {
             "$ref": "InterconnectAttachmentAggregatedList"
           },
@@ -9348,7 +9459,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/interconnectAttachments/{interconnectAttachment}",
+          "path": "projects/{project}/regions/{region}/interconnectAttachments/{interconnectAttachment}",
           "response": {
             "$ref": "Operation"
           },
@@ -9389,7 +9500,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/interconnectAttachments/{interconnectAttachment}",
+          "path": "projects/{project}/regions/{region}/interconnectAttachments/{interconnectAttachment}",
           "response": {
             "$ref": "InterconnectAttachment"
           },
@@ -9433,7 +9544,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/regions/{region}/interconnectAttachments",
+          "path": "projects/{project}/regions/{region}/interconnectAttachments",
           "request": {
             "$ref": "InterconnectAttachment"
           },
@@ -9497,7 +9608,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/regions/{region}/interconnectAttachments",
+          "path": "projects/{project}/regions/{region}/interconnectAttachments",
           "response": {
             "$ref": "InterconnectAttachmentList"
           },
@@ -9544,7 +9655,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/interconnectAttachments/{interconnectAttachment}",
+          "path": "projects/{project}/regions/{region}/interconnectAttachments/{interconnectAttachment}",
           "request": {
             "$ref": "InterconnectAttachment"
           },
@@ -9584,7 +9695,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/interconnectLocations/{interconnectLocation}",
+          "path": "projects/{project}/global/interconnectLocations/{interconnectLocation}",
           "response": {
             "$ref": "InterconnectLocation"
           },
@@ -9638,7 +9749,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/global/interconnectLocations",
+          "path": "projects/{project}/global/interconnectLocations",
           "response": {
             "$ref": "InterconnectLocationList"
           },
@@ -9681,7 +9792,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/interconnects/{interconnect}",
+          "path": "projects/{project}/global/interconnects/{interconnect}",
           "response": {
             "$ref": "Operation"
           },
@@ -9714,7 +9825,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/interconnects/{interconnect}",
+          "path": "projects/{project}/global/interconnects/{interconnect}",
           "response": {
             "$ref": "Interconnect"
           },
@@ -9748,7 +9859,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/interconnects/{interconnect}/getDiagnostics",
+          "path": "projects/{project}/global/interconnects/{interconnect}/getDiagnostics",
           "response": {
             "$ref": "InterconnectsGetDiagnosticsResponse"
           },
@@ -9779,7 +9890,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/interconnects",
+          "path": "projects/{project}/global/interconnects",
           "request": {
             "$ref": "Interconnect"
           },
@@ -9835,7 +9946,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/global/interconnects",
+          "path": "projects/{project}/global/interconnects",
           "response": {
             "$ref": "InterconnectList"
           },
@@ -9874,7 +9985,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/interconnects/{interconnect}",
+          "path": "projects/{project}/global/interconnects/{interconnect}",
           "request": {
             "$ref": "Interconnect"
           },
@@ -9914,7 +10025,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/licenseCodes/{licenseCode}",
+          "path": "projects/{project}/global/licenseCodes/{licenseCode}",
           "response": {
             "$ref": "LicenseCode"
           },
@@ -9948,7 +10059,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/licenseCodes/{resource}/testIamPermissions",
+          "path": "projects/{project}/global/licenseCodes/{resource}/testIamPermissions",
           "request": {
             "$ref": "TestPermissionsRequest"
           },
@@ -9994,7 +10105,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/licenses/{license}",
+          "path": "projects/{project}/global/licenses/{license}",
           "response": {
             "$ref": "Operation"
           },
@@ -10027,7 +10138,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/licenses/{license}",
+          "path": "projects/{project}/global/licenses/{license}",
           "response": {
             "$ref": "License"
           },
@@ -10067,7 +10178,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/licenses/{resource}/getIamPolicy",
+          "path": "projects/{project}/global/licenses/{resource}/getIamPolicy",
           "response": {
             "$ref": "Policy"
           },
@@ -10098,7 +10209,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/licenses",
+          "path": "projects/{project}/global/licenses",
           "request": {
             "$ref": "License"
           },
@@ -10157,7 +10268,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/global/licenses",
+          "path": "projects/{project}/global/licenses",
           "response": {
             "$ref": "LicensesListResponse"
           },
@@ -10191,7 +10302,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/licenses/{resource}/setIamPolicy",
+          "path": "projects/{project}/global/licenses/{resource}/setIamPolicy",
           "request": {
             "$ref": "GlobalSetPolicyRequest"
           },
@@ -10227,7 +10338,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/licenses/{resource}/testIamPermissions",
+          "path": "projects/{project}/global/licenses/{resource}/testIamPermissions",
           "request": {
             "$ref": "TestPermissionsRequest"
           },
@@ -10293,7 +10404,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/aggregated/machineTypes",
+          "path": "projects/{project}/aggregated/machineTypes",
           "response": {
             "$ref": "MachineTypeAggregatedList"
           },
@@ -10335,7 +10446,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/machineTypes/{machineType}",
+          "path": "projects/{project}/zones/{zone}/machineTypes/{machineType}",
           "response": {
             "$ref": "MachineType"
           },
@@ -10397,7 +10508,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/machineTypes",
+          "path": "projects/{project}/zones/{zone}/machineTypes",
           "response": {
             "$ref": "MachineTypeList"
           },
@@ -10460,7 +10571,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/aggregated/networkEndpointGroups",
+          "path": "projects/{project}/aggregated/networkEndpointGroups",
           "response": {
             "$ref": "NetworkEndpointGroupAggregatedList"
           },
@@ -10505,7 +10616,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/networkEndpointGroups/{networkEndpointGroup}/attachNetworkEndpoints",
+          "path": "projects/{project}/zones/{zone}/networkEndpointGroups/{networkEndpointGroup}/attachNetworkEndpoints",
           "request": {
             "$ref": "NetworkEndpointGroupsAttachEndpointsRequest"
           },
@@ -10552,7 +10663,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/networkEndpointGroups/{networkEndpointGroup}",
+          "path": "projects/{project}/zones/{zone}/networkEndpointGroups/{networkEndpointGroup}",
           "response": {
             "$ref": "Operation"
           },
@@ -10596,7 +10707,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/networkEndpointGroups/{networkEndpointGroup}/detachNetworkEndpoints",
+          "path": "projects/{project}/zones/{zone}/networkEndpointGroups/{networkEndpointGroup}/detachNetworkEndpoints",
           "request": {
             "$ref": "NetworkEndpointGroupsDetachEndpointsRequest"
           },
@@ -10638,7 +10749,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/networkEndpointGroups/{networkEndpointGroup}",
+          "path": "projects/{project}/zones/{zone}/networkEndpointGroups/{networkEndpointGroup}",
           "response": {
             "$ref": "NetworkEndpointGroup"
           },
@@ -10676,7 +10787,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/networkEndpointGroups",
+          "path": "projects/{project}/zones/{zone}/networkEndpointGroups",
           "request": {
             "$ref": "NetworkEndpointGroup"
           },
@@ -10739,7 +10850,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/networkEndpointGroups",
+          "path": "projects/{project}/zones/{zone}/networkEndpointGroups",
           "response": {
             "$ref": "NetworkEndpointGroupList"
           },
@@ -10807,7 +10918,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/networkEndpointGroups/{networkEndpointGroup}/listNetworkEndpoints",
+          "path": "projects/{project}/zones/{zone}/networkEndpointGroups/{networkEndpointGroup}/listNetworkEndpoints",
           "request": {
             "$ref": "NetworkEndpointGroupsListEndpointsRequest"
           },
@@ -10852,7 +10963,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/networkEndpointGroups/{resource}/testIamPermissions",
+          "path": "projects/{project}/zones/{zone}/networkEndpointGroups/{resource}/testIamPermissions",
           "request": {
             "$ref": "TestPermissionsRequest"
           },
@@ -10898,7 +11009,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/networks/{network}/addPeering",
+          "path": "projects/{project}/global/networks/{network}/addPeering",
           "request": {
             "$ref": "NetworksAddPeeringRequest"
           },
@@ -10939,7 +11050,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/networks/{network}",
+          "path": "projects/{project}/global/networks/{network}",
           "response": {
             "$ref": "Operation"
           },
@@ -10972,7 +11083,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/networks/{network}",
+          "path": "projects/{project}/global/networks/{network}",
           "response": {
             "$ref": "Network"
           },
@@ -11003,7 +11114,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/networks",
+          "path": "projects/{project}/global/networks",
           "request": {
             "$ref": "Network"
           },
@@ -11059,7 +11170,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/global/networks",
+          "path": "projects/{project}/global/networks",
           "response": {
             "$ref": "NetworkList"
           },
@@ -11144,7 +11255,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/global/networks/{network}/listPeeringRoutes",
+          "path": "projects/{project}/global/networks/{network}/listPeeringRoutes",
           "response": {
             "$ref": "ExchangedPeeringRoutesList"
           },
@@ -11183,7 +11294,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/networks/{network}",
+          "path": "projects/{project}/global/networks/{network}",
           "request": {
             "$ref": "Network"
           },
@@ -11224,7 +11335,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/networks/{network}/removePeering",
+          "path": "projects/{project}/global/networks/{network}/removePeering",
           "request": {
             "$ref": "NetworksRemovePeeringRequest"
           },
@@ -11265,7 +11376,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/networks/{network}/switchToCustomMode",
+          "path": "projects/{project}/global/networks/{network}/switchToCustomMode",
           "response": {
             "$ref": "Operation"
           },
@@ -11303,7 +11414,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/networks/{network}/updatePeering",
+          "path": "projects/{project}/global/networks/{network}/updatePeering",
           "request": {
             "$ref": "NetworksUpdatePeeringRequest"
           },
@@ -11356,7 +11467,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/nodeGroups/{nodeGroup}/addNodes",
+          "path": "projects/{project}/zones/{zone}/nodeGroups/{nodeGroup}/addNodes",
           "request": {
             "$ref": "NodeGroupsAddNodesRequest"
           },
@@ -11417,7 +11528,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/aggregated/nodeGroups",
+          "path": "projects/{project}/aggregated/nodeGroups",
           "response": {
             "$ref": "NodeGroupAggregatedList"
           },
@@ -11464,7 +11575,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/nodeGroups/{nodeGroup}",
+          "path": "projects/{project}/zones/{zone}/nodeGroups/{nodeGroup}",
           "response": {
             "$ref": "Operation"
           },
@@ -11510,7 +11621,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/nodeGroups/{nodeGroup}/deleteNodes",
+          "path": "projects/{project}/zones/{zone}/nodeGroups/{nodeGroup}/deleteNodes",
           "request": {
             "$ref": "NodeGroupsDeleteNodesRequest"
           },
@@ -11554,7 +11665,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/nodeGroups/{nodeGroup}",
+          "path": "projects/{project}/zones/{zone}/nodeGroups/{nodeGroup}",
           "response": {
             "$ref": "NodeGroup"
           },
@@ -11602,7 +11713,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/nodeGroups/{resource}/getIamPolicy",
+          "path": "projects/{project}/zones/{zone}/nodeGroups/{resource}/getIamPolicy",
           "response": {
             "$ref": "Policy"
           },
@@ -11649,7 +11760,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/nodeGroups",
+          "path": "projects/{project}/zones/{zone}/nodeGroups",
           "request": {
             "$ref": "NodeGroup"
           },
@@ -11713,7 +11824,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/nodeGroups",
+          "path": "projects/{project}/zones/{zone}/nodeGroups",
           "response": {
             "$ref": "NodeGroupList"
           },
@@ -11783,7 +11894,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/nodeGroups/{nodeGroup}/listNodes",
+          "path": "projects/{project}/zones/{zone}/nodeGroups/{nodeGroup}/listNodes",
           "response": {
             "$ref": "NodeGroupsListNodes"
           },
@@ -11830,7 +11941,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/nodeGroups/{nodeGroup}",
+          "path": "projects/{project}/zones/{zone}/nodeGroups/{nodeGroup}",
           "request": {
             "$ref": "NodeGroup"
           },
@@ -11874,7 +11985,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/nodeGroups/{resource}/setIamPolicy",
+          "path": "projects/{project}/zones/{zone}/nodeGroups/{resource}/setIamPolicy",
           "request": {
             "$ref": "ZoneSetPolicyRequest"
           },
@@ -11923,7 +12034,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/nodeGroups/{nodeGroup}/setNodeTemplate",
+          "path": "projects/{project}/zones/{zone}/nodeGroups/{nodeGroup}/setNodeTemplate",
           "request": {
             "$ref": "NodeGroupsSetNodeTemplateRequest"
           },
@@ -11967,7 +12078,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/nodeGroups/{resource}/testIamPermissions",
+          "path": "projects/{project}/zones/{zone}/nodeGroups/{resource}/testIamPermissions",
           "request": {
             "$ref": "TestPermissionsRequest"
           },
@@ -12033,7 +12144,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/aggregated/nodeTemplates",
+          "path": "projects/{project}/aggregated/nodeTemplates",
           "response": {
             "$ref": "NodeTemplateAggregatedList"
           },
@@ -12080,7 +12191,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/nodeTemplates/{nodeTemplate}",
+          "path": "projects/{project}/regions/{region}/nodeTemplates/{nodeTemplate}",
           "response": {
             "$ref": "Operation"
           },
@@ -12121,7 +12232,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/nodeTemplates/{nodeTemplate}",
+          "path": "projects/{project}/regions/{region}/nodeTemplates/{nodeTemplate}",
           "response": {
             "$ref": "NodeTemplate"
           },
@@ -12169,7 +12280,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/nodeTemplates/{resource}/getIamPolicy",
+          "path": "projects/{project}/regions/{region}/nodeTemplates/{resource}/getIamPolicy",
           "response": {
             "$ref": "Policy"
           },
@@ -12208,7 +12319,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/nodeTemplates",
+          "path": "projects/{project}/regions/{region}/nodeTemplates",
           "request": {
             "$ref": "NodeTemplate"
           },
@@ -12272,7 +12383,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/regions/{region}/nodeTemplates",
+          "path": "projects/{project}/regions/{region}/nodeTemplates",
           "response": {
             "$ref": "NodeTemplateList"
           },
@@ -12314,7 +12425,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/nodeTemplates/{resource}/setIamPolicy",
+          "path": "projects/{project}/regions/{region}/nodeTemplates/{resource}/setIamPolicy",
           "request": {
             "$ref": "RegionSetPolicyRequest"
           },
@@ -12358,7 +12469,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/nodeTemplates/{resource}/testIamPermissions",
+          "path": "projects/{project}/regions/{region}/nodeTemplates/{resource}/testIamPermissions",
           "request": {
             "$ref": "TestPermissionsRequest"
           },
@@ -12424,7 +12535,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/aggregated/nodeTypes",
+          "path": "projects/{project}/aggregated/nodeTypes",
           "response": {
             "$ref": "NodeTypeAggregatedList"
           },
@@ -12466,7 +12577,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/nodeTypes/{nodeType}",
+          "path": "projects/{project}/zones/{zone}/nodeTypes/{nodeType}",
           "response": {
             "$ref": "NodeType"
           },
@@ -12528,7 +12639,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/nodeTypes",
+          "path": "projects/{project}/zones/{zone}/nodeTypes",
           "response": {
             "$ref": "NodeTypeList"
           },
@@ -12591,7 +12702,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/aggregated/packetMirrorings",
+          "path": "projects/{project}/aggregated/packetMirrorings",
           "response": {
             "$ref": "PacketMirroringAggregatedList"
           },
@@ -12638,7 +12749,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/packetMirrorings/{packetMirroring}",
+          "path": "projects/{project}/regions/{region}/packetMirrorings/{packetMirroring}",
           "response": {
             "$ref": "Operation"
           },
@@ -12679,7 +12790,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/packetMirrorings/{packetMirroring}",
+          "path": "projects/{project}/regions/{region}/packetMirrorings/{packetMirroring}",
           "response": {
             "$ref": "PacketMirroring"
           },
@@ -12718,7 +12829,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/packetMirrorings",
+          "path": "projects/{project}/regions/{region}/packetMirrorings",
           "request": {
             "$ref": "PacketMirroring"
           },
@@ -12782,7 +12893,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/regions/{region}/packetMirrorings",
+          "path": "projects/{project}/regions/{region}/packetMirrorings",
           "response": {
             "$ref": "PacketMirroringList"
           },
@@ -12829,7 +12940,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/packetMirrorings/{packetMirroring}",
+          "path": "projects/{project}/regions/{region}/packetMirrorings/{packetMirroring}",
           "request": {
             "$ref": "PacketMirroring"
           },
@@ -12873,7 +12984,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/packetMirrorings/{resource}/testIamPermissions",
+          "path": "projects/{project}/regions/{region}/packetMirrorings/{resource}/testIamPermissions",
           "request": {
             "$ref": "TestPermissionsRequest"
           },
@@ -12911,7 +13022,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/disableXpnHost",
+          "path": "projects/{project}/disableXpnHost",
           "response": {
             "$ref": "Operation"
           },
@@ -12941,7 +13052,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/disableXpnResource",
+          "path": "projects/{project}/disableXpnResource",
           "request": {
             "$ref": "ProjectsDisableXpnResourceRequest"
           },
@@ -12974,7 +13085,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/enableXpnHost",
+          "path": "projects/{project}/enableXpnHost",
           "response": {
             "$ref": "Operation"
           },
@@ -13004,7 +13115,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/enableXpnResource",
+          "path": "projects/{project}/enableXpnResource",
           "request": {
             "$ref": "ProjectsEnableXpnResourceRequest"
           },
@@ -13032,7 +13143,7 @@
               "type": "string"
             }
           },
-          "path": "{project}",
+          "path": "projects/{project}",
           "response": {
             "$ref": "Project"
           },
@@ -13058,7 +13169,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/getXpnHost",
+          "path": "projects/{project}/getXpnHost",
           "response": {
             "$ref": "Project"
           },
@@ -13111,7 +13222,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/getXpnResources",
+          "path": "projects/{project}/getXpnResources",
           "response": {
             "$ref": "ProjectsGetXpnResources"
           },
@@ -13164,7 +13275,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/listXpnHosts",
+          "path": "projects/{project}/listXpnHosts",
           "request": {
             "$ref": "ProjectsListXpnHostsRequest"
           },
@@ -13197,7 +13308,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/moveDisk",
+          "path": "projects/{project}/moveDisk",
           "request": {
             "$ref": "DiskMoveRequest"
           },
@@ -13230,7 +13341,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/moveInstance",
+          "path": "projects/{project}/moveInstance",
           "request": {
             "$ref": "InstanceMoveRequest"
           },
@@ -13263,7 +13374,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/setCommonInstanceMetadata",
+          "path": "projects/{project}/setCommonInstanceMetadata",
           "request": {
             "$ref": "Metadata"
           },
@@ -13296,7 +13407,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/setDefaultNetworkTier",
+          "path": "projects/{project}/setDefaultNetworkTier",
           "request": {
             "$ref": "ProjectsSetDefaultNetworkTierRequest"
           },
@@ -13329,7 +13440,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/setUsageExportBucket",
+          "path": "projects/{project}/setUsageExportBucket",
           "request": {
             "$ref": "UsageExportLocation"
           },
@@ -13385,7 +13496,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/autoscalers/{autoscaler}",
+          "path": "projects/{project}/regions/{region}/autoscalers/{autoscaler}",
           "response": {
             "$ref": "Operation"
           },
@@ -13426,7 +13537,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/autoscalers/{autoscaler}",
+          "path": "projects/{project}/regions/{region}/autoscalers/{autoscaler}",
           "response": {
             "$ref": "Autoscaler"
           },
@@ -13465,7 +13576,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/autoscalers",
+          "path": "projects/{project}/regions/{region}/autoscalers",
           "request": {
             "$ref": "Autoscaler"
           },
@@ -13529,7 +13640,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/regions/{region}/autoscalers",
+          "path": "projects/{project}/regions/{region}/autoscalers",
           "response": {
             "$ref": "RegionAutoscalerList"
           },
@@ -13574,7 +13685,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/autoscalers",
+          "path": "projects/{project}/regions/{region}/autoscalers",
           "request": {
             "$ref": "Autoscaler"
           },
@@ -13621,7 +13732,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/autoscalers",
+          "path": "projects/{project}/regions/{region}/autoscalers",
           "request": {
             "$ref": "Autoscaler"
           },
@@ -13674,7 +13785,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/backendServices/{backendService}",
+          "path": "projects/{project}/regions/{region}/backendServices/{backendService}",
           "response": {
             "$ref": "Operation"
           },
@@ -13715,7 +13826,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/backendServices/{backendService}",
+          "path": "projects/{project}/regions/{region}/backendServices/{backendService}",
           "response": {
             "$ref": "BackendService"
           },
@@ -13756,7 +13867,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/backendServices/{backendService}/getHealth",
+          "path": "projects/{project}/regions/{region}/backendServices/{backendService}/getHealth",
           "request": {
             "$ref": "ResourceGroupReference"
           },
@@ -13798,7 +13909,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/backendServices",
+          "path": "projects/{project}/regions/{region}/backendServices",
           "request": {
             "$ref": "BackendService"
           },
@@ -13862,7 +13973,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/regions/{region}/backendServices",
+          "path": "projects/{project}/regions/{region}/backendServices",
           "response": {
             "$ref": "BackendServiceList"
           },
@@ -13909,7 +14020,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/backendServices/{backendService}",
+          "path": "projects/{project}/regions/{region}/backendServices/{backendService}",
           "request": {
             "$ref": "BackendService"
           },
@@ -13958,7 +14069,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/backendServices/{backendService}",
+          "path": "projects/{project}/regions/{region}/backendServices/{backendService}",
           "request": {
             "$ref": "BackendService"
           },
@@ -14023,7 +14134,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/aggregated/commitments",
+          "path": "projects/{project}/aggregated/commitments",
           "response": {
             "$ref": "CommitmentAggregatedList"
           },
@@ -14065,7 +14176,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/commitments/{commitment}",
+          "path": "projects/{project}/regions/{region}/commitments/{commitment}",
           "response": {
             "$ref": "Commitment"
           },
@@ -14104,7 +14215,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/commitments",
+          "path": "projects/{project}/regions/{region}/commitments",
           "request": {
             "$ref": "Commitment"
           },
@@ -14168,7 +14279,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/regions/{region}/commitments",
+          "path": "projects/{project}/regions/{region}/commitments",
           "response": {
             "$ref": "CommitmentList"
           },
@@ -14214,7 +14325,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/diskTypes/{diskType}",
+          "path": "projects/{project}/regions/{region}/diskTypes/{diskType}",
           "response": {
             "$ref": "DiskType"
           },
@@ -14276,7 +14387,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/regions/{region}/diskTypes",
+          "path": "projects/{project}/regions/{region}/diskTypes",
           "response": {
             "$ref": "RegionDiskTypeList"
           },
@@ -14327,7 +14438,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/disks/{disk}/addResourcePolicies",
+          "path": "projects/{project}/regions/{region}/disks/{disk}/addResourcePolicies",
           "request": {
             "$ref": "RegionDisksAddResourcePoliciesRequest"
           },
@@ -14376,7 +14487,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/disks/{disk}/createSnapshot",
+          "path": "projects/{project}/regions/{region}/disks/{disk}/createSnapshot",
           "request": {
             "$ref": "Snapshot"
           },
@@ -14424,7 +14535,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/disks/{disk}",
+          "path": "projects/{project}/regions/{region}/disks/{disk}",
           "response": {
             "$ref": "Operation"
           },
@@ -14465,7 +14576,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/disks/{disk}",
+          "path": "projects/{project}/regions/{region}/disks/{disk}",
           "response": {
             "$ref": "Disk"
           },
@@ -14513,7 +14624,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/disks/{resource}/getIamPolicy",
+          "path": "projects/{project}/regions/{region}/disks/{resource}/getIamPolicy",
           "response": {
             "$ref": "Policy"
           },
@@ -14557,7 +14668,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/disks",
+          "path": "projects/{project}/regions/{region}/disks",
           "request": {
             "$ref": "Disk"
           },
@@ -14621,7 +14732,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/regions/{region}/disks",
+          "path": "projects/{project}/regions/{region}/disks",
           "response": {
             "$ref": "DiskList"
           },
@@ -14668,7 +14779,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/disks/{disk}/removeResourcePolicies",
+          "path": "projects/{project}/regions/{region}/disks/{disk}/removeResourcePolicies",
           "request": {
             "$ref": "RegionDisksRemoveResourcePoliciesRequest"
           },
@@ -14717,7 +14828,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/disks/{disk}/resize",
+          "path": "projects/{project}/regions/{region}/disks/{disk}/resize",
           "request": {
             "$ref": "RegionDisksResizeRequest"
           },
@@ -14761,7 +14872,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/disks/{resource}/setIamPolicy",
+          "path": "projects/{project}/regions/{region}/disks/{resource}/setIamPolicy",
           "request": {
             "$ref": "RegionSetPolicyRequest"
           },
@@ -14810,7 +14921,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/disks/{resource}/setLabels",
+          "path": "projects/{project}/regions/{region}/disks/{resource}/setLabels",
           "request": {
             "$ref": "RegionSetLabelsRequest"
           },
@@ -14854,7 +14965,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/disks/{resource}/testIamPermissions",
+          "path": "projects/{project}/regions/{region}/disks/{resource}/testIamPermissions",
           "request": {
             "$ref": "TestPermissionsRequest"
           },
@@ -14907,7 +15018,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/healthCheckServices/{healthCheckService}",
+          "path": "projects/{project}/regions/{region}/healthCheckServices/{healthCheckService}",
           "response": {
             "$ref": "Operation"
           },
@@ -14947,7 +15058,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/healthCheckServices/{healthCheckService}",
+          "path": "projects/{project}/regions/{region}/healthCheckServices/{healthCheckService}",
           "response": {
             "$ref": "HealthCheckService"
           },
@@ -14986,7 +15097,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/healthCheckServices",
+          "path": "projects/{project}/regions/{region}/healthCheckServices",
           "request": {
             "$ref": "HealthCheckService"
           },
@@ -15050,7 +15161,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/regions/{region}/healthCheckServices",
+          "path": "projects/{project}/regions/{region}/healthCheckServices",
           "response": {
             "$ref": "HealthCheckServicesList"
           },
@@ -15096,7 +15207,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/healthCheckServices/{healthCheckService}",
+          "path": "projects/{project}/regions/{region}/healthCheckServices/{healthCheckService}",
           "request": {
             "$ref": "HealthCheckService"
           },
@@ -15149,7 +15260,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/healthChecks/{healthCheck}",
+          "path": "projects/{project}/regions/{region}/healthChecks/{healthCheck}",
           "response": {
             "$ref": "Operation"
           },
@@ -15190,7 +15301,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/healthChecks/{healthCheck}",
+          "path": "projects/{project}/regions/{region}/healthChecks/{healthCheck}",
           "response": {
             "$ref": "HealthCheck"
           },
@@ -15229,7 +15340,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/healthChecks",
+          "path": "projects/{project}/regions/{region}/healthChecks",
           "request": {
             "$ref": "HealthCheck"
           },
@@ -15293,7 +15404,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/regions/{region}/healthChecks",
+          "path": "projects/{project}/regions/{region}/healthChecks",
           "response": {
             "$ref": "HealthCheckList"
           },
@@ -15340,7 +15451,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/healthChecks/{healthCheck}",
+          "path": "projects/{project}/regions/{region}/healthChecks/{healthCheck}",
           "request": {
             "$ref": "HealthCheck"
           },
@@ -15389,7 +15500,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/healthChecks/{healthCheck}",
+          "path": "projects/{project}/regions/{region}/healthChecks/{healthCheck}",
           "request": {
             "$ref": "HealthCheck"
           },
@@ -15440,7 +15551,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/instanceGroupManagers/{instanceGroupManager}/abandonInstances",
+          "path": "projects/{project}/regions/{region}/instanceGroupManagers/{instanceGroupManager}/abandonInstances",
           "request": {
             "$ref": "RegionInstanceGroupManagersAbandonInstancesRequest"
           },
@@ -15482,7 +15593,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/instanceGroupManagers/{instanceGroupManager}/applyUpdatesToInstances",
+          "path": "projects/{project}/regions/{region}/instanceGroupManagers/{instanceGroupManager}/applyUpdatesToInstances",
           "request": {
             "$ref": "RegionInstanceGroupManagersApplyUpdatesRequest"
           },
@@ -15529,7 +15640,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/instanceGroupManagers/{instanceGroupManager}/createInstances",
+          "path": "projects/{project}/regions/{region}/instanceGroupManagers/{instanceGroupManager}/createInstances",
           "request": {
             "$ref": "RegionInstanceGroupManagersCreateInstancesRequest"
           },
@@ -15576,7 +15687,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/instanceGroupManagers/{instanceGroupManager}",
+          "path": "projects/{project}/regions/{region}/instanceGroupManagers/{instanceGroupManager}",
           "response": {
             "$ref": "Operation"
           },
@@ -15620,7 +15731,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/instanceGroupManagers/{instanceGroupManager}/deleteInstances",
+          "path": "projects/{project}/regions/{region}/instanceGroupManagers/{instanceGroupManager}/deleteInstances",
           "request": {
             "$ref": "RegionInstanceGroupManagersDeleteInstancesRequest"
           },
@@ -15662,7 +15773,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/instanceGroupManagers/{instanceGroupManager}/deletePerInstanceConfigs",
+          "path": "projects/{project}/regions/{region}/instanceGroupManagers/{instanceGroupManager}/deletePerInstanceConfigs",
           "request": {
             "$ref": "RegionInstanceGroupManagerDeleteInstanceConfigReq"
           },
@@ -15704,7 +15815,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/instanceGroupManagers/{instanceGroupManager}",
+          "path": "projects/{project}/regions/{region}/instanceGroupManagers/{instanceGroupManager}",
           "response": {
             "$ref": "InstanceGroupManager"
           },
@@ -15742,7 +15853,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/instanceGroupManagers",
+          "path": "projects/{project}/regions/{region}/instanceGroupManagers",
           "request": {
             "$ref": "InstanceGroupManager"
           },
@@ -15805,7 +15916,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/regions/{region}/instanceGroupManagers",
+          "path": "projects/{project}/regions/{region}/instanceGroupManagers",
           "response": {
             "$ref": "RegionInstanceGroupManagerList"
           },
@@ -15873,7 +15984,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/regions/{region}/instanceGroupManagers/{instanceGroupManager}/listErrors",
+          "path": "projects/{project}/regions/{region}/instanceGroupManagers/{instanceGroupManager}/listErrors",
           "response": {
             "$ref": "RegionInstanceGroupManagersListErrorsResponse"
           },
@@ -15941,7 +16052,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/regions/{region}/instanceGroupManagers/{instanceGroupManager}/listManagedInstances",
+          "path": "projects/{project}/regions/{region}/instanceGroupManagers/{instanceGroupManager}/listManagedInstances",
           "response": {
             "$ref": "RegionInstanceGroupManagersListInstancesResponse"
           },
@@ -16009,7 +16120,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/regions/{region}/instanceGroupManagers/{instanceGroupManager}/listPerInstanceConfigs",
+          "path": "projects/{project}/regions/{region}/instanceGroupManagers/{instanceGroupManager}/listPerInstanceConfigs",
           "response": {
             "$ref": "RegionInstanceGroupManagersListInstanceConfigsResp"
           },
@@ -16054,7 +16165,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/instanceGroupManagers/{instanceGroupManager}",
+          "path": "projects/{project}/regions/{region}/instanceGroupManagers/{instanceGroupManager}",
           "request": {
             "$ref": "InstanceGroupManager"
           },
@@ -16101,7 +16212,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/instanceGroupManagers/{instanceGroupManager}/patchPerInstanceConfigs",
+          "path": "projects/{project}/regions/{region}/instanceGroupManagers/{instanceGroupManager}/patchPerInstanceConfigs",
           "request": {
             "$ref": "RegionInstanceGroupManagerPatchInstanceConfigReq"
           },
@@ -16148,7 +16259,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/instanceGroupManagers/{instanceGroupManager}/recreateInstances",
+          "path": "projects/{project}/regions/{region}/instanceGroupManagers/{instanceGroupManager}/recreateInstances",
           "request": {
             "$ref": "RegionInstanceGroupManagersRecreateRequest"
           },
@@ -16204,7 +16315,7 @@
               "type": "integer"
             }
           },
-          "path": "{project}/regions/{region}/instanceGroupManagers/{instanceGroupManager}/resize",
+          "path": "projects/{project}/regions/{region}/instanceGroupManagers/{instanceGroupManager}/resize",
           "response": {
             "$ref": "Operation"
           },
@@ -16248,7 +16359,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/instanceGroupManagers/{instanceGroupManager}/setInstanceTemplate",
+          "path": "projects/{project}/regions/{region}/instanceGroupManagers/{instanceGroupManager}/setInstanceTemplate",
           "request": {
             "$ref": "RegionInstanceGroupManagersSetTemplateRequest"
           },
@@ -16295,7 +16406,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/instanceGroupManagers/{instanceGroupManager}/setTargetPools",
+          "path": "projects/{project}/regions/{region}/instanceGroupManagers/{instanceGroupManager}/setTargetPools",
           "request": {
             "$ref": "RegionInstanceGroupManagersSetTargetPoolsRequest"
           },
@@ -16342,7 +16453,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/instanceGroupManagers/{instanceGroupManager}/updatePerInstanceConfigs",
+          "path": "projects/{project}/regions/{region}/instanceGroupManagers/{instanceGroupManager}/updatePerInstanceConfigs",
           "request": {
             "$ref": "RegionInstanceGroupManagerUpdateInstanceConfigReq"
           },
@@ -16388,7 +16499,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/instanceGroups/{instanceGroup}",
+          "path": "projects/{project}/regions/{region}/instanceGroups/{instanceGroup}",
           "response": {
             "$ref": "InstanceGroup"
           },
@@ -16449,7 +16560,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/regions/{region}/instanceGroups",
+          "path": "projects/{project}/regions/{region}/instanceGroups",
           "response": {
             "$ref": "RegionInstanceGroupList"
           },
@@ -16517,7 +16628,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/regions/{region}/instanceGroups/{instanceGroup}/listInstances",
+          "path": "projects/{project}/regions/{region}/instanceGroups/{instanceGroup}/listInstances",
           "request": {
             "$ref": "RegionInstanceGroupsListInstancesRequest"
           },
@@ -16565,7 +16676,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/instanceGroups/{instanceGroup}/setNamedPorts",
+          "path": "projects/{project}/regions/{region}/instanceGroups/{instanceGroup}/setNamedPorts",
           "request": {
             "$ref": "RegionInstanceGroupsSetNamedPortsRequest"
           },
@@ -16616,7 +16727,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/networkEndpointGroups/{networkEndpointGroup}",
+          "path": "projects/{project}/regions/{region}/networkEndpointGroups/{networkEndpointGroup}",
           "response": {
             "$ref": "Operation"
           },
@@ -16655,7 +16766,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/networkEndpointGroups/{networkEndpointGroup}",
+          "path": "projects/{project}/regions/{region}/networkEndpointGroups/{networkEndpointGroup}",
           "response": {
             "$ref": "NetworkEndpointGroup"
           },
@@ -16693,7 +16804,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/networkEndpointGroups",
+          "path": "projects/{project}/regions/{region}/networkEndpointGroups",
           "request": {
             "$ref": "NetworkEndpointGroup"
           },
@@ -16756,7 +16867,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/regions/{region}/networkEndpointGroups",
+          "path": "projects/{project}/regions/{region}/networkEndpointGroups",
           "response": {
             "$ref": "NetworkEndpointGroupList"
           },
@@ -16807,7 +16918,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/notificationEndpoints/{notificationEndpoint}",
+          "path": "projects/{project}/regions/{region}/notificationEndpoints/{notificationEndpoint}",
           "response": {
             "$ref": "Operation"
           },
@@ -16848,7 +16959,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/notificationEndpoints/{notificationEndpoint}",
+          "path": "projects/{project}/regions/{region}/notificationEndpoints/{notificationEndpoint}",
           "response": {
             "$ref": "NotificationEndpoint"
           },
@@ -16887,7 +16998,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/notificationEndpoints",
+          "path": "projects/{project}/regions/{region}/notificationEndpoints",
           "request": {
             "$ref": "NotificationEndpoint"
           },
@@ -16951,7 +17062,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/regions/{region}/notificationEndpoints",
+          "path": "projects/{project}/regions/{region}/notificationEndpoints",
           "response": {
             "$ref": "NotificationEndpointList"
           },
@@ -16997,7 +17108,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/operations/{operation}",
+          "path": "projects/{project}/regions/{region}/operations/{operation}",
           "scopes": [
             "https://www.googleapis.com/auth/cloud-platform",
             "https://www.googleapis.com/auth/compute"
@@ -17035,7 +17146,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/operations/{operation}",
+          "path": "projects/{project}/regions/{region}/operations/{operation}",
           "response": {
             "$ref": "Operation"
           },
@@ -17097,7 +17208,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/regions/{region}/operations",
+          "path": "projects/{project}/regions/{region}/operations",
           "response": {
             "$ref": "OperationList"
           },
@@ -17139,7 +17250,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/operations/{operation}/wait",
+          "path": "projects/{project}/regions/{region}/operations/{operation}/wait",
           "response": {
             "$ref": "Operation"
           },
@@ -17190,7 +17301,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/sslCertificates/{sslCertificate}",
+          "path": "projects/{project}/regions/{region}/sslCertificates/{sslCertificate}",
           "response": {
             "$ref": "Operation"
           },
@@ -17231,7 +17342,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/sslCertificates/{sslCertificate}",
+          "path": "projects/{project}/regions/{region}/sslCertificates/{sslCertificate}",
           "response": {
             "$ref": "SslCertificate"
           },
@@ -17270,7 +17381,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/sslCertificates",
+          "path": "projects/{project}/regions/{region}/sslCertificates",
           "request": {
             "$ref": "SslCertificate"
           },
@@ -17334,7 +17445,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/regions/{region}/sslCertificates",
+          "path": "projects/{project}/regions/{region}/sslCertificates",
           "response": {
             "$ref": "SslCertificateList"
           },
@@ -17385,7 +17496,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/targetHttpProxies/{targetHttpProxy}",
+          "path": "projects/{project}/regions/{region}/targetHttpProxies/{targetHttpProxy}",
           "response": {
             "$ref": "Operation"
           },
@@ -17426,7 +17537,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/targetHttpProxies/{targetHttpProxy}",
+          "path": "projects/{project}/regions/{region}/targetHttpProxies/{targetHttpProxy}",
           "response": {
             "$ref": "TargetHttpProxy"
           },
@@ -17465,7 +17576,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/targetHttpProxies",
+          "path": "projects/{project}/regions/{region}/targetHttpProxies",
           "request": {
             "$ref": "TargetHttpProxy"
           },
@@ -17529,7 +17640,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/regions/{region}/targetHttpProxies",
+          "path": "projects/{project}/regions/{region}/targetHttpProxies",
           "response": {
             "$ref": "TargetHttpProxyList"
           },
@@ -17576,7 +17687,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/targetHttpProxies/{targetHttpProxy}/setUrlMap",
+          "path": "projects/{project}/regions/{region}/targetHttpProxies/{targetHttpProxy}/setUrlMap",
           "request": {
             "$ref": "UrlMapReference"
           },
@@ -17629,7 +17740,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/targetHttpsProxies/{targetHttpsProxy}",
+          "path": "projects/{project}/regions/{region}/targetHttpsProxies/{targetHttpsProxy}",
           "response": {
             "$ref": "Operation"
           },
@@ -17670,7 +17781,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/targetHttpsProxies/{targetHttpsProxy}",
+          "path": "projects/{project}/regions/{region}/targetHttpsProxies/{targetHttpsProxy}",
           "response": {
             "$ref": "TargetHttpsProxy"
           },
@@ -17709,7 +17820,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/targetHttpsProxies",
+          "path": "projects/{project}/regions/{region}/targetHttpsProxies",
           "request": {
             "$ref": "TargetHttpsProxy"
           },
@@ -17773,7 +17884,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/regions/{region}/targetHttpsProxies",
+          "path": "projects/{project}/regions/{region}/targetHttpsProxies",
           "response": {
             "$ref": "TargetHttpsProxyList"
           },
@@ -17820,7 +17931,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/targetHttpsProxies/{targetHttpsProxy}/setSslCertificates",
+          "path": "projects/{project}/regions/{region}/targetHttpsProxies/{targetHttpsProxy}/setSslCertificates",
           "request": {
             "$ref": "RegionTargetHttpsProxiesSetSslCertificatesRequest"
           },
@@ -17869,7 +17980,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/targetHttpsProxies/{targetHttpsProxy}/setUrlMap",
+          "path": "projects/{project}/regions/{region}/targetHttpsProxies/{targetHttpsProxy}/setUrlMap",
           "request": {
             "$ref": "UrlMapReference"
           },
@@ -17922,7 +18033,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/urlMaps/{urlMap}",
+          "path": "projects/{project}/regions/{region}/urlMaps/{urlMap}",
           "response": {
             "$ref": "Operation"
           },
@@ -17963,7 +18074,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/urlMaps/{urlMap}",
+          "path": "projects/{project}/regions/{region}/urlMaps/{urlMap}",
           "response": {
             "$ref": "UrlMap"
           },
@@ -18002,7 +18113,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/urlMaps",
+          "path": "projects/{project}/regions/{region}/urlMaps",
           "request": {
             "$ref": "UrlMap"
           },
@@ -18066,7 +18177,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/regions/{region}/urlMaps",
+          "path": "projects/{project}/regions/{region}/urlMaps",
           "response": {
             "$ref": "UrlMapList"
           },
@@ -18113,7 +18224,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/urlMaps/{urlMap}",
+          "path": "projects/{project}/regions/{region}/urlMaps/{urlMap}",
           "request": {
             "$ref": "UrlMap"
           },
@@ -18162,7 +18273,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/urlMaps/{urlMap}",
+          "path": "projects/{project}/regions/{region}/urlMaps/{urlMap}",
           "request": {
             "$ref": "UrlMap"
           },
@@ -18206,7 +18317,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/urlMaps/{urlMap}/validate",
+          "path": "projects/{project}/regions/{region}/urlMaps/{urlMap}/validate",
           "request": {
             "$ref": "RegionUrlMapsValidateRequest"
           },
@@ -18246,7 +18357,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}",
+          "path": "projects/{project}/regions/{region}",
           "response": {
             "$ref": "Region"
           },
@@ -18300,7 +18411,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/regions",
+          "path": "projects/{project}/regions",
           "response": {
             "$ref": "RegionList"
           },
@@ -18363,7 +18474,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/aggregated/reservations",
+          "path": "projects/{project}/aggregated/reservations",
           "response": {
             "$ref": "ReservationAggregatedList"
           },
@@ -18410,7 +18521,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/reservations/{reservation}",
+          "path": "projects/{project}/zones/{zone}/reservations/{reservation}",
           "response": {
             "$ref": "Operation"
           },
@@ -18451,7 +18562,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/reservations/{reservation}",
+          "path": "projects/{project}/zones/{zone}/reservations/{reservation}",
           "response": {
             "$ref": "Reservation"
           },
@@ -18499,7 +18610,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/reservations/{resource}/getIamPolicy",
+          "path": "projects/{project}/zones/{zone}/reservations/{resource}/getIamPolicy",
           "response": {
             "$ref": "Policy"
           },
@@ -18538,7 +18649,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/reservations",
+          "path": "projects/{project}/zones/{zone}/reservations",
           "request": {
             "$ref": "Reservation"
           },
@@ -18602,7 +18713,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/reservations",
+          "path": "projects/{project}/zones/{zone}/reservations",
           "response": {
             "$ref": "ReservationList"
           },
@@ -18649,7 +18760,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/reservations/{reservation}/resize",
+          "path": "projects/{project}/zones/{zone}/reservations/{reservation}/resize",
           "request": {
             "$ref": "ReservationsResizeRequest"
           },
@@ -18693,7 +18804,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/reservations/{resource}/setIamPolicy",
+          "path": "projects/{project}/zones/{zone}/reservations/{resource}/setIamPolicy",
           "request": {
             "$ref": "ZoneSetPolicyRequest"
           },
@@ -18737,7 +18848,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/reservations/{resource}/testIamPermissions",
+          "path": "projects/{project}/zones/{zone}/reservations/{resource}/testIamPermissions",
           "request": {
             "$ref": "TestPermissionsRequest"
           },
@@ -18803,7 +18914,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/aggregated/resourcePolicies",
+          "path": "projects/{project}/aggregated/resourcePolicies",
           "response": {
             "$ref": "ResourcePolicyAggregatedList"
           },
@@ -18850,7 +18961,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/resourcePolicies/{resourcePolicy}",
+          "path": "projects/{project}/regions/{region}/resourcePolicies/{resourcePolicy}",
           "response": {
             "$ref": "Operation"
           },
@@ -18891,7 +19002,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/resourcePolicies/{resourcePolicy}",
+          "path": "projects/{project}/regions/{region}/resourcePolicies/{resourcePolicy}",
           "response": {
             "$ref": "ResourcePolicy"
           },
@@ -18939,7 +19050,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/resourcePolicies/{resource}/getIamPolicy",
+          "path": "projects/{project}/regions/{region}/resourcePolicies/{resource}/getIamPolicy",
           "response": {
             "$ref": "Policy"
           },
@@ -18978,7 +19089,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/resourcePolicies",
+          "path": "projects/{project}/regions/{region}/resourcePolicies",
           "request": {
             "$ref": "ResourcePolicy"
           },
@@ -19042,7 +19153,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/regions/{region}/resourcePolicies",
+          "path": "projects/{project}/regions/{region}/resourcePolicies",
           "response": {
             "$ref": "ResourcePolicyList"
           },
@@ -19084,7 +19195,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/resourcePolicies/{resource}/setIamPolicy",
+          "path": "projects/{project}/regions/{region}/resourcePolicies/{resource}/setIamPolicy",
           "request": {
             "$ref": "RegionSetPolicyRequest"
           },
@@ -19128,7 +19239,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/resourcePolicies/{resource}/testIamPermissions",
+          "path": "projects/{project}/regions/{region}/resourcePolicies/{resource}/testIamPermissions",
           "request": {
             "$ref": "TestPermissionsRequest"
           },
@@ -19194,7 +19305,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/aggregated/routers",
+          "path": "projects/{project}/aggregated/routers",
           "response": {
             "$ref": "RouterAggregatedList"
           },
@@ -19241,7 +19352,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/routers/{router}",
+          "path": "projects/{project}/regions/{region}/routers/{router}",
           "response": {
             "$ref": "Operation"
           },
@@ -19282,7 +19393,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/routers/{router}",
+          "path": "projects/{project}/regions/{region}/routers/{router}",
           "response": {
             "$ref": "Router"
           },
@@ -19352,7 +19463,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/routers/{router}/getNatMappingInfo",
+          "path": "projects/{project}/regions/{region}/routers/{router}/getNatMappingInfo",
           "response": {
             "$ref": "VmEndpointNatMappingsList"
           },
@@ -19394,7 +19505,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/routers/{router}/getRouterStatus",
+          "path": "projects/{project}/regions/{region}/routers/{router}/getRouterStatus",
           "response": {
             "$ref": "RouterStatusResponse"
           },
@@ -19433,7 +19544,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/routers",
+          "path": "projects/{project}/regions/{region}/routers",
           "request": {
             "$ref": "Router"
           },
@@ -19497,7 +19608,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/regions/{region}/routers",
+          "path": "projects/{project}/regions/{region}/routers",
           "response": {
             "$ref": "RouterList"
           },
@@ -19544,7 +19655,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/routers/{router}",
+          "path": "projects/{project}/regions/{region}/routers/{router}",
           "request": {
             "$ref": "Router"
           },
@@ -19588,7 +19699,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/routers/{router}/preview",
+          "path": "projects/{project}/regions/{region}/routers/{router}/preview",
           "request": {
             "$ref": "Router"
           },
@@ -19638,7 +19749,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/routers/{router}",
+          "path": "projects/{project}/regions/{region}/routers/{router}",
           "request": {
             "$ref": "Router"
           },
@@ -19683,7 +19794,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/routes/{route}",
+          "path": "projects/{project}/global/routes/{route}",
           "response": {
             "$ref": "Operation"
           },
@@ -19716,7 +19827,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/routes/{route}",
+          "path": "projects/{project}/global/routes/{route}",
           "response": {
             "$ref": "Route"
           },
@@ -19747,7 +19858,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/routes",
+          "path": "projects/{project}/global/routes",
           "request": {
             "$ref": "Route"
           },
@@ -19803,7 +19914,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/global/routes",
+          "path": "projects/{project}/global/routes",
           "response": {
             "$ref": "RouteList"
           },
@@ -19841,7 +19952,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/securityPolicies/{securityPolicy}/addRule",
+          "path": "projects/{project}/global/securityPolicies/{securityPolicy}/addRule",
           "request": {
             "$ref": "SecurityPolicyRule"
           },
@@ -19882,7 +19993,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/securityPolicies/{securityPolicy}",
+          "path": "projects/{project}/global/securityPolicies/{securityPolicy}",
           "response": {
             "$ref": "Operation"
           },
@@ -19915,7 +20026,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/securityPolicies/{securityPolicy}",
+          "path": "projects/{project}/global/securityPolicies/{securityPolicy}",
           "response": {
             "$ref": "SecurityPolicy"
           },
@@ -19955,7 +20066,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/securityPolicies/{securityPolicy}/getRule",
+          "path": "projects/{project}/global/securityPolicies/{securityPolicy}/getRule",
           "response": {
             "$ref": "SecurityPolicyRule"
           },
@@ -19986,7 +20097,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/securityPolicies",
+          "path": "projects/{project}/global/securityPolicies",
           "request": {
             "$ref": "SecurityPolicy"
           },
@@ -20042,7 +20153,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/global/securityPolicies",
+          "path": "projects/{project}/global/securityPolicies",
           "response": {
             "$ref": "SecurityPolicyList"
           },
@@ -20096,7 +20207,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/global/securityPolicies/listPreconfiguredExpressionSets",
+          "path": "projects/{project}/global/securityPolicies/listPreconfiguredExpressionSets",
           "response": {
             "$ref": "SecurityPoliciesListPreconfiguredExpressionSetsResponse"
           },
@@ -20134,7 +20245,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/securityPolicies/{securityPolicy}",
+          "path": "projects/{project}/global/securityPolicies/{securityPolicy}",
           "request": {
             "$ref": "SecurityPolicy"
           },
@@ -20176,7 +20287,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/securityPolicies/{securityPolicy}/patchRule",
+          "path": "projects/{project}/global/securityPolicies/{securityPolicy}/patchRule",
           "request": {
             "$ref": "SecurityPolicyRule"
           },
@@ -20218,7 +20329,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/securityPolicies/{securityPolicy}/removeRule",
+          "path": "projects/{project}/global/securityPolicies/{securityPolicy}/removeRule",
           "response": {
             "$ref": "Operation"
           },
@@ -20260,7 +20371,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/snapshots/{snapshot}",
+          "path": "projects/{project}/global/snapshots/{snapshot}",
           "response": {
             "$ref": "Operation"
           },
@@ -20293,7 +20404,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/snapshots/{snapshot}",
+          "path": "projects/{project}/global/snapshots/{snapshot}",
           "response": {
             "$ref": "Snapshot"
           },
@@ -20333,7 +20444,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/snapshots/{resource}/getIamPolicy",
+          "path": "projects/{project}/global/snapshots/{resource}/getIamPolicy",
           "response": {
             "$ref": "Policy"
           },
@@ -20387,7 +20498,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/global/snapshots",
+          "path": "projects/{project}/global/snapshots",
           "response": {
             "$ref": "SnapshotList"
           },
@@ -20421,7 +20532,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/snapshots/{resource}/setIamPolicy",
+          "path": "projects/{project}/global/snapshots/{resource}/setIamPolicy",
           "request": {
             "$ref": "GlobalSetPolicyRequest"
           },
@@ -20457,7 +20568,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/snapshots/{resource}/setLabels",
+          "path": "projects/{project}/global/snapshots/{resource}/setLabels",
           "request": {
             "$ref": "GlobalSetLabelsRequest"
           },
@@ -20493,7 +20604,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/snapshots/{resource}/testIamPermissions",
+          "path": "projects/{project}/global/snapshots/{resource}/testIamPermissions",
           "request": {
             "$ref": "TestPermissionsRequest"
           },
@@ -20559,7 +20670,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/aggregated/sslCertificates",
+          "path": "projects/{project}/aggregated/sslCertificates",
           "response": {
             "$ref": "SslCertificateAggregatedList"
           },
@@ -20598,7 +20709,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/sslCertificates/{sslCertificate}",
+          "path": "projects/{project}/global/sslCertificates/{sslCertificate}",
           "response": {
             "$ref": "Operation"
           },
@@ -20631,7 +20742,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/sslCertificates/{sslCertificate}",
+          "path": "projects/{project}/global/sslCertificates/{sslCertificate}",
           "response": {
             "$ref": "SslCertificate"
           },
@@ -20662,7 +20773,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/sslCertificates",
+          "path": "projects/{project}/global/sslCertificates",
           "request": {
             "$ref": "SslCertificate"
           },
@@ -20718,7 +20829,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/global/sslCertificates",
+          "path": "projects/{project}/global/sslCertificates",
           "response": {
             "$ref": "SslCertificateList"
           },
@@ -20760,7 +20871,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/sslPolicies/{sslPolicy}",
+          "path": "projects/{project}/global/sslPolicies/{sslPolicy}",
           "response": {
             "$ref": "Operation"
           },
@@ -20792,7 +20903,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/sslPolicies/{sslPolicy}",
+          "path": "projects/{project}/global/sslPolicies/{sslPolicy}",
           "response": {
             "$ref": "SslPolicy"
           },
@@ -20823,7 +20934,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/sslPolicies",
+          "path": "projects/{project}/global/sslPolicies",
           "request": {
             "$ref": "SslPolicy"
           },
@@ -20879,7 +20990,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/global/sslPolicies",
+          "path": "projects/{project}/global/sslPolicies",
           "response": {
             "$ref": "SslPoliciesList"
           },
@@ -20933,7 +21044,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/global/sslPolicies/listAvailableFeatures",
+          "path": "projects/{project}/global/sslPolicies/listAvailableFeatures",
           "response": {
             "$ref": "SslPoliciesListAvailableFeaturesResponse"
           },
@@ -20971,7 +21082,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/sslPolicies/{sslPolicy}",
+          "path": "projects/{project}/global/sslPolicies/{sslPolicy}",
           "request": {
             "$ref": "SslPolicy"
           },
@@ -21036,7 +21147,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/aggregated/subnetworks",
+          "path": "projects/{project}/aggregated/subnetworks",
           "response": {
             "$ref": "SubnetworkAggregatedList"
           },
@@ -21083,7 +21194,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/subnetworks/{subnetwork}",
+          "path": "projects/{project}/regions/{region}/subnetworks/{subnetwork}",
           "response": {
             "$ref": "Operation"
           },
@@ -21129,7 +21240,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/subnetworks/{subnetwork}/expandIpCidrRange",
+          "path": "projects/{project}/regions/{region}/subnetworks/{subnetwork}/expandIpCidrRange",
           "request": {
             "$ref": "SubnetworksExpandIpCidrRangeRequest"
           },
@@ -21173,7 +21284,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/subnetworks/{subnetwork}",
+          "path": "projects/{project}/regions/{region}/subnetworks/{subnetwork}",
           "response": {
             "$ref": "Subnetwork"
           },
@@ -21221,7 +21332,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/subnetworks/{resource}/getIamPolicy",
+          "path": "projects/{project}/regions/{region}/subnetworks/{resource}/getIamPolicy",
           "response": {
             "$ref": "Policy"
           },
@@ -21260,7 +21371,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/subnetworks",
+          "path": "projects/{project}/regions/{region}/subnetworks",
           "request": {
             "$ref": "Subnetwork"
           },
@@ -21324,7 +21435,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/regions/{region}/subnetworks",
+          "path": "projects/{project}/regions/{region}/subnetworks",
           "response": {
             "$ref": "SubnetworkList"
           },
@@ -21378,7 +21489,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/aggregated/subnetworks/listUsable",
+          "path": "projects/{project}/aggregated/subnetworks/listUsable",
           "response": {
             "$ref": "UsableSubnetworksAggregatedList"
           },
@@ -21389,7 +21500,7 @@
           ]
         },
         "patch": {
-          "description": "Patches the specified subnetwork with the data included in the request. Only certain fields can up updated with a patch request as indicated in the field descriptions. You must specify the current fingerprint of the subnetwork resource being patched.",
+          "description": "Patches the specified subnetwork with the data included in the request. Only certain fields can be updated with a patch request as indicated in the field descriptions. You must specify the current fingerprint of the subnetwork resource being patched.",
           "httpMethod": "PATCH",
           "id": "compute.subnetworks.patch",
           "parameterOrder": [
@@ -21431,7 +21542,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/subnetworks/{subnetwork}",
+          "path": "projects/{project}/regions/{region}/subnetworks/{subnetwork}",
           "request": {
             "$ref": "Subnetwork"
           },
@@ -21475,7 +21586,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/subnetworks/{resource}/setIamPolicy",
+          "path": "projects/{project}/regions/{region}/subnetworks/{resource}/setIamPolicy",
           "request": {
             "$ref": "RegionSetPolicyRequest"
           },
@@ -21524,7 +21635,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/subnetworks/{subnetwork}/setPrivateIpGoogleAccess",
+          "path": "projects/{project}/regions/{region}/subnetworks/{subnetwork}/setPrivateIpGoogleAccess",
           "request": {
             "$ref": "SubnetworksSetPrivateIpGoogleAccessRequest"
           },
@@ -21568,7 +21679,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/subnetworks/{resource}/testIamPermissions",
+          "path": "projects/{project}/regions/{region}/subnetworks/{resource}/testIamPermissions",
           "request": {
             "$ref": "TestPermissionsRequest"
           },
@@ -21614,7 +21725,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/targetGrpcProxies/{targetGrpcProxy}",
+          "path": "projects/{project}/global/targetGrpcProxies/{targetGrpcProxy}",
           "response": {
             "$ref": "Operation"
           },
@@ -21647,7 +21758,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/targetGrpcProxies/{targetGrpcProxy}",
+          "path": "projects/{project}/global/targetGrpcProxies/{targetGrpcProxy}",
           "response": {
             "$ref": "TargetGrpcProxy"
           },
@@ -21678,7 +21789,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/targetGrpcProxies",
+          "path": "projects/{project}/global/targetGrpcProxies",
           "request": {
             "$ref": "TargetGrpcProxy"
           },
@@ -21734,7 +21845,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/global/targetGrpcProxies",
+          "path": "projects/{project}/global/targetGrpcProxies",
           "response": {
             "$ref": "TargetGrpcProxyList"
           },
@@ -21773,7 +21884,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/targetGrpcProxies/{targetGrpcProxy}",
+          "path": "projects/{project}/global/targetGrpcProxies/{targetGrpcProxy}",
           "request": {
             "$ref": "TargetGrpcProxy"
           },
@@ -21838,7 +21949,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/aggregated/targetHttpProxies",
+          "path": "projects/{project}/aggregated/targetHttpProxies",
           "response": {
             "$ref": "TargetHttpProxyAggregatedList"
           },
@@ -21877,7 +21988,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/targetHttpProxies/{targetHttpProxy}",
+          "path": "projects/{project}/global/targetHttpProxies/{targetHttpProxy}",
           "response": {
             "$ref": "Operation"
           },
@@ -21910,7 +22021,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/targetHttpProxies/{targetHttpProxy}",
+          "path": "projects/{project}/global/targetHttpProxies/{targetHttpProxy}",
           "response": {
             "$ref": "TargetHttpProxy"
           },
@@ -21941,7 +22052,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/targetHttpProxies",
+          "path": "projects/{project}/global/targetHttpProxies",
           "request": {
             "$ref": "TargetHttpProxy"
           },
@@ -21997,7 +22108,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/global/targetHttpProxies",
+          "path": "projects/{project}/global/targetHttpProxies",
           "response": {
             "$ref": "TargetHttpProxyList"
           },
@@ -22036,7 +22147,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/targetHttpProxies/{targetHttpProxy}",
+          "path": "projects/{project}/global/targetHttpProxies/{targetHttpProxy}",
           "request": {
             "$ref": "TargetHttpProxy"
           },
@@ -22077,7 +22188,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/targetHttpProxies/{targetHttpProxy}/setUrlMap",
+          "path": "projects/{project}/targetHttpProxies/{targetHttpProxy}/setUrlMap",
           "request": {
             "$ref": "UrlMapReference"
           },
@@ -22142,7 +22253,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/aggregated/targetHttpsProxies",
+          "path": "projects/{project}/aggregated/targetHttpsProxies",
           "response": {
             "$ref": "TargetHttpsProxyAggregatedList"
           },
@@ -22181,7 +22292,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/targetHttpsProxies/{targetHttpsProxy}",
+          "path": "projects/{project}/global/targetHttpsProxies/{targetHttpsProxy}",
           "response": {
             "$ref": "Operation"
           },
@@ -22214,7 +22325,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/targetHttpsProxies/{targetHttpsProxy}",
+          "path": "projects/{project}/global/targetHttpsProxies/{targetHttpsProxy}",
           "response": {
             "$ref": "TargetHttpsProxy"
           },
@@ -22245,7 +22356,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/targetHttpsProxies",
+          "path": "projects/{project}/global/targetHttpsProxies",
           "request": {
             "$ref": "TargetHttpsProxy"
           },
@@ -22301,7 +22412,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/global/targetHttpsProxies",
+          "path": "projects/{project}/global/targetHttpsProxies",
           "response": {
             "$ref": "TargetHttpsProxyList"
           },
@@ -22339,7 +22450,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/targetHttpsProxies/{targetHttpsProxy}/setQuicOverride",
+          "path": "projects/{project}/global/targetHttpsProxies/{targetHttpsProxy}/setQuicOverride",
           "request": {
             "$ref": "TargetHttpsProxiesSetQuicOverrideRequest"
           },
@@ -22380,7 +22491,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/targetHttpsProxies/{targetHttpsProxy}/setSslCertificates",
+          "path": "projects/{project}/targetHttpsProxies/{targetHttpsProxy}/setSslCertificates",
           "request": {
             "$ref": "TargetHttpsProxiesSetSslCertificatesRequest"
           },
@@ -22420,7 +22531,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/targetHttpsProxies/{targetHttpsProxy}/setSslPolicy",
+          "path": "projects/{project}/global/targetHttpsProxies/{targetHttpsProxy}/setSslPolicy",
           "request": {
             "$ref": "SslPolicyReference"
           },
@@ -22461,7 +22572,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/targetHttpsProxies/{targetHttpsProxy}/setUrlMap",
+          "path": "projects/{project}/targetHttpsProxies/{targetHttpsProxy}/setUrlMap",
           "request": {
             "$ref": "UrlMapReference"
           },
@@ -22526,7 +22637,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/aggregated/targetInstances",
+          "path": "projects/{project}/aggregated/targetInstances",
           "response": {
             "$ref": "TargetInstanceAggregatedList"
           },
@@ -22573,7 +22684,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/targetInstances/{targetInstance}",
+          "path": "projects/{project}/zones/{zone}/targetInstances/{targetInstance}",
           "response": {
             "$ref": "Operation"
           },
@@ -22614,7 +22725,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/targetInstances/{targetInstance}",
+          "path": "projects/{project}/zones/{zone}/targetInstances/{targetInstance}",
           "response": {
             "$ref": "TargetInstance"
           },
@@ -22653,7 +22764,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/targetInstances",
+          "path": "projects/{project}/zones/{zone}/targetInstances",
           "request": {
             "$ref": "TargetInstance"
           },
@@ -22717,7 +22828,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/targetInstances",
+          "path": "projects/{project}/zones/{zone}/targetInstances",
           "response": {
             "$ref": "TargetInstanceList"
           },
@@ -22768,7 +22879,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/targetPools/{targetPool}/addHealthCheck",
+          "path": "projects/{project}/regions/{region}/targetPools/{targetPool}/addHealthCheck",
           "request": {
             "$ref": "TargetPoolsAddHealthCheckRequest"
           },
@@ -22817,7 +22928,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/targetPools/{targetPool}/addInstance",
+          "path": "projects/{project}/regions/{region}/targetPools/{targetPool}/addInstance",
           "request": {
             "$ref": "TargetPoolsAddInstanceRequest"
           },
@@ -22878,7 +22989,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/aggregated/targetPools",
+          "path": "projects/{project}/aggregated/targetPools",
           "response": {
             "$ref": "TargetPoolAggregatedList"
           },
@@ -22925,7 +23036,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/targetPools/{targetPool}",
+          "path": "projects/{project}/regions/{region}/targetPools/{targetPool}",
           "response": {
             "$ref": "Operation"
           },
@@ -22966,7 +23077,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/targetPools/{targetPool}",
+          "path": "projects/{project}/regions/{region}/targetPools/{targetPool}",
           "response": {
             "$ref": "TargetPool"
           },
@@ -23008,7 +23119,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/targetPools/{targetPool}/getHealth",
+          "path": "projects/{project}/regions/{region}/targetPools/{targetPool}/getHealth",
           "request": {
             "$ref": "InstanceReference"
           },
@@ -23050,7 +23161,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/targetPools",
+          "path": "projects/{project}/regions/{region}/targetPools",
           "request": {
             "$ref": "TargetPool"
           },
@@ -23114,7 +23225,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/regions/{region}/targetPools",
+          "path": "projects/{project}/regions/{region}/targetPools",
           "response": {
             "$ref": "TargetPoolList"
           },
@@ -23161,7 +23272,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/targetPools/{targetPool}/removeHealthCheck",
+          "path": "projects/{project}/regions/{region}/targetPools/{targetPool}/removeHealthCheck",
           "request": {
             "$ref": "TargetPoolsRemoveHealthCheckRequest"
           },
@@ -23210,7 +23321,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/targetPools/{targetPool}/removeInstance",
+          "path": "projects/{project}/regions/{region}/targetPools/{targetPool}/removeInstance",
           "request": {
             "$ref": "TargetPoolsRemoveInstanceRequest"
           },
@@ -23265,7 +23376,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/targetPools/{targetPool}/setBackup",
+          "path": "projects/{project}/regions/{region}/targetPools/{targetPool}/setBackup",
           "request": {
             "$ref": "TargetReference"
           },
@@ -23310,7 +23421,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/targetSslProxies/{targetSslProxy}",
+          "path": "projects/{project}/global/targetSslProxies/{targetSslProxy}",
           "response": {
             "$ref": "Operation"
           },
@@ -23343,7 +23454,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/targetSslProxies/{targetSslProxy}",
+          "path": "projects/{project}/global/targetSslProxies/{targetSslProxy}",
           "response": {
             "$ref": "TargetSslProxy"
           },
@@ -23374,7 +23485,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/targetSslProxies",
+          "path": "projects/{project}/global/targetSslProxies",
           "request": {
             "$ref": "TargetSslProxy"
           },
@@ -23430,7 +23541,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/global/targetSslProxies",
+          "path": "projects/{project}/global/targetSslProxies",
           "response": {
             "$ref": "TargetSslProxyList"
           },
@@ -23469,7 +23580,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/targetSslProxies/{targetSslProxy}/setBackendService",
+          "path": "projects/{project}/global/targetSslProxies/{targetSslProxy}/setBackendService",
           "request": {
             "$ref": "TargetSslProxiesSetBackendServiceRequest"
           },
@@ -23510,7 +23621,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/targetSslProxies/{targetSslProxy}/setProxyHeader",
+          "path": "projects/{project}/global/targetSslProxies/{targetSslProxy}/setProxyHeader",
           "request": {
             "$ref": "TargetSslProxiesSetProxyHeaderRequest"
           },
@@ -23551,7 +23662,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/targetSslProxies/{targetSslProxy}/setSslCertificates",
+          "path": "projects/{project}/global/targetSslProxies/{targetSslProxy}/setSslCertificates",
           "request": {
             "$ref": "TargetSslProxiesSetSslCertificatesRequest"
           },
@@ -23591,7 +23702,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/targetSslProxies/{targetSslProxy}/setSslPolicy",
+          "path": "projects/{project}/global/targetSslProxies/{targetSslProxy}/setSslPolicy",
           "request": {
             "$ref": "SslPolicyReference"
           },
@@ -23636,7 +23747,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/targetTcpProxies/{targetTcpProxy}",
+          "path": "projects/{project}/global/targetTcpProxies/{targetTcpProxy}",
           "response": {
             "$ref": "Operation"
           },
@@ -23669,7 +23780,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/targetTcpProxies/{targetTcpProxy}",
+          "path": "projects/{project}/global/targetTcpProxies/{targetTcpProxy}",
           "response": {
             "$ref": "TargetTcpProxy"
           },
@@ -23700,7 +23811,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/targetTcpProxies",
+          "path": "projects/{project}/global/targetTcpProxies",
           "request": {
             "$ref": "TargetTcpProxy"
           },
@@ -23756,7 +23867,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/global/targetTcpProxies",
+          "path": "projects/{project}/global/targetTcpProxies",
           "response": {
             "$ref": "TargetTcpProxyList"
           },
@@ -23795,7 +23906,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/targetTcpProxies/{targetTcpProxy}/setBackendService",
+          "path": "projects/{project}/global/targetTcpProxies/{targetTcpProxy}/setBackendService",
           "request": {
             "$ref": "TargetTcpProxiesSetBackendServiceRequest"
           },
@@ -23836,7 +23947,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/targetTcpProxies/{targetTcpProxy}/setProxyHeader",
+          "path": "projects/{project}/global/targetTcpProxies/{targetTcpProxy}/setProxyHeader",
           "request": {
             "$ref": "TargetTcpProxiesSetProxyHeaderRequest"
           },
@@ -23901,7 +24012,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/aggregated/targetVpnGateways",
+          "path": "projects/{project}/aggregated/targetVpnGateways",
           "response": {
             "$ref": "TargetVpnGatewayAggregatedList"
           },
@@ -23948,7 +24059,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/targetVpnGateways/{targetVpnGateway}",
+          "path": "projects/{project}/regions/{region}/targetVpnGateways/{targetVpnGateway}",
           "response": {
             "$ref": "Operation"
           },
@@ -23989,7 +24100,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/targetVpnGateways/{targetVpnGateway}",
+          "path": "projects/{project}/regions/{region}/targetVpnGateways/{targetVpnGateway}",
           "response": {
             "$ref": "TargetVpnGateway"
           },
@@ -24028,7 +24139,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/targetVpnGateways",
+          "path": "projects/{project}/regions/{region}/targetVpnGateways",
           "request": {
             "$ref": "TargetVpnGateway"
           },
@@ -24092,7 +24203,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/regions/{region}/targetVpnGateways",
+          "path": "projects/{project}/regions/{region}/targetVpnGateways",
           "response": {
             "$ref": "TargetVpnGatewayList"
           },
@@ -24155,7 +24266,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/aggregated/urlMaps",
+          "path": "projects/{project}/aggregated/urlMaps",
           "response": {
             "$ref": "UrlMapsAggregatedList"
           },
@@ -24194,7 +24305,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/urlMaps/{urlMap}",
+          "path": "projects/{project}/global/urlMaps/{urlMap}",
           "response": {
             "$ref": "Operation"
           },
@@ -24227,7 +24338,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/urlMaps/{urlMap}",
+          "path": "projects/{project}/global/urlMaps/{urlMap}",
           "response": {
             "$ref": "UrlMap"
           },
@@ -24258,7 +24369,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/urlMaps",
+          "path": "projects/{project}/global/urlMaps",
           "request": {
             "$ref": "UrlMap"
           },
@@ -24299,7 +24410,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/urlMaps/{urlMap}/invalidateCache",
+          "path": "projects/{project}/global/urlMaps/{urlMap}/invalidateCache",
           "request": {
             "$ref": "CacheInvalidationRule"
           },
@@ -24355,7 +24466,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/global/urlMaps",
+          "path": "projects/{project}/global/urlMaps",
           "response": {
             "$ref": "UrlMapList"
           },
@@ -24394,7 +24505,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/urlMaps/{urlMap}",
+          "path": "projects/{project}/global/urlMaps/{urlMap}",
           "request": {
             "$ref": "UrlMap"
           },
@@ -24435,7 +24546,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/urlMaps/{urlMap}",
+          "path": "projects/{project}/global/urlMaps/{urlMap}",
           "request": {
             "$ref": "UrlMap"
           },
@@ -24471,7 +24582,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/global/urlMaps/{urlMap}/validate",
+          "path": "projects/{project}/global/urlMaps/{urlMap}/validate",
           "request": {
             "$ref": "UrlMapsValidateRequest"
           },
@@ -24536,7 +24647,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/aggregated/vpnGateways",
+          "path": "projects/{project}/aggregated/vpnGateways",
           "response": {
             "$ref": "VpnGatewayAggregatedList"
           },
@@ -24583,7 +24694,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/vpnGateways/{vpnGateway}",
+          "path": "projects/{project}/regions/{region}/vpnGateways/{vpnGateway}",
           "response": {
             "$ref": "Operation"
           },
@@ -24624,7 +24735,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/vpnGateways/{vpnGateway}",
+          "path": "projects/{project}/regions/{region}/vpnGateways/{vpnGateway}",
           "response": {
             "$ref": "VpnGateway"
           },
@@ -24666,7 +24777,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/vpnGateways/{vpnGateway}/getStatus",
+          "path": "projects/{project}/regions/{region}/vpnGateways/{vpnGateway}/getStatus",
           "response": {
             "$ref": "VpnGatewaysGetStatusResponse"
           },
@@ -24705,7 +24816,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/vpnGateways",
+          "path": "projects/{project}/regions/{region}/vpnGateways",
           "request": {
             "$ref": "VpnGateway"
           },
@@ -24769,7 +24880,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/regions/{region}/vpnGateways",
+          "path": "projects/{project}/regions/{region}/vpnGateways",
           "response": {
             "$ref": "VpnGatewayList"
           },
@@ -24816,7 +24927,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/vpnGateways/{resource}/setLabels",
+          "path": "projects/{project}/regions/{region}/vpnGateways/{resource}/setLabels",
           "request": {
             "$ref": "RegionSetLabelsRequest"
           },
@@ -24860,7 +24971,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/vpnGateways/{resource}/testIamPermissions",
+          "path": "projects/{project}/regions/{region}/vpnGateways/{resource}/testIamPermissions",
           "request": {
             "$ref": "TestPermissionsRequest"
           },
@@ -24926,7 +25037,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/aggregated/vpnTunnels",
+          "path": "projects/{project}/aggregated/vpnTunnels",
           "response": {
             "$ref": "VpnTunnelAggregatedList"
           },
@@ -24973,7 +25084,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/vpnTunnels/{vpnTunnel}",
+          "path": "projects/{project}/regions/{region}/vpnTunnels/{vpnTunnel}",
           "response": {
             "$ref": "Operation"
           },
@@ -25014,7 +25125,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/vpnTunnels/{vpnTunnel}",
+          "path": "projects/{project}/regions/{region}/vpnTunnels/{vpnTunnel}",
           "response": {
             "$ref": "VpnTunnel"
           },
@@ -25053,7 +25164,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/regions/{region}/vpnTunnels",
+          "path": "projects/{project}/regions/{region}/vpnTunnels",
           "request": {
             "$ref": "VpnTunnel"
           },
@@ -25117,7 +25228,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/regions/{region}/vpnTunnels",
+          "path": "projects/{project}/regions/{region}/vpnTunnels",
           "response": {
             "$ref": "VpnTunnelList"
           },
@@ -25163,7 +25274,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/operations/{operation}",
+          "path": "projects/{project}/zones/{zone}/operations/{operation}",
           "scopes": [
             "https://www.googleapis.com/auth/cloud-platform",
             "https://www.googleapis.com/auth/compute"
@@ -25201,7 +25312,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/operations/{operation}",
+          "path": "projects/{project}/zones/{zone}/operations/{operation}",
           "response": {
             "$ref": "Operation"
           },
@@ -25263,7 +25374,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/operations",
+          "path": "projects/{project}/zones/{zone}/operations",
           "response": {
             "$ref": "OperationList"
           },
@@ -25305,7 +25416,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}/operations/{operation}/wait",
+          "path": "projects/{project}/zones/{zone}/operations/{operation}/wait",
           "response": {
             "$ref": "Operation"
           },
@@ -25343,7 +25454,7 @@
               "type": "string"
             }
           },
-          "path": "{project}/zones/{zone}",
+          "path": "projects/{project}/zones/{zone}",
           "response": {
             "$ref": "Zone"
           },
@@ -25397,7 +25508,7 @@
               "type": "boolean"
             }
           },
-          "path": "{project}/zones",
+          "path": "projects/{project}/zones",
           "response": {
             "$ref": "ZoneList"
           },
@@ -25410,7 +25521,7 @@
       }
     }
   },
-  "revision": "20201007",
+  "revision": "20201102",
   "rootUrl": "https://compute.googleapis.com/",
   "schemas": {
     "AcceleratorConfig": {
@@ -26681,7 +26792,7 @@
       "type": "object"
     },
     "Autoscaler": {
-      "description": "Represents an Autoscaler resource.\n\nGoogle Compute Engine has two Autoscaler resources:\n\n* [Global](/compute/docs/reference/rest/{$api_version}/autoscalers) * [Regional](/compute/docs/reference/rest/{$api_version}/regionAutoscalers)\n\nUse autoscalers to automatically add or delete instances from a managed instance group according to your defined autoscaling policy. For more information, read Autoscaling Groups of Instances.\n\nFor zonal managed instance groups resource, use the autoscaler resource.\n\nFor regional managed instance groups, use the regionAutoscalers resource. (== resource_for {$api_version}.autoscalers ==) (== resource_for {$api_version}.regionAutoscalers ==)",
+      "description": "Represents an Autoscaler resource.\n\nGoogle Compute Engine has two Autoscaler resources:\n\n* [Zonal](/compute/docs/reference/rest/{$api_version}/autoscalers) * [Regional](/compute/docs/reference/rest/{$api_version}/regionAutoscalers)\n\nUse autoscalers to automatically add or delete instances from a managed instance group according to your defined autoscaling policy. For more information, read Autoscaling Groups of Instances.\n\nFor zonal managed instance groups resource, use the autoscaler resource.\n\nFor regional managed instance groups, use the regionAutoscalers resource. (== resource_for {$api_version}.autoscalers ==) (== resource_for {$api_version}.regionAutoscalers ==)",
       "id": "Autoscaler",
       "properties": {
         "autoscalingPolicy": {
@@ -28216,7 +28327,7 @@
       "id": "Binding",
       "properties": {
         "bindingId": {
-          "description": "A client-specified ID for this binding. Expected to be globally unique to support the internal bindings-by-ID API.",
+          "description": "",
           "type": "string"
         },
         "condition": {
@@ -30054,7 +30165,7 @@
       "id": "DistributionPolicy",
       "properties": {
         "zones": {
-          "description": "Zones where the regional managed instance group will create and manage instances.",
+          "description": "Zones where the regional managed instance group will create and manage its instances.",
           "items": {
             "$ref": "DistributionPolicyZoneConfiguration"
           },
@@ -34185,7 +34296,7 @@
         },
         "distributionPolicy": {
           "$ref": "DistributionPolicy",
-          "description": "Policy specifying intended distribution of instances in regional managed instance group."
+          "description": "Policy specifying the intended distribution of managed instances across zones in a regional managed instance group."
         },
         "fingerprint": {
           "description": "Fingerprint of this resource. This field may be used in optimistic locking. It will be ignored when inserting an InstanceGroupManager. An up-to-date fingerprint must be provided in order to update the InstanceGroupManager, otherwise the request will fail with error 412 conditionNotMet.\n\nTo see the latest fingerprint, make a get() request to retrieve an InstanceGroupManager.",
@@ -34202,7 +34313,7 @@
           "type": "string"
         },
         "instanceTemplate": {
-          "description": "The URL of the instance template that is specified for this managed instance group. The group uses this template to create all new instances in the managed instance group.",
+          "description": "The URL of the instance template that is specified for this managed instance group. The group uses this template to create all new instances in the managed instance group. The templates for existing instances in the group do not change unless you run recreateInstances, run applyUpdatesToInstances, or set the group's updatePolicy.type to PROACTIVE.",
           "type": "string"
         },
         "kind": {
@@ -34274,7 +34385,7 @@
           "type": "array"
         },
         "zone": {
-          "description": "[Output Only] The URL of the zone where the managed instance group is located (for zonal resources).",
+          "description": "[Output Only] The URL of a zone where the managed instance group is located (for zonal resources).",
           "type": "string"
         }
       },
@@ -34712,7 +34823,7 @@
       "id": "InstanceGroupManagerVersion",
       "properties": {
         "instanceTemplate": {
-          "description": "The URL of the instance template that is specified for this managed instance group. The group uses this template to create new instances in the managed instance group until the `targetSize` for this version is reached.",
+          "description": "The URL of the instance template that is specified for this managed instance group. The group uses this template to create new instances in the managed instance group until the `targetSize` for this version is reached. The templates for existing instances in the group do not change unless you run recreateInstances, run applyUpdatesToInstances, or set the group's updatePolicy.type to PROACTIVE; in those cases, existing instances are updated until the `targetSize` for this version is reached.",
           "type": "string"
         },
         "name": {
@@ -35095,7 +35206,7 @@
       "id": "InstanceGroupManagersSetInstanceTemplateRequest",
       "properties": {
         "instanceTemplate": {
-          "description": "The URL of the instance template that is specified for this managed instance group. The group uses this template to create all new instances in the managed instance group.",
+          "description": "The URL of the instance template that is specified for this managed instance group. The group uses this template to create all new instances in the managed instance group. The templates for existing instances in the group do not change unless you run recreateInstances, run applyUpdatesToInstances, or set the group's updatePolicy.type to PROACTIVE.",
           "type": "string"
         }
       },
@@ -36482,6 +36593,11 @@
         "customerRouterIpAddress": {
           "description": "[Output Only] IPv4 address + prefix length to be configured on the customer router subinterface for this interconnect attachment.",
           "type": "string"
+        },
+        "dataplaneVersion": {
+          "description": "[Output Only] Dataplane version for this InterconnectAttachment.",
+          "format": "int32",
+          "type": "integer"
         },
         "description": {
           "description": "An optional description of this resource.",
@@ -42259,6 +42375,20 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "direction": {
+          "description": "Direction of traffic to mirror, either INGRESS, EGRESS, or BOTH. The default is BOTH.",
+          "enum": [
+            "BOTH",
+            "EGRESS",
+            "INGRESS"
+          ],
+          "enumDescriptions": [
+            "",
+            "",
+            ""
+          ],
+          "type": "string"
         }
       },
       "type": "object"
@@ -43024,6 +43154,7 @@
             "PREEMPTIBLE_NVIDIA_T4_GPUS",
             "PREEMPTIBLE_NVIDIA_T4_VWS_GPUS",
             "PREEMPTIBLE_NVIDIA_V100_GPUS",
+            "PSC_ILB_CONSUMER_FORWARDING_RULES_PER_PRODUCER_NETWORK",
             "PUBLIC_ADVERTISED_PREFIXES",
             "PUBLIC_DELEGATED_PREFIXES",
             "REGIONAL_AUTOSCALERS",
@@ -43050,9 +43181,12 @@
             "TARGET_VPN_GATEWAYS",
             "URL_MAPS",
             "VPN_GATEWAYS",
-            "VPN_TUNNELS"
+            "VPN_TUNNELS",
+            "XPN_SERVICE_PROJECTS"
           ],
           "enumDescriptions": [
+            "",
+            "",
             "",
             "",
             "",
@@ -46359,6 +46493,9 @@
           },
           "type": "array"
         },
+        "enableEndpointIndependentMapping": {
+          "type": "boolean"
+        },
         "icmpIdleTimeoutSec": {
           "description": "Timeout (in seconds) for ICMP connections. Defaults to 30s if not set.",
           "format": "int32",
@@ -48278,7 +48415,7 @@
       "type": "object"
     },
     "SslPolicy": {
-      "description": "Represents a Google Cloud Armor security policy resource.\n\nOnly external backend services used by HTTP or HTTPS load balancers can reference a security policy. For more information, see  Google Cloud Armor security policy overview. (== resource_for {$api_version}.sslPolicies ==)",
+      "description": "Represents an SSL Policy resource.\n\nUse SSL policies to control the SSL features, such as versions and cipher suites, offered by an HTTPS or SSL Proxy load balancer. For more information, read  SSL Policy Concepts. (== resource_for {$api_version}.sslPolicies ==)",
       "id": "SslPolicy",
       "properties": {
         "creationTimestamp": {
@@ -54081,7 +54218,7 @@
       "type": "object"
     }
   },
-  "servicePath": "compute/v1/projects/",
+  "servicePath": "compute/v1/",
   "title": "Compute Engine API",
   "version": "v1"
 }

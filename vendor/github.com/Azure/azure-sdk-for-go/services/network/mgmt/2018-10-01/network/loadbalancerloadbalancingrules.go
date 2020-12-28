@@ -74,6 +74,7 @@ func (client LoadBalancerLoadBalancingRulesClient) Get(ctx context.Context, reso
 	result, err = client.GetResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.LoadBalancerLoadBalancingRulesClient", "Get", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -151,6 +152,7 @@ func (client LoadBalancerLoadBalancingRulesClient) List(ctx context.Context, res
 	result.lblbrlr, err = client.ListResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.LoadBalancerLoadBalancingRulesClient", "List", resp, "Failure responding to request")
+		return
 	}
 	if result.lblbrlr.hasNextLink() && result.lblbrlr.IsEmpty() {
 		err = result.NextWithContext(ctx)
@@ -215,6 +217,7 @@ func (client LoadBalancerLoadBalancingRulesClient) listNextResults(ctx context.C
 	result, err = client.ListResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.LoadBalancerLoadBalancingRulesClient", "listNextResults", resp, "Failure responding to next results request")
+		return
 	}
 	return
 }

@@ -239,6 +239,7 @@ func (client PacketCapturesClient) Get(ctx context.Context, resourceGroupName st
 	result, err = client.GetResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.PacketCapturesClient", "Get", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -392,6 +393,7 @@ func (client PacketCapturesClient) List(ctx context.Context, resourceGroupName s
 	result, err = client.ListResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.PacketCapturesClient", "List", resp, "Failure responding to request")
+		return
 	}
 
 	return

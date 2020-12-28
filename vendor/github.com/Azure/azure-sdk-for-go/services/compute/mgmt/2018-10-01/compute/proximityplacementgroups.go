@@ -74,6 +74,7 @@ func (client ProximityPlacementGroupsClient) CreateOrUpdate(ctx context.Context,
 	result, err = client.CreateOrUpdateResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.ProximityPlacementGroupsClient", "CreateOrUpdate", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -151,6 +152,7 @@ func (client ProximityPlacementGroupsClient) Delete(ctx context.Context, resourc
 	result, err = client.DeleteResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.ProximityPlacementGroupsClient", "Delete", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -225,6 +227,7 @@ func (client ProximityPlacementGroupsClient) Get(ctx context.Context, resourceGr
 	result, err = client.GetResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.ProximityPlacementGroupsClient", "Get", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -300,6 +303,7 @@ func (client ProximityPlacementGroupsClient) ListByResourceGroup(ctx context.Con
 	result.ppglr, err = client.ListByResourceGroupResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.ProximityPlacementGroupsClient", "ListByResourceGroup", resp, "Failure responding to request")
+		return
 	}
 	if result.ppglr.hasNextLink() && result.ppglr.IsEmpty() {
 		err = result.NextWithContext(ctx)
@@ -363,6 +367,7 @@ func (client ProximityPlacementGroupsClient) listByResourceGroupNextResults(ctx 
 	result, err = client.ListByResourceGroupResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.ProximityPlacementGroupsClient", "listByResourceGroupNextResults", resp, "Failure responding to next results request")
+		return
 	}
 	return
 }
@@ -412,6 +417,7 @@ func (client ProximityPlacementGroupsClient) ListBySubscription(ctx context.Cont
 	result.ppglr, err = client.ListBySubscriptionResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.ProximityPlacementGroupsClient", "ListBySubscription", resp, "Failure responding to request")
+		return
 	}
 	if result.ppglr.hasNextLink() && result.ppglr.IsEmpty() {
 		err = result.NextWithContext(ctx)
@@ -474,6 +480,7 @@ func (client ProximityPlacementGroupsClient) listBySubscriptionNextResults(ctx c
 	result, err = client.ListBySubscriptionResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.ProximityPlacementGroupsClient", "listBySubscriptionNextResults", resp, "Failure responding to next results request")
+		return
 	}
 	return
 }
@@ -526,6 +533,7 @@ func (client ProximityPlacementGroupsClient) Update(ctx context.Context, resourc
 	result, err = client.UpdateResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.ProximityPlacementGroupsClient", "Update", resp, "Failure responding to request")
+		return
 	}
 
 	return
