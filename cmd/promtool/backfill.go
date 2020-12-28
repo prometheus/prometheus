@@ -79,7 +79,16 @@ func createBlocks(input []byte, mint, maxt int64, maxSamplesInAppender int, outp
 
 	var wroteHeader bool
 
+	nextSampleTs := int64(math.MaxInt64)
 	for t := mint; t <= maxt; t = t + blockDuration {
+		if nextSampleTs != math.MaxInt64 && nextSampleTs >= t+blockDuration {
+			// The next sample is not in this timerange, we can avoid parsing
+			// the file for this timerange.
+			continue
+
+		}
+		nextSampleTs = math.MaxInt64
+
 		err := func() error {
 			w, err := tsdb.NewBlockWriter(log.NewNopLogger(), outputDir, blockDuration)
 			if err != nil {
@@ -106,15 +115,24 @@ func createBlocks(input []byte, mint, maxt int64, maxSamplesInAppender int, outp
 					continue
 				}
 
-				l := labels.Labels{}
-				p.Metric(&l)
 				_, ts, v := p.Series()
 				if ts == nil {
+					l := labels.Labels{}
+					p.Metric(&l)
 					return errors.Errorf("expected timestamp for series %v, got none", l)
 				}
-				if *ts < t || *ts >= tsUpper {
+				if *ts < t {
 					continue
 				}
+				if *ts >= tsUpper {
+					if *ts < nextSampleTs {
+						nextSampleTs = *ts
+					}
+					continue
+				}
+
+				l := labels.Labels{}
+				p.Metric(&l)
 
 				if _, err := app.Add(l, *ts, v); err != nil {
 					return errors.Wrap(err, "add sample")

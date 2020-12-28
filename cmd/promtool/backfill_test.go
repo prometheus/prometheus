@@ -150,6 +150,45 @@ http_requests_total{code="400"} 1 1565133713.990
 			ToParse: `# HELP http_requests_total The total number of HTTP requests.
 # TYPE http_requests_total counter
 http_requests_total{code="200"} 1021 1565133713.989
+http_requests_total{code="200"} 1022 1565392913.989
+http_requests_total{code="200"} 1023 1565652113.989
+# EOF
+`,
+			IsOk:                 true,
+			Description:          "Multiple samples separated by 3 days.",
+			MaxSamplesInAppender: 5000,
+			Expected: struct {
+				MinTime   int64
+				MaxTime   int64
+				NumBlocks int
+				Samples   []backfillSample
+			}{
+				MinTime:   1565133713989,
+				MaxTime:   1565652113989,
+				NumBlocks: 3,
+				Samples: []backfillSample{
+					{
+						Timestamp: 1565133713989,
+						Value:     1021,
+						Labels:    labels.FromStrings("__name__", "http_requests_total", "code", "200"),
+					},
+					{
+						Timestamp: 1565392913989,
+						Value:     1022,
+						Labels:    labels.FromStrings("__name__", "http_requests_total", "code", "200"),
+					},
+					{
+						Timestamp: 1565652113989,
+						Value:     1023,
+						Labels:    labels.FromStrings("__name__", "http_requests_total", "code", "200"),
+					},
+				},
+			},
+		},
+		{
+			ToParse: `# HELP http_requests_total The total number of HTTP requests.
+# TYPE http_requests_total counter
+http_requests_total{code="200"} 1021 1565133713.989
 http_requests_total{code="200"} 1 1565133714.989
 http_requests_total{code="400"} 2 1565133715.989
 # EOF
