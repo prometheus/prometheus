@@ -263,6 +263,7 @@ func (client ContainerServicesClient) Get(ctx context.Context, resourceGroupName
 	result, err = client.GetResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.ContainerServicesClient", "Get", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -337,6 +338,7 @@ func (client ContainerServicesClient) List(ctx context.Context) (result Containe
 	result.cslr, err = client.ListResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.ContainerServicesClient", "List", resp, "Failure responding to request")
+		return
 	}
 	if result.cslr.hasNextLink() && result.cslr.IsEmpty() {
 		err = result.NextWithContext(ctx)
@@ -399,6 +401,7 @@ func (client ContainerServicesClient) listNextResults(ctx context.Context, lastR
 	result, err = client.ListResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.ContainerServicesClient", "listNextResults", resp, "Failure responding to next results request")
+		return
 	}
 	return
 }
@@ -452,6 +455,7 @@ func (client ContainerServicesClient) ListByResourceGroup(ctx context.Context, r
 	result.cslr, err = client.ListByResourceGroupResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.ContainerServicesClient", "ListByResourceGroup", resp, "Failure responding to request")
+		return
 	}
 	if result.cslr.hasNextLink() && result.cslr.IsEmpty() {
 		err = result.NextWithContext(ctx)
@@ -515,6 +519,7 @@ func (client ContainerServicesClient) listByResourceGroupNextResults(ctx context
 	result, err = client.ListByResourceGroupResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.ContainerServicesClient", "listByResourceGroupNextResults", resp, "Failure responding to next results request")
+		return
 	}
 	return
 }

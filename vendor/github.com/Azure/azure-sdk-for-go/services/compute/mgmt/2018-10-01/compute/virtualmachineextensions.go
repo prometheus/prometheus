@@ -231,6 +231,7 @@ func (client VirtualMachineExtensionsClient) Get(ctx context.Context, resourceGr
 	result, err = client.GetResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachineExtensionsClient", "Get", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -311,6 +312,7 @@ func (client VirtualMachineExtensionsClient) List(ctx context.Context, resourceG
 	result, err = client.ListResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachineExtensionsClient", "List", resp, "Failure responding to request")
+		return
 	}
 
 	return

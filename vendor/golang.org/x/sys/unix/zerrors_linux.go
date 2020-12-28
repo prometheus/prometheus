@@ -65,6 +65,7 @@ const (
 	ALG_OP_ENCRYPT                              = 0x1
 	ALG_SET_AEAD_ASSOCLEN                       = 0x4
 	ALG_SET_AEAD_AUTHSIZE                       = 0x5
+	ALG_SET_DRBG_ENTROPY                        = 0x6
 	ALG_SET_IV                                  = 0x2
 	ALG_SET_KEY                                 = 0x1
 	ALG_SET_OP                                  = 0x3
@@ -179,8 +180,10 @@ const (
 	BPF_F_ANY_ALIGNMENT                         = 0x2
 	BPF_F_QUERY_EFFECTIVE                       = 0x1
 	BPF_F_REPLACE                               = 0x4
+	BPF_F_SLEEPABLE                             = 0x10
 	BPF_F_STRICT_ALIGNMENT                      = 0x1
 	BPF_F_TEST_RND_HI32                         = 0x4
+	BPF_F_TEST_RUN_ON_CPU                       = 0x1
 	BPF_F_TEST_STATE_FREQ                       = 0x8
 	BPF_H                                       = 0x8
 	BPF_IMM                                     = 0x0
@@ -219,6 +222,7 @@ const (
 	BPF_NET_OFF                                 = -0x100000
 	BPF_OBJ_NAME_LEN                            = 0x10
 	BPF_OR                                      = 0x40
+	BPF_PSEUDO_BTF_ID                           = 0x3
 	BPF_PSEUDO_CALL                             = 0x1
 	BPF_PSEUDO_MAP_FD                           = 0x1
 	BPF_PSEUDO_MAP_VALUE                        = 0x2
@@ -429,10 +433,13 @@ const (
 	DEBUGFS_MAGIC                               = 0x64626720
 	DEVLINK_CMD_ESWITCH_MODE_GET                = 0x1d
 	DEVLINK_CMD_ESWITCH_MODE_SET                = 0x1e
+	DEVLINK_FLASH_OVERWRITE_IDENTIFIERS         = 0x2
+	DEVLINK_FLASH_OVERWRITE_SETTINGS            = 0x1
 	DEVLINK_GENL_MCGRP_CONFIG_NAME              = "config"
 	DEVLINK_GENL_NAME                           = "devlink"
 	DEVLINK_GENL_VERSION                        = 0x1
 	DEVLINK_SB_THRESHOLD_TO_ALPHA_MAX           = 0x14
+	DEVLINK_SUPPORTED_FLASH_OVERWRITE_SECTIONS  = 0x3
 	DEVMEM_MAGIC                                = 0x454d444d
 	DEVPTS_SUPER_MAGIC                          = 0x1cd1
 	DMA_BUF_MAGIC                               = 0x444d4142
@@ -477,9 +484,9 @@ const (
 	DM_UUID_FLAG                                = 0x4000
 	DM_UUID_LEN                                 = 0x81
 	DM_VERSION                                  = 0xc138fd00
-	DM_VERSION_EXTRA                            = "-ioctl (2020-02-27)"
+	DM_VERSION_EXTRA                            = "-ioctl (2020-10-01)"
 	DM_VERSION_MAJOR                            = 0x4
-	DM_VERSION_MINOR                            = 0x2a
+	DM_VERSION_MINOR                            = 0x2b
 	DM_VERSION_PATCHLEVEL                       = 0x0
 	DT_BLK                                      = 0x6
 	DT_CHR                                      = 0x2
@@ -1331,6 +1338,7 @@ const (
 	MS_NOREMOTELOCK                             = 0x8000000
 	MS_NOSEC                                    = 0x10000000
 	MS_NOSUID                                   = 0x2
+	MS_NOSYMFOLLOW                              = 0x100
 	MS_NOUSER                                   = -0x80000000
 	MS_POSIXACL                                 = 0x10000
 	MS_PRIVATE                                  = 0x40000
@@ -1572,7 +1580,7 @@ const (
 	PERF_MEM_REMOTE_REMOTE                      = 0x1
 	PERF_MEM_REMOTE_SHIFT                       = 0x25
 	PERF_MEM_SNOOPX_FWD                         = 0x1
-	PERF_MEM_SNOOPX_SHIFT                       = 0x25
+	PERF_MEM_SNOOPX_SHIFT                       = 0x26
 	PERF_MEM_SNOOP_HIT                          = 0x4
 	PERF_MEM_SNOOP_HITM                         = 0x10
 	PERF_MEM_SNOOP_MISS                         = 0x8
@@ -1672,6 +1680,13 @@ const (
 	PR_MCE_KILL_SET                             = 0x1
 	PR_MPX_DISABLE_MANAGEMENT                   = 0x2c
 	PR_MPX_ENABLE_MANAGEMENT                    = 0x2b
+	PR_MTE_TAG_MASK                             = 0x7fff8
+	PR_MTE_TAG_SHIFT                            = 0x3
+	PR_MTE_TCF_ASYNC                            = 0x4
+	PR_MTE_TCF_MASK                             = 0x6
+	PR_MTE_TCF_NONE                             = 0x0
+	PR_MTE_TCF_SHIFT                            = 0x1
+	PR_MTE_TCF_SYNC                             = 0x2
 	PR_PAC_APDAKEY                              = 0x4
 	PR_PAC_APDBKEY                              = 0x8
 	PR_PAC_APGAKEY                              = 0x10
@@ -2206,7 +2221,7 @@ const (
 	STATX_ATTR_APPEND                           = 0x20
 	STATX_ATTR_AUTOMOUNT                        = 0x1000
 	STATX_ATTR_COMPRESSED                       = 0x4
-	STATX_ATTR_DAX                              = 0x2000
+	STATX_ATTR_DAX                              = 0x200000
 	STATX_ATTR_ENCRYPTED                        = 0x800
 	STATX_ATTR_IMMUTABLE                        = 0x10
 	STATX_ATTR_MOUNT_ROOT                       = 0x2000
@@ -2390,6 +2405,7 @@ const (
 	TIPC_NODE_STATE                             = 0x0
 	TIPC_OK                                     = 0x0
 	TIPC_PUBLISHED                              = 0x1
+	TIPC_REKEYING_NOW                           = 0xffffffff
 	TIPC_RESERVED_TYPES                         = 0x40
 	TIPC_RETDATA                                = 0x2
 	TIPC_SERVICE_ADDR                           = 0x2
