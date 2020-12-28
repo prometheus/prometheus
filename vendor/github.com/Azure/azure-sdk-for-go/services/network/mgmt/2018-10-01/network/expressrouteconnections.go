@@ -239,6 +239,7 @@ func (client ExpressRouteConnectionsClient) Get(ctx context.Context, resourceGro
 	result, err = client.GetResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ExpressRouteConnectionsClient", "Get", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -315,6 +316,7 @@ func (client ExpressRouteConnectionsClient) List(ctx context.Context, resourceGr
 	result, err = client.ListResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ExpressRouteConnectionsClient", "List", resp, "Failure responding to request")
+		return
 	}
 
 	return

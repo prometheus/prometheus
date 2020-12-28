@@ -152,6 +152,7 @@ func (client ExpressRouteCrossConnectionsClient) Get(ctx context.Context, resour
 	result, err = client.GetResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ExpressRouteCrossConnectionsClient", "Get", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -225,6 +226,7 @@ func (client ExpressRouteCrossConnectionsClient) List(ctx context.Context) (resu
 	result.ercclr, err = client.ListResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ExpressRouteCrossConnectionsClient", "List", resp, "Failure responding to request")
+		return
 	}
 	if result.ercclr.hasNextLink() && result.ercclr.IsEmpty() {
 		err = result.NextWithContext(ctx)
@@ -287,6 +289,7 @@ func (client ExpressRouteCrossConnectionsClient) listNextResults(ctx context.Con
 	result, err = client.ListResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ExpressRouteCrossConnectionsClient", "listNextResults", resp, "Failure responding to next results request")
+		return
 	}
 	return
 }
@@ -418,6 +421,7 @@ func (client ExpressRouteCrossConnectionsClient) ListByResourceGroup(ctx context
 	result.ercclr, err = client.ListByResourceGroupResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ExpressRouteCrossConnectionsClient", "ListByResourceGroup", resp, "Failure responding to request")
+		return
 	}
 	if result.ercclr.hasNextLink() && result.ercclr.IsEmpty() {
 		err = result.NextWithContext(ctx)
@@ -481,6 +485,7 @@ func (client ExpressRouteCrossConnectionsClient) listByResourceGroupNextResults(
 	result, err = client.ListByResourceGroupResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ExpressRouteCrossConnectionsClient", "listByResourceGroupNextResults", resp, "Failure responding to next results request")
+		return
 	}
 	return
 }

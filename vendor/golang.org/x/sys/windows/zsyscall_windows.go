@@ -46,6 +46,7 @@ var (
 	modntdll    = NewLazySystemDLL("ntdll.dll")
 	modole32    = NewLazySystemDLL("ole32.dll")
 	modpsapi    = NewLazySystemDLL("psapi.dll")
+	modsechost  = NewLazySystemDLL("sechost.dll")
 	modsecur32  = NewLazySystemDLL("secur32.dll")
 	modshell32  = NewLazySystemDLL("shell32.dll")
 	moduser32   = NewLazySystemDLL("user32.dll")
@@ -95,6 +96,7 @@ var (
 	procImpersonateSelf                                      = modadvapi32.NewProc("ImpersonateSelf")
 	procInitializeSecurityDescriptor                         = modadvapi32.NewProc("InitializeSecurityDescriptor")
 	procInitiateSystemShutdownExW                            = modadvapi32.NewProc("InitiateSystemShutdownExW")
+	procIsTokenRestricted                                    = modadvapi32.NewProc("IsTokenRestricted")
 	procIsValidSecurityDescriptor                            = modadvapi32.NewProc("IsValidSecurityDescriptor")
 	procIsValidSid                                           = modadvapi32.NewProc("IsValidSid")
 	procIsWellKnownSid                                       = modadvapi32.NewProc("IsWellKnownSid")
@@ -115,6 +117,7 @@ var (
 	procQueryServiceStatusEx                                 = modadvapi32.NewProc("QueryServiceStatusEx")
 	procRegCloseKey                                          = modadvapi32.NewProc("RegCloseKey")
 	procRegEnumKeyExW                                        = modadvapi32.NewProc("RegEnumKeyExW")
+	procRegNotifyChangeKeyValue                              = modadvapi32.NewProc("RegNotifyChangeKeyValue")
 	procRegOpenKeyExW                                        = modadvapi32.NewProc("RegOpenKeyExW")
 	procRegQueryInfoKeyW                                     = modadvapi32.NewProc("RegQueryInfoKeyW")
 	procRegQueryValueExW                                     = modadvapi32.NewProc("RegQueryValueExW")
@@ -279,6 +282,8 @@ var (
 	procSetConsoleCursorPosition                             = modkernel32.NewProc("SetConsoleCursorPosition")
 	procSetConsoleMode                                       = modkernel32.NewProc("SetConsoleMode")
 	procSetCurrentDirectoryW                                 = modkernel32.NewProc("SetCurrentDirectoryW")
+	procSetDefaultDllDirectories                             = modkernel32.NewProc("SetDefaultDllDirectories")
+	procSetDllDirectoryW                                     = modkernel32.NewProc("SetDllDirectoryW")
 	procSetEndOfFile                                         = modkernel32.NewProc("SetEndOfFile")
 	procSetEnvironmentVariableW                              = modkernel32.NewProc("SetEnvironmentVariableW")
 	procSetErrorMode                                         = modkernel32.NewProc("SetErrorMode")
@@ -326,6 +331,8 @@ var (
 	procCoTaskMemFree                                        = modole32.NewProc("CoTaskMemFree")
 	procStringFromGUID2                                      = modole32.NewProc("StringFromGUID2")
 	procEnumProcesses                                        = modpsapi.NewProc("EnumProcesses")
+	procSubscribeServiceChangeNotifications                  = modsechost.NewProc("SubscribeServiceChangeNotifications")
+	procUnsubscribeServiceChangeNotifications                = modsechost.NewProc("UnsubscribeServiceChangeNotifications")
 	procGetUserNameExW                                       = modsecur32.NewProc("GetUserNameExW")
 	procTranslateNameW                                       = modsecur32.NewProc("TranslateNameW")
 	procCommandLineToArgvW                                   = modshell32.NewProc("CommandLineToArgvW")
@@ -756,6 +763,15 @@ func InitiateSystemShutdownEx(machineName *uint16, message *uint16, timeout uint
 	return
 }
 
+func isTokenRestricted(tokenHandle Token) (ret bool, err error) {
+	r0, _, e1 := syscall.Syscall(procIsTokenRestricted.Addr(), 1, uintptr(tokenHandle), 0, 0)
+	ret = r0 != 0
+	if !ret {
+		err = errnoErr(e1)
+	}
+	return
+}
+
 func isValidSecurityDescriptor(sd *SECURITY_DESCRIPTOR) (isValid bool) {
 	r0, _, _ := syscall.Syscall(procIsValidSecurityDescriptor.Addr(), 1, uintptr(unsafe.Pointer(sd)), 0, 0)
 	isValid = r0 != 0
@@ -910,6 +926,22 @@ func RegCloseKey(key Handle) (regerrno error) {
 
 func RegEnumKeyEx(key Handle, index uint32, name *uint16, nameLen *uint32, reserved *uint32, class *uint16, classLen *uint32, lastWriteTime *Filetime) (regerrno error) {
 	r0, _, _ := syscall.Syscall9(procRegEnumKeyExW.Addr(), 8, uintptr(key), uintptr(index), uintptr(unsafe.Pointer(name)), uintptr(unsafe.Pointer(nameLen)), uintptr(unsafe.Pointer(reserved)), uintptr(unsafe.Pointer(class)), uintptr(unsafe.Pointer(classLen)), uintptr(unsafe.Pointer(lastWriteTime)), 0)
+	if r0 != 0 {
+		regerrno = syscall.Errno(r0)
+	}
+	return
+}
+
+func RegNotifyChangeKeyValue(key Handle, watchSubtree bool, notifyFilter uint32, event Handle, asynchronous bool) (regerrno error) {
+	var _p0 uint32
+	if watchSubtree {
+		_p0 = 1
+	}
+	var _p1 uint32
+	if asynchronous {
+		_p1 = 1
+	}
+	r0, _, _ := syscall.Syscall6(procRegNotifyChangeKeyValue.Addr(), 5, uintptr(key), uintptr(_p0), uintptr(notifyFilter), uintptr(event), uintptr(_p1), 0)
 	if r0 != 0 {
 		regerrno = syscall.Errno(r0)
 	}
@@ -1181,7 +1213,7 @@ func CertGetCertificateChain(engine Handle, leaf *CertContext, time *Filetime, a
 func CertOpenStore(storeProvider uintptr, msgAndCertEncodingType uint32, cryptProv uintptr, flags uint32, para uintptr) (handle Handle, err error) {
 	r0, _, e1 := syscall.Syscall6(procCertOpenStore.Addr(), 5, uintptr(storeProvider), uintptr(msgAndCertEncodingType), uintptr(cryptProv), uintptr(flags), uintptr(para), 0)
 	handle = Handle(r0)
-	if handle == InvalidHandle {
+	if handle == 0 {
 		err = errnoErr(e1)
 	}
 	return
@@ -2366,6 +2398,31 @@ func SetCurrentDirectory(path *uint16) (err error) {
 	return
 }
 
+func SetDefaultDllDirectories(directoryFlags uint32) (err error) {
+	r1, _, e1 := syscall.Syscall(procSetDefaultDllDirectories.Addr(), 1, uintptr(directoryFlags), 0, 0)
+	if r1 == 0 {
+		err = errnoErr(e1)
+	}
+	return
+}
+
+func SetDllDirectory(path string) (err error) {
+	var _p0 *uint16
+	_p0, err = syscall.UTF16PtrFromString(path)
+	if err != nil {
+		return
+	}
+	return _SetDllDirectory(_p0)
+}
+
+func _SetDllDirectory(path *uint16) (err error) {
+	r1, _, e1 := syscall.Syscall(procSetDllDirectoryW.Addr(), 1, uintptr(unsafe.Pointer(path)), 0, 0)
+	if r1 == 0 {
+		err = errnoErr(e1)
+	}
+	return
+}
+
 func SetEndOfFile(handle Handle) (err error) {
 	r1, _, e1 := syscall.Syscall(procSetEndOfFile.Addr(), 1, uintptr(handle), 0, 0)
 	if r1 == 0 {
@@ -2749,6 +2806,27 @@ func EnumProcesses(processIds []uint32, bytesReturned *uint32) (err error) {
 	if r1 == 0 {
 		err = errnoErr(e1)
 	}
+	return
+}
+
+func SubscribeServiceChangeNotifications(service Handle, eventType uint32, callback uintptr, callbackCtx uintptr, subscription *uintptr) (ret error) {
+	ret = procSubscribeServiceChangeNotifications.Find()
+	if ret != nil {
+		return
+	}
+	r0, _, _ := syscall.Syscall6(procSubscribeServiceChangeNotifications.Addr(), 5, uintptr(service), uintptr(eventType), uintptr(callback), uintptr(callbackCtx), uintptr(unsafe.Pointer(subscription)), 0)
+	if r0 != 0 {
+		ret = syscall.Errno(r0)
+	}
+	return
+}
+
+func UnsubscribeServiceChangeNotifications(subscription uintptr) (err error) {
+	err = procUnsubscribeServiceChangeNotifications.Find()
+	if err != nil {
+		return
+	}
+	syscall.Syscall(procUnsubscribeServiceChangeNotifications.Addr(), 1, uintptr(subscription), 0, 0)
 	return
 }
 

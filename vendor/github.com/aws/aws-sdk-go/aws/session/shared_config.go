@@ -34,6 +34,9 @@ const (
 	// Additional Config fields
 	regionKey = `region`
 
+	// custom CA Bundle filename
+	customCABundleKey = `ca_bundle`
+
 	// endpoint discovery group
 	enableEndpointDiscoveryKey = `endpoint_discovery_enabled` // optional
 
@@ -89,6 +92,15 @@ type sharedConfig struct {
 	//
 	//	region
 	Region string
+
+	// CustomCABundle is the file path to a PEM file the SDK will read and
+	// use to configure the HTTP transport with additional CA certs that are
+	// not present in the platforms default CA store.
+	//
+	// This value will be ignored if the file does not exist.
+	//
+	//  ca_bundle
+	CustomCABundle string
 
 	// EnableEndpointDiscovery can be enabled in the shared config by setting
 	// endpoint_discovery_enabled to true
@@ -276,6 +288,7 @@ func (cfg *sharedConfig) setFromIniFile(profile string, file sharedConfigFile, e
 		updateString(&cfg.SourceProfileName, section, sourceProfileKey)
 		updateString(&cfg.CredentialSource, section, credentialSourceKey)
 		updateString(&cfg.Region, section, regionKey)
+		updateString(&cfg.CustomCABundle, section, customCABundleKey)
 
 		if section.Has(roleDurationSecondsKey) {
 			d := time.Duration(section.Int(roleDurationSecondsKey)) * time.Second

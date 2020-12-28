@@ -28,7 +28,7 @@ type RegistryService interface {
 	ListRepositoryTags(context.Context, string, string, *ListOptions) ([]*RepositoryTag, *Response, error)
 	DeleteTag(context.Context, string, string, string) (*Response, error)
 	DeleteManifest(context.Context, string, string, string) (*Response, error)
-	StartGarbageCollection(context.Context, string) (*GarbageCollection, *Response, error)
+	StartGarbageCollection(context.Context, string, ...*StartGarbageCollectionRequest) (*GarbageCollection, *Response, error)
 	GetGarbageCollection(context.Context, string) (*GarbageCollection, *Response, error)
 	ListGarbageCollections(context.Context, string, *ListOptions) ([]*GarbageCollection, *Response, error)
 	UpdateGarbageCollection(context.Context, string, string, *UpdateGarbageCollectionRequest) (*GarbageCollection, *Response, error)
@@ -100,13 +100,14 @@ type repositoryTagsRoot struct {
 
 // GarbageCollection represents a garbage collection.
 type GarbageCollection struct {
-	UUID         string    `json:"uuid"`
-	RegistryName string    `json:"registry_name"`
-	Status       string    `json:"status"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
-	BlobsDeleted uint64    `json:"blobs_deleted"`
-	FreedBytes   uint64    `json:"freed_bytes"`
+	UUID         string                `json:"uuid"`
+	RegistryName string                `json:"registry_name"`
+	Status       string                `json:"status"`
+	Type         GarbageCollectionType `json:"type"`
+	CreatedAt    time.Time             `json:"created_at"`
+	UpdatedAt    time.Time             `json:"updated_at"`
+	BlobsDeleted uint64                `json:"blobs_deleted"`
+	FreedBytes   uint64                `json:"freed_bytes"`
 }
 
 type garbageCollectionRoot struct {
@@ -117,6 +118,26 @@ type garbageCollectionsRoot struct {
 	GarbageCollections []*GarbageCollection `json:"garbage_collections,omitempty"`
 	Links              *Links               `json:"links,omitempty"`
 	Meta               *Meta                `json:"meta"`
+}
+
+type GarbageCollectionType string
+
+const (
+	// GCTypeUntaggedManifestsOnly indicates that a garbage collection should
+	// only delete untagged manifests.
+	GCTypeUntaggedManifestsOnly = GarbageCollectionType("untagged manifests only")
+	// GCTypeUnreferencedBlobsOnly indicates that a garbage collection should
+	// only delete unreferenced blobs.
+	GCTypeUnreferencedBlobsOnly = GarbageCollectionType("unreferenced blobs only")
+	// GCTypeUntaggedManifestsAndUnreferencedBlobs indicates that a garbage
+	// collection should delete both untagged manifests and unreferenced blobs.
+	GCTypeUntaggedManifestsAndUnreferencedBlobs = GarbageCollectionType("untagged manifests and unreferenced blobs")
+)
+
+// StartGarbageCollectionRequest represents options to a garbage collection
+// start request.
+type StartGarbageCollectionRequest struct {
+	Type GarbageCollectionType `json:"type"`
 }
 
 // UpdateGarbageCollectionRequest represents a request to update a garbage
@@ -330,9 +351,19 @@ func (svc *RegistryServiceOp) DeleteManifest(ctx context.Context, registry, repo
 
 // StartGarbageCollection requests a garbage collection for the specified
 // registry.
-func (svc *RegistryServiceOp) StartGarbageCollection(ctx context.Context, registry string) (*GarbageCollection, *Response, error) {
+func (svc *RegistryServiceOp) StartGarbageCollection(ctx context.Context, registry string, request ...*StartGarbageCollectionRequest) (*GarbageCollection, *Response, error) {
 	path := fmt.Sprintf("%s/%s/garbage-collection", registryPath, registry)
-	req, err := svc.client.NewRequest(ctx, http.MethodPost, path, nil)
+	var requestParams interface{}
+	if len(request) < 1 {
+		// default to only garbage collecting unreferenced blobs for backwards
+		// compatibility
+		requestParams = &StartGarbageCollectionRequest{
+			Type: GCTypeUnreferencedBlobsOnly,
+		}
+	} else {
+		requestParams = request[0]
+	}
+	req, err := svc.client.NewRequest(ctx, http.MethodPost, path, requestParams)
 	if err != nil {
 		return nil, nil, err
 	}

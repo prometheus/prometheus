@@ -93,6 +93,8 @@ type AgentService struct {
 	// to include the Namespace in the hash. When we do, then we are in for lots of fun with tests.
 	// For now though, ignoring it works well enough.
 	Namespace string `json:",omitempty" bexpr:"-" hash:"ignore"`
+	// Datacenter is only ever returned and is ignored if presented.
+	Datacenter string `json:",omitempty" bexpr:"-" hash:"ignore"`
 }
 
 // AgentServiceChecksInfo returns information about a Service and its checks
@@ -162,7 +164,7 @@ const (
 	// MemberTagKeyReadReplica is the key used to indicate that the member is a read
 	// replica server (will remain a Raft non-voter).
 	// Read Replicas are a Consul Enterprise feature.
-	MemberTagKeyReadReplica = "nonvoter"
+	MemberTagKeyReadReplica = "read_replica"
 	// MemberTagValueReadReplica is the value of the MemberTagKeyReadReplica key when
 	// the member is in fact a read-replica. Any other value indicates that it is not.
 	// Read Replicas are a Consul Enterprise feature.
@@ -187,10 +189,18 @@ const (
 
 // AgentMember represents a cluster member known to the agent
 type AgentMember struct {
-	Name        string
-	Addr        string
-	Port        uint16
-	Tags        map[string]string
+	Name string
+	Addr string
+	Port uint16
+	Tags map[string]string
+	// Status of the Member which corresponds to  github.com/hashicorp/serf/serf.MemberStatus
+	// Value is one of:
+	//
+	// 	  AgentMemberNone    = 0
+	//	  AgentMemberAlive   = 1
+	//	  AgentMemberLeaving = 2
+	//	  AgentMemberLeft    = 3
+	//	  AgentMemberFailed  = 4
 	Status      int
 	ProtocolMin uint8
 	ProtocolMax uint8

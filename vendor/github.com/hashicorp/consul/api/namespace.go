@@ -26,7 +26,7 @@ type Namespace struct {
 
 	// DeletedAt is the time when the Namespace was marked for deletion
 	// This is nullable so that we can omit if empty when encoding in JSON
-	DeletedAt *time.Time `json:"DeletedAt,omitempty"`
+	DeletedAt *time.Time `json:"DeletedAt,omitempty" alias:"deleted_at"`
 
 	// CreateIndex is the Raft index at which the Namespace was created
 	CreateIndex uint64 `json:"CreateIndex,omitempty"`
@@ -39,10 +39,10 @@ type Namespace struct {
 type NamespaceACLConfig struct {
 	// PolicyDefaults is the list of policies that should be used for the parent authorizer
 	// of all tokens in the associated namespace.
-	PolicyDefaults []ACLLink `json:"PolicyDefaults"`
+	PolicyDefaults []ACLLink `json:"PolicyDefaults" alias:"policy_defaults"`
 	// RoleDefaults is the list of roles that should be used for the parent authorizer
 	// of all tokens in the associated namespace.
-	RoleDefaults []ACLLink `json:"RoleDefaults"`
+	RoleDefaults []ACLLink `json:"RoleDefaults" alias:"role_defaults"`
 }
 
 // Namespaces can be used to manage Namespaces in Consul Enterprise..

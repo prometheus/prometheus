@@ -624,6 +624,7 @@ func (tml *Tokenmandatorylabel) Size() uint32 {
 
 // Authorization Functions
 //sys	checkTokenMembership(tokenHandle Token, sidToCheck *SID, isMember *int32) (err error) = advapi32.CheckTokenMembership
+//sys	isTokenRestricted(tokenHandle Token) (ret bool, err error) [!failretval] = advapi32.IsTokenRestricted
 //sys	OpenProcessToken(process Handle, access uint32, token *Token) (err error) = advapi32.OpenProcessToken
 //sys	OpenThreadToken(thread Handle, access uint32, openAsSelf bool, token *Token) (err error) = advapi32.OpenThreadToken
 //sys	ImpersonateSelf(impersonationlevel uint32) (err error) = advapi32.ImpersonateSelf
@@ -835,6 +836,16 @@ func (t Token) IsMember(sid *SID) (bool, error) {
 		return false, e
 	}
 	return b != 0, nil
+}
+
+// IsRestricted reports whether the access token t is a restricted token.
+func (t Token) IsRestricted() (isRestricted bool, err error) {
+	isRestricted, err = isTokenRestricted(t)
+	if !isRestricted && err == syscall.EINVAL {
+		// If err is EINVAL, this returned ERROR_SUCCESS indicating a non-restricted token.
+		err = nil
+	}
+	return
 }
 
 const (

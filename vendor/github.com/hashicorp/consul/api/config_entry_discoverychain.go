@@ -17,10 +17,12 @@ type ServiceRouterConfigEntry struct {
 	ModifyIndex uint64
 }
 
-func (e *ServiceRouterConfigEntry) GetKind() string        { return e.Kind }
-func (e *ServiceRouterConfigEntry) GetName() string        { return e.Name }
-func (e *ServiceRouterConfigEntry) GetCreateIndex() uint64 { return e.CreateIndex }
-func (e *ServiceRouterConfigEntry) GetModifyIndex() uint64 { return e.ModifyIndex }
+func (e *ServiceRouterConfigEntry) GetKind() string            { return e.Kind }
+func (e *ServiceRouterConfigEntry) GetName() string            { return e.Name }
+func (e *ServiceRouterConfigEntry) GetNamespace() string       { return e.Namespace }
+func (e *ServiceRouterConfigEntry) GetMeta() map[string]string { return e.Meta }
+func (e *ServiceRouterConfigEntry) GetCreateIndex() uint64     { return e.CreateIndex }
+func (e *ServiceRouterConfigEntry) GetModifyIndex() uint64     { return e.ModifyIndex }
 
 type ServiceRoute struct {
 	Match       *ServiceRouteMatch       `json:",omitempty"`
@@ -117,10 +119,12 @@ type ServiceSplitterConfigEntry struct {
 	ModifyIndex uint64
 }
 
-func (e *ServiceSplitterConfigEntry) GetKind() string        { return e.Kind }
-func (e *ServiceSplitterConfigEntry) GetName() string        { return e.Name }
-func (e *ServiceSplitterConfigEntry) GetCreateIndex() uint64 { return e.CreateIndex }
-func (e *ServiceSplitterConfigEntry) GetModifyIndex() uint64 { return e.ModifyIndex }
+func (e *ServiceSplitterConfigEntry) GetKind() string            { return e.Kind }
+func (e *ServiceSplitterConfigEntry) GetName() string            { return e.Name }
+func (e *ServiceSplitterConfigEntry) GetNamespace() string       { return e.Namespace }
+func (e *ServiceSplitterConfigEntry) GetMeta() map[string]string { return e.Meta }
+func (e *ServiceSplitterConfigEntry) GetCreateIndex() uint64     { return e.CreateIndex }
+func (e *ServiceSplitterConfigEntry) GetModifyIndex() uint64     { return e.ModifyIndex }
 
 type ServiceSplit struct {
 	Weight        float32
@@ -139,6 +143,10 @@ type ServiceResolverConfigEntry struct {
 	Redirect       *ServiceResolverRedirect           `json:",omitempty"`
 	Failover       map[string]ServiceResolverFailover `json:",omitempty"`
 	ConnectTimeout time.Duration                      `json:",omitempty" alias:"connect_timeout"`
+
+	// LoadBalancer determines the load balancing policy and configuration for services
+	// issuing requests to this upstream service.
+	LoadBalancer *LoadBalancer `json:",omitempty" alias:"load_balancer"`
 
 	Meta        map[string]string `json:",omitempty"`
 	CreateIndex uint64
@@ -181,10 +189,12 @@ func (e *ServiceResolverConfigEntry) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func (e *ServiceResolverConfigEntry) GetKind() string        { return e.Kind }
-func (e *ServiceResolverConfigEntry) GetName() string        { return e.Name }
-func (e *ServiceResolverConfigEntry) GetCreateIndex() uint64 { return e.CreateIndex }
-func (e *ServiceResolverConfigEntry) GetModifyIndex() uint64 { return e.ModifyIndex }
+func (e *ServiceResolverConfigEntry) GetKind() string            { return e.Kind }
+func (e *ServiceResolverConfigEntry) GetName() string            { return e.Name }
+func (e *ServiceResolverConfigEntry) GetNamespace() string       { return e.Namespace }
+func (e *ServiceResolverConfigEntry) GetMeta() map[string]string { return e.Meta }
+func (e *ServiceResolverConfigEntry) GetCreateIndex() uint64     { return e.CreateIndex }
+func (e *ServiceResolverConfigEntry) GetModifyIndex() uint64     { return e.ModifyIndex }
 
 type ServiceResolverSubset struct {
 	Filter      string `json:",omitempty"`
@@ -203,4 +213,77 @@ type ServiceResolverFailover struct {
 	ServiceSubset string   `json:",omitempty" alias:"service_subset"`
 	Namespace     string   `json:",omitempty"`
 	Datacenters   []string `json:",omitempty"`
+}
+
+// LoadBalancer determines the load balancing policy and configuration for services
+// issuing requests to this upstream service.
+type LoadBalancer struct {
+	// Policy is the load balancing policy used to select a host
+	Policy string `json:",omitempty"`
+
+	// RingHashConfig contains configuration for the "ring_hash" policy type
+	RingHashConfig *RingHashConfig `json:",omitempty" alias:"ring_hash_config"`
+
+	// LeastRequestConfig contains configuration for the "least_request" policy type
+	LeastRequestConfig *LeastRequestConfig `json:",omitempty" alias:"least_request_config"`
+
+	// HashPolicies is a list of hash policies to use for hashing load balancing algorithms.
+	// Hash policies are evaluated individually and combined such that identical lists
+	// result in the same hash.
+	// If no hash policies are present, or none are successfully evaluated,
+	// then a random backend host will be selected.
+	HashPolicies []HashPolicy `json:",omitempty" alias:"hash_policies"`
+}
+
+// RingHashConfig contains configuration for the "ring_hash" policy type
+type RingHashConfig struct {
+	// MinimumRingSize determines the minimum number of entries in the hash ring
+	MinimumRingSize uint64 `json:",omitempty" alias:"minimum_ring_size"`
+
+	// MaximumRingSize determines the maximum number of entries in the hash ring
+	MaximumRingSize uint64 `json:",omitempty" alias:"maximum_ring_size"`
+}
+
+// LeastRequestConfig contains configuration for the "least_request" policy type
+type LeastRequestConfig struct {
+	// ChoiceCount determines the number of random healthy hosts from which to select the one with the least requests.
+	ChoiceCount uint32 `json:",omitempty" alias:"choice_count"`
+}
+
+// HashPolicy defines which attributes will be hashed by hash-based LB algorithms
+type HashPolicy struct {
+	// Field is the attribute type to hash on.
+	// Must be one of "header","cookie", or "query_parameter".
+	// Cannot be specified along with SourceIP.
+	Field string `json:",omitempty"`
+
+	// FieldValue is the value to hash.
+	// ie. header name, cookie name, URL query parameter name
+	// Cannot be specified along with SourceIP.
+	FieldValue string `json:",omitempty" alias:"field_value"`
+
+	// CookieConfig contains configuration for the "cookie" hash policy type.
+	CookieConfig *CookieConfig `json:",omitempty" alias:"cookie_config"`
+
+	// SourceIP determines whether the hash should be of the source IP rather than of a field and field value.
+	// Cannot be specified along with Field or FieldValue.
+	SourceIP bool `json:",omitempty" alias:"source_ip"`
+
+	// Terminal will short circuit the computation of the hash when multiple hash policies are present.
+	// If a hash is computed when a Terminal policy is evaluated,
+	// then that hash will be used and subsequent hash policies will be ignored.
+	Terminal bool `json:",omitempty"`
+}
+
+// CookieConfig contains configuration for the "cookie" hash policy type.
+// This is specified to have Envoy generate a cookie for a client on its first request.
+type CookieConfig struct {
+	// Generates a session cookie with no expiration.
+	Session bool `json:",omitempty"`
+
+	// TTL for generated cookies. Cannot be specified for session cookies.
+	TTL time.Duration `json:",omitempty"`
+
+	// The path to set for the cookie
+	Path string `json:",omitempty"`
 }

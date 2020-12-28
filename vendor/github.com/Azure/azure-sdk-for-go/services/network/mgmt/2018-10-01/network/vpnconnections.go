@@ -231,6 +231,7 @@ func (client VpnConnectionsClient) Get(ctx context.Context, resourceGroupName st
 	result, err = client.GetResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VpnConnectionsClient", "Get", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -308,6 +309,7 @@ func (client VpnConnectionsClient) ListByVpnGateway(ctx context.Context, resourc
 	result.lvcr, err = client.ListByVpnGatewayResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VpnConnectionsClient", "ListByVpnGateway", resp, "Failure responding to request")
+		return
 	}
 	if result.lvcr.hasNextLink() && result.lvcr.IsEmpty() {
 		err = result.NextWithContext(ctx)
@@ -372,6 +374,7 @@ func (client VpnConnectionsClient) listByVpnGatewayNextResults(ctx context.Conte
 	result, err = client.ListByVpnGatewayResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.VpnConnectionsClient", "listByVpnGatewayNextResults", resp, "Failure responding to next results request")
+		return
 	}
 	return
 }

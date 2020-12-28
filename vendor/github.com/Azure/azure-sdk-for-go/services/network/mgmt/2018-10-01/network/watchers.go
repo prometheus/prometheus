@@ -161,6 +161,7 @@ func (client WatchersClient) CreateOrUpdate(ctx context.Context, resourceGroupNa
 	result, err = client.CreateOrUpdateResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.WatchersClient", "CreateOrUpdate", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -312,6 +313,7 @@ func (client WatchersClient) Get(ctx context.Context, resourceGroupName string, 
 	result, err = client.GetResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.WatchersClient", "Get", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -731,6 +733,7 @@ func (client WatchersClient) GetTopology(ctx context.Context, resourceGroupName 
 	result, err = client.GetTopologyResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.WatchersClient", "GetTopology", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -1063,6 +1066,7 @@ func (client WatchersClient) List(ctx context.Context, resourceGroupName string)
 	result, err = client.ListResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.WatchersClient", "List", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -1134,6 +1138,7 @@ func (client WatchersClient) ListAll(ctx context.Context) (result WatcherListRes
 	result, err = client.ListAllResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.WatchersClient", "ListAll", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -1382,6 +1387,7 @@ func (client WatchersClient) UpdateTags(ctx context.Context, resourceGroupName s
 	result, err = client.UpdateTagsResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.WatchersClient", "UpdateTags", resp, "Failure responding to request")
+		return
 	}
 
 	return

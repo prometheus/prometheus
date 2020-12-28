@@ -241,6 +241,7 @@ func (client ConnectionMonitorsClient) Get(ctx context.Context, resourceGroupNam
 	result, err = client.GetResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ConnectionMonitorsClient", "Get", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -317,6 +318,7 @@ func (client ConnectionMonitorsClient) List(ctx context.Context, resourceGroupNa
 	result, err = client.ListResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.ConnectionMonitorsClient", "List", resp, "Failure responding to request")
+		return
 	}
 
 	return

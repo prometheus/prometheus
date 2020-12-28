@@ -303,6 +303,7 @@ func (client P2sVpnGatewaysClient) Get(ctx context.Context, resourceGroupName st
 	result, err = client.GetResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.P2sVpnGatewaysClient", "Get", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -376,6 +377,7 @@ func (client P2sVpnGatewaysClient) List(ctx context.Context) (result ListP2SVpnG
 	result.lpvgr, err = client.ListResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.P2sVpnGatewaysClient", "List", resp, "Failure responding to request")
+		return
 	}
 	if result.lpvgr.hasNextLink() && result.lpvgr.IsEmpty() {
 		err = result.NextWithContext(ctx)
@@ -438,6 +440,7 @@ func (client P2sVpnGatewaysClient) listNextResults(ctx context.Context, lastResu
 	result, err = client.ListResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.P2sVpnGatewaysClient", "listNextResults", resp, "Failure responding to next results request")
+		return
 	}
 	return
 }
@@ -489,6 +492,7 @@ func (client P2sVpnGatewaysClient) ListByResourceGroup(ctx context.Context, reso
 	result.lpvgr, err = client.ListByResourceGroupResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.P2sVpnGatewaysClient", "ListByResourceGroup", resp, "Failure responding to request")
+		return
 	}
 	if result.lpvgr.hasNextLink() && result.lpvgr.IsEmpty() {
 		err = result.NextWithContext(ctx)
@@ -552,6 +556,7 @@ func (client P2sVpnGatewaysClient) listByResourceGroupNextResults(ctx context.Co
 	result, err = client.ListByResourceGroupResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.P2sVpnGatewaysClient", "listByResourceGroupNextResults", resp, "Failure responding to next results request")
+		return
 	}
 	return
 }

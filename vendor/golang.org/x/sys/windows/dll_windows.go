@@ -391,7 +391,6 @@ func loadLibraryEx(name string, system bool) (*DLL, error) {
 	var flags uintptr
 	if system {
 		if canDoSearchSystem32() {
-			const LOAD_LIBRARY_SEARCH_SYSTEM32 = 0x00000800
 			flags = LOAD_LIBRARY_SEARCH_SYSTEM32
 		} else if isBaseName(name) {
 			// WindowsXP or unpatched Windows machine
