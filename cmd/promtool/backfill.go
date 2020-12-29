@@ -77,17 +77,18 @@ func createBlocks(input []byte, mint, maxt int64, maxSamplesInAppender int, outp
 		returnErr = tsdb_errors.NewMulti(returnErr, db.Close()).Err()
 	}()
 
-	var wroteHeader bool
+	var (
+		wroteHeader  bool
+		nextSampleTs int64 = math.MinInt64
+	)
 
-	nextSampleTs := int64(math.MaxInt64)
 	for t := mint; t <= maxt; t = t + blockDuration {
-		if nextSampleTs != math.MaxInt64 && nextSampleTs >= t+blockDuration {
+		tsUpper := t + blockDuration
+		if nextSampleTs >= tsUpper {
 			// The next sample is not in this timerange, we can avoid parsing
 			// the file for this timerange.
 			continue
-
 		}
-		nextSampleTs = math.MaxInt64
 
 		err := func() error {
 			w, err := tsdb.NewBlockWriter(log.NewNopLogger(), outputDir, blockDuration)
@@ -101,7 +102,6 @@ func createBlocks(input []byte, mint, maxt int64, maxSamplesInAppender int, outp
 			ctx := context.Background()
 			app := w.Appender(ctx)
 			p := textparse.NewOpenMetricsParser(input)
-			tsUpper := t + blockDuration
 			samplesCount := 0
 			for {
 				e, err := p.Next()
@@ -125,10 +125,8 @@ func createBlocks(input []byte, mint, maxt int64, maxSamplesInAppender int, outp
 					continue
 				}
 				if *ts >= tsUpper {
-					if *ts < nextSampleTs {
-						nextSampleTs = *ts
-					}
-					continue
+					nextSampleTs = *ts
+					break
 				}
 
 				l := labels.Labels{}
