@@ -37,6 +37,7 @@ import (
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
+	"github.com/prometheus/exporter-toolkit/https"
 	"gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/prometheus/prometheus/config"
@@ -56,6 +57,12 @@ func main() {
 	checkConfigCmd := checkCmd.Command("config", "Check if the config files are valid or not.")
 	configFiles := checkConfigCmd.Arg(
 		"config-files",
+		"The config files to check.",
+	).Required().ExistingFiles()
+
+	checkWebConfigCmd := checkCmd.Command("web-config", "Check if the web config files are valid or not.")
+	webConfigFiles := checkWebConfigCmd.Arg(
+		"web-config-files",
 		"The config files to check.",
 	).Required().ExistingFiles()
 
@@ -154,6 +161,9 @@ func main() {
 	case checkConfigCmd.FullCommand():
 		os.Exit(CheckConfig(*configFiles...))
 
+	case checkWebConfigCmd.FullCommand():
+		os.Exit(CheckWebConfig(*webConfigFiles...))
+
 	case checkRulesCmd.FullCommand():
 		os.Exit(CheckRules(*ruleFiles...))
 
@@ -227,6 +237,24 @@ func CheckConfig(files ...string) int {
 			}
 			fmt.Println()
 		}
+	}
+	if failed {
+		return 1
+	}
+	return 0
+}
+
+// CheckWebConfig validates web configuration files.
+func CheckWebConfig(files ...string) int {
+	failed := false
+
+	for _, f := range files {
+		if err := https.Validate(f); err != nil {
+			fmt.Fprintln(os.Stderr, f, "FAILED:", err)
+			failed = true
+			continue
+		}
+		fmt.Fprintln(os.Stderr, f, "SUCCESS")
 	}
 	if failed {
 		return 1
