@@ -9,7 +9,6 @@
 * [ENHANCEMENT] SD: Expose IPv6 as a label in EC2 SD. #7086
 * [ENHANCEMENT] SD: Reuse EC2 client, reducing frequency of requesting credentials. #8311
 * [ENHANCEMENT] TSDB: Add logging when compaction takes more than the block time range. #8151
-* [ENHANCEMENT] TSDB: Reduced log level for overlapping blocks from warn to info. 8313
 * [ENHANCEMENT] TSDB: Avoid unnecessary GC runs after compaction. #8276 
 * [BUGFIX] HTTP API: Avoid double-closing of channel when quitting multiple times via HTTP. #8242
 * [BUGFIX] SD: Ignore CNAME records in DNS SD to avoid spurious `Invalid SRV record` warnings. #8216
