@@ -1,8 +1,8 @@
 ## 2.24.0-rc.0 / 2020-12-30
 
 * [FEATURE] Add TLS and basic authentication to HTTP endpoints. #8316
-* [FEATURE] promtool: Add `check web-config` command to check web config files. #8319
-* [FEATURE] promtool: Add `tsdb create-blocks-from openmetrics` command to backfill metrics data from an OpenMetrics file. #8084
+* [FEATURE] promtool: Add `check web-config` subcommand to check web config files. #8319
+* [FEATURE] promtool: Add `tsdb create-blocks-from openmetrics` subcommand to backfill metrics data from an OpenMetrics file. #8084
 * [ENHANCEMENT] HTTP API: Fast-fail queries with only empty matchers. #8288
 * [ENHANCEMENT] HTTP API: Support matchers for labels API. #8301
 * [ENHANCEMENT] promtool: Improve checking of URLs passed on the command line. #7956
@@ -13,7 +13,7 @@
 * [ENHANCEMENT] TSDB: Avoid unnecessary GC runs after compaction. #8276 
 * [BUGFIX] HTTP API: Avoid double-closing of channel when quitting multiple times via HTTP. #8242
 * [BUGFIX] SD: Ignore CNAME records in DNS SD to avoid spurious `Invalid SRV record` warnings. #8216
-* [BUGFIX] SD: Avoid config error triggered by valid label selector. #8285
+* [BUGFIX] SD: Avoid config error triggered by valid label selectors in K8s SD. #8285
 
 ## 2.23.0 / 2020-11-26
 
