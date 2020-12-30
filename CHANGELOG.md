@@ -13,7 +13,7 @@
 * [ENHANCEMENT] TSDB: Avoid unnecessary GC runs after compaction. #8276 
 * [BUGFIX] HTTP API: Avoid double-closing of channel when quitting multiple times via HTTP. #8242
 * [BUGFIX] SD: Ignore CNAME records in DNS SD to avoid spurious `Invalid SRV record` warnings. #8216
-* [BUGFIX] SD: Avoid config error triggered by valid label selectors in K8s SD. #8285
+* [BUGFIX] SD: Avoid config error triggered by valid label selectors in Kubernetes SD. #8285
 
 ## 2.23.0 / 2020-11-26
 
