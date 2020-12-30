@@ -38,7 +38,7 @@
     // Example: @'http://test-alertmanager\..*'
     nonNotifyingAlertmanagerRegEx: @'',
 
-    grafana: {
+    grafanaPrometheus: {
       prefix: 'Prometheus / ',
       tags: ['prometheus-mixin'],
       // The default refresh time for all dashboards, default to 60s
