@@ -37,12 +37,5 @@
     // expression is matched against the `alertmanager` label.
     // Example: @'http://test-alertmanager\..*'
     nonNotifyingAlertmanagerRegEx: @'',
-
-    grafana: {
-      prefix: 'Prometheus / ',
-      tags: ['prometheus-mixin'],
-      // The default refresh time for all dashboards, default to 60s
-      refresh: '60s',
-    },
   },
 }
