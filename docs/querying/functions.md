@@ -410,6 +410,7 @@ for each of the given times in UTC.
 The following functions allow aggregating each series of a given range vector
 over time and return an instant vector with per-series aggregation results:
 
+* `avg_angle_over_time(range-vector)`: the average angle of all angles in the specified interval.
 * `avg_over_time(range-vector)`: the average value of all points in the specified interval.
 * `min_over_time(range-vector)`: the minimum value of all points in the specified interval.
 * `max_over_time(range-vector)`: the maximum value of all points in the specified interval.

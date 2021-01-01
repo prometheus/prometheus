@@ -557,6 +557,27 @@ eval instant at 1m avg_over_time(metric10[1m])
 eval instant at 1m sum_over_time(metric10[1m])/count_over_time(metric10[1m])
   {} 0
 
+# Tests for avg_angle_over_time
+clear
+load 10s
+  metric1 340 358 7 25 5
+  metric2 -20 -2 7 25 5
+  metric3 0 180 0 -180 90
+  metric4 0 180 0 -180 -90
+
+eval instant at 1m avg_angle_over_time(metric1[1m])
+  {} 3.016282588803491
+
+eval instant at 1m avg_angle_over_time(metric2[1m])
+  {} 3.016282588803491
+
+eval instant at 1m avg_angle_over_time(metric3[1m])
+  {} 90
+
+eval instant at 1m avg_angle_over_time(metric4[1m])
+  {} 270
+
+
 # Tests for stddev_over_time and stdvar_over_time.
 clear
 load 10s
