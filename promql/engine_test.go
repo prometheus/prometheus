@@ -555,10 +555,11 @@ load 10s
 	err = test.Run()
 	require.NoError(t, err)
 
+	// These test cases should be touching the limit exactly (hence no exceeding).
+	// Exceeding the limit will be tested by doing -1 to the MaxSamples.
 	cases := []struct {
 		Query      string
 		MaxSamples int
-		Result     Result
 		Start      time.Time
 		End        time.Time
 		Interval   time.Duration
@@ -567,209 +568,82 @@ load 10s
 		{
 			Query:      "1",
 			MaxSamples: 1,
-			Result: Result{
-				nil,
-				Scalar{V: 1, T: 1000},
-				nil},
-			Start: time.Unix(1, 0),
-		},
-		{
-			Query:      "1",
-			MaxSamples: 0,
-			Result: Result{
-				ErrTooManySamples(env),
-				nil,
-				nil,
-			},
-			Start: time.Unix(1, 0),
-		},
-		{
-			Query:      "metric",
-			MaxSamples: 0,
-			Result: Result{
-				ErrTooManySamples(env),
-				nil,
-				nil,
-			},
-			Start: time.Unix(1, 0),
-		},
-		{
+			Start:      time.Unix(1, 0),
+		}, {
 			Query:      "metric",
 			MaxSamples: 1,
-			Result: Result{
-				nil,
-				Vector{
-					Sample{Point: Point{V: 1, T: 1000},
-						Metric: labels.FromStrings("__name__", "metric")},
-				},
-				nil,
-			},
-			Start: time.Unix(1, 0),
-		},
-		{
+			Start:      time.Unix(1, 0),
+		}, {
 			Query:      "metric[20s]",
 			MaxSamples: 2,
-			Result: Result{
-				nil,
-				Matrix{Series{
-					Points: []Point{{V: 1, T: 0}, {V: 2, T: 10000}},
-					Metric: labels.FromStrings("__name__", "metric")},
-				},
-				nil,
-			},
-			Start: time.Unix(10, 0),
-		},
-		{
+			Start:      time.Unix(10, 0),
+		}, {
 			Query:      "rate(metric[20s])",
 			MaxSamples: 3,
-			Result: Result{
-				nil,
-				Vector{
-					Sample{
-						Point:  Point{V: 0.1, T: 10000},
-						Metric: labels.Labels{},
-					},
-				},
-				nil,
-			},
-			Start: time.Unix(10, 0),
-		},
-		{
+			Start:      time.Unix(10, 0),
+		}, {
 			Query:      "metric[20s:5s]",
 			MaxSamples: 3,
-			Result: Result{
-				nil,
-				Matrix{Series{
-					Points: []Point{{V: 1, T: 0}, {V: 1, T: 5000}, {V: 2, T: 10000}},
-					Metric: labels.FromStrings("__name__", "metric")},
-				},
-				nil,
-			},
-			Start: time.Unix(10, 0),
-		},
-		{
-			Query:      "metric[20s]",
-			MaxSamples: 0,
-			Result: Result{
-				ErrTooManySamples(env),
-				nil,
-				nil,
-			},
-			Start: time.Unix(10, 0),
+			Start:      time.Unix(10, 0),
 		},
 		// Range queries.
 		{
 			Query:      "1",
 			MaxSamples: 3,
-			Result: Result{
-				nil,
-				Matrix{Series{
-					Points: []Point{{V: 1, T: 0}, {V: 1, T: 1000}, {V: 1, T: 2000}},
-					Metric: labels.FromStrings()},
-				},
-				nil,
-			},
-			Start:    time.Unix(0, 0),
-			End:      time.Unix(2, 0),
-			Interval: time.Second,
-		},
-		{
+			Start:      time.Unix(0, 0),
+			End:        time.Unix(2, 0),
+			Interval:   time.Second,
+		}, {
 			Query:      "1",
-			MaxSamples: 0,
-			Result: Result{
-				ErrTooManySamples(env),
-				nil,
-				nil,
-			},
-			Start:    time.Unix(0, 0),
-			End:      time.Unix(2, 0),
-			Interval: time.Second,
-		},
-		{
+			MaxSamples: 3,
+			Start:      time.Unix(0, 0),
+			End:        time.Unix(2, 0),
+			Interval:   time.Second,
+		}, {
 			Query:      "metric",
 			MaxSamples: 3,
-			Result: Result{
-				nil,
-				Matrix{Series{
-					Points: []Point{{V: 1, T: 0}, {V: 1, T: 1000}, {V: 1, T: 2000}},
-					Metric: labels.FromStrings("__name__", "metric")},
-				},
-				nil,
-			},
-			Start:    time.Unix(0, 0),
-			End:      time.Unix(2, 0),
-			Interval: time.Second,
-		},
-		{
-			Query:      "metric",
-			MaxSamples: 2,
-			Result: Result{
-				ErrTooManySamples(env),
-				nil,
-				nil,
-			},
-			Start:    time.Unix(0, 0),
-			End:      time.Unix(2, 0),
-			Interval: time.Second,
-		},
-		{
+			Start:      time.Unix(0, 0),
+			End:        time.Unix(2, 0),
+			Interval:   time.Second,
+		}, {
 			Query:      "metric",
 			MaxSamples: 3,
-			Result: Result{
-				nil,
-				Matrix{Series{
-					Points: []Point{{V: 1, T: 0}, {V: 1, T: 5000}, {V: 2, T: 10000}},
-					Metric: labels.FromStrings("__name__", "metric")},
-				},
-				nil,
-			},
-			Start:    time.Unix(0, 0),
-			End:      time.Unix(10, 0),
-			Interval: 5 * time.Second,
-		},
-		{
-			Query:      "metric",
-			MaxSamples: 2,
-			Result: Result{
-				ErrTooManySamples(env),
-				nil,
-				nil,
-			},
-			Start:    time.Unix(0, 0),
-			End:      time.Unix(10, 0),
-			Interval: 5 * time.Second,
-		},
-		{
+			Start:      time.Unix(0, 0),
+			End:        time.Unix(10, 0),
+			Interval:   5 * time.Second,
+		}, {
 			Query:      "rate(bigmetric[1s])",
 			MaxSamples: 1,
-			Result: Result{
-				nil,
-				Matrix{},
-				nil,
-			},
-			Start:    time.Unix(0, 0),
-			End:      time.Unix(10, 0),
-			Interval: 5 * time.Second,
+			Start:      time.Unix(0, 0),
+			End:        time.Unix(10, 0),
+			Interval:   5 * time.Second,
 		},
 	}
 
 	engine := test.QueryEngine()
 	for _, c := range cases {
-		var err error
-		var qry Query
+		t.Run(c.Query, func(t *testing.T) {
+			var err error
+			var qry Query
 
-		engine.maxSamplesPerQuery = c.MaxSamples
+			engine.maxSamplesPerQuery = c.MaxSamples
 
-		if c.Interval == 0 {
-			qry, err = engine.NewInstantQuery(test.Queryable(), c.Query, c.Start)
-		} else {
-			qry, err = engine.NewRangeQuery(test.Queryable(), c.Query, c.Start, c.End, c.Interval)
-		}
-		require.NoError(t, err)
+			if c.Interval == 0 {
+				qry, err = engine.NewInstantQuery(test.Queryable(), c.Query, c.Start)
+			} else {
+				qry, err = engine.NewRangeQuery(test.Queryable(), c.Query, c.Start, c.End, c.Interval)
+			}
+			require.NoError(t, err)
 
-		res := qry.Exec(test.Context())
-		require.Equal(t, c.Result.Err, res.Err)
-		require.Equal(t, c.Result.Value, res.Value, "query %q failed", c.Query)
+			// Within limit.
+			res := qry.Exec(test.Context())
+			require.NoError(t, res.Err)
+
+			// Exceeding limit.
+			engine.maxSamplesPerQuery = c.MaxSamples - 1
+			res = qry.Exec(test.Context())
+			require.Equal(t, ErrTooManySamples(env), res.Err)
+		})
 	}
 }
 
