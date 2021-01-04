@@ -203,6 +203,19 @@ func TestTemplateExpansion(t *testing.T) {
 			output: "100ms:100us:123.5ms:1m 0s:1m 0s:1.234s:12.35s:",
 		},
 		{
+			// HumanizeDuration - valid strings.
+			text:   "{{ range . }}{{ humanizeDuration . }}:{{ end }}",
+			input:  []string{".1", ".0001", ".12345", "60.1", "60.5", "1.2345", "12.345"},
+			output: "100ms:100us:123.5ms:1m 0s:1m 0s:1.234s:12.35s:",
+		},
+		{
+			// HumanizeDuration - invalid string.
+			text:       "{{ range . }}{{ humanizeDuration . }}:{{ end }}",
+			input:      []string{"foobar"},
+			shouldFail: true,
+			errorMsg:   "this test is actually not testing if the errorMsg is correct",
+		},
+		{
 			// Humanize* Inf and NaN.
 			text:   "{{ range . }}{{ humanize . }}:{{ humanize1024 . }}:{{ humanizeDuration . }}:{{humanizeTimestamp .}}:{{ end }}",
 			input:  []float64{math.Inf(1), math.Inf(-1), math.NaN()},

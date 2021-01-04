@@ -22,6 +22,7 @@ import (
 	"net/url"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	text_template "text/template"
 	"time"
@@ -202,12 +203,28 @@ func NewTemplateExpander(
 				}
 				return fmt.Sprintf("%.4g%s", v, prefix)
 			},
-			"humanizeDuration": func(v float64) string {
+			"humanizeDuration": func(i interface{}) (string, error) {
+				var (
+					v   float64
+					err error
+				)
+
+				s, ok := i.(string)
+				if ok {
+					if v, err = strconv.ParseFloat(s, 64); err != nil {
+						return "", err
+					}
+				} else {
+					if v, ok = i.(float64); !ok {
+						return "", fmt.Errorf("could not detect duration: %v", i)
+					}
+				}
+
 				if math.IsNaN(v) || math.IsInf(v, 0) {
-					return fmt.Sprintf("%.4g", v)
+					return fmt.Sprintf("%.4g", v), nil
 				}
 				if v == 0 {
-					return fmt.Sprintf("%.4gs", v)
+					return fmt.Sprintf("%.4gs", v), nil
 				}
 				if math.Abs(v) >= 1 {
 					sign := ""
@@ -221,16 +238,16 @@ func NewTemplateExpander(
 					days := int64(v) / 60 / 60 / 24
 					// For days to minutes, we display seconds as an integer.
 					if days != 0 {
-						return fmt.Sprintf("%s%dd %dh %dm %ds", sign, days, hours, minutes, seconds)
+						return fmt.Sprintf("%s%dd %dh %dm %ds", sign, days, hours, minutes, seconds), nil
 					}
 					if hours != 0 {
-						return fmt.Sprintf("%s%dh %dm %ds", sign, hours, minutes, seconds)
+						return fmt.Sprintf("%s%dh %dm %ds", sign, hours, minutes, seconds), nil
 					}
 					if minutes != 0 {
-						return fmt.Sprintf("%s%dm %ds", sign, minutes, seconds)
+						return fmt.Sprintf("%s%dm %ds", sign, minutes, seconds), nil
 					}
 					// For seconds, we display 4 significant digits.
-					return fmt.Sprintf("%s%.4gs", sign, v)
+					return fmt.Sprintf("%s%.4gs", sign, v), nil
 				}
 				prefix := ""
 				for _, p := range []string{"m", "u", "n", "p", "f", "a", "z", "y"} {
@@ -240,7 +257,7 @@ func NewTemplateExpander(
 					prefix = p
 					v *= 1000
 				}
-				return fmt.Sprintf("%.4g%ss", v, prefix)
+				return fmt.Sprintf("%.4g%ss", v, prefix), nil
 			},
 			"humanizePercentage": func(v float64) string {
 				return fmt.Sprintf("%.4g%%", v*100)
