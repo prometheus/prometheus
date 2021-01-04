@@ -79,6 +79,7 @@ type LockOptions struct {
 	MonitorRetryTime time.Duration // Optional, defaults to DefaultMonitorRetryTime
 	LockWaitTime     time.Duration // Optional, defaults to DefaultLockWaitTime
 	LockTryOnce      bool          // Optional, defaults to false which means try forever
+	LockDelay        time.Duration // Optional, defaults to 15s
 	Namespace        string        `json:",omitempty"` // Optional, defaults to API client config, namespace of ACL token, or "default" namespace
 }
 
@@ -351,8 +352,9 @@ func (l *Lock) createSession() (string, error) {
 	se := l.opts.SessionOpts
 	if se == nil {
 		se = &SessionEntry{
-			Name: l.opts.SessionName,
-			TTL:  l.opts.SessionTTL,
+			Name:      l.opts.SessionName,
+			TTL:       l.opts.SessionTTL,
+			LockDelay: l.opts.LockDelay,
 		}
 	}
 	w := WriteOptions{Namespace: l.opts.Namespace}

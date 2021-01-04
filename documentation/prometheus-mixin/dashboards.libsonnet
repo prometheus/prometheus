@@ -10,7 +10,9 @@ local template = grafana.template;
 {
   grafanaDashboards+:: {
     'prometheus.json':
-      g.dashboard('Prometheus Overview')
+      g.dashboard(
+        '%(prefix)sOverview' % $._config.grafanaPrometheus
+      )
       .addMultiTemplate('job', 'prometheus_build_info', 'job')
       .addMultiTemplate('instance', 'prometheus_build_info', 'instance')
       .addRow(
@@ -96,7 +98,10 @@ local template = grafana.template;
           { yaxes: g.yaxes('ms') } +
           g.stack,
         )
-      ),
+      ) + {
+        tags: $._config.grafanaPrometheus.tags,
+        refresh: $._config.grafanaPrometheus.refresh,
+      },
     // Remote write specific dashboard.
     'prometheus-remote-write.json':
       local timestampComparison =
@@ -287,8 +292,10 @@ local template = grafana.template;
           legendFormat='{{cluster}}:{{instance}} {{remote_name}}:{{url}}'
         ));
 
-      dashboard.new('Prometheus Remote Write',
-                    editable=true)
+      dashboard.new(
+        title='%(prefix)sRemote Write' % $._config.grafanaPrometheus,
+        editable=true
+      )
       .addTemplate(
         {
           hide: 0,
@@ -372,6 +379,9 @@ local template = grafana.template;
         .addPanel(failedSamples)
         .addPanel(retriedSamples)
         .addPanel(enqueueRetries)
-      ),
+      ) + {
+        tags: $._config.grafanaPrometheus.tags,
+        refresh: $._config.grafanaPrometheus.refresh,
+      },
   },
 }

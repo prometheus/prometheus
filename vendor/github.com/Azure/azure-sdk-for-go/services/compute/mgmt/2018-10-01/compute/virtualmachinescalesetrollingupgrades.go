@@ -148,6 +148,7 @@ func (client VirtualMachineScaleSetRollingUpgradesClient) GetLatest(ctx context.
 	result, err = client.GetLatestResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachineScaleSetRollingUpgradesClient", "GetLatest", resp, "Failure responding to request")
+		return
 	}
 
 	return

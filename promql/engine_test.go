@@ -712,6 +712,168 @@ load 10s
 	}
 }
 
+func TestMaxQuerySamples(t *testing.T) {
+	test, err := NewTest(t, `
+load 10s
+  metric 1+1x100
+  bigmetric{a="1"} 1+1x100
+  bigmetric{a="2"} 1+1x100
+`)
+	require.NoError(t, err)
+	defer test.Close()
+
+	err = test.Run()
+	require.NoError(t, err)
+
+	// These test cases should be touching the limit exactly (hence no exceeding).
+	// Exceeding the limit will be tested by doing -1 to the MaxSamples.
+	cases := []struct {
+		Query      string
+		MaxSamples int
+		Start      time.Time
+		End        time.Time
+		Interval   time.Duration
+	}{
+		// Instant queries.
+		{
+			Query:      "1",
+			MaxSamples: 1,
+			Start:      time.Unix(1, 0),
+		}, {
+			Query:      "metric",
+			MaxSamples: 1,
+			Start:      time.Unix(1, 0),
+		}, {
+			Query:      "metric[20s]",
+			MaxSamples: 2,
+			Start:      time.Unix(10, 0),
+		}, {
+			Query:      "rate(metric[20s])",
+			MaxSamples: 3,
+			Start:      time.Unix(10, 0),
+		}, {
+			Query:      "metric[20s:5s]",
+			MaxSamples: 3,
+			Start:      time.Unix(10, 0),
+		}, {
+			Query:      "metric[20s] @ 10",
+			MaxSamples: 2,
+			Start:      time.Unix(0, 0),
+		},
+		// Range queries.
+		{
+			Query:      "1",
+			MaxSamples: 3,
+			Start:      time.Unix(0, 0),
+			End:        time.Unix(2, 0),
+			Interval:   time.Second,
+		}, {
+			Query:      "1",
+			MaxSamples: 3,
+			Start:      time.Unix(0, 0),
+			End:        time.Unix(2, 0),
+			Interval:   time.Second,
+		}, {
+			Query:      "metric",
+			MaxSamples: 3,
+			Start:      time.Unix(0, 0),
+			End:        time.Unix(2, 0),
+			Interval:   time.Second,
+		}, {
+			Query:      "metric",
+			MaxSamples: 3,
+			Start:      time.Unix(0, 0),
+			End:        time.Unix(10, 0),
+			Interval:   5 * time.Second,
+		}, {
+			Query:      "rate(bigmetric[1s])",
+			MaxSamples: 1,
+			Start:      time.Unix(0, 0),
+			End:        time.Unix(10, 0),
+			Interval:   5 * time.Second,
+		}, {
+			// Result is duplicated, so @ also produces 3 samples.
+			Query:      "metric @ 10",
+			MaxSamples: 3,
+			Start:      time.Unix(0, 0),
+			End:        time.Unix(10, 0),
+			Interval:   5 * time.Second,
+		}, {
+			// The peak samples in memory is during first evaluation:
+			//   - Subquery takes 22 samples, 11 for each bigmetric,
+			//   - Result is calculated per series where the series samples is buffered, hence 11 more here.
+			//   - The result of two series is added before the last series buffer is discarded, so 2 more here.
+			//   Hence at peak it is 22 (subquery) + 11 (buffer of a series) + 2 (result from 2 series).
+			// The subquery samples and the buffer is discarded before duplicating.
+			Query:      `rate(bigmetric[10s:1s] @ 10)`,
+			MaxSamples: 35,
+			Start:      time.Unix(0, 0),
+			End:        time.Unix(10, 0),
+			Interval:   5 * time.Second,
+		}, {
+			// Here the reasoning is same as above. But LHS and RHS are done one after another.
+			// So while one of them takes 35 samples at peak, we need to hold the 2 sample
+			// result of the other till then.
+			Query:      `rate(bigmetric[10s:1s] @ 10) + rate(bigmetric[10s:1s] @ 30)`,
+			MaxSamples: 37,
+			Start:      time.Unix(0, 0),
+			End:        time.Unix(10, 0),
+			Interval:   5 * time.Second,
+		}, {
+			// Sample as above but with only 1 part as step invariant.
+			// Here the peak is caused by the non-step invariant part as it touches more time range.
+			// Hence at peak it is 2*21 (subquery from 0s to 20s)
+			//                     + 11 (buffer of a series per evaluation)
+			//                     + 6 (result from 2 series at 3 eval times).
+			Query:      `rate(bigmetric[10s:1s]) + rate(bigmetric[10s:1s] @ 30)`,
+			MaxSamples: 59,
+			Start:      time.Unix(10, 0),
+			End:        time.Unix(20, 0),
+			Interval:   5 * time.Second,
+		}, {
+			// Nested subquery.
+			// We saw that inner most rate takes 35 samples which is still the peak
+			// since the other two subqueries just duplicate the result.
+			Query:      `rate(rate(bigmetric[10s:1s] @ 10)[100s:25s] @ 1000)[100s:20s] @ 2000`,
+			MaxSamples: 35,
+			Start:      time.Unix(10, 0),
+		}, {
+			// Nested subquery.
+			// Now the out most subquery produces more samples than inner most rate.
+			Query:      `rate(rate(bigmetric[10s:1s] @ 10)[100s:25s] @ 1000)[17s:1s] @ 2000`,
+			MaxSamples: 36,
+			Start:      time.Unix(10, 0),
+		},
+	}
+
+	engine := test.QueryEngine()
+	for _, c := range cases {
+		t.Run(c.Query, func(t *testing.T) {
+			testFunc := func(expError error) {
+				var err error
+				var qry Query
+				if c.Interval == 0 {
+					qry, err = engine.NewInstantQuery(test.Queryable(), c.Query, c.Start)
+				} else {
+					qry, err = engine.NewRangeQuery(test.Queryable(), c.Query, c.Start, c.End, c.Interval)
+				}
+				require.NoError(t, err)
+
+				res := qry.Exec(test.Context())
+				require.Equal(t, expError, res.Err)
+			}
+
+			// Within limit.
+			engine.maxSamplesPerQuery = c.MaxSamples
+			testFunc(nil)
+
+			// Exceeding limit.
+			engine.maxSamplesPerQuery = c.MaxSamples - 1
+			testFunc(ErrTooManySamples(env))
+		})
+	}
+}
+
 func TestAtModifier(t *testing.T) {
 	test, err := NewTest(t, `
 load 10s
@@ -895,199 +1057,6 @@ load 1ms
 		})
 	}
 }
-
-func TestMaxQuerySamples(t *testing.T) {
-	test, err := NewTest(t, `
-load 10s
-  metric 1+1x100
-  bigmetric{a="1"} 1+1x100
-  bigmetric{a="2"} 1+1x100
-`)
-	require.NoError(t, err)
-	defer test.Close()
-
-	err = test.Run()
-	require.NoError(t, err)
-
-	type testCase struct {
-		Query             string
-		MaxSamples        int
-		Start             time.Time
-		End               time.Time
-		Interval          time.Duration
-		exceedsMaxSamples bool
-	}
-
-	// These handwritten test cases should be touching the limit exactly (hence no exceeding).
-	// Additional test cases with exceeding the limit will be autogenerated
-	// below by doing -1 to the MaxSamples.
-	cases := []testCase{
-		// Instant queries.
-		{
-			Query:      "1",
-			MaxSamples: 1,
-			Start:      time.Unix(1, 0),
-		},
-		{
-			Query:      "metric",
-			MaxSamples: 1,
-			Start:      time.Unix(1, 0),
-		},
-		{
-			Query:      "metric[20s]",
-			MaxSamples: 2,
-			Start:      time.Unix(10, 0),
-		},
-		{
-			Query:      "rate(metric[20s])",
-			MaxSamples: 3,
-			Start:      time.Unix(10, 0),
-		},
-		{
-			Query:      "metric[20s:5s]",
-			MaxSamples: 3,
-			Start:      time.Unix(10, 0),
-		},
-		{
-			Query:      "metric[20s] @ 10",
-			MaxSamples: 2,
-			Start:      time.Unix(0, 0),
-		},
-		// Range queries.
-		{
-			Query:      "1",
-			MaxSamples: 3,
-			Start:      time.Unix(0, 0),
-			End:        time.Unix(2, 0),
-			Interval:   time.Second,
-		},
-		{
-			Query:      "1",
-			MaxSamples: 3,
-			Start:      time.Unix(0, 0),
-			End:        time.Unix(2, 0),
-			Interval:   time.Second,
-		},
-		{
-			Query:      "metric",
-			MaxSamples: 3,
-			Start:      time.Unix(0, 0),
-			End:        time.Unix(2, 0),
-			Interval:   time.Second,
-		},
-		{
-			Query:      "metric",
-			MaxSamples: 3,
-			Start:      time.Unix(0, 0),
-			End:        time.Unix(10, 0),
-			Interval:   5 * time.Second,
-		},
-		{
-			Query:      "rate(bigmetric[1s])",
-			MaxSamples: 1,
-			Start:      time.Unix(0, 0),
-			End:        time.Unix(10, 0),
-			Interval:   5 * time.Second,
-		},
-		{
-			// Result is duplicated, so @ also produces 3 samples.
-			Query:      "metric @ 10",
-			MaxSamples: 3,
-			Start:      time.Unix(0, 0),
-			End:        time.Unix(10, 0),
-			Interval:   5 * time.Second,
-		},
-		{
-			// The peak samples in memory is during first evaluation:
-			//   - Subquery takes 22 samples, 11 for each bigmetric,
-			//   - Result is calculated per series where the series samples is buffered, hence 11 more here.
-			//   - The result of two series is added before the last series buffer is discarded, so 2 more here.
-			//   Hence at peak it is 22 (subquery) + 11 (buffer of a series) + 2 (result from 2 series).
-			// The subquery samples and the buffer is discarded before duplicating.
-			Query:      `rate(bigmetric[10s:1s] @ 10)`,
-			MaxSamples: 35,
-			Start:      time.Unix(0, 0),
-			End:        time.Unix(10, 0),
-			Interval:   5 * time.Second,
-		},
-		{
-			// Here the reasoning is same as above. But LHS and RHS are done one after another.
-			// So while one of them takes 35 samples at peak, we need to hold the 2 sample
-			// result of the other till then.
-			Query:      `rate(bigmetric[10s:1s] @ 10) + rate(bigmetric[10s:1s] @ 30)`,
-			MaxSamples: 37,
-			Start:      time.Unix(0, 0),
-			End:        time.Unix(10, 0),
-			Interval:   5 * time.Second,
-		},
-		{
-			// Sample as above but with only 1 part as step invariant.
-			// Here the peak is caused by the non-step invariant part as it touches more time range.
-			// Hence at peak it is 2*21 (subquery from 0s to 20s)
-			//                     + 11 (buffer of a series per evaluation)
-			//                     + 6 (result from 2 series at 3 eval times).
-			Query:      `rate(bigmetric[10s:1s]) + rate(bigmetric[10s:1s] @ 30)`,
-			MaxSamples: 59,
-			Start:      time.Unix(10, 0),
-			End:        time.Unix(20, 0),
-			Interval:   5 * time.Second,
-		},
-		{
-			// Nested subquery.
-			// We saw that inner most rate takes 35 samples which is still the peak
-			// since the other two subqueries just duplicate the result.
-			Query:      `rate(rate(bigmetric[10s:1s] @ 10)[100s:25s] @ 1000)[100s:20s] @ 2000`,
-			MaxSamples: 35,
-			Start:      time.Unix(10, 0),
-		},
-		{
-			// Nested subquery.
-			// Now the out most subquery produces more samples than inner most rate.
-			Query:      `rate(rate(bigmetric[10s:1s] @ 10)[100s:25s] @ 1000)[17s:1s] @ 2000`,
-			MaxSamples: 36,
-			Start:      time.Unix(10, 0),
-		},
-	}
-
-	// Adding additional test cases for exceeding limit.
-	additionalCases := make([]testCase, 0, len(cases))
-	for _, c := range cases {
-		additionalCases = append(additionalCases, testCase{
-			Query:             c.Query,
-			MaxSamples:        c.MaxSamples - 1,
-			Start:             c.Start,
-			End:               c.End,
-			Interval:          c.Interval,
-			exceedsMaxSamples: true,
-		})
-	}
-	cases = append(cases, additionalCases...)
-
-	engine := test.QueryEngine()
-	for _, c := range cases {
-		t.Run(c.Query, func(t *testing.T) {
-			var err error
-			var qry Query
-
-			engine.maxSamplesPerQuery = c.MaxSamples
-
-			if c.Interval == 0 {
-				qry, err = engine.NewInstantQuery(test.Queryable(), c.Query, c.Start)
-			} else {
-				qry, err = engine.NewRangeQuery(test.Queryable(), c.Query, c.Start, c.End, c.Interval)
-			}
-			require.NoError(t, err)
-
-			res := qry.Exec(test.Context())
-			if c.exceedsMaxSamples {
-				require.Equal(t, ErrTooManySamples(env), res.Err)
-			} else {
-				require.NoError(t, res.Err)
-			}
-		})
-	}
-}
-
 func TestRecoverEvaluatorRuntime(t *testing.T) {
 	ev := &evaluator{logger: log.NewNopLogger()}
 

@@ -22,7 +22,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -841,8 +840,7 @@ func (db *DB) Compact() (returnErr error) {
 	}
 
 	compactionDuration := time.Since(start)
-	// TODO: change to milliseconds once fuzzit tests are removed
-	if int64(compactionDuration.Seconds())*1000 > db.head.chunkRange.Load() {
+	if compactionDuration.Milliseconds() > db.head.chunkRange.Load() {
 		level.Warn(db.logger).Log(
 			"msg", "Head compaction took longer than the block time range, compactions are falling behind and won't be able to catch up",
 			"duration", compactionDuration.String(),
@@ -875,7 +873,6 @@ func (db *DB) compactHead(head *RangeHead) error {
 		return errors.Wrap(err, "persist head block")
 	}
 
-	runtime.GC()
 	if err := db.reloadBlocks(); err != nil {
 		if errRemoveAll := os.RemoveAll(filepath.Join(db.dir, uid.String())); errRemoveAll != nil {
 			return tsdb_errors.NewMulti(
@@ -888,7 +885,6 @@ func (db *DB) compactHead(head *RangeHead) error {
 	if err = db.head.truncateMemory(head.BlockMaxTime()); err != nil {
 		return errors.Wrap(err, "head memory truncate")
 	}
-	runtime.GC()
 	return nil
 }
 
@@ -915,7 +911,6 @@ func (db *DB) compactBlocks() (err error) {
 		if err != nil {
 			return errors.Wrapf(err, "compact %s", plan)
 		}
-		runtime.GC()
 
 		if err := db.reloadBlocks(); err != nil {
 			if err := os.RemoveAll(filepath.Join(db.dir, uid.String())); err != nil {
@@ -923,7 +918,6 @@ func (db *DB) compactBlocks() (err error) {
 			}
 			return errors.Wrap(err, "reloadBlocks blocks")
 		}
-		runtime.GC()
 	}
 
 	return nil
