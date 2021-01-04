@@ -732,6 +732,10 @@ func (db *DB) run() {
 
 		select {
 		case <-time.After(1 * time.Minute):
+			if err := db.reloadBlocks(); err != nil {
+				level.Error(db.logger).Log("msg", "reloadBlocks", "err", err)
+			}
+
 			select {
 			case db.compactc <- struct{}{}:
 			default:
