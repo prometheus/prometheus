@@ -246,11 +246,12 @@ func (h *hintRecordingQuerier) Select(sortSeries bool, hints *storage.SelectHint
 
 func TestSelectHintsSetCorrectly(t *testing.T) {
 	opts := EngineOpts{
-		Logger:        nil,
-		Reg:           nil,
-		MaxSamples:    10,
-		Timeout:       10 * time.Second,
-		LookbackDelta: 5 * time.Second,
+		Logger:                      nil,
+		Reg:                         nil,
+		MaxSamples:                  10,
+		Timeout:                     10 * time.Second,
+		LookbackDelta:               5 * time.Second,
+		AllowLookingAheadOfEvalTime: true,
 	}
 
 	for _, tc := range []struct {

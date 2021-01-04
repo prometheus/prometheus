@@ -595,11 +595,12 @@ func (t *Test) clear() {
 	t.storage = teststorage.New(t)
 
 	opts := EngineOpts{
-		Logger:                   nil,
-		Reg:                      nil,
-		MaxSamples:               10000,
-		Timeout:                  100 * time.Second,
-		NoStepSubqueryIntervalFn: func(int64) int64 { return durationMilliseconds(1 * time.Minute) },
+		Logger:                      nil,
+		Reg:                         nil,
+		MaxSamples:                  10000,
+		Timeout:                     100 * time.Second,
+		NoStepSubqueryIntervalFn:    func(int64) int64 { return durationMilliseconds(1 * time.Minute) },
+		AllowLookingAheadOfEvalTime: true,
 	}
 
 	t.queryEngine = NewEngine(opts)
@@ -709,10 +710,11 @@ func (ll *LazyLoader) clear() {
 	ll.storage = teststorage.New(ll)
 
 	opts := EngineOpts{
-		Logger:     nil,
-		Reg:        nil,
-		MaxSamples: 10000,
-		Timeout:    100 * time.Second,
+		Logger:                      nil,
+		Reg:                         nil,
+		MaxSamples:                  10000,
+		Timeout:                     100 * time.Second,
+		AllowLookingAheadOfEvalTime: true,
 	}
 
 	ll.queryEngine = NewEngine(opts)
