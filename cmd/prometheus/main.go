@@ -109,20 +109,21 @@ func main() {
 	cfg := struct {
 		configFile string
 
-		localStoragePath    string
-		notifier            notifier.Options
-		notifierTimeout     model.Duration
-		forGracePeriod      model.Duration
-		outageTolerance     model.Duration
-		resendDelay         model.Duration
-		web                 web.Options
-		tsdb                tsdbOptions
-		lookbackDelta       model.Duration
-		webTimeout          model.Duration
-		queryTimeout        model.Duration
-		queryConcurrency    int
-		queryMaxSamples     int
-		RemoteFlushDeadline model.Duration
+		localStoragePath                  string
+		notifier                          notifier.Options
+		notifierTimeout                   model.Duration
+		forGracePeriod                    model.Duration
+		outageTolerance                   model.Duration
+		resendDelay                       model.Duration
+		web                               web.Options
+		tsdb                              tsdbOptions
+		lookbackDelta                     model.Duration
+		webTimeout                        model.Duration
+		queryTimeout                      model.Duration
+		queryConcurrency                  int
+		queryMaxSamples                   int
+		promqlAllowLookingaheadOfEvalTime bool
+		RemoteFlushDeadline               model.Duration
 
 		prometheusURL   string
 		corsRegexString string
@@ -261,6 +262,9 @@ func main() {
 	a.Flag("query.max-samples", "Maximum number of samples a single query can load into memory. Note that queries will fail if they try to load more samples than this into memory, so this also limits the number of samples a query can return.").
 		Default("50000000").IntVar(&cfg.queryMaxSamples)
 
+	a.Flag("feature.promql.allow-looking-ahead-of-eval-time", "Allow looking ahead of eval time in PromQL. Enables @ modifier in PromQL.").
+		Default("false").BoolVar(&cfg.promqlAllowLookingaheadOfEvalTime)
+
 	promlogflag.AddFlags(a, &cfg.promlogConfig)
 
 	_, err := a.Parse(os.Args[1:])
@@ -389,13 +393,14 @@ func main() {
 		scrapeManager = scrape.NewManager(log.With(logger, "component", "scrape manager"), fanoutStorage)
 
 		opts = promql.EngineOpts{
-			Logger:                   log.With(logger, "component", "query engine"),
-			Reg:                      prometheus.DefaultRegisterer,
-			MaxSamples:               cfg.queryMaxSamples,
-			Timeout:                  time.Duration(cfg.queryTimeout),
-			ActiveQueryTracker:       promql.NewActiveQueryTracker(cfg.localStoragePath, cfg.queryConcurrency, log.With(logger, "component", "activeQueryTracker")),
-			LookbackDelta:            time.Duration(cfg.lookbackDelta),
-			NoStepSubqueryIntervalFn: noStepSubqueryInterval.Get,
+			Logger:                      log.With(logger, "component", "query engine"),
+			Reg:                         prometheus.DefaultRegisterer,
+			MaxSamples:                  cfg.queryMaxSamples,
+			Timeout:                     time.Duration(cfg.queryTimeout),
+			ActiveQueryTracker:          promql.NewActiveQueryTracker(cfg.localStoragePath, cfg.queryConcurrency, log.With(logger, "component", "activeQueryTracker")),
+			LookbackDelta:               time.Duration(cfg.lookbackDelta),
+			NoStepSubqueryIntervalFn:    noStepSubqueryInterval.Get,
+			AllowLookingAheadOfEvalTime: cfg.promqlAllowLookingaheadOfEvalTime,
 		}
 
 		queryEngine = promql.NewEngine(opts)

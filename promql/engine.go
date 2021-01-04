@@ -208,20 +208,24 @@ type EngineOpts struct {
 	// NoStepSubqueryIntervalFn is the default evaluation interval of
 	// a subquery in milliseconds if no step in range vector was specified `[30m:<step>]`.
 	NoStepSubqueryIntervalFn func(rangeMillis int64) int64
+
+	// AllowLookingAheadOfEvalTime if true enables @ modifier. Disabled otherwise.
+	AllowLookingAheadOfEvalTime bool
 }
 
 // Engine handles the lifetime of queries from beginning to end.
 // It is connected to a querier.
 type Engine struct {
-	logger                   log.Logger
-	metrics                  *engineMetrics
-	timeout                  time.Duration
-	maxSamplesPerQuery       int
-	activeQueryTracker       *ActiveQueryTracker
-	queryLogger              QueryLogger
-	queryLoggerLock          sync.RWMutex
-	lookbackDelta            time.Duration
-	noStepSubqueryIntervalFn func(rangeMillis int64) int64
+	logger                      log.Logger
+	metrics                     *engineMetrics
+	timeout                     time.Duration
+	maxSamplesPerQuery          int
+	activeQueryTracker          *ActiveQueryTracker
+	queryLogger                 QueryLogger
+	queryLoggerLock             sync.RWMutex
+	lookbackDelta               time.Duration
+	noStepSubqueryIntervalFn    func(rangeMillis int64) int64
+	allowLookingAheadOfEvalTime bool
 }
 
 // NewEngine returns a new engine.
@@ -295,13 +299,14 @@ func NewEngine(opts EngineOpts) *Engine {
 	}
 
 	return &Engine{
-		timeout:                  opts.Timeout,
-		logger:                   opts.Logger,
-		metrics:                  metrics,
-		maxSamplesPerQuery:       opts.MaxSamples,
-		activeQueryTracker:       opts.ActiveQueryTracker,
-		lookbackDelta:            opts.LookbackDelta,
-		noStepSubqueryIntervalFn: opts.NoStepSubqueryIntervalFn,
+		timeout:                     opts.Timeout,
+		logger:                      opts.Logger,
+		metrics:                     metrics,
+		maxSamplesPerQuery:          opts.MaxSamples,
+		activeQueryTracker:          opts.ActiveQueryTracker,
+		lookbackDelta:               opts.LookbackDelta,
+		noStepSubqueryIntervalFn:    opts.NoStepSubqueryIntervalFn,
+		allowLookingAheadOfEvalTime: opts.AllowLookingAheadOfEvalTime,
 	}
 }
 
@@ -334,7 +339,10 @@ func (ng *Engine) NewInstantQuery(q storage.Queryable, qs string, ts time.Time) 
 	if err != nil {
 		return nil, err
 	}
-	qry := ng.newQuery(q, expr, ts, ts, 0)
+	qry, err := ng.newQuery(q, expr, ts, ts, 0)
+	if err != nil {
+		return nil, err
+	}
 	qry.q = qs
 
 	return qry, nil
@@ -350,13 +358,20 @@ func (ng *Engine) NewRangeQuery(q storage.Queryable, qs string, start, end time.
 	if expr.Type() != parser.ValueTypeVector && expr.Type() != parser.ValueTypeScalar {
 		return nil, errors.Errorf("invalid expression type %q for range query, must be Scalar or instant Vector", parser.DocumentedType(expr.Type()))
 	}
-	qry := ng.newQuery(q, expr, start, end, interval)
+	qry, err := ng.newQuery(q, expr, start, end, interval)
+	if err != nil {
+		return nil, err
+	}
 	qry.q = qs
 
 	return qry, nil
 }
 
-func (ng *Engine) newQuery(q storage.Queryable, expr parser.Expr, start, end time.Time, interval time.Duration) *query {
+func (ng *Engine) newQuery(q storage.Queryable, expr parser.Expr, start, end time.Time, interval time.Duration) (*query, error) {
+	if err := ng.validateOpts(expr); err != nil {
+		return nil, err
+	}
+
 	es := &parser.EvalStmt{
 		Expr:     WrapWithStepInvariantExpr(expr),
 		Start:    start,
@@ -369,7 +384,39 @@ func (ng *Engine) newQuery(q storage.Queryable, expr parser.Expr, start, end tim
 		stats:     stats.NewQueryTimers(),
 		queryable: q,
 	}
-	return qry
+	return qry, nil
+}
+
+func (ng *Engine) validateOpts(expr parser.Expr) error {
+	if ng.allowLookingAheadOfEvalTime {
+		return nil
+	}
+
+	var validationErr error
+	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
+		switch n := node.(type) {
+		case *parser.VectorSelector:
+			if n.Timestamp != nil {
+				validationErr = errors.New("@ modifier is disabled")
+				return validationErr
+			}
+
+		case *parser.MatrixSelector:
+			if n.VectorSelector.(*parser.VectorSelector).Timestamp != nil {
+				validationErr = errors.New("@ modifier is disabled")
+				return validationErr
+			}
+
+		case *parser.SubqueryExpr:
+			if n.Timestamp != nil {
+				validationErr = errors.New("@ modifier is disabled")
+				return validationErr
+			}
+		}
+		return nil
+	})
+
+	return validationErr
 }
 
 func (ng *Engine) newTestQuery(f func(context.Context) error) Query {

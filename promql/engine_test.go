@@ -2118,3 +2118,40 @@ func TestWrapWithStepInvariantExpr(t *testing.T) {
 		})
 	}
 }
+
+func TestEngineOptsValidation(t *testing.T) {
+	cases := []struct {
+		opts     EngineOpts
+		query    string
+		fail     bool
+		expError string
+	}{
+		{
+			opts:     EngineOpts{AllowLookingAheadOfEvalTime: false},
+			query:    "metric @ 100",
+			fail:     true,
+			expError: "@ modifier is disabled",
+		}, {
+			opts:  EngineOpts{AllowLookingAheadOfEvalTime: true},
+			query: "metric @ 100",
+		},
+	}
+
+	for _, c := range cases {
+		eng := NewEngine(c.opts)
+
+		_, err := eng.NewInstantQuery(nil, c.query, timestamp.Time(100))
+		if c.fail {
+			require.Equal(t, c.expError, err.Error())
+		} else {
+			require.Nil(t, err)
+		}
+
+		_, err = eng.NewRangeQuery(nil, c.query, timestamp.Time(100), timestamp.Time(200), time.Millisecond)
+		if c.fail {
+			require.Equal(t, c.expError, err.Error())
+		} else {
+			require.Nil(t, err)
+		}
+	}
+}
