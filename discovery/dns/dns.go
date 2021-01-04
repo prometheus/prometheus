@@ -213,6 +213,7 @@ func (d *Discovery) refreshOne(ctx context.Context, name string, ch chan<- *targ
 			target = hostPort(addr.AAAA.String(), d.port)
 		case *dns.CNAME:
 			// CNAME responses can occur with "Type: A" dns_sd_config requests.
+			continue
 		default:
 			level.Warn(d.logger).Log("msg", "Invalid record", "record", record)
 			continue
