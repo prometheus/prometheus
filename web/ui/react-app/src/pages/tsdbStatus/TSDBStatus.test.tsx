@@ -15,6 +15,7 @@ const fakeTSDBStatusResponse: {
   data: {
     headStats: {
       numSeries: 508,
+      numLabelPairs: 1234,
       chunkCount: 937,
       minTime: 1591516800000,
       maxTime: 1598896800143,
@@ -85,7 +86,7 @@ describe('TSDB Stats', () => {
         .at(0)
         .find('tbody')
         .find('td');
-      ['508', '937', '2020-06-07T08:00:00.000Z (1591516800000)', '2020-08-31T18:00:00.143Z (1598896800143)'].forEach(
+      ['508', '937', '1234', '2020-06-07T08:00:00.000Z (1591516800000)', '2020-08-31T18:00:00.143Z (1598896800143)'].forEach(
         (value, i) => {
           expect(headStats.at(i).text()).toEqual(value);
         }

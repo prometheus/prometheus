@@ -1236,10 +1236,11 @@ type stat struct {
 
 // HeadStats has information about the TSDB head.
 type HeadStats struct {
-	NumSeries  uint64 `json:"numSeries"`
-	ChunkCount int64  `json:"chunkCount"`
-	MinTime    int64  `json:"minTime"`
-	MaxTime    int64  `json:"maxTime"`
+	NumSeries     uint64 `json:"numSeries"`
+	NumLabelPairs uint64 `json:"numLabelPairs"`
+	ChunkCount    int64  `json:"chunkCount"`
+	MinTime       int64  `json:"minTime"`
+	MaxTime       int64  `json:"maxTime"`
 }
 
 // tsdbStatus has information of cardinality statistics from postings.
@@ -1281,10 +1282,11 @@ func (api *API) serveTSDBStatus(*http.Request) apiFuncResult {
 	}
 	return apiFuncResult{tsdbStatus{
 		HeadStats: HeadStats{
-			NumSeries:  s.NumSeries,
-			ChunkCount: chunkCount,
-			MinTime:    s.MinTime,
-			MaxTime:    s.MaxTime,
+			NumSeries:     s.NumSeries,
+			ChunkCount:    chunkCount,
+			MinTime:       s.MinTime,
+			MaxTime:       s.MaxTime,
+			NumLabelPairs: s.IndexPostingStats.NumLabelPairs,
 		},
 		SeriesCountByMetricName:     convertStats(s.IndexPostingStats.CardinalityMetricsStats),
 		LabelValueCountByLabelName:  convertStats(s.IndexPostingStats.CardinalityLabelStats),
