@@ -76,7 +76,7 @@ Prometheus has several flags that configure local storage. The most important ar
 
 * `--storage.tsdb.path`: Where Prometheus writes its database. Defaults to `data/`.
 * `--storage.tsdb.retention.time`: When to remove old data. Defaults to `15d`. Overrides `storage.tsdb.retention` if this flag is set to anything other than default.
-* `--storage.tsdb.retention.size`: [EXPERIMENTAL] The maximum number of bytes of storage blocks to retain. The oldest data will be removed first. Defaults to `0` or disabled. This flag is experimental and may change in future releases. Units supported: B, KB, MB, GB, TB, PB, EB. Ex: "512MB"
+* `--storage.tsdb.retention.size`: [EXPERIMENTAL] The maximum number of bytes of storage blocks to retain. The oldest data will be removed first. Defaults to `0` or disabled. This flag is experimental and may change in future releases. Units supported: B, KB, KiB, MB, MiB, GB, GiB, TB, TiB, PB,PiB, EB, EiB. Ex: "512MB". **Note** that KB here means the same as KiB etc., i.e. 1024B = 1KiB = 1KB, 1024KiB = 1024KB = 1MB = 1MiB, etc.".
 * `--storage.tsdb.retention`: Deprecated in favor of `storage.tsdb.retention.time`.
 * `--storage.tsdb.wal-compression`: Enables compression of the write-ahead log (WAL). Depending on your data, you can expect the WAL size to be halved with little extra cpu load. This flag was introduced in 2.11.0 and enabled by default in 2.20.0. Note that once enabled, downgrading Prometheus to a version below 2.11.0 will require deleting the WAL.
 

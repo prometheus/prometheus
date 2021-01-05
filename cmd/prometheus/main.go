@@ -211,7 +211,7 @@ func main() {
 	a.Flag("storage.tsdb.retention.time", "How long to retain samples in storage. When this flag is set it overrides \"storage.tsdb.retention\". If neither this flag nor \"storage.tsdb.retention\" nor \"storage.tsdb.retention.size\" is set, the retention time defaults to "+defaultRetentionString+". Units Supported: y, w, d, h, m, s, ms.").
 		SetValue(&newFlagRetentionDuration)
 
-	a.Flag("storage.tsdb.retention.size", "[EXPERIMENTAL] Maximum number of bytes that can be stored for blocks. A unit is required, supported units: B, KB, MB, GB, TB, PB, EB. Ex: \"512MB\". This flag is experimental and can be changed in future releases.").
+	a.Flag("storage.tsdb.retention.size", "[EXPERIMENTAL] Maximum number of bytes that can be stored for blocks. A unit is required, supported units: B, KB, KiB, MB, MiB, GB, GiB, TB, TiB, PB,PiB, EB, EiB. Ex: \"512MB\". This flag is experimental and can be changed in future releases. Note that KB here means the same as KiB etc., i.e. 1024B = 1KiB = 1KB, 1024KiB = 1024KB = 1MB = 1MiB, etc.").
 		BytesVar(&cfg.tsdb.MaxBytes)
 
 	a.Flag("storage.tsdb.no-lockfile", "Do not create lockfile in data directory.").
