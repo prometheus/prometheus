@@ -1,4 +1,4 @@
-## 2.24.0-rc.0 / 2020-12-30
+## 2.24.0 / 2021-01-06
 
 * [FEATURE] Add TLS and basic authentication to HTTP endpoints. #8316
 * [FEATURE] promtool: Add `check web-config` subcommand to check web config files. #8319
