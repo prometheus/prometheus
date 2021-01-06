@@ -1534,23 +1534,23 @@ var testExpr = []struct {
 	}, {
 		input:  `foo @ +Inf`,
 		fail:   true,
-		errMsg: "1:1: parse error: timestamp out of bound for @ modifier: +Inf",
+		errMsg: "1:1: parse error: timestamp out of bounds for @ modifier: +Inf",
 	}, {
 		input:  `foo @ -Inf`,
 		fail:   true,
-		errMsg: "1:1: parse error: timestamp out of bound for @ modifier: -Inf",
+		errMsg: "1:1: parse error: timestamp out of bounds for @ modifier: -Inf",
 	}, {
 		input:  `foo @ NaN`,
 		fail:   true,
-		errMsg: "1:1: parse error: timestamp out of bound for @ modifier: NaN",
+		errMsg: "1:1: parse error: timestamp out of bounds for @ modifier: NaN",
 	}, {
 		input:  fmt.Sprintf(`foo @ %f`, float64(math.MaxInt64)+1),
 		fail:   true,
-		errMsg: fmt.Sprintf("1:1: parse error: timestamp out of bound for @ modifier: %f", float64(math.MaxInt64)+1),
+		errMsg: fmt.Sprintf("1:1: parse error: timestamp out of bounds for @ modifier: %f", float64(math.MaxInt64)+1),
 	}, {
 		input:  fmt.Sprintf(`foo @ %f`, float64(math.MinInt64)-1),
 		fail:   true,
-		errMsg: fmt.Sprintf("1:1: parse error: timestamp out of bound for @ modifier: %f", float64(math.MinInt64)-1),
+		errMsg: fmt.Sprintf("1:1: parse error: timestamp out of bounds for @ modifier: %f", float64(math.MinInt64)-1),
 	}, {
 		input: `foo:bar{a="bc"}`,
 		expected: &VectorSelector{

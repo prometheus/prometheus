@@ -206,9 +206,9 @@ The same works for range vectors. This returns the 5-minute rate that
 
 ### @ modifier
 
-The `@` modifier allows changing the time for individual instant
+The `@` modifier allows changing the evaluation time for individual instant
 and range vectors in a query. The time supplied to `@` modifier
-is a unix timestamp and described with a float literal.
+is a unix timestamp and described with a float literal. 
 
 For example, the following expression returns the value of
 `http_requests_total` at `2021-01-04T07:40:00+00:00`:
@@ -229,9 +229,9 @@ The same works for range vectors. This returns the 5-minute rate that
 
     rate(http_requests_total[5m] @ 1609746000)
 
-`@` modifier supports all representation of float literal described
+`@` modifier supports all representation of float literals described
 above within the limits of `int64`. It can also be used along
-with `offset` modifier where the offset is applied w.r.t. the `@`
+with `offset` modifier where the offset is applied relative to the `@`
 modifier time irrespective of which modifier is written first.
 These 2 queries will produce the same result.
 
@@ -239,6 +239,10 @@ These 2 queries will produce the same result.
     http_requests_total @ 1609746000 offset 5m
     # offset before @
     http_requests_total offset 5m @ 1609746000
+
+This modifier is disabled by default for now since it breaks the earlier assumption that PromQL
+does not look ahead of the eval time for samples. It can be enabled by setting
+`--enable-feature=promql-at-modifier` flag. It will be enabled by default in the future.
 
 ## Subquery
 

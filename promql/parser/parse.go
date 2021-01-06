@@ -717,7 +717,7 @@ func (p *parser) addOffset(e Node, offset time.Duration) {
 func (p *parser) setTimestamp(e Node, ts float64) {
 	if math.IsInf(ts, -1) || math.IsInf(ts, 1) || math.IsNaN(ts) ||
 		ts >= float64(math.MaxInt64) || ts <= float64(math.MinInt64) {
-		p.addParseErrf(e.PositionRange(), "timestamp out of bound for @ modifier: %f", ts)
+		p.addParseErrf(e.PositionRange(), "timestamp out of bounds for @ modifier: %f", ts)
 	}
 	var timestampp **int64
 	var endPosp *Pos

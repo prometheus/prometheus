@@ -113,14 +113,6 @@ eval instant at 10s minute(metric @ 1500)
   {job="1"} 2
   {job="2"} 5
 
-# If nothing passed, minute() takes eval time.
-# Verifying that the optimisations for @ modifier does not affect this.
-eval instant at 90s minute()
-  {} 1
-
-eval instant at 150s minute()
-  {} 2
-
 # timestamp() takes the time of the sample and not the evaluation time.
 eval instant at 10m timestamp(metric{job="1"} @ 10)
   {job="1"} 10
@@ -141,7 +133,7 @@ eval instant at 0s sum_over_time(minute(metric @ 1500)[100s:10s])
   {job="2"} 55
 
 # If nothing passed, minute() takes eval time.
-# Here the eval time is decided by the subquery.
+# Here the eval time is determined by the subquery.
 # [50m:1m] at 6000, i.e. 100m, is 50m to 100m.
 # sum=50+51+52+...+59+0+1+2+...+40.
 eval instant at 0s sum_over_time(minute()[50m:1m] @ 6000)
@@ -151,7 +143,7 @@ eval instant at 0s sum_over_time(minute()[50m:1m] @ 6000)
 eval instant at 0s sum_over_time(minute()[50m:1m] @ 6000 offset 5m)
   {} 1410
 
-# time() is the eval time which is decided by subquery here.
+# time() is the eval time which is determined by subquery here.
 # 2900+2901+...+3000 = (3000*3001 - 2899*2900)/2.
 eval instant at 0s sum_over_time(vector(time())[100s:1s] @ 3000)
   {} 297950
@@ -166,7 +158,7 @@ eval instant at 0s sum_over_time(timestamp(metric{job="1"} @ 10)[100s:10s] @ 300
 
 # The result of inner timestamp() will have the timestamp as the
 # eval time, hence entire expression is not step invariant and depends on eval time.
-# Here eval time is decided by the subquery.
+# Here eval time is determined by the subquery.
 eval instant at 0s sum_over_time(timestamp(timestamp(metric{job="1"} @ 999))[10s:1s] @ 10)
   {job="1"} 55
 

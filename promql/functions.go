@@ -939,8 +939,8 @@ var FunctionCalls = map[string]FunctionCall{
 // AtModifierUnsafeFunctions are the functions whose result
 // can vary if evaluation time is changed when the arguments are
 // step invariant. It also includes functions that use the timestamp
-// of the passed argument to calculate a result since that can
-// also change with change in eval time.
+// of the passed instant vector argument to calculate a result since
+// that can also change with change in eval time.
 var AtModifierUnsafeFunctions = map[string]struct{}{
 	// Step invariant functions.
 	"days_in_month": {}, "day_of_month": {}, "day_of_week": {},

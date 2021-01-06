@@ -130,8 +130,9 @@ type SubqueryExpr struct {
 	// OriginalOffset is the actual offset that was set in the query.
 	// This never changes.
 	OriginalOffset time.Duration
-	// Offset is the offset used during the query execution.
-	// This can change because of the @ modifier.
+	// Offset is the offset used during the query execution
+	// which is calculated using the original offset, at modifier time,
+	// eval time, and subquery offsets in the AST tree.
 	Offset    time.Duration
 	Timestamp *int64
 	Step      time.Duration
@@ -185,8 +186,9 @@ type VectorSelector struct {
 	// OriginalOffset is the actual offset that was set in the query.
 	// This never changes.
 	OriginalOffset time.Duration
-	// Offset is the offset used during the query execution.
-	// This can change because of the @ modifier.
+	// Offset is the offset used during the query execution
+	// which is calculated using the original offset, at modifier time,
+	// eval time, and subquery offsets in the AST tree.
 	Offset        time.Duration
 	Timestamp     *int64
 	LabelMatchers []*labels.Matcher

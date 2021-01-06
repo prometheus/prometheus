@@ -209,23 +209,23 @@ type EngineOpts struct {
 	// a subquery in milliseconds if no step in range vector was specified `[30m:<step>]`.
 	NoStepSubqueryIntervalFn func(rangeMillis int64) int64
 
-	// AllowLookingAheadOfEvalTime if true enables @ modifier. Disabled otherwise.
-	AllowLookingAheadOfEvalTime bool
+	// EnableAtModifier if true enables @ modifier. Disabled otherwise.
+	EnableAtModifier bool
 }
 
 // Engine handles the lifetime of queries from beginning to end.
 // It is connected to a querier.
 type Engine struct {
-	logger                      log.Logger
-	metrics                     *engineMetrics
-	timeout                     time.Duration
-	maxSamplesPerQuery          int
-	activeQueryTracker          *ActiveQueryTracker
-	queryLogger                 QueryLogger
-	queryLoggerLock             sync.RWMutex
-	lookbackDelta               time.Duration
-	noStepSubqueryIntervalFn    func(rangeMillis int64) int64
-	allowLookingAheadOfEvalTime bool
+	logger                   log.Logger
+	metrics                  *engineMetrics
+	timeout                  time.Duration
+	maxSamplesPerQuery       int
+	activeQueryTracker       *ActiveQueryTracker
+	queryLogger              QueryLogger
+	queryLoggerLock          sync.RWMutex
+	lookbackDelta            time.Duration
+	noStepSubqueryIntervalFn func(rangeMillis int64) int64
+	enableAtModifier         bool
 }
 
 // NewEngine returns a new engine.
@@ -299,14 +299,14 @@ func NewEngine(opts EngineOpts) *Engine {
 	}
 
 	return &Engine{
-		timeout:                     opts.Timeout,
-		logger:                      opts.Logger,
-		metrics:                     metrics,
-		maxSamplesPerQuery:          opts.MaxSamples,
-		activeQueryTracker:          opts.ActiveQueryTracker,
-		lookbackDelta:               opts.LookbackDelta,
-		noStepSubqueryIntervalFn:    opts.NoStepSubqueryIntervalFn,
-		allowLookingAheadOfEvalTime: opts.AllowLookingAheadOfEvalTime,
+		timeout:                  opts.Timeout,
+		logger:                   opts.Logger,
+		metrics:                  metrics,
+		maxSamplesPerQuery:       opts.MaxSamples,
+		activeQueryTracker:       opts.ActiveQueryTracker,
+		lookbackDelta:            opts.LookbackDelta,
+		noStepSubqueryIntervalFn: opts.NoStepSubqueryIntervalFn,
+		enableAtModifier:         opts.EnableAtModifier,
 	}
 }
 
@@ -388,7 +388,7 @@ func (ng *Engine) newQuery(q storage.Queryable, expr parser.Expr, start, end tim
 }
 
 func (ng *Engine) validateOpts(expr parser.Expr) error {
-	if ng.allowLookingAheadOfEvalTime {
+	if ng.enableAtModifier {
 		return nil
 	}
 

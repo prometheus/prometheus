@@ -246,12 +246,12 @@ func (h *hintRecordingQuerier) Select(sortSeries bool, hints *storage.SelectHint
 
 func TestSelectHintsSetCorrectly(t *testing.T) {
 	opts := EngineOpts{
-		Logger:                      nil,
-		Reg:                         nil,
-		MaxSamples:                  10,
-		Timeout:                     10 * time.Second,
-		LookbackDelta:               5 * time.Second,
-		AllowLookingAheadOfEvalTime: true,
+		Logger:           nil,
+		Reg:              nil,
+		MaxSamples:       10,
+		Timeout:          10 * time.Second,
+		LookbackDelta:    5 * time.Second,
+		EnableAtModifier: true,
 	}
 
 	for _, tc := range []struct {
@@ -799,7 +799,7 @@ load 10s
 			End:        time.Unix(10, 0),
 			Interval:   5 * time.Second,
 		}, {
-			// The peak samples in memory is during first evaluation:
+			// The peak samples in memory is during the first evaluation:
 			//   - Subquery takes 22 samples, 11 for each bigmetric,
 			//   - Result is calculated per series where the series samples is buffered, hence 11 more here.
 			//   - The result of two series is added before the last series buffer is discarded, so 2 more here.
@@ -832,14 +832,14 @@ load 10s
 			Interval:   5 * time.Second,
 		}, {
 			// Nested subquery.
-			// We saw that inner most rate takes 35 samples which is still the peak
+			// We saw that innermost rate takes 35 samples which is still the peak
 			// since the other two subqueries just duplicate the result.
 			Query:      `rate(rate(bigmetric[10s:1s] @ 10)[100s:25s] @ 1000)[100s:20s] @ 2000`,
 			MaxSamples: 35,
 			Start:      time.Unix(10, 0),
 		}, {
 			// Nested subquery.
-			// Now the out most subquery produces more samples than inner most rate.
+			// Now the outmost subquery produces more samples than inner most rate.
 			Query:      `rate(rate(bigmetric[10s:1s] @ 10)[100s:25s] @ 1000)[17s:1s] @ 2000`,
 			MaxSamples: 36,
 			Start:      time.Unix(10, 0),
@@ -2097,31 +2097,26 @@ func TestEngineOptsValidation(t *testing.T) {
 		expError string
 	}{
 		{
-			opts:     EngineOpts{AllowLookingAheadOfEvalTime: false},
+			opts:     EngineOpts{EnableAtModifier: false},
 			query:    "metric @ 100",
 			fail:     true,
 			expError: "@ modifier is disabled",
 		}, {
-			opts:  EngineOpts{AllowLookingAheadOfEvalTime: true},
+			opts:  EngineOpts{EnableAtModifier: true},
 			query: "metric @ 100",
 		},
 	}
 
 	for _, c := range cases {
 		eng := NewEngine(c.opts)
-
-		_, err := eng.NewInstantQuery(nil, c.query, timestamp.Time(100))
+		_, err1 := eng.NewInstantQuery(nil, c.query, time.Unix(10, 0))
+		_, err2 := eng.NewRangeQuery(nil, c.query, time.Unix(0, 0), time.Unix(10, 0), time.Second)
 		if c.fail {
-			require.Equal(t, c.expError, err.Error())
+			require.Equal(t, c.expError, err1.Error())
+			require.Equal(t, c.expError, err2.Error())
 		} else {
-			require.Nil(t, err)
-		}
-
-		_, err = eng.NewRangeQuery(nil, c.query, timestamp.Time(100), timestamp.Time(200), time.Millisecond)
-		if c.fail {
-			require.Equal(t, c.expError, err.Error())
-		} else {
-			require.Nil(t, err)
+			require.Nil(t, err1)
+			require.Nil(t, err2)
 		}
 	}
 }
