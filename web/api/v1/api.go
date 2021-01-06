@@ -1237,7 +1237,7 @@ type stat struct {
 // HeadStats has information about the TSDB head.
 type HeadStats struct {
 	NumSeries     uint64 `json:"numSeries"`
-	NumLabelPairs uint64 `json:"numLabelPairs"`
+	NumLabelPairs int    `json:"numLabelPairs"`
 	ChunkCount    int64  `json:"chunkCount"`
 	MinTime       int64  `json:"minTime"`
 	MaxTime       int64  `json:"maxTime"`

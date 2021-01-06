@@ -115,7 +115,8 @@ type PostingsStats struct {
 	CardinalityLabelStats   []Stat
 	LabelValueStats         []Stat
 	LabelValuePairsStats    []Stat
-	NumLabelPairs           uint64
+	// TODO: Currently this is only counted for Head block. It will need to include persistent blocks in the future.
+	NumLabelPairs int
 }
 
 // Stats calculates the cardinality statistics from postings.
@@ -129,7 +130,7 @@ func (p *MemPostings) Stats(label string) *PostingsStats {
 	labels := &maxHeap{}
 	labelValueLength := &maxHeap{}
 	labelValuePairs := &maxHeap{}
-	numLabelPairs := uint64(0)
+	numLabelPairs := 0
 
 	metrics.init(maxNumOfRecords)
 	labels.init(maxNumOfRecords)
@@ -141,9 +142,9 @@ func (p *MemPostings) Stats(label string) *PostingsStats {
 			continue
 		}
 		labels.push(Stat{Name: n, Count: uint64(len(e))})
+		numLabelPairs += len(e)
 		size = 0
 		for name, values := range e {
-			numLabelPairs++
 			if n == label {
 				metrics.push(Stat{Name: name, Count: uint64(len(values))})
 			}
