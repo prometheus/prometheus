@@ -115,8 +115,7 @@ type PostingsStats struct {
 	CardinalityLabelStats   []Stat
 	LabelValueStats         []Stat
 	LabelValuePairsStats    []Stat
-	// TODO: Currently this is only counted for Head block. It will need to include persistent blocks in the future.
-	NumLabelPairs int
+	NumLabelPairs           int
 }
 
 // Stats calculates the cardinality statistics from postings.
