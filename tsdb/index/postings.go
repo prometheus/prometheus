@@ -115,6 +115,7 @@ type PostingsStats struct {
 	CardinalityLabelStats   []Stat
 	LabelValueStats         []Stat
 	LabelValuePairsStats    []Stat
+	NumLabelPairs           int
 }
 
 // Stats calculates the cardinality statistics from postings.
@@ -128,6 +129,7 @@ func (p *MemPostings) Stats(label string) *PostingsStats {
 	labels := &maxHeap{}
 	labelValueLength := &maxHeap{}
 	labelValuePairs := &maxHeap{}
+	numLabelPairs := 0
 
 	metrics.init(maxNumOfRecords)
 	labels.init(maxNumOfRecords)
@@ -139,6 +141,7 @@ func (p *MemPostings) Stats(label string) *PostingsStats {
 			continue
 		}
 		labels.push(Stat{Name: n, Count: uint64(len(e))})
+		numLabelPairs += len(e)
 		size = 0
 		for name, values := range e {
 			if n == label {
@@ -157,6 +160,7 @@ func (p *MemPostings) Stats(label string) *PostingsStats {
 		CardinalityLabelStats:   labels.get(),
 		LabelValueStats:         labelValueLength.get(),
 		LabelValuePairsStats:    labelValuePairs.get(),
+		NumLabelPairs:           numLabelPairs,
 	}
 }
 
