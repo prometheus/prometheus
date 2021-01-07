@@ -583,6 +583,21 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 		p.checkAST(n.VectorSelector)
 
 	case *VectorSelector:
+		if n.Name != "" {
+			// In this case the last LabelMatcher is checking for the metric name
+			// set outside the braces. This checks if the name has already been set
+			// previously.
+			for _, m := range n.LabelMatchers[0 : len(n.LabelMatchers)-1] {
+				if m != nil && m.Name == labels.MetricName {
+					p.addParseErrf(n.PositionRange(), "metric name must not be set twice: %q or %q", n.Name, m.Value)
+				}
+			}
+
+			// Skip the check for non-empty matchers because an explicit
+			// metric name is a non-empty matcher.
+			break
+		}
+
 		// A Vector selector must contain at least one non-empty matcher to prevent
 		// implicit selection of all metrics (e.g. by a typo).
 		notEmpty := false
@@ -594,17 +609,6 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 		}
 		if !notEmpty {
 			p.addParseErrf(n.PositionRange(), "vector selector must contain at least one non-empty matcher")
-		}
-
-		if n.Name != "" {
-			// In this case the last LabelMatcher is checking for the metric name
-			// set outside the braces. This checks if the name has already been set
-			// previously
-			for _, m := range n.LabelMatchers[0 : len(n.LabelMatchers)-1] {
-				if m != nil && m.Name == labels.MetricName {
-					p.addParseErrf(n.PositionRange(), "metric name must not be set twice: %q or %q", n.Name, m.Value)
-				}
-			}
 		}
 
 	case *NumberLiteral, *StringLiteral:
