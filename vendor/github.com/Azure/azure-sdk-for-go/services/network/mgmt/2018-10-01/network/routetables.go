@@ -225,6 +225,7 @@ func (client RouteTablesClient) Get(ctx context.Context, resourceGroupName strin
 	result, err = client.GetResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.RouteTablesClient", "Get", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -303,6 +304,7 @@ func (client RouteTablesClient) List(ctx context.Context, resourceGroupName stri
 	result.rtlr, err = client.ListResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.RouteTablesClient", "List", resp, "Failure responding to request")
+		return
 	}
 	if result.rtlr.hasNextLink() && result.rtlr.IsEmpty() {
 		err = result.NextWithContext(ctx)
@@ -366,6 +368,7 @@ func (client RouteTablesClient) listNextResults(ctx context.Context, lastResults
 	result, err = client.ListResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.RouteTablesClient", "listNextResults", resp, "Failure responding to next results request")
+		return
 	}
 	return
 }
@@ -415,6 +418,7 @@ func (client RouteTablesClient) ListAll(ctx context.Context) (result RouteTableL
 	result.rtlr, err = client.ListAllResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.RouteTablesClient", "ListAll", resp, "Failure responding to request")
+		return
 	}
 	if result.rtlr.hasNextLink() && result.rtlr.IsEmpty() {
 		err = result.NextWithContext(ctx)
@@ -477,6 +481,7 @@ func (client RouteTablesClient) listAllNextResults(ctx context.Context, lastResu
 	result, err = client.ListAllResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.RouteTablesClient", "listAllNextResults", resp, "Failure responding to next results request")
+		return
 	}
 	return
 }

@@ -232,6 +232,7 @@ func (client P2sVpnServerConfigurationsClient) Get(ctx context.Context, resource
 	result, err = client.GetResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.P2sVpnServerConfigurationsClient", "Get", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -309,6 +310,7 @@ func (client P2sVpnServerConfigurationsClient) ListByVirtualWan(ctx context.Cont
 	result.lpvscr, err = client.ListByVirtualWanResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.P2sVpnServerConfigurationsClient", "ListByVirtualWan", resp, "Failure responding to request")
+		return
 	}
 	if result.lpvscr.hasNextLink() && result.lpvscr.IsEmpty() {
 		err = result.NextWithContext(ctx)
@@ -373,6 +375,7 @@ func (client P2sVpnServerConfigurationsClient) listByVirtualWanNextResults(ctx c
 	result, err = client.ListByVirtualWanResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.P2sVpnServerConfigurationsClient", "listByVirtualWanNextResults", resp, "Failure responding to next results request")
+		return
 	}
 	return
 }

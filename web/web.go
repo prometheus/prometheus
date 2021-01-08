@@ -50,6 +50,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
 	"github.com/prometheus/common/server"
+	"github.com/prometheus/exporter-toolkit/https"
 	"go.uber.org/atomic"
 	"golang.org/x/net/netutil"
 
@@ -524,13 +525,13 @@ func (h *Handler) Reload() <-chan chan error {
 	return h.reloadCh
 }
 
-// Run serves the HTTP endpoints.
-func (h *Handler) Run(ctx context.Context) error {
+// Listener creates the TCP listener for web requests.
+func (h *Handler) Listener() (net.Listener, error) {
 	level.Info(h.logger).Log("msg", "Start listening for connections", "address", h.options.ListenAddress)
 
 	listener, err := net.Listen("tcp", h.options.ListenAddress)
 	if err != nil {
-		return err
+		return listener, err
 	}
 	listener = netutil.LimitListener(listener, h.options.MaxConnections)
 
@@ -539,6 +540,18 @@ func (h *Handler) Run(ctx context.Context) error {
 		conntrack.TrackWithName("http"),
 		conntrack.TrackWithTracing())
 
+	return listener, nil
+}
+
+// Run serves the HTTP endpoints.
+func (h *Handler) Run(ctx context.Context, listener net.Listener, httpsConfig string) error {
+	if listener == nil {
+		var err error
+		listener, err = h.Listener()
+		if err != nil {
+			return err
+		}
+	}
 	operationName := nethttp.OperationNameFunc(func(r *http.Request) string {
 		return fmt.Sprintf("%s %s", r.Method, r.URL.Path)
 	})
@@ -567,7 +580,7 @@ func (h *Handler) Run(ctx context.Context) error {
 
 	errCh := make(chan error)
 	go func() {
-		errCh <- httpSrv.Serve(listener)
+		errCh <- https.Serve(listener, httpSrv, httpsConfig, h.logger)
 	}()
 
 	select {

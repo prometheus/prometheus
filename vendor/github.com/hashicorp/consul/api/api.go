@@ -254,6 +254,11 @@ type QueryMeta struct {
 	// CacheAge is set if request was ?cached and indicates how stale the cached
 	// response is.
 	CacheAge time.Duration
+
+	// DefaultACLPolicy is used to control the ACL interaction when there is no
+	// defined policy. This can be "allow" which means ACLs are used to
+	// deny-list, or "deny" which means ACLs are allow-lists.
+	DefaultACLPolicy string
 }
 
 // WriteMeta is used to return meta data about a write
@@ -305,7 +310,7 @@ type Config struct {
 	TokenFile string
 
 	// Namespace is the name of the namespace to send along for the request
-	// when no other Namespace ispresent in the QueryOptions
+	// when no other Namespace is present in the QueryOptions
 	Namespace string
 
 	TLSConfig TLSConfig
@@ -960,6 +965,12 @@ func parseQueryMeta(resp *http.Response, q *QueryMeta) error {
 		q.AddressTranslationEnabled = true
 	default:
 		q.AddressTranslationEnabled = false
+	}
+
+	// Parse X-Consul-Default-ACL-Policy
+	switch v := header.Get("X-Consul-Default-ACL-Policy"); v {
+	case "allow", "deny":
+		q.DefaultACLPolicy = v
 	}
 
 	// Parse Cache info

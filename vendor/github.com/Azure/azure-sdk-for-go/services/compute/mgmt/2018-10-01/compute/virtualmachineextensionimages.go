@@ -72,6 +72,7 @@ func (client VirtualMachineExtensionImagesClient) Get(ctx context.Context, locat
 	result, err = client.GetResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachineExtensionImagesClient", "Get", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -148,6 +149,7 @@ func (client VirtualMachineExtensionImagesClient) ListTypes(ctx context.Context,
 	result, err = client.ListTypesResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachineExtensionImagesClient", "ListTypes", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -223,6 +225,7 @@ func (client VirtualMachineExtensionImagesClient) ListVersions(ctx context.Conte
 	result, err = client.ListVersionsResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.VirtualMachineExtensionImagesClient", "ListVersions", resp, "Failure responding to request")
+		return
 	}
 
 	return

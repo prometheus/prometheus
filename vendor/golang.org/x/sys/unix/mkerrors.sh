@@ -561,6 +561,7 @@ ccflags="$@"
 		$2 ~ /^(HDIO|WIN|SMART)_/ ||
 		$2 ~ /^CRYPTO_/ ||
 		$2 ~ /^TIPC_/ ||
+		$2 !~  "DEVLINK_RELOAD_LIMITS_VALID_MASK" &&
 		$2 ~ /^DEVLINK_/ ||
 		$2 ~ /^LWTUNNEL_IP/ ||
 		$2 !~ "WMESGLEN" &&
