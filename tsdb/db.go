@@ -56,7 +56,7 @@ const (
 	// about removing those too on start to save space. Currently only blocks tmp dirs are removed.
 	tmpForDeletionBlockDirSuffix = ".tmp-for-deletion"
 	tmpForCreationBlockDirSuffix = ".tmp-for-creation"
-	// Pre-2.21 suffix for tmp dirs
+	// Pre-2.21 tmp dir suffix, used in clean-up functions.
 	tmpLegacy = ".tmp"
 )
 
