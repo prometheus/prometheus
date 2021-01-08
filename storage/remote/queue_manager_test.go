@@ -100,7 +100,7 @@ func TestSampleDelivery(t *testing.T) {
 	require.NoError(t, s.ApplyConfig(conf))
 	hash, err := toHash(writeConfig)
 	require.NoError(t, err)
-	qm := s.rws.queues[hash]
+	qm := s.Write.queues[hash]
 	qm.SetClient(c)
 
 	qm.StoreSeries(series, 0)

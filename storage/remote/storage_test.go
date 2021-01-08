@@ -55,7 +55,7 @@ func TestStorageLifecycle(t *testing.T) {
 	require.NoError(t, s.ApplyConfig(conf))
 
 	// make sure remote write has a queue.
-	require.Equal(t, 1, len(s.rws.queues))
+	require.Equal(t, 1, len(s.Write.queues))
 
 	// make sure remote write has a queue.
 	require.Equal(t, 1, len(s.queryables))
