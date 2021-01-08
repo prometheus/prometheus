@@ -101,7 +101,7 @@ func TestNoDuplicateReadConfigs(t *testing.T) {
 				RemoteReadConfigs: tc.cfgs,
 			}
 			err := s.ApplyConfig(conf)
-			prometheus.Unregister(s.rws.highestTimestamp)
+			prometheus.Unregister(s.Write.highestTimestamp)
 			gotError := err != nil
 			require.Equal(t, tc.err, gotError)
 			require.NoError(t, s.Close())
