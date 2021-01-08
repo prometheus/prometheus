@@ -938,7 +938,7 @@ var FunctionCalls = map[string]FunctionCall{
 
 // AtModifierUnsafeFunctions are the functions whose result
 // can vary if evaluation time is changed when the arguments are
-// step invariant. It also includes functions that use the timestamp
+// step invariant. It also includes functions that use the timestamps
 // of the passed instant vector argument to calculate a result since
 // that can also change with change in eval time.
 var AtModifierUnsafeFunctions = map[string]struct{}{

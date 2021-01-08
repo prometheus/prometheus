@@ -240,8 +240,8 @@ These 2 queries will produce the same result.
     # offset before @
     http_requests_total offset 5m @ 1609746000
 
-This modifier is disabled by default for now since it breaks the earlier assumption that PromQL
-does not look ahead of the eval time for samples. It can be enabled by setting
+This modifier is disabled by default since it breaks the invariant that PromQL
+does not look ahead of the evaluation time for samples. It can be enabled by setting
 `--enable-feature=promql-at-modifier` flag. It will be enabled by default in the future.
 
 ## Subquery
