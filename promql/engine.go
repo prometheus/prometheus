@@ -1676,7 +1676,7 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 				insertedSigs = map[uint64]struct{}{}
 				matchedSigs[sig] = insertedSigs
 			} else if _, duplicate := insertedSigs[insertSig]; duplicate {
-                ev.errorf("multiple matches for labels: grouping labels must ensure unique matches: duplicate metric found %s as a result of the operation [%s, %s]", metric.Metric.String(), ls.Metric.String(), rs.Metric.String())
+                ev.errorf("multiple matches for labels: grouping labels must ensure unique matches: duplicate metric %s found as a result of the operation [%s, %s]", metric.Metric.String(), ls.Metric.String(), rs.Metric.String())
 			}
 			insertedSigs[insertSig] = struct{}{}
 		}
