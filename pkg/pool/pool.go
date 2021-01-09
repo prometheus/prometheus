@@ -16,6 +16,7 @@ package pool
 import (
 	"fmt"
 	"reflect"
+	"sort"
 	"sync"
 )
 
@@ -57,13 +58,10 @@ func New(minSize, maxSize int, factor float64, makeFunc func(int) interface{}) *
 
 // Get returns a new byte slices that fits the given size.
 func (p *Pool) Get(sz int) interface{} {
-	for i, bktSize := range p.sizes {
-		if sz > bktSize {
-			continue
-		}
-		b := p.buckets[i].Get()
+	if idx, ok := p.index(sz); ok {
+		b := p.buckets[idx].Get()
 		if b == nil {
-			b = p.make(bktSize)
+			b = p.make(p.sizes[idx])
 		}
 		return b
 	}
@@ -77,11 +75,12 @@ func (p *Pool) Put(s interface{}) {
 	if slice.Kind() != reflect.Slice {
 		panic(fmt.Sprintf("%+v is not a slice", slice))
 	}
-	for i, size := range p.sizes {
-		if slice.Cap() > size {
-			continue
-		}
-		p.buckets[i].Put(slice.Slice(0, 0).Interface())
-		return
+	if idx, ok := p.index(slice.Cap()); ok {
+		p.buckets[idx].Put(slice.Slice(0, 0).Interface())
 	}
+}
+
+func (p *Pool) index(size int) (int, bool) {
+	index := sort.SearchInts(p.sizes, size)
+	return index, index != len(p.sizes)
 }
