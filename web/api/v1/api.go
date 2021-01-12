@@ -82,7 +82,7 @@ const (
 )
 
 var (
-	LocalhostRepresentations = []string{"127.0.0.1", "localhost"}
+	LocalhostRepresentations = []string{"127.0.0.1", "localhost", "::1"}
 	remoteReadQueries        = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace: namespace,
 		Subsystem: subsystem,
@@ -753,7 +753,11 @@ type GlobalURLOptions struct {
 func getGlobalURL(u *url.URL, opts GlobalURLOptions) (*url.URL, error) {
 	host, port, err := net.SplitHostPort(u.Host)
 	if err != nil {
-		return u, err
+		if strings.HasSuffix(err.Error(), "missing port in address") {
+			host = u.Host
+		} else {
+			return u, err
+		}
 	}
 
 	for _, lhr := range LocalhostRepresentations {
@@ -780,9 +784,16 @@ func getGlobalURL(u *url.URL, opts GlobalURLOptions) (*url.URL, error) {
 				// this port, but it's still the best possible guess.
 				host, _, err := net.SplitHostPort(opts.Host)
 				if err != nil {
-					return u, err
+					if strings.HasSuffix(err.Error(), "missing port in address") {
+						host = opts.Host
+					} else {
+						return u, err
+					}
 				}
-				u.Host = host + ":" + port
+				u.Host = host
+				if port != "" {
+					u.Host += ":" + port
+				}
 			}
 			break
 		}
