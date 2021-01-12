@@ -197,6 +197,8 @@ func endpointSliceSourceFromNamespaceAndName(namespace, name string) string {
 }
 
 const (
+	endpointSliceLabelPrefix                        = metaLabelPrefix + "endpointslice_label_"
+	endpointSliceLabelPresentPrefix                 = metaLabelPrefix + "endpointslice_labelpresent_"
 	endpointSliceNameLabel                          = metaLabelPrefix + "endpointslice_name"
 	endpointSliceAddressTypeLabel                   = metaLabelPrefix + "endpointslice_address_type"
 	endpointSlicePortNameLabel                      = metaLabelPrefix + "endpointslice_port_name"
@@ -221,7 +223,11 @@ func (e *EndpointSlice) buildEndpointSlice(eps *disv1beta1.EndpointSlice) *targe
 		endpointSliceAddressTypeLabel: lv(string(eps.AddressType)),
 	}
 	e.addServiceLabels(eps, tg)
-
+	for k, v := range eps.Labels {
+		ln := strutil.SanitizeLabelName(k)
+		tg.Labels[model.LabelName(endpointSliceLabelPrefix+ln)] = lv(v)
+		tg.Labels[model.LabelName(endpointSliceLabelPresentPrefix+ln)] = presentValue
+	}
 	type podEntry struct {
 		pod          *apiv1.Pod
 		servicePorts []disv1beta1.EndpointPort
