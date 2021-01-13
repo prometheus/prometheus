@@ -46,8 +46,8 @@ import (
 	"github.com/prometheus/common/promlog"
 	promlogflag "github.com/prometheus/common/promlog/flag"
 	"github.com/prometheus/common/version"
-	"github.com/prometheus/exporter-toolkit/https"
-	httpsflag "github.com/prometheus/exporter-toolkit/https/kingpinflag"
+	toolkit_web "github.com/prometheus/exporter-toolkit/web"
+	toolkit_webflag "github.com/prometheus/exporter-toolkit/web/kingpinflag"
 	jcfg "github.com/uber/jaeger-client-go/config"
 	jprom "github.com/uber/jaeger-lib/metrics/prometheus"
 	"go.uber.org/atomic"
@@ -153,7 +153,7 @@ func main() {
 	a.Flag("web.listen-address", "Address to listen on for UI, API, and telemetry.").
 		Default("0.0.0.0:9090").StringVar(&cfg.web.ListenAddress)
 
-	httpsConfig := httpsflag.AddFlags(a)
+	webConfig := toolkit_webflag.AddFlags(a)
 
 	a.Flag("web.read-timeout",
 		"Maximum duration before timing out read of the request, and closing idle connections.").
@@ -568,7 +568,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	err = https.Validate(*httpsConfig)
+	err = toolkit_web.Validate(*webConfig)
 	if err != nil {
 		level.Error(logger).Log("msg", "Unable to validate web configuration file", "err", err)
 		os.Exit(1)
@@ -788,7 +788,7 @@ func main() {
 		// Web handler.
 		g.Add(
 			func() error {
-				if err := webHandler.Run(ctxWeb, listener, *httpsConfig); err != nil {
+				if err := webHandler.Run(ctxWeb, listener, *webConfig); err != nil {
 					return errors.Wrapf(err, "error starting web server")
 				}
 				return nil
