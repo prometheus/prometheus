@@ -155,7 +155,7 @@ func (l labelGenericQueriers) SplitByHalf() (labelGenericQueriers, labelGenericQ
 }
 
 // LabelValues returns all potential values for a label name.
-func (q *mergeGenericQuerier) LabelValues(name string) ([]string, Warnings, error) {
+func (q *mergeGenericQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, Warnings, error) {
 	res, ws, err := q.lvals(q.queriers, name)
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "LabelValues() from merge generic querier for label %s", name)

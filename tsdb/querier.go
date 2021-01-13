@@ -83,8 +83,8 @@ func newBlockBaseQuerier(b BlockReader, mint, maxt int64) (*blockBaseQuerier, er
 	}, nil
 }
 
-func (q *blockBaseQuerier) LabelValues(name string) ([]string, storage.Warnings, error) {
-	res, err := q.index.SortedLabelValues(name)
+func (q *blockBaseQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
+	res, err := q.index.SortedLabelValues(name, matchers...)
 	return res, nil, err
 }
 

@@ -1598,8 +1598,8 @@ func (h *headIndexReader) Symbols() index.StringIter {
 
 // SortedLabelValues returns label values present in the head for the
 // specific label name that are within the time range mint to maxt.
-func (h *headIndexReader) SortedLabelValues(name string) ([]string, error) {
-	values, err := h.LabelValues(name)
+func (h *headIndexReader) SortedLabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
+	values, err := h.LabelValues(name, matchers...)
 	if err == nil {
 		sort.Strings(values)
 	}
@@ -1608,14 +1608,36 @@ func (h *headIndexReader) SortedLabelValues(name string) ([]string, error) {
 
 // LabelValues returns label values present in the head for the
 // specific label name that are within the time range mint to maxt.
-func (h *headIndexReader) LabelValues(name string) ([]string, error) {
+func (h *headIndexReader) LabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
 	h.head.symMtx.RLock()
 	defer h.head.symMtx.RUnlock()
 	if h.maxt < h.head.MinTime() || h.mint > h.head.MaxTime() {
 		return []string{}, nil
 	}
 
-	values := h.head.postings.LabelValues(name)
+	p, err := PostingsForMatchers(h, matchers...)
+	if err != nil {
+		return nil, err
+	}
+
+	dedupe := map[string]interface{}{}
+	for p.Next() {
+		err, v := h.head.LabelValueFor(p.At(), name)
+		if err != nil {
+			return nil, err
+		}
+		dedupe[v] = nil
+	}
+	if err := p.Err(); err != nil {
+		return nil, err
+	}
+
+	values := make([]string, 0, len(dedupe))
+	for value := range dedupe {
+		values = append(values, value)
+	}
+
+	sort.Strings(values)
 	return values, nil
 }
 

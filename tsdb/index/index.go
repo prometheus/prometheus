@@ -1443,8 +1443,8 @@ func (r *Reader) SymbolTableSize() uint64 {
 // SortedLabelValues returns value tuples that exist for the given label name.
 // It is not safe to use the return value beyond the lifetime of the byte slice
 // passed into the Reader.
-func (r *Reader) SortedLabelValues(name string) ([]string, error) {
-	values, err := r.LabelValues(name)
+func (r *Reader) SortedLabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
+	values, err := r.LabelValues(name, matchers...)
 	if err == nil && r.version == FormatV1 {
 		sort.Strings(values)
 	}
@@ -1454,7 +1454,7 @@ func (r *Reader) SortedLabelValues(name string) ([]string, error) {
 // LabelValues returns value tuples that exist for the given label name.
 // It is not safe to use the return value beyond the lifetime of the byte slice
 // passed into the Reader.
-func (r *Reader) LabelValues(name string) ([]string, error) {
+func (r *Reader) LabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
 	if r.version == FormatV1 {
 		e, ok := r.postingsV1[name]
 		if !ok {
@@ -1518,6 +1518,25 @@ func (r *Reader) Series(id uint64, lbls *labels.Labels, chks *[]chunks.Meta) err
 		return d.Err()
 	}
 	return errors.Wrap(r.dec.Series(d.Get(), lbls, chks), "read series")
+}
+
+func (r *Reader) LabelValueFor(id uint64, label string) (string, error) {
+	offset := id
+	// In version 2 series IDs are no longer exact references but series are 16-byte padded
+	// and the ID is the multiple of 16 of the actual position.
+	if r.version == FormatV2 {
+		offset = id * 16
+	}
+	d := encoding.NewDecbufUvarintAt(r.b, int(offset), castagnoliTable)
+	if d.Err() != nil {
+		return "", d.Err()
+	}
+
+	v, err := r.dec.LabelValueFor(d.Get(), label)
+	if err != nil {
+		return "", errors.Wrap(err, "label values for")
+	}
+	return v, nil
 }
 
 func (r *Reader) Postings(name string, values ...string) (Postings, error) {
@@ -1681,6 +1700,37 @@ func (dec *Decoder) Postings(b []byte) (int, Postings, error) {
 	n := d.Be32int()
 	l := d.Get()
 	return n, newBigEndianPostings(l), d.Err()
+}
+
+// LabelValueFor decodes a label for a given series.
+func (dec *Decoder) LabelValueFor(b []byte, label string) (string, error) {
+
+	d := encoding.Decbuf{B: b}
+	k := d.Uvarint()
+
+	for i := 0; i < k; i++ {
+		lno := uint32(d.Uvarint())
+		lvo := uint32(d.Uvarint())
+
+		if d.Err() != nil {
+			return "", errors.Wrap(d.Err(), "read series label offsets")
+		}
+
+		ln, err := dec.LookupSymbol(lno)
+		if err != nil {
+			return "", errors.Wrap(err, "lookup label name")
+		}
+		lv, err := dec.LookupSymbol(lvo)
+		if err != nil {
+			return "", errors.Wrap(err, "lookup label value")
+		}
+
+		if ln == label {
+			return lv, nil
+		}
+	}
+
+	return "", nil
 }
 
 // Series decodes a series entry from the given byte slice into lset and chks.
