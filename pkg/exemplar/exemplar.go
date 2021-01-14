@@ -27,8 +27,7 @@ type Exemplar struct {
 
 // Equals compares if the exemplar e is the same as e2.
 func (e Exemplar) Equals(e2 Exemplar) bool {
-	// todo (callum) enforce sorted ordering of labels, then just compare labelsets as string?
-	if e.Labels.Hash() != e2.Labels.Hash() {
+	if e.Labels.String() != e2.Labels.String() {
 		return false
 	}
 

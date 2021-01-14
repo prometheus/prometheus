@@ -1319,9 +1319,6 @@ loop:
 			_, err = sl.checkAddError(ce, met, tp, err, &sampleLimitErr, &appErrs)
 			switch err {
 			case nil:
-				if tp == nil {
-					sl.cache.trackStaleness(ce.hash, ce.lset)
-				}
 				if hasExemplar := p.Exemplar(&e); hasExemplar {
 					if err := exemplarApp.AddExemplar(ce.lset, t, e); err != nil {
 						if err != storage.ErrDuplicateExemplar {
@@ -1364,9 +1361,7 @@ loop:
 				// todo: This smells funny.
 				if hasExemplar := p.Exemplar(&e); hasExemplar {
 					if err := exemplarApp.AddExemplar(lset, t, e); err != nil {
-						if err == storage.ErrDuplicateExemplar {
-							level.Debug(sl.l).Log("msg", "Duplicate exemplar", "seriesLabels", lset, "exemplar", e)
-						} else {
+						if err != storage.ErrDuplicateExemplar {
 							level.Debug(sl.l).Log("msg", "unexpected error", "error", err, "seriesLabels", lset, "exemplar", e)
 						}
 					}

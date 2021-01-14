@@ -518,7 +518,7 @@ func (api *API) queryExemplars(r *http.Request) apiFuncResult {
 	var series []storage.SeriesSet
 
 	for _, selectorArr := range selectors {
-		series = append(series, q.Select(false, nil, selectorArr...))
+		series = append(series, q.Select(false, &storage.SelectHints{Func: "series"}, selectorArr...))
 	}
 
 	for _, s := range series {

@@ -27,7 +27,6 @@ type CircularExemplarStorage struct {
 	index       map[string]int
 	exemplars   []*circularBufferEntry
 	nextIndex   int
-	len         int
 	secondaries []storage.ExemplarAppender
 }
 
@@ -52,7 +51,6 @@ func NewCircularExemplarStorage(len int, secondaries ...storage.ExemplarAppender
 	return &CircularExemplarStorage{
 		exemplars:   make([]*circularBufferEntry, len),
 		index:       make(map[string]int),
-		len:         len,
 		secondaries: secondaries,
 	}
 }
@@ -105,12 +103,12 @@ func (ce *CircularExemplarStorage) Select(start, end int64, l labels.Labels) ([]
 		}
 
 		lastTs = ce.exemplars[idx].se.scrapeTimestamp
-		// Prepend since this exemplar came before the last one we appeneded chronologically.
 		if e.Ts >= start && e.Ts <= end {
-			ret = append([]exemplar.Exemplar{e}, ret...)
+			ret = append(ret, e)
 		}
 		idx = ce.exemplars[idx].prev
 	}
+	reverseExemplars(ret)
 	return ret, nil
 }
 
@@ -141,12 +139,9 @@ func (ce *CircularExemplarStorage) indexGcCheck(cbe *circularBufferEntry) {
 
 func (ce *CircularExemplarStorage) addExemplar(l labels.Labels, t int64, e exemplar.Exemplar) error {
 	seriesLabels := l.String()
-	ce.lock.RLock()
-	idx, ok := ce.index[seriesLabels]
-	ce.lock.RUnlock()
-
 	ce.lock.Lock()
 	defer ce.lock.Unlock()
+	idx, ok := ce.index[seriesLabels]
 
 	if !ok {
 		ce.indexGcCheck(ce.exemplars[ce.nextIndex])
@@ -154,8 +149,9 @@ func (ce *CircularExemplarStorage) addExemplar(l labels.Labels, t int64, e exemp
 		// since this is the first exemplar stored for this series.
 		ce.exemplars[ce.nextIndex] = &circularBufferEntry{
 			se: storageExemplar{
-				exemplar:     e,
-				seriesLabels: l,
+				exemplar:        e,
+				seriesLabels:    l,
+				scrapeTimestamp: t,
 			},
 			prev: -1}
 		ce.index[seriesLabels] = ce.nextIndex
@@ -204,6 +200,12 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, t int64, e exemp
 
 // For use in tests, clears the entire exemplar storage.
 func (ce *CircularExemplarStorage) Reset() {
-	ce.exemplars = make([]*circularBufferEntry, ce.len)
+	ce.exemplars = make([]*circularBufferEntry, len(ce.exemplars))
 	ce.index = make(map[string]int)
+}
+
+func reverseExemplars(b []exemplar.Exemplar) {
+	for i, j := 0, len(b)-1; i < j; i, j = i+1, j-1 {
+		b[i], b[j] = b[j], b[i]
+	}
 }
