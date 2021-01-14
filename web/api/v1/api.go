@@ -297,8 +297,8 @@ func (api *API) Register(r *route.Router) {
 	r.Post("/query", wrap(api.query))
 	r.Get("/query_range", wrap(api.queryRange))
 	r.Post("/query_range", wrap(api.queryRange))
-	r.Get("/query_exemplar", wrap(api.queryExemplars))
-	r.Post("/query_exemplar", wrap(api.queryExemplars))
+	r.Get("/query_exemplars", wrap(api.queryExemplars))
+	r.Post("/query_exemplars", wrap(api.queryExemplars))
 
 	r.Get("/labels", wrap(api.labelNames))
 	r.Post("/labels", wrap(api.labelNames))
