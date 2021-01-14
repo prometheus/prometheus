@@ -72,11 +72,22 @@ series: <string>
 # Expanding notation:
 #     'a+bxc' becomes 'a a+b a+(2*b) a+(3*b) … a+(c*b)'
 #     'a-bxc' becomes 'a a-b a-(2*b) a-(3*b) … a-(c*b)'
+#     '  axc' becomes 'a a … a'
 # Examples:
 #     1. '-2+4x3' becomes '-2 2 6 10'
 #     2. ' 1-2x4' becomes '1 -1 -3 -5 -7'
+#     3. '   1x4' becomes '1 1 1 1'
+#
+# '_' may be used in place of a number to indicate no value at that time.
+#
+# Additionally the keyboard 'stale' may be used to explicitly mark a series as
+# stale.
 values: <string>
 ```
+
+`stale` is not possible to repeat using the expanding notation, but it is not
+needed, instead for a period of 10 minutes where a value is stale use: `stale _x9`. See
+[staleness](../querying/basics.md#staleness) for more discussion on staleness in Prometheus.
 
 ### `<alert_test_case>`
 
