@@ -5,9 +5,11 @@ sort_rank: 10
 
 # Disabled Features
 
-Here is a list of features that are disabled by default since they are breaking changes.
-They can be enabled using the `--enable-feature` flag and will be enabled by default
-in future when it's adopted widely.
+Here is a list of features that are disabled by default since they are breaking changes or are considered experimental.
+Their behaviour can change in future releases which will be communicated via the [release changelog](https://github.com/prometheus/prometheus/blob/master/CHANGELOG.md).
+
+You can enable them using the `--enable-feature` flag with a comma separated list of features.
+They may be enabled by default in future versions.
 
 ## `@` Modifier in PromQL
 

@@ -127,15 +127,18 @@ type flagConfig struct {
 }
 
 // setFeatureListOptions sets the corresponding options from the featureList.
-func (c *flagConfig) setFeatureListOptions() error {
+func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 	for _, f := range c.featureList {
-		switch f {
-		case "promql-at-modifier":
-			c.enablePromQLAtModifier = true
-		case "":
-			continue
-		default:
-			return errors.Errorf("invalid feature %q", f)
+		opts := strings.Split(f, ",")
+		for _, o := range opts {
+			switch o {
+			case "promql-at-modifier":
+				c.enablePromQLAtModifier = true
+			case "":
+				continue
+			default:
+				level.Warn(logger).Log("msg", "Unknown option for --enable-feature", "option", o)
+			}
 		}
 	}
 	return nil
@@ -299,12 +302,12 @@ func main() {
 		os.Exit(2)
 	}
 
-	if err := cfg.setFeatureListOptions(); err != nil {
+	logger := promlog.New(&cfg.promlogConfig)
+
+	if err := cfg.setFeatureListOptions(logger); err != nil {
 		fmt.Fprintln(os.Stderr, errors.Wrapf(err, "Error parsing feature list"))
 		os.Exit(1)
 	}
-
-	logger := promlog.New(&cfg.promlogConfig)
 
 	cfg.web.ExternalURL, err = computeExternalURL(cfg.prometheusURL, cfg.web.ListenAddress)
 	if err != nil {
