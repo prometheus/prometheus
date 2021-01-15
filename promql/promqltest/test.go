@@ -996,7 +996,7 @@ func atModifierTestCases(exprStr string, evalTime time.Time) ([]atModifierTestCa
 	// Setting the @ timestamp for all selectors to be evalTime.
 	// If there is a subquery, then the selectors inside it don't get the @ timestamp.
 	// If any selector already has the @ timestamp set, then it is untouched.
-	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
+	parser.Inspect(context.TODO(), &parser.EvalStmt{Expr: expr}, func(node parser.Node, path []parser.Node) error {
 		if hasAtModifier(path) {
 			// There is a subquery with timestamp in the path,
 			// hence don't change any timestamps further.
@@ -1023,7 +1023,7 @@ func atModifierTestCases(exprStr string, evalTime time.Time) ([]atModifierTestCa
 			containsNonStepInvariant = containsNonStepInvariant || ok
 		}
 		return nil
-	})
+	}, nil)
 
 	if containsNonStepInvariant {
 		// Expression contains a function whose result can vary with evaluation

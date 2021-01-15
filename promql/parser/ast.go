@@ -313,32 +313,53 @@ type Visitor interface {
 // invoked recursively with visitor w for each of the non-nil children of node,
 // followed by a call of w.Visit(nil), returning an error
 // As the tree is descended the path of previous nodes is provided.
-func Walk(v Visitor, node Node, path []Node) error {
+func Walk(ctx context.Context, v Visitor, s *EvalStmt, node Node, path []Node, nr NodeReplacer) (Node, error) {
+	// Check if the context is closed already
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
+	if nr != nil {
+		replacement, err := nr(ctx, s, node)
+		if replacement != nil {
+			node = replacement
+		}
+		if err != nil {
+			return node, err
+		}
+
+	}
+
 	var err error
 	if v, err = v.Visit(node, path); v == nil || err != nil {
-		return err
+		return node, err
 	}
 	path = append(path, node)
 
-	for _, e := range Children(node) {
-		if err := Walk(v, e, path); err != nil {
-			return err
+	// TODO: parallel execution of children
+	for i, e := range Children(node) {
+		if childNode, err := Walk(ctx, v, s, e, path, nr); err != nil {
+			return node, err
+		} else {
+			SetChild(node, i, childNode)
 		}
 	}
 
 	_, err = v.Visit(nil, nil)
-	return err
+	return node, err
 }
 
 func ExtractSelectors(expr Expr) [][]*labels.Matcher {
 	var selectors [][]*labels.Matcher
-	Inspect(expr, func(node Node, _ []Node) error {
+	Inspect(context.TODO(), &EvalStmt{Expr: expr}, func(node Node, _ []Node) error {
 		vs, ok := node.(*VectorSelector)
 		if ok {
 			selectors = append(selectors, vs.LabelMatchers)
 		}
 		return nil
-	})
+	}, nil)
 	return selectors
 }
 
@@ -355,8 +376,52 @@ func (f inspector) Visit(node Node, path []Node) (Visitor, error) {
 // Inspect traverses an AST in depth-first order: It starts by calling
 // f(node, path); node must not be nil. If f returns a nil error, Inspect invokes f
 // for all the non-nil children of node, recursively.
-func Inspect(node Node, f inspector) {
-	Walk(f, node, nil) //nolint:errcheck
+func Inspect(ctx context.Context, s *EvalStmt, f inspector, nr NodeReplacer) (Node, error) {
+	//nolint: errcheck
+	return Walk(ctx, inspector(f), s, s.Expr, nil, nr)
+}
+
+func SetChild(node Node, i int, child Node) {
+	// For some reasons these switches have significantly better performance than interfaces
+	switch n := node.(type) {
+	case *EvalStmt:
+		n.Expr = child.(Expr)
+	case Expressions:
+		n[i] = child.(Expr)
+	case *AggregateExpr:
+		// While this does not look nice, it should avoid unnecessary allocations
+		// caused by slice resizing
+		if n.Expr == nil && n.Param == nil {
+		} else if n.Expr == nil {
+			n.Param = child.(Expr)
+		} else if n.Param == nil {
+			n.Expr = child.(Expr)
+		} else {
+			switch i {
+			case 0:
+				n.Expr = child.(Expr)
+			case 1:
+				n.Param = child.(Expr)
+			}
+		}
+	case *BinaryExpr:
+		switch i {
+		case 0:
+			n.LHS = child.(Expr)
+		case 1:
+			n.RHS = child.(Expr)
+		}
+	case *Call:
+		n.Args[i] = child.(Expr)
+	case *SubqueryExpr:
+		n.Expr = child.(Expr)
+	case *ParenExpr:
+		n.Expr = child.(Expr)
+	case *UnaryExpr:
+		n.Expr = child.(Expr)
+	case *MatrixSelector:
+	case *NumberLiteral, *StringLiteral, *VectorSelector:
+	}
 }
 
 // Children returns a list of all child nodes of a syntax tree node.
@@ -494,3 +559,5 @@ func (e *UnaryExpr) PositionRange() posrange.PositionRange {
 func (e *VectorSelector) PositionRange() posrange.PositionRange {
 	return e.PosRange
 }
+
+type NodeReplacer func(context.Context, *EvalStmt, Node) (Node, error)

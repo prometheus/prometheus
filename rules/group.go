@@ -1064,7 +1064,7 @@ func buildDependencyMap(rules []Rule) dependencyMap {
 		name := rule.Name()
 		outputs[name] = append(outputs[name], rule)
 
-		parser.Inspect(rule.Query(), func(node parser.Node, path []parser.Node) error {
+		parser.Inspect(context.TODO(), &parser.EvalStmt{Expr: rule.Query()}, func(node parser.Node, path []parser.Node) error {
 			if n, ok := node.(*parser.VectorSelector); ok {
 				// A wildcard metric expression means we cannot reliably determine if this rule depends on any other,
 				// which means we cannot safely run any rules concurrently.
@@ -1083,7 +1083,7 @@ func buildDependencyMap(rules []Rule) dependencyMap {
 				inputs[n.Name] = append(inputs[n.Name], rule)
 			}
 			return nil
-		})
+		}, nil)
 	}
 
 	if indeterminate {
