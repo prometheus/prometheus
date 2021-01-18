@@ -96,7 +96,7 @@ approximately two hours data per block directory. Again, Prometheus's local
 storage is not intended to be durable long-term storage; external solutions
 offer extended retention and data durability.
 
-CAUTION: Non-POSIX compliant filesystems are not supported for Prometheus' local storage as unrecoverable corruptions may happen. NFS filesystems (including AWS's EFS) are not supported. NFS could be POSIX-compliant, but most implementations are not. It is strongly recommended to use a local filesystem for reliability.
+CAUTION: Non-POSIX compliant filesystems are not supported for Prometheus' local storage as unrecoverable corruptions may happen. NFS (including AWS's EFS) are not supported. NFS could be POSIX-compliant, but most implementations are not. It is strongly recommended to use a local filesystem for reliability.
 
 If both time and size retention policies are specified, whichever triggers first
 will be used.
