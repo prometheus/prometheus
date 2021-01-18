@@ -1014,7 +1014,7 @@ func (h *RangeHead) Meta() BlockMeta {
 // keep this function in order to avoid the struct dump when the head is stringified in
 // errors or logs.
 func (h *RangeHead) String() string {
-	return "range head"
+	return fmt.Sprintf("range head (mint: %d, maxt: %d)", h.MinTime(), h.MaxTime())
 }
 
 // initAppender is a helper to initialize the time bounds of the head
