@@ -50,7 +50,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
 	"github.com/prometheus/common/server"
-	"github.com/prometheus/exporter-toolkit/https"
+	https "github.com/prometheus/exporter-toolkit/web"
 	"go.uber.org/atomic"
 	"golang.org/x/net/netutil"
 

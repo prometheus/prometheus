@@ -1,4 +1,6 @@
 // Copyright 2020 The Prometheus Authors
+// This code is partly borrowed from Caddy:
+//    Copyright 2015 Matthew Holt and The Caddy Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -11,10 +13,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package https
+package web
 
 import (
+	"encoding/hex"
 	"net/http"
+	"sync"
 
 	"github.com/go-kit/kit/log"
 	"golang.org/x/crypto/bcrypt"
@@ -40,6 +44,10 @@ type userAuthRoundtrip struct {
 	tlsConfigPath string
 	handler       http.Handler
 	logger        log.Logger
+	cache         *cache
+	// bcryptMtx is there to ensure that bcrypt.CompareHashAndPassword is run
+	// only once in parallel as this is CPU intensive.
+	bcryptMtx sync.Mutex
 }
 
 func (u *userAuthRoundtrip) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -57,11 +65,31 @@ func (u *userAuthRoundtrip) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	user, pass, auth := r.BasicAuth()
 	if auth {
-		if hashedPassword, ok := c.Users[user]; ok {
-			if err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(pass)); err == nil {
-				u.handler.ServeHTTP(w, r)
-				return
-			}
+		hashedPassword, validUser := c.Users[user]
+
+		if !validUser {
+			// The user is not found. Use a fixed password hash to
+			// prevent user enumeration by timing requests.
+			// This is a bcrypt-hashed version of "fakepassword".
+			hashedPassword = "$2y$10$QOauhQNbBCuQDKes6eFzPeMqBSjb7Mr5DUmpZ/VcEd00UAV/LDeSi"
+		}
+
+		cacheKey := hex.EncodeToString(append(append([]byte(user), []byte(hashedPassword)...), []byte(pass)...))
+		authOk, ok := u.cache.get(cacheKey)
+
+		if !ok {
+			// This user, hashedPassword, password is not cached.
+			u.bcryptMtx.Lock()
+			err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(pass))
+			u.bcryptMtx.Unlock()
+
+			authOk = err == nil
+			u.cache.set(cacheKey, authOk)
+		}
+
+		if authOk && validUser {
+			u.handler.ServeHTTP(w, r)
+			return
 		}
 	}
 

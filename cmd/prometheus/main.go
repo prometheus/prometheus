@@ -46,8 +46,8 @@ import (
 	"github.com/prometheus/common/promlog"
 	promlogflag "github.com/prometheus/common/promlog/flag"
 	"github.com/prometheus/common/version"
-	"github.com/prometheus/exporter-toolkit/https"
-	httpsflag "github.com/prometheus/exporter-toolkit/https/kingpinflag"
+	toolkit_web "github.com/prometheus/exporter-toolkit/web"
+	httpsflag "github.com/prometheus/exporter-toolkit/web/kingpinflag"
 	jcfg "github.com/uber/jaeger-client-go/config"
 	jprom "github.com/uber/jaeger-lib/metrics/prometheus"
 	"go.uber.org/atomic"
@@ -568,7 +568,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	err = https.Validate(*httpsConfig)
+	err = toolkit_web.Validate(*httpsConfig)
 	if err != nil {
 		level.Error(logger).Log("msg", "Unable to validate web configuration file", "err", err)
 		os.Exit(1)
