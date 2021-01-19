@@ -1,3 +1,8 @@
+## 2.24.1 / 2021-01-20
+
+* [ENHANCEMENT] Cache basic authentication results to significantly improve performance of HTTP endpoints (via an update of prometheus/exporter-toolkit).
+* [BUGFIX] Prevent user enumeration by timing requests sent to authenticated HTTP endpoints (via an update of prometheus/exporter-toolkit).
+
 ## 2.24.0 / 2021-01-06
 
 * [FEATURE] Add TLS and basic authentication to HTTP endpoints. #8316
