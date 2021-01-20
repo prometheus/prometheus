@@ -201,15 +201,17 @@ func Serve(l net.Listener, server *http.Server, tlsConfigPath string, logger log
 	if server.Handler != nil {
 		handler = server.Handler
 	}
-	server.Handler = &userAuthRoundtrip{
-		tlsConfigPath: tlsConfigPath,
-		logger:        logger,
-		handler:       handler,
-	}
 
 	c, err := getConfig(tlsConfigPath)
 	if err != nil {
 		return err
+	}
+
+	server.Handler = &userAuthRoundtrip{
+		tlsConfigPath: tlsConfigPath,
+		logger:        logger,
+		handler:       handler,
+		cache:         newCache(),
 	}
 
 	config, err := ConfigToTLSConfig(&c.TLSConfig)
