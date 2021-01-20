@@ -13,7 +13,10 @@
 
 package timestamp
 
-import "time"
+import (
+	"math"
+	"time"
+)
 
 // FromTime returns a new millisecond timestamp from a time.
 func FromTime(t time.Time) int64 {
@@ -23,4 +26,9 @@ func FromTime(t time.Time) int64 {
 // Time returns a new time.Time object from a millisecond timestamp.
 func Time(ts int64) time.Time {
 	return time.Unix(ts/1000, (ts%1000)*int64(time.Millisecond)).UTC()
+}
+
+// FromFloatSeconds returns a millisecond timestamp from float seconds.
+func FromFloatSeconds(ts float64) int64 {
+	return int64(math.Round(ts * 1000))
 }
