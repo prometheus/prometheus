@@ -25,7 +25,7 @@ import (
 )
 
 func TestAddExemplar(t *testing.T) {
-	es := NewCircularExemplarStorage(2)
+	es := NewCircularExemplarStorage(2, nil)
 
 	l := labels.Labels{
 		{Name: "service", Value: "asdf"},
@@ -64,7 +64,7 @@ func TestAddExemplar(t *testing.T) {
 }
 
 func TestAddDuplicateExemplar(t *testing.T) {
-	es := NewCircularExemplarStorage(5)
+	es := NewCircularExemplarStorage(5, nil)
 
 	l := labels.Labels{
 		{Name: "service", Value: "asdf"},
@@ -101,7 +101,7 @@ func TestAddDuplicateExemplar(t *testing.T) {
 }
 
 func TestAddOutOfOrderExemplar(t *testing.T) {
-	es := NewCircularExemplarStorage(5)
+	es := NewCircularExemplarStorage(5, nil)
 
 	l := labels.Labels{
 		{Name: "service", Value: "asdf"},
@@ -138,7 +138,7 @@ func TestAddOutOfOrderExemplar(t *testing.T) {
 }
 
 func TestAddExtraExemplar(t *testing.T) {
-	es := NewCircularExemplarStorage(5)
+	es := NewCircularExemplarStorage(5, nil)
 
 	l := labels.Labels{
 		{Name: "service", Value: "asdf"},
@@ -213,7 +213,7 @@ func TestAddExtraExemplar(t *testing.T) {
 }
 
 func TestSelectExemplar(t *testing.T) {
-	es := NewCircularExemplarStorage(5)
+	es := NewCircularExemplarStorage(5, nil)
 
 	l := labels.Labels{
 		{Name: "service", Value: "asdf"},
@@ -239,7 +239,7 @@ func TestSelectExemplar(t *testing.T) {
 }
 
 func TestSelectExemplarOrdering(t *testing.T) {
-	es := NewCircularExemplarStorage(5)
+	es := NewCircularExemplarStorage(5, nil)
 
 	l := labels.Labels{
 		{Name: "service", Value: "asdf"},
@@ -319,7 +319,7 @@ func TestSelectExemplarOrdering(t *testing.T) {
 }
 
 func TestSelectExemplar_Circ(t *testing.T) {
-	es := NewCircularExemplarStorage(3)
+	es := NewCircularExemplarStorage(3, nil)
 
 	l := labels.Labels{
 		{Name: "service", Value: "asdf"},
@@ -375,7 +375,7 @@ func TestSelectExemplar_Circ(t *testing.T) {
 // This is a set of stored exemplars I scraped and stored locally that resulted in an infinite loop.
 // This test ensures Select doesn't infinitely loop on them anymore.
 func TestSelectExemplar_OverwriteLoop(t *testing.T) {
-	es := NewCircularExemplarStorage(10)
+	es := NewCircularExemplarStorage(10, nil)
 
 	l1 := labels.Labels{
 		{Name: "__name__", Value: "test_metric"},
@@ -468,7 +468,7 @@ func TestSelectExemplar_OverwriteLoop(t *testing.T) {
 }
 
 func TestSelectExemplar_TimeRange(t *testing.T) {
-	es := NewCircularExemplarStorage(4)
+	es := NewCircularExemplarStorage(4, nil)
 
 	l := labels.Labels{
 		{Name: "service", Value: "asdf"},
@@ -532,7 +532,7 @@ func TestSelectExemplar_TimeRange(t *testing.T) {
 }
 
 func TestIndexOverwrite(t *testing.T) {
-	es := NewCircularExemplarStorage(2)
+	es := NewCircularExemplarStorage(2, nil)
 
 	l1 := labels.Labels{
 		{Name: "service", Value: "asdf"},

@@ -38,7 +38,7 @@ func BenchmarkPostingsForMatchers(b *testing.B) {
 	defer func() {
 		require.NoError(b, os.RemoveAll(chunkDir))
 	}()
-	h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, chunks.DefaultWriteBufferSize, DefaultStripeSize, nil)
+	h, err := NewHead(nil, nil, nil, 0, 1000, chunkDir, nil, chunks.DefaultWriteBufferSize, DefaultStripeSize, nil)
 	require.NoError(b, err)
 	defer func() {
 		require.NoError(b, h.Close())
@@ -147,7 +147,7 @@ func BenchmarkQuerierSelect(b *testing.B) {
 	defer func() {
 		require.NoError(b, os.RemoveAll(chunkDir))
 	}()
-	h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, chunks.DefaultWriteBufferSize, DefaultStripeSize, nil)
+	h, err := NewHead(nil, nil, nil, 0, 1000, chunkDir, nil, chunks.DefaultWriteBufferSize, DefaultStripeSize, nil)
 	require.NoError(b, err)
 	defer h.Close()
 	app := h.Appender(context.Background())

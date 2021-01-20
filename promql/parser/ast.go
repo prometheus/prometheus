@@ -264,12 +264,6 @@ type Visitor interface {
 	Visit(node Node, path []Node) (w Visitor, err error)
 }
 
-type VisitorFunc func(node Node, path []Node) (w Visitor, err error)
-
-func (v VisitorFunc) Visit(node Node, path []Node) (w Visitor, err error) {
-	return v(node, path)
-}
-
 // Walk traverses an AST in depth-first order: It starts by calling
 // v.Visit(node, path); node must not be nil. If the visitor w returned by
 // v.Visit(node, path) is not nil and the visitor returns no error, Walk is
@@ -295,19 +289,17 @@ func Walk(v Visitor, node Node, path []Node) error {
 
 func ExtractSelectors(node Node) ([][]*labels.Matcher, error) {
 	var selectors [][]*labels.Matcher
-	var visitor Visitor
 
-	visitor = VisitorFunc(func(node Node, path []Node) (w Visitor, err error) {
+	visitor := func(node Node, nArr []Node) error {
 		switch n := node.(type) {
 		case *MatrixSelector:
 			selectors = append(selectors, n.VectorSelector.(*VectorSelector).LabelMatchers)
 		case *VectorSelector:
 			selectors = append(selectors, n.LabelMatchers)
 		}
-		return visitor, nil
-	})
-
-	err := Walk(visitor, node, nil)
+		return nil
+	}
+	err := Walk(inspector(visitor), node, nil)
 	return selectors, err
 }
 

@@ -101,18 +101,17 @@ func (mc *MetadataMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 }
 
 // NewManager is the Manager constructor
-func NewManager(logger log.Logger, app storage.Appendable, exemplarApp storage.ExemplarAppendable) *Manager {
+func NewManager(logger log.Logger, app storage.Appendable) *Manager {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 	m := &Manager{
-		append:         app,
-		exemplarAppend: exemplarApp,
-		logger:         logger,
-		scrapeConfigs:  make(map[string]*config.ScrapeConfig),
-		scrapePools:    make(map[string]*scrapePool),
-		graceShut:      make(chan struct{}),
-		triggerReload:  make(chan struct{}, 1),
+		append:        app,
+		logger:        logger,
+		scrapeConfigs: make(map[string]*config.ScrapeConfig),
+		scrapePools:   make(map[string]*scrapePool),
+		graceShut:     make(chan struct{}),
+		triggerReload: make(chan struct{}, 1),
 	}
 	targetMetadataCache.registerManager(m)
 
@@ -122,10 +121,9 @@ func NewManager(logger log.Logger, app storage.Appendable, exemplarApp storage.E
 // Manager maintains a set of scrape pools and manages start/stop cycles
 // when receiving new target groups form the discovery manager.
 type Manager struct {
-	logger         log.Logger
-	append         storage.Appendable
-	exemplarAppend storage.ExemplarAppendable
-	graceShut      chan struct{}
+	logger    log.Logger
+	append    storage.Appendable
+	graceShut chan struct{}
 
 	jitterSeed    uint64     // Global jitterSeed seed is used to spread scrape workload across HA setup.
 	mtxScrape     sync.Mutex // Guards the fields below.
@@ -185,7 +183,7 @@ func (m *Manager) reload() {
 				level.Error(m.logger).Log("msg", "error reloading target set", "err", "invalid config id:"+setName)
 				continue
 			}
-			sp, err := newScrapePool(scrapeConfig, m.append, m.exemplarAppend, m.jitterSeed, log.With(m.logger, "scrape_pool", setName))
+			sp, err := newScrapePool(scrapeConfig, m.append, m.jitterSeed, log.With(m.logger, "scrape_pool", setName))
 			if err != nil {
 				level.Error(m.logger).Log("msg", "error creating new scrape pool", "err", err, "scrape_pool", setName)
 				continue

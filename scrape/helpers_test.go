@@ -61,6 +61,8 @@ type collectResultAppender struct {
 	result           []sample
 	pendingResult    []sample
 	rolledbackResult []sample
+	pendingExemplars []exemplar.Exemplar
+	resultExemplars  []exemplar.Exemplar
 
 	mapper map[uint64]labels.Labels
 }
@@ -105,16 +107,28 @@ func (a *collectResultAppender) Add(m labels.Labels, t int64, v float64) (uint64
 }
 
 func (a *collectResultAppender) AddExemplar(l labels.Labels, t int64, e exemplar.Exemplar) error {
-	return nil
+	a.pendingExemplars = append(a.pendingExemplars, e)
+	if a.next == nil {
+		return nil
+	}
+
+	return a.next.AddExemplar(l, t, e)
 }
 
 func (a *collectResultAppender) AddExemplarFast(ref uint64, t int64, v float64, e exemplar.Exemplar) error {
-	return nil
+	a.pendingExemplars = append(a.pendingExemplars, e)
+	if a.next == nil {
+		return nil
+	}
+
+	return a.next.AddExemplarFast(ref, t, v, e)
 }
 
 func (a *collectResultAppender) Commit() error {
 	a.result = append(a.result, a.pendingResult...)
+	a.resultExemplars = append(a.resultExemplars, a.pendingExemplars...)
 	a.pendingResult = nil
+	a.pendingExemplars = nil
 	if a.next == nil {
 		return nil
 	}

@@ -17,12 +17,39 @@ import (
 	"context"
 	"sync"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 )
 
+type exemplarMetrics struct {
+	outOfOrderExemplars prometheus.Counter
+	duplicateExemplars  prometheus.Counter
+}
+
+func newExemplarMetrics(r prometheus.Registerer) *exemplarMetrics {
+	m := &exemplarMetrics{
+		outOfOrderExemplars: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "prometheus_exemplar_out_of_order_exemplars_total",
+			Help: "Total number of out of order samples ingestion failed attempts",
+		}),
+		duplicateExemplars: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "prometheus_exemplar_duplicate_exemplars_total",
+			Help: "Total number of series in the head block.",
+		}),
+	}
+	if r != nil {
+		r.MustRegister(
+			m.outOfOrderExemplars,
+			m.duplicateExemplars,
+		)
+	}
+	return m
+}
+
 type CircularExemplarStorage struct {
+	metrics     *exemplarMetrics
 	lock        sync.RWMutex
 	index       map[string]int
 	exemplars   []*circularBufferEntry
@@ -47,11 +74,12 @@ type storageExemplar struct {
 
 // If we assume the average case 95 bytes per exemplar we can fit 5651272 exemplars in
 // 1GB of extra memory, accounting for the fact that this is heap allocated space.
-func NewCircularExemplarStorage(len int, secondaries ...storage.ExemplarAppender) *CircularExemplarStorage {
+func NewCircularExemplarStorage(len int, reg prometheus.Registerer, secondaries ...storage.ExemplarAppender) *CircularExemplarStorage {
 	return &CircularExemplarStorage{
 		exemplars:   make([]*circularBufferEntry, len),
 		index:       make(map[string]int),
 		secondaries: secondaries,
+		metrics:     newExemplarMetrics(reg),
 	}
 }
 
@@ -164,9 +192,11 @@ func (ce *CircularExemplarStorage) addExemplar(l labels.Labels, t int64, e exemp
 
 	// Check for duplicate vs last stored exemplar for this series.
 	if ce.exemplars[idx].Exemplar().Equals(e) {
+		ce.metrics.duplicateExemplars.Inc()
 		return storage.ErrDuplicateExemplar
 	}
 	if e.Ts <= ce.exemplars[idx].se.scrapeTimestamp || t <= ce.exemplars[idx].se.scrapeTimestamp {
+		ce.metrics.outOfOrderExemplars.Inc()
 		return storage.ErrOutOfOrderExemplar
 	}
 	ce.indexGcCheck(ce.exemplars[ce.nextIndex])

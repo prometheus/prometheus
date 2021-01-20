@@ -69,7 +69,7 @@ func NewTest(t testutil.T, input string) (*Test, error) {
 	test := &Test{
 		T:               t,
 		cmds:            []testCommand{},
-		exemplarStorage: tsdb.NewCircularExemplarStorage(10),
+		exemplarStorage: tsdb.NewCircularExemplarStorage(10, nil),
 	}
 	err := test.parse(input)
 	test.clear()

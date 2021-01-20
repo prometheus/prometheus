@@ -225,7 +225,7 @@ const maxAheadTime = 10 * time.Minute
 
 type labelsMutator func(labels.Labels) labels.Labels
 
-func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, exemplarApp storage.ExemplarAppendable, jitterSeed uint64, logger log.Logger) (*scrapePool, error) {
+func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed uint64, logger log.Logger) (*scrapePool, error) {
 	targetScrapePools.Inc()
 	if logger == nil {
 		logger = log.NewNopLogger()
@@ -267,7 +267,6 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, exemplarApp
 			},
 			func(l labels.Labels) labels.Labels { return mutateReportSampleLabels(l, opts.target) },
 			func(ctx context.Context) storage.Appender { return appender(app.Appender(ctx), opts.limit) },
-			func() storage.ExemplarAppender { return exemplarApp.Appender() },
 			cache,
 			jitterSeed,
 			opts.honorTimestamps,
@@ -703,7 +702,6 @@ type scrapeLoop struct {
 	forcedErrMtx    sync.Mutex
 
 	appender            func(ctx context.Context) storage.Appender
-	exemplarAppender    func() storage.ExemplarAppender
 	sampleMutator       labelsMutator
 	reportSampleMutator labelsMutator
 
@@ -966,7 +964,6 @@ func newScrapeLoop(ctx context.Context,
 	sampleMutator labelsMutator,
 	reportSampleMutator labelsMutator,
 	appender func(ctx context.Context) storage.Appender,
-	exemplarAppender func() storage.ExemplarAppender,
 	cache *scrapeCache,
 	jitterSeed uint64,
 	honorTimestamps bool,
@@ -985,7 +982,6 @@ func newScrapeLoop(ctx context.Context,
 		buffers:             buffers,
 		cache:               cache,
 		appender:            appender,
-		exemplarAppender:    exemplarAppender,
 		sampleMutator:       sampleMutator,
 		reportSampleMutator: reportSampleMutator,
 		stopped:             make(chan struct{}),
@@ -1255,7 +1251,6 @@ type appendErrors struct {
 
 func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string, ts time.Time) (total, added, seriesAdded int, err error) {
 	var (
-		exemplarApp    = sl.exemplarAppender()
 		p              = textparse.New(b, contentType)
 		defTime        = timestamp.FromTime(ts)
 		appErrs        = appendErrors{}
@@ -1320,7 +1315,7 @@ loop:
 			switch err {
 			case nil:
 				if hasExemplar := p.Exemplar(&e); hasExemplar {
-					if err := exemplarApp.AddExemplar(ce.lset, t, e); err != nil {
+					if err := app.AddExemplar(ce.lset, t, e); err != nil {
 						if err != storage.ErrDuplicateExemplar {
 							level.Debug(sl.l).Log("msg", "unexpected error", "error", err, "seriesLabels", ce.lset, "exemplar", e)
 						}
@@ -1360,7 +1355,7 @@ loop:
 			case nil:
 				// todo: This smells funny.
 				if hasExemplar := p.Exemplar(&e); hasExemplar {
-					if err := exemplarApp.AddExemplar(lset, t, e); err != nil {
+					if err := app.AddExemplar(lset, t, e); err != nil {
 						if err != storage.ErrDuplicateExemplar {
 							level.Debug(sl.l).Log("msg", "unexpected error", "error", err, "seriesLabels", lset, "exemplar", e)
 						}
