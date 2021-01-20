@@ -1612,8 +1612,10 @@ func (h *headIndexReader) Symbols() index.StringIter {
 
 // SortedLabelValues returns label values present in the head for the
 // specific label name that are within the time range mint to maxt.
-func (h *headIndexReader) SortedLabelValues(name string) ([]string, error) {
-	values, err := h.LabelValues(name)
+// If matchers are specified the returned result set is reduced
+// to label values of metrics matching the matchers.
+func (h *headIndexReader) SortedLabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
+	values, err := h.LabelValues(name, matchers...)
 	if err == nil {
 		sort.Strings(values)
 	}
@@ -1622,15 +1624,50 @@ func (h *headIndexReader) SortedLabelValues(name string) ([]string, error) {
 
 // LabelValues returns label values present in the head for the
 // specific label name that are within the time range mint to maxt.
-func (h *headIndexReader) LabelValues(name string) ([]string, error) {
+// If matchers are specified the returned result set is reduced
+// to label values of metrics matching the matchers.
+func (h *headIndexReader) LabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
 	h.head.symMtx.RLock()
-	defer h.head.symMtx.RUnlock()
+
 	if h.maxt < h.head.MinTime() || h.mint > h.head.MaxTime() {
+		h.head.symMtx.RUnlock()
 		return []string{}, nil
 	}
 
-	values := h.head.postings.LabelValues(name)
-	return values, nil
+	if len(matchers) == 0 {
+		h.head.symMtx.RUnlock()
+		return h.head.postings.LabelValues(name), nil
+	}
+
+	postings, err := PostingsForMatchers(h, matchers...)
+	if err != nil {
+		h.head.symMtx.RUnlock()
+		return nil, err
+	}
+
+	seenResults := make(map[string]interface{})
+	for postings.Next() {
+		memSeries := h.head.series.getByID(postings.At())
+		if memSeries == nil {
+			continue
+		}
+
+		seenResults[memSeries.lset.Get(name)] = nil
+	}
+
+	// No need to keep holding the lock while we convert map to slice.
+	h.head.symMtx.RUnlock()
+
+	// If labels.Labels.Get() can't find label of given name it returns "",
+	// we never want the empty string to be part of the result set.
+	delete(seenResults, "")
+
+	results := make([]string, 0, len(seenResults))
+	for result := range seenResults {
+		results = append(results, result)
+	}
+
+	return results, nil
 }
 
 // LabelNames returns all the unique label names present in the head
@@ -1721,6 +1758,18 @@ func (h *headIndexReader) Series(ref uint64, lbls *labels.Labels, chks *[]chunks
 	}
 
 	return nil
+}
+
+func (h *headIndexReader) LabelValueFor(id uint64, label string) (string, error) {
+	h.head.symMtx.RLock()
+	defer h.head.symMtx.RUnlock()
+
+	memSeries := h.head.series.getByID(id)
+	if memSeries == nil {
+		return "", nil
+	}
+
+	return memSeries.lset.Get(label), nil
 }
 
 func (h *Head) getOrCreate(hash uint64, lset labels.Labels) (*memSeries, bool, error) {

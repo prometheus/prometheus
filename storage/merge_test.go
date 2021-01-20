@@ -734,7 +734,7 @@ func (m *mockGenericQuerier) Select(b bool, _ *SelectHints, _ ...*labels.Matcher
 	return &mockGenericSeriesSet{resp: m.resp, warnings: m.warnings, err: m.err}
 }
 
-func (m *mockGenericQuerier) LabelValues(name string) ([]string, Warnings, error) {
+func (m *mockGenericQuerier) LabelValues(name string, _ ...*labels.Matcher) ([]string, Warnings, error) {
 	m.mtx.Lock()
 	m.labelNamesRequested = append(m.labelNamesRequested, name)
 	m.mtx.Unlock()

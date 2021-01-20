@@ -20,6 +20,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 
 	"github.com/go-kit/kit/log"
@@ -63,10 +64,10 @@ type IndexReader interface {
 	Symbols() index.StringIter
 
 	// SortedLabelValues returns sorted possible label values.
-	SortedLabelValues(name string) ([]string, error)
+	SortedLabelValues(name string, matchers ...*labels.Matcher) ([]string, error)
 
 	// LabelValues returns possible label values which may not be sorted.
-	LabelValues(name string) ([]string, error)
+	LabelValues(name string, matchers ...*labels.Matcher) ([]string, error)
 
 	// Postings returns the postings list iterator for the label pairs.
 	// The Postings here contain the offsets to the series inside the index.
@@ -85,6 +86,9 @@ type IndexReader interface {
 
 	// LabelNames returns all the unique label names present in the index in sorted order.
 	LabelNames() ([]string, error)
+
+	// LabelValueFor returns value of given label of metric referred to by id.
+	LabelValueFor(id uint64, label string) (string, error)
 
 	// Close releases the underlying resources of the reader.
 	Close() error
@@ -415,14 +419,53 @@ func (r blockIndexReader) Symbols() index.StringIter {
 	return r.ir.Symbols()
 }
 
-func (r blockIndexReader) SortedLabelValues(name string) ([]string, error) {
-	st, err := r.ir.SortedLabelValues(name)
+func (r blockIndexReader) SortedLabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
+	var st []string
+	var err error
+
+	if len(matchers) == 0 {
+		st, err = r.ir.SortedLabelValues(name, matchers...)
+	} else {
+		st, err = r.LabelValues(name, matchers...)
+		if err == nil {
+			sort.Strings(st)
+		}
+	}
+
 	return st, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
 }
 
-func (r blockIndexReader) LabelValues(name string) ([]string, error) {
-	st, err := r.ir.LabelValues(name)
-	return st, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
+func (r blockIndexReader) LabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
+	if len(matchers) == 0 {
+		st, err := r.ir.LabelValues(name, matchers...)
+		return st, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
+	}
+
+	var p index.Postings
+	p, err := PostingsForMatchers(r, matchers...)
+	if err != nil {
+		return nil, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
+	}
+
+	dedupe := map[string]interface{}{}
+	for p.Next() {
+		v, err := r.ir.LabelValueFor(p.At(), name)
+		if err != nil {
+			return nil, err
+		}
+		dedupe[v] = nil
+	}
+
+	if err = p.Err(); err != nil {
+		return nil, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
+	}
+
+	values := make([]string, 0, len(dedupe))
+	for value := range dedupe {
+		values = append(values, value)
+	}
+
+	return values, nil
 }
 
 func (r blockIndexReader) Postings(name string, values ...string) (index.Postings, error) {
@@ -451,6 +494,11 @@ func (r blockIndexReader) LabelNames() ([]string, error) {
 func (r blockIndexReader) Close() error {
 	r.b.pendingReaders.Done()
 	return nil
+}
+
+// LabelValueFor returns value of given label of metric referred to by id.
+func (r blockIndexReader) LabelValueFor(id uint64, label string) (string, error) {
+	return r.ir.LabelValueFor(id, label)
 }
 
 type blockTombstoneReader struct {

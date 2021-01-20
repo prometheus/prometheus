@@ -592,37 +592,18 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 		warnings storage.Warnings
 	)
 	if len(matcherSets) > 0 {
-		hints := &storage.SelectHints{
-			Start: timestamp.FromTime(start),
-			End:   timestamp.FromTime(end),
-			Func:  "series", // There is no series function, this token is used for lookups that don't need samples.
-		}
-
+		var callWarnings storage.Warnings
 		labelValuesSet := make(map[string]struct{})
-		// Get all series which match matchers.
-		for _, mset := range matcherSets {
-			s := q.Select(false, hints, mset...)
-			for s.Next() {
-				series := s.At()
-				labelValue := series.Labels().Get(name)
-				// Filter out empty value.
-				if labelValue == "" {
-					continue
-				}
-				labelValuesSet[labelValue] = struct{}{}
+		for _, matchers := range matcherSets {
+			vals, callWarnings, err = q.LabelValues(name, matchers...)
+			if err != nil {
+				return apiFuncResult{nil, &apiError{errorExec, err}, warnings, closer}
 			}
-			warnings = append(warnings, s.Warnings()...)
-			if err := s.Err(); err != nil {
-				return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
+			warnings = append(warnings, callWarnings...)
+			for _, val := range vals {
+				labelValuesSet[val] = struct{}{}
 			}
 		}
-
-		// Convert the map to an array.
-		vals = make([]string, 0, len(labelValuesSet))
-		for key := range labelValuesSet {
-			vals = append(vals, key)
-		}
-		sort.Strings(vals)
 	} else {
 		vals, warnings, err = q.LabelValues(name)
 		if err != nil {
