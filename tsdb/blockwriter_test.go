@@ -32,6 +32,7 @@ func TestBlockWriter(t *testing.T) {
 	ctx := context.Background()
 	outputDir, err := ioutil.TempDir(os.TempDir(), "output")
 	require.NoError(t, err)
+	defer func() { require.NoError(t, os.RemoveAll(outputDir)) }()
 	w, err := NewBlockWriter(log.NewNopLogger(), outputDir, DefaultBlockDuration)
 	require.NoError(t, err)
 
@@ -55,6 +56,7 @@ func TestBlockWriter(t *testing.T) {
 	blockpath := filepath.Join(outputDir, id.String())
 	b, err := OpenBlock(nil, blockpath, nil)
 	require.NoError(t, err)
+	defer func() { require.NoError(t, b.Close()) }()
 	q, err := NewBlockQuerier(b, math.MinInt64, math.MaxInt64)
 	require.NoError(t, err)
 	series := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))

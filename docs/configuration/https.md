@@ -25,6 +25,8 @@ Generic placeholders are defined as follows:
 * `<secret>`: a regular string that is a secret, such as a password
 * `<string>`: a regular string
 
+A valid example file can be found [here](/documentation/examples/web-config.yml).
+
 ```
 tls_server_config:
   # Certificate and key files for server to use to authenticate to client.

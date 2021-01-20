@@ -2795,15 +2795,20 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 		require.NoError(t, os.Remove(filepath.Join(dir, metaFilename)))
 	}
 	{
-		// Tmp blocks during creation & deletion; those should be removed on start.
+		// Tmp blocks during creation; those should be removed on start.
 		dir := createBlock(t, tmpDir, genSeries(10, 2, 30, 40))
 		require.NoError(t, fileutil.Replace(dir, dir+tmpForCreationBlockDirSuffix))
 		expectedRemovedDirs[dir+tmpForCreationBlockDirSuffix] = struct{}{}
 
-		// Tmp blocks during creation & deletion; those should be removed on start.
+		// Tmp blocks during deletion; those should be removed on start.
 		dir = createBlock(t, tmpDir, genSeries(10, 2, 40, 50))
 		require.NoError(t, fileutil.Replace(dir, dir+tmpForDeletionBlockDirSuffix))
 		expectedRemovedDirs[dir+tmpForDeletionBlockDirSuffix] = struct{}{}
+
+		// Pre-2.21 tmp blocks; those should be removed on start.
+		dir = createBlock(t, tmpDir, genSeries(10, 2, 50, 60))
+		require.NoError(t, fileutil.Replace(dir, dir+tmpLegacy))
+		expectedRemovedDirs[dir+tmpLegacy] = struct{}{}
 	}
 	{
 		// One ok block; but two should be replaced.

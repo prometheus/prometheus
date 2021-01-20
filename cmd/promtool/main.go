@@ -37,7 +37,7 @@ import (
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
-	toolkit_web "github.com/prometheus/exporter-toolkit/web"
+	"github.com/prometheus/exporter-toolkit/web"
 	"gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/prometheus/prometheus/config"
@@ -249,7 +249,7 @@ func CheckWebConfig(files ...string) int {
 	failed := false
 
 	for _, f := range files {
-		if err := toolkit_web.Validate(f); err != nil {
+		if err := web.Validate(f); err != nil {
 			fmt.Fprintln(os.Stderr, f, "FAILED:", err)
 			failed = true
 			continue
