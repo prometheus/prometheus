@@ -53,17 +53,21 @@ const namespace = "prometheus"
 
 // Metrics for rule evaluation.
 type Metrics struct {
-	evalDuration        prometheus.Summary
-	iterationDuration   prometheus.Summary
-	iterationsMissed    *prometheus.CounterVec
-	iterationsScheduled *prometheus.CounterVec
-	evalTotal           *prometheus.CounterVec
-	evalFailures        *prometheus.CounterVec
-	groupInterval       *prometheus.GaugeVec
-	groupLastEvalTime   *prometheus.GaugeVec
-	groupLastDuration   *prometheus.GaugeVec
-	groupRules          *prometheus.GaugeVec
-	groupSamples        *prometheus.GaugeVec
+	evalDuration                 prometheus.Summary
+	iterationDuration            prometheus.Summary
+	iterationsMissed             *prometheus.CounterVec
+	iterationsScheduled          *prometheus.CounterVec
+	evalTotal                    *prometheus.CounterVec
+	evalFailures                 *prometheus.CounterVec
+	ingestionSamplesTotal        *prometheus.CounterVec
+	ingestionSamplesDuplicate    *prometheus.CounterVec
+	ingestionSamplesOutOfOrder   *prometheus.CounterVec
+	ingestionSamplesOtherFailure *prometheus.CounterVec
+	groupInterval                *prometheus.GaugeVec
+	groupLastEvalTime            *prometheus.GaugeVec
+	groupLastDuration            *prometheus.GaugeVec
+	groupRules                   *prometheus.GaugeVec
+	groupSamples                 *prometheus.GaugeVec
 }
 
 // NewGroupMetrics creates a new instance of Metrics and registers it with the provided registerer,
@@ -112,6 +116,38 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 				Namespace: namespace,
 				Name:      "rule_evaluation_failures_total",
 				Help:      "The total number of rule evaluation failures.",
+			},
+			[]string{"rule_group"},
+		),
+		ingestionSamplesTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: namespace,
+				Name:      "rule_group_ingested_samples_total",
+				Help:      "Total number of ruler result samples attempted to ingest.",
+			},
+			[]string{"rule_group"},
+		),
+		ingestionSamplesDuplicate: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: namespace,
+				Name:      "rule_group_ingested_samples_duplicate_timestamp_total",
+				Help:      "Total number of ruler result samples rejected at ingestion due to duplicate timestamps but different values.",
+			},
+			[]string{"rule_group"},
+		),
+		ingestionSamplesOutOfOrder: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: namespace,
+				Name:      "rule_group_ingested_samples_out_of_order_total",
+				Help:      "Total number of ruler result samples rejected at ingestion due to not being in the expected order.",
+			},
+			[]string{"rule_group"},
+		),
+		ingestionSamplesOtherFailure: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: namespace,
+				Name:      "rule_group_ingested_samples_other_failures_total",
+				Help:      "Total number of ruler result samples rejected at ingestion for other failures than duplicate timestamp and out of order.",
 			},
 			[]string{"rule_group"},
 		),
@@ -165,6 +201,10 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 			m.iterationsScheduled,
 			m.evalTotal,
 			m.evalFailures,
+			m.ingestionSamplesTotal,
+			m.ingestionSamplesDuplicate,
+			m.ingestionSamplesOutOfOrder,
+			m.ingestionSamplesOtherFailure,
 			m.groupInterval,
 			m.groupLastEvalTime,
 			m.groupLastDuration,
@@ -283,6 +323,10 @@ func NewGroup(o GroupOptions) *Group {
 	metrics.iterationsScheduled.WithLabelValues(key)
 	metrics.evalTotal.WithLabelValues(key)
 	metrics.evalFailures.WithLabelValues(key)
+	metrics.ingestionSamplesTotal.WithLabelValues(key)
+	metrics.ingestionSamplesDuplicate.WithLabelValues(key)
+	metrics.ingestionSamplesOutOfOrder.WithLabelValues(key)
+	metrics.ingestionSamplesOtherFailure.WithLabelValues(key)
 	metrics.groupLastEvalTime.WithLabelValues(key)
 	metrics.groupLastDuration.WithLabelValues(key)
 	metrics.groupRules.WithLabelValues(key).Set(float64(len(o.Rules)))
@@ -608,14 +652,27 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				ar.sendAlerts(ctx, ts, g.opts.ResendDelay, g.interval, g.opts.NotifyFunc)
 			}
 			var (
-				numOutOfOrder = 0
-				numDuplicates = 0
+				numOutOfOrder    = 0
+				numDuplicates    = 0
+				numOtherFailures = 0
 			)
 
 			app := g.opts.Appendable.Appender(ctx)
 			seriesReturned := make(map[string]labels.Labels, len(g.seriesInPreviousEval[i]))
 			defer func() {
 				if err := app.Commit(); err != nil {
+					// determine which metric responsible for counting this error
+					var sampleMetric *prometheus.CounterVec
+					switch errors.Cause(err) {
+					case storage.ErrOutOfOrderSample:
+						sampleMetric = g.metrics.ingestionSamplesOutOfOrder
+					case storage.ErrDuplicateSampleForTimestamp:
+						sampleMetric = g.metrics.ingestionSamplesDuplicate
+					default:
+						sampleMetric = g.metrics.ingestionSamplesOtherFailure
+					}
+					sampleMetric.WithLabelValues(groupKey(g.File(), g.Name())).Add(float64(len(seriesReturned)))
+
 					level.Warn(g.logger).Log("msg", "Rule sample appending failed", "err", err)
 					return
 				}
@@ -631,21 +688,30 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 						numDuplicates++
 						level.Debug(g.logger).Log("msg", "Rule evaluation result discarded", "err", err, "sample", s)
 					default:
+						numOtherFailures++
 						level.Warn(g.logger).Log("msg", "Rule evaluation result discarded", "err", err, "sample", s)
 					}
 				} else {
 					seriesReturned[s.Metric.String()] = s.Metric
 				}
 			}
+			metricGroupKey := groupKey(g.File(), g.Name())
+			g.metrics.ingestionSamplesTotal.WithLabelValues(metricGroupKey).Add(float64(len(vector)))
 			if numOutOfOrder > 0 {
+				g.metrics.ingestionSamplesOutOfOrder.WithLabelValues(metricGroupKey).Add(float64(numOutOfOrder))
 				level.Warn(g.logger).Log("msg", "Error on ingesting out-of-order result from rule evaluation", "numDropped", numOutOfOrder)
 			}
 			if numDuplicates > 0 {
+				g.metrics.ingestionSamplesDuplicate.WithLabelValues(metricGroupKey).Add(float64(numDuplicates))
 				level.Warn(g.logger).Log("msg", "Error on ingesting results from rule evaluation with different value but same timestamp", "numDropped", numDuplicates)
+			}
+			if numOtherFailures > 0 {
+				g.metrics.ingestionSamplesOtherFailure.WithLabelValues(metricGroupKey).Add(float64(numOtherFailures))
 			}
 
 			for metric, lset := range g.seriesInPreviousEval[i] {
 				if _, ok := seriesReturned[metric]; !ok {
+					g.metrics.ingestionSamplesTotal.WithLabelValues(groupKey(g.File(), g.Name())).Inc()
 					// Series no longer exposed, mark it stale.
 					_, err = app.Append(0, lset, timestamp.FromTime(ts), math.Float64frombits(value.StaleNaN))
 					switch errors.Cause(err) {
@@ -990,6 +1056,10 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 				m.iterationsScheduled.DeleteLabelValues(n)
 				m.evalTotal.DeleteLabelValues(n)
 				m.evalFailures.DeleteLabelValues(n)
+				m.ingestionSamplesTotal.DeleteLabelValues(n)
+				m.ingestionSamplesDuplicate.DeleteLabelValues(n)
+				m.ingestionSamplesOutOfOrder.DeleteLabelValues(n)
+				m.ingestionSamplesOtherFailure.DeleteLabelValues(n)
 				m.groupInterval.DeleteLabelValues(n)
 				m.groupLastEvalTime.DeleteLabelValues(n)
 				m.groupLastDuration.DeleteLabelValues(n)

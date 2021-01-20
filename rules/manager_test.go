@@ -20,11 +20,13 @@ import (
 	"math"
 	"os"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/client_golang/prometheus"
+	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
@@ -900,11 +902,132 @@ func TestNotify(t *testing.T) {
 	require.Equal(t, 1, len(lastNotified))
 }
 
+type fakeAppender struct {
+	addErrCh    chan error
+	commitErrCh chan error
+	t           testing.TB
+}
+
+func newFakeAppender(ctx context.Context, t testing.TB, addErrs []error, commitErrs []error) (appender *fakeAppender, cancel func()) {
+	ctx, cancel = context.WithCancel(ctx)
+
+	appender = &fakeAppender{
+		addErrCh:    make(chan error),
+		commitErrCh: make(chan error),
+		t:           t,
+	}
+
+	handleErrs := func(sliceE []error, chanE chan error) {
+		defer close(chanE)
+		for _, err := range sliceE {
+			select {
+			case chanE <- err:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}
+	go handleErrs(addErrs, appender.addErrCh)
+	go handleErrs(commitErrs, appender.commitErrCh)
+
+	return appender, cancel
+}
+
+func (f *fakeAppender) Append(ref uint64, l labels.Labels, t int64, v float64) (uint64, error) {
+	return 0, <-f.addErrCh
+}
+
+func (f *fakeAppender) Commit() error {
+	return <-f.commitErrCh
+}
+
+func (f *fakeAppender) Rollback() error {
+	panic("not implemented")
+}
+
+func (f *fakeAppender) Appender(ctx context.Context) storage.Appender {
+	return f
+}
+
+func TestMetricsIngestion(t *testing.T) {
+	files := []string{"fixtures/rules2.yaml"}
+
+	appendable, cancel := newFakeAppender(
+		context.Background(),
+		t,
+		// error sequence for Add() operation
+		[]error{
+			nil,
+			// this should be counted as an ingestion failure
+			storage.ErrDuplicateSampleForTimestamp,
+			// this err is encountered by the NaN logic and should not show up in the metrics
+			storage.ErrOutOfOrderSample,
+		},
+		// error sequence for Commit() operation, both errors should be surfaced by the metrics and
+		[]error{nil, nil, storage.ErrOutOfOrderSample, fmt.Errorf("other error")},
+	)
+	defer cancel()
+
+	var (
+		expectedDuplicates    = 1
+		expectedOtherFailures = 1
+		expectedOutOfOrder    = 1
+	)
+
+	storage := teststorage.New(t)
+	defer storage.Close()
+	registry := prometheus.NewRegistry()
+	opts := promql.EngineOpts{
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    10 * time.Second,
+	}
+	engine := promql.NewEngine(opts)
+	ruleManager := NewManager(&ManagerOptions{
+		Appendable: appendable,
+		Queryable:  storage,
+		QueryFunc:  EngineQueryFunc(engine, storage),
+		Context:    context.Background(),
+		Logger:     log.NewNopLogger(),
+		Registerer: registry,
+	})
+	ruleManager.start()
+	defer ruleManager.Stop()
+
+	err := ruleManager.Update(100*time.Millisecond, files, nil)
+	require.NoError(t, err)
+	time.Sleep(1 * time.Second)
+
+	err = client_testutil.GatherAndCompare(
+		registry,
+		strings.NewReader(fmt.Sprintf(`
+# HELP prometheus_rule_group_ingested_samples_duplicate_timestamp_total Total number of ruler result samples rejected at ingestion due to duplicate timestamps but different values.
+# TYPE prometheus_rule_group_ingested_samples_duplicate_timestamp_total counter
+prometheus_rule_group_ingested_samples_duplicate_timestamp_total{rule_group="fixtures/rules2.yaml;test_2"} %d
+# HELP prometheus_rule_group_ingested_samples_other_failures_total Total number of ruler result samples rejected at ingestion for other failures than duplicate timestamp and out of order.
+# TYPE prometheus_rule_group_ingested_samples_other_failures_total counter
+prometheus_rule_group_ingested_samples_other_failures_total{rule_group="fixtures/rules2.yaml;test_2"} %d
+# HELP prometheus_rule_group_ingested_samples_out_of_order_total Total number of ruler result samples rejected at ingestion due to not being in the expected order.
+# TYPE prometheus_rule_group_ingested_samples_out_of_order_total counter
+prometheus_rule_group_ingested_samples_out_of_order_total{rule_group="fixtures/rules2.yaml;test_2"} %d
+`, expectedDuplicates, expectedOtherFailures, expectedOutOfOrder)),
+		"prometheus_rule_group_ingested_samples_duplicate_timestamp_total",
+		"prometheus_rule_group_ingested_samples_out_of_order_total",
+		"prometheus_rule_group_ingested_samples_other_failures_total",
+	)
+	require.NoError(t, err)
+}
+
 func TestMetricsUpdate(t *testing.T) {
 	files := []string{"fixtures/rules.yaml", "fixtures/rules2.yaml"}
 	metricNames := []string{
 		"prometheus_rule_evaluations_total",
 		"prometheus_rule_evaluation_failures_total",
+		"prometheus_rule_group_ingested_samples_total",
+		"prometheus_rule_group_ingested_samples_duplicate_timestamp_total",
+		"prometheus_rule_group_ingested_samples_out_of_order_total",
+		"prometheus_rule_group_ingested_samples_other_failures_total",
 		"prometheus_rule_group_interval_seconds",
 		"prometheus_rule_group_last_duration_seconds",
 		"prometheus_rule_group_last_evaluation_timestamp_seconds",
@@ -954,11 +1077,11 @@ func TestMetricsUpdate(t *testing.T) {
 	}{
 		{
 			files:   files,
-			metrics: 12,
+			metrics: len(metricNames) * 2,
 		},
 		{
 			files:   files[:1],
-			metrics: 6,
+			metrics: len(metricNames),
 		},
 		{
 			files:   files[:0],
@@ -966,7 +1089,7 @@ func TestMetricsUpdate(t *testing.T) {
 		},
 		{
 			files:   files[1:],
-			metrics: 6,
+			metrics: len(metricNames),
 		},
 	}
 
