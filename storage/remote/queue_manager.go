@@ -303,7 +303,7 @@ type QueueManager struct {
 	seriesMtx            sync.Mutex
 	seriesLabels         map[uint64]labels.Labels
 	seriesSegmentIndexes map[uint64]int
-	droppedSeries        map[uint64]struct{}
+	droppedSeries        map[uint64]int
 
 	shards      *shards
 	numShards   int
@@ -352,7 +352,7 @@ func NewQueueManager(
 
 		seriesLabels:         make(map[uint64]labels.Labels),
 		seriesSegmentIndexes: make(map[uint64]int),
-		droppedSeries:        make(map[uint64]struct{}),
+		droppedSeries:        make(map[uint64]int),
 
 		numShards:   cfg.MinShards,
 		reshardChan: make(chan int),
@@ -541,7 +541,7 @@ func (t *QueueManager) StoreSeries(series []record.RefSeries, index int) {
 		ls := processExternalLabels(s.Labels, t.externalLabels)
 		lbls := relabel.Process(ls, t.relabelConfigs...)
 		if len(lbls) == 0 {
-			t.droppedSeries[s.Ref] = struct{}{}
+			t.droppedSeries[s.Ref] = index
 			continue
 		}
 		t.seriesSegmentIndexes[s.Ref] = index
@@ -570,6 +570,11 @@ func (t *QueueManager) SeriesReset(index int) {
 			delete(t.seriesSegmentIndexes, k)
 			t.releaseLabels(t.seriesLabels[k])
 			delete(t.seriesLabels, k)
+		}
+	}
+
+	for k, v := range t.droppedSeries {
+		if v < index {
 			delete(t.droppedSeries, k)
 		}
 	}
