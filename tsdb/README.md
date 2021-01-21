@@ -17,3 +17,4 @@ A series of blog posts explaining different components of TSDB:
 * [WAL and Checkpoint](https://ganeshvernekar.com/blog/prometheus-tsdb-wal-and-checkpoint/)
 * [Memory Mapping of Head Chunks from Disk](https://ganeshvernekar.com/blog/prometheus-tsdb-mmapping-head-chunks-from-disk/)
 * [Persistent Block and its Index](https://ganeshvernekar.com/blog/prometheus-tsdb-persistent-block-and-its-index/)
+* [Queries](https://ganeshvernekar.com/blog/prometheus-tsdb-queries/)
