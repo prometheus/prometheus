@@ -303,7 +303,7 @@ type QueueManager struct {
 	seriesMtx            sync.Mutex
 	seriesLabels         map[uint64]labels.Labels
 	seriesSegmentIndexes map[uint64]int
-	droppedSeries        map[uint64]int
+	droppedSeries        map[uint64]struct{}
 
 	shards      *shards
 	numShards   int
@@ -352,7 +352,7 @@ func NewQueueManager(
 
 		seriesLabels:         make(map[uint64]labels.Labels),
 		seriesSegmentIndexes: make(map[uint64]int),
-		droppedSeries:        make(map[uint64]int),
+		droppedSeries:        make(map[uint64]struct{}),
 
 		numShards:   cfg.MinShards,
 		reshardChan: make(chan int),
@@ -538,13 +538,15 @@ func (t *QueueManager) StoreSeries(series []record.RefSeries, index int) {
 	t.seriesMtx.Lock()
 	defer t.seriesMtx.Unlock()
 	for _, s := range series {
+		// Just make sure all the Refs of Series will insert into seriesSegmentIndexes map for tracking.
+		t.seriesSegmentIndexes[s.Ref] = index
+
 		ls := processExternalLabels(s.Labels, t.externalLabels)
 		lbls := relabel.Process(ls, t.relabelConfigs...)
 		if len(lbls) == 0 {
-			t.droppedSeries[s.Ref] = index
+			t.droppedSeries[s.Ref] = struct{}{}
 			continue
 		}
-		t.seriesSegmentIndexes[s.Ref] = index
 		t.internLabels(lbls)
 
 		// We should not ever be replacing a series labels in the map, but just
@@ -570,11 +572,6 @@ func (t *QueueManager) SeriesReset(index int) {
 			delete(t.seriesSegmentIndexes, k)
 			t.releaseLabels(t.seriesLabels[k])
 			delete(t.seriesLabels, k)
-		}
-	}
-
-	for k, v := range t.droppedSeries {
-		if v < index {
 			delete(t.droppedSeries, k)
 		}
 	}
