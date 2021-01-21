@@ -1639,7 +1639,13 @@ func (h *headIndexReader) LabelValues(name string, matchers ...*labels.Matcher) 
 		return h.head.postings.LabelValues(name), nil
 	}
 
-	postings, err := PostingsForMatchers(h, matchers...)
+	// We're only interested in metrics which have the label <name>.
+	requireLabel, err := labels.NewMatcher(labels.MatchNotEqual, name, "")
+	if err != nil {
+		return nil, errors.Wrapf(err, "Failed to instantiate label matcher")
+	}
+
+	postings, err := PostingsForMatchers(h, append(matchers, requireLabel)...)
 	if err != nil {
 		h.head.symMtx.RUnlock()
 		return nil, err

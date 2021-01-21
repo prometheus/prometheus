@@ -441,8 +441,14 @@ func (r blockIndexReader) LabelValues(name string, matchers ...*labels.Matcher) 
 		return st, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
 	}
 
+	// We're only interested in metrics which have the label <name>.
+	requireLabel, err := labels.NewMatcher(labels.MatchNotEqual, name, "")
+	if err != nil {
+		return nil, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
+	}
+
 	var p index.Postings
-	p, err := PostingsForMatchers(r, matchers...)
+	p, err = PostingsForMatchers(r, append(matchers, requireLabel)...)
 	if err != nil {
 		return nil, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
 	}
