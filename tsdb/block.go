@@ -437,7 +437,7 @@ func (r blockIndexReader) SortedLabelValues(name string, matchers ...*labels.Mat
 
 func (r blockIndexReader) LabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
 	if len(matchers) == 0 {
-		st, err := r.ir.LabelValues(name, matchers...)
+		st, err := r.ir.LabelValues(name)
 		return st, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
 	}
 
