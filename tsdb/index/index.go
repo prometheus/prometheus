@@ -1452,6 +1452,7 @@ func (r *Reader) SortedLabelValues(name string, matchers ...*labels.Matcher) ([]
 }
 
 // LabelValues returns value tuples that exist for the given label name.
+// Passing matchers is not supported yet.
 // It is not safe to use the return value beyond the lifetime of the byte slice
 // passed into the Reader.
 func (r *Reader) LabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {

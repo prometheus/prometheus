@@ -1766,6 +1766,7 @@ func (h *headIndexReader) Series(ref uint64, lbls *labels.Labels, chks *[]chunks
 	return nil
 }
 
+// LabelValueFor returns value of given label of metric referred to by id.
 func (h *headIndexReader) LabelValueFor(id uint64, label string) (string, error) {
 	h.head.symMtx.RLock()
 	defer h.head.symMtx.RUnlock()
