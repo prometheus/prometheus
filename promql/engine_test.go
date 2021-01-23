@@ -1053,6 +1053,10 @@ load 1ms
 
 			res := qry.Exec(test.Context())
 			require.NoError(t, res.Err)
+			if expMat, ok := c.result.(Matrix); ok {
+				sort.Sort(expMat)
+				sort.Sort(res.Value.(Matrix))
+			}
 			require.Equal(t, c.result, res.Value, "query %q failed", c.query)
 		})
 	}
