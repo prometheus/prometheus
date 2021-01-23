@@ -3010,6 +3010,16 @@ func TestGetGlobalURL(t *testing.T) {
 			mustParseURL(t, "http://[::1]:9091"),
 			false,
 		},
+		{
+			mustParseURL(t, "http://localhost:9091"),
+			GlobalURLOptions{
+				ListenAddress: "[::1]:9090",
+				Host:          "[::1]:9090",
+				Scheme:        "https",
+			},
+			mustParseURL(t, "http://[::1]:9091"),
+			false,
+		},
 	}
 
 	for i, tc := range testcases {
