@@ -602,7 +602,6 @@ func TestEndpointSliceDiscoveryNamespaces(t *testing.T) {
 					"__meta_kubernetes_service_labelpresent_app":                              "true",
 					"__meta_kubernetes_service_name":                                          "testendpoints",
 					"__meta_kubernetes_endpointslice_labelpresent_kubernetes_io_service_name": "true",
-					"__meta_kubernetes_endpointslice_label_kubernetes_io_service_name": 	   "testendpoints",
 				},
 				Source: "endpointslice/ns1/testendpoints",
 			},
