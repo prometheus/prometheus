@@ -102,7 +102,6 @@ type flagConfig struct {
 
 	localStoragePath    string
 	notifier            notifier.Options
-	notifierTimeout     model.Duration
 	forGracePeriod      model.Duration
 	outageTolerance     model.Duration
 	resendDelay         model.Duration
@@ -275,8 +274,8 @@ func main() {
 	a.Flag("alertmanager.notification-queue-capacity", "The capacity of the queue for pending Alertmanager notifications.").
 		Default("10000").IntVar(&cfg.notifier.QueueCapacity)
 
-	a.Flag("alertmanager.timeout", "Timeout for sending alerts to Alertmanager.").
-		Default("10s").SetValue(&cfg.notifierTimeout)
+	// TODO: Remove in Prometheus 3.0.
+	alertmanagerTimeout := a.Flag("alertmanager.timeout", "[DEPRECATED] This flag has no effect.").Hidden().String()
 
 	a.Flag("query.lookback-delta", "The maximum lookback duration for retrieving metrics during expression evaluations and federation.").
 		Default("5m").SetValue(&cfg.lookbackDelta)
@@ -319,6 +318,10 @@ func main() {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, errors.Wrapf(err, "could not compile CORS regex string %q", cfg.corsRegexString))
 		os.Exit(2)
+	}
+
+	if *alertmanagerTimeout != "" {
+		level.Warn(logger).Log("msg", "The flag --alertmanager.timeout has no effect and will be removed in the future.")
 	}
 
 	// Throw error for invalid config before starting other components.
