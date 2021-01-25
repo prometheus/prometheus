@@ -375,6 +375,49 @@ func TestReadIndexFormatV1(t *testing.T) {
 		})
 }
 
+func BenchmarkLabelValuesWithMatchers(b *testing.B) {
+	tmpdir, err := ioutil.TempDir("", "bench_block_label_values_with_matchers")
+	require.NoError(b, err)
+	defer func() {
+		require.NoError(b, os.RemoveAll(tmpdir))
+	}()
+
+	var seriesEntries []storage.Series
+	metricCount := 1000000
+	for i := 0; i < metricCount; i++ {
+		seriesEntries = append(seriesEntries, storage.NewListSeries(labels.Labels{
+			{Name: "unique", Value: fmt.Sprintf("value%d", i)},
+			{Name: "tens", Value: fmt.Sprintf("value%d", i/(metricCount/10))},
+			{Name: "ninety", Value: fmt.Sprintf("value%d", i/(metricCount/10)/9)}, // "0" for the first 90%, then "1"
+		}, []tsdbutil.Sample{sample{100, 0}}))
+	}
+
+	blockDir := createBlock(b, tmpdir, seriesEntries)
+	files, err := sequenceFiles(chunkDir(blockDir))
+	require.NoError(b, err)
+	require.Greater(b, len(files), 0, "No chunk created.")
+
+	// Check open err.
+	block, err := OpenBlock(nil, blockDir, nil)
+	require.NoError(b, err)
+	defer func() { require.NoError(b, block.Close()) }()
+
+	indexReader, err := block.Index()
+	require.NoError(b, err)
+	defer func() { require.NoError(b, indexReader.Close()) }()
+
+	matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "ninety", "value0")}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for benchIdx := 0; benchIdx < b.N; benchIdx++ {
+		actualValues, err := indexReader.LabelValues("tens", matchers...)
+		require.NoError(b, err)
+		require.Equal(b, 9, len(actualValues))
+	}
+}
+
 // createBlock creates a block with given set of series and returns its dir.
 func createBlock(tb testing.TB, dir string, series []storage.Series) string {
 	blockDir, err := CreateBlock(series, dir, 0, log.NewNopLogger())

@@ -1992,3 +1992,34 @@ func TestHeadMintAfterTruncation(t *testing.T) {
 
 	require.NoError(t, head.Close())
 }
+
+func BenchmarkHeadLabelValuesWithMatchers(b *testing.B) {
+	chunkRange := int64(2000)
+	head, _ := newTestHead(b, chunkRange, false)
+	b.Cleanup(func() { require.NoError(b, head.Close()) })
+
+	app := head.Appender(context.Background())
+
+	metricCount := 1000000
+	for i := 0; i < metricCount; i++ {
+		_, err := app.Add(labels.Labels{
+			{Name: "unique", Value: fmt.Sprintf("value%d", i)},
+			{Name: "tens", Value: fmt.Sprintf("value%d", i/(metricCount/10))},
+			{Name: "ninety", Value: fmt.Sprintf("value%d", i/(metricCount/10)/9)}, // "0" for the first 90%, then "1"
+		}, 100, 0)
+		require.NoError(b, err)
+	}
+	require.NoError(b, app.Commit())
+
+	headIdxReader := head.indexRange(0, 200)
+	matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "ninety", "value0")}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for benchIdx := 0; benchIdx < b.N; benchIdx++ {
+		actualValues, err := headIdxReader.LabelValues("tens", matchers...)
+		require.NoError(b, err)
+		require.Equal(b, 9, len(actualValues))
+	}
+}
