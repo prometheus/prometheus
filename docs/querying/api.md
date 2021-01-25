@@ -1019,7 +1019,7 @@ $ curl -X POST \
   -g 'http://localhost:9090/api/v1/admin/tsdb/delete_series?match[]=up&match[]=process_start_time_seconds{job="prometheus"}'
 ```
 
-NOTE: This endpoint deletes samples from series, but will not necessarily delete associated series metadata in every case (even after cleaning tombstones). Thus the series metadata API endpoints may still return metadata for series whose samples have been deleted for the selected time range. The exact extent of metadata deletion is an implementation detail that may change in the future.
+NOTE: This endpoint marks samples from series as deleted, but will not necessarily delete associated series metadata in every case (even after cleaning tombstones). Thus the series metadata API endpoints may still return metadata for series whose samples have been deleted for the selected time range. The exact extent of metadata deletion is an implementation detail that may change in the future.
 
 *New in v2.1 and supports PUT from v2.9*
 
