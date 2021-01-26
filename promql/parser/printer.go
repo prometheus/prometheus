@@ -116,14 +116,24 @@ func (node *MatrixSelector) String() string {
 	// Copy the Vector selector before changing the offset
 	vecSelector := *node.VectorSelector.(*VectorSelector)
 	offset := ""
-	if vecSelector.Offset != time.Duration(0) {
-		offset = fmt.Sprintf(" offset %s", model.Duration(vecSelector.Offset))
+	if vecSelector.OriginalOffset != time.Duration(0) {
+		offset = fmt.Sprintf(" offset %s", model.Duration(vecSelector.OriginalOffset))
+	}
+	at := ""
+	if vecSelector.Timestamp != nil {
+		at = fmt.Sprintf(" @ %.3f", float64(*vecSelector.Timestamp)/1000.0)
 	}
 
-	// Do not print the offset twice.
-	vecSelector.Offset = 0
+	// Do not print the @ and offset twice.
+	offsetVal, atVal := vecSelector.OriginalOffset, vecSelector.Timestamp
+	vecSelector.OriginalOffset = 0
+	vecSelector.Timestamp = nil
 
-	return fmt.Sprintf("%s[%s]%s", vecSelector.String(), model.Duration(node.Range), offset)
+	str := fmt.Sprintf("%s[%s]%s%s", vecSelector.String(), model.Duration(node.Range), at, offset)
+
+	vecSelector.OriginalOffset, vecSelector.Timestamp = offsetVal, atVal
+
+	return str
 }
 
 func (node *SubqueryExpr) String() string {
@@ -132,10 +142,14 @@ func (node *SubqueryExpr) String() string {
 		step = model.Duration(node.Step).String()
 	}
 	offset := ""
-	if node.Offset != time.Duration(0) {
-		offset = fmt.Sprintf(" offset %s", model.Duration(node.Offset))
+	if node.OriginalOffset != time.Duration(0) {
+		offset = fmt.Sprintf(" offset %s", model.Duration(node.OriginalOffset))
 	}
-	return fmt.Sprintf("%s[%s:%s]%s", node.Expr.String(), model.Duration(node.Range), step, offset)
+	at := ""
+	if node.Timestamp != nil {
+		at = fmt.Sprintf(" @ %.3f", float64(*node.Timestamp)/1000.0)
+	}
+	return fmt.Sprintf("%s[%s:%s]%s%s", node.Expr.String(), model.Duration(node.Range), step, at, offset)
 }
 
 func (node *NumberLiteral) String() string {
@@ -164,13 +178,17 @@ func (node *VectorSelector) String() string {
 		labelStrings = append(labelStrings, matcher.String())
 	}
 	offset := ""
-	if node.Offset != time.Duration(0) {
-		offset = fmt.Sprintf(" offset %s", model.Duration(node.Offset))
+	if node.OriginalOffset != time.Duration(0) {
+		offset = fmt.Sprintf(" offset %s", model.Duration(node.OriginalOffset))
+	}
+	at := ""
+	if node.Timestamp != nil {
+		at = fmt.Sprintf(" @ %.3f", float64(*node.Timestamp)/1000.0)
 	}
 
 	if len(labelStrings) == 0 {
-		return fmt.Sprintf("%s%s", node.Name, offset)
+		return fmt.Sprintf("%s%s%s", node.Name, at, offset)
 	}
 	sort.Strings(labelStrings)
-	return fmt.Sprintf("%s{%s}%s", node.Name, strings.Join(labelStrings, ","), offset)
+	return fmt.Sprintf("%s{%s}%s%s", node.Name, strings.Join(labelStrings, ","), at, offset)
 }

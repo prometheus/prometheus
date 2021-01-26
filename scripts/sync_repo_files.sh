@@ -73,10 +73,12 @@ process_repo() {
     fi
     if [[ -z "${target_file}" ]]; then
       echo "${source_file} doesn't exist in ${org_repo}"
-      if [[ "${source_file}" == 'CODE_OF_CONDUCT.md' ]] ; then
-        echo "CODE_OF_CONDUCT.md missing in ${org_repo}, force updating."
-        needs_update+=('CODE_OF_CONDUCT.md')
-      fi
+      case "${source_file}" in
+        CODE_OF_CONDUCT.md | SECURITY.md)
+          echo "${source_file} missing in ${org_repo}, force updating."
+          needs_update+=("${source_file}")
+          ;;
+      esac
       continue
     fi
     target_checksum="$(echo "${target_file}" | sha256sum | cut -d' ' -f1)"

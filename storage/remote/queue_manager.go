@@ -538,13 +538,15 @@ func (t *QueueManager) StoreSeries(series []record.RefSeries, index int) {
 	t.seriesMtx.Lock()
 	defer t.seriesMtx.Unlock()
 	for _, s := range series {
+		// Just make sure all the Refs of Series will insert into seriesSegmentIndexes map for tracking.
+		t.seriesSegmentIndexes[s.Ref] = index
+
 		ls := processExternalLabels(s.Labels, t.externalLabels)
 		lbls := relabel.Process(ls, t.relabelConfigs...)
 		if len(lbls) == 0 {
 			t.droppedSeries[s.Ref] = struct{}{}
 			continue
 		}
-		t.seriesSegmentIndexes[s.Ref] = index
 		t.internLabels(lbls)
 
 		// We should not ever be replacing a series labels in the map, but just

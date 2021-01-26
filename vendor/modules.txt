@@ -395,10 +395,10 @@ github.com/prometheus/common/promlog/flag
 github.com/prometheus/common/route
 github.com/prometheus/common/server
 github.com/prometheus/common/version
-# github.com/prometheus/exporter-toolkit v0.4.0
+# github.com/prometheus/exporter-toolkit v0.5.1
 ## explicit
-github.com/prometheus/exporter-toolkit/https
-github.com/prometheus/exporter-toolkit/https/kingpinflag
+github.com/prometheus/exporter-toolkit/web
+github.com/prometheus/exporter-toolkit/web/kingpinflag
 # github.com/prometheus/procfs v0.2.0
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs

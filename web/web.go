@@ -50,7 +50,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
 	"github.com/prometheus/common/server"
-	"github.com/prometheus/exporter-toolkit/https"
+	toolkit_web "github.com/prometheus/exporter-toolkit/web"
 	"go.uber.org/atomic"
 	"golang.org/x/net/netutil"
 
@@ -544,7 +544,7 @@ func (h *Handler) Listener() (net.Listener, error) {
 }
 
 // Run serves the HTTP endpoints.
-func (h *Handler) Run(ctx context.Context, listener net.Listener, httpsConfig string) error {
+func (h *Handler) Run(ctx context.Context, listener net.Listener, webConfig string) error {
 	if listener == nil {
 		var err error
 		listener, err = h.Listener()
@@ -580,7 +580,7 @@ func (h *Handler) Run(ctx context.Context, listener net.Listener, httpsConfig st
 
 	errCh := make(chan error)
 	go func() {
-		errCh <- https.Serve(listener, httpSrv, httpsConfig, h.logger)
+		errCh <- toolkit_web.Serve(listener, httpSrv, webConfig, h.logger)
 	}()
 
 	select {
