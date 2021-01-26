@@ -595,14 +595,22 @@ func TestEndpointSliceDiscoveryNamespaces(t *testing.T) {
 					},
 				},
 				Labels: model.LabelSet{
+<<<<<<< HEAD
+=======
+          "__meta_kubernetes_endpointslice_labelpresent_kubernetes_io_service_name": "true",
+          "__meta_kubernetes_endpointslice_label_kubernetes_io_service_name":        "testendpoints",
+>>>>>>> update test TestEndpointSliceDiscoveryNamespaces
 					"__meta_kubernetes_endpointslice_address_type":                            "IPv4",
 					"__meta_kubernetes_endpointslice_name":                                    "testendpoints",
 					"__meta_kubernetes_namespace":                                             "ns1",
 					"__meta_kubernetes_service_label_app":                                     "app1",
 					"__meta_kubernetes_service_labelpresent_app":                              "true",
 					"__meta_kubernetes_service_name":                                          "testendpoints",
+<<<<<<< HEAD
 					"__meta_kubernetes_endpointslice_label_kubernetes_io_service_name":        "testendpoints",
 					"__meta_kubernetes_endpointslice_labelpresent_kubernetes_io_service_name": "true",
+=======
+>>>>>>> update test TestEndpointSliceDiscoveryNamespaces
 				},
 				Source: "endpointslice/ns1/testendpoints",
 			},
@@ -629,11 +637,9 @@ func TestEndpointSliceDiscoveryNamespaces(t *testing.T) {
 					},
 				},
 				Labels: model.LabelSet{
-					"__meta_kubernetes_endpointslice_address_type":                            "IPv4",
-					"__meta_kubernetes_endpointslice_name":                                    "testendpoints",
-					"__meta_kubernetes_namespace":                                             "ns2",
-					"__meta_kubernetes_endpointslice_label_kubernetes_io_service_name":        "testendpoints",
-					"__meta_kubernetes_endpointslice_labelpresent_kubernetes_io_service_name": "true",
+					"__meta_kubernetes_endpointslice_address_type": "IPv4",
+					"__meta_kubernetes_endpointslice_name":         "testendpoints",
+					"__meta_kubernetes_namespace":                  "ns2",
 				},
 				Source: "endpointslice/ns2/testendpoints",
 			},
