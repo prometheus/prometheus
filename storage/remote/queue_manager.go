@@ -1064,7 +1064,7 @@ func sendWriteRequestWithBackoff(ctx context.Context, cfg config.QueueConfig, s 
 
 		// If we make it this far, we've encountered a recoverable error and will retry.
 		onRetry()
-		level.Debug(l).Log("msg", "failed to send batch, retrying", "err", err)
+		level.Warn(l).Log("msg", "Failed to send batch, retrying", "err", err)
 
 		time.Sleep(time.Duration(backoff))
 		backoff = backoff * 2
