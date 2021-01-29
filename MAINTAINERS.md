@@ -1,4 +1,4 @@
-@brian-brazil is the main/default maintainer, some parts of the codebase have other maintainers:
+@roidelapluie is the main/default maintainer, some parts of the codebase have other maintainers:
 
 * `cmd`
   * `promtool`: @simonpasquier
