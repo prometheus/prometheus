@@ -985,7 +985,7 @@ func computeExternalURL(u, listenAddr string) (*url.URL, error) {
 	}
 
 	if endsWithQuote(u) {
-		return nil, errors.New("URL must not begin or end with quotes")
+		return nil, errors.New("URL must not end with quotes")
 	}
 
 	eu, err := url.Parse(u)
