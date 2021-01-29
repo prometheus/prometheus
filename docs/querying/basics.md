@@ -244,6 +244,8 @@ This modifier is disabled by default since it breaks the invariant that PromQL
 does not look ahead of the evaluation time for samples. It can be enabled by setting
 `--enable-feature=promql-at-modifier` flag. It will be enabled by default in the future.
 
+`start()` and `end()` can also be used with `@` modifier. Learn more about it [here](#pre-processors)
+
 ## Subquery
 
 Subquery allows you to run an instant query for a given range and resolution. The result of a subquery is a range vector.
@@ -251,6 +253,23 @@ Subquery allows you to run an instant query for a given range and resolution. Th
 Syntax: `<instant_query> '[' <range> ':' [<resolution>] ']' [ @ <float_literal> ] [ offset <duration> ]`
 
 * `<resolution>` is optional. Default is the global evaluation interval.
+
+## Pre-processors
+
+`start()` and `end()` are the currently supported pre-processors.
+
+While they look like PromQL functions, they actually act like template variables;
+they are replaced with query start and end time respectively _before_ executing the query.
+
+For a range query, their values depend on the start and end time passed to the query API and not the evaluation time.
+
+For an instant query, `start()` and `end()` both resolve to the evaluation time.
+
+At the moment, these can only be used with `@` modifier, hence the flag `--enable-feature=promql-at-modifier` is required
+to enable these pre-processors.
+
+    http_requests_total @ start()
+    rate(http_requests_total[5m] @ end())
 
 ## Operators
 

@@ -11,9 +11,11 @@ Their behaviour can change in future releases which will be communicated via the
 You can enable them using the `--enable-feature` flag with a comma separated list of features.
 They may be enabled by default in future versions.
 
-## `@` Modifier in PromQL
+## `@` Modifier, `start()` and `end()` in PromQL
 
 `--enable-feature=promql-at-modifier`
 
-This feature lets you specify the evaluation time for instant vector selectors,
-range vector selectors, and subqueries. More details can be found [here](querying/basics.md#@-modifier).
+`@` modifier lets you specify the evaluation time for instant vector selectors,
+range vector selectors, and subqueries. More details can be found [here](querying/basics.md#-modifier).
+
+`start()` and `end()` are pre-processors that can be used with `@` modifier. More details can be found [here](querying/basics.md#pre-processors).

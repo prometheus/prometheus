@@ -1033,6 +1033,24 @@ load 1ms
 					Metric: lblstopk2,
 				},
 			},
+		}, {
+			query: `metric_topk and topk(1, sum_over_time(metric_topk[50s] @ end()))`,
+			start: 70, end: 100, interval: 10,
+			result: Matrix{
+				Series{
+					Points: []Point{{V: 993, T: 70000}, {V: 992, T: 80000}, {V: 991, T: 90000}, {V: 990, T: 100000}},
+					Metric: lblstopk3,
+				},
+			},
+		}, {
+			query: `metric_topk and topk(1, sum_over_time(metric_topk[50s] @ start()))`,
+			start: 100, end: 130, interval: 10,
+			result: Matrix{
+				Series{
+					Points: []Point{{V: 990, T: 100000}, {V: 989, T: 110000}, {V: 988, T: 120000}, {V: 987, T: 130000}},
+					Metric: lblstopk3,
+				},
+			},
 		},
 	}
 
@@ -1491,7 +1509,9 @@ func TestQueryLogger_error(t *testing.T) {
 	}
 }
 
-func TestWrapWithStepInvariantExpr(t *testing.T) {
+func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
+	startTime := time.Unix(1000, 0)
+	endTime := time.Unix(9999, 0)
 	var testCases = []struct {
 		input    string      // The input to be parsed.
 		expected parser.Expr // The expected expression AST.
@@ -2080,6 +2100,120 @@ func TestWrapWithStepInvariantExpr(t *testing.T) {
 					},
 				},
 			},
+		}, {
+			input: `foo @ start()`,
+			expected: &parser.StepInvariantExpr{
+				Expr: &parser.VectorSelector{
+					Name: "foo",
+					LabelMatchers: []*labels.Matcher{
+						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
+					},
+					PosRange: parser.PositionRange{
+						Start: 0,
+						End:   13,
+					},
+					Timestamp:    makeInt64Pointer(timestamp.FromTime(startTime)),
+					Preprocessor: parser.START,
+				},
+			},
+		}, {
+			input: `foo @ end()`,
+			expected: &parser.StepInvariantExpr{
+				Expr: &parser.VectorSelector{
+					Name: "foo",
+					LabelMatchers: []*labels.Matcher{
+						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
+					},
+					PosRange: parser.PositionRange{
+						Start: 0,
+						End:   11,
+					},
+					Timestamp:    makeInt64Pointer(timestamp.FromTime(endTime)),
+					Preprocessor: parser.END,
+				},
+			},
+		}, {
+			input: `test[5y] @ start()`,
+			expected: &parser.StepInvariantExpr{
+				Expr: &parser.MatrixSelector{
+					VectorSelector: &parser.VectorSelector{
+						Name:         "test",
+						Timestamp:    makeInt64Pointer(timestamp.FromTime(startTime)),
+						Preprocessor: parser.START,
+						LabelMatchers: []*labels.Matcher{
+							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "test"),
+						},
+						PosRange: parser.PositionRange{
+							Start: 0,
+							End:   4,
+						},
+					},
+					Range:  5 * 365 * 24 * time.Hour,
+					EndPos: 18,
+				},
+			},
+		}, {
+			input: `test[5y] @ end()`,
+			expected: &parser.StepInvariantExpr{
+				Expr: &parser.MatrixSelector{
+					VectorSelector: &parser.VectorSelector{
+						Name:         "test",
+						Timestamp:    makeInt64Pointer(timestamp.FromTime(endTime)),
+						Preprocessor: parser.END,
+						LabelMatchers: []*labels.Matcher{
+							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "test"),
+						},
+						PosRange: parser.PositionRange{
+							Start: 0,
+							End:   4,
+						},
+					},
+					Range:  5 * 365 * 24 * time.Hour,
+					EndPos: 16,
+				},
+			},
+		}, {
+			input: `some_metric[10m:5s] @ start()`,
+			expected: &parser.StepInvariantExpr{
+				Expr: &parser.SubqueryExpr{
+					Expr: &parser.VectorSelector{
+						Name: "some_metric",
+						LabelMatchers: []*labels.Matcher{
+							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric"),
+						},
+						PosRange: parser.PositionRange{
+							Start: 0,
+							End:   11,
+						},
+					},
+					Timestamp:    makeInt64Pointer(timestamp.FromTime(startTime)),
+					Preprocessor: parser.START,
+					Range:        10 * time.Minute,
+					Step:         5 * time.Second,
+					EndPos:       29,
+				},
+			},
+		}, {
+			input: `some_metric[10m:5s] @ end()`,
+			expected: &parser.StepInvariantExpr{
+				Expr: &parser.SubqueryExpr{
+					Expr: &parser.VectorSelector{
+						Name: "some_metric",
+						LabelMatchers: []*labels.Matcher{
+							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric"),
+						},
+						PosRange: parser.PositionRange{
+							Start: 0,
+							End:   11,
+						},
+					},
+					Timestamp:    makeInt64Pointer(timestamp.FromTime(endTime)),
+					Preprocessor: parser.END,
+					Range:        10 * time.Minute,
+					Step:         5 * time.Second,
+					EndPos:       27,
+				},
+			},
 		},
 	}
 
@@ -2087,7 +2221,7 @@ func TestWrapWithStepInvariantExpr(t *testing.T) {
 		t.Run(test.input, func(t *testing.T) {
 			expr, err := parser.ParseExpr(test.input)
 			require.NoError(t, err)
-			expr = WrapWithStepInvariantExpr(expr)
+			expr = PreprocessAndWrapWithStepInvariantExpr(expr, startTime, endTime)
 			require.Equal(t, test.expected, expr, "error on input '%s'", test.input)
 		})
 	}

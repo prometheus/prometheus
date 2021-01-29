@@ -98,6 +98,26 @@ func TestExprString(t *testing.T) {
 		{
 			in: `a{b!~"c"}[1m]`,
 		},
+		{
+			in:  `a @ 10`,
+			out: `a @ 10.000`,
+		},
+		{
+			in:  `a[1m] @ 10`,
+			out: `a[1m] @ 10.000`,
+		},
+		{
+			in: `a @ start()`,
+		},
+		{
+			in: `a @ end()`,
+		},
+		{
+			in: `a[1m] @ start()`,
+		},
+		{
+			in: `a[1m] @ end()`,
+		},
 	}
 
 	for _, test := range inputs {

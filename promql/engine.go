@@ -373,7 +373,7 @@ func (ng *Engine) newQuery(q storage.Queryable, expr parser.Expr, start, end tim
 	}
 
 	es := &parser.EvalStmt{
-		Expr:     WrapWithStepInvariantExpr(expr),
+		Expr:     PreprocessAndWrapWithStepInvariantExpr(expr, start, end),
 		Start:    start,
 		End:      end,
 		Interval: interval,
@@ -2306,29 +2306,35 @@ func unwrapStepInvariantExpr(e parser.Expr) parser.Expr {
 	return e
 }
 
-// WrapWithStepInvariantExpr wraps all possible parts of the given
-// expression with StepInvariantExpr wherever valid.
-func WrapWithStepInvariantExpr(expr parser.Expr) parser.Expr {
-	isStepInvariant := wrapWithStepInvariantExprHelper(expr)
+// PreprocessAndWrapWithStepInvariantExpr wraps all possible parts of the given
+// expression with StepInvariantExpr wherever valid. It also resolves the preprocessors.
+func PreprocessAndWrapWithStepInvariantExpr(expr parser.Expr, start, end time.Time) parser.Expr {
+	isStepInvariant := preprocessAndWrapWithStepInvariantExprHelper(expr, start, end)
 	if isStepInvariant {
 		return newStepInvariantExpr(expr)
 	}
 	return expr
 }
 
-// wrapWithStepInvariantExprHelper wraps the child nodes of the expression
+// preprocessAndWrapWithStepInvariantExprHelper wraps the child nodes of the expression
 // with a StepInvariantExpr wherever valid. The returned boolean is true if the
 // passed expression qualifies to be wrapped by StepInvariantExpr.
-func wrapWithStepInvariantExprHelper(expr parser.Expr) bool {
+// It also resolves the preprocessors.
+func preprocessAndWrapWithStepInvariantExprHelper(expr parser.Expr, start, end time.Time) bool {
 	switch n := expr.(type) {
 	case *parser.VectorSelector:
+		if n.Preprocessor == parser.START {
+			n.Timestamp = makeInt64Pointer(timestamp.FromTime(start))
+		} else if n.Preprocessor == parser.END {
+			n.Timestamp = makeInt64Pointer(timestamp.FromTime(end))
+		}
 		return n.Timestamp != nil
 
 	case *parser.AggregateExpr:
-		return wrapWithStepInvariantExprHelper(n.Expr)
+		return preprocessAndWrapWithStepInvariantExprHelper(n.Expr, start, end)
 
 	case *parser.BinaryExpr:
-		isInvariant1, isInvariant2 := wrapWithStepInvariantExprHelper(n.LHS), wrapWithStepInvariantExprHelper(n.RHS)
+		isInvariant1, isInvariant2 := preprocessAndWrapWithStepInvariantExprHelper(n.LHS, start, end), preprocessAndWrapWithStepInvariantExprHelper(n.RHS, start, end)
 		if isInvariant1 && isInvariant2 {
 			return true
 		}
@@ -2347,7 +2353,7 @@ func wrapWithStepInvariantExprHelper(expr parser.Expr) bool {
 		isStepInvariant := !ok
 		isStepInvariantSlice := make([]bool, len(n.Args))
 		for i := range n.Args {
-			isStepInvariantSlice[i] = wrapWithStepInvariantExprHelper(n.Args[i])
+			isStepInvariantSlice[i] = preprocessAndWrapWithStepInvariantExprHelper(n.Args[i], start, end)
 			isStepInvariant = isStepInvariant && isStepInvariantSlice[i]
 		}
 
@@ -2365,7 +2371,7 @@ func wrapWithStepInvariantExprHelper(expr parser.Expr) bool {
 		return false
 
 	case *parser.MatrixSelector:
-		return n.VectorSelector.(*parser.VectorSelector).Timestamp != nil
+		return preprocessAndWrapWithStepInvariantExprHelper(n.VectorSelector, start, end)
 
 	case *parser.SubqueryExpr:
 		// Since we adjust offset for the @ modifier evaluation,
@@ -2373,17 +2379,22 @@ func wrapWithStepInvariantExprHelper(expr parser.Expr) bool {
 		// Hence we wrap the inside of subquery irrespective of
 		// @ on subquery (given it is also step invariant) so that
 		// it is evaluated only once w.r.t. the start time of subquery.
-		isInvariant := wrapWithStepInvariantExprHelper(n.Expr)
+		isInvariant := preprocessAndWrapWithStepInvariantExprHelper(n.Expr, start, end)
 		if isInvariant {
 			n.Expr = newStepInvariantExpr(n.Expr)
+		}
+		if n.Preprocessor == parser.START {
+			n.Timestamp = makeInt64Pointer(timestamp.FromTime(start))
+		} else if n.Preprocessor == parser.END {
+			n.Timestamp = makeInt64Pointer(timestamp.FromTime(end))
 		}
 		return n.Timestamp != nil
 
 	case *parser.ParenExpr:
-		return wrapWithStepInvariantExprHelper(n.Expr)
+		return preprocessAndWrapWithStepInvariantExprHelper(n.Expr, start, end)
 
 	case *parser.UnaryExpr:
-		return wrapWithStepInvariantExprHelper(n.Expr)
+		return preprocessAndWrapWithStepInvariantExprHelper(n.Expr, start, end)
 
 	case *parser.StringLiteral, *parser.NumberLiteral:
 		return true
@@ -2435,4 +2446,10 @@ func setOffsetForAtModifier(evalTime int64, expr parser.Expr) {
 		}
 		return nil
 	})
+}
+
+func makeInt64Pointer(val int64) *int64 {
+	valp := new(int64)
+	*valp = val
+	return valp
 }

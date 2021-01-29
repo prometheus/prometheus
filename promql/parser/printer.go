@@ -122,16 +122,21 @@ func (node *MatrixSelector) String() string {
 	at := ""
 	if vecSelector.Timestamp != nil {
 		at = fmt.Sprintf(" @ %.3f", float64(*vecSelector.Timestamp)/1000.0)
+	} else if vecSelector.Preprocessor == START {
+		at = " @ start()"
+	} else if vecSelector.Preprocessor == END {
+		at = " @ end()"
 	}
 
 	// Do not print the @ and offset twice.
-	offsetVal, atVal := vecSelector.OriginalOffset, vecSelector.Timestamp
+	offsetVal, atVal, preproc := vecSelector.OriginalOffset, vecSelector.Timestamp, vecSelector.Preprocessor
 	vecSelector.OriginalOffset = 0
 	vecSelector.Timestamp = nil
+	vecSelector.Preprocessor = 0
 
 	str := fmt.Sprintf("%s[%s]%s%s", vecSelector.String(), model.Duration(node.Range), at, offset)
 
-	vecSelector.OriginalOffset, vecSelector.Timestamp = offsetVal, atVal
+	vecSelector.OriginalOffset, vecSelector.Timestamp, vecSelector.Preprocessor = offsetVal, atVal, preproc
 
 	return str
 }
@@ -148,6 +153,10 @@ func (node *SubqueryExpr) String() string {
 	at := ""
 	if node.Timestamp != nil {
 		at = fmt.Sprintf(" @ %.3f", float64(*node.Timestamp)/1000.0)
+	} else if node.Preprocessor == START {
+		at = " @ start()"
+	} else if node.Preprocessor == END {
+		at = " @ end()"
 	}
 	return fmt.Sprintf("%s[%s:%s]%s%s", node.Expr.String(), model.Duration(node.Range), step, at, offset)
 }
@@ -184,6 +193,10 @@ func (node *VectorSelector) String() string {
 	at := ""
 	if node.Timestamp != nil {
 		at = fmt.Sprintf(" @ %.3f", float64(*node.Timestamp)/1000.0)
+	} else if node.Preprocessor == START {
+		at = " @ start()"
+	} else if node.Preprocessor == END {
+		at = " @ end()"
 	}
 
 	if len(labelStrings) == 0 {
