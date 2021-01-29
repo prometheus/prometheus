@@ -956,9 +956,8 @@ func reloadConfig(filename string, logger log.Logger, noStepSuqueryInterval *saf
 	return nil
 }
 
-func startsOrEndsWithQuote(s string) bool {
-	return strings.HasPrefix(s, "\"") || strings.HasPrefix(s, "'") ||
-		strings.HasSuffix(s, "\"") || strings.HasSuffix(s, "'")
+func endsWithQuote(s string) bool {
+	return strings.HasSuffix(s, "\"") || strings.HasSuffix(s, "'")
 }
 
 // compileCORSRegexString compiles given string and adds anchors
@@ -985,7 +984,7 @@ func computeExternalURL(u, listenAddr string) (*url.URL, error) {
 		u = fmt.Sprintf("http://%s:%s/", hostname, port)
 	}
 
-	if startsOrEndsWithQuote(u) {
+	if endsWithQuote(u) {
 		return nil, errors.New("URL must not begin or end with quotes")
 	}
 
