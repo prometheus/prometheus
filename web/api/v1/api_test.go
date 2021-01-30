@@ -29,7 +29,6 @@ import (
 	"runtime"
 	"sort"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -59,10 +58,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/util/teststorage"
-)
-
-const (
-	errorNone errorType = ""
 )
 
 // testMetaStore satisfies the scrape.MetricMetadataStore interface.
@@ -2252,55 +2247,6 @@ func TestStreamReadEndpoint(t *testing.T) {
 			QueryIndex: 1,
 		},
 	}, results)
-}
-
-func TestSampledWriteEndpoint(t *testing.T) {
-
-	samples := []prompb.TimeSeries{
-		{
-			Labels: []prompb.Label{
-				{Name: "__name__", Value: "test_metric1"},
-				{Name: "b", Value: "c"},
-				{Name: "baz", Value: "qux"},
-				{Name: "d", Value: "e"},
-				{Name: "foo", Value: "bar"},
-			},
-			Samples: []prompb.Sample{{Value: 1, Timestamp: 0}},
-		},
-		{
-			Labels: []prompb.Label{
-				{Name: "__name__", Value: "test_metric1"},
-				{Name: "b", Value: "c"},
-				{Name: "baz", Value: "qux"},
-				{Name: "d", Value: "e"},
-				{Name: "foo", Value: "bar"},
-			},
-			Samples: []prompb.Sample{{Value: 2, Timestamp: 1}},
-		},
-	}
-
-	req := &prompb.WriteRequest{
-		Timeseries: samples,
-	}
-
-	suite, err := promql.NewTest(t, `
-		load 1m
-			test_metric1{foo="bar",baz="qux"} 1
-	`)
-	testutil.Ok(t, err)
-
-	defer suite.Close()
-
-	err = suite.Run()
-	testutil.Ok(t, err)
-
-	api := &API{
-		Appendable: suite.Storage(),
-		refs:       make(map[string]uint64),
-		refsLock:   &sync.RWMutex{},
-	}
-	err = api.write(req)
-	testutil.Ok(t, err)
 }
 
 type fakeDB struct {

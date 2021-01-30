@@ -16,7 +16,6 @@ package v1
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"math"
 	"math/rand"
 	"net"
@@ -28,14 +27,11 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 	"unsafe"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
-	"github.com/gogo/protobuf/proto"
-	"github.com/golang/snappy"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -75,6 +71,7 @@ const (
 type errorType string
 
 const (
+	errorNone        errorType = ""
 	errorTimeout     errorType = "timeout"
 	errorCanceled    errorType = "canceled"
 	errorExec        errorType = "execution"
@@ -175,9 +172,6 @@ type TSDBAdminStats interface {
 // them using the provided storage and query engine.
 type API struct {
 	Queryable   storage.SampleAndChunkQueryable
-	Appendable  storage.Appendable
-	refs        map[string]uint64
-	refsLock    *sync.RWMutex
 	QueryEngine *promql.Engine
 
 	targetRetriever       func(context.Context) TargetRetriever
@@ -200,6 +194,7 @@ type API struct {
 	buildInfo                 *PrometheusVersion
 	runtimeInfo               func() (RuntimeInfo, error)
 	gatherer                  prometheus.Gatherer
+	remoteWriteHandler        http.Handler
 }
 
 func init() {
@@ -210,7 +205,7 @@ func init() {
 // NewAPI returns an initialized API type.
 func NewAPI(
 	qe *promql.Engine,
-	q storage.SampleAndChunkQueryable,
+	s storage.Storage,
 	tr func(context.Context) TargetRetriever,
 	ar func(context.Context) AlertmanagerRetriever,
 	configFunc func() config.Config,
@@ -229,13 +224,12 @@ func NewAPI(
 	runtimeInfo func() (RuntimeInfo, error),
 	buildInfo *PrometheusVersion,
 	gatherer prometheus.Gatherer,
+	remoteWriteReceiver bool,
 ) *API {
-	return &API{
-		QueryEngine:           qe,
-		refs:                  make(map[string]uint64),
-		refsLock:              &sync.RWMutex{},
-		Queryable:             q,
-		Appendable:            q,
+	a := &API{
+		QueryEngine: qe,
+		Queryable:   s,
+
 		targetRetriever:       tr,
 		alertmanagerRetriever: ar,
 
@@ -257,6 +251,12 @@ func NewAPI(
 		buildInfo:                 buildInfo,
 		gatherer:                  gatherer,
 	}
+
+	if remoteWriteReceiver {
+		a.remoteWriteHandler = remote.NewWriteHandler(logger, s)
+	}
+
+	return a
 }
 
 func setUnavailStatusOnTSDBNotReady(r apiFuncResult) apiFuncResult {
@@ -677,7 +677,7 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 		return invalidParamError(err, "match[]")
 	}
 
-	q, err := api.Queryable.Querier(r.Context(), timestamp.FromTime(end.Add(time.Minute*-5)), timestamp.FromTime(end))
+	q, err := api.Queryable.Querier(r.Context(), timestamp.FromTime(start), timestamp.FromTime(end))
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
 	}
@@ -1506,84 +1506,6 @@ func (api *API) remoteReadStreamedXORChunks(ctx context.Context, w http.Response
 	}
 }
 
-func (api *API) remoteWrite(w http.ResponseWriter, r *http.Request) {
-	compressed, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		level.Error(api.logger).Log("msg", "Read error", "err", err.Error())
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	reqBuf, err := snappy.Decode(nil, compressed)
-	if err != nil {
-		level.Error(api.logger).Log("msg", "Decode error", "err", err.Error())
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	var req prompb.WriteRequest
-	if err := proto.Unmarshal(reqBuf, &req); err != nil {
-		level.Error(api.logger).Log("msg", "Unmarshal error", "err", err.Error())
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	err = api.write(&req)
-	if err != nil {
-		level.Error(api.logger).Log("msg", "Api write", "err", err.Error())
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-}
-
-func (api *API) write(req *prompb.WriteRequest) error {
-	var err error = nil
-	app := api.Appendable.Appender()
-	defer func() { //TODO:clear api.refs cache
-		if err != nil {
-			app.Rollback()
-			return
-		}
-		if err = app.Commit(); err != nil {
-			return
-		}
-	}()
-	for _, ts := range req.Timeseries {
-		tsLabels := make(labels.Labels, 0, len(ts.Labels))
-		for _, l := range ts.Labels {
-			tsLabels = append(tsLabels, labels.Label{Name: l.Name, Value: l.Value})
-		}
-		sort.Sort(tsLabels)
-		tsLabelsKey := tsLabels.String()
-		for _, s := range ts.Samples {
-			api.refsLock.RLock()
-			ref, ok := api.refs[tsLabelsKey]
-			api.refsLock.RUnlock()
-			if ok {
-				err = app.AddFast(ref, s.Timestamp, s.Value)
-				if err != nil && strings.Contains(err.Error(), "unknown series") {
-					//
-				} else {
-					switch err {
-					case nil:
-					case storage.ErrOutOfOrderSample:
-						//level.Error(api.logger).Log("msg", "AddFast fail .Out of order sample", "err", err, "series", tsLabelsKey, "Timestamp", s.Timestamp, "Value", s.Value)
-					default:
-						level.Error(api.logger).Log("msg", "AddFast fail .unexpected error", "err", err, "series", tsLabelsKey, "Timestamp", s.Timestamp, "Value", s.Value)
-						return err
-					}
-					continue
-				}
-			}
-			ref, err = app.Add(tsLabels, s.Timestamp, s.Value)
-			if err != nil {
-				return err
-			}
-			api.refsLock.Lock()
-			api.refs[tsLabelsKey] = ref
-			api.refsLock.Unlock()
-		}
-	}
-	return nil
-}
-
 // filterExtLabelsFromMatchers change equality matchers which match external labels
 // to a matcher that looks for an empty label,
 // as that label should not be present in the storage.
@@ -1608,6 +1530,14 @@ func filterExtLabelsFromMatchers(pbMatchers []*prompb.LabelMatcher, externalLabe
 	}
 
 	return filteredMatchers, nil
+}
+
+func (api *API) remoteWrite(w http.ResponseWriter, r *http.Request) {
+	if api.remoteWriteHandler != nil {
+		api.remoteWriteHandler.ServeHTTP(w, r)
+	} else {
+		http.Error(w, "remote write receiver needs to be enabled with --enable-feature=remote-write-receiver", http.StatusNotFound)
+	}
 }
 
 func (api *API) deleteSeries(r *http.Request) apiFuncResult {
