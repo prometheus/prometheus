@@ -7,7 +7,7 @@ import sanitizeHTML from 'sanitize-html';
 
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSearch, faSpinner, faGlobeEurope } from '@fortawesome/free-solid-svg-icons';
-import ExpressionExplorer from './ExpressionExplorer';
+import MetricsExplorer from './MetricsExplorer';
 
 interface ExpressionInputProps {
   value: string;
@@ -225,7 +225,7 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
           )}
         </Downshift>
 
-        <ExpressionExplorer
+        <MetricsExplorer
           show={this.state.showExpressionExplorer}
           updateShow={this.updateShowExpressionExplorer}
           autocompleteSections={this.props.autocompleteSections}

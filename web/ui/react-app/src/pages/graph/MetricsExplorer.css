@@ -1,9 +1,9 @@
-.expression-explorer .query {
+.metrics-explorer .metric {
     cursor: pointer;
     margin: 0;
     padding: 5px;
 }
 
-.expression-explorer .query:hover {
+.metrics-explorer .metric:hover {
     background: #efefef;
 }

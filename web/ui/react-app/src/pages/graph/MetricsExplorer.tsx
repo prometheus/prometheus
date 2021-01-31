@@ -11,8 +11,8 @@ interface Props {
 
 interface State { }
 
-class ExpressionExplorer extends Component<Props, State> {
-  handleQueryClick = (query: string) => {
+class MetricsExplorer extends Component<Props, State> {
+  handleMetricClick = (query: string) => {
     this.props.insertAtCursor(query);
     this.props.updateShow(false);
   }
@@ -27,7 +27,7 @@ class ExpressionExplorer extends Component<Props, State> {
         <ModalHeader toggle={this.toggle}>Expression Explorer</ModalHeader>
         <ModalBody>
           {this.props.autocompleteSections['Metric Names'].map(query => (
-            <p className="query" onClick={this.handleQueryClick.bind(this, query)}>{query}</p>
+            <p className="metric" onClick={this.handleMetricClick.bind(this, query)}>{query}</p>
           ))}
         </ModalBody>
       </Modal>
@@ -35,4 +35,4 @@ class ExpressionExplorer extends Component<Props, State> {
   }
 }
 
-export default ExpressionExplorer
+export default MetricsExplorer
