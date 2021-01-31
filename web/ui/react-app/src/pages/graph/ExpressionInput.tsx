@@ -210,9 +210,9 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
                   value={value}
                 />
                 <InputGroupAddon addonType="prepend">
-                  <button className="button btn-light" type="button" onClick={this.openExpressionExplorer}>
+                  <Button className="btn-light border" onClick={this.openExpressionExplorer}>
                     <FontAwesomeIcon icon={faGlobeEurope} />
-                  </button>
+                  </Button>
                 </InputGroupAddon>
                 <InputGroupAddon addonType="append">
                   <Button className="execute-btn" color="primary" onClick={executeQuery}>
