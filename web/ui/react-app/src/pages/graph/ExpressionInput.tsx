@@ -228,7 +228,7 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
         <MetricsExplorer
           show={this.state.showExpressionExplorer}
           updateShow={this.updateShowExpressionExplorer}
-          autocompleteSections={this.props.autocompleteSections}
+          metrics={this.props.autocompleteSections['Metric Names']}
           insertAtCursor={this.insertAtCursor} />
       </>
     );

@@ -1,11 +1,11 @@
 import React, { Component } from 'react'
 import { Modal, ModalBody, ModalHeader } from 'reactstrap';
-import './ExpressionExplorer.css'
+import './MetricsExplorer.css'
 
 interface Props {
   show: boolean;
   updateShow(show: boolean): void;
-  autocompleteSections: { [key: string]: string[] };
+  metrics: string[];
   insertAtCursor(value: string): void;
 }
 
@@ -23,11 +23,11 @@ class MetricsExplorer extends Component<Props, State> {
 
   render() {
     return (
-      <Modal isOpen={this.props.show} toggle={this.toggle} className="expression-explorer">
+      <Modal isOpen={this.props.show} toggle={this.toggle} className="metrics-explorer">
         <ModalHeader toggle={this.toggle}>Expression Explorer</ModalHeader>
         <ModalBody>
-          {this.props.autocompleteSections['Metric Names'].map(query => (
-            <p className="metric" onClick={this.handleMetricClick.bind(this, query)}>{query}</p>
+          {this.props.metrics.map(metric => (
+            <p className="metric" onClick={this.handleMetricClick.bind(this, metric)}>{metric}</p>
           ))}
         </ModalBody>
       </Modal>
