@@ -158,12 +158,12 @@
             alert: 'PrometheusRemoteStorageFailures',
             expr: |||
               (
-                rate(prometheus_remote_storage_failed_samples_total{%(prometheusSelector)s}[5m])
+                (rate(prometheus_remote_storage_failed_samples_total{%(prometheusSelector)s}[5m]) or rate(prometheus_remote_storage_samples_failed_total{%(prometheusSelector)s}[5m]))
               /
                 (
-                  rate(prometheus_remote_storage_failed_samples_total{%(prometheusSelector)s}[5m])
+                  (rate(prometheus_remote_storage_failed_samples_total{%(prometheusSelector)s}[5m]) or rate(prometheus_remote_storage_samples_failed_total{%(prometheusSelector)s}[5m]))
                 +
-                  rate(prometheus_remote_storage_succeeded_samples_total{%(prometheusSelector)s}[5m])
+                  (rate(prometheus_remote_storage_succeeded_samples_total{%(prometheusSelector)s}[5m]) or rate(prometheus_remote_storage_samples_total{%(prometheusSelector)s}[5m]))
                 )
               )
               * 100
