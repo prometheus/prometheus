@@ -20,7 +20,7 @@ interface ExpressionInputProps {
 
 interface ExpressionInputState {
   height: number | string;
-  showExpressionExplorer: boolean
+  showExpressionExplorer: boolean;
 }
 
 class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputState> {
@@ -30,7 +30,7 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
     super(props);
     this.state = {
       height: 'auto',
-      showExpressionExplorer: false
+      showExpressionExplorer: false,
     };
   }
 
@@ -83,35 +83,35 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
     const sections =
       inputValue!.length && this.props.enableAutocomplete
         ? Object.entries(autocompleteSections).reduce((acc, [title, items]) => {
-          const matches = this.getSearchMatches(inputValue!, items);
-          return !matches.length
-            ? acc
-            : [
-              ...acc,
-              <ul className="autosuggest-dropdown-list" key={title}>
-                <li className="autosuggest-dropdown-header">{title}</li>
-                {matches
-                  .slice(0, 100) // Limit DOM rendering to 100 results, as DOM rendering is sloooow.
-                  .map(({ original, string: text }) => {
-                    const itemProps = downshift.getItemProps({
-                      key: original,
-                      index,
-                      item: original,
-                      style: {
-                        backgroundColor: highlightedIndex === index++ ? 'lightgray' : 'white',
-                      },
-                    });
-                    return (
-                      <li
-                        key={title}
-                        {...itemProps}
-                        dangerouslySetInnerHTML={{ __html: sanitizeHTML(text, { allowedTags: ['strong'] }) }}
-                      />
-                    );
-                  })}
-              </ul>,
-            ];
-        }, [] as JSX.Element[])
+            const matches = this.getSearchMatches(inputValue!, items);
+            return !matches.length
+              ? acc
+              : [
+                  ...acc,
+                  <ul className="autosuggest-dropdown-list" key={title}>
+                    <li className="autosuggest-dropdown-header">{title}</li>
+                    {matches
+                      .slice(0, 100) // Limit DOM rendering to 100 results, as DOM rendering is sloooow.
+                      .map(({ original, string: text }) => {
+                        const itemProps = downshift.getItemProps({
+                          key: original,
+                          index,
+                          item: original,
+                          style: {
+                            backgroundColor: highlightedIndex === index++ ? 'lightgray' : 'white',
+                          },
+                        });
+                        return (
+                          <li
+                            key={title}
+                            {...itemProps}
+                            dangerouslySetInnerHTML={{ __html: sanitizeHTML(text, { allowedTags: ['strong'] }) }}
+                          />
+                        );
+                      })}
+                  </ul>,
+                ];
+          }, [] as JSX.Element[])
         : [];
 
     if (!sections.length) {
@@ -130,15 +130,15 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
 
   openExpressionExplorer = () => {
     this.setState({
-      showExpressionExplorer: true
+      showExpressionExplorer: true,
     });
-  }
+  };
 
   updateShowExpressionExplorer = (show: boolean) => {
     this.setState({
-      showExpressionExplorer: show
+      showExpressionExplorer: show,
     });
-  }
+  };
 
   insertAtCursor = (value: string) => {
     if (!this.exprInputRef.current) return;
@@ -149,13 +149,14 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
     const previousValue = this.exprInputRef.current.value;
     let newValue: string;
     if (startPosition && endPosition) {
-      newValue = previousValue.substring(0, startPosition) + value + previousValue.substring(endPosition, previousValue.length);
+      newValue =
+        previousValue.substring(0, startPosition) + value + previousValue.substring(endPosition, previousValue.length);
     } else {
       newValue = previousValue + value;
     }
 
     this.setValue(newValue);
-  }
+  };
 
   render() {
     const { executeQuery, value } = this.props;
@@ -217,7 +218,7 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
                 <InputGroupAddon addonType="append">
                   <Button className="execute-btn" color="primary" onClick={executeQuery}>
                     Execute
-                </Button>
+                  </Button>
                 </InputGroupAddon>
               </InputGroup>
               {downshift.isOpen && this.createAutocompleteSection(downshift)}
@@ -229,7 +230,8 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
           show={this.state.showExpressionExplorer}
           updateShow={this.updateShowExpressionExplorer}
           metrics={this.props.autocompleteSections['Metric Names']}
-          insertAtCursor={this.insertAtCursor} />
+          insertAtCursor={this.insertAtCursor}
+        />
       </>
     );
   }

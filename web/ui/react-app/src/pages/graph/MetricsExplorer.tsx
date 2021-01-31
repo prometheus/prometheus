@@ -1,6 +1,6 @@
-import React, { Component } from 'react'
+import React, { Component } from 'react';
 import { Modal, ModalBody, ModalHeader } from 'reactstrap';
-import './MetricsExplorer.css'
+import './MetricsExplorer.css';
 
 interface Props {
   show: boolean;
@@ -9,17 +9,15 @@ interface Props {
   insertAtCursor(value: string): void;
 }
 
-interface State { }
-
-class MetricsExplorer extends Component<Props, State> {
+class MetricsExplorer extends Component<Props, {}> {
   handleMetricClick = (query: string) => {
     this.props.insertAtCursor(query);
     this.props.updateShow(false);
-  }
+  };
 
   toggle = () => {
-    this.props.updateShow(!this.props.show)
-  }
+    this.props.updateShow(!this.props.show);
+  };
 
   render() {
     return (
@@ -27,7 +25,9 @@ class MetricsExplorer extends Component<Props, State> {
         <ModalHeader toggle={this.toggle}>Expression Explorer</ModalHeader>
         <ModalBody>
           {this.props.metrics.map(metric => (
-            <p className="metric" onClick={this.handleMetricClick.bind(this, metric)}>{metric}</p>
+            <p className="metric" onClick={this.handleMetricClick.bind(this, metric)}>
+              {metric}
+            </p>
           ))}
         </ModalBody>
       </Modal>
@@ -35,4 +35,4 @@ class MetricsExplorer extends Component<Props, State> {
   }
 }
 
-export default MetricsExplorer
+export default MetricsExplorer;
