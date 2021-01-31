@@ -6,7 +6,8 @@ import fuzzy from 'fuzzy';
 import sanitizeHTML from 'sanitize-html';
 
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faSearch, faSpinner } from '@fortawesome/free-solid-svg-icons';
+import { faSearch, faSpinner, faGlobeEurope } from '@fortawesome/free-solid-svg-icons';
+import ExpressionExplorer from './ExpressionExplorer';
 
 interface ExpressionInputProps {
   value: string;
@@ -19,6 +20,7 @@ interface ExpressionInputProps {
 
 interface ExpressionInputState {
   height: number | string;
+  showExpressionExplorer: boolean
 }
 
 class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputState> {
@@ -28,6 +30,7 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
     super(props);
     this.state = {
       height: 'auto',
+      showExpressionExplorer: false
     };
   }
 
@@ -80,35 +83,35 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
     const sections =
       inputValue!.length && this.props.enableAutocomplete
         ? Object.entries(autocompleteSections).reduce((acc, [title, items]) => {
-            const matches = this.getSearchMatches(inputValue!, items);
-            return !matches.length
-              ? acc
-              : [
-                  ...acc,
-                  <ul className="autosuggest-dropdown-list" key={title}>
-                    <li className="autosuggest-dropdown-header">{title}</li>
-                    {matches
-                      .slice(0, 100) // Limit DOM rendering to 100 results, as DOM rendering is sloooow.
-                      .map(({ original, string: text }) => {
-                        const itemProps = downshift.getItemProps({
-                          key: original,
-                          index,
-                          item: original,
-                          style: {
-                            backgroundColor: highlightedIndex === index++ ? 'lightgray' : 'white',
-                          },
-                        });
-                        return (
-                          <li
-                            key={title}
-                            {...itemProps}
-                            dangerouslySetInnerHTML={{ __html: sanitizeHTML(text, { allowedTags: ['strong'] }) }}
-                          />
-                        );
-                      })}
-                  </ul>,
-                ];
-          }, [] as JSX.Element[])
+          const matches = this.getSearchMatches(inputValue!, items);
+          return !matches.length
+            ? acc
+            : [
+              ...acc,
+              <ul className="autosuggest-dropdown-list" key={title}>
+                <li className="autosuggest-dropdown-header">{title}</li>
+                {matches
+                  .slice(0, 100) // Limit DOM rendering to 100 results, as DOM rendering is sloooow.
+                  .map(({ original, string: text }) => {
+                    const itemProps = downshift.getItemProps({
+                      key: original,
+                      index,
+                      item: original,
+                      style: {
+                        backgroundColor: highlightedIndex === index++ ? 'lightgray' : 'white',
+                      },
+                    });
+                    return (
+                      <li
+                        key={title}
+                        {...itemProps}
+                        dangerouslySetInnerHTML={{ __html: sanitizeHTML(text, { allowedTags: ['strong'] }) }}
+                      />
+                    );
+                  })}
+              </ul>,
+            ];
+        }, [] as JSX.Element[])
         : [];
 
     if (!sections.length) {
@@ -125,67 +128,109 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
     );
   };
 
+  openExpressionExplorer = () => {
+    this.setState({
+      showExpressionExplorer: true
+    });
+  }
+
+  updateShowExpressionExplorer = (show: boolean) => {
+    this.setState({
+      showExpressionExplorer: show
+    });
+  }
+
+  insertAtCursor = (value: string) => {
+    if (!this.exprInputRef.current) return;
+
+    const startPosition = this.exprInputRef.current.selectionStart;
+    const endPosition = this.exprInputRef.current.selectionEnd;
+
+    const previousValue = this.exprInputRef.current.value;
+    let newValue: string;
+    if (startPosition && endPosition) {
+      newValue = previousValue.substring(0, startPosition) + value + previousValue.substring(endPosition, previousValue.length);
+    } else {
+      newValue = previousValue + value;
+    }
+
+    this.setValue(newValue);
+  }
+
   render() {
     const { executeQuery, value } = this.props;
     const { height } = this.state;
     return (
-      <Downshift onSelect={this.setValue}>
-        {downshift => (
-          <div>
-            <InputGroup className="expression-input">
-              <InputGroupAddon addonType="prepend">
-                <InputGroupText>
-                  {this.props.loading ? <FontAwesomeIcon icon={faSpinner} spin /> : <FontAwesomeIcon icon={faSearch} />}
-                </InputGroupText>
-              </InputGroupAddon>
-              <Input
-                onInput={this.handleInput}
-                style={{ height }}
-                autoFocus
-                type="textarea"
-                rows="1"
-                onKeyPress={this.handleKeyPress}
-                placeholder="Expression (press Shift+Enter for newlines)"
-                innerRef={this.exprInputRef}
-                {...downshift.getInputProps({
-                  onKeyDown: (event: React.KeyboardEvent): void => {
-                    switch (event.key) {
-                      case 'Home':
-                      case 'End':
-                        // We want to be able to jump to the beginning/end of the input field.
-                        // By default, Downshift otherwise jumps to the first/last suggestion item instead.
-                        (event.nativeEvent as any).preventDownshiftDefault = true;
-                        break;
-                      case 'ArrowUp':
-                      case 'ArrowDown':
-                        if (!downshift.isOpen) {
+      <>
+        <Downshift onSelect={this.setValue}>
+          {downshift => (
+            <div>
+              <InputGroup className="expression-input">
+                <InputGroupAddon addonType="prepend">
+                  <InputGroupText>
+                    {this.props.loading ? <FontAwesomeIcon icon={faSpinner} spin /> : <FontAwesomeIcon icon={faSearch} />}
+                  </InputGroupText>
+                </InputGroupAddon>
+                <Input
+                  onInput={this.handleInput}
+                  style={{ height }}
+                  autoFocus
+                  type="textarea"
+                  rows="1"
+                  onKeyPress={this.handleKeyPress}
+                  placeholder="Expression (press Shift+Enter for newlines)"
+                  innerRef={this.exprInputRef}
+                  {...downshift.getInputProps({
+                    onKeyDown: (event: React.KeyboardEvent): void => {
+                      switch (event.key) {
+                        case 'Home':
+                        case 'End':
+                          // We want to be able to jump to the beginning/end of the input field.
+                          // By default, Downshift otherwise jumps to the first/last suggestion item instead.
                           (event.nativeEvent as any).preventDownshiftDefault = true;
-                        }
-                        break;
-                      case 'Enter':
-                        downshift.closeMenu();
-                        break;
-                      case 'Escape':
-                        if (!downshift.isOpen) {
-                          this.exprInputRef.current!.blur();
-                        }
-                        break;
-                      default:
-                    }
-                  },
-                } as any)}
-                value={value}
-              />
-              <InputGroupAddon addonType="append">
-                <Button className="execute-btn" color="primary" onClick={executeQuery}>
-                  Execute
+                          break;
+                        case 'ArrowUp':
+                        case 'ArrowDown':
+                          if (!downshift.isOpen) {
+                            (event.nativeEvent as any).preventDownshiftDefault = true;
+                          }
+                          break;
+                        case 'Enter':
+                          downshift.closeMenu();
+                          break;
+                        case 'Escape':
+                          if (!downshift.isOpen) {
+                            this.exprInputRef.current!.blur();
+                          }
+                          break;
+                        default:
+                      }
+                    },
+                  } as any)}
+                  value={value}
+                />
+                <InputGroupAddon addonType="prepend">
+                  <button className="button btn-light" type="button" onClick={this.openExpressionExplorer}>
+                    <FontAwesomeIcon icon={faGlobeEurope} />
+                  </button>
+                </InputGroupAddon>
+                <InputGroupAddon addonType="append">
+                  <Button className="execute-btn" color="primary" onClick={executeQuery}>
+                    Execute
                 </Button>
-              </InputGroupAddon>
-            </InputGroup>
-            {downshift.isOpen && this.createAutocompleteSection(downshift)}
-          </div>
-        )}
-      </Downshift>
+                </InputGroupAddon>
+              </InputGroup>
+              {downshift.isOpen && this.createAutocompleteSection(downshift)}
+            </div>
+          )}
+        </Downshift>
+
+        <ExpressionExplorer
+          show={this.state.showExpressionExplorer}
+          updateShow={this.updateShowExpressionExplorer}
+          autocompleteSections={this.props.autocompleteSections}
+          insertAtCursor={this.insertAtCursor} />
+      </>
     );
   }
 }

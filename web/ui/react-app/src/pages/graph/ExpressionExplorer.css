@@ -1,0 +1,9 @@
+.expression-explorer .query {
+    cursor: pointer;
+    margin: 0;
+    padding: 5px;
+}
+
+.expression-explorer .query:hover {
+    background: #efefef;
+}
