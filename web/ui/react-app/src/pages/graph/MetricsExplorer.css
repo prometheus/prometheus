@@ -1,3 +1,8 @@
+.metrics-explorer.modal-dialog {
+    max-width: 750px;
+    overflow-wrap: break-word;
+}
+
 .metrics-explorer .metric {
     cursor: pointer;
     margin: 0;
