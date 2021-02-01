@@ -1720,6 +1720,7 @@ url: <string>
 [ remote_timeout: <duration> | default = 30s ]
 
 # Custom HTTP headers to be sent along with each remote write request.
+# Be aware that headers that are set by Prometheus itself can't be overwritten.
 headers:
   [ <string>: <string> ... ]
 
