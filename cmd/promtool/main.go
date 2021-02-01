@@ -387,7 +387,7 @@ func checkRules(filename string) (int, []error) {
 
 	dRules := checkDuplicates(rgs.Groups)
 	if len(dRules) != 0 {
-		fmt.Printf("%d duplicate rules(s) found.\n", len(dRules))
+		fmt.Printf("%d duplicate rule(s) found.\n", len(dRules))
 		for _, n := range dRules {
 			fmt.Printf("Metric: %s\nLabel(s):\n", n.metric)
 			for i, l := range n.label {
