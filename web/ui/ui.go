@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 
 	"github.com/shurcooL/httpfs/filter"
@@ -32,7 +33,7 @@ var Assets = func() http.FileSystem {
 		panic(err)
 	}
 	var assetsPrefix string
-	switch path.Base(wd) {
+	switch filepath.Base(wd) {
 	case "prometheus":
 		// When running Prometheus (without built-in assets) from the repo root.
 		assetsPrefix = "./web/ui"
