@@ -207,7 +207,7 @@ func main() {
 		os.Exit(checkErr(dumpSamples(*dumpPath, *dumpMinTime, *dumpMaxTime)))
 	//TODO(aSquare14): Work on adding support for custom block size.
 	case openMetricsImportCmd.FullCommand():
-		os.Exit(checkErr(backfillOpenMetrics(*importFilePath, *importDBPath, *importHumanReadable)))
+		os.Exit(backfillOpenMetrics(*importFilePath, *importDBPath, *importHumanReadable))
 	}
 }
 
