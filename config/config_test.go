@@ -102,6 +102,7 @@ var expectedConf = &Config{
 					KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
 				},
 			},
+			Headers: map[string]string{"name": "value"},
 		},
 	},
 

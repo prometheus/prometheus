@@ -570,6 +570,7 @@ func CheckTargetAddress(address model.LabelValue) error {
 type RemoteWriteConfig struct {
 	URL                 *config.URL       `yaml:"url"`
 	RemoteTimeout       model.Duration    `yaml:"remote_timeout,omitempty"`
+	Headers             map[string]string `yaml:"headers,omitempty"`
 	WriteRelabelConfigs []*relabel.Config `yaml:"write_relabel_configs,omitempty"`
 	Name                string            `yaml:"name,omitempty"`
 

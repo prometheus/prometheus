@@ -134,6 +134,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			URL:              rwConf.URL,
 			Timeout:          rwConf.RemoteTimeout,
 			HTTPClientConfig: rwConf.HTTPClientConfig,
+			Headers:          rwConf.Headers,
 		})
 		if err != nil {
 			return err
