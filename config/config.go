@@ -33,7 +33,20 @@ import (
 )
 
 var (
-	patRulePath = regexp.MustCompile(`^[^*]*(\*[^/]*)?$`)
+	patRulePath         = regexp.MustCompile(`^[^*]*(\*[^/]*)?$`)
+	unchangeableHeaders = map[string]struct{}{
+		"host":                              {},
+		"authorization":                     {},
+		"content-encoding":                  {},
+		"content-type":                      {},
+		"c-prometheus-remote-write-version": {},
+		"user-agent":                        {},
+		"connection":                        {},
+		"keep-alive":                        {},
+		"proxy-authenticate":                {},
+		"proxy-authorization":               {},
+		"www-authenticate":                  {},
+	}
 )
 
 // Load parses the YAML input s into a Config.
@@ -599,6 +612,11 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 	for _, rlcfg := range c.WriteRelabelConfigs {
 		if rlcfg == nil {
 			return errors.New("empty or null relabeling rule in remote write config")
+		}
+	}
+	for header := range c.Headers {
+		if _, ok := unchangeableHeaders[strings.ToLower(header)]; ok {
+			return errors.Errorf("%s is an unchangeable header", header)
 		}
 	}
 
