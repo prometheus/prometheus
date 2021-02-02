@@ -2221,7 +2221,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 		t.Run(test.input, func(t *testing.T) {
 			expr, err := parser.ParseExpr(test.input)
 			require.NoError(t, err)
-			expr = PreprocessAndWrapWithStepInvariantExpr(expr, startTime, endTime)
+			expr = PreprocessExpr(expr, startTime, endTime)
 			require.Equal(t, test.expected, expr, "error on input '%s'", test.input)
 		})
 	}
@@ -2232,16 +2232,44 @@ func TestEngineOptsValidation(t *testing.T) {
 		opts     EngineOpts
 		query    string
 		fail     bool
-		expError string
+		expError error
 	}{
 		{
-			opts:     EngineOpts{EnableAtModifier: false},
-			query:    "metric @ 100",
-			fail:     true,
-			expError: "@ modifier is disabled",
+			opts:  EngineOpts{EnableAtModifier: false},
+			query: "metric @ 100", fail: true, expError: ErrValidationAtModifierDisabled,
+		}, {
+			opts:  EngineOpts{EnableAtModifier: false},
+			query: "rate(metric[1m] @ 100)", fail: true, expError: ErrValidationAtModifierDisabled,
+		}, {
+			opts:  EngineOpts{EnableAtModifier: false},
+			query: "rate(metric[1h:1m] @ 100)", fail: true, expError: ErrValidationAtModifierDisabled,
+		}, {
+			opts:  EngineOpts{EnableAtModifier: false},
+			query: "metric @ start()", fail: true, expError: ErrValidationAtModifierDisabled,
+		}, {
+			opts:  EngineOpts{EnableAtModifier: false},
+			query: "rate(metric[1m] @ start())", fail: true, expError: ErrValidationAtModifierDisabled,
+		}, {
+			opts:  EngineOpts{EnableAtModifier: false},
+			query: "rate(metric[1h:1m] @ start())", fail: true, expError: ErrValidationAtModifierDisabled,
+		}, {
+			opts:  EngineOpts{EnableAtModifier: false},
+			query: "metric @ end()", fail: true, expError: ErrValidationAtModifierDisabled,
+		}, {
+			opts:  EngineOpts{EnableAtModifier: false},
+			query: "rate(metric[1m] @ end())", fail: true, expError: ErrValidationAtModifierDisabled,
+		}, {
+			opts:  EngineOpts{EnableAtModifier: false},
+			query: "rate(metric[1h:1m] @ end())", fail: true, expError: ErrValidationAtModifierDisabled,
 		}, {
 			opts:  EngineOpts{EnableAtModifier: true},
 			query: "metric @ 100",
+		}, {
+			opts:  EngineOpts{EnableAtModifier: true},
+			query: "rate(metric[1m] @ start())",
+		}, {
+			opts:  EngineOpts{EnableAtModifier: true},
+			query: "rate(metric[1h:1m] @ end())",
 		},
 	}
 
@@ -2250,8 +2278,8 @@ func TestEngineOptsValidation(t *testing.T) {
 		_, err1 := eng.NewInstantQuery(nil, c.query, time.Unix(10, 0))
 		_, err2 := eng.NewRangeQuery(nil, c.query, time.Unix(0, 0), time.Unix(10, 0), time.Second)
 		if c.fail {
-			require.Equal(t, c.expError, err1.Error())
-			require.Equal(t, c.expError, err2.Error())
+			require.Equal(t, c.expError, err1)
+			require.Equal(t, c.expError, err2)
 		} else {
 			require.Nil(t, err1)
 			require.Nil(t, err2)

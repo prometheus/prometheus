@@ -244,7 +244,7 @@ This modifier is disabled by default since it breaks the invariant that PromQL
 does not look ahead of the evaluation time for samples. It can be enabled by setting
 `--enable-feature=promql-at-modifier` flag. It will be enabled by default in the future.
 
-`start()` and `end()` can also be used with `@` modifier. Learn more about it [here](#pre-processors)
+`start()` and `end()` can also be used as values for `@` modifier. Learn more about it [here](#pre-processors)
 
 ## Subquery
 
