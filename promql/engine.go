@@ -727,7 +727,10 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 	}
 	defer querier.Close()
 
-	ng.populateSeries(ctxPrepare, querier, s)
+	if err := ng.populateSeries(ctxPrepare, querier, s); err != nil {
+		prepareSpanTimer.Finish()
+		return nil, nil, err
+	}
 	prepareSpanTimer.Finish()
 
 	// Modify the offset of vector and matrix selectors for the @ modifier
@@ -957,7 +960,7 @@ func (ng *Engine) getLastSubqueryInterval(path []parser.Node) time.Duration {
 	return interval
 }
 
-func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s *parser.EvalStmt) {
+func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s *parser.EvalStmt) error {
 	// Whenever a MatrixSelector is evaluated, evalRange is set to the corresponding range.
 	// The evaluation of the VectorSelector inside then evaluates the given range and unsets
 	// the variable.
@@ -992,12 +995,14 @@ func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s
 	}, ng.NodeReplacer)
 
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	if nTyped, ok := n.(parser.Expr); ok {
 		s.Expr = nTyped
 	}
+
+	return nil
 }
 
 // extractFuncFromPath walks up the path and searches for the first instance of
