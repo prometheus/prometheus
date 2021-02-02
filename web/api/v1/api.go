@@ -355,7 +355,14 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 		defer cancel()
 	}
 
-	qry, err := api.QueryEngine.NewInstantQuery(api.Queryable, r.FormValue("query"), ts)
+	parts := strings.Split(r.FormValue("query"), "|")
+	queryTerm := strings.TrimSpace(parts[0])
+	modifier := strings.TrimSpace(parts[1])
+	method := strings.Split(modifier, "(")[0]
+	rankingFunction := strings.Split(modifier, "(")[1]
+
+	fmt.Println("The query is now", queryTerm, modifier)
+	qry, err := api.QueryEngine.NewInstantQuery(api.Queryable, queryTerm, ts)
 	if err != nil {
 		err = errors.Wrapf(err, "invalid parameter 'query'")
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
@@ -375,7 +382,21 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 	if res.Err != nil {
 		return apiFuncResult{nil, returnAPIError(res.Err), res.Warnings, qry.Close}
 	}
-	var ranker Ranker = avg{}
+
+	var ranker Ranker
+	if rankingFunction == "avg_over_time" {
+		ranker = avg{}
+	} else if rankingFunction == "sum_over_time" {
+		ranker = sum{}
+	} else if rankingFunction == "max_over_time" {
+		ranker = max{}
+	}
+	var sign float64
+	if method == "sort" {
+		sign = +1.0
+	} else if method == "sort_desc" {
+		sign = -1.0
+	}
 
 	if res.Value.Type() == parser.ValueTypeVector {
 		vec, ok := res.Value.(promql.Vector)
@@ -393,7 +414,7 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 		}
 		sort.Slice(mat, func(i, j int) bool {
-			return (ranker.rank(mat[i]) > ranker.rank(mat[j]))
+			return sign*ranker.rank(mat[i]) < sign*ranker.rank(mat[j])
 		})
 	}
 
@@ -425,6 +446,16 @@ type avg struct{}
 func (a avg) rank(v promql.Series) float64 {
 	var ranker Ranker = sum{}
 	return ranker.rank(v) / float64(len(v.Points))
+}
+
+type max struct{}
+
+func (m max) rank(v promql.Series) float64 {
+	ans := 0.0
+	for i := 0; i < len(v.Points); i++ {
+		ans = math.Max(ans, v.Points[i].V)
+	}
+	return ans
 }
 
 func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
