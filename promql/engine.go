@@ -1125,6 +1125,11 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			vs, ok := arg.(*parser.VectorSelector)
 			if ok {
 				return ev.rangeEval(func(v []parser.Value, enh *EvalNodeHelper) (Vector, storage.Warnings) {
+					if vs.Timestamp != nil {
+						// This is a special case only for "timestamp" since the offset
+						// needs to be adjusted for every point.
+						vs.Offset = time.Duration(enh.Ts-*vs.Timestamp) * time.Millisecond
+					}
 					val, ws := ev.vectorSelector(vs, enh.Ts)
 					return call([]parser.Value{val}, e.Args, enh), ws
 				})
