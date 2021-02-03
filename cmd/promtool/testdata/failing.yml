@@ -1,6 +1,7 @@
 tests:
   # Simple failing test.
   - interval: 1m
+    name: "Failing test"
     input_series:
       - series: test
         values: '0'

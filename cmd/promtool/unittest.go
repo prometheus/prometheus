@@ -146,6 +146,7 @@ type testGroup struct {
 	AlertRuleTests  []alertTestCase  `yaml:"alert_rule_test,omitempty"`
 	PromqlExprTests []promqlTestCase `yaml:"promql_expr_test,omitempty"`
 	ExternalLabels  labels.Labels    `yaml:"external_labels,omitempty"`
+	TestGroupName   string           `yaml:"name,omitempty"`
 }
 
 // test performs the unit tests.
@@ -300,15 +301,25 @@ func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]i
 				}
 
 				if gotAlerts.Len() != expAlerts.Len() {
-					errs = append(errs, errors.Errorf("    alertname:%s, time:%s, \n        exp:%#v, \n        got:%#v",
-						testcase.Alertname, testcase.EvalTime.String(), expAlerts.String(), gotAlerts.String()))
+					if tg.TestGroupName == "" {
+						errs = append(errs, errors.Errorf("    alertname:%s, time:%s, \n        exp:%#v, \n        got:%#v",
+							testcase.Alertname, testcase.EvalTime.String(), expAlerts.String(), gotAlerts.String()))
+					} else {
+						errs = append(errs, errors.Errorf("    name: %s,\n    alertname:%s, time:%s, \n        exp:%#v, \n        got:%#v",
+							tg.TestGroupName, testcase.Alertname, testcase.EvalTime.String(), expAlerts.String(), gotAlerts.String()))
+					}
 				} else {
 					sort.Sort(gotAlerts)
 					sort.Sort(expAlerts)
 
 					if !reflect.DeepEqual(expAlerts, gotAlerts) {
-						errs = append(errs, errors.Errorf("    alertname:%s, time:%s, \n        exp:%#v, \n        got:%#v",
-							testcase.Alertname, testcase.EvalTime.String(), expAlerts.String(), gotAlerts.String()))
+						if tg.TestGroupName == "" {
+							errs = append(errs, errors.Errorf("    alertname:%s, time:%s, \n        exp:%#v, \n        got:%#v",
+								testcase.Alertname, testcase.EvalTime.String(), expAlerts.String(), gotAlerts.String()))
+						} else {
+							errs = append(errs, errors.Errorf("   name: %s,\n    alertname:%s, time:%s, \n        exp:%#v, \n        got:%#v",
+								tg.TestGroupName, testcase.Alertname, testcase.EvalTime.String(), expAlerts.String(), gotAlerts.String()))
+						}
 					}
 				}
 			}
