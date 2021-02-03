@@ -39,7 +39,7 @@ var (
 		"authorization":                     {},
 		"content-encoding":                  {},
 		"content-type":                      {},
-		"c-prometheus-remote-write-version": {},
+		"x-prometheus-remote-write-version": {},
 		"user-agent":                        {},
 		"connection":                        {},
 		"keep-alive":                        {},
@@ -615,6 +615,9 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 		}
 	}
 	for header := range c.Headers {
+		if strings.ToLower(header) == "authorization" {
+			return errors.New("authorization header must be changed via the basic_auth, bearer_token, or bearer_token_file parameter")
+		}
 		if _, ok := unchangeableHeaders[strings.ToLower(header)]; ok {
 			return errors.Errorf("%s is an unchangeable header", header)
 		}
