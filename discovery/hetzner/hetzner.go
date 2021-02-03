@@ -15,13 +15,14 @@ package hetzner
 
 import (
 	"context"
-	"github.com/pkg/errors"
 	"time"
 
 	"github.com/go-kit/kit/log"
 	"github.com/hetznercloud/hcloud-go/hcloud"
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"

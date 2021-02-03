@@ -49,6 +49,7 @@ func (fw Firewall) String() string {
 	return Stringify(fw)
 }
 
+// URN returns the firewall name in a valid DO API URN form.
 func (fw Firewall) URN() string {
 	return ToURN("Firewall", fw.ID)
 }

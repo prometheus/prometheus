@@ -14,8 +14,10 @@ type Validator func(str string) bool
 // The second parameter should be the context (in the case of validating a struct: the whole object being validated).
 type CustomTypeValidator func(i interface{}, o interface{}) bool
 
-// ParamValidator is a wrapper for validator functions that accepts additional parameters.
+// ParamValidator is a wrapper for validator functions that accept additional parameters.
 type ParamValidator func(str string, params ...string) bool
+
+// InterfaceParamValidator is a wrapper for functions that accept variants parameters for an interface value
 type InterfaceParamValidator func(in interface{}, params ...string) bool
 type tagOptionsMap map[string]tagOption
 
@@ -72,13 +74,13 @@ var ParamTagMap = map[string]ParamValidator{
 
 // ParamTagRegexMap maps param tags to their respective regexes.
 var ParamTagRegexMap = map[string]*regexp.Regexp{
-	"range":        regexp.MustCompile("^range\\((\\d+)\\|(\\d+)\\)$"),
-	"length":       regexp.MustCompile("^length\\((\\d+)\\|(\\d+)\\)$"),
-	"runelength":   regexp.MustCompile("^runelength\\((\\d+)\\|(\\d+)\\)$"),
-	"stringlength": regexp.MustCompile("^stringlength\\((\\d+)\\|(\\d+)\\)$"),
-	"in":           regexp.MustCompile(`^in\((.*)\)`),
-	"matches":      regexp.MustCompile(`^matches\((.+)\)$`),
-	"rsapub":       regexp.MustCompile("^rsapub\\((\\d+)\\)$"),
+	"range":           regexp.MustCompile("^range\\((\\d+)\\|(\\d+)\\)$"),
+	"length":          regexp.MustCompile("^length\\((\\d+)\\|(\\d+)\\)$"),
+	"runelength":      regexp.MustCompile("^runelength\\((\\d+)\\|(\\d+)\\)$"),
+	"stringlength":    regexp.MustCompile("^stringlength\\((\\d+)\\|(\\d+)\\)$"),
+	"in":              regexp.MustCompile(`^in\((.*)\)`),
+	"matches":         regexp.MustCompile(`^matches\((.+)\)$`),
+	"rsapub":          regexp.MustCompile("^rsapub\\((\\d+)\\)$"),
 	"minstringlength": regexp.MustCompile("^minstringlength\\((\\d+)\\)$"),
 	"maxstringlength": regexp.MustCompile("^maxstringlength\\((\\d+)\\)$"),
 }
@@ -162,6 +164,7 @@ var TagMap = map[string]Validator{
 	"ISO3166Alpha2":      IsISO3166Alpha2,
 	"ISO3166Alpha3":      IsISO3166Alpha3,
 	"ISO4217":            IsISO4217,
+	"IMEI":               IsIMEI,
 }
 
 // ISO3166Entry stores country codes
@@ -446,10 +449,10 @@ var ISO4217List = []string{
 	"PAB", "PEN", "PGK", "PHP", "PKR", "PLN", "PYG",
 	"QAR",
 	"RON", "RSD", "RUB", "RWF",
-	"SAR", "SBD", "SCR", "SDG", "SEK", "SGD", "SHP", "SLL", "SOS", "SRD", "SSP", "STD", "SVC", "SYP", "SZL",
+	"SAR", "SBD", "SCR", "SDG", "SEK", "SGD", "SHP", "SLL", "SOS", "SRD", "SSP", "STD", "STN", "SVC", "SYP", "SZL",
 	"THB", "TJS", "TMT", "TND", "TOP", "TRY", "TTD", "TWD", "TZS",
-	"UAH", "UGX", "USD", "USN", "UYI", "UYU", "UZS",
-	"VEF", "VND", "VUV",
+	"UAH", "UGX", "USD", "USN", "UYI", "UYU", "UYW", "UZS",
+	"VEF", "VES", "VND", "VUV",
 	"WST",
 	"XAF", "XAG", "XAU", "XBA", "XBB", "XBC", "XBD", "XCD", "XDR", "XOF", "XPD", "XPF", "XPT", "XSU", "XTS", "XUA", "XXX",
 	"YER",

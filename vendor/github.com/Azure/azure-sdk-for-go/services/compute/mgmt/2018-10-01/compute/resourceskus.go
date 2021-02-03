@@ -70,6 +70,7 @@ func (client ResourceSkusClient) List(ctx context.Context) (result ResourceSkusR
 	result.rsr, err = client.ListResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.ResourceSkusClient", "List", resp, "Failure responding to request")
+		return
 	}
 	if result.rsr.hasNextLink() && result.rsr.IsEmpty() {
 		err = result.NextWithContext(ctx)
@@ -132,6 +133,7 @@ func (client ResourceSkusClient) listNextResults(ctx context.Context, lastResult
 	result, err = client.ListResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.ResourceSkusClient", "listNextResults", resp, "Failure responding to next results request")
+		return
 	}
 	return
 }

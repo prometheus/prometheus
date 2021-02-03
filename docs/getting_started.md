@@ -6,9 +6,9 @@ sort_rank: 1
 # Getting started
 
 This guide is a "Hello World"-style tutorial which shows how to install,
-configure, and use Prometheus in a simple example setup. You will download and run
+configure, and use a simple Prometheus instance. You will download and run
 Prometheus locally, configure it to scrape itself and an example application,
-and then work with queries, rules, and graphs to make use of the collected time
+then work with queries, rules, and graphs to use collected time
 series data.
 
 ## Downloading and running Prometheus
@@ -25,12 +25,12 @@ Before starting Prometheus, let's configure it.
 
 ## Configuring Prometheus to monitor itself
 
-Prometheus collects metrics from monitored targets by scraping metrics HTTP
-endpoints on these targets. Since Prometheus also exposes data in the same
+Prometheus collects metrics from _targets_ by scraping metrics HTTP
+endpoints. Since Prometheus exposes data in the same
 manner about itself, it can also scrape and monitor its own health.
 
 While a Prometheus server that collects only data about itself is not very
-useful in practice, it is a good starting example. Save the following basic
+useful, it is a good starting example. Save the following basic
 Prometheus configuration as a file named `prometheus.yml`:
 
 ```yaml
@@ -79,26 +79,26 @@ navigating to its metrics endpoint:
 
 ## Using the expression browser
 
-Let us try looking at some data that Prometheus has collected about itself. To
+Let us explore data that Prometheus has collected about itself. To
 use Prometheus's built-in expression browser, navigate to
 http://localhost:9090/graph and choose the "Console" view within the "Graph" tab.
 
 As you can gather from [localhost:9090/metrics](http://localhost:9090/metrics),
-one metric that Prometheus exports about itself is called
+one metric that Prometheus exports about itself is named
 `prometheus_target_interval_length_seconds` (the actual amount of time between
-target scrapes). Go ahead and enter this into the expression console and then click "Execute":
+target scrapes). Enter the below into the expression console and then click "Execute":
 
 ```
 prometheus_target_interval_length_seconds
 ```
 
 This should return a number of different time series (along with the latest value
-recorded for each), all with the metric name
+recorded for each), each with the metric name
 `prometheus_target_interval_length_seconds`, but with different labels. These
 labels designate different latency percentiles and target group intervals.
 
-If we were only interested in the 99th percentile latencies, we could use this
-query to retrieve that information:
+If we are interested only in 99th percentile latencies, we could use this
+query:
 
 ```
 prometheus_target_interval_length_seconds{quantile="0.99"}
@@ -129,8 +129,7 @@ Experiment with the graph range parameters and other settings.
 
 ## Starting up some sample targets
 
-Let us make this more interesting and start some example targets for Prometheus
-to scrape.
+Let's add additional targets for Prometheus to scrape.
 
 The Node Exporter is used as an example target, for more information on using it
 [see these instructions.](https://prometheus.io/docs/guides/node-exporter/)
@@ -151,7 +150,7 @@ http://localhost:8081/metrics, and http://localhost:8082/metrics.
 ## Configure Prometheus to monitor the sample targets
 
 Now we will configure Prometheus to scrape these new targets. Let's group all
-three endpoints into one job called `node`. However, imagine that the
+three endpoints into one job called `node`. We will imagine that the
 first two endpoints are production targets, while the third one represents a
 canary instance. To model this in Prometheus, we can add several groups of
 endpoints to a single job, adding extra labels to each group of targets. In
@@ -185,8 +184,8 @@ about time series that these example endpoints expose, such as `node_cpu_seconds
 
 Though not a problem in our example, queries that aggregate over thousands of
 time series can get slow when computed ad-hoc. To make this more efficient,
-Prometheus allows you to prerecord expressions into completely new persisted
-time series via configured recording rules. Let's say we are interested in
+Prometheus can prerecord expressions into new persisted
+time series via configured _recording rules_. Let's say we are interested in
 recording the per-second rate of cpu time (`node_cpu_seconds_total`) averaged
 over all cpus per instance (but preserving the `job`, `instance` and `mode`
 dimensions) as measured over a window of 5 minutes. We could write this as:

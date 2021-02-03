@@ -78,6 +78,7 @@ func normalizePaths(refPath, base string) string {
 func denormalizeFileRef(ref *Ref, relativeBase, originalRelativeBase string) *Ref {
 	debugLog("denormalizeFileRef for: %s", ref.String())
 
+	// log.Printf("denormalize: %s, IsRoot: %t,HasFragmentOnly: %t, HasFullURL: %t", ref.String(), ref.IsRoot(), ref.HasFragmentOnly, ref.HasFullURL)
 	if ref.String() == "" || ref.IsRoot() || ref.HasFragmentOnly {
 		return ref
 	}

@@ -28,6 +28,8 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"go.uber.org/atomic"
+
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -38,7 +40,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wal"
-	"go.uber.org/atomic"
 )
 
 var (
@@ -294,7 +295,7 @@ func (h *Head) PostingsCardinalityStats(statsByLabelName string) *index.Postings
 // stripeSize sets the number of entries in the hash map, it must be a power of 2.
 // A larger stripeSize will allocate more memory up-front, but will increase performance when handling a large number of series.
 // A smaller stripeSize reduces the memory allocated, but can decrease performance with large number of series.
-func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, chunkRange int64, chkDirRoot string, pool chunkenc.Pool, stripeSize int, seriesCallback SeriesLifecycleCallback) (*Head, error) {
+func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, chunkRange int64, chkDirRoot string, chkPool chunkenc.Pool, chkWriteBufferSize, stripeSize int, seriesCallback SeriesLifecycleCallback) (*Head, error) {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
@@ -327,12 +328,12 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, chunkRange int
 	h.lastWALTruncationTime.Store(math.MinInt64)
 	h.metrics = newHeadMetrics(h, r)
 
-	if pool == nil {
-		pool = chunkenc.NewPool()
+	if chkPool == nil {
+		chkPool = chunkenc.NewPool()
 	}
 
 	var err error
-	h.chunkDiskMapper, err = chunks.NewChunkDiskMapper(mmappedChunksDir(chkDirRoot), pool)
+	h.chunkDiskMapper, err = chunks.NewChunkDiskMapper(mmappedChunksDir(chkDirRoot), chkPool, chkWriteBufferSize)
 	if err != nil {
 		return nil, err
 	}
@@ -819,9 +820,22 @@ func (h *Head) truncateMemory(mint int64) (err error) {
 	h.metrics.headTruncateTotal.Inc()
 	start := time.Now()
 
-	h.gc()
+	actualMint := h.gc()
 	level.Info(h.logger).Log("msg", "Head GC completed", "duration", time.Since(start))
 	h.metrics.gcDuration.Observe(time.Since(start).Seconds())
+	if actualMint > h.minTime.Load() {
+		// The actual mint of the Head is higher than the one asked to truncate.
+		appendableMinValidTime := h.appendableMinValidTime()
+		if actualMint < appendableMinValidTime {
+			h.minTime.Store(actualMint)
+			h.minValidTime.Store(actualMint)
+		} else {
+			// The actual min time is in the appendable window.
+			// So we set the mint to the appendableMinValidTime.
+			h.minTime.Store(appendableMinValidTime)
+			h.minValidTime.Store(appendableMinValidTime)
+		}
+	}
 
 	// Truncate the chunk m-mapper.
 	if err := h.chunkDiskMapper.Truncate(mint); err != nil {
@@ -996,6 +1010,13 @@ func (h *RangeHead) Meta() BlockMeta {
 	}
 }
 
+// String returns an human readable representation of the range head. It's important to
+// keep this function in order to avoid the struct dump when the head is stringified in
+// errors or logs.
+func (h *RangeHead) String() string {
+	return fmt.Sprintf("range head (mint: %d, maxt: %d)", h.MinTime(), h.MaxTime())
+}
+
 // initAppender is a helper to initialize the time bounds of the head
 // upon the first sample it receives.
 type initAppender struct {
@@ -1053,10 +1074,8 @@ func (h *Head) appender() *headAppender {
 	cleanupAppendIDsBelow := h.iso.lowWatermark()
 
 	return &headAppender{
-		head: h,
-		// Set the minimum valid time to whichever is greater the head min valid time or the compaction window.
-		// This ensures that no samples will be added within the compaction window to avoid races.
-		minValidTime:          max(h.minValidTime.Load(), h.MaxTime()-h.chunkRange.Load()/2),
+		head:                  h,
+		minValidTime:          h.appendableMinValidTime(),
 		mint:                  math.MaxInt64,
 		maxt:                  math.MinInt64,
 		samples:               h.getAppendBuffer(),
@@ -1064,6 +1083,12 @@ func (h *Head) appender() *headAppender {
 		appendID:              appendID,
 		cleanupAppendIDsBelow: cleanupAppendIDsBelow,
 	}
+}
+
+func (h *Head) appendableMinValidTime() int64 {
+	// Setting the minimum valid time to whichever is greater, the head min valid time or the compaction window,
+	// ensures that no samples will be added within the compaction window to avoid races.
+	return max(h.minValidTime.Load(), h.MaxTime()-h.chunkRange.Load()/2)
 }
 
 func max(a, b int64) int64 {
@@ -1334,13 +1359,14 @@ func (h *Head) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
 }
 
 // gc removes data before the minimum timestamp from the head.
-func (h *Head) gc() {
+// It returns the actual min times of the chunks present in the Head.
+func (h *Head) gc() int64 {
 	// Only data strictly lower than this timestamp must be deleted.
 	mint := h.MinTime()
 
 	// Drop old chunks and remember series IDs and hashes if they can be
 	// deleted entirely.
-	deleted, chunksRemoved := h.series.gc(mint)
+	deleted, chunksRemoved, actualMint := h.series.gc(mint)
 	seriesRemoved := len(deleted)
 
 	h.metrics.seriesRemoved.Add(float64(seriesRemoved))
@@ -1381,6 +1407,8 @@ func (h *Head) gc() {
 		panic(err)
 	}
 	h.symbols = symbols
+
+	return actualMint
 }
 
 // Tombstones returns a new reader over the head's tombstones
@@ -1464,12 +1492,18 @@ func (h *Head) Close() error {
 	h.closedMtx.Lock()
 	defer h.closedMtx.Unlock()
 	h.closed = true
-	var merr tsdb_errors.MultiError
-	merr.Add(h.chunkDiskMapper.Close())
+	errs := tsdb_errors.NewMulti(h.chunkDiskMapper.Close())
 	if h.wal != nil {
-		merr.Add(h.wal.Close())
+		errs.Add(h.wal.Close())
 	}
-	return merr.Err()
+	return errs.Err()
+}
+
+// String returns an human readable representation of the TSDB head. It's important to
+// keep this function in order to avoid the struct dump when the head is stringified in
+// errors or logs.
+func (h *Head) String() string {
+	return "head"
 }
 
 type headChunkReader struct {
@@ -1813,11 +1847,12 @@ func newStripeSeries(stripeSize int, seriesCallback SeriesLifecycleCallback) *st
 
 // gc garbage collects old chunks that are strictly before mint and removes
 // series entirely that have no chunks left.
-func (s *stripeSeries) gc(mint int64) (map[uint64]struct{}, int) {
+func (s *stripeSeries) gc(mint int64) (map[uint64]struct{}, int, int64) {
 	var (
-		deleted            = map[uint64]struct{}{}
-		deletedForCallback = []labels.Labels{}
-		rmChunks           = 0
+		deleted                  = map[uint64]struct{}{}
+		deletedForCallback       = []labels.Labels{}
+		rmChunks                 = 0
+		actualMint         int64 = math.MaxInt64
 	)
 	// Run through all series and truncate old chunks. Mark those with no
 	// chunks left as deleted and store their ID.
@@ -1830,6 +1865,10 @@ func (s *stripeSeries) gc(mint int64) (map[uint64]struct{}, int) {
 				rmChunks += series.truncateChunksBefore(mint)
 
 				if len(series.mmappedChunks) > 0 || series.headChunk != nil || series.pendingCommit {
+					seriesMint := series.minTime()
+					if seriesMint < actualMint {
+						actualMint = seriesMint
+					}
 					series.Unlock()
 					continue
 				}
@@ -1864,7 +1903,11 @@ func (s *stripeSeries) gc(mint int64) (map[uint64]struct{}, int) {
 		deletedForCallback = deletedForCallback[:0]
 	}
 
-	return deleted, rmChunks
+	if actualMint == math.MaxInt64 {
+		actualMint = mint
+	}
+
+	return deleted, rmChunks, actualMint
 }
 
 func (s *stripeSeries) getByID(id uint64) *memSeries {
@@ -2086,26 +2129,25 @@ func (s *memSeries) chunkID(pos int) int {
 // have no timestamp at or after mint.
 // Chunk IDs remain unchanged.
 func (s *memSeries) truncateChunksBefore(mint int64) (removed int) {
-	var k int
 	if s.headChunk != nil && s.headChunk.maxTime < mint {
 		// If head chunk is truncated, we can truncate all mmapped chunks.
-		k = 1 + len(s.mmappedChunks)
-		s.firstChunkID += k
+		removed = 1 + len(s.mmappedChunks)
+		s.firstChunkID += removed
 		s.headChunk = nil
 		s.mmappedChunks = nil
-		return k
+		return removed
 	}
 	if len(s.mmappedChunks) > 0 {
 		for i, c := range s.mmappedChunks {
 			if c.maxTime >= mint {
 				break
 			}
-			k = i + 1
+			removed = i + 1
 		}
-		s.mmappedChunks = append(s.mmappedChunks[:0], s.mmappedChunks[k:]...)
-		s.firstChunkID += k
+		s.mmappedChunks = append(s.mmappedChunks[:0], s.mmappedChunks[removed:]...)
+		s.firstChunkID += removed
 	}
-	return k
+	return removed
 }
 
 // append adds the sample (t, v) to the series. The caller also has to provide
@@ -2373,7 +2415,8 @@ func (h *Head) Size() int64 {
 	if h.wal != nil {
 		walSize, _ = h.wal.Size()
 	}
-	return walSize + h.chunkDiskMapper.Size()
+	cdmSize, _ := h.chunkDiskMapper.Size()
+	return walSize + cdmSize
 }
 
 func (h *RangeHead) Size() int64 {

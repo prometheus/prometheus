@@ -297,11 +297,9 @@ func (w *Writer) String(s string) {
 
 	p := 0 // last non-escape symbol
 
-	var escapeTable [128]bool
+	escapeTable := &htmlEscapeTable
 	if w.NoEscapeHTML {
-		escapeTable = htmlNoEscapeTable
-	} else {
-		escapeTable = htmlEscapeTable
+		escapeTable = &htmlNoEscapeTable
 	}
 
 	for i := 0; i < len(s); {

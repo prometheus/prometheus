@@ -19,8 +19,6 @@ import (
 // bits should be set to the size of the algorithm.
 func (k *DNSKEY) Generate(bits int) (crypto.PrivateKey, error) {
 	switch k.Algorithm {
-	case RSAMD5, DSA, DSANSEC3SHA1:
-		return nil, ErrAlg
 	case RSASHA1, RSASHA256, RSASHA1NSEC3SHA1:
 		if bits < 512 || bits > 4096 {
 			return nil, ErrKeySize
@@ -41,6 +39,8 @@ func (k *DNSKEY) Generate(bits int) (crypto.PrivateKey, error) {
 		if bits != 256 {
 			return nil, ErrKeySize
 		}
+	default:
+		return nil, ErrAlg
 	}
 
 	switch k.Algorithm {

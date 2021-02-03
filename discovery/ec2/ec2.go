@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 	"github.com/aws/aws-sdk-go/aws/ec2metadata"
@@ -42,21 +43,22 @@ const (
 	ec2LabelAMI               = ec2Label + "ami"
 	ec2LabelAZ                = ec2Label + "availability_zone"
 	ec2LabelArch              = ec2Label + "architecture"
+	ec2LabelIPv6Addresses     = ec2Label + "ipv6_addresses"
 	ec2LabelInstanceID        = ec2Label + "instance_id"
+	ec2LabelInstanceLifecycle = ec2Label + "instance_lifecycle"
 	ec2LabelInstanceState     = ec2Label + "instance_state"
 	ec2LabelInstanceType      = ec2Label + "instance_type"
-	ec2LabelInstanceLifecycle = ec2Label + "instance_lifecycle"
 	ec2LabelOwnerID           = ec2Label + "owner_id"
 	ec2LabelPlatform          = ec2Label + "platform"
-	ec2LabelPublicDNS         = ec2Label + "public_dns_name"
-	ec2LabelPublicIP          = ec2Label + "public_ip"
+	ec2LabelPrimarySubnetID   = ec2Label + "primary_subnet_id"
 	ec2LabelPrivateDNS        = ec2Label + "private_dns_name"
 	ec2LabelPrivateIP         = ec2Label + "private_ip"
-	ec2LabelPrimarySubnetID   = ec2Label + "primary_subnet_id"
+	ec2LabelPublicDNS         = ec2Label + "public_dns_name"
+	ec2LabelPublicIP          = ec2Label + "public_ip"
 	ec2LabelSubnetID          = ec2Label + "subnet_id"
 	ec2LabelTag               = ec2Label + "tag_"
 	ec2LabelVPCID             = ec2Label + "vpc_id"
-	subnetSeparator           = ","
+	ec2LabelSeparator         = ","
 )
 
 // DefaultSDConfig is the default EC2 SD configuration.
@@ -128,66 +130,71 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 // the Discoverer interface.
 type Discovery struct {
 	*refresh.Discovery
-	aws      *aws.Config
-	interval time.Duration
-	profile  string
-	roleARN  string
-	port     int
-	filters  []*Filter
+	cfg *SDConfig
+	ec2 *ec2.EC2
 }
 
 // NewDiscovery returns a new EC2Discovery which periodically refreshes its targets.
 func NewDiscovery(conf *SDConfig, logger log.Logger) *Discovery {
-	creds := credentials.NewStaticCredentials(conf.AccessKey, string(conf.SecretKey), "")
-	if conf.AccessKey == "" && conf.SecretKey == "" {
-		creds = nil
-	}
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 	d := &Discovery{
-		aws: &aws.Config{
-			Endpoint:    &conf.Endpoint,
-			Region:      &conf.Region,
-			Credentials: creds,
-		},
-		profile:  conf.Profile,
-		roleARN:  conf.RoleARN,
-		filters:  conf.Filters,
-		interval: time.Duration(conf.RefreshInterval),
-		port:     conf.Port,
+		cfg: conf,
 	}
 	d.Discovery = refresh.NewDiscovery(
 		logger,
 		"ec2",
-		time.Duration(conf.RefreshInterval),
+		time.Duration(d.cfg.RefreshInterval),
 		d.refresh,
 	)
 	return d
 }
 
-func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
+func (d *Discovery) ec2Client() (*ec2.EC2, error) {
+	if d.ec2 != nil {
+		return d.ec2, nil
+	}
+
+	creds := credentials.NewStaticCredentials(d.cfg.AccessKey, string(d.cfg.SecretKey), "")
+	if d.cfg.AccessKey == "" && d.cfg.SecretKey == "" {
+		creds = nil
+	}
+
 	sess, err := session.NewSessionWithOptions(session.Options{
-		Config:  *d.aws,
-		Profile: d.profile,
+		Config: aws.Config{
+			Endpoint:    &d.cfg.Endpoint,
+			Region:      &d.cfg.Region,
+			Credentials: creds,
+		},
+		Profile: d.cfg.Profile,
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "could not create aws session")
 	}
 
-	var ec2s *ec2.EC2
-	if d.roleARN != "" {
-		creds := stscreds.NewCredentials(sess, d.roleARN)
-		ec2s = ec2.New(sess, &aws.Config{Credentials: creds})
+	if d.cfg.RoleARN != "" {
+		creds := stscreds.NewCredentials(sess, d.cfg.RoleARN)
+		d.ec2 = ec2.New(sess, &aws.Config{Credentials: creds})
 	} else {
-		ec2s = ec2.New(sess)
+		d.ec2 = ec2.New(sess)
 	}
+
+	return d.ec2, nil
+}
+
+func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
+	ec2Client, err := d.ec2Client()
+	if err != nil {
+		return nil, err
+	}
+
 	tg := &targetgroup.Group{
-		Source: *d.aws.Region,
+		Source: d.cfg.Region,
 	}
 
 	var filters []*ec2.Filter
-	for _, f := range d.filters {
+	for _, f := range d.cfg.Filters {
 		filters = append(filters, &ec2.Filter{
 			Name:   aws.String(f.Name),
 			Values: aws.StringSlice(f.Values),
@@ -196,7 +203,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 	input := &ec2.DescribeInstancesInput{Filters: filters}
 
-	if err = ec2s.DescribeInstancesPagesWithContext(ctx, input, func(p *ec2.DescribeInstancesOutput, lastPage bool) bool {
+	if err := ec2Client.DescribeInstancesPagesWithContext(ctx, input, func(p *ec2.DescribeInstancesOutput, lastPage bool) bool {
 		for _, r := range p.Reservations {
 			for _, inst := range r.Instances {
 				if inst.PrivateIpAddress == nil {
@@ -214,7 +221,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 				if inst.PrivateDnsName != nil {
 					labels[ec2LabelPrivateDNS] = model.LabelValue(*inst.PrivateDnsName)
 				}
-				addr := net.JoinHostPort(*inst.PrivateIpAddress, fmt.Sprintf("%d", d.port))
+				addr := net.JoinHostPort(*inst.PrivateIpAddress, fmt.Sprintf("%d", d.cfg.Port))
 				labels[model.AddressLabel] = model.LabelValue(addr)
 
 				if inst.Platform != nil {
@@ -243,22 +250,33 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 					labels[ec2LabelVPCID] = model.LabelValue(*inst.VpcId)
 					labels[ec2LabelPrimarySubnetID] = model.LabelValue(*inst.SubnetId)
 
-					// Deduplicate VPC Subnet IDs maintaining the order of the network interfaces returned by EC2.
 					var subnets []string
+					var ipv6addrs []string
 					subnetsMap := make(map[string]struct{})
 					for _, eni := range inst.NetworkInterfaces {
 						if eni.SubnetId == nil {
 							continue
 						}
+						// Deduplicate VPC Subnet IDs maintaining the order of the subnets returned by EC2.
 						if _, ok := subnetsMap[*eni.SubnetId]; !ok {
 							subnetsMap[*eni.SubnetId] = struct{}{}
 							subnets = append(subnets, *eni.SubnetId)
 						}
+
+						for _, ipv6addr := range eni.Ipv6Addresses {
+							ipv6addrs = append(ipv6addrs, *ipv6addr.Ipv6Address)
+						}
 					}
 					labels[ec2LabelSubnetID] = model.LabelValue(
-						subnetSeparator +
-							strings.Join(subnets, subnetSeparator) +
-							subnetSeparator)
+						ec2LabelSeparator +
+							strings.Join(subnets, ec2LabelSeparator) +
+							ec2LabelSeparator)
+					if len(ipv6addrs) > 0 {
+						labels[ec2LabelIPv6Addresses] = model.LabelValue(
+							ec2LabelSeparator +
+								strings.Join(ipv6addrs, ec2LabelSeparator) +
+								ec2LabelSeparator)
+					}
 				}
 
 				for _, t := range inst.Tags {
@@ -273,6 +291,9 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		}
 		return true
 	}); err != nil {
+		if awsErr, ok := err.(awserr.Error); ok && (awsErr.Code() == "AuthFailure" || awsErr.Code() == "UnauthorizedOperation") {
+			d.ec2 = nil
+		}
 		return nil, errors.Wrap(err, "could not describe instances")
 	}
 	return []*targetgroup.Group{tg}, nil

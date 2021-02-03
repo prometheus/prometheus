@@ -16,19 +16,17 @@ package rules
 import (
 	"context"
 	"fmt"
+	html_template "html/template"
 	"net/url"
 	"strings"
 	"sync"
 	"time"
 
-	html_template "html/template"
-
-	yaml "gopkg.in/yaml.v2"
-
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+	yaml "gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/rulefmt"

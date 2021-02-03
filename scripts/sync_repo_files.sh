@@ -20,7 +20,7 @@ if [ -z "${GITHUB_TOKEN}" ]; then
 fi
 
 # List of files that should be synced.
-SYNC_FILES="CODE_OF_CONDUCT.md LICENSE Makefile.common"
+SYNC_FILES="CODE_OF_CONDUCT.md LICENSE Makefile.common SECURITY.md"
 
 # Go to the root of the repo
 cd "$(git rev-parse --show-cdup)" || exit 1
@@ -39,6 +39,9 @@ fetch_repos() {
 push_branch() {
   # stdout and stderr are redirected to /dev/null otherwise git-push could leak
   # the token in the logs.
+  # Delete the remote branch in case it was merged but not deleted.
+  git push --quiet "https://${GITHUB_TOKEN}:@github.com/${1}" \
+    ":${branch}" 1>/dev/null 2>&1
   git push --quiet \
     "https://${GITHUB_TOKEN}:@github.com/${1}" \
     --set-upstream "${branch}" 1>/dev/null 2>&1
@@ -73,10 +76,12 @@ process_repo() {
     fi
     if [[ -z "${target_file}" ]]; then
       echo "${source_file} doesn't exist in ${org_repo}"
-      if [[ "${source_file}" == 'CODE_OF_CONDUCT.md' ]] ; then
-        echo "CODE_OF_CONDUCT.md missing in ${org_repo}, force updating."
-        needs_update+=('CODE_OF_CONDUCT.md')
-      fi
+      case "${source_file}" in
+        CODE_OF_CONDUCT.md | SECURITY.md)
+          echo "${source_file} missing in ${org_repo}, force updating."
+          needs_update+=("${source_file}")
+          ;;
+      esac
       continue
     fi
     target_checksum="$(echo "${target_file}" | sha256sum | cut -d' ' -f1)"
@@ -119,6 +124,16 @@ for org in ${orgs}; do
   # at most but it should be enough for us as there are less than 40 repositories
   # currently.
   fetch_repos "${org}" | while read -r repo; do
+    # Check if a PR is already opened for the branch.
+    prLink=$(curl --show-error --silent \
+      -u "${GITHUB_USER}:${GITHUB_TOKEN}" \
+      "https://api.github.com/repos/${org}/${repo}/pulls?head=${repo}:${branch}" | jq '.[0].url')
+    if [[ "${prLink}" != "null" ]]; then
+      echo "Pull request already opened for branch '${branch}': ${prLink}"
+      echo "Either close it or merge it before running this script again!"
+      continue
+    fi
+
     if ! process_repo "${org}/${repo}"; then
       echo "Failed to process '${org}/${repo}'"
       exit 1

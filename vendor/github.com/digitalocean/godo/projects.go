@@ -117,7 +117,7 @@ type ProjectResource struct {
 	Status     string                `json:"status,omitempty"`
 }
 
-// ProjetResourceLinks specify the link for more information about the resource.
+// ProjectResourceLinks specify the link for more information about the resource.
 type ProjectResourceLinks struct {
 	Self string `json:"self"`
 }
@@ -252,7 +252,6 @@ func (p *ProjectsServiceOp) ListResources(ctx context.Context, projectID string,
 
 // AssignResources assigns one or more resources to a project. AssignResources
 // accepts resources in two possible formats:
-
 //  1. The resource type, like `&Droplet{ID: 1}` or `&FloatingIP{IP: "1.2.3.4"}`
 //  2. A valid DO URN as a string, like "do:droplet:1234"
 //

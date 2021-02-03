@@ -17,9 +17,10 @@ import (
 	"io"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestOpenMetricsParse(t *testing.T) {
@@ -220,7 +221,7 @@ foo_total 17.0 1520879607.789 # {xx="yy"} 5`
 		if err == io.EOF {
 			break
 		}
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 
 		switch et {
 		case EntrySeries:
@@ -230,40 +231,40 @@ foo_total 17.0 1520879607.789 # {xx="yy"} 5`
 			p.Metric(&res)
 			found := p.Exemplar(&e)
 
-			testutil.Equals(t, exp[i].m, string(m))
-			testutil.Equals(t, exp[i].t, ts)
-			testutil.Equals(t, exp[i].v, v)
-			testutil.Equals(t, exp[i].lset, res)
+			require.Equal(t, exp[i].m, string(m))
+			require.Equal(t, exp[i].t, ts)
+			require.Equal(t, exp[i].v, v)
+			require.Equal(t, exp[i].lset, res)
 			if exp[i].e == nil {
-				testutil.Equals(t, false, found)
+				require.Equal(t, false, found)
 			} else {
-				testutil.Equals(t, true, found)
-				testutil.Equals(t, *exp[i].e, e)
+				require.Equal(t, true, found)
+				require.Equal(t, *exp[i].e, e)
 			}
 			res = res[:0]
 
 		case EntryType:
 			m, typ := p.Type()
-			testutil.Equals(t, exp[i].m, string(m))
-			testutil.Equals(t, exp[i].typ, typ)
+			require.Equal(t, exp[i].m, string(m))
+			require.Equal(t, exp[i].typ, typ)
 
 		case EntryHelp:
 			m, h := p.Help()
-			testutil.Equals(t, exp[i].m, string(m))
-			testutil.Equals(t, exp[i].help, string(h))
+			require.Equal(t, exp[i].m, string(m))
+			require.Equal(t, exp[i].help, string(h))
 
 		case EntryUnit:
 			m, u := p.Unit()
-			testutil.Equals(t, exp[i].m, string(m))
-			testutil.Equals(t, exp[i].unit, string(u))
+			require.Equal(t, exp[i].m, string(m))
+			require.Equal(t, exp[i].unit, string(u))
 
 		case EntryComment:
-			testutil.Equals(t, exp[i].comment, string(p.Comment()))
+			require.Equal(t, exp[i].comment, string(p.Comment()))
 		}
 
 		i++
 	}
-	testutil.Equals(t, len(exp), i)
+	require.Equal(t, len(exp), i)
 }
 
 func TestOpenMetricsParseErrors(t *testing.T) {
@@ -510,7 +511,7 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 		for err == nil {
 			_, err = p.Next()
 		}
-		testutil.Equals(t, c.err, err.Error(), "test %d: %s", i, c.input)
+		require.Equal(t, c.err, err.Error(), "test %d: %s", i, c.input)
 	}
 }
 
@@ -577,10 +578,10 @@ func TestOMNullByteHandling(t *testing.T) {
 		}
 
 		if c.err == "" {
-			testutil.Equals(t, io.EOF, err, "test %d", i)
+			require.Equal(t, io.EOF, err, "test %d", i)
 			continue
 		}
 
-		testutil.Equals(t, c.err, err.Error(), "test %d", i)
+		require.Equal(t, c.err, err.Error(), "test %d", i)
 	}
 }

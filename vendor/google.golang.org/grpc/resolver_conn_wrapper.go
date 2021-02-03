@@ -217,6 +217,6 @@ func (ccr *ccResolverWrapper) addChannelzTraceEvent(s resolver.State) {
 	}
 	channelz.AddTraceEvent(logger, ccr.cc.channelzID, 0, &channelz.TraceEventDesc{
 		Desc:     fmt.Sprintf("Resolver state updated: %+v (%v)", s, strings.Join(updates, "; ")),
-		Severity: channelz.CtINFO,
+		Severity: channelz.CtInfo,
 	})
 }

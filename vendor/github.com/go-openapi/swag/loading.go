@@ -53,7 +53,7 @@ func LoadStrategy(path string, local, remote func(string) ([]byte, error)) func(
 		return remote
 	}
 	return func(pth string) ([]byte, error) {
-		upth, err := pathUnescape(pth)
+		upth, err := pathUnescape(strings.TrimPrefix(pth, `file://`))
 		if err != nil {
 			return nil, err
 		}
@@ -64,7 +64,7 @@ func LoadStrategy(path string, local, remote func(string) ([]byte, error)) func(
 func loadHTTPBytes(timeout time.Duration) func(path string) ([]byte, error) {
 	return func(path string) ([]byte, error) {
 		client := &http.Client{Timeout: timeout}
-		req, err := http.NewRequest("GET", path, nil)
+		req, err := http.NewRequest("GET", path, nil) // nolint: noctx
 		if err != nil {
 			return nil, err
 		}

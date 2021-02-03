@@ -60,6 +60,14 @@ if [[ "$1" = "-install" ]]; then
       unzip ${PROTOC_FILENAME}
       bin/protoc --version
       popd
+    elif [[ "${GITHUB_ACTIONS}" = "true" ]]; then
+      PROTOBUF_VERSION=3.3.0
+      PROTOC_FILENAME=protoc-${PROTOBUF_VERSION}-linux-x86_64.zip
+      pushd /home/runner/go
+      wget https://github.com/google/protobuf/releases/download/v${PROTOBUF_VERSION}/${PROTOC_FILENAME}
+      unzip ${PROTOC_FILENAME}
+      bin/protoc --version
+      popd
     elif not which protoc > /dev/null; then
       die "Please install protoc into your path"
     fi
@@ -91,6 +99,10 @@ not git grep "\(import \|^\s*\)\"github.com/golang/protobuf/ptypes/" -- "*.go"
 
 # - Ensure all xds proto imports are renamed to *pb or *grpc.
 git grep '"github.com/envoyproxy/go-control-plane/envoy' -- '*.go' ':(exclude)*.pb.go' | not grep -v 'pb "\|grpc "'
+
+# - Check imports that are illegal in appengine (until Go 1.11).
+# TODO: Remove when we drop Go 1.10 support
+go list -f {{.Dir}} ./... | xargs go run test/go_vet/vet.go
 
 # - gofmt, goimports, golint (with exceptions for generated code), go vet.
 gofmt -s -d -l . 2>&1 | fail_on_output
@@ -153,7 +165,26 @@ grpc.WithTimeout
 http.CloseNotifier
 info.SecurityVersion
 resolver.Backend
-resolver.GRPCLB' "${SC_OUT}"
+resolver.GRPCLB
+extDesc.Filename is deprecated
+BuildVersion is deprecated
+github.com/golang/protobuf/jsonpb is deprecated
+proto is deprecated
+xxx_messageInfo_
+proto.InternalMessageInfo is deprecated
+proto.EnumName is deprecated
+proto.ErrInternalBadWireType is deprecated
+proto.FileDescriptor is deprecated
+proto.Marshaler is deprecated
+proto.MessageType is deprecated
+proto.RegisterEnum is deprecated
+proto.RegisterFile is deprecated
+proto.RegisterType is deprecated
+proto.RegisterExtension is deprecated
+proto.RegisteredExtension is deprecated
+proto.RegisteredExtensions is deprecated
+proto.RegisterMapType is deprecated
+proto.Unmarshaler is deprecated' "${SC_OUT}"
 
 # - special golint on package comments.
 lint_package_comment_per_package() {

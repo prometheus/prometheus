@@ -6,3 +6,8 @@ scrape_configs:
           - role:  "pod"
             label: "foo=bar"
             field: "metadata.status=Running"
+      - role: pod
+        selectors:
+          - role:  "pod"
+            label: "foo in (bar,baz)"
+            field: "metadata.status=Running"

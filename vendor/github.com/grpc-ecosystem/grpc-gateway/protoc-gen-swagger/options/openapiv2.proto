@@ -170,6 +170,51 @@ message Operation {
   map<string, google.protobuf.Value> extensions = 13;
 }
 
+// `Header` is a representation of OpenAPI v2 specification's Header object.
+//
+// See: https://github.com/OAI/OpenAPI-Specification/blob/3.0.0/versions/2.0.md#headerObject
+//
+message Header {
+  // `Description` is a short description of the header.
+  string description = 1;
+  // The type of the object. The value MUST be one of "string", "number", "integer", or "boolean". The "array" type is not supported.
+  string type = 2;
+  // `Format` The extending format for the previously mentioned type.
+  string format = 3;
+  // field 4 is reserved for 'items', but in OpenAPI-specific way.
+  reserved 4;
+  // field 5 is reserved `Collection Format` Determines the format of the array if type array is used.
+  reserved 5;
+  // `Default` Declares the value of the header that the server will use if none is provided.
+  // See: https://tools.ietf.org/html/draft-fge-json-schema-validation-00#section-6.2.
+  // Unlike JSON Schema this value MUST conform to the defined type for the header.
+  string default = 6;
+  // field 7 is reserved for 'maximum'.
+  reserved 7;
+  // field 8 is reserved for 'exclusiveMaximum'.
+  reserved 8;
+  // field 9 is reserved for 'minimum'.
+  reserved 9;
+  // field 10 is reserved for 'exclusiveMinimum'.
+  reserved 10;
+  // field 11 is reserved for 'maxLength'.
+  reserved 11;
+  // field 12 is reserved for 'minLength'.
+  reserved 12;
+  // 'Pattern' See https://tools.ietf.org/html/draft-fge-json-schema-validation-00#section-5.2.3.
+  string pattern = 13;
+  // field 14 is reserved for 'maxItems'.
+  reserved 14;
+  // field 15 is reserved for 'minItems'.
+  reserved 15;
+  // field 16 is reserved for 'uniqueItems'.
+  reserved 16;
+  // field 17 is reserved for 'enum'.
+  reserved 17;
+  // field 18 is reserved for 'multipleOf'.
+  reserved 18;
+}
+
 // `Response` is a representation of OpenAPI v2 specification's Response object.
 //
 // See: https://github.com/OAI/OpenAPI-Specification/blob/3.0.0/versions/2.0.md#responseObject
@@ -181,8 +226,10 @@ message Response {
   // `Schema` optionally defines the structure of the response.
   // If `Schema` is not provided, it means there is no content to the response.
   Schema schema = 2;
-  // field 3 is reserved for 'headers'.
-  reserved 3;
+  // `Headers` A list of headers that are sent with the response.
+  // `Header` name is expected to be a string in the canonical format of the MIME header key
+  // See: https://golang.org/pkg/net/textproto/#CanonicalMIMEHeaderKey
+  map<string, Header> headers = 3;
   // `Examples` gives per-mimetype response examples.
   // See: https://github.com/OAI/OpenAPI-Specification/blob/3.0.0/versions/2.0.md#example-object
   map<string, string> examples = 4;
@@ -391,9 +438,10 @@ message JSONSchema {
   string description = 6;
   string default = 7;
   bool read_only = 8;
-  // field 9 is reserved for 'examples', which is omitted from OpenAPI v2 in
-  // favor of 'example' field.
-  reserved 9;
+  // A free-form property to include a JSON example of this field. This is copied
+  // verbatim to the output swagger.json. Quotes must be escaped.
+  // This property is the same for 2.0 and 3.0.0 https://github.com/OAI/OpenAPI-Specification/blob/3.0.0/versions/3.0.0.md#schemaObject  https://github.com/OAI/OpenAPI-Specification/blob/3.0.0/versions/2.0.md#schemaObject
+  string example = 9;
   double multiple_of = 10;
   // Maximum represents an inclusive upper limit for a numeric instance. The 
   // value of MUST be a number, 
@@ -446,9 +494,11 @@ message JSONSchema {
   }
 
   repeated JSONSchemaSimpleTypes type = 35;
+  // `Format`
+  string format = 36;
   // following fields are reserved, as the properties have been omitted from 
-  // OpenAPI v2: format, contentMediaType, contentEncoding, if, then, else
-  reserved 36 to 41;
+  // OpenAPI v2: contentMediaType, contentEncoding, if, then, else
+  reserved 37 to 41;
   // field 42 is reserved for 'allOf', but in OpenAPI-specific way.
   // TODO(ivucica): add 'allOf'?
   reserved 42;
@@ -456,6 +506,8 @@ message JSONSchema {
   // OpenAPI v2:
   // anyOf, oneOf, not
   reserved 43 to 45;
+  // Items in `enum` must be unique https://tools.ietf.org/html/draft-fge-json-schema-validation-00#section-5.5.1
+  repeated string enum = 46;
 }
 
 // `Tag` is a representation of OpenAPI v2 specification's Tag object.

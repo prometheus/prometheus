@@ -15,10 +15,11 @@
 DOCKER_ARCHS ?= amd64 armv7 arm64 ppc64le s390x
 
 REACT_APP_PATH = web/ui/react-app
-REACT_APP_SOURCE_FILES = $(wildcard $(REACT_APP_PATH)/public/* $(REACT_APP_PATH)/src/* $(REACT_APP_PATH)/tsconfig.json)
+REACT_APP_SOURCE_FILES = $(shell find $(REACT_APP_PATH)/public/ $(REACT_APP_PATH)/src/ $(REACT_APP_PATH)/tsconfig.json)
 REACT_APP_OUTPUT_DIR = web/ui/static/react
 REACT_APP_NODE_MODULES_PATH = $(REACT_APP_PATH)/node_modules
 REACT_APP_NPM_LICENSES_TARBALL = "npm_licenses.tar.bz2"
+REACT_APP_BUILD_SCRIPT = ./scripts/build_react_app.sh
 
 PROMTOOL = ./promtool
 TSDB_BENCHMARK_NUM_METRICS ?= 1000
@@ -32,9 +33,9 @@ DOCKER_IMAGE_NAME       ?= prometheus
 $(REACT_APP_NODE_MODULES_PATH): $(REACT_APP_PATH)/package.json $(REACT_APP_PATH)/yarn.lock
 	cd $(REACT_APP_PATH) && yarn --frozen-lockfile
 
-$(REACT_APP_OUTPUT_DIR): $(REACT_APP_NODE_MODULES_PATH) $(REACT_APP_SOURCE_FILES)
+$(REACT_APP_OUTPUT_DIR): $(REACT_APP_NODE_MODULES_PATH) $(REACT_APP_SOURCE_FILES) $(REACT_APP_BUILD_SCRIPT)
 	@echo ">> building React app"
-	@./scripts/build_react_app.sh
+	@$(REACT_APP_BUILD_SCRIPT)
 
 .PHONY: assets
 assets: $(REACT_APP_OUTPUT_DIR)
@@ -46,12 +47,12 @@ assets: $(REACT_APP_OUTPUT_DIR)
 	@$(GOFMT) -w ./web/ui
 
 .PHONY: react-app-lint
-react-app-lint: 
+react-app-lint:
 	@echo ">> running React app linting"
 	cd $(REACT_APP_PATH) && yarn lint:ci
 
 .PHONY: react-app-lint-fix
-react-app-lint-fix: 
+react-app-lint-fix:
 	@echo ">> running React app linting and fixing errors where possible"
 	cd $(REACT_APP_PATH) && yarn lint
 

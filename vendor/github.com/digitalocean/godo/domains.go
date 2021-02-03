@@ -101,6 +101,7 @@ func (d Domain) String() string {
 	return Stringify(d)
 }
 
+// URN returns the domain name in a valid DO API URN form.
 func (d Domain) URN() string {
 	return ToURN("Domain", d.Name)
 }

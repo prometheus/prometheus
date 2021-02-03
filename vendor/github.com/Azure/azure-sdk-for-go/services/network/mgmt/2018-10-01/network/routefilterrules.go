@@ -241,6 +241,7 @@ func (client RouteFilterRulesClient) Get(ctx context.Context, resourceGroupName 
 	result, err = client.GetResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.RouteFilterRulesClient", "Get", resp, "Failure responding to request")
+		return
 	}
 
 	return
@@ -318,6 +319,7 @@ func (client RouteFilterRulesClient) ListByRouteFilter(ctx context.Context, reso
 	result.rfrlr, err = client.ListByRouteFilterResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.RouteFilterRulesClient", "ListByRouteFilter", resp, "Failure responding to request")
+		return
 	}
 	if result.rfrlr.hasNextLink() && result.rfrlr.IsEmpty() {
 		err = result.NextWithContext(ctx)
@@ -382,6 +384,7 @@ func (client RouteFilterRulesClient) listByRouteFilterNextResults(ctx context.Co
 	result, err = client.ListByRouteFilterResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.RouteFilterRulesClient", "listByRouteFilterNextResults", resp, "Failure responding to next results request")
+		return
 	}
 	return
 }

@@ -15,6 +15,7 @@ package scrape
 
 import (
 	"context"
+
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 )

@@ -6,10 +6,10 @@
               </div>
               <div class="col-lg-2">
                 <div class="eval_stats float-right"></div>
-                <img src="{{ pathPrefix }}/static/img/ajax-loader.gif?v={{ buildVersion }}" class="spinner" alt="ajax_spinner">
+                <img src="{{ pathPrefix }}/classic/static/img/ajax-loader.gif?v={{ buildVersion }}" class="spinner" alt="ajax_spinner">
               </div>
             </div>
-            <div class="form-inline">              
+            <div class="form-inline">
               <input class="btn btn-primary execute_btn" type="submit" value="Execute" name="submit">
               <select class="custom-select form-control expression_select" name="insert_metric">
                 <option value="">- insert metric at cursor -</option>

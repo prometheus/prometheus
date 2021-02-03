@@ -39,11 +39,14 @@ import (
 // EmptyDocumentLength is the length of a document that has been started/ended but has no elements.
 const EmptyDocumentLength = 5
 
+// nullTerminator is a string version of the 0 byte that is appended at the end of cstrings.
+const nullTerminator = string(byte(0))
+
 // AppendType will append t to dst and return the extended buffer.
 func AppendType(dst []byte, t bsontype.Type) []byte { return append(dst, byte(t)) }
 
 // AppendKey will append key to dst and return the extended buffer.
-func AppendKey(dst []byte, key string) []byte { return append(dst, key+string(0x00)...) }
+func AppendKey(dst []byte, key string) []byte { return append(dst, key+nullTerminator...) }
 
 // AppendHeader will append Type t and key to dst and return the extended
 // buffer.
@@ -427,7 +430,7 @@ func AppendNullElement(dst []byte, key string) []byte { return AppendHeader(dst,
 
 // AppendRegex will append pattern and options to dst and return the extended buffer.
 func AppendRegex(dst []byte, pattern, options string) []byte {
-	return append(dst, pattern+string(0x00)+options+string(0x00)...)
+	return append(dst, pattern+nullTerminator+options+nullTerminator...)
 }
 
 // AppendRegexElement will append a BSON regex element using key, pattern, and

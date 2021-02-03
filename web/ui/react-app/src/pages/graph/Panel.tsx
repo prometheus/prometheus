@@ -10,8 +10,8 @@ import { GraphTabContent } from './GraphTabContent';
 import DataTable from './DataTable';
 import TimeInput from './TimeInput';
 import QueryStatsView, { QueryStats } from './QueryStatsView';
-import PathPrefixProps from '../../types/PathPrefixProps';
 import { QueryParams } from '../../types/types';
+import { API_PATH } from '../../constants/constants';
 
 interface PanelProps {
   options: PanelOptions;
@@ -21,12 +21,15 @@ interface PanelProps {
   metricNames: string[];
   removePanel: () => void;
   onExecuteQuery: (query: string) => void;
+  pathPrefix: string;
+  enableAutocomplete: boolean;
 }
 
 interface PanelState {
   data: any; // TODO: Type data.
   lastQueryParams: QueryParams | null;
   loading: boolean;
+  warnings: string[] | null;
   error: string | null;
   stats: QueryStats | null;
   exprInputValue: string;
@@ -55,7 +58,7 @@ export const PanelDefaultOptions: PanelOptions = {
   stacked: false,
 };
 
-class Panel extends Component<PanelProps & PathPrefixProps, PanelState> {
+class Panel extends Component<PanelProps, PanelState> {
   private abortInFlightFetch: (() => void) | null = null;
 
   constructor(props: PanelProps) {
@@ -65,6 +68,7 @@ class Panel extends Component<PanelProps & PathPrefixProps, PanelState> {
       data: null,
       lastQueryParams: null,
       loading: false,
+      warnings: null,
       error: null,
       stats: null,
       exprInputValue: props.options.expr,
@@ -117,21 +121,20 @@ class Panel extends Component<PanelProps & PathPrefixProps, PanelState> {
     let path: string;
     switch (this.props.options.type) {
       case 'graph':
-        path = '/api/v1/query_range';
+        path = 'query_range';
         params.append('start', startTime.toString());
         params.append('end', endTime.toString());
         params.append('step', resolution.toString());
-        // TODO path prefix here and elsewhere.
         break;
       case 'table':
-        path = '/api/v1/query';
+        path = 'query';
         params.append('time', endTime.toString());
         break;
       default:
         throw new Error('Invalid panel type "' + this.props.options.type + '"');
     }
 
-    fetch(`${this.props.pathPrefix}${path}?${params}`, {
+    fetch(`${this.props.pathPrefix}/${API_PATH}/${path}?${params}`, {
       cache: 'no-store',
       credentials: 'same-origin',
       signal: abortController.signal,
@@ -155,6 +158,7 @@ class Panel extends Component<PanelProps & PathPrefixProps, PanelState> {
         this.setState({
           error: null,
           data: json.data,
+          warnings: json.warnings,
           lastQueryParams: {
             startTime,
             endTime,
@@ -233,6 +237,7 @@ class Panel extends Component<PanelProps & PathPrefixProps, PanelState> {
               onExpressionChange={this.handleExpressionChange}
               executeQuery={this.executeQuery}
               loading={this.state.loading}
+              enableAutocomplete={this.props.enableAutocomplete}
               autocompleteSections={{
                 'Query History': pastQueries,
                 'Metric Names': metricNames,
@@ -243,6 +248,11 @@ class Panel extends Component<PanelProps & PathPrefixProps, PanelState> {
         <Row>
           <Col>{this.state.error && <Alert color="danger">{this.state.error}</Alert>}</Col>
         </Row>
+        {this.state.warnings?.map((warning, index) => (
+          <Row key={index}>
+            <Col>{warning && <Alert color="warning">{warning}</Alert>}</Col>
+          </Row>
+        ))}
         <Row>
           <Col>
             <Nav tabs>

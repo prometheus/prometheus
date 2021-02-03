@@ -1,0 +1,19 @@
+tests:
+  # Simple failing test.
+  - interval: 1m
+    input_series:
+      - series: test
+        values: '0'
+
+    promql_expr_test:
+      - expr: test
+        eval_time: 0m
+        exp_samples:
+          - value: 1
+            labels: test
+
+    alert_rule_test:
+      - eval_time: 0m
+        alertname: Test
+        exp_alerts:
+          - exp_labels: {}

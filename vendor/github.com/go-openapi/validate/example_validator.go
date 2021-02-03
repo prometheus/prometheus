@@ -83,7 +83,7 @@ func (ex *exampleValidator) validateExampleValueValidAgainstSchema() *Result {
 				// default values provided must validate against their inline definition (no explicit schema)
 				if param.Example != nil && param.Schema == nil {
 					// check param default value is valid
-					red := NewParamValidator(&param, s.KnownFormats).Validate(param.Example)
+					red := NewParamValidator(&param, s.KnownFormats).Validate(param.Example) //#nosec
 					if red.HasErrorsOrWarnings() {
 						res.AddWarnings(exampleValueDoesNotValidateMsg(param.Name, param.In))
 						res.MergeAsWarnings(red)
@@ -92,7 +92,7 @@ func (ex *exampleValidator) validateExampleValueValidAgainstSchema() *Result {
 
 				// Recursively follows Items and Schemas
 				if param.Items != nil {
-					red := ex.validateExampleValueItemsAgainstSchema(param.Name, param.In, &param, param.Items)
+					red := ex.validateExampleValueItemsAgainstSchema(param.Name, param.In, &param, param.Items) //#nosec
 					if red.HasErrorsOrWarnings() {
 						res.AddWarnings(exampleValueItemsDoesNotValidateMsg(param.Name, param.In))
 						res.Merge(red)
@@ -117,7 +117,7 @@ func (ex *exampleValidator) validateExampleValueValidAgainstSchema() *Result {
 				// Same constraint on regular Responses
 				if op.Responses.StatusCodeResponses != nil { // Safeguard
 					for code, r := range op.Responses.StatusCodeResponses {
-						res.Merge(ex.validateExampleInResponse(&r, "response", path, code, op.ID))
+						res.Merge(ex.validateExampleInResponse(&r, "response", path, code, op.ID)) //#nosec
 					}
 				}
 			} else if op.ID != "" {
@@ -130,7 +130,7 @@ func (ex *exampleValidator) validateExampleValueValidAgainstSchema() *Result {
 		// reset explored schemas to get depth-first recursive-proof exploration
 		ex.resetVisited()
 		for nm, sch := range s.spec.Spec().Definitions {
-			res.Merge(ex.validateExampleValueSchemaAgainstSchema(fmt.Sprintf("definitions.%s", nm), "body", &sch))
+			res.Merge(ex.validateExampleValueSchemaAgainstSchema(fmt.Sprintf("definitions.%s", nm), "body", &sch)) //#nosec
 		}
 	}
 	return res
@@ -153,7 +153,7 @@ func (ex *exampleValidator) validateExampleInResponse(resp *spec.Response, respo
 			ex.resetVisited()
 
 			if h.Example != nil {
-				red := NewHeaderValidator(nm, &h, s.KnownFormats).Validate(h.Example)
+				red := NewHeaderValidator(nm, &h, s.KnownFormats).Validate(h.Example) //#nosec
 				if red.HasErrorsOrWarnings() {
 					res.AddWarnings(exampleValueHeaderDoesNotValidateMsg(operationID, nm, responseName))
 					res.MergeAsWarnings(red)
@@ -162,7 +162,7 @@ func (ex *exampleValidator) validateExampleInResponse(resp *spec.Response, respo
 
 			// Headers have inline definition, like params
 			if h.Items != nil {
-				red := ex.validateExampleValueItemsAgainstSchema(nm, "header", &h, h.Items)
+				red := ex.validateExampleValueItemsAgainstSchema(nm, "header", &h, h.Items) //#nosec
 				if red.HasErrorsOrWarnings() {
 					res.AddWarnings(exampleValueHeaderItemsDoesNotValidateMsg(operationID, nm, responseName))
 					res.MergeAsWarnings(red)
@@ -222,7 +222,7 @@ func (ex *exampleValidator) validateExampleValueSchemaAgainstSchema(path, in str
 		// Multiple schemas in items
 		if schema.Items.Schemas != nil { // Safeguard
 			for i, sch := range schema.Items.Schemas {
-				res.Merge(ex.validateExampleValueSchemaAgainstSchema(fmt.Sprintf("%s.items[%d].example", path, i), in, &sch))
+				res.Merge(ex.validateExampleValueSchemaAgainstSchema(fmt.Sprintf("%s.items[%d].example", path, i), in, &sch)) //#nosec
 			}
 		}
 	}
@@ -234,17 +234,17 @@ func (ex *exampleValidator) validateExampleValueSchemaAgainstSchema(path, in str
 		res.Merge(ex.validateExampleValueSchemaAgainstSchema(fmt.Sprintf("%s.additionalItems", path), in, schema.AdditionalItems.Schema))
 	}
 	for propName, prop := range schema.Properties {
-		res.Merge(ex.validateExampleValueSchemaAgainstSchema(path+"."+propName, in, &prop))
+		res.Merge(ex.validateExampleValueSchemaAgainstSchema(path+"."+propName, in, &prop)) //#nosec
 	}
 	for propName, prop := range schema.PatternProperties {
-		res.Merge(ex.validateExampleValueSchemaAgainstSchema(path+"."+propName, in, &prop))
+		res.Merge(ex.validateExampleValueSchemaAgainstSchema(path+"."+propName, in, &prop)) //#nosec
 	}
 	if schema.AdditionalProperties != nil && schema.AdditionalProperties.Schema != nil {
 		res.Merge(ex.validateExampleValueSchemaAgainstSchema(fmt.Sprintf("%s.additionalProperties", path), in, schema.AdditionalProperties.Schema))
 	}
 	if schema.AllOf != nil {
 		for i, aoSch := range schema.AllOf {
-			res.Merge(ex.validateExampleValueSchemaAgainstSchema(fmt.Sprintf("%s.allOf[%d]", path, i), in, &aoSch))
+			res.Merge(ex.validateExampleValueSchemaAgainstSchema(fmt.Sprintf("%s.allOf[%d]", path, i), in, &aoSch)) //#nosec
 		}
 	}
 	return res

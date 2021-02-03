@@ -31,6 +31,41 @@ func TestRulesUnitTest(t *testing.T) {
 			},
 			want: 0,
 		},
+		{
+			name: "Bad input series",
+			args: args{
+				files: []string{"./testdata/bad-input-series.yml"},
+			},
+			want: 1,
+		},
+		{
+			name: "Bad PromQL",
+			args: args{
+				files: []string{"./testdata/bad-promql.yml"},
+			},
+			want: 1,
+		},
+		{
+			name: "Bad rules (syntax error)",
+			args: args{
+				files: []string{"./testdata/bad-rules-syntax-test.yml"},
+			},
+			want: 1,
+		},
+		{
+			name: "Bad rules (error evaluating)",
+			args: args{
+				files: []string{"./testdata/bad-rules-error-test.yml"},
+			},
+			want: 1,
+		},
+		{
+			name: "Simple failing test",
+			args: args{
+				files: []string{"./testdata/failing.yml"},
+			},
+			want: 1,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

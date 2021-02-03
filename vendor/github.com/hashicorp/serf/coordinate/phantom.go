@@ -11,7 +11,7 @@ import (
 // given config.
 func GenerateClients(nodes int, config *Config) ([]*Client, error) {
 	clients := make([]*Client, nodes)
-	for i, _ := range clients {
+	for i := range clients {
 		client, err := NewClient(config)
 		if err != nil {
 			return nil, err
@@ -146,7 +146,7 @@ func Simulate(clients []*Client, truth [][]time.Duration, cycles int) {
 
 	nodes := len(clients)
 	for cycle := 0; cycle < cycles; cycle++ {
-		for i, _ := range clients {
+		for i := range clients {
 			if j := rand.Intn(nodes); j != i {
 				c := clients[j].GetCoordinate()
 				rtt := truth[i][j]

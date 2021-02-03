@@ -69,6 +69,7 @@ func (client OperationsClient) List(ctx context.Context) (result OperationListRe
 	result, err = client.ListResponder(resp)
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "compute.OperationsClient", "List", resp, "Failure responding to request")
+		return
 	}
 
 	return

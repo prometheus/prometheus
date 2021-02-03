@@ -50,7 +50,7 @@ func FixEmptyResponseDescriptions(s *spec.Swagger) {
 		}
 	}
 	for k, v := range s.Responses {
-		FixEmptyDesc(&v)
+		FixEmptyDesc(&v) //#nosec
 		s.Responses[k] = v
 	}
 }
@@ -60,7 +60,7 @@ func FixEmptyResponseDescriptions(s *spec.Swagger) {
 func FixEmptyDescs(rs *spec.Responses) {
 	FixEmptyDesc(rs.Default)
 	for k, v := range rs.StatusCodeResponses {
-		FixEmptyDesc(&v)
+		FixEmptyDesc(&v) //#nosec
 		rs.StatusCodeResponses[k] = v
 	}
 }

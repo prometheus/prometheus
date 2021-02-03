@@ -28,6 +28,7 @@ type KubernetesService interface {
 	GetUser(context.Context, string) (*KubernetesClusterUser, *Response, error)
 	GetUpgrades(context.Context, string) ([]*KubernetesVersion, *Response, error)
 	GetKubeConfig(context.Context, string) (*KubernetesClusterConfig, *Response, error)
+	GetKubeConfigWithExpiry(context.Context, string, int64) (*KubernetesClusterConfig, *Response, error)
 	GetCredentials(context.Context, string, *KubernetesClusterCredentialsGetRequest) (*KubernetesClusterCredentials, *Response, error)
 	List(context.Context, *ListOptions) ([]*KubernetesCluster, *Response, error)
 	Update(context.Context, string, *KubernetesClusterUpdateRequest) (*KubernetesCluster, *Response, error)
@@ -45,6 +46,11 @@ type KubernetesService interface {
 	DeleteNode(ctx context.Context, clusterID, poolID, nodeID string, req *KubernetesNodeDeleteRequest) (*Response, error)
 
 	GetOptions(context.Context) (*KubernetesOptions, *Response, error)
+	AddRegistry(ctx context.Context, req *KubernetesClusterRegistryRequest) (*Response, error)
+	RemoveRegistry(ctx context.Context, req *KubernetesClusterRegistryRequest) (*Response, error)
+
+	RunClusterlint(ctx context.Context, clusterID string, req *KubernetesRunClusterlintRequest) (string, *Response, error)
+	GetClusterlintResults(ctx context.Context, clusterID string, req *KubernetesGetClusterlintRequest) ([]*ClusterlintDiagnostic, *Response, error)
 }
 
 var _ KubernetesService = &KubernetesServiceOp{}
@@ -145,6 +151,22 @@ type KubernetesClusterCredentialsGetRequest struct {
 	ExpirySeconds *int `json:"expiry_seconds,omitempty"`
 }
 
+// KubernetesClusterRegistryRequest represents clusters to integrate with docr registry
+type KubernetesClusterRegistryRequest struct {
+	ClusterUUIDs []string `json:"cluster_uuids,omitempty"`
+}
+
+type KubernetesRunClusterlintRequest struct {
+	IncludeGroups []string `json:"include_groups"`
+	ExcludeGroups []string `json:"exclude_groups"`
+	IncludeChecks []string `json:"include_checks"`
+	ExcludeChecks []string `json:"exclude_checks"`
+}
+
+type KubernetesGetClusterlintRequest struct {
+	RunId string `json:"run_id"`
+}
+
 // KubernetesCluster represents a Kubernetes cluster.
 type KubernetesCluster struct {
 	ID            string   `json:"id,omitempty"`
@@ -163,6 +185,7 @@ type KubernetesCluster struct {
 	MaintenancePolicy *KubernetesMaintenancePolicy `json:"maintenance_policy,omitempty"`
 	AutoUpgrade       bool                         `json:"auto_upgrade,omitempty"`
 	SurgeUpgrade      bool                         `json:"surge_upgrade,omitempty"`
+	RegistryEnabled   bool                         `json:"registry_enabled,omitempty"`
 
 	Status    *KubernetesClusterStatus `json:"status,omitempty"`
 	CreatedAt time.Time                `json:"created_at,omitempty"`
@@ -198,13 +221,36 @@ type KubernetesMaintenancePolicy struct {
 type KubernetesMaintenancePolicyDay int
 
 const (
+	// KubernetesMaintenanceDayAny sets the KubernetesMaintenancePolicyDay to any
+	// day of the week
 	KubernetesMaintenanceDayAny KubernetesMaintenancePolicyDay = iota
+
+	// KubernetesMaintenanceDayMonday sets the KubernetesMaintenancePolicyDay to
+	// Monday
 	KubernetesMaintenanceDayMonday
+
+	// KubernetesMaintenanceDayTuesday sets the KubernetesMaintenancePolicyDay to
+	// Tuesday
 	KubernetesMaintenanceDayTuesday
+
+	// KubernetesMaintenanceDayWednesday sets the KubernetesMaintenancePolicyDay to
+	// Wednesday
 	KubernetesMaintenanceDayWednesday
+
+	// KubernetesMaintenanceDayThursday sets the KubernetesMaintenancePolicyDay to
+	// Thursday
 	KubernetesMaintenanceDayThursday
+
+	// KubernetesMaintenanceDayFriday sets the KubernetesMaintenancePolicyDay to
+	// Friday
 	KubernetesMaintenanceDayFriday
+
+	// KubernetesMaintenanceDaySaturday sets the KubernetesMaintenancePolicyDay to
+	// Saturday
 	KubernetesMaintenanceDaySaturday
+
+	// KubernetesMaintenanceDaySunday sets the KubernetesMaintenancePolicyDay to
+	// Sunday
 	KubernetesMaintenanceDaySunday
 )
 
@@ -250,6 +296,7 @@ func (k KubernetesMaintenancePolicyDay) String() string {
 
 }
 
+// UnmarshalJSON parses the JSON string into KubernetesMaintenancePolicyDay
 func (k *KubernetesMaintenancePolicyDay) UnmarshalJSON(data []byte) error {
 	var val string
 	if err := json.Unmarshal(data, &val); err != nil {
@@ -264,6 +311,7 @@ func (k *KubernetesMaintenancePolicyDay) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// MarshalJSON returns the JSON string for KubernetesMaintenancePolicyDay
 func (k KubernetesMaintenancePolicyDay) MarshalJSON() ([]byte, error) {
 	if KubernetesMaintenanceDayAny <= k && k <= KubernetesMaintenanceDaySunday {
 		return json.Marshal(days[k])
@@ -373,6 +421,28 @@ type KubernetesNodeSize struct {
 type KubernetesRegion struct {
 	Name string `json:"name"`
 	Slug string `json:"slug"`
+}
+
+// ClusterlintDiagnostic is a diagnostic returned from clusterlint.
+type ClusterlintDiagnostic struct {
+	CheckName string             `json:"check_name"`
+	Severity  string             `json:"severity"`
+	Message   string             `json:"message"`
+	Object    *ClusterlintObject `json:"object"`
+}
+
+// ClusterlintObject is the object a clusterlint diagnostic refers to.
+type ClusterlintObject struct {
+	Kind      string              `json:"kind"`
+	Name      string              `json:"name"`
+	Namespace string              `json:"namespace"`
+	Owners    []*ClusterlintOwner `json:"owners,omitempty"`
+}
+
+// ClusterlintOwner indicates the resource that owns the offending object.
+type ClusterlintOwner struct {
+	Kind string `json:"kind"`
+	Name string `json:"name"`
 }
 
 type kubernetesClustersRoot struct {
@@ -519,6 +589,27 @@ func (svc *KubernetesServiceOp) GetKubeConfig(ctx context.Context, clusterID str
 	if err != nil {
 		return nil, nil, err
 	}
+	configBytes := bytes.NewBuffer(nil)
+	resp, err := svc.client.Do(ctx, req, configBytes)
+	if err != nil {
+		return nil, resp, err
+	}
+	res := &KubernetesClusterConfig{
+		KubeconfigYAML: configBytes.Bytes(),
+	}
+	return res, resp, nil
+}
+
+// GetKubeConfigWithExpiry returns a Kubernetes config file for the specified cluster with expiry_seconds.
+func (svc *KubernetesServiceOp) GetKubeConfigWithExpiry(ctx context.Context, clusterID string, expirySeconds int64) (*KubernetesClusterConfig, *Response, error) {
+	path := fmt.Sprintf("%s/%s/kubeconfig", kubernetesClustersPath, clusterID)
+	req, err := svc.client.NewRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	q := req.URL.Query()
+	q.Add("expiry_seconds", fmt.Sprintf("%d", expirySeconds))
+	req.URL.RawQuery = q.Encode()
 	configBytes := bytes.NewBuffer(nil)
 	resp, err := svc.client.Do(ctx, req, configBytes)
 	if err != nil {
@@ -715,4 +806,80 @@ func (svc *KubernetesServiceOp) GetOptions(ctx context.Context) (*KubernetesOpti
 		return nil, resp, err
 	}
 	return root.Options, resp, nil
+}
+
+// AddRegistry integrates docr registry with all the specified clusters
+func (svc *KubernetesServiceOp) AddRegistry(ctx context.Context, req *KubernetesClusterRegistryRequest) (*Response, error) {
+	path := fmt.Sprintf("%s/registry", kubernetesBasePath)
+	request, err := svc.client.NewRequest(ctx, http.MethodPost, path, req)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := svc.client.Do(ctx, request, nil)
+	if err != nil {
+		return resp, err
+	}
+	return resp, nil
+}
+
+// RemoveRegistry removes docr registry support for all the specified clusters
+func (svc *KubernetesServiceOp) RemoveRegistry(ctx context.Context, req *KubernetesClusterRegistryRequest) (*Response, error) {
+	path := fmt.Sprintf("%s/registry", kubernetesBasePath)
+	request, err := svc.client.NewRequest(ctx, http.MethodDelete, path, req)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := svc.client.Do(ctx, request, nil)
+	if err != nil {
+		return resp, err
+	}
+	return resp, nil
+}
+
+type runClusterlintRoot struct {
+	RunID string `json:"run_id"`
+}
+
+// RunClusterlint schedules a clusterlint run for the specified cluster
+func (svc *KubernetesServiceOp) RunClusterlint(ctx context.Context, clusterID string, req *KubernetesRunClusterlintRequest) (string, *Response, error) {
+	path := fmt.Sprintf("%s/%s/clusterlint", kubernetesClustersPath, clusterID)
+	request, err := svc.client.NewRequest(ctx, http.MethodPost, path, req)
+	if err != nil {
+		return "", nil, err
+	}
+	root := new(runClusterlintRoot)
+	resp, err := svc.client.Do(ctx, request, root)
+	if err != nil {
+		return "", resp, err
+	}
+	return root.RunID, resp, nil
+}
+
+type clusterlintDiagnosticsRoot struct {
+	Diagnostics []*ClusterlintDiagnostic
+}
+
+// GetClusterlintResults fetches the diagnostics after clusterlint run completes
+func (svc *KubernetesServiceOp) GetClusterlintResults(ctx context.Context, clusterID string, req *KubernetesGetClusterlintRequest) ([]*ClusterlintDiagnostic, *Response, error) {
+	path := fmt.Sprintf("%s/%s/clusterlint", kubernetesClustersPath, clusterID)
+	if req != nil {
+		v := make(url.Values)
+		if req.RunId != "" {
+			v.Set("run_id", req.RunId)
+		}
+		if query := v.Encode(); query != "" {
+			path = path + "?" + query
+		}
+	}
+
+	request, err := svc.client.NewRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	root := new(clusterlintDiagnosticsRoot)
+	resp, err := svc.client.Do(ctx, request, root)
+	if err != nil {
+		return nil, resp, err
+	}
+	return root.Diagnostics, resp, nil
 }

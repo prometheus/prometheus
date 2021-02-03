@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 )
 
 // BlockWriter is a block writer that allows appending and flushing series to disk.
@@ -38,6 +39,9 @@ type BlockWriter struct {
 	blockSize int64 // in ms
 	chunkDir  string
 }
+
+// ErrNoSeriesAppended is returned if the series count is zero while flushing blocks.
+var ErrNoSeriesAppended error = errors.New("no series appended, aborting")
 
 // NewBlockWriter create a new block writer.
 //
@@ -67,7 +71,7 @@ func (w *BlockWriter) initHead() error {
 	}
 	w.chunkDir = chunkDir
 
-	h, err := NewHead(nil, w.logger, nil, w.blockSize, w.chunkDir, nil, DefaultStripeSize, nil)
+	h, err := NewHead(nil, w.logger, nil, w.blockSize, w.chunkDir, nil, chunks.DefaultWriteBufferSize, DefaultStripeSize, nil)
 	if err != nil {
 		return errors.Wrap(err, "tsdb.NewHead")
 	}
@@ -87,7 +91,7 @@ func (w *BlockWriter) Appender(ctx context.Context) storage.Appender {
 func (w *BlockWriter) Flush(ctx context.Context) (ulid.ULID, error) {
 	seriesCount := w.head.NumSeries()
 	if w.head.NumSeries() == 0 {
-		return ulid.ULID{}, errors.New("no series appended, aborting")
+		return ulid.ULID{}, ErrNoSeriesAppended
 	}
 
 	mint := w.head.MinTime()

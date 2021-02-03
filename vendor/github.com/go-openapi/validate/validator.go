@@ -532,7 +532,6 @@ func (n *numberValidator) Validate(val interface{}) *Result {
 	// Is the provided value within the range of the specified numeric type and format?
 	res.AddErrors(IsValueValidAgainstRange(val, n.Type, n.Format, "Checked", n.Path))
 
-	// nolint: dupl
 	if n.MultipleOf != nil {
 		// Is the constraint specifier within the range of the specific numeric type and format?
 		resMultiple.AddErrors(IsValueValidAgainstRange(*n.MultipleOf, n.Type, n.Format, "MultipleOf", n.Path))

@@ -91,7 +91,7 @@ func (mux *ServeMux) HandleRemove(pattern string) {
 // are redirected to the parent zone (if that is also registered),
 // otherwise the child gets the query.
 //
-// If no handler is found, or there is no question, a standard SERVFAIL
+// If no handler is found, or there is no question, a standard REFUSED
 // message is returned
 func (mux *ServeMux) ServeDNS(w ResponseWriter, req *Msg) {
 	var h Handler
@@ -102,7 +102,7 @@ func (mux *ServeMux) ServeDNS(w ResponseWriter, req *Msg) {
 	if h != nil {
 		h.ServeDNS(w, req)
 	} else {
-		HandleFailed(w, req)
+		handleRefused(w, req)
 	}
 }
 

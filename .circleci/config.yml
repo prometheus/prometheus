@@ -13,10 +13,6 @@ executors:
     docker:
     - image: circleci/golang:1.15-node
 
-  fuzzit:
-    docker:
-      - image: fuzzitdev/golang:1.12.7-buster
-
 jobs:
   test:
     executor: golang
@@ -95,22 +91,6 @@ jobs:
         command: git diff --exit-code
         working_directory: ~/project/documentation/prometheus-mixin
 
-  fuzzit_regression:
-    executor: fuzzit
-    working_directory: /go/src/github.com/prometheus/prometheus
-    steps:
-      - checkout
-      - setup_remote_docker
-      - run: ./fuzzit.sh local-regression
-
-  fuzzit_fuzzing:
-    executor: fuzzit
-    working_directory: /go/src/github.com/prometheus/prometheus
-    steps:
-      - checkout
-      - setup_remote_docker
-      - run: ./fuzzit.sh fuzzing
-
   repo_sync:
     executor: golang
     steps:
@@ -130,10 +110,6 @@ workflows:
           tags:
             only: /.*/
     - test_windows:
-        filters:
-          tags:
-            only: /.*/
-    - fuzzit_regression:
         filters:
           tags:
             only: /.*/
@@ -172,6 +148,4 @@ workflows:
                 - master
     jobs:
     - repo_sync:
-        context: org-context
-    - fuzzit_fuzzing:
         context: org-context

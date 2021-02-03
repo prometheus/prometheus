@@ -48,7 +48,7 @@ func (d *Discovery) refreshNodes(ctx context.Context) ([]*targetgroup.Group, err
 		Source: "DockerSwarm",
 	}
 
-	nodes, err := d.client.NodeList(ctx, types.NodeListOptions{})
+	nodes, err := d.client.NodeList(ctx, types.NodeListOptions{Filters: d.filters})
 	if err != nil {
 		return nil, fmt.Errorf("error while listing swarm nodes: %w", err)
 	}

@@ -10,6 +10,12 @@ package bsonoptions
 type MapCodecOptions struct {
 	DecodeZerosMap   *bool // Specifies if the map should be zeroed before decoding into it. Defaults to false.
 	EncodeNilAsEmpty *bool // Specifies if a nil map should encode as an empty document instead of null. Defaults to false.
+	// Specifies how keys should be handled. If false, the behavior matches encoding/json, where the encoding key type must
+	// either be a string, an integer type, or implement bsoncodec.KeyMarshaler and the decoding key type must either be a
+	// string, an integer type, or implement bsoncodec.KeyUnmarshaler. If true, keys are encoded with fmt.Sprint() and the
+	// encoding key type must be a string, an integer type, or a float. If true, the use of Stringer will override
+	// TextMarshaler/TextUnmarshaler. Defaults to false.
+	EncodeKeysWithStringer *bool
 }
 
 // MapCodec creates a new *MapCodecOptions
@@ -23,9 +29,19 @@ func (t *MapCodecOptions) SetDecodeZerosMap(b bool) *MapCodecOptions {
 	return t
 }
 
-// SetEncodeNilAsEmpty specifies  if a nil map should encode as an empty document instead of null. Defaults to false.
+// SetEncodeNilAsEmpty specifies if a nil map should encode as an empty document instead of null. Defaults to false.
 func (t *MapCodecOptions) SetEncodeNilAsEmpty(b bool) *MapCodecOptions {
 	t.EncodeNilAsEmpty = &b
+	return t
+}
+
+// SetEncodeKeysWithStringer specifies how keys should be handled. If false, the behavior matches encoding/json, where the
+// encoding key type must either be a string, an integer type, or implement bsoncodec.KeyMarshaler and the decoding key
+// type must either be a string, an integer type, or implement bsoncodec.KeyUnmarshaler. If true, keys are encoded with
+// fmt.Sprint() and the encoding key type must be a string, an integer type, or a float. If true, the use of Stringer
+// will override TextMarshaler/TextUnmarshaler. Defaults to false.
+func (t *MapCodecOptions) SetEncodeKeysWithStringer(b bool) *MapCodecOptions {
+	t.EncodeKeysWithStringer = &b
 	return t
 }
 
@@ -41,6 +57,9 @@ func MergeMapCodecOptions(opts ...*MapCodecOptions) *MapCodecOptions {
 		}
 		if opt.EncodeNilAsEmpty != nil {
 			s.EncodeNilAsEmpty = opt.EncodeNilAsEmpty
+		}
+		if opt.EncodeKeysWithStringer != nil {
+			s.EncodeKeysWithStringer = opt.EncodeKeysWithStringer
 		}
 	}
 

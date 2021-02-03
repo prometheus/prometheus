@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"math"
+	"net/textproto"
 	"os"
 	"reflect"
 	"regexp"
@@ -13,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"text/template"
+	"time"
 
 	"github.com/golang/glog"
 	"github.com/golang/protobuf/jsonpb"
@@ -1001,7 +1004,6 @@ func renderServices(services []*descriptor.Service, paths swaggerPathsObject, re
 				if pkg := svc.File.GetPackage(); pkg != "" && reg.IsIncludePackageInTags() {
 					tag = pkg + "." + tag
 				}
-
 				operationObject := &swaggerOperationObject{
 					Tags:       []string{tag},
 					Parameters: parameters,
@@ -1009,6 +1011,7 @@ func renderServices(services []*descriptor.Service, paths swaggerPathsObject, re
 						"200": swaggerResponseObject{
 							Description: desc,
 							Schema:      responseSchema,
+							Headers:     swaggerHeadersObject{},
 						},
 					},
 				}
@@ -1104,6 +1107,13 @@ func renderServices(services []*descriptor.Service, paths swaggerPathsObject, re
 							}
 							if resp.Examples != nil {
 								respObj.Examples = swaggerExamplesFromProtoExamples(resp.Examples)
+							}
+							if resp.Headers != nil {
+								hdrs, err := processHeaders(resp.Headers)
+								if err != nil {
+									return err
+								}
+								respObj.Headers = hdrs
 							}
 							if resp.Extensions != nil {
 								exts, err := processExtensions(resp.Extensions)
@@ -1446,6 +1456,180 @@ func processExtensions(inputExts map[string]*structpb.Value) ([]extension, error
 	}
 	sort.Slice(exts, func(i, j int) bool { return exts[i].key < exts[j].key })
 	return exts, nil
+}
+
+func validateHeaderTypeAndFormat(headerType string, format string) error {
+	// The type of the object. The value MUST be one of "string", "number", "integer", "boolean", or "array"
+	// See: https://github.com/OAI/OpenAPI-Specification/blob/3.0.0/versions/2.0.md#headerObject
+	// Note: currently not implementing array as we are only implementing this in the operation response context
+	switch headerType {
+	// the format property is an open string-valued property, and can have any value to support documentation needs
+	// primary check for format is to ensure that the number/integer formats are extensions of the specified type
+	// See: https://github.com/OAI/OpenAPI-Specification/blob/3.0.0/versions/2.0.md#dataTypeFormat
+	case "string":
+		return nil
+	case "number":
+		switch format {
+		case "uint",
+			"uint8",
+			"uint16",
+			"uint32",
+			"uint64",
+			"int",
+			"int8",
+			"int16",
+			"int32",
+			"int64",
+			"float",
+			"float32",
+			"float64",
+			"complex64",
+			"complex128",
+			"double",
+			"byte",
+			"rune",
+			"uintptr",
+			"":
+			return nil
+		default:
+			return fmt.Errorf("the provided format %q is not a valid extension of the type %q", format, headerType)
+		}
+	case "integer":
+		switch format {
+		case "uint",
+			"uint8",
+			"uint16",
+			"uint32",
+			"uint64",
+			"int",
+			"int8",
+			"int16",
+			"int32",
+			"int64",
+			"":
+			return nil
+		default:
+			return fmt.Errorf("the provided format %q is not a valid extension of the type %q", format, headerType)
+		}
+	case "boolean":
+		return nil
+	}
+	return fmt.Errorf("the provided header type %q is not supported", headerType)
+}
+
+func validateDefaultValueTypeAndFormat(headerType string, defaultValue string, format string) error {
+	switch headerType {
+	case "string":
+		if !isQuotedString(defaultValue) {
+			return fmt.Errorf("the provided default value %q does not match provider type %q, or is not properly quoted with escaped quotations", defaultValue, headerType)
+		}
+		switch format {
+		case "date-time":
+			unquoteTime := strings.Trim(defaultValue, `"`)
+			_, err := time.Parse(time.RFC3339, unquoteTime)
+			if err != nil {
+				return fmt.Errorf("the provided default value %q is not a valid RFC3339 date-time string", defaultValue)
+			}
+		case "date":
+			const (
+				layoutRFC3339Date = "2006-01-02"
+			)
+			unquoteDate := strings.Trim(defaultValue, `"`)
+			_, err := time.Parse(layoutRFC3339Date, unquoteDate)
+			if err != nil {
+				return fmt.Errorf("the provided default value %q is not a valid RFC3339 date-time string", defaultValue)
+			}
+		}
+	case "number":
+		err := isJSONNumber(defaultValue, headerType)
+		if err != nil {
+			return err
+		}
+	case "integer":
+		switch format {
+		case "int32":
+			_, err := strconv.ParseInt(defaultValue, 0, 32)
+			if err != nil {
+				return fmt.Errorf("the provided default value %q does not match provided format %q", defaultValue, format)
+			}
+		case "uint32":
+			_, err := strconv.ParseUint(defaultValue, 0, 32)
+			if err != nil {
+				return fmt.Errorf("the provided default value %q does not match provided format %q", defaultValue, format)
+			}
+		case "int64":
+			_, err := strconv.ParseInt(defaultValue, 0, 64)
+			if err != nil {
+				return fmt.Errorf("the provided default value %q does not match provided format %q", defaultValue, format)
+			}
+		case "uint64":
+			_, err := strconv.ParseUint(defaultValue, 0, 64)
+			if err != nil {
+				return fmt.Errorf("the provided default value %q does not match provided format %q", defaultValue, format)
+			}
+		default:
+			_, err := strconv.ParseInt(defaultValue, 0, 64)
+			if err != nil {
+				return fmt.Errorf("the provided default value %q does not match provided type %q", defaultValue, headerType)
+			}
+		}
+	case "boolean":
+		if !isBool(defaultValue) {
+			return fmt.Errorf("the provided default value %q does not match provider type %q", defaultValue, headerType)
+		}
+	}
+	return nil
+}
+
+func isQuotedString(s string) bool {
+	return len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"'
+}
+
+func isJSONNumber(s string, t string) error {
+	val, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return fmt.Errorf("the provided default value %q does not match provider type %q", s, t)
+	}
+	// Floating point values that cannot be represented as sequences of digits (such as Infinity and NaN) are not permitted.
+	// See: https://tools.ietf.org/html/rfc4627#section-2.4
+	if math.IsInf(val, 0) || math.IsNaN(val) {
+		return fmt.Errorf("the provided number %q is not a valid JSON number", s)
+	}
+
+	return nil
+}
+
+func isBool(s string) bool {
+	// Unable to use strconv.ParseBool because it returns truthy values https://golang.org/pkg/strconv/#example_ParseBool
+	// per https://swagger.io/specification/v2/#data-types
+	// type: boolean represents two values: true and false. Note that truthy and falsy values such as "true", "", 0 or null are not considered boolean values.
+	return s == "true" || s == "false"
+}
+
+func processHeaders(inputHdrs map[string]*swagger_options.Header) (swaggerHeadersObject, error) {
+	hdrs := map[string]swaggerHeaderObject{}
+	for k, v := range inputHdrs {
+		header := textproto.CanonicalMIMEHeaderKey(k)
+		ret := swaggerHeaderObject{
+			Description: v.Description,
+			Format:      v.Format,
+			Pattern:     v.Pattern,
+		}
+		err := validateHeaderTypeAndFormat(v.Type, v.Format)
+		if err != nil {
+			return nil, err
+		}
+		ret.Type = v.Type
+		if v.Default != "" {
+			err := validateDefaultValueTypeAndFormat(v.Type, v.Default, v.Format)
+			if err != nil {
+				return nil, err
+			}
+			ret.Default = json.RawMessage(v.Default)
+		}
+		hdrs[header] = ret
+	}
+	return hdrs, nil
 }
 
 // updateSwaggerDataFromComments updates a Swagger object based on a comment
@@ -1861,8 +2045,15 @@ func updateSwaggerObjectFromJSONSchema(s *swaggerSchemaObject, j *swagger_option
 	s.MaxProperties = j.GetMaxProperties()
 	s.MinProperties = j.GetMinProperties()
 	s.Required = j.GetRequired()
+	s.Enum = j.GetEnum()
 	if overrideType := j.GetType(); len(overrideType) > 0 {
 		s.Type = strings.ToLower(overrideType[0].String())
+	}
+	if j != nil && j.GetExample() != "" {
+		s.Example = json.RawMessage(j.GetExample())
+	}
+	if j != nil && j.GetFormat() != "" {
+		s.Format = j.GetFormat()
 	}
 }
 

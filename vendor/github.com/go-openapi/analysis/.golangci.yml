@@ -8,7 +8,7 @@ linters-settings:
   maligned:
     suggest-new: true
   dupl:
-    threshold: 100
+    threshold: 150
   goconst:
     min-len: 2
     min-occurrences: 4
@@ -30,3 +30,15 @@ linters:
     - whitespace
     - wsl
     - funlen
+    - testpackage
+    - wrapcheck
+    - nlreturn
+    - gomnd
+    - goerr113
+    - exhaustivestruct
+    - errorlint
+    - nestif
+    - gofumpt
+    - godot
+    - gci
+    - dogsled

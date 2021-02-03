@@ -27,6 +27,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
+
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
@@ -125,10 +126,8 @@ func WriteFile(logger log.Logger, dir string, tr Reader) (int64, error) {
 	}
 	size += n
 
-	var merr tsdb_errors.MultiError
-	if merr.Add(f.Sync()); merr.Err() != nil {
-		merr.Add(f.Close())
-		return 0, merr.Err()
+	if err := f.Sync(); err != nil {
+		return 0, tsdb_errors.NewMulti(err, f.Close()).Err()
 	}
 
 	if err = f.Close(); err != nil {

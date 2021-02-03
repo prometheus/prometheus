@@ -93,7 +93,11 @@ const (
 )
 
 // Address represents a server the client connects to.
-// This is the EXPERIMENTAL API and may be changed or extended in the future.
+//
+// Experimental
+//
+// Notice: This type is EXPERIMENTAL and may be changed or removed in a
+// later release.
 type Address struct {
 	// Addr is the server address on which a connection will be established.
 	Addr string

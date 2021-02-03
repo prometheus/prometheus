@@ -10,6 +10,8 @@ import (
 
 var timestampType = reflect.TypeOf(Timestamp{})
 
+// ResourceWithURN is an interface for interfacing with the types
+// that implement the URN method.
 type ResourceWithURN interface {
 	URN() string
 }

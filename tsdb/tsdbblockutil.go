@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 
 	"github.com/go-kit/kit/log"
+
 	"github.com/prometheus/prometheus/storage"
 )
 

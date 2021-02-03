@@ -23,6 +23,7 @@ type DialSettings struct {
 	DefaultEndpoint     string
 	DefaultMTLSEndpoint string
 	Scopes              []string
+	DefaultScopes       []string
 	TokenSource         oauth2.TokenSource
 	Credentials         *google.Credentials
 	CredentialsFile     string // if set, Token Source is ignored.
@@ -30,6 +31,7 @@ type DialSettings struct {
 	UserAgent           string
 	APIKey              string
 	Audiences           []string
+	DefaultAudience     string
 	HTTPClient          *http.Client
 	GRPCDialOpts        []grpc.DialOption
 	GRPCConn            *grpc.ClientConn
@@ -41,11 +43,21 @@ type DialSettings struct {
 	CustomClaims        map[string]interface{}
 	SkipValidation      bool
 	ImpersonationConfig *impersonate.Config
+	EnableDirectPath    bool
 
 	// Google API system parameters. For more information please read:
 	// https://cloud.google.com/apis/docs/system-parameters
 	QuotaProject  string
 	RequestReason string
+}
+
+// GetScopes returns the user-provided scopes, if set, or else falls back to the
+// default scopes.
+func (ds *DialSettings) GetScopes() []string {
+	if len(ds.Scopes) > 0 {
+		return ds.Scopes
+	}
+	return ds.DefaultScopes
 }
 
 // Validate reports an error if ds is invalid.

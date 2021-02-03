@@ -16,10 +16,11 @@ package hetzner
 import (
 	"context"
 	"fmt"
+	"testing"
+
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/util/testutil"
-	"testing"
+	"github.com/stretchr/testify/require"
 )
 
 type hcloudSDTestSuite struct {
@@ -43,16 +44,16 @@ func TestHCloudSDRefresh(t *testing.T) {
 	cfg.hcloudEndpoint = suite.Mock.Endpoint()
 
 	d, err := newHcloudDiscovery(&cfg, log.NewNopLogger())
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	targetGroups, err := d.refresh(context.Background())
-	testutil.Ok(t, err)
-	testutil.Equals(t, 1, len(targetGroups))
+	require.NoError(t, err)
+	require.Equal(t, 1, len(targetGroups))
 
 	targetGroup := targetGroups[0]
-	testutil.Assert(t, targetGroup != nil, "targetGroup should not be nil")
-	testutil.Assert(t, targetGroup.Targets != nil, "targetGroup.targets should not be nil")
-	testutil.Equals(t, 3, len(targetGroup.Targets))
+	require.NotNil(t, targetGroup, "targetGroup should not be nil")
+	require.NotNil(t, targetGroup.Targets, "targetGroup.targets should not be nil")
+	require.Equal(t, 3, len(targetGroup.Targets))
 
 	for i, labelSet := range []model.LabelSet{
 		{
@@ -118,7 +119,7 @@ func TestHCloudSDRefresh(t *testing.T) {
 		},
 	} {
 		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
-			testutil.Equals(t, labelSet, targetGroup.Targets[i])
+			require.Equal(t, labelSet, targetGroup.Targets[i])
 		})
 	}
 }

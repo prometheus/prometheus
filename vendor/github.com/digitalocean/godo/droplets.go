@@ -126,6 +126,7 @@ func (d Droplet) String() string {
 	return Stringify(d)
 }
 
+// URN returns the droplet ID in a valid DO API URN form.
 func (d Droplet) URN() string {
 	return ToURN("Droplet", d.ID)
 }

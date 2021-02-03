@@ -17,43 +17,50 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/stretchr/testify/require"
 )
 
 func TestQueryRange(t *testing.T) {
 	s, getRequest := mockServer(200, `{"status": "success", "data": {"resultType": "matrix", "result": []}}`)
 	defer s.Close()
 
-	p := &promqlPrinter{}
-	exitCode := QueryRange(s.URL, map[string]string{}, "up", "0", "300", 0, p)
-	testutil.Equals(t, "/api/v1/query_range", getRequest().URL.Path)
-	form := getRequest().Form
-	testutil.Equals(t, "up", form.Get("query"))
-	testutil.Equals(t, "1", form.Get("step"))
-	testutil.Equals(t, 0, exitCode)
+	urlObject, err := url.Parse(s.URL)
+	require.Equal(t, nil, err)
 
-	exitCode = QueryRange(s.URL, map[string]string{}, "up", "0", "300", 10*time.Millisecond, p)
-	testutil.Equals(t, "/api/v1/query_range", getRequest().URL.Path)
+	p := &promqlPrinter{}
+	exitCode := QueryRange(urlObject, map[string]string{}, "up", "0", "300", 0, p)
+	require.Equal(t, "/api/v1/query_range", getRequest().URL.Path)
+	form := getRequest().Form
+	require.Equal(t, "up", form.Get("query"))
+	require.Equal(t, "1", form.Get("step"))
+	require.Equal(t, 0, exitCode)
+
+	exitCode = QueryRange(urlObject, map[string]string{}, "up", "0", "300", 10*time.Millisecond, p)
+	require.Equal(t, "/api/v1/query_range", getRequest().URL.Path)
 	form = getRequest().Form
-	testutil.Equals(t, "up", form.Get("query"))
-	testutil.Equals(t, "0.01", form.Get("step"))
-	testutil.Equals(t, 0, exitCode)
+	require.Equal(t, "up", form.Get("query"))
+	require.Equal(t, "0.01", form.Get("step"))
+	require.Equal(t, 0, exitCode)
 }
 
 func TestQueryInstant(t *testing.T) {
 	s, getRequest := mockServer(200, `{"status": "success", "data": {"resultType": "vector", "result": []}}`)
 	defer s.Close()
 
+	urlObject, err := url.Parse(s.URL)
+	require.Equal(t, nil, err)
+
 	p := &promqlPrinter{}
-	exitCode := QueryInstant(s.URL, "up", "300", p)
-	testutil.Equals(t, "/api/v1/query", getRequest().URL.Path)
+	exitCode := QueryInstant(urlObject, "up", "300", p)
+	require.Equal(t, "/api/v1/query", getRequest().URL.Path)
 	form := getRequest().Form
-	testutil.Equals(t, "up", form.Get("query"))
-	testutil.Equals(t, "300", form.Get("time"))
-	testutil.Equals(t, 0, exitCode)
+	require.Equal(t, "up", form.Get("query"))
+	require.Equal(t, "300", form.Get("time"))
+	require.Equal(t, 0, exitCode)
 }
 
 func mockServer(code int, body string) (*httptest.Server, func() *http.Request) {

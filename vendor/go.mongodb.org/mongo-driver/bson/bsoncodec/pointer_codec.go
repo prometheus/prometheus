@@ -14,11 +14,6 @@ import (
 	"go.mongodb.org/mongo-driver/bson/bsontype"
 )
 
-var defaultPointerCodec = &PointerCodec{
-	ecache: make(map[reflect.Type]ValueEncoder),
-	dcache: make(map[reflect.Type]ValueDecoder),
-}
-
 var _ ValueEncoder = &PointerCodec{}
 var _ ValueDecoder = &PointerCodec{}
 
@@ -82,6 +77,10 @@ func (pc *PointerCodec) DecodeValue(dc DecodeContext, vr bsonrw.ValueReader, val
 	if vr.Type() == bsontype.Null {
 		val.Set(reflect.Zero(val.Type()))
 		return vr.ReadNull()
+	}
+	if vr.Type() == bsontype.Undefined {
+		val.Set(reflect.Zero(val.Type()))
+		return vr.ReadUndefined()
 	}
 
 	if val.IsNil() {

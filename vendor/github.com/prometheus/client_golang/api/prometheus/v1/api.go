@@ -117,8 +117,6 @@ func marshalPointJSONIsEmpty(ptr unsafe.Pointer) bool {
 }
 
 const (
-	statusAPIError = 422
-
 	apiPrefix = "/api/v1"
 
 	epAlerts          = apiPrefix + "/alerts"
@@ -138,6 +136,7 @@ const (
 	epConfig          = apiPrefix + "/status/config"
 	epFlags           = apiPrefix + "/status/flags"
 	epRuntimeinfo     = apiPrefix + "/status/runtimeinfo"
+	epTSDB            = apiPrefix + "/status/tsdb"
 )
 
 // AlertState models the state of an alert.
@@ -254,6 +253,8 @@ type API interface {
 	TargetsMetadata(ctx context.Context, matchTarget string, metric string, limit string) ([]MetricMetadata, error)
 	// Metadata returns metadata about metrics currently scraped by the metric name.
 	Metadata(ctx context.Context, metric string, limit string) (map[string][]Metadata, error)
+	// TSDB returns the cardinality statistics.
+	TSDB(ctx context.Context) (TSDBResult, error)
 }
 
 // AlertsResult contains the result from querying the alerts endpoint.
@@ -282,18 +283,18 @@ type FlagsResult map[string]string
 
 // RuntimeinfoResult contains the result from querying the runtimeinfo endpoint.
 type RuntimeinfoResult struct {
-	StartTime           string `json:"startTime"`
-	CWD                 string `json:"CWD"`
-	ReloadConfigSuccess bool   `json:"reloadConfigSuccess"`
-	LastConfigTime      string `json:"lastConfigTime"`
-	ChunkCount          int    `json:"chunkCount"`
-	TimeSeriesCount     int    `json:"timeSeriesCount"`
-	CorruptionCount     int    `json:"corruptionCount"`
-	GoroutineCount      int    `json:"goroutineCount"`
-	GOMAXPROCS          int    `json:"GOMAXPROCS"`
-	GOGC                string `json:"GOGC"`
-	GODEBUG             string `json:"GODEBUG"`
-	StorageRetention    string `json:"storageRetention"`
+	StartTime           time.Time `json:"startTime"`
+	CWD                 string    `json:"CWD"`
+	ReloadConfigSuccess bool      `json:"reloadConfigSuccess"`
+	LastConfigTime      time.Time `json:"lastConfigTime"`
+	ChunkCount          int       `json:"chunkCount"`
+	TimeSeriesCount     int       `json:"timeSeriesCount"`
+	CorruptionCount     int       `json:"corruptionCount"`
+	GoroutineCount      int       `json:"goroutineCount"`
+	GOMAXPROCS          int       `json:"GOMAXPROCS"`
+	GOGC                string    `json:"GOGC"`
+	GODEBUG             string    `json:"GODEBUG"`
+	StorageRetention    string    `json:"storageRetention"`
 }
 
 // SnapshotResult contains the result from querying the snapshot endpoint.
@@ -402,6 +403,20 @@ type queryResult struct {
 
 	// The decoded value.
 	v model.Value
+}
+
+// TSDBResult contains the result from querying the tsdb endpoint.
+type TSDBResult struct {
+	SeriesCountByMetricName     []Stat `json:"seriesCountByMetricName"`
+	LabelValueCountByLabelName  []Stat `json:"labelValueCountByLabelName"`
+	MemoryInBytesByLabelName    []Stat `json:"memoryInBytesByLabelName"`
+	SeriesCountByLabelValuePair []Stat `json:"seriesCountByLabelValuePair"`
+}
+
+// Stat models information about statistic value.
+type Stat struct {
+	Name  string `json:"name"`
+	Value uint64 `json:"value"`
 }
 
 func (rg *RuleGroup) UnmarshalJSON(b []byte) error {
@@ -883,6 +898,24 @@ func (h *httpAPI) Metadata(ctx context.Context, metric string, limit string) (ma
 	return res, json.Unmarshal(body, &res)
 }
 
+func (h *httpAPI) TSDB(ctx context.Context) (TSDBResult, error) {
+	u := h.client.URL(epTSDB, nil)
+
+	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
+	if err != nil {
+		return TSDBResult{}, err
+	}
+
+	_, body, _, err := h.client.Do(ctx, req)
+	if err != nil {
+		return TSDBResult{}, err
+	}
+
+	var res TSDBResult
+	return res, json.Unmarshal(body, &res)
+
+}
+
 // Warnings is an array of non critical errors
 type Warnings []string
 
@@ -908,7 +941,7 @@ type apiResponse struct {
 
 func apiError(code int) bool {
 	// These are the codes that Prometheus sends when it returns an error.
-	return code == statusAPIError || code == http.StatusBadRequest
+	return code == http.StatusUnprocessableEntity || code == http.StatusBadRequest
 }
 
 func errorTypeAndMsgFor(resp *http.Response) (ErrorType, string) {
@@ -971,7 +1004,8 @@ func (h *apiClientImpl) Do(ctx context.Context, req *http.Request) (*http.Respon
 
 }
 
-// DoGetFallback will attempt to do the request as-is, and on a 405 it will fallback to a GET request.
+// DoGetFallback will attempt to do the request as-is, and on a 405 or 501 it
+// will fallback to a GET request.
 func (h *apiClientImpl) DoGetFallback(ctx context.Context, u *url.URL, args url.Values) (*http.Response, []byte, Warnings, error) {
 	req, err := http.NewRequest(http.MethodPost, u.String(), strings.NewReader(args.Encode()))
 	if err != nil {
@@ -980,7 +1014,7 @@ func (h *apiClientImpl) DoGetFallback(ctx context.Context, u *url.URL, args url.
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	resp, body, warnings, err := h.Do(ctx, req)
-	if resp != nil && resp.StatusCode == http.StatusMethodNotAllowed {
+	if resp != nil && (resp.StatusCode == http.StatusMethodNotAllowed || resp.StatusCode == http.StatusNotImplemented) {
 		u.RawQuery = args.Encode()
 		req, err = http.NewRequest(http.MethodGet, u.String(), nil)
 		if err != nil {

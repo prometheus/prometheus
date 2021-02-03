@@ -123,6 +123,9 @@ func (sc *SliceCodec) DecodeValue(dc DecodeContext, vr bsonrw.ValueReader, val r
 	case bsontype.Null:
 		val.Set(reflect.Zero(val.Type()))
 		return vr.ReadNull()
+	case bsontype.Undefined:
+		val.Set(reflect.Zero(val.Type()))
+		return vr.ReadUndefined()
 	case bsontype.Type(0), bsontype.EmbeddedDocument:
 		if val.Type().Elem() != tE {
 			return fmt.Errorf("cannot decode document into %s", val.Type())
@@ -149,8 +152,8 @@ func (sc *SliceCodec) DecodeValue(dc DecodeContext, vr bsonrw.ValueReader, val r
 		}
 		return nil
 	case bsontype.String:
-		if val.Type().Elem() != tByte {
-			return fmt.Errorf("SliceDecodeValue can only decode a string into a byte array, got %v", vrType)
+		if sliceType := val.Type().Elem(); sliceType != tByte {
+			return fmt.Errorf("SliceDecodeValue can only decode a string into a byte array, got %v", sliceType)
 		}
 		str, err := vr.ReadString()
 		if err != nil {

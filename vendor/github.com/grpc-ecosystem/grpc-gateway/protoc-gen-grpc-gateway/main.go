@@ -35,6 +35,7 @@ var (
 	repeatedPathParamSeparator = flag.String("repeated_path_param_separator", "csv", "configures how repeated fields should be split. Allowed values are `csv`, `pipes`, `ssv` and `tsv`.")
 	allowPatchFeature          = flag.Bool("allow_patch_feature", true, "determines whether to use PATCH feature involving update masks (using google.protobuf.FieldMask).")
 	allowColonFinalSegments    = flag.Bool("allow_colon_final_segments", false, "determines whether colons are permitted in the final segment of a path")
+	omitPackageDoc             = flag.Bool("omit_package_doc", false, "if true, no package comment will be included in the generated code")
 	versionFlag                = flag.Bool("version", false, "print the current version")
 	warnOnUnboundMethods       = flag.Bool("warn_on_unbound_methods", false, "emit a warning message if an RPC method has no HttpRule annotation")
 	generateUnboundMethods     = flag.Bool("generate_unbound_methods", false, "generate proxy methods even for RPC methods that have no HttpRule annotation")
@@ -98,6 +99,7 @@ func main() {
 	reg.SetAllowDeleteBody(*allowDeleteBody)
 	reg.SetAllowRepeatedFieldsInBody(*allowRepeatedFieldsInBody)
 	reg.SetAllowColonFinalSegments(*allowColonFinalSegments)
+	reg.SetOmitPackageDoc(*omitPackageDoc)
 
 	if *warnOnUnboundMethods && *generateUnboundMethods {
 		glog.Warningf("Option warn_on_unbound_methods has no effect when generate_unbound_methods is used.")

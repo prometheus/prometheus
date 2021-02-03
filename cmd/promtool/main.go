@@ -37,14 +37,14 @@ import (
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
+	"github.com/prometheus/exporter-toolkit/web"
 	"gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/file"
+	_ "github.com/prometheus/prometheus/discovery/install" // Register service discovery implementations.
 	"github.com/prometheus/prometheus/discovery/kubernetes"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
-
-	_ "github.com/prometheus/prometheus/discovery/install" // Register service discovery implementations.
 )
 
 func main() {
@@ -60,6 +60,12 @@ func main() {
 		"The config files to check.",
 	).Required().ExistingFiles()
 
+	checkWebConfigCmd := checkCmd.Command("web-config", "Check if the web config files are valid or not.")
+	webConfigFiles := checkWebConfigCmd.Arg(
+		"web-config-files",
+		"The config files to check.",
+	).Required().ExistingFiles()
+
 	checkRulesCmd := checkCmd.Command("rules", "Check if the rule files are valid or not.")
 	ruleFiles := checkRulesCmd.Arg(
 		"rule-files",
@@ -72,12 +78,12 @@ func main() {
 	queryCmdFmt := queryCmd.Flag("format", "Output format of the query.").Short('o').Default("promql").Enum("promql", "json")
 
 	queryInstantCmd := queryCmd.Command("instant", "Run instant query.")
-	queryInstantServer := queryInstantCmd.Arg("server", "Prometheus server to query.").Required().String()
+	queryInstantServer := queryInstantCmd.Arg("server", "Prometheus server to query.").Required().URL()
 	queryInstantExpr := queryInstantCmd.Arg("expr", "PromQL query expression.").Required().String()
 	queryInstantTime := queryInstantCmd.Flag("time", "Query evaluation time (RFC3339 or Unix timestamp).").String()
 
 	queryRangeCmd := queryCmd.Command("range", "Run range query.")
-	queryRangeServer := queryRangeCmd.Arg("server", "Prometheus server to query.").Required().String()
+	queryRangeServer := queryRangeCmd.Arg("server", "Prometheus server to query.").Required().URL()
 	queryRangeExpr := queryRangeCmd.Arg("expr", "PromQL query expression.").Required().String()
 	queryRangeHeaders := queryRangeCmd.Flag("header", "Extra headers to send to server.").StringMap()
 	queryRangeBegin := queryRangeCmd.Flag("start", "Query range start time (RFC3339 or Unix timestamp).").String()
@@ -134,6 +140,13 @@ func main() {
 	dumpMinTime := tsdbDumpCmd.Flag("min-time", "Minimum timestamp to dump.").Default(strconv.FormatInt(math.MinInt64, 10)).Int64()
 	dumpMaxTime := tsdbDumpCmd.Flag("max-time", "Maximum timestamp to dump.").Default(strconv.FormatInt(math.MaxInt64, 10)).Int64()
 
+	importCmd := tsdbCmd.Command("create-blocks-from", "[Experimental] Import samples from input and produce TSDB blocks. Please refer to the storage docs for more details.")
+	importHumanReadable := importCmd.Flag("human-readable", "Print human readable values.").Short('r').Bool()
+	openMetricsImportCmd := importCmd.Command("openmetrics", "Import samples from OpenMetrics input and produce TSDB blocks. Please refer to the storage docs for more details.")
+	// TODO(aSquare14): add flag to set default block duration
+	importFilePath := openMetricsImportCmd.Arg("input file", "OpenMetrics file to read samples from.").Required().String()
+	importDBPath := openMetricsImportCmd.Arg("output directory", "Output directory for generated blocks.").Default(defaultDBPath).String()
+
 	parsedCmd := kingpin.MustParse(app.Parse(os.Args[1:]))
 
 	var p printer
@@ -147,6 +160,9 @@ func main() {
 	switch parsedCmd {
 	case checkConfigCmd.FullCommand():
 		os.Exit(CheckConfig(*configFiles...))
+
+	case checkWebConfigCmd.FullCommand():
+		os.Exit(CheckWebConfig(*webConfigFiles...))
 
 	case checkRulesCmd.FullCommand():
 		os.Exit(CheckRules(*ruleFiles...))
@@ -189,6 +205,9 @@ func main() {
 
 	case tsdbDumpCmd.FullCommand():
 		os.Exit(checkErr(dumpSamples(*dumpPath, *dumpMinTime, *dumpMaxTime)))
+	//TODO(aSquare14): Work on adding support for custom block size.
+	case openMetricsImportCmd.FullCommand():
+		os.Exit(checkErr(backfillOpenMetrics(*importFilePath, *importDBPath, *importHumanReadable)))
 	}
 }
 
@@ -218,6 +237,24 @@ func CheckConfig(files ...string) int {
 			}
 			fmt.Println()
 		}
+	}
+	if failed {
+		return 1
+	}
+	return 0
+}
+
+// CheckWebConfig validates web configuration files.
+func CheckWebConfig(files ...string) int {
+	failed := false
+
+	for _, f := range files {
+		if err := web.Validate(f); err != nil {
+			fmt.Fprintln(os.Stderr, f, "FAILED:", err)
+			failed = true
+			continue
+		}
+		fmt.Fprintln(os.Stderr, f, "SUCCESS")
 	}
 	if failed {
 		return 1
@@ -350,7 +387,7 @@ func checkRules(filename string) (int, []error) {
 
 	dRules := checkDuplicates(rgs.Groups)
 	if len(dRules) != 0 {
-		fmt.Printf("%d duplicate rules(s) found.\n", len(dRules))
+		fmt.Printf("%d duplicate rule(s) found.\n", len(dRules))
 		for _, n := range dRules {
 			fmt.Printf("Metric: %s\nLabel(s):\n", n.metric)
 			for i, l := range n.label {
@@ -429,9 +466,12 @@ func CheckMetrics() int {
 }
 
 // QueryInstant performs an instant query against a Prometheus server.
-func QueryInstant(url, query, evalTime string, p printer) int {
+func QueryInstant(url *url.URL, query, evalTime string, p printer) int {
+	if url.Scheme == "" {
+		url.Scheme = "http"
+	}
 	config := api.Config{
-		Address: url,
+		Address: url.String(),
 	}
 
 	// Create new client.
@@ -467,9 +507,12 @@ func QueryInstant(url, query, evalTime string, p printer) int {
 }
 
 // QueryRange performs a range query against a Prometheus server.
-func QueryRange(url string, headers map[string]string, query, start, end string, step time.Duration, p printer) int {
+func QueryRange(url *url.URL, headers map[string]string, query, start, end string, step time.Duration, p printer) int {
+	if url.Scheme == "" {
+		url.Scheme = "http"
+	}
 	config := api.Config{
-		Address: url,
+		Address: url.String(),
 	}
 
 	if len(headers) > 0 {
@@ -539,6 +582,9 @@ func QueryRange(url string, headers map[string]string, query, start, end string,
 
 // QuerySeries queries for a series against a Prometheus server.
 func QuerySeries(url *url.URL, matchers []string, start, end string, p printer) int {
+	if url.Scheme == "" {
+		url.Scheme = "http"
+	}
 	config := api.Config{
 		Address: url.String(),
 	}
@@ -573,6 +619,9 @@ func QuerySeries(url *url.URL, matchers []string, start, end string, p printer) 
 
 // QueryLabels queries for label values against a Prometheus server.
 func QueryLabels(url *url.URL, name string, start, end string, p printer) int {
+	if url.Scheme == "" {
+		url.Scheme = "http"
+	}
 	config := api.Config{
 		Address: url.String(),
 	}

@@ -218,7 +218,7 @@ func (a *AnalyzedSchema) initializeFlags() {
 		(a.schema.Items.Schema != nil || len(a.schema.Items.Schemas) > 0)
 
 	a.hasAdditionalProps = a.schema.AdditionalProperties != nil &&
-		(a.schema.AdditionalProperties != nil || a.schema.AdditionalProperties.Allows)
+		(a.schema.AdditionalProperties.Schema != nil || a.schema.AdditionalProperties.Allows)
 
 	a.hasAdditionalItems = a.schema.AdditionalItems != nil &&
 		(a.schema.AdditionalItems.Schema != nil || a.schema.AdditionalItems.Allows)

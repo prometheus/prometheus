@@ -78,6 +78,9 @@ func (bsc *ByteSliceCodec) DecodeValue(dc DecodeContext, vr bsonrw.ValueReader, 
 	case bsontype.Null:
 		val.Set(reflect.Zero(val.Type()))
 		return vr.ReadNull()
+	case bsontype.Undefined:
+		val.Set(reflect.Zero(val.Type()))
+		return vr.ReadUndefined()
 	default:
 		return fmt.Errorf("cannot decode %v into a []byte", vrType)
 	}

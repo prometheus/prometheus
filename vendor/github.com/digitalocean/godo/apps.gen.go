@@ -20,6 +20,9 @@ type App struct {
 	LastDeploymentCreatedAt time.Time   `json:"last_deployment_created_at,omitempty"`
 	LiveURL                 string      `json:"live_url,omitempty"`
 	Region                  *AppRegion  `json:"region,omitempty"`
+	TierSlug                string      `json:"tier_slug,omitempty"`
+	LiveURLBase             string      `json:"live_url_base,omitempty"`
+	LiveDomain              string      `json:"live_domain,omitempty"`
 }
 
 // AppDatabaseSpec struct for AppDatabaseSpec
@@ -58,6 +61,9 @@ type AppDomainSpec struct {
 	// The hostname.
 	Domain string            `json:"domain"`
 	Type   AppDomainSpecType `json:"type,omitempty"`
+	// Whether the domain includes all sub-domains, in addition to the given domain.
+	Wildcard bool   `json:"wildcard,omitempty"`
+	Zone     string `json:"zone,omitempty"`
 }
 
 // AppDomainSpecType  - DEFAULT: The default .ondigitalocean.app domain assigned to this app.  - PRIMARY: The primary domain for this app. This is the domain that is displayed as the default in the control panel, used in bindable environment variables, and any other places that reference an app's live URL. Only one domain may be set as primary.  - ALIAS: A non-primary domain.
@@ -77,6 +83,7 @@ type AppJobSpec struct {
 	Name   string            `json:"name"`
 	Git    *GitSourceSpec    `json:"git,omitempty"`
 	GitHub *GitHubSourceSpec `json:"github,omitempty"`
+	Image  *ImageSourceSpec  `json:"image,omitempty"`
 	// The path to the Dockerfile relative to the root of the repo. If set, it will be used to build this component. Otherwise, App Platform will attempt to build it using buildpacks.
 	DockerfilePath string `json:"dockerfile_path,omitempty"`
 	// An optional build command to run while building this component from source.
@@ -90,9 +97,21 @@ type AppJobSpec struct {
 	// A list of environment variables made available to the component.
 	Envs []*AppVariableDefinition `json:"envs,omitempty"`
 	// The instance size to use for this component.
-	InstanceSizeSlug string `json:"instance_size_slug,omitempty"`
-	InstanceCount    int64  `json:"instance_count,omitempty"`
+	InstanceSizeSlug string         `json:"instance_size_slug,omitempty"`
+	InstanceCount    int64          `json:"instance_count,omitempty"`
+	Kind             AppJobSpecKind `json:"kind,omitempty"`
 }
+
+// AppJobSpecKind  - UNSPECIFIED: Default job type, will auto-complete to POST_DEPLOY kind.  - PRE_DEPLOY: Indicates a job that runs before an app deployment.  - POST_DEPLOY: Indicates a job that runs after an app deployment.  - FAILED_DEPLOY: Indicates a job that runs after a component fails to deploy.
+type AppJobSpecKind string
+
+// List of AppJobSpecKind
+const (
+	AppJobSpecKind_Unspecified  AppJobSpecKind = "UNSPECIFIED"
+	AppJobSpecKind_PreDeploy    AppJobSpecKind = "PRE_DEPLOY"
+	AppJobSpecKind_PostDeploy   AppJobSpecKind = "POST_DEPLOY"
+	AppJobSpecKind_FailedDeploy AppJobSpecKind = "FAILED_DEPLOY"
+)
 
 // AppRouteSpec struct for AppRouteSpec
 type AppRouteSpec struct {
@@ -106,6 +125,7 @@ type AppServiceSpec struct {
 	Name   string            `json:"name"`
 	Git    *GitSourceSpec    `json:"git,omitempty"`
 	GitHub *GitHubSourceSpec `json:"github,omitempty"`
+	Image  *ImageSourceSpec  `json:"image,omitempty"`
 	// The path to the Dockerfile relative to the root of the repo. If set, it will be used to build this component. Otherwise, App Platform will attempt to build it using buildpacks.
 	DockerfilePath string `json:"dockerfile_path,omitempty"`
 	// An optional build command to run while building this component from source.
@@ -117,15 +137,17 @@ type AppServiceSpec struct {
 	// An environment slug describing the type of this app. For a full list, please refer to [the product documentation](https://www.digitalocean.com/docs/app-platform/).
 	EnvironmentSlug string `json:"environment_slug,omitempty"`
 	// A list of environment variables made available to the component.
-	Envs []*AppVariableDefinition `json:"envs,omitempty"`
-	// The instance size to use for this component.
-	InstanceSizeSlug string `json:"instance_size_slug,omitempty"`
-	InstanceCount    int64  `json:"instance_count,omitempty"`
+	Envs             []*AppVariableDefinition `json:"envs,omitempty"`
+	InstanceSizeSlug string                   `json:"instance_size_slug,omitempty"`
+	InstanceCount    int64                    `json:"instance_count,omitempty"`
 	// The internal port on which this service's run command will listen. Default: 8080 If there is not an environment variable with the name `PORT`, one will be automatically added with its value set to the value of this field.
 	HTTPPort int64 `json:"http_port,omitempty"`
 	// A list of HTTP routes that should be routed to this component.
 	Routes      []*AppRouteSpec            `json:"routes,omitempty"`
 	HealthCheck *AppServiceSpecHealthCheck `json:"health_check,omitempty"`
+	CORS        *AppCORSPolicy             `json:"cors,omitempty"`
+	// The ports on which this service will listen for internal traffic.
+	InternalPorts []int64 `json:"internal_ports,omitempty"`
 }
 
 // AppServiceSpecHealthCheck struct for AppServiceSpecHealthCheck
@@ -156,14 +178,13 @@ type AppSpec struct {
 	StaticSites []*AppStaticSiteSpec `json:"static_sites,omitempty"`
 	// Workloads which do not expose publicly-accessible HTTP services.
 	Workers []*AppWorkerSpec `json:"workers,omitempty"`
-	// One-time or recurring workloads which do not expose publicly-accessible HTTP routes.
+	// Pre and post deployment workloads which do not expose publicly-accessible HTTP routes.
 	Jobs []*AppJobSpec `json:"jobs,omitempty"`
 	// Database instances which can provide persistence to workloads within the application.
 	Databases []*AppDatabaseSpec `json:"databases,omitempty"`
 	// A set of hostnames where the application will be available.
 	Domains []*AppDomainSpec `json:"domains,omitempty"`
-	// The slug form of the geographical origin of the app.
-	Region string `json:"region,omitempty"`
+	Region  string           `json:"region,omitempty"`
 }
 
 // AppStaticSiteSpec struct for AppStaticSiteSpec
@@ -189,14 +210,17 @@ type AppStaticSiteSpec struct {
 	Envs []*AppVariableDefinition `json:"envs,omitempty"`
 	// A list of HTTP routes that should be routed to this component.
 	Routes []*AppRouteSpec `json:"routes,omitempty"`
+	CORS   *AppCORSPolicy  `json:"cors,omitempty"`
+	// The name of the document to use as the fallback for any requests to documents that are not found when serving this static site. Only 1 of `catchall_document` or `error_document` can be set.
+	CatchallDocument string `json:"catchall_document,omitempty"`
 }
 
 // AppVariableDefinition struct for AppVariableDefinition
 type AppVariableDefinition struct {
 	// The name
 	Key string `json:"key"`
-	// The value. If the type is SECRET, the value will be encrypted on first submission. On following submissions, the encrypted value must be used.
-	Value string        `json:"value,omitempty"`
+	// The value. If the type is `SECRET`, the value will be encrypted on first submission. On following submissions, the encrypted value should be used.
+	Value string           `json:"value,omitempty"`
 	Scope AppVariableScope `json:"scope,omitempty"`
 	Type  AppVariableType  `json:"type,omitempty"`
 }
@@ -207,6 +231,7 @@ type AppWorkerSpec struct {
 	Name   string            `json:"name"`
 	Git    *GitSourceSpec    `json:"git,omitempty"`
 	GitHub *GitHubSourceSpec `json:"github,omitempty"`
+	Image  *ImageSourceSpec  `json:"image,omitempty"`
 	// The path to the Dockerfile relative to the root of the repo. If set, it will be used to build this component. Otherwise, App Platform will attempt to build it using buildpacks.
 	DockerfilePath string `json:"dockerfile_path,omitempty"`
 	// An optional build command to run while building this component from source.
@@ -224,6 +249,12 @@ type AppWorkerSpec struct {
 	InstanceCount    int64  `json:"instance_count,omitempty"`
 }
 
+// AppCORSPolicy struct for AppCORSPolicy
+type AppCORSPolicy struct {
+	// The set of allowed CORS origins.
+	AllowOrigins []*AppStringMatch `json:"allow_origins,omitempty"`
+}
+
 // Deployment struct for Deployment
 type Deployment struct {
 	ID                 string                  `json:"id,omitempty"`
@@ -239,6 +270,7 @@ type Deployment struct {
 	ClonedFrom         string                  `json:"cloned_from,omitempty"`
 	Progress           *DeploymentProgress     `json:"progress,omitempty"`
 	Phase              DeploymentPhase         `json:"phase,omitempty"`
+	TierSlug           string                  `json:"tier_slug,omitempty"`
 }
 
 // DeploymentJob struct for DeploymentJob
@@ -265,11 +297,11 @@ const (
 
 // DeploymentProgress struct for DeploymentProgress
 type DeploymentProgress struct {
-	PendingSteps int32           `json:"pending_steps,omitempty"`
-	RunningSteps int32           `json:"running_steps,omitempty"`
-	SuccessSteps int32           `json:"success_steps,omitempty"`
-	ErrorSteps   int32           `json:"error_steps,omitempty"`
-	TotalSteps   int32           `json:"total_steps,omitempty"`
+	PendingSteps int32                     `json:"pending_steps,omitempty"`
+	RunningSteps int32                     `json:"running_steps,omitempty"`
+	SuccessSteps int32                     `json:"success_steps,omitempty"`
+	ErrorSteps   int32                     `json:"error_steps,omitempty"`
+	TotalSteps   int32                     `json:"total_steps,omitempty"`
 	Steps        []*DeploymentProgressStep `json:"steps,omitempty"`
 	SummarySteps []*DeploymentProgressStep `json:"summary_steps,omitempty"`
 }
@@ -305,16 +337,60 @@ type GitSourceSpec struct {
 	Branch       string `json:"branch,omitempty"`
 }
 
+// ImageSourceSpec struct for ImageSourceSpec
+type ImageSourceSpec struct {
+	RegistryType ImageSourceSpecRegistryType `json:"registry_type,omitempty"`
+	// The registry name. Must be left empty for the `DOCR` registry type.
+	Registry string `json:"registry,omitempty"`
+	// The repository name.
+	Repository string `json:"repository,omitempty"`
+	// The repository tag. Defaults to `latest` if not provided.
+	Tag string `json:"tag,omitempty"`
+}
+
+// ImageSourceSpecRegistryType  - UNSPECIFIED: Represents an unspecified registry type.  - DOCR: The DigitalOcean container registry type.
+type ImageSourceSpecRegistryType string
+
+// List of ImageSourceSpecRegistryType
+const (
+	ImageSourceSpecRegistryType_Unspecified ImageSourceSpecRegistryType = "UNSPECIFIED"
+	ImageSourceSpecRegistryType_DOCR        ImageSourceSpecRegistryType = "DOCR"
+)
+
+// AppInstanceSize struct for AppInstanceSize
+type AppInstanceSize struct {
+	Name            string                 `json:"name,omitempty"`
+	Slug            string                 `json:"slug,omitempty"`
+	CPUType         AppInstanceSizeCPUType `json:"cpu_type,omitempty"`
+	CPUs            string                 `json:"cpus,omitempty"`
+	MemoryBytes     string                 `json:"memory_bytes,omitempty"`
+	USDPerMonth     string                 `json:"usd_per_month,omitempty"`
+	USDPerSecond    string                 `json:"usd_per_second,omitempty"`
+	TierSlug        string                 `json:"tier_slug,omitempty"`
+	TierUpgradeTo   string                 `json:"tier_upgrade_to,omitempty"`
+	TierDowngradeTo string                 `json:"tier_downgrade_to,omitempty"`
+}
+
+// AppInstanceSizeCPUType the model 'AppInstanceSizeCPUType'
+type AppInstanceSizeCPUType string
+
+// List of AppInstanceSizeCPUType
+const (
+	AppInstanceSizeCPUType_Unspecified AppInstanceSizeCPUType = "UNSPECIFIED"
+	AppInstanceSizeCPUType_Shared      AppInstanceSizeCPUType = "SHARED"
+	AppInstanceSizeCPUType_Dedicated   AppInstanceSizeCPUType = "DEDICATED"
+)
+
 // DeploymentProgressStep struct for DeploymentProgressStep
 type DeploymentProgressStep struct {
-	Name          string             `json:"name,omitempty"`
-	Status        DeploymentProgressStepStatus `json:"status,omitempty"`
-	Steps         []*DeploymentProgressStep    `json:"steps,omitempty"`
-	StartedAt     time.Time          `json:"started_at,omitempty"`
-	EndedAt       time.Time          `json:"ended_at,omitempty"`
-	Reason        *DeploymentProgressStepReason        `json:"reason,omitempty"`
-	ComponentName string             `json:"component_name,omitempty"`
-	// The base of a human-readable description of the step intended to be combined with the component name for presentation. For example:  message_base = \"Building service\" component_name = \"api\"
+	Name          string                        `json:"name,omitempty"`
+	Status        DeploymentProgressStepStatus  `json:"status,omitempty"`
+	Steps         []*DeploymentProgressStep     `json:"steps,omitempty"`
+	StartedAt     time.Time                     `json:"started_at,omitempty"`
+	EndedAt       time.Time                     `json:"ended_at,omitempty"`
+	Reason        *DeploymentProgressStepReason `json:"reason,omitempty"`
+	ComponentName string                        `json:"component_name,omitempty"`
+	// The base of a human-readable description of the step intended to be combined with the component name for presentation. For example:  `message_base` = \"Building service\" `component_name` = \"api\"
 	MessageBase string `json:"message_base,omitempty"`
 }
 
@@ -339,12 +415,32 @@ type AppRegion struct {
 	Disabled    bool     `json:"disabled,omitempty"`
 	DataCenters []string `json:"data_centers,omitempty"`
 	Reason      string   `json:"reason,omitempty"`
+	// Whether or not the region is presented as the default.
+	Default bool `json:"default,omitempty"`
 }
 
 // DeploymentProgressStepReason struct for DeploymentProgressStepReason
 type DeploymentProgressStepReason struct {
 	Code    string `json:"code,omitempty"`
 	Message string `json:"message,omitempty"`
+}
+
+// AppStringMatch struct for AppStringMatch
+type AppStringMatch struct {
+	// Exact string match. Only 1 of `exact`, `prefix`, or `regex` must be set.
+	Exact string `json:"exact,omitempty"`
+	// Prefix-based match. Only 1 of `exact`, `prefix`, or `regex` must be set.
+	Prefix string `json:"prefix,omitempty"`
+	Regex  string `json:"regex,omitempty"`
+}
+
+// AppTier struct for AppTier
+type AppTier struct {
+	Name                 string `json:"name,omitempty"`
+	Slug                 string `json:"slug,omitempty"`
+	StorageBytes         string `json:"storage_bytes,omitempty"`
+	EgressBandwidthBytes string `json:"egress_bandwidth_bytes,omitempty"`
+	BuildSeconds         string `json:"build_seconds,omitempty"`
 }
 
 // AppVariableScope the model 'AppVariableScope'

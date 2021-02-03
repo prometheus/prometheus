@@ -23,7 +23,6 @@ import (
 	"time"
 
 	influx "github.com/influxdata/influxdb/client/v2"
-
 	"github.com/prometheus/common/model"
 )
 

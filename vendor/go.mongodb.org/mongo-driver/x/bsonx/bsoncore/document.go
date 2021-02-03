@@ -181,7 +181,8 @@ func (d Document) LookupErr(key ...string) (Value, error) {
 		if !ok {
 			return Value{}, NewInsufficientBytesError(d, rem)
 		}
-		if elem.Key() != key[0] {
+		// We use `KeyBytes` rather than `Key` to avoid a needless string alloc.
+		if string(elem.KeyBytes()) != key[0] {
 			continue
 		}
 		if len(key) > 1 {

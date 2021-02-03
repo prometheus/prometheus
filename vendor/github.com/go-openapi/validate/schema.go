@@ -28,7 +28,7 @@ var (
 	specSchemaType    = reflect.TypeOf(&spec.Schema{})
 	specParameterType = reflect.TypeOf(&spec.Parameter{})
 	specHeaderType    = reflect.TypeOf(&spec.Header{})
-	//specItemsType     = reflect.TypeOf(&spec.Items{})
+	// specItemsType     = reflect.TypeOf(&spec.Items{})
 )
 
 // SchemaValidator validates data against a JSON schema

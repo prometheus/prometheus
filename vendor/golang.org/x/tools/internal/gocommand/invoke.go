@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -130,6 +131,12 @@ type Invocation struct {
 	Verb       string
 	Args       []string
 	BuildFlags []string
+	ModFlag    string
+	ModFile    string
+	Overlay    string
+	// If CleanEnv is set, the invocation will run only with the environment
+	// in Env, not starting with os.Environ.
+	CleanEnv   bool
 	Env        []string
 	WorkingDir string
 	Logf       func(format string, args ...interface{})
@@ -158,17 +165,41 @@ func (i *Invocation) run(ctx context.Context, stdout, stderr io.Writer) error {
 	}
 
 	goArgs := []string{i.Verb}
+
+	appendModFile := func() {
+		if i.ModFile != "" {
+			goArgs = append(goArgs, "-modfile="+i.ModFile)
+		}
+	}
+	appendModFlag := func() {
+		if i.ModFlag != "" {
+			goArgs = append(goArgs, "-mod="+i.ModFlag)
+		}
+	}
+	appendOverlayFlag := func() {
+		if i.Overlay != "" {
+			goArgs = append(goArgs, "-overlay="+i.Overlay)
+		}
+	}
+
 	switch i.Verb {
-	case "mod":
-		// mod needs the sub-verb before build flags.
-		goArgs = append(goArgs, i.Args[0])
-		goArgs = append(goArgs, i.BuildFlags...)
-		goArgs = append(goArgs, i.Args[1:]...)
-	case "env":
-		// env doesn't take build flags.
+	case "env", "version":
 		goArgs = append(goArgs, i.Args...)
-	default:
+	case "mod":
+		// mod needs the sub-verb before flags.
+		goArgs = append(goArgs, i.Args[0])
+		appendModFile()
+		goArgs = append(goArgs, i.Args[1:]...)
+	case "get":
 		goArgs = append(goArgs, i.BuildFlags...)
+		appendModFile()
+		goArgs = append(goArgs, i.Args...)
+
+	default: // notably list and build.
+		goArgs = append(goArgs, i.BuildFlags...)
+		appendModFile()
+		appendModFlag()
+		appendOverlayFlag()
 		goArgs = append(goArgs, i.Args...)
 	}
 	cmd := exec.Command("go", goArgs...)
@@ -180,7 +211,10 @@ func (i *Invocation) run(ctx context.Context, stdout, stderr io.Writer) error {
 	// The Go stdlib has a special feature where if the cwd and the PWD are the
 	// same node then it trusts the PWD, so by setting it in the env for the child
 	// process we fix up all the paths returned by the go command.
-	cmd.Env = append(os.Environ(), i.Env...)
+	if !i.CleanEnv {
+		cmd.Env = os.Environ()
+	}
+	cmd.Env = append(cmd.Env, i.Env...)
 	if i.WorkingDir != "" {
 		cmd.Env = append(cmd.Env, "PWD="+i.WorkingDir)
 		cmd.Dir = i.WorkingDir
@@ -221,10 +255,19 @@ func runCmdContext(ctx context.Context, cmd *exec.Cmd) error {
 func cmdDebugStr(cmd *exec.Cmd) string {
 	env := make(map[string]string)
 	for _, kv := range cmd.Env {
-		split := strings.Split(kv, "=")
+		split := strings.SplitN(kv, "=", 2)
 		k, v := split[0], split[1]
 		env[k] = v
 	}
 
-	return fmt.Sprintf("GOROOT=%v GOPATH=%v GO111MODULE=%v GOPROXY=%v PWD=%v go %v", env["GOROOT"], env["GOPATH"], env["GO111MODULE"], env["GOPROXY"], env["PWD"], cmd.Args)
+	var args []string
+	for _, arg := range cmd.Args {
+		quoted := strconv.Quote(arg)
+		if quoted[1:len(quoted)-1] != arg || strings.Contains(arg, " ") {
+			args = append(args, quoted)
+		} else {
+			args = append(args, arg)
+		}
+	}
+	return fmt.Sprintf("GOROOT=%v GOPATH=%v GO111MODULE=%v GOPROXY=%v PWD=%v %v", env["GOROOT"], env["GOPATH"], env["GO111MODULE"], env["GOPROXY"], env["PWD"], strings.Join(args, " "))
 }

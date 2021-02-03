@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/stretchr/testify/require"
 )
 
 type counter int
@@ -35,13 +35,13 @@ func TestDedupe(t *testing.T) {
 	// Log 10 times quickly, ensure they are deduped.
 	for i := 0; i < 10; i++ {
 		err := d.Log("msg", "hello")
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 	}
-	testutil.Equals(t, 1, int(c))
+	require.Equal(t, 1, int(c))
 
 	// Wait, then log again, make sure it is logged.
 	time.Sleep(200 * time.Millisecond)
 	err := d.Log("msg", "hello")
-	testutil.Ok(t, err)
-	testutil.Equals(t, 2, int(c))
+	require.NoError(t, err)
+	require.Equal(t, 2, int(c))
 }

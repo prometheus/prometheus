@@ -83,7 +83,7 @@ type ImportFix struct {
 	IdentName string
 	// FixType is the type of fix this is (AddImport, DeleteImport, SetImportName).
 	FixType   ImportFixType
-	Relevance int // see pkg
+	Relevance float64 // see pkg
 }
 
 // An ImportInfo represents a single import statement.
@@ -592,9 +592,9 @@ func getFixes(fset *token.FileSet, f *ast.File, filename string, env *ProcessEnv
 	return fixes, nil
 }
 
-// Highest relevance, used for the standard library. Chosen arbitrarily to
-// match pre-existing gopls code.
-const MaxRelevance = 7
+// MaxRelevance is the highest relevance, used for the standard library.
+// Chosen arbitrarily to match pre-existing gopls code.
+const MaxRelevance = 7.0
 
 // getCandidatePkgs works with the passed callback to find all acceptable packages.
 // It deduplicates by import path, and uses a cached stdlib rather than reading
@@ -607,6 +607,10 @@ func getCandidatePkgs(ctx context.Context, wrappedCallback *scanCallback, filena
 	if err != nil {
 		return err
 	}
+
+	var mu sync.Mutex // to guard asynchronous access to dupCheck
+	dupCheck := map[string]struct{}{}
+
 	// Start off with the standard library.
 	for importPath, exports := range stdlib {
 		p := &pkg{
@@ -615,13 +619,11 @@ func getCandidatePkgs(ctx context.Context, wrappedCallback *scanCallback, filena
 			packageName:     path.Base(importPath),
 			relevance:       MaxRelevance,
 		}
+		dupCheck[importPath] = struct{}{}
 		if notSelf(p) && wrappedCallback.dirFound(p) && wrappedCallback.packageNameLoaded(p) {
 			wrappedCallback.exportsLoaded(p, exports)
 		}
 	}
-
-	var mu sync.Mutex
-	dupCheck := map[string]struct{}{}
 
 	scanFilter := &scanCallback{
 		rootFound: func(root gopathwalk.Root) bool {
@@ -658,8 +660,8 @@ func getCandidatePkgs(ctx context.Context, wrappedCallback *scanCallback, filena
 	return resolver.scan(ctx, scanFilter)
 }
 
-func ScoreImportPaths(ctx context.Context, env *ProcessEnv, paths []string) (map[string]int, error) {
-	result := make(map[string]int)
+func ScoreImportPaths(ctx context.Context, env *ProcessEnv, paths []string) (map[string]float64, error) {
+	result := make(map[string]float64)
 	resolver, err := env.GetResolver()
 	if err != nil {
 		return nil, err
@@ -802,6 +804,8 @@ type ProcessEnv struct {
 	GocmdRunner *gocommand.Runner
 
 	BuildFlags []string
+	ModFlag    string
+	ModFile    string
 
 	// Env overrides the OS environment, and can be used to specify
 	// GOPROXY, GO111MODULE, etc. PATH cannot be set here, because
@@ -995,7 +999,7 @@ type Resolver interface {
 	// loadExports may be called concurrently.
 	loadExports(ctx context.Context, pkg *pkg, includeTest bool) (string, []string, error)
 	// scoreImportPath returns the relevance for an import path.
-	scoreImportPath(ctx context.Context, path string) int
+	scoreImportPath(ctx context.Context, path string) float64
 
 	ClearForNewScan()
 }
@@ -1260,10 +1264,10 @@ func packageDirToName(dir string) (packageName string, err error) {
 }
 
 type pkg struct {
-	dir             string // absolute file path to pkg directory ("/usr/lib/go/src/net/http")
-	importPathShort string // vendorless import path ("net/http", "a/b")
-	packageName     string // package name loaded from source if requested
-	relevance       int    // a weakly-defined score of how relevant a package is. 0 is most relevant.
+	dir             string  // absolute file path to pkg directory ("/usr/lib/go/src/net/http")
+	importPathShort string  // vendorless import path ("net/http", "a/b")
+	packageName     string  // package name loaded from source if requested
+	relevance       float64 // a weakly-defined score of how relevant a package is. 0 is most relevant.
 }
 
 type pkgDistance struct {
@@ -1389,7 +1393,7 @@ func (r *gopathResolver) scan(ctx context.Context, callback *scanCallback) error
 	return nil
 }
 
-func (r *gopathResolver) scoreImportPath(ctx context.Context, path string) int {
+func (r *gopathResolver) scoreImportPath(ctx context.Context, path string) float64 {
 	if _, ok := stdlib[path]; ok {
 		return MaxRelevance
 	}

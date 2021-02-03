@@ -21,8 +21,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"gopkg.in/yaml.v2"
+
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
 const (

@@ -172,6 +172,9 @@ func (g *generator) generate(file *descriptor.File) (string, error) {
 		RegisterFuncSuffix: g.registerFuncSuffix,
 		AllowPatchFeature:  g.allowPatchFeature,
 	}
+	if g.reg != nil {
+		params.OmitPackageDoc = g.reg.GetOmitPackageDoc()
+	}
 	return applyTemplate(params, g.reg)
 }
 

@@ -4,10 +4,11 @@ import { Alert, Button } from 'reactstrap';
 
 import Panel, { PanelOptions, PanelDefaultOptions } from './Panel';
 import Checkbox from '../../components/Checkbox';
-import PathPrefixProps from '../../types/PathPrefixProps';
 import { generateID, decodePanelOptionsFromQueryString, encodePanelOptionsToQueryString, callAll } from '../../utils';
 import { useFetch } from '../../hooks/useFetch';
 import { useLocalStorage } from '../../hooks/useLocalStorage';
+import { usePathPrefix } from '../../contexts/PathPrefixContext';
+import { API_PATH } from '../../constants/constants';
 
 export type PanelMeta = { key: string; options: PanelOptions; id: string };
 
@@ -16,18 +17,19 @@ export const updateURL = (nextPanels: PanelMeta[]) => {
   window.history.pushState({}, '', query);
 };
 
-interface PanelListProps extends PathPrefixProps, RouteComponentProps {
+interface PanelListProps extends RouteComponentProps {
   panels: PanelMeta[];
   metrics: string[];
   useLocalTime: boolean;
   queryHistoryEnabled: boolean;
+  enableAutocomplete: boolean;
 }
 
 export const PanelListContent: FC<PanelListProps> = ({
   metrics = [],
   useLocalTime,
-  pathPrefix,
   queryHistoryEnabled,
+  enableAutocomplete,
   ...rest
 }) => {
   const [panels, setPanels] = useState(rest.panels);
@@ -73,10 +75,13 @@ export const PanelListContent: FC<PanelListProps> = ({
     ]);
   };
 
+  const pathPrefix = usePathPrefix();
+
   return (
     <>
       {panels.map(({ id, options }) => (
         <Panel
+          pathPrefix={pathPrefix}
           onExecuteQuery={handleExecuteQuery}
           key={id}
           options={options}
@@ -97,25 +102,29 @@ export const PanelListContent: FC<PanelListProps> = ({
           useLocalTime={useLocalTime}
           metricNames={metrics}
           pastQueries={queryHistoryEnabled ? historyItems : []}
-          pathPrefix={pathPrefix}
+          enableAutocomplete={enableAutocomplete}
         />
       ))}
-      <Button className="mb-3" color="primary" onClick={addPanel}>
+      <Button className="d-block mb-3" color="primary" onClick={addPanel}>
         Add Panel
       </Button>
     </>
   );
 };
 
-const PanelList: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix = '' }) => {
+const PanelList: FC<RouteComponentProps> = () => {
   const [delta, setDelta] = useState(0);
   const [useLocalTime, setUseLocalTime] = useLocalStorage('use-local-time', false);
   const [enableQueryHistory, setEnableQueryHistory] = useLocalStorage('enable-query-history', false);
+  const [enableAutocomplete, setEnableAutocomplete] = useLocalStorage('enable-metric-autocomplete', true);
 
-  const { response: metricsRes, error: metricsErr } = useFetch<string[]>(`${pathPrefix}/api/v1/label/__name__/values`);
+  const pathPrefix = usePathPrefix();
+  const { response: metricsRes, error: metricsErr } = useFetch<string[]>(`${pathPrefix}/${API_PATH}/label/__name__/values`);
 
   const browserTime = new Date().getTime() / 1000;
-  const { response: timeRes, error: timeErr } = useFetch<{ result: number[] }>(`${pathPrefix}/api/v1/query?query=time()`);
+  const { response: timeRes, error: timeErr } = useFetch<{ result: number[] }>(
+    `${pathPrefix}/${API_PATH}/query?query=time()`
+  );
 
   useEffect(() => {
     if (timeRes.data) {
@@ -148,6 +157,14 @@ const PanelList: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix = '' 
       >
         Use local time
       </Checkbox>
+      <Checkbox
+        wrapperStyles={{ marginLeft: 20, display: 'inline-block' }}
+        id="autocomplete"
+        onChange={({ target }) => setEnableAutocomplete(target.checked)}
+        defaultChecked={enableAutocomplete}
+      >
+        Enable autocomplete
+      </Checkbox>
       {(delta > 30 || timeErr) && (
         <Alert color="danger">
           <strong>Warning: </strong>
@@ -164,10 +181,10 @@ const PanelList: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix = '' 
       )}
       <PanelListContent
         panels={decodePanelOptionsFromQueryString(window.location.search)}
-        pathPrefix={pathPrefix}
         useLocalTime={useLocalTime}
         metrics={metricsRes.data}
         queryHistoryEnabled={enableQueryHistory}
+        enableAutocomplete={enableAutocomplete}
       />
     </>
   );
