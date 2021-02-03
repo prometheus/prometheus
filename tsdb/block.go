@@ -87,7 +87,7 @@ type IndexReader interface {
 	// LabelNames returns all the unique label names present in the index in sorted order.
 	LabelNames() ([]string, error)
 
-	// LabelValueFor returns value of given label of metric referred to by id.
+	// LabelValueFor returns value of given label value of series referred to by ID.
 	LabelValueFor(id uint64, label string) (string, error)
 
 	// Close releases the underlying resources of the reader.
