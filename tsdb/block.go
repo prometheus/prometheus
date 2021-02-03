@@ -502,7 +502,7 @@ func (r blockIndexReader) Close() error {
 	return nil
 }
 
-// LabelValueFor returns value of given label of metric referred to by id.
+// LabelValueFor returns value of given label value of series referred to by ID.
 func (r blockIndexReader) LabelValueFor(id uint64, label string) (string, error) {
 	return r.ir.LabelValueFor(id, label)
 }
