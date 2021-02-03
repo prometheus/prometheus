@@ -388,6 +388,27 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 	if res.Err != nil {
 		return apiFuncResult{nil, returnAPIError(res.Err), res.Warnings, qry.Close}
 	}
+	var ranker Ranker = avg{}
+
+	if res.Value.Type() == parser.ValueTypeVector {
+		vec, ok := res.Value.(promql.Vector)
+		if !ok {
+			err := errors.New("cannot convert to vector")
+			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+		}
+		sort.Slice(vec, func(i, j int) bool {
+			return vec[i].V > vec[j].V
+		})
+	} else if res.Value.Type() == parser.ValueTypeMatrix {
+		mat, ok := res.Value.(promql.Matrix)
+		if !ok {
+			err := errors.New("cannot convert to matrix")
+			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+		}
+		sort.Slice(mat, func(i, j int) bool {
+			return (ranker.rank(mat[i]) > ranker.rank(mat[j]))
+		})
+	}
 
 	var ranker Ranker
 	if rankingFunction == "avg_over_time" {
