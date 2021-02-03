@@ -618,16 +618,16 @@ func checkErr(err error) int {
 	return 0
 }
 
-func backfillOpenMetrics(path string, outputDir string, humanReadable bool) (err error) {
+func backfillOpenMetrics(path string, outputDir string, humanReadable bool) int {
 	inputFile, err := fileutil.OpenMmapFile(path)
 	if err != nil {
-		return err
+		return checkErr(err)
 	}
 	defer inputFile.Close()
 
 	if err := os.MkdirAll(outputDir, 0777); err != nil {
-		return errors.Wrap(err, "create output dir")
+		return checkErr(errors.Wrap(err, "create output dir"))
 	}
 
-	return backfill(5000, inputFile.Bytes(), outputDir, humanReadable)
+	return checkErr(backfill(5000, inputFile.Bytes(), outputDir, humanReadable))
 }
