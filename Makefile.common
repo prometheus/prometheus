@@ -231,6 +231,7 @@ common-tarball: promu
 	@echo ">> building release tarball"
 	$(PROMU) tarball --prefix $(PREFIX) $(BIN_DIR)
 
+DOCKER_VERSION = $(shell cat VERSION)
 .PHONY: common-docker $(BUILD_DOCKER_ARCHS)
 common-docker: $(BUILD_DOCKER_ARCHS)
 $(BUILD_DOCKER_ARCHS): common-docker-%:
@@ -238,6 +239,7 @@ $(BUILD_DOCKER_ARCHS): common-docker-%:
 		-f $(DOCKERFILE_PATH) \
 		--build-arg ARCH="$*" \
 		--build-arg OS="linux" \
+		--build-arg "VERSION=${DOCKER_VERSION}" \
 		$(DOCKERBUILD_CONTEXT)
 
 .PHONY: common-docker-publish $(PUBLISH_DOCKER_ARCHS)
