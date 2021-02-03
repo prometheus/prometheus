@@ -1160,12 +1160,13 @@ func (m mockIndex) LabelValues(name string, matchers ...*labels.Matcher) ([]stri
 				values = append(values, l.Value)
 			}
 		}
-	} else {
-		for _, series := range m.series {
-			for _, matcher := range matchers {
-				if matcher.Matches(series.l.Get(matcher.Name)) {
-					values = append(values, series.l.Get(name))
-				}
+		return values, nil
+	}
+
+	for _, series := range m.series {
+		for _, matcher := range matchers {
+			if matcher.Matches(series.l.Get(matcher.Name)) {
+				values = append(values, series.l.Get(name))
 			}
 		}
 	}
