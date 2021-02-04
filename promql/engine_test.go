@@ -2150,8 +2150,3 @@ func TestEngineOptsValidation(t *testing.T) {
 		}
 	}
 }
-
-// TestFuncTimestampWithAtModifier tests for https://github.com/prometheus/prometheus/issues/8433.
-func TestFuncTimestampWithAtModifier(t *testing.T) {
-
-}
