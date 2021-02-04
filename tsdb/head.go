@@ -551,7 +551,7 @@ Outer:
 					h.lastSeriesID.Store(s.Ref)
 				}
 			}
-			//lint:ignore SA6002 relax staticcheck verification.
+			//nolint:staticcheck // Ignore SA6002 relax staticcheck verification.
 			seriesPool.Put(v)
 		case []record.RefSample:
 			samples := v
@@ -584,7 +584,7 @@ Outer:
 				}
 				samples = samples[m:]
 			}
-			//lint:ignore SA6002 relax staticcheck verification.
+			//nolint:staticcheck // Ignore SA6002 relax staticcheck verification.
 			samplesPool.Put(v)
 		case []tombstones.Stone:
 			for _, s := range v {
@@ -599,7 +599,7 @@ Outer:
 					h.tombstones.AddInterval(s.Ref, itv)
 				}
 			}
-			//lint:ignore SA6002 relax staticcheck verification.
+			//nolint:staticcheck // Ignore SA6002 relax staticcheck verification.
 			tstonesPool.Put(v)
 		default:
 			panic(fmt.Errorf("unexpected decoded type: %T", d))
@@ -1107,7 +1107,7 @@ func (h *Head) getAppendBuffer() []record.RefSample {
 }
 
 func (h *Head) putAppendBuffer(b []record.RefSample) {
-	//lint:ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
+	//nolint:staticcheck // Ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 	h.appendPool.Put(b[:0])
 }
 
@@ -1120,7 +1120,7 @@ func (h *Head) getSeriesBuffer() []*memSeries {
 }
 
 func (h *Head) putSeriesBuffer(b []*memSeries) {
-	//lint:ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
+	//nolint:staticcheck // Ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 	h.seriesPool.Put(b[:0])
 }
 
@@ -1133,7 +1133,7 @@ func (h *Head) getBytesBuffer() []byte {
 }
 
 func (h *Head) putBytesBuffer(b []byte) {
-	//lint:ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
+	//nolint:staticcheck // Ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 	h.bytesPool.Put(b[:0])
 }
 
