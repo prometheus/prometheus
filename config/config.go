@@ -33,7 +33,22 @@ import (
 )
 
 var (
-	patRulePath = regexp.MustCompile(`^[^*]*(\*[^/]*)?$`)
+	patRulePath         = regexp.MustCompile(`^[^*]*(\*[^/]*)?$`)
+	unchangeableHeaders = map[string]struct{}{
+		// NOTE: authorization is checked specially,
+		// see RemoteWriteConfig.UnmarshalYAML.
+		// "authorization":                  {},
+		"host":                              {},
+		"content-encoding":                  {},
+		"content-type":                      {},
+		"x-prometheus-remote-write-version": {},
+		"user-agent":                        {},
+		"connection":                        {},
+		"keep-alive":                        {},
+		"proxy-authenticate":                {},
+		"proxy-authorization":               {},
+		"www-authenticate":                  {},
+	}
 )
 
 // Load parses the YAML input s into a Config.
@@ -570,6 +585,7 @@ func CheckTargetAddress(address model.LabelValue) error {
 type RemoteWriteConfig struct {
 	URL                 *config.URL       `yaml:"url"`
 	RemoteTimeout       model.Duration    `yaml:"remote_timeout,omitempty"`
+	Headers             map[string]string `yaml:"headers,omitempty"`
 	WriteRelabelConfigs []*relabel.Config `yaml:"write_relabel_configs,omitempty"`
 	Name                string            `yaml:"name,omitempty"`
 
@@ -598,6 +614,14 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 	for _, rlcfg := range c.WriteRelabelConfigs {
 		if rlcfg == nil {
 			return errors.New("empty or null relabeling rule in remote write config")
+		}
+	}
+	for header := range c.Headers {
+		if strings.ToLower(header) == "authorization" {
+			return errors.New("authorization header must be changed via the basic_auth, bearer_token, or bearer_token_file parameter")
+		}
+		if _, ok := unchangeableHeaders[strings.ToLower(header)]; ok {
+			return errors.Errorf("%s is an unchangeable header", header)
 		}
 	}
 

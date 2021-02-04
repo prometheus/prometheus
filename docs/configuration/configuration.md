@@ -1719,6 +1719,11 @@ url: <string>
 # Timeout for requests to the remote write endpoint.
 [ remote_timeout: <duration> | default = 30s ]
 
+# Custom HTTP headers to be sent along with each remote write request.
+# Be aware that headers that are set by Prometheus itself can't be overwritten.
+headers:
+  [ <string>: <string> ... ]
+
 # List of remote write relabel configurations.
 write_relabel_configs:
   [ - <relabel_config> ... ]

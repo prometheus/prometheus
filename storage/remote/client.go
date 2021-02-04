@@ -83,6 +83,7 @@ type Client struct {
 	url        *config_util.URL
 	Client     *http.Client
 	timeout    time.Duration
+	headers    map[string]string
 
 	readQueries         prometheus.Gauge
 	readQueriesTotal    *prometheus.CounterVec
@@ -94,6 +95,7 @@ type ClientConfig struct {
 	URL              *config_util.URL
 	Timeout          model.Duration
 	HTTPClientConfig config_util.HTTPClientConfig
+	Headers          map[string]string
 }
 
 // ReadClient uses the SAMPLES method of remote read to read series samples from remote server.
@@ -142,6 +144,7 @@ func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
 		url:        conf.URL,
 		Client:     httpClient,
 		timeout:    time.Duration(conf.Timeout),
+		headers:    conf.Headers,
 	}, nil
 }
 
@@ -157,6 +160,9 @@ func (c *Client) Store(ctx context.Context, req []byte) error {
 		// Errors from NewRequest are from unparsable URLs, so are not
 		// recoverable.
 		return err
+	}
+	for k, v := range c.headers {
+		httpReq.Header.Set(k, v)
 	}
 	httpReq.Header.Add("Content-Encoding", "snappy")
 	httpReq.Header.Set("Content-Type", "application/x-protobuf")
