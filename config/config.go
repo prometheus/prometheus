@@ -35,8 +35,10 @@ import (
 var (
 	patRulePath         = regexp.MustCompile(`^[^*]*(\*[^/]*)?$`)
 	unchangeableHeaders = map[string]struct{}{
+		// NOTE: authorization is checked specially,
+		// see RemoteWriteConfig.UnmarshalYAML.
+		// "authorization":                  {},
 		"host":                              {},
-		"authorization":                     {},
 		"content-encoding":                  {},
 		"content-type":                      {},
 		"x-prometheus-remote-write-version": {},
