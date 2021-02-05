@@ -300,26 +300,29 @@ func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]i
 					})
 				}
 
+				var sb strings.Builder
 				if gotAlerts.Len() != expAlerts.Len() {
-					if tg.TestGroupName == "" {
-						errs = append(errs, errors.Errorf("    alertname:%s, time:%s, \n        exp:%#v, \n        got:%#v",
-							testcase.Alertname, testcase.EvalTime.String(), expAlerts.String(), gotAlerts.String()))
-					} else {
-						errs = append(errs, errors.Errorf("    name: %s,\n    alertname:%s, time:%s, \n        exp:%#v, \n        got:%#v",
-							tg.TestGroupName, testcase.Alertname, testcase.EvalTime.String(), expAlerts.String(), gotAlerts.String()))
+					if tg.TestGroupName != "" {
+						fmt.Fprintf(&sb, "    name: %s,\n", tg.TestGroupName)
 					}
+					fmt.Fprintf(&sb, "    alertname:%s, time:%s, \n", testcase.Alertname, testcase.EvalTime.String())
+					fmt.Fprintf(&sb, "        exp:%#v, \n", expAlerts.String())
+					fmt.Fprintf(&sb, "        got:%#v", gotAlerts.String())
+
+					errs = append(errs, errors.New(sb.String()))
 				} else {
 					sort.Sort(gotAlerts)
 					sort.Sort(expAlerts)
 
 					if !reflect.DeepEqual(expAlerts, gotAlerts) {
-						if tg.TestGroupName == "" {
-							errs = append(errs, errors.Errorf("    alertname:%s, time:%s, \n        exp:%#v, \n        got:%#v",
-								testcase.Alertname, testcase.EvalTime.String(), expAlerts.String(), gotAlerts.String()))
-						} else {
-							errs = append(errs, errors.Errorf("   name: %s,\n    alertname:%s, time:%s, \n        exp:%#v, \n        got:%#v",
-								tg.TestGroupName, testcase.Alertname, testcase.EvalTime.String(), expAlerts.String(), gotAlerts.String()))
+						if tg.TestGroupName != "" {
+							fmt.Fprintf(&sb, "    name: %s,\n", tg.TestGroupName)
 						}
+						fmt.Fprintf(&sb, "    alertname:%s, time:%s, \n", testcase.Alertname, testcase.EvalTime.String())
+						fmt.Fprintf(&sb, "        exp:%#v, \n", expAlerts.String())
+						fmt.Fprintf(&sb, "        got:%#v", gotAlerts.String())
+
+						errs = append(errs, errors.New(sb.String()))
 					}
 				}
 			}
