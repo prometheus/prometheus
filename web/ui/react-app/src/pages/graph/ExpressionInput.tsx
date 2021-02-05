@@ -20,7 +20,7 @@ interface ExpressionInputProps {
 
 interface ExpressionInputState {
   height: number | string;
-  showExpressionExplorer: boolean;
+  showMetricsExplorer: boolean;
 }
 
 class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputState> {
@@ -30,7 +30,7 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
     super(props);
     this.state = {
       height: 'auto',
-      showExpressionExplorer: false,
+      showMetricsExplorer: false,
     };
   }
 
@@ -128,15 +128,15 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
     );
   };
 
-  openExpressionExplorer = () => {
+  openMetricsExplorer = () => {
     this.setState({
-      showExpressionExplorer: true,
+      showMetricsExplorer: true,
     });
   };
 
-  updateShowExpressionExplorer = (show: boolean) => {
+  updateShowMetricsExplorer = (show: boolean) => {
     this.setState({
-      showExpressionExplorer: show,
+      showMetricsExplorer: show,
     });
   };
 
@@ -211,7 +211,7 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
                   value={value}
                 />
                 <InputGroupAddon addonType="append">
-                  <Button className="btn-light border" onClick={this.openExpressionExplorer}>
+                  <Button className="btn-light border" onClick={this.openMetricsExplorer}>
                     <FontAwesomeIcon icon={faGlobeEurope} />
                   </Button>
                 </InputGroupAddon>
@@ -227,8 +227,8 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
         </Downshift>
 
         <MetricsExplorer
-          show={this.state.showExpressionExplorer}
-          updateShow={this.updateShowExpressionExplorer}
+          show={this.state.showMetricsExplorer}
+          updateShow={this.updateShowMetricsExplorer}
           metrics={this.props.autocompleteSections['Metric Names']}
           insertAtCursor={this.insertAtCursor}
         />
