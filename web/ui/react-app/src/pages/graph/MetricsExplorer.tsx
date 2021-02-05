@@ -22,7 +22,7 @@ class MetricsExplorer extends Component<Props, {}> {
   render() {
     return (
       <Modal isOpen={this.props.show} toggle={this.toggle} className="metrics-explorer">
-        <ModalHeader toggle={this.toggle}>Expression Explorer</ModalHeader>
+        <ModalHeader toggle={this.toggle}>Metrics Explorer</ModalHeader>
         <ModalBody>
           {this.props.metrics.map(metric => (
             <p className="metric" onClick={this.handleMetricClick.bind(this, metric)}>
