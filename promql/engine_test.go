@@ -2112,8 +2112,8 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 						Start: 0,
 						End:   13,
 					},
-					Timestamp:    makeInt64Pointer(timestamp.FromTime(startTime)),
-					Preprocessor: parser.START,
+					Timestamp:  makeInt64Pointer(timestamp.FromTime(startTime)),
+					StartOrEnd: parser.START,
 				},
 			},
 		}, {
@@ -2128,8 +2128,8 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 						Start: 0,
 						End:   11,
 					},
-					Timestamp:    makeInt64Pointer(timestamp.FromTime(endTime)),
-					Preprocessor: parser.END,
+					Timestamp:  makeInt64Pointer(timestamp.FromTime(endTime)),
+					StartOrEnd: parser.END,
 				},
 			},
 		}, {
@@ -2137,9 +2137,9 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 			expected: &parser.StepInvariantExpr{
 				Expr: &parser.MatrixSelector{
 					VectorSelector: &parser.VectorSelector{
-						Name:         "test",
-						Timestamp:    makeInt64Pointer(timestamp.FromTime(startTime)),
-						Preprocessor: parser.START,
+						Name:       "test",
+						Timestamp:  makeInt64Pointer(timestamp.FromTime(startTime)),
+						StartOrEnd: parser.START,
 						LabelMatchers: []*labels.Matcher{
 							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "test"),
 						},
@@ -2157,9 +2157,9 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 			expected: &parser.StepInvariantExpr{
 				Expr: &parser.MatrixSelector{
 					VectorSelector: &parser.VectorSelector{
-						Name:         "test",
-						Timestamp:    makeInt64Pointer(timestamp.FromTime(endTime)),
-						Preprocessor: parser.END,
+						Name:       "test",
+						Timestamp:  makeInt64Pointer(timestamp.FromTime(endTime)),
+						StartOrEnd: parser.END,
 						LabelMatchers: []*labels.Matcher{
 							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "test"),
 						},
@@ -2186,11 +2186,11 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 							End:   11,
 						},
 					},
-					Timestamp:    makeInt64Pointer(timestamp.FromTime(startTime)),
-					Preprocessor: parser.START,
-					Range:        10 * time.Minute,
-					Step:         5 * time.Second,
-					EndPos:       29,
+					Timestamp:  makeInt64Pointer(timestamp.FromTime(startTime)),
+					StartOrEnd: parser.START,
+					Range:      10 * time.Minute,
+					Step:       5 * time.Second,
+					EndPos:     29,
 				},
 			},
 		}, {
@@ -2207,11 +2207,11 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 							End:   11,
 						},
 					},
-					Timestamp:    makeInt64Pointer(timestamp.FromTime(endTime)),
-					Preprocessor: parser.END,
-					Range:        10 * time.Minute,
-					Step:         5 * time.Second,
-					EndPos:       27,
+					Timestamp:  makeInt64Pointer(timestamp.FromTime(endTime)),
+					StartOrEnd: parser.END,
+					Range:      10 * time.Minute,
+					Step:       5 * time.Second,
+					EndPos:     27,
 				},
 			},
 		},

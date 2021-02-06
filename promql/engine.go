@@ -398,20 +398,20 @@ func (ng *Engine) validateOpts(expr parser.Expr) error {
 	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
 		switch n := node.(type) {
 		case *parser.VectorSelector:
-			if n.Timestamp != nil || n.Preprocessor == parser.START || n.Preprocessor == parser.END {
+			if n.Timestamp != nil || n.StartOrEnd == parser.START || n.StartOrEnd == parser.END {
 				validationErr = ErrValidationAtModifierDisabled
 				return validationErr
 			}
 
 		case *parser.MatrixSelector:
 			vs := n.VectorSelector.(*parser.VectorSelector)
-			if vs.Timestamp != nil || vs.Preprocessor == parser.START || vs.Preprocessor == parser.END {
+			if vs.Timestamp != nil || vs.StartOrEnd == parser.START || vs.StartOrEnd == parser.END {
 				validationErr = ErrValidationAtModifierDisabled
 				return validationErr
 			}
 
 		case *parser.SubqueryExpr:
-			if n.Timestamp != nil || n.Preprocessor == parser.START || n.Preprocessor == parser.END {
+			if n.Timestamp != nil || n.StartOrEnd == parser.START || n.StartOrEnd == parser.END {
 				validationErr = ErrValidationAtModifierDisabled
 				return validationErr
 			}
@@ -2326,9 +2326,9 @@ func PreprocessExpr(expr parser.Expr, start, end time.Time) parser.Expr {
 func preprocessExprHelper(expr parser.Expr, start, end time.Time) bool {
 	switch n := expr.(type) {
 	case *parser.VectorSelector:
-		if n.Preprocessor == parser.START {
+		if n.StartOrEnd == parser.START {
 			n.Timestamp = makeInt64Pointer(timestamp.FromTime(start))
-		} else if n.Preprocessor == parser.END {
+		} else if n.StartOrEnd == parser.END {
 			n.Timestamp = makeInt64Pointer(timestamp.FromTime(end))
 		}
 		return n.Timestamp != nil
@@ -2386,9 +2386,9 @@ func preprocessExprHelper(expr parser.Expr, start, end time.Time) bool {
 		if isInvariant {
 			n.Expr = newStepInvariantExpr(n.Expr)
 		}
-		if n.Preprocessor == parser.START {
+		if n.StartOrEnd == parser.START {
 			n.Timestamp = makeInt64Pointer(timestamp.FromTime(start))
-		} else if n.Preprocessor == parser.END {
+		} else if n.StartOrEnd == parser.END {
 			n.Timestamp = makeInt64Pointer(timestamp.FromTime(end))
 		}
 		return n.Timestamp != nil

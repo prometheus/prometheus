@@ -3063,8 +3063,8 @@ var testExpr = []struct {
 	{
 		input: `foo @ start()`,
 		expected: &VectorSelector{
-			Name:         "foo",
-			Preprocessor: START,
+			Name:       "foo",
+			StartOrEnd: START,
 			LabelMatchers: []*labels.Matcher{
 				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
 			},
@@ -3076,8 +3076,8 @@ var testExpr = []struct {
 	}, {
 		input: `foo @ end()`,
 		expected: &VectorSelector{
-			Name:         "foo",
-			Preprocessor: END,
+			Name:       "foo",
+			StartOrEnd: END,
 			LabelMatchers: []*labels.Matcher{
 				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
 			},
@@ -3090,8 +3090,8 @@ var testExpr = []struct {
 		input: `test[5y] @ start()`,
 		expected: &MatrixSelector{
 			VectorSelector: &VectorSelector{
-				Name:         "test",
-				Preprocessor: START,
+				Name:       "test",
+				StartOrEnd: START,
 				LabelMatchers: []*labels.Matcher{
 					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "test"),
 				},
@@ -3107,8 +3107,8 @@ var testExpr = []struct {
 		input: `test[5y] @ end()`,
 		expected: &MatrixSelector{
 			VectorSelector: &VectorSelector{
-				Name:         "test",
-				Preprocessor: END,
+				Name:       "test",
+				StartOrEnd: END,
 				LabelMatchers: []*labels.Matcher{
 					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "test"),
 				},
@@ -3133,10 +3133,10 @@ var testExpr = []struct {
 					End:   3,
 				},
 			},
-			Range:        10 * time.Minute,
-			Step:         6 * time.Second,
-			Preprocessor: START,
-			EndPos:       21,
+			Range:      10 * time.Minute,
+			Step:       6 * time.Second,
+			StartOrEnd: START,
+			EndPos:     21,
 		},
 	}, {
 		input: `foo[10m:6s] @ end()`,
@@ -3151,10 +3151,10 @@ var testExpr = []struct {
 					End:   3,
 				},
 			},
-			Range:        10 * time.Minute,
-			Step:         6 * time.Second,
-			Preprocessor: END,
-			EndPos:       19,
+			Range:      10 * time.Minute,
+			Step:       6 * time.Second,
+			StartOrEnd: END,
+			EndPos:     19,
 		},
 	}, {
 		input:  `start()`,

@@ -762,7 +762,7 @@ func (p *parser) getAtModifierVars(e Node) (**int64, *ItemType, *Pos, bool) {
 	switch s := e.(type) {
 	case *VectorSelector:
 		timestampp = &s.Timestamp
-		preprocp = &s.Preprocessor
+		preprocp = &s.StartOrEnd
 		endPosp = &s.PosRange.End
 	case *MatrixSelector:
 		vs, ok := s.VectorSelector.(*VectorSelector)
@@ -770,11 +770,11 @@ func (p *parser) getAtModifierVars(e Node) (**int64, *ItemType, *Pos, bool) {
 			p.addParseErrf(e.PositionRange(), "ranges only allowed for vector selectors")
 			return nil, nil, nil, false
 		}
-		preprocp = &vs.Preprocessor
+		preprocp = &vs.StartOrEnd
 		timestampp = &vs.Timestamp
 		endPosp = &s.EndPos
 	case *SubqueryExpr:
-		preprocp = &s.Preprocessor
+		preprocp = &s.StartOrEnd
 		timestampp = &s.Timestamp
 		endPosp = &s.EndPos
 	default:
