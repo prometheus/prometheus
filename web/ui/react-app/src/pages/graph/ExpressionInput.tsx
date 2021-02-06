@@ -12,7 +12,10 @@ import MetricsExplorer from './MetricsExplorer';
 interface ExpressionInputProps {
   value: string;
   onExpressionChange: (expr: string) => void;
-  autocompleteSections: { [key: string]: string[] };
+  autocompleteSections: {
+    'Query History': string[];
+    'Metric Names': string[];
+  };
   executeQuery: () => void;
   loading: boolean;
   enableAutocomplete: boolean;
@@ -211,7 +214,7 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
                   value={value}
                 />
                 <InputGroupAddon addonType="append">
-                  <Button className="btn-light border" onClick={this.openMetricsExplorer}>
+                  <Button className="btn-light border" title="Open metrics explorer" onClick={this.openMetricsExplorer}>
                     <FontAwesomeIcon icon={faGlobeEurope} />
                   </Button>
                 </InputGroupAddon>
