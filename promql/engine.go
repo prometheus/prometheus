@@ -1128,6 +1128,11 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			vs, ok := arg.(*parser.VectorSelector)
 			if ok {
 				return ev.rangeEval(func(v []parser.Value, enh *EvalNodeHelper) (Vector, storage.Warnings) {
+					if vs.Timestamp != nil {
+						// This is a special case only for "timestamp" since the offset
+						// needs to be adjusted for every point.
+						vs.Offset = time.Duration(enh.Ts-*vs.Timestamp) * time.Millisecond
+					}
 					val, ws := ev.vectorSelector(vs, enh.Ts)
 					return call([]parser.Value{val}, e.Args, enh), ws
 				})
@@ -1569,7 +1574,7 @@ func getPointSlice(sz int) []Point {
 }
 
 func putPointSlice(p []Point) {
-	//lint:ignore SA6002 relax staticcheck verification.
+	//nolint:staticcheck // Ignore SA6002 relax staticcheck verification.
 	pointPool.Put(p[:0])
 }
 

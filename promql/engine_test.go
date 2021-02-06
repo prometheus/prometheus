@@ -907,6 +907,11 @@ load 1ms
 	for ts := int64(-1000000 + 1000); ts <= 0; ts += 1000 {
 		require.NoError(t, app.AddFast(ref, ts, -float64(ts/1000)+1))
 	}
+
+	// To test the fix for https://github.com/prometheus/prometheus/issues/8433.
+	_, err = app.Add(labels.FromStrings("__name__", "metric_timestamp"), 3600*1000, 1000)
+	require.NoError(t, err)
+
 	require.NoError(t, app.Commit())
 
 	cases := []struct {
@@ -1051,6 +1056,26 @@ load 1ms
 					Metric: lblstopk3,
 				},
 			},
+		}, {
+			// Tests for https://github.com/prometheus/prometheus/issues/8433.
+			// The trick here is that the query range should be > lookback delta.
+			query: `timestamp(metric_timestamp @ 3600)`,
+			start: 0, end: 7 * 60, interval: 60,
+			result: Matrix{
+				Series{
+					Points: []Point{
+						{V: 3600, T: 0},
+						{V: 3600, T: 60 * 1000},
+						{V: 3600, T: 2 * 60 * 1000},
+						{V: 3600, T: 3 * 60 * 1000},
+						{V: 3600, T: 4 * 60 * 1000},
+						{V: 3600, T: 5 * 60 * 1000},
+						{V: 3600, T: 6 * 60 * 1000},
+						{V: 3600, T: 7 * 60 * 1000},
+					},
+					Metric: labels.Labels{},
+				},
+			},
 		},
 	}
 
@@ -1079,6 +1104,7 @@ load 1ms
 		})
 	}
 }
+
 func TestRecoverEvaluatorRuntime(t *testing.T) {
 	ev := &evaluator{logger: log.NewNopLogger()}
 
