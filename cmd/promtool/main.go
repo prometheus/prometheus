@@ -207,7 +207,7 @@ func main() {
 		os.Exit(checkErr(dumpSamples(*dumpPath, *dumpMinTime, *dumpMaxTime)))
 	//TODO(aSquare14): Work on adding support for custom block size.
 	case openMetricsImportCmd.FullCommand():
-		os.Exit(checkErr(backfillOpenMetrics(*importFilePath, *importDBPath, *importHumanReadable)))
+		os.Exit(backfillOpenMetrics(*importFilePath, *importDBPath, *importHumanReadable))
 	}
 }
 
@@ -387,7 +387,7 @@ func checkRules(filename string) (int, []error) {
 
 	dRules := checkDuplicates(rgs.Groups)
 	if len(dRules) != 0 {
-		fmt.Printf("%d duplicate rules(s) found.\n", len(dRules))
+		fmt.Printf("%d duplicate rule(s) found.\n", len(dRules))
 		for _, n := range dRules {
 			fmt.Printf("Metric: %s\nLabel(s):\n", n.metric)
 			for i, l := range n.label {

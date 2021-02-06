@@ -440,7 +440,8 @@ func lexStatements(l *Lexer) stateFn {
 		}
 		l.emit(RIGHT_BRACKET)
 		l.bracketOpen = false
-
+	case r == '@':
+		l.emit(AT)
 	default:
 		return l.errorf("unexpected character: %q", r)
 	}
