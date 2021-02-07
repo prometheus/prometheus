@@ -1093,7 +1093,11 @@ func BenchmarkCompactionFromHead(b *testing.B) {
 			defer func() {
 				require.NoError(b, os.RemoveAll(chunkDir))
 			}()
-			h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, chunks.DefaultWriteBufferSize, DefaultStripeSize, nil)
+			opts := DefaultHeadOptions(&HeadOptions{
+				ChunkRange: 1000,
+				ChkDirRoot: chunkDir,
+			})
+			h, err := NewHead(nil, nil, nil, opts)
 			require.NoError(b, err)
 			for ln := 0; ln < labelNames; ln++ {
 				app := h.Appender(context.Background())

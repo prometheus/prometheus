@@ -47,7 +47,11 @@ func newTestHead(t testing.TB, chunkRange int64, compressWAL bool) (*Head, *wal.
 	wlog, err := wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compressWAL)
 	require.NoError(t, err)
 
-	h, err := NewHead(nil, nil, wlog, chunkRange, dir, nil, chunks.DefaultWriteBufferSize, DefaultStripeSize, nil)
+	opts := DefaultHeadOptions(&HeadOptions{
+		ChunkRange: chunkRange,
+		ChkDirRoot: dir,
+	})
+	h, err := NewHead(nil, nil, wlog, opts)
 	require.NoError(t, err)
 
 	require.NoError(t, h.chunkDiskMapper.IterateAllChunks(func(_, _ uint64, _, _ int64, _ uint16) error { return nil }))
@@ -191,7 +195,11 @@ func BenchmarkLoadWAL(b *testing.B) {
 
 				// Load the WAL.
 				for i := 0; i < b.N; i++ {
-					h, err := NewHead(nil, nil, w, 1000, w.Dir(), nil, chunks.DefaultWriteBufferSize, DefaultStripeSize, nil)
+					opts := DefaultHeadOptions(&HeadOptions{
+						ChunkRange: 1000,
+						ChkDirRoot: w.Dir(),
+					})
+					h, err := NewHead(nil, nil, w, opts)
 					require.NoError(b, err)
 					h.Init(0)
 				}
@@ -302,7 +310,11 @@ func TestHead_WALMultiRef(t *testing.T) {
 	w, err = wal.New(nil, nil, w.Dir(), false)
 	require.NoError(t, err)
 
-	head, err = NewHead(nil, nil, w, 1000, w.Dir(), nil, chunks.DefaultWriteBufferSize, DefaultStripeSize, nil)
+	opts := DefaultHeadOptions(&HeadOptions{
+		ChunkRange: 1000,
+		ChkDirRoot: w.Dir(),
+	})
+	head, err = NewHead(nil, nil, w, opts)
 	require.NoError(t, err)
 	require.NoError(t, head.Init(0))
 	defer func() {
@@ -583,7 +595,11 @@ func TestHeadDeleteSimple(t *testing.T) {
 				// Compare the samples for both heads - before and after the reloadBlocks.
 				reloadedW, err := wal.New(nil, nil, w.Dir(), compress) // Use a new wal to ensure deleted samples are gone even after a reloadBlocks.
 				require.NoError(t, err)
-				reloadedHead, err := NewHead(nil, nil, reloadedW, 1000, reloadedW.Dir(), nil, chunks.DefaultWriteBufferSize, DefaultStripeSize, nil)
+				opts := DefaultHeadOptions(&HeadOptions{
+					ChunkRange: 1000,
+					ChkDirRoot: reloadedW.Dir(),
+				})
+				reloadedHead, err := NewHead(nil, nil, reloadedW, opts)
 				require.NoError(t, err)
 				require.NoError(t, reloadedHead.Init(0))
 
@@ -1265,7 +1281,11 @@ func TestWalRepair_DecodingError(t *testing.T) {
 						require.NoError(t, w.Log(test.rec))
 					}
 
-					h, err := NewHead(nil, nil, w, 1, w.Dir(), nil, chunks.DefaultWriteBufferSize, DefaultStripeSize, nil)
+					opts := DefaultHeadOptions(&HeadOptions{
+						ChunkRange: 1,
+						ChkDirRoot: w.Dir(),
+					})
+					h, err := NewHead(nil, nil, w, opts)
 					require.NoError(t, err)
 					require.Equal(t, 0.0, prom_testutil.ToFloat64(h.metrics.walCorruptionsTotal))
 					initErr := h.Init(math.MinInt64)
@@ -1320,7 +1340,11 @@ func TestHeadReadWriterRepair(t *testing.T) {
 		w, err := wal.New(nil, nil, walDir, false)
 		require.NoError(t, err)
 
-		h, err := NewHead(nil, nil, w, chunkRange, dir, nil, chunks.DefaultWriteBufferSize, DefaultStripeSize, nil)
+		opts := DefaultHeadOptions(&HeadOptions{
+			ChunkRange: chunkRange,
+			ChkDirRoot: dir,
+		})
+		h, err := NewHead(nil, nil, w, opts)
 		require.NoError(t, err)
 		require.Equal(t, 0.0, prom_testutil.ToFloat64(h.metrics.mmapChunkCorruptionTotal))
 		require.NoError(t, h.Init(math.MinInt64))
@@ -1550,7 +1574,11 @@ func TestMemSeriesIsolation(t *testing.T) {
 
 	wlog, err := wal.NewSize(nil, nil, w.Dir(), 32768, false)
 	require.NoError(t, err)
-	hb, err = NewHead(nil, nil, wlog, 1000, wlog.Dir(), nil, chunks.DefaultWriteBufferSize, DefaultStripeSize, nil)
+	opts := DefaultHeadOptions(&HeadOptions{
+		ChunkRange: 1000,
+		ChkDirRoot: wlog.Dir(),
+	})
+	hb, err = NewHead(nil, nil, wlog, opts)
 	defer func() { require.NoError(t, hb.Close()) }()
 	require.NoError(t, err)
 	require.NoError(t, hb.Init(0))
@@ -1931,3 +1959,86 @@ func TestHeadMintAfterTruncation(t *testing.T) {
 
 	require.NoError(t, head.Close())
 }
+
+func TestDefaultHeadOptions(t *testing.T) {
+	testCases := []struct {
+		overrides *HeadOptions
+		expected  *HeadOptions
+	}{
+		{
+			overrides: &HeadOptions{
+				ChunkRange:         0,
+				ChkDirRoot:         "",
+				ChkPool:            mockPool{},
+				ChkWriteBufferSize: 0,
+				StripeSize:         0,
+				SeriesCallback:     nil,
+			},
+			expected: &HeadOptions{
+				ChunkRange:         DefaultBlockDuration,
+				ChkDirRoot:         "",
+				ChkPool:            mockPool{},
+				ChkWriteBufferSize: chunks.DefaultWriteBufferSize,
+				StripeSize:         DefaultStripeSize,
+				SeriesCallback:     &noopSeriesLifecycleCallback{},
+			},
+		},
+		{
+			overrides: &HeadOptions{
+				ChunkRange: 1000,
+				ChkDirRoot: "tmp/chunk_dir",
+				ChkPool:    mockPool{},
+			},
+			expected: &HeadOptions{
+				ChunkRange:         1000,
+				ChkDirRoot:         "tmp/chunk_dir",
+				ChkPool:            mockPool{},
+				ChkWriteBufferSize: chunks.DefaultWriteBufferSize,
+				StripeSize:         DefaultStripeSize,
+				SeriesCallback:     &noopSeriesLifecycleCallback{},
+			},
+		},
+		{
+			overrides: &HeadOptions{
+				ChunkRange:         2000,
+				ChkDirRoot:         "/etc/chunk_dir",
+				ChkPool:            mockPool{},
+				ChkWriteBufferSize: 1000,
+				StripeSize:         100,
+				SeriesCallback:     mockSeriesLifecycleCallback{},
+			},
+			expected: &HeadOptions{
+				ChunkRange:         2000,
+				ChkDirRoot:         "/etc/chunk_dir",
+				ChkPool:            mockPool{},
+				ChkWriteBufferSize: 1000,
+				StripeSize:         100,
+				SeriesCallback:     mockSeriesLifecycleCallback{},
+			},
+		},
+	}
+	for _, tc := range testCases {
+		actual := DefaultHeadOptions(tc.overrides)
+		require.Equal(t, tc.expected, actual)
+	}
+}
+
+type mockPool struct{}
+
+func (m mockPool) Put(_ chunkenc.Chunk) error {
+	return nil
+}
+
+func (m mockPool) Get(_ chunkenc.Encoding, _ []byte) (chunkenc.Chunk, error) {
+	return nil, nil
+}
+
+type mockSeriesLifecycleCallback struct{}
+
+func (m mockSeriesLifecycleCallback) PreCreation(_ labels.Labels) error {
+	return nil
+}
+
+func (m mockSeriesLifecycleCallback) PostCreation(_ labels.Labels) {}
+
+func (m mockSeriesLifecycleCallback) PostDeletion(_ ...labels.Labels) {}
