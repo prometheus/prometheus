@@ -1734,10 +1734,15 @@ func (h *headIndexReader) Series(ref uint64, lbls *labels.Labels, chks *[]chunks
 func (h *headIndexReader) LabelValueFor(id uint64, label string) (string, error) {
 	memSeries := h.head.series.getByID(id)
 	if memSeries == nil {
-		return "", nil
+		return "", errors.Errorf("unknown series with id %d", id)
 	}
 
-	return memSeries.lset.Get(label), nil
+	value := memSeries.lset.Get(label)
+	if value == "" {
+		return "", errors.Errorf("series does not have label %q", label)
+	}
+
+	return value, nil
 }
 
 func (h *Head) getOrCreate(hash uint64, lset labels.Labels) (*memSeries, bool, error) {

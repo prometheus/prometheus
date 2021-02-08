@@ -1521,14 +1521,19 @@ func (r *Reader) LabelValueFor(id uint64, label string) (string, error) {
 	d := encoding.NewDecbufUvarintAt(r.b, int(offset), castagnoliTable)
 	buf := d.Get()
 	if d.Err() != nil {
-		return "", d.Err()
+		return "", errors.Wrap(d.Err(), "label values for")
 	}
 
-	v, err := r.dec.LabelValueFor(buf, label)
+	value, err := r.dec.LabelValueFor(buf, label)
 	if err != nil {
 		return "", errors.Wrap(err, "label values for")
 	}
-	return v, nil
+
+	if value == "" {
+		return "", errors.Errorf("series does not have label %q", label)
+	}
+
+	return value, nil
 }
 
 // Series reads the series with the given ID and writes its labels and chunks into lbls and chks.
