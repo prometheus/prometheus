@@ -8,7 +8,7 @@ export interface FetchState<T> {
   isLoading: boolean;
 }
 
-export const useFetch = <T extends {}>(url: string, options?: RequestInit, includeTime?: boolean): FetchState<T> => {
+export const useFetch = <T extends {}>(url: string, options?: RequestInit): FetchState<T> => {
   const [response, setResponse] = useState<APIResponse<T>>({ status: 'start fetching' } as any);
   const [error, setError] = useState<Error>();
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -17,12 +17,6 @@ export const useFetch = <T extends {}>(url: string, options?: RequestInit, inclu
     const fetchData = async () => {
       setIsLoading(true);
       try {
-        // By adding the current timestamp to the url we are preventing the response from being cached
-        if (includeTime) {
-          // eslint-disable-next-line
-          url += `?_=${new Date().getTime()}`
-        }
-
         const res = await fetch(url, { cache: 'no-store', credentials: 'same-origin', ...options });
         if (!res.ok) {
           throw new Error(res.statusText);
