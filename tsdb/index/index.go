@@ -1736,7 +1736,7 @@ func (dec *Decoder) LabelValueFor(b []byte, label string) (string, error) {
 		}
 	}
 
-	return "", nil
+	return "", d.Err()
 }
 
 // Series decodes a series entry from the given byte slice into lset and chks.
