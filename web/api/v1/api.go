@@ -194,6 +194,7 @@ type API struct {
 	buildInfo                 *PrometheusVersion
 	runtimeInfo               func() (RuntimeInfo, error)
 	gatherer                  prometheus.Gatherer
+	remoteWriteHandler        http.Handler
 }
 
 func init() {
@@ -204,7 +205,7 @@ func init() {
 // NewAPI returns an initialized API type.
 func NewAPI(
 	qe *promql.Engine,
-	q storage.SampleAndChunkQueryable,
+	s storage.Storage,
 	tr func(context.Context) TargetRetriever,
 	ar func(context.Context) AlertmanagerRetriever,
 	configFunc func() config.Config,
@@ -223,10 +224,12 @@ func NewAPI(
 	runtimeInfo func() (RuntimeInfo, error),
 	buildInfo *PrometheusVersion,
 	gatherer prometheus.Gatherer,
+	remoteWriteReceiver bool,
 ) *API {
-	return &API{
-		QueryEngine:           qe,
-		Queryable:             q,
+	a := &API{
+		QueryEngine: qe,
+		Queryable:   s,
+
 		targetRetriever:       tr,
 		alertmanagerRetriever: ar,
 
@@ -248,6 +251,12 @@ func NewAPI(
 		buildInfo:                 buildInfo,
 		gatherer:                  gatherer,
 	}
+
+	if remoteWriteReceiver {
+		a.remoteWriteHandler = remote.NewWriteHandler(logger, s)
+	}
+
+	return a
 }
 
 func setUnavailStatusOnTSDBNotReady(r apiFuncResult) apiFuncResult {
@@ -309,6 +318,7 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/status/flags", wrap(api.serveFlags))
 	r.Get("/status/tsdb", wrap(api.serveTSDBStatus))
 	r.Post("/read", api.ready(http.HandlerFunc(api.remoteRead)))
+	r.Post("/write", api.ready(http.HandlerFunc(api.remoteWrite)))
 
 	r.Get("/alerts", wrap(api.alerts))
 	r.Get("/rules", wrap(api.rules))
@@ -1520,6 +1530,14 @@ func filterExtLabelsFromMatchers(pbMatchers []*prompb.LabelMatcher, externalLabe
 	}
 
 	return filteredMatchers, nil
+}
+
+func (api *API) remoteWrite(w http.ResponseWriter, r *http.Request) {
+	if api.remoteWriteHandler != nil {
+		api.remoteWriteHandler.ServeHTTP(w, r)
+	} else {
+		http.Error(w, "remote write receiver needs to be enabled with --enable-feature=remote-write-receiver", http.StatusNotFound)
+	}
 }
 
 func (api *API) deleteSeries(r *http.Request) apiFuncResult {

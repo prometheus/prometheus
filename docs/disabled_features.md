@@ -17,3 +17,9 @@ They may be enabled by default in future versions.
 
 This feature lets you specify the evaluation time for instant vector selectors,
 range vector selectors, and subqueries. More details can be found [here](querying/basics.md#@-modifier).
+
+## Remote Write Receiver
+
+`--enable-feature=remote-write-receiver`
+
+The remote write receiver allows Prometheus to accept remote write requests from other Prometheus servers. More details can be found [here](storage.md#overview).

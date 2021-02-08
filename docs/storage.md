@@ -88,7 +88,7 @@ needed_disk_space = retention_time_seconds * ingested_samples_per_second * bytes
 
 To lower the rate of ingested samples, you can either reduce the number of time series you scrape (fewer targets or fewer series per target), or you can increase the scrape interval. However, reducing the number of series is likely more effective, due to compression of samples within a series.
 
-If your local storage becomes corrupted for whatever reason, the best 
+If your local storage becomes corrupted for whatever reason, the best
 strategy to address the problem is to shut down Prometheus then remove the
 entire storage directory. You can also try removing individual block directories,
 or the WAL directory to resolve the problem.  Note that this means losing
@@ -111,9 +111,10 @@ a set of interfaces that allow integrating with remote storage systems.
 
 ### Overview
 
-Prometheus integrates with remote storage systems in two ways:
+Prometheus integrates with remote storage systems in three ways:
 
 * Prometheus can write samples that it ingests to a remote URL in a standardized format.
+* Prometheus can receive samples from other Prometheus servers in a standardized format.
 * Prometheus can read (back) sample data from a remote URL in a standardized format.
 
 ![Remote read and write architecture](images/remote_integrations.png)
@@ -121,6 +122,8 @@ Prometheus integrates with remote storage systems in two ways:
 The read and write protocols both use a snappy-compressed protocol buffer encoding over HTTP. The protocols are not considered as stable APIs yet and may change to use gRPC over HTTP/2 in the future, when all hops between Prometheus and the remote storage can safely be assumed to support HTTP/2.
 
 For details on configuring remote storage integrations in Prometheus, see the [remote write](configuration/configuration.md#remote_write) and [remote read](configuration/configuration.md#remote_read) sections of the Prometheus configuration documentation.
+
+The built-in remote write receiver can be enabled by setting the `--enable-feature=remote-write-receiver` command line flag. When enabled, the remote write receiver endpoint is `/api/v1/write`.
 
 For details on the request and response messages, see the [remote storage protocol buffer definitions](https://github.com/prometheus/prometheus/blob/master/prompb/remote.proto).
 
@@ -138,7 +141,7 @@ If a user wants to create blocks into the TSDB from data that is in [OpenMetrics
 
 A typical use case is to migrate metrics data from a different monitoring system or time-series database to Prometheus. To do so, the user must first convert the source data into [OpenMetrics](https://openmetrics.io/)  format, which is the input format for the backfilling as described below.
 
-### Usage 
+### Usage
 
 Backfilling can be used via the Promtool command line. Promtool will write the blocks to a directory. By default this output directory is ./data/, you can change it by using the name of the desired output directory as an optional argument in the sub-command.
 
