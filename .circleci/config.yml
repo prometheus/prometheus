@@ -60,7 +60,7 @@ jobs:
         # Temporary workaround until circleci updates go.
         shell: bash
         command: |
-          choco install golang --version 1.15.7
+          choco upgrade -y golang
     - run:
         shell: bash
         command: |
