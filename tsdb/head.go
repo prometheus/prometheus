@@ -1627,28 +1627,24 @@ func (h *headIndexReader) SortedLabelValues(name string, matchers ...*labels.Mat
 // If matchers are specified the returned result set is reduced
 // to label values of metrics matching the matchers.
 func (h *headIndexReader) LabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
-	h.head.symMtx.RLock()
-
 	if h.maxt < h.head.MinTime() || h.mint > h.head.MaxTime() {
-		h.head.symMtx.RUnlock()
 		return []string{}, nil
 	}
 
 	if len(matchers) == 0 {
-		h.head.symMtx.RUnlock()
+		h.head.symMtx.RLock()
+		defer h.head.symMtx.RUnlock()
 		return h.head.postings.LabelValues(name), nil
 	}
 
 	// We're only interested in metrics which have the label <name>.
 	requireLabel, err := labels.NewMatcher(labels.MatchNotEqual, name, "")
 	if err != nil {
-		h.head.symMtx.RUnlock()
 		return nil, errors.Wrapf(err, "Failed to instantiate label matcher")
 	}
 
 	postings, err := PostingsForMatchers(h, append(matchers, requireLabel)...)
 	if err != nil {
-		h.head.symMtx.RUnlock()
 		return nil, err
 	}
 
@@ -1661,9 +1657,6 @@ func (h *headIndexReader) LabelValues(name string, matchers ...*labels.Matcher) 
 
 		seenResults[memSeries.lset.Get(name)] = nil
 	}
-
-	// No need to keep holding the lock while we convert map to slice.
-	h.head.symMtx.RUnlock()
 
 	// If labels.Labels.Get() can't find label of given name it returns "",
 	// we never want the empty string to be part of the result set.
