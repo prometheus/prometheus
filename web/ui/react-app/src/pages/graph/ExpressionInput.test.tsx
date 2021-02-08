@@ -19,10 +19,8 @@ describe('ExpressionInput', () => {
   const metricNames = ['instance:node_cpu_utilisation:rate1m', 'node_cpu_guest_seconds_total', 'node_cpu_seconds_total'];
   const expressionInputProps = {
     value: 'node_cpu',
-    autocompleteSections: {
-      'Query History': [],
-      'Metric Names': metricNames,
-    },
+    queryHistory: [],
+    metricNames,
     executeQuery: (): void => {
       // Do nothing.
     },
@@ -163,10 +161,7 @@ describe('ExpressionInput', () => {
   describe('createAutocompleteSection', () => {
     const props = {
       ...expressionInputProps,
-      autocompleteSections: {
-        'Query History': [],
-        'Metric Names': ['foo', 'bar', 'baz'],
-      },
+      metricNames: ['foo', 'bar', 'baz'],
     };
 
     it('should close menu if no matches found', () => {

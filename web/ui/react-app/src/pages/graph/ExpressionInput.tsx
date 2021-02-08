@@ -12,10 +12,8 @@ import MetricsExplorer from './MetricsExplorer';
 interface ExpressionInputProps {
   value: string;
   onExpressionChange: (expr: string) => void;
-  autocompleteSections: {
-    'Query History': string[];
-    'Metric Names': string[];
-  };
+  queryHistory: string[];
+  metricNames: string[];
   executeQuery: () => void;
   loading: boolean;
   enableAutocomplete: boolean;
@@ -81,40 +79,43 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
 
   createAutocompleteSection = (downshift: ControllerStateAndHelpers<any>) => {
     const { inputValue = '', closeMenu, highlightedIndex } = downshift;
-    const { autocompleteSections } = this.props;
+    const autocompleteSections = {
+      'Query History': this.props.queryHistory,
+      'Metric Names': this.props.metricNames,
+    };
     let index = 0;
     const sections =
       inputValue!.length && this.props.enableAutocomplete
         ? Object.entries(autocompleteSections).reduce((acc, [title, items]) => {
-            const matches = this.getSearchMatches(inputValue!, items);
-            return !matches.length
-              ? acc
-              : [
-                  ...acc,
-                  <ul className="autosuggest-dropdown-list" key={title}>
-                    <li className="autosuggest-dropdown-header">{title}</li>
-                    {matches
-                      .slice(0, 100) // Limit DOM rendering to 100 results, as DOM rendering is sloooow.
-                      .map(({ original, string: text }) => {
-                        const itemProps = downshift.getItemProps({
-                          key: original,
-                          index,
-                          item: original,
-                          style: {
-                            backgroundColor: highlightedIndex === index++ ? 'lightgray' : 'white',
-                          },
-                        });
-                        return (
-                          <li
-                            key={title}
-                            {...itemProps}
-                            dangerouslySetInnerHTML={{ __html: sanitizeHTML(text, { allowedTags: ['strong'] }) }}
-                          />
-                        );
-                      })}
-                  </ul>,
-                ];
-          }, [] as JSX.Element[])
+          const matches = this.getSearchMatches(inputValue!, items);
+          return !matches.length
+            ? acc
+            : [
+              ...acc,
+              <ul className="autosuggest-dropdown-list" key={title}>
+                <li className="autosuggest-dropdown-header">{title}</li>
+                {matches
+                  .slice(0, 100) // Limit DOM rendering to 100 results, as DOM rendering is sloooow.
+                  .map(({ original, string: text }) => {
+                    const itemProps = downshift.getItemProps({
+                      key: original,
+                      index,
+                      item: original,
+                      style: {
+                        backgroundColor: highlightedIndex === index++ ? 'lightgray' : 'white',
+                      },
+                    });
+                    return (
+                      <li
+                        key={title}
+                        {...itemProps}
+                        dangerouslySetInnerHTML={{ __html: sanitizeHTML(text, { allowedTags: ['strong'] }) }}
+                      />
+                    );
+                  })}
+              </ul>,
+            ];
+        }, [] as JSX.Element[])
         : [];
 
     if (!sections.length) {
@@ -232,7 +233,7 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
         <MetricsExplorer
           show={this.state.showMetricsExplorer}
           updateShow={this.updateShowMetricsExplorer}
-          metrics={this.props.autocompleteSections['Metric Names']}
+          metrics={this.props.metricNames}
           insertAtCursor={this.insertAtCursor}
         />
       </>
