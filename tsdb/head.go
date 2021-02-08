@@ -1637,33 +1637,7 @@ func (h *headIndexReader) LabelValues(name string, matchers ...*labels.Matcher) 
 		return h.head.postings.LabelValues(name), nil
 	}
 
-	// We're only interested in metrics which have the label <name>.
-	requireLabel, err := labels.NewMatcher(labels.MatchNotEqual, name, "")
-	if err != nil {
-		return nil, errors.Wrapf(err, "Failed to instantiate label matcher")
-	}
-
-	postings, err := PostingsForMatchers(h, append(matchers, requireLabel)...)
-	if err != nil {
-		return nil, err
-	}
-
-	seenResults := make(map[string]interface{})
-	for postings.Next() {
-		memSeries := h.head.series.getByID(postings.At())
-		if memSeries == nil {
-			continue
-		}
-
-		seenResults[memSeries.lset.Get(name)] = nil
-	}
-
-	results := make([]string, 0, len(seenResults))
-	for result := range seenResults {
-		results = append(results, result)
-	}
-
-	return results, nil
+	return labelValuesWithMatchers(h, name, matchers...)
 }
 
 // LabelNames returns all the unique label names present in the head
