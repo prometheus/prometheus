@@ -1519,11 +1519,12 @@ func (r *Reader) LabelValueFor(id uint64, label string) (string, error) {
 		offset = id * 16
 	}
 	d := encoding.NewDecbufUvarintAt(r.b, int(offset), castagnoliTable)
+	buf := d.Get()
 	if d.Err() != nil {
 		return "", d.Err()
 	}
 
-	v, err := r.dec.LabelValueFor(d.Get(), label)
+	v, err := r.dec.LabelValueFor(buf, label)
 	if err != nil {
 		return "", errors.Wrap(err, "label values for")
 	}
