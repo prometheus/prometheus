@@ -1658,10 +1658,6 @@ func (h *headIndexReader) LabelValues(name string, matchers ...*labels.Matcher) 
 		seenResults[memSeries.lset.Get(name)] = nil
 	}
 
-	// If labels.Labels.Get() can't find label of given name it returns "",
-	// we never want the empty string to be part of the result set.
-	delete(seenResults, "")
-
 	results := make([]string, 0, len(seenResults))
 	for result := range seenResults {
 		results = append(results, result)
