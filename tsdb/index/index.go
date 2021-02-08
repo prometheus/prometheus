@@ -1725,12 +1725,13 @@ func (dec *Decoder) LabelValueFor(b []byte, label string) (string, error) {
 		if err != nil {
 			return "", errors.Wrap(err, "lookup label name")
 		}
-		lv, err := dec.LookupSymbol(lvo)
-		if err != nil {
-			return "", errors.Wrap(err, "lookup label value")
-		}
 
 		if ln == label {
+			lv, err := dec.LookupSymbol(lvo)
+			if err != nil {
+				return "", errors.Wrap(err, "lookup label value")
+			}
+
 			return lv, nil
 		}
 	}
