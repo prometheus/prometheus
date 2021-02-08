@@ -1095,7 +1095,7 @@ func BenchmarkCompactionFromHead(b *testing.B) {
 			}()
 			opts := DefaultHeadOptions()
 			opts.ChunkRange = 1000
-			opts.ChkDirRoot = chunkDir
+			opts.ChunkDirRoot = chunkDir
 			h, err := NewHead(nil, nil, nil, opts)
 			require.NoError(b, err)
 			for ln := 0; ln < labelNames; ln++ {

@@ -49,7 +49,7 @@ func newTestHead(t testing.TB, chunkRange int64, compressWAL bool) (*Head, *wal.
 
 	opts := DefaultHeadOptions()
 	opts.ChunkRange = chunkRange
-	opts.ChkDirRoot = dir
+	opts.ChunkDirRoot = dir
 	h, err := NewHead(nil, nil, wlog, opts)
 	require.NoError(t, err)
 
@@ -196,7 +196,7 @@ func BenchmarkLoadWAL(b *testing.B) {
 				for i := 0; i < b.N; i++ {
 					opts := DefaultHeadOptions()
 					opts.ChunkRange = 1000
-					opts.ChkDirRoot = w.Dir()
+					opts.ChunkDirRoot = w.Dir()
 					h, err := NewHead(nil, nil, w, opts)
 					require.NoError(b, err)
 					h.Init(0)
@@ -310,7 +310,7 @@ func TestHead_WALMultiRef(t *testing.T) {
 
 	opts := DefaultHeadOptions()
 	opts.ChunkRange = 1000
-	opts.ChkDirRoot = w.Dir()
+	opts.ChunkDirRoot = w.Dir()
 	head, err = NewHead(nil, nil, w, opts)
 	require.NoError(t, err)
 	require.NoError(t, head.Init(0))
@@ -594,7 +594,7 @@ func TestHeadDeleteSimple(t *testing.T) {
 				require.NoError(t, err)
 				opts := DefaultHeadOptions()
 				opts.ChunkRange = 1000
-				opts.ChkDirRoot = reloadedW.Dir()
+				opts.ChunkDirRoot = reloadedW.Dir()
 				reloadedHead, err := NewHead(nil, nil, reloadedW, opts)
 				require.NoError(t, err)
 				require.NoError(t, reloadedHead.Init(0))
@@ -1279,7 +1279,7 @@ func TestWalRepair_DecodingError(t *testing.T) {
 
 					opts := DefaultHeadOptions()
 					opts.ChunkRange = 1
-					opts.ChkDirRoot = w.Dir()
+					opts.ChunkDirRoot = w.Dir()
 					h, err := NewHead(nil, nil, w, opts)
 					require.NoError(t, err)
 					require.Equal(t, 0.0, prom_testutil.ToFloat64(h.metrics.walCorruptionsTotal))
@@ -1337,7 +1337,7 @@ func TestHeadReadWriterRepair(t *testing.T) {
 
 		opts := DefaultHeadOptions()
 		opts.ChunkRange = chunkRange
-		opts.ChkDirRoot = dir
+		opts.ChunkDirRoot = dir
 		h, err := NewHead(nil, nil, w, opts)
 		require.NoError(t, err)
 		require.Equal(t, 0.0, prom_testutil.ToFloat64(h.metrics.mmapChunkCorruptionTotal))
@@ -1570,7 +1570,7 @@ func TestMemSeriesIsolation(t *testing.T) {
 	require.NoError(t, err)
 	opts := DefaultHeadOptions()
 	opts.ChunkRange = 1000
-	opts.ChkDirRoot = wlog.Dir()
+	opts.ChunkDirRoot = wlog.Dir()
 	hb, err = NewHead(nil, nil, wlog, opts)
 	defer func() { require.NoError(t, hb.Close()) }()
 	require.NoError(t, err)

@@ -71,7 +71,7 @@ func (w *BlockWriter) initHead() error {
 	w.chunkDir = chunkDir
 	opts := DefaultHeadOptions()
 	opts.ChunkRange = w.blockSize
-	opts.ChkDirRoot = w.chunkDir
+	opts.ChunkDirRoot = w.chunkDir
 	h, err := NewHead(nil, w.logger, nil, opts)
 	if err != nil {
 		return errors.Wrap(err, "tsdb.NewHead")

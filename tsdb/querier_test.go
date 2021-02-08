@@ -1554,7 +1554,7 @@ func TestPostingsForMatchers(t *testing.T) {
 	}()
 	opts := DefaultHeadOptions()
 	opts.ChunkRange = 1000
-	opts.ChkDirRoot = chunkDir
+	opts.ChunkDirRoot = chunkDir
 	h, err := NewHead(nil, nil, nil, opts)
 	require.NoError(t, err)
 	defer func() {

@@ -95,13 +95,13 @@ type Head struct {
 	closed    bool
 }
 
-// HeadOptions are parameters for Head.
+// HeadOptions are parameters for the Head block.
 type HeadOptions struct {
 	ChunkRange int64
-	// chunkDirRoot is the parent directory of the chunks directory.
-	ChkDirRoot         string
-	ChkPool            chunkenc.Pool
-	ChkWriteBufferSize int
+	// ChunkDirRoot is the parent directory of the chunks directory.
+	ChunkDirRoot         string
+	ChunkPool            chunkenc.Pool
+	ChunkWriteBufferSize int
 	// StripeSize sets the number of entries in the hash map, it must be a power of 2.
 	// A larger StripeSize will allocate more memory up-front, but will increase performance when handling a large number of series.
 	// A smaller StripeSize reduces the memory allocated, but can decrease performance with large number of series.
@@ -111,12 +111,12 @@ type HeadOptions struct {
 
 func DefaultHeadOptions() *HeadOptions {
 	return &HeadOptions{
-		ChunkRange:         DefaultBlockDuration,
-		ChkDirRoot:         "",
-		ChkPool:            chunkenc.NewPool(),
-		ChkWriteBufferSize: chunks.DefaultWriteBufferSize,
-		StripeSize:         DefaultStripeSize,
-		SeriesCallback:     &noopSeriesLifecycleCallback{},
+		ChunkRange:           DefaultBlockDuration,
+		ChunkDirRoot:         "",
+		ChunkPool:            chunkenc.NewPool(),
+		ChunkWriteBufferSize: chunks.DefaultWriteBufferSize,
+		StripeSize:           DefaultStripeSize,
+		SeriesCallback:       &noopSeriesLifecycleCallback{},
 	}
 }
 
@@ -322,6 +322,9 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, opts *HeadOpti
 	if opts.ChunkRange < 1 {
 		return nil, errors.Errorf("invalid chunk range %d", opts.ChunkRange)
 	}
+	if opts.SeriesCallback == nil {
+		opts.SeriesCallback = &noopSeriesLifecycleCallback{}
+	}
 	h := &Head{
 		wal:        wal,
 		logger:     l,
@@ -344,11 +347,15 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, opts *HeadOpti
 	h.lastWALTruncationTime.Store(math.MinInt64)
 	h.metrics = newHeadMetrics(h, r)
 
+	if opts.ChunkPool == nil {
+		opts.ChunkPool = chunkenc.NewPool()
+	}
+
 	var err error
 	h.chunkDiskMapper, err = chunks.NewChunkDiskMapper(
-		mmappedChunksDir(opts.ChkDirRoot),
-		opts.ChkPool,
-		opts.ChkWriteBufferSize,
+		mmappedChunksDir(opts.ChunkDirRoot),
+		opts.ChunkPool,
+		opts.ChunkWriteBufferSize,
 	)
 	if err != nil {
 		return nil, err
