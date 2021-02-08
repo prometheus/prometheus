@@ -25,7 +25,7 @@ require (
 	github.com/go-logfmt/logfmt v0.5.0
 	github.com/go-openapi/strfmt v0.19.11
 	github.com/go-openapi/validate v0.19.14 // indirect
-	github.com/gogo/protobuf v1.3.1
+	github.com/gogo/protobuf v1.3.2
 	github.com/golang/snappy v0.0.2
 	github.com/google/pprof v0.0.0-20201218002935-b9804c9f04c2
 	github.com/gophercloud/gophercloud v0.15.0
@@ -66,7 +66,7 @@ require (
 	golang.org/x/sync v0.0.0-20201207232520-09787c993a3a
 	golang.org/x/sys v0.0.0-20201223074533-0d417f636930
 	golang.org/x/time v0.0.0-20201208040808-7e3f01d25324
-	golang.org/x/tools v0.0.0-20201228162255-34cd474b9958
+	golang.org/x/tools v0.0.0-20210106214847-113979e3529a
 	google.golang.org/api v0.36.0
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	gopkg.in/fsnotify/fsnotify.v1 v1.4.7
