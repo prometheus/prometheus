@@ -1,5 +1,5 @@
 import React from 'react';
-import { shallow } from 'enzyme';
+import { shallow, mount } from 'enzyme';
 import { Badge, Alert } from 'reactstrap';
 import EndpointLink from './EndpointLink';
 
@@ -34,5 +34,15 @@ describe('EndpointLink', () => {
     const endpointLink = shallow(<EndpointLink endpoint={'afdsacas'} globalUrl={'afdsacas'} />);
     const err = endpointLink.find(Alert);
     expect(err.render().text()).toEqual('Error: Invalid URL');
+  });
+
+  it('handles params with multiple values correctly', () => {
+    const consoleSpy = jest.spyOn(console, "warn");
+    const endpoint = `http://example.com/federate?match[]={__name__="name1"}&match[]={__name__="name2"}&match[]={__name__="name3"}`;
+    const globalURL = 'http://example.com/federate';
+    const endpointLink = mount(<EndpointLink endpoint={endpoint} globalUrl={globalURL} />);
+    const badges = endpointLink.find(Badge);
+    expect(badges).toHaveLength(3);
+    expect(consoleSpy).not.toHaveBeenCalled();
   });
 });
