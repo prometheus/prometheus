@@ -37,10 +37,9 @@ func BenchmarkPostingsForMatchers(b *testing.B) {
 	defer func() {
 		require.NoError(b, os.RemoveAll(chunkDir))
 	}()
-	opts := DefaultHeadOptions(&HeadOptions{
-		ChunkRange: 1000,
-		ChkDirRoot: chunkDir,
-	})
+	opts := DefaultHeadOptions()
+	opts.ChunkRange = 1000
+	opts.ChkDirRoot = chunkDir
 	h, err := NewHead(nil, nil, nil, opts)
 	require.NoError(b, err)
 	defer func() {
@@ -150,10 +149,9 @@ func BenchmarkQuerierSelect(b *testing.B) {
 	defer func() {
 		require.NoError(b, os.RemoveAll(chunkDir))
 	}()
-	opts := DefaultHeadOptions(&HeadOptions{
-		ChunkRange: 1000,
-		ChkDirRoot: chunkDir,
-	})
+	opts := DefaultHeadOptions()
+	opts.ChunkRange = 1000
+	opts.ChkDirRoot = chunkDir
 	h, err := NewHead(nil, nil, nil, opts)
 	require.NoError(b, err)
 	defer h.Close()

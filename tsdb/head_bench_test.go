@@ -32,10 +32,9 @@ func BenchmarkHeadStripeSeriesCreate(b *testing.B) {
 		require.NoError(b, os.RemoveAll(chunkDir))
 	}()
 	// Put a series, select it. GC it and then access it.
-	opts := DefaultHeadOptions(&HeadOptions{
-		ChunkRange: 1000,
-		ChkDirRoot: chunkDir,
-	})
+	opts := DefaultHeadOptions()
+	opts.ChunkRange = 1000
+	opts.ChkDirRoot = chunkDir
 	h, err := NewHead(nil, nil, nil, opts)
 	require.NoError(b, err)
 	defer h.Close()
@@ -52,10 +51,9 @@ func BenchmarkHeadStripeSeriesCreateParallel(b *testing.B) {
 		require.NoError(b, os.RemoveAll(chunkDir))
 	}()
 	// Put a series, select it. GC it and then access it.
-	opts := DefaultHeadOptions(&HeadOptions{
-		ChunkRange: 1000,
-		ChkDirRoot: chunkDir,
-	})
+	opts := DefaultHeadOptions()
+	opts.ChunkRange = 1000
+	opts.ChkDirRoot = chunkDir
 	h, err := NewHead(nil, nil, nil, opts)
 	require.NoError(b, err)
 	defer h.Close()

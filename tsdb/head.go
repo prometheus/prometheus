@@ -109,8 +109,8 @@ type HeadOptions struct {
 	SeriesCallback SeriesLifecycleCallback
 }
 
-func DefaultHeadOptions(overrides *HeadOptions) *HeadOptions {
-	base := &HeadOptions{
+func DefaultHeadOptions() *HeadOptions {
+	return &HeadOptions{
 		ChunkRange:         DefaultBlockDuration,
 		ChkDirRoot:         "",
 		ChkPool:            chunkenc.NewPool(),
@@ -118,25 +118,6 @@ func DefaultHeadOptions(overrides *HeadOptions) *HeadOptions {
 		StripeSize:         DefaultStripeSize,
 		SeriesCallback:     &noopSeriesLifecycleCallback{},
 	}
-	if overrides.ChunkRange != 0 {
-		base.ChunkRange = overrides.ChunkRange
-	}
-	if overrides.ChkDirRoot != "" {
-		base.ChkDirRoot = overrides.ChkDirRoot
-	}
-	if overrides.ChkPool != nil {
-		base.ChkPool = overrides.ChkPool
-	}
-	if overrides.ChkWriteBufferSize != 0 {
-		base.ChkWriteBufferSize = overrides.ChkWriteBufferSize
-	}
-	if overrides.StripeSize != 0 {
-		base.StripeSize = overrides.StripeSize
-	}
-	if overrides.SeriesCallback != nil {
-		base.SeriesCallback = overrides.SeriesCallback
-	}
-	return base
 }
 
 type headMetrics struct {

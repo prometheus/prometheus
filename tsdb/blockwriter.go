@@ -69,10 +69,9 @@ func (w *BlockWriter) initHead() error {
 		return errors.Wrap(err, "create temp dir")
 	}
 	w.chunkDir = chunkDir
-	opts := DefaultHeadOptions(&HeadOptions{
-		ChunkRange: w.blockSize,
-		ChkDirRoot: w.chunkDir,
-	})
+	opts := DefaultHeadOptions()
+	opts.ChunkRange = w.blockSize
+	opts.ChkDirRoot = w.chunkDir
 	h, err := NewHead(nil, w.logger, nil, opts)
 	if err != nil {
 		return errors.Wrap(err, "tsdb.NewHead")
