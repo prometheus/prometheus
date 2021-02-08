@@ -1510,7 +1510,7 @@ func (r *Reader) LabelValues(name string, matchers ...*labels.Matcher) ([]string
 	return values, nil
 }
 
-// LabelValueFor returns value of given label value of series referred to by ID.
+// LabelValueFor returns label value for the given label name in the series referred to by ID.
 func (r *Reader) LabelValueFor(id uint64, label string) (string, error) {
 	offset := id
 	// In version 2 series IDs are no longer exact references but series are 16-byte padded

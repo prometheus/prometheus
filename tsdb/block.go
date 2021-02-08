@@ -87,7 +87,7 @@ type IndexReader interface {
 	// LabelNames returns all the unique label names present in the index in sorted order.
 	LabelNames() ([]string, error)
 
-	// LabelValueFor returns value of given label value of series referred to by ID.
+	// LabelValueFor returns label value for the given label name in the series referred to by ID.
 	LabelValueFor(id uint64, label string) (string, error)
 
 	// Close releases the underlying resources of the reader.
@@ -502,7 +502,7 @@ func (r blockIndexReader) Close() error {
 	return nil
 }
 
-// LabelValueFor returns value of given label value of series referred to by ID.
+// LabelValueFor returns label value for the given label name in the series referred to by ID.
 func (r blockIndexReader) LabelValueFor(id uint64, label string) (string, error) {
 	return r.ir.LabelValueFor(id, label)
 }
