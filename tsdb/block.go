@@ -424,7 +424,7 @@ func (r blockIndexReader) SortedLabelValues(name string, matchers ...*labels.Mat
 	var err error
 
 	if len(matchers) == 0 {
-		st, err = r.ir.SortedLabelValues(name, matchers...)
+		st, err = r.ir.SortedLabelValues(name)
 	} else {
 		st, err = r.LabelValues(name, matchers...)
 		if err == nil {
