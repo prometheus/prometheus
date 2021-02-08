@@ -52,20 +52,25 @@ jobs:
         path: test-results
 
   test_windows:
-    executor: win/default
+    executor: 
+      name: win/default
+      shell: powershell
     working_directory: /go/src/github.com/prometheus/prometheus
     steps:
     - checkout
     - run:
         # Temporary workaround until circleci updates go.
-        shell: bash
         command: |
           choco upgrade -y golang
     - run:
-        shell: bash
+        command:
+          refreshenv
+    - run:
         command: |
-          (cd web/ui && GOOS= GOARCH= go generate -mod=vendor)
-          go test -mod=vendor -vet=off -test.v `go list ./...|grep -Exv "(github.com/prometheus/prometheus/discovery.*|github.com/prometheus/prometheus/config|github.com/prometheus/prometheus/web)"`
+          $env:GOARCH=""; $env:GOOS=""; cd web/ui; go generate -mod=vendor
+          cd ../..
+          $TestTargets = go list ./... | Where-Object { $_ -NotMatch "(github.com/prometheus/prometheus/discovery.*|github.com/prometheus/prometheus/config|github.com/prometheus/prometheus/web)"}
+          go test $TestTargets -mod=vendor -vet=off -v
         environment:
           GOGC: "20"
           GOOPTS: "-p 2 -mod=vendor"
