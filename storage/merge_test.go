@@ -980,7 +980,7 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 			t.Run("LabelValuesWithMatchers", func(t *testing.T) {
 				matcher := labels.MustNewMatcher(labels.MatchEqual, "otherLabel", "someValue")
 				res, w, err := q.LabelValues("test2", matcher)
-				require.Equal(t, tcase.expectedWarnings[2], w)
+				require.Equal(t, tcase.expectedWarnings[3], w)
 				require.True(t, errors.Is(err, tcase.expectedErrs[3]), "expected error doesn't match")
 				require.Equal(t, tcase.expectedLabels, res)
 
