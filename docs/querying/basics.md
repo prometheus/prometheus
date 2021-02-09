@@ -231,7 +231,7 @@ The same works for range vectors. This returns the 5-minute rate that
 
 The `@` modifier supports all representation of float literals described
 above within the limits of `int64`. It can also be used along
-with `offset` modifier where the offset is applied relative to the `@`
+with the `offset` modifier where the offset is applied relative to the `@`
 modifier time irrespective of which modifier is written first.
 These 2 queries will produce the same result.
 
@@ -242,11 +242,11 @@ These 2 queries will produce the same result.
 
 This modifier is disabled by default since it breaks the invariant that PromQL
 does not look ahead of the evaluation time for samples. It can be enabled by setting
-`--enable-feature=promql-at-modifier` flag. See [disabled features](../disabled_features.md) for more about this flag.
+`--enable-feature=promql-at-modifier` flag. See [disabled features](../disabled_features.md) for more details about this flag.
 
-Additionally, `start()` and `end()` can also be used as values for the `@` modifier.
+Additionally, `start()` and `end()` can also be used as values for the `@` modifier as special values.
 
-For a range query, their values are the start and end of the range query respectively and remain the same for all steps.
+For a range query, they resolve to the start and end of the range query respectively and remain the same for all steps.
 
 For an instant query, `start()` and `end()` both resolve to the evaluation time.
 
