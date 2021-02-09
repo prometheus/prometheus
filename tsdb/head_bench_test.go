@@ -23,7 +23,6 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/tsdb/chunks"
 )
 
 func BenchmarkHeadStripeSeriesCreate(b *testing.B) {
@@ -33,7 +32,10 @@ func BenchmarkHeadStripeSeriesCreate(b *testing.B) {
 		require.NoError(b, os.RemoveAll(chunkDir))
 	}()
 	// Put a series, select it. GC it and then access it.
-	h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, chunks.DefaultWriteBufferSize, DefaultStripeSize, nil)
+	opts := DefaultHeadOptions()
+	opts.ChunkRange = 1000
+	opts.ChunkDirRoot = chunkDir
+	h, err := NewHead(nil, nil, nil, opts)
 	require.NoError(b, err)
 	defer h.Close()
 
@@ -49,7 +51,10 @@ func BenchmarkHeadStripeSeriesCreateParallel(b *testing.B) {
 		require.NoError(b, os.RemoveAll(chunkDir))
 	}()
 	// Put a series, select it. GC it and then access it.
-	h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, chunks.DefaultWriteBufferSize, DefaultStripeSize, nil)
+	opts := DefaultHeadOptions()
+	opts.ChunkRange = 1000
+	opts.ChunkDirRoot = chunkDir
+	h, err := NewHead(nil, nil, nil, opts)
 	require.NoError(b, err)
 	defer h.Close()
 
