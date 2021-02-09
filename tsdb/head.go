@@ -61,6 +61,7 @@ type Head struct {
 	lastSeriesID          atomic.Uint64
 
 	metrics      *headMetrics
+	opts         *HeadOptions
 	wal          *wal.WAL
 	logger       log.Logger
 	appendPool   sync.Pool
@@ -69,8 +70,7 @@ type Head struct {
 	memChunkPool sync.Pool
 
 	// All series addressable by their ID or hash.
-	series         *stripeSeries
-	seriesCallback SeriesLifecycleCallback
+	series *stripeSeries
 
 	symMtx  sync.RWMutex
 	symbols map[string]struct{}
@@ -90,11 +90,34 @@ type Head struct {
 
 	// chunkDiskMapper is used to write and read Head chunks to/from disk.
 	chunkDiskMapper *chunks.ChunkDiskMapper
-	// chunkDirRoot is the parent directory of the chunks directory.
-	chunkDirRoot string
 
 	closedMtx sync.Mutex
 	closed    bool
+}
+
+// HeadOptions are parameters for the Head block.
+type HeadOptions struct {
+	ChunkRange int64
+	// ChunkDirRoot is the parent directory of the chunks directory.
+	ChunkDirRoot         string
+	ChunkPool            chunkenc.Pool
+	ChunkWriteBufferSize int
+	// StripeSize sets the number of entries in the hash map, it must be a power of 2.
+	// A larger StripeSize will allocate more memory up-front, but will increase performance when handling a large number of series.
+	// A smaller StripeSize reduces the memory allocated, but can decrease performance with large number of series.
+	StripeSize     int
+	SeriesCallback SeriesLifecycleCallback
+}
+
+func DefaultHeadOptions() *HeadOptions {
+	return &HeadOptions{
+		ChunkRange:           DefaultBlockDuration,
+		ChunkDirRoot:         "",
+		ChunkPool:            chunkenc.NewPool(),
+		ChunkWriteBufferSize: chunks.DefaultWriteBufferSize,
+		StripeSize:           DefaultStripeSize,
+		SeriesCallback:       &noopSeriesLifecycleCallback{},
+	}
 }
 
 type headMetrics struct {
@@ -292,23 +315,21 @@ func (h *Head) PostingsCardinalityStats(statsByLabelName string) *index.Postings
 }
 
 // NewHead opens the head block in dir.
-// stripeSize sets the number of entries in the hash map, it must be a power of 2.
-// A larger stripeSize will allocate more memory up-front, but will increase performance when handling a large number of series.
-// A smaller stripeSize reduces the memory allocated, but can decrease performance with large number of series.
-func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, chunkRange int64, chkDirRoot string, chkPool chunkenc.Pool, chkWriteBufferSize, stripeSize int, seriesCallback SeriesLifecycleCallback) (*Head, error) {
+func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, opts *HeadOptions) (*Head, error) {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
-	if chunkRange < 1 {
-		return nil, errors.Errorf("invalid chunk range %d", chunkRange)
+	if opts.ChunkRange < 1 {
+		return nil, errors.Errorf("invalid chunk range %d", opts.ChunkRange)
 	}
-	if seriesCallback == nil {
-		seriesCallback = &noopSeriesLifecycleCallback{}
+	if opts.SeriesCallback == nil {
+		opts.SeriesCallback = &noopSeriesLifecycleCallback{}
 	}
 	h := &Head{
 		wal:        wal,
 		logger:     l,
-		series:     newStripeSeries(stripeSize, seriesCallback),
+		opts:       opts,
+		series:     newStripeSeries(opts.StripeSize, opts.SeriesCallback),
 		symbols:    map[string]struct{}{},
 		postings:   index.NewUnorderedMemPostings(),
 		tombstones: tombstones.NewMemTombstones(),
@@ -319,21 +340,23 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, chunkRange int
 				return &memChunk{}
 			},
 		},
-		chunkDirRoot:   chkDirRoot,
-		seriesCallback: seriesCallback,
 	}
-	h.chunkRange.Store(chunkRange)
+	h.chunkRange.Store(opts.ChunkRange)
 	h.minTime.Store(math.MaxInt64)
 	h.maxTime.Store(math.MinInt64)
 	h.lastWALTruncationTime.Store(math.MinInt64)
 	h.metrics = newHeadMetrics(h, r)
 
-	if chkPool == nil {
-		chkPool = chunkenc.NewPool()
+	if opts.ChunkPool == nil {
+		opts.ChunkPool = chunkenc.NewPool()
 	}
 
 	var err error
-	h.chunkDiskMapper, err = chunks.NewChunkDiskMapper(mmappedChunksDir(chkDirRoot), chkPool, chkWriteBufferSize)
+	h.chunkDiskMapper, err = chunks.NewChunkDiskMapper(
+		mmappedChunksDir(opts.ChunkDirRoot),
+		opts.ChunkPool,
+		opts.ChunkWriteBufferSize,
+	)
 	if err != nil {
 		return nil, err
 	}

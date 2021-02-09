@@ -42,6 +42,7 @@ import (
 	"github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_adapter/influxdb"
 	"github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_adapter/opentsdb"
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/storage/remote"
 )
 
 type config struct {
@@ -211,28 +212,14 @@ func buildClients(logger log.Logger, cfg *config) ([]writer, []reader) {
 
 func serve(logger log.Logger, addr string, writers []writer, readers []reader) error {
 	http.HandleFunc("/write", func(w http.ResponseWriter, r *http.Request) {
-		compressed, err := ioutil.ReadAll(r.Body)
+		req, err := remote.DecodeWriteRequest(r.Body)
 		if err != nil {
 			level.Error(logger).Log("msg", "Read error", "err", err.Error())
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		reqBuf, err := snappy.Decode(nil, compressed)
-		if err != nil {
-			level.Error(logger).Log("msg", "Decode error", "err", err.Error())
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		var req prompb.WriteRequest
-		if err := proto.Unmarshal(reqBuf, &req); err != nil {
-			level.Error(logger).Log("msg", "Unmarshal error", "err", err.Error())
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		samples := protoToSamples(&req)
+		samples := protoToSamples(req)
 		receivedSamples.Add(float64(len(samples)))
 
 		var wg sync.WaitGroup

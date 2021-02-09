@@ -1,5 +1,5 @@
 import React from 'react';
-import { shallow } from 'enzyme';
+import { shallow, mount } from 'enzyme';
 import { Badge, Alert } from 'reactstrap';
 import EndpointLink from './EndpointLink';
 
@@ -24,15 +24,25 @@ describe('EndpointLink', () => {
     expect(anchor.children().text()).toEqual('http://100.99.128.71:9115/probe');
     expect(endpointLink.find('br')).toHaveLength(1);
     expect(badges).toHaveLength(2);
-    const moduleLabel = badges.filterWhere(badge => badge.hasClass('module'));
-    expect(moduleLabel.children().text()).toEqual('module="http_2xx"');
-    const targetLabel = badges.filterWhere(badge => badge.hasClass('target'));
-    expect(targetLabel.children().text()).toEqual('target="http://some-service"');
+    const moduleLabel = badges.filterWhere(badge => badge.children().text() === 'module="http_2xx"');
+    expect(moduleLabel.length).toEqual(1);
+    const targetLabel = badges.filterWhere(badge => badge.children().text() === 'target="http://some-service"');
+    expect(targetLabel.length).toEqual(1);
   });
 
   it('renders an alert if url is invalid', () => {
     const endpointLink = shallow(<EndpointLink endpoint={'afdsacas'} globalUrl={'afdsacas'} />);
     const err = endpointLink.find(Alert);
     expect(err.render().text()).toEqual('Error: Invalid URL');
+  });
+
+  it('handles params with multiple values correctly', () => {
+    const consoleSpy = jest.spyOn(console, 'warn');
+    const endpoint = `http://example.com/federate?match[]={__name__="name1"}&match[]={__name__="name2"}&match[]={__name__="name3"}`;
+    const globalURL = 'http://example.com/federate';
+    const endpointLink = mount(<EndpointLink endpoint={endpoint} globalUrl={globalURL} />);
+    const badges = endpointLink.find(Badge);
+    expect(badges).toHaveLength(3);
+    expect(consoleSpy).not.toHaveBeenCalled();
   });
 });
