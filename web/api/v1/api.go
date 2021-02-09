@@ -604,16 +604,23 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 				labelValuesSet[val] = struct{}{}
 			}
 		}
+
+		vals = make([]string, 0, len(labelValuesSet))
+		for val := range labelValuesSet {
+			vals = append(vals, val)
+		}
 	} else {
 		vals, warnings, err = q.LabelValues(name)
 		if err != nil {
 			return apiFuncResult{nil, &apiError{errorExec, err}, warnings, closer}
 		}
+
+		if vals == nil {
+			vals = []string{}
+		}
 	}
 
-	if vals == nil {
-		vals = []string{}
-	}
+	sort.Strings(vals)
 
 	return apiFuncResult{vals, nil, warnings, closer}
 }
