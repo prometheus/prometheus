@@ -779,9 +779,3 @@ func (ll *LazyLoader) Close() {
 		ll.T.Fatalf("closing test storage: %s", err)
 	}
 }
-
-func makeInt64Pointer(val int64) *int64 {
-	valp := new(int64)
-	*valp = val
-	return valp
-}

@@ -116,6 +116,13 @@ ON
 WITHOUT
 %token keywordsEnd
 
+// Preprocessors.
+%token preprocessorStart
+%token <item>
+START
+END
+%token preprocessorEnd
+
 
 // Start symbols for the generated parser.
 %token	startSymbolsStart
@@ -131,7 +138,7 @@ START_METRIC_SELECTOR
 %type <matchers> label_match_list
 %type <matcher> label_matcher
 
-%type <item> aggregate_op grouping_label match_op maybe_label metric_identifier unary_op
+%type <item> aggregate_op grouping_label match_op maybe_label metric_identifier unary_op at_modifier_preprocessors
 
 %type <labels> label_set label_set_list metric
 %type <label> label_set_item
@@ -391,10 +398,16 @@ step_invariant_expr: expr AT signed_or_unsigned_number
                         yylex.(*parser).setTimestamp($1, $3)
                         $$ = $1
                         }
-
+                | expr AT at_modifier_preprocessors LEFT_PAREN RIGHT_PAREN
+                        {
+                        yylex.(*parser).setAtModifierPreprocessor($1, $3)
+                        $$ = $1
+                        }
                 | expr AT error
                         { yylex.(*parser).unexpected("@", "timestamp"); $$ = $1 }
                 ;
+
+at_modifier_preprocessors: START | END;
 
 /*
  * Subquery and range selectors.

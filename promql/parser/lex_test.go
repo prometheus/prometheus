@@ -276,6 +276,9 @@ var tests = []struct {
 			}, {
 				input:    `unless`,
 				expected: []Item{{LUNLESS, 0, `unless`}},
+			}, {
+				input:    `@`,
+				expected: []Item{{AT, 0, `@`}},
 			},
 		},
 	},
@@ -336,6 +339,19 @@ var tests = []struct {
 			}, {
 				input:    "bool",
 				expected: []Item{{BOOL, 0, "bool"}},
+			},
+		},
+	},
+	{
+		name: "preprocessors",
+		tests: []testCase{
+			{
+				input:    `start`,
+				expected: []Item{{START, 0, `start`}},
+			},
+			{
+				input:    `end`,
+				expected: []Item{{END, 0, `end`}},
 			},
 		},
 	},

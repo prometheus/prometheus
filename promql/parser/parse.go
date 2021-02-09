@@ -726,34 +726,68 @@ func (p *parser) setTimestamp(e Node, ts float64) {
 	var timestampp **int64
 	var endPosp *Pos
 
-	switch s := e.(type) {
-	case *VectorSelector:
-		timestampp = &s.Timestamp
-		endPosp = &s.PosRange.End
-	case *MatrixSelector:
-		vs, ok := s.VectorSelector.(*VectorSelector)
-		if !ok {
-			p.addParseErrf(e.PositionRange(), "ranges only allowed for vector selectors")
-			return
-		}
-		timestampp = &vs.Timestamp
-		endPosp = &s.EndPos
-	case *SubqueryExpr:
-		timestampp = &s.Timestamp
-		endPosp = &s.EndPos
-	default:
-		p.addParseErrf(e.PositionRange(), "@ modifier must be preceded by an instant selector vector or range vector selector or a subquery")
+	timestampp, _, endPosp, ok := p.getAtModifierVars(e)
+	if !ok {
 		return
 	}
 
-	if *timestampp != nil {
-		p.addParseErrf(e.PositionRange(), "@ <timestamp> may not be set multiple times")
-	} else if timestampp != nil {
+	if timestampp != nil {
 		*timestampp = new(int64)
 		**timestampp = timestamp.FromFloatSeconds(ts)
 	}
 
 	*endPosp = p.lastClosing
+}
+
+// setAtModifierPreprocessor is used to set the preprocessor for the @ modifier.
+func (p *parser) setAtModifierPreprocessor(e Node, op Item) {
+	_, preprocp, endPosp, ok := p.getAtModifierVars(e)
+	if !ok {
+		return
+	}
+
+	if preprocp != nil {
+		*preprocp = op.Typ
+	}
+
+	*endPosp = p.lastClosing
+}
+
+func (p *parser) getAtModifierVars(e Node) (**int64, *ItemType, *Pos, bool) {
+	var (
+		timestampp **int64
+		preprocp   *ItemType
+		endPosp    *Pos
+	)
+	switch s := e.(type) {
+	case *VectorSelector:
+		timestampp = &s.Timestamp
+		preprocp = &s.StartOrEnd
+		endPosp = &s.PosRange.End
+	case *MatrixSelector:
+		vs, ok := s.VectorSelector.(*VectorSelector)
+		if !ok {
+			p.addParseErrf(e.PositionRange(), "ranges only allowed for vector selectors")
+			return nil, nil, nil, false
+		}
+		preprocp = &vs.StartOrEnd
+		timestampp = &vs.Timestamp
+		endPosp = &s.EndPos
+	case *SubqueryExpr:
+		preprocp = &s.StartOrEnd
+		timestampp = &s.Timestamp
+		endPosp = &s.EndPos
+	default:
+		p.addParseErrf(e.PositionRange(), "@ modifier must be preceded by an instant selector vector or range vector selector or a subquery")
+		return nil, nil, nil, false
+	}
+
+	if *timestampp != nil || (*preprocp) == START || (*preprocp) == END {
+		p.addParseErrf(e.PositionRange(), "@ <timestamp> may not be set multiple times")
+		return nil, nil, nil, false
+	}
+
+	return timestampp, preprocp, endPosp, true
 }
 
 func MustLabelMatcher(mt labels.MatchType, name, val string) *labels.Matcher {

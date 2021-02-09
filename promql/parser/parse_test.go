@@ -3059,6 +3059,112 @@ var testExpr = []struct {
 		fail:   true,
 		errMsg: `1:15: parse error: ranges only allowed for vector selectors`,
 	},
+	// Preprocessors.
+	{
+		input: `foo @ start()`,
+		expected: &VectorSelector{
+			Name:       "foo",
+			StartOrEnd: START,
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+			},
+			PosRange: PositionRange{
+				Start: 0,
+				End:   13,
+			},
+		},
+	}, {
+		input: `foo @ end()`,
+		expected: &VectorSelector{
+			Name:       "foo",
+			StartOrEnd: END,
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+			},
+			PosRange: PositionRange{
+				Start: 0,
+				End:   11,
+			},
+		},
+	}, {
+		input: `test[5y] @ start()`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name:       "test",
+				StartOrEnd: START,
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "test"),
+				},
+				PosRange: PositionRange{
+					Start: 0,
+					End:   4,
+				},
+			},
+			Range:  5 * 365 * 24 * time.Hour,
+			EndPos: 18,
+		},
+	}, {
+		input: `test[5y] @ end()`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name:       "test",
+				StartOrEnd: END,
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "test"),
+				},
+				PosRange: PositionRange{
+					Start: 0,
+					End:   4,
+				},
+			},
+			Range:  5 * 365 * 24 * time.Hour,
+			EndPos: 16,
+		},
+	}, {
+		input: `foo[10m:6s] @ start()`,
+		expected: &SubqueryExpr{
+			Expr: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: PositionRange{
+					Start: 0,
+					End:   3,
+				},
+			},
+			Range:      10 * time.Minute,
+			Step:       6 * time.Second,
+			StartOrEnd: START,
+			EndPos:     21,
+		},
+	}, {
+		input: `foo[10m:6s] @ end()`,
+		expected: &SubqueryExpr{
+			Expr: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: PositionRange{
+					Start: 0,
+					End:   3,
+				},
+			},
+			Range:      10 * time.Minute,
+			Step:       6 * time.Second,
+			StartOrEnd: END,
+			EndPos:     19,
+		},
+	}, {
+		input:  `start()`,
+		fail:   true,
+		errMsg: `1:1: parse error: unexpected "start"`,
+	}, {
+		input:  `end()`,
+		fail:   true,
+		errMsg: `1:1: parse error: unexpected "end"`,
+	},
 }
 
 func makeInt64Pointer(val int64) *int64 {
