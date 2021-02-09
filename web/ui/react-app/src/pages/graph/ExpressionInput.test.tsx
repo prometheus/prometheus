@@ -7,13 +7,13 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSearch, faSpinner } from '@fortawesome/free-solid-svg-icons';
 
 const getKeyEvent = (key: string): React.KeyboardEvent<HTMLInputElement> =>
-({
-  key,
-  nativeEvent: {},
-  preventDefault: () => {
-    // Do nothing.
-  },
-} as React.KeyboardEvent<HTMLInputElement>);
+  ({
+    key,
+    nativeEvent: {},
+    preventDefault: () => {
+      // Do nothing.
+    },
+  } as React.KeyboardEvent<HTMLInputElement>);
 
 describe('ExpressionInput', () => {
   const metricNames = ['instance:node_cpu_utilisation:rate1m', 'node_cpu_guest_seconds_total', 'node_cpu_seconds_total'];
@@ -257,7 +257,10 @@ describe('ExpressionInput', () => {
 
   it('renders an execute Button', () => {
     const addon = expressionInput.find(InputGroupAddon).filterWhere(addon => addon.prop('addonType') === 'append');
-    const button = addon.find(Button).find('.execute-btn').first();
+    const button = addon
+      .find(Button)
+      .find('.execute-btn')
+      .first();
     expect(button.prop('color')).toEqual('primary');
     expect(button.text()).toEqual('Execute');
   });
