@@ -250,7 +250,6 @@ func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]i
 			// then we compare alerts with the Eval at `ts`.
 			t := alertEvalTimes[curr]
 
-			presentAlerts := alertsInTest[t]
 			got := make(map[string]labelsAndAnnotations)
 
 			// Same Alert name can be present in multiple groups.
@@ -260,9 +259,6 @@ func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]i
 				for _, r := range grules {
 					ar, ok := r.(*rules.AlertingRule)
 					if !ok {
-						continue
-					}
-					if _, ok := presentAlerts[ar.Name()]; !ok {
 						continue
 					}
 
@@ -282,7 +278,10 @@ func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]i
 
 			for _, testcase := range alertTests[t] {
 				// Checking alerts.
-				gotAlerts := got[testcase.Alertname]
+				var gotAlerts labelsAndAnnotations
+				for _, m := range got {
+					gotAlerts = append(gotAlerts, m...)
+				}
 
 				var expAlerts labelsAndAnnotations
 				for _, a := range testcase.ExpAlerts {
