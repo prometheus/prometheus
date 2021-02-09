@@ -31,6 +31,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
@@ -1526,11 +1527,11 @@ func (r *Reader) LabelValueFor(id uint64, label string) (string, error) {
 
 	value, err := r.dec.LabelValueFor(buf, label)
 	if err != nil {
-		return "", errors.Wrap(err, "label values for")
+		return "", storage.ErrNotFound
 	}
 
 	if value == "" {
-		return "", errors.Errorf("series does not have label %q", label)
+		return "", storage.ErrNotFound
 	}
 
 	return value, nil

@@ -386,6 +386,10 @@ func labelValuesWithMatchers(r IndexReader, name string, matchers ...*labels.Mat
 	for p.Next() {
 		v, err := r.LabelValueFor(p.At(), name)
 		if err != nil {
+			if err == storage.ErrNotFound {
+				continue
+			}
+
 			return nil, err
 		}
 		dedupe[v] = nil

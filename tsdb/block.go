@@ -88,6 +88,8 @@ type IndexReader interface {
 	LabelNames() ([]string, error)
 
 	// LabelValueFor returns label value for the given label name in the series referred to by ID.
+	// If the series couldn't be found or the series doesn't have the requested label a
+	// storage.ErrNotFound is returned as error.
 	LabelValueFor(id uint64, label string) (string, error)
 
 	// Close releases the underlying resources of the reader.

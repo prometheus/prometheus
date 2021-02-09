@@ -1734,12 +1734,12 @@ func (h *headIndexReader) Series(ref uint64, lbls *labels.Labels, chks *[]chunks
 func (h *headIndexReader) LabelValueFor(id uint64, label string) (string, error) {
 	memSeries := h.head.series.getByID(id)
 	if memSeries == nil {
-		return "", errors.Errorf("unknown series with id %d", id)
+		return "", storage.ErrNotFound
 	}
 
 	value := memSeries.lset.Get(label)
 	if value == "" {
-		return "", errors.Errorf("series does not have label %q", label)
+		return "", storage.ErrNotFound
 	}
 
 	return value, nil
