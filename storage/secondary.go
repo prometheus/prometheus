@@ -47,8 +47,8 @@ func newSecondaryQuerierFromChunk(cq ChunkQuerier) genericQuerier {
 	return &secondaryQuerier{genericQuerier: newGenericQuerierFromChunk(cq)}
 }
 
-func (s *secondaryQuerier) LabelValues(name string) ([]string, Warnings, error) {
-	vals, w, err := s.genericQuerier.LabelValues(name)
+func (s *secondaryQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, Warnings, error) {
+	vals, w, err := s.genericQuerier.LabelValues(name, matchers...)
 	if err != nil {
 		return nil, append([]error{err}, w...), nil
 	}

@@ -1147,20 +1147,37 @@ func (m mockIndex) Close() error {
 	return nil
 }
 
-func (m mockIndex) SortedLabelValues(name string) ([]string, error) {
-	values, _ := m.LabelValues(name)
+func (m mockIndex) SortedLabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
+	values, _ := m.LabelValues(name, matchers...)
 	sort.Strings(values)
 	return values, nil
 }
 
-func (m mockIndex) LabelValues(name string) ([]string, error) {
+func (m mockIndex) LabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
 	values := []string{}
-	for l := range m.postings {
-		if l.Name == name {
-			values = append(values, l.Value)
+
+	if len(matchers) == 0 {
+		for l := range m.postings {
+			if l.Name == name {
+				values = append(values, l.Value)
+			}
+		}
+		return values, nil
+	}
+
+	for _, series := range m.series {
+		for _, matcher := range matchers {
+			if matcher.Matches(series.l.Get(matcher.Name)) {
+				values = append(values, series.l.Get(name))
+			}
 		}
 	}
+
 	return values, nil
+}
+
+func (m mockIndex) LabelValueFor(id uint64, label string) (string, error) {
+	return m.series[id].l.Get(label), nil
 }
 
 func (m mockIndex) Postings(name string, values ...string) (index.Postings, error) {
@@ -1970,13 +1987,17 @@ func (m mockMatcherIndex) Symbols() index.StringIter { return nil }
 func (m mockMatcherIndex) Close() error { return nil }
 
 // SortedLabelValues will return error if it is called.
-func (m mockMatcherIndex) SortedLabelValues(name string) ([]string, error) {
+func (m mockMatcherIndex) SortedLabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
 	return []string{}, errors.New("sorted label values called")
 }
 
 // LabelValues will return error if it is called.
-func (m mockMatcherIndex) LabelValues(name string) ([]string, error) {
+func (m mockMatcherIndex) LabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
 	return []string{}, errors.New("label values called")
+}
+
+func (m mockMatcherIndex) LabelValueFor(id uint64, label string) (string, error) {
+	return "", errors.New("label value for called")
 }
 
 func (m mockMatcherIndex) Postings(name string, values ...string) (index.Postings, error) {

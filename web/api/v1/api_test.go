@@ -1699,6 +1699,20 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 					"boo",
 				},
 			},
+			// Try to overlap the selected series set as much as possible to test that the value de-duplication works.
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "foo",
+				},
+				query: url.Values{
+					"match[]": []string{`test_metric4{dup=~"^1"}`, `test_metric4{foo=~".+o$"}`},
+				},
+				response: []string{
+					"bar",
+					"boo",
+				},
+			},
 			// Label names.
 			{
 				endpoint: api.labelNames,

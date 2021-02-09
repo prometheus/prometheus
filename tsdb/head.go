@@ -1635,8 +1635,10 @@ func (h *headIndexReader) Symbols() index.StringIter {
 
 // SortedLabelValues returns label values present in the head for the
 // specific label name that are within the time range mint to maxt.
-func (h *headIndexReader) SortedLabelValues(name string) ([]string, error) {
-	values, err := h.LabelValues(name)
+// If matchers are specified the returned result set is reduced
+// to label values of metrics matching the matchers.
+func (h *headIndexReader) SortedLabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
+	values, err := h.LabelValues(name, matchers...)
 	if err == nil {
 		sort.Strings(values)
 	}
@@ -1645,15 +1647,20 @@ func (h *headIndexReader) SortedLabelValues(name string) ([]string, error) {
 
 // LabelValues returns label values present in the head for the
 // specific label name that are within the time range mint to maxt.
-func (h *headIndexReader) LabelValues(name string) ([]string, error) {
-	h.head.symMtx.RLock()
-	defer h.head.symMtx.RUnlock()
+// If matchers are specified the returned result set is reduced
+// to label values of metrics matching the matchers.
+func (h *headIndexReader) LabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
 	if h.maxt < h.head.MinTime() || h.mint > h.head.MaxTime() {
 		return []string{}, nil
 	}
 
-	values := h.head.postings.LabelValues(name)
-	return values, nil
+	if len(matchers) == 0 {
+		h.head.symMtx.RLock()
+		defer h.head.symMtx.RUnlock()
+		return h.head.postings.LabelValues(name), nil
+	}
+
+	return labelValuesWithMatchers(h, name, matchers...)
 }
 
 // LabelNames returns all the unique label names present in the head
@@ -1744,6 +1751,21 @@ func (h *headIndexReader) Series(ref uint64, lbls *labels.Labels, chks *[]chunks
 	}
 
 	return nil
+}
+
+// LabelValueFor returns label value for the given label name in the series referred to by ID.
+func (h *headIndexReader) LabelValueFor(id uint64, label string) (string, error) {
+	memSeries := h.head.series.getByID(id)
+	if memSeries == nil {
+		return "", storage.ErrNotFound
+	}
+
+	value := memSeries.lset.Get(label)
+	if value == "" {
+		return "", storage.ErrNotFound
+	}
+
+	return value, nil
 }
 
 func (h *Head) getOrCreate(hash uint64, lset labels.Labels) (*memSeries, bool, error) {
