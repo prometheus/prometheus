@@ -358,6 +358,18 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_consul_service`: the name of the service the target belongs to
 * `__meta_consul_tagged_address_<key>`: each node tagged address key value of the target
 * `__meta_consul_tags`: the list of tags of the target joined by the tag separator
+* `__meta_consul_service_kind`: the service kind of the target
+
+If the service kind is a [connect proxy][https://www.consul.io/docs/connect/registration/service-registration] the following meta labels will be also available::
+
+* `__meta_consul_proxy_service`: the name of the service associated to the proxy the target belongs to
+* `__meta_consul_proxy_service_id`: the service ID associated to the proxy of the target
+* `__meta_consul_proxy_service_address`: the service address associated to the proxy of the target
+* `__meta_consul_proxy_service_port`: the service port associated to the proxy of the target
+* `__meta_consul_proxy_exposed_path_port`: the exposed port for this path
+* `__meta_consul_proxy_exposed_path_local_port`: the local port por the exposed path
+* `__meta_consul_proxy_exposed_path_path`: the exposed path
+* `__meta_consul_proxy_exposed_path_protocol`: the exposed path protocol
 
 ```yaml
 # The information to access the Consul API. It is to be defined

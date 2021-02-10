@@ -218,6 +218,70 @@ const (
 	}]
 }]`
 
+	ServiceTestProxyAnswer = `
+	{
+		"ID": "05b80bcb-26e1-8d84-a15c-e8029f28ea65",
+		"Node": "node1",
+		"Address": "10.171.0.33",
+		"Datacenter": "dc1",
+		"TaggedAddresses": {
+		  "lan": "10.171.0.33",
+		  "lan_ipv4": "10.171.0.33",
+		  "wan": "10.171.0.33",
+		  "wan_ipv4": "10.171.0.33"
+		},
+		"NodeMeta": {},
+		"ServiceKind": "connect-proxy",
+		"ServiceID": "test-sidecar-proxy",
+		"ServiceName": "test-sidecar-proxy",
+		"ServiceTags": [
+		  "test"
+		],
+		"ServiceAddress": "10.171.0.33",
+		"ServiceTaggedAddresses": {
+		  "lan_ipv4": {
+			"Address": "10.171.0.33",
+			"Port": 29149
+		  },
+		  "wan_ipv4": {
+			"Address": "10.171.0.33",
+			"Port": 29149
+		  }
+		},
+		"ServiceWeights": {
+		  "Passing": 1,
+		  "Warning": 1
+		},
+		"ServiceMeta": {},
+		"ServicePort": 29149,
+		"ServiceEnableTagOverride": false,
+		"ServiceProxy": {
+		  "DestinationServiceName": "test",
+		  "DestinationServiceID": "test",
+		  "LocalServiceAddress": "127.0.0.1",
+		  "LocalServicePort": 9001,
+		  "Config": {
+			"bind_address": "0.0.0.0",
+			"bind_port": 29149,
+			"protocol": "http"
+		  },
+		  "MeshGateway": {
+			"Mode": "local"
+		  },
+		  "Expose": {
+			"Paths": [
+			  {
+				"ListenerPort": 21107,
+				"Path": "/metrics",
+				"LocalPathPort": 9001,
+				"Protocol": "http",
+				"ParsedFromCheck": false
+			  }
+			]
+		  }
+		}
+	}`
+
 	ServicesTestAnswer = `{"test": ["tag1"], "other": ["tag2"]}`
 )
 

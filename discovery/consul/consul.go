@@ -64,6 +64,24 @@ const (
 	taggedAddressesLabel = model.MetaLabelPrefix + "consul_tagged_address_"
 	// serviceIDLabel is the name of the label containing the service ID.
 	serviceIDLabel = model.MetaLabelPrefix + "consul_service_id"
+	// serviceKindLabel is the name of the label containing the service kind.
+	serviceKindLabel = model.MetaLabelPrefix + "consul_service_kind"
+	// proxiedServiceLabel is the name of the label containing the proxied service name.
+	proxiedServiceLabel = model.MetaLabelPrefix + "consul_proxy_service"
+	// proxiedServiceIDLabel is the name of the label containing the proxied service id.
+	proxiedServiceIDLabel = model.MetaLabelPrefix + "consul_proxy_service_id"
+	// proxiedServiceAddressLabel is the name of the label containing the proxied service address.
+	proxiedServiceAddressLabel = model.MetaLabelPrefix + "consul_proxy_service_address"
+	// proxiedServicePortLabel is the name of the label containing the proxied service port.
+	proxiedServicePortLabel = model.MetaLabelPrefix + "consul_proxy_service_port"
+	// exposedPathPortLabel is the name of the label containing the target exposed paths listener port.
+	exposedPathPortLabel = model.MetaLabelPrefix + "consul_proxy_exposed_path_port"
+	// exposedPathLocalPortLabel is the name of the label containing the target exposed paths local port.
+	exposedPathLocalPortLabel = model.MetaLabelPrefix + "consul_proxy_exposed_path_local_port"
+	// exposedPathPathLabel is the name of the label containing the target exposed path
+	exposedPathPathLabel = model.MetaLabelPrefix + "consul_proxy_exposed_path_path"
+	// exposedPathProtocolLabel is the name of the label containing the target exposed protocol
+	exposedPathProtocolLabel = model.MetaLabelPrefix + "consul_proxy_exposed_path_protocol"
 
 	// Constants for instrumentation.
 	namespace = "prometheus"
@@ -134,6 +152,9 @@ type SDConfig struct {
 	// Desired node metadata.
 	NodeMeta map[string]string `yaml:"node_meta,omitempty"`
 
+	// Sets if this should also emit a target per exposed path
+	FetchExposedPaths bool `yaml:"fetch_exposed_paths,omitempty"`
+
 	TLSConfig config.TLSConfig `yaml:"tls_config,omitempty"`
 }
 
@@ -174,6 +195,7 @@ type Discovery struct {
 	watchedTags      []string // Tags used to filter instances of a service.
 	watchedNodeMeta  map[string]string
 	allowStale       bool
+	fetchProxyPaths  bool
 	refreshInterval  time.Duration
 	finalizer        func()
 	logger           log.Logger
@@ -224,6 +246,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 		watchedTags:      conf.ServiceTags,
 		watchedNodeMeta:  conf.NodeMeta,
 		allowStale:       conf.AllowStale,
+		fetchProxyPaths:  conf.FetchExposedPaths,
 		refreshInterval:  time.Duration(conf.RefreshInterval),
 		clientDatacenter: conf.Datacenter,
 		finalizer:        transport.CloseIdleConnections,
@@ -558,6 +581,30 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Gr
 		for k, v := range serviceNode.Node.TaggedAddresses {
 			name := strutil.SanitizeLabelName(k)
 			labels[taggedAddressesLabel+model.LabelName(name)] = model.LabelValue(v)
+		}
+
+		if serviceNode.Service.Kind != consul.ServiceKindTypical { // to avoid setting the label to an empty value
+			labels[serviceKindLabel] = model.LabelValue(serviceNode.Service.Kind)
+		}
+
+		if serviceNode.Service.Kind == consul.ServiceKindConnectProxy && serviceNode.Service.Proxy != nil {
+			labels[proxiedServiceLabel] = model.LabelValue(serviceNode.Service.Proxy.DestinationServiceName)
+			labels[proxiedServiceIDLabel] = model.LabelValue(serviceNode.Service.Proxy.DestinationServiceID)
+			labels[proxiedServiceAddressLabel] = model.LabelValue(serviceNode.Service.Proxy.LocalServiceAddress)
+			labels[proxiedServicePortLabel] = model.LabelValue(strconv.Itoa(serviceNode.Service.Proxy.LocalServicePort))
+
+			if srv.discovery.fetchProxyPaths {
+				for _, path := range serviceNode.Service.Proxy.Expose.Paths {
+					pathLabels := labels.Clone()
+					newAddr := strings.Replace(string(pathLabels[model.AddressLabel]), strconv.Itoa(serviceNode.Service.Port), strconv.Itoa(path.ListenerPort), 1)
+					pathLabels[model.AddressLabel] = model.LabelValue(newAddr)
+					pathLabels[exposedPathPortLabel] = model.LabelValue(strconv.Itoa(path.ListenerPort))
+					pathLabels[exposedPathLocalPortLabel] = model.LabelValue(strconv.Itoa(path.LocalPathPort))
+					pathLabels[exposedPathPathLabel] = model.LabelValue(path.Path)
+					pathLabels[exposedPathProtocolLabel] = model.LabelValue(path.Protocol)
+					tgroup.Targets = append(tgroup.Targets, pathLabels)
+				}
+			}
 		}
 
 		tgroup.Targets = append(tgroup.Targets, labels)
