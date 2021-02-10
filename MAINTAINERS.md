@@ -5,7 +5,7 @@ Julien Pivotto (<roidelapluie@prometheus.io> / @roidelapluie) is the main/defaul
 * `discovery`
   * `k8s`: Frederic Branczyk (<fbranczyk@gmail.com> / @brancz)
 * `documentation`
-  * `prometheus-mixin`: Björn Rabenstein (<bjoern@rabenste.in> / @beorn7)
+  * `prometheus-mixin`: Björn Rabenstein (<beorn@grafana.com> / @beorn7)
 * `storage`
   * `remote`: Chris Marchbanks (<csmarchbanks@gmail.com> / @csmarchbanks), Callum Styan (<callumstyan@gmail.com> / @cstyan), Bartłomiej Płotka (<bwplotka@gmail.com> / @bwplotka)
 * `tsdb`: Ganesh Vernekar (<ganesh@grafana.com> / @codesome), Bartłomiej Płotka (<bwplotka@gmail.com> / @bwplotka)
