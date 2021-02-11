@@ -238,6 +238,36 @@ func TestWALSegmentSizeBounds(t *testing.T) {
 	}
 }
 
+func TestMaxChunkSize(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode.")
+	}
+
+	for _, size := range []string{"1MB", "512MB", "1GB"} {
+		prom := exec.Command(promPath, "-test.main", "--storage.tsdb.max-chunk-size="+size, "--config.file="+promConfig)
+
+		// Log stderr in case of failure.
+		stderr, err := prom.StderrPipe()
+		require.NoError(t, err)
+		go func() {
+			slurp, _ := ioutil.ReadAll(stderr)
+			t.Log(string(slurp))
+		}()
+
+		err = prom.Start()
+		require.NoError(t, err)
+
+		done := make(chan error, 1)
+		go func() { done <- prom.Wait() }()
+		select {
+		case err := <-done:
+			t.Errorf("prometheus should be still running: %v", err)
+		case <-time.After(5 * time.Second):
+			prom.Process.Kill()
+		}
+	}
+}
+
 func TestTimeMetrics(t *testing.T) {
 	tmpDir, err := ioutil.TempDir("", "time_metrics_e2e")
 	require.NoError(t, err)
