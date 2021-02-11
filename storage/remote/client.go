@@ -85,6 +85,8 @@ type Client struct {
 	timeout    time.Duration
 	headers    map[string]string
 
+	retryOnRateLimit bool
+
 	readQueries         prometheus.Gauge
 	readQueriesTotal    *prometheus.CounterVec
 	readQueriesDuration prometheus.Observer
@@ -96,6 +98,7 @@ type ClientConfig struct {
 	Timeout          model.Duration
 	HTTPClientConfig config_util.HTTPClientConfig
 	Headers          map[string]string
+	RetryOnRateLimit bool
 }
 
 // ReadClient uses the SAMPLES method of remote read to read series samples from remote server.
@@ -140,11 +143,12 @@ func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
 	}
 
 	return &Client{
-		remoteName: name,
-		url:        conf.URL,
-		Client:     httpClient,
-		timeout:    time.Duration(conf.Timeout),
-		headers:    conf.Headers,
+		remoteName:       name,
+		url:              conf.URL,
+		Client:           httpClient,
+		retryOnRateLimit: conf.RetryOnRateLimit,
+		timeout:          time.Duration(conf.Timeout),
+		headers:          conf.Headers,
 	}, nil
 }
 
@@ -209,7 +213,7 @@ func (c *Client) Store(ctx context.Context, req []byte) error {
 	if httpResp.StatusCode/100 == 5 {
 		return RecoverableError{err, defaultBackoff}
 	}
-	if httpResp.StatusCode == http.StatusTooManyRequests {
+	if c.retryOnRateLimit && httpResp.StatusCode == http.StatusTooManyRequests {
 		return RecoverableError{err, retryAfterDuration(httpResp.Header.Get("Retry-After"))}
 	}
 	return err
