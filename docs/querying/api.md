@@ -340,6 +340,72 @@ $ curl http://localhost:9090/api/v1/label/job/values
 }
 ```
 
+## Querying exemplars
+
+This is **experimental** and might change in the future.
+The following endpoint returns a list of exemplars for a valid PromQL query for a specific time range:
+
+```
+GET /api/v1/query_exemplars
+POST /api/v1/query_exemplars
+```
+
+URL query parameters:
+
+- `query=<string>`: Prometheus expression query string.
+- `start=<rfc3339 | unix_timestamp>`: Start timestamp.
+- `end=<rfc3339 | unix_timestamp>`: End timestamp.
+
+```json
+$ curl -g 'http://localhost:9090/api/v1/query_exemplars?query=test_exemplar_metric_total&start=2020-09-14T15:22:25.479Z&end=020-09-14T15:23:25.479Z'
+{
+    "status": "success",
+    "data": [
+        {
+            "seriesLabels": {
+                "__name__": "test_exemplar_metric_total",
+                "instance": "localhost:8090",
+                "job": "prometheus",
+                "service": "bar"
+            },
+            "exemplars": [
+                {
+                    "labels": {
+                        "traceID": "EpTxMJ40fUus7aGY"
+                    },
+                    "value": "6",
+                    "timestamp": 1600096945.479,
+                }
+            ]
+        },
+        {
+            "seriesLabels": {
+                "__name__": "test_exemplar_metric_total",
+                "instance": "localhost:8090",
+                "job": "prometheus",
+                "service": "foo"
+            },
+            "exemplars": [
+                {
+                    "labels": {
+                        "traceID": "Olp9XHlq763ccsfa"
+                    },
+                    "value": "19",
+                    "timestamp": 1600096955.479,
+                },
+                {
+                    "labels": {
+                        "traceID": "hCtjygkIHwAN9vs4"
+                    },
+                    "value": "20",
+                    "timestamp": 1600096965.489,
+                },
+            ]
+        }
+    ]
+}
+```
+
 ## Expression query result formats
 
 Expression queries may return the following response values in the `result`

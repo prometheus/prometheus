@@ -3370,3 +3370,39 @@ func TestRecoverParserError(t *testing.T) {
 
 	panic(e)
 }
+
+func TestExtractSelectors(t *testing.T) {
+	for _, tc := range [...]struct {
+		input    string
+		expected []string
+	}{
+		{
+			"foo",
+			[]string{`{__name__="foo"}`},
+		}, {
+			`foo{bar="baz"}`,
+			[]string{`{bar="baz", __name__="foo"}`},
+		}, {
+			`foo{bar="baz"} / flip{flop="flap"}`,
+			[]string{`{bar="baz", __name__="foo"}`, `{flop="flap", __name__="flip"}`},
+		}, {
+			`rate(foo[5m])`,
+			[]string{`{__name__="foo"}`},
+		}, {
+			`vector(1)`,
+			[]string{},
+		},
+	} {
+		expr, err := ParseExpr(tc.input)
+		require.NoError(t, err)
+
+		var expected [][]*labels.Matcher
+		for _, s := range tc.expected {
+			selector, err := ParseMetricSelector(s)
+			require.NoError(t, err)
+			expected = append(expected, selector)
+		}
+
+		require.Equal(t, expected, ExtractSelectors(expr))
+	}
+}

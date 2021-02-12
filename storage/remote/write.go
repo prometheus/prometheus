@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/wal"
@@ -219,6 +220,10 @@ func (t *timestampTracker) Append(_ uint64, _ labels.Labels, ts int64, _ float64
 	if ts > t.highestTimestamp {
 		t.highestTimestamp = ts
 	}
+	return 0, nil
+}
+
+func (t *timestampTracker) AppendExemplar(_ uint64, _ labels.Labels, _ exemplar.Exemplar) (uint64, error) {
 	return 0, nil
 }
 
