@@ -29,7 +29,6 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/relabel"
@@ -1043,7 +1042,6 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 
 func sendWriteRequestWithBackoff(ctx context.Context, cfg config.QueueConfig, l log.Logger, attempt func(int) error, onRetry func()) error {
 	backoff := cfg.MinBackoff
-	sleepDuration := model.Duration(0)
 	try := 0
 
 	for {
@@ -1060,29 +1058,16 @@ func sendWriteRequestWithBackoff(ctx context.Context, cfg config.QueueConfig, l 
 		}
 
 		// If the error is unrecoverable, we should not retry.
-		backoffErr, ok := err.(RecoverableError)
-		if !ok {
+		if _, ok := err.(RecoverableError); !ok {
 			return err
-		}
-
-		sleepDuration = backoff
-		if backoffErr.retryAfter > 0 {
-			sleepDuration = backoffErr.retryAfter
-			level.Info(l).Log("msg", "Retrying after duration specified by Retry-After header", "duration", sleepDuration)
-		} else if backoffErr.retryAfter < 0 {
-			level.Debug(l).Log("msg", "retry-after cannot be in past, retrying using default backoff mechanism")
-		}
-
-		select {
-		case <-ctx.Done():
-		case <-time.After(time.Duration(sleepDuration)):
 		}
 
 		// If we make it this far, we've encountered a recoverable error and will retry.
 		onRetry()
 		level.Warn(l).Log("msg", "Failed to send batch, retrying", "err", err)
 
-		backoff = sleepDuration * 2
+		time.Sleep(time.Duration(backoff))
+		backoff = backoff * 2
 
 		if backoff > cfg.MaxBackoff {
 			backoff = cfg.MaxBackoff

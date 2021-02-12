@@ -49,7 +49,7 @@ func TestStoreHTTPErrorHandling(t *testing.T) {
 		},
 		{
 			code: 500,
-			err:  RecoverableError{errors.New("server returned HTTP status 500 Internal Server Error: " + longErrMessage[:maxErrMsgLen]), defaultBackoff},
+			err:  RecoverableError{errors.New("server returned HTTP status 500 Internal Server Error: " + longErrMessage[:maxErrMsgLen])},
 		},
 	}
 
@@ -81,32 +81,5 @@ func TestStoreHTTPErrorHandling(t *testing.T) {
 		}
 
 		server.Close()
-	}
-}
-
-func TestRetryAfterDuration(t *testing.T) {
-	tc := []struct {
-		name     string
-		tInput   string
-		expected model.Duration
-	}{
-		{
-			name:     "seconds",
-			tInput:   "120",
-			expected: model.Duration(time.Second * 120),
-		},
-		{
-			name:     "date-time default",
-			tInput:   time.RFC1123, // Expected layout is http.TimeFormat, hence an error.
-			expected: defaultBackoff,
-		},
-		{
-			name:     "retry-after not provided",
-			tInput:   "", // Expected layout is http.TimeFormat, hence an error.
-			expected: defaultBackoff,
-		},
-	}
-	for _, c := range tc {
-		require.Equal(t, c.expected, retryAfterDuration(c.tInput), c.name)
 	}
 }
