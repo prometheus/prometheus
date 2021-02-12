@@ -1,11 +1,10 @@
 name: CIFuzz
-on: {}
-# Disabled for now, until we find a proper solution for vendoring.
-#  pull_request:
-#    paths:
-#      - 'go.sum'
-#      - 'go.mod'
-#      - '**.go'
+on:
+  pull_request:
+    paths:
+      - 'go.sum'
+      - 'go.mod'
+      - '**.go'
 jobs:
  Fuzzing:
    runs-on: ubuntu-latest
