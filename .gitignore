@@ -23,3 +23,4 @@ npm_licenses.tar.bz2
 /web/ui/assets_vfsdata.go
 
 /vendor
+/.build

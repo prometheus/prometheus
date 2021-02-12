@@ -91,8 +91,18 @@ The Makefile provides several targets:
   * *test-short*: run the short tests
   * *format*: format the source code
   * *vet*: check the source code for common errors
-  * *docker*: build a docker container for the current `HEAD`
   * *assets*: build the new experimental React UI
+
+### Building the Docker image
+
+The `make docker` target is designed for use in our CI system.
+You can build a docker image locally with the following commands:
+
+    $ make promu
+    $ promu crossbuild -p linux/amd64
+    $ make common-docker-amd64
+
+*NB* if you are on a Mac, you will need [gnu-tar](https://formulae.brew.sh/formula/gnu-tar).
 
 ## React UI Development
 
