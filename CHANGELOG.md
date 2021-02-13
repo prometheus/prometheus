@@ -3,6 +3,11 @@
 This release includes a new `--enable-feature=` flag that enables
 experimental features. Such features might be changed or removed in the future.
 
+In the next minor release (2.26), Prometheus will use the Alertmanager API v2.
+It will be done by defaulting `alertmanager_config.api_version` to `v2`.
+Alertmanager API v2 was released in Alertmanager v0.16.0 (released in January
+2019).
+
 * [FEATURE] **experimental** API: Accept remote_write requests. Behind the --enable-feature=remote-write-receiver flag. #8424
 * [FEATURE] **experimental** PromQL: Add '@ <timestamp>' modifier. Behind the --enable-feature=promql-at-modifier flag. #8121 #8436 #8425
 * [ENHANCEMENT] Add optional name property to testgroup for better test failure output. #8440
