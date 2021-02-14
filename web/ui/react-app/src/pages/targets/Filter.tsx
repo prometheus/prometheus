@@ -5,6 +5,9 @@ import styles from './Filter.module.css';
 export interface FilterData {
   showHealthy: boolean;
   showUnhealthy: boolean;
+  expanded: {
+    [scrapePool: string]: boolean;
+  };
 }
 
 export interface FilterProps {
@@ -13,7 +16,16 @@ export interface FilterProps {
 }
 
 const Filter: FC<FilterProps> = ({ filter, setFilter }) => {
-  const { showHealthy } = filter;
+  const { showHealthy, expanded } = filter;
+  const allExpanded = Object.values(expanded).every((v: boolean): boolean => v);
+  const mapExpansion = (next: boolean): { [scrapePool: string]: boolean } =>
+    Object.keys(expanded).reduce(
+      (acc: { [scrapePool: string]: boolean }, scrapePool: string) => ({
+        ...acc,
+        [scrapePool]: next,
+      }),
+      {}
+    );
   const btnProps = {
     all: {
       active: showHealthy,
@@ -27,11 +39,18 @@ const Filter: FC<FilterProps> = ({ filter, setFilter }) => {
       color: 'primary',
       onClick: (): void => setFilter({ ...filter, showHealthy: false }),
     },
+    expansionState: {
+      active: false,
+      className: `expansion ${styles.btn}`,
+      color: 'primary',
+      onClick: (): void => setFilter({ ...filter, expanded: mapExpansion(!allExpanded) }),
+    },
   };
   return (
     <ButtonGroup>
       <Button {...btnProps.all}>All</Button>
       <Button {...btnProps.unhealthy}>Unhealthy</Button>
+      <Button {...btnProps.expansionState}>{allExpanded ? 'Collapse All' : 'Expand All'}</Button>
     </ButtonGroup>
   );
 };
