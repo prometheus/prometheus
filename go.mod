@@ -10,6 +10,7 @@ require (
 	github.com/Azure/go-autorest/autorest/validation v0.3.1 // indirect
 	github.com/HdrHistogram/hdrhistogram-go v1.0.1 // indirect
 	github.com/Microsoft/go-winio v0.4.16 // indirect
+	github.com/alecthomas/jsonschema v0.0.0-20210214200137-e6fc2822d59d
 	github.com/alecthomas/units v0.0.0-20210208195552-ff826a37aa15
 	github.com/aws/aws-sdk-go v1.37.8
 	github.com/cespare/xxhash/v2 v2.1.1
@@ -32,6 +33,7 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0
 	github.com/hashicorp/consul/api v1.8.1
 	github.com/hetznercloud/hcloud-go v1.23.1
+	github.com/iancoleman/orderedmap v0.2.0 // indirect
 	github.com/influxdata/influxdb v1.8.4
 	github.com/json-iterator/go v1.1.10
 	github.com/miekg/dns v1.1.38

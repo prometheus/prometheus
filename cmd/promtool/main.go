@@ -22,12 +22,14 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/alecthomas/jsonschema"
 	"github.com/google/pprof/profile"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/api"
@@ -38,7 +40,11 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
 	"github.com/prometheus/exporter-toolkit/web"
+	"github.com/prometheus/prometheus/discovery"
+	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/relabel"
 	"gopkg.in/alecthomas/kingpin.v2"
+	"gopkg.in/yaml.v3"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/file"
@@ -95,6 +101,10 @@ func main() {
 	querySeriesMatch := querySeriesCmd.Flag("match", "Series selector. Can be specified multiple times.").Required().Strings()
 	querySeriesBegin := querySeriesCmd.Flag("start", "Start time (RFC3339 or Unix timestamp).").String()
 	querySeriesEnd := querySeriesCmd.Flag("end", "End time (RFC3339 or Unix timestamp).").String()
+
+	schemasCmd := app.Command("schemas", "Output schemas for types.")
+	schemasConfigCmd := schemasCmd.Command("config", "Output schema for config type.")
+	schemasRulesCmd := schemasCmd.Command("rules", "Output schema for rules type.")
 
 	debugCmd := app.Command("debug", "Fetch debug information.")
 	debugPprofCmd := debugCmd.Command("pprof", "Fetch profiling debug information.")
@@ -208,6 +218,12 @@ func main() {
 	//TODO(aSquare14): Work on adding support for custom block size.
 	case openMetricsImportCmd.FullCommand():
 		os.Exit(backfillOpenMetrics(*importFilePath, *importDBPath, *importHumanReadable))
+
+	case schemasConfigCmd.FullCommand():
+		os.Exit(OutputSchema(reflect.TypeOf(&config.Config{})))
+
+	case schemasRulesCmd.FullCommand():
+		os.Exit(OutputSchema(reflect.TypeOf((*rulefmt.RuleGroups)(nil))))
 	}
 }
 
@@ -462,6 +478,66 @@ func CheckMetrics() int {
 		return 3
 	}
 
+	return 0
+}
+
+func schemaOverride(t reflect.Type) *jsonschema.Type {
+	labelType := reflect.TypeOf((*labels.Labels)(nil)).Elem()
+	durationType := reflect.TypeOf((*model.Duration)(nil)).Elem()
+	regexpType := reflect.TypeOf((*relabel.Regexp)(nil)).Elem()
+	yamlNodeType := reflect.TypeOf((*yaml.Node)(nil)).Elem()
+	if t == labelType {
+		return &jsonschema.Type{
+			Type: "object",
+			PatternProperties: map[string]*jsonschema.Type{
+				".*": {
+					Type: "string",
+				},
+			},
+		}
+	}
+	if t == durationType || t == regexpType || t == yamlNodeType {
+		return &jsonschema.Type{
+			Type: "string",
+		}
+	}
+	return nil
+}
+
+func schemaTypeName(t reflect.Type) string {
+	mainConfigType := reflect.TypeOf((*config.Config)(nil)).Elem()
+	if t == mainConfigType {
+		return "PrometheusConfig"
+	}
+	switch t.Name() {
+	case "SDConfig", "Config":
+		return strings.Title(path.Base(t.PkgPath())) + t.Name()
+	}
+	return ""
+}
+
+func schemaAddFields(t reflect.Type) []reflect.StructField {
+	scrapeConfig := reflect.TypeOf((*config.ScrapeConfig)(nil)).Elem()
+	alertConfg := reflect.TypeOf((*config.AlertmanagerConfig)(nil)).Elem()
+	if t == scrapeConfig || t == alertConfg {
+		return discovery.ConfigsAsFields()
+	}
+	return nil
+}
+
+// OutputSchema renders a json schema for the given Type.
+func OutputSchema(t reflect.Type) int {
+	r := &jsonschema.Reflector{
+		TypeNamer:           schemaTypeName,
+		YAMLEmbeddedStructs: true,
+		TypeMapper:          schemaOverride,
+		AdditionalFields:    schemaAddFields,
+	}
+	schema := r.ReflectFromType(t)
+	err := json.NewEncoder(os.Stdout).Encode(schema)
+	if err != nil {
+		return 1
+	}
 	return 0
 }
 

@@ -256,3 +256,8 @@ func replaceYAMLTypeError(err error, oldTyp, newTyp reflect.Type) error {
 	}
 	return err
 }
+
+// ConfigsAsFields returns the dynamically generated golang StructFields for the Config type
+func ConfigsAsFields() []reflect.StructField {
+	return configFields
+}
