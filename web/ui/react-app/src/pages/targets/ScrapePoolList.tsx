@@ -25,7 +25,7 @@ export const ScrapePoolContent: FC<ScrapePoolListProps> = ({ activeTargets }) =>
       {}
     ),
   };
-  const [filter, setFilter] = useLocalStorage('targets-page-filter', initialState);
+  const [filter, setFilter] = useLocalStorage('targets-page-filter-expansion', initialState);
   const { showHealthy, showUnhealthy, expanded } = filter;
   return (
     <>
