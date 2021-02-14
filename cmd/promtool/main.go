@@ -497,8 +497,7 @@ func QueryInstant(url *url.URL, query, evalTime string, p printer) int {
 	val, _, err := api.Query(ctx, query, eTime) // Ignoring warnings for now.
 	cancel()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "query error:", err)
-		return 1
+		return handleAPIError(err)
 	}
 
 	p.printValue(val)
@@ -572,8 +571,7 @@ func QueryRange(url *url.URL, headers map[string]string, query, start, end strin
 	cancel()
 
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "query error:", err)
-		return 1
+		return handleAPIError(err)
 	}
 
 	p.printValue(val)
@@ -609,8 +607,7 @@ func QuerySeries(url *url.URL, matchers []string, start, end string, p printer) 
 	cancel()
 
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "query error:", err)
-		return 1
+		return handleAPIError(err)
 	}
 
 	p.printSeries(val)
@@ -648,14 +645,23 @@ func QueryLabels(url *url.URL, name string, start, end string, p printer) int {
 	for _, v := range warn {
 		fmt.Fprintln(os.Stderr, "query warning:", v)
 	}
-
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "query error:", err)
-		return 1
+		return handleAPIError(err)
 	}
 
 	p.printLabelValues(val)
 	return 0
+}
+
+func handleAPIError(err error) int {
+	var apiErr *v1.Error
+	if errors.As(err, &apiErr) && apiErr.Detail != "" {
+		fmt.Fprintf(os.Stderr, "query error: %v (detail: %s)\n", apiErr, strings.TrimSpace(apiErr.Detail))
+	} else {
+		fmt.Fprintln(os.Stderr, "query error:", err)
+	}
+
+	return 1
 }
 
 func parseStartTimeAndEndTime(start, end string) (time.Time, time.Time, error) {
