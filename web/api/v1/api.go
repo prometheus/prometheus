@@ -205,7 +205,8 @@ func init() {
 // NewAPI returns an initialized API type.
 func NewAPI(
 	qe *promql.Engine,
-	s storage.Storage,
+	q storage.SampleAndChunkQueryable,
+	ap storage.Appendable,
 	tr func(context.Context) TargetRetriever,
 	ar func(context.Context) AlertmanagerRetriever,
 	configFunc func() config.Config,
@@ -224,11 +225,10 @@ func NewAPI(
 	runtimeInfo func() (RuntimeInfo, error),
 	buildInfo *PrometheusVersion,
 	gatherer prometheus.Gatherer,
-	remoteWriteReceiver bool,
 ) *API {
 	a := &API{
 		QueryEngine: qe,
-		Queryable:   s,
+		Queryable:   q,
 
 		targetRetriever:       tr,
 		alertmanagerRetriever: ar,
@@ -252,8 +252,8 @@ func NewAPI(
 		gatherer:                  gatherer,
 	}
 
-	if remoteWriteReceiver {
-		a.remoteWriteHandler = remote.NewWriteHandler(logger, s)
+	if ap != nil {
+		a.remoteWriteHandler = remote.NewWriteHandler(logger, ap)
 	}
 
 	return a
