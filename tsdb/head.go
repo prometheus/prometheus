@@ -1047,21 +1047,14 @@ type initAppender struct {
 	head *Head
 }
 
-func (a *initAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
+func (a *initAppender) Append(ref uint64, lset labels.Labels, t int64, v float64) (uint64, error) {
 	if a.app != nil {
-		return a.app.Add(lset, t, v)
+		return a.app.Append(ref, lset, t, v)
 	}
+
 	a.head.initTime(t)
 	a.app = a.head.appender()
-
-	return a.app.Add(lset, t, v)
-}
-
-func (a *initAppender) AddFast(ref uint64, t int64, v float64) error {
-	if a.app == nil {
-		return storage.ErrNotFound
-	}
-	return a.app.AddFast(ref, t, v)
+	return a.app.Append(ref, lset, t, v)
 }
 
 func (a *initAppender) Commit() error {
@@ -1173,54 +1166,45 @@ type headAppender struct {
 	closed                          bool
 }
 
-func (a *headAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
+func (a *headAppender) Append(ref uint64, lset labels.Labels, t int64, v float64) (uint64, error) {
 	if t < a.minValidTime {
 		a.head.metrics.outOfBoundSamples.Inc()
 		return 0, storage.ErrOutOfBounds
 	}
 
-	// Ensure no empty labels have gotten through.
-	lset = lset.WithoutEmpty()
-
-	if len(lset) == 0 {
-		return 0, errors.Wrap(ErrInvalidSample, "empty labelset")
-	}
-
-	if l, dup := lset.HasDuplicateLabelNames(); dup {
-		return 0, errors.Wrap(ErrInvalidSample, fmt.Sprintf(`label name "%s" is not unique`, l))
-	}
-
-	s, created, err := a.head.getOrCreate(lset.Hash(), lset)
-	if err != nil {
-		return 0, err
-	}
-
-	if created {
-		a.series = append(a.series, record.RefSeries{
-			Ref:    s.ref,
-			Labels: lset,
-		})
-	}
-	return s.ref, a.AddFast(s.ref, t, v)
-}
-
-func (a *headAppender) AddFast(ref uint64, t int64, v float64) error {
-	if t < a.minValidTime {
-		a.head.metrics.outOfBoundSamples.Inc()
-		return storage.ErrOutOfBounds
-	}
-
 	s := a.head.series.getByID(ref)
 	if s == nil {
-		return errors.Wrap(storage.ErrNotFound, "unknown series")
+		// Ensure no empty labels have gotten through.
+		lset = lset.WithoutEmpty()
+		if len(lset) == 0 {
+			return 0, errors.Wrap(ErrInvalidSample, "empty labelset")
+		}
+
+		if l, dup := lset.HasDuplicateLabelNames(); dup {
+			return 0, errors.Wrap(ErrInvalidSample, fmt.Sprintf(`label name "%s" is not unique`, l))
+		}
+
+		var created bool
+		var err error
+		s, created, err = a.head.getOrCreate(lset.Hash(), lset)
+		if err != nil {
+			return 0, err
+		}
+		if created {
+			a.series = append(a.series, record.RefSeries{
+				Ref:    s.ref,
+				Labels: lset,
+			})
+		}
 	}
+
 	s.Lock()
 	if err := s.appendable(t, v); err != nil {
 		s.Unlock()
 		if err == storage.ErrOutOfOrderSample {
 			a.head.metrics.outOfOrderSamples.Inc()
 		}
-		return err
+		return 0, err
 	}
 	s.pendingCommit = true
 	s.Unlock()
@@ -1233,12 +1217,12 @@ func (a *headAppender) AddFast(ref uint64, t int64, v float64) error {
 	}
 
 	a.samples = append(a.samples, record.RefSample{
-		Ref: ref,
+		Ref: s.ref,
 		T:   t,
 		V:   v,
 	})
 	a.sampleSeries = append(a.sampleSeries, s)
-	return nil
+	return s.ref, nil
 }
 
 func (a *headAppender) log() error {

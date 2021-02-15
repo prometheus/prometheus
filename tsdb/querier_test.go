@@ -417,7 +417,7 @@ func TestBlockQuerier_AgainstHeadWithOpenChunks(t *testing.T) {
 			for _, s := range testData {
 				for _, chk := range s.chunks {
 					for _, sample := range chk {
-						_, err = app.Add(labels.FromMap(s.lset), sample.t, sample.v)
+						_, err = app.Append(0, labels.FromMap(s.lset), sample.t, sample.v)
 						require.NoError(t, err)
 					}
 				}
@@ -1579,11 +1579,11 @@ func TestPostingsForMatchers(t *testing.T) {
 	}()
 
 	app := h.Appender(context.Background())
-	app.Add(labels.FromStrings("n", "1"), 0, 0)
-	app.Add(labels.FromStrings("n", "1", "i", "a"), 0, 0)
-	app.Add(labels.FromStrings("n", "1", "i", "b"), 0, 0)
-	app.Add(labels.FromStrings("n", "2"), 0, 0)
-	app.Add(labels.FromStrings("n", "2.5"), 0, 0)
+	app.Append(0, labels.FromStrings("n", "1"), 0, 0)
+	app.Append(0, labels.FromStrings("n", "1", "i", "a"), 0, 0)
+	app.Append(0, labels.FromStrings("n", "1", "i", "b"), 0, 0)
+	app.Append(0, labels.FromStrings("n", "2"), 0, 0)
+	app.Append(0, labels.FromStrings("n", "2.5"), 0, 0)
 	require.NoError(t, app.Commit())
 
 	cases := []struct {

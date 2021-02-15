@@ -75,7 +75,7 @@ func (h *handler) write(ctx context.Context, req *prompb.WriteRequest) (err erro
 	for _, ts := range req.Timeseries {
 		labels := labelProtosToLabels(ts.Labels)
 		for _, s := range ts.Samples {
-			_, err = app.Add(labels, s.Timestamp, s.Value)
+			_, err = app.Append(0, labels, s.Timestamp, s.Value)
 			if err != nil {
 				return err
 			}

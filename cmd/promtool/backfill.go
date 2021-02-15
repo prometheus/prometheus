@@ -136,7 +136,7 @@ func createBlocks(input []byte, mint, maxt int64, maxSamplesInAppender int, outp
 				l := labels.Labels{}
 				p.Metric(&l)
 
-				if _, err := app.Add(l, *ts, v); err != nil {
+				if _, err := app.Append(0, l, *ts, v); err != nil {
 					return errors.Wrap(err, "add sample")
 				}
 

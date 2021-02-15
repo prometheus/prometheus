@@ -904,14 +904,15 @@ load 1ms
 	// Add some samples with negative timestamp.
 	db := test.TSDB()
 	app := db.Appender(context.Background())
-	ref, err := app.Add(lblsneg, -1000000, 1000)
+	ref, err := app.Append(0, lblsneg, -1000000, 1000)
 	require.NoError(t, err)
 	for ts := int64(-1000000 + 1000); ts <= 0; ts += 1000 {
-		require.NoError(t, app.AddFast(ref, ts, -float64(ts/1000)+1))
+		_, err := app.Append(ref, nil, ts, -float64(ts/1000)+1)
+		require.NoError(t, err)
 	}
 
 	// To test the fix for https://github.com/prometheus/prometheus/issues/8433.
-	_, err = app.Add(labels.FromStrings("__name__", "metric_timestamp"), 3600*1000, 1000)
+	_, err = app.Append(0, labels.FromStrings("__name__", "metric_timestamp"), 3600*1000, 1000)
 	require.NoError(t, err)
 
 	require.NoError(t, app.Commit())
