@@ -1363,6 +1363,19 @@ var testExpr = []struct {
 			},
 		},
 	}, {
+		input: "foo offset -7m",
+		expected: &VectorSelector{
+			Name:           "foo",
+			OriginalOffset: -7 * time.Minute,
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+			},
+			PosRange: PositionRange{
+				Start: 0,
+				End:   14,
+			},
+		},
+	}, {
 		input: `foo OFFSET 1h30m`,
 		expected: &VectorSelector{
 			Name:           "foo",
