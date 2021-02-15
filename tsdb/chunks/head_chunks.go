@@ -188,7 +188,7 @@ func (cdm *ChunkDiskMapper) openMMapFiles() (returnErr error) {
 			return errors.Wrapf(err, "mmap files, file: %s", fn)
 		}
 		cdm.closers[seq] = f
-		cdm.mmappedChunkFiles[seq] = &mmappedChunkFile{byteSlice: realByteSlice(f.Bytes())}
+		cdm.mmappedChunkFiles[seq] = &mmappedChunkFile{byteSlice: newRealByteSlice(f.Bytes(), f.Size())}
 		chkFileIndices = append(chkFileIndices, seq)
 	}
 
@@ -401,7 +401,7 @@ func (cdm *ChunkDiskMapper) cut() (returnErr error) {
 	}
 
 	cdm.closers[cdm.curFileSequence] = mmapFile
-	cdm.mmappedChunkFiles[cdm.curFileSequence] = &mmappedChunkFile{byteSlice: realByteSlice(mmapFile.Bytes())}
+	cdm.mmappedChunkFiles[cdm.curFileSequence] = &mmappedChunkFile{byteSlice: newRealByteSlice(mmapFile.Bytes(), mmapFile.Size())}
 	cdm.readPathMtx.Unlock()
 
 	cdm.curFileMaxt = 0

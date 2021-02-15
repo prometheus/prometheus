@@ -409,14 +409,24 @@ type ByteSlice interface {
 	Range(start, end int) []byte
 }
 
-type realByteSlice []byte
+type realByteSlice struct {
+	b []byte
+	s int
+}
+
+func newRealByteSlice(b []byte, size int) ByteSlice {
+	return realByteSlice{
+		b: b,
+		s: size,
+	}
+}
 
 func (b realByteSlice) Len() int {
-	return len(b)
+	return b.s
 }
 
 func (b realByteSlice) Range(start, end int) []byte {
-	return b[start:end]
+	return b.b[start:end]
 }
 
 // Reader implements a ChunkReader for a serialized byte stream
@@ -474,7 +484,7 @@ func NewDirReader(dir string, pool chunkenc.Pool) (*Reader, error) {
 			).Err()
 		}
 		cs = append(cs, f)
-		bs = append(bs, realByteSlice(f.Bytes()))
+		bs = append(bs, newRealByteSlice(f.Bytes(), f.Size()))
 	}
 
 	reader, err := newReader(bs, cs, pool)

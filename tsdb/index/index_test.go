@@ -486,14 +486,14 @@ func TestPersistence_index_e2e(t *testing.T) {
 }
 
 func TestDecbufUvarintWithInvalidBuffer(t *testing.T) {
-	b := realByteSlice([]byte{0x81, 0x81, 0x81, 0x81, 0x81, 0x81})
+	b := newRealByteSlice([]byte{0x81, 0x81, 0x81, 0x81, 0x81, 0x81}, 6)
 
 	db := encoding.NewDecbufUvarintAt(b, 0, castagnoliTable)
 	require.Error(t, db.Err())
 }
 
 func TestReaderWithInvalidBuffer(t *testing.T) {
-	b := realByteSlice([]byte{0x81, 0x81, 0x81, 0x81, 0x81, 0x81})
+	b := newRealByteSlice([]byte{0x81, 0x81, 0x81, 0x81, 0x81, 0x81}, 6)
 
 	_, err := NewReader(b)
 	require.Error(t, err)
@@ -530,7 +530,7 @@ func TestSymbols(t *testing.T) {
 	checksum := crc32.Checksum(buf.Get()[symbolsStart+4:], castagnoliTable)
 	buf.PutBE32(checksum) // Check sum at the end.
 
-	s, err := NewSymbols(realByteSlice(buf.Get()), FormatV2, symbolsStart)
+	s, err := NewSymbols(newRealByteSlice(buf.Get(), buf.Len()), FormatV2, symbolsStart)
 	require.NoError(t, err)
 
 	// We store only 4 offsets to symbols.

@@ -22,6 +22,7 @@ import (
 type MmapFile struct {
 	f *os.File
 	b []byte
+	s int
 }
 
 func OpenMmapFile(path string) (*MmapFile, error) {
@@ -51,7 +52,7 @@ func OpenMmapFileWithSize(path string, size int) (mf *MmapFile, retErr error) {
 		return nil, errors.Wrapf(err, "mmap, size %d", size)
 	}
 
-	return &MmapFile{f: f, b: b}, nil
+	return &MmapFile{f: f, b: b, s: size}, nil
 }
 
 func (f *MmapFile) Close() error {
@@ -70,4 +71,8 @@ func (f *MmapFile) File() *os.File {
 
 func (f *MmapFile) Bytes() []byte {
 	return f.b
+}
+
+func (f *MmapFile) Size() int {
+	return f.s
 }
