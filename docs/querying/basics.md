@@ -204,6 +204,11 @@ The same works for range vectors. This returns the 5-minute rate that
 
     rate(http_requests_total[5m] offset 1w)
 
+For comparisons with temporal shifts forward and backward, a negative offset
+can be specified:
+
+    rate(http_requests_total[5m] offset -1w)
+
 ### @ modifier
 
 The `@` modifier allows changing the evaluation time for individual instant
