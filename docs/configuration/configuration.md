@@ -423,7 +423,8 @@ The following meta labels are available on targets during [relabeling](#relabel_
 
 * `__meta_digitalocean_droplet_id`: the id of the droplet
 * `__meta_digitalocean_droplet_name`: the name of the droplet
-* `__meta_digitalocean_image`: the image name of the droplet
+* `__meta_digitalocean_image`: the slug of the droplet's image
+* `__meta_digitalocean_image_name`: the display name of the droplet's image
 * `__meta_digitalocean_private_ipv4`: the private IPv4 of the droplet
 * `__meta_digitalocean_public_ipv4`: the public IPv4 of the droplet
 * `__meta_digitalocean_public_ipv6`: the public IPv6 of the droplet
