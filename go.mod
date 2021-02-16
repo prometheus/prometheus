@@ -24,6 +24,7 @@ require (
 	github.com/go-logfmt/logfmt v0.5.0
 	github.com/go-openapi/strfmt v0.20.0
 	github.com/go-openapi/validate v0.20.2 // indirect
+	github.com/go-zookeeper/zk v1.0.2
 	github.com/gogo/protobuf v1.3.2
 	github.com/golang/snappy v0.0.2
 	github.com/google/pprof v0.0.0-20210208152844-1612e9be7af6
@@ -49,7 +50,6 @@ require (
 	github.com/prometheus/client_model v0.2.0
 	github.com/prometheus/common v0.15.0
 	github.com/prometheus/exporter-toolkit v0.5.1
-	github.com/samuel/go-zookeeper v0.0.0-20201211165307-7117e9ea2414
 	github.com/shurcooL/httpfs v0.0.0-20190707220628-8d4bc4ba7749
 	github.com/shurcooL/vfsgen v0.0.0-20200824052919-0d455de96546
 	github.com/stretchr/testify v1.7.0
