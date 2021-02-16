@@ -125,7 +125,7 @@ exports[`Flags should match snapshot 1`] = `
     </thead>
     <tbody>
       <tr
-        key="alertmanager.notification-queue-capacity"
+        key="--alertmanager.notification-queue-capacity"
       >
         <td
           className="px-4"
@@ -133,9 +133,8 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            --
             <span>
-              alertmanager.notification-queue-capacity
+              --alertmanager.notification-queue-capacity
             </span>
           </code>
         </td>
@@ -152,7 +151,7 @@ exports[`Flags should match snapshot 1`] = `
         </td>
       </tr>
       <tr
-        key="alertmanager.timeout"
+        key="--alertmanager.timeout"
       >
         <td
           className="px-4"
@@ -160,9 +159,8 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            --
             <span>
-              alertmanager.timeout
+              --alertmanager.timeout
             </span>
           </code>
         </td>
@@ -179,7 +177,7 @@ exports[`Flags should match snapshot 1`] = `
         </td>
       </tr>
       <tr
-        key="config.file"
+        key="--config.file"
       >
         <td
           className="px-4"
@@ -187,9 +185,8 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            --
             <span>
-              config.file
+              --config.file
             </span>
           </code>
         </td>
@@ -206,7 +203,7 @@ exports[`Flags should match snapshot 1`] = `
         </td>
       </tr>
       <tr
-        key="log.format"
+        key="--log.format"
       >
         <td
           className="px-4"
@@ -214,9 +211,8 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            --
             <span>
-              log.format
+              --log.format
             </span>
           </code>
         </td>
@@ -233,7 +229,7 @@ exports[`Flags should match snapshot 1`] = `
         </td>
       </tr>
       <tr
-        key="log.level"
+        key="--log.level"
       >
         <td
           className="px-4"
@@ -241,9 +237,8 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            --
             <span>
-              log.level
+              --log.level
             </span>
           </code>
         </td>
@@ -260,7 +255,7 @@ exports[`Flags should match snapshot 1`] = `
         </td>
       </tr>
       <tr
-        key="query.lookback-delta"
+        key="--query.lookback-delta"
       >
         <td
           className="px-4"
@@ -268,9 +263,8 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            --
             <span>
-              query.lookback-delta
+              --query.lookback-delta
             </span>
           </code>
         </td>
@@ -287,7 +281,7 @@ exports[`Flags should match snapshot 1`] = `
         </td>
       </tr>
       <tr
-        key="query.max-concurrency"
+        key="--query.max-concurrency"
       >
         <td
           className="px-4"
@@ -295,9 +289,8 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            --
             <span>
-              query.max-concurrency
+              --query.max-concurrency
             </span>
           </code>
         </td>
@@ -314,7 +307,7 @@ exports[`Flags should match snapshot 1`] = `
         </td>
       </tr>
       <tr
-        key="query.max-samples"
+        key="--query.max-samples"
       >
         <td
           className="px-4"
@@ -322,9 +315,8 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            --
             <span>
-              query.max-samples
+              --query.max-samples
             </span>
           </code>
         </td>
@@ -341,7 +333,7 @@ exports[`Flags should match snapshot 1`] = `
         </td>
       </tr>
       <tr
-        key="query.timeout"
+        key="--query.timeout"
       >
         <td
           className="px-4"
@@ -349,9 +341,8 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            --
             <span>
-              query.timeout
+              --query.timeout
             </span>
           </code>
         </td>
@@ -368,7 +359,7 @@ exports[`Flags should match snapshot 1`] = `
         </td>
       </tr>
       <tr
-        key="rules.alert.for-grace-period"
+        key="--rules.alert.for-grace-period"
       >
         <td
           className="px-4"
@@ -376,9 +367,8 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            --
             <span>
-              rules.alert.for-grace-period
+              --rules.alert.for-grace-period
             </span>
           </code>
         </td>
@@ -395,7 +385,7 @@ exports[`Flags should match snapshot 1`] = `
         </td>
       </tr>
       <tr
-        key="rules.alert.for-outage-tolerance"
+        key="--rules.alert.for-outage-tolerance"
       >
         <td
           className="px-4"
@@ -403,9 +393,8 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            --
             <span>
-              rules.alert.for-outage-tolerance
+              --rules.alert.for-outage-tolerance
             </span>
           </code>
         </td>
@@ -422,7 +411,7 @@ exports[`Flags should match snapshot 1`] = `
         </td>
       </tr>
       <tr
-        key="rules.alert.resend-delay"
+        key="--rules.alert.resend-delay"
       >
         <td
           className="px-4"
@@ -430,9 +419,8 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            --
             <span>
-              rules.alert.resend-delay
+              --rules.alert.resend-delay
             </span>
           </code>
         </td>
@@ -449,7 +437,7 @@ exports[`Flags should match snapshot 1`] = `
         </td>
       </tr>
       <tr
-        key="storage.remote.flush-deadline"
+        key="--storage.remote.flush-deadline"
       >
         <td
           className="px-4"
@@ -457,9 +445,8 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            --
             <span>
-              storage.remote.flush-deadline
+              --storage.remote.flush-deadline
             </span>
           </code>
         </td>
@@ -476,7 +463,7 @@ exports[`Flags should match snapshot 1`] = `
         </td>
       </tr>
       <tr
-        key="storage.remote.read-concurrent-limit"
+        key="--storage.remote.read-concurrent-limit"
       >
         <td
           className="px-4"
@@ -484,9 +471,8 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            --
             <span>
-              storage.remote.read-concurrent-limit
+              --storage.remote.read-concurrent-limit
             </span>
           </code>
         </td>
@@ -503,7 +489,7 @@ exports[`Flags should match snapshot 1`] = `
         </td>
       </tr>
       <tr
-        key="storage.remote.read-max-bytes-in-frame"
+        key="--storage.remote.read-max-bytes-in-frame"
       >
         <td
           className="px-4"
@@ -511,9 +497,8 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            --
             <span>
-              storage.remote.read-max-bytes-in-frame
+              --storage.remote.read-max-bytes-in-frame
             </span>
           </code>
         </td>
@@ -530,7 +515,7 @@ exports[`Flags should match snapshot 1`] = `
         </td>
       </tr>
       <tr
-        key="storage.remote.read-sample-limit"
+        key="--storage.remote.read-sample-limit"
       >
         <td
           className="px-4"
@@ -538,9 +523,8 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            --
             <span>
-              storage.remote.read-sample-limit
+              --storage.remote.read-sample-limit
             </span>
           </code>
         </td>
@@ -557,7 +541,7 @@ exports[`Flags should match snapshot 1`] = `
         </td>
       </tr>
       <tr
-        key="storage.tsdb.allow-overlapping-blocks"
+        key="--storage.tsdb.allow-overlapping-blocks"
       >
         <td
           className="px-4"
@@ -565,9 +549,8 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            --
             <span>
-              storage.tsdb.allow-overlapping-blocks
+              --storage.tsdb.allow-overlapping-blocks
             </span>
           </code>
         </td>
@@ -584,7 +567,7 @@ exports[`Flags should match snapshot 1`] = `
         </td>
       </tr>
       <tr
-        key="storage.tsdb.max-block-duration"
+        key="--storage.tsdb.max-block-duration"
       >
         <td
           className="px-4"
@@ -592,9 +575,8 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            --
             <span>
-              storage.tsdb.max-block-duration
+              --storage.tsdb.max-block-duration
             </span>
           </code>
         </td>
@@ -611,7 +593,7 @@ exports[`Flags should match snapshot 1`] = `
         </td>
       </tr>
       <tr
-        key="storage.tsdb.min-block-duration"
+        key="--storage.tsdb.min-block-duration"
       >
         <td
           className="px-4"
@@ -619,9 +601,8 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            --
             <span>
-              storage.tsdb.min-block-duration
+              --storage.tsdb.min-block-duration
             </span>
           </code>
         </td>
@@ -638,7 +619,7 @@ exports[`Flags should match snapshot 1`] = `
         </td>
       </tr>
       <tr
-        key="storage.tsdb.no-lockfile"
+        key="--storage.tsdb.no-lockfile"
       >
         <td
           className="px-4"
@@ -646,9 +627,8 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            --
             <span>
-              storage.tsdb.no-lockfile
+              --storage.tsdb.no-lockfile
             </span>
           </code>
         </td>
@@ -665,7 +645,7 @@ exports[`Flags should match snapshot 1`] = `
         </td>
       </tr>
       <tr
-        key="storage.tsdb.path"
+        key="--storage.tsdb.path"
       >
         <td
           className="px-4"
@@ -673,9 +653,8 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            --
             <span>
-              storage.tsdb.path
+              --storage.tsdb.path
             </span>
           </code>
         </td>
@@ -692,7 +671,7 @@ exports[`Flags should match snapshot 1`] = `
         </td>
       </tr>
       <tr
-        key="storage.tsdb.retention"
+        key="--storage.tsdb.retention"
       >
         <td
           className="px-4"
@@ -700,9 +679,8 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            --
             <span>
-              storage.tsdb.retention
+              --storage.tsdb.retention
             </span>
           </code>
         </td>
@@ -719,7 +697,7 @@ exports[`Flags should match snapshot 1`] = `
         </td>
       </tr>
       <tr
-        key="storage.tsdb.retention.size"
+        key="--storage.tsdb.retention.size"
       >
         <td
           className="px-4"
@@ -727,9 +705,8 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            --
             <span>
-              storage.tsdb.retention.size
+              --storage.tsdb.retention.size
             </span>
           </code>
         </td>
@@ -746,7 +723,7 @@ exports[`Flags should match snapshot 1`] = `
         </td>
       </tr>
       <tr
-        key="storage.tsdb.retention.time"
+        key="--storage.tsdb.retention.time"
       >
         <td
           className="px-4"
@@ -754,9 +731,8 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            --
             <span>
-              storage.tsdb.retention.time
+              --storage.tsdb.retention.time
             </span>
           </code>
         </td>
@@ -773,7 +749,7 @@ exports[`Flags should match snapshot 1`] = `
         </td>
       </tr>
       <tr
-        key="storage.tsdb.wal-compression"
+        key="--storage.tsdb.wal-compression"
       >
         <td
           className="px-4"
@@ -781,9 +757,8 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            --
             <span>
-              storage.tsdb.wal-compression
+              --storage.tsdb.wal-compression
             </span>
           </code>
         </td>
@@ -800,7 +775,7 @@ exports[`Flags should match snapshot 1`] = `
         </td>
       </tr>
       <tr
-        key="storage.tsdb.wal-segment-size"
+        key="--storage.tsdb.wal-segment-size"
       >
         <td
           className="px-4"
@@ -808,9 +783,8 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            --
             <span>
-              storage.tsdb.wal-segment-size
+              --storage.tsdb.wal-segment-size
             </span>
           </code>
         </td>
@@ -827,7 +801,7 @@ exports[`Flags should match snapshot 1`] = `
         </td>
       </tr>
       <tr
-        key="web.console.libraries"
+        key="--web.console.libraries"
       >
         <td
           className="px-4"
@@ -835,9 +809,8 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            --
             <span>
-              web.console.libraries
+              --web.console.libraries
             </span>
           </code>
         </td>
@@ -854,7 +827,7 @@ exports[`Flags should match snapshot 1`] = `
         </td>
       </tr>
       <tr
-        key="web.console.templates"
+        key="--web.console.templates"
       >
         <td
           className="px-4"
@@ -862,9 +835,8 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            --
             <span>
-              web.console.templates
+              --web.console.templates
             </span>
           </code>
         </td>
@@ -881,7 +853,7 @@ exports[`Flags should match snapshot 1`] = `
         </td>
       </tr>
       <tr
-        key="web.cors.origin"
+        key="--web.cors.origin"
       >
         <td
           className="px-4"
@@ -889,9 +861,8 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            --
             <span>
-              web.cors.origin
+              --web.cors.origin
             </span>
           </code>
         </td>
@@ -908,7 +879,7 @@ exports[`Flags should match snapshot 1`] = `
         </td>
       </tr>
       <tr
-        key="web.enable-admin-api"
+        key="--web.enable-admin-api"
       >
         <td
           className="px-4"
@@ -916,9 +887,8 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            --
             <span>
-              web.enable-admin-api
+              --web.enable-admin-api
             </span>
           </code>
         </td>
@@ -935,7 +905,7 @@ exports[`Flags should match snapshot 1`] = `
         </td>
       </tr>
       <tr
-        key="web.enable-lifecycle"
+        key="--web.enable-lifecycle"
       >
         <td
           className="px-4"
@@ -943,9 +913,8 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            --
             <span>
-              web.enable-lifecycle
+              --web.enable-lifecycle
             </span>
           </code>
         </td>
@@ -962,7 +931,7 @@ exports[`Flags should match snapshot 1`] = `
         </td>
       </tr>
       <tr
-        key="web.external-url"
+        key="--web.external-url"
       >
         <td
           className="px-4"
@@ -970,9 +939,8 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            --
             <span>
-              web.external-url
+              --web.external-url
             </span>
           </code>
         </td>
@@ -987,7 +955,7 @@ exports[`Flags should match snapshot 1`] = `
         </td>
       </tr>
       <tr
-        key="web.listen-address"
+        key="--web.listen-address"
       >
         <td
           className="px-4"
@@ -995,9 +963,8 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            --
             <span>
-              web.listen-address
+              --web.listen-address
             </span>
           </code>
         </td>
@@ -1014,7 +981,7 @@ exports[`Flags should match snapshot 1`] = `
         </td>
       </tr>
       <tr
-        key="web.max-connections"
+        key="--web.max-connections"
       >
         <td
           className="px-4"
@@ -1022,9 +989,8 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            --
             <span>
-              web.max-connections
+              --web.max-connections
             </span>
           </code>
         </td>
@@ -1041,7 +1007,7 @@ exports[`Flags should match snapshot 1`] = `
         </td>
       </tr>
       <tr
-        key="web.page-title"
+        key="--web.page-title"
       >
         <td
           className="px-4"
@@ -1049,9 +1015,8 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            --
             <span>
-              web.page-title
+              --web.page-title
             </span>
           </code>
         </td>
@@ -1068,7 +1033,7 @@ exports[`Flags should match snapshot 1`] = `
         </td>
       </tr>
       <tr
-        key="web.read-timeout"
+        key="--web.read-timeout"
       >
         <td
           className="px-4"
@@ -1076,9 +1041,8 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            --
             <span>
-              web.read-timeout
+              --web.read-timeout
             </span>
           </code>
         </td>
@@ -1095,7 +1059,7 @@ exports[`Flags should match snapshot 1`] = `
         </td>
       </tr>
       <tr
-        key="web.route-prefix"
+        key="--web.route-prefix"
       >
         <td
           className="px-4"
@@ -1103,9 +1067,8 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            --
             <span>
-              web.route-prefix
+              --web.route-prefix
             </span>
           </code>
         </td>
@@ -1122,7 +1085,7 @@ exports[`Flags should match snapshot 1`] = `
         </td>
       </tr>
       <tr
-        key="web.user-assets"
+        key="--web.user-assets"
       >
         <td
           className="px-4"
@@ -1130,9 +1093,8 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            --
             <span>
-              web.user-assets
+              --web.user-assets
             </span>
           </code>
         </td>

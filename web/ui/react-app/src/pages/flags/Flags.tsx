@@ -107,11 +107,12 @@ export const FlagsContent: FC<FlagsProps> = ({ data = {} }) => {
         <tbody>
           {Object.entries(data)
             .sort(compareAlphaFn(state.sort.name === 'Flag', !state.sort.alpha))
+            .map(([flag, value]) => [`--${flag}`, value])
             .filter(([flag, value]) => flag.includes(state.search) || value.includes(state.search))
             .map(([flag, value]) => (
               <tr key={flag}>
                 <td className="px-4">
-                  <code className="text-dark flag-item">--{boldSubstring(flag, state.search)}</code>
+                  <code className="text-dark flag-item">{boldSubstring(flag, state.search)}</code>
                 </td>
                 <td className="px-4">
                   <code className="text-dark value-item">{boldSubstring(value, state.search)}</code>
