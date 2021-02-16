@@ -651,8 +651,9 @@ type QueueConfig struct {
 	BatchSendDeadline model.Duration `yaml:"batch_send_deadline,omitempty"`
 
 	// On recoverable errors, backoff exponentially.
-	MinBackoff model.Duration `yaml:"min_backoff,omitempty"`
-	MaxBackoff model.Duration `yaml:"max_backoff,omitempty"`
+	MinBackoff       model.Duration `yaml:"min_backoff,omitempty"`
+	MaxBackoff       model.Duration `yaml:"max_backoff,omitempty"`
+	RetryOnRateLimit bool           `yaml:"retry_on_http_429,omitempty"`
 }
 
 // MetadataConfig is the configuration for sending metadata to remote

@@ -734,6 +734,20 @@ func TestYAMLRoundtrip(t *testing.T) {
 	require.Equal(t, want, got)
 }
 
+func TestRemoteWriteRetryOnRateLimit(t *testing.T) {
+	want, err := LoadFile("testdata/remote_write_retry_on_rate_limit.good.yml")
+	require.NoError(t, err)
+
+	out, err := yaml.Marshal(want)
+
+	require.NoError(t, err)
+	got := &Config{}
+	require.NoError(t, yaml.UnmarshalStrict(out, got))
+
+	require.Equal(t, true, got.RemoteWriteConfigs[0].QueueConfig.RetryOnRateLimit)
+	require.Equal(t, false, got.RemoteWriteConfigs[1].QueueConfig.RetryOnRateLimit)
+}
+
 func TestLoadConfig(t *testing.T) {
 	// Parse a valid file that sets a global scrape timeout. This tests whether parsing
 	// an overwritten default field in the global config permanently changes the default.
