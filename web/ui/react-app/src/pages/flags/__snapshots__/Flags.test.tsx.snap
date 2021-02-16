@@ -5,389 +5,1146 @@ exports[`Flags should match snapshot 1`] = `
   <h2>
     Command-Line Flags
   </h2>
+  <InputGroup
+    tag="div"
+  >
+    <Input
+      autoFocus={true}
+      className="my-3"
+      onChange={[Function]}
+      placeholder="Filter by flag name or value..."
+      type="text"
+      value=""
+    />
+  </InputGroup>
   <Table
     bordered={true}
+    hover={true}
     responsiveTag="div"
     size="sm"
     striped={true}
     tag="table"
   >
+    <thead>
+      <tr>
+        <td
+          className="px-4 Flag"
+          key="Flag"
+          onClick={[Function]}
+          style={
+            Object {
+              "width": "50%",
+            }
+          }
+        >
+          <span
+            className="mr-2"
+          >
+            Flag
+          </span>
+          <FontAwesomeIcon
+            border={false}
+            className=""
+            fixedWidth={false}
+            flip={null}
+            icon={
+              Object {
+                "icon": Array [
+                  320,
+                  512,
+                  Array [],
+                  "f0dd",
+                  "M41 288h238c21.4 0 32.1 25.9 17 41L177 448c-9.4 9.4-24.6 9.4-33.9 0L24 329c-15.1-15.1-4.4-41 17-41z",
+                ],
+                "iconName": "sort-down",
+                "prefix": "fas",
+              }
+            }
+            inverse={false}
+            listItem={false}
+            mask={null}
+            pull={null}
+            pulse={false}
+            rotation={null}
+            size={null}
+            spin={false}
+            swapOpacity={false}
+            symbol={false}
+            title=""
+            transform={null}
+          />
+        </td>
+        <td
+          className="px-4 Value"
+          key="Value"
+          onClick={[Function]}
+          style={
+            Object {
+              "width": "50%",
+            }
+          }
+        >
+          <span
+            className="mr-2"
+          >
+            Value
+          </span>
+          <FontAwesomeIcon
+            border={false}
+            className=""
+            fixedWidth={false}
+            flip={null}
+            icon={
+              Object {
+                "icon": Array [
+                  320,
+                  512,
+                  Array [],
+                  "f0dc",
+                  "M41 288h238c21.4 0 32.1 25.9 17 41L177 448c-9.4 9.4-24.6 9.4-33.9 0L24 329c-15.1-15.1-4.4-41 17-41zm255-105L177 64c-9.4-9.4-24.6-9.4-33.9 0L24 183c-15.1 15.1-4.4 41 17 41h238c21.4 0 32.1-25.9 17-41z",
+                ],
+                "iconName": "sort",
+                "prefix": "fas",
+              }
+            }
+            inverse={false}
+            listItem={false}
+            mask={null}
+            pull={null}
+            pulse={false}
+            rotation={null}
+            size={null}
+            spin={false}
+            swapOpacity={false}
+            symbol={false}
+            title=""
+            transform={null}
+          />
+        </td>
+      </tr>
+    </thead>
     <tbody>
       <tr
         key="alertmanager.notification-queue-capacity"
       >
-        <th>
-          alertmanager.notification-queue-capacity
-        </th>
-        <td>
-          10000
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark flag-item"
+          >
+            --
+            <span>
+              alertmanager.notification-queue-capacity
+            </span>
+          </code>
+        </td>
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark value-item"
+          >
+            <span>
+              10000
+            </span>
+          </code>
         </td>
       </tr>
       <tr
         key="alertmanager.timeout"
       >
-        <th>
-          alertmanager.timeout
-        </th>
-        <td>
-          10s
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark flag-item"
+          >
+            --
+            <span>
+              alertmanager.timeout
+            </span>
+          </code>
+        </td>
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark value-item"
+          >
+            <span>
+              10s
+            </span>
+          </code>
         </td>
       </tr>
       <tr
         key="config.file"
       >
-        <th>
-          config.file
-        </th>
-        <td>
-          ./documentation/examples/prometheus.yml
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark flag-item"
+          >
+            --
+            <span>
+              config.file
+            </span>
+          </code>
+        </td>
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark value-item"
+          >
+            <span>
+              ./documentation/examples/prometheus.yml
+            </span>
+          </code>
         </td>
       </tr>
       <tr
         key="log.format"
       >
-        <th>
-          log.format
-        </th>
-        <td>
-          logfmt
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark flag-item"
+          >
+            --
+            <span>
+              log.format
+            </span>
+          </code>
+        </td>
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark value-item"
+          >
+            <span>
+              logfmt
+            </span>
+          </code>
         </td>
       </tr>
       <tr
         key="log.level"
       >
-        <th>
-          log.level
-        </th>
-        <td>
-          info
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark flag-item"
+          >
+            --
+            <span>
+              log.level
+            </span>
+          </code>
+        </td>
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark value-item"
+          >
+            <span>
+              info
+            </span>
+          </code>
         </td>
       </tr>
       <tr
         key="query.lookback-delta"
       >
-        <th>
-          query.lookback-delta
-        </th>
-        <td>
-          5m
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark flag-item"
+          >
+            --
+            <span>
+              query.lookback-delta
+            </span>
+          </code>
+        </td>
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark value-item"
+          >
+            <span>
+              5m
+            </span>
+          </code>
         </td>
       </tr>
       <tr
         key="query.max-concurrency"
       >
-        <th>
-          query.max-concurrency
-        </th>
-        <td>
-          20
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark flag-item"
+          >
+            --
+            <span>
+              query.max-concurrency
+            </span>
+          </code>
+        </td>
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark value-item"
+          >
+            <span>
+              20
+            </span>
+          </code>
         </td>
       </tr>
       <tr
         key="query.max-samples"
       >
-        <th>
-          query.max-samples
-        </th>
-        <td>
-          50000000
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark flag-item"
+          >
+            --
+            <span>
+              query.max-samples
+            </span>
+          </code>
+        </td>
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark value-item"
+          >
+            <span>
+              50000000
+            </span>
+          </code>
         </td>
       </tr>
       <tr
         key="query.timeout"
       >
-        <th>
-          query.timeout
-        </th>
-        <td>
-          2m
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark flag-item"
+          >
+            --
+            <span>
+              query.timeout
+            </span>
+          </code>
+        </td>
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark value-item"
+          >
+            <span>
+              2m
+            </span>
+          </code>
         </td>
       </tr>
       <tr
         key="rules.alert.for-grace-period"
       >
-        <th>
-          rules.alert.for-grace-period
-        </th>
-        <td>
-          10m
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark flag-item"
+          >
+            --
+            <span>
+              rules.alert.for-grace-period
+            </span>
+          </code>
+        </td>
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark value-item"
+          >
+            <span>
+              10m
+            </span>
+          </code>
         </td>
       </tr>
       <tr
         key="rules.alert.for-outage-tolerance"
       >
-        <th>
-          rules.alert.for-outage-tolerance
-        </th>
-        <td>
-          1h
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark flag-item"
+          >
+            --
+            <span>
+              rules.alert.for-outage-tolerance
+            </span>
+          </code>
+        </td>
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark value-item"
+          >
+            <span>
+              1h
+            </span>
+          </code>
         </td>
       </tr>
       <tr
         key="rules.alert.resend-delay"
       >
-        <th>
-          rules.alert.resend-delay
-        </th>
-        <td>
-          1m
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark flag-item"
+          >
+            --
+            <span>
+              rules.alert.resend-delay
+            </span>
+          </code>
+        </td>
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark value-item"
+          >
+            <span>
+              1m
+            </span>
+          </code>
         </td>
       </tr>
       <tr
         key="storage.remote.flush-deadline"
       >
-        <th>
-          storage.remote.flush-deadline
-        </th>
-        <td>
-          1m
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark flag-item"
+          >
+            --
+            <span>
+              storage.remote.flush-deadline
+            </span>
+          </code>
+        </td>
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark value-item"
+          >
+            <span>
+              1m
+            </span>
+          </code>
         </td>
       </tr>
       <tr
         key="storage.remote.read-concurrent-limit"
       >
-        <th>
-          storage.remote.read-concurrent-limit
-        </th>
-        <td>
-          10
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark flag-item"
+          >
+            --
+            <span>
+              storage.remote.read-concurrent-limit
+            </span>
+          </code>
+        </td>
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark value-item"
+          >
+            <span>
+              10
+            </span>
+          </code>
         </td>
       </tr>
       <tr
         key="storage.remote.read-max-bytes-in-frame"
       >
-        <th>
-          storage.remote.read-max-bytes-in-frame
-        </th>
-        <td>
-          1048576
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark flag-item"
+          >
+            --
+            <span>
+              storage.remote.read-max-bytes-in-frame
+            </span>
+          </code>
+        </td>
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark value-item"
+          >
+            <span>
+              1048576
+            </span>
+          </code>
         </td>
       </tr>
       <tr
         key="storage.remote.read-sample-limit"
       >
-        <th>
-          storage.remote.read-sample-limit
-        </th>
-        <td>
-          50000000
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark flag-item"
+          >
+            --
+            <span>
+              storage.remote.read-sample-limit
+            </span>
+          </code>
+        </td>
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark value-item"
+          >
+            <span>
+              50000000
+            </span>
+          </code>
         </td>
       </tr>
       <tr
         key="storage.tsdb.allow-overlapping-blocks"
       >
-        <th>
-          storage.tsdb.allow-overlapping-blocks
-        </th>
-        <td>
-          false
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark flag-item"
+          >
+            --
+            <span>
+              storage.tsdb.allow-overlapping-blocks
+            </span>
+          </code>
+        </td>
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark value-item"
+          >
+            <span>
+              false
+            </span>
+          </code>
         </td>
       </tr>
       <tr
         key="storage.tsdb.max-block-duration"
       >
-        <th>
-          storage.tsdb.max-block-duration
-        </th>
-        <td>
-          36h
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark flag-item"
+          >
+            --
+            <span>
+              storage.tsdb.max-block-duration
+            </span>
+          </code>
+        </td>
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark value-item"
+          >
+            <span>
+              36h
+            </span>
+          </code>
         </td>
       </tr>
       <tr
         key="storage.tsdb.min-block-duration"
       >
-        <th>
-          storage.tsdb.min-block-duration
-        </th>
-        <td>
-          2h
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark flag-item"
+          >
+            --
+            <span>
+              storage.tsdb.min-block-duration
+            </span>
+          </code>
+        </td>
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark value-item"
+          >
+            <span>
+              2h
+            </span>
+          </code>
         </td>
       </tr>
       <tr
         key="storage.tsdb.no-lockfile"
       >
-        <th>
-          storage.tsdb.no-lockfile
-        </th>
-        <td>
-          false
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark flag-item"
+          >
+            --
+            <span>
+              storage.tsdb.no-lockfile
+            </span>
+          </code>
+        </td>
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark value-item"
+          >
+            <span>
+              false
+            </span>
+          </code>
         </td>
       </tr>
       <tr
         key="storage.tsdb.path"
       >
-        <th>
-          storage.tsdb.path
-        </th>
-        <td>
-          data/
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark flag-item"
+          >
+            --
+            <span>
+              storage.tsdb.path
+            </span>
+          </code>
+        </td>
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark value-item"
+          >
+            <span>
+              data/
+            </span>
+          </code>
         </td>
       </tr>
       <tr
         key="storage.tsdb.retention"
       >
-        <th>
-          storage.tsdb.retention
-        </th>
-        <td>
-          0s
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark flag-item"
+          >
+            --
+            <span>
+              storage.tsdb.retention
+            </span>
+          </code>
+        </td>
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark value-item"
+          >
+            <span>
+              0s
+            </span>
+          </code>
         </td>
       </tr>
       <tr
         key="storage.tsdb.retention.size"
       >
-        <th>
-          storage.tsdb.retention.size
-        </th>
-        <td>
-          0B
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark flag-item"
+          >
+            --
+            <span>
+              storage.tsdb.retention.size
+            </span>
+          </code>
+        </td>
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark value-item"
+          >
+            <span>
+              0B
+            </span>
+          </code>
         </td>
       </tr>
       <tr
         key="storage.tsdb.retention.time"
       >
-        <th>
-          storage.tsdb.retention.time
-        </th>
-        <td>
-          0s
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark flag-item"
+          >
+            --
+            <span>
+              storage.tsdb.retention.time
+            </span>
+          </code>
+        </td>
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark value-item"
+          >
+            <span>
+              0s
+            </span>
+          </code>
         </td>
       </tr>
       <tr
         key="storage.tsdb.wal-compression"
       >
-        <th>
-          storage.tsdb.wal-compression
-        </th>
-        <td>
-          false
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark flag-item"
+          >
+            --
+            <span>
+              storage.tsdb.wal-compression
+            </span>
+          </code>
+        </td>
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark value-item"
+          >
+            <span>
+              false
+            </span>
+          </code>
         </td>
       </tr>
       <tr
         key="storage.tsdb.wal-segment-size"
       >
-        <th>
-          storage.tsdb.wal-segment-size
-        </th>
-        <td>
-          0B
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark flag-item"
+          >
+            --
+            <span>
+              storage.tsdb.wal-segment-size
+            </span>
+          </code>
+        </td>
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark value-item"
+          >
+            <span>
+              0B
+            </span>
+          </code>
         </td>
       </tr>
       <tr
         key="web.console.libraries"
       >
-        <th>
-          web.console.libraries
-        </th>
-        <td>
-          console_libraries
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark flag-item"
+          >
+            --
+            <span>
+              web.console.libraries
+            </span>
+          </code>
+        </td>
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark value-item"
+          >
+            <span>
+              console_libraries
+            </span>
+          </code>
         </td>
       </tr>
       <tr
         key="web.console.templates"
       >
-        <th>
-          web.console.templates
-        </th>
-        <td>
-          consoles
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark flag-item"
+          >
+            --
+            <span>
+              web.console.templates
+            </span>
+          </code>
+        </td>
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark value-item"
+          >
+            <span>
+              consoles
+            </span>
+          </code>
         </td>
       </tr>
       <tr
         key="web.cors.origin"
       >
-        <th>
-          web.cors.origin
-        </th>
-        <td>
-          .*
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark flag-item"
+          >
+            --
+            <span>
+              web.cors.origin
+            </span>
+          </code>
+        </td>
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark value-item"
+          >
+            <span>
+              .*
+            </span>
+          </code>
         </td>
       </tr>
       <tr
         key="web.enable-admin-api"
       >
-        <th>
-          web.enable-admin-api
-        </th>
-        <td>
-          false
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark flag-item"
+          >
+            --
+            <span>
+              web.enable-admin-api
+            </span>
+          </code>
+        </td>
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark value-item"
+          >
+            <span>
+              false
+            </span>
+          </code>
         </td>
       </tr>
       <tr
         key="web.enable-lifecycle"
       >
-        <th>
-          web.enable-lifecycle
-        </th>
-        <td>
-          false
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark flag-item"
+          >
+            --
+            <span>
+              web.enable-lifecycle
+            </span>
+          </code>
+        </td>
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark value-item"
+          >
+            <span>
+              false
+            </span>
+          </code>
         </td>
       </tr>
       <tr
         key="web.external-url"
       >
-        <th>
-          web.external-url
-        </th>
-        <td />
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark flag-item"
+          >
+            --
+            <span>
+              web.external-url
+            </span>
+          </code>
+        </td>
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark value-item"
+          >
+            <span />
+          </code>
+        </td>
       </tr>
       <tr
         key="web.listen-address"
       >
-        <th>
-          web.listen-address
-        </th>
-        <td>
-          0.0.0.0:9090
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark flag-item"
+          >
+            --
+            <span>
+              web.listen-address
+            </span>
+          </code>
+        </td>
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark value-item"
+          >
+            <span>
+              0.0.0.0:9090
+            </span>
+          </code>
         </td>
       </tr>
       <tr
         key="web.max-connections"
       >
-        <th>
-          web.max-connections
-        </th>
-        <td>
-          512
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark flag-item"
+          >
+            --
+            <span>
+              web.max-connections
+            </span>
+          </code>
+        </td>
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark value-item"
+          >
+            <span>
+              512
+            </span>
+          </code>
         </td>
       </tr>
       <tr
         key="web.page-title"
       >
-        <th>
-          web.page-title
-        </th>
-        <td>
-          Prometheus Time Series Collection and Processing Server
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark flag-item"
+          >
+            --
+            <span>
+              web.page-title
+            </span>
+          </code>
+        </td>
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark value-item"
+          >
+            <span>
+              Prometheus Time Series Collection and Processing Server
+            </span>
+          </code>
         </td>
       </tr>
       <tr
         key="web.read-timeout"
       >
-        <th>
-          web.read-timeout
-        </th>
-        <td>
-          5m
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark flag-item"
+          >
+            --
+            <span>
+              web.read-timeout
+            </span>
+          </code>
+        </td>
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark value-item"
+          >
+            <span>
+              5m
+            </span>
+          </code>
         </td>
       </tr>
       <tr
         key="web.route-prefix"
       >
-        <th>
-          web.route-prefix
-        </th>
-        <td>
-          /
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark flag-item"
+          >
+            --
+            <span>
+              web.route-prefix
+            </span>
+          </code>
+        </td>
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark value-item"
+          >
+            <span>
+              /
+            </span>
+          </code>
         </td>
       </tr>
       <tr
         key="web.user-assets"
       >
-        <th>
-          web.user-assets
-        </th>
-        <td />
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark flag-item"
+          >
+            --
+            <span>
+              web.user-assets
+            </span>
+          </code>
+        </td>
+        <td
+          className="px-4"
+        >
+          <code
+            className="text-dark value-item"
+          >
+            <span />
+          </code>
+        </td>
       </tr>
     </tbody>
   </Table>
