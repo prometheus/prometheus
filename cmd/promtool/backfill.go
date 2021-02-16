@@ -93,7 +93,13 @@ func createBlocks(input []byte, mint, maxt int64, maxSamplesInAppender int, outp
 		nextSampleTs = math.MaxInt64
 
 		err := func() error {
-			w, err := tsdb.NewBlockWriter(log.NewNopLogger(), outputDir, blockDuration)
+			// To prevent races with compaction, a block writer only allows appending samples
+			// that are at most half a block size older than the most recent sample appended so far.
+			// However, in the way we use the block writer here, compaction doesn't happen, while we
+			// also need to append samples throughout the whole block range. To allow that, we
+			// pretend that the block is twice as large here, but only really add sample in the
+			// original interval later.
+			w, err := tsdb.NewBlockWriter(log.NewNopLogger(), outputDir, 2*blockDuration)
 			if err != nil {
 				return errors.Wrap(err, "block writer")
 			}
