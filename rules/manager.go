@@ -53,7 +53,7 @@ const namespace = "prometheus"
 
 // Metrics for rule evaluation.
 type Metrics struct {
-	evalDuration        prometheus.Summary
+	evalDuration        *prometheus.SummaryVec
 	iterationDuration   prometheus.Summary
 	iterationsMissed    *prometheus.CounterVec
 	iterationsScheduled *prometheus.CounterVec
@@ -70,13 +70,15 @@ type Metrics struct {
 // if not nil.
 func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 	m := &Metrics{
-		evalDuration: prometheus.NewSummary(
+		evalDuration: prometheus.NewSummaryVec(
 			prometheus.SummaryOpts{
 				Namespace:  namespace,
 				Name:       "rule_evaluation_duration_seconds",
 				Help:       "The duration for a rule to execute.",
 				Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
-			}),
+			},
+			[]string{"rule_group", "rule"},
+		),
 		iterationDuration: prometheus.NewSummary(prometheus.SummaryOpts{
 			Namespace:  namespace,
 			Name:       "rule_group_duration_seconds",
@@ -583,7 +585,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				sp.Finish()
 
 				since := time.Since(t)
-				g.metrics.evalDuration.Observe(since.Seconds())
+				g.metrics.evalDuration.WithLabelValues(groupKey(g.File(), g.Name()), rule.Name()).Observe(since.Seconds())
 				rule.SetEvaluationDuration(since)
 				rule.SetEvaluationTimestamp(t)
 			}(time.Now())
