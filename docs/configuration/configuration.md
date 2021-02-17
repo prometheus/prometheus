@@ -366,8 +366,11 @@ If the service kind is a [connect proxy][https://www.consul.io/docs/connect/regi
 * `__meta_consul_proxy_service_id`: the service ID associated to the proxy of the target
 * `__meta_consul_proxy_service_address`: the service address associated to the proxy of the target
 * `__meta_consul_proxy_service_port`: the service port associated to the proxy of the target
+
+Also, if fetch_exposed_paths is set to true. A target will be generated per exporsed path with the following labels exported. All other labels will be the same.
+
 * `__meta_consul_proxy_exposed_path_port`: the exposed port for this path
-* `__meta_consul_proxy_exposed_path_local_port`: the local port por the exposed path
+* `__meta_consul_proxy_exposed_path_local_port`: the local port for the exposed path
 * `__meta_consul_proxy_exposed_path_path`: the exposed path
 * `__meta_consul_proxy_exposed_path_protocol`: the exposed path protocol
 
@@ -409,6 +412,9 @@ tags:
 # The time after which the provided names are refreshed.
 # On large setup it might be a good idea to increase this value because the catalog will change all the time.
 [ refresh_interval: <duration> | default = 30s ]
+
+# Wether to generate a target per exporsed path if the discovered service is connect proxy.
+[ fetch_exposed_paths: <boolean> | default = false]
 ```
 
 Note that the IP number and port used to scrape the targets is assembled as
