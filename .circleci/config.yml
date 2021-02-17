@@ -62,7 +62,7 @@ jobs:
     - run:
         # Temporary workaround until circleci updates go.
         command: |
-          choco upgrade -y golang
+          choco upgrade -y golang --version=1.15.8
     - run:
         command:
           refreshenv
