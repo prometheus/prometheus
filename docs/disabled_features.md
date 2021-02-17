@@ -16,7 +16,7 @@ They may be enabled by default in future versions.
 `--enable-feature=promql-at-modifier`
 
 The `@` modifier lets you specify the evaluation time for instant vector selectors,
-range vector selectors, and subqueries. More details can be found [here](querying/basics.md#-modifier).
+range vector selectors, and subqueries. More details can be found [here](querying/basics.md#modifier).
 
 ## Remote Write Receiver
 
