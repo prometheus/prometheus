@@ -244,7 +244,7 @@ func TestMaxChunkSize(t *testing.T) {
 	}
 
 	for _, size := range []string{"1MB", "512MB", "1GB"} {
-		prom := exec.Command(promPath, "-test.main", "--storage.tsdb.max-chunk-size="+size, "--config.file="+promConfig)
+		prom := exec.Command(promPath, "-test.main", "--storage.tsdb.max-block-chunk-segment-size="+size, "--config.file="+promConfig)
 
 		// Log stderr in case of failure.
 		stderr, err := prom.StderrPipe()

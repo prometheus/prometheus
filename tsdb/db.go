@@ -70,7 +70,7 @@ var (
 func DefaultOptions() *Options {
 	return &Options{
 		WALSegmentSize:            wal.DefaultSegmentSize,
-		MaxChunkSize:              chunks.DefaultChunkSegmentSize,
+		MaxBlockChunkSegmentSize:  chunks.DefaultChunkSegmentSize,
 		RetentionDuration:         int64(15 * 24 * time.Hour / time.Millisecond),
 		MinBlockDuration:          DefaultBlockDuration,
 		MaxBlockDuration:          DefaultBlockDuration,
@@ -90,10 +90,10 @@ type Options struct {
 	// WALSegmentSize < 0, wal is disabled.
 	WALSegmentSize int
 
-	// Chunk max size.
-	// MaxChunkSize = 0, chunk size is default size.
-	// MaxChunkSize > 0, chunk size is MaxChunkSize.
-	MaxChunkSegmentSize int64
+	// Chunk segment file max size.
+	// MaxBlockChunkSegmentSize = 0, chunk segment size is default size.
+	// MaxBlockChunkSegmentSize > 0, chunk segment size is MaxBlockChunkSegmentSize.
+	MaxBlockChunkSegmentSize int64
 
 	// Duration of persisted data to keep.
 	// Unit agnostic as long as unit is consistent with MinBlockDuration and MaxBlockDuration.
@@ -552,8 +552,8 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64) {
 	if opts.HeadChunksWriteBufferSize <= 0 {
 		opts.HeadChunksWriteBufferSize = chunks.DefaultWriteBufferSize
 	}
-	if opts.MaxChunkSize <= 0 {
-		opts.MaxChunkSize = chunks.DefaultChunkSegmentSize
+	if opts.MaxBlockChunkSegmentSize <= 0 {
+		opts.MaxBlockChunkSegmentSize = chunks.DefaultChunkSegmentSize
 	}
 	if opts.MinBlockDuration <= 0 {
 		opts.MinBlockDuration = DefaultBlockDuration
@@ -644,7 +644,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 
 	var err error
 	ctx, cancel := context.WithCancel(context.Background())
-	db.compactor, err = NewLeveledCompactorWithChunkSize(ctx, r, l, rngs, db.chunkPool, opts.MaxChunkSize)
+	db.compactor, err = NewLeveledCompactorWithChunkSize(ctx, r, l, rngs, db.chunkPool, opts.MaxBlockChunkSegmentSize)
 	if err != nil {
 		cancel()
 		return nil, errors.Wrap(err, "create leveled compactor")

@@ -229,9 +229,9 @@ func main() {
 		"Maximum duration compacted blocks may span. For use in testing. (Defaults to 10% of the retention period.)").
 		Hidden().PlaceHolder("<duration>").SetValue(&cfg.tsdb.MaxBlockDuration)
 
-	a.Flag("storage.tsdb.max-chunk-segment-size",
-		"The maximum size for a single chunk. Example: 512MB").
-		Hidden().PlaceHolder("<bytes>").BytesVar(&cfg.tsdb.MaxChunkSize)
+	a.Flag("storage.tsdb.max-block-chunk-segment-size",
+		"The maximum size for a single chunk segment in a block. Example: 512MB").
+		Hidden().PlaceHolder("<bytes>").BytesVar(&cfg.tsdb.MaxBlockChunkSegmentSize)
 
 	a.Flag("storage.tsdb.wal-segment-size",
 		"Size at which to split the tsdb WAL segment files. Example: 100MB").
@@ -1189,30 +1189,30 @@ func (rm *readyScrapeManager) Get() (*scrape.Manager, error) {
 // tsdbOptions is tsdb.Option version with defined units.
 // This is required as tsdb.Option fields are unit agnostic (time).
 type tsdbOptions struct {
-	WALSegmentSize         units.Base2Bytes
-	MaxChunkSize           units.Base2Bytes
-	RetentionDuration      model.Duration
-	MaxBytes               units.Base2Bytes
-	NoLockfile             bool
-	AllowOverlappingBlocks bool
-	WALCompression         bool
-	StripeSize             int
-	MinBlockDuration       model.Duration
-	MaxBlockDuration       model.Duration
+	WALSegmentSize           units.Base2Bytes
+	MaxBlockChunkSegmentSize units.Base2Bytes
+	RetentionDuration        model.Duration
+	MaxBytes                 units.Base2Bytes
+	NoLockfile               bool
+	AllowOverlappingBlocks   bool
+	WALCompression           bool
+	StripeSize               int
+	MinBlockDuration         model.Duration
+	MaxBlockDuration         model.Duration
 }
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 	return tsdb.Options{
-		WALSegmentSize:         int(opts.WALSegmentSize),
-		MaxChunkSize:           int64(opts.MaxChunkSize),
-		RetentionDuration:      int64(time.Duration(opts.RetentionDuration) / time.Millisecond),
-		MaxBytes:               int64(opts.MaxBytes),
-		NoLockfile:             opts.NoLockfile,
-		AllowOverlappingBlocks: opts.AllowOverlappingBlocks,
-		WALCompression:         opts.WALCompression,
-		StripeSize:             opts.StripeSize,
-		MinBlockDuration:       int64(time.Duration(opts.MinBlockDuration) / time.Millisecond),
-		MaxBlockDuration:       int64(time.Duration(opts.MaxBlockDuration) / time.Millisecond),
+		WALSegmentSize:           int(opts.WALSegmentSize),
+		MaxBlockChunkSegmentSize: int64(opts.MaxBlockChunkSegmentSize),
+		RetentionDuration:        int64(time.Duration(opts.RetentionDuration) / time.Millisecond),
+		MaxBytes:                 int64(opts.MaxBytes),
+		NoLockfile:               opts.NoLockfile,
+		AllowOverlappingBlocks:   opts.AllowOverlappingBlocks,
+		WALCompression:           opts.WALCompression,
+		StripeSize:               opts.StripeSize,
+		MinBlockDuration:         int64(time.Duration(opts.MinBlockDuration) / time.Millisecond),
+		MaxBlockDuration:         int64(time.Duration(opts.MaxBlockDuration) / time.Millisecond),
 	}
 }
 

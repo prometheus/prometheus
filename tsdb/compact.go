@@ -76,12 +76,12 @@ type Compactor interface {
 
 // LeveledCompactor implements the Compactor interface.
 type LeveledCompactor struct {
-	metrics      *compactorMetrics
-	logger       log.Logger
-	ranges       []int64
-	chunkPool    chunkenc.Pool
-	ctx          context.Context
-	maxChunkSize int64
+	metrics                  *compactorMetrics
+	logger                   log.Logger
+	ranges                   []int64
+	chunkPool                chunkenc.Pool
+	ctx                      context.Context
+	maxBlockChunkSegmentSize int64
 }
 
 type compactorMetrics struct {
@@ -149,7 +149,7 @@ func NewLeveledCompactor(ctx context.Context, r prometheus.Registerer, l log.Log
 	return NewLeveledCompactorWithChunkSize(ctx, r, l, ranges, pool, chunks.DefaultChunkSegmentSize)
 }
 
-func NewLeveledCompactorWithChunkSize(ctx context.Context, r prometheus.Registerer, l log.Logger, ranges []int64, pool chunkenc.Pool, maxChunkSize int64) (*LeveledCompactor, error) {
+func NewLeveledCompactorWithChunkSize(ctx context.Context, r prometheus.Registerer, l log.Logger, ranges []int64, pool chunkenc.Pool, maxBlockChunkSegmentSize int64) (*LeveledCompactor, error) {
 	if len(ranges) == 0 {
 		return nil, errors.Errorf("at least one range must be provided")
 	}
@@ -160,12 +160,12 @@ func NewLeveledCompactorWithChunkSize(ctx context.Context, r prometheus.Register
 		l = log.NewNopLogger()
 	}
 	return &LeveledCompactor{
-		ranges:       ranges,
-		chunkPool:    pool,
-		logger:       l,
-		metrics:      newCompactorMetrics(r),
-		ctx:          ctx,
-		maxChunkSize: maxChunkSize,
+		ranges:                   ranges,
+		chunkPool:                pool,
+		logger:                   l,
+		metrics:                  newCompactorMetrics(r),
+		ctx:                      ctx,
+		maxBlockChunkSegmentSize: maxBlockChunkSegmentSize,
 	}, nil
 }
 
@@ -567,7 +567,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 	// data of all blocks.
 	var chunkw ChunkWriter
 
-	chunkw, err = chunks.NewWriterWithSegSize(chunkDir(tmp), c.maxChunkSegmentSize)
+	chunkw, err = chunks.NewWriterWithSegSize(chunkDir(tmp), c.maxBlockChunkSegmentSize)
 	if err != nil {
 		return errors.Wrap(err, "open chunk writer")
 	}
