@@ -567,7 +567,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 	// data of all blocks.
 	var chunkw ChunkWriter
 
-	chunkw, err = chunks.NewWriterWithSegSize(chunkDir(tmp), c.maxChunkSize)
+	chunkw, err = chunks.NewWriterWithSegSize(chunkDir(tmp), c.maxChunkSegmentSize)
 	if err != nil {
 		return errors.Wrap(err, "open chunk writer")
 	}
