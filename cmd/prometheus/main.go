@@ -229,7 +229,7 @@ func main() {
 		"Maximum duration compacted blocks may span. For use in testing. (Defaults to 10% of the retention period.)").
 		Hidden().PlaceHolder("<duration>").SetValue(&cfg.tsdb.MaxBlockDuration)
 
-	a.Flag("storage.tsdb.max-chunk-size",
+	a.Flag("storage.tsdb.max-chunk-segment-size",
 		"The maximum size for a single chunk. Example: 512MB").
 		Hidden().PlaceHolder("<bytes>").BytesVar(&cfg.tsdb.MaxChunkSize)
 
