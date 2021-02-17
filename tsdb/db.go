@@ -978,6 +978,8 @@ func (db *DB) reloadBlocks() (err error) {
 		}
 		db.metrics.reloads.Inc()
 	}()
+	db.mtx.Lock()
+	defer db.mtx.Unlock()
 
 	loadable, corrupted, err := openBlocks(db.logger, db.dir, db.blocks, db.chunkPool)
 	if err != nil {
@@ -1044,10 +1046,8 @@ func (db *DB) reloadBlocks() (err error) {
 	}
 
 	// Swap new blocks first for subsequently created readers to be seen.
-	db.mtx.Lock()
 	oldBlocks := db.blocks
 	db.blocks = toLoad
-	db.mtx.Unlock()
 
 	blockMetas := make([]BlockMeta, 0, len(toLoad))
 	for _, b := range toLoad {
