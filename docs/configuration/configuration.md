@@ -223,6 +223,10 @@ gce_sd_configs:
 hetzner_sd_configs:
   [ - <hetzner_sd_config> ... ]
 
+# List of HTTP service discovery configurations.
+http_sd_configs:
+  [ - <http_sd_config> ... ]
+
 # List of Kubernetes service discovery configurations.
 kubernetes_sd_configs:
   [ - <kubernetes_sd_config> ... ]
@@ -1021,6 +1025,54 @@ tls_config:
 [ refresh_interval: <duration> | default = 60s ]
 ```
 
+### `<http_sd_config>`
+
+The http file-based service discovery provides a generic way to configure targets
+and serves as an interface to plug in custom service discovery mechanisms.
+
+It reads a set of url paths containing a list of zero or more
+`<static_config>`s. Changes to the remote file are detected via an
+http get retrieval.  The only file extensions supported, defined by the remote
+file path, are YAML or JSON.  Retrieved files must be in well-formed target groups.
+
+Files must contain a list of static configs, using these formats:
+
+**JSON**
+```json
+[
+  {
+    "targets": [ "<host>", ... ],
+    "labels": {
+      "<labelname>": "<labelvalue>", ...
+    }
+  },
+  ...
+]
+```
+
+**YAML**
+```yaml
+- targets:
+  [ - '<host>' ]
+  labels:
+    [ <labelname>: <labelvalue> ... ]
+```
+
+Each target has a meta label `__meta_filepath`, set during the
+[relabeling phase](#relabel_config), containing the source file path.
+
+```yaml
+# Patterns for files from which target groups are extracted.
+paths:
+  [ - <url_path_filename> ... ]
+
+# Refresh interval to re-read the files.
+[ refresh_interval: <duration> | default = 5m ]
+```
+
+Where `<url_path_filename>` may be a path ending in `.json`, `.yml` or `.yaml`.
+
+
 ### `<kubernetes_sd_config>`
 
 Kubernetes SD configurations allow retrieving scrape targets from
@@ -1670,6 +1722,10 @@ gce_sd_configs:
 # List of Hetzner service discovery configurations.
 hetzner_sd_configs:
   [ - <hetzner_sd_config> ... ]
+
+# List of HTTP service discovery configurations.
+http_sd_configs:
+  [ - <http_sd_config> ... ]
 
 # List of Kubernetes service discovery configurations.
 kubernetes_sd_configs:
