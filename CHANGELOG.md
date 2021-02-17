@@ -1,4 +1,4 @@
-## 2.25.0-rc.0 / 2021-02-12
+## 2.25.0 / 2021-02-17
 
 This release includes a new `--enable-feature=` flag that enables
 experimental features. Such features might be changed or removed in the future.
@@ -20,6 +20,7 @@ Alertmanager API v2 was released in Alertmanager v0.16.0 (released in January
 * [ENHANCEMENT] TSDB: Reload blocks every minute, to detect new blocks and enforce retention more often. #8343
 * [BUGFIX] API: Fix global URL when external address has no port. #8359
 * [BUGFIX] Backfill: Fix error message handling. #8432
+* [BUGFIX] Backfill: Fix "add sample: out of bounds" error when series span an entire block. #8476
 * [BUGFIX] Deprecate unused flag --alertmanager.timeout. #8407
 * [BUGFIX] Mixins: Support remote-write metrics renamed in v2.23 in alerts. #8423
 * [BUGFIX] Remote: Fix garbage collection of dropped series in remote write. #8387
