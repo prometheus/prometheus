@@ -681,11 +681,9 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	}
 	// Set the min valid time for the ingested samples
 	// to be no lower than the maxt of the last block.
-	// But if we can overlap blocks, we don't need
-	// this limit.
 	blocks := db.Blocks()
 	minValidTime := int64(math.MinInt64)
-	if !db.opts.AllowOverlappingBlocks && len(blocks) > 0 {
+	if len(blocks) > 0 {
 		minValidTime = blocks[len(blocks)-1].Meta().MaxTime
 	}
 
