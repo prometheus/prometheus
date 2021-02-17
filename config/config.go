@@ -601,6 +601,7 @@ type RemoteWriteConfig struct {
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 	QueueConfig      QueueConfig             `yaml:"queue_config,omitempty"`
 	MetadataConfig   MetadataConfig          `yaml:"metadata_config,omitempty"`
+	SigV4Config      SigV4Config             `yaml:"sigv4,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -627,10 +628,23 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 		return err
 	}
 
-	// The UnmarshalYAML method of HTTPClientConfig is not being called because it's not a pointer.
-	// We cannot make it a pointer as the parser panics for inlined pointer structs.
-	// Thus we just do its validation here.
-	return c.HTTPClientConfig.Validate()
+	return c.Validate()
+}
+
+func (c *RemoteWriteConfig) Validate() error {
+	if err := c.HTTPClientConfig.Validate(); err != nil {
+		return err
+	}
+
+	httpClientConfigEnabled := c.HTTPClientConfig.BasicAuth != nil ||
+		len(c.HTTPClientConfig.BearerToken) > 0 ||
+		len(c.HTTPClientConfig.BearerTokenFile) > 0
+
+	if httpClientConfigEnabled && c.SigV4Config.Enabled {
+		return fmt.Errorf("at most one of basic_auth & bearer_token & bearer_token_file & sigv4 must be configured")
+	}
+
+	return nil
 }
 
 func validateHeaders(headers map[string]string) error {
@@ -677,6 +691,18 @@ type MetadataConfig struct {
 	Send bool `yaml:"send"`
 	// SendInterval controls how frequently we send metric metadata.
 	SendInterval model.Duration `yaml:"send_interval"`
+}
+
+// SigV4Config is the configuration for signing remote write requests with
+// AWS's SigV4 verification process.
+type SigV4Config struct {
+	// Enabled uses SigV4 for signing remote write requests. Must not be
+	// true at the same time as using one of the standard remote_write
+	// authentication methods.
+	Enabled bool `yaml:"enabled,omitempty"`
+	// Region overrides the region used for signing requests. If empty, defaults
+	// to using the AWS default credentials chain.
+	Region string `yaml:"region,omitempty"`
 }
 
 // RemoteReadConfig is the configuration for reading from remote storage.
