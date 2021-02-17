@@ -1030,7 +1030,7 @@ func TestTombstoneClean(t *testing.T) {
 	for _, c := range cases {
 		// Delete the ranges.
 
-		// create snapshot
+		// Create snapshot.
 		snap, err := ioutil.TempDir("", "snap")
 		require.NoError(t, err)
 
@@ -1040,7 +1040,7 @@ func TestTombstoneClean(t *testing.T) {
 		require.NoError(t, db.Snapshot(snap, true))
 		require.NoError(t, db.Close())
 
-		// reopen DB from snapshot
+		// Reopen DB from snapshot.
 		db, err = Open(snap, nil, nil, nil)
 		require.NoError(t, err)
 		defer db.Close()
@@ -1099,6 +1099,54 @@ func TestTombstoneClean(t *testing.T) {
 	}
 }
 
+// TestTombstoneCleanResultEmptyBlock tests that a TombstoneClean that results in empty blocks (no timeseries)
+// will also delete the resultant block.
+func TestTombstoneCleanResultEmptyBlock(t *testing.T) {
+	numSamples := int64(10)
+
+	db := openTestDB(t, nil, nil)
+
+	ctx := context.Background()
+	app := db.Appender(ctx)
+
+	smpls := make([]float64, numSamples)
+	for i := int64(0); i < numSamples; i++ {
+		smpls[i] = rand.Float64()
+		app.Add(labels.Labels{{Name: "a", Value: "b"}}, i, smpls[i])
+	}
+
+	require.NoError(t, app.Commit())
+	// Interval should cover the whole block.
+	intervals := tombstones.Intervals{{Mint: 0, Maxt: numSamples}}
+
+	// Create snapshot.
+	snap, err := ioutil.TempDir("", "snap")
+	require.NoError(t, err)
+
+	defer func() {
+		require.NoError(t, os.RemoveAll(snap))
+	}()
+	require.NoError(t, db.Snapshot(snap, true))
+	require.NoError(t, db.Close())
+
+	// Reopen DB from snapshot.
+	db, err = Open(snap, nil, nil, nil)
+	require.NoError(t, err)
+	defer db.Close()
+
+	// Create tombstones by deleting all samples.
+	for _, r := range intervals {
+		require.NoError(t, db.Delete(r.Mint, r.Maxt, labels.MustNewMatcher(labels.MatchEqual, "a", "b")))
+	}
+
+	require.NoError(t, db.CleanTombstones())
+
+	// After cleaning tombstones that covers the entire block, no blocks should be left behind.
+	actualBlockDirs, err := blockDirs(db.dir)
+	require.NoError(t, err)
+	require.Equal(t, 0, len(actualBlockDirs))
+}
+
 // TestTombstoneCleanFail tests that a failing TombstoneClean doesn't leave any blocks behind.
 // When TombstoneClean errors the original block that should be rebuilt doesn't get deleted so
 // if TombstoneClean leaves any blocks behind these will overlap.
@@ -1108,22 +1156,22 @@ func TestTombstoneCleanFail(t *testing.T) {
 		require.NoError(t, db.Close())
 	}()
 
-	var expectedBlockDirs []string
+	var oldBlockDirs []string
 
-	// Create some empty blocks pending for compaction.
+	// Create some blocks pending for compaction.
 	// totalBlocks should be >=2 so we have enough blocks to trigger compaction failure.
 	totalBlocks := 2
 	for i := 0; i < totalBlocks; i++ {
-		blockDir := createBlock(t, db.Dir(), genSeries(1, 1, 0, 1))
+		blockDir := createBlock(t, db.Dir(), genSeries(1, 1, int64(i), int64(i)+1))
 		block, err := OpenBlock(nil, blockDir, nil)
 		require.NoError(t, err)
 		// Add some fake tombstones to trigger the compaction.
 		tomb := tombstones.NewMemTombstones()
-		tomb.AddInterval(0, tombstones.Interval{Mint: 0, Maxt: 1})
+		tomb.AddInterval(0, tombstones.Interval{Mint: int64(i), Maxt: int64(i) + 1})
 		block.tombstones = tomb
 
 		db.blocks = append(db.blocks, block)
-		expectedBlockDirs = append(expectedBlockDirs, blockDir)
+		oldBlockDirs = append(oldBlockDirs, blockDir)
 	}
 
 	// Initialize the mockCompactorFailing with a room for a single compaction iteration.
@@ -1137,10 +1185,76 @@ func TestTombstoneCleanFail(t *testing.T) {
 	// The compactor should trigger a failure here.
 	require.Error(t, db.CleanTombstones())
 
-	// Now check that the CleanTombstones didn't leave any blocks behind after a failure.
+	// Now check that the CleanTombstones replaced the old block even after a failure.
 	actualBlockDirs, err := blockDirs(db.dir)
 	require.NoError(t, err)
-	require.Equal(t, expectedBlockDirs, actualBlockDirs)
+	// Only one block should have been replaced by a new block.
+	require.Equal(t, len(oldBlockDirs), len(actualBlockDirs))
+	require.Equal(t, len(intersection(oldBlockDirs, actualBlockDirs)), len(actualBlockDirs)-1)
+}
+
+// TestTombstoneCleanRetentionLimitsRace tests that a CleanTombstones operation
+// and retention limit policies, when triggered at the same time,
+// won't race against each other.
+func TestTombstoneCleanRetentionLimitsRace(t *testing.T) {
+	opts := DefaultOptions()
+	var wg sync.WaitGroup
+
+	// We want to make sure that a race doesn't happen when a normal reload and a CleanTombstones()
+	// reload try to delete the same block. Without the correct lock placement, it can happen if a
+	// block is marked for deletion due to retention limits and also has tombstones to be cleaned at
+	// the same time.
+	//
+	// That is something tricky to trigger, so let's try several times just to make sure.
+	for i := 0; i < 20; i++ {
+		db := openTestDB(t, opts, nil)
+		totalBlocks := 20
+		dbDir := db.Dir()
+		// Generate some blocks with old mint (near epoch).
+		for j := 0; j < totalBlocks; j++ {
+			blockDir := createBlock(t, dbDir, genSeries(10, 1, int64(j), int64(j)+1))
+			block, err := OpenBlock(nil, blockDir, nil)
+			require.NoError(t, err)
+			// Cover block with tombstones so it can be deleted with CleanTombstones() as well.
+			tomb := tombstones.NewMemTombstones()
+			tomb.AddInterval(0, tombstones.Interval{Mint: int64(j), Maxt: int64(j) + 1})
+			block.tombstones = tomb
+
+			db.blocks = append(db.blocks, block)
+		}
+
+		wg.Add(2)
+		// Run reload and CleanTombstones together, with a small time window randomization
+		go func() {
+			defer wg.Done()
+			time.Sleep(time.Duration(rand.Float64() * 100 * float64(time.Millisecond)))
+			require.NoError(t, db.reloadBlocks())
+		}()
+		go func() {
+			defer wg.Done()
+			time.Sleep(time.Duration(rand.Float64() * 100 * float64(time.Millisecond)))
+			require.NoError(t, db.CleanTombstones())
+		}()
+
+		wg.Wait()
+
+		require.NoError(t, db.Close())
+	}
+
+}
+
+func intersection(oldBlocks, actualBlocks []string) (intersection []string) {
+	hash := make(map[string]bool)
+	for _, e := range oldBlocks {
+		hash[e] = true
+	}
+	for _, e := range actualBlocks {
+		// If block present in the hashmap then append intersection list.
+		if hash[e] {
+			intersection = append(intersection, e)
+		}
+	}
+	return
 }
 
 // mockCompactorFailing creates a new empty block on every write and fails when reached the max allowed total.
