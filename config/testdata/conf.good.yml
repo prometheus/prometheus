@@ -59,6 +59,11 @@ scrape_configs:
     - files:
       - bar/*.yaml
 
+  http_sd_configs:
+    - paths:
+      - http://localhost:9550/sd.json
+      refresh_interval: 1m
+
   static_configs:
   - targets: ['localhost:9090', 'localhost:9191']
     labels:

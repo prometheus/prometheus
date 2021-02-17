@@ -10,6 +10,11 @@ alerting:
     - files:
       - bar/*.yaml
 
+    http_sd_configs:
+    - paths:
+      - http://localhost:9550/sd.json
+      refresh_interval: 1m
+
     static_configs:
       - targets:
         - 1.2.3.4:9093
