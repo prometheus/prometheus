@@ -93,7 +93,7 @@ type Options struct {
 	// Chunk max size.
 	// MaxChunkSize = 0, chunk size is default size.
 	// MaxChunkSize > 0, chunk size is MaxChunkSize.
-	MaxChunkSize int64
+	MaxChunkSegmentSize int64
 
 	// Duration of persisted data to keep.
 	// Unit agnostic as long as unit is consistent with MinBlockDuration and MaxBlockDuration.
