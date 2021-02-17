@@ -1185,7 +1185,7 @@ func TestTombstoneCleanFail(t *testing.T) {
 	// The compactor should trigger a failure here.
 	require.Error(t, db.CleanTombstones())
 
-	// Now check that the cleanTombstones replaced the old block even after a failure.
+	// Now check that the CleanTombstones replaced the old block even after a failure.
 	actualBlockDirs, err := blockDirs(db.dir)
 	require.NoError(t, err)
 	// Only one block should have been replaced by a new block.
@@ -1224,7 +1224,7 @@ func TestTombstoneCleanRetentionLimitsRace(t *testing.T) {
 		}
 
 		wg.Add(2)
-		// Run reload and cleanTombstones together, with a small time window randomization
+		// Run reload and CleanTombstones together, with a small time window randomization
 		go func() {
 			defer wg.Done()
 			time.Sleep(time.Duration(rand.Float64() * 100 * float64(time.Millisecond)))
