@@ -585,7 +585,7 @@ func lexEscape(l *Lexer) stateFn {
 		x = x*base + d
 		n--
 
-		// don't seek after last rune
+		// Don't seek after last rune.
 		if n > 0 {
 			ch = l.next()
 		}
