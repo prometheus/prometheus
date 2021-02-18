@@ -83,7 +83,6 @@ type Client struct {
 	url        *config_util.URL
 	Client     *http.Client
 	timeout    time.Duration
-	headers    map[string]string
 
 	retryOnRateLimit bool
 
@@ -115,6 +114,9 @@ func NewReadClient(name string, conf *ClientConfig) (ReadClient, error) {
 	}
 
 	t := httpClient.Transport
+	if len(conf.Headers) > 0 {
+		t = newInjectHeadersRoundTripper(conf.Headers, t)
+	}
 	httpClient.Transport = &nethttp.Transport{
 		RoundTripper: t,
 	}
@@ -138,6 +140,9 @@ func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
 	}
 
 	t := httpClient.Transport
+	if len(conf.Headers) > 0 {
+		t = newInjectHeadersRoundTripper(conf.Headers, t)
+	}
 	httpClient.Transport = &nethttp.Transport{
 		RoundTripper: t,
 	}
@@ -148,8 +153,23 @@ func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
 		Client:           httpClient,
 		retryOnRateLimit: conf.RetryOnRateLimit,
 		timeout:          time.Duration(conf.Timeout),
-		headers:          conf.Headers,
 	}, nil
+}
+
+func newInjectHeadersRoundTripper(h map[string]string, underlyingRT http.RoundTripper) *injectHeadersRoundTripper {
+	return &injectHeadersRoundTripper{headers: h, RoundTripper: underlyingRT}
+}
+
+type injectHeadersRoundTripper struct {
+	headers map[string]string
+	http.RoundTripper
+}
+
+func (t *injectHeadersRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	for key, value := range t.headers {
+		req.Header.Set(key, value)
+	}
+	return t.RoundTripper.RoundTrip(req)
 }
 
 const defaultBackoff = 0
@@ -168,9 +188,7 @@ func (c *Client) Store(ctx context.Context, req []byte) error {
 		// recoverable.
 		return err
 	}
-	for k, v := range c.headers {
-		httpReq.Header.Set(k, v)
-	}
+
 	httpReq.Header.Add("Content-Encoding", "snappy")
 	httpReq.Header.Set("Content-Type", "application/x-protobuf")
 	httpReq.Header.Set("User-Agent", UserAgent)

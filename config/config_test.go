@@ -972,7 +972,10 @@ var expectedErrors = []struct {
 		errMsg:   `url for remote_read is empty`,
 	}, {
 		filename: "remote_write_header.bad.yml",
-		errMsg:   `x-prometheus-remote-write-version is an unchangeable header`,
+		errMsg:   `x-prometheus-remote-write-version is a reserved header. It must not be changed`,
+	}, {
+		filename: "remote_read_header.bad.yml",
+		errMsg:   `x-prometheus-remote-write-version is a reserved header. It must not be changed`,
 	}, {
 		filename: "remote_write_authorization_header.bad.yml",
 		errMsg:   `authorization header must be changed via the basic_auth or authorization parameter`,

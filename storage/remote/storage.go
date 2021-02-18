@@ -111,6 +111,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 			URL:              rrConf.URL,
 			Timeout:          rrConf.RemoteTimeout,
 			HTTPClientConfig: rrConf.HTTPClientConfig,
+			Headers:          rrConf.Headers,
 		})
 		if err != nil {
 			return err

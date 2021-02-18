@@ -1850,6 +1850,11 @@ required_matchers:
 # Timeout for requests to the remote read endpoint.
 [ remote_timeout: <duration> | default = 1m ]
 
+# Custom HTTP headers to be sent along with each remote read request.
+# Be aware that headers that are set by Prometheus itself can't be overwritten.
+headers:
+  [ <string>: <string> ... ]
+
 # Whether reads should be made for queries for time ranges that
 # the local storage should have complete data for.
 [ read_recent: <boolean> | default = false ]
