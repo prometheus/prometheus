@@ -1560,7 +1560,7 @@ type errorAppender struct {
 	collectResultAppender
 }
 
-func (app *errorAppender) Append(ref uint64, lset labels.Labels, t int64, v float64) (uint64, error) {
+func (app *errorAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
 	switch lset.Get(model.MetricNameLabel) {
 	case "out_of_order":
 		return 0, storage.ErrOutOfOrderSample
@@ -1569,8 +1569,12 @@ func (app *errorAppender) Append(ref uint64, lset labels.Labels, t int64, v floa
 	case "out_of_bounds":
 		return 0, storage.ErrOutOfBounds
 	default:
-		return app.collectResultAppender.Append(ref, lset, t, v)
+		return app.collectResultAppender.Add(lset, t, v)
 	}
+}
+
+func (app *errorAppender) AddFast(ref uint64, t int64, v float64) error {
+	return app.collectResultAppender.AddFast(ref, t, v)
 }
 
 func TestScrapeLoopAppendGracefullyIfAmendOrOutOfOrderOrOutOfBounds(t *testing.T) {

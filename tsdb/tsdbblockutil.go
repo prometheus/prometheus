@@ -50,10 +50,14 @@ func CreateBlock(series []storage.Series, dir string, chunkRange int64, logger l
 	for _, s := range series {
 		ref := uint64(0)
 		it := s.Iterator()
-		lset := s.Labels()
 		for it.Next() {
 			t, v := it.At()
-			ref, err = app.Append(ref, lset, t, v)
+			if ref != 0 {
+				if err := app.AddFast(ref, t, v); err == nil {
+					continue
+				}
+			}
+			ref, err = app.Add(s.Labels(), t, v)
 			if err != nil {
 				return "", err
 			}
