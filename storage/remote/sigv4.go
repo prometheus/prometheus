@@ -23,6 +23,8 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 	"github.com/aws/aws-sdk-go/aws/session"
 	signer "github.com/aws/aws-sdk-go/aws/signer/v4"
 	"github.com/prometheus/prometheus/config"
@@ -43,13 +45,17 @@ type sigV4RoundTripper struct {
 //
 // Credentials for signing are retrieved using the the default AWS credential
 // chain. If credentials cannot be found, an error will be returned.
-func NewSigV4RoundTripper(cfg config.SigV4Config, next http.RoundTripper) (http.RoundTripper, error) {
+func NewSigV4RoundTripper(cfg *config.SigV4Config, next http.RoundTripper) (http.RoundTripper, error) {
 	if next == nil {
 		next = http.DefaultTransport
 	}
 
-	sess, err := session.NewSession(&aws.Config{
-		Region: aws.String(cfg.Region),
+	sess, err := session.NewSessionWithOptions(session.Options{
+		Config: aws.Config{
+			Region:      aws.String(cfg.Region),
+			Credentials: credentials.NewStaticCredentials(cfg.AccessKey, string(cfg.SecretKey), ""),
+		},
+		Profile: cfg.Profile,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("could not create new AWS session: %w", err)
@@ -61,10 +67,15 @@ func NewSigV4RoundTripper(cfg config.SigV4Config, next http.RoundTripper) (http.
 		return nil, fmt.Errorf("region not configured in sigv4 or in default credentials chain")
 	}
 
+	signerCreds := sess.Config.Credentials
+	if cfg.RoleARN != "" {
+		signerCreds = stscreds.NewCredentials(sess, cfg.RoleARN)
+	}
+
 	rt := &sigV4RoundTripper{
 		region: cfg.Region,
 		next:   next,
-		signer: signer.NewSigner(sess.Config.Credentials),
+		signer: signer.NewSigner(signerCreds),
 	}
 	rt.pool.New = rt.newBuf
 	return rt, nil

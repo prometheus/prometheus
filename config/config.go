@@ -601,7 +601,7 @@ type RemoteWriteConfig struct {
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 	QueueConfig      QueueConfig             `yaml:"queue_config,omitempty"`
 	MetadataConfig   MetadataConfig          `yaml:"metadata_config,omitempty"`
-	SigV4Config      SigV4Config             `yaml:"sigv4,omitempty"`
+	SigV4Config      *SigV4Config            `yaml:"sigv4,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -628,10 +628,9 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 		return err
 	}
 
-	return c.Validate()
-}
-
-func (c *RemoteWriteConfig) Validate() error {
+	// The UnmarshalYAML method of HTTPClientConfig is not being called because it's not a pointer.
+	// We cannot make it a pointer as the parser panics for inlined pointer structs.
+	// Thus we just do its validation here.
 	if err := c.HTTPClientConfig.Validate(); err != nil {
 		return err
 	}
@@ -640,7 +639,7 @@ func (c *RemoteWriteConfig) Validate() error {
 		len(c.HTTPClientConfig.BearerToken) > 0 ||
 		len(c.HTTPClientConfig.BearerTokenFile) > 0
 
-	if httpClientConfigEnabled && c.SigV4Config.Enabled {
+	if httpClientConfigEnabled && c.SigV4Config != nil {
 		return fmt.Errorf("at most one of basic_auth & bearer_token & bearer_token_file & sigv4 must be configured")
 	}
 
@@ -694,15 +693,14 @@ type MetadataConfig struct {
 }
 
 // SigV4Config is the configuration for signing remote write requests with
-// AWS's SigV4 verification process.
+// AWS's SigV4 verification process. Empty values will be retrieved using the
+// AWS default credentials chain.
 type SigV4Config struct {
-	// Enabled uses SigV4 for signing remote write requests. Must not be
-	// true at the same time as using one of the standard remote_write
-	// authentication methods.
-	Enabled bool `yaml:"enabled,omitempty"`
-	// Region overrides the region used for signing requests. If empty, defaults
-	// to using the AWS default credentials chain.
-	Region string `yaml:"region,omitempty"`
+	Region    string        `yaml:"region,omitempty"`
+	AccessKey string        `yaml:"access_key,omitempty"`
+	SecretKey config.Secret `yaml:"secret_key,omitempty"`
+	Profile   string        `yaml:"profile,omitempty"`
+	RoleARN   string        `yaml:"role_arn,omitempty"`
 }
 
 // RemoteReadConfig is the configuration for reading from remote storage.
