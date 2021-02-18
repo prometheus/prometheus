@@ -2,4 +2,5 @@ scrape_configs:
   - job_name: prometheus
     kubernetes_sd_configs:
     - role: pod
-      bearer_token: 1234
+      authorization:
+        credentials: 1234
