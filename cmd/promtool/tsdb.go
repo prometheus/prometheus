@@ -35,7 +35,6 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
@@ -206,25 +205,19 @@ func (b *writeBenchmark) ingestScrapesShard(lbls []labels.Labels, scrapeCount in
 		for _, s := range scrape {
 			s.value += 1000
 
-			if s.ref == nil {
-				ref, err := app.Add(s.labels, ts, float64(s.value))
-				if err != nil {
-					panic(err)
-				}
-				s.ref = &ref
-			} else if err := app.AddFast(*s.ref, ts, float64(s.value)); err != nil {
-
-				if errors.Cause(err) != storage.ErrNotFound {
-					panic(err)
-				}
-
-				ref, err := app.Add(s.labels, ts, float64(s.value))
-				if err != nil {
-					panic(err)
-				}
-				s.ref = &ref
+			var ref uint64
+			if s.ref != nil {
+				ref = *s.ref
 			}
 
+			ref, err := app.Append(ref, s.labels, ts, float64(s.value))
+			if err != nil {
+				panic(err)
+			}
+
+			if s.ref == nil {
+				s.ref = &ref
+			}
 			total++
 		}
 		if err := app.Commit(); err != nil {

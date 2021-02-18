@@ -115,7 +115,7 @@ func (m *mockAppendable) Appender(_ context.Context) storage.Appender {
 	return m
 }
 
-func (m *mockAppendable) Add(l labels.Labels, t int64, v float64) (uint64, error) {
+func (m *mockAppendable) Append(_ uint64, l labels.Labels, t int64, v float64) (uint64, error) {
 	if t < m.latest {
 		return 0, storage.ErrOutOfOrderSample
 	}
@@ -127,10 +127,6 @@ func (m *mockAppendable) Add(l labels.Labels, t int64, v float64) (uint64, error
 
 func (m *mockAppendable) Commit() error {
 	return m.commitErr
-}
-
-func (*mockAppendable) AddFast(uint64, int64, float64) error {
-	return fmt.Errorf("not implemented")
 }
 
 func (*mockAppendable) Rollback() error {

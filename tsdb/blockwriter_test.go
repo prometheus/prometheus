@@ -43,10 +43,10 @@ func TestBlockWriter(t *testing.T) {
 	// Add some series.
 	app := w.Appender(ctx)
 	ts1, v1 := int64(44), float64(7)
-	_, err = app.Add(labels.Labels{{Name: "a", Value: "b"}}, ts1, v1)
+	_, err = app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, ts1, v1)
 	require.NoError(t, err)
 	ts2, v2 := int64(55), float64(12)
-	_, err = app.Add(labels.Labels{{Name: "c", Value: "d"}}, ts2, v2)
+	_, err = app.Append(0, labels.Labels{{Name: "c", Value: "d"}}, ts2, v2)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	id, err := w.Flush(ctx)

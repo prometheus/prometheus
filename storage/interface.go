@@ -136,18 +136,15 @@ func (f QueryableFunc) Querier(ctx context.Context, mint, maxt int64) (Querier, 
 //
 // Operations on the Appender interface are not goroutine-safe.
 type Appender interface {
-	// Add adds a sample pair for the given series. A reference number is
-	// returned which can be used to add further samples in the same or later
-	// transactions.
+	// Append adds a sample pair for the given series.
+	// An optional reference number can be provided to accelerate calls.
+	// A reference number is returned which can be used to add further
+	// samples in the same or later transactions.
 	// Returned reference numbers are ephemeral and may be rejected in calls
-	// to AddFast() at any point. Adding the sample via Add() returns a new
+	// to Append() at any point. Adding the sample via Append() returns a new
 	// reference number.
 	// If the reference is 0 it must not be used for caching.
-	Add(l labels.Labels, t int64, v float64) (uint64, error)
-
-	// AddFast adds a sample pair for the referenced series. It is generally
-	// faster than adding a sample by providing its full label set.
-	AddFast(ref uint64, t int64, v float64) error
+	Append(ref uint64, l labels.Labels, t int64, v float64) (uint64, error)
 
 	// Commit submits the collected samples and purges the batch. If Commit
 	// returns a non-nil error, it also rolls back all modifications made in

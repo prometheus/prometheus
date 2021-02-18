@@ -265,11 +265,11 @@ func TestTimeMetrics(t *testing.T) {
 	))
 
 	app := db.Appender(context.Background())
-	_, err = app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 1000, 1)
+	_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 1000, 1)
 	require.NoError(t, err)
-	_, err = app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 2000, 1)
+	_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 2000, 1)
 	require.NoError(t, err)
-	_, err = app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 3000, 1)
+	_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 3000, 1)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 

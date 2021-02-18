@@ -290,29 +290,18 @@ type limitAppender struct {
 	i     int
 }
 
-func (app *limitAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
+func (app *limitAppender) Append(ref uint64, lset labels.Labels, t int64, v float64) (uint64, error) {
 	if !value.IsStaleNaN(v) {
 		app.i++
 		if app.i > app.limit {
 			return 0, errSampleLimit
 		}
 	}
-	ref, err := app.Appender.Add(lset, t, v)
+	ref, err := app.Appender.Append(ref, lset, t, v)
 	if err != nil {
 		return 0, err
 	}
 	return ref, nil
-}
-
-func (app *limitAppender) AddFast(ref uint64, t int64, v float64) error {
-	if !value.IsStaleNaN(v) {
-		app.i++
-		if app.i > app.limit {
-			return errSampleLimit
-		}
-	}
-	err := app.Appender.AddFast(ref, t, v)
-	return err
 }
 
 type timeLimitAppender struct {
@@ -321,24 +310,16 @@ type timeLimitAppender struct {
 	maxTime int64
 }
 
-func (app *timeLimitAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
+func (app *timeLimitAppender) Append(ref uint64, lset labels.Labels, t int64, v float64) (uint64, error) {
 	if t > app.maxTime {
 		return 0, storage.ErrOutOfBounds
 	}
 
-	ref, err := app.Appender.Add(lset, t, v)
+	ref, err := app.Appender.Append(ref, lset, t, v)
 	if err != nil {
 		return 0, err
 	}
 	return ref, nil
-}
-
-func (app *timeLimitAppender) AddFast(ref uint64, t int64, v float64) error {
-	if t > app.maxTime {
-		return storage.ErrOutOfBounds
-	}
-	err := app.Appender.AddFast(ref, t, v)
-	return err
 }
 
 // populateLabels builds a label set from the given label set and scrape configuration.

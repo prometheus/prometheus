@@ -1101,7 +1101,7 @@ func BenchmarkCompactionFromHead(b *testing.B) {
 			for ln := 0; ln < labelNames; ln++ {
 				app := h.Appender(context.Background())
 				for lv := 0; lv < labelValues; lv++ {
-					app.Add(labels.FromStrings(fmt.Sprintf("%d", ln), fmt.Sprintf("%d%s%d", lv, postingsBenchSuffix, ln)), 0, 0)
+					app.Append(0, labels.FromStrings(fmt.Sprintf("%d", ln), fmt.Sprintf("%d%s%d", lv, postingsBenchSuffix, ln)), 0, 0)
 				}
 				require.NoError(b, app.Commit())
 			}
@@ -1134,9 +1134,9 @@ func TestDisableAutoCompactions(t *testing.T) {
 	db.DisableCompactions()
 	app := db.Appender(context.Background())
 	for i := int64(0); i < 3; i++ {
-		_, err := app.Add(label, i*blockRange, 0)
+		_, err := app.Append(0, label, i*blockRange, 0)
 		require.NoError(t, err)
-		_, err = app.Add(label, i*blockRange+1000, 0)
+		_, err = app.Append(0, label, i*blockRange+1000, 0)
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
@@ -1249,11 +1249,11 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 
 			// Add some data to the head that is enough to trigger a compaction.
 			app := db.Appender(context.Background())
-			_, err := app.Add(defaultLabel, 1, 0)
+			_, err := app.Append(0, defaultLabel, 1, 0)
 			require.NoError(t, err)
-			_, err = app.Add(defaultLabel, 2, 0)
+			_, err = app.Append(0, defaultLabel, 2, 0)
 			require.NoError(t, err)
-			_, err = app.Add(defaultLabel, 3+rangeToTriggerCompaction, 0)
+			_, err = app.Append(0, defaultLabel, 3+rangeToTriggerCompaction, 0)
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 
