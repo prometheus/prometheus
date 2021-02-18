@@ -241,7 +241,7 @@ func TestRelabel(t *testing.T) {
 				{
 					SourceLabels: model.LabelNames{"a"},
 					TargetLabel:  "a",
-					Regex: MustNewRegexp(".*-.*"),
+					Regex:        MustNewRegexp(".*-.*"),
 					Separator:    ";",
 					Action:       HashMod,
 					Modulus:      1000,
@@ -259,7 +259,7 @@ func TestRelabel(t *testing.T) {
 				{
 					SourceLabels: model.LabelNames{"a"},
 					TargetLabel:  "a",
-					Regex: MustNewRegexp(".*-.*"),
+					Regex:        MustNewRegexp(".*-.*"),
 					Separator:    ";",
 					Action:       HashMod,
 					Modulus:      1000,

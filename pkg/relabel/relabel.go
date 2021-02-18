@@ -226,7 +226,7 @@ func relabel(lset labels.Labels, cfg *Config) labels.Labels {
 		}
 		lb.Set(string(target), string(res))
 	case HashMod:
-		if  cfg.Regex.Regexp != nil && !cfg.Regex.MatchString(val) {
+		if cfg.Regex.Regexp != nil && !cfg.Regex.MatchString(val) {
 			break
 		}
 		mod := sum64(md5.Sum([]byte(val))) % cfg.Modulus
