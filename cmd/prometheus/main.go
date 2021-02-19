@@ -786,6 +786,11 @@ func main() {
 						return errors.New("flag 'storage.tsdb.wal-segment-size' must be set between 10MB and 256MB")
 					}
 				}
+				if cfg.tsdb.MaxBlockChunkSegmentSize != 0 {
+					if cfg.tsdb.MaxBlockChunkSegmentSize < 1024*1024 {
+						return errors.New("flag 'storage.tsdb.max-block-chunk-segment-size' must be set over 1MB")
+					}
+				}
 				db, err := openDBWithMetrics(
 					cfg.localStoragePath,
 					logger,
