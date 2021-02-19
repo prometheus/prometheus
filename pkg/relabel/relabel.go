@@ -31,7 +31,6 @@ var (
 	DefaultRelabelConfig = Config{
 		Action:      Replace,
 		Separator:   ";",
-		Regex:       MustNewRegexp("(.*)"),
 		Replacement: "$1",
 	}
 )
@@ -98,7 +97,12 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	if c.Regex.Regexp == nil {
-		c.Regex = MustNewRegexp("")
+		if c.Action == HashMod {
+			c.Regex = MustNewRegexp("(?s)(.*)")
+		} else {
+			c.Regex = MustNewRegexp("(.*)")
+		}
+
 	}
 	if c.Modulus == 0 && c.Action == HashMod {
 		return errors.Errorf("relabel configuration for hashmod requires non-zero modulus")
@@ -226,11 +230,10 @@ func relabel(lset labels.Labels, cfg *Config) labels.Labels {
 		}
 		lb.Set(string(target), string(res))
 	case HashMod:
-		if cfg.Regex.Regexp != nil && !cfg.Regex.MatchString(val) {
-			break
+		if cfg.Regex.MatchString(val) {
+			mod := sum64(md5.Sum([]byte(val))) % cfg.Modulus
+			lb.Set(cfg.TargetLabel, fmt.Sprintf("%d", mod))
 		}
-		mod := sum64(md5.Sum([]byte(val))) % cfg.Modulus
-		lb.Set(cfg.TargetLabel, fmt.Sprintf("%d", mod))
 	case LabelMap:
 		for _, l := range lset {
 			if cfg.Regex.MatchString(l.Name) {
