@@ -3275,6 +3275,16 @@ var testSeries = []struct {
 		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
 		expectedValues: newSeq(1, 2, 3),
 	}, {
+		// Handle escaped unicode characters as whole label values.
+		input:          `my_metric{a="\u70ac"} 1 2 3`,
+		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", `炬`),
+		expectedValues: newSeq(1, 2, 3),
+	}, {
+		// Handle escaped unicode characters as partial label values.
+		input:          `my_metric{a="\u70ac = torch"} 1 2 3`,
+		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", `炬 = torch`),
+		expectedValues: newSeq(1, 2, 3),
+	}, {
 		input: `my_metric{a="b"} -3-3 -3`,
 		fail:  true,
 	}, {
