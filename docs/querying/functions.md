@@ -75,7 +75,7 @@ vector.
 
 ## `clamp()`
 
-`clamp(v instant-vector, min max, max scalar)`
+`clamp(v instant-vector, min scalar, max scalar)`
 clamps the sample values of all elements in `v` to have a lower limit of `min` and an upper limit of `max`.
 
 ## `clamp_max()`
@@ -377,8 +377,7 @@ have exactly one element, `scalar` will return `NaN`.
 
 ## `sgn()`
 
-`sgn(v instant-vector)` returns vector with the value: 1 if v > 0, -1 if v < 0,
-and leaves the values of 0 or NaN the same as the input.
+`sgn(v instant-vector)` returns vector with the value: 1 if v > 0, -1 if v < 0, and leaves others untouched.
 
 ## `sort()`
 

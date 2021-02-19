@@ -54,6 +54,11 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
 	},
+	"clamp": {
+		Name:       "clamp",
+		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeScalar, ValueTypeScalar},
+		ReturnType: ValueTypeVector,
+	},
 	"clamp_max": {
 		Name:       "clamp_max",
 		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeScalar},
@@ -161,6 +166,16 @@ var Functions = map[string]*Function{
 	},
 	"log2": {
 		Name:       "log2",
+		ArgTypes:   []ValueType{ValueTypeVector},
+		ReturnType: ValueTypeVector,
+	},
+	"last_over_time": {
+		Name:       "last_over_time",
+		ArgTypes:   []ValueType{ValueTypeMatrix},
+		ReturnType: ValueTypeVector,
+	},
+	"sgn": {
+		Name:       "sgn",
 		ArgTypes:   []ValueType{ValueTypeVector},
 		ReturnType: ValueTypeVector,
 	},
