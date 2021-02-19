@@ -236,12 +236,39 @@ func TestRelabel(t *testing.T) {
 		{
 			input: labels.FromMap(map[string]string{
 				"a": "foo",
+				"b": "foo-bar",
+				"c": "bar",
+				"d": "baz",
 			}),
 			relabel: []*Config{
 				{
 					SourceLabels: model.LabelNames{"a"},
 					TargetLabel:  "a",
 					Regex:        MustNewRegexp(".*-.*"),
+					Separator:    ";",
+					Action:       HashMod,
+					Modulus:      1000,
+				},
+				{
+					SourceLabels: model.LabelNames{"b"},
+					TargetLabel:  "b",
+					Regex:        MustNewRegexp(".*-.*"),
+					Separator:    ";",
+					Action:       HashMod,
+					Modulus:      1000,
+				},
+				{
+					SourceLabels: model.LabelNames{"a", "c"},
+					TargetLabel:  "c",
+					Regex:        MustNewRegexp(".*;baz"),
+					Separator:    ";",
+					Action:       HashMod,
+					Modulus:      1000,
+				},
+				{
+					SourceLabels: model.LabelNames{"a", "d"},
+					TargetLabel:  "d",
+					Regex:        MustNewRegexp(".*;baz"),
 					Separator:    ";",
 					Action:       HashMod,
 					Modulus:      1000,
@@ -249,24 +276,9 @@ func TestRelabel(t *testing.T) {
 			},
 			output: labels.FromMap(map[string]string{
 				"a": "foo",
-			}),
-		},
-		{
-			input: labels.FromMap(map[string]string{
-				"a": "foo-bar",
-			}),
-			relabel: []*Config{
-				{
-					SourceLabels: model.LabelNames{"a"},
-					TargetLabel:  "a",
-					Regex:        MustNewRegexp(".*-.*"),
-					Separator:    ";",
-					Action:       HashMod,
-					Modulus:      1000,
-				},
-			},
-			output: labels.FromMap(map[string]string{
-				"a": "17",
+				"b": "17",
+				"c": "bar",
+				"d": "158",
 			}),
 		},
 		{
