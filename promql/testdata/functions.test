@@ -372,7 +372,7 @@ eval instant at 60m vector(time())
   {} 3600
 
 
-# Tests for clamp_max, clamp_min(), clamp(0, and sgn().
+# Tests for clamp_max, clamp_min(), clamp(), and sgn().
 load 5m
 	test_clamp{src="clamp-a"}	-50
 	test_clamp{src="clamp-b"}	0
