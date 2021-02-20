@@ -781,11 +781,11 @@ eval instant at 1m max_over_time(data[1m])
 	{type="only_nan"} NaN
 
 eval instant at 1m last_over_time(data[1m])
-	{type="numbers"} 3
-	{type="some_nan"} NaN
-	{type="some_nan2"} 1
-	{type="some_nan3"} 1
-	{type="only_nan"} NaN
+	data{type="numbers"} 3
+	data{type="some_nan"} NaN
+	data{type="some_nan2"} 1
+	data{type="some_nan3"} 1
+	data{type="only_nan"} NaN
 
 clear
 
