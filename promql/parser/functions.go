@@ -154,6 +154,11 @@ var Functions = map[string]*Function{
 		Variadic:   -1,
 		ReturnType: ValueTypeVector,
 	},
+	"last_over_time": {
+		Name:       "last_over_time",
+		ArgTypes:   []ValueType{ValueTypeMatrix},
+		ReturnType: ValueTypeVector,
+	},
 	"ln": {
 		Name:       "ln",
 		ArgTypes:   []ValueType{ValueTypeVector},
@@ -166,16 +171,6 @@ var Functions = map[string]*Function{
 	},
 	"log2": {
 		Name:       "log2",
-		ArgTypes:   []ValueType{ValueTypeVector},
-		ReturnType: ValueTypeVector,
-	},
-	"last_over_time": {
-		Name:       "last_over_time",
-		ArgTypes:   []ValueType{ValueTypeMatrix},
-		ReturnType: ValueTypeVector,
-	},
-	"sgn": {
-		Name:       "sgn",
 		ArgTypes:   []ValueType{ValueTypeVector},
 		ReturnType: ValueTypeVector,
 	},
@@ -231,6 +226,11 @@ var Functions = map[string]*Function{
 		Name:       "scalar",
 		ArgTypes:   []ValueType{ValueTypeVector},
 		ReturnType: ValueTypeScalar,
+	},
+	"sgn": {
+		Name:       "sgn",
+		ArgTypes:   []ValueType{ValueTypeVector},
+		ReturnType: ValueTypeVector,
 	},
 	"sort": {
 		Name:       "sort",

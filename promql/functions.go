@@ -278,11 +278,14 @@ func funcSortDesc(vals []parser.Value, args parser.Expressions, enh *EvalNodeHel
 	return Vector(byValueSorter)
 }
 
-// === clamp(Vector parser.ValueTypeVector, max Scalar) Vector ===
+// === clamp(Vector parser.ValueTypeVector, min, max Scalar) Vector ===
 func funcClamp(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	vec := vals[0].(Vector)
 	min := vals[1].(Vector)[0].Point.V
 	max := vals[2].(Vector)[0].Point.V
+	if max < min {
+		return enh.Out
+	}
 	for _, el := range vec {
 		enh.Out = append(enh.Out, Sample{
 			Metric: enh.DropMetricName(el.Metric),
@@ -560,7 +563,7 @@ func funcLog10(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper
 	return simpleFunc(vals, enh, math.Log10)
 }
 
-// === sgn(Vector parser.ValueTypeVector, min, max) Vector ===
+// === sgn(Vector parser.ValueTypeVector) Vector ===
 func funcSgn(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return simpleFunc(vals, enh, func(v float64) float64 {
 		if v < 0 {
