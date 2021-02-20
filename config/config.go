@@ -636,7 +636,7 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 	}
 
 	httpClientConfigEnabled := c.HTTPClientConfig.BasicAuth != nil ||
-		c.HTTPClientConfig.Authorization != nil 
+		c.HTTPClientConfig.Authorization != nil
 
 	if httpClientConfigEnabled && c.SigV4Config != nil {
 		return fmt.Errorf("at most one of basic_auth & bearer_token & bearer_token_file & sigv4 must be configured")
