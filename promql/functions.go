@@ -399,8 +399,11 @@ func funcCountOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNo
 
 // === last_over_time(Matrix parser.ValueTypeMatrix) Vector ===
 func funcLastOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
-	return aggrOverTime(vals, enh, func(values []Point) float64 {
-		return values[len(values)-1].V
+	el := vals[0].(Matrix)[0]
+
+	return append(enh.Out, Sample{
+		Metric: el.Metric,
+		Point:  Point{V: el.Points[len(el.Points)-1].V},
 	})
 }
 
@@ -557,7 +560,7 @@ func funcLog10(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper
 	return simpleFunc(vals, enh, math.Log10)
 }
 
-// === sgn(Vector parser.ValueTypeVector) Vector ===
+// === sgn(Vector parser.ValueTypeVector, min, max) Vector ===
 func funcSgn(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return simpleFunc(vals, enh, func(v float64) float64 {
 		if v < 0 {

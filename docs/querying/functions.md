@@ -377,7 +377,7 @@ have exactly one element, `scalar` will return `NaN`.
 
 ## `sgn()`
 
-`sgn(v instant-vector)` returns vector with the value: 1 if v > 0, -1 if v < 0, and leaves others untouched.
+`sgn(v instant-vector)` returns a vector with all sample values converted to their sign, defined as this: 1 if v is positive, -1 if v is negative and 0 if v is equal to zero.
 
 ## `sort()`
 
