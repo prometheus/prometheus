@@ -117,7 +117,8 @@ type flagConfig struct {
 	featureList []string
 	// These options are extracted from featureList
 	// for ease of use.
-	enablePromQLAtModifier bool
+	enablePromQLAtModifier     bool
+	enablePromQLNegativeOffset bool
 
 	prometheusURL   string
 	corsRegexString string
@@ -134,6 +135,9 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 			case "promql-at-modifier":
 				c.enablePromQLAtModifier = true
 				level.Info(logger).Log("msg", "Experimental promql-at-modifier enabled")
+			case "promql-negative-offset":
+				c.enablePromQLNegativeOffset = true
+				level.Info(logger).Log("msg", "Experimental promql-negative-offset enabled")
 			case "remote-write-receiver":
 				c.web.RemoteWriteReceiver = true
 				level.Info(logger).Log("msg", "Experimental remote-write-receiver enabled")
@@ -441,6 +445,7 @@ func main() {
 			LookbackDelta:            time.Duration(cfg.lookbackDelta),
 			NoStepSubqueryIntervalFn: noStepSubqueryInterval.Get,
 			EnableAtModifier:         cfg.enablePromQLAtModifier,
+			EnableNegativeOffset:     cfg.enablePromQLNegativeOffset,
 		}
 
 		queryEngine = promql.NewEngine(opts)

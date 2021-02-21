@@ -204,10 +204,16 @@ The same works for range vectors. This returns the 5-minute rate that
 
     rate(http_requests_total[5m] offset 1w)
 
-For comparisons with temporal shifts forward and backward, a negative offset
+For comparisons with temporal shifts forward in time, a negative offset
 can be specified:
 
     rate(http_requests_total[5m] offset -1w)
+
+This negative offset is disabled by default since it breaks the invariant
+that PromQL does not look ahead of the evaluation time for samples. This
+feature is enabled by setting `--enable-feature=promql-negative-offset`
+flag. See [disabled features](../disabled_features.md) for more details
+about this flag.
 
 ### @ modifier
 
