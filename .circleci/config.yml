@@ -2,7 +2,7 @@
 version: 2.1
 
 orbs:
-  prometheus: prometheus/prometheus@0.4.0
+  prometheus: prometheus/prometheus@0.9.0
   go: circleci/go@0.2.0
   win: circleci/windows@2.3.0
 
@@ -124,14 +124,14 @@ workflows:
         filters:
           tags:
             only: /.*/
-    - prometheus/publish_master:
+    - prometheus/publish_main:
         context: org-context
         requires:
         - test
         - build
         filters:
           branches:
-            only: master
+            only: main
         image: circleci/golang:1-node
     - prometheus/publish_release:
         context: org-context
@@ -151,7 +151,7 @@ workflows:
           filters:
             branches:
               only:
-                - master
+                - main
     jobs:
     - repo_sync:
         context: org-context
