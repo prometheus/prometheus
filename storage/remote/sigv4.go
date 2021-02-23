@@ -43,14 +43,14 @@ type sigV4RoundTripper struct {
 	signer *signer.Signer
 }
 
-// NewSigV4RoundTripper returns a new http.RoundTripper that will sign requests
+// newSigV4RoundTripper returns a new http.RoundTripper that will sign requests
 // using Amazon's Signature Verification V4 signing procedure. The request will
 // then be handed off to the next RoundTripper provided by next. If next is nil,
 // http.DefaultTransport will be used.
 //
 // Credentials for signing are retrieved using the the default AWS credential
 // chain. If credentials cannot be found, an error will be returned.
-func NewSigV4RoundTripper(cfg *config.SigV4Config, next http.RoundTripper) (http.RoundTripper, error) {
+func newSigV4RoundTripper(cfg *config.SigV4Config, next http.RoundTripper) (http.RoundTripper, error) {
 	if next == nil {
 		next = http.DefaultTransport
 	}

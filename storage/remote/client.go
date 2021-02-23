@@ -143,7 +143,7 @@ func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
 	t := httpClient.Transport
 
 	if conf.SigV4Config != nil {
-		t, err = NewSigV4RoundTripper(conf.SigV4Config, httpClient.Transport)
+		t, err = newSigV4RoundTripper(conf.SigV4Config, httpClient.Transport)
 		if err != nil {
 			return nil, err
 		}
