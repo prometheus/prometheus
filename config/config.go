@@ -51,6 +51,11 @@ var (
 		"accept-encoding":                   {},
 		"x-prometheus-remote-write-version": {},
 		"x-prometheus-remote-read-version":  {},
+
+		// Added by SigV4. X-Amz-Content-Sha256 is not included since it may be
+		// explicitly provided to override request signing.
+		"x-amz-date":           {},
+		"x-amz-security-token": {},
 	}
 )
 
