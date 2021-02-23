@@ -30,6 +30,11 @@ source_dir="$(pwd)"
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "${tmp_dir}"' EXIT
 
+get_default_branch(){
+    local url="https://api.github.com/repos/${1}"
+    curl --retry 5 --silent -u "${git_user}:${GITHUB_TOKEN}" "${url}" 2>/dev/null | jq -r .default_branch
+}
+
 fetch_repos() {
   local url="https://api.github.com/users/${1}/repos?per_page=100"
   curl --retry 5 --silent -u "${git_user}:${GITHUB_TOKEN}" "${url}" 2>/dev/null |
@@ -47,9 +52,9 @@ push_branch() {
     --set-upstream "${branch}" 1>/dev/null 2>&1
 }
 
-post_template='{"title":"%s","base":"master","head":"%s","body":"%s"}'
-post_json="$(printf "${post_template}" "${pr_title}" "${branch}" "${pr_msg}")"
 post_pull_request() {
+  post_template='{"title":"%s","base":"%s","head":"%s","body":"%s"}'
+  post_json="$(printf "${post_template}" "${pr_title}" "${2}" "${branch}" "${pr_msg}")"
   curl --show-error --silent --fail \
     -u "${git_user}:${GITHUB_TOKEN}" \
     -d "${post_json}" \
@@ -65,11 +70,17 @@ process_repo() {
   local org_repo="$1"
   echo -e "\e[32mAnalyzing '${org_repo}'\e[0m"
 
+  default_branch="$(get_default_branch ${1})"
+  if [[ -z "${target_file}" ]]; then
+    echo "Can't get the default branch."
+    return
+  fi
+
   local needs_update=()
   for source_file in ${SYNC_FILES}; do
     source_checksum="$(sha256sum "${source_dir}/${source_file}" | cut -d' ' -f1)"
 
-    target_file="$(curl -s --fail "https://raw.githubusercontent.com/${org_repo}/master/${source_file}")"
+    target_file="$(curl -s --fail "https://raw.githubusercontent.com/${org_repo}/${default_branch}/${source_file}")"
     if [[ "${source_file}" == 'LICENSE' ]] && ! check_license "${target_file}" ; then
       echo "LICENSE in ${org_repo} is not apache, skipping."
       continue
@@ -113,7 +124,7 @@ process_repo() {
     git add .
     git commit -s -m "${commit_msg}"
     if push_branch "${org_repo}"; then
-      post_pull_request "${org_repo}"
+      post_pull_request "${org_repo}" "${default_branch}"
     fi
   fi
 }
