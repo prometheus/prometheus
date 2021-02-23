@@ -50,10 +50,15 @@ func NewSigV4RoundTripper(cfg *config.SigV4Config, next http.RoundTripper) (http
 		next = http.DefaultTransport
 	}
 
+	creds := credentials.NewStaticCredentials(cfg.AccessKey, string(cfg.SecretKey), "")
+	if cfg.AccessKey == "" && cfg.SecretKey == "" {
+		creds = nil
+	}
+
 	sess, err := session.NewSessionWithOptions(session.Options{
 		Config: aws.Config{
 			Region:      aws.String(cfg.Region),
-			Credentials: credentials.NewStaticCredentials(cfg.AccessKey, string(cfg.SecretKey), ""),
+			Credentials: creds,
 		},
 		Profile: cfg.Profile,
 	})
