@@ -71,7 +71,7 @@ process_repo() {
   echo -e "\e[32mAnalyzing '${org_repo}'\e[0m"
 
   default_branch="$(get_default_branch ${1})"
-  if [[ -z "${target_file}" ]]; then
+  if [[ -z "${default_branch}" ]]; then
     echo "Can't get the default branch."
     return
   fi
