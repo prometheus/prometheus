@@ -301,7 +301,7 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/status/buildinfo", wrap(api.serveBuildInfo))
 	r.Get("/status/flags", wrap(api.serveFlags))
 	r.Get("/status/tsdb", wrap(api.serveTSDBStatus))
-	r.Post("/read", api.ready(http.HandlerFunc(api.remoteReadHandler.ServeHTTP)))
+	r.Post("/read", api.ready(http.HandlerFunc(api.remoteRead)))
 	r.Post("/write", api.ready(http.HandlerFunc(api.remoteWrite)))
 
 	r.Get("/alerts", wrap(api.alerts))
@@ -1299,6 +1299,13 @@ func (api *API) serveTSDBStatus(*http.Request) apiFuncResult {
 		MemoryInBytesByLabelName:    convertStats(s.IndexPostingStats.LabelValueStats),
 		SeriesCountByLabelValuePair: convertStats(s.IndexPostingStats.LabelValuePairsStats),
 	}, nil, nil, nil}
+}
+
+func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
+	// This is only really for tests - this will never be nil IRL.
+	if api.remoteReadHandler != nil {
+		api.remoteReadHandler.ServeHTTP(w, r)
+	}
 }
 
 func (api *API) remoteWrite(w http.ResponseWriter, r *http.Request) {
