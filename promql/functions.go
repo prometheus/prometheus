@@ -70,17 +70,17 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 	if len(samples.Points) < 2 {
 		return enh.Out
 	}
-	var (
-		counterCorrection float64
-		lastValue         float64
-	)
-	for _, sample := range samples.Points {
-		if isCounter && sample.V < lastValue {
-			counterCorrection += lastValue
+
+	resultValue := samples.Points[len(samples.Points)-1].V - samples.Points[0].V
+	if isCounter {
+		var lastValue float64
+		for _, sample := range samples.Points {
+			if sample.V < lastValue {
+				resultValue += lastValue
+			}
+			lastValue = sample.V
 		}
-		lastValue = sample.V
 	}
-	resultValue := lastValue - samples.Points[0].V + counterCorrection
 
 	// Duration between first/last samples and boundary of range.
 	durationToStart := float64(samples.Points[0].T-rangeStart) / 1000
