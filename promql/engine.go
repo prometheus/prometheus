@@ -400,43 +400,47 @@ func (ng *Engine) validateOpts(expr parser.Expr) error {
 		return nil
 	}
 
+	atModifierUsed := false
+	negativeOffsetUsed := false
+
 	var validationErr error
 	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
 		switch n := node.(type) {
 		case *parser.VectorSelector:
-			if !ng.enableAtModifier &&
-				(n.Timestamp != nil || n.StartOrEnd == parser.START || n.StartOrEnd == parser.END) {
-				validationErr = ErrValidationAtModifierDisabled
-				return validationErr
+			if n.Timestamp != nil || n.StartOrEnd == parser.START || n.StartOrEnd == parser.END {
+				atModifierUsed = true
 			}
-			if !ng.enableNegativeOffset && n.OriginalOffset < 0 {
-				validationErr = ErrValidationNegativeOffsetDisabled
-				return validationErr
+			if n.OriginalOffset < 0 {
+				negativeOffsetUsed = true
 			}
 
 		case *parser.MatrixSelector:
 			vs := n.VectorSelector.(*parser.VectorSelector)
-			if !ng.enableAtModifier &&
-				(vs.Timestamp != nil || vs.StartOrEnd == parser.START || vs.StartOrEnd == parser.END) {
-				validationErr = ErrValidationAtModifierDisabled
-				return validationErr
+			if vs.Timestamp != nil || vs.StartOrEnd == parser.START || vs.StartOrEnd == parser.END {
+				atModifierUsed = true
 			}
-			if !ng.enableNegativeOffset && vs.OriginalOffset < 0 {
-				validationErr = ErrValidationNegativeOffsetDisabled
-				return validationErr
+			if vs.OriginalOffset < 0 {
+				negativeOffsetUsed = true
 			}
 
 		case *parser.SubqueryExpr:
-			if !ng.enableAtModifier &&
-				(n.Timestamp != nil || n.StartOrEnd == parser.START || n.StartOrEnd == parser.END) {
-				validationErr = ErrValidationAtModifierDisabled
-				return validationErr
+			if n.Timestamp != nil || n.StartOrEnd == parser.START || n.StartOrEnd == parser.END {
+				atModifierUsed = true
 			}
-			if !ng.enableNegativeOffset && n.OriginalOffset < 0 {
-				validationErr = ErrValidationNegativeOffsetDisabled
-				return validationErr
+			if n.OriginalOffset < 0 {
+				negativeOffsetUsed = true
 			}
 		}
+
+		if atModifierUsed && !ng.enableAtModifier {
+			validationErr = ErrValidationAtModifierDisabled
+			return validationErr
+		}
+		if negativeOffsetUsed && !ng.enableNegativeOffset {
+			validationErr = ErrValidationNegativeOffsetDisabled
+			return validationErr
+		}
+
 		return nil
 	})
 
