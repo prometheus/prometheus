@@ -19,6 +19,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"net/textproto"
 	"sync"
 	"time"
 
@@ -29,6 +30,10 @@ import (
 	signer "github.com/aws/aws-sdk-go/aws/signer/v4"
 	"github.com/prometheus/prometheus/config"
 )
+
+var sigv4HeaderDenylist = []string{
+	"uber-trace-id",
+}
 
 type sigV4RoundTripper struct {
 	region string
@@ -111,9 +116,23 @@ func (rt *sigV4RoundTripper) RoundTrip(req *http.Request) (*http.Response, error
 	}()
 	req.Body = ioutil.NopCloser(seeker)
 
-	_, err := rt.signer.Sign(req, seeker, "aps", rt.region, time.Now().UTC())
+	// Clone the request and trim out headers that we don't want to sign.
+	signReq := req.Clone(req.Context())
+	for _, header := range sigv4HeaderDenylist {
+		signReq.Header.Del(header)
+	}
+
+	headers, err := rt.signer.Sign(signReq, seeker, "aps", rt.region, time.Now().UTC())
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign request: %w", err)
 	}
+
+	// Copy over signed headers. Authorization header is not returned by
+	// rt.signer.Sign and needs to be copied separately.
+	for k, v := range headers {
+		req.Header[textproto.CanonicalMIMEHeaderKey(k)] = v
+	}
+	req.Header.Set("Authorization", signReq.Header.Get("Authorization"))
+
 	return rt.next.RoundTrip(req)
 }

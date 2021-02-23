@@ -66,9 +66,28 @@ func TestSigV4RoundTripper(t *testing.T) {
 
 	req, err := http.NewRequest(http.MethodPost, "google.com", strings.NewReader("Hello, world!"))
 	require.NoError(t, err)
+
 	_, err = cli.Do(req)
 	require.NoError(t, err)
-
 	require.NotNil(t, gotReq)
-	require.NotEmpty(t, gotReq.Header.Get("Authorization"))
+
+	origReq := gotReq
+	require.NotEmpty(t, origReq.Header.Get("Authorization"))
+	require.NotEmpty(t, origReq.Header.Get("X-Amz-Date"))
+
+	// Perform the same request but with a header that shouldn't included in the
+	// signature; validate that the signatures match.
+	t.Run("Ignored Headers", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodPost, "google.com", strings.NewReader("Hello, world!"))
+		require.NoError(t, err)
+
+		req.Header.Add("Uber-Trace-Id", "some-trace-id")
+
+		_, err = cli.Do(req)
+		require.NoError(t, err)
+		require.NotNil(t, gotReq)
+
+		require.Equal(t, origReq.Header.Get("Authorization"), gotReq.Header.Get("Authorization"))
+		require.Equal(t, origReq.Header.Get("X-Amz-Date"), gotReq.Header.Get("X-Amz-Date"))
+	})
 }
