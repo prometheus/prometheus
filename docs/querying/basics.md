@@ -253,11 +253,11 @@ For example, the following expression returns the value of
 Note that the `@` modifier always needs to follow the selector
 immediately, i.e. the following would be correct:
 
-    sum( http_requests_total{method="GET"} @ 1609746000 ) // GOOD.
+    sum(http_requests_total{method="GET"} @ 1609746000) // GOOD.
 
 While the following would be *incorrect*:
 
-    sum( http_requests_total{method="GET"} ) @ 1609746000 // INVALID.
+    sum(http_requests_total{method="GET"}) @ 1609746000 // INVALID.
 
 The same works for range vectors. This returns the 5-minute rate that
 `http_requests_total` had at `2021-01-04T07:40:00+00:00`:
