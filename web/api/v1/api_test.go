@@ -633,14 +633,6 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 							{V: 1, T: timestamp.FromTime(start.Add(1 * time.Second))},
 							{V: 2, T: timestamp.FromTime(start.Add(2 * time.Second))},
 						},
-						Metric: labels.FromStrings("__name__", "test_metric1", "foo", "boo"),
-					},
-					promql.Series{
-						Points: []promql.Point{
-							{V: 0, T: timestamp.FromTime(start)},
-							{V: 0, T: timestamp.FromTime(start.Add(1 * time.Second))},
-							{V: 0, T: timestamp.FromTime(start.Add(2 * time.Second))},
-						},
 						Metric: nil,
 					},
 				},
