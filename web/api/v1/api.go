@@ -194,6 +194,7 @@ type API struct {
 	buildInfo                 *PrometheusVersion
 	runtimeInfo               func() (RuntimeInfo, error)
 	gatherer                  prometheus.Gatherer
+	remoteWriteHandler        http.Handler
 }
 
 func init() {
@@ -205,6 +206,7 @@ func init() {
 func NewAPI(
 	qe *promql.Engine,
 	q storage.SampleAndChunkQueryable,
+	ap storage.Appendable,
 	tr func(context.Context) TargetRetriever,
 	ar func(context.Context) AlertmanagerRetriever,
 	configFunc func() config.Config,
@@ -224,9 +226,10 @@ func NewAPI(
 	buildInfo *PrometheusVersion,
 	gatherer prometheus.Gatherer,
 ) *API {
-	return &API{
-		QueryEngine:           qe,
-		Queryable:             q,
+	a := &API{
+		QueryEngine: qe,
+		Queryable:   q,
+
 		targetRetriever:       tr,
 		alertmanagerRetriever: ar,
 
@@ -248,6 +251,12 @@ func NewAPI(
 		buildInfo:                 buildInfo,
 		gatherer:                  gatherer,
 	}
+
+	if ap != nil {
+		a.remoteWriteHandler = remote.NewWriteHandler(logger, ap)
+	}
+
+	return a
 }
 
 func setUnavailStatusOnTSDBNotReady(r apiFuncResult) apiFuncResult {
@@ -309,6 +318,7 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/status/flags", wrap(api.serveFlags))
 	r.Get("/status/tsdb", wrap(api.serveTSDBStatus))
 	r.Post("/read", api.ready(http.HandlerFunc(api.remoteRead)))
+	r.Post("/write", api.ready(http.HandlerFunc(api.remoteWrite)))
 
 	r.Get("/alerts", wrap(api.alerts))
 	r.Get("/rules", wrap(api.rules))
@@ -358,6 +368,9 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 	}
 
 	qry, err := api.QueryEngine.NewInstantQuery(api.Queryable, r.FormValue("query"), ts)
+	if err == promql.ErrValidationAtModifierDisabled {
+		err = errors.New("@ modifier is disabled, use --enable-feature=promql-at-modifier to enable it")
+	}
 	if err != nil {
 		return invalidParamError(err, "query")
 	}
@@ -433,6 +446,9 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 	}
 
 	qry, err := api.QueryEngine.NewRangeQuery(api.Queryable, r.FormValue("query"), start, end, step)
+	if err == promql.ErrValidationAtModifierDisabled {
+		err = errors.New("@ modifier is disabled, use --enable-feature=promql-at-modifier to enable it")
+	}
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
@@ -592,47 +608,35 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 		warnings storage.Warnings
 	)
 	if len(matcherSets) > 0 {
-		hints := &storage.SelectHints{
-			Start: timestamp.FromTime(start),
-			End:   timestamp.FromTime(end),
-			Func:  "series", // There is no series function, this token is used for lookups that don't need samples.
-		}
-
+		var callWarnings storage.Warnings
 		labelValuesSet := make(map[string]struct{})
-		// Get all series which match matchers.
-		for _, mset := range matcherSets {
-			s := q.Select(false, hints, mset...)
-			for s.Next() {
-				series := s.At()
-				labelValue := series.Labels().Get(name)
-				// Filter out empty value.
-				if labelValue == "" {
-					continue
-				}
-				labelValuesSet[labelValue] = struct{}{}
+		for _, matchers := range matcherSets {
+			vals, callWarnings, err = q.LabelValues(name, matchers...)
+			if err != nil {
+				return apiFuncResult{nil, &apiError{errorExec, err}, warnings, closer}
 			}
-			warnings = append(warnings, s.Warnings()...)
-			if err := s.Err(); err != nil {
-				return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
+			warnings = append(warnings, callWarnings...)
+			for _, val := range vals {
+				labelValuesSet[val] = struct{}{}
 			}
 		}
 
-		// Convert the map to an array.
 		vals = make([]string, 0, len(labelValuesSet))
-		for key := range labelValuesSet {
-			vals = append(vals, key)
+		for val := range labelValuesSet {
+			vals = append(vals, val)
 		}
-		sort.Strings(vals)
 	} else {
 		vals, warnings, err = q.LabelValues(name)
 		if err != nil {
 			return apiFuncResult{nil, &apiError{errorExec, err}, warnings, closer}
 		}
+
+		if vals == nil {
+			vals = []string{}
+		}
 	}
 
-	if vals == nil {
-		vals = []string{}
-	}
+	sort.Strings(vals)
 
 	return apiFuncResult{vals, nil, warnings, closer}
 }
@@ -1520,6 +1524,14 @@ func filterExtLabelsFromMatchers(pbMatchers []*prompb.LabelMatcher, externalLabe
 	}
 
 	return filteredMatchers, nil
+}
+
+func (api *API) remoteWrite(w http.ResponseWriter, r *http.Request) {
+	if api.remoteWriteHandler != nil {
+		api.remoteWriteHandler.ServeHTTP(w, r)
+	} else {
+		http.Error(w, "remote write receiver needs to be enabled with --enable-feature=remote-write-receiver", http.StatusNotFound)
+	}
 }
 
 func (api *API) deleteSeries(r *http.Request) apiFuncResult {

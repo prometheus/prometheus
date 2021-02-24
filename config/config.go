@@ -618,7 +618,7 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 	}
 	for header := range c.Headers {
 		if strings.ToLower(header) == "authorization" {
-			return errors.New("authorization header must be changed via the basic_auth, bearer_token, or bearer_token_file parameter")
+			return errors.New("authorization header must be changed via the basic_auth or authorization parameter")
 		}
 		if _, ok := unchangeableHeaders[strings.ToLower(header)]; ok {
 			return errors.Errorf("%s is an unchangeable header", header)
@@ -651,8 +651,9 @@ type QueueConfig struct {
 	BatchSendDeadline model.Duration `yaml:"batch_send_deadline,omitempty"`
 
 	// On recoverable errors, backoff exponentially.
-	MinBackoff model.Duration `yaml:"min_backoff,omitempty"`
-	MaxBackoff model.Duration `yaml:"max_backoff,omitempty"`
+	MinBackoff       model.Duration `yaml:"min_backoff,omitempty"`
+	MaxBackoff       model.Duration `yaml:"max_backoff,omitempty"`
+	RetryOnRateLimit bool           `yaml:"retry_on_http_429,omitempty"`
 }
 
 // MetadataConfig is the configuration for sending metadata to remote

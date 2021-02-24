@@ -1,4 +1,0 @@
-sudo: false
-language: go
-install: go get -t -v ./...
-go: 1.2

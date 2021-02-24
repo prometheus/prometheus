@@ -133,6 +133,10 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 			switch o {
 			case "promql-at-modifier":
 				c.enablePromQLAtModifier = true
+				level.Info(logger).Log("msg", "Experimental promql-at-modifier enabled")
+			case "remote-write-receiver":
+				c.web.RemoteWriteReceiver = true
+				level.Info(logger).Log("msg", "Experimental remote-write-receiver enabled")
 			case "":
 				continue
 			default:
@@ -289,7 +293,7 @@ func main() {
 	a.Flag("query.max-samples", "Maximum number of samples a single query can load into memory. Note that queries will fail if they try to load more samples than this into memory, so this also limits the number of samples a query can return.").
 		Default("50000000").IntVar(&cfg.queryMaxSamples)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: 'promql-at-modifier' to enable the @ modifier. See https://prometheus.io/docs/prometheus/latest/disabled_features/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: 'promql-at-modifier' to enable the @ modifier, 'remote-write-receiver' to enable remote write receiver. See https://prometheus.io/docs/prometheus/latest/disabled_features/ for more details.").
 		Default("").StringsVar(&cfg.featureList)
 
 	promlogflag.AddFlags(a, &cfg.promlogConfig)
@@ -1101,11 +1105,9 @@ func (s *readyStorage) Appender(ctx context.Context) storage.Appender {
 
 type notReadyAppender struct{}
 
-func (n notReadyAppender) Add(l labels.Labels, t int64, v float64) (uint64, error) {
+func (n notReadyAppender) Append(ref uint64, l labels.Labels, t int64, v float64) (uint64, error) {
 	return 0, tsdb.ErrNotReady
 }
-
-func (n notReadyAppender) AddFast(ref uint64, t int64, v float64) error { return tsdb.ErrNotReady }
 
 func (n notReadyAppender) Commit() error { return tsdb.ErrNotReady }
 

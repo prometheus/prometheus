@@ -47,7 +47,10 @@ func newTestHead(t testing.TB, chunkRange int64, compressWAL bool) (*Head, *wal.
 	wlog, err := wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compressWAL)
 	require.NoError(t, err)
 
-	h, err := NewHead(nil, nil, wlog, chunkRange, dir, nil, chunks.DefaultWriteBufferSize, DefaultStripeSize, nil)
+	opts := DefaultHeadOptions()
+	opts.ChunkRange = chunkRange
+	opts.ChunkDirRoot = dir
+	h, err := NewHead(nil, nil, wlog, opts)
 	require.NoError(t, err)
 
 	require.NoError(t, h.chunkDiskMapper.IterateAllChunks(func(_, _ uint64, _, _ int64, _ uint16) error { return nil }))
@@ -191,7 +194,10 @@ func BenchmarkLoadWAL(b *testing.B) {
 
 				// Load the WAL.
 				for i := 0; i < b.N; i++ {
-					h, err := NewHead(nil, nil, w, 1000, w.Dir(), nil, chunks.DefaultWriteBufferSize, DefaultStripeSize, nil)
+					opts := DefaultHeadOptions()
+					opts.ChunkRange = 1000
+					opts.ChunkDirRoot = w.Dir()
+					h, err := NewHead(nil, nil, w, opts)
 					require.NoError(b, err)
 					h.Init(0)
 				}
@@ -269,14 +275,14 @@ func TestHead_WALMultiRef(t *testing.T) {
 	require.NoError(t, head.Init(0))
 
 	app := head.Appender(context.Background())
-	ref1, err := app.Add(labels.FromStrings("foo", "bar"), 100, 1)
+	ref1, err := app.Append(0, labels.FromStrings("foo", "bar"), 100, 1)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.chunksCreated))
 
 	// Add another sample outside chunk range to mmap a chunk.
 	app = head.Appender(context.Background())
-	_, err = app.Add(labels.FromStrings("foo", "bar"), 1500, 2)
+	_, err = app.Append(0, labels.FromStrings("foo", "bar"), 1500, 2)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	require.Equal(t, 2.0, prom_testutil.ToFloat64(head.metrics.chunksCreated))
@@ -284,14 +290,14 @@ func TestHead_WALMultiRef(t *testing.T) {
 	require.NoError(t, head.Truncate(1600))
 
 	app = head.Appender(context.Background())
-	ref2, err := app.Add(labels.FromStrings("foo", "bar"), 1700, 3)
+	ref2, err := app.Append(0, labels.FromStrings("foo", "bar"), 1700, 3)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	require.Equal(t, 3.0, prom_testutil.ToFloat64(head.metrics.chunksCreated))
 
 	// Add another sample outside chunk range to mmap a chunk.
 	app = head.Appender(context.Background())
-	_, err = app.Add(labels.FromStrings("foo", "bar"), 2000, 4)
+	_, err = app.Append(0, labels.FromStrings("foo", "bar"), 2000, 4)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	require.Equal(t, 4.0, prom_testutil.ToFloat64(head.metrics.chunksCreated))
@@ -302,7 +308,10 @@ func TestHead_WALMultiRef(t *testing.T) {
 	w, err = wal.New(nil, nil, w.Dir(), false)
 	require.NoError(t, err)
 
-	head, err = NewHead(nil, nil, w, 1000, w.Dir(), nil, chunks.DefaultWriteBufferSize, DefaultStripeSize, nil)
+	opts := DefaultHeadOptions()
+	opts.ChunkRange = 1000
+	opts.ChunkDirRoot = w.Dir()
+	head, err = NewHead(nil, nil, w, opts)
 	require.NoError(t, err)
 	require.NoError(t, head.Init(0))
 	defer func() {
@@ -560,7 +569,7 @@ func TestHeadDeleteSimple(t *testing.T) {
 
 				app := head.Appender(context.Background())
 				for _, smpl := range smplsAll {
-					_, err := app.Add(labels.Labels{lblDefault}, smpl.t, smpl.v)
+					_, err := app.Append(0, labels.Labels{lblDefault}, smpl.t, smpl.v)
 					require.NoError(t, err)
 
 				}
@@ -574,7 +583,7 @@ func TestHeadDeleteSimple(t *testing.T) {
 				// Add more samples.
 				app = head.Appender(context.Background())
 				for _, smpl := range c.addSamples {
-					_, err := app.Add(labels.Labels{lblDefault}, smpl.t, smpl.v)
+					_, err := app.Append(0, labels.Labels{lblDefault}, smpl.t, smpl.v)
 					require.NoError(t, err)
 
 				}
@@ -583,7 +592,10 @@ func TestHeadDeleteSimple(t *testing.T) {
 				// Compare the samples for both heads - before and after the reloadBlocks.
 				reloadedW, err := wal.New(nil, nil, w.Dir(), compress) // Use a new wal to ensure deleted samples are gone even after a reloadBlocks.
 				require.NoError(t, err)
-				reloadedHead, err := NewHead(nil, nil, reloadedW, 1000, reloadedW.Dir(), nil, chunks.DefaultWriteBufferSize, DefaultStripeSize, nil)
+				opts := DefaultHeadOptions()
+				opts.ChunkRange = 1000
+				opts.ChunkDirRoot = reloadedW.Dir()
+				reloadedHead, err := NewHead(nil, nil, reloadedW, opts)
 				require.NoError(t, err)
 				require.NoError(t, reloadedHead.Init(0))
 
@@ -643,7 +655,7 @@ func TestDeleteUntilCurMax(t *testing.T) {
 	smpls := make([]float64, numSamples)
 	for i := int64(0); i < numSamples; i++ {
 		smpls[i] = rand.Float64()
-		_, err := app.Add(labels.Labels{{Name: "a", Value: "b"}}, i, smpls[i])
+		_, err := app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, i, smpls[i])
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
@@ -664,7 +676,7 @@ func TestDeleteUntilCurMax(t *testing.T) {
 
 	// Add again and test for presence.
 	app = hb.Appender(context.Background())
-	_, err = app.Add(labels.Labels{{Name: "a", Value: "b"}}, 11, 1)
+	_, err = app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, 11, 1)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	q, err = NewBlockQuerier(hb, 0, 100000)
@@ -690,7 +702,7 @@ func TestDeletedSamplesAndSeriesStillInWALAfterCheckpoint(t *testing.T) {
 
 	for i := 0; i < numSamples; i++ {
 		app := hb.Appender(context.Background())
-		_, err := app.Add(labels.Labels{{Name: "a", Value: "b"}}, int64(i), 0)
+		_, err := app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, int64(i), 0)
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 	}
@@ -788,7 +800,7 @@ func TestDelete_e2e(t *testing.T) {
 		ts := rand.Int63n(300)
 		for i := 0; i < numDatapoints; i++ {
 			v := rand.Float64()
-			_, err := app.Add(ls, ts, v)
+			_, err := app.Append(0, ls, ts, v)
 			require.NoError(t, err)
 			series = append(series, sample{ts, v})
 			ts += rand.Int63n(timeInterval) + 1
@@ -1133,7 +1145,7 @@ func TestUncommittedSamplesNotLostOnTruncate(t *testing.T) {
 
 	app := h.appender()
 	lset := labels.FromStrings("a", "1")
-	_, err := app.Add(lset, 2100, 1)
+	_, err := app.Append(0, lset, 2100, 1)
 	require.NoError(t, err)
 
 	require.NoError(t, h.Truncate(2000))
@@ -1163,7 +1175,7 @@ func TestRemoveSeriesAfterRollbackAndTruncate(t *testing.T) {
 
 	app := h.appender()
 	lset := labels.FromStrings("a", "1")
-	_, err := app.Add(lset, 2100, 1)
+	_, err := app.Append(0, lset, 2100, 1)
 	require.NoError(t, err)
 
 	require.NoError(t, h.Truncate(2000))
@@ -1193,7 +1205,7 @@ func TestHead_LogRollback(t *testing.T) {
 			}()
 
 			app := h.Appender(context.Background())
-			_, err := app.Add(labels.FromStrings("a", "b"), 1, 2)
+			_, err := app.Append(0, labels.FromStrings("a", "b"), 1, 2)
 			require.NoError(t, err)
 
 			require.NoError(t, app.Rollback())
@@ -1265,7 +1277,10 @@ func TestWalRepair_DecodingError(t *testing.T) {
 						require.NoError(t, w.Log(test.rec))
 					}
 
-					h, err := NewHead(nil, nil, w, 1, w.Dir(), nil, chunks.DefaultWriteBufferSize, DefaultStripeSize, nil)
+					opts := DefaultHeadOptions()
+					opts.ChunkRange = 1
+					opts.ChunkDirRoot = w.Dir()
+					h, err := NewHead(nil, nil, w, opts)
 					require.NoError(t, err)
 					require.Equal(t, 0.0, prom_testutil.ToFloat64(h.metrics.walCorruptionsTotal))
 					initErr := h.Init(math.MinInt64)
@@ -1320,7 +1335,10 @@ func TestHeadReadWriterRepair(t *testing.T) {
 		w, err := wal.New(nil, nil, walDir, false)
 		require.NoError(t, err)
 
-		h, err := NewHead(nil, nil, w, chunkRange, dir, nil, chunks.DefaultWriteBufferSize, DefaultStripeSize, nil)
+		opts := DefaultHeadOptions()
+		opts.ChunkRange = chunkRange
+		opts.ChunkDirRoot = dir
+		h, err := NewHead(nil, nil, w, opts)
 		require.NoError(t, err)
 		require.Equal(t, 0.0, prom_testutil.ToFloat64(h.metrics.mmapChunkCorruptionTotal))
 		require.NoError(t, h.Init(math.MinInt64))
@@ -1379,7 +1397,7 @@ func TestNewWalSegmentOnTruncate(t *testing.T) {
 	}()
 	add := func(ts int64) {
 		app := h.Appender(context.Background())
-		_, err := app.Add(labels.Labels{{Name: "a", Value: "b"}}, ts, 0)
+		_, err := app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, ts, 0)
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 	}
@@ -1410,7 +1428,7 @@ func TestAddDuplicateLabelName(t *testing.T) {
 
 	add := func(labels labels.Labels, labelName string) {
 		app := h.Appender(context.Background())
-		_, err := app.Add(labels, 0, 0)
+		_, err := app.Append(0, labels, 0, 0)
 		require.Error(t, err)
 		require.Equal(t, fmt.Sprintf(`label name "%s" is not unique: invalid sample`, labelName), err.Error())
 	}
@@ -1471,7 +1489,7 @@ func TestMemSeriesIsolation(t *testing.T) {
 				app = a
 			}
 
-			_, err := app.Add(labels.FromStrings("foo", "bar"), int64(i), float64(i))
+			_, err := app.Append(0, labels.FromStrings("foo", "bar"), int64(i), float64(i))
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 		}
@@ -1499,7 +1517,7 @@ func TestMemSeriesIsolation(t *testing.T) {
 	// Cleanup appendIDs below 500.
 	app := hb.appender()
 	app.cleanupAppendIDsBelow = 500
-	_, err := app.Add(labels.FromStrings("foo", "bar"), int64(i), float64(i))
+	_, err := app.Append(0, labels.FromStrings("foo", "bar"), int64(i), float64(i))
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	i++
@@ -1518,7 +1536,7 @@ func TestMemSeriesIsolation(t *testing.T) {
 	// the only thing with appendIDs.
 	app = hb.appender()
 	app.cleanupAppendIDsBelow = 1000
-	_, err = app.Add(labels.FromStrings("foo", "bar"), int64(i), float64(i))
+	_, err = app.Append(0, labels.FromStrings("foo", "bar"), int64(i), float64(i))
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	require.Equal(t, 999, lastValue(hb, 998))
@@ -1532,7 +1550,7 @@ func TestMemSeriesIsolation(t *testing.T) {
 	// Cleanup appendIDs below 1001, but with a rollback.
 	app = hb.appender()
 	app.cleanupAppendIDsBelow = 1001
-	_, err = app.Add(labels.FromStrings("foo", "bar"), int64(i), float64(i))
+	_, err = app.Append(0, labels.FromStrings("foo", "bar"), int64(i), float64(i))
 	require.NoError(t, err)
 	require.NoError(t, app.Rollback())
 	require.Equal(t, 1000, lastValue(hb, 999))
@@ -1550,7 +1568,10 @@ func TestMemSeriesIsolation(t *testing.T) {
 
 	wlog, err := wal.NewSize(nil, nil, w.Dir(), 32768, false)
 	require.NoError(t, err)
-	hb, err = NewHead(nil, nil, wlog, 1000, wlog.Dir(), nil, chunks.DefaultWriteBufferSize, DefaultStripeSize, nil)
+	opts := DefaultHeadOptions()
+	opts.ChunkRange = 1000
+	opts.ChunkDirRoot = wlog.Dir()
+	hb, err = NewHead(nil, nil, wlog, opts)
 	defer func() { require.NoError(t, hb.Close()) }()
 	require.NoError(t, err)
 	require.NoError(t, hb.Init(0))
@@ -1565,7 +1586,7 @@ func TestMemSeriesIsolation(t *testing.T) {
 	// Cleanup appendIDs below 1000, which means the sample buffer is
 	// the only thing with appendIDs.
 	app = hb.appender()
-	_, err = app.Add(labels.FromStrings("foo", "bar"), int64(i), float64(i))
+	_, err = app.Append(0, labels.FromStrings("foo", "bar"), int64(i), float64(i))
 	i++
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
@@ -1578,7 +1599,7 @@ func TestMemSeriesIsolation(t *testing.T) {
 
 	// Cleanup appendIDs below 1002, but with a rollback.
 	app = hb.appender()
-	_, err = app.Add(labels.FromStrings("foo", "bar"), int64(i), float64(i))
+	_, err = app.Append(0, labels.FromStrings("foo", "bar"), int64(i), float64(i))
 	require.NoError(t, err)
 	require.NoError(t, app.Rollback())
 	require.Equal(t, 1001, lastValue(hb, 999))
@@ -1596,21 +1617,21 @@ func TestIsolationRollback(t *testing.T) {
 	}()
 
 	app := hb.Appender(context.Background())
-	_, err := app.Add(labels.FromStrings("foo", "bar"), 0, 0)
+	_, err := app.Append(0, labels.FromStrings("foo", "bar"), 0, 0)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	require.Equal(t, uint64(1), hb.iso.lowWatermark())
 
 	app = hb.Appender(context.Background())
-	_, err = app.Add(labels.FromStrings("foo", "bar"), 1, 1)
+	_, err = app.Append(0, labels.FromStrings("foo", "bar"), 1, 1)
 	require.NoError(t, err)
-	_, err = app.Add(labels.FromStrings("foo", "bar", "foo", "baz"), 2, 2)
+	_, err = app.Append(0, labels.FromStrings("foo", "bar", "foo", "baz"), 2, 2)
 	require.Error(t, err)
 	require.NoError(t, app.Rollback())
 	require.Equal(t, uint64(2), hb.iso.lowWatermark())
 
 	app = hb.Appender(context.Background())
-	_, err = app.Add(labels.FromStrings("foo", "bar"), 3, 3)
+	_, err = app.Append(0, labels.FromStrings("foo", "bar"), 3, 3)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	require.Equal(t, uint64(3), hb.iso.lowWatermark(), "Low watermark should proceed to 3 even if append #2 was rolled back.")
@@ -1623,18 +1644,18 @@ func TestIsolationLowWatermarkMonotonous(t *testing.T) {
 	}()
 
 	app1 := hb.Appender(context.Background())
-	_, err := app1.Add(labels.FromStrings("foo", "bar"), 0, 0)
+	_, err := app1.Append(0, labels.FromStrings("foo", "bar"), 0, 0)
 	require.NoError(t, err)
 	require.NoError(t, app1.Commit())
 	require.Equal(t, uint64(1), hb.iso.lowWatermark(), "Low watermark should by 1 after 1st append.")
 
 	app1 = hb.Appender(context.Background())
-	_, err = app1.Add(labels.FromStrings("foo", "bar"), 1, 1)
+	_, err = app1.Append(0, labels.FromStrings("foo", "bar"), 1, 1)
 	require.NoError(t, err)
 	require.Equal(t, uint64(2), hb.iso.lowWatermark(), "Low watermark should be two, even if append is not committed yet.")
 
 	app2 := hb.Appender(context.Background())
-	_, err = app2.Add(labels.FromStrings("foo", "baz"), 1, 1)
+	_, err = app2.Append(0, labels.FromStrings("foo", "baz"), 1, 1)
 	require.NoError(t, err)
 	require.NoError(t, app2.Commit())
 	require.Equal(t, uint64(2), hb.iso.lowWatermark(), "Low watermark should stay two because app1 is not committed yet.")
@@ -1680,7 +1701,7 @@ func TestIsolationWithoutAdd(t *testing.T) {
 	require.NoError(t, app.Commit())
 
 	app = hb.Appender(context.Background())
-	_, err := app.Add(labels.FromStrings("foo", "baz"), 1, 1)
+	_, err := app.Append(0, labels.FromStrings("foo", "baz"), 1, 1)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
@@ -1704,7 +1725,7 @@ func TestOutOfOrderSamplesMetric(t *testing.T) {
 	ctx := context.Background()
 	app := db.Appender(ctx)
 	for i := 1; i <= 5; i++ {
-		_, err = app.Add(labels.FromStrings("a", "b"), int64(i), 99)
+		_, err = app.Append(0, labels.FromStrings("a", "b"), int64(i), 99)
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
@@ -1712,22 +1733,22 @@ func TestOutOfOrderSamplesMetric(t *testing.T) {
 	// Test out of order metric.
 	require.Equal(t, 0.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples))
 	app = db.Appender(ctx)
-	_, err = app.Add(labels.FromStrings("a", "b"), 2, 99)
+	_, err = app.Append(0, labels.FromStrings("a", "b"), 2, 99)
 	require.Equal(t, storage.ErrOutOfOrderSample, err)
 	require.Equal(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples))
 
-	_, err = app.Add(labels.FromStrings("a", "b"), 3, 99)
+	_, err = app.Append(0, labels.FromStrings("a", "b"), 3, 99)
 	require.Equal(t, storage.ErrOutOfOrderSample, err)
 	require.Equal(t, 2.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples))
 
-	_, err = app.Add(labels.FromStrings("a", "b"), 4, 99)
+	_, err = app.Append(0, labels.FromStrings("a", "b"), 4, 99)
 	require.Equal(t, storage.ErrOutOfOrderSample, err)
 	require.Equal(t, 3.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples))
 	require.NoError(t, app.Commit())
 
 	// Compact Head to test out of bound metric.
 	app = db.Appender(ctx)
-	_, err = app.Add(labels.FromStrings("a", "b"), DefaultBlockDuration*2, 99)
+	_, err = app.Append(0, labels.FromStrings("a", "b"), DefaultBlockDuration*2, 99)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
@@ -1736,11 +1757,11 @@ func TestOutOfOrderSamplesMetric(t *testing.T) {
 	require.Greater(t, db.head.minValidTime.Load(), int64(0))
 
 	app = db.Appender(ctx)
-	_, err = app.Add(labels.FromStrings("a", "b"), db.head.minValidTime.Load()-2, 99)
+	_, err = app.Append(0, labels.FromStrings("a", "b"), db.head.minValidTime.Load()-2, 99)
 	require.Equal(t, storage.ErrOutOfBounds, err)
 	require.Equal(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.outOfBoundSamples))
 
-	_, err = app.Add(labels.FromStrings("a", "b"), db.head.minValidTime.Load()-1, 99)
+	_, err = app.Append(0, labels.FromStrings("a", "b"), db.head.minValidTime.Load()-1, 99)
 	require.Equal(t, storage.ErrOutOfBounds, err)
 	require.Equal(t, 2.0, prom_testutil.ToFloat64(db.head.metrics.outOfBoundSamples))
 	require.NoError(t, app.Commit())
@@ -1748,22 +1769,22 @@ func TestOutOfOrderSamplesMetric(t *testing.T) {
 	// Some more valid samples for out of order.
 	app = db.Appender(ctx)
 	for i := 1; i <= 5; i++ {
-		_, err = app.Add(labels.FromStrings("a", "b"), db.head.minValidTime.Load()+DefaultBlockDuration+int64(i), 99)
+		_, err = app.Append(0, labels.FromStrings("a", "b"), db.head.minValidTime.Load()+DefaultBlockDuration+int64(i), 99)
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
 
 	// Test out of order metric.
 	app = db.Appender(ctx)
-	_, err = app.Add(labels.FromStrings("a", "b"), db.head.minValidTime.Load()+DefaultBlockDuration+2, 99)
+	_, err = app.Append(0, labels.FromStrings("a", "b"), db.head.minValidTime.Load()+DefaultBlockDuration+2, 99)
 	require.Equal(t, storage.ErrOutOfOrderSample, err)
 	require.Equal(t, 4.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples))
 
-	_, err = app.Add(labels.FromStrings("a", "b"), db.head.minValidTime.Load()+DefaultBlockDuration+3, 99)
+	_, err = app.Append(0, labels.FromStrings("a", "b"), db.head.minValidTime.Load()+DefaultBlockDuration+3, 99)
 	require.Equal(t, storage.ErrOutOfOrderSample, err)
 	require.Equal(t, 5.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples))
 
-	_, err = app.Add(labels.FromStrings("a", "b"), db.head.minValidTime.Load()+DefaultBlockDuration+4, 99)
+	_, err = app.Append(0, labels.FromStrings("a", "b"), db.head.minValidTime.Load()+DefaultBlockDuration+4, 99)
 	require.Equal(t, storage.ErrOutOfOrderSample, err)
 	require.Equal(t, 6.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples))
 	require.NoError(t, app.Commit())
@@ -1777,10 +1798,10 @@ func testHeadSeriesChunkRace(t *testing.T) {
 	require.NoError(t, h.Init(0))
 	app := h.Appender(context.Background())
 
-	s2, err := app.Add(labels.FromStrings("foo2", "bar"), 5, 0)
+	s2, err := app.Append(0, labels.FromStrings("foo2", "bar"), 5, 0)
 	require.NoError(t, err)
 	for ts := int64(6); ts < 11; ts++ {
-		err = app.AddFast(s2, ts, 0)
+		_, err = app.Append(s2, nil, ts, 0)
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
@@ -1826,7 +1847,7 @@ func TestHeadLabelNamesValuesWithMinMaxRange(t *testing.T) {
 
 	app := head.Appender(context.Background())
 	for i, name := range expectedLabelNames {
-		_, err := app.Add(labels.Labels{{Name: name, Value: expectedLabelValues[i]}}, seriesTimestamps[i], 0)
+		_, err := app.Append(0, labels.Labels{{Name: name, Value: expectedLabelValues[i]}}, seriesTimestamps[i], 0)
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
@@ -1863,6 +1884,67 @@ func TestHeadLabelNamesValuesWithMinMaxRange(t *testing.T) {
 	}
 }
 
+func TestHeadLabelValuesWithMatchers(t *testing.T) {
+	head, _ := newTestHead(t, 1000, false)
+	defer func() {
+		require.NoError(t, head.Close())
+	}()
+
+	app := head.Appender(context.Background())
+	for i := 0; i < 100; i++ {
+		_, err := app.Append(0, labels.Labels{
+			{Name: "unique", Value: fmt.Sprintf("value%d", i)},
+			{Name: "tens", Value: fmt.Sprintf("value%d", i/10)},
+		}, 100, 0)
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	var testCases = []struct {
+		name           string
+		labelName      string
+		matchers       []*labels.Matcher
+		expectedValues []string
+	}{
+		{
+			name:           "get tens based on unique id",
+			labelName:      "tens",
+			matchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "unique", "value35")},
+			expectedValues: []string{"value3"},
+		}, {
+			name:           "get unique ids based on a ten",
+			labelName:      "unique",
+			matchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "tens", "value1")},
+			expectedValues: []string{"value10", "value11", "value12", "value13", "value14", "value15", "value16", "value17", "value18", "value19"},
+		}, {
+			name:           "get tens by pattern matching on unique id",
+			labelName:      "tens",
+			matchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "unique", "value[5-7]5")},
+			expectedValues: []string{"value5", "value6", "value7"},
+		}, {
+			name:           "get tens by matching for absence of unique label",
+			labelName:      "tens",
+			matchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "unique", "")},
+			expectedValues: []string{"value0", "value1", "value2", "value3", "value4", "value5", "value6", "value7", "value8", "value9"},
+		},
+	}
+
+	for _, tt := range testCases {
+		t.Run(tt.name, func(t *testing.T) {
+			headIdxReader := head.indexRange(0, 200)
+
+			actualValues, err := headIdxReader.SortedLabelValues(tt.labelName, tt.matchers...)
+			require.NoError(t, err)
+			require.Equal(t, tt.expectedValues, actualValues)
+
+			actualValues, err = headIdxReader.LabelValues(tt.labelName, tt.matchers...)
+			sort.Strings(actualValues)
+			require.NoError(t, err)
+			require.Equal(t, tt.expectedValues, actualValues)
+		})
+	}
+}
+
 func TestErrReuseAppender(t *testing.T) {
 	head, _ := newTestHead(t, 1000, false)
 	defer func() {
@@ -1870,28 +1952,28 @@ func TestErrReuseAppender(t *testing.T) {
 	}()
 
 	app := head.Appender(context.Background())
-	_, err := app.Add(labels.Labels{{Name: "test", Value: "test"}}, 0, 0)
+	_, err := app.Append(0, labels.Labels{{Name: "test", Value: "test"}}, 0, 0)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	require.Error(t, app.Commit())
 	require.Error(t, app.Rollback())
 
 	app = head.Appender(context.Background())
-	_, err = app.Add(labels.Labels{{Name: "test", Value: "test"}}, 1, 0)
+	_, err = app.Append(0, labels.Labels{{Name: "test", Value: "test"}}, 1, 0)
 	require.NoError(t, err)
 	require.NoError(t, app.Rollback())
 	require.Error(t, app.Rollback())
 	require.Error(t, app.Commit())
 
 	app = head.Appender(context.Background())
-	_, err = app.Add(labels.Labels{{Name: "test", Value: "test"}}, 2, 0)
+	_, err = app.Append(0, labels.Labels{{Name: "test", Value: "test"}}, 2, 0)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	require.Error(t, app.Rollback())
 	require.Error(t, app.Commit())
 
 	app = head.Appender(context.Background())
-	_, err = app.Add(labels.Labels{{Name: "test", Value: "test"}}, 3, 0)
+	_, err = app.Append(0, labels.Labels{{Name: "test", Value: "test"}}, 3, 0)
 	require.NoError(t, err)
 	require.NoError(t, app.Rollback())
 	require.Error(t, app.Commit())
@@ -1903,11 +1985,11 @@ func TestHeadMintAfterTruncation(t *testing.T) {
 	head, _ := newTestHead(t, chunkRange, false)
 
 	app := head.Appender(context.Background())
-	_, err := app.Add(labels.Labels{{Name: "a", Value: "b"}}, 100, 100)
+	_, err := app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, 100, 100)
 	require.NoError(t, err)
-	_, err = app.Add(labels.Labels{{Name: "a", Value: "b"}}, 4000, 200)
+	_, err = app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, 4000, 200)
 	require.NoError(t, err)
-	_, err = app.Add(labels.Labels{{Name: "a", Value: "b"}}, 8000, 300)
+	_, err = app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, 8000, 300)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
@@ -1930,4 +2012,35 @@ func TestHeadMintAfterTruncation(t *testing.T) {
 	require.Equal(t, int64(7500), head.minValidTime.Load())
 
 	require.NoError(t, head.Close())
+}
+
+func BenchmarkHeadLabelValuesWithMatchers(b *testing.B) {
+	chunkRange := int64(2000)
+	head, _ := newTestHead(b, chunkRange, false)
+	b.Cleanup(func() { require.NoError(b, head.Close()) })
+
+	app := head.Appender(context.Background())
+
+	metricCount := 1000000
+	for i := 0; i < metricCount; i++ {
+		_, err := app.Append(0, labels.Labels{
+			{Name: "unique", Value: fmt.Sprintf("value%d", i)},
+			{Name: "tens", Value: fmt.Sprintf("value%d", i/(metricCount/10))},
+			{Name: "ninety", Value: fmt.Sprintf("value%d", i/(metricCount/10)/9)}, // "0" for the first 90%, then "1"
+		}, 100, 0)
+		require.NoError(b, err)
+	}
+	require.NoError(b, app.Commit())
+
+	headIdxReader := head.indexRange(0, 200)
+	matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "ninety", "value0")}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for benchIdx := 0; benchIdx < b.N; benchIdx++ {
+		actualValues, err := headIdxReader.LabelValues("tens", matchers...)
+		require.NoError(b, err)
+		require.Equal(b, 9, len(actualValues))
+	}
 }

@@ -135,6 +135,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			Timeout:          rwConf.RemoteTimeout,
 			HTTPClientConfig: rwConf.HTTPClientConfig,
 			Headers:          rwConf.Headers,
+			RetryOnRateLimit: rwConf.QueueConfig.RetryOnRateLimit,
 		})
 		if err != nil {
 			return err
@@ -211,19 +212,13 @@ type timestampTracker struct {
 	highestRecvTimestamp *maxTimestamp
 }
 
-// Add implements storage.Appender.
-func (t *timestampTracker) Add(_ labels.Labels, ts int64, _ float64) (uint64, error) {
+// Append implements storage.Appender.
+func (t *timestampTracker) Append(_ uint64, _ labels.Labels, ts int64, _ float64) (uint64, error) {
 	t.samples++
 	if ts > t.highestTimestamp {
 		t.highestTimestamp = ts
 	}
 	return 0, nil
-}
-
-// AddFast implements storage.Appender.
-func (t *timestampTracker) AddFast(_ uint64, ts int64, v float64) error {
-	_, err := t.Add(nil, ts, v)
-	return err
 }
 
 // Commit implements storage.Appender.

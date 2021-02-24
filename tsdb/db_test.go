@@ -173,7 +173,7 @@ func TestDataAvailableOnlyAfterCommit(t *testing.T) {
 	ctx := context.Background()
 	app := db.Appender(ctx)
 
-	_, err := app.Add(labels.FromStrings("foo", "bar"), 0, 0)
+	_, err := app.Append(0, labels.FromStrings("foo", "bar"), 0, 0)
 	require.NoError(t, err)
 
 	querier, err := db.Querier(context.TODO(), 0, 1)
@@ -206,7 +206,7 @@ func TestNoPanicAfterWALCorruption(t *testing.T) {
 	{
 		for {
 			app := db.Appender(ctx)
-			_, err := app.Add(labels.FromStrings("foo", "bar"), maxt, 0)
+			_, err := app.Append(0, labels.FromStrings("foo", "bar"), maxt, 0)
 			expSamples = append(expSamples, sample{t: maxt, v: 0})
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
@@ -261,7 +261,7 @@ func TestDataNotAvailableAfterRollback(t *testing.T) {
 	}()
 
 	app := db.Appender(context.Background())
-	_, err := app.Add(labels.FromStrings("foo", "bar"), 0, 0)
+	_, err := app.Append(0, labels.FromStrings("foo", "bar"), 0, 0)
 	require.NoError(t, err)
 
 	err = app.Rollback()
@@ -285,12 +285,13 @@ func TestDBAppenderAddRef(t *testing.T) {
 	ctx := context.Background()
 	app1 := db.Appender(ctx)
 
-	ref1, err := app1.Add(labels.FromStrings("a", "b"), 123, 0)
+	ref1, err := app1.Append(0, labels.FromStrings("a", "b"), 123, 0)
 	require.NoError(t, err)
 
 	// Reference should already work before commit.
-	err = app1.AddFast(ref1, 124, 1)
+	ref2, err := app1.Append(ref1, nil, 124, 1)
 	require.NoError(t, err)
+	require.Equal(t, ref1, ref2)
 
 	err = app1.Commit()
 	require.NoError(t, err)
@@ -298,20 +299,22 @@ func TestDBAppenderAddRef(t *testing.T) {
 	app2 := db.Appender(ctx)
 
 	// first ref should already work in next transaction.
-	err = app2.AddFast(ref1, 125, 0)
+	ref3, err := app2.Append(ref1, nil, 125, 0)
 	require.NoError(t, err)
+	require.Equal(t, ref1, ref3)
 
-	ref2, err := app2.Add(labels.FromStrings("a", "b"), 133, 1)
+	ref4, err := app2.Append(ref1, labels.FromStrings("a", "b"), 133, 1)
 	require.NoError(t, err)
-
-	require.Equal(t, ref1, ref2)
+	require.Equal(t, ref1, ref4)
 
 	// Reference must be valid to add another sample.
-	err = app2.AddFast(ref2, 143, 2)
+	ref5, err := app2.Append(ref2, nil, 143, 2)
 	require.NoError(t, err)
+	require.Equal(t, ref1, ref5)
 
-	err = app2.AddFast(9999999, 1, 1)
-	require.Equal(t, storage.ErrNotFound, errors.Cause(err))
+	// Missing labels & invalid refs should fail.
+	_, err = app2.Append(9999999, nil, 1, 1)
+	require.Equal(t, ErrInvalidSample, errors.Cause(err))
 
 	require.NoError(t, app2.Commit())
 
@@ -340,11 +343,11 @@ func TestAppendEmptyLabelsIgnored(t *testing.T) {
 	ctx := context.Background()
 	app1 := db.Appender(ctx)
 
-	ref1, err := app1.Add(labels.FromStrings("a", "b"), 123, 0)
+	ref1, err := app1.Append(0, labels.FromStrings("a", "b"), 123, 0)
 	require.NoError(t, err)
 
 	// Construct labels manually so there is an empty label.
-	ref2, err := app1.Add(labels.Labels{labels.Label{Name: "a", Value: "b"}, labels.Label{Name: "c", Value: ""}}, 124, 0)
+	ref2, err := app1.Append(0, labels.Labels{labels.Label{Name: "a", Value: "b"}, labels.Label{Name: "c", Value: ""}}, 124, 0)
 	require.NoError(t, err)
 
 	// Should be the same series.
@@ -396,7 +399,7 @@ Outer:
 		smpls := make([]float64, numSamples)
 		for i := int64(0); i < numSamples; i++ {
 			smpls[i] = rand.Float64()
-			app.Add(labels.Labels{{Name: "a", Value: "b"}}, i, smpls[i])
+			app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, i, smpls[i])
 		}
 
 		require.NoError(t, app.Commit())
@@ -452,12 +455,12 @@ func TestAmendDatapointCausesError(t *testing.T) {
 
 	ctx := context.Background()
 	app := db.Appender(ctx)
-	_, err := app.Add(labels.Labels{{Name: "a", Value: "b"}}, 0, 0)
+	_, err := app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, 0, 0)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
 	app = db.Appender(ctx)
-	_, err = app.Add(labels.Labels{{Name: "a", Value: "b"}}, 0, 1)
+	_, err = app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, 0, 1)
 	require.Equal(t, storage.ErrDuplicateSampleForTimestamp, err)
 	require.NoError(t, app.Rollback())
 }
@@ -470,12 +473,12 @@ func TestDuplicateNaNDatapointNoAmendError(t *testing.T) {
 
 	ctx := context.Background()
 	app := db.Appender(ctx)
-	_, err := app.Add(labels.Labels{{Name: "a", Value: "b"}}, 0, math.NaN())
+	_, err := app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, 0, math.NaN())
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
 	app = db.Appender(ctx)
-	_, err = app.Add(labels.Labels{{Name: "a", Value: "b"}}, 0, math.NaN())
+	_, err = app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, 0, math.NaN())
 	require.NoError(t, err)
 }
 
@@ -487,12 +490,12 @@ func TestNonDuplicateNaNDatapointsCausesAmendError(t *testing.T) {
 
 	ctx := context.Background()
 	app := db.Appender(ctx)
-	_, err := app.Add(labels.Labels{{Name: "a", Value: "b"}}, 0, math.Float64frombits(0x7ff0000000000001))
+	_, err := app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, 0, math.Float64frombits(0x7ff0000000000001))
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
 	app = db.Appender(ctx)
-	_, err = app.Add(labels.Labels{{Name: "a", Value: "b"}}, 0, math.Float64frombits(0x7ff0000000000002))
+	_, err = app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, 0, math.Float64frombits(0x7ff0000000000002))
 	require.Equal(t, storage.ErrDuplicateSampleForTimestamp, err)
 }
 
@@ -504,7 +507,7 @@ func TestEmptyLabelsetCausesError(t *testing.T) {
 
 	ctx := context.Background()
 	app := db.Appender(ctx)
-	_, err := app.Add(labels.Labels{}, 0, 0)
+	_, err := app.Append(0, labels.Labels{}, 0, 0)
 	require.Error(t, err)
 	require.Equal(t, "empty labelset: invalid sample", err.Error())
 }
@@ -518,9 +521,9 @@ func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
 	// Append AmendedValue.
 	ctx := context.Background()
 	app := db.Appender(ctx)
-	_, err := app.Add(labels.Labels{{Name: "a", Value: "b"}}, 0, 1)
+	_, err := app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, 0, 1)
 	require.NoError(t, err)
-	_, err = app.Add(labels.Labels{{Name: "a", Value: "b"}}, 0, 2)
+	_, err = app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, 0, 2)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
@@ -536,9 +539,9 @@ func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
 
 	// Append Out of Order Value.
 	app = db.Appender(ctx)
-	_, err = app.Add(labels.Labels{{Name: "a", Value: "b"}}, 10, 3)
+	_, err = app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, 10, 3)
 	require.NoError(t, err)
-	_, err = app.Add(labels.Labels{{Name: "a", Value: "b"}}, 7, 5)
+	_, err = app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, 7, 5)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
@@ -560,7 +563,7 @@ func TestDB_Snapshot(t *testing.T) {
 	app := db.Appender(ctx)
 	mint := int64(1414141414000)
 	for i := 0; i < 1000; i++ {
-		_, err := app.Add(labels.FromStrings("foo", "bar"), mint+int64(i), 1.0)
+		_, err := app.Append(0, labels.FromStrings("foo", "bar"), mint+int64(i), 1.0)
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
@@ -610,7 +613,7 @@ func TestDB_Snapshot_ChunksOutsideOfCompactedRange(t *testing.T) {
 	app := db.Appender(ctx)
 	mint := int64(1414141414000)
 	for i := 0; i < 1000; i++ {
-		_, err := app.Add(labels.FromStrings("foo", "bar"), mint+int64(i), 1.0)
+		_, err := app.Append(0, labels.FromStrings("foo", "bar"), mint+int64(i), 1.0)
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
@@ -665,7 +668,7 @@ func TestDB_SnapshotWithDelete(t *testing.T) {
 	smpls := make([]float64, numSamples)
 	for i := int64(0); i < numSamples; i++ {
 		smpls[i] = rand.Float64()
-		app.Add(labels.Labels{{Name: "a", Value: "b"}}, i, smpls[i])
+		app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, i, smpls[i])
 	}
 
 	require.NoError(t, app.Commit())
@@ -818,7 +821,7 @@ func TestDB_e2e(t *testing.T) {
 
 			series = append(series, sample{ts, v})
 
-			_, err := app.Add(lset, ts, v)
+			_, err := app.Append(0, lset, ts, v)
 			require.NoError(t, err)
 
 			ts += rand.Int63n(timeInterval) + 1
@@ -912,7 +915,7 @@ func TestWALFlushedOnDBClose(t *testing.T) {
 
 	ctx := context.Background()
 	app := db.Appender(ctx)
-	_, err := app.Add(lbls, 0, 1)
+	_, err := app.Append(0, lbls, 0, 1)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
@@ -986,10 +989,10 @@ func TestWALSegmentSizeOptions(t *testing.T) {
 
 			for i := int64(0); i < 155; i++ {
 				app := db.Appender(context.Background())
-				ref, err := app.Add(labels.Labels{labels.Label{Name: "wal" + fmt.Sprintf("%d", i), Value: "size"}}, i, rand.Float64())
+				ref, err := app.Append(0, labels.Labels{labels.Label{Name: "wal" + fmt.Sprintf("%d", i), Value: "size"}}, i, rand.Float64())
 				require.NoError(t, err)
 				for j := int64(1); j <= 78; j++ {
-					err := app.AddFast(ref, i+j, rand.Float64())
+					_, err := app.Append(ref, nil, i+j, rand.Float64())
 					require.NoError(t, err)
 				}
 				require.NoError(t, app.Commit())
@@ -1013,7 +1016,7 @@ func TestTombstoneClean(t *testing.T) {
 	smpls := make([]float64, numSamples)
 	for i := int64(0); i < numSamples; i++ {
 		smpls[i] = rand.Float64()
-		app.Add(labels.Labels{{Name: "a", Value: "b"}}, i, smpls[i])
+		app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, i, smpls[i])
 	}
 
 	require.NoError(t, app.Commit())
@@ -1030,7 +1033,7 @@ func TestTombstoneClean(t *testing.T) {
 	for _, c := range cases {
 		// Delete the ranges.
 
-		// create snapshot
+		// Create snapshot.
 		snap, err := ioutil.TempDir("", "snap")
 		require.NoError(t, err)
 
@@ -1040,7 +1043,7 @@ func TestTombstoneClean(t *testing.T) {
 		require.NoError(t, db.Snapshot(snap, true))
 		require.NoError(t, db.Close())
 
-		// reopen DB from snapshot
+		// Reopen DB from snapshot.
 		db, err = Open(snap, nil, nil, nil)
 		require.NoError(t, err)
 		defer db.Close()
@@ -1099,6 +1102,54 @@ func TestTombstoneClean(t *testing.T) {
 	}
 }
 
+// TestTombstoneCleanResultEmptyBlock tests that a TombstoneClean that results in empty blocks (no timeseries)
+// will also delete the resultant block.
+func TestTombstoneCleanResultEmptyBlock(t *testing.T) {
+	numSamples := int64(10)
+
+	db := openTestDB(t, nil, nil)
+
+	ctx := context.Background()
+	app := db.Appender(ctx)
+
+	smpls := make([]float64, numSamples)
+	for i := int64(0); i < numSamples; i++ {
+		smpls[i] = rand.Float64()
+		app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, i, smpls[i])
+	}
+
+	require.NoError(t, app.Commit())
+	// Interval should cover the whole block.
+	intervals := tombstones.Intervals{{Mint: 0, Maxt: numSamples}}
+
+	// Create snapshot.
+	snap, err := ioutil.TempDir("", "snap")
+	require.NoError(t, err)
+
+	defer func() {
+		require.NoError(t, os.RemoveAll(snap))
+	}()
+	require.NoError(t, db.Snapshot(snap, true))
+	require.NoError(t, db.Close())
+
+	// Reopen DB from snapshot.
+	db, err = Open(snap, nil, nil, nil)
+	require.NoError(t, err)
+	defer db.Close()
+
+	// Create tombstones by deleting all samples.
+	for _, r := range intervals {
+		require.NoError(t, db.Delete(r.Mint, r.Maxt, labels.MustNewMatcher(labels.MatchEqual, "a", "b")))
+	}
+
+	require.NoError(t, db.CleanTombstones())
+
+	// After cleaning tombstones that covers the entire block, no blocks should be left behind.
+	actualBlockDirs, err := blockDirs(db.dir)
+	require.NoError(t, err)
+	require.Equal(t, 0, len(actualBlockDirs))
+}
+
 // TestTombstoneCleanFail tests that a failing TombstoneClean doesn't leave any blocks behind.
 // When TombstoneClean errors the original block that should be rebuilt doesn't get deleted so
 // if TombstoneClean leaves any blocks behind these will overlap.
@@ -1108,22 +1159,22 @@ func TestTombstoneCleanFail(t *testing.T) {
 		require.NoError(t, db.Close())
 	}()
 
-	var expectedBlockDirs []string
+	var oldBlockDirs []string
 
-	// Create some empty blocks pending for compaction.
+	// Create some blocks pending for compaction.
 	// totalBlocks should be >=2 so we have enough blocks to trigger compaction failure.
 	totalBlocks := 2
 	for i := 0; i < totalBlocks; i++ {
-		blockDir := createBlock(t, db.Dir(), genSeries(1, 1, 0, 1))
+		blockDir := createBlock(t, db.Dir(), genSeries(1, 1, int64(i), int64(i)+1))
 		block, err := OpenBlock(nil, blockDir, nil)
 		require.NoError(t, err)
 		// Add some fake tombstones to trigger the compaction.
 		tomb := tombstones.NewMemTombstones()
-		tomb.AddInterval(0, tombstones.Interval{Mint: 0, Maxt: 1})
+		tomb.AddInterval(0, tombstones.Interval{Mint: int64(i), Maxt: int64(i) + 1})
 		block.tombstones = tomb
 
 		db.blocks = append(db.blocks, block)
-		expectedBlockDirs = append(expectedBlockDirs, blockDir)
+		oldBlockDirs = append(oldBlockDirs, blockDir)
 	}
 
 	// Initialize the mockCompactorFailing with a room for a single compaction iteration.
@@ -1137,10 +1188,76 @@ func TestTombstoneCleanFail(t *testing.T) {
 	// The compactor should trigger a failure here.
 	require.Error(t, db.CleanTombstones())
 
-	// Now check that the CleanTombstones didn't leave any blocks behind after a failure.
+	// Now check that the CleanTombstones replaced the old block even after a failure.
 	actualBlockDirs, err := blockDirs(db.dir)
 	require.NoError(t, err)
-	require.Equal(t, expectedBlockDirs, actualBlockDirs)
+	// Only one block should have been replaced by a new block.
+	require.Equal(t, len(oldBlockDirs), len(actualBlockDirs))
+	require.Equal(t, len(intersection(oldBlockDirs, actualBlockDirs)), len(actualBlockDirs)-1)
+}
+
+// TestTombstoneCleanRetentionLimitsRace tests that a CleanTombstones operation
+// and retention limit policies, when triggered at the same time,
+// won't race against each other.
+func TestTombstoneCleanRetentionLimitsRace(t *testing.T) {
+	opts := DefaultOptions()
+	var wg sync.WaitGroup
+
+	// We want to make sure that a race doesn't happen when a normal reload and a CleanTombstones()
+	// reload try to delete the same block. Without the correct lock placement, it can happen if a
+	// block is marked for deletion due to retention limits and also has tombstones to be cleaned at
+	// the same time.
+	//
+	// That is something tricky to trigger, so let's try several times just to make sure.
+	for i := 0; i < 20; i++ {
+		db := openTestDB(t, opts, nil)
+		totalBlocks := 20
+		dbDir := db.Dir()
+		// Generate some blocks with old mint (near epoch).
+		for j := 0; j < totalBlocks; j++ {
+			blockDir := createBlock(t, dbDir, genSeries(10, 1, int64(j), int64(j)+1))
+			block, err := OpenBlock(nil, blockDir, nil)
+			require.NoError(t, err)
+			// Cover block with tombstones so it can be deleted with CleanTombstones() as well.
+			tomb := tombstones.NewMemTombstones()
+			tomb.AddInterval(0, tombstones.Interval{Mint: int64(j), Maxt: int64(j) + 1})
+			block.tombstones = tomb
+
+			db.blocks = append(db.blocks, block)
+		}
+
+		wg.Add(2)
+		// Run reload and CleanTombstones together, with a small time window randomization
+		go func() {
+			defer wg.Done()
+			time.Sleep(time.Duration(rand.Float64() * 100 * float64(time.Millisecond)))
+			require.NoError(t, db.reloadBlocks())
+		}()
+		go func() {
+			defer wg.Done()
+			time.Sleep(time.Duration(rand.Float64() * 100 * float64(time.Millisecond)))
+			require.NoError(t, db.CleanTombstones())
+		}()
+
+		wg.Wait()
+
+		require.NoError(t, db.Close())
+	}
+
+}
+
+func intersection(oldBlocks, actualBlocks []string) (intersection []string) {
+	hash := make(map[string]bool)
+	for _, e := range oldBlocks {
+		hash[e] = true
+	}
+	for _, e := range actualBlocks {
+		// If block present in the hashmap then append intersection list.
+		if hash[e] {
+			intersection = append(intersection, e)
+		}
+	}
+	return
 }
 
 // mockCompactorFailing creates a new empty block on every write and fails when reached the max allowed total.
@@ -1242,7 +1359,7 @@ func TestSizeRetention(t *testing.T) {
 			it := s.Iterator()
 			for it.Next() {
 				tim, v := it.At()
-				_, err := headApp.Add(s.Labels(), tim, v)
+				_, err := headApp.Append(0, s.Labels(), tim, v)
 				require.NoError(t, err)
 			}
 			require.NoError(t, it.Err())
@@ -1358,7 +1475,7 @@ func TestNotMatcherSelectsLabelsUnsetSeries(t *testing.T) {
 	ctx := context.Background()
 	app := db.Appender(ctx)
 	for _, lbls := range labelpairs {
-		_, err := app.Add(lbls, 0, 1)
+		_, err := app.Append(0, lbls, 0, 1)
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
@@ -1543,9 +1660,9 @@ func TestChunkAtBlockBoundary(t *testing.T) {
 	label := labels.FromStrings("foo", "bar")
 
 	for i := int64(0); i < 3; i++ {
-		_, err := app.Add(label, i*blockRange, 0)
+		_, err := app.Append(0, label, i*blockRange, 0)
 		require.NoError(t, err)
-		_, err = app.Add(label, i*blockRange+1000, 0)
+		_, err = app.Append(0, label, i*blockRange+1000, 0)
 		require.NoError(t, err)
 	}
 
@@ -1600,9 +1717,9 @@ func TestQuerierWithBoundaryChunks(t *testing.T) {
 	label := labels.FromStrings("foo", "bar")
 
 	for i := int64(0); i < 5; i++ {
-		_, err := app.Add(label, i*blockRange, 0)
+		_, err := app.Append(0, label, i*blockRange, 0)
 		require.NoError(t, err)
-		_, err = app.Add(labels.FromStrings("blockID", strconv.FormatInt(i, 10)), i*blockRange, 0)
+		_, err = app.Append(0, labels.FromStrings("blockID", strconv.FormatInt(i, 10)), i*blockRange, 0)
 		require.NoError(t, err)
 	}
 
@@ -1649,7 +1766,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 		// First added sample initializes the writable range.
 		ctx := context.Background()
 		app := db.Appender(ctx)
-		_, err = app.Add(labels.FromStrings("a", "b"), 1000, 1)
+		_, err = app.Append(0, labels.FromStrings("a", "b"), 1000, 1)
 		require.NoError(t, err)
 
 		require.Equal(t, int64(1000), db.head.MinTime())
@@ -1766,11 +1883,11 @@ func TestNoEmptyBlocks(t *testing.T) {
 
 	t.Run("Test no blocks after deleting all samples from head.", func(t *testing.T) {
 		app := db.Appender(ctx)
-		_, err := app.Add(defaultLabel, 1, 0)
+		_, err := app.Append(0, defaultLabel, 1, 0)
 		require.NoError(t, err)
-		_, err = app.Add(defaultLabel, 2, 0)
+		_, err = app.Append(0, defaultLabel, 2, 0)
 		require.NoError(t, err)
-		_, err = app.Add(defaultLabel, 3+rangeToTriggerCompaction, 0)
+		_, err = app.Append(0, defaultLabel, 3+rangeToTriggerCompaction, 0)
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 		require.NoError(t, db.Delete(math.MinInt64, math.MaxInt64, defaultMatcher))
@@ -1783,16 +1900,16 @@ func TestNoEmptyBlocks(t *testing.T) {
 		require.Equal(t, 0, len(actBlocks))
 
 		app = db.Appender(ctx)
-		_, err = app.Add(defaultLabel, 1, 0)
+		_, err = app.Append(0, defaultLabel, 1, 0)
 		require.Equal(t, storage.ErrOutOfBounds, err, "the head should be truncated so no samples in the past should be allowed")
 
 		// Adding new blocks.
 		currentTime := db.Head().MaxTime()
-		_, err = app.Add(defaultLabel, currentTime, 0)
+		_, err = app.Append(0, defaultLabel, currentTime, 0)
 		require.NoError(t, err)
-		_, err = app.Add(defaultLabel, currentTime+1, 0)
+		_, err = app.Append(0, defaultLabel, currentTime+1, 0)
 		require.NoError(t, err)
-		_, err = app.Add(defaultLabel, currentTime+rangeToTriggerCompaction, 0)
+		_, err = app.Append(0, defaultLabel, currentTime+rangeToTriggerCompaction, 0)
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 
@@ -1809,11 +1926,11 @@ func TestNoEmptyBlocks(t *testing.T) {
 		oldBlocks := db.Blocks()
 		app := db.Appender(ctx)
 		currentTime := db.Head().MaxTime()
-		_, err := app.Add(defaultLabel, currentTime, 0)
+		_, err := app.Append(0, defaultLabel, currentTime, 0)
 		require.NoError(t, err)
-		_, err = app.Add(defaultLabel, currentTime+1, 0)
+		_, err = app.Append(0, defaultLabel, currentTime+1, 0)
 		require.NoError(t, err)
-		_, err = app.Add(defaultLabel, currentTime+rangeToTriggerCompaction, 0)
+		_, err = app.Append(0, defaultLabel, currentTime+rangeToTriggerCompaction, 0)
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 		require.NoError(t, db.head.Delete(math.MinInt64, math.MaxInt64, defaultMatcher))
@@ -1895,7 +2012,7 @@ func TestDB_LabelNames(t *testing.T) {
 		for i := mint; i <= maxt; i++ {
 			for _, tuple := range sampleLabels {
 				label := labels.FromStrings(tuple[0], tuple[1])
-				_, err := app.Add(label, i*blockRange, 0)
+				_, err := app.Append(0, label, i*blockRange, 0)
 				require.NoError(t, err)
 			}
 		}
@@ -1962,7 +2079,7 @@ func TestCorrectNumTombstones(t *testing.T) {
 	app := db.Appender(ctx)
 	for i := int64(0); i < 3; i++ {
 		for j := int64(0); j < 15; j++ {
-			_, err := app.Add(defaultLabel, i*blockRange+j, 0)
+			_, err := app.Append(0, defaultLabel, i*blockRange+j, 0)
 			require.NoError(t, err)
 		}
 	}
@@ -2015,16 +2132,16 @@ func TestBlockRanges(t *testing.T) {
 	}()
 	app := db.Appender(ctx)
 	lbl := labels.Labels{{Name: "a", Value: "b"}}
-	_, err = app.Add(lbl, firstBlockMaxT-1, rand.Float64())
+	_, err = app.Append(0, lbl, firstBlockMaxT-1, rand.Float64())
 	if err == nil {
 		t.Fatalf("appending a sample with a timestamp covered by a previous block shouldn't be possible")
 	}
-	_, err = app.Add(lbl, firstBlockMaxT+1, rand.Float64())
+	_, err = app.Append(0, lbl, firstBlockMaxT+1, rand.Float64())
 	require.NoError(t, err)
-	_, err = app.Add(lbl, firstBlockMaxT+2, rand.Float64())
+	_, err = app.Append(0, lbl, firstBlockMaxT+2, rand.Float64())
 	require.NoError(t, err)
 	secondBlockMaxt := firstBlockMaxT + rangeToTriggerCompaction
-	_, err = app.Add(lbl, secondBlockMaxt, rand.Float64()) // Add samples to trigger a new compaction
+	_, err = app.Append(0, lbl, secondBlockMaxt, rand.Float64()) // Add samples to trigger a new compaction
 
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
@@ -2044,13 +2161,13 @@ func TestBlockRanges(t *testing.T) {
 	// and compaction doesn't create an overlapping block.
 	app = db.Appender(ctx)
 	db.DisableCompactions()
-	_, err = app.Add(lbl, secondBlockMaxt+1, rand.Float64())
+	_, err = app.Append(0, lbl, secondBlockMaxt+1, rand.Float64())
 	require.NoError(t, err)
-	_, err = app.Add(lbl, secondBlockMaxt+2, rand.Float64())
+	_, err = app.Append(0, lbl, secondBlockMaxt+2, rand.Float64())
 	require.NoError(t, err)
-	_, err = app.Add(lbl, secondBlockMaxt+3, rand.Float64())
+	_, err = app.Append(0, lbl, secondBlockMaxt+3, rand.Float64())
 	require.NoError(t, err)
-	_, err = app.Add(lbl, secondBlockMaxt+4, rand.Float64())
+	_, err = app.Append(0, lbl, secondBlockMaxt+4, rand.Float64())
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	require.NoError(t, db.Close())
@@ -2066,7 +2183,7 @@ func TestBlockRanges(t *testing.T) {
 	require.Equal(t, db.Blocks()[2].Meta().MaxTime, thirdBlockMaxt, "unexpected maxt of the last block")
 
 	app = db.Appender(ctx)
-	_, err = app.Add(lbl, thirdBlockMaxt+rangeToTriggerCompaction, rand.Float64()) // Trigger a compaction
+	_, err = app.Append(0, lbl, thirdBlockMaxt+rangeToTriggerCompaction, rand.Float64()) // Trigger a compaction
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	for x := 0; x < 100; x++ {
@@ -2133,7 +2250,7 @@ func TestDBReadOnly(t *testing.T) {
 		dbSizeBeforeAppend, err := fileutil.DirSize(dbWritable.Dir())
 		require.NoError(t, err)
 		app := dbWritable.Appender(context.Background())
-		_, err = app.Add(labels.FromStrings("foo", "bar"), dbWritable.Head().MaxTime()+1, 0)
+		_, err = app.Append(0, labels.FromStrings("foo", "bar"), dbWritable.Head().MaxTime()+1, 0)
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 
@@ -2234,7 +2351,7 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 		app := db.Appender(ctx)
 		maxt = 1000
 		for i := 0; i < maxt; i++ {
-			_, err := app.Add(labels.FromStrings(defaultLabelName, "flush"), int64(i), 1.0)
+			_, err := app.Append(0, labels.FromStrings(defaultLabelName, "flush"), int64(i), 1.0)
 			require.NoError(t, err)
 		}
 		require.NoError(t, app.Commit())
@@ -2304,7 +2421,7 @@ func TestDBCannotSeePartialCommits(t *testing.T) {
 			app := db.Appender(ctx)
 
 			for j := 0; j < 100; j++ {
-				_, err := app.Add(labels.FromStrings("foo", "bar", "a", strconv.Itoa(j)), int64(iter), float64(iter))
+				_, err := app.Append(0, labels.FromStrings("foo", "bar", "a", strconv.Itoa(j)), int64(iter), float64(iter))
 				require.NoError(t, err)
 			}
 			err = app.Commit()
@@ -2369,7 +2486,7 @@ func TestDBQueryDoesntSeeAppendsAfterCreation(t *testing.T) {
 
 	ctx := context.Background()
 	app := db.Appender(ctx)
-	_, err = app.Add(labels.FromStrings("foo", "bar"), 0, 0)
+	_, err = app.Append(0, labels.FromStrings("foo", "bar"), 0, 0)
 	require.NoError(t, err)
 
 	querierAfterAddButBeforeCommit, err := db.Querier(context.Background(), 0, 1000000)
@@ -2694,7 +2811,7 @@ func TestCompactHead(t *testing.T) {
 	maxt := 100
 	for i := 0; i < maxt; i++ {
 		val := rand.Float64()
-		_, err := app.Add(labels.FromStrings("a", "b"), int64(i), val)
+		_, err := app.Append(0, labels.FromStrings("a", "b"), int64(i), val)
 		require.NoError(t, err)
 		expSamples = append(expSamples, sample{int64(i), val})
 	}
@@ -2894,9 +3011,9 @@ func TestOneCheckpointPerCompactCall(t *testing.T) {
 	// Append samples spanning 59 block ranges.
 	app := db.Appender(context.Background())
 	for i := int64(0); i < 60; i++ {
-		_, err := app.Add(lbls, blockRange*i, rand.Float64())
+		_, err := app.Append(0, lbls, blockRange*i, rand.Float64())
 		require.NoError(t, err)
-		_, err = app.Add(lbls, (blockRange*i)+blockRange/2, rand.Float64())
+		_, err = app.Append(0, lbls, (blockRange*i)+blockRange/2, rand.Float64())
 		require.NoError(t, err)
 		// Rotate the WAL file so that there is >3 files for checkpoint to happen.
 		require.NoError(t, db.head.wal.NextSegment())
@@ -2953,7 +3070,7 @@ func TestOneCheckpointPerCompactCall(t *testing.T) {
 
 	// Adding sample way into the future.
 	app = db.Appender(context.Background())
-	_, err = app.Add(lbls, blockRange*120, rand.Float64())
+	_, err = app.Append(0, lbls, blockRange*120, rand.Float64())
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 

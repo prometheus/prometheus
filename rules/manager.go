@@ -622,7 +622,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				g.seriesInPreviousEval[i] = seriesReturned
 			}()
 			for _, s := range vector {
-				if _, err := app.Add(s.Metric, s.T, s.V); err != nil {
+				if _, err := app.Append(0, s.Metric, s.T, s.V); err != nil {
 					switch errors.Cause(err) {
 					case storage.ErrOutOfOrderSample:
 						numOutOfOrder++
@@ -647,7 +647,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			for metric, lset := range g.seriesInPreviousEval[i] {
 				if _, ok := seriesReturned[metric]; !ok {
 					// Series no longer exposed, mark it stale.
-					_, err = app.Add(lset, timestamp.FromTime(ts), math.Float64frombits(value.StaleNaN))
+					_, err = app.Append(0, lset, timestamp.FromTime(ts), math.Float64frombits(value.StaleNaN))
 					switch errors.Cause(err) {
 					case nil:
 					case storage.ErrOutOfOrderSample, storage.ErrDuplicateSampleForTimestamp:
@@ -673,7 +673,7 @@ func (g *Group) cleanupStaleSeries(ctx context.Context, ts time.Time) {
 	app := g.opts.Appendable.Appender(ctx)
 	for _, s := range g.staleSeries {
 		// Rule that produced series no longer configured, mark it stale.
-		_, err := app.Add(s, timestamp.FromTime(ts), math.Float64frombits(value.StaleNaN))
+		_, err := app.Append(0, s, timestamp.FromTime(ts), math.Float64frombits(value.StaleNaN))
 		switch errors.Cause(err) {
 		case nil:
 		case storage.ErrOutOfOrderSample, storage.ErrDuplicateSampleForTimestamp:

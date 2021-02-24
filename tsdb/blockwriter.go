@@ -27,7 +27,6 @@ import (
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/prometheus/tsdb/chunks"
 )
 
 // BlockWriter is a block writer that allows appending and flushing series to disk.
@@ -70,8 +69,10 @@ func (w *BlockWriter) initHead() error {
 		return errors.Wrap(err, "create temp dir")
 	}
 	w.chunkDir = chunkDir
-
-	h, err := NewHead(nil, w.logger, nil, w.blockSize, w.chunkDir, nil, chunks.DefaultWriteBufferSize, DefaultStripeSize, nil)
+	opts := DefaultHeadOptions()
+	opts.ChunkRange = w.blockSize
+	opts.ChunkDirRoot = w.chunkDir
+	h, err := NewHead(nil, w.logger, nil, opts)
 	if err != nil {
 		return errors.Wrap(err, "tsdb.NewHead")
 	}

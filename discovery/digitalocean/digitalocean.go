@@ -38,6 +38,7 @@ const (
 	doLabelID          = doLabel + "droplet_id"
 	doLabelName        = doLabel + "droplet_name"
 	doLabelImage       = doLabel + "image"
+	doLabelImageName   = doLabel + "image_name"
 	doLabelPrivateIPv4 = doLabel + "private_ipv4"
 	doLabelPublicIPv4  = doLabel + "public_ipv4"
 	doLabelPublicIPv6  = doLabel + "public_ipv6"
@@ -88,7 +89,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
-	return nil
+	return c.HTTPClientConfig.Validate()
 }
 
 // Discovery periodically performs DigitalOcean requests. It implements
@@ -161,6 +162,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 			doLabelID:          model.LabelValue(fmt.Sprintf("%d", droplet.ID)),
 			doLabelName:        model.LabelValue(droplet.Name),
 			doLabelImage:       model.LabelValue(droplet.Image.Slug),
+			doLabelImageName:   model.LabelValue(droplet.Image.Name),
 			doLabelPrivateIPv4: model.LabelValue(privateIPv4),
 			doLabelPublicIPv4:  model.LabelValue(publicIPv4),
 			doLabelPublicIPv6:  model.LabelValue(publicIPv6),

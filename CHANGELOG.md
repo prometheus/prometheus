@@ -1,3 +1,34 @@
+## 2.25.0 / 2021-02-17
+
+This release includes a new `--enable-feature=` flag that enables
+experimental features. Such features might be changed or removed in the future.
+
+In the next minor release (2.26), Prometheus will use the Alertmanager API v2.
+It will be done by defaulting `alertmanager_config.api_version` to `v2`.
+Alertmanager API v2 was released in Alertmanager v0.16.0 (released in January
+2019).
+
+* [FEATURE] **experimental** API: Accept remote_write requests. Behind the --enable-feature=remote-write-receiver flag. #8424
+* [FEATURE] **experimental** PromQL: Add '@ <timestamp>' modifier. Behind the --enable-feature=promql-at-modifier flag. #8121 #8436 #8425
+* [ENHANCEMENT] Add optional name property to testgroup for better test failure output. #8440
+* [ENHANCEMENT] Add warnings into React Panel on the Graph page. #8427
+* [ENHANCEMENT] TSDB: Increase the number of buckets for the compaction duration metric. #8342
+* [ENHANCEMENT] Remote: Allow passing along custom remote_write HTTP headers. #8416
+* [ENHANCEMENT] Mixins: Scope grafana configuration. #8332
+* [ENHANCEMENT] Kubernetes SD: Add endpoint labels metadata. #8273
+* [ENHANCEMENT] UI: Expose total number of label pairs in head in TSDB stats page. #8343
+* [ENHANCEMENT] TSDB: Reload blocks every minute, to detect new blocks and enforce retention more often. #8343
+* [BUGFIX] API: Fix global URL when external address has no port. #8359
+* [BUGFIX] Backfill: Fix error message handling. #8432
+* [BUGFIX] Backfill: Fix "add sample: out of bounds" error when series span an entire block. #8476
+* [BUGFIX] Deprecate unused flag --alertmanager.timeout. #8407
+* [BUGFIX] Mixins: Support remote-write metrics renamed in v2.23 in alerts. #8423
+* [BUGFIX] Remote: Fix garbage collection of dropped series in remote write. #8387
+* [BUGFIX] Remote: Log recoverable remote write errors as warnings. #8412
+* [BUGFIX] TSDB: Remove pre-2.21 temporary blocks on start. #8353.
+* [BUGFIX] UI: Fix duplicated keys on /targets page. #8456
+* [BUGFIX] UI: Fix label name leak into class name. #8459
+
 ## 2.24.1 / 2021-01-20
 
 * [ENHANCEMENT] Cache basic authentication results to significantly improve performance of HTTP endpoints (via an update of prometheus/exporter-toolkit).

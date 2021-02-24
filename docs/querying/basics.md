@@ -240,7 +240,7 @@ When querying for samples in the past, a negative offset will enable temporal co
 ### @ modifier
 
 The `@` modifier allows changing the evaluation time for individual instant
-and range vectors in a query. The time supplied to `@` modifier
+and range vectors in a query. The time supplied to the `@` modifier
 is a unix timestamp and described with a float literal. 
 
 For example, the following expression returns the value of
@@ -262,12 +262,11 @@ The same works for range vectors. This returns the 5-minute rate that
 
     rate(http_requests_total[5m] @ 1609746000)
 
-`@` modifier supports all representation of numeric literals described
-above within the limits of `int64`. This can be used with the `offset` modifier, 
-where the offset is applied relative to the `@` modifier time.  The results are the
-same irrespective of which modifier is written first.
+The `@` modifier supports all representations of numeric literals described above.
+It works with the `offset` modifier where the offset is applied relative to the `@`
+modifier time.  The results are the same irrespective of the order of the modifiers.
 
-These two queries will produce the same result.
+For example, these two queries will produce the same result:
 
     # offset after @
     http_requests_total @ 1609746000 offset 5m
@@ -275,8 +274,17 @@ These two queries will produce the same result.
     http_requests_total offset 5m @ 1609746000
 
 This modifier is disabled by default since it breaks the invariant that PromQL
-does not look ahead of the evaluation time for samples. This can be enabled by setting
-`--enable-feature=promql-at-modifier` flag. It will be enabled by default in the future.
+does not look ahead of the evaluation time for samples. It can be enabled by setting
+`--enable-feature=promql-at-modifier` flag. See [disabled features](../disabled_features.md) for more details about this flag.
+
+Additionally, `start()` and `end()` can also be used as values for the `@` modifier as special values.
+
+For a range query, they resolve to the start and end of the range query respectively and remain the same for all steps.
+
+For an instant query, `start()` and `end()` both resolve to the evaluation time.
+
+    http_requests_total @ start()
+    rate(http_requests_total[5m] @ end())
 
 ## Subquery
 

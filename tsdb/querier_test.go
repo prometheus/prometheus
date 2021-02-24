@@ -407,7 +407,9 @@ func TestBlockQuerier_AgainstHeadWithOpenChunks(t *testing.T) {
 		},
 	} {
 		t.Run("", func(t *testing.T) {
-			h, err := NewHead(nil, nil, nil, 2*time.Hour.Milliseconds(), "", nil, chunks.DefaultWriteBufferSize, DefaultStripeSize, nil)
+			opts := DefaultHeadOptions()
+			opts.ChunkRange = 2 * time.Hour.Milliseconds()
+			h, err := NewHead(nil, nil, nil, opts)
 			require.NoError(t, err)
 			defer h.Close()
 
@@ -415,7 +417,7 @@ func TestBlockQuerier_AgainstHeadWithOpenChunks(t *testing.T) {
 			for _, s := range testData {
 				for _, chk := range s.chunks {
 					for _, sample := range chk {
-						_, err = app.Add(labels.FromMap(s.lset), sample.t, sample.v)
+						_, err = app.Append(0, labels.FromMap(s.lset), sample.t, sample.v)
 						require.NoError(t, err)
 					}
 				}
@@ -1145,20 +1147,37 @@ func (m mockIndex) Close() error {
 	return nil
 }
 
-func (m mockIndex) SortedLabelValues(name string) ([]string, error) {
-	values, _ := m.LabelValues(name)
+func (m mockIndex) SortedLabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
+	values, _ := m.LabelValues(name, matchers...)
 	sort.Strings(values)
 	return values, nil
 }
 
-func (m mockIndex) LabelValues(name string) ([]string, error) {
+func (m mockIndex) LabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
 	values := []string{}
-	for l := range m.postings {
-		if l.Name == name {
-			values = append(values, l.Value)
+
+	if len(matchers) == 0 {
+		for l := range m.postings {
+			if l.Name == name {
+				values = append(values, l.Value)
+			}
+		}
+		return values, nil
+	}
+
+	for _, series := range m.series {
+		for _, matcher := range matchers {
+			if matcher.Matches(series.l.Get(matcher.Name)) {
+				values = append(values, series.l.Get(name))
+			}
 		}
 	}
+
 	return values, nil
+}
+
+func (m mockIndex) LabelValueFor(id uint64, label string) (string, error) {
+	return m.series[id].l.Get(label), nil
 }
 
 func (m mockIndex) Postings(name string, values ...string) (index.Postings, error) {
@@ -1550,18 +1569,21 @@ func TestPostingsForMatchers(t *testing.T) {
 	defer func() {
 		require.NoError(t, os.RemoveAll(chunkDir))
 	}()
-	h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, chunks.DefaultWriteBufferSize, DefaultStripeSize, nil)
+	opts := DefaultHeadOptions()
+	opts.ChunkRange = 1000
+	opts.ChunkDirRoot = chunkDir
+	h, err := NewHead(nil, nil, nil, opts)
 	require.NoError(t, err)
 	defer func() {
 		require.NoError(t, h.Close())
 	}()
 
 	app := h.Appender(context.Background())
-	app.Add(labels.FromStrings("n", "1"), 0, 0)
-	app.Add(labels.FromStrings("n", "1", "i", "a"), 0, 0)
-	app.Add(labels.FromStrings("n", "1", "i", "b"), 0, 0)
-	app.Add(labels.FromStrings("n", "2"), 0, 0)
-	app.Add(labels.FromStrings("n", "2.5"), 0, 0)
+	app.Append(0, labels.FromStrings("n", "1"), 0, 0)
+	app.Append(0, labels.FromStrings("n", "1", "i", "a"), 0, 0)
+	app.Append(0, labels.FromStrings("n", "1", "i", "b"), 0, 0)
+	app.Append(0, labels.FromStrings("n", "2"), 0, 0)
+	app.Append(0, labels.FromStrings("n", "2.5"), 0, 0)
 	require.NoError(t, app.Commit())
 
 	cases := []struct {
@@ -1965,13 +1987,17 @@ func (m mockMatcherIndex) Symbols() index.StringIter { return nil }
 func (m mockMatcherIndex) Close() error { return nil }
 
 // SortedLabelValues will return error if it is called.
-func (m mockMatcherIndex) SortedLabelValues(name string) ([]string, error) {
+func (m mockMatcherIndex) SortedLabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
 	return []string{}, errors.New("sorted label values called")
 }
 
 // LabelValues will return error if it is called.
-func (m mockMatcherIndex) LabelValues(name string) ([]string, error) {
+func (m mockMatcherIndex) LabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
 	return []string{}, errors.New("label values called")
+}
+
+func (m mockMatcherIndex) LabelValueFor(id uint64, label string) (string, error) {
+	return "", errors.New("label value for called")
 }
 
 func (m mockMatcherIndex) Postings(name string, values ...string) (index.Postings, error) {

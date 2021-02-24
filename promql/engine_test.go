@@ -181,9 +181,11 @@ type errQuerier struct {
 func (q *errQuerier) Select(bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
 	return errSeriesSet{err: q.err}
 }
-func (*errQuerier) LabelValues(string) ([]string, storage.Warnings, error) { return nil, nil, nil }
-func (*errQuerier) LabelNames() ([]string, storage.Warnings, error)        { return nil, nil, nil }
-func (*errQuerier) Close() error                                           { return nil }
+func (*errQuerier) LabelValues(string, ...*labels.Matcher) ([]string, storage.Warnings, error) {
+	return nil, nil, nil
+}
+func (*errQuerier) LabelNames() ([]string, storage.Warnings, error) { return nil, nil, nil }
+func (*errQuerier) Close() error                                    { return nil }
 
 // errSeriesSet implements storage.SeriesSet which always returns error.
 type errSeriesSet struct {
@@ -902,14 +904,15 @@ load 1ms
 	// Add some samples with negative timestamp.
 	db := test.TSDB()
 	app := db.Appender(context.Background())
-	ref, err := app.Add(lblsneg, -1000000, 1000)
+	ref, err := app.Append(0, lblsneg, -1000000, 1000)
 	require.NoError(t, err)
 	for ts := int64(-1000000 + 1000); ts <= 0; ts += 1000 {
-		require.NoError(t, app.AddFast(ref, ts, -float64(ts/1000)+1))
+		_, err := app.Append(ref, nil, ts, -float64(ts/1000)+1)
+		require.NoError(t, err)
 	}
 
 	// To test the fix for https://github.com/prometheus/prometheus/issues/8433.
-	_, err = app.Add(labels.FromStrings("__name__", "metric_timestamp"), 3600*1000, 1000)
+	_, err = app.Append(0, labels.FromStrings("__name__", "metric_timestamp"), 3600*1000, 1000)
 	require.NoError(t, err)
 
 	require.NoError(t, app.Commit())
@@ -1036,6 +1039,24 @@ load 1ms
 				Series{
 					Points: []Point{{V: 10, T: 50000}, {V: 12, T: 60000}, {V: 14, T: 70000}, {V: 16, T: 80000}},
 					Metric: lblstopk2,
+				},
+			},
+		}, {
+			query: `metric_topk and topk(1, sum_over_time(metric_topk[50s] @ end()))`,
+			start: 70, end: 100, interval: 10,
+			result: Matrix{
+				Series{
+					Points: []Point{{V: 993, T: 70000}, {V: 992, T: 80000}, {V: 991, T: 90000}, {V: 990, T: 100000}},
+					Metric: lblstopk3,
+				},
+			},
+		}, {
+			query: `metric_topk and topk(1, sum_over_time(metric_topk[50s] @ start()))`,
+			start: 100, end: 130, interval: 10,
+			result: Matrix{
+				Series{
+					Points: []Point{{V: 990, T: 100000}, {V: 989, T: 110000}, {V: 988, T: 120000}, {V: 987, T: 130000}},
+					Metric: lblstopk3,
 				},
 			},
 		}, {
@@ -1517,7 +1538,9 @@ func TestQueryLogger_error(t *testing.T) {
 	}
 }
 
-func TestWrapWithStepInvariantExpr(t *testing.T) {
+func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
+	startTime := time.Unix(1000, 0)
+	endTime := time.Unix(9999, 0)
 	var testCases = []struct {
 		input    string      // The input to be parsed.
 		expected parser.Expr // The expected expression AST.
@@ -2106,6 +2129,120 @@ func TestWrapWithStepInvariantExpr(t *testing.T) {
 					},
 				},
 			},
+		}, {
+			input: `foo @ start()`,
+			expected: &parser.StepInvariantExpr{
+				Expr: &parser.VectorSelector{
+					Name: "foo",
+					LabelMatchers: []*labels.Matcher{
+						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
+					},
+					PosRange: parser.PositionRange{
+						Start: 0,
+						End:   13,
+					},
+					Timestamp:  makeInt64Pointer(timestamp.FromTime(startTime)),
+					StartOrEnd: parser.START,
+				},
+			},
+		}, {
+			input: `foo @ end()`,
+			expected: &parser.StepInvariantExpr{
+				Expr: &parser.VectorSelector{
+					Name: "foo",
+					LabelMatchers: []*labels.Matcher{
+						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
+					},
+					PosRange: parser.PositionRange{
+						Start: 0,
+						End:   11,
+					},
+					Timestamp:  makeInt64Pointer(timestamp.FromTime(endTime)),
+					StartOrEnd: parser.END,
+				},
+			},
+		}, {
+			input: `test[5y] @ start()`,
+			expected: &parser.StepInvariantExpr{
+				Expr: &parser.MatrixSelector{
+					VectorSelector: &parser.VectorSelector{
+						Name:       "test",
+						Timestamp:  makeInt64Pointer(timestamp.FromTime(startTime)),
+						StartOrEnd: parser.START,
+						LabelMatchers: []*labels.Matcher{
+							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "test"),
+						},
+						PosRange: parser.PositionRange{
+							Start: 0,
+							End:   4,
+						},
+					},
+					Range:  5 * 365 * 24 * time.Hour,
+					EndPos: 18,
+				},
+			},
+		}, {
+			input: `test[5y] @ end()`,
+			expected: &parser.StepInvariantExpr{
+				Expr: &parser.MatrixSelector{
+					VectorSelector: &parser.VectorSelector{
+						Name:       "test",
+						Timestamp:  makeInt64Pointer(timestamp.FromTime(endTime)),
+						StartOrEnd: parser.END,
+						LabelMatchers: []*labels.Matcher{
+							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "test"),
+						},
+						PosRange: parser.PositionRange{
+							Start: 0,
+							End:   4,
+						},
+					},
+					Range:  5 * 365 * 24 * time.Hour,
+					EndPos: 16,
+				},
+			},
+		}, {
+			input: `some_metric[10m:5s] @ start()`,
+			expected: &parser.StepInvariantExpr{
+				Expr: &parser.SubqueryExpr{
+					Expr: &parser.VectorSelector{
+						Name: "some_metric",
+						LabelMatchers: []*labels.Matcher{
+							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric"),
+						},
+						PosRange: parser.PositionRange{
+							Start: 0,
+							End:   11,
+						},
+					},
+					Timestamp:  makeInt64Pointer(timestamp.FromTime(startTime)),
+					StartOrEnd: parser.START,
+					Range:      10 * time.Minute,
+					Step:       5 * time.Second,
+					EndPos:     29,
+				},
+			},
+		}, {
+			input: `some_metric[10m:5s] @ end()`,
+			expected: &parser.StepInvariantExpr{
+				Expr: &parser.SubqueryExpr{
+					Expr: &parser.VectorSelector{
+						Name: "some_metric",
+						LabelMatchers: []*labels.Matcher{
+							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric"),
+						},
+						PosRange: parser.PositionRange{
+							Start: 0,
+							End:   11,
+						},
+					},
+					Timestamp:  makeInt64Pointer(timestamp.FromTime(endTime)),
+					StartOrEnd: parser.END,
+					Range:      10 * time.Minute,
+					Step:       5 * time.Second,
+					EndPos:     27,
+				},
+			},
 		},
 	}
 
@@ -2113,7 +2250,7 @@ func TestWrapWithStepInvariantExpr(t *testing.T) {
 		t.Run(test.input, func(t *testing.T) {
 			expr, err := parser.ParseExpr(test.input)
 			require.NoError(t, err)
-			expr = WrapWithStepInvariantExpr(expr)
+			expr = PreprocessExpr(expr, startTime, endTime)
 			require.Equal(t, test.expected, expr, "error on input '%s'", test.input)
 		})
 	}
@@ -2124,16 +2261,44 @@ func TestEngineOptsValidation(t *testing.T) {
 		opts     EngineOpts
 		query    string
 		fail     bool
-		expError string
+		expError error
 	}{
 		{
-			opts:     EngineOpts{EnableAtModifier: false},
-			query:    "metric @ 100",
-			fail:     true,
-			expError: "@ modifier is disabled",
+			opts:  EngineOpts{EnableAtModifier: false},
+			query: "metric @ 100", fail: true, expError: ErrValidationAtModifierDisabled,
+		}, {
+			opts:  EngineOpts{EnableAtModifier: false},
+			query: "rate(metric[1m] @ 100)", fail: true, expError: ErrValidationAtModifierDisabled,
+		}, {
+			opts:  EngineOpts{EnableAtModifier: false},
+			query: "rate(metric[1h:1m] @ 100)", fail: true, expError: ErrValidationAtModifierDisabled,
+		}, {
+			opts:  EngineOpts{EnableAtModifier: false},
+			query: "metric @ start()", fail: true, expError: ErrValidationAtModifierDisabled,
+		}, {
+			opts:  EngineOpts{EnableAtModifier: false},
+			query: "rate(metric[1m] @ start())", fail: true, expError: ErrValidationAtModifierDisabled,
+		}, {
+			opts:  EngineOpts{EnableAtModifier: false},
+			query: "rate(metric[1h:1m] @ start())", fail: true, expError: ErrValidationAtModifierDisabled,
+		}, {
+			opts:  EngineOpts{EnableAtModifier: false},
+			query: "metric @ end()", fail: true, expError: ErrValidationAtModifierDisabled,
+		}, {
+			opts:  EngineOpts{EnableAtModifier: false},
+			query: "rate(metric[1m] @ end())", fail: true, expError: ErrValidationAtModifierDisabled,
+		}, {
+			opts:  EngineOpts{EnableAtModifier: false},
+			query: "rate(metric[1h:1m] @ end())", fail: true, expError: ErrValidationAtModifierDisabled,
 		}, {
 			opts:  EngineOpts{EnableAtModifier: true},
 			query: "metric @ 100",
+		}, {
+			opts:  EngineOpts{EnableAtModifier: true},
+			query: "rate(metric[1m] @ start())",
+		}, {
+			opts:  EngineOpts{EnableAtModifier: true},
+			query: "rate(metric[1h:1m] @ end())",
 		},
 	}
 
@@ -2142,8 +2307,8 @@ func TestEngineOptsValidation(t *testing.T) {
 		_, err1 := eng.NewInstantQuery(nil, c.query, time.Unix(10, 0))
 		_, err2 := eng.NewRangeQuery(nil, c.query, time.Unix(0, 0), time.Unix(10, 0), time.Second)
 		if c.fail {
-			require.Equal(t, c.expError, err1.Error())
-			require.Equal(t, c.expError, err2.Error())
+			require.Equal(t, c.expError, err1)
+			require.Equal(t, c.expError, err2)
 		} else {
 			require.Nil(t, err1)
 			require.Nil(t, err2)

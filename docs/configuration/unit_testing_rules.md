@@ -44,6 +44,9 @@ interval: <duration>
 input_series:
   [ - <series> ]
 
+# Name of the test group
+[ name: <string> ]
+
 # Unit tests for the above data.
 
 # Unit tests for alerting rules. We consider the alerting rules from the input file.

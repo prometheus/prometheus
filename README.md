@@ -1,11 +1,12 @@
 # Prometheus
 
-[![CircleCI](https://circleci.com/gh/prometheus/prometheus/tree/master.svg?style=shield)][circleci]
+[![CircleCI](https://circleci.com/gh/prometheus/prometheus/tree/main.svg?style=shield)][circleci]
 [![Docker Repository on Quay](https://quay.io/repository/prometheus/prometheus/status)][quay]
 [![Docker Pulls](https://img.shields.io/docker/pulls/prom/prometheus.svg?maxAge=604800)][hub]
 [![Go Report Card](https://goreportcard.com/badge/github.com/prometheus/prometheus)](https://goreportcard.com/report/github.com/prometheus/prometheus)
 [![CII Best Practices](https://bestpractices.coreinfrastructure.org/projects/486/badge)](https://bestpractices.coreinfrastructure.org/projects/486)
 [![Gitpod ready-to-code](https://img.shields.io/badge/Gitpod-ready--to--code-blue?logo=gitpod)](https://gitpod.io/#https://github.com/prometheus/prometheus)
+[![Fuzzing Status](https://oss-fuzz-build-logs.storage.googleapis.com/badges/prometheus.svg)](https://bugs.chromium.org/p/oss-fuzz/issues/list?sort=-opened&can=1&q=proj:prometheus)
 
 Visit [prometheus.io](https://prometheus.io) for the full documentation,
 examples and guides.
@@ -71,7 +72,7 @@ read its web assets from local filesystem directories under `web/ui/static` and
 from the root of the cloned repository. Note also that these directories do not include the
 new experimental React UI unless it has been built explicitly using `make assets` or `make build`.
 
-An example of the above configuration file can be found [here.](https://github.com/prometheus/prometheus/blob/master/documentation/examples/prometheus.yml)
+An example of the above configuration file can be found [here.](https://github.com/prometheus/prometheus/blob/main/documentation/examples/prometheus.yml)
 
 You can also clone the repository yourself and build using `make build`, which will compile in
 the web assets so that Prometheus can be run from anywhere:
@@ -90,12 +91,22 @@ The Makefile provides several targets:
   * *test-short*: run the short tests
   * *format*: format the source code
   * *vet*: check the source code for common errors
-  * *docker*: build a docker container for the current `HEAD`
   * *assets*: build the new experimental React UI
+
+### Building the Docker image
+
+The `make docker` target is designed for use in our CI system.
+You can build a docker image locally with the following commands:
+
+    $ make promu
+    $ promu crossbuild -p linux/amd64
+    $ make common-docker-amd64
+
+*NB* if you are on a Mac, you will need [gnu-tar](https://formulae.brew.sh/formula/gnu-tar).
 
 ## React UI Development
 
-For more information on building, running, and developing on the new React-based UI, see the React app's [README.md](https://github.com/prometheus/prometheus/blob/master/web/ui/react-app/README.md).
+For more information on building, running, and developing on the new React-based UI, see the React app's [README.md](web/ui/react-app/README.md).
 
 ## More information
 
@@ -105,11 +116,11 @@ For more information on building, running, and developing on the new React-based
 
 ## Contributing
 
-Refer to [CONTRIBUTING.md](https://github.com/prometheus/prometheus/blob/master/CONTRIBUTING.md)
+Refer to [CONTRIBUTING.md](https://github.com/prometheus/prometheus/blob/main/CONTRIBUTING.md)
 
 ## License
 
-Apache License 2.0, see [LICENSE](https://github.com/prometheus/prometheus/blob/master/LICENSE).
+Apache License 2.0, see [LICENSE](https://github.com/prometheus/prometheus/blob/main/LICENSE).
 
 
 [hub]: https://hub.docker.com/r/prom/prometheus/

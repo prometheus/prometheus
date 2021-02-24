@@ -44,7 +44,7 @@ Internally, the scrape discovery manager runs an instance of each configuration-
 
 When a configuration change is applied, the discovery manager stops all currently running discovery mechanisms and restarts new ones as defined in the new configuration file.
 
-For more details, see the more extensive [documentation about service discovery internals](https://github.com/prometheus/prometheus/blob/master/discovery/README.md).
+For more details, see the more extensive [documentation about service discovery internals](https://github.com/prometheus/prometheus/blob/main/discovery/README.md).
 
 ## Scrape manager
 
@@ -93,7 +93,7 @@ Currently rules still read and write directly from/to the fanout storage, but th
 
 ### Local storage
 
-About Prometheus's local on-disk time series database, please refer to [`github.com/prometheus/prometheus/tsdb.DB`](https://github.com/prometheus/prometheus/blob/master/tsdb/db.go). You can find more details about the TSDB's on-disk layout in the [local storage documentation](https://prometheus.io/docs/prometheus/latest/storage/).
+About Prometheus's local on-disk time series database, please refer to [`github.com/prometheus/prometheus/tsdb.DB`](https://github.com/prometheus/prometheus/blob/main/tsdb/db.go). You can find more details about the TSDB's on-disk layout in the [local storage documentation](https://prometheus.io/docs/prometheus/latest/storage/).
 
 ### Remote storage
 

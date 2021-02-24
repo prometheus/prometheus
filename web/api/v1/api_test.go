@@ -56,7 +56,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
-	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
@@ -1700,6 +1699,20 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 					"boo",
 				},
 			},
+			// Try to overlap the selected series set as much as possible to test that the value de-duplication works.
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "foo",
+				},
+				query: url.Values{
+					"match[]": []string{`test_metric4{dup=~"^1"}`, `test_metric4{foo=~".+o$"}`},
+				},
+				response: []string{
+					"bar",
+					"boo",
+				},
+			},
 			// Label names.
 			{
 				endpoint: api.labelNames,
@@ -2267,7 +2280,9 @@ func (f *fakeDB) Stats(statsByLabelName string) (_ *tsdb.Stats, retErr error) {
 			retErr = err
 		}
 	}()
-	h, _ := tsdb.NewHead(nil, nil, nil, 1000, "", nil, chunks.DefaultWriteBufferSize, tsdb.DefaultStripeSize, nil)
+	opts := tsdb.DefaultHeadOptions()
+	opts.ChunkRange = 1000
+	h, _ := tsdb.NewHead(nil, nil, nil, opts)
 	return h.Stats(statsByLabelName), nil
 }
 
