@@ -383,12 +383,12 @@ paren_expr      : LEFT_PAREN expr RIGHT_PAREN
 
 offset_expr: expr OFFSET duration
                         {
-                        yylex.(*parser).addOffset($1, $3, 1)
+                        yylex.(*parser).addOffset($1, $3)
                         $$ = $1
                         }
                 | expr OFFSET SUB duration
                         {
-                        yylex.(*parser).addOffset($1, $4, -1)
+                        yylex.(*parser).addOffset($1, -$4)
                         $$ = $1
                         }
                 | expr OFFSET error

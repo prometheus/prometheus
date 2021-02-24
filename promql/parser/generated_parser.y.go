@@ -1241,14 +1241,14 @@ yydefault:
 		yyDollar = yyS[yypt-3 : yypt+1]
 //line generated_parser.y:385
 		{
-			yylex.(*parser).addOffset(yyDollar[1].node, yyDollar[3].duration, 1)
+			yylex.(*parser).addOffset(yyDollar[1].node, yyDollar[3].duration)
 			yyVAL.node = yyDollar[1].node
 		}
 	case 67:
 		yyDollar = yyS[yypt-4 : yypt+1]
 //line generated_parser.y:390
 		{
-			yylex.(*parser).addOffset(yyDollar[1].node, yyDollar[4].duration, -1)
+			yylex.(*parser).addOffset(yyDollar[1].node, -yyDollar[4].duration)
 			yyVAL.node = yyDollar[1].node
 		}
 	case 68:

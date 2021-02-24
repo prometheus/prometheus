@@ -683,7 +683,7 @@ func (p *parser) newLabelMatcher(label Item, operator Item, value Item) *labels.
 }
 
 // addOffset is used to set the offset in the generated parser.
-func (p *parser) addOffset(e Node, offset time.Duration, direction int) {
+func (p *parser) addOffset(e Node, offset time.Duration) {
 	var orgoffsetp *time.Duration
 	var endPosp *Pos
 
@@ -711,7 +711,7 @@ func (p *parser) addOffset(e Node, offset time.Duration, direction int) {
 	if *orgoffsetp != 0 {
 		p.addParseErrf(e.PositionRange(), "offset may not be set multiple times")
 	} else if orgoffsetp != nil {
-		*orgoffsetp = offset * time.Duration(direction)
+		*orgoffsetp = offset
 	}
 
 	*endPosp = p.lastClosing
