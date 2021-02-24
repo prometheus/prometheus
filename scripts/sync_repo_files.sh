@@ -45,10 +45,10 @@ push_branch() {
   # stdout and stderr are redirected to /dev/null otherwise git-push could leak
   # the token in the logs.
   # Delete the remote branch in case it was merged but not deleted.
-  git push --quiet "https://${GITHUB_TOKEN}:@github.com/${1}" \
+  git push --quiet "https://${git_user}:${GITHUB_TOKEN}:@github.com/${1}" \
     ":${branch}" 1>/dev/null 2>&1
   git push --quiet \
-    "https://${GITHUB_TOKEN}:@github.com/${1}" \
+    "https://${git_user}:${GITHUB_TOKEN}:@github.com/${1}" \
     --set-upstream "${branch}" 1>/dev/null 2>&1
 }
 
@@ -137,7 +137,7 @@ for org in ${orgs}; do
   fetch_repos "${org}" | while read -r repo; do
     # Check if a PR is already opened for the branch.
     prLink=$(curl --show-error --silent \
-      -u "${GITHUB_USER}:${GITHUB_TOKEN}" \
+      -u "${git_user}:${GITHUB_TOKEN}" \
       "https://api.github.com/repos/${org}/${repo}/pulls?head=${repo}:${branch}" | jq '.[0].url')
     if [[ "${prLink}" != "null" ]]; then
       echo "Pull request already opened for branch '${branch}': ${prLink}"
