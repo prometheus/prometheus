@@ -196,8 +196,9 @@ type API struct {
 	gatherer                  prometheus.Gatherer
 }
 
-type Ranker interface {
+type Modifier interface {
 	rank(v promql.Series) float64
+	isAscending() bool
 }
 
 func init() {
@@ -344,6 +345,74 @@ func (api *API) options(r *http.Request) apiFuncResult {
 	return apiFuncResult{nil, nil, nil, nil}
 }
 
+type sum struct {
+	ascending bool
+}
+
+func (s sum) rank(v promql.Series) float64 {
+	ans := 0.0
+	for i := 0; i < len(v.Points); i++ {
+		ans += v.Points[i].V
+	}
+	return ans
+}
+func (s sum) isAscending() bool {
+	return s.ascending
+}
+
+type avg struct {
+	ascending bool
+}
+
+func (a avg) rank(v promql.Series) float64 {
+	var ranker Modifier = sum{}
+	return ranker.rank(v) / float64(len(v.Points))
+}
+func (a avg) isAscending() bool {
+	return a.ascending
+}
+
+type max struct {
+	ascending bool
+}
+
+func (m max) rank(v promql.Series) float64 {
+	ans := 0.0
+	for i := 0; i < len(v.Points); i++ {
+		ans = math.Max(ans, v.Points[i].V)
+	}
+	return ans
+}
+func (m max) isAscending() bool {
+	return m.ascending
+}
+
+type min struct {
+	ascending bool
+}
+
+func (m min) rank(v promql.Series) float64 {
+	ans := 0.0
+	for i := 0; i < len(v.Points); i++ {
+		ans = math.Min(ans, v.Points[i].V)
+	}
+	return ans
+}
+func (m min) isAscending() bool {
+	return m.ascending
+}
+
+type count struct {
+	ascending bool
+}
+
+func (c count) rank(v promql.Series) float64 {
+	return float64(len(v.Points))
+}
+func (c count) isAscending() bool {
+	return c.ascending
+}
+
 func (api *API) query(r *http.Request) (result apiFuncResult) {
 	ts, err := parseTimeParam(r, "time", api.now())
 	if err != nil {
@@ -361,13 +430,17 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 		defer cancel()
 	}
 
+	var method string = ""
+	var rankingFunction string = ""
+	var modifier string = ""
 	parts := strings.Split(r.FormValue("query"), "|")
 	queryTerm := strings.TrimSpace(parts[0])
-	modifier := strings.TrimSpace(parts[1])
-	method := strings.Split(modifier, "(")[0]
-	rankingFunction := strings.Split(modifier, "(")[1]
+	if len(parts) > 1 {
+		modifier = strings.TrimSpace(parts[1])
+		method = strings.Split(modifier, "(")[0]
+		rankingFunction = strings.Split(modifier, "(")[1]
+	}
 
-	fmt.Println("The query is now", queryTerm, modifier)
 	qry, err := api.QueryEngine.NewInstantQuery(api.Queryable, queryTerm, ts)
 	if err != nil {
 		return invalidParamError(err, "query")
@@ -388,41 +461,14 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 	if res.Err != nil {
 		return apiFuncResult{nil, returnAPIError(res.Err), res.Warnings, qry.Close}
 	}
-	var ranker Ranker = avg{}
 
-	if res.Value.Type() == parser.ValueTypeVector {
-		vec, ok := res.Value.(promql.Vector)
-		if !ok {
-			err := errors.New("cannot convert to vector")
-			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
-		}
-		sort.Slice(vec, func(i, j int) bool {
-			return vec[i].V > vec[j].V
-		})
-	} else if res.Value.Type() == parser.ValueTypeMatrix {
-		mat, ok := res.Value.(promql.Matrix)
-		if !ok {
-			err := errors.New("cannot convert to matrix")
-			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
-		}
-		sort.Slice(mat, func(i, j int) bool {
-			return (ranker.rank(mat[i]) > ranker.rank(mat[j]))
-		})
-	}
-
-	var ranker Ranker
+	var ranker Modifier
 	if rankingFunction == "avg_over_time" {
-		ranker = avg{}
+		ranker = avg{ascending: method == "sort"}
 	} else if rankingFunction == "sum_over_time" {
-		ranker = sum{}
+		ranker = sum{ascending: method == "sort"}
 	} else if rankingFunction == "max_over_time" {
-		ranker = max{}
-	}
-	var sign float64
-	if method == "sort" {
-		sign = +1.0
-	} else if method == "sort_desc" {
-		sign = -1.0
+		ranker = max{ascending: method == "sort"}
 	}
 
 	if res.Value.Type() == parser.ValueTypeVector {
@@ -431,18 +477,28 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 			err := errors.New("cannot convert to vector")
 			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 		}
-		sort.Slice(vec, func(i, j int) bool {
-			return vec[i].V > vec[j].V
-		})
+		if ranker != nil {
+			sort.Slice(vec, func(i, j int) bool {
+				if ranker.isAscending() {
+					return vec[i].V < vec[j].V
+				}
+				return vec[i].V > vec[j].V
+			})
+		}
 	} else if res.Value.Type() == parser.ValueTypeMatrix {
 		mat, ok := res.Value.(promql.Matrix)
 		if !ok {
 			err := errors.New("cannot convert to matrix")
 			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 		}
-		sort.Slice(mat, func(i, j int) bool {
-			return sign*ranker.rank(mat[i]) < sign*ranker.rank(mat[j])
-		})
+		if ranker != nil {
+			sort.Slice(mat, func(i, j int) bool {
+				if ranker.isAscending() {
+					return ranker.rank(mat[i]) < ranker.rank(mat[j])
+				}
+				return ranker.rank(mat[i]) > ranker.rank(mat[j])
+			})
+		}
 	}
 
 	// Optional stats field in response if parameter "stats" is not empty.
@@ -456,33 +512,6 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 		Result:     res.Value,
 		Stats:      qs,
 	}, nil, res.Warnings, qry.Close}
-}
-
-type sum struct{}
-
-func (s sum) rank(v promql.Series) float64 {
-	ans := 0.0
-	for i := 0; i < len(v.Points); i++ {
-		ans += v.Points[i].V
-	}
-	return ans
-}
-
-type avg struct{}
-
-func (a avg) rank(v promql.Series) float64 {
-	var ranker Ranker = sum{}
-	return ranker.rank(v) / float64(len(v.Points))
-}
-
-type max struct{}
-
-func (m max) rank(v promql.Series) float64 {
-	ans := 0.0
-	for i := 0; i < len(v.Points); i++ {
-		ans = math.Max(ans, v.Points[i].V)
-	}
-	return ans
 }
 
 func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
@@ -526,7 +555,18 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 		defer cancel()
 	}
 
-	qry, err := api.QueryEngine.NewRangeQuery(api.Queryable, r.FormValue("query"), start, end, step)
+	var method string = ""
+	var rankingFunction string = ""
+	var modifier string = ""
+	parts := strings.Split(r.FormValue("query"), "|")
+	queryTerm := strings.TrimSpace(parts[0])
+	if len(parts) > 1 {
+		modifier = strings.TrimSpace(parts[1])
+		method = strings.Split(modifier, "(")[0]
+		rankingFunction = strings.Split(modifier, "(")[1]
+	}
+
+	qry, err := api.QueryEngine.NewRangeQuery(api.Queryable, queryTerm, start, end, step)
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
@@ -546,16 +586,29 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 		return apiFuncResult{nil, returnAPIError(res.Err), res.Warnings, qry.Close}
 	}
 
-	var ranker Ranker = sum{}
+	var ranker Modifier
+	if rankingFunction == "avg_over_time" {
+		ranker = avg{ascending: method == "sort"}
+	} else if rankingFunction == "sum_over_time" {
+		ranker = sum{ascending: method == "sort"}
+	} else if rankingFunction == "max_over_time" {
+		ranker = max{ascending: method == "sort"}
+	}
+
 	if res.Value.Type() == parser.ValueTypeMatrix {
 		mat, ok := res.Value.(promql.Matrix)
 		if !ok {
 			err := errors.New("Cannot convert to matrix")
 			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 		}
-		sort.Slice(mat, func(i, j int) bool {
-			return (ranker.rank(mat[i]) > ranker.rank(mat[j]))
-		})
+		if ranker != nil {
+			sort.Slice(mat, func(i, j int) bool {
+				if ranker.isAscending() {
+					return ranker.rank(mat[i]) < ranker.rank(mat[j])
+				}
+				return ranker.rank(mat[i]) > ranker.rank(mat[j])
+			})
+		}
 	}
 
 	// Optional stats field in response if parameter "stats" is not empty.
