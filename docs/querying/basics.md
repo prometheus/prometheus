@@ -30,7 +30,7 @@ evaluate to one of four types:
 Depending on the use-case (e.g. when graphing vs. displaying the output of an
 expression), only some of these types are legal as the result of a
 user-specified expression. For example, an expression that returns an instant
-vector is the only type which can graphed.
+vector is the only type which can be graphed.
 
 ## Literals
 
@@ -192,14 +192,16 @@ following units:
 
 * `ms` - milliseconds
 * `s` - seconds
-* `m` - minutes
+* `m` - minutes - assuming a minute always has 60s<sup>1</sup>
 * `h` - hours
-* `d` - days - assuming a day has 24h
-* `w` - weeks - assuming a week has 7d
-* `y` - years - assuming a year has 365d
+* `d` - days - assuming a day always has 24h
+* `w` - weeks - assuming a week always has 7d
+* `y` - years - assuming a year always has 365d<sup>1</sup>
+
+<sup>1</sup> For days in a year, the leap day is ignored, and conversely, for a minute, a leap second is ignored.
 
 Time durations can be combined by concatenation. Units must be ordered from the
-longest to the shortest. A given unit must only appear once in the time duration.
+longest to the shortest. A given unit must only appear once in a time duration.
 
 Here are some examples of valid time durations:
 
