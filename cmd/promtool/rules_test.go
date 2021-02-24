@@ -15,10 +15,10 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"io/ioutil"
 	"math"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -36,114 +36,127 @@ const (
 )
 
 var testTime = model.Time(time.Now().Add(-20 * time.Minute).Unix())
+var testTime2 = model.Time(time.Now().Add(-30 * time.Minute).Unix())
 
-type mockQueryRangeAPI struct{}
+type mockQueryRangeAPI struct {
+	samples model.Matrix
+}
 
 func (mockAPI mockQueryRangeAPI) QueryRange(ctx context.Context, query string, r v1.Range) (model.Value, v1.Warnings, error) {
-	var testMatrix model.Matrix = []*model.SampleStream{
-		{
-			Metric: model.Metric{
-				"name1": "val1",
-			},
-			Values: []model.SamplePair{
-				{
-					Timestamp: testTime,
-					Value:     testValue,
-				},
-			},
-		},
-	}
-	return testMatrix, v1.Warnings{}, nil
+	return mockAPI.samples, v1.Warnings{}, nil
 }
 
 // TestBackfillRuleIntegration is an integration test that runs all the rule importer code to confirm the parts work together.
 func TestBackfillRuleIntegration(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "backfilldata")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(tmpDir))
-	}()
-	start := time.Now().UTC()
-	ctx := context.Background()
-
-	const (
-		groupName  = "test_group_name"
-		ruleName1  = "test_rule1_name"
-		ruleExpr   = "test_expr"
-		ruleLabels = "test_label_name: test_label_value"
-	)
-
-	// Execute test two times in a row to simulate running the rule importer twice with the same data.
-	// We expect that duplicate blocks with the same series are created when run more than once.
-	for i := 0; i < 2; i++ {
-
-		ruleImporter, err := newTestRuleImporter(ctx, start, tmpDir)
-		require.NoError(t, err)
-		path := tmpDir + "/test.file"
-		require.NoError(t, createTestFiles(groupName, ruleName1, ruleExpr, ruleLabels, path))
-
-		// After loading/parsing the recording rule files make sure the parsing was correct.
-		errs := ruleImporter.loadGroups(ctx, []string{path})
-		for _, err := range errs {
-			require.NoError(t, err)
-		}
-		const groupCount = 1
-		require.Equal(t, groupCount, len(ruleImporter.groups))
-		groupNameWithPath := path + ";" + groupName
-		group1 := ruleImporter.groups[groupNameWithPath]
-		require.NotNil(t, group1)
-		const defaultInterval = 60
-		require.Equal(t, time.Duration(defaultInterval*time.Second), group1.Interval())
-		gRules := group1.Rules()
-		const ruleCount = 1
-		require.Equal(t, ruleCount, len(gRules))
-		require.Equal(t, ruleName1, gRules[0].Name())
-		require.Equal(t, ruleExpr, gRules[0].Query().String())
-		require.Equal(t, 1, len(gRules[0].Labels()))
-
-		// Backfill all recording rules then check the blocks to confirm the right
-		// data was created.
-		errs = ruleImporter.importAll(ctx)
-		for _, err := range errs {
-			require.NoError(t, err)
-		}
-
-		opts := tsdb.DefaultOptions()
-		opts.AllowOverlappingBlocks = true
-		db, err := tsdb.Open(tmpDir, nil, nil, opts)
-		require.NoError(t, err)
-
-		blocks := db.Blocks()
-		require.Equal(t, i+1, len(blocks))
-
-		q, err := db.Querier(context.Background(), math.MinInt64, math.MaxInt64)
-		require.NoError(t, err)
-
-		selectedSeries := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
-		var seriesCount, samplesCount int
-		for selectedSeries.Next() {
-			seriesCount++
-			series := selectedSeries.At()
-			require.Equal(t, 3, len(series.Labels()))
-			it := series.Iterator()
-			for it.Next() {
-				samplesCount++
-				ts, v := it.At()
-				require.Equal(t, float64(testValue), v)
-				require.Equal(t, int64(testTime), ts)
-			}
-			require.NoError(t, it.Err())
-		}
-		require.NoError(t, selectedSeries.Err())
-		require.Equal(t, 1, seriesCount)
-		require.Equal(t, 1, samplesCount)
-		require.NoError(t, q.Close())
-		require.NoError(t, db.Close())
+	var testCases = []struct {
+		name                string
+		runcount            int
+		expectedBlockCount  int
+		expectedSeriesCount int
+		expectedSampleCount int
+		samples             []*model.SampleStream
+	}{
+		{"no samples", 1, 0, 0, 0, []*model.SampleStream{}},
+		{"run importer once", 1, 1, 4, 4, []*model.SampleStream{{Metric: model.Metric{"name1": "val1"}, Values: []model.SamplePair{{Timestamp: testTime, Value: testValue}}}}},
+		{"one importer twice", 2, 1, 4, 4, []*model.SampleStream{{Metric: model.Metric{"name1": "val1"}, Values: []model.SamplePair{{Timestamp: testTime, Value: testValue}, {Timestamp: testTime2, Value: testValue}}}}},
 	}
+	for _, tt := range testCases {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir, err := ioutil.TempDir("", "backfilldata")
+			require.NoError(t, err)
+			defer func() {
+				require.NoError(t, os.RemoveAll(tmpDir))
+			}()
+			start := time.Now().UTC()
+			ctx := context.Background()
 
+			// Execute the test more than once to simulate running the rule importer twice with the same data.
+			// We expect that duplicate blocks with the same series are created when run more than once.
+			for i := 0; i < tt.runcount; i++ {
+				ruleImporter, err := newTestRuleImporter(ctx, start, tmpDir, tt.samples)
+				require.NoError(t, err)
+				path1 := filepath.Join(tmpDir, "test.file")
+				require.NoError(t, createSingleRuleTestFiles(path1))
+				path2 := filepath.Join(tmpDir, "test2.file")
+				require.NoError(t, createMultiRuleTestFiles(path2))
+
+				// Confirm that the rule files were loaded in correctly.
+				errs := ruleImporter.loadGroups(ctx, []string{path1, path2})
+				for _, err := range errs {
+					require.NoError(t, err)
+				}
+				require.Equal(t, 3, len(ruleImporter.groups))
+				group1 := ruleImporter.groups[path1+";group0"]
+				require.NotNil(t, group1)
+				const defaultInterval = 60
+				require.Equal(t, time.Duration(defaultInterval*time.Second), group1.Interval())
+				gRules := group1.Rules()
+				require.Equal(t, 1, len(gRules))
+				require.Equal(t, "rule1", gRules[0].Name())
+				require.Equal(t, "ruleExpr", gRules[0].Query().String())
+				require.Equal(t, 1, len(gRules[0].Labels()))
+
+				group2 := ruleImporter.groups[path2+";group2"]
+				require.NotNil(t, group2)
+				require.Equal(t, time.Duration(defaultInterval*time.Second), group2.Interval())
+				g2Rules := group2.Rules()
+				require.Equal(t, 2, len(g2Rules))
+				require.Equal(t, "grp2_rule1", g2Rules[0].Name())
+				require.Equal(t, "grp2_rule1_expr", g2Rules[0].Query().String())
+				require.Equal(t, 0, len(g2Rules[0].Labels()))
+
+				// Backfill all recording rules then check the blocks to confirm the right data was created.
+				errs = ruleImporter.importAll(ctx)
+				for _, err := range errs {
+					require.NoError(t, err)
+				}
+
+				opts := tsdb.DefaultOptions()
+				opts.AllowOverlappingBlocks = true
+				db, err := tsdb.Open(tmpDir, nil, nil, opts)
+				require.NoError(t, err)
+
+				blocks := db.Blocks()
+				require.Equal(t, i+tt.expectedBlockCount, len(blocks))
+
+				q, err := db.Querier(context.Background(), math.MinInt64, math.MaxInt64)
+				require.NoError(t, err)
+
+				selectedSeries := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
+				var seriesCount, samplesCount int
+				for selectedSeries.Next() {
+					seriesCount++
+					series := selectedSeries.At()
+					if len(series.Labels()) != 3 {
+						require.Equal(t, 2, len(series.Labels()))
+						x := labels.Labels{
+							labels.Label{Name: "__name__", Value: "grp2_rule1"},
+							labels.Label{Name: "name1", Value: "val1"},
+						}
+						require.Equal(t, x, series.Labels())
+					} else {
+						require.Equal(t, 3, len(series.Labels()))
+					}
+					it := series.Iterator()
+					for it.Next() {
+						samplesCount++
+						ts, v := it.At()
+						require.Equal(t, float64(testValue), v)
+						require.Equal(t, int64(testTime), ts)
+					}
+					require.NoError(t, it.Err())
+				}
+				require.NoError(t, selectedSeries.Err())
+				require.Equal(t, tt.expectedSeriesCount, seriesCount)
+				require.Equal(t, tt.expectedSampleCount, samplesCount)
+				require.NoError(t, q.Close())
+				require.NoError(t, db.Close())
+			}
+		})
+	}
 }
 
-func newTestRuleImporter(ctx context.Context, start time.Time, tmpDir string) (*ruleImporter, error) {
+func newTestRuleImporter(ctx context.Context, start time.Time, tmpDir string, testSamples model.Matrix) (*ruleImporter, error) {
 	logger := log.NewNopLogger()
 	cfg := ruleImporterConfig{
 		Start:        start.Add(-1 * time.Hour),
@@ -159,19 +172,39 @@ func newTestRuleImporter(ctx context.Context, start time.Time, tmpDir string) (*
 	}
 
 	app := newMultipleAppender(ctx, testMaxSampleCount, writer)
-	return newRuleImporter(logger, cfg, mockQueryRangeAPI{}, app), nil
+	return newRuleImporter(logger, cfg, mockQueryRangeAPI{
+		samples: testSamples,
+	}, app), nil
 }
 
-func createTestFiles(groupName, ruleName, ruleExpr, ruleLabels, path string) error {
-	recordingRules := fmt.Sprintf(`groups:
-- name: %s
+func createSingleRuleTestFiles(path string) error {
+	recordingRules := `groups:
+- name: group0
   rules:
-  - record: %s
-    expr: %s
+  - record: rule1
+    expr: ruleExpr
     labels:
-      %s
-`,
-		groupName, ruleName, ruleExpr, ruleLabels,
-	)
+        testlabel11: testlabelvalue11
+`
+	return ioutil.WriteFile(path, []byte(recordingRules), 0777)
+}
+
+func createMultiRuleTestFiles(path string) error {
+	recordingRules := `groups:
+- name: group1
+  rules:
+  - record: grp1_rule1
+    expr: grp1_rule1_expr
+    labels:
+        testlabel11: testlabelvalue11
+- name: group2
+  rules:
+  - record: grp2_rule1
+    expr: grp2_rule1_expr
+  - record: grp2_rule2
+    expr: grp2_rule2_expr
+    labels:
+        testlabel11: testlabelvalue11
+`
 	return ioutil.WriteFile(path, []byte(recordingRules), 0777)
 }
