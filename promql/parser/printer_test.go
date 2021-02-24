@@ -78,10 +78,16 @@ func TestExprString(t *testing.T) {
 			in: `a offset 1m`,
 		},
 		{
+			in: `a offset -7m`,
+		},
+		{
 			in: `a{c="d"}[5m] offset 1m`,
 		},
 		{
 			in: `a[5m] offset 1m`,
+		},
+		{
+			in: `a[12m] offset -3m`,
 		},
 		{
 			in: `a[1h:5m] offset 1m`,
