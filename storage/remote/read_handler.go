@@ -29,17 +29,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
-var remoteReadAPIQueries = prometheus.NewGauge(prometheus.GaugeOpts{
-	Namespace: "prometheus",
-	Subsystem: "api",
-	Name:      "remote_read_queries",
-	Help:      "The current number of remote read queries being executed or waiting.",
-})
-
-func init() {
-	prometheus.MustRegister(remoteReadAPIQueries)
-}
-
 type readHandler struct {
 	logger                    log.Logger
 	queryable                 storage.SampleAndChunkQueryable
@@ -47,19 +36,31 @@ type readHandler struct {
 	remoteReadSampleLimit     int
 	remoteReadMaxBytesInFrame int
 	remoteReadGate            *gate.Gate
+	queries                   prometheus.Gauge
 }
 
 // NewReadHandler creates a http.Handler that accepts remote read requests and
 // writes them to the provided queryable.
-func NewReadHandler(logger log.Logger, queryable storage.SampleAndChunkQueryable, config func() config.Config, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame int) http.Handler {
-	return &readHandler{
+func NewReadHandler(logger log.Logger, r prometheus.Registerer, queryable storage.SampleAndChunkQueryable, config func() config.Config, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame int) http.Handler {
+	h := &readHandler{
 		logger:                    logger,
 		queryable:                 queryable,
 		config:                    config,
 		remoteReadSampleLimit:     remoteReadSampleLimit,
 		remoteReadGate:            gate.New(remoteReadConcurrencyLimit),
 		remoteReadMaxBytesInFrame: remoteReadMaxBytesInFrame,
+
+		queries: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: "prometheus",
+			Subsystem: "api",
+			Name:      "remote_read_queries",
+			Help:      "The current number of remote read queries being executed or waiting.",
+		}),
 	}
+	if r != nil {
+		r.MustRegister(h.queries)
+	}
+	return h
 }
 
 func (h *readHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -68,10 +69,10 @@ func (h *readHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	remoteReadAPIQueries.Inc()
+	h.queries.Inc()
 
 	defer h.remoteReadGate.Done()
-	defer remoteReadAPIQueries.Dec()
+	defer h.queries.Dec()
 
 	req, err := DecodeReadRequest(r)
 	if err != nil {

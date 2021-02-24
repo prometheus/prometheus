@@ -328,6 +328,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		h.runtimeInfo,
 		h.versionInfo,
 		o.Gatherer,
+		o.Registerer,
 	)
 
 	if o.RoutePrefix != "/" {

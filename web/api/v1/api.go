@@ -210,6 +210,7 @@ func NewAPI(
 	runtimeInfo func() (RuntimeInfo, error),
 	buildInfo *PrometheusVersion,
 	gatherer prometheus.Gatherer,
+	registerer prometheus.Registerer,
 ) *API {
 	a := &API{
 		QueryEngine: qe,
@@ -233,7 +234,7 @@ func NewAPI(
 		buildInfo:        buildInfo,
 		gatherer:         gatherer,
 
-		remoteReadHandler: remote.NewReadHandler(logger, q, configFunc, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame),
+		remoteReadHandler: remote.NewReadHandler(logger, registerer, q, configFunc, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame),
 	}
 
 	if ap != nil {
