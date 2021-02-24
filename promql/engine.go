@@ -400,8 +400,7 @@ func (ng *Engine) validateOpts(expr parser.Expr) error {
 		return nil
 	}
 
-	atModifierUsed := false
-	negativeOffsetUsed := false
+	var atModifierUsed, negativeOffsetUsed bool
 
 	var validationErr error
 	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
