@@ -1115,7 +1115,7 @@ func TestTombstoneCleanResultEmptyBlock(t *testing.T) {
 	smpls := make([]float64, numSamples)
 	for i := int64(0); i < numSamples; i++ {
 		smpls[i] = rand.Float64()
-		app.Add(labels.Labels{{Name: "a", Value: "b"}}, i, smpls[i])
+		app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, i, smpls[i])
 	}
 
 	require.NoError(t, app.Commit())
