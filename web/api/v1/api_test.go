@@ -416,7 +416,7 @@ func TestLabelNames(t *testing.T) {
 			test_metric1{foo1="bar", baz="abc"} 0+100x100
 			test_metric1{foo2="boo"} 1+0x100
 			test_metric2{foo="boo"} 1+0x100
-			test_metric2{foo="boo", xyz="qwerty"} 1+0x100				
+			test_metric2{foo="boo", xyz="qwerty"} 1+0x100
 	`)
 	require.NoError(t, err)
 	defer suite.Close()
@@ -619,7 +619,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 		{
 			endpoint: api.queryRange,
 			query: url.Values{
-				"query": []string{"test_metric1"},
+				"query": []string{"time()"},
 				"start": []string{"0"},
 				"end":   []string{"2"},
 				"step":  []string{"1"},
@@ -629,9 +629,9 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 				Result: promql.Matrix{
 					promql.Series{
 						Points: []promql.Point{
-							{V: 1, T: timestamp.FromTime(start)},
+							{V: 0, T: timestamp.FromTime(start)},
 							{V: 1, T: timestamp.FromTime(start.Add(1 * time.Second))},
-							{V: 1, T: timestamp.FromTime(start.Add(2 * time.Second))},
+							{V: 2, T: timestamp.FromTime(start.Add(2 * time.Second))},
 						},
 						Metric: labels.FromStrings("__name__", "test_metric1", "foo", "boo"),
 					},
@@ -641,7 +641,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 							{V: 0, T: timestamp.FromTime(start.Add(1 * time.Second))},
 							{V: 0, T: timestamp.FromTime(start.Add(2 * time.Second))},
 						},
-						Metric: labels.FromStrings("__name__", "test_metric1", "foo", "bar"),
+						Metric: nil,
 					},
 				},
 			},
