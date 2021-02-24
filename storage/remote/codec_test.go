@@ -14,6 +14,7 @@
 package remote
 
 import (
+	"bytes"
 	"fmt"
 	"testing"
 
@@ -24,6 +25,31 @@ import (
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
 )
+
+var writeRequestFixture = &prompb.WriteRequest{
+	Timeseries: []prompb.TimeSeries{
+		{
+			Labels: []prompb.Label{
+				{Name: "__name__", Value: "test_metric1"},
+				{Name: "b", Value: "c"},
+				{Name: "baz", Value: "qux"},
+				{Name: "d", Value: "e"},
+				{Name: "foo", Value: "bar"},
+			},
+			Samples: []prompb.Sample{{Value: 1, Timestamp: 0}},
+		},
+		{
+			Labels: []prompb.Label{
+				{Name: "__name__", Value: "test_metric1"},
+				{Name: "b", Value: "c"},
+				{Name: "baz", Value: "qux"},
+				{Name: "d", Value: "e"},
+				{Name: "foo", Value: "bar"},
+			},
+			Samples: []prompb.Sample{{Value: 2, Timestamp: 1}},
+		},
+	},
+}
 
 func TestValidateLabelsAndMetricName(t *testing.T) {
 	tests := []struct {
@@ -261,4 +287,13 @@ func TestMetricTypeToMetricTypeProto(t *testing.T) {
 			require.Equal(t, tt.expected, m)
 		})
 	}
+}
+
+func TestDecodeWriteRequest(t *testing.T) {
+	buf, _, err := buildWriteRequest(writeRequestFixture.Timeseries, nil, nil)
+	require.NoError(t, err)
+
+	actual, err := DecodeWriteRequest(bytes.NewReader(buf))
+	require.NoError(t, err)
+	require.Equal(t, writeRequestFixture, actual)
 }

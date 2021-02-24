@@ -83,8 +83,8 @@ func newBlockBaseQuerier(b BlockReader, mint, maxt int64) (*blockBaseQuerier, er
 	}, nil
 }
 
-func (q *blockBaseQuerier) LabelValues(name string) ([]string, storage.Warnings, error) {
-	res, err := q.index.SortedLabelValues(name)
+func (q *blockBaseQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
+	res, err := q.index.SortedLabelValues(name, matchers...)
 	return res, nil, err
 }
 
@@ -367,6 +367,44 @@ func inversePostingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Posting
 		sort.Strings(res)
 	}
 	return ix.Postings(m.Name, res...)
+}
+
+func labelValuesWithMatchers(r IndexReader, name string, matchers ...*labels.Matcher) ([]string, error) {
+	// We're only interested in metrics which have the label <name>.
+	requireLabel, err := labels.NewMatcher(labels.MatchNotEqual, name, "")
+	if err != nil {
+		return nil, errors.Wrapf(err, "Failed to instantiate label matcher")
+	}
+
+	var p index.Postings
+	p, err = PostingsForMatchers(r, append(matchers, requireLabel)...)
+	if err != nil {
+		return nil, err
+	}
+
+	dedupe := map[string]interface{}{}
+	for p.Next() {
+		v, err := r.LabelValueFor(p.At(), name)
+		if err != nil {
+			if err == storage.ErrNotFound {
+				continue
+			}
+
+			return nil, err
+		}
+		dedupe[v] = nil
+	}
+
+	if err = p.Err(); err != nil {
+		return nil, err
+	}
+
+	values := make([]string, 0, len(dedupe))
+	for value := range dedupe {
+		values = append(values, value)
+	}
+
+	return values, nil
 }
 
 // blockBaseSeriesSet allows to iterate over all series in the single block.

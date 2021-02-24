@@ -35,10 +35,10 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
+	"github.com/prometheus/prometheus/tsdb/fileutil"
 )
 
 const timeDelta = 30000
@@ -205,25 +205,19 @@ func (b *writeBenchmark) ingestScrapesShard(lbls []labels.Labels, scrapeCount in
 		for _, s := range scrape {
 			s.value += 1000
 
-			if s.ref == nil {
-				ref, err := app.Add(s.labels, ts, float64(s.value))
-				if err != nil {
-					panic(err)
-				}
-				s.ref = &ref
-			} else if err := app.AddFast(*s.ref, ts, float64(s.value)); err != nil {
-
-				if errors.Cause(err) != storage.ErrNotFound {
-					panic(err)
-				}
-
-				ref, err := app.Add(s.labels, ts, float64(s.value))
-				if err != nil {
-					panic(err)
-				}
-				s.ref = &ref
+			var ref uint64
+			if s.ref != nil {
+				ref = *s.ref
 			}
 
+			ref, err := app.Append(ref, s.labels, ts, float64(s.value))
+			if err != nil {
+				panic(err)
+			}
+
+			if s.ref == nil {
+				s.ref = &ref
+			}
 			total++
 		}
 		if err := app.Commit(); err != nil {
@@ -353,15 +347,18 @@ func listBlocks(path string, humanReadable bool) error {
 	if err != nil {
 		return err
 	}
-	printBlocks(blocks, humanReadable)
+	printBlocks(blocks, true, humanReadable)
 	return nil
 }
 
-func printBlocks(blocks []tsdb.BlockReader, humanReadable bool) {
-	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+func printBlocks(blocks []tsdb.BlockReader, writeHeader, humanReadable bool) {
+	tw := tabwriter.NewWriter(os.Stdout, 13, 0, 2, ' ', 0)
 	defer tw.Flush()
 
-	fmt.Fprintln(tw, "BLOCK ULID\tMIN TIME\tMAX TIME\tDURATION\tNUM SAMPLES\tNUM CHUNKS\tNUM SERIES\tSIZE")
+	if writeHeader {
+		fmt.Fprintln(tw, "BLOCK ULID\tMIN TIME\tMAX TIME\tDURATION\tNUM SAMPLES\tNUM CHUNKS\tNUM SERIES\tSIZE")
+	}
+
 	for _, b := range blocks {
 		meta := b.Meta()
 
@@ -614,13 +611,16 @@ func checkErr(err error) int {
 	return 0
 }
 
-func backfillOpenMetrics(path string, outputDir string) (err error) {
-	input, err := os.Open(path)
+func backfillOpenMetrics(path string, outputDir string, humanReadable bool) int {
+	inputFile, err := fileutil.OpenMmapFile(path)
 	if err != nil {
-		return err
+		return checkErr(err)
 	}
-	defer func() {
-		input.Close()
-	}()
-	return backfill(5000, input, outputDir)
+	defer inputFile.Close()
+
+	if err := os.MkdirAll(outputDir, 0777); err != nil {
+		return checkErr(errors.Wrap(err, "create output dir"))
+	}
+
+	return checkErr(backfill(5000, inputFile.Bytes(), outputDir, humanReadable))
 }

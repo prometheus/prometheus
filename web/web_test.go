@@ -143,11 +143,15 @@ func TestReadyAndHealthy(t *testing.T) {
 
 	webHandler.config = &config.Config{}
 	webHandler.notifier = &notifier.Manager{}
+	l, err := webHandler.Listener()
+	if err != nil {
+		panic(fmt.Sprintf("Unable to start web listener: %s", err))
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() {
-		err := webHandler.Run(ctx)
+		err := webHandler.Run(ctx, l, "")
 		if err != nil {
 			panic(fmt.Sprintf("Can't start web handler:%s", err))
 		}
@@ -252,10 +256,14 @@ func TestRoutePrefix(t *testing.T) {
 	opts.Flags = map[string]string{}
 
 	webHandler := New(nil, opts)
+	l, err := webHandler.Listener()
+	if err != nil {
+		panic(fmt.Sprintf("Unable to start web listener: %s", err))
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() {
-		err := webHandler.Run(ctx)
+		err := webHandler.Run(ctx, l, "")
 		if err != nil {
 			panic(fmt.Sprintf("Can't start web handler:%s", err))
 		}
@@ -420,12 +428,16 @@ func TestShutdownWithStaleConnection(t *testing.T) {
 
 	webHandler.config = &config.Config{}
 	webHandler.notifier = &notifier.Manager{}
+	l, err := webHandler.Listener()
+	if err != nil {
+		panic(fmt.Sprintf("Unable to start web listener: %s", err))
+	}
 
 	closed := make(chan struct{})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
-		err := webHandler.Run(ctx)
+		err := webHandler.Run(ctx, l, "")
 		if err != nil {
 			panic(fmt.Sprintf("Can't start web handler:%s", err))
 		}
@@ -467,10 +479,14 @@ func TestHandleMultipleQuitRequests(t *testing.T) {
 	webHandler := New(nil, opts)
 	webHandler.config = &config.Config{}
 	webHandler.notifier = &notifier.Manager{}
+	l, err := webHandler.Listener()
+	if err != nil {
+		panic(fmt.Sprintf("Unable to start web listener: %s", err))
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	closed := make(chan struct{})
 	go func() {
-		err := webHandler.Run(ctx)
+		err := webHandler.Run(ctx, l, "")
 		if err != nil {
 			panic(fmt.Sprintf("Can't start web handler:%s", err))
 		}

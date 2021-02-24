@@ -15,6 +15,7 @@ package parser
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"runtime"
 	"strconv"
@@ -26,6 +27,7 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/util/strutil"
 )
 
@@ -318,7 +320,7 @@ func (p *parser) Lex(lval *yySymType) int {
 	case EOF:
 		lval.item.Typ = EOF
 		p.InjectItem(0)
-	case RIGHT_BRACE, RIGHT_PAREN, RIGHT_BRACKET, DURATION:
+	case RIGHT_BRACE, RIGHT_PAREN, RIGHT_BRACKET, DURATION, NUMBER:
 		p.lastClosing = lval.item.Pos + Pos(len(lval.item.Val))
 	}
 
@@ -583,6 +585,21 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 		p.checkAST(n.VectorSelector)
 
 	case *VectorSelector:
+		if n.Name != "" {
+			// In this case the last LabelMatcher is checking for the metric name
+			// set outside the braces. This checks if the name has already been set
+			// previously.
+			for _, m := range n.LabelMatchers[0 : len(n.LabelMatchers)-1] {
+				if m != nil && m.Name == labels.MetricName {
+					p.addParseErrf(n.PositionRange(), "metric name must not be set twice: %q or %q", n.Name, m.Value)
+				}
+			}
+
+			// Skip the check for non-empty matchers because an explicit
+			// metric name is a non-empty matcher.
+			break
+		}
+
 		// A Vector selector must contain at least one non-empty matcher to prevent
 		// implicit selection of all metrics (e.g. by a typo).
 		notEmpty := false
@@ -594,17 +611,6 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 		}
 		if !notEmpty {
 			p.addParseErrf(n.PositionRange(), "vector selector must contain at least one non-empty matcher")
-		}
-
-		if n.Name != "" {
-			// In this case the last LabelMatcher is checking for the metric name
-			// set outside the braces. This checks if the name has already been set
-			// previously
-			for _, m := range n.LabelMatchers[0 : len(n.LabelMatchers)-1] {
-				if m != nil && m.Name == labels.MetricName {
-					p.addParseErrf(n.PositionRange(), "metric name must not be set twice: %q or %q", n.Name, m.Value)
-				}
-			}
 		}
 
 	case *NumberLiteral, *StringLiteral:
@@ -676,34 +682,126 @@ func (p *parser) newLabelMatcher(label Item, operator Item, value Item) *labels.
 	return m
 }
 
+// addOffset is used to set the offset in the generated parser.
 func (p *parser) addOffset(e Node, offset time.Duration) {
-	var offsetp *time.Duration
+	var orgoffsetp *time.Duration
 	var endPosp *Pos
 
 	switch s := e.(type) {
 	case *VectorSelector:
-		offsetp = &s.Offset
+		orgoffsetp = &s.OriginalOffset
 		endPosp = &s.PosRange.End
 	case *MatrixSelector:
-		if vs, ok := s.VectorSelector.(*VectorSelector); ok {
-			offsetp = &vs.Offset
+		vs, ok := s.VectorSelector.(*VectorSelector)
+		if !ok {
+			p.addParseErrf(e.PositionRange(), "ranges only allowed for vector selectors")
+			return
 		}
+		orgoffsetp = &vs.OriginalOffset
 		endPosp = &s.EndPos
 	case *SubqueryExpr:
-		offsetp = &s.Offset
+		orgoffsetp = &s.OriginalOffset
 		endPosp = &s.EndPos
 	default:
-		p.addParseErrf(e.PositionRange(), "offset modifier must be preceded by an instant or range selector, but follows a %T instead", e)
+		p.addParseErrf(e.PositionRange(), "offset modifier must be preceded by an instant selector vector or range vector selector or a subquery")
 		return
 	}
 
 	// it is already ensured by parseDuration func that there never will be a zero offset modifier
-	if *offsetp != 0 {
+	if *orgoffsetp != 0 {
 		p.addParseErrf(e.PositionRange(), "offset may not be set multiple times")
-	} else if offsetp != nil {
-		*offsetp = offset
+	} else if orgoffsetp != nil {
+		*orgoffsetp = offset
 	}
 
 	*endPosp = p.lastClosing
+}
 
+// setTimestamp is used to set the timestamp from the @ modifier in the generated parser.
+func (p *parser) setTimestamp(e Node, ts float64) {
+	if math.IsInf(ts, -1) || math.IsInf(ts, 1) || math.IsNaN(ts) ||
+		ts >= float64(math.MaxInt64) || ts <= float64(math.MinInt64) {
+		p.addParseErrf(e.PositionRange(), "timestamp out of bounds for @ modifier: %f", ts)
+	}
+	var timestampp **int64
+	var endPosp *Pos
+
+	timestampp, _, endPosp, ok := p.getAtModifierVars(e)
+	if !ok {
+		return
+	}
+
+	if timestampp != nil {
+		*timestampp = new(int64)
+		**timestampp = timestamp.FromFloatSeconds(ts)
+	}
+
+	*endPosp = p.lastClosing
+}
+
+// setAtModifierPreprocessor is used to set the preprocessor for the @ modifier.
+func (p *parser) setAtModifierPreprocessor(e Node, op Item) {
+	_, preprocp, endPosp, ok := p.getAtModifierVars(e)
+	if !ok {
+		return
+	}
+
+	if preprocp != nil {
+		*preprocp = op.Typ
+	}
+
+	*endPosp = p.lastClosing
+}
+
+func (p *parser) getAtModifierVars(e Node) (**int64, *ItemType, *Pos, bool) {
+	var (
+		timestampp **int64
+		preprocp   *ItemType
+		endPosp    *Pos
+	)
+	switch s := e.(type) {
+	case *VectorSelector:
+		timestampp = &s.Timestamp
+		preprocp = &s.StartOrEnd
+		endPosp = &s.PosRange.End
+	case *MatrixSelector:
+		vs, ok := s.VectorSelector.(*VectorSelector)
+		if !ok {
+			p.addParseErrf(e.PositionRange(), "ranges only allowed for vector selectors")
+			return nil, nil, nil, false
+		}
+		preprocp = &vs.StartOrEnd
+		timestampp = &vs.Timestamp
+		endPosp = &s.EndPos
+	case *SubqueryExpr:
+		preprocp = &s.StartOrEnd
+		timestampp = &s.Timestamp
+		endPosp = &s.EndPos
+	default:
+		p.addParseErrf(e.PositionRange(), "@ modifier must be preceded by an instant selector vector or range vector selector or a subquery")
+		return nil, nil, nil, false
+	}
+
+	if *timestampp != nil || (*preprocp) == START || (*preprocp) == END {
+		p.addParseErrf(e.PositionRange(), "@ <timestamp> may not be set multiple times")
+		return nil, nil, nil, false
+	}
+
+	return timestampp, preprocp, endPosp, true
+}
+
+func MustLabelMatcher(mt labels.MatchType, name, val string) *labels.Matcher {
+	m, err := labels.NewMatcher(mt, name, val)
+	if err != nil {
+		panic(err)
+	}
+	return m
+}
+
+func MustGetFunction(name string) *Function {
+	f, ok := getFunction(name)
+	if !ok {
+		panic(errors.Errorf("function %q does not exist", name))
+	}
+	return f
 }

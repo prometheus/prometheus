@@ -14,50 +14,17 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"io"
 	"math"
-	"os"
 
 	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
-	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/prometheus/prometheus/tsdb"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 )
-
-// OpenMetricsParser implements textparse.Parser.
-type OpenMetricsParser struct {
-	textparse.Parser
-	s *bufio.Scanner
-}
-
-// NewOpenMetricsParser returns an OpenMetricsParser reading from the provided reader.
-func NewOpenMetricsParser(r io.Reader) *OpenMetricsParser {
-	return &OpenMetricsParser{s: bufio.NewScanner(r)}
-}
-
-// Next advances the parser to the next sample. It returns io.EOF if no
-// more samples were read.
-func (p *OpenMetricsParser) Next() (textparse.Entry, error) {
-	for p.s.Scan() {
-		line := p.s.Bytes()
-		line = append(line, '\n')
-
-		p.Parser = textparse.New(line, string(expfmt.FmtOpenMetrics))
-		if et, err := p.Parser.Next(); err != io.EOF {
-			return et, err
-		}
-	}
-
-	if err := p.s.Err(); err != nil {
-		return 0, err
-	}
-	return 0, io.EOF
-}
 
 func getMinAndMaxTimestamps(p textparse.Parser) (int64, int64, error) {
 	var maxt, mint int64 = math.MinInt64, math.MaxInt64
@@ -98,7 +65,7 @@ func getMinAndMaxTimestamps(p textparse.Parser) (int64, int64, error) {
 	return maxt, mint, nil
 }
 
-func createBlocks(input *os.File, mint, maxt int64, maxSamplesInAppender int, outputDir string) (returnErr error) {
+func createBlocks(input []byte, mint, maxt int64, maxSamplesInAppender int, outputDir string, humanReadable bool) (returnErr error) {
 	blockDuration := tsdb.DefaultBlockDuration
 	mint = blockDuration * (mint / blockDuration)
 
@@ -110,9 +77,29 @@ func createBlocks(input *os.File, mint, maxt int64, maxSamplesInAppender int, ou
 		returnErr = tsdb_errors.NewMulti(returnErr, db.Close()).Err()
 	}()
 
+	var (
+		wroteHeader  bool
+		nextSampleTs int64 = math.MaxInt64
+	)
+
 	for t := mint; t <= maxt; t = t + blockDuration {
+		tsUpper := t + blockDuration
+		if nextSampleTs != math.MaxInt64 && nextSampleTs >= tsUpper {
+			// The next sample is not in this timerange, we can avoid parsing
+			// the file for this timerange.
+			continue
+
+		}
+		nextSampleTs = math.MaxInt64
+
 		err := func() error {
-			w, err := tsdb.NewBlockWriter(log.NewNopLogger(), outputDir, blockDuration)
+			// To prevent races with compaction, a block writer only allows appending samples
+			// that are at most half a block size older than the most recent sample appended so far.
+			// However, in the way we use the block writer here, compaction doesn't happen, while we
+			// also need to append samples throughout the whole block range. To allow that, we
+			// pretend that the block is twice as large here, but only really add sample in the
+			// original interval later.
+			w, err := tsdb.NewBlockWriter(log.NewNopLogger(), outputDir, 2*blockDuration)
 			if err != nil {
 				return errors.Wrap(err, "block writer")
 			}
@@ -120,13 +107,9 @@ func createBlocks(input *os.File, mint, maxt int64, maxSamplesInAppender int, ou
 				err = tsdb_errors.NewMulti(err, w.Close()).Err()
 			}()
 
-			if _, err := input.Seek(0, 0); err != nil {
-				return errors.Wrap(err, "seek file")
-			}
 			ctx := context.Background()
 			app := w.Appender(ctx)
-			p := NewOpenMetricsParser(input)
-			tsUpper := t + blockDuration
+			p := textparse.NewOpenMetricsParser(input)
 			samplesCount := 0
 			for {
 				e, err := p.Next()
@@ -140,17 +123,26 @@ func createBlocks(input *os.File, mint, maxt int64, maxSamplesInAppender int, ou
 					continue
 				}
 
-				l := labels.Labels{}
-				p.Metric(&l)
 				_, ts, v := p.Series()
 				if ts == nil {
+					l := labels.Labels{}
+					p.Metric(&l)
 					return errors.Errorf("expected timestamp for series %v, got none", l)
 				}
-				if *ts < t || *ts >= tsUpper {
+				if *ts < t {
+					continue
+				}
+				if *ts >= tsUpper {
+					if *ts < nextSampleTs {
+						nextSampleTs = *ts
+					}
 					continue
 				}
 
-				if _, err := app.Add(l, *ts, v); err != nil {
+				l := labels.Labels{}
+				p.Metric(&l)
+
+				if _, err := app.Append(0, l, *ts, v); err != nil {
 					return errors.Wrap(err, "add sample")
 				}
 
@@ -169,36 +161,46 @@ func createBlocks(input *os.File, mint, maxt int64, maxSamplesInAppender int, ou
 				app = w.Appender(ctx)
 				samplesCount = 0
 			}
+
 			if err := app.Commit(); err != nil {
 				return errors.Wrap(err, "commit")
 			}
-			if _, err := w.Flush(ctx); err != nil && err != tsdb.ErrNoSeriesAppended {
+
+			block, err := w.Flush(ctx)
+			switch err {
+			case nil:
+				blocks, err := db.Blocks()
+				if err != nil {
+					return errors.Wrap(err, "get blocks")
+				}
+				for _, b := range blocks {
+					if b.Meta().ULID == block {
+						printBlocks([]tsdb.BlockReader{b}, !wroteHeader, humanReadable)
+						wroteHeader = true
+						break
+					}
+				}
+			case tsdb.ErrNoSeriesAppended:
+			default:
 				return errors.Wrap(err, "flush")
 			}
+
 			return nil
 		}()
 
 		if err != nil {
 			return errors.Wrap(err, "process blocks")
 		}
-
-		blocks, err := db.Blocks()
-		if err != nil {
-			return errors.Wrap(err, "get blocks")
-		}
-		if len(blocks) <= 0 {
-			continue
-		}
-		printBlocks(blocks[len(blocks)-1:], true)
 	}
 	return nil
+
 }
 
-func backfill(maxSamplesInAppender int, input *os.File, outputDir string) (err error) {
-	p := NewOpenMetricsParser(input)
+func backfill(maxSamplesInAppender int, input []byte, outputDir string, humanReadable bool) (err error) {
+	p := textparse.NewOpenMetricsParser(input)
 	maxt, mint, err := getMinAndMaxTimestamps(p)
 	if err != nil {
 		return errors.Wrap(err, "getting min and max timestamp")
 	}
-	return errors.Wrap(createBlocks(input, mint, maxt, maxSamplesInAppender, outputDir), "block creation")
+	return errors.Wrap(createBlocks(input, mint, maxt, maxSamplesInAppender, outputDir, humanReadable), "block creation")
 }

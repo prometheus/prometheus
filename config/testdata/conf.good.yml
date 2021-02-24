@@ -24,6 +24,8 @@ remote_write:
     tls_config:
       cert_file: valid_cert_file
       key_file: valid_key_file
+    headers:
+      name: value
 
 remote_read:
   - url: http://remote1/read
@@ -77,7 +79,8 @@ scrape_configs:
     replacement:   static
     target_label:  abc
 
-  bearer_token_file: valid_token_file
+  authorization:
+    credentials_file: valid_token_file
 
 
 - job_name: service-x
@@ -156,7 +159,8 @@ scrape_configs:
     cert_file: valid_cert_file
     key_file: valid_key_file
 
-  bearer_token: mysecret
+  authorization:
+    credentials: mysecret
 
 - job_name: service-kubernetes
 
@@ -261,7 +265,8 @@ scrape_configs:
 
 - job_name: digitalocean-droplets
   digitalocean_sd_configs:
-    - bearer_token: abcdef
+    - authorization:
+        credentials: abcdef
 
 - job_name: dockerswarm
   dockerswarm_sd_configs:
@@ -282,7 +287,8 @@ scrape_configs:
 - job_name: hetzner
   hetzner_sd_configs:
     - role: hcloud
-      bearer_token: abcdef
+      authorization:
+        credentials: abcdef
     - role: robot
       basic_auth:
         username: abcdef

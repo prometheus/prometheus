@@ -24,7 +24,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/tsdb/chunks"
 )
 
 // Make entries ~50B in size, to emulate real-world high cardinality.
@@ -38,7 +37,10 @@ func BenchmarkPostingsForMatchers(b *testing.B) {
 	defer func() {
 		require.NoError(b, os.RemoveAll(chunkDir))
 	}()
-	h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, chunks.DefaultWriteBufferSize, DefaultStripeSize, nil)
+	opts := DefaultHeadOptions()
+	opts.ChunkRange = 1000
+	opts.ChunkDirRoot = chunkDir
+	h, err := NewHead(nil, nil, nil, opts)
 	require.NoError(b, err)
 	defer func() {
 		require.NoError(b, h.Close())
@@ -46,7 +48,7 @@ func BenchmarkPostingsForMatchers(b *testing.B) {
 
 	app := h.Appender(context.Background())
 	addSeries := func(l labels.Labels) {
-		app.Add(l, 0, 0)
+		app.Append(0, l, 0, 0)
 	}
 
 	for n := 0; n < 10; n++ {
@@ -147,13 +149,16 @@ func BenchmarkQuerierSelect(b *testing.B) {
 	defer func() {
 		require.NoError(b, os.RemoveAll(chunkDir))
 	}()
-	h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, chunks.DefaultWriteBufferSize, DefaultStripeSize, nil)
+	opts := DefaultHeadOptions()
+	opts.ChunkRange = 1000
+	opts.ChunkDirRoot = chunkDir
+	h, err := NewHead(nil, nil, nil, opts)
 	require.NoError(b, err)
 	defer h.Close()
 	app := h.Appender(context.Background())
 	numSeries := 1000000
 	for i := 0; i < numSeries; i++ {
-		app.Add(labels.FromStrings("foo", "bar", "i", fmt.Sprintf("%d%s", i, postingsBenchSuffix)), int64(i), 0)
+		app.Append(0, labels.FromStrings("foo", "bar", "i", fmt.Sprintf("%d%s", i, postingsBenchSuffix)), int64(i), 0)
 	}
 	require.NoError(b, app.Commit())
 

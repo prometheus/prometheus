@@ -83,6 +83,9 @@ type Client struct {
 	url        *config_util.URL
 	Client     *http.Client
 	timeout    time.Duration
+	headers    map[string]string
+
+	retryOnRateLimit bool
 
 	readQueries         prometheus.Gauge
 	readQueriesTotal    *prometheus.CounterVec
@@ -94,6 +97,8 @@ type ClientConfig struct {
 	URL              *config_util.URL
 	Timeout          model.Duration
 	HTTPClientConfig config_util.HTTPClientConfig
+	Headers          map[string]string
+	RetryOnRateLimit bool
 }
 
 // ReadClient uses the SAMPLES method of remote read to read series samples from remote server.
@@ -138,15 +143,20 @@ func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
 	}
 
 	return &Client{
-		remoteName: name,
-		url:        conf.URL,
-		Client:     httpClient,
-		timeout:    time.Duration(conf.Timeout),
+		remoteName:       name,
+		url:              conf.URL,
+		Client:           httpClient,
+		retryOnRateLimit: conf.RetryOnRateLimit,
+		timeout:          time.Duration(conf.Timeout),
+		headers:          conf.Headers,
 	}, nil
 }
 
+const defaultBackoff = 0
+
 type RecoverableError struct {
 	error
+	retryAfter model.Duration
 }
 
 // Store sends a batch of samples to the HTTP endpoint, the request is the proto marshalled
@@ -157,6 +167,9 @@ func (c *Client) Store(ctx context.Context, req []byte) error {
 		// Errors from NewRequest are from unparsable URLs, so are not
 		// recoverable.
 		return err
+	}
+	for k, v := range c.headers {
+		httpReq.Header.Set(k, v)
 	}
 	httpReq.Header.Add("Content-Encoding", "snappy")
 	httpReq.Header.Set("Content-Type", "application/x-protobuf")
@@ -182,7 +195,7 @@ func (c *Client) Store(ctx context.Context, req []byte) error {
 	if err != nil {
 		// Errors from Client.Do are from (for example) network errors, so are
 		// recoverable.
-		return RecoverableError{err}
+		return RecoverableError{err, defaultBackoff}
 	}
 	defer func() {
 		io.Copy(ioutil.Discard, httpResp.Body)
@@ -198,9 +211,28 @@ func (c *Client) Store(ctx context.Context, req []byte) error {
 		err = errors.Errorf("server returned HTTP status %s: %s", httpResp.Status, line)
 	}
 	if httpResp.StatusCode/100 == 5 {
-		return RecoverableError{err}
+		return RecoverableError{err, defaultBackoff}
+	}
+	if c.retryOnRateLimit && httpResp.StatusCode == http.StatusTooManyRequests {
+		return RecoverableError{err, retryAfterDuration(httpResp.Header.Get("Retry-After"))}
 	}
 	return err
+}
+
+// retryAfterDuration returns the duration for the Retry-After header. In case of any errors, it
+// returns the defaultBackoff as if the header was never supplied.
+func retryAfterDuration(t string) model.Duration {
+	parsedDuration, err := time.Parse(http.TimeFormat, t)
+	if err == nil {
+		s := time.Until(parsedDuration).Seconds()
+		return model.Duration(s) * model.Duration(time.Second)
+	}
+	// The duration can be in seconds.
+	d, err := strconv.Atoi(t)
+	if err != nil {
+		return defaultBackoff
+	}
+	return model.Duration(d) * model.Duration(time.Second)
 }
 
 // Name uniquely identifies the client.

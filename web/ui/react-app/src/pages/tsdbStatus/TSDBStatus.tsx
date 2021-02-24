@@ -14,6 +14,7 @@ interface Stats {
 
 interface HeadStats {
   numSeries: number;
+  numLabelPairs: number;
   chunkCount: number;
   minTime: number;
   maxTime: number;
@@ -35,10 +36,11 @@ export const TSDBStatusContent: FC<TSDBMap> = ({
   seriesCountByLabelValuePair,
 }) => {
   const unixToTime = (unix: number): string => new Date(unix).toISOString();
-  const { chunkCount, numSeries, minTime, maxTime } = headStats;
+  const { chunkCount, numSeries, numLabelPairs, minTime, maxTime } = headStats;
   const stats = [
     { header: 'Number of Series', value: numSeries },
     { header: 'Number of Chunks', value: chunkCount },
+    { header: 'Number of Label Pairs', value: numLabelPairs },
     { header: 'Current Min Time', value: `${unixToTime(minTime)} (${minTime})` },
     { header: 'Current Max Time', value: `${unixToTime(maxTime)} (${maxTime})` },
   ];

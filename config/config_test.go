@@ -102,6 +102,7 @@ var expectedConf = &Config{
 					KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
 				},
 			},
+			Headers: map[string]string{"name": "value"},
 		},
 	},
 
@@ -140,7 +141,10 @@ var expectedConf = &Config{
 			Scheme:      DefaultScrapeConfig.Scheme,
 
 			HTTPClientConfig: config.HTTPClientConfig{
-				BearerTokenFile: filepath.FromSlash("testdata/valid_token_file"),
+				Authorization: &config.Authorization{
+					Type:            "Bearer",
+					CredentialsFile: filepath.FromSlash("testdata/valid_token_file"),
+				},
 			},
 
 			ServiceDiscoveryConfigs: discovery.Configs{
@@ -343,7 +347,10 @@ var expectedConf = &Config{
 					KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
 				},
 
-				BearerToken: "mysecret",
+				Authorization: &config.Authorization{
+					Type:        "Bearer",
+					Credentials: "mysecret",
+				},
 			},
 		},
 		{
@@ -602,7 +609,10 @@ var expectedConf = &Config{
 			ServiceDiscoveryConfigs: discovery.Configs{
 				&digitalocean.SDConfig{
 					HTTPClientConfig: config.HTTPClientConfig{
-						BearerToken: "abcdef",
+						Authorization: &config.Authorization{
+							Type:        "Bearer",
+							Credentials: "abcdef",
+						},
 					},
 					Port:            80,
 					RefreshInterval: model.Duration(60 * time.Second),
@@ -664,7 +674,10 @@ var expectedConf = &Config{
 			ServiceDiscoveryConfigs: discovery.Configs{
 				&hetzner.SDConfig{
 					HTTPClientConfig: config.HTTPClientConfig{
-						BearerToken: "abcdef",
+						Authorization: &config.Authorization{
+							Type:        "Bearer",
+							Credentials: "abcdef",
+						},
 					},
 					Port:            80,
 					RefreshInterval: model.Duration(60 * time.Second),
@@ -731,6 +744,20 @@ func TestYAMLRoundtrip(t *testing.T) {
 	require.NoError(t, yaml.UnmarshalStrict(out, got))
 
 	require.Equal(t, want, got)
+}
+
+func TestRemoteWriteRetryOnRateLimit(t *testing.T) {
+	want, err := LoadFile("testdata/remote_write_retry_on_rate_limit.good.yml")
+	require.NoError(t, err)
+
+	out, err := yaml.Marshal(want)
+
+	require.NoError(t, err)
+	got := &Config{}
+	require.NoError(t, yaml.UnmarshalStrict(out, got))
+
+	require.Equal(t, true, got.RemoteWriteConfigs[0].QueueConfig.RetryOnRateLimit)
+	require.Equal(t, false, got.RemoteWriteConfigs[1].QueueConfig.RetryOnRateLimit)
 }
 
 func TestLoadConfig(t *testing.T) {
@@ -905,6 +932,9 @@ var expectedErrors = []struct {
 		filename: "kubernetes_bearertoken_basicauth.bad.yml",
 		errMsg:   "at most one of basic_auth, bearer_token & bearer_token_file must be configured",
 	}, {
+		filename: "kubernetes_authorization_basicauth.bad.yml",
+		errMsg:   "at most one of basic_auth & authorization must be configured",
+	}, {
 		filename: "marathon_no_servers.bad.yml",
 		errMsg:   "marathon_sd: must contain at least one Marathon server",
 	}, {
@@ -916,6 +946,9 @@ var expectedErrors = []struct {
 	}, {
 		filename: "marathon_authtoken_bearertoken.bad.yml",
 		errMsg:   "marathon_sd: at most one of bearer_token, bearer_token_file, auth_token & auth_token_file must be configured",
+	}, {
+		filename: "marathon_authtoken_authorization.bad.yml",
+		errMsg:   "marathon_sd: at most one of auth_token, auth_token_file & authorization must be configured",
 	}, {
 		filename: "openstack_role.bad.yml",
 		errMsg:   "unknown OpenStack SD role",
@@ -937,6 +970,12 @@ var expectedErrors = []struct {
 	}, {
 		filename: "remote_read_url_missing.bad.yml",
 		errMsg:   `url for remote_read is empty`,
+	}, {
+		filename: "remote_write_header.bad.yml",
+		errMsg:   `x-prometheus-remote-write-version is an unchangeable header`,
+	}, {
+		filename: "remote_write_authorization_header.bad.yml",
+		errMsg:   `authorization header must be changed via the basic_auth or authorization parameter`,
 	}, {
 		filename: "remote_write_url_missing.bad.yml",
 		errMsg:   `url for remote_write is empty`,

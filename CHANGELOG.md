@@ -1,3 +1,84 @@
+## 2.25.0 / 2021-02-17
+
+This release includes a new `--enable-feature=` flag that enables
+experimental features. Such features might be changed or removed in the future.
+
+In the next minor release (2.26), Prometheus will use the Alertmanager API v2.
+It will be done by defaulting `alertmanager_config.api_version` to `v2`.
+Alertmanager API v2 was released in Alertmanager v0.16.0 (released in January
+2019).
+
+* [FEATURE] **experimental** API: Accept remote_write requests. Behind the --enable-feature=remote-write-receiver flag. #8424
+* [FEATURE] **experimental** PromQL: Add '@ <timestamp>' modifier. Behind the --enable-feature=promql-at-modifier flag. #8121 #8436 #8425
+* [ENHANCEMENT] Add optional name property to testgroup for better test failure output. #8440
+* [ENHANCEMENT] Add warnings into React Panel on the Graph page. #8427
+* [ENHANCEMENT] TSDB: Increase the number of buckets for the compaction duration metric. #8342
+* [ENHANCEMENT] Remote: Allow passing along custom remote_write HTTP headers. #8416
+* [ENHANCEMENT] Mixins: Scope grafana configuration. #8332
+* [ENHANCEMENT] Kubernetes SD: Add endpoint labels metadata. #8273
+* [ENHANCEMENT] UI: Expose total number of label pairs in head in TSDB stats page. #8343
+* [ENHANCEMENT] TSDB: Reload blocks every minute, to detect new blocks and enforce retention more often. #8343
+* [BUGFIX] API: Fix global URL when external address has no port. #8359
+* [BUGFIX] Backfill: Fix error message handling. #8432
+* [BUGFIX] Backfill: Fix "add sample: out of bounds" error when series span an entire block. #8476
+* [BUGFIX] Deprecate unused flag --alertmanager.timeout. #8407
+* [BUGFIX] Mixins: Support remote-write metrics renamed in v2.23 in alerts. #8423
+* [BUGFIX] Remote: Fix garbage collection of dropped series in remote write. #8387
+* [BUGFIX] Remote: Log recoverable remote write errors as warnings. #8412
+* [BUGFIX] TSDB: Remove pre-2.21 temporary blocks on start. #8353.
+* [BUGFIX] UI: Fix duplicated keys on /targets page. #8456
+* [BUGFIX] UI: Fix label name leak into class name. #8459
+
+## 2.24.1 / 2021-01-20
+
+* [ENHANCEMENT] Cache basic authentication results to significantly improve performance of HTTP endpoints (via an update of prometheus/exporter-toolkit).
+* [BUGFIX] Prevent user enumeration by timing requests sent to authenticated HTTP endpoints (via an update of prometheus/exporter-toolkit).
+
+## 2.24.0 / 2021-01-06
+
+* [FEATURE] Add TLS and basic authentication to HTTP endpoints. #8316
+* [FEATURE] promtool: Add `check web-config` subcommand to check web config files. #8319
+* [FEATURE] promtool: Add `tsdb create-blocks-from openmetrics` subcommand to backfill metrics data from an OpenMetrics file. #8084
+* [ENHANCEMENT] HTTP API: Fast-fail queries with only empty matchers. #8288
+* [ENHANCEMENT] HTTP API: Support matchers for labels API. #8301
+* [ENHANCEMENT] promtool: Improve checking of URLs passed on the command line. #7956
+* [ENHANCEMENT] SD: Expose IPv6 as a label in EC2 SD. #7086
+* [ENHANCEMENT] SD: Reuse EC2 client, reducing frequency of requesting credentials. #8311
+* [ENHANCEMENT] TSDB: Add logging when compaction takes more than the block time range. #8151
+* [ENHANCEMENT] TSDB: Avoid unnecessary GC runs after compaction. #8276 
+* [BUGFIX] HTTP API: Avoid double-closing of channel when quitting multiple times via HTTP. #8242
+* [BUGFIX] SD: Ignore CNAME records in DNS SD to avoid spurious `Invalid SRV record` warnings. #8216
+* [BUGFIX] SD: Avoid config error triggered by valid label selectors in Kubernetes SD. #8285
+
+## 2.23.0 / 2020-11-26
+
+* [CHANGE] UI: Make the React UI default. #8142
+* [CHANGE] Remote write: The following metrics were removed/renamed in remote write. #6815
+     - `prometheus_remote_storage_succeeded_samples_total` was removed and `prometheus_remote_storage_samples_total` was introduced for all the samples attempted to send.
+     - `prometheus_remote_storage_sent_bytes_total` was removed and replaced with `prometheus_remote_storage_samples_bytes_total` and `prometheus_remote_storage_metadata_bytes_total`.
+     - `prometheus_remote_storage_failed_samples_total` -> `prometheus_remote_storage_samples_failed_total` .
+     - `prometheus_remote_storage_retried_samples_total` -> `prometheus_remote_storage_samples_retried_total`.
+     - `prometheus_remote_storage_dropped_samples_total` -> `prometheus_remote_storage_samples_dropped_total`.
+     - `prometheus_remote_storage_pending_samples` -> `prometheus_remote_storage_samples_pending`.
+* [CHANGE] Remote: Do not collect non-initialized timestamp metrics. #8060
+* [FEATURE] [EXPERIMENTAL] Remote write: Allow metric metadata to be propagated via remote write. The following new metrics were introduced: `prometheus_remote_storage_metadata_total`, `prometheus_remote_storage_metadata_failed_total`, `prometheus_remote_storage_metadata_retried_total`, `prometheus_remote_storage_metadata_bytes_total`. #6815
+* [ENHANCEMENT] Remote write: Added a metric `prometheus_remote_storage_max_samples_per_send` for remote write. #8102
+* [ENHANCEMENT] TSDB: Make the snapshot directory name always the same length. #8138
+* [ENHANCEMENT] TSDB: Create a checkpoint only once at the end of all head compactions. #8067
+* [ENHANCEMENT] TSDB: Avoid Series API from hitting the chunks. #8050 
+* [ENHANCEMENT] TSDB: Cache label name and last value when adding series during compactions making compactions faster. #8192
+* [ENHANCEMENT] PromQL: Improved performance of Hash method making queries a bit faster. #8025
+* [ENHANCEMENT] promtool: `tsdb list` now prints block sizes. #7993
+* [ENHANCEMENT] promtool: Calculate mint and maxt per test avoiding unnecessary calculations. #8096
+* [ENHANCEMENT] SD: Add filtering of services to Docker Swarm SD. #8074
+* [BUGFIX] React UI: Fix button display when there are no panels. #8155
+* [BUGFIX] PromQL: Fix timestamp() method for vector selector inside parenthesis. #8164
+* [BUGFIX] PromQL: Don't include rendered expression on PromQL parse errors. #8177
+* [BUGFIX] web: Fix panic with double close() of channel on calling `/-/quit/`. #8166
+* [BUGFIX] TSDB: Fixed WAL corruption on partial writes within a page causing `invalid checksum` error on WAL replay. #8125
+* [BUGFIX] Update config metrics `prometheus_config_last_reload_successful` and `prometheus_config_last_reload_success_timestamp_seconds` right after initial validation before starting TSDB.
+* [BUGFIX] promtool: Correctly detect duplicate label names in exposition.
+
 ## 2.22.2 / 2020-11-16
 
 * [BUGFIX] Fix race condition in syncing/stopping/reloading scrapers. #8176

@@ -17,11 +17,13 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"hash/crc32"
 	"io/ioutil"
 	"math/rand"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"testing"
 
@@ -212,6 +214,78 @@ func TestCorruptedChunk(t *testing.T) {
 	}
 }
 
+func TestLabelValuesWithMatchers(t *testing.T) {
+	tmpdir, err := ioutil.TempDir("", "test_block_label_values_with_matchers")
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, os.RemoveAll(tmpdir))
+	}()
+
+	var seriesEntries []storage.Series
+	for i := 0; i < 100; i++ {
+		seriesEntries = append(seriesEntries, storage.NewListSeries(labels.Labels{
+			{Name: "unique", Value: fmt.Sprintf("value%d", i)},
+			{Name: "tens", Value: fmt.Sprintf("value%d", i/10)},
+		}, []tsdbutil.Sample{sample{100, 0}}))
+	}
+
+	blockDir := createBlock(t, tmpdir, seriesEntries)
+	files, err := sequenceFiles(chunkDir(blockDir))
+	require.NoError(t, err)
+	require.Greater(t, len(files), 0, "No chunk created.")
+
+	// Check open err.
+	block, err := OpenBlock(nil, blockDir, nil)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, block.Close()) }()
+
+	indexReader, err := block.Index()
+	require.NoError(t, err)
+	defer func() { require.NoError(t, indexReader.Close()) }()
+
+	testCases := []struct {
+		name           string
+		labelName      string
+		matchers       []*labels.Matcher
+		expectedValues []string
+	}{
+		{
+			name:           "get tens based on unique id",
+			labelName:      "tens",
+			matchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "unique", "value35")},
+			expectedValues: []string{"value3"},
+		}, {
+			name:           "get unique ids based on a ten",
+			labelName:      "unique",
+			matchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "tens", "value1")},
+			expectedValues: []string{"value10", "value11", "value12", "value13", "value14", "value15", "value16", "value17", "value18", "value19"},
+		}, {
+			name:           "get tens by pattern matching on unique id",
+			labelName:      "tens",
+			matchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "unique", "value[5-7]5")},
+			expectedValues: []string{"value5", "value6", "value7"},
+		}, {
+			name:           "get tens by matching for absence of unique label",
+			labelName:      "tens",
+			matchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "unique", "")},
+			expectedValues: []string{"value0", "value1", "value2", "value3", "value4", "value5", "value6", "value7", "value8", "value9"},
+		},
+	}
+
+	for _, tt := range testCases {
+		t.Run(tt.name, func(t *testing.T) {
+			actualValues, err := indexReader.SortedLabelValues(tt.labelName, tt.matchers...)
+			require.NoError(t, err)
+			require.Equal(t, tt.expectedValues, actualValues)
+
+			actualValues, err = indexReader.LabelValues(tt.labelName, tt.matchers...)
+			sort.Strings(actualValues)
+			require.NoError(t, err)
+			require.Equal(t, tt.expectedValues, actualValues)
+		})
+	}
+}
+
 // TestBlockSize ensures that the block size is calculated correctly.
 func TestBlockSize(t *testing.T) {
 	tmpdir, err := ioutil.TempDir("", "test_blockSize")
@@ -301,6 +375,49 @@ func TestReadIndexFormatV1(t *testing.T) {
 		})
 }
 
+func BenchmarkLabelValuesWithMatchers(b *testing.B) {
+	tmpdir, err := ioutil.TempDir("", "bench_block_label_values_with_matchers")
+	require.NoError(b, err)
+	defer func() {
+		require.NoError(b, os.RemoveAll(tmpdir))
+	}()
+
+	var seriesEntries []storage.Series
+	metricCount := 1000000
+	for i := 0; i < metricCount; i++ {
+		seriesEntries = append(seriesEntries, storage.NewListSeries(labels.Labels{
+			{Name: "unique", Value: fmt.Sprintf("value%d", i)},
+			{Name: "tens", Value: fmt.Sprintf("value%d", i/(metricCount/10))},
+			{Name: "ninety", Value: fmt.Sprintf("value%d", i/(metricCount/10)/9)}, // "0" for the first 90%, then "1"
+		}, []tsdbutil.Sample{sample{100, 0}}))
+	}
+
+	blockDir := createBlock(b, tmpdir, seriesEntries)
+	files, err := sequenceFiles(chunkDir(blockDir))
+	require.NoError(b, err)
+	require.Greater(b, len(files), 0, "No chunk created.")
+
+	// Check open err.
+	block, err := OpenBlock(nil, blockDir, nil)
+	require.NoError(b, err)
+	defer func() { require.NoError(b, block.Close()) }()
+
+	indexReader, err := block.Index()
+	require.NoError(b, err)
+	defer func() { require.NoError(b, indexReader.Close()) }()
+
+	matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "ninety", "value0")}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for benchIdx := 0; benchIdx < b.N; benchIdx++ {
+		actualValues, err := indexReader.LabelValues("tens", matchers...)
+		require.NoError(b, err)
+		require.Equal(b, 9, len(actualValues))
+	}
+}
+
 // createBlock creates a block with given set of series and returns its dir.
 func createBlock(tb testing.TB, dir string, series []storage.Series) string {
 	blockDir, err := CreateBlock(series, dir, 0, log.NewNopLogger())
@@ -322,22 +439,19 @@ func createBlockFromHead(tb testing.TB, dir string, head *Head) string {
 }
 
 func createHead(tb testing.TB, w *wal.WAL, series []storage.Series, chunkDir string) *Head {
-	head, err := NewHead(nil, nil, w, DefaultBlockDuration, chunkDir, nil, chunks.DefaultWriteBufferSize, DefaultStripeSize, nil)
+	opts := DefaultHeadOptions()
+	opts.ChunkDirRoot = chunkDir
+	head, err := NewHead(nil, nil, w, opts)
 	require.NoError(tb, err)
 
 	app := head.Appender(context.Background())
 	for _, s := range series {
 		ref := uint64(0)
 		it := s.Iterator()
+		lset := s.Labels()
 		for it.Next() {
 			t, v := it.At()
-			if ref != 0 {
-				err := app.AddFast(ref, t, v)
-				if err == nil {
-					continue
-				}
-			}
-			ref, err = app.Add(s.Labels(), t, v)
+			ref, err = app.Append(ref, lset, t, v)
 			require.NoError(tb, err)
 		}
 		require.NoError(tb, it.Err())

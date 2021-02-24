@@ -29,6 +29,7 @@ interface PanelState {
   data: any; // TODO: Type data.
   lastQueryParams: QueryParams | null;
   loading: boolean;
+  warnings: string[] | null;
   error: string | null;
   stats: QueryStats | null;
   exprInputValue: string;
@@ -67,6 +68,7 @@ class Panel extends Component<PanelProps, PanelState> {
       data: null,
       lastQueryParams: null,
       loading: false,
+      warnings: null,
       error: null,
       stats: null,
       exprInputValue: props.options.expr,
@@ -156,6 +158,7 @@ class Panel extends Component<PanelProps, PanelState> {
         this.setState({
           error: null,
           data: json.data,
+          warnings: json.warnings,
           lastQueryParams: {
             startTime,
             endTime,
@@ -235,16 +238,19 @@ class Panel extends Component<PanelProps, PanelState> {
               executeQuery={this.executeQuery}
               loading={this.state.loading}
               enableAutocomplete={this.props.enableAutocomplete}
-              autocompleteSections={{
-                'Query History': pastQueries,
-                'Metric Names': metricNames,
-              }}
+              queryHistory={pastQueries}
+              metricNames={metricNames}
             />
           </Col>
         </Row>
         <Row>
           <Col>{this.state.error && <Alert color="danger">{this.state.error}</Alert>}</Col>
         </Row>
+        {this.state.warnings?.map((warning, index) => (
+          <Row key={index}>
+            <Col>{warning && <Alert color="warning">{warning}</Alert>}</Col>
+          </Row>
+        ))}
         <Row>
           <Col>
             <Nav tabs>

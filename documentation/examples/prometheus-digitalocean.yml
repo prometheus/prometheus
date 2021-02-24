@@ -12,7 +12,8 @@ scrape_configs:
   - job_name: 'node'
 
     digitalocean_sd_configs:
-      - bearer_token: "<replace with a Personal Access Token>"
+      - authorization:
+          credentials: "<replace with a Personal Access Token>"
     relabel_configs:
       # Only scrape targets that have a tag 'monitoring'.
       - source_labels: [__meta_digitalocean_tags]

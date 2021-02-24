@@ -111,7 +111,7 @@ func newCompactorMetrics(r prometheus.Registerer) *compactorMetrics {
 	m.duration = prometheus.NewHistogram(prometheus.HistogramOpts{
 		Name:    "prometheus_tsdb_compaction_duration_seconds",
 		Help:    "Duration of compaction runs",
-		Buckets: prometheus.ExponentialBuckets(1, 2, 10),
+		Buckets: prometheus.ExponentialBuckets(1, 2, 14),
 	})
 	m.chunkSize = prometheus.NewHistogram(prometheus.HistogramOpts{
 		Name:    "prometheus_tsdb_compaction_chunk_size_bytes",
@@ -683,7 +683,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 			if i > 0 && b.Meta().MinTime < globalMaxt {
 				c.metrics.overlappingBlocks.Inc()
 				overlapping = true
-				level.Warn(c.logger).Log("msg", "Found overlapping blocks during compaction", "ulid", meta.ULID)
+				level.Info(c.logger).Log("msg", "Found overlapping blocks during compaction", "ulid", meta.ULID)
 			}
 			if b.Meta().MaxTime > globalMaxt {
 				globalMaxt = b.Meta().MaxTime

@@ -29,6 +29,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/relabel"
@@ -431,7 +432,7 @@ func (t *QueueManager) sendMetadataWithBackoff(ctx context.Context, metadata []p
 	retry := func() {
 		t.metrics.retriedMetadataTotal.Add(float64(len(metadata)))
 	}
-	err = sendWriteRequestWithBackoff(ctx, t.cfg, t.client(), t.logger, req, attemptStore, retry)
+	err = sendWriteRequestWithBackoff(ctx, t.cfg, t.logger, attemptStore, retry)
 	if err != nil {
 		return err
 	}
@@ -538,13 +539,15 @@ func (t *QueueManager) StoreSeries(series []record.RefSeries, index int) {
 	t.seriesMtx.Lock()
 	defer t.seriesMtx.Unlock()
 	for _, s := range series {
+		// Just make sure all the Refs of Series will insert into seriesSegmentIndexes map for tracking.
+		t.seriesSegmentIndexes[s.Ref] = index
+
 		ls := processExternalLabels(s.Labels, t.externalLabels)
 		lbls := relabel.Process(ls, t.relabelConfigs...)
 		if len(lbls) == 0 {
 			t.droppedSeries[s.Ref] = struct{}{}
 			continue
 		}
-		t.seriesSegmentIndexes[s.Ref] = index
 		t.internLabels(lbls)
 
 		// We should not ever be replacing a series labels in the map, but just
@@ -1029,7 +1032,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 		s.qm.metrics.retriedSamplesTotal.Add(float64(sampleCount))
 	}
 
-	err = sendWriteRequestWithBackoff(ctx, s.qm.cfg, s.qm.client(), s.qm.logger, req, attemptStore, onRetry)
+	err = sendWriteRequestWithBackoff(ctx, s.qm.cfg, s.qm.logger, attemptStore, onRetry)
 	if err != nil {
 		return err
 	}
@@ -1038,8 +1041,9 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 	return nil
 }
 
-func sendWriteRequestWithBackoff(ctx context.Context, cfg config.QueueConfig, s WriteClient, l log.Logger, req []byte, attempt func(int) error, onRetry func()) error {
+func sendWriteRequestWithBackoff(ctx context.Context, cfg config.QueueConfig, l log.Logger, attempt func(int) error, onRetry func()) error {
 	backoff := cfg.MinBackoff
+	sleepDuration := model.Duration(0)
 	try := 0
 
 	for {
@@ -1056,16 +1060,29 @@ func sendWriteRequestWithBackoff(ctx context.Context, cfg config.QueueConfig, s 
 		}
 
 		// If the error is unrecoverable, we should not retry.
-		if _, ok := err.(RecoverableError); !ok {
+		backoffErr, ok := err.(RecoverableError)
+		if !ok {
 			return err
+		}
+
+		sleepDuration = backoff
+		if backoffErr.retryAfter > 0 {
+			sleepDuration = backoffErr.retryAfter
+			level.Info(l).Log("msg", "Retrying after duration specified by Retry-After header", "duration", sleepDuration)
+		} else if backoffErr.retryAfter < 0 {
+			level.Debug(l).Log("msg", "retry-after cannot be in past, retrying using default backoff mechanism")
+		}
+
+		select {
+		case <-ctx.Done():
+		case <-time.After(time.Duration(sleepDuration)):
 		}
 
 		// If we make it this far, we've encountered a recoverable error and will retry.
 		onRetry()
-		level.Debug(l).Log("msg", "failed to send batch, retrying", "err", err)
+		level.Warn(l).Log("msg", "Failed to send batch, retrying", "err", err)
 
-		time.Sleep(time.Duration(backoff))
-		backoff = backoff * 2
+		backoff = sleepDuration * 2
 
 		if backoff > cfg.MaxBackoff {
 			backoff = cfg.MaxBackoff

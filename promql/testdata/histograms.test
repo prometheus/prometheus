@@ -105,7 +105,7 @@ eval instant at 50m histogram_quantile(0.3, avg(rate(request_duration_seconds_bu
 eval instant at 50m histogram_quantile(0.5, avg(rate(request_duration_seconds_bucket[5m])) by (le))
 	{} 0.12777777777777778
 
-# Aggregated histogram: By job.
+# Aggregated histogram: By instance.
 eval instant at 50m histogram_quantile(0.3, sum(rate(request_duration_seconds_bucket[5m])) by (le, instance))
 	{instance="ins1"} 0.075
 	{instance="ins2"} 0.075
@@ -114,7 +114,7 @@ eval instant at 50m histogram_quantile(0.5, sum(rate(request_duration_seconds_bu
 	{instance="ins1"} 0.1333333333
 	{instance="ins2"} 0.125
 
-# Aggregated histogram: By instance.
+# Aggregated histogram: By job.
 eval instant at 50m histogram_quantile(0.3, sum(rate(request_duration_seconds_bucket[5m])) by (le, job))
 	{job="job1"} 0.1
 	{job="job2"} 0.0642857142857143

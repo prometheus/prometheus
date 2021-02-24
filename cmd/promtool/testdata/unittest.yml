@@ -83,10 +83,17 @@ tests:
       - expr: count(ALERTS) by (alertname, alertstate)
         eval_time: 4m
         exp_samples:
+        - labels: '{alertname="AlwaysFiring",alertstate="firing"}'
+          value: 1
         - labels: '{alertname="InstanceDown",alertstate="pending"}'
           value: 1
 
     alert_rule_test:
+      - eval_time: 1d
+        alertname: AlwaysFiring
+        exp_alerts:
+          - {}
+
       - eval_time: 1d
         alertname: InstanceDown
         exp_alerts:
@@ -97,6 +104,15 @@ tests:
             exp_annotations:
               summary: "Instance localhost:9090 down"
               description: "localhost:9090 of job prometheus has been down for more than 5 minutes."
+
+      - eval_time: 0
+        alertname: AlwaysFiring
+        exp_alerts:
+          - {}
+
+      - eval_time: 0
+        alertname: InstanceDown
+        exp_alerts: []
 
   # Tests for interval vs evaluation_interval.
   - interval: 1s
