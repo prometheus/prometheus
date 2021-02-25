@@ -1306,6 +1306,8 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 	// This is only really for tests - this will never be nil IRL.
 	if api.remoteReadHandler != nil {
 		api.remoteReadHandler.ServeHTTP(w, r)
+	} else {
+		http.Error(w, "not found", http.StatusNotFound)
 	}
 }
 
