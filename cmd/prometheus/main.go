@@ -169,7 +169,7 @@ func main() {
 		promlogConfig: promlog.Config{},
 	}
 
-	a := kingpin.New(filepath.Base(os.Args[0]), "The Prometheus monitoring server")
+	a := kingpin.New(filepath.Base(os.Args[0]), "The Prometheus monitoring server").UsageWriter(os.Stdout)
 
 	a.Version(version.Print("prometheus"))
 
