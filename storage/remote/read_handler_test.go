@@ -26,7 +26,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/pkg/gate"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
@@ -45,23 +44,18 @@ func TestSampledReadEndpoint(t *testing.T) {
 	err = suite.Run()
 	require.NoError(t, err)
 
-	h := &readHandler{
-		queryable: suite.Storage(),
-		config: func() config.Config {
-			return config.Config{
-				GlobalConfig: config.GlobalConfig{
-					ExternalLabels: labels.Labels{
-						// We expect external labels to be added, with the source labels honored.
-						{Name: "baz", Value: "a"},
-						{Name: "b", Value: "c"},
-						{Name: "d", Value: "e"},
-					},
+	h := NewReadHandler(nil, nil, suite.Storage(), func() config.Config {
+		return config.Config{
+			GlobalConfig: config.GlobalConfig{
+				ExternalLabels: labels.Labels{
+					// We expect external labels to be added, with the source labels honored.
+					{Name: "baz", Value: "a"},
+					{Name: "b", Value: "c"},
+					{Name: "d", Value: "e"},
 				},
-			}
-		},
-		remoteReadSampleLimit: 1e6,
-		remoteReadGate:        gate.New(1),
-	}
+			},
+		}
+	}, 1e6, 1, 0)
 
 	// Encode the request.
 	matcher1, err := labels.NewMatcher(labels.MatchEqual, "__name__", "test_metric1")
@@ -138,25 +132,22 @@ func TestStreamReadEndpoint(t *testing.T) {
 
 	require.NoError(t, suite.Run())
 
-	api := &readHandler{
-		queryable: suite.Storage(),
-		config: func() config.Config {
-			return config.Config{
-				GlobalConfig: config.GlobalConfig{
-					ExternalLabels: labels.Labels{
-						// We expect external labels to be added, with the source labels honored.
-						{Name: "baz", Value: "a"},
-						{Name: "b", Value: "c"},
-						{Name: "d", Value: "e"},
-					},
+	api := NewReadHandler(nil, nil, suite.Storage(), func() config.Config {
+		return config.Config{
+			GlobalConfig: config.GlobalConfig{
+				ExternalLabels: labels.Labels{
+					// We expect external labels to be added, with the source labels honored.
+					{Name: "baz", Value: "a"},
+					{Name: "b", Value: "c"},
+					{Name: "d", Value: "e"},
 				},
-			}
-		},
-		remoteReadSampleLimit: 1e6,
-		remoteReadGate:        gate.New(1),
+			},
+		}
+	},
+		1e6, 1,
 		// Labelset has 57 bytes. Full chunk in test data has roughly 240 bytes. This allows us to have at max 2 chunks in this test.
-		remoteReadMaxBytesInFrame: 57 + 480,
-	}
+		57+480,
+	)
 
 	// Encode the request.
 	matcher1, err := labels.NewMatcher(labels.MatchEqual, "__name__", "test_metric1")
