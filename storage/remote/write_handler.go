@@ -23,7 +23,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
-type handler struct {
+type writeHandler struct {
 	logger     log.Logger
 	appendable storage.Appendable
 }
@@ -31,13 +31,13 @@ type handler struct {
 // NewWriteHandler creates a http.Handler that accepts remote write requests and
 // writes them to the provided appendable.
 func NewWriteHandler(logger log.Logger, appendable storage.Appendable) http.Handler {
-	return &handler{
+	return &writeHandler{
 		logger:     logger,
 		appendable: appendable,
 	}
 }
 
-func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	req, err := DecodeWriteRequest(r.Body)
 	if err != nil {
 		level.Error(h.logger).Log("msg", "Error decoding remote write request", "err", err.Error())
@@ -62,7 +62,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h *handler) write(ctx context.Context, req *prompb.WriteRequest) (err error) {
+func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err error) {
 	app := h.appendable.Appender(ctx)
 	defer func() {
 		if err != nil {
