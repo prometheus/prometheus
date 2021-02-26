@@ -33,21 +33,24 @@ import (
 )
 
 var (
-	patRulePath         = regexp.MustCompile(`^[^*]*(\*[^/]*)?$`)
-	unchangeableHeaders = map[string]struct{}{
+	patRulePath     = regexp.MustCompile(`^[^*]*(\*[^/]*)?$`)
+	reservedHeaders = map[string]struct{}{
 		// NOTE: authorization is checked specially,
 		// see RemoteWriteConfig.UnmarshalYAML.
 		// "authorization":                  {},
 		"host":                              {},
 		"content-encoding":                  {},
+		"content-length":                    {},
 		"content-type":                      {},
-		"x-prometheus-remote-write-version": {},
 		"user-agent":                        {},
 		"connection":                        {},
 		"keep-alive":                        {},
 		"proxy-authenticate":                {},
 		"proxy-authorization":               {},
 		"www-authenticate":                  {},
+		"accept-encoding":                   {},
+		"x-prometheus-remote-write-version": {},
+		"x-prometheus-remote-read-version":  {},
 	}
 )
 
@@ -616,19 +619,26 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 			return errors.New("empty or null relabeling rule in remote write config")
 		}
 	}
-	for header := range c.Headers {
-		if strings.ToLower(header) == "authorization" {
-			return errors.New("authorization header must be changed via the basic_auth or authorization parameter")
-		}
-		if _, ok := unchangeableHeaders[strings.ToLower(header)]; ok {
-			return errors.Errorf("%s is an unchangeable header", header)
-		}
+	if err := validateHeaders(c.Headers); err != nil {
+		return err
 	}
 
 	// The UnmarshalYAML method of HTTPClientConfig is not being called because it's not a pointer.
 	// We cannot make it a pointer as the parser panics for inlined pointer structs.
 	// Thus we just do its validation here.
 	return c.HTTPClientConfig.Validate()
+}
+
+func validateHeaders(headers map[string]string) error {
+	for header := range headers {
+		if strings.ToLower(header) == "authorization" {
+			return errors.New("authorization header must be changed via the basic_auth or authorization parameter")
+		}
+		if _, ok := reservedHeaders[strings.ToLower(header)]; ok {
+			return errors.Errorf("%s is a reserved header. It must not be changed", header)
+		}
+	}
+	return nil
 }
 
 // QueueConfig is the configuration for the queue used to write to remote
@@ -667,10 +677,11 @@ type MetadataConfig struct {
 
 // RemoteReadConfig is the configuration for reading from remote storage.
 type RemoteReadConfig struct {
-	URL           *config.URL    `yaml:"url"`
-	RemoteTimeout model.Duration `yaml:"remote_timeout,omitempty"`
-	ReadRecent    bool           `yaml:"read_recent,omitempty"`
-	Name          string         `yaml:"name,omitempty"`
+	URL           *config.URL       `yaml:"url"`
+	RemoteTimeout model.Duration    `yaml:"remote_timeout,omitempty"`
+	Headers       map[string]string `yaml:"headers,omitempty"`
+	ReadRecent    bool              `yaml:"read_recent,omitempty"`
+	Name          string            `yaml:"name,omitempty"`
 
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
@@ -695,6 +706,9 @@ func (c *RemoteReadConfig) UnmarshalYAML(unmarshal func(interface{}) error) erro
 	}
 	if c.URL == nil {
 		return errors.New("url for remote_read is empty")
+	}
+	if err := validateHeaders(c.Headers); err != nil {
+		return err
 	}
 	// The UnmarshalYAML method of HTTPClientConfig is not being called because it's not a pointer.
 	// We cannot make it a pointer as the parser panics for inlined pointer structs.
