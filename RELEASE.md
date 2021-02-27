@@ -8,32 +8,39 @@ Release cadence of first pre-releases being cut is 6 weeks.
 
 | release series | date of first pre-release (year-month-day) | release shepherd                            |
 |----------------|--------------------------------------------|---------------------------------------------|
-| v2.4           | 2018-09-06                                 | Goutham Veeramachaneni (GitHub: @gouthamve) |
-| v2.5           | 2018-10-24                                 | Frederic Branczyk (GitHub: @brancz)         |
-| v2.6           | 2018-12-05                                 | Simon Pasquier (GitHub: @simonpasquier)     |
-| v2.7           | 2019-01-16                                 | Goutham Veeramachaneni (GitHub: @gouthamve) |
-| v2.8           | 2019-02-27                                 | Ganesh Vernekar (GitHub: @codesome)         |
-| v2.9           | 2019-04-10                                 | Brian Brazil (GitHub: @brian-brazil)        |
-| v2.10          | 2019-05-22                                 | Björn Rabenstein (GitHub: @beorn7)          |
-| v2.11          | 2019-07-03                                 | Frederic Branczyk (GitHub: @brancz)         |
-| v2.12          | 2019-08-14                                 | Julius Volz (GitHub: @juliusv)              |
-| v2.13          | 2019-09-25                                 | Krasi Georgiev (GitHub: @krasi-georgiev)    |
-| v2.14          | 2019-11-06                                 | Chris Marchbanks (GitHub: @csmarchbanks)    |
-| v2.15          | 2019-12-18                                 | Bartek Plotka (GitHub: @bwplotka)           |
-| v2.16          | 2020-01-29                                 | Callum Styan (GitHub: @cstyan)              |
-| v2.17          | 2020-03-11                                 | Julien Pivotto (GitHub: @roidelapluie)      |
-| v2.18          | 2020-04-22                                 | Bartek Plotka (GitHub: @bwplotka)           |
-| v2.19          | 2020-06-03                                 | Ganesh Vernekar (GitHub: @codesome)         |
-| v2.20          | 2020-07-15                                 | Björn Rabenstein (GitHub: @beorn7)          |
-| v2.21          | 2020-08-26                                 | Julien Pivotto (GitHub: @roidelapluie)      |
-| v2.22          | 2020-10-07                                 | Frederic Branczyk (GitHub: @brancz)         |
-| v2.23          | 2020-11-18                                 | Ganesh Vernekar (GitHub: @codesome)         |
-| v2.24          | 2020-12-30                                 | Björn Rabenstein (GitHub: @beorn7)          |
 | v2.25          | 2021-02-10                                 | Julien Pivotto (GitHub: @roidelapluie)      |
 | v2.26          | 2021-03-24                                 | Bartek Plotka (GitHub: @bwplotka)           |
 | v2.27          | 2021-05-05                                 | Chris Marchbanks (GitHub: @csmarchbanks)    |
 | v2.28          | 2021-06-16                                 | **searching for volunteer**                 |
 | v2.29          | 2021-07-28                                 | **searching for volunteer**                 |
+
+<details><summary>Past releases</summary>
+
+<table>
+<tr><th>release series</th><th>date of first pre-release (year-month-day)</th><th>release shepherd</th></tr>
+<tr><td>v2.4</td><td>2018-09-06</td><td>Goutham Veeramachaneni (GitHub: @gouthamve)</td></tr>
+<tr><td>v2.5</td><td>2018-10-24</td><td>Frederic Branczyk (GitHub: @brancz)</td></tr>
+<tr><td>v2.6</td><td>2018-12-05</td><td>Simon Pasquier (GitHub: @simonpasquier)</td></tr>
+<tr><td>v2.7</td><td>2019-01-16</td><td>Goutham Veeramachaneni (GitHub: @gouthamve)</td></tr>
+<tr><td>v2.8</td><td>2019-02-27</td><td>Ganesh Vernekar (GitHub: @codesome)</td></tr>
+<tr><td>v2.9</td><td>2019-04-10</td><td>Brian Brazil (GitHub: @brian-brazil)</td></tr>
+<tr><td>v2.10</td><td>2019-05-22</td><td>Björn Rabenstein (GitHub: @beorn7)</td></tr>
+<tr><td>v2.11</td><td>2019-07-03</td><td>Frederic Branczyk (GitHub: @brancz)</td></tr>
+<tr><td>v2.12</td><td>2019-08-14</td><td>Julius Volz (GitHub: @juliusv)</td></tr>
+<tr><td>v2.13</td><td>2019-09-25</td><td>Krasi Georgiev (GitHub: @krasi-georgiev)</td></tr>
+<tr><td>v2.14</td><td>2019-11-06</td><td>Chris Marchbanks (GitHub: @csmarchbanks)</td></tr>
+<tr><td>v2.15</td><td>2019-12-18</td><td>Bartek Plotka (GitHub: @bwplotka)</td></tr>
+<tr><td>v2.16</td><td>2020-01-29</td><td>Callum Styan (GitHub: @cstyan)</td></tr>
+<tr><td>v2.17</td><td>2020-03-11</td><td>Julien Pivotto (GitHub: @roidelapluie)</td></tr>
+<tr><td>v2.18</td><td>2020-04-22</td><td>Bartek Plotka (GitHub: @bwplotka)</td></tr>
+<tr><td>v2.19</td><td>2020-06-03</td><td>Ganesh Vernekar (GitHub: @codesome)</td></tr>
+<tr><td>v2.20</td><td>2020-07-15</td><td>Björn Rabenstein (GitHub: @beorn7)</td></tr>
+<tr><td>v2.21</td><td>2020-08-26</td><td>Julien Pivotto (GitHub: @roidelapluie)</td></tr>
+<tr><td>v2.22</td><td>2020-10-07</td><td>Frederic Branczyk (GitHub: @brancz)</td></tr>
+<tr><td>v2.23</td><td>2020-11-18</td><td>Ganesh Vernekar (GitHub: @codesome)</td></tr>
+<tr><td>v2.24</td><td>2020-12-30</td><td>Björn Rabenstein (GitHub: @beorn7)</td></tr>
+</table>
+</details>
 
 If you are interested in volunteering please create a pull request against the [prometheus/prometheus](https://github.com/prometheus/prometheus) repository and propose yourself for the release series of your choice.
 
