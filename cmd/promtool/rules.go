@@ -171,7 +171,7 @@ func newMultipleAppender(ctx context.Context, maxSamplesInMemory int, blockWrite
 }
 
 func (m *multipleAppender) add(ctx context.Context, l labels.Labels, t int64, v float64) error {
-	if _, err := m.appender.Add(l, t, v); err != nil {
+	if _, err := m.appender.Append(0, l, t, v); err != nil {
 		return err
 	}
 	m.currentSampleCount++
