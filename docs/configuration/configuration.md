@@ -180,6 +180,9 @@ authorization:
   # configured file. It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
+# Configure whether scrape requests follow HTTP 3xx redirects.
+[ follow_redirects: <bool> | default = true ]
+
 # Configures the scrape request's TLS settings.
 tls_config:
   [ <tls_config> ]
@@ -464,6 +467,9 @@ authorization:
 # Optional proxy URL.
 [ proxy_url: <string> ]
 
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <bool> | default = true ]
+
 # TLS configuration.
 tls_config:
   [ <tls_config> ]
@@ -621,6 +627,10 @@ authorization:
   # Sets the credentials with the credentials read from the configured file.
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <bool> | default = true ]
+
 ```
 
 The [relabeling phase](#relabel_config) is the preferred and more powerful
@@ -1029,6 +1039,9 @@ authorization:
 # Optional proxy URL.
 [ proxy_url: <string> ]
 
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <bool> | default = true ]
+
 # TLS configuration.
 tls_config:
   [ <tls_config> ]
@@ -1197,6 +1210,9 @@ authorization:
 # Optional proxy URL.
 [ proxy_url: <string> ]
 
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <bool> | default = true ]
+
 # TLS configuration.
 tls_config:
   [ <tls_config> ]
@@ -1290,6 +1306,9 @@ authorization:
   # Sets the credentials with the credentials read from the configured file.
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <bool> | default = true ]
 
 # TLS configuration for connecting to marathon servers
 tls_config:
@@ -1493,6 +1512,9 @@ tls_config:
 # Optional proxy URL.
 [ proxy_url: <string> ]
 
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <bool> | default = true ]
+
 # Refresh interval to re-read the app instance list.
 [ refresh_interval: <duration> | default = 30s ]
 ```
@@ -1665,6 +1687,9 @@ tls_config:
 # Optional proxy URL.
 [ proxy_url: <string> ]
 
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <bool> | default = true ]
+
 # List of Azure service discovery configurations.
 azure_sd_configs:
   [ - <azure_sd_config> ... ]
@@ -1794,6 +1819,9 @@ tls_config:
 # Optional proxy URL.
 [ proxy_url: <string> ]
 
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <bool> | default = true ]
+
 # Configures the queue used to write to remote storage.
 queue_config:
   # Number of samples to buffer per shard before we block reading of more
@@ -1884,6 +1912,9 @@ tls_config:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <bool> | default = true ]
 ```
 
 There is a list of

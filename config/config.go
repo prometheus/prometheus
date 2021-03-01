@@ -101,24 +101,27 @@ var (
 	DefaultScrapeConfig = ScrapeConfig{
 		// ScrapeTimeout and ScrapeInterval default to the
 		// configured globals.
-		MetricsPath:     "/metrics",
-		Scheme:          "http",
-		HonorLabels:     false,
-		HonorTimestamps: true,
+		MetricsPath:      "/metrics",
+		Scheme:           "http",
+		HonorLabels:      false,
+		HonorTimestamps:  true,
+		HTTPClientConfig: config.DefaultHTTPClientConfig,
 	}
 
 	// DefaultAlertmanagerConfig is the default alertmanager configuration.
 	DefaultAlertmanagerConfig = AlertmanagerConfig{
-		Scheme:     "http",
-		Timeout:    model.Duration(10 * time.Second),
-		APIVersion: AlertmanagerAPIVersionV1,
+		Scheme:           "http",
+		Timeout:          model.Duration(10 * time.Second),
+		APIVersion:       AlertmanagerAPIVersionV1,
+		HTTPClientConfig: config.DefaultHTTPClientConfig,
 	}
 
 	// DefaultRemoteWriteConfig is the default remote write configuration.
 	DefaultRemoteWriteConfig = RemoteWriteConfig{
-		RemoteTimeout:  model.Duration(30 * time.Second),
-		QueueConfig:    DefaultQueueConfig,
-		MetadataConfig: DefaultMetadataConfig,
+		RemoteTimeout:    model.Duration(30 * time.Second),
+		QueueConfig:      DefaultQueueConfig,
+		MetadataConfig:   DefaultMetadataConfig,
+		HTTPClientConfig: config.DefaultHTTPClientConfig,
 	}
 
 	// DefaultQueueConfig is the default remote queue configuration.
@@ -148,7 +151,8 @@ var (
 
 	// DefaultRemoteReadConfig is the default remote read configuration.
 	DefaultRemoteReadConfig = RemoteReadConfig{
-		RemoteTimeout: model.Duration(1 * time.Minute),
+		RemoteTimeout:    model.Duration(1 * time.Minute),
+		HTTPClientConfig: config.DefaultHTTPClientConfig,
 	}
 )
 
