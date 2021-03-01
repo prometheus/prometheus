@@ -7,7 +7,7 @@ Julien Pivotto (<roidelapluie@prometheus.io> / @roidelapluie) is the main/defaul
 * `documentation`
   * `prometheus-mixin`: Björn Rabenstein (<beorn@grafana.com> / @beorn7)
 * `storage`
-  * `remote`: Chris Marchbanks (<csmarchbanks@gmail.com> / @csmarchbanks), Callum Styan (<callumstyan@gmail.com> / @cstyan), Bartłomiej Płotka (<bwplotka@gmail.com> / @bwplotka)
+  * `remote`: Chris Marchbanks (<csmarchbanks@gmail.com> / @csmarchbanks), Callum Styan (<callumstyan@gmail.com> / @cstyan), Bartłomiej Płotka (<bwplotka@gmail.com> / @bwplotka), Tom Wilkie (<tom.wilkie@gmail.com> / @tomwilkie)
 * `tsdb`: Ganesh Vernekar (<ganesh@grafana.com> / @codesome), Bartłomiej Płotka (<bwplotka@gmail.com> / @bwplotka)
 * `web`
   * `ui`: Julius Volz (<julius.volz@gmail.com> / @juliusv)
