@@ -152,6 +152,57 @@ func TestSampleDelivery(t *testing.T) {
 	}
 }
 
+func TestSampleDeliveryWithPolicy(t *testing.T) {
+	n := config.DefaultQueueConfig.MaxSamplesPerSend * 20
+	offset := time.Minute * 30
+	from := n / 2
+	samples, series := createTimeseriesWithOffset(n, 1, offset, from)
+
+	c := NewTestWriteClient()
+	c.expectSamples(samples[:from], series)
+
+	queueConfig := config.DefaultQueueConfig
+	queueConfig.BatchSendDeadline = model.Duration(100 * time.Millisecond)
+	queueConfig.MaxShards = 1
+	queueConfig.Capacity = len(samples)
+	queueConfig.MaxSamplesPerSend = len(samples) / 2
+	queueConfig.Retry.Policy.MinSampleAge = model.Duration(offset - time.Minute*10)
+
+	dir, err := ioutil.TempDir("", "TestSampleDeliver")
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, os.RemoveAll(dir))
+	}()
+
+	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
+	defer s.Close()
+
+	writeConfig := config.DefaultRemoteWriteConfig
+	conf := &config.Config{
+		GlobalConfig: config.DefaultGlobalConfig,
+		RemoteWriteConfigs: []*config.RemoteWriteConfig{
+			&writeConfig,
+		},
+	}
+	// We need to set URL's so that metric creation doesn't panic.
+	writeConfig.URL = &common_config.URL{
+		URL: &url.URL{
+			Host: "http://test-storage.com",
+		},
+	}
+	writeConfig.QueueConfig = queueConfig
+	require.NoError(t, s.ApplyConfig(conf))
+	hash, err := toHash(writeConfig)
+	require.NoError(t, err)
+	qm := s.rws.queues[hash]
+	qm.SetClient(c)
+
+	qm.StoreSeries(series, 0)
+
+	qm.Append(samples)
+	c.waitForExpectedSamples(t)
+}
+
 func TestMetadataDelivery(t *testing.T) {
 	c := NewTestWriteClient()
 
@@ -514,6 +565,30 @@ func createExemplars(numExemplars, numSeries int) ([]record.RefExemplar, []recor
 		})
 	}
 	return exemplars, series
+}
+
+func createTimeseriesWithOffset(numSamples, numSeries int, offsetAfterMid time.Duration, applyOffsetAfterNumSamples int) ([]record.RefSample, []record.RefSeries) {
+	samples := make([]record.RefSample, 0, numSamples)
+	series := make([]record.RefSeries, 0, numSeries)
+	t := time.Now().UnixNano() / int64(time.Millisecond/time.Nanosecond)
+	for i := 0; i < numSeries; i++ {
+		name := fmt.Sprintf("test_metric_%d", i)
+		for j := 0; j < numSamples; j++ {
+			samples = append(samples, record.RefSample{
+				Ref: uint64(i),
+				T:   t + int64(j),
+				V:   float64(i),
+			})
+		}
+		series = append(series, record.RefSeries{
+			Ref:    uint64(i),
+			Labels: labels.Labels{{Name: "__name__", Value: name}},
+		})
+	}
+	for i := applyOffsetAfterNumSamples + 1; i < len(samples); i++ {
+		samples[i].T -= offsetAfterMid.Milliseconds()
+	}
+	return samples, series
 }
 
 func getSeriesNameFromRef(r record.RefSeries) string {

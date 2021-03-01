@@ -15,6 +15,7 @@ package remote
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"strconv"
 	"sync"
@@ -493,7 +494,7 @@ func (t *QueueManager) sendMetadataWithBackoff(ctx context.Context, metadata []p
 	retry := func() {
 		t.metrics.retriedMetadataTotal.Add(float64(len(metadata)))
 	}
-	err = sendWriteRequestWithBackoff(ctx, t.cfg, t.logger, attemptStore, retry)
+	err = sendWriteRequestWithBackoff(ctx, t.cfg, t.logger, metadataCount, attemptStore, retry, math.MinInt64)
 	if err != nil {
 		return err
 	}
@@ -521,7 +522,7 @@ outer:
 		}
 		t.seriesMtx.Unlock()
 		// This will only loop if the queues are being resharded.
-		backoff := t.cfg.MinBackoff
+		backoff := t.cfg.Retry.MinBackoff
 		for {
 			select {
 			case <-t.quit:
@@ -584,8 +585,8 @@ outer:
 			t.metrics.enqueueRetriesTotal.Inc()
 			time.Sleep(time.Duration(backoff))
 			backoff = backoff * 2
-			if backoff > t.cfg.MaxBackoff {
-				backoff = t.cfg.MaxBackoff
+			if backoff > t.cfg.Retry.MaxBackoff {
+				backoff = t.cfg.Retry.MaxBackoff
 			}
 		}
 	}
@@ -1047,6 +1048,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 		buf            []byte
 		pendingData    []prompb.TimeSeries
 		exemplarBuffer [][]prompb.Exemplar
+		minSampleTs    int64 = math.MaxInt64
 	)
 	totalPending := max
 	if s.qm.sendExemplars {
@@ -1094,6 +1096,11 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 				return
 			}
 
+			//fmt.Println(minSampleTs, sample.t)
+			if minSampleTs > sample.t {
+				minSampleTs = sample.t
+			}
+
 			// Number of pending samples is limited by the fact that sendSamples (via sendSamplesWithBackoff)
 			// retries endlessly, so once we reach max samples, if we can never send to the endpoint we'll
 			// stop reading from the queue. This makes it safe to reference pendingSamples by index.
@@ -1119,6 +1126,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 				s.sendSamples(ctx, pendingData[:nPending], nPendingSamples, nPendingExemplars, &buf)
 				s.qm.metrics.pendingSamples.Sub(float64(nPendingSamples))
 				s.qm.metrics.pendingExemplars.Sub(float64(nPendingExemplars))
+				minSampleTs = math.MaxInt64
 				nPendingSamples = 0
 				nPendingExemplars = 0
 				nPending = 0
@@ -1136,13 +1144,14 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 				nPendingSamples = 0
 				nPendingExemplars = 0
 				nPending = 0
+				minSampleTs = math.MaxInt64
 			}
 			timer.Reset(time.Duration(s.qm.cfg.BatchSendDeadline))
 		}
 	}
 }
 
-func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, sampleCount int, exemplarCount int, buf *[]byte) {
+func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, sampleCount int, exemplarCount int, buf *[]byte, minTs int64) {
 	begin := time.Now()
 	err := s.sendSamplesWithBackoff(ctx, samples, sampleCount, exemplarCount, buf)
 	if err != nil {
@@ -1159,7 +1168,7 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, s
 }
 
 // sendSamples to the remote storage with backoff for recoverable errors.
-func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.TimeSeries, sampleCount int, exemplarCount int, buf *[]byte) error {
+func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.TimeSeries, sampleCount int, exemplarCount int, buf *[]byte, minTs int64) error {
 	// Build the WriteRequest with no metadata.
 	req, highest, err := buildWriteRequest(samples, nil, *buf)
 	if err != nil {
@@ -1207,7 +1216,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 		s.qm.metrics.retriedExemplarsTotal.Add(float64(exemplarCount))
 	}
 
-	err = sendWriteRequestWithBackoff(ctx, s.qm.cfg, s.qm.logger, attemptStore, onRetry)
+	err = sendWriteRequestWithBackoff(ctx, s.qm.cfg, s.qm.logger, sampleCount, attemptStore, onRetry, minTs)
 	if err != nil {
 		return err
 	}
@@ -1216,8 +1225,8 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 	return nil
 }
 
-func sendWriteRequestWithBackoff(ctx context.Context, cfg config.QueueConfig, l log.Logger, attempt func(int) error, onRetry func()) error {
-	backoff := cfg.MinBackoff
+func sendWriteRequestWithBackoff(ctx context.Context, cfg config.QueueConfig, l log.Logger, samplesCount int, attempt func(int) error, onRetry func(), minTs int64) error {
+	backoff := cfg.Retry.MinBackoff
 	sleepDuration := model.Duration(0)
 	try := 0
 
@@ -1228,9 +1237,19 @@ func sendWriteRequestWithBackoff(ctx context.Context, cfg config.QueueConfig, l 
 		default:
 		}
 
+		if policy := cfg.Retry.Policy; !shouldAttempt(policy, minTs, try) {
+			level.Warn(l).Log("msg", fmt.Sprintf("Retrying policy expired. Dropping %d samples", samplesCount), "min_sample_age", policy.MinSampleAge, "max_retries", policy.MaxRetries)
+			return nil
+		}
+
 		err := attempt(try)
 
 		if err == nil {
+			return nil
+		}
+
+		if dropErr, ok := err.(DropError); ok {
+			level.Warn(l).Log("msg", fmt.Sprintf("Received Unprocessable-entity status code. Dropping %d samples", samplesCount), "Err", dropErr.error)
 			return nil
 		}
 
@@ -1259,13 +1278,30 @@ func sendWriteRequestWithBackoff(ctx context.Context, cfg config.QueueConfig, l 
 
 		backoff = sleepDuration * 2
 
-		if backoff > cfg.MaxBackoff {
-			backoff = cfg.MaxBackoff
+		if backoff > cfg.Retry.MaxBackoff {
+			backoff = cfg.Retry.MaxBackoff
 		}
 
 		try++
 		continue
 	}
+}
+
+func shouldAttempt(policy config.RetryPolicy, minTs int64, retries int) bool {
+	if !policy.IsSet() {
+		return true
+	}
+
+	minSampleAge := timeMilliseconds(time.Now().Add(-time.Duration(policy.MinSampleAge)))
+	if (policy.MinSampleAge != 0 && minTs < minSampleAge) ||
+		(policy.MaxRetries != 0 && retries > policy.MaxRetries) {
+		return false
+	}
+	return true
+}
+
+func timeMilliseconds(t time.Time) int64 {
+	return t.UnixNano() / int64(time.Millisecond/time.Nanosecond)
 }
 
 func buildWriteRequest(samples []prompb.TimeSeries, metadata []prompb.MetricMetadata, buf []byte) ([]byte, int64, error) {

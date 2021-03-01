@@ -167,8 +167,10 @@ var (
 		BatchSendDeadline: model.Duration(5 * time.Second),
 
 		// Backoff times for retrying a batch of samples on recoverable errors.
-		MinBackoff: model.Duration(30 * time.Millisecond),
-		MaxBackoff: model.Duration(100 * time.Millisecond),
+		Retry: RetryWriteBatch{
+			MinBackoff: model.Duration(30 * time.Millisecond),
+			MaxBackoff: model.Duration(100 * time.Millisecond),
+		},
 	}
 
 	// DefaultMetadataConfig is the default metadata configuration for a remote write endpoint.
@@ -741,10 +743,29 @@ type QueueConfig struct {
 	// Maximum time sample will wait in buffer.
 	BatchSendDeadline model.Duration `yaml:"batch_send_deadline,omitempty"`
 
+	// Configuration for retrying functionality in remote-write component.
+	Retry RetryWriteBatch `yaml:"retry,omitempty"`
+}
+
+type RetryWriteBatch struct {
 	// On recoverable errors, backoff exponentially.
 	MinBackoff       model.Duration `yaml:"min_backoff,omitempty"`
 	MaxBackoff       model.Duration `yaml:"max_backoff,omitempty"`
 	RetryOnRateLimit bool           `yaml:"retry_on_http_429,omitempty"`
+	Policy           RetryPolicy    `yaml:"policy,omitempty"`
+}
+
+// RetryPolicy configures the retry functionality of remote-write component. If unset, the default behaviour is to
+// retry forever.
+type RetryPolicy struct {
+	MinSampleAge model.Duration `yaml:"min_sample_age,omitempty"`
+	MaxRetries   int            `yaml:"max_retries,omitempty"`
+}
+
+// IsDefault returns true if the configuration in RetryPolicy is unset.
+func (p RetryPolicy) IsSet() bool {
+	var tmp RetryPolicy
+	return !(p.MaxRetries == tmp.MaxRetries && p.MinSampleAge == tmp.MinSampleAge)
 }
 
 // MetadataConfig is the configuration for sending metadata to remote
