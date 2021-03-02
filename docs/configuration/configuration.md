@@ -246,6 +246,10 @@ nerve_sd_configs:
 openstack_sd_configs:
   [ - <openstack_sd_config> ... ]
 
+# List of Scaleway service discovery configurations.
+scaleway_sd_configs:
+  [ - <scaleway_sd_config> ... ]
+
 # List of Zookeeper Serverset service discovery configurations.
 serverset_sd_configs:
   [ - <serverset_sd_config> ... ]
@@ -1523,6 +1527,17 @@ See [the Prometheus eureka-sd configuration file](/documentation/examples/promet
 for a practical example on how to set up your Eureka app and your Prometheus
 configuration.
 
+### `<scaleway_sd_config>`
+
+```yaml
+server: <string>
+
+# Refresh interval to re-read the targets list.
+[ refresh_interval: <duration> | default = 30s ]
+```
+
+See [the Prometheus scaleway-sd configuration file](/documentation/examples/prometheus-scaleway.yml)
+for a practical example on how to set up your Prometheus for Scaleway service discovery.
 
 ### `<static_config>`
 
@@ -1745,6 +1760,10 @@ nerve_sd_configs:
 # List of OpenStack service discovery configurations.
 openstack_sd_configs:
   [ - <openstack_sd_config> ... ]
+
+# List of Scaleway service discovery configurations.
+scaleway_sd_configs:
+  [ - <scaleway_sd_config> ... ]
 
 # List of Zookeeper Serverset service discovery configurations.
 serverset_sd_configs:
