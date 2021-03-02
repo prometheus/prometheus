@@ -259,3 +259,7 @@ Here are some non-obvious parts of adding service discoveries that need to be ve
   `<alertmanager_config>` in `docs/configuration/configuration.md`.
 
 <!-- TODO: Add best-practices -->
+
+### Examples of Service Discovery pull requests
+
+- [Eureka](https://github.com/prometheus/prometheus/pull/3369)
