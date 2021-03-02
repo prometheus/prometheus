@@ -37,10 +37,21 @@ const (
 
 func (d *Discovery) listBaremetalServers(ctx context.Context) ([]model.LabelSet, error) {
 	api := baremetal.NewAPI(d.client)
-	servers, err := api.ListServers(&baremetal.ListServersRequest{
+
+	req := &baremetal.ListServersRequest{
 		Zone:      scw.Zone(d.zone),
 		ProjectID: scw.StringPtr(d.project),
-	}, scw.WithAllPages(), scw.WithContext(ctx))
+	}
+
+	if d.name != "" {
+		req.Name = scw.StringPtr(d.name)
+	}
+
+	if d.tags != nil {
+		req.Tags = d.tags
+	}
+
+	servers, err := api.ListServers(req, scw.WithAllPages(), scw.WithContext(ctx))
 	if err != nil {
 		return nil, err
 	}

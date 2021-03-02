@@ -54,6 +54,10 @@ type SDConfig struct {
 	AccessKey string `yaml:"access_key"`
 	// Secret Key
 	SecretKey string `yaml:"secret_key"`
+	// FilterName to filter on during the ListServers
+	FilterName string `yaml:"name"`
+	// FilterTags to filter on during the ListServers
+	FilterTags []string `yaml:"tags"`
 
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 
@@ -99,6 +103,8 @@ type Discovery struct {
 	project   string
 	accessKey string
 	secretKey string
+	name      string
+	tags      []string
 }
 
 func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
@@ -108,6 +114,8 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 		project:   conf.Project,
 		accessKey: conf.AccessKey,
 		secretKey: conf.SecretKey,
+		name:      conf.FilterName,
+		tags:      conf.FilterTags,
 	}
 
 	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "scaleway_sd", false, false)

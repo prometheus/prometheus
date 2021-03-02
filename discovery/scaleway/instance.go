@@ -44,10 +44,20 @@ func (d *Discovery) listInstanceServers(ctx context.Context) ([]model.LabelSet, 
 	zone, _ := d.client.GetDefaultZone()
 	project, _ := d.client.GetDefaultProjectID()
 
-	servers, err := api.ListServers(&instance.ListServersRequest{
+	req := &instance.ListServersRequest{
 		Zone:    zone,
 		Project: scw.StringPtr(project),
-	}, scw.WithAllPages(), scw.WithContext(ctx))
+	}
+
+	if d.name != "" {
+		req.Name = scw.StringPtr(d.name)
+	}
+
+	if d.tags != nil {
+		req.Tags = d.tags
+	}
+
+	servers, err := api.ListServers(req, scw.WithAllPages(), scw.WithContext(ctx))
 	if err != nil {
 		return nil, err
 	}
