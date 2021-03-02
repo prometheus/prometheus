@@ -63,7 +63,6 @@ func (c *role) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 // DefaultSDConfig is the default Scaleway Service Discovery configuration.
 var DefaultSDConfig = SDConfig{
-	Zone:            "fr-par-1",
 	Port:            80,
 	RefreshInterval: model.Duration(60 * time.Second),
 }
