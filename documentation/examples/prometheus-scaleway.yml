@@ -11,7 +11,7 @@ scrape_configs:
 
     scaleway_sd_configs:
       - authorization:
-          credentials: "<replace with a Personal Access Token https://console.scaleway.com/project/credentials>"
+          credentials: "<replace with a Scaleway Secret Key https://console.scaleway.com/project/credentials>"
     relabel_configs:
       # Only scrape targets that have a tag 'monitoring'.
       - source_labels: [__meta_scaleway_tags]
