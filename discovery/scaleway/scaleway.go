@@ -32,7 +32,7 @@ import (
 // metaLabelPrefix is the meta prefix used for all meta labels.
 // in this discovery.
 const (
-	metaLabelPrefix = model.MetaLabelPrefix + "scaleway_"
+	metaLabelPrefix = model.MetaLabelPrefix + "scw_"
 	separator       = ","
 )
 
