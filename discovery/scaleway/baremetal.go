@@ -15,14 +15,33 @@ package scaleway
 
 import (
 	"context"
+	"fmt"
 	"net"
+	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/version"
+	"github.com/prometheus/prometheus/discovery/refresh"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/scaleway/scaleway-sdk-go/api/baremetal/v1"
 	"github.com/scaleway/scaleway-sdk-go/scw"
 )
+
+type baremetalDiscovery struct {
+	*refresh.Discovery
+	Client    *scw.Client
+	Port      int
+	Zone      string
+	Project   string
+	AccessKey string
+	SecretKey string
+	Name      string
+	Tags      []string
+}
 
 const (
 	baremetalLabelPrefix = metaLabelPrefix + "baremetal_"
@@ -33,22 +52,59 @@ const (
 	baremetalStatusLabel    = baremetalLabelPrefix + "status"
 	baremetalTagsLabel      = baremetalLabelPrefix + "tags"
 	baremetalProjectIDLabel = baremetalLabelPrefix + "project_id"
+	baremetalIPLabel        = baremetalLabelPrefix + "ip"
+	baremetalIPVersionLabel = baremetalLabelPrefix + "ip_version"
 )
 
-func (d *Discovery) listBaremetalServers(ctx context.Context) ([]model.LabelSet, error) {
-	api := baremetal.NewAPI(d.client)
+func newBaremetalDiscovery(conf *SDConfig) (*baremetalDiscovery, error) {
+	d := &baremetalDiscovery{
+		Port:      conf.Port,
+		Zone:      conf.Zone,
+		Project:   conf.Project,
+		AccessKey: conf.AccessKey,
+		SecretKey: string(conf.SecretKey),
+		Name:      conf.FilterName,
+		Tags:      conf.FilterTags,
+	}
+
+	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "scaleway_sd", false, false)
+	if err != nil {
+		return nil, err
+	}
+
+	profile, err := LoadProfile(conf)
+	if err != nil {
+		return nil, err
+	}
+	d.Client, err = scw.NewClient(
+		scw.WithHTTPClient(&http.Client{
+			Transport: rt,
+			Timeout:   time.Duration(conf.RefreshInterval),
+		}),
+		scw.WithUserAgent(fmt.Sprintf("Prometheus/%s", version.Version)),
+		scw.WithProfile(profile),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error setting up scaleway client: %w", err)
+	}
+
+	return d, nil
+}
+
+func (d *baremetalDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
+	api := baremetal.NewAPI(d.Client)
 
 	req := &baremetal.ListServersRequest{
-		Zone:      scw.Zone(d.zone),
-		ProjectID: scw.StringPtr(d.project),
+		Zone:      scw.Zone(d.Zone),
+		ProjectID: scw.StringPtr(d.Project),
 	}
 
-	if d.name != "" {
-		req.Name = scw.StringPtr(d.name)
+	if d.Name != "" {
+		req.Name = scw.StringPtr(d.Name)
 	}
 
-	if d.tags != nil {
-		req.Tags = d.tags
+	if d.Tags != nil {
+		req.Tags = d.Tags
 	}
 
 	servers, err := api.ListServers(req, scw.WithAllPages(), scw.WithContext(ctx))
@@ -73,10 +129,15 @@ func (d *Discovery) listBaremetalServers(ctx context.Context) ([]model.LabelSet,
 			labels[baremetalTagsLabel] = model.LabelValue(tags)
 		}
 
-		addr := net.JoinHostPort(server.IPs[0].Address.String(), strconv.FormatUint(uint64(d.port), 10))
-		labels[model.AddressLabel] = model.LabelValue(addr)
+		for _, ip := range server.IPs {
+			labels[baremetalIPVersionLabel] = model.LabelValue(ip.Version.String())
+			labels[baremetalIPLabel] = model.LabelValue(ip.Address.String())
 
-		targets = append(targets, labels)
+			addr := net.JoinHostPort(ip.Address.String(), strconv.FormatUint(uint64(d.Port), 10))
+			labels[model.AddressLabel] = model.LabelValue(addr)
+
+			targets = append(targets, labels.Clone())
+		}
 	}
-	return targets, nil
+	return []*targetgroup.Group{{Source: "scaleway", Targets: targets}}, nil
 }

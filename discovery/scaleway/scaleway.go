@@ -15,14 +15,12 @@ package scaleway
 
 import (
 	"context"
-	"fmt"
-	"net/http"
 	"time"
 
 	"github.com/go-kit/kit/log"
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/common/version"
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -35,6 +33,33 @@ const (
 	metaLabelPrefix = model.MetaLabelPrefix + "scaleway_"
 	separator       = ","
 )
+
+// role is the role of the target within the Scaleway Ecosystem.
+type role string
+
+// The valid options for role.
+const (
+	// Scaleway Elements Baremetal
+	// https://www.scaleway.com/en/bare-metal-servers/
+	roleBaremetal role = "baremetal"
+
+	// Scaleway Elements Instance
+	// https://www.scaleway.com/en/virtual-instances/
+	roleInstance role = "instance"
+)
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *role) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	if err := unmarshal((*string)(c)); err != nil {
+		return err
+	}
+	switch *c {
+	case roleInstance, roleBaremetal:
+		return nil
+	default:
+		return errors.Errorf("unknown role %q", *c)
+	}
+}
 
 // DefaultSDConfig is the default Scaleway Service Discovery configuration.
 var DefaultSDConfig = SDConfig{
@@ -53,7 +78,7 @@ type SDConfig struct {
 	// Access Key
 	AccessKey string `yaml:"access_key"`
 	// Secret Key
-	SecretKey string `yaml:"secret_key"`
+	SecretKey config.Secret `yaml:"secret_key"`
 	// FilterName to filter on during the ListServers
 	FilterName string `yaml:"name"`
 	// FilterTags to filter on during the ListServers
@@ -63,6 +88,8 @@ type SDConfig struct {
 
 	RefreshInterval model.Duration `yaml:"refresh_interval"`
 	Port            int            `yaml:"port"`
+	// Role can be either instance or baremetal
+	Role role `yaml:"role"`
 }
 
 func (c SDConfig) Name() string {
@@ -77,6 +104,11 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
+
+	if c.Role == "" {
+		return errors.New("role missing (one of: instance, baremetal)")
+	}
+
 	return c.HTTPClientConfig.Validate()
 }
 
@@ -96,81 +128,37 @@ func init() {
 // Discovery periodically performs Scaleway requests. It implements
 // the Discoverer interface.
 type Discovery struct {
-	*refresh.Discovery
-	client    *scw.Client
-	port      int
-	zone      string
-	project   string
-	accessKey string
-	secretKey string
-	name      string
-	tags      []string
 }
 
-func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
-	d := &Discovery{
-		port:      conf.Port,
-		zone:      conf.Zone,
-		project:   conf.Project,
-		accessKey: conf.AccessKey,
-		secretKey: conf.SecretKey,
-		name:      conf.FilterName,
-		tags:      conf.FilterTags,
-	}
-
-	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "scaleway_sd", false, false)
+func NewDiscovery(conf *SDConfig, logger log.Logger) (*refresh.Discovery, error) {
+	r, err := newRefresher(conf)
 	if err != nil {
 		return nil, err
 	}
 
-	profile, err := d.loadProfile()
-	if err != nil {
-		return nil, err
-	}
-	d.client, err = scw.NewClient(
-		scw.WithHTTPClient(&http.Client{
-			Transport: rt,
-			Timeout:   time.Duration(conf.RefreshInterval),
-		}),
-		scw.WithUserAgent(fmt.Sprintf("Prometheus/%s", version.Version)),
-		scw.WithProfile(profile),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("error setting up scaleway client: %w", err)
-	}
-
-	d.Discovery = refresh.NewDiscovery(
+	return refresh.NewDiscovery(
 		logger,
 		"scaleway",
 		time.Duration(conf.RefreshInterval),
-		d.refresh,
-	)
-	return d, nil
+		r.refresh,
+	), nil
 }
 
-func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
-	tg := &targetgroup.Group{
-		Source: "scaleway",
-	}
-
-	// instance fetching
-	instanceServerLabelSet, err := d.listInstanceServers(ctx)
-	if err != nil {
-		return nil, err
-	}
-	tg.Targets = append(tg.Targets, instanceServerLabelSet...)
-
-	// baremetal fetching
-	baremetalServerLabelSet, err := d.listBaremetalServers(ctx)
-	if err != nil {
-		return nil, err
-	}
-	tg.Targets = append(tg.Targets, baremetalServerLabelSet...)
-
-	return []*targetgroup.Group{tg}, nil
+type refresher interface {
+	refresh(context.Context) ([]*targetgroup.Group, error)
 }
 
-func (d *Discovery) loadProfile() (*scw.Profile, error) {
+func newRefresher(conf *SDConfig) (refresher, error) {
+	switch conf.Role {
+	case roleBaremetal:
+		return newBaremetalDiscovery(conf)
+	case roleInstance:
+		return newInstanceDiscovery(conf)
+	}
+	return nil, errors.New("unknown Scaleway discovery role")
+}
+
+func LoadProfile(sdConfig *SDConfig) (*scw.Profile, error) {
 	scwConfig, err := scw.LoadConfig()
 	// If the config file do not exist, don't return an error as we may find config in ENV or flags.
 	if _, isNotFoundError := err.(*scw.ConfigFileNotFoundError); isNotFoundError {
@@ -185,26 +173,29 @@ func (d *Discovery) loadProfile() (*scw.Profile, error) {
 		DefaultZone:   scw.StringPtr(scw.ZoneFrPar1.String()),
 	}
 
+	// Profile coming from Scaleway configuration file
 	activeProfile, err := scwConfig.GetActiveProfile()
 	if err != nil {
 		return nil, err
 	}
+
+	// Profile coming from environment variables
 	envProfile := scw.LoadEnvProfile()
 
+	// Profile coming from Prometheus Configuration file
 	providerProfile := &scw.Profile{}
-	if d != nil {
-		if d.accessKey != "" {
-			providerProfile.AccessKey = scw.StringPtr(d.accessKey)
-		}
-		if d.secretKey != "" {
-			providerProfile.SecretKey = scw.StringPtr(d.secretKey)
-		}
-		if d.project != "" {
-			providerProfile.DefaultProjectID = scw.StringPtr(d.project)
-		}
-		if d.zone != "" {
-			providerProfile.DefaultZone = scw.StringPtr(d.zone)
-		}
+
+	if sdConfig.AccessKey != "" {
+		providerProfile.AccessKey = scw.StringPtr(sdConfig.AccessKey)
+	}
+	if sdConfig.SecretKey != "" {
+		providerProfile.SecretKey = scw.StringPtr(string(sdConfig.SecretKey))
+	}
+	if sdConfig.Project != "" {
+		providerProfile.DefaultProjectID = scw.StringPtr(sdConfig.Project)
+	}
+	if sdConfig.Zone != "" {
+		providerProfile.DefaultZone = scw.StringPtr(sdConfig.Zone)
 	}
 
 	profile := scw.MergeProfiles(defaultZoneProfile, activeProfile, providerProfile, envProfile)

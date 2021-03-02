@@ -15,11 +15,18 @@ package scaleway
 
 import (
 	"context"
+	"fmt"
 	"net"
+	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/version"
+	"github.com/prometheus/prometheus/discovery/refresh"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/scaleway/scaleway-sdk-go/api/instance/v1"
 	"github.com/scaleway/scaleway-sdk-go/scw"
 )
@@ -37,24 +44,72 @@ const (
 	instancePrivateIPLabel      = instanceLabelPrefix + "private_ip"
 	instancePublicIPLabel       = instanceLabelPrefix + "public_ip"
 	instanceIPv6Label           = instanceLabelPrefix + "ipv6"
+	instanceIPVersionLabel      = instanceLabelPrefix + "ip_version"
 )
 
-func (d *Discovery) listInstanceServers(ctx context.Context) ([]model.LabelSet, error) {
-	api := instance.NewAPI(d.client)
-	zone, _ := d.client.GetDefaultZone()
-	project, _ := d.client.GetDefaultProjectID()
+type instanceDiscovery struct {
+	*refresh.Discovery
+	Client    *scw.Client
+	Port      int
+	Zone      string
+	Project   string
+	AccessKey string
+	SecretKey string
+	Name      string
+	Tags      []string
+}
+
+func newInstanceDiscovery(conf *SDConfig) (*instanceDiscovery, error) {
+	d := &instanceDiscovery{
+		Port:      conf.Port,
+		Zone:      conf.Zone,
+		Project:   conf.Project,
+		AccessKey: conf.AccessKey,
+		SecretKey: string(conf.SecretKey),
+		Name:      conf.FilterName,
+		Tags:      conf.FilterTags,
+	}
+
+	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "scaleway_sd", false, false)
+	if err != nil {
+		return nil, err
+	}
+
+	profile, err := LoadProfile(conf)
+	if err != nil {
+		return nil, err
+	}
+	d.Client, err = scw.NewClient(
+		scw.WithHTTPClient(&http.Client{
+			Transport: rt,
+			Timeout:   time.Duration(conf.RefreshInterval),
+		}),
+		scw.WithUserAgent(fmt.Sprintf("Prometheus/%s", version.Version)),
+		scw.WithProfile(profile),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error setting up scaleway client: %w", err)
+	}
+
+	return d, nil
+}
+
+func (d *instanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
+	api := instance.NewAPI(d.Client)
+	zone, _ := d.Client.GetDefaultZone()
+	project, _ := d.Client.GetDefaultProjectID()
 
 	req := &instance.ListServersRequest{
 		Zone:    zone,
 		Project: scw.StringPtr(project),
 	}
 
-	if d.name != "" {
-		req.Name = scw.StringPtr(d.name)
+	if d.Name != "" {
+		req.Name = scw.StringPtr(d.Name)
 	}
 
-	if d.tags != nil {
-		req.Tags = d.tags
+	if d.Tags != nil {
+		req.Tags = d.Tags
 	}
 
 	servers, err := api.ListServers(req, scw.WithAllPages(), scw.WithContext(ctx))
@@ -71,6 +126,7 @@ func (d *Discovery) listInstanceServers(ctx context.Context) ([]model.LabelSet, 
 			instanceZoneLabel:           model.LabelValue(server.Zone.String()),
 			instanceCommercialTypeLabel: model.LabelValue(server.CommercialType),
 			instanceStateLabel:          model.LabelValue(server.State),
+			instancePrivateIPLabel:      model.LabelValue(*server.PrivateIP),
 		}
 
 		if len(server.Tags) > 0 {
@@ -81,22 +137,30 @@ func (d *Discovery) listInstanceServers(ctx context.Context) ([]model.LabelSet, 
 		}
 
 		if server.PrivateIP != nil {
-			labels[instancePrivateIPLabel] = model.LabelValue(*server.PrivateIP)
-		}
-
-		if server.PublicIP != nil {
-			labels[instancePublicIPLabel] = model.LabelValue(server.PublicIP.Address.String())
+			addr := net.JoinHostPort(server.PublicIP.Address.String(), strconv.FormatUint(uint64(d.Port), 10))
+			labels[model.AddressLabel] = model.LabelValue(addr)
+			targets = append(targets, labels.Clone())
 		}
 
 		if server.IPv6 != nil {
 			labels[instanceIPv6Label] = model.LabelValue(server.IPv6.Address.String())
+			labels[instanceIPVersionLabel] = "IPv6"
+
+			addr := net.JoinHostPort(server.IPv6.Address.String(), strconv.FormatUint(uint64(d.Port), 10))
+			labels[model.AddressLabel] = model.LabelValue(addr)
+
+			targets = append(targets, labels.Clone())
 		}
 
-		addr := net.JoinHostPort(server.PublicIP.Address.String(), strconv.FormatUint(uint64(d.port), 10))
-		labels[model.AddressLabel] = model.LabelValue(addr)
+		if server.PublicIP != nil {
+			labels[instancePublicIPLabel] = model.LabelValue(server.PublicIP.Address.String())
 
-		targets = append(targets, labels)
+			addr := net.JoinHostPort(server.PublicIP.Address.String(), strconv.FormatUint(uint64(d.Port), 10))
+			labels[model.AddressLabel] = model.LabelValue(addr)
+
+			targets = append(targets, labels.Clone())
+		}
 	}
 
-	return targets, nil
+	return []*targetgroup.Group{{Source: "scaleway", Targets: targets}}, nil
 }
