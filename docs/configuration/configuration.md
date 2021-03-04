@@ -1529,6 +1529,35 @@ configuration.
 
 ### `<scaleway_sd_config>`
 
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+#### Instance role
+
+* `__meta_scaleway_instance_id`: the id of the instance
+* `__meta_scaleway_instance_ip_is_public`: whether the ip of the target is publicly routed
+* `__meta_scaleway_instance_ip_version`: version of the ip `IPv4`, `IPv6`
+* `__meta_scaleway_instance_image_name`: name of the server image
+* `__meta_scaleway_instance_name`: name of the server
+* `__meta_scaleway_instance_status`: status of the server
+* `__meta_scaleway_instance_tags`: tag list of the server
+* `__meta_scaleway_instance_type`: commercial type of the server
+* `__meta_scaleway_instance_zone`: zone of the instance (`fr-par-1`, `fr-par-2`, `nl-ams-1`, `pl-waw-1`)
+
+#### Baremetal role
+
+* `__meta_scaleway_baremetal_id`: the id of the instance
+* `__meta_scaleway_baremetal_ip_is_public`: whether the ip of the target is publicly routed
+* `__meta_scaleway_baremetal_ip_version`: version of the ip `IPv4`, `IPv6`
+* `__meta_scaleway_baremetal_name`: name of the server
+* `__meta_scaleway_baremetal_os_name`: name of the os used
+* `__meta_scaleway_baremetal_os_version`: version of the os used
+* `__meta_scaleway_baremetal_status`: status of the server
+* `__meta_scaleway_baremetal_tags`: tag list of the server
+* `__meta_scaleway_baremetal_type`: commercial type of the server
+* `__meta_scaleway_baremetal_zone`: zone of the server (`fr-par-1`, `fr-par-2`, `nl-ams-1`, `pl-waw-1`)
+
+See below for the configuration options for Scaleway discovery:
+
 ```yaml
 # The port to scrape metrics from.
 [ port: <int> | default = 80 ]

@@ -52,7 +52,6 @@ const (
 	baremetalNameLabel       = baremetalLabelPrefix + "name"
 	baremetalOSNameLabel     = baremetalLabelPrefix + "os_name"
 	baremetalOSVersionLabel  = baremetalLabelPrefix + "os_version"
-	baremetalProjectIDLabel  = baremetalLabelPrefix + "project_id"
 	baremetalStatusLabel     = baremetalLabelPrefix + "status"
 	baremetalTagsLabel       = baremetalLabelPrefix + "tags"
 	baremetalTypeLabel       = baremetalLabelPrefix + "type"
@@ -132,11 +131,10 @@ func (d *baremetalDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 	var targets []model.LabelSet
 	for _, server := range servers.Servers {
 		labels := model.LabelSet{
-			baremetalIDLabel:        model.LabelValue(server.ID),
-			baremetalNameLabel:      model.LabelValue(server.Name),
-			baremetalZoneLabel:      model.LabelValue(server.Zone.String()),
-			baremetalStatusLabel:    model.LabelValue(server.Status),
-			baremetalProjectIDLabel: model.LabelValue(server.ProjectID),
+			baremetalIDLabel:     model.LabelValue(server.ID),
+			baremetalNameLabel:   model.LabelValue(server.Name),
+			baremetalZoneLabel:   model.LabelValue(server.Zone.String()),
+			baremetalStatusLabel: model.LabelValue(server.Status),
 		}
 
 		for _, offer := range offers.Offers {
