@@ -162,9 +162,6 @@ func LoadProfile(sdConfig *SDConfig) (*scw.Profile, error) {
 		DefaultZone:   scw.StringPtr(scw.ZoneFrPar1.String()),
 	}
 
-	// Profile coming from environment variables
-	envProfile := scw.LoadEnvProfile()
-
 	// Profile coming from Prometheus Configuration file
 	prometheusConfigProfile := &scw.Profile{}
 
@@ -178,7 +175,7 @@ func LoadProfile(sdConfig *SDConfig) (*scw.Profile, error) {
 		prometheusConfigProfile.DefaultZone = scw.StringPtr(sdConfig.Zone)
 	}
 
-	profile := scw.MergeProfiles(defaultZoneProfile, prometheusConfigProfile, envProfile)
+	profile := scw.MergeProfiles(defaultZoneProfile, prometheusConfigProfile)
 
 	return profile, nil
 }
