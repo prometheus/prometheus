@@ -507,7 +507,9 @@ func (sp *scrapePool) sync(targets []*Target) {
 	}
 	for _, l := range uniqueLoops {
 		if l != nil {
-			go l.run(interval, timeout, nil)
+			go func(lp loop) {
+				lp.run(interval, timeout, nil)
+			}(l)
 		}
 	}
 	// Wait for all potentially stopped scrapers to terminate.
