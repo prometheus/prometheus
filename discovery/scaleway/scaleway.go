@@ -68,17 +68,17 @@ var DefaultSDConfig = SDConfig{
 }
 
 type SDConfig struct {
-	// Project: The Scaleway Project ID
+	// Project: The Scaleway Project ID used to filter discovery on.
 	Project string `yaml:"project"`
 
 	// Zone: The zone of the scrape targets.
 	// If you need to configure multiple zones use multiple scaleway_sd_configs
 	Zone string `yaml:"zone"`
-	// Secret Key
+	// SecretKey used to authenticate on Scaleway APIs.
 	SecretKey config.Secret `yaml:"secret_key"`
-	// FilterName to filter on during the ListServers
+	// FilterName to filter on during the ListServers.
 	FilterName string `yaml:"name"`
-	// FilterTags to filter on during the ListServers
+	// FilterTags to filter on during the ListServers.
 	FilterTags []string `yaml:"tags"`
 
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
