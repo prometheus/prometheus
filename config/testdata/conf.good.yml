@@ -301,11 +301,9 @@ scrape_configs:
 - job_name: scaleway
   scaleway_sd_configs:
     - role: instance
-      authorization:
-        credentials: 11111111-1111-1111-1111-111111111111
+      secret_key: 11111111-1111-1111-1111-111111111111
     - role: baremetal
-      authorization:
-        credentials: 11111111-1111-1111-1111-111111111111
+      secret_key: 11111111-1111-1111-1111-111111111111
 
 alerting:
   alertmanagers:
