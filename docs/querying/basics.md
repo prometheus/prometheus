@@ -209,10 +209,9 @@ can be specified:
 
     rate(http_requests_total[5m] offset -1w)
 
-This negative offset is disabled by default since it breaks the invariant
-that PromQL does not look ahead of the evaluation time for samples. This feature
-is enabled by setting `--enable-feature=promql-negative-offset` flag. See
-[disabled features](../disabled_features.md) for more details about this flag.
+This feature is enabled by setting `--enable-feature=promql-negative-offset`
+flag. See [disabled features](../disabled_features.md) for more details about
+this flag.
 
 ### @ modifier
 

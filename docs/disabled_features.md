@@ -20,6 +20,9 @@ range vector selectors, and subqueries. More details can be found [here](queryin
 
 ## Negative offset in PromQL
 
+This negative offset is disabled by default since it breaks the invariant
+that PromQL does not look ahead of the evaluation time for samples.
+
 `--enable-feature=promql-negative-offset`
 
 In contrast to the positive offset modifier, the negative offset modifier lets
