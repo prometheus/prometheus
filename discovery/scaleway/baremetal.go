@@ -37,6 +37,7 @@ type baremetalDiscovery struct {
 	Port      int
 	Zone      string
 	Project   string
+	AccessKey string
 	SecretKey string
 	Name      string
 	Tags      []string
@@ -63,6 +64,7 @@ func newBaremetalDiscovery(conf *SDConfig) (*baremetalDiscovery, error) {
 		Port:      conf.Port,
 		Zone:      conf.Zone,
 		Project:   conf.Project,
+		AccessKey: conf.AccessKey,
 		SecretKey: string(conf.SecretKey),
 		Name:      conf.FilterName,
 		Tags:      conf.FilterTags,

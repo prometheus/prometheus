@@ -51,6 +51,7 @@ type instanceDiscovery struct {
 	Port      int
 	Zone      string
 	Project   string
+	AccessKey string
 	SecretKey string
 	Name      string
 	Tags      []string
@@ -61,6 +62,7 @@ func newInstanceDiscovery(conf *SDConfig) (*instanceDiscovery, error) {
 		Port:      conf.Port,
 		Zone:      conf.Zone,
 		Project:   conf.Project,
+		AccessKey: conf.AccessKey,
 		SecretKey: string(conf.SecretKey),
 		Name:      conf.FilterName,
 		Tags:      conf.FilterTags,

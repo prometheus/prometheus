@@ -76,6 +76,8 @@ type SDConfig struct {
 	// Zone: The zone of the scrape targets.
 	// If you need to configure multiple zones use multiple scaleway_sd_configs
 	Zone string `yaml:"zone"`
+	// AccessKey used to authenticate on Scaleway APIs.
+	AccessKey string `yaml:"access_key"`
 	// SecretKey used to authenticate on Scaleway APIs.
 	SecretKey config.Secret `yaml:"secret_key"`
 	// FilterName to filter on during the ListServers.
@@ -167,6 +169,9 @@ func LoadProfile(sdConfig *SDConfig) (*scw.Profile, error) {
 	// Profile coming from Prometheus Configuration file
 	prometheusConfigProfile := &scw.Profile{}
 
+	if sdConfig.AccessKey != "" {
+		prometheusConfigProfile.AccessKey = scw.StringPtr(sdConfig.AccessKey)
+	}
 	if sdConfig.SecretKey != "" {
 		prometheusConfigProfile.SecretKey = scw.StringPtr(string(sdConfig.SecretKey))
 	}
