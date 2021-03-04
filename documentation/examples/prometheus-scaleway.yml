@@ -10,8 +10,7 @@ scrape_configs:
   - job_name: 'node'
 
     scaleway_sd_configs:
-      - authorization:
-          credentials: "<replace with a Scaleway Secret Key https://console.scaleway.com/project/credentials>"
+      - secret_key: "<replace with a Scaleway Secret Key https://console.scaleway.com/project/credentials>"
     relabel_configs:
       # Only scrape targets that have a tag 'monitoring'.
       - source_labels: [__meta_scaleway_tags]
