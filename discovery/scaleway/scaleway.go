@@ -156,43 +156,29 @@ func newRefresher(conf *SDConfig) (refresher, error) {
 }
 
 func LoadProfile(sdConfig *SDConfig) (*scw.Profile, error) {
-	scwConfig, err := scw.LoadConfig()
-	// If the config file do not exist, don't return an error as we may find config in ENV or flags.
-	if _, isNotFoundError := err.(*scw.ConfigFileNotFoundError); isNotFoundError {
-		scwConfig = &scw.Config{}
-	} else if err != nil {
-		return nil, err
-	}
-
 	// By default we set default zone and region to fr-par
 	defaultZoneProfile := &scw.Profile{
 		DefaultRegion: scw.StringPtr(scw.RegionFrPar.String()),
 		DefaultZone:   scw.StringPtr(scw.ZoneFrPar1.String()),
 	}
 
-	// Profile coming from Scaleway configuration file
-	activeProfile, err := scwConfig.GetActiveProfile()
-	if err != nil {
-		return nil, err
-	}
-
 	// Profile coming from environment variables
 	envProfile := scw.LoadEnvProfile()
 
 	// Profile coming from Prometheus Configuration file
-	providerProfile := &scw.Profile{}
+	prometheusConfigProfile := &scw.Profile{}
 
 	if sdConfig.SecretKey != "" {
-		providerProfile.SecretKey = scw.StringPtr(string(sdConfig.SecretKey))
+		prometheusConfigProfile.SecretKey = scw.StringPtr(string(sdConfig.SecretKey))
 	}
 	if sdConfig.Project != "" {
-		providerProfile.DefaultProjectID = scw.StringPtr(sdConfig.Project)
+		prometheusConfigProfile.DefaultProjectID = scw.StringPtr(sdConfig.Project)
 	}
 	if sdConfig.Zone != "" {
-		providerProfile.DefaultZone = scw.StringPtr(sdConfig.Zone)
+		prometheusConfigProfile.DefaultZone = scw.StringPtr(sdConfig.Zone)
 	}
 
-	profile := scw.MergeProfiles(defaultZoneProfile, activeProfile, providerProfile, envProfile)
+	profile := scw.MergeProfiles(defaultZoneProfile, prometheusConfigProfile, envProfile)
 
 	return profile, nil
 }
