@@ -23,7 +23,7 @@ range vector selectors, and subqueries. More details can be found [here](queryin
 `--enable-feature=promql-negative-offset`
 
 In contrast to the positive offset modifier, the negative offset modifier lets
-one shift a vector into the past.  An example in which one may want to use a
+one shift a vector into the future.  An example in which one may want to use a
 negative offset is reviewing past data and making temporal comparisons with
 more recent data.
 
