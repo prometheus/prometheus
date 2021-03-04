@@ -71,6 +71,8 @@ type SDConfig struct {
 	// Project: The Scaleway Project ID used to filter discovery on.
 	Project string `yaml:"project"`
 
+	// APIURL: URL of the Scaleway API to use (will default to https://api.scaleway.com).
+	APIURL string `yaml:"api_url"`
 	// Zone: The zone of the scrape targets.
 	// If you need to configure multiple zones use multiple scaleway_sd_configs
 	Zone string `yaml:"zone"`
@@ -173,6 +175,9 @@ func LoadProfile(sdConfig *SDConfig) (*scw.Profile, error) {
 	}
 	if sdConfig.Zone != "" {
 		prometheusConfigProfile.DefaultZone = scw.StringPtr(sdConfig.Zone)
+	}
+	if sdConfig.APIURL != "" {
+		prometheusConfigProfile.APIURL = scw.StringPtr(sdConfig.APIURL)
 	}
 
 	profile := scw.MergeProfiles(defaultZoneProfile, prometheusConfigProfile)
