@@ -1530,10 +1530,33 @@ configuration.
 ### `<scaleway_sd_config>`
 
 ```yaml
-server: <string>
+# The port to scrape metrics from.
+[ port: <int> | default = 80 ]
 
 # Refresh interval to re-read the targets list.
-[ refresh_interval: <duration> | default = 30s ]
+[ refresh_interval: <duration> | default = 60s ]
+
+# API URL to use when doing the List requests
+[ api_url: <string> | default = "https://api.scaleway.com" ]
+
+# Secret key to use when listing servers. https://console.scaleway.com/project/credentials
+[ secret_key: <secret> ]
+
+# Project id to use when listing servers. https://console.scaleway.com/project/credentials
+[ project_id: <string> ]
+
+# Role can be either instance or baremetal
+[ role: <string> ]
+
+# Zone specify the availability zone of the server you target (fr-par-1, fr-par-2, nl-ams-1, pl-waw-1, ...)
+[ zone: <string> ]
+
+# Name specify a name filter to apply on the ListServers request
+[ name: <string> ]
+
+# Tags specify a tag filter to apply on the ListServers requests
+tags:
+[ - <string> ... ]
 ```
 
 See [the Prometheus scaleway-sd configuration file](/documentation/examples/prometheus-scaleway.yml)
