@@ -45,14 +45,17 @@ type baremetalDiscovery struct {
 const (
 	baremetalLabelPrefix = metaLabelPrefix + "baremetal_"
 
-	baremetalIDLabel        = baremetalLabelPrefix + "id"
-	baremetalZoneLabel      = baremetalLabelPrefix + "zone"
-	baremetalNameLabel      = baremetalLabelPrefix + "name"
-	baremetalStatusLabel    = baremetalLabelPrefix + "status"
-	baremetalTagsLabel      = baremetalLabelPrefix + "tags"
-	baremetalProjectIDLabel = baremetalLabelPrefix + "project_id"
-	baremetalIPLabel        = baremetalLabelPrefix + "ip"
-	baremetalIPVersionLabel = baremetalLabelPrefix + "ip_version"
+	baremetalIDLabel         = baremetalLabelPrefix + "id"
+	baremetalIPIsPublicLabel = baremetalLabelPrefix + "ip_is_public"
+	baremetalIPVersionLabel  = baremetalLabelPrefix + "ip_version"
+	baremetalNameLabel       = baremetalLabelPrefix + "name"
+	baremetalOSNameLabel     = baremetalLabelPrefix + "os_name"
+	baremetalOSVersionLabel  = baremetalLabelPrefix + "os_version"
+	baremetalProjectIDLabel  = baremetalLabelPrefix + "project_id"
+	baremetalStatusLabel     = baremetalLabelPrefix + "status"
+	baremetalTagsLabel       = baremetalLabelPrefix + "tags"
+	baremetalTypeLabel       = baremetalLabelPrefix + "type"
+	baremetalZoneLabel       = baremetalLabelPrefix + "zone"
 )
 
 func newBaremetalDiscovery(conf *SDConfig) (*baremetalDiscovery, error) {
@@ -110,6 +113,20 @@ func (d *baremetalDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 		return nil, err
 	}
 
+	offers, err := api.ListOffers(&baremetal.ListOffersRequest{
+		Zone: req.Zone,
+	}, scw.WithAllPages())
+	if err != nil {
+		return nil, err
+	}
+
+	osFullList, err := api.ListOS(&baremetal.ListOSRequest{
+		Zone: req.Zone,
+	}, scw.WithAllPages())
+	if err != nil {
+		return nil, err
+	}
+
 	var targets []model.LabelSet
 	for _, server := range servers.Servers {
 		labels := model.LabelSet{
@@ -118,6 +135,21 @@ func (d *baremetalDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 			baremetalZoneLabel:      model.LabelValue(server.Zone.String()),
 			baremetalStatusLabel:    model.LabelValue(server.Status),
 			baremetalProjectIDLabel: model.LabelValue(server.ProjectID),
+		}
+
+		for _, offer := range offers.Offers {
+			if server.OfferID == offer.ID {
+				labels[baremetalTypeLabel] = model.LabelValue(offer.Name)
+			}
+		}
+
+		if server.Install != nil {
+			for _, os := range osFullList.Os {
+				if server.Install.OsID == os.ID {
+					labels[baremetalOSNameLabel] = model.LabelValue(os.Name)
+					labels[baremetalOSVersionLabel] = model.LabelValue(os.Version)
+				}
+			}
 		}
 
 		if len(server.Tags) > 0 {
@@ -129,7 +161,7 @@ func (d *baremetalDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 
 		for _, ip := range server.IPs {
 			labels[baremetalIPVersionLabel] = model.LabelValue(ip.Version.String())
-			labels[baremetalIPLabel] = model.LabelValue(ip.Address.String())
+			labels[baremetalIPIsPublicLabel] = "true"
 
 			addr := net.JoinHostPort(ip.Address.String(), strconv.FormatUint(uint64(d.Port), 10))
 			labels[model.AddressLabel] = model.LabelValue(addr)
