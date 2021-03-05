@@ -94,12 +94,13 @@ func newInstanceDiscovery(conf *SDConfig) (*instanceDiscovery, error) {
 
 func (d *instanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	api := instance.NewAPI(d.Client)
-	zone, _ := d.Client.GetDefaultZone()
-	project, _ := d.Client.GetDefaultProjectID()
 
 	req := &instance.ListServersRequest{
-		Zone:    zone,
-		Project: scw.StringPtr(project),
+		Zone: scw.Zone(d.Zone),
+	}
+
+	if d.Project != "" {
+		req.Project = scw.StringPtr(d.Project)
 	}
 
 	if d.Name != "" {

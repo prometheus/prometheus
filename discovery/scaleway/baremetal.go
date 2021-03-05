@@ -97,8 +97,11 @@ func (d *baremetalDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 	api := baremetal.NewAPI(d.Client)
 
 	req := &baremetal.ListServersRequest{
-		Zone:      scw.Zone(d.Zone),
-		ProjectID: scw.StringPtr(d.Project),
+		Zone: scw.Zone(d.Zone),
+	}
+
+	if d.Project != "" {
+		req.ProjectID = scw.StringPtr(d.Project)
 	}
 
 	if d.Name != "" {
