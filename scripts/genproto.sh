@@ -15,8 +15,9 @@ if ! [[ $(protoc --version) =~ "3.12.3" ]]; then
 	exit 255
 fi
 
-echo "installing plugins"
-GO111MODULE=on go mod download
+# Since we run go get, go mod download, the go.sum will change.
+# Make a backup.
+cp go.sum go.sum.bak
 
 INSTALL_PKGS="golang.org/x/tools/cmd/goimports github.com/gogo/protobuf/protoc-gen-gogofast github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger"
 for pkg in ${INSTALL_PKGS}; do
@@ -49,3 +50,5 @@ for dir in ${DIRS}; do
 		goimports -w ./*.go
 	popd
 done
+
+mv go.sum.bak go.sum
