@@ -1578,7 +1578,7 @@ See below for the configuration options for Scaleway discovery:
 role: <string>
 
 # Zone specify the availability zone of the server you target (fr-par-1, fr-par-2, nl-ams-1, pl-waw-1, ...)
-[ zone: <string> ]
+[ zone: <string> | default = fr-par-1 ]
 
 # Name specify a name filter to apply on the ListServers request
 [ name: <string> ]
