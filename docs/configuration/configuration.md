@@ -1586,6 +1586,16 @@ role: <string>
 # Tags specify a tag filter to apply on the ListServers requests
 tags:
 [ - <string> ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <bool> | default = true ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
 ```
 
 See [the Prometheus scaleway-sd configuration file](/documentation/examples/prometheus-scaleway.yml)
