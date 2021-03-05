@@ -1541,7 +1541,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_scaleway_instance_status`: status of the server
 * `__meta_scaleway_instance_tags`: tag list of the server
 * `__meta_scaleway_instance_type`: commercial type of the server
-* `__meta_scaleway_instance_zone`: zone of the instance (`fr-par-1`, `fr-par-2`, `nl-ams-1`, `pl-waw-1`)
+* `__meta_scaleway_instance_zone`: zone of the instance (ex: `fr-par-1`, complete list on <https://developers.scaleway.com/en/>)
 
 #### Baremetal role
 
@@ -1554,7 +1554,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_scaleway_baremetal_status`: status of the server
 * `__meta_scaleway_baremetal_tags`: tag list of the server
 * `__meta_scaleway_baremetal_type`: commercial type of the server
-* `__meta_scaleway_baremetal_zone`: zone of the server (`fr-par-1`, `fr-par-2`, `nl-ams-1`, `pl-waw-1`)
+* `__meta_scaleway_baremetal_zone`: zone of the server (ex: `fr-par-1`, complete list on <https://developers.scaleway.com/en/>)
 
 See below for the configuration options for Scaleway discovery:
 
