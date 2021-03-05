@@ -65,6 +65,8 @@ func (c *role) UnmarshalYAML(unmarshal func(interface{}) error) error {
 var DefaultSDConfig = SDConfig{
 	Port:            80,
 	RefreshInterval: model.Duration(60 * time.Second),
+	Zone:            scw.ZoneFrPar1.String(),
+	APIURL:          "http://api.scaleway.com",
 }
 
 type SDConfig struct {
@@ -160,14 +162,11 @@ func newRefresher(conf *SDConfig) (refresher, error) {
 }
 
 func LoadProfile(sdConfig *SDConfig) (*scw.Profile, error) {
-	// By default we set default zone and region to fr-par
-	defaultZoneProfile := &scw.Profile{
-		DefaultRegion: scw.StringPtr(scw.RegionFrPar.String()),
-		DefaultZone:   scw.StringPtr(scw.ZoneFrPar1.String()),
-	}
-
 	// Profile coming from Prometheus Configuration file
-	prometheusConfigProfile := &scw.Profile{}
+	prometheusConfigProfile := &scw.Profile{
+		DefaultZone: scw.StringPtr(sdConfig.Zone),
+		APIURL:      scw.StringPtr(sdConfig.APIURL),
+	}
 
 	if sdConfig.AccessKey != "" {
 		prometheusConfigProfile.AccessKey = scw.StringPtr(sdConfig.AccessKey)
@@ -178,14 +177,6 @@ func LoadProfile(sdConfig *SDConfig) (*scw.Profile, error) {
 	if sdConfig.Project != "" {
 		prometheusConfigProfile.DefaultProjectID = scw.StringPtr(sdConfig.Project)
 	}
-	if sdConfig.Zone != "" {
-		prometheusConfigProfile.DefaultZone = scw.StringPtr(sdConfig.Zone)
-	}
-	if sdConfig.APIURL != "" {
-		prometheusConfigProfile.APIURL = scw.StringPtr(sdConfig.APIURL)
-	}
 
-	profile := scw.MergeProfiles(defaultZoneProfile, prometheusConfigProfile)
-
-	return profile, nil
+	return prometheusConfigProfile, nil
 }
