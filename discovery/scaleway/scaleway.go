@@ -63,11 +63,11 @@ func (c *role) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 // DefaultSDConfig is the default Scaleway Service Discovery configuration.
 var DefaultSDConfig = SDConfig{
-	Port:            80,
-	RefreshInterval: model.Duration(60 * time.Second),
-	HTTPClientConfig: config.DefaultHTTPClientConfig, 
-	Zone:            scw.ZoneFrPar1.String(),
-	APIURL:          "https://api.scaleway.com",
+	Port:             80,
+	RefreshInterval:  model.Duration(60 * time.Second),
+	HTTPClientConfig: config.DefaultHTTPClientConfig,
+	Zone:             scw.ZoneFrPar1.String(),
+	APIURL:           "https://api.scaleway.com",
 }
 
 type SDConfig struct {
@@ -75,7 +75,7 @@ type SDConfig struct {
 	Project string `yaml:"project"`
 
 	// APIURL: URL of the Scaleway API to use.
-	APIURL string `yaml:"api_url"`
+	APIURL string `yaml:"api_url,omitempty"`
 	// Zone: The zone of the scrape targets.
 	// If you need to configure multiple zones use multiple scaleway_sd_configs
 	Zone string `yaml:"zone"`
@@ -84,9 +84,9 @@ type SDConfig struct {
 	// SecretKey used to authenticate on Scaleway APIs.
 	SecretKey config.Secret `yaml:"secret_key"`
 	// FilterName to filter on during the ListServers.
-	FilterName string `yaml:"name"`
+	FilterName string `yaml:"name,omitempty"`
 	// FilterTags to filter on during the ListServers.
-	FilterTags []string `yaml:"tags"`
+	FilterTags []string `yaml:"tags,omitempty"`
 
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 
