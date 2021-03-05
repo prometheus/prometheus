@@ -1585,7 +1585,7 @@ role: <string>
 
 # Tags specify a tag filter to apply on the ListServers requests
 tags:
-[ - <string> ... ]
+[ - <string> ]
 ```
 
 See [the Prometheus scaleway-sd configuration file](/documentation/examples/prometheus-scaleway.yml)
