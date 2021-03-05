@@ -65,6 +65,7 @@ func (c *role) UnmarshalYAML(unmarshal func(interface{}) error) error {
 var DefaultSDConfig = SDConfig{
 	Port:            80,
 	RefreshInterval: model.Duration(60 * time.Second),
+	HTTPClientConfig: config.DefaultHTTPClientConfig, 
 	Zone:            scw.ZoneFrPar1.String(),
 	APIURL:          "https://api.scaleway.com",
 }
