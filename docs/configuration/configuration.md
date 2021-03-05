@@ -1575,7 +1575,7 @@ See below for the configuration options for Scaleway discovery:
 [ project_id: <string> ]
 
 # Role can be either instance or baremetal
-[ role: <string> ]
+role: <string>
 
 # Zone specify the availability zone of the server you target (fr-par-1, fr-par-2, nl-ams-1, pl-waw-1, ...)
 [ zone: <string> ]
