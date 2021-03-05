@@ -108,6 +108,10 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 
+	if c.SecretKey == "" {
+		return errors.New("secret key cannot be empty")
+	}
+
 	if c.Role == "" {
 		return errors.New("role missing (one of: instance, baremetal)")
 	}
