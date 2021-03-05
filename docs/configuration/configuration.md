@@ -1539,7 +1539,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_scaleway_instance_image_name`: name of the server image
 * `__meta_scaleway_instance_name`: name of the server
 * `__meta_scaleway_instance_status`: status of the server
-* `__meta_scaleway_instance_tags`: tag list of the server
+* `__meta_scaleway_instance_tags`: the list of tags of the target joined by the tag separator
 * `__meta_scaleway_instance_type`: commercial type of the server
 * `__meta_scaleway_instance_zone`: zone of the instance (ex: `fr-par-1`, complete list on <https://developers.scaleway.com/en/>)
 
