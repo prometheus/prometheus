@@ -1571,7 +1571,7 @@ See below for the configuration options for Scaleway discovery:
 # Secret key to use when listing targets. https://console.scaleway.com/project/credentials
 [ secret_key: <secret> ]
 
-# Project id to use when listing servers. https://console.scaleway.com/project/credentials
+# Project ID of the targets.
 [ project_id: <string> ]
 
 # Role of the targets to retrieve. Must be `instance` or `baremetal`.
