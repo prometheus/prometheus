@@ -143,6 +143,7 @@ func (d *baremetalDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 		for _, offer := range offers.Offers {
 			if server.OfferID == offer.ID {
 				labels[baremetalTypeLabel] = model.LabelValue(offer.Name)
+				break
 			}
 		}
 
@@ -151,6 +152,7 @@ func (d *baremetalDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 				if server.Install.OsID == os.ID {
 					labels[baremetalOSNameLabel] = model.LabelValue(os.Name)
 					labels[baremetalOSVersionLabel] = model.LabelValue(os.Version)
+					break
 				}
 			}
 		}
