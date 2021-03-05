@@ -1568,7 +1568,7 @@ See below for the configuration options for Scaleway discovery:
 # API URL to use when doing the List requests
 [ api_url: <string> | default = "https://api.scaleway.com" ]
 
-# Secret key to use when listing servers. https://console.scaleway.com/project/credentials
+# Secret key to use when listing targets. https://console.scaleway.com/project/credentials
 [ secret_key: <secret> ]
 
 # Project id to use when listing servers. https://console.scaleway.com/project/credentials
