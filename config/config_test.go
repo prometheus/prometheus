@@ -24,6 +24,7 @@ import (
 
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/discovery/scaleway"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
 
@@ -742,6 +743,36 @@ var expectedConf = &Config{
 				},
 			},
 		},
+		{
+			JobName: "scaleway",
+
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath: DefaultScrapeConfig.MetricsPath,
+			Scheme:      DefaultScrapeConfig.Scheme,
+
+			ServiceDiscoveryConfigs: discovery.Configs{
+				&scaleway.SDConfig{
+					APIURL:          "https://api.scaleway.com",
+					Zone:            "fr-par-1",
+					Port:            80,
+					SecretKey:       "11111111-1111-1111-1111-111111111111",
+					RefreshInterval: model.Duration(60 * time.Second),
+					Role:            "instance",
+				},
+				&scaleway.SDConfig{
+					APIURL:           "https://api.scaleway.com",
+					Zone:             "fr-par-1",
+					HTTPClientConfig: config.HTTPClientConfig{},
+					RefreshInterval:  model.Duration(60 * time.Second),
+					SecretKey:        "11111111-1111-1111-1111-111111111111",
+					Port:             80,
+					Role:             "baremetal",
+				},
+			},
+		},
 	},
 	AlertingConfig: AlertingConfig{
 		AlertmanagerConfigs: []*AlertmanagerConfig{
@@ -826,7 +857,7 @@ func TestElideSecrets(t *testing.T) {
 	yamlConfig := string(config)
 
 	matches := secretRe.FindAllStringIndex(yamlConfig, -1)
-	require.Equal(t, 10, len(matches), "wrong number of secret matches found")
+	require.Equal(t, 12, len(matches), "wrong number of secret matches found")
 	require.NotContains(t, yamlConfig, "mysecret",
 		"yaml marshal reveals authentication credentials.")
 }

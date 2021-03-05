@@ -66,7 +66,7 @@ var DefaultSDConfig = SDConfig{
 	Port:            80,
 	RefreshInterval: model.Duration(60 * time.Second),
 	Zone:            scw.ZoneFrPar1.String(),
-	APIURL:          "http://api.scaleway.com",
+	APIURL:          "https://api.scaleway.com",
 }
 
 type SDConfig struct {
