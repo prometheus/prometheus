@@ -172,11 +172,10 @@ func LoadProfile(sdConfig *SDConfig) (*scw.Profile, error) {
 		APIURL:      scw.StringPtr(sdConfig.APIURL),
 	}
 
+	prometheusConfigProfile.SecretKey = scw.StringPtr(string(sdConfig.SecretKey))
+
 	if sdConfig.AccessKey != "" {
 		prometheusConfigProfile.AccessKey = scw.StringPtr(sdConfig.AccessKey)
-	}
-	if sdConfig.SecretKey != "" {
-		prometheusConfigProfile.SecretKey = scw.StringPtr(string(sdConfig.SecretKey))
 	}
 	if sdConfig.Project != "" {
 		prometheusConfigProfile.DefaultProjectID = scw.StringPtr(sdConfig.Project)
