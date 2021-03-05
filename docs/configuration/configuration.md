@@ -1574,7 +1574,7 @@ See below for the configuration options for Scaleway discovery:
 # Project id to use when listing servers. https://console.scaleway.com/project/credentials
 [ project_id: <string> ]
 
-# Role can be either instance or baremetal
+# Role of the targets to retrieve. Must be `instance` or `baremetal`.
 role: <string>
 
 # Zone specify the availability zone of the server you target (fr-par-1, fr-par-2, nl-ams-1, pl-waw-1, ...)
