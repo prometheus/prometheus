@@ -80,6 +80,10 @@ func LoadFile(filename string) (*Config, error) {
 		return nil, errors.Wrapf(err, "parsing YAML file %s", filename)
 	}
 	cfg.SetDirectory(filepath.Dir(filename))
+	err = cfg.LoadScrapeConfigFiles()
+	if err != nil {
+		return nil, err
+	}
 	return cfg, nil
 }
 
@@ -158,13 +162,75 @@ var (
 
 // Config is the top-level configuration for Prometheus's config files.
 type Config struct {
-	GlobalConfig   GlobalConfig    `yaml:"global"`
-	AlertingConfig AlertingConfig  `yaml:"alerting,omitempty"`
-	RuleFiles      []string        `yaml:"rule_files,omitempty"`
-	ScrapeConfigs  []*ScrapeConfig `yaml:"scrape_configs,omitempty"`
+	GlobalConfig      GlobalConfig    `yaml:"global"`
+	AlertingConfig    AlertingConfig  `yaml:"alerting,omitempty"`
+	RuleFiles         []string        `yaml:"rule_files,omitempty"`
+	ScrapeConfigs     []*ScrapeConfig `yaml:"scrape_configs,omitempty"`
+	ScrapeConfigFiles []string        `yaml:"scrape_config_files,omitempty"`
 
 	RemoteWriteConfigs []*RemoteWriteConfig `yaml:"remote_write,omitempty"`
 	RemoteReadConfigs  []*RemoteReadConfig  `yaml:"remote_read,omitempty"`
+}
+
+// ScrapeConfigFile is the configuration for scrape config files
+type ScrapeConfigFile struct {
+	ScrapeConfigs []*ScrapeConfig `yaml:"scrape_configs"`
+}
+
+// LoadScrapeConfigFiles parses the given YAML files from scrape_config_files
+// and adds ScrapeConfigs from all of them.
+func (c *Config) LoadScrapeConfigFiles() error {
+	var scrapeConfigFiles []string
+	for _, pat := range c.ScrapeConfigFiles {
+		fs, err := filepath.Glob(pat)
+		if err != nil {
+			// The only error can be a bad pattern.
+			return errors.Wrapf(err, "error retrieving scrape config files for %s", pat)
+		}
+		// There is no scrape config file that matches pattern
+		if len(fs) == 0 {
+			return errors.Errorf("no scrape config files found for %s", pat)
+		}
+		scrapeConfigFiles = append(scrapeConfigFiles, fs...)
+	}
+
+	// Job names from main config file
+	jobNames := map[string]struct{}{}
+	for _, scfg := range c.ScrapeConfigs {
+		jobNames[scfg.JobName] = struct{}{}
+	}
+
+	for _, scrapeConfigFile := range scrapeConfigFiles {
+		scfgFile, err := LoadScrapeConfigFile(scrapeConfigFile)
+		if err != nil {
+			return err
+		}
+		for _, scfg := range scfgFile.ScrapeConfigs {
+			c.checkScrapeConfig(scfg)
+			if _, ok := jobNames[scfg.JobName]; ok {
+				return errors.Errorf("found multiple scrape configs with job name %q", scfg.JobName)
+			}
+			jobNames[scfg.JobName] = struct{}{}
+			c.ScrapeConfigs = append(c.ScrapeConfigs, scfg)
+		}
+	}
+	return nil
+}
+
+// LoadScrapeConfigFile parses the given YAML file into a ScrapeConfigFile.
+func LoadScrapeConfigFile(filename string) (*ScrapeConfigFile, error) {
+	// Read file contents
+	content, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return nil, err
+	}
+	// Parse content into ScrapeConfigFile
+	cfg := &ScrapeConfigFile{}
+	err = yaml.UnmarshalStrict([]byte(content), cfg)
+	if err != nil {
+		return nil, err
+	}
+	return cfg, nil
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -173,6 +239,9 @@ func (c *Config) SetDirectory(dir string) {
 	c.AlertingConfig.SetDirectory(dir)
 	for i, file := range c.RuleFiles {
 		c.RuleFiles[i] = config.JoinDir(dir, file)
+	}
+	for i, file := range c.ScrapeConfigFiles {
+		c.ScrapeConfigFiles[i] = config.JoinDir(dir, file)
 	}
 	for _, c := range c.ScrapeConfigs {
 		c.SetDirectory(dir)
@@ -191,6 +260,28 @@ func (c Config) String() string {
 		return fmt.Sprintf("<error creating config string: %s>", err)
 	}
 	return string(b)
+}
+
+func (c *Config) checkScrapeConfig(scfg *ScrapeConfig) error {
+	if scfg == nil {
+		return errors.New("empty or null scrape config section")
+	}
+	// First set the correct scrape interval, then check that the timeout
+	// (inferred or explicit) is not greater than that.
+	if scfg.ScrapeInterval == 0 {
+		scfg.ScrapeInterval = c.GlobalConfig.ScrapeInterval
+	}
+	if scfg.ScrapeTimeout > scfg.ScrapeInterval {
+		return errors.Errorf("scrape timeout greater than scrape interval for scrape config with job name %q", scfg.JobName)
+	}
+	if scfg.ScrapeTimeout == 0 {
+		if c.GlobalConfig.ScrapeTimeout > scfg.ScrapeInterval {
+			scfg.ScrapeTimeout = scfg.ScrapeInterval
+		} else {
+			scfg.ScrapeTimeout = c.GlobalConfig.ScrapeTimeout
+		}
+	}
+	return nil
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -218,25 +309,10 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	// Do global overrides and validate unique names.
 	jobNames := map[string]struct{}{}
 	for _, scfg := range c.ScrapeConfigs {
-		if scfg == nil {
-			return errors.New("empty or null scrape config section")
+		err := c.checkScrapeConfig(scfg)
+		if err != nil {
+			return err
 		}
-		// First set the correct scrape interval, then check that the timeout
-		// (inferred or explicit) is not greater than that.
-		if scfg.ScrapeInterval == 0 {
-			scfg.ScrapeInterval = c.GlobalConfig.ScrapeInterval
-		}
-		if scfg.ScrapeTimeout > scfg.ScrapeInterval {
-			return errors.Errorf("scrape timeout greater than scrape interval for scrape config with job name %q", scfg.JobName)
-		}
-		if scfg.ScrapeTimeout == 0 {
-			if c.GlobalConfig.ScrapeTimeout > scfg.ScrapeInterval {
-				scfg.ScrapeTimeout = scfg.ScrapeInterval
-			} else {
-				scfg.ScrapeTimeout = c.GlobalConfig.ScrapeTimeout
-			}
-		}
-
 		if _, ok := jobNames[scfg.JobName]; ok {
 			return errors.Errorf("found multiple scrape configs with job name %q", scfg.JobName)
 		}

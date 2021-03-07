@@ -1,0 +1,9 @@
+scrape_configs:
+  - job_name: 'blackbox'
+
+    scrape_interval: 5s
+
+    static_configs:
+      - targets: ['localhost:9090']
+scrape_config_files:
+  - config_files_glob/*.yml
