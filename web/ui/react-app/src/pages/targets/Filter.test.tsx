@@ -9,16 +9,19 @@ describe('Filter', () => {
     scrapePool1: true,
     scrapePool2: true,
   };
+  let setExpaned: SinonSpy;
   const initialState: FilterData = {
     showHealthy: true,
     showUnhealthy: true,
-    expanded: initialExpanded,
   };
   let setFilter: SinonSpy;
   let filterWrapper: ShallowWrapper<FilterProps, Readonly<{}>, Component<{}, {}, Component>>;
   beforeEach(() => {
     setFilter = sinon.spy();
-    filterWrapper = shallow(<Filter filter={initialState} setFilter={setFilter} />);
+    setExpaned = sinon.spy();
+    filterWrapper = shallow(
+      <Filter filter={initialState} setFilter={setFilter} expanded={initialExpanded} setExpanded={setExpaned} />
+    );
   });
 
   it('renders a button group', () => {
@@ -47,14 +50,17 @@ describe('Filter', () => {
     const btn = filterWrapper.find(Button).filterWhere((btn): boolean => btn.hasClass('all'));
     btn.simulate('click');
     expect(setFilter.calledOnce).toBe(true);
-    expect(setFilter.getCall(0).args[0]).toEqual({ showHealthy: true, showUnhealthy: true, expanded: initialExpanded });
+    expect(setFilter.getCall(0).args[0]).toEqual({ showHealthy: true, showUnhealthy: true });
   });
 
   it('renders an unhealthy filter button which filters targets', () => {
     const btn = filterWrapper.find(Button).filterWhere((btn): boolean => btn.hasClass('unhealthy'));
     btn.simulate('click');
     expect(setFilter.calledOnce).toBe(true);
-    expect(setFilter.getCall(0).args[0]).toEqual({ showHealthy: false, showUnhealthy: true, expanded: initialExpanded });
+    expect(setFilter.getCall(0).args[0]).toEqual({
+      showHealthy: false,
+      showUnhealthy: true,
+    });
   });
 
   describe('Expansion filter', () => {
@@ -79,17 +85,17 @@ describe('Filter', () => {
       },
     ].forEach(({ name, text, initial, final }) => {
       it(`filters targets ${name}`, (): void => {
-        const filter = { ...initialState, expanded: initial };
-        const callback = sinon.spy();
-        const filterW = shallow(<Filter filter={filter} setFilter={callback} />);
+        const filter = { ...initialState };
+        const filterCallback = sinon.spy();
+        const expandedCallback = sinon.spy();
+        const filterW = shallow(
+          <Filter filter={filter} setFilter={filterCallback} expanded={initial} setExpanded={expandedCallback} />
+        );
         const btn = filterW.find(Button).filterWhere((btn): boolean => btn.hasClass('expansion'));
         expect(btn.children().text()).toEqual(text);
         btn.simulate('click');
-        expect(callback.calledOnce).toBe(true);
-        expect(callback.getCall(0).args[0]).toEqual({
-          ...initialState,
-          expanded: final,
-        });
+        expect(expandedCallback.calledOnce).toBe(true);
+        expect(expandedCallback.getCall(0).args[0]).toEqual(final);
       });
     });
   });

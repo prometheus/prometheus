@@ -10,10 +10,6 @@ import { FetchMock } from 'jest-fetch-mock/types';
 import { PathPrefixContext } from '../../contexts/PathPrefixContext';
 
 describe('ScrapePoolList', () => {
-  const defaultProps = {
-    filter: { showHealthy: true, showUnhealthy: true },
-  };
-
   beforeEach(() => {
     fetchMock.resetMocks();
   });

@@ -1,5 +1,5 @@
 import React, { FC } from 'react';
-import Filter, { FilterData } from './Filter';
+import Filter, { Expanded, FilterData } from './Filter';
 import { useFetch } from '../../hooks/useFetch';
 import { groupTargets, Target } from './target';
 import ScrapePoolPanel from './ScrapePoolPanel';
@@ -14,22 +14,26 @@ interface ScrapePoolListProps {
 
 export const ScrapePoolContent: FC<ScrapePoolListProps> = ({ activeTargets }) => {
   const targetGroups = groupTargets(activeTargets);
-  const initialState: FilterData = {
+  const initialFilter: FilterData = {
     showHealthy: true,
     showUnhealthy: true,
-    expanded: Object.keys(targetGroups).reduce(
-      (acc: { [scrapePool: string]: boolean }, scrapePool: string) => ({
-        ...acc,
-        [scrapePool]: true,
-      }),
-      {}
-    ),
   };
-  const [filter, setFilter] = useLocalStorage('targets-page-filter-v2', initialState);
-  const { showHealthy, showUnhealthy, expanded } = filter;
+  const [filter, setFilter] = useLocalStorage('targets-page-filter', initialFilter);
+
+  const initialExpanded: Expanded = Object.keys(targetGroups).reduce(
+    (acc: { [scrapePool: string]: boolean }, scrapePool: string) => ({
+      ...acc,
+      [scrapePool]: true,
+      [scrapePool]: true,
+    }),
+    {}
+  );
+  const [expanded, setExpanded] = useLocalStorage('targets-page-expansion-state', initialExpanded);
+
+  const { showHealthy, showUnhealthy } = filter;
   return (
     <>
-      <Filter filter={filter} setFilter={setFilter} />
+      <Filter filter={filter} setFilter={setFilter} expanded={expanded} setExpanded={setExpanded} />
       {Object.keys(targetGroups)
         .filter(scrapePool => {
           const targetGroup = targetGroups[scrapePool];
@@ -42,9 +46,7 @@ export const ScrapePoolContent: FC<ScrapePoolListProps> = ({ activeTargets }) =>
             scrapePool={scrapePool}
             targetGroup={targetGroups[scrapePool]}
             expanded={expanded[scrapePool]}
-            toggleExpanded={(): void =>
-              setFilter({ ...filter, expanded: { ...expanded, [scrapePool]: !expanded[scrapePool] } })
-            }
+            toggleExpanded={(): void => setExpanded({ ...expanded, [scrapePool]: !expanded[scrapePool] })}
           />
         ))}
     </>
