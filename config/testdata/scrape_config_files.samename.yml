@@ -1,5 +1,5 @@
 scrape_configs:
-  - job_name: 'blackbox'
+  - job_name: 'scrape_config_files_test'
 
     scrape_interval: 5s
 
