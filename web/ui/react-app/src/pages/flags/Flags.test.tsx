@@ -70,8 +70,10 @@ describe('Flags', () => {
     const td = w
       .find('tbody')
       .find('td')
+      .find('code')
+      .find('span')
       .first();
-    expect(td.text()).toBe('--alertmanager.notification-queue-capacity');
+    expect(td.html()).toBe('<span>--alertmanager.notification-queue-capacity</span>');
   });
 
   it('sorts', (): void => {
@@ -84,8 +86,10 @@ describe('Flags', () => {
     const td = w
       .find('tbody')
       .find('td')
+      .find('code')
+      .find('span')
       .first();
-    expect(td.text()).toBe('--web.user-assets');
+    expect(td.html()).toBe('<span>--web.user-assets</span>');
   });
 
   it('filters by flag name', (): void => {

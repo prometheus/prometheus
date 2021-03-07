@@ -133,9 +133,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            <span>
-              --alertmanager.notification-queue-capacity
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "--alertmanager.notification-queue-capacity",
+                }
+              }
+            />
           </code>
         </td>
         <td
@@ -144,9 +148,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark value-item"
           >
-            <span>
-              10000
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "10000",
+                }
+              }
+            />
           </code>
         </td>
       </tr>
@@ -159,9 +167,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            <span>
-              --alertmanager.timeout
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "--alertmanager.timeout",
+                }
+              }
+            />
           </code>
         </td>
         <td
@@ -170,9 +182,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark value-item"
           >
-            <span>
-              10s
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "10s",
+                }
+              }
+            />
           </code>
         </td>
       </tr>
@@ -185,9 +201,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            <span>
-              --config.file
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "--config.file",
+                }
+              }
+            />
           </code>
         </td>
         <td
@@ -196,9 +216,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark value-item"
           >
-            <span>
-              ./documentation/examples/prometheus.yml
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "./documentation/examples/prometheus.yml",
+                }
+              }
+            />
           </code>
         </td>
       </tr>
@@ -211,9 +235,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            <span>
-              --log.format
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "--log.format",
+                }
+              }
+            />
           </code>
         </td>
         <td
@@ -222,9 +250,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark value-item"
           >
-            <span>
-              logfmt
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "logfmt",
+                }
+              }
+            />
           </code>
         </td>
       </tr>
@@ -237,9 +269,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            <span>
-              --log.level
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "--log.level",
+                }
+              }
+            />
           </code>
         </td>
         <td
@@ -248,9 +284,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark value-item"
           >
-            <span>
-              info
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "info",
+                }
+              }
+            />
           </code>
         </td>
       </tr>
@@ -263,9 +303,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            <span>
-              --query.lookback-delta
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "--query.lookback-delta",
+                }
+              }
+            />
           </code>
         </td>
         <td
@@ -274,9 +318,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark value-item"
           >
-            <span>
-              5m
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "5m",
+                }
+              }
+            />
           </code>
         </td>
       </tr>
@@ -289,9 +337,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            <span>
-              --query.max-concurrency
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "--query.max-concurrency",
+                }
+              }
+            />
           </code>
         </td>
         <td
@@ -300,9 +352,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark value-item"
           >
-            <span>
-              20
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "20",
+                }
+              }
+            />
           </code>
         </td>
       </tr>
@@ -315,9 +371,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            <span>
-              --query.max-samples
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "--query.max-samples",
+                }
+              }
+            />
           </code>
         </td>
         <td
@@ -326,9 +386,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark value-item"
           >
-            <span>
-              50000000
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "50000000",
+                }
+              }
+            />
           </code>
         </td>
       </tr>
@@ -341,9 +405,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            <span>
-              --query.timeout
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "--query.timeout",
+                }
+              }
+            />
           </code>
         </td>
         <td
@@ -352,9 +420,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark value-item"
           >
-            <span>
-              2m
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "2m",
+                }
+              }
+            />
           </code>
         </td>
       </tr>
@@ -367,9 +439,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            <span>
-              --rules.alert.for-grace-period
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "--rules.alert.for-grace-period",
+                }
+              }
+            />
           </code>
         </td>
         <td
@@ -378,9 +454,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark value-item"
           >
-            <span>
-              10m
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "10m",
+                }
+              }
+            />
           </code>
         </td>
       </tr>
@@ -393,9 +473,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            <span>
-              --rules.alert.for-outage-tolerance
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "--rules.alert.for-outage-tolerance",
+                }
+              }
+            />
           </code>
         </td>
         <td
@@ -404,9 +488,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark value-item"
           >
-            <span>
-              1h
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "1h",
+                }
+              }
+            />
           </code>
         </td>
       </tr>
@@ -419,9 +507,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            <span>
-              --rules.alert.resend-delay
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "--rules.alert.resend-delay",
+                }
+              }
+            />
           </code>
         </td>
         <td
@@ -430,9 +522,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark value-item"
           >
-            <span>
-              1m
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "1m",
+                }
+              }
+            />
           </code>
         </td>
       </tr>
@@ -445,9 +541,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            <span>
-              --storage.remote.flush-deadline
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "--storage.remote.flush-deadline",
+                }
+              }
+            />
           </code>
         </td>
         <td
@@ -456,9 +556,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark value-item"
           >
-            <span>
-              1m
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "1m",
+                }
+              }
+            />
           </code>
         </td>
       </tr>
@@ -471,9 +575,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            <span>
-              --storage.remote.read-concurrent-limit
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "--storage.remote.read-concurrent-limit",
+                }
+              }
+            />
           </code>
         </td>
         <td
@@ -482,9 +590,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark value-item"
           >
-            <span>
-              10
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "10",
+                }
+              }
+            />
           </code>
         </td>
       </tr>
@@ -497,9 +609,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            <span>
-              --storage.remote.read-max-bytes-in-frame
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "--storage.remote.read-max-bytes-in-frame",
+                }
+              }
+            />
           </code>
         </td>
         <td
@@ -508,9 +624,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark value-item"
           >
-            <span>
-              1048576
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "1048576",
+                }
+              }
+            />
           </code>
         </td>
       </tr>
@@ -523,9 +643,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            <span>
-              --storage.remote.read-sample-limit
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "--storage.remote.read-sample-limit",
+                }
+              }
+            />
           </code>
         </td>
         <td
@@ -534,9 +658,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark value-item"
           >
-            <span>
-              50000000
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "50000000",
+                }
+              }
+            />
           </code>
         </td>
       </tr>
@@ -549,9 +677,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            <span>
-              --storage.tsdb.allow-overlapping-blocks
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "--storage.tsdb.allow-overlapping-blocks",
+                }
+              }
+            />
           </code>
         </td>
         <td
@@ -560,9 +692,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark value-item"
           >
-            <span>
-              false
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "false",
+                }
+              }
+            />
           </code>
         </td>
       </tr>
@@ -575,9 +711,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            <span>
-              --storage.tsdb.max-block-duration
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "--storage.tsdb.max-block-duration",
+                }
+              }
+            />
           </code>
         </td>
         <td
@@ -586,9 +726,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark value-item"
           >
-            <span>
-              36h
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "36h",
+                }
+              }
+            />
           </code>
         </td>
       </tr>
@@ -601,9 +745,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            <span>
-              --storage.tsdb.min-block-duration
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "--storage.tsdb.min-block-duration",
+                }
+              }
+            />
           </code>
         </td>
         <td
@@ -612,9 +760,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark value-item"
           >
-            <span>
-              2h
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "2h",
+                }
+              }
+            />
           </code>
         </td>
       </tr>
@@ -627,9 +779,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            <span>
-              --storage.tsdb.no-lockfile
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "--storage.tsdb.no-lockfile",
+                }
+              }
+            />
           </code>
         </td>
         <td
@@ -638,9 +794,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark value-item"
           >
-            <span>
-              false
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "false",
+                }
+              }
+            />
           </code>
         </td>
       </tr>
@@ -653,9 +813,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            <span>
-              --storage.tsdb.path
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "--storage.tsdb.path",
+                }
+              }
+            />
           </code>
         </td>
         <td
@@ -664,9 +828,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark value-item"
           >
-            <span>
-              data/
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "data/",
+                }
+              }
+            />
           </code>
         </td>
       </tr>
@@ -679,9 +847,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            <span>
-              --storage.tsdb.retention
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "--storage.tsdb.retention",
+                }
+              }
+            />
           </code>
         </td>
         <td
@@ -690,9 +862,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark value-item"
           >
-            <span>
-              0s
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "0s",
+                }
+              }
+            />
           </code>
         </td>
       </tr>
@@ -705,9 +881,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            <span>
-              --storage.tsdb.retention.size
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "--storage.tsdb.retention.size",
+                }
+              }
+            />
           </code>
         </td>
         <td
@@ -716,9 +896,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark value-item"
           >
-            <span>
-              0B
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "0B",
+                }
+              }
+            />
           </code>
         </td>
       </tr>
@@ -731,9 +915,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            <span>
-              --storage.tsdb.retention.time
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "--storage.tsdb.retention.time",
+                }
+              }
+            />
           </code>
         </td>
         <td
@@ -742,9 +930,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark value-item"
           >
-            <span>
-              0s
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "0s",
+                }
+              }
+            />
           </code>
         </td>
       </tr>
@@ -757,9 +949,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            <span>
-              --storage.tsdb.wal-compression
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "--storage.tsdb.wal-compression",
+                }
+              }
+            />
           </code>
         </td>
         <td
@@ -768,9 +964,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark value-item"
           >
-            <span>
-              false
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "false",
+                }
+              }
+            />
           </code>
         </td>
       </tr>
@@ -783,9 +983,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            <span>
-              --storage.tsdb.wal-segment-size
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "--storage.tsdb.wal-segment-size",
+                }
+              }
+            />
           </code>
         </td>
         <td
@@ -794,9 +998,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark value-item"
           >
-            <span>
-              0B
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "0B",
+                }
+              }
+            />
           </code>
         </td>
       </tr>
@@ -809,9 +1017,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            <span>
-              --web.console.libraries
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "--web.console.libraries",
+                }
+              }
+            />
           </code>
         </td>
         <td
@@ -820,9 +1032,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark value-item"
           >
-            <span>
-              console_libraries
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "console_libraries",
+                }
+              }
+            />
           </code>
         </td>
       </tr>
@@ -835,9 +1051,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            <span>
-              --web.console.templates
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "--web.console.templates",
+                }
+              }
+            />
           </code>
         </td>
         <td
@@ -846,9 +1066,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark value-item"
           >
-            <span>
-              consoles
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "consoles",
+                }
+              }
+            />
           </code>
         </td>
       </tr>
@@ -861,9 +1085,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            <span>
-              --web.cors.origin
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "--web.cors.origin",
+                }
+              }
+            />
           </code>
         </td>
         <td
@@ -872,9 +1100,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark value-item"
           >
-            <span>
-              .*
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": ".*",
+                }
+              }
+            />
           </code>
         </td>
       </tr>
@@ -887,9 +1119,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            <span>
-              --web.enable-admin-api
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "--web.enable-admin-api",
+                }
+              }
+            />
           </code>
         </td>
         <td
@@ -898,9 +1134,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark value-item"
           >
-            <span>
-              false
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "false",
+                }
+              }
+            />
           </code>
         </td>
       </tr>
@@ -913,9 +1153,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            <span>
-              --web.enable-lifecycle
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "--web.enable-lifecycle",
+                }
+              }
+            />
           </code>
         </td>
         <td
@@ -924,9 +1168,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark value-item"
           >
-            <span>
-              false
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "false",
+                }
+              }
+            />
           </code>
         </td>
       </tr>
@@ -939,9 +1187,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            <span>
-              --web.external-url
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "--web.external-url",
+                }
+              }
+            />
           </code>
         </td>
         <td
@@ -950,7 +1202,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark value-item"
           >
-            <span />
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "",
+                }
+              }
+            />
           </code>
         </td>
       </tr>
@@ -963,9 +1221,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            <span>
-              --web.listen-address
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "--web.listen-address",
+                }
+              }
+            />
           </code>
         </td>
         <td
@@ -974,9 +1236,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark value-item"
           >
-            <span>
-              0.0.0.0:9090
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "0.0.0.0:9090",
+                }
+              }
+            />
           </code>
         </td>
       </tr>
@@ -989,9 +1255,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            <span>
-              --web.max-connections
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "--web.max-connections",
+                }
+              }
+            />
           </code>
         </td>
         <td
@@ -1000,9 +1270,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark value-item"
           >
-            <span>
-              512
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "512",
+                }
+              }
+            />
           </code>
         </td>
       </tr>
@@ -1015,9 +1289,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            <span>
-              --web.page-title
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "--web.page-title",
+                }
+              }
+            />
           </code>
         </td>
         <td
@@ -1026,9 +1304,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark value-item"
           >
-            <span>
-              Prometheus Time Series Collection and Processing Server
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "Prometheus Time Series Collection and Processing Server",
+                }
+              }
+            />
           </code>
         </td>
       </tr>
@@ -1041,9 +1323,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            <span>
-              --web.read-timeout
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "--web.read-timeout",
+                }
+              }
+            />
           </code>
         </td>
         <td
@@ -1052,9 +1338,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark value-item"
           >
-            <span>
-              5m
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "5m",
+                }
+              }
+            />
           </code>
         </td>
       </tr>
@@ -1067,9 +1357,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            <span>
-              --web.route-prefix
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "--web.route-prefix",
+                }
+              }
+            />
           </code>
         </td>
         <td
@@ -1078,9 +1372,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark value-item"
           >
-            <span>
-              /
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "/",
+                }
+              }
+            />
           </code>
         </td>
       </tr>
@@ -1093,9 +1391,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark flag-item"
           >
-            <span>
-              --web.user-assets
-            </span>
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "--web.user-assets",
+                }
+              }
+            />
           </code>
         </td>
         <td
@@ -1104,7 +1406,13 @@ exports[`Flags should match snapshot 1`] = `
           <code
             className="text-dark value-item"
           >
-            <span />
+            <span
+              dangerouslySetInnerHTML={
+                Object {
+                  "__html": "",
+                }
+              }
+            />
           </code>
         </td>
       </tr>

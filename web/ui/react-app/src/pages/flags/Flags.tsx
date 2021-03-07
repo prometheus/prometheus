@@ -8,6 +8,8 @@ import { API_PATH } from '../../constants/constants';
 import { faSort, faSortDown, faSortUp } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { IconDefinition } from '@fortawesome/fontawesome-common-types';
+import sanitizeHTML from 'sanitize-html';
+import fuzzy from 'fuzzy';
 
 interface FlagMap {
   [key: string]: string;
@@ -28,10 +30,14 @@ const compareAlphaFn = (keys: boolean, reverse: boolean) => (
 };
 
 const boldSubstring = (s: string, subs: string) => {
-  if (subs === '' || s.indexOf(subs) < 0) {
-    return <span>{s}</span>;
+  const matchResult = fuzzy.match(subs, s, {
+    pre: '<strong>',
+    post: '</strong>',
+  });
+  if (matchResult == null) {
+    return s;
   }
-  return <span dangerouslySetInnerHTML={{ __html: s.split(subs).join(subs.bold()) }} />;
+  return matchResult.rendered;
 };
 
 const getSortIcon = (b: boolean | undefined): IconDefinition => {
@@ -100,16 +106,25 @@ export const FlagsContent: FC<FlagsProps> = ({ data = {} }) => {
             .sort(compareAlphaFn(sortState.name === 'Flag', !sortState.alpha))
             .map(([flag, value]) => [`--${flag}`, value])
             .filter(([flag, value]) => flag.includes(searchState) || value.includes(searchState))
-            .map(([flag, value]) => (
-              <tr key={flag}>
-                <td className="px-4">
-                  <code className="text-dark flag-item">{boldSubstring(flag, searchState)}</code>
-                </td>
-                <td className="px-4">
-                  <code className="text-dark value-item">{boldSubstring(value, searchState)}</code>
-                </td>
-              </tr>
-            ))}
+            .map(([flag, value]) => {
+              const flagMatchStr = boldSubstring(flag, searchState);
+              const valueMatchStr = boldSubstring(value, searchState);
+              const sanitizeOpts = { allowedTags: ['strong'] };
+              return (
+                <tr key={flag}>
+                  <td className="px-4">
+                    <code className="text-dark flag-item">
+                      <span dangerouslySetInnerHTML={{ __html: sanitizeHTML(flagMatchStr, sanitizeOpts) }} />
+                    </code>
+                  </td>
+                  <td className="px-4">
+                    <code className="text-dark value-item">
+                      <span dangerouslySetInnerHTML={{ __html: sanitizeHTML(valueMatchStr, sanitizeOpts) }} />
+                    </code>
+                  </td>
+                </tr>
+              );
+            })}
         </tbody>
       </Table>
     </>
