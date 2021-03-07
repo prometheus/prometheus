@@ -44,27 +44,21 @@ const getSortIcon = (b: boolean | undefined): IconDefinition => {
   return faSortUp;
 };
 
-interface ColumnState {
+interface SortState {
   name: string;
   alpha: boolean;
   focused: boolean;
 }
 
-interface FlagState {
-  search: string;
-  sort: ColumnState;
-}
-
 export const FlagsContent: FC<FlagsProps> = ({ data = {} }) => {
-  const initialState: FlagState = {
-    search: '',
-    sort: {
-      name: 'Flag',
-      alpha: true,
-      focused: true,
-    },
+  const initialSearch = '';
+  const [searchState, setSearchState] = useState(initialSearch);
+  const initialSort: SortState = {
+    name: 'Flag',
+    alpha: true,
+    focused: true,
   };
-  const [state, setState] = useState(initialState);
+  const [sortState, setSortState] = useState(initialSort);
   return (
     <>
       <h2>Command-Line Flags</h2>
@@ -73,9 +67,9 @@ export const FlagsContent: FC<FlagsProps> = ({ data = {} }) => {
           autoFocus
           placeholder="Filter by flag name or value..."
           className="my-3"
-          value={state.search}
+          value={searchState}
           onChange={({ target }: ChangeEvent<HTMLInputElement>): void => {
-            setState({ ...state, search: target.value });
+            setSearchState(target.value);
           }}
         />
       </InputGroup>
@@ -88,34 +82,31 @@ export const FlagsContent: FC<FlagsProps> = ({ data = {} }) => {
                 className={`px-4 ${col}`}
                 style={{ width: '50%' }}
                 onClick={(): void =>
-                  setState({
-                    ...state,
-                    sort: {
-                      name: col,
-                      focused: true,
-                      alpha: state.sort.name === col ? !state.sort.alpha : true,
-                    },
+                  setSortState({
+                    name: col,
+                    focused: true,
+                    alpha: sortState.name === col ? !sortState.alpha : true,
                   })
                 }
               >
                 <span className="mr-2">{col}</span>
-                <FontAwesomeIcon icon={getSortIcon(state.sort.name !== col ? undefined : state.sort.alpha)} />
+                <FontAwesomeIcon icon={getSortIcon(sortState.name !== col ? undefined : sortState.alpha)} />
               </td>
             ))}
           </tr>
         </thead>
         <tbody>
           {Object.entries(data)
-            .sort(compareAlphaFn(state.sort.name === 'Flag', !state.sort.alpha))
+            .sort(compareAlphaFn(sortState.name === 'Flag', !sortState.alpha))
             .map(([flag, value]) => [`--${flag}`, value])
-            .filter(([flag, value]) => flag.includes(state.search) || value.includes(state.search))
+            .filter(([flag, value]) => flag.includes(searchState) || value.includes(searchState))
             .map(([flag, value]) => (
               <tr key={flag}>
                 <td className="px-4">
-                  <code className="text-dark flag-item">{boldSubstring(flag, state.search)}</code>
+                  <code className="text-dark flag-item">{boldSubstring(flag, searchState)}</code>
                 </td>
                 <td className="px-4">
-                  <code className="text-dark value-item">{boldSubstring(value, state.search)}</code>
+                  <code className="text-dark value-item">{boldSubstring(value, searchState)}</code>
                 </td>
               </tr>
             ))}
