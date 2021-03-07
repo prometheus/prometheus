@@ -157,6 +157,7 @@ func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]i
 		return []error{err}
 	}
 	defer suite.Close()
+	suite.SubqueryInterval = evalInterval
 
 	// Load the rule files.
 	opts := &rules.ManagerOptions{

@@ -657,7 +657,8 @@ type LazyLoader struct {
 
 	loadCmd *loadCmd
 
-	storage storage.Storage
+	storage          storage.Storage
+	SubqueryInterval time.Duration
 
 	queryEngine *Engine
 	context     context.Context
@@ -710,11 +711,12 @@ func (ll *LazyLoader) clear() {
 	ll.storage = teststorage.New(ll)
 
 	opts := EngineOpts{
-		Logger:           nil,
-		Reg:              nil,
-		MaxSamples:       10000,
-		Timeout:          100 * time.Second,
-		EnableAtModifier: true,
+		Logger:                   nil,
+		Reg:                      nil,
+		MaxSamples:               10000,
+		Timeout:                  100 * time.Second,
+		NoStepSubqueryIntervalFn: func(int64) int64 { return durationMilliseconds(ll.SubqueryInterval) },
+		EnableAtModifier:         true,
 	}
 
 	ll.queryEngine = NewEngine(opts)
