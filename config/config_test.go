@@ -1109,7 +1109,7 @@ var expectedErrors = []struct {
 	},
 	{
 		filename: "scrape_config_files.samename.yml",
-		errMsg:   "found multiple scrape configs with job name \"blackbox\"",
+		errMsg:   "found multiple scrape configs with job name \"scrape_config_files_test\"",
 	},
 }
 
