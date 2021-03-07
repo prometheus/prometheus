@@ -1099,6 +1099,18 @@ var expectedErrors = []struct {
 		filename: "eureka_invalid_server.bad.yml",
 		errMsg:   "invalid eureka server URL",
 	},
+	{
+		filename: "scrape_config_files.badpattern.yml",
+		errMsg:   "error retrieving scrape config files for testdata/config_files_glob/[a-b-c].yml",
+	},
+	{
+		filename: "scrape_config_files.nonexist.yml",
+		errMsg:   "no scrape config files found for testdata/config_files_glob/nonexist.yml",
+	},
+	{
+		filename: "scrape_config_files.samename.yml",
+		errMsg:   "found multiple scrape configs with job name \"blackbox\"",
+	},
 }
 
 func TestBadConfigs(t *testing.T) {
@@ -1143,4 +1155,10 @@ func TestEmptyGlobalBlock(t *testing.T) {
 func kubernetesSDHostURL() config.URL {
 	tURL, _ := url.Parse("https://localhost:1234")
 	return config.URL{URL: tURL}
+}
+
+func TestGlobInScrapeConfigFile(t *testing.T) {
+	c, err := LoadFile("testdata/scrape_config_files.yml")
+	require.NoError(t, err)
+	require.Equal(t, nil, *c)
 }
