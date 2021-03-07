@@ -1157,8 +1157,73 @@ func kubernetesSDHostURL() config.URL {
 	return config.URL{URL: tURL}
 }
 
+var scrapeConfigFileExpectedConfig = Config{
+	GlobalConfig: GlobalConfig{
+		ScrapeInterval:     model.Duration(15 * time.Second),
+		ScrapeTimeout:      DefaultGlobalConfig.ScrapeTimeout,
+		EvaluationInterval: model.Duration(60 * time.Second),
+		QueryLogFile:       "",
+
+		ExternalLabels: labels.Labels{
+			{Name: "monitor", Value: "codelab-monitor"},
+		},
+	},
+
+	ScrapeConfigs: []*ScrapeConfig{
+		{
+			JobName: "prometheus",
+
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(5 * time.Second),
+			ScrapeTimeout:   model.Duration(5 * time.Second),
+
+			ServiceDiscoveryConfigs: discovery.Configs{
+				discovery.StaticConfig{
+					{
+						Targets: []model.LabelSet{
+							{model.AddressLabel: "localhost:9090"},
+						},
+						Source: "0",
+					},
+				},
+			},
+
+			MetricsPath: DefaultScrapeConfig.MetricsPath,
+			Scheme:      DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.HTTPClientConfig{
+				FollowRedirects: true,
+			},
+		},
+		{
+
+			JobName: "scrape_config_files_test",
+
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   model.Duration(10 * time.Second),
+			MetricsPath:     "/my_path",
+			HTTPClientConfig: config.HTTPClientConfig{
+				FollowRedirects: true,
+			},
+			Scheme: "http",
+			ServiceDiscoveryConfigs: discovery.Configs{
+				discovery.StaticConfig{
+					{
+						Targets: []model.LabelSet{
+							{model.AddressLabel: "localhost:8080"},
+						},
+						Source: "0",
+					},
+				},
+			},
+		},
+	},
+	ScrapeConfigFiles: []string{"testdata/config_files_glob/*.yml"},
+	AlertingConfig:    AlertingConfig{},
+}
+
 func TestGlobInScrapeConfigFile(t *testing.T) {
 	c, err := LoadFile("testdata/scrape_config_files.yml")
 	require.NoError(t, err)
-	require.Equal(t, nil, *c)
+	require.Equal(t, scrapeConfigFileExpectedConfig, *c)
 }
