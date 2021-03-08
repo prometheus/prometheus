@@ -1577,7 +1577,7 @@ See below for the configuration options for Scaleway discovery:
 # Role of the targets to retrieve. Must be `instance` or `baremetal`.
 role: <string>
 
-# Zone specify the availability zone of the server you target (fr-par-1, fr-par-2, nl-ams-1, pl-waw-1, ...)
+# Zone is the availability zone of your targets (e.g. fr-par-1).
 [ zone: <string> | default = fr-par-1 ]
 
 # NameFilter specify a name filter to apply on the ListServers request
