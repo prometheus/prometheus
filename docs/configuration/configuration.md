@@ -1529,6 +1529,8 @@ configuration.
 
 ### `<scaleway_sd_config>`
 
+Scaleway SD configurations allow retrieving scrape targets from [Scaleway instances](https://www.scaleway.com/en/virtual-instances/) and [baremetal services](https://www.scaleway.com/en/bare-metal-servers/).
+
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
 #### Instance role
