@@ -1568,8 +1568,11 @@ See below for the configuration options for Scaleway discovery:
 # API URL to use when doing the List requests
 [ api_url: <string> | default = "https://api.scaleway.com" ]
 
+# Access key to use. https://console.scaleway.com/project/credentials
+access_key: <string>
+
 # Secret key to use when listing targets. https://console.scaleway.com/project/credentials
-[ secret_key: <secret> ]
+secret_key: <secret>
 
 # Project ID of the targets.
 [ project_id: <string> ]
