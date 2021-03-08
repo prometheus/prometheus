@@ -9,9 +9,13 @@ scrape_configs:
         secret_key: 11111111-1111-1111-1111-111111111111
     relabel_configs:
       # Only scrape targets that have a tag 'monitoring'.
-      - source_labels: [__meta_scaleway_tags]
+      - source_labels: [__meta_scaleway_instance_tags]
         regex: '.*,monitoring,.*'
         action: keep
+      # Use the public IPv6 address and port 9100 to scrape the target.
+      - source_labels: [__meta_scaleway_instance_public_ipv6]
+        target_label: __address__
+        replacement: '[$1]:9100'
 
   - job_name: 'baremetal'
     scaleway_sd_configs:
@@ -22,7 +26,7 @@ scrape_configs:
         access_key: SCWXXXXXXXXXXXXXXXXX
         secret_key: 11111111-1111-1111-1111-111111111111
     relabel_configs:
-      # Use the public IPv6 address and port 9100 to scrape the target.
-      - source_labels: [__meta_scaleway_public_ipv6]
-        target_label: __address__
-        replacement: '[$1]:9100'
+      # Use only the primary IP addresses to scrape the targets.
+      - source_labels: [__meta_scaleway_baremetal_ipaddress_order]
+        regex: "0"
+        action: keep

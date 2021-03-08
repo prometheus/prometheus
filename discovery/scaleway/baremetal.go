@@ -46,17 +46,18 @@ type baremetalDiscovery struct {
 const (
 	baremetalLabelPrefix = metaLabelPrefix + "baremetal_"
 
-	baremetalIDLabel         = baremetalLabelPrefix + "id"
-	baremetalIPIsPublicLabel = baremetalLabelPrefix + "ip_is_public"
-	baremetalIPVersionLabel  = baremetalLabelPrefix + "ip_version"
-	baremetalNameLabel       = baremetalLabelPrefix + "name"
-	baremetalOSNameLabel     = baremetalLabelPrefix + "os_name"
-	baremetalOSVersionLabel  = baremetalLabelPrefix + "os_version"
-	baremetalProjectLabel    = baremetalLabelPrefix + "project_id"
-	baremetalStatusLabel     = baremetalLabelPrefix + "status"
-	baremetalTagsLabel       = baremetalLabelPrefix + "tags"
-	baremetalTypeLabel       = baremetalLabelPrefix + "type"
-	baremetalZoneLabel       = baremetalLabelPrefix + "zone"
+	baremetalIDLabel        = baremetalLabelPrefix + "id"
+	baremetalPublicIPv4     = baremetalLabelPrefix + "public_ipv4"
+	baremetalPublicIPv6     = baremetalLabelPrefix + "public_ipv6"
+	baremetalIPAddressOrder = baremetalLabelPrefix + "ipaddress_order"
+	baremetalNameLabel      = baremetalLabelPrefix + "name"
+	baremetalOSNameLabel    = baremetalLabelPrefix + "os_name"
+	baremetalOSVersionLabel = baremetalLabelPrefix + "os_version"
+	baremetalProjectLabel   = baremetalLabelPrefix + "project_id"
+	baremetalStatusLabel    = baremetalLabelPrefix + "status"
+	baremetalTagsLabel      = baremetalLabelPrefix + "tags"
+	baremetalTypeLabel      = baremetalLabelPrefix + "type"
+	baremetalZoneLabel      = baremetalLabelPrefix + "zone"
 )
 
 func newBaremetalDiscovery(conf *SDConfig) (*baremetalDiscovery, error) {
@@ -156,9 +157,16 @@ func (d *baremetalDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 			labels[baremetalTagsLabel] = model.LabelValue(tags)
 		}
 
-		for _, ip := range server.IPs {
-			labels[baremetalIPVersionLabel] = model.LabelValue(ip.Version.String())
-			labels[baremetalIPIsPublicLabel] = "true"
+		for i, ip := range server.IPs {
+			switch ip.Version.String() {
+			case "IPv4":
+				labels[baremetalPublicIPv4] = model.LabelValue(ip.Version.String())
+				labels[baremetalPublicIPv6] = ""
+			case "IPv6":
+				labels[baremetalPublicIPv6] = model.LabelValue(ip.Version.String())
+				labels[baremetalPublicIPv4] = ""
+			}
+			labels[baremetalIPAddressOrder] = model.LabelValue(strconv.Itoa(i))
 
 			addr := net.JoinHostPort(ip.Address.String(), strconv.FormatUint(uint64(d.port), 10))
 			labels[model.AddressLabel] = model.LabelValue(addr)
