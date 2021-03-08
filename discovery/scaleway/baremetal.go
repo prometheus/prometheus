@@ -96,13 +96,7 @@ func newBaremetalDiscovery(conf *SDConfig) (*baremetalDiscovery, error) {
 func (d *baremetalDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	api := baremetal.NewAPI(d.Client)
 
-	req := &baremetal.ListServersRequest{
-		Zone: scw.Zone(d.Zone),
-	}
-
-	if d.Project != "" {
-		req.ProjectID = scw.StringPtr(d.Project)
-	}
+	req := &baremetal.ListServersRequest{}
 
 	if d.Name != "" {
 		req.Name = scw.StringPtr(d.Name)
@@ -117,16 +111,12 @@ func (d *baremetalDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 		return nil, err
 	}
 
-	offers, err := api.ListOffers(&baremetal.ListOffersRequest{
-		Zone: req.Zone,
-	}, scw.WithAllPages())
+	offers, err := api.ListOffers(&baremetal.ListOffersRequest{}, scw.WithAllPages())
 	if err != nil {
 		return nil, err
 	}
 
-	osFullList, err := api.ListOS(&baremetal.ListOSRequest{
-		Zone: req.Zone,
-	}, scw.WithAllPages())
+	osFullList, err := api.ListOS(&baremetal.ListOSRequest{}, scw.WithAllPages())
 	if err != nil {
 		return nil, err
 	}

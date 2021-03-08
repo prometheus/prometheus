@@ -95,13 +95,7 @@ func newInstanceDiscovery(conf *SDConfig) (*instanceDiscovery, error) {
 func (d *instanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	api := instance.NewAPI(d.Client)
 
-	req := &instance.ListServersRequest{
-		Zone: scw.Zone(d.Zone),
-	}
-
-	if d.Project != "" {
-		req.Project = scw.StringPtr(d.Project)
-	}
+	req := &instance.ListServersRequest{}
 
 	if d.Name != "" {
 		req.Name = scw.StringPtr(d.Name)
