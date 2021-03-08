@@ -211,6 +211,9 @@ type EngineOpts struct {
 
 	// EnableAtModifier if true enables @ modifier. Disabled otherwise.
 	EnableAtModifier bool
+
+	// EnableNegativeOffset if true enables negative (-) offset values. Disabled otherwise.
+	EnableNegativeOffset bool
 }
 
 // Engine handles the lifetime of queries from beginning to end.
@@ -226,6 +229,7 @@ type Engine struct {
 	lookbackDelta            time.Duration
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
 	enableAtModifier         bool
+	enableNegativeOffset     bool
 }
 
 // NewEngine returns a new engine.
@@ -307,6 +311,7 @@ func NewEngine(opts EngineOpts) *Engine {
 		lookbackDelta:            opts.LookbackDelta,
 		noStepSubqueryIntervalFn: opts.NoStepSubqueryIntervalFn,
 		enableAtModifier:         opts.EnableAtModifier,
+		enableNegativeOffset:     opts.EnableNegativeOffset,
 	}
 }
 
@@ -388,34 +393,53 @@ func (ng *Engine) newQuery(q storage.Queryable, expr parser.Expr, start, end tim
 }
 
 var ErrValidationAtModifierDisabled = errors.New("@ modifier is disabled")
+var ErrValidationNegativeOffsetDisabled = errors.New("negative offset is disabled")
 
 func (ng *Engine) validateOpts(expr parser.Expr) error {
-	if ng.enableAtModifier {
+	if ng.enableAtModifier && ng.enableNegativeOffset {
 		return nil
 	}
+
+	var atModifierUsed, negativeOffsetUsed bool
 
 	var validationErr error
 	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
 		switch n := node.(type) {
 		case *parser.VectorSelector:
 			if n.Timestamp != nil || n.StartOrEnd == parser.START || n.StartOrEnd == parser.END {
-				validationErr = ErrValidationAtModifierDisabled
-				return validationErr
+				atModifierUsed = true
+			}
+			if n.OriginalOffset < 0 {
+				negativeOffsetUsed = true
 			}
 
 		case *parser.MatrixSelector:
 			vs := n.VectorSelector.(*parser.VectorSelector)
 			if vs.Timestamp != nil || vs.StartOrEnd == parser.START || vs.StartOrEnd == parser.END {
-				validationErr = ErrValidationAtModifierDisabled
-				return validationErr
+				atModifierUsed = true
+			}
+			if vs.OriginalOffset < 0 {
+				negativeOffsetUsed = true
 			}
 
 		case *parser.SubqueryExpr:
 			if n.Timestamp != nil || n.StartOrEnd == parser.START || n.StartOrEnd == parser.END {
-				validationErr = ErrValidationAtModifierDisabled
-				return validationErr
+				atModifierUsed = true
+			}
+			if n.OriginalOffset < 0 {
+				negativeOffsetUsed = true
 			}
 		}
+
+		if atModifierUsed && !ng.enableAtModifier {
+			validationErr = ErrValidationAtModifierDisabled
+			return validationErr
+		}
+		if negativeOffsetUsed && !ng.enableNegativeOffset {
+			validationErr = ErrValidationNegativeOffsetDisabled
+			return validationErr
+		}
+
 		return nil
 	})
 

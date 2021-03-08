@@ -2299,6 +2299,18 @@ func TestEngineOptsValidation(t *testing.T) {
 		}, {
 			opts:  EngineOpts{EnableAtModifier: true},
 			query: "rate(metric[1h:1m] @ end())",
+		}, {
+			opts:  EngineOpts{EnableNegativeOffset: false},
+			query: "metric offset -1s", fail: true, expError: ErrValidationNegativeOffsetDisabled,
+		}, {
+			opts:  EngineOpts{EnableNegativeOffset: true},
+			query: "metric offset -1s",
+		}, {
+			opts:  EngineOpts{EnableAtModifier: true, EnableNegativeOffset: true},
+			query: "metric @ 100 offset -2m",
+		}, {
+			opts:  EngineOpts{EnableAtModifier: true, EnableNegativeOffset: true},
+			query: "metric offset -2m @ 100",
 		},
 	}
 
