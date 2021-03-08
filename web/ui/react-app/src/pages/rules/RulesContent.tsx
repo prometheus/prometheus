@@ -65,7 +65,7 @@ export const RulesContent: FC<RouteComponentProps & RulesContentProps> = ({ resp
                     </a>
                   </td>
                   <td>
-                    <h2>{formatRelative(g.lastEvaluation, now())} ago</h2>
+                    <h2>{formatRelative(g.lastEvaluation, now())}</h2>
                   </td>
                   <td>
                     <h2>{humanizeDuration(parseFloat(g.evaluationTime) * 1000)}</h2>
@@ -120,7 +120,7 @@ export const RulesContent: FC<RouteComponentProps & RulesContentProps> = ({ resp
                         <Badge color={getBadgeColor(r.health)}>{r.health.toUpperCase()}</Badge>
                       </td>
                       <td>{r.lastError ? <Alert color="danger">{r.lastError}</Alert> : null}</td>
-                      <td>{formatRelative(r.lastEvaluation, now())} ago</td>
+                      <td>{formatRelative(r.lastEvaluation, now())}</td>
                       <td>{humanizeDuration(parseFloat(r.evaluationTime) * 1000)}</td>
                     </tr>
                   );
