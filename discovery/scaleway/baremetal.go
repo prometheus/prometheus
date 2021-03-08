@@ -33,14 +33,14 @@ import (
 
 type baremetalDiscovery struct {
 	*refresh.Discovery
-	Client    *scw.Client
-	Port      int
-	Zone      string
-	Project   string
-	AccessKey string
-	SecretKey string
-	Name      string
-	Tags      []string
+	client    *scw.Client
+	port      int
+	zone      string
+	project   string
+	accessKey string
+	secretKey string
+	name      string
+	tags      []string
 }
 
 const (
@@ -60,13 +60,13 @@ const (
 
 func newBaremetalDiscovery(conf *SDConfig) (*baremetalDiscovery, error) {
 	d := &baremetalDiscovery{
-		Port:      conf.Port,
-		Zone:      conf.Zone,
-		Project:   conf.Project,
-		AccessKey: conf.AccessKey,
-		SecretKey: string(conf.SecretKey),
-		Name:      conf.FilterName,
-		Tags:      conf.FilterTags,
+		port:      conf.Port,
+		zone:      conf.Zone,
+		project:   conf.Project,
+		accessKey: conf.AccessKey,
+		secretKey: string(conf.SecretKey),
+		name:      conf.FilterName,
+		tags:      conf.FilterTags,
 	}
 
 	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "scaleway_sd", false, false)
@@ -78,7 +78,7 @@ func newBaremetalDiscovery(conf *SDConfig) (*baremetalDiscovery, error) {
 	if err != nil {
 		return nil, err
 	}
-	d.Client, err = scw.NewClient(
+	d.client, err = scw.NewClient(
 		scw.WithHTTPClient(&http.Client{
 			Transport: rt,
 			Timeout:   time.Duration(conf.RefreshInterval),
@@ -94,16 +94,16 @@ func newBaremetalDiscovery(conf *SDConfig) (*baremetalDiscovery, error) {
 }
 
 func (d *baremetalDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
-	api := baremetal.NewAPI(d.Client)
+	api := baremetal.NewAPI(d.client)
 
 	req := &baremetal.ListServersRequest{}
 
-	if d.Name != "" {
-		req.Name = scw.StringPtr(d.Name)
+	if d.name != "" {
+		req.Name = scw.StringPtr(d.name)
 	}
 
-	if d.Tags != nil {
-		req.Tags = d.Tags
+	if d.tags != nil {
+		req.Tags = d.tags
 	}
 
 	servers, err := api.ListServers(req, scw.WithAllPages(), scw.WithContext(ctx))
@@ -158,7 +158,7 @@ func (d *baremetalDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 			labels[baremetalIPVersionLabel] = model.LabelValue(ip.Version.String())
 			labels[baremetalIPIsPublicLabel] = "true"
 
-			addr := net.JoinHostPort(ip.Address.String(), strconv.FormatUint(uint64(d.Port), 10))
+			addr := net.JoinHostPort(ip.Address.String(), strconv.FormatUint(uint64(d.port), 10))
 			labels[model.AddressLabel] = model.LabelValue(addr)
 
 			targets = append(targets, labels.Clone())

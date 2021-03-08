@@ -47,25 +47,25 @@ const (
 
 type instanceDiscovery struct {
 	*refresh.Discovery
-	Client    *scw.Client
-	Port      int
-	Zone      string
-	Project   string
-	AccessKey string
-	SecretKey string
-	Name      string
-	Tags      []string
+	client    *scw.Client
+	port      int
+	zone      string
+	project   string
+	accessKey string
+	secretKey string
+	name      string
+	tags      []string
 }
 
 func newInstanceDiscovery(conf *SDConfig) (*instanceDiscovery, error) {
 	d := &instanceDiscovery{
-		Port:      conf.Port,
-		Zone:      conf.Zone,
-		Project:   conf.Project,
-		AccessKey: conf.AccessKey,
-		SecretKey: string(conf.SecretKey),
-		Name:      conf.FilterName,
-		Tags:      conf.FilterTags,
+		port:      conf.Port,
+		zone:      conf.Zone,
+		project:   conf.Project,
+		accessKey: conf.AccessKey,
+		secretKey: string(conf.SecretKey),
+		name:      conf.FilterName,
+		tags:      conf.FilterTags,
 	}
 
 	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "scaleway_sd", false, false)
@@ -77,7 +77,7 @@ func newInstanceDiscovery(conf *SDConfig) (*instanceDiscovery, error) {
 	if err != nil {
 		return nil, err
 	}
-	d.Client, err = scw.NewClient(
+	d.client, err = scw.NewClient(
 		scw.WithHTTPClient(&http.Client{
 			Transport: rt,
 			Timeout:   time.Duration(conf.RefreshInterval),
@@ -93,16 +93,16 @@ func newInstanceDiscovery(conf *SDConfig) (*instanceDiscovery, error) {
 }
 
 func (d *instanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
-	api := instance.NewAPI(d.Client)
+	api := instance.NewAPI(d.client)
 
 	req := &instance.ListServersRequest{}
 
-	if d.Name != "" {
-		req.Name = scw.StringPtr(d.Name)
+	if d.name != "" {
+		req.Name = scw.StringPtr(d.name)
 	}
 
-	if d.Tags != nil {
-		req.Tags = d.Tags
+	if d.tags != nil {
+		req.Tags = d.tags
 	}
 
 	servers, err := api.ListServers(req, scw.WithAllPages(), scw.WithContext(ctx))
@@ -132,7 +132,7 @@ func (d *instanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 			labels[instanceIPVersionLabel] = "IPv4"
 			labels[instanceIPIsPublicLabel] = "false"
 
-			addr := net.JoinHostPort(*server.PrivateIP, strconv.FormatUint(uint64(d.Port), 10))
+			addr := net.JoinHostPort(*server.PrivateIP, strconv.FormatUint(uint64(d.port), 10))
 			labels[model.AddressLabel] = model.LabelValue(addr)
 
 			targets = append(targets, labels.Clone())
@@ -142,7 +142,7 @@ func (d *instanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 			labels[instanceIPVersionLabel] = "IPv6"
 			labels[instanceIPIsPublicLabel] = "true"
 
-			addr := net.JoinHostPort(server.IPv6.Address.String(), strconv.FormatUint(uint64(d.Port), 10))
+			addr := net.JoinHostPort(server.IPv6.Address.String(), strconv.FormatUint(uint64(d.port), 10))
 			labels[model.AddressLabel] = model.LabelValue(addr)
 
 			targets = append(targets, labels.Clone())
@@ -152,7 +152,7 @@ func (d *instanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 			labels[instanceIPVersionLabel] = "IPv4"
 			labels[instanceIPIsPublicLabel] = "true"
 
-			addr := net.JoinHostPort(server.PublicIP.Address.String(), strconv.FormatUint(uint64(d.Port), 10))
+			addr := net.JoinHostPort(server.PublicIP.Address.String(), strconv.FormatUint(uint64(d.port), 10))
 			labels[model.AddressLabel] = model.LabelValue(addr)
 
 			targets = append(targets, labels.Clone())
