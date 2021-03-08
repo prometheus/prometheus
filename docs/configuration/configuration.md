@@ -1580,11 +1580,11 @@ role: <string>
 # Zone specify the availability zone of the server you target (fr-par-1, fr-par-2, nl-ams-1, pl-waw-1, ...)
 [ zone: <string> | default = fr-par-1 ]
 
-# Name specify a name filter to apply on the ListServers request
-[ name: <string> ]
+# NameFilter specify a name filter to apply on the ListServers request
+[ name_filter: <string> ]
 
-# Tags specify a tag filter to apply on the ListServers requests
-tags:
+# TagsFilter specify a tag filter to apply on the ListServers requests
+tags_filter:
 [ - <string> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.

@@ -83,10 +83,10 @@ type SDConfig struct {
 	AccessKey string `yaml:"access_key"`
 	// SecretKey used to authenticate on Scaleway APIs.
 	SecretKey config.Secret `yaml:"secret_key"`
-	// FilterName to filter on during the ListServers.
-	FilterName string `yaml:"name,omitempty"`
-	// FilterTags to filter on during the ListServers.
-	FilterTags []string `yaml:"tags,omitempty"`
+	// NameFilter to filter on during the ListServers.
+	NameFilter string `yaml:"name_filter,omitempty"`
+	// TagsFilter to filter on during the ListServers.
+	TagsFilter []string `yaml:"tags_filter,omitempty"`
 
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 

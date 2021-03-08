@@ -33,14 +33,14 @@ import (
 
 type baremetalDiscovery struct {
 	*refresh.Discovery
-	client    *scw.Client
-	port      int
-	zone      string
-	project   string
-	accessKey string
-	secretKey string
-	name      string
-	tags      []string
+	client     *scw.Client
+	port       int
+	zone       string
+	project    string
+	accessKey  string
+	secretKey  string
+	nameFilter string
+	tagsFilter []string
 }
 
 const (
@@ -60,13 +60,13 @@ const (
 
 func newBaremetalDiscovery(conf *SDConfig) (*baremetalDiscovery, error) {
 	d := &baremetalDiscovery{
-		port:      conf.Port,
-		zone:      conf.Zone,
-		project:   conf.Project,
-		accessKey: conf.AccessKey,
-		secretKey: string(conf.SecretKey),
-		name:      conf.FilterName,
-		tags:      conf.FilterTags,
+		port:       conf.Port,
+		zone:       conf.Zone,
+		project:    conf.Project,
+		accessKey:  conf.AccessKey,
+		secretKey:  string(conf.SecretKey),
+		nameFilter: conf.NameFilter,
+		tagsFilter: conf.TagsFilter,
 	}
 
 	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "scaleway_sd", false, false)
@@ -98,12 +98,12 @@ func (d *baremetalDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 
 	req := &baremetal.ListServersRequest{}
 
-	if d.name != "" {
-		req.Name = scw.StringPtr(d.name)
+	if d.nameFilter != "" {
+		req.Name = scw.StringPtr(d.nameFilter)
 	}
 
-	if d.tags != nil {
-		req.Tags = d.tags
+	if d.tagsFilter != nil {
+		req.Tags = d.tagsFilter
 	}
 
 	servers, err := api.ListServers(req, scw.WithAllPages(), scw.WithContext(ctx))
