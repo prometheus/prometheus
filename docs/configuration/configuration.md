@@ -1222,13 +1222,13 @@ namespaces:
   names:
     [ - <string> ]
 
-# Optional label and field selectors to limit the discovery process to a subset of available resources. 
+# Optional label and field selectors to limit the discovery process to a subset of available resources.
 # See https://kubernetes.io/docs/concepts/overview/working-with-objects/field-selectors/
-# and https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/ to learn more about the possible 
+# and https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/ to learn more about the possible
 # filters that can be used. Endpoints role supports pod, service and endpoints selectors, other roles
 # only support selectors matching the role itself (e.g. node role can only contain node selectors).
 
-# Note: When making decision about using field/label selector make sure that this 
+# Note: When making decision about using field/label selector make sure that this
 # is the best approach - it will prevent Prometheus from reusing single list/watch
 # for all scrape configs. This might result in a bigger load on the Kubernetes API,
 # because per each selector combination there will be additional LIST/WATCH. On the other hand,
@@ -1788,7 +1788,7 @@ headers:
 write_relabel_configs:
   [ - <relabel_config> ... ]
 
-# Name of the remote write config, which if specified must be unique among remote write configs. 
+# Name of the remote write config, which if specified must be unique among remote write configs.
 # The name will be used in metrics and logging in place of a generated value to help users distinguish between
 # remote write configs.
 [ name: <string> ]
@@ -1811,6 +1811,25 @@ authorization:
   # Sets the credentials with the credentials read from the configured file.
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
+
+# Optionally configures AWS's Signature Verification 4 signing process to
+# sign requests. Cannot be set at the same time as basic_auth or authorization.
+# To use the default credentials from the AWS SDK, use `sigv4: {}`.
+sigv4:
+  # The AWS region. If blank, the region from the default credentials chain
+  # is used.
+  [ region: <string> ]
+
+  # The AWS API keys. If blank, the environment variables `AWS_ACCESS_KEY_ID`
+  # and `AWS_SECRET_ACCESS_KEY` are used.
+  [ access_key: <string> ]
+  [ secret_key: <secret> ]
+
+  # Named AWS profile used to authenticate.
+  [ profile: <string> ]
+
+  # AWS Role ARN, an alternative to using AWS API keys.
+  [ role_arn: <string> ]
 
 # Configures the remote write request's TLS settings.
 tls_config:
@@ -1865,7 +1884,7 @@ with this feature.
 # The URL of the endpoint to query from.
 url: <string>
 
-# Name of the remote read config, which if specified must be unique among remote read configs. 
+# Name of the remote read config, which if specified must be unique among remote read configs.
 # The name will be used in metrics and logging in place of a generated value to help users distinguish between
 # remote read configs.
 [ name: <string> ]
