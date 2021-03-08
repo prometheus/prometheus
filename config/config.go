@@ -206,7 +206,10 @@ func (c *Config) LoadScrapeConfigFiles() error {
 			return err
 		}
 		for _, scfg := range scfgFile.ScrapeConfigs {
-			c.checkScrapeConfig(scfg)
+			err := c.checkScrapeConfig(scfg)
+			if err != nil {
+				return err
+			}
 			if _, ok := jobNames[scfg.JobName]; ok {
 				return errors.Errorf("found multiple scrape configs with job name %q", scfg.JobName)
 			}
