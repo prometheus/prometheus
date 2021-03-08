@@ -172,7 +172,7 @@ type Config struct {
 	RemoteReadConfigs  []*RemoteReadConfig  `yaml:"remote_read,omitempty"`
 }
 
-// ScrapeConfigFile is the configuration for scrape config files
+// ScrapeConfigFile is the configuration for scrape config files.
 type ScrapeConfigFile struct {
 	ScrapeConfigs []*ScrapeConfig `yaml:"scrape_configs"`
 }
@@ -187,14 +187,14 @@ func (c *Config) LoadScrapeConfigFiles() error {
 			// The only error can be a bad pattern.
 			return errors.Wrapf(err, "error retrieving scrape config files for %s", pat)
 		}
-		// There is no scrape config file that matches pattern
+		// There is no scrape config file that matches pattern.
 		if len(fs) == 0 {
 			return errors.Errorf("no scrape config files found for %s", pat)
 		}
 		scrapeConfigFiles = append(scrapeConfigFiles, fs...)
 	}
 
-	// Job names from main config file
+	// Job names from main config file.
 	jobNames := map[string]struct{}{}
 	for _, scfg := range c.ScrapeConfigs {
 		jobNames[scfg.JobName] = struct{}{}
@@ -219,12 +219,12 @@ func (c *Config) LoadScrapeConfigFiles() error {
 
 // LoadScrapeConfigFile parses the given YAML file into a ScrapeConfigFile.
 func LoadScrapeConfigFile(filename string) (*ScrapeConfigFile, error) {
-	// Read file contents
+	// Read file contents.
 	content, err := ioutil.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}
-	// Parse content into ScrapeConfigFile
+	// Parse content into ScrapeConfigFile.
 	cfg := &ScrapeConfigFile{}
 	err = yaml.UnmarshalStrict([]byte(content), cfg)
 	if err != nil {
