@@ -178,6 +178,7 @@ func loadProfile(sdConfig *SDConfig) (*scw.Profile, error) {
 		SecretKey:        scw.StringPtr(string(sdConfig.SecretKey)),
 		AccessKey:        scw.StringPtr(sdConfig.AccessKey),
 		DefaultProjectID: scw.StringPtr(sdConfig.Project),
+		SendTelemetry:    scw.BoolPtr(false),
 	}
 
 	return prometheusConfigProfile, nil
