@@ -746,9 +746,10 @@ var expectedConf = &Config{
 		{
 			JobName: "scaleway",
 
-			HonorTimestamps: true,
-			ScrapeInterval:  model.Duration(15 * time.Second),
-			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps:  true,
+			ScrapeInterval:   model.Duration(15 * time.Second),
+			ScrapeTimeout:    DefaultGlobalConfig.ScrapeTimeout,
+			HTTPClientConfig: config.HTTPClientConfig{FollowRedirects: true},
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
