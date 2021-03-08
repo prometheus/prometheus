@@ -39,6 +39,7 @@ const (
 	instanceIPVersionLabel  = instanceLabelPrefix + "ip_version"
 	instanceImageNameLabel  = instanceLabelPrefix + "image_name"
 	instanceNameLabel       = instanceLabelPrefix + "name"
+	instanceProjectLabel    = instanceLabelPrefix + "project_id"
 	instanceStateLabel      = instanceLabelPrefix + "status"
 	instanceTagsLabel       = instanceLabelPrefix + "tags"
 	instanceTypeLabel       = instanceLabelPrefix + "type"
@@ -114,11 +115,12 @@ func (d *instanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 	for _, server := range servers.Servers {
 		labels := model.LabelSet{
 			instanceIDLabel:        model.LabelValue(server.ID),
-			instanceNameLabel:      model.LabelValue(server.Name),
 			instanceImageNameLabel: model.LabelValue(server.Image.Name),
-			instanceZoneLabel:      model.LabelValue(server.Zone.String()),
-			instanceTypeLabel:      model.LabelValue(server.CommercialType),
+			instanceNameLabel:      model.LabelValue(server.Name),
+			instanceProjectLabel:   model.LabelValue(server.Project),
 			instanceStateLabel:     model.LabelValue(server.State),
+			instanceTypeLabel:      model.LabelValue(server.CommercialType),
+			instanceZoneLabel:      model.LabelValue(server.Zone.String()),
 		}
 
 		if len(server.Tags) > 0 {

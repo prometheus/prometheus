@@ -1540,6 +1540,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_scaleway_instance_ip_version`: version of the ip `IPv4`, `IPv6`
 * `__meta_scaleway_instance_image_name`: name of the server image
 * `__meta_scaleway_instance_name`: name of the server
+* `__meta_scaleway_instance_project_id`: project id of the server
 * `__meta_scaleway_instance_status`: status of the server
 * `__meta_scaleway_instance_tags`: the list of tags of the target joined by the tag separator
 * `__meta_scaleway_instance_type`: commercial type of the server
@@ -1553,6 +1554,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_scaleway_baremetal_name`: name of the server
 * `__meta_scaleway_baremetal_os_name`: name of the os used
 * `__meta_scaleway_baremetal_os_version`: version of the os used
+* `__meta_scaleway_baremetal_project_id`: project id of the server
 * `__meta_scaleway_baremetal_status`: status of the server
 * `__meta_scaleway_baremetal_tags`: tag list of the server
 * `__meta_scaleway_baremetal_type`: commercial type of the server
