@@ -1569,7 +1569,7 @@ See below for the configuration options for Scaleway discovery:
 # Refresh interval to re-read the targets list.
 [ refresh_interval: <duration> | default = 60s ]
 
-# API URL to use when doing the List requests
+# API URL to use when doing the server listing requests.
 [ api_url: <string> | default = "https://api.scaleway.com" ]
 
 # Access key to use. https://console.scaleway.com/project/credentials
@@ -1587,10 +1587,10 @@ role: <string>
 # Zone is the availability zone of your targets (e.g. fr-par-1).
 [ zone: <string> | default = fr-par-1 ]
 
-# NameFilter specify a name filter to apply on the ListServers request
+# NameFilter specify a name filter (works as a LIKE) to apply on the server listing request.
 [ name_filter: <string> ]
 
-# TagsFilter specify a tag filter to apply on the ListServers requests
+# TagsFilter specify a tag filter (a server needs to have all defined tags to be listed) to apply on the server listing request.
 tags_filter:
 [ - <string> ]
 
