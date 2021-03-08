@@ -170,20 +170,14 @@ func newRefresher(conf *SDConfig) (refresher, error) {
 	return nil, errors.New("unknown Scaleway discovery role")
 }
 
-func LoadProfile(sdConfig *SDConfig) (*scw.Profile, error) {
+func loadProfile(sdConfig *SDConfig) (*scw.Profile, error) {
 	// Profile coming from Prometheus Configuration file
 	prometheusConfigProfile := &scw.Profile{
-		DefaultZone: scw.StringPtr(sdConfig.Zone),
-		APIURL:      scw.StringPtr(sdConfig.APIURL),
-	}
-
-	prometheusConfigProfile.SecretKey = scw.StringPtr(string(sdConfig.SecretKey))
-
-	if sdConfig.AccessKey != "" {
-		prometheusConfigProfile.AccessKey = scw.StringPtr(sdConfig.AccessKey)
-	}
-	if sdConfig.Project != "" {
-		prometheusConfigProfile.DefaultProjectID = scw.StringPtr(sdConfig.Project)
+		DefaultZone:      scw.StringPtr(sdConfig.Zone),
+		APIURL:           scw.StringPtr(sdConfig.APIURL),
+		SecretKey:        scw.StringPtr(string(sdConfig.SecretKey)),
+		AccessKey:        scw.StringPtr(sdConfig.AccessKey),
+		DefaultProjectID: scw.StringPtr(sdConfig.Project),
 	}
 
 	return prometheusConfigProfile, nil

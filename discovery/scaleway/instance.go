@@ -73,7 +73,7 @@ func newInstanceDiscovery(conf *SDConfig) (*instanceDiscovery, error) {
 		return nil, err
 	}
 
-	profile, err := LoadProfile(conf)
+	profile, err := loadProfile(conf)
 	if err != nil {
 		return nil, err
 	}
