@@ -46,18 +46,17 @@ type baremetalDiscovery struct {
 const (
 	baremetalLabelPrefix = metaLabelPrefix + "baremetal_"
 
-	baremetalIDLabel        = baremetalLabelPrefix + "id"
-	baremetalPublicIPv4     = baremetalLabelPrefix + "public_ipv4"
-	baremetalPublicIPv6     = baremetalLabelPrefix + "public_ipv6"
-	baremetalIPAddressOrder = baremetalLabelPrefix + "ipaddress_order"
-	baremetalNameLabel      = baremetalLabelPrefix + "name"
-	baremetalOSNameLabel    = baremetalLabelPrefix + "os_name"
-	baremetalOSVersionLabel = baremetalLabelPrefix + "os_version"
-	baremetalProjectLabel   = baremetalLabelPrefix + "project_id"
-	baremetalStatusLabel    = baremetalLabelPrefix + "status"
-	baremetalTagsLabel      = baremetalLabelPrefix + "tags"
-	baremetalTypeLabel      = baremetalLabelPrefix + "type"
-	baremetalZoneLabel      = baremetalLabelPrefix + "zone"
+	baremetalIDLabel         = baremetalLabelPrefix + "id"
+	baremetalPublicIPv4Label = baremetalLabelPrefix + "public_ipv4"
+	baremetalPublicIPv6Label = baremetalLabelPrefix + "public_ipv6"
+	baremetalNameLabel       = baremetalLabelPrefix + "name"
+	baremetalOSNameLabel     = baremetalLabelPrefix + "os_name"
+	baremetalOSVersionLabel  = baremetalLabelPrefix + "os_version"
+	baremetalProjectLabel    = baremetalLabelPrefix + "project_id"
+	baremetalStatusLabel     = baremetalLabelPrefix + "status"
+	baremetalTagsLabel       = baremetalLabelPrefix + "tags"
+	baremetalTypeLabel       = baremetalLabelPrefix + "type"
+	baremetalZoneLabel       = baremetalLabelPrefix + "zone"
 )
 
 func newBaremetalDiscovery(conf *SDConfig) (*baremetalDiscovery, error) {
@@ -157,22 +156,37 @@ func (d *baremetalDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 			labels[baremetalTagsLabel] = model.LabelValue(tags)
 		}
 
-		for i, ip := range server.IPs {
-			switch ip.Version.String() {
+		for _, ip := range server.IPs {
+			switch v := ip.Version.String(); v {
 			case "IPv4":
-				labels[baremetalPublicIPv4] = model.LabelValue(ip.Version.String())
-				labels[baremetalPublicIPv6] = ""
+				if _, ok := labels[baremetalPublicIPv4Label]; ok {
+					// If the server has multiple IPv4, we only take the first one.
+					// This should not happen.
+					continue
+				}
+				labels[baremetalPublicIPv4Label] = model.LabelValue(ip.Version.String())
+
+				// We always default the __address__ to IPv4.
+				addr := net.JoinHostPort(ip.Address.String(), strconv.FormatUint(uint64(d.port), 10))
+				labels[model.AddressLabel] = model.LabelValue(addr)
 			case "IPv6":
-				labels[baremetalPublicIPv6] = model.LabelValue(ip.Version.String())
-				labels[baremetalPublicIPv4] = ""
+				if _, ok := labels[baremetalPublicIPv6Label]; ok {
+					// If the server has multiple IPv6, we only take the first one.
+					// This should not happen.
+					continue
+				}
+				labels[baremetalPublicIPv6Label] = model.LabelValue(ip.Version.String())
+				if _, ok := labels[model.AddressLabel]; !ok {
+					// This server does not have an IPv4 or we have not parsed it
+					// yet.
+					addr := net.JoinHostPort(ip.Address.String(), strconv.FormatUint(uint64(d.port), 10))
+					labels[model.AddressLabel] = model.LabelValue(addr)
+				}
+			default:
+				return nil, fmt.Errorf("unknown IP version: %s", v)
 			}
-			labels[baremetalIPAddressOrder] = model.LabelValue(strconv.Itoa(i))
-
-			addr := net.JoinHostPort(ip.Address.String(), strconv.FormatUint(uint64(d.port), 10))
-			labels[model.AddressLabel] = model.LabelValue(addr)
-
-			targets = append(targets, labels.Clone())
 		}
+		targets = append(targets, labels.Clone())
 	}
 	return []*targetgroup.Group{{Source: "scaleway", Targets: targets}}, nil
 }
