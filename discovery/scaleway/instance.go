@@ -34,16 +34,17 @@ import (
 const (
 	instanceLabelPrefix = metaLabelPrefix + "instance_"
 
-	instanceIDLabel         = instanceLabelPrefix + "id"
-	instanceIPIsPublicLabel = instanceLabelPrefix + "ip_is_public"
-	instanceIPVersionLabel  = instanceLabelPrefix + "ip_version"
-	instanceImageNameLabel  = instanceLabelPrefix + "image_name"
-	instanceNameLabel       = instanceLabelPrefix + "name"
-	instanceProjectLabel    = instanceLabelPrefix + "project_id"
-	instanceStateLabel      = instanceLabelPrefix + "status"
-	instanceTagsLabel       = instanceLabelPrefix + "tags"
-	instanceTypeLabel       = instanceLabelPrefix + "type"
-	instanceZoneLabel       = instanceLabelPrefix + "zone"
+	instanceIDLabel        = instanceLabelPrefix + "id"
+	instancePrivateIPv4    = instanceLabelPrefix + "private_ipv4"
+	instancePublicIPv4     = instanceLabelPrefix + "public_ipv4"
+	instancePublicIPv6     = instanceLabelPrefix + "public_ipv6"
+	instanceImageNameLabel = instanceLabelPrefix + "image_name"
+	instanceNameLabel      = instanceLabelPrefix + "name"
+	instanceProjectLabel   = instanceLabelPrefix + "project_id"
+	instanceStateLabel     = instanceLabelPrefix + "status"
+	instanceTagsLabel      = instanceLabelPrefix + "tags"
+	instanceTypeLabel      = instanceLabelPrefix + "type"
+	instanceZoneLabel      = instanceLabelPrefix + "zone"
 )
 
 type instanceDiscovery struct {
@@ -78,6 +79,7 @@ func newInstanceDiscovery(conf *SDConfig) (*instanceDiscovery, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	d.client, err = scw.NewClient(
 		scw.WithHTTPClient(&http.Client{
 			Transport: rt,
@@ -130,35 +132,23 @@ func (d *instanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 			labels[instanceTagsLabel] = model.LabelValue(tags)
 		}
 
+		if server.IPv6 != nil {
+			labels[instancePublicIPv6] = model.LabelValue(server.IPv6.Address.String())
+		}
+
+		if server.PublicIP != nil {
+			labels[instancePublicIPv4] = model.LabelValue(server.PublicIP.Address.String())
+		}
+
 		if server.PrivateIP != nil {
-			labels[instanceIPVersionLabel] = "IPv4"
-			labels[instanceIPIsPublicLabel] = "false"
+			labels[instancePrivateIPv4] = model.LabelValue(*server.PrivateIP)
 
 			addr := net.JoinHostPort(*server.PrivateIP, strconv.FormatUint(uint64(d.port), 10))
 			labels[model.AddressLabel] = model.LabelValue(addr)
 
-			targets = append(targets, labels.Clone())
+			targets = append(targets, labels)
 		}
 
-		if server.IPv6 != nil {
-			labels[instanceIPVersionLabel] = "IPv6"
-			labels[instanceIPIsPublicLabel] = "true"
-
-			addr := net.JoinHostPort(server.IPv6.Address.String(), strconv.FormatUint(uint64(d.port), 10))
-			labels[model.AddressLabel] = model.LabelValue(addr)
-
-			targets = append(targets, labels.Clone())
-		}
-
-		if server.PublicIP != nil {
-			labels[instanceIPVersionLabel] = "IPv4"
-			labels[instanceIPIsPublicLabel] = "true"
-
-			addr := net.JoinHostPort(server.PublicIP.Address.String(), strconv.FormatUint(uint64(d.port), 10))
-			labels[model.AddressLabel] = model.LabelValue(addr)
-
-			targets = append(targets, labels.Clone())
-		}
 	}
 
 	return []*targetgroup.Group{{Source: "scaleway", Targets: targets}}, nil

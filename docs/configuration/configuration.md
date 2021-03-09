@@ -1536,8 +1536,9 @@ The following meta labels are available on targets during [relabeling](#relabel_
 #### Instance role
 
 * `__meta_scaleway_instance_id`: the id of the instance
-* `__meta_scaleway_instance_ip_is_public`: whether the ip of the target is publicly routed
-* `__meta_scaleway_instance_ip_version`: version of the ip `IPv4`, `IPv6`
+* `__meta_scaleway_instance_private_ipv4`: the private ipv4 address of the instance
+* `__meta_scaleway_instance_public_ipv4`: the public ipv4 address of the instance
+* `__meta_scaleway_instance_public_ipv6`: the public ipv6 address of the instance
 * `__meta_scaleway_instance_image_name`: name of the server image
 * `__meta_scaleway_instance_name`: name of the server
 * `__meta_scaleway_instance_project_id`: project id of the server
@@ -1546,11 +1547,16 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_scaleway_instance_type`: commercial type of the server
 * `__meta_scaleway_instance_zone`: zone of the instance (ex: `fr-par-1`, complete list on <https://developers.scaleway.com/en/>)
 
+This role uses the private IPv4 address by default, by that can be
+changed with relabelling, as demonstrated in [the Prometheus scaleway-sd
+configuration file](/documentation/examples/prometheus-scaleway.yml).
+
 #### Baremetal role
 
-* `__meta_scaleway_baremetal_id`: the id of the instance
-* `__meta_scaleway_baremetal_ip_is_public`: whether the ip of the target is publicly routed
-* `__meta_scaleway_baremetal_ip_version`: version of the ip `IPv4`, `IPv6`
+* `__meta_scaleway_baremetal_id`: the id of the server
+* `__meta_scaleway_baremetal_public_ipv4`: the public ipv4 address of the server
+* `__meta_scaleway_baremetal_public_ipv6`: the public ipv6 address of the server
+* `__meta_scaleway_baremetal_ipaddress_order`: zero-based order of the address in the server
 * `__meta_scaleway_baremetal_name`: name of the server
 * `__meta_scaleway_baremetal_os_name`: name of the os used
 * `__meta_scaleway_baremetal_os_version`: version of the os used
@@ -1560,18 +1566,13 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_scaleway_baremetal_type`: commercial type of the server
 * `__meta_scaleway_baremetal_zone`: zone of the server (ex: `fr-par-1`, complete list on <https://developers.scaleway.com/en/>)
 
+This role creates a target by IP address, filtering targets can be done using
+relabeling, as demonstrated in [the Prometheus scaleway-sd
+configuration file](/documentation/examples/prometheus-scaleway.yml).
+
 See below for the configuration options for Scaleway discovery:
 
 ```yaml
-# The port to scrape metrics from.
-[ port: <int> | default = 80 ]
-
-# Refresh interval to re-read the targets list.
-[ refresh_interval: <duration> | default = 60s ]
-
-# API URL to use when doing the server listing requests.
-[ api_url: <string> | default = "https://api.scaleway.com" ]
-
 # Access key to use. https://console.scaleway.com/project/credentials
 access_key: <string>
 
@@ -1579,10 +1580,16 @@ access_key: <string>
 secret_key: <secret>
 
 # Project ID of the targets.
-[ project_id: <string> ]
+project_id: <string>
 
 # Role of the targets to retrieve. Must be `instance` or `baremetal`.
 role: <string>
+
+# The port to scrape metrics from.
+[ port: <int> | default = 80 ]
+
+# API URL to use when doing the server listing requests.
+[ api_url: <string> | default = "https://api.scaleway.com" ]
 
 # Zone is the availability zone of your targets (e.g. fr-par-1).
 [ zone: <string> | default = fr-par-1 ]
@@ -1594,6 +1601,9 @@ role: <string>
 tags_filter:
 [ - <string> ]
 
+# Refresh interval to re-read the targets list.
+[ refresh_interval: <duration> | default = 60s ]
+
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <bool> | default = true ]
 
@@ -1604,9 +1614,6 @@ tags_filter:
 tls_config:
   [ <tls_config> ]
 ```
-
-See [the Prometheus scaleway-sd configuration file](/documentation/examples/prometheus-scaleway.yml)
-for a practical example on how to set up your Prometheus for Scaleway service discovery.
 
 ### `<static_config>`
 

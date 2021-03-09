@@ -72,7 +72,7 @@ var DefaultSDConfig = SDConfig{
 
 type SDConfig struct {
 	// Project: The Scaleway Project ID used to filter discovery on.
-	Project string `yaml:"project"`
+	Project string `yaml:"project_id"`
 
 	// APIURL: URL of the Scaleway API to use.
 	APIURL string `yaml:"api_url,omitempty"`
@@ -109,16 +109,31 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 
-	if c.AccessKey == "" {
-		return errors.New("access key cannot be empty")
+	if c.Role == "" {
+		return errors.New("role missing (one of: instance, baremetal)")
+	}
+
+	if c.Project == "" {
+		return errors.New("project_id is mandatory")
 	}
 
 	if c.SecretKey == "" {
-		return errors.New("secret key cannot be empty")
+		return errors.New("secret_key is mandatory")
 	}
 
-	if c.Role == "" {
-		return errors.New("role missing (one of: instance, baremetal)")
+	if c.AccessKey == "" {
+		return errors.New("access_key is mandatory")
+	}
+
+	profile, err := loadProfile(c)
+	if err != nil {
+		return err
+	}
+	_, err = scw.NewClient(
+		scw.WithProfile(profile),
+	)
+	if err != nil {
+		return err
 	}
 
 	return c.HTTPClientConfig.Validate()
