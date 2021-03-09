@@ -124,6 +124,7 @@ func main() {
 	tsdbBenchWriteCmd := tsdbBenchCmd.Command("write", "Run a write performance benchmark.")
 	benchWriteOutPath := tsdbBenchWriteCmd.Flag("out", "Set the output path.").Default("benchout").String()
 	benchWriteNumMetrics := tsdbBenchWriteCmd.Flag("metrics", "Number of metrics to read.").Default("10000").Int()
+	benchWriteNumScrapes := tsdbBenchWriteCmd.Flag("scrapes", "Number of scrapes to simulate.").Default("3000").Int()
 	benchSamplesFile := tsdbBenchWriteCmd.Arg("file", "Input file with samples data, default is ("+filepath.Join("..", "..", "tsdb", "testdata", "20kseries.json")+").").Default(filepath.Join("..", "..", "tsdb", "testdata", "20kseries.json")).String()
 
 	tsdbAnalyzeCmd := tsdbCmd.Command("analyze", "Analyze churn, label pair cardinality.")
@@ -195,7 +196,7 @@ func main() {
 		os.Exit(RulesUnitTest(*testRulesFiles...))
 
 	case tsdbBenchWriteCmd.FullCommand():
-		os.Exit(checkErr(benchmarkWrite(*benchWriteOutPath, *benchSamplesFile, *benchWriteNumMetrics)))
+		os.Exit(checkErr(benchmarkWrite(*benchWriteOutPath, *benchSamplesFile, *benchWriteNumMetrics, *benchWriteNumScrapes)))
 
 	case tsdbAnalyzeCmd.FullCommand():
 		os.Exit(checkErr(analyzeBlock(*analyzePath, *analyzeBlockID, *analyzeLimit)))
