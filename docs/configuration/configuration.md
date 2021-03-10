@@ -246,6 +246,10 @@ nerve_sd_configs:
 openstack_sd_configs:
   [ - <openstack_sd_config> ... ]
 
+# List of Scaleway service discovery configurations.
+scaleway_sd_configs:
+  [ - <scaleway_sd_config> ... ]
+
 # List of Zookeeper Serverset service discovery configurations.
 serverset_sd_configs:
   [ - <serverset_sd_config> ... ]
@@ -1523,6 +1527,93 @@ See [the Prometheus eureka-sd configuration file](/documentation/examples/promet
 for a practical example on how to set up your Eureka app and your Prometheus
 configuration.
 
+### `<scaleway_sd_config>`
+
+Scaleway SD configurations allow retrieving scrape targets from [Scaleway instances](https://www.scaleway.com/en/virtual-instances/) and [baremetal services](https://www.scaleway.com/en/bare-metal-servers/).
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+#### Instance role
+
+* `__meta_scaleway_instance_id`: the id of the instance
+* `__meta_scaleway_instance_private_ipv4`: the private ipv4 address of the instance
+* `__meta_scaleway_instance_public_ipv4`: the public ipv4 address of the instance
+* `__meta_scaleway_instance_public_ipv6`: the public ipv6 address of the instance
+* `__meta_scaleway_instance_image_name`: name of the server image
+* `__meta_scaleway_instance_name`: name of the server
+* `__meta_scaleway_instance_project_id`: project id of the server
+* `__meta_scaleway_instance_status`: status of the server
+* `__meta_scaleway_instance_tags`: the list of tags of the target joined by the tag separator
+* `__meta_scaleway_instance_type`: commercial type of the server
+* `__meta_scaleway_instance_zone`: zone of the instance (ex: `fr-par-1`, complete list on <https://developers.scaleway.com/en/>)
+
+This role uses the private IPv4 address by default. This can be
+changed with relabelling, as demonstrated in [the Prometheus scaleway-sd
+configuration file](/documentation/examples/prometheus-scaleway.yml).
+
+#### Baremetal role
+
+* `__meta_scaleway_baremetal_id`: the id of the server
+* `__meta_scaleway_baremetal_public_ipv4`: the public ipv4 address of the server
+* `__meta_scaleway_baremetal_public_ipv6`: the public ipv6 address of the server
+* `__meta_scaleway_baremetal_ipaddress_order`: zero-based order of the address in the server
+* `__meta_scaleway_baremetal_name`: name of the server
+* `__meta_scaleway_baremetal_os_name`: name of the os used
+* `__meta_scaleway_baremetal_os_version`: version of the os used
+* `__meta_scaleway_baremetal_project_id`: project id of the server
+* `__meta_scaleway_baremetal_status`: status of the server
+* `__meta_scaleway_baremetal_tags`: tag list of the server
+* `__meta_scaleway_baremetal_type`: commercial type of the server
+* `__meta_scaleway_baremetal_zone`: zone of the server (ex: `fr-par-1`, complete list on <https://developers.scaleway.com/en/>)
+
+This role uses the public IPv4 address by default. This can be
+changed with relabelling, as demonstrated in [the Prometheus scaleway-sd
+configuration file](/documentation/examples/prometheus-scaleway.yml).
+
+See below for the configuration options for Scaleway discovery:
+
+```yaml
+# Access key to use. https://console.scaleway.com/project/credentials
+access_key: <string>
+
+# Secret key to use when listing targets. https://console.scaleway.com/project/credentials
+secret_key: <secret>
+
+# Project ID of the targets.
+project_id: <string>
+
+# Role of the targets to retrieve. Must be `instance` or `baremetal`.
+role: <string>
+
+# The port to scrape metrics from.
+[ port: <int> | default = 80 ]
+
+# API URL to use when doing the server listing requests.
+[ api_url: <string> | default = "https://api.scaleway.com" ]
+
+# Zone is the availability zone of your targets (e.g. fr-par-1).
+[ zone: <string> | default = fr-par-1 ]
+
+# NameFilter specify a name filter (works as a LIKE) to apply on the server listing request.
+[ name_filter: <string> ]
+
+# TagsFilter specify a tag filter (a server needs to have all defined tags to be listed) to apply on the server listing request.
+tags_filter:
+[ - <string> ]
+
+# Refresh interval to re-read the targets list.
+[ refresh_interval: <duration> | default = 60s ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <bool> | default = true ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
+```
 
 ### `<static_config>`
 
@@ -1745,6 +1836,10 @@ nerve_sd_configs:
 # List of OpenStack service discovery configurations.
 openstack_sd_configs:
   [ - <openstack_sd_config> ... ]
+
+# List of Scaleway service discovery configurations.
+scaleway_sd_configs:
+  [ - <scaleway_sd_config> ... ]
 
 # List of Zookeeper Serverset service discovery configurations.
 serverset_sd_configs:
