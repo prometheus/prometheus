@@ -186,7 +186,7 @@ func (d *baremetalDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 				return nil, fmt.Errorf("unknown IP version: %s", v)
 			}
 		}
-		targets = append(targets, labels.Clone())
+		targets = append(targets, labels)
 	}
 	return []*targetgroup.Group{{Source: "scaleway", Targets: targets}}, nil
 }
