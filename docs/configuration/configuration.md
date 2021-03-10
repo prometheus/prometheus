@@ -206,6 +206,10 @@ digitalocean_sd_configs:
 dockerswarm_sd_configs:
   [ - <dockerswarm_sd_config> ... ]
 
+# List of Docker service discovery configurations.
+docker_sd_configs:
+  [ - <docker_sd_config> ... ]
+
 # List of DNS service discovery configurations.
 dns_sd_configs:
   [ - <dns_sd_config> ... ]
@@ -644,6 +648,94 @@ filtering nodes (using `filters`).
 
 See [this example Prometheus configuration file](/documentation/examples/prometheus-dockerswarm.yml)
 for a detailed example of configuring Prometheus for Docker Swarm.
+
+### `<docker_sd_config>`
+
+Docker SD configurations allow retrieving scrape targets from [Docker Engine](https://docs.docker.com/engine/) hosts without a Swarm configuration.
+
+This SD discovers "containers" and will create a target for each network IP and port the container is configured to expose.
+
+Available meta labels:
+
+* `__meta_docker_container_id`: the id of the container
+* `__meta_docker_container_name`: the name of the container
+* `__meta_docker_container_network_mode`: the network mode of the container
+* `__meta_docker_container_label_<labelname>`: each label of the container
+* `__meta_docker_network_id`: the ID of the network
+* `__meta_docker_network_name`: the name of the network
+* `__meta_docker_network_ingress`: whether the network is ingress
+* `__meta_docker_network_internal`: whether the network is internal
+* `__meta_docker_network_label_<labelname>`: each label of the network
+* `__meta_docker_network_scope`: the scope of the network
+* `__meta_docker_network_ip`: the IP of the container in this network
+* `__meta_docker_port_private`: the port on the container
+* `__meta_docker_port_public`: the external port if a port-mapping exists
+
+See below for the configuration options for Docker discovery:
+
+```yaml
+# Address of the Docker daemon.
+host: <string>
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
+
+# The port to scrape metrics from, when `role` is nodes, and for discovered
+# tasks and services that don't have published ports.
+[ port: <int> | default = 80 ]
+
+# Optional filters to limit the discovery process to a subset of available
+# resources.
+# The available filters are listed in the upstream documentation:
+# Services: https://docs.docker.com/engine/api/v1.40/#operation/ServiceList
+# Tasks: https://docs.docker.com/engine/api/v1.40/#operation/TaskList
+# Nodes: https://docs.docker.com/engine/api/v1.40/#operation/NodeList
+[ filters:
+  [ - name: <string>
+      values: <string>, [...] ]
+
+# The time after which the droplets are refreshed.
+[ refresh_interval: <duration> | default = 60s ]
+
+# Authentication information used to authenticate to the Docker daemon.
+# Note that `basic_auth` and `authorization` options are
+# mutually exclusive.
+# password and password_file are mutually exclusive.
+
+# Optional HTTP basic authentication information.
+basic_auth:
+  [ username: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
+
+# Optional the `Authorization` header configuration.
+authorization:
+  # Sets the authentication type.
+  [ type: <string> | default: Bearer ]
+  # Sets the credentials. It is mutually exclusive with
+  # `credentials_file`.
+  [ credentials: <secret> ]
+  # Sets the credentials with the credentials read from the configured file.
+  # It is mutually exclusive with `credentials`.
+  [ credentials_file: <filename> ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <bool> | default = true ]
+
+```
+
+The [relabeling phase](#relabel_config) is the preferred and more powerful
+way to filter tasks, services or nodes. For users with thousands of tasks it
+can be more efficient to use the Docker API directly which has basic support for
+filtering nodes (using `filters`).
+
+See [this example Prometheus configuration file](/documentation/examples/prometheus-docker.yml)
+for a detailed example of configuring Prometheus for Docker Engine.
+
 
 ### `<dns_sd_config>`
 
