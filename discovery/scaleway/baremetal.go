@@ -164,7 +164,7 @@ func (d *baremetalDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 					// This should not happen.
 					continue
 				}
-				labels[baremetalPublicIPv4Label] = model.LabelValue(ip.Version.String())
+				labels[baremetalPublicIPv4Label] = model.LabelValue(ip.Address.String())
 
 				// We always default the __address__ to IPv4.
 				addr := net.JoinHostPort(ip.Address.String(), strconv.FormatUint(uint64(d.port), 10))
@@ -175,7 +175,7 @@ func (d *baremetalDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 					// This should not happen.
 					continue
 				}
-				labels[baremetalPublicIPv6Label] = model.LabelValue(ip.Version.String())
+				labels[baremetalPublicIPv6Label] = model.LabelValue(ip.Address.String())
 				if _, ok := labels[model.AddressLabel]; !ok {
 					// This server does not have an IPv4 or we have not parsed it
 					// yet.
