@@ -1547,7 +1547,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_scaleway_instance_type`: commercial type of the server
 * `__meta_scaleway_instance_zone`: zone of the instance (ex: `fr-par-1`, complete list on <https://developers.scaleway.com/en/>)
 
-This role uses the private IPv4 address by default, by that can be
+This role uses the private IPv4 address by default. This can be
 changed with relabelling, as demonstrated in [the Prometheus scaleway-sd
 configuration file](/documentation/examples/prometheus-scaleway.yml).
 
@@ -1566,8 +1566,8 @@ configuration file](/documentation/examples/prometheus-scaleway.yml).
 * `__meta_scaleway_baremetal_type`: commercial type of the server
 * `__meta_scaleway_baremetal_zone`: zone of the server (ex: `fr-par-1`, complete list on <https://developers.scaleway.com/en/>)
 
-This role creates a target by IP address, filtering targets can be done using
-relabeling, as demonstrated in [the Prometheus scaleway-sd
+This role uses the public IPv4 address by default. This can be
+changed with relabelling, as demonstrated in [the Prometheus scaleway-sd
 configuration file](/documentation/examples/prometheus-scaleway.yml).
 
 See below for the configuration options for Scaleway discovery:
