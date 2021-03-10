@@ -247,7 +247,7 @@ func (s *seriesToChunkEncoder) Iterator() chunks.Iterator {
 				return errChunksIterator{err: err}
 			}
 			mint = int64(math.MaxInt64)
-			maxt = int64(math.MinInt64)
+			// maxt is immediately overwritten below
 			i = 0
 		}
 
