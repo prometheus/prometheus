@@ -1586,6 +1586,13 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				},
 			},
 		},
+		{
+			endpoint: api.queryExemplars,
+			query: url.Values{
+				"query": []string{`{__name__="test_metric5"}`},
+			},
+			response: []exemplar.QueryResult{},
+		},
 	}
 
 	if testLabelAPI {

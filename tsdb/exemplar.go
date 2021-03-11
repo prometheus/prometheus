@@ -84,7 +84,7 @@ func (ce *CircularExemplarStorage) Querier(ctx context.Context) (storage.Exempla
 
 // Select returns exemplars for a given set of label matchers.
 func (ce *CircularExemplarStorage) Select(start, end int64, matchers ...[]*labels.Matcher) ([]exemplar.QueryResult, error) {
-	var ret []exemplar.QueryResult
+	ret := make([]exemplar.QueryResult, 0)
 
 	ce.lock.RLock()
 	defer ce.lock.RUnlock()
