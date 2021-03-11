@@ -24,31 +24,15 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
-type exemplarMetrics struct {
-	outOfOrderExemplars prometheus.Counter
-}
-
-func newExemplarMetrics(r prometheus.Registerer) *exemplarMetrics {
-	m := &exemplarMetrics{
-		outOfOrderExemplars: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "prometheus_tsdb_exemplar_out_of_order_exemplars_total",
-			Help: "Total number of out of order exemplar ingestion failed attempts",
-		}),
-	}
-	if r != nil {
-		r.MustRegister(m.outOfOrderExemplars)
-	}
-	return m
-}
-
 type CircularExemplarStorage struct {
-	metrics   *exemplarMetrics
+	outOfOrderExemplars prometheus.Counter
+
 	lock      sync.RWMutex
 	exemplars []*circularBufferEntry
 	nextIndex int
 
 	// Map of series labels as a string to index entry, which points to the first
-	// and last exemplar for the series the exemplars circular buffer.
+	// and last exemplar for the series in the exemplars circular buffer.
 	index map[string]*indexEntry
 }
 
@@ -70,11 +54,20 @@ func NewCircularExemplarStorage(len int, reg prometheus.Registerer) (ExemplarSto
 	if len < 1 {
 		return &noopExemplarStorage{}, nil
 	}
-	return &CircularExemplarStorage{
+	c := &CircularExemplarStorage{
 		exemplars: make([]*circularBufferEntry, len),
 		index:     make(map[string]*indexEntry),
-		metrics:   newExemplarMetrics(reg),
-	}, nil
+		outOfOrderExemplars: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_exemplar_out_of_order_exemplars_total",
+			Help: "Total number of out of order exemplar ingestion failed attempts",
+		}),
+	}
+
+	if reg != nil {
+		reg.MustRegister(c.outOfOrderExemplars)
+	}
+
+	return c, nil
 }
 
 func (ce *CircularExemplarStorage) Appender() *CircularExemplarStorage {
@@ -89,7 +82,7 @@ func (ce *CircularExemplarStorage) Querier(ctx context.Context) (storage.Exempla
 	return ce, nil
 }
 
-// Select returns exemplars for a given set of series labels hash.
+// Select returns exemplars for a given set of label matchers.
 func (ce *CircularExemplarStorage) Select(start, end int64, matchers ...[]*labels.Matcher) ([]exemplar.QueryResult, error) {
 	var ret []exemplar.QueryResult
 
@@ -183,7 +176,7 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 	}
 
 	if e.Ts <= ce.exemplars[idx.last].exemplar.Ts {
-		ce.metrics.outOfOrderExemplars.Inc()
+		ce.outOfOrderExemplars.Inc()
 		return storage.ErrOutOfOrderExemplar
 	}
 	ce.indexGc(ce.exemplars[ce.nextIndex])

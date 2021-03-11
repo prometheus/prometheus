@@ -15,6 +15,7 @@ package tsdb
 
 import (
 	"reflect"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -77,7 +78,7 @@ func TestAddExemplar(t *testing.T) {
 	require.Equal(t, err, storage.ErrOutOfOrderExemplar)
 }
 
-func TestAddExtraExemplar(t *testing.T) {
+func TestStorageOverflow(t *testing.T) {
 	// Test that circular buffer index and assignment
 	// works properly, adding more exemplars than can
 	// be stored and then querying for them.
@@ -206,71 +207,40 @@ func TestSelectExemplar_MultiSeries(t *testing.T) {
 }
 
 func TestSelectExemplar_TimeRange(t *testing.T) {
-	exs, err := NewCircularExemplarStorage(4, nil)
+	lenEs := 5
+	exs, err := NewCircularExemplarStorage(lenEs, nil)
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 
 	l := labels.Labels{
 		{Name: "service", Value: "asdf"},
 	}
-	exemplars := []exemplar.Exemplar{
-		{
-			Labels: labels.Labels{
-				labels.Label{
-					Name:  "traceID",
-					Value: "qwerty",
-				},
-			},
-			Value: 0.1,
-			Ts:    101,
-		},
-		{
-			Labels: labels.Labels{
-				labels.Label{
-					Name:  "traceID",
-					Value: "zxcvbn",
-				},
-			},
-			Value: 0.1,
-			Ts:    102,
-		},
-		{
-			Labels: labels.Labels{
-				labels.Label{
-					Name:  "traceID",
-					Value: "asdfgh",
-				},
-			},
-			Value: 0.1,
-			Ts:    103,
-		},
-		{
-			Labels: labels.Labels{
-				labels.Label{
-					Name:  "traceID",
-					Value: "hjkl;",
-				},
-			},
-			Value: 0.1,
-			Ts:    106,
-		},
-	}
 
-	for i, e := range exemplars {
-		err := es.AddExemplar(l, e)
+	for i := 0; i < lenEs; i++ {
+		err := es.AddExemplar(l, exemplar.Exemplar{
+			Labels: labels.Labels{
+				labels.Label{
+					Name:  "traceID",
+					Value: strconv.Itoa(i),
+				},
+			},
+			Value: 0.1,
+			Ts:    int64(101 + i),
+		})
 		require.NoError(t, err)
 		require.Equal(t, es.index[l.String()].last, i, "exemplar was not stored correctly")
 	}
 
 	m, err := labels.NewMatcher(labels.MatchEqual, l[0].Name, l[0].Value)
 	require.NoError(t, err, "error creating label matcher for exemplar query")
-	ret, err := es.Select(102, 105, []*labels.Matcher{m})
+	ret, err := es.Select(102, 104, []*labels.Matcher{m})
 	require.NoError(t, err)
 	require.True(t, len(ret) == 1, "select should have returned samples for a single series only")
-	require.True(t, len(ret[0].Exemplars) == 2, "didn't get expected two exemplars ", len(ret), ret)
-	require.True(t, reflect.DeepEqual(ret[0].Exemplars, exemplars[1:3]), "returned exemplar did not matched expected\n\tactual: %+v\n\texpected %+v", ret[0].Exemplars, exemplars[1:3])
+	require.True(t, len(ret[0].Exemplars) == 3, "didn't get expected two exemplars %d, %+v", len(ret[0].Exemplars), ret)
 }
 
+// Test to ensure that even though a series matches more than one matcher from the
+// query that it's exemplars are only included in the result a single time.
 func TestSelectExemplar_DuplicateSeries(t *testing.T) {
 	exs, err := NewCircularExemplarStorage(4, nil)
 	require.NoError(t, err)
@@ -332,6 +302,8 @@ func TestIndexOverwrite(t *testing.T) {
 	err = es.AddExemplar(l2, exemplar.Exemplar{Value: 3, Ts: 3})
 	require.NoError(t, err)
 
+	// Ensure index GC'ing is taking place, there should no longer be any
+	// index entry for series l1 since we just wrote two exemplars for series l2.
 	_, ok := es.index[l1.String()]
 	require.False(t, ok)
 	require.Equal(t, &indexEntry{1, 0}, es.index[l2.String()])

@@ -186,7 +186,7 @@ type ExemplarAppender interface {
 	// AppendExemplar adds an exemplar for the given series labels.
 	// An optional reference number can be provided to accelerate calls.
 	// A reference number is returned which can be used to add further
-	// samples in the same or later transactions.
+	// exemplars in the same or later transactions.
 	// Returned reference numbers are ephemeral and may be rejected in calls
 	// to Append() at any point. Adding the sample via Append() returns a new
 	// reference number.
