@@ -26,7 +26,7 @@ require (
 	github.com/go-openapi/validate v0.20.2 // indirect
 	github.com/go-zookeeper/zk v1.0.2
 	github.com/gogo/protobuf v1.3.2
-	github.com/golang/snappy v0.0.2
+	github.com/golang/snappy v0.0.3
 	github.com/google/pprof v0.0.0-20210208152844-1612e9be7af6
 	github.com/gophercloud/gophercloud v0.15.0
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0
