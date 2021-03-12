@@ -1535,17 +1535,29 @@ The following meta labels are available on targets during [relabeling](#relabel_
 
 #### Instance role
 
-* `__meta_scaleway_instance_id`: the id of the instance
-* `__meta_scaleway_instance_private_ipv4`: the private ipv4 address of the instance
-* `__meta_scaleway_instance_public_ipv4`: the public ipv4 address of the instance
-* `__meta_scaleway_instance_public_ipv6`: the public ipv6 address of the instance
-* `__meta_scaleway_instance_image_name`: name of the server image
+
+* `__meta_scaleway_instance_boot_type`: the boot type of the server
+* `__meta_scaleway_instance_hostname`: the hostname of the server
+* `__meta_scaleway_instance_id`: the ID of the server
+* `__meta_scaleway_instance_image_arch`: the arch of the server image
+* `__meta_scaleway_instance_image_id`: the ID of the server image
+* `__meta_scaleway_instance_image_name`: the name of the server image
+* `__meta_scaleway_instance_location_cluster_id`: the cluster ID of the server location
+* `__meta_scaleway_instance_location_hypervisor_id`: the hypervisor ID of the server location
+* `__meta_scaleway_instance_location_node_id`: the node ID of the server location
 * `__meta_scaleway_instance_name`: name of the server
+* `__meta_scaleway_instance_organization`: the organization of the server
+* `__meta_scaleway_instance_private_ipv4`: the private IPv4 address of the server
 * `__meta_scaleway_instance_project_id`: project id of the server
+* `__meta_scaleway_instance_public_ipv4`: the public IPv4 address of the server
+* `__meta_scaleway_instance_public_ipv6`: the public IPv6 address of the server
+* `__meta_scaleway_instance_region`: the region of the server
+* `__meta_scaleway_instance_security_group_id`: the ID of the security group of the server
+* `__meta_scaleway_instance_security_group_name`: the name of the security group of the server
 * `__meta_scaleway_instance_status`: status of the server
-* `__meta_scaleway_instance_tags`: the list of tags of the target joined by the tag separator
+* `__meta_scaleway_instance_tags`: the list of tags of the server joined by the tag separator
 * `__meta_scaleway_instance_type`: commercial type of the server
-* `__meta_scaleway_instance_zone`: zone of the instance (ex: `fr-par-1`, complete list on <https://developers.scaleway.com/en/>)
+* `__meta_scaleway_instance_zone`: the zone of the server (ex: `fr-par-1`, complete list [here](https://developers.scaleway.com/en/products/instance/api/#introduction))
 
 This role uses the private IPv4 address by default. This can be
 changed with relabelling, as demonstrated in [the Prometheus scaleway-sd
@@ -1553,18 +1565,17 @@ configuration file](/documentation/examples/prometheus-scaleway.yml).
 
 #### Baremetal role
 
-* `__meta_scaleway_baremetal_id`: the id of the server
-* `__meta_scaleway_baremetal_public_ipv4`: the public ipv4 address of the server
-* `__meta_scaleway_baremetal_public_ipv6`: the public ipv6 address of the server
-* `__meta_scaleway_baremetal_ipaddress_order`: zero-based order of the address in the server
-* `__meta_scaleway_baremetal_name`: name of the server
-* `__meta_scaleway_baremetal_os_name`: name of the os used
-* `__meta_scaleway_baremetal_os_version`: version of the os used
-* `__meta_scaleway_baremetal_project_id`: project id of the server
-* `__meta_scaleway_baremetal_status`: status of the server
-* `__meta_scaleway_baremetal_tags`: tag list of the server
-* `__meta_scaleway_baremetal_type`: commercial type of the server
-* `__meta_scaleway_baremetal_zone`: zone of the server (ex: `fr-par-1`, complete list on <https://developers.scaleway.com/en/>)
+* `__meta_scaleway_baremetal_id`: the ID of the server
+* `__meta_scaleway_baremetal_public_ipv4`: the public IPv4 address of the server
+* `__meta_scaleway_baremetal_public_ipv6`: the public IPv6 address of the server
+* `__meta_scaleway_baremetal_name`: the name of the server
+* `__meta_scaleway_baremetal_os_name`: the name of the operating system of the server
+* `__meta_scaleway_baremetal_os_version`: the version of the operating system of the server
+* `__meta_scaleway_baremetal_project_id`: the project ID of the server
+* `__meta_scaleway_baremetal_status`: the status of the server
+* `__meta_scaleway_baremetal_tags`: the list of tags of the server joined by the tag separator
+* `__meta_scaleway_baremetal_type`: the commercial type of the server
+* `__meta_scaleway_baremetal_zone`: the zone of the server (ex: `fr-par-1`, complete list [here](https://developers.scaleway.com/en/products/instance/api/#introduction))
 
 This role uses the public IPv4 address by default. This can be
 changed with relabelling, as demonstrated in [the Prometheus scaleway-sd

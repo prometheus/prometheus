@@ -34,17 +34,28 @@ import (
 const (
 	instanceLabelPrefix = metaLabelPrefix + "instance_"
 
-	instanceIDLabel        = instanceLabelPrefix + "id"
-	instancePrivateIPv4    = instanceLabelPrefix + "private_ipv4"
-	instancePublicIPv4     = instanceLabelPrefix + "public_ipv4"
-	instancePublicIPv6     = instanceLabelPrefix + "public_ipv6"
-	instanceImageNameLabel = instanceLabelPrefix + "image_name"
-	instanceNameLabel      = instanceLabelPrefix + "name"
-	instanceProjectLabel   = instanceLabelPrefix + "project_id"
-	instanceStateLabel     = instanceLabelPrefix + "status"
-	instanceTagsLabel      = instanceLabelPrefix + "tags"
-	instanceTypeLabel      = instanceLabelPrefix + "type"
-	instanceZoneLabel      = instanceLabelPrefix + "zone"
+	instanceBootTypeLabel          = instanceLabelPrefix + "boot_type"
+	instanceHostnameLabel          = instanceLabelPrefix + "hostname"
+	instanceIDLabel                = instanceLabelPrefix + "id"
+	instanceImageArchLabel         = instanceLabelPrefix + "image_arch"
+	instanceImageIDLabel           = instanceLabelPrefix + "image_id"
+	instanceImageNameLabel         = instanceLabelPrefix + "image_name"
+	instanceLocationClusterID      = instanceLabelPrefix + "location_cluster_id"
+	instanceLocationHypervisorID   = instanceLabelPrefix + "location_hypervisor_id"
+	instanceLocationNodeID         = instanceLabelPrefix + "location_node_id"
+	instanceNameLabel              = instanceLabelPrefix + "name"
+	instanceOrganizationLabel      = instanceLabelPrefix + "organization"
+	instancePrivateIPv4Label       = instanceLabelPrefix + "private_ipv4"
+	instanceProjectLabel           = instanceLabelPrefix + "project_id"
+	instancePublicIPv4Label        = instanceLabelPrefix + "public_ipv4"
+	instancePublicIPv6Label        = instanceLabelPrefix + "public_ipv6"
+	instanceSecurityGroupIDLabel   = instanceLabelPrefix + "security_group_id"
+	instanceSecurityGroupNameLabel = instanceLabelPrefix + "security_group_name"
+	instanceStateLabel             = instanceLabelPrefix + "status"
+	instanceTagsLabel              = instanceLabelPrefix + "tags"
+	instanceTypeLabel              = instanceLabelPrefix + "type"
+	instanceZoneLabel              = instanceLabelPrefix + "zone"
+	instanceRegionLabel            = instanceLabelPrefix + "region"
 )
 
 type instanceDiscovery struct {
@@ -116,13 +127,27 @@ func (d *instanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 	var targets []model.LabelSet
 	for _, server := range servers.Servers {
 		labels := model.LabelSet{
-			instanceIDLabel:        model.LabelValue(server.ID),
-			instanceImageNameLabel: model.LabelValue(server.Image.Name),
-			instanceNameLabel:      model.LabelValue(server.Name),
-			instanceProjectLabel:   model.LabelValue(server.Project),
-			instanceStateLabel:     model.LabelValue(server.State),
-			instanceTypeLabel:      model.LabelValue(server.CommercialType),
-			instanceZoneLabel:      model.LabelValue(server.Zone.String()),
+			instanceBootTypeLabel:          model.LabelValue(server.BootType),
+			instanceHostnameLabel:          model.LabelValue(server.Hostname),
+			instanceIDLabel:                model.LabelValue(server.ID),
+			instanceImageArchLabel:         model.LabelValue(server.Image.Arch),
+			instanceImageIDLabel:           model.LabelValue(server.Image.ID),
+			instanceImageNameLabel:         model.LabelValue(server.Image.Name),
+			instanceLocationClusterID:      model.LabelValue(server.Location.ClusterID),
+			instanceLocationHypervisorID:   model.LabelValue(server.Location.HypervisorID),
+			instanceLocationNodeID:         model.LabelValue(server.Location.NodeID),
+			instanceNameLabel:              model.LabelValue(server.Name),
+			instanceOrganizationLabel:      model.LabelValue(server.Organization),
+			instanceProjectLabel:           model.LabelValue(server.Project),
+			instanceSecurityGroupIDLabel:   model.LabelValue(server.SecurityGroup.ID),
+			instanceSecurityGroupNameLabel: model.LabelValue(server.SecurityGroup.Name),
+			instanceStateLabel:             model.LabelValue(server.State),
+			instanceTypeLabel:              model.LabelValue(server.CommercialType),
+			instanceZoneLabel:              model.LabelValue(server.Zone.String()),
+		}
+
+		if region, err := server.Zone.Region(); err == nil {
+			labels[instanceRegionLabel] = model.LabelValue(region.String())
 		}
 
 		if len(server.Tags) > 0 {
@@ -133,15 +158,15 @@ func (d *instanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 		}
 
 		if server.IPv6 != nil {
-			labels[instancePublicIPv6] = model.LabelValue(server.IPv6.Address.String())
+			labels[instancePublicIPv6Label] = model.LabelValue(server.IPv6.Address.String())
 		}
 
 		if server.PublicIP != nil {
-			labels[instancePublicIPv4] = model.LabelValue(server.PublicIP.Address.String())
+			labels[instancePublicIPv4Label] = model.LabelValue(server.PublicIP.Address.String())
 		}
 
 		if server.PrivateIP != nil {
-			labels[instancePrivateIPv4] = model.LabelValue(*server.PrivateIP)
+			labels[instancePrivateIPv4Label] = model.LabelValue(*server.PrivateIP)
 
 			addr := net.JoinHostPort(*server.PrivateIP, strconv.FormatUint(uint64(d.port), 10))
 			labels[model.AddressLabel] = model.LabelValue(addr)
