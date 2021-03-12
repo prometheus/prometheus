@@ -210,7 +210,7 @@ $ curl 'http://localhost:9090/api/v1/query_range?query=up&start=2015-07-01T20:10
 
 Prometheus offers a set of API endpoints to query metadata about series and their labels.
 
-NOTE: These API endpoints may return additional metadata for series outside of the selected time range, or for series whose samples have been deleted via the deletion API endpoint. The exact extent of additionally returned metadata is an implementation detail that may change in the future.
+NOTE: These API endpoints may return metadata for series for which there is no sample within the selected time range, and/or for series whose samples have been marked as deleted via the deletion API endpoint. The exact extent of additionally returned series metadata is an implementation detail that may change in the future.
 
 ### Finding series by label matchers
 
@@ -1019,7 +1019,7 @@ $ curl -X POST \
   -g 'http://localhost:9090/api/v1/admin/tsdb/delete_series?match[]=up&match[]=process_start_time_seconds{job="prometheus"}'
 ```
 
-NOTE: This endpoint marks samples from series as deleted, but will not necessarily delete associated series metadata in every case (even after cleaning tombstones). Thus the series metadata API endpoints may still return metadata for series whose samples have been deleted for the selected time range. The exact extent of metadata deletion is an implementation detail that may change in the future.
+NOTE: This endpoint marks samples from series as deleted, but will not necessarily prevent associated series metadata from still being returned in metadata queries for the affected time range (even after cleaning tombstones). The exact extent of metadata deletion is an implementation detail that may change in the future.
 
 *New in v2.1 and supports PUT from v2.9*
 
