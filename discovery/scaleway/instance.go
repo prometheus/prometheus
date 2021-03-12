@@ -44,7 +44,7 @@ const (
 	instanceLocationHypervisorID   = instanceLabelPrefix + "location_hypervisor_id"
 	instanceLocationNodeID         = instanceLabelPrefix + "location_node_id"
 	instanceNameLabel              = instanceLabelPrefix + "name"
-	instanceOrganizationLabel      = instanceLabelPrefix + "organization"
+	instanceOrganizationLabel      = instanceLabelPrefix + "organization_id"
 	instancePrivateIPv4Label       = instanceLabelPrefix + "private_ipv4"
 	instanceProjectLabel           = instanceLabelPrefix + "project_id"
 	instancePublicIPv4Label        = instanceLabelPrefix + "public_ipv4"

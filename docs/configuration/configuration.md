@@ -1546,7 +1546,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_scaleway_instance_location_hypervisor_id`: the hypervisor ID of the server location
 * `__meta_scaleway_instance_location_node_id`: the node ID of the server location
 * `__meta_scaleway_instance_name`: name of the server
-* `__meta_scaleway_instance_organization`: the organization of the server
+* `__meta_scaleway_instance_organization_id`: the organization of the server
 * `__meta_scaleway_instance_private_ipv4`: the private IPv4 address of the server
 * `__meta_scaleway_instance_project_id`: project id of the server
 * `__meta_scaleway_instance_public_ipv4`: the public IPv4 address of the server
