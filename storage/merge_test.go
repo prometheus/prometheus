@@ -647,6 +647,14 @@ func TestChainSampleIteratorSeek(t *testing.T) {
 			seek:     2,
 			expected: []tsdbutil.Sample{sample{2, 2}, sample{3, 3}, sample{4, 4}, sample{5, 5}},
 		},
+		{
+			input: []chunkenc.Iterator{
+				NewListSeriesIterator(samples{sample{0, 0}, sample{2, 2}, sample{3, 3}}),
+				NewListSeriesIterator(samples{sample{0, 0}, sample{1, 1}, sample{2, 2}}),
+			},
+			seek:     0,
+			expected: []tsdbutil.Sample{sample{0, 0}, sample{1, 1}, sample{2, 2}, sample{3, 3}},
+		},
 	} {
 		merged := newChainSampleIterator(tc.input)
 		actual := []tsdbutil.Sample{}
