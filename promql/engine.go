@@ -2369,14 +2369,14 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 func generateGroupingKey(metric labels.Labels, grouping []string, without bool, buf []byte) (uint64, []byte) {
 	if without {
 		return metric.HashWithoutLabels(buf, grouping...)
-	} else {
-		if len(grouping) == 0 {
-			// No need to generate any hash if there are no grouping labels.
-			return 0, buf
-		}
-
-		return metric.HashForLabels(buf, grouping...)
 	}
+
+	if len(grouping) == 0 {
+		// No need to generate any hash if there are no grouping labels.
+		return 0, buf
+	}
+
+	return metric.HashForLabels(buf, grouping...)
 }
 
 // btos returns 1 if b is true, 0 otherwise.
