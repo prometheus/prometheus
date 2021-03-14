@@ -46,7 +46,6 @@ import (
 	_ "github.com/prometheus/prometheus/discovery/install" // Register service discovery implementations.
 	"github.com/prometheus/prometheus/discovery/kubernetes"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
-	"github.com/prometheus/prometheus/tsdb"
 )
 
 func main() {
@@ -151,10 +150,10 @@ func main() {
 	importRulesCmd := importCmd.Command("rules", "Create new blocks of data from Prometheus data for new rules from recording rule files.")
 	importRulesStart := importRulesCmd.Flag("start", "The time to start backfilling the new rule from. It is required. Start time should be RFC3339 or Unix timestamp.").
 		Required().String()
-	importRulesEnd := importRulesCmd.Flag("end", "If an end time is provided, all recording rules in the rule files provided will be backfilled to the end time. Default will backfill up to 3 hrs ago. End time should be RFC3339 or Unix timestamp.").String()
+	importRulesEnd := importRulesCmd.Flag("end", "If an end time is provided, all recording rules in the rule files provided will be backfilled to the end time. Default will backfill up to 3 hours ago. End time should be RFC3339 or Unix timestamp.").String()
 	importRulesOutputDir := importRulesCmd.Flag("output-dir", "The filepath on the local filesystem to write the output to. Output will be blocks containing the data of the backfilled recording rules. Don't use an active Prometheus data directory. If command is run many times with same start/end time, it will create duplicate series.").Default("backfilldata/").String()
-	importRulesURL := importRulesCmd.Flag("url", "The URL for the Prometheus API with the data where the rule will be backfilled from.").Default("http://localhost:9090").String()
-	importRulesEvalInterval := importRulesCmd.Flag("eval-interval-default", "How frequently to evaluate rules when backfilling if a value is not set in the recording rule files.").
+	importRulesURL := importRulesCmd.Flag("url", "The URL for the Prometheus API with the data where the rule will be backfilled from.").Default("http://localhost:9090").URL()
+	importRulesEvalInterval := importRulesCmd.Flag("eval-interval", "How frequently to evaluate rules when backfilling if a value is not set in the recording rule files.").
 		Default("60s").Duration()
 	importRulesFiles := importRulesCmd.Arg(
 		"rule-files",
@@ -838,7 +837,7 @@ func (j *jsonPrinter) printLabelValues(v model.LabelValues) {
 
 // importRules backfills recording rules from the files provided. The output are blocks of data
 // at the outputDir location.
-func importRules(url, start, end, outputDir string, evalInterval time.Duration, files ...string) error {
+func importRules(url *url.URL, start, end, outputDir string, evalInterval time.Duration, files ...string) error {
 	ctx := context.Background()
 	var stime, etime time.Time
 	var err error
@@ -863,33 +862,21 @@ func importRules(url, start, end, outputDir string, evalInterval time.Duration, 
 		return nil
 	}
 
-	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
-	writer, err := tsdb.NewBlockWriter(logger,
-		outputDir,
-		tsdb.DefaultBlockDuration,
-	)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "new writer error", err)
-		return err
-	}
-	defer func() {
-		err = writer.Close()
-	}()
-
 	cfg := ruleImporterConfig{
-		Start:        stime,
-		End:          etime,
-		EvalInterval: evalInterval,
+		outputDir:    outputDir,
+		start:        stime,
+		end:          etime,
+		evalInterval: evalInterval,
 	}
-	c, err := api.NewClient(api.Config{
-		Address: url,
+	client, err := api.NewClient(api.Config{
+		Address: url.String(),
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "new api client error", err)
 		return err
 	}
-	const maxSamplesInMemory = 5000
-	ruleImporter := newRuleImporter(logger, cfg, v1.NewAPI(c), newMultipleAppender(ctx, maxSamplesInMemory, writer))
+
+	ruleImporter := newRuleImporter(log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr)), cfg, v1.NewAPI(client))
 
 	errs := ruleImporter.loadGroups(ctx, files)
 	for _, err := range errs {
