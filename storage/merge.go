@@ -467,6 +467,7 @@ func (c *chainSampleIterator) Seek(t int64) bool {
 	}
 	if len(c.h) > 0 {
 		c.curr = heap.Pop(&c.h).(chunkenc.Iterator)
+		c.lastt, _ = c.curr.At()
 		return true
 	}
 	c.curr = nil
