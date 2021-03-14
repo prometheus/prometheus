@@ -1107,6 +1107,15 @@ func (a *initAppender) AppendExemplar(ref uint64, l labels.Labels, e exemplar.Ex
 	return a.app.AppendExemplar(ref, l, e)
 }
 
+func (a *initAppender) GetRef(lset labels.Labels) (uint64, bool) {
+	if g, ok := a.app.(interface {
+		GetRef(lset labels.Labels) (uint64, bool)
+	}); ok {
+		return g.GetRef(lset)
+	}
+	return 0, false
+}
+
 func (a *initAppender) Commit() error {
 	if a.app == nil {
 		return nil
@@ -1329,6 +1338,15 @@ func (a *headAppender) AppendExemplar(ref uint64, _ labels.Labels, e exemplar.Ex
 	a.exemplars = append(a.exemplars, exemplarWithSeriesRef{ref, e})
 
 	return s.ref, nil
+}
+
+// GetRef is used by downstream projects (e.g. Cortex) to avoid maintaining a parallel set of references
+func (a *headAppender) GetRef(lset labels.Labels) (uint64, bool) {
+	s := a.head.series.getByHash(lset.Hash(), lset)
+	if s == nil {
+		return 0, false
+	}
+	return s.ref, true
 }
 
 func (a *headAppender) log() error {

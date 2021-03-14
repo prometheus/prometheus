@@ -795,6 +795,15 @@ type dbAppender struct {
 	db *DB
 }
 
+func (a dbAppender) GetRef(lset labels.Labels) (uint64, bool) {
+	if g, ok := a.Appender.(interface {
+		GetRef(lset labels.Labels) (uint64, bool)
+	}); ok {
+		return g.GetRef(lset)
+	}
+	return 0, false
+}
+
 func (a dbAppender) Commit() error {
 	err := a.Appender.Commit()
 
