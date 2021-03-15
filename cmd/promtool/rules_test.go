@@ -46,6 +46,12 @@ func (mockAPI mockQueryRangeAPI) QueryRange(ctx context.Context, query string, r
 	return mockAPI.samples, v1.Warnings{}, nil
 }
 
+func getTestProdData() []*model.SampleStream {
+	var result = []*model.SampleStream{}
+
+	return result
+}
+
 // TestBackfillRuleIntegration is an integration test that runs all the rule importer code to confirm the parts work together.
 func TestBackfillRuleIntegration(t *testing.T) {
 	var testCases = []struct {
@@ -105,7 +111,7 @@ func TestBackfillRuleIntegration(t *testing.T) {
 				require.Equal(t, "grp2_rule1_expr", g2Rules[0].Query().String())
 				require.Equal(t, 0, len(g2Rules[0].Labels()))
 
-				// Backfill all recording rules then check the blocks to confirm the right data was created.
+				// Backfill all recording rules then check the blocks to confirm the correct data was created.
 				errs = ruleImporter.importAll(ctx)
 				for _, err := range errs {
 					require.NoError(t, err)
@@ -159,22 +165,15 @@ func TestBackfillRuleIntegration(t *testing.T) {
 func newTestRuleImporter(ctx context.Context, start time.Time, tmpDir string, testSamples model.Matrix) (*ruleImporter, error) {
 	logger := log.NewNopLogger()
 	cfg := ruleImporterConfig{
-		Start:        start.Add(-1 * time.Hour),
-		End:          start,
-		EvalInterval: 60 * time.Second,
-	}
-	writer, err := tsdb.NewBlockWriter(logger,
-		tmpDir,
-		tsdb.DefaultBlockDuration,
-	)
-	if err != nil {
-		return nil, err
+		outputDir:    tmpDir,
+		start:        start.Add(-1 * time.Hour),
+		end:          start,
+		evalInterval: 60 * time.Second,
 	}
 
-	app := newMultipleAppender(ctx, testMaxSampleCount, writer)
 	return newRuleImporter(logger, cfg, mockQueryRangeAPI{
 		samples: testSamples,
-	}, app), nil
+	}), nil
 }
 
 func createSingleRuleTestFiles(path string) error {
@@ -182,7 +181,7 @@ func createSingleRuleTestFiles(path string) error {
 - name: group0
   rules:
   - record: rule1
-    expr: ruleExpr
+    expr:  ruleExpr
     labels:
         testlabel11: testlabelvalue11
 `

@@ -57,7 +57,6 @@ type ruleImporterConfig struct {
 // newRuleImporter creates a new rule importer that can be used to parse and evaluate recording rule files and create new series
 // written to disk in blocks.
 func newRuleImporter(logger log.Logger, config ruleImporterConfig, apiClient queryRangeAPI) *ruleImporter {
-
 	return &ruleImporter{
 		logger:      logger,
 		config:      config,
@@ -84,7 +83,7 @@ func (importer *ruleImporter) importAll(ctx context.Context) (errs []error) {
 		stimeWithAlignment := group.EvalTimestamp(importer.config.start.UnixNano())
 		for i, r := range group.Rules() {
 			level.Info(importer.logger).Log("backfiller", fmt.Sprintf("processing rule %d, name: %s", i+1, r.Name()))
-			if err := importer.importRule(ctx, r.Query().String(), r.Name(), r.Labels(), stimeWithAlignment, importer.config.end, group.Interval()); err != nil {
+			if err := importer.importRule(ctx, r.Query().String(), r.Name(), r.Labels(), stimeWithAlignment, importer.config.end, group); err != nil {
 				errs = append(errs, err)
 			}
 		}
@@ -93,18 +92,23 @@ func (importer *ruleImporter) importAll(ctx context.Context) (errs []error) {
 }
 
 // importRule queries a prometheus API to evaluate rules at times in the past.
-func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName string, ruleLabels labels.Labels, start, end time.Time, interval time.Duration) (err error) {
+func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName string, ruleLabels labels.Labels, start, end time.Time, grp *rules.Group) (err error) {
 	blockDuration := tsdb.DefaultBlockDuration
-	startOfBlock := blockDuration * (start.Unix() / blockDuration)
-	for t := startOfBlock; t <= end.Unix(); t = t + blockDuration {
-		endOfBlock := t + blockDuration
+	startInMs := start.Unix() * int64(time.Second/time.Millisecond)
+	startOfBlock := blockDuration * (startInMs / blockDuration)
+	endInMs := end.Unix() * int64(time.Second/time.Millisecond)
 
+	for s := startOfBlock; s <= endInMs; s = s + blockDuration {
+		endOfBlock := s + blockDuration - 1
+
+		currStart := max(s/int64(time.Second/time.Millisecond), start.Unix())
+		startWithAlignment := grp.EvalTimestamp(time.Unix(currStart, 0).UnixNano())
 		val, warnings, err := importer.apiClient.QueryRange(ctx,
 			ruleExpr,
 			v1.Range{
-				Start: time.Unix(t, 0),
-				End:   time.Unix(endOfBlock, 0),
-				Step:  interval,
+				Start: startWithAlignment,
+				End:   time.Unix(min(endOfBlock/int64(time.Second/time.Millisecond), end.Unix()), 0),
+				Step:  grp.Interval(),
 			},
 		)
 		if err != nil {
@@ -174,8 +178,7 @@ func newMultipleAppender(ctx context.Context, blockWriter *tsdb.BlockWriter) *mu
 }
 
 // multipleAppender keeps track of how many series have been added to the current appender.
-// If the max samples have been added, then all series are flushed to disk and commited and a new
-// appender is created.
+// If the max samples have been added, then all series are commited and a new appender is created.
 type multipleAppender struct {
 	maxSamplesInMemory int
 	currentSampleCount int
@@ -214,4 +217,18 @@ func (m *multipleAppender) flushAndCommit(ctx context.Context) error {
 		return errors.Wrap(err, "multiappender flush")
 	}
 	return nil
+}
+
+func max(x, y int64) int64 {
+	if x > y {
+		return x
+	}
+	return y
+}
+
+func min(x, y int64) int64 {
+	if x < y {
+		return x
+	}
+	return y
 }

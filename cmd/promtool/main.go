@@ -877,7 +877,6 @@ func importRules(url *url.URL, start, end, outputDir string, evalInterval time.D
 	}
 
 	ruleImporter := newRuleImporter(log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr)), cfg, v1.NewAPI(client))
-
 	errs := ruleImporter.loadGroups(ctx, files)
 	for _, err := range errs {
 		if err != nil {
