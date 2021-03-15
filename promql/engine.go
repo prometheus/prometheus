@@ -19,6 +19,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"reflect"
 	"regexp"
 	"runtime"
 	"sort"
@@ -1124,6 +1125,10 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		ev.error(err)
 	}
 	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
+
+	// Create a new span to help investigate inner evaluation performances.
+	span, _ := opentracing.StartSpanFromContext(ev.ctx, stats.InnerEvalTime.SpanOperation()+" eval "+reflect.TypeOf(expr).String())
+	defer span.Finish()
 
 	switch e := expr.(type) {
 	case *parser.AggregateExpr:
