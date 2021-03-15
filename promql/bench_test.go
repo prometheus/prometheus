@@ -21,6 +21,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
@@ -63,7 +65,27 @@ func BenchmarkRangeQuery(b *testing.B) {
 		}
 		metrics = append(metrics, labels.FromStrings("__name__", "h_hundred", "l", strconv.Itoa(i), "le", "+Inf"))
 	}
+
+	for i := 0; i < 100; i++ {
+		metrics = append(metrics, labels.FromStrings("__name__", "a_churning", "l", strconv.Itoa(i)))
+		metrics = append(metrics, labels.FromStrings("__name__", "b_churning", "l", strconv.Itoa(i)))
+		for j := 0; j < 10; j++ {
+			metrics = append(metrics, labels.FromStrings("__name__", "h_churning", "l", strconv.Itoa(i), "le", strconv.Itoa(j)))
+		}
+		metrics = append(metrics, labels.FromStrings("__name__", "h_churning", "l", strconv.Itoa(i), "le", "+Inf"))
+	}
+
 	refs := make([]storage.SeriesRef, len(metrics))
+
+	// Count the total number of churning metrics. This could be hardcoded to a fixed number
+	// but counting it looks more future proof (easy to forget to update this number once the
+	// churning metrics change).
+	numChurningMetrics := 0
+	for _, metric := range metrics {
+		if strings.HasSuffix(metric.Get("__name__"), "churning") {
+			numChurningMetrics++
+		}
+	}
 
 	// A day of data plus 10k steps.
 	numIntervals := 8640 + 10000
@@ -71,7 +93,17 @@ func BenchmarkRangeQuery(b *testing.B) {
 	for s := 0; s < numIntervals; s++ {
 		a := stor.Appender(context.Background())
 		ts := int64(s * 10000) // 10s interval.
+		churningIdx := 0
+
 		for i, metric := range metrics {
+			// Churning series simulates a particularly bad scenario: only 1 series (each time different) with a sample
+			// for each interval.
+			if strings.HasSuffix(metric.Get("__name__"), "churning") {
+				if churningIdx++; s%numChurningMetrics != churningIdx {
+					continue
+				}
+			}
+
 			ref, _ := a.Append(refs[i], metric, ts, float64(s)+float64(i)/float64(len(metrics)))
 			refs[i] = ref
 		}
@@ -194,6 +226,7 @@ func BenchmarkRangeQuery(b *testing.B) {
 			tmp = append(tmp, benchCase{expr: strings.Replace(c.expr, "X", "one", -1), steps: c.steps})
 			tmp = append(tmp, benchCase{expr: strings.Replace(c.expr, "X", "ten", -1), steps: c.steps})
 			tmp = append(tmp, benchCase{expr: strings.Replace(c.expr, "X", "hundred", -1), steps: c.steps})
+			tmp = append(tmp, benchCase{expr: strings.Replace(c.expr, "X", "churning", -1), steps: c.steps})
 		}
 	}
 	cases = tmp
@@ -230,6 +263,70 @@ func BenchmarkRangeQuery(b *testing.B) {
 				qry.Close()
 			}
 		})
+	}
+}
+
+func BenchmarkRangeQuery_HighCardinalityAggregation(b *testing.B) {
+	const (
+		numMetrics          = 10000
+		numSamplesPerMetric = 1000
+		step                = 20
+		query               = "max by(unique) (metric)"
+	)
+
+	// Create metrics labels.
+	metrics := make([]labels.Labels, 0, numMetrics)
+	for i := 0; i < numMetrics; i++ {
+		metrics = append(metrics, labels.FromStrings("__name__", "metric", "unique", strconv.Itoa(i)))
+	}
+
+	// Create series in the storage.
+	stor := teststorage.New(b)
+	b.Cleanup(func() {
+		require.NoError(b, stor.Close())
+	})
+
+	refs := make([]storage.SeriesRef, len(metrics))
+	for s := 0; s < numSamplesPerMetric; s++ {
+		a := stor.Appender(context.Background())
+		ts := int64(s * step * 1000)
+
+		for i, metric := range metrics {
+			ref, _ := a.Append(refs[i], metric, ts, 0)
+			refs[i] = ref
+		}
+		if err := a.Commit(); err != nil {
+			b.Fatal(err)
+		}
+	}
+
+	// Create query engine.
+	opts := EngineOpts{
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 5000000000,
+		Timeout:    120 * time.Second,
+	}
+	engine := NewEngine(opts)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		qry, err := engine.NewRangeQuery(
+			stor, nil, query,
+			time.UnixMilli(0),
+			time.UnixMilli(numSamplesPerMetric*step*1000),
+			time.Duration(step)*time.Second,
+		)
+		if err != nil {
+			b.Fatal(err)
+		}
+		res := qry.Exec(context.Background())
+		if res.Err != nil {
+			b.Fatal(res.Err)
+		}
+		qry.Close()
 	}
 }
 
