@@ -70,7 +70,7 @@ const ScrapePoolPanel: FC<PanelProps> = ({ scrapePool, targetGroup }) => {
                   </td>
                   <td className={styles['last-scrape']}>{formatRelative(lastScrape, now())}</td>
                   <td className={styles['scrape-duration']}>{humanizeDuration(lastScrapeDuration * 1000)}</td>
-                  <td className={styles.errors}>{lastError ? <Badge color={color}>{lastError}</Badge> : null}</td>
+                  <td className={styles.errors}>{lastError ? <span className="text-danger">{lastError}</span> : null}</td>
                 </tr>
               );
             })}
