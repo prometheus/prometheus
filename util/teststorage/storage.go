@@ -18,6 +18,9 @@ import (
 	"os"
 	"time"
 
+	"github.com/prometheus/prometheus/pkg/exemplar"
+	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -35,16 +38,22 @@ func New(t testutil.T) *TestStorage {
 	opts := tsdb.DefaultOptions()
 	opts.MinBlockDuration = int64(24 * time.Hour / time.Millisecond)
 	opts.MaxBlockDuration = int64(24 * time.Hour / time.Millisecond)
+	opts.MaxExemplars = 10
 	db, err := tsdb.Open(dir, nil, nil, opts)
 	if err != nil {
 		t.Fatalf("Opening test storage failed: %s", err)
 	}
-	return &TestStorage{DB: db, dir: dir}
+	es, err := tsdb.NewCircularExemplarStorage(10, nil)
+	if err != nil {
+		t.Fatalf("Opening test exemplar storage failed: %s", err)
+	}
+	return &TestStorage{DB: db, exemplarStorage: es, dir: dir}
 }
 
 type TestStorage struct {
 	*tsdb.DB
-	dir string
+	exemplarStorage tsdb.ExemplarStorage
+	dir             string
 }
 
 func (s TestStorage) Close() error {
@@ -52,4 +61,16 @@ func (s TestStorage) Close() error {
 		return err
 	}
 	return os.RemoveAll(s.dir)
+}
+
+func (s TestStorage) ExemplarAppender() storage.ExemplarAppender {
+	return s
+}
+
+func (s TestStorage) ExemplarQueryable() storage.ExemplarQueryable {
+	return s.exemplarStorage
+}
+
+func (s TestStorage) AppendExemplar(ref uint64, l labels.Labels, e exemplar.Exemplar) (uint64, error) {
+	return ref, s.exemplarStorage.AddExemplar(l, e)
 }
