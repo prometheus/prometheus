@@ -2264,22 +2264,9 @@ host: <string>
 username: <string>
 password: <secret>
 
-# A list of formulas used to install exporters.
-[ exporter_formulas:
-  [ - <string> | default = "prometheus-exporters" ] ]
-
-# The string by which Uyuni formulas are joined into the formulas label.
-[ formulas_separator: <string> | default = , ]
-
 # Refresh interval to re-read the managed targets list.
 [ refresh_interval: <duration> | default = 60s ]
 ```
-
-The formulas in `exporter_formulas` list should implement the expected contract.
-In particular, they should contain the field `exporters` with the list of exporter
-configurations.
-See [the uyuni-pillar.example file](/documentation/examples/uyuni-pillar)
-for complete structure of possible exporter configuration items.
 
 See [the Prometheus uyuni-sd configuration file](/documentation/examples/prometheus-uyuni.yml)
 for a practical example on how to set up Uyuni Prometheus configuration.
