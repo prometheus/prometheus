@@ -946,10 +946,10 @@ var expectedConf = &Config{
 			Scheme:           DefaultScrapeConfig.Scheme,
 			ServiceDiscoveryConfigs: discovery.Configs{
 				&uyuni.SDConfig{
-					Host:              "http://example.uyuni-project.org",
-					User:              "gopher",
-					Pass:              "hole",
-					RefreshInterval:   model.Duration(60 * time.Second),
+					Host:            "http://example.uyuni-project.org",
+					User:            "gopher",
+					Pass:            "hole",
+					RefreshInterval: model.Duration(60 * time.Second),
 				},
 			},
 		},

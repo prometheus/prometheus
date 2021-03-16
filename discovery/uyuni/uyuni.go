@@ -40,7 +40,7 @@ const (
 
 // DefaultSDConfig is the default Uyuni SD configuration.
 var DefaultSDConfig = SDConfig{
-	RefreshInterval:   model.Duration(1 * time.Minute),
+	RefreshInterval: model.Duration(1 * time.Minute),
 }
 
 func init() {
@@ -49,10 +49,10 @@ func init() {
 
 // SDConfig is the configuration for Uyuni based service discovery.
 type SDConfig struct {
-	Host              string         `yaml:"host"`
-	User              string         `yaml:"username"`
-	Pass              config.Secret  `yaml:"password"`
-	RefreshInterval   model.Duration `yaml:"refresh_interval,omitempty"`
+	Host            string         `yaml:"host"`
+	User            string         `yaml:"username"`
+	Pass            config.Secret  `yaml:"password"`
+	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 }
 
 // Uyuni API Response structures
