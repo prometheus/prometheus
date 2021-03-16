@@ -949,8 +949,6 @@ var expectedConf = &Config{
 					Host:              "http://example.uyuni-project.org",
 					User:              "gopher",
 					Pass:              "hole",
-					ExporterFormulas:  []string{"prometheus-exporters"},
-					FormulasSeparator: ",",
 					RefreshInterval:   model.Duration(60 * time.Second),
 				},
 			},
