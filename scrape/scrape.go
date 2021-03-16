@@ -1005,7 +1005,7 @@ func (sl *scrapeLoop) run(interval, timeout time.Duration, errc chan<- error) {
 
 	var last time.Time
 
-	alignedScrapeTime := time.Now()
+	alignedScrapeTime := time.Now().Round(0)
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -1023,7 +1023,9 @@ mainLoop:
 		// Temporary workaround for a jitter in go timers that causes disk space
 		// increase in TSDB.
 		// See https://github.com/prometheus/prometheus/issues/7846
-		scrapeTime := time.Now()
+		// Calling Round ensures the time used is the wall clock, as otherwise .Sub
+		// and .Add on time.Time behave differently (see time package docs).
+		scrapeTime := time.Now().Round(0)
 		if AlignScrapeTimestamps && interval > 100*scrapeTimestampTolerance {
 			// For some reason, a tick might have been skipped, in which case we
 			// would call alignedScrapeTime.Add(interval) multiple times.
