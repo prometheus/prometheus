@@ -1,3 +1,7 @@
+## 2.25.2 / 2021-03-16
+
+* [BUGFIX] Fix the ingestion of scrapes when the wall clock changes, e.g. on suspend. #8601
+
 ## 2.25.1 / 2021-03-14
 
 * [BUGFIX] Fix a crash in `promtool` when a subquery with default resolution is used. #8569
