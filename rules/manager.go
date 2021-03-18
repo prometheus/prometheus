@@ -592,6 +592,9 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 
 			vector, err := rule.Eval(ctx, ts, g.opts.QueryFunc, g.opts.ExternalURL)
 			if err != nil {
+				rule.SetHealth(HealthBad)
+				rule.SetLastError(err)
+
 				// Canceled queries are intentional termination of queries. This normally
 				// happens on shutdown and thus we skip logging of any errors here.
 				if _, ok := err.(promql.ErrQueryCanceled); !ok {
@@ -616,13 +619,20 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			seriesReturned := make(map[string]labels.Labels, len(g.seriesInPreviousEval[i]))
 			defer func() {
 				if err := app.Commit(); err != nil {
+					rule.SetHealth(HealthBad)
+					rule.SetLastError(err)
+
 					level.Warn(g.logger).Log("msg", "Rule sample appending failed", "err", err)
 					return
 				}
 				g.seriesInPreviousEval[i] = seriesReturned
 			}()
+
 			for _, s := range vector {
 				if _, err := app.Append(0, s.Metric, s.T, s.V); err != nil {
+					rule.SetHealth(HealthBad)
+					rule.SetLastError(err)
+
 					switch errors.Cause(err) {
 					case storage.ErrOutOfOrderSample:
 						numOutOfOrder++

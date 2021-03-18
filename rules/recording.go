@@ -76,8 +76,6 @@ func (rule *RecordingRule) Labels() labels.Labels {
 func (rule *RecordingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, _ *url.URL) (promql.Vector, error) {
 	vector, err := query(ctx, rule.vector.String(), ts)
 	if err != nil {
-		rule.SetHealth(HealthBad)
-		rule.SetLastError(err)
 		return nil, err
 	}
 	// Override the metric name and labels.
