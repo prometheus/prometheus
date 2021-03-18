@@ -73,7 +73,7 @@ func NewDiscovery(l log.Logger, mech string, interval time.Duration, refreshf fu
 // Run implements the Discoverer interface.
 func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	// Get an initial set right away.
-	tgs, err := d.refresh(ctx)
+	tgs, err := d.Refresh(ctx)
 	if err != nil {
 		if ctx.Err() != context.Canceled {
 			level.Error(d.logger).Log("msg", "Unable to refresh target groups", "err", err.Error())
@@ -92,7 +92,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	for {
 		select {
 		case <-ticker.C:
-			tgs, err := d.refresh(ctx)
+			tgs, err := d.Refresh(ctx)
 			if err != nil {
 				if ctx.Err() != context.Canceled {
 					level.Error(d.logger).Log("msg", "Unable to refresh target groups", "err", err.Error())
@@ -111,7 +111,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	}
 }
 
-func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
+func (d *Discovery) Refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	now := time.Now()
 	defer d.duration.Observe(time.Since(now).Seconds())
 	tgs, err := d.refreshf(ctx)
