@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ec2
+package amazon
 
 import (
 	"context"
@@ -61,14 +61,19 @@ const (
 	ec2LabelSeparator         = ","
 )
 
-// DefaultSDConfig is the default EC2 SD configuration.
-var DefaultSDConfig = SDConfig{
-	Port:            80,
-	RefreshInterval: model.Duration(60 * time.Second),
-}
+var (
+	// Ec2DefaultSDConfig is the default EC2 SD configuration.
+	Ec2DefaultSDConfig = Ec2SDConfig{
+		Port:            80,
+		RefreshInterval: model.Duration(60 * time.Second),
+	}
+
+	// LightsailDefaultSDConfig is the default Lightsail SD configuration.
+	// ...
+)
 
 func init() {
-	discovery.RegisterConfig(&SDConfig{})
+	discovery.RegisterConfig(&Ec2SDConfig{})
 }
 
 // Filter is the configuration for filtering EC2 instances.
@@ -78,7 +83,7 @@ type Filter struct {
 }
 
 // SDConfig is the configuration for EC2 based service discovery.
-type SDConfig struct {
+type Ec2SDConfig struct {
 	Endpoint        string         `yaml:"endpoint"`
 	Region          string         `yaml:"region"`
 	AccessKey       string         `yaml:"access_key,omitempty"`
@@ -90,18 +95,18 @@ type SDConfig struct {
 	Filters         []*Filter      `yaml:"filters"`
 }
 
-// Name returns the name of the Config.
-func (*SDConfig) Name() string { return "ec2" }
+// Name returns the name of the EC2 Config.
+func (*Ec2SDConfig) Name() string { return "ec2" }
 
 // NewDiscoverer returns a Discoverer for the Config.
-func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
+func (c *Ec2SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
 	return NewDiscovery(c, opts.Logger), nil
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	*c = DefaultSDConfig
-	type plain SDConfig
+func (c *Ec2SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = Ec2DefaultSDConfig
+	type plain Ec2SDConfig
 	err := unmarshal((*plain)(c))
 	if err != nil {
 		return err
@@ -128,18 +133,18 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 // Discovery periodically performs EC2-SD requests. It implements
 // the Discoverer interface.
-type Discovery struct {
+type Ec2Discovery struct {
 	*refresh.Discovery
-	cfg *SDConfig
+	cfg *Ec2SDConfig
 	ec2 *ec2.EC2
 }
 
 // NewDiscovery returns a new EC2Discovery which periodically refreshes its targets.
-func NewDiscovery(conf *SDConfig, logger log.Logger) *Discovery {
+func NewDiscovery(conf *Ec2SDConfig, logger log.Logger) *Ec2Discovery {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
-	d := &Discovery{
+	d := &Ec2Discovery{
 		cfg: conf,
 	}
 	d.Discovery = refresh.NewDiscovery(
@@ -151,7 +156,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) *Discovery {
 	return d
 }
 
-func (d *Discovery) ec2Client() (*ec2.EC2, error) {
+func (d *Ec2Discovery) ec2Client() (*ec2.EC2, error) {
 	if d.ec2 != nil {
 		return d.ec2, nil
 	}
@@ -183,7 +188,7 @@ func (d *Discovery) ec2Client() (*ec2.EC2, error) {
 	return d.ec2, nil
 }
 
-func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
+func (d *Ec2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	ec2Client, err := d.ec2Client()
 	if err != nil {
 		return nil, err

@@ -30,11 +30,12 @@ import (
 	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/discovery"
+	"github.com/prometheus/prometheus/discovery/amazon"
 	"github.com/prometheus/prometheus/discovery/azure"
 	"github.com/prometheus/prometheus/discovery/consul"
 	"github.com/prometheus/prometheus/discovery/digitalocean"
 	"github.com/prometheus/prometheus/discovery/dns"
-	"github.com/prometheus/prometheus/discovery/ec2"
+	"github.com/prometheus/prometheus/discovery/dockerswarm"
 	"github.com/prometheus/prometheus/discovery/eureka"
 	"github.com/prometheus/prometheus/discovery/file"
 	"github.com/prometheus/prometheus/discovery/hetzner"
