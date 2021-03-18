@@ -39,7 +39,7 @@ import (
 	"github.com/prometheus/prometheus/prompb"
 )
 
-const maxErrMsgLen = 512
+const maxErrMsgLen = 1024
 
 var UserAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 
