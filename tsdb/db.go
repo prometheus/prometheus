@@ -795,10 +795,10 @@ type dbAppender struct {
 	db *DB
 }
 
+var _ storage.OptionalGetRef = dbAppender{}
+
 func (a dbAppender) GetRef(lset labels.Labels) (uint64, bool) {
-	if g, ok := a.Appender.(interface {
-		GetRef(lset labels.Labels) (uint64, bool)
-	}); ok {
+	if g, ok := a.Appender.(storage.OptionalGetRef); ok {
 		return g.GetRef(lset)
 	}
 	return 0, false
