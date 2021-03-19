@@ -2,6 +2,7 @@ import $ from 'jquery';
 import React, { Component } from 'react';
 import { Button, InputGroup, InputGroupAddon, Input } from 'reactstrap';
 
+import debounce from 'debounce';
 import moment from 'moment-timezone';
 
 import 'tempusdominus-core';
@@ -41,19 +42,19 @@ class TimeInput extends Component<TimeInputProps> {
 
   calcShiftRange = () => this.props.range / 2;
 
-  increaseTime = (): void => {
+  increaseTime = debounce((): void => {
     const time = this.getBaseTime() + this.calcShiftRange();
     this.props.onChangeTime(time);
-  };
+  }, 250);
 
-  decreaseTime = (): void => {
+  decreaseTime = debounce((): void => {
     const time = this.getBaseTime() - this.calcShiftRange();
     this.props.onChangeTime(time);
-  };
+  }, 250);
 
-  clearTime = (): void => {
+  clearTime = debounce((): void => {
     this.props.onChangeTime(null);
-  };
+  }, 250);
 
   timezone = (): string => {
     return this.props.useLocalTime ? moment.tz.guess() : 'UTC';

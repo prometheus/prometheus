@@ -40,6 +40,7 @@ describe('TimeInput', () => {
         icon: faChevronRight,
       },
     ].forEach(button => {
+      const clock = sinon.useFakeTimers();
       const onChangeTime = sinon.spy();
       const timeInput = shallow(<TimeInput {...timeInputProps} onChangeTime={onChangeTime} />);
       const addon = timeInput.find(InputGroupAddon).filterWhere(addon => addon.prop('addonType') === button.position);
@@ -48,6 +49,8 @@ describe('TimeInput', () => {
       expect(icon.prop('icon')).toEqual(button.icon);
       expect(icon.prop('fixedWidth')).toBe(true);
       btn.simulate('click');
+      // wait 250ms
+      clock.tick(250);
       expect(onChangeTime.calledOnce).toBe(true);
     });
   });
