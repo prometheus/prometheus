@@ -1445,7 +1445,7 @@ func (r *Reader) SymbolTableSize() uint64 {
 // It is not safe to use the return value beyond the lifetime of the byte slice
 // passed into the Reader.
 func (r *Reader) SortedLabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
-	values, err := r.LabelValues(name, matchers...)
+	values, err := r.UnsortedLabelValues(name, matchers...)
 	if err == nil && r.version == FormatV1 {
 		sort.Strings(values)
 	}
@@ -1456,7 +1456,7 @@ func (r *Reader) SortedLabelValues(name string, matchers ...*labels.Matcher) ([]
 // It is not safe to use the return value beyond the lifetime of the byte slice
 // passed into the Reader.
 // TODO(replay): Support filtering by matchers
-func (r *Reader) LabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
+func (r *Reader) UnsortedLabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
 	if len(matchers) > 0 {
 		return nil, errors.Errorf("matchers parameter is not implemented: %+v", matchers)
 	}
