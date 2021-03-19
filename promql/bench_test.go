@@ -156,6 +156,9 @@ func BenchmarkRangeQuery(b *testing.B) {
 		{
 			expr: "sum by (le)(h_X)",
 		},
+		{
+			expr: "count_values('value', h_X)",
+		},
 		// Combinations.
 		{
 			expr: "rate(a_X[1m]) + rate(b_X[1m])",
