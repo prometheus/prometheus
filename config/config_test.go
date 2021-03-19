@@ -785,7 +785,7 @@ var expectedConf = &Config{
 			{
 				Scheme:           "https",
 				Timeout:          model.Duration(10 * time.Second),
-				APIVersion:       AlertmanagerAPIVersionV1,
+				APIVersion:       AlertmanagerAPIVersionV2,
 				HTTPClientConfig: config.DefaultHTTPClientConfig,
 				ServiceDiscoveryConfigs: discovery.Configs{
 					discovery.StaticConfig{

@@ -1755,7 +1755,7 @@ through the `__alerts_path__` label.
 [ timeout: <duration> | default = 10s ]
 
 # The api version of Alertmanager.
-[ api_version: <string> | default = v1 ]
+[ api_version: <string> | default = v2 ]
 
 # Prefix for the HTTP path alerts are pushed to.
 [ path_prefix: <path> | default = / ]
