@@ -1107,6 +1107,15 @@ func (a *initAppender) AppendExemplar(ref uint64, l labels.Labels, e exemplar.Ex
 	return a.app.AppendExemplar(ref, l, e)
 }
 
+var _ storage.GetRef = &initAppender{}
+
+func (a *initAppender) GetRef(lset labels.Labels) uint64 {
+	if g, ok := a.app.(storage.GetRef); ok {
+		return g.GetRef(lset)
+	}
+	return 0
+}
+
 func (a *initAppender) Commit() error {
 	if a.app == nil {
 		return nil
@@ -1329,6 +1338,16 @@ func (a *headAppender) AppendExemplar(ref uint64, _ labels.Labels, e exemplar.Ex
 	a.exemplars = append(a.exemplars, exemplarWithSeriesRef{ref, e})
 
 	return s.ref, nil
+}
+
+var _ storage.GetRef = &headAppender{}
+
+func (a *headAppender) GetRef(lset labels.Labels) uint64 {
+	s := a.head.series.getByHash(lset.Hash(), lset)
+	if s == nil {
+		return 0
+	}
+	return s.ref
 }
 
 func (a *headAppender) log() error {
