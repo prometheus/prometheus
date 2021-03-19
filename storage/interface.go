@@ -180,8 +180,8 @@ type Appender interface {
 	ExemplarAppender
 }
 
-// OptionalGetRef is used by downstream projects (e.g. Cortex) to avoid maintaining a parallel set of references.
-type OptionalGetRef interface {
+// GetRef is used by downstream projects (e.g. Cortex) to avoid maintaining a parallel set of references.
+type GetRef interface {
 	// Returns reference number that can be used to pass to Appender.Append()
 	GetRef(lset labels.Labels) (uint64, bool)
 }

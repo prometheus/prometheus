@@ -1107,10 +1107,10 @@ func (a *initAppender) AppendExemplar(ref uint64, l labels.Labels, e exemplar.Ex
 	return a.app.AppendExemplar(ref, l, e)
 }
 
-var _ storage.OptionalGetRef = &initAppender{}
+var _ storage.GetRef = &initAppender{}
 
 func (a *initAppender) GetRef(lset labels.Labels) (uint64, bool) {
-	if g, ok := a.app.(storage.OptionalGetRef); ok {
+	if g, ok := a.app.(storage.GetRef); ok {
 		return g.GetRef(lset)
 	}
 	return 0, false
@@ -1340,7 +1340,7 @@ func (a *headAppender) AppendExemplar(ref uint64, _ labels.Labels, e exemplar.Ex
 	return s.ref, nil
 }
 
-var _ storage.OptionalGetRef = &headAppender{}
+var _ storage.GetRef = &headAppender{}
 
 func (a *headAppender) GetRef(lset labels.Labels) (uint64, bool) {
 	s := a.head.series.getByHash(lset.Hash(), lset)
