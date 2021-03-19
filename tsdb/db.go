@@ -695,7 +695,21 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	if initErr := db.head.Init(minValidTime); initErr != nil {
 		db.head.metrics.walCorruptionsTotal.Inc()
 		level.Warn(db.logger).Log("msg", "Encountered WAL read error, attempting repair", "err", initErr)
-		if err := wlog.Repair(initErr); err != nil {
+
+		causeErr := errors.Cause(initErr) // So that we can pick up errors even if wrapped.
+
+		cerr, ok := causeErr.(*wal.CorruptionErr)
+		if !ok {
+			return nil, errors.Wrapf(initErr, "unexpected error %t", initErr)
+		}
+
+		if cerr.Dir != "" && cerr.Dir != wlog.Dir() {
+			// The checkpoint is corrupted, we can only reset the WAL at this point.
+			level.Warn(db.logger).Log("msg", "Deleting all data from the WAL because of corrupted checkpoint")
+			if err := wlog.Reset(); err != nil {
+				return nil, errors.Wrap(err, "reset corrupted WAL")
+			}
+		} else if err := wlog.Repair(initErr); err != nil {
 			return nil, errors.Wrap(err, "repair corrupted WAL")
 		}
 	}

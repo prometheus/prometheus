@@ -358,8 +358,8 @@ func TestClose(t *testing.T) {
 	require.Error(t, w.Close())
 }
 
-func TestRepairWithCorruptedCheckpoint(t *testing.T) {
-	dir, err := ioutil.TempDir("", "wal_repair")
+func TestReset(t *testing.T) {
+	dir, err := ioutil.TempDir("", "wal_reset")
 	require.NoError(t, err)
 	defer func() {
 		require.NoError(t, os.RemoveAll(dir))
@@ -367,13 +367,13 @@ func TestRepairWithCorruptedCheckpoint(t *testing.T) {
 
 	logger := testutil.NewLogger(t)
 
-	// Append some records to the WAL and make sure to generate 2 segments.
+	// Append some records to the WAL and make sure to generate 3 segments.
 	w, err := NewSize(logger, nil, dir, pageSize, false)
 	require.NoError(t, err)
 
 	var (
-		enc        record.Encoder
-		i, written int
+		enc record.Encoder
+		i   int
 	)
 	for {
 		i++
@@ -384,8 +384,9 @@ func TestRepairWithCorruptedCheckpoint(t *testing.T) {
 			nil,
 		)
 		require.NoError(t, w.Log(b, nil))
-		written += len(b)
-		if written > pageSize {
+		segs, err := listSegments(w.Dir())
+		require.NoError(t, err)
+		if len(segs) >= 3 {
 			break
 		}
 	}
@@ -396,44 +397,67 @@ func TestRepairWithCorruptedCheckpoint(t *testing.T) {
 
 	require.NoError(t, w.Truncate(1))
 
-	// Confirm there's a checkpoint directory and a segment left.
-	checkpoint, _, err := LastCheckpoint(dir)
+	// Confirm there's a checkpoint directory and 2 segments left.
+	_, _, err = LastCheckpoint(dir)
 	require.NoError(t, err)
 
 	segs, err := listSegments(w.Dir())
 	require.NoError(t, err)
-	require.NotEqual(t, 0, len(segs))
+	require.Equal(t, 2, len(segs))
 
-	// Corrupt the checkpoint by zero-ing the CRC field of the first record.
-	f, err := os.OpenFile(filepath.Join(checkpoint, fmt.Sprintf("%08d", 0)), os.O_RDWR, 0)
+	// Reset the WAL.
+	require.NoError(t, w.Reset())
+
+	// Check that there is only one empty segment.
+	segs, err = listSegments(w.Dir())
 	require.NoError(t, err)
+	require.Equal(t, 1, len(segs))
 
-	_, err = f.WriteAt([]byte{0x00, 0x00, 0x00, 0x00}, 3)
+	_, _, err = LastCheckpoint(dir)
+	require.ErrorIs(t, err, record.ErrNotFound)
+
+	sgr, err := NewSegmentsReader(dir)
 	require.NoError(t, err)
-
-	require.NoError(t, f.Close())
-
-	// Verify that the checkpoint is corrupted.
-	sgr, err := NewSegmentsReader(checkpoint)
-	require.NoError(t, err)
-
 	r := NewReader(sgr)
 	for r.Next() {
+		t.Fatal("expected no record in the WAL")
 	}
-	require.Error(t, r.Err())
+	require.NoError(t, r.Err())
 
 	// Close the segment so we don't break things on Windows.
 	require.NoError(t, sgr.Close())
 
-	require.NoError(t, w.Repair(r.Err()))
+	// Write a record to the WAL.
+	b := enc.Series(
+		[]record.RefSeries{
+			{Ref: uint64(0), Labels: labels.FromStrings("lbl", "sentinel")},
+		},
+		nil,
+	)
+	require.NoError(t, w.Log(b))
 
-	// Reopen the WAL to make sure that it's been cleaned up.
+	// Reopen the WAL and make sure that no error happens.
 	require.NoError(t, w.Close())
 
 	w, err = NewSize(logger, nil, dir, pageSize, false)
 	require.NoError(t, err)
 
 	require.NoError(t, w.Close())
+
+	// Make sure that the record has been persisted.
+	sgr, err = NewSegmentsReader(dir)
+	require.NoError(t, err)
+
+	i = 0
+	r = NewReader(sgr)
+	for r.Next() {
+		i++
+	}
+	require.NoError(t, r.Err())
+	require.Equal(t, 1, i)
+
+	// Close the segment so we don't break things on Windows.
+	require.NoError(t, sgr.Close())
 }
 
 func TestSegmentMetric(t *testing.T) {

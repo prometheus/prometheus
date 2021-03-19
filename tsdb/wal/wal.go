@@ -365,12 +365,6 @@ func (w *WAL) Repair(origErr error) error {
 	level.Warn(w.logger).Log("msg", "Starting corruption repair",
 		"dir", cerr.Dir, "segment", cerr.Segment, "offset", cerr.Offset)
 
-	// The checkpoint is corrupted, we can only discard all data at this point.
-	if cerr.Dir != "" && cerr.Dir != w.Dir() {
-		level.Warn(w.logger).Log("msg", "Deleting all data from WAL because of corrupted checkpoint")
-		return w.dropAllData()
-	}
-
 	// All segments behind the corruption can no longer be used.
 	segs, err := listSegments(w.Dir())
 	if err != nil {
@@ -465,14 +459,16 @@ func (w *WAL) Repair(origErr error) error {
 	return nil
 }
 
-func (w *WAL) dropAllData() error {
+// Reset deletes all data from the WAL, including on-disk segments and checkpoints.
+// It should never be called when writes happen.
+func (w *WAL) Reset() error {
 	segs, err := listSegments(w.Dir())
 	if err != nil {
 		return errors.Wrap(err, "list segments")
 	}
 
 	for _, s := range segs {
-		if w.segment.i == s.index {
+		if w.segment.Index() == s.index {
 			// The active segment needs to be removed,
 			// close it first (Windows!). Can be closed safely
 			// as we reset the current segment below.
@@ -490,8 +486,8 @@ func (w *WAL) dropAllData() error {
 		return errors.Wrap(err, "delete checkpoints")
 	}
 
-	// Initialize a new segment.
-	s, err := CreateSegment(w.Dir(), 0)
+	// Initialize a new segment continuing from the last sequence.
+	s, err := CreateSegment(w.Dir(), w.segment.Index())
 	if err != nil {
 		return errors.Wrap(err, "create segment")
 	}
