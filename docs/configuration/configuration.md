@@ -651,7 +651,7 @@ for a detailed example of configuring Prometheus for Docker Swarm.
 
 ### `<docker_sd_config>`
 
-Docker SD configurations allow retrieving scrape targets from [Docker Engine](https://docs.docker.com/engine/) hosts without a Swarm configuration.
+Docker SD configurations allow retrieving scrape targets from [Docker Engine](https://docs.docker.com/engine/) hosts.
 
 This SD discovers "containers" and will create a target for each network IP and port the container is configured to expose.
 
@@ -698,7 +698,7 @@ tls_config:
   [ - name: <string>
       values: <string>, [...] ]
 
-# The time after which the droplets are refreshed.
+# The time after which the containers are refreshed.
 [ refresh_interval: <duration> | default = 60s ]
 
 # Authentication information used to authenticate to the Docker daemon.
@@ -729,9 +729,9 @@ authorization:
 ```
 
 The [relabeling phase](#relabel_config) is the preferred and more powerful
-way to filter tasks, services or nodes. For users with thousands of tasks it
+way to filter containers. For users with thousands of containers it
 can be more efficient to use the Docker API directly which has basic support for
-filtering nodes (using `filters`).
+filtering containers (using `filters`).
 
 See [this example Prometheus configuration file](/documentation/examples/prometheus-docker.yml)
 for a detailed example of configuring Prometheus for Docker Engine.
