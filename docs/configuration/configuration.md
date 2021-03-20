@@ -691,9 +691,7 @@ role: <string>
 # Optional filters to limit the discovery process to a subset of available
 # resources.
 # The available filters are listed in the upstream documentation:
-# Services: https://docs.docker.com/engine/api/v1.40/#operation/ServiceList
-# Tasks: https://docs.docker.com/engine/api/v1.40/#operation/TaskList
-# Nodes: https://docs.docker.com/engine/api/v1.40/#operation/NodeList
+# https://docs.docker.com/engine/api/v1.40/#operation/ContainerList
 [ filters:
   [ - name: <string>
       values: <string>, [...] ]
