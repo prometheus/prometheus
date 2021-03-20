@@ -1740,18 +1740,18 @@ func (h *headIndexReader) Symbols() index.StringIter {
 // If matchers are specified the returned result set is reduced
 // to label values of metrics matching the matchers.
 func (h *headIndexReader) SortedLabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
-	values, err := h.LabelValues(name, matchers...)
+	values, err := h.UnsortedLabelValues(name, matchers...)
 	if err == nil {
 		sort.Strings(values)
 	}
 	return values, err
 }
 
-// LabelValues returns label values present in the head for the
+// UnsortedLabelValues returns label values present in the head for the
 // specific label name that are within the time range mint to maxt.
 // If matchers are specified the returned result set is reduced
 // to label values of metrics matching the matchers.
-func (h *headIndexReader) LabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
+func (h *headIndexReader) UnsortedLabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
 	if h.maxt < h.head.MinTime() || h.mint > h.head.MaxTime() {
 		return []string{}, nil
 	}
