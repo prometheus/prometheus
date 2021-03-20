@@ -317,7 +317,7 @@ func postingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Postings, erro
 		}
 	}
 
-	vals, err := ix.LabelValues(m.Name)
+	vals, err := ix.UnsortedLabelValues(m.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -346,7 +346,7 @@ func postingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Postings, erro
 
 // inversePostingsForMatcher returns the postings for the series with the label name set but not matching the matcher.
 func inversePostingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Postings, error) {
-	vals, err := ix.LabelValues(m.Name)
+	vals, err := ix.UnsortedLabelValues(m.Name)
 	if err != nil {
 		return nil, err
 	}
