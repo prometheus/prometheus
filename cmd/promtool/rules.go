@@ -78,11 +78,11 @@ func (importer *ruleImporter) loadGroups(ctx context.Context, filenames []string
 // importAll evaluates all the recording rules and creates new time series and writes them to disk in blocks.
 func (importer *ruleImporter) importAll(ctx context.Context) (errs []error) {
 	for name, group := range importer.groups {
-		level.Info(importer.logger).Log("backfiller", fmt.Sprintf("processing group, name: %s", name))
+		level.Info(importer.logger).Log("backfiller", "processing group", "name", name)
 
 		stimeWithAlignment := group.EvalTimestamp(importer.config.start.UnixNano())
 		for i, r := range group.Rules() {
-			level.Info(importer.logger).Log("backfiller", fmt.Sprintf("processing rule %d, name: %s", i+1, r.Name()))
+			level.Info(importer.logger).Log("backfiller", "processing rule", "id", i, "name", r.Name())
 			if err := importer.importRule(ctx, r.Query().String(), r.Name(), r.Labels(), stimeWithAlignment, importer.config.end, group); err != nil {
 				errs = append(errs, err)
 			}
@@ -95,19 +95,18 @@ func (importer *ruleImporter) importAll(ctx context.Context) (errs []error) {
 func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName string, ruleLabels labels.Labels, start, end time.Time, grp *rules.Group) (err error) {
 	blockDuration := tsdb.DefaultBlockDuration
 	startInMs := start.Unix() * int64(time.Second/time.Millisecond)
-	startOfBlock := blockDuration * (startInMs / blockDuration)
 	endInMs := end.Unix() * int64(time.Second/time.Millisecond)
 
-	for s := startOfBlock; s <= endInMs; s = s + blockDuration {
-		endOfBlock := s + blockDuration - 1
+	for startOfBlock := blockDuration * (startInMs / blockDuration); startOfBlock <= endInMs; startOfBlock = startOfBlock + blockDuration {
+		endOfBlock := startOfBlock + blockDuration - 1
 
-		currStart := max(s/int64(time.Second/time.Millisecond), start.Unix())
-		startWithAlignment := grp.EvalTimestamp(time.Unix(currStart, 0).UnixNano())
+		currStart := max(startOfBlock/int64(time.Second/time.Millisecond), start.Unix())
+		startWithAlignment := grp.EvalTimestamp(time.Unix(currStart, 0).UTC().UnixNano())
 		val, warnings, err := importer.apiClient.QueryRange(ctx,
 			ruleExpr,
 			v1.Range{
 				Start: startWithAlignment,
-				End:   time.Unix(min(endOfBlock/int64(time.Second/time.Millisecond), end.Unix()), 0),
+				End:   time.Unix(min(endOfBlock/int64(time.Second/time.Millisecond), end.Unix()), 0).UTC(),
 				Step:  grp.Interval(),
 			},
 		)
@@ -115,7 +114,7 @@ func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName
 			return errors.Wrap(err, "query range")
 		}
 		if warnings != nil {
-			level.Warn(importer.logger).Log("backfiller", fmt.Sprintf("warnings QueryRange api: %v", warnings))
+			level.Warn(importer.logger).Log("msg", "Range query returned warnings.", "warnings", warnings)
 		}
 
 		// To prevent races with compaction, a block writer only allows appending samples
@@ -136,6 +135,7 @@ func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName
 		switch val.Type() {
 		case model.ValMatrix:
 			matrix = val.(model.Matrix)
+
 			for _, sample := range matrix {
 				currentLabels := make(labels.Labels, 0, len(sample.Metric)+len(ruleLabels)+1)
 				currentLabels = append(currentLabels, labels.Label{

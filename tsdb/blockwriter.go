@@ -24,6 +24,7 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 
+	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
@@ -93,6 +94,7 @@ func (w *BlockWriter) Flush(ctx context.Context) (ulid.ULID, error) {
 	// Add +1 millisecond to block maxt because block intervals are half-open: [b.MinTime, b.MaxTime).
 	// Because of this block intervals are always +1 than the total samples it includes.
 	maxt := w.head.MaxTime() + 1
+	level.Info(w.logger).Log("msg", "flushing", "series_count", w.head.NumSeries(), "mint", timestamp.Time(mint), "maxt", timestamp.Time(maxt))
 
 	compactor, err := NewLeveledCompactor(ctx,
 		nil,

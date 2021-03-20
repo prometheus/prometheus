@@ -30,14 +30,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const (
-	testMaxSampleCount = 50
-	testValue          = 123
-)
-
-var testTime = model.Time(time.Now().Add(-20 * time.Minute).Unix())
-var testTime2 = model.Time(time.Now().Add(-30 * time.Minute).Unix())
-
 type mockQueryRangeAPI struct {
 	samples model.Matrix
 }
@@ -46,14 +38,19 @@ func (mockAPI mockQueryRangeAPI) QueryRange(ctx context.Context, query string, r
 	return mockAPI.samples, v1.Warnings{}, nil
 }
 
-func getTestProdData() []*model.SampleStream {
-	var result = []*model.SampleStream{}
-
-	return result
-}
-
 // TestBackfillRuleIntegration is an integration test that runs all the rule importer code to confirm the parts work together.
 func TestBackfillRuleIntegration(t *testing.T) {
+	const (
+		testMaxSampleCount = 50
+		testValue          = 123
+		testValue2         = 98
+	)
+	var (
+		start     = time.Date(2009, time.November, 10, 6, 34, 0, 0, time.UTC)
+		testTime  = model.Time(start.Add(-9 * time.Hour).Unix())
+		testTime2 = model.Time(start.Add(-8 * time.Hour).Unix())
+	)
+
 	var testCases = []struct {
 		name                string
 		runcount            int
@@ -63,8 +60,8 @@ func TestBackfillRuleIntegration(t *testing.T) {
 		samples             []*model.SampleStream
 	}{
 		{"no samples", 1, 0, 0, 0, []*model.SampleStream{}},
-		{"run importer once", 1, 1, 4, 4, []*model.SampleStream{{Metric: model.Metric{"name1": "val1"}, Values: []model.SamplePair{{Timestamp: testTime, Value: testValue}}}}},
-		{"one importer twice", 2, 1, 4, 4, []*model.SampleStream{{Metric: model.Metric{"name1": "val1"}, Values: []model.SamplePair{{Timestamp: testTime, Value: testValue}, {Timestamp: testTime2, Value: testValue}}}}},
+		{"run importer once", 1, 8, 4, 4, []*model.SampleStream{{Metric: model.Metric{"name1": "val1"}, Values: []model.SamplePair{{Timestamp: testTime, Value: testValue}}}}},
+		{"one importer twice", 2, 8, 4, 8, []*model.SampleStream{{Metric: model.Metric{"name1": "val1"}, Values: []model.SamplePair{{Timestamp: testTime, Value: testValue}, {Timestamp: testTime2, Value: testValue2}}}}},
 	}
 	for _, tt := range testCases {
 		t.Run(tt.name, func(t *testing.T) {
@@ -73,11 +70,10 @@ func TestBackfillRuleIntegration(t *testing.T) {
 			defer func() {
 				require.NoError(t, os.RemoveAll(tmpDir))
 			}()
-			start := time.Now().UTC()
 			ctx := context.Background()
 
 			// Execute the test more than once to simulate running the rule importer twice with the same data.
-			// We expect that duplicate blocks with the same series are created when run more than once.
+			// We expect duplicate blocks with the same series are created when run more than once.
 			for i := 0; i < tt.runcount; i++ {
 				ruleImporter, err := newTestRuleImporter(ctx, start, tmpDir, tt.samples)
 				require.NoError(t, err)
@@ -123,7 +119,7 @@ func TestBackfillRuleIntegration(t *testing.T) {
 				require.NoError(t, err)
 
 				blocks := db.Blocks()
-				require.Equal(t, i+tt.expectedBlockCount, len(blocks))
+				require.Equal(t, (i+1)*tt.expectedBlockCount, len(blocks))
 
 				q, err := db.Querier(context.Background(), math.MinInt64, math.MaxInt64)
 				require.NoError(t, err)
@@ -147,8 +143,11 @@ func TestBackfillRuleIntegration(t *testing.T) {
 					for it.Next() {
 						samplesCount++
 						ts, v := it.At()
-						require.Equal(t, float64(testValue), v)
-						require.Equal(t, int64(testTime), ts)
+						if v == testValue {
+							require.Equal(t, int64(testTime), ts)
+						} else {
+							require.Equal(t, int64(testTime2), ts)
+						}
 					}
 					require.NoError(t, it.Err())
 				}
@@ -166,8 +165,8 @@ func newTestRuleImporter(ctx context.Context, start time.Time, tmpDir string, te
 	logger := log.NewNopLogger()
 	cfg := ruleImporterConfig{
 		outputDir:    tmpDir,
-		start:        start.Add(-1 * time.Hour),
-		end:          start,
+		start:        start.Add(-10 * time.Hour),
+		end:          start.Add(-7 * time.Hour),
 		evalInterval: 60 * time.Second,
 	}
 
