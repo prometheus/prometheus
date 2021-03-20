@@ -66,8 +66,8 @@ type IndexReader interface {
 	// SortedLabelValues returns sorted possible label values.
 	SortedLabelValues(name string, matchers ...*labels.Matcher) ([]string, error)
 
-	// LabelValues returns possible label values which may not be sorted.
-	LabelValues(name string, matchers ...*labels.Matcher) ([]string, error)
+	// UnsortedLabelValues returns possible label values which may not be sorted.
+	UnsortedLabelValues(name string, matchers ...*labels.Matcher) ([]string, error)
 
 	// Postings returns the postings list iterator for the label pairs.
 	// The Postings here contain the offsets to the series inside the index.
@@ -428,7 +428,7 @@ func (r blockIndexReader) SortedLabelValues(name string, matchers ...*labels.Mat
 	if len(matchers) == 0 {
 		st, err = r.ir.SortedLabelValues(name)
 	} else {
-		st, err = r.LabelValues(name, matchers...)
+		st, err = r.UnsortedLabelValues(name, matchers...)
 		if err == nil {
 			sort.Strings(st)
 		}
@@ -437,9 +437,9 @@ func (r blockIndexReader) SortedLabelValues(name string, matchers ...*labels.Mat
 	return st, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
 }
 
-func (r blockIndexReader) LabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
+func (r blockIndexReader) UnsortedLabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
 	if len(matchers) == 0 {
-		st, err := r.ir.LabelValues(name)
+		st, err := r.ir.UnsortedLabelValues(name)
 		return st, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
 	}
 
