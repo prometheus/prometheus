@@ -1938,7 +1938,7 @@ func TestHeadLabelValuesWithMatchers(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, tt.expectedValues, actualValues)
 
-			actualValues, err = headIdxReader.LabelValues(tt.labelName, tt.matchers...)
+			actualValues, err = headIdxReader.UnsortedLabelValues(tt.labelName, tt.matchers...)
 			sort.Strings(actualValues)
 			require.NoError(t, err)
 			require.Equal(t, tt.expectedValues, actualValues)
@@ -2062,7 +2062,7 @@ func BenchmarkHeadLabelValuesWithMatchers(b *testing.B) {
 	b.ReportAllocs()
 
 	for benchIdx := 0; benchIdx < b.N; benchIdx++ {
-		actualValues, err := headIdxReader.LabelValues("tens", matchers...)
+		actualValues, err := headIdxReader.UnsortedLabelValues("tens", matchers...)
 		require.NoError(b, err)
 		require.Equal(b, 9, len(actualValues))
 	}
