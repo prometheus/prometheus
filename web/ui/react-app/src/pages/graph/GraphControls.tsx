@@ -3,6 +3,7 @@ import { Button, ButtonGroup, Form, InputGroup, InputGroupAddon, Input } from 'r
 
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faPlus, faMinus, faChartArea, faChartLine } from '@fortawesome/free-solid-svg-icons';
+import debounce from 'debounce';
 
 import TimeInput from './TimeInput';
 import { parseDuration, formatDuration } from '../../utils';
@@ -45,20 +46,20 @@ class GraphControls extends Component<GraphControlsProps> {
     730 * 24 * 60 * 60,
   ].map(s => s * 1000);
 
-  onChangeRangeInput = (rangeText: string): void => {
+  onChangeRangeInput = debounce((rangeText: string): void => {
     const range = parseDuration(rangeText);
     if (range === null) {
       this.changeRangeInput(this.props.range);
     } else {
       this.props.onChangeRange(range);
     }
-  };
+  }, 250);
 
   changeRangeInput = (range: number): void => {
     this.rangeRef.current!.value = formatDuration(range);
   };
 
-  increaseRange = (): void => {
+  increaseRange = debounce((): void => {
     for (const range of this.rangeSteps) {
       if (this.props.range < range) {
         this.changeRangeInput(range);
@@ -66,9 +67,9 @@ class GraphControls extends Component<GraphControlsProps> {
         return;
       }
     }
-  };
+  }, 250);
 
-  decreaseRange = (): void => {
+  decreaseRange = debounce((): void => {
     for (const range of this.rangeSteps.slice().reverse()) {
       if (this.props.range > range) {
         this.changeRangeInput(range);
@@ -76,7 +77,7 @@ class GraphControls extends Component<GraphControlsProps> {
         return;
       }
     }
-  };
+  }, 250);
 
   componentDidUpdate(prevProps: GraphControlsProps) {
     if (prevProps.range !== this.props.range) {
