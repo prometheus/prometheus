@@ -24,7 +24,6 @@ export const ScrapePoolContent: FC<ScrapePoolListProps> = ({ activeTargets }) =>
     (acc: { [scrapePool: string]: boolean }, scrapePool: string) => ({
       ...acc,
       [scrapePool]: true,
-      [scrapePool]: true,
     }),
     {}
   );
