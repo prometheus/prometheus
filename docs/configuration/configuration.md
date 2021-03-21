@@ -202,13 +202,13 @@ consul_sd_configs:
 digitalocean_sd_configs:
   [ - <digitalocean_sd_config> ... ]
 
-# List of Docker Swarm service discovery configurations.
-dockerswarm_sd_configs:
-  [ - <dockerswarm_sd_config> ... ]
-
 # List of Docker service discovery configurations.
 docker_sd_configs:
   [ - <docker_sd_config> ... ]
+
+# List of Docker Swarm service discovery configurations.
+dockerswarm_sd_configs:
+  [ - <dockerswarm_sd_config> ... ]
 
 # List of DNS service discovery configurations.
 dns_sd_configs:
@@ -1909,6 +1909,10 @@ file_sd_configs:
 # List of DigitalOcean service discovery configurations.
 digitalocean_sd_configs:
   [ - <digitalocean_sd_config> ... ]
+
+# List of Docker service discovery configurations.
+docker_sd_configs:
+  [ - <docker_sd_config> ... ]
 
 # List of Docker Swarm service discovery configurations.
 dockerswarm_sd_configs:
