@@ -25,7 +25,7 @@ scrape_configs:
   # `http`.
   scheme: https
 
-  # This TLS & bearer token file config is used to connect to the actual scrape
+  # This TLS & authorization config is used to connect to the actual scrape
   # endpoints for cluster components. This is separate to discovery auth
   # configuration because discovery & scraping are two separate concerns in
   # Prometheus. The discovery auth config is automatic if Prometheus runs inside
@@ -40,7 +40,8 @@ scrape_configs:
     # disable certificate verification by uncommenting the line below.
     #
     # insecure_skip_verify: true
-  bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+  authorization:
+    credentials_file: /var/run/secrets/kubernetes.io/serviceaccount/token
 
   # Keep only the default/kubernetes service endpoints for the https port. This
   # will add targets for each API server which Kubernetes adds an endpoint to
@@ -62,7 +63,7 @@ scrape_configs:
   # `http`.
   scheme: https
 
-  # This TLS & bearer token file config is used to connect to the actual scrape
+  # This TLS & authorization config is used to connect to the actual scrape
   # endpoints for cluster components. This is separate to discovery auth
   # configuration because discovery & scraping are two separate concerns in
   # Prometheus. The discovery auth config is automatic if Prometheus runs inside
@@ -77,7 +78,8 @@ scrape_configs:
     # disable certificate verification by uncommenting the line below.
     #
     # insecure_skip_verify: true
-  bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+  authorization:
+    credentials_file: /var/run/secrets/kubernetes.io/serviceaccount/token
 
   kubernetes_sd_configs:
   - role: node
@@ -112,7 +114,7 @@ scrape_configs:
   # are used.
   metrics_path: /metrics/cadvisor
 
-  # This TLS & bearer token file config is used to connect to the actual scrape
+  # This TLS & authorization config is used to connect to the actual scrape
   # endpoints for cluster components. This is separate to discovery auth
   # configuration because discovery & scraping are two separate concerns in
   # Prometheus. The discovery auth config is automatic if Prometheus runs inside
@@ -127,7 +129,8 @@ scrape_configs:
     # disable certificate verification by uncommenting the line below.
     #
     # insecure_skip_verify: true
-  bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+  authorization:
+    credentials_file: /var/run/secrets/kubernetes.io/serviceaccount/token
 
   kubernetes_sd_configs:
   - role: node

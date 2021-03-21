@@ -70,7 +70,7 @@ const (
 	DefaultWriteBufferSize = 4 * 1024 * 1024 // 4 MiB.
 )
 
-// corruptionErr is an error that's returned when corruption is encountered.
+// CorruptionErr is an error that's returned when corruption is encountered.
 type CorruptionErr struct {
 	Dir       string
 	FileIndex int
@@ -605,12 +605,14 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef, chunkRef uint64, 
 					}
 				}
 				if allZeros {
+					// End of segment chunk file content.
 					break
 				}
 				return &CorruptionErr{
 					Dir:       cdm.dir.Name(),
 					FileIndex: segID,
-					Err:       errors.Errorf("head chunk file doesn't include enough bytes to read the chunk header - required:%v, available:%v, file:%d", idx+MaxHeadChunkMetaSize, fileEnd, segID),
+					Err: errors.Errorf("head chunk file has some unread data, but doesn't include enough bytes to read the chunk header"+
+						" - required:%v, available:%v, file:%d", idx+MaxHeadChunkMetaSize, fileEnd, segID),
 				}
 			}
 			chkCRC32.Reset()

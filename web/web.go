@@ -51,6 +51,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
 	"github.com/prometheus/common/server"
+	toolkit_web "github.com/prometheus/exporter-toolkit/web"
 	"go.uber.org/atomic"
 	"golang.org/x/net/netutil"
 
@@ -175,20 +176,22 @@ type Handler struct {
 	gatherer prometheus.Gatherer
 	metrics  *metrics
 
-	scrapeManager *scrape.Manager
-	ruleManager   *rules.Manager
-	remoteStorage *remote.Storage
-	queryEngine   *promql.Engine
-	lookbackDelta time.Duration
-	context       context.Context
-	storage       storage.Storage
-	localStorage  LocalStorage
-	notifier      *notifier.Manager
+	scrapeManager   *scrape.Manager
+	ruleManager     *rules.Manager
+  remoteStorage *remote.Storage
+	queryEngine     *promql.Engine
+	lookbackDelta   time.Duration
+	context         context.Context
+	storage         storage.Storage
+	localStorage    LocalStorage
+	exemplarStorage storage.ExemplarQueryable
+	notifier        *notifier.Manager
 
 	apiV1 *api_v1.API
 
 	router      *route.Router
 	quitCh      chan struct{}
+	quitOnce    sync.Once
 	reloadCh    chan chan error
 	options     *Options
 	config      *config.Config
@@ -221,6 +224,7 @@ type Options struct {
 	TSDBMaxBytes          units.Base2Bytes
 	LocalStorage          LocalStorage
 	Storage               storage.Storage
+	ExemplarStorage       storage.ExemplarQueryable
 	QueryEngine           *promql.Engine
 	LookbackDelta         time.Duration
 	ScrapeManager         *scrape.Manager
@@ -246,6 +250,7 @@ type Options struct {
 	RemoteReadSampleLimit      int
 	RemoteReadConcurrencyLimit int
 	RemoteReadBytesInFrame     int
+	RemoteWriteReceiver        bool
 
 	Gatherer   prometheus.Gatherer
 	Registerer prometheus.Registerer
@@ -282,15 +287,16 @@ func New(logger log.Logger, o *Options) *Handler {
 		cwd:         cwd,
 		flagsMap:    o.Flags,
 
-		context:       o.Context,
-		scrapeManager: o.ScrapeManager,
-		ruleManager:   o.RuleManager,
-		queryEngine:   o.QueryEngine,
-		lookbackDelta: o.LookbackDelta,
-		storage:       o.Storage,
-		localStorage:  o.LocalStorage,
-		remoteStorage: o.RemoteStorage,
-		notifier:      o.Notifier,
+		context:         o.Context,
+		scrapeManager:   o.ScrapeManager,
+		ruleManager:     o.RuleManager,
+		queryEngine:     o.QueryEngine,
+		lookbackDelta:   o.LookbackDelta,
+		storage:         o.Storage,
+		localStorage:    o.LocalStorage,
+    remoteStorage: o.RemoteStorage,
+		exemplarStorage: o.ExemplarStorage,
+		notifier:        o.Notifier,
 
 		now: model.Now,
 	}
@@ -301,7 +307,12 @@ func New(logger log.Logger, o *Options) *Handler {
 	FactoryRr := func(_ context.Context) api_v1.RulesRetriever { return h.ruleManager }
 	factoryQr := func(_ context.Context) api_v1.QueueRetriever { return h.remoteStorage.WriteStorage() }
 
-	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, factoryTr, factoryAr,
+	var app storage.Appendable
+	if o.RemoteWriteReceiver {
+		app = h.storage
+	}
+
+	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, app, h.exemplarStorage, factoryTr, factoryAr,
 		func() config.Config {
 			h.mtx.RLock()
 			defer h.mtx.RUnlock()
@@ -327,6 +338,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		h.runtimeInfo,
 		h.versionInfo,
 		o.Gatherer,
+		o.Registerer,
 	)
 
 	if o.RoutePrefix != "/" {
@@ -530,13 +542,13 @@ func (h *Handler) Reload() <-chan chan error {
 	return h.reloadCh
 }
 
-// Run serves the HTTP endpoints.
-func (h *Handler) Run(ctx context.Context) error {
+// Listener creates the TCP listener for web requests.
+func (h *Handler) Listener() (net.Listener, error) {
 	level.Info(h.logger).Log("msg", "Start listening for connections", "address", h.options.ListenAddress)
 
 	listener, err := net.Listen("tcp", h.options.ListenAddress)
 	if err != nil {
-		return err
+		return listener, err
 	}
 	listener = netutil.LimitListener(listener, h.options.MaxConnections)
 
@@ -545,6 +557,18 @@ func (h *Handler) Run(ctx context.Context) error {
 		conntrack.TrackWithName("http"),
 		conntrack.TrackWithTracing())
 
+	return listener, nil
+}
+
+// Run serves the HTTP endpoints.
+func (h *Handler) Run(ctx context.Context, listener net.Listener, webConfig string) error {
+	if listener == nil {
+		var err error
+		listener, err = h.Listener()
+		if err != nil {
+			return err
+		}
+	}
 	operationName := nethttp.OperationNameFunc(func(r *http.Request) string {
 		return fmt.Sprintf("%s %s", r.Method, r.URL.Path)
 	})
@@ -573,7 +597,7 @@ func (h *Handler) Run(ctx context.Context) error {
 
 	errCh := make(chan error)
 	go func() {
-		errCh <- httpSrv.Serve(listener)
+		errCh <- toolkit_web.Serve(listener, httpSrv, webConfig, h.logger)
 	}()
 
 	select {
@@ -925,12 +949,14 @@ func (h *Handler) version(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) quit(w http.ResponseWriter, r *http.Request) {
-	select {
-	case <-h.quitCh:
-		fmt.Fprintf(w, "Termination already in progress.")
-	default:
-		fmt.Fprintf(w, "Requesting termination... Goodbye!")
+	var closed bool
+	h.quitOnce.Do(func() {
+		closed = true
 		close(h.quitCh)
+		fmt.Fprintf(w, "Requesting termination... Goodbye!")
+	})
+	if !closed {
+		fmt.Fprintf(w, "Termination already in progress.")
 	}
 }
 

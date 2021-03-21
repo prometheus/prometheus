@@ -155,7 +155,7 @@ export const formatRelative = (startStr: string, end: number): string => {
   if (start < 0) {
     return 'Never';
   }
-  return humanizeDuration(end - start);
+  return humanizeDuration(end - start) + ' ago';
 };
 
 const paramFormat = /^g\d+\..+=.+$/;

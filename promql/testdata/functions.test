@@ -224,6 +224,18 @@ eval instant at 50m deriv(testcounter_reset_middle[100m])
 eval instant at 50m predict_linear(testcounter_reset_middle[100m], 3600)
 	{} 76.81818181818181
 
+# intercept at t = 3000+3600 = 6600
+eval instant at 50m predict_linear(testcounter_reset_middle[100m] @ 3000, 3600)
+	{} 76.81818181818181
+
+# intercept at t = 600+3600 = 4200
+eval instant at 10m predict_linear(testcounter_reset_middle[100m] @ 3000, 3600)
+	{} 51.36363636363637
+
+# intercept at t = 4200+3600 = 7800
+eval instant at 70m predict_linear(testcounter_reset_middle[100m] @ 3000, 3600)
+	{} 89.54545454545455
+
 # With http_requests, there is a sample value exactly at the end of
 # the range, and it has exactly the predicted value, so predict_linear
 # can be emulated with deriv.
@@ -360,7 +372,7 @@ eval instant at 60m vector(time())
   {} 3600
 
 
-# Tests for clamp_max and clamp_min().
+# Tests for clamp_max, clamp_min(), and clamp().
 load 5m
 	test_clamp{src="clamp-a"}	-50
 	test_clamp{src="clamp-b"}	0
@@ -376,6 +388,11 @@ eval instant at 0m clamp_min(test_clamp, -25)
 	{src="clamp-b"}	0
 	{src="clamp-c"}	100
 
+eval instant at 0m clamp(test_clamp, -25, 75)
+	{src="clamp-a"}	-25
+	{src="clamp-b"}	0
+	{src="clamp-c"}	75
+
 eval instant at 0m clamp_max(clamp_min(test_clamp, -20), 70)
 	{src="clamp-a"}	-20
 	{src="clamp-b"}	0
@@ -385,6 +402,36 @@ eval instant at 0m clamp_max((clamp_min(test_clamp, (-20))), (70))
 	{src="clamp-a"}	-20
 	{src="clamp-b"}	0
 	{src="clamp-c"}	70
+
+eval instant at 0m clamp(test_clamp, 0, NaN)
+	{src="clamp-a"}	NaN
+	{src="clamp-b"}	NaN
+	{src="clamp-c"}	NaN
+
+eval instant at 0m clamp(test_clamp, NaN, 0)
+	{src="clamp-a"}	NaN
+	{src="clamp-b"}	NaN
+	{src="clamp-c"}	NaN
+
+eval instant at 0m clamp(test_clamp, 5, -5)
+
+# Test cases for sgn.
+clear
+load 5m
+	test_sgn{src="sgn-a"}	-Inf
+	test_sgn{src="sgn-b"}	Inf
+	test_sgn{src="sgn-c"}	NaN
+	test_sgn{src="sgn-d"}	-50
+	test_sgn{src="sgn-e"}	0
+	test_sgn{src="sgn-f"}	100
+
+eval instant at 0m sgn(test_sgn)
+	{src="sgn-a"}	-1
+	{src="sgn-b"}	1
+	{src="sgn-c"}	NaN
+	{src="sgn-d"}	-1
+	{src="sgn-e"}	0
+	{src="sgn-f"}	1
 
 
 # Tests for sort/sort_desc.
@@ -733,6 +780,13 @@ eval instant at 1m max_over_time(data[1m])
 	{type="some_nan3"} 1
 	{type="only_nan"} NaN
 
+eval instant at 1m last_over_time(data[1m])
+	data{type="numbers"} 3
+	data{type="some_nan"} NaN
+	data{type="some_nan2"} 1
+	data{type="some_nan3"} 1
+	data{type="only_nan"} NaN
+
 clear
 
 # Test for absent()
@@ -826,8 +880,6 @@ eval instant at 16m absent_over_time(http_requests[5m])
 eval instant at 16m absent_over_time(http_requests[6m])
 
 eval instant at 16m absent_over_time(httpd_handshake_failures_total[1m])
-
-eval instant at 16m absent_over_time({instance="127.0.0.1"}[5m])
 
 eval instant at 16m absent_over_time({instance="127.0.0.1"}[5m])
 

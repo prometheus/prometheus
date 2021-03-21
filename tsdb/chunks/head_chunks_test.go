@@ -118,11 +118,6 @@ func TestChunkDiskMapper_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 	fileEnd := HeadChunkFileHeaderSize + len(expectedBytes)
 	require.Equal(t, expectedBytes, actualBytes[HeadChunkFileHeaderSize:fileEnd])
 
-	// Test for the next chunk header to be all 0s. That marks the end of the file.
-	for _, b := range actualBytes[fileEnd : fileEnd+MaxHeadChunkMetaSize] {
-		require.Equal(t, byte(0), b)
-	}
-
 	// Testing reading of chunks.
 	for _, exp := range expectedData {
 		actChunk, err := hrw.Chunk(exp.chunkRef)
@@ -137,7 +132,7 @@ func TestChunkDiskMapper_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 	require.NoError(t, err)
 
 	idx := 0
-	err = hrw.IterateAllChunks(func(seriesRef, chunkRef uint64, mint, maxt int64, numSamples uint16) error {
+	require.NoError(t, hrw.IterateAllChunks(func(seriesRef, chunkRef uint64, mint, maxt int64, numSamples uint16) error {
 		t.Helper()
 
 		expData := expectedData[idx]
@@ -153,10 +148,8 @@ func TestChunkDiskMapper_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 
 		idx++
 		return nil
-	})
-	require.NoError(t, err)
+	}))
 	require.Equal(t, len(expectedData), idx)
-
 }
 
 // TestChunkDiskMapper_Truncate tests

@@ -10,5 +10,5 @@ tests:
       - series: 'join_2{a="1",b="4"}'
         values: 3
 
-    # Just the existance of the data, that can't be joined, makes the recording
+    # Just the existence of the data, that can't be joined, makes the recording
     # rules error.

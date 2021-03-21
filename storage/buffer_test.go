@@ -103,6 +103,12 @@ func TestBufferedSeriesIterator(t *testing.T) {
 		require.Equal(t, ets, ts, "timestamp mismatch")
 		require.Equal(t, ev, v, "value mismatch")
 	}
+	prevSampleEq := func(ets int64, ev float64, eok bool) {
+		ts, v, ok := it.PeekBack(1)
+		require.Equal(t, eok, ok, "exist mismatch")
+		require.Equal(t, ets, ts, "timestamp mismatch")
+		require.Equal(t, ev, v, "value mismatch")
+	}
 
 	it = NewBufferIterator(NewListSeriesIterator(samples{
 		sample{t: 1, v: 2},
@@ -117,24 +123,29 @@ func TestBufferedSeriesIterator(t *testing.T) {
 
 	require.True(t, it.Seek(-123), "seek failed")
 	sampleEq(1, 2)
+	prevSampleEq(0, 0, false)
 	bufferEq(nil)
 
 	require.True(t, it.Next(), "next failed")
 	sampleEq(2, 3)
+	prevSampleEq(1, 2, true)
 	bufferEq([]sample{{t: 1, v: 2}})
 
 	require.True(t, it.Next(), "next failed")
 	require.True(t, it.Next(), "next failed")
 	require.True(t, it.Next(), "next failed")
 	sampleEq(5, 6)
+	prevSampleEq(4, 5, true)
 	bufferEq([]sample{{t: 2, v: 3}, {t: 3, v: 4}, {t: 4, v: 5}})
 
 	require.True(t, it.Seek(5), "seek failed")
 	sampleEq(5, 6)
+	prevSampleEq(4, 5, true)
 	bufferEq([]sample{{t: 2, v: 3}, {t: 3, v: 4}, {t: 4, v: 5}})
 
 	require.True(t, it.Seek(101), "seek failed")
 	sampleEq(101, 10)
+	prevSampleEq(100, 9, true)
 	bufferEq([]sample{{t: 99, v: 8}, {t: 100, v: 9}})
 
 	require.False(t, it.Next(), "next succeeded unexpectedly")

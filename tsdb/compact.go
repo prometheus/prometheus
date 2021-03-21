@@ -111,7 +111,7 @@ func newCompactorMetrics(r prometheus.Registerer) *compactorMetrics {
 	m.duration = prometheus.NewHistogram(prometheus.HistogramOpts{
 		Name:    "prometheus_tsdb_compaction_duration_seconds",
 		Help:    "Duration of compaction runs",
-		Buckets: prometheus.ExponentialBuckets(1, 2, 10),
+		Buckets: prometheus.ExponentialBuckets(1, 2, 14),
 	})
 	m.chunkSize = prometheus.NewHistogram(prometheus.HistogramOpts{
 		Name:    "prometheus_tsdb_compaction_chunk_size_bytes",
@@ -214,6 +214,11 @@ func (c *LeveledCompactor) plan(dms []dirMeta) ([]string, error) {
 	for i := len(dms) - 1; i >= 0; i-- {
 		meta := dms[i].meta
 		if meta.MaxTime-meta.MinTime < c.ranges[len(c.ranges)/2] {
+			// If the block is entirely deleted, then we don't care about the block being big enough.
+			// TODO: This is assuming single tombstone is for distinct series, which might be no true.
+			if meta.Stats.NumTombstones > 0 && meta.Stats.NumTombstones >= meta.Stats.NumSeries {
+				return []string{dms[i].dir}, nil
+			}
 			break
 		}
 		if float64(meta.Stats.NumTombstones)/float64(meta.Stats.NumSeries+1) > 0.05 {
@@ -678,7 +683,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 			if i > 0 && b.Meta().MinTime < globalMaxt {
 				c.metrics.overlappingBlocks.Inc()
 				overlapping = true
-				level.Warn(c.logger).Log("msg", "Found overlapping blocks during compaction", "ulid", meta.ULID)
+				level.Info(c.logger).Log("msg", "Found overlapping blocks during compaction", "ulid", meta.ULID)
 			}
 			if b.Meta().MaxTime > globalMaxt {
 				globalMaxt = b.Meta().MaxTime

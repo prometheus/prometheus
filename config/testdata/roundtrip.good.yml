@@ -53,7 +53,8 @@ scrape_configs:
       key_file:  valid_key_file
 
   digitalocean_sd_configs:
-    - bearer_token: <secret>
+    - authorization:
+        credentials: <secret>
 
   dockerswarm_sd_configs:
   - host: http://127.0.0.1:2375

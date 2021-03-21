@@ -33,6 +33,7 @@ import (
 	"k8s.io/api/networking/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
@@ -65,7 +66,9 @@ var (
 		[]string{"role", "event"},
 	)
 	// DefaultSDConfig is the default Kubernetes SD configuration
-	DefaultSDConfig = SDConfig{}
+	DefaultSDConfig = SDConfig{
+		HTTPClientConfig: config.DefaultHTTPClientConfig,
+	}
 )
 
 func init() {
@@ -151,7 +154,7 @@ type resourceSelector struct {
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	*c = SDConfig{}
+	*c = DefaultSDConfig
 	type plain SDConfig
 	err := unmarshal((*plain)(c))
 	if err != nil {
@@ -164,7 +167,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
-	if c.APIServer.URL == nil && !reflect.DeepEqual(c.HTTPClientConfig, config.HTTPClientConfig{}) {
+	if c.APIServer.URL == nil && !reflect.DeepEqual(c.HTTPClientConfig, config.DefaultHTTPClientConfig) {
 		return errors.Errorf("to use custom HTTP client configuration please provide the 'api_server' URL explicitly")
 	}
 
@@ -203,7 +206,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		if err != nil {
 			return err
 		}
-		_, err = fields.ParseSelector(selector.Label)
+		_, err = labels.Parse(selector.Label)
 		if err != nil {
 			return err
 		}

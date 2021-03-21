@@ -20,13 +20,15 @@ process. The changes are only applied if all rule files are well-formatted.
 ## Syntax-checking rules
 
 To quickly check whether a rule file is syntactically correct without starting
-a Prometheus server, install and run Prometheus's `promtool` command-line
-utility tool:
+a Prometheus server, you can use Prometheus's `promtool` command-line utility
+tool:
 
 ```bash
-go get github.com/prometheus/prometheus/cmd/promtool
 promtool check rules /path/to/example.rules.yml
 ```
+
+The `promtool` binary is part of the `prometheus` archive offered on the
+project's [download page](https://prometheus.io/download/).
 
 When the file is syntactically valid, the checker prints a textual
 representation of the parsed rules to standard output and then exits with
@@ -45,8 +47,9 @@ dashboards, which need to query the same expression repeatedly every time they
 refresh.
 
 Recording and alerting rules exist in a rule group. Rules within a group are
-run sequentially at a regular interval. The names of recording rules
-must be [valid metric names](https://prometheus.io/docs/concepts/data_model/#metric-names-and-labels).
+run sequentially at a regular interval, with the same evaluation time.
+The names of recording rules must be
+[valid metric names](https://prometheus.io/docs/concepts/data_model/#metric-names-and-labels).
 The names of alerting rules must be
 [valid label values](https://prometheus.io/docs/concepts/data_model/#metric-names-and-labels).
 

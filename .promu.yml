@@ -1,7 +1,7 @@
 go:
     # Whenever the Go version is updated here,
     # .circle/config.yml should also be updated.
-    version: 1.15
+    version: 1.16
 repository:
     path: github.com/prometheus/prometheus
 build:
@@ -10,7 +10,7 @@ build:
           path: ./cmd/prometheus
         - name: promtool
           path: ./cmd/promtool
-    flags: -mod=vendor -a -tags netgo,builtinassets
+    flags: -a -tags netgo,builtinassets
     ldflags: |
         -X github.com/prometheus/common/version.Version={{.Version}}
         -X github.com/prometheus/common/version.Revision={{.Revision}}

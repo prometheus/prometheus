@@ -59,7 +59,6 @@ func funcTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper)
 func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper, isCounter bool, isRate bool) Vector {
 	ms := args[0].(*parser.MatrixSelector)
 	vs := ms.VectorSelector.(*parser.VectorSelector)
-
 	var (
 		samples    = vals[0].(Matrix)[0]
 		rangeStart = enh.Ts - durationMilliseconds(ms.Range+vs.Offset)
@@ -71,17 +70,17 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 	if len(samples.Points) < 2 {
 		return enh.Out
 	}
-	var (
-		counterCorrection float64
-		lastValue         float64
-	)
-	for _, sample := range samples.Points {
-		if isCounter && sample.V < lastValue {
-			counterCorrection += lastValue
+
+	resultValue := samples.Points[len(samples.Points)-1].V - samples.Points[0].V
+	if isCounter {
+		var lastValue float64
+		for _, sample := range samples.Points {
+			if sample.V < lastValue {
+				resultValue += lastValue
+			}
+			lastValue = sample.V
 		}
-		lastValue = sample.V
 	}
-	resultValue := lastValue - samples.Points[0].V + counterCorrection
 
 	// Duration between first/last samples and boundary of range.
 	durationToStart := float64(samples.Points[0].T-rangeStart) / 1000
@@ -279,6 +278,23 @@ func funcSortDesc(vals []parser.Value, args parser.Expressions, enh *EvalNodeHel
 	return Vector(byValueSorter)
 }
 
+// === clamp(Vector parser.ValueTypeVector, min, max Scalar) Vector ===
+func funcClamp(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	vec := vals[0].(Vector)
+	min := vals[1].(Vector)[0].Point.V
+	max := vals[2].(Vector)[0].Point.V
+	if max < min {
+		return enh.Out
+	}
+	for _, el := range vec {
+		enh.Out = append(enh.Out, Sample{
+			Metric: enh.DropMetricName(el.Metric),
+			Point:  Point{V: math.Max(min, math.Min(max, el.V))},
+		})
+	}
+	return enh.Out
+}
+
 // === clamp_max(Vector parser.ValueTypeVector, max Scalar) Vector ===
 func funcClampMax(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	vec := vals[0].(Vector)
@@ -384,7 +400,16 @@ func funcCountOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNo
 	})
 }
 
-// === floor(Vector parser.ValueTypeVector) Vector ===
+// === last_over_time(Matrix parser.ValueTypeMatrix) Vector ===
+func funcLastOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	el := vals[0].(Matrix)[0]
+
+	return append(enh.Out, Sample{
+		Metric: el.Metric,
+		Point:  Point{V: el.Points[len(el.Points)-1].V},
+	})
+}
+
 // === max_over_time(Matrix parser.ValueTypeMatrix) Vector ===
 func funcMaxOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return aggrOverTime(vals, enh, func(values []Point) float64 {
@@ -538,6 +563,18 @@ func funcLog10(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper
 	return simpleFunc(vals, enh, math.Log10)
 }
 
+// === sgn(Vector parser.ValueTypeVector) Vector ===
+func funcSgn(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return simpleFunc(vals, enh, func(v float64) float64 {
+		if v < 0 {
+			return -1
+		} else if v > 0 {
+			return 1
+		}
+		return v
+	})
+}
+
 // === timestamp(Vector parser.ValueTypeVector) Vector ===
 func funcTimestamp(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	vec := vals[0].(Vector)
@@ -598,7 +635,6 @@ func funcDeriv(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper
 func funcPredictLinear(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	samples := vals[0].(Matrix)[0]
 	duration := vals[1].(Vector)[0].V
-
 	// No sense in trying to predict anything without at least two points.
 	// Drop this Vector element.
 	if len(samples.Points) < 2 {
@@ -701,10 +737,10 @@ func funcChanges(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelp
 func funcLabelReplace(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	var (
 		vector   = vals[0].(Vector)
-		dst      = args[1].(*parser.StringLiteral).Val
-		repl     = args[2].(*parser.StringLiteral).Val
-		src      = args[3].(*parser.StringLiteral).Val
-		regexStr = args[4].(*parser.StringLiteral).Val
+		dst      = stringFromArg(args[1])
+		repl     = stringFromArg(args[2])
+		src      = stringFromArg(args[3])
+		regexStr = stringFromArg(args[4])
 	)
 
 	if enh.regex == nil {
@@ -764,8 +800,8 @@ func funcVector(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelpe
 func funcLabelJoin(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	var (
 		vector    = vals[0].(Vector)
-		dst       = args[1].(*parser.StringLiteral).Val
-		sep       = args[2].(*parser.StringLiteral).Val
+		dst       = stringFromArg(args[1])
+		sep       = stringFromArg(args[2])
 		srcLabels = make([]string, len(args)-3)
 	)
 
@@ -774,7 +810,7 @@ func funcLabelJoin(vals []parser.Value, args parser.Expressions, enh *EvalNodeHe
 	}
 
 	for i := 3; i < len(args); i++ {
-		src := args[i].(*parser.StringLiteral).Val
+		src := stringFromArg(args[i])
 		if !model.LabelName(src).IsValid() {
 			panic(errors.Errorf("invalid source label name in label_join(): %s", src))
 		}
@@ -895,6 +931,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"avg_over_time":      funcAvgOverTime,
 	"ceil":               funcCeil,
 	"changes":            funcChanges,
+	"clamp":              funcClamp,
 	"clamp_max":          funcClampMax,
 	"clamp_min":          funcClampMin,
 	"count_over_time":    funcCountOverTime,
@@ -916,6 +953,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"ln":                 funcLn,
 	"log10":              funcLog10,
 	"log2":               funcLog2,
+	"last_over_time":     funcLastOverTime,
 	"max_over_time":      funcMaxOverTime,
 	"min_over_time":      funcMinOverTime,
 	"minute":             funcMinute,
@@ -926,6 +964,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"resets":             funcResets,
 	"round":              funcRound,
 	"scalar":             funcScalar,
+	"sgn":                funcSgn,
 	"sort":               funcSort,
 	"sort_desc":          funcSortDesc,
 	"sqrt":               funcSqrt,
@@ -936,6 +975,21 @@ var FunctionCalls = map[string]FunctionCall{
 	"timestamp":          funcTimestamp,
 	"vector":             funcVector,
 	"year":               funcYear,
+}
+
+// AtModifierUnsafeFunctions are the functions whose result
+// can vary if evaluation time is changed when the arguments are
+// step invariant. It also includes functions that use the timestamps
+// of the passed instant vector argument to calculate a result since
+// that can also change with change in eval time.
+var AtModifierUnsafeFunctions = map[string]struct{}{
+	// Step invariant functions.
+	"days_in_month": {}, "day_of_month": {}, "day_of_week": {},
+	"hour": {}, "minute": {}, "month": {}, "year": {},
+	"predict_linear": {}, "time": {},
+	// Uses timestamp of the argument for the result,
+	// hence unsafe to use with @ modifier.
+	"timestamp": {},
 }
 
 type vectorByValueHeap Vector
@@ -1027,4 +1081,8 @@ func createLabelsForAbsentFunction(expr parser.Expr) labels.Labels {
 		m = labels.NewBuilder(m).Del(v).Labels()
 	}
 	return m
+}
+
+func stringFromArg(e parser.Expr) string {
+	return unwrapStepInvariantExpr(e).(*parser.StringLiteral).Val
 }

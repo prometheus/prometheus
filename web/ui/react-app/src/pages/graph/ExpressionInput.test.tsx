@@ -19,10 +19,8 @@ describe('ExpressionInput', () => {
   const metricNames = ['instance:node_cpu_utilisation:rate1m', 'node_cpu_guest_seconds_total', 'node_cpu_seconds_total'];
   const expressionInputProps = {
     value: 'node_cpu',
-    autocompleteSections: {
-      'Query History': [],
-      'Metric Names': metricNames,
-    },
+    queryHistory: [],
+    metricNames,
     executeQuery: (): void => {
       // Do nothing.
     },
@@ -133,14 +131,16 @@ describe('ExpressionInput', () => {
   describe('handleKeyPress', () => {
     it('should call executeQuery on Enter key pressed', () => {
       const spyExecuteQuery = jest.fn();
-      const input = mount(<ExpressionInput executeQuery={spyExecuteQuery} {...({} as any)} />);
+      const props = { ...expressionInputProps, executeQuery: spyExecuteQuery };
+      const input = mount(<ExpressionInput {...props} />);
       const instance: any = input.instance();
       instance.handleKeyPress({ preventDefault: jest.fn, key: 'Enter' });
       expect(spyExecuteQuery).toHaveBeenCalled();
     });
     it('should NOT call executeQuery on Enter + Shift', () => {
       const spyExecuteQuery = jest.fn();
-      const input = mount(<ExpressionInput executeQuery={spyExecuteQuery} {...({} as any)} />);
+      const props = { ...expressionInputProps, executeQuery: spyExecuteQuery };
+      const input = mount(<ExpressionInput {...props} />);
       const instance: any = input.instance();
       instance.handleKeyPress({ preventDefault: jest.fn, key: 'Enter', shiftKey: true });
       expect(spyExecuteQuery).not.toHaveBeenCalled();
@@ -159,8 +159,13 @@ describe('ExpressionInput', () => {
   });
 
   describe('createAutocompleteSection', () => {
+    const props = {
+      ...expressionInputProps,
+      metricNames: ['foo', 'bar', 'baz'],
+    };
+
     it('should close menu if no matches found', () => {
-      const input = mount(<ExpressionInput autocompleteSections={{ title: ['foo', 'bar', 'baz'] }} {...({} as any)} />);
+      const input = mount(<ExpressionInput {...props} />);
       const instance: any = input.instance();
       const spyCloseMenu = jest.fn();
       instance.createAutocompleteSection({ inputValue: 'qqqqqq', closeMenu: spyCloseMenu });
@@ -168,34 +173,22 @@ describe('ExpressionInput', () => {
         expect(spyCloseMenu).toHaveBeenCalled();
       });
     });
-    it('should not render lsit if inputValue not exist', () => {
-      const input = mount(<ExpressionInput autocompleteSections={{ title: ['foo', 'bar', 'baz'] }} {...({} as any)} />);
+    it('should not render list if inputValue not exist', () => {
+      const input = mount(<ExpressionInput {...props} />);
       const instance: any = input.instance();
       const spyCloseMenu = jest.fn();
       instance.createAutocompleteSection({ closeMenu: spyCloseMenu });
       setTimeout(() => expect(spyCloseMenu).toHaveBeenCalled());
     });
     it('should not render list if enableAutocomplete is false', () => {
-      const input = mount(
-        <ExpressionInput
-          autocompleteSections={{ title: ['foo', 'bar', 'baz'] }}
-          {...({} as any)}
-          enableAutocomplete={false}
-        />
-      );
+      const input = mount(<ExpressionInput {...props} enableAutocomplete={false} />);
       const instance: any = input.instance();
       const spyCloseMenu = jest.fn();
       instance.createAutocompleteSection({ closeMenu: spyCloseMenu });
       setTimeout(() => expect(spyCloseMenu).toHaveBeenCalled());
     });
     it('should render autosuggest-dropdown', () => {
-      const input = mount(
-        <ExpressionInput
-          autocompleteSections={{ title: ['foo', 'bar', 'baz'] }}
-          {...({} as any)}
-          enableAutocomplete={true}
-        />
-      );
+      const input = mount(<ExpressionInput {...props} enableAutocomplete={true} />);
       const instance: any = input.instance();
       const spyGetMenuProps = jest.fn();
       const sections = instance.createAutocompleteSection({
@@ -264,8 +257,10 @@ describe('ExpressionInput', () => {
 
   it('renders an execute Button', () => {
     const addon = expressionInput.find(InputGroupAddon).filterWhere(addon => addon.prop('addonType') === 'append');
-    const button = addon.find(Button);
-    expect(button.prop('className')).toEqual('execute-btn');
+    const button = addon
+      .find(Button)
+      .find('.execute-btn')
+      .first();
     expect(button.prop('color')).toEqual('primary');
     expect(button.text()).toEqual('Execute');
   });

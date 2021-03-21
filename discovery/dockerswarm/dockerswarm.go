@@ -40,9 +40,10 @@ var userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 
 // DefaultSDConfig is the default Docker Swarm SD configuration.
 var DefaultSDConfig = SDConfig{
-	RefreshInterval: model.Duration(60 * time.Second),
-	Port:            80,
-	Filters:         []Filter{},
+	RefreshInterval:  model.Duration(60 * time.Second),
+	Port:             80,
+	Filters:          []Filter{},
+	HTTPClientConfig: config.DefaultHTTPClientConfig,
 }
 
 func init() {
@@ -102,7 +103,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	default:
 		return fmt.Errorf("invalid role %s, expected tasks, services, or nodes", c.Role)
 	}
-	return nil
+	return c.HTTPClientConfig.Validate()
 }
 
 // Discovery periodically performs Docker Swarm requests. It implements

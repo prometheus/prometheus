@@ -14,11 +14,9 @@
 package v1
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"math"
 	"net/http"
@@ -33,8 +31,6 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
-	"github.com/gogo/protobuf/proto"
-	"github.com/golang/snappy"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
@@ -44,7 +40,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/pkg/gate"
+	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/prometheus/prometheus/pkg/timestamp"
@@ -56,7 +52,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
-	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
@@ -310,6 +305,55 @@ func TestEndpoints(t *testing.T) {
 			test_metric4{foo="boo", dup="1"} 1+0x100
 			test_metric4{foo="boo"} 1+0x100
 	`)
+
+	start := time.Unix(0, 0)
+	exemplars := []exemplar.QueryResult{
+		{
+			SeriesLabels: labels.FromStrings("__name__", "test_metric3", "foo", "boo", "dup", "1"),
+			Exemplars: []exemplar.Exemplar{
+				{
+					Labels: labels.FromStrings("id", "abc"),
+					Value:  10,
+					Ts:     timestamp.FromTime(start.Add(2 * time.Second)),
+				},
+			},
+		},
+		{
+			SeriesLabels: labels.FromStrings("__name__", "test_metric4", "foo", "bar", "dup", "1"),
+			Exemplars: []exemplar.Exemplar{
+				{
+					Labels: labels.FromStrings("id", "lul"),
+					Value:  10,
+					Ts:     timestamp.FromTime(start.Add(4 * time.Second)),
+				},
+			},
+		},
+		{
+			SeriesLabels: labels.FromStrings("__name__", "test_metric3", "foo", "boo", "dup", "1"),
+			Exemplars: []exemplar.Exemplar{
+				{
+					Labels: labels.FromStrings("id", "abc2"),
+					Value:  10,
+					Ts:     timestamp.FromTime(start.Add(4053 * time.Millisecond)),
+				},
+			},
+		},
+		{
+			SeriesLabels: labels.FromStrings("__name__", "test_metric4", "foo", "bar", "dup", "1"),
+			Exemplars: []exemplar.Exemplar{
+				{
+					Labels: labels.FromStrings("id", "lul2"),
+					Value:  10,
+					Ts:     timestamp.FromTime(start.Add(4153 * time.Millisecond)),
+				},
+			},
+		},
+	}
+	for _, ed := range exemplars {
+		suite.ExemplarStorage().AppendExemplar(0, ed.SeriesLabels, ed.Exemplars[0])
+		require.NoError(t, err, "failed to add exemplar: %+v", ed.Exemplars[0])
+	}
+
 	require.NoError(t, err)
 	defer suite.Close()
 
@@ -330,6 +374,7 @@ func TestEndpoints(t *testing.T) {
 		api := &API{
 			Queryable:             suite.Storage(),
 			QueryEngine:           suite.QueryEngine(),
+			ExemplarQueryable:     suite.ExemplarQueryable(),
 			targetRetriever:       testTargetRetriever.toFactory(),
 			alertmanagerRetriever: testAlertmanagerRetriever{}.toFactory(),
 			flagsMap:              sampleFlagMap,
@@ -338,8 +383,7 @@ func TestEndpoints(t *testing.T) {
 			ready:                 func(f http.HandlerFunc) http.HandlerFunc { return f },
 			rulesRetriever:        algr.toFactory(),
 		}
-
-		testEndpoints(t, api, testTargetRetriever, true)
+		testEndpoints(t, api, testTargetRetriever, suite.ExemplarStorage(), true)
 	})
 
 	// Run all the API tests against a API that is wired to forward queries via
@@ -394,6 +438,7 @@ func TestEndpoints(t *testing.T) {
 		api := &API{
 			Queryable:             remote,
 			QueryEngine:           suite.QueryEngine(),
+			ExemplarQueryable:     suite.ExemplarQueryable(),
 			targetRetriever:       testTargetRetriever.toFactory(),
 			alertmanagerRetriever: testAlertmanagerRetriever{}.toFactory(),
 			flagsMap:              sampleFlagMap,
@@ -403,7 +448,7 @@ func TestEndpoints(t *testing.T) {
 			rulesRetriever:        algr.toFactory(),
 		}
 
-		testEndpoints(t, api, testTargetRetriever, false)
+		testEndpoints(t, api, testTargetRetriever, suite.ExemplarStorage(), false)
 	})
 
 }
@@ -541,7 +586,7 @@ func setupRemote(s storage.Storage) *httptest.Server {
 	return httptest.NewServer(handler)
 }
 
-func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI bool) {
+func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.ExemplarStorage, testLabelAPI bool) {
 	start := time.Unix(0, 0)
 
 	type targetMetadata struct {
@@ -558,6 +603,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 		errType     errorType
 		sorter      func(interface{})
 		metadata    []targetMetadata
+		exemplars   []exemplar.QueryResult
 	}
 
 	var tests = []test{
@@ -726,6 +772,13 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 			response: []labels.Labels{
 				labels.FromStrings("__name__", "test_metric2", "foo", "boo"),
 			},
+		},
+		{
+			endpoint: api.series,
+			query: url.Values{
+				"match[]": []string{`{foo=""}`},
+			},
+			errType: errorBadData,
 		},
 		{
 			endpoint: api.series,
@@ -1457,6 +1510,89 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 				},
 			},
 		},
+		{
+			endpoint: api.queryExemplars,
+			query: url.Values{
+				"query": []string{`test_metric3{foo="boo"} - test_metric4{foo="bar"}`},
+				"start": []string{"0"},
+				"end":   []string{"4"},
+			},
+			// Note extra integer length of timestamps for exemplars because of millisecond preservation
+			// of timestamps within Prometheus (see timestamp package).
+
+			response: []exemplar.QueryResult{
+				{
+					SeriesLabels: labels.FromStrings("__name__", "test_metric3", "foo", "boo", "dup", "1"),
+					Exemplars: []exemplar.Exemplar{
+						{
+							Labels: labels.FromStrings("id", "abc"),
+							Value:  10,
+							Ts:     timestamp.FromTime(start.Add(2 * time.Second)),
+						},
+					},
+				},
+				{
+					SeriesLabels: labels.FromStrings("__name__", "test_metric4", "foo", "bar", "dup", "1"),
+					Exemplars: []exemplar.Exemplar{
+						{
+							Labels: labels.FromStrings("id", "lul"),
+							Value:  10,
+							Ts:     timestamp.FromTime(start.Add(4 * time.Second)),
+						},
+					},
+				},
+			},
+		},
+		{
+			endpoint: api.queryExemplars,
+			query: url.Values{
+				"query": []string{`{foo="boo"}`},
+				"start": []string{"4"},
+				"end":   []string{"4.1"},
+			},
+			response: []exemplar.QueryResult{
+				{
+					SeriesLabels: labels.FromStrings("__name__", "test_metric3", "foo", "boo", "dup", "1"),
+					Exemplars: []exemplar.Exemplar{
+						{
+							Labels: labels.FromStrings("id", "abc2"),
+							Value:  10,
+							Ts:     4053,
+						},
+					},
+				},
+			},
+		},
+		{
+			endpoint: api.queryExemplars,
+			query: url.Values{
+				"query": []string{`{foo="boo"}`},
+			},
+			response: []exemplar.QueryResult{
+				{
+					SeriesLabels: labels.FromStrings("__name__", "test_metric3", "foo", "boo", "dup", "1"),
+					Exemplars: []exemplar.Exemplar{
+						{
+							Labels: labels.FromStrings("id", "abc"),
+							Value:  10,
+							Ts:     2000,
+						},
+						{
+							Labels: labels.FromStrings("id", "abc2"),
+							Value:  10,
+							Ts:     4053,
+						},
+					},
+				},
+			},
+		},
+		{
+			endpoint: api.queryExemplars,
+			query: url.Values{
+				"query": []string{`{__name__="test_metric5"}`},
+			},
+			response: []exemplar.QueryResult{},
+		},
 	}
 
 	if testLabelAPI {
@@ -1615,7 +1751,98 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 					"boo",
 				},
 			},
-
+			// Label values with bad matchers.
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "foo",
+				},
+				query: url.Values{
+					"match[]": []string{`{foo=""`, `test_metric2`},
+				},
+				errType: errorBadData,
+			},
+			// Label values with empty matchers.
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "foo",
+				},
+				query: url.Values{
+					"match[]": []string{`{foo=""}`},
+				},
+				errType: errorBadData,
+			},
+			// Label values with matcher.
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "foo",
+				},
+				query: url.Values{
+					"match[]": []string{`test_metric2`},
+				},
+				response: []string{
+					"boo",
+				},
+			},
+			// Label values with matcher.
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "foo",
+				},
+				query: url.Values{
+					"match[]": []string{`test_metric1`},
+				},
+				response: []string{
+					"bar",
+					"boo",
+				},
+			},
+			// Label values with matcher using label filter.
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "foo",
+				},
+				query: url.Values{
+					"match[]": []string{`test_metric1{foo="bar"}`},
+				},
+				response: []string{
+					"bar",
+				},
+			},
+			// Label values with matcher and time range.
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "foo",
+				},
+				query: url.Values{
+					"match[]": []string{`test_metric1`},
+					"start":   []string{"1"},
+					"end":     []string{"100000000"},
+				},
+				response: []string{
+					"bar",
+					"boo",
+				},
+			},
+			// Try to overlap the selected series set as much as possible to test that the value de-duplication works.
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "foo",
+				},
+				query: url.Values{
+					"match[]": []string{`test_metric4{dup=~"^1"}`, `test_metric4{foo=~".+o$"}`},
+				},
+				response: []string{
+					"bar",
+					"boo",
+				},
+			},
 			// Label names.
 			{
 				endpoint: api.labelNames,
@@ -1701,6 +1928,60 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 				},
 				response: []string{"__name__", "dup", "foo"},
 			},
+			// Label names with bad matchers.
+			{
+				endpoint: api.labelNames,
+				query: url.Values{
+					"match[]": []string{`{foo=""`, `test_metric2`},
+				},
+				errType: errorBadData,
+			},
+			// Label values with empty matchers.
+			{
+				endpoint: api.labelNames,
+				params: map[string]string{
+					"name": "foo",
+				},
+				query: url.Values{
+					"match[]": []string{`{foo=""}`},
+				},
+				errType: errorBadData,
+			},
+			// Label names with matcher.
+			{
+				endpoint: api.labelNames,
+				query: url.Values{
+					"match[]": []string{`test_metric2`},
+				},
+				response: []string{"__name__", "foo"},
+			},
+			// Label names with matcher.
+			{
+				endpoint: api.labelNames,
+				query: url.Values{
+					"match[]": []string{`test_metric3`},
+				},
+				response: []string{"__name__", "dup", "foo"},
+			},
+			// Label names with matcher using label filter.
+			// There is no matching series.
+			{
+				endpoint: api.labelNames,
+				query: url.Values{
+					"match[]": []string{`test_metric1{foo="test"}`},
+				},
+				response: []string{},
+			},
+			// Label names with matcher and time range.
+			{
+				endpoint: api.labelNames,
+				query: url.Values{
+					"match[]": []string{`test_metric2`},
+					"start":   []string{"1"},
+					"end":     []string{"100000000"},
+				},
+				response: []string{"__name__", "foo"},
+			},
 		}...)
 	}
 
@@ -1742,6 +2023,15 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 					tr.ResetMetadataStore()
 					for _, tm := range test.metadata {
 						tr.SetMetadataStoreForTargets(tm.identifier, &testMetaStore{Metadata: tm.metadata})
+					}
+
+					for _, te := range test.exemplars {
+						for _, e := range te.Exemplars {
+							_, err := es.AppendExemplar(0, te.SeriesLabels, e)
+							if err != nil {
+								t.Fatal(err)
+							}
+						}
 					}
 
 					res := test.endpoint(req.WithContext(ctx))
@@ -1803,314 +2093,6 @@ func assertAPIResponseLength(t *testing.T, got interface{}, expLen int) {
 	}
 }
 
-func TestSampledReadEndpoint(t *testing.T) {
-	suite, err := promql.NewTest(t, `
-		load 1m
-			test_metric1{foo="bar",baz="qux"} 1
-	`)
-	require.NoError(t, err)
-
-	defer suite.Close()
-
-	err = suite.Run()
-	require.NoError(t, err)
-
-	api := &API{
-		Queryable:   suite.Storage(),
-		QueryEngine: suite.QueryEngine(),
-		config: func() config.Config {
-			return config.Config{
-				GlobalConfig: config.GlobalConfig{
-					ExternalLabels: labels.Labels{
-						// We expect external labels to be added, with the source labels honored.
-						{Name: "baz", Value: "a"},
-						{Name: "b", Value: "c"},
-						{Name: "d", Value: "e"},
-					},
-				},
-			}
-		},
-		remoteReadSampleLimit: 1e6,
-		remoteReadGate:        gate.New(1),
-	}
-
-	// Encode the request.
-	matcher1, err := labels.NewMatcher(labels.MatchEqual, "__name__", "test_metric1")
-	require.NoError(t, err)
-
-	matcher2, err := labels.NewMatcher(labels.MatchEqual, "d", "e")
-	require.NoError(t, err)
-
-	query, err := remote.ToQuery(0, 1, []*labels.Matcher{matcher1, matcher2}, &storage.SelectHints{Step: 0, Func: "avg"})
-	require.NoError(t, err)
-
-	req := &prompb.ReadRequest{Queries: []*prompb.Query{query}}
-	data, err := proto.Marshal(req)
-	require.NoError(t, err)
-
-	compressed := snappy.Encode(nil, data)
-	request, err := http.NewRequest("POST", "", bytes.NewBuffer(compressed))
-	require.NoError(t, err)
-
-	recorder := httptest.NewRecorder()
-	api.remoteRead(recorder, request)
-
-	if recorder.Code/100 != 2 {
-		t.Fatal(recorder.Code)
-	}
-
-	require.Equal(t, "application/x-protobuf", recorder.Result().Header.Get("Content-Type"))
-	require.Equal(t, "snappy", recorder.Result().Header.Get("Content-Encoding"))
-
-	// Decode the response.
-	compressed, err = ioutil.ReadAll(recorder.Result().Body)
-	require.NoError(t, err)
-
-	uncompressed, err := snappy.Decode(nil, compressed)
-	require.NoError(t, err)
-
-	var resp prompb.ReadResponse
-	err = proto.Unmarshal(uncompressed, &resp)
-	require.NoError(t, err)
-
-	if len(resp.Results) != 1 {
-		t.Fatalf("Expected 1 result, got %d", len(resp.Results))
-	}
-
-	require.Equal(t, &prompb.QueryResult{
-		Timeseries: []*prompb.TimeSeries{
-			{
-				Labels: []prompb.Label{
-					{Name: "__name__", Value: "test_metric1"},
-					{Name: "b", Value: "c"},
-					{Name: "baz", Value: "qux"},
-					{Name: "d", Value: "e"},
-					{Name: "foo", Value: "bar"},
-				},
-				Samples: []prompb.Sample{{Value: 1, Timestamp: 0}},
-			},
-		},
-	}, resp.Results[0])
-}
-
-func TestStreamReadEndpoint(t *testing.T) {
-	// First with 120 samples. We expect 1 frame with 1 chunk.
-	// Second with 121 samples, We expect 1 frame with 2 chunks.
-	// Third with 241 samples. We expect 1 frame with 2 chunks, and 1 frame with 1 chunk for the same series due to bytes limit.
-	suite, err := promql.NewTest(t, `
-		load 1m
-			test_metric1{foo="bar1",baz="qux"} 0+100x119
-            test_metric1{foo="bar2",baz="qux"} 0+100x120
-            test_metric1{foo="bar3",baz="qux"} 0+100x240
-	`)
-	require.NoError(t, err)
-
-	defer suite.Close()
-
-	require.NoError(t, suite.Run())
-
-	api := &API{
-		Queryable:   suite.Storage(),
-		QueryEngine: suite.QueryEngine(),
-		config: func() config.Config {
-			return config.Config{
-				GlobalConfig: config.GlobalConfig{
-					ExternalLabels: labels.Labels{
-						// We expect external labels to be added, with the source labels honored.
-						{Name: "baz", Value: "a"},
-						{Name: "b", Value: "c"},
-						{Name: "d", Value: "e"},
-					},
-				},
-			}
-		},
-		remoteReadSampleLimit: 1e6,
-		remoteReadGate:        gate.New(1),
-		// Labelset has 57 bytes. Full chunk in test data has roughly 240 bytes. This allows us to have at max 2 chunks in this test.
-		remoteReadMaxBytesInFrame: 57 + 480,
-	}
-
-	// Encode the request.
-	matcher1, err := labels.NewMatcher(labels.MatchEqual, "__name__", "test_metric1")
-	require.NoError(t, err)
-
-	matcher2, err := labels.NewMatcher(labels.MatchEqual, "d", "e")
-	require.NoError(t, err)
-
-	matcher3, err := labels.NewMatcher(labels.MatchEqual, "foo", "bar1")
-	require.NoError(t, err)
-
-	query1, err := remote.ToQuery(0, 14400001, []*labels.Matcher{matcher1, matcher2}, &storage.SelectHints{
-		Step:  1,
-		Func:  "avg",
-		Start: 0,
-		End:   14400001,
-	})
-	require.NoError(t, err)
-
-	query2, err := remote.ToQuery(0, 14400001, []*labels.Matcher{matcher1, matcher3}, &storage.SelectHints{
-		Step:  1,
-		Func:  "avg",
-		Start: 0,
-		End:   14400001,
-	})
-	require.NoError(t, err)
-
-	req := &prompb.ReadRequest{
-		Queries:               []*prompb.Query{query1, query2},
-		AcceptedResponseTypes: []prompb.ReadRequest_ResponseType{prompb.ReadRequest_STREAMED_XOR_CHUNKS},
-	}
-	data, err := proto.Marshal(req)
-	require.NoError(t, err)
-
-	compressed := snappy.Encode(nil, data)
-	request, err := http.NewRequest("POST", "", bytes.NewBuffer(compressed))
-	require.NoError(t, err)
-
-	recorder := httptest.NewRecorder()
-	api.remoteRead(recorder, request)
-
-	if recorder.Code/100 != 2 {
-		t.Fatal(recorder.Code)
-	}
-
-	require.Equal(t, "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse", recorder.Result().Header.Get("Content-Type"))
-	require.Equal(t, "", recorder.Result().Header.Get("Content-Encoding"))
-
-	var results []*prompb.ChunkedReadResponse
-	stream := remote.NewChunkedReader(recorder.Result().Body, remote.DefaultChunkedReadLimit, nil)
-	for {
-		res := &prompb.ChunkedReadResponse{}
-		err := stream.NextProto(res)
-		if err == io.EOF {
-			break
-		}
-		require.NoError(t, err)
-		results = append(results, res)
-	}
-
-	if len(results) != 5 {
-		t.Fatalf("Expected 5 result, got %d", len(results))
-	}
-
-	require.Equal(t, []*prompb.ChunkedReadResponse{
-		{
-			ChunkedSeries: []*prompb.ChunkedSeries{
-				{
-					Labels: []prompb.Label{
-						{Name: "__name__", Value: "test_metric1"},
-						{Name: "b", Value: "c"},
-						{Name: "baz", Value: "qux"},
-						{Name: "d", Value: "e"},
-						{Name: "foo", Value: "bar1"},
-					},
-					Chunks: []prompb.Chunk{
-						{
-							Type:      prompb.Chunk_XOR,
-							MaxTimeMs: 7140000,
-							Data:      []byte("\000x\000\000\000\000\000\000\000\000\000\340\324\003\302|\005\224\000\301\254}\351z2\320O\355\264n[\007\316\224\243md\371\320\375\032Pm\nS\235\016Q\255\006P\275\250\277\312\201Z\003(3\240R\207\332\005(\017\240\322\201\332=(\023\2402\203Z\007(w\2402\201Z\017(\023\265\227\364P\033@\245\007\364\nP\033C\245\002t\036P+@e\036\364\016Pk@e\002t:P;A\245\001\364\nS\373@\245\006t\006P+C\345\002\364\006Pk@\345\036t\nP\033A\245\003\364:P\033@\245\006t\016ZJ\377\\\205\313\210\327\270\017\345+F[\310\347E)\355\024\241\366\342}(v\215(N\203)\326\207(\336\203(V\332W\362\202t4\240m\005(\377AJ\006\320\322\202t\374\240\255\003(oA\312:\3202"),
-						},
-					},
-				},
-			},
-		},
-		{
-			ChunkedSeries: []*prompb.ChunkedSeries{
-				{
-					Labels: []prompb.Label{
-						{Name: "__name__", Value: "test_metric1"},
-						{Name: "b", Value: "c"},
-						{Name: "baz", Value: "qux"},
-						{Name: "d", Value: "e"},
-						{Name: "foo", Value: "bar2"},
-					},
-					Chunks: []prompb.Chunk{
-						{
-							Type:      prompb.Chunk_XOR,
-							MaxTimeMs: 7140000,
-							Data:      []byte("\000x\000\000\000\000\000\000\000\000\000\340\324\003\302|\005\224\000\301\254}\351z2\320O\355\264n[\007\316\224\243md\371\320\375\032Pm\nS\235\016Q\255\006P\275\250\277\312\201Z\003(3\240R\207\332\005(\017\240\322\201\332=(\023\2402\203Z\007(w\2402\201Z\017(\023\265\227\364P\033@\245\007\364\nP\033C\245\002t\036P+@e\036\364\016Pk@e\002t:P;A\245\001\364\nS\373@\245\006t\006P+C\345\002\364\006Pk@\345\036t\nP\033A\245\003\364:P\033@\245\006t\016ZJ\377\\\205\313\210\327\270\017\345+F[\310\347E)\355\024\241\366\342}(v\215(N\203)\326\207(\336\203(V\332W\362\202t4\240m\005(\377AJ\006\320\322\202t\374\240\255\003(oA\312:\3202"),
-						},
-						{
-							Type:      prompb.Chunk_XOR,
-							MinTimeMs: 7200000,
-							MaxTimeMs: 7200000,
-							Data:      []byte("\000\001\200\364\356\006@\307p\000\000\000\000\000\000"),
-						},
-					},
-				},
-			},
-		},
-		{
-			ChunkedSeries: []*prompb.ChunkedSeries{
-				{
-					Labels: []prompb.Label{
-						{Name: "__name__", Value: "test_metric1"},
-						{Name: "b", Value: "c"},
-						{Name: "baz", Value: "qux"},
-						{Name: "d", Value: "e"},
-						{Name: "foo", Value: "bar3"},
-					},
-					Chunks: []prompb.Chunk{
-						{
-							Type:      prompb.Chunk_XOR,
-							MaxTimeMs: 7140000,
-							Data:      []byte("\000x\000\000\000\000\000\000\000\000\000\340\324\003\302|\005\224\000\301\254}\351z2\320O\355\264n[\007\316\224\243md\371\320\375\032Pm\nS\235\016Q\255\006P\275\250\277\312\201Z\003(3\240R\207\332\005(\017\240\322\201\332=(\023\2402\203Z\007(w\2402\201Z\017(\023\265\227\364P\033@\245\007\364\nP\033C\245\002t\036P+@e\036\364\016Pk@e\002t:P;A\245\001\364\nS\373@\245\006t\006P+C\345\002\364\006Pk@\345\036t\nP\033A\245\003\364:P\033@\245\006t\016ZJ\377\\\205\313\210\327\270\017\345+F[\310\347E)\355\024\241\366\342}(v\215(N\203)\326\207(\336\203(V\332W\362\202t4\240m\005(\377AJ\006\320\322\202t\374\240\255\003(oA\312:\3202"),
-						},
-						{
-							Type:      prompb.Chunk_XOR,
-							MinTimeMs: 7200000,
-							MaxTimeMs: 14340000,
-							Data:      []byte("\000x\200\364\356\006@\307p\000\000\000\000\000\340\324\003\340>\224\355\260\277\322\200\372\005(=\240R\207:\003(\025\240\362\201z\003(\365\240r\203:\005(\r\241\322\201\372\r(\r\240R\237:\007(5\2402\201z\037(\025\2402\203:\005(\375\240R\200\372\r(\035\241\322\201:\003(5\240r\326g\364\271\213\227!\253q\037\312N\340GJ\033E)\375\024\241\266\362}(N\217(V\203)\336\207(\326\203(N\334W\322\203\2644\240}\005(\373AJ\031\3202\202\264\374\240\275\003(kA\3129\320R\201\2644\240\375\264\277\322\200\332\005(3\240r\207Z\003(\027\240\362\201Z\003(\363\240R\203\332\005(\017\241\322\201\332\r(\023\2402\237Z\007(7\2402\201Z\037(\023\240\322\200\332\005(\377\240R\200\332\r "),
-						},
-					},
-				},
-			},
-		},
-		{
-			ChunkedSeries: []*prompb.ChunkedSeries{
-				{
-					Labels: []prompb.Label{
-						{Name: "__name__", Value: "test_metric1"},
-						{Name: "b", Value: "c"},
-						{Name: "baz", Value: "qux"},
-						{Name: "d", Value: "e"},
-						{Name: "foo", Value: "bar3"},
-					},
-					Chunks: []prompb.Chunk{
-						{
-							Type:      prompb.Chunk_XOR,
-							MinTimeMs: 14400000,
-							MaxTimeMs: 14400000,
-							Data:      []byte("\000\001\200\350\335\r@\327p\000\000\000\000\000\000"),
-						},
-					},
-				},
-			},
-		},
-		{
-			ChunkedSeries: []*prompb.ChunkedSeries{
-				{
-					Labels: []prompb.Label{
-						{Name: "__name__", Value: "test_metric1"},
-						{Name: "b", Value: "c"},
-						{Name: "baz", Value: "qux"},
-						{Name: "d", Value: "e"},
-						{Name: "foo", Value: "bar1"},
-					},
-					Chunks: []prompb.Chunk{
-						{
-							Type:      prompb.Chunk_XOR,
-							MaxTimeMs: 7140000,
-							Data:      []byte("\000x\000\000\000\000\000\000\000\000\000\340\324\003\302|\005\224\000\301\254}\351z2\320O\355\264n[\007\316\224\243md\371\320\375\032Pm\nS\235\016Q\255\006P\275\250\277\312\201Z\003(3\240R\207\332\005(\017\240\322\201\332=(\023\2402\203Z\007(w\2402\201Z\017(\023\265\227\364P\033@\245\007\364\nP\033C\245\002t\036P+@e\036\364\016Pk@e\002t:P;A\245\001\364\nS\373@\245\006t\006P+C\345\002\364\006Pk@\345\036t\nP\033A\245\003\364:P\033@\245\006t\016ZJ\377\\\205\313\210\327\270\017\345+F[\310\347E)\355\024\241\366\342}(v\215(N\203)\326\207(\336\203(V\332W\362\202t4\240m\005(\377AJ\006\320\322\202t\374\240\255\003(oA\312:\3202"),
-						},
-					},
-				},
-			},
-			QueryIndex: 1,
-		},
-	}, results)
-}
-
 type fakeDB struct {
 	err error
 }
@@ -2129,7 +2111,9 @@ func (f *fakeDB) Stats(statsByLabelName string) (_ *tsdb.Stats, retErr error) {
 			retErr = err
 		}
 	}()
-	h, _ := tsdb.NewHead(nil, nil, nil, 1000, "", nil, chunks.DefaultWriteBufferSize, tsdb.DefaultStripeSize, nil)
+	opts := tsdb.DefaultHeadOptions()
+	opts.ChunkRange = 1000
+	h, _ := tsdb.NewHead(nil, nil, nil, opts)
 	return h.Stats(statsByLabelName), nil
 }
 
@@ -2669,6 +2653,36 @@ func TestRespond(t *testing.T) {
 			response: promql.Point{V: 1.2345678e-67, T: 0},
 			expected: `{"status":"success","data":[0,"1.2345678e-67"]}`,
 		},
+		{
+			response: []exemplar.QueryResult{
+				{
+					SeriesLabels: labels.FromStrings("foo", "bar"),
+					Exemplars: []exemplar.Exemplar{
+						{
+							Labels: labels.FromStrings("traceID", "abc"),
+							Value:  100.123,
+							Ts:     1234,
+						},
+					},
+				},
+			},
+			expected: `{"status":"success","data":[{"seriesLabels":{"foo":"bar"},"exemplars":[{"labels":{"traceID":"abc"},"value":"100.123","timestamp":1.234}]}]}`,
+		},
+		{
+			response: []exemplar.QueryResult{
+				{
+					SeriesLabels: labels.FromStrings("foo", "bar"),
+					Exemplars: []exemplar.Exemplar{
+						{
+							Labels: labels.FromStrings("traceID", "abc"),
+							Value:  math.Inf(1),
+							Ts:     1234,
+						},
+					},
+				},
+			},
+			expected: `{"status":"success","data":[{"seriesLabels":{"foo":"bar"},"exemplars":[{"labels":{"traceID":"abc"},"value":"+Inf","timestamp":1.234}]}]}`,
+		},
 	}
 
 	for _, c := range cases {
@@ -2786,5 +2800,113 @@ func BenchmarkRespond(b *testing.B) {
 	api := API{}
 	for n := 0; n < b.N; n++ {
 		api.respond(&testResponseWriter, response, nil)
+	}
+}
+
+func TestGetGlobalURL(t *testing.T) {
+	mustParseURL := func(t *testing.T, u string) *url.URL {
+		parsed, err := url.Parse(u)
+		require.NoError(t, err)
+		return parsed
+	}
+
+	testcases := []struct {
+		input    *url.URL
+		opts     GlobalURLOptions
+		expected *url.URL
+		errorful bool
+	}{
+		{
+			mustParseURL(t, "http://127.0.0.1:9090"),
+			GlobalURLOptions{
+				ListenAddress: "127.0.0.1:9090",
+				Host:          "127.0.0.1:9090",
+				Scheme:        "http",
+			},
+			mustParseURL(t, "http://127.0.0.1:9090"),
+			false,
+		},
+		{
+			mustParseURL(t, "http://127.0.0.1:9090"),
+			GlobalURLOptions{
+				ListenAddress: "127.0.0.1:9090",
+				Host:          "prometheus.io",
+				Scheme:        "https",
+			},
+			mustParseURL(t, "https://prometheus.io"),
+			false,
+		},
+		{
+			mustParseURL(t, "http://exemple.com"),
+			GlobalURLOptions{
+				ListenAddress: "127.0.0.1:9090",
+				Host:          "prometheus.io",
+				Scheme:        "https",
+			},
+			mustParseURL(t, "http://exemple.com"),
+			false,
+		},
+		{
+			mustParseURL(t, "http://localhost:8080"),
+			GlobalURLOptions{
+				ListenAddress: "127.0.0.1:9090",
+				Host:          "prometheus.io",
+				Scheme:        "https",
+			},
+			mustParseURL(t, "http://prometheus.io:8080"),
+			false,
+		},
+		{
+			mustParseURL(t, "http://[::1]:8080"),
+			GlobalURLOptions{
+				ListenAddress: "127.0.0.1:9090",
+				Host:          "prometheus.io",
+				Scheme:        "https",
+			},
+			mustParseURL(t, "http://prometheus.io:8080"),
+			false,
+		},
+		{
+			mustParseURL(t, "http://localhost"),
+			GlobalURLOptions{
+				ListenAddress: "127.0.0.1:9090",
+				Host:          "prometheus.io",
+				Scheme:        "https",
+			},
+			mustParseURL(t, "http://prometheus.io"),
+			false,
+		},
+		{
+			mustParseURL(t, "http://localhost:9091"),
+			GlobalURLOptions{
+				ListenAddress: "[::1]:9090",
+				Host:          "[::1]",
+				Scheme:        "https",
+			},
+			mustParseURL(t, "http://[::1]:9091"),
+			false,
+		},
+		{
+			mustParseURL(t, "http://localhost:9091"),
+			GlobalURLOptions{
+				ListenAddress: "[::1]:9090",
+				Host:          "[::1]:9090",
+				Scheme:        "https",
+			},
+			mustParseURL(t, "http://[::1]:9091"),
+			false,
+		},
+	}
+
+	for i, tc := range testcases {
+		t.Run(fmt.Sprintf("Test %d", i), func(t *testing.T) {
+			output, err := getGlobalURL(tc.input, tc.opts)
+			if tc.errorful {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, output)
+		})
 	}
 }

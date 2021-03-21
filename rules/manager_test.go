@@ -547,9 +547,9 @@ func TestStaleness(t *testing.T) {
 
 	// A time series that has two samples and then goes stale.
 	app := st.Appender(context.Background())
-	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 0, 1)
-	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2)
-	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 2000, math.Float64frombits(value.StaleNaN))
+	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 1)
+	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2)
+	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 2000, math.Float64frombits(value.StaleNaN))
 
 	err = app.Commit()
 	require.NoError(t, err)
@@ -872,10 +872,10 @@ func TestNotify(t *testing.T) {
 	})
 
 	app := storage.Appender(context.Background())
-	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2)
-	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 2000, 3)
-	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 5000, 3)
-	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 6000, 0)
+	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2)
+	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 2000, 3)
+	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 5000, 3)
+	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 6000, 0)
 
 	err = app.Commit()
 	require.NoError(t, err)
@@ -1162,4 +1162,61 @@ func TestGroupHasAlertingRules(t *testing.T) {
 		got := test.group.HasAlertingRules()
 		require.Equal(t, test.want, got, "test case %d failed, expected:%t got:%t", i, test.want, got)
 	}
+}
+
+func TestRuleHealthUpdates(t *testing.T) {
+	st := teststorage.New(t)
+	defer st.Close()
+	engineOpts := promql.EngineOpts{
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    10 * time.Second,
+	}
+	engine := promql.NewEngine(engineOpts)
+	opts := &ManagerOptions{
+		QueryFunc:  EngineQueryFunc(engine, st),
+		Appendable: st,
+		Queryable:  st,
+		Context:    context.Background(),
+		Logger:     log.NewNopLogger(),
+	}
+
+	expr, err := parser.ParseExpr("a + 1")
+	require.NoError(t, err)
+	rule := NewRecordingRule("a_plus_one", expr, labels.Labels{})
+	group := NewGroup(GroupOptions{
+		Name:          "default",
+		Interval:      time.Second,
+		Rules:         []Rule{rule},
+		ShouldRestore: true,
+		Opts:          opts,
+	})
+
+	// A time series that has two samples.
+	app := st.Appender(context.Background())
+	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 1)
+	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2)
+	err = app.Commit()
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	rules := group.Rules()[0]
+	require.NoError(t, rules.LastError())
+	require.Equal(t, HealthUnknown, rules.Health())
+
+	// Execute 2 times, it should be all green.
+	group.Eval(ctx, time.Unix(0, 0))
+	group.Eval(ctx, time.Unix(1, 0))
+
+	rules = group.Rules()[0]
+	require.NoError(t, rules.LastError())
+	require.Equal(t, HealthGood, rules.Health())
+
+	// Now execute the rule in the past again, this should cause append failures.
+	group.Eval(ctx, time.Unix(0, 0))
+	rules = group.Rules()[0]
+	require.EqualError(t, rules.LastError(), storage.ErrOutOfOrderSample.Error())
+	require.Equal(t, HealthBad, rules.Health())
 }

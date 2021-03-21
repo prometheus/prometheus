@@ -29,7 +29,11 @@ Release cadence of first pre-releases being cut is 6 weeks.
 | v2.22          | 2020-10-07                                 | Frederic Branczyk (GitHub: @brancz)         |
 | v2.23          | 2020-11-18                                 | Ganesh Vernekar (GitHub: @codesome)         |
 | v2.24          | 2020-12-30                                 | Björn Rabenstein (GitHub: @beorn7)          |
-| v2.25          | 2021-02-10                                 | **searching for volunteer**                 |
+| v2.25          | 2021-02-10                                 | Julien Pivotto (GitHub: @roidelapluie)      |
+| v2.26          | 2021-03-24                                 | Bartek Plotka (GitHub: @bwplotka)           |
+| v2.27          | 2021-05-05                                 | Chris Marchbanks (GitHub: @csmarchbanks)    |
+| v2.28          | 2021-06-16                                 | **searching for volunteer**                 |
+| v2.29          | 2021-07-28                                 | **searching for volunteer**                 |
 
 If you are interested in volunteering please create a pull request against the [prometheus/prometheus](https://github.com/prometheus/prometheus) repository and propose yourself for the release series of your choice.
 
@@ -37,7 +41,7 @@ If you are interested in volunteering please create a pull request against the [
 
 The release shepherd is responsible for the entire release series of a minor release, meaning all pre- and patch releases of a minor release. The process formally starts with the initial pre-release, but some preparations should be done a few days in advance.
 
-* We aim to keep the master branch in a working state at all times. In principle, it should be possible to cut a release from master at any time. In practice, things might not work out as nicely. A few days before the pre-release is scheduled, the shepherd should check the state of master. Following their best judgement, the shepherd should try to expedite bug fixes that are still in progress but should make it into the release. On the other hand, the shepherd may hold back merging last-minute invasive and risky changes that are better suited for the next minor release.
+* We aim to keep the main branch in a working state at all times. In principle, it should be possible to cut a release from main at any time. In practice, things might not work out as nicely. A few days before the pre-release is scheduled, the shepherd should check the state of main. Following their best judgement, the shepherd should try to expedite bug fixes that are still in progress but should make it into the release. On the other hand, the shepherd may hold back merging last-minute invasive and risky changes that are better suited for the next minor release.
 * On the date listed in the table above, the release shepherd cuts the first pre-release (using the suffix `-rc.0`) and creates a new branch called  `release-<major>.<minor>` starting at the commit tagged for the pre-release. In general, a pre-release is considered a release candidate (that's what `rc` stands for) and should therefore not contain any known bugs that are planned to be fixed in the final release.
 * With the pre-release, the release shepherd is responsible for running and monitoring a benchmark run of the pre-release for 3 days, after which, if successful, the pre-release is promoted to a stable release.
 * If regressions or critical bugs are detected, they need to get fixed before cutting a new pre-release (called `-rc.1`, `-rc.2`, etc.).
@@ -56,9 +60,9 @@ We maintain a separate branch for each minor release, named `release-<major>.<mi
 
 Note that branch protection kicks in automatically for any branches whose name starts with `release-`. Never use names starting with `release-` for branches that are not release branches.
 
-The usual flow is to merge new features and changes into the master branch and to merge bug fixes into the latest release branch. Bug fixes are then merged into master from the latest release branch. The master branch should always contain all commits from the latest release branch. As long as master hasn't deviated from the release branch, new commits can also go to master, followed by merging master back into the release branch.
+The usual flow is to merge new features and changes into the main branch and to merge bug fixes into the latest release branch. Bug fixes are then merged into main from the latest release branch. The main branch should always contain all commits from the latest release branch. As long as main hasn't deviated from the release branch, new commits can also go to main, followed by merging main back into the release branch.
 
-If a bug fix got accidentally merged into master after non-bug-fix changes in master, the bug-fix commits have to be cherry-picked into the release branch, which then have to be merged back into master. Try to avoid that situation.
+If a bug fix got accidentally merged into main after non-bug-fix changes in main, the bug-fix commits have to be cherry-picked into the release branch, which then have to be merged back into main. Try to avoid that situation.
 
 Maintaining the release branches for older minor releases happens on a best effort basis.
 
@@ -66,7 +70,7 @@ Maintaining the release branches for older minor releases happens on a best effo
 
 A few days before a major or minor release, consider updating the dependencies.
 
-Then create a pull request against the master branch.
+Then create a pull request against the main branch.
 
 Note that after a dependency update, you should look out for any weirdness that
 might have happened. Such weirdnesses include but are not limited to: flaky
@@ -81,7 +85,7 @@ later follow-up.
 
 ```
 make update-go-deps
-git add go.mod go.sum vendor
+git add go.mod go.sum
 git commit -m "Update dependencies"
 ```
 
@@ -105,7 +109,7 @@ git add package.json yarn.lock
 
 ### 1. Prepare your release
 
-At the start of a new major or minor release cycle create the corresponding release branch based on the master branch. For example if we're releasing `2.17.0` and the previous stable release is `2.16.0` we need to create a `release-2.17` branch. Note that all releases are handled in protected release branches, see the above `Branch management and versioning` section. Release candidates and patch releases for any given major or minor release happen in the same `release-<major>.<minor>` branch. Do not create `release-<version>` for patch or release candidate releases.
+At the start of a new major or minor release cycle create the corresponding release branch based on the main branch. For example if we're releasing `2.17.0` and the previous stable release is `2.16.0` we need to create a `release-2.17` branch. Note that all releases are handled in protected release branches, see the above `Branch management and versioning` section. Release candidates and patch releases for any given major or minor release happen in the same `release-<major>.<minor>` branch. Do not create `release-<version>` for patch or release candidate releases.
 
 Changes for a patch release or release candidate should be merged into the previously mentioned release branch via pull request.
 
@@ -152,6 +156,6 @@ Finally, wait for the build step for the tag to finish. The point here is to wai
 
 For release candidate versions (`v2.16.0-rc.0`), run the benchmark for 3 days using the `/prombench vX.Y.Z` command, `vX.Y.Z` being the latest stable patch release's tag of the previous minor release series, such as `v2.15.2`.
 
-If the release has happened in the latest release branch, merge the changes into master.
+If the release has happened in the latest release branch, merge the changes into main.
 
 Once the binaries have been uploaded, announce the release on `prometheus-announce@googlegroups.com`. (Please do not use `prometheus-users@googlegroups.com` for announcements anymore.) Check out previous announcement mails for inspiration.

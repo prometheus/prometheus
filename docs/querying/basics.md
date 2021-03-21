@@ -204,11 +204,69 @@ The same works for range vectors. This returns the 5-minute rate that
 
     rate(http_requests_total[5m] offset 1w)
 
+For comparisons with temporal shifts forward in time, a negative offset
+can be specified:
+
+    rate(http_requests_total[5m] offset -1w)
+
+This feature is enabled by setting `--enable-feature=promql-negative-offset`
+flag. See [disabled features](../disabled_features.md) for more details about
+this flag.
+
+### @ modifier
+
+The `@` modifier allows changing the evaluation time for individual instant
+and range vectors in a query. The time supplied to the `@` modifier
+is a unix timestamp and described with a float literal. 
+
+For example, the following expression returns the value of
+`http_requests_total` at `2021-01-04T07:40:00+00:00`:
+
+    http_requests_total @ 1609746000
+
+Note that the `@` modifier always needs to follow the selector
+immediately, i.e. the following would be correct:
+
+    sum(http_requests_total{method="GET"} @ 1609746000) // GOOD.
+
+While the following would be *incorrect*:
+
+    sum(http_requests_total{method="GET"}) @ 1609746000 // INVALID.
+
+The same works for range vectors. This returns the 5-minute rate that
+`http_requests_total` had at `2021-01-04T07:40:00+00:00`:
+
+    rate(http_requests_total[5m] @ 1609746000)
+
+The `@` modifier supports all representation of float literals described
+above within the limits of `int64`. It can also be used along
+with the `offset` modifier where the offset is applied relative to the `@`
+modifier time irrespective of which modifier is written first.
+These 2 queries will produce the same result.
+
+    # offset after @
+    http_requests_total @ 1609746000 offset 5m
+    # offset before @
+    http_requests_total offset 5m @ 1609746000
+
+This modifier is disabled by default since it breaks the invariant that PromQL
+does not look ahead of the evaluation time for samples. It can be enabled by setting
+`--enable-feature=promql-at-modifier` flag. See [disabled features](../disabled_features.md) for more details about this flag.
+
+Additionally, `start()` and `end()` can also be used as values for the `@` modifier as special values.
+
+For a range query, they resolve to the start and end of the range query respectively and remain the same for all steps.
+
+For an instant query, `start()` and `end()` both resolve to the evaluation time.
+
+    http_requests_total @ start()
+    rate(http_requests_total[5m] @ end())
+
 ## Subquery
 
 Subquery allows you to run an instant query for a given range and resolution. The result of a subquery is a range vector.
 
-Syntax: `<instant_query> '[' <range> ':' [<resolution>] ']' [ offset <duration> ]`
+Syntax: `<instant_query> '[' <range> ':' [<resolution>] ']' [ @ <float_literal> ] [ offset <duration> ]`
 
 * `<resolution>` is optional. Default is the global evaluation interval.
 

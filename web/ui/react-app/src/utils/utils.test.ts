@@ -192,10 +192,10 @@ describe('Utils', () => {
       });
       it('renders a humanized duration for sane durations', () => {
         expect(formatRelative('2019-11-04T09:15:29.578701-07:00', parseTime('2019-11-04T09:15:35.8701-07:00'))).toEqual(
-          '6.292s'
+          '6.292s ago'
         );
         expect(formatRelative('2019-11-04T09:15:35.8701-07:00', parseTime('2019-11-04T09:15:29.578701-07:00'))).toEqual(
-          '-6.292s'
+          '-6.292s ago'
         );
       });
     });
