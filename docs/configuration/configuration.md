@@ -510,6 +510,7 @@ Available meta labels:
 * `__meta_docker_network_ip`: the IP of the container in this network
 * `__meta_docker_port_private`: the port on the container
 * `__meta_docker_port_public`: the external port if a port-mapping exists
+* `__meta_docker_port_public_ip`: the public IP if a port-mapping exists
 
 See below for the configuration options for Docker discovery:
 

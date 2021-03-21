@@ -16,14 +16,13 @@ package dockerswarm
 import (
 	"context"
 	"fmt"
-	"github.com/docker/docker/api/types"
-	"github.com/prometheus/prometheus/util/strutil"
 	"net"
 	"net/http"
 	"net/url"
 	"strconv"
 	"time"
 
+	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/client"
 	"github.com/go-kit/kit/log"
@@ -32,6 +31,7 @@ import (
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/util/strutil"
 )
 
 const (
@@ -46,6 +46,7 @@ const (
 	dockerLabelPortPrefix           = dockerLabel + "port_"
 	dockerLabelPortPrivate          = dockerLabelPortPrefix + "private"
 	dockerLabelPortPublic           = dockerLabelPortPrefix + "public"
+	dockerLabelPortPublicIP         = dockerLabelPortPrefix + "public_ip"
 )
 
 // DefaultDockerSDConfig is the default Docker SD configuration.
@@ -211,6 +212,7 @@ func (d *DockerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 
 				if p.PublicPort > 0 {
 					labels[dockerLabelPortPublic] = model.LabelValue(strconv.FormatUint(uint64(p.PublicPort), 10))
+					labels[dockerLabelPortPublicIP] = model.LabelValue(p.IP)
 				}
 
 				for k, v := range commonLabels {
