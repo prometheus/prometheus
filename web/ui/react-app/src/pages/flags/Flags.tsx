@@ -9,7 +9,7 @@ import { faSort, faSortDown, faSortUp } from '@fortawesome/free-solid-svg-icons'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { IconDefinition } from '@fortawesome/fontawesome-common-types';
 import sanitizeHTML from 'sanitize-html';
-import fuzzy from 'fuzzy';
+import fuzzy, { FilterResult } from 'fuzzy';
 
 interface FlagMap {
   [key: string]: string;
@@ -29,15 +29,11 @@ const compareAlphaFn = (keys: boolean, reverse: boolean) => (
   return reverser * a.localeCompare(b);
 };
 
-const boldSubstring = (s: string, subs: string) => {
-  const matchResult = fuzzy.match(subs, s, {
+const getSearchMatches = (input: string, expressions: string[]) => {
+  return fuzzy.filter(input.replace(/ /g, ''), expressions, {
     pre: '<strong>',
     post: '</strong>',
   });
-  if (matchResult == null) {
-    return s;
-  }
-  return matchResult.rendered;
 };
 
 const getSortIcon = (b: boolean | undefined): IconDefinition => {
@@ -65,6 +61,10 @@ export const FlagsContent: FC<FlagsProps> = ({ data = {} }) => {
     focused: true,
   };
   const [sortState, setSortState] = useState(initialSort);
+  const searchable = Object.entries(data)
+    .sort(compareAlphaFn(sortState.name === 'Flag', !sortState.alpha))
+    .map(([flag, value]) => `--${flag} ${value}`);
+  const filtered = getSearchMatches(searchState, searchable);
   return (
     <>
       <h2>Command-Line Flags</h2>
@@ -102,29 +102,24 @@ export const FlagsContent: FC<FlagsProps> = ({ data = {} }) => {
           </tr>
         </thead>
         <tbody>
-          {Object.entries(data)
-            .sort(compareAlphaFn(sortState.name === 'Flag', !sortState.alpha))
-            .map(([flag, value]) => [`--${flag}`, value])
-            .filter(([flag, value]) => flag.includes(searchState) || value.includes(searchState))
-            .map(([flag, value]) => {
-              const flagMatchStr = boldSubstring(flag, searchState);
-              const valueMatchStr = boldSubstring(value, searchState);
-              const sanitizeOpts = { allowedTags: ['strong'] };
-              return (
-                <tr key={flag}>
-                  <td className="px-4">
-                    <code className="text-dark flag-item">
-                      <span dangerouslySetInnerHTML={{ __html: sanitizeHTML(flagMatchStr, sanitizeOpts) }} />
-                    </code>
-                  </td>
-                  <td className="px-4">
-                    <code className="text-dark value-item">
-                      <span dangerouslySetInnerHTML={{ __html: sanitizeHTML(valueMatchStr, sanitizeOpts) }} />
-                    </code>
-                  </td>
-                </tr>
-              );
-            })}
+          {filtered.map((result: FilterResult<string>) => {
+            const [flagMatchStr, valueMatchStr] = result.string.split(' ');
+            const sanitizeOpts = { allowedTags: ['strong'] };
+            return (
+              <tr key={flagMatchStr}>
+                <td className="px-4">
+                  <code className="text-dark flag-item">
+                    <span dangerouslySetInnerHTML={{ __html: sanitizeHTML(flagMatchStr, sanitizeOpts) }} />
+                  </code>
+                </td>
+                <td className="px-4">
+                  <code className="text-dark value-item">
+                    <span dangerouslySetInnerHTML={{ __html: sanitizeHTML(valueMatchStr, sanitizeOpts) }} />
+                  </code>
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </Table>
     </>
