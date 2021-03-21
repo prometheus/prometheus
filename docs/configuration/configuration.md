@@ -696,7 +696,7 @@ role: <string>
   [ - name: <string>
       values: <string>, [...] ]
 
-# The time after which the droplets are refreshed.
+# The time after which the service discovery data is refreshed.
 [ refresh_interval: <duration> | default = 60s ]
 
 # Authentication information used to authenticate to the Docker daemon.
