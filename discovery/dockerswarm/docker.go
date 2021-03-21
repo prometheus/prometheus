@@ -200,6 +200,8 @@ func (d *DockerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 		}
 
 		for _, n := range c.NetworkSettings.Networks {
+			var added bool
+
 			for _, p := range c.Ports {
 				if p.Type != "tcp" {
 					continue
@@ -224,6 +226,26 @@ func (d *DockerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 				}
 
 				addr := net.JoinHostPort(n.IPAddress, strconv.FormatUint(uint64(p.PrivatePort), 10))
+				labels[model.AddressLabel] = model.LabelValue(addr)
+				tg.Targets = append(tg.Targets, labels)
+				added = true
+			}
+
+			if !added {
+				// Use fallback port when no exposed ports are available or if all are non-TCP
+				labels := model.LabelSet{
+					dockerLabelNetworkIP:   model.LabelValue(n.IPAddress),
+				}
+
+				for k, v := range commonLabels {
+					labels[model.LabelName(k)] = model.LabelValue(v)
+				}
+
+				for k, v := range networkLabels[n.NetworkID] {
+					labels[model.LabelName(k)] = model.LabelValue(v)
+				}
+
+				addr := net.JoinHostPort(n.IPAddress, strconv.FormatUint(uint64(d.port), 10))
 				labels[model.AddressLabel] = model.LabelValue(addr)
 				tg.Targets = append(tg.Targets, labels)
 			}

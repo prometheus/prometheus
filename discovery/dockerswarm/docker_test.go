@@ -49,7 +49,7 @@ host: %s
 	tg := tgs[0]
 	require.NotNil(t, tg)
 	require.NotNil(t, tg.Targets)
-	require.Equal(t, 1, len(tg.Targets))
+	require.Equal(t, 2, len(tg.Targets))
 
 	for i, lbls := range []model.LabelSet{
 		{
@@ -72,6 +72,26 @@ host: %s
 			"__meta_docker_network_name":                               "dockersd_default",
 			"__meta_docker_network_scope":                              "local",
 			"__meta_docker_port_private":                               "9100",
+		},
+		{
+			"__address__":                "172.19.0.3:80",
+			"__meta_docker_container_id": "c301b928faceb1a18fe379f6bc178727ef920bb30b0f9b8592b32b36255a0eca",
+			"__meta_docker_container_label_com_docker_compose_project": "dockersd",
+			"__meta_docker_container_label_com_docker_compose_service": "noport",
+			"__meta_docker_container_label_com_docker_compose_version": "1.25.0",
+			"__meta_docker_container_label_maintainer":                 "The Prometheus Authors <prometheus-developers@googlegroups.com>",
+			"__meta_docker_container_label_prometheus_job":             "noport",
+			"__meta_docker_container_name":                             "/dockersd_noport_1",
+			"__meta_docker_container_network_mode":                     "dockersd_default",
+			"__meta_docker_network_id":                                 "7189986ab399e144e52a71b7451b4e04e2158c044b4cd2f3ae26fc3a285d3798",
+			"__meta_docker_network_ingress":                            "false",
+			"__meta_docker_network_internal":                           "false",
+			"__meta_docker_network_ip":                                 "172.19.0.3",
+			"__meta_docker_network_label_com_docker_compose_network":   "default",
+			"__meta_docker_network_label_com_docker_compose_project":   "dockersd",
+			"__meta_docker_network_label_com_docker_compose_version":   "1.25.0",
+			"__meta_docker_network_name":                               "dockersd_default",
+			"__meta_docker_network_scope":                              "local",
 		},
 	} {
 		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
