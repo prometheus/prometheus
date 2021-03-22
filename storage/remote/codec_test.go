@@ -16,14 +16,18 @@ package remote
 import (
 	"bytes"
 	"fmt"
+	"io/ioutil"
+	"net/http"
 	"testing"
 
+	"github.com/gogo/protobuf/proto"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 )
 
 var writeRequestFixture = &prompb.WriteRequest{
@@ -287,6 +291,163 @@ func TestMetricTypeToMetricTypeProto(t *testing.T) {
 			require.Equal(t, tt.expected, m)
 		})
 	}
+}
+
+type TestSample struct {
+	t int64
+	v float64
+}
+
+func (s TestSample) T() int64 {
+	return s.t
+}
+
+func (s TestSample) V() float64 {
+	return s.v
+}
+
+func TestChunkSeriesSet(t *testing.T) {
+	b := &bytes.Buffer{}
+	f := &mockedFlusher{}
+	w := NewChunkedWriter(b, f)
+
+	chk1 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{TestSample{1, 10}, TestSample{2, 20}})
+	chk2 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{TestSample{5, 50}, TestSample{8, 55}})
+	chk3 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{TestSample{1, 100}, TestSample{2, 100}})
+	chk4 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{TestSample{12, 21}, TestSample{14, 41}, TestSample{16, 61}})
+	chk5 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{TestSample{10, 100}})
+
+	chunkedSeries1, _ :=
+		proto.Marshal(&prompb.ChunkedReadResponse{
+			ChunkedSeries: []*prompb.ChunkedSeries{
+				{
+					Labels: []prompb.Label{
+						{Name: "__name__", Value: "test_metric1"},
+						{Name: "__name__", Value: "test_metric2"},
+					},
+					Chunks: []prompb.Chunk{
+						{
+							Data:      chk1.Chunk.Bytes(),
+							MinTimeMs: chk1.MinTime,
+							MaxTimeMs: chk1.MaxTime,
+							Type:      prompb.Chunk_XOR,
+						},
+						{
+							Data:      chk2.Chunk.Bytes(),
+							MinTimeMs: chk2.MinTime,
+							MaxTimeMs: chk2.MaxTime,
+							Type:      prompb.Chunk_XOR,
+						},
+					},
+				},
+			},
+		})
+
+	chunkedSeries2, _ := proto.Marshal(&prompb.ChunkedReadResponse{
+		ChunkedSeries: []*prompb.ChunkedSeries{
+			{
+				Labels: []prompb.Label{
+					{Name: "__name__", Value: "test_metric3"},
+				},
+				Chunks: []prompb.Chunk{
+					{
+						Data:      chk3.Chunk.Bytes(),
+						MinTimeMs: chk3.MinTime,
+						MaxTimeMs: chk3.MaxTime,
+						Type:      prompb.Chunk_XOR,
+					},
+				},
+			},
+		},
+	})
+
+	chunkedSeries3, _ := proto.Marshal(&prompb.ChunkedReadResponse{
+		ChunkedSeries: []*prompb.ChunkedSeries{
+			{
+				Labels: []prompb.Label{
+					{Name: "__name__", Value: "test_metric4"},
+					{Name: "__name__", Value: "test_metric5"},
+				},
+				Chunks: []prompb.Chunk{
+					{
+						Data:      chk4.Chunk.Bytes(),
+						MinTimeMs: chk4.MinTime,
+						MaxTimeMs: chk4.MaxTime,
+						Type:      prompb.Chunk_XOR,
+					},
+					{
+						Data:      chk5.Chunk.Bytes(),
+						MinTimeMs: chk5.MinTime,
+						MaxTimeMs: chk5.MaxTime,
+						Type:      prompb.Chunk_XOR,
+					},
+				},
+			},
+		},
+	})
+
+	msgs := [][]byte{chunkedSeries1, chunkedSeries2, chunkedSeries3}
+	for _, msg := range msgs {
+		_, err := w.Write(msg)
+		require.NoError(t, err)
+	}
+	r := NewChunkedReader(b, 5e+7, nil)
+	mockHTTPResponse := http.Response{
+		Body: ioutil.NopCloser(bytes.NewBufferString("")),
+	}
+	ss := &chunkedResponseSeriesSet{stream: r, httpResp: &mockHTTPResponse}
+	require.Equal(t, true, ss.Next())
+	require.Equal(t, labels.Labels{labels.Label{Name: "__name__", Value: "test_metric1"}, labels.Label{Name: "__name__", Value: "test_metric2"}}, ss.At().Labels())
+	chk := ss.At().Iterator()
+	require.Equal(t, true, chk.Next())
+	time, value := chk.At()
+	require.Equal(t, int64(1), time)
+	require.Equal(t, 10.0, value)
+	require.Equal(t, true, chk.Next())
+	time, value = chk.At()
+	require.Equal(t, int64(2), time)
+	require.Equal(t, 20.0, value)
+	require.Equal(t, true, chk.Next())
+
+	time, value = chk.At()
+	require.Equal(t, int64(5), time)
+	require.Equal(t, 50.0, value)
+	require.Equal(t, true, chk.Next())
+	require.Equal(t, false, chk.Next())
+
+	require.Equal(t, true, ss.Next())
+	chk = ss.At().Iterator()
+	require.Equal(t, labels.Labels{labels.Label{Name: "__name__", Value: "test_metric3"}}, ss.At().Labels())
+
+	require.Equal(t, true, chk.Next())
+	time, value = chk.At()
+	require.Equal(t, int64(1), time)
+	require.Equal(t, 100.0, value)
+	require.Equal(t, true, chk.Next())
+	require.Equal(t, false, chk.Next())
+
+	require.Equal(t, true, ss.Next())
+	chk = ss.At().Iterator()
+	require.Equal(t, labels.Labels{labels.Label{Name: "__name__", Value: "test_metric4"}, labels.Label{Name: "__name__", Value: "test_metric5"}}, ss.At().Labels())
+
+	require.Equal(t, true, chk.Next())
+	require.Equal(t, true, chk.Seek(int64(14)))
+	time, value = chk.At()
+	require.Equal(t, int64(14), time)
+	require.Equal(t, 41.0, value)
+	require.Equal(t, true, chk.Seek(int64(15)))
+	time, value = chk.At()
+	require.Equal(t, int64(16), time)
+	require.Equal(t, 61.0, value)
+	require.Equal(t, labels.Labels{labels.Label{Name: "__name__", Value: "test_metric4"}, labels.Label{Name: "__name__", Value: "test_metric5"}}, ss.At().Labels())
+	require.Equal(t, true, chk.Next())
+	require.Equal(t, true, chk.Seek(int64(5)))
+	time, value = chk.At()
+	require.Equal(t, int64(10), time)
+	require.Equal(t, 100.0, value)
+	require.Equal(t, false, chk.Next())
+	require.Equal(t, false, ss.Next())
+	require.Equal(t, labels.Labels{}, ss.At().Labels())
 }
 
 func TestDecodeWriteRequest(t *testing.T) {

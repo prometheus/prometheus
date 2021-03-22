@@ -386,13 +386,7 @@ func TestEndpoints(t *testing.T) {
 		testEndpoints(t, api, testTargetRetriever, suite.ExemplarStorage(), true)
 	})
 
-	// Run all the API tests against a API that is wired to forward queries via
-	// the remote read client to a test server, which in turn sends them to the
-	// data from the test suite.
-	t.Run("remote", func(t *testing.T) {
-		server := setupRemote(suite.Storage())
-		defer server.Close()
-
+	testRemoteEndpoint := func(t *testing.T, server *httptest.Server, prometheusRegisterer prometheus.Registerer) {
 		u, err := url.Parse(server.URL)
 		require.NoError(t, err)
 
@@ -411,7 +405,7 @@ func TestEndpoints(t *testing.T) {
 		require.NoError(t, err)
 		defer os.RemoveAll(dbDir)
 
-		remote := remote.NewStorage(promlog.New(&promlogConfig), prometheus.DefaultRegisterer, func() (int64, error) {
+		remote := remote.NewStorage(promlog.New(&promlogConfig), prometheusRegisterer, func() (int64, error) {
 			return 0, nil
 		}, dbDir, 1*time.Second, nil)
 
@@ -449,8 +443,19 @@ func TestEndpoints(t *testing.T) {
 		}
 
 		testEndpoints(t, api, testTargetRetriever, suite.ExemplarStorage(), false)
+	}
+
+	t.Run("remote", func(t *testing.T) {
+		server := setupRemote(suite.Storage())
+		defer server.Close()
+		testRemoteEndpoint(t, server, prometheus.DefaultRegisterer)
 	})
 
+	t.Run("remote_streaming", func(t *testing.T) {
+		server := setupRemoteStreaming(suite.Storage(), suite.QueryEngine())
+		defer server.Close()
+		testRemoteEndpoint(t, server, nil)
+	})
 }
 
 func TestLabelNames(t *testing.T) {
@@ -576,13 +581,36 @@ func setupRemote(s storage.Storage) *httptest.Server {
 				return
 			}
 		}
-
+		w.Header().Set("Content-Type", "application/x-protobuf")
+		w.Header().Set("Content-Encoding", "snappy")
 		if err := remote.EncodeReadResponse(&resp, w); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 	})
 
+	return httptest.NewServer(handler)
+}
+
+func setupRemoteStreaming(s storage.Storage, q *promql.Engine) *httptest.Server {
+	api := &API{
+		Queryable:   s,
+		QueryEngine: q,
+		config: func() config.Config {
+			return config.Config{}
+		},
+		remoteReadHandler: remote.NewReadHandler(
+			nil, nil, s,
+			func() config.Config {
+				return config.Config{}
+			},
+			1e6,
+			1,
+			// Labelset has 57 bytes. Full chunk in test data has roughly 240 bytes. This allows us to have at max 2 chunks in this test.
+			57+480,
+		),
+	}
+	handler := http.HandlerFunc(api.remoteRead)
 	return httptest.NewServer(handler)
 }
 
