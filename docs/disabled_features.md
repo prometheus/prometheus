@@ -26,9 +26,9 @@ that PromQL does not look ahead of the evaluation time for samples.
 `--enable-feature=promql-negative-offset`
 
 In contrast to the positive offset modifier, the negative offset modifier lets
-one shift a vector into the future.  An example in which one may want to use a
-negative offset is reviewing past data and making temporal comparisons with
-more recent data.
+one shift a vector selector into the future.  An example in which one may want
+to use a negative offset is reviewing past data and making temporal comparisons
+with more recent data.
 
 More details can be found [here](querying/basics.md#offset-modifier).
 
