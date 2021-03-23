@@ -19,7 +19,6 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSearch, faSpinner, faGlobeEurope } from '@fortawesome/free-solid-svg-icons';
 import MetricsExplorer from './MetricsExplorer';
 import { CompleteStrategy, newCompleteStrategy } from 'codemirror-promql/complete';
-import { computeStartCompletePosition } from 'codemirror-promql/complete/hybrid';
 
 const promqlExtension = new PromQLExtension();
 
@@ -48,18 +47,15 @@ export class HistoryCompleteStrategy implements CompleteStrategy {
   }
 
   promQL(context: CompletionContext): Promise<CompletionResult | null> | CompletionResult | null {
-    const result: Promise<CompletionResult | null> = Promise.resolve(this.complete.promQL(context));
+    return Promise.resolve(this.complete.promQL(context)).then(res => {
+      const { state, pos } = context;
+      const tree = syntaxTree(state).resolve(pos, -1);
+      const start = res != null ? res.from : tree.from;
 
-    const { state, pos } = context;
-    const tree = syntaxTree(state).resolve(pos, -1);
-    const start = computeStartCompletePosition(tree, pos);
+      if (start !== 0) {
+        return res;
+      }
 
-    // We are not completing at the very beginning, so only return normal matches.
-    if (start !== 0) {
-      return result;
-    }
-
-    return result.then(res => {
       const historyItems: CompletionResult = {
         from: start,
         to: pos,
