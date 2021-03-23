@@ -19,6 +19,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSearch, faSpinner, faGlobeEurope } from '@fortawesome/free-solid-svg-icons';
 import MetricsExplorer from './MetricsExplorer';
 import { CompleteStrategy, newCompleteStrategy } from 'codemirror-promql/complete';
+import { usePathPrefix } from '../../contexts/PathPrefixContext';
 
 const promqlExtension = new PromQLExtension();
 
@@ -90,6 +91,8 @@ const CMExpressionInput: FC<CMExpressionInputProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const [showMetricsExplorer, setShowMetricsExplorer] = useState<boolean>(false);
+  const pathPrefix = usePathPrefix();
+  console.log(pathPrefix);
 
   // (Re)initialize editor based on settings / setting changes.
   useEffect(() => {
@@ -99,7 +102,7 @@ const CMExpressionInput: FC<CMExpressionInputProps> = ({
     promqlExtension.setComplete({
       completeStrategy: new HistoryCompleteStrategy(
         newCompleteStrategy({
-          remote: { url: '' },
+          remote: { url: pathPrefix },
         }),
         queryHistory
       ),
