@@ -92,7 +92,6 @@ const CMExpressionInput: FC<CMExpressionInputProps> = ({
   const viewRef = useRef<EditorView | null>(null);
   const [showMetricsExplorer, setShowMetricsExplorer] = useState<boolean>(false);
   const pathPrefix = usePathPrefix();
-  console.log(pathPrefix);
 
   // (Re)initialize editor based on settings / setting changes.
   useEffect(() => {
