@@ -123,7 +123,7 @@ export const PanelListContent: FC<PanelListContentProps> = ({
 
 const PanelList: FC<RouteComponentProps> = () => {
   const [delta, setDelta] = useState(0);
-  const [useNewEditor, setUseNewEditor] = useLocalStorage('enable-new-editor', true);
+  const [useNewEditor, setUseNewEditor] = useLocalStorage('use-new-editor', false);
   const [useLocalTime, setUseLocalTime] = useLocalStorage('use-local-time', false);
   const [enableQueryHistory, setEnableQueryHistory] = useLocalStorage('enable-query-history', false);
   const [enableAutocomplete, setEnableAutocomplete] = useLocalStorage('enable-metric-autocomplete', true);
@@ -153,45 +153,48 @@ const PanelList: FC<RouteComponentProps> = () => {
 
   return (
     <>
-      <Checkbox
-        wrapperStyles={{ marginLeft: 3, display: 'inline-block' }}
-        id="use-new-editor-checkbox"
-        onChange={({ target }) => setUseNewEditor(target.checked)}
-        defaultChecked={useNewEditor}
-      >
-        Use new editor
-      </Checkbox>
-      <Checkbox
-        wrapperStyles={{ marginLeft: 20, display: 'inline-block' }}
-        id="query-history-checkbox"
-        onChange={({ target }) => setEnableQueryHistory(target.checked)}
-        defaultChecked={enableQueryHistory}
-      >
-        Enable query history
-      </Checkbox>
-      <Checkbox
-        wrapperStyles={{ marginLeft: 20, display: 'inline-block' }}
-        id="use-local-time-checkbox"
-        onChange={({ target }) => setUseLocalTime(target.checked)}
-        defaultChecked={useLocalTime}
-      >
-        Use local time
-      </Checkbox>
-      <Checkbox
-        wrapperStyles={{ marginLeft: 20, display: 'inline-block' }}
-        id="autocomplete-checkbox"
-        onChange={({ target }) => setEnableAutocomplete(target.checked)}
-        defaultChecked={enableAutocomplete}
-      >
-        Enable autocomplete
-      </Checkbox>
-      {useNewEditor && (
-        <>
+      <div className="clearfix">
+        <div className="float-left">
+          <Checkbox
+            wrapperStyles={{ display: 'inline-block' }}
+            id="use-local-time-checkbox"
+            onChange={({ target }) => setUseLocalTime(target.checked)}
+            defaultChecked={useLocalTime}
+          >
+            Use local time
+          </Checkbox>
+          <Checkbox
+            wrapperStyles={{ marginLeft: 20, display: 'inline-block' }}
+            id="query-history-checkbox"
+            onChange={({ target }) => setEnableQueryHistory(target.checked)}
+            defaultChecked={enableQueryHistory}
+          >
+            Enable query history
+          </Checkbox>
+          <Checkbox
+            wrapperStyles={{ marginLeft: 20, display: 'inline-block' }}
+            id="autocomplete-checkbox"
+            onChange={({ target }) => setEnableAutocomplete(target.checked)}
+            defaultChecked={enableAutocomplete}
+          >
+            Enable autocomplete
+          </Checkbox>
+        </div>
+        <div className="float-right">
+          <Checkbox
+            wrapperStyles={{ display: 'inline-block' }}
+            id="use-new-editor-checkbox"
+            onChange={({ target }) => setUseNewEditor(target.checked)}
+            defaultChecked={useNewEditor}
+          >
+            Use new editor
+          </Checkbox>
           <Checkbox
             wrapperStyles={{ marginLeft: 20, display: 'inline-block' }}
             id="highlighting-checkbox"
             onChange={({ target }) => setEnableHighlighting(target.checked)}
             defaultChecked={enableHighlighting}
+            disabled={!useNewEditor}
           >
             Enable highlighting
           </Checkbox>
@@ -200,11 +203,12 @@ const PanelList: FC<RouteComponentProps> = () => {
             id="linter-checkbox"
             onChange={({ target }) => setEnableLinter(target.checked)}
             defaultChecked={enableLinter}
+            disabled={!useNewEditor}
           >
             Enable linter
           </Checkbox>
-        </>
-      )}
+        </div>
+      </div>
       {(delta > 30 || timeErr) && (
         <Alert color="danger">
           <strong>Warning: </strong>
