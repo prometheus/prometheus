@@ -17,19 +17,25 @@ export const updateURL = (nextPanels: PanelMeta[]) => {
   window.history.pushState({}, '', query);
 };
 
-interface PanelListProps extends RouteComponentProps {
+interface PanelListContentProps extends RouteComponentProps {
   panels: PanelMeta[];
   metrics: string[];
   useLocalTime: boolean;
+  useNewEditor: boolean;
   queryHistoryEnabled: boolean;
   enableAutocomplete: boolean;
+  enableHighlighting: boolean;
+  enableLinter: boolean;
 }
 
-export const PanelListContent: FC<PanelListProps> = ({
+export const PanelListContent: FC<PanelListContentProps> = ({
   metrics = [],
   useLocalTime,
+  useNewEditor,
   queryHistoryEnabled,
   enableAutocomplete,
+  enableHighlighting,
+  enableLinter,
   ...rest
 }) => {
   const [panels, setPanels] = useState(rest.panels);
@@ -99,10 +105,13 @@ export const PanelListContent: FC<PanelListProps> = ({
               )
             )
           }
+          useNewEditor={useNewEditor}
           useLocalTime={useLocalTime}
           metricNames={metrics}
           pastQueries={queryHistoryEnabled ? historyItems : []}
           enableAutocomplete={enableAutocomplete}
+          enableHighlighting={enableHighlighting}
+          enableLinter={enableLinter}
         />
       ))}
       <Button className="d-block mb-3" color="primary" onClick={addPanel}>
@@ -114,9 +123,12 @@ export const PanelListContent: FC<PanelListProps> = ({
 
 const PanelList: FC<RouteComponentProps> = () => {
   const [delta, setDelta] = useState(0);
+  const [useNewEditor, setUseNewEditor] = useLocalStorage('enable-new-editor', true);
   const [useLocalTime, setUseLocalTime] = useLocalStorage('use-local-time', false);
   const [enableQueryHistory, setEnableQueryHistory] = useLocalStorage('enable-query-history', false);
   const [enableAutocomplete, setEnableAutocomplete] = useLocalStorage('enable-metric-autocomplete', true);
+  const [enableHighlighting, setEnableHighlighting] = useLocalStorage('enable-syntax-highlighting', true);
+  const [enableLinter, setEnableLinter] = useLocalStorage('enable-linter', true);
 
   const pathPrefix = usePathPrefix();
   const { response: metricsRes, error: metricsErr } = useFetch<string[]>(`${pathPrefix}/${API_PATH}/label/__name__/values`);
@@ -143,6 +155,14 @@ const PanelList: FC<RouteComponentProps> = () => {
     <>
       <Checkbox
         wrapperStyles={{ marginLeft: 3, display: 'inline-block' }}
+        id="use-new-editor-checkbox"
+        onChange={({ target }) => setUseNewEditor(target.checked)}
+        defaultChecked={useNewEditor}
+      >
+        Use new editor
+      </Checkbox>
+      <Checkbox
+        wrapperStyles={{ marginLeft: 20, display: 'inline-block' }}
         id="query-history-checkbox"
         onChange={({ target }) => setEnableQueryHistory(target.checked)}
         defaultChecked={enableQueryHistory}
@@ -159,12 +179,32 @@ const PanelList: FC<RouteComponentProps> = () => {
       </Checkbox>
       <Checkbox
         wrapperStyles={{ marginLeft: 20, display: 'inline-block' }}
-        id="autocomplete"
+        id="autocomplete-checkbox"
         onChange={({ target }) => setEnableAutocomplete(target.checked)}
         defaultChecked={enableAutocomplete}
       >
         Enable autocomplete
       </Checkbox>
+      {useNewEditor && (
+        <>
+          <Checkbox
+            wrapperStyles={{ marginLeft: 20, display: 'inline-block' }}
+            id="highlighting-checkbox"
+            onChange={({ target }) => setEnableHighlighting(target.checked)}
+            defaultChecked={enableHighlighting}
+          >
+            Enable highlighting
+          </Checkbox>
+          <Checkbox
+            wrapperStyles={{ marginLeft: 20, display: 'inline-block' }}
+            id="linter-checkbox"
+            onChange={({ target }) => setEnableLinter(target.checked)}
+            defaultChecked={enableLinter}
+          >
+            Enable linter
+          </Checkbox>
+        </>
+      )}
       {(delta > 30 || timeErr) && (
         <Alert color="danger">
           <strong>Warning: </strong>
@@ -183,8 +223,11 @@ const PanelList: FC<RouteComponentProps> = () => {
         panels={decodePanelOptionsFromQueryString(window.location.search)}
         useLocalTime={useLocalTime}
         metrics={metricsRes.data}
+        useNewEditor={useNewEditor}
         queryHistoryEnabled={enableQueryHistory}
         enableAutocomplete={enableAutocomplete}
+        enableHighlighting={enableHighlighting}
+        enableLinter={enableLinter}
       />
     </>
   );

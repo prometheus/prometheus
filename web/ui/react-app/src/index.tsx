@@ -3,6 +3,7 @@ import React from 'react';
 import ReactDOM from 'react-dom';
 import App from './App';
 import 'bootstrap/dist/css/bootstrap.min.css';
+import './fonts/codicon.ttf';
 import { isPresent } from './utils';
 
 // Declared/defined in public/index.html, value replaced by Prometheus when serving bundle.
