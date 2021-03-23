@@ -63,7 +63,7 @@ export class HistoryCompleteStrategy implements CompleteStrategy {
           label: q.length < 80 ? q : q.slice(0, 76).concat('...'),
           detail: 'past query',
           apply: q,
-          info: q,
+          info: q.length < 80 ? undefined : q,
         })),
         span: /^[a-zA-Z0-9_:]+$/,
       };
