@@ -183,9 +183,10 @@ type Appender interface {
 // GetRef is an extra interface on Appenders used by downstream projects
 // (e.g. Cortex) to avoid maintaining a parallel set of references.
 type GetRef interface {
-	// Returns reference number that can be used to pass to Appender.Append().
+	// Returns reference number that can be used to pass to Appender.Append(),
+	// and a set of labels that will not cause another copy when passed to Appender.Append().
 	// 0 means the appender does not have a reference to this series.
-	GetRef(lset labels.Labels) uint64
+	GetRef(lset labels.Labels) (uint64, labels.Labels)
 }
 
 // ExemplarAppender provides an interface for adding samples to exemplar storage, which

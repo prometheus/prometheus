@@ -797,11 +797,11 @@ type dbAppender struct {
 
 var _ storage.GetRef = dbAppender{}
 
-func (a dbAppender) GetRef(lset labels.Labels) uint64 {
+func (a dbAppender) GetRef(lset labels.Labels) (uint64, labels.Labels) {
 	if g, ok := a.Appender.(storage.GetRef); ok {
 		return g.GetRef(lset)
 	}
-	return 0
+	return 0, nil
 }
 
 func (a dbAppender) Commit() error {
