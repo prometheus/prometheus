@@ -23,7 +23,7 @@ interface PanelProps {
   removePanel: () => void;
   onExecuteQuery: (query: string) => void;
   pathPrefix: string;
-  useNewEditor: boolean;
+  useExperimentalEditor: boolean;
   enableAutocomplete: boolean;
   enableHighlighting: boolean;
   enableLinter: boolean;
@@ -236,7 +236,7 @@ class Panel extends Component<PanelProps, PanelState> {
       <div className="panel">
         <Row>
           <Col>
-            {this.props.useNewEditor ? (
+            {this.props.useExperimentalEditor ? (
               <CMExpressionInput
                 value={this.state.exprInputValue}
                 onExpressionChange={this.handleExpressionChange}

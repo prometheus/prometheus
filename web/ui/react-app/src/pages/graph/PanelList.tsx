@@ -21,7 +21,7 @@ interface PanelListContentProps extends RouteComponentProps {
   panels: PanelMeta[];
   metrics: string[];
   useLocalTime: boolean;
-  useNewEditor: boolean;
+  useExperimentalEditor: boolean;
   queryHistoryEnabled: boolean;
   enableAutocomplete: boolean;
   enableHighlighting: boolean;
@@ -31,7 +31,7 @@ interface PanelListContentProps extends RouteComponentProps {
 export const PanelListContent: FC<PanelListContentProps> = ({
   metrics = [],
   useLocalTime,
-  useNewEditor,
+  useExperimentalEditor,
   queryHistoryEnabled,
   enableAutocomplete,
   enableHighlighting,
@@ -105,7 +105,7 @@ export const PanelListContent: FC<PanelListContentProps> = ({
               )
             )
           }
-          useNewEditor={useNewEditor}
+          useExperimentalEditor={useExperimentalEditor}
           useLocalTime={useLocalTime}
           metricNames={metrics}
           pastQueries={queryHistoryEnabled ? historyItems : []}
@@ -123,7 +123,7 @@ export const PanelListContent: FC<PanelListContentProps> = ({
 
 const PanelList: FC<RouteComponentProps> = () => {
   const [delta, setDelta] = useState(0);
-  const [useNewEditor, setUseNewEditor] = useLocalStorage('use-new-editor', false);
+  const [useExperimentalEditor, setUseExperimentalEditor] = useLocalStorage('use-new-editor', false);
   const [useLocalTime, setUseLocalTime] = useLocalStorage('use-local-time', false);
   const [enableQueryHistory, setEnableQueryHistory] = useLocalStorage('enable-query-history', false);
   const [enableAutocomplete, setEnableAutocomplete] = useLocalStorage('enable-metric-autocomplete', true);
@@ -183,18 +183,18 @@ const PanelList: FC<RouteComponentProps> = () => {
         <div className="float-right">
           <Checkbox
             wrapperStyles={{ display: 'inline-block' }}
-            id="use-new-editor-checkbox"
-            onChange={({ target }) => setUseNewEditor(target.checked)}
-            defaultChecked={useNewEditor}
+            id="use-experimental-editor-checkbox"
+            onChange={({ target }) => setUseExperimentalEditor(target.checked)}
+            defaultChecked={useExperimentalEditor}
           >
-            Use new editor
+            Use experimental editor
           </Checkbox>
           <Checkbox
             wrapperStyles={{ marginLeft: 20, display: 'inline-block' }}
             id="highlighting-checkbox"
             onChange={({ target }) => setEnableHighlighting(target.checked)}
             defaultChecked={enableHighlighting}
-            disabled={!useNewEditor}
+            disabled={!useExperimentalEditor}
           >
             Enable highlighting
           </Checkbox>
@@ -203,7 +203,7 @@ const PanelList: FC<RouteComponentProps> = () => {
             id="linter-checkbox"
             onChange={({ target }) => setEnableLinter(target.checked)}
             defaultChecked={enableLinter}
-            disabled={!useNewEditor}
+            disabled={!useExperimentalEditor}
           >
             Enable linter
           </Checkbox>
@@ -227,7 +227,7 @@ const PanelList: FC<RouteComponentProps> = () => {
         panels={decodePanelOptionsFromQueryString(window.location.search)}
         useLocalTime={useLocalTime}
         metrics={metricsRes.data}
-        useNewEditor={useNewEditor}
+        useExperimentalEditor={useExperimentalEditor}
         queryHistoryEnabled={enableQueryHistory}
         enableAutocomplete={enableAutocomplete}
         enableHighlighting={enableHighlighting}
