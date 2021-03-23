@@ -127,40 +127,40 @@ export const theme = EditorView.theme({
     color: '#007acc',
   },
 
-  '.cm-completionIcon.function, .cm-completionIcon.method': {
+  '.cm-completionIcon-function, .cm-completionIcon-method': {
     '&:after': { content: "'\\ea8c'" },
     color: '#652d90',
   },
-  '.cm-completionIcon.class': {
+  '.cm-completionIcon-class': {
     '&:after': { content: "'○'" },
   },
-  '.cm-completionIcon.interface': {
+  '.cm-completionIcon-interface': {
     '&:after': { content: "'◌'" },
   },
-  '.cm-completionIcon.variable': {
+  '.cm-completionIcon-variable': {
     '&:after': { content: "'𝑥'" },
   },
-  '.cm-completionIcon.constant': {
+  '.cm-completionIcon-constant': {
     '&:after': { content: "'\\eb5f'" },
     color: '#007acc',
   },
-  '.cm-completionIcon.type': {
+  '.cm-completionIcon-type': {
     '&:after': { content: "'𝑡'" },
   },
-  '.cm-completionIcon.enum': {
+  '.cm-completionIcon-enum': {
     '&:after': { content: "'∪'" },
   },
-  '.cm-completionIcon.property': {
+  '.cm-completionIcon-property': {
     '&:after': { content: "'□'" },
   },
-  '.cm-completionIcon.keyword': {
+  '.cm-completionIcon-keyword': {
     '&:after': { content: "'\\eb62'" },
     color: '#616161',
   },
-  '.cm-completionIcon.namespace': {
+  '.cm-completionIcon-namespace': {
     '&:after': { content: "'▢'" },
   },
-  '.cm-completionIcon.text': {
+  '.cm-completionIcon-text': {
     '&:after': { content: "'\\ea95'" },
     color: '#ee9d28',
   },
