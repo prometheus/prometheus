@@ -1,3 +1,27 @@
+## 2.26.0-rc.0 / 2021-03-24
+
+Prometheus is now built and supporting Go 1.16 (#8544). This reverts the memory release pattern added in Go 1.12. This makes common RSS usage metrics showing more accurate number for actual memory used by Prometheus. You can read more details [here](https://www.bwplotka.dev/2019/golang-memory-monitoring/).
+
+Note that from this release Prometheus is using Alertmanager v2 by default.
+
+* [CHANGE] Alerting: Using Alertmanager v2 API by default. #8626
+* [CHANGE] Prometheus/Promtool: As agreed on dev summit, binaries are now printing help and usage to stdout instead of stderr. #8542
+* [FEATURE] Remote: Add support for AWS SigV4 auth method for remote_write. #8509
+* [FEATURE] Scaleway Discovery: Add Scaleway Service Discovery. #8555
+* [FEATURE] PromQL: Allow negative offsets. Behind `--enable-feature=promql-negative-offset` flag. #8555
+* [FEATURE] **experimental** Exemplars: Add in-memory storage for exemplars. Behind `--enable-feature=exemplar-storage` flag. #6635
+* [FEATURE] UI: Add advanced auto-completion, syntax highlighting and linting to graph page query input. #8634
+* [ENHANCEMENT] Digital Ocean Discovery: Add `__meta_digitalocean_image` label. #8497
+* [ENHANCEMENT] Remote: Allow configuring retries on rate-limiting for remote_write. See [configuration docs](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_write) for details. #8477
+* [ENHANCEMENT] Scrape: Add support for specifying type of Authorization header credentials with Bearer by default. #8512
+* [ENHANCEMENT] Remote: Allow configuring custom headers for remote_read. See [configuration docs](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_read) for details. #8516
+* [ENHANCEMENT] Scrape: Add `follow_redirects` option to scrape configuration. #8546
+* [ENHANCEMENT] UI: Hitting Enter now triggers new query. #8581
+* [ENHANCEMENT] UI: Better handling of long rule names on `/rules` page. #8608
+* [ENHANCEMENT] UI: Better handling of long labels names on `/targets` page. #8609
+* [BUGFIX] TSDB: Eager deletion of removable blocks on every compaction, saving disk peak space usage. #8007
+* [BUGFIX] PromQL: Fix parser support for special characters like`炬`. #8517
+
 ## 2.25.2 / 2021-03-16
 
 * [BUGFIX] Fix the ingestion of scrapes when the wall clock changes, e.g. on suspend. #8601
