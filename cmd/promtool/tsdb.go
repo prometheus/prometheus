@@ -58,7 +58,7 @@ type writeBenchmark struct {
 	logger    log.Logger
 }
 
-func benchmarkWrite(outPath, samplesFile string, numMetrics int) error {
+func benchmarkWrite(outPath, samplesFile string, numMetrics, numScrapes int) error {
 	b := &writeBenchmark{
 		outPath:     outPath,
 		samplesFile: samplesFile,
@@ -118,7 +118,7 @@ func benchmarkWrite(outPath, samplesFile string, numMetrics int) error {
 		if err := b.startProfiling(); err != nil {
 			return err
 		}
-		total, err = b.ingestScrapes(lbs, 3000)
+		total, err = b.ingestScrapes(lbs, numScrapes)
 		if err != nil {
 			return err
 		}

@@ -6,15 +6,19 @@ import { Button } from 'reactstrap';
 import Panel from './Panel';
 
 describe('PanelList', () => {
-  it('renders query history and local time checkboxes', () => {
+  it('renders configuration checkboxes', () => {
     [
-      { id: 'query-history-checkbox', label: 'Enable query history' },
-      { id: 'use-local-time-checkbox', label: 'Use local time' },
+      { id: 'use-local-time-checkbox', label: 'Use local time', default: false },
+      { id: 'query-history-checkbox', label: 'Enable query history', default: false },
+      { id: 'autocomplete-checkbox', label: 'Enable autocomplete', default: true },
+      { id: 'use-experimental-editor-checkbox', label: 'Use experimental editor', default: false },
+      { id: 'highlighting-checkbox', label: 'Enable highlighting', default: true },
+      { id: 'linter-checkbox', label: 'Enable linter', default: true },
     ].forEach((cb, idx) => {
       const panelList = shallow(<PanelList />);
       const checkbox = panelList.find(Checkbox).at(idx);
       expect(checkbox.prop('id')).toEqual(cb.id);
-      expect(checkbox.prop('defaultChecked')).toBe(false);
+      expect(checkbox.prop('defaultChecked')).toBe(cb.default);
       expect(checkbox.children().text()).toBe(cb.label);
     });
   });

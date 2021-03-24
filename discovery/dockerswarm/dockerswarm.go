@@ -40,9 +40,10 @@ var userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 
 // DefaultSDConfig is the default Docker Swarm SD configuration.
 var DefaultSDConfig = SDConfig{
-	RefreshInterval: model.Duration(60 * time.Second),
-	Port:            80,
-	Filters:         []Filter{},
+	RefreshInterval:  model.Duration(60 * time.Second),
+	Port:             80,
+	Filters:          []Filter{},
+	HTTPClientConfig: config.DefaultHTTPClientConfig,
 }
 
 func init() {

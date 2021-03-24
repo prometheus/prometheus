@@ -10,10 +10,6 @@ import { FetchMock } from 'jest-fetch-mock/types';
 import { PathPrefixContext } from '../../contexts/PathPrefixContext';
 
 describe('ScrapePoolList', () => {
-  const defaultProps = {
-    filter: { showHealthy: true, showUnhealthy: true },
-  };
-
   beforeEach(() => {
     fetchMock.resetMocks();
   });
@@ -38,7 +34,7 @@ describe('ScrapePoolList', () => {
       await act(async () => {
         scrapePoolList = mount(
           <PathPrefixContext.Provider value="/path/prefix">
-            <ScrapePoolList {...defaultProps} />
+            <ScrapePoolList />
           </PathPrefixContext.Provider>
         );
       });
@@ -55,27 +51,6 @@ describe('ScrapePoolList', () => {
         expect(panel).toHaveLength(1);
       });
     });
-
-    it('filters by health', async () => {
-      const props = {
-        ...defaultProps,
-        filter: { showHealthy: false, showUnhealthy: true },
-      };
-      await act(async () => {
-        scrapePoolList = mount(
-          <PathPrefixContext.Provider value="/path/prefix">
-            <ScrapePoolList {...props} />
-          </PathPrefixContext.Provider>
-        );
-      });
-      scrapePoolList.update();
-      expect(mock).toHaveBeenCalledWith('/path/prefix/api/v1/targets?state=active', {
-        cache: 'no-store',
-        credentials: 'same-origin',
-      });
-      const panels = scrapePoolList.find(ScrapePoolPanel);
-      expect(panels).toHaveLength(0);
-    });
   });
 
   describe('when an error is returned', () => {
@@ -86,7 +61,7 @@ describe('ScrapePoolList', () => {
       await act(async () => {
         scrapePoolList = mount(
           <PathPrefixContext.Provider value="/path/prefix">
-            <ScrapePoolList {...defaultProps} />
+            <ScrapePoolList />
           </PathPrefixContext.Provider>
         );
       });

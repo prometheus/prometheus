@@ -454,7 +454,7 @@ func TestReload(t *testing.T) {
 					},
 				},
 			},
-			out: "http://alertmanager:9093/api/v1/alerts",
+			out: "http://alertmanager:9093/api/v2/alerts",
 		},
 	}
 
@@ -504,7 +504,7 @@ func TestDroppedAlertmanagers(t *testing.T) {
 					},
 				},
 			},
-			out: "http://alertmanager:9093/api/v1/alerts",
+			out: "http://alertmanager:9093/api/v2/alerts",
 		},
 	}
 

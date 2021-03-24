@@ -55,10 +55,6 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
     });
   };
 
-  const toggleAnnotations = () => {
-    setShowAnnotations({ checked: !showAnnotations.checked });
-  };
-
   return (
     <>
       <div className="d-flex togglers-wrapper">
@@ -69,7 +65,7 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
               wrapperStyles={{ marginRight: 10 }}
               checked={filter[state]}
               id={`${state}-toggler`}
-              onClick={toggleFilter(state)}
+              onChange={toggleFilter(state)}
             >
               <Badge color={color} className="text-capitalize">
                 {state} ({statsCount[state]})
@@ -81,7 +77,7 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
           wrapperStyles={{ marginLeft: 'auto' }}
           checked={showAnnotations.checked}
           id="show-annotations-toggler"
-          onClick={() => toggleAnnotations()}
+          onChange={({ target }) => setShowAnnotations({ checked: target.checked })}
         >
           <span style={{ fontSize: '0.9rem', lineHeight: 1.9 }}>Show annotations</span>
         </Checkbox>

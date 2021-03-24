@@ -101,6 +101,9 @@ class GraphControls extends Component<GraphControlsProps> {
             defaultValue={formatDuration(this.props.range)}
             innerRef={this.rangeRef}
             onBlur={() => this.onChangeRangeInput(this.rangeRef.current!.value)}
+            onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) =>
+              e.key === 'Enter' && this.onChangeRangeInput(this.rangeRef.current!.value)
+            }
           />
 
           <InputGroupAddon addonType="append">

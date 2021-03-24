@@ -30,6 +30,7 @@ import (
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -2011,6 +2012,28 @@ func TestHeadMintAfterTruncation(t *testing.T) {
 	require.Equal(t, int64(7500), head.MinTime())
 	require.Equal(t, int64(7500), head.minValidTime.Load())
 
+	require.NoError(t, head.Close())
+}
+
+func TestHeadExemplars(t *testing.T) {
+	chunkRange := int64(2000)
+	head, _ := newTestHead(t, chunkRange, false)
+	app := head.Appender(context.Background())
+
+	l := labels.FromStrings("traceId", "123")
+	// It is perfectly valid to add Exemplars before the current start time -
+	// histogram buckets that haven't been update in a while could still be
+	// exported exemplars from an hour ago.
+	ref, err := app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, 100, 100)
+	require.NoError(t, err)
+	_, err = app.AppendExemplar(ref, l, exemplar.Exemplar{
+		Labels: l,
+		HasTs:  true,
+		Ts:     -1000,
+		Value:  1,
+	})
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
 	require.NoError(t, head.Close())
 }
 

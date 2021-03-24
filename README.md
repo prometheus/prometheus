@@ -63,7 +63,7 @@ installed in order to build the frontend assets.
 You can directly use the `go` tool to download and install the `prometheus`
 and `promtool` binaries into your `GOPATH`:
 
-    $ go get github.com/prometheus/prometheus/cmd/...
+    $ GO111MODULE=on go get github.com/prometheus/prometheus/cmd/...
     $ prometheus --config.file=your_config.yml
 
 *However*, when using `go get` to build Prometheus, Prometheus will expect to be able to

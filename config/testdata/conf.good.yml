@@ -298,6 +298,17 @@ scrape_configs:
   eureka_sd_configs:
     - server: 'http://eureka.example.com:8761/eureka'
 
+- job_name: scaleway
+  scaleway_sd_configs:
+    - role: instance
+      project_id: 11111111-1111-1111-1111-111111111112
+      access_key: SCWXXXXXXXXXXXXXXXXX
+      secret_key: 11111111-1111-1111-1111-111111111111
+    - role: baremetal
+      project_id: 11111111-1111-1111-1111-111111111112
+      access_key: SCWXXXXXXXXXXXXXXXXX
+      secret_key: 11111111-1111-1111-1111-111111111111
+
 alerting:
   alertmanagers:
   - scheme: https

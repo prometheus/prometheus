@@ -1,0 +1,221 @@
+{
+  "servers": [
+    {
+      "id": "93c18a61-b681-49d0-a1cc-62b43883ae89",
+      "name": "scw-nervous-shirley",
+      "arch": "x86_64",
+      "commercial_type": "DEV1-S",
+      "boot_type": "local",
+      "organization": "cb334986-b054-4725-9d3a-40850fdc6015",
+      "project": "cb334986-b054-4725-9d5a-30850fdc6015",
+      "hostname": "scw-nervous-shirley",
+      "image": {
+        "id": "45a86b35-eca6-4055-9b34-ca69845da146",
+        "name": "Ubuntu 18.04 Bionic Beaver",
+        "organization": "51b656e3-4865-41e8-adbc-0c45bdd780db",
+        "project": "51b656e3-4865-41e8-adbc-0c45bdd780db",
+        "root_volume": {
+          "id": "b45d391a-90d7-4f0f-8a07-80806b31be94",
+          "name": "ubuntu_18.04_bionic_beaver:volume-0",
+          "volume_type": "l_ssd",
+          "size": 10000000000
+        },
+        "extra_volumes": {},
+        "public": true,
+        "arch": "x86_64",
+        "creation_date": "2021-03-05T14:31:33.729260+00:00",
+        "modification_date": "2021-03-05T14:31:33.729260+00:00",
+        "default_bootscript": null,
+        "from_server": null,
+        "state": "available",
+        "zone": "fr-par-1"
+      },
+      "volumes": {
+        "0": {
+          "id": "0dd09f67-a04a-495d-aae4-0ce437c87160",
+          "name": "ubuntu_18.04_bionic_beaver:volume-0",
+          "volume_type": "l_ssd",
+          "export_uri": null,
+          "organization": "cb334986-b054-4725-9d5a-40850fdc6015",
+          "project": "cb334986-b054-4725-9d5a-40850fdc6015",
+          "server": {
+            "id": "93c18a61-b681-49d0-a1cc-62b43883ae89",
+            "name": "scw-nervous-shirley"
+          },
+          "size": 20000000000,
+          "state": "available",
+          "creation_date": "2021-03-08T21:34:35.844665+00:00",
+          "modification_date": "2021-03-08T21:34:35.844665+00:00",
+          "zone": "fr-par-1"
+        }
+      },
+      "tags": [],
+      "state": "running",
+      "protected": false,
+      "state_detail": "booted",
+      "public_ip": null,
+      "ipv6": {
+        "address": "2001:bc8:630:1e1c::1",
+        "gateway": "2001:bc8:630:1e1c::",
+        "netmask": "64"
+      },
+      "extra_networks": [],
+      "dynamic_ip_required": false,
+      "enable_ipv6": true,
+      "private_ip": "10.70.60.57",
+      "creation_date": "2021-03-08T21:34:35.844665+00:00",
+      "modification_date": "2021-03-08T21:35:11.098337+00:00",
+      "bootscript": {
+        "id": "fdfe150f-a870-4ce4-b432-9f56b5b995c1",
+        "public": true,
+        "title": "x86_64 mainline 4.4.230 rev1",
+        "architecture": "x86_64",
+        "organization": "11111111-1111-4111-8111-111111111111",
+        "project": "11111111-1111-4111-8111-111111111111",
+        "kernel": "http://169.254.42.24/kernel/x86_64-mainline-lts-4.4-4.4.230-rev1/vmlinuz-4.4.230",
+        "dtb": "",
+        "initrd": "http://169.254.42.24/initrd/initrd-Linux-x86_64-v3.14.6.gz",
+        "bootcmdargs": "LINUX_COMMON scaleway boot=local nbd.max_part=16",
+        "default": true,
+        "zone": "fr-par-1"
+      },
+      "security_group": {
+        "id": "a6a794b7-c05b-4b20-b9fe-e17a9bb85cf0",
+        "name": "Default security group"
+      },
+      "location": {
+        "zone_id": "fr-par-1",
+        "platform_id": "14",
+        "cluster_id": "40",
+        "hypervisor_id": "1601",
+        "node_id": "29"
+      },
+      "maintenances": [],
+      "allowed_actions": [
+        "poweroff",
+        "terminate",
+        "reboot",
+        "stop_in_place",
+        "backup"
+      ],
+      "placement_group": null,
+      "private_nics": [
+        {
+          "id": "3a21e0a0-8d54-4314-b1e0-c6a3cb3bddec",
+          "private_network_id": "18ba4ed4-d194-4b5d-9083-447325234a71",
+          "server_id": "93c18a61-b681-49d0-a1cc-62b43883ae89",
+          "mac_address": "02:00:00:00:31:90",
+          "creation_date": "2021-03-08T21:35:53.312689+00:00",
+          "zone": "fr-par-1"
+        }
+      ],
+      "zone": "fr-par-1"
+    },
+    {
+      "id": "5b6198b4-c677-41b5-9c05-04557264ae1f",
+      "name": "scw-quizzical-feistel",
+      "arch": "x86_64",
+      "commercial_type": "DEV1-S",
+      "boot_type": "local",
+      "organization": "cb334986-b054-4725-9d3a-40850fdc6015",
+      "project": "cb334986-b054-4725-9d5a-30850fdc6015",
+      "hostname": "scw-quizzical-feistel",
+      "image": {
+        "id": "71733b74-260f-4d0d-8f18-f37dcfa56d6f",
+        "name": "Debian Buster",
+        "organization": "51b656e3-4865-41e8-adbc-0c45bdd780db",
+        "project": "51b656e3-4865-41e8-adbc-0c45bdd780db",
+        "root_volume": {
+          "id": "0440a261-a953-4cdc-b1fd-2f9e7bc79214",
+          "name": "debian_buster:volume-0",
+          "volume_type": "l_ssd",
+          "size": 10000000000
+        },
+        "extra_volumes": {},
+        "public": true,
+        "arch": "x86_64",
+        "creation_date": "2021-03-05T15:00:19.389536+00:00",
+        "modification_date": "2021-03-05T15:00:19.389536+00:00",
+        "default_bootscript": null,
+        "from_server": null,
+        "state": "available",
+        "zone": "fr-par-1"
+      },
+      "volumes": {
+        "0": {
+          "id": "ee463105-8fe5-4d32-a9ec-19057d27858a",
+          "name": "debian_buster:volume-0",
+          "volume_type": "l_ssd",
+          "export_uri": null,
+          "organization": "cb334986-b054-4725-9d5a-40850fdc6015",
+          "project": "cb334986-b054-4725-9d5a-40850fdc6015",
+          "server": {
+            "id": "5b6198b4-c677-41b5-9c05-04557264ae1f",
+            "name": "scw-quizzical-feistel"
+          },
+          "size": 20000000000,
+          "state": "available",
+          "creation_date": "2021-03-11T20:14:07.197878+00:00",
+          "modification_date": "2021-03-11T20:14:07.197878+00:00",
+          "zone": "fr-par-1"
+        }
+      },
+      "tags": [],
+      "state": "running",
+      "protected": false,
+      "state_detail": "booted",
+      "public_ip": {
+        "id": "c4a7bd85-d0a6-493f-a204-456a7fb4a475",
+        "address": "151.115.45.127",
+        "dynamic": false
+      },
+      "ipv6": {
+        "address": "2001:bc8:1e00:6204::1",
+        "gateway": "2001:bc8:1e00:6204::",
+        "netmask": "64"
+      },
+      "extra_networks": [],
+      "dynamic_ip_required": false,
+      "enable_ipv6": true,
+      "private_ip": "10.193.162.9",
+      "creation_date": "2021-03-11T20:14:07.197878+00:00",
+      "modification_date": "2021-03-11T20:14:24.574333+00:00",
+      "bootscript": {
+        "id": "b00f3023-1606-4247-b453-3fc0ab1dc8c3",
+        "public": true,
+        "title": "x86_64 mainline 4.4.182 rev1",
+        "architecture": "x86_64",
+        "organization": "11111111-1111-4111-8111-111111111111",
+        "project": "11111111-1111-4111-8111-111111111111",
+        "kernel": "http://169.254.42.24/kernel/x86_64-mainline-lts-4.4-4.4.182-rev1/vmlinuz-4.4.182",
+        "dtb": "",
+        "initrd": "http://169.254.42.24/initrd/initrd-Linux-x86_64-v3.14.6.gz",
+        "bootcmdargs": "LINUX_COMMON scaleway boot=local nbd.max_part=16",
+        "default": true,
+        "zone": "fr-par-1"
+      },
+      "security_group": {
+        "id": "d35dd210-8392-44dc-8854-121e419a0f56",
+        "name": "Default security group"
+      },
+      "location": {
+        "zone_id": "fr-par-1",
+        "platform_id": "40",
+        "cluster_id": "4",
+        "hypervisor_id": "201",
+        "node_id": "5"
+      },
+      "maintenances": [],
+      "allowed_actions": [
+        "poweroff",
+        "terminate",
+        "reboot",
+        "stop_in_place",
+        "backup"
+      ],
+      "placement_group": null,
+      "private_nics": [],
+      "zone": "fr-par-1"
+    }
+  ]
+}

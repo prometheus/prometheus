@@ -35,10 +35,11 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/prompb"
 )
 
-const maxErrMsgLen = 512
+const maxErrMsgLen = 1024
 
 var UserAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 
@@ -83,7 +84,6 @@ type Client struct {
 	url        *config_util.URL
 	Client     *http.Client
 	timeout    time.Duration
-	headers    map[string]string
 
 	retryOnRateLimit bool
 
@@ -97,6 +97,7 @@ type ClientConfig struct {
 	URL              *config_util.URL
 	Timeout          model.Duration
 	HTTPClientConfig config_util.HTTPClientConfig
+	SigV4Config      *config.SigV4Config
 	Headers          map[string]string
 	RetryOnRateLimit bool
 }
@@ -115,6 +116,9 @@ func NewReadClient(name string, conf *ClientConfig) (ReadClient, error) {
 	}
 
 	t := httpClient.Transport
+	if len(conf.Headers) > 0 {
+		t = newInjectHeadersRoundTripper(conf.Headers, t)
+	}
 	httpClient.Transport = &nethttp.Transport{
 		RoundTripper: t,
 	}
@@ -136,8 +140,19 @@ func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	t := httpClient.Transport
+
+	if conf.SigV4Config != nil {
+		t, err = newSigV4RoundTripper(conf.SigV4Config, httpClient.Transport)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if len(conf.Headers) > 0 {
+		t = newInjectHeadersRoundTripper(conf.Headers, t)
+	}
+
 	httpClient.Transport = &nethttp.Transport{
 		RoundTripper: t,
 	}
@@ -148,8 +163,23 @@ func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
 		Client:           httpClient,
 		retryOnRateLimit: conf.RetryOnRateLimit,
 		timeout:          time.Duration(conf.Timeout),
-		headers:          conf.Headers,
 	}, nil
+}
+
+func newInjectHeadersRoundTripper(h map[string]string, underlyingRT http.RoundTripper) *injectHeadersRoundTripper {
+	return &injectHeadersRoundTripper{headers: h, RoundTripper: underlyingRT}
+}
+
+type injectHeadersRoundTripper struct {
+	headers map[string]string
+	http.RoundTripper
+}
+
+func (t *injectHeadersRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	for key, value := range t.headers {
+		req.Header.Set(key, value)
+	}
+	return t.RoundTripper.RoundTrip(req)
 }
 
 const defaultBackoff = 0
@@ -168,9 +198,7 @@ func (c *Client) Store(ctx context.Context, req []byte) error {
 		// recoverable.
 		return err
 	}
-	for k, v := range c.headers {
-		httpReq.Header.Set(k, v)
-	}
+
 	httpReq.Header.Add("Content-Encoding", "snappy")
 	httpReq.Header.Set("Content-Type", "application/x-protobuf")
 	httpReq.Header.Set("User-Agent", UserAgent)

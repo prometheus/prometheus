@@ -39,11 +39,10 @@ import (
 	"github.com/prometheus/common/route"
 
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/pkg/gate"
+	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/prometheus/prometheus/pkg/timestamp"
-	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
@@ -54,11 +53,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/util/httputil"
 	"github.com/prometheus/prometheus/util/stats"
-)
-
-const (
-	namespace = "prometheus"
-	subsystem = "api"
 )
 
 type status string
@@ -83,12 +77,6 @@ const (
 
 var (
 	LocalhostRepresentations = []string{"127.0.0.1", "localhost", "::1"}
-	remoteReadQueries        = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: namespace,
-		Subsystem: subsystem,
-		Name:      "remote_read_queries",
-		Help:      "The current number of remote read queries being executed or waiting.",
-	})
 )
 
 type apiError struct {
@@ -171,8 +159,9 @@ type TSDBAdminStats interface {
 // API can register a set of endpoints in a router and handle
 // them using the provided storage and query engine.
 type API struct {
-	Queryable   storage.SampleAndChunkQueryable
-	QueryEngine *promql.Engine
+	Queryable         storage.SampleAndChunkQueryable
+	QueryEngine       *promql.Engine
+	ExemplarQueryable storage.ExemplarQueryable
 
 	targetRetriever       func(context.Context) TargetRetriever
 	alertmanagerRetriever func(context.Context) AlertmanagerRetriever
@@ -183,23 +172,22 @@ type API struct {
 	ready                 func(http.HandlerFunc) http.HandlerFunc
 	globalURLOptions      GlobalURLOptions
 
-	db                        TSDBAdminStats
-	dbDir                     string
-	enableAdmin               bool
-	logger                    log.Logger
-	remoteReadSampleLimit     int
-	remoteReadMaxBytesInFrame int
-	remoteReadGate            *gate.Gate
-	CORSOrigin                *regexp.Regexp
-	buildInfo                 *PrometheusVersion
-	runtimeInfo               func() (RuntimeInfo, error)
-	gatherer                  prometheus.Gatherer
-	remoteWriteHandler        http.Handler
+	db          TSDBAdminStats
+	dbDir       string
+	enableAdmin bool
+	logger      log.Logger
+	CORSOrigin  *regexp.Regexp
+	buildInfo   *PrometheusVersion
+	runtimeInfo func() (RuntimeInfo, error)
+	gatherer    prometheus.Gatherer
+
+	remoteWriteHandler http.Handler
+	remoteReadHandler  http.Handler
 }
 
 func init() {
 	jsoniter.RegisterTypeEncoderFunc("promql.Point", marshalPointJSON, marshalPointJSONIsEmpty)
-	prometheus.MustRegister(remoteReadQueries)
+	jsoniter.RegisterTypeEncoderFunc("exemplar.Exemplar", marshalExemplarJSON, marshalExemplarJSONEmpty)
 }
 
 // NewAPI returns an initialized API type.
@@ -207,6 +195,7 @@ func NewAPI(
 	qe *promql.Engine,
 	q storage.SampleAndChunkQueryable,
 	ap storage.Appendable,
+	eq storage.ExemplarQueryable,
 	tr func(context.Context) TargetRetriever,
 	ar func(context.Context) AlertmanagerRetriever,
 	configFunc func() config.Config,
@@ -225,31 +214,32 @@ func NewAPI(
 	runtimeInfo func() (RuntimeInfo, error),
 	buildInfo *PrometheusVersion,
 	gatherer prometheus.Gatherer,
+	registerer prometheus.Registerer,
 ) *API {
 	a := &API{
-		QueryEngine: qe,
-		Queryable:   q,
+		QueryEngine:       qe,
+		Queryable:         q,
+		ExemplarQueryable: eq,
 
 		targetRetriever:       tr,
 		alertmanagerRetriever: ar,
 
-		now:                       time.Now,
-		config:                    configFunc,
-		flagsMap:                  flagsMap,
-		ready:                     readyFunc,
-		globalURLOptions:          globalURLOptions,
-		db:                        db,
-		dbDir:                     dbDir,
-		enableAdmin:               enableAdmin,
-		rulesRetriever:            rr,
-		remoteReadSampleLimit:     remoteReadSampleLimit,
-		remoteReadGate:            gate.New(remoteReadConcurrencyLimit),
-		remoteReadMaxBytesInFrame: remoteReadMaxBytesInFrame,
-		logger:                    logger,
-		CORSOrigin:                CORSOrigin,
-		runtimeInfo:               runtimeInfo,
-		buildInfo:                 buildInfo,
-		gatherer:                  gatherer,
+		now:              time.Now,
+		config:           configFunc,
+		flagsMap:         flagsMap,
+		ready:            readyFunc,
+		globalURLOptions: globalURLOptions,
+		db:               db,
+		dbDir:            dbDir,
+		enableAdmin:      enableAdmin,
+		rulesRetriever:   rr,
+		logger:           logger,
+		CORSOrigin:       CORSOrigin,
+		runtimeInfo:      runtimeInfo,
+		buildInfo:        buildInfo,
+		gatherer:         gatherer,
+
+		remoteReadHandler: remote.NewReadHandler(logger, registerer, q, configFunc, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame),
 	}
 
 	if ap != nil {
@@ -297,6 +287,8 @@ func (api *API) Register(r *route.Router) {
 	r.Post("/query", wrap(api.query))
 	r.Get("/query_range", wrap(api.queryRange))
 	r.Post("/query_range", wrap(api.queryRange))
+	r.Get("/query_exemplars", wrap(api.queryExemplars))
+	r.Post("/query_exemplars", wrap(api.queryExemplars))
 
 	r.Get("/labels", wrap(api.labelNames))
 	r.Post("/labels", wrap(api.labelNames))
@@ -331,7 +323,6 @@ func (api *API) Register(r *route.Router) {
 	r.Put("/admin/tsdb/delete_series", wrap(api.deleteSeries))
 	r.Put("/admin/tsdb/clean_tombstones", wrap(api.cleanTombstones))
 	r.Put("/admin/tsdb/snapshot", wrap(api.snapshot))
-
 }
 
 type queryData struct {
@@ -370,6 +361,8 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 	qry, err := api.QueryEngine.NewInstantQuery(api.Queryable, r.FormValue("query"), ts)
 	if err == promql.ErrValidationAtModifierDisabled {
 		err = errors.New("@ modifier is disabled, use --enable-feature=promql-at-modifier to enable it")
+	} else if err == promql.ErrValidationNegativeOffsetDisabled {
+		err = errors.New("negative offset is disabled, use --enable-feature=promql-negative-offset to enable it")
 	}
 	if err != nil {
 		return invalidParamError(err, "query")
@@ -448,6 +441,8 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 	qry, err := api.QueryEngine.NewRangeQuery(api.Queryable, r.FormValue("query"), start, end, step)
 	if err == promql.ErrValidationAtModifierDisabled {
 		err = errors.New("@ modifier is disabled, use --enable-feature=promql-at-modifier to enable it")
+	} else if err == promql.ErrValidationNegativeOffsetDisabled {
+		err = errors.New("negative offset is disabled, use --enable-feature=promql-negative-offset to enable it")
 	}
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
@@ -479,6 +474,44 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 		Result:     res.Value,
 		Stats:      qs,
 	}, nil, res.Warnings, qry.Close}
+}
+
+func (api *API) queryExemplars(r *http.Request) apiFuncResult {
+	start, err := parseTimeParam(r, "start", minTime)
+	if err != nil {
+		return invalidParamError(err, "start")
+	}
+	end, err := parseTimeParam(r, "end", maxTime)
+	if err != nil {
+		return invalidParamError(err, "end")
+	}
+	if end.Before(start) {
+		err := errors.New("end timestamp must not be before start timestamp")
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+	}
+
+	expr, err := parser.ParseExpr(r.FormValue("query"))
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+	}
+
+	selectors := parser.ExtractSelectors(expr)
+	if len(selectors) < 1 {
+		return apiFuncResult{nil, nil, nil, nil}
+	}
+
+	ctx := r.Context()
+	eq, err := api.ExemplarQueryable.ExemplarQuerier(ctx)
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
+	}
+
+	res, err := eq.Select(timestamp.FromTime(start), timestamp.FromTime(end), selectors...)
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
+	}
+
+	return apiFuncResult{res, nil, nil, nil}
 }
 
 func returnAPIError(err error) *apiError {
@@ -1319,211 +1352,12 @@ func (api *API) serveTSDBStatus(*http.Request) apiFuncResult {
 }
 
 func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	if err := api.remoteReadGate.Start(ctx); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+	// This is only really for tests - this will never be nil IRL.
+	if api.remoteReadHandler != nil {
+		api.remoteReadHandler.ServeHTTP(w, r)
+	} else {
+		http.Error(w, "not found", http.StatusNotFound)
 	}
-	remoteReadQueries.Inc()
-
-	defer api.remoteReadGate.Done()
-	defer remoteReadQueries.Dec()
-
-	req, err := remote.DecodeReadRequest(r)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	externalLabels := api.config().GlobalConfig.ExternalLabels.Map()
-
-	sortedExternalLabels := make([]prompb.Label, 0, len(externalLabels))
-	for name, value := range externalLabels {
-		sortedExternalLabels = append(sortedExternalLabels, prompb.Label{
-			Name:  name,
-			Value: value,
-		})
-	}
-	sort.Slice(sortedExternalLabels, func(i, j int) bool {
-		return sortedExternalLabels[i].Name < sortedExternalLabels[j].Name
-	})
-
-	responseType, err := remote.NegotiateResponseType(req.AcceptedResponseTypes)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	switch responseType {
-	case prompb.ReadRequest_STREAMED_XOR_CHUNKS:
-		api.remoteReadStreamedXORChunks(ctx, w, req, externalLabels, sortedExternalLabels)
-	default:
-		// On empty or unknown types in req.AcceptedResponseTypes we default to non streamed, raw samples response.
-		api.remoteReadSamples(ctx, w, req, externalLabels, sortedExternalLabels)
-	}
-}
-
-func (api *API) remoteReadSamples(
-	ctx context.Context,
-	w http.ResponseWriter,
-	req *prompb.ReadRequest,
-	externalLabels map[string]string,
-	sortedExternalLabels []prompb.Label,
-) {
-	w.Header().Set("Content-Type", "application/x-protobuf")
-	w.Header().Set("Content-Encoding", "snappy")
-
-	resp := prompb.ReadResponse{
-		Results: make([]*prompb.QueryResult, len(req.Queries)),
-	}
-	for i, query := range req.Queries {
-		if err := func() error {
-			filteredMatchers, err := filterExtLabelsFromMatchers(query.Matchers, externalLabels)
-			if err != nil {
-				return err
-			}
-
-			querier, err := api.Queryable.Querier(ctx, query.StartTimestampMs, query.EndTimestampMs)
-			if err != nil {
-				return err
-			}
-			defer func() {
-				if err := querier.Close(); err != nil {
-					level.Warn(api.logger).Log("msg", "Error on querier close", "err", err.Error())
-				}
-			}()
-
-			var hints *storage.SelectHints
-			if query.Hints != nil {
-				hints = &storage.SelectHints{
-					Start:    query.Hints.StartMs,
-					End:      query.Hints.EndMs,
-					Step:     query.Hints.StepMs,
-					Func:     query.Hints.Func,
-					Grouping: query.Hints.Grouping,
-					Range:    query.Hints.RangeMs,
-					By:       query.Hints.By,
-				}
-			}
-
-			var ws storage.Warnings
-			resp.Results[i], ws, err = remote.ToQueryResult(querier.Select(false, hints, filteredMatchers...), api.remoteReadSampleLimit)
-			if err != nil {
-				return err
-			}
-			for _, w := range ws {
-				level.Warn(api.logger).Log("msg", "Warnings on remote read query", "err", w.Error())
-			}
-			for _, ts := range resp.Results[i].Timeseries {
-				ts.Labels = remote.MergeLabels(ts.Labels, sortedExternalLabels)
-			}
-			return nil
-		}(); err != nil {
-			if httpErr, ok := err.(remote.HTTPError); ok {
-				http.Error(w, httpErr.Error(), httpErr.Status())
-				return
-			}
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	}
-
-	if err := remote.EncodeReadResponse(&resp, w); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-}
-
-func (api *API) remoteReadStreamedXORChunks(ctx context.Context, w http.ResponseWriter, req *prompb.ReadRequest, externalLabels map[string]string, sortedExternalLabels []prompb.Label) {
-	w.Header().Set("Content-Type", "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse")
-
-	f, ok := w.(http.Flusher)
-	if !ok {
-		http.Error(w, "internal http.ResponseWriter does not implement http.Flusher interface", http.StatusInternalServerError)
-		return
-	}
-
-	for i, query := range req.Queries {
-		if err := func() error {
-			filteredMatchers, err := filterExtLabelsFromMatchers(query.Matchers, externalLabels)
-			if err != nil {
-				return err
-			}
-
-			querier, err := api.Queryable.ChunkQuerier(ctx, query.StartTimestampMs, query.EndTimestampMs)
-			if err != nil {
-				return err
-			}
-			defer func() {
-				if err := querier.Close(); err != nil {
-					level.Warn(api.logger).Log("msg", "Error on chunk querier close", "err", err.Error())
-				}
-			}()
-
-			var hints *storage.SelectHints
-			if query.Hints != nil {
-				hints = &storage.SelectHints{
-					Start:    query.Hints.StartMs,
-					End:      query.Hints.EndMs,
-					Step:     query.Hints.StepMs,
-					Func:     query.Hints.Func,
-					Grouping: query.Hints.Grouping,
-					Range:    query.Hints.RangeMs,
-					By:       query.Hints.By,
-				}
-			}
-
-			ws, err := remote.StreamChunkedReadResponses(
-				remote.NewChunkedWriter(w, f),
-				int64(i),
-				// The streaming API has to provide the series sorted.
-				querier.Select(true, hints, filteredMatchers...),
-				sortedExternalLabels,
-				api.remoteReadMaxBytesInFrame,
-			)
-			if err != nil {
-				return err
-			}
-
-			for _, w := range ws {
-				level.Warn(api.logger).Log("msg", "Warnings on chunked remote read query", "warnings", w.Error())
-			}
-			return nil
-		}(); err != nil {
-			if httpErr, ok := err.(remote.HTTPError); ok {
-				http.Error(w, httpErr.Error(), httpErr.Status())
-				return
-			}
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	}
-}
-
-// filterExtLabelsFromMatchers change equality matchers which match external labels
-// to a matcher that looks for an empty label,
-// as that label should not be present in the storage.
-func filterExtLabelsFromMatchers(pbMatchers []*prompb.LabelMatcher, externalLabels map[string]string) ([]*labels.Matcher, error) {
-	matchers, err := remote.FromLabelMatchers(pbMatchers)
-	if err != nil {
-		return nil, err
-	}
-
-	filteredMatchers := make([]*labels.Matcher, 0, len(matchers))
-	for _, m := range matchers {
-		value := externalLabels[m.Name]
-		if m.Type == labels.MatchEqual && value == m.Value {
-			matcher, err := labels.NewMatcher(labels.MatchEqual, m.Name, "")
-			if err != nil {
-				return nil, err
-			}
-			filteredMatchers = append(filteredMatchers, matcher)
-		} else {
-			filteredMatchers = append(filteredMatchers, m)
-		}
-	}
-
-	return filteredMatchers, nil
 }
 
 func (api *API) remoteWrite(w http.ResponseWriter, r *http.Request) {
@@ -1746,12 +1580,60 @@ OUTER:
 	return matcherSets, nil
 }
 
+// marshalPointJSON writes `[ts, "val"]`.
 func marshalPointJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 	p := *((*promql.Point)(ptr))
 	stream.WriteArrayStart()
+	marshalTimestamp(p.T, stream)
+	stream.WriteMore()
+	marshalValue(p.V, stream)
+	stream.WriteArrayEnd()
+}
+
+func marshalPointJSONIsEmpty(ptr unsafe.Pointer) bool {
+	return false
+}
+
+// marshalExemplarJSON writes.
+// {
+//    labels: <labels>,
+//    value: "<string>",
+//    timestamp: <float>
+// }
+func marshalExemplarJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
+	p := *((*exemplar.Exemplar)(ptr))
+	stream.WriteObjectStart()
+
+	// "labels" key.
+	stream.WriteObjectField(`labels`)
+	lbls, err := p.Labels.MarshalJSON()
+	if err != nil {
+		stream.Error = err
+		return
+	}
+	stream.SetBuffer(append(stream.Buffer(), lbls...))
+
+	// "value" key.
+	stream.WriteMore()
+	stream.WriteObjectField(`value`)
+	marshalValue(p.Value, stream)
+
+	// "timestamp" key.
+	stream.WriteMore()
+	stream.WriteObjectField(`timestamp`)
+	marshalTimestamp(p.Ts, stream)
+	//marshalTimestamp(p.Ts, stream)
+
+	stream.WriteObjectEnd()
+}
+
+func marshalExemplarJSONEmpty(ptr unsafe.Pointer) bool {
+	return false
+}
+
+func marshalTimestamp(t int64, stream *jsoniter.Stream) {
 	// Write out the timestamp as a float divided by 1000.
 	// This is ~3x faster than converting to a float.
-	t := p.T
 	if t < 0 {
 		stream.WriteRaw(`-`)
 		t = -t
@@ -1768,13 +1650,14 @@ func marshalPointJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 		}
 		stream.WriteInt64(fraction)
 	}
-	stream.WriteMore()
-	stream.WriteRaw(`"`)
+}
 
+func marshalValue(v float64, stream *jsoniter.Stream) {
+	stream.WriteRaw(`"`)
 	// Taken from https://github.com/json-iterator/go/blob/master/stream_float.go#L71 as a workaround
 	// to https://github.com/json-iterator/go/issues/365 (jsoniter, to follow json standard, doesn't allow inf/nan).
 	buf := stream.Buffer()
-	abs := math.Abs(p.V)
+	abs := math.Abs(v)
 	fmt := byte('f')
 	// Note: Must use float32 comparisons for underlying float32 value to get precise cutoffs right.
 	if abs != 0 {
@@ -1782,13 +1665,7 @@ func marshalPointJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 			fmt = 'e'
 		}
 	}
-	buf = strconv.AppendFloat(buf, p.V, fmt, -1, 64)
+	buf = strconv.AppendFloat(buf, v, fmt, -1, 64)
 	stream.SetBuffer(buf)
-
 	stream.WriteRaw(`"`)
-	stream.WriteArrayEnd()
-}
-
-func marshalPointJSONIsEmpty(ptr unsafe.Pointer) bool {
-	return false
 }

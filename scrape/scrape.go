@@ -38,6 +38,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/pool"
 	"github.com/prometheus/prometheus/pkg/relabel"
@@ -142,25 +143,31 @@ var (
 	targetScrapeSampleDuplicate = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "prometheus_target_scrapes_sample_duplicate_timestamp_total",
-			Help: "Total number of samples rejected due to duplicate timestamps but different values",
+			Help: "Total number of samples rejected due to duplicate timestamps but different values.",
 		},
 	)
 	targetScrapeSampleOutOfOrder = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "prometheus_target_scrapes_sample_out_of_order_total",
-			Help: "Total number of samples rejected due to not being out of the expected order",
+			Help: "Total number of samples rejected due to not being out of the expected order.",
 		},
 	)
 	targetScrapeSampleOutOfBounds = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "prometheus_target_scrapes_sample_out_of_bounds_total",
-			Help: "Total number of samples rejected due to timestamp falling outside of the time bounds",
+			Help: "Total number of samples rejected due to timestamp falling outside of the time bounds.",
 		},
 	)
 	targetScrapeCacheFlushForced = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "prometheus_target_scrapes_cache_flush_forced_total",
 			Help: "How many times a scrape cache was flushed due to getting big while scrapes are failing.",
+		},
+	)
+	targetScrapeExemplarOutOfOrder = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "prometheus_target_scrapes_exemplar_out_of_order_total",
+			Help: "Total number of exemplar rejected due to not being out of the expected order.",
 		},
 	)
 )
@@ -184,6 +191,7 @@ func init() {
 		targetScrapePoolTargetsAdded,
 		targetScrapeCacheFlushForced,
 		targetMetadataCache,
+		targetScrapeExemplarOutOfOrder,
 	)
 }
 
@@ -1005,7 +1013,7 @@ func (sl *scrapeLoop) run(interval, timeout time.Duration, errc chan<- error) {
 
 	var last time.Time
 
-	alignedScrapeTime := time.Now()
+	alignedScrapeTime := time.Now().Round(0)
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -1023,7 +1031,9 @@ mainLoop:
 		// Temporary workaround for a jitter in go timers that causes disk space
 		// increase in TSDB.
 		// See https://github.com/prometheus/prometheus/issues/7846
-		scrapeTime := time.Now()
+		// Calling Round ensures the time used is the wall clock, as otherwise .Sub
+		// and .Add on time.Time behave differently (see time package docs).
+		scrapeTime := time.Now().Round(0)
 		if AlignScrapeTimestamps && interval > 100*scrapeTimestampTolerance {
 			// For some reason, a tick might have been skipped, in which case we
 			// would call alignedScrapeTime.Add(interval) multiple times.
@@ -1243,9 +1253,10 @@ func (sl *scrapeLoop) getCache() *scrapeCache {
 }
 
 type appendErrors struct {
-	numOutOfOrder  int
-	numDuplicates  int
-	numOutOfBounds int
+	numOutOfOrder         int
+	numDuplicates         int
+	numOutOfBounds        int
+	numExemplarOutOfOrder int
 }
 
 func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string, ts time.Time) (total, added, seriesAdded int, err error) {
@@ -1270,6 +1281,7 @@ loop:
 		var (
 			et          textparse.Entry
 			sampleAdded bool
+			e           exemplar.Exemplar
 		)
 		if et, err = p.Next(); err != nil {
 			if err == io.EOF {
@@ -1360,6 +1372,18 @@ loop:
 		// number of samples remaining after relabeling.
 		added++
 
+		if hasExemplar := p.Exemplar(&e); hasExemplar {
+			if !e.HasTs {
+				e.Ts = t
+			}
+			_, exemplarErr := app.AppendExemplar(ref, lset, e)
+			exemplarErr = sl.checkAddExemplarError(exemplarErr, e, &appErrs)
+			if exemplarErr != nil {
+				// Since exemplar storage is still experimental, we don't fail the scrape on ingestion errors.
+				level.Debug(sl.l).Log("msg", "Error while adding exemplar in AddExemplar", "exemplar", fmt.Sprintf("%+v", e), "err", exemplarErr)
+			}
+		}
+
 	}
 	if sampleLimitErr != nil {
 		if err == nil {
@@ -1376,6 +1400,9 @@ loop:
 	}
 	if appErrs.numOutOfBounds > 0 {
 		level.Warn(sl.l).Log("msg", "Error on ingesting samples that are too old or are too far into the future", "num_dropped", appErrs.numOutOfBounds)
+	}
+	if appErrs.numExemplarOutOfOrder > 0 {
+		level.Warn(sl.l).Log("msg", "Error on ingesting out-of-order exemplars", "num_dropped", appErrs.numExemplarOutOfOrder)
 	}
 	if err == nil {
 		sl.cache.forEachStale(func(lset labels.Labels) bool {
@@ -1431,6 +1458,20 @@ func (sl *scrapeLoop) checkAddError(ce *cacheEntry, met []byte, tp *int64, err e
 		return false, nil
 	default:
 		return false, err
+	}
+}
+
+func (sl *scrapeLoop) checkAddExemplarError(err error, e exemplar.Exemplar, appErrs *appendErrors) error {
+	switch errors.Cause(err) {
+	case storage.ErrNotFound:
+		return storage.ErrNotFound
+	case storage.ErrOutOfOrderExemplar:
+		appErrs.numExemplarOutOfOrder++
+		level.Debug(sl.l).Log("msg", "Out of order exemplar", "exemplar", fmt.Sprintf("%+v", e))
+		targetScrapeExemplarOutOfOrder.Inc()
+		return nil
+	default:
+		return err
 	}
 }
 
