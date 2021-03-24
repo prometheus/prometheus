@@ -1,16 +1,11 @@
 ## 2.26.0-rc.0 / 2021-03-24
 
-Notable changes:
+Prometheus is now built and supporting Go 1.16 (#8544). This reverts the memory release pattern added in Go 1.12. This makes common RSS usage metrics showing more accurate number for actual memory used by Prometheus. You can read more details [here](https://www.bwplotka.dev/2019/golang-memory-monitoring/).
 
-* Experimental query editor UI helps you to write correct PromQL queries, with auto-completion, syntax highlighting and linting. 
-* Native support for AWS authentication for `remote_write` to Amazon Managed Service for Prometheus. This eliminates the need for a sidecar.
-* Two experimental features have been added, these are [disabled by default and may change in the future](https://prometheus.io/docs/prometheus/latest/disabled_features/):
-  * If you enable `--enable-feature=exemplar-storage`, Prometheus will hold certain amount of scraped OpenMetrics' Exemplars in circular memory. It will also expose `/api/v1/query_exemplars` querying HTTP API.
-  * PromQL support for negative offset in queries via feature flag `--enable-feature=promql-negative-offset`. (eg. `sum_over_time(metric[1h:1m] offset -5m)`)
-* Prometheus is now built and supporting Go 1.16 (#8544). This reverts the memory release pattern added in Go 1.12. This makes common RSS usage metrics showing more accurate number for actual memory used by Prometheus. You can read more details [here](https://www.bwplotka.dev/2019/golang-memory-monitoring/).
-* This release changed the main development branch to `main`.
+Note that from this release Prometheus is using Alertmanager v2 by default.
 
 * [CHANGE] Alerting: Using Alertmanager v2 API by default. #8626
+* [CHANGE] Prometheus/Promtool: As agreed on dev summit, binaries are now printing help and usage to stdout instead of stderr. #8542
 * [FEATURE] Remote: Add support for AWS SigV4 auth method for remote_write. #8509
 * [FEATURE] Scaleway Discovery: Add Scaleway Service Discovery. #8555
 * [FEATURE] PromQL: Allow negative offsets. Behind `--enable-feature=promql-negative-offset` flag. #8555
@@ -18,8 +13,7 @@ Notable changes:
 * [FEATURE] UI: Add advanced auto-completion, syntax highlighting and linting to graph page query input. #8634
 * [ENHANCEMENT] Digital Ocean Discovery: Add `__meta_digitalocean_image` label. #8497
 * [ENHANCEMENT] Remote: Allow configuring retries on rate-limiting for remote_write. See [configuration docs](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_write) for details. #8477
-* [ENHANCEMENT] Authorization: Add support for specifying type of credentials with `Bearer` by default. #8512
-* [ENHANCEMENT] Prometheus/Promtool: Binaries are now printing help and usage to stdout instead of stderr. #8542
+* [ENHANCEMENT] Scrape: Add support for specifying type of Authorization header credentials with Bearer by default. #8512
 * [ENHANCEMENT] Remote: Allow configuring custom headers for remote_read. See [configuration docs](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_read) for details. #8516
 * [ENHANCEMENT] Scrape: Add `follow_redirects` option to scrape configuration. #8546
 * [ENHANCEMENT] UI: Hitting Enter now triggers new query. #8581
@@ -27,7 +21,6 @@ Notable changes:
 * [ENHANCEMENT] UI: Better handling of long labels names on `/targets` page. #8609
 * [BUGFIX] TSDB: Eager deletion of removable blocks on every compaction, saving disk peak space usage. #8007
 * [BUGFIX] PromQL: Fix parser support for special characters like`炬`. #8517
-* [BUGFIX] TSDB: Fix rare case of duplicated sample. #8591
 
 ## 2.25.2 / 2021-03-16
 
