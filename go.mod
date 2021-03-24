@@ -3,7 +3,7 @@ module github.com/prometheus/prometheus
 go 1.14
 
 require (
-	github.com/Azure/azure-sdk-for-go v51.2.0+incompatible
+	github.com/Azure/azure-sdk-for-go v52.5.0+incompatible
 	github.com/Azure/go-autorest/autorest v0.11.18
 	github.com/Azure/go-autorest/autorest/adal v0.9.13
 	github.com/Azure/go-autorest/autorest/to v0.4.0 // indirect
@@ -11,13 +11,13 @@ require (
 	github.com/HdrHistogram/hdrhistogram-go v1.0.1 // indirect
 	github.com/Microsoft/go-winio v0.4.16 // indirect
 	github.com/alecthomas/units v0.0.0-20210208195552-ff826a37aa15
-	github.com/aws/aws-sdk-go v1.37.8
+	github.com/aws/aws-sdk-go v1.38.3
 	github.com/cespare/xxhash/v2 v2.1.1
 	github.com/containerd/containerd v1.4.3 // indirect
 	github.com/dgryski/go-sip13 v0.0.0-20200911182023-62edffca9245
-	github.com/digitalocean/godo v1.57.0
+	github.com/digitalocean/godo v1.58.0
 	github.com/docker/distribution v2.7.1+incompatible // indirect
-	github.com/docker/docker v20.10.3+incompatible
+	github.com/docker/docker v20.10.5+incompatible
 	github.com/docker/go-connections v0.4.0 // indirect
 	github.com/edsrzf/mmap-go v1.0.0
 	github.com/go-kit/kit v0.10.0
@@ -27,14 +27,14 @@ require (
 	github.com/go-zookeeper/zk v1.0.2
 	github.com/gogo/protobuf v1.3.2
 	github.com/golang/snappy v0.0.3
-	github.com/google/pprof v0.0.0-20210208152844-1612e9be7af6
-	github.com/gophercloud/gophercloud v0.15.0
+	github.com/google/pprof v0.0.0-20210323184331-8eee2492667d
+	github.com/gophercloud/gophercloud v0.16.0
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0
 	github.com/hashicorp/consul/api v1.8.1
-	github.com/hetznercloud/hcloud-go v1.23.1
+	github.com/hetznercloud/hcloud-go v1.24.0
 	github.com/influxdata/influxdb v1.8.4
 	github.com/json-iterator/go v1.1.10
-	github.com/miekg/dns v1.1.38
+	github.com/miekg/dns v1.1.41
 	github.com/moby/term v0.0.0-20201216013528-df9cb8a40635 // indirect
 	github.com/morikuni/aec v1.0.0 // indirect
 	github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f
@@ -46,7 +46,7 @@ require (
 	github.com/opentracing/opentracing-go v1.2.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/alertmanager v0.21.0
-	github.com/prometheus/client_golang v1.9.0
+	github.com/prometheus/client_golang v1.10.0
 	github.com/prometheus/client_model v0.2.0
 	github.com/prometheus/common v0.20.0
 	github.com/prometheus/exporter-toolkit v0.5.1
@@ -58,23 +58,23 @@ require (
 	github.com/uber/jaeger-lib v2.4.0+incompatible
 	go.uber.org/atomic v1.7.0
 	go.uber.org/goleak v1.1.10
-	golang.org/x/net v0.0.0-20210119194325-5f4716e94777
-	golang.org/x/oauth2 v0.0.0-20210210192628-66670185b0cd
-	golang.org/x/sync v0.0.0-20201207232520-09787c993a3a
-	golang.org/x/sys v0.0.0-20210124154548-22da62e12c0c
-	golang.org/x/time v0.0.0-20201208040808-7e3f01d25324
+	golang.org/x/net v0.0.0-20210324051636-2c4c8ecb7826
+	golang.org/x/oauth2 v0.0.0-20210323180902-22b0adad7558
+	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
+	golang.org/x/sys v0.0.0-20210324051608-47abb6519492
+	golang.org/x/time v0.0.0-20210220033141-f8bda1e9f3ba
 	golang.org/x/tools v0.1.0
-	google.golang.org/api v0.39.0
+	google.golang.org/api v0.42.0
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	gopkg.in/fsnotify/fsnotify.v1 v1.4.7
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 	gotest.tools/v3 v3.0.3 // indirect
-	k8s.io/api v0.20.2
-	k8s.io/apimachinery v0.20.2
-	k8s.io/client-go v0.20.2
+	k8s.io/api v0.20.5
+	k8s.io/apimachinery v0.20.5
+	k8s.io/client-go v0.20.5
 	k8s.io/klog v1.0.0
-	k8s.io/klog/v2 v2.5.0
+	k8s.io/klog/v2 v2.8.0
 )
 
 replace (
