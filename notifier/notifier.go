@@ -266,7 +266,10 @@ func (n *Manager) ApplyConfig(conf *config.Config) error {
 		if err != nil {
 			return err
 		}
-
+		// If old ams exist, use old ams to avoid empty ams when reload.
+		if oldAms, ok := n.alertmanagers[k]; ok {
+			ams.ams = oldAms.ams
+		}
 		amSets[k] = ams
 	}
 
