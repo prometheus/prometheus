@@ -90,7 +90,7 @@ type Options struct {
 	// WALSegmentSize < 0, wal is disabled.
 	WALSegmentSize int
 
-	// Chunk segment file max size.
+	// MaxBlockChunkSegmentSize is the max size of block chunk segment files.
 	// MaxBlockChunkSegmentSize = 0, chunk segment size is default size.
 	// MaxBlockChunkSegmentSize > 0, chunk segment size is MaxBlockChunkSegmentSize.
 	MaxBlockChunkSegmentSize int64

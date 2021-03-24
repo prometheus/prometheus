@@ -17,7 +17,7 @@ Ingested samples are grouped into blocks of two hours. Each two-hour block consi
 of a directory containing a chunks subdirectory containing all the time series samples
 for that window of time, a metadata file, and an index file (which indexes metric names
 and labels to time series in the chunks directory). The samples in the chunks directory
-are grouped together into one or more segment files of up to 512MB each. When series are
+are grouped together into one or more segment files of up to 512MB each by default. When series are
 deleted via the API, deletion records are stored in separate tombstone files (instead
 of deleting the data immediately from the chunk segments).
 
