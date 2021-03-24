@@ -444,6 +444,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_digitalocean_status`: the status of the droplet
 * `__meta_digitalocean_features`: the comma-separated list of features of the droplet
 * `__meta_digitalocean_tags`: the comma-separated list of tags of the droplet
+* `__meta_digitalocean_vpc`: the id of the droplet's VPC
 
 ```yaml
 # Authentication information used to authenticate to the API server.

@@ -47,6 +47,7 @@ const (
 	doLabelStatus      = doLabel + "status"
 	doLabelFeatures    = doLabel + "features"
 	doLabelTags        = doLabel + "tags"
+	doLabelVPC         = doLabel + "vpc"
 	separator          = ","
 )
 
@@ -170,6 +171,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 			doLabelRegion:      model.LabelValue(droplet.Region.Slug),
 			doLabelSize:        model.LabelValue(droplet.SizeSlug),
 			doLabelStatus:      model.LabelValue(droplet.Status),
+			doLabelVPC:         model.LabelValue(droplet.VPCUUID),
 		}
 
 		addr := net.JoinHostPort(publicIPv4, strconv.FormatUint(uint64(d.port), 10))
