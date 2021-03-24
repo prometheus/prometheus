@@ -423,9 +423,11 @@ func (d *Discovery) queryFromListTagResources() (instances []ecs_pop.Instance, e
 	originalToken := "INIT"
 	for {
 		if nextToken != "" && nextToken != "ICM=" && originalToken != nextToken {
-			nextToken, nextTokenInstances, getInstancesFromListTagResourcesErr = d.getInstancesFromListTagResources(nextToken, currentTotalCount)
 
 			originalToken = nextToken
+
+			nextToken, nextTokenInstances, getInstancesFromListTagResourcesErr = d.getInstancesFromListTagResources(nextToken, currentTotalCount)
+
 			if len(nextTokenInstances) == 0 {
 				break
 			}
