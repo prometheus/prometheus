@@ -27,9 +27,10 @@ import (
 )
 
 var (
-	testProjectID = "8feda53f-15f0-447f-badf-ebe32dad2fc0"
-	testSecretKey = "6d6579e5-a5b9-49fc-a35f-b4feb9b87301"
-	testAccessKey = "SCW0W8NG6024YHRJ7723"
+	testProjectID     = "8feda53f-15f0-447f-badf-ebe32dad2fc0"
+	testSecretKeyFile = "testdata/secret_key"
+	testSecretKey     = "6d6579e5-a5b9-49fc-a35f-b4feb9b87301"
+	testAccessKey     = "SCW0W8NG6024YHRJ7723"
 )
 
 func TestScalewayInstanceRefresh(t *testing.T) {
@@ -136,4 +137,29 @@ func mockScalewayInstance(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+}
+
+func TestScalewayInstanceAuthToken(t *testing.T) {
+	mock := httptest.NewServer(http.HandlerFunc(mockScalewayInstance))
+	defer mock.Close()
+
+	cfgString := fmt.Sprintf(`
+---
+role: instance
+project_id: %s
+secret_key_file: %s
+access_key: %s
+api_url: %s
+`, testProjectID, testSecretKeyFile, testAccessKey, mock.URL)
+	var cfg SDConfig
+	require.NoError(t, yaml.UnmarshalStrict([]byte(cfgString), &cfg))
+
+	d, err := newRefresher(&cfg)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	tgs, err := d.refresh(ctx)
+	require.NoError(t, err)
+
+	require.Equal(t, 1, len(tgs))
 }
