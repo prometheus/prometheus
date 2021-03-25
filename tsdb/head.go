@@ -438,7 +438,11 @@ func (h *Head) processWALSamples(
 	defer close(output)
 
 	// Mitigate lock contention in getByID.
-	refSeries := map[uint64]*memSeries{}
+	type seriesAndTime struct {
+		ms      *memSeries
+		minTime int64
+	}
+	refSeries := map[uint64]seriesAndTime{}
 
 	mint, maxt := int64(math.MaxInt64), int64(math.MinInt64)
 
@@ -448,17 +452,24 @@ func (h *Head) processWALSamples(
 				continue
 			}
 			ms := refSeries[s.Ref]
-			if ms == nil {
-				ms = h.series.getByID(s.Ref)
-				if ms == nil {
+			if ms.ms == nil {
+				ms.ms = h.series.getByID(s.Ref)
+				if ms.ms == nil {
 					unknownRefs++
 					continue
 				}
+				if len(ms.ms.mmappedChunks) == 0 {
+					ms.minTime = -1
+				} else {
+					ms.minTime = ms.ms.mmappedChunks[len(ms.ms.mmappedChunks)-1].maxTime
+				}
 				refSeries[s.Ref] = ms
 			}
-			if _, chunkCreated := ms.append(s.T, s.V, 0, h.chunkDiskMapper); chunkCreated {
-				h.metrics.chunksCreated.Inc()
-				h.metrics.chunks.Inc()
+			if ms.minTime < s.T {
+				if _, chunkCreated := ms.ms.append(s.T, s.V, 0, h.chunkDiskMapper); chunkCreated {
+					h.metrics.chunksCreated.Inc()
+					h.metrics.chunks.Inc()
+				}
 			}
 			if s.T > maxt {
 				maxt = s.T
