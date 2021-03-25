@@ -291,7 +291,7 @@ func checkFileExists(fn string) error {
 func checkConfig(filename string) ([]string, error) {
 	fmt.Println("Checking", filename)
 
-	cfg, err := config.LoadFile(filename)
+	cfg, err := config.LoadFile(filename, false, log.NewNopLogger())
 	if err != nil {
 		return nil, err
 	}

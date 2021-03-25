@@ -17,11 +17,14 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/url"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -60,7 +63,7 @@ var (
 )
 
 // Load parses the YAML input s into a Config.
-func Load(s string) (*Config, error) {
+func Load(s string, expandExternalLabels bool, logger log.Logger) (*Config, error) {
 	cfg := &Config{}
 	// If the entire config body is empty the UnmarshalYAML method is
 	// never called. We thus have to set the DefaultConfig at the entry
@@ -71,16 +74,35 @@ func Load(s string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	if !expandExternalLabels {
+		return cfg, nil
+	}
+
+	for i, v := range cfg.GlobalConfig.ExternalLabels {
+		newV := os.Expand(v.Value, func(s string) string {
+			if v := os.Getenv(s); v != "" {
+				return v
+			}
+			level.Warn(logger).Log("msg", "Empty environment variable", "name", s)
+			return ""
+		})
+		if newV != v.Value {
+			level.Debug(logger).Log("msg", "External label replaced", "label", v.Name, "input", v.Value, "output", newV)
+			v.Value = newV
+			cfg.GlobalConfig.ExternalLabels[i] = v
+		}
+	}
 	return cfg, nil
 }
 
 // LoadFile parses the given YAML file into a Config.
-func LoadFile(filename string) (*Config, error) {
+func LoadFile(filename string, expandExternalLabels bool, logger log.Logger) (*Config, error) {
 	content, err := ioutil.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}
-	cfg, err := Load(string(content))
+	cfg, err := Load(string(content), expandExternalLabels, logger)
 	if err != nil {
 		return nil, errors.Wrapf(err, "parsing YAML file %s", filename)
 	}
