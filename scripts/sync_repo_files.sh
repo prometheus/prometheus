@@ -13,9 +13,21 @@ pr_title="Synchronize common files from prometheus/prometheus"
 pr_msg="Propagating changes from prometheus/prometheus default branch."
 orgs="prometheus prometheus-community"
 
+color_red='\e[31m'
+color_green='\e[32m'
+color_none='\e[0m'
+
+echo_red() {
+  echo -e "${color_red}$@${color_none}"
+}
+
+echo_green() {
+  echo -e "${color_green}$@${color_none}"
+}
+
 GITHUB_TOKEN="${GITHUB_TOKEN:-}"
 if [ -z "${GITHUB_TOKEN}" ]; then
-  echo -e "\e[31mGitHub token (GITHUB_TOKEN) not set. Terminating.\e[0m"
+  echo_red 'GitHub token (GITHUB_TOKEN) not set. Terminating.'
   exit 1
 fi
 
@@ -43,8 +55,8 @@ get_default_branch() {
 }
 
 fetch_repos() {
-  github_api "users/${1}/repos?per_page=100" 2> /dev/null |
-    jq -r '.[] | select( .name != "prometheus" ) | .name'
+  github_api "orgs/${1}/repos?type=public&per_page=100" 2> /dev/null |
+    jq -r '.[] | select( .archived == false and .fork == false and .name != "prometheus" ) | .name'
 }
 
 push_branch() {
@@ -76,7 +88,7 @@ process_repo() {
   local org_repo
   local default_branch
   org_repo="$1"
-  echo -e "\e[32mAnalyzing '${org_repo}'\e[0m"
+  echo_green "Analyzing '${org_repo}'"
 
   default_branch="$(get_default_branch "${org_repo}")"
   if [[ -z "${default_branch}" ]]; then
@@ -154,13 +166,13 @@ for org in ${orgs}; do
     fetch_uri="repos/${org}/${repo}/pulls?state=open&head=${org}:${branch}"
     prLink="$(github_api "${fetch_uri}" --show-error | jq -r '.[0].html_url')"
     if [[ "${prLink}" != "null" ]]; then
-      echo "Pull request already opened for branch '${branch}': ${prLink}"
+      echo_green "Pull request already opened for branch '${branch}': ${prLink}"
       echo "Either close it or merge it before running this script again!"
       continue
     fi
 
     if ! process_repo "${org}/${repo}"; then
-      echo "Failed to process '${org}/${repo}'"
+      echo_red "Failed to process '${org}/${repo}'"
       exit 1
     fi
   done
