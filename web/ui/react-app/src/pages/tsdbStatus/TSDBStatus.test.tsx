@@ -150,6 +150,16 @@ describe('TSDB Stats', () => {
     });
 
     expect(page.find('h2').text()).toEqual('TSDB Status');
-    expect(page.find('div.text-center')).not.toBeUndefined();
+
+    const headStats = page
+      .find(Table)
+      .at(0)
+      .find('tbody')
+      .find('td');
+    ['0', '0', '0', 'Error parsing time (9223372036854776000)', 'Error parsing time (-9223372036854776000)'].forEach(
+      (value, i) => {
+        expect(headStats.at(i).text()).toEqual(value);
+      }
+    );
   });
 });

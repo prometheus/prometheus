@@ -35,21 +35,14 @@ export const TSDBStatusContent: FC<TSDBMap> = ({
   memoryInBytesByLabelName,
   seriesCountByLabelValuePair,
 }) => {
-  const unixToTime = (unix: number): string => new Date(unix).toISOString();
+  const unixToTime = (unix: number): string => {
+    try {
+      return new Date(unix).toISOString();
+    } catch {
+      return 'Error parsing time';
+    }
+  };
   const { chunkCount, numSeries, numLabelPairs, minTime, maxTime } = headStats;
-  if (numSeries < 1) {
-    return (
-      <div>
-        <h2>TSDB Status</h2>
-        <div className="text-center">
-          <h1>No TSDB statistics available yet</h1>
-          <h4>
-            If this is prolonged, try updating your <a href="/config">config</a>
-          </h4>
-        </div>
-      </div>
-    );
-  }
   const stats = [
     { header: 'Number of Series', value: numSeries },
     { header: 'Number of Chunks', value: chunkCount },
