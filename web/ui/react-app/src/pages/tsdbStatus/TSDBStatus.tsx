@@ -37,6 +37,19 @@ export const TSDBStatusContent: FC<TSDBMap> = ({
 }) => {
   const unixToTime = (unix: number): string => new Date(unix).toISOString();
   const { chunkCount, numSeries, numLabelPairs, minTime, maxTime } = headStats;
+  if (numSeries < 1) {
+    return (
+      <div>
+        <h2>TSDB Status</h2>
+        <div className="text-center">
+          <h1>No TSDB statistics available yet</h1>
+          <h4>
+            If this is prolonged, try updating your <a href="/config">config</a>
+          </h4>
+        </div>
+      </div>
+    );
+  }
   const stats = [
     { header: 'Number of Series', value: numSeries },
     { header: 'Number of Chunks', value: chunkCount },
