@@ -459,7 +459,7 @@ func (h *Head) processWALSamples(
 					continue
 				}
 				if len(ms.ms.mmappedChunks) == 0 {
-					ms.minTime = -1
+					ms.minTime = math.MinInt64
 				} else {
 					ms.minTime = ms.ms.mmappedChunks[len(ms.ms.mmappedChunks)-1].maxTime
 				}
