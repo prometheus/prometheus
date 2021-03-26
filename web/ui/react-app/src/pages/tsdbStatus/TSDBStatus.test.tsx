@@ -51,6 +51,26 @@ const fakeTSDBStatusResponse: {
   },
 };
 
+const fakeEmptyTSDBStatusResponse: {
+  status: string;
+  data: TSDBMap;
+} = {
+  status: 'success',
+  data: {
+    headStats: {
+      numSeries: 0,
+      numLabelPairs: 0,
+      chunkCount: 0,
+      minTime: 9223372036854776000,
+      maxTime: -9223372036854776000,
+    },
+    labelValueCountByLabelName: [],
+    seriesCountByMetricName: [],
+    memoryInBytesByLabelName: [],
+    seriesCountByLabelValuePair: [],
+  },
+};
+
 describe('TSDB Stats', () => {
   beforeEach(() => {
     fetchMock.resetMocks();
@@ -110,5 +130,36 @@ describe('TSDB Stats', () => {
         }
       }
     });
+  });
+
+  it('No Data', async () => {
+    const mock = fetchMock.mockResponse(JSON.stringify(fakeEmptyTSDBStatusResponse));
+    let page: any;
+    await act(async () => {
+      page = mount(
+        <PathPrefixContext.Provider value="/path/prefix">
+          <TSDBStatus />
+        </PathPrefixContext.Provider>
+      );
+    });
+    page.update();
+
+    expect(mock).toHaveBeenCalledWith('/path/prefix/api/v1/status/tsdb', {
+      cache: 'no-store',
+      credentials: 'same-origin',
+    });
+
+    expect(page.find('h2').text()).toEqual('TSDB Status');
+
+    const headStats = page
+      .find(Table)
+      .at(0)
+      .find('tbody')
+      .find('td');
+    ['0', '0', '0', 'Error parsing time (9223372036854776000)', 'Error parsing time (-9223372036854776000)'].forEach(
+      (value, i) => {
+        expect(headStats.at(i).text()).toEqual(value);
+      }
+    );
   });
 });

@@ -35,7 +35,13 @@ export const TSDBStatusContent: FC<TSDBMap> = ({
   memoryInBytesByLabelName,
   seriesCountByLabelValuePair,
 }) => {
-  const unixToTime = (unix: number): string => new Date(unix).toISOString();
+  const unixToTime = (unix: number): string => {
+    try {
+      return new Date(unix).toISOString();
+    } catch {
+      return 'Error parsing time';
+    }
+  };
   const { chunkCount, numSeries, numLabelPairs, minTime, maxTime } = headStats;
   const stats = [
     { header: 'Number of Series', value: numSeries },
