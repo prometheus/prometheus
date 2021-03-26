@@ -8,19 +8,21 @@ Note that from this release Prometheus is using Alertmanager v2 by default.
 * [CHANGE] Prometheus/Promtool: As agreed on dev summit, binaries are now printing help and usage to stdout instead of stderr. #8542
 * [FEATURE] Remote: Add support for AWS SigV4 auth method for remote_write. #8509
 * [FEATURE] Scaleway Discovery: Add Scaleway Service Discovery. #8555
-* [FEATURE] PromQL: Allow negative offsets. Behind `--enable-feature=promql-negative-offset` flag. #8555
+* [FEATURE] PromQL: Allow negative offsets. Behind `--enable-feature=promql-negative-offset` flag. #8487
 * [FEATURE] **experimental** Exemplars: Add in-memory storage for exemplars. Behind `--enable-feature=exemplar-storage` flag. #6635
 * [FEATURE] UI: Add advanced auto-completion, syntax highlighting and linting to graph page query input. #8634
 * [ENHANCEMENT] Digital Ocean Discovery: Add `__meta_digitalocean_image` label. #8497
-* [ENHANCEMENT] Remote: Allow configuring retries on rate-limiting for remote_write. See [configuration docs](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_write) for details. #8477
+* [ENHANCEMENT] PromQL: Add `last_over_time`, `sgn`, `clamp` functions. #8457
 * [ENHANCEMENT] Scrape: Add support for specifying type of Authorization header credentials with Bearer by default. #8512
-* [ENHANCEMENT] Remote: Allow configuring custom headers for remote_read. See [configuration docs](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_read) for details. #8516
 * [ENHANCEMENT] Scrape: Add `follow_redirects` option to scrape configuration. #8546
+* [ENHANCEMENT] Remote: Allow retries on HTTP 429 response code for remote_write. Disabled by default. See [configuration docs](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_write) for details. #8237 #8477
+* [ENHANCEMENT] Remote: Allow configuring custom headers for remote_read. See [configuration docs](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_read) for details. #8516
 * [ENHANCEMENT] UI: Hitting Enter now triggers new query. #8581
-* [ENHANCEMENT] UI: Better handling of long rule names on `/rules` page. #8608
-* [ENHANCEMENT] UI: Better handling of long labels names on `/targets` page. #8609
+* [ENHANCEMENT] UI: Better handling of long rule and names on the `/rules` and `/targets` pages. #8608 #8609
+* [ENHANCEMENT] UI: Add collapse/expand all button on the `/targets` page. #8486
 * [BUGFIX] TSDB: Eager deletion of removable blocks on every compaction, saving disk peak space usage. #8007
 * [BUGFIX] PromQL: Fix parser support for special characters like`炬`. #8517
+* [BUGFIX] Rules: Update rule health for append/commit fails. #8619
 
 ## 2.25.2 / 2021-03-16
 
