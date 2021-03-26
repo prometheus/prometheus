@@ -43,7 +43,7 @@ import (
 	"gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/discovery/file"
+	fileSD "github.com/prometheus/prometheus/discovery/file"
 	_ "github.com/prometheus/prometheus/discovery/install" // Register service discovery implementations.
 	"github.com/prometheus/prometheus/discovery/kubernetes"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
@@ -379,7 +379,7 @@ func checkConfig(file string, isFileName bool) ([]string, error) {
 				if err := checkTLSConfig(c.HTTPClientConfig.TLSConfig); err != nil {
 					return nil, err
 				}
-			case *file.SDConfig:
+			case *fileSD.SDConfig:
 				for _, file := range c.Files {
 					files, err := filepath.Glob(file)
 					if err != nil {
