@@ -1136,6 +1136,18 @@ var expectedErrors = []struct {
 		filename: "eureka_invalid_server.bad.yml",
 		errMsg:   "invalid eureka server URL",
 	},
+	{
+		filename: "scaleway_role.bad.yml",
+		errMsg:   `unknown role "invalid"`,
+	},
+	{
+		filename: "scaleway_no_secret.bad.yml",
+		errMsg:   "one of secret_key & secret_key_file must be configured",
+	},
+	{
+		filename: "scaleway_two_secrets.bad.yml",
+		errMsg:   "at most one of secret_key & secret_key_file must be configured",
+	},
 }
 
 func TestBadConfigs(t *testing.T) {

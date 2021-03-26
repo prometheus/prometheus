@@ -76,7 +76,7 @@ func newInstanceDiscovery(conf *SDConfig) (*instanceDiscovery, error) {
 		zone:       conf.Zone,
 		project:    conf.Project,
 		accessKey:  conf.AccessKey,
-		secretKey:  string(conf.SecretKey),
+		secretKey:  conf.secretKeyForConfig(),
 		nameFilter: conf.NameFilter,
 		tagsFilter: conf.TagsFilter,
 	}
@@ -84,6 +84,13 @@ func newInstanceDiscovery(conf *SDConfig) (*instanceDiscovery, error) {
 	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "scaleway_sd", false, false)
 	if err != nil {
 		return nil, err
+	}
+
+	if conf.SecretKeyFile != "" {
+		rt, err = newAuthTokenFileRoundTripper(conf.SecretKeyFile, rt)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	profile, err := loadProfile(conf)

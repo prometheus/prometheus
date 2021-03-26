@@ -1589,7 +1589,12 @@ See below for the configuration options for Scaleway discovery:
 access_key: <string>
 
 # Secret key to use when listing targets. https://console.scaleway.com/project/credentials
-secret_key: <secret>
+# It is mutually exclusive with `secret_key_file`.
+[ secret_key: <secret> ]
+
+# Sets the secret key with the credentials read from the configured file.
+# It is mutually exclusive with `secret_key`.
+[ secret_key_file: <filename> ]
 
 # Project ID of the targets.
 project_id: <string>
