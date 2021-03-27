@@ -63,19 +63,23 @@ const (
 )
 
 const (
-        lightsailLabel = model.MetaLabelPrefix + "lightsail_"
-        lightsailLabelAZ = lightsailLabel + "availability_zone"
-        lightsailLabelInstanceID = lightsailLabel + "instance_id"
-        lightsailLabelInstanceState = lightsailLabel + "instance_state"
-        lightsailLabelInstanceType  = lightsailLabel + "instance_type"
-        lightsailLabelPrivateIP = lightsailLabel + "private_ip"
-        lightsailLabelSeparator = ","
+	lightsailLabel                    = model.MetaLabelPrefix + "lightsail_"
+	lightsailLabelAZ                  = lightsailLabel + "availability_zone"
+	lightsailLabelBlueprintID         = lightsailLabel + "blueprint_id"
+	lightsailLabelBundleID            = lightsailLabel + "bundle_id"
+	lightsailLabelInstanceSupportCode = lightsailLabel + "instance_support_code"
+	lightsailLabelInstanceState       = lightsailLabel + "instance_state"
+	lightsailLabelInstanceName        = lightsailLabel + "instance_name"
+	lightsailLabelIPv6Addresses       = lightsailLabel + "ipv6_addresses"
+	lightsailLabelPrivateIP           = lightsailLabel + "private_ip"
+	lightsailLabelPublicIP            = lightsailLabel + "public_ip"
+	lightsailLabelTag                 = lightsailLabel + "tag_"
+	lightsailLabelSeparator           = ","
 )
-
 
 var (
 	// Ec2DefaultSDConfig is the default EC2 SD configuration.
-	Ec2DefaultSDConfig = Ec2SDConfig{
+	Ec2DefaultSDConfig = EC2SDConfig{
 		Port:            80,
 		RefreshInterval: model.Duration(60 * time.Second),
 	}
@@ -88,7 +92,7 @@ var (
 )
 
 func init() {
-	discovery.RegisterConfig(&Ec2SDConfig{})
+	discovery.RegisterConfig(&EC2SDConfig{})
 	discovery.RegisterConfig(&LightsailSDConfig{})
 }
 
@@ -98,8 +102,8 @@ type Filter struct {
 	Values []string `yaml:"values"`
 }
 
-// SDConfig is the configuration for EC2 based service discovery.
-type Ec2SDConfig struct {
+// EC2SDConfig is the configuration for EC2 based service discovery.
+type EC2SDConfig struct {
 	Endpoint        string         `yaml:"endpoint"`
 	Region          string         `yaml:"region"`
 	AccessKey       string         `yaml:"access_key,omitempty"`
@@ -111,6 +115,7 @@ type Ec2SDConfig struct {
 	Filters         []*Filter      `yaml:"filters"`
 }
 
+// LightsailSDConfig is the configuration for EC2 based service discovery.
 type LightsailSDConfig struct {
 	Endpoint        string         `yaml:"endpoint"`
 	Region          string         `yaml:"region"`
@@ -124,14 +129,14 @@ type LightsailSDConfig struct {
 }
 
 // Name returns the name of the EC2 Config.
-func (*Ec2SDConfig) Name() string { return "ec2" }
+func (*EC2SDConfig) Name() string { return "ec2" }
 
 // Name returns the name of the Lightsail Config.
 func (*LightsailSDConfig) Name() string { return "lightsail" }
 
 // NewDiscoverer returns a Discoverer for the EC2 Config.
-func (c *Ec2SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewEc2Discovery(c, opts.Logger), nil
+func (c *EC2SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
+	return NewEC2Discovery(c, opts.Logger), nil
 }
 
 // NewDiscoverer returns a Discoverer for the Lightsail Config.
@@ -140,9 +145,9 @@ func (c *LightsailSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (dis
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *Ec2SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *EC2SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*c = Ec2DefaultSDConfig
-	type plain Ec2SDConfig
+	type plain EC2SDConfig
 	err := unmarshal((*plain)(c))
 	if err != nil {
 		return err
@@ -170,7 +175,7 @@ func (c *Ec2SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (c *LightsailSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*c = LightsailDefaultSDConfig
-	type plain Ec2SDConfig
+	type plain EC2SDConfig
 	err := unmarshal((*plain)(c))
 	if err != nil {
 		return err
@@ -183,23 +188,25 @@ func (c *LightsailSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 		metadata := ec2metadata.New(sess)
 		region, err := metadata.Region()
 		if err != nil {
-			return errors.New("EC2 SD configuration requires a region")
+			return errors.New("Lightsail SD configuration requires a region")
 		}
 		c.Region = region
 	}
-	for _, f := range c.Filters {
-		if len(f.Values) == 0 {
-			return errors.New("EC2 SD configuration filter values cannot be empty")
-		}
-	}
+
+	// lightsail.GetInstancesInput does not accept a filter
+	//for _, f := range c.Filters {
+	//	if len(f.Values) == 0 {
+	//		return errors.New("Lightsail SD configuration filter values cannot be empty")
+	//	}
+	//}
 	return nil
 }
 
 // Discovery periodically performs EC2-SD requests. It implements
 // the Discoverer interface.
-type Ec2Discovery struct {
+type EC2Discovery struct {
 	*refresh.Discovery
-	cfg *Ec2SDConfig
+	cfg *EC2SDConfig
 	ec2 *ec2.EC2
 }
 
@@ -207,16 +214,16 @@ type Ec2Discovery struct {
 // the Discoverer interface.
 type LightsailDiscovery struct {
 	*refresh.Discovery
-	cfg *LightsailSDConfig
+	cfg       *LightsailSDConfig
 	lightsail *lightsail.Lightsail
 }
 
-// NewEc2Discovery returns a new EC2Discovery which periodically refreshes its targets.
-func NewEc2Discovery(conf *Ec2SDConfig, logger log.Logger) *Ec2Discovery {
+// NewEC2Discovery returns a new EC2Discovery which periodically refreshes its targets.
+func NewEC2Discovery(conf *EC2SDConfig, logger log.Logger) *EC2Discovery {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
-	d := &Ec2Discovery{
+	d := &EC2Discovery{
 		cfg: conf,
 	}
 	d.Discovery = refresh.NewDiscovery(
@@ -245,8 +252,8 @@ func NewLightsailDiscovery(conf *LightsailSDConfig, logger log.Logger) *Lightsai
 	return d
 }
 
-func (d *Ec2Discovery) ec2Client() (*ec2.EC2, error) {
-	if d.ec2 != nil  {
+func (d *EC2Discovery) ec2Client() (*ec2.EC2, error) {
+	if d.ec2 != nil {
 		return d.ec2, nil
 	}
 
@@ -304,8 +311,7 @@ func (d *LightsailDiscovery) lightsailClient() (*lightsail.Lightsail, error) {
 	return d.lightsail, nil
 }
 
-
-func (d *Ec2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
+func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	ec2Client, err := d.ec2Client()
 	if err != nil {
 		return nil, err
@@ -423,7 +429,6 @@ func (d *Ec2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 
 func (d *LightsailDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	lightsailClient, err := d.lightsailClient()
-
 	if err != nil {
 		return nil, err
 	}
@@ -432,18 +437,59 @@ func (d *LightsailDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 		Source: d.cfg.Region,
 	}
 
-	srvs, err := lightsailClient.GetInstances(nil)
+	input := &lightsail.GetInstancesInput{}
+
+	srvs, err := lightsailClient.GetInstancesWithContext(ctx, input)
+	if err != nil {
+		if awsErr, ok := err.(awserr.Error); ok && (awsErr.Code() == "AuthFailure" || awsErr.Code() == "UnauthorizedOperation") {
+			d.lightsail = nil
+		}
+		return nil, errors.Wrap(err, "could not describe instances")
+	}
 
 	for _, inst := range srvs.Instances {
-		labels := model.LabelSet{
-			lightsailLabelInstanceID: model.LabelValue(*inst.SupportCode),
+		if inst.PrivateIpAddress == nil {
+			continue
 		}
-		labels[lightsailLabelPrivateIP] = model.LabelValue(*inst.PrivateIpAddress)
 
-		labels[model.AddressLabel] = model.LabelValue(*inst.PrivateIpAddress)
+		labels := model.LabelSet{
+			lightsailLabelInstanceSupportCode: model.LabelValue(*inst.SupportCode),
+		}
+
+		labels[lightsailLabelPrivateIP] = model.LabelValue(*inst.PrivateIpAddress)
+		addr := net.JoinHostPort(*inst.PrivateIpAddress, fmt.Sprintf("%d", d.cfg.Port))
+		labels[model.AddressLabel] = model.LabelValue(addr)
+
+		if inst.PublicIpAddress != nil {
+			labels[lightsailLabelPublicIP] = model.LabelValue(*inst.PublicIpAddress)
+		}
+
+		if len(inst.Ipv6Addresses) > 0 {
+			var ipv6addrs []string
+			for _, ipv6addr := range inst.Ipv6Addresses {
+				ipv6addrs = append(ipv6addrs, *ipv6addr)
+			}
+			labels[lightsailLabelIPv6Addresses] = model.LabelValue(
+				lightsailLabelSeparator +
+					strings.Join(ipv6addrs, lightsailLabelSeparator) +
+					lightsailLabelSeparator)
+		}
+
+		labels[lightsailLabelAZ] = model.LabelValue(*inst.Location.AvailabilityZone)
+		labels[lightsailLabelBlueprintID] = model.LabelValue(*inst.BlueprintId)
+		labels[lightsailLabelBundleID] = model.LabelValue(*inst.BundleId)
+		labels[lightsailLabelInstanceName] = model.LabelValue(*inst.Name)
+		labels[lightsailLabelInstanceState] = model.LabelValue(*inst.State.Name)
+
+		for _, t := range inst.Tags {
+			if t == nil || t.Key == nil || t.Value == nil {
+				continue
+			}
+			name := strutil.SanitizeLabelName(*t.Key)
+			labels[lightsailLabelTag+model.LabelName(name)] = model.LabelValue(*t.Value)
+		}
 
 		tg.Targets = append(tg.Targets, labels)
 	}
-
 	return []*targetgroup.Group{tg}, nil
 }
