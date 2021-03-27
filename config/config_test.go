@@ -645,6 +645,27 @@ var expectedConf = &Config{
 			},
 		},
 		{
+			JobName: "docker",
+
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
+
+			ServiceDiscoveryConfigs: discovery.Configs{
+				&dockerswarm.DockerSDConfig{
+					Filters:          []dockerswarm.Filter{},
+					Host:             "unix:///var/run/docker.sock",
+					Port:             80,
+					RefreshInterval:  model.Duration(60 * time.Second),
+					HTTPClientConfig: config.DefaultHTTPClientConfig,
+				},
+			},
+		},
+		{
 			JobName: "dockerswarm",
 
 			HonorTimestamps: true,
