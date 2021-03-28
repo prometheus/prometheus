@@ -37,9 +37,12 @@ export const TSDBStatusContent: FC<TSDBMap> = ({
 }) => {
   const unixToTime = (unix: number): string => {
     try {
-      return new Date(unix).toISOString();
+      return `${new Date(unix).toISOString()} (${unix})`;
     } catch {
-      return 'Error parsing time';
+      if (numSeries === 0) {
+        return 'No datapoints yet';
+      }
+      return `Error parsing time (${unix})`;
     }
   };
   const { chunkCount, numSeries, numLabelPairs, minTime, maxTime } = headStats;
@@ -47,8 +50,8 @@ export const TSDBStatusContent: FC<TSDBMap> = ({
     { header: 'Number of Series', value: numSeries },
     { header: 'Number of Chunks', value: chunkCount },
     { header: 'Number of Label Pairs', value: numLabelPairs },
-    { header: 'Current Min Time', value: `${unixToTime(minTime)} (${minTime})` },
-    { header: 'Current Max Time', value: `${unixToTime(maxTime)} (${maxTime})` },
+    { header: 'Current Min Time', value: `${unixToTime(minTime)}` },
+    { header: 'Current Max Time', value: `${unixToTime(maxTime)}` },
   ];
   return (
     <div>
