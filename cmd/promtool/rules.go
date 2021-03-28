@@ -57,6 +57,7 @@ type ruleImporterConfig struct {
 // newRuleImporter creates a new rule importer that can be used to parse and evaluate recording rule files and create new series
 // written to disk in blocks.
 func newRuleImporter(logger log.Logger, config ruleImporterConfig, apiClient queryRangeAPI) *ruleImporter {
+	level.Info(logger).Log("backfiller", "new rule importer from start", config.start.Format(time.RFC822), " to end", config.end.Format(time.RFC822))
 	return &ruleImporter{
 		logger:      logger,
 		config:      config,
@@ -127,8 +128,11 @@ func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName
 		if err != nil {
 			return errors.Wrap(err, "new block writer")
 		}
+		var closed bool
 		defer func() {
-			err = tsdb_errors.NewMulti(err, w.Close()).Err()
+			if !closed {
+				err = tsdb_errors.NewMulti(err, w.Close()).Err()
+			}
 		}()
 		app := newMultipleAppender(ctx, w)
 		var matrix model.Matrix
@@ -160,6 +164,8 @@ func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName
 		default:
 			return errors.New(fmt.Sprintf("rule result is wrong type %s", val.Type().String()))
 		}
+		err = tsdb_errors.NewMulti(err, w.Close()).Err()
+		closed = true
 
 		if err := app.flushAndCommit(ctx); err != nil {
 			return errors.Wrap(err, "flush and commit")
