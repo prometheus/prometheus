@@ -164,12 +164,12 @@ func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName
 		default:
 			return errors.New(fmt.Sprintf("rule result is wrong type %s", val.Type().String()))
 		}
-		err = tsdb_errors.NewMulti(err, w.Close()).Err()
-		closed = true
 
 		if err := app.flushAndCommit(ctx); err != nil {
 			return errors.Wrap(err, "flush and commit")
 		}
+		err = tsdb_errors.NewMulti(err, w.Close()).Err()
+		closed = true
 	}
 
 	return err
