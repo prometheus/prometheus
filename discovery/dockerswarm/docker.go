@@ -234,7 +234,7 @@ func (d *DockerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 			if !added {
 				// Use fallback port when no exposed ports are available or if all are non-TCP
 				labels := model.LabelSet{
-					dockerLabelNetworkIP:   model.LabelValue(n.IPAddress),
+					dockerLabelNetworkIP: model.LabelValue(n.IPAddress),
 				}
 
 				for k, v := range commonLabels {
