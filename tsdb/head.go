@@ -53,12 +53,22 @@ var (
 	// ErrAppenderClosed is returned if an appender has already be successfully
 	// rolled back or committed.
 	ErrAppenderClosed = errors.New("appender closed")
+
+	WalReplayStatus walReplayStatus
 )
 
 type ExemplarStorage interface {
 	storage.ExemplarQueryable
 	AddExemplar(labels.Labels, exemplar.Exemplar) error
 	ValidateExemplar(labels.Labels, exemplar.Exemplar) error
+}
+
+type walReplayStatus struct {
+	First   int
+	Last    int
+	Read    int
+	Started bool
+	Done    bool
 }
 
 // Head handles reads and writes of time series data within a time window.
@@ -795,6 +805,10 @@ func (h *Head) Init(minValidTime int64) error {
 		return errors.Wrap(err, "finding WAL segments")
 	}
 
+	WalReplayStatus.Started = true
+	WalReplayStatus.First = startFrom + 1
+	WalReplayStatus.Last = last + 1
+
 	// Backfill segments from the most recent checkpoint onwards.
 	for i := startFrom; i <= last; i++ {
 		s, err := wal.OpenReadSegment(wal.SegmentName(h.wal.Dir(), i))
@@ -811,6 +825,7 @@ func (h *Head) Init(minValidTime int64) error {
 			return err
 		}
 		level.Info(h.logger).Log("msg", "WAL segment loaded", "segment", i, "maxSegment", last)
+		WalReplayStatus.Read = i + 1
 	}
 
 	walReplayDuration := time.Since(start)
@@ -821,6 +836,7 @@ func (h *Head) Init(minValidTime int64) error {
 		"wal_replay_duration", time.Since(walReplayStart).String(),
 		"total_replay_duration", walReplayDuration.String(),
 	)
+	WalReplayStatus.Done = true
 
 	return nil
 }

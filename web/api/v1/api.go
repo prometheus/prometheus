@@ -309,6 +309,7 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/status/buildinfo", wrap(api.serveBuildInfo))
 	r.Get("/status/flags", wrap(api.serveFlags))
 	r.Get("/status/tsdb", wrap(api.serveTSDBStatus))
+	r.Get("/status/walreplay", api.serveWalReplayStatus)
 	r.Post("/read", api.ready(http.HandlerFunc(api.remoteRead)))
 	r.Post("/write", api.ready(http.HandlerFunc(api.remoteWrite)))
 
@@ -1349,6 +1350,25 @@ func (api *API) serveTSDBStatus(*http.Request) apiFuncResult {
 		MemoryInBytesByLabelName:    convertStats(s.IndexPostingStats.LabelValueStats),
 		SeriesCountByLabelValuePair: convertStats(s.IndexPostingStats.LabelValuePairsStats),
 	}, nil, nil, nil}
+}
+
+type walReplayStatus struct {
+	First   int  `json:"first"`
+	Last    int  `json:"last"`
+	Read    int  `json:"read"`
+	Started bool `json:"started"`
+	Done    bool `json:"done"`
+}
+
+func (api *API) serveWalReplayStatus(w http.ResponseWriter, r *http.Request) {
+	httputil.SetCORS(w, api.CORSOrigin, r)
+	api.respond(w, walReplayStatus{
+		First:   tsdb.WalReplayStatus.First,
+		Last:    tsdb.WalReplayStatus.Last,
+		Read:    tsdb.WalReplayStatus.Read,
+		Started: tsdb.WalReplayStatus.Started,
+		Done:    tsdb.WalReplayStatus.Done,
+	}, nil)
 }
 
 func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
