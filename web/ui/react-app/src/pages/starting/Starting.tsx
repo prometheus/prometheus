@@ -23,8 +23,8 @@ export const StartingContent: FC<StartingContentProps> = ({ status, isUnexpected
     <div className="text-center m-3">
       <div className="m-4">
         <h2>Starting up...</h2>
-        {status?.started ? (
-          <div className="mx-5">
+        {status?.started && !status?.done ? (
+          <div>
             <p>
               Replaying WAL ({status?.read - status?.first}/{status?.last - status?.first})
             </p>
@@ -33,6 +33,7 @@ export const StartingContent: FC<StartingContentProps> = ({ status, isUnexpected
               max={status?.last - status?.first}
               value={status?.read - status?.first}
               color={status?.done ? 'success' : undefined}
+              style={{ width: '60%', margin: 'auto' }}
             />
           </div>
         ) : null}

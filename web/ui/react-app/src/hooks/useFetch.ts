@@ -94,7 +94,7 @@ export const useFetchReady = (pathPrefix: string, options?: RequestInit): FetchS
 export const useFetchReadyInterval = (pathPrefix: string, options?: RequestInit): FetchStateReadyInterval => {
   const [ready, setReady] = useState<boolean>(false);
   const [isUnexpected, setIsUnexpected] = useState<boolean>(false);
-  const [walReplayStatus, setWalReplayStatus] = useState<WALReplayStatus>({} as any);
+  const [walReplayStatus, setWALReplayStatus] = useState<WALReplayStatus>({} as any);
 
   useEffect(() => {
     const interval = setInterval(async () => {
@@ -107,17 +107,19 @@ export const useFetchReadyInterval = (pathPrefix: string, options?: RequestInit)
         }
         if (res.status !== 503) {
           setIsUnexpected(true);
+          setWALReplayStatus({ data: { last: 0, first: 0 } } as any);
         } else {
           setIsUnexpected(false);
 
           res = await fetch(`${pathPrefix}/${API_PATH}/status/walreplay`, { cache: 'no-store', credentials: 'same-origin' });
           if (res.ok) {
             const data = (await res.json()) as WALReplayStatus;
-            setWalReplayStatus(data);
+            setWALReplayStatus(data);
           }
         }
       } catch (error) {
         setIsUnexpected(true);
+        setWALReplayStatus({ data: { last: 0, first: 0 } } as any);
       }
     }, 1000);
 
