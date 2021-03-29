@@ -56,6 +56,9 @@ scrape_configs:
     - authorization:
         credentials: <secret>
 
+  docker_sd_configs:
+  - host: unix:///var/run/docker.sock
+
   dockerswarm_sd_configs:
   - host: http://127.0.0.1:2375
     role: nodes
