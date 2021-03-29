@@ -15,7 +15,7 @@ export interface FetchStateReady {
   isLoading: boolean;
 }
 
-export type WalReplayData = {
+export type WALReplayData = {
   first: number;
   last: number;
   read: number;
@@ -23,14 +23,14 @@ export type WalReplayData = {
   done: boolean;
 };
 
-export type WalReplayStatus = {
-  data?: WalReplayData;
+export type WALReplayStatus = {
+  data?: WALReplayData;
 };
 
 export interface FetchStateReadyInterval {
   ready: boolean;
   isResponding: boolean;
-  walReplayStatus: WalReplayStatus;
+  walReplayStatus: WALReplayStatus;
 }
 
 export const useFetch = <T extends {}>(url: string, options?: RequestInit): FetchState<T> => {
@@ -92,7 +92,7 @@ export const useFetchReady = (pathPrefix: string, options?: RequestInit): FetchS
 export const useFetchReadyInterval = (pathPrefix: string, options?: RequestInit): FetchStateReadyInterval => {
   const [ready, setReady] = useState<boolean>(false);
   const [isResponding, setIsResponding] = useState<boolean>(true);
-  const [walReplayStatus, setWalReplayStatus] = useState<WalReplayStatus>({} as any);
+  const [walReplayStatus, setWalReplayStatus] = useState<WALReplayStatus>({} as any);
 
   useEffect(() => {
     const interval = setInterval(async () => {
@@ -110,7 +110,7 @@ export const useFetchReadyInterval = (pathPrefix: string, options?: RequestInit)
 
           res = await fetch(`${pathPrefix}/${API_PATH}/status/walreplay`, { cache: 'no-store', credentials: 'same-origin' });
           if (res.ok) {
-            const data = (await res.json()) as WalReplayStatus;
+            const data = (await res.json()) as WALReplayStatus;
             setWalReplayStatus(data);
           }
         }

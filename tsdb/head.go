@@ -54,7 +54,7 @@ var (
 	// rolled back or committed.
 	ErrAppenderClosed = errors.New("appender closed")
 
-	WalReplayStatus walReplayStatus
+	WALReplayStatus walReplayStatus
 )
 
 type ExemplarStorage interface {
@@ -805,9 +805,9 @@ func (h *Head) Init(minValidTime int64) error {
 		return errors.Wrap(err, "finding WAL segments")
 	}
 
-	WalReplayStatus.Started = true
-	WalReplayStatus.First = startFrom + 1
-	WalReplayStatus.Last = last + 1
+	WALReplayStatus.Started = true
+	WALReplayStatus.First = startFrom + 1
+	WALReplayStatus.Last = last + 1
 
 	// Backfill segments from the most recent checkpoint onwards.
 	for i := startFrom; i <= last; i++ {
@@ -825,7 +825,7 @@ func (h *Head) Init(minValidTime int64) error {
 			return err
 		}
 		level.Info(h.logger).Log("msg", "WAL segment loaded", "segment", i, "maxSegment", last)
-		WalReplayStatus.Read = i + 1
+		WALReplayStatus.Read = i + 1
 	}
 
 	walReplayDuration := time.Since(start)
@@ -836,7 +836,7 @@ func (h *Head) Init(minValidTime int64) error {
 		"wal_replay_duration", time.Since(walReplayStart).String(),
 		"total_replay_duration", walReplayDuration.String(),
 	)
-	WalReplayStatus.Done = true
+	WALReplayStatus.Done = true
 
 	return nil
 }

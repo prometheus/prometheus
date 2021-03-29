@@ -309,7 +309,7 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/status/buildinfo", wrap(api.serveBuildInfo))
 	r.Get("/status/flags", wrap(api.serveFlags))
 	r.Get("/status/tsdb", wrap(api.serveTSDBStatus))
-	r.Get("/status/walreplay", api.serveWalReplayStatus)
+	r.Get("/status/walreplay", api.serveWALReplayStatus)
 	r.Post("/read", api.ready(http.HandlerFunc(api.remoteRead)))
 	r.Post("/write", api.ready(http.HandlerFunc(api.remoteWrite)))
 
@@ -1360,14 +1360,14 @@ type walReplayStatus struct {
 	Done    bool `json:"done"`
 }
 
-func (api *API) serveWalReplayStatus(w http.ResponseWriter, r *http.Request) {
+func (api *API) serveWALReplayStatus(w http.ResponseWriter, r *http.Request) {
 	httputil.SetCORS(w, api.CORSOrigin, r)
 	api.respond(w, walReplayStatus{
-		First:   tsdb.WalReplayStatus.First,
-		Last:    tsdb.WalReplayStatus.Last,
-		Read:    tsdb.WalReplayStatus.Read,
-		Started: tsdb.WalReplayStatus.Started,
-		Done:    tsdb.WalReplayStatus.Done,
+		First:   tsdb.WALReplayStatus.First,
+		Last:    tsdb.WALReplayStatus.Last,
+		Read:    tsdb.WALReplayStatus.Read,
+		Started: tsdb.WALReplayStatus.Started,
+		Done:    tsdb.WALReplayStatus.Done,
 	}, nil)
 }
 

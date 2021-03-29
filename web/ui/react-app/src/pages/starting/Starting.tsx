@@ -3,12 +3,12 @@ import { RouteComponentProps, navigate } from '@reach/router';
 import { Progress, Alert } from 'reactstrap';
 import Logo from './Logo';
 
-import { useFetchReadyInterval, WalReplayData } from '../../hooks/useFetch';
+import { useFetchReadyInterval, WALReplayData } from '../../hooks/useFetch';
 import { usePathPrefix } from '../../contexts/PathPrefixContext';
 
 interface StartingContentProps {
   isResponding: boolean;
-  status?: WalReplayData;
+  status?: WALReplayData;
 }
 
 export const StartingContent: FC<StartingContentProps> = ({ status, isResponding }) => {
@@ -25,10 +25,10 @@ export const StartingContent: FC<StartingContentProps> = ({ status, isResponding
       <Logo height="400" />
       <div className="m-4">
         <h2>Starting up...</h2>
-        {status?.started && !status?.done ? (
+        {status?.started ? (
           <div className="mx-5">
             <p>
-              Replaying Wal ({status?.read - status?.first}/{status?.last - status?.first})
+              Replaying WAL ({status?.read - status?.first}/{status?.last - status?.first})
             </p>
             <Progress
               animated
