@@ -216,6 +216,8 @@ type Rule interface {
 	Eval(context.Context, time.Time, QueryFunc, *url.URL) (promql.Vector, error)
 	// String returns a human-readable string representation of the rule.
 	String() string
+	// Query returns the rule query expression.
+	Query() parser.Expr
 	// SetLastErr sets the current error experienced by the rule.
 	SetLastError(error)
 	// LastErr returns the last error experienced by the rule.
@@ -278,7 +280,7 @@ func NewGroup(o GroupOptions) *Group {
 		metrics = NewGroupMetrics(o.Opts.Registerer)
 	}
 
-	key := groupKey(o.File, o.Name)
+	key := GroupKey(o.File, o.Name)
 	metrics.iterationsMissed.WithLabelValues(key)
 	metrics.iterationsScheduled.WithLabelValues(key)
 	metrics.evalTotal.WithLabelValues(key)
@@ -321,7 +323,7 @@ func (g *Group) run(ctx context.Context) {
 	defer close(g.terminated)
 
 	// Wait an initial amount to have consistently slotted intervals.
-	evalTimestamp := g.evalTimestamp().Add(g.interval)
+	evalTimestamp := g.EvalTimestamp(time.Now().UnixNano()).Add(g.interval)
 	select {
 	case <-time.After(time.Until(evalTimestamp)):
 	case <-g.done:
@@ -336,7 +338,7 @@ func (g *Group) run(ctx context.Context) {
 	})
 
 	iter := func() {
-		g.metrics.iterationsScheduled.WithLabelValues(groupKey(g.file, g.name)).Inc()
+		g.metrics.iterationsScheduled.WithLabelValues(GroupKey(g.file, g.name)).Inc()
 
 		start := time.Now()
 		g.Eval(ctx, evalTimestamp)
@@ -388,8 +390,8 @@ func (g *Group) run(ctx context.Context) {
 		case <-tick.C:
 			missed := (time.Since(evalTimestamp) / g.interval) - 1
 			if missed > 0 {
-				g.metrics.iterationsMissed.WithLabelValues(groupKey(g.file, g.name)).Add(float64(missed))
-				g.metrics.iterationsScheduled.WithLabelValues(groupKey(g.file, g.name)).Add(float64(missed))
+				g.metrics.iterationsMissed.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(missed))
+				g.metrics.iterationsScheduled.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(missed))
 			}
 			evalTimestamp = evalTimestamp.Add((missed + 1) * g.interval)
 			iter()
@@ -410,8 +412,8 @@ func (g *Group) run(ctx context.Context) {
 			case <-tick.C:
 				missed := (time.Since(evalTimestamp) / g.interval) - 1
 				if missed > 0 {
-					g.metrics.iterationsMissed.WithLabelValues(groupKey(g.file, g.name)).Add(float64(missed))
-					g.metrics.iterationsScheduled.WithLabelValues(groupKey(g.file, g.name)).Add(float64(missed))
+					g.metrics.iterationsMissed.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(missed))
+					g.metrics.iterationsScheduled.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(missed))
 				}
 				evalTimestamp = evalTimestamp.Add((missed + 1) * g.interval)
 				iter()
@@ -474,7 +476,7 @@ func (g *Group) GetEvaluationTime() time.Duration {
 
 // setEvaluationTime sets the time in seconds the last evaluation took.
 func (g *Group) setEvaluationTime(dur time.Duration) {
-	g.metrics.groupLastDuration.WithLabelValues(groupKey(g.file, g.name)).Set(dur.Seconds())
+	g.metrics.groupLastDuration.WithLabelValues(GroupKey(g.file, g.name)).Set(dur.Seconds())
 
 	g.mtx.Lock()
 	defer g.mtx.Unlock()
@@ -488,21 +490,20 @@ func (g *Group) GetLastEvaluation() time.Time {
 	return g.lastEvaluation
 }
 
-// setLastEvaluation updates lastEvaluation to the timestamp of when the rule group was last evaluated.
+// setLastEvaluation updates evaluationTimestamp to the timestamp of when the rule group was last evaluated.
 func (g *Group) setLastEvaluation(ts time.Time) {
-	g.metrics.groupLastEvalTime.WithLabelValues(groupKey(g.file, g.name)).Set(float64(ts.UnixNano()) / 1e9)
+	g.metrics.groupLastEvalTime.WithLabelValues(GroupKey(g.file, g.name)).Set(float64(ts.UnixNano()) / 1e9)
 
 	g.mtx.Lock()
 	defer g.mtx.Unlock()
 	g.lastEvaluation = ts
 }
 
-// evalTimestamp returns the immediately preceding consistently slotted evaluation time.
-func (g *Group) evalTimestamp() time.Time {
+// EvalTimestamp returns the immediately preceding consistently slotted evaluation time.
+func (g *Group) EvalTimestamp(startTime int64) time.Time {
 	var (
 		offset = int64(g.hash() % uint64(g.interval))
-		now    = time.Now().UnixNano()
-		adjNow = now - offset
+		adjNow = startTime - offset
 		base   = adjNow - (adjNow % int64(g.interval))
 	)
 
@@ -588,7 +589,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				rule.SetEvaluationTimestamp(t)
 			}(time.Now())
 
-			g.metrics.evalTotal.WithLabelValues(groupKey(g.File(), g.Name())).Inc()
+			g.metrics.evalTotal.WithLabelValues(GroupKey(g.File(), g.Name())).Inc()
 
 			vector, err := rule.Eval(ctx, ts, g.opts.QueryFunc, g.opts.ExternalURL)
 			if err != nil {
@@ -600,9 +601,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				if _, ok := err.(promql.ErrQueryCanceled); !ok {
 					level.Warn(g.logger).Log("msg", "Evaluating rule failed", "rule", rule, "err", err)
 				}
-				sp.SetTag("error", true)
-				sp.LogKV("error", err)
-				g.metrics.evalFailures.WithLabelValues(groupKey(g.File(), g.Name())).Inc()
+				g.metrics.evalFailures.WithLabelValues(GroupKey(g.File(), g.Name())).Inc()
 				return
 			}
 			samplesTotal += float64(len(vector))
@@ -671,7 +670,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		}(i, rule)
 	}
 	if g.metrics != nil {
-		g.metrics.groupSamples.WithLabelValues(groupKey(g.File(), g.Name())).Set(samplesTotal)
+		g.metrics.groupSamples.WithLabelValues(GroupKey(g.File(), g.Name())).Set(samplesTotal)
 	}
 	g.cleanupStaleSeries(ctx, ts)
 }
@@ -965,7 +964,7 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 		// check if new group equals with the old group, if yes then skip it.
 		// If not equals, stop it and wait for it to finish the current iteration.
 		// Then copy it into the new group.
-		gn := groupKey(newg.file, newg.name)
+		gn := GroupKey(newg.file, newg.name)
 		oldg, ok := m.groups[gn]
 		delete(m.groups, gn)
 
@@ -1079,7 +1078,7 @@ func (m *Manager) LoadGroups(
 				))
 			}
 
-			groups[groupKey(fn, rg.Name)] = NewGroup(GroupOptions{
+			groups[GroupKey(fn, rg.Name)] = NewGroup(GroupOptions{
 				Name:          rg.Name,
 				File:          fn,
 				Interval:      itv,
@@ -1094,8 +1093,8 @@ func (m *Manager) LoadGroups(
 	return groups, nil
 }
 
-// Group names need not be unique across filenames.
-func groupKey(file, name string) string {
+// GroupKey group names need not be unique across filenames.
+func GroupKey(file, name string) string {
 	return file + ";" + name
 }
 

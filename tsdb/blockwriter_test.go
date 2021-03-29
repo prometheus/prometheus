@@ -36,10 +36,6 @@ func TestBlockWriter(t *testing.T) {
 	w, err := NewBlockWriter(log.NewNopLogger(), outputDir, DefaultBlockDuration)
 	require.NoError(t, err)
 
-	// Flush with no series results in error.
-	_, err = w.Flush(ctx)
-	require.EqualError(t, err, "no series appended, aborting")
-
 	// Add some series.
 	app := w.Appender(ctx)
 	ts1, v1 := int64(44), float64(7)

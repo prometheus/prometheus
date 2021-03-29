@@ -90,16 +90,11 @@ func (w *BlockWriter) Appender(ctx context.Context) storage.Appender {
 // Flush implements the Writer interface. This is where actual block writing
 // happens. After flush completes, no writes can be done.
 func (w *BlockWriter) Flush(ctx context.Context) (ulid.ULID, error) {
-	seriesCount := w.head.NumSeries()
-	if w.head.NumSeries() == 0 {
-		return ulid.ULID{}, ErrNoSeriesAppended
-	}
-
 	mint := w.head.MinTime()
 	// Add +1 millisecond to block maxt because block intervals are half-open: [b.MinTime, b.MaxTime).
 	// Because of this block intervals are always +1 than the total samples it includes.
 	maxt := w.head.MaxTime() + 1
-	level.Info(w.logger).Log("msg", "flushing", "series_count", seriesCount, "mint", timestamp.Time(mint), "maxt", timestamp.Time(maxt))
+	level.Info(w.logger).Log("msg", "flushing", "series_count", w.head.NumSeries(), "mint", timestamp.Time(mint), "maxt", timestamp.Time(maxt))
 
 	compactor, err := NewLeveledCompactor(ctx,
 		nil,
