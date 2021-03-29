@@ -6,12 +6,12 @@ import { useFetchReadyInterval, WALReplayData } from '../../hooks/useFetch';
 import { usePathPrefix } from '../../contexts/PathPrefixContext';
 
 interface StartingContentProps {
-  isResponding: boolean;
+  isUnexpected: boolean;
   status?: WALReplayData;
 }
 
-export const StartingContent: FC<StartingContentProps> = ({ status, isResponding }) => {
-  if (!isResponding) {
+export const StartingContent: FC<StartingContentProps> = ({ status, isUnexpected }) => {
+  if (isUnexpected) {
     return (
       <Alert color="danger">
         <strong>Error:</strong> Server is not responding
@@ -43,7 +43,7 @@ export const StartingContent: FC<StartingContentProps> = ({ status, isResponding
 
 const Starting: FC<RouteComponentProps> = () => {
   const pathPrefix = usePathPrefix();
-  const { ready, walReplayStatus, isResponding } = useFetchReadyInterval(pathPrefix);
+  const { ready, walReplayStatus, isUnexpected } = useFetchReadyInterval(pathPrefix);
 
   useEffect(() => {
     if (ready) {
@@ -51,7 +51,7 @@ const Starting: FC<RouteComponentProps> = () => {
     }
   }, [ready]);
 
-  return <StartingContent isResponding={isResponding} status={walReplayStatus.data} />;
+  return <StartingContent isUnexpected={isUnexpected} status={walReplayStatus.data} />;
 };
 
 export default Starting;

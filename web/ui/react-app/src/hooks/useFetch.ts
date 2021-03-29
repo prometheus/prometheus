@@ -11,7 +11,7 @@ export interface FetchState<T> {
 
 export interface FetchStateReady {
   ready: boolean;
-  isResponding: boolean;
+  isUnexpected: boolean;
   isLoading: boolean;
 }
 
@@ -29,7 +29,7 @@ export type WALReplayStatus = {
 
 export interface FetchStateReadyInterval {
   ready: boolean;
-  isResponding: boolean;
+  isUnexpected: boolean;
   walReplayStatus: WALReplayStatus;
 }
 
@@ -60,7 +60,7 @@ export const useFetch = <T extends {}>(url: string, options?: RequestInit): Fetc
 
 export const useFetchReady = (pathPrefix: string, options?: RequestInit): FetchStateReady => {
   const [ready, setReady] = useState<boolean>(false);
-  const [isResponding, setIsResponding] = useState<boolean>(true);
+  const [isUnexpected, setIsUnexpected] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   useEffect(() => {
@@ -74,24 +74,26 @@ export const useFetchReady = (pathPrefix: string, options?: RequestInit): FetchS
         // The server sends back a 503 if it isn't ready,
         // if we get back anything else that means something has gone wrong.
         if (res.status !== 503) {
-          setIsResponding(false);
+          setIsUnexpected(true);
         } else {
-          setIsResponding(true);
+          setIsUnexpected(false);
         }
 
         setIsLoading(false);
-      } catch (error) {}
+      } catch (error) {
+        setIsUnexpected(true);
+      }
     };
     fetchData();
   }, [pathPrefix, options]);
-  return { ready, isResponding, isLoading };
+  return { ready, isUnexpected, isLoading };
 };
 
 // This is used on the starting page to periodically check if the server is ready yet,
 // and check the status of the WAL replay.
 export const useFetchReadyInterval = (pathPrefix: string, options?: RequestInit): FetchStateReadyInterval => {
   const [ready, setReady] = useState<boolean>(false);
-  const [isResponding, setIsResponding] = useState<boolean>(true);
+  const [isUnexpected, setIsUnexpected] = useState<boolean>(false);
   const [walReplayStatus, setWalReplayStatus] = useState<WALReplayStatus>({} as any);
 
   useEffect(() => {
@@ -104,9 +106,9 @@ export const useFetchReadyInterval = (pathPrefix: string, options?: RequestInit)
           return;
         }
         if (res.status !== 503) {
-          setIsResponding(false);
+          setIsUnexpected(true);
         } else {
-          setIsResponding(true);
+          setIsUnexpected(false);
 
           res = await fetch(`${pathPrefix}/${API_PATH}/status/walreplay`, { cache: 'no-store', credentials: 'same-origin' });
           if (res.ok) {
@@ -114,10 +116,12 @@ export const useFetchReadyInterval = (pathPrefix: string, options?: RequestInit)
             setWalReplayStatus(data);
           }
         }
-      } catch (error) {}
+      } catch (error) {
+        setIsUnexpected(true);
+      }
     }, 1000);
 
     return () => clearInterval(interval);
   }, [pathPrefix, options]);
-  return { ready, isResponding, walReplayStatus };
+  return { ready, isUnexpected, walReplayStatus };
 };

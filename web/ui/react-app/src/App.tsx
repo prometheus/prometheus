@@ -46,9 +46,9 @@ const App: FC<AppProps> = ({ consolesLink }) => {
   }
 
   const pathPrefix = usePathPrefix();
-  const { ready, isLoading, isResponding } = useFetchReady(pathPrefix);
+  const { ready, isLoading, isUnexpected } = useFetchReady(pathPrefix);
   if (basePath !== '/starting') {
-    if (!ready && !isLoading && isResponding) {
+    if (!ready && !isLoading && !isUnexpected) {
       navigate('/starting');
     }
   }
