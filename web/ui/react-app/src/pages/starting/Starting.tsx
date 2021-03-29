@@ -33,7 +33,7 @@ export const StartingContent: FC<StartingContentProps> = ({ status, isUnexpected
               max={status?.last - status?.first}
               value={status?.read - status?.first}
               color={status?.done ? 'success' : undefined}
-              style={{ width: '60%', margin: 'auto' }}
+              style={{ width: '10%', margin: 'auto' }}
             />
           </div>
         ) : null}
