@@ -1033,6 +1033,34 @@ $ curl http://localhost:9090/api/v1/status/tsdb
 
 *New in v2.15*
 
+### WAL Replay Stats
+
+The following endpoint returns information about the WAL replay:
+
+```
+GET /api/v1/status/walreplay
+```
+
+**first**: The first segment needed to be replayed.
+**last**: The last segment needed to be replayed.
+**read**: The latest segment replayed.
+
+```json
+$ curl http://localhost:9090/api/v1/status/walreplay
+{
+  "status": "success",
+  "data": {
+    "first": 1076,
+    "last": 1230,
+    "read": 1201,
+    "started": true,
+    "done": false
+  }
+}
+```
+
+NOTE: This endpoint is available before the server has been marked ready and is updated in real-time to facilitate monitoring the progress of the WAL replay.
+
 ## TSDB Admin APIs
 These are APIs that expose database functionalities for the advanced user. These APIs are not enabled unless the `--web.enable-admin-api` is set.
 
