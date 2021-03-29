@@ -128,6 +128,7 @@ const CMExpressionInput: FC<CMExpressionInputProps> = ({
           closeBrackets(),
           autocompletion(),
           highlightSelectionMatches(),
+          EditorView.lineWrapping,
           keymap.of([
             ...closeBracketsKeymap,
             ...defaultKeymap,
