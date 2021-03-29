@@ -110,7 +110,7 @@ jobs:
     executor: golang
     steps:
     - checkout
-    - run: curl -sL --fail https://github.com/mikefarah/yq/releases/download/v4.6.3/yq_linux_amd64 -o "${PATH%%:*}/yq" && chmod -v +x "${PATH%%:*}/yq"
+    - run: mkdir -v -p "${PATH%%:*}" && curl -sL --fail https://github.com/mikefarah/yq/releases/download/v4.6.3/yq_linux_amd64 -o "${PATH%%:*}/yq" && chmod -v +x "${PATH%%:*}/yq"
     - run: sha256sum -c <(echo "c4343783c3361495c0d6d1eb742bba7432aa65e13e9fb8d7e201d544bcf14247 ${PATH%%:*}/yq")
     - run: ./scripts/sync_repo_files.sh
 
