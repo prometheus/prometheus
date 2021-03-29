@@ -1,7 +1,6 @@
 import React, { FC, useEffect } from 'react';
 import { RouteComponentProps, navigate } from '@reach/router';
 import { Progress, Alert } from 'reactstrap';
-import Logo from './Logo';
 
 import { useFetchReadyInterval, WALReplayData } from '../../hooks/useFetch';
 import { usePathPrefix } from '../../contexts/PathPrefixContext';
@@ -22,7 +21,6 @@ export const StartingContent: FC<StartingContentProps> = ({ status, isResponding
 
   return (
     <div className="text-center m-3">
-      <Logo height="400" />
       <div className="m-4">
         <h2>Starting up...</h2>
         {status?.started ? (
