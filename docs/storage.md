@@ -150,3 +150,50 @@ promtool tsdb create-blocks-from openmetrics <input file> [<output directory>]
 ```
 
 After the creation of the blocks, move it to the data directory of Prometheus. If there is an overlap with the existing blocks in Prometheus, the flag `--storage.tsdb.allow-overlapping-blocks` needs to be set. Note that any backfilled data is subject to the retention configured for your Prometheus server (by time or size).
+
+## Backfilling for Recording Rules
+
+### Overview
+
+When a new recording rule is created there is no historical data for it, rather recording rule data only exists from the creation time on. However there is a `promtool` subcommand that makes it possible to create historical recording rule data.
+
+### Usage
+
+```
+$ promtool tsdb create-blocks-from rules --help
+usage: promtool tsdb create-blocks-from rules --start=START [<flags>] <rule-files>...
+
+Create blocks of past data for new recording rules.
+
+Flags:
+      --url=http://localhost:9090
+                            The URL for the Prometheus API with the data where the rule will be backfilled from.
+      --start=START         The time to start backfilling the new rule from. Must be a RFC3339 formatted date or Unix timestamp. Required.
+      --end=END             If an end time is provided, all recording rules in the rule files provided will be backfilled to the end time. Default
+                            will backfill up to 3 hours ago. Must be a RFC3339 formatted date or Unix timestamp.
+      --output-dir="data/"  Output directory for generated blocks.
+      --eval-interval=60s   How frequently to evaluate rules when backfilling if a value is not set in the recording rule files.
+
+Args:
+  <rule-files>  A list of one or more files containing recording rules to be backfilled. All recording rules listed in the files will be backfilled. Alerting rules are not evaluated.
+
+```
+
+Example usage:
+```
+$ promtool tsdb create-blocks-from rules \
+    --start 1617079873 \
+    --end 1617097873 \
+    --url http://mypromserver.com:9090 \
+    rules.yaml,rules2.yaml
+```
+
+The recording rule files provided should comply with Prometheus rule documentation [here](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/).
+
+The output of `promtool tsdb create-blocks-from rules` command is a directory that contains blocks with the historical rule data for all rules in the recording rule files. By default the output directory is `data/`. In order to make use of this new block data, the blocks must be moved to a running Prometheus instance that has the flag `--storage.tsdb.allow-overlapping-blocks` enabled. Once moved, the new blocks will merge with existing blocks when the next compaction runs.
+
+A couple of important things to note:
+- If you run the rule backfiller multiple times with the overlapping start/end times, blocks containing the same data will be created each time the rule backfiller is run.
+- Output blocks are in 2 hr chunks.
+- All rules in the recording rule files will be evaluated.
+- If the `interval` is set in the recording rule file that will take priority over the `eval-interval` flag in the rule backfill command.
