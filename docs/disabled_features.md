@@ -18,6 +18,14 @@ They may be enabled by default in future versions.
 The `@` modifier lets you specify the evaluation time for instant vector selectors,
 range vector selectors, and subqueries. More details can be found [here](querying/basics.md#modifier).
 
+## Expand environment variables in external labels
+
+`--enable-feature=expand-external-labels`
+
+Replace `${var}` or `$var` in the [`external_labels`](configuration/configuration.md#configuration-file)
+values according to the values of the current environment variables. References
+to undefined variables are replaced by the empty string.
+
 ## Negative offset in PromQL
 
 This negative offset is disabled by default since it breaks the invariant
