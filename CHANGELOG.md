@@ -199,6 +199,11 @@ This release changes WAL compression from opt-in to default. WAL compression wil
 * [BUGFIX] TSDB: Fixed panic during TSDB metric registration. #7501
 * [BUGFIX] TSDB: Fixed `--limit` command line flag in `tsdb` tool. #7430
 
+## 2.19.3 / 2020-07-24
+
+* [BUGFIX] TSDB: Don't panic on WAL corruptions. #7550
+* [BUGFIX] TSDB: Avoid leaving behind empty files in chunks_head, causing startup failures. #7573
+
 ## 2.19.2 / 2020-06-26
 
 * [BUGFIX] Remote Write: Fix panic when reloading config with modified queue parameters. #7452
