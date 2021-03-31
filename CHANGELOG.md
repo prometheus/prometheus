@@ -1,4 +1,4 @@
-## 2.26.0-rc.0 / 2021-03-24
+## 2.26.0 / 2021-03-31
 
 Prometheus is now built and supporting Go 1.16 (#8544). This reverts the memory release pattern added in Go 1.12. This makes common RSS usage metrics showing more accurate number for actual memory used by Prometheus. You can read more details [here](https://www.bwplotka.dev/2019/golang-memory-monitoring/).
 
