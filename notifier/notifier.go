@@ -637,9 +637,18 @@ type Target struct {
 func (a Target) Labels() labels.Labels {
 	lset := make(labels.Labels, 0, len(a.labels))
 	for _, l := range a.labels {
-		if l.Name == model.AddressLabel || !strings.HasPrefix(l.Name, model.ReservedLabelPrefix) {
+		if !strings.HasPrefix(l.Name, model.ReservedLabelPrefix) {
 			lset = append(lset, l)
 		}
+	}
+	url := url.URL{
+		Scheme: a.labels.Get(model.SchemeLabel),
+		Host:   a.labels.Get(model.AddressLabel),
+		Path:   a.labels.Get(pathLabel),
+	}
+	instance := url.String()
+	if instance != "" {
+		lset = append(lset, labels.Label{Name: model.InstanceLabel, Value: instance})
 	}
 	return lset
 }
