@@ -159,7 +159,7 @@ func (f QueryableFunc) Querier(ctx context.Context, mint, maxt int64) (Querier, 
 type Appender interface {
 	// Append adds a sample pair for the given series.
 	// An optional reference number representing a series can be provided
-	// along the required label pair to accelerate append calls. Use default value
+	// with the required label pair to accelerate append calls. Use default value
 	// (0) if you want Append to deduce series purely from provided labels.
 	//
 	// Returned reference numbers may be ephemeral across commits.
