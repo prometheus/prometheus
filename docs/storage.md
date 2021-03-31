@@ -155,29 +155,11 @@ After the creation of the blocks, move it to the data directory of Prometheus. I
 
 ### Overview
 
-When a new recording rule is created there is no historical data for it, rather recording rule data only exists from the creation time on. However there is a `promtool` subcommand that makes it possible to create historical recording rule data.
+When a new recording rule is created, there is no historical data for it. Recording rule data only exists from the creation time on. `promtool` makes it possible to create historical recording rule data.
 
 ### Usage
 
-```
-$ promtool tsdb create-blocks-from rules --help
-usage: promtool tsdb create-blocks-from rules --start=START [<flags>] <rule-files>...
-
-Create blocks of past data for new recording rules.
-
-Flags:
-      --url=http://localhost:9090
-                            The URL for the Prometheus API with the data where the rule will be backfilled from.
-      --start=START         The time to start backfilling the new rule from. Must be a RFC3339 formatted date or Unix timestamp. Required.
-      --end=END             If an end time is provided, all recording rules in the rule files provided will be backfilled to the end time. Default
-                            will backfill up to 3 hours ago. Must be a RFC3339 formatted date or Unix timestamp.
-      --output-dir="data/"  Output directory for generated blocks.
-      --eval-interval=60s   How frequently to evaluate rules when backfilling if a value is not set in the recording rule files.
-
-Args:
-  <rule-files>  A list of one or more files containing recording rules to be backfilled. All recording rules listed in the files will be backfilled. Alerting rules are not evaluated.
-
-```
+To see all options, use: `$ promtool tsdb create-blocks-from rules --help`.
 
 Example usage:
 ```
@@ -185,15 +167,16 @@ $ promtool tsdb create-blocks-from rules \
     --start 1617079873 \
     --end 1617097873 \
     --url http://mypromserver.com:9090 \
-    rules.yaml,rules2.yaml
+    rules.yaml rules2.yaml
 ```
 
-The recording rule files provided should comply with Prometheus rule documentation [here](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/).
+The recording rule files provided should be a normal [Prometheus rules file](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/).
 
-The output of `promtool tsdb create-blocks-from rules` command is a directory that contains blocks with the historical rule data for all rules in the recording rule files. By default the output directory is `data/`. In order to make use of this new block data, the blocks must be moved to a running Prometheus instance that has the flag `--storage.tsdb.allow-overlapping-blocks` enabled. Once moved, the new blocks will merge with existing blocks when the next compaction runs.
+The output of `promtool tsdb create-blocks-from rules` command is a directory that contains blocks with the historical rule data for all rules in the recording rule files. By default the output directory is `data/`. In order to make use of this new block data, the blocks must be moved to a running Prometheus instance data dir `storage.tsdb.path` that has the flag `--storage.tsdb.allow-overlapping-blocks` enabled. Once moved, the new blocks will merge with existing blocks when the next compaction runs.
 
-A couple of important things to note:
+### Limitations
 - If you run the rule backfiller multiple times with the overlapping start/end times, blocks containing the same data will be created each time the rule backfiller is run.
-- Output blocks are in 2 hr chunks.
 - All rules in the recording rule files will be evaluated.
 - If the `interval` is set in the recording rule file that will take priority over the `eval-interval` flag in the rule backfill command.
+- Alerts are currently ignored if they are in the recording rule file.
+- Rules in the same group cannot see the results of previous rules. Meaning that rules that refer to other rules being backfilled is not supported. A workaround is to backfill mulitple times and create the dependent data first (and move dependent data to the Prometheus server data dir so that it is accessible from the Prometheus API).
